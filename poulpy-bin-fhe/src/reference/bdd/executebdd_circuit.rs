@@ -5,8 +5,8 @@ use poulpy_hal::{api::*, layouts::*};
 /// Independently callable canonical implementation of [`ExecuteBDDCircuit::execute_bdd_circuit_tmp_bytes`].
 pub fn execute_bdd_circuit_tmp_bytes_reference<BE: Backend<ZnxWord = i64>, R, G>(
     module: &Module<BE>,
-    res_infos: &R,
     state_size: usize,
+    res_infos: &R,
     ggsw_infos: &G,
 ) -> usize
 where

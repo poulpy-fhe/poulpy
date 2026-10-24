@@ -164,7 +164,7 @@ impl<D: Data> CircuitBootstrappingPlan<D> {
         R: GGSWToBackendMut<BE> + GGSWAtViewRef<BE> + GGSWAtViewMut<BE> + GGSWInfos,
         L: LWEToBackendRef<BE> + LWEInfos,
     {
-        module.circuit_bootstrapping_execute_prepared(res, lwe, key, self, scratch);
+        module.circuit_bootstrapping_execute_prepared(res, lwe, self, key, scratch);
     }
 
     pub(crate) fn assert_key_compatible<BRA, BE>(&self, key: &CircuitBootstrappingKeyPrepared<D, BRA, BE>)
@@ -210,15 +210,15 @@ where
     pub fn prepare_to_constant<M, R>(
         &self,
         module: &M,
-        res_infos: &R,
         log_domain: usize,
         extension_factor: usize,
+        res_infos: &R,
     ) -> CircuitBootstrappingPlan<BE::OwnedBuf>
     where
         M: CircuitBootstrappingExecute<BRA, BE>,
         R: GGSWInfos,
     {
-        module.circuit_bootstrapping_prepare_to_constant(res_infos, self, log_domain, extension_factor)
+        module.circuit_bootstrapping_prepare_to_constant(log_domain, extension_factor, res_infos, self)
     }
 
     /// Prepares a reusable exponent-encoding circuit-bootstrap plan.
@@ -226,15 +226,15 @@ where
         &self,
         module: &M,
         log_gap_out: usize,
-        res_infos: &R,
         log_domain: usize,
         extension_factor: usize,
+        res_infos: &R,
     ) -> CircuitBootstrappingPlan<BE::OwnedBuf>
     where
         M: CircuitBootstrappingExecute<BRA, BE>,
         R: GGSWInfos,
     {
-        module.circuit_bootstrapping_prepare_to_exponent(log_gap_out, res_infos, self, log_domain, extension_factor)
+        module.circuit_bootstrapping_prepare_to_exponent(log_gap_out, log_domain, extension_factor, res_infos, self)
     }
 
     /// Convenience method: bootstraps `lwe` into the GGSW ciphertext `res`
@@ -244,17 +244,17 @@ where
     pub fn execute_to_constant<M, L, R>(
         &self,
         module: &M,
-        res: &mut R,
-        lwe: &L,
         log_domain: usize,
         extension_factor: usize,
+        res: &mut R,
+        lwe: &L,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         M: CircuitBootstrappingExecute<BRA, BE>,
         R: GGSWToBackendMut<BE> + GGSWAtViewRef<BE> + GGSWAtViewMut<BE> + GGSWInfos,
         L: LWEToBackendRef<BE> + LWEInfos,
     {
-        module.circuit_bootstrapping_execute_to_constant(res, lwe, self, log_domain, extension_factor, scratch);
+        module.circuit_bootstrapping_execute_to_constant(log_domain, extension_factor, res, lwe, self, scratch);
     }
 
     /// Convenience method: bootstraps `lwe` into `res` using the exponent
@@ -267,16 +267,16 @@ where
         &self,
         module: &M,
         log_gap_out: usize,
-        res: &mut R,
-        lwe: &L,
         log_domain: usize,
         extension_factor: usize,
+        res: &mut R,
+        lwe: &L,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         M: CircuitBootstrappingExecute<BRA, BE>,
         R: GGSWToBackendMut<BE> + GGSWAtViewRef<BE> + GGSWAtViewMut<BE> + GGSWInfos,
         L: LWEToBackendRef<BE> + LWEInfos,
     {
-        module.circuit_bootstrapping_execute_to_exponent(log_gap_out, res, lwe, self, log_domain, extension_factor, scratch);
+        module.circuit_bootstrapping_execute_to_exponent(log_gap_out, log_domain, extension_factor, res, lwe, self, scratch);
     }
 }

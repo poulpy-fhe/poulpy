@@ -18,33 +18,33 @@ pub unsafe trait GLWEBlindRetrievalImpl: Backend + crate::oep::CswapImpl {
     #[allow(clippy::too_many_arguments)]
     fn glwe_blind_retrieval_statefull<R, K>(
         module: &Module<Self>,
-        res: &mut Vec<R>,
-        bits: &K,
         bit_rsh: usize,
         bit_mask: usize,
+        res: &mut Vec<R>,
+        bits: &K,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         R: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + GLWEInfos,
         K: GetGGSWBit<Self>,
     {
         crate::oep::derived::bdd::glwe_blind_retrieval_statefull_derived::<Self, _, _>(
-            module, res, bits, bit_rsh, bit_mask, scratch,
+            module, bit_rsh, bit_mask, res, bits, scratch,
         )
     }
     #[allow(clippy::too_many_arguments)]
     fn glwe_blind_retrieval_statefull_rev<R, K>(
         module: &Module<Self>,
-        res: &mut Vec<R>,
-        bits: &K,
         bit_rsh: usize,
         bit_mask: usize,
+        res: &mut Vec<R>,
+        bits: &K,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         R: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + GLWEInfos,
         K: GetGGSWBit<Self>,
     {
         crate::oep::derived::bdd::glwe_blind_retrieval_statefull_rev_derived::<Self, _, _>(
-            module, res, bits, bit_rsh, bit_mask, scratch,
+            module, bit_rsh, bit_mask, res, bits, scratch,
         )
     }
 }

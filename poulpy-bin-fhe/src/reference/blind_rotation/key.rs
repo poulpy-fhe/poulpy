@@ -26,14 +26,14 @@ where
 pub fn blind_rotation_key_encrypt_sk_ref<BE, S0, S1>(
     module: &Module<BE>,
     res: &mut BlindRotationKey<BE::OwnedBuf, CGGI, BE::ZnxWord>,
-    sk_glwe: &S0,
-    sk_lwe: &S1,
+    sk_lwe: &S0,
+    sk_glwe: &S1,
     source_xe: &mut Source,
     source_xa: &mut Source,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    S0: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
-    S1: LWESecretToBackendRef<BE> + LWEInfos + GetDistribution,
+    S0: LWESecretToBackendRef<BE> + LWEInfos + GetDistribution,
+    S1: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
     BE: Backend<ZnxWord = i64>,
     Module<BE>: GGSWEncryptSk<BE>,
 {

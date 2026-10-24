@@ -9,7 +9,7 @@ use poulpy_hal::{
 };
 
 /// Encrypts coefficient-domain key bodies with deterministic per-element mask seeds.
-pub trait BlindRotationKeyCompressedEncryptSk<B: Backend, BRA: BlindRotationAlgo> {
+pub trait BlindRotationKeyCompressedEncryptSk<BRA: BlindRotationAlgo, BE: Backend> {
     /// Returns the minimum scratch-space size in bytes required by
     /// [`blind_rotation_key_compressed_encrypt_sk`][Self::blind_rotation_key_compressed_encrypt_sk].
     fn blind_rotation_key_compressed_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
@@ -24,13 +24,13 @@ pub trait BlindRotationKeyCompressedEncryptSk<B: Backend, BRA: BlindRotationAlgo
     #[allow(clippy::too_many_arguments)]
     fn blind_rotation_key_compressed_encrypt_sk<S0, S1>(
         &self,
-        res: &mut BlindRotationKeyCompressed<B::OwnedBuf, BRA, B::ZnxWord>,
-        sk_glwe: &S0,
-        sk_lwe: &S1,
+        res: &mut BlindRotationKeyCompressed<BE::OwnedBuf, BRA, BE::ZnxWord>,
+        sk_lwe: &S0,
+        sk_glwe: &S1,
         seed_xa: [u8; 32],
         source_xe: &mut Source,
-        scratch: &mut ScratchArena<'_, B>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
-        S0: GLWESecretPreparedToBackendRef<B> + GLWEInfos,
-        S1: LWESecretToBackendRef<B> + LWEInfos + GetDistribution;
+        S0: LWESecretToBackendRef<BE> + LWEInfos + GetDistribution,
+        S1: GLWESecretPreparedToBackendRef<BE> + GLWEInfos;
 }

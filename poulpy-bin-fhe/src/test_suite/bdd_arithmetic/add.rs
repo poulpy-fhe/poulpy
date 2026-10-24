@@ -73,7 +73,7 @@ pub fn test_bdd_add<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf: HostDataMut + 
     assert_eq!(res.decrypt(module, sk_glwe_prep, &mut scratch.borrow()), a.wrapping_add(b));
 
     let mt_threads: usize = 4;
-    let add_mt_bytes: usize = res.add_multi_thread_tmp_bytes(module, mt_threads, &glwe_infos, &ggsw_infos, bdd_key_prepared);
+    let add_mt_bytes: usize = res.add_multi_thread_tmp_bytes(mt_threads, module, &glwe_infos, &ggsw_infos, bdd_key_prepared);
     let mut scratch_mt: ScratchOwned<BE> = ScratchOwned::alloc(add_mt_bytes);
     res.add_multi_thread(
         mt_threads,

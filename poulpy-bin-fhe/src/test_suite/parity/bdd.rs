@@ -157,7 +157,7 @@ where
         for mask in [0, 1, 3] {
             let mut out = fixture_glwe(module, &layout, 7);
             with_scratch::<B, _>(module.glwe_blind_rotation_tmp_bytes(&out, &out, &key), |s| {
-                module.glwe_blind_rotation_assign(&mut out, &selectors, sign, 1, mask, 1, s)
+                module.glwe_blind_rotation_assign(sign, 1, mask, 1, &mut out, &selectors, s)
             });
             outputs.push(snapshot_glwe::<B, _>(&out));
             for input_layout in [
@@ -176,7 +176,7 @@ where
                 let mut out = fixture_glwe(module, &layout, 7);
                 let bytes = module.glwe_blind_rotation_tmp_bytes(&out, &input, &key);
                 with_scratch::<B, _>(bytes, |s| {
-                    module.glwe_blind_rotation(&mut out, &input, &selectors, sign, 1, mask, 1, s)
+                    module.glwe_blind_rotation(sign, 1, mask, 1, &mut out, &input, &selectors, s)
                 });
                 outputs.push(snapshot_glwe::<B, _>(&out));
             }
@@ -193,12 +193,12 @@ where
     out.set_k(layout.k);
     let bytes = module.glwe_blind_rotation_tmp_bytes(&out, &input, &key);
     with_scratch::<B, _>(bytes, |s| {
-        module.glwe_blind_rotation(&mut out, &input, &selectors, false, 1, 3, 1, s)
+        module.glwe_blind_rotation(false, 1, 3, 1, &mut out, &input, &selectors, s)
     });
     outputs.push(snapshot_glwe::<B, _>(&out));
     let bytes = module.glwe_blind_rotation_tmp_bytes(&out, &out, &key);
     with_scratch::<B, _>(bytes, |s| {
-        module.glwe_blind_rotation_assign(&mut out, &selectors, true, 1, 3, 1, s)
+        module.glwe_blind_rotation_assign(true, 1, 3, 1, &mut out, &selectors, s)
     });
     outputs.push(snapshot_glwe::<B, _>(&out));
     outputs
@@ -275,7 +275,7 @@ where
                 .enumerate()
                 .filter(|(i, _)| present & (1 << i) != 0)
                 .collect();
-            with_scratch::<B, _>(bytes, |s| module.glwe_blind_selection(&mut out, map, selectors, 1, 2, s));
+            with_scratch::<B, _>(bytes, |s| module.glwe_blind_selection(1, 2, &mut out, map, selectors, s));
             outputs.push(snapshot_glwe::<B, _>(&out));
         }
     }
@@ -314,8 +314,8 @@ where
     let bytes = module.glwe_blind_retrieval_tmp_bytes(&layout, &key);
     for reverse in [false, true, false] {
         with_scratch::<B, _>(bytes, |s| match reverse {
-            false => module.glwe_blind_retrieval_statefull(&mut values, selectors, 1, 2, s),
-            true => module.glwe_blind_retrieval_statefull_rev(&mut values, selectors, 1, 2, s),
+            false => module.glwe_blind_retrieval_statefull(1, 2, &mut values, selectors, s),
+            true => module.glwe_blind_retrieval_statefull_rev(1, 2, &mut values, selectors, s),
         });
         outputs.extend(values.iter().map(snapshot_glwe::<B, _>));
     }
@@ -464,7 +464,7 @@ where
     let mut outputs = Vec::new();
     for threads in [1, 2, 8] {
         let mut out: Vec<_> = (0..3).map(|i| fixture_glwe(module, &layout, 50 + i)).collect();
-        let per_worker = module.execute_bdd_circuit_tmp_bytes_for(&layout, &TinyCircuit, &key);
+        let per_worker = module.execute_bdd_circuit_tmp_bytes_for(&layout, &key, &TinyCircuit);
         let workers = poulpy_hal::execution::worker_count::<B::TaskExecutor>(threads, 2);
         let bytes = workers * poulpy_hal::execution::worker_scratch_bytes::<B>(per_worker);
         with_scratch::<B, _>(bytes, |s| {
@@ -506,9 +506,9 @@ where
             module.ggsw_to_ggsw_blind_rotation_tmp_bytes(&out, &input, &key)
         };
         with_scratch::<B, _>(bytes, |s| match variant {
-            0 => module.ggsw_blind_rotation(&mut out, &input, &inputs, true, 1, 2, 0, s),
-            1 => module.ggsw_blind_rotation_assign(&mut out, &inputs, false, 1, 2, 0, s),
-            _ => module.scalar_to_ggsw_blind_rotation(&mut out, &scalar, &inputs, true, 1, 2, 0, s),
+            0 => module.ggsw_blind_rotation(true, 1, 2, 0, &mut out, &input, &inputs, s),
+            1 => module.ggsw_blind_rotation_assign(false, 1, 2, 0, &mut out, &inputs, s),
+            _ => module.scalar_to_ggsw_blind_rotation(true, 1, 2, 0, &mut out, &scalar, &inputs, s),
         });
         outputs.push(snapshot_ggsw::<B, _>(&out));
     }
@@ -527,7 +527,7 @@ where
         let mut out = fixture_ggsw(module, &key, 61);
         let bytes = module.ggsw_to_ggsw_blind_rotation_tmp_bytes(&out, &input, &key);
         with_scratch::<B, _>(bytes, |s| {
-            module.ggsw_blind_rotation(&mut out, &input, &inputs, true, 1, 2, 0, s)
+            module.ggsw_blind_rotation(true, 1, 2, 0, &mut out, &input, &inputs, s)
         });
         outputs.push(snapshot_ggsw::<B, _>(&out));
     }

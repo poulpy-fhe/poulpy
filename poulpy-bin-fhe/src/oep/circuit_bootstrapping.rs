@@ -86,11 +86,11 @@ pub unsafe trait CircuitBootstrappingExecuteImpl<BRA: BlindRotationAlgo>: Backen
     }
     fn circuit_bootstrapping_execute_to_constant<R, L>(
         module: &Module<Self>,
+        log_domain: usize,
+        extension_factor: usize,
         res: &mut R,
         lwe: &L,
         key: &CircuitBootstrappingKeyPrepared<Self::OwnedBuf, BRA, Self>,
-        log_domain: usize,
-        extension_factor: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         R: GGSWToBackendMut<Self> + GGSWAtViewRef<Self> + GGSWAtViewMut<Self> + GGSWInfos,
@@ -98,22 +98,22 @@ pub unsafe trait CircuitBootstrappingExecuteImpl<BRA: BlindRotationAlgo>: Backen
     {
         crate::oep::derived::circuit_bootstrapping::circuit_bootstrapping_execute_to_constant_derived(
             module,
+            log_domain,
+            extension_factor,
             res,
             lwe,
             key,
-            log_domain,
-            extension_factor,
             scratch,
         )
     }
     fn circuit_bootstrapping_execute_to_exponent<R, L>(
         module: &Module<Self>,
         log_gap_out: usize,
+        log_domain: usize,
+        extension_factor: usize,
         res: &mut R,
         lwe: &L,
         key: &CircuitBootstrappingKeyPrepared<Self::OwnedBuf, BRA, Self>,
-        log_domain: usize,
-        extension_factor: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         R: GGSWToBackendMut<Self> + GGSWAtViewRef<Self> + GGSWAtViewMut<Self> + GGSWInfos,
@@ -122,28 +122,28 @@ pub unsafe trait CircuitBootstrappingExecuteImpl<BRA: BlindRotationAlgo>: Backen
         crate::oep::derived::circuit_bootstrapping::circuit_bootstrapping_execute_to_exponent_derived(
             module,
             log_gap_out,
+            log_domain,
+            extension_factor,
             res,
             lwe,
             key,
-            log_domain,
-            extension_factor,
             scratch,
         )
     }
     fn circuit_bootstrapping_prepare_to_constant<R: GGSWInfos>(
         module: &Module<Self>,
-        res_infos: &R,
-        key: &CircuitBootstrappingKeyPrepared<Self::OwnedBuf, BRA, Self>,
         log_domain: usize,
         extension_factor: usize,
+        res_infos: &R,
+        key: &CircuitBootstrappingKeyPrepared<Self::OwnedBuf, BRA, Self>,
     ) -> CircuitBootstrappingPlan<Self::OwnedBuf>;
     fn circuit_bootstrapping_prepare_to_exponent<R: GGSWInfos>(
         module: &Module<Self>,
         log_gap_out: usize,
-        res_infos: &R,
-        key: &CircuitBootstrappingKeyPrepared<Self::OwnedBuf, BRA, Self>,
         log_domain: usize,
         extension_factor: usize,
+        res_infos: &R,
+        key: &CircuitBootstrappingKeyPrepared<Self::OwnedBuf, BRA, Self>,
     ) -> CircuitBootstrappingPlan<Self::OwnedBuf>;
     fn circuit_bootstrapping_execute_prepared_tmp_bytes<A: CircuitBootstrappingKeyInfos>(
         module: &Module<Self>,
@@ -154,8 +154,8 @@ pub unsafe trait CircuitBootstrappingExecuteImpl<BRA: BlindRotationAlgo>: Backen
         module: &Module<Self>,
         res: &mut R,
         lwe: &L,
-        key: &CircuitBootstrappingKeyPrepared<Self::OwnedBuf, BRA, Self>,
         plan: &CircuitBootstrappingPlan<Self::OwnedBuf>,
+        key: &CircuitBootstrappingKeyPrepared<Self::OwnedBuf, BRA, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         R: GGSWToBackendMut<Self> + GGSWAtViewRef<Self> + GGSWAtViewMut<Self> + GGSWInfos,
@@ -205,34 +205,34 @@ macro_rules! impl_circuit_bootstrapping_execute_reference_full {
         unsafe impl $crate::oep::CircuitBootstrappingExecuteImpl<$algo> for $be {
             fn circuit_bootstrapping_prepare_to_constant<R: ::poulpy_core::layouts::GGSWInfos>(
                 module: &::poulpy_hal::layouts::Module<Self>,
-                res_infos: &R,
-                key: &$crate::circuit_bootstrapping::CircuitBootstrappingKeyPrepared<Self::OwnedBuf, $algo, Self>,
                 log_domain: usize,
                 extension_factor: usize,
+                res_infos: &R,
+                key: &$crate::circuit_bootstrapping::CircuitBootstrappingKeyPrepared<Self::OwnedBuf, $algo, Self>,
             ) -> $crate::circuit_bootstrapping::CircuitBootstrappingPlan<Self::OwnedBuf> {
                 $crate::reference::circuit_bootstrapping::circuit_bootstrapping_prepare_to_constant_reference::<R, _, $algo, Self>(
                     module,
-                    res_infos,
-                    key,
                     log_domain,
                     extension_factor,
+                    res_infos,
+                    key,
                 )
             }
             fn circuit_bootstrapping_prepare_to_exponent<R: ::poulpy_core::layouts::GGSWInfos>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 log_gap_out: usize,
-                res_infos: &R,
-                key: &$crate::circuit_bootstrapping::CircuitBootstrappingKeyPrepared<Self::OwnedBuf, $algo, Self>,
                 log_domain: usize,
                 extension_factor: usize,
+                res_infos: &R,
+                key: &$crate::circuit_bootstrapping::CircuitBootstrappingKeyPrepared<Self::OwnedBuf, $algo, Self>,
             ) -> $crate::circuit_bootstrapping::CircuitBootstrappingPlan<Self::OwnedBuf> {
                 $crate::reference::circuit_bootstrapping::circuit_bootstrapping_prepare_to_exponent_reference::<R, _, $algo, Self>(
                     module,
                     log_gap_out,
-                    res_infos,
-                    key,
                     log_domain,
                     extension_factor,
+                    res_infos,
+                    key,
                 )
             }
             fn circuit_bootstrapping_execute_prepared_tmp_bytes<A: $crate::circuit_bootstrapping::CircuitBootstrappingKeyInfos>(
@@ -248,8 +248,8 @@ macro_rules! impl_circuit_bootstrapping_execute_reference_full {
                 module: &::poulpy_hal::layouts::Module<Self>,
                 res: &mut R,
                 lwe: &L,
-                key: &$crate::circuit_bootstrapping::CircuitBootstrappingKeyPrepared<Self::OwnedBuf, $algo, Self>,
                 plan: &$crate::circuit_bootstrapping::CircuitBootstrappingPlan<Self::OwnedBuf>,
+                key: &$crate::circuit_bootstrapping::CircuitBootstrappingKeyPrepared<Self::OwnedBuf, $algo, Self>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) where
                 R: ::poulpy_core::layouts::GGSWToBackendMut<Self>
@@ -259,7 +259,7 @@ macro_rules! impl_circuit_bootstrapping_execute_reference_full {
                 L: ::poulpy_core::layouts::LWEToBackendRef<Self> + ::poulpy_core::layouts::LWEInfos,
             {
                 $crate::reference::circuit_bootstrapping::circuit_bootstrapping_execute_prepared_reference::<R, L, _, $algo, Self>(
-                    module, res, lwe, key, plan, scratch,
+                    module, res, lwe, plan, key, scratch,
                 )
             }
         }

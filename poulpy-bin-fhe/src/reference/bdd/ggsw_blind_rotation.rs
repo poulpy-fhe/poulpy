@@ -23,13 +23,13 @@ where
 /// Independently callable canonical implementation of [`GGSWBlindRotation::scalar_to_ggsw_blind_rotation`].
 pub fn scalar_to_ggsw_blind_rotation_reference<T: UnsignedInteger, BE, R, A, K>(
     module: &Module<BE>,
-    res: &mut R,
-    test_vector: &A,
-    fhe_uint: &K,
     sign: bool,
     bit_rsh: usize,
     bit_mask: usize,
     bit_lsh: usize,
+    res: &mut R,
+    test_vector: &A,
+    fhe_uint: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,
@@ -66,13 +66,13 @@ pub fn scalar_to_ggsw_blind_rotation_reference<T: UnsignedInteger, BE, R, A, K>(
             }
 
             module.glwe_blind_rotation(
-                &mut res.at_view_mut(row, col),
-                &tmp_glwe,
-                fhe_uint,
                 sign,
                 bit_rsh,
                 bit_mask,
                 bit_lsh,
+                &mut res.at_view_mut(row, col),
+                &tmp_glwe,
+                fhe_uint,
                 &mut scratch_1.borrow(),
             );
         }

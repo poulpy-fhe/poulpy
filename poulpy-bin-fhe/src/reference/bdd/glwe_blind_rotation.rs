@@ -40,12 +40,12 @@ where
 /// Independently callable canonical implementation of [`GLWEBlindRotation::glwe_blind_rotation_assign`].
 pub fn glwe_blind_rotation_assign_reference<BE, R, K>(
     module: &Module<BE>,
-    res: &mut R,
-    value: &K,
     sign: bool,
     bit_rsh: usize,
     bit_mask: usize,
     bit_lsh: usize,
+    res: &mut R,
+    value: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -88,13 +88,13 @@ pub fn glwe_blind_rotation_assign_reference<BE, R, K>(
 /// Independently callable canonical implementation of [`GLWEBlindRotation::glwe_blind_rotation`].
 pub fn glwe_blind_rotation_reference<BE, R, A, K>(
     module: &Module<BE>,
-    res: &mut R,
-    a: &A,
-    fhe_uint: &K,
     sign: bool,
     bit_rsh: usize,
     bit_mask: usize,
     bit_lsh: usize,
+    res: &mut R,
+    a: &A,
+    fhe_uint: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -104,5 +104,5 @@ pub fn glwe_blind_rotation_reference<BE, R, A, K>(
     Module<BE>: GLWECopy<BE> + GLWEBlindRotation<BE>,
 {
     module.glwe_copy(res, a, scratch);
-    module.glwe_blind_rotation_assign(res, fhe_uint, sign, bit_rsh, bit_mask, bit_lsh, scratch);
+    module.glwe_blind_rotation_assign(sign, bit_rsh, bit_mask, bit_lsh, res, fhe_uint, scratch);
 }

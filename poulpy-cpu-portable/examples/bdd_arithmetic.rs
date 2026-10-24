@@ -319,11 +319,11 @@ where
     input_selector_enc_prepared.prepare(&module, &input_selector_enc, &bdd_key_prepared, &mut scratch.borrow());
 
     module.glwe_blind_selection(
+        0,
+        log_2_number_of_inputs,
         &mut selected_enc,
         inputs_a_enc_vec_map,
         &input_selector_enc_prepared,
-        0,
-        log_2_number_of_inputs,
         &mut scratch.borrow(),
     );
 

@@ -9,7 +9,7 @@ use poulpy_hal::layouts::*;
 /// [`GLWEPacking`](poulpy_core::GLWEPacking).
 pub trait ExecuteBDDCircuit1WTo1W<BE: Backend> {
     /// Workspace for this evaluator and output packing.
-    fn execute_bdd_circuit_1w_to_1w_tmp_bytes<C, T, R, G, H>(&self, circuit: &C, res_infos: &R, ggsw_infos: &G, key: &H) -> usize
+    fn execute_bdd_circuit_1w_to_1w_tmp_bytes<C, T, R, G, H>(&self, res_infos: &R, ggsw_infos: &G, circuit: &C, key: &H) -> usize
     where
         C: GetBitCircuitInfo,
         T: UnsignedInteger,
@@ -20,9 +20,9 @@ pub trait ExecuteBDDCircuit1WTo1W<BE: Backend> {
     fn execute_bdd_circuit_1w_to_1w_multi_thread_tmp_bytes<C, T, R, G, H>(
         &self,
         threads: usize,
-        circuit: &C,
         res_infos: &R,
         ggsw_infos: &G,
+        circuit: &C,
         key: &H,
     ) -> usize
     where
@@ -35,8 +35,8 @@ pub trait ExecuteBDDCircuit1WTo1W<BE: Backend> {
     fn execute_bdd_circuit_1w_to_1w<C, H, T>(
         &self,
         out: &mut FheUint<BE::OwnedBuf, T, BE::ZnxWord>,
-        circuit: &C,
         a: &FheUintPrepared<BE::OwnedBuf, T, BE>,
+        circuit: &C,
         key: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
@@ -50,8 +50,8 @@ pub trait ExecuteBDDCircuit1WTo1W<BE: Backend> {
         &self,
         threads: usize,
         out: &mut FheUint<BE::OwnedBuf, T, BE::ZnxWord>,
-        circuit: &C,
         a: &FheUintPrepared<BE::OwnedBuf, T, BE>,
+        circuit: &C,
         key: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where

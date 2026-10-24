@@ -21,12 +21,12 @@ pub unsafe trait GGSWBlindRotationImpl<T: UnsignedInteger>: Backend + crate::oep
     #[allow(clippy::too_many_arguments)]
     fn ggsw_blind_rotation_assign<R, K>(
         module: &Module<Self>,
-        res: &mut R,
-        fhe_uint: &K,
         sign: bool,
         bit_rsh: usize,
         bit_mask: usize,
         bit_lsh: usize,
+        res: &mut R,
+        fhe_uint: &K,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         R: GGSWToBackendMut<Self> + GGSWAtViewMut<Self> + GGSWInfos,
@@ -34,19 +34,19 @@ pub unsafe trait GGSWBlindRotationImpl<T: UnsignedInteger>: Backend + crate::oep
         Self: Backend<ZnxWord = i64>,
     {
         crate::oep::derived::bdd::ggsw_blind_rotation_assign_derived::<Self, _, _>(
-            module, res, fhe_uint, sign, bit_rsh, bit_mask, bit_lsh, scratch,
+            module, sign, bit_rsh, bit_mask, bit_lsh, res, fhe_uint, scratch,
         )
     }
     #[allow(clippy::too_many_arguments)]
     fn ggsw_blind_rotation<R, A, K>(
         module: &Module<Self>,
-        res: &mut R,
-        a: &A,
-        fhe_uint: &K,
         sign: bool,
         bit_rsh: usize,
         bit_mask: usize,
         bit_lsh: usize,
+        res: &mut R,
+        a: &A,
+        fhe_uint: &K,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         R: GGSWToBackendMut<Self> + GGSWAtViewMut<Self> + GGSWInfos,
@@ -55,7 +55,7 @@ pub unsafe trait GGSWBlindRotationImpl<T: UnsignedInteger>: Backend + crate::oep
         Self: Backend<ZnxWord = i64>,
     {
         crate::oep::derived::bdd::ggsw_blind_rotation_derived::<Self, _, _, _>(
-            module, res, a, fhe_uint, sign, bit_rsh, bit_mask, bit_lsh, scratch,
+            module, sign, bit_rsh, bit_mask, bit_lsh, res, a, fhe_uint, scratch,
         )
     }
     #[allow(clippy::too_many_arguments)]
@@ -66,13 +66,13 @@ pub unsafe trait GGSWBlindRotationImpl<T: UnsignedInteger>: Backend + crate::oep
     #[allow(clippy::too_many_arguments)]
     fn scalar_to_ggsw_blind_rotation<R, A, K>(
         module: &Module<Self>,
-        res: &mut R,
-        test_vector: &A,
-        fhe_uint: &K,
         sign: bool,
         bit_rsh: usize,
         bit_mask: usize,
         bit_lsh: usize,
+        res: &mut R,
+        test_vector: &A,
+        fhe_uint: &K,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         R: GGSWToBackendMut<Self> + GGSWAtViewMut<Self> + GGSWInfos,

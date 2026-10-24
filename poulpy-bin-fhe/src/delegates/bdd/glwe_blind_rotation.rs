@@ -17,30 +17,30 @@ where
     #[allow(clippy::too_many_arguments)]
     fn glwe_blind_rotation_assign<R, K>(
         &self,
-        res: &mut R,
-        value: &K,
         sign: bool,
         bit_rsh: usize,
         bit_mask: usize,
         bit_lsh: usize,
+        res: &mut R,
+        value: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         K: GetGGSWBit<BE>,
         BE: Backend<ZnxWord = i64>,
     {
-        BE::glwe_blind_rotation_assign::<R, K>(self, res, value, sign, bit_rsh, bit_mask, bit_lsh, scratch)
+        BE::glwe_blind_rotation_assign::<R, K>(self, sign, bit_rsh, bit_mask, bit_lsh, res, value, scratch)
     }
     #[allow(clippy::too_many_arguments)]
     fn glwe_blind_rotation<R, A, K>(
         &self,
-        res: &mut R,
-        a: &A,
-        fhe_uint: &K,
         sign: bool,
         bit_rsh: usize,
         bit_mask: usize,
         bit_lsh: usize,
+        res: &mut R,
+        a: &A,
+        fhe_uint: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -48,6 +48,6 @@ where
         K: GetGGSWBit<BE>,
         BE: Backend<ZnxWord = i64>,
     {
-        BE::glwe_blind_rotation::<R, A, K>(self, res, a, fhe_uint, sign, bit_rsh, bit_mask, bit_lsh, scratch)
+        BE::glwe_blind_rotation::<R, A, K>(self, sign, bit_rsh, bit_mask, bit_lsh, res, a, fhe_uint, scratch)
     }
 }

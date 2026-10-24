@@ -246,11 +246,11 @@ where
 
         <Module<BE> as GLWEBlindSelection<u32, BE>>::glwe_blind_selection(
             &module,
+            0,
+            1,
             &mut max_enc,
             cts,
             &compare_enc_prepared,
-            0,
-            1,
             &mut scratch.borrow(),
         );
     }

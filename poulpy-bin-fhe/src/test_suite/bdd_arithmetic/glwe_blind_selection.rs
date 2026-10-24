@@ -115,11 +115,11 @@ where
         let mut selection_scratch = ScratchOwned::alloc(module.glwe_blind_selection_tmp_bytes(&res, &input_infos, &ggsw_infos));
 
         module.glwe_blind_selection(
+            bit_start,
+            bit_size,
             &mut res,
             cts_map,
             &k_enc_prep,
-            bit_start,
-            bit_size,
             &mut selection_scratch.borrow(),
         );
 

@@ -9,7 +9,7 @@ use poulpy_hal::layouts::{Backend, Module, Standard};
 /// Writes must stay within the destination's allocated backend storage.
 pub unsafe trait LookupTableFactoryImpl: Backend<Ring = Standard> {
     /// Encodes host function samples into the backend-owned LUT.
-    fn lookup_table_set(module: &Module<Self>, res: &mut LookupTable<Self::OwnedBuf, Self::ZnxWord>, f: &[i64], k: usize);
+    fn lookup_table_set(module: &Module<Self>, k: usize, res: &mut LookupTable<Self::OwnedBuf, Self::ZnxWord>, f: &[i64]);
 
     /// Rotates the backend-owned LUT in its extended negacyclic domain.
     fn lookup_table_rotate(module: &Module<Self>, k: i64, res: &mut LookupTable<Self::OwnedBuf, Self::ZnxWord>);
@@ -22,11 +22,11 @@ macro_rules! impl_lookup_table_factory_reference_full {
         unsafe impl $crate::oep::LookupTableFactoryImpl for $backend {
             fn lookup_table_set(
                 module: &poulpy_hal::layouts::Module<Self>,
+                k: usize,
                 res: &mut $crate::blind_rotation::LookupTable<Self::OwnedBuf, Self::ZnxWord>,
                 f: &[i64],
-                k: usize,
             ) {
-                $crate::reference::blind_rotation::lookup_table_set_ref(module, res, f, k)
+                $crate::reference::blind_rotation::lookup_table_set_ref(module, k, res, f)
             }
 
             fn lookup_table_rotate(

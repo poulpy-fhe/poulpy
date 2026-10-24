@@ -161,7 +161,7 @@ pub fn circuit_bootstrapping_key_encrypt_sk_reference<S0, S1, M, BRA, BE>(
             .take_glwe_secret_prepared_scratch(sk_glwe.n(), brk_infos.rank());
         module.glwe_secret_prepare(&mut sk_glwe_prepared, sk_glwe);
 
-        module.blind_rotation_key_encrypt_sk(&mut res.brk, &sk_glwe_prepared, sk_lwe, source_xe, source_xa, &mut op_scratch);
+        module.blind_rotation_key_encrypt_sk(&mut res.brk, sk_lwe, &sk_glwe_prepared, source_xe, source_xa, &mut op_scratch);
     }
     module.gglwe_to_ggsw_key_encrypt_sk(&mut res.tsk, sk_glwe, source_xe, source_xa, scratch);
 }
@@ -623,10 +623,10 @@ fn post_process<R, A, M, H, BE>(
 
 pub fn circuit_bootstrapping_prepare_to_constant_reference<R: GGSWInfos, M, BRA, BE>(
     module: &M,
-    res_infos: &R,
-    key: &CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE>,
     log_domain: usize,
     extension_factor: usize,
+    res_infos: &R,
+    key: &CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE>,
 ) -> CircuitBootstrappingPlan<BE::OwnedBuf>
 where
     BRA: BlindRotationAlgo,
@@ -645,10 +645,10 @@ where
 pub fn circuit_bootstrapping_prepare_to_exponent_reference<R: GGSWInfos, M, BRA, BE>(
     module: &M,
     log_gap_out: usize,
-    res_infos: &R,
-    key: &CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE>,
     log_domain: usize,
     extension_factor: usize,
+    res_infos: &R,
+    key: &CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE>,
 ) -> CircuitBootstrappingPlan<BE::OwnedBuf>
 where
     BRA: BlindRotationAlgo,
@@ -699,8 +699,8 @@ pub fn circuit_bootstrapping_execute_prepared_reference<R, L, M, BRA, BE>(
     module: &M,
     res: &mut R,
     lwe: &L,
-    key: &CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE>,
     plan: &CircuitBootstrappingPlan<BE::OwnedBuf>,
+    key: &CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     R: GGSWToBackendMut<BE> + GGSWAtViewRef<BE> + GGSWAtViewMut<BE> + GGSWInfos,

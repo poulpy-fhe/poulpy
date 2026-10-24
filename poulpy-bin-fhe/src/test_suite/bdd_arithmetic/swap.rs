@@ -229,11 +229,11 @@ where
         let mut idx_enc = FheUintPrepared::alloc_from_infos(module, &ggsw_infos);
         idx_enc.encrypt_sk(module, idx, sk, &mut source_xe, &mut source_xa, &mut scratch.borrow());
 
-        module.glwe_blind_retrieval_statefull(&mut data_enc, &idx_enc, 0, 5, &mut scratch.borrow());
+        module.glwe_blind_retrieval_statefull(0, 5, &mut data_enc, &idx_enc, &mut scratch.borrow());
 
         assert_eq!(data[idx as usize], data_enc[0].decrypt(module, sk, &mut scratch.borrow()));
 
-        module.glwe_blind_retrieval_statefull_rev(&mut data_enc, &idx_enc, 0, 5, &mut scratch.borrow());
+        module.glwe_blind_retrieval_statefull_rev(0, 5, &mut data_enc, &idx_enc, &mut scratch.borrow());
 
         for i in 0..data.len() {
             assert_eq!(data[i], data_enc[i].decrypt(module, sk, &mut scratch.borrow()))

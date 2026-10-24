@@ -203,19 +203,19 @@ where
         input_ref.transfer_into(&mut input_test);
         for extension in [0, 3] {
             let rejected = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                key_test.prepare_to_constant(tested, &output, 1, extension)
+                key_test.prepare_to_constant(tested, 1, extension, &output)
             }));
             assert!(rejected.is_err(), "plan accepted a non-power-of-two extension");
         }
         for extension in [1, 2] {
             for gap in [None, Some(n.ilog2() as usize - 1), Some(1)] {
                 let plan_ref = match gap {
-                    None => key_ref.prepare_to_constant(reference, &output, 1, extension),
-                    Some(gap) => key_ref.prepare_to_exponent(reference, gap, &output, 1, extension),
+                    None => key_ref.prepare_to_constant(reference, 1, extension, &output),
+                    Some(gap) => key_ref.prepare_to_exponent(reference, gap, 1, extension, &output),
                 };
                 let plan_test = match gap {
-                    None => key_test.prepare_to_constant(tested, &output, 1, extension),
-                    Some(gap) => key_test.prepare_to_exponent(tested, gap, &output, 1, extension),
+                    None => key_test.prepare_to_constant(tested, 1, extension, &output),
+                    Some(gap) => key_test.prepare_to_exponent(tested, gap, 1, extension, &output),
                 };
                 assert_eq!(plan_ref.output_layout(), output);
                 assert_eq!(plan_ref.output_layout(), plan_test.output_layout());
@@ -263,8 +263,8 @@ where
                     };
                     actual = fixture_ggsw(tested, &output, 43);
                     with_scratch::<BT, _>(bytes, |s| match gap {
-                        None => key_test.execute_to_constant(tested, &mut actual, &input_test, 1, extension, s),
-                        Some(gap) => key_test.execute_to_exponent(tested, gap, &mut actual, &input_test, 1, extension, s),
+                        None => key_test.execute_to_constant(tested, 1, extension, &mut actual, &input_test, s),
+                        Some(gap) => key_test.execute_to_exponent(tested, gap, 1, extension, &mut actual, &input_test, s),
                     });
                     let want = snapshot_ggsw::<BR, _>(&expected);
                     super::assert_untagged("circuit bootstrapping", &want.rows);

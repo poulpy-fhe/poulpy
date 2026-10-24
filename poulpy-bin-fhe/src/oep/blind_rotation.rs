@@ -91,18 +91,20 @@ macro_rules! impl_blind_rotation_execute_reference_full {
 /// # Safety
 /// Preserve the reference circuit, metadata, and advertised scratch bounds.
 pub unsafe trait BlindRotationKeyEncryptSkImpl<BRA: BlindRotationAlgo>: Backend {
-    fn blind_rotation_key_encrypt_sk_tmp_bytes<A: GGSWInfos>(module: &Module<Self>, infos: &A) -> usize;
+    fn blind_rotation_key_encrypt_sk_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
+    where
+        A: GGSWInfos;
     fn blind_rotation_key_encrypt_sk<S0, S1>(
         module: &Module<Self>,
         res: &mut BlindRotationKey<Self::OwnedBuf, BRA, Self::ZnxWord>,
-        sk_glwe: &S0,
-        sk_lwe: &S1,
+        sk_lwe: &S0,
+        sk_glwe: &S1,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        S0: GLWESecretPreparedToBackendRef<Self> + GLWEInfos,
-        S1: LWESecretToBackendRef<Self> + LWEInfos + GetDistribution;
+        S0: LWESecretToBackendRef<Self> + LWEInfos + GetDistribution,
+        S1: GLWESecretPreparedToBackendRef<Self> + GLWEInfos;
 }
 
 /// Selects the reference implementation of `BlindRotationKeyEncryptSkImpl<CGGI>` for the backend.
@@ -121,23 +123,26 @@ macro_rules! impl_blind_rotation_key_encrypt_sk_reference_full {
             use $crate::blind_rotation::{BlindRotationKey, CGGI};
 
             unsafe impl $crate::oep::BlindRotationKeyEncryptSkImpl<$crate::blind_rotation::CGGI> for $backend {
-                fn blind_rotation_key_encrypt_sk_tmp_bytes<A: GGSWInfos>(module: &Module<Self>, infos: &A) -> usize {
+                fn blind_rotation_key_encrypt_sk_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
+                where
+                    A: GGSWInfos,
+                {
                     $crate::reference::blind_rotation::blind_rotation_key_encrypt_sk_tmp_bytes_ref::<Self, _>(module, infos)
                 }
                 fn blind_rotation_key_encrypt_sk<S0, S1>(
                     module: &Module<Self>,
                     res: &mut BlindRotationKey<Self::OwnedBuf, CGGI, Self::ZnxWord>,
-                    sk_glwe: &S0,
-                    sk_lwe: &S1,
+                    sk_lwe: &S0,
+                    sk_glwe: &S1,
                     source_xe: &mut Source,
                     source_xa: &mut Source,
                     scratch: &mut ScratchArena<'_, Self>,
                 ) where
-                    S0: GLWESecretPreparedToBackendRef<Self> + GLWEInfos,
-                    S1: LWESecretToBackendRef<Self> + LWEInfos + GetDistribution,
+                    S0: LWESecretToBackendRef<Self> + LWEInfos + GetDistribution,
+                    S1: GLWESecretPreparedToBackendRef<Self> + GLWEInfos,
                 {
                     $crate::reference::blind_rotation::blind_rotation_key_encrypt_sk_ref::<Self, _, _>(
-                        module, res, sk_glwe, sk_lwe, source_xe, source_xa, scratch,
+                        module, res, sk_lwe, sk_glwe, source_xe, source_xa, scratch,
                     )
                 }
             }
@@ -156,14 +161,14 @@ pub unsafe trait BlindRotationKeyCompressedEncryptSkImpl<BRA: BlindRotationAlgo>
     fn blind_rotation_key_compressed_encrypt_sk<S0, S1>(
         module: &Module<Self>,
         res: &mut BlindRotationKeyCompressed<Self::OwnedBuf, BRA, Self::ZnxWord>,
-        sk_glwe: &S0,
-        sk_lwe: &S1,
+        sk_lwe: &S0,
+        sk_glwe: &S1,
         seed_xa: [u8; 32],
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        S0: GLWESecretPreparedToBackendRef<Self> + GLWEInfos,
-        S1: LWESecretToBackendRef<Self> + LWEInfos + GetDistribution;
+        S0: LWESecretToBackendRef<Self> + LWEInfos + GetDistribution,
+        S1: GLWESecretPreparedToBackendRef<Self> + GLWEInfos;
 }
 
 /// Selects the reference implementation of `BlindRotationKeyCompressedEncryptSkImpl<CGGI>` for the backend.
@@ -193,17 +198,17 @@ macro_rules! impl_blind_rotation_key_compressed_encrypt_sk_reference_full {
                 fn blind_rotation_key_compressed_encrypt_sk<S0, S1>(
                     module: &Module<Self>,
                     res: &mut BlindRotationKeyCompressed<Self::OwnedBuf, CGGI, Self::ZnxWord>,
-                    sk_glwe: &S0,
-                    sk_lwe: &S1,
+                    sk_lwe: &S0,
+                    sk_glwe: &S1,
                     seed_xa: [u8; 32],
                     source_xe: &mut Source,
                     scratch: &mut ScratchArena<'_, Self>,
                 ) where
-                    S0: GLWESecretPreparedToBackendRef<Self> + GLWEInfos,
-                    S1: LWESecretToBackendRef<Self> + LWEInfos + GetDistribution,
+                    S0: LWESecretToBackendRef<Self> + LWEInfos + GetDistribution,
+                    S1: GLWESecretPreparedToBackendRef<Self> + GLWEInfos,
                 {
                     $crate::reference::blind_rotation::blind_rotation_key_compressed_encrypt_sk_ref::<Self, _, _>(
-                        module, res, sk_glwe, sk_lwe, seed_xa, source_xe, scratch,
+                        module, res, sk_lwe, sk_glwe, seed_xa, source_xe, scratch,
                     )
                 }
             }
@@ -263,9 +268,9 @@ pub unsafe trait BlindRotationModSwitchImpl: Backend<ZnxWord = i64> {
     fn blind_rotation_mod_switch<L: LWEToBackendRef<Self> + LWEInfos>(
         module: &Module<Self>,
         modulus: usize,
+        direction: LookUpTableRotationDirection,
         res: &mut [i64],
         lwe: &L,
-        direction: LookUpTableRotationDirection,
     );
 }
 /// Backend coefficient-domain key decompression.
@@ -289,11 +294,11 @@ macro_rules! impl_blind_rotation_mod_switch_reference_full {
             fn blind_rotation_mod_switch<L: poulpy_core::layouts::LWEToBackendRef<Self> + poulpy_core::layouts::LWEInfos>(
                 _module: &poulpy_hal::layouts::Module<Self>,
                 modulus: usize,
+                direction: $crate::blind_rotation::LookUpTableRotationDirection,
                 res: &mut [i64],
                 lwe: &L,
-                direction: $crate::blind_rotation::LookUpTableRotationDirection,
             ) {
-                $crate::reference::blind_rotation::mod_switch_2n_ref::<Self, _>(modulus, res, lwe, direction)
+                $crate::reference::blind_rotation::mod_switch_2n_ref::<Self, _>(modulus, direction, res, lwe)
             }
         }
     };

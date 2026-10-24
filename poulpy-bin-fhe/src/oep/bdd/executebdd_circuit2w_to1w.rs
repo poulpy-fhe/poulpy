@@ -11,9 +11,9 @@ pub unsafe trait ExecuteBDDCircuit2WTo1WImpl: Backend<Ring = Standard> {
     fn execute_bdd_circuit_2w_to_1w<C, H, T>(
         module: &Module<Self>,
         out: &mut FheUint<Self::OwnedBuf, T, Self::ZnxWord>,
-        circuit: &C,
         a: &FheUintPrepared<Self::OwnedBuf, T, Self>,
         b: &FheUintPrepared<Self::OwnedBuf, T, Self>,
+        circuit: &C,
         key: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
@@ -22,14 +22,14 @@ pub unsafe trait ExecuteBDDCircuit2WTo1WImpl: Backend<Ring = Standard> {
         H: GetAutomorphismKey<Self>,
         Self: Backend<ZnxWord = i64>,
     {
-        crate::oep::derived::bdd::execute_bdd_circuit_2w_to_1w_derived::<Self, _, _, T>(module, out, circuit, a, b, key, scratch)
+        crate::oep::derived::bdd::execute_bdd_circuit_2w_to_1w_derived::<Self, _, _, T>(module, out, a, b, circuit, key, scratch)
     }
     #[allow(clippy::too_many_arguments)]
     fn execute_bdd_circuit_2w_to_1w_tmp_bytes<C, T, R, G, H>(
         module: &Module<Self>,
-        circuit: &C,
         res_infos: &R,
         ggsw_infos: &G,
+        circuit: &C,
         key: &H,
     ) -> usize
     where
@@ -40,16 +40,16 @@ pub unsafe trait ExecuteBDDCircuit2WTo1WImpl: Backend<Ring = Standard> {
         H: GetAutomorphismKey<Self>,
     {
         crate::oep::derived::bdd::execute_bdd_circuit_2w_to_1w_tmp_bytes_derived::<Self, C, T, R, G, H>(
-            module, circuit, res_infos, ggsw_infos, key,
+            module, res_infos, ggsw_infos, circuit, key,
         )
     }
     #[allow(clippy::too_many_arguments)]
     fn execute_bdd_circuit_2w_to_1w_multi_thread_tmp_bytes<C, T, R, G, H>(
         module: &Module<Self>,
         threads: usize,
-        circuit: &C,
         res_infos: &R,
         ggsw_infos: &G,
+        circuit: &C,
         key: &H,
     ) -> usize
     where
@@ -63,9 +63,9 @@ pub unsafe trait ExecuteBDDCircuit2WTo1WImpl: Backend<Ring = Standard> {
         module: &Module<Self>,
         threads: usize,
         out: &mut FheUint<Self::OwnedBuf, T, Self::ZnxWord>,
-        circuit: &C,
         a: &FheUintPrepared<Self::OwnedBuf, T, Self>,
         b: &FheUintPrepared<Self::OwnedBuf, T, Self>,
+        circuit: &C,
         key: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) where

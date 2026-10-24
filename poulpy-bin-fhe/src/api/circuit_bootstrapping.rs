@@ -36,18 +36,18 @@
 //!     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 //! {
 //!     let plan = module.circuit_bootstrapping_prepare_to_constant(
-//!         output,
-//!         key,
 //!         log_domain,
 //!         extension_factor,
+//!         output,
+//!         key,
 //!     );
 //!     let bytes = module.circuit_bootstrapping_execute_prepared_tmp_bytes(&plan.layout(), key);
 //!     let mut scratch = ScratchOwned::<BE>::alloc(bytes);
 //!     module.circuit_bootstrapping_execute_prepared(
 //!         output,
 //!         input,
-//!         key,
 //!         &plan,
+//!         key,
 //!         &mut scratch.arena(),
 //!     );
 //! }
