@@ -1,8 +1,8 @@
 #![allow(clippy::too_many_arguments)]
 
 use crate::layouts::{
-    Backend, MatZnxBackendMut, MatZnxBackendRef, Module, ScalarZnxBackendRef, ScratchArena, Standard, VecZnxBackendMut,
-    VecZnxBackendRef, VecZnxToBackendMut,
+    Backend, MatZnxBackendMut, MatZnxBackendRef, Module, ScalarZnxBackendMut, ScalarZnxBackendRef, ScratchArena, Standard,
+    VecZnxBackendMut, VecZnxBackendRef, VecZnxToBackendMut,
 };
 use crate::source::Source;
 
@@ -316,6 +316,19 @@ pub unsafe trait HalVecZnxImpl: Backend {
         scratch: &mut ScratchArena<'_, Self>,
     );
 
+    /// `res[res_col] = a[a_col](X^k)`. Default body: `scalar_znx_automorphism_derived`,
+    /// a `vec_znx_automorphism` on `res` and `a` read as one-limb `VecZnx`. Takes no scratch.
+    fn scalar_znx_automorphism(
+        module: &Module<Self>,
+        k: i64,
+        res: &mut ScalarZnxBackendMut<'_, Self>,
+        res_col: usize,
+        a: &ScalarZnxBackendRef<'_, Self>,
+        a_col: usize,
+    ) {
+        crate::oep::scalar_znx_automorphism_derived::<Self>(module, k, res, res_col, a, a_col)
+    }
+
     fn vec_znx_switch_ring(
         module: &Module<Self>,
         res: &mut VecZnxBackendMut<'_, Self>,
@@ -410,11 +423,11 @@ pub unsafe trait HalMatZnxImpl: HalVecZnxImpl {
     }
 }
 
-/// Monomial multiplication (`X^k`), not implemented by conjugate-invariant backends.
+/// Monomial multiplication (`X^k`), on the standard ring only.
 ///
 /// # Safety
 /// Same contract as [`HalVecZnxImpl`].
-pub unsafe trait HalVecZnxMonomialImpl: HalVecZnxImpl {
+pub unsafe trait HalVecZnxMonomialImpl: HalVecZnxImpl + Backend<Ring = Standard> {
     fn vec_znx_rotate(
         module: &Module<Self>,
         k: i64,
@@ -492,6 +505,19 @@ pub unsafe trait HalVecZnxCIImpl: HalVecZnxImpl + Backend<Ring = Standard> {
         a: &VecZnxBackendRef<'_, Self>,
         a_col: usize,
     );
+
+    /// `res[res_col]` = the conjugate-invariant `a[a_col]` embedded in the standard ring of twice its degree.
+    /// Default body: `scalar_znx_ci_embed_derived`, a `vec_znx_ci_embed` on `res` and `a` read as one-limb
+    /// `VecZnx`. Takes no scratch.
+    fn scalar_znx_ci_embed(
+        module: &Module<Self>,
+        res: &mut ScalarZnxBackendMut<'_, Self>,
+        res_col: usize,
+        a: &ScalarZnxBackendRef<'_, Self>,
+        a_col: usize,
+    ) {
+        crate::oep::scalar_znx_ci_embed_derived::<Self>(module, res, res_col, a, a_col)
+    }
 }
 
 /// Big-coefficient `VecZnxBig` extension point.

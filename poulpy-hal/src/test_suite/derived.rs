@@ -23,36 +23,37 @@
 
 use crate::{
     api::{
-        CnvPVecAlloc, Convolution, MatZnxAlloc, ModuleN, ScratchOwnedAlloc, ScratchOwnedBorrow, SvpApplyDftToDft, SvpPPolAlloc,
-        SvpPrepare, VecZnxAdd, VecZnxAddAssign, VecZnxAddScalarAssign, VecZnxAlloc, VecZnxBigAddAssign, VecZnxBigAddSmall,
-        VecZnxBigAddSmallAssign, VecZnxBigAlloc, VecZnxBigFromSmall, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
-        VecZnxBigSubAssign, VecZnxBigSubNegateAssign, VecZnxBigSubSmallA, VecZnxBigSubSmallB, VecZnxCopy, VecZnxDftAddAssign,
-        VecZnxDftAlloc, VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftAutomorphismPlan, VecZnxDftZero, VecZnxFillUniformSource,
-        VecZnxFillUniformSourceAll, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxLsh, VecZnxLshAdd, VecZnxLshAssign,
-        VecZnxLshSub, VecZnxLshTmpBytes, VecZnxMulXpMinusOne, VecZnxMulXpMinusOneAssign, VecZnxMulXpMinusOneAssignTmpBytes,
-        VecZnxNormalize, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxRotate, VecZnxRsh, VecZnxRshAdd, VecZnxRshAssign,
-        VecZnxRshSub, VecZnxRshTmpBytes, VecZnxSub, VecZnxSubAssign, VmpApplyDft, VmpApplyDftTmpBytes, VmpApplyDftToDft,
-        VmpApplyDftToDftAdd, VmpApplyDftToDftAddTmpBytes, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
+        CnvPVecAlloc, Convolution, MatZnxAlloc, ModuleN, ScalarZnxAutomorphism, ScalarZnxCIEmbed, ScratchOwnedAlloc,
+        ScratchOwnedBorrow, SvpApplyDftToDft, SvpPPolAlloc, SvpPrepare, VecZnxAdd, VecZnxAddAssign, VecZnxAddScalarAssign,
+        VecZnxAlloc, VecZnxAutomorphism, VecZnxBigAddAssign, VecZnxBigAddSmall, VecZnxBigAddSmallAssign, VecZnxBigAlloc,
+        VecZnxBigFromSmall, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxBigSubAssign, VecZnxBigSubNegateAssign,
+        VecZnxBigSubSmallA, VecZnxBigSubSmallB, VecZnxCIEmbed, VecZnxCopy, VecZnxDftAddAssign, VecZnxDftAlloc, VecZnxDftApply,
+        VecZnxDftAutomorphism, VecZnxDftAutomorphismPlan, VecZnxDftZero, VecZnxFillUniformSource, VecZnxFillUniformSourceAll,
+        VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxLsh, VecZnxLshAdd, VecZnxLshAssign, VecZnxLshSub, VecZnxLshTmpBytes,
+        VecZnxMulXpMinusOne, VecZnxMulXpMinusOneAssign, VecZnxMulXpMinusOneAssignTmpBytes, VecZnxNormalize,
+        VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxRotate, VecZnxRsh, VecZnxRshAdd, VecZnxRshAssign, VecZnxRshSub,
+        VecZnxRshTmpBytes, VecZnxSub, VecZnxSubAssign, VmpApplyDft, VmpApplyDftTmpBytes, VmpApplyDftToDft, VmpApplyDftToDftAdd,
+        VmpApplyDftToDftAddTmpBytes, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
     },
     layouts::{
         CnvDftAccTerm, CnvPVecLOwned, CnvPVecLToBackendMut, CnvPVecLToBackendRef, CnvPVecROwned, CnvPVecRToBackendMut,
-        CnvPVecRToBackendRef, MatZnx, MatZnxAtBackendMut, MatZnxInfos, MatZnxToBackendRef, Module, PrepareHint,
-        ScalarZnxAsVecZnxBackendMut, ScratchOwned, SvpPPolOwned, SvpPPolToBackendMut, SvpPPolToBackendRef, VecZnx,
+        CnvPVecRToBackendRef, HostDataRef, MatZnx, MatZnxAtBackendMut, MatZnxInfos, MatZnxToBackendRef, Module, PrepareHint,
+        ScalarZnx, ScalarZnxAsVecZnxBackendMut, ScratchOwned, SvpPPolOwned, SvpPPolToBackendMut, SvpPPolToBackendRef, VecZnx,
         VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxInfos, VecZnxOwned,
         VmpPMatToBackendMut, VmpPMatToBackendRef, ZnxInfos, ZnxView, ZnxViewMut, vec_znx_backend_mut, vec_znx_backend_ref,
     },
     oep::{
-        HalConvolutionImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVecZnxMonomialImpl, HalVmpImpl,
-        cnv_apply_dft_add_derived, cnv_apply_dft_add_tmp_bytes_derived, cnv_apply_dft_sum_derived,
-        cnv_apply_dft_sum_tmp_bytes_derived, cnv_by_const_apply_add_derived, cnv_by_const_apply_add_tmp_bytes_derived,
-        cnv_pairwise_apply_dft_derived, cnv_pairwise_apply_dft_tmp_bytes_derived, cnv_prepare_self_derived,
-        cnv_prepare_self_tmp_bytes_derived, vmp_apply_dft_derived, vmp_apply_dft_to_dft_add_derived,
+        HalConvolutionImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxCIImpl, HalVecZnxDftImpl, HalVecZnxImpl,
+        HalVecZnxMonomialImpl, HalVmpImpl, cnv_apply_dft_add_derived, cnv_apply_dft_add_tmp_bytes_derived,
+        cnv_apply_dft_sum_derived, cnv_apply_dft_sum_tmp_bytes_derived, cnv_by_const_apply_add_derived,
+        cnv_by_const_apply_add_tmp_bytes_derived, cnv_pairwise_apply_dft_derived, cnv_pairwise_apply_dft_tmp_bytes_derived,
+        cnv_prepare_self_derived, cnv_prepare_self_tmp_bytes_derived, vmp_apply_dft_derived, vmp_apply_dft_to_dft_add_derived,
         vmp_apply_dft_to_dft_add_tmp_bytes_derived,
     },
     source::Source,
     test_suite::{
-        TestBackend, TestParams, download_scalar_znx, download_vec_znx, scalar_znx_backend_ref, upload_vec_znx,
-        vec_znx::assert_canonical,
+        TestBackend, TestParams, download_scalar_znx, download_vec_znx, scalar_znx_backend_mut, scalar_znx_backend_ref,
+        upload_scalar_znx, upload_vec_znx, vec_znx::assert_canonical,
     },
 };
 
@@ -1294,6 +1295,171 @@ where
             );
         }
     }
+}
+
+/// `scalar_znx_automorphism`: the OEP default body and whatever `module`
+/// dispatches to, both versus `vec_znx_automorphism` on one-limb `VecZnx`
+/// copies of the operands, bit for bit, every column of the destination
+/// compared.
+pub fn test_scalar_znx_automorphism_derived<BE: TestBackend + HalVecZnxImpl>(params: &TestParams, module: &Module<BE>)
+where
+    Module<BE>: ScalarZnxAutomorphism<BE> + VecZnxAutomorphism<BE>,
+{
+    let base2k: usize = params.base2k;
+    let cols: usize = 2;
+    let mut source: Source = Source::new([0u8; 32]);
+
+    let mut a_backend = module.scalar_znx_alloc(params.n, cols);
+    let mut res_backend = module.scalar_znx_alloc(params.n, cols);
+    for col in 0..cols {
+        module.vec_znx_fill_uniform_source(
+            base2k,
+            base2k,
+            &mut ScalarZnxAsVecZnxBackendMut::<BE>::as_vec_znx_backend_mut(&mut a_backend),
+            col,
+            &mut source,
+        );
+        module.vec_znx_fill_uniform_source(
+            base2k,
+            base2k,
+            &mut ScalarZnxAsVecZnxBackendMut::<BE>::as_vec_znx_backend_mut(&mut res_backend),
+            col,
+            &mut source,
+        );
+    }
+    let res = download_scalar_znx::<BE>(&res_backend);
+    let a_vec_backend = upload_vec_znx::<BE>(&one_limb_vec_znx(&download_scalar_znx::<BE>(&a_backend)));
+
+    for k in [-5i64, -1, 1, 5, 2 * params.n as i64 - 1] {
+        for (res_col, a_col) in [(0usize, 0usize), (1, 0), (0, 1)] {
+            let mut have_backend = upload_scalar_znx::<BE>(&res);
+            crate::oep::scalar_znx_automorphism_derived::<BE>(
+                module,
+                k,
+                &mut scalar_znx_backend_mut::<BE>(&mut have_backend),
+                res_col,
+                &scalar_znx_backend_ref::<BE>(&a_backend),
+                a_col,
+            );
+
+            let mut got_backend = upload_scalar_znx::<BE>(&res);
+            module.scalar_znx_automorphism(
+                k,
+                &mut scalar_znx_backend_mut::<BE>(&mut got_backend),
+                res_col,
+                &scalar_znx_backend_ref::<BE>(&a_backend),
+                a_col,
+            );
+
+            // Oracle: the vector automorphism on one-limb copies of res and a.
+            let mut want_backend = upload_vec_znx::<BE>(&one_limb_vec_znx(&res));
+            module.vec_znx_automorphism(
+                k,
+                &mut vec_znx_backend_mut::<BE>(&mut want_backend),
+                res_col,
+                &vec_znx_backend_ref::<BE>(&a_vec_backend),
+                a_col,
+            );
+
+            let want = download_vec_znx::<BE>(&want_backend);
+            let have = download_scalar_znx::<BE>(&have_backend);
+            let got = download_scalar_znx::<BE>(&got_backend);
+            for col in 0..cols {
+                assert!(
+                    have.at(col, 0) == want.at(col, 0),
+                    "scalar_znx_automorphism: default body != vec_znx_automorphism (k {k} res_col {res_col} a_col {a_col} col {col})"
+                );
+                assert!(
+                    got.at(col, 0) == want.at(col, 0),
+                    "scalar_znx_automorphism: dispatched op != vec_znx_automorphism (k {k} res_col {res_col} a_col {a_col} col {col})"
+                );
+            }
+        }
+    }
+}
+
+/// `scalar_znx_ci_embed`: the OEP default body and whatever `module`
+/// dispatches to, both versus `vec_znx_ci_embed` on one-limb `VecZnx` copies
+/// of the operands, bit for bit, every column of the destination compared.
+pub fn test_scalar_znx_ci_embed_derived<BE: TestBackend + HalVecZnxCIImpl>(params: &TestParams, module: &Module<BE>)
+where
+    Module<BE>: ScalarZnxCIEmbed<BE> + VecZnxCIEmbed<BE>,
+{
+    let base2k: usize = params.base2k;
+    let cols: usize = 2;
+    let mut source: Source = Source::new([0u8; 32]);
+
+    let mut a_backend = module.scalar_znx_alloc(params.n >> 1, cols);
+    let mut res_backend = module.scalar_znx_alloc(params.n, cols);
+    for col in 0..cols {
+        module.vec_znx_fill_uniform_source(
+            base2k,
+            base2k,
+            &mut ScalarZnxAsVecZnxBackendMut::<BE>::as_vec_znx_backend_mut(&mut a_backend),
+            col,
+            &mut source,
+        );
+        module.vec_znx_fill_uniform_source(
+            base2k,
+            base2k,
+            &mut ScalarZnxAsVecZnxBackendMut::<BE>::as_vec_znx_backend_mut(&mut res_backend),
+            col,
+            &mut source,
+        );
+    }
+    let res = download_scalar_znx::<BE>(&res_backend);
+    let a_vec_backend = upload_vec_znx::<BE>(&one_limb_vec_znx(&download_scalar_znx::<BE>(&a_backend)));
+
+    for (res_col, a_col) in [(0usize, 0usize), (1, 0), (0, 1)] {
+        let mut have_backend = upload_scalar_znx::<BE>(&res);
+        crate::oep::scalar_znx_ci_embed_derived::<BE>(
+            module,
+            &mut scalar_znx_backend_mut::<BE>(&mut have_backend),
+            res_col,
+            &scalar_znx_backend_ref::<BE>(&a_backend),
+            a_col,
+        );
+
+        let mut got_backend = upload_scalar_znx::<BE>(&res);
+        module.scalar_znx_ci_embed(
+            &mut scalar_znx_backend_mut::<BE>(&mut got_backend),
+            res_col,
+            &scalar_znx_backend_ref::<BE>(&a_backend),
+            a_col,
+        );
+
+        // Oracle: the vector embedding on one-limb copies of res and a.
+        let mut want_backend = upload_vec_znx::<BE>(&one_limb_vec_znx(&res));
+        module.vec_znx_ci_embed(
+            &mut vec_znx_backend_mut::<BE>(&mut want_backend),
+            res_col,
+            &vec_znx_backend_ref::<BE>(&a_vec_backend),
+            a_col,
+        );
+
+        let want = download_vec_znx::<BE>(&want_backend);
+        let have = download_scalar_znx::<BE>(&have_backend);
+        let got = download_scalar_znx::<BE>(&got_backend);
+        for col in 0..cols {
+            assert!(
+                have.at(col, 0) == want.at(col, 0),
+                "scalar_znx_ci_embed: default body != vec_znx_ci_embed (res_col {res_col} a_col {a_col} col {col})"
+            );
+            assert!(
+                got.at(col, 0) == want.at(col, 0),
+                "scalar_znx_ci_embed: dispatched op != vec_znx_ci_embed (res_col {res_col} a_col {a_col} col {col})"
+            );
+        }
+    }
+}
+
+/// A host `ScalarZnx` copied into a one-limb `VecZnx` of the same degree and columns.
+fn one_limb_vec_znx(scalar: &ScalarZnx<impl HostDataRef, i64>) -> VecZnxOwned<i64> {
+    let mut vec = VecZnxOwned::<i64>::alloc(scalar.n(), scalar.cols(), 1);
+    for col in 0..scalar.cols() {
+        vec.at_mut(col, 0).copy_from_slice(scalar.at(col, 0));
+    }
+    vec
 }
 
 /// `vec_znx_big_add_small`: the scratch-free OEP default against an

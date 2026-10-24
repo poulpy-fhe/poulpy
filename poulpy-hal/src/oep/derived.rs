@@ -36,14 +36,17 @@ use crate::{
     api::ScratchArenaTakeBasic,
     layouts::{
         CnvDftAccTerm, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, MatZnxBackendMut,
-        MatZnxBackendRef, MatZnxInfos, Module, ScalarZnxBackendRef, ScratchArena, SvpPPolBackendRef, VecZnxBackendMut,
-        VecZnxBackendRef, VecZnxBigBackendMut, VecZnxBigBackendRef, VecZnxBigToBackendRef, VecZnxDftBackendMut,
+        MatZnxBackendRef, MatZnxInfos, Module, ScalarZnxBackendMut, ScalarZnxBackendRef, ScratchArena, SvpPPolBackendRef,
+        VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxBigBackendRef, VecZnxBigToBackendRef, VecZnxDftBackendMut,
         VecZnxDftBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxInfos, VecZnxToBackendMut, VecZnxToBackendRef,
         VmpPMatBackendRef, ZnxInfos, check_galois, mat_znx_at_backend_mut_from_mut, mat_znx_at_backend_ref_from_ref,
-        scalar_znx_as_vec_znx_backend_ref_from_ref, vec_znx_backend_ref_from_mut, vec_znx_dft_backend_ref_from_mut,
-        vec_znx_reborrow_backend_mut,
+        scalar_znx_as_vec_znx_backend_mut_from_mut, scalar_znx_as_vec_znx_backend_ref_from_ref, vec_znx_backend_ref_from_mut,
+        vec_znx_dft_backend_ref_from_mut, vec_znx_reborrow_backend_mut,
     },
-    oep::{HalConvolutionImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVecZnxMonomialImpl, HalVmpImpl},
+    oep::{
+        HalConvolutionImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxCIImpl, HalVecZnxDftImpl, HalVecZnxImpl,
+        HalVecZnxMonomialImpl, HalVmpImpl,
+    },
     source::Source,
 };
 
@@ -457,6 +460,51 @@ pub fn vec_znx_add_scalar_assign_derived<BE>(
     BE::vec_znx_add_assign(
         module,
         &mut window,
+        res_col,
+        &scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(a),
+        a_col,
+    );
+}
+
+/// `res[res_col] = a[a_col](X^k)`: `vec_znx_automorphism` with `res` and `a` read
+/// as one-limb `VecZnx`.
+#[doc(hidden)]
+pub fn scalar_znx_automorphism_derived<BE>(
+    module: &Module<BE>,
+    k: i64,
+    res: &mut ScalarZnxBackendMut<'_, BE>,
+    res_col: usize,
+    a: &ScalarZnxBackendRef<'_, BE>,
+    a_col: usize,
+) where
+    BE: HalVecZnxImpl,
+{
+    BE::vec_znx_automorphism(
+        module,
+        k,
+        &mut scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(res),
+        res_col,
+        &scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(a),
+        a_col,
+    );
+}
+
+/// `res[res_col]` = the conjugate-invariant `a[a_col]` embedded in the standard
+/// ring of twice its degree: `vec_znx_ci_embed` with `res` and `a` read as
+/// one-limb `VecZnx`.
+#[doc(hidden)]
+pub fn scalar_znx_ci_embed_derived<BE>(
+    module: &Module<BE>,
+    res: &mut ScalarZnxBackendMut<'_, BE>,
+    res_col: usize,
+    a: &ScalarZnxBackendRef<'_, BE>,
+    a_col: usize,
+) where
+    BE: HalVecZnxCIImpl,
+{
+    BE::vec_znx_ci_embed(
+        module,
+        &mut scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(res),
         res_col,
         &scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(a),
         a_col,

@@ -30,6 +30,9 @@
   FFT64 budgets each DCT as its cyclic FFT plus three stages. At `n = 2^16` and 128 bits, 32 products select 53 bits on NTT4x30 and 18 on FFT64, one square 52 and 17.
 - **Breaking:** `MaxBase2k::max_base2k` and `Module::max_base2k` return `usize`, where they returned `Option<usize>`: a backend without a model does not implement `MaxBase2k`, and `HostBytesBackend` no longer does.
 - The `# Degree` and `# Preconditions` docs of `poulpy_hal::api` state the coefficient-wise reduction exception and the column bound, and `backend_safety_contract.md` requires a release `assert!` to refuse an aliasing a kernel cannot handle.
+- **Breaking:** `HalVecZnxMonomialImpl` requires `Backend<Ring = Standard>`, as `HalVecZnxCIImpl` does, so a conjugate-invariant backend can no longer implement monomial multiplication; out-of-tree backends implement it on their standard-ring types only.
+- `scalar_znx_automorphism` and `scalar_znx_ci_embed` become derived operations with the OEP methods `HalVecZnxImpl::scalar_znx_automorphism` and `HalVecZnxCIImpl::scalar_znx_ci_embed`, whose default bodies, `oep::scalar_znx_automorphism_derived` and `oep::scalar_znx_ci_embed_derived`, run `vec_znx_automorphism` and `vec_znx_ci_embed` on the operands read as one-limb `VecZnx`, as the delegates did; the delegates now dispatch to these methods, and outputs are unchanged.
+  `test_scalar_znx_automorphism_derived` and `test_scalar_znx_ci_embed_derived` pin the default bodies in every `derived` suite, the second on the standard ring only, and `test_scalar_znx` joins the AVX-512 and emulated test filters.
 
 ### CPU backends
 
@@ -234,6 +237,8 @@
   `reverse` visits the levels from the last down, each by its inverse element, and a nonempty trace leaves its output canonical, summed or normalized.
   The test suite adds `test_glwe_trace_sum` and `test_glwe_trace_parity`, which takes over the trace cases of `test_trace_packing_parity`, runs on both rings and covers summed and reversed windows: register it beside `test_trace_packing_parity`.
 - `docs/layering-contract.md` states the layering rules that `core-contracts.md` restated, and the `# Canonical flag` doc of `GLWE` names the exception of a documented canonical precondition.
+- **Breaking:** `GLWERotateImpl` and `GLWEMulXpMinusOneImpl` require `Backend<Ring = Standard>`, and through them `GGSWRotateImpl`, `GLWEPackImpl` and `ConversionImpl`: these families compose the HAL monomial family, so out-of-tree backends implement them on standard-ring types only.
+  `EncryptionParityBackend` no longer includes `ConversionImpl` and stays ring-independent: `test_glwe_encryption_parity` drops its `GLWEExpandLWEMatrix` bound and its LWE-matrix decryption case, which moves to the new `test_lwe_matrix_decrypt_parity`, bounded on the standard ring and registered by `core_encryption_parity_test_suite!` as `lwe_matrix_decrypt`.
 
 ### `poulpy-ckks`
 
@@ -366,6 +371,7 @@
 - **Breaking:** `FheUintPrepared` and `FheUintPreparedDebug` allocators take `k_digit` in place of `dsize`, and the blind rotation keys report the `k_digit` their GGSWs store, `base2k` as built, as their layout does.
 - The scalar-to-GGSW blind rotation reference places its gadget rows through `gadget_row_plaintext`, requires `VecZnxNormalize` in place of `VecZnxAddScalarAssign` and `VecZnxNormalizeAssign`, and its scratch covers `vec_znx_normalize_tmp_bytes`.
 - `bin-fhe-contracts.md` links `docs/layering-contract.md` instead of restating it.
+- **Breaking:** `BlindRotationExecuteImpl`, `LookupTableFactoryImpl`, `CircuitBootstrappingExecuteImpl`, `GLWEBlindRotationImpl` (and through it `GGSWBlindRotationImpl`), `ExecuteBDDCircuit1WTo1WImpl`, `ExecuteBDDCircuit2WTo1WImpl` and `FheUintPrepareImpl` require `Backend<Ring = Standard>`: they compose standard-only rotations, so out-of-tree backends implement them on standard-ring types only.
 
 ### `poulpy-mhe`
 

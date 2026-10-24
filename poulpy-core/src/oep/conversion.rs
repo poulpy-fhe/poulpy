@@ -6,7 +6,7 @@ use crate::layouts::{
     prepared::{GGLWEPreparedBackendRef, GGLWEToGGSWKeyPreparedBackendRef},
 };
 
-/// Backend-provided ciphertext conversion operations.
+/// Backend-provided ciphertext conversion operations, on the standard ring only.
 ///
 /// # Safety
 /// Implementations must only read and write the regions described by the provided layouts, respect

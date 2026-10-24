@@ -137,6 +137,8 @@ backend_test_suite! {
         test_vec_znx_mul_xp_minus_one_assign_derived => poulpy_hal::test_suite::derived::test_vec_znx_mul_xp_minus_one_assign_derived,
         test_vec_znx_fill_uniform_source_all_derived => poulpy_hal::test_suite::derived::test_vec_znx_fill_uniform_source_all_derived,
         test_vec_znx_add_scalar_assign_derived => poulpy_hal::test_suite::derived::test_vec_znx_add_scalar_assign_derived,
+        test_scalar_znx_automorphism_derived => poulpy_hal::test_suite::derived::test_scalar_znx_automorphism_derived,
+        test_scalar_znx_ci_embed_derived => poulpy_hal::test_suite::derived::test_scalar_znx_ci_embed_derived,
         test_vec_znx_big_add_small_derived => poulpy_hal::test_suite::derived::test_vec_znx_big_add_small_derived,
         test_vec_znx_big_sub_small_a_derived => poulpy_hal::test_suite::derived::test_vec_znx_big_sub_small_a_derived,
         test_vec_znx_big_sub_small_b_derived => poulpy_hal::test_suite::derived::test_vec_znx_big_sub_small_b_derived,
