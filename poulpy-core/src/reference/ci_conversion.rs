@@ -2,9 +2,7 @@
 //! degree `2N`, expressed with HAL operations of the standard module, and the
 //! derived encryption of the switching keys between their secrets.
 use poulpy_hal::{
-    api::{
-        ModuleN, ScratchArenaTakeBasic, VecZnxCIEmbed, VecZnxCITrace, VecZnxNormalize, VecZnxNormalizeTmpBytes, VecZnxSwitchRing,
-    },
+    api::{ModuleN, ScratchArenaTakeBasic, VecZnxCIEmbed, VecZnxCITrace, VecZnxNormalize, VecZnxNormalizeTmpBytes},
     layouts::{Backend, Data, Module, ScratchArena, VecZnxToBackendMut, VecZnxToBackendRef},
     source::Source,
 };
@@ -35,26 +33,6 @@ where
     assert_eq!(res.base2k(), a.base2k());
     for col in 0..res.rank().as_usize() + 1 {
         module.vec_znx_ci_embed(&mut res.data, col, &a.data, col);
-    }
-}
-
-/// Writes each column of `a` into `res` at the degree of `res`: `X -> X^(N_res / N_a)`
-/// when it is larger, the coefficients at multiples of the ratio when it is smaller.
-/// `res` keeps the canonical flag of `a`.
-pub fn glwe_switch_degree_reference<BE, M, R, A>(module: &M, res: &mut R, a: &A)
-where
-    BE: Backend,
-    M: VecZnxSwitchRing<BE>,
-    R: GLWEToBackendMut<BE> + GLWEInfos,
-    A: GLWEToBackendRef<BE> + GLWEInfos,
-{
-    res.set_canonical(a.is_canonical());
-    let mut res = res.to_backend_mut();
-    let a = a.to_backend_ref();
-    assert_eq!(res.rank(), a.rank());
-    assert_eq!(res.base2k(), a.base2k());
-    for col in 0..res.rank().as_usize() + 1 {
-        module.vec_znx_switch_ring(&mut res.data, col, &a.data, col);
     }
 }
 

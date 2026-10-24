@@ -57,6 +57,7 @@ mod lwe_to_glwe_key;
 mod plaintext_meta;
 mod polynomial_evaluation;
 mod scratch_views;
+mod validation;
 
 pub mod compressed;
 pub mod prepared;
@@ -103,6 +104,7 @@ pub use plaintext_meta::*;
 pub use polynomial_evaluation::*;
 pub use prepared::*;
 pub use scratch_views::*;
+pub use validation::*;
 
 use std::{
     io::{Error, ErrorKind, Read, Result as IoResult},

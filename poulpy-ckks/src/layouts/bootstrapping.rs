@@ -28,8 +28,8 @@ use std::collections::BTreeMap;
 use crate::layouts::{CKKSPlaintext, CKKSPlaintextOwned};
 use anyhow::{Result, ensure};
 use poulpy_core::{
+    DiagonalProd,
     layouts::{Base2K, GLWEToBackendRef, LWEInfos, LinearTransformation},
-    reference::linear_transformation::DiagonalProd,
 };
 use poulpy_hal::layouts::{Backend, ConjugateInvariant, Module, ScratchArena};
 

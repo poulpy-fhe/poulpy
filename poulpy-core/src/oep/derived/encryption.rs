@@ -289,7 +289,7 @@ pub(crate) fn ggsw_encrypt_pk_derived<BE, R, P, K>(
         let (mut tmp_pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(res);
         for row in 0..res.dnum().into() {
             // The encryption adds the plaintext's limbs to its accumulator as they are.
-            crate::reference::encryption::gadget_row_plaintext(
+            crate::gadget::gadget_row_plaintext(
                 module,
                 &mut tmp_pt.data,
                 0,
@@ -355,7 +355,7 @@ pub(crate) fn glwe_tensor_key_encrypt_sk_derived<BE, R, S>(
 {
     assert_eq!(res.rank_out(), sk.rank());
     assert_eq!(res.n(), sk.n());
-    crate::reference::keyswitching::glwe::assert_no_row_offset("glwe_tensor_key_encrypt_sk", &*res);
+    crate::layouts::assert_no_row_offset("glwe_tensor_key_encrypt_sk", &*res);
     assert!(
         scratch.available() >= glwe_tensor_key_encrypt_sk_tmp_bytes_derived(module, res),
         "insufficient scratch for GLWE tensor key encryption"
@@ -416,7 +416,7 @@ pub(crate) fn glwe_tensor_key_compressed_encrypt_sk_derived<BE, R, S>(
 {
     assert_eq!(res.rank_out(), sk.rank());
     assert_eq!(res.n(), sk.n());
-    crate::reference::keyswitching::glwe::assert_no_row_offset("glwe_tensor_key_compressed_encrypt_sk", &*res);
+    crate::layouts::assert_no_row_offset("glwe_tensor_key_compressed_encrypt_sk", &*res);
     assert!(
         scratch.available() >= glwe_tensor_key_compressed_encrypt_sk_tmp_bytes_derived(module, res),
         "insufficient scratch for compressed GLWE tensor key encryption"

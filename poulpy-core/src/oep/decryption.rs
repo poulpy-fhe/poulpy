@@ -204,6 +204,3 @@ macro_rules! impl_decryption_reference_full {
         }
     };
 }
-
-// Reference helpers remain available through OEP for source compatibility.
-pub use crate::reference::decryption::DecryptionReference;

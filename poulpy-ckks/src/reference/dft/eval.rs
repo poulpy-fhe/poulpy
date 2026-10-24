@@ -23,10 +23,10 @@
 use crate::{CKKSResult as Result, ckks_ensure};
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
+    DiagonalProd,
     layouts::{
         Base2K, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LinearTransformation, LinearTransformationStrategy,
     },
-    reference::linear_transformation::DiagonalProd,
 };
 use poulpy_hal::{
     api::CnvPVecAlloc,

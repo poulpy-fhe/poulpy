@@ -75,7 +75,7 @@ mod gglwe {
             a.k_offset()
         );
         assert_eq!(res.base2k(), a.base2k());
-        crate::reference::keyswitching::glwe::assert_no_row_offset("gglwe_keyswitch", &b);
+        crate::layouts::assert_no_row_offset("gglwe_keyswitch", &b);
         assert!(
             scratch.available() >= gglwe_keyswitch_tmp_bytes_derived::<BE, _, _, _, _>(module, res, a, b),
             "scratch.available(): {} < GGLWEKeyswitch::gglwe_keyswitch_tmp_bytes: {}",
@@ -201,7 +201,7 @@ mod ggsw {
             ggsw_keyswitch_tmp_bytes_derived::<BE, _, _, _, _, _>(module, &res_backend, &a_backend, key, tsk)
         );
 
-        crate::reference::keyswitching::glwe::assert_no_row_offset("ggsw_keyswitch", &key);
+        crate::layouts::assert_no_row_offset("ggsw_keyswitch", &key);
         for row in 0..res_backend.dnum().into() {
             let mut res_at = res_backend.at_view_mut(row, 0);
             let a_at = a_backend.at_view(row, 0);

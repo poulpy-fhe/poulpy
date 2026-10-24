@@ -108,7 +108,7 @@ pub fn test_gadget_row_plaintext<BE: crate::test_suite::noise::TestBackend>(
                 };
                 let mut res = vec_znx_alloc_zeroed::<BE>(n, 2, size);
                 garbage(&mut res, 9);
-                crate::reference::encryption::gadget_row_plaintext(
+                crate::gadget::gadget_row_plaintext(
                     module,
                     &mut vec_znx_backend_mut::<BE>(&mut res),
                     res_col,

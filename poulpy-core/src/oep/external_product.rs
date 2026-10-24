@@ -236,6 +236,3 @@ macro_rules! impl_ggsw_external_product_derived_full {
         unsafe impl $crate::oep::GGSWExternalProductImpl for $be {}
     };
 }
-
-// Reference helpers remain available through OEP for source compatibility.
-pub use crate::reference::external_product::GLWEExternalProductReference;

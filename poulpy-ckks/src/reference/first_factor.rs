@@ -16,12 +16,11 @@
 //! sparse one, and these switches replace the sparse-to-dense one.
 
 use poulpy_core::{
-    GLWECopy, GLWEKeyswitch, GLWEMulPlain, GLWEShift, ScratchArenaTakeCore,
+    GLWECopy, GLWEKeyswitch, GLWEMulPlain, GLWEShift, ScratchArenaTakeCore, gglwe_product_accumulation_output_size,
     layouts::{
         GGLWEInfos, GGLWELayout, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos, LWEInfos,
         LinearTransformation, Rank, prepared::GGLWEPreparedToBackendRef,
     },
-    reference::keyswitching::glwe::gglwe_product_accumulation_output_size,
 };
 use poulpy_hal::{
     api::{

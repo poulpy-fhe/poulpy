@@ -1,9 +1,8 @@
 //! The `_assign` and self-caching evaluations compose the evaluation over a caller's baby cache with a copy and a
 //! baby-step preparation.
 use poulpy_core::{
-    LinearTransformation, LinearTransformationBabySteps,
+    DiagonalProd, LinearTransformation, LinearTransformationBabySteps,
     layouts::{GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, IntPolyInfos},
-    reference::linear_transformation::DiagonalProd,
 };
 use poulpy_hal::layouts::{Module, ScratchArena};
 

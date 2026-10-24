@@ -97,7 +97,7 @@ where
                 for row_i in 0..res.dnum().into() {
                     scratch_1 = scratch_1.apply_mut(|scratch| {
                         let mut tmp_pt_backend = tmp_pt.to_backend_mut();
-                        crate::reference::encryption::gadget_row_plaintext(
+                        crate::gadget::gadget_row_plaintext(
                             self,
                             &mut tmp_pt_backend.data,
                             0,

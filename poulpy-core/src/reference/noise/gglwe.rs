@@ -104,7 +104,7 @@ where
             ScalarZnx::from_data(BE::from_host_bytes(pt_want.data), pt_want.n(), pt_want.cols());
         {
             let mut pt_backend = pt.to_backend_mut();
-            crate::reference::encryption::gadget_row_plaintext(
+            crate::gadget::gadget_row_plaintext(
                 self,
                 &mut pt_backend.data,
                 0,

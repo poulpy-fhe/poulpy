@@ -34,7 +34,7 @@ pub unsafe trait GLWECIConversionImpl: Backend<Ring = Standard> {
         A: GLWEToBackendRef<Self> + GLWEInfos,
         Module<Self>: VecZnxSwitchRing<Self>,
     {
-        crate::reference::ci_conversion::glwe_switch_degree_reference(module, res, a)
+        crate::oep::derived::ci_conversion::glwe_switch_degree_derived::<Self, _, _, _>(module, res, a)
     }
 }
 

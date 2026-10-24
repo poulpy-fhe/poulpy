@@ -244,6 +244,3 @@ macro_rules! impl_ggsw_conversion_reference_full {
         }
     };
 }
-
-// Reference helpers remain available through OEP for source compatibility.
-pub use crate::reference::conversion::{ConversionReference, GGSWConversionReference};

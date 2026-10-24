@@ -60,6 +60,7 @@
 //! |---|---|
 //! | [`api`] | Safe, user-facing operation traits |
 //! | [`layouts`] | Type definitions for all ciphertext, key, plaintext, and secret layouts |
+//! | [`gadget`] | Gadget operands, product windows and limb placement |
 //! | encryption | Secret-key, public-key, and compressed encryption |
 //! | decryption | Decryption of GLWE, LWE, and tensor ciphertexts |
 //! | operations | Ciphertext arithmetic (add, sub, rotate, shift, normalize, mul) |
@@ -80,6 +81,7 @@ mod delegates;
 mod dist;
 pub mod error;
 mod fresh_noise_model;
+pub mod gadget;
 mod noise_distribution;
 pub mod oep;
 pub mod reference;
@@ -92,13 +94,15 @@ pub use component_noise::{ComponentNoise, FreshNoiseEstimate, SecretDistribution
 pub use dist::*;
 pub use error::{CoreError, Result};
 pub use fresh_noise_model::{PublicKeyBodyNoise, public_key_encryption_noise, public_key_sample_precision};
+pub use gadget::*;
+pub use layouts::DiagonalProd;
 pub use noise_distribution::Noise;
 pub use reference::encryption::*;
 pub use reference::linear_transformation::*;
 pub(crate) use reference::noise::{log2_std_noise_glwe_tensor, log2_std_noise_glwe_tensor_relinearized};
 pub use reference::operations::*;
 #[allow(deprecated)]
-pub use reference::polynomial_evaluation::{BSGSOps, GiantStepTensorBounds};
+pub use reference::polynomial_evaluation::GiantStepTensorBounds;
 pub use scratch::*;
 
 pub(crate) mod decryption {
