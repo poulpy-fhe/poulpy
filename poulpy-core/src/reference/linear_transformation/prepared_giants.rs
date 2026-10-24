@@ -1,6 +1,6 @@
 //! Prepared giant-step evaluation.
 //!
-//! Main loop from docs/linear_transformation.md: each giant bucket first runs PROD (a
+//! Main loop from docs/guides/linear_transformation.md: each giant bucket first runs PROD (a
 //! DFT-domain inner product over prepared baby rotations and prepared diagonals),
 //! then ROT rotates that bucket and folds it into a DFT accumulator. The lazy
 //! path keeps body add, DFT automorphism, and cross-giant accumulation in DFT;
@@ -150,7 +150,7 @@ pub(super) fn assert_linear_transformation_giant_steps<BE, P>(
 /// both the resident transform (`P = PreparedDiagonal`) and the streamed
 /// unprepared transform (`P` a plaintext); only the per-giant PROD block
 /// ([`DiagonalProd::accumulate_giant_prod`]) differs. Implements the giant-step
-/// products, rotations, and final normalization of docs/linear_transformation.md.
+/// products, rotations, and final normalization of docs/guides/linear_transformation.md.
 ///
 /// For each giant step `j` it computes `PROD = Σ_k ũ_{j,k} ⊙ rot(v,k)` in DFT,
 /// then rotates by `n1·j` and folds the result into a single accumulator. One of

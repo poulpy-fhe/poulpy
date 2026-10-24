@@ -1,7 +1,41 @@
 [workspace]
-members = ["poulpy-cpu-oracle", "poulpy-hal", "poulpy-core", "poulpy-cpu-avx", "poulpy-cpu-avx512", "poulpy-cpu-arm", "poulpy-cpu-rayon", "poulpy-bin-fhe", "poulpy-cpu-portable", "poulpy-bench", "poulpy-ckks", "poulpy-mhe", "poulpy-blas", "poulpy-libm"]
-default-members = ["poulpy-hal", "poulpy-core", "poulpy-cpu-avx", "poulpy-cpu-arm", "poulpy-bin-fhe", "poulpy-cpu-portable", "poulpy-bench", "poulpy-ckks", "poulpy-mhe", "poulpy-blas", "poulpy-libm"]
+members = [
+    "poulpy-hal",
+    "poulpy-core",
+    "poulpy-mhe",
+    "schemes/poulpy-ckks",
+    "schemes/poulpy-bin-fhe",
+    "libs/poulpy-blas",
+    "backends/poulpy-cpu-portable",
+    "backends/poulpy-cpu-avx",
+    "backends/poulpy-cpu-avx512",
+    "backends/poulpy-cpu-arm",
+    "backends/poulpy-cpu-rayon",
+    "backends/poulpy-cpu-oracle",
+    "poulpy-libm",
+    "tools/poulpy-bench",
+]
+default-members = [
+    "poulpy-hal",
+    "poulpy-core",
+    "poulpy-mhe",
+    "schemes/poulpy-ckks",
+    "schemes/poulpy-bin-fhe",
+    "libs/poulpy-blas",
+    "backends/poulpy-cpu-portable",
+    "backends/poulpy-cpu-avx",
+    "backends/poulpy-cpu-arm",
+    "poulpy-libm",
+    "tools/poulpy-bench",
+]
 resolver = "3"
+
+[workspace.package]
+version = "0.9.0"
+edition = "2024"
+license = "Apache-2.0"
+repository = "https://github.com/poulpy-fhe/poulpy"
+homepage = "https://github.com/poulpy-fhe/poulpy"
 
 [profile.ci]
 inherits = "test"
@@ -17,18 +51,19 @@ strip = false
 [workspace.dependencies]
 poulpy-hal = {path = "poulpy-hal", version = "0.9.0"}
 poulpy-core = {path = "poulpy-core", version = "0.9.0"}
-poulpy-cpu-avx = {path = "poulpy-cpu-avx", version = "0.9.0"}
-poulpy-cpu-arm = {path = "poulpy-cpu-arm", version = "0.9.0"}
-poulpy-cpu-portable = {path = "poulpy-cpu-portable", version = "0.9.0"}
-poulpy-cpu-avx512 = {path = "poulpy-cpu-avx512", version = "0.9.0"}
-poulpy-cpu-rayon = {path = "poulpy-cpu-rayon", version = "0.9.0"}
-poulpy-bin-fhe = {path = "poulpy-bin-fhe", version = "0.9.0"}
-poulpy-cpu-oracle = {path = "poulpy-cpu-oracle"}
-poulpy-bench = {path = "poulpy-bench"}
-poulpy-ckks = {path = "poulpy-ckks", version = "0.9.0"}
 poulpy-mhe = {path = "poulpy-mhe", version = "0.9.0"}
-poulpy-blas = {path = "poulpy-blas", version = "0.9.0"}
+poulpy-ckks = {path = "schemes/poulpy-ckks", version = "0.9.0"}
+poulpy-bin-fhe = {path = "schemes/poulpy-bin-fhe", version = "0.9.0"}
+poulpy-blas = {path = "libs/poulpy-blas", version = "0.9.0"}
 poulpy-libm = {path = "poulpy-libm", version = "0.9.0"}
+poulpy-cpu-portable = {path = "backends/poulpy-cpu-portable", version = "0.9.0"}
+poulpy-cpu-avx = {path = "backends/poulpy-cpu-avx", version = "0.9.0"}
+poulpy-cpu-avx512 = {path = "backends/poulpy-cpu-avx512", version = "0.9.0"}
+poulpy-cpu-arm = {path = "backends/poulpy-cpu-arm", version = "0.9.0"}
+poulpy-cpu-rayon = {path = "backends/poulpy-cpu-rayon", version = "0.9.0"}
+poulpy-cpu-oracle = {path = "backends/poulpy-cpu-oracle"}
+poulpy-bench = {path = "tools/poulpy-bench"}
+
 dashu-float = "0.6.2"
 dashu-int = "0.6.2"
 # Reproducible setup requires the same resolved math dependencies on each target.

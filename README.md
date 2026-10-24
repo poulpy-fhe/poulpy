@@ -2,7 +2,7 @@
 # 🐙 Poulpy
 
 <p align="center">
-<img src="poulpy.png" />
+<img src="docs/img/poulpy.png" />
 </p>
 
 [![CI](https://github.com/poulpy-fhe/poulpy/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/poulpy-fhe/poulpy/actions/workflows/ci.yml)
@@ -19,19 +19,35 @@
 
 ## Library Crates
 
+The basis crates sit at the root of the repository, and the other crates are grouped by role into four folders. A crate depends only on the basis, on crates of its own folder or on crates of the folders listed before it, except that the backends benchmark through `poulpy-bench`.
+
+### Basis, at the root
+
 - **`poulpy-hal`**: a crate providing layouts and a trait-based hardware acceleration layer with open extension points, matching the API and types of spqlios-arithmetic. This crate does not provide concrete implementations other than the layouts (e.g. `VecZnx`, `VmpPmat`).
 - **`poulpy-core`**: a backend-agnostic crate implementing scheme-agnostic Module-LWE arithmetic for LWE, GLWE, GGLWE, and GGSW ciphertexts using **`poulpy-hal`**. It can be instantiated with any backend crate (e.g. `poulpy-cpu-portable`, `poulpy-cpu-avx`).
+- **`poulpy-mhe`**: a backend-agnostic multiparty homomorphic encryption crate built on **`poulpy-core`** and **`poulpy-hal`**: collective public, switching, automorphism, tensor and GGSW keys, collective key switching, and conversions between encryptions and additive shares.
+
+### [`schemes/`](schemes): FHE schemes on top of core
+
 - **`poulpy-ckks`**: a backend-agnostic leveled CKKS implementation built on **`poulpy-core`** and **`poulpy-hal`**, including polynomial evaluation and bootstrappings.
 - **`poulpy-bin-fhe`**: the binary/gate-level FHE crate built on **`poulpy-core`** and **`poulpy-hal`**. It replaces the former `poulpy-schemes` crate and exposes backend-owned APIs with explicit operation overrides and reusable reference circuits.
-- **`poulpy-mhe`**: a backend-agnostic multiparty homomorphic encryption crate built on **`poulpy-core`** and **`poulpy-hal`**: collective public, switching, automorphism, tensor and GGSW keys, collective key switching, and conversions between encryptions and additive shares.
+
+### [`libs/`](libs): libraries built on a scheme
+
 - **`poulpy-blas`**: backend-agnostic encrypted matrix arithmetic built on **`poulpy-ckks`**: grids of CKKS block ciphertexts, and the encoded maps and public matrices its operations read.
 - **`poulpy-libm`**: backend-agnostic CKKS math functions with `libm` names built on **`poulpy-ckks`**: exponentials, logarithms, powers and roots, trigonometric, hyperbolic and special functions, comparisons, and slot reductions, each from a reusable plan prepared for an input interval and a precision.
+
+### [`backends/`](backends): concrete implementations of the layers
+
 - **`poulpy-cpu-portable`**: the portable CPU implementation of **`poulpy-hal`** in plain scalar Rust, which runs on any target and whose scalar kernels back the SIMD backends.
 - **`poulpy-cpu-oracle`**: an unpublished, independent scalar backend that the other backends are compared against in the cross-backend and parity suites.
 - **`poulpy-cpu-rayon`**: the shared Rayon task executor and parallel kernels used by the optional multithreaded CPU backend variants.
 - **`poulpy-cpu-avx`**: an AVX2/FMA accelerated CPU implementation of **`poulpy-hal`**, exposing `FFT64Avx`, `NTT4x30Avx`, and their optional Rayon-scheduled variants (`enable-rayon`).
 - **`poulpy-cpu-avx512`**: an AVX-512 accelerated CPU implementation of **`poulpy-hal`**, exposing `FFT64Avx512`, `NTT4x30Avx512`, and `NTT3x42Ifma` (`enable-ifma`), plus `FFT64Avx512Rayon` and `NTT4x30Avx512Rayon` (`enable-rayon`) and `NTT3x42IfmaRayon` (`enable-rayon` with `enable-ifma`).
 - **`poulpy-cpu-arm`**: a NEON/ASIMD accelerated CPU implementation of **`poulpy-hal`** for AArch64, exposing `FFT64Neon`, `NTT4x30Neon`, and their optional Rayon-scheduled variants (`enable-rayon`).
+
+### [`tools/`](tools): workspace tooling
+
 - **`poulpy-bench`**: the consolidated Criterion benchmark suite for the workspace. It is an internal workspace crate and is not published to crates.io.
 
 ## Architecture
@@ -55,7 +71,7 @@ poulpy-cpu-avx512           ← AVX-512/IFMA-accelerated backend
 poulpy-cpu-arm              ← NEON/ASIMD-accelerated backend (AArch64)
 ```
 
-Backend crates (`poulpy-cpu-portable`, `poulpy-cpu-avx`, `poulpy-cpu-avx512`, `poulpy-cpu-arm`, …) implement the open extension points defined in `poulpy-hal/oep`. Core, CKKS, BLAS and binary-FHE keep concrete backend wiring in backend crates. Each layer provides explicit operation contracts, reusable reference algorithms and caller-selected parity suites.
+Backend crates (`poulpy-cpu-portable`, `poulpy-cpu-avx`, `poulpy-cpu-avx512`, `poulpy-cpu-arm`, …) implement the open extension points defined in `poulpy_hal::oep`. Core, CKKS, BLAS and binary-FHE keep concrete backend wiring in backend crates. Each layer provides explicit operation contracts, reusable reference algorithms and caller-selected parity suites.
 
 ### Layer Anatomy
 
@@ -102,7 +118,7 @@ bootstrap another.
 2. Implement each required HAL OEP method and inherit or override its derived defaults.
 3. Implement the core `*Impl` traits, or use family macros to select reference algorithms and derived defaults.
 4. Optionally, do the same for `poulpy-ckks` using the `impl_ckks_*_reference!` macros or direct OEP trait implementations.
-5. Optionally, do the same for `poulpy-blas` using `impl_blas_reference_full!`, its per-family macros or direct OEP trait implementations; see [implementing BLAS operations](poulpy-blas/docs/blas-contracts.md).
+5. Optionally, do the same for `poulpy-blas` using `impl_blas_reference_full!`, its per-family macros or direct OEP trait implementations; see [implementing BLAS operations](libs/poulpy-blas/docs/blas-contracts.md).
 
 A family macro and a handwritten implementation of the same trait are mutually
 exclusive. Use individual family macros when customizing a core backend, and
@@ -111,9 +127,9 @@ validate its implementations with the shared conformance tests. The
 forwarding, derived defaults, scratch requirements and controlled sampling.
 
 See `poulpy-cpu-portable` for a complete implementation of all five steps. Its
-[compiled override example](poulpy-cpu-portable/src/tests/delegating_backend.rs)
+[compiled override example](backends/poulpy-cpu-portable/src/tests/delegating_backend.rs)
 checks reference forwarding and dispatch through custom core methods; the
-[encryption example](poulpy-cpu-portable/examples/core_encryption.rs) shows public API use.
+[encryption example](backends/poulpy-cpu-portable/examples/core_encryption.rs) shows public API use.
 
 ### Testing a Backend
 
@@ -169,10 +185,10 @@ circuit parity through `ckks_parity_test_suite!`. Registrations cover `f64` and
 `Quad` on all 16 CPU backend types, with Rayon variants compared against their
 serial siblings. Portable encoding and DFT matrix/evaluation parity also exercise `f32`. Native CI and optional QEMU
 runs include the `ckks_parity` groups, including controlled-sampling encryption.
-See [implementing a CKKS backend](poulpy-ckks/docs/ckks-contracts.md).
+See [implementing a CKKS backend](schemes/poulpy-ckks/docs/ckks-contracts.md).
 
 Run portable CKKS parity, the full conformance suite, or the
-[polynomial example](poulpy-cpu-portable/examples/ckks_poly2.rs) with:
+[polynomial example](backends/poulpy-cpu-portable/examples/ckks_poly2.rs) with:
 
 ```sh
 cargo test -p poulpy-cpu-portable --lib --profile ci --features enable-ckks -- ckks_parity
@@ -189,7 +205,7 @@ conjugate-invariant backend type, the oracle's included, also runs
 Intel SDE, the AVX-512 job runs the `f64` parity of each of its serial types
 once, in a step with its own execution budget; the emulated AVX job and the optional QEMU
 run do not run BLAS. See
-[implementing BLAS operations](poulpy-blas/docs/blas-contracts.md).
+[implementing BLAS operations](libs/poulpy-blas/docs/blas-contracts.md).
 
 Run portable BLAS parity with:
 
@@ -206,8 +222,8 @@ the conjugate-invariant ring, and the FFT64 types of the standard ring at
 `N = 32`, where one `4 x 4` block fills the 16 slots. `poulpy-cpu-portable`
 registers `blas_max_base2k_test_suite!` for its FFT64 and NTT4x30 types and
 their conjugate-invariant counterparts.
-[`blas_tests.rs`](poulpy-cpu-portable/src/tests/blas_tests.rs) shows the
-registrations, and [`blas_overrides.rs`](poulpy-cpu-portable/src/tests/blas_overrides.rs)
+[`blas_tests.rs`](backends/poulpy-cpu-portable/src/tests/blas_tests.rs) shows the
+registrations, and [`blas_overrides.rs`](backends/poulpy-cpu-portable/src/tests/blas_overrides.rs)
 overrides the map hook and the JKLS kernel, checks parity with the oracle
 through both, and checks that no rejected call enters either.
 
@@ -230,7 +246,7 @@ poulpy-cpu-oracle = {git = "https://github.com/poulpy-fhe/poulpy", rev = "<rev>"
 ```
 
 libm registers its suite through `libm_backend_test_suite!`: precision and exact budget consumption of every function, on the NTT4x30 type of each CPU backend and on `NTT3x42Ifma`, with the backends' `enable-ckks`.
-[`libm_tests.rs`](poulpy-cpu-portable/src/tests/libm_tests.rs) shows the registration.
+[`libm_tests.rs`](backends/poulpy-cpu-portable/src/tests/libm_tests.rs) shows the registration.
 CI runs it on the portable, native AVX2 and NEON backends. The emulated AVX job does not build it, and the AVX-512 jobs filter it out, since their results are byte-identical to the other backends'.
 Run it on the portable backend with:
 
@@ -256,7 +272,7 @@ This provides the following benefits:
 
 - **Deterministic computation:** Although it is defined on the Torus, bivariate arithmetic remains integer polynomial arithmetic, ensuring all computations are deterministic. Outputs are reproducible and identical regardless of the backend or hardware (even when using floating point).
 
-The bivariate representation recovers bit-granular scale and capacity management that RNS-CKKS lacks. A recent RNS-based technique, [Grafting](https://eprint.iacr.org/2024/1014) by Cheon et al., targets the same goal from inside the RNS world by decoupling scale factors from the modulus. For a detailed comparison of the two approaches, see [docs/grafting-vs-bivariate.md](docs/grafting-vs-bivariate.md).
+The bivariate representation recovers bit-granular scale and capacity management that RNS-CKKS lacks. A recent RNS-based technique, [Grafting](https://eprint.iacr.org/2024/1014) by Cheon et al., targets the same goal from inside the RNS world by decoupling scale factors from the modulus. For a detailed comparison of the two approaches, see [docs/guides/grafting-vs-bivariate.md](docs/guides/grafting-vs-bivariate.md).
 
 ## Installation
 
@@ -293,7 +309,7 @@ poulpy-cpu-portable = "0.9.0"
 
 * The [`docs/`](./docs) folder holds the full documentation: a codebase map, the backend guide, design notes, and architecture diagrams. Start with its [index](./docs/README.md).
 * Crate package pages and generated Rust documentation are linked from the crates.io entries above.
-* Crate-specific READMEs provide more focused usage notes, especially [`poulpy-ckks`](./poulpy-ckks/README.md) and [`poulpy-bench`](./poulpy-bench/README.md).
+* Crate-specific READMEs provide more focused usage notes, especially [`poulpy-ckks`](./schemes/poulpy-ckks/README.md) and [`poulpy-bench`](./tools/poulpy-bench/README.md).
 
 ## Built with Poulpy
 

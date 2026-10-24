@@ -1,0 +1,1495 @@
+//! Free-function test helpers for the CKKS test suite.
+//!
+//! Provides trait aliases ([`TestContextBackend`], [`TestContextSharedModule`],
+//! [`TestContextModule`]), test-vector generators, "want" functions for
+//! expected values, key-generation helpers, encode/upload/download utilities,
+//! encrypt/decrypt wrappers, and precision/metadata assertion helpers.
+//!
+//! Each test function is expected to be self-contained: it takes
+//! `(params, module, host_module)`, generates its own keys, encodes test
+//! vectors as host-side [`CKKSPlaintextOwned<HostBytesBackend>`](CKKSPlaintext), uploads
+//! them to the backend, performs the operation, downloads, and asserts
+//! correctness.
+
+use crate::CKKSModuleInfos;
+use crate::Scale;
+use poulpy_core::layouts::SetGLWEPlaintextInfos;
+use poulpy_hal::AlignedBuf;
+use poulpy_hal::layouts::HostStaged;
+use std::{cell::RefCell, collections::HashMap, f64::consts::TAU, fmt::Debug};
+
+use crate::{
+    CKKSCompositionError, CKKSInfos, CKKSLayout, GLWEPlaintextMeta, SetCKKSInfos,
+    api::{
+        CKKSAddManyOps, CKKSAddOps, CKKSAffineOps, CKKSAllOpsTmpBytes, CKKSConjugateOps, CKKSCopyOps, CKKSDotProductOps,
+        CKKSEncodingScalar, CKKSEvalModOps, CKKSImagOps, CKKSInnerSumOps, CKKSMulAddOps, CKKSMulOps, CKKSMulSubOps, CKKSNegOps,
+        CKKSPlaintextVecOps, CKKSPow2Ops, CKKSRotateOps, CKKSSubOps,
+    },
+    api::{CKKSDecryptOps, CKKSEncryptOps},
+    layouts::{
+        CKKSCiphertext, CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, CKKSPlaintextVecHostCodec,
+        plaintext::CKKSPlaintext,
+    },
+    test_suite::reference_encoder::ReferenceEncoder,
+};
+use num_traits::{Float, FromPrimitive, ToPrimitive};
+use poulpy_core::{
+    GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWECIKeyEncryptSk, GLWEDecrypt, GLWEKeyswitch, GLWEMaskFill, GLWENormalize,
+    GLWESub, GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk, ScratchArenaTakeCore, TransferInto,
+    layouts::{
+        BackendGLWESecret, Base2K, Degree, GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedFactory,
+        GLWECIEmbedKeyPrepared, GLWECIKeyPreparedFactory, GLWECITraceKeyPrepared, GLWEInfos, GLWELayout,
+        GLWESecretPreparedFactory, GLWESecretToBackendRef, GLWESwitchingKeyPrepared, GLWESwitchingKeyPreparedFactory,
+        GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory, GetAutomorphismKey, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
+        prepared::{GLWEAutomorphismKeyPreparedBackendRef, GLWEAutomorphismKeyPreparedToBackendRef, GLWESecretPrepared},
+    },
+};
+
+use poulpy_hal::{
+    api::{ModuleNew, NegacyclicFFT, ScratchOwnedAlloc},
+    layouts::{
+        Backend, Data, GaloisElement, HostBackend, HostBytesBackend, HostDataMut, HostDataRef, Module, ReaderFrom, Ring,
+        ScratchArena, ScratchOwned, WriterTo, ZnxView, ZnxWord,
+    },
+    source::Source,
+};
+
+use super::CKKSTestParams;
+use crate::SlotsKind;
+use poulpy_core::layouts::GLWESecretSampling;
+use poulpy_core::{Distribution, GetDistributionMut};
+
+// ─── deterministic per-call RNG seeds ────────────────────────────────────────
+
+thread_local! {
+    static SEED_COUNTER: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// Returns a fresh, deterministic 32-byte RNG seed for test-suite randomness.
+///
+/// Every call yields a distinct seed (`tag` domain-separates streams, a
+/// per-thread counter separates calls). Reusing one fixed seed across all
+/// encryptions in a test made every ciphertext share its GLWE mask `a` and
+/// error `e` — so `sub` tests were noiseless trivial encryptions (mask and
+/// error cancel exactly) and `mul` tests tensored degenerate `a ⊗ a` inputs,
+/// passing the noise assertions vacuously.
+///
+/// Determinism: libtest runs each test on its own thread, so each test sees the
+/// counter start at 0 and the sequence of seeds depends only on the test's own
+/// call order.
+pub fn next_test_seed(tag: u8) -> [u8; 32] {
+    let n = SEED_COUNTER.with(|c| {
+        let v = c.get();
+        c.set(v.wrapping_add(1));
+        v
+    });
+    let mut seed = [0u8; 32];
+    seed[0] = tag;
+    seed[1..9].copy_from_slice(&n.to_le_bytes());
+    seed
+}
+
+// ─── constants ───────────────────────────────────────────────────────────────
+
+/// Default plaintext precision used in all tests. `k = log_delta + log_budget = 18`;
+/// the layout's `n`/`base2k` are placeholders (callers pass an explicit `base2k`,
+/// and only `k()`/`meta()` are consumed off this spec).
+pub const PT_PREC: CKKSLayout = CKKSLayout {
+    glwe_layout: GLWELayout {
+        n: Degree(256),
+        base2k: Base2K(52),
+        k: TorusPrecision(8 + 10),
+        rank: Rank(1),
+    },
+    meta: GLWEPlaintextMeta {
+        scale: Scale::Log(8),
+        slots: SlotsKind::Complex,
+        log_sparsity: 0,
+    },
+};
+
+/// Builds a CKKS precision spec (`CKKSLayout`) from explicit precision params.
+/// `k = log_delta + log_budget`; `log_sparsity = 0`.
+pub fn ckks_spec(n: usize, base2k: usize, log_delta: usize, log_budget: usize) -> CKKSLayout {
+    ckks_spec_sparse(n, base2k, log_delta, log_budget, 0)
+}
+
+/// Snapshots a value's current precision as a `CKKSLayout` spec (so it can be
+/// passed to the `assert_mul_*_output_meta` helpers after the source is mutated
+/// in place). Captures `log_delta`/`log_budget`/`log_sparsity` and the width `k`.
+pub fn ckks_snapshot<A: CKKSInfos>(a: &A) -> CKKSLayout {
+    ckks_spec_sparse(
+        a.n().as_usize(),
+        a.base2k().as_usize(),
+        a.log_delta(),
+        a.log_budget(),
+        a.log_sparsity(),
+    )
+}
+
+/// Like [`ckks_spec`] but with an explicit `log_sparsity`.
+pub fn ckks_spec_sparse(n: usize, base2k: usize, log_delta: usize, log_budget: usize, log_sparsity: usize) -> CKKSLayout {
+    CKKSLayout {
+        glwe_layout: GLWELayout {
+            n: n.into(),
+            base2k: base2k.into(),
+            k: (log_delta + log_budget).into(),
+            rank: Rank(1),
+        },
+        meta: GLWEPlaintextMeta {
+            scale: Scale::Log(log_delta),
+            slots: SlotsKind::Complex,
+            log_sparsity,
+        },
+    }
+}
+
+/// Fixed real and imaginary constants used in add/sub constant tests.
+pub const ADD_SUB_CONST: (f64, f64) = (0.314_159_265_358_979_3, -0.271_828_182_845_904_5);
+
+/// Fixed real and imaginary constants used in multiply-constant tests.
+pub const MUL_CONST: (f64, f64) = (0.271_828_182_845_904_5, -0.141_421_356_237_309_5);
+
+// ─── trait aliases ────────────────────────────────────────────────────────────
+
+/// Backend bound for the CKKS test suite.
+/// Pinned to `ZnxWord = i64`: the suites drive [`CKKSPlaintextVecHostCodec`], whose
+/// float quantization targets `i64`/`i128` limbs. A backend with a narrower
+/// coefficient word needs its own codec, and its own suites.
+pub trait TestContextBackend:
+    Backend<OwnedBuf = AlignedBuf, ZnxWord = i64> + HostBackend + HostStaged + Send + Sync + 'static
+where
+    ScratchOwned<Self>: ScratchOwnedAlloc<Self>,
+    for<'a> ScratchArena<'a, Self>: ScratchArenaTakeCore<'a, Self>,
+{
+}
+
+impl<BE> TestContextBackend for BE
+where
+    BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64> + HostBackend + HostStaged + Send + Sync + 'static,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
+{
+}
+
+/// `Module<BE>` capabilities of the CKKS test suite shared by both rings.
+pub trait TestContextSharedModule<BE: Backend>:
+    ModuleNew<BE>
+    + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+    + CKKSModuleAlloc<BE>
+    + CKKSAllOpsTmpBytes<BE>
+    + CKKSEncryptOps<BE>
+    + CKKSDecryptOps<BE>
+    + CKKSAddOps<BE>
+    + CKKSSubOps<BE>
+    + CKKSMulOps<BE>
+    + CKKSNegOps<BE>
+    + CKKSCopyOps<BE>
+    + CKKSRotateOps<BE>
+    + CKKSPow2Ops<BE>
+    + CKKSPlaintextVecOps<BE>
+    + CKKSAddManyOps<BE>
+    + CKKSInnerSumOps<BE>
+    + CKKSMulAddOps<BE>
+    + CKKSMulSubOps<BE>
+    + CKKSAffineOps<BE>
+    + CKKSDotProductOps<BE>
+    + GLWEAutomorphism<BE>
+    + GLWEDecrypt<BE>
+    + GLWEMaskFill<BE>
+    + GLWENormalize<BE>
+    + GLWESub<BE>
+    + GLWESecretPreparedFactory<BE>
+    + GLWESecretSampling<BE>
+    + GLWETensorKeyPreparedFactory<BE>
+    + GLWEAutomorphismKeyPreparedFactory<BE>
+    + GLWETensorKeyEncryptSk<BE>
+    + GLWEAutomorphismKeyEncryptSk<BE>
+    + GLWESwitchingKeyEncryptSk<BE>
+    + GLWESwitchingKeyPreparedFactory<BE>
+    + GLWEKeyswitch<BE>
+    + poulpy_hal::api::VecZnxAutomorphism<BE>
+    + GaloisElement
+{
+}
+
+impl<BE: Backend, M> TestContextSharedModule<BE> for M where
+    M: ModuleNew<BE>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+        + CKKSModuleAlloc<BE>
+        + CKKSAllOpsTmpBytes<BE>
+        + CKKSEncryptOps<BE>
+        + CKKSDecryptOps<BE>
+        + CKKSAddOps<BE>
+        + CKKSSubOps<BE>
+        + CKKSMulOps<BE>
+        + CKKSNegOps<BE>
+        + CKKSCopyOps<BE>
+        + CKKSRotateOps<BE>
+        + CKKSPow2Ops<BE>
+        + CKKSPlaintextVecOps<BE>
+        + CKKSAddManyOps<BE>
+        + CKKSInnerSumOps<BE>
+        + CKKSMulAddOps<BE>
+        + CKKSMulSubOps<BE>
+        + CKKSAffineOps<BE>
+        + CKKSDotProductOps<BE>
+        + GLWEAutomorphism<BE>
+        + GLWEDecrypt<BE>
+        + GLWEMaskFill<BE>
+        + GLWENormalize<BE>
+        + GLWESub<BE>
+        + GLWESecretPreparedFactory<BE>
+        + GLWESecretSampling<BE>
+        + GLWETensorKeyPreparedFactory<BE>
+        + GLWEAutomorphismKeyPreparedFactory<BE>
+        + GLWETensorKeyEncryptSk<BE>
+        + GLWEAutomorphismKeyEncryptSk<BE>
+        + GLWESwitchingKeyEncryptSk<BE>
+        + GLWESwitchingKeyPreparedFactory<BE>
+        + GLWEKeyswitch<BE>
+        + poulpy_hal::api::VecZnxAutomorphism<BE>
+        + GaloisElement
+{
+}
+
+/// Aggregates all `Module<BE>` capabilities needed by the CKKS test suite:
+/// the shared ones plus the standard-only conjugation, `i` and EvalMod.
+pub trait TestContextModule<BE: Backend>:
+    TestContextSharedModule<BE> + CKKSEvalModOps<BE> + CKKSConjugateOps<BE> + CKKSImagOps<BE>
+{
+}
+
+impl<BE: Backend, M> TestContextModule<BE> for M where
+    M: TestContextSharedModule<BE> + CKKSEvalModOps<BE> + CKKSConjugateOps<BE> + CKKSImagOps<BE>
+{
+}
+
+// ─── scalar + test-vector marker ─────────────────────────────────────────────
+
+pub trait TestScalar: Copy + CKKSEncodingScalar + FromPrimitive + ToPrimitive {}
+
+impl<T> TestScalar for T where T: Copy + CKKSEncodingScalar + FromPrimitive + ToPrimitive {}
+
+#[derive(Clone, Copy)]
+pub enum TestVector {
+    First,
+    Second,
+}
+
+// ─── test-vector generators ──────────────────────────────────────────────────
+
+fn to_scalar<F: TestScalar>(x: f64) -> F {
+    F::from_f64(x).expect("f64 → scalar conversion should succeed")
+}
+
+/// Generates test vector 1: cos/sin wave at frequency 1/(2m).
+///
+/// `re[i] = cos(2π(i+0.25)/m)`, `im[i] = sin(2π(i+0.25)/m)`.
+pub fn test_vector_1<F: TestScalar>(m: usize) -> (Vec<F>, Vec<F>) {
+    let tau = to_scalar::<F>(TAU);
+    let quarter = to_scalar::<F>(0.25);
+    let m_f = F::from_usize(m).expect("usize → scalar");
+    let re = (0..m)
+        .map(|i| {
+            let i_f = F::from_usize(i).expect("usize → scalar");
+            (tau * (i_f + quarter) / m_f).cos()
+        })
+        .collect();
+    let im = (0..m)
+        .map(|i| {
+            let i_f = F::from_usize(i).expect("usize → scalar");
+            (tau * (i_f + quarter) / m_f).sin()
+        })
+        .collect();
+    (re, im)
+}
+
+/// Generates test vector 2: cos/sin wave at frequency 5/(4m).
+///
+/// `re[i] = cos(2π(5i+3)/(2m))`, `im[i] = sin(2π(5i+3)/(2m))`.
+pub fn test_vector_2<F: TestScalar>(m: usize) -> (Vec<F>, Vec<F>) {
+    let tau = to_scalar::<F>(TAU);
+    let five = to_scalar::<F>(5.0);
+    let three = to_scalar::<F>(3.0);
+    let two = to_scalar::<F>(2.0);
+    let m_f = F::from_usize(m).expect("usize → scalar");
+    let re = (0..m)
+        .map(|i| {
+            let i_f = F::from_usize(i).expect("usize → scalar");
+            (tau * (five * i_f + three) / (two * m_f)).cos()
+        })
+        .collect();
+    let im = (0..m)
+        .map(|i| {
+            let i_f = F::from_usize(i).expect("usize → scalar");
+            (tau * (five * i_f + three) / (two * m_f)).sin()
+        })
+        .collect();
+    (re, im)
+}
+
+// ─── "want" expected-value functions ─────────────────────────────────────────
+
+pub fn want_add<F: Float>(a_re: &[F], a_im: &[F], b_re: &[F], b_im: &[F]) -> (Vec<F>, Vec<F>) {
+    let re = a_re.iter().zip(b_re).map(|(a, b)| *a + *b).collect();
+    let im = a_im.iter().zip(b_im).map(|(a, b)| *a + *b).collect();
+    (re, im)
+}
+
+pub fn want_sub<F: Float>(a_re: &[F], a_im: &[F], b_re: &[F], b_im: &[F]) -> (Vec<F>, Vec<F>) {
+    let re = a_re.iter().zip(b_re).map(|(a, b)| *a - *b).collect();
+    let im = a_im.iter().zip(b_im).map(|(a, b)| *a - *b).collect();
+    (re, im)
+}
+
+pub fn want_neg<F: Float>(re: &[F], im: &[F]) -> (Vec<F>, Vec<F>) {
+    (re.iter().map(|x| -*x).collect(), im.iter().map(|x| -*x).collect())
+}
+
+pub fn want_add_const<F: Float>(a_re: &[F], a_im: &[F], c_re: F, c_im: F) -> (Vec<F>, Vec<F>) {
+    let re = a_re.iter().map(|x| *x + c_re).collect();
+    let im = a_im.iter().map(|x| *x + c_im).collect();
+    (re, im)
+}
+
+pub fn want_mul_const<F: Float>(a_re: &[F], a_im: &[F], c_re: F, c_im: F) -> (Vec<F>, Vec<F>) {
+    let mut re = Vec::with_capacity(a_re.len());
+    let mut im = Vec::with_capacity(a_im.len());
+    for i in 0..a_re.len() {
+        re.push(a_re[i] * c_re - a_im[i] * c_im);
+        im.push(a_re[i] * c_im + a_im[i] * c_re);
+    }
+    (re, im)
+}
+
+pub fn want_mul<F: Float>(a_re: &[F], a_im: &[F], b_re: &[F], b_im: &[F]) -> (Vec<F>, Vec<F>) {
+    let m = a_re.len();
+    let mut re = Vec::with_capacity(m);
+    let mut im = Vec::with_capacity(m);
+    for i in 0..m {
+        re.push(a_re[i] * b_re[i] - a_im[i] * b_im[i]);
+        im.push(a_re[i] * b_im[i] + b_re[i] * a_im[i]);
+    }
+    (re, im)
+}
+
+pub fn want_square<F: Float>(re_in: &[F], im_in: &[F]) -> (Vec<F>, Vec<F>) {
+    let two = F::from(2.0).unwrap();
+    let m = re_in.len();
+    let mut re = Vec::with_capacity(m);
+    let mut im = Vec::with_capacity(m);
+    for i in 0..m {
+        re.push(re_in[i] * re_in[i] - im_in[i] * im_in[i]);
+        im.push(two * re_in[i] * im_in[i]);
+    }
+    (re, im)
+}
+
+pub fn want_conjugate<F: Float>(re: &[F], im: &[F]) -> (Vec<F>, Vec<F>) {
+    (re.to_vec(), im.iter().map(|x| -*x).collect())
+}
+
+pub fn want_rotate<F: Float + Copy>(re: &[F], im: &[F], k: i64, m: usize) -> (Vec<F>, Vec<F>) {
+    let re_rot = (0..m).map(|j| re[((j as i64 + k).rem_euclid(m as i64)) as usize]).collect();
+    let im_rot = (0..m).map(|j| im[((j as i64 + k).rem_euclid(m as i64)) as usize]).collect();
+    (re_rot, im_rot)
+}
+
+pub fn want_mul_pow2<F: TestScalar>(re: &[F], im: &[F], bits: usize) -> (Vec<F>, Vec<F>) {
+    let scale = to_scalar::<F>((1u64 << bits) as f64);
+    (
+        re.iter().map(|x| *x * scale).collect(),
+        im.iter().map(|x| *x * scale).collect(),
+    )
+}
+
+pub fn want_div_pow2<F: TestScalar>(re: &[F], im: &[F], bits: usize) -> (Vec<F>, Vec<F>) {
+    let scale = to_scalar::<F>((1u64 << bits) as f64);
+    (
+        re.iter().map(|x| *x / scale).collect(),
+        im.iter().map(|x| *x / scale).collect(),
+    )
+}
+
+pub fn want_mul_i<F: Float>(re: &[F], im: &[F]) -> (Vec<F>, Vec<F>) {
+    (im.iter().map(|x| -*x).collect(), re.to_vec())
+}
+
+pub fn want_div_i<F: Float>(re: &[F], im: &[F]) -> (Vec<F>, Vec<F>) {
+    (im.to_vec(), re.iter().map(|x| -*x).collect())
+}
+
+pub fn scale_slots<F: TestScalar>(re: &[F], im: &[F], bits: isize) -> (Vec<F>, Vec<F>) {
+    let scale = to_scalar::<F>(2.0_f64).powi(bits as i32);
+    (
+        re.iter().map(|x| *x * scale).collect(),
+        im.iter().map(|x| *x * scale).collect(),
+    )
+}
+
+// ─── constant quantization ────────────────────────────────────────────────────
+
+/// Rounds `(re, im)` to the nearest multiple of `2^-log_delta`.
+pub fn quantized_const<F: TestScalar>(re: f64, im: f64, log_delta: usize) -> (F, F) {
+    let scale = to_scalar::<F>(2.0_f64).powi(log_delta as i32);
+    let re = (to_scalar::<F>(re) * scale).round() / scale;
+    let im = (to_scalar::<F>(im) * scale).round() / scale;
+    (re, im)
+}
+
+// ─── slot quantization ────────────────────────────────────────────────────────
+
+/// Encodes then immediately decodes `(re, im)` to obtain quantized slots.
+pub fn quantized_slots<F: TestScalar, E: NegacyclicFFT<F>>(
+    host_module: &Module<HostBytesBackend>,
+    encoder: &ReferenceEncoder<E>,
+    base2k: Base2K,
+    prec: CKKSLayout,
+    re: &[F],
+    im: &[F],
+) -> (Vec<F>, Vec<F>) {
+    let mut pt = host_module.ckks_pt_vec_alloc(host_module.ckks_max_slots(), base2k, prec.k());
+    pt.set_meta(prec.meta());
+    encoder.encode_reim(&mut pt, re, im).unwrap();
+    let m = re.len();
+    let mut re_out = vec![F::zero(); m];
+    let mut im_out = vec![F::zero(); m];
+    encoder.decode_reim(&pt, &mut re_out, &mut im_out).unwrap();
+    (re_out, im_out)
+}
+
+/// Returns the quantized slots of a test vector scaled to `log_delta`.
+pub fn quantized_vector<F: TestScalar, E: NegacyclicFFT<F>>(
+    host_module: &Module<HostBytesBackend>,
+    encoder: &ReferenceEncoder<E>,
+    params: &CKKSTestParams,
+    which: TestVector,
+    log_delta: usize,
+) -> (Vec<F>, Vec<F>) {
+    let m = params.n / 2;
+    let (re, im) = match which {
+        TestVector::First => test_vector_1::<F>(m),
+        TestVector::Second => test_vector_2::<F>(m),
+    };
+    let scale = to_scalar::<F>(2.0_f64).powi((log_delta as isize - params.prec().log_delta() as isize) as i32);
+    let re_scaled: Vec<F> = re.iter().map(|x| *x * scale).collect();
+    let im_scaled: Vec<F> = im.iter().map(|x| *x * scale).collect();
+    quantized_slots(
+        host_module,
+        encoder,
+        params.base2k.into(),
+        precision_at(params, log_delta),
+        &re_scaled,
+        &im_scaled,
+    )
+}
+
+/// Rounds each element to the nearest multiple of `2^-log_delta`.
+pub fn quantize<F: TestScalar>(values: &[F], log_delta: usize) -> Vec<F> {
+    let scale = to_scalar::<F>(2.0_f64.powi(log_delta as i32));
+    values.iter().map(|x| (*x * scale).round() / scale).collect()
+}
+
+// ─── GLWEPlaintextMeta helpers ─────────────────────────────────────────────────────────
+
+/// Returns a `CKKSLayout` spec at the given `log_delta` with the standard budget from params.
+pub fn precision_at(params: &CKKSTestParams, log_delta: usize) -> CKKSLayout {
+    let log_budget = params.prec().log_budget();
+    CKKSLayout {
+        glwe_layout: GLWELayout {
+            n: params.n.into(),
+            base2k: params.base2k.into(),
+            k: (log_delta + log_budget).into(),
+            rank: Rank(1),
+        },
+        meta: GLWEPlaintextMeta {
+            scale: Scale::Log(log_delta),
+            slots: SlotsKind::Complex,
+            log_sparsity: 0,
+        },
+    }
+}
+
+// ─── scratch allocation ───────────────────────────────────────────────────────
+
+/// Allocates scratch for common CKKS test operations, including ATK ops.
+/// DFT and EvalMod callers must also cover their selected operation-specific queries.
+pub fn alloc_scratch<BE>(params: &CKKSTestParams, module: &Module<BE>) -> ScratchOwned<BE>
+where
+    BE: TestContextBackend,
+    Module<BE>: TestContextSharedModule<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
+{
+    let mut ct = module.ckks_ciphertext_alloc_from_glwe_infos(&params.glwe_layout());
+    ct.set_meta(params.prec().meta);
+    let tsk_infos = params.tsk_layout();
+    let atk_infos = params.atk_layout();
+    let scratch_size = module.ckks_all_ops_with_atk_tmp_bytes(&ct, &tsk_infos, &atk_infos, &PT_PREC);
+    ScratchOwned::<BE>::alloc(scratch_size)
+}
+
+// ─── ciphertext allocation ────────────────────────────────────────────────────
+
+/// Allocates a ciphertext with `k` limbs according to `params`.
+pub fn alloc_ct<BE: Backend>(params: &CKKSTestParams, module: &Module<BE>, k: usize) -> CKKSCiphertextOwned<BE>
+where
+    Module<BE>: CKKSModuleAlloc<BE>,
+{
+    let mut layout = params.glwe_layout();
+    layout.k = k.into();
+    module.ckks_ciphertext_alloc_from_glwe_infos(&layout)
+}
+
+/// A ciphertext of `k` bits filled with digits other than any result, labelled like `like`, or unlabelled below its
+/// `log_delta`, where no label fits: a destination whose refused or overwritten content a test can tell apart.
+pub(crate) fn dirty_ct<BE: Backend<ZnxWord = i64>>(
+    module: &Module<BE>,
+    like: &CKKSCiphertextOwned<BE>,
+    k: usize,
+) -> CKKSCiphertextOwned<BE>
+where
+    Module<BE>: GLWEMaskFill<BE>,
+{
+    let layout = CKKSLayout {
+        glwe_layout: GLWELayout {
+            n: like.n(),
+            base2k: like.base2k(),
+            k: k.into(),
+            rank: like.rank(),
+        },
+        meta: if k >= like.log_delta() {
+            like.meta()
+        } else {
+            GLWEPlaintextMeta::default()
+        },
+    };
+    super::parity::helpers::fixture_ciphertext(module, &layout, 7)
+}
+
+// ─── plaintext upload / download ─────────────────────────────────────────────
+
+/// Uploads a host-side plaintext to a backend of the same ring.
+pub fn upload_pt<BE>(module: &Module<BE>, pt: &CKKSPlaintextOwned<HostBytesBackend<BE::Ring>>) -> CKKSPlaintextOwned<BE>
+where
+    BE: HostStaged,
+{
+    let mut inner = module.glwe_plaintext_alloc_from_infos(&pt.inner);
+    pt.inner.transfer_into(&mut inner);
+    CKKSPlaintext::from_inner(inner, pt.meta())
+}
+
+/// Downloads a backend plaintext to the host.
+pub fn download_pt<BE: Backend>(pt: &CKKSPlaintextOwned<BE>) -> CKKSPlaintext<AlignedBuf, BE::ZnxWord, BE::Ring> {
+    pt.to_host_owned::<BE>()
+}
+
+// ─── plaintext encoding helpers ───────────────────────────────────────────────
+
+/// Encodes complex slots into a host plaintext then uploads it to the backend.
+pub fn encode_and_upload_pt<BE, F, E>(
+    host_module: &Module<HostBytesBackend<BE::Ring>>,
+    module: &Module<BE>,
+    encoder: &ReferenceEncoder<E>,
+    base2k: Base2K,
+    prec: CKKSLayout,
+    re: &[F],
+    im: &[F],
+) -> CKKSPlaintextOwned<BE>
+where
+    BE: HostStaged,
+    F: TestScalar,
+    E: NegacyclicFFT<F>,
+{
+    let mut host_pt = host_module.ckks_pt_vec_alloc(host_module.ckks_max_slots(), base2k, prec.k());
+    host_pt.set_meta(prec.meta());
+    encoder.encode_reim(&mut host_pt, re, im).unwrap();
+    upload_pt(module, &host_pt)
+}
+
+/// Encodes a packed constant (at most 2 coefficients: re, im) and uploads.
+pub fn ckks_pt_cst<BE, F>(
+    host_module: &Module<HostBytesBackend<BE::Ring>>,
+    module: &Module<BE>,
+    base2k: Base2K,
+    prec: CKKSLayout,
+    re: Option<f64>,
+    im: Option<f64>,
+) -> CKKSPlaintextOwned<BE>
+where
+    BE: HostStaged,
+    F: TestScalar,
+{
+    let coeff_count = if im.is_some() { 2 } else { 1 };
+    let mut host_pt = host_module.ckks_pt_coeffs_alloc(coeff_count, base2k, prec.k());
+    host_pt.set_meta(prec.meta());
+    let mut packed: Vec<F> = vec![F::zero(); coeff_count];
+    if let Some(r) = re {
+        packed[0] = to_scalar(r);
+    }
+    if let Some(i) = im {
+        packed[1] = to_scalar(i);
+    }
+    host_pt.encode_host_floats(&packed).unwrap();
+    upload_pt(module, &host_pt)
+}
+
+/// Encodes a full-degree constant (sets coefficient 0 = re, coefficient m = im) and uploads.
+pub fn ckks_pt_cst_full<BE, F>(
+    host_module: &Module<HostBytesBackend<BE::Ring>>,
+    module: &Module<BE>,
+    base2k: Base2K,
+    prec: CKKSLayout,
+    m: usize,
+    re: Option<f64>,
+    im: Option<f64>,
+) -> CKKSPlaintextOwned<BE>
+where
+    BE: HostStaged,
+    F: TestScalar,
+{
+    let n = m * 2;
+    let mut host_pt = host_module.ckks_pt_vec_alloc(host_module.ckks_max_slots(), base2k, prec.k());
+    host_pt.set_meta(prec.meta());
+    let mut coeffs: Vec<F> = vec![F::zero(); n];
+    if let Some(r) = re {
+        coeffs[0] = to_scalar(r);
+    }
+    if let Some(i) = im {
+        coeffs[m] = to_scalar(i);
+    }
+    host_pt.encode_host_floats(&coeffs).unwrap();
+    upload_pt(module, &host_pt)
+}
+
+/// Encodes and uploads the add/sub test constant.
+pub fn add_sub_const_pt<BE, F>(
+    host_module: &Module<HostBytesBackend<BE::Ring>>,
+    module: &Module<BE>,
+    base2k: Base2K,
+) -> CKKSPlaintextOwned<BE>
+where
+    BE: HostStaged,
+    F: TestScalar,
+{
+    ckks_pt_cst::<BE, F>(
+        host_module,
+        module,
+        base2k,
+        PT_PREC,
+        Some(ADD_SUB_CONST.0),
+        Some(ADD_SUB_CONST.1),
+    )
+}
+
+/// Encodes and uploads the multiply test constant as a full-degree plaintext.
+pub fn mul_const_full_pt<BE, F>(
+    host_module: &Module<HostBytesBackend<BE::Ring>>,
+    module: &Module<BE>,
+    base2k: Base2K,
+    m: usize,
+) -> CKKSPlaintextOwned<BE>
+where
+    BE: HostStaged,
+    F: TestScalar,
+{
+    ckks_pt_cst_full::<BE, F>(host_module, module, base2k, PT_PREC, m, Some(MUL_CONST.0), Some(MUL_CONST.1))
+}
+
+// ─── key generation ───────────────────────────────────────────────────────────
+
+/// Generates and uploads a raw secret key plus a prepared secret key.
+///
+/// Returns `(sk_raw, sk_prepared)`.  `sk_raw` is needed to generate evaluation
+/// keys; `sk_prepared` is used for encrypt/decrypt.
+pub fn gen_sk_with_raw<BE>(
+    params: &CKKSTestParams,
+    module: &Module<BE>,
+    _host_module: &Module<HostBytesBackend<BE::Ring>>,
+    seed: [u8; 32],
+) -> (BackendGLWESecret<BE>, GLWESecretPrepared<BE::OwnedBuf, BE>)
+where
+    BE: TestContextBackend,
+    Module<BE>: TestContextSharedModule<BE>,
+{
+    let glwe_infos = params.glwe_layout();
+    let mut source = Source::new(seed);
+    let mut sk_raw = module.glwe_secret_alloc_from_infos(&glwe_infos);
+    module.glwe_secret_fill_ternary_hw(&mut sk_raw, params.hw, &mut source);
+    let mut sk = module.glwe_secret_prepared_alloc_from_infos(&glwe_infos);
+    module.glwe_secret_prepare(&mut sk, &sk_raw);
+    (sk_raw, sk)
+}
+
+/// Generates a prepared secret key (convenience wrapper around [`gen_sk_with_raw`]).
+pub fn gen_sk<BE>(
+    params: &CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend<BE::Ring>>,
+    seed: [u8; 32],
+) -> GLWESecretPrepared<BE::OwnedBuf, BE>
+where
+    BE: TestContextBackend,
+    Module<BE>: TestContextSharedModule<BE>,
+{
+    gen_sk_with_raw(params, module, host_module, seed).1
+}
+
+/// Generates a prepared tensor key (multiplication relinearisation key).
+pub fn gen_tsk<BE>(
+    params: &CKKSTestParams,
+    module: &Module<BE>,
+    sk_raw: &BackendGLWESecret<BE>,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> GLWETensorKeyPrepared<BE::OwnedBuf, BE>
+where
+    BE: TestContextBackend,
+    Module<BE>: TestContextSharedModule<BE>,
+{
+    let tsk_infos = params.tsk_layout();
+    let mut xa = Source::new(next_test_seed(1));
+    let mut xe = Source::new(next_test_seed(2));
+    let mut tsk = module.glwe_tensor_key_alloc_from_infos(&tsk_infos);
+    module.glwe_tensor_key_encrypt_sk(&mut tsk, sk_raw, &mut xe, &mut xa, scratch);
+    let mut tsk_prepared = module.alloc_tensor_key_prepared_from_infos(&tsk_infos);
+    module.prepare_tensor_key(&mut tsk_prepared, &tsk, scratch);
+    tsk_prepared
+}
+
+/// Generates a prepared automorphism key for rotation (`index ≥ 0`) or
+/// conjugation (`index == -1`).
+pub fn gen_atk<BE>(
+    params: &CKKSTestParams,
+    module: &Module<BE>,
+    galois_element: i64,
+    sk_raw: &BackendGLWESecret<BE>,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>
+where
+    BE: TestContextBackend,
+    Module<BE>: TestContextSharedModule<BE>,
+{
+    let atk_infos = params.atk_layout();
+    let mut xa = Source::new(next_test_seed(1));
+    let mut xe = Source::new(next_test_seed(2));
+    let mut atk = module.glwe_automorphism_key_alloc_from_infos(&atk_infos);
+    module.glwe_automorphism_key_encrypt_sk(&mut atk, galois_element, sk_raw, &mut xe, &mut xa, scratch);
+    let mut atk_prepared = module.glwe_automorphism_key_prepared_alloc_from_infos(&atk_infos);
+    module.glwe_automorphism_key_prepare(&mut atk_prepared, &atk, scratch);
+    atk_prepared
+}
+
+/// Key set that records the Galois element and precision of each lookup.
+pub(crate) struct QueryLog<K> {
+    keys: HashMap<i64, K>,
+    seen: RefCell<Vec<(i64, TorusPrecision)>>,
+}
+
+impl<K> QueryLog<K> {
+    pub(crate) fn new(keys: HashMap<i64, K>) -> Self {
+        Self {
+            keys,
+            seen: RefCell::new(Vec::new()),
+        }
+    }
+
+    /// The lookups recorded since the last call.
+    pub(crate) fn take(&self) -> Vec<(i64, TorusPrecision)> {
+        self.seen.take()
+    }
+}
+
+impl<BE: Backend, K: GLWEAutomorphismKeyPreparedToBackendRef<BE>> GetAutomorphismKey<BE> for QueryLog<K> {
+    fn lookup_automorphism_key(
+        &self,
+        p: i64,
+        k: TorusPrecision,
+    ) -> poulpy_core::Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
+        self.seen.borrow_mut().push((p, k));
+        self.keys.get_automorphism_key(p, k)
+    }
+}
+
+/// Generates a prepared rank-1 GLWE key-switching key from `sk_in` to `sk_out`,
+/// sized for an input ciphertext of modulus `k_in` bits.
+pub fn gen_switching_key<BE>(
+    params: &CKKSTestParams,
+    module: &Module<BE>,
+    sk_in: &BackendGLWESecret<BE>,
+    sk_out: &BackendGLWESecret<BE>,
+    k_in: usize,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> GLWESwitchingKeyPrepared<BE::OwnedBuf, BE>
+where
+    BE: TestContextBackend,
+    Module<BE>: TestContextSharedModule<BE>,
+{
+    let infos = params.ksk_layout(k_in);
+    let mut xa = Source::new(next_test_seed(1));
+    let mut xe = Source::new(next_test_seed(2));
+    let mut ksk = module.glwe_switching_key_alloc_from_infos(&infos);
+    module.glwe_switching_key_encrypt_sk(&mut ksk, sk_in, sk_out, &mut xe, &mut xa, scratch);
+    let mut ksk_prepared = module.glwe_switching_key_prepared_alloc_from_infos(&ksk);
+    module.glwe_switching_key_prepare(&mut ksk_prepared, &ksk, scratch);
+    ksk_prepared
+}
+
+/// Generates the prepared embed and trace keys between the conjugate-invariant secret
+/// `ci_sk` and the standard secret `sk` of `module`, of twice its degree.
+pub fn gen_ci_keys<BE, S>(
+    params: &CKKSTestParams,
+    module: &Module<BE>,
+    ci_sk: &S,
+    sk: &BackendGLWESecret<BE>,
+    k_in: usize,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> (
+    GLWECIEmbedKeyPrepared<BE::OwnedBuf, BE>,
+    GLWECITraceKeyPrepared<BE::OwnedBuf, BE>,
+)
+where
+    BE: TestContextBackend,
+    Module<BE>: TestContextSharedModule<BE> + GLWECIKeyEncryptSk<BE>,
+    S: GLWESecretToBackendRef<BE>,
+{
+    let infos = params.ksk_layout(k_in);
+    let mut xa = Source::new(next_test_seed(1));
+    let mut xe = Source::new(next_test_seed(2));
+    let mut embed = module.glwe_ci_embed_key_alloc_from_infos(&infos);
+    module.glwe_ci_embed_key_encrypt_sk(&mut embed, ci_sk, sk, &mut xe, &mut xa, scratch);
+    let mut trace = module.glwe_ci_trace_key_alloc_from_infos(&infos);
+    module.glwe_ci_trace_key_encrypt_sk(&mut trace, ci_sk, sk, &mut xe, &mut xa, scratch);
+    let mut bytes = Vec::new();
+    trace.write_to(&mut bytes).unwrap();
+    let mut restored = module.glwe_ci_trace_key_alloc_from_infos(&infos);
+    restored.read_from(&mut bytes.as_slice()).unwrap();
+    assert!(restored == trace);
+    trace = restored;
+    let mut embed_prepared = module.glwe_ci_embed_key_prepared_alloc_from_infos(&infos);
+    module.glwe_ci_key_prepare(&mut embed_prepared, &embed, scratch);
+    let mut trace_prepared = module.glwe_ci_trace_key_prepared_alloc_from_infos(&infos);
+    module.glwe_ci_key_prepare(&mut trace_prepared, &trace, scratch);
+    (embed_prepared, trace_prepared)
+}
+
+/// Generates the sparse-secret encapsulation key-switching keys
+/// (<https://eprint.iacr.org/2022/024>): samples a fresh sparse ephemeral secret
+/// of Hamming weight `ephemeral_secret_weight`, then returns the prepared
+/// `denseToSparse` key (sized at the input modulus `k_in`) and `sparseToDense` key
+/// (sized at the bootstrap modulus `k_out`), both derived from `sk_dense_raw`.
+#[allow(clippy::too_many_arguments)]
+pub fn gen_encapsulation_keys<BE>(
+    params: &CKKSTestParams,
+    module: &Module<BE>,
+    _host_module: &Module<HostBytesBackend<BE::Ring>>,
+    sk_dense_raw: &BackendGLWESecret<BE>,
+    ephemeral_secret_weight: usize,
+    k_in: usize,
+    k_out: usize,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> (
+    GLWESwitchingKeyPrepared<BE::OwnedBuf, BE>,
+    GLWESwitchingKeyPrepared<BE::OwnedBuf, BE>,
+)
+where
+    BE: TestContextBackend,
+    Module<BE>: TestContextSharedModule<BE>,
+{
+    // Sparse ephemeral secret skSparse (fixed Hamming weight).
+    let mut source = Source::new(next_test_seed(7));
+    let mut sk_sparse_raw = module.glwe_secret_alloc_from_infos(&params.glwe_layout());
+    module.glwe_secret_fill_ternary_hw(&mut sk_sparse_raw, ephemeral_secret_weight, &mut source);
+    *sk_sparse_raw.dist_mut() = Distribution::ENCAPSULATED("sparse-encapsulation");
+
+    let dense_to_sparse = gen_switching_key(params, module, sk_dense_raw, &sk_sparse_raw, k_in, scratch);
+    let sparse_to_dense = gen_switching_key(params, module, &sk_sparse_raw, sk_dense_raw, k_out, scratch);
+    (dense_to_sparse, sparse_to_dense)
+}
+
+// ─── encrypt / decrypt ────────────────────────────────────────────────────────
+
+/// Encrypts `(re, im)` at the given `k` using `params.prec()` as the plaintext
+/// precision.
+#[allow(clippy::too_many_arguments)]
+pub fn ckks_encrypt<BE, F, E>(
+    params: &CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend<BE::Ring>>,
+    encoder: &ReferenceEncoder<E>,
+    sk: &GLWESecretPrepared<BE::OwnedBuf, BE>,
+    k: usize,
+    re: &[F],
+    im: &[F],
+    scratch: &mut ScratchArena<'_, BE>,
+) -> CKKSCiphertextOwned<BE>
+where
+    BE: TestContextBackend,
+    Module<BE>: TestContextSharedModule<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F>,
+{
+    ckks_encrypt_with_prec(params, module, host_module, encoder, sk, k, re, im, params.prec(), scratch)
+}
+
+/// Encrypts a real **coefficient** vector directly (no slot/FFT encoding), at the
+/// given `k` and `prec`. `coeffs` has length `params.n` (the ring degree) and is placed
+/// into the polynomial coefficients. This is the input form for the homomorphic
+/// `CoeffsToSlots` test pipeline, which encrypts `bitReverse(vReal)||bitReverse(vImag)`
+/// coefficient-wise.
+#[allow(clippy::too_many_arguments)]
+pub fn ckks_encrypt_coeffs<BE, F>(
+    params: &CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend<BE::Ring>>,
+    sk: &GLWESecretPrepared<BE::OwnedBuf, BE>,
+    k: usize,
+    coeffs: &[F],
+    prec: CKKSLayout,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> CKKSCiphertextOwned<BE>
+where
+    BE: TestContextBackend,
+    Module<BE>: TestContextSharedModule<BE>,
+    F: TestScalar,
+{
+    let mut host_pt = host_module.ckks_plaintext_alloc(params.n.into(), params.base2k.into(), prec.k());
+    host_pt.set_meta(prec.meta());
+    host_pt.encode_host_floats(coeffs).unwrap();
+    let pt = upload_pt(module, &host_pt);
+
+    let mut ct = alloc_ct(params, module, k);
+    let mut xa = Source::new(next_test_seed(5));
+    let mut xe = Source::new(next_test_seed(6));
+    module.ckks_encrypt_sk(&mut ct, &pt, sk, &mut xe, &mut xa, scratch).unwrap();
+    // A full-degree plaintext reads as dense: keep the layout's claim.
+    ct.set_log_sparsity(prec.meta.log_sparsity);
+    ct
+}
+
+/// Encrypts `(re, im)` at the given `k` and explicit `prec`.
+#[allow(clippy::too_many_arguments)]
+pub fn ckks_encrypt_with_prec<BE, F, E>(
+    params: &CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend<BE::Ring>>,
+    encoder: &ReferenceEncoder<E>,
+    sk: &GLWESecretPrepared<BE::OwnedBuf, BE>,
+    k: usize,
+    re: &[F],
+    im: &[F],
+    prec: CKKSLayout,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> CKKSCiphertextOwned<BE>
+where
+    BE: TestContextBackend,
+    Module<BE>: TestContextSharedModule<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F>,
+{
+    let mut host_pt = host_module.ckks_pt_vec_alloc(host_module.ckks_max_slots(), params.base2k.into(), prec.k());
+    host_pt.set_meta(prec.meta());
+    encoder.encode_reim(&mut host_pt, re, im).unwrap();
+    let pt = upload_pt(module, &host_pt);
+
+    let mut ct = alloc_ct(params, module, k);
+    let mut xa = Source::new(next_test_seed(3));
+    let mut xe = Source::new(next_test_seed(4));
+    module.ckks_encrypt_sk(&mut ct, &pt, sk, &mut xe, &mut xa, scratch).unwrap();
+    // A full-degree plaintext reads as dense: keep the layout's claim.
+    ct.set_log_sparsity(prec.meta.log_sparsity);
+    ct
+}
+
+/// Encrypts an already-encoded host plaintext at the given `k`. Use this when the
+/// slot encoding is not a plain dense `(re, im)` or coefficient vector — e.g. a
+/// sparse / repacked layout the caller built with [`ReferenceEncoder::encode_reim`].
+pub fn ckks_encrypt_pt<BE>(
+    params: &CKKSTestParams,
+    module: &Module<BE>,
+    sk: &GLWESecretPrepared<BE::OwnedBuf, BE>,
+    k: usize,
+    host_pt: &CKKSPlaintextOwned<HostBytesBackend<BE::Ring>>,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> CKKSCiphertextOwned<BE>
+where
+    BE: TestContextBackend,
+    Module<BE>: TestContextSharedModule<BE>,
+{
+    let pt = upload_pt(module, host_pt);
+
+    let mut ct = alloc_ct(params, module, k);
+    let mut xa = Source::new(next_test_seed(3));
+    let mut xe = Source::new(next_test_seed(4));
+    module.ckks_encrypt_sk(&mut ct, &pt, sk, &mut xe, &mut xa, scratch).unwrap();
+    ct
+}
+
+/// Asserts that `ct`, when flagged canonical, is canonical at `ct.k()`.
+///
+/// Canonical at `k` means, coefficient by coefficient: the low
+/// `(-k) mod base2k` bits of the last live limb are zero, every limb past
+/// `ceil(k / base2k)` is zero, and no digit exceeds `2^(base2k - 1)` in
+/// magnitude. The first two are what the convolution consumers depend on:
+/// their `cnv_offset` rescales by `2^k`, so any content an operand carries
+/// below its own `k` comes back at full magnitude in the product.
+///
+/// The digit bound is the closed range, not the half-open one `normalize`
+/// produces: rotation, automorphism and negation are negacyclic and send the
+/// single digit `-2^(base2k - 1)` to `+2^(base2k - 1)`. That changes no value
+/// and nothing below `k`, so it is allowed here.
+///
+/// Every decryption helper in this module runs it first, so each operation
+/// test holds an output its flag calls canonical to the invariant before
+/// checking the value.
+///
+/// `BE` cannot be inferred from `CKKSCiphertextOwned<BE>`, which is a type
+/// alias over the backend's buffer and word types, so callers pass it.
+pub fn assert_canonical_at_k<BE: TestContextBackend>(label: &str, ct: &CKKSCiphertextOwned<BE>) {
+    if !ct.is_canonical() {
+        return;
+    }
+    let host = ct.to_host_owned::<BE>();
+    let base2k: usize = host.base2k().as_usize();
+    let k: usize = host.k().as_usize();
+    let live: usize = k.div_ceil(base2k);
+    let pad: usize = (base2k - k % base2k) % base2k;
+    let half: i64 = 1i64 << (base2k - 1);
+    let data = host.data();
+    for col in 0..data.cols() {
+        for limb in 0..live.min(data.size()) {
+            for (i, &digit) in data.at(col, limb).iter().enumerate() {
+                assert!(
+                    (-half..=half).contains(&digit),
+                    "{label}: col {col} limb {limb} coeff {i}: digit {digit} exceeds 2^(base2k - 1) (base2k {base2k}, k {k}, live limbs {live}, pad {pad})"
+                );
+            }
+        }
+        if live > 0 && pad != 0 {
+            let mask: i64 = (1i64 << pad) - 1;
+            let dirty: usize = data.at(col, live - 1).iter().filter(|&&d| d & mask != 0).count();
+            assert_eq!(
+                dirty,
+                0,
+                "{label}: col {col} limb {}: {dirty} coefficients carry bits below k = {k}",
+                live - 1
+            );
+        }
+        for limb in live..data.size() {
+            let dirty: usize = data.at(col, limb).iter().filter(|&&d| d != 0).count();
+            assert_eq!(
+                dirty, 0,
+                "{label}: col {col} limb {limb} past k = {k}: {dirty} non-zero coefficients"
+            );
+        }
+    }
+}
+
+/// Decrypts `ct` with `prec` metadata and returns the host-side plaintext.
+pub fn ckks_decrypt_with_prec<BE>(
+    module: &Module<BE>,
+    ct: &CKKSCiphertextOwned<BE>,
+    sk: &GLWESecretPrepared<BE::OwnedBuf, BE>,
+    prec: CKKSLayout,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> anyhow::Result<CKKSPlaintext<AlignedBuf, BE::ZnxWord, BE::Ring>>
+where
+    BE: TestContextBackend,
+    Module<BE>: TestContextSharedModule<BE>,
+{
+    assert_canonical_at_k::<BE>("decrypt", ct);
+    let mut pt = module.ckks_plaintext_alloc(ct.n(), ct.base2k(), prec.k());
+    pt.set_meta(prec.meta());
+    module.ckks_decrypt(&mut pt, ct, sk, scratch)?;
+    Ok(download_pt::<BE>(&pt))
+}
+
+/// Decrypts and decodes `ct`, returning the slot vectors.
+pub fn ckks_decrypt_decode<BE, F, E>(
+    params: &CKKSTestParams,
+    module: &Module<BE>,
+    encoder: &ReferenceEncoder<E>,
+    ct: &CKKSCiphertextOwned<BE>,
+    sk: &GLWESecretPrepared<BE::OwnedBuf, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> (Vec<F>, Vec<F>)
+where
+    BE: TestContextBackend,
+    Module<BE>: TestContextSharedModule<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F>,
+{
+    // Cap the integer headroom so the centered plaintext fits the i128 decode codec
+    // (`log_delta + log_budget <= 127`). This is the decode-time equivalent of
+    // rescaling the ciphertext to a smaller modulus before decoding: the decoded
+    // values are bounded, so dropping the unused high-order budget is lossless and
+    // lets the suite exercise scales (`log_delta`) wider than would otherwise leave
+    // room for the full noise budget.
+    let log_delta = ct.log_delta();
+    let log_budget = ct
+        .log_budget()
+        .min(params.prec().log_budget())
+        .min(127usize.saturating_sub(log_delta));
+    let prec = CKKSLayout {
+        glwe_layout: GLWELayout {
+            n: ct.n(),
+            base2k: ct.base2k(),
+            k: (log_delta + log_budget).into(),
+            rank: Rank(1),
+        },
+        meta: GLWEPlaintextMeta {
+            scale: Scale::Log(log_delta),
+            slots: SlotsKind::Complex,
+            log_sparsity: 0,
+        },
+    };
+    let pt = ckks_decrypt_with_prec(module, ct, sk, prec, scratch).unwrap();
+    ckks_decode_pt(encoder, encoder.m(), &pt)
+}
+
+/// Decodes a host-side plaintext to slot vectors.
+pub fn ckks_decode_pt<F, E, R: Ring>(
+    encoder: &ReferenceEncoder<E>,
+    m: usize,
+    pt: &CKKSPlaintextOwned<HostBytesBackend<R>>,
+) -> (Vec<F>, Vec<F>)
+where
+    F: TestScalar,
+    E: NegacyclicFFT<F>,
+{
+    let mut re = vec![F::zero(); m];
+    let mut im = vec![F::zero(); m];
+    encoder.decode_reim(pt, &mut re, &mut im).unwrap();
+    (re, im)
+}
+
+// ─── precision assertion helpers ─────────────────────────────────────────────
+
+#[derive(Clone, Copy, Debug)]
+pub struct PrecisionStats {
+    pub min_log2_prec: f64,
+    pub max_log2_prec: f64,
+    pub avg_log2_prec: f64,
+    pub worst_idx: usize,
+    pub worst_got: f64,
+    pub worst_want: f64,
+    pub worst_err: f64,
+}
+
+const PRECISION_GUARD_BITS: f64 = 2.0;
+
+/// Slack (in log2 bits) added to the analytic decryption-noise floor
+/// `2^(-k + log2(N))` used by [`assert_decrypt_precision`]. Sized to
+/// absorb the extra noise of key-switched operations (conjugate / rotate sit
+/// ~2.5 bits above the base floor) while keeping the ceiling tight enough to
+/// flag noise regressions and head-room corruption.
+const NOISE_GUARD_BITS: f64 = 4.0;
+
+/// Returns the minimum expected average log2 precision for standard-ring CKKS.
+pub fn expected_log2_precision(log_delta: usize, degree: usize) -> f64 {
+    (log_delta as f64 - degree.ilog2() as f64 - PRECISION_GUARD_BITS).max(0.0)
+}
+
+/// Computes log2 precision statistics: precisions are derived from **aggregate**
+/// errors via `−log₂(error)`, *not* as the mean of per-slot `−log₂`.
+///
+/// * `avg_log2_prec = −log₂(mean|err|)` — the precision of the average error
+///   (`AVG Prec`), which is `≤` the mean of per-slot precisions by Jensen.
+/// * `min_log2_prec = −log₂(max|err|)` — the worst slot (`MIN Prec`).
+/// * `max_log2_prec = −log₂(min|err|)` — the best slot (`MAX Prec`).
+///
+/// A non-positive aggregate error is floored to `2^−log_delta` before the `−log₂`,
+/// so an exact-zero error reads as `log_delta` bits rather than `+∞`.
+///  Positive errors are **not** capped.
+pub fn precision_stats<F>(got: &[F], want: &[F], log_delta: usize) -> PrecisionStats
+where
+    F: Float + ToPrimitive + Debug,
+{
+    assert_eq!(got.len(), want.len(), "precision_stats: vector length mismatch");
+    let mut sum_err = 0.0f64;
+    let mut max_err = 0.0f64;
+    let mut min_err = f64::INFINITY;
+    let mut worst_idx = 0usize;
+    let mut worst_got = 0.0f64;
+    let mut worst_want = 0.0f64;
+
+    for (idx, (g, w)) in got.iter().zip(want.iter()).enumerate() {
+        let err = (*g - *w).abs().to_f64().unwrap();
+        sum_err += err;
+        if err > max_err {
+            max_err = err;
+            worst_idx = idx;
+            worst_got = g.to_f64().unwrap();
+            worst_want = w.to_f64().unwrap();
+        }
+        min_err = min_err.min(err);
+    }
+
+    let log_scale = log_delta as f64;
+
+    let to_prec = |err: f64| -> f64 {
+        let err = if err <= 0.0 { (-log_scale).exp2() } else { err };
+        -err.log2()
+    };
+
+    PrecisionStats {
+        min_log2_prec: to_prec(max_err),
+        max_log2_prec: to_prec(min_err),
+        avg_log2_prec: to_prec(sum_err / got.len() as f64),
+        worst_idx,
+        worst_got,
+        worst_want,
+        worst_err: max_err,
+    }
+}
+
+/// Asserts that `got` and `want` meet the expected average log2 precision.
+pub fn assert_precision<F>(label: &str, got: &[F], want: &[F], log_delta: usize, degree: usize)
+where
+    F: Float + ToPrimitive + Debug,
+{
+    let stats = precision_stats(got, want, log_delta);
+    let min_bits = expected_log2_precision(log_delta, degree);
+    assert!(
+        stats.avg_log2_prec >= min_bits,
+        "{label}: avg precision {:.1} bits < {:.1} (log_delta={}, degree={}, min={:.1}, max={:.1}, max_err={}, sample_idx={}, got={}, want={})",
+        stats.avg_log2_prec,
+        min_bits,
+        log_delta,
+        degree,
+        stats.min_log2_prec,
+        stats.max_log2_prec,
+        stats.worst_err,
+        stats.worst_idx,
+        stats.worst_got,
+        stats.worst_want
+    );
+}
+
+/// Asserts precision at a given `log_delta` (without decryption).
+pub fn assert_precision_for_log_delta<F>(label: &str, got: &[F], want: &[F], log_delta: usize, degree: usize)
+where
+    F: Float + ToPrimitive + Debug,
+{
+    assert_precision(label, got, want, log_delta, degree);
+}
+
+/// Decrypts `ct`, decodes, and asserts precision at `ct.log_delta()`.
+#[allow(clippy::too_many_arguments)]
+pub fn assert_decrypt_precision<BE, F, E>(
+    label: &str,
+    params: &CKKSTestParams,
+    module: &Module<BE>,
+    encoder: &ReferenceEncoder<E>,
+    ct: &CKKSCiphertextOwned<BE>,
+    sk: &GLWESecretPrepared<BE::OwnedBuf, BE>,
+    want_re: &[F],
+    want_im: &[F],
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: TestContextBackend,
+    Module<BE>: TestContextSharedModule<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F>,
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
+{
+    assert_decrypt_precision_at_log_delta(
+        label,
+        params,
+        module,
+        encoder,
+        ct,
+        sk,
+        want_re,
+        want_im,
+        ct.log_delta(),
+        scratch,
+    )
+}
+
+/// Asserts that `ct` decrypts to `(want_re, want_im)` with two complementary
+/// checks, at the caller-provided precision target `log_delta`.
+///
+/// **Ring domain (valid plaintext).** Encodes the expected message at the
+/// ciphertext's full metadata — so the reference spans the same limbs as a
+/// full-width decryption — and measures the noise `std` of `decrypt(ct) - want(X)`
+/// directly over the polynomial coefficients. Unlike decrypt-then-decode, this
+/// does *not* clip the limbs above the plaintext head-room, so any corruption
+/// there contributes to the noise instead of being silently discarded. The std
+/// is bounded by the analytic floor `2^(-k + log2(N)) * 2^NOISE_GUARD_BITS`,
+/// with `k = log_delta + log_budget`. This mainly asserts that the
+/// top bits of the plaintext are zero, i.e. that the ciphertext is valid.
+///
+/// **Canonical embedding (precision).** Decrypts, decodes back to slots, and
+/// asserts the per-slot log2 precision matches the analytic expectation at
+/// `log_delta` (see [`assert_precision`]). This checks that the precision of the
+/// recovered plaintext is what we would expect.
+#[allow(clippy::too_many_arguments)]
+pub fn assert_decrypt_precision_at_log_delta<BE, F, E>(
+    label: &str,
+    params: &CKKSTestParams,
+    module: &Module<BE>,
+    encoder: &ReferenceEncoder<E>,
+    ct: &CKKSCiphertextOwned<BE>,
+    sk: &GLWESecretPrepared<BE::OwnedBuf, BE>,
+    want_re: &[F],
+    want_im: &[F],
+    log_delta: usize,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: TestContextBackend,
+    Module<BE>: TestContextSharedModule<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F>,
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
+{
+    assert_canonical_at_k::<BE>(label, ct);
+
+    // Encode the expected message at the ciphertext's full metadata, so the
+    // reference spans the same limbs as a full-width decryption (no head-room
+    // clipping — any corruption above the head-room shows up as noise).
+    let mut pt_want = module.ckks_pt_vec_alloc(module.ckks_max_slots(), ct.base2k(), ct.k());
+    pt_want.set_meta(GLWEPlaintextMeta {
+        scale: Scale::Log(ct.log_delta()),
+        slots: SlotsKind::Complex,
+        log_sparsity: 0,
+    });
+    encoder.encode_reim(&mut pt_want, want_re, want_im).unwrap();
+
+    // Decrypt once into the raw full-width plaintext; both checks below extract
+    // their own view from it (re-extracting an already-extracted plaintext would
+    // shift the message scale twice). `full_pt` carries `ct`'s metadata so
+    // the extracts re-precision it exactly as `ckks_decrypt` would.
+    let mut full_pt = module.glwe_plaintext_alloc_from_infos(ct);
+    module.glwe_decrypt(ct, &mut full_pt, sk, scratch);
+    let full_pt = CKKSPlaintext::from_inner(full_pt, ct.meta());
+
+    // ── Ring-domain check: the decryption is a valid plaintext. ──────────────
+    // Re-precision the decryption at full width, subtract the reference and bound
+    // the residual noise `std` directly over the polynomial coefficients. Unlike
+    // the decode below, this does *not* clip the limbs above the plaintext
+    // head-room, so any corruption there fails here.
+    let mut pt_noise = module.ckks_plaintext_alloc_from_infos(ct);
+    module.ckks_extract_pt(&mut pt_noise, &full_pt, scratch).unwrap();
+    module.glwe_sub_assign(&mut pt_noise, &pt_want);
+
+    let noise = pt_noise.inner.data().stats(pt_noise.base2k().into(), 0);
+    let noise_log2 = if noise.std() == 0.0 {
+        f64::NEG_INFINITY
+    } else {
+        noise.std().log2()
+    };
+
+    let k = log_delta + ct.log_budget();
+    let log_n = params.n.ilog2() as f64;
+    let bound = -(k as f64) + log_n + NOISE_GUARD_BITS;
+    assert!(
+        noise_log2 <= bound,
+        "{label}: ring noise std {noise_log2:.1} bits > bound {bound:.1} \
+         (k={k}, log_delta={log_delta}, log_budget={}, log_n={log_n})",
+        ct.log_budget(),
+    );
+
+    // ── Canonical-embedding check: the decoded slots match at `log_delta`. ───
+    // Re-precision the decryption down to a budget the decoder can represent —
+    // decoding the full storage width would overflow the decoder's
+    // `log_delta + log_budget <= 127` limit.
+    let mut pt_decode = module.ckks_pt_vec_alloc(
+        module.ckks_max_slots(),
+        ct.base2k(),
+        (ct.log_delta() + ct.log_budget().min(params.prec().log_budget())).into(),
+    );
+    pt_decode.set_meta(GLWEPlaintextMeta {
+        scale: Scale::Log(ct.log_delta()),
+        slots: SlotsKind::Complex,
+        log_sparsity: 0,
+    });
+    module.ckks_extract_pt(&mut pt_decode, &full_pt, scratch).unwrap();
+    let pt_host = download_pt::<BE>(&pt_decode);
+    let (re_out, im_out) = ckks_decode_pt(encoder, encoder.m(), &pt_host);
+    assert_precision(&format!("{label} re"), &re_out, want_re, log_delta, params.n);
+    assert_precision(&format!("{label} im"), &im_out, want_im, log_delta, params.n);
+}
+
+// ─── metadata assertion helpers ───────────────────────────────────────────────
+
+pub fn assert_ct_meta<D: Data, W: ZnxWord, R: Ring>(
+    label: &str,
+    ct: &CKKSCiphertext<D, W, R>,
+    log_delta: usize,
+    log_budget: usize,
+) {
+    assert_eq!(ct.log_delta(), log_delta, "{label}: unexpected log_delta");
+    assert_eq!(ct.log_budget(), log_budget, "{label}: unexpected log_budget");
+}
+
+pub fn assert_ckks_error(label: &str, err: &crate::CKKSError, want: CKKSCompositionError) {
+    // No downcast needed: typed operations surface semantic failures as
+    // `CKKSError::Composition` directly.
+    assert_eq!(err.composition(), Some(&want), "{label}: unexpected error: {err}");
+}
+
+/// Asserts the metadata a unary op stamps on `ct`: `input`'s, less the bits by which
+/// `input.k()` exceeds `dst_k`, the destination's `k()` before the call.
+pub fn assert_unary_output_meta<D: Data, W: ZnxWord, R: Ring>(
+    label: &str,
+    ct: &CKKSCiphertext<D, W, R>,
+    dst_k: usize,
+    input: &CKKSCiphertext<impl Data, W, R>,
+) {
+    let offset = input.k().as_usize().saturating_sub(dst_k);
+    assert_ct_meta(label, ct, input.log_delta(), input.log_budget() - offset);
+}
+
+/// Asserts the metadata an addition or subtraction stamps on `ct`: `min(log_delta)` and
+/// `min(log_budget)`, less the bits by which their sum exceeds `dst_k`, the destination's
+/// `k()` before the call.
+pub fn assert_binary_output_meta<D: Data, W: ZnxWord, R: Ring>(
+    label: &str,
+    ct: &CKKSCiphertext<D, W, R>,
+    dst_k: usize,
+    a: &CKKSCiphertext<impl Data, W, R>,
+    b: &CKKSCiphertext<impl Data, W, R>,
+) {
+    let log_delta = a.log_delta().min(b.log_delta());
+    let log_budget = a.log_budget().min(b.log_budget());
+    let offset = (log_budget + log_delta).saturating_sub(dst_k);
+    assert_ct_meta(label, ct, log_delta, log_budget - offset);
+}
+
+/// Asserts the metadata a ct × ct product stamps on `ct`, and that `ct` is canonical:
+/// `log_delta = min(log_delta)` and `log_budget = min(log_budget) - max(log_delta)`,
+/// less the bits by which that product exceeds `dst_k`, the destination's `k()` before
+/// the call (`a.k()` for `_assign`).
+pub fn assert_mul_ct_output_meta<D: Data, W: ZnxWord, R: Ring>(
+    label: &str,
+    ct: &CKKSCiphertext<D, W, R>,
+    dst_k: usize,
+    a: &impl CKKSInfos,
+    b: &impl CKKSInfos,
+) {
+    let log_budget = a.log_budget().min(b.log_budget()) - a.log_delta().max(b.log_delta());
+    let log_delta = a.log_delta().min(b.log_delta());
+    let offset = (log_budget + log_delta).saturating_sub(dst_k);
+    assert_ct_meta(label, ct, log_delta, log_budget - offset);
+    assert!(ct.is_canonical(), "{label}: a relinearized product is canonical");
+}
+
+/// Asserts the metadata a ct × pt product stamps on `ct`, computed from its inputs as
+/// [`CKKSMulOps`] states it: `log_delta = a.log_delta()` and
+/// `log_budget = a.log_budget() - b.log_delta()`, less the bits by which that product
+/// exceeds `dst_k`, the destination's `k()` before the call (`a.k()` for `_assign`).
+/// The product targets that requested width, with value-preserving rounding, not the
+/// buffer's capacity.
+pub fn assert_mul_pt_output_meta<D: Data, W: ZnxWord, R: Ring>(
+    label: &str,
+    ct: &CKKSCiphertext<D, W, R>,
+    dst_k: usize,
+    a: &impl CKKSInfos,
+    b: &impl CKKSInfos,
+) {
+    let log_delta = a.log_delta();
+    let log_budget = a.log_budget() - b.log_delta();
+    let offset = (log_budget + log_delta).saturating_sub(dst_k);
+    assert_ct_meta(label, ct, log_delta, log_budget - offset);
+}

@@ -264,8 +264,8 @@ at memory-bound backends (e.g. GPU). It reuses the entire giant-step loop unchan
 ## 8. CKKS wrapper
 
 The CKKS layer
-([`poulpy-ckks/src/api/linear_transformation.rs`](../../poulpy-ckks/src/api/linear_transformation.rs),
-[`poulpy-ckks/src/reference/linear_transformation.rs`](../../poulpy-ckks/src/reference/linear_transformation.rs))
+([`schemes/poulpy-ckks/src/api/linear_transformation.rs`](../../schemes/poulpy-ckks/src/api/linear_transformation.rs),
+[`schemes/poulpy-ckks/src/reference/linear_transformation.rs`](../../schemes/poulpy-ckks/src/reference/linear_transformation.rs))
 stays thin per spec §11: it owns all `log_delta` / `log_budget` / `cnv_offset` math,
 encodes and pre-rotates the diagonals, builds the galois-element → key map, and delegates
 every FHE operation to the core engine above. No FHE arithmetic lives in the CKKS layer.
