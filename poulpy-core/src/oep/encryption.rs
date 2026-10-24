@@ -1,8 +1,8 @@
 #![allow(clippy::too_many_arguments)]
 
 use poulpy_hal::{
-    api::{VecZnxNormalize, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes},
     layouts::{Backend, Module, ScalarZnxToBackendRef, ScratchArena, ZnxInfos},
+    oep::HalVecZnxImpl,
     source::Source,
 };
 
@@ -17,6 +17,7 @@ use crate::{
         compressed::{GLWEPublicKeyCompressedSeedMut, GLWEPublicKeyCompressedToBackendMut},
         prepared::{GLWEPublicKeyPreparedToBackendRef, GLWESecretPreparedToBackendRef},
     },
+    oep::{GLWENormalizeImpl, SamplingImpl, SecretImpl},
 };
 
 /// # Safety
@@ -24,7 +25,7 @@ use crate::{
 /// Implementations must satisfy the contracts of all trait methods, including
 /// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
 /// associated method signatures.
-pub unsafe trait EncryptionImpl: Backend + crate::oep::SecretImpl {
+pub unsafe trait EncryptionImpl: Backend + SamplingImpl + HalVecZnxImpl + GLWENormalizeImpl + SecretImpl {
     fn fill_glwe_mask_from_source<R>(module: &Module<Self>, res: &mut R, source_xa: &mut Source)
     where
         R: GLWEToBackendMut<Self>;
@@ -197,7 +198,6 @@ pub unsafe trait EncryptionImpl: Backend + crate::oep::SecretImpl {
     where
         R: GLWEInfos,
         K: GLWEInfos,
-        Module<Self>: VecZnxNormalizeTmpBytes,
     {
         super::derived::encryption::glwe_encrypt_pk_smudged_tmp_bytes_derived(module, res_infos, pk_infos)
     }
@@ -218,7 +218,6 @@ pub unsafe trait EncryptionImpl: Backend + crate::oep::SecretImpl {
         R: GLWEToBackendMut<Self> + GLWEInfos,
         P: GLWEToBackendRef<Self> + GLWEInfos,
         K: GLWEPublicKeyPreparedToBackendRef<Self> + GLWEInfos,
-        Module<Self>: crate::VecZnxAddNoise<Self> + VecZnxNormalizeAssign<Self> + VecZnxNormalizeTmpBytes,
     {
         super::derived::encryption::glwe_encrypt_pk_smudged_derived(
             module,
@@ -236,7 +235,6 @@ pub unsafe trait EncryptionImpl: Backend + crate::oep::SecretImpl {
     fn glwe_public_key_generate_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GLWEInfos,
-        Module<Self>: crate::GLWENormalize<Self>,
     {
         super::derived::encryption::glwe_public_key_generate_tmp_bytes_derived(module, infos)
     }
@@ -251,7 +249,6 @@ pub unsafe trait EncryptionImpl: Backend + crate::oep::SecretImpl {
     ) where
         R: GLWEPublicKeyToBackendMut<Self> + GetDistributionMut + GLWEInfos,
         S: GLWESecretPreparedToBackendRef<Self> + GetDistribution,
-        Module<Self>: crate::GLWENormalize<Self>,
     {
         super::derived::encryption::glwe_public_key_generate_derived(module, res, sk, source_xe, source_xa, scratch)
     }
@@ -315,7 +312,6 @@ pub unsafe trait EncryptionImpl: Backend + crate::oep::SecretImpl {
     where
         R: GGSWInfos,
         K: GLWEInfos,
-        Module<Self>: VecZnxNormalizeTmpBytes,
     {
         super::derived::encryption::ggsw_encrypt_pk_tmp_bytes_derived(module, res_infos, pk_infos)
     }
@@ -332,7 +328,6 @@ pub unsafe trait EncryptionImpl: Backend + crate::oep::SecretImpl {
         R: GGSWToBackendMut<Self> + GGSWInfos + GGSWAtViewMut<Self>,
         P: ScalarZnxToBackendRef<Self> + ZnxInfos,
         K: GLWEPublicKeyPreparedToBackendRef<Self> + GLWEInfos,
-        Module<Self>: VecZnxNormalize<Self> + VecZnxNormalizeTmpBytes,
     {
         super::derived::encryption::ggsw_encrypt_pk_derived(module, res, pt, pk, source_xu, source_xe, scratch)
     }

@@ -1,5 +1,4 @@
 use poulpy_hal::{
-    api::VecZnxSwitchRing,
     layouts::{Backend, Data, Module, ScratchArena},
     source::Source,
 };
@@ -42,10 +41,7 @@ impl<BE: Backend + GLWECIConversionImpl> GLWECITrace<BE> for Module<BE> {
     }
 }
 
-impl<BE: Backend + GLWECIConversionImpl> GLWESwitchDegree<BE> for Module<BE>
-where
-    Module<BE>: VecZnxSwitchRing<BE>,
-{
+impl<BE: Backend + GLWECIConversionImpl> GLWESwitchDegree<BE> for Module<BE> {
     fn glwe_switch_degree<R, A>(&self, res: &mut R, a: &A)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,

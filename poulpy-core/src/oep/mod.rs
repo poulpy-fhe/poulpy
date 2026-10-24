@@ -18,6 +18,13 @@
 //! other core operations. The polynomial-evaluation schedule composes the
 //! caller's `BSGSOps` arithmetic policy, which owns scheme precision and rounding.
 //!
+//! A family's supertraits are the OEP families, core, sampling or HAL, that its
+//! default bodies dispatch through, as
+//! `EncryptionImpl: SamplingImpl + HalVecZnxImpl + GLWENormalizeImpl + SecretImpl`,
+//! so a default reaches each constituent through the backend's selection with no
+//! bound on the module. A family that only a reference body composes bounds that
+//! reference instead.
+//!
 //! # Selecting an implementation
 //!
 //! `impl_*_reference_full!` macros implement a backend's `*Impl` family with the

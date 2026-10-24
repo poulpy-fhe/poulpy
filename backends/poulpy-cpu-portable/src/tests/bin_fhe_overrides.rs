@@ -763,7 +763,7 @@ unsafe impl poulpy_core::oep::GLWEExternalProductImpl for OpaqueBackend<'static>
         panic!("opaque DFT dispatch probe")
     }
 
-    fn glwe_external_product_tmp_bytes<R: GLWEInfos, A: GLWEInfos, G: GGSWInfos>(_: &Module<Self>, _: &R, _: &A, _: &G) -> usize {
+    fn glwe_external_product_tmp_bytes<R: GLWEInfos, A: GLWEInfos, B: GGSWInfos>(_: &Module<Self>, _: &R, _: &A, _: &B) -> usize {
         panic!("unused public external product probe")
     }
 
