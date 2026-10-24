@@ -1,7 +1,10 @@
 use poulpy_core::layouts::{
     Base2K, Degree, Dnum, GGLWEInfos, GGSWInfos, GLWEInfos, ModuleCoreAlloc, ModuleCoreCompressedAlloc, Rank, TorusPrecision,
 };
-use poulpy_hal::layouts::{Backend, Module};
+use poulpy_hal::{
+    api::ModuleN,
+    layouts::{Backend, Module},
+};
 
 use crate::layouts::{
     GGLWEPat, GGLWEPatCompressed, GGLWEPatCompressedOwned, GGLWEPatOwned, GGSWShare, GGSWShareOwned, GLWEAutomorphismKeyShare,
@@ -11,17 +14,27 @@ use crate::layouts::{
     GLWESwitchingKeyShare, GLWESwitchingKeyShareOwned, GLWETensorKeyShare, GLWETensorKeyShareOwned, ggsw_share_part_layout,
 };
 
+fn assert_degree(module_n: usize, infos_n: Degree) {
+    assert!(
+        infos_n.as_usize() == module_n,
+        "invalid layout: degree differs from the module's"
+    );
+}
+
 /// PAT and share allocation on a backend module.
 ///
 /// Every method is default-bodied over the core allocation supertraits, so the
 /// blanket impl for `Module<BE>` is empty. A fresh PAT or share is zero; share
 /// metadata starts as in core (degrees `0`, Galois element `0`, distribution
-/// `NONE`).
+/// `NONE`). Every `*_alloc_from_infos` panics unless the infos degree is the
+/// module's.
 pub trait MHEModuleAlloc<BE: Backend>:
-    ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+    ModuleN
+    + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
     + ModuleCoreCompressedAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
 {
     fn glwe_pat_compressed_alloc_from_infos<A: GLWEInfos>(&self, infos: &A) -> GLWEPatCompressedOwned<BE> {
+        assert_degree(self.n(), infos.n());
         GLWEPatCompressed {
             inner: self.glwe_compressed_alloc_from_infos(infos),
         }
@@ -34,6 +47,7 @@ pub trait MHEModuleAlloc<BE: Backend>:
     }
 
     fn gglwe_pat_compressed_alloc_from_infos<A: GGLWEInfos>(&self, infos: &A) -> GGLWEPatCompressedOwned<BE> {
+        assert_degree(self.n(), infos.n());
         GGLWEPatCompressed {
             inner: self.gglwe_compressed_alloc_from_infos(infos),
         }
@@ -54,6 +68,7 @@ pub trait MHEModuleAlloc<BE: Backend>:
     }
 
     fn gglwe_pat_alloc_from_infos<A: GGLWEInfos>(&self, infos: &A) -> GGLWEPatOwned<BE> {
+        assert_degree(self.n(), infos.n());
         GGLWEPat {
             inner: self.gglwe_alloc_from_infos(infos),
         }
@@ -74,6 +89,7 @@ pub trait MHEModuleAlloc<BE: Backend>:
     }
 
     fn glwe_public_key_share_alloc_from_infos<A: GLWEInfos>(&self, infos: &A) -> GLWEPublicKeyShareOwned<BE> {
+        assert_degree(self.n(), infos.n());
         GLWEPublicKeyShare {
             key: self.glwe_public_key_compressed_alloc_from_infos(infos),
         }
@@ -86,6 +102,7 @@ pub trait MHEModuleAlloc<BE: Backend>:
     }
 
     fn glwe_switching_key_share_alloc_from_infos<A: GGLWEInfos>(&self, infos: &A) -> GLWESwitchingKeyShareOwned<BE> {
+        assert_degree(self.n(), infos.n());
         GLWESwitchingKeyShare {
             key: self.gglwe_pat_compressed_alloc_from_infos(infos),
             input_degree: Degree(0),
@@ -110,6 +127,7 @@ pub trait MHEModuleAlloc<BE: Backend>:
     }
 
     fn glwe_automorphism_key_share_alloc_from_infos<A: GGLWEInfos>(&self, infos: &A) -> GLWEAutomorphismKeyShareOwned<BE> {
+        assert_degree(self.n(), infos.n());
         GLWEAutomorphismKeyShare {
             key: self.gglwe_pat_compressed_alloc_from_infos(infos),
             p: 0,
@@ -131,6 +149,7 @@ pub trait MHEModuleAlloc<BE: Backend>:
     }
 
     fn glwe_tensor_key_share_alloc_from_infos<A: GGLWEInfos>(&self, infos: &A) -> GLWETensorKeyShareOwned<BE> {
+        assert_degree(self.n(), infos.n());
         GLWETensorKeyShare {
             key: self.gglwe_pat_alloc_from_infos(infos),
         }
@@ -151,6 +170,7 @@ pub trait MHEModuleAlloc<BE: Backend>:
     }
 
     fn ggsw_share_alloc_from_infos<A: GGSWInfos>(&self, infos: &A) -> GGSWShareOwned<BE> {
+        assert_degree(self.n(), infos.n());
         let circ = || -> Vec<GGLWEPatCompressedOwned<BE>> {
             (0..infos.rank().as_usize())
                 .map(|_| self.gglwe_pat_compressed_alloc_from_infos(&ggsw_share_part_layout(infos, infos.rank(), infos.rank())))
@@ -185,6 +205,7 @@ pub trait MHEModuleAlloc<BE: Backend>:
 
     /// A key switching share of `infos`, the ciphertext layout, at rank 0.
     fn glwe_private_keyswitch_share_alloc_from_infos<A: GLWEInfos>(&self, infos: &A) -> GLWEPrivateKeyswitchShareOwned<BE> {
+        assert_degree(self.n(), infos.n());
         self.glwe_private_keyswitch_share_alloc(infos.base2k(), infos.k())
     }
 
@@ -196,6 +217,7 @@ pub trait MHEModuleAlloc<BE: Backend>:
 
     /// A public key switching share of `infos`, the share layout.
     fn glwe_public_keyswitch_share_alloc_from_infos<A: GLWEInfos>(&self, infos: &A) -> GLWEPublicKeyswitchShareOwned<BE> {
+        assert_degree(self.n(), infos.n());
         GLWEPublicKeyswitchShare {
             inner: self.glwe_alloc_from_infos(infos),
         }
@@ -214,6 +236,7 @@ pub trait MHEModuleAlloc<BE: Backend>:
 
     /// An encryption-to-shares public share of `infos`, the ciphertext layout, at rank 0.
     fn glwe_enc_to_share_share_alloc_from_infos<A: GLWEInfos>(&self, infos: &A) -> GLWEEncToShareShareOwned<BE> {
+        assert_degree(self.n(), infos.n());
         self.glwe_enc_to_share_share_alloc(infos.base2k(), infos.k())
     }
 
@@ -225,6 +248,7 @@ pub trait MHEModuleAlloc<BE: Backend>:
 
     /// A shares-to-encryption share of `infos`, the output layout.
     fn glwe_share_to_enc_share_alloc_from_infos<A: GLWEInfos>(&self, infos: &A) -> GLWEShareToEncShareOwned<BE> {
+        assert_degree(self.n(), infos.n());
         GLWEShareToEncShare {
             inner: self.glwe_pat_compressed_alloc_from_infos(infos),
         }
@@ -238,7 +262,8 @@ pub trait MHEModuleAlloc<BE: Backend>:
 }
 
 impl<BE: Backend> MHEModuleAlloc<BE> for Module<BE> where
-    Self: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+    Self: ModuleN
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
         + ModuleCoreCompressedAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
 {
 }

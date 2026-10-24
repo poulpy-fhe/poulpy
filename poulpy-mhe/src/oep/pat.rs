@@ -5,17 +5,23 @@ use poulpy_core::layouts::{
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 /// # Safety
-/// Reproduce the reference sum, including the seed and layout checks, and the
-/// reference canonical ciphertext, masks included, within the queried scratch
-/// budget.
+/// Every method reproduces the reference or derived body its doc names, checks
+/// included, and stays within the scratch its `_tmp_bytes` query returns. The
+/// synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md`
+/// apply.
 pub unsafe trait GLWEPatCompressedImpl: Backend {
+    /// Reproduces `GLWEPatCompressedReference::glwe_pat_compressed_aggregate_assign_reference`: adds `a` into `res` without normalizing.
+    /// Panics unless the layouts and the mask seeds agree.
     fn glwe_pat_compressed_aggregate_assign<R, A>(module: &Module<Self>, res: &mut R, a: &A)
     where
         R: GLWECompressedToBackendMut<Self> + GLWECompressedSeed + GLWEInfos,
         A: GLWECompressedToBackendRef<Self> + GLWECompressedSeed + GLWEInfos;
 
+    /// Upper bound on the scratch of `glwe_pat_compressed_finalize`, as `GLWEPatCompressedReference::glwe_pat_compressed_finalize_tmp_bytes_reference`.
     fn glwe_pat_compressed_finalize_tmp_bytes(module: &Module<Self>) -> usize;
 
+    /// Reproduces `GLWEPatCompressedReference::glwe_pat_compressed_finalize_reference`: writes the canonical normalization of the aggregate into `res`.
+    /// Panics unless the layouts agree; the masks are regenerated from the seed, already canonical, and only the body is normalized.
     fn glwe_pat_compressed_finalize<R, P>(module: &Module<Self>, res: &mut R, pat: &P, scratch: &mut ScratchArena<'_, Self>)
     where
         R: GLWEToBackendMut<Self> + GLWEInfos,
@@ -23,17 +29,23 @@ pub unsafe trait GLWEPatCompressedImpl: Backend {
 }
 
 /// # Safety
-/// Reproduce the reference sum, including the seed and layout checks, and the
-/// reference canonical ciphertext, masks included, within the queried scratch
-/// budget.
+/// Every method reproduces the reference or derived body its doc names, checks
+/// included, and stays within the scratch its `_tmp_bytes` query returns. The
+/// synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md`
+/// apply.
 pub unsafe trait GGLWEPatCompressedImpl: Backend {
+    /// Reproduces `GGLWEPatCompressedReference::gglwe_pat_compressed_aggregate_assign_reference`: adds `a` into `res` without normalizing.
+    /// Panics unless the layouts and the mask seeds agree.
     fn gglwe_pat_compressed_aggregate_assign<R, A>(module: &Module<Self>, res: &mut R, a: &A)
     where
         R: GGLWECompressedToBackendMut<Self> + GGLWECompressedSeed + GGLWEInfos,
         A: GGLWECompressedToBackendRef<Self> + GGLWECompressedSeed + GGLWEInfos;
 
+    /// Upper bound on the scratch of `gglwe_pat_compressed_finalize`, as `GGLWEPatCompressedReference::gglwe_pat_compressed_finalize_tmp_bytes_reference`.
     fn gglwe_pat_compressed_finalize_tmp_bytes(module: &Module<Self>) -> usize;
 
+    /// Reproduces `GGLWEPatCompressedReference::gglwe_pat_compressed_finalize_reference`: writes the canonical normalization of the aggregate into `res`.
+    /// Panics unless the layouts agree; the masks are regenerated from the seed, already canonical, and only the bodies are normalized.
     fn gglwe_pat_compressed_finalize<R, P>(module: &Module<Self>, res: &mut R, pat: &P, scratch: &mut ScratchArena<'_, Self>)
     where
         R: GGLWEToBackendMut<Self> + GGLWEInfos,
@@ -41,16 +53,23 @@ pub unsafe trait GGLWEPatCompressedImpl: Backend {
 }
 
 /// # Safety
-/// Reproduce the reference sum, including the layout check, and the reference
-/// canonical ciphertext, masks included, within the queried scratch budget.
+/// Every method reproduces the reference or derived body its doc names, checks
+/// included, and stays within the scratch its `_tmp_bytes` query returns. The
+/// synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md`
+/// apply.
 pub unsafe trait GGLWEPatImpl: Backend {
+    /// Reproduces `GGLWEPatReference::gglwe_pat_aggregate_assign_reference`: adds `a` into `res` without normalizing.
+    /// Panics unless the layouts agree.
     fn gglwe_pat_aggregate_assign<R, A>(module: &Module<Self>, res: &mut R, a: &A)
     where
         R: GGLWEToBackendMut<Self> + GGLWEInfos,
         A: GGLWEToBackendRef<Self> + GGLWEInfos;
 
+    /// Upper bound on the scratch of `gglwe_pat_finalize`, as `GGLWEPatReference::gglwe_pat_finalize_tmp_bytes_reference`.
     fn gglwe_pat_finalize_tmp_bytes(module: &Module<Self>) -> usize;
 
+    /// Reproduces `GGLWEPatReference::gglwe_pat_finalize_reference`: writes the canonical normalization of the aggregate into `res`.
+    /// Panics unless the layouts agree; every column is normalized.
     fn gglwe_pat_finalize<R, P>(module: &Module<Self>, res: &mut R, pat: &P, scratch: &mut ScratchArena<'_, Self>)
     where
         R: GGLWEToBackendMut<Self> + GGLWEInfos,

@@ -13,13 +13,18 @@ use crate::{
 };
 
 /// # Safety
-/// Reproduce the reference share and finalization within the queried scratch
-/// budgets.
+/// Every method reproduces the reference or derived body its doc names, checks
+/// included, and stays within the scratch its `_tmp_bytes` query returns. The
+/// synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md`
+/// apply.
 pub unsafe trait GLWEEncToShareMHEProtocolImpl: Backend {
+    /// Upper bound on the scratch of `mhe_glwe_enc_to_share_share_gen`, as `GLWEEncToShareMHEProtocolReference::mhe_glwe_enc_to_share_share_gen_tmp_bytes_reference`.
     fn mhe_glwe_enc_to_share_share_gen_tmp_bytes<A>(module: &Module<Self>, ct_infos: &A) -> usize
     where
         A: GLWEInfos;
 
+    /// Reproduces `GLWEEncToShareMHEProtocolReference::mhe_glwe_enc_to_share_share_gen_reference`: the secret share is uniform from `source_xm`, the public share is `<mask, sk> - secret` plus the `flood` noise from `source_smudge`; the mask is read only.
+    /// Panics unless `mask` is canonical and has the module's degree, `sk` has the mask's degree and rank, both shares have rank 0 and the mask's layout, and `flood` is valid at the share's precision, all before any draw.
     #[allow(clippy::too_many_arguments)]
     fn mhe_glwe_enc_to_share_share_gen<P, C, S>(
         module: &Module<Self>,
@@ -36,14 +41,19 @@ pub unsafe trait GLWEEncToShareMHEProtocolImpl: Backend {
         C: GLWEMaskToBackendRef<Self> + GLWEInfos,
         S: GLWESecretPreparedToBackendRef<Self> + GLWEInfos;
 
+    /// Reproduces `GLWEEncToShareMHEProtocolReference::mhe_glwe_enc_to_share_share_aggregate_reference`: adds `a` into `res` without normalizing and combines the noise with `aggregate_metadata`.
+    /// Panics unless the layouts agree.
     fn mhe_glwe_enc_to_share_share_aggregate(
         module: &Module<Self>,
         res: &mut GLWEEncToShareShareOwned<Self>,
         a: &GLWEEncToShareShareOwned<Self>,
     );
 
+    /// Upper bound on the scratch of `mhe_glwe_enc_to_share_share_finalize`, as the reference.
     fn mhe_glwe_enc_to_share_share_finalize_tmp_bytes(module: &Module<Self>) -> usize;
 
+    /// Reproduces `GLWEEncToShareMHEProtocolReference::mhe_glwe_enc_to_share_share_finalize_reference`: `secret += ct body + public`, normalized.
+    /// Panics unless the ciphertext and the public share have the same layout and both additive shares have rank 0.
     fn mhe_glwe_enc_to_share_share_finalize<P, C>(
         module: &Module<Self>,
         secret: &mut P,
@@ -56,13 +66,19 @@ pub unsafe trait GLWEEncToShareMHEProtocolImpl: Backend {
 }
 
 /// # Safety
-/// Reproduce the reference share within the queried scratch budget.
+/// Every method reproduces the reference or derived body its doc names, checks
+/// included, and stays within the scratch its `_tmp_bytes` query returns. The
+/// synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md`
+/// apply.
 pub unsafe trait GLWEShareToEncMHEProtocolImpl: GLWEPatCompressedImpl {
+    /// Upper bound on the scratch of `mhe_glwe_share_to_enc_share_gen`, as `GLWEShareToEncMHEProtocolReference::mhe_glwe_share_to_enc_share_gen_tmp_bytes_reference`.
     fn mhe_glwe_share_to_enc_share_gen_tmp_bytes<A, B>(module: &Module<Self>, res_infos: &A, secret_infos: &B) -> usize
     where
         A: GLWEInfos,
         B: GLWEInfos;
 
+    /// Reproduces `GLWEShareToEncMHEProtocolReference::mhe_glwe_share_to_enc_share_gen_reference`: a compressed encryption of the additive `secret` under `sk`, mask drawn from `seed`, errors from `source_xe`.
+    /// Panics unless `secret` has rank 0, is at most as precise as the output and shares its layout with the plaintext.
     #[allow(clippy::too_many_arguments)]
     fn mhe_glwe_share_to_enc_share_gen<P, S>(
         module: &Module<Self>,
@@ -76,6 +92,7 @@ pub unsafe trait GLWEShareToEncMHEProtocolImpl: GLWEPatCompressedImpl {
         P: GLWEToBackendRef<Self> + GLWEInfos,
         S: GLWESecretPreparedToBackendRef<Self> + GLWEInfos;
 
+    /// Default body: the `GLWEPatCompressed` aggregation of the inner shares.
     fn mhe_glwe_share_to_enc_share_aggregate(
         module: &Module<Self>,
         res: &mut GLWEShareToEncShareOwned<Self>,
@@ -84,10 +101,12 @@ pub unsafe trait GLWEShareToEncMHEProtocolImpl: GLWEPatCompressedImpl {
         Self::glwe_pat_compressed_aggregate_assign(module, &mut res.inner, &a.inner)
     }
 
+    /// Default body: the scratch of the `GLWEPatCompressed` finalization.
     fn mhe_glwe_share_to_enc_share_finalize_tmp_bytes(module: &Module<Self>) -> usize {
         Self::glwe_pat_compressed_finalize_tmp_bytes(module)
     }
 
+    /// Default body: the `GLWEPatCompressed` finalization of the inner share.
     fn mhe_glwe_share_to_enc_share_finalize<R>(
         module: &Module<Self>,
         res: &mut R,

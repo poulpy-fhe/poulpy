@@ -254,10 +254,7 @@ where
             key.rank_out() == share.rank(),
             "invalid finalization: key output rank differs from the GGSW's"
         );
-        assert!(
-            key.gglwe_layout().max_input_k().as_usize() >= share.k().as_usize(),
-            "invalid finalization: key does not cover the GGSW precision"
-        );
+        poulpy_core::layouts::assert_key_covers("mhe_ggsw_share_finalize", share.k(), key);
         let (dnum, rank) = (share.dnum().as_usize(), share.rank().as_usize());
         assert!(
             match (share.noise(), key.noise()) {

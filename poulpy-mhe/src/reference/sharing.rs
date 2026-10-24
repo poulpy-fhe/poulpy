@@ -93,6 +93,7 @@ where
             mask.n().as_usize() == self.n() && sk.n() == mask.n() && sk.rank() == mask.rank(),
             "invalid share: secret and mask layouts differ"
         );
+        assert!(mask.to_mask_backend_ref().is_canonical(), "invalid share: mask not canonical");
         assert!(
             public.rank().as_usize() == 0 && secret.rank().as_usize() == 0,
             "invalid share: additive shares must have rank zero"
@@ -142,7 +143,7 @@ where
         a: &GLWEEncToShareShareOwned<BE>,
     ) {
         assert!(res.glwe_layout() == a.glwe_layout(), "invalid aggregation: layouts differ");
-        let metadata = super::aggregate_metadata(res.noise(), a.noise());
+        let metadata = crate::metadata::aggregate_metadata(res.noise(), a.noise());
         self.glwe_add_assign(&mut res.inner, &a.inner);
         GLWEToBackendMut::<BE>::set_noise(res, metadata);
     }

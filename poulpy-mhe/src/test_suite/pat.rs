@@ -256,7 +256,7 @@ where
         if i == 1 {
             // Backend borrows stand in for the owned PATs. A mutable borrow
             // carries no tag, so the owner is stamped afterwards.
-            let metadata = crate::reference::aggregate_common_key_metadata(acc.noise(), share.noise(), module.n());
+            let metadata = crate::metadata::aggregate_common_key_metadata(acc.noise(), share.noise(), module.n());
             module.gglwe_pat_aggregate_assign(&mut acc.to_backend_mut(), &share.to_backend_ref());
             GGLWEToBackendMut::<BE>::set_noise(&mut acc, metadata);
         } else if i > 1 {

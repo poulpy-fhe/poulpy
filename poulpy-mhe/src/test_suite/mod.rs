@@ -145,7 +145,6 @@ macro_rules! mhe_backend_test_suite {
             }
 
             #[test]
-            #[should_panic(expected = "invalid finalization: key does not cover the GGSW precision")]
             fn ggsw_share_key_precision_mismatch() {
                 $crate::test_suite::ggsw::test_ggsw_share_key_precision_mismatch(&Module::<$backend>::new(64));
             }
@@ -241,6 +240,21 @@ macro_rules! mhe_backend_test_suite {
             #[test]
             fn glwe_public_keyswitch_share_layout_guards() {
                 $crate::test_suite::keyswitch::test_glwe_public_keyswitch_share_layout_guards(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            fn glwe_private_keyswitch_rejects_flag_clear_mask() {
+                $crate::test_suite::keyswitch::test_glwe_private_keyswitch_rejects_flag_clear_mask(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            fn glwe_public_keyswitch_rejects_flag_clear_mask() {
+                $crate::test_suite::keyswitch::test_glwe_public_keyswitch_rejects_flag_clear_mask(&Module::<$backend>::new(64));
+            }
+
+            #[test]
+            fn glwe_enc_to_share_rejects_flag_clear_mask() {
+                $crate::test_suite::sharing::test_glwe_enc_to_share_rejects_flag_clear_mask(&Module::<$backend>::new(64));
             }
 
             #[test]
