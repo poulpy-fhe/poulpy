@@ -16,6 +16,7 @@
 //! - [`schemes`]: full scheme-level operations (`ckks`, `bin_fhe`).
 //! - [`blas`]: `poulpy-blas` encrypted matrix operations (`blas_matmul`, `blas_matmul_pt_right`, `blas_matmul_pt_left`,
 //!   `blas_transpose`).
+//! - [`libm`]: `poulpy-libm` function plans (`exp`, `log`, `pow`).
 //!
 //! # The runner / `BenchOp` / suite pattern
 //!
@@ -81,6 +82,7 @@
 pub mod blas;
 pub mod core;
 pub mod hal;
+pub mod libm;
 pub mod schemes;
 
 use std::fmt::Display;

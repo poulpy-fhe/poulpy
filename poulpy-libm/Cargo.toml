@@ -8,27 +8,10 @@ description = "CKKS math functions (libm-style) built on poulpy-ckks"
 repository = "https://github.com/poulpy-fhe/poulpy"
 homepage = "https://github.com/poulpy-fhe/poulpy"
 documentation = "https://docs.rs/poulpy-libm"
-autobenches = false
 
 [features]
-default = []
+# Compiles the exported test suite for backend crates, which enable it from their dev-dependencies.
 test-utils = ["poulpy-ckks/test-utils"]
-portable = ["dep:poulpy-cpu-portable", "poulpy-cpu-portable/enable-ckks"]
-avx = [
-    "dep:poulpy-cpu-avx",
-    "poulpy-cpu-avx/enable-avx",
-    "poulpy-cpu-avx/enable-ckks",
-]
-avx512 = [
-    "dep:poulpy-cpu-avx512",
-    "poulpy-cpu-avx512/enable-avx512f",
-    "poulpy-cpu-avx512/enable-ckks",
-]
-ifma = [
-    "avx512",
-    "poulpy-cpu-avx512/enable-ifma",
-]
-all-backends = ["portable", "avx", "avx512", "ifma"]
 
 [dependencies]
 poulpy-hal = {workspace = true}
@@ -37,49 +20,6 @@ poulpy-ckks = {workspace = true}
 anyhow = {workspace = true}
 libm = {workspace = true}
 num-traits = {workspace = true}
-poulpy-cpu-portable = {workspace = true, optional = true}
-poulpy-cpu-avx = {workspace = true, optional = true}
-poulpy-cpu-avx512 = {workspace = true, optional = true}
-
-[dev-dependencies]
-criterion = {workspace = true}
-poulpy-ckks = {workspace = true, features = ["test-utils"]}
-
-[[bench]]
-name = "functions_ref"
-harness = false
-required-features = ["portable"]
-
-[[bench]]
-name = "functions_avx"
-harness = false
-required-features = ["avx"]
-
-[[bench]]
-name = "functions_avx512"
-harness = false
-required-features = ["avx512"]
-
-[[bench]]
-name = "functions_ifma"
-harness = false
-required-features = ["ifma"]
-
-[[example]]
-name = "exp_walkthrough"
-required-features = ["portable"]
-
-[[example]]
-name = "trig_walkthrough"
-required-features = ["portable"]
-
-[[example]]
-name = "inference_walkthrough"
-required-features = ["portable"]
-
-[[example]]
-name = "signal_walkthrough"
-required-features = ["portable"]
 
 [lints.rust]
 unsafe_op_in_unsafe_fn = "deny"

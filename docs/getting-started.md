@@ -217,5 +217,6 @@ let ggsw_layout = GGSWLayout {
 - For a GLWE encrypt and decrypt roundtrip, read `poulpy-cpu-portable/examples/core_encryption.rs`.
 - For the gate and encrypted integer API, read `poulpy-bin-fhe/examples/bdd_arithmetic.rs`.
 - For CKKS, read `poulpy-cpu-portable/examples/ckks_poly2.rs`.
+- For math functions on CKKS values, read `poulpy-cpu-portable/examples/libm_exp.rs` and the [libm API guide](../poulpy-libm/docs/api.md).
 - For CKKS polynomial evaluation and homomorphic linear transformations, read [polynomial_evaluation.md](polynomial_evaluation.md) and [linear_transformation.md](linear_transformation.md).
 - For the choice of arithmetic backend, read [backends.md](backends.md).

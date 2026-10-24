@@ -2,18 +2,18 @@
 //!
 //! Run the example with the following command.
 //!
-//! ```text
-//! cargo run --release --features portable --example trig_walkthrough
+//! ```bash
+//! cargo run --release -p poulpy-cpu-portable --features enable-ckks --example libm_trig
 //! ```
 
-mod common;
+mod libm_common;
 
 use anyhow::Result;
 use poulpy_ckks::{CKKSInfos, polynomial::SplitStrategy, test_suite::helpers::upload_pt};
 use poulpy_hal::api::ScratchOwnedBorrow;
 use poulpy_libm::trig::{CKKSTrigOps, CosPlan, SinPlan, TrigOptions};
 
-use common::{BASE2K, LOG_DELTA, Setup, coeff_layout, dense_interval, verify};
+use libm_common::{BASE2K, LOG_DELTA, Setup, coeff_layout, dense_interval, verify};
 
 fn run() -> Result<()> {
     // 1. Create one reusable plan for each function before encryption.

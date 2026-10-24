@@ -61,6 +61,22 @@ name = "blas_pipeline"
 required-features = ["enable-blas"]
 
 [[example]]
+name = "libm_exp"
+required-features = ["enable-ckks"]
+
+[[example]]
+name = "libm_trig"
+required-features = ["enable-ckks"]
+
+[[example]]
+name = "libm_inference"
+required-features = ["enable-ckks"]
+
+[[example]]
+name = "libm_signal"
+required-features = ["enable-ckks"]
+
+[[example]]
 name = "core_encryption"
 required-features = ["enable-core"]
 
@@ -119,3 +135,8 @@ required-features = ["enable-core"]
 name = "noise"
 harness = false
 required-features = ["enable-core"]
+
+[[bench]]
+name = "libm"
+harness = false
+required-features = ["enable-ckks"]

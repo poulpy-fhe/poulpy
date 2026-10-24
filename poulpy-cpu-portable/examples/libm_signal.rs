@@ -2,11 +2,11 @@
 //!
 //! Run the example with the following command.
 //!
-//! ```text
-//! cargo run --release --features portable --example signal_walkthrough
+//! ```bash
+//! cargo run --release -p poulpy-cpu-portable --features enable-ckks --example libm_signal
 //! ```
 
-mod common;
+mod libm_common;
 
 use anyhow::Result;
 use poulpy_ckks::{CKKSInfos, polynomial::SplitStrategy, test_suite::helpers::upload_pt};
@@ -17,7 +17,7 @@ use poulpy_libm::{
     roots::{CKKSRootOps, HypotPlan, RootOptions},
 };
 
-use common::{BASE2K, LOG_DELTA, Setup, coeff_layout, dense_interval, verify};
+use libm_common::{BASE2K, LOG_DELTA, Setup, coeff_layout, dense_interval, verify};
 
 fn run() -> Result<()> {
     // A receiver can represent each complex sample with encrypted in-phase and quadrature components.

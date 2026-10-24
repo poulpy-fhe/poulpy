@@ -1,16 +1,16 @@
-//! Shared function benchmarks.
+//! `bench_libm`: `exp`, `log` and `pow` of `poulpy-libm` on one backend.
 
-use poulpy_hal::{AlignedBuf, layouts::Standard};
 use std::hint::black_box;
 
-use criterion::{BatchSize, Criterion, Throughput};
+use criterion::{BatchSize, Criterion, Throughput, measurement::WallTime};
 use poulpy_core::layouts::{
     GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, SetBSGSMeta,
     prepared::GLWETensorKeyPreparedToBackendRef,
 };
 use poulpy_hal::{
+    AlignedBuf,
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{HostBytesBackend, Module, ScratchOwned},
+    layouts::{HostBytesBackend, Module, ScratchOwned, Standard},
 };
 
 use poulpy_ckks::{
@@ -31,6 +31,8 @@ use poulpy_libm::{
     pow::{CKKSPowOps, PowOptions, PowPlan},
 };
 
+use crate::backend_name;
+
 fn params_for(base: &CKKSTestParams, consumed: usize) -> CKKSTestParams {
     let log_delta = base.prec().log_delta();
     let k = (consumed + 2 * log_delta + 2 * base.base2k).next_multiple_of(base.dsize * base.base2k);
@@ -50,7 +52,11 @@ fn params_for(base: &CKKSTestParams, consumed: usize) -> CKKSTestParams {
     }
 }
 
-pub fn bench_functions<BE, E>(c: &mut Criterion, backend: &str)
+/// `exp` and `log` on `[0.5, 1.5]` and `pow` with exponents in `[-1, 1]`, at
+/// default precision on the radix-52 test parameter set (`N = 256`), the
+/// modulus sized to the deepest of the three plans. `E` is the host encoder the
+/// inputs are encrypted with. The group is `{backend}/libm/functions`.
+pub fn bench_libm<BE, E>(c: &mut Criterion<WallTime>)
 where
     BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE> + CKKSExpOps<BE> + CKKSLogOps<BE> + CKKSPowOps<BE>,
@@ -143,7 +149,7 @@ where
         &mut scratch.borrow(),
     );
 
-    let mut group = c.benchmark_group(format!("functions/{backend}"));
+    let mut group = c.benchmark_group(format!("{}/libm/functions", backend_name::<BE>()));
     group.throughput(Throughput::Elements(slots as u64));
     group.bench_function("exp", |b| {
         b.iter_batched(

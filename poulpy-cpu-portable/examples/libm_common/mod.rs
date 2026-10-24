@@ -1,4 +1,4 @@
-//! Shared code for the runnable walkthroughs.
+//! Shared code for the `libm_*` walkthroughs of `poulpy-libm`.
 //!
 //! Deterministic seeds make these examples reproducible.
 //! Applications must use their own cryptographic randomness and parameter selection.

@@ -35,30 +35,32 @@ Custom functions outside the libm scope are covered separately in the [custom ap
 
 The runnable walkthroughs explain plan creation, encryption, evaluation, decryption, and result verification.
 The inference and signal examples show how several operations compose into application-level circuits.
+They live in `poulpy-cpu-portable` and run on its NTT backend.
 
 ```sh
-cargo run --release --features portable --example exp_walkthrough
-cargo run --release --features portable --example trig_walkthrough
-cargo run --release --features portable --example inference_walkthrough
-cargo run --release --features portable --example signal_walkthrough
+cargo run --release -p poulpy-cpu-portable --features enable-ckks --example libm_exp
+cargo run --release -p poulpy-cpu-portable --features enable-ckks --example libm_trig
+cargo run --release -p poulpy-cpu-portable --features enable-ckks --example libm_inference
+cargo run --release -p poulpy-cpu-portable --features enable-ckks --example libm_signal
 ```
 
 ## Test
 
-```sh
-RUSTFLAGS='-C target-cpu=native' cargo test --release --features all-backends
-```
+The backend-generic suite in `test_suite`, compiled with `test-utils`, checks numerical precision and exact budget consumption.
+Backend crates register it with `ckks_libm_backend_test_suite!`, as the portable, AVX2, AVX-512, IFMA and NEON backends of the workspace do with `enable-ckks`.
 
-The backend-generic suite checks numerical precision and exact budget consumption on the reference, AVX, AVX-512, and IFMA backends.
+```sh
+cargo test -p poulpy-cpu-portable --lib --profile ci --features enable-ckks -- libm_tests
+```
 
 ## Benchmark
 
-The same `exp`, `log`, and `pow` workloads are available for every backend.
+The `exp`, `log`, and `pow` workloads live in `poulpy-bench` (`poulpy_bench::libm::suites::bench_libm`), registered as the `libm` bench of each backend crate.
 Run the target matching the benchmark host.
 
 ```sh
-RUSTFLAGS='-C target-cpu=native' cargo bench --features portable --bench functions_ref
-RUSTFLAGS='-C target-cpu=native' cargo bench --features avx --bench functions_avx
-RUSTFLAGS='-C target-cpu=native' cargo bench --features avx512 --bench functions_avx512
-RUSTFLAGS='-C target-cpu=native' cargo bench --features ifma --bench functions_ifma
+cargo bench -p poulpy-cpu-portable --features enable-ckks --bench libm
+RUSTFLAGS='-C target-cpu=native' cargo bench -p poulpy-cpu-avx --features enable-avx,enable-ckks --bench libm
+RUSTFLAGS='-C target-cpu=native' cargo bench -p poulpy-cpu-avx512 --features enable-avx512f,enable-ckks,enable-ifma --bench libm
+cargo bench -p poulpy-cpu-arm --features enable-neon,enable-ckks --bench libm
 ```

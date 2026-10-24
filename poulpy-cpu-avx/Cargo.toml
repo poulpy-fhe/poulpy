@@ -78,3 +78,8 @@ required-features = ["enable-avx"]
 name = "encrypt_pk"
 harness = false
 required-features = ["enable-avx"]
+
+[[bench]]
+name = "libm"
+harness = false
+required-features = ["enable-avx", "enable-ckks"]

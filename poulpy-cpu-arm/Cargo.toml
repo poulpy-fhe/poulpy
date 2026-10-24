@@ -81,3 +81,8 @@ required-features = ["enable-neon"]
 name = "bootstrapping"
 harness = false
 required-features = ["enable-neon", "enable-ckks"]
+
+[[bench]]
+name = "libm"
+harness = false
+required-features = ["enable-neon", "enable-ckks"]

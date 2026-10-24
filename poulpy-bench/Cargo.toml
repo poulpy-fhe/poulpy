@@ -19,3 +19,4 @@ poulpy-core = {workspace = true}
 poulpy-bin-fhe = {workspace = true}
 poulpy-ckks = {workspace = true, features = ["test-utils"]}
 poulpy-blas = {workspace = true}
+poulpy-libm = {workspace = true}

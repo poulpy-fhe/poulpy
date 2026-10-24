@@ -117,6 +117,7 @@
 - The portable `vec_znx_gadget_decompose` kernel bounds-checks its columns once and reads its limbs through raw pointers, where it called `at` and `at_mut` per limb and per chunk of coefficients ([#460](https://github.com/poulpy-fhe/poulpy/issues/460)). Results are unchanged.
 - **Breaking:** `impl_cpu_ckks_defaults!` registers `impl_ckks_eval_mod_reference!` on both rings, which the standard backends no longer do on their own; the conjugate-invariant oracle backends register it too.
   An out-of-tree backend that registers both removes its own `impl_ckks_eval_mod_reference!` next to `impl_cpu_ckks_defaults!`.
+- The portable, AVX2, AVX-512 and NEON backends run the `poulpy-libm` suite on their NTT4x30 types with `enable-ckks`, and `poulpy-cpu-avx512` also on `NTT3x42Ifma` with `enable-ifma`.
 
 ### `poulpy-core`
 
@@ -428,12 +429,25 @@
 - Calls with distinct `res` and `scratch` may run concurrently over a shared module, context, public operands, prepared operands and key stores, and an override keeps no state across calls.
 - `blas-contracts.md` links `docs/layering-contract.md` instead of restating it.
 
+### `poulpy-libm`
+
+- New crate in the workspace, imported from [poulpy-libm](https://github.com/poulpy-fhe/poulpy-libm) 0.1.0 (`5cfddab`): CKKS math functions with `libm` names, built on the approximation machinery of `poulpy-ckks`.
+  It is versioned and released with the other crates from 0.9.0.
+- **Breaking:** ported to the current Poulpy API.
+  Operands are `CKKSCiphertext<_, _, BE::Ring>`, host plans hold `CKKSPlaintext<AlignedBuf, i64, Standard>`, and the operations run on the standard ring.
+  Rotation and conjugation keys are `GetAutomorphismKey<BE>` sources, so `ckks_sum_slots`, `ckks_fmax_slots`, `ckks_fmin_slots` and `ckks_softmax` lose their key type parameter.
+  `ckks_scalbn_tmp_bytes` takes the destination.
+- **Breaking:** the features `ref`, `avx`, `avx512`, `ifma` and `all-backends` are removed with the crate's dependencies on the backends.
+  `ckks_libm_backend_test_suite!` registers the libm suite for a backend under `test-utils`, `precision_tuning_log_n12` included, and the CPU backends run it.
+- The benchmarks move to `poulpy-bench` and the walkthroughs to the `libm_exp`, `libm_trig`, `libm_inference` and `libm_signal` examples of `poulpy-cpu-portable`.
+
 ### `poulpy-cpu-arm`
 
 - Add the full-size bootstrapping preset precision test for `NTT4x30NeonRayon`.
 
 ### `poulpy-bench`
 
+- Add `libm::suites::bench_libm`, `exp`, `log` and `pow` of `poulpy-libm` on one backend, registered as the `libm` bench of `poulpy-cpu-portable`, `poulpy-cpu-avx`, `poulpy-cpu-avx512` (IFMA included with `enable-ifma`) and `poulpy-cpu-arm`.
 - **Breaking:** `bench_ckks_bootstrapping` requires `CKKSBootstrappingCIOps`, and runs the presets with EvalMod on the conjugate-invariant ring.
 
 ## [0.9.0] - 2026-10-08
