@@ -4,9 +4,7 @@ use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{BSGSMeta, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, SetBSGSMeta};
 use poulpy_core::{BSGSOps, GLWEPolynomialEvaluation, GLWEZero};
 use poulpy_hal::{
-    api::{
-        Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxRsh, VecZnxRshTmpBytes,
-    },
+    api::{Convolution, ScratchArenaTakeBasic, VecZnxBigNormalize, VecZnxRsh, VecZnxRshTmpBytes},
     layouts::{
         Backend, Data, Module, PrepareHint, Ring, ScratchArena, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxToBackendMut,
         VecZnxToBackendRef, ZnxWord, vec_znx_backend_ref_from_ref,
@@ -23,24 +21,6 @@ use crate::{
     layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPreparedRight},
     polynomial::ComplexBSGSPolynomial,
 };
-
-/// Scratch upper bound for [`BSGSOps::eval_baby_linear_combination`]: BIG
-/// accumulator, shifted-constant buffer and per-term convolution/shift/normalize
-/// scratch, for the widest term (`ct_size`) and constant (`pt_size`) in limbs.
-pub(crate) fn eval_baby_linear_combination_tmp_bytes<BE, M>(module: &M, ct_size: usize, pt_size: usize) -> usize
-where
-    BE: Backend,
-    M: ModuleN + Convolution<BE> + VecZnxRshTmpBytes + VecZnxBigNormalizeTmpBytes,
-{
-    let acc_size = ct_size + pt_size;
-    BE::bytes_of_vec_znx(1, 1, pt_size + 1)
-        + BE::bytes_of_vec_znx_big(module.n(), 1, acc_size)
-        + module
-            .cnv_by_const_apply_tmp_bytes(0, acc_size, ct_size, pt_size + 1)
-            .max(module.cnv_by_const_apply_add_tmp_bytes(0, acc_size, ct_size, pt_size + 1))
-            .max(module.vec_znx_rsh_tmp_bytes(acc_size))
-            .max(module.vec_znx_big_normalize_tmp_bytes())
-}
 
 struct EvaluatedBabyStep<D: Data, W: ZnxWord, R: Ring> {
     degree: usize,

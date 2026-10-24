@@ -8,7 +8,7 @@
 //!
 //! - [`paco_c2s_factors`] — the **partial CoeffToSlot** chain (seqPaCo
 //!   line 7): the `2C`-point Encode (IFFT) factorization of
-//!   [`gen_dft_matrices_blockwise`](crate::reference::dft) over the `n = 2hC`
+//!   [`gen_dft_matrices_blockwise`](crate::layouts::dft_matrices::gen_dft_matrices_blockwise) over the `n = 2hC`
 //!   tile, returning each block's coefficients to the slots in **natural
 //!   order**. Its product is exactly the inverse of the cleartext packing
 //!   [`pack_chunk`](super::key::pack_chunk) — the encoder's own per-block
@@ -36,13 +36,14 @@
 
 use poulpy_core::layouts::DiagonalArithmetic;
 
+use crate::layouts::{
+    ComplexDiagonals,
+    dft::{DFTType, DftScalar},
+    dft_matrices::gen_dft_matrices_blockwise,
+};
 use crate::{
     encoding::paco::cpx::Cpx,
     layouts::paco::plan::{PaCoPlan, PaCoSlotOrder},
-};
-use crate::{
-    layouts::{ComplexDiagonals, dft::DFTType},
-    reference::dft::{DftScalar, gen_dft_matrices_blockwise},
 };
 
 /// The grouped partial-CoeffToSlot **butterfly** factors (seqPaCo line 7), in
@@ -91,7 +92,7 @@ pub(crate) enum PaCoPsiTail<F> {
     /// ψ standing alone (last schedule entry `1`): one `2C`-tile of μ-mask
     /// values (the scaling share on the lower half, zero above), evaluated as
     /// `μ ⊙ (w + conj(rot_C(w)))` — a single fused conj-rotate keyswitch
-    /// ([`conj_rotate_galois_element`](super::ops::conj_rotate_galois_element))
+    /// ([`conj_rotate_galois_element`](crate::layouts::slots::conj_rotate_galois_element))
     /// followed by one plaintext multiplication. Same map and level count as
     /// the degenerate pair (`M_L = I`), at half the multiplications and one
     /// fewer keyswitch — the operation-lean layout.
@@ -335,7 +336,7 @@ pub(crate) fn conjugate_by_low_bitrev<F: DftScalar>(cd: &ComplexDiagonals<F>, lo
         "factor dim {m} below permutation span {}",
         1usize << log_p
     );
-    let p = |x: usize| super::ops::ext_bitrev_low(x, log_p);
+    let p = |x: usize| crate::layouts::slots::ext_bitrev_low(x, log_p);
     let mut re = poulpy_core::layouts::Diagonals::<F>::new(m);
     let mut im = poulpy_core::layouts::Diagonals::<F>::new(m);
     for i in cd.indexes() {
@@ -582,7 +583,9 @@ mod tests {
 
     /// `(Πv)[j] = v[P(j)]` — the vector action of the tiled low-bit-reversal.
     fn permute_low(v: &[Cpx], log_p: usize) -> Vec<Cpx> {
-        (0..v.len()).map(|j| v[super::super::ops::ext_bitrev_low(j, log_p)]).collect()
+        (0..v.len())
+            .map(|j| v[crate::layouts::slots::ext_bitrev_low(j, log_p)])
+            .collect()
     }
 
     /// Semantic equality of two factors: same values on every offset of
@@ -611,7 +614,7 @@ mod tests {
     /// and the identity for `log_p ∈ {0, 1}`.
     #[test]
     fn ext_bitrev_low_involution() {
-        use super::super::ops::ext_bitrev_low;
+        use crate::layouts::slots::ext_bitrev_low;
         for log_p in 0..=4usize {
             for x in 0..64usize {
                 let y = ext_bitrev_low(x, log_p);

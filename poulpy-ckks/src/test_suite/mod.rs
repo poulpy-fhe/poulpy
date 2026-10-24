@@ -134,7 +134,7 @@ impl CKKSTestParams {
         k_boot: usize,
         log_modulus_in: usize,
     ) -> GLWESwitchingKeyLayout {
-        use crate::reference::first_factor::{first_factor_diagonal_growth, first_factor_small_bits, first_factor_work};
+        use crate::presets::first_factor::{first_factor_diagonal_growth, first_factor_small_bits, first_factor_work};
         let (work, _) = first_factor_work(self.base2k, k_boot);
         let term_bits = first_factor_small_bits(
             self.base2k,

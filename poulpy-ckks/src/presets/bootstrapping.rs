@@ -66,7 +66,7 @@ use crate::{
         DFTType, EncapsulationKeysLayout, EvalModPlan, EvalModRing, EvalModType, SparseSecretEncapsulation,
     },
     polynomial::SplitStrategy,
-    reference::first_factor::{first_factor_diagonal_growth, first_factor_small_bits, first_factor_work},
+    presets::first_factor::{first_factor_diagonal_growth, first_factor_small_bits, first_factor_work},
 };
 
 /// Three factors of five layers for the logN16 presets, with the giant steps that
@@ -912,7 +912,7 @@ mod tests {
 
     use super::*;
     use crate::CKKSInfos;
-    use crate::reference::first_factor::FIRST_FACTOR_GUARD_BITS;
+    use crate::presets::first_factor::FIRST_FACTOR_GUARD_BITS;
 
     #[test]
     fn n15_d35_k180_p18_c2s_is_composable_and_within_bounds() {

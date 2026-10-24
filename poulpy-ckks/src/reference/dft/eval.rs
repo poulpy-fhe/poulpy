@@ -41,9 +41,9 @@ use crate::{
     },
     layouts::{
         CKKSModuleAlloc, CKKSPlaintextOwned, DFTMatrix, DFTMatrixFactors, DFTMatrixPrepared, DFTPlan, DftDirection, DftFormat,
+        DftScalar, dft_matrices::gen_dft_matrices,
     },
     oep::CKKSEncodingImpl,
-    reference::dft::matrices::{DftScalar, gen_dft_matrices},
 };
 
 /// One unprepared factor: the diagonals of a single DFT factor matrix encoded
@@ -96,7 +96,7 @@ where
             let strategy = LinearTransformationStrategy::Bsgs {
                 giant_step: step.giant_step,
             };
-            crate::reference::ckks_encode_linear_transformation_from_diagonals::<BE, F>(
+            crate::encoding::ckks_encode_linear_transformation_from_diagonals::<BE, F>(
                 module,
                 base2k,
                 plan.coeffs_meta,

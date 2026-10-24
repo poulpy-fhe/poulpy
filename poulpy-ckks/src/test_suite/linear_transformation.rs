@@ -77,7 +77,7 @@ where
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F>,
     F: TestScalar,
 {
-    crate::reference::ckks_encode_linear_transformation_from_diagonals(
+    crate::encoding::ckks_encode_linear_transformation_from_diagonals(
         module,
         params.base2k.into(),
         params.prec().into(),

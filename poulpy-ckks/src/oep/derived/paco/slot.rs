@@ -18,8 +18,8 @@ use crate::{
     CKKSCompositionError, CKKSCtBounds, SetCKKSInfos,
     api::{CKKSMulOps, CKKSRotateOps},
     layouts::CKKSModuleAlloc,
+    layouts::slots::fold_rotations,
     oep::CKKSPaCoImpl,
-    reference::paco::ops::fold_rotations,
 };
 
 pub(crate) fn ckks_slot_trace_assign_tmp_bytes_derived<BE, C, K>(module: &Module<BE>, ct_infos: &C, key_infos: &K) -> usize

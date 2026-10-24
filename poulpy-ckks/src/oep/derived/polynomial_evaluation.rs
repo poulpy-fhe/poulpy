@@ -5,6 +5,7 @@ use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta};
 
+use poulpy_hal::api::{Convolution, ModuleN, VecZnxBigNormalizeTmpBytes, VecZnxRshTmpBytes};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
@@ -14,6 +15,24 @@ use crate::{
     polynomial::ComplexBSGSPolynomial,
     power_basis::{PowerBasis, PowerBasisGen},
 };
+
+/// Scratch upper bound for [`BSGSOps::eval_baby_linear_combination`]: BIG
+/// accumulator, shifted-constant buffer and per-term convolution/shift/normalize
+/// scratch, for the widest term (`ct_size`) and constant (`pt_size`) in limbs.
+pub(crate) fn eval_baby_linear_combination_tmp_bytes<BE, M>(module: &M, ct_size: usize, pt_size: usize) -> usize
+where
+    BE: Backend,
+    M: ModuleN + Convolution<BE> + VecZnxRshTmpBytes + VecZnxBigNormalizeTmpBytes,
+{
+    let acc_size = ct_size + pt_size;
+    BE::bytes_of_vec_znx(1, 1, pt_size + 1)
+        + BE::bytes_of_vec_znx_big(module.n(), 1, acc_size)
+        + module
+            .cnv_by_const_apply_tmp_bytes(0, acc_size, ct_size, pt_size + 1)
+            .max(module.cnv_by_const_apply_add_tmp_bytes(0, acc_size, ct_size, pt_size + 1))
+            .max(module.vec_znx_rsh_tmp_bytes(acc_size))
+            .max(module.vec_znx_big_normalize_tmp_bytes())
+}
 
 /// Builds the folded input (`x`, `x²`, or `T₂(x)`) for one-shot evaluation.
 /// The prepared-basis kernels are selected through the backend contract.

@@ -35,7 +35,7 @@ use super::{
         next_test_seed, precision_at, precision_stats,
     },
 };
-use crate::reference::ckks_encode_linear_transformation_from_diagonals;
+use crate::encoding::ckks_encode_linear_transformation_from_diagonals;
 use poulpy_hal::api::CnvPVecAlloc;
 
 pub fn test_conjugate_invariant_leveled<BE>(

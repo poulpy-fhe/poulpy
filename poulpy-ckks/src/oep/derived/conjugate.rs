@@ -1,6 +1,6 @@
 use crate::{
-    CKKSCompositionError, CKKSCtBounds, CKKSResult, SetCKKSInfos, oep::CKKSConjugateImpl,
-    reference::paco::ops::conj_rotate_galois_element,
+    CKKSCompositionError, CKKSCtBounds, CKKSResult, SetCKKSInfos, layouts::slots::conj_rotate_galois_element,
+    oep::CKKSConjugateImpl,
 };
 use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey};
 use poulpy_hal::layouts::{CyclotomicOrder, Module, ScratchArena};
