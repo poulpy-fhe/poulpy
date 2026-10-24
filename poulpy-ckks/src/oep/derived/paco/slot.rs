@@ -7,7 +7,7 @@
 use crate::{CKKSResult as Result, ckks_ensure};
 use poulpy_core::{
     GLWEAutomorphism,
-    layouts::{GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey},
+    layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey},
 };
 use poulpy_hal::{
     api::ModuleN,
@@ -21,6 +21,15 @@ use crate::{
     oep::CKKSPaCoImpl,
     reference::paco::ops::fold_rotations,
 };
+
+pub(crate) fn ckks_slot_trace_assign_tmp_bytes_derived<BE, C, K>(module: &Module<BE>, ct_infos: &C, key_infos: &K) -> usize
+where
+    BE: CKKSPaCoImpl,
+    C: CKKSCtBounds,
+    K: GGLWEInfos,
+{
+    module.glwe_automorphism_tmp_bytes(ct_infos, ct_infos, key_infos)
+}
 
 pub(crate) fn ckks_slot_trace_assign_derived<BE, Dst, H>(
     module: &Module<BE>,
@@ -48,6 +57,23 @@ where
         module.glwe_automorphism_add_assign(ct, &key, scratch);
     }
     Ok(())
+}
+
+pub(crate) fn ckks_slot_product_assign_tmp_bytes_derived<BE, C, K, T>(
+    module: &Module<BE>,
+    ct_infos: &C,
+    key_infos: &K,
+    tsk_infos: &T,
+) -> usize
+where
+    BE: CKKSPaCoImpl,
+    C: CKKSCtBounds,
+    K: GGLWEInfos,
+    T: GGLWEInfos,
+{
+    module
+        .ckks_rotate_tmp_bytes(ct_infos, key_infos)
+        .max(module.ckks_mul_tmp_bytes(ct_infos, ct_infos, ct_infos, tsk_infos))
 }
 
 pub(crate) fn ckks_slot_product_assign_derived<BE, Dst, H, TH>(

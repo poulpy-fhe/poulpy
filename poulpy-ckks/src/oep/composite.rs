@@ -29,9 +29,14 @@ use crate::{
 /// Implementations uphold `poulpy-hal/docs/backend_safety_contract.md` for every
 /// operand and scratch region they touch.
 pub unsafe trait CKKSAddManyImpl: Backend + CKKSAddImpl + CKKSCopyImpl {
-    /// Scratch of [`Self::ckks_add_many`]: the selected `ckks_add_tmp_bytes`.
-    fn ckks_add_many_tmp_bytes(module: &Module<Self>, res_size: usize) -> usize {
-        ckks_add_many_tmp_bytes_derived(module, res_size)
+    /// Scratch of [`Self::ckks_add_many`]: the larger of the selected `ckks_add_tmp_bytes` at
+    /// `res` and `ckks_copy_tmp_bytes` from `input` to `res`.
+    fn ckks_add_many_tmp_bytes<R, A>(module: &Module<Self>, res: &R, input: &A) -> usize
+    where
+        R: CKKSCtBounds,
+        A: CKKSCtBounds,
+    {
+        ckks_add_many_tmp_bytes_derived(module, res, input)
     }
 
     /// `ckks_copy` of a single input, else `ckks_add_into` of the first two inputs

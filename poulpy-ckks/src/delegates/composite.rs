@@ -12,8 +12,12 @@ use crate::{
 };
 
 impl<BE: Backend + CKKSAddManyImpl> CKKSAddManyOps<BE> for Module<BE> {
-    fn ckks_add_many_tmp_bytes(&self, res_size: usize) -> usize {
-        BE::ckks_add_many_tmp_bytes(self, res_size)
+    fn ckks_add_many_tmp_bytes<R, A>(&self, res: &R, input: &A) -> usize
+    where
+        R: CKKSCtBounds,
+        A: CKKSCtBounds,
+    {
+        BE::ckks_add_many_tmp_bytes(self, res, input)
     }
 
     fn ckks_add_many<Dst, Src>(&self, dst: &mut Dst, inputs: &[&Src], scratch: &mut ScratchArena<'_, BE>) -> Result<()>

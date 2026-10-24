@@ -11,7 +11,13 @@ use crate::{
 
 /// Sum over a slice of ciphertexts.
 pub trait CKKSAddManyOps<BE: Backend> {
-    fn ckks_add_many_tmp_bytes(&self, res_size: usize) -> usize;
+    /// Scratch bytes for [`Self::ckks_add_many`] into `res` from inputs laid out like
+    /// `input`: the larger of the addition query at `res` and the copy query from
+    /// `input` to `res`, the copy serving a single input.
+    fn ckks_add_many_tmp_bytes<R, A>(&self, res: &R, input: &A) -> usize
+    where
+        R: CKKSCtBounds,
+        A: CKKSCtBounds;
 
     /// Computes `dst = inputs[0] + inputs[1] + … + inputs[n-1]`, adding the
     /// inputs to `dst` from left to right.

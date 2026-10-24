@@ -11,4 +11,7 @@ pub(crate) use parallel::{
     ckks_paco_bootstrap_parallel_into_derived,
 };
 pub(crate) use preflight::{ckks_paco_bootstrap_direct_tmp_bytes_derived, ckks_paco_bootstrap_tmp_bytes_derived};
-pub(crate) use slot::{ckks_slot_product_assign_derived, ckks_slot_trace_assign_derived};
+pub(crate) use slot::{
+    ckks_slot_product_assign_derived, ckks_slot_product_assign_tmp_bytes_derived, ckks_slot_trace_assign_derived,
+    ckks_slot_trace_assign_tmp_bytes_derived,
+};

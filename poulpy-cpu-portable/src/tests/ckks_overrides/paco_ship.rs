@@ -1,5 +1,5 @@
-//! The PaCo and SHIP drivers enter the selected coefficient encoding, masking and
-//! mux hooks, their queries carry the hooks' workspaces, and their outputs equal
+//! The PaCo and SHIP drivers enter the selected coefficient encoding, slot trace,
+//! masking and mux hooks, their queries carry the hooks' workspaces, and their outputs equal
 //! the portable backend's bit for bit on the same keys and inputs.
 use super::OverrideBackend;
 use super::carry::with_marked_region;
@@ -15,10 +15,10 @@ use poulpy_ckks::{
         parity::helpers::{snapshot, with_scratch},
     },
 };
-use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendRef, LWEInfos};
+use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos};
 use poulpy_hal::{
     api::ScratchOwnedBorrow,
-    layouts::{Backend, CnvPVecL, HostBytesBackend, Module, ScratchArena},
+    layouts::{Backend, CnvPVecL, HostBytesBackend, Module, ScratchArena, galois_element},
     source::Source,
 };
 use std::{cell::Cell, collections::HashMap};
@@ -27,8 +27,10 @@ thread_local! {
     static PACO_ENCODING_CALLS: Cell<usize> = const { Cell::new(0) };
     static SHIP_MASKING_CALLS: Cell<usize> = const { Cell::new(0) };
     static SHIP_MUX_CALLS: Cell<usize> = const { Cell::new(0) };
+    static SLOT_TRACE_CALLS: Cell<usize> = const { Cell::new(0) };
 }
 const PACO_ENCODING_EXTRA: usize = 4352;
+const SLOT_TRACE_EXTRA: usize = 5120;
 const SHIP_MASKING_EXTRA: usize = 4608;
 const SHIP_MUX_EXTRA: usize = 4864;
 
@@ -68,7 +70,51 @@ unsafe impl poulpy_ckks::oep::CKKSPaCoCoeffEncodingImpl for OverrideBackend {
         })
     }
 }
-poulpy_ckks::impl_ckks_paco_derived_full!(OverrideBackend);
+// The slot trace is a derived hook with no reference: the override runs its composition,
+// one fused automorphism-add per fold level, behind its own extra workspace.
+unsafe impl poulpy_ckks::oep::CKKSPaCoImpl for OverrideBackend {
+    fn ckks_slot_trace_assign_tmp_bytes<C, K>(module: &Module<Self>, ct_infos: &C, key_infos: &K) -> usize
+    where
+        C: CKKSCtBounds,
+        K: GGLWEInfos,
+    {
+        SLOT_TRACE_EXTRA + poulpy_core::GLWEAutomorphism::glwe_automorphism_tmp_bytes(module, ct_infos, ct_infos, key_infos)
+    }
+
+    fn ckks_slot_trace_assign<Dst, H>(
+        module: &Module<Self>,
+        ct: &mut Dst,
+        a: usize,
+        b: usize,
+        keys: &H,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) -> poulpy_ckks::CKKSResult<()>
+    where
+        Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + poulpy_ckks::SetCKKSInfos,
+        H: GetAutomorphismKey<Self>,
+    {
+        use poulpy_hal::layouts::CyclotomicOrder;
+        SLOT_TRACE_CALLS.set(SLOT_TRACE_CALLS.get() + 1);
+        if !(a.is_power_of_two() && b.is_power_of_two() && b <= a && a <= module.n() / 2) {
+            return Err(anyhow::anyhow!("invalid PaCo fold").into());
+        }
+        with_marked_region::<SLOT_TRACE_EXTRA, _>(scratch, |rest| {
+            for level in 0..(a / b).trailing_zeros() {
+                let rotation = (a >> (level + 1)) as i64;
+                let key = keys
+                    .get_automorphism_key(galois_element(rotation, module.cyclotomic_order()), ct.k())
+                    .map_err(|source| poulpy_ckks::CKKSCompositionError::MissingAutomorphismKey {
+                        op: "paco_slot_trace",
+                        rotation,
+                        k: ct.k().into(),
+                        source,
+                    })?;
+                poulpy_core::GLWEAutomorphism::glwe_automorphism_add_assign(module, ct, &key, rest);
+            }
+            Ok(())
+        })
+    }
+}
 crate::impl_ckks_ship_coeff_encoding!(OverrideBackend);
 
 unsafe impl poulpy_ckks::oep::CKKSShipImpl for OverrideBackend {
@@ -225,20 +271,23 @@ fn paco_drivers_enter_the_selected_coefficient_encoding() {
     }
     let (want, reference_bytes, _, _) = bootstrap!(&reference, FFT64Portable);
     PACO_ENCODING_CALLS.set(0);
+    SLOT_TRACE_CALLS.set(0);
     let (got, bytes, keys, ctx) = bootstrap!(&module, OverrideBackend);
     assert_eq!(PACO_ENCODING_CALLS.get(), kappa);
+    assert_eq!(SLOT_TRACE_CALLS.get(), kappa);
     assert!(bytes >= reference_bytes && bytes >= PACO_ENCODING_EXTRA);
     assert_eq!(got, want);
 
-    // An input at another width than the plan's modulus is refused before any encoding.
+    // An input at another width than the plan's modulus is refused before any encoding or trace.
     let wide = module.ckks_ciphertext_alloc(params.base2k.into(), (k_in + 1).into());
     let mut out = module.ckks_ciphertext_alloc(ctx.base2k(), ctx.max_output_k(&keys).unwrap());
     let unchanged = snapshot::<OverrideBackend, _>(&out);
     PACO_ENCODING_CALLS.set(0);
+    SLOT_TRACE_CALLS.set(0);
     assert!(
         with_scratch::<OverrideBackend, _>(bytes, |s| module.ckks_paco_bootstrap_into(&mut out, &wide, &ctx, &keys, s)).is_err()
     );
-    assert_eq!(PACO_ENCODING_CALLS.get(), 0);
+    assert_eq!((PACO_ENCODING_CALLS.get(), SLOT_TRACE_CALLS.get()), (0, 0));
     assert_eq!(snapshot::<OverrideBackend, _>(&out), unchanged);
 }
 

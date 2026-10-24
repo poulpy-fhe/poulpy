@@ -9,7 +9,7 @@ use crate::{CKKSResult as Result, ckks_ensure};
 use anyhow::Context;
 use poulpy_core::layouts::prepared::{GLWEAutomorphismKeyPreparedBackendRef, GLWETensorKeyPreparedBackendRef};
 use poulpy_core::{
-    GLWEAutomorphism, GLWEBytesOf, GLWEKeyswitch, GLWELinearTransformations, GLWERotate,
+    GLWEBytesOf, GLWEKeyswitch, GLWELinearTransformations, GLWERotate,
     layouts::{
         Degree, GGLWEPreparedToBackendRef, GLWEInfos, GLWELayout, GLWEPlaintextInfos, GLWEPlaintextMeta, GLWESwitchingKeyDegrees,
         GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos, Rank, Scale, TorusPrecision,
@@ -25,7 +25,7 @@ use crate::layouts::paco::{
 };
 use crate::{
     CKKSCtBounds, CKKSInfos, CKKSLayout,
-    api::{CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSMulOps, CKKSRotateOps, CKKSSubOps, PaCoScalar},
+    api::{CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSMulOps, CKKSSubOps, PaCoScalar},
     oep::{CKKSEncodingImpl, CKKSPaCoImpl},
 };
 
@@ -186,7 +186,6 @@ where
     let bsk = canonical;
     let mut required = module
         .ckks_mul_pt_vec_tmp_bytes(&branch_layout, bsk, &beta_layout)
-        .max(module.ckks_mul_tmp_bytes(&branch_layout, &branch_layout, &branch_layout, &relinearization))
         .max(module.ckks_add_tmp_bytes(branch_layout.size()))
         .max(module.ckks_sub_tmp_bytes(branch_layout.size()))
         .max(module.ckks_copy_tmp_bytes(&branch_layout, &branch_layout))
@@ -204,8 +203,13 @@ where
             .checked_add(lt_copy)
             .context("PaCo linear-transformation scratch size overflows usize")?;
         required = required
-            .max(module.glwe_automorphism_tmp_bytes(&branch_layout, &branch_layout, &key))
-            .max(module.ckks_rotate_tmp_bytes(&branch_layout, &key))
+            .max(BE::ckks_slot_trace_assign_tmp_bytes(module, &branch_layout, &key))
+            .max(BE::ckks_slot_product_assign_tmp_bytes(
+                module,
+                &branch_layout,
+                &key,
+                &relinearization,
+            ))
             .max(module.ckks_conjugate_tmp_bytes(&branch_layout, &key))
             .max(lt);
     }

@@ -34,8 +34,15 @@ where
     })
 }
 
-pub(crate) fn ckks_add_many_tmp_bytes_derived<BE: CKKSAddManyImpl>(module: &Module<BE>, res_size: usize) -> usize {
-    module.ckks_add_tmp_bytes(res_size)
+pub(crate) fn ckks_add_many_tmp_bytes_derived<BE, R, A>(module: &Module<BE>, res: &R, input: &A) -> usize
+where
+    BE: CKKSAddManyImpl,
+    R: CKKSCtBounds,
+    A: CKKSCtBounds,
+{
+    module
+        .ckks_add_tmp_bytes(res.max_size())
+        .max(module.ckks_copy_tmp_bytes(res, input))
 }
 
 pub(crate) fn ckks_add_many_derived<BE, Dst, Src>(
