@@ -502,6 +502,7 @@ macro_rules! conjugate_invariant_core_test_suite {
                 poulpy_core::test_suite::parity::test_glwe_external_product_parity(&params, &shapes, &reference, &module);
                 poulpy_core::test_suite::parity::test_glwe_automorphism_parity(&params, &shapes, &reference, &module);
                 poulpy_core::test_suite::parity::test_glwe_automorphism_coarsened(&params, &module);
+                poulpy_core::test_suite::parity::test_glwe_trace_parity(&params, &shapes, &reference, &module);
             }
         }
     };
@@ -520,6 +521,7 @@ mod tests {
         poulpy_core::test_suite::noise::encryption::test_glwe_encrypt_sk(&params, &module);
         poulpy_core::test_suite::noise::encryption::test_glwe_encrypt_pk(&params, &module);
         poulpy_core::test_suite::noise::automorphism::test_glwe_automorphism(&params, &module);
+        poulpy_core::test_suite::noise::test_glwe_trace_sum(&params, &module);
         poulpy_core::test_suite::noise::encryption::test_gglwe_automorphism_key_encrypt_sk(&params, &module);
         poulpy_core::test_suite::noise::linear_transformation::test_glwe_hoisted_baby_rotations_match_automorphism(
             &params, &module,

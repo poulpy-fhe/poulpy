@@ -1,9 +1,6 @@
 # Binary-FHE operation contracts
 
-Public `api` traits delegate to backend `oep::*Impl` contracts. A backend
-explicitly selects a reference family or implements a replacement. Reference
-algorithms compose lower-layer core/HAL operations; simple same-layer
-compositions are crate-private defaults in `oep::derived`. The `CGGI` marker
+Public `api` traits follow the [layering contract](../../docs/layering-contract.md). The `CGGI` marker
 selects the blind-rotation algorithm, independently of storage and scheduling.
 
 ## Public API organization
@@ -56,18 +53,12 @@ have caller-selected parity tests.
 
 ## Replacing an operation
 
-An override must compute the same circuit as the reference and pass the parity
-tests. The source reference defines the result and mutation semantics; this
-guide does not duplicate each algorithm. Compare coefficient-domain outputs,
+An override reproduces the reference as the [layering contract](../../docs/layering-contract.md) states. Parity
+compares coefficient-domain outputs,
 precision, rank, radix and allocated tails exactly. Prepared representations
 belong to each backend: compare their observable results, not their bytes.
 
-Select the reference families needed by the backend, then implement the
-remaining `*Impl` traits. `impl_bin_fhe_reference_full!` is a convenience opt-in
-for all families; omit it when replacing one of those families. The reference
-functions remain directly callable independently of the public dispatch path.
-Derived defaults dispatch to the selected same-layer operations and queries.
-Circuit execution, key encryption and key preparation also have separate
+`impl_bin_fhe_reference_full!` selects every family. Circuit execution, key encryption and key preparation also have separate
 `impl_bin_fhe_circuit_bootstrapping_*_reference!` opt-ins, allowing a backend to
 replace execution while retaining the key lifecycle implementations.
 

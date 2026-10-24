@@ -29,9 +29,12 @@
   The constant coefficient of a product has variance `4n - 3` there, twice the others', and a square's has mean `(2n - 1)` times the input variance, which comes off the NTT threshold `Q/2` and, summed coherently through the inverse DCT, adds `2u^2/3` of its square to the FFT64 error.
   FFT64 budgets each DCT as its cyclic FFT plus three stages. At `n = 2^16` and 128 bits, 32 products select 53 bits on NTT4x30 and 18 on FFT64, one square 52 and 17.
 - **Breaking:** `MaxBase2k::max_base2k` and `Module::max_base2k` return `usize`, where they returned `Option<usize>`: a backend without a model does not implement `MaxBase2k`, and `HostBytesBackend` no longer does.
+- The `# Degree` and `# Preconditions` docs of `poulpy_hal::api` state the coefficient-wise reduction exception and the column bound, and `backend_safety_contract.md` requires a release `assert!` to refuse an aliasing a kernel cannot handle.
 
 ### CPU backends
 
+- **Breaking:** `impl_cpu_core_defaults!` registers the core trace on both rings, where each standard backend registered it apart: an out-of-tree backend calling it drops its own `impl_glwe_trace_derived_full!`, which now conflicts.
+- `conjugate_invariant_core_test_suite!` also runs `test_glwe_trace_parity`.
 - Every conjugate-invariant backend type has a `max_base2k` model: each backend implements `MaxBase2k` once for both rings, where the conjugate-invariant types returned `None`.
 - The AVX-512 rank-one relinearization and the fused IFMA giant step refuse a key that does not cover their input, as the reference does.
 - The native CKKS encapsulated modulus raise (portable, AVX2, AVX-512, and their Rayon variants) and the fused IFMA giant step leave a key with a row offset to the reference, which refuses it, and the AVX-512 rank-one relinearization refuses one, instead of using it as an offset-free key.
@@ -224,6 +227,13 @@
 - **Fix:** `glwe_eval_linear_transformation_tmp_bytes` counts the scratch of the per-column and final BIG normalizations and of the final iDFT of the lazy giant-step path, and of the BIG normalization of the per-giant fallback ([#426](https://github.com/poulpy-fhe/poulpy/issues/426)).
   The lazy path counts its phases as sequential instead of summing them, so the query can shrink; outputs are unchanged.
 - Add `glwe_switch_degree` (`GLWESwitchDegree`), the switch of a GLWE between ring degrees that divide one another, column by column, beside the conjugate-invariant maps: `GLWECIConversionImpl` gains it with a default body, `glwe_switch_degree_reference`.
+- Add `layouts::max_lazy_terms(base2k, coefficients)`, the most canonical digits a lazy sum holds before it must be normalized: the larger of the worst case `2^(63 - base2k)` and the average-case count whose Gaussian sum leaves the normalizer's domain `[-2^62, 2^62]` with probability at most `2^-128` over the coefficients, for independent centered uniform digits (`docs/base2k-failure-probability.md`).
+- **Breaking:** `GLWETrace` traces over a window of levels in either direction, summed or normalized: `glwe_trace` and `glwe_trace_assign` take `levels: Range<usize>`, `reverse` and `normalize` in place of `skip`, which was `skip..log2(n)`, forward and normalized, and `glwe_trace_galois_elements` takes the levels and the direction.
+  Level 0 is the conjugation, on the standard ring only, and level `i` the rotation by `2^(i-1)` slots, so a full trace ends at `log2(n)` on the standard ring and at `log2(n) + 1` on the conjugate-invariant ring, whose backends now implement `GLWETraceImpl`, part of `impl_core_reference_full!`.
+  An out-of-tree backend calling `impl_core_reference_full!` drops its own `impl_glwe_trace_derived_full!`, which now conflicts, and a hand-written `GLWETraceImpl` takes the new parameters.
+  `reverse` visits the levels from the last down, each by its inverse element, and a nonempty trace leaves its output canonical, summed or normalized.
+  The test suite adds `test_glwe_trace_sum` and `test_glwe_trace_parity`, which takes over the trace cases of `test_trace_packing_parity`, runs on both rings and covers summed and reversed windows: register it beside `test_trace_packing_parity`.
+- `docs/layering-contract.md` states the layering rules that `core-contracts.md` restated, and the `# Canonical flag` doc of `GLWE` names the exception of a documented canonical precondition.
 
 ### `poulpy-ckks`
 
@@ -348,12 +358,14 @@
 - Add `DFTPlan::galois_elements_per_factor`.
 - The bootstrap scratch bounds cover every rotation key shape of the layout, taking one maximum per key list.
 - The test suite adds `small_s2c_preset_meets_precision`, an S2C-first bootstrap on an insecure `N = 2^11` preset built by the preset machinery, which backends run by default.
+- `ckks-contracts.md` links `docs/layering-contract.md` instead of restating it and no longer mentions the removed typestate.
 
 ### `poulpy-bin-fhe`
 
 - **Behaviour:** `FheUint::get_bit_lwe` narrows its input to the `max_input_k` of each switching key before the switch, and the circuit bootstrapping traces at the precision its automorphism keys cover, at most the blind rotation's; the circuit bootstrapping panics on a tensor key that does not cover the output GGSW.
 - **Breaking:** `FheUintPrepared` and `FheUintPreparedDebug` allocators take `k_digit` in place of `dsize`, and the blind rotation keys report the `k_digit` their GGSWs store, `base2k` as built, as their layout does.
 - The scalar-to-GGSW blind rotation reference places its gadget rows through `gadget_row_plaintext`, requires `VecZnxNormalize` in place of `VecZnxAddScalarAssign` and `VecZnxNormalizeAssign`, and its scratch covers `vec_znx_normalize_tmp_bytes`.
+- `bin-fhe-contracts.md` links `docs/layering-contract.md` instead of restating it.
 
 ### `poulpy-mhe`
 
@@ -367,6 +379,8 @@
   The finalizations of `GGLWEPatCompressed` and `GGLWEPat` normalize the whole matrix with `mat_znx_normalize_assign` (the bodies) and `mat_znx_normalize` (one call per output column), and their scratch queries are `mat_znx_normalize_tmp_bytes`.
   The public key share finalization normalizes the bodies with one `mat_znx_normalize` and fills each mask from its seed, where it called `glwe_pat_compressed_finalize` per entry; its scratch query is `mat_znx_normalize_tmp_bytes`.
   **Breaking:** the supertraits of `GLWEPublicKeyMHEProtocolImpl` are `HalMatZnxImpl` and `poulpy_core::oep::EncryptionImpl`, where it had `GLWEPatCompressedImpl`.
+- **Fix:** `mhe_ggsw_share_finalize` checks the key's `max_input_k` against the share's precision before any write, instead of `dnum * k_digit`, which a key with `k_aux < k_digit` exceeds.
+- `mhe-contracts.md` links `docs/layering-contract.md` instead of restating it and states that generation normalizes fresh shares.
 
 ### `poulpy-blas`
 
@@ -389,7 +403,7 @@
 - `blas_matmul_pt_right`, `blas_matmul_pt_left`, their `_tmp_bytes`, `_impl` and `_reference` forms, their validators, `blas_matmul_pt_right_key_uses`, `blas_matmul_pt_left_key_uses`, `blas_matmul_pt_right_output_layout`, `blas_matmul_pt_left_output_layout`, `blas_matmul_pt_right_max_base2k` and `blas_matmul_pt_left_max_base2k` take the context, which only the masked paths read; `matmul_pt_right_galois_elements` and `matmul_pt_left_galois_elements` add the masks' keys under those paths.
 - `BlasCiphertext` implements `WriterTo` and `ReaderFrom`: a header of its dimensions and block layout, its batch record, then its blocks; a grid whose blocks differ in layout, or hold a flag-clear block, is `InvalidInput` with nothing written, and a read into a grid whose blocks differ in layout is `InvalidInput`, into a grid of another layout `InvalidData`, before any block is read.
 - `impl_blas_reference_full!` selects every reference implementation, and `impl_blas_inter_reference!`, `impl_blas_intra_reference!`, `impl_blas_matmul_reference!` and `impl_blas_jkls_reference!` one family each, over the public reference traits of `reference`.
-- `impl_blas_matmul_reference!` overrides the provided `blas_matmul` with `BlasMatMulReference::blas_matmul_reference`, the same product on the grids read in place, without the preparations' copies.
+- `blas_matmul_impl` and `blas_matmul_tmp_bytes_impl` are required `BlasMatMulImpl` methods, which `impl_blas_matmul_reference!` forwards to `BlasMatMulReference::blas_matmul_reference` and `blas_matmul_tmp_bytes_reference`: the reference prepared product of two hot operands on the grids read in place, without the preparations' copies.
 - Add key-use queries in `reference` (`blas_matmul_key_uses`, `blas_matmul_prepare_left_key_uses`, `blas_matmul_prepare_right_key_uses`, `blas_matmul_prepared_key_uses`, `blas_matmul_pt_right_key_uses`, `blas_matmul_pt_left_key_uses`, `blas_transpose_key_uses`, `blas_rotate_rows_key_uses`, `blas_rotate_cols_key_uses`, `blas_rotate_key_uses`, `blas_sum_key_uses`) returning `BlasKeyUses`, the `(Galois element, width)` pairs and the tensor key width an operation looks up.
   Each validator enumerates its lookups with the function its query collects them with.
   Add output-layout queries (`blas_matmul_output_layout`, `blas_matmul_prepared_output_layout`, `blas_matmul_pt_right_output_layout`, `blas_matmul_pt_left_output_layout`, `blas_transpose_output_layout`, `blas_rotate_rows_output_layout`, `blas_rotate_cols_output_layout`, `blas_rotate_output_layout`, `blas_sum_output_layout`) returning the `BlasLayout` an operation stamps on `res`.
@@ -412,6 +426,7 @@
   The counts are those `blas_matmul` and `blas_matmul_pt_right` document.
 - `validate_blas_sum` rejects with `InvalidOperand` a `base2k` whose digits cannot hold the `log2(mat_slots) + 1` lazy terms the sum adds within `2^62`, as the products reject one above 62.
 - Calls with distinct `res` and `scratch` may run concurrently over a shared module, context, public operands, prepared operands and key stores, and an override keeps no state across calls.
+- `blas-contracts.md` links `docs/layering-contract.md` instead of restating it.
 
 ### `poulpy-cpu-arm`
 

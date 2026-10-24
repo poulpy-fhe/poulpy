@@ -2,15 +2,13 @@ use poulpy_ckks::{CKKSResult as Result, oep::CKKSMulImpl};
 use poulpy_core::layouts::{GGLWEInfos, GetAutomorphismKey, GetTensorKey};
 use poulpy_hal::layouts::{Backend, Module, PrepareHint, ScratchArena};
 
-use super::derived;
 use crate::layouts::{
     BlasContext, BlasGrid, BlasGridInfos, BlasGridMut, BlasMatMulLeft, BlasMatMulOperandInfos, BlasMatMulRight, BlasPtOperand,
     Left,
 };
 
-/// Extension point of [`crate::api::BlasMatMulOps`]: the preparations, the prepared product and the products by public
-/// matrices, on the right and on the left, are required, and `blas_matmul` is provided over the preparations and the
-/// prepared product.
+/// Extension point of [`crate::api::BlasMatMulOps`]: the product, the preparations, the prepared product and the products
+/// by public matrices, on the right and on the left, all required.
 ///
 /// # Safety
 ///
@@ -30,8 +28,7 @@ use crate::layouts::{
 /// [`blas_matmul_left_operand_layout`](crate::layouts::blas_matmul_left_operand_layout)
 /// ([`blas_matmul_right_operand_layout`](crate::layouts::blas_matmul_right_operand_layout)) gives for its source under
 /// the preparation's `ctx`, and the source's batch, [`grid_batch::<Self::Ring>(a)`](crate::layouts::grid_batch). The
-/// `_prepared` validator, the batch the prepared product records and the provided `blas_matmul` query read nothing
-/// else. The terms of a cold operand are those of the preparation's `ctx`; those of a hot operand are those of the
+/// `_prepared` validator and the batch the prepared product records read nothing else. The terms of a cold operand are those of the preparation's `ctx`; those of a hot operand are those of the
 /// `ctx` of the product it enters, whatever the context it was prepared under, at whatever scale: the product evaluates
 /// its maps, which spend their scale from the operand's budget, and stamps by the ct x ct rule. So a hot operand holds
 /// a copy of its source's live limbs. A cold preparation looks up the rotation keys of its terms and a hot one none,
@@ -236,7 +233,7 @@ pub unsafe trait BlasMatMulImpl: Backend + CKKSMulImpl {
         A: BlasGrid<Self>,
         K: GetAutomorphismKey<Self> + Sync;
 
-    /// The larger of both hot preparations' queries and the prepared product's on the layouts they give.
+    /// Scratch of [`Self::blas_matmul_impl`] under `ctx`.
     fn blas_matmul_tmp_bytes_impl<R, A, B, T, K>(
         module: &Module<Self>,
         res: &R,
@@ -251,18 +248,9 @@ pub unsafe trait BlasMatMulImpl: Backend + CKKSMulImpl {
         A: BlasGridInfos,
         B: BlasGridInfos,
         T: GGLWEInfos,
-        K: GGLWEInfos,
-    {
-        derived::blas_matmul_tmp_bytes_derived(module, res, a, b, ctx, tsk, atk)
-    }
+        K: GGLWEInfos;
 
-    /// [`Self::blas_matmul_prepare_left_impl`] on `a` and [`Self::blas_matmul_prepare_right_impl`] on `b`, into hot,
-    /// `OneShot`, operands allocated from the infos
-    /// [`blas_matmul_left_operand_layout`](crate::layouts::blas_matmul_left_operand_layout) and
-    /// [`blas_matmul_right_operand_layout`](crate::layouts::blas_matmul_right_operand_layout) give, then
-    /// [`Self::blas_matmul_prepared_impl`] into `res` under `ctx`. [`crate::impl_blas_matmul_reference!`] overrides it with
-    /// [`BlasMatMulReference::blas_matmul_reference`](crate::reference::BlasMatMulReference::blas_matmul_reference), the
-    /// same product on the borrowed grids, without the copies.
+    /// `res = a b`, the JKLS product of two encrypted grids.
     #[allow(clippy::too_many_arguments)]
     fn blas_matmul_impl<R, A, B, T, K>(
         module: &Module<Self>,
@@ -279,15 +267,11 @@ pub unsafe trait BlasMatMulImpl: Backend + CKKSMulImpl {
         A: BlasGrid<Self>,
         B: BlasGrid<Self>,
         T: GetTensorKey<Self> + Sync,
-        K: GetAutomorphismKey<Self> + Sync,
-    {
-        derived::blas_matmul_derived(module, res, a, b, ctx, tsk, atk, scratch)
-    }
+        K: GetAutomorphismKey<Self> + Sync;
 }
 
-/// Selects [`BlasMatMulReference`](crate::reference::BlasMatMulReference) for `$be`, and its `blas_matmul`, which
-/// streams the borrowed grids without the hot preparations' copies, under the provided query. The reference prepares
-/// cold operands, and the terms of hot ones inside the product, through `$be`'s map hook, converts them through its
+/// Selects [`BlasMatMulReference`](crate::reference::BlasMatMulReference) for `$be`. The reference prepares cold
+/// operands, and the terms of hot ones inside the product, through `$be`'s map hook, converts them through its
 /// poulpy-ckks preparations and multiplies them through its JKLS kernel, so `$be` also implements
 /// [`crate::oep::BlasMatIntraImpl`] and [`crate::oep::BlasJklsImpl`].
 #[macro_export]
@@ -387,6 +371,25 @@ macro_rules! impl_blas_matmul_reference {
                 K: ::poulpy_core::layouts::GetAutomorphismKey<Self> + Sync,
             {
                 $crate::reference::BlasMatMulReference::blas_matmul_prepared_reference(module, res, a, b, ctx, tsk, atk, scratch)
+            }
+
+            fn blas_matmul_tmp_bytes_impl<R, A, B, T, K>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                res: &R,
+                a: &A,
+                b: &B,
+                ctx: &$crate::layouts::BlasContext<Self>,
+                tsk: &T,
+                atk: &K,
+            ) -> usize
+            where
+                R: $crate::layouts::BlasGridInfos,
+                A: $crate::layouts::BlasGridInfos,
+                B: $crate::layouts::BlasGridInfos,
+                T: ::poulpy_core::layouts::GGLWEInfos,
+                K: ::poulpy_core::layouts::GGLWEInfos,
+            {
+                $crate::reference::BlasMatMulReference::blas_matmul_tmp_bytes_reference(module, res, a, b, ctx, tsk, atk)
             }
 
             fn blas_matmul_impl<R, A, B, T, K>(

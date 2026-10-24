@@ -363,7 +363,8 @@ impl<D: Data, T: UnsignedInteger> FheUint<D, T, i64> {
         module.glwe_rotate(-((T::bit_index(src << 3) << log_gap) as i64), &mut tmp_fhe_uint_byte, b);
 
         // Zeroes all other bytes
-        module.glwe_trace_assign(&mut tmp_fhe_uint_byte, trace_start, keys, &mut scratch_1);
+        let log_n = tmp_fhe_uint_byte.log_n();
+        module.glwe_trace_assign(&mut tmp_fhe_uint_byte, trace_start..log_n, false, true, keys, &mut scratch_1);
 
         // Moves back self[0] to self[byte_tg]
         module.glwe_rotate_assign(rot, &mut tmp_fhe_uint_byte, &mut scratch_1);
@@ -481,7 +482,8 @@ impl<D: Data, T: UnsignedInteger, W: ZnxWord> FheUint<D, T, W> {
         let log_gap: usize = module.log_n() - T::LOG_BITS as usize;
         let rot = (T::bit_index(bit) << log_gap) as i64;
         module.glwe_rotate(-rot, res, self);
-        module.glwe_trace_assign(res, 0, keys, scratch);
+        let log_n = res.log_n();
+        module.glwe_trace_assign(res, 0..log_n, false, true, keys, scratch);
     }
 
     pub fn get_byte<R, M, H, BE>(&self, module: &M, byte: usize, res: &mut R, keys: &H, scratch: &mut ScratchArena<'_, BE>)
@@ -496,7 +498,8 @@ impl<D: Data, T: UnsignedInteger, W: ZnxWord> FheUint<D, T, W> {
         let trace_start = (T::LOG_BITS - T::LOG_BYTES) as usize;
         let rot = (T::bit_index(byte << 3) << log_gap) as i64;
         module.glwe_rotate(-rot, res, self);
-        module.glwe_trace_assign(res, trace_start, keys, scratch);
+        let log_n = res.log_n();
+        module.glwe_trace_assign(res, trace_start..log_n, false, true, keys, scratch);
     }
 }
 
@@ -562,7 +565,8 @@ impl<D: Data, T: UnsignedInteger> FheUint<D, T, i64> {
 
         // Stores this byte (everything else zeroed) into tmp_trace
         let mut tmp_trace: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(self);
-        module.glwe_trace(&mut tmp_trace, trace_start, self, keys, scratch);
+        let log_n = tmp_trace.log_n();
+        module.glwe_trace(&mut tmp_trace, trace_start..log_n, false, true, self, keys, scratch);
 
         // Subtracts to self to zero it
         module.glwe_sub_assign(self, &tmp_trace);
@@ -597,7 +601,8 @@ impl<D: Data, T: UnsignedInteger> FheUint<D, T, i64> {
 
         // Extract MSB
         module.glwe_rotate(-rot, &mut sext, self);
-        module.glwe_trace_assign(&mut sext, 0, keys, &mut scratch_1.borrow());
+        let log_n = sext.log_n();
+        module.glwe_trace_assign(&mut sext, 0..log_n, false, true, keys, &mut scratch_1.borrow());
 
         // Replicates MSB in byte
         for i in 0..3 {

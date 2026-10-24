@@ -130,7 +130,6 @@ poulpy_cpu_portable::impl_cpu_core_defaults!(super::FFT64PortableRayon, fft64);
 ::poulpy_core::impl_glwe_rotate_reference_full!(super::FFT64PortableRayon);
 ::poulpy_core::impl_ggsw_rotate_derived_full!(super::FFT64PortableRayon);
 ::poulpy_core::impl_glwe_mul_xp_minus_one_reference_full!(super::FFT64PortableRayon);
-::poulpy_core::impl_glwe_trace_derived_full!(super::FFT64PortableRayon);
 ::poulpy_core::impl_glwe_ci_conversion_reference_full!(super::FFT64PortableRayon);
 poulpy_cpu_portable::impl_cpu_core_defaults!(super::NTT4x30PortableRayon, ntt4x30);
 ::poulpy_core::impl_conversion_reference_full!(super::NTT4x30PortableRayon);
@@ -138,7 +137,6 @@ poulpy_cpu_portable::impl_cpu_core_defaults!(super::NTT4x30PortableRayon, ntt4x3
 ::poulpy_core::impl_glwe_rotate_reference_full!(super::NTT4x30PortableRayon);
 ::poulpy_core::impl_ggsw_rotate_derived_full!(super::NTT4x30PortableRayon);
 ::poulpy_core::impl_glwe_mul_xp_minus_one_reference_full!(super::NTT4x30PortableRayon);
-::poulpy_core::impl_glwe_trace_derived_full!(super::NTT4x30PortableRayon);
 ::poulpy_core::impl_glwe_ci_conversion_reference_full!(super::NTT4x30PortableRayon);
 poulpy_cpu_portable::impl_cpu_core_defaults!(super::FFT64CIPortableRayon, fft64);
 poulpy_cpu_portable::impl_cpu_core_defaults!(super::NTT4x30CIPortableRayon, ntt4x30);

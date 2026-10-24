@@ -101,4 +101,12 @@ The threshold is **$1/2$**, the rounding threshold of the last live limb. `gadge
 
 ## Leave room for coefficient-domain additions
 
-The word-size cap is not a budget for repeated additions. A sum or difference of $a$ normalized digits can reach magnitude $a\,2^{K-1}$; that intermediate must fit the coefficient word and the normalization contract. With `i64`, eight digits at $K=62$ can overflow, whereas $K=60$ bounds their sum by $2^{62}$, within the current normalization input range. Choose a smaller radix or normalize earlier when an addition chain needs more headroom.
+The word-size cap is not a budget for repeated additions. A sum or difference of $a$ normalized digits can reach magnitude $a\,2^{K-1}$ in the worst case; that intermediate must fit the coefficient word and the normalization contract, whose input range is $[-2^{62},2^{62}]$ for `i64`. With independent centered uniform digits the sum is again close to Gaussian, with
+
+$$
+\sigma_a\simeq\frac{2^K\sqrt a}{\sqrt{12}},
+\qquad
+\widehat p_a=\operatorname{erfc}\!\left(\frac{2^{62}}{\sqrt2\,\sigma_a}\right),
+$$
+
+and the same Mills-ratio and union bounds give the largest $a$ for a target $\lambda$ over $m$ coefficients. A lazy sum may hold the larger of that count and the worst case $2^{63-K}$, which the Gaussian tail underestimates for a few terms near the word size. `poulpy_core::layouts::max_lazy_terms` returns it with $\lambda=128$ over the coefficients it is given. For $m=2^{16}\cdot2\cdot20$ coefficients, $K=52$ holds 62526 digits where the worst case allows 2048, $K=56$ holds 244 against 128, and from $K=57$ up the worst case binds: 8 digits at $K=60$, 2 at $K=62$. As everywhere in this document, correlated inputs, such as many copies of one value, are outside the model.
