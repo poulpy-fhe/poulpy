@@ -7,8 +7,9 @@ use crate::{
     ComponentNoise, Distribution,
     api::{
         GGLWEPreparedFactory, GGLWEToGGSWKeyPreparedFactory, GGSWPreparedFactory, GLWEAutomorphismKeyPreparedFactory,
-        GLWEPreparedFactory, GLWEPublicKeyPreparedFactory, GLWESwitchingKeyPreparedFactory, GLWETensorKeyPreparedFactory,
-        GLWEToLWEKeyPreparedFactory, LWESwitchingKeyPreparedFactory, LWEToGLWEKeyPreparedFactory,
+        GLWEPreparedFactory, GLWEPublicKeyPreparedFactory, GLWESecretPreparedFactory, GLWESecretTensorPreparedFactory,
+        GLWESwitchingKeyPreparedFactory, GLWETensorKeyPreparedFactory, GLWEToLWEKeyPreparedFactory,
+        LWESwitchingKeyPreparedFactory, LWEToGLWEKeyPreparedFactory,
     },
     layouts::*,
     test_suite::parity::{ParityBackend, ParityShapes, poisoned_scratch},

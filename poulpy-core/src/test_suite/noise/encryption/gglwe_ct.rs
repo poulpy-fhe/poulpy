@@ -6,16 +6,16 @@ use poulpy_hal::{
     test_suite::TestParams,
 };
 
-use crate::layouts::GLWESecretSampling;
+use crate::api::GLWESecretSampling;
 use crate::{
     Distribution, GGLWECompressedEncryptSk, GGLWEDecompress, GGLWEEncryptSk, GGLWEKeyswitch, GLWESwitchingKeyCompressedEncryptSk,
     GLWESwitchingKeyDecompress, GLWESwitchingKeyEncryptSk, GetDistributionMut,
-    api::GGLWEPreparedFactory,
+    api::{GGLWEPreparedFactory, GLWESecretPreparedFactory},
     decryption::GLWEDecrypt,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        GGLWE, GGLWECompressed, GGLWEInfos, GGLWELayout, GLWESecret, GLWESecretPreparedFactory, GLWESwitchingKey,
-        GLWESwitchingKeyCompressed, LWEInfos, ModuleCoreAlloc, ModuleCoreCompressedAlloc, prepared::GLWESecretPrepared,
+        GGLWE, GGLWECompressed, GGLWEInfos, GGLWELayout, GLWESecret, GLWESwitchingKey, GLWESwitchingKeyCompressed, LWEInfos,
+        ModuleCoreAlloc, ModuleCoreCompressedAlloc, prepared::GLWESecretPrepared,
     },
     noise::GGLWENoise,
 };

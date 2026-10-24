@@ -3,11 +3,10 @@
 
 use poulpy_core::{
     DEFAULT_SIGMA_XE, Distribution, GGLWENoise, GetDistributionMut,
-    api::GLWEPublicKeyPreparedFactory,
+    api::{GLWEPublicKeyPreparedFactory, GLWESecretPreparedFactory, GLWESecretSampling, GLWESecretTensorFactory},
     layouts::{
-        Base2K, Dnum, Dsize, GLWELayout, GLWEPublicKeyPrepared, GLWESecret, GLWESecretLayout, GLWESecretPreparedFactory,
-        GLWESecretSampling, GLWESecretTensor, GLWESecretTensorFactory, GLWETensorKey, GLWETensorKeyLayout, LWEInfos,
-        ModuleCoreAlloc, TorusPrecision, k_digit_of,
+        Base2K, Dnum, Dsize, GLWELayout, GLWEPublicKeyPrepared, GLWESecret, GLWESecretLayout, GLWESecretTensor, GLWETensorKey,
+        GLWETensorKeyLayout, LWEInfos, ModuleCoreAlloc, TorusPrecision, k_digit_of,
     },
 };
 use poulpy_hal::{

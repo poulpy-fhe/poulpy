@@ -37,13 +37,13 @@ use poulpy_core::{
     GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWECIKeyEncryptSk, GLWEDecrypt, GLWEKeyswitch, GLWENormalize, GLWESub,
     GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk, ScratchArenaTakeCore, TransferInto,
     api::{
-        GLWEAutomorphismKeyPreparedFactory, GLWECIKeyPreparedFactory, GLWESwitchingKeyPreparedFactory,
+        GLWEAutomorphismKeyPreparedFactory, GLWECIKeyPreparedFactory, GLWESecretPreparedFactory, GLWESwitchingKeyPreparedFactory,
         GLWETensorKeyPreparedFactory,
     },
     layouts::{
         BackendGLWESecret, Base2K, Degree, GLWEAutomorphismKeyPrepared, GLWECIEmbedKeyPrepared, GLWECITraceKeyPrepared,
-        GLWELayout, GLWESecretPreparedFactory, GLWESecretToBackendRef, GLWESwitchingKeyPrepared, GLWETensorKeyPrepared, LWEInfos,
-        ModuleCoreAlloc, Rank, TorusPrecision, prepared::GLWESecretPrepared,
+        GLWELayout, GLWESecretToBackendRef, GLWESwitchingKeyPrepared, GLWETensorKeyPrepared, LWEInfos, ModuleCoreAlloc, Rank,
+        TorusPrecision, prepared::GLWESecretPrepared,
     },
 };
 
@@ -58,7 +58,7 @@ use poulpy_hal::{
 
 use super::CKKSTestParams;
 use crate::SlotsKind;
-use poulpy_core::layouts::GLWESecretSampling;
+use poulpy_core::api::GLWESecretSampling;
 use poulpy_core::{Distribution, GetDistributionMut};
 
 // ─── deterministic per-call RNG seeds ────────────────────────────────────────

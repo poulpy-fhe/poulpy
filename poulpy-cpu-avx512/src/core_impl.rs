@@ -1480,6 +1480,7 @@ mod ifma_rayon_defaults {
     ::poulpy_core::impl_operations_reference_full!(NTT3x42IfmaRayon);
     ::poulpy_core::impl_polynomial_evaluation_derived_full!(NTT3x42IfmaRayon);
     ::poulpy_core::impl_preparation_reference_full!(NTT3x42IfmaRayon);
+    ::poulpy_core::impl_secret_reference_full!(NTT3x42IfmaRayon);
     ::poulpy_core::impl_glwe_trace_derived_full!(NTT3x42IfmaRayon);
     poulpy_cpu_portable::impl_sampling_host!(NTT3x42IfmaRayon, ntt4x30);
 }

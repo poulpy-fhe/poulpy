@@ -1,15 +1,11 @@
 use poulpy_hal::layouts::SvpPPolToBackendMut;
 use poulpy_hal::layouts::SvpPPolToBackendRef;
-use poulpy_hal::{
-    api::{SvpPPolAlloc, SvpPPolBytesOf, SvpPrepare},
-    layouts::{Backend, Data, Module, PrepareHint, SvpPPol, ZnxInfos},
-};
+use poulpy_hal::layouts::{Backend, Data, SvpPPol, ZnxInfos};
 
-use crate::layouts::{GLWESecretLayout, operand_degree};
 use crate::{
     GetDistribution, GetDistributionMut,
     dist::Distribution,
-    layouts::{Base2K, Degree, GLWEInfos, GLWESecretPreparedFactory, GLWESecretTensorToBackendRef, GetDegree, LWEInfos, Rank},
+    layouts::{Base2K, Degree, GLWEInfos, LWEInfos, Rank},
 };
 
 /// DFT-domain (prepared) variant of [`GLWESecretTensor`](crate::layouts::GLWESecretTensor).
@@ -57,92 +53,6 @@ impl<D: Data, B: Backend> GLWEInfos for GLWESecretTensorPrepared<D, B> {
     }
 }
 
-pub trait GLWESecretTensorPreparedFactory<B: Backend> {
-    fn glwe_secret_tensor_prepared_alloc(&self, rank: Rank) -> GLWESecretTensorPrepared<B::OwnedBuf, B>;
-    fn glwe_secret_tensor_prepared_alloc_from_infos<A>(&self, infos: &A) -> GLWESecretTensorPrepared<B::OwnedBuf, B>
-    where
-        A: GLWEInfos;
-
-    fn glwe_secret_tensor_prepared_bytes_of(&self, rank: Rank) -> usize;
-    fn glwe_secret_tensor_prepared_bytes_of_from_infos<A>(&self, infos: &A) -> usize
-    where
-        A: GLWEInfos;
-
-    /// Moves a [`GLWESecretTensor`](crate::layouts::GLWESecretTensor) to the
-    /// DFT domain.
-    ///
-    /// Only a tensor secret is accepted: preparing a base
-    /// [`GLWESecret`](crate::layouts::GLWESecret) is
-    /// [`glwe_secret_prepare`](GLWESecretPreparedFactory::glwe_secret_prepare),
-    /// and the two are not interchangeable (they do not even have the same
-    /// number of columns).
-    fn glwe_secret_tensor_prepared_prepare<R, O>(&self, res: &mut R, other: &O)
-    where
-        R: GLWESecretTensorPreparedToBackendMut<B> + GetDistributionMut,
-        O: GLWESecretTensorToBackendRef<B> + GetDistribution;
-}
-
-impl<B: Backend> GLWESecretTensorPreparedFactory<B> for Module<B>
-where
-    Self: GLWESecretPreparedFactory<B>,
-{
-    fn glwe_secret_tensor_prepared_alloc(&self, rank: Rank) -> GLWESecretTensorPrepared<B::OwnedBuf, B> {
-        self.glwe_secret_tensor_prepared_alloc_from_infos(&GLWESecretLayout {
-            n: self.ring_degree(),
-            rank,
-        })
-    }
-    fn glwe_secret_tensor_prepared_alloc_from_infos<A>(&self, infos: &A) -> GLWESecretTensorPrepared<B::OwnedBuf, B>
-    where
-        A: GLWEInfos,
-    {
-        let n: usize = operand_degree(self.n(), &[infos.n()]);
-        GLWESecretTensorPrepared {
-            data: self.svp_ppol_alloc(n, crate::layouts::pairs(infos.rank().into()), PrepareHint::Reuse),
-            rank: infos.rank(),
-            dist: Distribution::NONE,
-        }
-    }
-
-    fn glwe_secret_tensor_prepared_bytes_of(&self, rank: Rank) -> usize {
-        self.glwe_secret_tensor_prepared_bytes_of_from_infos(&GLWESecretLayout {
-            n: self.ring_degree(),
-            rank,
-        })
-    }
-    fn glwe_secret_tensor_prepared_bytes_of_from_infos<A>(&self, infos: &A) -> usize
-    where
-        A: GLWEInfos,
-    {
-        let n: usize = operand_degree(self.n(), &[infos.n()]);
-        self.bytes_of_svp_ppol(n, crate::layouts::pairs(infos.rank().into()), PrepareHint::Reuse)
-    }
-
-    fn glwe_secret_tensor_prepared_prepare<R, O>(&self, res: &mut R, other: &O)
-    where
-        R: GLWESecretTensorPreparedToBackendMut<B> + GetDistributionMut,
-        O: GLWESecretTensorToBackendRef<B> + GetDistribution,
-    {
-        {
-            let mut res = res.to_backend_mut();
-            let other = other.to_backend_ref();
-            assert_eq!(
-                res.rank, other.rank,
-                "GLWESecretTensorPrepared rank must equal the source tensor's rank"
-            );
-            let cols: usize = other.data.cols();
-            assert_eq!(res.data.cols(), cols);
-            for i in 0..cols {
-                self.svp_prepare(&mut res.data, i, &other.data, i);
-            }
-        }
-
-        *res.dist_mut() = *other.dist();
-    }
-}
-
-// module-only API: allocation/size helpers are provided by `GLWESecretTensorPreparedFactory` on `Module`.
-
 impl<D: Data, B: Backend> GLWESecretTensorPrepared<D, B> {
     pub fn n(&self) -> Degree {
         Degree(self.data.n() as u32)
@@ -154,8 +64,6 @@ impl<D: Data, B: Backend> GLWESecretTensorPrepared<D, B> {
         self.rank
     }
 }
-
-// module-only API: preparation is provided by `GLWESecretTensorPreparedFactory` on `Module`.
 
 pub type GLWESecretTensorPreparedBackendRef<'a, B> = GLWESecretTensorPrepared<<B as Backend>::BufRef<'a>, B>;
 pub type GLWESecretTensorPreparedBackendMut<'a, B> = GLWESecretTensorPrepared<<B as Backend>::BufMut<'a>, B>;

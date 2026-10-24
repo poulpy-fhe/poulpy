@@ -8,14 +8,13 @@ use poulpy_hal::{
     test_suite::TestParams,
 };
 
-use crate::layouts::GLWESecretSampling;
+use crate::api::GLWESecretSampling;
 use crate::test_suite::noise::glwe_noise_checked;
 use crate::{
     GLWEAutomorphismKeyEncryptSk, GLWEDecrypt, GLWEEncryptSk, GLWENoise, GLWEPacking, GLWERotate, GLWESub,
-    api::GLWEAutomorphismKeyPreparedFactory,
+    api::{GLWEAutomorphismKeyPreparedFactory, GLWESecretPreparedFactory},
     layouts::{
-        GLWE, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory,
-        ModuleCoreAlloc,
+        GLWE, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWELayout, GLWEPlaintext, GLWESecret, ModuleCoreAlloc,
         prepared::{GLWEAutomorphismKeyPrepared, GLWESecretPrepared},
     },
 };

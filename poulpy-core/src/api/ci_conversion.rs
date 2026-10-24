@@ -6,8 +6,8 @@ use poulpy_hal::{
 use crate::{
     GetDistribution,
     layouts::{
-        GGLWEInfos, GGLWEToBackendMut, GLWECIEmbedKey, GLWECITraceKey, GLWEInfos, GLWESecretToBackendRef, GLWEToBackendMut,
-        GLWEToBackendRef,
+        GGLWEInfos, GGLWEToBackendMut, GLWECIEmbedKey, GLWECITraceKey, GLWEInfos, GLWESecret, GLWESecretToBackendRef,
+        GLWEToBackendMut, GLWEToBackendRef,
     },
 };
 
@@ -15,7 +15,7 @@ use crate::{
 /// degree `2N`, on a standard module of degree at least `2N`.
 ///
 /// The result decrypts under the embedded conjugate-invariant secret
-/// ([`GLWESecretCIEmbed`](crate::layouts::GLWESecretCIEmbed)).
+/// ([`GLWESecretCIEmbed`]).
 pub trait GLWECIEmbed<BE: Backend> {
     /// Writes `a_0 + Σ a_i (X^i + X^-i)` of every column of `a` into `res`, at
     /// the radix of `a`. The digits are exact but not renormalized, so `res` is
@@ -24,6 +24,23 @@ pub trait GLWECIEmbed<BE: Backend> {
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos;
+}
+
+/// Embedding of a conjugate-invariant secret of degree `N` into the standard secret of degree `2N`,
+/// on a standard module of degree at least `2N`.
+pub trait GLWESecretCIEmbed<BE: Backend> {
+    /// Embeds a conjugate-invariant secret of degree `N` into the standard secret
+    /// of degree `2N` under which embedded ciphertexts decrypt; the module degree
+    /// is at least `2N`.
+    ///
+    /// The result is tagged [`Distribution::ENCAPSULATED`](crate::Distribution::ENCAPSULATED):
+    /// its coefficients mirror the source, so it only backs the ring-switching keys.
+    ///
+    /// # Panics
+    /// When `2N` exceeds the module degree.
+    fn glwe_secret_ci_embed<S>(&self, src: &S) -> GLWESecret<BE::OwnedBuf, BE::ZnxWord>
+    where
+        S: GLWESecretToBackendRef<BE>;
 }
 
 /// Switch of a GLWE between ring degrees that divide one another, on a module of
@@ -62,6 +79,8 @@ pub trait GLWECITrace<BE: Backend> {
 /// `2N`; `sk_ci` is embedded internally.
 #[allow(clippy::too_many_arguments)]
 pub trait GLWECIKeyEncryptSk<BE: Backend> {
+    /// Scratch bytes of [`Self::glwe_ci_embed_key_encrypt_sk`] and
+    /// [`Self::glwe_ci_trace_key_encrypt_sk`] for keys of layout `infos`.
     fn glwe_ci_key_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos;

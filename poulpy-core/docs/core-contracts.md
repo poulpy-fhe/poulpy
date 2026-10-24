@@ -37,7 +37,10 @@ Preparation dispatches through `PreparationImpl`, whose GLWE, GGLWE, GGSW,
 public-key and GGLWE-to-GGSW-key methods are required and whose key preparations
 are derived over `gglwe_prepare` and `glwe_switching_key_prepare`. Decompression
 dispatches through `DecompressionImpl`, whose GLWE and LWE methods are required
-and whose gadget and key decompressions are derived over them; see the
+and whose gadget and key decompressions are derived over them. Secret sampling,
+preparation, tensoring and LWE/GLWE conversion dispatch through `SecretImpl`, whose
+ternary and binary fills are derived over `scalar_znx_fill_distribution`, one draw
+per column in column order, and whose other methods are required; see the
 [OEP documentation](../src/oep/mod.rs) for the available hooks and macros.
 
 Prepared-right tensor multiplication is a `GLWETensoring` operation. Its

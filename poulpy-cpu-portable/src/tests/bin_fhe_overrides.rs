@@ -12,6 +12,7 @@ poulpy_core::impl_decompression_reference_full!(OverrideBackend);
 poulpy_core::impl_decryption_reference_full!(OverrideBackend);
 poulpy_core::impl_encryption_reference_full!(OverrideBackend);
 poulpy_core::impl_preparation_reference_full!(OverrideBackend);
+poulpy_core::impl_secret_reference_full!(OverrideBackend);
 poulpy_core::impl_ggsw_rotate_derived_full!(OverrideBackend);
 poulpy_core::impl_glwe_mul_const_reference_full!(OverrideBackend);
 poulpy_core::impl_glwe_mul_plain_reference_full!(OverrideBackend);

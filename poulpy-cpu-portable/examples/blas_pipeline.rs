@@ -40,11 +40,11 @@ use poulpy_blas::{
 use poulpy_ckks::prelude::*;
 use poulpy_core::{
     GLWEAutomorphismKeyEncryptSk, GLWETensorKeyEncryptSk,
-    api::{GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory},
+    api::{GLWEAutomorphismKeyPreparedFactory, GLWESecretPreparedFactory, GLWESecretSampling, GLWETensorKeyPreparedFactory},
     layouts::{
-        Base2K, Degree, GGLWELayout, GLWEAutomorphismKeyLayout, GLWELayout, GLWESecretSampling, GLWETensorKeyLayout, LWEInfos,
-        ModuleCoreAlloc, Rank, TorusPrecision,
-        prepared::{GLWEAutomorphismKeyPrepared, GLWESecretPreparedFactory, GLWETensorKeyPrepared},
+        Base2K, Degree, GGLWELayout, GLWEAutomorphismKeyLayout, GLWELayout, GLWETensorKeyLayout, LWEInfos, ModuleCoreAlloc, Rank,
+        TorusPrecision,
+        prepared::{GLWEAutomorphismKeyPrepared, GLWETensorKeyPrepared},
     },
 };
 use poulpy_cpu_portable::FFT64Portable;

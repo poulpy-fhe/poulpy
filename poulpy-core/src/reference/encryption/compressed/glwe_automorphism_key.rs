@@ -13,9 +13,10 @@ use crate::api::GLWEBytesOf;
 use crate::layouts::operand_degree;
 use crate::{
     GGLWECompressedEncryptSk, ScratchArenaTakeCore,
+    api::GLWESecretPreparedFactory,
     layouts::{
-        GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWEInfos, GLWEInfos, GLWESecretPreparedFactory,
-        GLWESecretToBackendRef, LWEInfos, SetGaloisElement,
+        GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWEInfos, GLWEInfos, GLWESecretToBackendRef, LWEInfos,
+        SetGaloisElement,
     },
 };
 

@@ -1,22 +1,41 @@
 use poulpy_hal::{
     api::VecZnxSwitchRing,
-    layouts::{Backend, Module, ScratchArena, Standard},
+    layouts::{Backend, Data, Module, ScratchArena, Standard},
+    source::Source,
 };
 
-use crate::layouts::{GLWEInfos, GLWEToBackendMut, GLWEToBackendRef};
+use crate::{
+    GetDistribution,
+    layouts::{
+        GGLWEInfos, GGLWEToBackendMut, GLWECIEmbedKey, GLWECITraceKey, GLWEInfos, GLWESecret, GLWESecretToBackendRef,
+        GLWEToBackendMut, GLWEToBackendRef,
+    },
+    oep::EncryptionImpl,
+};
 
-/// Backend-provided maps between conjugate-invariant GLWEs of degree `N` and
-/// standard GLWEs of degree `2N`, and the degree switch between standard GLWEs of
-/// degrees `N` and `2N`, executed by a standard backend of degree at least `2N`.
+/// Backend-provided maps between conjugate-invariant GLWEs and secrets of degree `N` and
+/// standard GLWEs and secrets of degree `2N`, the degree switch between standard GLWEs of
+/// degrees `N` and `2N`, and the encryption of the switching keys between a standard secret and
+/// an embedded conjugate-invariant one, executed by a standard backend of degree at least `2N`.
+///
+/// The key encryptions default to [`Self::glwe_secret_ci_embed`] followed by the selected
+/// [`EncryptionImpl::glwe_switching_key_encrypt_sk`].
 ///
 /// # Safety
 /// Implementations must only read and write the regions described by the provided layouts, respect
 /// scratch-space requirements, and produce results equivalent to the reference maps.
-pub unsafe trait GLWECIConversionImpl: Backend<Ring = Standard> {
+pub unsafe trait GLWECIConversionImpl: Backend<Ring = Standard> + EncryptionImpl {
     fn glwe_ci_embed<R, A>(module: &Module<Self>, res: &mut R, a: &A)
     where
         R: GLWEToBackendMut<Self> + GLWEInfos,
         A: GLWEToBackendRef<Self> + GLWEInfos;
+
+    /// Reproduces
+    /// [`glwe_secret_ci_embed_reference`](crate::reference::ci_conversion::glwe_secret_ci_embed_reference)
+    /// bit for bit; it takes no scratch.
+    fn glwe_secret_ci_embed<S>(module: &Module<Self>, src: &S) -> GLWESecret<Self::OwnedBuf, Self::ZnxWord>
+    where
+        S: GLWESecretToBackendRef<Self>;
 
     fn glwe_ci_trace_tmp_bytes<R, A>(module: &Module<Self>, res_infos: &R, a_infos: &A) -> usize
     where
@@ -36,6 +55,57 @@ pub unsafe trait GLWECIConversionImpl: Backend<Ring = Standard> {
     {
         crate::oep::derived::ci_conversion::glwe_switch_degree_derived::<Self, _, _, _>(module, res, a)
     }
+
+    /// Default body: `glwe_ci_key_encrypt_sk_tmp_bytes_derived`,
+    /// [`EncryptionImpl::glwe_switching_key_encrypt_sk_tmp_bytes`].
+    fn glwe_ci_key_encrypt_sk_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
+    where
+        A: GGLWEInfos,
+    {
+        crate::oep::derived::ci_conversion::glwe_ci_key_encrypt_sk_tmp_bytes_derived(module, infos)
+    }
+
+    /// Default body: `glwe_ci_embed_key_encrypt_sk_derived`, [`Self::glwe_secret_ci_embed`] of `sk_ci`,
+    /// then [`EncryptionImpl::glwe_switching_key_encrypt_sk`] from the embedded secret to `sk`.
+    fn glwe_ci_embed_key_encrypt_sk<D, S1, S2>(
+        module: &Module<Self>,
+        res: &mut GLWECIEmbedKey<D, Self::ZnxWord>,
+        sk_ci: &S1,
+        sk: &S2,
+        source_xe: &mut Source,
+        source_xa: &mut Source,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        D: Data,
+        GLWECIEmbedKey<D, Self::ZnxWord>: GGLWEToBackendMut<Self>,
+        S1: GLWESecretToBackendRef<Self>,
+        S2: GLWESecretToBackendRef<Self> + GetDistribution + GLWEInfos,
+    {
+        crate::oep::derived::ci_conversion::glwe_ci_embed_key_encrypt_sk_derived(
+            module, res, sk_ci, sk, source_xe, source_xa, scratch,
+        )
+    }
+
+    /// Default body: `glwe_ci_trace_key_encrypt_sk_derived`, [`Self::glwe_secret_ci_embed`] of `sk_ci`,
+    /// then [`EncryptionImpl::glwe_switching_key_encrypt_sk`] from `sk` to the embedded secret.
+    fn glwe_ci_trace_key_encrypt_sk<D, S1, S2>(
+        module: &Module<Self>,
+        res: &mut GLWECITraceKey<D, Self::ZnxWord>,
+        sk_ci: &S1,
+        sk: &S2,
+        source_xe: &mut Source,
+        source_xa: &mut Source,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        D: Data,
+        GLWECITraceKey<D, Self::ZnxWord>: GGLWEToBackendMut<Self>,
+        S1: GLWESecretToBackendRef<Self>,
+        S2: GLWESecretToBackendRef<Self> + GetDistribution + GLWEInfos,
+    {
+        crate::oep::derived::ci_conversion::glwe_ci_trace_key_encrypt_sk_derived(
+            module, res, sk_ci, sk, source_xe, source_xa, scratch,
+        )
+    }
 }
 
 /// Selects the portable HAL algorithms for the conjugate-invariant maps.
@@ -49,6 +119,19 @@ macro_rules! impl_glwe_ci_conversion_reference_full {
                 A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
             {
                 $crate::reference::ci_conversion::glwe_ci_embed_reference::<$be, _, _, _>(module, res, a)
+            }
+
+            fn glwe_secret_ci_embed<S>(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                src: &S,
+            ) -> $crate::layouts::GLWESecret<
+                <$be as ::poulpy_hal::layouts::Backend>::OwnedBuf,
+                <$be as ::poulpy_hal::layouts::Backend>::ZnxWord,
+            >
+            where
+                S: $crate::layouts::GLWESecretToBackendRef<$be>,
+            {
+                $crate::reference::ci_conversion::glwe_secret_ci_embed_reference::<$be, _>(module, src)
             }
 
             fn glwe_ci_trace_tmp_bytes<R, A>(module: &::poulpy_hal::layouts::Module<$be>, res_infos: &R, a_infos: &A) -> usize

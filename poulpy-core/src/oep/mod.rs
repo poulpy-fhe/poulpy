@@ -86,6 +86,7 @@ mod operations;
 mod polynomial_evaluation;
 mod preparation;
 mod sampling;
+mod secret;
 
 pub use automorphism::*;
 pub use ci_conversion::*;
@@ -100,6 +101,7 @@ pub use operations::*;
 pub use polynomial_evaluation::*;
 pub use preparation::*;
 pub use sampling::*;
+pub use secret::*;
 
 /// Forwards every core family except sampling and the standard-only families (LWE conversion,
 /// packing, GLWE/GGSW rotate, `mul_xp_minus_one`).
@@ -116,6 +118,7 @@ macro_rules! impl_core_reference_full {
         $crate::impl_operations_reference_full!($be);
         $crate::impl_polynomial_evaluation_derived_full!($be);
         $crate::impl_preparation_reference_full!($be);
+        $crate::impl_secret_reference_full!($be);
         $crate::impl_gglwe_external_product_derived_full!($be);
         $crate::impl_gglwe_keyswitch_derived_full!($be);
         $crate::impl_ggsw_external_product_derived_full!($be);
@@ -144,5 +147,5 @@ pub use crate::{
     impl_glwe_pack_derived_full, impl_glwe_rotate_reference_full, impl_glwe_shift_reference_full, impl_glwe_sub_reference_full,
     impl_glwe_tensoring_reference_full, impl_glwe_trace_derived_full, impl_glwe_zero_reference_full,
     impl_linear_transformation_reference_full, impl_lwe_keyswitch_reference_full, impl_operations_reference_full,
-    impl_polynomial_evaluation_derived_full, impl_preparation_reference_full,
+    impl_polynomial_evaluation_derived_full, impl_preparation_reference_full, impl_secret_reference_full,
 };

@@ -7,10 +7,8 @@ use crate::{
 };
 use poulpy_core::{
     LWEEncryptSk, TransferInto,
-    layouts::{
-        GGLWEToGGSWKeyLayout, GGSWLayout, GLWEAutomorphismKeyLayout, GLWESecretSampling, LWELayout, LWESecretSampling,
-        ModuleCoreAlloc,
-    },
+    api::{GLWESecretSampling, LWESecretSampling},
+    layouts::{GGLWEToGGSWKeyLayout, GGSWLayout, GLWEAutomorphismKeyLayout, LWELayout, ModuleCoreAlloc},
 };
 use poulpy_hal::{
     layouts::{HostBytesBackend, Module},

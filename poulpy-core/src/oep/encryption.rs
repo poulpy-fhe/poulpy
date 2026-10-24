@@ -24,7 +24,7 @@ use crate::{
 /// Implementations must satisfy the contracts of all trait methods, including
 /// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
 /// associated method signatures.
-pub unsafe trait EncryptionImpl: Backend {
+pub unsafe trait EncryptionImpl: Backend + crate::oep::SecretImpl {
     fn fill_glwe_mask_from_source<R>(module: &Module<Self>, res: &mut R, source_xa: &mut Source)
     where
         R: GLWEToBackendMut<Self>;
@@ -372,7 +372,6 @@ pub unsafe trait EncryptionImpl: Backend {
     fn glwe_tensor_key_encrypt_sk_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GGLWEInfos,
-        Module<Self>: crate::layouts::GLWESecretPreparedFactory<Self> + crate::layouts::GLWESecretTensorFactory<Self>,
     {
         super::derived::encryption::glwe_tensor_key_encrypt_sk_tmp_bytes_derived(module, infos)
     }
@@ -387,7 +386,6 @@ pub unsafe trait EncryptionImpl: Backend {
     ) where
         R: GGLWEToBackendMut<Self> + GGLWEInfos,
         S: GLWESecretToBackendRef<Self> + GetDistribution + GLWEInfos,
-        Module<Self>: crate::layouts::GLWESecretPreparedFactory<Self> + crate::layouts::GLWESecretTensorFactory<Self>,
     {
         super::derived::encryption::glwe_tensor_key_encrypt_sk_derived(module, res, sk, source_xe, source_xa, scratch)
     }
@@ -572,7 +570,6 @@ pub unsafe trait EncryptionImpl: Backend {
     fn glwe_tensor_key_compressed_encrypt_sk_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GGLWEInfos,
-        Module<Self>: crate::layouts::GLWESecretPreparedFactory<Self> + crate::layouts::GLWESecretTensorFactory<Self>,
     {
         super::derived::encryption::glwe_tensor_key_compressed_encrypt_sk_tmp_bytes_derived(module, infos)
     }
@@ -587,7 +584,6 @@ pub unsafe trait EncryptionImpl: Backend {
     ) where
         R: GGLWECompressedToBackendMut<Self> + GGLWEInfos + GGLWECompressedSeedMut,
         S: GLWESecretToBackendRef<Self> + GetDistribution + GLWEInfos,
-        Module<Self>: crate::layouts::GLWESecretPreparedFactory<Self> + crate::layouts::GLWESecretTensorFactory<Self>,
     {
         super::derived::encryption::glwe_tensor_key_compressed_encrypt_sk_derived(module, res, sk, seed_xa, source_xe, scratch)
     }

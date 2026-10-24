@@ -4,9 +4,9 @@ use poulpy_core::{
     GLWESwitchingKeyEncryptSk, GLWETensoring,
     api::{
         GGLWEPreparedFactory, GGSWPreparedFactory, GLWEAutomorphismKeyPreparedFactory, GLWEPublicKeyPreparedFactory,
-        GLWESwitchingKeyPreparedFactory, GLWETensorKeyPreparedFactory,
+        GLWESecretPreparedFactory, GLWESecretSampling, GLWESwitchingKeyPreparedFactory, GLWETensorKeyPreparedFactory,
     },
-    layouts::{GLWESecretPreparedFactory, GLWESecretSampling, ModuleCoreAlloc},
+    layouts::ModuleCoreAlloc,
 };
 use poulpy_hal::{
     api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},

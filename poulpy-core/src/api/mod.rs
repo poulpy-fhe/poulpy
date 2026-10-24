@@ -15,6 +15,7 @@
 //! - `sampling` -- in-place sampling of secret distributions into a `ScalarZnx`
 //!   column and of `Noise` samples over `ceil(k / base2k)` limbs of a
 //!   `VecZnx` / `VecZnxBig` column.
+//! - `secret` -- sampling, preparation, tensoring and LWE/GLWE conversion of secrets.
 //!
 //! Scheme authors can program against these traits directly. Execution is
 //! dispatched through the [`crate::oep`] backend extension points by blanket
@@ -35,6 +36,7 @@ mod operations;
 mod polynomial_evaluation;
 mod preparation;
 mod sampling;
+mod secret;
 mod transfer;
 
 pub use automorphism::*;
@@ -52,4 +54,5 @@ pub use operations::*;
 pub use polynomial_evaluation::*;
 pub use preparation::*;
 pub use sampling::*;
+pub use secret::*;
 pub use transfer::*;

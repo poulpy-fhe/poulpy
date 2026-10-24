@@ -5,15 +5,15 @@ use poulpy_hal::{
     test_suite::TestParams,
 };
 
-use crate::layouts::GLWESecretSampling;
+use crate::api::GLWESecretSampling;
 use crate::{Distribution, ScalarZnxFillDistribution};
 use crate::{
     GGSWCompressedEncryptSk, GGSWDecompress, GGSWEncryptPk, GGSWEncryptSk, GGSWNoise, GLWEPublicKeyGenerate,
-    api::{GGSWPreparedFactory, GLWEPublicKeyPreparedFactory},
+    api::{GGSWPreparedFactory, GLWEPublicKeyPreparedFactory, GLWESecretPreparedFactory},
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        GGSW, GGSWInfos, GGSWLayout, GLWEInfos, GLWELayout, GLWEPublicKey, GLWESecret, GLWESecretPreparedFactory, LWEInfos,
-        ModuleCoreAlloc, ModuleCoreCompressedAlloc,
+        GGSW, GGSWInfos, GGSWLayout, GLWEInfos, GLWELayout, GLWEPublicKey, GLWESecret, LWEInfos, ModuleCoreAlloc,
+        ModuleCoreCompressedAlloc,
         compressed::GGSWCompressed,
         prepared::{GLWEPublicKeyPrepared, GLWESecretPrepared},
     },

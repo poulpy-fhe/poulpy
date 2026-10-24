@@ -5,7 +5,7 @@ use poulpy_hal::{
     test_suite::{TestParams, vec_znx_backend_mut, vec_znx_backend_ref},
 };
 
-use crate::layouts::LWESecretSampling;
+use crate::api::LWESecretSampling;
 use crate::layouts::prepared::GGLWEPreparedToBackendRef;
 use crate::{
     LWEDecrypt, LWEEncryptSk, LWEKeyswitch, LWESwitchingKeyEncrypt,

@@ -15,18 +15,18 @@ use poulpy_hal::{
     test_suite::{TestParams, scalar_znx_backend_mut, scalar_znx_backend_ref, vec_znx_backend_mut, vec_znx_backend_ref},
 };
 
-use crate::layouts::GLWESecretSampling;
+use crate::api::GLWESecretSampling;
 use crate::test_suite::noise::glwe_noise_checked;
 use crate::{
     GLWECompressedEncryptSk, GLWEDecompress, GLWEDecrypt, GLWEEncryptPk, GLWEEncryptSk, GLWEMaskFill, GLWENoise, GLWENormalize,
     GLWEPublicKeyCompressedGenerate, GLWEPublicKeyDecompress, GLWEPublicKeyGenerate, GLWESub, GetDistribution,
     GetDistributionMut, Noise, ScalarZnxFillDistribution, VecZnxAddNoise, VecZnxBigAddNoise,
-    api::{GLWEPreparedFactory, GLWEPublicKeyPreparedFactory},
+    api::{GLWEPreparedFactory, GLWEPublicKeyPreparedFactory, GLWESecretPreparedFactory},
     dist::Distribution,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        GLWE, GLWEInfos, GLWELayout, GLWEPlaintext, GLWEPlaintextLayout, GLWEPrepared, GLWEPublicKey, GLWESecret,
-        GLWESecretPreparedFactory, LWEInfos, ModuleCoreAlloc, ModuleCoreCompressedAlloc, Rank,
+        GLWE, GLWEInfos, GLWELayout, GLWEPlaintext, GLWEPlaintextLayout, GLWEPrepared, GLWEPublicKey, GLWESecret, LWEInfos,
+        ModuleCoreAlloc, ModuleCoreCompressedAlloc, Rank,
         compressed::GLWECompressed,
         prepared::{GLWEPublicKeyPrepared, GLWESecretPrepared},
     },

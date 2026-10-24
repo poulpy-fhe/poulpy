@@ -7,10 +7,8 @@ use std::f64::consts::TAU;
 
 use poulpy_core::{
     GLWEZero, TransferInto,
-    api::GLWESwitchingKeyPreparedFactory,
-    layouts::{
-        BackendGLWESecret, GGLWEInfos, GLWESecretPreparedFactory, LWEInfos, ModuleCoreAlloc, prepared::GLWESecretPrepared,
-    },
+    api::{GLWESecretPreparedFactory, GLWESwitchingKeyPreparedFactory},
+    layouts::{BackendGLWESecret, GGLWEInfos, LWEInfos, ModuleCoreAlloc, prepared::GLWESecretPrepared},
     reference::keyswitching::glwe::GGLWEProductReference,
 };
 use poulpy_hal::{
@@ -41,7 +39,7 @@ use super::helpers::{
     TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_decrypt_precision, ckks_decrypt_decode,
     ckks_encrypt, ckks_encrypt_pt, ckks_spec, test_vector_1, want_rotate,
 };
-use poulpy_core::layouts::GLWESecretSampling;
+use poulpy_core::api::GLWESecretSampling;
 
 /// SHIP suite plan on the test ring: sparse weight 32, full offset window,
 /// base-4 mux with the low digit absorbed into masking.

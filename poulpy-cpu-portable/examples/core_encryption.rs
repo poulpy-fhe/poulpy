@@ -1,10 +1,10 @@
-use poulpy_core::layouts::GLWESecretSampling;
+use poulpy_core::api::GLWESecretSampling;
 use poulpy_core::{
     DEFAULT_SIGMA_XE, GLWEDecrypt, GLWEEncryptSk, GLWESub,
+    api::GLWESecretPreparedFactory,
     layouts::{
         Base2K, Degree, GLWE, GLWELayout, GLWEPlaintext, GLWEPlaintextLayout, GLWESecret, LWEInfos, ModuleCoreAlloc, Rank,
-        TorusPrecision,
-        prepared::{GLWESecretPrepared, GLWESecretPreparedFactory},
+        TorusPrecision, prepared::GLWESecretPrepared,
     },
 };
 use poulpy_cpu_portable::FFT64Portable as BackendImpl;

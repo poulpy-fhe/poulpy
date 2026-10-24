@@ -4,10 +4,10 @@
 use poulpy_core::{
     DEFAULT_SIGMA_XE, Distribution, GLWEEncryptPk, GLWEEncryptPkSmudged, GLWEEncryptSk, GLWENoise, GLWEPublicKeyGenerate,
     GetDistributionMut, Noise,
-    api::GLWEPublicKeyPreparedFactory,
+    api::{GLWEPublicKeyPreparedFactory, GLWESecretPreparedFactory, GLWESecretSampling},
     layouts::{
         GLWE, GLWELayout, GLWEPlaintext, GLWEPublicKey, GLWEPublicKeyCompressedSeedMut, GLWEPublicKeyPrepared, GLWESecret,
-        GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretSampling, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
+        GLWESecretPrepared, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
     },
 };
 use poulpy_hal::{

@@ -18,11 +18,11 @@
 use anyhow::Result;
 use poulpy_ckks::SlotsKind;
 use poulpy_ckks::prelude::*;
-use poulpy_core::layouts::GLWESecretSampling;
+use poulpy_core::api::GLWESecretSampling;
 use poulpy_core::{
     GLWETensorKeyEncryptSk,
-    api::GLWETensorKeyPreparedFactory,
-    layouts::{GLWELayout, GLWETensorKeyLayout, ModuleCoreAlloc, Rank, prepared::GLWESecretPreparedFactory},
+    api::{GLWESecretPreparedFactory, GLWETensorKeyPreparedFactory},
+    layouts::{GLWELayout, GLWETensorKeyLayout, ModuleCoreAlloc, Rank},
 };
 use poulpy_cpu_portable::NTT4x30Portable;
 use poulpy_hal::AlignedBuf;

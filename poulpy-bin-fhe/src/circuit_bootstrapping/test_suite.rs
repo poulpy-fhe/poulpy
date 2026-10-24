@@ -18,19 +18,16 @@ use crate::{
 use poulpy_core::test_suite::noise::glwe_decrypt_checked;
 use poulpy_core::{
     GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, LWEEncryptSk,
-    api::GGSWPreparedFactory,
-    layouts::{
-        GGLWEToGGSWKeyLayout, GGSWInfos, GGSWLayout, GLWEAutomorphismKeyLayout, GLWEInfos, GLWESecretPreparedFactory, LWELayout,
-        ModuleCoreAlloc,
-    },
+    api::{GGSWPreparedFactory, GLWESecretPreparedFactory},
+    layouts::{GGLWEToGGSWKeyLayout, GGSWInfos, GGSWLayout, GLWEAutomorphismKeyLayout, GLWEInfos, LWELayout, ModuleCoreAlloc},
 };
 
+use poulpy_core::api::{GLWESecretSampling, LWESecretSampling};
 use poulpy_core::layouts::prepared::GGSWPreparedToBackendRef;
 use poulpy_core::layouts::{
     GGSW, GLWE, GLWEPlaintext, GLWESecret, LWE, LWEPlaintext, LWESecret,
     prepared::{GGSWPrepared, GLWESecretPrepared},
 };
-use poulpy_core::layouts::{GLWESecretSampling, LWESecretSampling};
 
 pub fn test_circuit_bootstrapping_to_exponent<
     BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64> + HostBackend,

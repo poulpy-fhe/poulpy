@@ -2,7 +2,7 @@
 //! backends and, when their streams differ, installs a controlled-sampling adapter.
 use super::{arithmetic::layout, helpers::*};
 use crate::{CKKSInfos, SlotsKind, oep::CKKSEncryptionImpl, test_suite::CKKSTestParams};
-use poulpy_core::{Distribution, GLWEMaskFill, GetDistributionMut, layouts::*};
+use poulpy_core::{Distribution, GLWEMaskFill, GLWESecretPreparedFactory, GetDistributionMut, layouts::*};
 use poulpy_hal::{
     layouts::{Backend, Module},
     source::Source,

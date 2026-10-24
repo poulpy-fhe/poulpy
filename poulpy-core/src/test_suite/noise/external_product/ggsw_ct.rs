@@ -5,15 +5,15 @@ use poulpy_hal::{
     test_suite::TestParams,
 };
 
-use crate::layouts::GLWESecretSampling;
+use crate::api::GLWESecretSampling;
 use crate::layouts::prepared::GGSWPreparedToBackendRef;
 use crate::{Distribution, ScalarZnxFillDistribution};
 use crate::{
     GGSWEncryptSk, GGSWExternalProduct, GGSWNoise,
-    api::GGSWPreparedFactory,
+    api::{GGSWPreparedFactory, GLWESecretPreparedFactory},
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        GGSW, GGSWInfos, GGSWLayout, GLWEInfos, GLWESecret, GLWESecretPreparedFactory, ModuleCoreAlloc,
+        GGSW, GGSWInfos, GGSWLayout, GLWEInfos, GLWESecret, ModuleCoreAlloc,
         prepared::{GGSWPrepared, GLWESecretPrepared},
     },
     noise::GGSWNoiseModel,

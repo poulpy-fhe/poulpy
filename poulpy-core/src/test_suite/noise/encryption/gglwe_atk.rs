@@ -6,14 +6,15 @@ use poulpy_hal::{
     test_suite::TestParams,
 };
 
-use crate::layouts::GLWESecretSampling;
+use crate::api::GLWESecretSampling;
 use crate::{
     GGLWEKeyswitch, GLWEAutomorphismKeyCompressedEncryptSk, GLWEAutomorphismKeyDecompress, GLWEAutomorphismKeyEncryptSk,
     GLWESwitchingKeyCompressedEncryptSk, GLWESwitchingKeyEncryptSk,
+    api::GLWESecretPreparedFactory,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        GGLWEInfos, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWEInfos, GLWESecret, GLWESecretPreparedFactory, LWEInfos,
-        ModuleCoreAlloc, ModuleCoreCompressedAlloc, compressed::GLWEAutomorphismKeyCompressed, prepared::GLWESecretPrepared,
+        GGLWEInfos, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWEInfos, GLWESecret, LWEInfos, ModuleCoreAlloc,
+        ModuleCoreCompressedAlloc, compressed::GLWEAutomorphismKeyCompressed, prepared::GLWESecretPrepared,
     },
     noise::GGLWENoise,
 };

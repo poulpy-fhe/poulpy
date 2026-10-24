@@ -6,15 +6,15 @@ use poulpy_hal::{
     test_suite::{TestParams, vec_znx_backend_mut},
 };
 
-use crate::layouts::GLWESecretSampling;
+use crate::api::GLWESecretSampling;
 use crate::test_suite::noise::{assert_refuses_uncovered_input, glwe_noise_checked};
 use crate::{
     GLWEEncryptSk, GLWEKeyswitch, GLWENoise, GLWENormalize, GLWESwitchingKeyEncryptSk,
-    api::GLWESwitchingKeyPreparedFactory,
+    api::{GLWESecretPreparedFactory, GLWESwitchingKeyPreparedFactory},
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        GGLWEInfos, GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory, GLWESwitchingKey,
-        GLWESwitchingKeyLayout, LWEInfos, ModuleCoreAlloc,
+        GGLWEInfos, GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESwitchingKey, GLWESwitchingKeyLayout, LWEInfos,
+        ModuleCoreAlloc,
         prepared::{GLWESecretPrepared, GLWESwitchingKeyPrepared},
     },
     noise::GGLWENoiseModel,

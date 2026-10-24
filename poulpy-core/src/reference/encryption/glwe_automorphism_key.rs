@@ -11,9 +11,8 @@ use crate::api::GLWEBytesOf;
 use crate::layouts::operand_degree;
 use crate::{
     GGLWEEncryptSk, ScratchArenaTakeCore,
-    layouts::{
-        GGLWEInfos, GGLWEToBackendMut, GLWEInfos, GLWESecretPreparedFactory, GLWESecretToBackendRef, LWEInfos, SetGaloisElement,
-    },
+    api::GLWESecretPreparedFactory,
+    layouts::{GGLWEInfos, GGLWEToBackendMut, GLWEInfos, GLWESecretToBackendRef, LWEInfos, SetGaloisElement},
 };
 
 /// Portable implementation using HAL operations.

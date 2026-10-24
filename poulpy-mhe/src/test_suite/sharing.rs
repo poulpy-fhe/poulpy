@@ -4,9 +4,8 @@
 
 use poulpy_core::{
     DEFAULT_BOUND_XE, DEFAULT_SIGMA_XE, GLWEAdd, GLWEDecrypt, GLWEEncryptSk, GLWENormalize, Noise,
-    layouts::{
-        GLWE, GLWELayout, GLWEPlaintext, GLWESecretPreparedFactory, GLWESecretSampling, ModuleCoreAlloc, Rank, TorusPrecision,
-    },
+    api::{GLWESecretPreparedFactory, GLWESecretSampling},
+    layouts::{GLWE, GLWELayout, GLWEPlaintext, ModuleCoreAlloc, Rank, TorusPrecision},
 };
 use poulpy_hal::{
     AlignedBuf,
