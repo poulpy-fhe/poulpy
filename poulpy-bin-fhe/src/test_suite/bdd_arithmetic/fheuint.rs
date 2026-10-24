@@ -10,11 +10,9 @@ use poulpy_hal::{
 };
 use rand::Rng;
 
+use crate::test_suite::bdd_arithmetic::{TEST_GLWE_INFOS, TestContext};
 use crate::{
-    bdd_arithmetic::{
-        BDDKeyPrepared, FheUint, ToBits,
-        test_suite::{TEST_GLWE_INFOS, TestContext},
-    },
+    bdd_arithmetic::{BDDKeyPrepared, FheUint, ToBits},
     blind_rotation::BlindRotationAlgo,
 };
 

@@ -475,6 +475,8 @@
   `impl_bin_fhe_{execute_bdd_circuit,execute_bdd_circuit_1w_to_1w,execute_bdd_circuit_2w_to_1w,cswap,cmux,ggsw_blind_rotation,glwe_blind_rotation,glwe_blind_selection,fhe_uint_prepared_encrypt_sk,fhe_uint_prepare,bdd_key_encrypt_sk}_reference!` become `impl_{..}_reference_full!` with the same stems, `impl_bin_fhe_bdd_key_prepared_reference!` becomes `impl_bdd_key_prepared_factory_reference_full!` (`BDDKeyPreparedFactoryImpl`) and `impl_bin_fhe_glwe_blind_retrieval_derived!` `impl_glwe_blind_retrieval_derived_full!`.
   The group umbrellas `impl_bin_fhe_blind_rotation_reference!`, `impl_bin_fhe_circuit_bootstrapping_reference!` and `impl_bin_fhe_bdd_reference!` become `impl_blind_rotation_reference_full!`, `impl_circuit_bootstrapping_reference_full!` and `impl_bdd_reference_full!`; `impl_bin_fhe_reference_full!` keeps its name.
 - **Breaking:** `reference::blind_rotation::blind_rotation_key_decompress_ref` and `test_blind_rotation_key_lifecycle` bound `Module<BE>: GGSWDecompress<BE>`, the backend-generic core decompression API, so a backend registering `impl_blind_rotation_key_decompress_reference_full!` implements `poulpy_core::oep::DecompressionImpl`.
+- **Breaking:** the backend-generic test bodies move to the crate-level `test_suite`: `poulpy_bin_fhe::bdd_arithmetic::test_suite` becomes `poulpy_bin_fhe::test_suite::bdd_arithmetic`, `blind_rotation::test_suite` becomes `test_suite::blind_rotation` and `circuit_bootstrapping::test_suite` becomes `test_suite::circuit_bootstrapping`. `bin_fhe_backend_test_suite!` is unchanged; a backend crate that names the bodies directly updates the path.
+- **Breaking:** the `api` and `oep` family modules `blind_rotation`, `circuit_bootstrapping` and `bdd` are private, so `poulpy_bin_fhe::api::blind_rotation::X`, `api::circuit_bootstrapping::X`, `api::bdd::X` and the `oep::` forms become `poulpy_bin_fhe::api::X` and `poulpy_bin_fhe::oep::X`. Callers and backends update the paths only.
 
 ### `poulpy-mhe`
 
@@ -494,6 +496,7 @@
   `impl_mhe_ggsw_reference!`, `impl_mhe_public_key_reference!` and `impl_mhe_tensor_key_reference!` become `impl_ggsw_mhe_protocol_reference_full!`, `impl_glwe_public_key_mhe_protocol_reference_full!` and `impl_glwe_tensor_key_mhe_protocol_reference_full!`; `impl_mhe_reference_full!` invokes the twelve.
 - **Breaking:** `GGLWEPatCompressedReference` is implemented on `Module<BE>` bounded by `GGLWEDecompress<BE>`, the backend-generic core decompression API, so a backend registering `impl_gglwe_pat_compressed_reference_full!` implements `poulpy_core::oep::DecompressionImpl`.
 - **Breaking:** `GLWETensorKeyMHEProtocolReference` and `GGSWMHEProtocolReference` are implemented on `Module<BE>` for `BE: HalVecZnxImpl`, which `gadget_row_plaintext` requires, and the tensor key reference no longer bounds the module by `VecZnxNormalize`.
+- **Breaking:** the `api` family modules `evaluation_key`, `ggsw`, `keyswitch`, `pat`, `public_key`, `sharing` and `tensor_key` are private, so `poulpy_mhe::api::<family>::X` becomes `poulpy_mhe::api::X`. Callers update the paths only.
 
 ### `poulpy-blas`
 

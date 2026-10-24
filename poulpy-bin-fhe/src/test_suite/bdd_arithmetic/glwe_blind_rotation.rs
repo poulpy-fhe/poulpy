@@ -1,6 +1,3 @@
-use poulpy_hal::layouts::{HostDataMut, HostDataRef};
-use std::collections::HashMap;
-
 use poulpy_core::test_suite::noise::glwe_decrypt_checked;
 use poulpy_core::{
     GGSWEncryptSk, GLWEDecrypt, GLWEEncryptSk,
@@ -9,22 +6,21 @@ use poulpy_core::{
         Base2K, Dnum, GGSWLayout, GLWE, GLWELayout, GLWEPlaintext, GLWESecretPrepared, ModuleCoreAlloc, Rank, TorusPrecision,
     },
 };
+use poulpy_hal::layouts::HostDataRef;
 use poulpy_hal::{
     api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, HostBackend, Module, ScratchOwned},
+    layouts::{Backend, HostBackend, HostDataMut, Module, ScratchOwned},
     source::Source,
 };
 use rand::Rng;
 
+use crate::test_suite::bdd_arithmetic::{TEST_FHEUINT_BASE2K, TEST_RANK, TestContext};
 use crate::{
-    bdd_arithmetic::{
-        FheUintPrepared, GLWEBlindSelection,
-        test_suite::{TEST_FHEUINT_BASE2K, TEST_RANK, TestContext},
-    },
+    bdd_arithmetic::{FheUintPrepared, GLWEBlindRotation},
     blind_rotation::BlindRotationAlgo,
 };
 
-pub fn test_glwe_blind_selection<BRA, BE>(test_context: &TestContext<BRA, BE>)
+pub fn test_glwe_to_glwe_blind_rotation<BRA, BE>(test_context: &TestContext<BRA, BE>)
 where
     BRA: BlindRotationAlgo,
     Module<BE>: crate::api::FheUintPreparedEncryptSk<u32, BE>
@@ -32,7 +28,7 @@ where
         + GLWESecretPreparedFactory<BE>
         + GGSWPreparedFactory<BE>
         + GGSWEncryptSk<BE>
-        + GLWEBlindSelection<u32, BE>
+        + GLWEBlindRotation<BE>
         + GLWEDecrypt<BE>
         + GLWEEncryptSk<BE>,
     BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64> + HostBackend,
@@ -70,74 +66,60 @@ where
 
     let mut res: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_infos);
 
+    let mut test_glwe: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
+    let mut data: Vec<i64> = vec![0i64; module.n()];
+    data.iter_mut().enumerate().for_each(|(i, x)| *x = i as i64);
+    test_glwe.encode_vec_i64(&data, base2k.as_usize().into());
+
     let k: u32 = source.next_u32();
 
     let mut k_enc_prep: FheUintPrepared<BE::OwnedBuf, u32, BE> =
         FheUintPrepared::<BE::OwnedBuf, u32, BE>::alloc_from_infos(module, &ggsw_infos);
     k_enc_prep.encrypt_sk(module, k, sk_glwe_prep, &mut source_xe, &mut source_xa, &mut scratch.borrow());
 
-    let digit = 5;
-    let mask: u32 = (1 << digit) - 1;
+    let base: [usize; 2] = [module.log_n() >> 1, module.log_n() - (module.log_n() >> 1)];
+
+    assert_eq!(base.iter().sum::<usize>(), module.log_n());
 
     // Starting bit
     let mut bit_start: usize = 0;
 
-    let mut data = vec![0i64; 1 << digit];
-    data.iter_mut().enumerate().for_each(|(i, x)| *x = i as i64);
+    let mut pt: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
 
-    for _ in 0..32_usize.div_ceil(digit) {
-        let mut pt: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
+    for _ in 0..32_usize.div_ceil(module.log_n()) {
+        // By how many bits to left shift
+        let mut bit_step: usize = 0;
 
-        let mut cts_map: HashMap<usize, &mut GLWE<BE::OwnedBuf, BE::ZnxWord>> = HashMap::new();
-        let mut cts: Vec<GLWE<BE::OwnedBuf, BE::ZnxWord>> = Vec::new();
+        for digit in base {
+            let mask: u32 = (1 << digit) - 1;
 
-        for value in data.iter().take(1 << digit) {
-            pt.encode_coeff_i64(*value, TorusPrecision(base2k.as_u32()), 0);
-            let mut ct = module.glwe_alloc_from_infos(&glwe_infos);
-            module.glwe_encrypt_sk(
-                &mut ct,
-                &pt,
-                sk_glwe_prep,
-                &mut source_xe,
-                &mut source_xa,
+            // How many bits to take
+            let bit_size: usize = (32 - bit_start).min(digit);
+
+            module.glwe_blind_rotation(
+                &mut res,
+                &test_glwe,
+                &k_enc_prep,
+                false,
+                bit_start,
+                bit_size,
+                bit_step,
                 &mut scratch.borrow(),
             );
-            cts.push(ct);
-        }
 
-        for (i, ct) in cts.iter_mut().enumerate() {
-            if i.is_multiple_of(3) {
-                cts_map.insert(i, ct);
+            glwe_decrypt_checked(module, &res, &mut pt, sk_glwe_prep, &mut scratch.borrow());
+
+            assert_eq!(
+                (((k >> bit_start) & mask) << bit_step) as i64,
+                pt.decode_coeff_i64(base2k.as_usize().into(), 0)
+            );
+
+            bit_step += digit;
+            bit_start += digit;
+
+            if bit_start >= 32 {
+                break;
             }
-        }
-
-        // How many bits to take
-        let bit_size: usize = (32 - bit_start).min(digit);
-        let input_infos: Vec<_> = cts_map.values().map(|ct| &**ct).collect();
-        let mut selection_scratch = ScratchOwned::alloc(module.glwe_blind_selection_tmp_bytes(&res, &input_infos, &ggsw_infos));
-
-        module.glwe_blind_selection(
-            &mut res,
-            cts_map,
-            &k_enc_prep,
-            bit_start,
-            bit_size,
-            &mut selection_scratch.borrow(),
-        );
-
-        glwe_decrypt_checked(module, &res, &mut pt, sk_glwe_prep, &mut scratch.borrow());
-
-        let idx = ((k >> bit_start) & mask) as usize;
-        if !idx.is_multiple_of(3) {
-            assert_eq!(0, pt.decode_coeff_i64(TorusPrecision(base2k.as_u32()), 0));
-        } else {
-            assert_eq!(data[idx], pt.decode_coeff_i64(TorusPrecision(base2k.as_u32()), 0));
-        }
-
-        bit_start += digit;
-
-        if bit_start >= 32 {
-            break;
         }
     }
 }

@@ -882,7 +882,7 @@ fn test_core_serialization_fft64_portable() {
 #[cfg(feature = "enable-bin-fhe")]
 #[test]
 fn test_blind_rotation_key_serialization_fft64_portable() {
-    poulpy_bin_fhe::blind_rotation::test_suite::serialization::test_blind_rotation_key_serialization(
+    poulpy_bin_fhe::test_suite::blind_rotation::serialization::test_blind_rotation_key_serialization(
         &Module::<FFT64Portable>::new(256),
     );
 }

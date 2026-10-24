@@ -8,7 +8,7 @@
 //!
 //! ## User-facing API
 //!
-//! Import operation traits from [`crate::api::blind_rotation`] for module calls
+//! Import operation traits from [`crate::api`] for module calls
 //! and their scratch queries. The API documentation includes a generic usage
 //! example. Key and plan convenience methods dispatch through the same traits.
 //!
@@ -64,6 +64,3 @@ pub use algorithms::*;
 pub use encryption::*;
 pub use layouts::*;
 pub use lut::*;
-/// Backend-generic test bodies, instantiated by the backend crates through
-/// [`bin_fhe_backend_test_suite!`](crate::bin_fhe_backend_test_suite).
-pub mod test_suite;

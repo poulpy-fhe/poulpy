@@ -10,7 +10,7 @@
 //!
 //! ```
 //! use poulpy_bin_fhe::{
-//!     api::circuit_bootstrapping::CircuitBootstrappingExecute, blind_rotation::CGGI,
+//!     api::CircuitBootstrappingExecute, blind_rotation::CGGI,
 //!     circuit_bootstrapping::CircuitBootstrappingKeyPrepared,
 //! };
 //! use poulpy_core::layouts::{

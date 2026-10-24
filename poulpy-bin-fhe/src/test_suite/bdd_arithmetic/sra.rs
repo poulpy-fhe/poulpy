@@ -11,16 +11,16 @@ use poulpy_hal::{
 };
 use rand::Rng;
 
+use crate::test_suite::bdd_arithmetic::{TEST_GGSW_INFOS, TEST_GLWE_INFOS, TestContext};
 use crate::{
     bdd_arithmetic::{
         BDDKeyEncryptSk, BDDKeyPrepared, BDDKeyPreparedFactory, ExecuteBDDCircuit2WTo1W, FheUint, FheUintPrepare,
-        FheUintPrepareDebug, FheUintPrepared, FheUintPreparedEncryptSk, FheUintPreparedFactory, Sltu,
-        test_suite::{TEST_GGSW_INFOS, TEST_GLWE_INFOS, TestContext},
+        FheUintPrepareDebug, FheUintPrepared, FheUintPreparedEncryptSk, FheUintPreparedFactory, Sra,
     },
     blind_rotation::BlindRotationAlgo,
 };
 
-pub fn test_bdd_sltu<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64> + HostBackend>(
+pub fn test_bdd_sra<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64> + HostBackend>(
     test_context: &TestContext<BRA, BE>,
 ) where
     Module<BE>: ModuleNew<BE>
@@ -60,15 +60,17 @@ pub fn test_bdd_sltu<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf: HostDataMut +
         FheUintPrepared::<BE::OwnedBuf, u32, BE>::alloc_from_infos(module, &ggsw_infos);
 
     let a: u32 = source.next_u32();
-    let b: u32 = source.next_u32();
+    let b: u32 = source.next_u32() & 15;
 
     source.fill_bytes(scratch.data.as_mut());
     a_enc_prep.encrypt_sk(module, a, sk_glwe_prep, &mut source_xe, &mut source_xa, &mut scratch.borrow());
     source.fill_bytes(scratch.data.as_mut());
     b_enc_prep.encrypt_sk(module, b, sk_glwe_prep, &mut source_xe, &mut source_xa, &mut scratch.borrow());
 
-    // d + a
-    res.sltu(module, &a_enc_prep, &b_enc_prep, bdd_key_prepared, &mut scratch.borrow());
+    res.sra(module, &a_enc_prep, &b_enc_prep, bdd_key_prepared, &mut scratch.borrow());
 
-    assert_eq!(res.decrypt(module, sk_glwe_prep, &mut scratch.borrow()), (a < b) as u32);
+    assert_eq!(
+        res.decrypt(module, sk_glwe_prep, &mut scratch.borrow()),
+        ((a as i32) >> b) as u32
+    );
 }

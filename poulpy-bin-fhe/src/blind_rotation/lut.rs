@@ -131,7 +131,7 @@ impl<D: Data, W: ZnxWord> LookupTableInfos for LookupTable<D, W> {
     }
 }
 
-pub use crate::api::blind_rotation::LookupTableFactory;
+pub use crate::api::LookupTableFactory;
 
 impl<D: Data, W: ZnxWord> LookupTable<D, W> {
     /// Returns `log2(extension_factor)`.

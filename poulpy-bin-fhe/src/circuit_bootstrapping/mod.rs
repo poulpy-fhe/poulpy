@@ -8,7 +8,7 @@
 //!
 //! ## User-facing API
 //!
-//! Import operation traits from [`crate::api::circuit_bootstrapping`] for module calls
+//! Import operation traits from [`crate::api`] for module calls
 //! and their scratch queries. The API documentation includes a generic usage
 //! example. Key and plan convenience methods dispatch through the same traits.
 //!
@@ -43,10 +43,6 @@
 pub(crate) mod circuit;
 mod key;
 mod key_prepared;
-
-/// Backend-generic test bodies, instantiated by the backend crates through
-/// [`bin_fhe_backend_test_suite!`](crate::bin_fhe_backend_test_suite).
-pub mod test_suite;
 
 pub(crate) fn trace_galois_elements(log_n: usize, cyclotomic_order: i64) -> Vec<i64> {
     (0..log_n)

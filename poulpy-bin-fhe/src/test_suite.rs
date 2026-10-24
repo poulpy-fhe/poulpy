@@ -1,13 +1,13 @@
 //! Instantiation of the backend-generic test bodies.
 //!
-//! The bodies live next to the code they exercise, in
-//! [`blind_rotation::test_suite`](crate::blind_rotation::test_suite),
-//! [`circuit_bootstrapping::test_suite`](crate::circuit_bootstrapping::test_suite)
-//! and [`bdd_arithmetic::test_suite`](crate::bdd_arithmetic::test_suite). A
-//! backend crate turns them into `#[test]` functions with
+//! The bodies live in [`blind_rotation`], [`circuit_bootstrapping`] and
+//! [`bdd_arithmetic`]. A backend crate turns them into `#[test]` functions with
 //! [`bin_fhe_backend_test_suite!`](crate::bin_fhe_backend_test_suite), so no
 //! backend is ever named from this crate.
 
+pub mod bdd_arithmetic;
+pub mod blind_rotation;
+pub mod circuit_bootstrapping;
 pub mod parity;
 
 /// Instantiates the whole gate-level suite for one backend.
@@ -25,9 +25,9 @@ macro_rules! bin_fhe_backend_test_suite {
             mod blind_rotation {
                 use poulpy_hal::{api::ModuleNew, layouts::Module};
 
-                use $crate::blind_rotation::{
-                    CGGI,
-                    test_suite::{
+                use $crate::{
+                    blind_rotation::CGGI,
+                    test_suite::blind_rotation::{
                         generic_blind_rotation::test_blind_rotation,
                         generic_lut::{test_lut_extended, test_lut_standard, test_lut_transfer_into_carries_scalars},
                     },
@@ -72,7 +72,7 @@ macro_rules! bin_fhe_backend_test_suite {
 
                 use $crate::{
                     blind_rotation::CGGI,
-                    circuit_bootstrapping::test_suite::{
+                    test_suite::circuit_bootstrapping::{
                         test_circuit_bootstrapping_to_constant, test_circuit_bootstrapping_to_exponent,
                     },
                 };
@@ -93,7 +93,7 @@ macro_rules! bin_fhe_backend_test_suite {
             mod bdd_arithmetic {
                 use std::sync::LazyLock;
 
-                use $crate::{bdd_arithmetic::test_suite, blind_rotation::CGGI};
+                use $crate::{blind_rotation::CGGI, test_suite::bdd_arithmetic as test_suite};
 
                 static CTX: LazyLock<test_suite::TestContext<CGGI, $backend>> =
                     LazyLock::new(test_suite::TestContext::<CGGI, $backend>::new);
