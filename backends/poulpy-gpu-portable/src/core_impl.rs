@@ -14,8 +14,9 @@ use poulpy_core::{
     layouts::{GGLWEInfos, prepared::GGLWEPreparedBackendRef},
     oep::{ConstTerm, GGLWEProductDigitsStridedImpl, SamplingImpl},
     reference::keyswitching::glwe::{
-        gglwe_product_fused_reference, gglwe_product_fused_tmp_bytes_reference, gglwe_product_idft_normalize_reference,
-        gglwe_product_idft_normalize_tmp_bytes_reference, gglwe_product_limbs,
+        gglwe_operand_from_dft_reference, gglwe_product_fused_reference, gglwe_product_fused_tmp_bytes_reference,
+        gglwe_product_idft_normalize_reference, gglwe_product_idft_normalize_tmp_bytes_reference, gglwe_product_limbs,
+        gglwe_products_fused_reference, gglwe_products_idft_normalize_reference,
     },
 };
 use poulpy_cpu_portable::kernels::noise::{gaussian_cumulative_table_portable, gaussian_rejection_constants_portable};
@@ -115,6 +116,33 @@ unsafe impl<RT: GpuRuntime, R: Ring> GGLWEProductDigitsStridedImpl for NTT4x30Gp
         );
     }
 
+    fn gglwe_products_fused(
+        module: &Module<Self>,
+        res: &mut [VecZnxDftBackendMut<'_, Self>],
+        product_size: usize,
+        a: &[VecZnxDftBackendRef<'_, Self>],
+        key: &GGLWEPreparedBackendRef<'_, Self>,
+        term_count: usize,
+        addends: &[&[Option<(&VecZnxDftBackendRef<'_, Self>, usize)>]],
+        p: i64,
+        accumulate: &[bool],
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        gglwe_products_fused_reference(module, res, product_size, a, key, term_count, addends, p, accumulate, scratch)
+    }
+
+    fn gglwe_operand_from_dft(
+        module: &Module<Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self>,
+        a: &mut VecZnxDftBackendMut<'_, Self>,
+        a_base2k: usize,
+        key: &GGLWEPreparedBackendRef<'_, Self>,
+        output_size: usize,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        gglwe_operand_from_dft_reference(module, res, a, a_base2k, key, output_size, scratch)
+    }
+
     fn gglwe_product_idft_normalize_tmp_bytes<K>(
         module: &Module<Self>,
         res_size: usize,
@@ -179,6 +207,26 @@ unsafe impl<RT: GpuRuntime, R: Ring> GGLWEProductDigitsStridedImpl for NTT4x30Gp
                 if col == 0 { body } else { None },
             );
         }
+    }
+
+    fn gglwe_products_idft_normalize(
+        module: &Module<Self>,
+        res: &mut [VecZnxBackendMut<'_, Self>],
+        res_base2k: usize,
+        res_k: usize,
+        res_offset: i64,
+        res_dft: &mut [VecZnxDftBackendMut<'_, Self>],
+        a: &[VecZnxDftBackendRef<'_, Self>],
+        key: &GGLWEPreparedBackendRef<'_, Self>,
+        term_count: usize,
+        addends: &[&[Option<(&VecZnxDftBackendRef<'_, Self>, usize)>]],
+        body: &[Option<(&VecZnxBackendRef<'_, Self>, usize)>],
+        a_base2k: usize,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        gglwe_products_idft_normalize_reference(
+            module, res, res_base2k, res_k, res_offset, res_dft, a, key, term_count, addends, body, a_base2k, scratch,
+        )
     }
 }
 

@@ -379,6 +379,9 @@
 - **Fix:** `gglwe_bytes_of_from_infos` counts the limbs of a key with a row offset (`k_offset`), as its allocation and `GGLWE::bytes_of_from_infos` do; it counted those of a key without one.
 - **Breaking:** `GLWECIKeyPreparedFactory::glwe_ci_key_prepare` and `PreparationImpl::glwe_ci_key_prepare` take any source `O: GGLWEToBackendRef<BE> + GLWESwitchingKeyDegrees`, as `glwe_switching_key_prepare` does, instead of a `GLWECIKey`, the direction coming from the destination, so a key moved into a scratch carve goes through the backend's own body. A `GLWECIKey` meets the bounds, so callers are unchanged; an override takes the new signature.
 - Add `test_suite::with_scratch`, which runs a call on exactly the given bytes of scratch poisoned with `0xA5` between guards it checks untouched; the mhe suites run every call through it.
+- Add the multi-source step hooks `GGLWEProductDigitsStridedImpl::gglwe_products_fused` and `gglwe_products_idft_normalize`, several sources against one key, and `gglwe_operand_from_dft`, the gadget operand of a DFT source.
+  They are required, with reference bodies `gglwe_products_fused_reference` and `gglwe_products_idft_normalize_reference`, which run the single-source hook on each source in order, and `gglwe_operand_from_dft_reference`; `impl_gglwe_product_step_hooks_reference!()` forwards them.
+  A level of the power-of-two giant tree lays out its operands and switches them in one `gglwe_products_fused` call, and a doubling pass on a serial executor in one `gglwe_products_idft_normalize` call. Results are unchanged.
 
 ### `poulpy-ckks`
 

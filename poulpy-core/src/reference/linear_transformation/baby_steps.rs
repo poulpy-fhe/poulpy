@@ -411,8 +411,8 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, A, H>(
 
 /// [`glwe_prepare_linear_transformation_baby_steps`] for [`BsgsRotations::PowersOfTwo`]: the
 /// rotations of a doubling pass rotate earlier ones with the pass's key, each source laid out
-/// and switched on its own, a task each on a parallel executor. The rotations are held as
-/// ciphertexts until the last pass.
+/// and switched on its own, a task each, on a parallel executor, and all of them switched by one
+/// product call otherwise. The rotations are held as ciphertexts until the last pass.
 #[allow(clippy::type_complexity)]
 fn glwe_prepare_baby_steps_doubling<BE, H>(
     module: &Module<BE>,
@@ -517,9 +517,7 @@ fn glwe_prepare_baby_steps_doubling<BE, H>(
             // product by the key, normalized with its body
             // ([`GGLWEProductDigitsStridedImpl::gglwe_product_idft_normalize`](crate::oep::GGLWEProductDigitsStridedImpl::gglwe_product_idft_normalize)).
             let (base2k, k) = (a.base2k().as_usize(), a.k().as_usize());
-            let switch = |operand: &mut VecZnxDftBackendMut<'_, BE>,
-                          product: &mut VecZnxDftBackendMut<'_, BE>,
-                          normalized: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, BE>,
+            let layout = |operand: &mut VecZnxDftBackendMut<'_, BE>,
                           source: &GLWEBackendRef<'_, BE>,
                           scratch: &mut ScratchArena<'_, BE>| {
                 for col_i in 0..cols - 1 {
@@ -536,6 +534,13 @@ fn glwe_prepare_baby_steps_doubling<BE, H>(
                         &mut scratch.borrow(),
                     );
                 }
+            };
+            let switch = |operand: &mut VecZnxDftBackendMut<'_, BE>,
+                          product: &mut VecZnxDftBackendMut<'_, BE>,
+                          normalized: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, BE>,
+                          source: &GLWEBackendRef<'_, BE>,
+                          scratch: &mut ScratchArena<'_, BE>| {
+                layout(operand, source, scratch);
                 BE::gglwe_product_idft_normalize(
                     module,
                     normalized,
@@ -582,15 +587,34 @@ fn glwe_prepare_baby_steps_doubling<BE, H>(
                     },
                 );
             } else {
-                for (((operand, product), normalized), source) in tasks {
-                    switch(
-                        &mut operand.to_backend_mut(),
-                        &mut product.to_backend_mut(),
-                        &mut normalized.to_backend_mut(),
-                        source,
-                        &mut pass,
-                    );
+                // Serially, every source laid out first and all of them switched by one call,
+                // which a backend may take in one pass over the key.
+                drop(tasks);
+                for (operand, source) in operands.iter_mut().zip(&sources) {
+                    layout(&mut operand.to_backend_mut(), source, &mut pass);
                 }
+                let mut res: Vec<poulpy_hal::layouts::VecZnxBackendMut<'_, BE>> =
+                    normalized.iter_mut().map(|v| v.to_backend_mut()).collect();
+                let mut res_dft: Vec<VecZnxDftBackendMut<'_, BE>> = products.iter_mut().map(|v| v.to_backend_mut()).collect();
+                let operands: Vec<VecZnxDftBackendRef<'_, BE>> = operands.iter().map(|v| v.to_backend_ref()).collect();
+                let bodies: Vec<Option<(&poulpy_hal::layouts::VecZnxBackendRef<'_, BE>, usize)>> =
+                    sources.iter().map(|source| Some((&source.data, 0))).collect();
+                let addends: Vec<&[Option<(&VecZnxDftBackendRef<'_, BE>, usize)>]> = vec![&[]; m];
+                BE::gglwe_products_idft_normalize(
+                    module,
+                    &mut res,
+                    base2k,
+                    k,
+                    0,
+                    &mut res_dft,
+                    &operands,
+                    &key.key,
+                    1,
+                    &addends,
+                    &bodies,
+                    base2k,
+                    &mut pass,
+                );
             }
         }
         // Each rotation stored through the pass's automorphism.

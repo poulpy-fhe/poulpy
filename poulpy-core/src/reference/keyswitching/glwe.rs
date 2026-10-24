@@ -7,7 +7,7 @@ use poulpy_hal::{
         VmpApplyDftToDftTmpBytes, VmpExtractSelectedRows, VmpPMatBytesOf,
     },
     layouts::{
-        Backend, Module, PrepareHint, ScratchArena, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef,
+        Backend, Module, PrepareHint, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef,
         VecZnxDftToBackendRef, VmpPMatBackendRef, VmpPMatToBackendRef,
     },
 };
@@ -360,6 +360,8 @@ pub trait GGLWEProductFusedReference<BE: Backend>:
     + poulpy_hal::api::VecZnxDftAutomorphismAddWithPlanTmpBytes
     + poulpy_hal::api::VecZnxIdftNormalize<BE>
     + poulpy_hal::api::VecZnxIdftNormalizeTmpBytes
+    + poulpy_hal::api::VecZnxDftApply<BE>
+    + VecZnxGadgetDecompose<BE>
 {
 }
 
@@ -370,6 +372,8 @@ impl<BE: Backend, M> GGLWEProductFusedReference<BE> for M where
         + poulpy_hal::api::VecZnxDftAutomorphismAddWithPlanTmpBytes
         + poulpy_hal::api::VecZnxIdftNormalize<BE>
         + poulpy_hal::api::VecZnxIdftNormalizeTmpBytes
+        + poulpy_hal::api::VecZnxDftApply<BE>
+        + VecZnxGadgetDecompose<BE>
 {
 }
 
@@ -997,5 +1001,129 @@ pub fn gadget_known_zero_prefix(base2k: Base2K, k_digit: TorusPrecision, dnum: D
     } else {
         let digits: usize = (zero_bits.saturating_sub(1) / k_digit.as_usize()).min(dnum.as_usize());
         digits * k_digit.as_usize().div_ceil(base2k.as_usize())
+    }
+}
+
+/// The reference of `GGLWEProductDigitsStridedImpl::gglwe_operand_from_dft`: every mask column of `a`
+/// normalized with `vec_znx_idft_normalize` over `a.size().min(output_size)` limbs, then laid out
+/// with [`gadget_dft_apply`].
+#[doc(hidden)]
+pub fn gglwe_operand_from_dft_reference<BE, M>(
+    module: &M,
+    res: &mut VecZnxDftBackendMut<'_, BE>,
+    a: &mut VecZnxDftBackendMut<'_, BE>,
+    a_base2k: usize,
+    key: &GGLWEPreparedBackendRef<'_, BE>,
+    output_size: usize,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: Backend,
+    M: ModuleN + poulpy_hal::api::VecZnxIdftNormalize<BE> + poulpy_hal::api::VecZnxDftApply<BE> + VecZnxGadgetDecompose<BE>,
+{
+    let rank = a.cols() - 1;
+    let key_base2k = key.base2k().as_usize();
+    assert_eq!(
+        a_base2k, key_base2k,
+        "the operand of a DFT source requires its base2k to be the key's"
+    );
+    let mask_small_size = a.size().min(output_size);
+    let (k_digit, dnum) = (key.k_digit(), key.dnum());
+    let mask_k = TorusPrecision((mask_small_size * key_base2k) as u32);
+    let (mut col_small, mut scratch_1) = scratch.borrow().take_vec_znx_scratch(a.n(), 1, mask_small_size);
+    for c in 0..rank {
+        module.vec_znx_idft_normalize(
+            &mut col_small,
+            key_base2k,
+            mask_small_size * key_base2k,
+            0,
+            0,
+            a,
+            c + 1,
+            a_base2k,
+            None,
+            &mut scratch_1.borrow(),
+        );
+        gadget_dft_apply(
+            module,
+            res,
+            c,
+            &col_small.to_backend_ref(),
+            0,
+            key.base2k(),
+            k_digit,
+            dnum,
+            mask_k,
+            &mut scratch_1.borrow(),
+        );
+    }
+}
+
+/// The reference of `GGLWEProductDigitsStridedImpl::gglwe_products_fused`: the backend's
+/// `gglwe_product_fused` on the items in order.
+#[doc(hidden)]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+pub fn gglwe_products_fused_reference<BE>(
+    module: &Module<BE>,
+    res: &mut [VecZnxDftBackendMut<'_, BE>],
+    product_size: usize,
+    a: &[VecZnxDftBackendRef<'_, BE>],
+    key: &GGLWEPreparedBackendRef<'_, BE>,
+    term_count: usize,
+    addends: &[&[Option<(&VecZnxDftBackendRef<'_, BE>, usize)>]],
+    p: i64,
+    accumulate: &[bool],
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: GGLWEProductDigitsStridedImpl,
+{
+    assert!(
+        a.len() == res.len() && addends.len() == res.len() && accumulate.len() == res.len(),
+        "gglwe_products_fused: items of different lengths"
+    );
+    for (i, res) in res.iter_mut().enumerate() {
+        BE::gglwe_product_fused(
+            module,
+            res,
+            product_size,
+            &a[i],
+            key,
+            term_count,
+            addends[i],
+            p,
+            accumulate[i],
+            scratch,
+        );
+    }
+}
+
+/// The reference of `GGLWEProductDigitsStridedImpl::gglwe_products_idft_normalize`: the
+/// backend's `gglwe_product_idft_normalize` on the items in order.
+#[doc(hidden)]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+pub fn gglwe_products_idft_normalize_reference<BE>(
+    module: &Module<BE>,
+    res: &mut [VecZnxBackendMut<'_, BE>],
+    res_base2k: usize,
+    res_k: usize,
+    res_offset: i64,
+    res_dft: &mut [VecZnxDftBackendMut<'_, BE>],
+    a: &[VecZnxDftBackendRef<'_, BE>],
+    key: &GGLWEPreparedBackendRef<'_, BE>,
+    term_count: usize,
+    addends: &[&[Option<(&VecZnxDftBackendRef<'_, BE>, usize)>]],
+    body: &[Option<(&VecZnxBackendRef<'_, BE>, usize)>],
+    a_base2k: usize,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: GGLWEProductDigitsStridedImpl,
+{
+    assert!(
+        res_dft.len() == res.len() && a.len() == res.len() && addends.len() == res.len() && body.len() == res.len(),
+        "gglwe_products_idft_normalize: items of different lengths"
+    );
+    for (i, (res, res_dft)) in res.iter_mut().zip(res_dft.iter_mut()).enumerate() {
+        BE::gglwe_product_idft_normalize(
+            module, res, res_base2k, res_k, res_offset, res_dft, &a[i], key, term_count, addends[i], body[i], a_base2k, scratch,
+        );
     }
 }
