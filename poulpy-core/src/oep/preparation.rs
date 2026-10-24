@@ -1,4 +1,7 @@
-use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
+use poulpy_hal::{
+    layouts::{Backend, Data, Module, ScratchArena},
+    oep::HalVmpImpl,
+};
 
 use crate::{
     GetDistribution, GetDistributionMut,
@@ -12,9 +15,9 @@ use crate::{
 
 /// Backend-provided preparation of stored layouts into their prepared forms.
 ///
-/// The GLWE, GGLWE, GGSW, public-key and GGLWE-to-GGSW-key preparations, their scratch queries and
-/// `ggsw_zero` are required. The key-wrapper preparations and their queries default to compositions of
-/// `gglwe_prepare` and `glwe_switching_key_prepare`. An implementation reproduces the body it replaces bit
+/// The GLWE, GGLWE, GGSW, public-key and GGLWE-to-GGSW-key preparations and their scratch queries are
+/// required. `ggsw_zero` defaults to the selected `vmp_zero`, and the key-wrapper preparations and their
+/// queries to compositions of `gglwe_prepare` and `glwe_switching_key_prepare`. An implementation reproduces the body it replaces bit
 /// for bit: its refusals before any write to `res`, the metadata it records on `res`, and a prepared form
 /// from which the backend's consumers compute what they compute from the reference's. It chooses only its
 /// kernels, its prepared representation and its scratch size, within its own query, which may report less.
@@ -23,7 +26,7 @@ use crate::{
 /// Implementations read `other` and write `res` only within the regions their layouts describe, leave
 /// `other` unchanged, and use no more scratch than the method's query reports. The memory, layout,
 /// synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait PreparationImpl: Backend {
+pub unsafe trait PreparationImpl: Backend + HalVmpImpl {
     /// Scratch bytes of [`Self::glwe_prepare`]: those of
     /// [`glwe_prepare_tmp_bytes_reference`](crate::reference::preparation::PreparationReference::glwe_prepare_tmp_bytes_reference),
     /// or fewer for an override needing fewer.
@@ -69,12 +72,14 @@ pub unsafe trait PreparationImpl: Backend {
         R: GGSWPreparedToBackendMut<Self>,
         O: GGSWToBackendRef<Self>;
 
-    /// Reproduces
-    /// [`ggsw_zero_reference`](crate::reference::preparation::PreparationReference::ggsw_zero_reference)
-    /// bit for bit; it takes no scratch.
+    /// Default body: `ggsw_zero_derived`, [`HalVmpImpl::vmp_zero`] on `res`, after clearing its noise
+    /// metadata; it takes no scratch.
     fn ggsw_zero<R>(module: &Module<Self>, res: &mut R)
     where
-        R: GGSWPreparedToBackendMut<Self>;
+        R: GGSWPreparedToBackendMut<Self>,
+    {
+        super::derived::preparation::ggsw_zero_derived(module, res)
+    }
 
     /// Scratch bytes of [`Self::glwe_public_key_prepare`]: those of
     /// [`glwe_public_key_prepare_tmp_bytes_reference`](crate::reference::preparation::PreparationReference::glwe_public_key_prepare_tmp_bytes_reference),
@@ -299,13 +304,6 @@ macro_rules! impl_preparation_reference_full {
                 O: $crate::layouts::GGSWToBackendRef<$be>,
             {
                 <::poulpy_hal::layouts::Module<$be> as $crate::reference::preparation::PreparationReference<$be>>::ggsw_prepare_reference(module, res, other, scratch)
-            }
-
-            fn ggsw_zero<R>(module: &::poulpy_hal::layouts::Module<$be>, res: &mut R)
-            where
-                R: $crate::layouts::GGSWPreparedToBackendMut<$be>,
-            {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::preparation::PreparationReference<$be>>::ggsw_zero_reference(module, res)
             }
 
             fn glwe_public_key_prepare_tmp_bytes<A>(module: &::poulpy_hal::layouts::Module<$be>, infos: &A) -> usize

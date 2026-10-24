@@ -152,10 +152,21 @@ impl_secret_delegate!(
     {
         BE::glwe_secret_from_lwe_secret(self, src)
     },
-    fn lwe_secret_from_glwe_secret<S>(&self, src: &S, lwe_n: Degree) -> LWESecret<BE::OwnedBuf, BE::ZnxWord>
+    fn lwe_secret_from_glwe_secret_tmp_bytes<A>(&self, infos: &A) -> usize
+    where
+        A: GLWEInfos,
+    {
+        BE::lwe_secret_from_glwe_secret_tmp_bytes(self, infos)
+    },
+    fn lwe_secret_from_glwe_secret<S>(
+        &self,
+        src: &S,
+        lwe_n: Degree,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> LWESecret<BE::OwnedBuf, BE::ZnxWord>
     where
         S: GLWESecretToBackendRef<BE>,
     {
-        BE::lwe_secret_from_glwe_secret(self, src, lwe_n)
+        BE::lwe_secret_from_glwe_secret(self, src, lwe_n, scratch)
     }
 );

@@ -7,10 +7,11 @@ use poulpy_hal::{
 };
 
 use crate::{
-    GetDistribution,
+    GetDistribution, ScratchArenaTakeCore,
+    api::GLWEBytesOf,
     layouts::{
-        GGLWEInfos, GGLWEToBackendMut, GLWECIEmbedKey, GLWECITraceKey, GLWEInfos, GLWESecretToBackendRef, GLWEToBackendMut,
-        GLWEToBackendRef, LWEInfos,
+        Degree, GGLWEInfos, GGLWEToBackendMut, GLWECIEmbedKey, GLWECITraceKey, GLWEInfos, GLWESecretToBackendRef,
+        GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
     },
     oep::GLWECIConversionImpl,
 };
@@ -40,7 +41,8 @@ where
     BE: GLWECIConversionImpl,
     A: GGLWEInfos,
 {
-    BE::glwe_switching_key_encrypt_sk_tmp_bytes(module, infos)
+    let sk_embedded: usize = module.glwe_secret_bytes_of(infos.n(), infos.rank_in().max(infos.rank_out()));
+    BE::scratch_aligned(sk_embedded) + BE::glwe_switching_key_encrypt_sk_tmp_bytes(module, infos)
 }
 
 pub(crate) fn glwe_ci_embed_key_encrypt_sk_derived<BE, D, S1, S2>(
@@ -58,8 +60,19 @@ pub(crate) fn glwe_ci_embed_key_encrypt_sk_derived<BE, D, S1, S2>(
     S1: GLWESecretToBackendRef<BE>,
     S2: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
 {
-    let sk_embedded = BE::glwe_secret_ci_embed(module, sk_ci);
-    BE::glwe_switching_key_encrypt_sk(module, res, &sk_embedded, sk, source_xe, source_xa, scratch);
+    let tmp_bytes: usize = glwe_ci_key_encrypt_sk_tmp_bytes_derived(module, res);
+    assert!(
+        scratch.available() >= tmp_bytes,
+        "insufficient scratch for conjugate-invariant key encryption"
+    );
+    {
+        let sk_ci_ref = sk_ci.to_backend_ref();
+        let n: Degree = (2 * sk_ci_ref.n().as_usize()).into();
+        let (mut sk_embedded, mut scratch_1) = scratch.borrow().take_glwe_secret_scratch(n, sk_ci_ref.rank());
+        BE::glwe_secret_ci_embed(module, &mut sk_embedded, sk_ci);
+        BE::glwe_switching_key_encrypt_sk(module, res, &sk_embedded, sk, source_xe, source_xa, &mut scratch_1);
+    }
+    scratch.wipe(tmp_bytes);
 }
 
 pub(crate) fn glwe_ci_trace_key_encrypt_sk_derived<BE, D, S1, S2>(
@@ -77,6 +90,17 @@ pub(crate) fn glwe_ci_trace_key_encrypt_sk_derived<BE, D, S1, S2>(
     S1: GLWESecretToBackendRef<BE>,
     S2: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
 {
-    let sk_embedded = BE::glwe_secret_ci_embed(module, sk_ci);
-    BE::glwe_switching_key_encrypt_sk(module, res, sk, &sk_embedded, source_xe, source_xa, scratch);
+    let tmp_bytes: usize = glwe_ci_key_encrypt_sk_tmp_bytes_derived(module, res);
+    assert!(
+        scratch.available() >= tmp_bytes,
+        "insufficient scratch for conjugate-invariant key encryption"
+    );
+    {
+        let sk_ci_ref = sk_ci.to_backend_ref();
+        let n: Degree = (2 * sk_ci_ref.n().as_usize()).into();
+        let (mut sk_embedded, mut scratch_1) = scratch.borrow().take_glwe_secret_scratch(n, sk_ci_ref.rank());
+        BE::glwe_secret_ci_embed(module, &mut sk_embedded, sk_ci);
+        BE::glwe_switching_key_encrypt_sk(module, res, sk, &sk_embedded, source_xe, source_xa, &mut scratch_1);
+    }
+    scratch.wipe(tmp_bytes);
 }

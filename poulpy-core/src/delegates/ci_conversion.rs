@@ -5,10 +5,10 @@ use poulpy_hal::{
 };
 
 use crate::{
-    GetDistribution,
+    GetDistribution, GetDistributionMut,
     api::{GLWECIEmbed, GLWECIKeyEncryptSk, GLWECITrace, GLWESecretCIEmbed, GLWESwitchDegree},
     layouts::{
-        GGLWEInfos, GGLWEToBackendMut, GLWECIEmbedKey, GLWECITraceKey, GLWEInfos, GLWESecret, GLWESecretToBackendRef,
+        GGLWEInfos, GGLWEToBackendMut, GLWECIEmbedKey, GLWECITraceKey, GLWEInfos, GLWESecretToBackendMut, GLWESecretToBackendRef,
         GLWEToBackendMut, GLWEToBackendRef,
     },
     oep::GLWECIConversionImpl,
@@ -56,11 +56,12 @@ where
 }
 
 impl<BE: Backend + GLWECIConversionImpl> GLWESecretCIEmbed<BE> for Module<BE> {
-    fn glwe_secret_ci_embed<S>(&self, src: &S) -> GLWESecret<BE::OwnedBuf, BE::ZnxWord>
+    fn glwe_secret_ci_embed<R, S>(&self, res: &mut R, src: &S)
     where
+        R: GLWESecretToBackendMut<BE> + GetDistributionMut,
         S: GLWESecretToBackendRef<BE>,
     {
-        BE::glwe_secret_ci_embed(self, src)
+        BE::glwe_secret_ci_embed(self, res, src)
     }
 }
 

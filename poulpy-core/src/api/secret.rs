@@ -229,6 +229,11 @@ pub trait SecretConversion<B: Backend> {
     where
         S: LWESecretToBackendRef<B>;
 
+    /// Scratch bytes of [`Self::lwe_secret_from_glwe_secret`] for a source GLWE secret of layout `infos`.
+    fn lwe_secret_from_glwe_secret_tmp_bytes<A>(&self, infos: &A) -> usize
+    where
+        A: GLWEInfos;
+
     /// Derives an `LWESecret` of the requested flat dimension `lwe_n` from a
     /// `GLWESecret` by applying the X → X⁻¹ automorphism (k = -1) to each rank
     /// component and packing the results as consecutive `n`-coefficient blocks.
@@ -249,9 +254,18 @@ pub trait SecretConversion<B: Backend> {
     /// distribution of each polynomial component of the source key and is not
     /// multiplied by the rank during flattening.
     ///
+    /// The rotated components are carved from `scratch`, which is wiped over
+    /// [`Self::lwe_secret_from_glwe_secret_tmp_bytes`] before returning.
+    ///
     /// # Panics
-    /// When the degree of `src` differs from the module degree or `lwe_n > rank * n`.
-    fn lwe_secret_from_glwe_secret<S>(&self, src: &S, lwe_n: Degree) -> LWESecret<B::OwnedBuf, B::ZnxWord>
+    /// When the degree of `src` differs from the module degree, `lwe_n > rank * n` or the scratch
+    /// is smaller than the query.
+    fn lwe_secret_from_glwe_secret<S>(
+        &self,
+        src: &S,
+        lwe_n: Degree,
+        scratch: &mut ScratchArena<'_, B>,
+    ) -> LWESecret<B::OwnedBuf, B::ZnxWord>
     where
         S: GLWESecretToBackendRef<B>;
 }

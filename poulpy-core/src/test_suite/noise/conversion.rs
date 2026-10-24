@@ -82,7 +82,12 @@ pub fn test_lwe_secret_from_glwe_secret_flattens_rank_and_preserves_metadata<BE:
     module.glwe_secret_fill_ternary_hw(&mut sk_glwe, 3, &mut source);
 
     let lwe_n = Degree((module.n() * rank.as_usize()) as u32);
-    let sk_lwe = module.lwe_secret_from_glwe_secret(&sk_glwe, lwe_n);
+    let mut sk_lwe = None;
+    // The rotated components would be left in the scratch.
+    crate::test_suite::assert_wipes_scratch::<BE>(module.lwe_secret_from_glwe_secret_tmp_bytes(&sk_glwe), |scratch| {
+        sk_lwe = Some(module.lwe_secret_from_glwe_secret(&sk_glwe, lwe_n, scratch))
+    });
+    let sk_lwe = sk_lwe.unwrap();
 
     assert_eq!(sk_lwe.n(), lwe_n);
     assert_eq!(sk_lwe.dist(), crate::dist::Distribution::TernaryFixed(3));
@@ -465,7 +470,11 @@ pub fn test_glwe_expand_lwe<BE: crate::test_suite::noise::TestBackend + crate::o
         let mut sk_glwe_prep: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&sk_glwe);
         module.glwe_secret_prepare(&mut sk_glwe_prep, &sk_glwe);
 
-        let sk_lwe = module.lwe_secret_from_glwe_secret(&sk_glwe, lwe_infos.n);
+        let sk_lwe = module.lwe_secret_from_glwe_secret(
+            &sk_glwe,
+            lwe_infos.n,
+            &mut ScratchOwned::alloc(module.lwe_secret_from_glwe_secret_tmp_bytes(&sk_glwe)).borrow(),
+        );
 
         let a_idx: usize = 3;
         let mut data: Vec<i64> = vec![0i64; n];
@@ -611,7 +620,11 @@ pub fn test_glwe_expand_lwe_matrix_decrypt<BE: crate::test_suite::noise::TestBac
 
         let mut sk_glwe_prep: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&sk_glwe);
         module.glwe_secret_prepare(&mut sk_glwe_prep, &sk_glwe);
-        let sk_lwe = module.lwe_secret_from_glwe_secret(&sk_glwe, matrix_infos.n);
+        let sk_lwe = module.lwe_secret_from_glwe_secret(
+            &sk_glwe,
+            matrix_infos.n,
+            &mut ScratchOwned::alloc(module.lwe_secret_from_glwe_secret_tmp_bytes(&sk_glwe)).borrow(),
+        );
 
         let mut data: Vec<i64> = vec![0i64; n];
         for (i, x) in data.iter_mut().enumerate() {

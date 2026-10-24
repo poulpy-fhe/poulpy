@@ -1,7 +1,7 @@
 //! Preparation of stored GLWE, GGLWE, GGSW, public-key and GGLWE-to-GGSW-key layouts.
 
 use poulpy_hal::{
-    api::{VecZnxDftApply, VmpPrepare, VmpPrepareTmpBytes, VmpZero},
+    api::{VecZnxDftApply, VmpPrepare, VmpPrepareTmpBytes},
     layouts::{Backend, Module, ScratchArena},
 };
 
@@ -45,10 +45,6 @@ pub trait PreparationReference<BE: Backend> {
         R: GGSWPreparedToBackendMut<BE>,
         O: GGSWToBackendRef<BE>;
 
-    fn ggsw_zero_reference<R>(&self, res: &mut R)
-    where
-        R: GGSWPreparedToBackendMut<BE>;
-
     fn glwe_public_key_prepare_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GLWEInfos;
@@ -70,7 +66,7 @@ pub trait PreparationReference<BE: Backend> {
 
 impl<BE: Backend> PreparationReference<BE> for Module<BE>
 where
-    Module<BE>: GLWENormalize<BE> + VecZnxDftApply<BE> + VmpPrepare<BE> + VmpPrepareTmpBytes + VmpZero<BE>,
+    Module<BE>: GLWENormalize<BE> + VecZnxDftApply<BE> + VmpPrepare<BE> + VmpPrepareTmpBytes,
 {
     fn glwe_prepare_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
@@ -182,15 +178,6 @@ where
             self.vmp_prepare(&mut res.data, &other.data, scratch);
         }
         res.set_noise(noise);
-    }
-
-    fn ggsw_zero_reference<R>(&self, res: &mut R)
-    where
-        R: GGSWPreparedToBackendMut<BE>,
-    {
-        res.set_noise(None);
-        let mut res = res.to_backend_mut();
-        self.vmp_zero(&mut res.data);
     }
 
     fn glwe_public_key_prepare_tmp_bytes_reference<A>(&self, infos: &A) -> usize

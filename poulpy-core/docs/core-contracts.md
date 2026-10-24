@@ -34,13 +34,15 @@ and register on standard backends only. Use individual family macros when replac
 a family, so its `*Impl` is defined only once. Sampling is supplied through
 the mandatory `SamplingImpl`, including full-width flooding.
 Preparation dispatches through `PreparationImpl`, whose GLWE, GGLWE, GGSW,
-public-key and GGLWE-to-GGSW-key methods are required and whose key preparations
-are derived over `gglwe_prepare` and `glwe_switching_key_prepare`. Decompression
+public-key and GGLWE-to-GGSW-key methods are required, whose `ggsw_zero` is derived
+over `vmp_zero` and whose key preparations are derived over `gglwe_prepare` and
+`glwe_switching_key_prepare`. Decompression
 dispatches through `DecompressionImpl`, whose GLWE and LWE methods are required
 and whose gadget and key decompressions are derived over them. Secret sampling,
 preparation, tensoring and LWE/GLWE conversion dispatch through `SecretImpl`, whose
 ternary and binary fills are derived over `scalar_znx_fill_distribution`, one draw
-per column in column order, and whose other methods are required; see the
+per column in column order, whose zero fills are derived over `vec_znx_zero`, and
+whose other methods are required; see the
 [OEP documentation](../src/oep/mod.rs) for the available hooks and macros.
 
 Prepared-right tensor multiplication is a `GLWETensoring` operation. Its
