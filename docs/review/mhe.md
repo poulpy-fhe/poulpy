@@ -18,7 +18,7 @@ Generic rules: `docs/review/workspace.md` section 12.
   - aggregation: `(res, a)`;
   - finalization: `(res, [ct], share, [key], scratch)`.
 - **Mask-only share generation.** A generation reading only a ciphertext's mask takes `mask: &C` with `C: GLWEMaskToBackendRef<BE> + GLWEInfos`, its trait doc requiring a canonical mask, the body entering only at finalization.
-- **Allocators mirror core.** Every PAT and share type has `MHEModuleAlloc` default bodies over core's allocation supertraits, leaving the blanket `impl MHEModuleAlloc<BE> for Module<BE>` empty: `<type_snake>_alloc_from_infos(&self, infos)` at the infos degree and `<type_snake>_alloc(&self, ..)` at the module degree, taking the wrapped core allocator's parameters in core's order minus those the protocol fixes.
+- **Allocators mirror core.** Every PAT and share type has `MHEModuleAlloc` default bodies over core's allocation supertraits, leaving the blanket `impl MHEModuleAlloc<BE> for Module<BE>` empty: `<type_snake>_alloc_from_infos(&self, infos)` asserting the infos degree is the module's and `<type_snake>_alloc(&self, ..)` at the module degree (`docs/review/workspace.md` section 6), taking the wrapped core allocator's parameters in core's order minus those the protocol fixes.
 
 ## 2. Layers and extension points
 
@@ -48,7 +48,7 @@ Generic rules: `docs/review/workspace.md` section 3.
 
 ### 3.2. Aggregation
 
-- **Assign-only raw sum.** Aggregation is only `res += a` from the first share, raw limb addition through the share layout's family (section 7) with no normalization, scratch, query or headroom check.
+- **Assign-only raw sum.** Aggregation is only `res += a` from the first share, raw limb addition through the share layout's family (section 7) with no normalization, scratch, query or headroom check, headroom across calls being the caller's (`docs/review/workspace.md` section 8.1).
 - **Agreement before the first write.** Before adding, aggregation asserts for every part equal layouts (`*_layout()`), seeds and result metadata (degrees, Galois element, secret distribution, ranks), combining `ComponentNoise` first through the shared asserting helpers (`docs/review/workspace.md` section 4).
 
 ### 3.3. Normalization
@@ -73,7 +73,7 @@ Generic rule: `docs/review/workspace.md` section 9.
 
 - **Message grammar.** Every mhe path is secret-carrying (`docs/review/workspace.md` section 4): checks are `assert!(<cond>, "invalid <subject>: <reason>")` with a literal and no format argument, like reader `InvalidData` text, `<subject>` the stage (`share` in generation, `aggregation`, `finalization`, `layout` in a query) or a shared check's operand (`secret`, `public key`, `distribution`; `noise` comes from core's flood check).
 - **Checks at the protocol boundary.** A reference or default body checks every precondition (ranks, layouts, precision order `pk.k() >= share.k()` and `secret.k() <= res.k()`, samplable distributions, flood, row offsets, key coverage) with its own mhe message, row offsets excepted (section 3.1), before its first core call, write or draw, even where core rechecks (`docs/review/workspace.md` section 4).
-- **The module degree only.** Narrowing `docs/review/workspace.md` section 6, generation, its query and finalization first assert that the share, mask or ciphertext has degree `module.n()` ("invalid share: [mask ]degree differs from the module's", "invalid layout: degree differs from the module's", "invalid finalization: [ciphertext ]degree differs from the module's"); other operands have the share's degree, switching key share secrets any power of two up to the key's.
+- **The module degree only.** Under `docs/review/workspace.md` section 6 (module-degree crates), generation, its query and finalization first assert that the share, mask or ciphertext has degree `module.n()` ("invalid share: [mask ]degree differs from the module's", "invalid layout: degree differs from the module's", "invalid finalization: [ciphertext ]degree differs from the module's"); other operands have the share's degree, switching key share secrets any power of two up to the key's.
 - **Public-key checks.** Generation under a collective public key first checks its degree, radix and rank against the share, `pk.k() >= share.k()` ("invalid share: public key less precise than the share"), a samplable distribution and `assert_public_key_distribution`, sizes with `glwe_encrypt_pk_tmp_bytes(res_infos, pk_infos)` or its smudged variant, and is tested with a key one limb wider than the share.
 
 ## 5. Seeds, floods and the threat model

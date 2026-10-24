@@ -10,7 +10,7 @@ Read with `docs/review/REVIEW.md`; this file adds the rules specific to `poulpy-
   - its API trait in the operation map of `poulpy-bin-fhe/docs/bin-fhe-contracts.md` (`docs/review/workspace.md` section 13);
   - for an execution API, its calls in the `OpaqueBackend<'env>` contract (section 8).
 - **One file per operation.** A new operation gets its own file under `api/<family>/`, `delegates/<family>/` and `oep/<family>/`, named after its API trait in snake case (`GLWEBlindSelection`: `glwe_blind_selection.rs`) and declared like its siblings, its reference body in `reference/bdd/<op>.rs`, a file of `reference/blind_rotation/` or `reference/circuit_bootstrapping.rs`, and its derived bodies in `oep/derived/<family>/<op>.rs` or `oep/derived/circuit_bootstrapping.rs`.
-- **Operation traits live in `api`.** Every replaceable operation, LUT construction and compressed or prepared key allocation included, is an API trait in `api/<family>/` exported from `api::<family>`, `api` and the crate root, re-exported by a domain module (`blind_rotation`, `circuit_bootstrapping`, `bdd_arithmetic`) only to keep a path older than its move to `api`. Blanket `Module<BE>` impls outside `delegates` are only data helpers over public API traits (allocation, debug and noise inspection, serialization).
+- **Operation traits live in `api`.** Every replaceable operation, LUT construction and compressed or prepared key allocation included, is an API trait in a private `api/<family>/` module re-exported from `api` and the crate root (`docs/review/workspace.md` section 14), re-exported by a domain module (`blind_rotation`, `circuit_bootstrapping`, `bdd_arithmetic`) only to keep a path older than its move to `api`. Blanket `Module<BE>` impls outside `delegates` are only data helpers over public API traits (allocation, debug and noise inspection, serialization).
 - **Reference and OEP docs.** A reference method's doc opens with "Independently callable canonical implementation of [`Trait::method`]." naming its API method (a query's names its `_tmp_bytes` method), an OEP trait's with "Backend implementation contract for [`Trait`](crate::api::Trait)." (`docs/review/workspace.md` sections 3 and 13).
 - **No unsafe blocks.** `unsafe` appears only on the `pub unsafe trait` OEP declarations and the `unsafe impl`s of opt-ins and backend overrides.
 
@@ -94,7 +94,7 @@ Read with `docs/review/REVIEW.md`; this file adds the rules specific to `poulpy-
   - `circuits/u<w>/<op>_codegen.rs` with its `pub(crate) mod` line in `circuits/u<w>/mod.rs`;
   - a `define_bdd_2w_to_1w_trait!` or `define_bdd_1w_to_1w_trait!` invocation with a one-line doc;
   - one `impl_bdd_*_trait!(Trait, method, u<w>, ..::AnyBitCircuit, ..::OUTPUT_CIRCUITS)` line per supported width;
-  - `test_bdd_<op>` in `bdd_arithmetic/test_suite/<op>.rs`, declared and glob re-exported in its `mod.rs`, with `#[test] fn bdd_<op>()` in `bin_fhe_backend_test_suite!`;
+  - `test_bdd_<op>` in `src/test_suite/bdd_arithmetic/<op>.rs`, declared and glob re-exported in its `mod.rs`, with `#[test] fn bdd_<op>()` in `bin_fhe_backend_test_suite!`;
   - an entry in the `bdd_arithmetic` module doc.
 - **Node-array invariants.** A circuit fed to the BDD evaluator has levels of `max_inter_state` entries (0 for a zero output, else at least 2), an initial state holding constant 0 in slot 0 and constant 1 in slot 1, `Cmux(sel, hi, lo)` previous-level indices below `max_inter_state` and selectors below `input_size()`, `Copy` forwarding its own slot, a last level `[Cmux, None, ..]`, and two-word inputs `a` in `[0, BITS)`, `b` in `[BITS, 2 * BITS)`.
 - **Bit placement.** Bit `i` of an `FheUint<T>` sits at coefficient `T::bit_index(i) << (module.log_n() - T::LOG_BITS)`, never `i`, byte `b` is reached through `T::bit_index(b << 3)`, byte-isolating traces start at `T::LOG_BITS - T::LOG_BYTES`, and the ring degree is a multiple of `T::BITS`.
@@ -131,7 +131,7 @@ Read with `docs/review/REVIEW.md`; this file adds the rules specific to `poulpy-
 ## 11. Tests and registration
 
 - **Three suite macros.** Bodies register 1:1 (`docs/review/workspace.md` section 15):
-  - correctness bodies, in their domain module's test suite, in `bin_fhe_backend_test_suite!`;
+  - correctness bodies, in `src/test_suite/<domain>/`, in `bin_fhe_backend_test_suite!`;
   - `test_<op>_parity<BR, BT>(reference: &Module<BR>, tested: &Module<BT>)` bodies of `src/test_suite/parity/<family>.rs` in `bin_fhe_parity_test_suite!`;
   - same-backend, same-seed comparisons of randomized operations with their reference in `bin_fhe_reference_test_suite!`.
 

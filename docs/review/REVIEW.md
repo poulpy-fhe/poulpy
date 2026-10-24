@@ -30,6 +30,7 @@ Entry point for reviewing a poulpy diff: the one file a review needs to be given
 | adds or changes an OEP trait, OEP method, opt-in or registration macro, or public test suite, in any crate | `backends.md` (the backend side must follow) |
 | touches `poulpy-bench/` or any `benches/` directory, or makes a performance claim (PR description, CHANGELOG, README, `docs/performance.md`, gate constant) | `bench.md` |
 | touches `.github/` | these sections alone, picking no file: `hal.md` section 11, `ckks.md` sections 15.1 and 15.4, `backends.md` sections 11 and 13.7, `bench.md` section 4 |
+| touches `docs/layering-contract.md` | these sections alone, picking no file: `hal.md` sections 1 and 5, `core.md` section 1, `ckks.md` section 1, `bin-fhe.md` section 1, `mhe.md` section 2, `blas.md` section 1, `backends.md` sections 3 and 4 |
 | touches a crate's manifest, README or `docs/` directory | that crate's file |
 | touches `docs/bootstrapping.md` | `ckks.md` |
 
@@ -60,18 +61,18 @@ Each cell lists the sections to read in that file for that kind of change, on to
 | Validation, asserts, panics, errors | 3.2, 9 | 3, 6, 9 | 3 | 9 | 4 | 3 | 5.1 |
 | Normalization, canonical flag, rounding, DFT and IDFT work | 3.2, 9 | 7, 8.3 | 7, 8 | 10 | 3.3 | 7 | 5.3, 5.6, 6 |
 | Metadata: noise, plaintext, scheme or share metadata | - | 9 | 6 | 10 | 3.4 | 5 | - |
-| Keys, encryption, sampling, seeds, secrets | - | 5, 10, 11 | 5, 14 | 4 | 5 | 4 | 5.8 |
+| Keys, encryption, sampling, seeds, secrets | 9 | 5, 10, 11 | 5, 14 | 4 | 5 | 4 | 5.1, 5.8 |
 | Layouts and types: a new layout, field, tier, view, allocation, prepared or compressed form | 6, 7 | 6 | 4, 14 | 4 | 7 | 9 | 5.7 |
 | Serialization | 7 | 12 | 14 | 4.1 | 6 | 9 | - |
-| Degree, ring, Galois elements, modules | 6 | 5 | 5 | 9 | - | 5 | 5.5 |
+| Degree, ring, Galois elements, modules | 6 | 5 | 5 | 9 | 4 | 5 | 5.5 |
 | Names, signatures, renames | 3, 5, 9 | 3, 13 | 3, 15 | 11 | 9 | 3, 11 | 5.1, 13 |
-| Docs, comments, contract blocks | 3 | - | - | - | 8 | 10 | 12 |
+| Docs, comments, contract blocks | 3 | - | 3, 6 | - | 8 | 10 | 12 |
 | Visibility, features, manifests, dependencies, examples | - | - | - | - | - | 10 | 11, 12 |
 | Tests and fixtures | 11 | 13 | 15 | 11 | 9 | 11 | 13 |
 | Defect fix | 11 | 13.4 | 15.3 | 11 | 9 | 11 | 13 |
 | CI workflows and scripts | 11 | - | 15.1, 15.4 | - | - | - | 11, 13.7 |
 | Performance: fused paths, gates, algorithm choices, benches | 5 | - | 8 | 5 | - | 6 | 10, 11 |
-| Unsafe code, raw pointers, parallelism | 7, 9, 11 | - | - | 5 | - | 8 | 5.2, 8 |
+| Unsafe code, raw pointers, parallelism | 7, 9, 11 | 4 | 4 | 5 | - | 8 | 5.2, 8 |
 
 ## 5. Topics
 
