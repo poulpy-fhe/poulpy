@@ -8,8 +8,8 @@ use poulpy_ckks::{
         LinearTransformation, LinearTransformationLayout, LinearTransformationPlan, LinearTransformationPrepared, LtDiagonalMeta,
         ckks_linear_transformation_output_layout,
     },
+    encoding::{ckks_encode_linear_transformation_into, ckks_encode_linear_transformation_tmp_bytes},
     layouts::{CKKSModuleAlloc, CKKSPlaintextOwned, ComplexDiagonals},
-    reference::{ckks_encode_linear_transformation_into, ckks_encode_linear_transformation_tmp_bytes},
 };
 use poulpy_core::layouts::{
     Base2K, DiagonalArithmetic, Diagonals, GLWELayout, GetDegree, LWEInfos, LinearTransformationStrategy, Rank, TorusPrecision,

@@ -27,9 +27,9 @@ use crate::{
     CKKSInfos, GLWEPlaintextMeta, SetCKKSInfos,
     api::CKKSConjugateOps,
     encoding::paco::cpx::Cpx,
+    layouts::slots::fold_rotations,
     layouts::{CKKSCiphertextOwned, CKKSModuleAlloc},
     oep::CKKSPaCoImpl,
-    reference::paco::ops::fold_rotations,
     test_suite::reference_encoder::ReferenceEncoder,
     test_suite::{
         CKKSTestParams,

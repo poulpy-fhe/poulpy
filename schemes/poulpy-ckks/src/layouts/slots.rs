@@ -1,5 +1,6 @@
-//! PaCo slot helpers: the fold rotation schedule, the tiled bit-reversal and the
-//! conjugate-rotate Galois element.
+//! Slot and Galois helpers shared by the derived drivers, the layouts and the reference bodies: the
+//! fold rotation schedule, the tiled bit-reversal, the conjugate-rotate Galois element and the
+//! constant-one plaintext.
 //!
 //! Conjugation-with-rotation (seqPaCo line 8, Galois element `−5^k`) needs no
 //! new operation at all: the automorphism appliers use whatever key they are
@@ -8,7 +9,57 @@
 //! [`CKKSConjugateOps`](crate::api::CKKSConjugateOps) performs
 //! `conj(rotate(·, k))` in a single keyswitch.
 
-use poulpy_hal::layouts::galois_element;
+use crate::CKKSResult as Result;
+use crate::SlotsKind;
+use crate::layouts::CKKSPlaintextOwned;
+use crate::{GLWEPlaintextMeta, Scale, SetCKKSInfos, ckks_log_delta, layouts::CKKSModuleAlloc};
+use poulpy_core::layouts::Base2K;
+use poulpy_hal::{
+    AlignedBuf, alloc_aligned,
+    layouts::{Backend, VecZnx, galois_element},
+};
+
+/// Builds the backend-resident constant-`1.0` plaintext used by the
+/// add-one/sub-one facades.
+///
+/// This currently allocates and uploads a degree-1, single-limb monomial on
+/// each call. The unit-operation scratch query covers the arithmetic workspace.
+pub(crate) fn ckks_one_pt<BE, M>(module: &M, base2k: Base2K) -> Result<CKKSPlaintextOwned<BE>>
+where
+    BE: Backend,
+    M: CKKSModuleAlloc<BE> + ?Sized,
+{
+    let meta = GLWEPlaintextMeta {
+        scale: Scale::Log(1),
+        slots: SlotsKind::Real,
+        log_sparsity: 0,
+    };
+
+    // Monomial plaintext: total torus width is `log_delta` (budget 0).
+    let k_total: usize = ckks_log_delta(&meta);
+
+    // The constant is integer-exact: 1.0 at scale `2^log_delta` is the single
+    // coefficient `1 << log_delta`, so its limbs are built on the host with the
+    // integer codec and uploaded as raw bytes (no float codec, no transfer op).
+    let size = k_total.div_ceil(base2k.as_usize());
+    let mut limbs = VecZnx::<AlignedBuf, i64>::from_data(
+        alloc_aligned::<u8>(VecZnx::<AlignedBuf, i64>::bytes_of(1, 1, size)),
+        1,
+        1,
+        size,
+    );
+    limbs.encode_vec_i64(
+        base2k.as_usize(),
+        0,
+        size * base2k.as_usize(),
+        &[1i64 << ckks_log_delta(&meta)],
+    );
+
+    let mut pt = module.ckks_pt_coeffs_alloc(1, base2k, k_total.into());
+    pt.set_meta(meta);
+    pt.copy_from_host_bytes::<BE>(limbs.data().as_slice());
+    Ok(pt)
+}
 
 /// The rotation amounts of a `Tr_{a→b}` / `Pr_{a→b}` fold
 /// ([`ckks_slot_trace_assign`](crate::oep::CKKSPaCoImpl::ckks_slot_trace_assign),

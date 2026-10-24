@@ -40,9 +40,10 @@ use crate::{
     CKKSInfos, GLWEPlaintextMeta,
     api::{CKKSAddOps, CKKSLinearTransformationOps, CKKSMulOps},
     encoding::paco::{coeff_enc::glwe_column_residues, cpx::Cpx},
+    layouts::paco::factors::paco_c2s_factors,
+    layouts::slots::fold_rotations,
     layouts::{PaCoPlan, PaCoSecretSpec},
     oep::CKKSPaCoImpl,
-    reference::paco::{lt::paco_c2s_factors, ops::fold_rotations},
     test_suite::reference_encoder::ReferenceEncoder,
     test_suite::{
         CKKSTestParams,
@@ -226,7 +227,7 @@ where
     let lts: Vec<_> = factors
         .iter()
         .map(|cd| {
-            crate::reference::ckks_encode_linear_transformation_from_diagonals(
+            crate::encoding::ckks_encode_linear_transformation_from_diagonals(
                 &module,
                 Base2K(params.base2k as u32),
                 crate::CoeffsMeta {
@@ -282,7 +283,7 @@ where
         crate::layouts::PaCoSlotOrder::BitRevLow => {
             let log_p = p.log_c() - 1;
             (0..oracle.partial_c2s.len())
-                .map(|j| oracle.partial_c2s[crate::reference::paco::ops::ext_bitrev_low(j, log_p)])
+                .map(|j| oracle.partial_c2s[crate::layouts::slots::ext_bitrev_low(j, log_p)])
                 .collect()
         }
     };

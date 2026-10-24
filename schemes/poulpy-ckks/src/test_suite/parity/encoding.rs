@@ -15,15 +15,13 @@ use poulpy_hal::layouts::{Backend, Module, ZnxView};
 use crate::{
     CKKSInfos, CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, SlotsKind,
     api::{CKKSEncodingOps, CKKSEncodingScalar, CKKSModuleInfos, PaCoScalar, ShipScalar},
+    encoding::{ckks_encode_linear_transformation_from_diagonals, ckks_encode_linear_transformation_tmp_bytes},
     layouts::{
         CKKSEncodingBuffer, CKKSEncodingBufferToBackendMut, CKKSPlaintextOwned, ComplexDiagonals, PaCoContext, PaCoDFTPlan,
         PaCoPlan, PaCoSlotOrder, ShipPlan, slot_coeff_count,
     },
     oep::{CKKSEncodingImpl, CKKSPaCoCoeffEncodingImpl, CKKSShipCoeffEncodingImpl},
-    reference::{
-        ckks_encode_linear_transformation_from_diagonals, ckks_encode_linear_transformation_tmp_bytes,
-        encoding::CKKSSlotEmbedding,
-    },
+    reference::encoding::CKKSSlotEmbedding,
     test_suite::CKKSTestParams,
 };
 

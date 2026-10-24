@@ -24,10 +24,8 @@ pub mod first_factor;
 pub mod fold;
 pub mod imag;
 pub mod linear_transformation;
-pub mod linear_transformation_diagonals;
 pub mod mul;
 pub mod neg;
-pub mod paco;
 pub mod plaintext;
 pub mod polynomial_evaluation;
 pub mod pow2;
@@ -40,10 +38,6 @@ pub use dft::gen_dft_matrices;
 pub use dot_product::CKKSDotProductReference;
 pub use eval_mod::CKKSEvalModOpsReference;
 pub use linear_transformation::CKKSLinearTransformationReference;
-pub use linear_transformation_diagonals::{
-    ckks_encode_linear_transformation_from_diagonals, ckks_encode_linear_transformation_into,
-    ckks_encode_linear_transformation_tmp_bytes,
-};
 pub use plaintext::CKKSPlaintextReference;
 pub use polynomial_evaluation::PolynomialEvaluationReference;
 pub use sub::CKKSSubReference;

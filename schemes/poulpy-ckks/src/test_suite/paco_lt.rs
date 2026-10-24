@@ -36,11 +36,11 @@ use crate::{
     encoding::paco::cpx::Cpx,
     layouts::ComplexDiagonals,
     layouts::PaCoPlan,
+    layouts::paco::factors::{mul_vec_tiled, paco_c2s_factors, paco_stc_factors},
     layouts::{
         CKKSEncodingBuffer, CKKSModuleAlloc, ScratchArenaTakeCKKS, copy_encoding_buffer_into_reim_host,
         copy_host_into_encoding_buffer,
     },
-    reference::paco::lt::{mul_vec_tiled, paco_c2s_factors, paco_stc_factors},
     test_suite::reference_encoder::ReferenceEncoder,
     test_suite::{
         CKKSTestParams,
@@ -130,7 +130,7 @@ where
                     log_sparsity: 0,
                 },
             };
-            crate::reference::ckks_encode_linear_transformation_from_diagonals(
+            crate::encoding::ckks_encode_linear_transformation_from_diagonals(
                 &module,
                 Base2K(params.base2k as u32),
                 factor_layout,
@@ -286,7 +286,7 @@ where
     F: TestScalar,
 {
     use crate::layouts::paco::secret::pack_chunk;
-    use crate::reference::paco::ops::ext_bitrev_low;
+    use crate::layouts::slots::ext_bitrev_low;
 
     let base = PaCoPlan::new(params.n.trailing_zeros() as usize, PACO_H, PACO_C, 29).unwrap();
     let (two_c, n) = (2 * base.c(), base.slots());
@@ -366,7 +366,7 @@ where
         // under BitRevLow (the telescoped chain's output side).
         for schedule in [vec![1usize, 1, 1, 1], vec![2, 2], vec![4]] {
             let mut w = packed.clone();
-            for f in crate::reference::paco::lt::paco_c2s_factors::<f64>(&p, &schedule) {
+            for f in crate::layouts::paco::factors::paco_c2s_factors::<f64>(&p, &schedule) {
                 w = mul_vec_tiled(&f, &w);
             }
             for j in 0..n {

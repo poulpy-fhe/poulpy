@@ -20,15 +20,6 @@ use crate::{
     polynomial::ComplexBSGSPolynomial,
 };
 
-/// Scratch upper bound for [`BSGSOps::eval_baby_linear_combination`]: the constant combination
-/// for the widest term (`ct_size`) and constant (`pt_size`) in limbs.
-pub(crate) fn eval_baby_linear_combination_tmp_bytes<BE>(module: &Module<BE>, ct_size: usize, pt_size: usize) -> usize
-where
-    BE: GLWEMulConstImpl,
-{
-    BE::glwe_const_combination_tmp_bytes(module, ct_size + pt_size, ct_size, pt_size)
-}
-
 struct EvaluatedBabyStep<D: Data, W: ZnxWord, R: Ring> {
     degree: usize,
     value: CKKSCiphertext<D, W, R>,

@@ -4,6 +4,7 @@ use poulpy_core::GLWENormalize;
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta};
+use poulpy_core::oep::GLWEMulConstImpl;
 
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
@@ -14,6 +15,15 @@ use crate::{
     polynomial::ComplexBSGSPolynomial,
     power_basis::{PowerBasis, PowerBasisGen},
 };
+
+/// Scratch upper bound for [`BSGSOps::eval_baby_linear_combination`]: the constant combination
+/// for the widest term (`ct_size`) and constant (`pt_size`) in limbs.
+pub(crate) fn eval_baby_linear_combination_tmp_bytes<BE>(module: &Module<BE>, ct_size: usize, pt_size: usize) -> usize
+where
+    BE: GLWEMulConstImpl,
+{
+    BE::glwe_const_combination_tmp_bytes(module, ct_size + pt_size, ct_size, pt_size)
+}
 
 /// Builds the folded input (`x`, `x²`, or `T₂(x)`) for one-shot evaluation.
 /// The prepared-basis kernels are selected through the backend contract.

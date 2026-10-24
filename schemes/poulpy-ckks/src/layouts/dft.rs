@@ -1,7 +1,7 @@
 //! Homomorphic DFT parameters (CoeffsToSlots / SlotsToCoeffs).
 //!
 //! Scheme-level description of a factorized homomorphic (I)DFT. The factor
-//! matrices themselves are generated from this literal by the `reference::dft`
+//! matrices themselves are generated from this literal by the `dft_matrices`
 //! module; this file holds the (backend-free) parameter struct, its enums, and
 //! the prepared [`DFTMatrix`] that carries the encoded/prepared factor operands.
 //! The homomorphic DFT is documented as a stage of the bootstrapping pipeline in
@@ -19,7 +19,13 @@ use poulpy_core::{
 };
 use poulpy_hal::layouts::{Backend, Module, galois_element};
 
-use crate::{CoeffsMeta, GLWEPlaintextMeta, layouts::CKKSPlaintextOwned};
+use crate::{CoeffsMeta, GLWEPlaintextMeta, layouts::CKKSPlaintextOwned, numerics::CKKSFloat};
+use num_traits::FloatConst;
+
+/// Real scalar used for plaintext DFT-matrix generation, with platform-independent
+/// setup math and correctly rounded roots of unity.
+pub trait DftScalar: CKKSFloat + FloatConst {}
+impl<F: CKKSFloat + FloatConst> DftScalar for F {}
 
 /// Distinguishes the two homomorphic transforms.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -106,7 +112,7 @@ pub struct DFTPlan {
 }
 
 /// Single source of truth for the radix-2 merge geometry, shared by the factor
-/// generator (`crate::reference::dft::matrices::merge_next_layer`) and the
+/// generator (`crate::layouts::dft_matrices::merge_next_layer`) and the
 /// value-free index replay ([`DFTPlan::diagonal_indexes`]): the rotation a
 /// merged FFT layer applies. `level` counts down from `log_slots` (the layer
 /// being merged into the factor); `mask` is the factor's slot-count mask
@@ -570,7 +576,7 @@ impl DFTPlan {
     /// `{d, (d+rot), (d−rot)}` (modulo the factor's slot count) for each merged
     /// FFT layer, where `rot` depends only on the layer level, `kind` and
     /// `bit_reversed` — never on the twiddle values. This replays exactly that
-    /// index arithmetic, so it mirrors the diagonals the `reference::dft` generator
+    /// index arithmetic, so it mirrors the diagonals the `layouts::dft_matrices` generator
     /// produces. `log_n` (ring degree exponent) is needed only to decide the
     /// sparse-repack path (which prepends the `{0, slots}` repack diagonals and
     /// widens the first `Decode` factor to `2·slots`).
@@ -1030,9 +1036,9 @@ pub(crate) fn ckks_scaled_last_factors<BE, F>(
 where
     BE: Backend,
     Module<BE>: crate::layouts::CKKSModuleAlloc<BE> + crate::api::CKKSEncodingOps<BE, F>,
-    F: crate::reference::dft::DftScalar + crate::api::CKKSEncodingScalar,
+    F: crate::layouts::DftScalar + crate::api::CKKSEncodingScalar,
 {
-    let last = crate::reference::dft::gen_dft_matrices::<F>(plan, log_n)
+    let last = crate::layouts::dft_matrices::gen_dft_matrices::<F>(plan, log_n)
         .pop()
         .expect("a DFT plan has at least one factor");
     let strategy = plan.factor_strategy(
@@ -1045,7 +1051,7 @@ where
     let factors = scales
         .iter()
         .map(|scale| {
-            crate::reference::ckks_encode_linear_transformation_from_diagonals::<BE, F>(
+            crate::encoding::ckks_encode_linear_transformation_from_diagonals::<BE, F>(
                 module,
                 base2k,
                 plan.coeffs_meta,

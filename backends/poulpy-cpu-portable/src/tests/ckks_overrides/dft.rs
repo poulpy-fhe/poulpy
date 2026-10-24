@@ -377,7 +377,7 @@ crate::impl_ckks_encoding!(OverrideBackend);
 poulpy_ckks::impl_ckks_encapsulated_mod_up_reference_full!(OverrideBackend);
 poulpy_ckks::impl_ckks_mod_up_first_factor_reference_full!(OverrideBackend);
 poulpy_ckks::impl_ckks_bootstrapping_reference_full!(OverrideBackend);
-unsafe impl<F: poulpy_ckks::api::CKKSEncodingScalar + poulpy_ckks::reference::dft::DftScalar> poulpy_ckks::oep::DFTMatrixImpl<F>
+unsafe impl<F: poulpy_ckks::api::CKKSEncodingScalar + poulpy_ckks::layouts::DftScalar> poulpy_ckks::oep::DFTMatrixImpl<F>
     for OverrideBackend
 {
     fn ckks_new_dft_matrix<Dir: poulpy_ckks::layouts::DftDirection, Fmt: poulpy_ckks::layouts::DftFormat>(

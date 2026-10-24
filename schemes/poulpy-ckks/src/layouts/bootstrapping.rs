@@ -37,11 +37,10 @@ use crate::{
     CKKSCtBounds, CKKSInfos, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotsKind,
     api::{CKKSDFTMatrixOps, CKKSDFTOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar},
     layouts::{
-        CKKSModuleAlloc, ComplexDiagonals, DFTMatrix, DFTMatrixPrepared, DFTPlan, DFTType, Decode, Encode, EncodedLut, EvalMod,
-        EvalModPlan, Split,
+        CKKSModuleAlloc, ComplexDiagonals, DFTMatrix, DFTMatrixPrepared, DFTPlan, DFTType, Decode, DftScalar, Encode, EncodedLut,
+        EvalMod, EvalModPlan, Split,
         eval_mod::{EvalModType, compile_eval_mod},
     },
-    reference::dft::DftScalar,
 };
 
 /// Stage ordering for the ModUp/EvalMod bootstrapping family.

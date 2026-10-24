@@ -266,7 +266,7 @@ macro_rules! impl_dft_reference_full {
 #[macro_export]
 macro_rules! impl_dft_matrix_reference_full {
     ($be:ty) => {
-        unsafe impl<F: $crate::api::CKKSEncodingScalar + $crate::reference::dft::DftScalar> $crate::oep::DFTMatrixImpl<F> for $be
+        unsafe impl<F: $crate::api::CKKSEncodingScalar + $crate::layouts::DftScalar> $crate::oep::DFTMatrixImpl<F> for $be
         where
             $be: $crate::oep::CKKSEncodingImpl<F>,
         {

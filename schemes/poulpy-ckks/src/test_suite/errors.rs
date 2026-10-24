@@ -2,9 +2,9 @@ use crate::CKKSModuleInfos;
 use crate::{
     CKKSCompositionError, CKKSError, CKKSInfos, CoeffsMeta, SetCKKSInfos,
     api::{CKKSAddOps, CKKSEncodingOps, LinearTransformation},
+    encoding::{ckks_encode_linear_transformation_from_diagonals, ckks_encode_linear_transformation_into},
     layouts::{CKKSModuleAlloc, CKKSPlaintextOwned, ComplexDiagonals, EvalModPlan, compile_eval_mod},
     polynomial::{Basis, EncodeBSGS, Polynomial, SplitStrategy},
-    reference::{ckks_encode_linear_transformation_from_diagonals, ckks_encode_linear_transformation_into},
 };
 use poulpy_core::layouts::{Diagonals, LWEInfos, LinearTransformationStrategy, TorusPrecision};
 use poulpy_hal::{
