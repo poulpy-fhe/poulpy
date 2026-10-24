@@ -888,6 +888,9 @@ pub trait ModuleCoreCompressedAlloc {
         k_aux: TorusPrecision,
         rank: Rank,
     ) -> GGSWCompressed<Self::OwnedBuf, Self::ZnxWord>;
+    /// Bytes of the backend buffer [`Self::ggsw_compressed_alloc_from_infos`]
+    /// allocates for `infos`, without the host-side mask seeds.
+    fn ggsw_compressed_bytes_of_from_infos<A: GGSWInfos>(&self, infos: &A) -> usize;
 
     fn glwe_public_key_compressed_alloc_from_infos<A: GLWEInfos>(
         &self,
@@ -1025,6 +1028,10 @@ impl<B: Backend> ModuleCoreCompressedAlloc for Module<B> {
 
     fn ggsw_compressed_alloc_from_infos<A: GGSWInfos>(&self, infos: &A) -> GGSWCompressed<B::OwnedBuf, B::ZnxWord> {
         GGSWCompressed::alloc_from_infos::<B, _>(infos)
+    }
+    fn ggsw_compressed_bytes_of_from_infos<A: GGSWInfos>(&self, infos: &A) -> usize {
+        let size: usize = key_size(infos.base2k(), infos.dnum(), infos.k_digit(), infos.k_aux());
+        B::bytes_of_mat_znx(infos.n().into(), infos.dnum().into(), (infos.rank() + 1).into(), 1, size)
     }
     fn ggsw_compressed_alloc(
         &self,
