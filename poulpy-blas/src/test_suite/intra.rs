@@ -183,7 +183,7 @@ pub fn test_blas_rotate_rows_cols<BE, F, E>(
             for &k in row_shifts {
                 let layout = want_layout(k, &res);
                 module
-                    .blas_rotate_rows(&mut res, &ct, k, &ctx, &row_keys[k % d], &mut op_scratch.borrow())
+                    .blas_rotate_rows(k, &mut res, &ct, &ctx, &row_keys[k % d], &mut op_scratch.borrow())
                     .unwrap();
                 assert_grid_decrypt::<BE, F, E>(
                     &format!("rotate_rows {rows}x{cols} k={k} res_k={res_k}"),
@@ -200,7 +200,7 @@ pub fn test_blas_rotate_rows_cols<BE, F, E>(
             for &k in col_shifts {
                 let layout = want_layout(k, &res);
                 module
-                    .blas_rotate_cols(&mut res, &ct, k, &ctx, &col_keys[k % d], &mut op_scratch.borrow())
+                    .blas_rotate_cols(k, &mut res, &ct, &ctx, &col_keys[k % d], &mut op_scratch.borrow())
                     .unwrap();
                 assert_grid_decrypt::<BE, F, E>(
                     &format!("rotate_cols {rows}x{cols} k={k} res_k={res_k}"),
@@ -230,7 +230,7 @@ pub fn test_blas_rotate_rows_cols<BE, F, E>(
             let mut op_scratch = poisoned_scratch::<BE>(bytes);
             let layout = mapped_layout(&ct, rows, cols, params.k, p);
             module
-                .blas_rotate_rows(&mut res, &ct, 1, &ctx, &row_keys[1], &mut op_scratch.borrow())
+                .blas_rotate_rows(1, &mut res, &ct, &ctx, &row_keys[1], &mut op_scratch.borrow())
                 .unwrap();
             let label = format!("rotate_rows {rows}x{cols} k=1 p={p}");
             assert_grid_decrypt::<BE, F, E>(
@@ -245,7 +245,7 @@ pub fn test_blas_rotate_rows_cols<BE, F, E>(
                 &mut scratch.borrow(),
             );
             module
-                .blas_rotate_cols(&mut res, &ct, 1, &ctx, &col_keys[1], &mut op_scratch.borrow())
+                .blas_rotate_cols(1, &mut res, &ct, &ctx, &col_keys[1], &mut op_scratch.borrow())
                 .unwrap();
             let label = format!("rotate_cols {rows}x{cols} k=1 p={p}");
             assert_grid_decrypt::<BE, F, E>(
@@ -324,10 +324,10 @@ pub fn test_blas_intra_guards<BE, F, E>(
         module.blas_transpose(res, &ct, &ctx, &keys, &mut op_scratch.borrow())
     });
     assert_guard::<BE, _>("shape", "blas_rotate_rows", InvalidOperand, &mut wrong, |res| {
-        module.blas_rotate_rows(res, &ct, 1, &ctx, &keys, &mut op_scratch.borrow())
+        module.blas_rotate_rows(1, res, &ct, &ctx, &keys, &mut op_scratch.borrow())
     });
     assert_guard::<BE, _>("shape", "blas_rotate_cols", InvalidOperand, &mut wrong, |res| {
-        module.blas_rotate_cols(res, &ct, 1, &ctx, &keys, &mut op_scratch.borrow())
+        module.blas_rotate_cols(1, res, &ct, &ctx, &keys, &mut op_scratch.borrow())
     });
 
     // Each rejected grid as `a`, copies relabelled past `log2` of the ring degree, then each rejected grid as `res`.
@@ -345,10 +345,10 @@ pub fn test_blas_intra_guards<BE, F, E>(
             module.blas_transpose(res, &a, &ctx, &keys, &mut op_scratch.borrow())
         });
         assert_guard::<BE, _>(&label, "blas_rotate_rows", InvalidOperand, &mut res, |res| {
-            module.blas_rotate_rows(res, &a, 1, &ctx, &keys, &mut op_scratch.borrow())
+            module.blas_rotate_rows(1, res, &a, &ctx, &keys, &mut op_scratch.borrow())
         });
         assert_guard::<BE, _>(&label, "blas_rotate_cols", InvalidOperand, &mut res, |res| {
-            module.blas_rotate_cols(res, &a, 1, &ctx, &keys, &mut op_scratch.borrow())
+            module.blas_rotate_cols(1, res, &a, &ctx, &keys, &mut op_scratch.borrow())
         });
     }
     let bad_res = rejected_grids(module, &res).into_iter().chain(foreign_layouts(module, &res));
@@ -361,10 +361,10 @@ pub fn test_blas_intra_guards<BE, F, E>(
             module.blas_transpose(res, &ct, &ctx, &keys, &mut op_scratch.borrow())
         });
         assert_guard::<BE, _>(label, "blas_rotate_rows", InvalidOperand, &mut bad, |res| {
-            module.blas_rotate_rows(res, &ct, 1, &ctx, &keys, &mut op_scratch.borrow())
+            module.blas_rotate_rows(1, res, &ct, &ctx, &keys, &mut op_scratch.borrow())
         });
         assert_guard::<BE, _>(label, "blas_rotate_cols", InvalidOperand, &mut bad, |res| {
-            module.blas_rotate_cols(res, &ct, 1, &ctx, &keys, &mut op_scratch.borrow())
+            module.blas_rotate_cols(1, res, &ct, &ctx, &keys, &mut op_scratch.borrow())
         });
     }
     // `a` and `res` both of another degree than the module's, then both of another rank than the keys, which the first
@@ -376,10 +376,10 @@ pub fn test_blas_intra_guards<BE, F, E>(
             module.blas_transpose(res, &other_a, &ctx, &keys, &mut op_scratch.borrow())
         });
         assert_guard::<BE, _>(label, "blas_rotate_rows", InvalidOperand, &mut other_res, |res| {
-            module.blas_rotate_rows(res, &other_a, 1, &ctx, &keys, &mut op_scratch.borrow())
+            module.blas_rotate_rows(1, res, &other_a, &ctx, &keys, &mut op_scratch.borrow())
         });
         assert_guard::<BE, _>(label, "blas_rotate_cols", InvalidOperand, &mut other_res, |res| {
-            module.blas_rotate_cols(res, &other_a, 1, &ctx, &keys, &mut op_scratch.borrow())
+            module.blas_rotate_cols(1, res, &other_a, &ctx, &keys, &mut op_scratch.borrow())
         });
     }
     for (label, ctx) in &foreign {
@@ -387,10 +387,10 @@ pub fn test_blas_intra_guards<BE, F, E>(
             module.blas_transpose(res, &ct, ctx, &keys, &mut op_scratch.borrow())
         });
         assert_guard::<BE, _>(label, "blas_rotate_rows", InvalidOperand, &mut res, |res| {
-            module.blas_rotate_rows(res, &ct, 1, ctx, &keys, &mut op_scratch.borrow())
+            module.blas_rotate_rows(1, res, &ct, ctx, &keys, &mut op_scratch.borrow())
         });
         assert_guard::<BE, _>(label, "blas_rotate_cols", InvalidOperand, &mut res, |res| {
-            module.blas_rotate_cols(res, &ct, 1, ctx, &keys, &mut op_scratch.borrow())
+            module.blas_rotate_cols(1, res, &ct, ctx, &keys, &mut op_scratch.borrow())
         });
     }
     // A grid one block row short of the shape it reports, as `a`, then as `res`: its shape alone would pass.
@@ -404,10 +404,10 @@ pub fn test_blas_intra_guards<BE, F, E>(
         module.blas_transpose(res, &short_a, &ctx, &keys, &mut op_scratch.borrow())
     });
     assert_guard::<BE, _>("misshapen a", "blas_rotate_rows", InvalidOperand, &mut res, |res| {
-        module.blas_rotate_rows(res, &short_a, 1, &ctx, &keys, &mut op_scratch.borrow())
+        module.blas_rotate_rows(1, res, &short_a, &ctx, &keys, &mut op_scratch.borrow())
     });
     assert_guard::<BE, _>("misshapen a", "blas_rotate_cols", InvalidOperand, &mut res, |res| {
-        module.blas_rotate_cols(res, &short_a, 1, &ctx, &keys, &mut op_scratch.borrow())
+        module.blas_rotate_cols(1, res, &short_a, &ctx, &keys, &mut op_scratch.borrow())
     });
     let (mut short_res, mut short_res_t) = (short(alloc(rows - 1, cols)), short(alloc(cols - 1, rows)));
     assert_guard_on::<BE, _, _>(
@@ -424,7 +424,7 @@ pub fn test_blas_intra_guards<BE, F, E>(
         InvalidOperand,
         &mut short_res,
         |res| &res.grid,
-        |res| module.blas_rotate_rows(res, &ct, 1, &ctx, &keys, &mut op_scratch.borrow()),
+        |res| module.blas_rotate_rows(1, res, &ct, &ctx, &keys, &mut op_scratch.borrow()),
     );
     assert_guard_on::<BE, _, _>(
         "misshapen res",
@@ -432,7 +432,7 @@ pub fn test_blas_intra_guards<BE, F, E>(
         InvalidOperand,
         &mut short_res,
         |res| &res.grid,
-        |res| module.blas_rotate_cols(res, &ct, 1, &ctx, &keys, &mut op_scratch.borrow()),
+        |res| module.blas_rotate_cols(1, res, &ct, &ctx, &keys, &mut op_scratch.borrow()),
     );
 
     let no_keys = TestKeys::<BE> {
@@ -440,10 +440,10 @@ pub fn test_blas_intra_guards<BE, F, E>(
         tsk: None,
     };
     assert_guard::<BE, _>("no keys", "blas_rotate_rows", MissingKey, &mut res, |res| {
-        module.blas_rotate_rows(res, &ct, 1, &ctx, &no_keys, &mut op_scratch.borrow())
+        module.blas_rotate_rows(1, res, &ct, &ctx, &no_keys, &mut op_scratch.borrow())
     });
     assert_guard::<BE, _>("no keys", "blas_rotate_cols", MissingKey, &mut res, |res| {
-        module.blas_rotate_cols(res, &ct, 1, &ctx, &no_keys, &mut op_scratch.borrow())
+        module.blas_rotate_cols(1, res, &ct, &ctx, &no_keys, &mut op_scratch.borrow())
     });
     assert_guard::<BE, _>("no keys", "blas_transpose", MissingKey, &mut res_t, |res| {
         module.blas_transpose(res, &ct, &ctx, &no_keys, &mut op_scratch.borrow())
@@ -460,10 +460,10 @@ pub fn test_blas_intra_guards<BE, F, E>(
         module.blas_transpose(res, &ct, &ctx, &keys, &mut op_scratch.borrow())
     });
     assert_guard::<BE, _>("budget", "mul", Budget, &mut narrow_res, |res| {
-        module.blas_rotate_rows(res, &ct, 1, &ctx, &keys, &mut op_scratch.borrow())
+        module.blas_rotate_rows(1, res, &ct, &ctx, &keys, &mut op_scratch.borrow())
     });
     assert_guard::<BE, _>("budget", "mul", Budget, &mut narrow_res, |res| {
-        module.blas_rotate_cols(res, &ct, 1, &ctx, &keys, &mut op_scratch.borrow())
+        module.blas_rotate_cols(1, res, &ct, &ctx, &keys, &mut op_scratch.borrow())
     });
 
     // A shift by 1 takes both half maps along two or three blocks, the whole map along one.
@@ -472,11 +472,11 @@ pub fn test_blas_intra_guards<BE, F, E>(
         let mut res = alloc(a.rows(), a.cols());
         let bytes = module.blas_rotate_rows_tmp_bytes(&res, a, &ctx, &atk);
         assert_short_scratch::<BE, _>("blas_rotate_rows", &mut res, bytes, |res, s| {
-            module.blas_rotate_rows(res, a, 1, &ctx, &keys, s)
+            module.blas_rotate_rows(1, res, a, &ctx, &keys, s)
         });
         let bytes = module.blas_rotate_cols_tmp_bytes(&res, a, &ctx, &atk);
         assert_short_scratch::<BE, _>("blas_rotate_cols", &mut res, bytes, |res, s| {
-            module.blas_rotate_cols(res, a, 1, &ctx, &keys, s)
+            module.blas_rotate_cols(1, res, a, &ctx, &keys, s)
         });
     }
     let bytes = module.blas_transpose_tmp_bytes(&res_t, &ct, &ctx, &atk);

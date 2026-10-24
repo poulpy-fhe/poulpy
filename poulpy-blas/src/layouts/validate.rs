@@ -334,21 +334,21 @@ impl<BE: Backend, K: GetTensorKey<BE>> GetTensorKey<BE> for KeyLayouts<'_, K> {
 }
 
 /// Panics unless `scratch` holds the largest `bytes` over the layouts of the rotation keys that evaluating `lts` from
-/// blocks of rank `rank` and width `src_k` into width `dst_k` looks up in `atk`, as [`assert_scratch`] does; a call
+/// blocks of rank `rank` and width `src_k` into width `dst_k` looks up in `keys`, as [`assert_scratch`] does; a call
 /// that looks up none asserts nothing. The keys passed `op`'s validator, so the look-ups only record their layouts.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn assert_maps_scratch<BE: Backend, M: CKKSModuleInfos + ?Sized>(
     op: &'static str,
     module: &M,
     lts: &[&LinearTransformationPrepared<BE>],
-    atk: &impl GetAutomorphismKey<BE>,
+    keys: &impl GetAutomorphismKey<BE>,
     src_k: TorusPrecision,
     dst_k: TorusPrecision,
     rank: Rank,
     bytes: impl Fn(&GGLWELayout) -> usize,
     scratch: &ScratchArena<'_, BE>,
 ) {
-    let used = KeyLayouts::new(atk);
+    let used = KeyLayouts::new(keys);
     for lt in lts {
         let _ = ensure_lt_keys(op, module, lt, &used, src_k, dst_k, rank);
     }
@@ -377,7 +377,7 @@ where
 /// Checks a [`blas_rotate`](crate::api::BlasMatInterOps::blas_rotate) call, and returns the batch `res` records, `a`'s:
 /// `a` and `res` are grids at `a`'s `log_d` whose blocks tile their shape and share one layout whose label allows their
 /// batch record ([`BlasGrid::blocks`], [`BlasGridInfos::mat_slots`]), `res` has `a`'s shape and its blocks `a`'s
-/// degree, radix and rank, and `atk` holds the rotation key at the narrower of `a`'s and `res`'s widths, of `a`'s rank.
+/// degree, radix and rank, and `keys` holds the rotation key at the narrower of `a`'s and `res`'s widths, of `a`'s rank.
 ///
 /// # Errors
 ///
@@ -385,14 +385,14 @@ where
 /// key of another rank.
 pub fn validate_blas_rotate<BE: Backend>(
     module: &Module<BE>,
+    r: i64,
     res: &impl BlasGrid<BE>,
     a: &impl BlasGrid<BE>,
-    r: i64,
-    atk: &impl GetAutomorphismKey<BE>,
+    keys: &impl GetAutomorphismKey<BE>,
 ) -> Result<usize> {
     let op = "blas_rotate";
     ensure_same_grids(op, module, res, a)?;
-    rotate_uses(res, a, r, &mut |u| ensure_rotation(op, module, atk, u))?;
+    rotate_uses(r, res, a, &mut |u| ensure_rotation(op, module, keys, u))?;
     Ok(grid_batch::<BE::Ring>(a))
 }
 
@@ -408,18 +408,18 @@ pub fn validate_blas_sum<BE: Backend>(
     module: &Module<BE>,
     res: &impl BlasGrid<BE>,
     a: &impl BlasGrid<BE>,
-    atk: &impl GetAutomorphismKey<BE>,
+    keys: &impl GetAutomorphismKey<BE>,
 ) -> Result<usize> {
     let op = "blas_sum";
     ensure_same_grids(op, module, res, a)?;
     let terms = grid_batch::<BE::Ring>(a).ilog2() as usize + 1;
     ensure_lazy_terms(op, a.block_layout().base2k().as_usize(), terms)?;
-    sum_uses::<BE::Ring>(res, a, &mut |u| ensure_rotation(op, module, atk, u))?;
+    sum_uses::<BE::Ring>(res, a, &mut |u| ensure_rotation(op, module, keys, u))?;
     Ok(grid_batch::<BE::Ring>(a))
 }
 
 /// The look-up of [`validate_blas_rotate`]: the rotation by `r d^2` slots, at the narrower of `a`'s and `res`'s widths.
-pub(crate) fn rotate_uses(res: &impl BlasGridInfos, a: &impl BlasGridInfos, r: i64, f: UseSink<'_>) -> Result<()> {
+pub(crate) fn rotate_uses(r: i64, res: &impl BlasGridInfos, a: &impl BlasGridInfos, f: UseSink<'_>) -> Result<()> {
     f(RotationUse {
         rotation: r << (2 * a.log_d()),
         k: rotation_key_width(res, a),
@@ -457,7 +457,7 @@ fn rotation_key_width(res: &impl BlasGridInfos, a: &impl BlasGridInfos) -> Torus
 /// `a`'s: `a` and `res` are grids at the context's `log_d` whose blocks tile their shape and share one layout whose
 /// label allows their batch record ([`BlasGrid::blocks`], [`crate::layouts::BlasGridInfos::mat_slots`]), `res` has the
 /// transposed shape of `a` and its blocks `a`'s degree, radix and rank, `ctx` was encoded on a module of `module`'s
-/// slot count at `a`'s radix, and `atk` holds every key of the transpose at the width it is looked up at, of `a`'s
+/// slot count at `a`'s radix, and `keys` holds every key of the transpose at the width it is looked up at, of `a`'s
 /// rank.
 ///
 /// # Errors
@@ -469,11 +469,11 @@ pub fn validate_blas_transpose<BE: Backend>(
     res: &impl BlasGrid<BE>,
     a: &impl BlasGrid<BE>,
     ctx: &BlasContext<BE>,
-    atk: &impl GetAutomorphismKey<BE>,
+    keys: &impl GetAutomorphismKey<BE>,
 ) -> Result<usize> {
     let op = "blas_transpose";
     ensure_mapped(op, module, res, a, ctx, a.cols(), a.rows())?;
-    transpose_uses(res, a, &ctx.maps, &mut |u| ensure_rotation(op, module, atk, u))?;
+    transpose_uses(res, a, &ctx.maps, &mut |u| ensure_rotation(op, module, keys, u))?;
     Ok(grid_batch::<BE::Ring>(a))
 }
 
@@ -486,13 +486,13 @@ pub fn validate_blas_transpose<BE: Backend>(
 /// As [`validate_blas_transpose`].
 pub fn validate_blas_rotate_rows<BE: Backend>(
     module: &Module<BE>,
+    k: usize,
     res: &impl BlasGrid<BE>,
     a: &impl BlasGrid<BE>,
-    k: usize,
     ctx: &BlasContext<BE>,
-    atk: &impl GetAutomorphismKey<BE>,
+    keys: &impl GetAutomorphismKey<BE>,
 ) -> Result<usize> {
-    validate_shift(module, res, a, k, true, ctx, atk)
+    validate_shift(module, k, res, a, true, ctx, keys)
 }
 
 /// [`validate_blas_rotate_rows`] for [`blas_rotate_cols`](crate::api::BlasMatIntraOps::blas_rotate_cols).
@@ -502,13 +502,13 @@ pub fn validate_blas_rotate_rows<BE: Backend>(
 /// As [`validate_blas_transpose`].
 pub fn validate_blas_rotate_cols<BE: Backend>(
     module: &Module<BE>,
+    k: usize,
     res: &impl BlasGrid<BE>,
     a: &impl BlasGrid<BE>,
-    k: usize,
     ctx: &BlasContext<BE>,
-    atk: &impl GetAutomorphismKey<BE>,
+    keys: &impl GetAutomorphismKey<BE>,
 ) -> Result<usize> {
-    validate_shift(module, res, a, k, false, ctx, atk)
+    validate_shift(module, k, res, a, false, ctx, keys)
 }
 
 /// `a` and `res` are grids at the context's `log_d`, `res` of `rows x cols` blocks of `a`'s degree, radix and rank, and
@@ -532,16 +532,16 @@ fn ensure_mapped<BE: Backend>(
 /// The checks of a row (`rows`) or column shift by `k`.
 fn validate_shift<BE: Backend>(
     module: &Module<BE>,
+    k: usize,
     res: &impl BlasGrid<BE>,
     a: &impl BlasGrid<BE>,
-    k: usize,
     rows: bool,
     ctx: &BlasContext<BE>,
-    atk: &impl GetAutomorphismKey<BE>,
+    keys: &impl GetAutomorphismKey<BE>,
 ) -> Result<usize> {
     let op = if rows { "blas_rotate_rows" } else { "blas_rotate_cols" };
     ensure_mapped(op, module, res, a, ctx, a.rows(), a.cols())?;
-    shift_uses(res, a, k, rows, &ctx.maps, &mut |u| ensure_rotation(op, module, atk, u))?;
+    shift_uses(k, res, a, rows, &ctx.maps, &mut |u| ensure_rotation(op, module, keys, u))?;
     Ok(grid_batch::<BE::Ring>(a))
 }
 
@@ -559,9 +559,9 @@ pub(crate) fn transpose_uses<P: LtDiagonalMeta>(
 /// The look-ups of a row (`rows`) or column shift by `k`: the keys of each of its maps ([`shift_maps`]), from `a`'s width
 /// into `res`'s.
 pub(crate) fn shift_uses<P: LtDiagonalMeta>(
+    k: usize,
     res: &impl BlasGridInfos,
     a: &impl BlasGridInfos,
-    k: usize,
     rows: bool,
     maps: &ContextMaps<LinearTransformation<P>>,
     f: UseSink<'_>,
@@ -644,13 +644,13 @@ pub fn validate_blas_matmul<BE: Backend>(
     b: &impl BlasGrid<BE>,
     ctx: &BlasContext<BE>,
     tsk: &impl GetTensorKey<BE>,
-    atk: &impl GetAutomorphismKey<BE>,
+    keys: &impl GetAutomorphismKey<BE>,
 ) -> Result<usize> {
     let op = "blas_matmul";
     ensure_factor(op, module, a, ctx)?;
     ensure_factor(op, module, b, ctx)?;
     ensure_product(op, module, res, a, b)?;
-    matmul_uses(a, b, &ctx.maps, &mut |u| ensure_rotation(op, module, atk, u))?;
+    matmul_uses(a, b, &ctx.maps, &mut |u| ensure_rotation(op, module, keys, u))?;
     let (k, rank) = matmul_tensor(a, b, &ctx.maps);
     ensure_tensor_key(op, tsk, k, rank)?;
     Ok(grid_batch::<BE::Ring>(a).max(grid_batch::<BE::Ring>(b)))
@@ -661,7 +661,7 @@ pub fn validate_blas_matmul<BE: Backend>(
 /// module's degree, `ctx` was encoded on a module of `module`'s slot count at `a`'s radix, `res` has the shape of the
 /// infos [`blas_matmul_left_operand_layout`](crate::layouts::blas_matmul_left_operand_layout) gives for `a`, `ctx` and
 /// `res`'s hint (the hint, the dimensions, and the degree, radix, width and rank of the source's and the reported
-/// blocks, whatever their metadata), and `atk` holds every key of sigma from `a`'s width and of each phi^k from sigma's
+/// blocks, whatever their metadata), and `keys` holds every key of sigma from `a`'s width and of each phi^k from sigma's
 /// result into the terms' width, at the width it is looked up at, of `a`'s rank.
 ///
 /// # Errors
@@ -673,12 +673,12 @@ pub fn validate_blas_matmul_prepare_left<BE: Backend>(
     res: &impl BlasMatMulOperandInfos,
     a: &impl BlasGrid<BE>,
     ctx: &BlasContext<BE>,
-    atk: &impl GetAutomorphismKey<BE>,
+    keys: &impl GetAutomorphismKey<BE>,
 ) -> Result<()> {
     let op = "blas_matmul_prepare_left";
     ensure_factor(op, module, a, ctx)?;
     ensure_allocated(op, res, left_operand_layout(a, &ctx.maps, res.hint()))?;
-    left_uses(a, &ctx.maps, &mut |u| ensure_rotation(op, module, atk, u))
+    left_uses(a, &ctx.maps, &mut |u| ensure_rotation(op, module, keys, u))
 }
 
 /// [`validate_blas_matmul_prepare_left`] for
@@ -694,12 +694,12 @@ pub fn validate_blas_matmul_prepare_right<BE: Backend>(
     res: &impl BlasMatMulOperandInfos,
     b: &impl BlasGrid<BE>,
     ctx: &BlasContext<BE>,
-    atk: &impl GetAutomorphismKey<BE>,
+    keys: &impl GetAutomorphismKey<BE>,
 ) -> Result<()> {
     let op = "blas_matmul_prepare_right";
     ensure_factor(op, module, b, ctx)?;
     ensure_allocated(op, res, right_operand_layout(b, &ctx.maps, res.hint()))?;
-    right_uses(b, &ctx.maps, &mut |u| ensure_rotation(op, module, atk, u))
+    right_uses(b, &ctx.maps, &mut |u| ensure_rotation(op, module, keys, u))
 }
 
 /// Rejects `res` unless its shape is that of `want`, the infos of a preparation of its source under its hint: the hint,
@@ -721,9 +721,9 @@ fn ensure_allocated(op: &'static str, res: &impl BlasMatMulOperandInfos, want: B
 /// hot operand at the `log_d` of `ctx`, which was encoded on a module of `module`'s slot count at its radix; `res` is a
 /// grid at that `log_d` whose blocks tile its shape and share one layout whose label allows its batch record, of `a`'s
 /// rows and `b`'s columns, of the module's degree and the operands' radix and rank, at a radix of 62 at most; `a`'s
-/// columns match `b`'s rows; `atk` holds every key of a hot side's terms under `ctx`, as the preparation of its source
+/// columns match `b`'s rows; `keys` holds every key of a hot side's terms under `ctx`, as the preparation of its source
 /// looks them up; and `tsk` holds the tensor key at the wider of the terms' widths, a cold side's own, a hot side's
-/// under `ctx`, the one width the product looks it up at, of their rank. A cold side reads neither `ctx` nor `atk`, and
+/// under `ctx`, the one width the product looks it up at, of their rank. A cold side reads neither `ctx` nor `keys`, and
 /// the check reads no hot side's scale: the product spends that of the maps of `ctx`.
 ///
 /// # Errors
@@ -737,14 +737,14 @@ pub fn validate_blas_matmul_prepared<BE: Backend>(
     b: &impl BlasMatMulOperandInfos,
     ctx: &BlasContext<BE>,
     tsk: &impl GetTensorKey<BE>,
-    atk: &impl GetAutomorphismKey<BE>,
+    keys: &impl GetAutomorphismKey<BE>,
 ) -> Result<usize> {
     let op = "blas_matmul_prepared";
     let batch = ensure_operand::<BE>(op, a.log_d(), a)?.max(ensure_operand::<BE>(op, a.log_d(), b)?);
     ensure_hot_context(op, module, a, ctx)?;
     ensure_hot_context(op, module, b, ctx)?;
     ensure_product(op, module, res, a, b)?;
-    prepared_uses(a, b, &ctx.maps, &mut |u| ensure_rotation(op, module, atk, u))?;
+    prepared_uses(a, b, &ctx.maps, &mut |u| ensure_rotation(op, module, keys, u))?;
     let (k, rank) = prepared_tensor(a, b, &ctx.maps);
     ensure_tensor_key(op, tsk, k, rank)?;
     Ok(batch)
@@ -754,11 +754,11 @@ pub fn validate_blas_matmul_prepared<BE: Backend>(
 /// records, `a`'s: `a` and `res` are grids at `b`'s `log_d` whose blocks tile their shape and share one layout whose
 /// label allows their batch record, `a`'s columns match `b`'s rows, `res` has `a`'s rows and `b`'s columns, its blocks
 /// have the module's degree and `a`'s radix and rank, `b` was encoded on a module of `module`'s slot count at `a`'s
-/// radix, `b`'s public matrices divide `a`'s batch, and `atk` holds every key of `b`'s maps at the width it is looked
+/// radix, `b`'s public matrices divide `a`'s batch, and `keys` holds every key of `b`'s maps at the width it is looked
 /// up at, of `a`'s rank: under `Jkls` the first map's from `a`'s width, then the blocks' from the width it leaves.
 /// Under `JklsStored` and `JklsGalois`, `ctx` is at `a`'s `log_d`, encoded for the module's slot count at `a`'s radix,
 /// no wider than `a`, on the left holding the column halves of psi^k, and on the right `b` holds one public matrix;
-/// `atk` then holds the first map's keys from `a`'s width and the masks' from the width it leaves. Otherwise `ctx` is
+/// `keys` then holds the first map's keys from `a`'s width and the masks' from the width it leaves. Otherwise `ctx` is
 /// not read.
 ///
 /// # Errors
@@ -771,7 +771,7 @@ pub fn validate_blas_matmul_pt_right<BE: Backend>(
     a: &impl BlasGrid<BE>,
     b: &BlasPtOperand<BE>,
     ctx: &BlasContext<BE>,
-    atk: &impl GetAutomorphismKey<BE>,
+    keys: &impl GetAutomorphismKey<BE>,
 ) -> Result<usize> {
     let op = "blas_matmul_pt_right";
     ensure_grid::<BE::Ring>(op, b.log_d(), a, a.blocks())?;
@@ -801,7 +801,7 @@ pub fn validate_blas_matmul_pt_right<BE: Backend>(
         ensure_masks(op, module, a, ctx, false)?;
     }
     let masks = context_masks(b.plan(), &ctx.maps, false);
-    pt_right_uses(res, a, &b.maps, &masks, &mut |u| ensure_rotation(op, module, atk, u))?;
+    pt_right_uses(res, a, &b.maps, &masks, &mut |u| ensure_rotation(op, module, keys, u))?;
     Ok(batch)
 }
 
@@ -809,10 +809,10 @@ pub fn validate_blas_matmul_pt_right<BE: Backend>(
 /// records, `a`'s: `a` and `res` are grids at `b`'s `log_d` whose blocks tile their shape and share one layout whose
 /// label allows their batch record, `b`'s columns match `a`'s rows, `res` has `b`'s rows and `a`'s columns, its blocks
 /// have the module's degree and `a`'s radix and rank, `b` was encoded on a module of `module`'s slot count at `a`'s
-/// radix, `b`'s public matrices divide `a`'s batch, and `atk` holds every key of `b`'s maps at the width it is looked
+/// radix, `b`'s public matrices divide `a`'s batch, and `keys` holds every key of `b`'s maps at the width it is looked
 /// up at, of `a`'s rank: under `Jkls` the first map's from `a`'s width, then the blocks' from the width it leaves.
 /// Under `JklsStored` and `JklsGalois`, `ctx` is at `a`'s `log_d`, encoded for the module's slot count at `a`'s radix,
-/// no wider than `a`, and holds the column halves of psi^k; `atk` then holds the first map's keys from `a`'s width and
+/// no wider than `a`, and holds the column halves of psi^k; `keys` then holds the first map's keys from `a`'s width and
 /// the masks' from the width it leaves. Otherwise `ctx` is not read.
 ///
 /// # Errors
@@ -824,7 +824,7 @@ pub fn validate_blas_matmul_pt_left<BE: Backend>(
     b: &BlasPtOperand<BE, Left>,
     a: &impl BlasGrid<BE>,
     ctx: &BlasContext<BE>,
-    atk: &impl GetAutomorphismKey<BE>,
+    keys: &impl GetAutomorphismKey<BE>,
 ) -> Result<usize> {
     let op = "blas_matmul_pt_left";
     ensure_grid::<BE::Ring>(op, b.log_d(), a, a.blocks())?;
@@ -844,7 +844,7 @@ pub fn validate_blas_matmul_pt_left<BE: Backend>(
         ensure_masks(op, module, a, ctx, true)?;
     }
     let masks = context_masks(b.plan(), &ctx.maps, true);
-    pt_left_uses(res, &b.maps, &masks, a, &mut |u| ensure_rotation(op, module, atk, u))?;
+    pt_left_uses(res, &b.maps, &masks, a, &mut |u| ensure_rotation(op, module, keys, u))?;
     Ok(batch)
 }
 

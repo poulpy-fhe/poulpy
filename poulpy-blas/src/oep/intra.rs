@@ -64,14 +64,14 @@ use crate::layouts::{BlasContext, BlasGrid, BlasGridInfos, BlasGridMut};
 /// is a backend fault (a validator gap or a device failure), and `res` is then unspecified.
 pub unsafe trait BlasMatIntraImpl: Backend + CKKSCopyImpl + CKKSAddImpl {
     /// Scratch bytes of [`Self::blas_map_blocks`] from `sources` blocks of layout `src` into blocks of layout `dst`
-    /// through `lts`, with rotation keys of layout `atk`.
+    /// through `lts`, with rotation keys of layout `keys`.
     fn blas_map_blocks_tmp_bytes<D, S, K>(
         module: &Module<Self>,
+        sources: usize,
         dst: &D,
         src: &S,
-        sources: usize,
         lts: &[&LinearTransformationPrepared<Self>],
-        atk: &K,
+        keys: &K,
     ) -> usize
     where
         D: CKKSCtBounds,
@@ -85,7 +85,7 @@ pub unsafe trait BlasMatIntraImpl: Backend + CKKSCopyImpl + CKKSAddImpl {
         dst: &mut [D],
         src: &[&S],
         lts: &[&LinearTransformationPrepared<Self>],
-        atk: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
@@ -93,13 +93,13 @@ pub unsafe trait BlasMatIntraImpl: Backend + CKKSCopyImpl + CKKSAddImpl {
         S: GLWEToBackendRef<Self> + CKKSCtBounds + Sync,
         K: GetAutomorphismKey<Self> + Sync;
 
-    fn blas_transpose_tmp_bytes<R, A, K>(module: &Module<Self>, res: &R, a: &A, ctx: &BlasContext<Self>, atk: &K) -> usize
+    fn blas_transpose_tmp_bytes<R, A, K>(module: &Module<Self>, res: &R, a: &A, ctx: &BlasContext<Self>, keys: &K) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
         K: GGLWEInfos,
     {
-        blas_transpose_tmp_bytes_derived(module, res, a, ctx, atk)
+        blas_transpose_tmp_bytes_derived(module, res, a, ctx, keys)
     }
 
     fn blas_transpose<R, A, K>(
@@ -107,7 +107,7 @@ pub unsafe trait BlasMatIntraImpl: Backend + CKKSCopyImpl + CKKSAddImpl {
         res: &mut R,
         a: &A,
         ctx: &BlasContext<Self>,
-        atk: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
@@ -115,25 +115,25 @@ pub unsafe trait BlasMatIntraImpl: Backend + CKKSCopyImpl + CKKSAddImpl {
         A: BlasGrid<Self>,
         K: GetAutomorphismKey<Self> + Sync,
     {
-        blas_transpose_derived(module, res, a, ctx, atk, scratch)
+        blas_transpose_derived(module, res, a, ctx, keys, scratch)
     }
 
-    fn blas_rotate_rows_tmp_bytes<R, A, K>(module: &Module<Self>, res: &R, a: &A, ctx: &BlasContext<Self>, atk: &K) -> usize
+    fn blas_rotate_rows_tmp_bytes<R, A, K>(module: &Module<Self>, res: &R, a: &A, ctx: &BlasContext<Self>, keys: &K) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
         K: GGLWEInfos,
     {
-        blas_rotate_rows_tmp_bytes_derived(module, res, a, ctx, atk)
+        blas_rotate_rows_tmp_bytes_derived(module, res, a, ctx, keys)
     }
 
     fn blas_rotate_rows<R, A, K>(
         module: &Module<Self>,
+        k: usize,
         res: &mut R,
         a: &A,
-        k: usize,
         ctx: &BlasContext<Self>,
-        atk: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
@@ -141,25 +141,25 @@ pub unsafe trait BlasMatIntraImpl: Backend + CKKSCopyImpl + CKKSAddImpl {
         A: BlasGrid<Self>,
         K: GetAutomorphismKey<Self> + Sync,
     {
-        blas_rotate_rows_derived(module, res, a, k, ctx, atk, scratch)
+        blas_rotate_rows_derived(module, k, res, a, ctx, keys, scratch)
     }
 
-    fn blas_rotate_cols_tmp_bytes<R, A, K>(module: &Module<Self>, res: &R, a: &A, ctx: &BlasContext<Self>, atk: &K) -> usize
+    fn blas_rotate_cols_tmp_bytes<R, A, K>(module: &Module<Self>, res: &R, a: &A, ctx: &BlasContext<Self>, keys: &K) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
         K: GGLWEInfos,
     {
-        blas_rotate_cols_tmp_bytes_derived(module, res, a, ctx, atk)
+        blas_rotate_cols_tmp_bytes_derived(module, res, a, ctx, keys)
     }
 
     fn blas_rotate_cols<R, A, K>(
         module: &Module<Self>,
+        k: usize,
         res: &mut R,
         a: &A,
-        k: usize,
         ctx: &BlasContext<Self>,
-        atk: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
@@ -167,7 +167,7 @@ pub unsafe trait BlasMatIntraImpl: Backend + CKKSCopyImpl + CKKSAddImpl {
         A: BlasGrid<Self>,
         K: GetAutomorphismKey<Self> + Sync,
     {
-        blas_rotate_cols_derived(module, res, a, k, ctx, atk, scratch)
+        blas_rotate_cols_derived(module, k, res, a, ctx, keys, scratch)
     }
 }
 
@@ -179,18 +179,20 @@ macro_rules! impl_blas_mat_intra_reference_full {
         unsafe impl $crate::oep::BlasMatIntraImpl for $be {
             fn blas_map_blocks_tmp_bytes<D, S, K>(
                 module: &::poulpy_hal::layouts::Module<Self>,
+                sources: usize,
                 dst: &D,
                 src: &S,
-                sources: usize,
                 lts: &[&::poulpy_ckks::api::LinearTransformationPrepared<Self>],
-                atk: &K,
+                keys: &K,
             ) -> usize
             where
                 D: ::poulpy_ckks::CKKSCtBounds,
                 S: ::poulpy_ckks::CKKSCtBounds,
                 K: ::poulpy_core::layouts::GGLWEInfos,
             {
-                $crate::reference::BlasMatIntraReference::blas_map_blocks_tmp_bytes_reference(module, dst, src, sources, lts, atk)
+                $crate::reference::BlasMatIntraReference::blas_map_blocks_tmp_bytes_reference(
+                    module, sources, dst, src, lts, keys,
+                )
             }
 
             fn blas_map_blocks<D, S, K>(
@@ -198,7 +200,7 @@ macro_rules! impl_blas_mat_intra_reference_full {
                 dst: &mut [D],
                 src: &[&S],
                 lts: &[&::poulpy_ckks::api::LinearTransformationPrepared<Self>],
-                atk: &K,
+                keys: &K,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> ::poulpy_ckks::CKKSResult<()>
             where
@@ -209,7 +211,7 @@ macro_rules! impl_blas_mat_intra_reference_full {
                 S: ::poulpy_core::layouts::GLWEToBackendRef<Self> + ::poulpy_ckks::CKKSCtBounds + Sync,
                 K: ::poulpy_core::layouts::GetAutomorphismKey<Self> + Sync,
             {
-                $crate::reference::BlasMatIntraReference::blas_map_blocks_reference(module, dst, src, lts, atk, scratch)
+                $crate::reference::BlasMatIntraReference::blas_map_blocks_reference(module, dst, src, lts, keys, scratch)
             }
         }
     };

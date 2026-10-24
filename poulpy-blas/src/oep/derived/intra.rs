@@ -25,7 +25,7 @@ pub(crate) fn blas_transpose_tmp_bytes_derived<BE, R, A, K>(
     res: &R,
     a: &A,
     ctx: &BlasContext<BE>,
-    atk: &K,
+    keys: &K,
 ) -> usize
 where
     BE: BlasMatIntraImpl,
@@ -36,11 +36,11 @@ where
     let sources = a.rows() * a.cols();
     BE::blas_map_blocks_tmp_bytes(
         module,
+        sources,
         &res.block_layout(),
         &a.block_layout(),
-        sources,
         &[ctx.transpose()],
-        atk,
+        keys,
     )
 }
 
@@ -51,7 +51,7 @@ pub(crate) fn blas_transpose_derived<BE, R, A, K>(
     res: &mut R,
     a: &A,
     ctx: &BlasContext<BE>,
-    atk: &K,
+    keys: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
@@ -60,16 +60,16 @@ where
     A: BlasGrid<BE>,
     K: GetAutomorphismKey<BE> + Sync,
 {
-    let batch = validate_blas_transpose(module, &*res, a, ctx, atk)?;
+    let batch = validate_blas_transpose(module, &*res, a, ctx, keys)?;
     let lts = [ctx.transpose()];
     let (src_k, dst_k, rank) = (a.block_layout().k(), res.block_layout().k(), a.block_layout().rank());
     let bytes = |key: &GGLWELayout| blas_transpose_tmp_bytes_derived(module, &*res, a, ctx, key);
-    assert_maps_scratch("blas_transpose", module, &lts, atk, src_k, dst_k, rank, bytes, scratch);
+    assert_maps_scratch("blas_transpose", module, &lts, keys, src_k, dst_k, rank, bytes, scratch);
     let (rows, cols, blocks) = (a.rows(), a.cols(), a.blocks());
     let src: Vec<_> = (0..cols)
         .flat_map(|j| (0..rows).map(move |i| &blocks[i * cols + j]))
         .collect();
-    BE::blas_map_blocks(module, res.blocks_mut(), &src, &lts, atk, scratch)?;
+    BE::blas_map_blocks(module, res.blocks_mut(), &src, &lts, keys, scratch)?;
     res.set_mat_slots(batch);
     Ok(())
 }
@@ -80,7 +80,7 @@ pub(crate) fn blas_rotate_rows_tmp_bytes_derived<BE, R, A, K>(
     res: &R,
     a: &A,
     ctx: &BlasContext<BE>,
-    atk: &K,
+    keys: &K,
 ) -> usize
 where
     BE: BlasMatIntraImpl,
@@ -88,7 +88,7 @@ where
     A: BlasGridInfos,
     K: GGLWEInfos,
 {
-    shift_tmp_bytes(module, res, a, true, ctx, atk)
+    shift_tmp_bytes(module, res, a, true, ctx, keys)
 }
 
 /// The provided `blas_rotate_cols_tmp_bytes`: the scratch of a column shift by any `k`, as [`shift_tmp_bytes`].
@@ -97,7 +97,7 @@ pub(crate) fn blas_rotate_cols_tmp_bytes_derived<BE, R, A, K>(
     res: &R,
     a: &A,
     ctx: &BlasContext<BE>,
-    atk: &K,
+    keys: &K,
 ) -> usize
 where
     BE: BlasMatIntraImpl,
@@ -105,12 +105,12 @@ where
     A: BlasGridInfos,
     K: GGLWEInfos,
 {
-    shift_tmp_bytes(module, res, a, false, ctx, atk)
+    shift_tmp_bytes(module, res, a, false, ctx, keys)
 }
 
 /// Scratch of a row (`rows`) or column shift by any `k`: the copy for `k' = 0`, otherwise for every `k'` the hook with
 /// psi^k' (phi^k') along one block, or with both half maps plus the addition along several.
-fn shift_tmp_bytes<BE, R, A, K>(module: &Module<BE>, res: &R, a: &A, rows: bool, ctx: &BlasContext<BE>, atk: &K) -> usize
+fn shift_tmp_bytes<BE, R, A, K>(module: &Module<BE>, res: &R, a: &A, rows: bool, ctx: &BlasContext<BE>, keys: &K) -> usize
 where
     BE: BlasMatIntraImpl,
     R: BlasGridInfos,
@@ -122,7 +122,7 @@ where
     (1..1 << ctx.log_d())
         .map(|k1| {
             let lts = shift_maps(&ctx.maps, k1, rows, extent);
-            let hook = BE::blas_map_blocks_tmp_bytes(module, &res, &a, sources, &lts, atk);
+            let hook = BE::blas_map_blocks_tmp_bytes(module, sources, &res, &a, &lts, keys);
             if lts.len() == 2 {
                 hook.max(module.ckks_add_tmp_bytes(res.size()))
             } else {
@@ -135,11 +135,11 @@ where
 /// The provided `blas_rotate_rows`, as [`shift`].
 pub(crate) fn blas_rotate_rows_derived<BE, R, A, K>(
     module: &Module<BE>,
+    k: usize,
     res: &mut R,
     a: &A,
-    k: usize,
     ctx: &BlasContext<BE>,
-    atk: &K,
+    keys: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
@@ -148,17 +148,17 @@ where
     A: BlasGrid<BE>,
     K: GetAutomorphismKey<BE> + Sync,
 {
-    shift(module, "blas_rotate_rows", res, a, k, true, ctx, atk, scratch)
+    shift(module, "blas_rotate_rows", k, res, a, true, ctx, keys, scratch)
 }
 
 /// The provided `blas_rotate_cols`, as [`shift`].
 pub(crate) fn blas_rotate_cols_derived<BE, R, A, K>(
     module: &Module<BE>,
+    k: usize,
     res: &mut R,
     a: &A,
-    k: usize,
     ctx: &BlasContext<BE>,
-    atk: &K,
+    keys: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
@@ -167,7 +167,7 @@ where
     A: BlasGrid<BE>,
     K: GetAutomorphismKey<BE> + Sync,
 {
-    shift(module, "blas_rotate_cols", res, a, k, false, ctx, atk, scratch)
+    shift(module, "blas_rotate_cols", k, res, a, false, ctx, keys, scratch)
 }
 
 /// Shifts every matrix by `k mod m d = q d + k'` rows (`rows`) or columns, along the block axis of extent `m`. With
@@ -179,12 +179,12 @@ where
 fn shift<BE, R, A, K>(
     module: &Module<BE>,
     op: &'static str,
+    k: usize,
     res: &mut R,
     a: &A,
-    k: usize,
     rows: bool,
     ctx: &BlasContext<BE>,
-    atk: &K,
+    keys: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
@@ -194,11 +194,11 @@ where
     K: GetAutomorphismKey<BE> + Sync,
 {
     let batch = if rows {
-        validate_blas_rotate_rows(module, &*res, a, k, ctx, atk)?
+        validate_blas_rotate_rows(module, k, &*res, a, ctx, keys)?
     } else {
-        validate_blas_rotate_cols(module, &*res, a, k, ctx, atk)?
+        validate_blas_rotate_cols(module, k, &*res, a, ctx, keys)?
     };
-    shift_blocks(module, op, res, a, k, rows, ctx, atk, scratch)?;
+    shift_blocks(module, op, k, res, a, rows, ctx, keys, scratch)?;
     res.set_mat_slots(batch);
     Ok(())
 }
@@ -208,12 +208,12 @@ where
 fn shift_blocks<BE, R, A, K>(
     module: &Module<BE>,
     op: &'static str,
+    k: usize,
     res: &mut R,
     a: &A,
-    k: usize,
     rows: bool,
     ctx: &BlasContext<BE>,
-    atk: &K,
+    keys: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
@@ -246,18 +246,18 @@ where
     let lts = shift_maps(&ctx.maps, k1, rows, extent);
     let (src_k, dst_k, rank) = (a.block_layout().k(), res.block_layout().k(), a.block_layout().rank());
     let bytes = |key: &GGLWELayout| shift_tmp_bytes(module, &*res, a, rows, ctx, key);
-    assert_maps_scratch(op, module, &lts, atk, src_k, dst_k, rank, bytes, scratch);
+    assert_maps_scratch(op, module, &lts, keys, src_k, dst_k, rank, bytes, scratch);
     let sources: Vec<_> = a.blocks().iter().collect();
     if lts.len() == 1 {
         // One block along the axis: `q = 0`, so block `t` maps into block `t`.
-        return BE::blas_map_blocks(module, res.blocks_mut(), &sources, &lts, atk, scratch);
+        return BE::blas_map_blocks(module, res.blocks_mut(), &sources, &lts, keys, scratch);
     }
     // ponytail: one hook call over the whole heap grid, two blocks per block of `a`; an override chunks it.
     let layout = res.block_layout();
     let mut halves: Vec<_> = (0..2 * sources.len())
         .map(|_| module.ckks_ciphertext_alloc_from_infos(&layout))
         .collect();
-    BE::blas_map_blocks(module, &mut halves, &sources, &lts, atk, scratch)?;
+    BE::blas_map_blocks(module, &mut halves, &sources, &lts, keys, scratch)?;
     for (t, dst) in res.blocks_mut().iter_mut().enumerate() {
         module.ckks_add_into(dst, &halves[2 * src(t, q)], &halves[2 * src(t, q + 1) + 1], scratch)?;
     }

@@ -214,17 +214,17 @@ pub fn test_blas_result_meta<BE, F, E>(
                 };
                 let mut res = alloc(rows, cols, stale);
                 module
-                    .blas_rotate_rows(&mut res, a, shift, &ctx, &keys, &mut op_scratch.borrow())
+                    .blas_rotate_rows(shift, &mut res, a, &ctx, &keys, &mut op_scratch.borrow())
                     .unwrap();
                 let op = label(&format!("rotate_rows {shape}"));
-                assert_eq!(blas_rotate_rows_output_layout(&res, a, shift, &ctx), layout, "{op}: query");
+                assert_eq!(blas_rotate_rows_output_layout(shift, &res, a, &ctx), layout, "{op}: query");
                 check(&op, &res, &model.rotate_rows(shift), &layout, &mut scratch.borrow());
                 let mut res = alloc(rows, cols, stale);
                 module
-                    .blas_rotate_cols(&mut res, a, shift, &ctx, &keys, &mut op_scratch.borrow())
+                    .blas_rotate_cols(shift, &mut res, a, &ctx, &keys, &mut op_scratch.borrow())
                     .unwrap();
                 let op = label(&format!("rotate_cols {shape}"));
-                assert_eq!(blas_rotate_cols_output_layout(&res, a, shift, &ctx), layout, "{op}: query");
+                assert_eq!(blas_rotate_cols_output_layout(shift, &res, a, &ctx), layout, "{op}: query");
                 check(&op, &res, &model.rotate_cols(shift), &layout, &mut scratch.borrow());
             }
         }
@@ -283,7 +283,7 @@ pub fn test_blas_result_meta<BE, F, E>(
         );
         check(&label("matmul_pt_left"), &res, &want_left, &layout, &mut scratch.borrow());
         let mut res = alloc(1, 2, stale);
-        module.blas_rotate(&mut res, row, 1, &keys, &mut op_scratch.borrow()).unwrap();
+        module.blas_rotate(1, &mut res, row, &keys, &mut op_scratch.borrow()).unwrap();
         let layout = copied_layout(row, 1, 2, k);
         assert_eq!(blas_rotate_output_layout(&res, row), layout, "{}", label("rotate query"));
         check(

@@ -241,20 +241,20 @@ pub fn test_blas_key_widths<BE, F, E>(
         let mut full = alloc(1, 2, res_k);
         let bytes = module.blas_rotate_tmp_bytes(&full, &row, &atk_layout);
         module
-            .blas_rotate(&mut full, &row, 1, &keys, &mut own(bytes).borrow())
+            .blas_rotate(1, &mut full, &row, &keys, &mut own(bytes).borrow())
             .unwrap();
         let rotation = [(module.ckks_galois_element((d * d) as i64), a_k.min(width(&full)))];
         assert_key_widths(
             &format!("rotate res_k={res_k}"),
             "blas_rotate",
             &keys,
-            blas_rotate_key_uses(module, &full, &row, 1),
+            blas_rotate_key_uses(module, 1, &full, &row),
             rotation,
             [],
             &full,
             &mut alloc(1, 2, res_k),
             |g| g,
-            |res, keys| module.blas_rotate(res, &row, 1, keys, &mut own(bytes).borrow()),
+            |res, keys| module.blas_rotate(1, res, &row, keys, &mut own(bytes).borrow()),
         );
 
         let mut full = alloc(1, 2, res_k);
@@ -302,7 +302,7 @@ pub fn test_blas_key_widths<BE, F, E>(
             let mut full = alloc(rows, cols, res_k);
             let bytes = module.blas_rotate_rows_tmp_bytes(&full, a, &ctx, &atk_layout);
             module
-                .blas_rotate_rows(&mut full, a, 1, &ctx, &keys, &mut own(bytes).borrow())
+                .blas_rotate_rows(1, &mut full, a, &ctx, &keys, &mut own(bytes).borrow())
                 .unwrap();
             let maps = if rows == 1 {
                 vec![ctx.rotate_rows(1)]
@@ -314,18 +314,18 @@ pub fn test_blas_key_widths<BE, F, E>(
                 &format!("rotate_rows {case}"),
                 "blas_rotate_rows",
                 &keys,
-                blas_rotate_rows_key_uses(module, &full, a, 1, &ctx),
+                blas_rotate_rows_key_uses(module, 1, &full, a, &ctx),
                 used,
                 [],
                 &full,
                 &mut alloc(rows, cols, res_k),
                 |g| g,
-                |res, keys| module.blas_rotate_rows(res, a, 1, &ctx, keys, &mut own(bytes).borrow()),
+                |res, keys| module.blas_rotate_rows(1, res, a, &ctx, keys, &mut own(bytes).borrow()),
             );
             let mut full = alloc(rows, cols, res_k);
             let bytes = module.blas_rotate_cols_tmp_bytes(&full, a, &ctx, &atk_layout);
             module
-                .blas_rotate_cols(&mut full, a, 1, &ctx, &keys, &mut own(bytes).borrow())
+                .blas_rotate_cols(1, &mut full, a, &ctx, &keys, &mut own(bytes).borrow())
                 .unwrap();
             let maps = if cols == 1 {
                 vec![ctx.rotate_cols(1)]
@@ -337,13 +337,13 @@ pub fn test_blas_key_widths<BE, F, E>(
                 &format!("rotate_cols {case}"),
                 "blas_rotate_cols",
                 &keys,
-                blas_rotate_cols_key_uses(module, &full, a, 1, &ctx),
+                blas_rotate_cols_key_uses(module, 1, &full, a, &ctx),
                 used,
                 [],
                 &full,
                 &mut alloc(rows, cols, res_k),
                 |g| g,
-                |res, keys| module.blas_rotate_cols(res, a, 1, &ctx, keys, &mut own(bytes).borrow()),
+                |res, keys| module.blas_rotate_cols(1, res, a, &ctx, keys, &mut own(bytes).borrow()),
             );
         }
 

@@ -131,9 +131,9 @@ and every operation rejects a grid that breaks this. `BlasCiphertext` over
 owned storage implements both traits on every backend. Borrowed views are not
 grids: a `BufRef` view is `Sync`, but its blocks are not `GLWEToBackendRef`.
 
-Rotation keys come as `atk` and the tensor key as `tsk`, two separate stores:
+Rotation keys come as `keys` and the tensor key as `tsk`, two separate stores:
 the rotations, the sums, the maps, the preparations and the products by public
-matrices take `atk` alone, and the products both. The prepared product looks
+matrices take `keys` alone, and the products both. The prepared product looks
 up rotation keys only for a hot operand, whose terms it evaluates: of two cold
 operands it reads `tsk` alone. The traits' `Send` and `Sync` bounds leave an
 implementation its own choice of concurrency ([Parallelism](#parallelism)).

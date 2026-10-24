@@ -53,12 +53,12 @@ pub fn matmul_left_operand<BE: BlasMatMulImpl>(
     module: &Module<BE>,
     a: &impl BlasGrid<BE>,
     ctx: &BlasContext<BE>,
-    atk: &(impl GetAutomorphismKey<BE> + Sync),
+    keys: &(impl GetAutomorphismKey<BE> + Sync),
     hint: PrepareHint,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> CKKSResult<BlasMatMulLeft<BE>> {
     let mut res = module.blas_matmul_left_alloc_from_infos(&blas_matmul_left_operand_layout(a, ctx, hint));
-    module.blas_matmul_prepare_left(&mut res, a, ctx, atk, scratch)?;
+    module.blas_matmul_prepare_left(&mut res, a, ctx, keys, scratch)?;
     Ok(res)
 }
 
@@ -68,12 +68,12 @@ pub fn matmul_right_operand<BE: BlasMatMulImpl>(
     module: &Module<BE>,
     b: &impl BlasGrid<BE>,
     ctx: &BlasContext<BE>,
-    atk: &(impl GetAutomorphismKey<BE> + Sync),
+    keys: &(impl GetAutomorphismKey<BE> + Sync),
     hint: PrepareHint,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> CKKSResult<BlasMatMulRight<BE>> {
     let mut res = module.blas_matmul_right_alloc_from_infos(&blas_matmul_right_operand_layout(b, ctx, hint));
-    module.blas_matmul_prepare_right(&mut res, b, ctx, atk, scratch)?;
+    module.blas_matmul_prepare_right(&mut res, b, ctx, keys, scratch)?;
     Ok(res)
 }
 

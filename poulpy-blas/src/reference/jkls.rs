@@ -14,7 +14,7 @@ use crate::layouts::validate::{KeyLayouts, assert_scratch, ensure_tensor_key};
 pub trait BlasJklsReference<BE: Backend> {
     /// poulpy-ckks's `ckks_dot_product_ct` query for `terms` pairs, which covers `ckks_dot_product_prepared` on pairs
     /// prepared from terms of these layouts.
-    fn blas_jkls_block_tmp_bytes_reference<R, L, Rh, T>(&self, res: &R, lhs: &L, rhs: &Rh, terms: usize, tsk: &T) -> usize
+    fn blas_jkls_block_tmp_bytes_reference<R, L, Rh, T>(&self, terms: usize, res: &R, lhs: &L, rhs: &Rh, tsk: &T) -> usize
     where
         Self: CKKSDotProductOps<BE>,
         R: CKKSCtBounds,
@@ -54,7 +54,7 @@ pub trait BlasJklsReference<BE: Backend> {
             let op = "blas_jkls_block";
             let used = KeyLayouts::new(tsk);
             let _ = ensure_tensor_key(op, &used, l.k().max(r.k()), l.rank());
-            let bytes = used.max_bytes(|tsk| self.blas_jkls_block_tmp_bytes_reference(&*res, l, r, lhs.len(), tsk));
+            let bytes = used.max_bytes(|tsk| self.blas_jkls_block_tmp_bytes_reference(lhs.len(), &*res, l, r, tsk));
             assert_scratch(op, bytes, scratch);
         }
         self.ckks_dot_product_prepared(res, lhs, rhs, tsk, scratch)

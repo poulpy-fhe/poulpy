@@ -57,7 +57,7 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 pub unsafe trait BlasJklsImpl: Backend {
     /// Scratch bytes of [`Self::blas_jkls_block`] into a block of layout `res` from `terms` pairs prepared from terms
     /// of layouts `lhs` and `rhs`, with a tensor key of layout `tsk`.
-    fn blas_jkls_block_tmp_bytes<R, L, Rh, T>(module: &Module<Self>, res: &R, lhs: &L, rhs: &Rh, terms: usize, tsk: &T) -> usize
+    fn blas_jkls_block_tmp_bytes<R, L, Rh, T>(module: &Module<Self>, terms: usize, res: &R, lhs: &L, rhs: &Rh, tsk: &T) -> usize
     where
         R: CKKSCtBounds,
         L: CKKSCtBounds,
@@ -87,10 +87,11 @@ macro_rules! impl_blas_jkls_reference_full {
         unsafe impl $crate::oep::BlasJklsImpl for $be {
             fn blas_jkls_block_tmp_bytes<R, L, Rh, T>(
                 module: &::poulpy_hal::layouts::Module<Self>,
+                terms: usize,
+
                 res: &R,
                 lhs: &L,
                 rhs: &Rh,
-                terms: usize,
                 tsk: &T,
             ) -> usize
             where
@@ -99,7 +100,7 @@ macro_rules! impl_blas_jkls_reference_full {
                 Rh: ::poulpy_ckks::CKKSCtBounds,
                 T: ::poulpy_core::layouts::GGLWEInfos,
             {
-                $crate::reference::BlasJklsReference::blas_jkls_block_tmp_bytes_reference(module, res, lhs, rhs, terms, tsk)
+                $crate::reference::BlasJklsReference::blas_jkls_block_tmp_bytes_reference(module, terms, res, lhs, rhs, tsk)
             }
 
             fn blas_jkls_block<R, T>(

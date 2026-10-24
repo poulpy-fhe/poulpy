@@ -42,8 +42,8 @@ override keeps no state across calls ([Parallelism](docs/blas-contracts.md#paral
 
 A `BlasPlan` fixes the block dimension and how each block map is evaluated. The maps are encoded once from it, at a
 caller-chosen precision, into a `BlasContext`, and public matrices into a `BlasPtOperand`. Operations take the context
-and `Sync` key stores: rotation keys through poulpy-core's `GetAutomorphismKey` (`atk`), the tensor key through
-`GetTensorKey` (`tsk`). The preparations take only `atk`, and `blas_matmul` and `blas_matmul_prepared` both: the latter
+and `Sync` key stores: rotation keys through poulpy-core's `GetAutomorphismKey` (`keys`), the tensor key through
+`GetTensorKey` (`tsk`). The preparations take only `keys`, and `blas_matmul` and `blas_matmul_prepared` both: the latter
 looks up the rotation keys of a hot operand's terms, and of two cold operands the tensor key alone. Every operation
 takes any grid implementing `BlasGrid` (`BlasGridMut` for the result). A prepared operand, a `BlasMatMulOperand`, holds
 poulpy-ckks ciphertexts or prepared terms in the backend's storage, and reports its hint and its input's dimensions,

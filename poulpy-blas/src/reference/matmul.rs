@@ -39,16 +39,16 @@ use crate::{
     oep::{BlasJklsImpl, BlasMatIntraImpl},
 };
 
-/// Fails as [`ensure_rotation`] unless `atk` holds every key of [`term_uses`].
+/// Fails as [`ensure_rotation`] unless `keys` holds every key of [`term_uses`].
 fn ensure_term_keys<'c, BE: Backend + 'c>(
     op: &'static str,
     module: &(impl CKKSModuleInfos + ?Sized),
     a: &impl BlasGridInfos,
     first: &LinearTransformationPrepared<BE>,
     shift: impl Fn(usize) -> &'c LinearTransformationPrepared<BE>,
-    atk: &impl GetAutomorphismKey<BE>,
+    keys: &impl GetAutomorphismKey<BE>,
 ) -> Result<()> {
-    term_uses(a, first, shift, &mut |u| ensure_rotation(op, module, atk, u))
+    term_uses(a, first, shift, &mut |u| ensure_rotation(op, module, keys, u))
 }
 
 /// Reference compositions of [`crate::api::BlasMatMulOps`]. Each operation runs its validator, the matching
@@ -73,7 +73,7 @@ pub trait BlasMatMulReference<BE: Backend> {
         &self,
         a: &A,
         ctx: &BlasContext<BE>,
-        atk: &K,
+        keys: &K,
         hint: PrepareHint,
     ) -> usize
     where
@@ -98,7 +98,7 @@ pub trait BlasMatMulReference<BE: Backend> {
         res: &mut BlasMatMulOperand<BE, CKKSPreparedLeft<BE>>,
         a: &A,
         ctx: &BlasContext<BE>,
-        atk: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -113,7 +113,7 @@ pub trait BlasMatMulReference<BE: Backend> {
         &self,
         b: &B,
         ctx: &BlasContext<BE>,
-        atk: &K,
+        keys: &K,
         hint: PrepareHint,
     ) -> usize
     where
@@ -130,7 +130,7 @@ pub trait BlasMatMulReference<BE: Backend> {
         res: &mut BlasMatMulOperand<BE, CKKSPreparedRight<BE>>,
         b: &B,
         ctx: &BlasContext<BE>,
-        atk: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -154,7 +154,7 @@ pub trait BlasMatMulReference<BE: Backend> {
         b: &B,
         ctx: &BlasContext<BE>,
         tsk: &T,
-        atk: &K,
+        keys: &K,
     ) -> usize
     where
         BE: BlasJklsImpl + BlasMatIntraImpl,
@@ -189,7 +189,7 @@ pub trait BlasMatMulReference<BE: Backend> {
         b: &BlasMatMulOperand<BE, CKKSPreparedRight<BE>>,
         ctx: &BlasContext<BE>,
         tsk: &T,
-        atk: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -208,7 +208,7 @@ pub trait BlasMatMulReference<BE: Backend> {
         b: &B,
         ctx: &BlasContext<BE>,
         tsk: &T,
-        atk: &K,
+        keys: &K,
     ) -> usize
     where
         BE: BlasJklsImpl + BlasMatIntraImpl,
@@ -230,7 +230,7 @@ pub trait BlasMatMulReference<BE: Backend> {
         b: &B,
         ctx: &BlasContext<BE>,
         tsk: &T,
-        atk: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -255,7 +255,7 @@ pub trait BlasMatMulReference<BE: Backend> {
         a: &A,
         b: &BlasPtOperand<BE>,
         ctx: &BlasContext<BE>,
-        atk: &K,
+        keys: &K,
     ) -> usize
     where
         BE: BlasMatIntraImpl,
@@ -284,7 +284,7 @@ pub trait BlasMatMulReference<BE: Backend> {
         a: &A,
         b: &BlasPtOperand<BE>,
         ctx: &BlasContext<BE>,
-        atk: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -312,7 +312,7 @@ pub trait BlasMatMulReference<BE: Backend> {
         b: &BlasPtOperand<BE, Left>,
         a: &A,
         ctx: &BlasContext<BE>,
-        atk: &K,
+        keys: &K,
     ) -> usize
     where
         BE: BlasMatIntraImpl,
@@ -338,7 +338,7 @@ pub trait BlasMatMulReference<BE: Backend> {
         b: &BlasPtOperand<BE, Left>,
         a: &A,
         ctx: &BlasContext<BE>,
-        atk: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -360,7 +360,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
         &self,
         a: &A,
         ctx: &BlasContext<BE>,
-        atk: &K,
+        keys: &K,
         hint: PrepareHint,
     ) -> usize
     where
@@ -369,7 +369,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
         A: BlasGridInfos,
         K: GGLWEInfos,
     {
-        prepare_tmp_bytes(self, a, ctx.sigma(), |k| ctx.rotate_cols(k), atk, hint)
+        prepare_tmp_bytes(self, a, ctx.sigma(), |k| ctx.rotate_cols(k), keys, hint)
     }
 
     fn blas_matmul_prepare_left_reference<A, K>(
@@ -377,7 +377,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
         res: &mut BlasMatMulOperand<BE, CKKSPreparedLeft<BE>>,
         a: &A,
         ctx: &BlasContext<BE>,
-        atk: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -386,7 +386,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
         A: BlasGrid<BE>,
         K: GetAutomorphismKey<BE> + Sync,
     {
-        validate_blas_matmul_prepare_left(self, &*res, a, ctx, atk)?;
+        validate_blas_matmul_prepare_left(self, &*res, a, ctx, keys)?;
         let convert = |res: &mut CKKSPreparedLeft<BE>, term: &CKKSCiphertextOwned<BE>, s: &mut ScratchArena<'_, BE>| {
             self.ckks_prepare_left_into(res, term, s)
         };
@@ -400,7 +400,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
             a,
             first,
             shift,
-            atk,
+            keys,
             convert,
             scratch,
         )
@@ -410,7 +410,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
         &self,
         b: &B,
         ctx: &BlasContext<BE>,
-        atk: &K,
+        keys: &K,
         hint: PrepareHint,
     ) -> usize
     where
@@ -420,7 +420,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
         K: GGLWEInfos,
     {
         let (first, shift) = right_maps(&ctx.maps, replicated::<BE::Ring>(b));
-        prepare_tmp_bytes(self, b, first, shift, atk, hint)
+        prepare_tmp_bytes(self, b, first, shift, keys, hint)
     }
 
     fn blas_matmul_prepare_right_reference<B, K>(
@@ -428,7 +428,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
         res: &mut BlasMatMulOperand<BE, CKKSPreparedRight<BE>>,
         b: &B,
         ctx: &BlasContext<BE>,
-        atk: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -437,7 +437,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
         B: BlasGrid<BE>,
         K: GetAutomorphismKey<BE> + Sync,
     {
-        validate_blas_matmul_prepare_right(self, &*res, b, ctx, atk)?;
+        validate_blas_matmul_prepare_right(self, &*res, b, ctx, keys)?;
         let convert = |res: &mut CKKSPreparedRight<BE>, term: &CKKSCiphertextOwned<BE>, s: &mut ScratchArena<'_, BE>| {
             self.ckks_prepare_right_into(res, term, s)
         };
@@ -451,7 +451,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
             b,
             first,
             shift,
-            atk,
+            keys,
             convert,
             scratch,
         )
@@ -464,7 +464,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
         b: &B,
         ctx: &BlasContext<BE>,
         tsk: &T,
-        atk: &K,
+        keys: &K,
     ) -> usize
     where
         BE: BlasJklsImpl + BlasMatIntraImpl,
@@ -475,7 +475,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
         T: GGLWEInfos,
         K: GGLWEInfos,
     {
-        kernel_tmp_bytes(self, res, a, b, ctx, tsk).max(hot_tmp_bytes(self, a, b, ctx, atk))
+        kernel_tmp_bytes(self, res, a, b, ctx, tsk).max(hot_tmp_bytes(self, a, b, ctx, keys))
     }
 
     fn blas_matmul_prepared_reference<R, T, K>(
@@ -485,7 +485,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
         b: &BlasMatMulOperand<BE, CKKSPreparedRight<BE>>,
         ctx: &BlasContext<BE>,
         tsk: &T,
-        atk: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -496,8 +496,8 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
         K: GetAutomorphismKey<BE> + Sync,
     {
         let op = "blas_matmul_prepared";
-        let batch = validate_blas_matmul_prepared(self, &*res, a, b, ctx, tsk, atk)?;
-        assert_scratch(op, product_scratch(self, op, &*res, a, b, ctx, tsk, atk), scratch);
+        let batch = validate_blas_matmul_prepared(self, &*res, a, b, ctx, tsk, keys)?;
+        assert_scratch(op, product_scratch(self, op, &*res, a, b, ctx, tsk, keys), scratch);
         let b_rep = replicated::<BE::Ring>(b);
         product(
             self,
@@ -509,7 +509,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
             ctx,
             b_rep,
             tsk,
-            atk,
+            keys,
             scratch,
         )?;
         res.set_mat_slots(batch);
@@ -523,7 +523,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
         b: &B,
         ctx: &BlasContext<BE>,
         tsk: &T,
-        atk: &K,
+        keys: &K,
     ) -> usize
     where
         BE: BlasJklsImpl + BlasMatIntraImpl,
@@ -539,9 +539,9 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
             left_operand_layout(a, &ctx.maps, hot),
             right_operand_layout(b, &ctx.maps, hot),
         );
-        self.blas_matmul_prepare_left_tmp_bytes_reference(a, ctx, atk, hot)
-            .max(self.blas_matmul_prepare_right_tmp_bytes_reference(b, ctx, atk, hot))
-            .max(self.blas_matmul_prepared_tmp_bytes_reference(res, &left, &right, ctx, tsk, atk))
+        self.blas_matmul_prepare_left_tmp_bytes_reference(a, ctx, keys, hot)
+            .max(self.blas_matmul_prepare_right_tmp_bytes_reference(b, ctx, keys, hot))
+            .max(self.blas_matmul_prepared_tmp_bytes_reference(res, &left, &right, ctx, tsk, keys))
     }
 
     fn blas_matmul_reference<R, A, B, T, K>(
@@ -551,7 +551,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
         b: &B,
         ctx: &BlasContext<BE>,
         tsk: &T,
-        atk: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -564,19 +564,19 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
         K: GetAutomorphismKey<BE> + Sync,
     {
         let op = "blas_matmul";
-        let batch = validate_blas_matmul(self, &*res, a, b, ctx, tsk, atk)?;
+        let batch = validate_blas_matmul(self, &*res, a, b, ctx, tsk, keys)?;
         let hot = PrepareHint::OneShot;
         let (left, right) = (
             left_operand_layout(a, &ctx.maps, hot),
             right_operand_layout(b, &ctx.maps, hot),
         );
-        let bytes = product_scratch(self, op, &*res, &left, &right, ctx, tsk, atk)
+        let bytes = product_scratch(self, op, &*res, &left, &right, ctx, tsk, keys)
             .max(copy_tmp_bytes(self, a))
             .max(copy_tmp_bytes(self, b));
         assert_scratch(op, bytes, scratch);
         let (a_side, b_side) = (Side::Hot(a.blocks()), Side::Hot(b.blocks()));
         let b_rep = replicated::<BE::Ring>(b);
-        product(self, res, a_side, b_side, a.cols(), a.log_d(), ctx, b_rep, tsk, atk, scratch)?;
+        product(self, res, a_side, b_side, a.cols(), a.log_d(), ctx, b_rep, tsk, keys, scratch)?;
         res.set_mat_slots(batch);
         Ok(())
     }
@@ -587,7 +587,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
         a: &A,
         b: &BlasPtOperand<BE>,
         ctx: &BlasContext<BE>,
-        atk: &K,
+        keys: &K,
     ) -> usize
     where
         BE: BlasMatIntraImpl,
@@ -598,7 +598,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
     {
         let masks = context_masks(b.plan(), &ctx.maps, false);
         let masked = b.plan().pt_algorithm().masked().then(|| (masks.as_slice(), &b.plaintexts[0]));
-        pt_tmp_bytes(self, res, a, b.first(), masked, a.cols(), atk)
+        pt_tmp_bytes(self, res, a, b.first(), masked, a.cols(), keys)
     }
 
     fn blas_matmul_pt_right_reference<R, A, K>(
@@ -607,7 +607,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
         a: &A,
         b: &BlasPtOperand<BE>,
         ctx: &BlasContext<BE>,
-        atk: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -624,10 +624,10 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
         K: GetAutomorphismKey<BE> + Sync,
     {
         let op = "blas_matmul_pt_right";
-        let batch = validate_blas_matmul_pt_right(self, &*res, a, b, ctx, atk)?;
+        let batch = validate_blas_matmul_pt_right(self, &*res, a, b, ctx, keys)?;
         let (inner, n) = (a.cols(), b.cols());
         let masks = context_masks(b.plan(), &ctx.maps, false);
-        let used = KeyLayouts::new(atk);
+        let used = KeyLayouts::new(keys);
         let _ = pt_right_uses(&*res, a, &b.maps, &masks, &mut |u| ensure_rotation(op, self, &used, u));
         let bytes = used.max_bytes(|key| self.blas_matmul_pt_right_tmp_bytes_reference(&*res, a, b, ctx, key));
         assert_scratch(op, bytes, scratch);
@@ -641,20 +641,20 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
                 let galois = masked_galois(self, b.plan(), false, inner);
                 let plaintexts = |j: usize, l: usize| b.plaintexts_at(l, j);
                 masked_products(
-                    self, rows, source, inner, first, &masks, plaintexts, &galois, label, atk, scratch,
+                    self, rows, source, inner, first, &masks, plaintexts, &galois, label, keys, scratch,
                 )?;
             }
             None => {
                 let mut caches = baby_caches(self, &block_maps(), &blocks[0], inner);
-                shared_giants(self, &mut caches, rows, source, map, label, atk, scratch)?;
+                shared_giants(self, &mut caches, rows, source, map, label, keys, scratch)?;
             }
             Some(first) => {
                 let mut staged = alloc_blocks(self, &mapped_block(layout_of(&blocks[0]), first), inner);
                 let mut caches = baby_caches(self, &block_maps(), &staged[0], inner);
                 for (i, row) in rows.into_iter().enumerate() {
                     let unit: Vec<_> = blocks[i * inner..(i + 1) * inner].iter().collect();
-                    BE::blas_map_blocks(self, &mut staged, &unit, &[first], atk, scratch)?;
-                    shared_giants(self, &mut caches, vec![row], |_, l| &staged[l], map, label, atk, scratch)?;
+                    BE::blas_map_blocks(self, &mut staged, &unit, &[first], keys, scratch)?;
+                    shared_giants(self, &mut caches, vec![row], |_, l| &staged[l], map, label, keys, scratch)?;
                 }
             }
         }
@@ -668,7 +668,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
         b: &BlasPtOperand<BE, Left>,
         a: &A,
         ctx: &BlasContext<BE>,
-        atk: &K,
+        keys: &K,
     ) -> usize
     where
         BE: BlasMatIntraImpl,
@@ -679,7 +679,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
     {
         let masks = context_masks(b.plan(), &ctx.maps, true);
         let masked = b.plan().pt_algorithm().masked().then(|| (masks.as_slice(), &b.plaintexts[0]));
-        pt_tmp_bytes(self, res, a, b.first(), masked, a.rows(), atk)
+        pt_tmp_bytes(self, res, a, b.first(), masked, a.rows(), keys)
     }
 
     fn blas_matmul_pt_left_reference<R, A, K>(
@@ -688,7 +688,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
         b: &BlasPtOperand<BE, Left>,
         a: &A,
         ctx: &BlasContext<BE>,
-        atk: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -705,11 +705,11 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
         K: GetAutomorphismKey<BE> + Sync,
     {
         let op = "blas_matmul_pt_left";
-        let batch = validate_blas_matmul_pt_left(self, &*res, b, a, ctx, atk)?;
+        let batch = validate_blas_matmul_pt_left(self, &*res, b, a, ctx, keys)?;
         let (inner, n) = (a.rows(), a.cols());
         let rep = left_takes_replicated(&b.maps, a);
         let masks = context_masks(b.plan(), &ctx.maps, true);
-        let used = KeyLayouts::new(atk);
+        let used = KeyLayouts::new(keys);
         let _ = pt_left_uses(&*res, &b.maps, &masks, a, &mut |u| ensure_rotation(op, self, &used, u));
         let bytes = used.max_bytes(|key| self.blas_matmul_pt_left_tmp_bytes_reference(&*res, b, a, ctx, key));
         assert_scratch(op, bytes, scratch);
@@ -730,20 +730,20 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
                 let galois = masked_galois(self, b.plan(), true, inner);
                 let plaintexts = |i: usize, l: usize| b.plaintexts_at(i, l);
                 masked_products(
-                    self, columns, source, inner, first, &masks, plaintexts, &galois, label, atk, scratch,
+                    self, columns, source, inner, first, &masks, plaintexts, &galois, label, keys, scratch,
                 )?;
             }
             None => {
                 let mut caches = baby_caches(self, &block_maps(), &blocks[0], inner);
-                shared_giants(self, &mut caches, columns, source, map, label, atk, scratch)?;
+                shared_giants(self, &mut caches, columns, source, map, label, keys, scratch)?;
             }
             Some(first) => {
                 let mut staged = alloc_blocks(self, &mapped_block(layout_of(&blocks[0]), first), inner);
                 let mut caches = baby_caches(self, &block_maps(), &staged[0], inner);
                 for (j, column) in columns.into_iter().enumerate() {
                     let unit: Vec<_> = (0..inner).map(|l| &blocks[l * n + j]).collect();
-                    BE::blas_map_blocks(self, &mut staged, &unit, &[first], atk, scratch)?;
-                    shared_giants(self, &mut caches, vec![column], |_, l| &staged[l], map, label, atk, scratch)?;
+                    BE::blas_map_blocks(self, &mut staged, &unit, &[first], keys, scratch)?;
+                    shared_giants(self, &mut caches, vec![column], |_, l| &staged[l], map, label, keys, scratch)?;
                 }
             }
         }
@@ -769,7 +769,7 @@ enum Side<'a, S, P> {
     Cold(&'a [P]),
 }
 
-/// The prepared product's query on the layouts of the keys it looks up in `tsk` and `atk`, for `res` and the operands,
+/// The prepared product's query on the layouts of the keys it looks up in `tsk` and `keys`, for `res` and the operands,
 /// or their layouts, `a` and `b` under `ctx`: the tensor key's for the kernel, a hot side's rotation keys for its terms.
 /// The keys passed `op`'s validator, so the look-ups only record their layouts; a call that looks up none asks for `0`.
 #[allow(clippy::too_many_arguments)]
@@ -781,7 +781,7 @@ fn product_scratch<BE, T, K>(
     b: &impl BlasMatMulOperandInfos,
     ctx: &BlasContext<BE>,
     tsk: &T,
-    atk: &K,
+    keys: &K,
 ) -> usize
 where
     BE: BlasJklsImpl + BlasMatIntraImpl,
@@ -789,12 +789,12 @@ where
     T: GetTensorKey<BE>,
     K: GetAutomorphismKey<BE>,
 {
-    let (tsks, atks) = (KeyLayouts::new(tsk), KeyLayouts::new(atk));
+    let (tsks, atks) = (KeyLayouts::new(tsk), KeyLayouts::new(keys));
     let (k, rank) = prepared_tensor(a, b, &ctx.maps);
     let _ = ensure_tensor_key(op, &tsks, k, rank);
     let _ = prepared_uses(a, b, &ctx.maps, &mut |u| ensure_rotation(op, module, &atks, u));
     tsks.max_bytes(|tsk| kernel_tmp_bytes(module, res, a, b, ctx, tsk))
-        .max(atks.max_bytes(|atk| hot_tmp_bytes(module, a, b, ctx, atk)))
+        .max(atks.max_bytes(|keys| hot_tmp_bytes(module, a, b, ctx, keys)))
 }
 
 /// `res = a b` under `ctx`, `res` of `m x n` blocks, for the left side `a` of `m x K` blocks and the right side `b` of
@@ -815,7 +815,7 @@ fn product<BE, R, SA, SB, T, K>(
     ctx: &BlasContext<BE>,
     b_rep: bool,
     tsk: &T,
-    atk: &K,
+    keys: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
@@ -842,12 +842,12 @@ where
     let a_row = |blocks: &[SA], i: usize, scratch: &mut ScratchArena<'_, BE>| {
         let sources: Vec<_> = blocks[i * inner..(i + 1) * inner].iter().collect();
         let convert = |term: &CKKSCiphertextOwned<BE>, s: &mut ScratchArena<'_, BE>| module.ckks_prepare_left(term, hot, s);
-        new_unit_terms(module, &sources, ctx.sigma(), &a_shifts, atk, convert, scratch)
+        new_unit_terms(module, &sources, ctx.sigma(), &a_shifts, keys, convert, scratch)
     };
     let b_col = |blocks: &[SB], j: usize, scratch: &mut ScratchArena<'_, BE>| {
         let sources: Vec<_> = (0..inner).map(|l| &blocks[l * n + j]).collect();
         let convert = |term: &CKKSCiphertextOwned<BE>, s: &mut ScratchArena<'_, BE>| module.ckks_prepare_right(term, hot, s);
-        new_unit_terms(module, &sources, b_first, &b_shifts, atk, convert, scratch)
+        new_unit_terms(module, &sources, b_first, &b_shifts, keys, convert, scratch)
     };
     let mut jkls =
         |i: usize, j: usize, lhs: &[&CKKSPreparedLeft<BE>], rhs: &[&CKKSPreparedRight<BE>], s: &mut ScratchArena<'_, BE>| {
@@ -949,8 +949,8 @@ fn kernel_tmp_bytes<BE: BlasJklsImpl>(
         ..tsk
     };
     let terms = a.cols() << a.log_d();
-    BE::blas_jkls_block_tmp_bytes(module, &res, &lhs, &rhs, terms, &tsk)
-        .max(BE::blas_jkls_block_tmp_bytes(module, &res, &lhs, &rhs, terms, &at_width))
+    BE::blas_jkls_block_tmp_bytes(module, terms, &res, &lhs, &rhs, &tsk)
+        .max(BE::blas_jkls_block_tmp_bytes(module, terms, &res, &lhs, &rhs, &at_width))
 }
 
 /// The scratch of the terms of the hot sides of `a` and `b` in a product under `ctx`, a unit at a time, `K` blocks each:
@@ -960,7 +960,7 @@ fn hot_tmp_bytes<BE>(
     a: &impl BlasMatMulOperandInfos,
     b: &impl BlasMatMulOperandInfos,
     ctx: &BlasContext<BE>,
-    atk: &impl GGLWEInfos,
+    keys: &impl GGLWEInfos,
 ) -> usize
 where
     BE: BlasMatIntraImpl,
@@ -969,7 +969,7 @@ where
     let left = match a.hint() {
         PrepareHint::OneShot => {
             let shifts: Vec<_> = (1..1usize << a.log_d()).map(|k| ctx.rotate_cols(k)).collect();
-            unit_tmp_bytes(module, a, ctx.sigma(), &shifts, atk, a.cols())
+            unit_tmp_bytes(module, a, ctx.sigma(), &shifts, keys, a.cols())
         }
         PrepareHint::Reuse => 0,
     };
@@ -977,7 +977,7 @@ where
         PrepareHint::OneShot => {
             let (first, shift) = right_maps(&ctx.maps, replicated::<BE::Ring>(b));
             let shifts: Vec<_> = (1..1usize << b.log_d()).map(shift).collect();
-            unit_tmp_bytes(module, b, first, &shifts, atk, b.rows())
+            unit_tmp_bytes(module, b, first, &shifts, keys, b.rows())
         }
         PrepareHint::Reuse => 0,
     };
@@ -997,7 +997,7 @@ fn prepare_tmp_bytes<'c, BE, K>(
     a: &impl BlasGridInfos,
     first: &LinearTransformationPrepared<BE>,
     shift: impl Fn(usize) -> &'c LinearTransformationPrepared<BE>,
-    atk: &K,
+    keys: &K,
     hint: PrepareHint,
 ) -> usize
 where
@@ -1009,7 +1009,7 @@ where
         PrepareHint::OneShot => copy_tmp_bytes(module, a),
         PrepareHint::Reuse => {
             let shifts: Vec<_> = (1..1usize << a.log_d()).map(shift).collect();
-            unit_tmp_bytes(module, a, first, &shifts, atk, a.cols())
+            unit_tmp_bytes(module, a, first, &shifts, keys, a.cols())
         }
     }
 }
@@ -1023,7 +1023,7 @@ fn unit_tmp_bytes<BE, K>(
     a: &impl BlasGridInfos,
     first: &LinearTransformationPrepared<BE>,
     shifts: &[&LinearTransformationPrepared<BE>],
-    atk: &K,
+    keys: &K,
     sources: usize,
 ) -> usize
 where
@@ -1034,8 +1034,8 @@ where
     let block = a.block_layout();
     let s = mapped_block(block, first);
     let term = mapped_block(s, shifts[0]);
-    BE::blas_map_blocks_tmp_bytes(module, &s, &block, sources, &[first], atk)
-        .max(BE::blas_map_blocks_tmp_bytes(module, &term, &s, sources, shifts, atk))
+    BE::blas_map_blocks_tmp_bytes(module, sources, &s, &block, &[first], keys)
+        .max(BE::blas_map_blocks_tmp_bytes(module, sources, &term, &s, shifts, keys))
         .max(module.ckks_copy_tmp_bytes(&term, &s))
         .max(module.ckks_prepare_tmp_bytes(&term))
 }
@@ -1052,7 +1052,7 @@ fn prepare<'c, BE, A, K, P>(
     a: &A,
     first: &LinearTransformationPrepared<BE>,
     shift: impl Fn(usize) -> &'c LinearTransformationPrepared<BE>,
-    atk: &K,
+    keys: &K,
     convert: impl Fn(&mut P, &CKKSCiphertextOwned<BE>, &mut ScratchArena<'_, BE>) -> Result<()>,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
@@ -1070,7 +1070,7 @@ where
             }
         }
         PrepareHint::Reuse => {
-            let used = KeyLayouts::new(atk);
+            let used = KeyLayouts::new(keys);
             let _ = ensure_term_keys(op, module, a, first, &shift, &used);
             let bytes = used.max_bytes(|key| prepare_tmp_bytes(module, a, first, &shift, key, PrepareHint::Reuse));
             assert_scratch(op, bytes, scratch);
@@ -1081,7 +1081,7 @@ where
             for (row, out) in a.blocks().chunks(a.cols()).zip(res.terms.chunks_mut(row_terms)) {
                 let sources: Vec<_> = row.iter().collect();
                 let emit = |t: usize, term: &CKKSCiphertextOwned<BE>, s: &mut ScratchArena<'_, BE>| convert(&mut out[t], term, s);
-                unit_terms(module, &sources, first, &shifts, atk, emit, scratch)?;
+                unit_terms(module, &sources, first, &shifts, keys, emit, scratch)?;
             }
         }
     }
@@ -1104,7 +1104,7 @@ fn unit_terms<BE, S, K>(
     sources: &[&S],
     first: &LinearTransformationPrepared<BE>,
     shifts: &[&LinearTransformationPrepared<BE>],
-    atk: &K,
+    keys: &K,
     mut emit: impl FnMut(usize, &CKKSCiphertextOwned<BE>, &mut ScratchArena<'_, BE>) -> Result<()>,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
@@ -1117,10 +1117,10 @@ where
     let staged = mapped_block(block, first);
     let term = mapped_block(staged, shifts[0]);
     let mut sigma = alloc_blocks(module, &staged, sources.len());
-    BE::blas_map_blocks(module, &mut sigma, sources, &[first], atk, scratch)?;
+    BE::blas_map_blocks(module, &mut sigma, sources, &[first], keys, scratch)?;
     let results: Vec<_> = sigma.iter().collect();
     let mut shifted = alloc_blocks(module, &term, sigma.len() * shifts.len());
-    BE::blas_map_blocks(module, &mut shifted, &results, shifts, atk, scratch)?;
+    BE::blas_map_blocks(module, &mut shifted, &results, shifts, keys, scratch)?;
     let mut shifted = shifted.into_iter();
     for (t, s) in sigma.into_iter().enumerate() {
         let mut narrowed = module.ckks_ciphertext_alloc_from_infos(&term);
@@ -1140,7 +1140,7 @@ fn new_unit_terms<BE, S, K, P>(
     sources: &[&S],
     first: &LinearTransformationPrepared<BE>,
     shifts: &[&LinearTransformationPrepared<BE>],
-    atk: &K,
+    keys: &K,
     convert: impl Fn(&CKKSCiphertextOwned<BE>, &mut ScratchArena<'_, BE>) -> Result<P>,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<Vec<P>>
@@ -1154,7 +1154,7 @@ where
         terms.push(convert(term, s)?);
         Ok(())
     };
-    unit_terms(module, sources, first, shifts, atk, emit, scratch)?;
+    unit_terms(module, sources, first, shifts, keys, emit, scratch)?;
     Ok(terms)
 }
 
@@ -1171,22 +1171,22 @@ fn pt_tmp_bytes<BE: BlasMatIntraImpl>(
     first: Option<&LinearTransformationPrepared<BE>>,
     masked: Option<(&[&LinearTransformationPrepared<BE>], &CKKSPreparedRight<BE>)>,
     sources: usize,
-    atk: &impl GGLWEInfos,
+    keys: &impl GGLWEInfos,
 ) -> usize
 where
     Module<BE>: CKKSLinearTransformationOps<BE> + CKKSMulOps<BE> + CKKSDotProductOps<BE> + GLWEMulPreparedPlainSum<BE>,
 {
     let (res, block) = (res.block_layout(), a.block_layout());
     let Some(first) = first else {
-        return lt_tmp_bytes(module, &res, &block, atk, true);
+        return lt_tmp_bytes(module, &res, &block, keys, true);
     };
     let staged = mapped_block(block, first);
     let Some((masks, plaintext)) = masked else {
-        return BE::blas_map_blocks_tmp_bytes(module, &staged, &block, sources, &[first], atk)
-            .max(lt_tmp_bytes(module, &res, &staged, atk, true));
+        return BE::blas_map_blocks_tmp_bytes(module, sources, &staged, &block, &[first], keys)
+            .max(lt_tmp_bytes(module, &res, &staged, keys, true));
     };
     let term = mapped_block(staged, masks[0]);
-    unit_tmp_bytes(module, a, first, masks, atk, sources)
+    unit_tmp_bytes(module, a, first, masks, keys, sources)
         .max(module.ckks_dot_product_prepared_pt_tmp_bytes(&res, &term, plaintext))
 }
 
@@ -1221,7 +1221,7 @@ fn shared_giants<'s, 'm, BE, M, D, S, K>(
     source: impl Fn(usize, usize) -> &'s S,
     map: impl Fn(usize, usize, usize) -> &'m LinearTransformationPrepared<BE>,
     label: usize,
-    atk: &K,
+    keys: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
@@ -1235,7 +1235,7 @@ where
     let (mut srcs, mut lts) = (Vec::with_capacity(inner), Vec::with_capacity(inner));
     for (g, blocks) in groups.into_iter().enumerate() {
         for (l, cache) in caches.iter_mut().enumerate() {
-            module.ckks_prepare_linear_transformation_baby_steps(cache, source(g, l), atk, scratch)?;
+            module.ckks_prepare_linear_transformation_baby_steps(cache, source(g, l), keys, scratch)?;
         }
         let babies: Vec<_> = caches.iter().collect();
         srcs.clear();
@@ -1243,7 +1243,7 @@ where
         for (o, dst) in blocks.into_iter().enumerate() {
             lts.clear();
             lts.extend((0..inner).map(|l| map(g, o, l)));
-            module.ckks_eval_linear_transformation_sum_into(&mut *dst, &srcs, &babies, &lts, atk, scratch)?;
+            module.ckks_eval_linear_transformation_sum_into(&mut *dst, &srcs, &babies, &lts, keys, scratch)?;
             dst.set_log_sparsity(label);
         }
     }
@@ -1267,7 +1267,7 @@ fn masked_products<'s, 'p, BE, D, S, K>(
     plaintexts: impl Fn(usize, usize) -> &'p [CKKSPreparedRight<BE>],
     galois: &[i64],
     label: usize,
-    atk: &K,
+    keys: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
@@ -1283,7 +1283,7 @@ where
     let mut pts = Vec::with_capacity(inner * per);
     for (g, blocks) in groups.into_iter().enumerate() {
         let sources: Vec<_> = (0..inner).map(|l| source(g, l)).collect();
-        let unit = new_unit_terms(module, &sources, first, masks, atk, convert, scratch)?;
+        let unit = new_unit_terms(module, &sources, first, masks, keys, convert, scratch)?;
         let lefts: Vec<_> = unit.iter().collect();
         for (o, dst) in blocks.into_iter().enumerate() {
             pts.clear();

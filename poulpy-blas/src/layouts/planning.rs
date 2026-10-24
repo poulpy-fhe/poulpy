@@ -138,11 +138,11 @@ pub fn blas_sum_output_layout(res: &impl BlasGridInfos, a: &impl BlasGridInfos) 
 /// The keys [`crate::api::BlasMatInterOps::blas_rotate`] by `r` looks up for `a` into `res`; see [`BlasKeyUses`].
 pub fn blas_rotate_key_uses<BE: Backend>(
     module: &Module<BE>,
+    r: i64,
     res: &impl BlasGridInfos,
     a: &impl BlasGridInfos,
-    r: i64,
 ) -> BlasKeyUses {
-    BlasKeyUses::collect(module, None, |f| rotate_uses(res, a, r, f))
+    BlasKeyUses::collect(module, None, |f| rotate_uses(r, res, a, f))
 }
 
 /// The keys [`crate::api::BlasMatInterOps::blas_sum`] looks up for `a` into `res`; see [`BlasKeyUses`].
@@ -161,9 +161,9 @@ pub fn blas_transpose_output_layout(res: &impl BlasGridInfos, a: &impl BlasGridI
 /// The layout of a row (`rows`) or column shift by `k`: a copy of `a`'s block for a shift by a multiple of `d`, else its
 /// block through the shift's maps ([`shift_maps`], of one scale) into `res`'s width.
 fn shift_output<P: LtDiagonalMeta>(
+    k: usize,
     res: &impl BlasGridInfos,
     a: &impl BlasGridInfos,
-    k: usize,
     rows: bool,
     maps: &ContextMaps<LinearTransformation<P>>,
 ) -> BlasLayout {
@@ -179,22 +179,22 @@ fn shift_output<P: LtDiagonalMeta>(
 /// The layout [`crate::api::BlasMatIntraOps::blas_rotate_rows`] by `k` stamps on `res` for `a`; see
 /// [`blas_transpose_output_layout`].
 pub fn blas_rotate_rows_output_layout(
+    k: usize,
     res: &impl BlasGridInfos,
     a: &impl BlasGridInfos,
-    k: usize,
     ctx: &impl BlasContextInfos,
 ) -> BlasLayout {
-    shift_output(res, a, k, true, &context_shapes(ctx))
+    shift_output(k, res, a, true, &context_shapes(ctx))
 }
 
 /// [`blas_rotate_rows_output_layout`] for [`crate::api::BlasMatIntraOps::blas_rotate_cols`].
 pub fn blas_rotate_cols_output_layout(
+    k: usize,
     res: &impl BlasGridInfos,
     a: &impl BlasGridInfos,
-    k: usize,
     ctx: &impl BlasContextInfos,
 ) -> BlasLayout {
-    shift_output(res, a, k, false, &context_shapes(ctx))
+    shift_output(k, res, a, false, &context_shapes(ctx))
 }
 
 /// The keys [`crate::api::BlasMatIntraOps::blas_transpose`] looks up for `a` into `res`; see [`BlasKeyUses`]. `ctx`
@@ -214,25 +214,25 @@ pub fn blas_transpose_key_uses<BE: Backend>(
 /// context or its layout: the query reads the shape of its maps.
 pub fn blas_rotate_rows_key_uses<BE: Backend>(
     module: &Module<BE>,
+    k: usize,
     res: &impl BlasGridInfos,
     a: &impl BlasGridInfos,
-    k: usize,
     ctx: &impl BlasContextInfos,
 ) -> BlasKeyUses {
     let maps = context_shapes(ctx);
-    BlasKeyUses::collect(module, None, |f| shift_uses(res, a, k, true, &maps, f))
+    BlasKeyUses::collect(module, None, |f| shift_uses(k, res, a, true, &maps, f))
 }
 
 /// [`blas_rotate_rows_key_uses`] for [`crate::api::BlasMatIntraOps::blas_rotate_cols`].
 pub fn blas_rotate_cols_key_uses<BE: Backend>(
     module: &Module<BE>,
+    k: usize,
     res: &impl BlasGridInfos,
     a: &impl BlasGridInfos,
-    k: usize,
     ctx: &impl BlasContextInfos,
 ) -> BlasKeyUses {
     let maps = context_shapes(ctx);
-    BlasKeyUses::collect(module, None, |f| shift_uses(res, a, k, false, &maps, f))
+    BlasKeyUses::collect(module, None, |f| shift_uses(k, res, a, false, &maps, f))
 }
 
 /// The largest radix in `1..=62` at which the model of `BE` holds the `products(r)` limb products that a lazy sum adds

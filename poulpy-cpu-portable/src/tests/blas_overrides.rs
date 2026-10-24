@@ -67,18 +67,19 @@ poulpy_blas::impl_blas_mat_mul_reference_full!(OverrideBackend);
 unsafe impl BlasMatIntraImpl for OverrideBackend {
     fn blas_map_blocks_tmp_bytes<D, S, K>(
         module: &Module<Self>,
+        sources: usize,
+
         dst: &D,
         src: &S,
-        sources: usize,
         lts: &[&LinearTransformationPrepared<Self>],
-        atk: &K,
+        keys: &K,
     ) -> usize
     where
         D: CKKSCtBounds,
         S: CKKSCtBounds,
         K: GGLWEInfos,
     {
-        module.blas_map_blocks_tmp_bytes_reference(dst, src, sources, lts, atk)
+        module.blas_map_blocks_tmp_bytes_reference(sources, dst, src, lts, keys)
     }
 
     fn blas_map_blocks<D, S, K>(
@@ -86,7 +87,7 @@ unsafe impl BlasMatIntraImpl for OverrideBackend {
         dst: &mut [D],
         src: &[&S],
         lts: &[&LinearTransformationPrepared<Self>],
-        atk: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> CKKSResult<()>
     where
@@ -95,19 +96,19 @@ unsafe impl BlasMatIntraImpl for OverrideBackend {
         K: GetAutomorphismKey<Self> + Sync,
     {
         MAP_CALLS.fetch_add(1, Relaxed);
-        module.blas_map_blocks_reference(dst, src, lts, atk, scratch)
+        module.blas_map_blocks_reference(dst, src, lts, keys, scratch)
     }
 }
 
 unsafe impl BlasJklsImpl for OverrideBackend {
-    fn blas_jkls_block_tmp_bytes<R, L, Rh, T>(module: &Module<Self>, res: &R, lhs: &L, rhs: &Rh, terms: usize, tsk: &T) -> usize
+    fn blas_jkls_block_tmp_bytes<R, L, Rh, T>(module: &Module<Self>, terms: usize, res: &R, lhs: &L, rhs: &Rh, tsk: &T) -> usize
     where
         R: CKKSCtBounds,
         L: CKKSCtBounds,
         Rh: CKKSCtBounds,
         T: GGLWEInfos,
     {
-        module.blas_jkls_block_tmp_bytes_reference(res, lhs, rhs, terms, tsk)
+        module.blas_jkls_block_tmp_bytes_reference(terms, res, lhs, rhs, tsk)
     }
 
     fn blas_jkls_block<R, T>(
@@ -243,10 +244,10 @@ fn blas_hooks_run_on_accepted_calls_alone() {
         module.blas_transpose(&mut res, &a, &ctx, &keys, &mut op_scratch.borrow())
     });
     assert_enters("blas_rotate_rows", (1, 0), || {
-        module.blas_rotate_rows(&mut res, &a, 1, &ctx, &keys, &mut op_scratch.borrow())
+        module.blas_rotate_rows(1, &mut res, &a, &ctx, &keys, &mut op_scratch.borrow())
     });
     assert_enters("blas_rotate_cols", (1, 0), || {
-        module.blas_rotate_cols(&mut res, &a, 1, &ctx, &keys, &mut op_scratch.borrow())
+        module.blas_rotate_cols(1, &mut res, &a, &ctx, &keys, &mut op_scratch.borrow())
     });
     // Hot operands at `side(OneShot)`, cold ones at `side(Reuse)`.
     let side = |hint| usize::from(hint == Reuse);
@@ -319,10 +320,10 @@ fn blas_hooks_run_on_accepted_calls_alone() {
         let rejected = |call: &str, result: CKKSResult<()>| assert_rejected(&format!("{label}: {call}"), result);
         rejected("transpose a", module.blas_transpose(res, &bad, &ctx, &keys, s));
         rejected("transpose res", module.blas_transpose(&mut bad, &a, &ctx, &keys, s));
-        rejected("rotate_rows a", module.blas_rotate_rows(res, &bad, 1, &ctx, &keys, s));
-        rejected("rotate_rows res", module.blas_rotate_rows(&mut bad, &a, 1, &ctx, &keys, s));
-        rejected("rotate_cols a", module.blas_rotate_cols(res, &bad, 1, &ctx, &keys, s));
-        rejected("rotate_cols res", module.blas_rotate_cols(&mut bad, &a, 1, &ctx, &keys, s));
+        rejected("rotate_rows a", module.blas_rotate_rows(1, res, &bad, &ctx, &keys, s));
+        rejected("rotate_rows res", module.blas_rotate_rows(1, &mut bad, &a, &ctx, &keys, s));
+        rejected("rotate_cols a", module.blas_rotate_cols(1, res, &bad, &ctx, &keys, s));
+        rejected("rotate_cols res", module.blas_rotate_cols(1, &mut bad, &a, &ctx, &keys, s));
         rejected("matmul a", module.blas_matmul(res, &bad, &a, &ctx, &keys, &keys, s));
         rejected("matmul b", module.blas_matmul(res, &a, &bad, &ctx, &keys, &keys, s));
         rejected("matmul res", module.blas_matmul(&mut bad, &a, &a, &ctx, &keys, &keys, s));
@@ -350,8 +351,8 @@ fn blas_hooks_run_on_accepted_calls_alone() {
     for (label, ctx) in &foreign {
         let rejected = |call: &str, result: CKKSResult<()>| assert_rejected(&format!("{label} context: {call}"), result);
         rejected("transpose", module.blas_transpose(&mut res, &a, ctx, &keys, s));
-        rejected("rotate_rows", module.blas_rotate_rows(&mut res, &a, 1, ctx, &keys, s));
-        rejected("rotate_cols", module.blas_rotate_cols(&mut res, &a, 1, ctx, &keys, s));
+        rejected("rotate_rows", module.blas_rotate_rows(1, &mut res, &a, ctx, &keys, s));
+        rejected("rotate_cols", module.blas_rotate_cols(1, &mut res, &a, ctx, &keys, s));
         rejected("matmul", module.blas_matmul(&mut res, &a, &a, ctx, &keys, &keys, s));
         for hint in HINTS {
             assert_rejected(
@@ -380,8 +381,8 @@ fn blas_hooks_run_on_accepted_calls_alone() {
     );
     let rejected = |call: &str, result: CKKSResult<()>| assert_rejected(&format!("no rotation keys: {call}"), result);
     rejected("transpose", module.blas_transpose(&mut res, &a, &ctx, &no_atks, s));
-    rejected("rotate_rows", module.blas_rotate_rows(&mut res, &a, 1, &ctx, &no_atks, s));
-    rejected("rotate_cols", module.blas_rotate_cols(&mut res, &a, 1, &ctx, &no_atks, s));
+    rejected("rotate_rows", module.blas_rotate_rows(1, &mut res, &a, &ctx, &no_atks, s));
+    rejected("rotate_cols", module.blas_rotate_cols(1, &mut res, &a, &ctx, &no_atks, s));
     rejected("matmul", module.blas_matmul(&mut res, &a, &a, &ctx, &no_atks, &no_atks, s));
     for hint in HINTS {
         assert_rejected(

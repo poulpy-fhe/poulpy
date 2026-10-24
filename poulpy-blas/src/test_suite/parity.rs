@@ -421,7 +421,7 @@ where
         let keys = fixture_keys(params, module, &plan.rotate_galois_elements(order, r), false);
         let mut res = operand(params, module, log_d, 2, 2, 70);
         with_scratch::<B, _>(module.blas_rotate_tmp_bytes(&res, src, &key), |s| {
-            module.blas_rotate(&mut res, src, r, &keys, s)
+            module.blas_rotate(r, &mut res, src, &keys, s)
         })
         .unwrap();
         out.push(output("blas_rotate", &res, &keys));
@@ -477,7 +477,7 @@ where
     vec![
         failure::<B>("blas_rotate", &mut res, &[&a], &rotate, |res| {
             with_scratch::<B, _>(module.blas_rotate_tmp_bytes(res, &a, &key), |s| {
-                module.blas_rotate(res, &a, 3, &rotate, s)
+                module.blas_rotate(3, res, &a, &rotate, s)
             })
         }),
         failure::<B>("blas_sum", &mut res, &[&a], &sum, |res| {
@@ -542,14 +542,14 @@ where
         if rows {
             let keys = fixture_keys(params, module, &plan.rotate_rows_galois_elements(order, k), false);
             with_scratch::<B, _>(module.blas_rotate_rows_tmp_bytes(&res, src, ctx, &key), |s| {
-                module.blas_rotate_rows(&mut res, src, k, ctx, &keys, s)
+                module.blas_rotate_rows(k, &mut res, src, ctx, &keys, s)
             })
             .unwrap();
             output("blas_rotate_rows", &res, &keys)
         } else {
             let keys = fixture_keys(params, module, &plan.rotate_cols_galois_elements(order, k), false);
             with_scratch::<B, _>(module.blas_rotate_cols_tmp_bytes(&res, src, ctx, &key), |s| {
-                module.blas_rotate_cols(&mut res, src, k, ctx, &keys, s)
+                module.blas_rotate_cols(k, &mut res, src, ctx, &keys, s)
             })
             .unwrap();
             output("blas_rotate_cols", &res, &keys)
@@ -597,12 +597,12 @@ where
         }),
         failure::<B>("blas_rotate_rows", &mut res, &[&a], &rows, |res| {
             with_scratch::<B, _>(module.blas_rotate_rows_tmp_bytes(res, &a, &ctx, &key), |s| {
-                module.blas_rotate_rows(res, &a, 1, &ctx, &rows, s)
+                module.blas_rotate_rows(1, res, &a, &ctx, &rows, s)
             })
         }),
         failure::<B>("blas_rotate_cols", &mut res, &[&a], &cols, |res| {
             with_scratch::<B, _>(module.blas_rotate_cols_tmp_bytes(res, &a, &ctx, &key), |s| {
-                module.blas_rotate_cols(res, &a, d / 2, &ctx, &cols, s)
+                module.blas_rotate_cols(d / 2, res, &a, &ctx, &cols, s)
             })
         }),
     ]

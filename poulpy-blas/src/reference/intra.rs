@@ -26,11 +26,11 @@ pub trait BlasMatIntraReference<BE: Backend> {
     /// layout `dst`.
     fn blas_map_blocks_tmp_bytes_reference<D, S, K>(
         &self,
+        _sources: usize,
         dst: &D,
         src: &S,
-        _sources: usize,
         _lts: &[&LinearTransformationPrepared<BE>],
-        atk: &K,
+        keys: &K,
     ) -> usize
     where
         Self: CKKSLinearTransformationOps<BE>,
@@ -38,7 +38,7 @@ pub trait BlasMatIntraReference<BE: Backend> {
         S: CKKSCtBounds,
         K: GGLWEInfos,
     {
-        lt_tmp_bytes(self, dst, src, atk, false)
+        lt_tmp_bytes(self, dst, src, keys, false)
     }
 
     /// `dst[t * lts.len() + m] = lts[m](src[t])`, stamped with the label of `src[t]`. Per source, one baby-step cache
@@ -53,7 +53,7 @@ pub trait BlasMatIntraReference<BE: Backend> {
         dst: &mut [D],
         src: &[&S],
         lts: &[&LinearTransformationPrepared<BE>],
-        atk: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -75,14 +75,14 @@ pub trait BlasMatIntraReference<BE: Backend> {
         };
         // At the blocks' widths, as the callers' queries read them, not their allocations.
         let (dst_layout, src_layout) = (layout_of(first_dst), layout_of(first));
-        let bytes = |key: &GGLWELayout| self.blas_map_blocks_tmp_bytes_reference(&dst_layout, &src_layout, src.len(), lts, key);
-        assert_maps_scratch(op, self, lts, atk, first.k(), first_dst.k(), first.rank(), bytes, scratch);
+        let bytes = |key: &GGLWELayout| self.blas_map_blocks_tmp_bytes_reference(src.len(), &dst_layout, &src_layout, lts, key);
+        assert_maps_scratch(op, self, lts, keys, first.k(), first_dst.k(), first.rank(), bytes, scratch);
         let rotations: Vec<i64> = lts.iter().flat_map(|lt| lt.baby_steps().iter().copied()).collect();
         let mut babies = LinearTransformationBabySteps::alloc(self, &rotations, first);
         for (&src, dst) in src.iter().zip(dst.chunks_mut(lts.len())) {
-            self.ckks_prepare_linear_transformation_baby_steps(&mut babies, src, atk, scratch)?;
+            self.ckks_prepare_linear_transformation_baby_steps(&mut babies, src, keys, scratch)?;
             for (dst, lt) in dst.iter_mut().zip(lts) {
-                self.ckks_eval_linear_transformation_into(dst, src, &babies, lt, atk, scratch)?;
+                self.ckks_eval_linear_transformation_into(dst, src, &babies, lt, keys, scratch)?;
                 dst.set_log_sparsity(src.log_sparsity());
             }
         }

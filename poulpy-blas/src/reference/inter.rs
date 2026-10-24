@@ -23,24 +23,24 @@ use crate::layouts::{
 /// and the first error stops them.
 pub trait BlasMatInterReference<BE: Backend> {
     /// The rotation of one block.
-    fn blas_rotate_tmp_bytes_reference<R, A, K>(&self, res: &R, a: &A, atk: &K) -> usize
+    fn blas_rotate_tmp_bytes_reference<R, A, K>(&self, res: &R, a: &A, keys: &K) -> usize
     where
         Self: CKKSRotateOps<BE>,
         R: BlasGridInfos,
         A: BlasGridInfos,
         K: GGLWEInfos,
     {
-        self.ckks_rotate_tmp_bytes(&res.block_layout(), atk)
-            .max(self.ckks_rotate_tmp_bytes(&a.block_layout(), atk))
+        self.ckks_rotate_tmp_bytes(&res.block_layout(), keys)
+            .max(self.ckks_rotate_tmp_bytes(&a.block_layout(), keys))
     }
 
     /// `ckks_rotate_into` by `r d^2` slots on every block.
     fn blas_rotate_reference<R, A, K>(
         &self,
+        r: i64,
         res: &mut R,
         a: &A,
-        r: i64,
-        atk: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -50,7 +50,7 @@ pub trait BlasMatInterReference<BE: Backend> {
         K: GetAutomorphismKey<BE> + Sync;
 
     /// The loop over one block carves, rotates and adds on the layout of a block of `res`.
-    fn blas_sum_tmp_bytes_reference<R, A, K>(&self, res: &R, a: &A, atk: &K) -> usize
+    fn blas_sum_tmp_bytes_reference<R, A, K>(&self, res: &R, a: &A, keys: &K) -> usize
     where
         Self: CKKSRotateOps<BE> + CKKSAddOps<BE> + CKKSCopyOps<BE> + GLWEBytesOf<BE>,
         R: BlasGridInfos,
@@ -60,13 +60,13 @@ pub trait BlasMatInterReference<BE: Backend> {
         let (res, a) = (res.block_layout(), a.block_layout());
         BE::scratch_aligned(self.glwe_bytes_of_from_infos(&res))
             + self
-                .ckks_rotate_tmp_bytes(&res, atk)
+                .ckks_rotate_tmp_bytes(&res, keys)
                 .max(self.ckks_add_tmp_bytes(res.size()))
                 .max(self.ckks_copy_tmp_bytes(&res, &a))
     }
 
     /// Per block, `res = a`, then `res += rot(res, 2^i d^2)` for every `i < log2(mat_slots)` in order.
-    fn blas_sum_reference<R, A, K>(&self, res: &mut R, a: &A, atk: &K, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn blas_sum_reference<R, A, K>(&self, res: &mut R, a: &A, keys: &K, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Self: CKKSRotateOps<BE> + CKKSAddOps<BE> + CKKSCopyOps<BE> + GLWEBytesOf<BE>,
         R: BlasGridMut<BE>,
@@ -77,10 +77,10 @@ pub trait BlasMatInterReference<BE: Backend> {
 impl<BE: Backend> BlasMatInterReference<BE> for Module<BE> {
     fn blas_rotate_reference<R, A, K>(
         &self,
+        r: i64,
         res: &mut R,
         a: &A,
-        r: i64,
-        atk: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -90,20 +90,20 @@ impl<BE: Backend> BlasMatInterReference<BE> for Module<BE> {
         K: GetAutomorphismKey<BE> + Sync,
     {
         let op = "blas_rotate";
-        let batch = validate_blas_rotate(self, &*res, a, r, atk)?;
+        let batch = validate_blas_rotate(self, r, &*res, a, keys)?;
         let rotation = r << (2 * a.log_d());
-        let used = KeyLayouts::new(atk);
-        let _ = rotate_uses(&*res, a, r, &mut |u| ensure_rotation(op, self, &used, u));
+        let used = KeyLayouts::new(keys);
+        let _ = rotate_uses(r, &*res, a, &mut |u| ensure_rotation(op, self, &used, u));
         let bytes = used.max_bytes(|key| self.blas_rotate_tmp_bytes_reference(&*res, a, key));
         assert_scratch(op, bytes, scratch);
         for (dst, src) in res.blocks_mut().iter_mut().zip(a.blocks()) {
-            self.ckks_rotate_into(rotation, dst, src, atk, scratch)?;
+            self.ckks_rotate_into(rotation, dst, src, keys, scratch)?;
         }
         res.set_mat_slots(batch);
         Ok(())
     }
 
-    fn blas_sum_reference<R, A, K>(&self, res: &mut R, a: &A, atk: &K, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn blas_sum_reference<R, A, K>(&self, res: &mut R, a: &A, keys: &K, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Self: CKKSRotateOps<BE> + CKKSAddOps<BE> + CKKSCopyOps<BE> + GLWEBytesOf<BE>,
         R: BlasGridMut<BE>,
@@ -111,9 +111,9 @@ impl<BE: Backend> BlasMatInterReference<BE> for Module<BE> {
         K: GetAutomorphismKey<BE> + Sync,
     {
         let op = "blas_sum";
-        let batch = validate_blas_sum(self, &*res, a, atk)?;
+        let batch = validate_blas_sum(self, &*res, a, keys)?;
         let rotations: Vec<i64> = sum_rotations(a.log_d(), grid_batch::<BE::Ring>(a)).collect();
-        let used = KeyLayouts::new(atk);
+        let used = KeyLayouts::new(keys);
         let _ = sum_uses::<BE::Ring>(&*res, a, &mut |u| ensure_rotation(op, self, &used, u));
         let bytes = used.max_bytes(|key| self.blas_sum_tmp_bytes_reference(&*res, a, key));
         assert_scratch(op, bytes, scratch);
@@ -123,7 +123,7 @@ impl<BE: Backend> BlasMatInterReference<BE> for Module<BE> {
             for &rotation in &rotations {
                 scratch.scope(|s| -> Result<()> {
                     let (mut rotated, mut s) = s.take_ckks_ciphertext_like_scratch(&*dst);
-                    self.ckks_rotate_into(rotation, &mut rotated, &*dst, atk, &mut s)?;
+                    self.ckks_rotate_into(rotation, &mut rotated, &*dst, keys, &mut s)?;
                     self.ckks_add_assign(dst, &rotated, &mut s)
                 })?;
             }
