@@ -16,14 +16,27 @@ use crate::{
 
 type Word = CrtWord<Primes30, u32>;
 
+/// Panics unless the view of `binding` holds its first `elems` elements of `T`: the
+/// kernels launch unchecked, so a layout wider than its storage must stop here.
+fn assert_holds<T>(binding: &Binding, elems: usize) {
+    let start = binding.base::<T>() as usize;
+    assert!(
+        (start + elems) * size_of::<T>() <= binding.offset + binding.len,
+        "device storage shorter than its layout"
+    );
+}
+
 fn column(binding: Option<Binding>, shape: VecZnxShape, col: usize, words: u32) -> Option<Column> {
-    assert!(col < shape.cols(), "column {col} out of range ({} columns)", shape.cols());
+    assert!(col < shape.cols(), "operand column out of range");
     let binding = binding?;
     let base = binding.base::<u64>() as usize + shape.scalar_offset(col, 0) * words as usize;
     let stride = shape.limb_step() * shape.cols() * shape.n_full() * words as usize;
     // The kernels index in 32 bits: the last word of the column must be in range.
     let end = base + stride * shape.size().saturating_sub(1) + shape.n() * words as usize;
     assert!(u32::try_from(end).is_ok(), "device column ends beyond the 32-bit word range");
+    if shape.size() > 0 {
+        assert_holds::<u64>(&binding, end - binding.base::<u64>() as usize);
+    }
     Some(Column {
         base: u32::try_from(base).expect("device view starts beyond the 32-bit word range"),
         stride: u32::try_from(stride).expect("limb stride beyond the 32-bit word range"),
@@ -62,9 +75,10 @@ pub(crate) fn big_column_mut<RT: GpuRuntime, B: Backend<BigWord = i128>>(
 
 /// A DFT-domain vector is dense: limb `j` of column `col` is block `j * cols + col`.
 fn dft_column(binding: Option<Binding>, n: usize, cols: usize, size: usize, col: usize) -> Option<DftColumn> {
-    assert!(col < cols, "column {col} out of range ({cols} columns)");
+    assert!(col < cols, "operand column out of range");
     let binding = binding?;
     let block = 4 * n;
+    assert_holds::<u32>(&binding, cols * size * block);
     Some(DftColumn {
         base: u32::try_from(binding.base::<u32>() as usize + col * block)
             .expect("device view starts beyond the 32-bit word range"),
@@ -133,6 +147,7 @@ pub(crate) fn svp_column<D: Bind, B: Backend<DftWord = Word>>(a: &SvpPPol<D, Wor
 /// A prepared matrix, or `None` when it holds no storage.
 pub(crate) fn pmat<D: Bind, B: Backend<DftWord = Word>>(a: &VmpPMat<D, Word, B>) -> Option<Pmat> {
     let binding = a.data().bind()?;
+    assert_holds::<u32>(&binding, a.rows() * a.cols_in() * a.cols_out() * a.size() * 4 * a.n());
     Some(Pmat {
         base: binding.base::<u32>(),
         n: a.n(),
@@ -148,6 +163,7 @@ pub(crate) fn pmat<D: Bind, B: Backend<DftWord = Word>>(a: &VmpPMat<D, Word, B>)
 /// column, in the block order of the prepared matrix.
 pub(crate) fn mat_blocks<D: Bind>(a: &MatZnx<D, i64>) -> Option<Column> {
     let binding = a.data().bind()?;
+    assert_holds::<u64>(&binding, a.rows() * a.cols_in() * a.cols_out() * a.size() * a.n());
     Some(Column {
         base: binding.base::<u64>(),
         stride: a.n() as u32,
@@ -160,8 +176,9 @@ pub(crate) fn mat_blocks<D: Bind>(a: &MatZnx<D, i64>) -> Option<Column> {
 
 /// Column `col` of a scalar polynomial vector, as a one-limb column.
 pub(crate) fn scalar_column<D: Bind>(a: &ScalarZnx<D, i64>, col: usize) -> Option<Column> {
-    assert!(col < a.cols(), "column {col} out of range ({} columns)", a.cols());
+    assert!(col < a.cols(), "operand column out of range");
     let binding = a.data().bind()?;
+    assert_holds::<u64>(&binding, a.cols() * a.n());
     Some(Column {
         base: u32::try_from(binding.base::<u64>() as usize + col * a.n())
             .expect("device view starts beyond the 32-bit word range"),

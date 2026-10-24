@@ -26,9 +26,11 @@ poulpy_core::core_parity_test_suite! {
         lwe_conversion => poulpy_core::test_suite::parity::test_lwe_conversion_parity,
         gglwe_product_digits_strided => poulpy_core::test_suite::parity::test_gglwe_product_digits_strided_parity,
         polynomial_evaluation => poulpy_core::test_suite::parity::test_polynomial_evaluation_parity,
+        glwe_trace => poulpy_core::test_suite::parity::test_glwe_trace_parity,
         trace_packing => poulpy_core::test_suite::parity::test_trace_packing_parity,
         tensor_relinearize_decrypt => poulpy_core::test_suite::parity::test_tensor_relinearize_decrypt_parity,
         linear_transformation => poulpy_core::test_suite::parity::test_linear_transformation_parity,
+        linear_transformation_powers_of_two => poulpy_core::test_suite::parity::test_linear_transformation_powers_of_two_parity,
         sampling => poulpy_core::test_suite::sampling::test_sampling_contract,
         preparation => poulpy_core::test_suite::parity::test_preparation_contract,
         glwe_add => poulpy_core::test_suite::parity::test_glwe_add_parity,
@@ -90,4 +92,5 @@ fn conjugate_invariant_core_parity() {
     poulpy_core::test_suite::parity::test_glwe_keyswitch_parity(&params, &shapes, &reference, &module);
     poulpy_core::test_suite::parity::test_glwe_external_product_parity(&params, &shapes, &reference, &module);
     poulpy_core::test_suite::parity::test_glwe_automorphism_parity(&params, &shapes, &reference, &module);
+    poulpy_core::test_suite::parity::test_glwe_trace_parity(&params, &shapes, &reference, &module);
 }

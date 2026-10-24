@@ -664,7 +664,11 @@
 
 ### `poulpy-gpu-portable`
 
-- New crate: the `NTT4x30` subfamily on GPUs through CubeCL 0.11, bit-identical to `NTT4x30Portable`, for both rings. One implementation behind `NTT4x30Cuda`, `NTT4x30Hip` and `NTT4x30Wgpu` (`enable-cuda`, `enable-hip`, `enable-metal`, `enable-vulkan`, `enable-wgpu`), with `enable-core` and `enable-ckks`. CKKS encoding and sampling are staged through the host. `Replay` records a repeated sequence of calls and replays it as one graph. See `docs/backends.md`.
+- New crate: the `NTT4x30` subfamily on GPUs through CubeCL 0.11, bit-identical to `NTT4x30Portable`, for both rings.
+  One implementation behind `NTT4x30Cuda`, `NTT4x30Hip` and `NTT4x30Wgpu` (`enable-cuda`, `enable-hip`, `enable-metal`, `enable-vulkan`, `enable-wgpu`), with `enable-core` and `enable-ckks`.
+  CKKS encoding and sampling are staged through the host.
+  `Replay` records a repeated sequence of calls and replays it as one graph.
+  See `docs/backends.md`.
 
 ### `poulpy-bench`
 

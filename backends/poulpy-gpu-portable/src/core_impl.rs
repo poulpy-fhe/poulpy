@@ -133,9 +133,13 @@ unsafe impl<RT: GpuRuntime, R: Ring> SamplingImpl for NTT4x30Gpu<RT, R> {
     ) {
         let n = res.n();
         assert!(n.is_power_of_two() && n <= module.n(), "noise degree outside module");
-        assert!(base2k >= 1, "noise radix must be positive");
+        // The checks of the portable sampler, before anything is drawn.
+        noise.validate();
+        assert!((1..=63).contains(&base2k), "noise radix must be in 1..=63");
+        assert!(k > 0, "noise precision must be positive");
         let size = k.div_ceil(base2k);
         assert!(size <= res.size(), "noise precision exceeds destination allocation");
+        assert!(res_col < res.cols(), "noise column exceeds destination allocation");
         let mut host = VecZnx::<AlignedBuf, i64>::from_data(AlignedBuf::from(vec![0u8; n * size * size_of::<i64>()]), n, 1, size);
         add_noise_portable(base2k, k, &mut host, 0, noise, &mut Source::new(seed));
         let Some(res) = column_mut(res, res_col) else { return };
@@ -153,9 +157,13 @@ unsafe impl<RT: GpuRuntime, R: Ring> SamplingImpl for NTT4x30Gpu<RT, R> {
     ) {
         let n = res.n();
         assert!(n.is_power_of_two() && n <= module.n(), "noise degree outside module");
-        assert!(base2k >= 1, "noise radix must be positive");
+        // The checks of the portable sampler, before anything is drawn.
+        noise.validate();
+        assert!((1..=63).contains(&base2k), "noise radix must be in 1..=63");
+        assert!(k > 0, "noise precision must be positive");
         let size = k.div_ceil(base2k);
         assert!(size <= res.size(), "noise precision exceeds destination allocation");
+        assert!(res_col < res.cols(), "noise column exceeds destination allocation");
         let mut host = VecZnxBig::<AlignedBuf, i128, NTT4x30Portable>::from_data(
             AlignedBuf::from(vec![0u8; n * size * size_of::<i128>()]),
             n,
@@ -617,17 +625,6 @@ mod wgpu {
     impl_core_standard!(crate::NTT4x30Wgpu);
     impl_core!(crate::NTT4x30Wgpu<ConjugateInvariant>);
     impl_tensoring!(crate::NTT4x30Wgpu<ConjugateInvariant>);
-}
-
-#[cfg(feature = "enable-cpu")]
-mod cpu {
-    use super::ConjugateInvariant;
-    type Cpu<R = poulpy_hal::layouts::Standard> = crate::NTT4x30Gpu<crate::runtime::Cpu, R>;
-    impl_core!(Cpu);
-    impl_tensoring!(Cpu);
-    impl_core_standard!(Cpu);
-    impl_core!(Cpu<ConjugateInvariant>);
-    impl_tensoring!(Cpu<ConjugateInvariant>);
 }
 
 #[cfg(feature = "enable-cuda")]

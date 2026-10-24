@@ -194,6 +194,8 @@ static TOTALS: [Totals; LABELS.len()] = [const {
 static ALLOCATIONS: AtomicU64 = AtomicU64::new(0);
 static REPLAYS: AtomicU64 = AtomicU64::new(0);
 
+#[cfg(test)]
+#[allow(dead_code, reason = "read by the tests of an enabled runtime")]
 /// Kernel launches, the bytes they were sized to read plus write, the
 /// device allocations requested from CubeCL, and the graph replays.
 ///
@@ -208,6 +210,8 @@ pub struct LaunchCounters {
     pub replays: u64,
 }
 
+#[cfg(test)]
+#[allow(dead_code, reason = "read by the tests of an enabled runtime")]
 /// The launches of one kernel.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct KernelCounters {
@@ -216,6 +220,8 @@ pub struct KernelCounters {
     pub bytes: u64,
 }
 
+#[cfg(test)]
+#[allow(dead_code, reason = "read by the tests of an enabled runtime")]
 /// Launches issued by every backend type of this crate since the last reset.
 pub fn launch_counters() -> LaunchCounters {
     let mut counters = LaunchCounters {
@@ -230,6 +236,8 @@ pub fn launch_counters() -> LaunchCounters {
     counters
 }
 
+#[cfg(test)]
+#[allow(dead_code, reason = "read by the tests of an enabled runtime")]
 /// [`launch_counters`] per kernel, for the kernels launched at least once,
 /// largest byte count first.
 pub fn launch_breakdown() -> Vec<KernelCounters> {
@@ -303,6 +311,8 @@ pub(crate) mod profile {
     }
 }
 
+#[cfg(test)]
+#[allow(dead_code, reason = "read by the tests of an enabled runtime")]
 /// Resets [`launch_counters`] and [`launch_breakdown`].
 pub fn reset_launch_counters() {
     for totals in &TOTALS {
@@ -542,7 +552,6 @@ pub(crate) use launch;
 #[cfg(all(
     test,
     any(
-        feature = "enable-cpu",
         feature = "enable-cuda",
         feature = "enable-hip",
         feature = "enable-metal",

@@ -116,8 +116,6 @@ Limits of the GPU backends:
 - A window whose degree is not a power-of-two fraction of its operand's is rejected with a panic.
 - The suites pass on Metal and on HIP (Radeon RX 7900 XTX). The CUDA and Vulkan registrations compile from the same code but have not been run.
 
-Without a GPU, the feature `enable-cpu` runs the test suites on CubeCL's CPU runtime, which compiles the kernels through the same LLVM path as the CUDA and HIP runtimes. It is for tests only: no backend type is exported for it.
-
 ## How to use a backend
 
 A backend is selected by naming its type when you build the `Module`.

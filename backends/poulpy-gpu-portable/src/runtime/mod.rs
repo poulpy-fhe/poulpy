@@ -8,8 +8,6 @@ mod launch;
 mod replay;
 
 pub(crate) use buffer::{GpuBuf, GpuMut, GpuRef, read_at, write_at};
-#[cfg(feature = "enable-cpu")]
-pub(crate) use device::Cpu;
 #[cfg(feature = "enable-cuda")]
 pub use device::Cuda;
 pub use device::GpuRuntime;
@@ -19,11 +17,14 @@ pub use device::Hip;
 pub use device::Wgpu;
 pub(crate) use device::on_stream;
 pub(crate) use device::{NttGeometry, RuntimeDevice};
+pub use launch::HostEvents;
 #[cfg(test)]
 pub(crate) use launch::profile;
 pub(crate) use launch::{
     Binding, Bound, BufferArgs, HostEvent, Label, Trace, Tracer, cubes, host_event, launch, launched, replayed, trace_launch,
     tracing,
 };
-pub use launch::{HostEvents, KernelCounters, LaunchCounters, launch_breakdown, launch_counters, reset_launch_counters};
+#[cfg(test)]
+#[allow(unused_imports, reason = "read by the tests of an enabled runtime")]
+pub(crate) use launch::{launch_breakdown, launch_counters, reset_launch_counters};
 pub(crate) use replay::{GraphRecording, record};

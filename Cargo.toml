@@ -63,6 +63,7 @@ poulpy-cpu-avx512 = {path = "backends/poulpy-cpu-avx512", version = "0.9.0"}
 poulpy-cpu-arm = {path = "backends/poulpy-cpu-arm", version = "0.9.0"}
 poulpy-cpu-rayon = {path = "backends/poulpy-cpu-rayon", version = "0.9.0"}
 poulpy-cpu-oracle = {path = "backends/poulpy-cpu-oracle"}
+poulpy-gpu-portable = {path = "backends/poulpy-gpu-portable", version = "0.9.0"}
 poulpy-bench = {path = "tools/poulpy-bench"}
 
 dashu-float = "0.6.2"
@@ -80,6 +81,10 @@ itertools = "0.15.0"
 criterion = "0.8.2"
 byteorder = "1.5.0"
 once_cell = "1.21.4"
+# The GPU backend pins CubeCL: its kernels and launch geometry follow this release.
+cubecl = "=0.11.3"
+cubecl-environment = "=0.11.3"
+pollster = "0.4"
 rayon = "1.12.0"
 bytemuck = { version = "1.25.2", features = ["min_const_generics"] }
 paste = "1.0.15"

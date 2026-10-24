@@ -41,9 +41,8 @@ impl<RT: GpuRuntime> GpuHandle<RT> {
 
     /// Runs `f` on an uninitialized device temporary of `len` bytes, the one of
     /// the in-place permutations and of the inverse transform that keeps its
-    /// source. Each call takes its own from the allocator, which recycles
-    /// memory per stream: threads sharing the module run on different streams
-    /// and must not share a temporary.
+    /// source. Each call takes its own from the allocator, which recycles freed
+    /// memory, so that threads sharing the module never share a temporary.
     pub(crate) fn with_temp<T>(&self, len: usize, f: impl FnOnce(&mut GpuBuf<RT>) -> T) -> T {
         f(&mut GpuBuf::uninit(len))
     }
@@ -57,6 +56,18 @@ pub(crate) fn handle<RT: GpuRuntime, R: Ring>(module: &Module<NTT4x30Gpu<RT, R>>
 
 unsafe impl<RT: GpuRuntime, R: Ring> HalModuleImpl for NTT4x30Gpu<RT, R> {
     fn new(n: u64) -> Module<Self> {
+        // The degree is checked before any table is built or uploaded.
+        const { assert!(1 << crate::ntt4x30::tables::MIN_LOG_N == <Self as poulpy_hal::layouts::Backend>::MIN_DEGREE) };
+        assert!(n.is_power_of_two(), "n must be a power of two, got {n}");
+        assert!(
+            n as usize >= <Self as poulpy_hal::layouts::Backend>::MIN_DEGREE,
+            "n is below the backend's minimum degree"
+        );
+        assert!(
+            n <= poulpy_hal::layouts::MAX_RING_DEGREE,
+            "ring degree {n} exceeds the supported maximum {}",
+            poulpy_hal::layouts::MAX_RING_DEGREE
+        );
         // The client is created here so that a missing device fails at construction.
         RT::client();
         let handle = Box::new(GpuHandle::<RT> {

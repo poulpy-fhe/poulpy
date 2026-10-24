@@ -4,6 +4,14 @@
 //! results are bit-identical to `NTT4x30Portable`. The implementation is
 //! written once on [`NTT4x30Gpu`]; each CubeCL runtime gets its own backend
 //! type, so several runtimes can run side by side in one process.
+//!
+//! # Features
+//!
+//! - `enable-cuda`: [`NTT4x30Cuda`], on CubeCL's CUDA runtime.
+//! - `enable-hip`: [`NTT4x30Hip`], on CubeCL's HIP runtime.
+//! - `enable-metal`, `enable-vulkan`, `enable-wgpu`: [`NTT4x30Wgpu`], on CubeCL's wgpu runtime with
+//!   the Metal, Vulkan or WebGPU shader compiler.
+//! - `enable-core`, `enable-ckks`: the `poulpy-core` and `poulpy-ckks` families on every backend type.
 
 mod backend;
 #[cfg(feature = "enable-ckks")]
@@ -32,9 +40,10 @@ pub use runtime::Cuda;
 pub use runtime::Hip;
 #[cfg(any(feature = "enable-metal", feature = "enable-vulkan", feature = "enable-wgpu"))]
 pub use runtime::Wgpu;
-pub use runtime::{
-    GpuRuntime, HostEvents, KernelCounters, LaunchCounters, launch_breakdown, launch_counters, reset_launch_counters,
-};
+pub use runtime::{GpuRuntime, HostEvents};
+#[cfg(test)]
+#[allow(unused_imports, reason = "read by the tests of an enabled runtime")]
+pub(crate) use runtime::{launch_breakdown, launch_counters, reset_launch_counters};
 
 /// NTT4x30 on CubeCL's CUDA runtime.
 #[cfg(feature = "enable-cuda")]

@@ -19,8 +19,8 @@
 use super::primes::{MAX_LOG_N, Q, companion, inv_mod, mul_mod, omega_pow2};
 use crate::runtime::{GpuBuf, GpuRuntime};
 
-/// Smallest degree with tables: `Backend::MIN_DEGREE`.
-const MIN_LOG_N: u32 = 3;
+/// Smallest degree with tables: `Backend::MIN_DEGREE`, which module construction checks.
+pub(crate) const MIN_LOG_N: u32 = 3;
 
 fn powers(root: u32, n: usize, q: u32) -> Vec<u32> {
     let mut powers = vec![1u32; n];

@@ -226,7 +226,8 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxImpl for NTT4x30Gpu<RT, R> {
     ) {
         // The stream is part of the contract, so the draws come from the
         // portable sampler and reach the device limb by limb.
-        assert!(res_col < res.cols(), "vec_znx_fill_uniform: column {res_col} out of range");
+        assert!(res_col < res.cols(), "operand column out of range");
+        poulpy_hal::layouts::assert_dense(res, "vec_znx_fill_uniform");
         let (n, size) = (res.n(), res.size());
         let mut host = VecZnx::<AlignedBuf, i64>::from_data(AlignedBuf::from(vec![0u8; n * size * size_of::<i64>()]), n, 1, size);
         let mut source = Source::new(seed);

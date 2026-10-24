@@ -23,7 +23,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalSvpImpl for NTT4x30Gpu<RT, R> {
         a_col: usize,
     ) {
         check_degree::<Self>(module.n(), res.n());
-        assert_eq!(a.n(), res.n(), "svp_prepare: a.n() != res.n()");
+        assert!(a.n() == res.n(), "svp_prepare: operand degrees differ");
         let Some(res) = svp_column(res, res_col) else { return };
         let a = scalar_column(a, a_col).expect("svp_prepare: a holds no storage");
         forward::<RT>(handle(module).tables(), &res, &a, 1);
@@ -36,8 +36,8 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalSvpImpl for NTT4x30Gpu<RT, R> {
         a: &SvpPPolBackendRef<'_, Self>,
         a_col: usize,
     ) {
-        assert_eq!(a.n(), res.n(), "svp_ppol_copy: a.n() != res.n()");
-        assert_eq!(a.hint(), res.hint(), "svp_ppol_copy: a.hint() != res.hint()");
+        assert!(a.n() == res.n(), "svp_ppol_copy: operand degrees differ");
+        assert!(a.hint() == res.hint(), "svp_ppol_copy: operand hints differ");
         let Some(res) = svp_column(res, res_col) else { return };
         let a = svp_column(a, a_col).expect("svp_ppol_copy: a holds no storage");
         combine::<RT>(&res, 1, DftTerm::plus(&a), DftTerm::zero(&a));
@@ -57,7 +57,9 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalSvpImpl for NTT4x30Gpu<RT, R> {
         b_col: usize,
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
-        // The transform of `b` lands in `res`, which is then scaled in place.
+        // `a` is checked before the transform of `b` lands in `res`, which is then scaled in place.
+        assert!(a.n() == res.n(), "svp_apply_dft: operand degrees differ");
+        svp_column(a, a_col);
         Self::vec_znx_dft_apply(module, 1, 0, res, res_col, b, b_col);
         Self::svp_apply_dft_to_dft_assign(module, res, res_col, a, a_col);
     }
@@ -88,7 +90,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalSvpImpl for NTT4x30Gpu<RT, R> {
         a: &SvpPPolBackendRef<'_, Self>,
         a_col: usize,
     ) {
-        assert_eq!(a.n(), res.n(), "svp_apply_dft_to_dft_assign: a.n() != res.n()");
+        assert!(a.n() == res.n(), "svp_apply_dft_to_dft_assign: operand degrees differ");
         let Some(res) = dft_column_mut(res, res_col) else { return };
         let a = svp_column(a, a_col).expect("svp_apply_dft_to_dft_assign: a holds no storage");
         scale::<RT>(&res, &a, &res);

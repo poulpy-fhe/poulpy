@@ -181,12 +181,17 @@ poulpy_ckks::ckks_encryption_parity_test_suite! {
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
 
+/// Serializes the full-size tests: each takes about 20 GB of device memory, and the
+/// launch counters two of them assert are global to the process.
+static FULL_SIZE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// The bootstrapping presets at full size: keys generated and inputs
 /// encrypted by the portable client, context compiled, keys prepared and
 /// bootstrap evaluated on the device.
 #[test]
 #[ignore = "full-size presets: minutes and about 20 GB of device memory; run in release"]
 fn bootstrapping_presets_meet_precision() {
+    let _serial = FULL_SIZE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     poulpy_ckks::test_suite::presets::bootstrapping_presets_meet_precision_with_client::<Gpu, poulpy_cpu_portable::NTT4x30Portable>(
     );
 }
@@ -194,8 +199,9 @@ fn bootstrapping_presets_meet_precision() {
 /// One preset at full size: its measured precision, then the kernel launches
 /// of one steady-state bootstrap (after a warm-up that compiles the kernels).
 #[test]
-#[ignore = "full-size preset: minutes and about 20 GB of device memory; run in release"]
+#[ignore = "full-size preset: minutes and about 20 GB of device memory; run in release with --test-threads=1"]
 fn bootstrapping_n16_d35_k733_p20_s2c_precision_and_launches() {
+    let _serial = FULL_SIZE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     use poulpy_ckks::test_suite::presets::{BootstrappingPresetRun, preset_for_backend};
     let preset = poulpy_ckks::presets::bootstrapping::n16_d35_k733_p20_s2c().unwrap();
     let preset = preset_for_backend::<Gpu, GpuCI>(&preset).unwrap();
@@ -265,8 +271,9 @@ fn bootstrapping_n16_d35_k733_p20_s2c_precision_and_launches() {
 /// allocation, and the output decrypted and measured is the one a graph
 /// replay produced. The closure is then checked against its recording.
 #[test]
-#[ignore = "full-size preset: minutes and about 20 GB of device memory; run in release"]
+#[ignore = "full-size preset: minutes and about 20 GB of device memory; run in release with --test-threads=1"]
 fn bootstrapping_n16_d35_k733_p20_s2c_replay() {
+    let _serial = FULL_SIZE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     use poulpy_ckks::test_suite::presets::{BootstrappingPresetRun, preset_for_backend};
     use std::cell::RefCell;
 

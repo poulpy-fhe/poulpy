@@ -19,7 +19,7 @@ mod elementwise;
 mod ntt;
 mod primes;
 mod svp;
-mod tables;
+pub(crate) mod tables;
 mod vmp;
 
 pub use automorphism::AutomorphismPlan;

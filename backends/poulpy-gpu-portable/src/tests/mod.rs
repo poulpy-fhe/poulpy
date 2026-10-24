@@ -1,7 +1,6 @@
 //! The upstream HAL suites, with `NTT4x30Portable` as the comparison backend.
 
 #![cfg(any(
-    feature = "enable-cpu",
     feature = "enable-cuda",
     feature = "enable-hip",
     feature = "enable-metal",
@@ -18,15 +17,7 @@ mod core;
 mod local;
 mod replay;
 
-#[cfg(not(any(
-    feature = "enable-cuda",
-    feature = "enable-hip",
-    feature = "enable-metal",
-    feature = "enable-vulkan",
-    feature = "enable-wgpu"
-)))]
-pub(crate) use crate::runtime::Cpu as Runtime;
-/// The runtime the suites run on: the first enabled of CUDA, HIP, wgpu and the CPU runtime.
+/// The runtime the suites run on: the first enabled of CUDA, HIP and wgpu.
 #[cfg(feature = "enable-cuda")]
 pub(crate) use crate::runtime::Cuda as Runtime;
 #[cfg(all(feature = "enable-hip", not(feature = "enable-cuda")))]
@@ -46,6 +37,13 @@ cross_backend_test_suite! {
     backend_test = super::Gpu,
     params = TestParams { size: 1 << 8, base2k: 50, n: 8 },
     tests = {
+        test_vec_znx_zero_matches_wrapper => poulpy_hal::test_suite::vec_znx::test_vec_znx_zero_matches_wrapper,
+        test_vec_znx_add_assign_matches_wrapper => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_assign_matches_wrapper,
+        test_vec_znx_negate_matches_wrapper => poulpy_hal::test_suite::vec_znx::test_vec_znx_negate_matches_wrapper,
+        test_vec_znx_negate_assign_matches_wrapper => poulpy_hal::test_suite::vec_znx::test_vec_znx_negate_assign_matches_wrapper,
+        test_vec_znx_switch_ring_matches_wrapper => poulpy_hal::test_suite::vec_znx::test_vec_znx_switch_ring_matches_wrapper,
+        test_vec_znx_copy_matches_wrapper => poulpy_hal::test_suite::vec_znx::test_vec_znx_copy_matches_wrapper,
+        test_vec_znx_ci_embed_trace => poulpy_hal::test_suite::vec_znx::test_vec_znx_ci_embed_trace,
         test_vec_znx_add_matches_reference => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_matches_reference,
         test_vec_znx_add_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_assign,
         test_vec_znx_add_scalar_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_scalar_assign,
@@ -166,6 +164,8 @@ backend_test_suite! {
         test_vec_znx_dft_automorphism_add_with_plan_derived => poulpy_hal::test_suite::derived::test_vec_znx_dft_automorphism_add_with_plan_derived,
         test_vec_znx_dft_automorphism_derived => poulpy_hal::test_suite::derived::test_vec_znx_dft_automorphism_derived,
         test_vec_znx_dft_rejects_zero_step => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_rejects_zero_step,
+        test_vec_znx_dft_rejects_invalid_operands => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_rejects_invalid_operands,
+        test_vec_znx_dft_transforms_reject_invalid_operands => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_transforms_reject_invalid_operands,
     }
 }
 

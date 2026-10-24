@@ -26,7 +26,7 @@
 //! [exclusive access](super::access) to the device from `graph_prepare` to
 //! `stop_capture`, and a replay holds it while the graph is queued.
 //!
-//! The wgpu, CUDA and HIP runtimes of CubeCL 0.11.1 all record graphs. On a
+//! The wgpu, CUDA and HIP runtimes of CubeCL 0.11.3 all record graphs. On a
 //! runtime that does not, `graph_prepare` fails and the body just runs,
 //! traced.
 
