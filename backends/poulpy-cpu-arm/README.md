@@ -4,10 +4,10 @@
 
 This backend implements the Poulpy HAL extension traits and can be used by:
 
-- [`poulpy-hal`](https://github.com/poulpy-fhe/poulpy/tree/main/poulpy-hal)
-- [`poulpy-core`](https://github.com/poulpy-fhe/poulpy/tree/main/poulpy-core)
-- [`poulpy-ckks`](https://github.com/poulpy-fhe/poulpy/tree/main/poulpy-ckks) (backend wiring opt-in via `enable-ckks`)
-- [`poulpy-blas`](https://github.com/poulpy-fhe/poulpy/tree/main/poulpy-blas) (backend wiring opt-in via `enable-blas`, which implies `enable-ckks`)
+- [`poulpy-hal`](../../base/poulpy-hal)
+- [`poulpy-core`](../../base/poulpy-core)
+- [`poulpy-ckks`](../../schemes/poulpy-ckks) (backend wiring opt-in via `enable-ckks`)
+- [`poulpy-blas`](../../libs/poulpy-blas) (backend wiring opt-in via `enable-blas`, which implies `enable-ckks`)
 
 ## 🚩 Safety and Requirements
 

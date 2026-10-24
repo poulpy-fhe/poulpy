@@ -1,9 +1,12 @@
 # 🐙 Poulpy documentation
 
+The [`guides/`](guides) folder holds the guides and design notes, [`spec/`](spec) the implementation specifications, and [`img/`](img) the diagrams. The contract documents of each crate live in its own `docs/` folder.
+
 - [Getting Started](guides/getting-started.md) — a map of the codebase: what each crate contains and where to look, how the layers are organized, how to build, test, and benchmark, and how the parameters in the code relate to the usual FHE
   notation.
 - [Backends](guides/backends.md) — the FFT and NTT arithmetic families, the currently available subfamilies (`FFT64`, `NTT4x30`, `NTT3x42`), the available backend types, and how to choose one.
 - [Performance](guides/performance.md) — choosing the arithmetic family, the backend, `base2k` and the thread count, with measurements for each decision and a diagnostic for finding the thread knee on your own machine.
+- [Failure estimates for base-2^K arithmetic](guides/base2k-failure-probability.md), the failure model behind `Module::max_base2k`: the probability that a sum of products fails the NTT's centered reconstruction or the FFT's rounding, on the negacyclic and conjugate-invariant rings, how the radix is selected from it, and the guard limbs and headroom it implies.
 - [Grafting vs. the Bivariate Representation](guides/grafting-vs-bivariate.md) — how Poulpy's bivariate base-`2^K` representation compares to RNS Grafting for bit-granular scale and modulus management.
 - [HAL model and contracts](../base/poulpy-hal/src/api/mod.rs), the rustdoc of `poulpy_hal::api` (`cargo doc -p poulpy-hal --open`): the value model, canonical form, limb rule, mutation and exactness classes, the degree-embedding rule and the contract block every HAL operation carries, with the derived operations and the backend implementation order in [`poulpy_hal::oep`](../base/poulpy-hal/src/oep/mod.rs) and the window views in [`poulpy_hal::layouts`](../base/poulpy-hal/src/layouts/mod.rs).
 

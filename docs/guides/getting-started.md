@@ -56,10 +56,15 @@ It provides `FFT64Portable` and `NTT4x30Portable`.
 It implements only the required HAL operations, directly and with plain loops, inherits every optional one, and has no fast paths.
 It is a test dependency only and is not published.
 
-`poulpy-cpu-avx` and `poulpy-cpu-avx512` do not reimplement the whole HAL.
+`poulpy-cpu-avx`, `poulpy-cpu-avx512` and `poulpy-cpu-arm` do not reimplement the whole HAL.
 They hand-vectorize only the hot paths, the transform butterflies and the matrix-vector products, and delegate every other operation to the portable backend through shared macros.
 `poulpy-cpu-avx` adds AVX2 and FMA kernels and provides `FFT64Avx` and `NTT4x30Avx`.
 `poulpy-cpu-avx512` adds AVX-512 and IFMA kernels and provides `FFT64Avx512`, `NTT4x30Avx512`, and `NTT3x42Ifma`, the last of which reconstructs its CRT output with an AVX-512 IFMA kernel.
+`poulpy-cpu-arm` adds NEON / ASIMD kernels for AArch64 and provides `FFT64Neon` and `NTT4x30Neon`.
+
+`poulpy-cpu-rayon` is the Rayon task executor the CPU backends share.
+With `enable-rayon`, the AVX, AVX-512 and NEON backends gain multithreaded variants such as `FFT64AvxRayon`, `NTT4x30Avx512Rayon` and `FFT64NeonRayon`, and the crate itself defines `FFT64PortableRayon` and `NTT4x30PortableRayon`, the variants of the portable backends.
+See [performance.md](performance.md) for choosing the thread count.
 
 Results are deterministic and bit-identical across backends, since the NTT backends are exact and the FFT backends are held within correct rounding.
 This means you can develop and test against `FFT64Portable` and switch to an accelerated backend with no change in output.
@@ -110,14 +115,26 @@ A plaintext integer is packed bit by bit into a single GLWE (`FheUint`), each bi
 Addition, subtraction, logical and arithmetic shifts, signed and unsigned comparison, and bitwise and, or, and xor over `u32` come out of the box, alongside an oblivious `GLWEBlindSelection` that picks one ciphertext from many by an encrypted index.
 Key preparation and circuit evaluation both offer multi-threaded variants, and the keys are `Sync`.
 
+### poulpy-mhe
+
+Multiparty homomorphic encryption built on core.
+Each party generates a share from its own secret, and the parties exchange the shares as public aggregatable transcripts whose sum is the collective object.
+The protocols cover the collective public key, the switching, automorphism and tensor keys, GGSW keys, collective key switching to a secret or a public key, and the conversions between encryptions and additive shares.
+
+### poulpy-blas
+
+Encrypted matrix arithmetic built on CKKS.
+A matrix is a grid of `d x d` blocks with one CKKS ciphertext per block, and the slots of a ciphertext hold a batch of matrices, so every operation acts on the whole batch.
+Intra operations (transpose, row and column rotations) apply one map to every matrix, inter operations (rotation and sum) move whole matrices across the batch, and the products multiply two encrypted matrices with the JKLS algorithm or an encrypted matrix with public ones.
+
 ### poulpy-bench
 
 The consolidated Criterion benchmark suite for the workspace.
 It is an internal crate and is not published.
 
-## Inside a crate: api, oep, default, delegates
+## Inside a crate: api, oep, reference, delegates
 
-Every layer (`poulpy-hal`, `poulpy-core`, `poulpy-ckks`) follows the same internal four-folder shape.
+Every library crate (`poulpy-hal`, `poulpy-core`, `poulpy-ckks`, `poulpy-bin-fhe`, `poulpy-mhe`, `poulpy-blas`) follows the same internal four-folder shape, as the [layering contract](layering-contract.md) states.
 
 | Folder | Role |
 |--------|------|

@@ -15,11 +15,11 @@ It exposes six serial and Rayon backend variants behind layered Cargo features:
 
 This crate implements the Poulpy HAL extension traits and can be used by:
 
-- [`poulpy-hal`](https://github.com/poulpy-fhe/poulpy/tree/main/poulpy-hal)
-- [`poulpy-core`](https://github.com/poulpy-fhe/poulpy/tree/main/poulpy-core)
-- [`poulpy-ckks`](https://github.com/poulpy-fhe/poulpy/tree/main/poulpy-ckks) (backend wiring opt-in via `enable-ckks`)
-- [`poulpy-blas`](https://github.com/poulpy-fhe/poulpy/tree/main/poulpy-blas) (backend wiring opt-in via `enable-blas`, which implies `enable-ckks`)
-- [`poulpy-bin-fhe`](https://github.com/poulpy-fhe/poulpy/tree/main/poulpy-bin-fhe) (backend-agnostic; its tests are instantiated here with `bin_fhe_backend_test_suite!`)
+- [`poulpy-hal`](../../base/poulpy-hal)
+- [`poulpy-core`](../../base/poulpy-core)
+- [`poulpy-ckks`](../../schemes/poulpy-ckks) (backend wiring opt-in via `enable-ckks`)
+- [`poulpy-blas`](../../libs/poulpy-blas) (backend wiring opt-in via `enable-blas`, which implies `enable-ckks`)
+- [`poulpy-bin-fhe`](../../schemes/poulpy-bin-fhe) (backend-agnostic; its tests are instantiated here with `bin_fhe_backend_test_suite!`)
 
 ## 🚩 Safety and Requirements
 

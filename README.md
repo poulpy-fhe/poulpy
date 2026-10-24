@@ -69,7 +69,7 @@ poulpy-cpu-avx512           ← AVX-512/IFMA-accelerated backend
 poulpy-cpu-arm              ← NEON/ASIMD-accelerated backend (AArch64)
 ```
 
-Backend crates (`poulpy-cpu-portable`, `poulpy-cpu-avx`, `poulpy-cpu-avx512`, `poulpy-cpu-arm`, …) implement the open extension points defined in `poulpy-hal/oep`. Core, CKKS, BLAS and binary-FHE keep concrete backend wiring in backend crates. Each layer provides explicit operation contracts, reusable reference algorithms and caller-selected parity suites.
+Backend crates (`poulpy-cpu-portable`, `poulpy-cpu-avx`, `poulpy-cpu-avx512`, `poulpy-cpu-arm`, …) implement the open extension points defined in `poulpy_hal::oep`. Core, CKKS, BLAS and binary-FHE keep concrete backend wiring in backend crates. Each layer provides explicit operation contracts, reusable reference algorithms and caller-selected parity suites.
 
 ### Layer Anatomy
 
