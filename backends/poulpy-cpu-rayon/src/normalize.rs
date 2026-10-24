@@ -44,7 +44,7 @@ where
     });
 }
 
-/// Parallel [`vec_znx_normalize`], `B` being the serial kernel backend.
+/// Parallel [`vec_znx_normalize`](poulpy_hal::api::VecZnxNormalize::vec_znx_normalize), `B` being the serial kernel backend.
 #[allow(clippy::too_many_arguments)]
 pub fn vec_znx_normalize_par<B, T>(
     res: &mut VecZnxBackendMut<'_, B>,
@@ -96,7 +96,7 @@ pub fn vec_znx_normalize_par<B, T>(
     });
 }
 
-/// Parallel [`vec_znx_normalize_assign`], `B` being the serial kernel backend.
+/// Parallel [`vec_znx_normalize_assign`](poulpy_hal::api::VecZnxNormalizeAssign::vec_znx_normalize_assign), `B` being the serial kernel backend.
 pub fn vec_znx_normalize_assign_par<B, T>(
     base2k: usize,
     k: usize,
@@ -127,7 +127,7 @@ pub fn vec_znx_normalize_assign_par<B, T>(
     });
 }
 
-/// Parallel [`vec_znx_big_normalize`], `B` being the serial kernel backend.
+/// Parallel [`vec_znx_big_normalize`](poulpy_hal::api::VecZnxBigNormalize::vec_znx_big_normalize), `B` being the serial kernel backend.
 #[allow(clippy::too_many_arguments)]
 pub fn vec_znx_big_normalize_par<B, T>(
     res: &mut VecZnxBackendMut<'_, B>,

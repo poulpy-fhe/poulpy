@@ -1,6 +1,6 @@
 //! Rayon-scheduled wrapper shared by the NTT4x30 backends that store the transform domain as packed `u32` residues.
 //!
-//! A serial backend describes its drivers through [`PackedNtt4x30Base`], and [`impl_ntt4x30_rayon_backend!`]
+//! A serial backend describes its drivers through [`PackedNtt4x30Base`], and [`impl_ntt4x30_rayon_backend!`](crate::impl_ntt4x30_rayon_backend!)
 //! builds the Rayon variant on top of it: the coefficient kernels are forwarded or split by ranges, and the
 //! transform-domain operations run the base drivers on [`RayonTaskExecutor`](crate::RayonTaskExecutor).
 
