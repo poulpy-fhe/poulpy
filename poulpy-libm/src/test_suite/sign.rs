@@ -23,7 +23,10 @@ use poulpy_ckks::{
     },
 };
 
-use crate::sign::{CKKSSignOps, SignComposite};
+use crate::{
+    comparison::DEFAULT_SIGN_COMPOSITE_CHEBYSHEV,
+    sign::{CKKSSignOps, SignComposite},
+};
 
 use super::helpers::{assert_error, assert_precision_bits};
 
@@ -226,15 +229,6 @@ where
     x[3] = F::from_f64(-0.05).unwrap();
     let im = vec![F::zero(); slots];
 
-    // Reference computed before the host polys are moved by map_plaintexts.
-    let half = F::from_f64(0.5).unwrap();
-    let want: Vec<F> = x
-        .iter()
-        .map(|&v| {
-            let s = host_composite.evaluate(v);
-            if step { (s + F::one()) * half } else { s }
-        })
-        .collect();
     let composite = host_composite.map_plaintexts(|pt| upload_pt(module, pt));
 
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
@@ -279,9 +273,61 @@ where
         "{label}: consumed bits mismatch"
     );
 
-    let (re_out, im_out) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &res, &sk, &mut scratch.borrow());
-
+    // Near +-1 every early factor amplifies the error about twentyfold, so the
+    // composite's end-to-end error depends on the noise draw. Each factor is held
+    // to the noise it adds instead: replayed through the same API as a one-row
+    // composite, its output is compared with its polynomial applied in the clear
+    // to the decrypted input of that factor.
     let required = log_delta as f64 - 15.0;
-    assert_precision_bits(label, &re_out, &want, required, params.n);
-    assert_precision_bits(&format!("{label}/imag"), &im_out, &vec![F::zero(); slots], required, params.n);
+    let half = F::from_f64(0.5).unwrap();
+    let rows = DEFAULT_SIGN_COMPOSITE_CHEBYSHEV;
+    let mut cur = ct;
+    for j in 0..rows.len() {
+        let last_step = step && j + 1 == rows.len();
+        let host_factor = SignComposite::<F, _>::from_coeffs(
+            base.base2k.into(),
+            &rows[j..=j],
+            coeff_meta,
+            SplitStrategy::MinDepth,
+            host_module,
+        )
+        .expect("one-row SignComposite");
+        let (re_in, _) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &cur, &sk, &mut scratch.borrow());
+        let want: Vec<F> = re_in
+            .iter()
+            .map(|&v| {
+                let s = host_factor.evaluate(v);
+                if last_step { (s + F::one()) * half } else { s }
+            })
+            .collect();
+        let factor = host_factor.map_plaintexts(|pt| upload_pt(module, pt));
+        let mut next = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
+        if last_step {
+            module
+                .ckks_step(&mut next, &cur, &factor, &tsk, &conj_key, &mut scratch.borrow())
+                .expect("ckks_step");
+        } else {
+            module
+                .ckks_sign(&mut next, &cur, &factor, &tsk, &conj_key, &mut scratch.borrow())
+                .expect("ckks_sign");
+        }
+        let (re_out, im_out) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &next, &sk, &mut scratch.borrow());
+        assert_precision_bits(&format!("{label}/factor {j}"), &re_out, &want, required, params.n);
+        assert_precision_bits(
+            &format!("{label}/factor {j}/imag"),
+            &im_out,
+            &vec![F::zero(); slots],
+            required,
+            params.n,
+        );
+        cur = next;
+    }
+
+    // The composite is the composition of its factors: the same bits come out.
+    let (re_out, im_out) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &res, &sk, &mut scratch.borrow());
+    let (re_rep, im_rep) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &cur, &sk, &mut scratch.borrow());
+    assert!(
+        re_out == re_rep && im_out == im_rep,
+        "{label}: differs from its factors evaluated one at a time"
+    );
 }
