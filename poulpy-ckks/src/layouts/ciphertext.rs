@@ -247,7 +247,8 @@ pub type CKKSCiphertextOwned<BE> = CKKSCiphertext<<BE as Backend>::OwnedBuf, <BE
 /// Ciphertext of ring `R` in the buffers of backend `BE`.
 pub type CKKSRingCiphertext<BE, R> = CKKSCiphertext<<BE as Backend>::OwnedBuf, <BE as Backend>::ZnxWord, R>;
 
-pub(crate) struct CKKSCiphertextViewRef<'a, BE: Backend + 'a> {
+/// Read-only view of a scratch-backed CKKS ciphertext, from [`CKKSCiphertextViewMut::to_backend_view_ref`].
+pub struct CKKSCiphertextViewRef<'a, BE: Backend + 'a> {
     inner: GLWEViewRef<'a, BE>,
 }
 
@@ -317,7 +318,8 @@ impl<'a, BE: Backend + 'a> CKKSCiphertextViewMut<'a, BE> {
         ct
     }
 
-    pub(crate) fn to_backend_view_ref(&self) -> CKKSCiphertextViewRef<'_, BE> {
+    /// Reborrows this view read-only, in the backend's shared buffer type.
+    pub fn to_backend_view_ref(&self) -> CKKSCiphertextViewRef<'_, BE> {
         CKKSCiphertextViewRef {
             inner: GLWEViewRef::from_inner(self.inner.to_backend_ref()),
         }

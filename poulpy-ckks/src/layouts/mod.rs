@@ -125,7 +125,9 @@ pub use bootstrapping_keys::{
     BootstrappingLinearKeys, CKKSFoldKeysLayout, EncapsulationKeys, EncapsulationKeysLayout, RingSwitchKeySet, RingSwitchKeys,
     RingSwitchKeysLayout, RingSwitchKeysPrepared,
 };
-pub use ciphertext::{CKKSCiphertext, CKKSCiphertextOwned, CKKSCiphertextViewMut, CKKSRingCiphertext, ScratchArenaTakeCKKS};
+pub use ciphertext::{
+    CKKSCiphertext, CKKSCiphertextOwned, CKKSCiphertextViewMut, CKKSCiphertextViewRef, CKKSRingCiphertext, ScratchArenaTakeCKKS,
+};
 pub use complex_diagonals::ComplexDiagonals;
 pub use dft::{
     DFTMatrix, DFTMatrixFactors, DFTMatrixPrepared, DFTOutputFormat, DFTPlan, DFTType, Decode, DftDirection, DftFormat, Encode,

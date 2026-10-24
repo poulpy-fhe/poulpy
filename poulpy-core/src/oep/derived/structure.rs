@@ -29,7 +29,7 @@ mod trace {
 
     use crate::{
         GLWEAutomorphism, GLWECopy, GLWENormalize, GLWEShift, GLWETrace, ScratchArenaTakeCore,
-        layouts::{GGLWEInfos, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos},
+        layouts::{Degree, GGLWEInfos, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos},
     };
 
     /// The full trace of a degree-`n` operand: the conjugation first, on the standard ring only since the
@@ -185,13 +185,19 @@ mod trace {
             .max(module.glwe_automorphism_tmp_bytes(a_infos, a_infos, key_infos))
     }
 
-    pub(crate) fn glwe_trace_galois_elements_derived<BE, M>(module: &M, levels: Range<usize>, reverse: bool) -> Vec<i64>
+    pub(crate) fn glwe_trace_galois_elements_derived<BE, M>(
+        module: &M,
+        n: Degree,
+        levels: Range<usize>,
+        reverse: bool,
+    ) -> Vec<i64>
     where
         BE: Backend,
         M: GaloisElement,
     {
-        assert_levels::<BE>(module.n(), &levels);
-        trace_rotations::<BE, _>(module, module.n(), levels, reverse).collect()
+        let n = operand_degree(module.n(), &[n]);
+        assert_levels::<BE>(n, &levels);
+        trace_rotations::<BE, _>(module, n, levels, reverse).collect()
     }
 
     pub(crate) fn glwe_trace_tmp_bytes_derived<BE, M, R, A, K>(module: &M, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
@@ -419,7 +425,7 @@ mod packing {
         BE: Backend,
         M: GLWETrace<BE> + ModuleLogN,
     {
-        module.glwe_trace_galois_elements(0..module.log_n(), false)
+        module.glwe_trace_galois_elements(module.n().into(), 0..module.log_n(), false)
     }
 
     pub(crate) fn glwe_pack_tmp_bytes_derived<BE, M, R, A, K>(module: &M, res: &R, a: &A, key: &K) -> usize

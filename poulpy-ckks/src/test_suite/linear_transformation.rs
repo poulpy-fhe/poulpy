@@ -8,7 +8,6 @@
 //! which the homomorphic engine must match up to CKKS precision.
 
 use crate::api::CKKSEncodingOps;
-use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
 use poulpy_core::layouts::{
@@ -28,8 +27,8 @@ use crate::{
     test_suite::{
         CKKSTestParams,
         helpers::{
-            TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_decrypt_precision, ckks_encrypt,
-            gen_atk, gen_sk_with_raw, test_vector_1, test_vector_2, want_add,
+            QueryLog, TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_decrypt_precision,
+            ckks_encrypt, gen_atk, gen_sk_with_raw, test_vector_1, test_vector_2, want_add,
         },
         parity::helpers::{snapshot, with_scratch},
     },
@@ -462,23 +461,6 @@ impl<BE: Backend> GetAutomorphismKey<BE> for MixedDsize<BE> {
     }
 }
 
-/// Key set that records the precision each lookup was made at.
-struct QueryLog<K> {
-    keys: HashMap<i64, K>,
-    seen: RefCell<Vec<(i64, TorusPrecision)>>,
-}
-
-impl<BE: Backend, K: GLWEAutomorphismKeyPreparedToBackendRef<BE>> GetAutomorphismKey<BE> for QueryLog<K> {
-    fn lookup_automorphism_key(
-        &self,
-        p: i64,
-        k: TorusPrecision,
-    ) -> poulpy_core::Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
-        self.seen.borrow_mut().push((p, k));
-        self.keys.get_automorphism_key(p, k)
-    }
-}
-
 /// Baby rotations resolve at the source precision, giant rotations at the
 /// destination one.
 ///
@@ -519,10 +501,7 @@ pub fn test_linear_transformation_pins_operation_precisions<BE, F, E>(
         keys.entry(p)
             .or_insert_with(|| gen_atk(&key_params, module, p, &sk_raw, &mut scratch.borrow()));
     }
-    let keys = QueryLog {
-        keys,
-        seen: RefCell::new(Vec::new()),
-    };
+    let keys = QueryLog::new(keys);
 
     let ct = ckks_encrypt(
         &params,
@@ -557,7 +536,7 @@ pub fn test_linear_transformation_pins_operation_precisions<BE, F, E>(
         .map(|gs| galois_element(gs.rot, order))
         .collect();
 
-    let seen = keys.seen.borrow();
+    let seen = keys.take();
     assert!(!seen.is_empty(), "the factor consulted no key");
     for &(p, k) in seen.iter() {
         match (baby_elements.contains(&p), giant_elements.contains(&p)) {
