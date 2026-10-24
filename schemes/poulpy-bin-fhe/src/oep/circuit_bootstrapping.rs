@@ -204,9 +204,9 @@ pub unsafe trait CircuitBootstrappingKeyPreparedImpl<BRA: BlindRotationAlgo>: Ba
         scratch: &mut ScratchArena<'_, Self>,
     );
 }
-/// Explicitly selects the canonical circuit-bootstrap execute implementation.
+/// Selects the reference implementation of `CircuitBootstrappingExecuteImpl<$algo>` for `$be`.
 #[macro_export]
-macro_rules! impl_bin_fhe_circuit_bootstrapping_execute_reference {
+macro_rules! impl_circuit_bootstrapping_execute_reference_full {
     ($be:ty, $algo:ty) => {
         unsafe impl $crate::oep::CircuitBootstrappingExecuteImpl<$algo> for $be {
             fn circuit_bootstrapping_prepare_to_constant<R: ::poulpy_core::layouts::GGSWInfos>(
@@ -271,9 +271,9 @@ macro_rules! impl_bin_fhe_circuit_bootstrapping_execute_reference {
         }
     };
 }
-/// Explicitly selects the canonical circuit-bootstrap key encrypt sk implementation.
+/// Selects the reference implementation of `CircuitBootstrappingKeyEncryptSkImpl<$algo>` for `$be`.
 #[macro_export]
-macro_rules! impl_bin_fhe_circuit_bootstrapping_key_encrypt_sk_reference {
+macro_rules! impl_circuit_bootstrapping_key_encrypt_sk_reference_full {
     ($be:ty, $algo:ty) => {
         unsafe impl $crate::oep::CircuitBootstrappingKeyEncryptSkImpl<$algo> for $be {
             fn circuit_bootstrapping_key_encrypt_sk_tmp_bytes<A>(module: &::poulpy_hal::layouts::Module<Self>, infos: &A) -> usize
@@ -305,9 +305,9 @@ macro_rules! impl_bin_fhe_circuit_bootstrapping_key_encrypt_sk_reference {
         }
     };
 }
-/// Explicitly selects the canonical circuit-bootstrap key prepared implementation.
+/// Selects the reference implementation of `CircuitBootstrappingKeyPreparedImpl<$algo>` for `$be`.
 #[macro_export]
-macro_rules! impl_bin_fhe_circuit_bootstrapping_key_prepared_reference {
+macro_rules! impl_circuit_bootstrapping_key_prepared_reference_full {
     ($be:ty, $algo:ty) => {
         unsafe impl $crate::oep::CircuitBootstrappingKeyPreparedImpl<$algo> for $be {
             fn circuit_bootstrapping_key_prepared_alloc_from_infos<A>(
@@ -340,10 +340,10 @@ macro_rules! impl_bin_fhe_circuit_bootstrapping_key_prepared_reference {
 }
 /// Explicitly registers all canonical circuit-bootstrap operations.
 #[macro_export]
-macro_rules! impl_bin_fhe_circuit_bootstrapping_reference {
+macro_rules! impl_circuit_bootstrapping_reference_full {
     ($be:ty, $algo:ty) => {
-        $crate::impl_bin_fhe_circuit_bootstrapping_execute_reference!($be, $algo);
-        $crate::impl_bin_fhe_circuit_bootstrapping_key_encrypt_sk_reference!($be, $algo);
-        $crate::impl_bin_fhe_circuit_bootstrapping_key_prepared_reference!($be, $algo);
+        $crate::impl_circuit_bootstrapping_execute_reference_full!($be, $algo);
+        $crate::impl_circuit_bootstrapping_key_encrypt_sk_reference_full!($be, $algo);
+        $crate::impl_circuit_bootstrapping_key_prepared_reference_full!($be, $algo);
     };
 }

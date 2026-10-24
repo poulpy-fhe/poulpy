@@ -14,8 +14,8 @@ All public operation traits follow `API -> delegate -> OEP`, including
 `LookupTableFactory` and `BlindRotationKeyCompressedFactory`. Their delegates
 require only the corresponding backend hook. LUT algorithms and compressed-key
 allocation live in independently callable reference functions; a backend opts
-in with `impl_bin_fhe_lookup_table_reference!` and
-`impl_bin_fhe_blind_rotation_key_compressed_factory_reference!`, or provides its
+in with `impl_lookup_table_factory_reference_full!` and
+`impl_blind_rotation_key_compressed_factory_reference_full!`, or provides its
 own implementation. The full blind-rotation opt-in includes both hooks.
 Existing domain import paths remain compatibility re-exports.
 
@@ -58,23 +58,31 @@ compares coefficient-domain outputs,
 precision, rank, radix and allocated tails exactly. Prepared representations
 belong to each backend: compare their observable results, not their bytes.
 
-`impl_bin_fhe_reference_full!` selects every family. Circuit execution, key encryption and key preparation also have separate
-`impl_bin_fhe_circuit_bootstrapping_*_reference!` opt-ins, allowing a backend to
-replace execution while retaining the key lifecycle implementations.
+`impl_bin_fhe_reference_full!` selects every family, through the group
+umbrellas `impl_blind_rotation_reference_full!`,
+`impl_circuit_bootstrapping_reference_full!` and `impl_bdd_reference_full!`.
+Each OEP trait has its own opt-in, `impl_<family>_reference_full!` (or
+`impl_<family>_derived_full!` when every method has a default), `<family>`
+being the trait in snake case without `Impl`: circuit execution, key
+encryption and key preparation have
+`impl_circuit_bootstrapping_execute_reference_full!`,
+`impl_circuit_bootstrapping_key_encrypt_sk_reference_full!` and
+`impl_circuit_bootstrapping_key_prepared_reference_full!`, allowing a backend
+to replace execution while retaining the key lifecycle implementations.
 
 BDD opt-ins are also available per operation contract. For example, keep the
 reference CMux, blind selection, and derived retrieval while implementing a
 custom Cswap:
 
 ```rust,ignore
-poulpy_bin_fhe::impl_bin_fhe_cmux_reference!(MyBackend);
-poulpy_bin_fhe::impl_bin_fhe_glwe_blind_selection_reference!(MyBackend);
-poulpy_bin_fhe::impl_bin_fhe_glwe_blind_retrieval_derived!(MyBackend);
+poulpy_bin_fhe::impl_cmux_reference_full!(MyBackend);
+poulpy_bin_fhe::impl_glwe_blind_selection_reference_full!(MyBackend);
+poulpy_bin_fhe::impl_glwe_blind_retrieval_derived_full!(MyBackend);
 // Implement CswapImpl for MyBackend with the selected execution and scratch query.
 ```
 
 Select the other required contracts through their individual macros in
-[`oep/bdd.rs`](../src/oep/bdd.rs). `impl_bin_fhe_bdd_reference!` composes all of
+[`oep/bdd.rs`](../src/oep/bdd.rs). `impl_bdd_reference_full!` composes all of
 these opt-ins; omit that aggregate when providing a custom BDD implementation.
 The integer-parameterized opt-ins still implement their contracts for every
 supported `UnsignedInteger` type, and key/preparation opt-ins take the algorithm

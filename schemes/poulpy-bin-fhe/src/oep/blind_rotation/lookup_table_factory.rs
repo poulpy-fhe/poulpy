@@ -17,7 +17,7 @@ pub unsafe trait LookupTableFactoryImpl: Backend<Ring = Standard> {
 
 /// Selects canonical LUT encoding and rotation through HAL operations.
 #[macro_export]
-macro_rules! impl_bin_fhe_lookup_table_reference {
+macro_rules! impl_lookup_table_factory_reference_full {
     ($backend:ty) => {
         unsafe impl $crate::oep::LookupTableFactoryImpl for $backend {
             fn lookup_table_set(

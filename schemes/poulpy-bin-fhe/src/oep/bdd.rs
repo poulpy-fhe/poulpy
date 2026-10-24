@@ -26,9 +26,9 @@ pub use bdd_key_encrypt_sk::*;
 mod bdd_key_prepared_factory;
 pub use bdd_key_prepared_factory::*;
 
-/// Selects the canonical implementation of [`ExecuteBDDCircuitImpl`].
+/// Selects the reference implementation of [`ExecuteBDDCircuitImpl`].
 #[macro_export]
-macro_rules! impl_bin_fhe_execute_bdd_circuit_reference {
+macro_rules! impl_execute_bdd_circuit_reference_full {
     ($be:ty) => {
         const _: () = {
             use poulpy_core::{
@@ -81,9 +81,9 @@ macro_rules! impl_bin_fhe_execute_bdd_circuit_reference {
     };
 }
 
-/// Selects the canonical implementation of [`CswapImpl`].
+/// Selects the reference implementation of [`CswapImpl`].
 #[macro_export]
-macro_rules! impl_bin_fhe_cswap_reference {
+macro_rules! impl_cswap_reference_full {
     ($be:ty) => {
         const _: () = {
             use poulpy_core::{
@@ -126,9 +126,9 @@ macro_rules! impl_bin_fhe_cswap_reference {
     };
 }
 
-/// Selects the canonical implementation of [`CmuxImpl`].
+/// Selects the reference implementation of [`CmuxImpl`].
 #[macro_export]
-macro_rules! impl_bin_fhe_cmux_reference {
+macro_rules! impl_cmux_reference_full {
     ($be:ty) => {
         const _: () = {
             use poulpy_core::{
@@ -199,9 +199,9 @@ macro_rules! impl_bin_fhe_cmux_reference {
     };
 }
 
-/// Selects the canonical implementation of [`GGSWBlindRotationImpl`].
+/// Selects the reference implementation of [`GGSWBlindRotationImpl`].
 #[macro_export]
-macro_rules! impl_bin_fhe_ggsw_blind_rotation_reference {
+macro_rules! impl_ggsw_blind_rotation_reference_full {
     ($be:ty) => {
         const _: () = {
             use poulpy_core::{
@@ -261,9 +261,9 @@ macro_rules! impl_bin_fhe_ggsw_blind_rotation_reference {
     };
 }
 
-/// Selects the canonical implementation of [`GLWEBlindRotationImpl`].
+/// Selects the reference implementation of [`GLWEBlindRotationImpl`].
 #[macro_export]
-macro_rules! impl_bin_fhe_glwe_blind_rotation_reference {
+macro_rules! impl_glwe_blind_rotation_reference_full {
     ($be:ty) => {
         const _: () = {
             use poulpy_core::{
@@ -344,9 +344,9 @@ macro_rules! impl_bin_fhe_glwe_blind_rotation_reference {
     };
 }
 
-/// Selects the canonical implementation of [`GLWEBlindSelectionImpl`].
+/// Selects the reference implementation of [`GLWEBlindSelectionImpl`].
 #[macro_export]
-macro_rules! impl_bin_fhe_glwe_blind_selection_reference {
+macro_rules! impl_glwe_blind_selection_reference_full {
     ($be:ty) => {
         const _: () = {
             use poulpy_core::{
@@ -406,15 +406,15 @@ macro_rules! impl_bin_fhe_glwe_blind_selection_reference {
 
 /// Selects the same-layer derived defaults for [`GLWEBlindRetrievalImpl`].
 #[macro_export]
-macro_rules! impl_bin_fhe_glwe_blind_retrieval_derived {
+macro_rules! impl_glwe_blind_retrieval_derived_full {
     ($be:ty) => {
         unsafe impl $crate::oep::GLWEBlindRetrievalImpl for $be {}
     };
 }
 
-/// Selects the canonical implementation of [`ExecuteBDDCircuit1WTo1WImpl`].
+/// Selects the reference implementation of [`ExecuteBDDCircuit1WTo1WImpl`].
 #[macro_export]
-macro_rules! impl_bin_fhe_execute_bdd_circuit_1w_to_1w_reference {
+macro_rules! impl_execute_bdd_circuit_1w_to_1w_reference_full {
     ($be:ty) => {
         const _: () = {
             use poulpy_core::{
@@ -473,9 +473,9 @@ macro_rules! impl_bin_fhe_execute_bdd_circuit_1w_to_1w_reference {
     };
 }
 
-/// Selects the canonical implementation of [`ExecuteBDDCircuit2WTo1WImpl`].
+/// Selects the reference implementation of [`ExecuteBDDCircuit2WTo1WImpl`].
 #[macro_export]
-macro_rules! impl_bin_fhe_execute_bdd_circuit_2w_to_1w_reference {
+macro_rules! impl_execute_bdd_circuit_2w_to_1w_reference_full {
     ($be:ty) => {
         const _: () = {
             use poulpy_core::{
@@ -536,9 +536,9 @@ macro_rules! impl_bin_fhe_execute_bdd_circuit_2w_to_1w_reference {
     };
 }
 
-/// Selects the canonical implementation of [`FheUintPreparedEncryptSkImpl`].
+/// Selects the reference implementation of [`FheUintPreparedEncryptSkImpl`].
 #[macro_export]
-macro_rules! impl_bin_fhe_fhe_uint_prepared_encrypt_sk_reference {
+macro_rules! impl_fhe_uint_prepared_encrypt_sk_reference_full {
     ($be:ty) => {
         const _: () = {
             use poulpy_core::{
@@ -578,9 +578,9 @@ macro_rules! impl_bin_fhe_fhe_uint_prepared_encrypt_sk_reference {
     };
 }
 
-/// Selects the canonical implementation of [`FheUintPrepareImpl`].
+/// Selects the reference implementation of [`FheUintPrepareImpl`].
 #[macro_export]
-macro_rules! impl_bin_fhe_fhe_uint_prepare_reference {
+macro_rules! impl_fhe_uint_prepare_reference_full {
     ($be:ty, $algo:ty) => {
         const _: () = {
             use poulpy_core::{
@@ -641,9 +641,9 @@ macro_rules! impl_bin_fhe_fhe_uint_prepare_reference {
     };
 }
 
-/// Selects the canonical implementation of [`BDDKeyEncryptSkImpl`].
+/// Selects the reference implementation of [`BDDKeyEncryptSkImpl`].
 #[macro_export]
-macro_rules! impl_bin_fhe_bdd_key_encrypt_sk_reference {
+macro_rules! impl_bdd_key_encrypt_sk_reference_full {
     ($be:ty, $algo:ty) => {
         const _: () = {
             use poulpy_core::{
@@ -688,9 +688,9 @@ macro_rules! impl_bin_fhe_bdd_key_encrypt_sk_reference {
     };
 }
 
-/// Selects the canonical implementation of [`BDDKeyPreparedFactoryImpl`].
+/// Selects the reference implementation of [`BDDKeyPreparedFactoryImpl`].
 #[macro_export]
-macro_rules! impl_bin_fhe_bdd_key_prepared_reference {
+macro_rules! impl_bdd_key_prepared_factory_reference_full {
     ($be:ty, $algo:ty) => {
         const _: () = {
             use poulpy_core::{
@@ -737,22 +737,22 @@ macro_rules! impl_bin_fhe_bdd_key_prepared_reference {
 /// Selects all canonical BDD implementations and same-layer derived defaults.
 ///
 /// When overriding one operation family, select its peers using their individual
-/// `impl_bin_fhe_*_reference!` or `impl_bin_fhe_*_derived!` macros instead.
+/// `impl_<family>_reference_full!` or `impl_<family>_derived_full!` macros instead.
 #[macro_export]
-macro_rules! impl_bin_fhe_bdd_reference {
+macro_rules! impl_bdd_reference_full {
     ($be:ty, $algo:ty) => {
-        $crate::impl_bin_fhe_execute_bdd_circuit_reference!($be);
-        $crate::impl_bin_fhe_cswap_reference!($be);
-        $crate::impl_bin_fhe_cmux_reference!($be);
-        $crate::impl_bin_fhe_ggsw_blind_rotation_reference!($be);
-        $crate::impl_bin_fhe_glwe_blind_rotation_reference!($be);
-        $crate::impl_bin_fhe_glwe_blind_selection_reference!($be);
-        $crate::impl_bin_fhe_glwe_blind_retrieval_derived!($be);
-        $crate::impl_bin_fhe_execute_bdd_circuit_1w_to_1w_reference!($be);
-        $crate::impl_bin_fhe_execute_bdd_circuit_2w_to_1w_reference!($be);
-        $crate::impl_bin_fhe_fhe_uint_prepared_encrypt_sk_reference!($be);
-        $crate::impl_bin_fhe_fhe_uint_prepare_reference!($be, $algo);
-        $crate::impl_bin_fhe_bdd_key_encrypt_sk_reference!($be, $algo);
-        $crate::impl_bin_fhe_bdd_key_prepared_reference!($be, $algo);
+        $crate::impl_execute_bdd_circuit_reference_full!($be);
+        $crate::impl_cswap_reference_full!($be);
+        $crate::impl_cmux_reference_full!($be);
+        $crate::impl_ggsw_blind_rotation_reference_full!($be);
+        $crate::impl_glwe_blind_rotation_reference_full!($be);
+        $crate::impl_glwe_blind_selection_reference_full!($be);
+        $crate::impl_glwe_blind_retrieval_derived_full!($be);
+        $crate::impl_execute_bdd_circuit_1w_to_1w_reference_full!($be);
+        $crate::impl_execute_bdd_circuit_2w_to_1w_reference_full!($be);
+        $crate::impl_fhe_uint_prepared_encrypt_sk_reference_full!($be);
+        $crate::impl_fhe_uint_prepare_reference_full!($be, $algo);
+        $crate::impl_bdd_key_encrypt_sk_reference_full!($be, $algo);
+        $crate::impl_bdd_key_prepared_factory_reference_full!($be, $algo);
     };
 }

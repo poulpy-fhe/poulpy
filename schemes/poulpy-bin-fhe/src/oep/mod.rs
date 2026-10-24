@@ -23,16 +23,16 @@ pub use circuit_bootstrapping::*;
 #[macro_export]
 macro_rules! impl_bin_fhe_reference_full {
     ($be:ty) => {
-        $crate::impl_bin_fhe_blind_rotation_reference!($be);
+        $crate::impl_blind_rotation_reference_full!($be);
         $crate::impl_bin_fhe_reference_full!(@remaining $be);
     };
     ($be:ty, scheduling = parallel) => {
-        $crate::impl_bin_fhe_blind_rotation_reference!($be, scheduling = parallel);
+        $crate::impl_blind_rotation_reference_full!($be, scheduling = parallel);
         $crate::impl_bin_fhe_reference_full!(@remaining $be);
     };
     (@remaining $be:ty) => {
-        $crate::impl_bin_fhe_circuit_bootstrapping_reference!($be, $crate::blind_rotation::CGGI);
-        $crate::impl_bin_fhe_bdd_reference!($be, $crate::blind_rotation::CGGI);
+        $crate::impl_circuit_bootstrapping_reference_full!($be, $crate::blind_rotation::CGGI);
+        $crate::impl_bdd_reference_full!($be, $crate::blind_rotation::CGGI);
     };
 }
 pub use crate::impl_bin_fhe_reference_full;

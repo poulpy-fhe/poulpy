@@ -65,26 +65,26 @@ unsafe impl poulpy_core::oep::GLWECopyImpl for OverrideBackend {
         assert!(marker.iter().all(|&x| x == 0x39));
     }
 }
-poulpy_bin_fhe::impl_bin_fhe_blind_rotation_key_encrypt_reference!(OverrideBackend);
-poulpy_bin_fhe::impl_bin_fhe_blind_rotation_key_compressed_reference!(OverrideBackend);
-poulpy_bin_fhe::impl_bin_fhe_blind_rotation_key_decompress_reference!(OverrideBackend);
-poulpy_bin_fhe::impl_bin_fhe_blind_rotation_key_compressed_factory_reference!(OverrideBackend);
-poulpy_bin_fhe::impl_bin_fhe_lookup_table_reference!(OverrideBackend);
-poulpy_bin_fhe::impl_bin_fhe_circuit_bootstrapping_key_encrypt_sk_reference!(OverrideBackend, CGGI);
-poulpy_bin_fhe::impl_bin_fhe_circuit_bootstrapping_key_prepared_reference!(OverrideBackend, CGGI);
+poulpy_bin_fhe::impl_blind_rotation_key_encrypt_sk_reference_full!(OverrideBackend);
+poulpy_bin_fhe::impl_blind_rotation_key_compressed_encrypt_sk_reference_full!(OverrideBackend);
+poulpy_bin_fhe::impl_blind_rotation_key_decompress_reference_full!(OverrideBackend);
+poulpy_bin_fhe::impl_blind_rotation_key_compressed_factory_reference_full!(OverrideBackend);
+poulpy_bin_fhe::impl_lookup_table_factory_reference_full!(OverrideBackend);
+poulpy_bin_fhe::impl_circuit_bootstrapping_key_encrypt_sk_reference_full!(OverrideBackend, CGGI);
+poulpy_bin_fhe::impl_circuit_bootstrapping_key_prepared_reference_full!(OverrideBackend, CGGI);
 // Select BDD peers independently, keeping Cswap available for an override.
-poulpy_bin_fhe::impl_bin_fhe_execute_bdd_circuit_reference!(OverrideBackend);
-poulpy_bin_fhe::impl_bin_fhe_cmux_reference!(OverrideBackend);
-poulpy_bin_fhe::impl_bin_fhe_ggsw_blind_rotation_reference!(OverrideBackend);
-poulpy_bin_fhe::impl_bin_fhe_glwe_blind_rotation_reference!(OverrideBackend);
-poulpy_bin_fhe::impl_bin_fhe_glwe_blind_selection_reference!(OverrideBackend);
-poulpy_bin_fhe::impl_bin_fhe_glwe_blind_retrieval_derived!(OverrideBackend);
-poulpy_bin_fhe::impl_bin_fhe_execute_bdd_circuit_1w_to_1w_reference!(OverrideBackend);
-poulpy_bin_fhe::impl_bin_fhe_execute_bdd_circuit_2w_to_1w_reference!(OverrideBackend);
-poulpy_bin_fhe::impl_bin_fhe_fhe_uint_prepared_encrypt_sk_reference!(OverrideBackend);
-poulpy_bin_fhe::impl_bin_fhe_fhe_uint_prepare_reference!(OverrideBackend, CGGI);
-poulpy_bin_fhe::impl_bin_fhe_bdd_key_encrypt_sk_reference!(OverrideBackend, CGGI);
-poulpy_bin_fhe::impl_bin_fhe_bdd_key_prepared_reference!(OverrideBackend, CGGI);
+poulpy_bin_fhe::impl_execute_bdd_circuit_reference_full!(OverrideBackend);
+poulpy_bin_fhe::impl_cmux_reference_full!(OverrideBackend);
+poulpy_bin_fhe::impl_ggsw_blind_rotation_reference_full!(OverrideBackend);
+poulpy_bin_fhe::impl_glwe_blind_rotation_reference_full!(OverrideBackend);
+poulpy_bin_fhe::impl_glwe_blind_selection_reference_full!(OverrideBackend);
+poulpy_bin_fhe::impl_glwe_blind_retrieval_derived_full!(OverrideBackend);
+poulpy_bin_fhe::impl_execute_bdd_circuit_1w_to_1w_reference_full!(OverrideBackend);
+poulpy_bin_fhe::impl_execute_bdd_circuit_2w_to_1w_reference_full!(OverrideBackend);
+poulpy_bin_fhe::impl_fhe_uint_prepared_encrypt_sk_reference_full!(OverrideBackend);
+poulpy_bin_fhe::impl_fhe_uint_prepare_reference_full!(OverrideBackend, CGGI);
+poulpy_bin_fhe::impl_bdd_key_encrypt_sk_reference_full!(OverrideBackend, CGGI);
+poulpy_bin_fhe::impl_bdd_key_prepared_factory_reference_full!(OverrideBackend, CGGI);
 
 thread_local! {
     static CSWAP_CALLS: Cell<usize> = const { Cell::new(0) };
@@ -135,8 +135,8 @@ thread_local! {
     static STAGING_CALLS: Cell<usize> = const { Cell::new(0) };
 }
 const EXTRA: usize = 256;
-poulpy_bin_fhe::impl_bin_fhe_blind_rotation_key_prepared_reference!(OverrideBackend);
-poulpy_bin_fhe::impl_bin_fhe_blind_rotation_mod_switch_reference!(OverrideBackend);
+poulpy_bin_fhe::impl_blind_rotation_key_prepared_reference_full!(OverrideBackend);
+poulpy_bin_fhe::impl_blind_rotation_mod_switch_reference_full!(OverrideBackend);
 unsafe impl BlindRotationExecuteImpl<CGGI> for OverrideBackend {
     fn blind_rotation_execute_tmp_bytes<G: GLWEInfos, K: BlindRotationKeyInfos>(
         module: &Module<Self>,
