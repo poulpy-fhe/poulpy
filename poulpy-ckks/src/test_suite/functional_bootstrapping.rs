@@ -326,6 +326,7 @@ fn run_case<BE, F, E>(
     let keys_layout = BootstrappingKeysLayout {
         rotation_keys: Default::default(),
         first_factor_key: first_factor_on_raise.then(|| tp.first_factor_key_layout(&plan, k_boot, log_modulus_in)),
+        conversion_keys: None,
         automorphism_key: tp.atk_layout(),
         tensor_key: tp.tsk_layout(),
         // The first-factor keys switch back to the dense secret.
@@ -343,7 +344,8 @@ fn run_case<BE, F, E>(
             meta: GLWEPlaintextMeta::default(),
         };
         let boot_ct_bytes = module.glwe_bytes_of_from_infos(&boot_layout);
-        let eval_mod_tmp = module.ckks_eval_mod_tmp_bytes(&boot_layout, &boot_layout, ctx.eval_mod(), &keys_layout.tensor_key);
+        let eval_mod_tmp =
+            module.ckks_eval_mod_tmp_bytes(&boot_layout, &boot_layout, ctx.eval_mod().unwrap(), &keys_layout.tensor_key);
         assert!(boot_tmp >= 4 * boot_ct_bytes + eval_mod_tmp);
     }
     if boot_tmp > initial_tmp {

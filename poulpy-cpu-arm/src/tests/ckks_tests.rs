@@ -16,6 +16,17 @@ fn ntt4x30_neon_small_s2c_preset_meets_precision() {
     poulpy_ckks::test_suite::presets::small_s2c_preset_meets_precision::<crate::NTT4x30Neon>();
 }
 
+#[test]
+fn ntt4x30_neon_ci_bootstrap_refuses_invalid_inputs() {
+    poulpy_ckks::test_suite::presets::ci_bootstrap_refuses_invalid_inputs::<crate::NTT4x30Neon>();
+}
+
+#[cfg(feature = "enable-rayon")]
+#[test]
+fn ntt4x30_neon_rayon_ci_bootstrap_refuses_invalid_inputs() {
+    poulpy_ckks::test_suite::presets::ci_bootstrap_refuses_invalid_inputs::<crate::NTT4x30NeonRayon>();
+}
+
 /// Full logN16 bootstraps per preset: slow, so opt in with `--ignored`.
 #[cfg(feature = "enable-rayon")]
 mod bootstrapping_presets {

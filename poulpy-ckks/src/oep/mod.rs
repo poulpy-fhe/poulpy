@@ -21,8 +21,9 @@
 //! caller-selected comparison backend. Validation across backends is transitive.
 //!
 //! Conjugation, multiplication by `i`, complex polynomial evaluation, DFT,
-//! EvalMod, encapsulated ModUp and the PaCo/SHIP coefficient encodings exist
-//! only on the standard ring: conjugate-invariant backends do not implement them.
+//! encapsulated ModUp and the PaCo/SHIP coefficient encodings exist only on the
+//! standard ring: conjugate-invariant backends do not implement them. EvalMod
+//! runs on both rings; the conjugate-invariant ring refuses `ExpCmplx`.
 
 mod add;
 mod bootstrapping;
@@ -52,8 +53,9 @@ mod sub;
 pub use add::CKKSAddImpl;
 pub use add::impl_ckks_add_reference;
 pub use bootstrapping::{
-    CKKSBootstrappingImpl, CKKSEncapsulatedModUpImpl, CKKSModUpFirstFactorImpl, impl_ckks_bootstrapping_reference,
-    impl_ckks_encapsulated_mod_up_reference, impl_ckks_mod_up_first_factor_reference,
+    CKKSBootstrappingCIImpl, CKKSBootstrappingImpl, CKKSEncapsulatedModUpImpl, CKKSModUpFirstFactorImpl,
+    impl_ckks_bootstrapping_ci_reference, impl_ckks_bootstrapping_reference, impl_ckks_encapsulated_mod_up_reference,
+    impl_ckks_mod_up_first_factor_reference,
 };
 pub use ckks_impl::CKKSImpl;
 pub use conjugate::CKKSConjugateImpl;

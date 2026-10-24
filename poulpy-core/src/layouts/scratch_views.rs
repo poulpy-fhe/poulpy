@@ -190,12 +190,7 @@ macro_rules! impl_dist {
 
 impl_dist!(GLWESecretTensorViewMut);
 impl_dist!(GLWESecretPreparedViewMut);
-
-impl<BE: Backend> GetDistribution for GLWESecretViewMut<'_, BE> {
-    fn dist(&self) -> &Distribution {
-        self.inner.dist()
-    }
-}
+impl_dist!(GLWESecretViewMut);
 
 impl<BE: Backend> GGLWEInfos for GGLWEViewMut<'_, BE> {
     fn k_aux(&self) -> crate::layouts::TorusPrecision {

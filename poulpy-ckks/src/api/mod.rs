@@ -26,7 +26,7 @@ mod tmp_bytes;
 pub use crate::CKKSModuleInfos;
 pub use add::CKKSAddOps;
 pub use approximation::CKKSApproximationOps;
-pub use bootstrapping::CKKSBootstrappingOps;
+pub use bootstrapping::{CKKSBootstrappingCIOps, CKKSBootstrappingOps};
 pub use composite::{CKKSAddManyOps, CKKSAffineOps, CKKSDotProductOps, CKKSMulAddOps, CKKSMulSubOps};
 pub use conjugate::CKKSConjugateOps;
 pub use copy::CKKSCopyOps;

@@ -3,13 +3,17 @@ use poulpy_core::layouts::GLWEPlaintextInfos;
 use std::collections::HashMap;
 
 use crate::{
-    CKKSInfos, CKKSLayout, GLWEPlaintextMeta, SetCKKSInfos, SlotsKind,
+    CKKSInfos, CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos, SlotsKind,
     api::{
         CKKSAddOps, CKKSCIRingMapOps, CKKSCopyOps, CKKSDecryptOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar,
-        CKKSFoldLayoutOps, CKKSFoldOps, CKKSLinearTransformationOps, CKKSModuleInfos, CKKSMulOps, CKKSNegOps,
+        CKKSEvalModOps, CKKSFoldLayoutOps, CKKSFoldOps, CKKSLinearTransformationOps, CKKSModuleInfos, CKKSMulOps, CKKSNegOps,
         CKKSPolynomialEvaluationOps, CKKSPow2Ops, CKKSRotateOps, CKKSSubOps, LinearTransformationPrepared,
     },
-    layouts::{CKKSFoldKeysLayout, CKKSModuleAlloc, RingSwitchKeys},
+    layouts::{
+        CKKSFoldKeysLayout, CKKSModuleAlloc, RingSwitchKeys,
+        eval_mod::{EvalModPlan, EvalModType, compile_eval_mod},
+    },
+    polynomial::SplitStrategy,
 };
 use poulpy_core::{
     GLWECIKeyEncryptSk,
@@ -29,7 +33,7 @@ use super::{
     helpers::{
         TestContextBackend, TestContextModule, TestContextSharedModule, alloc_ct, alloc_scratch, assert_precision,
         ckks_decrypt_with_prec, ckks_encrypt_coeffs, ckks_encrypt_pt, gen_atk, gen_ci_keys, gen_sk_with_raw, gen_tsk,
-        precision_at,
+        next_test_seed, precision_at, precision_stats,
     },
 };
 use crate::reference::ckks_encode_linear_transformation_from_diagonals;
@@ -473,6 +477,13 @@ macro_rules! conjugate_invariant_ckks_test_suite {
                 );
             }
             #[test]
+            fn ckks_ci_eval_mod() {
+                let params = $params;
+                let module = Module::<$backend>::new(params.n as u64);
+                let host = Module::<HostBytesBackend<<$backend as poulpy_hal::layouts::Backend>::Ring>>::new(params.n as u64);
+                $crate::test_suite::conjugate_invariant::test_conjugate_invariant_eval_mod(params, &module, &host);
+            }
+            #[test]
             fn ckks_ci_leveled() {
                 let params = $params;
                 let module = Module::<$backend>::new(params.n as u64);
@@ -481,6 +492,135 @@ macro_rules! conjugate_invariant_ckks_test_suite {
             }
         }
     };
+}
+
+/// EvalMod on the conjugate-invariant ring: one ciphertext reduces `n` real slots,
+/// against the ideal `sin(2π·x)/(2π)`, and the complex-exponential variant, which
+/// needs complex slots, is rejected.
+pub fn test_conjugate_invariant_eval_mod<BE>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend<BE::Ring>>,
+) where
+    BE: TestContextBackend<Ring = ConjugateInvariant>,
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
+    Module<BE>: TestContextSharedModule<BE> + CKKSEncodingHostOps<BE, f64> + CKKSEvalModOps<BE>,
+{
+    let lit = EvalModPlan {
+        eval_mod_type: EvalModType::CosHKEven,
+        log_msg_ratio: 8,
+        f_mod_degree: 30,
+        f_mod_interval: 16,
+        f_mod_log_interval_reduction: 3,
+        f_mod_inv_degree: None,
+        scaling: None,
+        split_strategy: SplitStrategy::MinDepth,
+        coeffs_meta: CoeffsMeta::from_delta_budget(60, params.base2k),
+        f_mod_log_delta: 60,
+    };
+    let input_log_delta = 40;
+    let dsize = 2;
+    let params = CKKSTestParams {
+        k: (lit.consumed_bits() + input_log_delta + 2 * params.base2k).next_multiple_of(dsize * params.base2k),
+        hw: 192,
+        prec_meta: GLWEPlaintextMeta {
+            scale: Scale::Log(input_log_delta),
+            slots: SlotsKind::Real,
+            log_sparsity: 0,
+        },
+        prec_log_budget: 10,
+        dsize,
+        rank: 1,
+        ..params
+    };
+    let mut compile_scratch = ScratchOwned::<BE>::alloc(module.ckks_reim_tmp_bytes(params.n));
+    let eval_mod = compile_eval_mod::<BE, f64>(params.base2k.into(), lit, module, &mut compile_scratch.borrow()).unwrap();
+
+    let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [3u8; 32]);
+    let res_k = params.k + lit.f_mod_log_delta - input_log_delta;
+    let mut res = alloc_ct(&params, module, res_k);
+    let ct_layout = alloc_ct(&params, module, params.k);
+    // The tensor key covers the width EvalMod multiplies at.
+    let tsk_params = CKKSTestParams { k: res_k, ..params };
+    let bytes = module.ckks_eval_mod_tmp_bytes(&res, &ct_layout, &eval_mod, &tsk_params.tsk_layout());
+    // Key generation and encryption on an arena of their own, EvalMod on exactly its query.
+    let mut scratch = alloc_scratch(&params, module);
+    let tsk = gen_tsk(&tsk_params, module, &sk_raw, &mut scratch.borrow());
+
+    // `I·ratio + m` over the interval, at the input scaling `1/K`.
+    let slots = params.n;
+    let ratio = (1u64 << lit.log_msg_ratio) as f64;
+    let bound = (lit.input_scaling().unwrap().recip() - ratio.recip()).floor();
+    let mut source = Source::new(next_test_seed(5));
+    let x: Vec<f64> = (0..slots)
+        .map(|_| {
+            (source.next_f64(-bound, bound).round() * ratio + source.next_f64(-1.0, 1.0)) * lit.input_scaling().unwrap() / ratio
+        })
+        .collect();
+    let mut pt = module.ckks_pt_vec_alloc(slots, params.base2k.into(), params.prec().k());
+    pt.set_meta(params.prec().meta());
+    module
+        .ckks_encode_reim_into(&mut pt, &x, &vec![0.0; slots], &mut scratch.borrow())
+        .unwrap();
+    let ct = ckks_encrypt_pt(
+        &params,
+        module,
+        &sk,
+        params.k,
+        &pt.to_host_owned::<BE>(),
+        &mut scratch.borrow(),
+    );
+
+    crate::test_suite::parity::helpers::with_scratch::<BE, _>(bytes, |scratch| {
+        module.ckks_eval_mod(&mut res, &ct, &eval_mod, &tsk, scratch)
+    })
+    .unwrap();
+    assert_eq!(res.slots(), SlotsKind::Real);
+    let mut prec = precision_at(&params, res.log_delta());
+    prec.meta = res.meta();
+    let decrypted = ckks_decrypt_with_prec(module, &res, &sk, prec, &mut scratch.borrow()).unwrap();
+    let (mut re, mut im) = (vec![0.0; slots], vec![0.0; slots]);
+    module
+        .ckks_decode_reim_into(&decrypted, &mut re, &mut im, &mut scratch.borrow())
+        .unwrap();
+    let tau = std::f64::consts::TAU;
+    let want: Vec<f64> = x
+        .iter()
+        .map(|&t| (tau * t / lit.input_scaling().unwrap()).sin() / tau * ratio)
+        .collect();
+    let got: Vec<f64> = re.iter().map(|v| v * ratio).collect();
+    let stats = precision_stats(&got, &want, input_log_delta);
+    // 18.5 bits measured on average on the portable FFT64 and NTT backends: half a bit of margin.
+    assert!(
+        stats.avg_log2_prec >= 18.0,
+        "CI EvalMod: avg precision {:.1} bits",
+        stats.avg_log2_prec
+    );
+
+    let complex = EvalModPlan {
+        eval_mod_type: EvalModType::ExpCmplx,
+        f_mod_degree: 64,
+        f_mod_log_interval_reduction: 2,
+        ..lit
+    };
+    let complex = compile_eval_mod::<BE, f64>(params.base2k.into(), complex, module, &mut compile_scratch.borrow()).unwrap();
+    let before = res.to_host_owned::<BE>();
+    let err = module
+        .ckks_eval_mod(&mut res, &ct, &complex, &tsk, &mut scratch.borrow())
+        .unwrap_err();
+    assert!(
+        matches!(
+            err.composition(),
+            Some(crate::CKKSCompositionError::InvalidPlan { plan: "EvalModPlan", .. })
+        ),
+        "ExpCmplx on the CI ring: {err}"
+    );
+    let after = res.to_host_owned::<BE>();
+    assert!(
+        (after.meta(), after.k(), after.data()) == (before.meta(), before.k(), before.data()),
+        "the refusal wrote the output"
+    );
 }
 
 /// Embeds a CI ciphertext into the standard ring of twice its degree, switches

@@ -434,6 +434,17 @@ impl DFTPlan {
         self.schedule.log_slots()
     }
 
+    /// The plan as a ring of degree `2^log_n` resolves it: a `RepackImagAsReal`
+    /// plan over every slot is canonicalized to `SplitRealAndImag`, the two
+    /// coinciding, so `RepackImagAsReal` is left only to sparse plans.
+    pub(crate) fn resolved_at(&self, log_n: usize) -> Self {
+        let mut plan = self.clone();
+        if plan.format == DFTOutputFormat::RepackImagAsReal && plan.log_slots() >= log_n.saturating_sub(1) {
+            plan.format = DFTOutputFormat::SplitRealAndImag;
+        }
+        plan
+    }
+
     /// Number of factor matrices (the schedule length).
     pub fn num_factors(&self) -> usize {
         self.schedule.num_factors()

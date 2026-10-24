@@ -174,6 +174,19 @@ pub trait CKKSModuleInfos {
     fn ckks_galois_element(&self, rotation: i64) -> i64;
 }
 
+/// The cyclotomic order of the operands of degree `n` that `module` serves, at most its own
+/// degree.
+pub(crate) fn operand_cyclotomic_order<M: CyclotomicOrder + ?Sized>(op: &'static str, module: &M, n: usize) -> CKKSResult<i64> {
+    if n > module.n() {
+        return Err(CKKSCompositionError::InvalidOperand {
+            op,
+            reason: "operand degree exceeds the module degree".into(),
+        }
+        .into());
+    }
+    Ok(module.cyclotomic_order() / module.n() as i64 * n as i64)
+}
+
 impl<BE: Backend> CKKSModuleInfos for Module<BE> {
     fn ckks_max_slots(&self) -> usize {
         (self.cyclotomic_order() / 4) as usize

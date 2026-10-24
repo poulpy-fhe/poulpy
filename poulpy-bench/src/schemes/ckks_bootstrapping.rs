@@ -5,30 +5,37 @@
 //! preset by its name. The setup, bootstrap call, and precision measurement use
 //! the shared
 //! [`BootstrappingPresetRun`] driver, so the benchmark exercises exactly what
-//! the precision pin test checks.
+//! the precision pin test checks, EvalMod on the conjugate-invariant ring included.
 
 use crate::backend_name;
 use criterion::{BenchmarkGroup, BenchmarkId, Criterion, measurement::WallTime};
 use poulpy_ckks::{
     CKKSCtBounds, SetCKKSInfos,
-    api::{CKKSBootstrappingOps, CKKSDFTMatrixOps, CKKSEncodingOps},
-    layouts::{CKKSCiphertextOwned, CKKSPlaintextOwned},
+    api::{CKKSBootstrappingCIOps, CKKSBootstrappingOps, CKKSDFTMatrixOps, CKKSEncodingOps},
+    layouts::{CKKSCiphertextOwned, CKKSPlaintextOwned, EvalModRing},
     presets::bootstrapping::{BootstrappingPreset, all},
     test_suite::{
-        helpers::{TestContextBackend, TestContextModule},
-        presets::{BootstrappingPresetRun, preset_with_max_base2k},
+        helpers::{TestContextBackend, TestContextModule, TestContextSharedModule},
+        presets::{BootstrappingPresetRun, CIBackend, preset_with_max_base2k},
     },
 };
-use poulpy_core::layouts::{
-    GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, prepared::GLWETensorKeyPreparedToBackendRef,
+use poulpy_core::{
+    GLWECIKeyEncryptSk,
+    layouts::{
+        GGLWEInfos, GLWECIKeyPreparedFactory, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
+        prepared::GLWETensorKeyPreparedToBackendRef,
+    },
 };
 use poulpy_hal::{
     api::ScratchOwnedAlloc,
     layouts::{Backend, HostDataMut, HostDataRef, Module, ScratchOwned, Standard},
 };
 
-fn runner_ckks_bootstrapping<BE>(group: &mut BenchmarkGroup<'_, WallTime>, preset: BootstrappingPreset)
-where
+fn runner_ckks_bootstrapping<BE>(
+    group: &mut BenchmarkGroup<'_, WallTime>,
+    preset: BootstrappingPreset,
+    setup: impl Fn(BootstrappingPreset) -> BootstrappingPresetRun<BE>,
+) where
     BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, f64> + CKKSBootstrappingOps<BE> + CKKSDFTMatrixOps<BE, f64>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
@@ -48,7 +55,7 @@ where
     let mut run = None;
     let mut precision = None;
     group.bench_function(BenchmarkId::from_parameter(&id), |bencher| {
-        let run = run.get_or_insert_with(|| BootstrappingPresetRun::<BE>::setup(preset.clone()));
+        let run = run.get_or_insert_with(|| setup(preset.clone()));
         bencher.iter(|| run.bootstrap());
         precision = Some(run.precision());
     });
@@ -74,14 +81,23 @@ where
     }
 }
 
-/// Exercises every preset at the caller's fixture radix limit.
+/// Exercises every preset at the caller's fixture radix limit, the twin [`CIBackend`] running
+/// EvalMod for the presets that put it on the conjugate-invariant ring.
 ///
 /// `FIXTURE_BASE2K` selects the benchmark shape; it carries no failure-probability
 /// guarantee. The registered FFT and NTT fixtures use 18 and 52 respectively.
 pub fn bench_ckks_bootstrapping<BE, const FIXTURE_BASE2K: usize>(c: &mut Criterion<WallTime>)
 where
     BE: TestContextBackend<Ring = Standard>,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, f64> + CKKSBootstrappingOps<BE> + CKKSDFTMatrixOps<BE, f64>,
+    CIBackend<BE>: TestContextBackend,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, f64>
+        + CKKSBootstrappingOps<BE>
+        + CKKSDFTMatrixOps<BE, f64>
+        + CKKSBootstrappingCIOps<BE>
+        + GLWECIKeyEncryptSk<BE>
+        + GLWECIKeyPreparedFactory<BE>,
+    Module<CIBackend<BE>>: TestContextSharedModule<CIBackend<BE>> + CKKSEncodingOps<CIBackend<BE>, f64>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
@@ -93,8 +109,12 @@ where
     let mut group = c.benchmark_group(format!("{backend}/ckks/ckks_bootstrapping"));
     group.sample_size(10);
     for preset in all().unwrap() {
+        let ring = preset.plan().eval_mod_ring();
         let preset = preset_with_max_base2k(&preset, FIXTURE_BASE2K).unwrap();
-        runner_ckks_bootstrapping::<BE>(&mut group, preset);
+        match ring {
+            EvalModRing::Standard => runner_ckks_bootstrapping(&mut group, preset, BootstrappingPresetRun::<BE>::setup),
+            _ => runner_ckks_bootstrapping(&mut group, preset, |preset| BootstrappingPresetRun::<BE>::setup_ci(preset)),
+        }
     }
     group.finish();
 }

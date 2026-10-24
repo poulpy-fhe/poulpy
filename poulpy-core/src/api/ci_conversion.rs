@@ -26,6 +26,18 @@ pub trait GLWECIEmbed<BE: Backend> {
         A: GLWEToBackendRef<BE> + GLWEInfos;
 }
 
+/// Switch of a GLWE between ring degrees that divide one another, on a module of
+/// degree at least the larger, as from `N` to the degree `2N` of the conjugate-invariant maps.
+pub trait GLWESwitchDegree<BE: Backend> {
+    /// Writes each column of `a` into `res` at the degree of `res`: `X -> X^(N_res / N_a)`
+    /// when it is larger, the coefficients at multiples of the ratio when it is smaller.
+    /// `res` keeps the canonical flag of `a`.
+    fn glwe_switch_degree<R, A>(&self, res: &mut R, a: &A)
+    where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos;
+}
+
 /// Relative trace of a standard GLWE of degree `2N` onto the conjugate-invariant ring of
 /// degree `N`, on a standard module of degree at least `2N`.
 ///

@@ -449,6 +449,7 @@ fn bootstrap_sizing_includes_selected_dft_workspace() {
     let keys = BootstrappingKeysLayout {
         rotation_keys: Default::default(),
         first_factor_key: None,
+        conversion_keys: None,
         automorphism_key: poulpy_core::layouts::GLWEAutomorphismKeyLayout {
             n: key.n,
             base2k: key.base2k,

@@ -49,6 +49,11 @@ ckks_backend_rank2_test_suite!(
     rotations = super::ATK_ROTATIONS,
 );
 
+#[test]
+fn ntt4x30_ci_bootstrap_refuses_invalid_inputs() {
+    poulpy_ckks::test_suite::presets::ci_bootstrap_refuses_invalid_inputs::<crate::NTT4x30Oracle>();
+}
+
 /// Full logN16 bootstraps per preset: slow, so opt in with `--ignored`.
 mod bootstrapping_presets {
     use poulpy_ckks::test_suite::presets::bootstrapping_presets_meet_precision;

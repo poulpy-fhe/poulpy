@@ -33,7 +33,7 @@ use poulpy_hal::{
 
 use crate::{
     CKKSCtBounds, CKKSInfos, CKKSResult as Result, CoeffsMeta, GLWEPlaintextMeta, Scale, SetCKKSInfos, ckks_bail, ckks_ensure,
-    layouts::{BootstrappingKeys, CKKSPlaintextOwned},
+    layouts::{BootstrappingLinearKeys, CKKSPlaintextOwned},
 };
 
 /// Fewest bits the raise keeps below the raised precision while it applies
@@ -118,7 +118,7 @@ where
 }
 
 /// The first-factor key of the rotation `rotation`.
-fn first_factor_key<BE: Backend, K: BootstrappingKeys<BE>>(keys: &K, rotation: i64) -> Result<&K::SwitchingKey> {
+fn first_factor_key<BE: Backend, K: BootstrappingLinearKeys<BE>>(keys: &K, rotation: i64) -> Result<&K::SwitchingKey> {
     let Some(key) = keys.first_factor_key(rotation) else {
         ckks_bail!("no first-factor key for the rotation {rotation}");
     };
@@ -151,7 +151,7 @@ pub(crate) fn check_first_factor_raise<BE, K>(
 ) -> Result<FirstFactorRaise>
 where
     BE: Backend,
-    K: BootstrappingKeys<BE>,
+    K: BootstrappingLinearKeys<BE>,
     CKKSPlaintextOwned<BE>: IntPolyInfos + CKKSInfos,
 {
     let Some(diagonal) = factor.first_diagonal_plaintext() else {
@@ -274,7 +274,7 @@ where
         + VecZnxNormalize<BE>
         + VecZnxIdftNormalize<BE>
         + CyclotomicOrder,
-    K: BootstrappingKeys<BE>,
+    K: BootstrappingLinearKeys<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds,
@@ -313,7 +313,8 @@ where
     let k_offset = key_layout.k_offset.as_usize();
     let (_, guard) = first_factor_work(base2k, k_large);
     let small_layout = layout(dst, small);
-    let order = module.cyclotomic_order();
+    // The cyclotomic order of the bootstrap's degree, which the module may exceed.
+    let order = crate::operand_cyclotomic_order("ckks_mod_up_first_factor", module, dst.n().as_usize())?;
     let meta = GLWEPlaintextMeta {
         scale: Scale::Log(src.log_delta() + scale_up),
         slots: src.slots(),

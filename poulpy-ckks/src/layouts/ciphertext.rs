@@ -322,6 +322,14 @@ impl<'a, BE: Backend + 'a> CKKSCiphertextViewMut<'a, BE> {
             inner: GLWEViewRef::from_inner(self.inner.to_backend_ref()),
         }
     }
+    /// The same view on backend `B`, which shares the buffers of `BE`.
+    pub(crate) fn rebind<B: Backend + 'a>(self) -> CKKSCiphertextViewMut<'a, B>
+    where
+        BE: for<'b> Backend<BufMut<'b> = B::BufMut<'b>, ZnxWord = B::ZnxWord>,
+    {
+        let meta = self.meta();
+        CKKSCiphertextViewMut::from_inner(GLWEViewMut::from_inner(self.inner.into_inner()), meta)
+    }
 }
 
 impl<'a, BE: Backend + 'a> Deref for CKKSCiphertextViewMut<'a, BE> {

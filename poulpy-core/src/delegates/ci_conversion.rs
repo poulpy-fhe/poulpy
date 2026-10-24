@@ -1,7 +1,10 @@
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::{
+    api::VecZnxSwitchRing,
+    layouts::{Backend, Module, ScratchArena},
+};
 
 use crate::{
-    api::{GLWECIEmbed, GLWECITrace},
+    api::{GLWECIEmbed, GLWECITrace, GLWESwitchDegree},
     layouts::{GLWEInfos, GLWEToBackendMut, GLWEToBackendRef},
     oep::GLWECIConversionImpl,
 };
@@ -31,5 +34,18 @@ impl<BE: Backend + GLWECIConversionImpl> GLWECITrace<BE> for Module<BE> {
         A: GLWEToBackendRef<BE> + GLWEInfos,
     {
         BE::glwe_ci_trace(self, res, a, scratch)
+    }
+}
+
+impl<BE: Backend + GLWECIConversionImpl> GLWESwitchDegree<BE> for Module<BE>
+where
+    Module<BE>: VecZnxSwitchRing<BE>,
+{
+    fn glwe_switch_degree<R, A>(&self, res: &mut R, a: &A)
+    where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos,
+    {
+        BE::glwe_switch_degree(self, res, a)
     }
 }
