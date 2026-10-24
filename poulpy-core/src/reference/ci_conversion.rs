@@ -8,11 +8,9 @@ use poulpy_hal::{
 };
 
 use crate::{
+    GetDistributionMut,
     dist::Distribution,
-    layouts::{
-        GLWEInfos, GLWESecret, GLWESecretLayout, GLWESecretToBackendMut, GLWESecretToBackendRef, GLWEToBackendMut,
-        GLWEToBackendRef, LWEInfos, ModuleCoreAlloc,
-    },
+    layouts::{GLWEInfos, GLWESecretToBackendMut, GLWESecretToBackendRef, GLWEToBackendMut, GLWEToBackendRef, LWEInfos},
 };
 
 /// Embeds each column of `a` into `res` at the radix of `a`; the digits are
@@ -85,27 +83,35 @@ where
     }
 }
 
-/// Embeds each column of `src` into a fresh standard secret of twice its degree, tagged
+/// Embeds each column of `src` into `res`, a standard secret of twice its degree, tagged
 /// [`Distribution::ENCAPSULATED`].
-pub fn glwe_secret_ci_embed_reference<BE, S>(module: &Module<BE>, src: &S) -> GLWESecret<BE::OwnedBuf, BE::ZnxWord>
+pub fn glwe_secret_ci_embed_reference<BE, R, S>(module: &Module<BE>, res: &mut R, src: &S)
 where
     BE: Backend,
     Module<BE>: ScalarZnxCIEmbed<BE>,
+    R: GLWESecretToBackendMut<BE> + GetDistributionMut,
     S: GLWESecretToBackendRef<BE>,
 {
     let src = src.to_backend_ref();
-    let n = 2 * src.n().as_usize();
-    assert!(n <= module.n(), "the embedded secret degree exceeds the module degree");
-    let mut res = module.glwe_secret_alloc_from_infos(&GLWESecretLayout {
-        n: n.into(),
-        rank: src.rank(),
-    });
-    res.dist = Distribution::ENCAPSULATED("conjugate-invariant");
     {
-        let mut res_ref = GLWESecretToBackendMut::<BE>::to_backend_mut(&mut res);
+        let mut res_ref = res.to_backend_mut();
+        assert_eq!(
+            res_ref.n().as_usize(),
+            2 * src.n().as_usize(),
+            "the embedded secret degree must be twice the source degree"
+        );
+        assert!(
+            res_ref.n().as_usize() <= module.n(),
+            "the embedded secret degree exceeds the module degree"
+        );
+        assert_eq!(
+            res_ref.rank(),
+            src.rank(),
+            "the embedded secret rank must equal the source rank"
+        );
         for j in 0..src.rank().as_usize() {
             module.scalar_znx_ci_embed(res_ref.data_mut(), j, src.data(), j);
         }
     }
-    res
+    *res.dist_mut() = Distribution::ENCAPSULATED("conjugate-invariant");
 }

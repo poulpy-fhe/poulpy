@@ -1,10 +1,9 @@
-//! Zero fills, preparation, tensoring and LWE/GLWE conversion of secrets.
+//! Preparation, tensoring and LWE/GLWE conversion of secrets.
 
 use poulpy_hal::{
     api::{
         ScalarZnxAutomorphism, ScratchArenaTakeBasic, SvpApplyDftToDft, SvpPrepare, VecZnxBigBytesOf, VecZnxBigNormalize,
         VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftApply, VecZnxDftBytesOf, VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
-        VecZnxZero,
     },
     layouts::{
         Backend, Module, ScratchArena, SvpPPolReborrowBackendMut, SvpPPolReborrowBackendRef, VecZnxBigToBackendMut,
@@ -16,8 +15,7 @@ use poulpy_hal::{
 
 use crate::{
     GetDistribution, GetDistributionMut, ScratchArenaTakeCore,
-    api::GLWESecretPreparedFactory,
-    dist::Distribution,
+    api::{GLWEBytesOf, GLWESecretPreparedFactory},
     layouts::{
         Degree, GLWEInfos, GLWESecret, GLWESecretPreparedToBackendMut, GLWESecretTensorPreparedToBackendMut,
         GLWESecretTensorToBackendMut, GLWESecretTensorToBackendRef, GLWESecretToBackendMut, GLWESecretToBackendRef, LWEInfos,
@@ -28,14 +26,6 @@ use crate::{
 /// Reference secret bodies. Backend dispatch is selected independently through
 /// [`SecretImpl`](crate::oep::SecretImpl).
 pub trait SecretReference<BE: Backend> {
-    fn glwe_secret_fill_zero_reference<S>(&self, sk: &mut S)
-    where
-        S: GLWESecretToBackendMut<BE> + GetDistributionMut + GLWEInfos;
-
-    fn lwe_secret_fill_zero_reference<S>(&self, sk: &mut S)
-    where
-        S: LWESecretToBackendMut<BE> + GetDistributionMut;
-
     fn glwe_secret_prepare_reference<R, O>(&self, res: &mut R, other: &O)
     where
         R: GLWESecretPreparedToBackendMut<BE> + GetDistributionMut,
@@ -57,7 +47,16 @@ pub trait SecretReference<BE: Backend> {
     where
         S: LWESecretToBackendRef<BE>;
 
-    fn lwe_secret_from_glwe_secret_reference<S>(&self, src: &S, lwe_n: Degree) -> LWESecret<BE::OwnedBuf, BE::ZnxWord>
+    fn lwe_secret_from_glwe_secret_tmp_bytes_reference<A>(&self, infos: &A) -> usize
+    where
+        A: GLWEInfos;
+
+    fn lwe_secret_from_glwe_secret_reference<S>(
+        &self,
+        src: &S,
+        lwe_n: Degree,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> LWESecret<BE::OwnedBuf, BE::ZnxWord>
     where
         S: GLWESecretToBackendRef<BE>;
 }
@@ -77,36 +76,8 @@ where
         + VecZnxDftApply<BE>
         + VecZnxDftBytesOf
         + VecZnxIdftApply<BE>
-        + VecZnxIdftApplyTmpBytes
-        + VecZnxZero<BE>,
+        + VecZnxIdftApplyTmpBytes,
 {
-    fn glwe_secret_fill_zero_reference<S>(&self, sk: &mut S)
-    where
-        S: GLWESecretToBackendMut<BE> + GetDistributionMut + GLWEInfos,
-    {
-        let rank: usize = sk.rank().into();
-        {
-            let mut sk_backend = sk.to_backend_mut();
-            let mut sk_vec = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(&mut sk_backend.data);
-            for i in 0..rank {
-                self.vec_znx_zero(&mut sk_vec, i);
-            }
-        }
-        *sk.dist_mut() = Distribution::ZERO;
-    }
-
-    fn lwe_secret_fill_zero_reference<S>(&self, sk: &mut S)
-    where
-        S: LWESecretToBackendMut<BE> + GetDistributionMut,
-    {
-        {
-            let mut sk_backend = sk.to_backend_mut();
-            let mut sk_vec = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(&mut sk_backend.data);
-            self.vec_znx_zero(&mut sk_vec, 0);
-        }
-        *sk.dist_mut() = Distribution::ZERO;
-    }
-
     fn glwe_secret_prepare_reference<R, O>(&self, res: &mut R, other: &O)
     where
         R: GLWESecretPreparedToBackendMut<BE> + GetDistributionMut,
@@ -260,7 +231,19 @@ where
         res
     }
 
-    fn lwe_secret_from_glwe_secret_reference<S>(&self, src: &S, lwe_n: Degree) -> LWESecret<BE::OwnedBuf, BE::ZnxWord>
+    fn lwe_secret_from_glwe_secret_tmp_bytes_reference<A>(&self, infos: &A) -> usize
+    where
+        A: GLWEInfos,
+    {
+        self.glwe_secret_bytes_of_from_infos(infos)
+    }
+
+    fn lwe_secret_from_glwe_secret_reference<S>(
+        &self,
+        src: &S,
+        lwe_n: Degree,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> LWESecret<BE::OwnedBuf, BE::ZnxWord>
     where
         S: GLWESecretToBackendRef<BE>,
     {
@@ -275,22 +258,27 @@ where
             target,
             rank * n
         );
-
-        // Scratch buffer shaped like the source (rank cols, ring N) so the
-        // per-column automorphism dimensions match. The result is then packed
-        // into the flat LWE secret via the backend copy op, truncating the
-        // last block when `target % n != 0`.
-        let mut tmp: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = self.glwe_secret_alloc(src.rank());
-        {
-            let mut tmp_ref = GLWESecretToBackendMut::<BE>::to_backend_mut(&mut tmp);
-            for j in 0..rank {
-                self.scalar_znx_automorphism(-1, tmp_ref.data_mut(), j, src.data(), j);
-            }
-        }
+        let tmp_bytes: usize = self.lwe_secret_from_glwe_secret_tmp_bytes_reference(&src);
+        assert!(
+            scratch.available() >= tmp_bytes,
+            "insufficient scratch for LWE secret flattening"
+        );
 
         let mut res: LWESecret<BE::OwnedBuf, BE::ZnxWord> = self.lwe_secret_alloc(lwe_n);
         res.dist = src.dist;
         {
+            // Scratch secret shaped like the source (rank cols, ring N) so the
+            // per-column automorphism dimensions match. The result is then packed
+            // into the flat LWE secret via the backend copy op, truncating the
+            // last block when `target % n != 0`.
+            let (mut tmp, _) = scratch.borrow().take_glwe_secret_scratch(src.n(), src.rank());
+            {
+                let mut tmp_ref = GLWESecretToBackendMut::<BE>::to_backend_mut(&mut tmp);
+                for j in 0..rank {
+                    self.scalar_znx_automorphism(-1, tmp_ref.data_mut(), j, src.data(), j);
+                }
+            }
+
             let tmp_ref = GLWESecretToBackendMut::<BE>::to_backend_mut(&mut tmp);
             let mut res_ref = LWESecretToBackendMut::<BE>::to_backend_mut(&mut res);
             let tmp_vz = scalar_znx_as_vec_znx_backend_ref_from_mut::<BE>(tmp_ref.data());
@@ -311,6 +299,7 @@ where
                 written += take;
             }
         }
+        scratch.wipe(tmp_bytes);
         res
     }
 }

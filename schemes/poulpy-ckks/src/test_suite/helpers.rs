@@ -857,10 +857,16 @@ where
     let infos = params.ksk_layout(k_in);
     let mut xa = Source::new(next_test_seed(1));
     let mut xe = Source::new(next_test_seed(2));
+    let bytes = module.glwe_ci_key_encrypt_sk_tmp_bytes(&infos);
+    // The embedded conjugate-invariant secret would be left in the scratch.
     let mut embed = module.glwe_ci_embed_key_alloc_from_infos(&infos);
-    module.glwe_ci_embed_key_encrypt_sk(&mut embed, ci_sk, sk, &mut xe, &mut xa, scratch);
+    poulpy_core::test_suite::assert_wipes_scratch::<BE>(bytes, |scratch| {
+        module.glwe_ci_embed_key_encrypt_sk(&mut embed, ci_sk, sk, &mut xe, &mut xa, scratch)
+    });
     let mut trace = module.glwe_ci_trace_key_alloc_from_infos(&infos);
-    module.glwe_ci_trace_key_encrypt_sk(&mut trace, ci_sk, sk, &mut xe, &mut xa, scratch);
+    poulpy_core::test_suite::assert_wipes_scratch::<BE>(bytes, |scratch| {
+        module.glwe_ci_trace_key_encrypt_sk(&mut trace, ci_sk, sk, &mut xe, &mut xa, scratch)
+    });
     let mut bytes = Vec::new();
     trace.write_to(&mut bytes).unwrap();
     let mut restored = module.glwe_ci_trace_key_alloc_from_infos(&infos);

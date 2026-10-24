@@ -1,10 +1,12 @@
-//! Preparations of key wrappers composed from GGLWE and GLWE switching-key preparation.
+//! Preparations of key wrappers composed from GGLWE and GLWE switching-key preparation, and the
+//! zeroing of a prepared GGSW through the selected `vmp_zero`.
 use poulpy_hal::layouts::{Data, Module, ScratchArena};
 
 use crate::{
     layouts::{
-        GGLWEInfos, GGLWEPreparedToBackendMut, GGLWEToBackendRef, GLWECIKey, GLWECIKeyPrepared, GLWESwitchingKey,
-        GLWESwitchingKeyDegrees, GLWESwitchingKeyDegreesMut, GLWESwitchingKeyPrepared, GetGaloisElement, SetGaloisElement,
+        GGLWEInfos, GGLWEPreparedToBackendMut, GGLWEToBackendRef, GGSWPreparedToBackendMut, GLWECIKey, GLWECIKeyPrepared,
+        GLWESwitchingKey, GLWESwitchingKeyDegrees, GLWESwitchingKeyDegreesMut, GLWESwitchingKeyPrepared, GetGaloisElement,
+        SetGaloisElement,
     },
     oep::PreparationImpl,
 };
@@ -219,4 +221,14 @@ pub(crate) fn glwe_ci_key_prepare_derived<BE, DR, DO, M>(
     GLWESwitchingKey<DO, BE::ZnxWord>: GGLWEToBackendRef<BE>,
 {
     BE::glwe_switching_key_prepare(module, &mut res.0, &other.0, scratch);
+}
+
+pub(crate) fn ggsw_zero_derived<BE, R>(module: &Module<BE>, res: &mut R)
+where
+    BE: PreparationImpl,
+    R: GGSWPreparedToBackendMut<BE>,
+{
+    res.set_noise(None);
+    let mut res = res.to_backend_mut();
+    BE::vmp_zero(module, &mut res.data);
 }

@@ -4,9 +4,9 @@ use poulpy_hal::{
 };
 
 use crate::{
-    GetDistribution,
+    GetDistribution, GetDistributionMut,
     layouts::{
-        GGLWEInfos, GGLWEToBackendMut, GLWECIEmbedKey, GLWECITraceKey, GLWEInfos, GLWESecret, GLWESecretToBackendRef,
+        GGLWEInfos, GGLWEToBackendMut, GLWECIEmbedKey, GLWECITraceKey, GLWEInfos, GLWESecretToBackendMut, GLWESecretToBackendRef,
         GLWEToBackendMut, GLWEToBackendRef,
     },
 };
@@ -29,17 +29,19 @@ pub trait GLWECIEmbed<BE: Backend> {
 /// Embedding of a conjugate-invariant secret of degree `N` into the standard secret of degree `2N`,
 /// on a standard module of degree at least `2N`.
 pub trait GLWESecretCIEmbed<BE: Backend> {
-    /// Embeds a conjugate-invariant secret of degree `N` into the standard secret
-    /// of degree `2N` under which embedded ciphertexts decrypt; the module degree
-    /// is at least `2N`.
+    /// Writes into `res` the embedding of the conjugate-invariant secret `src` of degree `N`:
+    /// the standard secret of degree `2N` under which embedded ciphertexts decrypt; the module
+    /// degree is at least `2N`.
     ///
-    /// The result is tagged [`Distribution::ENCAPSULATED`](crate::Distribution::ENCAPSULATED):
+    /// `res` is tagged [`Distribution::ENCAPSULATED`](crate::Distribution::ENCAPSULATED):
     /// its coefficients mirror the source, so it only backs the ring-switching keys.
     ///
     /// # Panics
-    /// When `2N` exceeds the module degree.
-    fn glwe_secret_ci_embed<S>(&self, src: &S) -> GLWESecret<BE::OwnedBuf, BE::ZnxWord>
+    /// Before writing `res`, when its degree is not `2N` or exceeds the module degree, or its
+    /// rank differs from that of `src`.
+    fn glwe_secret_ci_embed<R, S>(&self, res: &mut R, src: &S)
     where
+        R: GLWESecretToBackendMut<BE> + GetDistributionMut,
         S: GLWESecretToBackendRef<BE>;
 }
 
@@ -76,7 +78,8 @@ pub trait GLWECITrace<BE: Backend> {
 
 /// Encryption of the switching keys between the embedding of a conjugate-invariant secret `sk_ci`
 /// of degree `N` and a standard secret `sk` of degree `2N`, on a standard module of degree at least
-/// `2N`; `sk_ci` is embedded internally.
+/// `2N`; `sk_ci` is embedded into the scratch, which is wiped over
+/// [`glwe_ci_key_encrypt_sk_tmp_bytes`](Self::glwe_ci_key_encrypt_sk_tmp_bytes) before returning.
 #[allow(clippy::too_many_arguments)]
 pub trait GLWECIKeyEncryptSk<BE: Backend> {
     /// Scratch bytes of [`Self::glwe_ci_embed_key_encrypt_sk`] and
