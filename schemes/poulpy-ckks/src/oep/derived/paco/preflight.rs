@@ -9,7 +9,7 @@ use crate::{CKKSResult as Result, ckks_ensure};
 use anyhow::Context;
 use poulpy_core::layouts::prepared::{GLWEAutomorphismKeyPreparedBackendRef, GLWETensorKeyPreparedBackendRef};
 use poulpy_core::{
-    GLWEBytesOf, GLWEKeyswitch, GLWELinearTransformations, GLWERotate,
+    GLWEBytesOf, GLWEKeyswitch, GLWERotate,
     layouts::{
         Degree, GGLWEPreparedToBackendRef, GLWEInfos, GLWELayout, GLWEPlaintextInfos, GLWEPlaintextMeta, GLWESwitchingKeyDegrees,
         GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos, Rank, Scale, TorusPrecision,
@@ -17,7 +17,7 @@ use poulpy_core::{
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
-use super::bootstrap::validate_runtime;
+use super::bootstrap::{branch_work_layout, validate_runtime};
 use crate::SlotsKind;
 use crate::layouts::paco::{
     context::PaCoContext,
@@ -25,7 +25,7 @@ use crate::layouts::paco::{
 };
 use crate::{
     CKKSCtBounds, CKKSInfos, CKKSLayout,
-    api::{CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSMulOps, CKKSSubOps, PaCoScalar},
+    api::{CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSLinearTransformationOps, CKKSMulOps, CKKSSubOps, PaCoScalar},
     oep::{CKKSEncodingImpl, CKKSPaCoImpl},
 };
 
@@ -97,17 +97,19 @@ where
         .map_err(Into::into)
 }
 
-/// Computes a conservative scratch bound for one direct branch after the
-/// common runtime layouts have been validated.
+/// Computes a conservative scratch bound for one shifted branch on `input` after
+/// the common runtime layouts have been validated: the shifted input, the
+/// accumulator and the temporary it carves, and its largest stage.
 ///
 /// Every stage is sized at the branch's working precision, the widest the
 /// accumulator ever is, and every key-dependent term is taken over the
 /// context's rotation keys resolved at that precision. The keys' effective
 /// decompositions are resolved below this API, so each query only needs the
 /// key itself.
-pub(super) fn direct_tmp_bytes_validated<BE, F, K>(
+pub(super) fn branch_tmp_bytes_validated<BE, F, K, I>(
     module: &Module<BE>,
     output: &CKKSCiphertextOwned<BE>,
+    input: &I,
     context: &PaCoContext<BE, F>,
     keys: &K,
 ) -> Result<usize>
@@ -115,6 +117,7 @@ where
     BE: CKKSPaCoImpl + CKKSEncodingImpl<F>,
     F: PaCoScalar,
     K: PaCoKeys<BE>,
+    I: CKKSCtBounds,
 {
     let plan = context.plan();
     let canonical = &keys.bootstrapping_keys()[0];
@@ -182,6 +185,22 @@ where
         },
     };
 
+    // The selected linear-transformation query reads one ciphertext as the proxy of both the evaluated ciphertext
+    // and its diagonals, so it is taken at the wider of the branch and the factors.
+    let lt_k = working_precision.max(factor_layout.k());
+    let lt_layout = BranchScratchLayout {
+        glwe_layout: GLWELayout {
+            k: lt_k,
+            ..branch_layout.glwe_layout
+        },
+        max_size: branch_layout.max_size.max(factor_layout.size()),
+        meta: branch_layout.meta,
+    };
+
+    // A branch shifts the caller's input in direct mode and its dense-to-PaCo switch in encapsulated mode, so the
+    // direct bound covers the parallel workers of both.
+    let structured = encapsulated_input_layout(input, context);
+
     let relinearization = relinearization_layout_for(keys.tensor_key(), working_precision)?;
     let bsk = canonical;
     let mut required = module
@@ -189,27 +208,15 @@ where
         .max(module.ckks_add_tmp_bytes(branch_layout.size()))
         .max(module.ckks_sub_tmp_bytes(branch_layout.size()))
         .max(module.ckks_copy_tmp_bytes(&branch_layout, &branch_layout))
+        .max(module.ckks_copy_tmp_bytes(output, &branch_layout))
+        .max(module.ckks_copy_tmp_bytes(input, input))
+        .max(module.ckks_copy_tmp_bytes(&structured, &structured))
         .max(module.glwe_rotate_tmp_bytes());
 
-    // The assign path evaluates into a branch-shaped scratch copy and copies it
-    // back with the selected `ckks_copy`, so both are sized here too.
-    let lt_copy = module.glwe_bytes_of_from_infos(&branch_layout);
-    let copy_back = module.ckks_copy_tmp_bytes(&branch_layout, &branch_layout);
     // PaCo's transforms take a key per rotation, which every plan of that kind sizes alike.
     let lt_plan = poulpy_core::layouts::LinearTransformationPlan::default();
     for &element in context.galois_elements() {
         let key = automorphism_layout_for::<BE, _>(keys.rotation_keys(), element, working_precision)?;
-        let lt = module
-            .glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(
-                &branch_layout,
-                &branch_layout,
-                &factor_layout,
-                &lt_plan,
-                &key,
-            )
-            .max(copy_back)
-            .checked_add(lt_copy)
-            .context("PaCo linear-transformation scratch size overflows usize")?;
         required = required
             .max(BE::ckks_slot_trace_assign_tmp_bytes(module, &branch_layout, &key))
             .max(BE::ckks_slot_product_assign_tmp_bytes(
@@ -219,10 +226,72 @@ where
                 &relinearization,
             ))
             .max(module.ckks_conjugate_tmp_bytes(&branch_layout, &key))
-            .max(lt);
+            .max(module.ckks_eval_linear_transformation_streamed_tmp_bytes(&lt_layout, &lt_plan, &key));
     }
     required = required.max(BE::ckks_paco_coeff_encodings_tmp_bytes::<F>(module, context)?);
-    Ok(required)
+
+    // The shifted input, the accumulator and the temporary coexist through the whole branch.
+    let work = BE::scratch_aligned(module.glwe_bytes_of_from_infos(&branch_work_layout(module, canonical.base2k(), working_k)?));
+    let shifted = module
+        .glwe_bytes_of_from_infos(input)
+        .max(module.glwe_bytes_of_from_infos(&structured));
+    BE::scratch_aligned(shifted)
+        .checked_add(work)
+        .and_then(|bytes| bytes.checked_add(work))
+        .and_then(|bytes| bytes.checked_add(required))
+        .context("PaCo branch scratch size overflows usize")
+        .map_err(Into::into)
+}
+
+/// [`branch_tmp_bytes_validated`] of the sequential driver, which carves its branch output, of `output`'s layout,
+/// before its shifted branches.
+pub(super) fn direct_tmp_bytes_validated<BE, F, K, I>(
+    module: &Module<BE>,
+    output: &CKKSCiphertextOwned<BE>,
+    input: &I,
+    context: &PaCoContext<BE, F>,
+    keys: &K,
+) -> Result<usize>
+where
+    BE: CKKSPaCoImpl + CKKSEncodingImpl<F>,
+    F: PaCoScalar,
+    K: PaCoKeys<BE>,
+    I: CKKSCtBounds,
+{
+    BE::scratch_aligned(module.glwe_bytes_of_from_infos(output))
+        .checked_add(branch_tmp_bytes_validated(module, output, input, context, keys)?)
+        .context("PaCo direct scratch size overflows usize")
+        .map_err(Into::into)
+}
+
+/// The caller-arena bound of one public PaCo call and the sequential driver's bound within it, after the runtime
+/// validation: with `encapsulated`, the structured input is carved first, the key switch filling it and the driver
+/// running on the remainder.
+fn call_tmp_bytes_validated<BE, F, K, Src>(
+    module: &Module<BE>,
+    output: &CKKSCiphertextOwned<BE>,
+    input: &Src,
+    context: &PaCoContext<BE, F>,
+    keys: &K,
+    encapsulated: bool,
+) -> Result<(usize, usize)>
+where
+    BE: CKKSPaCoImpl + CKKSEncodingImpl<F>,
+    F: PaCoScalar,
+    K: PaCoKeys<BE>,
+    Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+{
+    if !encapsulated {
+        let direct = direct_tmp_bytes_validated(module, output, input, context, keys)?;
+        return Ok((direct, direct));
+    }
+    let switching_key = validate_encapsulation_key(input, context, keys)?;
+    let structured = encapsulated_input_layout(input, context);
+    let direct = direct_tmp_bytes_validated(module, output, &structured, context, keys)?;
+    let required = BE::scratch_aligned(module.glwe_bytes_of_from_infos(&structured))
+        .checked_add(direct.max(module.glwe_keyswitch_tmp_bytes(&structured, input, switching_key)))
+        .context("PaCo encapsulated scratch size overflows usize")?;
+    Ok((required, direct))
 }
 
 /// Scratch bytes for one public PaCo call. With `encapsulated`, includes the
@@ -242,13 +311,7 @@ where
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     validate_runtime(module, context, output, input, keys)?;
-    let direct = direct_tmp_bytes_validated(module, output, context, keys)?;
-    if !encapsulated {
-        return Ok(direct);
-    }
-    let switching_key = validate_encapsulation_key(input, context, keys)?;
-    let structured = encapsulated_input_layout(input, context);
-    Ok(direct.max(module.glwe_keyswitch_tmp_bytes(&structured, input, switching_key)))
+    Ok(call_tmp_bytes_validated(module, output, input, context, keys, encapsulated)?.0)
 }
 
 pub(crate) fn ckks_paco_bootstrap_direct_tmp_bytes_derived<BE, F, K, Src>(
@@ -301,14 +364,7 @@ where
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     let output_meta = validate_runtime(module, context, output, input, keys)?;
-    let direct = direct_tmp_bytes_validated(module, output, context, keys)?;
-    let required = if encapsulated {
-        let switching_key = validate_encapsulation_key(input, context, keys)?;
-        let structured = encapsulated_input_layout(input, context);
-        direct.max(module.glwe_keyswitch_tmp_bytes(&structured, input, switching_key))
-    } else {
-        direct
-    };
+    let (required, direct) = call_tmp_bytes_validated(module, output, input, context, keys, encapsulated)?;
     ckks_ensure!(
         scratch.available() >= required,
         "PaCo bootstrap needs {required} scratch bytes, but only {} are available",
@@ -411,7 +467,7 @@ where
 /// Layout produced by dense-to-PaCo encapsulation. The key switch accepts an
 /// input in a different limb radix, but its result must use the context radix
 /// consumed by the compiled plaintexts and bootstrapping keys.
-fn encapsulated_input_layout<BE: Backend, F: PaCoScalar, Src: CKKSCtBounds>(
+pub(super) fn encapsulated_input_layout<BE: Backend, F: PaCoScalar, Src: CKKSCtBounds>(
     input: &Src,
     context: &PaCoContext<BE, F>,
 ) -> CKKSLayout {

@@ -6,7 +6,7 @@
 
 use crate::{CKKSResult as Result, ckks_ensure};
 use poulpy_core::{
-    GLWEAutomorphism,
+    GLWEAutomorphism, GLWEBytesOf,
     layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey},
 };
 use poulpy_hal::{
@@ -17,7 +17,7 @@ use poulpy_hal::{
 use crate::{
     CKKSCompositionError, CKKSCtBounds, SetCKKSInfos,
     api::{CKKSMulOps, CKKSRotateOps},
-    layouts::CKKSModuleAlloc,
+    layouts::ScratchArenaTakeCKKS,
     layouts::slots::fold_rotations,
     oep::CKKSPaCoImpl,
 };
@@ -71,9 +71,13 @@ where
     K: GGLWEInfos,
     T: GGLWEInfos,
 {
-    module
-        .ckks_rotate_tmp_bytes(ct_infos, key_infos)
-        .max(module.ckks_mul_tmp_bytes(ct_infos, ct_infos, ct_infos, tsk_infos))
+    BE::scratch_aligned(module.glwe_bytes_of_from_infos(ct_infos))
+        .checked_add(
+            module
+                .ckks_rotate_tmp_bytes(ct_infos, key_infos)
+                .max(module.ckks_mul_tmp_bytes(ct_infos, ct_infos, ct_infos, tsk_infos)),
+        )
+        .expect("ckks_slot_product_assign_tmp_bytes: the byte count overflows usize")
 }
 
 pub(crate) fn ckks_slot_product_assign_derived<BE, Dst, H, TH>(
@@ -92,12 +96,14 @@ where
     TH: GetTensorKey<BE>,
 {
     let rotations = checked_fold_rotations(module, a, b)?;
-    let mut tmp = module.ckks_ciphertext_alloc_from_infos(ct);
-    for k in rotations {
-        module.ckks_rotate_into(&mut tmp, ct, k, keys, scratch)?;
-        module.ckks_mul_assign(ct, &tmp, tsk, scratch)?;
-    }
-    Ok(())
+    scratch.scope(|scratch_local| {
+        let (mut tmp, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(ct);
+        for k in rotations {
+            module.ckks_rotate_into(&mut tmp, ct, k, keys, &mut scratch_local.borrow())?;
+            module.ckks_mul_assign(ct, &tmp, tsk, &mut scratch_local.borrow())?;
+        }
+        Ok(())
+    })
 }
 
 /// Validates the fold bounds against the module's slot count and returns the

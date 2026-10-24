@@ -5,7 +5,7 @@ use poulpy_core::layouts::SetGLWEPlaintextInfos;
 use poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef;
 use poulpy_core::{
     GLWEKeyswitch, GLWEZero,
-    layouts::{GLWEInfos, GLWEToBackendRef, LWEInfos, TorusPrecision},
+    layouts::{Base2K, GLWEInfos, GLWELayout, GLWEToBackendRef, LWEInfos, Rank, TorusPrecision},
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
@@ -13,9 +13,29 @@ use super::ship_mux_plans;
 use crate::{
     CKKSCtBounds, CKKSInfos, GLWEPlaintextMeta, Scale, SlotsKind,
     api::{CKKSAddOps, CKKSConjugateOps, CKKSImagOps, CKKSMulOps, CKKSSubOps, ShipScalar},
-    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, ShipKeysPrepared},
+    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, ScratchArenaTakeCKKS, ShipKeysPrepared, ShipPlan},
     oep::{CKKSEncodingImpl, CKKSShipImpl},
 };
+
+/// The layout of the bottom ciphertext the dense-to-sparse switch writes: one limb of the key radix.
+pub(super) fn ship_bottom_layout(plan: &ShipPlan, base2k: usize) -> GLWELayout {
+    GLWELayout {
+        n: (plan.n() as u32).into(),
+        base2k: base2k.into(),
+        k: base2k.into(),
+        rank: Rank(1),
+    }
+}
+
+/// The layout of a temporary of the final combination of the product-tree roots, at width `k`.
+fn ship_root_layout<BE: Backend>(module: &Module<BE>, base2k: Base2K, k: TorusPrecision) -> GLWELayout {
+    GLWELayout {
+        n: (module.n() as u32).into(),
+        base2k,
+        k,
+        rank: Rank(1),
+    }
+}
 
 /// Validates the runtime ciphertexts against the key bundle's parameters.
 pub(crate) fn validate_runtime<BE, Src>(
@@ -102,16 +122,24 @@ where
 
     // Encapsulation: switch the bottom ciphertext from the dense to the
     // sparse secret at the bottom modulus.
-    let mut a_sparse = module.ckks_ciphertext_alloc(b2k_t, TorusPrecision(base2k as u32));
-    module.glwe_keyswitch(&mut a_sparse, input, &keys.dense_to_sparse().to_backend_ref(), scratch);
-    a_sparse.set_meta_checked(input.meta())?;
-
-    let enc = BE::ckks_ship_coeff_encodings::<F, _>(module, &a_sparse, &plan, b2k_t, complex, scratch)?;
+    let enc = scratch.scope(|scratch_local| -> Result<_> {
+        let (mut a_sparse, mut scratch_local) =
+            scratch_local.take_ckks_ciphertext_scratch(&ship_bottom_layout(&plan, base2k), GLWEPlaintextMeta::default());
+        module.glwe_keyswitch(
+            &mut a_sparse,
+            input,
+            &keys.dense_to_sparse().to_backend_ref(),
+            &mut scratch_local.borrow(),
+        );
+        a_sparse.set_meta_checked(input.meta())?;
+        BE::ckks_ship_coeff_encodings::<F, _>(module, &a_sparse, &plan, b2k_t, complex, &mut scratch_local)
+    })?;
     ckks_ensure!(
         enc.pi.len() == plan.sparse_hamming_weight() && (!complex || enc.pt0_2.is_some()),
         "{OP}: malformed coefficient encodings"
     );
 
+    // The plan's Hamming weight sets the leaf count, so the leaves and their product tree stay on the heap.
     // Leaf 0 per half: trivial encryption of pt0 / pt0_2.
     let mut leaves: Vec<Vec<CKKSCiphertextOwned<BE>>> = Vec::with_capacity(halves);
     for half in 0..halves {
@@ -203,9 +231,11 @@ where
     let mut roots = ship_bootstrap_roots::<BE, F, _>(module, input, keys, false, scratch)?;
 
     let root = roots.pop().expect("real bootstrap has one root");
-    let mut conj = module.ckks_ciphertext_alloc(base2k, root.k());
-    module.ckks_conjugate_into(&mut conj, &root, keys.conjugation_key(), scratch)?;
-    module.ckks_add_into(output, &root, &conj, scratch)?;
+    let (mut conj, mut scratch_rest) = scratch
+        .borrow()
+        .take_ckks_ciphertext_scratch(&ship_root_layout(module, base2k, root.k()), GLWEPlaintextMeta::default());
+    module.ckks_conjugate_into(&mut conj, &root, keys.conjugation_key(), &mut scratch_rest.borrow())?;
+    module.ckks_add_into(output, &root, &conj, &mut scratch_rest)?;
     // `root + conj(root) = 2·Re(root)`.
     output.set_slots(SlotsKind::Real);
     Ok(())
@@ -232,14 +262,19 @@ where
     let v2 = roots.pop().expect("complex bootstrap has two roots");
     let v1 = roots.pop().expect("complex bootstrap has two roots");
     let k_eff = v1.k();
-    let mut iv2 = module.ckks_ciphertext_alloc(base2k, v2.k());
-    module.ckks_mul_i_into(&mut iv2, &v2, scratch)?;
-    let mut w_plus = module.ckks_ciphertext_alloc(base2k, k_eff);
-    module.ckks_add_into(&mut w_plus, &v1, &iv2, scratch)?;
-    let mut w_minus = module.ckks_ciphertext_alloc(base2k, k_eff);
-    module.ckks_sub_into(&mut w_minus, &v1, &iv2, scratch)?;
-    let mut conj = module.ckks_ciphertext_alloc(base2k, w_minus.k());
-    module.ckks_conjugate_into(&mut conj, &w_minus, keys.conjugation_key(), scratch)?;
-    module.ckks_add_into(output, &w_plus, &conj, scratch)?;
+    let (mut iv2, scratch_rest) = scratch
+        .borrow()
+        .take_ckks_ciphertext_scratch(&ship_root_layout(module, base2k, v2.k()), GLWEPlaintextMeta::default());
+    let (mut w_plus, scratch_rest) =
+        scratch_rest.take_ckks_ciphertext_scratch(&ship_root_layout(module, base2k, k_eff), GLWEPlaintextMeta::default());
+    let (mut w_minus, mut scratch_rest) =
+        scratch_rest.take_ckks_ciphertext_scratch(&ship_root_layout(module, base2k, k_eff), GLWEPlaintextMeta::default());
+    module.ckks_mul_i_into(&mut iv2, &v2, &mut scratch_rest.borrow())?;
+    module.ckks_add_into(&mut w_plus, &v1, &iv2, &mut scratch_rest.borrow())?;
+    module.ckks_sub_into(&mut w_minus, &v1, &iv2, &mut scratch_rest.borrow())?;
+    let (mut conj, mut scratch_rest) =
+        scratch_rest.take_ckks_ciphertext_scratch(&ship_root_layout(module, base2k, w_minus.k()), GLWEPlaintextMeta::default());
+    module.ckks_conjugate_into(&mut conj, &w_minus, keys.conjugation_key(), &mut scratch_rest.borrow())?;
+    module.ckks_add_into(output, &w_plus, &conj, &mut scratch_rest)?;
     Ok(())
 }
