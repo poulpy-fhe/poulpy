@@ -113,7 +113,7 @@ Read with `docs/review/REVIEW.md`; this file adds the rules specific to `poulpy-
 - **One value per coefficient.** Encoders and decoders take exactly one value per plaintext coefficient or `ckks_slots_of_degree(n)` planar `[re | im]` slots (`2m` scalars for `m` slots), returning an error for any other count and never spreading values at a gap.
 - **Quantization rejects before writing.** Every encoding path, overrides included, quantizes through `ckks_quantize` or `ckks_quantize_i64`, never an `as` cast, rejecting a non-finite value or one outside the codec range (`i64` while `log_delta + log_budget <= 63`, else `i128`) before any write, and keeps the preset metadata, narrowing only the slot kind with `meet`.
 - **Resident encoding signatures.** Encoding API and OEP signatures take only backend-resident buffers (`CKKSEncodingBuffer`) and plaintext views, host slices entering only through host-named adapters (`CKKSEncodingHostOps`) staging through the caller's arena with `copy_host_into_encoding_buffer` and `copy_encoding_buffer_into_host` (`docs/review/workspace.md` sections 2 and 7).
-- **Encoding plans in the cache.** Encoding plans are backend-owned, cached per scalar in the module's `ModulePlanCache` (`ckks_encoding_plan_cache_impl`, built by `ckks_encoding_plans_create_impl`) once per key, never rebuilt per call or kept in a global or thread-local, and encoding operations take no plan argument.
+- **Encoding plans in the cache.** Encoding plans are backend-owned, cached per scalar in the module's `ModulePlanCache` (`ckks_encoding_plan_cache`, built by `ckks_encoding_plans_create`) once per key, never rebuilt per call or kept in a global or thread-local, and encoding operations take no plan argument.
 
 ## 10. Numerics and determinism
 
