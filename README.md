@@ -100,18 +100,18 @@ bootstrap another.
 2. Implement each required HAL OEP method and inherit or override its derived defaults.
 3. Implement the core `*Impl` traits, or use family macros to select reference algorithms and derived defaults.
 4. Optionally, do the same for `poulpy-ckks` using the `impl_ckks_*_reference!` macros or direct OEP trait implementations.
-5. Optionally, do the same for `poulpy-blas` using `impl_blas_reference_full!`, its per-family macros or direct OEP trait implementations; see [implementing BLAS operations](poulpy-blas/docs/blas-contracts.md).
+5. Optionally, do the same for `poulpy-blas` using `impl_blas_reference_full!`, its per-family macros or direct OEP trait implementations; see [implementing BLAS operations](libs/poulpy-blas/docs/blas-contracts.md).
 
 A family macro and a handwritten implementation of the same trait are mutually
 exclusive. Use individual family macros when customizing a core backend, and
 validate its implementations with the shared conformance tests. The
-[core backend guide](poulpy-core/docs/core-contracts.md) explains reference
+[core backend guide](base/poulpy-core/docs/core-contracts.md) explains reference
 forwarding, derived defaults, scratch requirements and controlled sampling.
 
 See `poulpy-cpu-portable` for a complete implementation of all five steps. Its
-[compiled override example](poulpy-cpu-portable/src/tests/delegating_backend.rs)
+[compiled override example](backends/poulpy-cpu-portable/src/tests/delegating_backend.rs)
 checks reference forwarding and dispatch through custom core methods; the
-[encryption example](poulpy-cpu-portable/examples/core_encryption.rs) shows public API use.
+[encryption example](backends/poulpy-cpu-portable/examples/core_encryption.rs) shows public API use.
 
 ### Testing a Backend
 
@@ -167,10 +167,10 @@ circuit parity through `ckks_parity_test_suite!`. Registrations cover `f64` and
 `Quad` on all 16 CPU backend types, with Rayon variants compared against their
 serial siblings. Portable encoding and DFT matrix/evaluation parity also exercise `f32`. Native CI and optional QEMU
 runs include the `ckks_parity` groups, including controlled-sampling encryption.
-See [implementing a CKKS backend](poulpy-ckks/docs/ckks-contracts.md).
+See [implementing a CKKS backend](schemes/poulpy-ckks/docs/ckks-contracts.md).
 
 Run portable CKKS parity, the full conformance suite, or the
-[polynomial example](poulpy-cpu-portable/examples/ckks_poly2.rs) with:
+[polynomial example](backends/poulpy-cpu-portable/examples/ckks_poly2.rs) with:
 
 ```sh
 cargo test -p poulpy-cpu-portable --lib --profile ci --features enable-ckks -- ckks_parity
@@ -187,7 +187,7 @@ conjugate-invariant backend type, the oracle's included, also runs
 Intel SDE, the AVX-512 job runs the `f64` parity of each of its serial types
 once, in a step with its own execution budget; the emulated AVX job and the optional QEMU
 run do not run BLAS. See
-[implementing BLAS operations](poulpy-blas/docs/blas-contracts.md).
+[implementing BLAS operations](libs/poulpy-blas/docs/blas-contracts.md).
 
 Run portable BLAS parity with:
 
@@ -204,8 +204,8 @@ the conjugate-invariant ring, and the FFT64 types of the standard ring at
 `N = 32`, where one `4 x 4` block fills the 16 slots. `poulpy-cpu-portable`
 registers `blas_max_base2k_test_suite!` for its FFT64 and NTT4x30 types and
 their conjugate-invariant counterparts.
-[`blas_tests.rs`](poulpy-cpu-portable/src/tests/blas_tests.rs) shows the
-registrations, and [`blas_overrides.rs`](poulpy-cpu-portable/src/tests/blas_overrides.rs)
+[`blas_tests.rs`](backends/poulpy-cpu-portable/src/tests/blas_tests.rs) shows the
+registrations, and [`blas_overrides.rs`](backends/poulpy-cpu-portable/src/tests/blas_overrides.rs)
 overrides the map hook and the JKLS kernel, checks parity with the oracle
 through both, and checks that no rejected call enters either.
 
@@ -281,7 +281,7 @@ poulpy-cpu-portable = "0.9.0"
 
 * The [`docs/`](./docs) folder holds the full documentation: a codebase map, the backend guide, design notes, and architecture diagrams. Start with its [index](./docs/README.md).
 * Crate package pages and generated Rust documentation are linked from the crates.io entries above.
-* Crate-specific READMEs provide more focused usage notes, especially [`poulpy-ckks`](./poulpy-ckks/README.md) and [`poulpy-bench`](./poulpy-bench/README.md).
+* Crate-specific READMEs provide more focused usage notes, especially [`poulpy-ckks`](./schemes/poulpy-ckks/README.md) and [`poulpy-bench`](./tools/poulpy-bench/README.md).
 
 ## Built with Poulpy
 

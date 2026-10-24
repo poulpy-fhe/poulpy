@@ -91,6 +91,6 @@ backend's advertised scratch with guards, and verifies that failed shape checks
 preserve the input. The independent host replica and full pipeline tests remain
 separate checks of the scheme math and precision.
 
-See [Implementing CKKS operations](../poulpy-ckks/docs/ckks-contracts.md) for the
+See [Implementing CKKS operations](../schemes/poulpy-ckks/docs/ckks-contracts.md) for the
 replacement contract and the [repository README](../README.md) for concrete
 test commands and execution coverage.

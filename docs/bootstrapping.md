@@ -316,8 +316,8 @@ Conjugate-invariant inputs of degree `n` fold on the same standard module: each 
 The total arithmetic cost is `consumed_bits`; its placement around ModUp is given by the pre- and post-ModUp costs.
 A small self-contained parameter set (ring degree `n = 2048`, `K = 16`, message ratio `2^11`, `log_delta = 45`, a degree-30 `CosHK` EvalMod) recovers the slots to a few bits of precision on the reference backend, which is the floor the end-to-end test asserts; wider parameters recover proportionally more.
 
-- `poulpy-ckks/src/test_suite/bootstrapping.rs` runs `ckks_bootstrap` end to end for the C2S-first, EvalRound+, and S2C-first pipelines.
-- `poulpy-cpu-portable/examples/bootstrap_trace.rs` runs the standard pipeline for profiling.
+- `schemes/poulpy-ckks/src/test_suite/bootstrapping.rs` runs `ckks_bootstrap` end to end for the C2S-first, EvalRound+, and S2C-first pipelines.
+- `backends/poulpy-cpu-portable/examples/bootstrap_trace.rs` runs the standard pipeline for profiling.
 
 ```sh
 cargo test -p poulpy-cpu-portable --features enable-ckks --release ntt4x30_f64::bootstrapping -- --nocapture

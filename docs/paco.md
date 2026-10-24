@@ -273,6 +273,6 @@ coefficients and exact metadata, uses each implementation's own guarded scratch
 budget, and checks rejected shapes and input preservation. Independent pipeline
 oracles remain part of the conformance suite.
 
-See [Implementing CKKS operations](../poulpy-ckks/docs/ckks-contracts.md) for the
+See [Implementing CKKS operations](../schemes/poulpy-ckks/docs/ckks-contracts.md) for the
 replacement contract and the [repository README](../README.md) for concrete
 test commands and execution coverage.

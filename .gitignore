@@ -1,6 +1,6 @@
 /target
 /target-*
-/poulpy-bench/target/
+/tools/poulpy-bench/target/
 /.vscode
 .codex
 /ci-local.md

@@ -10,7 +10,7 @@ GGLWE automorphism keys, and prepared plaintext diagonals — so it lives in
 **poulpy-core**, beside `keyswitching` and `automorphism`. CKKS only contributes the
 diagonal *encoding* and the galois-element map; the `CKKSLinearTransformationOps`
 trait in
-[`poulpy-ckks/src/api/linear_transformation.rs`](../../poulpy-ckks/src/api/linear_transformation.rs)
+[`schemes/poulpy-ckks/src/api/linear_transformation.rs`](../../schemes/poulpy-ckks/src/api/linear_transformation.rs)
 becomes a thin wrapper that drives the core engine (§11).
 The diagram [`linear_transformation.png`](../img/linear_transformation.png) is the visual companion to this text, and
 [`lt_bsgs_impl.md`](lt_bsgs_impl.md) is a file-by-file walkthrough of the default
@@ -18,13 +18,13 @@ implementation that realizes this specification.
 
 > **Implementation status.** The engine lives in **poulpy-core** as the scheme-agnostic
 > `GLWELinearTransformations` module tree
-> ([`poulpy-core/src/reference/linear_transformation.rs`](../../poulpy-core/src/reference/linear_transformation.rs)):
+> ([`base/poulpy-core/src/reference/linear_transformation.rs`](../../base/poulpy-core/src/reference/linear_transformation.rs)):
 > the module root re-exports focused files for indexing (§3), preparation (§5), hoisted
 > baby rotations (§6.2), prepared inner products (§6.3), lazy giant rotations (§6.3), and
 > final normalization (§6.4). The one-shot borrowed API prepares a temporary transform
 > internally; the prepared evaluator implements the hoisted BSGS strategy described here. The
 > CKKS API
-> [`poulpy-ckks/src/reference/linear_transformation.rs`](../../poulpy-ckks/src/reference/linear_transformation.rs)
+> [`schemes/poulpy-ckks/src/reference/linear_transformation.rs`](../../schemes/poulpy-ckks/src/reference/linear_transformation.rs)
 > owns all `log_delta`/`log_budget` math: it derives the convolution alignment and result
 > metadata, then delegates to the core engine.
 
@@ -94,10 +94,10 @@ prepared-convolution and DFT forms:
 
 | Name | Poulpy type | Role |
 |---|---|---|
-| `SMALL` | [`VecZnx`](../../poulpy-hal/src/layouts/vec_znx.rs) | normalized base-`2^K` limbs; required input to gadget decomposition and to `cnv_prepare_*` |
-| `BIG` | [`VecZnxBig`](../../poulpy-hal/src/layouts/vec_znx_big.rs) | un-normalized extended-precision accumulator; supports exact add and automorphism without normalizing |
-| DFT | [`VecZnxDft`](../../poulpy-hal/src/layouts/vec_znx_dft.rs) | NTT/FFT domain; where VMP and convolution products live |
-| `CnvPVecL` / `CnvPVecR` | [`convolution.rs`](../../poulpy-hal/src/api/convolution.rs) | a polynomial prepared as the left / right operand of a bivariate convolution |
+| `SMALL` | [`VecZnx`](../../base/poulpy-hal/src/layouts/vec_znx.rs) | normalized base-`2^K` limbs; required input to gadget decomposition and to `cnv_prepare_*` |
+| `BIG` | [`VecZnxBig`](../../base/poulpy-hal/src/layouts/vec_znx_big.rs) | un-normalized extended-precision accumulator; supports exact add and automorphism without normalizing |
+| DFT | [`VecZnxDft`](../../base/poulpy-hal/src/layouts/vec_znx_dft.rs) | NTT/FFT domain; where VMP and convolution products live |
+| `CnvPVecL` / `CnvPVecR` | [`convolution.rs`](../../base/poulpy-hal/src/api/convolution.rs) | a polynomial prepared as the left / right operand of a bivariate convolution |
 
 Primitives (all already implemented in the HAL):
 
@@ -123,7 +123,7 @@ Primitives (all already implemented in the HAL):
 
 The composite `VMP → IDFT → add-body → normalize → automorphism` is exactly the GLWE
 automorphism in
-[`poulpy-core/.../automorphism/glwe.rs`](../../poulpy-core/src/reference/automorphism/glwe.rs);
+[`poulpy-core/.../automorphism/glwe.rs`](../../base/poulpy-core/src/reference/automorphism/glwe.rs);
 the baby-step rotation reuses `glwe_automorphism_reference` verbatim, the giant-step
 rotation needs one new deferred-normalization variant (§11).
 
@@ -331,7 +331,7 @@ the IDFT+normalize — i.e. they expose neither the hoisting seam nor the lazy-n
 seam this algorithm needs. From inside poulpy-core the right primitives are reachable;
 from poulpy-ckks they are not.
 
-- **Core engine.** `poulpy-core/src/reference/linear_transformation/` mirrors the
+- **Core engine.** `base/poulpy-core/src/reference/linear_transformation/` mirrors the
   `automorphism` and `keyswitching` split. It exposes prepared-transform evaluation
   through `glwe_eval_linear_transformation`, which takes a prepared transform, prepared
   baby rotations, and the keyed set of GGLWE automorphism keys (`GetGaloisElement`).
@@ -340,7 +340,7 @@ from poulpy-ckks they are not.
   `LinearTransformation<BE>` data type also lives core-side.
 - **CKKS wrapper.** `CKKSLinearTransformationOps::ckks_eval_linear_transformation_into` /
   `_assign` in
-  [`poulpy-ckks/src/api/linear_transformation.rs`](../../poulpy-ckks/src/api/linear_transformation.rs)
+  [`schemes/poulpy-ckks/src/api/linear_transformation.rs`](../../schemes/poulpy-ckks/src/api/linear_transformation.rs)
   becomes thin: encode the diagonals (CKKS scale/`Δ_pt`), build the galois-element map,
   and call the core engine. No FHE arithmetic in the CKKS layer.
 - **VMP reuse — do not fork.** Both the baby- and giant-step rotations get their gadget
@@ -349,7 +349,7 @@ from poulpy-ckks they are not.
   `vmp_apply_dft_to_dft` (a fused `vmp_apply_dft_to_dft_add` also exists); for
   `dsize > 1` it is the digit-decomposition loop already implemented and tested in
   `gglwe_product_dft_reference`
-  ([keyswitching/glwe.rs:123](../../poulpy-core/src/reference/keyswitching/glwe.rs)) — reuse
+  ([keyswitching/glwe.rs:123](../../base/poulpy-core/src/reference/keyswitching/glwe.rs)) — reuse
   it, do not reimplement it in HAL. Keys whose digits are not whole limbs first lay the
   input out on their digit grid with `vec_znx_gadget_decompose`, then take the same DFT
   and product. A hoisted operand is shared only by keys with whole-limb digits or with
@@ -363,7 +363,7 @@ from poulpy-ckks they are not.
   automorphism*: `gglwe_product_dft → idft → big_add(carry body) → big_automorphism`,
   with **no** final normalize and **no** add-after-automorphism. It is a small variant
   of `glwe_automorphism_add_reference`
-  ([automorphism/glwe.rs:115](../../poulpy-core/src/reference/automorphism/glwe.rs)) — that
+  ([automorphism/glwe.rs:115](../../base/poulpy-core/src/reference/automorphism/glwe.rs)) — that
   function has the right `BIG`-automorphism mechanics but the wrong (`res = a + φ(KS a)`)
   add semantics; the BSGS path wants plain `res = φ(KS a)` left un-normalized in `BIG`.
   Factor it next to the existing automorphism variants so it can share their scratch
