@@ -19,7 +19,7 @@ use crate::{
 ///
 /// Implementations must satisfy the contracts of all trait methods, including
 /// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
-/// associated method signatures. See `base/poulpy-hal/docs/backend_safety_contract.md`.
+/// associated method signatures. See `poulpy-hal/docs/backend_safety_contract.md`.
 pub unsafe trait CKKSLinearTransformationImpl: Backend + super::CKKSCopyImpl {
     fn ckks_prepare_linear_transformation_rhs_tmp_bytes_impl<P: LWEInfos>(module: &Module<Self>, pt_infos: &P) -> usize;
 

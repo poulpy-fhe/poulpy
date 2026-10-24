@@ -130,7 +130,7 @@ override other families can register the individual operation macros.
 Use either a family macro or a handwritten implementation of the same core
 `*Impl` trait. Reference helpers remain callable for methods you forward, while
 derived defaults reuse selected backend operations. Validate the resulting
-backend with the shared conformance tests; the [core backend guide](../../base/poulpy-core/docs/core-contracts.md)
+backend with the shared conformance tests; the [core backend guide](../../poulpy-core/docs/core-contracts.md)
 describes the contracts and test setup.
 
 Your backend will automatically integrate with the backend-generic layers:

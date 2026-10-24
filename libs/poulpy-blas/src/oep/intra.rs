@@ -14,7 +14,7 @@ use crate::layouts::{BlasContext, BlasGrid, BlasGridInfos, BlasGridMut};
 ///
 /// # Safety
 ///
-/// The memory, layout and aliasing rules of `base/poulpy-hal/docs/backend_safety_contract.md` apply.
+/// The memory, layout and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 ///
 /// **The hook.** [`Self::blas_map_blocks_impl`] reproduces
 /// [`BlasMatIntraReference::blas_map_blocks_reference`](crate::reference::BlasMatIntraReference::blas_map_blocks_reference)

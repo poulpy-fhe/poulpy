@@ -16,7 +16,7 @@ use crate::{
 ///
 /// Implementations must satisfy the contracts of all trait methods, including
 /// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
-/// associated method signatures. See `base/poulpy-hal/docs/backend_safety_contract.md`.
+/// associated method signatures. See `poulpy-hal/docs/backend_safety_contract.md`.
 pub unsafe trait CKKSDotProductImpl: Backend + super::CKKSMulImpl + super::CKKSAddImpl {
     fn ckks_dot_product_ct_tmp_bytes_impl<R: CKKSCtBounds, A: CKKSCtBounds, B: CKKSCtBounds, T: GGLWEInfos>(
         module: &Module<Self>,

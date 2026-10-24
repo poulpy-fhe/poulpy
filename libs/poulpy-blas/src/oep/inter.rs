@@ -12,7 +12,7 @@ use crate::layouts::{BlasGrid, BlasGridInfos, BlasGridMut};
 /// [`BlasMatInterReference`](crate::reference::BlasMatInterReference) bit for bit, within the scratch the matching
 /// `_tmp_bytes_impl` reports. With less, a call that uses a key panics before it writes `res`, as the reference does.
 ///
-/// The memory, layout and aliasing rules of `base/poulpy-hal/docs/backend_safety_contract.md` apply.
+/// The memory, layout and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 ///
 /// The circuit is the one the `# Metadata` sections of [`crate::api::BlasMatInterOps`] state, block by block:
 /// `blas_rotate` one `ckks_rotate_into` per block, a `ckks_copy` with a cleared noise tag when the rotation is a

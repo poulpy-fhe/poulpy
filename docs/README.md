@@ -8,11 +8,11 @@ The [`guides/`](guides) folder holds the guides and design notes, [`spec/`](spec
 - [Performance](guides/performance.md) — choosing the arithmetic family, the backend, `base2k` and the thread count, with measurements for each decision and a diagnostic for finding the thread knee on your own machine.
 - [Failure estimates for base-2^K arithmetic](guides/base2k-failure-probability.md), the failure model behind `Module::max_base2k`: the probability that a sum of products fails the NTT's centered reconstruction or the FFT's rounding, on the negacyclic and conjugate-invariant rings, how the radix is selected from it, and the guard limbs and headroom it implies.
 - [Grafting vs. the Bivariate Representation](guides/grafting-vs-bivariate.md) — how Poulpy's bivariate base-`2^K` representation compares to RNS Grafting for bit-granular scale and modulus management.
-- [HAL model and contracts](../base/poulpy-hal/src/api/mod.rs), the rustdoc of `poulpy_hal::api` (`cargo doc -p poulpy-hal --open`): the value model, canonical form, limb rule, mutation and exactness classes, the degree-embedding rule and the contract block every HAL operation carries, with the derived operations and the backend implementation order in [`poulpy_hal::oep`](../base/poulpy-hal/src/oep/mod.rs) and the window views in [`poulpy_hal::layouts`](../base/poulpy-hal/src/layouts/mod.rs).
+- [HAL model and contracts](../poulpy-hal/src/api/mod.rs), the rustdoc of `poulpy_hal::api` (`cargo doc -p poulpy-hal --open`): the value model, canonical form, limb rule, mutation and exactness classes, the degree-embedding rule and the contract block every HAL operation carries, with the derived operations and the backend implementation order in [`poulpy_hal::oep`](../poulpy-hal/src/oep/mod.rs) and the window views in [`poulpy_hal::layouts`](../poulpy-hal/src/layouts/mod.rs).
 
 - [Layering contract](guides/layering-contract.md), the API, delegate, OEP, reference and derived layers every library crate follows, opt-in selection and what an override reproduces.
 
-- [Implementing a core backend](../base/poulpy-core/docs/core-contracts.md), reference algorithms, derived defaults, backend overrides, scratch contracts and parity tests.
+- [Implementing a core backend](../poulpy-core/docs/core-contracts.md), reference algorithms, derived defaults, backend overrides, scratch contracts and parity tests.
 
 ## CKKS
 

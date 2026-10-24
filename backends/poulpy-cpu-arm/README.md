@@ -4,8 +4,8 @@
 
 This backend implements the Poulpy HAL extension traits and can be used by:
 
-- [`poulpy-hal`](../../base/poulpy-hal)
-- [`poulpy-core`](../../base/poulpy-core)
+- [`poulpy-hal`](../../poulpy-hal)
+- [`poulpy-core`](../../poulpy-core)
 - [`poulpy-ckks`](../../schemes/poulpy-ckks) (backend wiring opt-in via `enable-ckks`)
 - [`poulpy-blas`](../../libs/poulpy-blas) (backend wiring opt-in via `enable-blas`, which implies `enable-ckks`)
 
@@ -91,7 +91,7 @@ The serial backends require `enable-neon`; the Rayon variants additionally requi
 - Integer operations (`Znx*`, `I128BigOps`) are bit-exact against `poulpy-cpu-portable`. The NTT4x30 transform domain uses a packed `u32` layout that differs from the portable one in bytes, and agrees with it in the residues it holds.
 - FFT-domain operations (`ReimArith`, `Reim4*`, `I64Ops`, `ReimFFTExecute`) match the reference within ULP tolerance — NEON kernels use FMA where the scalar reference does not.
 
-See `base/poulpy-hal/docs/backend_safety_contract.md` for the full backend contract.
+See `poulpy-hal/docs/backend_safety_contract.md` for the full backend contract.
 
 ## 🤝 Contributors
 
@@ -105,7 +105,7 @@ To implement your own Poulpy backend (SIMD or accelerator):
 Use either a family macro or a handwritten implementation of the same core
 `*Impl` trait. Reference helpers remain callable for methods you forward, while
 derived defaults reuse selected backend operations. Validate the resulting
-backend with the shared conformance tests; the [core backend guide](../../base/poulpy-core/docs/core-contracts.md)
+backend with the shared conformance tests; the [core backend guide](../../poulpy-core/docs/core-contracts.md)
 describes the contracts and test setup.
 
 Your backend will automatically integrate with the backend-generic layers:

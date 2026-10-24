@@ -31,7 +31,7 @@ use crate::{
 ///   `ckks_copy` (out of place), poulpy-core's summed `glwe_trace_assign` and, for a normalized inner sum,
 ///   `ckks_div_pow2_assign`, fusing each level's key switch and addition if they wish.
 ///
-/// Memory, layout, synchrony and aliasing follow `base/poulpy-hal/docs/backend_safety_contract.md`.
+/// Memory, layout, synchrony and aliasing follow `poulpy-hal/docs/backend_safety_contract.md`.
 pub unsafe trait CKKSInnerSumImpl: super::CKKSCopyImpl + super::CKKSPow2Impl + GLWETraceImpl {
     fn ckks_inner_sum_galois_elements(module: &Module<Self>, n: Degree, log_batch: usize, log_count: usize) -> Vec<i64> {
         ckks_inner_sum_galois_elements_derived(module, n, log_batch, log_count)

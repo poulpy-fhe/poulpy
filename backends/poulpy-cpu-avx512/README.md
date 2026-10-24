@@ -15,8 +15,8 @@ It exposes six serial and Rayon backend variants behind layered Cargo features:
 
 This crate implements the Poulpy HAL extension traits and can be used by:
 
-- [`poulpy-hal`](../../base/poulpy-hal)
-- [`poulpy-core`](../../base/poulpy-core)
+- [`poulpy-hal`](../../poulpy-hal)
+- [`poulpy-core`](../../poulpy-core)
 - [`poulpy-ckks`](../../schemes/poulpy-ckks) (backend wiring opt-in via `enable-ckks`)
 - [`poulpy-blas`](../../libs/poulpy-blas) (backend wiring opt-in via `enable-blas`, which implies `enable-ckks`)
 - [`poulpy-bin-fhe`](../../schemes/poulpy-bin-fhe) (backend-agnostic; its tests are instantiated here with `bin_fhe_backend_test_suite!`)
@@ -143,7 +143,7 @@ To implement your own Poulpy backend (SIMD or accelerator):
 Use either a family macro or a handwritten implementation of the same core
 `*Impl` trait. Reference helpers remain callable for methods you forward, while
 derived defaults reuse selected backend operations. Validate the resulting
-backend with the shared conformance tests; the [core backend guide](../../base/poulpy-core/docs/core-contracts.md)
+backend with the shared conformance tests; the [core backend guide](../../poulpy-core/docs/core-contracts.md)
 describes the contracts and test setup.
 
 Your backend will automatically integrate with the backend-generic layers:

@@ -13,7 +13,7 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 ///
 /// # Safety
 ///
-/// The memory, layout and aliasing rules of `base/poulpy-hal/docs/backend_safety_contract.md` apply.
+/// The memory, layout and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 ///
 /// [`Self::blas_jkls_block_impl`] reproduces
 /// [`BlasMatMulReference::blas_jkls_block_reference`](crate::reference::BlasMatMulReference::blas_jkls_block_reference)

@@ -15,7 +15,7 @@ use crate::layouts::{
 /// Every required method reproduces its `_reference` counterpart in
 /// [`BlasMatMulReference`](crate::reference::BlasMatMulReference) bit for bit, digits and CKKS metadata, within the
 /// scratch the matching `_tmp_bytes_impl` reports; with less, it panics before any write to `res` when it looks up a
-/// key, as the reference does. The memory, layout and aliasing rules of `base/poulpy-hal/docs/backend_safety_contract.md`
+/// key, as the reference does. The memory, layout and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md`
 /// apply.
 ///
 /// **Prepared operands.** A backend does not choose their type: [`BlasMatMulLeft`] and [`BlasMatMulRight`] are

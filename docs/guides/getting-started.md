@@ -6,16 +6,16 @@ It describes what each crate contains and where to look, how the layers are orga
 ## Library organization
 
 Poulpy is a stack of crates with a strict dependency direction.
-The repository groups them by role into five folders, and a crate depends only on crates of its own folder or of the folders listed before it, except that the backends benchmark through `poulpy-bench`.
+The basis crates sit at the root of the repository, and the other crates are grouped by role into four folders.
+A crate depends only on the basis, on crates of its own folder or on crates of the folders listed before it, except that the backends benchmark through `poulpy-bench`.
 
 ```
-base/
-  poulpy-hal               hardware abstraction: layouts and operation traits
-  poulpy-core              scheme-agnostic (Module-)LWE arithmetic (LWE, GLWE, GGSW)
+poulpy-hal                 hardware abstraction: layouts and operation traits
+poulpy-core                scheme-agnostic (Module-)LWE arithmetic (LWE, GLWE, GGSW)
+poulpy-mhe                 multiparty homomorphic encryption
 schemes/
   poulpy-ckks              leveled CKKS evaluator
   poulpy-bin-fhe           binary and gate-level FHE
-  poulpy-mhe               multiparty homomorphic encryption
 libs/
   poulpy-blas              encrypted matrix arithmetic on CKKS
 backends/

@@ -19,18 +19,18 @@
 
 ## Library Crates
 
-The crates are grouped by role into five folders. A crate depends only on crates of its own folder or of the folders listed before it, except that the backends benchmark through `poulpy-bench`.
+The basis crates sit at the root of the repository, and the other crates are grouped by role into four folders. A crate depends only on the basis, on crates of its own folder or on crates of the folders listed before it, except that the backends benchmark through `poulpy-bench`.
 
-### [`base/`](base): the layers every scheme is built on
+### Basis, at the root
 
 - **`poulpy-hal`**: a crate providing layouts and a trait-based hardware acceleration layer with open extension points, matching the API and types of spqlios-arithmetic. This crate does not provide concrete implementations other than the layouts (e.g. `VecZnx`, `VmpPmat`).
 - **`poulpy-core`**: a backend-agnostic crate implementing scheme-agnostic Module-LWE arithmetic for LWE, GLWE, GGLWE, and GGSW ciphertexts using **`poulpy-hal`**. It can be instantiated with any backend crate (e.g. `poulpy-cpu-portable`, `poulpy-cpu-avx`).
+- **`poulpy-mhe`**: a backend-agnostic multiparty homomorphic encryption crate built on **`poulpy-core`** and **`poulpy-hal`**: collective public, switching, automorphism, tensor and GGSW keys, collective key switching, and conversions between encryptions and additive shares.
 
 ### [`schemes/`](schemes): FHE schemes on top of core
 
 - **`poulpy-ckks`**: a backend-agnostic leveled CKKS implementation built on **`poulpy-core`** and **`poulpy-hal`**, including polynomial evaluation and bootstrappings.
 - **`poulpy-bin-fhe`**: the binary/gate-level FHE crate built on **`poulpy-core`** and **`poulpy-hal`**. It replaces the former `poulpy-schemes` crate and exposes backend-owned APIs with explicit operation overrides and reusable reference circuits.
-- **`poulpy-mhe`**: a backend-agnostic multiparty homomorphic encryption crate built on **`poulpy-core`** and **`poulpy-hal`**: collective public, switching, automorphism, tensor and GGSW keys, collective key switching, and conversions between encryptions and additive shares.
 
 ### [`libs/`](libs): libraries built on a scheme
 
@@ -121,7 +121,7 @@ bootstrap another.
 A family macro and a handwritten implementation of the same trait are mutually
 exclusive. Use individual family macros when customizing a core backend, and
 validate its implementations with the shared conformance tests. The
-[core backend guide](base/poulpy-core/docs/core-contracts.md) explains reference
+[core backend guide](poulpy-core/docs/core-contracts.md) explains reference
 forwarding, derived defaults, scratch requirements and controlled sampling.
 
 See `poulpy-cpu-portable` for a complete implementation of all five steps. Its
