@@ -1556,7 +1556,7 @@ const GADGET_PRODUCT_GUARD_FAILURE_BITS: usize = 128;
 /// The limbs below the window are dropped before normalization. They act as an error on the
 /// last live limb, and this returns the smallest window that keeps that error under the rounding
 /// threshold of one half with the failure target above, under the model of
-/// `docs/base2k-failure-probability.md`:
+/// `docs/guides/base2k-failure-probability.md`:
 ///
 /// - one accumulated coefficient has standard deviation `2^(2 * base2k) * sqrt(product_terms) / 12`,
 ///   for independent centered uniform digits,
@@ -1597,7 +1597,7 @@ const LAZY_SUM_FAILURE_BITS: usize = 128;
 
 /// The most canonical digits of radix `base2k` a coefficient of a lazy sum holds before it must be normalized, at
 /// least 1: the larger of the worst case, `2^(63 - base2k)` digits of magnitude at most `2^(base2k - 1)`, and the
-/// average case of `docs/base2k-failure-probability.md`, the count whose sum leaves the normalizer's domain
+/// average case of `docs/guides/base2k-failure-probability.md`, the count whose sum leaves the normalizer's domain
 /// `[-2^62, 2^62]` with probability at most `2^-128` over `coefficients` coefficients, for independent centered uniform
 /// digits of deviation `2^base2k / sqrt(12)`, by the Gaussian approximation, the Mills-ratio bound on `erfc` and a
 /// union bound. Correlated digits, such as copies of one value, are outside the model.

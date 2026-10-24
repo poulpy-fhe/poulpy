@@ -1,0 +1,44 @@
+[package]
+name = "poulpy-ckks"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+readme = "README.md"
+description = "A backend-agnostic crate implementing the CKKS FHE scheme"
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/poulpy-ckks"
+
+[features]
+# Compile the exported backend-conformance test suite (`poulpy_ckks::test_suite`).
+# Backend crates enable this from their dev-dependencies; production builds of
+# dependents skip the ~17k lines of test code entirely.
+test-utils = []
+# Route `Quad`'s libm-backed math through libquadmath (`f128` crate) on the
+# one ABI where that dependency is known to work; elsewhere this is a no-op.
+# The `Quad` type itself is unchanged.
+libquadmath = ["dep:f128"]
+
+[dependencies]
+poulpy-hal = {workspace = true}
+poulpy-core = {workspace = true}
+num-traits = {workspace = true}
+anyhow = {workspace = true}
+bytemuck = {workspace = true}
+paste = {workspace = true}
+dashu-float = {workspace = true}
+
+# Portable setup math on every target: `f64` through the pure-Rust libm, whose
+# hardware paths are exact IEEE operations, and `Quad` through the pure-Rust
+# binary128 implementation. `unstable-float` provides the f128 functions.
+astro-float-num = {workspace = true}
+libm = {workspace = true, features = ["unstable-float"]}
+
+# libquadmath backing for `Quad` (x86_64 Linux GNU only).
+[target.'cfg(all(target_arch = "x86_64", target_os = "linux", target_env = "gnu"))'.dependencies]
+f128 = { version = "0.2.9", optional = true }
+
+# Reference for the portable-`Quad` parity test. Keep this positive allowlist:
+# the crate compiles a C shim against GCC's quadmath.h/libquadmath.
+[target.'cfg(all(target_arch = "x86_64", target_os = "linux", target_env = "gnu"))'.dev-dependencies]
+f128 = "0.2.9"

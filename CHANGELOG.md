@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Workspace
+
+- The basis crates `poulpy-hal`, `poulpy-core` and `poulpy-mhe` stay at the root, and the other crates move into four folders by role: `schemes/` (`poulpy-ckks`, `poulpy-bin-fhe`), `libs/` (`poulpy-blas`), `backends/` (the `poulpy-cpu-*` crates) and `tools/` (`poulpy-bench`).
+  Crate names and features are unchanged. A path dependency on a local clone takes the new folder.
+- The crates inherit `version`, `edition`, `license`, `repository` and `homepage` from `[workspace.package]` in the root `Cargo.toml`.
+- The guides move from `docs/` to `docs/guides/` and the logo to `docs/img/`. The unused `cspell.json` is removed.
+
 ### `poulpy-hal`
 
 - Add `mat_znx_copy` (`MatZnxCopy`, `HalMatZnxImpl::mat_znx_copy`), the copy of one output column of every entry of a matrix, a `vec_znx_copy` on each entry by default.
@@ -487,6 +494,10 @@
 - **Breaking:** `bench_ckks_bootstrapping` requires `CKKSBootstrappingCIOps`, and runs the presets with EvalMod on the conjugate-invariant ring.
 - **Breaking:** `bench_ckks_bootstrapping` takes no `FIXTURE_BASE2K`: it runs each preset at the radix `test_suite::presets::preset_for_backend` selects for the backend, so the ids of its NTT4x30 and FFT64 runs read `base2k=53` and `base2k=17` instead of 52 and 18.
 - **Breaking:** `hal::suites::bench_normalization` requires `VecZnxGadgetDecompose` and `VecZnxGadgetDecomposeTmpBytes`, and also sweeps `vec_znx_gadget_decompose` over the 27-limb key-switch columns of a bootstrap at radix 53 (`GadgetDecomposeSweepParams`, `default_bench_params_gadget_decompose`).
+
+### Dependencies
+
+- Lock `chacha20`, a dependency of `rand`, at 0.10.2, as 0.10.0 is yanked.
 
 ## [0.9.0] - 2026-10-08
 

@@ -11,7 +11,7 @@ The caller should get the same result through the public API.
 
 ## Choosing an implementation
 
-Core follows the [layering contract](../../docs/layering-contract.md), of which it is the model above poulpy-hal.
+Core follows the [layering contract](../../docs/guides/layering-contract.md), of which it is the model above poulpy-hal.
 For example, rotating each GLWE polynomial with HAL's rotation operation is a
 **reference** implementation. Rotating a GGSW by calling core GLWE rotation on
 each row is **derived**. A backend that overrides GLWE rotation also changes the
@@ -58,7 +58,7 @@ before writing it.
 
 ## Matching the result
 
-An override reproduces the reference as the [layering contract](../../docs/layering-contract.md) states and passes
+An override reproduces the reference as the [layering contract](../../docs/guides/layering-contract.md) states and passes
 the corresponding [parity tests](../src/test_suite/parity).
 
 ## Respecting storage and scratch

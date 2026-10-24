@@ -10,7 +10,7 @@ GGLWE automorphism keys, and prepared plaintext diagonals — so it lives in
 **poulpy-core**, beside `keyswitching` and `automorphism`. CKKS only contributes the
 diagonal *encoding* and the galois-element map; the `CKKSLinearTransformationOps`
 trait in
-[`poulpy-ckks/src/api/linear_transformation.rs`](../../poulpy-ckks/src/api/linear_transformation.rs)
+[`schemes/poulpy-ckks/src/api/linear_transformation.rs`](../../schemes/poulpy-ckks/src/api/linear_transformation.rs)
 becomes a thin wrapper that drives the core engine (§11).
 The diagram [`linear_transformation.png`](../img/linear_transformation.png) is the visual companion to this text, and
 [`lt_bsgs_impl.md`](lt_bsgs_impl.md) is a file-by-file walkthrough of the default
@@ -24,7 +24,7 @@ implementation that realizes this specification.
 > final normalization (§6.4). The one-shot borrowed API prepares a temporary transform
 > internally; the prepared evaluator implements the hoisted BSGS strategy described here. The
 > CKKS API
-> [`poulpy-ckks/src/reference/linear_transformation.rs`](../../poulpy-ckks/src/reference/linear_transformation.rs)
+> [`schemes/poulpy-ckks/src/reference/linear_transformation.rs`](../../schemes/poulpy-ckks/src/reference/linear_transformation.rs)
 > owns all `log_delta`/`log_budget` math: it derives the convolution alignment and result
 > metadata, then delegates to the core engine.
 
@@ -340,7 +340,7 @@ from poulpy-ckks they are not.
   `LinearTransformation<BE>` data type also lives core-side.
 - **CKKS wrapper.** `CKKSLinearTransformationOps::ckks_eval_linear_transformation_into` /
   `_assign` in
-  [`poulpy-ckks/src/api/linear_transformation.rs`](../../poulpy-ckks/src/api/linear_transformation.rs)
+  [`schemes/poulpy-ckks/src/api/linear_transformation.rs`](../../schemes/poulpy-ckks/src/api/linear_transformation.rs)
   becomes thin: encode the diagonals (CKKS scale/`Δ_pt`), build the galois-element map,
   and call the core engine. No FHE arithmetic in the CKKS layer.
 - **VMP reuse — do not fork.** Both the baby- and giant-step rotations get their gadget

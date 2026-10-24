@@ -1,0 +1,82 @@
+[package]
+name = "poulpy-cpu-arm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+readme = "README.md"
+description = "A crate providing concrete NEON accelerated CPU implementations of poulpy-hal through its open extension points"
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/poulpy-cpu-arm"
+
+[lib]
+doctest = false
+
+[features]
+enable-bin-fhe = ["dep:poulpy-bin-fhe", "poulpy-cpu-portable/enable-bin-fhe"]
+enable-neon = []
+enable-rayon = ["enable-neon", "dep:rayon", "dep:poulpy-cpu-rayon"]
+enable-ckks = ["dep:poulpy-ckks", "poulpy-cpu-portable/enable-ckks"]
+enable-blas = ["dep:poulpy-blas", "enable-ckks"]
+
+[dependencies]
+poulpy-bin-fhe = {workspace = true, optional = true}
+poulpy-blas = {workspace = true, optional = true}
+bytemuck = {workspace = true}
+poulpy-ckks = {workspace = true, optional = true}
+poulpy-core = {workspace = true}
+poulpy-hal = {workspace = true}
+poulpy-cpu-portable = {workspace = true}
+poulpy-cpu-rayon = {workspace = true, optional = true}
+itertools = {workspace = true}
+rand = {workspace = true}
+rand_distr = {workspace = true}
+rand_core = {workspace = true}
+byteorder = {workspace = true}
+once_cell = {workspace = true}
+rand_chacha = {workspace = true}
+paste = {workspace = true}
+rayon = {workspace = true, optional = true}
+
+[dev-dependencies]
+# Independent arithmetic for the blas parity tests.
+poulpy-cpu-oracle = {workspace = true, features = ["enable-blas"]}
+# Shared test helpers and portable comparison backends.
+poulpy-cpu-portable = {workspace = true, features = ["enable-core", "enable-test-suite"]}
+poulpy-ckks = {workspace = true, features = ["test-utils"]}
+poulpy-blas = {workspace = true, features = ["test-utils"]}
+poulpy-bin-fhe = {workspace = true}
+poulpy-bench = {workspace = true}
+criterion = {workspace = true}
+anyhow = {workspace = true}
+
+[package.metadata.docs.rs]
+all-features = true
+default-target = "aarch64-unknown-linux-gnu"
+targets = ["aarch64-unknown-linux-gnu"]
+rustdoc-args = ["--cfg", "docsrs"]
+
+[[bench]]
+name = "full"
+harness = false
+required-features = ["enable-neon", "enable-ckks", "enable-bin-fhe"]
+
+[[bench]]
+name = "standard"
+harness = false
+required-features = ["enable-neon", "enable-ckks", "enable-bin-fhe"]
+
+[[bench]]
+name = "light"
+harness = false
+required-features = ["enable-neon", "enable-ckks", "enable-bin-fhe"]
+
+[[bench]]
+name = "normalize"
+harness = false
+required-features = ["enable-neon"]
+
+[[bench]]
+name = "bootstrapping"
+harness = false
+required-features = ["enable-neon", "enable-ckks"]

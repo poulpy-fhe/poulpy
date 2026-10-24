@@ -1,6 +1,6 @@
 //! Transform preparation reference implementations.
 //!
-//! Implements docs/linear_transformation.md: diagonals are encoded by the scheme-aware
+//! Implements docs/guides/linear_transformation.md: diagonals are encoded by the scheme-aware
 //! caller (CKKS), then turned into right convolution operands (`CnvPVecR`).
 //! The resident transform is allocated up-front as a
 //! `LinearTransformation<PreparedDiagonal<…>>` via

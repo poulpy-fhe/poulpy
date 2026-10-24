@@ -1,6 +1,6 @@
 //! Lazy DFT-domain giant rotations and final normalization.
 //!
-//! Implements the ROT and Finalize pieces of docs/linear_transformation.md. The PROD
+//! Implements the ROT and Finalize pieces of docs/guides/linear_transformation.md. The PROD
 //! result rides through giant rotations in `VecZnxDft`: mask columns are still
 //! normalized through scratch BIG/SMALL before key-switching because gadget
 //! decomposition requires limb-aligned input, but the body add, automorphism,
