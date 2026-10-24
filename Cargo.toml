@@ -1,6 +1,8 @@
 [workspace]
 members = ["poulpy-cpu-oracle", "poulpy-hal", "poulpy-core", "poulpy-cpu-avx", "poulpy-cpu-avx512", "poulpy-cpu-arm", "poulpy-cpu-rayon", "poulpy-bin-fhe", "poulpy-cpu-portable", "poulpy-bench", "poulpy-ckks", "poulpy-mhe", "poulpy-blas"]
 default-members = ["poulpy-hal", "poulpy-core", "poulpy-cpu-avx", "poulpy-cpu-arm", "poulpy-bin-fhe", "poulpy-cpu-portable", "poulpy-bench", "poulpy-ckks", "poulpy-mhe", "poulpy-blas"]
+# Imported from poulpy-fhe/poulpy-libm, not yet ported to this workspace.
+exclude = ["poulpy-libm"]
 resolver = "3"
 
 [profile.ci]

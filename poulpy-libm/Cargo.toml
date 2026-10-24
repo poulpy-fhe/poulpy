@@ -1,0 +1,83 @@
+[package]
+name = "poulpy-libm"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "Poulpy libm: CKKS math functions built on Poulpy"
+repository = "https://github.com/poulpy-fhe/poulpy-libm"
+readme = "README.md"
+autobenches = false
+
+[features]
+default = []
+test-utils = ["poulpy-ckks/test-utils"]
+ref = ["dep:poulpy-cpu-ref", "poulpy-cpu-ref/enable-ckks"]
+avx = [
+    "dep:poulpy-cpu-avx",
+    "poulpy-cpu-avx/enable-avx",
+    "poulpy-cpu-avx/enable-ckks",
+]
+avx512 = [
+    "dep:poulpy-cpu-avx512",
+    "poulpy-cpu-avx512/enable-avx512f",
+    "poulpy-cpu-avx512/enable-ckks",
+]
+ifma = [
+    "avx512",
+    "poulpy-cpu-avx512/enable-ifma",
+]
+all-backends = ["ref", "avx", "avx512", "ifma"]
+
+[dependencies]
+anyhow = "1"
+libm = "0.2"
+num-traits = "0.2"
+poulpy-ckks = "=0.8.0"
+poulpy-core = "=0.8.0"
+poulpy-hal = "=0.8.0"
+poulpy-cpu-ref = { version = "=0.8.0", optional = true }
+poulpy-cpu-avx = { version = "=0.8.0", optional = true }
+poulpy-cpu-avx512 = { version = "=0.8.0", optional = true }
+
+[dev-dependencies]
+criterion = "0.8"
+poulpy-ckks = { version = "=0.8.0", features = ["test-utils"] }
+
+[[bench]]
+name = "functions_ref"
+harness = false
+required-features = ["ref"]
+
+[[bench]]
+name = "functions_avx"
+harness = false
+required-features = ["avx"]
+
+[[bench]]
+name = "functions_avx512"
+harness = false
+required-features = ["avx512"]
+
+[[bench]]
+name = "functions_ifma"
+harness = false
+required-features = ["ifma"]
+
+[[example]]
+name = "exp_walkthrough"
+required-features = ["ref"]
+
+[[example]]
+name = "trig_walkthrough"
+required-features = ["ref"]
+
+[[example]]
+name = "inference_walkthrough"
+required-features = ["ref"]
+
+[[example]]
+name = "signal_walkthrough"
+required-features = ["ref"]
+
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
