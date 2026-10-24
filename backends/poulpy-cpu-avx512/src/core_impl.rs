@@ -14,7 +14,8 @@ use crate::ntt3x42_ifma::{
 };
 use poulpy_core::{
     GLWEBytesOf, GLWENormalize, ScratchArenaTakeCore, cnv_offset_to_limb_offset, gadget_dft_apply, gadget_dft_apply_tmp_bytes,
-    gadget_input_size, gglwe_product_output_size, impl_gglwe_product_digits_strided_reference, impl_glwe_tensoring_reference,
+    gadget_input_size, gglwe_product_output_size, impl_gglwe_product_digits_strided_reference_full,
+    impl_glwe_tensoring_reference_full,
     layouts::{Degree, GGLWEInfos, GGLWEPreparedToBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos},
     normalize_input_limb_bound_with_offset,
     oep::GLWETensoringImpl,
@@ -46,18 +47,18 @@ use poulpy_hal::{
     },
 };
 
-impl_glwe_tensoring_reference!(FFT64Avx512);
-impl_glwe_tensoring_reference!(FFT64CIAvx512);
+impl_glwe_tensoring_reference_full!(FFT64Avx512);
+impl_glwe_tensoring_reference_full!(FFT64CIAvx512);
 #[cfg(feature = "enable-rayon")]
-impl_glwe_tensoring_reference!(FFT64Avx512Rayon);
+impl_glwe_tensoring_reference_full!(FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
-impl_glwe_tensoring_reference!(FFT64CIAvx512Rayon);
-impl_gglwe_product_digits_strided_reference!(FFT64Avx512);
-impl_gglwe_product_digits_strided_reference!(FFT64CIAvx512);
+impl_glwe_tensoring_reference_full!(FFT64CIAvx512Rayon);
+impl_gglwe_product_digits_strided_reference_full!(FFT64Avx512);
+impl_gglwe_product_digits_strided_reference_full!(FFT64CIAvx512);
 #[cfg(feature = "enable-rayon")]
-impl_gglwe_product_digits_strided_reference!(FFT64Avx512Rayon);
+impl_gglwe_product_digits_strided_reference_full!(FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
-impl_gglwe_product_digits_strided_reference!(FFT64CIAvx512Rayon);
+impl_gglwe_product_digits_strided_reference_full!(FFT64CIAvx512Rayon);
 
 trait RankOneTensorDft: Backend {
     fn tensor_finish_tmp_bytes(module: &Module<Self>, n: usize, size: usize) -> usize
@@ -1406,14 +1407,14 @@ where
 
 poulpy_cpu_portable::impl_cpu_core_defaults!(super::FFT64Avx512, fft64);
 ::poulpy_core::impl_conversion_reference_full!(super::FFT64Avx512);
-::poulpy_core::impl_glwe_packing_derived_full!(super::FFT64Avx512);
+::poulpy_core::impl_glwe_pack_derived_full!(super::FFT64Avx512);
 ::poulpy_core::impl_glwe_rotate_reference_full!(super::FFT64Avx512);
 ::poulpy_core::impl_ggsw_rotate_derived_full!(super::FFT64Avx512);
 ::poulpy_core::impl_glwe_mul_xp_minus_one_reference_full!(super::FFT64Avx512);
 ::poulpy_core::impl_glwe_ci_conversion_reference_full!(super::FFT64Avx512);
 poulpy_cpu_portable::impl_cpu_core_defaults!(super::NTT4x30Avx512, ntt4x30);
 ::poulpy_core::impl_conversion_reference_full!(super::NTT4x30Avx512);
-::poulpy_core::impl_glwe_packing_derived_full!(super::NTT4x30Avx512);
+::poulpy_core::impl_glwe_pack_derived_full!(super::NTT4x30Avx512);
 ::poulpy_core::impl_glwe_rotate_reference_full!(super::NTT4x30Avx512);
 ::poulpy_core::impl_ggsw_rotate_derived_full!(super::NTT4x30Avx512);
 ::poulpy_core::impl_glwe_mul_xp_minus_one_reference_full!(super::NTT4x30Avx512);
@@ -1423,7 +1424,7 @@ poulpy_cpu_portable::impl_cpu_core_defaults!(super::NTT3x42Ifma, ntt4x30);
 #[cfg(feature = "enable-ifma")]
 ::poulpy_core::impl_conversion_reference_full!(super::NTT3x42Ifma);
 #[cfg(feature = "enable-ifma")]
-::poulpy_core::impl_glwe_packing_derived_full!(super::NTT3x42Ifma);
+::poulpy_core::impl_glwe_pack_derived_full!(super::NTT3x42Ifma);
 #[cfg(feature = "enable-ifma")]
 ::poulpy_core::impl_glwe_rotate_reference_full!(super::NTT3x42Ifma);
 #[cfg(feature = "enable-ifma")]
@@ -1437,7 +1438,7 @@ poulpy_cpu_portable::impl_cpu_core_defaults!(super::FFT64Avx512Rayon, fft64);
 #[cfg(feature = "enable-rayon")]
 ::poulpy_core::impl_conversion_reference_full!(super::FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
-::poulpy_core::impl_glwe_packing_derived_full!(super::FFT64Avx512Rayon);
+::poulpy_core::impl_glwe_pack_derived_full!(super::FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
 ::poulpy_core::impl_glwe_rotate_reference_full!(super::FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
@@ -1451,7 +1452,7 @@ poulpy_cpu_portable::impl_cpu_core_defaults!(super::NTT4x30Avx512Rayon, ntt4x30)
 #[cfg(feature = "enable-rayon")]
 ::poulpy_core::impl_conversion_reference_full!(super::NTT4x30Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
-::poulpy_core::impl_glwe_packing_derived_full!(super::NTT4x30Avx512Rayon);
+::poulpy_core::impl_glwe_pack_derived_full!(super::NTT4x30Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
 ::poulpy_core::impl_glwe_rotate_reference_full!(super::NTT4x30Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
@@ -1483,7 +1484,7 @@ mod ifma_rayon_defaults {
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 ::poulpy_core::impl_conversion_reference_full!(super::NTT3x42IfmaRayon);
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
-::poulpy_core::impl_glwe_packing_derived_full!(super::NTT3x42IfmaRayon);
+::poulpy_core::impl_glwe_pack_derived_full!(super::NTT3x42IfmaRayon);
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 ::poulpy_core::impl_glwe_rotate_reference_full!(super::NTT3x42IfmaRayon);
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]

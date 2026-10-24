@@ -29,12 +29,12 @@ poulpy_core::impl_ggsw_keyswitch_derived_full!(OverrideBackend);
 poulpy_core::impl_automorphism_reference_full!(OverrideBackend);
 poulpy_core::impl_glwe_external_product_reference_full!(OverrideBackend);
 poulpy_core::impl_glwe_keyswitch_reference_full!(OverrideBackend);
-poulpy_core::impl_glwe_packing_derived_full!(OverrideBackend);
+poulpy_core::impl_glwe_pack_derived_full!(OverrideBackend);
 poulpy_core::impl_glwe_trace_derived_full!(OverrideBackend);
 poulpy_core::impl_linear_transformation_reference_full!(OverrideBackend);
 poulpy_core::impl_lwe_keyswitch_reference_full!(OverrideBackend);
-poulpy_core::impl_glwe_tensoring_reference!(OverrideBackend);
-poulpy_core::impl_gglwe_product_digits_strided_reference!(OverrideBackend);
+poulpy_core::impl_glwe_tensoring_reference_full!(OverrideBackend);
+poulpy_core::impl_gglwe_product_digits_strided_reference_full!(OverrideBackend);
 const COPY_PER_LIMB: usize = 4096;
 fn copy_override_bytes<R: GLWEInfos, A: GLWEInfos>(res: &R, source: &A) -> usize {
     // Non-monotonic source costs detect queries that substitute a supposedly

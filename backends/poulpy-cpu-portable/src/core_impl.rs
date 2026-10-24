@@ -1,6 +1,6 @@
 use super::{FFT64CIPortable, FFT64Portable, NTT4x30CIPortable, NTT4x30Portable};
 use poulpy_core::{
-    impl_gglwe_product_digits_strided_reference, impl_glwe_tensoring_reference,
+    impl_gglwe_product_digits_strided_reference_full, impl_glwe_tensoring_reference_full,
     reference::keyswitching::glwe::{gglwe_product_digits_strided_reference, gglwe_product_digits_strided_tmp_bytes_reference},
 };
 use poulpy_hal::{
@@ -10,12 +10,12 @@ use poulpy_hal::{
 
 use crate::ntt4x30::{STRIDED_MAX_DSIZE, gglwe_product_digits_strided, gglwe_product_digits_strided_tmp_bytes};
 
-impl_glwe_tensoring_reference!(FFT64Portable);
-impl_glwe_tensoring_reference!(NTT4x30Portable);
-impl_glwe_tensoring_reference!(FFT64CIPortable);
-impl_glwe_tensoring_reference!(NTT4x30CIPortable);
-impl_gglwe_product_digits_strided_reference!(FFT64Portable);
-impl_gglwe_product_digits_strided_reference!(FFT64CIPortable);
+impl_glwe_tensoring_reference_full!(FFT64Portable);
+impl_glwe_tensoring_reference_full!(NTT4x30Portable);
+impl_glwe_tensoring_reference_full!(FFT64CIPortable);
+impl_glwe_tensoring_reference_full!(NTT4x30CIPortable);
+impl_gglwe_product_digits_strided_reference_full!(FFT64Portable);
+impl_gglwe_product_digits_strided_reference_full!(FFT64CIPortable);
 
 /// Interleaved-digit product of the NTT backends, fused in one pass over the key up to `STRIDED_MAX_DSIZE` digits.
 unsafe impl<R: Ring> poulpy_core::oep::GGLWEProductDigitsStridedImpl for NTT4x30Portable<R>
@@ -71,14 +71,14 @@ where
 
 crate::impl_cpu_core_defaults!(super::FFT64Portable, fft64);
 ::poulpy_core::impl_conversion_reference_full!(super::FFT64Portable);
-::poulpy_core::impl_glwe_packing_derived_full!(super::FFT64Portable);
+::poulpy_core::impl_glwe_pack_derived_full!(super::FFT64Portable);
 ::poulpy_core::impl_glwe_rotate_reference_full!(super::FFT64Portable);
 ::poulpy_core::impl_ggsw_rotate_derived_full!(super::FFT64Portable);
 ::poulpy_core::impl_glwe_mul_xp_minus_one_reference_full!(super::FFT64Portable);
 ::poulpy_core::impl_glwe_ci_conversion_reference_full!(super::FFT64Portable);
 crate::impl_cpu_core_defaults!(super::NTT4x30Portable, ntt4x30);
 ::poulpy_core::impl_conversion_reference_full!(super::NTT4x30Portable);
-::poulpy_core::impl_glwe_packing_derived_full!(super::NTT4x30Portable);
+::poulpy_core::impl_glwe_pack_derived_full!(super::NTT4x30Portable);
 ::poulpy_core::impl_glwe_rotate_reference_full!(super::NTT4x30Portable);
 ::poulpy_core::impl_ggsw_rotate_derived_full!(super::NTT4x30Portable);
 ::poulpy_core::impl_glwe_mul_xp_minus_one_reference_full!(super::NTT4x30Portable);

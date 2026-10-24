@@ -1,7 +1,7 @@
 //! `poulpy-core` extension points of the portable Rayon backends.
 
 use poulpy_core::{
-    impl_gglwe_product_digits_strided_reference, impl_glwe_tensoring_reference,
+    impl_gglwe_product_digits_strided_reference_full, impl_glwe_tensoring_reference_full,
     reference::keyswitching::glwe::{gglwe_product_digits_strided_reference, gglwe_product_digits_strided_tmp_bytes_reference},
 };
 use poulpy_cpu_portable::{
@@ -19,12 +19,12 @@ use poulpy_hal::{
 use super::{FFT64CIPortableRayon, FFT64PortableRayon, NTT4x30CIPortableRayon, NTT4x30PortableRayon};
 use crate::RayonTaskExecutor;
 
-impl_glwe_tensoring_reference!(FFT64PortableRayon);
-impl_glwe_tensoring_reference!(NTT4x30PortableRayon);
-impl_glwe_tensoring_reference!(FFT64CIPortableRayon);
-impl_glwe_tensoring_reference!(NTT4x30CIPortableRayon);
-impl_gglwe_product_digits_strided_reference!(FFT64PortableRayon);
-impl_gglwe_product_digits_strided_reference!(FFT64CIPortableRayon);
+impl_glwe_tensoring_reference_full!(FFT64PortableRayon);
+impl_glwe_tensoring_reference_full!(NTT4x30PortableRayon);
+impl_glwe_tensoring_reference_full!(FFT64CIPortableRayon);
+impl_glwe_tensoring_reference_full!(NTT4x30CIPortableRayon);
+impl_gglwe_product_digits_strided_reference_full!(FFT64PortableRayon);
+impl_gglwe_product_digits_strided_reference_full!(FFT64CIPortableRayon);
 
 /// Interleaved-digit product of the NTT backends over one ring, fused in one pass over the key up to
 /// `STRIDED_MAX_DSIZE` digits. The helpers live in `$helpers`.
@@ -126,14 +126,14 @@ impl_digits_strided!(poulpy_hal::layouts::ConjugateInvariant, digits_strided_ci)
 
 poulpy_cpu_portable::impl_cpu_core_defaults!(super::FFT64PortableRayon, fft64);
 ::poulpy_core::impl_conversion_reference_full!(super::FFT64PortableRayon);
-::poulpy_core::impl_glwe_packing_derived_full!(super::FFT64PortableRayon);
+::poulpy_core::impl_glwe_pack_derived_full!(super::FFT64PortableRayon);
 ::poulpy_core::impl_glwe_rotate_reference_full!(super::FFT64PortableRayon);
 ::poulpy_core::impl_ggsw_rotate_derived_full!(super::FFT64PortableRayon);
 ::poulpy_core::impl_glwe_mul_xp_minus_one_reference_full!(super::FFT64PortableRayon);
 ::poulpy_core::impl_glwe_ci_conversion_reference_full!(super::FFT64PortableRayon);
 poulpy_cpu_portable::impl_cpu_core_defaults!(super::NTT4x30PortableRayon, ntt4x30);
 ::poulpy_core::impl_conversion_reference_full!(super::NTT4x30PortableRayon);
-::poulpy_core::impl_glwe_packing_derived_full!(super::NTT4x30PortableRayon);
+::poulpy_core::impl_glwe_pack_derived_full!(super::NTT4x30PortableRayon);
 ::poulpy_core::impl_glwe_rotate_reference_full!(super::NTT4x30PortableRayon);
 ::poulpy_core::impl_ggsw_rotate_derived_full!(super::NTT4x30PortableRayon);
 ::poulpy_core::impl_glwe_mul_xp_minus_one_reference_full!(super::NTT4x30PortableRayon);

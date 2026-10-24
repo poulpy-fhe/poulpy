@@ -249,7 +249,7 @@ fn test_znx_normalize_delegating_fft64_portable() {
 
 poulpy_core::impl_core_reference_full!(ControlledSamplingFFT64Portable);
 poulpy_core::impl_conversion_reference_full!(ControlledSamplingFFT64Portable);
-poulpy_core::impl_glwe_packing_derived_full!(ControlledSamplingFFT64Portable);
+poulpy_core::impl_glwe_pack_derived_full!(ControlledSamplingFFT64Portable);
 poulpy_core::impl_glwe_rotate_reference_full!(ControlledSamplingFFT64Portable);
 poulpy_core::impl_ggsw_rotate_derived_full!(ControlledSamplingFFT64Portable);
 poulpy_core::impl_glwe_mul_xp_minus_one_reference_full!(ControlledSamplingFFT64Portable);
@@ -272,7 +272,7 @@ poulpy_core::impl_core_reference_full!(DifferentSamplingFFT64Portable);
 #[cfg(test)]
 poulpy_core::impl_conversion_reference_full!(DifferentSamplingFFT64Portable);
 #[cfg(test)]
-poulpy_core::impl_glwe_packing_derived_full!(DifferentSamplingFFT64Portable);
+poulpy_core::impl_glwe_pack_derived_full!(DifferentSamplingFFT64Portable);
 #[cfg(test)]
 poulpy_core::impl_glwe_rotate_reference_full!(DifferentSamplingFFT64Portable);
 #[cfg(test)]
