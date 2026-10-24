@@ -6,7 +6,7 @@ The Poulpy team encourages contributions. We welcome bug fixes, documentation, t
 
 We are open to all external contributions, but please talk to us **before** writing a substantial patch.
 
-Poulpy is a layered library: `poulpy-hal` (arithmetic and layouts), `poulpy-core` (RLWE machinery), the scheme crates, and the backend crates. A change often has a natural home in a different layer than the one where the problem surfaced, and a new operation usually has to be introduced through the override extension points (`oep`) so that backends can specialize it. A short exchange up front is much cheaper than a redesign in review.
+Poulpy is a layered library: the basis at the root, `poulpy-hal` (arithmetic and layouts), `poulpy-core` (RLWE machinery) and `poulpy-mhe` (multiparty HE), then the scheme crates in `schemes/`, the libraries built on them in `libs/`, and the backend crates in `backends/`. A change often has a natural home in a different layer than the one where the problem surfaced, and a new operation usually has to be introduced through the override extension points (`oep`) so that backends can specialize it. A short exchange up front is much cheaper than a redesign in review.
 
 Small, self-evident changes (typos, documentation, an obvious bug with an obvious fix) can go straight to a pull request.
 
@@ -59,4 +59,4 @@ If you touch an accelerated backend, run its lane too, with `RUSTFLAGS="-C targe
 
 Every user-visible change gets an entry under `## [Unreleased]` in [CHANGELOG.md](./CHANGELOG.md), in the section of the crate it affects. Prefix an entry that breaks an API with `**Breaking:**`.
 
-The workspace crates share one version, bumped together in a single release commit that also cuts `[Unreleased]` into a dated section. Releases are tagged on `main`.
+The workspace crates share one version, set in `[workspace.package]` and in the internal `[workspace.dependencies]` of the root `Cargo.toml` and bumped together in a single release commit that also cuts `[Unreleased]` into a dated section. Releases are tagged on `main`.

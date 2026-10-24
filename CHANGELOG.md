@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Workspace
+
+- The basis crates `poulpy-hal`, `poulpy-core` and `poulpy-mhe` stay at the root, and the other crates move into four folders by role: `schemes/` (`poulpy-ckks`, `poulpy-bin-fhe`), `libs/` (`poulpy-blas`), `backends/` (the `poulpy-cpu-*` crates) and `tools/` (`poulpy-bench`).
+  Crate names and features are unchanged. A path dependency on a local clone takes the new folder.
+- The crates inherit `version`, `edition`, `license`, `repository` and `homepage` from `[workspace.package]` in the root `Cargo.toml`.
+- The guides move from `docs/` to `docs/guides/` and the logo to `docs/img/`. The unused `cspell.json` is removed.
+
 ### `poulpy-hal`
 
 - Add `mat_znx_copy` (`MatZnxCopy`, `HalMatZnxImpl::mat_znx_copy`), the copy of one output column of every entry of a matrix, a `vec_znx_copy` on each entry by default.
@@ -447,6 +454,10 @@
 ### `poulpy-bench`
 
 - **Breaking:** `bench_ckks_bootstrapping` requires `CKKSBootstrappingCIOps`, and runs the presets with EvalMod on the conjugate-invariant ring.
+
+### Dependencies
+
+- Lock `chacha20`, a dependency of `rand`, at 0.10.2, as 0.10.0 is yanked.
 
 ## [0.9.0] - 2026-10-08
 
