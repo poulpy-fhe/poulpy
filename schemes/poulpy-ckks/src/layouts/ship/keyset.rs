@@ -13,11 +13,12 @@ use anyhow::{Result, ensure};
 use poulpy_core::{Distribution, GetDistribution, GetDistributionMut};
 use poulpy_core::{
     GLWEAutomorphismKeyEncryptSk, GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk, TransferInto,
+    api::{GLWEAutomorphismKeyPreparedFactory, GLWESwitchingKeyPreparedFactory, GLWETensorKeyPreparedFactory},
     layouts::{
         Base2K, GGLWEInfos, GGLWEToBackendRef, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPrepared,
-        GLWEAutomorphismKeyPreparedFactory, GLWEInfos, GLWESecret, GLWESecretLayout, GLWESecretPreparedFactory, GLWESwitchingKey,
-        GLWESwitchingKeyLayout, GLWESwitchingKeyPrepared, GLWESwitchingKeyPreparedFactory, GLWETensorKey, GLWETensorKeyLayout,
-        GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory, GLWEToBackendRef, GetGaloisElement, LWEInfos, ModuleCoreAlloc, Rank,
+        GLWEInfos, GLWESecret, GLWESecretLayout, GLWESecretPreparedFactory, GLWESwitchingKey, GLWESwitchingKeyLayout,
+        GLWESwitchingKeyPrepared, GLWETensorKey, GLWETensorKeyLayout, GLWETensorKeyPrepared, GLWEToBackendRef, GetGaloisElement,
+        LWEInfos, ModuleCoreAlloc, Rank,
     },
 };
 use poulpy_hal::AlignedBuf;

@@ -22,10 +22,13 @@ use poulpy_ckks::{
         reference_encoder::ReferenceEncoder,
     },
 };
-use poulpy_core::layouts::{
-    BackendGLWESecret, DiagonalArithmetic, GLWETensorKeyLayout, GLWEToBackendMut, GetAutomorphismKey, LWEInfos, Rank,
-    TorusPrecision,
-    prepared::{GLWEAutomorphismKeyPreparedBackendRef, GLWESecretPrepared, GLWETensorKeyPreparedFactory},
+use poulpy_core::{
+    api::GLWETensorKeyPreparedFactory,
+    layouts::{
+        BackendGLWESecret, DiagonalArithmetic, GLWETensorKeyLayout, GLWEToBackendMut, GetAutomorphismKey, LWEInfos, Rank,
+        TorusPrecision,
+        prepared::{GLWEAutomorphismKeyPreparedBackendRef, GLWESecretPrepared},
+    },
 };
 use poulpy_hal::{
     AlignedBuf,

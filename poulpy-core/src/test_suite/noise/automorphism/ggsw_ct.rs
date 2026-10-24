@@ -11,10 +11,11 @@ use crate::layouts::prepared::{GGLWEToGGSWKeyPreparedToBackendRef, GLWEAutomorph
 use crate::{Distribution, ScalarZnxFillDistribution};
 use crate::{
     GGLWEToGGSWKeyEncryptSk, GGSWAutomorphism, GGSWEncryptSk, GGSWNoise, GLWEAutomorphismKeyEncryptSk,
+    api::{GGLWEToGGSWKeyPreparedFactory, GLWEAutomorphismKeyPreparedFactory},
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        GGLWEToGGSWKey, GGLWEToGGSWKeyLayout, GGLWEToGGSWKeyPreparedFactory, GGSW, GGSWInfos, GGSWLayout, GLWEAutomorphismKey,
-        GLWEAutomorphismKeyPreparedFactory, GLWEInfos, GLWESecret, GLWESecretPreparedFactory, ModuleCoreAlloc,
+        GGLWEToGGSWKey, GGLWEToGGSWKeyLayout, GGSW, GGSWInfos, GGSWLayout, GLWEAutomorphismKey, GLWEInfos, GLWESecret,
+        GLWESecretPreparedFactory, ModuleCoreAlloc,
         prepared::{GGLWEToGGSWKeyPrepared, GLWEAutomorphismKeyPrepared, GLWESecretPrepared},
     },
     noise::GGLWENoiseModel,

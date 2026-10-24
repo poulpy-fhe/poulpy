@@ -10,12 +10,12 @@ use crate::layouts::GLWESecretSampling;
 use crate::{
     Distribution, GGLWECompressedEncryptSk, GGLWEDecompress, GGLWEEncryptSk, GGLWEKeyswitch, GLWESwitchingKeyCompressedEncryptSk,
     GLWESwitchingKeyDecompress, GLWESwitchingKeyEncryptSk, GetDistributionMut,
+    api::GGLWEPreparedFactory,
     decryption::GLWEDecrypt,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
         GGLWE, GGLWECompressed, GGLWEInfos, GGLWELayout, GLWESecret, GLWESecretPreparedFactory, GLWESwitchingKey,
-        GLWESwitchingKeyCompressed, LWEInfos, ModuleCoreAlloc, ModuleCoreCompressedAlloc,
-        prepared::{GGLWEPreparedFactory, GLWESecretPrepared},
+        GLWESwitchingKeyCompressed, LWEInfos, ModuleCoreAlloc, ModuleCoreCompressedAlloc, prepared::GLWESecretPrepared,
     },
     noise::GGLWENoise,
 };

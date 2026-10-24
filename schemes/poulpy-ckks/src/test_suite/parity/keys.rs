@@ -2,9 +2,9 @@
 use super::helpers::with_scratch;
 use poulpy_core::{
     GLWEMaskFill,
+    api::{GGLWEPreparedFactory, GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory},
     layouts::{
-        GGLWE, GGLWELayout, GGLWEPrepared, GGLWEPreparedFactory, GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedFactory,
-        GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory, ModuleCoreAlloc, SetGaloisElement,
+        GGLWE, GGLWELayout, GGLWEPrepared, GLWEAutomorphismKeyPrepared, GLWETensorKeyPrepared, ModuleCoreAlloc, SetGaloisElement,
     },
     test_suite::keys::fill_by_digit,
 };

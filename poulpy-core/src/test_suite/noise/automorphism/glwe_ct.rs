@@ -11,10 +11,11 @@ use crate::layouts::prepared::GLWEAutomorphismKeyPreparedToBackendRef;
 use crate::test_suite::noise::{assert_refuses_uncovered_input, glwe_noise_checked};
 use crate::{
     GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWEDecrypt, GLWEEncryptSk, GLWENoise, GLWENormalize,
+    api::GLWEAutomorphismKeyPreparedFactory,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        GGLWEInfos, GLWE, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPreparedFactory, GLWELayout,
-        GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory, LWEInfos, ModuleCoreAlloc, TorusPrecision,
+        GGLWEInfos, GLWE, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWELayout, GLWEPlaintext, GLWESecret,
+        GLWESecretPreparedFactory, LWEInfos, ModuleCoreAlloc, TorusPrecision,
         prepared::{GLWEAutomorphismKeyPrepared, GLWESecretPrepared},
     },
     noise::GGLWENoiseModel,

@@ -101,9 +101,9 @@ let mut scratch = ScratchOwned::<BE>::alloc(
 module.glwe_automorphism_key_prepare(&mut prepared, &key, &mut scratch.borrow());
 ```
 
-The decompression traits come from `poulpy_core::api`, the allocation and
-preparation traits from `poulpy_core::layouts`, and scratch allocation and
-borrowing traits from `poulpy_hal::api`.
+The decompression and preparation traits come from `poulpy_core::api`, the
+standard allocation traits from `poulpy_core::layouts`, and scratch allocation
+and borrowing traits from `poulpy_hal::api`.
 
 ---
 

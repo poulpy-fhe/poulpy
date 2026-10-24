@@ -1605,7 +1605,8 @@ mod relinearize_tests {
     use super::*;
     use poulpy_core::{
         GLWETensoring,
-        layouts::{GGLWEAtBackendMut, GLWELayout, GLWETensorKeyLayout, GLWETensorKeyPreparedFactory, ModuleCoreAlloc},
+        api::GLWETensorKeyPreparedFactory,
+        layouts::{GGLWEAtBackendMut, GLWELayout, GLWETensorKeyLayout, ModuleCoreAlloc},
     };
     use poulpy_hal::{
         api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniformSource, VecZnxFillUniformSourceAll},

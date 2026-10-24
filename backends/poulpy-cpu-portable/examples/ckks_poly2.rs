@@ -33,9 +33,9 @@ use poulpy_ckks::{
 use poulpy_core::layouts::GLWESecretSampling;
 use poulpy_core::{
     GLWETensorKeyEncryptSk,
+    api::GLWETensorKeyPreparedFactory,
     layouts::{
-        Base2K, Degree, GLWELayout, GLWETensorKeyLayout, GLWETensorKeyPreparedFactory, LWEInfos, ModuleCoreAlloc, Rank,
-        TorusPrecision,
+        Base2K, Degree, GLWELayout, GLWETensorKeyLayout, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
         prepared::{GLWESecretPrepared, GLWESecretPreparedFactory, GLWETensorKeyPrepared},
     },
 };

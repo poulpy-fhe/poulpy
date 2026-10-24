@@ -2,15 +2,16 @@ use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
 
 use crate::{
     GetDistribution, GetDistributionMut,
+    api::{
+        GGLWEPreparedFactory, GGLWEToGGSWKeyPreparedFactory, GGSWPreparedFactory, GLWEAutomorphismKeyPreparedFactory,
+        GLWECIKeyPreparedFactory, GLWEPreparedFactory, GLWEPublicKeyPreparedFactory, GLWESwitchingKeyPreparedFactory,
+        GLWETensorKeyPreparedFactory, GLWEToLWEKeyPreparedFactory, LWESwitchingKeyPreparedFactory, LWEToGLWEKeyPreparedFactory,
+    },
     layouts::{
-        GGLWEInfos, GGLWEPreparedFactory, GGLWEPreparedToBackendMut, GGLWEToBackendRef, GGLWEToGGSWKeyPreparedFactory,
-        GGLWEToGGSWKeyPreparedToBackendMut, GGLWEToGGSWKeyToBackendRef, GGSWInfos, GGSWPreparedFactory, GGSWPreparedToBackendMut,
-        GGSWToBackendRef, GLWEAutomorphismKeyPreparedFactory, GLWECIKey, GLWECIKeyPrepared, GLWECIKeyPreparedFactory, GLWEInfos,
-        GLWEPreparedFactory, GLWEPreparedToBackendMut, GLWEPublicKeyPreparedFactory, GLWEPublicKeyPreparedToBackendMut,
-        GLWEPublicKeyToBackendRef, GLWESwitchingKey, GLWESwitchingKeyDegrees, GLWESwitchingKeyDegreesMut,
-        GLWESwitchingKeyPrepared, GLWESwitchingKeyPreparedFactory, GLWETensorKeyPreparedFactory, GLWEToBackendRef,
-        GLWEToLWEKeyPreparedFactory, GetGaloisElement, LWESwitchingKeyPreparedFactory, LWEToGLWEKeyPreparedFactory,
-        SetGaloisElement,
+        GGLWEInfos, GGLWEPreparedToBackendMut, GGLWEToBackendRef, GGLWEToGGSWKeyPreparedToBackendMut, GGLWEToGGSWKeyToBackendRef,
+        GGSWInfos, GGSWPreparedToBackendMut, GGSWToBackendRef, GLWECIKey, GLWECIKeyPrepared, GLWEInfos, GLWEPreparedToBackendMut,
+        GLWEPublicKeyPreparedToBackendMut, GLWEPublicKeyToBackendRef, GLWESwitchingKey, GLWESwitchingKeyDegrees,
+        GLWESwitchingKeyDegreesMut, GLWESwitchingKeyPrepared, GLWEToBackendRef, GetGaloisElement, SetGaloisElement,
     },
     oep::PreparationImpl,
 };

@@ -3,9 +3,9 @@ use std::hint::black_box;
 use criterion::{Bencher, measurement::Measurement};
 use poulpy_core::{
     GLWEMaskFill, GLWETensoring,
+    api::GLWETensorKeyPreparedFactory,
     layouts::{
-        Base2K, Degree, Dnum, GLWELayout, GLWETensorKey, GLWETensorKeyLayout, GLWETensorKeyPreparedFactory, ModuleCoreAlloc,
-        Rank, TorusPrecision, k_digit_of,
+        Base2K, Degree, Dnum, GLWELayout, GLWETensorKey, GLWETensorKeyLayout, ModuleCoreAlloc, Rank, TorusPrecision, k_digit_of,
     },
     test_suite::keys::fill_by_digit,
 };

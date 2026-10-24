@@ -10,9 +10,10 @@ use crate::layouts::prepared::GGSWPreparedToBackendRef;
 use crate::{Distribution, ScalarZnxFillDistribution};
 use crate::{
     GGSWEncryptSk, GGSWExternalProduct, GGSWNoise,
+    api::GGSWPreparedFactory,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        GGSW, GGSWInfos, GGSWLayout, GGSWPreparedFactory, GLWEInfos, GLWESecret, GLWESecretPreparedFactory, ModuleCoreAlloc,
+        GGSW, GGSWInfos, GGSWLayout, GLWEInfos, GLWESecret, GLWESecretPreparedFactory, ModuleCoreAlloc,
         prepared::{GGSWPrepared, GLWESecretPrepared},
     },
     noise::GGSWNoiseModel,

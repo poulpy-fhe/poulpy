@@ -10,12 +10,14 @@
 use std::collections::HashMap;
 
 use anyhow::{Context, Result, ensure};
-use poulpy_core::layouts::{
-    GGLWEInfos, GGLWEPreparedToBackendRef, GGLWEToBackendRef, GLWEAutomorphismKey, GLWEAutomorphismKeyPrepared,
-    GLWEAutomorphismKeyPreparedFactory, GLWESwitchingKey, GLWESwitchingKeyDegrees, GLWESwitchingKeyPrepared,
-    GLWESwitchingKeyPreparedFactory, GLWETensorKey, GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory,
-    GLWETensorKeyPreparedToBackendRef, GLWEToBackendRef, GetAutomorphismKey, GetGaloisElement, GetTensorKey, LWEInfos,
-    ModuleCoreAlloc, prepared::GLWEAutomorphismKeyPreparedToBackendRef,
+use poulpy_core::{
+    api::{GLWEAutomorphismKeyPreparedFactory, GLWESwitchingKeyPreparedFactory, GLWETensorKeyPreparedFactory},
+    layouts::{
+        GGLWEInfos, GGLWEPreparedToBackendRef, GGLWEToBackendRef, GLWEAutomorphismKey, GLWEAutomorphismKeyPrepared,
+        GLWESwitchingKey, GLWESwitchingKeyDegrees, GLWESwitchingKeyPrepared, GLWETensorKey, GLWETensorKeyPrepared,
+        GLWETensorKeyPreparedToBackendRef, GLWEToBackendRef, GetAutomorphismKey, GetGaloisElement, GetTensorKey, LWEInfos,
+        ModuleCoreAlloc, prepared::GLWEAutomorphismKeyPreparedToBackendRef,
+    },
 };
 use poulpy_hal::layouts::{Backend, Data, HostDataRef, Module, ScratchArena, Standard, ZnxWord};
 

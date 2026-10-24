@@ -22,6 +22,7 @@ use crate::layouts::GLWESecretSampling;
 use crate::{
     GLWEAdd, GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWECopy, GLWEDecrypt, GLWEEncryptSk, GLWELinearTransformations,
     GLWENoise, LinearTransformationBabySteps, LinearTransformationPrepared,
+    api::GLWEAutomorphismKeyPreparedFactory,
     encryption::DEFAULT_SIGMA_XE,
     error::{CoreError, Result},
     layouts::{
@@ -30,8 +31,8 @@ use crate::{
         LinearTransformationDiagonal, LinearTransformationGiantStep, LinearTransformationLayout, LinearTransformationPlan,
         LinearTransformationStrategy, ModuleCoreAlloc, SetK, TorusPrecision,
         prepared::{
-            GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedBackendRef, GLWEAutomorphismKeyPreparedFactory,
-            GLWEAutomorphismKeyPreparedToBackendRef, GLWESecretPrepared, PreparedDiagonal,
+            GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedBackendRef, GLWEAutomorphismKeyPreparedToBackendRef,
+            GLWESecretPrepared, PreparedDiagonal,
         },
     },
     noise::GGLWENoiseModel,

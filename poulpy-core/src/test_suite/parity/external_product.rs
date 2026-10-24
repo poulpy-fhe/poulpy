@@ -11,11 +11,8 @@ use poulpy_hal::{
 use crate::layouts::prepared::GGSWPreparedToBackendRef;
 use crate::{
     GLWEExternalProduct, GLWEExternalProductInternal, GLWEMaskFill,
-    api::TransferInto,
-    layouts::{
-        Base2K, Degree, Dnum, GGSWAtViewMut, GGSWLayout, GLWELayout, ModuleCoreAlloc, Rank, TorusPrecision,
-        prepared::GGSWPreparedFactory,
-    },
+    api::{GGSWPreparedFactory, TransferInto},
+    layouts::{Base2K, Degree, Dnum, GGSWAtViewMut, GGSWLayout, GLWELayout, ModuleCoreAlloc, Rank, TorusPrecision},
     test_suite::parity::{ParityBackend, ParityShapes, ref_glwe, unnormalized_twin, wide_twin},
 };
 

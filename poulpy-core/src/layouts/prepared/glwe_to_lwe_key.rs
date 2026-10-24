@@ -1,13 +1,9 @@
-use poulpy_hal::layouts::{Backend, Data, ScratchArena};
+use poulpy_hal::layouts::{Backend, Data};
 
 use crate::layouts::{
     Base2K, Degree, Dnum, GGLWEInfos, GGLWEPrepared, GGLWEPreparedBackendRef, GGLWEPreparedToBackendMut,
-    GGLWEPreparedToBackendRef, GGLWEToBackendRef, GLWEInfos, GLWESwitchingKeyDegrees, GLWESwitchingKeyDegreesMut, LWEInfos, Rank,
-    TorusPrecision,
-    prepared::{
-        GLWESwitchingKeyPrepared, GLWESwitchingKeyPreparedFactory, GLWESwitchingKeyPreparedToBackendMut,
-        GLWESwitchingKeyPreparedToBackendRef,
-    },
+    GGLWEPreparedToBackendRef, GLWEInfos, GLWESwitchingKeyDegrees, GLWESwitchingKeyDegreesMut, LWEInfos, Rank, TorusPrecision,
+    prepared::{GLWESwitchingKeyPrepared, GLWESwitchingKeyPreparedToBackendMut, GLWESwitchingKeyPreparedToBackendRef},
 };
 
 /// DFT-domain (prepared) variant of a GLWE-to-LWE conversion key.
@@ -74,77 +70,6 @@ impl<D: Data, B: Backend> GGLWEInfos for GLWEToLWEKeyPrepared<D, B> {
         self.0.stride()
     }
 }
-
-pub trait GLWEToLWEKeyPreparedFactory<B: Backend>
-where
-    Self: GLWESwitchingKeyPreparedFactory<B>,
-{
-    fn glwe_to_lwe_key_prepared_alloc(
-        &self,
-        base2k: Base2K,
-        dnum: Dnum,
-        k_aux: TorusPrecision,
-        rank_in: Rank,
-    ) -> GLWEToLWEKeyPrepared<B::OwnedBuf, B> {
-        GLWEToLWEKeyPrepared(self.glwe_switching_key_prepared_alloc(
-            base2k,
-            dnum,
-            TorusPrecision::from(base2k),
-            k_aux,
-            rank_in,
-            Rank(1),
-        ))
-    }
-    fn glwe_to_lwe_key_prepared_alloc_from_infos<A>(&self, infos: &A) -> GLWEToLWEKeyPrepared<B::OwnedBuf, B>
-    where
-        A: GGLWEInfos,
-    {
-        debug_assert_eq!(
-            infos.rank_out().0,
-            1,
-            "rank_out > 1 is not supported for GLWEToLWEKeyPrepared"
-        );
-        debug_assert_eq!(
-            infos.k_digit().0,
-            infos.base2k().0,
-            "GLWEToLWEKeyPrepared uses one-limb digits: k_digit must equal base2k"
-        );
-        GLWEToLWEKeyPrepared(self.glwe_switching_key_prepared_alloc_from_infos(infos))
-    }
-
-    fn glwe_to_lwe_key_prepared_bytes_of(&self, base2k: Base2K, dnum: Dnum, k_aux: TorusPrecision, rank_in: Rank) -> usize {
-        self.bytes_of_glwe_key_prepared(base2k, dnum, TorusPrecision::from(base2k), k_aux, rank_in, Rank(1))
-    }
-
-    fn glwe_to_lwe_key_prepared_bytes_of_from_infos<A>(&self, infos: &A) -> usize
-    where
-        A: GGLWEInfos,
-    {
-        debug_assert_eq!(
-            infos.rank_out().0,
-            1,
-            "rank_out > 1 is not supported for GLWEToLWEKeyPrepared"
-        );
-        debug_assert_eq!(
-            infos.k_digit().0,
-            infos.base2k().0,
-            "GLWEToLWEKeyPrepared uses one-limb digits: k_digit must equal base2k"
-        );
-        self.glwe_switching_key_prepared_bytes_of_from_infos(infos)
-    }
-
-    fn glwe_to_lwe_key_prepare_tmp_bytes<A>(&self, infos: &A) -> usize
-    where
-        A: GGLWEInfos;
-
-    fn glwe_to_lwe_key_prepare<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, B>)
-    where
-        R: GGLWEPreparedToBackendMut<B> + GLWESwitchingKeyDegreesMut,
-        O: GGLWEToBackendRef<B> + GLWESwitchingKeyDegrees;
-}
-
-// module-only API: allocation, sizing, and preparation are provided by
-// `GLWEToLWEKeyPreparedFactory` on `Module`.
 
 impl<D: Data, B: Backend> GGLWEPreparedToBackendMut<B> for GLWEToLWEKeyPrepared<D, B>
 where

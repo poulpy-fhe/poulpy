@@ -9,10 +9,11 @@ use crate::layouts::GLWESecretSampling;
 use crate::{Distribution, ScalarZnxFillDistribution};
 use crate::{
     GGSWCompressedEncryptSk, GGSWDecompress, GGSWEncryptPk, GGSWEncryptSk, GGSWNoise, GLWEPublicKeyGenerate,
+    api::{GGSWPreparedFactory, GLWEPublicKeyPreparedFactory},
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        GGSW, GGSWInfos, GGSWLayout, GGSWPreparedFactory, GLWEInfos, GLWELayout, GLWEPublicKey, GLWEPublicKeyPreparedFactory,
-        GLWESecret, GLWESecretPreparedFactory, LWEInfos, ModuleCoreAlloc, ModuleCoreCompressedAlloc,
+        GGSW, GGSWInfos, GGSWLayout, GLWEInfos, GLWELayout, GLWEPublicKey, GLWESecret, GLWESecretPreparedFactory, LWEInfos,
+        ModuleCoreAlloc, ModuleCoreCompressedAlloc,
         compressed::GGSWCompressed,
         prepared::{GLWEPublicKeyPrepared, GLWESecretPrepared},
     },

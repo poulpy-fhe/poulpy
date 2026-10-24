@@ -2,11 +2,14 @@ mod external_product;
 
 use poulpy_core::{
     GLWEMaskFill,
-    api::{GGSWRotate, GLWEAdd, GLWEAutomorphism, GLWEMulXpMinusOne, GLWENormalize, GLWERotate, GLWEShift, GLWETrace},
+    api::{
+        GGSWRotate, GLWEAdd, GLWEAutomorphism, GLWEAutomorphismKeyPreparedFactory, GLWEMulXpMinusOne, GLWENormalize, GLWERotate,
+        GLWEShift, GLWETrace,
+    },
     layouts::{
         Base2K, Degree, Dnum, GGLWEInfos, GGSWAtViewMut, GGSWInfos, GGSWLayout, GGSWToBackendMut, GLWE,
         GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos,
-        ModuleCoreAlloc, Rank, SetGaloisElement, TorusPrecision, prepared::GLWEAutomorphismKeyPreparedFactory,
+        ModuleCoreAlloc, Rank, SetGaloisElement, TorusPrecision,
     },
     oep::{GGLWEProductDigitsStridedImpl, GGSWRotateImpl, GLWEAddImpl, GLWERotateImpl, GLWETraceImpl},
     reference::operations::{GLWEAddReference, GLWERotateReference},

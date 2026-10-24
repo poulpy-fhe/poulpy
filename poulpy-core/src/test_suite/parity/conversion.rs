@@ -2,13 +2,10 @@
 use super::{ParityBackend, ParityShapes, poisoned_scratch, ref_glwe};
 use crate::{
     GLWEExpandLWE, GLWEExpandLWEMatrix, GLWEFromLWE, LWEFillMask, LWEFromGLWE, LWEKeyswitch, LWESampleExtract,
-    api::TransferInto,
+    api::{GLWEToLWEKeyPreparedFactory, LWESwitchingKeyPreparedFactory, LWEToGLWEKeyPreparedFactory, TransferInto},
     layouts::{
         Base2K, Degree, Dnum, GLWELayout, GLWEToLWEKeyLayout, LWEInfos, LWELayout, LWEMatrixInfos, LWEMatrixLayout,
-        LWESwitchingKeyLayout, LWEToGLWEKeyLayout, ModuleCoreAlloc, Rank, TorusPrecision,
-        prepared::{
-            GGLWEPreparedToBackendRef, GLWEToLWEKeyPreparedFactory, LWESwitchingKeyPreparedFactory, LWEToGLWEKeyPreparedFactory,
-        },
+        LWESwitchingKeyLayout, LWEToGLWEKeyLayout, ModuleCoreAlloc, Rank, TorusPrecision, prepared::GGLWEPreparedToBackendRef,
     },
     test_suite::keys::fill_by_digit,
 };

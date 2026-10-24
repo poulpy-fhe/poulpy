@@ -18,11 +18,12 @@ use itertools::Itertools;
 use poulpy_core::{
     Distribution, GGLWEToGGSWKeyEncryptSk, GGSWExpandRows, GLWEAutomorphismKeyEncryptSk, GLWEBytesOf, GLWECopy, GLWEPacking,
     GLWERotate, GLWETrace, GetDistribution, ScratchArenaTakeCore,
+    api::{GGLWEToGGSWKeyPreparedFactory, GLWEAutomorphismKeyPreparedFactory},
     layouts::{
-        GGLWEInfos, GGLWELayout, GGLWEToGGSWKeyLayout, GGLWEToGGSWKeyPreparedFactory, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos,
-        GGSWToBackendMut, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPreparedFactory, GLWEInfos, GLWELayout,
-        GLWESecretPreparedFactory, GLWESecretToBackendRef, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos,
-        LWESecretToBackendRef, LWEToBackendRef, ModuleCoreAlloc, SetGaloisElement, prepared::GGLWEToGGSWKeyPreparedToBackendRef,
+        GGLWEInfos, GGLWELayout, GGLWEToGGSWKeyLayout, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut,
+        GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout, GLWESecretPreparedFactory, GLWESecretToBackendRef, GLWEToBackendMut,
+        GLWEToBackendRef, GetAutomorphismKey, LWEInfos, LWESecretToBackendRef, LWEToBackendRef, ModuleCoreAlloc,
+        SetGaloisElement, prepared::GGLWEToGGSWKeyPreparedToBackendRef,
     },
 };
 use poulpy_hal::{

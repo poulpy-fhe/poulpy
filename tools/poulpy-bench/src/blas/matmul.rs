@@ -34,10 +34,10 @@ use poulpy_ckks::{
 };
 use poulpy_core::{
     GLWEAutomorphismKeyEncryptSk, GLWETensorKeyEncryptSk,
+    api::{GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory},
     layouts::{
-        BackendGLWESecret, Base2K, Degree, Dnum, Dsize, GGLWELayout, GLWEAutomorphismKeyLayout,
-        GLWEAutomorphismKeyPreparedFactory, GLWELayout, GLWESecretPreparedFactory, GLWESecretSampling, GLWETensorKeyLayout,
-        GLWETensorKeyPreparedFactory, ModuleCoreAlloc, Rank, TorusPrecision, k_digit_of,
+        BackendGLWESecret, Base2K, Degree, Dnum, Dsize, GGLWELayout, GLWEAutomorphismKeyLayout, GLWELayout,
+        GLWESecretPreparedFactory, GLWESecretSampling, GLWETensorKeyLayout, ModuleCoreAlloc, Rank, TorusPrecision, k_digit_of,
         prepared::{GLWEAutomorphismKeyPrepared, GLWESecretPrepared, GLWETensorKeyPrepared},
     },
 };

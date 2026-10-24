@@ -17,11 +17,12 @@ use crate::test_suite::noise::glwe_noise_checked;
 use crate::{
     GGLWEKeyswitch, GLWEAdd, GLWECopy, GLWEDecrypt, GLWEEncryptSk, GLWEKeyswitch, GLWENoise, GLWENormalize, GLWEShift,
     GLWESwitchingKeyEncryptSk,
+    api::GLWESwitchingKeyPreparedFactory,
     encryption::DEFAULT_SIGMA_XE,
     gadget::gglwe_product_accumulation_output_size,
     layouts::{
         GGLWEInfos, GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory, GLWESwitchingKey,
-        GLWESwitchingKeyLayout, GLWESwitchingKeyPreparedFactory, LWEInfos, ModuleCoreAlloc, TorusPrecision,
+        GLWESwitchingKeyLayout, LWEInfos, ModuleCoreAlloc, TorusPrecision,
         prepared::{GGLWEPreparedToBackendRef, GLWESecretPrepared, GLWESwitchingKeyPrepared},
     },
     noise::GGLWENoiseModel,

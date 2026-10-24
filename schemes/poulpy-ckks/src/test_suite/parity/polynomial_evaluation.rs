@@ -21,7 +21,8 @@ use crate::{
 };
 use poulpy_core::{
     GLWEMaskFill,
-    layouts::{GGLWELayout, GLWELayout, GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory, LWEInfos},
+    api::GLWETensorKeyPreparedFactory,
+    layouts::{GGLWELayout, GLWELayout, GLWETensorKeyPrepared, LWEInfos},
 };
 use poulpy_hal::{
     layouts::{Backend, HostBytesBackend, Module},
