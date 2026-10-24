@@ -11,12 +11,13 @@ use poulpy_core::layouts::GLWEPlaintextInfos;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::LinearTransformationPlan;
 use poulpy_core::{
-    GLWELinearTransformations, LinearTransformationBabySteps, LinearTransformationGiantStep, LinearTransformationPrepared,
+    DiagonalProd, GLWELinearTransformations, LinearTransformationBabySteps, LinearTransformationGiantStep,
+    LinearTransformationPrepared,
     layouts::{
         BsgsRotations, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, TorusPrecision,
         prepared::PreparedDiagonal,
     },
-    reference::linear_transformation::{DiagonalProd, glwe_accumulate_streamed_baby_steps_dft},
+    reference::linear_transformation::glwe_accumulate_streamed_baby_steps_dft,
 };
 use poulpy_hal::{
     api::{CnvPVecBytesOf, Convolution, ModuleN},

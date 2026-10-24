@@ -13,13 +13,13 @@ use crate::ntt3x42_ifma::{
     traits::Ntt3x42IfmaDFTExecute,
 };
 use poulpy_core::{
-    GLWEBytesOf, GLWENormalize, ScratchArenaTakeCore, impl_gglwe_product_digits_strided_reference, impl_glwe_tensoring_reference,
+    GLWEBytesOf, GLWENormalize, ScratchArenaTakeCore, cnv_offset_to_limb_offset, gadget_dft_apply, gadget_dft_apply_tmp_bytes,
+    gadget_input_size, gglwe_product_output_size, impl_gglwe_product_digits_strided_reference, impl_glwe_tensoring_reference,
     layouts::{Degree, GGLWEInfos, GGLWEPreparedToBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos},
+    normalize_input_limb_bound_with_offset,
     oep::GLWETensoringImpl,
-    reference::keyswitching::glwe::{
-        GGLWEProductReference, gadget_dft_apply, gadget_dft_apply_tmp_bytes, gadget_input_size, gglwe_product_output_size,
-    },
-    reference::operations::{GLWETensoringReference, cnv_offset_to_limb_offset, normalize_input_limb_bound_with_offset},
+    reference::keyswitching::glwe::GGLWEProductReference,
+    reference::operations::GLWETensoringReference,
 };
 use poulpy_cpu_portable::kernels::{
     ntt4x30::{
@@ -910,7 +910,7 @@ macro_rules! impl_rank_one_tensoring {
                 if a.base2k() != key.base2k() {
                     return module.glwe_tensor_relinearize_reference(res, a, tsk, scratch);
                 }
-                poulpy_core::reference::keyswitching::glwe::assert_no_row_offset("glwe_tensor_relinearize", &key);
+                poulpy_core::layouts::assert_no_row_offset("glwe_tensor_relinearize", &key);
                 let n = assert_degrees(module, [res.n(), a.n(), key.n()]);
                 assert_eq!(res.rank(), key.rank_out());
                 assert_eq!(a.rank(), key.rank_out());

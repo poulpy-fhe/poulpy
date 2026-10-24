@@ -5,8 +5,8 @@
 //! that policy dispatch, including fused baby steps and prepared giant products.
 
 use crate::{
+    api::BSGSOps,
     layouts::{BabyStep, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey, Parity, PowerBasisHelper},
-    reference::polynomial_evaluation::BSGSOps,
 };
 use anyhow::{Result, ensure};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};

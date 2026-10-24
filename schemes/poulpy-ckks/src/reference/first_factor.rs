@@ -17,12 +17,12 @@
 
 use poulpy_core::{
     GLWEBytesOf, GLWECopy, GLWEKeyswitch, GLWEMulPreparedPlainSum, GLWENormalize, GLWEShift, ScratchArenaTakeCore,
-    glwe_prepare_left, glwe_prepare_left_tmp_bytes, glwe_prepare_right, glwe_prepare_right_tmp_bytes,
+    gglwe_product_accumulation_output_size, glwe_prepare_left, glwe_prepare_left_tmp_bytes, glwe_prepare_right,
+    glwe_prepare_right_tmp_bytes,
     layouts::{
         GGLWEInfos, GGLWELayout, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos, LWEInfos,
         LinearTransformation, Rank, prepared::GGLWEPreparedToBackendRef,
     },
-    reference::keyswitching::glwe::gglwe_product_accumulation_output_size,
 };
 use poulpy_hal::{
     api::{

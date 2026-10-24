@@ -21,11 +21,9 @@ use poulpy_hal::{
 };
 
 use crate::{
+    gadget::{gadget_dft_apply, gadget_dft_apply_tmp_bytes, gadget_input_size},
     layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, LWEInfos, TorusPrecision, prepared::GGLWEPreparedBackendRef},
-    reference::keyswitching::{
-        GGLWEProductReference, GLWEKeyswitchInternal,
-        glwe::{gadget_dft_apply, gadget_dft_apply_tmp_bytes, gadget_input_size},
-    },
+    reference::keyswitching::{GGLWEProductReference, GLWEKeyswitchInternal},
 };
 
 pub(super) fn glwe_lazy_giant_automorphism_tmp_bytes<BE, M, R, K>(module: &M, a_infos: &R, key_infos: &K) -> usize
@@ -129,7 +127,7 @@ pub(super) fn glwe_lazy_giant_automorphism_from_dft<BE, M>(
     glwe_lazy_giant_operand(module, &mut a_dft, prod_dft, prod_base2k, key, output_size, &mut scratch_1);
 
     let (mut ks_dft, mut scratch_2) = scratch_1.take_vec_znx_dft_scratch(res_dft.n(), cols, output_size);
-    crate::reference::keyswitching::glwe::assert_no_row_offset("glwe_eval_linear_transformation", &key);
+    crate::layouts::assert_no_row_offset("glwe_eval_linear_transformation", &key);
     module.gglwe_product_dft_reference(&mut ks_dft, &a_dft.to_backend_ref(), key, term_count, &mut scratch_2.borrow());
 
     // Carry the body in DFT. `vec_znx_dft_add_assign` truncates to `output_size`,

@@ -1,7 +1,5 @@
 #![allow(clippy::too_many_arguments)]
 
-pub use crate::reference::keyswitching::{GLWEKeyswitchReference, LWEKeyswitchReference};
-
 use poulpy_hal::{
     api::VecZnxDftAddAssign,
     layouts::{Backend, Module, ScratchArena, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendRef},
@@ -457,8 +455,6 @@ macro_rules! impl_ggsw_keyswitch_derived_full {
         unsafe impl $crate::oep::GGSWKeyswitchImpl for $be {}
     };
 }
-
-// Reference helpers remain available through OEP for source compatibility.
 
 #[cfg(test)]
 mod digit_output_size_tests {

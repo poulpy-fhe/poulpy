@@ -89,7 +89,7 @@ where
             let tmp_pt_k = tmp_pt.k().as_usize();
 
             for row_i in 0..res.dnum().into() {
-                super::gadget_row_plaintext(
+                crate::gadget::gadget_row_plaintext(
                     self,
                     &mut tmp_pt.data,
                     0,

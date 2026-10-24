@@ -1,10 +1,9 @@
 use crate::CKKSResult as Result;
 use poulpy_core::{
-    LinearTransformation, LinearTransformationBabySteps, LinearTransformationPrepared,
+    DiagonalProd, LinearTransformation, LinearTransformationBabySteps, LinearTransformationPrepared,
     layouts::{
         GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, IntPolyInfos, LWEInfos, LinearTransformationPlan,
     },
-    reference::linear_transformation::DiagonalProd,
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
@@ -230,7 +229,7 @@ macro_rules! impl_ckks_linear_transformation_reference {
                 P: ::poulpy_core::layouts::GLWEToBackendRef<Self>
                     + ::poulpy_core::layouts::IntPolyInfos
                     + $crate::CKKSCtBounds
-                    + ::poulpy_core::reference::linear_transformation::DiagonalProd<Self>,
+                    + ::poulpy_core::DiagonalProd<Self>,
             {
                 $crate::reference::CKKSLinearTransformationReference::ckks_prepare_linear_transformation_rhs_reference(
                     module, prepared, lt, scratch,
@@ -265,7 +264,7 @@ macro_rules! impl_ckks_linear_transformation_reference {
             where
                 Dst: ::poulpy_core::layouts::GLWEToBackendMut<Self> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
                 Src: ::poulpy_core::layouts::GLWEToBackendRef<Self> + $crate::CKKSCtBounds,
-                P: ::poulpy_core::reference::linear_transformation::DiagonalProd<Self>
+                P: ::poulpy_core::DiagonalProd<Self>
                     + $crate::api::LtDiagonalMeta
                     + ::poulpy_core::layouts::IntPolyInfos,
                 H: ::poulpy_core::layouts::GetAutomorphismKey<Self>,

@@ -125,7 +125,7 @@ where
             // (-(b*s) + s1, b)
             for col_i in 0..rank_in {
                 for row_i in 0..dnum {
-                    super::gadget_row_plaintext(
+                    crate::gadget::gadget_row_plaintext(
                         self,
                         &mut tmp_pt.data,
                         0,

@@ -129,7 +129,7 @@ pub trait GLWELinearTransformations<BE: Backend> {
 
     /// Computes `res = M(a)` from the prepared left cache `lhs` (the input baby
     /// rotations) and the matrix `rhs`, generic over the diagonal representation
-    /// `P` (see [`DiagonalProd`](crate::reference::linear_transformation::DiagonalProd)):
+    /// `P` (see [`DiagonalProd`](crate::layouts::DiagonalProd)):
     ///
     /// - `P = PreparedDiagonal` (resident): the diagonals are already in the
     ///   convolution domain, so each giant step is one fused accumulation.
@@ -158,7 +158,7 @@ pub trait GLWELinearTransformations<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        P: crate::reference::linear_transformation::DiagonalProd<BE>,
+        P: crate::layouts::DiagonalProd<BE>,
         H: GetAutomorphismKey<BE>;
 
     /// Computes `res = Σ_t M_t(a_t)`, where `babies[t]` is the baby cache of

@@ -24,8 +24,8 @@ use poulpy_hal::{
 use crate::{
     GLWEAdd, GLWEAutomorphism, GLWECopy, GLWEMulPlain, LinearTransformation,
     layouts::{
-        GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, LinearTransformationPlan,
-        ModuleCoreAlloc,
+        DiagonalProd, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LinearTransformationPlan,
+        ModuleCoreAlloc, assert_linear_transformation_into, assert_linear_transformation_sum,
     },
     reference::{
         keyswitching::{GGLWEProductReference, GLWEKeyswitchInternal},
@@ -36,9 +36,7 @@ use crate::{
             },
             inner_product::glwe_accumulate_prepared_baby_steps_dft_tmp_bytes,
             lazy::{glwe_lazy_giant_automorphism_from_dft_tmp_bytes, glwe_lazy_giant_automorphism_tmp_bytes},
-            prepared_giants::{
-                DiagonalProd, assert_linear_transformation_giant_steps, glwe_eval_giant_steps, glwe_eval_giant_tree_tmp_bytes,
-            },
+            prepared_giants::{glwe_eval_giant_steps, glwe_eval_giant_tree_tmp_bytes},
         },
     },
 };
@@ -281,15 +279,6 @@ pub fn glwe_eval_linear_transformation_into_reference<BE, M, R, P, H>(
     res.set_canonical(true);
 }
 
-/// The checks of [`glwe_eval_linear_transformation_into_reference`], run before it reads a key or writes `res`.
-pub fn assert_linear_transformation_into<BE, P>(lhs: &LinearTransformationBabySteps<BE>, rhs: &LinearTransformation<P>)
-where
-    BE: Backend,
-    P: DiagonalProd<BE>,
-{
-    assert_linear_transformation_giant_steps(&[lhs], &[rhs]);
-}
-
 /// Reference impl: scratch bytes for [`glwe_eval_linear_transformation_sum_into_reference`],
 /// the single-transform budget plus the PROD bucket every term after the first is computed into.
 pub fn glwe_eval_linear_transformation_sum_tmp_bytes_reference<BE, M, R, A, B, K>(
@@ -393,42 +382,6 @@ pub fn glwe_eval_linear_transformation_sum_into_reference<BE, M, R, H>(
     assert_linear_transformation_sum(babies, lts);
     glwe_eval_giant_steps(module, cnv_offset, res, babies, lts, keys, scratch);
     res.set_canonical(true);
-}
-
-/// The checks of [`glwe_eval_linear_transformation_sum_into_reference`], run before it reads a key or writes `res`.
-pub fn assert_linear_transformation_sum<BE: Backend>(
-    babies: &[&LinearTransformationBabySteps<BE>],
-    lts: &[&LinearTransformationPrepared<BE>],
-) {
-    assert_eq!(
-        babies.len(),
-        lts.len(),
-        "linear transformation sum: babies and lts differ in length"
-    );
-    let (&lhs, &rhs) = (babies.first().expect("linear transformation sum has no terms"), &lts[0]);
-    // First, so that a later term's cache holds the rotations its schedule reads before its layout is read.
-    assert_linear_transformation_giant_steps(babies, lts);
-    let diagonals = |lt: &LinearTransformationPrepared<BE>| {
-        lt.first_diagonal_plaintext()
-            .map(|d| (d.glwe_layout(), d.max_size(), d.log_scale()))
-    };
-    for (t, (&l, &r)) in babies.iter().zip(lts).enumerate().skip(1) {
-        assert!(
-            r.giant_steps
-                .iter()
-                .map(|gs| gs.rot)
-                .eq(rhs.giant_steps.iter().map(|gs| gs.rot)),
-            "summed linear transformation {t} does not share the first one's giant schedule"
-        );
-        assert!(
-            diagonals(r) == diagonals(rhs),
-            "summed linear transformation {t} does not share the first one's diagonal layout, width and scale"
-        );
-        assert!(
-            (l.size(), l.cols()) == (lhs.size(), lhs.cols()),
-            "summed linear transformation {t} does not share the first one's source layout"
-        );
-    }
 }
 
 /// Reference impl: scratch bytes for the streamed (unprepared-RHS) evaluation.

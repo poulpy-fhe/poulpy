@@ -172,7 +172,7 @@ where
                     }
                     for (l, col) in cols.iter_mut().enumerate() {
                         if l == j {
-                            poulpy_core::reference::encryption::gadget_row_plaintext(
+                            poulpy_core::gadget_row_plaintext(
                                 self,
                                 row_pt.data_mut(),
                                 0,

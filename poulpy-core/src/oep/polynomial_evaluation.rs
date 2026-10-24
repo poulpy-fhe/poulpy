@@ -4,8 +4,8 @@ use anyhow::Result;
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
+    api::BSGSOps,
     layouts::{BabyStep, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, Parity, PowerBasisHelper},
-    reference::polynomial_evaluation::BSGSOps,
 };
 
 /// Backend-provided Baby-Step / Giant-Step polynomial-evaluation phases.

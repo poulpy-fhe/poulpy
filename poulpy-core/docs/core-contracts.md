@@ -113,8 +113,13 @@ in place.
 `GetAutomorphismKey::get_automorphism_key` and `GetTensorKey::get_tensor_key`
 return `CoreError::GGLWEKeyUse` for a key that does not cover the width asked
 for, so a scheme can report it as an error. An operation given a key directly
-panics through `reference::keyswitching::glwe::assert_key_covers`. An override
-refuses the same inputs.
+panics through `layouts::assert_key_covers`. An override refuses the same
+inputs.
+
+References, derived defaults and overrides share the gadget operand, product
+window and limb placement helpers of `poulpy_core::gadget` and the refusal
+checks of `poulpy_core::layouts` (`assert_key_covers`, `assert_no_row_offset`,
+`assert_linear_transformation_into`, `assert_linear_transformation_sum`).
 
 ## Public keys
 

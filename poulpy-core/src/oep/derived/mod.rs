@@ -4,6 +4,7 @@
 //! Backends can override these defaults in the corresponding `*Impl` trait.
 
 pub(crate) mod automorphism;
+pub(crate) mod ci_conversion;
 pub(crate) mod conversion;
 pub(crate) mod encryption;
 pub(crate) mod external_product;

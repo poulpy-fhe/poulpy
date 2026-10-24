@@ -23,14 +23,13 @@ use crate::{
     test_suite::CKKSTestParams,
 };
 use poulpy_core::{
-    GLWEAdd, GLWEMaskFill,
+    DiagonalProd, GLWEAdd, GLWEMaskFill,
     layouts::{
         GGLWEInfos, GGLWELayout, GGLWEPrepared, GGLWEPreparedFactory, GLWEAutomorphismKeyPrepared,
         GLWEAutomorphismKeyPreparedFactory, GLWELayout, GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory, GLWEToBackendRef,
         LWEInfos, TorusPrecision,
         prepared::{GGLWEPreparedToBackendRef, GLWEAutomorphismKeyPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
     },
-    reference::linear_transformation::DiagonalProd,
 };
 use poulpy_hal::layouts::{Backend, CyclotomicOrder, HostBytesBackend, HostStaged, Module};
 

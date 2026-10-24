@@ -50,7 +50,7 @@ pub fn scalar_to_ggsw_blind_rotation_reference<T: UnsignedInteger, BE, R, A, K>(
             {
                 let mut tmp_glwe_inner = tmp_glwe.data_mut();
                 let mut tmp_glwe_data = VecZnxToBackendMut::<BE>::to_backend_mut(&mut tmp_glwe_inner);
-                poulpy_core::reference::encryption::gadget_row_plaintext(
+                poulpy_core::gadget_row_plaintext(
                     module,
                     &mut tmp_glwe_data,
                     col,

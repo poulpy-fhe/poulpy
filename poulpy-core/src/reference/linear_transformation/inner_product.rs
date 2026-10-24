@@ -15,9 +15,9 @@ use poulpy_hal::{
 
 use crate::{
     LinearTransformationGiantStep,
+    gadget::prod_dft_size,
     layouts::IntPolyInfos,
     layouts::{GLWEInfos, GLWEToBackendRef, prepared::PreparedDiagonal},
-    reference::operations::prod_dft_size,
 };
 
 use super::LinearTransformationBabySteps;

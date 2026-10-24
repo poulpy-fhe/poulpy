@@ -100,7 +100,7 @@ pub unsafe trait LinearTransformationImpl: Backend {
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         R: GLWEToBackendMut<Self> + GLWEInfos,
-        P: crate::reference::linear_transformation::DiagonalProd<Self>,
+        P: crate::layouts::DiagonalProd<Self>,
         H: GetAutomorphismKey<Self>;
 
     /// Checks every term before writing `res`; see
@@ -236,7 +236,7 @@ macro_rules! impl_linear_transformation_reference_full {
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
             ) where
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
-                P: $crate::reference::linear_transformation::DiagonalProd<$be>,
+                P: $crate::DiagonalProd<$be>,
                 H: $crate::layouts::GetAutomorphismKey<$be>,
             {
                 $crate::reference::linear_transformation::glwe_eval_linear_transformation_into_reference::<$be, _, _, _, _>(

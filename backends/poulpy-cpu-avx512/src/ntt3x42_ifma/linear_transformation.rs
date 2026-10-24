@@ -3,13 +3,11 @@ use poulpy_cpu_rayon::RayonTaskExecutor as E;
 use poulpy_hal::execution::TaskExecutor;
 
 use poulpy_core::{
+    gadget_dft_apply, gadget_input_size, gglwe_product_accumulation_output_size,
     layouts::*,
     reference::{
-        keyswitching::glwe::{
-            GGLWEProductReference, gadget_dft_apply, gadget_input_size, gglwe_product_accumulation_output_size,
-        },
+        keyswitching::glwe::GGLWEProductReference,
         linear_transformation::{
-            DiagonalProd, assert_linear_transformation_into, assert_linear_transformation_sum,
             glwe_eval_linear_transformation_into_reference, glwe_eval_linear_transformation_sum_into_reference,
         },
     },
@@ -145,7 +143,7 @@ unsafe impl poulpy_core::oep::LinearTransformationImpl for BE {
         scratch: &mut ::poulpy_hal::layouts::ScratchArena<BE>,
     ) where
         R: poulpy_core::layouts::GLWEToBackendMut<BE> + poulpy_core::layouts::GLWEInfos,
-        P: poulpy_core::reference::linear_transformation::DiagonalProd<BE>,
+        P: poulpy_core::DiagonalProd<BE>,
         H: poulpy_core::layouts::GetAutomorphismKey<BE>,
     {
         assert_linear_transformation_into(lhs, rhs);
@@ -206,9 +204,8 @@ where
     }
     let base = rhs.first_diagonal_plaintext().unwrap().base2k().as_usize();
     let cols = res.rank().as_usize() + 1;
-    let (offset_hi, offset_lo) = poulpy_core::reference::operations::cnv_offset_to_limb_offset(cnv_offset, base);
-    let prod_size =
-        poulpy_core::reference::operations::prod_dft_size(lhs.size(), rhs.first_diagonal_plaintext().unwrap().size(), offset_hi);
+    let (offset_hi, offset_lo) = poulpy_core::cnv_offset_to_limb_offset(cnv_offset, base);
+    let prod_size = poulpy_core::prod_dft_size(lhs.size(), rhs.first_diagonal_plaintext().unwrap().size(), offset_hi);
     let term_count = rhs.giant_steps.iter().filter(|g| g.rot != 0).count();
     let giant_keys: Vec<_> = rhs
         .giant_steps

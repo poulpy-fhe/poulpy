@@ -10,7 +10,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    GLWELinearTransformations,
+    DiagonalProd, GLWELinearTransformations,
     api::TransferInto,
     layouts::{
         Base2K, Degree, Dnum, GGLWEInfos, GLWE, GLWEAutomorphismKeyLayout, GLWEBackendRef, GLWEInfos, GLWELayout,
@@ -19,7 +19,7 @@ use crate::{
         TorusPrecision,
         prepared::{GLWEAutomorphismKeyPreparedFactory, LinearTransformationBabySteps, PreparedDiagonal},
     },
-    reference::linear_transformation::{DiagonalProd, glwe_accumulate_streamed_baby_steps_dft},
+    reference::linear_transformation::glwe_accumulate_streamed_baby_steps_dft,
     test_suite::{
         keys::fill_by_digit,
         noise::assert_refuses_uncovered_input,

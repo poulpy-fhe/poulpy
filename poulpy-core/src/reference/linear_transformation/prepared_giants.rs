@@ -26,9 +26,10 @@ use std::collections::BTreeMap;
 use crate::{
     GLWEAdd, GLWEAutomorphism, GLWECopy, GLWEMulPlain, LinearTransformation, LinearTransformationGiantStep, ScratchArenaTakeCore,
     api::GLWENormalize,
+    gadget::{cnv_offset_to_limb_offset, prod_dft_size},
     layouts::{
-        GGLWEInfos, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, LinearTransformationPlan,
-        ModuleCoreAlloc,
+        DiagonalProd, GGLWEInfos, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos,
+        LinearTransformationPlan, ModuleCoreAlloc,
         prepared::{GLWEAutomorphismKeyPreparedBackendRef, PreparedDiagonal},
     },
     reference::{
@@ -43,45 +44,11 @@ use crate::{
                 glwe_lazy_giant_automorphism_from_dft_tmp_bytes, glwe_normalize_big_into,
             },
         },
-        operations::{cnv_offset_to_limb_offset, prod_dft_size},
     },
 };
 
 use super::LinearTransformationBabySteps;
 use crate::layouts::{GiantTreeLevel, operand_galois_element};
-
-/// Per-giant PROD, provided by the diagonal representation itself.
-///
-/// The shared evaluator `glwe_eval_giant_steps` is generic over the diagonal
-/// type `P` stored in the [`LinearTransformation`]; the only per-flavor step is
-/// how one giant step's `Σ_k ũ_{j,k} ⊙ rot(v,k)` is computed. Each concrete
-/// diagonal type implements this once:
-///
-/// - [`PreparedDiagonal`] (resident): diagonals are already in convolution
-///   domain, so the whole giant step is one fused accumulation
-///   (`glwe_accumulate_prepared_baby_steps_dft`).
-/// - a plaintext diagonal (streamed): each diagonal is prepared on the fly
-///   through one reused scratch slot
-///   (`glwe_accumulate_unprepared_baby_steps_dft`); implemented by the scheme
-///   layer for its plaintext type.
-///
-/// Dispatching per concrete type — rather than via a blanket keyed on
-/// [`GLWEToBackendRef`] — is what keeps the impls coherent: the backend type
-/// parameter prevents the compiler from ruling out a downstream
-/// `GLWEToBackendRef` impl for [`PreparedDiagonal`], so a blanket would clash
-/// with the resident impl.
-pub trait DiagonalProd<BE: Backend>: LWEInfos + Sized {
-    /// Runs the PROD inner product of one giant step into `prod_dft`.
-    fn accumulate_giant_prod<M>(
-        module: &M,
-        cnv_offset_hi: usize,
-        prod_dft: &mut VecZnxDftBackendMut<'_, BE>,
-        lhs: &LinearTransformationBabySteps<BE>,
-        gs: &LinearTransformationGiantStep<Self>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        M: CnvPVecBytesOf + Convolution<BE> + ModuleN;
-}
 
 impl<BE: Backend> DiagonalProd<BE> for PreparedDiagonal<BE::OwnedBuf, BE> {
     fn accumulate_giant_prod<M>(
@@ -115,43 +82,6 @@ pub fn glwe_accumulate_streamed_baby_steps_dft<BE, M, P>(
     glwe_accumulate_unprepared_baby_steps_dft(module, cnv_offset_hi, prod_dft, lhs, gs, scratch);
 }
 
-/// Panics unless the first term has a giant step, and every giant step of every term has a diagonal as wide as its
-/// transform's first diagonal and reads only baby rotations its term's cache holds. The other diagonals are not
-/// checked: every diagonal of a transform shares one width, scale and degree, as the encoder produces them, and
-/// preparing asserts the degree. Reads no cache layout, so an empty cache fails on its first missing rotation.
-pub(super) fn assert_linear_transformation_giant_steps<BE, P>(
-    babies: &[&LinearTransformationBabySteps<BE>],
-    lts: &[&LinearTransformation<P>],
-) where
-    BE: Backend,
-    P: DiagonalProd<BE>,
-{
-    assert!(
-        !lts[0].giant_steps.is_empty(),
-        "linear transformation has no non-empty giant steps"
-    );
-    for (t, (&lhs, &lt)) in babies.iter().zip(lts).enumerate() {
-        let width = lt.first_diagonal_plaintext().map(|d| d.max_size());
-        for (g, gs) in lt.giant_steps.iter().enumerate() {
-            let first = gs
-                .diagonals
-                .first()
-                .unwrap_or_else(|| panic!("giant step {g} of linear transformation {t} has no diagonals"));
-            assert!(
-                Some(first.plaintext.max_size()) == width,
-                "giant step {g} of linear transformation {t} is not as wide as the first diagonal"
-            );
-            for d in &gs.diagonals {
-                assert!(
-                    lhs.contains_baby_step(d.baby),
-                    "missing prepared baby-step rotation {} of linear transformation {t}",
-                    d.baby
-                );
-            }
-        }
-    }
-}
-
 /// The shared Phase B/C driver: runs the BSGS giant-step loop and finalizes.
 ///
 /// Generic over the diagonal type `P: DiagonalProd`, so the *same* loop drives
@@ -175,7 +105,8 @@ pub(super) fn assert_linear_transformation_giant_steps<BE, P>(
 ///
 /// The terms `(babies[t], lts[t])` share the first one's giant schedule and
 /// diagonal layout, checked by the callers with
-/// [`assert_linear_transformation_giant_steps`]: each giant step's PROD is
+/// [`assert_linear_transformation_into`](crate::layouts::assert_linear_transformation_into) and
+/// [`assert_linear_transformation_sum`](crate::layouts::assert_linear_transformation_sum): each giant step's PROD is
 /// summed over them by `sum_giant_prod` before its single rotation, so one
 /// pair is the single transform.
 ///
@@ -240,7 +171,7 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
     let baby_size = lhs.size();
     let diagonal_size = first_diagonal.size();
     let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, prod_base2k.as_usize());
-    let prod_size = crate::reference::operations::prod_dft_size(baby_size, diagonal_size, cnv_offset_hi);
+    let prod_size = crate::gadget::prod_dft_size(baby_size, diagonal_size, cnv_offset_hi);
 
     if let Some((leaves, levels)) = rhs.rotations.giant_tree(rhs.giant_steps.iter().map(|gs| gs.rot)) {
         let tree = GiantTree {
@@ -284,7 +215,7 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
         .iter()
         .flatten()
         .map(|key| {
-            crate::reference::keyswitching::gglwe_product_accumulation_output_size_with_tail(
+            crate::gadget::gglwe_product_accumulation_output_size_with_tail(
                 res,
                 res,
                 key,
@@ -606,7 +537,7 @@ fn glwe_eval_giant_tree<BE, M, R, P, H>(
         .iter()
         .flatten()
         .map(|key| {
-            crate::reference::keyswitching::gglwe_product_accumulation_output_size_with_tail(
+            crate::gadget::gglwe_product_accumulation_output_size_with_tail(
                 res,
                 res,
                 key,

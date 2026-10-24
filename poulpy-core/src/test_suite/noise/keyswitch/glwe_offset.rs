@@ -18,13 +18,13 @@ use crate::{
     GGLWEKeyswitch, GLWEAdd, GLWECopy, GLWEDecrypt, GLWEEncryptSk, GLWEKeyswitch, GLWENoise, GLWENormalize, GLWEShift,
     GLWESwitchingKeyEncryptSk,
     encryption::DEFAULT_SIGMA_XE,
+    gadget::gglwe_product_accumulation_output_size,
     layouts::{
         GGLWEInfos, GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory, GLWESwitchingKey,
         GLWESwitchingKeyLayout, GLWESwitchingKeyPreparedFactory, LWEInfos, ModuleCoreAlloc, TorusPrecision,
         prepared::{GGLWEPreparedToBackendRef, GLWESecretPrepared, GLWESwitchingKeyPrepared},
     },
     noise::GGLWENoiseModel,
-    reference::keyswitching::glwe::gglwe_product_accumulation_output_size,
 };
 
 struct Case {

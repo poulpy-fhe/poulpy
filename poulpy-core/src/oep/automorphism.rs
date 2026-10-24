@@ -344,6 +344,3 @@ macro_rules! impl_automorphism_reference_full {
         }
     };
 }
-
-// Reference helpers remain available through OEP for source compatibility.
-pub use crate::reference::automorphism::{GGLWEAutomorphismReference, GLWEAutomorphismReference};
