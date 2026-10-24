@@ -27,8 +27,9 @@ use poulpy_hal::layouts::{
 };
 
 use crate::layouts::{
-    GGLWE, GGLWEToGGSWKey, GGSW, GLWE, GLWEAutomorphismKey, GLWEPlaintext, GLWESecret, GLWESwitchingKey, GLWETensor,
-    GLWETensorKey, GLWEToLWEKey, LWE, LWEPlaintext, LWESecret,
+    GGLWE, GGLWEToGGSWKey, GGSW, GLWE, GLWEAutomorphismKey, GLWEPlaintext, GLWEPublicKey, GLWESecret, GLWESwitchingKey,
+    GLWETensor, GLWETensorKey, GLWEToLWEKey, LWE, LWEPlaintext, LWESecret,
+    compressed::{GGLWECompressed, GLWECompressed, GLWEPublicKeyCompressed},
 };
 
 /// Moves `Self` into an already-allocated destination.
@@ -160,6 +161,78 @@ where
         assert_eq!(self.k_aux, dst.k_aux, "transfer_into: GGSW k_aux");
         assert_eq!(self.k_digit, dst.k_digit, "transfer_into: GGSW k_digit");
         move_mat_znx(&self.data, &mut dst.data);
+        dst.noise = self.noise.clone();
+    }
+}
+
+impl<D1, D2, W> TransferInto<GLWECompressed<D2, W>> for GLWECompressed<D1, W>
+where
+    D1: Data + CopyToHost,
+    D2: Data + CopyFromHost,
+    W: ZnxWord,
+{
+    fn transfer_into(&self, dst: &mut GLWECompressed<D2, W>) {
+        assert_eq!(self.base2k, dst.base2k, "transfer_into: GLWECompressed base2k");
+        assert_eq!(self.k, dst.k, "transfer_into: GLWECompressed k");
+        assert_eq!(self.rank, dst.rank, "transfer_into: GLWECompressed rank");
+        move_vec_znx(&self.data, &mut dst.data);
+        dst.seed = self.seed;
+        dst.noise = self.noise.clone();
+        dst.plaintext_meta = self.plaintext_meta;
+    }
+}
+
+impl<D1, D2, W> TransferInto<GGLWECompressed<D2, W>> for GGLWECompressed<D1, W>
+where
+    D1: Data + CopyToHost,
+    D2: Data + CopyFromHost,
+    W: ZnxWord,
+{
+    fn transfer_into(&self, dst: &mut GGLWECompressed<D2, W>) {
+        assert_eq!(self.base2k, dst.base2k, "transfer_into: GGLWECompressed base2k");
+        assert_eq!(self.k_aux, dst.k_aux, "transfer_into: GGLWECompressed k_aux");
+        assert_eq!(self.k_digit, dst.k_digit, "transfer_into: GGLWECompressed k_digit");
+        assert_eq!(self.k_offset, dst.k_offset, "transfer_into: GGLWECompressed k_offset");
+        assert_eq!(self.rank_out, dst.rank_out, "transfer_into: GGLWECompressed rank_out");
+        assert_eq!(self.seed.len(), dst.seed.len(), "transfer_into: GGLWECompressed seed count");
+        move_mat_znx(&self.data, &mut dst.data);
+        dst.seed.copy_from_slice(&self.seed);
+        dst.noise = self.noise.clone();
+    }
+}
+
+impl<D1, D2, W> TransferInto<GLWEPublicKey<D2, W>> for GLWEPublicKey<D1, W>
+where
+    D1: Data + CopyToHost,
+    D2: Data + CopyFromHost,
+    W: ZnxWord,
+{
+    fn transfer_into(&self, dst: &mut GLWEPublicKey<D2, W>) {
+        assert_eq!(self.base2k, dst.base2k, "transfer_into: GLWEPublicKey base2k");
+        assert_eq!(self.k, dst.k, "transfer_into: GLWEPublicKey k");
+        move_mat_znx(&self.data, &mut dst.data);
+        dst.dist = self.dist;
+        dst.noise = self.noise.clone();
+    }
+}
+
+impl<D1, D2, W> TransferInto<GLWEPublicKeyCompressed<D2, W>> for GLWEPublicKeyCompressed<D1, W>
+where
+    D1: Data + CopyToHost,
+    D2: Data + CopyFromHost,
+    W: ZnxWord,
+{
+    fn transfer_into(&self, dst: &mut GLWEPublicKeyCompressed<D2, W>) {
+        assert_eq!(self.base2k, dst.base2k, "transfer_into: GLWEPublicKeyCompressed base2k");
+        assert_eq!(self.k, dst.k, "transfer_into: GLWEPublicKeyCompressed k");
+        assert_eq!(
+            self.seed.len(),
+            dst.seed.len(),
+            "transfer_into: GLWEPublicKeyCompressed seed count"
+        );
+        move_mat_znx(&self.data, &mut dst.data);
+        dst.seed.copy_from_slice(&self.seed);
+        dst.dist = self.dist;
         dst.noise = self.noise.clone();
     }
 }
