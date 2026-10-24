@@ -1,19 +1,9 @@
 use poulpy_core::{
     GGLWECompressedEncryptSk, GGLWEEncryptSk, GLWECompressedEncryptSk, TransferInto,
     api::{GLWESecretPreparedFactory, GLWESecretSampling},
-    layouts::{
-        GGLWECompressedSeed, GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWEInfos, GGLWELayout, GLWECompressedSeed,
-        GLWECompressedSeedMut, GLWECompressedToBackendMut, GLWEInfos, GLWELayout, GLWEPlaintextInfos, LWEInfos, ModuleCoreAlloc,
-        SetGLWEPlaintextInfos,
-    },
+    layouts::{GGLWELayout, GLWELayout, ModuleCoreAlloc},
 };
-use poulpy_hal::{
-    AlignedBuf,
-    api::VecZnxFillUniformSource,
-    layouts::{DataView, DataViewMut, Module, transfer_buf_into},
-    source::Source,
-    test_suite::vec_znx_backend_mut,
-};
+use poulpy_hal::{AlignedBuf, api::VecZnxFillUniformSource, layouts::Module, source::Source, test_suite::vec_znx_backend_mut};
 
 use super::{
     ParityBackend, ReferenceBackend, Snapshot, poison_gglwe, poison_glwe, snapshot_gglwe, snapshot_gglwe_compressed,
@@ -71,7 +61,7 @@ where
         .iter()
         .map(|pat| {
             let mut copy = module_test.glwe_pat_compressed_alloc_from_infos(&layout);
-            transfer_glwe_pat_compressed::<BT>(pat, &mut copy);
+            pat.transfer_into(&mut copy);
             copy
         })
         .collect();
@@ -112,7 +102,7 @@ where
         .iter()
         .map(|pat| {
             let mut copy = module_test.gglwe_pat_compressed_alloc_from_infos(&layout);
-            transfer_gglwe_pat_compressed::<BT>(pat, &mut copy);
+            pat.transfer_into(&mut copy);
             copy
         })
         .collect();
@@ -120,7 +110,7 @@ where
         .iter()
         .map(|pat| {
             let mut copy = module_test.gglwe_pat_alloc_from_infos(&layout);
-            pat.inner.transfer_into(&mut copy.inner);
+            pat.transfer_into(&mut copy);
             copy
         })
         .collect();
@@ -130,27 +120,6 @@ where
     let want = run_gglwe_pat(module_ref, &layout, &mut full_ref);
     let have = run_gglwe_pat(module_test, &layout, &mut full_test);
     assert_eq!(want, have, "gglwe pat");
-}
-
-fn transfer_glwe_pat_compressed<BT: ParityBackend>(
-    src: &GLWEPatCompressed<AlignedBuf, i64>,
-    dst: &mut GLWEPatCompressedOwned<BT>,
-) {
-    assert_eq!(src.glwe_layout(), dst.glwe_layout(), "transfer: layouts differ");
-    transfer_buf_into(src.data().data(), dst.data_mut().data_mut());
-    *dst.seed_mut() = *src.seed();
-    dst.inner.set_plaintext_meta(src.inner.plaintext_meta());
-    GLWECompressedToBackendMut::<BT>::set_noise(dst, src.noise());
-}
-
-fn transfer_gglwe_pat_compressed<BT: ParityBackend>(
-    src: &GGLWEPatCompressed<AlignedBuf, i64>,
-    dst: &mut GGLWEPatCompressedOwned<BT>,
-) {
-    assert_eq!(src.gglwe_layout(), dst.gglwe_layout(), "transfer: layouts differ");
-    transfer_buf_into(src.inner.data().data(), dst.inner.data_mut().data_mut());
-    dst.seed_mut().clone_from(src.seed());
-    GGLWECompressedToBackendMut::<BT>::set_noise(dst, src.noise());
 }
 
 fn run_glwe_pat_compressed<BE: ParityBackend>(

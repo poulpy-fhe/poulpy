@@ -1,5 +1,5 @@
 //! Reference multiparty implementations, each paired with the backend test
-//! suite and the parity suite against its controlled-sampling oracle.
+//! suite and the parity suite against the controlled-sampling FFT64 oracle.
 
 poulpy_mhe::impl_mhe_reference_full!(crate::FFT64Portable);
 poulpy_mhe::impl_mhe_reference_full!(crate::NTT4x30Portable);
@@ -17,6 +17,6 @@ poulpy_mhe::mhe_parity_test_suite!(
 #[cfg(test)]
 poulpy_mhe::mhe_parity_test_suite!(
     mod mhe_parity_ntt4x30portable,
-    backend_ref = poulpy_cpu_oracle::test_suite::ControlledSamplingNTT4x30Oracle,
+    backend_ref = poulpy_cpu_oracle::test_suite::ControlledSamplingFFT64Oracle,
     backend_test = crate::NTT4x30Portable,
 );

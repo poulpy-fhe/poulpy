@@ -7,7 +7,7 @@ use poulpy_hal::{AlignedBuf, layouts::Module, source::Source};
 
 use super::{
     ParityBackend, ReferenceBackend, Snapshot, fixture_secrets, poison_glwe, prepare_secrets, public_key::collective_public_key,
-    snapshot_glwe, snapshot_source, transfer_public_key, with_scratch,
+    snapshot_glwe, snapshot_source, with_scratch,
 };
 use crate::{
     api::{GLWEPrivateKeyswitchMHEProtocol, GLWEPublicKeyMHEProtocol, GLWEPublicKeyswitchMHEProtocol},
@@ -148,7 +148,7 @@ where
             .collect();
         let pk_ref = collective_public_key(module_ref, &secrets_out, &pk_layout);
         let mut pk_test = module_test.glwe_public_key_alloc_from_infos(&pk_layout);
-        transfer_public_key::<BT>(&pk_ref, &mut pk_test);
+        pk_ref.transfer_into(&mut pk_test);
         let want = run_public(module_ref, &share_layout, &ct_ref, &in_ref, &pk_ref);
         let have = run_public(module_test, &share_layout, &ct_test, &in_test, &pk_test);
         assert_eq!(want, have, "glwe public keyswitch, {share_layout:?}");

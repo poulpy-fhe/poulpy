@@ -1,4 +1,5 @@
 use poulpy_core::{
+    TransferInto,
     api::{GLWEPublicKeyPreparedFactory, GLWESecretPreparedFactory, GLWESecretSampling},
     layouts::{Dnum, Dsize, GLWEPublicKey, GLWESecret, GLWETensorKeyLayout, LWEInfos, ModuleCoreAlloc, TorusPrecision},
 };
@@ -6,7 +7,7 @@ use poulpy_hal::{layouts::Module, source::Source};
 
 use super::{
     ParityBackend, ReferenceBackend, Snapshot, fixture_secrets, poison_gglwe, public_key::collective_public_key, snapshot_gglwe,
-    snapshot_source, transfer_public_key, with_scratch,
+    snapshot_source, with_scratch,
 };
 use crate::{
     api::{GLWEPublicKeyMHEProtocol, GLWETensorKeyMHEProtocol},
@@ -38,7 +39,7 @@ where
         let (secrets_ref, secrets_test) = fixture_secrets(module_ref, module_test, RANK, 100);
         let pk_ref = collective_public_key(module_ref, &secrets_ref, &pk_layout);
         let mut pk_test = module_test.glwe_public_key_alloc_from_infos(&pk_layout);
-        transfer_public_key::<BT>(&pk_ref, &mut pk_test);
+        pk_ref.transfer_into(&mut pk_test);
         let want = run(module_ref, &layout, &secrets_ref, &pk_ref);
         let have = run(module_test, &layout, &secrets_test, &pk_test);
         assert_eq!(want, have, "glwe tensor key, {layout:?}");
