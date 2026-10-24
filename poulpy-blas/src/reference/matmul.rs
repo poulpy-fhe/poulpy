@@ -551,7 +551,7 @@ pub trait BlasMatMulReference<BE: Backend> {
         T: GGLWEInfos,
         K: GGLWEInfos;
 
-    /// For every block `(i, j)` of `res`, one JKLS kernel, [`BlasJklsImpl::blas_jkls_block_impl`], over the `K d` pairs
+    /// For every block `(i, j)` of `res`, one JKLS kernel, [`BlasJklsImpl::blas_jkls_block`], over the `K d` pairs
     /// `(a_il[k], b_lj[k])`, `l`-major: ascending `l`, then ascending `k` within each `l`. A cold side brings its terms.
     /// A hot side's are made under `ctx` as the cold preparation of its source makes them, but converted under
     /// `OneShot`, one unit at a time: a block row of `a` or a block column of `b`, `K` blocks, through two hook calls,
@@ -1087,7 +1087,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
                 let mut caches = baby_caches(self, &block_maps(), &staged[0], inner);
                 for (i, row) in rows.into_iter().enumerate() {
                     let unit: Vec<_> = blocks[i * inner..(i + 1) * inner].iter().collect();
-                    BE::blas_map_blocks_impl(self, &mut staged, &unit, &[first], atk, scratch)?;
+                    BE::blas_map_blocks(self, &mut staged, &unit, &[first], atk, scratch)?;
                     shared_giants(self, &mut caches, vec![row], |_, l| &staged[l], map, label, atk, scratch)?;
                 }
             }
@@ -1176,7 +1176,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
                 let mut caches = baby_caches(self, &block_maps(), &staged[0], inner);
                 for (j, column) in columns.into_iter().enumerate() {
                     let unit: Vec<_> = (0..inner).map(|l| &blocks[l * n + j]).collect();
-                    BE::blas_map_blocks_impl(self, &mut staged, &unit, &[first], atk, scratch)?;
+                    BE::blas_map_blocks(self, &mut staged, &unit, &[first], atk, scratch)?;
                     shared_giants(self, &mut caches, vec![column], |_, l| &staged[l], map, label, atk, scratch)?;
                 }
             }
@@ -1285,7 +1285,7 @@ where
     };
     let mut jkls =
         |i: usize, j: usize, lhs: &[&CKKSPreparedLeft<BE>], rhs: &[&CKKSPreparedRight<BE>], s: &mut ScratchArena<'_, BE>| {
-            BE::blas_jkls_block_impl(module, &mut res.blocks_mut()[i * n + j], lhs, rhs, tsk, s)
+            BE::blas_jkls_block(module, &mut res.blocks_mut()[i * n + j], lhs, rhs, tsk, s)
         };
     match (a, b) {
         (Side::Cold(at), Side::Cold(bt)) => {
@@ -1383,8 +1383,8 @@ fn kernel_tmp_bytes<BE: BlasJklsImpl>(
         ..tsk
     };
     let terms = a.cols() << a.log_d();
-    BE::blas_jkls_block_tmp_bytes_impl(module, &res, &lhs, &rhs, terms, &tsk)
-        .max(BE::blas_jkls_block_tmp_bytes_impl(module, &res, &lhs, &rhs, terms, &at_width))
+    BE::blas_jkls_block_tmp_bytes(module, &res, &lhs, &rhs, terms, &tsk)
+        .max(BE::blas_jkls_block_tmp_bytes(module, &res, &lhs, &rhs, terms, &at_width))
 }
 
 /// The scratch of the terms of the hot sides of `a` and `b` in a product under `ctx`, a unit at a time, `K` blocks each:
@@ -1468,8 +1468,8 @@ where
     let block = a.block_layout();
     let s = mapped_block(block, first);
     let term = mapped_block(s, shifts[0]);
-    BE::blas_map_blocks_tmp_bytes_impl(module, &s, &block, sources, &[first], atk)
-        .max(BE::blas_map_blocks_tmp_bytes_impl(module, &term, &s, sources, shifts, atk))
+    BE::blas_map_blocks_tmp_bytes(module, &s, &block, sources, &[first], atk)
+        .max(BE::blas_map_blocks_tmp_bytes(module, &term, &s, sources, shifts, atk))
         .max(module.ckks_copy_tmp_bytes(&term, &s))
         .max(module.ckks_prepare_tmp_bytes(&term))
 }
@@ -1551,10 +1551,10 @@ where
     let staged = mapped_block(block, first);
     let term = mapped_block(staged, shifts[0]);
     let mut sigma = alloc_blocks(module, &staged, sources.len());
-    BE::blas_map_blocks_impl(module, &mut sigma, sources, &[first], atk, scratch)?;
+    BE::blas_map_blocks(module, &mut sigma, sources, &[first], atk, scratch)?;
     let results: Vec<_> = sigma.iter().collect();
     let mut shifted = alloc_blocks(module, &term, sigma.len() * shifts.len());
-    BE::blas_map_blocks_impl(module, &mut shifted, &results, shifts, atk, scratch)?;
+    BE::blas_map_blocks(module, &mut shifted, &results, shifts, atk, scratch)?;
     let mut shifted = shifted.into_iter();
     for (t, s) in sigma.into_iter().enumerate() {
         let mut narrowed = module.ckks_ciphertext_alloc_from_infos(&term);
@@ -1616,7 +1616,7 @@ where
     };
     let staged = mapped_block(block, first);
     let Some((masks, plaintext)) = masked else {
-        return BE::blas_map_blocks_tmp_bytes_impl(module, &staged, &block, sources, &[first], atk)
+        return BE::blas_map_blocks_tmp_bytes(module, &staged, &block, sources, &[first], atk)
             .max(lt_tmp_bytes(module, &res, &staged, atk, true));
     };
     let term = mapped_block(staged, masks[0]);

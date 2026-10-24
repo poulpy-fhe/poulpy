@@ -5,14 +5,16 @@ select a concrete backend or require host storage in these dispatch contracts.
 
 ## Reference and derived implementations
 
-Each family's opt-in macro is `impl_ckks_<family>_reference!`. The table gives
+Each family's opt-in macro is `impl_<family>_reference_full!`, `<family>` being the
+OEP trait in snake case without `Impl` (`CKKSAddImpl`: `impl_ckks_add_reference_full!`,
+`DFTImpl`: `impl_dft_reference_full!`). The table gives
 the reference of each family.
 
 | OEP family | Canonical implementation |
 |---|---|
 | `CKKSAddImpl`, `CKKSSubImpl` | [`reference/add.rs`](../src/reference/add.rs), [`reference/sub.rs`](../src/reference/sub.rs); adding/subtracting one are derived plaintext compositions. |
 | `CKKSCopyImpl`, `CKKSNegImpl`, `CKKSPow2Impl`, `CKKSImagImpl` | Corresponding [`reference`](../src/reference/) modules; multiplication and division by `i` use direct core monomial rotations by `N/2` and `-N/2`. |
-| `CKKSMulImpl` | [`reference/mul.rs`](../src/reference/mul.rs), including the left and right preparations, ordinary/prepared and plaintext products. The prepared operands follow poulpy-core's lifecycle: `ckks_prepared_{left,right}_alloc_from_infos_impl` allocate one for a ciphertext layout under a `PrepareHint`, `ckks_prepared_{left,right}_bytes_of_from_infos_impl` give its bytes, and `ckks_prepare_{left,right}_into_impl` fill it with no allocation, rejecting a source of another layout with `InvalidOperand` before any write; the allocating `ckks_prepare_{left,right}_impl` are derived defaults, an allocation then a preparation into it. |
+| `CKKSMulImpl` | [`reference/mul.rs`](../src/reference/mul.rs), including the left and right preparations, ordinary/prepared and plaintext products. The prepared operands follow poulpy-core's lifecycle: `ckks_prepared_{left,right}_alloc_from_infos` allocate one for a ciphertext layout under a `PrepareHint`, `ckks_prepared_{left,right}_bytes_of_from_infos` give its bytes, and `ckks_prepare_{left,right}_into` fill it with no allocation, rejecting a source of another layout with `InvalidOperand` before any write; the allocating `ckks_prepare_{left,right}` are derived defaults, an allocation then a preparation into it. |
 | `CKKSDotProductImpl` | [`reference/dot_product.rs`](../src/reference/dot_product.rs): the ciphertext and prepared dot products, relinearized once where the pairs share one product rule; the sum of prepared terms by prepared plaintexts over poulpy-core's `glwe_mul_prepared_plain_sum`, each plaintext read through an odd Galois element, summed in the transform domain and normalized once, every operand checked before `dst` is written; and their scratch. The plaintext dot products are derived defaults, a product then an addition per pair. |
 | `CKKSLinearTransformationImpl` | [`reference/linear_transformation.rs`](../src/reference/linear_transformation.rs): the preparations, the evaluation over a caller's baby cache and the summed evaluation; `_assign` and the self-caching evaluations are derived defaults. |
 | `CKKSRotateImpl`, `CKKSConjugateImpl` | [`reference/rotate.rs`](../src/reference/rotate.rs), [`reference/conjugate.rs`](../src/reference/conjugate.rs). |
@@ -24,8 +26,8 @@ the reference of each family.
 | `CKKSEvalModImpl` | [`reference/eval_mod.rs`](../src/reference/eval_mod.rs), including the selected scratch query. Serves both rings; the conjugate-invariant ring refuses `ExpCmplx`. |
 | `CKKSEncapsulatedModUpImpl` | [`reference/bootstrapping.rs`](../src/reference/bootstrapping.rs). |
 | `CKKSBootstrappingImpl` | [`reference/bootstrapping.rs`](../src/reference/bootstrapping.rs): the ModUp stages and the identity and functional pipelines. |
-| `CKKSBootstrappingCIImpl` | [`reference/bootstrapping.rs`](../src/reference/bootstrapping.rs): `ckks_bootstrap_ci_reference`, registered by `impl_ckks_bootstrapping_ci_reference!($be, $ci)`, `$ci` its conjugate-invariant twin. |
-| `CKKSFoldLayoutImpl`, `CKKSFoldImpl<R>` | [`reference/fold.rs`](../src/reference/fold.rs): `CKKSFoldLayoutReference` and `CKKSFoldReference<BE, R>`, a crate-private per-ring step around ring packing; `impl_ckks_fold_reference!` registers every input ring the reference folds. |
+| `CKKSBootstrappingCIImpl` | [`reference/bootstrapping.rs`](../src/reference/bootstrapping.rs): `ckks_bootstrap_ci_reference`, registered by `impl_ckks_bootstrapping_ci_reference_full!($be, $ci)`, `$ci` its conjugate-invariant twin. |
+| `CKKSFoldLayoutImpl`, `CKKSFoldImpl<R>` | [`reference/fold.rs`](../src/reference/fold.rs): `CKKSFoldLayoutReference` and `CKKSFoldReference<BE, R>`, a crate-private per-ring step around ring packing; `impl_ckks_fold_layout_reference_full!` selects the layout and scratch query, and `impl_ckks_fold_reference_full!` registers every input ring the reference folds. |
 | `CKKSPaCoCoeffEncodingImpl`, `CKKSShipCoeffEncodingImpl` | Scheme embeddings exposed by [`reference::encoding`](../src/reference/encoding.rs), with explicitly named host reference helpers. |
 
 `CKKSImpl` aggregates capabilities; it does not choose operation
@@ -60,7 +62,7 @@ lower. Add/subtract-one calls use `ckks_add_one_tmp_bytes` and
 `ckks_sub_one_tmp_bytes`; their derived queries follow the selected
 plaintext-constant add/subtract implementation. An override may report a
 different size from the reference. EvalMod's query dispatches through
-`CKKSEvalModImpl::ckks_eval_mod_tmp_bytes_impl`, so replacing its evaluation and
+`CKKSEvalModImpl::ckks_eval_mod_tmp_bytes`, so replacing its evaluation and
 workspace policy does not pin execution to the reference budget.
 
 DFT preparation uses `ckks_prepare_dft_matrix_tmp_bytes`; raw evaluation and

@@ -24,7 +24,7 @@ impl<BE: Backend + DFTImpl> CKKSDFTOps<BE> for Module<BE> {
     where
         P: poulpy_core::layouts::LWEInfos,
     {
-        BE::ckks_prepare_dft_matrix_tmp_bytes_impl(self, dft)
+        BE::ckks_prepare_dft_matrix_tmp_bytes(self, dft)
     }
 
     fn ckks_dft_tmp_bytes<Dir, Fmt, P, Dst, Src, K>(
@@ -40,7 +40,7 @@ impl<BE: Backend + DFTImpl> CKKSDFTOps<BE> for Module<BE> {
         Src: CKKSCtBounds,
         K: poulpy_core::layouts::GGLWEInfos,
     {
-        BE::ckks_dft_tmp_bytes_impl(self, dst, src, dft, key)
+        BE::ckks_dft_tmp_bytes(self, dst, src, dft, key)
     }
 
     fn ckks_prepare_dft_matrix<Dir, Fmt, P>(
@@ -51,7 +51,7 @@ impl<BE: Backend + DFTImpl> CKKSDFTOps<BE> for Module<BE> {
     where
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + DiagonalProd<BE>,
     {
-        BE::ckks_prepare_dft_matrix_impl::<Dir, Fmt, P>(self, dft, scratch)
+        BE::ckks_prepare_dft_matrix::<Dir, Fmt, P>(self, dft, scratch)
     }
 
     fn ckks_dft_evaluate_assign<Dir, Fmt, P, Dst, H>(
@@ -66,7 +66,7 @@ impl<BE: Backend + DFTImpl> CKKSDFTOps<BE> for Module<BE> {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<BE>,
     {
-        BE::ckks_dft_evaluate_assign_impl(self, ct, dft, keys, scratch)
+        BE::ckks_dft_evaluate_assign(self, ct, dft, keys, scratch)
     }
 
     fn ckks_coeffs_to_slots<P, Dst, H>(
@@ -81,7 +81,7 @@ impl<BE: Backend + DFTImpl> CKKSDFTOps<BE> for Module<BE> {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<BE>,
     {
-        BE::ckks_coeffs_to_slots_impl(self, ct, dft, keys, scratch)
+        BE::ckks_coeffs_to_slots(self, ct, dft, keys, scratch)
     }
 
     fn ckks_slots_to_coeffs<P, Dst, H>(
@@ -96,7 +96,7 @@ impl<BE: Backend + DFTImpl> CKKSDFTOps<BE> for Module<BE> {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<BE>,
     {
-        BE::ckks_slots_to_coeffs_impl(self, ct, dft, keys, scratch)
+        BE::ckks_slots_to_coeffs(self, ct, dft, keys, scratch)
     }
 
     fn ckks_coeffs_to_slots_split<P, Dst, Src, H>(
@@ -114,7 +114,7 @@ impl<BE: Backend + DFTImpl> CKKSDFTOps<BE> for Module<BE> {
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetAutomorphismKey<BE>,
     {
-        BE::ckks_coeffs_to_slots_split_impl(self, ct_real, ct_imag, ct_in, dft, keys, scratch)
+        BE::ckks_coeffs_to_slots_split(self, ct_real, ct_imag, ct_in, dft, keys, scratch)
     }
 
     fn ckks_slots_to_coeffs_split<P, Dst, Src, H>(
@@ -132,7 +132,7 @@ impl<BE: Backend + DFTImpl> CKKSDFTOps<BE> for Module<BE> {
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetAutomorphismKey<BE>,
     {
-        BE::ckks_slots_to_coeffs_split_impl(self, op_out, ct_real, ct_imag, dft, keys, scratch)
+        BE::ckks_slots_to_coeffs_split(self, op_out, ct_real, ct_imag, dft, keys, scratch)
     }
 
     fn ckks_coeffs_to_slots_repack<P, Dst, Src, H>(
@@ -149,7 +149,7 @@ impl<BE: Backend + DFTImpl> CKKSDFTOps<BE> for Module<BE> {
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetAutomorphismKey<BE>,
     {
-        BE::ckks_coeffs_to_slots_repack_impl(self, ct_out, ct_in, dft, keys, scratch)
+        BE::ckks_coeffs_to_slots_repack(self, ct_out, ct_in, dft, keys, scratch)
     }
 
     fn ckks_slots_to_coeffs_repack<P, Dst, Src, H>(
@@ -166,7 +166,7 @@ impl<BE: Backend + DFTImpl> CKKSDFTOps<BE> for Module<BE> {
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetAutomorphismKey<BE>,
     {
-        BE::ckks_slots_to_coeffs_repack_impl(self, op_out, ct_in, dft, keys, scratch)
+        BE::ckks_slots_to_coeffs_repack(self, op_out, ct_in, dft, keys, scratch)
     }
 }
 
@@ -185,6 +185,6 @@ where
         Dir: DftDirection,
         Fmt: DftFormat,
     {
-        BE::ckks_new_dft_matrix_impl::<Dir, Fmt>(self, base2k, literal, scratch)
+        BE::ckks_new_dft_matrix::<Dir, Fmt>(self, base2k, literal, scratch)
     }
 }

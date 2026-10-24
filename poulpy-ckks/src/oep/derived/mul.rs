@@ -17,8 +17,8 @@ where
     BE: CKKSMulImpl,
     A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
 {
-    let mut res = BE::ckks_prepared_left_alloc_from_infos_impl(module, a, hint);
-    BE::ckks_prepare_left_into_impl(module, &mut res, a, scratch)?;
+    let mut res = BE::ckks_prepared_left_alloc_from_infos(module, a, hint);
+    BE::ckks_prepare_left_into(module, &mut res, a, scratch)?;
     Ok(res)
 }
 
@@ -33,7 +33,7 @@ where
     BE: CKKSMulImpl,
     A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
 {
-    let mut res = BE::ckks_prepared_right_alloc_from_infos_impl(module, a, hint);
-    BE::ckks_prepare_right_into_impl(module, &mut res, a, scratch)?;
+    let mut res = BE::ckks_prepared_right_alloc_from_infos(module, a, hint);
+    BE::ckks_prepare_right_into(module, &mut res, a, scratch)?;
     Ok(res)
 }

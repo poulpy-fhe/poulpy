@@ -1,5 +1,5 @@
 //! The provided methods of [`BlasMatIntraImpl`], the transpose and the row and column shifts, each composed over the
-//! map hook [`BlasMatIntraImpl::blas_map_blocks_impl`] and poulpy-ckks's copy and addition. Each runs its validator before any write and, on
+//! map hook [`BlasMatIntraImpl::blas_map_blocks`] and poulpy-ckks's copy and addition. Each runs its validator before any write and, on
 //! `Ok`, stamps the batch record of `res`, as the references do. They are public so that an override of a provided
 //! method can fall back to it; their scratch assertion over the keys a map looks up is shared with the references.
 
@@ -24,7 +24,7 @@ use crate::layouts::{
     validate_blas_rotate_cols, validate_blas_rotate_rows, validate_blas_transpose,
 };
 
-/// The provided `blas_transpose_tmp_bytes_impl`: the hook's scratch for the transpose of every block of `a` into a
+/// The provided `blas_transpose_tmp_bytes`: the hook's scratch for the transpose of every block of `a` into a
 /// block of `res`.
 #[doc(hidden)]
 pub fn blas_transpose_tmp_bytes_derived<BE, R, A, K>(module: &Module<BE>, res: &R, a: &A, ctx: &BlasContext<BE>, atk: &K) -> usize
@@ -35,7 +35,7 @@ where
     K: GGLWEInfos,
 {
     let sources = a.rows() * a.cols();
-    BE::blas_map_blocks_tmp_bytes_impl(
+    BE::blas_map_blocks_tmp_bytes(
         module,
         &res.block_layout(),
         &a.block_layout(),
@@ -45,7 +45,7 @@ where
     )
 }
 
-/// The provided `blas_transpose_impl`, `res_ji = transpose(a_ij)`: one hook call, its sources in the order of `res`'s
+/// The provided `blas_transpose`, `res_ji = transpose(a_ij)`: one hook call, its sources in the order of `res`'s
 /// blocks.
 #[doc(hidden)]
 pub fn blas_transpose_derived<BE, R, A, K>(
@@ -71,12 +71,12 @@ where
     let src: Vec<_> = (0..cols)
         .flat_map(|j| (0..rows).map(move |i| &blocks[i * cols + j]))
         .collect();
-    BE::blas_map_blocks_impl(module, res.blocks_mut(), &src, &lts, atk, scratch)?;
+    BE::blas_map_blocks(module, res.blocks_mut(), &src, &lts, atk, scratch)?;
     res.set_mat_slots(batch);
     Ok(())
 }
 
-/// The provided `blas_rotate_rows_tmp_bytes_impl`: the scratch of a row shift by any `k`, as [`shift_tmp_bytes`].
+/// The provided `blas_rotate_rows_tmp_bytes`: the scratch of a row shift by any `k`, as [`shift_tmp_bytes`].
 #[doc(hidden)]
 pub fn blas_rotate_rows_tmp_bytes_derived<BE, R, A, K>(
     module: &Module<BE>,
@@ -94,7 +94,7 @@ where
     shift_tmp_bytes(module, res, a, true, ctx, atk)
 }
 
-/// The provided `blas_rotate_cols_tmp_bytes_impl`: the scratch of a column shift by any `k`, as [`shift_tmp_bytes`].
+/// The provided `blas_rotate_cols_tmp_bytes`: the scratch of a column shift by any `k`, as [`shift_tmp_bytes`].
 #[doc(hidden)]
 pub fn blas_rotate_cols_tmp_bytes_derived<BE, R, A, K>(
     module: &Module<BE>,
@@ -126,7 +126,7 @@ where
     (1..1 << ctx.log_d())
         .map(|k1| {
             let lts = shift_maps(&ctx.maps, k1, rows, extent);
-            let hook = BE::blas_map_blocks_tmp_bytes_impl(module, &res, &a, sources, &lts, atk);
+            let hook = BE::blas_map_blocks_tmp_bytes(module, &res, &a, sources, &lts, atk);
             if lts.len() == 2 {
                 hook.max(module.ckks_add_tmp_bytes(res.size()))
             } else {
@@ -136,7 +136,7 @@ where
         .fold(module.ckks_copy_tmp_bytes(&res, &a), usize::max)
 }
 
-/// The provided `blas_rotate_rows_impl`, as [`shift`].
+/// The provided `blas_rotate_rows`, as [`shift`].
 #[doc(hidden)]
 pub fn blas_rotate_rows_derived<BE, R, A, K>(
     module: &Module<BE>,
@@ -156,7 +156,7 @@ where
     shift(module, "blas_rotate_rows", res, a, k, true, ctx, atk, scratch)
 }
 
-/// The provided `blas_rotate_cols_impl`, as [`shift`].
+/// The provided `blas_rotate_cols`, as [`shift`].
 #[doc(hidden)]
 pub fn blas_rotate_cols_derived<BE, R, A, K>(
     module: &Module<BE>,
@@ -256,14 +256,14 @@ where
     let sources: Vec<_> = a.blocks().iter().collect();
     if lts.len() == 1 {
         // One block along the axis: `q = 0`, so block `t` maps into block `t`.
-        return BE::blas_map_blocks_impl(module, res.blocks_mut(), &sources, &lts, atk, scratch);
+        return BE::blas_map_blocks(module, res.blocks_mut(), &sources, &lts, atk, scratch);
     }
     // ponytail: one hook call over the whole heap grid, two blocks per block of `a`; an override chunks it.
     let layout = res.block_layout();
     let mut halves: Vec<_> = (0..2 * sources.len())
         .map(|_| module.ckks_ciphertext_alloc_from_infos(&layout))
         .collect();
-    BE::blas_map_blocks_impl(module, &mut halves, &sources, &lts, atk, scratch)?;
+    BE::blas_map_blocks(module, &mut halves, &sources, &lts, atk, scratch)?;
     for (t, dst) in res.blocks_mut().iter_mut().enumerate() {
         module.ckks_add_into(dst, &halves[2 * src(t, q)], &halves[2 * src(t, q + 1) + 1], scratch)?;
     }

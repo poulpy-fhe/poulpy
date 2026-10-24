@@ -30,7 +30,7 @@ where
     // The working copy is carved from scratch, which `ckks_eval_linear_transformation_tmp_bytes` covers.
     scratch.scope(|scratch_local| {
         let (mut tmp, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(dst);
-        BE::ckks_eval_linear_transformation_into_impl(module, &mut tmp, dst, babies, lt, keys, &mut scratch_local)?;
+        BE::ckks_eval_linear_transformation_into(module, &mut tmp, dst, babies, lt, keys, &mut scratch_local)?;
         // `ckks_copy` also moves the metadata the evaluation stamped, which a `glwe_copy` would leave stale.
         module.ckks_copy(dst, &tmp, &mut scratch_local)
     })
@@ -53,8 +53,8 @@ where
 {
     // Only the baby cache is allocated: a plaintext `lt` streams its diagonals inside the evaluation.
     let mut babies = LinearTransformationBabySteps::alloc(module, lt.baby_steps(), src);
-    BE::ckks_prepare_linear_transformation_baby_steps_impl(module, &mut babies, src, keys, scratch)?;
-    BE::ckks_eval_linear_transformation_into_impl(module, dst, src, &babies, lt, keys, scratch)
+    BE::ckks_prepare_linear_transformation_baby_steps(module, &mut babies, src, keys, scratch)?;
+    BE::ckks_eval_linear_transformation_into(module, dst, src, &babies, lt, keys, scratch)
 }
 
 pub(crate) fn ckks_eval_linear_transformation_self_assign<BE, Dst, P, H>(
@@ -72,7 +72,7 @@ where
 {
     scratch.scope(|scratch_local| {
         let (mut tmp, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(dst);
-        BE::ckks_eval_linear_transformation_self_into_impl(module, &mut tmp, dst, lt, keys, &mut scratch_local)?;
+        BE::ckks_eval_linear_transformation_self_into(module, &mut tmp, dst, lt, keys, &mut scratch_local)?;
         module.ckks_copy(dst, &tmp, &mut scratch_local)
     })
 }

@@ -88,7 +88,7 @@ where
     };
 
     let mut bytes = module.glwe_keyswitch_tmp_bytes(&bottom, input, keys.dense_to_sparse());
-    bytes = bytes.max(BE::ckks_ship_coeff_encodings_tmp_bytes_impl::<F>(
+    bytes = bytes.max(BE::ckks_ship_coeff_encodings_tmp_bytes::<F>(
         module,
         plan,
         base2k.into(),

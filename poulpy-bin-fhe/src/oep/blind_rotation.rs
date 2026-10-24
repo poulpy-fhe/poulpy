@@ -39,9 +39,9 @@ pub unsafe trait BlindRotationExecuteImpl<BRA: BlindRotationAlgo>: Backend<Ring 
         L: LWEToBackendRef<Self> + LWEInfos;
 }
 
-/// Explicitly selects the canonical implementation for this operation family.
+/// Selects the reference implementation of `BlindRotationExecuteImpl<CGGI>` for the backend.
 #[macro_export]
-macro_rules! impl_bin_fhe_blind_rotation_execute_reference {
+macro_rules! impl_blind_rotation_execute_reference_full {
     ($backend:ty) => {
         const _: () = {
             use poulpy_core::layouts::{GLWEInfos, GLWEToBackendMut, LWEInfos, LWEToBackendRef};
@@ -107,9 +107,9 @@ pub unsafe trait BlindRotationKeyEncryptSkImpl<BRA: BlindRotationAlgo>: Backend 
         S1: LWESecretToBackendRef<Self> + LWEInfos + GetDistribution;
 }
 
-/// Explicitly selects the canonical implementation for this operation family.
+/// Selects the reference implementation of `BlindRotationKeyEncryptSkImpl<CGGI>` for the backend.
 #[macro_export]
-macro_rules! impl_bin_fhe_blind_rotation_key_encrypt_reference {
+macro_rules! impl_blind_rotation_key_encrypt_sk_reference_full {
     ($backend:ty) => {
         const _: () = {
             use poulpy_core::{
@@ -168,9 +168,9 @@ pub unsafe trait BlindRotationKeyCompressedEncryptSkImpl<BRA: BlindRotationAlgo>
         S1: LWESecretToBackendRef<Self> + LWEInfos + GetDistribution;
 }
 
-/// Explicitly selects the canonical implementation for this operation family.
+/// Selects the reference implementation of `BlindRotationKeyCompressedEncryptSkImpl<CGGI>` for the backend.
 #[macro_export]
-macro_rules! impl_bin_fhe_blind_rotation_key_compressed_reference {
+macro_rules! impl_blind_rotation_key_compressed_encrypt_sk_reference_full {
     ($backend:ty) => {
         const _: () = {
             use poulpy_core::{
@@ -235,9 +235,9 @@ pub unsafe trait BlindRotationKeyPreparedImpl<BRA: BlindRotationAlgo>: Backend {
     );
 }
 
-/// Explicitly selects the canonical implementation for this operation family.
+/// Selects the reference implementation of `BlindRotationKeyPreparedImpl<CGGI>` for the backend.
 #[macro_export]
-macro_rules! impl_bin_fhe_blind_rotation_key_prepared_reference {
+macro_rules! impl_blind_rotation_key_prepared_reference_full {
     ($backend:ty) => {
         const _: () = {
             use poulpy_hal::layouts::{Module, ScratchArena};
@@ -300,7 +300,7 @@ pub unsafe trait BlindRotationKeyDecompressImpl<BRA: BlindRotationAlgo>: Backend
 }
 /// Selects the canonical host staging boundary.
 #[macro_export]
-macro_rules! impl_bin_fhe_blind_rotation_mod_switch_reference {
+macro_rules! impl_blind_rotation_mod_switch_reference_full {
     ($backend:ty) => {
         unsafe impl $crate::oep::BlindRotationModSwitchImpl for $backend {
             fn blind_rotation_mod_switch<L: poulpy_core::layouts::LWEToBackendRef<Self> + poulpy_core::layouts::LWEInfos>(
@@ -317,7 +317,7 @@ macro_rules! impl_bin_fhe_blind_rotation_mod_switch_reference {
 }
 /// Selects coefficient-domain decompression through core operations.
 #[macro_export]
-macro_rules! impl_bin_fhe_blind_rotation_key_decompress_reference {
+macro_rules! impl_blind_rotation_key_decompress_reference_full {
     ($backend:ty) => {
         unsafe impl $crate::oep::BlindRotationKeyDecompressImpl<$crate::blind_rotation::CGGI> for $backend {
             fn blind_rotation_key_decompress_tmp_bytes<A: $crate::blind_rotation::BlindRotationKeyInfos>(
@@ -343,26 +343,26 @@ macro_rules! impl_bin_fhe_blind_rotation_key_decompress_reference {
 }
 /// Opts a backend into all canonical CGGI operations.
 #[macro_export]
-macro_rules! impl_bin_fhe_blind_rotation_reference {
+macro_rules! impl_blind_rotation_reference_full {
     ($backend:ty) => {
-        $crate::impl_bin_fhe_blind_rotation_execute_reference!($backend);
-        $crate::impl_bin_fhe_blind_rotation_key_encrypt_reference!($backend);
-        $crate::impl_bin_fhe_blind_rotation_key_compressed_reference!($backend);
-        $crate::impl_bin_fhe_blind_rotation_key_prepared_reference!($backend);
-        $crate::impl_bin_fhe_blind_rotation_mod_switch_reference!($backend);
-        $crate::impl_bin_fhe_blind_rotation_key_decompress_reference!($backend);
-        $crate::impl_bin_fhe_blind_rotation_key_compressed_factory_reference!($backend);
-        $crate::impl_bin_fhe_lookup_table_reference!($backend);
+        $crate::impl_blind_rotation_execute_reference_full!($backend);
+        $crate::impl_blind_rotation_key_encrypt_sk_reference_full!($backend);
+        $crate::impl_blind_rotation_key_compressed_encrypt_sk_reference_full!($backend);
+        $crate::impl_blind_rotation_key_prepared_reference_full!($backend);
+        $crate::impl_blind_rotation_mod_switch_reference_full!($backend);
+        $crate::impl_blind_rotation_key_decompress_reference_full!($backend);
+        $crate::impl_blind_rotation_key_compressed_factory_reference_full!($backend);
+        $crate::impl_lookup_table_factory_reference_full!($backend);
     };
     ($backend:ty, scheduling = parallel) => {
         $crate::impl_bin_fhe_blind_rotation_execute_parallel!($backend);
-        $crate::impl_bin_fhe_blind_rotation_key_encrypt_reference!($backend);
-        $crate::impl_bin_fhe_blind_rotation_key_compressed_reference!($backend);
-        $crate::impl_bin_fhe_blind_rotation_key_prepared_reference!($backend);
-        $crate::impl_bin_fhe_blind_rotation_mod_switch_reference!($backend);
-        $crate::impl_bin_fhe_blind_rotation_key_decompress_reference!($backend);
-        $crate::impl_bin_fhe_blind_rotation_key_compressed_factory_reference!($backend);
-        $crate::impl_bin_fhe_lookup_table_reference!($backend);
+        $crate::impl_blind_rotation_key_encrypt_sk_reference_full!($backend);
+        $crate::impl_blind_rotation_key_compressed_encrypt_sk_reference_full!($backend);
+        $crate::impl_blind_rotation_key_prepared_reference_full!($backend);
+        $crate::impl_blind_rotation_mod_switch_reference_full!($backend);
+        $crate::impl_blind_rotation_key_decompress_reference_full!($backend);
+        $crate::impl_blind_rotation_key_compressed_factory_reference_full!($backend);
+        $crate::impl_lookup_table_factory_reference_full!($backend);
     };
 }
 

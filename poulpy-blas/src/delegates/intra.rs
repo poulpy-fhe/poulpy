@@ -15,7 +15,7 @@ impl<BE: Backend + BlasMatIntraImpl> BlasMatIntraOps<BE> for Module<BE> {
         A: BlasGridInfos,
         K: GGLWEInfos,
     {
-        BE::blas_transpose_tmp_bytes_impl(self, res, a, ctx, atk)
+        BE::blas_transpose_tmp_bytes(self, res, a, ctx, atk)
     }
 
     fn blas_transpose<R, A, K>(
@@ -31,7 +31,7 @@ impl<BE: Backend + BlasMatIntraImpl> BlasMatIntraOps<BE> for Module<BE> {
         A: BlasGrid<BE>,
         K: GetAutomorphismKey<BE> + Sync,
     {
-        BE::blas_transpose_impl(self, res, a, ctx, atk, scratch)
+        BE::blas_transpose(self, res, a, ctx, atk, scratch)
     }
 
     fn blas_rotate_rows_tmp_bytes<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContext<BE>, atk: &K) -> usize
@@ -40,7 +40,7 @@ impl<BE: Backend + BlasMatIntraImpl> BlasMatIntraOps<BE> for Module<BE> {
         A: BlasGridInfos,
         K: GGLWEInfos,
     {
-        BE::blas_rotate_rows_tmp_bytes_impl(self, res, a, ctx, atk)
+        BE::blas_rotate_rows_tmp_bytes(self, res, a, ctx, atk)
     }
 
     fn blas_rotate_rows<R, A, K>(
@@ -57,7 +57,7 @@ impl<BE: Backend + BlasMatIntraImpl> BlasMatIntraOps<BE> for Module<BE> {
         A: BlasGrid<BE>,
         K: GetAutomorphismKey<BE> + Sync,
     {
-        BE::blas_rotate_rows_impl(self, res, a, k, ctx, atk, scratch)
+        BE::blas_rotate_rows(self, res, a, k, ctx, atk, scratch)
     }
 
     fn blas_rotate_cols_tmp_bytes<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContext<BE>, atk: &K) -> usize
@@ -66,7 +66,7 @@ impl<BE: Backend + BlasMatIntraImpl> BlasMatIntraOps<BE> for Module<BE> {
         A: BlasGridInfos,
         K: GGLWEInfos,
     {
-        BE::blas_rotate_cols_tmp_bytes_impl(self, res, a, ctx, atk)
+        BE::blas_rotate_cols_tmp_bytes(self, res, a, ctx, atk)
     }
 
     fn blas_rotate_cols<R, A, K>(
@@ -83,6 +83,6 @@ impl<BE: Backend + BlasMatIntraImpl> BlasMatIntraOps<BE> for Module<BE> {
         A: BlasGrid<BE>,
         K: GetAutomorphismKey<BE> + Sync,
     {
-        BE::blas_rotate_cols_impl(self, res, a, k, ctx, atk, scratch)
+        BE::blas_rotate_cols(self, res, a, k, ctx, atk, scratch)
     }
 }

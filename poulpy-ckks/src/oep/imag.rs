@@ -11,9 +11,9 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 /// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
 /// associated method signatures.
 pub unsafe trait CKKSImagImpl: Backend<Ring = Standard> {
-    fn ckks_mul_i_tmp_bytes_impl(module: &Module<Self>, res_size: usize) -> usize;
+    fn ckks_mul_i_tmp_bytes(module: &Module<Self>, res_size: usize) -> usize;
 
-    fn ckks_mul_i_into_impl<Dst, Src>(
+    fn ckks_mul_i_into<Dst, Src>(
         module: &Module<Self>,
         dst: &mut Dst,
         src: &Src,
@@ -23,13 +23,13 @@ pub unsafe trait CKKSImagImpl: Backend<Ring = Standard> {
         Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<Self> + GLWEInfos + CKKSCtBounds;
 
-    fn ckks_mul_i_assign_impl<Dst>(module: &Module<Self>, dst: &mut Dst, scratch: &mut ScratchArena<'_, Self>) -> Result<()>
+    fn ckks_mul_i_assign<Dst>(module: &Module<Self>, dst: &mut Dst, scratch: &mut ScratchArena<'_, Self>) -> Result<()>
     where
         Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos;
 
-    fn ckks_div_i_tmp_bytes_impl(module: &Module<Self>, res_size: usize) -> usize;
+    fn ckks_div_i_tmp_bytes(module: &Module<Self>, res_size: usize) -> usize;
 
-    fn ckks_div_i_into_impl<Dst, Src>(
+    fn ckks_div_i_into<Dst, Src>(
         module: &Module<Self>,
         dst: &mut Dst,
         src: &Src,
@@ -39,21 +39,21 @@ pub unsafe trait CKKSImagImpl: Backend<Ring = Standard> {
         Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<Self> + GLWEInfos + CKKSCtBounds;
 
-    fn ckks_div_i_assign_impl<Dst>(module: &Module<Self>, dst: &mut Dst, scratch: &mut ScratchArena<'_, Self>) -> Result<()>
+    fn ckks_div_i_assign<Dst>(module: &Module<Self>, dst: &mut Dst, scratch: &mut ScratchArena<'_, Self>) -> Result<()>
     where
         Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos;
 }
 
-/// Implements this contract with the callable reference algorithms.
+/// Selects the reference implementation of `CKKSImagImpl` for `$be`.
 #[macro_export]
-macro_rules! impl_ckks_imag_reference {
+macro_rules! impl_ckks_imag_reference_full {
     ($be:ty) => {
         unsafe impl $crate::oep::CKKSImagImpl for $be {
-            fn ckks_mul_i_tmp_bytes_impl(module: &::poulpy_hal::layouts::Module<Self>, res_size: usize) -> usize {
+            fn ckks_mul_i_tmp_bytes(module: &::poulpy_hal::layouts::Module<Self>, res_size: usize) -> usize {
                 $crate::reference::imag::CKKSImagReference::ckks_mul_i_tmp_bytes_reference(module, res_size)
             }
 
-            fn ckks_mul_i_into_impl<Dst, Src>(
+            fn ckks_mul_i_into<Dst, Src>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
                 src: &Src,
@@ -66,7 +66,7 @@ macro_rules! impl_ckks_imag_reference {
                 $crate::reference::imag::CKKSImagReference::ckks_mul_i_into_reference(module, dst, src, scratch)
             }
 
-            fn ckks_mul_i_assign_impl<Dst>(
+            fn ckks_mul_i_assign<Dst>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
@@ -77,11 +77,11 @@ macro_rules! impl_ckks_imag_reference {
                 $crate::reference::imag::CKKSImagReference::ckks_mul_i_assign_reference(module, dst, scratch)
             }
 
-            fn ckks_div_i_tmp_bytes_impl(module: &::poulpy_hal::layouts::Module<Self>, res_size: usize) -> usize {
+            fn ckks_div_i_tmp_bytes(module: &::poulpy_hal::layouts::Module<Self>, res_size: usize) -> usize {
                 $crate::reference::imag::CKKSImagReference::ckks_div_i_tmp_bytes_reference(module, res_size)
             }
 
-            fn ckks_div_i_into_impl<Dst, Src>(
+            fn ckks_div_i_into<Dst, Src>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
                 src: &Src,
@@ -94,7 +94,7 @@ macro_rules! impl_ckks_imag_reference {
                 $crate::reference::imag::CKKSImagReference::ckks_div_i_into_reference(module, dst, src, scratch)
             }
 
-            fn ckks_div_i_assign_impl<Dst>(
+            fn ckks_div_i_assign<Dst>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
@@ -107,4 +107,4 @@ macro_rules! impl_ckks_imag_reference {
         }
     };
 }
-pub use crate::impl_ckks_imag_reference;
+pub use crate::impl_ckks_imag_reference_full;

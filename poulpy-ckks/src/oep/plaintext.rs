@@ -12,9 +12,9 @@ use crate::{CKKSInfos, SetCKKSInfos};
 /// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
 /// associated method signatures.
 pub unsafe trait CKKSPlaintextZnxImpl: Backend {
-    fn ckks_extract_pt_tmp_bytes_impl(module: &Module<Self>, res_size: usize) -> usize;
+    fn ckks_extract_pt_tmp_bytes(module: &Module<Self>, res_size: usize) -> usize;
 
-    fn ckks_extract_pt_impl<Dst, Src>(
+    fn ckks_extract_pt<Dst, Src>(
         module: &Module<Self>,
         dst: &mut Dst,
         src: &Src,
@@ -25,16 +25,16 @@ pub unsafe trait CKKSPlaintextZnxImpl: Backend {
         Src: GLWEToBackendRef<Self> + GLWEInfos + CKKSInfos;
 }
 
-/// Implements this contract with the callable reference algorithms.
+/// Selects the reference implementation of `CKKSPlaintextZnxImpl` for `$be`.
 #[macro_export]
-macro_rules! impl_ckks_plaintext_reference {
+macro_rules! impl_ckks_plaintext_znx_reference_full {
     ($be:ty) => {
         unsafe impl $crate::oep::CKKSPlaintextZnxImpl for $be {
-            fn ckks_extract_pt_tmp_bytes_impl(module: &::poulpy_hal::layouts::Module<Self>, res_size: usize) -> usize {
+            fn ckks_extract_pt_tmp_bytes(module: &::poulpy_hal::layouts::Module<Self>, res_size: usize) -> usize {
                 $crate::reference::plaintext::CKKSPlaintextReference::ckks_extract_pt_tmp_bytes_reference(module, res_size)
             }
 
-            fn ckks_extract_pt_impl<Dst, Src>(
+            fn ckks_extract_pt<Dst, Src>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
                 src: &Src,
@@ -52,4 +52,4 @@ macro_rules! impl_ckks_plaintext_reference {
         }
     };
 }
-pub use crate::impl_ckks_plaintext_reference;
+pub use crate::impl_ckks_plaintext_znx_reference_full;

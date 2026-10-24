@@ -18,7 +18,7 @@ use crate::{
 };
 
 /// Backend override hook for [`CKKSBootstrappingOps`](crate::api::CKKSBootstrappingOps).
-/// [`impl_ckks_bootstrapping_reference`] wires every method to the reference pipeline.
+/// [`impl_ckks_bootstrapping_reference_full`] wires every method to the reference pipeline.
 ///
 /// # Safety
 ///
@@ -26,9 +26,9 @@ use crate::{
 /// semantics of the reference pipeline, honor all key layouts, and stay within
 /// the scratch they report.
 pub unsafe trait CKKSBootstrappingImpl: Backend<Ring = Standard> {
-    fn ckks_mod_up_tmp_bytes_impl(module: &Module<Self>, res_size: usize) -> usize;
+    fn ckks_mod_up_tmp_bytes(module: &Module<Self>, res_size: usize) -> usize;
 
-    fn ckks_bootstrap_tmp_bytes_impl<C1, C2, F>(
+    fn ckks_bootstrap_tmp_bytes<C1, C2, F>(
         module: &Module<Self>,
         ct_out: &C1,
         ct_in: &C2,
@@ -39,7 +39,7 @@ pub unsafe trait CKKSBootstrappingImpl: Backend<Ring = Standard> {
         C1: CKKSCtBounds,
         C2: CKKSCtBounds;
 
-    fn ckks_functional_bootstrap_tmp_bytes_impl<C1, C2, F>(
+    fn ckks_functional_bootstrap_tmp_bytes<C1, C2, F>(
         module: &Module<Self>,
         ct_out: &C1,
         ct_in: &C2,
@@ -51,7 +51,7 @@ pub unsafe trait CKKSBootstrappingImpl: Backend<Ring = Standard> {
         C1: CKKSCtBounds,
         C2: CKKSCtBounds;
 
-    fn ckks_mod_up_into_impl<Dst, Src>(
+    fn ckks_mod_up_into<Dst, Src>(
         module: &Module<Self>,
         dst: &mut Dst,
         src: &Src,
@@ -62,7 +62,7 @@ pub unsafe trait CKKSBootstrappingImpl: Backend<Ring = Standard> {
         Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<Self> + CKKSCtBounds;
 
-    fn ckks_bootstrap_mod_up_impl<Dst, Src, K>(
+    fn ckks_bootstrap_mod_up<Dst, Src, K>(
         module: &Module<Self>,
         dst: &mut Dst,
         src: &Src,
@@ -75,7 +75,7 @@ pub unsafe trait CKKSBootstrappingImpl: Backend<Ring = Standard> {
         Src: GLWEToBackendRef<Self> + CKKSCtBounds,
         K: BootstrappingKeys<Self>;
 
-    fn ckks_bootstrap_impl<F, K>(
+    fn ckks_bootstrap<F, K>(
         module: &Module<Self>,
         ct_out: &mut CKKSCiphertextOwned<Self>,
         ct_in: &CKKSCiphertextOwned<Self>,
@@ -88,7 +88,7 @@ pub unsafe trait CKKSBootstrappingImpl: Backend<Ring = Standard> {
         K: BootstrappingKeys<Self> + Sync,
         K::TensorKey: Sync;
 
-    fn ckks_functional_bootstrap_impl<F, K>(
+    fn ckks_functional_bootstrap<F, K>(
         module: &Module<Self>,
         ct_outs: &mut [CKKSCiphertextOwned<Self>],
         ct_in: &CKKSCiphertextOwned<Self>,
@@ -103,13 +103,13 @@ pub unsafe trait CKKSBootstrappingImpl: Backend<Ring = Standard> {
 
 /// Backend override hook for [`CKKSBootstrappingCIOps`](crate::api::CKKSBootstrappingCIOps),
 /// the bootstrap with EvalMod on the conjugate-invariant ring of [`Self::CI`].
-/// [`impl_ckks_bootstrapping_ci_reference`] wires it to the reference pipeline.
+/// [`impl_ckks_bootstrapping_ci_reference_full`] wires it to the reference pipeline.
 ///
 /// # Safety
 ///
-/// `ckks_bootstrap_ci_into_impl` must reproduce `ckks_bootstrap_ci_reference` bit for bit: values,
+/// `ckks_bootstrap_ci_into` must reproduce `ckks_bootstrap_ci_reference` bit for bit: values,
 /// metadata, canonical flag, refusals and their order. It must run within what
-/// `ckks_bootstrap_ci_tmp_bytes_impl` reports for each arena, which may be less than the
+/// `ckks_bootstrap_ci_tmp_bytes` reports for each arena, which may be less than the
 /// reference reports but never less than the body uses.
 pub unsafe trait CKKSBootstrappingCIImpl: Backend<Ring = Standard> {
     /// The conjugate-invariant twin that runs EvalMod, sharing the buffers of `Self`.
@@ -117,7 +117,7 @@ pub unsafe trait CKKSBootstrappingCIImpl: Backend<Ring = Standard> {
         + for<'a> Backend<BufRef<'a> = Self::BufRef<'a>, BufMut<'a> = Self::BufMut<'a>>
         + 'static;
 
-    fn ckks_bootstrap_ci_tmp_bytes_impl<C1, C2, F>(
+    fn ckks_bootstrap_ci_tmp_bytes<C1, C2, F>(
         module: &Module<Self>,
         ci: &Module<Self::CI>,
         ct_out: &C1,
@@ -133,7 +133,7 @@ pub unsafe trait CKKSBootstrappingCIImpl: Backend<Ring = Standard> {
         clippy::too_many_arguments,
         reason = "the bootstrap takes a module and a scratch arena per ring"
     )]
-    fn ckks_bootstrap_ci_into_impl<Dst, Src, F, K>(
+    fn ckks_bootstrap_ci_into<Dst, Src, F, K>(
         module: &Module<Self>,
         ci: &Module<Self::CI>,
         dst: &mut Dst,
@@ -237,14 +237,14 @@ pub unsafe trait CKKSEncapsulatedModUpImpl: Backend<Ring = Standard> {
 /// backend also implements [`CKKSEncapsulatedModUpImpl`] and
 /// [`CKKSModUpFirstFactorImpl`], the two raises the pipeline runs.
 #[macro_export]
-macro_rules! impl_ckks_bootstrapping_reference {
+macro_rules! impl_ckks_bootstrapping_reference_full {
     ($be:ty) => {
         unsafe impl $crate::oep::CKKSBootstrappingImpl for $be {
-            fn ckks_mod_up_tmp_bytes_impl(module: &::poulpy_hal::layouts::Module<$be>, res_size: usize) -> usize {
+            fn ckks_mod_up_tmp_bytes(module: &::poulpy_hal::layouts::Module<$be>, res_size: usize) -> usize {
                 $crate::reference::bootstrapping::CKKSBootstrappingReference::ckks_mod_up_tmp_bytes_reference(module, res_size)
             }
 
-            fn ckks_bootstrap_tmp_bytes_impl<C1, C2, F>(
+            fn ckks_bootstrap_tmp_bytes<C1, C2, F>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 ct_out: &C1,
                 ct_in: &C2,
@@ -264,7 +264,7 @@ macro_rules! impl_ckks_bootstrapping_reference {
                 )
             }
 
-            fn ckks_functional_bootstrap_tmp_bytes_impl<C1, C2, F>(
+            fn ckks_functional_bootstrap_tmp_bytes<C1, C2, F>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 ct_out: &C1,
                 ct_in: &C2,
@@ -286,7 +286,7 @@ macro_rules! impl_ckks_bootstrapping_reference {
                 )
             }
 
-            fn ckks_mod_up_into_impl<Dst, Src>(
+            fn ckks_mod_up_into<Dst, Src>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 dst: &mut Dst,
                 src: &Src,
@@ -302,7 +302,7 @@ macro_rules! impl_ckks_bootstrapping_reference {
                 )
             }
 
-            fn ckks_bootstrap_mod_up_impl<Dst, Src, K>(
+            fn ckks_bootstrap_mod_up<Dst, Src, K>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 dst: &mut Dst,
                 src: &Src,
@@ -323,7 +323,7 @@ macro_rules! impl_ckks_bootstrapping_reference {
                 )
             }
 
-            fn ckks_bootstrap_impl<F, K>(
+            fn ckks_bootstrap<F, K>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 ct_out: &mut $crate::layouts::CKKSCiphertextOwned<$be>,
                 ct_in: &$crate::layouts::CKKSCiphertextOwned<$be>,
@@ -341,7 +341,7 @@ macro_rules! impl_ckks_bootstrapping_reference {
                 )
             }
 
-            fn ckks_functional_bootstrap_impl<F, K>(
+            fn ckks_functional_bootstrap<F, K>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 ct_outs: &mut [$crate::layouts::CKKSCiphertextOwned<$be>],
                 ct_in: &$crate::layouts::CKKSCiphertextOwned<$be>,
@@ -364,12 +364,12 @@ macro_rules! impl_ckks_bootstrapping_reference {
 /// Opts a backend into the reference bootstrap with EvalMod on the
 /// conjugate-invariant ring ([`CKKSBootstrappingCIImpl`]), run by its twin `$ci`.
 #[macro_export]
-macro_rules! impl_ckks_bootstrapping_ci_reference {
+macro_rules! impl_ckks_bootstrapping_ci_reference_full {
     ($be:ty, $ci:ty) => {
         unsafe impl $crate::oep::CKKSBootstrappingCIImpl for $be {
             type CI = $ci;
 
-            fn ckks_bootstrap_ci_tmp_bytes_impl<C1, C2, F>(
+            fn ckks_bootstrap_ci_tmp_bytes<C1, C2, F>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 ci: &::poulpy_hal::layouts::Module<$ci>,
                 ct_out: &C1,
@@ -391,7 +391,7 @@ macro_rules! impl_ckks_bootstrapping_ci_reference {
                 )
             }
 
-            fn ckks_bootstrap_ci_into_impl<Dst, Src, F, K>(
+            fn ckks_bootstrap_ci_into<Dst, Src, F, K>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 ci: &::poulpy_hal::layouts::Module<$ci>,
                 dst: &mut Dst,
@@ -416,7 +416,7 @@ macro_rules! impl_ckks_bootstrapping_ci_reference {
 
 /// Opts a backend into the CKKS reference encapsulated-ModUp pipeline.
 #[macro_export]
-macro_rules! impl_ckks_encapsulated_mod_up_reference {
+macro_rules! impl_ckks_encapsulated_mod_up_reference_full {
     ($be:ty) => {
         unsafe impl $crate::oep::CKKSEncapsulatedModUpImpl for $be {
             fn ckks_encapsulated_mod_up_tmp_bytes<Dst, Src, D2S, S2D>(
@@ -476,7 +476,7 @@ macro_rules! impl_ckks_encapsulated_mod_up_reference {
 
 /// Opts a standard backend into the reference raise with the first factor.
 #[macro_export]
-macro_rules! impl_ckks_mod_up_first_factor_reference {
+macro_rules! impl_ckks_mod_up_first_factor_reference_full {
     ($be:ty) => {
         unsafe impl $crate::oep::CKKSModUpFirstFactorImpl for $be {
             fn ckks_mod_up_first_factor_tmp_bytes<Dst, Src, D2S, K>(
@@ -526,10 +526,10 @@ macro_rules! impl_ckks_mod_up_first_factor_reference {
     };
 }
 
-pub use crate::impl_ckks_mod_up_first_factor_reference;
+pub use crate::impl_ckks_mod_up_first_factor_reference_full;
 
-pub use crate::impl_ckks_encapsulated_mod_up_reference;
+pub use crate::impl_ckks_encapsulated_mod_up_reference_full;
 
-pub use crate::impl_ckks_bootstrapping_reference;
+pub use crate::impl_ckks_bootstrapping_reference_full;
 
-pub use crate::impl_ckks_bootstrapping_ci_reference;
+pub use crate::impl_ckks_bootstrapping_ci_reference_full;

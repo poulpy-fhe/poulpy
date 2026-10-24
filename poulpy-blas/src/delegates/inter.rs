@@ -15,7 +15,7 @@ impl<BE: Backend + BlasMatInterImpl> BlasMatInterOps<BE> for Module<BE> {
         A: BlasGridInfos,
         K: GGLWEInfos,
     {
-        BE::blas_rotate_tmp_bytes_impl(self, res, a, atk)
+        BE::blas_rotate_tmp_bytes(self, res, a, atk)
     }
 
     fn blas_rotate<R, A, K>(&self, res: &mut R, a: &A, r: i64, atk: &K, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
@@ -24,7 +24,7 @@ impl<BE: Backend + BlasMatInterImpl> BlasMatInterOps<BE> for Module<BE> {
         A: BlasGrid<BE>,
         K: GetAutomorphismKey<BE> + Sync,
     {
-        BE::blas_rotate_impl(self, res, a, r, atk, scratch)
+        BE::blas_rotate(self, res, a, r, atk, scratch)
     }
 
     fn blas_sum_tmp_bytes<R, A, K>(&self, res: &R, a: &A, atk: &K) -> usize
@@ -33,7 +33,7 @@ impl<BE: Backend + BlasMatInterImpl> BlasMatInterOps<BE> for Module<BE> {
         A: BlasGridInfos,
         K: GGLWEInfos,
     {
-        BE::blas_sum_tmp_bytes_impl(self, res, a, atk)
+        BE::blas_sum_tmp_bytes(self, res, a, atk)
     }
 
     fn blas_sum<R, A, K>(&self, res: &mut R, a: &A, atk: &K, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
@@ -42,6 +42,6 @@ impl<BE: Backend + BlasMatInterImpl> BlasMatInterOps<BE> for Module<BE> {
         A: BlasGrid<BE>,
         K: GetAutomorphismKey<BE> + Sync,
     {
-        BE::blas_sum_impl(self, res, a, atk, scratch)
+        BE::blas_sum(self, res, a, atk, scratch)
     }
 }

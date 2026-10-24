@@ -17,7 +17,7 @@ pub unsafe trait BlindRotationKeyCompressedFactoryImpl<BRA: BlindRotationAlgo>: 
 
 /// Selects compressed CGGI key allocation built from core storage operations.
 #[macro_export]
-macro_rules! impl_bin_fhe_blind_rotation_key_compressed_factory_reference {
+macro_rules! impl_blind_rotation_key_compressed_factory_reference_full {
     ($backend:ty) => {
         unsafe impl $crate::oep::BlindRotationKeyCompressedFactoryImpl<$crate::blind_rotation::CGGI> for $backend {
             fn blind_rotation_key_compressed_alloc<A: $crate::blind_rotation::BlindRotationKeyInfos>(

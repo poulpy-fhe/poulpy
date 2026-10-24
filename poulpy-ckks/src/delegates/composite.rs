@@ -363,7 +363,7 @@ impl<BE: Backend + CKKSDotProductImpl> CKKSDotProductOps<BE> for Module<BE> {
         B: CKKSCtBounds,
         T: GGLWEInfos,
     {
-        BE::ckks_dot_product_ct_tmp_bytes_impl(self, n, res, a, b, tsk)
+        BE::ckks_dot_product_ct_tmp_bytes(self, n, res, a, b, tsk)
     }
 
     fn ckks_dot_product_pt_vec_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
@@ -372,7 +372,7 @@ impl<BE: Backend + CKKSDotProductImpl> CKKSDotProductOps<BE> for Module<BE> {
         A: CKKSCtBounds,
         P: CKKSInfos,
     {
-        BE::ckks_dot_product_pt_vec_tmp_bytes_impl(self, res, a, b)
+        BE::ckks_dot_product_pt_vec_tmp_bytes(self, res, a, b)
     }
 
     fn ckks_dot_product_pt_const_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
@@ -381,7 +381,7 @@ impl<BE: Backend + CKKSDotProductImpl> CKKSDotProductOps<BE> for Module<BE> {
         A: CKKSCtBounds,
         P: CKKSInfos,
     {
-        BE::ckks_dot_product_pt_const_tmp_bytes_impl(self, res, a, b)
+        BE::ckks_dot_product_pt_const_tmp_bytes(self, res, a, b)
     }
 
     fn ckks_dot_product_ct<Dst, A, B, H>(
@@ -398,7 +398,7 @@ impl<BE: Backend + CKKSDotProductImpl> CKKSDotProductOps<BE> for Module<BE> {
         B: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetTensorKey<BE>,
     {
-        BE::ckks_dot_product_ct_impl(self, dst, a, b, tsk, scratch)
+        BE::ckks_dot_product_ct(self, dst, a, b, tsk, scratch)
     }
 
     fn ckks_dot_product_prepared<Dst, H>(
@@ -413,7 +413,7 @@ impl<BE: Backend + CKKSDotProductImpl> CKKSDotProductOps<BE> for Module<BE> {
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetTensorKey<BE>,
     {
-        BE::ckks_dot_product_prepared_impl(self, dst, a, b, tsk, scratch)
+        BE::ckks_dot_product_prepared(self, dst, a, b, tsk, scratch)
     }
 
     fn ckks_dot_product_prepared_pt_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
@@ -423,7 +423,7 @@ impl<BE: Backend + CKKSDotProductImpl> CKKSDotProductOps<BE> for Module<BE> {
         A: GLWEInfos,
         P: GLWEInfos,
     {
-        BE::ckks_dot_product_prepared_pt_tmp_bytes_impl(self, res, a, b)
+        BE::ckks_dot_product_prepared_pt_tmp_bytes(self, res, a, b)
     }
 
     fn ckks_dot_product_prepared_pt<Dst>(
@@ -438,7 +438,7 @@ impl<BE: Backend + CKKSDotProductImpl> CKKSDotProductOps<BE> for Module<BE> {
         Self: GLWEMulPreparedPlainSum<BE>,
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     {
-        BE::ckks_dot_product_prepared_pt_impl(self, dst, a, b, galois, scratch)
+        BE::ckks_dot_product_prepared_pt(self, dst, a, b, galois, scratch)
     }
 
     fn ckks_dot_product_pt_vec<Dst: Data, D: Data, E>(
@@ -453,7 +453,7 @@ impl<BE: Backend + CKKSDotProductImpl> CKKSDotProductOps<BE> for Module<BE> {
         CKKSCiphertext<D, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + GLWEInfos,
         E: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
-        BE::ckks_dot_product_pt_vec_impl(self, dst, a, b, scratch)
+        BE::ckks_dot_product_pt_vec(self, dst, a, b, scratch)
     }
 
     fn ckks_dot_product_pt_const<Dst: Data, D: Data, E>(
@@ -469,6 +469,6 @@ impl<BE: Backend + CKKSDotProductImpl> CKKSDotProductOps<BE> for Module<BE> {
         CKKSCiphertext<D, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + GLWEInfos,
         E: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
-        BE::ckks_dot_product_pt_const_impl(self, dst, a, b, pt_coeffs, scratch)
+        BE::ckks_dot_product_pt_const(self, dst, a, b, pt_coeffs, scratch)
     }
 }

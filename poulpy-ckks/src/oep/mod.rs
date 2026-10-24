@@ -4,7 +4,7 @@
 //! Delegates only forward.
 //!
 //! A backend explicitly implements each `*Impl` family. The
-//! `impl_ckks_*_reference!` macros wire lower-layer algorithms from
+//! `impl_<family>_reference_full!` macros wire lower-layer algorithms from
 //! [`crate::reference`]; a custom implementation can call those algorithms for
 //! unchanged methods and replace other methods independently.
 //!
@@ -51,45 +51,45 @@ mod ship;
 mod sub;
 
 pub use add::CKKSAddImpl;
-pub use add::impl_ckks_add_reference;
+pub use add::impl_ckks_add_reference_full;
 pub use bootstrapping::{
     CKKSBootstrappingCIImpl, CKKSBootstrappingImpl, CKKSEncapsulatedModUpImpl, CKKSModUpFirstFactorImpl,
-    impl_ckks_bootstrapping_ci_reference, impl_ckks_bootstrapping_reference, impl_ckks_encapsulated_mod_up_reference,
-    impl_ckks_mod_up_first_factor_reference,
+    impl_ckks_bootstrapping_ci_reference_full, impl_ckks_bootstrapping_reference_full,
+    impl_ckks_encapsulated_mod_up_reference_full, impl_ckks_mod_up_first_factor_reference_full,
 };
 pub use ckks_impl::CKKSImpl;
 pub use conjugate::CKKSConjugateImpl;
-pub use conjugate::impl_ckks_conjugate_reference;
+pub use conjugate::impl_ckks_conjugate_reference_full;
 pub use copy::CKKSCopyImpl;
-pub use copy::impl_ckks_copy_reference;
-pub use dft::{DFTImpl, DFTMatrixImpl, impl_ckks_dft_reference};
-pub use dot_product::{CKKSDotProductImpl, impl_ckks_dot_product_reference};
+pub use copy::impl_ckks_copy_reference_full;
+pub use dft::{DFTImpl, DFTMatrixImpl, impl_dft_matrix_reference_full, impl_dft_reference_full};
+pub use dot_product::{CKKSDotProductImpl, impl_ckks_dot_product_reference_full};
 pub use encoding::CKKSEncodingImpl;
 pub use encryption::CKKSEncryptionImpl;
-pub use encryption::impl_ckks_encryption_reference;
-pub use eval_mod::{CKKSEvalModImpl, impl_ckks_eval_mod_reference};
-pub use fold::{CKKSFoldImpl, CKKSFoldLayoutImpl, impl_ckks_fold_reference};
+pub use encryption::impl_ckks_encryption_reference_full;
+pub use eval_mod::{CKKSEvalModImpl, impl_ckks_eval_mod_reference_full};
+pub use fold::{CKKSFoldImpl, CKKSFoldLayoutImpl, impl_ckks_fold_layout_reference_full, impl_ckks_fold_reference_full};
 pub use imag::CKKSImagImpl;
-pub use imag::impl_ckks_imag_reference;
-pub use linear_transformation::{CKKSLinearTransformationImpl, impl_ckks_linear_transformation_reference};
+pub use imag::impl_ckks_imag_reference_full;
+pub use linear_transformation::{CKKSLinearTransformationImpl, impl_ckks_linear_transformation_reference_full};
 pub use mul::CKKSMulImpl;
-pub use mul::impl_ckks_mul_reference;
+pub use mul::impl_ckks_mul_reference_full;
 pub use neg::CKKSNegImpl;
-pub use neg::impl_ckks_neg_reference;
+pub use neg::impl_ckks_neg_reference_full;
 pub use paco::CKKSPaCoCoeffEncodingImpl;
 pub use plaintext::CKKSPlaintextZnxImpl;
-pub use plaintext::impl_ckks_plaintext_reference;
+pub use plaintext::impl_ckks_plaintext_znx_reference_full;
 pub use polynomial_evaluation::{
-    CKKSComplexPolynomialEvaluationImpl, CKKSPolynomialEvaluationImpl, impl_ckks_complex_polynomial_evaluation_reference,
-    impl_ckks_polynomial_evaluation_reference,
+    CKKSComplexPolynomialEvaluationImpl, CKKSPolynomialEvaluationImpl, impl_ckks_complex_polynomial_evaluation_reference_full,
+    impl_ckks_polynomial_evaluation_reference_full,
 };
 pub use pow2::CKKSPow2Impl;
-pub use pow2::impl_ckks_pow2_reference;
+pub use pow2::impl_ckks_pow2_reference_full;
 pub use rotate::CKKSRotateImpl;
-pub use rotate::impl_ckks_rotate_reference;
+pub use rotate::impl_ckks_rotate_reference_full;
 pub use ship::CKKSShipCoeffEncodingImpl;
 pub use sub::CKKSSubImpl;
-pub use sub::impl_ckks_sub_reference;
+pub use sub::impl_ckks_sub_reference_full;
 
 /// Callable same-layer fallbacks that retain selected constituent overrides.
 pub mod defaults;

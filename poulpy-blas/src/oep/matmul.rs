@@ -14,7 +14,7 @@ use crate::layouts::{
 ///
 /// Every required method reproduces its `_reference` counterpart in
 /// [`BlasMatMulReference`](crate::reference::BlasMatMulReference) bit for bit, digits and CKKS metadata, within the
-/// scratch the matching `_tmp_bytes_impl` reports; with less, it panics before any write to `res` when it looks up a
+/// scratch the matching `_tmp_bytes` reports; with less, it panics before any write to `res` when it looks up a
 /// key, as the reference does. The memory, layout and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md`
 /// apply.
 ///
@@ -44,7 +44,7 @@ use crate::layouts::{
 ///   [`BlasContext::rotate_rows_rep`], all at the width `b.k - p`. Each term is converted once, by poulpy-ckks's
 ///   `ckks_prepare_left_into` (`ckks_prepare_right_into`) in a preparation and `ckks_prepare_left`
 ///   (`ckks_prepare_right`) in a product, on its `ceil(w / base2k)` limbs;
-/// - one JKLS kernel per block of `res`, [`crate::oep::BlasJklsImpl::blas_jkls_block_impl`], over its `K d` pairs of
+/// - one JKLS kernel per block of `res`, [`crate::oep::BlasJklsImpl::blas_jkls_block`], over its `K d` pairs of
 ///   terms `(a_il[k], b_lj[k])`, `l`-major: ascending `l`, then ascending `k` within each `l`, the order the one-pass
 ///   kernel sums them in, part of the bits on FFT; the kernel's `# Safety` fixes its circuit;
 /// - the bits, whatever the hints: the prepared product equals the reference's on the reference's operands of the same
@@ -64,7 +64,7 @@ use crate::layouts::{
 ///   `res_ij` is poulpy-ckks's `ckks_eval_linear_transformation_sum_into` of its `K` terms in ascending `l`,
 ///   `(s_il, b_lj)` on the right and `(s_lj, b_il)` on the left, where `s` is `a` under `Diagonal`, and under `Jkls`
 ///   the blocks of `a` through the operand's first map, one map-hook call
-///   ([`crate::oep::BlasMatIntraImpl::blas_map_blocks_impl`]) per block row of `a` on the right and per block column on
+///   ([`crate::oep::BlasMatIntraImpl::blas_map_blocks`]) per block row of `a` on the right and per block column on
 ///   the left, into heap blocks of `a`'s layout at the width that map leaves. Each giant step sums the products of
 ///   every term in the transform domain, in that order, before its one rotation; an FFT backend rounds that sum, so the
 ///   order is part of the bits. Each block of `res` is then stamped with the label
@@ -95,7 +95,7 @@ use crate::layouts::{
 /// batch on its operand, or poulpy-ckks's budget error before any write to `res`. Any other `Err` is a backend fault (a
 /// validator gap or a device failure), and `res` is then unspecified.
 pub unsafe trait BlasMatMulImpl: Backend + CKKSMulImpl {
-    fn blas_matmul_prepare_left_tmp_bytes_impl<A, K>(
+    fn blas_matmul_prepare_left_tmp_bytes<A, K>(
         module: &Module<Self>,
         a: &A,
         ctx: &BlasContext<Self>,
@@ -107,7 +107,7 @@ pub unsafe trait BlasMatMulImpl: Backend + CKKSMulImpl {
         K: GGLWEInfos;
 
     /// Fills `res`, allocated from the infos its validator checks, from `a` under `res`'s hint.
-    fn blas_matmul_prepare_left_impl<A, K>(
+    fn blas_matmul_prepare_left<A, K>(
         module: &Module<Self>,
         res: &mut BlasMatMulLeft<Self>,
         a: &A,
@@ -119,7 +119,7 @@ pub unsafe trait BlasMatMulImpl: Backend + CKKSMulImpl {
         A: BlasGrid<Self>,
         K: GetAutomorphismKey<Self> + Sync;
 
-    fn blas_matmul_prepare_right_tmp_bytes_impl<B, K>(
+    fn blas_matmul_prepare_right_tmp_bytes<B, K>(
         module: &Module<Self>,
         b: &B,
         ctx: &BlasContext<Self>,
@@ -131,7 +131,7 @@ pub unsafe trait BlasMatMulImpl: Backend + CKKSMulImpl {
         K: GGLWEInfos;
 
     /// Fills `res`, allocated from the infos its validator checks, from `b` under `res`'s hint.
-    fn blas_matmul_prepare_right_impl<B, K>(
+    fn blas_matmul_prepare_right<B, K>(
         module: &Module<Self>,
         res: &mut BlasMatMulRight<Self>,
         b: &B,
@@ -143,10 +143,10 @@ pub unsafe trait BlasMatMulImpl: Backend + CKKSMulImpl {
         B: BlasGrid<Self>,
         K: GetAutomorphismKey<Self> + Sync;
 
-    /// Scratch of [`Self::blas_matmul_prepared_impl`] under `ctx`; `a` and `b` are the operands or the layouts
+    /// Scratch of [`Self::blas_matmul_prepared`] under `ctx`; `a` and `b` are the operands or the layouts
     /// [`blas_matmul_left_operand_layout`](crate::layouts::blas_matmul_left_operand_layout) and
     /// [`blas_matmul_right_operand_layout`](crate::layouts::blas_matmul_right_operand_layout) give.
-    fn blas_matmul_prepared_tmp_bytes_impl<R, A, B, T, K>(
+    fn blas_matmul_prepared_tmp_bytes<R, A, B, T, K>(
         module: &Module<Self>,
         res: &R,
         a: &A,
@@ -163,7 +163,7 @@ pub unsafe trait BlasMatMulImpl: Backend + CKKSMulImpl {
         K: GGLWEInfos;
 
     #[allow(clippy::too_many_arguments)]
-    fn blas_matmul_prepared_impl<R, T, K>(
+    fn blas_matmul_prepared<R, T, K>(
         module: &Module<Self>,
         res: &mut R,
         a: &BlasMatMulLeft<Self>,
@@ -178,7 +178,7 @@ pub unsafe trait BlasMatMulImpl: Backend + CKKSMulImpl {
         T: GetTensorKey<Self> + Sync,
         K: GetAutomorphismKey<Self> + Sync;
 
-    fn blas_matmul_pt_right_tmp_bytes_impl<R, A, K>(
+    fn blas_matmul_pt_right_tmp_bytes<R, A, K>(
         module: &Module<Self>,
         res: &R,
         a: &A,
@@ -191,7 +191,7 @@ pub unsafe trait BlasMatMulImpl: Backend + CKKSMulImpl {
         A: BlasGridInfos,
         K: GGLWEInfos;
 
-    fn blas_matmul_pt_right_impl<R, A, K>(
+    fn blas_matmul_pt_right<R, A, K>(
         module: &Module<Self>,
         res: &mut R,
         a: &A,
@@ -205,7 +205,7 @@ pub unsafe trait BlasMatMulImpl: Backend + CKKSMulImpl {
         A: BlasGrid<Self>,
         K: GetAutomorphismKey<Self> + Sync;
 
-    fn blas_matmul_pt_left_tmp_bytes_impl<R, A, K>(
+    fn blas_matmul_pt_left_tmp_bytes<R, A, K>(
         module: &Module<Self>,
         res: &R,
         b: &BlasPtOperand<Self, Left>,
@@ -219,7 +219,7 @@ pub unsafe trait BlasMatMulImpl: Backend + CKKSMulImpl {
         K: GGLWEInfos;
 
     /// `res = b a`, the product by public matrices on the left.
-    fn blas_matmul_pt_left_impl<R, A, K>(
+    fn blas_matmul_pt_left<R, A, K>(
         module: &Module<Self>,
         res: &mut R,
         b: &BlasPtOperand<Self, Left>,
@@ -233,8 +233,8 @@ pub unsafe trait BlasMatMulImpl: Backend + CKKSMulImpl {
         A: BlasGrid<Self>,
         K: GetAutomorphismKey<Self> + Sync;
 
-    /// Scratch of [`Self::blas_matmul_impl`] under `ctx`.
-    fn blas_matmul_tmp_bytes_impl<R, A, B, T, K>(
+    /// Scratch of [`Self::blas_matmul`] under `ctx`.
+    fn blas_matmul_tmp_bytes<R, A, B, T, K>(
         module: &Module<Self>,
         res: &R,
         a: &A,
@@ -252,7 +252,7 @@ pub unsafe trait BlasMatMulImpl: Backend + CKKSMulImpl {
 
     /// `res = a b`, the JKLS product of two encrypted grids.
     #[allow(clippy::too_many_arguments)]
-    fn blas_matmul_impl<R, A, B, T, K>(
+    fn blas_matmul<R, A, B, T, K>(
         module: &Module<Self>,
         res: &mut R,
         a: &A,
@@ -275,10 +275,10 @@ pub unsafe trait BlasMatMulImpl: Backend + CKKSMulImpl {
 /// poulpy-ckks preparations and multiplies them through its JKLS kernel, so `$be` also implements
 /// [`crate::oep::BlasMatIntraImpl`] and [`crate::oep::BlasJklsImpl`].
 #[macro_export]
-macro_rules! impl_blas_matmul_reference {
+macro_rules! impl_blas_mat_mul_reference_full {
     ($be:ty) => {
         unsafe impl $crate::oep::BlasMatMulImpl for $be {
-            fn blas_matmul_prepare_left_tmp_bytes_impl<A, K>(
+            fn blas_matmul_prepare_left_tmp_bytes<A, K>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 a: &A,
                 ctx: &$crate::layouts::BlasContext<Self>,
@@ -292,7 +292,7 @@ macro_rules! impl_blas_matmul_reference {
                 $crate::reference::BlasMatMulReference::blas_matmul_prepare_left_tmp_bytes_reference(module, a, ctx, atk, hint)
             }
 
-            fn blas_matmul_prepare_left_impl<A, K>(
+            fn blas_matmul_prepare_left<A, K>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 res: &mut $crate::layouts::BlasMatMulLeft<Self>,
                 a: &A,
@@ -307,7 +307,7 @@ macro_rules! impl_blas_matmul_reference {
                 $crate::reference::BlasMatMulReference::blas_matmul_prepare_left_reference(module, res, a, ctx, atk, scratch)
             }
 
-            fn blas_matmul_prepare_right_tmp_bytes_impl<B, K>(
+            fn blas_matmul_prepare_right_tmp_bytes<B, K>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 b: &B,
                 ctx: &$crate::layouts::BlasContext<Self>,
@@ -321,7 +321,7 @@ macro_rules! impl_blas_matmul_reference {
                 $crate::reference::BlasMatMulReference::blas_matmul_prepare_right_tmp_bytes_reference(module, b, ctx, atk, hint)
             }
 
-            fn blas_matmul_prepare_right_impl<B, K>(
+            fn blas_matmul_prepare_right<B, K>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 res: &mut $crate::layouts::BlasMatMulRight<Self>,
                 b: &B,
@@ -336,7 +336,7 @@ macro_rules! impl_blas_matmul_reference {
                 $crate::reference::BlasMatMulReference::blas_matmul_prepare_right_reference(module, res, b, ctx, atk, scratch)
             }
 
-            fn blas_matmul_prepared_tmp_bytes_impl<R, A, B, T, K>(
+            fn blas_matmul_prepared_tmp_bytes<R, A, B, T, K>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 res: &R,
                 a: &A,
@@ -355,7 +355,7 @@ macro_rules! impl_blas_matmul_reference {
                 $crate::reference::BlasMatMulReference::blas_matmul_prepared_tmp_bytes_reference(module, res, a, b, ctx, tsk, atk)
             }
 
-            fn blas_matmul_prepared_impl<R, T, K>(
+            fn blas_matmul_prepared<R, T, K>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 res: &mut R,
                 a: &$crate::layouts::BlasMatMulLeft<Self>,
@@ -373,7 +373,7 @@ macro_rules! impl_blas_matmul_reference {
                 $crate::reference::BlasMatMulReference::blas_matmul_prepared_reference(module, res, a, b, ctx, tsk, atk, scratch)
             }
 
-            fn blas_matmul_tmp_bytes_impl<R, A, B, T, K>(
+            fn blas_matmul_tmp_bytes<R, A, B, T, K>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 res: &R,
                 a: &A,
@@ -392,7 +392,7 @@ macro_rules! impl_blas_matmul_reference {
                 $crate::reference::BlasMatMulReference::blas_matmul_tmp_bytes_reference(module, res, a, b, ctx, tsk, atk)
             }
 
-            fn blas_matmul_impl<R, A, B, T, K>(
+            fn blas_matmul<R, A, B, T, K>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 res: &mut R,
                 a: &A,
@@ -412,7 +412,7 @@ macro_rules! impl_blas_matmul_reference {
                 $crate::reference::BlasMatMulReference::blas_matmul_reference(module, res, a, b, ctx, tsk, atk, scratch)
             }
 
-            fn blas_matmul_pt_right_tmp_bytes_impl<R, A, K>(
+            fn blas_matmul_pt_right_tmp_bytes<R, A, K>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 res: &R,
                 a: &A,
@@ -428,7 +428,7 @@ macro_rules! impl_blas_matmul_reference {
                 $crate::reference::BlasMatMulReference::blas_matmul_pt_right_tmp_bytes_reference(module, res, a, b, ctx, atk)
             }
 
-            fn blas_matmul_pt_right_impl<R, A, K>(
+            fn blas_matmul_pt_right<R, A, K>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 res: &mut R,
                 a: &A,
@@ -445,7 +445,7 @@ macro_rules! impl_blas_matmul_reference {
                 $crate::reference::BlasMatMulReference::blas_matmul_pt_right_reference(module, res, a, b, ctx, atk, scratch)
             }
 
-            fn blas_matmul_pt_left_tmp_bytes_impl<R, A, K>(
+            fn blas_matmul_pt_left_tmp_bytes<R, A, K>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 res: &R,
                 b: &$crate::layouts::BlasPtOperand<Self, $crate::layouts::Left>,
@@ -461,7 +461,7 @@ macro_rules! impl_blas_matmul_reference {
                 $crate::reference::BlasMatMulReference::blas_matmul_pt_left_tmp_bytes_reference(module, res, b, a, ctx, atk)
             }
 
-            fn blas_matmul_pt_left_impl<R, A, K>(
+            fn blas_matmul_pt_left<R, A, K>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 res: &mut R,
                 b: &$crate::layouts::BlasPtOperand<Self, $crate::layouts::Left>,

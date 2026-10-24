@@ -11,9 +11,9 @@ use crate::{CKKSCtBounds, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos};
 /// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
 /// associated method signatures.
 pub unsafe trait CKKSNegImpl: Backend {
-    fn ckks_neg_tmp_bytes_impl(module: &Module<Self>, res_size: usize) -> usize;
+    fn ckks_neg_tmp_bytes(module: &Module<Self>, res_size: usize) -> usize;
 
-    fn ckks_neg_into_impl<Dst, Src>(
+    fn ckks_neg_into<Dst, Src>(
         module: &Module<Self>,
         dst: &mut Dst,
         src: &Src,
@@ -23,21 +23,21 @@ pub unsafe trait CKKSNegImpl: Backend {
         Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<Self> + GLWEInfos + CKKSCtBounds;
 
-    fn ckks_neg_assign_impl<Dst>(module: &Module<Self>, dst: &mut Dst) -> Result<()>
+    fn ckks_neg_assign<Dst>(module: &Module<Self>, dst: &mut Dst) -> Result<()>
     where
         Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos;
 }
 
-/// Implements this contract with the callable reference algorithms.
+/// Selects the reference implementation of `CKKSNegImpl` for `$be`.
 #[macro_export]
-macro_rules! impl_ckks_neg_reference {
+macro_rules! impl_ckks_neg_reference_full {
     ($be:ty) => {
         unsafe impl $crate::oep::CKKSNegImpl for $be {
-            fn ckks_neg_tmp_bytes_impl(module: &::poulpy_hal::layouts::Module<Self>, res_size: usize) -> usize {
+            fn ckks_neg_tmp_bytes(module: &::poulpy_hal::layouts::Module<Self>, res_size: usize) -> usize {
                 $crate::reference::neg::CKKSNegReference::ckks_neg_tmp_bytes_reference(module, res_size)
             }
 
-            fn ckks_neg_into_impl<Dst, Src>(
+            fn ckks_neg_into<Dst, Src>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
                 src: &Src,
@@ -50,7 +50,7 @@ macro_rules! impl_ckks_neg_reference {
                 $crate::reference::neg::CKKSNegReference::ckks_neg_into_reference(module, dst, src, scratch)
             }
 
-            fn ckks_neg_assign_impl<Dst>(module: &::poulpy_hal::layouts::Module<Self>, dst: &mut Dst) -> $crate::CKKSResult<()>
+            fn ckks_neg_assign<Dst>(module: &::poulpy_hal::layouts::Module<Self>, dst: &mut Dst) -> $crate::CKKSResult<()>
             where
                 Dst: ::poulpy_core::layouts::GLWEToBackendMut<Self> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
             {
@@ -59,4 +59,4 @@ macro_rules! impl_ckks_neg_reference {
         }
     };
 }
-pub use crate::impl_ckks_neg_reference;
+pub use crate::impl_ckks_neg_reference_full;

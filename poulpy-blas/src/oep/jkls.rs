@@ -8,14 +8,14 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 /// Extension point of the JKLS kernel, one output block of the prepared product: the references
 /// [`BlasMatMulReference::blas_matmul_prepared_reference`](crate::reference::BlasMatMulReference::blas_matmul_prepared_reference)
 /// and [`BlasMatMulReference::blas_matmul_reference`](crate::reference::BlasMatMulReference::blas_matmul_reference) run
-/// one [`Self::blas_jkls_block_impl`] per block of `res`, so both `blas_matmul` and `blas_matmul_prepared` reach it,
+/// one [`Self::blas_jkls_block`] per block of `res`, so both `blas_matmul` and `blas_matmul_prepared` reach it,
 /// whatever the hints of the operands.
 ///
 /// # Safety
 ///
 /// The memory, layout and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 ///
-/// [`Self::blas_jkls_block_impl`] reproduces
+/// [`Self::blas_jkls_block`] reproduces
 /// [`BlasMatMulReference::blas_jkls_block_reference`](crate::reference::BlasMatMulReference::blas_jkls_block_reference)
 /// bit for bit, digits and CKKS metadata: `res = sum_t lhs[t] rhs[t]` as poulpy-ckks's `ckks_dot_product_ct` computes
 /// it for the terms the pairs were prepared from, which share one layout per side. The pairs are terms prepared once by
@@ -46,7 +46,7 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 ///
 /// It is called with `lhs.len() == rhs.len() >= 1` pairs, every `lhs` prepared from terms of one layout and every `rhs`
 /// from terms of another, on inputs the prepared product's validator accepted, at a radix of 62 at most, which checked
-/// the tensor key at that width and of their rank. Within the scratch [`Self::blas_jkls_block_tmp_bytes_impl`] reports
+/// the tensor key at that width and of their rank. Within the scratch [`Self::blas_jkls_block_tmp_bytes`] reports
 /// for `res`, `lhs[0]`, `rhs[0]`, the pair count and the key, it returns `Ok`, or poulpy-ckks's budget error before any
 /// write to `res`; with less scratch it panics before any write, as the reference does. Any other `Err` is a backend
 /// fault (a validator gap or a device failure), and `res` is then unspecified. The reference products call it once per
@@ -55,16 +55,9 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 /// in its own representation through its poulpy-ckks preparations, the storage of `CKKSPreparedLeft<Self>` and
 /// `CKKSPreparedRight<Self>`.
 pub unsafe trait BlasJklsImpl: Backend {
-    /// Scratch bytes of [`Self::blas_jkls_block_impl`] into a block of layout `res` from `terms` pairs prepared from terms
+    /// Scratch bytes of [`Self::blas_jkls_block`] into a block of layout `res` from `terms` pairs prepared from terms
     /// of layouts `lhs` and `rhs`, with a tensor key of layout `tsk`.
-    fn blas_jkls_block_tmp_bytes_impl<R, L, Rh, T>(
-        module: &Module<Self>,
-        res: &R,
-        lhs: &L,
-        rhs: &Rh,
-        terms: usize,
-        tsk: &T,
-    ) -> usize
+    fn blas_jkls_block_tmp_bytes<R, L, Rh, T>(module: &Module<Self>, res: &R, lhs: &L, rhs: &Rh, terms: usize, tsk: &T) -> usize
     where
         R: CKKSCtBounds,
         L: CKKSCtBounds,
@@ -72,7 +65,7 @@ pub unsafe trait BlasJklsImpl: Backend {
         T: GGLWEInfos;
 
     /// The JKLS kernel: `res = sum_t lhs[t] rhs[t]` over prepared terms, relinearized once. See the trait's `# Safety`.
-    fn blas_jkls_block_impl<R, T>(
+    fn blas_jkls_block<R, T>(
         module: &Module<Self>,
         res: &mut R,
         lhs: &[&CKKSPreparedLeft<Self>],
@@ -89,10 +82,10 @@ pub unsafe trait BlasJklsImpl: Backend {
 /// [`BlasMatMulReference::blas_jkls_block_reference`](crate::reference::BlasMatMulReference::blas_jkls_block_reference)
 /// as the JKLS kernel of `$be`.
 #[macro_export]
-macro_rules! impl_blas_jkls_reference {
+macro_rules! impl_blas_jkls_reference_full {
     ($be:ty) => {
         unsafe impl $crate::oep::BlasJklsImpl for $be {
-            fn blas_jkls_block_tmp_bytes_impl<R, L, Rh, T>(
+            fn blas_jkls_block_tmp_bytes<R, L, Rh, T>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 res: &R,
                 lhs: &L,
@@ -109,7 +102,7 @@ macro_rules! impl_blas_jkls_reference {
                 $crate::reference::BlasMatMulReference::blas_jkls_block_tmp_bytes_reference(module, res, lhs, rhs, terms, tsk)
             }
 
-            fn blas_jkls_block_impl<R, T>(
+            fn blas_jkls_block<R, T>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 res: &mut R,
                 lhs: &[&::poulpy_ckks::layouts::CKKSPreparedLeft<Self>],

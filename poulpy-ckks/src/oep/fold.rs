@@ -14,11 +14,11 @@ use crate::{
 /// Implementations must answer for the fold they register with
 /// [`CKKSFoldImpl`]: its key elements, layouts and scratch.
 pub unsafe trait CKKSFoldLayoutImpl: Backend<Ring = Standard> {
-    fn ckks_fold_layout_impl<C>(module: &Module<Self>, ct_in: &C, degree: Degree, keys: &CKKSFoldKeysLayout) -> GLWELayout
+    fn ckks_fold_layout<C>(module: &Module<Self>, ct_in: &C, degree: Degree, keys: &CKKSFoldKeysLayout) -> GLWELayout
     where
         C: CKKSCtBounds;
 
-    fn ckks_fold_tmp_bytes_impl<C1, C2>(
+    fn ckks_fold_tmp_bytes<C1, C2>(
         module: &Module<Self>,
         ct_out: &C1,
         ct_in: &C2,
@@ -36,15 +36,15 @@ pub unsafe trait CKKSFoldLayoutImpl: Backend<Ring = Standard> {
 ///
 /// Implementations must preserve the exact CKKS metadata and ciphertext
 /// semantics of the reference fold, honor all key layouts, and stay within the
-/// scratch of [`CKKSFoldLayoutImpl::ckks_fold_tmp_bytes_impl`].
+/// scratch of [`CKKSFoldLayoutImpl::ckks_fold_tmp_bytes`].
 pub unsafe trait CKKSFoldImpl<R: Ring>: Backend<Ring = Standard> {
-    fn ckks_fold_count_impl(module: &Module<Self>, ins: &[CKKSRingCiphertext<Self, R>], degree: Degree) -> usize;
+    fn ckks_fold_count(module: &Module<Self>, ins: &[CKKSRingCiphertext<Self, R>], degree: Degree) -> usize;
 
-    fn ckks_unfold_galois_elements_impl<C>(module: &Module<Self>, ct_in: &C) -> Vec<i64>
+    fn ckks_unfold_galois_elements<C>(module: &Module<Self>, ct_in: &C) -> Vec<i64>
     where
         C: CKKSCtBounds;
 
-    fn ckks_fold_impl<S>(
+    fn ckks_fold<S>(
         module: &Module<Self>,
         folded: &mut [CKKSCiphertextOwned<Self>],
         ins: &[CKKSRingCiphertext<Self, R>],
@@ -54,7 +54,7 @@ pub unsafe trait CKKSFoldImpl<R: Ring>: Backend<Ring = Standard> {
     where
         S: GGLWEPreparedToBackendRef<Self> + GGLWEInfos;
 
-    fn ckks_unfold_impl<S, H>(
+    fn ckks_unfold<S, H>(
         module: &Module<Self>,
         outs: &mut [CKKSRingCiphertext<Self, R>],
         folded: &mut [CKKSCiphertextOwned<Self>],
@@ -67,13 +67,12 @@ pub unsafe trait CKKSFoldImpl<R: Ring>: Backend<Ring = Standard> {
         H: GetAutomorphismKey<Self>;
 }
 
-/// Opts a standard backend into the CKKS reference fold, for every input ring the
-/// reference folds.
+/// Selects the reference fold layout and fold scratch query for a standard backend.
 #[macro_export]
-macro_rules! impl_ckks_fold_reference {
+macro_rules! impl_ckks_fold_layout_reference_full {
     ($be:ty) => {
         unsafe impl $crate::oep::CKKSFoldLayoutImpl for $be {
-            fn ckks_fold_layout_impl<C>(
+            fn ckks_fold_layout<C>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 ct_in: &C,
                 degree: ::poulpy_core::layouts::Degree,
@@ -85,7 +84,7 @@ macro_rules! impl_ckks_fold_reference {
                 $crate::reference::fold::CKKSFoldLayoutReference::ckks_fold_layout_reference(module, ct_in, degree, keys)
             }
 
-            fn ckks_fold_tmp_bytes_impl<C1, C2>(
+            fn ckks_fold_tmp_bytes<C1, C2>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 ct_out: &C1,
                 ct_in: &C2,
@@ -101,12 +100,19 @@ macro_rules! impl_ckks_fold_reference {
                 )
             }
         }
+    };
+}
 
+/// Selects the reference fold and unfold for a standard backend, for every input ring
+/// the reference folds.
+#[macro_export]
+macro_rules! impl_ckks_fold_reference_full {
+    ($be:ty) => {
         unsafe impl<R: ::poulpy_hal::layouts::Ring> $crate::oep::CKKSFoldImpl<R> for $be
         where
             ::poulpy_hal::layouts::Module<$be>: $crate::reference::fold::CKKSFoldReference<$be, R>,
         {
-            fn ckks_fold_count_impl(
+            fn ckks_fold_count(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 ins: &[$crate::layouts::CKKSRingCiphertext<$be, R>],
                 degree: ::poulpy_core::layouts::Degree,
@@ -114,14 +120,14 @@ macro_rules! impl_ckks_fold_reference {
                 $crate::reference::fold::CKKSFoldReference::ckks_fold_count_reference(module, ins, degree)
             }
 
-            fn ckks_unfold_galois_elements_impl<C>(module: &::poulpy_hal::layouts::Module<$be>, ct_in: &C) -> Vec<i64>
+            fn ckks_unfold_galois_elements<C>(module: &::poulpy_hal::layouts::Module<$be>, ct_in: &C) -> Vec<i64>
             where
                 C: $crate::CKKSCtBounds,
             {
                 $crate::reference::fold::CKKSFoldReference::<$be, R>::ckks_unfold_galois_elements_reference(module, ct_in)
             }
 
-            fn ckks_fold_impl<S>(
+            fn ckks_fold<S>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 folded: &mut [$crate::layouts::CKKSCiphertextOwned<$be>],
                 ins: &[$crate::layouts::CKKSRingCiphertext<$be, R>],
@@ -134,7 +140,7 @@ macro_rules! impl_ckks_fold_reference {
                 $crate::reference::fold::CKKSFoldReference::ckks_fold_reference(module, folded, ins, inbound, scratch)
             }
 
-            fn ckks_unfold_impl<S, H>(
+            fn ckks_unfold<S, H>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 outs: &mut [$crate::layouts::CKKSRingCiphertext<$be, R>],
                 folded: &mut [$crate::layouts::CKKSCiphertextOwned<$be>],
@@ -159,4 +165,5 @@ macro_rules! impl_ckks_fold_reference {
     };
 }
 
-pub use crate::impl_ckks_fold_reference;
+pub use crate::impl_ckks_fold_layout_reference_full;
+pub use crate::impl_ckks_fold_reference_full;

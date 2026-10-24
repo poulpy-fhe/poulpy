@@ -10,7 +10,7 @@ use crate::layouts::{BlasGrid, BlasGridInfos, BlasGridMut};
 ///
 /// Every method reproduces its `_reference` counterpart in
 /// [`BlasMatInterReference`](crate::reference::BlasMatInterReference) bit for bit, within the scratch the matching
-/// `_tmp_bytes_impl` reports. With less, a call that uses a key panics before it writes `res`, as the reference does.
+/// `_tmp_bytes` reports. With less, a call that uses a key panics before it writes `res`, as the reference does.
 ///
 /// The memory, layout and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 ///
@@ -26,13 +26,13 @@ use crate::layouts::{BlasGrid, BlasGridInfos, BlasGridMut};
 /// budget error: that error is the reference's, the one poulpy-ckks raises, returned before any write to `res`. Any
 /// other `Err` is a backend fault (a validator gap or a device failure), and `res` is then unspecified.
 pub unsafe trait BlasMatInterImpl: Backend {
-    fn blas_rotate_tmp_bytes_impl<R, A, K>(module: &Module<Self>, res: &R, a: &A, atk: &K) -> usize
+    fn blas_rotate_tmp_bytes<R, A, K>(module: &Module<Self>, res: &R, a: &A, atk: &K) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
         K: GGLWEInfos;
 
-    fn blas_rotate_impl<R, A, K>(
+    fn blas_rotate<R, A, K>(
         module: &Module<Self>,
         res: &mut R,
         a: &A,
@@ -45,19 +45,13 @@ pub unsafe trait BlasMatInterImpl: Backend {
         A: BlasGrid<Self>,
         K: GetAutomorphismKey<Self> + Sync;
 
-    fn blas_sum_tmp_bytes_impl<R, A, K>(module: &Module<Self>, res: &R, a: &A, atk: &K) -> usize
+    fn blas_sum_tmp_bytes<R, A, K>(module: &Module<Self>, res: &R, a: &A, atk: &K) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
         K: GGLWEInfos;
 
-    fn blas_sum_impl<R, A, K>(
-        module: &Module<Self>,
-        res: &mut R,
-        a: &A,
-        atk: &K,
-        scratch: &mut ScratchArena<'_, Self>,
-    ) -> Result<()>
+    fn blas_sum<R, A, K>(module: &Module<Self>, res: &mut R, a: &A, atk: &K, scratch: &mut ScratchArena<'_, Self>) -> Result<()>
     where
         R: BlasGridMut<Self>,
         A: BlasGrid<Self>,
@@ -66,10 +60,10 @@ pub unsafe trait BlasMatInterImpl: Backend {
 
 /// Selects [`BlasMatInterReference`](crate::reference::BlasMatInterReference) for `$be`.
 #[macro_export]
-macro_rules! impl_blas_inter_reference {
+macro_rules! impl_blas_mat_inter_reference_full {
     ($be:ty) => {
         unsafe impl $crate::oep::BlasMatInterImpl for $be {
-            fn blas_rotate_tmp_bytes_impl<R, A, K>(module: &::poulpy_hal::layouts::Module<Self>, res: &R, a: &A, atk: &K) -> usize
+            fn blas_rotate_tmp_bytes<R, A, K>(module: &::poulpy_hal::layouts::Module<Self>, res: &R, a: &A, atk: &K) -> usize
             where
                 R: $crate::layouts::BlasGridInfos,
                 A: $crate::layouts::BlasGridInfos,
@@ -78,7 +72,7 @@ macro_rules! impl_blas_inter_reference {
                 $crate::reference::BlasMatInterReference::blas_rotate_tmp_bytes_reference(module, res, a, atk)
             }
 
-            fn blas_rotate_impl<R, A, K>(
+            fn blas_rotate<R, A, K>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 res: &mut R,
                 a: &A,
@@ -94,7 +88,7 @@ macro_rules! impl_blas_inter_reference {
                 $crate::reference::BlasMatInterReference::blas_rotate_reference(module, res, a, r, atk, scratch)
             }
 
-            fn blas_sum_tmp_bytes_impl<R, A, K>(module: &::poulpy_hal::layouts::Module<Self>, res: &R, a: &A, atk: &K) -> usize
+            fn blas_sum_tmp_bytes<R, A, K>(module: &::poulpy_hal::layouts::Module<Self>, res: &R, a: &A, atk: &K) -> usize
             where
                 R: $crate::layouts::BlasGridInfos,
                 A: $crate::layouts::BlasGridInfos,
@@ -103,7 +97,7 @@ macro_rules! impl_blas_inter_reference {
                 $crate::reference::BlasMatInterReference::blas_sum_tmp_bytes_reference(module, res, a, atk)
             }
 
-            fn blas_sum_impl<R, A, K>(
+            fn blas_sum<R, A, K>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 res: &mut R,
                 a: &A,

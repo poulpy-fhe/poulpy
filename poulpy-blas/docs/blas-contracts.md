@@ -18,9 +18,9 @@ changes bits.
 | OEP family | Required | Provided |
 |---|---|---|
 | `BlasMatInterImpl` | `blas_rotate`, `blas_sum` | |
-| `BlasMatIntraImpl` | the map hook `blas_map_blocks_impl` | `blas_transpose`, `blas_rotate_rows`, `blas_rotate_cols`, over the hook |
+| `BlasMatIntraImpl` | the map hook `blas_map_blocks` | `blas_transpose`, `blas_rotate_rows`, `blas_rotate_cols`, over the hook |
 | `BlasMatMulImpl` | `blas_matmul`, `blas_matmul_prepare_left`, `blas_matmul_prepare_right`, `blas_matmul_prepared`, `blas_matmul_pt_right`, `blas_matmul_pt_left` | |
-| `BlasJklsImpl` | the JKLS kernel `blas_jkls_block_impl`, one output block of the prepared product | |
+| `BlasJklsImpl` | the JKLS kernel `blas_jkls_block`, one output block of the prepared product | |
 
 Each operation's `_tmp_bytes` query belongs to the same family. `BlasImpl`
 aggregates the four families as a test bound; it has a blanket implementation
@@ -50,15 +50,15 @@ APIs, so a backend's CKKS and core overrides remain effective inside them.
 
 | OEP family | Reference | Macro |
 |---|---|---|
-| `BlasMatInterImpl` | `BlasMatInterReference`, [`reference/inter.rs`](../src/reference/inter.rs) | `impl_blas_inter_reference!` |
-| `BlasMatIntraImpl` | `BlasMatIntraReference` (the hook), [`reference/intra.rs`](../src/reference/intra.rs) | `impl_blas_intra_reference!` |
-| `BlasMatMulImpl` | `BlasMatMulReference`, [`reference/matmul.rs`](../src/reference/matmul.rs) | `impl_blas_matmul_reference!` |
-| `BlasJklsImpl` | `BlasMatMulReference::blas_jkls_block_reference`, [`reference/matmul.rs`](../src/reference/matmul.rs) | `impl_blas_jkls_reference!` |
+| `BlasMatInterImpl` | `BlasMatInterReference`, [`reference/inter.rs`](../src/reference/inter.rs) | `impl_blas_mat_inter_reference_full!` |
+| `BlasMatIntraImpl` | `BlasMatIntraReference` (the hook), [`reference/intra.rs`](../src/reference/intra.rs) | `impl_blas_mat_intra_reference_full!` |
+| `BlasMatMulImpl` | `BlasMatMulReference`, [`reference/matmul.rs`](../src/reference/matmul.rs) | `impl_blas_mat_mul_reference_full!` |
+| `BlasJklsImpl` | `BlasMatMulReference::blas_jkls_block_reference`, [`reference/matmul.rs`](../src/reference/matmul.rs) | `impl_blas_jkls_reference_full!` |
 
 `impl_blas_reference_full!` expands to the four family macros. The reference's
 cold preparations call the backend's map hook, and the reference prepared
 product, like the reference `blas_matmul`, calls it for the terms of a hot
-operand, then its JKLS kernel. So `impl_blas_matmul_reference!` needs the intra
+operand, then its JKLS kernel. So `impl_blas_mat_mul_reference_full!` needs the intra
 and JKLS families. The reference `blas_matmul` is the reference prepared
 product of two hot operands, bit for bit, on the grids read in place, without
 the preparations' copies.
@@ -96,9 +96,9 @@ states what an implementation must reproduce. Three replacements cover most need
   products, `blas_matmul` included:
 
   ```rust
-  ::poulpy_blas::impl_blas_inter_reference!(MyBackend);
-  ::poulpy_blas::impl_blas_matmul_reference!(MyBackend);
-  ::poulpy_blas::impl_blas_jkls_reference!(MyBackend);
+  ::poulpy_blas::impl_blas_mat_inter_reference_full!(MyBackend);
+  ::poulpy_blas::impl_blas_mat_mul_reference_full!(MyBackend);
+  ::poulpy_blas::impl_blas_jkls_reference_full!(MyBackend);
   unsafe impl poulpy_blas::oep::BlasMatIntraImpl for MyBackend { /* the hook and its query */ }
   ```
 
@@ -106,9 +106,9 @@ states what an implementation must reproduce. Three replacements cover most need
   Both `blas_matmul` and `blas_matmul_prepared` reach it:
 
   ```rust
-  ::poulpy_blas::impl_blas_inter_reference!(MyBackend);
-  ::poulpy_blas::impl_blas_intra_reference!(MyBackend);
-  ::poulpy_blas::impl_blas_matmul_reference!(MyBackend);
+  ::poulpy_blas::impl_blas_mat_inter_reference_full!(MyBackend);
+  ::poulpy_blas::impl_blas_mat_intra_reference_full!(MyBackend);
+  ::poulpy_blas::impl_blas_mat_mul_reference_full!(MyBackend);
   unsafe impl poulpy_blas::oep::BlasJklsImpl for MyBackend { /* the kernel and its query */ }
   ```
 
@@ -316,7 +316,7 @@ keys in use then reports `MissingAutomorphismKey` instead of the budget error.
 
 ## Scratch
 
-Every method runs within the scratch its own `_tmp_bytes_impl` reports for the
+Every method runs within the scratch its own `_tmp_bytes` reports for the
 layouts and keys it receives, which may differ from the reference's; the
 reference asserts its bound on entry and panics before any write when it falls
 short, for a call that looks up a key. An override that needs other scratch

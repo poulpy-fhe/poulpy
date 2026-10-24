@@ -36,11 +36,11 @@ pub unsafe trait CKKSEncodingImpl<F: CKKSEncodingScalar>: Backend {
     /// Opaque backend-specific plan family for precision `F`.
     type Plans: Send + Sync + 'static;
 
-    fn ckks_encoding_plan_cache_impl(module: &Module<Self>) -> &ModulePlanCache;
+    fn ckks_encoding_plan_cache(module: &Module<Self>) -> &ModulePlanCache;
 
     /// Builds the transform-plan family for every supported power-of-two
     /// dimension up to `module.max_n()`.
-    fn ckks_encoding_plans_create_impl(module: &Module<Self>) -> Result<Self::Plans>;
+    fn ckks_encoding_plans_create(module: &Module<Self>) -> Result<Self::Plans>;
 
     /// Backend-native coefficient → plaintext mapping, without an IFFT.
     ///
@@ -49,7 +49,7 @@ pub unsafe trait CKKSEncodingImpl<F: CKKSEncodingScalar>: Backend {
     /// rounded values outside the codec's signed integer range before writing
     /// the plaintext. Preserves the input coefficients and plaintext metadata,
     /// except that invariant modules mark the slots [`SlotsKind::Real`](crate::SlotsKind::Real).
-    fn ckks_encode_coeffs_into_impl<P>(
+    fn ckks_encode_coeffs_into<P>(
         module: &Module<Self>,
         pt: &mut P,
         coeffs: &CKKSEncodingBufferBackendRef<'_, Self, F>,
@@ -61,7 +61,7 @@ pub unsafe trait CKKSEncodingImpl<F: CKKSEncodingScalar>: Backend {
     ///
     /// Follows [`decode_coeffs_into_host`](crate::reference::encoding::decode_coeffs_into_host)
     /// and preserves the plaintext and its metadata.
-    fn ckks_decode_coeffs_into_impl<P>(
+    fn ckks_decode_coeffs_into<P>(
         module: &Module<Self>,
         pt: &P,
         coeffs: &mut CKKSEncodingBufferBackendMut<'_, Self, F>,
@@ -75,7 +75,7 @@ pub unsafe trait CKKSEncodingImpl<F: CKKSEncodingScalar>: Backend {
     ///
     /// Uses the ordering and normalization defined by
     /// [`EncodingPermutation`](crate::reference::encoding::EncodingPermutation).
-    fn ckks_slots_to_coeffs_assign_impl(
+    fn ckks_slots_to_coeffs_assign(
         module: &Module<Self>,
         plans: &Self::Plans,
         values: &mut CKKSEncodingBufferBackendMut<'_, Self, F>,
@@ -87,7 +87,7 @@ pub unsafe trait CKKSEncodingImpl<F: CKKSEncodingScalar>: Backend {
     ///
     /// Inverts the ordering and normalization defined by
     /// [`EncodingPermutation`](crate::reference::encoding::EncodingPermutation).
-    fn ckks_coeffs_to_slots_assign_impl(
+    fn ckks_coeffs_to_slots_assign(
         module: &Module<Self>,
         plans: &Self::Plans,
         values: &mut CKKSEncodingBufferBackendMut<'_, Self, F>,
@@ -95,7 +95,7 @@ pub unsafe trait CKKSEncodingImpl<F: CKKSEncodingScalar>: Backend {
 
     /// Destructive planar slots → plaintext: the slot transform, then the
     /// coefficient mapping of the ring's leading coefficients.
-    fn ckks_encode_slots_assign_into_impl<P, C>(module: &Module<Self>, pt: &mut P, slots: &mut C) -> Result<()>
+    fn ckks_encode_slots_assign_into<P, C>(module: &Module<Self>, pt: &mut P, slots: &mut C) -> Result<()>
     where
         P: CKKSPlaintextToBackendMut<Self> + IntPolyInfos + SetCKKSInfos,
         C: CKKSEncodingBufferToBackendMut<Self, F>,
@@ -105,7 +105,7 @@ pub unsafe trait CKKSEncodingImpl<F: CKKSEncodingScalar>: Backend {
 
     /// Plaintext → planar slots: the coefficient mapping into the ring's
     /// leading coefficients, then the coefficient transform.
-    fn ckks_decode_slots_into_impl<P, C>(module: &Module<Self>, pt: &P, slots: &mut C) -> Result<()>
+    fn ckks_decode_slots_into<P, C>(module: &Module<Self>, pt: &P, slots: &mut C) -> Result<()>
     where
         P: CKKSPlaintextToBackendRef<Self> + IntPolyInfos,
         C: CKKSEncodingBufferToBackendMut<Self, F>,

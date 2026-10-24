@@ -18,7 +18,7 @@ pub trait CKKSConjugateReference<BE: Backend> {
             .max(self.glwe_shift_tmp_bytes(ct_infos.max_size()))
     }
 
-    fn ckks_conjugate_into_reference<Dst, Src>(
+    fn ckks_conjugate_with_key_into_reference<Dst, Src>(
         &self,
         dst: &mut Dst,
         src: &Src,
@@ -51,7 +51,7 @@ pub trait CKKSConjugateReference<BE: Backend> {
         Ok(())
     }
 
-    fn ckks_conjugate_assign_reference<Dst>(
+    fn ckks_conjugate_with_key_assign_reference<Dst>(
         &self,
         dst: &mut Dst,
         key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,

@@ -44,7 +44,7 @@ where
     {
         validate_transform(2 * self.ckks_max_slots(), slots.len())?;
         validate_coefficients(self.max_n(), pt, slot_coeff_count(self, slots.len()))?;
-        BE::ckks_encode_slots_assign_into_impl(self, pt, slots)
+        BE::ckks_encode_slots_assign_into(self, pt, slots)
     }
 
     fn ckks_decode_slots_into<P, C>(&self, pt: &P, slots: &mut C) -> Result<()>
@@ -54,7 +54,7 @@ where
     {
         validate_transform(2 * self.ckks_max_slots(), slots.len())?;
         validate_coefficients(self.max_n(), pt, slot_coeff_count(self, slots.len()))?;
-        BE::ckks_decode_slots_into_impl(self, pt, slots)
+        BE::ckks_decode_slots_into(self, pt, slots)
     }
 
     fn ckks_encode_coeffs_into<P, C>(&self, pt: &mut P, coeffs: &C) -> Result<()>
@@ -63,7 +63,7 @@ where
         C: CKKSEncodingBufferToBackendRef<BE, F>,
     {
         validate_coefficients(self.max_n(), pt, coeffs.len())?;
-        BE::ckks_encode_coeffs_into_impl(self, pt, &coeffs.to_backend_ref())
+        BE::ckks_encode_coeffs_into(self, pt, &coeffs.to_backend_ref())
     }
 
     fn ckks_decode_coeffs_into<P, C>(&self, pt: &P, coeffs: &mut C) -> Result<()>
@@ -72,7 +72,7 @@ where
         C: CKKSEncodingBufferToBackendMut<BE, F>,
     {
         validate_coefficients(self.max_n(), pt, coeffs.len())?;
-        BE::ckks_decode_coeffs_into_impl(self, pt, &mut coeffs.to_backend_mut())
+        BE::ckks_decode_coeffs_into(self, pt, &mut coeffs.to_backend_mut())
     }
 
     fn ckks_slots_to_coeffs_assign<C>(&self, values: &mut C) -> Result<()>
@@ -81,9 +81,9 @@ where
     {
         validate_transform(2 * self.ckks_max_slots(), values.len())?;
         let mut values = values.to_backend_mut();
-        BE::ckks_encoding_plan_cache_impl(self).with_or_create::<CKKSEncodingPlanKey<F>, _, _>(
-            || BE::ckks_encoding_plans_create_impl(self).map_err(::anyhow::Error::from),
-            |plans| BE::ckks_slots_to_coeffs_assign_impl(self, plans, &mut values),
+        BE::ckks_encoding_plan_cache(self).with_or_create::<CKKSEncodingPlanKey<F>, _, _>(
+            || BE::ckks_encoding_plans_create(self).map_err(::anyhow::Error::from),
+            |plans| BE::ckks_slots_to_coeffs_assign(self, plans, &mut values),
         )?
     }
 
@@ -93,9 +93,9 @@ where
     {
         validate_transform(2 * self.ckks_max_slots(), values.len())?;
         let mut values = values.to_backend_mut();
-        BE::ckks_encoding_plan_cache_impl(self).with_or_create::<CKKSEncodingPlanKey<F>, _, _>(
-            || BE::ckks_encoding_plans_create_impl(self).map_err(::anyhow::Error::from),
-            |plans| BE::ckks_coeffs_to_slots_assign_impl(self, plans, &mut values),
+        BE::ckks_encoding_plan_cache(self).with_or_create::<CKKSEncodingPlanKey<F>, _, _>(
+            || BE::ckks_encoding_plans_create(self).map_err(::anyhow::Error::from),
+            |plans| BE::ckks_coeffs_to_slots_assign(self, plans, &mut values),
         )?
     }
 }

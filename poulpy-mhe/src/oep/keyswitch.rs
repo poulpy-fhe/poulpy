@@ -104,9 +104,10 @@ pub unsafe trait GLWEPublicKeyswitchMHEProtocolImpl: Backend {
         C: GLWEToBackendRef<Self> + GLWEInfos;
 }
 
-/// Selects the reference key switching shares and finalizations.
+/// Selects the reference private key switching share generation, aggregation
+/// and finalization.
 #[macro_export]
-macro_rules! impl_mhe_keyswitch_reference {
+macro_rules! impl_glwe_private_keyswitch_mhe_protocol_reference_full {
     ($be:ty) => {
         unsafe impl $crate::oep::GLWEPrivateKeyswitchMHEProtocolImpl for $be {
             fn mhe_glwe_private_keyswitch_share_gen_tmp_bytes<A>(module: &::poulpy_hal::layouts::Module<$be>, infos: &A) -> usize
@@ -154,7 +155,14 @@ macro_rules! impl_mhe_keyswitch_reference {
                 <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWEPrivateKeyswitchMHEProtocolReference<$be>>::mhe_glwe_private_keyswitch_share_finalize_reference(module, res, ct, share, scratch)
             }
         }
+    };
+}
 
+/// Selects the reference public key switching share generation, aggregation
+/// and finalization.
+#[macro_export]
+macro_rules! impl_glwe_public_keyswitch_mhe_protocol_reference_full {
+    ($be:ty) => {
         unsafe impl $crate::oep::GLWEPublicKeyswitchMHEProtocolImpl for $be {
             fn mhe_glwe_public_keyswitch_share_gen_tmp_bytes<A, B, P>(
                 module: &::poulpy_hal::layouts::Module<$be>,

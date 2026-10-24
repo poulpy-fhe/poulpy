@@ -84,17 +84,17 @@ where
     where
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        let required = BE::ckks_paco_coeff_encodings_tmp_bytes_impl::<F>(self, context.plan())?;
+        let required = BE::ckks_paco_coeff_encodings_tmp_bytes::<F>(self, context)?;
         ckks_ensure!(
             scratch.available() >= required,
             "PaCo coefficient encoding needs {required} scratch bytes, but only {} are available",
             scratch.available()
         );
-        BE::ckks_paco_coeff_encodings_impl::<F, Src>(self, ciphertext, context.plan(), context.base2k(), scratch)
+        BE::ckks_paco_coeff_encodings::<F, Src>(self, ciphertext, context, scratch)
     }
 
     fn ckks_paco_coeff_encodings_tmp_bytes(&self, context: &PaCoContext<BE, F>) -> Result<usize> {
-        BE::ckks_paco_coeff_encodings_tmp_bytes_impl::<F>(self, context.plan())
+        BE::ckks_paco_coeff_encodings_tmp_bytes::<F>(self, context)
     }
 
     fn ckks_paco_bootstrap_direct_into<K, Src>(

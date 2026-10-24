@@ -11,8 +11,8 @@ use crate::{CKKSCtBounds, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos};
 /// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
 /// associated method signatures.
 pub unsafe trait CKKSPow2Impl: Backend {
-    fn ckks_mul_pow2_tmp_bytes_impl(module: &Module<Self>, res_size: usize) -> usize;
-    fn ckks_mul_pow2_into_impl<Dst, Src>(
+    fn ckks_mul_pow2_tmp_bytes(module: &Module<Self>, res_size: usize) -> usize;
+    fn ckks_mul_pow2_into<Dst, Src>(
         module: &Module<Self>,
         dst: &mut Dst,
         src: &Src,
@@ -22,7 +22,7 @@ pub unsafe trait CKKSPow2Impl: Backend {
     where
         Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<Self> + GLWEInfos + CKKSCtBounds;
-    fn ckks_mul_pow2_assign_impl<Dst>(
+    fn ckks_mul_pow2_assign<Dst>(
         module: &Module<Self>,
         dst: &mut Dst,
         bits: usize,
@@ -30,7 +30,7 @@ pub unsafe trait CKKSPow2Impl: Backend {
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos;
-    fn ckks_double_into_impl<Dst, Src>(
+    fn ckks_double_into<Dst, Src>(
         module: &Module<Self>,
         dst: &mut Dst,
         src: &Src,
@@ -39,8 +39,8 @@ pub unsafe trait CKKSPow2Impl: Backend {
     where
         Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<Self> + GLWEInfos + CKKSCtBounds;
-    fn ckks_div_pow2_tmp_bytes_impl(module: &Module<Self>, res_size: usize) -> usize;
-    fn ckks_div_pow2_into_impl<Dst, Src>(
+    fn ckks_div_pow2_tmp_bytes(module: &Module<Self>, res_size: usize) -> usize;
+    fn ckks_div_pow2_into<Dst, Src>(
         module: &Module<Self>,
         dst: &mut Dst,
         src: &Src,
@@ -50,21 +50,21 @@ pub unsafe trait CKKSPow2Impl: Backend {
     where
         Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<Self> + GLWEInfos + CKKSCtBounds;
-    fn ckks_div_pow2_assign_impl<Dst>(module: &Module<Self>, dst: &mut Dst, bits: usize) -> Result<()>
+    fn ckks_div_pow2_assign<Dst>(module: &Module<Self>, dst: &mut Dst, bits: usize) -> Result<()>
     where
         Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos;
 }
 
-/// Implements this contract with the callable reference algorithms.
+/// Selects the reference implementation of `CKKSPow2Impl` for `$be`.
 #[macro_export]
-macro_rules! impl_ckks_pow2_reference {
+macro_rules! impl_ckks_pow2_reference_full {
     ($be:ty) => {
         unsafe impl $crate::oep::CKKSPow2Impl for $be {
-            fn ckks_mul_pow2_tmp_bytes_impl(module: &::poulpy_hal::layouts::Module<Self>, res_size: usize) -> usize {
+            fn ckks_mul_pow2_tmp_bytes(module: &::poulpy_hal::layouts::Module<Self>, res_size: usize) -> usize {
                 $crate::reference::pow2::CKKSPow2Reference::ckks_mul_pow2_tmp_bytes_reference(module, res_size)
             }
 
-            fn ckks_mul_pow2_into_impl<Dst, Src>(
+            fn ckks_mul_pow2_into<Dst, Src>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
                 src: &Src,
@@ -78,7 +78,7 @@ macro_rules! impl_ckks_pow2_reference {
                 $crate::reference::pow2::CKKSPow2Reference::ckks_mul_pow2_into_reference(module, dst, src, bits, scratch)
             }
 
-            fn ckks_mul_pow2_assign_impl<Dst>(
+            fn ckks_mul_pow2_assign<Dst>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
                 bits: usize,
@@ -90,7 +90,7 @@ macro_rules! impl_ckks_pow2_reference {
                 $crate::reference::pow2::CKKSPow2Reference::ckks_mul_pow2_assign_reference(module, dst, bits, scratch)
             }
 
-            fn ckks_double_into_impl<Dst, Src>(
+            fn ckks_double_into<Dst, Src>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
                 src: &Src,
@@ -103,11 +103,11 @@ macro_rules! impl_ckks_pow2_reference {
                 $crate::reference::pow2::CKKSPow2Reference::ckks_double_into_reference(module, dst, src, scratch)
             }
 
-            fn ckks_div_pow2_tmp_bytes_impl(module: &::poulpy_hal::layouts::Module<Self>, res_size: usize) -> usize {
+            fn ckks_div_pow2_tmp_bytes(module: &::poulpy_hal::layouts::Module<Self>, res_size: usize) -> usize {
                 $crate::reference::pow2::CKKSPow2Reference::ckks_div_pow2_tmp_bytes_reference(module, res_size)
             }
 
-            fn ckks_div_pow2_into_impl<Dst, Src>(
+            fn ckks_div_pow2_into<Dst, Src>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
                 src: &Src,
@@ -121,7 +121,7 @@ macro_rules! impl_ckks_pow2_reference {
                 $crate::reference::pow2::CKKSPow2Reference::ckks_div_pow2_into_reference(module, dst, src, bits, scratch)
             }
 
-            fn ckks_div_pow2_assign_impl<Dst>(
+            fn ckks_div_pow2_assign<Dst>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
                 bits: usize,
@@ -134,4 +134,4 @@ macro_rules! impl_ckks_pow2_reference {
         }
     };
 }
-pub use crate::impl_ckks_pow2_reference;
+pub use crate::impl_ckks_pow2_reference_full;

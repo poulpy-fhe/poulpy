@@ -465,31 +465,31 @@ where
         if functional {
             let luts = [lut.transfer_to(module)];
             let mut outs = vec![fixture_ciphertext(module, &out_layout, 97)];
-            let bytes = B::ckks_functional_bootstrap_tmp_bytes_impl(module, &outs[0], &ct_in, &ctx, &luts, &layout);
+            let bytes = B::ckks_functional_bootstrap_tmp_bytes(module, &outs[0], &ct_in, &ctx, &luts, &layout);
             let result = with_scratch::<B, _>(bytes, |scratch| {
-                B::ckks_functional_bootstrap_impl(module, &mut outs, &ct_in, &ctx, &luts, &keys, scratch)
+                B::ckks_functional_bootstrap(module, &mut outs, &ct_in, &ctx, &luts, &keys, scratch)
             });
             assert!(result.is_ok(), "{pipeline:?}: {result:?}");
             results.push((result.map_err(|e| e.to_string()), vec![snapshot::<B, _>(&outs[0])]));
             continue;
         }
-        let bytes = B::ckks_bootstrap_tmp_bytes_impl(module, &out_layout, &in_layout, &ctx, &layout);
+        let bytes = B::ckks_bootstrap_tmp_bytes(module, &out_layout, &in_layout, &ctx, &layout);
         let mut out = fixture_ciphertext(module, &out_layout, 97);
         let result = with_scratch::<B, _>(bytes, |scratch| {
-            B::ckks_bootstrap_impl(module, &mut out, &ct_in, &ctx, &keys, scratch)
+            B::ckks_bootstrap(module, &mut out, &ct_in, &ctx, &keys, scratch)
         });
         assert!(result.is_ok(), "{pipeline:?}: {result:?}");
         results.push((result.map_err(|e| e.to_string()), vec![snapshot::<B, _>(&out)]));
         if pipeline == BootstrappingPipeline::C2SFirst {
             let mut raised = fixture_ciphertext(module, &out_layout, 101);
-            let result = with_scratch::<B, _>(B::ckks_mod_up_tmp_bytes_impl(module, raised.size()), |scratch| {
-                B::ckks_mod_up_into_impl(module, &mut raised, &ct_in, plan.eval_mod(), scratch)
+            let result = with_scratch::<B, _>(B::ckks_mod_up_tmp_bytes(module, raised.size()), |scratch| {
+                B::ckks_mod_up_into(module, &mut raised, &ct_in, plan.eval_mod(), scratch)
             });
             assert!(result.is_ok(), "{pipeline:?}: {result:?}");
             results.push((result.map_err(|e| e.to_string()), vec![snapshot::<B, _>(&raised)]));
             let mut raised = fixture_ciphertext(module, &out_layout, 103);
             let result = with_scratch::<B, _>(bytes, |scratch| {
-                B::ckks_bootstrap_mod_up_impl(module, &mut raised, &ct_in, plan.eval_mod(), &keys, scratch)
+                B::ckks_bootstrap_mod_up(module, &mut raised, &ct_in, plan.eval_mod(), &keys, scratch)
             });
             assert!(result.is_ok(), "{pipeline:?}: {result:?}");
             results.push((result.map_err(|e| e.to_string()), vec![snapshot::<B, _>(&raised)]));

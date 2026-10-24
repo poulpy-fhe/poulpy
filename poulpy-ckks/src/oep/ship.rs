@@ -28,7 +28,7 @@ use crate::{
 /// the associated method signatures.
 pub unsafe trait CKKSShipCoeffEncodingImpl: Backend<Ring = Standard> {
     /// Backend-native arena bytes required by the coefficient encoding.
-    fn ckks_ship_coeff_encodings_tmp_bytes_impl<F>(
+    fn ckks_ship_coeff_encodings_tmp_bytes<F>(
         module: &Module<Self>,
         plan: &ShipPlan,
         base2k: Base2K,
@@ -42,7 +42,7 @@ pub unsafe trait CKKSShipCoeffEncodingImpl: Backend<Ring = Standard> {
     /// ciphertext's public coefficients. Implementations must preserve the
     /// plan's degree, radix, scales, and backend ownership, and must reject
     /// malformed ciphertext layouts before reading their limbs.
-    fn ckks_ship_coeff_encodings_impl<F, Src>(
+    fn ckks_ship_coeff_encodings<F, Src>(
         module: &Module<Self>,
         ct: &Src,
         plan: &ShipPlan,

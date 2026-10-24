@@ -24,7 +24,7 @@ pub unsafe trait CKKSPolynomialEvaluationImpl:
     + super::CKKSSubImpl
     + poulpy_core::oep::GLWENormalizeImpl
 {
-    fn ckks_eval_poly_real_const_coeffs_from_power_basis_impl<R, B, A, G, H>(
+    fn ckks_eval_poly_real_const_coeffs_from_power_basis<R, B, A, G, H>(
         module: &Module<Self>,
         res: &mut R,
         poly: &B,
@@ -40,7 +40,7 @@ pub unsafe trait CKKSPolynomialEvaluationImpl:
         G: PowerBasisHelper<Self, A>,
         H: GetTensorKey<Self>;
 
-    fn ckks_eval_poly_real_const_coeffs_impl<R, S, B, H>(
+    fn ckks_eval_poly_real_const_coeffs<R, S, B, H>(
         module: &Module<Self>,
         dst: &mut R,
         src: &S,
@@ -66,7 +66,7 @@ pub unsafe trait CKKSPolynomialEvaluationImpl:
 ///
 /// Same contract as [`CKKSPolynomialEvaluationImpl`].
 pub unsafe trait CKKSComplexPolynomialEvaluationImpl: CKKSPolynomialEvaluationImpl + super::CKKSImagImpl {
-    fn ckks_eval_poly_complex_const_coeffs_from_power_basis_impl<R, C, A, G, H>(
+    fn ckks_eval_poly_complex_const_coeffs_from_power_basis<R, C, A, G, H>(
         module: &Module<Self>,
         res: &mut R,
         poly: &ComplexBSGSPolynomial<C>,
@@ -81,7 +81,7 @@ pub unsafe trait CKKSComplexPolynomialEvaluationImpl: CKKSPolynomialEvaluationIm
         G: PowerBasisHelper<Self, A>,
         H: GetTensorKey<Self>;
 
-    fn ckks_eval_poly_complex_const_coeffs_impl<R, S, C, H>(
+    fn ckks_eval_poly_complex_const_coeffs<R, S, C, H>(
         module: &Module<Self>,
         dst: &mut R,
         src: &S,
@@ -102,11 +102,12 @@ pub unsafe trait CKKSComplexPolynomialEvaluationImpl: CKKSPolynomialEvaluationIm
     }
 }
 
+/// Selects the reference implementation of `CKKSPolynomialEvaluationImpl` for `$be`.
 #[macro_export]
-macro_rules! impl_ckks_polynomial_evaluation_reference {
+macro_rules! impl_ckks_polynomial_evaluation_reference_full {
     ($be:ty) => {
         unsafe impl $crate::oep::CKKSPolynomialEvaluationImpl for $be {
-            fn ckks_eval_poly_real_const_coeffs_from_power_basis_impl<R, B, A, G, H>(
+            fn ckks_eval_poly_real_const_coeffs_from_power_basis<R, B, A, G, H>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 res: &mut R,
                 poly: &B,
@@ -135,11 +136,12 @@ macro_rules! impl_ckks_polynomial_evaluation_reference {
     };
 }
 
+/// Selects the reference implementation of `CKKSComplexPolynomialEvaluationImpl` for `$be`.
 #[macro_export]
-macro_rules! impl_ckks_complex_polynomial_evaluation_reference {
+macro_rules! impl_ckks_complex_polynomial_evaluation_reference_full {
     ($be:ty) => {
         unsafe impl $crate::oep::CKKSComplexPolynomialEvaluationImpl for $be {
-            fn ckks_eval_poly_complex_const_coeffs_from_power_basis_impl<R, C, A, G, H>(
+            fn ckks_eval_poly_complex_const_coeffs_from_power_basis<R, C, A, G, H>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 res: &mut R,
                 poly: &$crate::polynomial::ComplexBSGSPolynomial<C>,
@@ -171,4 +173,4 @@ macro_rules! impl_ckks_complex_polynomial_evaluation_reference {
     };
 }
 
-pub use crate::{impl_ckks_complex_polynomial_evaluation_reference, impl_ckks_polynomial_evaluation_reference};
+pub use crate::{impl_ckks_complex_polynomial_evaluation_reference_full, impl_ckks_polynomial_evaluation_reference_full};

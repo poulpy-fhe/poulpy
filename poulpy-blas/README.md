@@ -124,7 +124,7 @@ again, then prepare them.
 
 poulpy-blas imports no backend. Backend crates select the reference compositions with
 `poulpy_blas::impl_blas_reference_full!(Backend)`. To override a family, a backend wires the other families with
-`impl_blas_inter_reference!`, `impl_blas_intra_reference!`, `impl_blas_matmul_reference!` or `impl_blas_jkls_reference!`
+`impl_blas_mat_inter_reference_full!`, `impl_blas_mat_intra_reference_full!`, `impl_blas_mat_mul_reference_full!` or `impl_blas_jkls_reference_full!`
 and implements that family's `oep` trait by hand, forwarding the methods it keeps to `reference`. `poulpy-cpu-oracle`
 and the CPU backends do so behind their `enable-blas` feature. A backend crate outside this workspace does the same for
 its own types. It takes `poulpy-hal`, `poulpy-core`, `poulpy-ckks` and `poulpy-blas` from one poulpy source, as direct

@@ -69,9 +69,9 @@ where
 macro_rules! impl_ckks_paco_coeff_encoding {
     ($be:ty) => {
         unsafe impl ::poulpy_ckks::oep::CKKSPaCoCoeffEncodingImpl for $be {
-            fn ckks_paco_coeff_encodings_tmp_bytes_impl<F>(
+            fn ckks_paco_coeff_encodings_tmp_bytes<F>(
                 _module: &::poulpy_hal::layouts::Module<$be>,
-                _plan: &::poulpy_ckks::layouts::PaCoPlan,
+                _context: &::poulpy_ckks::layouts::PaCoContext<$be, F>,
             ) -> ::poulpy_ckks::CKKSResult<usize>
             where
                 F: ::poulpy_ckks::api::PaCoScalar,
@@ -82,11 +82,10 @@ macro_rules! impl_ckks_paco_coeff_encoding {
                 Ok(0)
             }
 
-            fn ckks_paco_coeff_encodings_impl<F, Src>(
+            fn ckks_paco_coeff_encodings<F, Src>(
                 module: &::poulpy_hal::layouts::Module<$be>,
-                ct: &Src,
-                plan: &::poulpy_ckks::layouts::PaCoPlan,
-                base2k: ::poulpy_core::layouts::Base2K,
+                ciphertext: &Src,
+                context: &::poulpy_ckks::layouts::PaCoContext<$be, F>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) -> ::poulpy_ckks::CKKSResult<[::poulpy_ckks::layouts::CKKSPlaintextOwned<$be>; 4]>
             where
@@ -94,8 +93,14 @@ macro_rules! impl_ckks_paco_coeff_encoding {
                 $be: ::poulpy_ckks::oep::CKKSEncodingImpl<F>,
                 Src: ::poulpy_core::layouts::GLWEToBackendRef<$be> + ::poulpy_ckks::CKKSCtBounds,
             {
-                $crate::ckks_paco::paco_coeff_encodings_staged::<$be, F, Src>(module, ct, plan, base2k, scratch)
-                    .map_err(::poulpy_ckks::CKKSError::from)
+                $crate::ckks_paco::paco_coeff_encodings_staged::<$be, F, Src>(
+                    module,
+                    ciphertext,
+                    context.plan(),
+                    context.base2k(),
+                    scratch,
+                )
+                .map_err(::poulpy_ckks::CKKSError::from)
             }
         }
     };

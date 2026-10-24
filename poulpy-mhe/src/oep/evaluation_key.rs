@@ -102,10 +102,10 @@ pub unsafe trait GLWEAutomorphismKeyMHEProtocolImpl: GGLWEPatCompressedImpl {
     }
 }
 
-/// Selects the reference share generation; aggregation and finalization keep
-/// their derived defaults.
+/// Selects the reference switching key share generation; aggregation and
+/// finalization keep their derived defaults.
 #[macro_export]
-macro_rules! impl_mhe_evaluation_key_reference {
+macro_rules! impl_glwe_switching_key_mhe_protocol_reference_full {
     ($be:ty) => {
         unsafe impl $crate::oep::GLWESwitchingKeyMHEProtocolImpl for $be {
             fn mhe_glwe_switching_key_share_gen_tmp_bytes<A>(module: &::poulpy_hal::layouts::Module<$be>, infos: &A) -> usize
@@ -132,7 +132,14 @@ macro_rules! impl_mhe_evaluation_key_reference {
                 <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWESwitchingKeyMHEProtocolReference<$be>>::mhe_glwe_switching_key_share_gen_reference(module, res, sk_in, sk_out, seed, source_xe, scratch)
             }
         }
+    };
+}
 
+/// Selects the reference automorphism key share generation; aggregation and
+/// finalization keep their derived defaults.
+#[macro_export]
+macro_rules! impl_glwe_automorphism_key_mhe_protocol_reference_full {
+    ($be:ty) => {
         unsafe impl $crate::oep::GLWEAutomorphismKeyMHEProtocolImpl for $be {
             fn mhe_glwe_automorphism_key_share_gen_tmp_bytes<A>(module: &::poulpy_hal::layouts::Module<$be>, infos: &A) -> usize
             where

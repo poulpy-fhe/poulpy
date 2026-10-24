@@ -744,11 +744,9 @@ pub unsafe trait GLWEPackImpl: GLWETraceImpl + GLWERotateImpl + GLWESubImpl + GL
     }
 }
 
-/// Implements the canonical Core tensoring operation for a backend.
-///
-/// Explicit opt-in lets optimized backends dispatch to specialized kernels.
+/// Selects the reference implementation of `GLWETensoringImpl` for `$be`.
 #[macro_export]
-macro_rules! impl_glwe_tensoring_reference {
+macro_rules! impl_glwe_tensoring_reference_full {
     ($be:ty) => {
         unsafe impl $crate::oep::GLWETensoringImpl for $be {
             fn glwe_tensor_apply_prepared_right_tmp_bytes<R, A>(
@@ -1146,7 +1144,7 @@ macro_rules! impl_glwe_trace_derived_full {
 
 /// Selects the core-derived packing defaults.
 #[macro_export]
-macro_rules! impl_glwe_packing_derived_full {
+macro_rules! impl_glwe_pack_derived_full {
     ($be:ty) => {
         unsafe impl $crate::oep::GLWEPackImpl for $be {}
     };

@@ -14,7 +14,7 @@ impl<BE: Backend + CKKSEvalModImpl> CKKSEvalModOps<BE> for Module<BE> {
         P: CKKSCtBounds,
         T: GGLWEInfos,
     {
-        BE::ckks_eval_mod_tmp_bytes_impl(self, res, ct, params, tsk)
+        BE::ckks_eval_mod_tmp_bytes(self, res, ct, params, tsk)
     }
 
     fn ckks_eval_mod<R, C, P, F, H>(
@@ -31,6 +31,6 @@ impl<BE: Backend + CKKSEvalModImpl> CKKSEvalModOps<BE> for Module<BE> {
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
         H: GetTensorKey<BE>,
     {
-        BE::ckks_eval_mod_impl::<R, C, P, F, H>(self, res, ct, params, tsk, scratch)
+        BE::ckks_eval_mod::<R, C, P, F, H>(self, res, ct, params, tsk, scratch)
     }
 }

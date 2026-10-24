@@ -61,9 +61,9 @@ pub unsafe trait GGLWEProductDigitsStridedImpl: Backend {
     );
 }
 
-/// keyswitch can still dispatch through that implementation.
+/// Selects the reference implementation of `GGLWEProductDigitsStridedImpl` for `$be`.
 #[macro_export]
-macro_rules! impl_gglwe_product_digits_strided_reference {
+macro_rules! impl_gglwe_product_digits_strided_reference_full {
     ($be:ty) => {
         unsafe impl $crate::oep::GGLWEProductDigitsStridedImpl for $be {
             fn gglwe_product_digits_strided_tmp_bytes(

@@ -63,7 +63,7 @@ The libquadmath backing, independent tests and the comparison benchmark explicit
 
 The public API is available when the crate is imported. Backend crates select
 implementations by explicitly implementing the corresponding `oep::*Impl`
-contracts, usually through the `impl_ckks_*_reference!` macros.
+contracts, usually through the `impl_<family>_reference_full!` opt-in macros.
 
 ```sh
 cargo test -p poulpy-ckks

@@ -9,7 +9,7 @@ use crate::{CKKSCtBounds, SetCKKSInfos, layouts::eval_mod::EvalMod};
 /// Backend override hook for [`CKKSEvalModOps`](crate::api::CKKSEvalModOps).
 ///
 /// Evaluation and scratch sizing are independently selected backend methods.
-/// [`impl_ckks_eval_mod_reference`] wires both to the callable reference circuit.
+/// [`impl_ckks_eval_mod_reference_full`] wires both to the callable reference circuit.
 ///
 /// # Safety
 ///
@@ -17,13 +17,7 @@ use crate::{CKKSCtBounds, SetCKKSInfos, layouts::eval_mod::EvalMod};
 /// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
 /// associated method signatures.
 pub unsafe trait CKKSEvalModImpl: Backend {
-    fn ckks_eval_mod_tmp_bytes_impl<R, C, P, F, T>(
-        module: &Module<Self>,
-        res: &R,
-        ct: &C,
-        params: &EvalMod<F, P>,
-        tsk: &T,
-    ) -> usize
+    fn ckks_eval_mod_tmp_bytes<R, C, P, F, T>(module: &Module<Self>, res: &R, ct: &C, params: &EvalMod<F, P>, tsk: &T) -> usize
     where
         R: CKKSCtBounds,
         C: CKKSCtBounds,
@@ -31,7 +25,7 @@ pub unsafe trait CKKSEvalModImpl: Backend {
         T: poulpy_core::layouts::GGLWEInfos;
 
     /// See [`CKKSEvalModOps::ckks_eval_mod`](crate::api::CKKSEvalModOps::ckks_eval_mod).
-    fn ckks_eval_mod_impl<R, C, P, F, H>(
+    fn ckks_eval_mod<R, C, P, F, H>(
         module: &Module<Self>,
         res: &mut R,
         ct: &C,
@@ -46,11 +40,12 @@ pub unsafe trait CKKSEvalModImpl: Backend {
         H: GetTensorKey<Self>;
 }
 
+/// Selects the reference implementation of `CKKSEvalModImpl` for `$be`.
 #[macro_export]
-macro_rules! impl_ckks_eval_mod_reference {
+macro_rules! impl_ckks_eval_mod_reference_full {
     ($be:ty) => {
         unsafe impl $crate::oep::CKKSEvalModImpl for $be {
-            fn ckks_eval_mod_tmp_bytes_impl<R, C, P, F, T>(
+            fn ckks_eval_mod_tmp_bytes<R, C, P, F, T>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 res: &R,
                 ct: &C,
@@ -65,7 +60,7 @@ macro_rules! impl_ckks_eval_mod_reference {
             {
                 $crate::reference::eval_mod::ckks_eval_mod_tmp_bytes_reference(module, res, ct, params, tsk)
             }
-            fn ckks_eval_mod_impl<R, C, P, F, H>(
+            fn ckks_eval_mod<R, C, P, F, H>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 res: &mut R,
                 ct: &C,
@@ -93,4 +88,4 @@ macro_rules! impl_ckks_eval_mod_reference {
         }
     };
 }
-pub use crate::impl_ckks_eval_mod_reference;
+pub use crate::impl_ckks_eval_mod_reference_full;

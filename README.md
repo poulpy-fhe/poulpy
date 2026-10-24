@@ -99,7 +99,7 @@ bootstrap another.
 1. Define a backend struct and implement the `Backend` trait from `poulpy-hal`.
 2. Implement each required HAL OEP method and inherit or override its derived defaults.
 3. Implement the core `*Impl` traits, or use family macros to select reference algorithms and derived defaults.
-4. Optionally, do the same for `poulpy-ckks` using the `impl_ckks_*_reference!` macros or direct OEP trait implementations.
+4. Optionally, do the same for `poulpy-ckks` using its opt-in macros (`impl_<family>_reference_full!`) or direct OEP trait implementations.
 5. Optionally, do the same for `poulpy-blas` using `impl_blas_reference_full!`, its per-family macros or direct OEP trait implementations; see [implementing BLAS operations](poulpy-blas/docs/blas-contracts.md).
 
 A family macro and a handwritten implementation of the same trait are mutually

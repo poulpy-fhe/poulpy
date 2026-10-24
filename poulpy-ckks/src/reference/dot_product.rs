@@ -21,7 +21,7 @@ use crate::{
 };
 
 /// The reference algorithms of [`CKKSDotProductImpl`](crate::oep::CKKSDotProductImpl), which
-/// `impl_ckks_dot_product_reference!` forwards to and an override can call for the methods it keeps.
+/// `impl_ckks_dot_product_reference_full!` forwards to and an override can call for the methods it keeps.
 pub trait CKKSDotProductReference<BE: Backend>: Sized {
     fn ckks_dot_product_ct_tmp_bytes_reference<R, A, B, T>(&self, n: usize, res: &R, a: &A, b: &B, tsk: &T) -> usize
     where

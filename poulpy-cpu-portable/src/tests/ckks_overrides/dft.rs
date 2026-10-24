@@ -247,7 +247,7 @@ thread_local! {
     static REPACK_CALLS: Cell<usize> = const { Cell::new(0) };
 }
 unsafe impl poulpy_ckks::oep::DFTImpl for OverrideBackend {
-    fn ckks_prepare_dft_matrix_tmp_bytes_impl<Dir, Fmt, P>(
+    fn ckks_prepare_dft_matrix_tmp_bytes<Dir, Fmt, P>(
         module: &Module<Self>,
         dft: &DFTMatrix<Self, Dir, Fmt, LinearTransformation<P>>,
     ) -> usize
@@ -257,7 +257,7 @@ unsafe impl poulpy_ckks::oep::DFTImpl for OverrideBackend {
         DFT_PREPARE_SCRATCH + poulpy_ckks::reference::dft::ckks_prepare_dft_matrix_tmp_bytes(module, dft)
     }
 
-    fn ckks_dft_tmp_bytes_impl<Dir, Fmt, P, Dst, Src, K>(
+    fn ckks_dft_tmp_bytes<Dir, Fmt, P, Dst, Src, K>(
         module: &Module<Self>,
         dst: &Dst,
         src: &Src,
@@ -276,7 +276,7 @@ unsafe impl poulpy_ckks::oep::DFTImpl for OverrideBackend {
         poulpy_ckks::reference::dft::ckks_dft_tmp_bytes(module, dst, src, dft, key) + DFT_EXTRA_SCRATCH
     }
 
-    fn ckks_prepare_dft_matrix_impl<Dir, Fmt, P>(
+    fn ckks_prepare_dft_matrix<Dir, Fmt, P>(
         module: &Module<Self>,
         dft: &DFTMatrix<Self, Dir, Fmt, LinearTransformation<P>>,
         scratch: &mut ScratchArena<'_, Self>,
@@ -291,7 +291,7 @@ unsafe impl poulpy_ckks::oep::DFTImpl for OverrideBackend {
         prepared
     }
 
-    fn ckks_dft_evaluate_assign_impl<Dir, Fmt, P, Dst, H>(
+    fn ckks_dft_evaluate_assign<Dir, Fmt, P, Dst, H>(
         module: &Module<Self>,
         ct: &mut Dst,
         dft: &DFTMatrix<Self, Dir, Fmt, LinearTransformation<P>>,
@@ -310,7 +310,7 @@ unsafe impl poulpy_ckks::oep::DFTImpl for OverrideBackend {
         Err(anyhow::anyhow!("DFT override probe").into())
     }
 
-    fn ckks_slots_to_coeffs_repack_impl<P, Dst, Src, H>(
+    fn ckks_slots_to_coeffs_repack<P, Dst, Src, H>(
         module: &Module<Self>,
         op_out: &mut Dst,
         ct_in: &Src,
@@ -392,13 +392,13 @@ impl<F: poulpy_ckks::api::CKKSEncodingScalar> crate::ckks_encoding::CKKSEncoding
     type Fft = crate::ckks_encoding::EncodingFFTTable<F>;
 }
 crate::impl_ckks_encoding!(OverrideBackend);
-poulpy_ckks::impl_ckks_encapsulated_mod_up_reference!(OverrideBackend);
-poulpy_ckks::impl_ckks_mod_up_first_factor_reference!(OverrideBackend);
-poulpy_ckks::impl_ckks_bootstrapping_reference!(OverrideBackend);
+poulpy_ckks::impl_ckks_encapsulated_mod_up_reference_full!(OverrideBackend);
+poulpy_ckks::impl_ckks_mod_up_first_factor_reference_full!(OverrideBackend);
+poulpy_ckks::impl_ckks_bootstrapping_reference_full!(OverrideBackend);
 unsafe impl<F: poulpy_ckks::api::CKKSEncodingScalar + poulpy_ckks::reference::dft::DftScalar> poulpy_ckks::oep::DFTMatrixImpl<F>
     for OverrideBackend
 {
-    fn ckks_new_dft_matrix_impl<Dir: poulpy_ckks::layouts::DftDirection, Fmt: poulpy_ckks::layouts::DftFormat>(
+    fn ckks_new_dft_matrix<Dir: poulpy_ckks::layouts::DftDirection, Fmt: poulpy_ckks::layouts::DftFormat>(
         module: &Module<Self>,
         base2k: poulpy_core::layouts::Base2K,
         plan: &DFTPlan,

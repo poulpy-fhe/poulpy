@@ -9,14 +9,14 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 use super::derived;
 use crate::layouts::{BlasContext, BlasGrid, BlasGridInfos, BlasGridMut};
 
-/// Extension point of [`crate::api::BlasMatIntraOps`]: the map hook [`Self::blas_map_blocks_impl`] and its query are
+/// Extension point of [`crate::api::BlasMatIntraOps`]: the map hook [`Self::blas_map_blocks`] and its query are
 /// required, and the transpose and both shifts are provided over the hook, poulpy-ckks's copy and its addition.
 ///
 /// # Safety
 ///
 /// The memory, layout and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 ///
-/// **The hook.** [`Self::blas_map_blocks_impl`] reproduces
+/// **The hook.** [`Self::blas_map_blocks`] reproduces
 /// [`BlasMatIntraReference::blas_map_blocks_reference`](crate::reference::BlasMatIntraReference::blas_map_blocks_reference)
 /// bit for bit, digits and CKKS metadata: block `t * lts.len() + m` of `dst` receives `lts[m]` evaluated from `src[t]`
 /// by poulpy-ckks's `ckks_eval_linear_transformation_into`, then the label (`log_sparsity`) of `src[t]`. It is called
@@ -24,7 +24,7 @@ use crate::layouts::{BlasContext, BlasGrid, BlasGridInfos, BlasGridMut};
 /// of `src` another, on inputs the calling operation's validator accepted. It looks up the keys of a map at the widths
 /// that evaluation does: the baby steps at the width of `src`, the giant steps at `src`'s width less the map's scale
 /// (`0` for [`BlasContext::rotate_rows_rep`]), capped at `dst`'s. Within the scratch
-/// [`Self::blas_map_blocks_tmp_bytes_impl`] reports for the layouts of `dst` and `src`, at their widths whatever their
+/// [`Self::blas_map_blocks_tmp_bytes`] reports for the layouts of `dst` and `src`, at their widths whatever their
 /// allocations, `src.len()`, `lts` and every key it looks up, it returns `Ok`, or poulpy-ckks's budget error before any
 /// write to `dst`; with less scratch it panics before any write, as the reference does when it looks up a key.
 ///
@@ -49,7 +49,7 @@ use crate::layouts::{BlasContext, BlasGrid, BlasGridInfos, BlasGridMut};
 /// slot kind joined with `Real`, and no noise tag; it is canonical, except after the two half maps, whose addition
 /// leaves it unnormalized. A copy (`k' = 0`) has width `min(res.k, a.k)` and `a`'s metadata, as `ckks_copy` gives.
 ///
-/// The shift maps are `Direct`, as the plan records. Each method returns `Ok` within the scratch its `_tmp_bytes_impl`
+/// The shift maps are `Direct`, as the plan records. Each method returns `Ok` within the scratch its `_tmp_bytes`
 /// reports, or poulpy-ckks's budget error before any write to `res`, and panics before any write with less scratch when
 /// it looks up a key. The provided shifts hold two heap blocks per block of `a`, across both half maps; an override may
 /// chunk them.
@@ -60,9 +60,9 @@ use crate::layouts::{BlasContext, BlasGrid, BlasGridInfos, BlasGridMut};
 /// ([`crate::layouts::BlasGridMut::set_mat_slots`]), as the provided methods do. Any other `Err` but the budget error
 /// is a backend fault (a validator gap or a device failure), and `res` is then unspecified.
 pub unsafe trait BlasMatIntraImpl: Backend + CKKSCopyImpl + CKKSAddImpl {
-    /// Scratch bytes of [`Self::blas_map_blocks_impl`] from `sources` blocks of layout `src` into blocks of layout `dst`
+    /// Scratch bytes of [`Self::blas_map_blocks`] from `sources` blocks of layout `src` into blocks of layout `dst`
     /// through `lts`, with rotation keys of layout `atk`.
-    fn blas_map_blocks_tmp_bytes_impl<D, S, K>(
+    fn blas_map_blocks_tmp_bytes<D, S, K>(
         module: &Module<Self>,
         dst: &D,
         src: &S,
@@ -77,7 +77,7 @@ pub unsafe trait BlasMatIntraImpl: Backend + CKKSCopyImpl + CKKSAddImpl {
 
     /// The map hook: `dst[t * lts.len() + m] = lts[m](src[t])`, stamped with the label of `src[t]`, in any order. See the
     /// trait's `# Safety`.
-    fn blas_map_blocks_impl<D, S, K>(
+    fn blas_map_blocks<D, S, K>(
         module: &Module<Self>,
         dst: &mut [D],
         src: &[&S],
@@ -90,7 +90,7 @@ pub unsafe trait BlasMatIntraImpl: Backend + CKKSCopyImpl + CKKSAddImpl {
         S: GLWEToBackendRef<Self> + CKKSCtBounds + Sync,
         K: GetAutomorphismKey<Self> + Sync;
 
-    fn blas_transpose_tmp_bytes_impl<R, A, K>(module: &Module<Self>, res: &R, a: &A, ctx: &BlasContext<Self>, atk: &K) -> usize
+    fn blas_transpose_tmp_bytes<R, A, K>(module: &Module<Self>, res: &R, a: &A, ctx: &BlasContext<Self>, atk: &K) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
@@ -99,7 +99,7 @@ pub unsafe trait BlasMatIntraImpl: Backend + CKKSCopyImpl + CKKSAddImpl {
         derived::blas_transpose_tmp_bytes_derived(module, res, a, ctx, atk)
     }
 
-    fn blas_transpose_impl<R, A, K>(
+    fn blas_transpose<R, A, K>(
         module: &Module<Self>,
         res: &mut R,
         a: &A,
@@ -115,7 +115,7 @@ pub unsafe trait BlasMatIntraImpl: Backend + CKKSCopyImpl + CKKSAddImpl {
         derived::blas_transpose_derived(module, res, a, ctx, atk, scratch)
     }
 
-    fn blas_rotate_rows_tmp_bytes_impl<R, A, K>(module: &Module<Self>, res: &R, a: &A, ctx: &BlasContext<Self>, atk: &K) -> usize
+    fn blas_rotate_rows_tmp_bytes<R, A, K>(module: &Module<Self>, res: &R, a: &A, ctx: &BlasContext<Self>, atk: &K) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
@@ -124,7 +124,7 @@ pub unsafe trait BlasMatIntraImpl: Backend + CKKSCopyImpl + CKKSAddImpl {
         derived::blas_rotate_rows_tmp_bytes_derived(module, res, a, ctx, atk)
     }
 
-    fn blas_rotate_rows_impl<R, A, K>(
+    fn blas_rotate_rows<R, A, K>(
         module: &Module<Self>,
         res: &mut R,
         a: &A,
@@ -141,7 +141,7 @@ pub unsafe trait BlasMatIntraImpl: Backend + CKKSCopyImpl + CKKSAddImpl {
         derived::blas_rotate_rows_derived(module, res, a, k, ctx, atk, scratch)
     }
 
-    fn blas_rotate_cols_tmp_bytes_impl<R, A, K>(module: &Module<Self>, res: &R, a: &A, ctx: &BlasContext<Self>, atk: &K) -> usize
+    fn blas_rotate_cols_tmp_bytes<R, A, K>(module: &Module<Self>, res: &R, a: &A, ctx: &BlasContext<Self>, atk: &K) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
@@ -150,7 +150,7 @@ pub unsafe trait BlasMatIntraImpl: Backend + CKKSCopyImpl + CKKSAddImpl {
         derived::blas_rotate_cols_tmp_bytes_derived(module, res, a, ctx, atk)
     }
 
-    fn blas_rotate_cols_impl<R, A, K>(
+    fn blas_rotate_cols<R, A, K>(
         module: &Module<Self>,
         res: &mut R,
         a: &A,
@@ -171,10 +171,10 @@ pub unsafe trait BlasMatIntraImpl: Backend + CKKSCopyImpl + CKKSAddImpl {
 /// Selects [`BlasMatIntraReference`](crate::reference::BlasMatIntraReference) for `$be`: the map hook and its query,
 /// under the provided transpose and shifts.
 #[macro_export]
-macro_rules! impl_blas_intra_reference {
+macro_rules! impl_blas_mat_intra_reference_full {
     ($be:ty) => {
         unsafe impl $crate::oep::BlasMatIntraImpl for $be {
-            fn blas_map_blocks_tmp_bytes_impl<D, S, K>(
+            fn blas_map_blocks_tmp_bytes<D, S, K>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &D,
                 src: &S,
@@ -190,7 +190,7 @@ macro_rules! impl_blas_intra_reference {
                 $crate::reference::BlasMatIntraReference::blas_map_blocks_tmp_bytes_reference(module, dst, src, sources, lts, atk)
             }
 
-            fn blas_map_blocks_impl<D, S, K>(
+            fn blas_map_blocks<D, S, K>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut [D],
                 src: &[&S],

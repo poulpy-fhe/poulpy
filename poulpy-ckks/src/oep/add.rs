@@ -12,4 +12,4 @@ ckks_carry_verb_oep! {
     dollar: $,
 }
 
-pub use impl_ckks_add_reference;
+pub use impl_ckks_add_reference_full;

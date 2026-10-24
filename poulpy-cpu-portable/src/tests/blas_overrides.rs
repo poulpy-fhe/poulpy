@@ -61,11 +61,11 @@ fn calls() -> (usize, usize) {
     (MAP_CALLS.load(Relaxed), JKLS_CALLS.load(Relaxed))
 }
 
-poulpy_blas::impl_blas_inter_reference!(OverrideBackend);
-poulpy_blas::impl_blas_matmul_reference!(OverrideBackend);
+poulpy_blas::impl_blas_mat_inter_reference_full!(OverrideBackend);
+poulpy_blas::impl_blas_mat_mul_reference_full!(OverrideBackend);
 
 unsafe impl BlasMatIntraImpl for OverrideBackend {
-    fn blas_map_blocks_tmp_bytes_impl<D, S, K>(
+    fn blas_map_blocks_tmp_bytes<D, S, K>(
         module: &Module<Self>,
         dst: &D,
         src: &S,
@@ -81,7 +81,7 @@ unsafe impl BlasMatIntraImpl for OverrideBackend {
         module.blas_map_blocks_tmp_bytes_reference(dst, src, sources, lts, atk)
     }
 
-    fn blas_map_blocks_impl<D, S, K>(
+    fn blas_map_blocks<D, S, K>(
         module: &Module<Self>,
         dst: &mut [D],
         src: &[&S],
@@ -100,14 +100,7 @@ unsafe impl BlasMatIntraImpl for OverrideBackend {
 }
 
 unsafe impl BlasJklsImpl for OverrideBackend {
-    fn blas_jkls_block_tmp_bytes_impl<R, L, Rh, T>(
-        module: &Module<Self>,
-        res: &R,
-        lhs: &L,
-        rhs: &Rh,
-        terms: usize,
-        tsk: &T,
-    ) -> usize
+    fn blas_jkls_block_tmp_bytes<R, L, Rh, T>(module: &Module<Self>, res: &R, lhs: &L, rhs: &Rh, terms: usize, tsk: &T) -> usize
     where
         R: CKKSCtBounds,
         L: CKKSCtBounds,
@@ -117,7 +110,7 @@ unsafe impl BlasJklsImpl for OverrideBackend {
         module.blas_jkls_block_tmp_bytes_reference(res, lhs, rhs, terms, tsk)
     }
 
-    fn blas_jkls_block_impl<R, T>(
+    fn blas_jkls_block<R, T>(
         module: &Module<Self>,
         res: &mut R,
         lhs: &[&CKKSPreparedLeft<Self>],
