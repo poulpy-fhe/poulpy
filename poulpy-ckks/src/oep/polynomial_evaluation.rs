@@ -12,10 +12,12 @@ use crate::{
     polynomial::ComplexBSGSPolynomial,
 };
 
-/// # Safety
+/// Backend contract of [`CKKSPolynomialEvaluationOps`](crate::api::CKKSPolynomialEvaluationOps).
 ///
-/// Implementations must satisfy the contracts of the polynomial-evaluation
-/// API, including the invariants of the underlying add/mul/copy kernels.
+/// # Safety
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait CKKSPolynomialEvaluationImpl:
     Backend
     + super::CKKSCopyImpl
@@ -24,6 +26,9 @@ pub unsafe trait CKKSPolynomialEvaluationImpl:
     + super::CKKSSubImpl
     + poulpy_core::oep::GLWENormalizeImpl
 {
+    /// Reproduces
+    /// [`ckks_eval_poly_real_const_coeffs_from_power_basis_reference`](crate::reference::polynomial_evaluation::PolynomialEvaluationReference::ckks_eval_poly_real_const_coeffs_from_power_basis_reference)
+    /// bit for bit; free in kernels and scratch use. No `_tmp_bytes` query bounds it.
     fn ckks_eval_poly_real_const_coeffs_from_power_basis<R, B, A, G, H>(
         module: &Module<Self>,
         res: &mut R,
@@ -40,6 +45,12 @@ pub unsafe trait CKKSPolynomialEvaluationImpl:
         G: PowerBasisHelper<Self, A>,
         H: GetTensorKey<Self>;
 
+    /// Default body: `ckks_eval_poly_real_const_coeffs_derived`, the folded input of the polynomial's input transform
+    /// (an allocated copy through `ckks_copy` for the identity, `ckks_square_into` for the square forms,
+    /// `ckks_square_into`, `ckks_double_into` and `ckks_sub_one_assign` for the Chebyshev `T2` forms), a power basis of
+    /// it populated to the polynomial's degree, log split and parity through the selected operations, then
+    /// [`Self::ckks_eval_poly_real_const_coeffs_from_power_basis`]. The two times-input transforms end with
+    /// `ckks_mul_assign` of `dst` by `src`.
     fn ckks_eval_poly_real_const_coeffs<R, S, B, H>(
         module: &Module<Self>,
         dst: &mut R,
@@ -60,12 +71,17 @@ pub unsafe trait CKKSPolynomialEvaluationImpl:
     }
 }
 
-/// Complex-coefficient polynomial evaluation (`re + i·im`), standard ring only.
+/// Backend contract of [`CKKSComplexPolynomialEvaluationOps`](crate::api::CKKSComplexPolynomialEvaluationOps):
+/// complex-coefficient polynomial evaluation (`re + i·im`), standard ring only.
 ///
 /// # Safety
-///
-/// Same contract as [`CKKSPolynomialEvaluationImpl`].
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait CKKSComplexPolynomialEvaluationImpl: CKKSPolynomialEvaluationImpl + super::CKKSImagImpl {
+    /// Reproduces
+    /// [`ckks_eval_poly_complex_const_coeffs_from_power_basis_reference`](crate::reference::polynomial_evaluation::PolynomialEvaluationReference::ckks_eval_poly_complex_const_coeffs_from_power_basis_reference)
+    /// bit for bit; free in kernels and scratch use. No `_tmp_bytes` query bounds it.
     fn ckks_eval_poly_complex_const_coeffs_from_power_basis<R, C, A, G, H>(
         module: &Module<Self>,
         res: &mut R,
@@ -81,6 +97,13 @@ pub unsafe trait CKKSComplexPolynomialEvaluationImpl: CKKSPolynomialEvaluationIm
         G: PowerBasisHelper<Self, A>,
         H: GetTensorKey<Self>;
 
+    /// Default body: `ckks_eval_poly_complex_const_coeffs_derived`. Real and imaginary parts with different input
+    /// transforms are a refusal. Then the folded input of the polynomial's input transform (an allocated copy through
+    /// `ckks_copy` for the identity, `ckks_square_into` for the square forms, `ckks_square_into`, `ckks_double_into`
+    /// and `ckks_sub_one_assign` for the Chebyshev `T2` forms), a power basis of it populated to the polynomial's
+    /// degree, log split and parity through the selected operations, taken from the real part, then
+    /// [`Self::ckks_eval_poly_complex_const_coeffs_from_power_basis`]. The two times-input transforms end with
+    /// `ckks_mul_assign` of `dst` by `src`.
     fn ckks_eval_poly_complex_const_coeffs<R, S, C, H>(
         module: &Module<Self>,
         dst: &mut R,

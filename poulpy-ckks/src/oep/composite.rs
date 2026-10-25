@@ -25,12 +25,13 @@ use crate::{
 /// override reproduces it bit for bit within its own query.
 ///
 /// # Safety
-///
-/// Implementations uphold `poulpy-hal/docs/backend_safety_contract.md` for every
-/// operand and scratch region they touch.
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait CKKSAddManyImpl: Backend + CKKSAddImpl + CKKSCopyImpl {
-    /// Scratch of [`Self::ckks_add_many`]: the larger of the selected `ckks_add_tmp_bytes` at
-    /// `res` and `ckks_copy_tmp_bytes` from `input` to `res`.
+    /// Default body: `ckks_add_many_tmp_bytes_derived`, the larger of the selected `ckks_add_tmp_bytes` at
+    /// `res.max_size()` and the selected `ckks_copy_tmp_bytes` from `input` to `res`, the copy serving a single input.
+    /// Scratch bound of [`Self::ckks_add_many`]; may report less than the reference, never less than the body takes.
     fn ckks_add_many_tmp_bytes<R, A>(module: &Module<Self>, res: &R, input: &A) -> usize
     where
         R: CKKSCtBounds,
@@ -39,8 +40,9 @@ pub unsafe trait CKKSAddManyImpl: Backend + CKKSAddImpl + CKKSCopyImpl {
         ckks_add_many_tmp_bytes_derived(module, res, input)
     }
 
-    /// `ckks_copy` of a single input, else `ckks_add_into` of the first two inputs
-    /// then `ckks_add_assign` of each later one, the noise record cleared.
+    /// Default body: `ckks_add_many_derived`. No input is a refusal. One input is the selected `ckks_copy`. Two or more
+    /// are `ckks_add_into` of the first two inputs, then `ckks_add_assign` of each later one. The noise record is
+    /// cleared in every case.
     fn ckks_add_many<Dst, Src>(
         module: &Module<Self>,
         dst: &mut Dst,
@@ -62,11 +64,13 @@ pub unsafe trait CKKSAddManyImpl: Backend + CKKSAddImpl + CKKSCopyImpl {
 /// its own query.
 ///
 /// # Safety
-///
-/// Implementations uphold `poulpy-hal/docs/backend_safety_contract.md` for every
-/// operand and scratch region they touch.
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait CKKSMulAddImpl: Backend + CKKSMulImpl + CKKSAddImpl {
-    /// Scratch of [`Self::ckks_mul_add_ct_into`]: the temporary plus the larger of the product and addition queries.
+    /// Default body: `ckks_mul_add_ct_tmp_bytes_derived`, the bytes of the `dst`-shaped temporary plus the larger of
+    /// the selected `ckks_mul_tmp_bytes` and `ckks_add_tmp_bytes` at `res.size()`. Scratch bound of
+    /// [`Self::ckks_mul_add_ct_into`]; may report less than the reference, never less than the body takes.
     fn ckks_mul_add_ct_tmp_bytes<R, A, B, T>(module: &Module<Self>, res: &R, a: &A, b: &B, tsk: &T) -> usize
     where
         R: CKKSCtBounds,
@@ -77,7 +81,9 @@ pub unsafe trait CKKSMulAddImpl: Backend + CKKSMulImpl + CKKSAddImpl {
         ckks_mul_add_ct_tmp_bytes_derived(module, res, a, b, tsk)
     }
 
-    /// Scratch of [`Self::ckks_mul_add_pt_vec_into`]: the temporary plus the larger of the product and addition queries.
+    /// Default body: `ckks_mul_add_pt_vec_tmp_bytes_derived`, the bytes of the `dst`-shaped temporary plus the larger
+    /// of the selected `ckks_mul_pt_vec_tmp_bytes` and `ckks_add_tmp_bytes` at `res.size()`. Scratch bound of
+    /// [`Self::ckks_mul_add_pt_vec_into`]; may report less than the reference, never less than the body takes.
     fn ckks_mul_add_pt_vec_tmp_bytes<R, A, P>(module: &Module<Self>, res: &R, a: &A, b: &P) -> usize
     where
         R: CKKSCtBounds,
@@ -87,7 +93,9 @@ pub unsafe trait CKKSMulAddImpl: Backend + CKKSMulImpl + CKKSAddImpl {
         ckks_mul_add_pt_vec_tmp_bytes_derived(module, res, a, b)
     }
 
-    /// Scratch of [`Self::ckks_mul_add_pt_const_into`]: the temporary plus the larger of the product and addition queries.
+    /// Default body: `ckks_mul_add_pt_const_tmp_bytes_derived`, the bytes of the `dst`-shaped temporary plus the larger
+    /// of the selected `ckks_mul_pt_const_tmp_bytes` and `ckks_add_tmp_bytes` at `res.size()`. Scratch bound of
+    /// [`Self::ckks_mul_add_pt_const_into`]; may report less than the reference, never less than the body takes.
     fn ckks_mul_add_pt_const_tmp_bytes<R, A, P>(module: &Module<Self>, res: &R, a: &A, b: &P) -> usize
     where
         R: CKKSCtBounds,
@@ -97,7 +105,8 @@ pub unsafe trait CKKSMulAddImpl: Backend + CKKSMulImpl + CKKSAddImpl {
         ckks_mul_add_pt_const_tmp_bytes_derived(module, res, a, b)
     }
 
-    /// `ckks_mul_into` into the temporary, then `ckks_add_assign` into `dst`.
+    /// Default body: `ckks_mul_add_ct_into_derived`, `ckks_mul_into` into a `dst`-shaped scratch temporary, then
+    /// `ckks_add_assign` of the temporary into `dst`.
     fn ckks_mul_add_ct_into<Dst, A, B, H>(
         module: &Module<Self>,
         dst: &mut Dst,
@@ -115,7 +124,8 @@ pub unsafe trait CKKSMulAddImpl: Backend + CKKSMulImpl + CKKSAddImpl {
         ckks_mul_add_ct_into_derived(module, dst, a, b, tsk, scratch)
     }
 
-    /// `ckks_mul_pt_vec_into` into the temporary, then `ckks_add_assign` into `dst`.
+    /// Default body: `ckks_mul_add_pt_vec_into_derived`, `ckks_mul_pt_vec_into` into a `dst`-shaped scratch temporary,
+    /// then `ckks_add_assign` of the temporary into `dst`.
     fn ckks_mul_add_pt_vec_into<Dst, A, P>(
         module: &Module<Self>,
         dst: &mut Dst,
@@ -131,7 +141,8 @@ pub unsafe trait CKKSMulAddImpl: Backend + CKKSMulImpl + CKKSAddImpl {
         ckks_mul_add_pt_vec_into_derived(module, dst, a, pt, scratch)
     }
 
-    /// `ckks_mul_pt_const_into` into the temporary, then `ckks_add_assign` into `dst`.
+    /// Default body: `ckks_mul_add_pt_const_into_derived`, `ckks_mul_pt_const_into` into a `dst`-shaped scratch
+    /// temporary, then `ckks_add_assign` of the temporary into `dst`.
     fn ckks_mul_add_pt_const_into<Dst, A, P>(
         module: &Module<Self>,
         dst: &mut Dst,
@@ -156,11 +167,13 @@ pub unsafe trait CKKSMulAddImpl: Backend + CKKSMulImpl + CKKSAddImpl {
 /// query.
 ///
 /// # Safety
-///
-/// Implementations uphold `poulpy-hal/docs/backend_safety_contract.md` for every
-/// operand and scratch region they touch.
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait CKKSAffineImpl: Backend + CKKSMulImpl + CKKSAddImpl {
-    /// Scratch of the constant affine forms: the larger of the product and addition queries.
+    /// Default body: `ckks_affine_pt_const_tmp_bytes_derived`, the larger of the selected `ckks_mul_pt_const_tmp_bytes`
+    /// and `ckks_add_pt_const_tmp_bytes` at `res.size()`. Scratch bound of [`Self::ckks_affine_pt_const_into`] and
+    /// [`Self::ckks_affine_pt_const_assign`]; may report less than the reference, never less than the body takes.
     fn ckks_affine_pt_const_tmp_bytes<R, A, P>(module: &Module<Self>, res: &R, a: &A, affine_const: &P) -> usize
     where
         R: CKKSCtBounds,
@@ -170,7 +183,8 @@ pub unsafe trait CKKSAffineImpl: Backend + CKKSMulImpl + CKKSAddImpl {
         ckks_affine_pt_const_tmp_bytes_derived(module, res, a, affine_const)
     }
 
-    /// `ckks_mul_pt_const_into` at `scale_coeff`, then `ckks_add_pt_const_assign` at `offset_coeff`.
+    /// Default body: `ckks_affine_pt_const_into_derived`, `ckks_mul_pt_const_into` at `scale_coeff`, then
+    /// `ckks_add_pt_const_assign` of the same constant at `offset_coeff` into coefficient 0 of `dst`.
     fn ckks_affine_pt_const_into<Dst, A, P>(
         module: &Module<Self>,
         dst: &mut Dst,
@@ -188,7 +202,8 @@ pub unsafe trait CKKSAffineImpl: Backend + CKKSMulImpl + CKKSAddImpl {
         ckks_affine_pt_const_into_derived(module, dst, a, affine_const, offset_coeff, scale_coeff, scratch)
     }
 
-    /// `ckks_mul_pt_const_assign` at `scale_coeff`, then `ckks_add_pt_const_assign` at `offset_coeff`.
+    /// Default body: `ckks_affine_pt_const_assign_derived`, `ckks_mul_pt_const_assign` at `scale_coeff`, then
+    /// `ckks_add_pt_const_assign` of the same constant at `offset_coeff` into coefficient 0 of `dst`.
     fn ckks_affine_pt_const_assign<Dst, P>(
         module: &Module<Self>,
         dst: &mut Dst,
@@ -204,7 +219,9 @@ pub unsafe trait CKKSAffineImpl: Backend + CKKSMulImpl + CKKSAddImpl {
         ckks_affine_pt_const_assign_derived(module, dst, affine_const, offset_coeff, scale_coeff, scratch)
     }
 
-    /// Scratch of the vector affine forms: the larger of the product and addition queries.
+    /// Default body: `ckks_affine_pt_vec_tmp_bytes_derived`, the larger of the selected `ckks_mul_pt_vec_tmp_bytes` and
+    /// `ckks_add_pt_vec_tmp_bytes` at `res.size()`. Scratch bound of [`Self::ckks_affine_pt_vec_into`] and
+    /// [`Self::ckks_affine_pt_vec_assign`]; may report less than the reference, never less than the body takes.
     fn ckks_affine_pt_vec_tmp_bytes<R, A, S>(module: &Module<Self>, res: &R, a: &A, scale: &S) -> usize
     where
         R: CKKSCtBounds,
@@ -214,7 +231,8 @@ pub unsafe trait CKKSAffineImpl: Backend + CKKSMulImpl + CKKSAddImpl {
         ckks_affine_pt_vec_tmp_bytes_derived(module, res, a, scale)
     }
 
-    /// `ckks_mul_pt_vec_into` by `scale`, then `ckks_add_pt_vec_assign` of `offset`.
+    /// Default body: `ckks_affine_pt_vec_into_derived`, `ckks_mul_pt_vec_into` by `scale`, then
+    /// `ckks_add_pt_vec_assign` of `offset`.
     fn ckks_affine_pt_vec_into<Dst, A, S, P>(
         module: &Module<Self>,
         dst: &mut Dst,
@@ -232,7 +250,8 @@ pub unsafe trait CKKSAffineImpl: Backend + CKKSMulImpl + CKKSAddImpl {
         ckks_affine_pt_vec_into_derived(module, dst, a, scale, offset, scratch)
     }
 
-    /// `ckks_mul_pt_vec_assign` by `scale`, then `ckks_add_pt_vec_assign` of `offset`.
+    /// Default body: `ckks_affine_pt_vec_assign_derived`, `ckks_mul_pt_vec_assign` by `scale`, then
+    /// `ckks_add_pt_vec_assign` of `offset`.
     fn ckks_affine_pt_vec_assign<Dst, S, P>(
         module: &Module<Self>,
         dst: &mut Dst,
@@ -256,11 +275,13 @@ pub unsafe trait CKKSAffineImpl: Backend + CKKSMulImpl + CKKSAddImpl {
 /// its own query.
 ///
 /// # Safety
-///
-/// Implementations uphold `poulpy-hal/docs/backend_safety_contract.md` for every
-/// operand and scratch region they touch.
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait CKKSMulSubImpl: Backend + CKKSMulImpl + CKKSSubImpl {
-    /// Scratch of [`Self::ckks_mul_sub_ct_into`]: the temporary plus the larger of the product and subtraction queries.
+    /// Default body: `ckks_mul_sub_ct_tmp_bytes_derived`, the bytes of the `dst`-shaped temporary plus the larger of
+    /// the selected `ckks_mul_tmp_bytes` and `ckks_sub_tmp_bytes` at `res.size()`. Scratch bound of
+    /// [`Self::ckks_mul_sub_ct_into`]; may report less than the reference, never less than the body takes.
     fn ckks_mul_sub_ct_tmp_bytes<R, A, B, T>(module: &Module<Self>, res: &R, a: &A, b: &B, tsk: &T) -> usize
     where
         R: CKKSCtBounds,
@@ -271,7 +292,9 @@ pub unsafe trait CKKSMulSubImpl: Backend + CKKSMulImpl + CKKSSubImpl {
         ckks_mul_sub_ct_tmp_bytes_derived(module, res, a, b, tsk)
     }
 
-    /// Scratch of [`Self::ckks_mul_sub_pt_vec_into`]: the temporary plus the larger of the product and subtraction queries.
+    /// Default body: `ckks_mul_sub_pt_vec_tmp_bytes_derived`, the bytes of the `dst`-shaped temporary plus the larger
+    /// of the selected `ckks_mul_pt_vec_tmp_bytes` and `ckks_sub_tmp_bytes` at `res.size()`. Scratch bound of
+    /// [`Self::ckks_mul_sub_pt_vec_into`]; may report less than the reference, never less than the body takes.
     fn ckks_mul_sub_pt_vec_tmp_bytes<R, A, P>(module: &Module<Self>, res: &R, a: &A, b: &P) -> usize
     where
         R: CKKSCtBounds,
@@ -281,8 +304,9 @@ pub unsafe trait CKKSMulSubImpl: Backend + CKKSMulImpl + CKKSSubImpl {
         ckks_mul_sub_pt_vec_tmp_bytes_derived(module, res, a, b)
     }
 
-    /// Scratch of [`Self::ckks_mul_sub_pt_const_into`]: the temporary plus the larger of the product and subtraction
-    /// queries.
+    /// Default body: `ckks_mul_sub_pt_const_tmp_bytes_derived`, the bytes of the `dst`-shaped temporary plus the larger
+    /// of the selected `ckks_mul_pt_const_tmp_bytes` and `ckks_sub_tmp_bytes` at `res.size()`. Scratch bound of
+    /// [`Self::ckks_mul_sub_pt_const_into`]; may report less than the reference, never less than the body takes.
     fn ckks_mul_sub_pt_const_tmp_bytes<R, A, P>(module: &Module<Self>, res: &R, a: &A, b: &P) -> usize
     where
         R: CKKSCtBounds,
@@ -292,7 +316,8 @@ pub unsafe trait CKKSMulSubImpl: Backend + CKKSMulImpl + CKKSSubImpl {
         ckks_mul_sub_pt_const_tmp_bytes_derived(module, res, a, b)
     }
 
-    /// `ckks_mul_into` into the temporary, then `ckks_sub_assign` from `dst`.
+    /// Default body: `ckks_mul_sub_ct_into_derived`, `ckks_mul_into` into a `dst`-shaped scratch temporary, then
+    /// `ckks_sub_assign` of the temporary from `dst`.
     fn ckks_mul_sub_ct_into<Dst, A, B, H>(
         module: &Module<Self>,
         dst: &mut Dst,
@@ -310,7 +335,8 @@ pub unsafe trait CKKSMulSubImpl: Backend + CKKSMulImpl + CKKSSubImpl {
         ckks_mul_sub_ct_into_derived(module, dst, a, b, tsk, scratch)
     }
 
-    /// `ckks_mul_pt_vec_into` into the temporary, then `ckks_sub_assign` from `dst`.
+    /// Default body: `ckks_mul_sub_pt_vec_into_derived`, `ckks_mul_pt_vec_into` into a `dst`-shaped scratch temporary,
+    /// then `ckks_sub_assign` of the temporary from `dst`.
     fn ckks_mul_sub_pt_vec_into<Dst, A, P>(
         module: &Module<Self>,
         dst: &mut Dst,
@@ -326,7 +352,8 @@ pub unsafe trait CKKSMulSubImpl: Backend + CKKSMulImpl + CKKSSubImpl {
         ckks_mul_sub_pt_vec_into_derived(module, dst, a, pt, scratch)
     }
 
-    /// `ckks_mul_pt_const_into` into the temporary, then `ckks_sub_assign` from `dst`.
+    /// Default body: `ckks_mul_sub_pt_const_into_derived`, `ckks_mul_pt_const_into` into a `dst`-shaped scratch
+    /// temporary, then `ckks_sub_assign` of the temporary from `dst`.
     fn ckks_mul_sub_pt_const_into<Dst, A, P>(
         module: &Module<Self>,
         dst: &mut Dst,

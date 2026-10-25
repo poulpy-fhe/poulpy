@@ -12,11 +12,13 @@ use crate::{CKKSCtBounds, SetCKKSInfos, layouts::eval_mod::EvalMod};
 /// [`impl_ckks_eval_mod_reference_full`] wires both to the callable reference circuit.
 ///
 /// # Safety
-///
-/// Implementations must satisfy the contracts of all trait methods, including
-/// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
-/// associated method signatures.
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait CKKSEvalModImpl: Backend {
+    /// Scratch bound of [`Self::ckks_eval_mod`]; may report less than the reference, never less than the body takes.
+    /// Pass the `res`, `ct`, `params` and `tsk` the evaluation uses: EvalMod raises the input to the plan's
+    /// `f_mod_log_delta` internally.
     fn ckks_eval_mod_tmp_bytes<R, C, P, F, T>(module: &Module<Self>, res: &R, ct: &C, params: &EvalMod<F, P>, tsk: &T) -> usize
     where
         R: CKKSCtBounds,
@@ -24,7 +26,9 @@ pub unsafe trait CKKSEvalModImpl: Backend {
         P: CKKSCtBounds,
         T: poulpy_core::layouts::GGLWEInfos;
 
-    /// See [`CKKSEvalModOps::ckks_eval_mod`](crate::api::CKKSEvalModOps::ckks_eval_mod).
+    /// Reproduces
+    /// [`ckks_eval_mod_reference`](crate::reference::eval_mod::CKKSEvalModOpsReference::ckks_eval_mod_reference) bit
+    /// for bit, within [`Self::ckks_eval_mod_tmp_bytes`]; free in kernels and scratch use.
     fn ckks_eval_mod<R, C, P, F, H>(
         module: &Module<Self>,
         res: &mut R,

@@ -10,14 +10,21 @@ use crate::{
 /// Backend override hook for [`CKKSFoldLayoutOps`](crate::api::CKKSFoldLayoutOps).
 ///
 /// # Safety
-///
-/// Implementations must answer for the fold they register with
-/// [`CKKSFoldImpl`]: its key elements, layouts and scratch.
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait CKKSFoldLayoutImpl: Backend<Ring = Standard> {
+    /// Reproduces
+    /// [`ckks_fold_layout_reference`](crate::reference::fold::CKKSFoldLayoutReference::ckks_fold_layout_reference) bit
+    /// for bit; free in kernels. The layout answers for the fold registered with [`CKKSFoldImpl`]: it is the layout of
+    /// the folded ciphertexts that fold writes and its unfold reads.
     fn ckks_fold_layout<C>(module: &Module<Self>, degree: Degree, ct_in: &C, keys: &CKKSFoldKeysLayout) -> GLWELayout
     where
         C: CKKSCtBounds;
 
+    /// Scratch bound of [`CKKSFoldImpl::ckks_fold`] and [`CKKSFoldImpl::ckks_unfold`] for the registered fold, for
+    /// outputs like `ct_out`, inputs like `ct_in` of any ring folded into `degree` and keys like `keys`; may report
+    /// less than the reference, never less than the body takes.
     fn ckks_fold_tmp_bytes<C1, C2>(
         module: &Module<Self>,
         degree: Degree,
@@ -33,17 +40,25 @@ pub unsafe trait CKKSFoldLayoutImpl: Backend<Ring = Standard> {
 /// Backend override hook for [`CKKSFoldOps`](crate::api::CKKSFoldOps) on inputs of ring `R`.
 ///
 /// # Safety
-///
-/// Implementations must preserve the exact CKKS metadata and ciphertext
-/// semantics of the reference fold, honor all key layouts, and stay within the
-/// scratch of [`CKKSFoldLayoutImpl::ckks_fold_tmp_bytes`].
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait CKKSFoldImpl<R: Ring>: Backend<Ring = Standard> {
+    /// Reproduces [`ckks_fold_count_reference`](crate::reference::fold::CKKSFoldReference::ckks_fold_count_reference)
+    /// bit for bit; free in kernels. It answers for the registered `ckks_fold`: the number of ciphertexts it writes.
     fn ckks_fold_count(module: &Module<Self>, degree: Degree, ins: &[CKKSRingCiphertext<Self, R>]) -> usize;
 
+    /// Reproduces
+    /// [`ckks_unfold_galois_elements_reference`](crate::reference::fold::CKKSFoldReference::ckks_unfold_galois_elements_reference)
+    /// bit for bit; free in kernels. It answers for the registered `ckks_unfold`: the Galois elements of the
+    /// input-secret automorphism keys it reads.
     fn ckks_unfold_galois_elements<C>(module: &Module<Self>, ct_in: &C) -> Vec<i64>
     where
         C: CKKSCtBounds;
 
+    /// Reproduces [`ckks_fold_reference`](crate::reference::fold::CKKSFoldReference::ckks_fold_reference) bit for bit,
+    /// within [`CKKSFoldLayoutImpl::ckks_fold_tmp_bytes`]: CKKS metadata, ciphertext values and refusals as the
+    /// reference fold, honoring the key layouts of `inbound`; free in kernels and scratch use.
     fn ckks_fold<S>(
         module: &Module<Self>,
         folded: &mut [CKKSCiphertextOwned<Self>],
@@ -54,6 +69,9 @@ pub unsafe trait CKKSFoldImpl<R: Ring>: Backend<Ring = Standard> {
     where
         S: GGLWEPreparedToBackendRef<Self> + GGLWEInfos;
 
+    /// Reproduces [`ckks_unfold_reference`](crate::reference::fold::CKKSFoldReference::ckks_unfold_reference) bit for
+    /// bit, within [`CKKSFoldLayoutImpl::ckks_fold_tmp_bytes`]: CKKS metadata, ciphertext values and refusals as the
+    /// reference unfold, honoring the key layouts of `outbound` and `automorphisms`; free in kernels and scratch use.
     fn ckks_unfold<S, H>(
         module: &Module<Self>,
         outs: &mut [CKKSRingCiphertext<Self, R>],

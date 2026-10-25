@@ -22,10 +22,7 @@ use super::{
 /// standard-only families, so conjugate-invariant backends do not implement it.
 ///
 /// # Safety
-///
-/// Implementations must satisfy the contracts of all bundled `CKKS*Impl`
-/// traits, including the HAL-level invariants implied by their method
-/// signatures.
+/// The trait has no method: it adds no obligation to those of the bundled `CKKS*Impl` traits.
 pub unsafe trait CKKSImpl:
     Backend
     + CKKSPlaintextZnxImpl

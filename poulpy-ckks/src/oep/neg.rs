@@ -5,14 +5,19 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{CKKSCtBounds, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos};
 
-/// # Safety
+/// Backend contract of [`CKKSNegOps`](crate::api::CKKSNegOps).
 ///
-/// Implementations must satisfy the contracts of all trait methods, including
-/// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
-/// associated method signatures.
+/// # Safety
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait CKKSNegImpl: Backend {
+    /// Scratch bound of [`Self::ckks_neg_into`] and [`Self::ckks_neg_assign`]; may report less than the reference,
+    /// never less than the body takes.
     fn ckks_neg_tmp_bytes(module: &Module<Self>, res_size: usize) -> usize;
 
+    /// Reproduces [`ckks_neg_into_reference`](crate::reference::neg::CKKSNegReference::ckks_neg_into_reference) bit for
+    /// bit, within [`Self::ckks_neg_tmp_bytes`]; free in kernels and scratch use.
     fn ckks_neg_into<Dst, Src>(
         module: &Module<Self>,
         dst: &mut Dst,
@@ -23,6 +28,8 @@ pub unsafe trait CKKSNegImpl: Backend {
         Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<Self> + GLWEInfos + CKKSCtBounds;
 
+    /// Reproduces [`ckks_neg_assign_reference`](crate::reference::neg::CKKSNegReference::ckks_neg_assign_reference) bit
+    /// for bit, within [`Self::ckks_neg_tmp_bytes`]; free in kernels and scratch use.
     fn ckks_neg_assign<Dst>(module: &Module<Self>, dst: &mut Dst) -> Result<()>
     where
         Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos;

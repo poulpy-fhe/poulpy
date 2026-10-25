@@ -35,14 +35,12 @@ use crate::{
 /// so host reference implementations derive from the same math.
 ///
 /// # Safety
-///
-/// Implementations must satisfy the contracts of all trait methods, including
-/// any HAL-level invariants (alignment, layout, scratch sizing) implied by
-/// the associated method signatures.
+/// Implementations meet the contract their methods document, a numeric one with no bit-exact body, report for the
+/// `_tmp_bytes` query a bound that covers the body, and refuse as documented. The memory, layout, synchrony and
+/// aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait CKKSShipCoeffEncodingImpl: Backend<Ring = Standard> {
-    /// Backend-native arena bytes required by the coefficient encoding.
-    /// [`Self::ckks_ship_coeff_encodings`] refuses a smaller arena with
-    /// `CKKSError::Internal` before any work.
+    /// Scratch bound of [`Self::ckks_ship_coeff_encodings`], in backend-native arena bytes. That method refuses a
+    /// smaller arena with `CKKSError::Internal` before any work.
     fn ckks_ship_coeff_encodings_tmp_bytes<F>(
         module: &Module<Self>,
         base2k: Base2K,
@@ -53,10 +51,11 @@ pub unsafe trait CKKSShipCoeffEncodingImpl: Backend<Ring = Standard> {
         F: ShipScalar,
         Self: CKKSEncodingImpl<F>;
 
-    /// Builds the input-dependent SHIP plaintext material from the bottom
-    /// ciphertext's public coefficients. Implementations must preserve the
-    /// plan's degree, radix, scales, and backend ownership, and must reject
-    /// malformed ciphertext layouts before reading their limbs.
+    /// No reference body is wired: this crate carries no implementation, and the host scheme definition
+    /// [`ship_coeff_encodings_host`](crate::reference::encoding::ship_coeff_encodings_host) is the math. Builds the
+    /// input-dependent SHIP plaintext material from the bottom ciphertext's public coefficients, within
+    /// [`Self::ckks_ship_coeff_encodings_tmp_bytes`]. Preserves the plan's degree, radix, scales and backend ownership,
+    /// and rejects malformed ciphertext layouts before reading their limbs.
     fn ckks_ship_coeff_encodings<F, Src>(
         module: &Module<Self>,
         base2k: Base2K,
@@ -81,9 +80,9 @@ pub unsafe trait CKKSShipCoeffEncodingImpl: Backend<Ring = Standard> {
 /// parameter bounded by `Self: CKKSEncodingImpl<F>`.
 ///
 /// # Safety
-///
-/// Implementations uphold `poulpy-hal/docs/backend_safety_contract.md` for every
-/// operand, key and scratch region they touch.
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait CKKSShipImpl:
     Backend<Ring = Standard>
     + CKKSShipCoeffEncodingImpl
@@ -96,8 +95,14 @@ pub unsafe trait CKKSShipImpl:
     + GLWEZeroImpl
     + HalVecZnxDftImpl
 {
-    /// Scratch of both bootstraps after their runtime validation: the largest stage with the ciphertexts it
-    /// carves, the complex variant included when the keys carry its masks.
+    /// Default body: `ckks_ship_bootstrap_tmp_bytes_derived`, the runtime validation (refusing as the drivers do), then
+    /// the largest of the encapsulation (the larger of the selected `glwe_keyswitch_tmp_bytes` and the
+    /// coefficient-encoding query, plus the bottom ciphertext it carves), the product tree (the add-plaintext,
+    /// [`Self::ckks_ship_masking_accumulate_tmp_bytes`], [`Self::ckks_ship_mux_rotate_tmp_bytes`] of each group at its
+    /// key count, and `ckks_mul_tmp_bytes` queries) and the final combination (its temporaries plus the conjugate, add,
+    /// sub and multiply-by-`i` queries), the complex combination counted whenever the keys carry its masks. Scratch
+    /// bound of [`Self::ckks_ship_bootstrap_into`] and [`Self::ckks_ship_bootstrap_complex_into`]; may report less than
+    /// the reference, never less than the body takes.
     fn ckks_ship_bootstrap_tmp_bytes<F, Src>(
         module: &Module<Self>,
         output: &CKKSCiphertextOwned<Self>,
@@ -112,9 +117,14 @@ pub unsafe trait CKKSShipImpl:
         ckks_ship_bootstrap_tmp_bytes_derived::<Self, F, Src>(module, output, input, keys)
     }
 
-    /// Validates, switches `input` to the sparse secret, builds the leaves (coefficient encoding,
-    /// [`Self::ckks_ship_masking_accumulate`], [`Self::ckks_ship_mux_rotate`]), multiplies them in a
-    /// binary tree, then `output = root + conj(root)`.
+    /// Default body: `ckks_ship_bootstrap_into_derived`. The runtime validation of the output, input and key layouts
+    /// refuses before any write. Then the selected `glwe_keyswitch` of `input` into a carved ciphertext under the
+    /// dense-to-sparse key (carrying the input's metadata), [`CKKSShipCoeffEncodingImpl::ckks_ship_coeff_encodings`], a
+    /// leaf 0 (`glwe_zero` then `ckks_add_pt_vec_assign` of the constant encoding), one leaf per index key (a
+    /// [`Self::ckks_ship_masking_accumulate`] then a [`Self::ckks_ship_mux_rotate`] per mux group), and a binary
+    /// product tree of `ckks_mul_into` under the tensor key, an odd leftover carrying to the next level, a tree that
+    /// exhausts the budget being a refusal, and `output = root + conj(root)` with the selected `ckks_conjugate_into`
+    /// and `ckks_add_into`, the slot kind set to real.
     fn ckks_ship_bootstrap_into<F, Src>(
         module: &Module<Self>,
         output: &mut CKKSCiphertextOwned<Self>,
@@ -130,8 +140,12 @@ pub unsafe trait CKKSShipImpl:
         ckks_ship_bootstrap_into_derived::<Self, F, Src>(module, output, input, keys, scratch)
     }
 
-    /// As [`Self::ckks_ship_bootstrap_into`] over both coefficient halves, then
-    /// `output = (v1 + i·v2) + conj(v1 − i·v2)`.
+    /// Default body: `ckks_ship_bootstrap_complex_into_derived`. The runtime validation of the output, input and key
+    /// layouts refuses before any write. Then the encapsulation and coefficient encodings of the real bootstrap once,
+    /// then for each of the two coefficient halves its own leaves (the second half with the second mask set) and
+    /// product tree as there, and with `v1` and `v2` the two roots, `ckks_mul_i_into` of `v2`, `ckks_add_into` and
+    /// `ckks_sub_into` of it with `v1`, `ckks_conjugate_into` of the difference, and `output = (v1 + i·v2) + conj(v1 −
+    /// i·v2)` by `ckks_add_into`.
     fn ckks_ship_bootstrap_complex_into<F, Src>(
         module: &Module<Self>,
         output: &mut CKKSCiphertextOwned<Self>,
@@ -147,14 +161,16 @@ pub unsafe trait CKKSShipImpl:
         ckks_ship_bootstrap_complex_into_derived::<Self, F, Src>(module, output, input, keys, scratch)
     }
 
-    /// Scratch of [`Self::ckks_ship_masking_accumulate`] for `plan` at `base2k`.
+    /// Scratch bound of [`Self::ckks_ship_masking_accumulate`] for `plan` at `base2k`; may report less than the
+    /// reference, never less than the body takes.
     fn ckks_ship_masking_accumulate_tmp_bytes(module: &Module<Self>, plan: &ShipPlan, base2k: usize) -> usize;
 
-    /// Hook without an API twin: `acc = Σ_i masks[i] · pis[i]` at the plan's working scale,
-    /// reproducing [`CKKSShipReference::ckks_ship_masking_accumulate_reference`](crate::reference::ship::CKKSShipReference::ckks_ship_masking_accumulate_reference)
-    /// bit for bit within [`Self::ckks_ship_masking_accumulate_tmp_bytes`]. Required: the masks are
-    /// key-generation prepared convolution operands with no CKKS metadata, which no CKKS
-    /// product or dot product takes.
+    /// Hook without an API twin. Reproduces
+    /// [`ckks_ship_masking_accumulate_reference`](crate::reference::ship::CKKSShipReference::ckks_ship_masking_accumulate_reference)
+    /// bit for bit, within [`Self::ckks_ship_masking_accumulate_tmp_bytes`]; free in kernels and scratch use. It
+    /// computes `acc = Σ_i masks[i] · pis[i]` at the plan's working scale. Required: the masks are key-generation
+    /// prepared convolution operands with no CKKS metadata, which no CKKS product or dot product takes. The caller, the
+    /// leaf construction of the bootstrap, allocates `acc` and records its metadata.
     fn ckks_ship_masking_accumulate(
         module: &Module<Self>,
         acc: &mut CKKSCiphertextOwned<Self>,
@@ -164,18 +180,20 @@ pub unsafe trait CKKSShipImpl:
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>;
 
-    /// Scratch of [`Self::ckks_ship_mux_rotate`] on `ct` for `term_count` keys like `key`.
+    /// Scratch bound of [`Self::ckks_ship_mux_rotate`] on `ct` for `term_count` keys like `key`; may report less than
+    /// the reference, never less than the body takes.
     fn ckks_ship_mux_rotate_tmp_bytes<C, K>(module: &Module<Self>, ct: &C, key: &K, term_count: usize) -> usize
     where
         C: LWEInfos,
         K: GGLWEInfos;
 
-    /// Hook without an API twin: the hoisted mux rotation `ct ← Σ_d β_d · Rot_{rot_d}(ct)` over
-    /// one digit position's `keys`, the output automorphisms read from `plans`, reproducing
-    /// [`CKKSShipReference::ckks_ship_mux_rotate_reference`](crate::reference::ship::CKKSShipReference::ckks_ship_mux_rotate_reference)
-    /// bit for bit within [`Self::ckks_ship_mux_rotate_tmp_bytes`]. Required: one gadget
-    /// decomposition serves every key of the group and each product is twisted in the DFT
-    /// domain before the single normalization, which no core key switch or automorphism offers.
+    /// Hook without an API twin. Reproduces
+    /// [`ckks_ship_mux_rotate_reference`](crate::reference::ship::CKKSShipReference::ckks_ship_mux_rotate_reference)
+    /// bit for bit, within [`Self::ckks_ship_mux_rotate_tmp_bytes`]; free in kernels and scratch use. It computes the
+    /// hoisted mux rotation `ct ← Σ_d β_d · Rot_{rot_d}(ct)` over one digit position's `keys`, the output automorphisms
+    /// read from `plans`. Required: one gadget decomposition serves every key of the group and each product is twisted
+    /// in the DFT domain before the single normalization, which no core key switch or automorphism offers. The caller,
+    /// the leaf construction of the bootstrap, records the metadata of `ct`.
     fn ckks_ship_mux_rotate(
         module: &Module<Self>,
         ct: &mut CKKSCiphertextOwned<Self>,

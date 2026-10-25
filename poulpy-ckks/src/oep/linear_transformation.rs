@@ -14,37 +14,53 @@ use crate::{
     },
 };
 
-/// # Safety
+/// Backend contract of [`CKKSLinearTransformationOps`](crate::api::CKKSLinearTransformationOps).
 ///
-/// Implementations must satisfy the contracts of all trait methods, including
-/// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
-/// associated method signatures. See `poulpy-hal/docs/backend_safety_contract.md`.
+/// # Safety
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait CKKSLinearTransformationImpl: Backend + super::CKKSCopyImpl {
+    /// Scratch bound of [`Self::ckks_prepare_linear_transformation_rhs`]; may report less than the reference, never
+    /// less than the body takes.
     fn ckks_prepare_linear_transformation_rhs_tmp_bytes<P: LWEInfos>(module: &Module<Self>, pt_infos: &P) -> usize;
 
+    /// Scratch bound of [`Self::ckks_prepare_linear_transformation_baby_steps`]; may report less than the reference,
+    /// never less than the body takes.
     fn ckks_prepare_linear_transformation_baby_steps_tmp_bytes<C: CKKSCtBounds, K: GGLWEInfos>(
         module: &Module<Self>,
         ct: &C,
         key: &K,
     ) -> usize;
 
+    /// Scratch bound of [`Self::ckks_eval_linear_transformation_into`] with a prepared (resident) right side, and of
+    /// [`Self::ckks_eval_linear_transformation_assign`], whose `dst`-shaped working copy and copy back it counts; may
+    /// report less than the reference, never less than the body takes.
     fn ckks_eval_linear_transformation_tmp_bytes<C: CKKSCtBounds, K: GGLWEInfos>(module: &Module<Self>, ct: &C, key: &K)
     -> usize;
 
+    /// Scratch bound of [`Self::ckks_eval_linear_transformation_into`] with a plaintext (streamed) right side, which
+    /// additionally holds one resident diagonal slot, and of [`Self::ckks_eval_linear_transformation_assign`] on it,
+    /// whose working copy it counts; may report less than the reference, never less than the body takes.
     fn ckks_eval_linear_transformation_streamed_tmp_bytes<C: CKKSCtBounds, K: GGLWEInfos>(
         module: &Module<Self>,
         ct: &C,
         key: &K,
     ) -> usize;
 
+    /// Scratch bound of [`Self::ckks_eval_linear_transformation_sum_into`]; may report less than the reference, never
+    /// less than the body takes.
     fn ckks_eval_linear_transformation_sum_tmp_bytes<C: CKKSCtBounds, K: GGLWEInfos>(
         module: &Module<Self>,
         ct: &C,
         key: &K,
     ) -> usize;
 
-    /// Prepares every diagonal of `lt` into `prepared`; a `prepared` allocated for another layout than `lt`'s, or
-    /// diagonals not sharing one scale, width and slot kind, are `InvalidOperand`, before any write.
+    /// Reproduces
+    /// [`ckks_prepare_linear_transformation_rhs_reference`](crate::reference::CKKSLinearTransformationReference::ckks_prepare_linear_transformation_rhs_reference)
+    /// bit for bit, within [`Self::ckks_prepare_linear_transformation_rhs_tmp_bytes`]; free in kernels, prepared form
+    /// and scratch use. A `prepared` allocated for another layout than `lt`'s, or diagonals not sharing one scale,
+    /// width and slot kind, are `InvalidOperand`, before any write.
     fn ckks_prepare_linear_transformation_rhs<P>(
         module: &Module<Self>,
         prepared: &mut LinearTransformationPrepared<Self>,
@@ -54,6 +70,10 @@ pub unsafe trait CKKSLinearTransformationImpl: Backend + super::CKKSCopyImpl {
     where
         P: GLWEToBackendRef<Self> + IntPolyInfos + CKKSCtBounds + DiagonalProd<Self>;
 
+    /// Reproduces
+    /// [`ckks_prepare_linear_transformation_baby_steps_reference`](crate::reference::CKKSLinearTransformationReference::ckks_prepare_linear_transformation_baby_steps_reference)
+    /// bit for bit, within [`Self::ckks_prepare_linear_transformation_baby_steps_tmp_bytes`]; free in kernels and
+    /// scratch use.
     fn ckks_prepare_linear_transformation_baby_steps<Src, H>(
         module: &Module<Self>,
         babies: &mut LinearTransformationBabySteps<Self>,
@@ -65,6 +85,11 @@ pub unsafe trait CKKSLinearTransformationImpl: Backend + super::CKKSCopyImpl {
         Src: GLWEToBackendRef<Self> + CKKSCtBounds,
         H: GetAutomorphismKey<Self>;
 
+    /// Reproduces
+    /// [`ckks_eval_linear_transformation_into_reference`](crate::reference::CKKSLinearTransformationReference::ckks_eval_linear_transformation_into_reference)
+    /// bit for bit, within [`Self::ckks_eval_linear_transformation_tmp_bytes`] for a prepared right side and
+    /// [`Self::ckks_eval_linear_transformation_streamed_tmp_bytes`] for a plaintext one; free in kernels and scratch
+    /// use.
     fn ckks_eval_linear_transformation_into<Dst, Src, P, H>(
         module: &Module<Self>,
         dst: &mut Dst,
@@ -80,7 +105,9 @@ pub unsafe trait CKKSLinearTransformationImpl: Backend + super::CKKSCopyImpl {
         P: DiagonalProd<Self> + LtDiagonalMeta + IntPolyInfos,
         H: GetAutomorphismKey<Self>;
 
-    /// [`Self::ckks_eval_linear_transformation_into`] into a working copy carved from scratch, then copied back.
+    /// Default body: `ckks_eval_linear_transformation_assign_derived`, [`Self::ckks_eval_linear_transformation_into`]
+    /// from `dst` into a `dst`-shaped working copy carved from scratch, then the selected `ckks_copy` of the copy back
+    /// into `dst`, which moves the metadata the evaluation stamped.
     fn ckks_eval_linear_transformation_assign<Dst, P, H>(
         module: &Module<Self>,
         dst: &mut Dst,
@@ -97,6 +124,9 @@ pub unsafe trait CKKSLinearTransformationImpl: Backend + super::CKKSCopyImpl {
         ckks_eval_linear_transformation_assign_derived(module, dst, babies, lt, keys, scratch)
     }
 
+    /// Reproduces
+    /// [`ckks_eval_linear_transformation_sum_into_reference`](crate::reference::CKKSLinearTransformationReference::ckks_eval_linear_transformation_sum_into_reference)
+    /// bit for bit, within [`Self::ckks_eval_linear_transformation_sum_tmp_bytes`]; free in kernels and scratch use.
     fn ckks_eval_linear_transformation_sum_into<Dst, Src, H>(
         module: &Module<Self>,
         dst: &mut Dst,
@@ -111,7 +141,12 @@ pub unsafe trait CKKSLinearTransformationImpl: Backend + super::CKKSCopyImpl {
         Src: GLWEToBackendRef<Self> + CKKSCtBounds,
         H: GetAutomorphismKey<Self>;
 
-    /// [`Self::ckks_eval_linear_transformation_into`] over a baby cache allocated and prepared from `src`.
+    /// Default body: `ckks_eval_linear_transformation_self_into_derived`, a baby cache allocated for `src`,
+    /// [`Self::ckks_prepare_linear_transformation_baby_steps`] into it, then
+    /// [`Self::ckks_eval_linear_transformation_into`] over it. A plaintext `lt` streams its diagonals inside the
+    /// evaluation. Bounded by the larger of [`Self::ckks_prepare_linear_transformation_baby_steps_tmp_bytes`] and the
+    /// evaluation query of the right side, [`Self::ckks_eval_linear_transformation_tmp_bytes`] or
+    /// [`Self::ckks_eval_linear_transformation_streamed_tmp_bytes`].
     fn ckks_eval_linear_transformation_self_into<Dst, Src, P, H>(
         module: &Module<Self>,
         dst: &mut Dst,
@@ -129,8 +164,10 @@ pub unsafe trait CKKSLinearTransformationImpl: Backend + super::CKKSCopyImpl {
         ckks_eval_linear_transformation_self_into_derived(module, dst, src, lt, keys, scratch)
     }
 
-    /// [`Self::ckks_eval_linear_transformation_self_into`] into a working copy carved from scratch, then copied
-    /// back.
+    /// Default body: `ckks_eval_linear_transformation_self_assign_derived`,
+    /// [`Self::ckks_eval_linear_transformation_self_into`] from `dst` into a `dst`-shaped working copy carved from
+    /// scratch, then the selected `ckks_copy` of the copy back into `dst`. Bounded as
+    /// [`Self::ckks_eval_linear_transformation_self_into`].
     fn ckks_eval_linear_transformation_self_assign<Dst, P, H>(
         module: &Module<Self>,
         dst: &mut Dst,

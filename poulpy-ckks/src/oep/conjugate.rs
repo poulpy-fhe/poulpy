@@ -8,12 +8,16 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena, Standard};
 
 use crate::{CKKSCtBounds, SetCKKSInfos};
 
-/// # Safety
+/// Backend contract of [`CKKSConjugateOps`](crate::api::CKKSConjugateOps), on the standard ring.
 ///
-/// Implementations must satisfy the contracts of all trait methods, including
-/// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
-/// associated method signatures.
+/// # Safety
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait CKKSConjugateImpl: Backend<Ring = Standard> {
+    /// Default body: `ckks_conjugate_rotate_into_derived`, the lookup of the automorphism key of the conjugate-rotate
+    /// Galois element of `k` at the switch width `min(src.k(), dst.k())`, then [`Self::ckks_conjugate_with_key_into`]
+    /// with it. A missing key is `MissingAutomorphismKey`.
     fn ckks_conjugate_rotate_into<Dst, Src, H>(
         module: &Module<Self>,
         k: i64,
@@ -30,6 +34,8 @@ pub unsafe trait CKKSConjugateImpl: Backend<Ring = Standard> {
         super::derived::conjugate::ckks_conjugate_rotate_into_derived(module, k, dst, src, keys, scratch)
     }
 
+    /// Default body: `ckks_conjugate_assign_derived`, the lookup of the automorphism key of Galois element `-1` at
+    /// `dst.k()`, then [`Self::ckks_conjugate_with_key_assign`] with it. A missing key is `MissingAutomorphismKey`.
     fn ckks_conjugate_assign<Dst, H>(
         module: &Module<Self>,
         dst: &mut Dst,
@@ -43,9 +49,15 @@ pub unsafe trait CKKSConjugateImpl: Backend<Ring = Standard> {
         super::derived::conjugate::ckks_conjugate_assign_derived(module, dst, keys, scratch)
     }
 
+    /// Scratch bound of [`Self::ckks_conjugate_with_key_into`] and [`Self::ckks_conjugate_with_key_assign`]; may report
+    /// less than the reference, never less than the body takes. It also bounds the conjugate and conjugate-rotate
+    /// forms, which call them.
     fn ckks_conjugate_tmp_bytes<C: GLWEInfos, K: GGLWEInfos>(module: &Module<Self>, ct_infos: &C, key_infos: &K) -> usize;
 
-    /// Hook without an API twin: the conjugation under the automorphism key its caller looked up.
+    /// Hook without an API twin. Reproduces
+    /// [`ckks_conjugate_with_key_into_reference`](crate::reference::conjugate::CKKSConjugateReference::ckks_conjugate_with_key_into_reference)
+    /// bit for bit, within [`Self::ckks_conjugate_tmp_bytes`]; free in kernels and scratch use. The caller hands the
+    /// automorphism key it looked up, and the hook stamps the output metadata as the reference does.
     fn ckks_conjugate_with_key_into<Dst, Src>(
         module: &Module<Self>,
         dst: &mut Dst,
@@ -57,7 +69,10 @@ pub unsafe trait CKKSConjugateImpl: Backend<Ring = Standard> {
         Dst: GLWEToBackendMut<Self> + GLWEInfos + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<Self> + GLWEInfos + CKKSCtBounds;
 
-    /// In-place [`Self::ckks_conjugate_with_key_into`].
+    /// Hook without an API twin. Reproduces
+    /// [`ckks_conjugate_with_key_assign_reference`](crate::reference::conjugate::CKKSConjugateReference::ckks_conjugate_with_key_assign_reference)
+    /// bit for bit, within [`Self::ckks_conjugate_tmp_bytes`]; free in kernels and scratch use. The caller hands the
+    /// automorphism key it looked up, and the hook stamps the output metadata as the reference does.
     fn ckks_conjugate_with_key_assign<Dst>(
         module: &Module<Self>,
         dst: &mut Dst,

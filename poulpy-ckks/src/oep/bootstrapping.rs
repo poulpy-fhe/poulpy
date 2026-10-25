@@ -21,13 +21,15 @@ use crate::{
 /// [`impl_ckks_bootstrapping_reference_full`] wires every method to the reference pipeline.
 ///
 /// # Safety
-///
-/// Implementations must preserve the exact CKKS metadata and ciphertext
-/// semantics of the reference pipeline, honor all key layouts, and stay within
-/// the scratch they report.
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait CKKSBootstrappingImpl: Backend<Ring = Standard> {
+    /// Scratch bound of [`Self::ckks_mod_up_into`]; may report less than the reference, never less than the body takes.
     fn ckks_mod_up_tmp_bytes(module: &Module<Self>, res_size: usize) -> usize;
 
+    /// Scratch bound of [`Self::ckks_bootstrap`] and [`Self::ckks_bootstrap_mod_up`]; may report less than the
+    /// reference, never less than the body takes.
     fn ckks_bootstrap_tmp_bytes<C1, C2, F>(
         module: &Module<Self>,
         ct_out: &C1,
@@ -39,6 +41,8 @@ pub unsafe trait CKKSBootstrappingImpl: Backend<Ring = Standard> {
         C1: CKKSCtBounds,
         C2: CKKSCtBounds;
 
+    /// Scratch bound of [`Self::ckks_functional_bootstrap`]; may report less than the reference, never less than the
+    /// body takes. It does not grow with the number of LUTs.
     fn ckks_functional_bootstrap_tmp_bytes<C1, C2, F>(
         module: &Module<Self>,
         ct_out: &C1,
@@ -51,6 +55,10 @@ pub unsafe trait CKKSBootstrappingImpl: Backend<Ring = Standard> {
         C1: CKKSCtBounds,
         C2: CKKSCtBounds;
 
+    /// Reproduces
+    /// [`ckks_mod_up_into_reference`](crate::reference::bootstrapping::CKKSBootstrappingReference::ckks_mod_up_into_reference)
+    /// bit for bit, within [`Self::ckks_mod_up_tmp_bytes`]; free in kernels and scratch use. It honors the metadata,
+    /// ciphertext semantics and key layouts of the reference pipeline.
     fn ckks_mod_up_into<Dst, Src>(
         module: &Module<Self>,
         dst: &mut Dst,
@@ -62,6 +70,9 @@ pub unsafe trait CKKSBootstrappingImpl: Backend<Ring = Standard> {
         Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<Self> + CKKSCtBounds;
 
+    /// Reproduces
+    /// [`ckks_bootstrap_mod_up_reference`](crate::reference::bootstrapping::CKKSBootstrappingReference::ckks_bootstrap_mod_up_reference)
+    /// bit for bit, within [`Self::ckks_bootstrap_tmp_bytes`]; free in kernels and scratch use.
     fn ckks_bootstrap_mod_up<Dst, Src, K>(
         module: &Module<Self>,
         dst: &mut Dst,
@@ -75,6 +86,9 @@ pub unsafe trait CKKSBootstrappingImpl: Backend<Ring = Standard> {
         Src: GLWEToBackendRef<Self> + CKKSCtBounds,
         K: BootstrappingKeys<Self>;
 
+    /// Reproduces
+    /// [`ckks_bootstrap_reference`](crate::reference::bootstrapping::CKKSBootstrappingReference::ckks_bootstrap_reference)
+    /// bit for bit, within [`Self::ckks_bootstrap_tmp_bytes`]; free in kernels and scratch use.
     fn ckks_bootstrap<F, K>(
         module: &Module<Self>,
         ct_out: &mut CKKSCiphertextOwned<Self>,
@@ -88,6 +102,9 @@ pub unsafe trait CKKSBootstrappingImpl: Backend<Ring = Standard> {
         K: BootstrappingKeys<Self> + Sync,
         K::TensorKey: Sync;
 
+    /// Reproduces
+    /// [`ckks_functional_bootstrap_reference`](crate::reference::bootstrapping::CKKSBootstrappingReference::ckks_functional_bootstrap_reference)
+    /// bit for bit, within [`Self::ckks_functional_bootstrap_tmp_bytes`]; free in kernels and scratch use.
     fn ckks_functional_bootstrap<F, K>(
         module: &Module<Self>,
         ct_outs: &mut [CKKSCiphertextOwned<Self>],
@@ -106,17 +123,17 @@ pub unsafe trait CKKSBootstrappingImpl: Backend<Ring = Standard> {
 /// [`impl_ckks_bootstrapping_ci_reference_full`] wires it to the reference pipeline.
 ///
 /// # Safety
-///
-/// `ckks_bootstrap_ci_into` must reproduce `ckks_bootstrap_ci_reference` bit for bit: values,
-/// metadata, canonical flag, refusals and their order. It must run within what
-/// `ckks_bootstrap_ci_tmp_bytes` reports for each arena, which may be less than the
-/// reference reports but never less than the body uses.
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait CKKSBootstrappingCIImpl: Backend<Ring = Standard> {
     /// The conjugate-invariant twin that runs EvalMod, sharing the buffers of `Self`.
     type CI: Backend<Ring = ConjugateInvariant, OwnedBuf = Self::OwnedBuf, ZnxWord = Self::ZnxWord>
         + for<'a> Backend<BufRef<'a> = Self::BufRef<'a>, BufMut<'a> = Self::BufMut<'a>>
         + 'static;
 
+    /// Scratch bound of [`Self::ckks_bootstrap_ci_into`], one size per arena as `(scratch, scratch_ci)`; may report
+    /// less than the reference, never less than the body uses.
     fn ckks_bootstrap_ci_tmp_bytes<C1, C2, F>(
         module: &Module<Self>,
         ci: &Module<Self::CI>,
@@ -129,6 +146,9 @@ pub unsafe trait CKKSBootstrappingCIImpl: Backend<Ring = Standard> {
         C1: CKKSCtBounds,
         C2: CKKSCtBounds;
 
+    /// Reproduces [`ckks_bootstrap_ci_reference`](crate::reference::bootstrapping::ckks_bootstrap_ci_reference) bit for
+    /// bit: values, metadata, canonical flag, refusals and their order; free in kernels. It runs within what
+    /// [`Self::ckks_bootstrap_ci_tmp_bytes`] reports for each arena.
     #[expect(
         clippy::too_many_arguments,
         reason = "the bootstrap takes a module and a scratch arena per ring"
@@ -154,13 +174,13 @@ pub unsafe trait CKKSBootstrappingCIImpl: Backend<Ring = Standard> {
 /// ([`DFTPlan::with_first_factor_on_raise`](crate::layouts::DFTPlan::with_first_factor_on_raise)).
 ///
 /// # Safety
-///
-/// Implementations must preserve the exact CKKS metadata and ciphertext
-/// semantics of the reference composition and stay within the supplied
-/// scratch arena.
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait CKKSModUpFirstFactorImpl: Backend<Ring = Standard> {
-    /// `d2s_infos` is the dense-to-sparse key under encapsulation, `key_infos`
-    /// the layout of the first-factor keys.
+    /// Scratch bound of [`Self::ckks_mod_up_first_factor`]; may report less than the reference, never less than the
+    /// body takes. `d2s_infos` is the dense-to-sparse key under encapsulation, `key_infos` the layout of the
+    /// first-factor keys.
     fn ckks_mod_up_first_factor_tmp_bytes<Dst, Src, D2S, K>(
         module: &Module<Self>,
         dst_infos: &Dst,
@@ -175,7 +195,10 @@ pub unsafe trait CKKSModUpFirstFactorImpl: Backend<Ring = Standard> {
         D2S: GGLWEInfos,
         K: GGLWEInfos;
 
-    /// See [`ckks_mod_up_first_factor_reference`](crate::reference::first_factor::ckks_mod_up_first_factor_reference).
+    /// Reproduces
+    /// [`ckks_mod_up_first_factor_reference`](crate::reference::first_factor::ckks_mod_up_first_factor_reference) bit
+    /// for bit, within [`Self::ckks_mod_up_first_factor_tmp_bytes`]; free in kernels and scratch use. It honors the key
+    /// layouts of the reference composition.
     fn ckks_mod_up_first_factor<Dst, Src, K>(
         module: &Module<Self>,
         dst: &mut Dst,
@@ -198,11 +221,12 @@ pub unsafe trait CKKSModUpFirstFactorImpl: Backend<Ring = Standard> {
 /// switch, which reads the raised ciphertext at its own width.
 ///
 /// # Safety
-///
-/// Implementations must preserve the exact CKKS metadata and ciphertext
-/// semantics of the reference composition, honor all key layouts, and stay
-/// within the supplied scratch arena.
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait CKKSEncapsulatedModUpImpl: Backend<Ring = Standard> {
+    /// Scratch bound of [`Self::ckks_encapsulated_mod_up`]; may report less than the reference, never less than the
+    /// body takes.
     fn ckks_encapsulated_mod_up_tmp_bytes<Dst, Src, D2S, S2D>(
         module: &Module<Self>,
         dst_infos: &Dst,
@@ -216,9 +240,11 @@ pub unsafe trait CKKSEncapsulatedModUpImpl: Backend<Ring = Standard> {
         D2S: GGLWEInfos,
         S2D: GGLWEInfos;
 
-    /// `scale_up` is applied to the raised ciphertext between ModUp and the
-    /// sparse-to-dense switch, so the message is already at its final scale when
-    /// that key-switch's noise is added.
+    /// Reproduces
+    /// [`ckks_encapsulated_mod_up_reference`](crate::reference::bootstrapping::ckks_encapsulated_mod_up_reference) bit
+    /// for bit, within [`Self::ckks_encapsulated_mod_up_tmp_bytes`]; free in kernels and scratch use. `scale_up` is
+    /// applied to the raised ciphertext between ModUp and the sparse-to-dense switch, so the message is already at its
+    /// final scale when that key-switch's noise is added. It honors the key layouts of the reference composition.
     fn ckks_encapsulated_mod_up<Dst, Src>(
         module: &Module<Self>,
         dst: &mut Dst,
