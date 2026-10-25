@@ -130,8 +130,14 @@ impl<D: HostDataMut, T: UnsignedInteger + ToBits> FheUint<D, T, i64> {
         #[cfg(debug_assertions)]
         {
             assert!(module.n().is_multiple_of(T::BITS as usize));
-            assert_eq!(self.n(), module.n() as u32);
-            assert_eq!(sk_glwe.n(), module.n() as u32);
+            assert!(
+                self.n() == module.n() as u32,
+                "the ciphertext degree differs from the module degree"
+            );
+            assert!(
+                sk_glwe.n() == module.n() as u32,
+                "the secret degree differs from the module degree"
+            );
         }
 
         let mut data_bits: Vec<i64> = vec![0i64; module.n()];
@@ -185,8 +191,14 @@ impl<D: HostDataRef, T: UnsignedInteger + FromBits> FheUint<D, T, i64> {
         #[cfg(debug_assertions)]
         {
             assert!(module.n().is_multiple_of(T::BITS as usize));
-            assert_eq!(self.n(), module.n() as u32);
-            assert_eq!(sk.n(), module.n() as u32);
+            assert!(
+                self.n() == module.n() as u32,
+                "the ciphertext degree differs from the module degree"
+            );
+            assert!(
+                sk.n() == module.n() as u32,
+                "the secret degree differs from the module degree"
+            );
         }
 
         let pt_infos = GLWEPlaintextLayout {
@@ -215,8 +227,14 @@ impl<D: HostDataRef, T: UnsignedInteger + FromBits> FheUint<D, T, i64> {
         #[cfg(debug_assertions)]
         {
             assert!(module.n().is_multiple_of(T::BITS as usize));
-            assert_eq!(self.n(), module.n() as u32);
-            assert_eq!(sk_glwe.n(), module.n() as u32);
+            assert!(
+                self.n() == module.n() as u32,
+                "the ciphertext degree differs from the module degree"
+            );
+            assert!(
+                sk_glwe.n() == module.n() as u32,
+                "the secret degree differs from the module degree"
+            );
         }
 
         let pt_infos = GLWEPlaintextLayout {

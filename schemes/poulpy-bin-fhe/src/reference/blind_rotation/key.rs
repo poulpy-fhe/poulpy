@@ -37,9 +37,15 @@ pub fn blind_rotation_key_encrypt_sk_reference<BE, S0, S1>(
     BE: Backend<ZnxWord = i64>,
     Module<BE>: GGSWEncryptSk<BE>,
 {
-    assert_eq!(res.keys.len() as u32, sk_lwe.n());
+    assert!(
+        res.keys.len() as u32 == sk_lwe.n(),
+        "the key count differs from the LWE secret dimension"
+    );
     assert!(sk_glwe.n() <= module.n() as u32);
-    assert_eq!(sk_glwe.rank(), res.keys[0].rank());
+    assert!(
+        sk_glwe.rank() == res.keys[0].rank(),
+        "the GLWE secret rank differs from the key rank"
+    );
 
     match sk_lwe.dist() {
         Distribution::BinaryBlock(_) | Distribution::BinaryFixed(_) | Distribution::BinaryProb(_) | Distribution::ZERO => {}
