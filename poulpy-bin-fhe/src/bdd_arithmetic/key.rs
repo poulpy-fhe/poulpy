@@ -276,6 +276,37 @@ impl<D: Data, BRA: BlindRotationAlgo, BE: Backend> BDDKeyInfos for BDDKeyPrepare
     }
 }
 
+impl<D: Data, BRA: BlindRotationAlgo, W: ZnxWord> BDDKeyInfos for BDDKey<D, BRA, W> {
+    fn cbt_infos(&self) -> CircuitBootstrappingKeyLayout {
+        CircuitBootstrappingKeyLayout {
+            brk_layout: self.cbt.brk_infos(),
+            atk_layout: self.cbt.atk_infos(),
+            tsk_layout: self.cbt.tsk_infos(),
+        }
+    }
+    fn ks_glwe_infos(&self) -> Option<GLWESwitchingKeyLayout> {
+        self.ks_glwe.as_ref().map(|ks_glwe| GLWESwitchingKeyLayout {
+            n: ks_glwe.n(),
+            base2k: ks_glwe.base2k(),
+            dnum: ks_glwe.dnum(),
+            rank_in: ks_glwe.rank_in(),
+            rank_out: ks_glwe.rank_out(),
+            k_aux: ks_glwe.k_aux(),
+            k_digit: ks_glwe.k_digit(),
+            k_offset: ks_glwe.k_offset(),
+        })
+    }
+    fn ks_lwe_infos(&self) -> GLWEToLWEKeyLayout {
+        GLWEToLWEKeyLayout {
+            n: self.ks_lwe.n(),
+            base2k: self.ks_lwe.base2k(),
+            dnum: self.ks_lwe.dnum(),
+            rank_in: self.ks_lwe.rank_in(),
+            k_aux: self.ks_lwe.k_aux(),
+        }
+    }
+}
+
 impl<BRA: BlindRotationAlgo, BE: Backend> GetAutomorphismKey<BE> for BDDKeyPrepared<BE::OwnedBuf, BRA, BE> {
     fn lookup_automorphism_key(
         &self,

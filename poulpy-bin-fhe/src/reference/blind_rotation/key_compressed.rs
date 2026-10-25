@@ -74,4 +74,9 @@ pub fn blind_rotation_key_compressed_encrypt_sk_reference<BE, S0, S1>(
             module.ggsw_compressed_encrypt_sk(ggsw, &pt, sk_glwe, source_xa.new_seed(), source_xe, &mut scratch_iter);
         }
     }
+
+    scratch.wipe(blind_rotation_key_compressed_encrypt_sk_tmp_bytes_reference(
+        module,
+        &res.keys[0],
+    ));
 }

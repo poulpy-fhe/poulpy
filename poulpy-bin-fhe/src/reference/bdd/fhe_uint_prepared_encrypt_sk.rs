@@ -49,4 +49,6 @@ pub fn fhe_uint_prepared_encrypt_sk_reference<T: UnsignedInteger + ToBits, BE: B
         module.ggsw_encrypt_sk(&mut tmp_ggsw, &pt_backend, sk, source_xe, source_xa, &mut scratch_bit);
         module.ggsw_prepare(&mut res.bits[i], &tmp_ggsw, &mut scratch_bit);
     }
+
+    scratch.wipe(fhe_uint_prepared_encrypt_sk_tmp_bytes_reference(module, &*res));
 }
