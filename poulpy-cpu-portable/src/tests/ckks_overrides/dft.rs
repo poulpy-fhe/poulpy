@@ -382,6 +382,13 @@ poulpy_ckks::impl_ckks_bootstrapping_reference_full!(OverrideBackend);
 unsafe impl<F: poulpy_ckks::api::CKKSEncodingScalar + poulpy_ckks::layouts::DftScalar> poulpy_ckks::oep::DFTMatrixImpl<F>
     for OverrideBackend
 {
+    fn ckks_new_dft_matrix_tmp_bytes<Dir: poulpy_ckks::layouts::DftDirection, Fmt: poulpy_ckks::layouts::DftFormat>(
+        module: &Module<Self>,
+        plan: &DFTPlan,
+    ) -> Result<usize> {
+        poulpy_ckks::reference::dft::ckks_new_dft_matrix_tmp_bytes::<Dir, Fmt, Self, F>(module, plan)
+    }
+
     fn ckks_new_dft_matrix<Dir: poulpy_ckks::layouts::DftDirection, Fmt: poulpy_ckks::layouts::DftFormat>(
         module: &Module<Self>,
         base2k: poulpy_core::layouts::Base2K,

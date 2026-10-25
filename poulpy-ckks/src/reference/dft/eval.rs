@@ -35,10 +35,13 @@ use poulpy_hal::{
 
 use crate::{
     CKKSCompositionError, CKKSCtBounds, SetCKKSInfos,
-    api::{CKKSEncodingOps, CKKSEncodingScalar, CKKSLinearTransformationOps, LinearTransformationBabySteps, LtDiagonalMeta},
+    api::{
+        CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, CKKSLinearTransformationOps, LinearTransformationBabySteps,
+        LtDiagonalMeta,
+    },
     layouts::{
-        CKKSModuleAlloc, CKKSPlaintextOwned, DFTMatrix, DFTMatrixFactors, DFTMatrixPrepared, DFTPlan, DftDirection, DftFormat,
-        DftScalar,
+        CKKSModuleAlloc, CKKSPlaintextOwned, ComplexDiagonals, DFTMatrix, DFTMatrixFactors, DFTMatrixPrepared, DFTPlan,
+        DftDirection, DftFormat, DftScalar,
         dft_matrices::gen_dft_matrices,
         validation::{ensure_prepared_transformation_layout, ensure_uniform_diagonals},
     },
@@ -61,10 +64,19 @@ fn checked_dft_log_slots(literal: &DFTPlan, log_n: usize) -> Result<usize> {
     Ok(log_slots)
 }
 
-/// Resolves the plan and generates + encodes each factor into an (unprepared)
-/// CKKS linear transformation (the plaintext factors of an unprepared
-/// [`DFTMatrix`]); [`ckks_prepare_dft_matrix`] later prepares each factor into a
-/// `CnvPVec` of the resident [`DFTMatrixPrepared`].
+/// Resolves the plan against the ring degree, so the stored `format` is canonical and `plan.is_sparse()` is exact, and
+/// generates the diagonals of each factor. The per-factor scale is carried by `literal.coeffs_meta`.
+fn dft_plan_diagonals<F: DftScalar>(literal: &DFTPlan, log_n: usize) -> Result<(DFTPlan, Vec<ComplexDiagonals<F>>)> {
+    checked_dft_log_slots(literal, log_n)?;
+    let plan = literal.resolved_at(log_n);
+    let factors = gen_dft_matrices::<F>(&plan, log_n);
+    Ok((plan, factors))
+}
+
+/// Encodes each factor's generated diagonals into an (unprepared) CKKS linear
+/// transformation (the plaintext factors of an unprepared [`DFTMatrix`]);
+/// [`ckks_prepare_dft_matrix`] later prepares each factor into a `CnvPVec` of the
+/// resident [`DFTMatrixPrepared`].
 #[allow(clippy::too_many_arguments)]
 fn dft_factor_lts<BE, F>(
     module: &Module<BE>,
@@ -77,14 +89,7 @@ where
     Module<BE>: CnvPVecAlloc<BE> + CKKSLinearTransformationOps<BE> + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
     F: DftScalar + CKKSEncodingScalar,
 {
-    checked_dft_log_slots(literal, module.log_n())?;
-
-    // Resolve the plan against the ring degree, so the stored `format` is canonical
-    // and `plan.is_sparse()` is exact. The per-factor scale is carried by
-    // `literal.coeffs_meta`.
-    let plan = literal.resolved_at(module.log_n());
-
-    let factors_cd = gen_dft_matrices::<F>(&plan, module.log_n());
+    let (plan, factors_cd) = dft_plan_diagonals::<F>(literal, module.log_n())?;
 
     // Each factor's BSGS width is taken from the plan's schedule; the library
     // applies no implicit optimum. `giant_step == 1` is the direct schedule.
@@ -200,6 +205,31 @@ where
     }
 
     Ok(DFTMatrix::from_factors(DFTMatrixFactors::new(plan, lts)))
+}
+
+/// Scratch bytes of [`ckks_new_dft_matrix`] for `literal`: the factors are encoded one after the other on the same
+/// scratch, so the largest slot encoding of one factor's diagonals, at that factor's period.
+///
+/// # Errors
+///
+/// The plan-versus-ring error of [`ckks_new_dft_matrix`] for a plan with more slots than the ring supports.
+pub fn ckks_new_dft_matrix_tmp_bytes<Dir, Fmt, BE, F>(module: &Module<BE>, literal: &DFTPlan) -> Result<usize>
+where
+    Dir: DftDirection,
+    Fmt: DftFormat,
+    BE: Backend,
+    Module<BE>: CKKSEncodingHostOps<BE, F>,
+    F: DftScalar + CKKSEncodingScalar,
+{
+    let mut literal = literal.clone();
+    literal.kind = Dir::KIND;
+    literal.format = Fmt::FORMAT;
+    let (_, factors) = dft_plan_diagonals::<F>(&literal, module.log_n())?;
+    Ok(factors
+        .iter()
+        .map(|factor| crate::encoding::ckks_encode_linear_transformation_tmp_bytes::<BE, _, F>(module, factor.period()))
+        .max()
+        .unwrap_or(0))
 }
 
 impl<BE: Backend, Dir, Fmt: DftFormat, P> DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>> {

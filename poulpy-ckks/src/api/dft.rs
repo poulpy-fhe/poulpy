@@ -201,6 +201,17 @@ pub trait CKKSDFTOps<BE: Backend> {
 /// level, and a backend overrides that seam independently of any bounds the
 /// reference implementation carries.
 pub trait CKKSDFTMatrixOps<BE: Backend, F: CKKSEncodingScalar> {
+    /// Scratch bytes of [`Self::ckks_new_dft_matrix`] for `literal`: the factors are encoded one after the other on the
+    /// same scratch, so the largest slot encoding of one factor's diagonals.
+    ///
+    /// # Errors
+    ///
+    /// The plan-versus-ring error of [`Self::ckks_new_dft_matrix`] for a plan with more slots than the ring supports.
+    fn ckks_new_dft_matrix_tmp_bytes<Dir, Fmt>(&self, literal: &DFTPlan) -> Result<usize>
+    where
+        Dir: DftDirection,
+        Fmt: DftFormat;
+
     /// Builds the unprepared homomorphic (I)DFT described by `literal` at
     /// scalar precision `F` (the reference chain is
     /// [`crate::reference::dft::ckks_new_dft_matrix`]): each factor matrix is
@@ -209,6 +220,8 @@ pub trait CKKSDFTMatrixOps<BE: Backend, F: CKKSEncodingScalar> {
     /// with [`CKKSDFTOps::ckks_prepare_dft_matrix`]. Each factor's BSGS
     /// giant-step width is taken verbatim from the plan's schedule (`1` is the
     /// direct schedule); no implicit optimum is applied.
+    ///
+    /// Size scratch with [`Self::ckks_new_dft_matrix_tmp_bytes`].
     fn ckks_new_dft_matrix<Dir, Fmt>(
         &self,
         base2k: Base2K,

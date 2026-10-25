@@ -925,6 +925,32 @@ where
         Ok(context)
     }
 
+    /// Scratch of [`Self::compile_unprepared`] for `plan`: the DFT matrices and EvalMod are built one after the other on
+    /// the same scratch, so the largest of their queries, [`CKKSDFTMatrixOps::ckks_new_dft_matrix_tmp_bytes`] of each
+    /// matrix and the slot encoding EvalMod stages its coefficients through.
+    ///
+    /// # Errors
+    ///
+    /// The plan-versus-ring error of [`CKKSDFTMatrixOps::ckks_new_dft_matrix`].
+    pub fn compile_unprepared_tmp_bytes(module: &Module<BE>, plan: &BootstrappingPlan) -> Result<usize>
+    where
+        Module<BE>: CKKSDFTMatrixOps<BE, F> + CKKSEncodingOps<BE, F>,
+    {
+        let mut bytes = module
+            .ckks_new_dft_matrix_tmp_bytes::<Encode, Split>(&plan.coeffs_to_slots)?
+            .max(module.ckks_new_dft_matrix_tmp_bytes::<Decode, Split>(&plan.slots_to_coeffs)?);
+        if let Some(bypass) = plan.coeffs_to_slots_bypass() {
+            bytes = bytes.max(module.ckks_new_dft_matrix_tmp_bytes::<Encode, Split>(bypass)?);
+        }
+        if plan.eval_mod_ring == EvalModRing::Standard {
+            bytes = bytes.max(<Module<BE> as CKKSEncodingHostOps<BE, F>>::ckks_reim_tmp_bytes(
+                module,
+                module.n() / 2,
+            ));
+        }
+        Ok(bytes)
+    }
+
     /// First stage of [`Self::compile`]: generates the DFT matrices and encodes
     /// EvalMod, without preparing the matrices.
     pub fn compile_unprepared(

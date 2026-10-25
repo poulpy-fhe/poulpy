@@ -187,6 +187,14 @@ where
     BE: Backend + DFTMatrixImpl<F>,
     F: CKKSEncodingScalar,
 {
+    fn ckks_new_dft_matrix_tmp_bytes<Dir, Fmt>(&self, literal: &DFTPlan) -> Result<usize>
+    where
+        Dir: DftDirection,
+        Fmt: DftFormat,
+    {
+        BE::ckks_new_dft_matrix_tmp_bytes::<Dir, Fmt>(self, literal)
+    }
+
     fn ckks_new_dft_matrix<Dir, Fmt>(
         &self,
         base2k: Base2K,
