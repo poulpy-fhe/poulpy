@@ -11,6 +11,7 @@ use poulpy_hal::{
 use rand::Rng;
 
 use crate::test_suite::bdd_arithmetic::{TEST_GLWE_INFOS, TestContext};
+use crate::test_suite::parity::with_scratch;
 use crate::{
     bdd_arithmetic::{BDDKeyPrepared, FheUint, ToBits},
     blind_rotation::BlindRotationAlgo,
@@ -31,42 +32,49 @@ pub fn test_fhe_uint_sext<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf: HostData
     let mut source_xa: Source = Source::new([2u8; 32]);
     let mut source_xe: Source = Source::new([3u8; 32]);
 
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(1 << 22);
-
     let mut a_enc: FheUint<BE::OwnedBuf, u32, BE::ZnxWord> =
         FheUint::<BE::OwnedBuf, u32, i64>::alloc_from_infos(module, &glwe_infos);
 
     for j in 0..3 {
         let a: u32 = 0x8483_8281;
-        a_enc.encrypt_sk(module, a, sk, &mut source_xe, &mut source_xa, &mut scratch.borrow());
+        with_scratch::<BE, _>(a_enc.encrypt_sk_tmp_bytes(module), |s| {
+            a_enc.encrypt_sk(module, a, sk, &mut source_xe, &mut source_xa, s)
+        });
 
-        a_enc.sext(module, j, keys, &mut scratch.borrow());
+        with_scratch::<BE, _>(a_enc.sext_tmp_bytes(module, keys), |s| a_enc.sext(module, j, keys, s));
 
         assert_eq!(
             sext(a, ((1 + j as u32) << 3) - 1),
-            a_enc.decrypt(module, sk, &mut scratch.borrow())
+            with_scratch::<BE, _>(a_enc.decrypt_tmp_bytes(module), |s| a_enc.decrypt(module, sk, s))
         );
     }
 
     for j in 0..3 {
         let a: u32 = 0x4443_4241;
-        a_enc.encrypt_sk(module, a, sk, &mut source_xe, &mut source_xa, &mut scratch.borrow());
+        with_scratch::<BE, _>(a_enc.encrypt_sk_tmp_bytes(module), |s| {
+            a_enc.encrypt_sk(module, a, sk, &mut source_xe, &mut source_xa, s)
+        });
 
-        a_enc.sext(module, j, keys, &mut scratch.borrow());
+        with_scratch::<BE, _>(a_enc.sext_tmp_bytes(module, keys), |s| a_enc.sext(module, j, keys, s));
 
         assert_eq!(
             sext(a, ((1 + j as u32) << 3) - 1),
-            a_enc.decrypt(module, sk, &mut scratch.borrow())
+            with_scratch::<BE, _>(a_enc.decrypt_tmp_bytes(module), |s| a_enc.decrypt(module, sk, s))
         );
     }
 
     // Extending from the top byte leaves the value unchanged, yet is an evaluation.
     let a: u32 = 0x8483_8281;
-    a_enc.encrypt_sk(module, a, sk, &mut source_xe, &mut source_xa, &mut scratch.borrow());
+    with_scratch::<BE, _>(a_enc.encrypt_sk_tmp_bytes(module), |s| {
+        a_enc.encrypt_sk(module, a, sk, &mut source_xe, &mut source_xa, s)
+    });
     assert!(a_enc.noise().is_some());
-    a_enc.sext(module, 3, keys, &mut scratch.borrow());
+    with_scratch::<BE, _>(a_enc.sext_tmp_bytes(module, keys), |s| a_enc.sext(module, 3, keys, s));
     assert!(a_enc.noise().is_none());
-    assert_eq!(a, a_enc.decrypt(module, sk, &mut scratch.borrow()));
+    assert_eq!(
+        a,
+        with_scratch::<BE, _>(a_enc.decrypt_tmp_bytes(module), |s| a_enc.decrypt(module, sk, s))
+    );
 }
 
 pub(crate) fn sext(x: u32, bits: u32) -> u32 {
@@ -93,8 +101,6 @@ pub fn test_fhe_uint_splice_u8<
     let mut source_xa: Source = Source::new([2u8; 32]);
     let mut source_xe: Source = Source::new([3u8; 32]);
 
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(1 << 22);
-
     let mut a_enc: FheUint<BE::OwnedBuf, u32, BE::ZnxWord> =
         FheUint::<BE::OwnedBuf, u32, i64>::alloc_from_infos(module, &glwe_infos);
     let mut b_enc: FheUint<BE::OwnedBuf, u32, BE::ZnxWord> =
@@ -105,12 +111,18 @@ pub fn test_fhe_uint_splice_u8<
     let a: u32 = 0xFFFFFFFF;
     let b: u32 = 0xAABBCCDD;
 
-    b_enc.encrypt_sk(module, b, sk, &mut source_xe, &mut source_xa, &mut scratch.borrow());
-    a_enc.encrypt_sk(module, a, sk, &mut source_xe, &mut source_xa, &mut scratch.borrow());
+    with_scratch::<BE, _>(b_enc.encrypt_sk_tmp_bytes(module), |s| {
+        b_enc.encrypt_sk(module, b, sk, &mut source_xe, &mut source_xa, s)
+    });
+    with_scratch::<BE, _>(a_enc.encrypt_sk_tmp_bytes(module), |s| {
+        a_enc.encrypt_sk(module, a, sk, &mut source_xe, &mut source_xa, s)
+    });
 
     for dst in 0..4 {
         for src in 0..4 {
-            c_enc.splice_u8(module, dst, src, &a_enc, &b_enc, keys, &mut scratch.borrow());
+            with_scratch::<BE, _>(c_enc.splice_u8_tmp_bytes(module, &a_enc, &b_enc, keys), |s| {
+                c_enc.splice_u8(module, dst, src, &a_enc, &b_enc, keys, s)
+            });
 
             let rj: u32 = (dst << 3) as u32;
             let ri: u32 = (src << 3) as u32;
@@ -119,7 +131,10 @@ pub fn test_fhe_uint_splice_u8<
 
             let c_want: u32 = ((a_r & 0xFFFF_FF00) | (b_r & 0x0000_00FF)).rotate_left(rj);
 
-            assert_eq!(c_want, c_enc.decrypt(module, sk, &mut scratch.borrow()));
+            assert_eq!(
+                c_want,
+                with_scratch::<BE, _>(c_enc.decrypt_tmp_bytes(module), |s| c_enc.decrypt(module, sk, s))
+            );
         }
     }
 }
@@ -142,8 +157,6 @@ pub fn test_fhe_uint_splice_u16<
     let mut source_xa: Source = Source::new([2u8; 32]);
     let mut source_xe: Source = Source::new([3u8; 32]);
 
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(1 << 22);
-
     let mut a_enc: FheUint<BE::OwnedBuf, u32, BE::ZnxWord> =
         FheUint::<BE::OwnedBuf, u32, i64>::alloc_from_infos(module, &glwe_infos);
     let mut b_enc: FheUint<BE::OwnedBuf, u32, BE::ZnxWord> =
@@ -154,18 +167,27 @@ pub fn test_fhe_uint_splice_u16<
     let a: u32 = 0xFFFFFFFF;
     let b: u32 = 0xAABBCCDD;
 
-    b_enc.encrypt_sk(module, b, sk, &mut source_xe, &mut source_xa, &mut scratch.borrow());
-    a_enc.encrypt_sk(module, a, sk, &mut source_xe, &mut source_xa, &mut scratch.borrow());
+    with_scratch::<BE, _>(b_enc.encrypt_sk_tmp_bytes(module), |s| {
+        b_enc.encrypt_sk(module, b, sk, &mut source_xe, &mut source_xa, s)
+    });
+    with_scratch::<BE, _>(a_enc.encrypt_sk_tmp_bytes(module), |s| {
+        a_enc.encrypt_sk(module, a, sk, &mut source_xe, &mut source_xa, s)
+    });
 
     for dst in 0..2 {
         for src in 0..2 {
-            c_enc.splice_u16(module, dst, src, &a_enc, &b_enc, keys, &mut scratch.borrow());
+            with_scratch::<BE, _>(c_enc.splice_u16_tmp_bytes(module, &a_enc, &b_enc, keys), |s| {
+                c_enc.splice_u16(module, dst, src, &a_enc, &b_enc, keys, s)
+            });
             let rj: u32 = (dst << 4) as u32;
             let ri: u32 = (src << 4) as u32;
             let a_r: u32 = a.rotate_right(rj);
             let b_r: u32 = b.rotate_right(ri);
             let c_want: u32 = ((a_r & 0xFFFF_0000) | (b_r & 0x0000_FFFF)).rotate_left(rj);
-            assert_eq!(c_want, c_enc.decrypt(module, sk, &mut scratch.borrow()));
+            assert_eq!(
+                c_want,
+                with_scratch::<BE, _>(c_enc.decrypt_tmp_bytes(module), |s| c_enc.decrypt(module, sk, s))
+            );
         }
     }
 }
@@ -188,8 +210,6 @@ pub fn test_fhe_uint_get_bit_glwe<
     let mut source_xa: Source = Source::new([2u8; 32]);
     let mut source_xe: Source = Source::new([3u8; 32]);
 
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(1 << 22);
-
     let mut a_enc: FheUint<BE::OwnedBuf, u32, BE::ZnxWord> =
         FheUint::<BE::OwnedBuf, u32, i64>::alloc_from_infos(module, &glwe_infos);
     let mut c_enc: FheUint<BE::OwnedBuf, u32, BE::ZnxWord> =
@@ -197,13 +217,17 @@ pub fn test_fhe_uint_get_bit_glwe<
 
     let a: u32 = source_xa.next_u32();
 
-    let mut scratch_enc: ScratchOwned<BE> = ScratchOwned::alloc(a_enc.encrypt_sk_tmp_bytes(module));
-    a_enc.encrypt_sk(module, a, sk, &mut source_xe, &mut source_xa, &mut scratch_enc.borrow());
-
-    let mut scratch_dec: ScratchOwned<BE> = ScratchOwned::alloc(c_enc.decrypt_tmp_bytes(module));
+    with_scratch::<BE, _>(a_enc.encrypt_sk_tmp_bytes(module), |s| {
+        a_enc.encrypt_sk(module, a, sk, &mut source_xe, &mut source_xa, s)
+    });
 
     for i in 0..32 {
-        a_enc.get_bit_glwe(module, i, &mut c_enc, keys, &mut scratch.borrow());
-        assert_eq!(a.bit(i) as u32, c_enc.decrypt(module, sk, &mut scratch_dec.borrow()));
+        with_scratch::<BE, _>(a_enc.get_bit_glwe_tmp_bytes(module, &c_enc, keys), |s| {
+            a_enc.get_bit_glwe(module, i, &mut c_enc, keys, s)
+        });
+        assert_eq!(
+            a.bit(i) as u32,
+            with_scratch::<BE, _>(c_enc.decrypt_tmp_bytes(module), |s| c_enc.decrypt(module, sk, s))
+        );
     }
 }
