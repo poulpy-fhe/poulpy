@@ -24,17 +24,11 @@ pub fn shaped_round_correction<BE>(
         "ckks_shaped_round_correction: invalid buffers"
     );
     assert!(
-        low.n().is_multiple_of(2 << profile.log_r()) && lambda > 0 && lambda <= profile.max_pass_bits(),
+        low.n().is_multiple_of(profile.period()) && lambda > 0 && lambda <= profile.max_pass_bits(),
         "ckks_shaped_round_correction: invalid shaping depth or degree"
     );
     let c = low.at(0, 0);
-    profile.shaped_multiple_host(
-        low.n() >> (profile.log_r() + 1),
-        lambda,
-        c,
-        h.at_mut(0, 0),
-        carry.at_mut(0, 0),
-    );
+    profile.shaped_multiple_host(lambda, c, h.at_mut(0, 0), carry.at_mut(0, 0));
     for (kappa, &cj) in carry.at_mut(0, 0).iter_mut().zip(c) {
         *kappa = (cj - *kappa) >> lambda;
     }

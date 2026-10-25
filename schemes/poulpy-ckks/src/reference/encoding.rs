@@ -311,7 +311,7 @@ where
             .context("CKKS coefficient is not representable as an i128 at the plaintext scale")?;
         *l = *q as i64;
     }
-    profile.shaped_multiple_host(coeffs.len() / period, lambda, low, h, gh);
+    profile.shaped_multiple_host(lambda, low, h, gh);
     for (q, &m) in out.iter_mut().zip(gh.iter()) {
         *q = (*q - m as i128) >> lambda;
     }

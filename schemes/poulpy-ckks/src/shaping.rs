@@ -6,6 +6,14 @@
 //! `U(ω^(5^(t mod R)))`, `ω = e^(iπ/(2R))`, so `U` acts on `R` slot classes,
 //! class `0` carrying the data and the others the guards.
 //!
+//! On the conjugate-invariant ring of degree `N`, the subring of
+//! `Z[X]/(X^(2N)+1)` fixed by `X -> X^-1`, `g = U(X^(N/R))` must be invariant
+//! too: `U` lies in `Z[Y+Y^-1]`. Its `N` real slots fall into the same `R`
+//! classes, slot `t` in class `t mod R`. Every unit of `Z[Y]/(Y^(2R)+1)` is a
+//! power of `Y` times an invariant unit, which has the same class magnitudes,
+//! so the conjugate-invariant ring shapes with `Y^s*U` for the shift `s` that
+//! makes it invariant.
+//!
 //! [`ShapingProfile`] derives what shaped rounding needs from `U`: its inverse
 //! modulo `2^64`, the per-class magnitudes and the largest exact pass.
 //! [`ShapingUnit`] lists units with the smallest guard amplification for a
@@ -18,7 +26,7 @@ use poulpy_hal::layouts::{Backend, Ring, Standard};
 
 use num_traits::{FromPrimitive, ToPrimitive, Zero};
 
-use crate::{Quad, numerics::CKKSFloat};
+use crate::{CKKSCompositionError, CKKSResult, Quad, numerics::CKKSFloat};
 
 /// Largest [`ShapingProfile::max_pass_bits`], reached by `U = ±1`.
 pub const MAX_PASS_BITS: usize = 62;
@@ -35,10 +43,33 @@ pub(crate) fn supports_ring<BE: Backend>() -> bool {
     BE::Ring::CYCLOTOMIC_ORDER_FACTOR == Standard::CYCLOTOMIC_ORDER_FACTOR
 }
 
+/// Ring a [`ShapingProfile`] multiplies in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShapingRing {
+    /// `Z[X]/(X^N+1)`, where `Y = X^(N/(2R))`.
+    Standard,
+    /// The conjugate-invariant ring of degree `N`, where `Y = X^(N/R)` in
+    /// `Z[X]/(X^(2N)+1)` and polynomials hold their `N` invariant coefficients.
+    ConjugateInvariant,
+}
+
+impl ShapingRing {
+    /// The shaping ring of the backend ring `R`.
+    pub fn of<R: Ring>() -> Self {
+        if R::CYCLOTOMIC_ORDER_FACTOR == Standard::CYCLOTOMIC_ORDER_FACTOR {
+            Self::Standard
+        } else {
+            Self::ConjugateInvariant
+        }
+    }
+}
+
 /// Exact data of a shaping polynomial `U`, and its slot-class profile.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ShapingProfile {
     log_r: usize,
+    ring: ShapingRing,
+    shift: usize,
     coeffs: [i16; MAX_COEFFS],
     shaping: [u64; MAX_COEFFS],
     inverse: OnceLock<[u64; MAX_COEFFS]>,
@@ -47,11 +78,33 @@ pub struct ShapingProfile {
 }
 
 impl ShapingProfile {
+    /// The profile of `layout` on the standard ring.
     pub fn new(layout: &ReplicatedLayout) -> Self {
-        Self::from_coeffs(layout.log_r(), layout.shaping())
+        Self::from_coeffs(layout.log_r(), ShapingRing::Standard, 0, layout.shaping())
     }
 
-    fn from_coeffs(log_r: usize, coeffs: &[i16]) -> Self {
+    /// The profile of `layout` on the backend ring `R`. The conjugate-invariant
+    /// ring shapes with `Y^s*U`, the smallest shift `s < 2R` that makes `U`
+    /// invariant, and refuses a `U` that has none.
+    pub fn for_ring<R: Ring>(layout: &ReplicatedLayout) -> CKKSResult<Self> {
+        match ShapingRing::of::<R>() {
+            ShapingRing::Standard => Ok(Self::new(layout)),
+            ShapingRing::ConjugateInvariant => {
+                let u = layout.shaping();
+                let shifted = (0..u.len()).map(|s| (s, monomial_shift(u, s))).find(|(_, v)| is_invariant(v));
+                let Some((shift, v)) = shifted else {
+                    return Err(CKKSCompositionError::InvalidOperand {
+                        op: "ShapingProfile::for_ring",
+                        reason: "no power of Y shifts the shaping polynomial onto a conjugate-invariant one".into(),
+                    }
+                    .into());
+                };
+                Ok(Self::from_coeffs(layout.log_r(), ShapingRing::ConjugateInvariant, shift, &v))
+            }
+        }
+    }
+
+    fn from_coeffs(log_r: usize, ring: ShapingRing, shift: usize, coeffs: &[i16]) -> Self {
         let (mut padded, mut shaping) = ([0; MAX_COEFFS], [0; MAX_COEFFS]);
         for (i, &c) in coeffs.iter().enumerate() {
             padded[i] = c;
@@ -59,6 +112,8 @@ impl ShapingProfile {
         }
         Self {
             log_r,
+            ring,
+            shift,
             coeffs: padded,
             shaping,
             inverse: OnceLock::new(),
@@ -76,12 +131,34 @@ impl ShapingProfile {
         self.log_r
     }
 
-    /// The `2R` signed coefficients of `U`.
+    /// The ring this profile multiplies in.
+    pub fn ring(&self) -> ShapingRing {
+        self.ring
+    }
+
+    /// The shift `s` of the shaping polynomial `Y^s*U`, zero on the standard ring.
+    pub fn shift(&self) -> usize {
+        self.shift
+    }
+
+    /// Smallest number of coefficients a shaped polynomial has, one period of
+    /// `Y`: `2R` on the standard ring and `R` invariant ones on the
+    /// conjugate-invariant ring. Degrees are multiples of it.
+    pub fn period(&self) -> usize {
+        match self.ring {
+            ShapingRing::Standard => self.len(),
+            ShapingRing::ConjugateInvariant => self.len() / 2,
+        }
+    }
+
+    /// The `2R` signed coefficients of the shaping polynomial `Y^s*U`, in
+    /// `Z[Y]/(Y^(2R)+1)`. On the conjugate-invariant ring coefficient `2R - j`
+    /// is the opposite of coefficient `j` and coefficient `R` is zero.
     pub fn coefficients(&self) -> &[i16] {
         &self.coeffs[..self.len()]
     }
 
-    /// The `2R` coefficients of `U^(-1) mod 2^64`.
+    /// The `2R` coefficients of `(Y^s*U)^(-1) mod 2^64`, invariant when `Y^s*U` is.
     pub fn inverse(&self) -> &[u64] {
         &self.inverse.get_or_init(|| inverse_mod_2_64(&self.shaping[..self.len()]))[..self.len()]
     }
@@ -124,12 +201,21 @@ impl ShapingProfile {
         (log_delta + w).min(self.max_pass_bits())
     }
 
-    /// Writes `g·h` into `gh` for `h = [U^(-1)·c]_(2^λ)`, centered, where `c`
-    /// is read modulo `2^64` and `Y = X^stride`, so that `c − g·h` is divisible
-    /// by `2^λ`; `h` is a buffer as long as `c`. Exact for `λ <= max_pass_bits`.
-    pub fn shaped_multiple_host(&self, stride: usize, lambda: usize, c: &[i64], h: &mut [i64], gh: &mut [i64]) {
+    /// Writes `g*h` into `gh` for `h = [U^(-1)*c]_(2^lambda)`, centered, where
+    /// `c` is read modulo `2^64`, so that `c - g*h` is divisible by
+    /// `2^lambda`. `h` is a buffer as long as `c`. `c` holds the coefficients of a polynomial of
+    /// the profile's ring, whose degree is a multiple of [`Self::period`]: on
+    /// the conjugate-invariant ring its invariant coefficients, and `h` and
+    /// `g*h` are invariant too. Exact for `lambda <= max_pass_bits`.
+    pub fn shaped_multiple_host(&self, lambda: usize, c: &[i64], h: &mut [i64], gh: &mut [i64]) {
+        assert!(
+            !c.is_empty() && c.len().is_multiple_of(self.period()) && h.len() == c.len() && gh.len() == c.len(),
+            "shaped_multiple_host: {} coefficients do not hold whole periods of {}",
+            c.len(),
+            self.period()
+        );
         let mask = u64::MAX >> (64 - lambda);
-        negacyclic_sparse(self.inverse(), stride, c, h);
+        self.product(self.inverse(), c, h);
         for x in h.iter_mut() {
             let reduced = *x as u64 & mask;
             *x = if reduced > mask >> 1 {
@@ -138,8 +224,36 @@ impl ShapingProfile {
                 reduced as i64
             };
         }
-        negacyclic_sparse(&self.shaping[..self.len()], stride, h, gh);
+        self.product(&self.shaping[..self.len()], h, gh);
     }
+
+    /// `p(Y)*x` in the profile's ring for `p` of `2R` coefficients, invariant
+    /// on the conjugate-invariant ring.
+    fn product(&self, p: &[u64], x: &[i64], out: &mut [i64]) {
+        let stride = x.len() / self.period();
+        match self.ring {
+            ShapingRing::Standard => negacyclic_sparse(p, stride, x, out),
+            ShapingRing::ConjugateInvariant => invariant_sparse(&p[..self.len() / 2], stride, x, out),
+        }
+    }
+}
+
+/// `Y^s*u` in `Z[Y]/(Y^m+1)`, `m = u.len()`.
+fn monomial_shift(u: &[i16], s: usize) -> Vec<i16> {
+    let m = u.len();
+    let mut out = vec![0; m];
+    for (i, &c) in u.iter().enumerate() {
+        let k = i + s;
+        out[k % m] = if (k / m).is_multiple_of(2) { c } else { -c };
+    }
+    out
+}
+
+/// Whether `v in Z[Y]/(Y^m+1)` is fixed by `Y -> Y^-1 = -Y^(m-1)`: `v_(m/2) = 0`
+/// and `v_(m-j) = -v_j`.
+fn is_invariant(v: &[i16]) -> bool {
+    let m = v.len();
+    v[m / 2] == 0 && (1..m / 2).all(|j| v[m - j] == -v[j])
 }
 
 /// A shaping unit `U = ∏ ((1 - Y^a)/(1 - Y))^(e_a)`, odd `1 < a < 2R`,
@@ -277,6 +391,39 @@ fn negacyclic_sparse(coeffs: &[u64], stride: usize, x: &[i64], out: &mut [i64]) 
     }
 }
 
+/// Writes `p(Y)*x` into `out` on the conjugate-invariant ring of degree
+/// `N = x.len()`, `Y = X^stride` in `(Z/2^64)[X]/(X^(2N) + 1)`, for invariant
+/// `p` and `x` given by their invariant coefficients: `p_0` and `p_t` for
+/// `0 < t < R`, `R*stride = N`, standing for `p_t*(Y^t + Y^-t)`. Coefficient
+/// `j` of `x` stands for `x_j*X^j` and, when `j > 0`, `x_j*X^-j`, so
+/// `X^-j = -X^(2N-j)` reads `x_(2N-j) = -x_j` and `x_N = 0`.
+fn invariant_sparse(p: &[u64], stride: usize, x: &[i64], out: &mut [i64]) {
+    let n = x.len();
+    let p0 = p[0] as i64;
+    for (o, &x) in out.iter_mut().zip(x) {
+        *o = p0.wrapping_mul(x);
+    }
+    for (t, &coeff) in p.iter().enumerate().skip(1).filter(|&(_, &c)| c != 0) {
+        let coeff = coeff as i64;
+        let m = t * stride;
+        // `X^m * x`: coefficient `i` reads `x_(i-m)`, which is `x_(m-i)` below `m`.
+        for (o, &x) in out[m..].iter_mut().zip(x) {
+            *o = o.wrapping_add(coeff.wrapping_mul(x));
+        }
+        for (i, o) in out[..m].iter_mut().enumerate() {
+            *o = o.wrapping_add(coeff.wrapping_mul(x[m - i]));
+        }
+        // `X^-m * x`: coefficient `i` reads `x_(i+m)`, zero at `i + m = N` and
+        // `-x_(2N-i-m)` above it.
+        for (o, &x) in out[..n - m].iter_mut().zip(&x[m..]) {
+            *o = o.wrapping_add(coeff.wrapping_mul(x));
+        }
+        for (i, o) in out.iter_mut().enumerate().skip(n - m + 1) {
+            *o = o.wrapping_sub(coeff.wrapping_mul(x[2 * n - i - m]));
+        }
+    }
+}
+
 /// Product in `(Z/2^64)[Y]/(Y^m + 1)`, for `m <= MAX_COEFFS`.
 fn negacyclic_mul(a: &[u64], b: &[u64]) -> [u64; MAX_COEFFS] {
     let m = a.len();
@@ -317,6 +464,100 @@ fn inverse_mod_2_64(u: &[u64]) -> [u64; MAX_COEFFS] {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use poulpy_hal::layouts::ConjugateInvariant;
+
+    fn pseudo_random(n: usize, seed: u64) -> Vec<i64> {
+        (0..n as u64)
+            .map(|i| (i + seed).wrapping_mul(0x9E37_79B9_7F4A_7C15).rotate_left(i as u32 % 64) as i64)
+            .collect()
+    }
+
+    #[test]
+    fn conjugate_invariant_profiles() {
+        for (unit, shift) in ShapingUnit::ALL.into_iter().zip([10, 4, 3, 24, 1, 20, 24, 0]) {
+            let layout = unit.layout(2, 24).unwrap();
+            let standard = ShapingProfile::new(&layout);
+            let profile = ShapingProfile::for_ring::<ConjugateInvariant>(&layout).unwrap();
+            assert_eq!(ShapingProfile::for_ring::<Standard>(&layout).unwrap(), standard);
+            assert_eq!(profile.ring(), ShapingRing::ConjugateInvariant);
+            assert_eq!(profile.shift(), shift, "{unit:?}");
+            assert_eq!(profile.period(), 1 << unit.log_r);
+            assert!(is_invariant(profile.coefficients()), "{unit:?}");
+            assert_eq!(profile.l1_norm(), standard.l1_norm());
+            assert_eq!(profile.max_pass_bits(), standard.max_pass_bits());
+            for (a, b) in profile.class_log_magnitudes().iter().zip(standard.class_log_magnitudes()) {
+                assert!((a - b).abs() < 1e-9, "{unit:?}");
+            }
+            let u: Vec<u64> = profile.coefficients().iter().map(|&c| c as i64 as u64).collect();
+            let product = negacyclic_mul(&u, profile.inverse());
+            assert_eq!(product[0], 1);
+            assert!(product[1..u.len()].iter().all(|&c| c == 0));
+            // The inverse of an invariant unit is invariant.
+            let (m, inverse) = (u.len(), profile.inverse());
+            assert!(inverse[m / 2] == 0 && (1..m / 2).all(|j| inverse[m - j] == inverse[j].wrapping_neg()));
+        }
+    }
+
+    #[test]
+    fn conjugate_invariant_refuses_shapes_without_invariant_shift() {
+        let refused = ReplicatedLayout::new(2, 1, 8, &[3, 0, 2, 0]).unwrap();
+        assert!(ShapingProfile::for_ring::<ConjugateInvariant>(&refused).is_err());
+        let invariant = ReplicatedLayout::new(2, 1, 8, &[3, 1, 0, -1]).unwrap();
+        assert_eq!(ShapingProfile::for_ring::<ConjugateInvariant>(&invariant).unwrap().shift(), 0);
+    }
+
+    /// The invariant coefficients of `x` unfolded onto `Z[X]/(X^(2N)+1)`.
+    fn unfold(x: &[i64]) -> Vec<i64> {
+        let n = x.len();
+        let mut ambient = vec![0i64; 2 * n];
+        ambient[..n].copy_from_slice(x);
+        for j in 1..n {
+            ambient[2 * n - j] = x[j].wrapping_neg();
+        }
+        ambient
+    }
+
+    #[test]
+    fn invariant_product_matches_ambient() {
+        for unit in [ShapingUnit::U16_40, ShapingUnit::U32_45] {
+            let profile = ShapingProfile::for_ring::<ConjugateInvariant>(&unit.layout(2, 24).unwrap()).unwrap();
+            let r = profile.period();
+            let shaping: Vec<u64> = profile.coefficients().iter().map(|&c| c as i64 as u64).collect();
+            for p in [&shaping[..], profile.inverse()] {
+                for n in [r, 4 * r] {
+                    let x = pseudo_random(n, n as u64);
+                    let mut ambient = vec![0i64; 2 * n];
+                    negacyclic_sparse(p, n / r, &unfold(&x), &mut ambient);
+                    let mut got = vec![0i64; n];
+                    invariant_sparse(&p[..r], n / r, &x, &mut got);
+                    assert_eq!(unfold(&got), ambient, "{unit:?}, n = {n}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn shaped_multiple_is_divisible() {
+        let layout = ShapingUnit::U32_45.layout(2, 24).unwrap();
+        for profile in [
+            ShapingProfile::new(&layout),
+            ShapingProfile::for_ring::<ConjugateInvariant>(&layout).unwrap(),
+        ] {
+            let lambda = 40;
+            let n = 4 * profile.period();
+            let c = pseudo_random(n, 7);
+            let (mut h, mut gh) = (vec![0; n], vec![0; n]);
+            profile.shaped_multiple_host(lambda, &c, &mut h, &mut gh);
+            assert!(h.iter().all(|&x| x.unsigned_abs() <= 1 << (lambda - 1)));
+            assert!(
+                c.iter()
+                    .zip(&gh)
+                    .all(|(&c, &gh)| c.wrapping_sub(gh).trailing_zeros() as usize >= lambda),
+                "{:?}",
+                profile.ring()
+            );
+        }
+    }
 
     #[test]
     fn preset_profiles() {
