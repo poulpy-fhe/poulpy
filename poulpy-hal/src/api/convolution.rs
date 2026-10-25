@@ -197,7 +197,7 @@ pub trait Convolution<BE: Backend> {
     /// class      basis
     /// mutation   out-of-place
     /// definition idft(res)[res_col,j] = sum_{0 <= u < a.size(), 0 <= v < b.size(), u + v = j + cnv_offset} a[a_col,u] * sigma_{b_galois}(b[b_col,v]); other columns of res are unchanged
-    /// domain     res: a VecZnxDft and a: a CnvPVecL, both of degree N; b: a CnvPVecR of degree N or of a degree dividing it; res.size(), a.size() and b.size() >= 1; b_galois odd, 1 for b itself
+    /// domain     res: a VecZnxDft and a: a CnvPVecL, both of degree N; b: a CnvPVecR of degree N or of a power-of-two degree dividing it, at least MIN_DEGREE; res.size(), a.size() and b.size() >= 1; b_galois odd, 1 for b itself
     /// requires   scratch >= cnv_apply_dft_tmp_bytes(cnv_offset, res.size(), a.size(), b.size())
     /// ensures    the selected inverse column holds the limb window of the convolution, scaled by 2^((cnv_offset + 1) * w) at any radix width w; the remaining limbs are zero-filled
     /// embed      b may be a prepared right operand of degree n, n a power of two dividing N and not below the backend's minimum embedded degree, prepared at degree n; res and a take degree N; the degree embedding of the api module docs defines the correspondence that reads it
@@ -276,7 +276,7 @@ pub trait Convolution<BE: Backend> {
     /// class      derived
     /// mutation   out-of-place
     /// definition idft(res)[res_col,j] = sum_{0 <= t < terms.len()} sum_{0 <= u < terms[t].a.size(), 0 <= v < terms[t].b.size(), u + v = j + cnv_offset} terms[t].a[terms[t].a_col,u] * sigma_{terms[t].b_galois}(terms[t].b[terms[t].b_col,v]); an empty terms slice yields zero; other columns of res are unchanged
-    /// domain     res: a VecZnxDft of degree N; terms: prepared left operands of degree N and right operands of degree N or of a degree dividing it, with their column indices; every terms[t].b_galois odd
+    /// domain     res: a VecZnxDft of degree N; terms: prepared left operands of degree N and right operands of degree N or of a power-of-two degree dividing it, at least MIN_DEGREE, with their column indices; every terms[t].b_galois odd
     /// requires   scratch >= cnv_apply_dft_sum_tmp_bytes(cnv_offset, res.size(), max({0} union {terms[t].a.size() : 0 <= t < terms.len()}), max({0} union {terms[t].b.size() : 0 <= t < terms.len()}))
     /// ensures    the selected inverse column is the sum of the selected convolution limb windows; an empty slice zeroes the column
     /// embed      per term, as for cnv_apply_dft
@@ -313,7 +313,7 @@ pub trait Convolution<BE: Backend> {
     /// class      derived
     /// mutation   out-of-place
     /// definition for every 0 <= ell < res.size(), idft(res)[res_col,ell] = sum_{0 <= u < a.size(), 0 <= v < b.size(), u + v = ell + cnv_offset} a[i,u] * b[i,v] if i == j, and idft(res)[res_col,ell] = sum_{0 <= u < a.size(), 0 <= v < b.size(), u + v = ell + cnv_offset} (a[i,u] + a[j,u]) * (b[i,v] + b[j,v]) if i != j; other columns of res are unchanged
-    /// domain     res: a VecZnxDft and a: a CnvPVecL, both of degree N; b: a CnvPVecR of degree N or of a degree dividing it; i, j column indices
+    /// domain     res: a VecZnxDft and a: a CnvPVecL, both of degree N; b: a CnvPVecR of degree N or of a power-of-two degree dividing it, at least MIN_DEGREE; i, j column indices
     /// requires   scratch >= cnv_pairwise_apply_dft_tmp_bytes(cnv_offset, res.size(), a.size(), b.size())
     /// ensures    the selected inverse column contains one convolution when i == j and the convolution of the two column sums when i != j
     /// embed      per product, as for cnv_apply_dft

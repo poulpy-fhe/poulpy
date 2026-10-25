@@ -358,7 +358,7 @@ pub fn ntt4x30_cnv_apply_dft_portable<BE>(
     let n = res.n();
     check_degree::<BE>(module.n(), n);
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let b_read = right_read_ntt::<BE::Ring>(n, b.n(), b_galois);
+    let b_read = right_read_ntt::<BE::Ring>(n, b.n(), b_galois, BE::MIN_DEGREE);
     let res_size = res.size();
     let a_size = a.size();
     let b_size = b.size();
@@ -399,7 +399,7 @@ pub fn ntt4x30_cnv_apply_dft_add_portable<BE>(
     let n = res.n();
     check_degree::<BE>(module.n(), n);
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let b_read = right_read_ntt::<BE::Ring>(n, b.n(), b_galois);
+    let b_read = right_read_ntt::<BE::Ring>(n, b.n(), b_galois, BE::MIN_DEGREE);
     let res_size = res.size();
     let a_size = a.size();
     let b_size = b.size();
@@ -504,7 +504,7 @@ pub fn ntt4x30_cnv_apply_dft_sum_portable<BE>(
                 col_slice_u32(t.b.raw(), t.b.n(), b_size, t.b_col),
                 a_size,
                 b_size,
-                right_read_ntt::<BE::Ring>(n, t.b.n(), t.b_galois),
+                right_read_ntt::<BE::Ring>(n, t.b.n(), t.b_galois, BE::MIN_DEGREE),
             )
         })
         .collect();
@@ -622,7 +622,7 @@ pub fn ntt4x30_cnv_pairwise_apply_dft_portable<BE>(
     let n = res.n();
     check_degree::<BE>(module.n(), n);
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let b_read = RightRead::embedded(n, b.n());
+    let b_read = RightRead::embedded(n, b.n(), BE::MIN_DEGREE);
     let res_size = res.size();
     let a_size = a.size();
     let b_size = b.size();

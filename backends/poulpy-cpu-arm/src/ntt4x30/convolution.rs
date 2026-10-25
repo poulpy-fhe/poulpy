@@ -552,7 +552,7 @@ unsafe fn apply<BE, E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>(
     check_degree::<BE>(module.n(), n);
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
     assert!(n.is_multiple_of(4));
-    let b_read = right_read_ntt::<BE::Ring>(n, b.n(), b_galois);
+    let b_read = right_read_ntt::<BE::Ring>(n, b.n(), b_galois, BE::MIN_DEGREE);
     if res_size == 0 || a_size == 0 || b_size == 0 {
         if !ACC {
             for limb in 0..res_size {
@@ -714,7 +714,7 @@ pub(crate) unsafe fn cnv_apply_dft_sum_neon<BE, E: TaskExecutor>(
         for (dst, term) in sum_terms.iter_mut().zip(group) {
             let (a_size, b_size) = (term.a.size(), term.b.size());
             assert_eq!(term.a.n(), n, "a.n():{} != res.n():{n}", term.a.n());
-            let b_read = right_read_ntt::<BE::Ring>(n, term.b.n(), term.b_galois);
+            let b_read = right_read_ntt::<BE::Ring>(n, term.b.n(), term.b_galois, BE::MIN_DEGREE);
             if a_size == 0 || b_size == 0 {
                 continue;
             }

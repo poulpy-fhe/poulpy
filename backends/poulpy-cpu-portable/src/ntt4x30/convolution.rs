@@ -89,7 +89,7 @@ impl<'a> Term<'a> {
     {
         let (a_size, b_size) = (a.size(), b.size());
         assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-        let b_read = right_read_ntt::<BE::Ring>(n, b.n(), b_galois);
+        let b_read = right_read_ntt::<BE::Ring>(n, b.n(), b_galois, BE::MIN_DEGREE);
         if a_size == 0 || b_size == 0 {
             return Self::EMPTY;
         }
