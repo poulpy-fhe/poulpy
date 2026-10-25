@@ -89,7 +89,9 @@ pub unsafe trait LinearTransformationImpl: Backend {
     /// Reproduces
     /// [`glwe_eval_linear_transformation_into_reference`](crate::reference::linear_transformation::glwe_eval_linear_transformation_into_reference)
     /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
-    /// [`Self::glwe_eval_linear_transformation_tmp_bytes`]; free in kernels and scratch use.
+    /// [`Self::glwe_eval_linear_transformation_tmp_bytes`], or
+    /// [`Self::glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes`] for a streamed right-hand side; free in
+    /// kernels and scratch use.
     fn glwe_eval_linear_transformation_into<R, P, H>(
         module: &Module<Self>,
         cnv_offset: usize,
