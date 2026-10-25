@@ -15,7 +15,7 @@ use poulpy_hal::{
     layouts::{Backend, CopyFromHost, CopyToHost, Data, HostBackend, HostDataMut, HostDataRef, ScratchArena, Stats},
     source::Source,
 };
-use std::{collections::HashMap, marker::PhantomData};
+use std::{collections::HashMap, marker::PhantomData, ops::Range};
 
 use crate::bdd_arithmetic::{Cmux, FheUintPrepared, FromBits, GetGGSWBit, ToBits, UnsignedInteger};
 use poulpy_core::GLWEBytesOf;
@@ -299,6 +299,10 @@ impl<D: Data, T: UnsignedInteger> FheUint<D, T, i64> {
     }
 
     /// Scratch bytes of [`FheUint::splice_u16`] for operands `a` and `b` into `self`: its two byte splices run one after the other.
+    ///
+    /// # Panics
+    ///
+    /// If `keys` lacks a key the trace reads.
     pub fn splice_u16_tmp_bytes<A, B, H, M, BE>(&self, module: &M, a_infos: &A, b_infos: &B, keys: &H) -> usize
     where
         BE: Backend,
@@ -307,11 +311,16 @@ impl<D: Data, T: UnsignedInteger> FheUint<D, T, i64> {
         H: GetAutomorphismKey<BE>,
         M: GLWECopy<BE> + GLWERotate<BE> + GLWETrace<BE>,
     {
+        // The second splice reads the first's result, which has self's layout.
         self.splice_u8_tmp_bytes(module, a_infos, b_infos, keys)
             .max(self.splice_u8_tmp_bytes(module, self, b_infos, keys))
     }
 
     /// Scratch bytes of [`FheUint::splice_u8`] for operands `a` and `b` into `self`: the copy of `a`, the byte zeroing and the isolation of `b`'s byte run one after the other.
+    ///
+    /// # Panics
+    ///
+    /// If `keys` lacks a key the trace reads.
     pub fn splice_u8_tmp_bytes<A, B, H, M, BE>(&self, module: &M, a_infos: &A, b_infos: &B, keys: &H) -> usize
     where
         BE: Backend,
@@ -323,7 +332,7 @@ impl<D: Data, T: UnsignedInteger> FheUint<D, T, i64> {
         module
             .glwe_copy_tmp_bytes(self, a_infos)
             .max(self.zero_byte_tmp_bytes(module, keys))
-            .max(trace_tmp_bytes(module, b_infos, b_infos, keys))
+            .max(trace_tmp_bytes(module, byte_levels::<T>(b_infos), b_infos, b_infos, keys))
             .max(module.glwe_rotate_tmp_bytes())
     }
 
@@ -421,8 +430,13 @@ impl<D: Data, T: UnsignedInteger> FheUint<D, T, i64> {
     }
 }
 
-/// Scratch bytes of tracing `a_infos` into `res_infos` with the key `keys` provides at their precision.
-fn trace_tmp_bytes<M, R, A, H, BE>(module: &M, res_infos: &R, a_infos: &A, keys: &H) -> usize
+/// The levels a byte isolation traces.
+fn byte_levels<T: UnsignedInteger>(infos: &impl GLWEInfos) -> Range<usize> {
+    (T::LOG_BITS - T::LOG_BYTES) as usize..infos.log_n()
+}
+
+/// Scratch bytes of tracing `a_infos` over `levels` into `res_infos`, sized from the key of the first rotation as the trace reads it.
+fn trace_tmp_bytes<M, R, A, H, BE>(module: &M, levels: Range<usize>, res_infos: &R, a_infos: &A, keys: &H) -> usize
 where
     BE: Backend,
     R: GLWEInfos,
@@ -430,9 +444,14 @@ where
     H: GetAutomorphismKey<BE>,
     M: GLWETrace<BE>,
 {
+    let first = module
+        .glwe_trace_galois_elements(levels, false)
+        .first()
+        .copied()
+        .unwrap_or(-1);
     let atk = keys
-        .get_automorphism_key(-1, res_infos.k().max(a_infos.k()))
-        .unwrap_or_else(|e| panic!("{e}"));
+        .get_automorphism_key(first, res_infos.k().max(a_infos.k()))
+        .unwrap_or_else(|e| panic!("trace rotation {first}: {e}"));
     module.glwe_trace_tmp_bytes(res_infos, a_infos, &atk)
 }
 
@@ -534,6 +553,10 @@ impl<D: Data, T: UnsignedInteger, W: ZnxWord> FheUint<D, T, W> {
     }
 
     /// Scratch bytes of [`FheUint::get_bit_glwe`] into `res`: the trace of `res`.
+    ///
+    /// # Panics
+    ///
+    /// If `keys` lacks a key the trace reads.
     pub fn get_bit_glwe_tmp_bytes<R, M, H, BE>(&self, module: &M, res_infos: &R, keys: &H) -> usize
     where
         BE: Backend,
@@ -541,7 +564,7 @@ impl<D: Data, T: UnsignedInteger, W: ZnxWord> FheUint<D, T, W> {
         H: GetAutomorphismKey<BE>,
         M: GLWETrace<BE>,
     {
-        trace_tmp_bytes(module, res_infos, res_infos, keys)
+        trace_tmp_bytes(module, 0..res_infos.log_n(), res_infos, res_infos, keys)
     }
 
     pub fn get_bit_glwe<R, M, H, BE>(&self, module: &M, bit: usize, res: &mut R, keys: &H, scratch: &mut ScratchArena<'_, BE>)
@@ -615,13 +638,19 @@ impl<T: UnsignedInteger> FheUint<AlignedBuf, T, i64> {
 
 impl<D: Data, T: UnsignedInteger> FheUint<D, T, i64> {
     /// Scratch bytes of [`FheUint::zero_byte`]: the rotations and the trace of `self`.
-    pub(crate) fn zero_byte_tmp_bytes<M, H, BE>(&self, module: &M, keys: &H) -> usize
+    ///
+    /// # Panics
+    ///
+    /// If `keys` lacks a key the trace reads.
+    pub fn zero_byte_tmp_bytes<M, H, BE>(&self, module: &M, keys: &H) -> usize
     where
         BE: Backend,
         H: GetAutomorphismKey<BE>,
         M: GLWERotate<BE> + GLWETrace<BE>,
     {
-        module.glwe_rotate_tmp_bytes().max(trace_tmp_bytes(module, self, self, keys))
+        module
+            .glwe_rotate_tmp_bytes()
+            .max(trace_tmp_bytes(module, byte_levels::<T>(self), self, self, keys))
     }
 
     pub fn zero_byte<M, H, BE>(&mut self, module: &M, byte: usize, keys: &H, scratch: &mut ScratchArena<'_, BE>)
@@ -659,13 +688,17 @@ impl<D: Data, T: UnsignedInteger> FheUint<D, T, i64> {
     }
 
     /// Scratch bytes of [`FheUint::sext`]: the trace of the sign bit, then the byte splices and the copies, one after the other.
+    ///
+    /// # Panics
+    ///
+    /// If `keys` lacks a key the trace reads.
     pub fn sext_tmp_bytes<H, M, BE>(&self, module: &M, keys: &H) -> usize
     where
         BE: Backend,
         H: GetAutomorphismKey<BE>,
         M: GLWECopy<BE> + GLWERotate<BE> + GLWETrace<BE>,
     {
-        trace_tmp_bytes(module, self, self, keys)
+        trace_tmp_bytes(module, 0..self.log_n(), self, self, keys)
             .max(module.glwe_copy_tmp_bytes(self, self))
             .max(self.splice_u8_tmp_bytes(module, self, self, keys))
     }

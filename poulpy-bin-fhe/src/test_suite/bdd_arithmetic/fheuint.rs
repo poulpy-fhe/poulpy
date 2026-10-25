@@ -4,8 +4,7 @@ use poulpy_core::{
 };
 use poulpy_hal::layouts::HostDataRef;
 use poulpy_hal::{
-    api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, HostBackend, HostDataMut, Module, ScratchOwned},
+    layouts::{Backend, HostBackend, HostDataMut, Module},
     source::Source,
 };
 use rand::Rng;
@@ -21,7 +20,6 @@ pub fn test_fhe_uint_sext<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf: HostData
     test_context: &TestContext<BRA, BE>,
 ) where
     Module<BE>: GLWEEncryptSk<BE> + GLWERotate<BE> + GLWETrace<BE> + GLWESub<BE> + GLWEAdd<BE> + GLWECopy<BE> + GLWEDecrypt<BE>,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let glwe_infos: GLWELayout = TEST_GLWE_INFOS;
 
@@ -90,7 +88,6 @@ pub fn test_fhe_uint_splice_u8<
     test_context: &TestContext<BRA, BE>,
 ) where
     Module<BE>: GLWEEncryptSk<BE> + GLWERotate<BE> + GLWETrace<BE> + GLWESub<BE> + GLWEAdd<BE> + GLWECopy<BE> + GLWEDecrypt<BE>,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let glwe_infos: GLWELayout = TEST_GLWE_INFOS;
 
@@ -146,7 +143,6 @@ pub fn test_fhe_uint_splice_u16<
     test_context: &TestContext<BRA, BE>,
 ) where
     Module<BE>: GLWEEncryptSk<BE> + GLWERotate<BE> + GLWETrace<BE> + GLWESub<BE> + GLWEAdd<BE> + GLWECopy<BE> + GLWEDecrypt<BE>,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let glwe_infos: GLWELayout = TEST_GLWE_INFOS;
 
@@ -199,7 +195,6 @@ pub fn test_fhe_uint_get_bit_glwe<
     test_context: &TestContext<BRA, BE>,
 ) where
     Module<BE>: GLWEEncryptSk<BE> + GLWERotate<BE> + GLWETrace<BE> + GLWESub<BE> + GLWEAdd<BE> + GLWEDecrypt<BE>,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let glwe_infos: GLWELayout = TEST_GLWE_INFOS;
 

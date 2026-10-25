@@ -502,7 +502,7 @@
 
 ### `poulpy-bin-fhe`
 
-- Add `FheUint::sext_tmp_bytes`, `splice_u8_tmp_bytes`, `splice_u16_tmp_bytes` and `get_bit_glwe_tmp_bytes`, the scratch queries of the operations that took scratch without one; the `fheuint` tests run each call on exactly its query.
+- Add `FheUint::sext_tmp_bytes`, `splice_u8_tmp_bytes`, `splice_u16_tmp_bytes`, `get_bit_glwe_tmp_bytes` and `zero_byte_tmp_bytes`, the scratch queries of the operations that took scratch without one; the `fheuint` tests run each call on exactly its query.
 - **Behaviour:** `FheUint::get_bit_lwe` narrows its input to the `max_input_k` of each switching key before the switch, and the circuit bootstrapping traces at the precision its automorphism keys cover, at most the blind rotation's; the circuit bootstrapping panics on a tensor key that does not cover the output GGSW.
 - **Breaking:** `FheUintPrepared` and `FheUintPreparedDebug` allocators take `k_digit` in place of `dsize`, and the blind rotation keys report the `k_digit` their GGSWs store, `base2k` as built, as their layout does.
 - The scalar-to-GGSW blind rotation reference places its gadget rows through `gadget_row_plaintext`, requires `BE: HalVecZnxImpl` in place of `VecZnxAddScalarAssign` and `VecZnxNormalizeAssign`, and its scratch covers `vec_znx_normalize_tmp_bytes`.
