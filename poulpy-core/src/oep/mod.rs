@@ -24,9 +24,8 @@
 //! available reference algorithms and derived defaults. Purely derived families
 //! have `impl_*_derived_full!` macros. [`crate::impl_core_reference_full!`] selects
 //! the provided implementations for all core families except [`SamplingImpl`],
-//! and the standard-only families (monomial operations,
-//! the Galois trace and the conjugate-invariant maps), which conjugate-invariant
-//! backends do not implement.
+//! and the standard-only families (monomial operations and the
+//! conjugate-invariant maps), which conjugate-invariant backends do not implement.
 //!
 //! To customize a family, implement its `*Impl` trait yourself. Forward unchanged
 //! required methods to reference helpers and inherit the derived defaults you
@@ -99,7 +98,7 @@ pub use polynomial_evaluation::*;
 pub use sampling::*;
 
 /// Forwards every core family except sampling and the standard-only families (LWE conversion,
-/// packing, GLWE/GGSW rotate, `mul_xp_minus_one`, trace).
+/// packing, GLWE/GGSW rotate, `mul_xp_minus_one`).
 ///
 /// Select the individual family macros instead when replacing an operation. The
 /// reference gadget-product and external-product bodies require contiguous DFT limbs.
@@ -122,6 +121,7 @@ macro_rules! impl_core_reference_full {
         $crate::impl_lwe_keyswitch_reference_full!($be);
         $crate::impl_glwe_tensoring_reference!($be);
         $crate::impl_gglwe_product_digits_strided_reference!($be);
+        $crate::impl_glwe_trace_derived_full!($be);
     };
 }
 

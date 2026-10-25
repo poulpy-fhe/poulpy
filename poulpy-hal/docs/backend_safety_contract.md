@@ -41,7 +41,7 @@ Implementors must uphold all of the following for **every** call:
 
 * **Aliasing & overlaps**: If res, a, b, etc... alias or overlap in ways
   that violate your kernel’s requirements, you must either handle safely or reject
-  with a defined error path (e.g., debug assert). Never trigger UB.
+  with a release `assert!` before any write. Never trigger UB.
 
 * **Numerical contract**: For modular/integer arithmetic, results must be
   bit-exact to the specification. For floating-point, any permitted tolerance

@@ -1,6 +1,6 @@
-/target
+# Cargo and Criterion output, at the root and under any crate
+target/
 /target-*
-/poulpy-bench/target/
 /.vscode
 .codex
 /ci-local.md

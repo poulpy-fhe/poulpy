@@ -1556,7 +1556,7 @@ const GADGET_PRODUCT_GUARD_FAILURE_BITS: usize = 128;
 /// The limbs below the window are dropped before normalization. They act as an error on the
 /// last live limb, and this returns the smallest window that keeps that error under the rounding
 /// threshold of one half with the failure target above, under the model of
-/// `docs/base2k-failure-probability.md`:
+/// `docs/guides/base2k-failure-probability.md`:
 ///
 /// - one accumulated coefficient has standard deviation `2^(2 * base2k) * sqrt(product_terms) / 12`,
 ///   for independent centered uniform digits,
@@ -1578,11 +1578,46 @@ pub(crate) fn gadget_product_guard_limbs(key_base2k: Base2K, product_terms: usiz
         let log2_tail = log2_sigma + (4f64 / 3.0).log2() / 2.0 - (guard as f64 + 1.0) * base2k;
         // x = T / (sqrt(2) * sigma) with the threshold T = 1 / 2.
         let x = (-1.5 - log2_tail).exp2();
-        if x * x + (core::f64::consts::PI.sqrt() * x / 2.0).asinh() >= target {
+        if mills_bound_meets(x, target) {
             return guard;
         }
     }
     exact
+}
+
+/// Whether `x = T / (sqrt(2) sigma)` meets a failure target of `exp(-target)` under the Mills-ratio bound
+/// `erfc(x) <= exp(-x^2 - asinh(sqrt(pi) x / 2))`.
+fn mills_bound_meets(x: f64, target: f64) -> bool {
+    x * x + (core::f64::consts::PI.sqrt() * x / 2.0).asinh() >= target
+}
+
+/// Failure target of [`max_lazy_terms`]: a lazy sum leaves the normalizer's domain with probability at most `2^-128`
+/// over the coefficients it counts.
+const LAZY_SUM_FAILURE_BITS: usize = 128;
+
+/// The most canonical digits of radix `base2k` a coefficient of a lazy sum holds before it must be normalized, at
+/// least 1: the larger of the worst case, `2^(63 - base2k)` digits of magnitude at most `2^(base2k - 1)`, and the
+/// average case of `docs/guides/base2k-failure-probability.md`, the count whose sum leaves the normalizer's domain
+/// `[-2^62, 2^62]` with probability at most `2^-128` over `coefficients` coefficients, for independent centered uniform
+/// digits of deviation `2^base2k / sqrt(12)`, by the Gaussian approximation, the Mills-ratio bound on `erfc` and a
+/// union bound. Correlated digits, such as copies of one value, are outside the model.
+pub fn max_lazy_terms(base2k: Base2K, coefficients: usize) -> usize {
+    let base2k = base2k.as_usize();
+    let worst = 63usize.saturating_sub(base2k).min(usize::BITS as usize - 1);
+    let target = (LAZY_SUM_FAILURE_BITS as f64 + (coefficients.max(1) as f64).log2()) * core::f64::consts::LN_2;
+    // The smallest `x = 2^62 / (sqrt(2) sigma)` the bound admits, by bisection: `x^2 <= target`.
+    let (mut lo, mut hi) = (0.0f64, target.sqrt());
+    for _ in 0..64 {
+        let x = (lo + hi) / 2.0;
+        if mills_bound_meets(x, target) {
+            hi = x;
+        } else {
+            lo = x;
+        }
+    }
+    // `sigma = 2^base2k sqrt(t / 12)`, so `x >= hi` holds up to `t = 6 * 2^(124 - 2 base2k) / hi^2`.
+    let log2_average = 6f64.log2() + 2.0 * (62.0 - base2k as f64) - 2.0 * hi.log2();
+    (1usize << worst).max(log2_average.exp2() as usize)
 }
 
 /// Sizes the key region materialized for a gadget product and its immediate
@@ -1740,6 +1775,18 @@ mod gadget_sizing_tests {
                 }
             }
         }
+    }
+
+    /// Near the word size the worst case binds, from 56 bits down the average case: at `2^16 x 2 x 20` coefficients,
+    /// 62, 61 and 60 bits hold 2, 4 and 8 digits, 56 bits 244 where the worst case allows 128, and 52 bits 62526 where it
+    /// allows 2048. More coefficients allow fewer digits.
+    #[test]
+    fn max_lazy_terms_takes_the_larger_bound() {
+        let coefficients = (1 << 16) * 2 * 20;
+        let at = |base2k: u32| max_lazy_terms(Base2K(base2k), coefficients);
+        assert_eq!([62, 61, 60, 56, 54, 52].map(at), [2, 4, 8, 244, 3907, 62526]);
+        assert!(max_lazy_terms(Base2K(52), coefficients << 10) < at(52));
+        assert_eq!(max_lazy_terms(Base2K(1), 1), usize::MAX);
     }
 
     #[test]

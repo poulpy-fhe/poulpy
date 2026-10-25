@@ -1,0 +1,24 @@
+[package]
+name = "poulpy-bin-fhe"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+readme = "README.md"
+description = "Binary/gate-level Module-LWE-based FHE built on Poulpy core and HAL"
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/poulpy-bin-fhe"
+
+[features]
+# Kept as the historical opt-in switch used by the CI feature sets and by
+# downstream crates; the gate-level API itself is unconditional.
+enable-bin-fhe = []
+
+[dependencies]
+poulpy-hal = {workspace = true}
+poulpy-core = {workspace = true}
+itertools = {workspace = true}
+byteorder = {workspace = true}
+rand = {workspace = true}
+paste = {workspace = true}
+anyhow = {workspace = true}

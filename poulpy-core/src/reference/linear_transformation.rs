@@ -3,7 +3,7 @@
 //!
 //! This module is scheme-agnostic: CKKS derives scale/capacity metadata and
 //! passes only base2k alignment integers (`a_k`, `cnv_offset`). The
-//! files under `linear_transformation/` follow the phases in `docs/linear_transformation.md`:
+//! files under `linear_transformation/` follow the phases in `docs/guides/linear_transformation.md`:
 //! schedule construction, setup/preparation, baby hoisting, giant-step products
 //! and rotations, and final normalization.
 

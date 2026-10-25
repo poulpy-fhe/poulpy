@@ -1,6 +1,6 @@
 # PaCo DFT convention: where and why the library diverges from the paper
 
-The PaCo bootstrapping (`poulpy-ckks`, split across `layouts/paco/`, `encoding/paco/`, and `default/paco/`) does **not** use the DFT conventions of the paper and its reference implementation ([se-tim/PaCo-Implementation](https://github.com/se-tim/PaCo-Implementation)). It builds the same pipeline on the crate's official DFT factorization instead. This note explains the divergence: what each convention is, why the library's one was chosen, and what the trade-offs cost.
+The PaCo bootstrapping (`poulpy-ckks`, split across `layouts/paco/`, `encoding/paco/`, and `reference/paco/`) does **not** use the DFT conventions of the paper and its reference implementation ([se-tim/PaCo-Implementation](https://github.com/se-tim/PaCo-Implementation)). It builds the same pipeline on the crate's official DFT factorization instead. This note explains the divergence: what each convention is, why the library's one was chosen, and what the trade-offs cost.
 
 ## Why diverge
 
