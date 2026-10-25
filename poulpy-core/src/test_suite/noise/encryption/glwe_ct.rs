@@ -20,9 +20,9 @@ use crate::test_suite::noise::glwe_noise_checked;
 use crate::test_suite::poisoned_scratch;
 use crate::test_suite::refusal::{assert_refusal, glwe_state};
 use crate::{
-    GLWECompressedEncryptSk, GLWEDecompress, GLWEDecrypt, GLWEEncryptPk, GLWEEncryptSk, GLWEMaskFill, GLWENoise, GLWENormalize,
-    GLWEPublicKeyCompressedGenerate, GLWEPublicKeyDecompress, GLWEPublicKeyGenerate, GLWESub, GetDistribution,
-    GetDistributionMut, Noise, ScalarZnxFillDistribution, VecZnxAddNoise, VecZnxBigAddNoise,
+    GLWECompressedEncryptSk, GLWEDecompress, GLWEDecrypt, GLWEEncryptPk, GLWEEncryptPkSmudged, GLWEEncryptSk, GLWEMaskFill,
+    GLWENoise, GLWENormalize, GLWEPublicKeyCompressedGenerate, GLWEPublicKeyDecompress, GLWEPublicKeyGenerate, GLWESub,
+    GetDistribution, GetDistributionMut, Noise, ScalarZnxFillDistribution, VecZnxAddNoise, VecZnxBigAddNoise,
     api::{GLWEPreparedFactory, GLWEPublicKeyPreparedFactory, GLWESecretPreparedFactory},
     dist::Distribution,
     encryption::DEFAULT_SIGMA_XE,
@@ -782,6 +782,7 @@ where
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: GLWEEncryptPk<BE>
+        + GLWEEncryptPkSmudged<BE>
         + GLWEEncryptSk<BE>
         + GLWENormalize<BE>
         + GLWEPreparedFactory<BE>
@@ -850,13 +851,15 @@ where
             module.glwe_secret_prepare(&mut sk_prepared, &sk);
 
             let mut pk: GLWEPublicKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_public_key_alloc_from_infos(&pk_infos);
-            module.glwe_public_key_generate(
-                &mut pk,
-                &sk_prepared,
-                &mut Source::new([2u8; 32]),
-                &mut Source::new([3u8; 32]),
-                &mut poisoned_scratch::<BE>(module.glwe_public_key_generate_tmp_bytes(&pk_infos)).borrow(),
-            );
+            crate::test_suite::assert_wipes_scratch::<BE>(module.glwe_public_key_generate_tmp_bytes(&pk_infos), |scratch| {
+                module.glwe_public_key_generate(
+                    &mut pk,
+                    &sk_prepared,
+                    &mut Source::new([2u8; 32]),
+                    &mut Source::new([3u8; 32]),
+                    scratch,
+                )
+            });
 
             let (mut xe, mut xa) = (Source::new([2u8; 32]), Source::new([3u8; 32]));
             let keys_want: Vec<GLWE<BE::OwnedBuf, BE::ZnxWord>> = (0..rank)
@@ -1041,6 +1044,21 @@ where
                     scratch,
                 )
             });
+            crate::test_suite::assert_wipes_scratch::<BE>(
+                module.glwe_encrypt_pk_smudged_tmp_bytes(&infos, &pk_infos),
+                |scratch| {
+                    module.glwe_encrypt_pk_smudged(
+                        &mut ct,
+                        &pt,
+                        &pk_prepared,
+                        Noise::Gaussian { sigma: 1024.0 },
+                        &mut Source::new([5u8; 32]),
+                        &mut Source::new([6u8; 32]),
+                        &mut Source::new([7u8; 32]),
+                        scratch,
+                    )
+                },
+            );
         }
     }
 }

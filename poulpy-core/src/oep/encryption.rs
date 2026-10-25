@@ -28,7 +28,7 @@ use crate::{
 /// # Safety
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does.
-/// Every method taking scratch wipes its secret-derived temporaries before returning.
+/// Every method taking scratch wipes the scratch its query reports before returning.
 /// The memory, layout, synchrony and aliasing rules of
 /// `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait EncryptionImpl: Backend + SamplingImpl + HalVecZnxImpl + GLWENormalizeImpl + SecretImpl {
@@ -260,7 +260,7 @@ pub unsafe trait EncryptionImpl: Backend + SamplingImpl + HalVecZnxImpl + GLWENo
 
     /// Default body: `glwe_encrypt_pk_smudged_derived`, [`Self::glwe_encrypt_pk_sampled_at`] of `pt` into the body
     /// without its error, then `flood` on the body at the output's precision, drawn from `source_smudge`, normalized
-    /// once more, within [`Self::glwe_encrypt_pk_smudged_tmp_bytes`], under any
+    /// once more, then the wipe of its query, within [`Self::glwe_encrypt_pk_smudged_tmp_bytes`], under any
     /// [`PrepareHint`](poulpy_hal::layouts::PrepareHint) of its prepared operands.
     fn glwe_encrypt_pk_smudged<R, P, K>(
         module: &Module<Self>,
@@ -301,7 +301,7 @@ pub unsafe trait EncryptionImpl: Backend + SamplingImpl + HalVecZnxImpl + GLWENo
 
     /// Default body: `glwe_public_key_generate_derived`, [`Self::glwe_encrypt_zero_sk`] then
     /// [`GLWENormalizeImpl::glwe_normalize_assign`](crate::oep::GLWENormalizeImpl::glwe_normalize_assign) on each of
-    /// the `rank` entries, then the secret's noise estimate and distribution on `res`, within
+    /// the `rank` entries, then the wipe of its query and the secret's noise estimate and distribution on `res`, within
     /// [`Self::glwe_public_key_generate_tmp_bytes`], under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint) of
     /// its prepared operands.
     fn glwe_public_key_generate<R, S>(

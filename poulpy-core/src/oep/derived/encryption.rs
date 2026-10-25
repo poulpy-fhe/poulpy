@@ -76,8 +76,9 @@ pub(crate) fn glwe_public_key_generate_derived<BE, R, S>(
             _ => {}
         }
 
+        let tmp_bytes: usize = glwe_public_key_generate_tmp_bytes_derived(module, res);
         assert!(
-            scratch.available() >= glwe_public_key_generate_tmp_bytes_derived(module, res),
+            scratch.available() >= tmp_bytes,
             "insufficient scratch for GLWE public key generation"
         );
         let mut pk = res.to_backend_mut();
@@ -86,6 +87,7 @@ pub(crate) fn glwe_public_key_generate_derived<BE, R, S>(
             BE::glwe_encrypt_zero_sk(module, &mut entry, sk, source_xe, source_xa, scratch);
             module.glwe_normalize_assign(&mut entry, scratch);
         }
+        scratch.wipe(tmp_bytes);
     }
     res.set_noise(crate::component_noise::fresh_sk_noise(*sk.dist(), res));
     *res.dist_mut() = *sk.dist();
@@ -205,8 +207,9 @@ pub(crate) fn glwe_encrypt_pk_smudged_derived<BE, R, P, K>(
 {
     let (base2k, k): (usize, usize) = (res.base2k().into(), res.k().as_usize());
     flood.assert_valid_for(base2k, k);
+    let tmp_bytes: usize = glwe_encrypt_pk_smudged_tmp_bytes_derived(module, res, pk);
     assert!(
-        scratch.available() >= glwe_encrypt_pk_smudged_tmp_bytes_derived(module, res, pk),
+        scratch.available() >= tmp_bytes,
         "insufficient scratch for smudged GLWE public-key encryption"
     );
     let noise = public_key_encryption_noise::<BE, _, _>(res, pk, PublicKeyBodyNoise::Flood(flood));
@@ -217,6 +220,7 @@ pub(crate) fn glwe_encrypt_pk_smudged_derived<BE, R, P, K>(
         module.vec_znx_add_noise(base2k, k, &mut res.data, 0, flood, source_smudge);
         BE::vec_znx_normalize_assign(module, base2k, k, 0, &mut res.data, 0, scratch);
     }
+    scratch.wipe(tmp_bytes);
     res.set_noise(noise);
 }
 
