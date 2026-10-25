@@ -74,8 +74,7 @@ where
 
             assert!(res.rank_in() == pt_backend.cols() as u32, "res.rank_in() != pt.cols()");
             assert!(res.rank_out() == sk_ref.rank(), "res.rank_out() != sk.rank()");
-            assert_eq!(res.n(), sk_ref.n());
-            assert_eq!(pt_backend.n() as u32, sk_ref.n());
+            operand_degree(self.n(), &[res.n(), sk_ref.n(), pt_backend.n().into()]);
             assert!(
                 scratch.available() >= GGLWEEncryptSkReference::gglwe_encrypt_sk_tmp_bytes_reference(self, res),
                 "scratch.available(): {} < GGLWEEncryptSk::gglwe_encrypt_sk_tmp_bytes: {}",

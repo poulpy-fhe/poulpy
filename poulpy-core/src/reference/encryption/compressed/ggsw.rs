@@ -75,7 +75,10 @@ where
             let sk_ref = sk.to_backend_ref();
             let pt_backend = pt.to_backend_ref();
 
-            assert_eq!(res.rank(), sk_ref.rank());
+            assert!(
+                res.rank() == sk_ref.rank(),
+                "the ciphertext rank differs from the secret's rank"
+            );
             operand_degree(self.n(), &[pt_backend.n().into(), res.n(), sk_ref.n()]);
             assert!(
                 scratch.available() >= self.ggsw_compressed_encrypt_sk_tmp_bytes_reference(res),

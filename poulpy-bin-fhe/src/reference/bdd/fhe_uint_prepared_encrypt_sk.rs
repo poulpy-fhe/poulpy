@@ -29,8 +29,14 @@ pub fn fhe_uint_prepared_encrypt_sk_reference<T: UnsignedInteger + ToBits, BE: B
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
 {
     assert!(module.n().is_multiple_of(T::BITS as usize));
-    assert_eq!(res.n(), module.n() as u32);
-    assert_eq!(sk.n(), module.n() as u32);
+    assert!(
+        res.n() == module.n() as u32,
+        "the ciphertext degree differs from the module degree"
+    );
+    assert!(
+        sk.n() == module.n() as u32,
+        "the secret degree differs from the module degree"
+    );
 
     let mut tmp_ggsw: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(res);
     let mut pt = vec![0u8; module.n() * size_of::<i64>()];

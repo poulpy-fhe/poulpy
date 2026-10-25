@@ -160,7 +160,10 @@ where
             let pt_backend = pt.to_backend_ref();
             let sk_ref = sk.to_backend_ref();
 
-            assert_eq!(res.rank(), sk_ref.rank());
+            assert!(
+                res.rank() == sk_ref.rank(),
+                "the ciphertext rank differs from the secret's rank"
+            );
             operand_degree(self.n(), &[res.n(), sk_ref.n(), pt_backend.n()]);
             assert!(
                 scratch.available() >= self.glwe_encrypt_sk_tmp_bytes_reference(res),
@@ -204,7 +207,10 @@ where
             let res = &mut res.to_backend_mut();
             let sk_ref = sk.to_backend_ref();
 
-            assert_eq!(res.rank(), sk_ref.rank());
+            assert!(
+                res.rank() == sk_ref.rank(),
+                "the ciphertext rank differs from the secret's rank"
+            );
             operand_degree(self.n(), &[res.n(), sk_ref.n()]);
             assert!(
                 scratch.available() >= self.glwe_encrypt_sk_tmp_bytes_reference(res),
@@ -250,7 +256,10 @@ where
             let pt_backend = pt.to_backend_ref();
             let sk_ref = sk.to_backend_ref();
 
-            assert_eq!(res.rank(), sk_ref.rank());
+            assert!(
+                res.rank() == sk_ref.rank(),
+                "the ciphertext rank differs from the secret's rank"
+            );
             operand_degree(self.n(), &[res.n(), sk_ref.n(), pt_backend.n()]);
             assert!(
                 scratch.available() >= self.glwe_encrypt_sk_tmp_bytes_reference(res),
@@ -419,17 +428,25 @@ where
         {
             let res_ref = res.to_backend_ref();
 
-            assert_eq!(res_ref.base2k(), pk.base2k());
-            assert_eq!(res_ref.n(), pk.n());
-            assert_eq!(res_ref.rank(), pk.rank());
+            assert!(
+                res_ref.base2k() == pk.base2k(),
+                "the ciphertext base2k differs from the public key's base2k"
+            );
+            assert!(
+                res_ref.rank() == pk.rank(),
+                "the ciphertext rank differs from the public key's rank"
+            );
             assert!(pk.k() >= res_ref.k(), "invalid public key: less precise than the output");
             assert!(
                 res_ref.k() <= k_sample && k_sample <= pk.k(),
                 "invalid k_sample: outside the output and key precisions"
             );
             if let Some((pt, _)) = &pt {
-                assert_eq!(pt.base2k(), pk.base2k());
-                assert_eq!(pt.n(), pk.n());
+                assert!(
+                    pt.base2k() == pk.base2k(),
+                    "the plaintext base2k differs from the public key's base2k"
+                );
+                operand_degree(self.n(), &[pt.n(), pk.n()]);
             }
 
             let pk = <K as GLWEPublicKeyPreparedToBackendRef<BE>>::to_backend_ref(pk);

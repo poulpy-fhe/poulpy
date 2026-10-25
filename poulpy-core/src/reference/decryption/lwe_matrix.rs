@@ -46,7 +46,7 @@ pub fn lwe_matrix_decrypt_reference<BE, R, P, S>(
     let res = res.to_backend_ref();
     let sk = sk.to_backend_ref();
 
-    assert_eq!(res.n(), sk.n(), "lwe_matrix_decrypt: secret dimension mismatch");
+    assert!(res.n() == sk.n(), "lwe_matrix_decrypt: secret dimension mismatch");
     assert!(
         scratch.available() >= lwe_matrix_decrypt_tmp_bytes_reference::<BE, _>(module, &res),
         "scratch.available(): {} < LWEMatrixDecrypt::lwe_matrix_decrypt_tmp_bytes: {}",
@@ -59,14 +59,13 @@ pub fn lwe_matrix_decrypt_reference<BE, R, P, S>(
         let pt_k = pt.k().as_usize();
         let res_base2k = res.base2k().into();
         let mut pt = pt.to_backend_mut();
-        assert_eq!(pt.rank(), Rank(0), "lwe_matrix_decrypt: plaintext must have rank 0");
+        assert!(pt.rank() == Rank(0), "lwe_matrix_decrypt: plaintext must have rank 0");
         assert!(
             res.rows() <= pt.n().as_usize(),
             "lwe_matrix_decrypt: plaintext ring degree is too small for row count"
         );
-        assert_eq!(
-            pt.size(),
-            res.size(),
+        assert!(
+            pt.size() == res.size(),
             "lwe_matrix_decrypt currently expects matching limb counts"
         );
 

@@ -37,7 +37,10 @@ where
 
     #[cfg(debug_assertions)]
     {
-        assert_eq!(res.n(), sk.n());
+        assert!(
+            res.n() == sk.n(),
+            "the ciphertext dimension differs from the secret's dimension"
+        );
     }
     assert!(
         scratch.available() >= lwe_decrypt_tmp_bytes_reference::<M, BE, _>(module, &res),

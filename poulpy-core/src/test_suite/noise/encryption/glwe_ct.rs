@@ -716,11 +716,7 @@ pub fn test_glwe_encrypt_pk_rejects_imprecise_key<BE: crate::test_suite::noise::
                 base2k: (base2k - 1).into(),
                 ..glwe_infos
             },
-            format!(
-                "assertion `left == right` failed\n  left: Base2K({})\n right: Base2K({})",
-                base2k,
-                base2k - 1
-            ),
+            "the ciphertext base2k differs from the public key's base2k".to_string(),
         ),
         (
             "unprepared public key",

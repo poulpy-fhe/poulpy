@@ -143,10 +143,22 @@ pub fn circuit_bootstrapping_key_encrypt_sk_reference<S0, S1, M, BRA, BE>(
     let atk_infos: &GLWEAutomorphismKeyLayout = &res.atk_infos();
     let tsk_infos: &GGLWEToGGSWKeyLayout = &res.tsk_infos();
 
-    assert_eq!(sk_lwe.n(), brk_infos.n_lwe());
-    assert_eq!(sk_glwe.n(), brk_infos.n_glwe());
-    assert_eq!(sk_glwe.n(), atk_infos.n());
-    assert_eq!(sk_glwe.n(), tsk_infos.n());
+    assert!(
+        sk_lwe.n() == brk_infos.n_lwe(),
+        "the LWE secret dimension differs from the blind rotation key's"
+    );
+    assert!(
+        sk_glwe.n() == brk_infos.n_glwe(),
+        "the GLWE secret degree differs from the blind rotation key's"
+    );
+    assert!(
+        sk_glwe.n() == atk_infos.n(),
+        "the GLWE secret degree differs from the automorphism key's"
+    );
+    assert!(
+        sk_glwe.n() == tsk_infos.n(),
+        "the GLWE secret degree differs from the tensor key's"
+    );
 
     assert!(sk_glwe.dist() != &Distribution::NONE);
 
