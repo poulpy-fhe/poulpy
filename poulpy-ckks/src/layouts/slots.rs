@@ -71,11 +71,11 @@ pub(crate) fn fold_rotations(a: usize, b: usize) -> Vec<i64> {
     (0..(a / b).trailing_zeros()).map(|l| (a >> (l + 1)) as i64).collect()
 }
 
-/// Reverses the low `log_p` bits of `x`, keeping the higher bits — the tiled
+/// Reverses the low `log_p` bits of `x`, keeping the higher bits, the tiled
 /// permutation `P` of the `BitRevLow` slot-order convention (the paper's
 /// extended bit-reversal `Π^{(C/2)}` for `log_p = log(C/2)`). Self-inverse;
 /// the identity for `log_p ∈ {0, 1}`. Because it only touches bits below
-/// `log_p`, it commutes with every stride that is a multiple of `2^{log_p}` —
+/// `log_p`, it commutes with every stride that is a multiple of `2^{log_p}`:
 /// the fold rotations, the ψ-pairing offset `C`, and the μ/η mask strata.
 pub(crate) fn ext_bitrev_low(x: usize, log_p: usize) -> usize {
     if log_p == 0 {
@@ -92,7 +92,7 @@ pub(crate) fn ext_bitrev_low(x: usize, log_p: usize) -> usize {
 /// automorphism appliers use whatever key they are handed, so a key generated
 /// for this element applied through
 /// [`CKKSConjugateOps`](crate::api::CKKSConjugateOps) performs
-/// `conj(rotate(·, k))` in a single keyswitch — the ψ-pairing's fast tail.
+/// `conj(rotate(·, k))` in a single keyswitch, the ψ-pairing's fast tail.
 pub(crate) fn conj_rotate_galois_element(k: i64, cyclotomic_order: i64) -> i64 {
     -galois_element(k, cyclotomic_order)
 }
