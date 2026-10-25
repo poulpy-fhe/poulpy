@@ -166,8 +166,9 @@ pub unsafe trait CKKSLinearTransformationImpl: Backend + super::CKKSCopyImpl {
 
     /// Default body: `ckks_eval_linear_transformation_self_assign_derived`,
     /// [`Self::ckks_eval_linear_transformation_self_into`] from `dst` into a `dst`-shaped working copy carved from
-    /// scratch, then the selected `ckks_copy` of the copy back into `dst`. Bounded as
-    /// [`Self::ckks_eval_linear_transformation_self_into`].
+    /// scratch, then the selected `ckks_copy` of the copy back into `dst`. Bounded by the bytes of that working copy
+    /// plus the bound of [`Self::ckks_eval_linear_transformation_self_into`], whose evaluation query already counts the
+    /// copy back.
     fn ckks_eval_linear_transformation_self_assign<Dst, P, H>(
         module: &Module<Self>,
         dst: &mut Dst,
