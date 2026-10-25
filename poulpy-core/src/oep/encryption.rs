@@ -171,7 +171,7 @@ pub unsafe trait EncryptionImpl: Backend + SamplingImpl + HalVecZnxImpl + GLWENo
         super::derived::encryption::glwe_encrypt_pk_derived(module, res, pt, pk, source_xu, source_xe, scratch)
     }
 
-    /// Default body: `glwe_encrypt_zero_pk_derived`, as [`Self::glwe_encrypt_pk`] of a zero plaintext, within
+    /// Default body: `glwe_encrypt_zero_pk_derived`, as [`Self::glwe_encrypt_pk`] with no plaintext, within
     /// [`Self::glwe_encrypt_pk_tmp_bytes`], under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint) of its
     /// prepared operands.
     fn glwe_encrypt_zero_pk<R, K>(

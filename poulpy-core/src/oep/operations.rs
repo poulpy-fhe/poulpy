@@ -109,8 +109,8 @@ pub unsafe trait GLWEMulPlainImpl: Backend {
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait GLWEMulPreparedPlainSumImpl: Backend {
-    /// Scratch bound of [`Self::glwe_mul_prepared_plain_sum`]; may report less than the reference, never less than
-    /// the body takes.
+    /// Scratch bound of [`Self::glwe_mul_prepared_plain_sum`], whatever the number of terms; may report less than the
+    /// reference, never less than the body takes.
     fn glwe_mul_prepared_plain_sum_tmp_bytes<R>(module: &Module<Self>, res: &R, a_size: usize, b_size: usize) -> usize
     where
         R: GLWEInfos;
@@ -364,11 +364,11 @@ pub unsafe trait GLWETensoringImpl: Backend {
 
     /// Reproduces
     /// [`glwe_mul_columns_reference`](crate::reference::operations::GLWETensoringReference::glwe_mul_columns_reference)
-    /// bit for bit; free in kernels and scratch use.
+    /// bit for bit; free in kernels.
     ///
     /// The caller hands it the prepared rank-one operands, the two column buffers and the scratch left once those are
-    /// allocated; a kernel needing more than the reference convolutions adds it to
-    /// [`Self::glwe_mul_relinearize_tmp_bytes`]. It records no metadata.
+    /// allocated, within [`Self::glwe_mul_relinearize_tmp_bytes`]; a kernel needing more than the reference
+    /// convolutions adds it there. It records no metadata.
     fn glwe_mul_columns(
         module: &Module<Self>,
         cnv_offset_hi: usize,
@@ -379,8 +379,8 @@ pub unsafe trait GLWETensoringImpl: Backend {
         scratch: &mut ScratchArena<'_, Self>,
     );
 
-    /// Scratch bound of [`Self::glwe_mul_relinearize_sum`]; may report less than the reference, never less than the
-    /// body takes.
+    /// Scratch bound of [`Self::glwe_mul_relinearize_sum`], whatever the number of pairs; may report less than the
+    /// reference, never less than the body takes.
     fn glwe_mul_relinearize_sum_tmp_bytes<R, B>(
         module: &Module<Self>,
         res: &R,
@@ -416,8 +416,9 @@ pub unsafe trait GLWETensoringImpl: Backend {
         B: GLWEToBackendRef<Self> + GLWEInfos,
         H: GetTensorKey<Self>;
 
-    /// Scratch bound of [`Self::glwe_mul_prepared_relinearize_sum`]; may report less than the reference, never less
-    /// than the body takes.
+    /// Scratch bound of [`Self::glwe_mul_prepared_relinearize_sum`], whatever the number of pairs; one pair needs no
+    /// more than [`Self::glwe_mul_relinearize_tmp_bytes`]; may report less than the reference, never less than the
+    /// body takes.
     fn glwe_mul_prepared_relinearize_sum_tmp_bytes<R, B>(
         module: &Module<Self>,
         res: &R,
@@ -812,11 +813,13 @@ pub unsafe trait GLWETraceImpl: crate::oep::AutomorphismImpl + GLWEShiftImpl + G
         crate::oep::derived::structure::glwe_trace_galois_elements_derived::<Self, _>(module, n, levels, reverse)
     }
 
-    /// Default body: `glwe_trace_tmp_bytes_derived`, a normalized copy of the input plus the larger of
-    /// [`GLWECopyImpl::glwe_copy_tmp_bytes`](crate::oep::GLWECopyImpl::glwe_copy_tmp_bytes),
+    /// Default body: `glwe_trace_tmp_bytes_derived`, a temporary at the key's radix plus the larger of the copies
+    /// into and out of it ([`GLWECopyImpl::glwe_copy_tmp_bytes`](crate::oep::GLWECopyImpl::glwe_copy_tmp_bytes)) and
+    /// the in-place trace, itself the larger of
     /// [`GLWEShiftImpl::glwe_shift_tmp_bytes`](crate::oep::GLWEShiftImpl::glwe_shift_tmp_bytes),
-    /// [`GLWENormalizeImpl::glwe_normalize_tmp_bytes`](crate::oep::GLWENormalizeImpl::glwe_normalize_tmp_bytes) and
-    /// [`AutomorphismImpl::glwe_automorphism_tmp_bytes`](crate::oep::AutomorphismImpl::glwe_automorphism_tmp_bytes).
+    /// [`AutomorphismImpl::glwe_automorphism_tmp_bytes`](crate::oep::AutomorphismImpl::glwe_automorphism_tmp_bytes)
+    /// and, on a radix mismatch, a converted copy with
+    /// [`GLWENormalizeImpl::glwe_normalize_tmp_bytes`](crate::oep::GLWENormalizeImpl::glwe_normalize_tmp_bytes).
     fn glwe_trace_tmp_bytes<R, A, K>(module: &Module<Self>, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
         R: GLWEInfos,
@@ -826,13 +829,11 @@ pub unsafe trait GLWETraceImpl: crate::oep::AutomorphismImpl + GLWEShiftImpl + G
         crate::oep::derived::structure::glwe_trace_tmp_bytes_derived::<Self, _, _, _, _>(module, res_infos, a_infos, key_infos)
     }
 
-    /// Default body: `glwe_trace_derived`, each visited level adds the Galois conjugate of the running sum through
-    /// [`AutomorphismImpl::glwe_automorphism_add_assign`](crate::oep::AutomorphismImpl::glwe_automorphism_add_assign),
-    /// after [`GLWEShiftImpl::glwe_rsh`](crate::oep::GLWEShiftImpl::glwe_rsh) by one bit when normalizing, working on
-    /// a normalized copy made by [`GLWECopyImpl::glwe_copy`](crate::oep::GLWECopyImpl::glwe_copy) and
-    /// [`GLWENormalizeImpl::glwe_normalize`](crate::oep::GLWENormalizeImpl::glwe_normalize); an empty window is
-    /// [`GLWECopyImpl::glwe_copy`](crate::oep::GLWECopyImpl::glwe_copy), within [`Self::glwe_trace_tmp_bytes`], under
-    /// any [`PrepareHint`](poulpy_hal::layouts::PrepareHint) of its prepared operands.
+    /// Default body: `glwe_trace_derived`, [`GLWECopyImpl::glwe_copy`](crate::oep::GLWECopyImpl::glwe_copy) of `a`
+    /// into a temporary at the key's radix, [`Self::glwe_trace_assign`] on it, then
+    /// [`GLWECopyImpl::glwe_copy`](crate::oep::GLWECopyImpl::glwe_copy) into `res`; an empty window is
+    /// [`GLWECopyImpl::glwe_copy`](crate::oep::GLWECopyImpl::glwe_copy) alone, within [`Self::glwe_trace_tmp_bytes`],
+    /// under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint) of its prepared operands.
     #[expect(
         clippy::too_many_arguments,
         reason = "the trace's operands, levels, direction and normalization, keys and scratch"
@@ -856,12 +857,14 @@ pub unsafe trait GLWETraceImpl: crate::oep::AutomorphismImpl + GLWEShiftImpl + G
         )
     }
 
-    /// Default body: `glwe_trace_assign_derived`, the levels of [`Self::glwe_trace`] applied to `res` in place,
-    /// through [`GLWENormalizeImpl::glwe_normalize`](crate::oep::GLWENormalizeImpl::glwe_normalize),
-    /// [`GLWEShiftImpl::glwe_rsh`](crate::oep::GLWEShiftImpl::glwe_rsh) and
+    /// Default body: `glwe_trace_assign_derived`, each visited level adds the Galois conjugate of the running sum
+    /// through
     /// [`AutomorphismImpl::glwe_automorphism_add_assign`](crate::oep::AutomorphismImpl::glwe_automorphism_add_assign),
-    /// within [`Self::glwe_trace_tmp_bytes`], under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint) of its
-    /// prepared operands.
+    /// after [`GLWEShiftImpl::glwe_rsh`](crate::oep::GLWEShiftImpl::glwe_rsh) by one bit when normalizing; only when
+    /// `res`'s radix differs from the keys' does the work run on a copy at the keys' radix, converted by
+    /// [`GLWENormalizeImpl::glwe_normalize`](crate::oep::GLWENormalizeImpl::glwe_normalize), within
+    /// [`Self::glwe_trace_tmp_bytes`], under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint) of its prepared
+    /// operands.
     fn glwe_trace_assign<R, H>(
         module: &Module<Self>,
         res: &mut R,
@@ -901,7 +904,8 @@ pub unsafe trait GLWEPackImpl:
     /// [`GLWEShiftImpl::glwe_shift_tmp_bytes`](crate::oep::GLWEShiftImpl::glwe_shift_tmp_bytes),
     /// [`GLWENormalizeImpl::glwe_normalize_tmp_bytes`](crate::oep::GLWENormalizeImpl::glwe_normalize_tmp_bytes) and
     /// [`AutomorphismImpl::glwe_automorphism_tmp_bytes`](crate::oep::AutomorphismImpl::glwe_automorphism_tmp_bytes),
-    /// or [`GLWETraceImpl::glwe_trace_tmp_bytes`](crate::oep::GLWETraceImpl::glwe_trace_tmp_bytes) if larger.
+    /// or [`GLWETraceImpl::glwe_trace_tmp_bytes`](crate::oep::GLWETraceImpl::glwe_trace_tmp_bytes), which carries the
+    /// trace's radix-conversion term, if larger.
     fn glwe_pack_tmp_bytes<R, A, K>(module: &Module<Self>, res: &R, a: &A, key: &K) -> usize
     where
         R: GLWEInfos,
@@ -911,15 +915,21 @@ pub unsafe trait GLWEPackImpl:
         crate::oep::derived::structure::glwe_pack_tmp_bytes_derived::<Self, _, _, _, _>(module, res, a, key)
     }
 
-    /// Default body: `glwe_pack_derived`, a binary merge tree of
+    /// Default body: `glwe_pack_derived`, a binary merge tree whose steps use
     /// [`GLWERotateImpl::glwe_rotate_assign`](crate::oep::GLWERotateImpl::glwe_rotate_assign),
+    /// [`GLWERotateImpl::glwe_rotate`](crate::oep::GLWERotateImpl::glwe_rotate),
     /// [`GLWESubImpl::glwe_sub`](crate::oep::GLWESubImpl::glwe_sub),
-    /// [`GLWEShiftImpl::glwe_rsh`](crate::oep::GLWEShiftImpl::glwe_rsh),
+    /// [`GLWESubImpl::glwe_sub_assign`](crate::oep::GLWESubImpl::glwe_sub_assign),
     /// [`GLWEAddImpl::glwe_add_assign`](crate::oep::GLWEAddImpl::glwe_add_assign),
-    /// [`AutomorphismImpl::glwe_automorphism_assign`](crate::oep::AutomorphismImpl::glwe_automorphism_assign) and
-    /// [`GLWENormalizeImpl::glwe_normalize_assign`](crate::oep::GLWENormalizeImpl::glwe_normalize_assign), closed by
-    /// [`GLWETraceImpl::glwe_trace`](crate::oep::GLWETraceImpl::glwe_trace), within [`Self::glwe_pack_tmp_bytes`],
-    /// under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint) of its prepared operands.
+    /// [`GLWEShiftImpl::glwe_rsh`](crate::oep::GLWEShiftImpl::glwe_rsh),
+    /// [`GLWENormalizeImpl::glwe_normalize_assign`](crate::oep::GLWENormalizeImpl::glwe_normalize_assign),
+    /// [`AutomorphismImpl::glwe_automorphism_assign`](crate::oep::AutomorphismImpl::glwe_automorphism_assign),
+    /// [`AutomorphismImpl::glwe_automorphism_add_assign`](crate::oep::AutomorphismImpl::glwe_automorphism_add_assign)
+    /// and
+    /// [`AutomorphismImpl::glwe_automorphism_sub_negate`](crate::oep::AutomorphismImpl::glwe_automorphism_sub_negate),
+    /// closed by [`GLWETraceImpl::glwe_trace`](crate::oep::GLWETraceImpl::glwe_trace), within
+    /// [`Self::glwe_pack_tmp_bytes`], under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint) of its prepared
+    /// operands.
     fn glwe_pack<R, A, H>(
         module: &Module<Self>,
         res: &mut R,
