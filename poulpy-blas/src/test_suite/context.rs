@@ -241,7 +241,7 @@ pub fn test_blas_context<BE, F, E>(
         || module.blas_context_prepare_tmp_bytes(&ctx_other_slots),
     );
     let mut ctx = module.blas_context_alloc_from_infos(&ctx_base);
-    module.blas_context_encode_into(&mut ctx, &mut scratch.borrow()).unwrap();
+    module.blas_context_encode(&mut ctx, &mut scratch.borrow()).unwrap();
     let mut ctx_other = module.blas_context_prepared_alloc_from_infos(&ctx_with(|l| l.base2k = Base2K(l.base2k.as_u32() + 1)));
     assert_panics(
         "context prepare into another layout",
@@ -298,7 +298,7 @@ pub fn test_blas_context<BE, F, E>(
         module.blas_pt_operand_prepare_tmp_bytes(&other_slots)
     });
     let mut op = module.blas_pt_operand_alloc_from_infos(&base);
-    module.blas_pt_operand_encode_into(&mut op, f, &mut scratch.borrow()).unwrap();
+    module.blas_pt_operand_encode(&mut op, f, &mut scratch.borrow()).unwrap();
     let mut other = module.blas_pt_operand_prepared_alloc_from_infos(&with(|l| l.rows = 2));
     assert_panics(
         "prepare into another layout",
@@ -443,7 +443,7 @@ fn refill_operand<BE, F, S>(
         |op, p, again| {
             let entry = if again { second } else { first };
             module
-                .blas_pt_operand_encode_into(op, |m, r, c| F::from_f64(entry(m, r, c)).unwrap(), scratch)
+                .blas_pt_operand_encode(op, |m, r, c| F::from_f64(entry(m, r, c)).unwrap(), scratch)
                 .unwrap();
             module.blas_pt_operand_prepare(p, op, scratch);
         },
@@ -487,7 +487,7 @@ pub fn test_blas_refill<BE, F, E>(
             poison_prepared::<BE>(p.maps.iter_mut());
         },
         |c, p, _| {
-            module.blas_context_encode_into(c, &mut scratch.borrow()).unwrap();
+            module.blas_context_encode(c, &mut scratch.borrow()).unwrap();
             module.blas_context_prepare(p, c, &mut scratch.borrow());
         },
     );

@@ -99,11 +99,11 @@ let mut ctx = module.blas_context_alloc(plan, base2k, coeffs_meta);
 let mut prepared = module.blas_context_prepared_alloc_from_infos(&ctx);
 let encode_bytes = BlasEncodingOps::<BE, f64>::blas_context_encode_tmp_bytes(&module, &ctx);
 let mut scratch = ScratchOwned::<BE>::alloc(encode_bytes.max(module.blas_context_prepare_tmp_bytes(&ctx)));
-BlasEncodingOps::<BE, f64>::blas_context_encode_into(&module, &mut ctx, &mut scratch.borrow())?;
+BlasEncodingOps::<BE, f64>::blas_context_encode(&module, &mut ctx, &mut scratch.borrow())?;
 module.blas_context_prepare(&mut prepared, &ctx, &mut scratch.borrow());
 
 let mut b = module.blas_pt_operand_alloc::<Right>(plan, rows, cols, count, base2k, coeffs_meta);
-module.blas_pt_operand_encode_into(&mut b, |m, row, col| entry(m, row, col), &mut scratch.borrow())?;
+module.blas_pt_operand_encode(&mut b, |m, row, col| entry(m, row, col), &mut scratch.borrow())?;
 ```
 
 An allocation panics on a layout whose blocks do not fit the module's slots, whose count of public matrices does not

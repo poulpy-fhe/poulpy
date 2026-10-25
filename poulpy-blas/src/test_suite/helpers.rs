@@ -661,7 +661,7 @@ where
     S: BlasPtSide,
 {
     let mut op = module.blas_pt_operand_alloc::<S>(plan, rows, cols, count, base2k, coeffs_meta);
-    module.blas_pt_operand_encode_into(&mut op, entry, scratch).unwrap();
+    module.blas_pt_operand_encode(&mut op, entry, scratch).unwrap();
     let mut prepared = module.blas_pt_operand_prepared_alloc_from_infos(&op);
     module.blas_pt_operand_prepare(&mut prepared, &op, scratch);
     prepared
@@ -907,7 +907,7 @@ where
     F: DiagonalArithmetic + CKKSEncodingScalar,
 {
     let mut ctx = module.blas_context_alloc(plan, base2k, coeffs_meta);
-    module.blas_context_encode_into(&mut ctx, scratch).unwrap();
+    module.blas_context_encode(&mut ctx, scratch).unwrap();
     let mut prepared = module.blas_context_prepared_alloc_from_infos(&ctx);
     module.blas_context_prepare(&mut prepared, &ctx, scratch);
     prepared

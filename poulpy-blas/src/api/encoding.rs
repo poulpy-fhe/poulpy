@@ -11,9 +11,9 @@ use crate::layouts::{
 ///
 /// The scalar is a trait parameter, as for poulpy-ckks's encoder: the delegating impl on `Module<BE>` requires
 /// [`CKKSEncodingImpl<F>`](poulpy_ckks::oep::CKKSEncodingImpl), and a call that cannot infer `F` from its arguments names
-/// it, `BlasEncodingOps::<BE, f64>::blas_context_encode_into(&module, &mut ctx, scratch)`.
+/// it, `BlasEncodingOps::<BE, f64>::blas_context_encode(&module, &mut ctx, scratch)`.
 pub trait BlasEncodingOps<BE: Backend, F: CKKSEncodingScalar + DiagonalArithmetic> {
-    /// Scratch bytes [`Self::blas_pt_operand_encode_into`] needs for an operand of `infos`: the encoding of one diagonal
+    /// Scratch bytes [`Self::blas_pt_operand_encode`] needs for an operand of `infos`: the encoding of one diagonal
     /// of a map of period `count d^2`.
     ///
     /// # Panics
@@ -53,14 +53,14 @@ pub trait BlasEncodingOps<BE: Backend, F: CKKSEncodingScalar + DiagonalArithmeti
     /// [`maps::right_jkls`]: crate::layouts::maps::right_jkls
     /// [`maps::left_jkls`]: crate::layouts::maps::left_jkls
     /// [`maps::left_mul_rep`]: crate::layouts::maps::left_mul_rep
-    fn blas_pt_operand_encode_into<S: BlasPtSide>(
+    fn blas_pt_operand_encode<S: BlasPtSide>(
         &self,
         res: &mut BlasPtOperandUnprepared<BE, S>,
         entry: impl Fn(usize, usize, usize) -> F,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> CKKSResult<()>;
 
-    /// Scratch bytes [`Self::blas_context_encode_into`] needs for a context of `infos`: the encoding of one diagonal of a
+    /// Scratch bytes [`Self::blas_context_encode`] needs for a context of `infos`: the encoding of one diagonal of a
     /// map of period `d^2`.
     ///
     /// # Panics
@@ -85,8 +85,7 @@ pub trait BlasEncodingOps<BE: Backend, F: CKKSEncodingScalar + DiagonalArithmeti
     /// # Panics
     ///
     /// Panics if `res` was allocated on a module of another ring.
-    fn blas_context_encode_into(&self, res: &mut BlasContextUnprepared<BE>, scratch: &mut ScratchArena<'_, BE>)
-    -> CKKSResult<()>;
+    fn blas_context_encode(&self, res: &mut BlasContextUnprepared<BE>, scratch: &mut ScratchArena<'_, BE>) -> CKKSResult<()>;
 }
 
 /// Allocation, sizing and preparation of prepared public operands. The allocation is direct on the module; the

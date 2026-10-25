@@ -30,7 +30,7 @@ pub trait BlasEncodingReference<BE: Backend> {
 
     /// Every map of `res`, in walking order: the first map under JKLS and the masked paths, the blocks row-major, each
     /// block's terms in order, then the replicated-input maps, every block sharing the first block's schedule.
-    fn blas_pt_operand_encode_into_reference<F, S>(
+    fn blas_pt_operand_encode_reference<F, S>(
         &self,
         res: &mut BlasPtOperandUnprepared<BE, S>,
         entry: impl Fn(usize, usize, usize) -> F,
@@ -49,7 +49,7 @@ pub trait BlasEncodingReference<BE: Backend> {
         A: BlasContextInfos;
 
     /// Every map of the plan of `res`, in walking order.
-    fn blas_context_encode_into_reference<F>(
+    fn blas_context_encode_reference<F>(
         &self,
         res: &mut BlasContextUnprepared<BE>,
         scratch: &mut ScratchArena<'_, BE>,
@@ -106,7 +106,7 @@ impl<BE: Backend> BlasEncodingReference<BE> for Module<BE> {
         ckks_encode_linear_transformation_tmp_bytes::<BE, Self, F>(self, slots)
     }
 
-    fn blas_pt_operand_encode_into_reference<F, S>(
+    fn blas_pt_operand_encode_reference<F, S>(
         &self,
         res: &mut BlasPtOperandUnprepared<BE, S>,
         entry: impl Fn(usize, usize, usize) -> F,
@@ -160,7 +160,7 @@ impl<BE: Backend> BlasEncodingReference<BE> for Module<BE> {
         ckks_encode_linear_transformation_tmp_bytes::<BE, Self, F>(self, slots)
     }
 
-    fn blas_context_encode_into_reference<F>(
+    fn blas_context_encode_reference<F>(
         &self,
         res: &mut BlasContextUnprepared<BE>,
         scratch: &mut ScratchArena<'_, BE>,

@@ -813,7 +813,7 @@ fn assert_operand_shapes<BE, F, S>(
     let label = format!("left={} {:?} log_d={}", S::LEFT, plan.pt_algorithm(), plan.log_d());
     let entry = |m: usize, r: usize, c: usize| F::from_f64(((m + r * 3 + c) % 5) as f64 - 2.0).unwrap();
     let mut op = module.blas_pt_operand_alloc::<S>(plan, 2, 2, 1, base2k, meta);
-    module.blas_pt_operand_encode_into(&mut op, entry, scratch).unwrap();
+    module.blas_pt_operand_encode(&mut op, entry, scratch).unwrap();
     let mut prepared = module.blas_pt_operand_prepared_alloc_from_infos(&op);
     module.blas_pt_operand_prepare(&mut prepared, &op, scratch);
     let shapes: Vec<Shape> = operand_shapes(&op.blas_pt_operand_layout()).iter().map(shape_of).collect();

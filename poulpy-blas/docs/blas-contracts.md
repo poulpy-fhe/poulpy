@@ -23,7 +23,7 @@ changes bits.
 | `BlasMatIntraImpl` | the map hook `blas_map_blocks` | `blas_transpose`, `blas_rotate_rows`, `blas_rotate_cols`, over the hook |
 | `BlasMatMulImpl` | `blas_matmul`, `blas_matmul_prepare_left`, `blas_matmul_prepare_right`, `blas_matmul_prepared`, `blas_matmul_pt_right`, `blas_matmul_pt_left` | |
 | `BlasJklsImpl` | the JKLS kernel `blas_jkls_block`, one output block of the prepared product | |
-| `BlasEncodingImpl` | `blas_pt_operand_encode_into`, `blas_context_encode_into`, `blas_pt_operand_prepare`, `blas_context_prepare` | |
+| `BlasEncodingImpl` | `blas_pt_operand_encode`, `blas_context_encode`, `blas_pt_operand_prepare`, `blas_context_prepare` | |
 
 Each operation's `_tmp_bytes` query belongs to the same family. The encodings
 take poulpy-ckks's encoding scalar `F` as a method parameter bounded by

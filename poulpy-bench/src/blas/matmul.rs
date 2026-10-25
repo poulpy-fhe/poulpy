@@ -272,7 +272,7 @@ where
                 .blas_context_encode_tmp_bytes(&ctx)
                 .max(module.blas_context_prepare_tmp_bytes(&ctx)),
         );
-        module.blas_context_encode_into(&mut ctx, &mut arena.borrow()).unwrap();
+        module.blas_context_encode(&mut ctx, &mut arena.borrow()).unwrap();
         module.blas_context_prepare(&mut prepared, &ctx, &mut arena.borrow());
         prepared
     }
@@ -290,7 +290,7 @@ where
                 .max(module.blas_pt_operand_prepare_tmp_bytes(&op)),
         );
         module
-            .blas_pt_operand_encode_into(&mut op, p_entry(bp.d()), &mut arena.borrow())
+            .blas_pt_operand_encode(&mut op, p_entry(bp.d()), &mut arena.borrow())
             .unwrap();
         module.blas_pt_operand_prepare(&mut prepared, &op, &mut arena.borrow());
         prepared

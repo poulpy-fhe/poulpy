@@ -198,9 +198,9 @@ fn main() -> Result<()> {
             .max(module.blas_pt_operand_prepare_tmp_bytes(&pt_p))
             .max(module.blas_pt_operand_prepare_tmp_bytes(&pt_q)),
     );
-    BlasEncodingOps::<_, f64>::blas_context_encode_into(&module, &mut ctx, &mut arena.borrow())?;
-    module.blas_pt_operand_encode_into(&mut pt_p, |_, r, c| p(r, c), &mut arena.borrow())?;
-    module.blas_pt_operand_encode_into(&mut pt_q, q, &mut arena.borrow())?;
+    BlasEncodingOps::<_, f64>::blas_context_encode(&module, &mut ctx, &mut arena.borrow())?;
+    module.blas_pt_operand_encode(&mut pt_p, |_, r, c| p(r, c), &mut arena.borrow())?;
+    module.blas_pt_operand_encode(&mut pt_q, q, &mut arena.borrow())?;
     let (mut ctx_prepared, mut pt_p_prepared, mut pt_q_prepared) = (
         module.blas_context_prepared_alloc_from_infos(&ctx),
         module.blas_pt_operand_prepared_alloc_from_infos(&pt_p),

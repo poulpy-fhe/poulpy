@@ -357,7 +357,7 @@ where
         .blas_context_encode_tmp_bytes(&layout)
         .max(module.blas_context_prepare_tmp_bytes(&layout));
     with_scratch::<B, _>(bytes, |s| {
-        module.blas_context_encode_into(&mut ctx, s).unwrap();
+        module.blas_context_encode(&mut ctx, s).unwrap();
         module.blas_context_prepare(&mut prepared, &ctx, s);
     });
     prepared
@@ -631,7 +631,7 @@ where
         .blas_pt_operand_encode_tmp_bytes(&layout)
         .max(module.blas_pt_operand_prepare_tmp_bytes(&layout));
     with_scratch::<B, _>(bytes, |s| {
-        module.blas_pt_operand_encode_into(&mut op, public_entry::<F>, s).unwrap();
+        module.blas_pt_operand_encode(&mut op, public_entry::<F>, s).unwrap();
         module.blas_pt_operand_prepare(&mut prepared, &op, s);
     });
     prepared

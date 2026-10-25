@@ -20,25 +20,21 @@ where
         BE::blas_pt_operand_encode_tmp_bytes::<F, A>(self, infos)
     }
 
-    fn blas_pt_operand_encode_into<S: BlasPtSide>(
+    fn blas_pt_operand_encode<S: BlasPtSide>(
         &self,
         res: &mut BlasPtOperandUnprepared<BE, S>,
         entry: impl Fn(usize, usize, usize) -> F,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> CKKSResult<()> {
-        BE::blas_pt_operand_encode_into(self, res, entry, scratch)
+        BE::blas_pt_operand_encode(self, res, entry, scratch)
     }
 
     fn blas_context_encode_tmp_bytes<A: BlasContextInfos>(&self, infos: &A) -> usize {
         BE::blas_context_encode_tmp_bytes::<F, A>(self, infos)
     }
 
-    fn blas_context_encode_into(
-        &self,
-        res: &mut BlasContextUnprepared<BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> CKKSResult<()> {
-        BE::blas_context_encode_into::<F>(self, res, scratch)
+    fn blas_context_encode(&self, res: &mut BlasContextUnprepared<BE>, scratch: &mut ScratchArena<'_, BE>) -> CKKSResult<()> {
+        BE::blas_context_encode::<F>(self, res, scratch)
     }
 }
 
