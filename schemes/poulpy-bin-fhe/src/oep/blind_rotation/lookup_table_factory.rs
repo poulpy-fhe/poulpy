@@ -1,17 +1,18 @@
 use crate::blind_rotation::LookupTable;
 use poulpy_hal::layouts::{Backend, Module, Standard};
 
-/// Backend implementation of [`LookupTableFactory`](crate::api::LookupTableFactory), on the standard ring only.
+/// Backend implementation contract for [`LookupTableFactory`](crate::api::LookupTableFactory), on the standard ring only.
 ///
 /// # Safety
-/// Implementations must preserve the canonical LUT encoding, coefficient and
-/// polynomial ordering, precision, rotation direction, and drift metadata.
-/// Writes must stay within the destination's allocated backend storage.
+/// Implementations reproduce the bodies their methods document bit for bit and refuse as the reference does.
+/// The memory, layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait LookupTableFactoryImpl: Backend<Ring = Standard> {
-    /// Encodes host function samples into the backend-owned LUT.
+    /// Reproduces [`lookup_table_set_reference`](crate::reference::blind_rotation::lookup_table_set_reference) bit for
+    /// bit; free in kernels.
     fn lookup_table_set(module: &Module<Self>, k: usize, res: &mut LookupTable<Self::OwnedBuf, Self::ZnxWord>, f: &[i64]);
 
-    /// Rotates the backend-owned LUT in its extended negacyclic domain.
+    /// Reproduces [`lookup_table_rotate_reference`](crate::reference::blind_rotation::lookup_table_rotate_reference) bit
+    /// for bit; free in kernels.
     fn lookup_table_rotate(module: &Module<Self>, k: i64, res: &mut LookupTable<Self::OwnedBuf, Self::ZnxWord>);
 }
 
