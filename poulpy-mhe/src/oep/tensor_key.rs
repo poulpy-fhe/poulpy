@@ -9,9 +9,10 @@ use crate::{layouts::GLWETensorKeyShareOwned, oep::GGLWEPatImpl};
 
 /// # Safety
 /// Every method reproduces the reference or derived body its doc names, checks
-/// included, and stays within the scratch its `_tmp_bytes` query returns. The
-/// synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md`
-/// apply.
+/// included, and stays within the scratch its `_tmp_bytes` query returns.
+/// Share generation wipes that scratch before returning.
+/// The memory, layout, synchrony and aliasing rules of
+/// `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait GLWETensorKeyMHEProtocolImpl: GGLWEPatImpl {
     /// Upper bound on the scratch of `mhe_glwe_tensor_key_share_gen`, as `GLWETensorKeyMHEProtocolReference::mhe_glwe_tensor_key_share_gen_tmp_bytes_reference`; panics unless `res_infos` has the module's degree.
     fn mhe_glwe_tensor_key_share_gen_tmp_bytes<A, B>(module: &Module<Self>, res_infos: &A, pk_infos: &B) -> usize

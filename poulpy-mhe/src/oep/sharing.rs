@@ -14,9 +14,11 @@ use crate::{
 
 /// # Safety
 /// Every method reproduces the reference or derived body its doc names, checks
-/// included, and stays within the scratch its `_tmp_bytes` query returns. The
-/// synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md`
-/// apply.
+/// included, and stays within the scratch its `_tmp_bytes` query returns.
+/// Share generation and finalization, which writes the party's private
+/// share, wipe that scratch before returning.
+/// The memory, layout, synchrony and aliasing rules of
+/// `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait GLWEEncToShareMHEProtocolImpl: Backend {
     /// Upper bound on the scratch of `mhe_glwe_enc_to_share_share_gen`, as `GLWEEncToShareMHEProtocolReference::mhe_glwe_enc_to_share_share_gen_tmp_bytes_reference`.
     fn mhe_glwe_enc_to_share_share_gen_tmp_bytes<A>(module: &Module<Self>, ct_infos: &A) -> usize
@@ -67,9 +69,10 @@ pub unsafe trait GLWEEncToShareMHEProtocolImpl: Backend {
 
 /// # Safety
 /// Every method reproduces the reference or derived body its doc names, checks
-/// included, and stays within the scratch its `_tmp_bytes` query returns. The
-/// synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md`
-/// apply.
+/// included, and stays within the scratch its `_tmp_bytes` query returns.
+/// Share generation wipes that scratch before returning.
+/// The memory, layout, synchrony and aliasing rules of
+/// `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait GLWEShareToEncMHEProtocolImpl: GLWEPatCompressedImpl {
     /// Upper bound on the scratch of `mhe_glwe_share_to_enc_share_gen`, as `GLWEShareToEncMHEProtocolReference::mhe_glwe_share_to_enc_share_gen_tmp_bytes_reference`.
     fn mhe_glwe_share_to_enc_share_gen_tmp_bytes<A, B>(module: &Module<Self>, res_infos: &A, secret_infos: &B) -> usize

@@ -29,10 +29,10 @@ use crate::{
 /// report less.
 ///
 /// # Safety
-/// Implementations read their sources and write their outputs only within the regions their
-/// layouts describe, leave the sources unchanged, use no more scratch than the method's query
-/// reports and wipe that scratch before returning. The memory, layout, synchrony and aliasing
-/// rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
+/// Implementations read their source operands and write their outputs only within the regions
+/// their layouts describe, leave the source operands unchanged, use no more scratch than the
+/// method's query reports and wipe that scratch before returning. The memory, layout, synchrony
+/// and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait SecretImpl: Backend + SamplingImpl + HalVecZnxImpl {
     /// Default body: `glwe_secret_fill_ternary_prob_derived`, one
     /// [`SamplingImpl::scalar_znx_fill_distribution`] draw per column, then the tag.

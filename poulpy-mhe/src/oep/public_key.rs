@@ -14,9 +14,10 @@ use crate::layouts::GLWEPublicKeyShareOwned;
 
 /// # Safety
 /// Every method reproduces the reference or derived body its doc names, checks
-/// included, and stays within the scratch its `_tmp_bytes` query returns. The
-/// synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md`
-/// apply.
+/// included, and stays within the scratch its `_tmp_bytes` query returns.
+/// Share generation wipes that scratch before returning.
+/// The memory, layout, synchrony and aliasing rules of
+/// `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait GLWEPublicKeyMHEProtocolImpl: HalMatZnxImpl + EncryptionImpl {
     /// Upper bound on the scratch of `mhe_glwe_public_key_share_gen`, as `GLWEPublicKeyMHEProtocolReference::mhe_glwe_public_key_share_gen_tmp_bytes_reference`.
     fn mhe_glwe_public_key_share_gen_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
