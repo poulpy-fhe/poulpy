@@ -296,6 +296,7 @@ poulpy_ckks::ckks_parity_test_suite! {
         encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
         slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
         real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
+        replicated => poulpy_ckks::test_suite::parity::test_replicated_ring_parity,
     }
 }
 
@@ -313,6 +314,7 @@ poulpy_ckks::ckks_parity_test_suite! {
         encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
         slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
         real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
+        replicated => poulpy_ckks::test_suite::parity::test_replicated_ring_parity,
     }
 }
 
@@ -337,6 +339,7 @@ poulpy_ckks::ckks_parity_test_suite! {
         encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
         slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
         real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
+        replicated => poulpy_ckks::test_suite::parity::test_replicated_ring_parity,
     }
 }
 
@@ -354,6 +357,7 @@ poulpy_ckks::ckks_parity_test_suite! {
         encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
         slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
         real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
+        replicated => poulpy_ckks::test_suite::parity::test_replicated_ring_parity,
     }
 }
 

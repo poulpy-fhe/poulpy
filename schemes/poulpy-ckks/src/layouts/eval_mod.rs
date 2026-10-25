@@ -41,7 +41,7 @@
 //! [`CKKSEvalModOps`](crate::api::CKKSEvalModOps) trait (see
 //! [`crate::reference::eval_mod`] for the evaluation itself).
 
-use crate::numerics::CKKSFloat;
+use crate::{numerics::CKKSFloat, shaping::ShapingRing};
 use anyhow::{Result, anyhow, ensure};
 use poulpy_core::layouts::{Base2K, GetDegree, bsgs_consumed_bits, bsgs_eval_depth, bsgs_op_counts};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
@@ -568,7 +568,8 @@ where
 /// range-extension steps: the polynomial's constants are multiplied by `φ` on
 /// the second half and the constant of step `i` by `φ^(2^(i+1))`, so that the
 /// second half comes out multiplied by `φ^(2^r) = i`. The input offset carries
-/// no phase.
+/// no phase. The second half comes out on the imaginary parts, which the
+/// conjugate-invariant ring has not, so it refuses a packed EvalMod.
 pub fn compile_eval_mod_replicated_packed<BE, F>(
     base2k: Base2K,
     lit: EvalModPlan,
@@ -581,6 +582,10 @@ where
     Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F> + GetDegree + CKKSModuleInfos,
     F: CKKSEncodingScalar,
 {
+    ensure!(
+        ShapingRing::of::<BE::Ring>() == ShapingRing::Standard,
+        "a packed EvalMod needs the complex slots of the standard ring"
+    );
     ensure!(layout.log_k() > 0, "a packed EvalMod needs two batches");
     ensure!(
         lit.f_mod_inv_degree.is_none() && matches!(lit.eval_mod_type, EvalModType::CosHK | EvalModType::CosHKEven),

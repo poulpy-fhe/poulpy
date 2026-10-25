@@ -628,6 +628,8 @@ macro_rules! conjugate_invariant_ckks_test_suite {
             run_replicated!(test_replicated_rotations_are_shaped);
             run_replicated!(test_replicated_rotations_are_admissible);
             run_replicated!(test_replicated_masked_constants);
+            run_replicated!(test_replicated_polynomials_are_shaped);
+            run_replicated!(test_replicated_eval_mod_is_shaped);
             #[test]
             fn ckks_ci_round_error_is_shaped() {
                 let params = $params;

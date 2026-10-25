@@ -11,17 +11,51 @@ use crate::{
         CKKSAddOps, CKKSAllOpsTmpBytes, CKKSConjugateOps, CKKSEncodingHostOps, CKKSEncodingScalar, CKKSModuleInfos, CKKSMulOps,
         CKKSPolynomialEvaluationOps, CKKSRotateOps, CKKSRoundOps, CKKSSubOps,
     },
-    layouts::encode_bsgs_replicated,
-    oep::{CKKSEncodingImpl, CKKSImpl},
+    layouts::{CKKSCiphertextOwned, encode_bsgs_replicated},
+    oep::{
+        CKKSAddImpl, CKKSCopyImpl, CKKSDotProductImpl, CKKSEncodingImpl, CKKSImpl, CKKSMulImpl, CKKSPlaintextZnxImpl,
+        CKKSPolynomialEvaluationImpl, CKKSPow2Impl, CKKSRotateImpl, CKKSRoundImpl, CKKSSubImpl,
+    },
     polynomial::{Basis, Polynomial, SplitStrategy},
     shaping::ShapingUnit,
     test_suite::CKKSTestParams,
 };
 use poulpy_core::{
     GLWEMaskFill,
-    layouts::{GLWEAutomorphismKeyPreparedFactory, GLWELayout, GLWETensorKeyPreparedFactory, LWEInfos},
+    layouts::{
+        GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedFactory, GLWELayout, GLWETensorKeyPreparedFactory, LWEInfos,
+    },
 };
-use poulpy_hal::layouts::{Backend, Module};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+
+/// The CKKS families of both rings that the shaped operations use.
+pub trait ReplicatedRingImpl:
+    CKKSPlaintextZnxImpl
+    + CKKSCopyImpl
+    + CKKSAddImpl
+    + CKKSSubImpl
+    + CKKSRoundImpl
+    + CKKSPow2Impl
+    + CKKSRotateImpl
+    + CKKSMulImpl
+    + CKKSDotProductImpl
+    + CKKSPolynomialEvaluationImpl
+{
+}
+
+impl<B> ReplicatedRingImpl for B where
+    B: CKKSPlaintextZnxImpl
+        + CKKSCopyImpl
+        + CKKSAddImpl
+        + CKKSSubImpl
+        + CKKSRoundImpl
+        + CKKSPow2Impl
+        + CKKSRotateImpl
+        + CKKSMulImpl
+        + CKKSDotProductImpl
+        + CKKSPolynomialEvaluationImpl
+{
+}
 
 /// A replicated layout of period 8 holding 2 values, on `2kR = 32` slots.
 fn replicated(params: CKKSTestParams, k: usize) -> CKKSLayout {
@@ -31,9 +65,10 @@ fn replicated(params: CKKSTestParams, k: usize) -> CKKSLayout {
     out
 }
 
+/// The shaped operations of both rings.
 fn replicated_ops<B, F>(params: CKKSTestParams, module: &Module<B>) -> Vec<(&'static str, Snapshot)>
 where
-    B: Backend<ZnxWord = i64> + CKKSImpl + CKKSEncodingImpl<F>,
+    B: Backend<ZnxWord = i64> + ReplicatedRingImpl + CKKSEncodingImpl<F>,
     F: CKKSEncodingScalar,
     Module<B>: CKKSAllOpsTmpBytes<B> + GLWETensorKeyPreparedFactory<B> + GLWEAutomorphismKeyPreparedFactory<B> + GLWEMaskFill<B>,
 {
@@ -48,7 +83,6 @@ where
     let atk_layout = key_layout(params.n, b, la.k().as_usize(), 1, 1, 1);
     let shift = 8;
     let rot = prepared_automorphism_key(module, &atk_layout, module.ckks_galois_element(shift), 62);
-    let conj = prepared_automorphism_key(module, &atk_layout, -1, 63);
     let mut results = Vec::new();
 
     let mut out = fixture_ciphertext(module, &replicated(params, la.k().as_usize() - b / 2), 99);
@@ -94,62 +128,13 @@ where
     .unwrap();
     results.push(("rotate_into", snapshot::<B, _>(&out)));
 
-    let mut out = fixture_ciphertext(module, &lr, 99);
-    with_scratch::<B, _>(module.ckks_conjugate_tmp_bytes(&a, &atk_layout), |s| {
-        module.ckks_conjugate_into(&mut out, &a, &conj, s)
-    })
-    .unwrap();
-    results.push(("conjugate_into", snapshot::<B, _>(&out)));
-
-    let mut source_layout = la;
-    source_layout.glwe_layout.k = 130usize.into();
-    source_layout.meta.scale = crate::Scale::Log(40);
-    source_layout.meta.log_sparsity = 0;
-    let shaped_layout = ShapingUnit::U16_40.layout(1, 24).unwrap();
-    for slot_layout in [SlotLayout::Full, SlotLayout::Replicated(shaped_layout)] {
-        source_layout.meta.slot_layout = slot_layout;
-        let source = fixture_ciphertext(module, &source_layout, 91);
-        let source_before = snapshot::<B, _>(&source);
-        let mut destination_layout = source_layout;
-        destination_layout.glwe_layout.k = 110usize.into();
-        for conjugate in [false, true] {
-            let p = if conjugate { -1 } else { module.ckks_galois_element(8) };
-            for key_bits in [110, 180] {
-                let key_infos = key_layout_bits(params.n, b, key_bits, 10, 1, 1);
-                let key = prepared_automorphism_key(module, &key_infos, p, 93);
-                let mut destination = fixture_ciphertext(module, &destination_layout, 95);
-                let before = snapshot::<B, _>(&destination);
-                let bytes = if conjugate {
-                    module.ckks_conjugate_tmp_bytes(&source, &key_infos)
-                } else {
-                    module.ckks_rotate_tmp_bytes(&source, &key_infos)
-                };
-                let result = with_scratch::<B, _>(bytes, |scratch| {
-                    if conjugate {
-                        module.ckks_conjugate_into(&mut destination, &source, &key, scratch)
-                    } else {
-                        module.ckks_rotate_into(&mut destination, &source, 8, &key, scratch)
-                    }
-                });
-                if slot_layout != SlotLayout::Full && key_bits == 110 {
-                    let err = result.unwrap_err();
-                    let required = 110 + crate::shaping::ShapingProfile::new(&shaped_layout).shaping_depth(40, shaped_layout.w());
-                    let expected_op = if conjugate { "conjugate" } else { "rotate" };
-                    assert!(
-                        matches!(err.composition(), Some(crate::CKKSCompositionError::MissingAutomorphismKey { op, k, .. }) if *op == expected_op && *k as usize == required)
-                    );
-                    assert_eq!(snapshot::<B, _>(&destination), before);
-                } else {
-                    result.unwrap();
-                    results.push((
-                        if conjugate { "narrow_conjugate" } else { "narrow_rotate" },
-                        snapshot::<B, _>(&destination),
-                    ));
-                }
-                assert_eq!(snapshot::<B, _>(&source), source_before);
-            }
-        }
-    }
+    narrow_automorphisms::<B>(
+        params,
+        module,
+        module.ckks_galois_element(8),
+        &mut results,
+        |module, dst, src, key, scratch| module.ckks_rotate_into(dst, src, 8, key, scratch),
+    );
 
     for (label, add) in [("add_one_assign", true), ("sub_one_assign", false)] {
         let mut out = fixture_ciphertext(module, &la, 71);
@@ -180,7 +165,7 @@ where
     let SlotLayout::Replicated(rl) = la.meta.slot_layout else {
         unreachable!()
     };
-    let encoding = <Module<B> as CKKSEncodingHostOps<B, F>>::ckks_reim_tmp_bytes(module, module.n() / 2);
+    let encoding = <Module<B> as CKKSEncodingHostOps<B, F>>::ckks_reim_tmp_bytes(module, module.n());
     let bsgs = with_scratch::<B, _>(encoding, |s| {
         encode_bsgs_replicated(&polynomial, module, b.into(), coeff_meta, SplitStrategy::MinDepth, rl, s)
     })
@@ -204,6 +189,91 @@ where
     results
 }
 
+type Automorphism<B> = fn(
+    &Module<B>,
+    &mut CKKSCiphertextOwned<B>,
+    &CKKSCiphertextOwned<B>,
+    &GLWEAutomorphismKeyPrepared<<B as Backend>::OwnedBuf, B>,
+    &mut ScratchArena<'_, B>,
+) -> crate::CKKSResult<()>;
+
+/// The automorphism `apply` of Galois element `p`, from a source at scale
+/// `2^40` into a narrower destination, with a key that covers the shaped
+/// working width and one that does not, on a full and a replicated layout.
+fn narrow_automorphisms<B>(
+    params: CKKSTestParams,
+    module: &Module<B>,
+    p: i64,
+    results: &mut Vec<(&'static str, Snapshot)>,
+    apply: Automorphism<B>,
+) where
+    B: Backend<ZnxWord = i64> + CKKSPlaintextZnxImpl + CKKSRotateImpl,
+    Module<B>: GLWEAutomorphismKeyPreparedFactory<B> + GLWEMaskFill<B>,
+{
+    let b = params.base2k;
+    let mut source_layout = replicated(params, 8 * b + 5);
+    source_layout.glwe_layout.k = 130usize.into();
+    source_layout.meta.scale = crate::Scale::Log(40);
+    source_layout.meta.log_sparsity = 0;
+    let shaped_layout = ShapingUnit::U16_40.layout(1, 24).unwrap();
+    let label = if p == -1 { "conjugate" } else { "rotate" };
+    for slot_layout in [SlotLayout::Full, SlotLayout::Replicated(shaped_layout)] {
+        source_layout.meta.slot_layout = slot_layout;
+        let source = fixture_ciphertext(module, &source_layout, 91);
+        let source_before = snapshot::<B, _>(&source);
+        let mut destination_layout = source_layout;
+        destination_layout.glwe_layout.k = 110usize.into();
+        for key_bits in [110, 180] {
+            let key_infos = key_layout_bits(params.n, b, key_bits, 10, 1, 1);
+            let key = prepared_automorphism_key(module, &key_infos, p, 93);
+            let mut destination = fixture_ciphertext(module, &destination_layout, 95);
+            let before = snapshot::<B, _>(&destination);
+            let bytes = module.ckks_rotate_tmp_bytes(&source, &key_infos);
+            let result = with_scratch::<B, _>(bytes, |scratch| apply(module, &mut destination, &source, &key, scratch));
+            if slot_layout != SlotLayout::Full && key_bits == 110 {
+                let err = result.unwrap_err();
+                let required = 110 + crate::shaping::ShapingProfile::new(&shaped_layout).shaping_depth(40, shaped_layout.w());
+                assert!(
+                    matches!(err.composition(), Some(crate::CKKSCompositionError::MissingAutomorphismKey { op, k, .. }) if *op == label && *k as usize == required)
+                );
+                assert_eq!(snapshot::<B, _>(&destination), before);
+            } else {
+                result.unwrap();
+                results.push((
+                    if p == -1 { "narrow_conjugate" } else { "narrow_rotate" },
+                    snapshot::<B, _>(&destination),
+                ));
+            }
+            assert_eq!(snapshot::<B, _>(&source), source_before);
+        }
+    }
+}
+
+/// The conjugations of the standard ring.
+fn conjugations<B>(params: CKKSTestParams, module: &Module<B>) -> Vec<(&'static str, Snapshot)>
+where
+    B: Backend<ZnxWord = i64> + CKKSImpl,
+    Module<B>: CKKSAllOpsTmpBytes<B> + GLWEAutomorphismKeyPreparedFactory<B> + GLWEMaskFill<B>,
+{
+    let b = params.base2k;
+    let la = replicated(params, 8 * b + 5);
+    let lr = replicated(params, 5 * b + 3);
+    let a = fixture_ciphertext(module, &la, 71);
+    let atk_layout = key_layout(params.n, b, la.k().as_usize(), 1, 1, 1);
+    let conj = prepared_automorphism_key(module, &atk_layout, -1, 63);
+    let mut results = Vec::new();
+    let mut out = fixture_ciphertext(module, &lr, 99);
+    with_scratch::<B, _>(module.ckks_conjugate_tmp_bytes(&a, &atk_layout), |s| {
+        module.ckks_conjugate_into(&mut out, &a, &conj, s)
+    })
+    .unwrap();
+    results.push(("conjugate_into", snapshot::<B, _>(&out)));
+    narrow_automorphisms::<B>(params, module, -1, &mut results, |module, dst, src, key, scratch| {
+        module.ckks_conjugate_into(dst, src, key, scratch)
+    });
+    results
+}
+
 /// Rounding, products, automorphisms and polynomial evaluation of a
 /// replicated layout give the same digits and metadata on both backends.
 pub fn test_replicated_parity<BR, BT, F>(params: CKKSTestParams, reference: &Module<BR>, tested: &Module<BT>)
@@ -217,7 +287,31 @@ where
         CKKSAllOpsTmpBytes<BT> + GLWETensorKeyPreparedFactory<BT> + GLWEAutomorphismKeyPreparedFactory<BT> + GLWEMaskFill<BT>,
 {
     assert_eq!(reference.n(), tested.n());
+    let mut want = replicated_ops::<BR, F>(params, reference);
+    want.extend(conjugations::<BR>(params, reference));
+    assert_untagged("replicated", want.iter().map(|(_, output)| output));
+    let mut got = replicated_ops::<BT, F>(params, tested);
+    got.extend(conjugations::<BT>(params, tested));
+    assert_eq!(want, got, "replicated parity differs");
+}
+
+/// [`test_replicated_parity`] without the conjugations, on either ring.
+pub fn test_replicated_ring_parity<BR, BT, F>(params: CKKSTestParams, reference: &Module<BR>, tested: &Module<BT>)
+where
+    BR: Backend<ZnxWord = i64> + ReplicatedRingImpl + CKKSEncodingImpl<F>,
+    BT: Backend<ZnxWord = i64> + ReplicatedRingImpl + CKKSEncodingImpl<F>,
+    F: CKKSEncodingScalar,
+    Module<BR>:
+        CKKSAllOpsTmpBytes<BR> + GLWETensorKeyPreparedFactory<BR> + GLWEAutomorphismKeyPreparedFactory<BR> + GLWEMaskFill<BR>,
+    Module<BT>:
+        CKKSAllOpsTmpBytes<BT> + GLWETensorKeyPreparedFactory<BT> + GLWEAutomorphismKeyPreparedFactory<BT> + GLWEMaskFill<BT>,
+{
+    assert_eq!(reference.n(), tested.n());
     let want = replicated_ops::<BR, F>(params, reference);
     assert_untagged("replicated", want.iter().map(|(_, output)| output));
-    assert_eq!(want, replicated_ops::<BT, F>(params, tested), "replicated parity differs");
+    assert_eq!(
+        want,
+        replicated_ops::<BT, F>(params, tested),
+        "replicated ring parity differs"
+    );
 }

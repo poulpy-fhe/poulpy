@@ -12,7 +12,8 @@
 //! | [`test_replicated_layouts_do_not_mix`] | products and sums of different layouts, and constant sums |
 //! | [`test_replicated_plain_rounding_is_rejected`] | operations that round plainly, and layouts or scales without a shaped encoding |
 //! | [`test_replicated_eval_mod_is_shaped`] | EvalMod with masked constants and a shaped last squaring keeps the message far above CKKS |
-//! | [`test_replicated_polynomials_are_shaped`] | monomial, Chebyshev and complex polynomials keep the data slots far above CKKS |
+//! | [`test_replicated_polynomials_are_shaped`] | monomial and Chebyshev polynomials keep the data slots far above CKKS, on either ring |
+//! | [`test_replicated_complex_polynomials_are_shaped`] | a complex polynomial keeps the data slots far above CKKS |
 //! | [`test_replicated_automorphisms_are_shaped`] | rotations and conjugation keep the data slots far above CKKS |
 //! | [`test_replicated_rotations_are_shaped`] | rotations keep the data slots far above CKKS, on either ring |
 //! | [`test_replicated_rotations_are_admissible`] | rotations by a non-multiple of the period |
@@ -687,7 +688,6 @@ where
 enum PolynomialCase {
     Monomial,
     Chebyshev,
-    Complex,
 }
 
 fn coefficients<F: TestScalar>(len: usize, shift: usize) -> Vec<F> {
@@ -696,23 +696,31 @@ fn coefficients<F: TestScalar>(len: usize, shift: usize) -> Vec<F> {
         .collect()
 }
 
-/// Precision of a polynomial evaluated on real inputs in `[-1, 1]`, with
-/// constants at the ciphertext scale: scalar constants on a full layout, and
-/// masked constants on a replicated layout.
-fn polynomial_precision<BE, F>(
+/// An encrypted batch of real inputs in `[-1, 1]`, and the setup of a
+/// polynomial evaluation on it with constants at the ciphertext scale.
+struct PolynomialSetup<BE: Backend, F> {
+    sk: GLWESecretPrepared<BE::OwnedBuf, BE>,
+    tsk: poulpy_core::layouts::GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
+    xs: Vec<F>,
+    x: CKKSCiphertextOwned<BE>,
+    out: CKKSCiphertextOwned<BE>,
+    coeff_meta: CoeffsMeta,
+    scratch: ScratchOwned<BE>,
+    encoding: ScratchOwned<BE>,
+}
+
+fn polynomial_setup<BE, F>(
     params: &CKKSTestParams,
     module: &Module<BE>,
-    host_module: &Module<HostBytesBackend>,
+    host_module: &Module<HostBytesBackend<BE::Ring>>,
     slot_layout: SlotLayout,
-    case: PolynomialCase,
-) -> Result<f64>
+) -> Result<PolynomialSetup<BE, F>>
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     F: TestScalar,
-    Module<BE>:
-        TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSPolynomialEvaluationOps<BE> + CKKSComplexPolynomialEvaluationOps<BE>,
+    Module<BE>: TestContextSharedModule<BE> + CKKSEncodingOps<BE, F>,
 {
     let len = 1 << LOG_K;
     let (sk_raw, sk) = gen_sk_with_raw(params, module, host_module, [0u8; 32]);
@@ -724,74 +732,120 @@ where
         .collect();
     let zero = vec![F::zero(); len];
     let x = encrypt_batch(params, module, &sk, slot_layout, (&xs, &zero), k, 1)?;
-    let mut out = alloc_ct(params, module, k);
-    let base2k = params.base2k.into();
+    let out = alloc_ct(params, module, k);
     let coeff_prec = ckks_spec(params.n, params.base2k, LOG_DELTA, 10);
-    let coeff_meta = CoeffsMeta::from(coeff_prec);
-    let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_all_ops_tmp_bytes(&x, &params.tsk_layout(), &coeff_prec));
-    let s = &mut scratch.borrow();
-    let mut encoding = ScratchOwned::<BE>::alloc(module.ckks_reim_tmp_bytes(params.n / 2));
-    let want: Vec<(F, F)> = match case {
-        PolynomialCase::Monomial | PolynomialCase::Chebyshev => {
-            let (basis, degree) = match case {
-                PolynomialCase::Monomial => (Basis::Monomial, 7),
-                _ => (Basis::Chebyshev, 13),
-            };
-            let poly = Polynomial::new(basis, coefficients::<F>(degree + 1, 0));
-            match slot_layout {
-                SlotLayout::Replicated(layout) => {
-                    let bsgs = encode_bsgs_replicated(
-                        &poly,
-                        module,
-                        base2k,
-                        coeff_meta,
-                        SplitStrategy::MinDepth,
-                        layout,
-                        &mut encoding.borrow(),
-                    )?;
-                    module.ckks_eval_poly_real_const_coeffs(&mut out, &x, &bsgs, &tsk, s)?;
-                }
-                SlotLayout::Full => {
-                    let bsgs = poly
-                        .encode_bsgs(host_module, base2k, coeff_meta)?
-                        .map_baby_steps_ref(|pt| upload_pt(module, pt));
-                    module.ckks_eval_poly_real_const_coeffs(&mut out, &x, &bsgs, &tsk, s)?;
-                }
-            }
-            xs.iter().map(|&x| (poly.evaluate(x), F::zero())).collect()
-        }
-        PolynomialCase::Complex => {
-            let poly = ComplexPolynomial::new(Basis::Monomial, coefficients::<F>(6, 0), coefficients::<F>(6, 2));
-            match slot_layout {
-                SlotLayout::Replicated(layout) => {
-                    let bsgs = encode_complex_bsgs_replicated(
-                        &poly,
-                        module,
-                        base2k,
-                        coeff_meta,
-                        SplitStrategy::MinDepth,
-                        layout,
-                        &mut encoding.borrow(),
-                    )?;
-                    module.ckks_eval_poly_complex_const_coeffs(&mut out, &x, &bsgs, &tsk, s)?;
-                }
-                SlotLayout::Full => {
-                    let bsgs = poly
-                        .encode_bsgs(host_module, base2k, coeff_meta)?
-                        .map_baby_steps_ref(|pt| upload_pt(module, pt));
-                    module.ckks_eval_poly_complex_const_coeffs(&mut out, &x, &bsgs, &tsk, s)?;
-                }
-            }
-            xs.iter().map(|&x| poly.evaluate(x)).collect()
-        }
+    let scratch = ScratchOwned::<BE>::alloc(module.ckks_all_ops_tmp_bytes(&x, &params.tsk_layout(), &coeff_prec));
+    let encoding = ScratchOwned::<BE>::alloc(module.ckks_reim_tmp_bytes(params.n));
+    Ok(PolynomialSetup {
+        sk,
+        tsk,
+        xs,
+        x,
+        out,
+        coeff_meta: CoeffsMeta::from(coeff_prec),
+        scratch,
+        encoding,
+    })
+}
+
+/// Precision of a real polynomial evaluated on real inputs in `[-1, 1]`, with
+/// constants at the ciphertext scale: scalar constants on a full layout, and
+/// masked constants on a replicated layout.
+fn polynomial_precision<BE, F>(
+    params: &CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend<BE::Ring>>,
+    slot_layout: SlotLayout,
+    case: PolynomialCase,
+) -> Result<f64>
+where
+    BE: TestContextBackend,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    F: TestScalar,
+    Module<BE>: TestContextSharedModule<BE> + CKKSEncodingOps<BE, F> + CKKSPolynomialEvaluationOps<BE>,
+{
+    let len = 1 << LOG_K;
+    let mut setup = polynomial_setup::<BE, F>(params, module, host_module, slot_layout)?;
+    let base2k = params.base2k.into();
+    let (basis, degree) = match case {
+        PolynomialCase::Monomial => (Basis::Monomial, 7),
+        PolynomialCase::Chebyshev => (Basis::Chebyshev, 13),
     };
-    assert_eq!(out.slot_layout(), slot_layout, "{case:?}");
-    let got = decrypt_batch::<BE, F>(params, module, &sk, &out, len);
-    let want: (Vec<F>, Vec<F>) = want.into_iter().unzip();
+    let poly = Polynomial::new(basis, coefficients::<F>(degree + 1, 0));
+    let s = &mut setup.scratch.borrow();
+    match slot_layout {
+        SlotLayout::Replicated(layout) => {
+            let bsgs = encode_bsgs_replicated(
+                &poly,
+                module,
+                base2k,
+                setup.coeff_meta,
+                SplitStrategy::MinDepth,
+                layout,
+                &mut setup.encoding.borrow(),
+            )?;
+            module.ckks_eval_poly_real_const_coeffs(&mut setup.out, &setup.x, &bsgs, &setup.tsk, s)?;
+        }
+        SlotLayout::Full => {
+            let bsgs = poly
+                .encode_bsgs(host_module, base2k, setup.coeff_meta)?
+                .map_baby_steps_ref(|pt| upload_pt(module, pt));
+            module.ckks_eval_poly_real_const_coeffs(&mut setup.out, &setup.x, &bsgs, &setup.tsk, s)?;
+        }
+    }
+    assert_eq!(setup.out.slot_layout(), slot_layout, "{case:?}");
+    let got = decrypt_batch::<BE, F>(params, module, &setup.sk, &setup.out, len);
+    let want: Vec<F> = setup.xs.iter().map(|&x| poly.evaluate(x)).collect();
+    Ok(precision((&got.0, &got.1), (&want, &vec![F::zero(); len])))
+}
+
+/// [`polynomial_precision`] of a complex polynomial, on the standard ring.
+fn complex_polynomial_precision<BE, F>(
+    params: &CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+    slot_layout: SlotLayout,
+) -> Result<f64>
+where
+    BE: TestContextBackend<Ring = Standard>,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    F: TestScalar,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSComplexPolynomialEvaluationOps<BE>,
+{
+    let len = 1 << LOG_K;
+    let mut setup = polynomial_setup::<BE, F>(params, module, host_module, slot_layout)?;
+    let base2k = params.base2k.into();
+    let poly = ComplexPolynomial::new(Basis::Monomial, coefficients::<F>(6, 0), coefficients::<F>(6, 2));
+    let s = &mut setup.scratch.borrow();
+    match slot_layout {
+        SlotLayout::Replicated(layout) => {
+            let bsgs = encode_complex_bsgs_replicated(
+                &poly,
+                module,
+                base2k,
+                setup.coeff_meta,
+                SplitStrategy::MinDepth,
+                layout,
+                &mut setup.encoding.borrow(),
+            )?;
+            module.ckks_eval_poly_complex_const_coeffs(&mut setup.out, &setup.x, &bsgs, &setup.tsk, s)?;
+        }
+        SlotLayout::Full => {
+            let bsgs = poly
+                .encode_bsgs(host_module, base2k, setup.coeff_meta)?
+                .map_baby_steps_ref(|pt| upload_pt(module, pt));
+            module.ckks_eval_poly_complex_const_coeffs(&mut setup.out, &setup.x, &bsgs, &setup.tsk, s)?;
+        }
+    }
+    assert_eq!(setup.out.slot_layout(), slot_layout);
+    let got = decrypt_batch::<BE, F>(params, module, &setup.sk, &setup.out, len);
+    let want: (Vec<F>, Vec<F>) = setup.xs.iter().map(|&x| poly.evaluate(x)).unzip();
     Ok(precision((&got.0, &got.1), (&want.0, &want.1)))
 }
 
-pub fn test_replicated_polynomials_are_shaped<BE, F, E>(
+pub fn test_replicated_complex_polynomials_are_shaped<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
@@ -800,12 +854,32 @@ where
     BE: TestContextBackend<Ring = Standard>,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>:
-        TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSPolynomialEvaluationOps<BE> + CKKSComplexPolynomialEvaluationOps<BE>,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSComplexPolynomialEvaluationOps<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
-    for case in [PolynomialCase::Monomial, PolynomialCase::Chebyshev, PolynomialCase::Complex] {
+    let full = complex_polynomial_precision::<BE, F>(&params, module, host_module, SlotLayout::Full)?;
+    let shaped = complex_polynomial_precision::<BE, F>(&params, module, host_module, SlotLayout::Replicated(layout()))?;
+    assert!(
+        shaped >= full + 15.0,
+        "complex polynomial at 2^{LOG_DELTA}: {shaped:.2} bits against {full:.2} for a full layout"
+    );
+    Ok(())
+}
+
+pub fn test_replicated_polynomials_are_shaped<BE, F>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend<BE::Ring>>,
+) -> Result<()>
+where
+    BE: TestContextBackend,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextSharedModule<BE> + CKKSEncodingOps<BE, F> + CKKSPolynomialEvaluationOps<BE>,
+    F: TestScalar,
+{
+    for case in [PolynomialCase::Monomial, PolynomialCase::Chebyshev] {
         let full = polynomial_precision::<BE, F>(&params, module, host_module, SlotLayout::Full, case)?;
         let shaped = polynomial_precision::<BE, F>(&params, module, host_module, SlotLayout::Replicated(layout()), case)?;
         assert!(
@@ -830,7 +904,7 @@ where
     )?;
     let narrower = ShapingUnit::U16_20.layout(LOG_K, 24)?;
     let identity = Polynomial::new(Basis::Monomial, vec![F::zero(), F::one()]);
-    let mut encoding = ScratchOwned::<BE>::alloc(module.ckks_reim_tmp_bytes(params.n / 2));
+    let mut encoding = ScratchOwned::<BE>::alloc(module.ckks_reim_tmp_bytes(params.n));
     let bsgs = encode_bsgs_replicated(
         &identity,
         module,
@@ -1451,15 +1525,15 @@ enum EvalModMode {
 fn eval_mod_precision<BE, F>(
     params: &CKKSTestParams,
     module: &Module<BE>,
-    host_module: &Module<HostBytesBackend>,
+    host_module: &Module<HostBytesBackend<BE::Ring>>,
     mode: EvalModMode,
 ) -> Result<f64>
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     F: TestScalar,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSEvalModOps<BE>,
+    Module<BE>: TestContextSharedModule<BE> + CKKSEncodingOps<BE, F> + CKKSEvalModOps<BE>,
 {
     let plan = eval_mod_plan();
     let ratio = (1u64 << plan.log_msg_ratio) as f64;
@@ -1522,7 +1596,7 @@ where
     let (mut xe, mut xa) = (Source::new([1; 32]), Source::new([2; 32]));
     module.ckks_encrypt_sk(&mut ct, &pt, &sk, &mut xe, &mut xa, &mut scratch.borrow())?;
 
-    let mut compile = ScratchOwned::<BE>::alloc(module.ckks_reim_tmp_bytes(params.n / 2));
+    let mut compile = ScratchOwned::<BE>::alloc(module.ckks_reim_tmp_bytes(params.n));
     let base2k = Base2K(params.base2k as u32);
     let mut res = alloc_ct(&test_params, module, k);
     let tsk_layout = test_params.tsk_layout();
@@ -1574,26 +1648,30 @@ where
     Ok(precision((&got_re, &got_im), (&want_re, &want_im)))
 }
 
-pub fn test_replicated_eval_mod_is_shaped<BE, F, E>(
+pub fn test_replicated_eval_mod_is_shaped<BE, F>(
     params: CKKSTestParams,
     module: &Module<BE>,
-    host_module: &Module<HostBytesBackend>,
+    host_module: &Module<HostBytesBackend<BE::Ring>>,
 ) -> Result<()>
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSEvalModOps<BE>,
+    Module<BE>: TestContextSharedModule<BE> + CKKSEncodingOps<BE, F> + CKKSEvalModOps<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let full = eval_mod_precision::<BE, F>(&params, module, host_module, EvalModMode::Full)?;
     let shaped = eval_mod_precision::<BE, F>(&params, module, host_module, EvalModMode::Replicated)?;
-    let packed = eval_mod_precision::<BE, F>(&params, module, host_module, EvalModMode::Packed)?;
     assert!(
         shaped >= 30.0 && shaped >= full + 25.0,
         "EvalMod at 2^28: {shaped:.2} bits against {full:.2} for a full layout"
     );
+    // Real slots have no imaginary parts to pack a second batch on.
+    if real_slots::<BE>() {
+        assert!(eval_mod_precision::<BE, F>(&params, module, host_module, EvalModMode::Packed).is_err());
+        return Ok(());
+    }
+    let packed = eval_mod_precision::<BE, F>(&params, module, host_module, EvalModMode::Packed)?;
     assert!(
         packed >= 30.0 && packed >= full + 25.0,
         "packed EvalMod at 2^28: {packed:.2} bits against {full:.2} for a full layout"

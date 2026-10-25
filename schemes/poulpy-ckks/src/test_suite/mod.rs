@@ -724,11 +724,15 @@ macro_rules! ckks_backend_test_suite {
                 replicated_plain_rounding_is_rejected,
                 $crate::test_suite::replicated::test_replicated_plain_rounding_is_rejected
             );
-            run_test_result!(
+            run_ring_test_result!(
                 replicated_polynomials_are_shaped,
                 $crate::test_suite::replicated::test_replicated_polynomials_are_shaped
             );
             run_test_result!(
+                replicated_complex_polynomials_are_shaped,
+                $crate::test_suite::replicated::test_replicated_complex_polynomials_are_shaped
+            );
+            run_ring_test_result!(
                 replicated_eval_mod_is_shaped,
                 $crate::test_suite::replicated::test_replicated_eval_mod_is_shaped
             );
