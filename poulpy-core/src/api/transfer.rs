@@ -46,9 +46,9 @@ where
     D2: Data + CopyFromHost,
     W: ZnxWord,
 {
-    assert_eq!(src.n(), dst.n(), "transfer_into: ring degree");
-    assert_eq!(src.cols(), dst.cols(), "transfer_into: cols");
-    assert_eq!(src.size(), dst.size(), "transfer_into: size");
+    assert!(src.n() == dst.n(), "transfer_into: ring degree");
+    assert!(src.cols() == dst.cols(), "transfer_into: cols");
+    assert!(src.size() == dst.size(), "transfer_into: size");
     transfer_buf_into(src.data(), dst.data_mut());
 }
 
@@ -72,8 +72,8 @@ where
     D2: Data + CopyFromHost,
     W: ZnxWord,
 {
-    assert_eq!(src.n(), dst.n(), "transfer_into: ring degree");
-    assert_eq!(src.cols(), dst.cols(), "transfer_into: cols");
+    assert!(src.n() == dst.n(), "transfer_into: ring degree");
+    assert!(src.cols() == dst.cols(), "transfer_into: cols");
     transfer_buf_into(src.data(), dst.data_mut());
 }
 
@@ -100,8 +100,8 @@ where
     W: ZnxWord,
 {
     fn transfer_into(&self, dst: &mut GLWEPlaintext<D2, W>) {
-        assert_eq!(self.base2k, dst.base2k, "transfer_into: GLWEPlaintext base2k");
-        assert_eq!(self.k, dst.k, "transfer_into: GLWEPlaintext k");
+        assert!(self.base2k == dst.base2k, "transfer_into: GLWEPlaintext base2k");
+        assert!(self.k == dst.k, "transfer_into: GLWEPlaintext k");
         move_vec_znx(&self.data, &mut dst.data);
         dst.plaintext_meta = self.plaintext_meta;
     }
@@ -114,8 +114,8 @@ where
     W: ZnxWord,
 {
     fn transfer_into(&self, dst: &mut LWEPlaintext<D2, W>) {
-        assert_eq!(self.base2k, dst.base2k, "transfer_into: LWEPlaintext base2k");
-        assert_eq!(self.k, dst.k, "transfer_into: LWEPlaintext k");
+        assert!(self.base2k == dst.base2k, "transfer_into: LWEPlaintext base2k");
+        assert!(self.k == dst.k, "transfer_into: LWEPlaintext k");
         move_vec_znx(&self.data, &mut dst.data);
     }
 }

@@ -68,7 +68,7 @@ where
     {
         let metadata = crate::component_noise::fresh_sk_noise(sk.to_backend_ref().dist, &res.to_backend_ref());
         {
-            assert_eq!(res.rank(), sk.rank());
+            assert!(res.rank() == sk.rank(), "the ciphertext rank differs from the secret's rank");
             operand_degree(self.n(), &[res.n(), pt.n().into(), sk.n()]);
             assert!(
                 scratch.available() >= self.ggsw_encrypt_sk_tmp_bytes_reference(res),

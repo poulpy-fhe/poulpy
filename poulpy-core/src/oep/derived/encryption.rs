@@ -338,8 +338,11 @@ pub(crate) fn glwe_tensor_key_encrypt_sk_derived<BE, R, S>(
     R: GGLWEToBackendMut<BE> + GGLWEInfos,
     S: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
 {
-    assert_eq!(res.rank_out(), sk.rank());
-    assert_eq!(res.n(), sk.n());
+    assert!(
+        res.rank_out() == sk.rank(),
+        "the tensor key's output rank differs from the secret's rank"
+    );
+    operand_degree(module.n(), &[res.n(), sk.n()]);
     crate::layouts::assert_no_row_offset("glwe_tensor_key_encrypt_sk", &*res);
     assert!(
         scratch.available() >= glwe_tensor_key_encrypt_sk_tmp_bytes_derived(module, res),
@@ -397,8 +400,11 @@ pub(crate) fn glwe_tensor_key_compressed_encrypt_sk_derived<BE, R, S>(
     R: GGLWEInfos + GGLWECompressedToBackendMut<BE> + GGLWECompressedSeedMut,
     S: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
 {
-    assert_eq!(res.rank_out(), sk.rank());
-    assert_eq!(res.n(), sk.n());
+    assert!(
+        res.rank_out() == sk.rank(),
+        "the tensor key's output rank differs from the secret's rank"
+    );
+    operand_degree(module.n(), &[res.n(), sk.n()]);
     crate::layouts::assert_no_row_offset("glwe_tensor_key_compressed_encrypt_sk", &*res);
     assert!(
         scratch.available() >= glwe_tensor_key_compressed_encrypt_sk_tmp_bytes_derived(module, res),
