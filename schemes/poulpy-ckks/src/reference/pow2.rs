@@ -34,7 +34,7 @@ pub trait CKKSPow2Reference<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
     {
-        crate::ckks_shift_stamp_unary(self, "mul_pow2", dst, src, bits, 0, 0, scratch)?;
+        crate::ckks_shift_stamp_unary(self, "ckks_mul_pow2_into", dst, src, bits, 0, 0, scratch)?;
         Ok(())
     }
 

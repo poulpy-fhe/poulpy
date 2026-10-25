@@ -1472,7 +1472,7 @@ pub fn test_mul_prepared_assign_rejects_layout_mismatch<BE, F, E>(
         "mul_prepared_layout_mismatch",
         &err,
         CKKSCompositionError::PreparedOperandLayoutMismatch {
-            op: "ckks_mul_prepared",
+            op: "ckks_mul_prepared_assign",
             dst_n: params.n,
             dst_base2k: params.base2k,
             dst_rank: 1,
@@ -1653,7 +1653,7 @@ pub fn test_mul_into_rejects_explicit_metadata<BE, F, E>(
         "mul_into_rejects_explicit_metadata",
         &err,
         CKKSCompositionError::MultiplicationPrecisionUnderflow {
-            op: "ckks_mul",
+            op: "ckks_mul_into",
             lhs_log_budget: 8,
             rhs_log_budget: 9,
             lhs_log_delta: params.prec().log_delta(),

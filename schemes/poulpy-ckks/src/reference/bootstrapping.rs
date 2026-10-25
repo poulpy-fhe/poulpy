@@ -1878,7 +1878,7 @@ fn ensure_encapsulation_covers<Dst: CKKSCtBounds, Src: CKKSCtBounds, D2S: GGLWEI
         sparse_to_dense.k_offset().as_usize() > 0 || dst.k() <= sparse_to_dense.gglwe_layout().max_input_k();
     if src.k() > dense_to_sparse.gglwe_layout().max_input_k() || !sparse_to_dense_covers {
         return Err(CKKSCompositionError::InvalidOperand {
-            op: "ckks_encapsulated_mod_up",
+            op: "ckks_bootstrap_mod_up",
             reason: "the input is wider than an encapsulation key's max_input_k".into(),
         }
         .into());

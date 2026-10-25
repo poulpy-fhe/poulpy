@@ -833,9 +833,13 @@ pub fn test_blas_matmul_pt_right_guards<BE, F, E>(
     // inside the implementation, before any write.
     let input = grid_snapshot::<BE, _>(&ct);
     let mut narrow_res = res_below_scale(&params, module, log_d, ct.block_layout().log_delta());
-    assert_guard::<BE, _>("budget", "mul", Budget, &mut narrow_res, |res| {
-        module.blas_matmul_pt_right(res, &ct, &b, &ctx, &keys, &mut op_scratch.borrow())
-    });
+    assert_guard::<BE, _>(
+        "budget",
+        "ckks_eval_linear_transformation_sum_into",
+        Budget,
+        &mut narrow_res,
+        |res| module.blas_matmul_pt_right(res, &ct, &b, &ctx, &keys, &mut op_scratch.borrow()),
+    );
     assert!(grid_snapshot::<BE, _>(&ct) == input, "budget: blas_matmul_pt_right changed a");
 
     let jkls = pt_operand::<BE, F, Right>(
@@ -865,9 +869,17 @@ pub fn test_blas_matmul_pt_right_guards<BE, F, E>(
         let input = grid_snapshot::<BE, _>(&short);
         let mut res = alloc_grid(&params, module, log_d, 1, 1, params.k);
         let bytes = module.blas_matmul_pt_right_tmp_bytes(&res, &short, &jkls, &ctx, &params.atk_layout());
-        assert_guard::<BE, _>(label, "mul", Budget, &mut res, |res| {
-            module.blas_matmul_pt_right(res, &short, &jkls, &ctx, &keys, &mut poisoned_scratch::<BE>(bytes).borrow())
-        });
+        assert_guard::<BE, _>(
+            label,
+            if label == "jkls second map" {
+                "ckks_eval_linear_transformation_sum_into"
+            } else {
+                "ckks_eval_linear_transformation_into"
+            },
+            Budget,
+            &mut res,
+            |res| module.blas_matmul_pt_right(res, &short, &jkls, &ctx, &keys, &mut poisoned_scratch::<BE>(bytes).borrow()),
+        );
         assert!(
             grid_snapshot::<BE, _>(&short) == input,
             "{label}: blas_matmul_pt_right changed a"
@@ -1500,9 +1512,13 @@ pub fn test_blas_matmul_pt_left_guards<BE, F, E>(
     // inside the implementation, before any write.
     let input = grid_snapshot::<BE, _>(&ct);
     let mut narrow_res = res_below_scale(&params, module, log_d, ct.block_layout().log_delta());
-    assert_guard::<BE, _>("budget", "mul", Budget, &mut narrow_res, |res| {
-        module.blas_matmul_pt_left(res, &b, &ct, &ctx, &keys, &mut op_scratch.borrow())
-    });
+    assert_guard::<BE, _>(
+        "budget",
+        "ckks_eval_linear_transformation_sum_into",
+        Budget,
+        &mut narrow_res,
+        |res| module.blas_matmul_pt_left(res, &b, &ct, &ctx, &keys, &mut op_scratch.borrow()),
+    );
     assert!(grid_snapshot::<BE, _>(&ct) == input, "budget: blas_matmul_pt_left changed a");
 
     let jkls = pt_operand::<BE, F, Left>(
@@ -1532,9 +1548,17 @@ pub fn test_blas_matmul_pt_left_guards<BE, F, E>(
         let input = grid_snapshot::<BE, _>(&short);
         let mut res = alloc_grid(&params, module, log_d, 1, 1, params.k);
         let bytes = module.blas_matmul_pt_left_tmp_bytes(&res, &jkls, &short, &ctx, &params.atk_layout());
-        assert_guard::<BE, _>(label, "mul", Budget, &mut res, |res| {
-            module.blas_matmul_pt_left(res, &jkls, &short, &ctx, &keys, &mut poisoned_scratch::<BE>(bytes).borrow())
-        });
+        assert_guard::<BE, _>(
+            label,
+            if label == "jkls second map" {
+                "ckks_eval_linear_transformation_sum_into"
+            } else {
+                "ckks_eval_linear_transformation_into"
+            },
+            Budget,
+            &mut res,
+            |res| module.blas_matmul_pt_left(res, &jkls, &short, &ctx, &keys, &mut poisoned_scratch::<BE>(bytes).borrow()),
+        );
         assert!(
             grid_snapshot::<BE, _>(&short) == input,
             "{label}: blas_matmul_pt_left changed a"
@@ -2310,14 +2334,18 @@ pub fn test_blas_matmul_guards<BE, F, E>(
     let infos = || (left.each_ref().map(operand_infos), right.each_ref().map(operand_infos));
     let operands = infos();
     let mut narrow_res = res_below_scale(&params, module, log_d, ct.block_layout().log_delta());
-    assert_guard::<BE, _>("budget", "mul", Budget, &mut narrow_res, |res| {
+    assert_guard::<BE, _>("budget", "ckks_dot_product_prepared", Budget, &mut narrow_res, |res| {
         module.blas_matmul(res, &ct, &column, &ctx, &keys, &keys, &mut op_scratch.borrow())
     });
     for (hl, hr) in MIXES {
         let (l, r) = (&left[side(hl)], &right[side(hr)]);
-        assert_guard::<BE, _>(&format!("budget {hl:?} x {hr:?}"), "mul", Budget, &mut narrow_res, |res| {
-            module.blas_matmul_prepared(res, l, r, &ctx, &keys, &keys, &mut op_scratch.borrow())
-        });
+        assert_guard::<BE, _>(
+            &format!("budget {hl:?} x {hr:?}"),
+            "ckks_dot_product_prepared",
+            Budget,
+            &mut narrow_res,
+            |res| module.blas_matmul_prepared(res, l, r, &ctx, &keys, &keys, &mut op_scratch.borrow()),
+        );
     }
     assert!(
         [&ct, &column].map(grid_snapshot::<BE, _>) == factors,
@@ -2349,22 +2377,36 @@ pub fn test_blas_matmul_guards<BE, F, E>(
     }
     let inputs = [&short, &short_right].map(grid_snapshot::<BE, _>);
     let left_short = matmul_left_operand(module, &short, &ctx, &keys, Reuse, &mut op_scratch.borrow());
-    assert_rejected("budget", "mul", Budget, left_short);
+    assert_rejected("budget", "ckks_eval_linear_transformation_into", Budget, left_short);
     let right_short = matmul_right_operand(module, &short_right, &ctx, &keys, Reuse, &mut op_scratch.borrow());
-    assert_rejected("budget", "mul", Budget, right_short);
-    assert_guard::<BE, _>("budget factor", "mul", Budget, &mut res, |res| {
-        module.blas_matmul(res, &short, &column, &ctx, &keys, &keys, &mut op_scratch.borrow())
-    });
+    assert_rejected("budget", "ckks_eval_linear_transformation_into", Budget, right_short);
+    assert_guard::<BE, _>(
+        "budget factor",
+        "ckks_eval_linear_transformation_into",
+        Budget,
+        &mut res,
+        |res| module.blas_matmul(res, &short, &column, &ctx, &keys, &keys, &mut op_scratch.borrow()),
+    );
     let hot_short = matmul_left_operand(module, &short, &ctx, &keys, OneShot, &mut op_scratch.borrow()).unwrap();
-    assert_guard::<BE, _>("budget hot left", "mul", Budget, &mut res, |res| {
-        module.blas_matmul_prepared(res, &hot_short, cold_right, &ctx, &keys, &keys, &mut op_scratch.borrow())
-    });
+    assert_guard::<BE, _>(
+        "budget hot left",
+        "ckks_eval_linear_transformation_into",
+        Budget,
+        &mut res,
+        |res| module.blas_matmul_prepared(res, &hot_short, cold_right, &ctx, &keys, &keys, &mut op_scratch.borrow()),
+    );
     // `short_right` is 1 x 2: on the right, it multiplies `column`'s 2 x 1 operand into 2 x 2.
     let hot_short = matmul_right_operand(module, &short_right, &ctx, &keys, OneShot, &mut op_scratch.borrow()).unwrap();
-    assert_guard::<BE, _>("budget hot right", "mul", Budget, &mut alloc(2, 2), |res| {
-        let left = &left_column[side(Reuse)];
-        module.blas_matmul_prepared(res, left, &hot_short, &ctx, &keys, &keys, &mut op_scratch.borrow())
-    });
+    assert_guard::<BE, _>(
+        "budget hot right",
+        "ckks_eval_linear_transformation_into",
+        Budget,
+        &mut alloc(2, 2),
+        |res| {
+            let left = &left_column[side(Reuse)];
+            module.blas_matmul_prepared(res, left, &hot_short, &ctx, &keys, &keys, &mut op_scratch.borrow())
+        },
+    );
     assert!(
         [&short, &short_right].map(grid_snapshot::<BE, _>) == inputs,
         "budget: a preparation changed its input"
@@ -2402,11 +2444,17 @@ pub fn test_blas_matmul_guards<BE, F, E>(
             "{label}: one error for both sides"
         );
         let mut both = None;
-        assert_guard::<BE, _>(&format!("budget {label}"), "mul", Budget, &mut res, |res| {
-            let result = matmul(short_a, short_b, res);
-            both = error(&result);
-            result
-        });
+        assert_guard::<BE, _>(
+            &format!("budget {label}"),
+            "ckks_eval_linear_transformation_into",
+            Budget,
+            &mut res,
+            |res| {
+                let result = matmul(short_a, short_b, res);
+                both = error(&result);
+                result
+            },
+        );
         assert_eq!(both, left_error, "{label}: blas_matmul returned the right terms' error first");
         let s = &mut op_scratch.borrow();
         let hot_a = matmul_left_operand(module, short_a, &ctx, &keys, OneShot, s).unwrap();
@@ -2793,7 +2841,7 @@ pub fn test_blas_matmul_operands<BE, F, E>(
 
         let mut left_rejected = vec![("narrow", &narrow, InvalidOperand, "blas_matmul_prepare_left")];
         if hint == Reuse {
-            left_rejected.push(("budget", &short, Budget, "mul"));
+            left_rejected.push(("budget", &short, Budget, "ckks_eval_linear_transformation_into"));
         }
         check_operand_refill(
             &format!("left {hint:?}"),

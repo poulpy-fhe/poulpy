@@ -275,7 +275,7 @@ pub fn test_blas_inter_guards<BE, F, E>(
     // `res` narrower than the scale of `a`: poulpy-ckks rejects its budget inside the implementation, before any write,
     // in the rotation, or in the copy that replaces it on one matrix slot, and in the inner sum that makes the sum.
     let mut narrow = alloc_grid(&params, module, log_d, 2, 2, ct.block_layout().log_delta() - 1);
-    let rotate = if lanes > 1 { "rotate" } else { "copy" };
+    let rotate = if lanes > 1 { "ckks_rotate_into" } else { "ckks_copy" };
     assert_guard::<BE, _>("budget", rotate, Budget, &mut narrow, |res| {
         module.blas_rotate(res, &ct, 1, &sum_keys, &mut op_scratch.borrow())
     });

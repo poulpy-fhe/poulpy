@@ -24,7 +24,7 @@ pub trait CKKSNegReference<BE: Backend> {
         let offset = ckks_offset_unary(dst, src);
         if !ckks_unary_exact(dst, src) {
             // Validate before mutating: on error `dst` must remain untouched.
-            let log_budget = checked_log_budget_sub("neg", src.log_budget(), offset)?;
+            let log_budget = checked_log_budget_sub("ckks_neg_into", src.log_budget(), offset)?;
             // Stamp before the shift: it normalizes at `dst.k()`.
             dst.set_meta(src.meta());
             dst.set_log_budget(log_budget);

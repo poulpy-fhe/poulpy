@@ -88,7 +88,7 @@ macro_rules! ckks_carry_verb_reference {
                     let offset = ckks_offset_binary(dst, a, b);
                     // Validate before mutating: on error `dst` must remain untouched.
                     let log_budget =
-                        checked_log_budget_sub(stringify!($verb), a.log_budget().min(b.log_budget()), offset)?;
+                        checked_log_budget_sub(concat!("ckks_", stringify!($verb), "_into"), a.log_budget().min(b.log_budget()), offset)?;
 
                     // Align both operands to the common torus level: operand `x` is
                     // shifted by `x.log_budget − min_budget + offset`. When both
@@ -157,7 +157,7 @@ macro_rules! ckks_carry_verb_reference {
                     A: GLWEToBackendRef<BE> + CKKSInfos,
                     P: GLWEToBackendRef<BE> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
                 {
-                    $crate::ckks_copy_stamp_unary(self, concat!(stringify!($verb), "_pt_vec"), dst, a, scratch)?;
+                    $crate::ckks_copy_stamp_unary(self, concat!("ckks_", stringify!($verb), "_pt_vec"), dst, a, scratch)?;
                     self.[<ckks_ $verb _pt_vec_assign_reference>](dst, pt, scratch)
                 }
 
@@ -193,7 +193,7 @@ macro_rules! ckks_carry_verb_reference {
                     A: GLWEToBackendRef<BE> + CKKSInfos,
                     P: GLWEToBackendRef<BE> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
                 {
-                    $crate::ckks_copy_stamp_unary(self, concat!(stringify!($verb), "_pt_const"), dst, a, scratch)?;
+                    $crate::ckks_copy_stamp_unary(self, concat!("ckks_", stringify!($verb), "_pt_const"), dst, a, scratch)?;
                     self.[<ckks_ $verb _pt_const_assign_reference>](dst, dst_coeff, cst, const_coeff, scratch)
                 }
 

@@ -70,7 +70,7 @@ where
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BE>,
 {
-    const OP: &str = "ckks_ship_masking_accumulate";
+    const OP: &str = "ckks_ship_bootstrap_into";
     ckks_ensure!(
         !masks.is_empty() && masks.len() == pis.len(),
         "{OP}: empty or mismatched operands"
@@ -79,6 +79,7 @@ where
     let kk = plan.raised_k(base2k);
     let ld = plan.log_delta_work();
     let (res_log_budget, res_log_delta, cnv_offset) = mul_pt_params_raw(
+        OP,
         acc.max_k().as_usize(),
         ld,
         kk - ld,

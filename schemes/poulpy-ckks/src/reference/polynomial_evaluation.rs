@@ -104,6 +104,7 @@ where
                 return Ok(false);
             }
             let Ok((b_i, d_i, off_i)) = mul_pt_params_raw(
+                "ckks_eval_poly_real_const_coeffs",
                 budget + delta,
                 t.log_delta(),
                 t.log_budget(),

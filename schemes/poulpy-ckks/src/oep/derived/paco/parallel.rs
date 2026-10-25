@@ -136,7 +136,16 @@ where
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     let (kappa, stride) = branch_schedule(context, input.log_sparsity())?;
-    let (output_meta, required_scratch) = preflight(module, output, input, context, keys, false, scratch)?;
+    let (output_meta, required_scratch) = preflight(
+        "ckks_paco_bootstrap_direct_into",
+        module,
+        output,
+        input,
+        context,
+        keys,
+        false,
+        scratch,
+    )?;
     let schedule = ValidatedSchedule {
         kappa,
         stride,
@@ -246,7 +255,16 @@ where
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     let (kappa, stride) = branch_schedule(context, input.log_sparsity())?;
-    let (output_meta, required_scratch) = preflight(module, output, input, context, keys, true, scratch)?;
+    let (output_meta, required_scratch) = preflight(
+        "ckks_paco_bootstrap_into",
+        module,
+        output,
+        input,
+        context,
+        keys,
+        true,
+        scratch,
+    )?;
     let schedule = ValidatedSchedule {
         kappa,
         stride,
@@ -280,7 +298,16 @@ where
     Src: GLWEToBackendRef<BE> + CKKSCtBounds + Sync,
 {
     let (kappa, stride) = branch_schedule(context, input.log_sparsity())?;
-    let (output_meta, required_scratch) = preflight(module, output, input, context, keys, false, scratch)?;
+    let (output_meta, required_scratch) = preflight(
+        "ckks_paco_bootstrap_parallel_direct_into",
+        module,
+        output,
+        input,
+        context,
+        keys,
+        false,
+        scratch,
+    )?;
     let schedule = ValidatedSchedule {
         kappa,
         stride,
@@ -491,7 +518,16 @@ where
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     let (kappa, stride) = branch_schedule(context, input.log_sparsity())?;
-    let (output_meta, required_scratch) = preflight(module, output, input, context, keys, true, scratch)?;
+    let (output_meta, required_scratch) = preflight(
+        "ckks_paco_bootstrap_parallel_into",
+        module,
+        output,
+        input,
+        context,
+        keys,
+        true,
+        scratch,
+    )?;
     let schedule = ValidatedSchedule {
         kappa,
         stride,

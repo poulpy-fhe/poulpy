@@ -115,6 +115,7 @@ where
 }
 
 fn validate_automorphism_use<BE, K>(
+    op: &'static str,
     keys: &K,
     element: i64,
     input_k: TorusPrecision,
@@ -129,7 +130,7 @@ where
         .rotation_keys()
         .get_automorphism_key(element, input_k)
         .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
-            op: "ckks_paco_bootstrap",
+            op,
             rotation: element,
             k: input_k.into(),
             source,
@@ -143,6 +144,7 @@ where
 }
 
 fn validate_relinearization_use<BE, K>(
+    op: &'static str,
     keys: &K,
     input_k: TorusPrecision,
     n: usize,
@@ -156,7 +158,7 @@ where
         .tensor_key()
         .get_tensor_key(input_k)
         .map_err(|source| CKKSCompositionError::MissingRelinearizationKey {
-            op: "ckks_paco_bootstrap",
+            op,
             k: input_k.into(),
             source,
         })?;
@@ -168,6 +170,7 @@ where
 /// checks at construction; repeating the inexpensive shape checks here keeps
 /// the public trait safe for lazy or external key managers.
 pub(crate) fn validate_runtime<BE, F, K, Src>(
+    op: &'static str,
     module: &Module<BE>,
     context: &PaCoContext<BE, F>,
     output: &CKKSCiphertextOwned<BE>,
@@ -305,10 +308,10 @@ where
     );
     let (n, base2k) = (plan.n(), context.base2k());
     for &element in context.galois_elements() {
-        validate_automorphism_use::<BE, _>(keys, element, working_k, n, base2k)?;
+        validate_automorphism_use::<BE, _>(op, keys, element, working_k, n, base2k)?;
     }
-    validate_automorphism_use::<BE, _>(keys, -1, working_k, n, base2k)?;
-    validate_relinearization_use::<BE, _>(keys, working_k, n, base2k)?;
+    validate_automorphism_use::<BE, _>(op, keys, -1, working_k, n, base2k)?;
+    validate_relinearization_use::<BE, _>(op, keys, working_k, n, base2k)?;
 
     Ok(output_meta)
 }
@@ -399,21 +402,6 @@ where
     for factor in context.coeffs_to_slots() {
         module.ckks_eval_linear_transformation_self_assign(output, factor, keys.rotation_keys(), scratch)?;
     }
-
-    // `conj(·)` via the order `-1` automorphism key. Resolved at each point of
-    // use, not once: the product fold between the two uses spends budget, so the
-    // second conjugation runs at a narrower precision and can legitimately
-    // resolve to a different key or a different effective decomposition.
-    let _conjugation_key_for = |k: TorusPrecision| {
-        keys.rotation_keys()
-            .get_automorphism_key(-1, k)
-            .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
-                op: "ckks_paco_bootstrap",
-                rotation: -1,
-                k: k.into(),
-                source,
-            })
-    };
 
     // Step 5 — CoeffsToSlots (ψ tail). The conjugation-augmented final C2S
     // factor, scheduled apart from the body. Either the fused `Pair` form
