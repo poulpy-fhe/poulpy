@@ -112,6 +112,15 @@ where
     out
 }
 
+/// An arena of exactly `bytes` poisoned bytes, for a driver that keeps one across calls. [`with_scratch`] also guards
+/// the bounds of one call.
+pub fn poisoned_scratch<BE: Backend>(bytes: usize) -> ScratchOwned<BE> {
+    ScratchOwned::<BE> {
+        data: BE::from_host_bytes(&vec![0xA5; bytes]),
+        _phantom: std::marker::PhantomData,
+    }
+}
+
 /// Runs with exactly `bytes` accessible poisoned scratch bytes, surrounded by
 /// guards. Both allocation and guard downloads work for opaque backend storage.
 pub fn with_scratch<BE: Backend, R>(bytes: usize, run: impl FnOnce(&mut ScratchArena<'_, BE>) -> R) -> R {

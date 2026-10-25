@@ -9,6 +9,7 @@ use super::helpers::{
     assert_unary_output_meta, ckks_encrypt, ckks_encrypt_with_prec, ckks_pt_cst, ckks_spec, encode_and_upload_pt, gen_sk,
     precision_at, quantize, quantized_const, quantized_vector, test_vector_1, test_vector_2, want_sub,
 };
+use super::parity::helpers::with_scratch;
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
     layouts::{HostBytesBackend, Module, Standard},
@@ -58,7 +59,10 @@ where
     );
     let (want_re, want_im) = want_sub(&re1, &im1, &re2, &im2);
     let mut ct_res = alloc_ct(&params, module, params.k);
-    module.ckks_sub_into(&mut ct_res, &ct1, &ct2, &mut scratch.borrow()).unwrap();
+    with_scratch::<BE, _>(module.ckks_sub_tmp_bytes(ct_res.max_size()), |s| {
+        module.ckks_sub_into(&mut ct_res, &ct1, &ct2, s)
+    })
+    .unwrap();
     assert_binary_output_meta("sub_ct_aligned", &ct_res, params.k, &ct1, &ct2);
     assert_decrypt_precision(
         "sub_ct_aligned",
@@ -113,7 +117,10 @@ where
     );
     let (want_re, want_im) = want_sub(&re1, &im1, &re2, &im2);
     let mut ct_res = alloc_ct(&params, module, params.k);
-    module.ckks_sub_into(&mut ct_res, &ct1, &ct2, &mut scratch.borrow()).unwrap();
+    with_scratch::<BE, _>(module.ckks_sub_tmp_bytes(ct_res.max_size()), |s| {
+        module.ckks_sub_into(&mut ct_res, &ct1, &ct2, s)
+    })
+    .unwrap();
     assert_binary_output_meta("sub_ct a_lt_b", &ct_res, params.k, &ct1, &ct2);
     assert_decrypt_precision(
         "sub_ct a_lt_b",
@@ -168,7 +175,10 @@ where
     );
     let (want_re, want_im) = want_sub(&re1, &im1, &re2, &im2);
     let mut ct_res = alloc_ct(&params, module, params.k);
-    module.ckks_sub_into(&mut ct_res, &ct1, &ct2, &mut scratch.borrow()).unwrap();
+    with_scratch::<BE, _>(module.ckks_sub_tmp_bytes(ct_res.max_size()), |s| {
+        module.ckks_sub_into(&mut ct_res, &ct1, &ct2, s)
+    })
+    .unwrap();
     assert_binary_output_meta("sub_ct a_gt_b", &ct_res, params.k, &ct1, &ct2);
     assert_decrypt_precision(
         "sub_ct a_gt_b",
@@ -226,7 +236,10 @@ where
     );
     let (want_re, want_im) = want_sub(&a_re, &a_im, &b_re, &b_im);
     let mut ct_res = alloc_ct(&params, module, params.k);
-    module.ckks_sub_into(&mut ct_res, &ct1, &ct2, &mut scratch.borrow()).unwrap();
+    with_scratch::<BE, _>(module.ckks_sub_tmp_bytes(ct_res.max_size()), |s| {
+        module.ckks_sub_into(&mut ct_res, &ct1, &ct2, s)
+    })
+    .unwrap();
     assert_binary_output_meta("sub_ct delta_log_delta", &ct_res, params.k, &ct1, &ct2);
     assert_decrypt_precision_at_log_delta(
         "sub_ct delta_log_delta",
@@ -283,7 +296,10 @@ where
     let (want_re, want_im) = want_sub(&re1, &im1, &re2, &im2);
     let dst_k = params.k - params.base2k - 1;
     let mut ct_res = alloc_ct(&params, module, dst_k);
-    module.ckks_sub_into(&mut ct_res, &ct1, &ct2, &mut scratch.borrow()).unwrap();
+    with_scratch::<BE, _>(module.ckks_sub_tmp_bytes(ct_res.max_size()), |s| {
+        module.ckks_sub_into(&mut ct_res, &ct1, &ct2, s)
+    })
+    .unwrap();
     assert_binary_output_meta("sub_ct smaller_output", &ct_res, dst_k, &ct1, &ct2);
     assert_decrypt_precision(
         "sub_ct smaller_output",
@@ -339,7 +355,10 @@ where
     let (want_re, want_im) = want_sub(&re1, &im1, &re2, &im2);
     let expected_log_budget = ct1.log_budget().min(ct2.log_budget());
     let expected_log_delta = ct1.log_delta().max(ct2.log_delta());
-    module.ckks_sub_assign(&mut ct1, &ct2, &mut scratch.borrow()).unwrap();
+    with_scratch::<BE, _>(module.ckks_sub_tmp_bytes(ct1.max_size()), |s| {
+        module.ckks_sub_assign(&mut ct1, &ct2, s)
+    })
+    .unwrap();
     assert_ct_meta("sub_ct_assign_aligned", &ct1, expected_log_delta, expected_log_budget);
     assert_decrypt_precision(
         "sub_ct_assign_aligned",
@@ -395,9 +414,10 @@ where
     let (want_re, want_im) = want_sub(&re1, &im1, &re2, &im2);
     let expected_log_budget = ct_self.log_budget().min(ct_other.log_budget());
     let expected_log_delta = ct_self.log_delta().max(ct_other.log_delta());
-    module
-        .ckks_sub_assign(&mut ct_self, &ct_other, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_sub_tmp_bytes(ct_self.max_size()), |s| {
+        module.ckks_sub_assign(&mut ct_self, &ct_other, s)
+    })
+    .unwrap();
     assert_ct_meta("sub_ct_assign self_lt", &ct_self, expected_log_delta, expected_log_budget);
     assert_decrypt_precision(
         "sub_ct_assign self_lt",
@@ -453,9 +473,10 @@ where
     let (want_re, want_im) = want_sub(&re1, &im1, &re2, &im2);
     let expected_log_budget = ct_self.log_budget().min(ct_other.log_budget());
     let expected_log_delta = ct_self.log_delta().max(ct_other.log_delta());
-    module
-        .ckks_sub_assign(&mut ct_self, &ct_other, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_sub_tmp_bytes(ct_self.max_size()), |s| {
+        module.ckks_sub_assign(&mut ct_self, &ct_other, s)
+    })
+    .unwrap();
     assert_ct_meta("sub_ct_assign self_gt", &ct_self, expected_log_delta, expected_log_budget);
     assert_decrypt_precision(
         "sub_ct_assign self_gt",
@@ -508,7 +529,10 @@ where
     let expected_log_budget = ct.log_budget();
     let provenance = ct.noise();
     assert!(provenance.is_some());
-    module.ckks_sub_pt_vec_assign(&mut ct, &pt, &mut scratch.borrow()).unwrap();
+    with_scratch::<BE, _>(module.ckks_sub_pt_vec_tmp_bytes(ct.max_size()), |s| {
+        module.ckks_sub_pt_vec_assign(&mut ct, &pt, s)
+    })
+    .unwrap();
     assert_eq!(ct.noise(), None);
     assert_ct_meta("sub_pt_vec_assign", &ct, expected_log_delta, expected_log_budget);
     assert_decrypt_precision(
@@ -559,9 +583,10 @@ where
         &quantize(&im2, params.prec().log_delta()),
     );
     let mut ct_res = alloc_ct(&params, module, params.k);
-    module
-        .ckks_sub_pt_vec_into(&mut ct_res, &ct1, &pt, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_sub_pt_vec_tmp_bytes(ct_res.max_size()), |s| {
+        module.ckks_sub_pt_vec_into(&mut ct_res, &ct1, &pt, s)
+    })
+    .unwrap();
     assert_unary_output_meta("sub_pt_vec_into", &ct_res, params.k, &ct1);
     assert!(ct1.noise().is_some());
     assert_eq!(ct_res.noise(), None);
@@ -616,9 +641,10 @@ pub fn test_sub_pt_vec_into_delta_log_delta<BE, F, E>(
         &quantize(&im2, PT_PREC.log_delta()),
     );
     let mut ct_res = alloc_ct(&params, module, params.k);
-    module
-        .ckks_sub_pt_vec_into(&mut ct_res, &ct1, &pt, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_sub_pt_vec_tmp_bytes(ct_res.max_size()), |s| {
+        module.ckks_sub_pt_vec_into(&mut ct_res, &ct1, &pt, s)
+    })
+    .unwrap();
     assert_unary_output_meta("sub_pt_vec_into delta_log_delta", &ct_res, params.k, &ct1);
     assert_decrypt_precision_at_log_delta(
         "sub_pt_vec_into delta_log_delta",
@@ -673,9 +699,10 @@ pub fn test_sub_pt_vec_into_smaller_output<BE, F, E>(
     );
     let dst_k = params.k - params.base2k - 1;
     let mut ct_res = alloc_ct(&params, module, dst_k);
-    module
-        .ckks_sub_pt_vec_into(&mut ct_res, &ct1, &pt, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_sub_pt_vec_tmp_bytes(ct_res.max_size()), |s| {
+        module.ckks_sub_pt_vec_into(&mut ct_res, &ct1, &pt, s)
+    })
+    .unwrap();
     assert_unary_output_meta("sub_pt_vec_into smaller_output", &ct_res, dst_k, &ct1);
     assert_decrypt_precision(
         "sub_pt_vec_into smaller_output",
@@ -724,12 +751,14 @@ pub fn test_sub_pt_const_into_aligned<BE, F, E>(
     let want_im: Vec<F> = im1.iter().map(|x| *x - const_im).collect();
     let mut ct_res = alloc_ct(&params, module, params.k);
     let cst = add_sub_const_pt::<BE, F>(host_module, module, params.base2k.into());
-    module
-        .ckks_sub_pt_const_into(&mut ct_res, &ct, 0, &cst, 0, &mut scratch.borrow())
-        .unwrap();
-    module
-        .ckks_sub_pt_const_assign(&mut ct_res, m, &cst, 1, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_sub_pt_const_tmp_bytes(ct_res.max_size()), |s| {
+        module.ckks_sub_pt_const_into(&mut ct_res, &ct, 0, &cst, 0, s)
+    })
+    .unwrap();
+    with_scratch::<BE, _>(module.ckks_sub_pt_const_tmp_bytes(ct_res.max_size()), |s| {
+        module.ckks_sub_pt_const_assign(&mut ct_res, m, &cst, 1, s)
+    })
+    .unwrap();
     assert_unary_output_meta("sub_pt_const_into_aligned", &ct_res, params.k, &ct);
     assert_decrypt_precision(
         "sub_pt_const_into_aligned",
@@ -795,12 +824,14 @@ pub fn test_sub_const_into_lsh_alignment<BE, F, E>(
         cst.encoded_k().as_usize(),
         ct.log_budget() + cst.log_delta()
     );
-    module
-        .ckks_sub_pt_const_into(&mut ct_res, &ct, 0, &cst, 0, &mut scratch.borrow())
-        .unwrap();
-    module
-        .ckks_sub_pt_const_assign(&mut ct_res, m, &cst, 1, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_sub_pt_const_tmp_bytes(ct_res.max_size()), |s| {
+        module.ckks_sub_pt_const_into(&mut ct_res, &ct, 0, &cst, 0, s)
+    })
+    .unwrap();
+    with_scratch::<BE, _>(module.ckks_sub_pt_const_tmp_bytes(ct_res.max_size()), |s| {
+        module.ckks_sub_pt_const_assign(&mut ct_res, m, &cst, 1, s)
+    })
+    .unwrap();
     assert_unary_output_meta("sub_const_into_lsh_alignment", &ct_res, params.k, &ct);
     assert_decrypt_precision(
         "sub_const_into_lsh_alignment",
@@ -845,7 +876,10 @@ where
     let want_im = im1.clone();
     let expected_log_delta = ct.log_delta();
     let expected_log_budget = ct.log_budget();
-    module.ckks_sub_one_assign(&mut ct, &mut scratch.borrow()).unwrap();
+    with_scratch::<BE, _>(module.ckks_sub_one_tmp_bytes(ct.max_size()), |s| {
+        module.ckks_sub_one_assign(&mut ct, s)
+    })
+    .unwrap();
     assert_ct_meta("sub_one_assign", &ct, expected_log_delta, expected_log_budget);
     assert_decrypt_precision(
         "sub_one_assign",

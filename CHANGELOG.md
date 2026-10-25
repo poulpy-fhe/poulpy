@@ -498,6 +498,7 @@
 - Add `CKKSDFTMatrixOps::ckks_new_dft_matrix_tmp_bytes`, the scratch of `ckks_new_dft_matrix`, and `BootstrappingContext::compile_unprepared_tmp_bytes`, the scratch of `compile_unprepared`.
   `ckks_new_dft_matrix_tmp_bytes` is the largest slot encoding of one factor's diagonals, the factors being encoded one after the other on one scratch; `compile_unprepared_tmp_bytes` is the largest of the queries of the DFT matrices and of the slot encoding EvalMod stages its coefficients through.
   **Breaking:** `DFTMatrixImpl<F>` gains the required method `ckks_new_dft_matrix_tmp_bytes`; a backend registering `impl_dft_matrix_reference_full!` is unaffected, and one implementing the trait by hand returns a bound that covers its `ckks_new_dft_matrix`, as `reference::dft::ckks_new_dft_matrix_tmp_bytes` does.
+- Add `test_suite::parity::helpers::poisoned_scratch(bytes)`, an arena of exactly `bytes` poisoned bytes for a driver that keeps one across calls; `test_suite::presets::BootstrappingPresetRun` runs on one.
 
 ### `poulpy-bin-fhe`
 

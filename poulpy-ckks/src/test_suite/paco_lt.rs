@@ -23,6 +23,7 @@
 //! the SlotToCoeff chain. Grouping radices `g ∈ {1, 2}` cover both the
 //! one-layer-per-factor and merged schedules.
 
+use super::parity::helpers::with_scratch;
 use crate::CKKSModuleInfos;
 use crate::Scale;
 use std::collections::HashMap;
@@ -168,9 +169,11 @@ where
     let budget_before = ct.log_budget();
 
     for lt in &lts {
-        module
-            .ckks_eval_linear_transformation_self_assign(&mut ct, lt, &atks, &mut scratch.borrow())
-            .unwrap();
+        with_scratch::<BE, _>(
+            module.ckks_eval_linear_transformation_streamed_tmp_bytes(&ct, &params.atk_layout()),
+            |s| module.ckks_eval_linear_transformation_self_assign(&mut ct, lt, &atks, s),
+        )
+        .unwrap();
     }
 
     assert_eq!(

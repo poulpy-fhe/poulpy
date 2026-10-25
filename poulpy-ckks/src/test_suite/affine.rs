@@ -27,6 +27,7 @@ use super::helpers::{
     ADD_SUB_CONST, MUL_CONST, PT_PREC, TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch,
     assert_ct_meta, assert_decrypt_precision, ckks_encrypt, ckks_pt_cst_full, gen_sk, quantized_const, test_vector_1,
 };
+use super::parity::helpers::with_scratch;
 
 use crate::{test_suite::CKKSTestParams, test_suite::reference_encoder::ReferenceEncoder};
 
@@ -90,9 +91,10 @@ pub fn test_affine_pt_const_into_aligned<BE, F, E>(
     let affine_const = encode_affine_const::<F>(host_module, params.base2k.into(), offset, scale, PT_PREC);
     let mut dst = alloc_ct(&params, module, params.k);
 
-    module
-        .ckks_affine_pt_const_into(&mut dst, &a, &affine_const, 0, 1, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_affine_pt_const_tmp_bytes(&dst, &a, &affine_const), |s| {
+        module.ckks_affine_pt_const_into(&mut dst, &a, &affine_const, 0, 1, s)
+    })
+    .unwrap();
     assert_decrypt_precision(
         "affine_pt_const_into_aligned",
         &params,
@@ -147,9 +149,10 @@ pub fn test_affine_pt_const_zero_bias_matches_mul<BE, F, E>(
     let affine_const = encode_affine_const::<F>(host_module, params.base2k.into(), F::zero(), scale, PT_PREC);
     let mut dst = alloc_ct(&params, module, params.k);
 
-    module
-        .ckks_affine_pt_const_into(&mut dst, &a, &affine_const, 0, 1, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_affine_pt_const_tmp_bytes(&dst, &a, &affine_const), |s| {
+        module.ckks_affine_pt_const_into(&mut dst, &a, &affine_const, 0, 1, s)
+    })
+    .unwrap();
 
     assert_ct_meta(
         "affine_pt_const_zero_bias",
@@ -212,9 +215,10 @@ pub fn test_affine_pt_const_assign_aligned<BE, F, E>(
     );
     let affine_const = encode_affine_const::<F>(host_module, params.base2k.into(), offset, scale, PT_PREC);
 
-    module
-        .ckks_affine_pt_const_assign(&mut ct, &affine_const, 0, 1, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_affine_pt_const_tmp_bytes(&ct, &ct, &affine_const), |s| {
+        module.ckks_affine_pt_const_assign(&mut ct, &affine_const, 0, 1, s)
+    })
+    .unwrap();
     assert_decrypt_precision(
         "affine_pt_const_assign_aligned",
         &params,
@@ -272,9 +276,10 @@ pub fn test_affine_pt_vec_into_aligned<BE, F, E>(
     let offset_pt = ckks_pt_cst_full::<BE, F>(host_module, module, params.base2k.into(), PT_PREC, m, Some(offset_f64), None);
     let mut dst = alloc_ct(&params, module, params.k);
 
-    module
-        .ckks_affine_pt_vec_into(&mut dst, &a, &scale_pt, &offset_pt, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_affine_pt_vec_tmp_bytes(&dst, &a, &scale_pt), |s| {
+        module.ckks_affine_pt_vec_into(&mut dst, &a, &scale_pt, &offset_pt, s)
+    })
+    .unwrap();
     assert_decrypt_precision(
         "affine_pt_vec_into_aligned",
         &params,
@@ -331,9 +336,10 @@ pub fn test_affine_pt_vec_assign_aligned<BE, F, E>(
     let scale_pt = ckks_pt_cst_full::<BE, F>(host_module, module, params.base2k.into(), PT_PREC, m, Some(scale_f64), None);
     let offset_pt = ckks_pt_cst_full::<BE, F>(host_module, module, params.base2k.into(), PT_PREC, m, Some(offset_f64), None);
 
-    module
-        .ckks_affine_pt_vec_assign(&mut ct, &scale_pt, &offset_pt, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_affine_pt_vec_tmp_bytes(&ct, &ct, &scale_pt), |s| {
+        module.ckks_affine_pt_vec_assign(&mut ct, &scale_pt, &offset_pt, s)
+    })
+    .unwrap();
     assert_decrypt_precision(
         "affine_pt_vec_assign_aligned",
         &params,

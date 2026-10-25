@@ -12,6 +12,7 @@
 //!   signed Galois element `−5^k` applied through the
 //!   plain conjugation op must equal `conj(rotate(·, k))`, in one keyswitch.
 
+use super::parity::helpers::with_scratch;
 use crate::CKKSModuleInfos;
 use crate::Scale;
 use poulpy_core::layouts::IntPolyInfos;
@@ -186,7 +187,10 @@ where
             &mut scratch.borrow(),
         );
         let budget_before = ct.log_budget();
-        BE::ckks_slot_trace_assign(module, &mut ct, a, b, &atks, &mut scratch.borrow()).unwrap();
+        with_scratch::<BE, _>(BE::ckks_slot_trace_assign_tmp_bytes(module, &ct, &params.atk_layout()), |s| {
+            BE::ckks_slot_trace_assign(module, &mut ct, a, b, &atks, s)
+        })
+        .unwrap();
         assert_eq!(ct.log_budget(), budget_before, "trace({a}->{b}) must consume no budget");
         assert_slots::<BE, F, E>(
             &format!("paco_slot_trace({a}->{b})"),
@@ -249,7 +253,11 @@ where
             &mut scratch.borrow(),
         );
         let budget_before = ct.log_budget();
-        BE::ckks_slot_product_assign(&module, &mut ct, a, b, &atks, &tsk, &mut scratch.borrow()).unwrap();
+        let bytes = BE::ckks_slot_product_assign_tmp_bytes(&module, &ct, &params.atk_layout(), &params.tsk_layout());
+        with_scratch::<BE, _>(bytes, |s| {
+            BE::ckks_slot_product_assign(&module, &mut ct, a, b, &atks, &tsk, s)
+        })
+        .unwrap();
         assert_eq!(
             budget_before - ct.log_budget(),
             levels * log_delta,
@@ -299,9 +307,10 @@ where
             &mut scratch.borrow(),
         );
         let mut out = module.ckks_ciphertext_alloc_from_infos(&ct);
-        module
-            .ckks_conjugate_rotate_into(k, &mut out, &ct, &key, &mut scratch.borrow())
-            .unwrap();
+        with_scratch::<BE, _>(module.ckks_conjugate_tmp_bytes(&ct, &params.atk_layout()), |s| {
+            module.ckks_conjugate_rotate_into(k, &mut out, &ct, &key, s)
+        })
+        .unwrap();
         assert_eq!(out.log_budget(), ct.log_budget(), "conj_rotate must consume no budget");
         assert_slots::<BE, F, E>(
             &format!("paco_conj_rotate(k={k})"),

@@ -339,7 +339,7 @@ where
         // digit = 1, weight = 5: paper Rot_5 = poulpy rotation by -5.
         let (want_re, want_im) = want_rotate(&re1, &im1, -5, m);
         let mut out = alloc_ct(&params, module, k);
-        module.ckks_copy(&mut out, &ct, &mut scratch.borrow()).unwrap();
+        with_scratch::<BE, _>(module.ckks_copy_tmp_bytes(&out, &ct), |s| module.ckks_copy(&mut out, &ct, s)).unwrap();
         with_scratch::<BE, _>(mux_bytes(&group_rot), |s| {
             BE::ckks_ship_mux_rotate(module, &mut out, &group_rot, &plans, s)
         })
@@ -360,7 +360,10 @@ where
 
         // digit = 0: identity.
         let mut out_id = alloc_ct(&params, module, k);
-        module.ckks_copy(&mut out_id, &ct, &mut scratch.borrow()).unwrap();
+        with_scratch::<BE, _>(module.ckks_copy_tmp_bytes(&out_id, &ct), |s| {
+            module.ckks_copy(&mut out_id, &ct, s)
+        })
+        .unwrap();
         with_scratch::<BE, _>(mux_bytes(&group_id), |s| {
             BE::ckks_ship_mux_rotate(module, &mut out_id, &group_id, &plans, s)
         })
@@ -380,7 +383,10 @@ where
         // No digit selected: all-zero cleartext.
         let zeros = vec![F::zero(); m];
         let mut out_zero = alloc_ct(&params, module, k);
-        module.ckks_copy(&mut out_zero, &ct, &mut scratch.borrow()).unwrap();
+        with_scratch::<BE, _>(module.ckks_copy_tmp_bytes(&out_zero, &ct), |s| {
+            module.ckks_copy(&mut out_zero, &ct, s)
+        })
+        .unwrap();
         with_scratch::<BE, _>(mux_bytes(&group_zero), |s| {
             BE::ckks_ship_mux_rotate(module, &mut out_zero, &group_zero, &plans, s)
         })

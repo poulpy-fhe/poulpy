@@ -23,6 +23,7 @@ use super::helpers::{
     assert_decrypt_precision_at_log_delta, ckks_encrypt, ckks_encrypt_with_prec, gen_sk, precision_at, quantized_vector,
     test_vector_1, test_vector_2,
 };
+use super::parity::helpers::with_scratch;
 
 use crate::{test_suite::CKKSTestParams, test_suite::reference_encoder::ReferenceEncoder};
 
@@ -86,7 +87,10 @@ where
         .collect();
     let ct_refs: Vec<&_> = cts.iter().collect();
     let mut ct_res = alloc_ct(&params, module, params.k);
-    module.ckks_add_many(&mut ct_res, &ct_refs, &mut scratch.borrow()).unwrap();
+    with_scratch::<BE, _>(module.ckks_add_many_tmp_bytes(&ct_res, ct_refs[0]), |s| {
+        module.ckks_add_many(&mut ct_res, &ct_refs, s)
+    })
+    .unwrap();
     let expected_log_delta: usize = cts.iter().map(|c| c.log_delta()).max().unwrap();
     let expected_log_budget: usize = cts.iter().map(|c| c.log_budget()).min().unwrap();
     assert_ct_meta("add_many_aligned", &ct_res, expected_log_delta, expected_log_budget);
@@ -135,11 +139,17 @@ pub fn test_add_many_single_smaller_output<BE, F, E>(
     let ct_refs = vec![&ct];
     // At the input's width, one input is a lossless copy, still an evaluation.
     let mut ct_same = alloc_ct(&params, module, params.k);
-    module.ckks_add_many(&mut ct_same, &ct_refs, &mut scratch.borrow()).unwrap();
+    with_scratch::<BE, _>(module.ckks_add_many_tmp_bytes(&ct_same, ct_refs[0]), |s| {
+        module.ckks_add_many(&mut ct_same, &ct_refs, s)
+    })
+    .unwrap();
     assert!(ct.noise().is_some());
     assert!(ct_same.noise().is_none());
     let mut ct_res = alloc_ct(&params, module, params.k - params.base2k - 1);
-    module.ckks_add_many(&mut ct_res, &ct_refs, &mut scratch.borrow()).unwrap();
+    with_scratch::<BE, _>(module.ckks_add_many_tmp_bytes(&ct_res, ct_refs[0]), |s| {
+        module.ckks_add_many(&mut ct_res, &ct_refs, s)
+    })
+    .unwrap();
     assert!(ct_res.noise().is_none());
     assert_decrypt_precision(
         "add_many_single_smaller_output",
@@ -185,7 +195,10 @@ pub fn test_add_many_unaligned_log_budget<BE, F, E>(
         .collect();
     let ct_refs: Vec<&_> = cts.iter().collect();
     let mut ct_res = alloc_ct(&params, module, params.k);
-    module.ckks_add_many(&mut ct_res, &ct_refs, &mut scratch.borrow()).unwrap();
+    with_scratch::<BE, _>(module.ckks_add_many_tmp_bytes(&ct_res, ct_refs[0]), |s| {
+        module.ckks_add_many(&mut ct_res, &ct_refs, s)
+    })
+    .unwrap();
     assert_decrypt_precision(
         "add_many unaligned_log_budget",
         &params,
@@ -272,7 +285,10 @@ pub fn test_add_many_delta_log_delta<BE, F, E>(
     }
 
     let mut ct_res = alloc_ct(&params, module, params.k);
-    module.ckks_add_many(&mut ct_res, &ct_refs, &mut scratch.borrow()).unwrap();
+    with_scratch::<BE, _>(module.ckks_add_many_tmp_bytes(&ct_res, ct_refs[0]), |s| {
+        module.ckks_add_many(&mut ct_res, &ct_refs, s)
+    })
+    .unwrap();
     assert_decrypt_precision_at_log_delta(
         "add_many delta_log_delta",
         &params,
@@ -322,7 +338,10 @@ where
         .collect();
     let ct_refs: Vec<&_> = cts.iter().collect();
     let mut ct_res = alloc_ct(&params, module, params.k - params.base2k - 1);
-    module.ckks_add_many(&mut ct_res, &ct_refs, &mut scratch.borrow()).unwrap();
+    with_scratch::<BE, _>(module.ckks_add_many_tmp_bytes(&ct_res, ct_refs[0]), |s| {
+        module.ckks_add_many(&mut ct_res, &ct_refs, s)
+    })
+    .unwrap();
     assert_decrypt_precision(
         "add_many smaller_output",
         &params,

@@ -6,6 +6,7 @@ use super::helpers::{
     download_pt, gen_sk, quantized_slots, test_vector_1,
 };
 use super::parity::helpers::snapshot;
+use super::parity::helpers::with_scratch;
 use crate::CKKSModuleInfos;
 use crate::Scale;
 use crate::{
@@ -197,7 +198,6 @@ where
     let mut ct = module.ckks_ciphertext_alloc_from_glwe_infos(&enc);
     let mut pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), 8usize.into(), 8usize.into());
     let sk = other.glwe_secret_prepared_alloc(1usize.into());
-    let mut scratch = ScratchOwned::<BE>::alloc(0);
     let ct_before = snapshot::<BE, _>(&ct);
     let pt_before = snapshot::<BE, _>(&pt);
     let mut xe = Source::new([1; 32]);
@@ -210,13 +210,11 @@ where
             ct_n: n,
             sk_n: 2 * n,
         };
-        let err = call_module.ckks_decrypt(&mut pt, &ct, &sk, &mut scratch.arena()).unwrap_err();
+        let err = with_scratch::<BE, _>(0, |s| call_module.ckks_decrypt(&mut pt, &ct, &sk, s)).unwrap_err();
         assert_ckks_error("decrypt_degree_mismatch", &err, expected("ckks_decrypt"));
         assert_eq!(pt_before, snapshot::<BE, _>(&pt));
 
-        let err = call_module
-            .ckks_encrypt_sk(&mut ct, &pt, &sk, &mut xe, &mut xa, &mut scratch.arena())
-            .unwrap_err();
+        let err = with_scratch::<BE, _>(0, |s| call_module.ckks_encrypt_sk(&mut ct, &pt, &sk, &mut xe, &mut xa, s)).unwrap_err();
         assert_ckks_error("encrypt_degree_mismatch", &err, expected("ckks_encrypt_sk"));
         assert_eq!(ct_before, snapshot::<BE, _>(&ct));
     }
@@ -224,9 +222,10 @@ where
     // A plaintext scale above the ciphertext precision fails before encryption.
     let sk = module.glwe_secret_prepared_alloc(1usize.into());
     pt.set_log_delta(9);
-    let err = module
-        .ckks_encrypt_sk(&mut ct, &pt, &sk, &mut xe, &mut xa, &mut scratch.arena())
-        .unwrap_err();
+    let err = with_scratch::<BE, _>(module.ckks_encrypt_sk_tmp_bytes(&ct), |s| {
+        module.ckks_encrypt_sk(&mut ct, &pt, &sk, &mut xe, &mut xa, s)
+    })
+    .unwrap_err();
     assert_ckks_error(
         "encrypt_insufficient_budget",
         &err,
@@ -385,7 +384,10 @@ pub fn test_decrypt_rejects_output_hom_rem_too_large<BE, F, E>(
         slots: SlotsKind::Complex,
         log_sparsity: 0,
     });
-    let err = module.ckks_decrypt(&mut pt, &ct, &sk, &mut scratch.borrow()).unwrap_err();
+    let err = with_scratch::<BE, _>(module.ckks_decrypt_tmp_bytes(&pt, &ct), |s| {
+        module.ckks_decrypt(&mut pt, &ct, &sk, s)
+    })
+    .unwrap_err();
     assert_ckks_error(
         "decrypt_rejects_output_hom_rem_too_large",
         &err,
@@ -434,7 +436,10 @@ pub fn test_decrypt_rejects_base2k_mismatch<BE, F, E>(
     let mismatched_base2k = (params.base2k / 2).into();
     let mut pt = host_module.ckks_pt_vec_alloc(host_module.ckks_max_slots(), mismatched_base2k, src_prec.k());
     pt.set_meta(src_prec.meta());
-    let err = module.ckks_decrypt(&mut pt, &ct, &sk, &mut scratch.borrow()).unwrap_err();
+    let err = with_scratch::<BE, _>(module.ckks_decrypt_tmp_bytes(&pt, &ct), |s| {
+        module.ckks_decrypt(&mut pt, &ct, &sk, s)
+    })
+    .unwrap_err();
     assert_ckks_error(
         "decrypt_extract_base2k_mismatch",
         &err,
@@ -481,7 +486,10 @@ pub fn test_decrypt_rejects_degree_mismatch<BE, F, E>(
     );
     let mut pt = host_module.ckks_pt_vec_alloc(m / 2, params.base2k.into(), src_prec.k());
     pt.set_meta(src_prec.meta());
-    let err = module.ckks_decrypt(&mut pt, &ct, &sk, &mut scratch.borrow()).unwrap_err();
+    let err = with_scratch::<BE, _>(module.ckks_decrypt_tmp_bytes(&pt, &ct), |s| {
+        module.ckks_decrypt(&mut pt, &ct, &sk, s)
+    })
+    .unwrap_err();
     assert_ckks_error(
         "decrypt_extract_degree_mismatch",
         &err,
@@ -510,7 +518,10 @@ pub fn test_decrypt_rejects_degree_mismatch<BE, F, E>(
     );
     let mut pt = module.ckks_pt_vec_alloc(m / 2, params.base2k.into(), src_prec.k());
     pt.set_meta(src_prec.meta());
-    module.ckks_decrypt(&mut pt, &ct, &sk, &mut scratch.borrow()).unwrap();
+    with_scratch::<BE, _>(module.ckks_decrypt_tmp_bytes(&pt, &ct), |s| {
+        module.ckks_decrypt(&mut pt, &ct, &sk, s)
+    })
+    .unwrap();
     let (mut re_out, mut im_out) = (vec![F::zero(); m / 2], vec![F::zero(); m / 2]);
     half.decode_reim(&download_pt::<BE>(&pt), &mut re_out, &mut im_out).unwrap();
     assert_precision(

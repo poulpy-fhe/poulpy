@@ -21,9 +21,9 @@ use crate::{
         CKKSPolynomialEvaluationOps,
     },
     layouts::{
-        BootstrappingContext, BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques,
-        CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, DFTOutputFormat, DFTPlan, DFTType, EncapsulationKeysLayout,
-        EncodedLut, SparseSecretEncapsulation, eval_mod::EvalModPlan,
+        BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques, CKKSCiphertextOwned,
+        CKKSModuleAlloc, CKKSPlaintextOwned, DFTOutputFormat, DFTPlan, DFTType, EncapsulationKeysLayout, EncodedLut,
+        SparseSecretEncapsulation, eval_mod::EvalModPlan,
     },
     polynomial::SplitStrategy,
     test_suite::{
@@ -33,6 +33,7 @@ use crate::{
             gen_sk_with_raw, precision_stats,
         },
         parity::helpers::with_scratch,
+        presets::compile_context,
         reference_encoder::ReferenceEncoder,
     },
 };
@@ -328,12 +329,12 @@ fn run_case<BE, F, E>(
         );
         ScratchOwned::<BE>::alloc(initial_tmp)
     };
-    let ctx = BootstrappingContext::<BE, F>::compile(module, params.base2k.into(), &plan, &mut scratch.borrow()).unwrap();
+    let ctx = compile_context::<BE, F>(module, params.base2k.into(), &plan);
     let padded_ctx = if padded_luts.is_empty() {
         None
     } else {
         let plan = fbt_plan(params.base2k, guard_bits, first_factor_on_raise);
-        Some(BootstrappingContext::<BE, F>::compile(module, params.base2k.into(), &plan, &mut scratch.borrow()).unwrap())
+        Some(compile_context::<BE, F>(module, params.base2k.into(), &plan))
     };
     let keys_layout = BootstrappingKeysLayout {
         rotation_keys: Default::default(),

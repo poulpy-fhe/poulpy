@@ -8,11 +8,11 @@
 
 use crate::Scale;
 use poulpy_core::{
-    GLWECIKeyEncryptSk,
+    DiagonalProd, GLWECIKeyEncryptSk,
     api::{GLWECIKeyPreparedFactory, GLWESecretPreparedFactory, GLWESecretSampling},
     layouts::{
-        GGLWEInfos, GLWESecretPrepared, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, ModuleCoreAlloc,
-        SetK, prepared::GLWETensorKeyPreparedToBackendRef,
+        Base2K, GGLWEInfos, GLWESecretPrepared, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
+        ModuleCoreAlloc, SetK, prepared::GLWETensorKeyPreparedToBackendRef,
     },
 };
 use poulpy_hal::{
@@ -25,7 +25,7 @@ use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSLayout, CKKSResult, GLWEPlaintextMeta, SetCKKSInfos, SlotsKind,
     api::{
         CKKSAllOpsTmpBytes, CKKSBootstrappingCIOps, CKKSBootstrappingOps, CKKSDFTMatrixOps, CKKSDFTOps, CKKSDecryptOps,
-        CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncryptOps, CKKSEvalModOps,
+        CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, CKKSEncryptOps, CKKSEvalModOps,
     },
     layouts::{
         BootstrappingContext, BootstrappingKeysLayout, BootstrappingPlan, CKKSCiphertextOwned, CKKSModuleAlloc,
@@ -36,7 +36,7 @@ use crate::{
         PrecisionStats, TestContextBackend, TestContextModule, TestContextSharedModule, assert_canonical_at_k, ckks_spec,
         precision_stats, test_vector_1,
     },
-    test_suite::parity::helpers::with_scratch,
+    test_suite::parity::helpers::{poisoned_scratch, with_scratch},
 };
 
 /// Plaintext budget bits (above `log_delta`) used to measure the output precision.
@@ -115,19 +115,10 @@ where
         let keys_layout = preset.keys_layout().clone();
         let module = Module::<BE>::new(n as u64);
 
-        let scratch_size = bootstrap_setup_tmp_bytes(&module, &bootstrap_layout, plan, &keys_layout);
-        let mut scratch = ScratchOwned::<BE>::alloc(scratch_size);
-        let unprepared =
-            BootstrappingContext::<BE, f64>::compile_unprepared(&module, base2k.into(), plan, &mut scratch.borrow()).unwrap();
-        let prepare_scratch = unprepared.prepare_tmp_bytes(&module);
-        if prepare_scratch > BE::len_bytes(&scratch.data) {
-            scratch = ScratchOwned::<BE>::alloc(prepare_scratch);
-        }
-        let context = unprepared.prepare(&module, &mut scratch.borrow()).unwrap();
+        let context = compile_context::<BE, f64>(&module, base2k.into(), plan);
         let boot_scratch = module.ckks_bootstrap_tmp_bytes(&bootstrap_layout, &input_layout, &context, &keys_layout);
-        if boot_scratch > BE::len_bytes(&scratch.data) {
-            scratch = ScratchOwned::<BE>::alloc(boot_scratch);
-        }
+        let setup_scratch = bootstrap_setup_tmp_bytes(&module, &bootstrap_layout, plan, &keys_layout);
+        let mut scratch = ScratchOwned::<BE>::alloc(setup_scratch);
 
         // Dense application secret at the preset's Hamming weight.
         let mut source_sk = Source::new([0; 32]);
@@ -155,7 +146,7 @@ where
 
         let bootstrap: Bootstrap<BE> =
             Box::new(move |module, output, input, scratch| module.ckks_bootstrap(output, input, &context, &keys, scratch));
-        Self::with_bootstrap(preset, module, scratch, sk, bootstrap)
+        Self::with_bootstrap(preset, module, poisoned_scratch::<BE>(boot_scratch), sk, bootstrap)
     }
 
     /// Writes every key of `keys` and reads it back into a fresh key of its layout, which must
@@ -221,11 +212,11 @@ where
         let keys = prepare_keys_ci(&module, &ci, &keys, preset.keys_layout());
         let (layout, input_layout) = (preset.bootstrap_layout(), preset.input_layout());
         let (bytes, bytes_ci) = module.ckks_bootstrap_ci_tmp_bytes(&ci, &layout, &input_layout, &context, preset.keys_layout());
-        let mut scratch_ci = ScratchOwned::<CIBackend<BE>>::alloc(bytes_ci);
+        let mut scratch_ci = poisoned_scratch::<CIBackend<BE>>(bytes_ci);
         let bootstrap: Bootstrap<BE> = Box::new(move |module, output, input, scratch| {
             module.ckks_bootstrap_ci_into(&ci, output, input, &context, &keys, scratch, &mut scratch_ci.borrow())
         });
-        Self::with_bootstrap(preset, module, ScratchOwned::alloc(bytes), sk, bootstrap)
+        Self::with_bootstrap(preset, module, poisoned_scratch::<BE>(bytes), sk, bootstrap)
     }
 
     /// Encrypts the reference vector at the preset's input layout and runs one
@@ -612,6 +603,23 @@ where
             "{cause}: {err}"
         );
     }
+}
+
+/// [`BootstrappingContext::compile`] of `plan`, each stage on an arena of exactly its query.
+pub(crate) fn compile_context<BE, F>(module: &Module<BE>, base2k: Base2K, plan: &BootstrappingPlan) -> BootstrappingContext<BE, F>
+where
+    BE: Backend,
+    F: CKKSEncodingScalar,
+    Module<BE>: CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F> + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE> + LWEInfos,
+{
+    let bytes = BootstrappingContext::<BE, F>::compile_unprepared_tmp_bytes(module, plan).unwrap();
+    let unprepared = with_scratch::<BE, _>(bytes, |s| {
+        BootstrappingContext::<BE, F>::compile_unprepared(module, base2k, plan, s)
+    })
+    .unwrap();
+    let bytes = unprepared.prepare_tmp_bytes(module);
+    with_scratch::<BE, _>(bytes, |s| unprepared.prepare(module, s)).unwrap()
 }
 
 /// [`BootstrappingContext::compile_ci`] of `preset`, each stage on arenas of exactly its query.
