@@ -182,13 +182,9 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
         atks.insert(module.galois_element(rot), prepared);
     }
 
-    // Two key sets over the same stored keys: all rotations at the stored
-    // layout, then half of them read through a coarser `dsize`. The public
-    // query sizes one layout at a time, so a caller holding several takes the
-    // max over them; both sets must fit in exactly that budget.
-    let prep_bytes = module
-        .glwe_prepare_linear_transformation_baby_steps_tmp_bytes(&ct_infos, &atk_infos)
-        .max(module.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(&ct_infos, &coarse_infos));
+    // Two key sets over the same stored keys: all rotations at the stored layout, then half of them read through a
+    // coarser `dsize`.
+    let stored_bytes = module.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(&ct_infos, &atk_infos);
     let coarse_sets: [Vec<i64>; 2] = [
         Vec::new(),
         baby_steps
@@ -204,6 +200,12 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
             atks: &atks,
             coarse: coarse_dsize,
             coarse_ps: &coarse_ps,
+        };
+        // The mixed set reads two layouts, so its budget is the max of their queries.
+        let prep_bytes = if coarse_ps.is_empty() {
+            stored_bytes
+        } else {
+            stored_bytes.max(module.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(&ct_infos, &coarse_infos))
         };
         let mut prep_scratch: ScratchOwned<BE> = poisoned_scratch::<BE>(prep_bytes);
         let mut prepared_babies = LinearTransformationBabySteps::alloc(module, &baby_steps, &ct);
