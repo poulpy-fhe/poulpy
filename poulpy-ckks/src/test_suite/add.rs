@@ -1202,7 +1202,7 @@ pub fn test_add_pt_vec_into_smaller_output<BE, F, E>(
 }
 
 /// ct + ZNX plaintext must reject mismatched base2k with an explicit error.
-pub fn test_add_pt_vec_base2k_mismatch_error<BE, F, E>(
+pub fn test_add_pt_vec_assign_rejects_base2k_mismatch<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,

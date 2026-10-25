@@ -90,7 +90,7 @@ where
 
     let max_noise = |col_i: usize| {
         // Noise floor sits at the semantic precision `k()` (gadget + guard), not at the
-        // physical limb capacity `size * base2k` — the two only coincide when `k()`
+        // physical limb capacity `size * base2k`, the two only coincide when `k()`
         // happens to be limb-aligned.
         let mut noise: f64 = -(ggsw_res_infos.k().as_usize() as f64) + DEFAULT_SIGMA_XE.log2() + 3.0;
         noise += 0.5 * ggsw_res_infos.log_n() as f64;

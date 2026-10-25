@@ -17,7 +17,7 @@
 //! | Type | Role |
 //! |------|------|
 //! | [`LookupTable<AlignedBuf, i64>`] | Encoded evaluation function, allocated from a [`LookUpTableLayout`] |
-//! | [`BlindRotationKey`] | Raw (standard) bootstrapping key — one GGSW per LWE dimension |
+//! | [`BlindRotationKey`] | Raw (standard) bootstrapping key, one GGSW per LWE dimension |
 //! | [`BlindRotationKeyCompressed`] | Seed-compressed form of the bootstrapping key |
 //! | [`BlindRotationKeyPrepared`] | DFT-pre-processed form for fast on-line evaluation |
 //! | [`BlindRotationKeyLayout`] | Plain-old-data descriptor for key dimensions |

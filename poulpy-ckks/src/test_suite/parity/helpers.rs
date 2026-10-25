@@ -34,14 +34,14 @@ impl std::fmt::Debug for Snapshot {
 }
 
 /// Copies the digits, layout and metadata of `value` to the host.
-pub fn snapshot<B, A>(value: &A) -> Snapshot
+pub fn snapshot<BE, A>(value: &A) -> Snapshot
 where
-    B: Backend<ZnxWord = i64>,
-    A: CKKSInfos + GLWEInfos + GLWEToBackendRef<B>,
+    BE: Backend<ZnxWord = i64>,
+    A: CKKSInfos + GLWEInfos + GLWEToBackendRef<BE>,
 {
     let view = value.to_backend_ref();
     let mut digits = vec![0i64; view.n().as_usize() * (view.rank().as_usize() + 1) * view.data().size()];
-    B::copy_view_to_host(view.data().data(), bytemuck::cast_slice_mut(&mut digits));
+    BE::copy_view_to_host(view.data().data(), bytemuck::cast_slice_mut(&mut digits));
     Snapshot {
         layout: CKKSLayout {
             glwe_layout: poulpy_core::layouts::GLWELayout {
@@ -66,28 +66,32 @@ pub fn assert_untagged<'a>(label: &str, outputs: impl IntoIterator<Item = &'a Sn
 }
 
 /// A ciphertext of `layout` filled from `seed`, tagged with a fresh noise estimate.
-pub fn fixture_ciphertext<B: Backend<ZnxWord = i64>>(module: &Module<B>, layout: &CKKSLayout, seed: u8) -> CKKSCiphertextOwned<B>
+pub fn fixture_ciphertext<BE: Backend<ZnxWord = i64>>(
+    module: &Module<BE>,
+    layout: &CKKSLayout,
+    seed: u8,
+) -> CKKSCiphertextOwned<BE>
 where
-    Module<B>: GLWEMaskFill<B>,
+    Module<BE>: GLWEMaskFill<BE>,
 {
     let mut out = module.ckks_ciphertext_alloc_from_infos(layout);
     module.fill_glwe_from_source(&mut out, &mut Source::new([seed; 32]));
     // A fresh estimate, so an evaluation output that keeps a stale one fails the comparison.
     let noise = ComponentNoise::from_secret_at(Distribution::TernaryProb(0.5), out.k(), out.rank().as_usize());
-    GLWEToBackendMut::<B>::set_noise(&mut out, Some(noise));
+    GLWEToBackendMut::<BE>::set_noise(&mut out, Some(noise));
     out
 }
 
 /// With `lazy`, adds a fixture filled over whole limbs: the digits leave the
 /// canonical range, bits below `k` must round away, and the flag is clear.
-pub fn fixture_operand<B: Backend<ZnxWord = i64>>(
-    module: &Module<B>,
+pub fn fixture_operand<BE: Backend<ZnxWord = i64>>(
+    module: &Module<BE>,
     layout: &CKKSLayout,
     seed: u8,
     lazy: bool,
-) -> CKKSCiphertextOwned<B>
+) -> CKKSCiphertextOwned<BE>
 where
-    Module<B>: GLWEMaskFill<B> + GLWEAdd<B>,
+    Module<BE>: GLWEMaskFill<BE> + GLWEAdd<BE>,
 {
     let mut out = fixture_ciphertext(module, layout, seed);
     if lazy {
@@ -99,9 +103,9 @@ where
 }
 
 /// A plaintext of `layout` filled from `seed`.
-pub fn fixture_plaintext<B: Backend<ZnxWord = i64>>(module: &Module<B>, layout: &CKKSLayout, seed: u8) -> CKKSPlaintextOwned<B>
+pub fn fixture_plaintext<BE: Backend<ZnxWord = i64>>(module: &Module<BE>, layout: &CKKSLayout, seed: u8) -> CKKSPlaintextOwned<BE>
 where
-    Module<B>: GLWEMaskFill<B>,
+    Module<BE>: GLWEMaskFill<BE>,
 {
     let mut out = module.ckks_plaintext_alloc_from_infos(layout);
     module.fill_glwe_from_source(&mut out, &mut Source::new([seed; 32]));
@@ -110,10 +114,10 @@ where
 
 /// Runs with exactly `bytes` accessible poisoned scratch bytes, surrounded by
 /// guards. Both allocation and guard downloads work for opaque backend storage.
-pub fn with_scratch<B: Backend, R>(bytes: usize, run: impl FnOnce(&mut ScratchArena<'_, B>) -> R) -> R {
-    let guard = B::scratch_aligned(64);
-    let mut owned = ScratchOwned::<B> {
-        data: B::from_host_bytes(&vec![0xA5; guard + bytes + guard]),
+pub fn with_scratch<BE: Backend, R>(bytes: usize, run: impl FnOnce(&mut ScratchArena<'_, BE>) -> R) -> R {
+    let guard = BE::scratch_aligned(64);
+    let mut owned = ScratchOwned::<BE> {
+        data: BE::from_host_bytes(&vec![0xA5; guard + bytes + guard]),
         _phantom: std::marker::PhantomData,
     };
     let result = {
@@ -122,7 +126,7 @@ pub fn with_scratch<B: Backend, R>(bytes: usize, run: impl FnOnce(&mut ScratchAr
         assert_eq!(exact.available(), bytes);
         run(&mut exact)
     };
-    let host = B::to_host_bytes(&owned.data);
+    let host = BE::to_host_bytes(&owned.data);
     assert!(host[..guard].iter().all(|v| *v == 0xA5), "scratch prefix overwritten");
     assert!(
         host[guard + bytes..guard + bytes + guard].iter().all(|v| *v == 0xA5),

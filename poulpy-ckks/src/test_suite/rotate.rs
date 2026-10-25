@@ -210,7 +210,7 @@ pub fn test_rotate_assign<BE, F, E>(
     }
 }
 
-pub fn test_rotate_assign_missing_key_error<BE, F, E>(
+pub fn test_rotate_assign_rejects_missing_key<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,

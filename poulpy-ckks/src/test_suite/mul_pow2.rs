@@ -299,7 +299,7 @@ where
     );
 }
 
-pub fn test_div_pow2_assign_explicit_error<BE, F, E>(
+pub fn test_div_pow2_assign_rejects_insufficient_capacity<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
@@ -332,7 +332,7 @@ pub fn test_div_pow2_assign_explicit_error<BE, F, E>(
     let required_bits = available_log_budget + 1;
     let err = module.ckks_div_pow2_assign(required_bits, &mut ct).unwrap_err();
     assert_ckks_error(
-        "div_pow2_assign_explicit_error",
+        "div_pow2_assign_rejects_insufficient_capacity",
         &err,
         CKKSCompositionError::InsufficientHomomorphicCapacity {
             op: "div_pow2_assign",

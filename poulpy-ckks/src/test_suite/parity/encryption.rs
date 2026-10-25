@@ -88,14 +88,14 @@ where
 /// Both backends must receive identical draws, either through matching streams
 /// or a caller-installed controlled-sampling scope. Equal seeds alone do not
 /// establish that condition. Each backend prepares the same secret independently.
-pub fn test_encryption_parity<BR, BT>(params: CKKSTestParams, r: &Module<BR>, t: &Module<BT>)
+pub fn test_encryption_parity<BR, BT>(params: CKKSTestParams, module_ref: &Module<BR>, module_test: &Module<BT>)
 where
     BR: Backend<ZnxWord = i64> + CKKSEncryptionImpl,
     BT: Backend<ZnxWord = i64> + CKKSEncryptionImpl,
     Module<BR>: GLWESecretPreparedFactory<BR> + GLWEMaskFill<BR>,
     Module<BT>: GLWESecretPreparedFactory<BT> + GLWEMaskFill<BT>,
 {
-    assert_eq!(exercise(params, r), exercise(params, t));
+    assert_eq!(exercise(params, module_ref), exercise(params, module_test));
 }
 
 /// Registers encryption parity for caller-selected backends, exposing the tested
@@ -105,8 +105,8 @@ macro_rules! ckks_encryption_parity_test_suite {
     (mod $name:ident, backend_ref=$reference:ty, backend_test=$tested:ty, params=$params:expr $(,)?) => {
         mod $name {
             #[test]
-            fn encryption_degree_mismatch_error() {
-                $crate::test_suite::encryption::test_encryption_degree_mismatch_error::<$tested>();
+            fn encrypt_sk_rejects_degree_mismatch() {
+                $crate::test_suite::encryption::test_encrypt_sk_rejects_degree_mismatch::<$tested>();
             }
 
             #[test]

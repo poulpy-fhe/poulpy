@@ -1104,20 +1104,28 @@ fn compare(label: &str, want: Vec<Output>, got: Vec<Output>) {
 /// Matrix-slot rotations and sums agree bit for bit at every swept `log_d`, through the identity, one matrix slot, a
 /// narrower `res`, and lazy real inputs, and fail alike on a budget poulpy-ckks rejects, leaving `res` and `a`
 /// unchanged.
-pub fn test_blas_inter_parity<BR, BT, F>(params: CKKSTestParams, shapes: &BlasParityShapes, r: &Module<BR>, t: &Module<BT>)
-where
+pub fn test_blas_inter_parity<BR, BT, F>(
+    params: CKKSTestParams,
+    shapes: &BlasParityShapes,
+    module_ref: &Module<BR>,
+    module_test: &Module<BT>,
+) where
     BR: BlasParityBackend,
     BT: BlasParityBackend,
     Module<BR>: BlasParityModule<BR, F>,
     Module<BT>: BlasParityModule<BT, F>,
     F: TestScalar + DiagonalArithmetic,
 {
-    for log_d in swept_log_d(shapes, r.ckks_max_slots()) {
+    for log_d in swept_log_d(shapes, module_ref.ckks_max_slots()) {
         let label = format!("inter, log_d {log_d}");
-        compare(&label, inter::<BR, F>(params, r, log_d), inter::<BT, F>(params, t, log_d));
+        compare(
+            &label,
+            inter::<BR, F>(params, module_ref, log_d),
+            inter::<BT, F>(params, module_test, log_d),
+        );
         let (want, got) = (
-            inter_budget::<BR, F>(params, r, log_d),
-            inter_budget::<BT, F>(params, t, log_d),
+            inter_budget::<BR, F>(params, module_ref, log_d),
+            inter_budget::<BT, F>(params, module_test, log_d),
         );
         compare(&format!("{label}, budget"), want, got);
     }
@@ -1126,20 +1134,28 @@ where
 /// Transposes and row and column rotations agree bit for bit at every swept `log_d`, through every branch of the
 /// shifts, a narrower `res`, lazy real inputs, and maps at scales other than the inputs', and fail alike on a budget
 /// poulpy-ckks rejects, leaving `res` and `a` unchanged.
-pub fn test_blas_intra_parity<BR, BT, F>(params: CKKSTestParams, shapes: &BlasParityShapes, r: &Module<BR>, t: &Module<BT>)
-where
+pub fn test_blas_intra_parity<BR, BT, F>(
+    params: CKKSTestParams,
+    shapes: &BlasParityShapes,
+    module_ref: &Module<BR>,
+    module_test: &Module<BT>,
+) where
     BR: BlasParityBackend,
     BT: BlasParityBackend,
     Module<BR>: BlasParityModule<BR, F>,
     Module<BT>: BlasParityModule<BT, F>,
     F: TestScalar + DiagonalArithmetic,
 {
-    for log_d in swept_log_d(shapes, r.ckks_max_slots()) {
+    for log_d in swept_log_d(shapes, module_ref.ckks_max_slots()) {
         let label = format!("intra, log_d {log_d}");
-        compare(&label, intra::<BR, F>(params, r, log_d), intra::<BT, F>(params, t, log_d));
+        compare(
+            &label,
+            intra::<BR, F>(params, module_ref, log_d),
+            intra::<BT, F>(params, module_test, log_d),
+        );
         let (want, got) = (
-            intra_budget::<BR, F>(params, r, log_d),
-            intra_budget::<BT, F>(params, t, log_d),
+            intra_budget::<BR, F>(params, module_ref, log_d),
+            intra_budget::<BT, F>(params, module_test, log_d),
         );
         compare(&format!("{label}, budget"), want, got);
     }
@@ -1154,20 +1170,28 @@ where
 /// blocks (`1 x 16` by `16 x 1` above radix 52), agrees too, and so does a right factor holding one matrix, whose terms
 /// spend one scale. The product, the prepared product and the products by public matrices on either side, under
 /// `Diagonal` and `Jkls`, fail alike on a budget poulpy-ckks rejects, leaving `res` and the factors unchanged.
-pub fn test_blas_matmul_parity<BR, BT, F>(params: CKKSTestParams, shapes: &BlasParityShapes, r: &Module<BR>, t: &Module<BT>)
-where
+pub fn test_blas_matmul_parity<BR, BT, F>(
+    params: CKKSTestParams,
+    shapes: &BlasParityShapes,
+    module_ref: &Module<BR>,
+    module_test: &Module<BT>,
+) where
     BR: BlasParityBackend,
     BT: BlasParityBackend,
     Module<BR>: BlasParityModule<BR, F>,
     Module<BT>: BlasParityModule<BT, F>,
     F: TestScalar + DiagonalArithmetic,
 {
-    for log_d in swept_log_d(shapes, r.ckks_max_slots()) {
+    for log_d in swept_log_d(shapes, module_ref.ckks_max_slots()) {
         let label = format!("matmul, log_d {log_d}");
-        compare(&label, matmul::<BR, F>(params, r, log_d), matmul::<BT, F>(params, t, log_d));
+        compare(
+            &label,
+            matmul::<BR, F>(params, module_ref, log_d),
+            matmul::<BT, F>(params, module_test, log_d),
+        );
         let (want, got) = (
-            matmul_budget::<BR, F>(params, r, log_d),
-            matmul_budget::<BT, F>(params, t, log_d),
+            matmul_budget::<BR, F>(params, module_ref, log_d),
+            matmul_budget::<BT, F>(params, module_test, log_d),
         );
         compare(&format!("{label}, budget"), want, got);
     }

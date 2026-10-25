@@ -1,7 +1,7 @@
 //! Word-level FHE arithmetic on encrypted unsigned integers.
 //!
-//! This module provides [`FheUint`] — a packed-GLWE ciphertext encoding all bits
-//! of an unsigned integer — together with its DFT-prepared counterpart
+//! This module provides [`FheUint`], a packed-GLWE ciphertext encoding all bits
+//! of an unsigned integer, together with its DFT-prepared counterpart
 //! [`FheUintPrepared`], the key material ([`BDDKey`] / [`BDDKeyPrepared`]) needed
 //! to operate on it, and a library of arithmetic and logical operations driven by
 //! pre-compiled Binary Decision Diagram (BDD) circuits.

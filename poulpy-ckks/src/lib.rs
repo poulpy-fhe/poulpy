@@ -81,7 +81,7 @@ use poulpy_hal::layouts::galois_element;
 pub mod api;
 pub mod approximation;
 pub(crate) mod cosine;
-pub(crate) mod delegates;
+mod delegates;
 pub mod reference;
 
 /// Re-exports for use inside this crate's exported macros (e.g.
@@ -100,7 +100,7 @@ pub mod numerics;
 ///
 /// `use poulpy_ckks::prelude::*;` brings in the op traits (add/sub/mul/…,
 /// encrypt/decrypt, scratch sizing), the ciphertext/plaintext containers with
-/// their allocation helpers, and the metadata types — everything the
+/// their allocation helpers, and the metadata types, everything the
 /// encode → encrypt → evaluate → decrypt → decode loop needs from this crate.
 /// Key material and the `Module`/scratch machinery come from `poulpy-core` and
 /// `poulpy-hal`.
@@ -136,7 +136,7 @@ pub(crate) use error::{
 /// every configuration. Under the `libquadmath` feature on non-Apple x86_64
 /// only its libm-backed math is routed through libquadmath (faster for
 /// on-the-fly FFT-table builds); storage, codecs, and exact arithmetic are
-/// unchanged, so the type — and its `bytemuck::Pod` encoding — is identical
+/// unchanged, so the type, and its `bytemuck::Pod` encoding, is identical
 /// across features.
 pub use scalar::Quad;
 
@@ -262,8 +262,8 @@ impl<T: CKKSInfos + SetGLWEPlaintextInfos + SetK + ?Sized> SetCKKSInfos for T {}
 
 /// Allocation / precision spec for a CKKS value.
 ///
-/// Bundles a core [`GLWELayout`] — which carries `n`, `base2k`, the torus width
-/// `k`, and `rank` — with the [`GLWEPlaintextMeta`]. The
+/// Bundles a core [`GLWELayout`], which carries `n`, `base2k`, the torus width
+/// `k`, and `rank`, with the [`GLWEPlaintextMeta`]. The
 /// budget is derived as `log_budget = k - log_delta`, so `k` lives in the GLWE
 /// layout exactly as it does on a wrapped ciphertext/plaintext.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -279,8 +279,8 @@ pub struct CKKSLayout {
 ///
 /// The reduced form of a [`CKKSLayout`]: only the torus width `k` the operand
 /// plaintexts are allocated with and the [`GLWEPlaintextMeta`] they are stamped with.
-/// Plans carry no ring or radix information — `n` follows the module and
-/// `base2k` is passed explicitly at compile time — so there is nothing to fill
+/// Plans carry no ring or radix information, `n` follows the module and
+/// `base2k` is passed explicitly at compile time, so there is nothing to fill
 /// with placeholders.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CoeffsMeta {
@@ -370,8 +370,8 @@ impl GLWEPlaintextInfos for CKKSLayout {
 impl CKKSInfos for CKKSLayout {}
 
 /// Bits a binary add/sub must shift its result down to fit `res`: the excess of
-/// the **natural result width** — `min(log_delta) + min(log_budget)`, the meta
-/// the operation stamps — over the destination's requested `res.k()`. Using the natural width (rather
+/// the **natural result width**, `min(log_delta) + min(log_budget)`, the meta
+/// the operation stamps, over the destination's requested `res.k()`. Using the natural width (rather
 /// than `min(a.k, b.k)`, which is `≥` it whenever deltas *and* budgets both
 /// differ) charges exactly the budget the narrower destination forces and no
 /// more; the larger-delta operand's truncated tail lies below the claimed
@@ -536,12 +536,12 @@ mod offset_tests {
     }
 
     /// The binary offset charges exactly the natural result width's excess over
-    /// the destination — not `min(a.k, b.k)`, which over-charges when deltas
+    /// the destination, not `min(a.k, b.k)`, which over-charges when deltas
     /// and budgets both differ.
     #[test]
     fn offset_binary_charges_natural_result_width() {
         // Deltas AND budgets differ: natural width = 30 + 20 = 50, while
-        // min(a.k, b.k) = 55 — the old formula charged 5 spurious bits.
+        // min(a.k, b.k) = 55, the old formula charged 5 spurious bits.
         let a = layout(40, 20); // k = 60
         let b = layout(30, 25); // k = 55
         let res = layout(30, 20); // max_k = 50

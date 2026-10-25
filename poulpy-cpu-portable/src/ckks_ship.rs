@@ -30,10 +30,10 @@ use poulpy_hal::{
 /// [`ship_coeff_encodings_host`].
 pub fn ship_coeff_encodings_staged<BE, F, Src>(
     module: &Module<BE>,
-    ct: &Src,
-    plan: &ShipPlan,
     base2k: Base2K,
     complex: bool,
+    ct: &Src,
+    plan: &ShipPlan,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<ShipCoeffEncodings<BE::OwnedBuf, BE::ZnxWord>>
 where
@@ -52,7 +52,7 @@ where
     let mut owned = module.ckks_ciphertext_alloc_from_infos(ct);
     module.glwe_copy(&mut owned, ct, scratch);
     owned.set_meta_checked(ct.meta())?;
-    ship_coeff_encodings_host::<BE, _, F>(module, &owned, plan, base2k, complex)
+    ship_coeff_encodings_host::<BE, _, F>(module, base2k, complex, &owned, plan)
 }
 
 /// Opts a CPU backend into the reference SHIP coefficient encoding. Requires
@@ -94,7 +94,7 @@ macro_rules! impl_ckks_ship_coeff_encoding {
                 $be: ::poulpy_ckks::oep::CKKSEncodingImpl<F>,
                 Src: ::poulpy_core::layouts::GLWEToBackendRef<$be> + ::poulpy_ckks::CKKSCtBounds,
             {
-                $crate::ckks_ship::ship_coeff_encodings_staged::<$be, F, Src>(module, ciphertext, plan, base2k, complex, scratch)
+                $crate::ckks_ship::ship_coeff_encodings_staged::<$be, F, Src>(module, base2k, complex, ciphertext, plan, scratch)
                     .map_err(::poulpy_ckks::CKKSError::from)
             }
         }

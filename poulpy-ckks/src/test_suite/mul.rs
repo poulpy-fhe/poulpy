@@ -497,7 +497,7 @@ where
 /// Wide operands into a narrower destination, on a scratch arena of exactly
 /// `ckks_mul_tmp_bytes(res, a, b, tsk)`.
 ///
-/// Regression test: the sizing must account for the operands' widths — the op
+/// Regression test: the sizing must account for the operands' widths, the op
 /// carves its tensor intermediate at `max(a.max_k, b.max_k)`, which exceeds
 /// the destination's width here. Sizing from `res` alone under-allocated and
 /// blew the scratch-arena assert on this documented-legal call.
@@ -1428,7 +1428,7 @@ where
 /// `ckks_mul_prepared_assign` must reject a prepared operand built under a
 /// different layout (here: a different `base2k`) with a typed error, before
 /// touching the destination.
-pub fn test_mul_prepared_layout_mismatch_error<BE, F, E>(
+pub fn test_mul_prepared_assign_rejects_layout_mismatch<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
@@ -1601,7 +1601,7 @@ fn check_prepare_into<
     );
 }
 
-pub fn test_mul_ct_explicit_metadata_error<BE, F, E>(
+pub fn test_mul_into_rejects_explicit_metadata<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
@@ -1650,7 +1650,7 @@ pub fn test_mul_ct_explicit_metadata_error<BE, F, E>(
         .ckks_mul_into(&mut ct_res, &ct1, &ct2, &tsk, &mut scratch.borrow())
         .unwrap_err();
     assert_ckks_error(
-        "mul_ct_explicit_metadata_error",
+        "mul_into_rejects_explicit_metadata",
         &err,
         CKKSCompositionError::MultiplicationPrecisionUnderflow {
             op: "mul",

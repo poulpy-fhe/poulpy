@@ -323,6 +323,9 @@ where
 /// `encoding_determinism_quad` run
 /// [`test_encoding_determinism`](crate::test_suite::determinism::test_encoding_determinism).
 ///
+/// A backend type with an `f32` encoding transform adds `, f32` after `backend = <type>`, which also
+/// registers `encoding_determinism_f32`.
+///
 /// Every backend type implementing CKKS on the standard ring registers it; the
 /// conjugate-invariant types run their encoding fixtures in
 /// [`conjugate_invariant_ckks_test_suite!`](crate::conjugate_invariant_ckks_test_suite).
@@ -333,6 +336,24 @@ macro_rules! ckks_determinism_test_suite {
             #[test]
             fn encoding_determinism_f64() {
                 $crate::test_suite::determinism::test_encoding_determinism::<$backend, f64>();
+            }
+
+            #[test]
+            fn encoding_determinism_quad() {
+                $crate::test_suite::determinism::test_encoding_determinism::<$backend, $crate::Quad>();
+            }
+        }
+    };
+    (mod $modname:ident, backend = $backend:ty, f32 $(,)?) => {
+        mod $modname {
+            #[test]
+            fn encoding_determinism_f64() {
+                $crate::test_suite::determinism::test_encoding_determinism::<$backend, f64>();
+            }
+
+            #[test]
+            fn encoding_determinism_f32() {
+                $crate::test_suite::determinism::test_encoding_determinism::<$backend, f32>();
             }
 
             #[test]

@@ -197,21 +197,21 @@ where
 /// widths, rank, sparsity and slot metadata.
 pub fn test_arithmetic_parity<BR: ArithmeticParityBackend, BT: ArithmeticParityBackend, F>(
     params: CKKSTestParams,
-    r: &Module<BR>,
-    t: &Module<BT>,
+    module_ref: &Module<BR>,
+    module_test: &Module<BT>,
 ) where
     Module<BR>: GLWEMaskFill<BR>,
     Module<BT>: GLWEMaskFill<BT>,
 {
     let _scalar = std::marker::PhantomData::<F>;
-    let want = arithmetic(params, r);
+    let want = arithmetic(params, module_ref);
     assert_untagged(
         "arithmetic",
         want.iter()
             .filter(|(label, _)| !label.contains("copy"))
             .map(|(_, output)| output),
     );
-    assert_eq!(want, arithmetic(params, t));
+    assert_eq!(want, arithmetic(params, module_test));
 }
 
 fn imaginary<B: Backend<ZnxWord = i64> + CKKSImagImpl>(
@@ -275,7 +275,7 @@ where
 }
 
 /// Multiplication and division by the imaginary unit, standard ring only.
-pub fn test_imag_parity<BR, BT, F>(params: CKKSTestParams, r: &Module<BR>, t: &Module<BT>)
+pub fn test_imag_parity<BR, BT, F>(params: CKKSTestParams, module_ref: &Module<BR>, module_test: &Module<BT>)
 where
     BR: Backend<ZnxWord = i64> + CKKSImagImpl,
     BT: Backend<ZnxWord = i64> + CKKSImagImpl,
@@ -283,14 +283,14 @@ where
     Module<BT>: GLWEMaskFill<BT>,
 {
     let _scalar = std::marker::PhantomData::<F>;
-    let want = imaginary(params, r);
+    let want = imaginary(params, module_ref);
     assert_untagged(
         "imaginary",
         want.iter()
             .filter(|(label, _)| !label.contains("copy"))
             .map(|(_, output)| output),
     );
-    assert_eq!(want, imaginary(params, t));
+    assert_eq!(want, imaginary(params, module_test));
 }
 
 fn products<B>(params: CKKSTestParams, module: &Module<B>) -> Vec<(&'static str, Snapshot)>
@@ -431,7 +431,7 @@ where
 
 /// Ciphertext, square, prepared, vector and scalar multiplication, and the prepared dot product, which equals
 /// `ckks_dot_product_ct` of its operands' sources.
-pub fn test_multiplication_parity<BR, BT, F>(params: CKKSTestParams, r: &Module<BR>, t: &Module<BT>)
+pub fn test_multiplication_parity<BR, BT, F>(params: CKKSTestParams, module_ref: &Module<BR>, module_test: &Module<BT>)
 where
     BR: Backend<ZnxWord = i64> + CKKSMulImpl,
     BT: Backend<ZnxWord = i64> + CKKSMulImpl,
@@ -439,18 +439,18 @@ where
     Module<BT>: GLWETensorKeyPreparedFactory<BT> + GLWEMaskFill<BT> + GLWEAdd<BT> + CKKSDotProductOps<BT>,
 {
     let _scalar = std::marker::PhantomData::<F>;
-    let want = products(params, r);
+    let want = products(params, module_ref);
     assert_untagged(
         "products",
         want.iter()
             .filter(|(label, _)| !label.contains("copy"))
             .map(|(_, output)| output),
     );
-    assert_eq!(want, products(params, t));
+    assert_eq!(want, products(params, module_test));
 }
 
 /// Prepared, ordinary and square products at caller-selected large-ring layouts.
-pub fn test_prepared_multiplication_parity<BR, BT, F>(params: CKKSTestParams, r: &Module<BR>, t: &Module<BT>)
+pub fn test_prepared_multiplication_parity<BR, BT, F>(params: CKKSTestParams, module_ref: &Module<BR>, module_test: &Module<BT>)
 where
     BR: Backend<ZnxWord = i64> + CKKSMulImpl,
     BT: Backend<ZnxWord = i64> + CKKSMulImpl,
@@ -496,9 +496,9 @@ where
         results
     }
     let _scalar = std::marker::PhantomData::<F>;
-    let want = products(params, r);
+    let want = products(params, module_ref);
     assert_untagged("prepared products", &want);
-    assert_eq!(want, products(params, t));
+    assert_eq!(want, products(params, module_test));
 }
 
 fn rotations<B>(params: CKKSTestParams, module: &Module<B>) -> Vec<(&'static str, Snapshot)>
@@ -567,7 +567,7 @@ where
 }
 
 /// Keyed rotation and rotation by a slot shift, including the identity copy.
-pub fn test_rotate_parity<BR, BT, F>(params: CKKSTestParams, r: &Module<BR>, t: &Module<BT>)
+pub fn test_rotate_parity<BR, BT, F>(params: CKKSTestParams, module_ref: &Module<BR>, module_test: &Module<BT>)
 where
     BR: Backend<ZnxWord = i64> + CKKSRotateImpl,
     BT: Backend<ZnxWord = i64> + CKKSRotateImpl,
@@ -575,14 +575,14 @@ where
     Module<BT>: GLWEAutomorphismKeyPreparedFactory<BT> + GLWEMaskFill<BT> + GLWEAdd<BT>,
 {
     let _scalar = std::marker::PhantomData::<F>;
-    let want = rotations(params, r);
+    let want = rotations(params, module_ref);
     assert_untagged(
         "rotations",
         want.iter()
             .filter(|(label, _)| !label.contains("copy"))
             .map(|(_, output)| output),
     );
-    assert_eq!(want, rotations(params, t));
+    assert_eq!(want, rotations(params, module_test));
 }
 
 fn conjugations<B>(params: CKKSTestParams, module: &Module<B>) -> Vec<(&'static str, Snapshot)>
@@ -634,7 +634,7 @@ where
 }
 
 /// Conjugation, standard ring only.
-pub fn test_conjugate_parity<BR, BT, F>(params: CKKSTestParams, r: &Module<BR>, t: &Module<BT>)
+pub fn test_conjugate_parity<BR, BT, F>(params: CKKSTestParams, module_ref: &Module<BR>, module_test: &Module<BT>)
 where
     BR: Backend<ZnxWord = i64> + CKKSConjugateImpl,
     BT: Backend<ZnxWord = i64> + CKKSConjugateImpl,
@@ -642,12 +642,12 @@ where
     Module<BT>: GLWEAutomorphismKeyPreparedFactory<BT> + GLWEMaskFill<BT> + GLWEAdd<BT>,
 {
     let _scalar = std::marker::PhantomData::<F>;
-    let want = conjugations(params, r);
+    let want = conjugations(params, module_ref);
     assert_untagged(
         "conjugations",
         want.iter()
             .filter(|(label, _)| !label.contains("copy"))
             .map(|(_, output)| output),
     );
-    assert_eq!(want, conjugations(params, t));
+    assert_eq!(want, conjugations(params, module_test));
 }

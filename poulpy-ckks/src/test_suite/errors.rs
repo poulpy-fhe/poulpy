@@ -23,7 +23,7 @@ use super::{
 
 use crate::{test_suite::CKKSTestParams, test_suite::reference_encoder::ReferenceEncoder};
 
-pub fn test_add_pt_vec_alignment_error<BE, F, E>(
+pub fn test_add_pt_vec_assign_rejects_alignment<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
@@ -75,7 +75,7 @@ pub fn test_add_pt_vec_alignment_error<BE, F, E>(
 /// `ckks_encode_linear_transformation_from_diagonals` rejects a zero torus width, `coeffs_meta.k = 0`, with
 /// `InvalidOperand` before it allocates or writes anything: here on an empty scratch, on which encoding a diagonal
 /// fails with another error.
-pub fn test_encode_linear_transformation_zero_k_error<BE, F, E>(
+pub fn test_encode_linear_transformation_from_diagonals_rejects_zero_k<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
     _host_module: &Module<HostBytesBackend>,
@@ -203,7 +203,7 @@ pub fn test_encode_linear_transformation_into<BE, F, E>(
 /// `EncodeBSGS::encode_bsgs_with`, `encode_bsgs_folded_with` and `compile_eval_mod` reject a zero torus width,
 /// `coeff_meta.k = 0`, with `InvalidOperand` before they allocate anything: here on an odd polynomial the encoders
 /// would otherwise encode, panicking on the first baby step, and on an empty scratch for `compile_eval_mod`.
-pub fn test_encode_bsgs_zero_k_error<BE, F, E>(
+pub fn test_encode_bsgs_with_rejects_zero_k<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,

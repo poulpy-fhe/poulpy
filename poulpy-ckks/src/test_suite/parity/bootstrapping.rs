@@ -218,20 +218,20 @@ where
 /// Compare selected implementations using the same canonical inputs and key
 /// coefficients. Source mutations, destination metadata, errors, and each
 /// implementation's own exact guarded scratch budget are part of the contract.
-pub fn test_encapsulated_mod_up_parity<BR, BT, F>(params: CKKSTestParams, reference: &Module<BR>, tested: &Module<BT>)
+pub fn test_encapsulated_mod_up_parity<BR, BT, F>(params: CKKSTestParams, module_ref: &Module<BR>, module_test: &Module<BT>)
 where
     BR: Backend<ZnxWord = i64> + CKKSEncapsulatedModUpImpl,
     BT: Backend<ZnxWord = i64> + CKKSEncapsulatedModUpImpl,
     Module<BR>: GGLWEPreparedFactory<BR> + GLWEMaskFill<BR> + GLWEAdd<BR>,
     Module<BT>: GGLWEPreparedFactory<BT> + GLWEMaskFill<BT> + GLWEAdd<BT>,
 {
-    assert_eq!(reference.n(), tested.n());
-    let want = run(params, reference);
+    assert_eq!(module_ref.n(), module_test.n());
+    let want = run(params, module_ref);
     assert_untagged(
         "encapsulated ModUp",
         want.iter().filter(|(result, _, _)| result.is_ok()).map(|(_, _, dst)| dst),
     );
-    assert_eq!(want, run(params, tested), "encapsulated ModUp differs");
+    assert_eq!(want, run(params, module_test), "encapsulated ModUp differs");
 }
 
 /// Fixture key store of the bootstrapping parity tests: identical coefficients
@@ -503,7 +503,7 @@ where
 /// and key coefficients: C2S-first, S2C-first, real slots, EvalRound+,
 /// encapsulation, functional bootstrapping and the ModUp stages, each within its
 /// own exact guarded scratch budget.
-pub fn test_bootstrapping_parity<BR, BT, F>(params: CKKSTestParams, reference: &Module<BR>, tested: &Module<BT>)
+pub fn test_bootstrapping_parity<BR, BT, F>(params: CKKSTestParams, module_ref: &Module<BR>, module_test: &Module<BT>)
 where
     BR: Backend<ZnxWord = i64> + CKKSBootstrappingImpl + HostStaged,
     BT: Backend<ZnxWord = i64> + CKKSBootstrappingImpl + HostStaged,
@@ -537,13 +537,13 @@ where
     FixtureKeys<BT>: BootstrappingKeys<BT> + Sync,
     <FixtureKeys<BT> as BootstrappingKeys<BT>>::TensorKey: Sync,
 {
-    assert_eq!(reference.n(), tested.n());
-    let want = run_bootstrap::<BR, F>(params, reference);
+    assert_eq!(module_ref.n(), module_test.n());
+    let want = run_bootstrap::<BR, F>(params, module_ref);
     assert_untagged(
         "bootstrapping",
         want.iter()
             .filter(|(result, _)| result.is_ok())
             .flat_map(|(_, outputs)| outputs),
     );
-    assert_eq!(want, run_bootstrap::<BT, F>(params, tested), "bootstrapping differs");
+    assert_eq!(want, run_bootstrap::<BT, F>(params, module_test), "bootstrapping differs");
 }

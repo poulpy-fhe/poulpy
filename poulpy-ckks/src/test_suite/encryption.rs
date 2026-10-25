@@ -180,7 +180,7 @@ where
 }
 
 /// CKKS returns a degree error without changing outputs or consuming randomness.
-pub fn test_encryption_degree_mismatch_error<BE>()
+pub fn test_encrypt_sk_rejects_degree_mismatch<BE>()
 where
     BE: Backend<ZnxWord = i64> + crate::oep::CKKSEncryptionImpl,
     Module<BE>: ModuleNew<BE> + GLWESecretPreparedFactory<BE>,
@@ -344,7 +344,7 @@ pub fn test_decrypt_extract_lsh_for_larger_log_delta<BE, F, E>(
     );
 }
 
-pub fn test_decrypt_extract_output_hom_rem_too_large<BE, F, E>(
+pub fn test_decrypt_rejects_output_hom_rem_too_large<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
@@ -387,7 +387,7 @@ pub fn test_decrypt_extract_output_hom_rem_too_large<BE, F, E>(
     });
     let err = module.ckks_decrypt(&mut pt, &ct, &sk, &mut scratch.borrow()).unwrap_err();
     assert_ckks_error(
-        "decrypt_extract_output_hom_rem_too_large",
+        "decrypt_rejects_output_hom_rem_too_large",
         &err,
         CKKSCompositionError::PlaintextAlignmentImpossible {
             op: "ckks_extract_pt",
@@ -400,7 +400,7 @@ pub fn test_decrypt_extract_output_hom_rem_too_large<BE, F, E>(
     );
 }
 
-pub fn test_decrypt_extract_base2k_mismatch_error<BE, F, E>(
+pub fn test_decrypt_rejects_base2k_mismatch<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
@@ -448,7 +448,7 @@ pub fn test_decrypt_extract_base2k_mismatch_error<BE, F, E>(
 
 /// Decrypting a dense ciphertext into a plaintext of half its degree is a `PlaintextDegreeMismatch`; a ciphertext
 /// whose slots repeat every `N / 4` decrypts into it, every second coefficient of its polynomial.
-pub fn test_decrypt_extract_degree_mismatch_error<BE, F, E>(
+pub fn test_decrypt_rejects_degree_mismatch<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
