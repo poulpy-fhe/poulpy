@@ -286,17 +286,20 @@ where
         lwe_secret_host.transfer_into(&mut lwe_secret);
         let mut expected = BlindRotationKey::<BE::OwnedBuf, CGGI, i64>::alloc(module, &layout);
         let mut actual = BlindRotationKey::<BE::OwnedBuf, CGGI, i64>::alloc(module, &layout);
-        with_scratch::<BE, _>(blind_rotation_key_encrypt_sk_tmp_bytes_reference(module, &layout), |s| {
-            blind_rotation_key_encrypt_sk_reference(
-                module,
-                &mut expected,
-                &lwe_secret,
-                &secret_prepared,
-                &mut Source::new([21; 32]),
-                &mut Source::new([22; 32]),
-                s,
-            );
-        });
+        poulpy_core::test_suite::assert_wipes_scratch::<BE>(
+            blind_rotation_key_encrypt_sk_tmp_bytes_reference(module, &layout),
+            |s| {
+                blind_rotation_key_encrypt_sk_reference(
+                    module,
+                    &mut expected,
+                    &lwe_secret,
+                    &secret_prepared,
+                    &mut Source::new([21; 32]),
+                    &mut Source::new([22; 32]),
+                    s,
+                );
+            },
+        );
         with_scratch::<BE, _>(module.blind_rotation_key_encrypt_sk_tmp_bytes(&layout), |s| {
             module.blind_rotation_key_encrypt_sk(
                 &mut actual,
@@ -325,7 +328,7 @@ where
             module.blind_rotation_key_compressed_bytes_of_from_infos(&layout),
             layout.n_lwe.as_usize() * ggsw_bytes
         );
-        with_scratch::<BE, _>(
+        poulpy_core::test_suite::assert_wipes_scratch::<BE>(
             blind_rotation_key_compressed_encrypt_sk_tmp_bytes_reference(module, &layout),
             |s| {
                 blind_rotation_key_compressed_encrypt_sk_reference(

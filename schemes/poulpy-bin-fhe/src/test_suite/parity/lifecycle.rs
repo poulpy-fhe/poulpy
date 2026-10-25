@@ -440,7 +440,7 @@ where
                 module,
                 &layout.cbt_layout,
             );
-        with_scratch::<BE, _>(circuit_bytes, |scratch| {
+        poulpy_core::test_suite::assert_wipes_scratch::<BE>(circuit_bytes, |scratch| {
             crate::reference::circuit_bootstrapping::circuit_bootstrapping_key_encrypt_sk_reference::<_, _, _, CGGI, BE>(
                 module,
                 &mut expected.cbt,
@@ -469,7 +469,7 @@ where
             "key encryption parity mismatch"
         );
         let reference_bytes = crate::reference::bdd::bdd_key_encrypt_sk_tmp_bytes_reference::<CGGI, BE, _>(module, &layout);
-        with_scratch::<BE, _>(reference_bytes, |s| {
+        poulpy_core::test_suite::assert_wipes_scratch::<BE>(reference_bytes, |s| {
             crate::reference::bdd::bdd_key_encrypt_sk_reference::<CGGI, BE, _, _>(
                 module,
                 &mut expected,
@@ -509,7 +509,7 @@ where
             let mut expected = module.alloc_fhe_uint_prepared_from_infos(&output);
             let mut actual = module.alloc_fhe_uint_prepared_from_infos(&output);
             let bytes = crate::reference::bdd::fhe_uint_prepared_encrypt_sk_tmp_bytes_reference::<BE, _>(module, &output);
-            with_scratch::<BE, _>(bytes, |s| {
+            poulpy_core::test_suite::assert_wipes_scratch::<BE>(bytes, |s| {
                 crate::reference::bdd::fhe_uint_prepared_encrypt_sk_reference::<u8, BE, _>(
                     module,
                     &mut expected,

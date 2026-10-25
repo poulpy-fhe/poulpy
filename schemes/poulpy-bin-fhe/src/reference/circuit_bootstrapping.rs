@@ -177,6 +177,10 @@ pub fn circuit_bootstrapping_key_encrypt_sk_reference<S0, S1, M, BRA, BE>(
         module.blind_rotation_key_encrypt_sk(&mut res.brk, sk_lwe, &sk_glwe_prepared, source_xe, source_xa, &mut op_scratch);
     }
     module.gglwe_to_ggsw_key_encrypt_sk(&mut res.tsk, sk_glwe, source_xe, source_xa, scratch);
+
+    scratch.wipe(circuit_bootstrapping_key_encrypt_sk_tmp_bytes_reference::<_, M, BRA, BE>(
+        module, &*res,
+    ));
 }
 pub fn circuit_bootstrapping_key_prepare_tmp_bytes_reference<A, M, BRA, BE>(module: &M, infos: &A) -> usize
 where
