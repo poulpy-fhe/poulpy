@@ -2,6 +2,7 @@
 //! through [`mhe_backend_test_suite!`](crate::mhe_backend_test_suite) and,
 //! against a comparison backend, [`mhe_parity_test_suite!`](crate::mhe_parity_test_suite).
 
+pub mod alloc;
 pub mod evaluation_key;
 pub(crate) mod fixtures;
 pub mod ggsw;
@@ -18,6 +19,11 @@ macro_rules! mhe_backend_test_suite {
     (mod $modname:ident, backend = $backend:ty $(,)?) => {
         mod $modname {
             use poulpy_hal::{api::ModuleNew, layouts::Module};
+
+            #[test]
+            fn mhe_module_alloc_rejects_foreign_degree() {
+                $crate::test_suite::alloc::test_mhe_module_alloc_rejects_foreign_degree(&Module::<$backend>::new(64));
+            }
 
             #[test]
             fn glwe_pat_compressed_ops() {
