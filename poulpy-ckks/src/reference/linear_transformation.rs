@@ -172,14 +172,21 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
     {
         const OP: &str = "ckks_prepare_linear_transformation_rhs";
         ensure_prepared_transformation_layout(OP, prepared, lt)?;
+        ensure_uniform_diagonals(OP, lt, |pt| (pt.log_delta(), pt.encoded_k().as_usize(), pt.slots()))?;
+        let first_pt = lt.first_diagonal_plaintext();
+        if let Some(first_pt) = first_pt {
+            ckks_ensure!(
+                scratch.available() >= self.ckks_prepare_linear_transformation_rhs_tmp_bytes_reference(first_pt),
+                "{OP}: scratch below its query"
+            );
+        }
+        self.glwe_prepare_linear_transformation_rhs(prepared, lt, scratch);
         // The first diagonal's scale and real-slot claim are stashed for all, so eval needs no `lt` for its
         // `cnv_offset` and slot kind.
-        ensure_uniform_diagonals(OP, lt, |pt| (pt.log_delta(), pt.encoded_k().as_usize(), pt.slots()))?;
-        if let Some(first_pt) = lt.first_diagonal_plaintext() {
+        if let Some(first_pt) = first_pt {
             prepared.set_log_scale(first_pt.log_delta());
             prepared.set_real_slots(first_pt.slots().is_real());
         }
-        self.glwe_prepare_linear_transformation_rhs(prepared, lt, scratch);
         Ok(())
     }
 

@@ -1376,6 +1376,14 @@ pub fn assert_ckks_error(label: &str, err: &crate::CKKSError, want: CKKSComposit
     assert_eq!(err.composition(), Some(&want), "{label}: unexpected error: {err}");
 }
 
+/// Asserts that `err` is the untyped [`CKKSError::Internal`](crate::CKKSError::Internal) whose message contains `message`.
+pub fn assert_ckks_internal(label: &str, err: &crate::CKKSError, message: &str) {
+    assert!(
+        matches!(err, crate::CKKSError::Internal(_)) && err.to_string().contains(message),
+        "{label}: unexpected error: {err}"
+    );
+}
+
 /// Asserts the metadata a unary op stamps on `ct`: `input`'s, less the bits by which
 /// `input.k()` exceeds `dst_k`, the destination's `k()` before the call.
 pub fn assert_unary_output_meta<D: Data, W: ZnxWord, R: Ring>(

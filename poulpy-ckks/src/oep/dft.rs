@@ -64,7 +64,8 @@ pub unsafe trait DFTImpl:
     /// Reproduces [`ckks_prepare_dft_matrix`](crate::reference::dft::ckks_prepare_dft_matrix) bit for bit, within
     /// [`Self::ckks_prepare_dft_matrix_tmp_bytes`]; free in kernels, prepared form and scratch use. A `res` allocated
     /// for another matrix layout, or a factor whose diagonals do not share one scale, width and slot kind, is
-    /// `InvalidOperand`, before any write.
+    /// `InvalidOperand`, then an arena below [`Self::ckks_prepare_dft_matrix_tmp_bytes`] is `CKKSError::Internal`, both
+    /// before any write.
     fn ckks_prepare_dft_matrix<Dir, Fmt, P>(
         module: &Module<Self>,
         res: &mut DFTMatrixPrepared<Self, Dir, Fmt>,

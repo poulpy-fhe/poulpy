@@ -19,12 +19,12 @@ use poulpy_hal::{
 use crate::{CKKSInfos, api::CKKSMulAddOps};
 
 use super::helpers::{
-    MUL_CONST, PT_PREC, TestContextBackend, TestContextModule, TestScalar, alloc_scratch, assert_ct_meta,
+    MUL_CONST, PT_PREC, TestContextBackend, TestContextModule, TestScalar, alloc_scratch, assert_ckks_internal, assert_ct_meta,
     assert_decrypt_precision, assert_decrypt_precision_at_log_delta, ckks_encrypt, ckks_pt_cst_full, ckks_snapshot, ckks_spec,
     encode_and_upload_pt, gen_sk, gen_sk_with_raw, gen_tsk, quantize, quantized_const, quantized_slots, test_vector_1,
     test_vector_2,
 };
-use super::parity::helpers::with_scratch;
+use super::parity::helpers::{snapshot, with_scratch};
 
 use crate::{test_suite::CKKSTestParams, test_suite::reference_encoder::ReferenceEncoder};
 
@@ -116,10 +116,20 @@ where
         &b_im,
         &mut scratch.borrow(),
     );
-    with_scratch::<BE, _>(module.ckks_mul_add_ct_tmp_bytes(&dst, &a, &b, &tsk), |s| {
-        module.ckks_mul_add_ct_into(&mut dst, &a, &b, &tsk, s)
-    })
-    .unwrap();
+    let bytes = module.ckks_mul_add_ct_tmp_bytes(&dst, &a, &b, &tsk);
+    let before = snapshot::<BE, _>(&dst);
+    let err = with_scratch::<BE, _>(bytes - 1, |s| module.ckks_mul_add_ct_into(&mut dst, &a, &b, &tsk, s)).unwrap_err();
+    assert_ckks_internal(
+        "ckks_mul_add_ct_into: one byte short",
+        &err,
+        "ckks_mul_add_ct_into: scratch below its query",
+    );
+    assert_eq!(
+        snapshot::<BE, _>(&dst),
+        before,
+        "ckks_mul_add_ct_into: a refused call wrote dst"
+    );
+    with_scratch::<BE, _>(bytes, |s| module.ckks_mul_add_ct_into(&mut dst, &a, &b, &tsk, s)).unwrap();
     assert_decrypt_precision(
         "mul_add_ct_aligned",
         &params,
@@ -282,10 +292,20 @@ pub fn test_mul_add_pt_vec_into_aligned<BE, F, E>(
         &b_re_raw,
         &b_im_raw,
     );
-    with_scratch::<BE, _>(module.ckks_mul_add_pt_vec_tmp_bytes(&dst, &a, &pt), |s| {
-        module.ckks_mul_add_pt_vec_into(&mut dst, &a, &pt, s)
-    })
-    .unwrap();
+    let bytes = module.ckks_mul_add_pt_vec_tmp_bytes(&dst, &a, &pt);
+    let before = snapshot::<BE, _>(&dst);
+    let err = with_scratch::<BE, _>(bytes - 1, |s| module.ckks_mul_add_pt_vec_into(&mut dst, &a, &pt, s)).unwrap_err();
+    assert_ckks_internal(
+        "ckks_mul_add_pt_vec_into: one byte short",
+        &err,
+        "ckks_mul_add_pt_vec_into: scratch below its query",
+    );
+    assert_eq!(
+        snapshot::<BE, _>(&dst),
+        before,
+        "ckks_mul_add_pt_vec_into: a refused call wrote dst"
+    );
+    with_scratch::<BE, _>(bytes, |s| module.ckks_mul_add_pt_vec_into(&mut dst, &a, &pt, s)).unwrap();
     assert_decrypt_precision(
         "mul_add_pt_vec_into_aligned",
         &params,
@@ -434,10 +454,20 @@ pub fn test_mul_add_const_into_aligned<BE, F, E>(
         &mut scratch.borrow(),
     );
     let cst = ckks_pt_cst_full::<BE, F>(host_module, module, params.base2k.into(), PT_PREC, m, Some(c_re_f64), None);
-    with_scratch::<BE, _>(module.ckks_mul_add_pt_const_tmp_bytes(&dst, &a, &cst), |s| {
-        module.ckks_mul_add_pt_const_into(&mut dst, &a, &cst, 0, s)
-    })
-    .unwrap();
+    let bytes = module.ckks_mul_add_pt_const_tmp_bytes(&dst, &a, &cst);
+    let before = snapshot::<BE, _>(&dst);
+    let err = with_scratch::<BE, _>(bytes - 1, |s| module.ckks_mul_add_pt_const_into(&mut dst, &a, &cst, 0, s)).unwrap_err();
+    assert_ckks_internal(
+        "ckks_mul_add_pt_const_into: one byte short",
+        &err,
+        "ckks_mul_add_pt_const_into: scratch below its query",
+    );
+    assert_eq!(
+        snapshot::<BE, _>(&dst),
+        before,
+        "ckks_mul_add_pt_const_into: a refused call wrote dst"
+    );
+    with_scratch::<BE, _>(bytes, |s| module.ckks_mul_add_pt_const_into(&mut dst, &a, &cst, 0, s)).unwrap();
     assert_decrypt_precision(
         "mul_add_const_into_aligned",
         &params,

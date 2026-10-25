@@ -303,7 +303,10 @@ pub unsafe trait CKKSPaCoImpl:
     }
 
     /// Hook without an API twin. Default body: `ckks_slot_product_assign_derived`. A fold that is not a pair of powers
-    /// of two with `b <= a` at most the slot count is a refusal. Then, for each rotation `k` of the fold schedule,
+    /// of two with `b <= a` at most the slot count is a refusal, and `a == b` leaves `ct` unchanged. Then the
+    /// automorphism key of the first rotation and the tensor key at `ct.k()` (`MissingAutomorphismKey`,
+    /// `MissingRelinearizationKey`) and an arena of [`Self::ckks_slot_product_assign_tmp_bytes`] at their layouts
+    /// are checked before any write, and, for each rotation `k` of the fold schedule,
     /// `ckks_rotate_into` of `ct` into a `ct`-shaped scratch temporary and `ckks_mul_assign` of the temporary into `ct`
     /// under `tsk`. This is `Pr_{a→b}` in place, slot `i` becoming `Π_j ct[i + j·b]` for `j ∈ [0, a/b)`, consuming
     /// `log(a/b) · log_delta` budget bits. The metadata is the one its constituents record.

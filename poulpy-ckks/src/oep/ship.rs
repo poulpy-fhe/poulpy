@@ -117,8 +117,8 @@ pub unsafe trait CKKSShipImpl:
         ckks_ship_bootstrap_tmp_bytes_derived::<Self, F, Src>(module, output, input, keys)
     }
 
-    /// Default body: `ckks_ship_bootstrap_into_derived`. The runtime validation of the output, input and key layouts
-    /// refuses before any write. Then the selected `glwe_keyswitch` of `input` into a carved ciphertext under the
+    /// Default body: `ckks_ship_bootstrap_into_derived`. The runtime validation of the output, input and key layouts,
+    /// then an arena below [`Self::ckks_ship_bootstrap_tmp_bytes`], refuse before any write. Then the selected `glwe_keyswitch` of `input` into a carved ciphertext under the
     /// dense-to-sparse key (carrying the input's metadata), [`CKKSShipCoeffEncodingImpl::ckks_ship_coeff_encodings`], a
     /// leaf 0 (`glwe_zero` then `ckks_add_pt_vec_assign` of the constant encoding), one leaf per index key (a
     /// [`Self::ckks_ship_masking_accumulate`] then a [`Self::ckks_ship_mux_rotate`] per mux group), and a binary
@@ -141,7 +141,7 @@ pub unsafe trait CKKSShipImpl:
     }
 
     /// Default body: `ckks_ship_bootstrap_complex_into_derived`. The runtime validation of the output, input and key
-    /// layouts refuses before any write. Then the encapsulation and coefficient encodings of the real bootstrap once,
+    /// layouts, then an arena below [`Self::ckks_ship_bootstrap_tmp_bytes`], refuse before any write. Then the encapsulation and coefficient encodings of the real bootstrap once,
     /// then for each of the two coefficient halves its own leaves (the second half with the second mask set) and
     /// product tree as there, and with `v1` and `v2` the two roots, `ckks_mul_i_into` of `v2`, `ckks_add_into` and
     /// `ckks_sub_into` of it with `v1`, `ckks_conjugate_into` of the difference, and `output = (v1 + i·v2) + conj(v1 −

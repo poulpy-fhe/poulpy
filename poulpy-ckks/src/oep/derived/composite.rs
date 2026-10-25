@@ -1,21 +1,26 @@
 //! Sums, multiply-accumulate and affine forms compose the selected products and additions.
 use poulpy_core::{
     GLWEBytesOf,
-    layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey, IntPolyInfos},
+    layouts::{
+        GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey, IntPolyInfos,
+        prepared::GLWETensorKeyPreparedBackendRef,
+    },
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
-    CKKSCtBounds, CKKSInfos, CKKSResult as Result, SetCKKSInfos,
+    CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSResult as Result, SetCKKSInfos,
     api::{CKKSAddOps, CKKSCopyOps, CKKSMulOps, CKKSSubOps},
-    ckks_bail,
+    ckks_bail, ckks_ensure,
     layouts::{CKKSCiphertextViewMut, ScratchArenaTakeCKKS},
     oep::{CKKSAddManyImpl, CKKSAffineImpl, CKKSMulAddImpl, CKKSMulSubImpl},
 };
 
-/// Carves a `dst`-shaped temporary in a scratch scope, runs the product into it,
-/// then folds it into `dst`.
+/// Checks the arena against the caller's query `bytes`, then carves a `dst`-shaped temporary in a scratch scope, runs
+/// the product into it and folds it into `dst`.
 fn mul_then_combine<BE, Dst, MulF, CombineF>(
+    op: &'static str,
+    bytes: usize,
     dst: &mut Dst,
     scratch: &mut ScratchArena<'_, BE>,
     mul: MulF,
@@ -27,11 +32,25 @@ where
     MulF: for<'t> FnOnce(&mut CKKSCiphertextViewMut<'t, BE>, &mut ScratchArena<'t, BE>) -> Result<()>,
     CombineF: for<'t> FnOnce(&mut Dst, &CKKSCiphertextViewMut<'t, BE>, &mut ScratchArena<'t, BE>) -> Result<()>,
 {
+    ckks_ensure!(scratch.available() >= bytes, "{op}: scratch below its query");
     scratch.scope(|scratch_local| {
         let (mut tmp, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(dst);
         mul(&mut tmp, &mut scratch_local)?;
         combine(dst, &tmp, &mut scratch_local)
     })
+}
+
+/// The tensor key the product `a * b` looks up first, at the wider operand's `k`.
+fn tensor_key<'k, BE, A, B, H>(op: &'static str, a: &A, b: &B, tsk: &'k H) -> Result<GLWETensorKeyPreparedBackendRef<'k, BE>>
+where
+    BE: Backend,
+    A: CKKSCtBounds,
+    B: CKKSCtBounds,
+    H: GetTensorKey<BE>,
+{
+    let k = a.k().max(b.k());
+    tsk.get_tensor_key(k)
+        .map_err(|source| CKKSCompositionError::MissingRelinearizationKey { op, k: k.into(), source }.into())
 }
 
 pub(crate) fn ckks_add_many_tmp_bytes_derived<BE, R, A>(module: &Module<BE>, res: &R, input: &A) -> usize
@@ -127,7 +146,12 @@ where
     B: GLWEToBackendRef<BE> + CKKSCtBounds,
     H: GetTensorKey<BE>,
 {
+    const OP: &str = "ckks_mul_add_ct_into";
+    let key = tensor_key(OP, a, b, tsk)?;
+    let bytes = ckks_mul_add_ct_tmp_bytes_derived(module, &*dst, a, b, &key);
     mul_then_combine(
+        OP,
+        bytes,
         dst,
         scratch,
         |tmp, s| module.ckks_mul_into(tmp, a, b, tsk, s),
@@ -148,7 +172,11 @@ where
     A: GLWEToBackendRef<BE> + CKKSCtBounds,
     P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds,
 {
+    const OP: &str = "ckks_mul_add_pt_vec_into";
+    let bytes = ckks_mul_add_pt_vec_tmp_bytes_derived(module, &*dst, a, pt);
     mul_then_combine(
+        OP,
+        bytes,
         dst,
         scratch,
         |tmp, s| module.ckks_mul_pt_vec_into(tmp, a, pt, s),
@@ -170,7 +198,11 @@ where
     A: GLWEToBackendRef<BE> + CKKSCtBounds,
     P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds,
 {
+    const OP: &str = "ckks_mul_add_pt_const_into";
+    let bytes = ckks_mul_add_pt_const_tmp_bytes_derived(module, &*dst, a, pt);
     mul_then_combine(
+        OP,
+        bytes,
         dst,
         scratch,
         |tmp, s| module.ckks_mul_pt_const_into(tmp, a, pt, pt_coeff, s),
@@ -329,7 +361,12 @@ where
     B: GLWEToBackendRef<BE> + CKKSCtBounds,
     H: GetTensorKey<BE>,
 {
+    const OP: &str = "ckks_mul_sub_ct_into";
+    let key = tensor_key(OP, a, b, tsk)?;
+    let bytes = ckks_mul_sub_ct_tmp_bytes_derived(module, &*dst, a, b, &key);
     mul_then_combine(
+        OP,
+        bytes,
         dst,
         scratch,
         |tmp, s| module.ckks_mul_into(tmp, a, b, tsk, s),
@@ -350,7 +387,11 @@ where
     A: GLWEToBackendRef<BE> + CKKSCtBounds,
     P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds,
 {
+    const OP: &str = "ckks_mul_sub_pt_vec_into";
+    let bytes = ckks_mul_sub_pt_vec_tmp_bytes_derived(module, &*dst, a, pt);
     mul_then_combine(
+        OP,
+        bytes,
         dst,
         scratch,
         |tmp, s| module.ckks_mul_pt_vec_into(tmp, a, pt, s),
@@ -372,7 +413,11 @@ where
     A: GLWEToBackendRef<BE> + CKKSCtBounds,
     P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds,
 {
+    const OP: &str = "ckks_mul_sub_pt_const_into";
+    let bytes = ckks_mul_sub_pt_const_tmp_bytes_derived(module, &*dst, a, pt);
     mul_then_combine(
+        OP,
+        bytes,
         dst,
         scratch,
         |tmp, s| module.ckks_mul_pt_const_into(tmp, a, pt, pt_coeff, s),

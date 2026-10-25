@@ -12,7 +12,7 @@
 //!   signed Galois element `−5^k` applied through the
 //!   plain conjugation op must equal `conj(rotate(·, k))`, in one keyswitch.
 
-use super::parity::helpers::with_scratch;
+use super::parity::helpers::{snapshot, with_scratch};
 use crate::CKKSModuleInfos;
 use crate::Scale;
 use poulpy_core::layouts::IntPolyInfos;
@@ -35,8 +35,8 @@ use crate::{
     test_suite::{
         CKKSTestParams,
         helpers::{
-            TestContextBackend, TestContextModule, TestScalar, alloc_scratch, ckks_encrypt, gen_atk, gen_sk_with_raw, gen_tsk,
-            test_vector_1,
+            TestContextBackend, TestContextModule, TestScalar, alloc_scratch, assert_ckks_internal, ckks_encrypt, gen_atk,
+            gen_sk_with_raw, gen_tsk, test_vector_1,
         },
         paco_reference_model::{conjugate, product_slots, rotate_left, trace_slots},
     },
@@ -254,6 +254,21 @@ where
         );
         let budget_before = ct.log_budget();
         let bytes = BE::ckks_slot_product_assign_tmp_bytes(&module, &ct, &params.atk_layout(), &params.tsk_layout());
+        let before = snapshot::<BE, _>(&ct);
+        let err = with_scratch::<BE, _>(bytes - 1, |s| {
+            BE::ckks_slot_product_assign(&module, &mut ct, a, b, &atks, &tsk, s)
+        })
+        .unwrap_err();
+        assert_ckks_internal(
+            &format!("paco_slot_product({a}->{b}): one byte short"),
+            &err,
+            "ckks_slot_product_assign: scratch below its query",
+        );
+        assert_eq!(
+            snapshot::<BE, _>(&ct),
+            before,
+            "paco_slot_product({a}->{b}): a refused fold wrote ct"
+        );
         with_scratch::<BE, _>(bytes, |s| {
             BE::ckks_slot_product_assign(&module, &mut ct, a, b, &atks, &tsk, s)
         })

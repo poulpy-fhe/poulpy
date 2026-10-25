@@ -29,8 +29,8 @@ use crate::{
     test_suite::{
         CKKSTestParams,
         helpers::{
-            TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_decrypt_precision, ckks_encrypt,
-            gen_atk, gen_sk_with_raw, test_vector_1, test_vector_2, want_add,
+            TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_ckks_internal,
+            assert_decrypt_precision, ckks_encrypt, gen_atk, gen_sk_with_raw, test_vector_1, test_vector_2, want_add,
         },
         parity::helpers::{snapshot, with_scratch},
     },
@@ -468,6 +468,14 @@ fn assert_prepare_refused<BE>(
         "{reason}: {err:?}"
     );
     assert!(err.to_string().contains(reason), "expected {reason:?}, got: {err}");
+    assert_prepared_unchanged(res, want, reason);
+}
+
+/// Asserts that a refused preparation left `res` equal to `want`.
+fn assert_prepared_unchanged<BE>(res: &LinearTransformationPrepared<BE>, want: &LinearTransformationPrepared<BE>, reason: &str)
+where
+    BE: TestContextBackend<Ring = Standard>,
+{
     let diagonals = |lt: &LinearTransformationPrepared<BE>| {
         lt.giant_steps
             .iter()
@@ -542,6 +550,49 @@ pub fn test_prepare_linear_transformation_rejects_mixed_diagonals<BE, F, E>(
         }
         assert_prepare_refused(module, &mut res, &want, &mixed, "not uniform");
     }
+}
+
+/// An arena one byte below the preparation's query is refused as `CKKSError::Internal` before any write, the
+/// destination, prepared from other values, unchanged.
+pub fn test_prepare_linear_transformation_rejects_short_scratch<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    _host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend<Ring = Standard>,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    F: TestScalar,
+{
+    let m = params.n / 2;
+    let mut scratch = alloc_scratch(&params, module);
+    let indices = [0, 1, 2, 3, 4, 5];
+    let mut encode = |offset| {
+        encode_lt(
+            module,
+            &params,
+            &complex_diagonals::<F>(&indices, m, offset),
+            2,
+            false,
+            &mut scratch.borrow(),
+        )
+    };
+    let (lt, other) = (encode(0), encode(1));
+    let want = prepare_lt(module, &other);
+    let mut res = prepare_lt(module, &other);
+    let bytes = module.ckks_prepare_linear_transformation_rhs_tmp_bytes(lt.first_diagonal_plaintext().unwrap());
+    if bytes == 0 {
+        eprintln!("test_prepare_linear_transformation_rejects_short_scratch: the preparation takes no scratch here");
+        return;
+    }
+    let err = with_scratch::<BE, _>(bytes - 1, |s| module.ckks_prepare_linear_transformation_rhs(&mut res, &lt, s)).unwrap_err();
+    assert_ckks_internal(
+        "one byte short",
+        &err,
+        "ckks_prepare_linear_transformation_rhs: scratch below its query",
+    );
+    assert_prepared_unchanged(&res, &want, "one byte short");
 }
 
 /// A destination allocated for another schedule or diagonal layout is refused by the preparation as `InvalidOperand`,

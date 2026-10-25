@@ -43,8 +43,8 @@ use crate::{
     test_suite::{
         CKKSTestParams,
         helpers::{
-            TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, ckks_encrypt, ckks_encrypt_coeffs,
-            ckks_encrypt_pt, ckks_spec, gen_atk, gen_sk_with_raw, test_vector_1,
+            TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_ckks_internal, ckks_encrypt,
+            ckks_encrypt_coeffs, ckks_encrypt_pt, ckks_spec, gen_atk, gen_sk_with_raw, test_vector_1,
         },
         parity::helpers::with_scratch,
     },
@@ -815,6 +815,19 @@ where
     .unwrap();
     assert_eq!(addresses(&res), before, "the refill reallocated");
     assert_eq!(buffers(&res), buffers(&fresh), "the refill differs from prepare");
+    if prepare_bytes > 0 {
+        let (want_buffers, want_infos) = (buffers(&res), infos(&res));
+        let err = with_scratch::<BE, _>(prepare_bytes - 1, |scratch| {
+            module.ckks_prepare_dft_matrix(&mut res, &dft, scratch)
+        })
+        .unwrap_err();
+        assert_ckks_internal("one byte short", &err, "ckks_prepare_dft_matrix: scratch below its query");
+        assert!(
+            buffers(&res) == want_buffers,
+            "a refused preparation changed the prepared bytes"
+        );
+        assert_eq!(infos(&res), want_infos, "a refused preparation changed the prepared infos");
+    }
 
     let other_schedule = build(1);
     let mut non_uniform = build(2);

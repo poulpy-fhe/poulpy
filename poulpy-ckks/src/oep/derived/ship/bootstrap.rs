@@ -226,9 +226,12 @@ where
     F: ShipScalar,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
-    validate_runtime("ckks_ship_bootstrap_into", module, output, input, keys, false)?;
+    const OP: &str = "ckks_ship_bootstrap_into";
+    validate_runtime(OP, module, output, input, keys, false)?;
+    let bytes = BE::ckks_ship_bootstrap_tmp_bytes::<F, _>(module, &*output, input, keys)?;
+    ckks_ensure!(scratch.available() >= bytes, "{OP}: scratch below its query");
     let base2k: poulpy_core::layouts::Base2K = keys.parameters().base2k().into();
-    let mut roots = ship_bootstrap_roots::<BE, F, _>("ckks_ship_bootstrap_into", module, input, keys, false, scratch)?;
+    let mut roots = ship_bootstrap_roots::<BE, F, _>(OP, module, input, keys, false, scratch)?;
 
     let root = roots.pop().expect("real bootstrap has one root");
     let (mut conj, mut scratch_rest) = scratch
@@ -255,9 +258,12 @@ where
     F: ShipScalar,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
-    validate_runtime("ckks_ship_bootstrap_complex_into", module, output, input, keys, true)?;
+    const OP: &str = "ckks_ship_bootstrap_complex_into";
+    validate_runtime(OP, module, output, input, keys, true)?;
+    let bytes = BE::ckks_ship_bootstrap_tmp_bytes::<F, _>(module, &*output, input, keys)?;
+    ckks_ensure!(scratch.available() >= bytes, "{OP}: scratch below its query");
     let base2k: poulpy_core::layouts::Base2K = keys.parameters().base2k().into();
-    let mut roots = ship_bootstrap_roots::<BE, F, _>("ckks_ship_bootstrap_complex_into", module, input, keys, true, scratch)?;
+    let mut roots = ship_bootstrap_roots::<BE, F, _>(OP, module, input, keys, true, scratch)?;
 
     let v2 = roots.pop().expect("complex bootstrap has two roots");
     let v1 = roots.pop().expect("complex bootstrap has two roots");

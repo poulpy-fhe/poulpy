@@ -105,7 +105,9 @@ pub unsafe trait CKKSMulAddImpl: Backend + CKKSMulImpl + CKKSAddImpl {
         ckks_mul_add_pt_const_tmp_bytes_derived(module, res, a, b)
     }
 
-    /// Default body: `ckks_mul_add_ct_into_derived`, `ckks_mul_into` into a `dst`-shaped scratch temporary, then
+    /// Default body: `ckks_mul_add_ct_into_derived`, the tensor key at the wider of `a.k()` and `b.k()`
+    /// (`MissingRelinearizationKey`) and an arena below [`Self::ckks_mul_add_ct_tmp_bytes`] at its layout
+    /// (`CKKSError::Internal`) refused first, then `ckks_mul_into` into a `dst`-shaped scratch temporary and
     /// `ckks_add_assign` of the temporary into `dst`.
     fn ckks_mul_add_ct_into<Dst, A, B, H>(
         module: &Module<Self>,
@@ -124,8 +126,9 @@ pub unsafe trait CKKSMulAddImpl: Backend + CKKSMulImpl + CKKSAddImpl {
         ckks_mul_add_ct_into_derived(module, dst, a, b, tsk, scratch)
     }
 
-    /// Default body: `ckks_mul_add_pt_vec_into_derived`, `ckks_mul_pt_vec_into` into a `dst`-shaped scratch temporary,
-    /// then `ckks_add_assign` of the temporary into `dst`.
+    /// Default body: `ckks_mul_add_pt_vec_into_derived`, an arena below [`Self::ckks_mul_add_pt_vec_tmp_bytes`]
+    /// refused first (`CKKSError::Internal`), then `ckks_mul_pt_vec_into` into a `dst`-shaped scratch temporary and
+    /// `ckks_add_assign` of the temporary into `dst`.
     fn ckks_mul_add_pt_vec_into<Dst, A, P>(
         module: &Module<Self>,
         dst: &mut Dst,
@@ -141,8 +144,9 @@ pub unsafe trait CKKSMulAddImpl: Backend + CKKSMulImpl + CKKSAddImpl {
         ckks_mul_add_pt_vec_into_derived(module, dst, a, pt, scratch)
     }
 
-    /// Default body: `ckks_mul_add_pt_const_into_derived`, `ckks_mul_pt_const_into` into a `dst`-shaped scratch
-    /// temporary, then `ckks_add_assign` of the temporary into `dst`.
+    /// Default body: `ckks_mul_add_pt_const_into_derived`, an arena below
+    /// [`Self::ckks_mul_add_pt_const_tmp_bytes`] refused first (`CKKSError::Internal`), then `ckks_mul_pt_const_into`
+    /// into a `dst`-shaped scratch temporary and `ckks_add_assign` of the temporary into `dst`.
     fn ckks_mul_add_pt_const_into<Dst, A, P>(
         module: &Module<Self>,
         dst: &mut Dst,
@@ -316,7 +320,9 @@ pub unsafe trait CKKSMulSubImpl: Backend + CKKSMulImpl + CKKSSubImpl {
         ckks_mul_sub_pt_const_tmp_bytes_derived(module, res, a, b)
     }
 
-    /// Default body: `ckks_mul_sub_ct_into_derived`, `ckks_mul_into` into a `dst`-shaped scratch temporary, then
+    /// Default body: `ckks_mul_sub_ct_into_derived`, the tensor key at the wider of `a.k()` and `b.k()`
+    /// (`MissingRelinearizationKey`) and an arena below [`Self::ckks_mul_sub_ct_tmp_bytes`] at its layout
+    /// (`CKKSError::Internal`) refused first, then `ckks_mul_into` into a `dst`-shaped scratch temporary and
     /// `ckks_sub_assign` of the temporary from `dst`.
     fn ckks_mul_sub_ct_into<Dst, A, B, H>(
         module: &Module<Self>,
@@ -335,8 +341,9 @@ pub unsafe trait CKKSMulSubImpl: Backend + CKKSMulImpl + CKKSSubImpl {
         ckks_mul_sub_ct_into_derived(module, dst, a, b, tsk, scratch)
     }
 
-    /// Default body: `ckks_mul_sub_pt_vec_into_derived`, `ckks_mul_pt_vec_into` into a `dst`-shaped scratch temporary,
-    /// then `ckks_sub_assign` of the temporary from `dst`.
+    /// Default body: `ckks_mul_sub_pt_vec_into_derived`, an arena below [`Self::ckks_mul_sub_pt_vec_tmp_bytes`]
+    /// refused first (`CKKSError::Internal`), then `ckks_mul_pt_vec_into` into a `dst`-shaped scratch temporary and
+    /// `ckks_sub_assign` of the temporary from `dst`.
     fn ckks_mul_sub_pt_vec_into<Dst, A, P>(
         module: &Module<Self>,
         dst: &mut Dst,
@@ -352,8 +359,9 @@ pub unsafe trait CKKSMulSubImpl: Backend + CKKSMulImpl + CKKSSubImpl {
         ckks_mul_sub_pt_vec_into_derived(module, dst, a, pt, scratch)
     }
 
-    /// Default body: `ckks_mul_sub_pt_const_into_derived`, `ckks_mul_pt_const_into` into a `dst`-shaped scratch
-    /// temporary, then `ckks_sub_assign` of the temporary from `dst`.
+    /// Default body: `ckks_mul_sub_pt_const_into_derived`, an arena below
+    /// [`Self::ckks_mul_sub_pt_const_tmp_bytes`] refused first (`CKKSError::Internal`), then `ckks_mul_pt_const_into`
+    /// into a `dst`-shaped scratch temporary and `ckks_sub_assign` of the temporary from `dst`.
     fn ckks_mul_sub_pt_const_into<Dst, A, P>(
         module: &Module<Self>,
         dst: &mut Dst,

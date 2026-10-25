@@ -64,7 +64,8 @@ pub trait CKKSDFTOps<BE: Backend> {
     ///
     /// `InvalidOperand`, before any write to `res`, when `res` was allocated for another factor count, factor schedule
     /// or diagonal degree, radix or width than `dft`'s, or when the diagonals of a factor do not share one scale, width
-    /// and slot kind.
+    /// and slot kind; then `CKKSError::Internal`, before any write, for an arena below
+    /// [`Self::ckks_prepare_dft_matrix_tmp_bytes`].
     fn ckks_prepare_dft_matrix<Dir, Fmt, P>(
         &self,
         res: &mut DFTMatrixPrepared<BE, Dir, Fmt>,
