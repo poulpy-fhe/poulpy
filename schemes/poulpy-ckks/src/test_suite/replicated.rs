@@ -19,13 +19,14 @@
 //! | [`test_replicated_rotations_are_admissible`] | rotations by a non-multiple of the period |
 //! | [`test_replicated_masked_constants`] | a masked constant fills the data slots only, and adds to a ciphertext |
 //! | [`test_replicated_conversions_round_trip`] | CKKS to the replicated layout and back keeps the input's precision |
+//! | [`test_replicated_ci_bootstrap`] | the bootstrapping of a conjugate-invariant replicated layout through the standard ring |
 //! | [`test_replicated_transforms_apply_matrices`] | a complex matrix onto the data slots, and gathered then traced back to period `k` |
 
 use std::collections::HashMap;
 
 use anyhow::Result;
 use poulpy_core::{
-    GLWEMulPreparedPlainSum, GLWETrace,
+    GLWECIKeyEncryptSk, GLWEMulPreparedPlainSum, GLWETrace,
     layouts::{
         Base2K, GLWEInfos, GLWELayout, GLWEToBackendRef, LWEInfos, LinearTransformationBabySteps, TorusPrecision,
         prepared::GLWESecretPrepared,
@@ -33,21 +34,21 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{CnvPVecAlloc, NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, HostBytesBackend, Module, PrepareHint, ScratchOwned, Standard, ZnxView},
+    layouts::{Backend, ConjugateInvariant, HostBytesBackend, Module, PrepareHint, ScratchOwned, Standard, ZnxView},
     source::Source,
 };
 
 use super::helpers::{
     PT_PREC, TestContextBackend, TestContextModule, TestContextSharedModule, TestScalar, alloc_ct, alloc_scratch,
-    ckks_pt_cst_full, ckks_spec, gen_atk, gen_sk, gen_sk_with_raw, gen_tsk, upload_pt,
+    ckks_pt_cst_full, ckks_spec, gen_atk, gen_ci_keys, gen_sk, gen_sk_with_raw, gen_tsk, upload_pt,
 };
 use crate::{
     CKKSInfos, CoeffsMeta, GLWEPlaintextInfos, GLWEPlaintextMeta, ReplicatedLayout, Scale, SetCKKSInfos, SlotLayout, SlotsKind,
     api::{
         CKKSAddOps, CKKSAffineOps, CKKSAllOpsTmpBytes, CKKSComplexPolynomialEvaluationOps, CKKSConjugateOps, CKKSDecryptOps,
         CKKSDotProductOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncryptOps, CKKSEvalModOps, CKKSLinearTransformationOps,
-        CKKSModuleInfos, CKKSMulOps, CKKSPolynomialEvaluationOps, CKKSReplicatedBootstrapOps, CKKSReplicatedOps, CKKSRotateOps,
-        CKKSSubOps,
+        CKKSModuleInfos, CKKSMulOps, CKKSPolynomialEvaluationOps, CKKSReplicatedBootstrapOps, CKKSReplicatedCIBootstrapOps,
+        CKKSReplicatedOps, CKKSRotateOps, CKKSSubOps,
     },
     layouts::{
         CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, EvalModPlan, EvalModPoly, EvalModType, ReplicatedBootstrapPlan,
@@ -1775,5 +1776,128 @@ where
         bits >= 18.0,
         "offset and full-width replicated bootstrapping differ by {bits:.2} bits"
     );
+    Ok(())
+}
+
+/// [`test_replicated_bootstrap`] on the conjugate-invariant ring of `ci`,
+/// through the standard ring of `standard`, of twice its degree.
+pub fn test_replicated_ci_bootstrap<BE, STD>(params: CKKSTestParams, ci: Module<BE>, standard: Module<STD>) -> Result<()>
+where
+    BE: TestContextBackend<Ring = ConjugateInvariant>
+        + for<'a> Backend<BufRef<'a> = STD::BufRef<'a>, BufMut<'a> = STD::BufMut<'a>>,
+    STD: TestContextBackend<Ring = Standard> + CKKSEncapsulatedModUpImpl,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextSharedModule<BE> + CKKSEncodingOps<BE, f64> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    Module<STD>: TestContextModule<STD>
+        + CKKSEncodingOps<STD, f64>
+        + CKKSReplicatedBootstrapOps<STD>
+        + CKKSReplicatedCIBootstrapOps<STD>
+        + CKKSLinearTransformationOps<STD>
+        + CnvPVecAlloc<STD>
+        + GLWECIKeyEncryptSk<STD>
+        + GLWETrace<STD>,
+{
+    let standard_params = CKKSTestParams {
+        n: 2 * params.n,
+        ..params
+    };
+    let ci_host = Module::<HostBytesBackend<ConjugateInvariant>>::new(params.n as u64);
+    let standard_host = Module::<HostBytesBackend>::new(standard_params.n as u64);
+    let layout = ShapingUnit::U16_40.layout(3, 24)?;
+    let plan = ReplicatedBootstrapPlan::paper(layout);
+    let base2k = Base2K(params.base2k as u32);
+    let mut compile = ScratchOwned::<STD>::alloc(standard.ckks_reim_tmp_bytes(standard_params.n));
+    let ctx = ReplicatedBootstrapping::<STD, f64>::new(&standard, plan, base2k, &mut compile.borrow())?;
+    let mut ci_compile = ScratchOwned::<BE>::alloc(ci.ckks_reim_tmp_bytes(params.n));
+    assert!(ReplicatedBootstrapping::<BE, f64>::new(&ci, plan, base2k, &mut ci_compile.borrow()).is_err());
+
+    // The standard bootstrapping runs one bit wider than the output.
+    let k_out = plan.k_in() + plan.level_log_delta;
+    let key_layouts = plan.key_layouts(
+        standard_params.n.into(),
+        base2k,
+        k_out + 1,
+        params.base2k,
+        params.base2k + 1,
+        true,
+    );
+    let (ci_sk_raw, ci_sk) = gen_sk_with_raw(&params, &ci, &ci_host, [0u8; 32]);
+    let (sk_raw, _) = gen_sk_with_raw(&standard_params, &standard, &standard_host, [1u8; 32]);
+
+    let len = 1 << layout.log_k();
+    let values = unit_batch::<BE, f64>(len, 0);
+    let k_in = plan.k_in() - (plan.log_delta - plan.level_log_delta);
+    let input = encrypt_batch(
+        &params,
+        &ci,
+        &ci_sk,
+        SlotLayout::Replicated(layout),
+        (&values.0, &values.1),
+        k_in,
+        1,
+    )?;
+
+    // The conversion keys cover the ring maps at the shaping depth.
+    let profile = crate::shaping::ShapingProfile::new(&layout);
+    let width = (k_in + profile.shaping_depth(input.log_delta(), layout.w()))
+        .max(k_out + 1 + profile.shaping_depth(plan.level_log_delta, layout.w()));
+    let mut keygen = ScratchOwned::<STD>::alloc(1 << 26);
+    let (embed_key, trace_key) = gen_ci_keys(&standard_params, &standard, &ci_sk_raw, &sk_raw, width, &mut keygen.borrow());
+    let (mut xs, mut xe, mut xa) = (Source::new([3; 32]), Source::new([4; 32]), Source::new([5; 32]));
+    let keys = ctx
+        .generate_keys(
+            &standard,
+            &sk_raw,
+            &key_layouts,
+            16,
+            &mut xs,
+            &mut xe,
+            &mut xa,
+            &mut keygen.borrow(),
+        )
+        .prepare(&standard, &mut keygen.borrow());
+
+    let encapsulation = key_layouts.encapsulation.as_ref().unwrap();
+    let mut out = alloc_ct(&params, &ci, k_out);
+    let (bytes, bytes_ci) = standard.ckks_replicated_ci_bootstrap_tmp_bytes(
+        &ci,
+        &out,
+        &input,
+        &ctx,
+        &key_layouts.automorphism_key,
+        &key_layouts.tensor_key,
+        Some((
+            &encapsulation.dense_to_sparse,
+            encapsulation.sparse_to_dense.as_ref().unwrap(),
+        )),
+        &standard_params.ksk_layout(width),
+    );
+    let (mut boot_scratch, mut boot_scratch_ci) = (ScratchOwned::<STD>::alloc(bytes), ScratchOwned::<BE>::alloc(bytes_ci));
+    let mut workspace = ctx.alloc_workspace(
+        &standard,
+        &GLWELayout {
+            n: standard_params.n.into(),
+            k: (k_out + 1).into(),
+            ..out.glwe_layout()
+        },
+    );
+    standard.ckks_replicated_ci_bootstrap_into(
+        &ci,
+        &mut out,
+        &input,
+        &ctx,
+        &mut workspace,
+        &keys,
+        (&embed_key, &trace_key),
+        &mut boot_scratch.borrow(),
+        &mut boot_scratch_ci.borrow(),
+    )?;
+    assert_eq!(out.slot_layout(), SlotLayout::Replicated(layout));
+    assert_eq!(out.slots(), SlotsKind::Real);
+    assert_eq!((out.log_delta(), out.k().as_usize()), (plan.level_log_delta, k_out));
+    let got = decrypt_batch::<BE, f64>(&params, &ci, &ci_sk, &out, len);
+    let bits = precision((&got.0, &got.1), (&values.0, &values.1));
+    assert!(bits >= 19.0, "conjugate-invariant replicated bootstrapping: {bits:.2} bits");
     Ok(())
 }

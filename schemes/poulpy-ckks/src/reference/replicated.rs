@@ -1,19 +1,19 @@
 use crate::CKKSResult as Result;
 use poulpy_core::{
-    GLWECopy, GLWEKeyswitch, GLWEShift, GLWETrace,
+    GLWECIEmbed, GLWECITrace, GLWECopy, GLWEKeyswitch, GLWEShift, GLWETrace,
     layouts::{
-        GGLWEInfos, GLWEInfos, GLWELayout, GLWEPlaintextMeta, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos,
-        Scale, SetK,
+        GGLWEInfos, GGLWEPreparedToBackendRef, GLWECIEmbedKeyPrepared, GLWECITraceKeyPrepared, GLWEInfos, GLWELayout,
+        GLWEPlaintextMeta, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, Scale, SetK,
     },
 };
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, ConjugateInvariant, Data, Module, ScratchArena, Standard};
 
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSLayout, CKKSModuleInfos, GLWEPlaintextInfos, ReplicatedLayout,
     SetCKKSInfos, SetGLWEPlaintextInfos, SlotLayout, SlotsKind,
     api::{
-        CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSEvalModOps, CKKSImagOps, CKKSLinearTransformationOps, CKKSPow2Ops,
-        CKKSRotateOps, CKKSRoundOps, CKKSSubOps,
+        CKKSAddOps, CKKSCIRingMapOps, CKKSConjugateOps, CKKSCopyOps, CKKSEvalModOps, CKKSImagOps, CKKSLinearTransformationOps,
+        CKKSPow2Ops, CKKSReplicatedBootstrapOps, CKKSRotateOps, CKKSRoundOps, CKKSSubOps,
     },
     layouts::{
         BootstrappingKeys, CKKSCiphertextViewMut, ReplicatedBootstrapWorkspace, ReplicatedBootstrapping, ReplicatedConversion,
@@ -669,4 +669,205 @@ where
     out.set_scale(Scale::Log(plan.log_delta + plan.mod_up_extra_bits));
     dst.set_k((out.log_budget() + plan.level_log_delta).into());
     module.ckks_round_into(dst, &out, &mut scratch)
+}
+
+/// Shaping depths of the two ring maps of [`ckks_replicated_ci_bootstrap_into`]
+/// for an input at scale `2^log_delta_in` and an output at the leveled scale.
+fn ci_bootstrap_depths(layout: &ReplicatedLayout, log_delta_in: usize, level_log_delta: usize) -> (usize, usize) {
+    let profile = crate::shaping::ShapingProfile::new(layout);
+    (
+        profile.shaping_depth(log_delta_in, layout.w()),
+        profile.shaping_depth(level_log_delta, layout.w()),
+    )
+}
+
+/// Scratch of [`ckks_replicated_ci_bootstrap_into`], `(scratch, scratch_ci)`:
+/// the working ciphertexts of both rings beside the largest operation.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn ckks_replicated_ci_bootstrap_tmp_bytes<BE, BCI, C, I, F, A, T, S, K>(
+    module: &Module<BE>,
+    ci: &Module<BCI>,
+    ct_out: &C,
+    ct_in: &I,
+    ctx: &ReplicatedBootstrapping<BE, F>,
+    atk_infos: &A,
+    tsk_infos: &T,
+    encapsulation_infos: Option<(&S, &S)>,
+    conversion_infos: &K,
+) -> (usize, usize)
+where
+    BE: Backend<Ring = Standard>,
+    BCI: Backend<Ring = ConjugateInvariant>,
+    Module<BE>: CKKSReplicatedBootstrapOps<BE> + CKKSCIRingMapOps<BE> + CKKSCopyOps<BE> + CKKSRoundOps<BE>,
+    Module<BCI>: CKKSCopyOps<BCI> + CKKSRoundOps<BCI>,
+    C: CKKSCtBounds,
+    I: CKKSCtBounds,
+    A: GGLWEInfos,
+    T: GGLWEInfos,
+    S: GGLWEInfos,
+    K: GGLWEInfos,
+{
+    let plan = ctx.plan;
+    let (lambda_in, lambda_out) = ci_bootstrap_depths(&plan.layout, ct_in.log_delta(), plan.level_log_delta);
+    let ckks = |n: usize, k: usize, meta: GLWEPlaintextMeta| CKKSLayout {
+        glwe_layout: GLWELayout {
+            n: n.into(),
+            k: k.into(),
+            ..ct_in.glwe_layout()
+        },
+        meta,
+    };
+    let (n, n_ci) = (module.n(), ct_in.n().as_usize());
+    let (k_in, k_out) = (ct_in.k().as_usize(), ct_out.k().as_usize() + 1);
+    let level_meta = GLWEPlaintextMeta {
+        scale: Scale::Log(plan.level_log_delta),
+        ..ct_in.meta()
+    };
+    let embedded = ckks(n, k_in + lambda_in, ct_in.meta());
+    let input = ckks(n, k_in, ct_in.meta());
+    let output = ckks(n, k_out, level_meta);
+    let wide_output = ckks(n, k_out + lambda_out, level_meta);
+    let traced = ckks(n_ci, k_out + lambda_out - 1, level_meta);
+    let ops = module
+        .ckks_ci_embed_tmp_bytes(&embedded, conversion_infos)
+        .max(module.ckks_round_tmp_bytes(&input, &embedded))
+        .max(module.ckks_replicated_bootstrap_tmp_bytes(&output, &input, ctx, atk_infos, tsk_infos, encapsulation_infos))
+        .max(module.ckks_copy_tmp_bytes(&wide_output, &output))
+        .max(module.ckks_ci_trace_tmp_bytes(&traced, &wide_output, conversion_infos));
+    let standard = [&embedded, &input, &output, &wide_output]
+        .iter()
+        .map(|layout| ct_bytes::<BE>(&layout.glwe_layout))
+        .sum::<usize>()
+        + ops;
+    let wide_input = ckks(n_ci, k_in + lambda_in, ct_in.meta());
+    let ci_ops = ci
+        .ckks_copy_tmp_bytes(&wide_input, ct_in)
+        .max(ci.ckks_round_tmp_bytes(ct_out, &traced));
+    let conjugate_invariant = ct_bytes::<BCI>(&wide_input.glwe_layout) + ct_bytes::<BCI>(&traced.glwe_layout) + ci_ops;
+    (standard, conjugate_invariant)
+}
+
+/// Bootstraps the conjugate-invariant replicated ciphertext `src` of degree
+/// `N` into `dst` through the standard ring of degree `2N` of `module`, where
+/// `ctx` was compiled: `src` is embedded, the standard bootstrapping refreshes
+/// it, and the relative trace brings it back. Each ring map runs at the
+/// shaping depth under the scale and rounds with shaping, so their key
+/// switches and the trace's halving stay off the data slots. `dst` ends at
+/// its own width and the leveled scale, which the standard bootstrapping
+/// reaches one bit wider for the trace to spend.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn ckks_replicated_ci_bootstrap_into<BE, BCI, Dst, Src, F, K, E, T>(
+    module: &Module<BE>,
+    ci: &Module<BCI>,
+    dst: &mut Dst,
+    src: &Src,
+    ctx: &ReplicatedBootstrapping<BE, F>,
+    workspace: &mut ReplicatedBootstrapWorkspace<BE>,
+    keys: &K,
+    embed_key: &GLWECIEmbedKeyPrepared<E, BE>,
+    trace_key: &GLWECITraceKeyPrepared<T, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
+    scratch_ci: &mut ScratchArena<'_, BCI>,
+) -> Result<()>
+where
+    BE: Backend<Ring = Standard>,
+    BCI: Backend<Ring = ConjugateInvariant, OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+        + for<'a> Backend<BufRef<'a> = BE::BufRef<'a>, BufMut<'a> = BE::BufMut<'a>>
+        + 'static,
+    Module<BE>: CKKSReplicatedBootstrapOps<BE>
+        + CKKSCopyOps<BE>
+        + CKKSRoundOps<BE>
+        + GLWECIEmbed<BE>
+        + GLWECITrace<BE>
+        + GLWEKeyswitch<BE>,
+    Module<BCI>: CKKSCopyOps<BCI> + CKKSRoundOps<BCI>,
+    Dst: GLWEToBackendMut<BCI> + CKKSCtBounds + SetCKKSInfos,
+    Src: GLWEToBackendRef<BCI> + CKKSCtBounds,
+    K: BootstrappingKeys<BE>,
+    E: Data,
+    T: Data,
+    GLWECIEmbedKeyPrepared<E, BE>: GGLWEPreparedToBackendRef<BE>,
+    GLWECITraceKeyPrepared<T, BE>: GGLWEPreparedToBackendRef<BE>,
+{
+    const OP: &str = "ckks_replicated_ci_bootstrap_into";
+    check_destination(OP, dst, src)?;
+    let plan = ctx.plan;
+    if src.slot_layout() != SlotLayout::Replicated(plan.layout) {
+        return Err(invalid(OP, "the source must have the bootstrapping's replicated layout"));
+    }
+    if module.n() != 2 * src.n().as_usize()
+        || ci.n() != src.n().as_usize()
+        || embed_key.n().as_usize() != module.n()
+        || trace_key.n().as_usize() != module.n()
+    {
+        return Err(invalid(
+            OP,
+            "takes a standard module and conversion keys of degree 2N, a conjugate-invariant module and ciphertexts of degree N",
+        ));
+    }
+    let (lambda_in, lambda_out) = ci_bootstrap_depths(&plan.layout, src.log_delta(), plan.level_log_delta);
+    let standard = |k: usize| GLWELayout {
+        n: module.n().into(),
+        k: k.into(),
+        ..src.glwe_layout()
+    };
+    let invariant = |k: usize| GLWELayout {
+        k: k.into(),
+        ..src.glwe_layout()
+    };
+    let (input, mut scratch) = scratch
+        .borrow()
+        .take_ckks_ciphertext_scratch(&standard(src.k().as_usize()), src.meta());
+    let mut input = input;
+
+    // 1. Into the standard ring, `lambda_in` bits under the scale.
+    scratch.scope(|scratch| -> Result<()> {
+        let (mut wide, mut scratch_ci) = scratch_ci
+            .borrow()
+            .take_ckks_ciphertext_scratch(&invariant(src.k().as_usize() + lambda_in), src.meta());
+        ci.ckks_copy(&mut wide, src, &mut scratch_ci)?;
+        wide.set_log_delta(src.log_delta() + lambda_in);
+        let wide = wide.rebind::<BE>();
+        let meta = GLWEPlaintextMeta {
+            slots: SlotsKind::Real,
+            ..wide.meta()
+        };
+        let (mut embedded, mut scratch) = scratch.take_ckks_ciphertext_scratch(&standard(wide.k().as_usize()), meta);
+        // `ckks_ci_embed` on the conjugate-invariant view carved from `scratch_ci`.
+        module.glwe_ci_embed(&mut embedded, &wide);
+        module.glwe_keyswitch_assign(&mut embedded, &embed_key.to_backend_ref(), &mut scratch);
+        input.set_k((embedded.log_budget() + src.log_delta()).into());
+        module.ckks_round_into(&mut input, &embedded, &mut scratch)
+    })?;
+
+    // 2. The standard bootstrapping, one bit wider than `dst`.
+    let level_meta = GLWEPlaintextMeta {
+        scale: Scale::Log(plan.level_log_delta),
+        ..src.meta()
+    };
+    let k_out = dst.k().as_usize() + 1;
+    let (mut output, mut scratch) = scratch.take_ckks_ciphertext_scratch(&standard(k_out), level_meta);
+    module.ckks_replicated_bootstrap_into(&mut output, &input, ctx, workspace, keys, &mut scratch)?;
+
+    // 3. Back by the relative trace, `lambda_out` bits under the scale.
+    let (mut wide, mut scratch) = scratch.take_ckks_ciphertext_scratch(&standard(k_out + lambda_out), output.meta());
+    module.ckks_copy(&mut wide, &output, &mut scratch)?;
+    wide.set_log_delta(output.log_delta() + lambda_out);
+    // `ckks_ci_trace` into the conjugate-invariant view carved from `scratch_ci`:
+    // the trace doubles the real part, which one bit less of budget halves.
+    let (mut switched, mut scratch) = scratch.take_ckks_ciphertext_scratch(&wide.glwe_layout(), wide.meta());
+    module.glwe_keyswitch(&mut switched, &wide, &trace_key.to_backend_ref(), &mut scratch);
+    let meta = GLWEPlaintextMeta {
+        slots: SlotsKind::Real,
+        ..switched.meta()
+    };
+    let (traced, mut scratch_ci) = scratch_ci
+        .borrow()
+        .take_ckks_ciphertext_scratch(&invariant(k_out + lambda_out - 1), meta);
+    let mut traced = traced.rebind::<BE>();
+    traced.set_log_budget(switched.log_budget() - 1);
+    module.glwe_ci_trace(&mut traced, &switched, &mut scratch);
+    let traced = traced.rebind::<BCI>();
+    dst.set_k((traced.log_budget() + plan.level_log_delta).into());
+    ci.ckks_round_into(dst, &traced, &mut scratch_ci)
 }

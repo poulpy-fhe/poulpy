@@ -567,6 +567,15 @@ macro_rules! conjugate_invariant_ckks_test_suite {
                 );
             }
             #[test]
+            fn ckks_ci_replicated_bootstrap() -> anyhow::Result<()> {
+                let params = $params;
+                $crate::test_suite::replicated::test_replicated_ci_bootstrap::<$backend, $standard>(
+                    params,
+                    Module::<$backend>::new(params.n as u64),
+                    Module::<$standard>::new((2 * params.n) as u64),
+                )
+            }
+            #[test]
             fn ckks_ci_fold() {
                 let params = $params;
                 $crate::test_suite::conjugate_invariant::test_conjugate_invariant_fold(
