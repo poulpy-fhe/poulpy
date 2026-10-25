@@ -10,7 +10,7 @@ use anyhow::Context;
 use bytemuck::Pod;
 use num_traits::FloatConst;
 use poulpy_core::layouts::IntPolyInfos;
-use poulpy_hal::layouts::{Backend, ScratchArena};
+use poulpy_hal::layouts::{Backend, Ring, ScratchArena};
 
 use crate::{
     CKKSPlaintextToBackendMut, CKKSPlaintextToBackendRef, GLWEPlaintextInfos, SetCKKSInfos, SlotLayout,
@@ -19,6 +19,7 @@ use crate::{
         copy_encoding_buffer_into_host, copy_encoding_buffer_into_reim_host, copy_host_into_encoding_buffer,
         copy_reim_host_into_encoding_buffer, download_from_encoding_buffer, upload_into_encoding_buffer,
     },
+    shaping::ShapingRing,
 };
 
 /// Scalar types accepted by CKKS encoding operations.
@@ -115,12 +116,12 @@ pub trait CKKSEncodingHostOps<BE: Backend, F: CKKSEncodingScalar>: CKKSEncodingO
                 re.len(),
                 im.len()
             );
+            let plaintext_slots = slots_of_degree::<BE>(pt.n().as_usize());
             ckks_ensure!(
-                (2usize << layout.log_k()) << layout.log_r() <= pt.n().as_usize(),
-                "{} values of period {} need more than the {} slots of the plaintext",
+                (1usize << layout.log_k()) << layout.log_r() <= plaintext_slots,
+                "{} values of period {} need more than the {plaintext_slots} slots of the plaintext",
                 1usize << layout.log_k(),
                 1usize << layout.log_r(),
-                pt.n().as_usize() / 2
             );
             let (period, slots) = (1usize << layout.log_r(), re.len() << layout.log_r());
             let required = CKKSEncodingBuffer::<BE::OwnedBuf, F>::bytes_of(2 * slots);
@@ -192,12 +193,12 @@ pub trait CKKSEncodingHostOps<BE: Backend, F: CKKSEncodingScalar>: CKKSEncodingO
                 re.len(),
                 im.len()
             );
+            let plaintext_slots = slots_of_degree::<BE>(pt.n().as_usize());
             ckks_ensure!(
-                (2usize << layout.log_k()) << layout.log_r() <= pt.n().as_usize(),
-                "{} values of period {} need more than the {} slots of the plaintext",
+                (1usize << layout.log_k()) << layout.log_r() <= plaintext_slots,
+                "{} values of period {} need more than the {plaintext_slots} slots of the plaintext",
                 1usize << layout.log_k(),
                 1usize << layout.log_r(),
-                pt.n().as_usize() / 2
             );
             let (period, slots) = (1usize << layout.log_r(), re.len() << layout.log_r());
             let required = CKKSEncodingBuffer::<BE::OwnedBuf, F>::bytes_of(2 * slots);
@@ -255,6 +256,9 @@ pub trait CKKSEncodingHostOps<BE: Backend, F: CKKSEncodingScalar>: CKKSEncodingO
     /// zero on the guards. `π_S`, one on the data class, lies in `R[Y]`,
     /// `Y = X^(N/(2R))`, with coefficients `cos(π·j/(2R))/R`, and `i·π_S = Y^R·π_S`,
     /// so the constant has `2R` coefficients, quantized with shaped rounding.
+    /// `π_S` is invariant, so the conjugate-invariant ring, where `Y = X^(N/R)`,
+    /// holds `re*π_S` by its first `R` coefficients and drops `im`, as its slot
+    /// encoder does.
     fn ckks_encode_masked_constant_into<P>(&self, pt: &mut P, re: F, im: F, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         P: CKKSPlaintextToBackendMut<BE> + IntPolyInfos + SetCKKSInfos,
@@ -269,12 +273,15 @@ pub trait CKKSEncodingHostOps<BE: Backend, F: CKKSEncodingScalar>: CKKSEncodingO
             .recip();
         let pi_s = |j: usize| F::ckks_root_of_unity(j as u64, order).0 * r_inv;
         let n = pt.n().as_usize();
+        let period = match ShapingRing::of::<BE::Ring>() {
+            ShapingRing::Standard => 2 * r,
+            ShapingRing::ConjugateInvariant => r,
+        };
         ckks_ensure!(
-            n.is_multiple_of(2 * r),
-            "a masked constant of period {r} needs a degree multiple of {}, got {n}",
-            2 * r
+            n.is_multiple_of(period),
+            "a masked constant of period {r} needs a degree multiple of {period}, got {n}"
         );
-        let stride = n / (2 * r);
+        let stride = n / period;
         let required = CKKSEncodingBuffer::<BE::OwnedBuf, F>::bytes_of(n);
         ckks_ensure!(
             scratch.available() >= required,
@@ -288,6 +295,9 @@ pub trait CKKSEncodingHostOps<BE: Backend, F: CKKSEncodingScalar>: CKKSEncodingO
                     return F::zero();
                 }
                 let j = t / stride;
+                if period == r {
+                    return re * pi_s(j);
+                }
                 let shifted = if j >= r { pi_s(j - r) } else { -pi_s(j + r) };
                 re * pi_s(j) + im * shifted
             });
@@ -338,4 +348,10 @@ where
     F: CKKSEncodingScalar,
     T: CKKSEncodingOps<BE, F>,
 {
+}
+
+/// Slots of a plaintext of degree `n` on the ring of `BE`: `n/2` complex
+/// slots on the standard ring and `n` real ones on the conjugate-invariant ring.
+fn slots_of_degree<BE: Backend>(n: usize) -> usize {
+    n * BE::Ring::CYCLOTOMIC_ORDER_FACTOR as usize / 4
 }

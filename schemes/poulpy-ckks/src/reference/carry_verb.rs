@@ -13,7 +13,7 @@ use poulpy_core::layouts::{Base2K, GLWEPlaintextLayout, GLWEToBackendMut, IntPol
 use poulpy_hal::layouts::{Backend, ScratchArena, encode_i128_by_limb};
 
 use crate::SlotsKind;
-use crate::{GLWEPlaintextMeta, ReplicatedLayout, Scale, SlotLayout, numerics::CKKSFloat, scalar::Quad};
+use crate::{GLWEPlaintextMeta, ReplicatedLayout, Scale, SlotLayout, numerics::CKKSFloat, scalar::Quad, shaping::ShapingRing};
 
 /// Largest number of coefficients of the one of a slot layout, `2R`.
 const MAX_ONE_COEFFS: usize = 2 << ReplicatedLayout::MAX_LOG_R;
@@ -27,7 +27,9 @@ pub(crate) fn one_pt_tmp_bytes<BE: Backend>(res_size: usize) -> usize {
 /// monomial `2` at scale `2`, added as a constant. On a replicated layout it is
 /// the masked one `π_S` at scale `2^log_delta`: one on the data slots and zero
 /// on the guards, a plaintext of degree `2R` in `Y = X^(N/(2R))` with
-/// coefficients `cos(π·j/(2R))/R`, quantized with shaped rounding.
+/// coefficients `cos(π·j/(2R))/R`, quantized with shaped rounding. It is
+/// invariant, and the conjugate-invariant ring holds it as a plaintext of
+/// degree `R`, its first `R` coefficients.
 pub(crate) fn take_one_pt<'a, BE: Backend + 'a>(
     base2k: Base2K,
     slot_layout: SlotLayout,
@@ -47,33 +49,31 @@ pub(crate) fn take_one_pt<'a, BE: Backend + 'a>(
             (1, 1, meta)
         }
         SlotLayout::Replicated(layout) => {
-            if !crate::shaping::supports_ring::<BE>() {
-                return Err(crate::CKKSCompositionError::InvalidOperand {
-                    op: "ckks_one",
-                    reason: crate::shaping::STANDARD_RING_ONLY.into(),
-                }
-                .into());
-            }
             let r = 1usize << layout.log_r();
+            let ring = ShapingRing::of::<BE::Ring>();
+            let m = match ring {
+                ShapingRing::Standard => 2 * r,
+                ShapingRing::ConjugateInvariant => r,
+            };
             let r_inv = Quad::from_usize(r).expect("the period is a small integer").recip();
             let mut coeffs = [Quad::from_usize(0).expect("zero"); MAX_ONE_COEFFS];
-            for (j, c) in coeffs[..2 * r].iter_mut().enumerate() {
+            for (j, c) in coeffs[..m].iter_mut().enumerate() {
                 *c = Quad::ckks_root_of_unity(j as u64, layout.log_r() as u32 + 2).0 * r_inv;
             }
             let (mut low, mut h, mut gh) = ([0i64; MAX_ONE_COEFFS], [0i64; MAX_ONE_COEFFS], [0i64; MAX_ONE_COEFFS]);
             crate::reference::encoding::shaped_quantize_into(
-                &coeffs[..2 * r],
+                &coeffs[..m],
                 &layout,
                 log_delta,
                 1,
-                SlotsKind::Complex,
-                &mut data[..2 * r],
-                &mut low[..2 * r],
-                &mut h[..2 * r],
-                &mut gh[..2 * r],
+                ring,
+                &mut data[..m],
+                &mut low[..m],
+                &mut h[..m],
+                &mut gh[..m],
             )?;
-            // Embedded at the backend's smallest plaintext degree when `2R` is below it.
-            let n = (2 * r).max(BE::MIN_DEGREE);
+            // Embedded at the backend's smallest plaintext degree when `m` is below it.
+            let n = m.max(BE::MIN_DEGREE);
             if n > MAX_ONE_COEFFS {
                 return Err(crate::CKKSCompositionError::InvalidOperand {
                     op: "ckks_one",
@@ -81,9 +81,9 @@ pub(crate) fn take_one_pt<'a, BE: Backend + 'a>(
                 }
                 .into());
             }
-            let stride = n / (2 * r);
+            let stride = n / m;
             if stride > 1 {
-                for j in (1..2 * r).rev() {
+                for j in (1..m).rev() {
                     data[j * stride] = data[j];
                     data[j] = 0;
                 }

@@ -87,11 +87,17 @@ impl ShapingProfile {
     /// ring shapes with `Y^s*U`, the smallest shift `s < 2R` that makes `U`
     /// invariant, and refuses a `U` that has none.
     pub fn for_ring<R: Ring>(layout: &ReplicatedLayout) -> CKKSResult<Self> {
-        match ShapingRing::of::<R>() {
+        Self::with_ring(layout, ShapingRing::of::<R>())
+    }
+
+    /// [`Self::for_ring`] for the shaping ring `ring`.
+    pub fn with_ring(layout: &ReplicatedLayout, ring: ShapingRing) -> CKKSResult<Self> {
+        match ring {
             ShapingRing::Standard => Ok(Self::new(layout)),
             ShapingRing::ConjugateInvariant => {
                 let u = layout.shaping();
-                let shifted = (0..u.len()).map(|s| (s, monomial_shift(u, s))).find(|(_, v)| is_invariant(v));
+                let m = u.len();
+                let shifted = (0..m).map(|s| (s, monomial_shift(u, s))).find(|(_, v)| is_invariant(&v[..m]));
                 let Some((shift, v)) = shifted else {
                     return Err(CKKSCompositionError::InvalidOperand {
                         op: "ShapingProfile::for_ring",
@@ -99,7 +105,12 @@ impl ShapingProfile {
                     }
                     .into());
                 };
-                Ok(Self::from_coeffs(layout.log_r(), ShapingRing::ConjugateInvariant, shift, &v))
+                Ok(Self::from_coeffs(
+                    layout.log_r(),
+                    ShapingRing::ConjugateInvariant,
+                    shift,
+                    &v[..m],
+                ))
             }
         }
     }
@@ -238,10 +249,10 @@ impl ShapingProfile {
     }
 }
 
-/// `Y^s*u` in `Z[Y]/(Y^m+1)`, `m = u.len()`.
-fn monomial_shift(u: &[i16], s: usize) -> Vec<i16> {
+/// `Y^s*u` in `Z[Y]/(Y^m+1)`, `m = u.len()`, in the first `m` entries.
+fn monomial_shift(u: &[i16], s: usize) -> [i16; MAX_COEFFS] {
     let m = u.len();
-    let mut out = vec![0; m];
+    let mut out = [0; MAX_COEFFS];
     for (i, &c) in u.iter().enumerate() {
         let k = i + s;
         out[k % m] = if (k / m).is_multiple_of(2) { c } else { -c };

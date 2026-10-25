@@ -14,6 +14,7 @@
 //! | [`test_replicated_eval_mod_is_shaped`] | EvalMod with masked constants and a shaped last squaring keeps the message far above CKKS |
 //! | [`test_replicated_polynomials_are_shaped`] | monomial, Chebyshev and complex polynomials keep the data slots far above CKKS |
 //! | [`test_replicated_automorphisms_are_shaped`] | rotations and conjugation keep the data slots far above CKKS |
+//! | [`test_replicated_rotations_are_shaped`] | rotations keep the data slots far above CKKS, on either ring |
 //! | [`test_replicated_rotations_are_admissible`] | rotations by a non-multiple of the period |
 //! | [`test_replicated_masked_constants`] | a masked constant fills the data slots only, and adds to a ciphertext |
 //! | [`test_replicated_conversions_round_trip`] | CKKS to the replicated layout and back keeps the input's precision |
@@ -36,8 +37,8 @@ use poulpy_hal::{
 };
 
 use super::helpers::{
-    PT_PREC, TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, ckks_pt_cst_full, ckks_spec, gen_atk,
-    gen_sk, gen_sk_with_raw, gen_tsk, upload_pt,
+    PT_PREC, TestContextBackend, TestContextModule, TestContextSharedModule, TestScalar, alloc_ct, alloc_scratch,
+    ckks_pt_cst_full, ckks_spec, gen_atk, gen_sk, gen_sk_with_raw, gen_tsk, upload_pt,
 };
 use crate::{
     CKKSInfos, CoeffsMeta, GLWEPlaintextInfos, GLWEPlaintextMeta, ReplicatedLayout, Scale, SetCKKSInfos, SlotLayout, SlotsKind,
@@ -55,7 +56,7 @@ use crate::{
     oep::CKKSEncapsulatedModUpImpl,
     polynomial::{Basis, ComplexPolynomial, EncodeBSGS, Polynomial, SplitStrategy},
     reference::replicated::{wide_gather_trace, wide_onto_replicated},
-    shaping::ShapingUnit,
+    shaping::{ShapingRing, ShapingUnit},
     test_suite::CKKSTestParams,
 };
 
@@ -66,18 +67,24 @@ fn layout() -> ReplicatedLayout {
     ShapingUnit::U32_45.layout(LOG_K, 24).unwrap()
 }
 
-fn batch<F: TestScalar>(len: usize) -> (Vec<F>, Vec<F>) {
+/// Whether the ring of `BE` has real slots, where batches have no imaginary part.
+fn real_slots<BE: Backend>() -> bool {
+    ShapingRing::of::<BE::Ring>() == ShapingRing::ConjugateInvariant
+}
+
+fn batch<BE: Backend, F: TestScalar>(len: usize) -> (Vec<F>, Vec<F>) {
     let value = |x: f64| F::from_f64(x).unwrap();
+    let im = if real_slots::<BE>() { 0.0 } else { 0.7 };
     (
         (0..len).map(|i| value(0.9 * (i as f64 + 0.3).cos())).collect(),
-        (0..len).map(|i| value(0.7 * (2.0 * i as f64 + 0.1).sin())).collect(),
+        (0..len).map(|i| value(im * (2.0 * i as f64 + 0.1).sin())).collect(),
     )
 }
 
 fn plaintext<BE>(params: &CKKSTestParams, module: &Module<BE>, slot_layout: SlotLayout, len: usize) -> CKKSPlaintextOwned<BE>
 where
     BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextSharedModule<BE>,
 {
     let mut pt = module.ckks_pt_vec_alloc(
         slots_of(module, slot_layout, len),
@@ -117,7 +124,7 @@ fn decode<BE, F>(module: &Module<BE>, pt: &CKKSPlaintextOwned<BE>, len: usize) -
 where
     BE: TestContextBackend,
     F: TestScalar,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F>,
+    Module<BE>: TestContextSharedModule<BE> + CKKSEncodingOps<BE, F>,
 {
     let slots = module.ckks_slots_of_degree(pt.n().as_usize());
     let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_reim_tmp_bytes(slots));
@@ -135,7 +142,7 @@ fn encoded<BE, F>(module: &Module<BE>, pt: &mut CKKSPlaintextOwned<BE>, re: &[F]
 where
     BE: TestContextBackend,
     F: TestScalar,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F>,
+    Module<BE>: TestContextSharedModule<BE> + CKKSEncodingOps<BE, F>,
 {
     let slots = module.ckks_slots_of_degree(pt.n().as_usize());
     let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_reim_tmp_bytes(slots));
@@ -148,20 +155,19 @@ where
     Ok(())
 }
 
-pub fn test_replicated_encoding_is_shaped<BE, F, E>(
+pub fn test_replicated_encoding_is_shaped<BE, F>(
     params: CKKSTestParams,
     module: &Module<BE>,
-    _host_module: &Module<HostBytesBackend>,
+    _host_module: &Module<HostBytesBackend<BE::Ring>>,
 ) -> Result<()>
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F>,
+    Module<BE>: TestContextSharedModule<BE> + CKKSEncodingOps<BE, F>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
-    let (re, im) = batch::<F>(1 << LOG_K);
+    let (re, im) = batch::<BE, F>(1 << LOG_K);
     let mut full = plaintext(&params, module, SlotLayout::Full, re.len());
     encoded(module, &mut full, &re, &im)?;
     let mut shaped = plaintext(&params, module, SlotLayout::Replicated(layout()), re.len());
@@ -178,21 +184,20 @@ where
     Ok(())
 }
 
-pub fn test_replicated_unit_shaping_encodes_plainly<BE, F, E>(
+pub fn test_replicated_unit_shaping_encodes_plainly<BE, F>(
     params: CKKSTestParams,
     module: &Module<BE>,
-    _host_module: &Module<HostBytesBackend>,
+    _host_module: &Module<HostBytesBackend<BE::Ring>>,
 ) -> Result<()>
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F>,
+    Module<BE>: TestContextSharedModule<BE> + CKKSEncodingOps<BE, F>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let unit = ReplicatedLayout::new(LOG_K + 2, 1, 0, &[1, 0, 0, 0])?;
-    let (re, im) = batch::<F>(1 << unit.log_k());
+    let (re, im) = batch::<BE, F>(1 << unit.log_k());
     let mut shaped = plaintext(&params, module, SlotLayout::Replicated(unit), re.len());
     encoded(module, &mut shaped, &re, &im)?;
 
@@ -213,21 +218,20 @@ where
     Ok(())
 }
 
-pub fn test_replicated_encryption_is_shaped<BE, F, E>(
+pub fn test_replicated_encryption_is_shaped<BE, F>(
     params: CKKSTestParams,
     module: &Module<BE>,
-    host_module: &Module<HostBytesBackend>,
+    host_module: &Module<HostBytesBackend<BE::Ring>>,
 ) -> Result<()>
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F>,
+    Module<BE>: TestContextSharedModule<BE> + CKKSEncodingOps<BE, F>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let sk = gen_sk(&params, module, host_module, [0u8; 32]);
-    let (re, im) = batch::<F>(1 << LOG_K);
+    let (re, im) = batch::<BE, F>(1 << LOG_K);
     let mut bits = Vec::new();
     for slot_layout in [SlotLayout::Full, SlotLayout::Replicated(layout())] {
         let mut pt = plaintext(&params, module, slot_layout, re.len());
@@ -258,20 +262,19 @@ where
     Ok(())
 }
 
-pub fn test_replicated_encoding_rejects_batch_size<BE, F, E>(
+pub fn test_replicated_encoding_rejects_batch_size<BE, F>(
     params: CKKSTestParams,
     module: &Module<BE>,
-    _host_module: &Module<HostBytesBackend>,
+    _host_module: &Module<HostBytesBackend<BE::Ring>>,
 ) -> Result<()>
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F>,
+    Module<BE>: TestContextSharedModule<BE> + CKKSEncodingOps<BE, F>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
-    let (re, im) = batch::<F>(2 << LOG_K);
+    let (re, im) = batch::<BE, F>(2 << LOG_K);
     let mut pt = plaintext(&params, module, SlotLayout::Replicated(layout()), 1 << LOG_K);
     assert!(encoded(module, &mut pt, &re, &im).is_err());
     Ok(())
@@ -306,7 +309,7 @@ fn encrypt_batch<BE, F>(
 where
     BE: TestContextBackend,
     F: TestScalar,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F>,
+    Module<BE>: TestContextSharedModule<BE> + CKKSEncodingOps<BE, F>,
 {
     let mut pt = plaintext(params, module, slot_layout, values.0.len());
     encoded(module, &mut pt, values.0, values.1)?;
@@ -327,7 +330,7 @@ fn decrypt_batch<BE, F>(
 where
     BE: TestContextBackend,
     F: TestScalar,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F>,
+    Module<BE>: TestContextSharedModule<BE> + CKKSEncodingOps<BE, F>,
 {
     // A few bits of budget hold the unit-scale message.
     let budget = ct.log_budget().min(10);
@@ -343,13 +346,15 @@ where
     decode::<BE, F>(module, &pt, len)
 }
 
-/// Unit-modulus operands, so that the chained products stay bounded.
-fn unit_batch<F: TestScalar>(len: usize, step: usize) -> (Vec<F>, Vec<F>) {
+/// Unit-modulus operands, so that the chained products stay bounded. Real
+/// slots take the real parts, of modulus at most one.
+fn unit_batch<BE: Backend, F: TestScalar>(len: usize, step: usize) -> (Vec<F>, Vec<F>) {
     let angle = |i: usize| 0.37 * (i + 1) as f64 + 1.1 * step as f64;
     let value = |x: f64| F::from_f64(x).unwrap();
+    let real = real_slots::<BE>();
     (
         (0..len).map(|i| value(angle(i).cos())).collect(),
-        (0..len).map(|i| value(angle(i).sin())).collect(),
+        (0..len).map(|i| value(if real { 0.0 } else { angle(i).sin() })).collect(),
     )
 }
 
@@ -364,16 +369,16 @@ fn complex_mul<F: TestScalar>(a: (&[F], &[F]), b: (&[F], &[F])) -> (Vec<F>, Vec<
 fn product_chain<BE, F>(
     params: &CKKSTestParams,
     module: &Module<BE>,
-    host_module: &Module<HostBytesBackend>,
+    host_module: &Module<HostBytesBackend<BE::Ring>>,
     slot_layout: SlotLayout,
     product: Product,
 ) -> Result<f64>
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     F: TestScalar,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F>,
+    Module<BE>: TestContextSharedModule<BE> + CKKSEncodingOps<BE, F>,
 {
     let len = 1 << LOG_K;
     let (sk_raw, sk) = gen_sk_with_raw(params, module, host_module, [0u8; 32]);
@@ -381,7 +386,7 @@ where
     let tsk = gen_tsk(params, module, &sk_raw, &mut scratch.borrow());
     let k = LOG_DELTA * (STEPS + 2);
 
-    let mut want = unit_batch::<F>(len, 0);
+    let mut want = unit_batch::<BE, F>(len, 0);
     let mut acc = encrypt_batch(params, module, &sk, slot_layout, (&want.0, &want.1), k, 1)?;
     let cst = ckks_pt_cst_full::<BE, F>(
         host_module,
@@ -394,7 +399,7 @@ where
     );
     let zero = F::zero();
     for step in 1..=STEPS {
-        let operand = unit_batch::<F>(len, step);
+        let operand = unit_batch::<BE, F>(len, step);
         let fresh = encrypt_batch(params, module, &sk, slot_layout, (&operand.0, &operand.1), k, step as u8 + 1)?;
         let mut pt = plaintext(params, module, slot_layout, len);
         encoded(module, &mut pt, &operand.0, &operand.1)?;
@@ -445,18 +450,17 @@ where
     Ok(precision((&got.0, &got.1), (&want.0, &want.1)))
 }
 
-pub fn test_replicated_products_are_shaped<BE, F, E>(
+pub fn test_replicated_products_are_shaped<BE, F>(
     params: CKKSTestParams,
     module: &Module<BE>,
-    host_module: &Module<HostBytesBackend>,
+    host_module: &Module<HostBytesBackend<BE::Ring>>,
 ) -> Result<()>
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F>,
+    Module<BE>: TestContextSharedModule<BE> + CKKSEncodingOps<BE, F>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     use Product::*;
     for product in [
@@ -479,23 +483,22 @@ where
     Ok(())
 }
 
-pub fn test_replicated_layouts_do_not_mix<BE, F, E>(
+pub fn test_replicated_layouts_do_not_mix<BE, F>(
     params: CKKSTestParams,
     module: &Module<BE>,
-    host_module: &Module<HostBytesBackend>,
+    host_module: &Module<HostBytesBackend<BE::Ring>>,
 ) -> Result<()>
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F>,
+    Module<BE>: TestContextSharedModule<BE> + CKKSEncodingOps<BE, F>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
     let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
-    let values = unit_batch::<F>(1 << LOG_K, 0);
+    let values = unit_batch::<BE, F>(1 << LOG_K, 0);
     let k = 3 * LOG_DELTA;
     let shaped = encrypt_batch(
         &params,
@@ -529,27 +532,26 @@ where
     Ok(())
 }
 
-pub fn test_replicated_plain_rounding_is_rejected<BE, F, E>(
+pub fn test_replicated_plain_rounding_is_rejected<BE, F>(
     params: CKKSTestParams,
     module: &Module<BE>,
-    host_module: &Module<HostBytesBackend>,
+    host_module: &Module<HostBytesBackend<BE::Ring>>,
 ) -> Result<()>
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>
+    Module<BE>: TestContextSharedModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSAffineOps<BE>
         + CKKSDotProductOps<BE>
         + CKKSLinearTransformationOps<BE>
         + GLWEMulPreparedPlainSum<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
-    let values = unit_batch::<F>(1 << LOG_K, 0);
+    let values = unit_batch::<BE, F>(1 << LOG_K, 0);
     let k = 3 * LOG_DELTA;
     let shaped = encrypt_batch(
         &params,
@@ -676,7 +678,7 @@ where
         slot_layout: SlotLayout::Replicated(oversized),
         ..big.meta()
     });
-    let many = unit_batch::<F>(params.n / 2, 0);
+    let many = unit_batch::<BE, F>(params.n / 2, 0);
     assert!(encoded(module, &mut big, &many.0, &many.1).is_err());
     Ok(())
 }
@@ -816,7 +818,7 @@ where
     let mut scratch = alloc_scratch(&params, module);
     let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
     let k = 7 * LOG_DELTA;
-    let values = unit_batch::<F>(1 << LOG_K, 0);
+    let values = unit_batch::<BE, F>(1 << LOG_K, 0);
     let x = encrypt_batch(
         &params,
         module,
@@ -874,7 +876,7 @@ where
     atks.insert(gal, gen_atk(params, module, gal, &sk_raw, &mut scratch.borrow()));
     let conj = gen_atk(params, module, -1, &sk_raw, &mut scratch.borrow());
 
-    let values = unit_batch::<F>(len, 0);
+    let values = unit_batch::<BE, F>(len, 0);
     let k = 3 * LOG_DELTA;
     let ct = encrypt_batch(params, module, &sk, slot_layout, (&values.0, &values.1), k, 1)?;
     let mut rotated = alloc_ct(params, module, k);
@@ -913,18 +915,79 @@ where
     Ok(())
 }
 
-pub fn test_replicated_rotations_are_admissible<BE, F, E>(
-    params: CKKSTestParams,
+/// Precision after a rotation into a new ciphertext and a rotation in place,
+/// against `v[i + 2]`.
+fn rotation_chain<BE, F>(
+    params: &CKKSTestParams,
     module: &Module<BE>,
-    host_module: &Module<HostBytesBackend>,
-) -> Result<()>
+    host_module: &Module<HostBytesBackend<BE::Ring>>,
+    slot_layout: SlotLayout,
+) -> Result<f64>
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    Module<BE>: TestContextSharedModule<BE> + CKKSEncodingOps<BE, F>,
+{
+    let len = 1 << LOG_K;
+    let step = match slot_layout {
+        SlotLayout::Replicated(layout) => 1i64 << layout.log_r(),
+        SlotLayout::Full => 1,
+    };
+    let (sk_raw, sk) = gen_sk_with_raw(params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(params, module);
+    let gal = module.ckks_galois_element(step);
+    let atks = HashMap::from([(gal, gen_atk(params, module, gal, &sk_raw, &mut scratch.borrow()))]);
+
+    let values = unit_batch::<BE, F>(len, 0);
+    let k = 3 * LOG_DELTA;
+    let ct = encrypt_batch(params, module, &sk, slot_layout, (&values.0, &values.1), k, 1)?;
+    let mut out = alloc_ct(params, module, k);
+    let s = &mut scratch.borrow();
+    module.ckks_rotate_into(&mut out, &ct, step, &atks, s)?;
+    module.ckks_rotate_assign(&mut out, step, &atks, s)?;
+    assert_eq!(out.slot_layout(), slot_layout);
+
+    let want_re: Vec<F> = (0..len).map(|i| values.0[(i + 2) % len]).collect();
+    let want_im: Vec<F> = (0..len).map(|i| values.1[(i + 2) % len]).collect();
+    let got = decrypt_batch::<BE, F>(params, module, &sk, &out, len);
+    Ok(precision((&got.0, &got.1), (&want_re, &want_im)))
+}
+
+/// The rotations of [`test_replicated_automorphisms_are_shaped`], on any ring.
+pub fn test_replicated_rotations_are_shaped<BE, F>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend<BE::Ring>>,
+) -> Result<()>
+where
+    BE: TestContextBackend,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextSharedModule<BE> + CKKSEncodingOps<BE, F>,
+    F: TestScalar,
+{
+    let full = rotation_chain::<BE, F>(&params, module, host_module, SlotLayout::Full)?;
+    let shaped = rotation_chain::<BE, F>(&params, module, host_module, SlotLayout::Replicated(layout()))?;
+    assert!(
+        shaped >= full + 15.0,
+        "rotations at 2^{LOG_DELTA}: {shaped:.2} bits against {full:.2} for a full layout"
+    );
+    Ok(())
+}
+
+pub fn test_replicated_rotations_are_admissible<BE, F>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend<BE::Ring>>,
+) -> Result<()>
+where
+    BE: TestContextBackend,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextSharedModule<BE> + CKKSEncodingOps<BE, F>,
+    F: TestScalar,
 {
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
@@ -933,7 +996,7 @@ where
         let gal = module.ckks_galois_element(r);
         atks.insert(gal, gen_atk(&params, module, gal, &sk_raw, &mut scratch.borrow()));
     }
-    let values = unit_batch::<F>(1 << LOG_K, 0);
+    let values = unit_batch::<BE, F>(1 << LOG_K, 0);
     let mut ct = encrypt_batch(
         &params,
         module,
@@ -951,22 +1014,22 @@ where
     Ok(())
 }
 
-pub fn test_replicated_masked_constants<BE, F, E>(
+pub fn test_replicated_masked_constants<BE, F>(
     params: CKKSTestParams,
     module: &Module<BE>,
-    host_module: &Module<HostBytesBackend>,
+    host_module: &Module<HostBytesBackend<BE::Ring>>,
 ) -> Result<()>
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F>,
+    Module<BE>: TestContextSharedModule<BE> + CKKSEncodingOps<BE, F>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let len = 1usize << LOG_K;
     let slots = len << layout().log_r();
-    let (c_re, c_im) = (F::from_f64(0.3).unwrap(), F::from_f64(-0.2).unwrap());
+    let c_im = if real_slots::<BE>() { 0.0 } else { -0.2 };
+    let (c_re, c_im) = (F::from_f64(0.3).unwrap(), F::from_f64(c_im).unwrap());
     let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_reim_tmp_bytes(slots));
     let mut cst = plaintext(&params, module, SlotLayout::Replicated(layout()), len);
     module.ckks_encode_masked_constant_into(&mut cst, c_re, c_im, &mut scratch.borrow())?;
@@ -984,7 +1047,7 @@ where
     }
 
     let sk = gen_sk(&params, module, host_module, [0u8; 32]);
-    let values = unit_batch::<F>(len, 0);
+    let values = unit_batch::<BE, F>(len, 0);
     let mut ct = encrypt_batch(
         &params,
         module,
@@ -1028,7 +1091,10 @@ where
     let got = decrypt_batch::<BE, F>(&params, module, &sk, &ct, len);
     let want_re: Vec<F> = values.0.iter().map(|&x| x + F::one()).collect();
     let bits = precision((&got.0, &got.1), (&want_re, &values.1));
-    assert!(bits >= LOG_DELTA as f64 - 4.0, "masked one of period 2: {bits:.2} bits");
+    // `1 - Y + Y^3` barely suppresses, so the precision stays near the
+    // scale's, about half a bit lower on the conjugate-invariant ring, whose
+    // products have twice the variance.
+    assert!(bits >= LOG_DELTA as f64 - 5.0, "masked one of period 2: {bits:.2} bits");
     Ok(())
 }
 
@@ -1104,7 +1170,7 @@ where
         atks.insert(gal, gen_atk(&params, module, gal, &sk_raw, &mut scratch.borrow()));
     }
 
-    let values = unit_batch::<F>(len, 0);
+    let values = unit_batch::<BE, F>(len, 0);
     let k = log_delta_ckks + 3 * log_delta_diag;
     let ckks = encrypt_full(&params, module, &sk, (&values.0, &values.1), log_delta_ckks, k)?;
     let fresh = decrypt_batch::<BE, F>(&params, module, &sk, &ckks, len);
@@ -1287,7 +1353,7 @@ where
         let gal = module.ckks_galois_element(r);
         atks.insert(gal, gen_atk(&params, module, gal, &sk_raw, &mut scratch.borrow()));
     }
-    let values = unit_batch::<F>(len, 0);
+    let values = unit_batch::<BE, F>(len, 0);
     let want = apply_matrix((&values.0, &values.1));
     let k = 40 + 2 * log_delta_diag;
     let mut scratch = ScratchOwned::<BE>::alloc(1 << 24);
@@ -1567,7 +1633,7 @@ where
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
 
     let len = 1 << layout.log_k();
-    let values = unit_batch::<F>(len, 0);
+    let values = unit_batch::<BE, F>(len, 0);
     let input = encrypt_batch(
         &params,
         module,

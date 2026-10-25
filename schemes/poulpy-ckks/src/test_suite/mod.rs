@@ -268,6 +268,17 @@ macro_rules! ckks_backend_rank2_test_suite {
                 };
             }
 
+            // Tests shared with the conjugate-invariant suite, which take no encoder.
+            macro_rules! run_ring_test_result {
+                ($name:ident, $path:path) => {
+                    #[test]
+                    fn $name() -> Result<()> {
+                        use $path as __test_fn;
+                        __test_fn::<$backend, $scalar>($params, &*MODULE, &*HOST_MODULE)
+                    }
+                };
+            }
+
             run_test!(encrypt_decrypt, $crate::test_suite::encryption::test_encrypt_decrypt);
             run_test!(add_ct_aligned, $crate::test_suite::add::test_add_ct_aligned);
             run_test!(add_ct_delta_a_lt_b, $crate::test_suite::add::test_add_ct_delta_a_lt_b);
@@ -304,31 +315,31 @@ macro_rules! ckks_backend_rank2_test_suite {
                 round_rejects_incompatible_layouts,
                 $crate::test_suite::round::test_round_rejects_incompatible_layouts
             );
-            run_test_result!(
+            run_ring_test_result!(
                 replicated_encoding_is_shaped,
                 $crate::test_suite::replicated::test_replicated_encoding_is_shaped
             );
-            run_test_result!(
+            run_ring_test_result!(
                 replicated_unit_shaping_encodes_plainly,
                 $crate::test_suite::replicated::test_replicated_unit_shaping_encodes_plainly
             );
-            run_test_result!(
+            run_ring_test_result!(
                 replicated_encryption_is_shaped,
                 $crate::test_suite::replicated::test_replicated_encryption_is_shaped
             );
-            run_test_result!(
+            run_ring_test_result!(
                 replicated_encoding_rejects_batch_size,
                 $crate::test_suite::replicated::test_replicated_encoding_rejects_batch_size
             );
-            run_test_result!(
+            run_ring_test_result!(
                 replicated_products_are_shaped,
                 $crate::test_suite::replicated::test_replicated_products_are_shaped
             );
-            run_test_result!(
+            run_ring_test_result!(
                 replicated_layouts_do_not_mix,
                 $crate::test_suite::replicated::test_replicated_layouts_do_not_mix
             );
-            run_test_result!(
+            run_ring_test_result!(
                 replicated_plain_rounding_is_rejected,
                 $crate::test_suite::replicated::test_replicated_plain_rounding_is_rejected
             );
@@ -336,11 +347,11 @@ macro_rules! ckks_backend_rank2_test_suite {
                 replicated_automorphisms_are_shaped,
                 $crate::test_suite::replicated::test_replicated_automorphisms_are_shaped
             );
-            run_test_result!(
+            run_ring_test_result!(
                 replicated_rotations_are_admissible,
                 $crate::test_suite::replicated::test_replicated_rotations_are_admissible
             );
-            run_test_result!(
+            run_ring_test_result!(
                 replicated_masked_constants,
                 $crate::test_suite::replicated::test_replicated_masked_constants
             );
@@ -479,6 +490,17 @@ macro_rules! ckks_backend_test_suite {
                     fn $name() -> Result<()> {
                         use $path as __test_fn;
                         __test_fn::<$backend, $scalar, $encoder_ty>($params, &*MODULE, &*HOST_MODULE)
+                    }
+                };
+            }
+
+            // Tests shared with the conjugate-invariant suite, which take no encoder.
+            macro_rules! run_ring_test_result {
+                ($name:ident, $path:path) => {
+                    #[test]
+                    fn $name() -> Result<()> {
+                        use $path as __test_fn;
+                        __test_fn::<$backend, $scalar>($params, &*MODULE, &*HOST_MODULE)
                     }
                 };
             }
@@ -674,31 +696,31 @@ macro_rules! ckks_backend_test_suite {
                 round_rejects_incompatible_layouts,
                 $crate::test_suite::round::test_round_rejects_incompatible_layouts
             );
-            run_test_result!(
+            run_ring_test_result!(
                 replicated_encoding_is_shaped,
                 $crate::test_suite::replicated::test_replicated_encoding_is_shaped
             );
-            run_test_result!(
+            run_ring_test_result!(
                 replicated_unit_shaping_encodes_plainly,
                 $crate::test_suite::replicated::test_replicated_unit_shaping_encodes_plainly
             );
-            run_test_result!(
+            run_ring_test_result!(
                 replicated_encryption_is_shaped,
                 $crate::test_suite::replicated::test_replicated_encryption_is_shaped
             );
-            run_test_result!(
+            run_ring_test_result!(
                 replicated_encoding_rejects_batch_size,
                 $crate::test_suite::replicated::test_replicated_encoding_rejects_batch_size
             );
-            run_test_result!(
+            run_ring_test_result!(
                 replicated_products_are_shaped,
                 $crate::test_suite::replicated::test_replicated_products_are_shaped
             );
-            run_test_result!(
+            run_ring_test_result!(
                 replicated_layouts_do_not_mix,
                 $crate::test_suite::replicated::test_replicated_layouts_do_not_mix
             );
-            run_test_result!(
+            run_ring_test_result!(
                 replicated_plain_rounding_is_rejected,
                 $crate::test_suite::replicated::test_replicated_plain_rounding_is_rejected
             );
@@ -714,11 +736,11 @@ macro_rules! ckks_backend_test_suite {
                 replicated_automorphisms_are_shaped,
                 $crate::test_suite::replicated::test_replicated_automorphisms_are_shaped
             );
-            run_test_result!(
+            run_ring_test_result!(
                 replicated_rotations_are_admissible,
                 $crate::test_suite::replicated::test_replicated_rotations_are_admissible
             );
-            run_test_result!(
+            run_ring_test_result!(
                 replicated_masked_constants,
                 $crate::test_suite::replicated::test_replicated_masked_constants
             );

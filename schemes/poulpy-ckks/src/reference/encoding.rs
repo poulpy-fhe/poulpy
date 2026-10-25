@@ -19,7 +19,7 @@ use crate::{
     SlotsKind,
     api::CKKSEncodingScalar,
     layouts::{CKKSEncodingBufferBackendMut, CKKSEncodingBufferBackendRef},
-    shaping::ShapingProfile,
+    shaping::{ShapingProfile, ShapingRing},
 };
 
 pub use crate::encoding::{paco_coeff_encodings_host, ship_coeff_encodings_host};
@@ -219,7 +219,7 @@ where
     let base2k = pt.base2k().as_usize();
     let k = pt.encoded_k().as_usize();
     if let SlotLayout::Replicated(layout) = pt.slot_layout() {
-        let data = shaped_quantize(coeffs, &layout, log_delta, log_budget, BE::Ring::SLOTS)?;
+        let data = shaped_quantize(coeffs, &layout, log_delta, log_budget, ShapingRing::of::<BE::Ring>())?;
         pt.to_backend_mut().data_mut().encode_vec_i128(base2k, 0, k, &data);
         pt.set_slots(pt.slots().meet(BE::Ring::SLOTS));
         return Ok(());
@@ -261,7 +261,7 @@ pub(crate) fn shaped_quantize<F>(
     layout: &ReplicatedLayout,
     log_delta: usize,
     log_budget: usize,
-    ring_slots: SlotsKind,
+    ring: ShapingRing,
 ) -> Result<Vec<i128>>
 where
     F: CKKSEncodingScalar,
@@ -270,7 +270,7 @@ where
     let mut out = vec![0i128; n];
     let (mut low, mut h, mut gh) = (vec![0i64; n], vec![0i64; n], vec![0i64; n]);
     shaped_quantize_into(
-        coeffs, layout, log_delta, log_budget, ring_slots, &mut out, &mut low, &mut h, &mut gh,
+        coeffs, layout, log_delta, log_budget, ring, &mut out, &mut low, &mut h, &mut gh,
     )?;
     Ok(out)
 }
@@ -282,7 +282,7 @@ pub(crate) fn shaped_quantize_into<F>(
     layout: &ReplicatedLayout,
     log_delta: usize,
     log_budget: usize,
-    ring_slots: SlotsKind,
+    ring: ShapingRing,
     out: &mut [i128],
     low: &mut [i64],
     h: &mut [i64],
@@ -291,14 +291,13 @@ pub(crate) fn shaped_quantize_into<F>(
 where
     F: CKKSEncodingScalar,
 {
-    ensure!(ring_slots == SlotsKind::Complex, "{}", crate::shaping::STANDARD_RING_ONLY);
-    let period = 2 << layout.log_r();
+    let profile = ShapingProfile::with_ring(layout, ring)?;
+    let period = profile.period();
     ensure!(
         coeffs.len().is_multiple_of(period),
         "a replicated layout of period {} needs a multiple of {period} coefficients",
-        period / 2
+        1usize << layout.log_r()
     );
-    let profile = ShapingProfile::new(layout);
     let lambda = profile.max_pass_bits().min(126usize.saturating_sub(log_delta + log_budget));
     ensure!(
         lambda > 0,
