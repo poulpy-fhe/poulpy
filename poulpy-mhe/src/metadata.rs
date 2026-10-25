@@ -31,7 +31,7 @@ pub(crate) fn aggregate_common_key_metadata(
     match (left, right) {
         (Some(left), Some(right)) => {
             assert!(left.same_secret(&right), "invalid aggregation: output key provenance differs");
-            assert_eq!(left.rank(), right.rank(), "invalid aggregation: component ranks differ");
+            assert!(left.rank() == right.rank(), "invalid aggregation: component ranks differ");
             let centered = left.secret_distribution().coefficient_mean(n) == Some(0.0);
             let components = left
                 .components()
