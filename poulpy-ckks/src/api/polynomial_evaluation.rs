@@ -10,6 +10,7 @@ use crate::{CKKSCtBounds, SetCKKSInfos, layouts::CKKSCiphertextOwned, polynomial
 pub use poulpy_core::layouts::{BSGSPolynomialInfos, BabyStep, Basis, Parity, PolynomialInputTransform, PowerBasisHelper};
 
 pub trait CKKSPolynomialEvaluationOps<BE: Backend> {
+    /// Scratch is bounded by [`CKKSAllOpsTmpBytes::ckks_all_ops_tmp_bytes`](crate::api::CKKSAllOpsTmpBytes::ckks_all_ops_tmp_bytes).
     fn ckks_eval_poly_real_const_coeffs_from_power_basis<R, B, A, G, H>(
         &self,
         res: &mut R,
@@ -28,6 +29,8 @@ pub trait CKKSPolynomialEvaluationOps<BE: Backend> {
 
     /// Builds the power basis internally then evaluates a real-coefficient
     /// polynomial.
+    ///
+    /// Scratch is bounded by [`CKKSAllOpsTmpBytes::ckks_all_ops_tmp_bytes`](crate::api::CKKSAllOpsTmpBytes::ckks_all_ops_tmp_bytes).
     fn ckks_eval_poly_real_const_coeffs<R, S, B, H>(
         &self,
         dst: &mut R,
@@ -50,6 +53,7 @@ pub trait CKKSComplexPolynomialEvaluationOps<BE: Backend> {
     /// Evaluates a complex-coefficient polynomial `Σ_k (a_k + i·b_k)·z^k`,
     /// where `poly.re`/`poly.im` are the matched real/imag BSGS decompositions
     /// (identical baby-step schedule).
+    /// Scratch is bounded by [`CKKSAllOpsTmpBytes::ckks_all_ops_tmp_bytes`](crate::api::CKKSAllOpsTmpBytes::ckks_all_ops_tmp_bytes).
     fn ckks_eval_poly_complex_const_coeffs_from_power_basis<R, C, A, G, H>(
         &self,
         res: &mut R,
@@ -67,6 +71,8 @@ pub trait CKKSComplexPolynomialEvaluationOps<BE: Backend> {
 
     /// Builds the power basis internally then evaluates a complex-coefficient
     /// polynomial.
+    ///
+    /// Scratch is bounded by [`CKKSAllOpsTmpBytes::ckks_all_ops_tmp_bytes`](crate::api::CKKSAllOpsTmpBytes::ckks_all_ops_tmp_bytes).
     fn ckks_eval_poly_complex_const_coeffs<R, S, C, H>(
         &self,
         dst: &mut R,

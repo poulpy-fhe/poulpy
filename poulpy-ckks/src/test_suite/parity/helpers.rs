@@ -125,10 +125,7 @@ pub fn poisoned_scratch<BE: Backend>(bytes: usize) -> ScratchOwned<BE> {
 /// guards. Both allocation and guard downloads work for opaque backend storage.
 pub fn with_scratch<BE: Backend, R>(bytes: usize, run: impl FnOnce(&mut ScratchArena<'_, BE>) -> R) -> R {
     let guard = BE::scratch_aligned(64);
-    let mut owned = ScratchOwned::<BE> {
-        data: BE::from_host_bytes(&vec![0xA5; guard + bytes + guard]),
-        _phantom: std::marker::PhantomData,
-    };
+    let mut owned = poisoned_scratch::<BE>(guard + bytes + guard);
     let result = {
         let (_, rest) = owned.arena().split_at(guard);
         let (mut exact, _) = rest.split_at(bytes);
