@@ -1068,7 +1068,7 @@ where
     ScratchOwned<CIBackend<BE>>: ScratchOwnedAlloc<CIBackend<BE>>,
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::DiagonalProd<BE>,
 {
-    let (bytes, bytes_ci) = BootstrappingContext::<BE, f64>::compile_ci_unprepared_tmp_bytes(module, ci);
+    let (bytes, bytes_ci) = BootstrappingContext::<BE, f64>::compile_ci_unprepared_tmp_bytes(module, ci, preset.plan()).unwrap();
     let unprepared = with_scratch::<BE, _>(bytes, |s| {
         with_scratch::<CIBackend<BE>, _>(bytes_ci, |sc| {
             BootstrappingContext::<BE, f64>::compile_ci_unprepared(module, ci, preset.base2k().into(), preset.plan(), s, sc)
