@@ -9,7 +9,7 @@ Generic rules: `docs/review/workspace.md` sections 2 and 3.
 - **No hal reference layer.** A new basis or variant op gets a portable kernel (`hal_defaults`, `hal_impl_*!`) and an independent poulpy-cpu-oracle implementation calling no portable kernel; poulpy-hal adds no `reference` module, `*_reference` function or reference macro.
 - **Four op classes.** Every API method has one class fixing its OEP form:
   - `basis`: independently defined, required, no default body, tested across backends (samplers and the raw complex transform against their definitions);
-  - `variant`: another storage or mutation form of a defined op (`_assign`, `ScalarZnx`, conjugate-invariant), required;
+  - `variant`: another storage or mutation form of a defined op (`_assign`, `ScalarZnx`, conjugate-invariant), required, except a layout conversion that re-views its operand as another layout and calls the defined op (`scalar_znx_automorphism`, `scalar_znx_ci_embed`), which is `derived`;
   - `derived`: a composition within its signature's scratch, defaulted over `oep::derived`;
   - `support`: allocation, `bytes_of_*`, `_tmp_bytes`, scratch, plans, module queries, no arithmetic.
 - **Default bodies follow the class.** Only `derived` ops, their `_tmp_bytes` and `HalModuleImpl::synchronize` have default bodies; adding or removing one updates the op's `class`, `fallback`, `override` and `test` lines in the same PR.
