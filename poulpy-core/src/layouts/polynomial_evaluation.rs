@@ -337,8 +337,8 @@ pub fn split_degree(n: usize) -> (usize, usize) {
 /// `P`, the longest pure `ct×ct` chain, is `bit_len(degree)`, minus one when
 /// `degree` is a power of two: then its leading term is a lone constant reached
 /// only through a `ct×pt` (a `MinDepth` fold, or the deepest `MinMult` baby step),
-/// so no pure chain reaches the top. For `MinMult` with `degree ≥ threshold` —
-/// where [`bsgs_eval_depth`] already adds the extra level — `P = bit_len =
+/// so no pure chain reaches the top. For `MinMult` with `degree ≥ threshold` ,
+/// where [`bsgs_eval_depth`] already adds the extra level, `P = bit_len =
 /// eval_depth − 1` drops out automatically, so this one expression covers both
 /// strategies.
 ///
@@ -374,8 +374,8 @@ pub fn bsgs_consumed_bits(
     (pure_depth * input_log_delta).max(ctpt_depth * input_log_delta + coeff_log_delta)
 }
 
-/// Faithful replay of the homomorphic BSGS schedule — flat baby-step list,
-/// iterative giant-step pairing (`b = b·Xᵍˢᵖ + a`), trailing-constant fold —
+/// Faithful replay of the homomorphic BSGS schedule, flat baby-step list,
+/// iterative giant-step pairing (`b = b·Xᵍˢᵖ + a`), trailing-constant fold ,
 /// computing the same heaviest-chain weight as [`bsgs_consumed_bits`]. Kept as the
 /// structure-exact reference the closed form is tested against.
 #[cfg(test)]
@@ -530,9 +530,9 @@ pub fn bsgs_eval_depth(degree: usize, strategy: SplitStrategy) -> usize {
 /// point `x` in the approximation interval `[a, b]` to the variable the
 /// coefficients of `basis` are expressed in.
 ///
-/// - [`Basis::Monomial`]: identity — `(1, 0)` (coefficients are in `x` directly).
+/// - [`Basis::Monomial`]: identity, `(1, 0)` (coefficients are in `x` directly).
 /// - [`Basis::Chebyshev`]: normalization of `[a, b]` onto the canonical `[-1, 1]`
-///   — `u = 2/(b−a)`, `w = −(a+b)/(b−a)`, i.e. `y = (2x − a − b)/(b − a)`.
+///  , `u = 2/(b−a)`, `w = −(a+b)/(b−a)`, i.e. `y = (2x − a − b)/(b − a)`.
 ///
 /// The pair lets a caller apply the remap to a ciphertext (`ct ← u·ct + w`)
 /// before a homomorphic evaluation that assumes coefficients in the normalized
@@ -984,7 +984,7 @@ impl<C> BSGSPolynomial<C> {
     /// the longest (heaviest) chain through the BSGS data-dependency graph.
     ///
     /// `input_log_delta` is the scale of the input ciphertext / its powers
-    /// (consumed by every `ct×ct` along the chain — power basis and giant steps);
+    /// (consumed by every `ct×ct` along the chain, power basis and giant steps);
     /// `coeff_log_delta` is the scale of the encoded polynomial coefficients
     /// (consumed by the single `ct×pt` baby-step inner product on the chain).
     ///
@@ -1018,7 +1018,9 @@ impl<C> BSGSPolynomial<C> {
 
     /// Returns one encoded baby-step coefficient polynomial.
     ///
-    /// Panics if `i >= self.baby_steps().len()`.
+    /// # Panics
+    ///
+    /// If `i >= self.baby_steps().len()`.
     pub fn baby_step(&self, i: usize) -> &C {
         &self.baby_steps[i]
     }

@@ -30,7 +30,7 @@ where
         R: LWEToBackendMut<BE>,
     {
         let mut res = res.to_backend_mut();
-        assert_eq!(res.mask.cols(), 1, "fill_lwe_mask_from_source: LWE mask cols must be 1");
+        assert!(res.mask.cols() == 1, "fill_lwe_mask_from_source: LWE mask cols must be 1");
         self.vec_znx_fill_uniform_source(base2k, res.k().as_usize(), &mut res.mask, 0, source_xa);
     }
 }

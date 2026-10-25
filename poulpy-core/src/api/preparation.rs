@@ -732,7 +732,9 @@ where
 {
     /// Allocates a new [`GGLWEToGGSWKeyPrepared`] matching the parameters of `infos`.
     ///
-    /// Panics if `rank_in != rank_out`.
+    /// # Panics
+    ///
+    /// If `rank_in != rank_out`.
     fn gglwe_to_ggsw_key_prepared_alloc_from_infos<A>(&self, infos: &A) -> GGLWEToGGSWKeyPrepared<BE::OwnedBuf, BE>
     where
         A: GGLWEInfos,

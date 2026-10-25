@@ -8,8 +8,12 @@ use crate::layouts::{
     LinearTransformationPrepared, TorusPrecision,
 };
 
-/// Panics on a key with a row offset: `op` adds its input back at the input's
+/// Checks that `key` has no row offset: `op` adds its input back at the input's
 /// own place, which only an offset-free key's product matches.
+///
+/// # Panics
+///
+/// On a key with a row offset.
 pub fn assert_no_row_offset<K: GGLWEInfos>(op: &str, key: &K) {
     assert_eq!(
         key.k_offset().0,
@@ -18,9 +22,13 @@ pub fn assert_no_row_offset<K: GGLWEInfos>(op: &str, key: &K) {
     );
 }
 
-/// Panics unless `key` decomposes an input of precision `k` exactly: `k` is at
+/// Checks that `key` decomposes an input of precision `k` exactly: `k` is at
 /// most its [`max_input_k`](crate::layouts::GGLWELayout::max_input_k). A wider
 /// input is narrowed by the caller first.
+///
+/// # Panics
+///
+/// Unless `key` decomposes an input of precision `k` exactly.
 pub fn assert_key_covers<K: GGLWEInfos>(op: &str, k: TorusPrecision, key: &K) {
     assert!(
         k <= key.gglwe_layout().max_input_k(),
@@ -73,10 +81,14 @@ pub fn assert_linear_transformation_sum<BE: Backend>(
     }
 }
 
-/// Panics unless the first term has a giant step, and every giant step of every term has a diagonal as wide as its
-/// transform's first diagonal and reads only baby rotations its term's cache holds. The other diagonals are not
-/// checked: every diagonal of a transform shares one width, scale and degree, as the encoder produces them, and
-/// preparing asserts the degree. Reads no cache layout, so an empty cache fails on its first missing rotation.
+/// Checks the giant steps of every term. The other diagonals are not checked: every diagonal of a transform shares
+/// one width, scale and degree, as the encoder produces them, and preparing asserts the degree. Reads no cache
+/// layout, so an empty cache fails on its first missing rotation.
+///
+/// # Panics
+///
+/// Unless the first term has a giant step, and every giant step of every term has a diagonal as wide as its
+/// transform's first diagonal and reads only baby rotations its term's cache holds.
 fn assert_linear_transformation_giant_steps<BE, P>(
     babies: &[&LinearTransformationBabySteps<BE>],
     lts: &[&LinearTransformation<P>],

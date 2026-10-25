@@ -31,7 +31,9 @@ pub struct GLWESwitchingKeyLayout {
 
 /// The switching key of a stored GGLWE layout.
 ///
-/// Panics on a coarsened view (`stride != 1`), which no key is stored as.
+/// # Panics
+///
+/// On a coarsened view (`stride != 1`), which no key is stored as.
 impl From<GGLWELayout> for GLWESwitchingKeyLayout {
     fn from(layout: GGLWELayout) -> Self {
         assert_eq!(layout.stride, 1, "a coarsened view is not a stored layout");

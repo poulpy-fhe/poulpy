@@ -44,9 +44,8 @@ where
     where
         A: GGLWEInfos,
     {
-        assert_eq!(
-            infos.rank_in(),
-            infos.rank_out(),
+        assert!(
+            infos.rank_in() == infos.rank_out(),
             "rank_in != rank_out is not supported for GLWEAutomorphismKey"
         );
         operand_degree(self.n(), &[infos.n()]);

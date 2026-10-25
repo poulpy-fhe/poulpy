@@ -80,6 +80,10 @@ impl<D: Data, BE: Backend> GGLWEToGGSWKeyPrepared<D, BE> {
     /// Returns a mutable reference to the `i`-th prepared GGLWE key element.
     ///
     /// The `i`-th element corresponds to `GGLWEPrepared_s([s[i]*s[0], s[i]*s[1], ..., s[i]*s[rank]])`.
+    ///
+    /// # Panics
+    ///
+    /// If `i >= rank`.
     pub fn at_mut(&mut self, i: usize) -> &mut GGLWEPrepared<D, BE> {
         assert!((i as u32) < self.rank());
         &mut self.keys[i]
@@ -90,6 +94,10 @@ impl<D: Data, BE: Backend> GGLWEToGGSWKeyPrepared<D, BE> {
     /// Returns a reference to the `i`-th prepared GGLWE key element.
     ///
     /// The `i`-th element corresponds to `GGLWEPrepared_s([s[i]*s[0], s[i]*s[1], ..., s[i]*s[rank]])`.
+    ///
+    /// # Panics
+    ///
+    /// If `i >= rank`.
     pub fn at(&self, i: usize) -> &GGLWEPrepared<D, BE> {
         assert!((i as u32) < self.rank());
         &self.keys[i]
