@@ -1,0 +1,86 @@
+//! Large-interval normalization from Cheon et al., ePrint 2022/280.
+
+use anyhow::{Context, Result, anyhow, ensure};
+use num_traits::{Float, FloatConst, FromPrimitive};
+use poulpy_core::layouts::{Base2K, LWEInfos};
+use poulpy_hal::{
+    AlignedBuf,
+    layouts::{HostBytesBackend, Module, Standard},
+};
+
+use poulpy_ckks::{
+    CKKSInfos, CKKSLayout, SetCKKSInfos,
+    layouts::{CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar},
+};
+
+/// Compression factor `L` (experimental, from the reference).
+pub const COMPRESSION_L: f64 = 2.45;
+
+/// Prepared interval-normalization constants.
+pub struct IntervalNorm<P> {
+    pub(crate) consts: P,
+    pub(crate) n: usize,
+    pub(crate) coeff_log_delta: usize,
+}
+
+impl IntervalNorm<CKKSPlaintext<AlignedBuf, i64, Standard>> {
+    /// Builds the constants for compressing `[−max, max]`.
+    pub fn from_max<F>(max: f64, base2k: Base2K, coeff_meta: CKKSLayout, module: &Module<HostBytesBackend>) -> Result<Self>
+    where
+        F: CKKSScalar + Float + FloatConst + FromPrimitive,
+        CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
+    {
+        ensure!(max.is_finite() && max > 0.0, "interval_norm: max must be positive and finite");
+        let n = (max.log2() / COMPRESSION_L.log2()).ceil().max(1.0) as usize;
+        let c: Vec<F> = (0..n)
+            .map(|i| {
+                let den = 27.0 * COMPRESSION_L.powi(2 * (n - 1 - i) as i32);
+                F::from_f64(4.0 / den).ok_or_else(|| anyhow!("interval_norm: c_{i} not representable"))
+            })
+            .collect::<Result<_>>()?;
+        let mut consts = module.ckks_pt_coeffs_alloc(n, base2k, coeff_meta.k());
+        consts.set_meta(coeff_meta.meta());
+        consts.encode_host_floats(&c).context("interval_norm")?;
+        Ok(Self {
+            consts,
+            n,
+            coeff_log_delta: coeff_meta.log_delta(),
+        })
+    }
+}
+
+impl<P> IntervalNorm<P> {
+    /// Per-step constants.
+    pub fn consts(&self) -> &P {
+        &self.consts
+    }
+
+    /// Number of compression steps `ceil(log_L(max))`.
+    pub fn steps(&self) -> usize {
+        self.n
+    }
+
+    /// Scale the constants were encoded at.
+    pub fn coeff_log_delta(&self) -> usize {
+        self.coeff_log_delta
+    }
+
+    /// Consumed modulus bits.
+    pub fn consumed_bits(&self, log_delta: usize) -> usize {
+        2 * self.n * log_delta
+    }
+
+    /// Multiplicative depth.
+    pub fn depth(&self) -> usize {
+        2 * self.n
+    }
+
+    /// Maps prepared plaintexts.
+    pub fn map_plaintexts<Q>(self, f: impl FnOnce(&P) -> Q) -> IntervalNorm<Q> {
+        IntervalNorm {
+            consts: f(&self.consts),
+            n: self.n,
+            coeff_log_delta: self.coeff_log_delta,
+        }
+    }
+}

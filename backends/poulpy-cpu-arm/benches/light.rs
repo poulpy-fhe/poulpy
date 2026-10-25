@@ -13,6 +13,7 @@ use criterion::{criterion_group, criterion_main};
 use poulpy_bench::blas::suites::light::bench_blas;
 use poulpy_bench::core::suites::light::{bench_core_binfhe, bench_core_ckks};
 use poulpy_bench::hal::suites::light::{bench_hal_binfhe, bench_hal_ckks};
+use poulpy_bench::libm::suites::light::bench_libm;
 use poulpy_bench::schemes::suites::bench_binfhe;
 use poulpy_bench::schemes::suites::light::bench_ckks;
 use poulpy_bin_fhe::blind_rotation::CGGI;
@@ -29,6 +30,7 @@ criterion_group! {
      bench_core_ckks::<Ntt>,
      bench_core_binfhe::<Fft>,
      bench_ckks::<Ntt>,
+     bench_libm::<Ntt>,
      bench_binfhe::<Fft, CGGI>
 }
 

@@ -419,8 +419,8 @@ where
 // ── bench_ckks / bench_binfhe (criterion_group targets) ─────────────────────
 
 /// Every CKKS op family, unfiltered — the full tier. `where` clause matches
-/// [`all_ops`]'s own. Takes exactly one backend type parameter; a
-/// `criterion_group!` registers it once per backend to cover.
+/// [`all_ops`]'s own. Takes exactly one backend type parameter, and
+/// a `criterion_group!` registers it once per backend to cover.
 pub fn bench_ckks<BE>(c: &mut Criterion<WallTime>)
 where
     BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64> + HostBackend,

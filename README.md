@@ -35,6 +35,7 @@ The basis crates sit at the root of the repository, and the other crates are gro
 ### [`libs/`](libs): libraries built on a scheme
 
 - **`poulpy-blas`**: backend-agnostic encrypted matrix arithmetic built on **`poulpy-ckks`**: grids of CKKS block ciphertexts, and the encoded maps and public matrices its operations read.
+- **`poulpy-libm`**: backend-agnostic CKKS math functions with `libm` names built on **`poulpy-ckks`**: exponentials, logarithms, powers and roots, trigonometric, hyperbolic and special functions, comparisons, and slot reductions, each from a reusable plan prepared for an input interval and a precision.
 
 ### [`backends/`](backends): concrete implementations of the layers
 
@@ -57,7 +58,8 @@ The basis crates sit at the root of the repository, and the other crates are gro
 poulpy-hal                  ← hardware abstraction: layouts and operation traits
 └── poulpy-core              ← scheme-agnostic Module-LWE arithmetic (LWE, GLWE, GGLWE, GGSW)
     ├── poulpy-ckks           ← leveled CKKS evaluator
-    │   └── poulpy-blas        ← encrypted matrix arithmetic (JKLS)
+    │   ├── poulpy-blas        ← encrypted matrix arithmetic (JKLS)
+    │   └── poulpy-libm        ← CKKS math functions (libm-style)
     ├── poulpy-bin-fhe        ← binary / gate-level FHE
     └── poulpy-mhe            ← multiparty HE
 
@@ -243,6 +245,15 @@ poulpy-blas = {git = "https://github.com/poulpy-fhe/poulpy", rev = "<rev>", feat
 poulpy-cpu-oracle = {git = "https://github.com/poulpy-fhe/poulpy", rev = "<rev>", features = ["enable-blas"]}
 ```
 
+libm registers its suite through `libm_backend_test_suite!`: precision and exact budget consumption of every function, on the NTT4x30 type of each CPU backend and on `NTT3x42Ifma`, with the backends' `enable-ckks`.
+[`libm_tests.rs`](backends/poulpy-cpu-portable/src/tests/libm_tests.rs) shows the registration.
+CI runs it on the portable, native AVX2 and NEON backends. The emulated AVX job does not build it, and the AVX-512 jobs filter it out, since their results are byte-identical to the other backends'.
+Run it on the portable backend with:
+
+```sh
+cargo test -p poulpy-cpu-portable --lib --profile ci --features enable-ckks -- libm_tests
+```
+
 ## Bivariate Polynomial Representation
 
 Existing FHE implementations (such as [Lattigo](https://github.com/tuneinsight/lattigo) or [OpenFHE](https://github.com/openfheorg/openfhe-development)) use the [residue number system](https://en.wikipedia.org/wiki/Residue_number_system) (RNS) to represent large integers. Although the parallelism and carry-less arithmetic offered by the RNS representation provide efficient modular arithmetic over large integers, RNS also has drawbacks in the context of FHE. The main idea behind the bivariate representation is to decouple cyclotomic arithmetic from large-number arithmetic. Instead of using the RNS representation for large integers, integers are decomposed in base $2^{-K}$ over the Torus $\mathbb{T}_{N}[X]$.
@@ -271,6 +282,7 @@ The bivariate representation recovers bit-granular scale and capacity management
 - **`poulpy-bin-fhe`**: https://crates.io/crates/poulpy-bin-fhe
 - **`poulpy-mhe`**: https://crates.io/crates/poulpy-mhe
 - **`poulpy-blas`**: https://crates.io/crates/poulpy-blas
+- **`poulpy-libm`**: https://crates.io/crates/poulpy-libm
 - **`poulpy-cpu-portable`**: https://crates.io/crates/poulpy-cpu-portable
 - **`poulpy-cpu-rayon`**: https://crates.io/crates/poulpy-cpu-rayon
 - **`poulpy-cpu-avx`**: https://crates.io/crates/poulpy-cpu-avx
@@ -302,10 +314,6 @@ poulpy-cpu-portable = "0.9.0"
 ## Built with Poulpy
 
 Projects building on Poulpy. Open a pull request to add yours.
-
-**Function evaluation**
-
-- [`poulpy-libm`](https://github.com/poulpy-fhe/poulpy-libm): homomorphic evaluation of libm-style mathematical functions on CKKS ciphertexts, built on `poulpy-ckks`'s Remez approximation planning.
 
 **Private information retrieval**
 
