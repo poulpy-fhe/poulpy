@@ -416,8 +416,9 @@ pub trait CKKSMulReference<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
     {
-        let (res_log_budget, res_log_delta, cnv_offset) = get_mul_pt_params("ckks_mul_pt_vec_into", dst, a, pt)?;
-        ensure_plaintext_degree_embeds("ckks_mul_pt_vec", a.n().as_usize(), pt.n().as_usize(), BE::MIN_DEGREE)?;
+        const OP: &str = "ckks_mul_pt_vec_into";
+        ensure_plaintext_degree_embeds(OP, a.n().as_usize(), pt.n().as_usize(), BE::MIN_DEGREE)?;
+        let (res_log_budget, res_log_delta, cnv_offset) = get_mul_pt_params(OP, dst, a, pt)?;
         // Set the result metadata first: `dst.size()` is meta-derived and a fresh
         // `dst` carries zero meta, so `glwe_mul_plain` (which writes `res.size()`
         // limbs) would otherwise produce an empty output.
@@ -437,13 +438,9 @@ pub trait CKKSMulReference<BE: Backend> {
         Self: GLWECopy<BE> + GLWEMulPlain<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord> + VecZnxCopy<BE>,
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
     {
-        let (res_log_budget, res_log_delta, cnv_offset) = get_mul_pt_params("ckks_mul_pt_vec_assign", dst, dst, pt)?;
-        ensure_plaintext_degree_embeds(
-            "ckks_mul_pt_vec_assign",
-            dst.n().as_usize(),
-            pt.n().as_usize(),
-            BE::MIN_DEGREE,
-        )?;
+        const OP: &str = "ckks_mul_pt_vec_assign";
+        ensure_plaintext_degree_embeds(OP, dst.n().as_usize(), pt.n().as_usize(), BE::MIN_DEGREE)?;
+        let (res_log_budget, res_log_delta, cnv_offset) = get_mul_pt_params(OP, dst, dst, pt)?;
         let log_sparsity = dst.log_sparsity().min(dst.log_n() - pt.log_n());
         let slots = dst.slots().join(pt.slots());
         scratch.scope(|scratch_local| {
