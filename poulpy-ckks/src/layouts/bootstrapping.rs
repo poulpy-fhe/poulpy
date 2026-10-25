@@ -850,21 +850,31 @@ where
         Self::compile_ci_unprepared(module, ci, base2k, plan, scratch, scratch_ci)?.prepare(module, scratch)
     }
 
-    /// Scratch of [`Self::compile_ci_unprepared`] for a bootstrap of degree `N = ci.n()`:
-    /// `(scratch, scratch_ci)`. Each encoding stages the values of one plaintext:
-    /// at most those of `u` and `v`, of degree `2N`, on `module`, and the
-    /// coefficients of a plaintext of degree `N` on `ci`.
-    pub fn compile_ci_unprepared_tmp_bytes<BCI>(module: &Module<BE>, ci: &Module<BCI>) -> (usize, usize)
+    /// Scratch of [`Self::compile_ci_unprepared`] for `plan` and a bootstrap of degree `N = ci.n()`:
+    /// `(scratch, scratch_ci)`. On `module`, the larger of [`Self::compile_unprepared_tmp_bytes`] of `plan` with its
+    /// DFT formats resolved at degree `N` and the encoding of `u` and `v`, of degree `2N`; on `ci`, the encoding of the
+    /// coefficients of a plaintext of degree `N`.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::compile_unprepared_tmp_bytes`].
+    pub fn compile_ci_unprepared_tmp_bytes<BCI>(
+        module: &Module<BE>,
+        ci: &Module<BCI>,
+        plan: &BootstrappingPlan,
+    ) -> Result<(usize, usize)>
     where
         BCI: Backend,
-        Module<BE>: CKKSEncodingOps<BE, F>,
+        Module<BE>: CKKSDFTMatrixOps<BE, F> + CKKSEncodingOps<BE, F>,
         Module<BCI>: CKKSEncodingOps<BCI, F>,
     {
         let n = ci.n();
-        (
-            <Module<BE> as CKKSEncodingHostOps<BE, F>>::ckks_reim_tmp_bytes(module, n),
+        let plan = plan.with_dft_formats_resolved_at(ci.log_n());
+        Ok((
+            Self::compile_unprepared_tmp_bytes(module, &plan)?
+                .max(<Module<BE> as CKKSEncodingHostOps<BE, F>>::ckks_reim_tmp_bytes(module, n)),
             <Module<BCI> as CKKSEncodingHostOps<BCI, F>>::ckks_reim_tmp_bytes(ci, n / 2),
-        )
+        ))
     }
 
     /// First stage of [`Self::compile_ci`]: generates the DFT matrices and encodes
