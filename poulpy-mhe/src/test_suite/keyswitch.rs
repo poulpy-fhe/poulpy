@@ -273,7 +273,7 @@ where
 }
 
 /// Finalizing into an output whose radix differs from the ciphertext's panics.
-pub fn test_glwe_public_keyswitch_finalize_layout_mismatch<BE>(module: &Module<BE>)
+pub fn test_mhe_glwe_public_keyswitch_share_finalize_rejects_layout_mismatch<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     Module<BE>: GLWEPublicKeyswitchMHEProtocol<BE>,
@@ -289,24 +289,32 @@ where
         inner: module.glwe_alloc_from_infos(&layout),
     };
     let mut res: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
-    with_scratch::<BE, _>(module.mhe_glwe_public_keyswitch_share_finalize_tmp_bytes(), |s| {
-        module.mhe_glwe_public_keyswitch_share_finalize(&mut res, &ct, &share, s)
+    let before = res.clone();
+    assert_panics_with("invalid finalization: ciphertext and output layouts differ", || {
+        with_scratch::<BE, _>(module.mhe_glwe_public_keyswitch_share_finalize_tmp_bytes(), |s| {
+            module.mhe_glwe_public_keyswitch_share_finalize(&mut res, &ct, &share, s)
+        })
     });
+    assert!(res == before);
 }
 
 /// Aggregating key switching shares of different layouts panics.
-pub fn test_glwe_private_keyswitch_aggregate_layout_mismatch<BE>(module: &Module<BE>)
+pub fn test_mhe_glwe_private_keyswitch_share_aggregate_rejects_layout_mismatch<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     Module<BE>: MHEModuleAlloc<BE> + GLWEPrivateKeyswitchMHEProtocol<BE>,
 {
     let mut a = module.glwe_private_keyswitch_share_alloc(BASE2K, K);
     let b = module.glwe_private_keyswitch_share_alloc(BASE2K, TorusPrecision(K.0 + BASE2K.0));
-    module.mhe_glwe_private_keyswitch_share_aggregate(&mut a, &b);
+    let before = a.clone();
+    assert_panics_with("invalid aggregation: layouts differ", || {
+        module.mhe_glwe_private_keyswitch_share_aggregate(&mut a, &b);
+    });
+    assert!(a == before);
 }
 
 /// Sharing under a public key less precise than the share panics.
-pub fn test_glwe_public_keyswitch_pk_precision<BE>(module: &Module<BE>)
+pub fn test_mhe_glwe_public_keyswitch_share_gen_rejects_pk_precision<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     Module<BE>: GLWEPublicKeyswitchMHEProtocol<BE>
@@ -327,22 +335,36 @@ where
     let mut res = GLWEPublicKeyswitchShare {
         inner: module.glwe_alloc_from_infos(&layout),
     };
-    with_scratch::<BE, _>(
-        module.mhe_glwe_public_keyswitch_share_gen_tmp_bytes(&layout, &layout, &pk_layout),
-        |s| {
-            module.mhe_glwe_public_keyswitch_share_gen(
-                &mut res,
-                &ct,
-                &sk_in,
-                &pk_out,
-                FLOOD,
-                &mut Source::new([20u8; 32]),
-                &mut Source::new([10u8; 32]),
-                &mut Source::new([30u8; 32]),
-                s,
-            )
-        },
-    );
+    let before = res.inner.clone();
+    let mut source_a = Source::new([20u8; 32]);
+    let mut source_b = Source::new([10u8; 32]);
+    let mut source_c = Source::new([30u8; 32]);
+    assert_panics_with("invalid share: public key less precise than the share", || {
+        with_scratch::<BE, _>(
+            module.mhe_glwe_public_keyswitch_share_gen_tmp_bytes(&layout, &layout, &pk_layout),
+            |s| {
+                module.mhe_glwe_public_keyswitch_share_gen(
+                    &mut res,
+                    &ct,
+                    &sk_in,
+                    &pk_out,
+                    FLOOD,
+                    &mut source_a,
+                    &mut source_b,
+                    &mut source_c,
+                    s,
+                )
+            },
+        )
+    });
+    assert!(res.inner == before);
+    for (source, seed) in [
+        (&mut source_a, [20u8; 32]),
+        (&mut source_b, [10u8; 32]),
+        (&mut source_c, [30u8; 32]),
+    ] {
+        assert_eq!(source.next_i64(), Source::new(seed).next_i64());
+    }
 }
 
 /// Invalid result and secret layouts are rejected with exact static messages.

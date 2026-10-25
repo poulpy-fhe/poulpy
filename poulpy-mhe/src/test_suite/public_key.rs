@@ -344,7 +344,7 @@ fn assert_noise_tag(value: &impl LWEInfos, base: Distribution, parties: usize, v
 }
 
 /// Finalizing a share without a samplable distribution panics; a fresh share has `NONE`.
-pub fn test_glwe_public_key_finalize_dist_none<BE>(module: &Module<BE>)
+pub fn test_mhe_glwe_public_key_share_finalize_rejects_dist_none<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
@@ -360,13 +360,17 @@ where
     };
     let share = module.glwe_public_key_share_alloc_from_infos(&layout);
     let mut pk: GLWEPublicKey<AlignedBuf, i64> = module.glwe_public_key_alloc_from_infos(&layout);
-    with_scratch::<BE, _>(module.mhe_glwe_public_key_share_finalize_tmp_bytes(), |s| {
-        module.mhe_glwe_public_key_share_finalize(&mut pk, &share, s)
+    let before = pk.data().clone();
+    super::fixtures::assert_panics_with("invalid distribution: a public key needs a samplable distribution", || {
+        with_scratch::<BE, _>(module.mhe_glwe_public_key_share_finalize_tmp_bytes(), |s| {
+            module.mhe_glwe_public_key_share_finalize(&mut pk, &share, s)
+        })
     });
+    assert!(*pk.data() == before);
 }
 
 /// Entries sharing a seed share their masks, which makes encryption rank 1 in the ephemerals; a fresh share has zero seeds.
-pub fn test_glwe_public_key_finalize_shared_seed<BE>(module: &Module<BE>)
+pub fn test_mhe_glwe_public_key_share_finalize_rejects_shared_seed<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
@@ -383,9 +387,13 @@ where
     let mut share = module.glwe_public_key_share_alloc_from_infos(&layout);
     *share.dist_mut() = Distribution::TernaryProb(0.5);
     let mut pk: GLWEPublicKey<AlignedBuf, i64> = module.glwe_public_key_alloc_from_infos(&layout);
-    with_scratch::<BE, _>(module.mhe_glwe_public_key_share_finalize_tmp_bytes(), |s| {
-        module.mhe_glwe_public_key_share_finalize(&mut pk, &share, s)
+    let before = pk.data().clone();
+    super::fixtures::assert_panics_with("invalid finalization: public key entries share a seed", || {
+        with_scratch::<BE, _>(module.mhe_glwe_public_key_share_finalize_tmp_bytes(), |s| {
+            module.mhe_glwe_public_key_share_finalize(&mut pk, &share, s)
+        })
     });
+    assert!(*pk.data() == before);
 }
 
 /// Reading a share of another rank fails.
@@ -402,18 +410,22 @@ where
 }
 
 /// Aggregating shares of different ranks panics.
-pub fn test_glwe_public_key_aggregate_rank_mismatch<BE>(module: &Module<BE>)
+pub fn test_mhe_glwe_public_key_share_aggregate_rejects_rank_mismatch<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     Module<BE>: MHEModuleAlloc<BE> + GLWEPublicKeyMHEProtocol<BE>,
 {
     let mut a = module.glwe_public_key_share_alloc(BASE2K, K, RANK);
     let b = module.glwe_public_key_share_alloc(BASE2K, K, Rank(1));
-    module.mhe_glwe_public_key_share_aggregate(&mut a, &b);
+    let before = a.clone();
+    super::fixtures::assert_panics_with("invalid aggregation: layouts differ", || {
+        module.mhe_glwe_public_key_share_aggregate(&mut a, &b);
+    });
+    assert!(a == before);
 }
 
 /// Aggregating shares generated under secrets of different distributions panics.
-pub fn test_glwe_public_key_aggregate_dist_mismatch<BE>(module: &Module<BE>)
+pub fn test_mhe_glwe_public_key_share_aggregate_rejects_dist_mismatch<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     Module<BE>: MHEModuleAlloc<BE> + GLWEPublicKeyMHEProtocol<BE>,
@@ -427,11 +439,15 @@ where
     let mut a = module.glwe_public_key_share_alloc_from_infos(&layout);
     let mut b = module.glwe_public_key_share_alloc_from_infos(&layout);
     *b.dist_mut() = Distribution::TernaryProb(0.5);
-    module.mhe_glwe_public_key_share_aggregate(&mut a, &b);
+    let before = a.clone();
+    super::fixtures::assert_panics_with("invalid aggregation: secret distributions differ", || {
+        module.mhe_glwe_public_key_share_aggregate(&mut a, &b);
+    });
+    assert!(a == before);
 }
 
 /// Sharing under a secret without a samplable distribution panics.
-pub fn test_glwe_public_key_gen_secret_none<BE>(module: &Module<BE>)
+pub fn test_mhe_glwe_public_key_share_gen_rejects_secret_none<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
@@ -448,9 +464,15 @@ where
 
     let sk: GLWESecretPrepared<AlignedBuf, BE> = module.glwe_secret_prepared_alloc(RANK);
     let mut res = module.glwe_public_key_share_alloc_from_infos(&layout);
-    with_scratch::<BE, _>(module.mhe_glwe_public_key_share_gen_tmp_bytes(&layout), |s| {
-        module.mhe_glwe_public_key_share_gen(&mut res, &sk, SEEDS[0], &mut Source::new([10u8; 32]), s)
+    let before = res.clone();
+    let mut source_xe = Source::new([10u8; 32]);
+    super::fixtures::assert_panics_with("invalid secret: a public key share needs a samplable distribution", || {
+        with_scratch::<BE, _>(module.mhe_glwe_public_key_share_gen_tmp_bytes(&layout), |s| {
+            module.mhe_glwe_public_key_share_gen(&mut res, &sk, SEEDS[0], &mut source_xe, s)
+        })
     });
+    assert!(res == before);
+    assert_eq!(source_xe.next_i64(), Source::new([10u8; 32]).next_i64());
 }
 
 /// Invalid shapes fail at the protocol boundary with an exact static message.

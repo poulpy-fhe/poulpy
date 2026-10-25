@@ -412,7 +412,7 @@ where
     assert_decrypts_to(module, &res, &want, &sk, 1 << 6, &mut scratch);
 }
 
-pub fn test_ggsw_share_seed_mismatch<BE>(module: &Module<BE>)
+pub fn test_mhe_ggsw_share_aggregate_rejects_seed_mismatch<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     Module<BE>:
@@ -431,10 +431,14 @@ where
         });
         share
     });
-    module.mhe_ggsw_share_aggregate(&mut a, &b);
+    let before = a.clone();
+    super::fixtures::assert_panics_with("invalid aggregation: seeds differ", || {
+        module.mhe_ggsw_share_aggregate(&mut a, &b);
+    });
+    assert!(a == before);
 }
 
-pub fn test_ggsw_share_ephemeral_rank_mismatch<BE>(module: &Module<BE>)
+pub fn test_mhe_ggsw_share_gen_rejects_ephemeral_rank_mismatch<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     Module<BE>:
@@ -447,12 +451,18 @@ where
     let u = secret_from_seed_at(module, Rank(1), [9u8; 32]);
     let m: ScalarZnx<AlignedBuf, i64> = module.scalar_znx_alloc(module.n(), 1);
     let mut share = module.ggsw_share_alloc_from_infos(&layout);
-    with_scratch::<BE, _>(module.mhe_ggsw_share_gen_tmp_bytes(&layout), |s| {
-        module.mhe_ggsw_share_gen(&mut share, &m, &secrets[0].1, &u.1, SEEDS[0], &mut Source::new([10u8; 32]), s)
+    let before = share.clone();
+    let mut source_xe = Source::new([10u8; 32]);
+    super::fixtures::assert_panics_with("invalid share: ephemeral secret rank differs from the secret's", || {
+        with_scratch::<BE, _>(module.mhe_ggsw_share_gen_tmp_bytes(&layout), |s| {
+            module.mhe_ggsw_share_gen(&mut share, &m, &secrets[0].1, &u.1, SEEDS[0], &mut source_xe, s)
+        })
     });
+    assert!(share == before);
+    assert_eq!(source_xe.next_i64(), Source::new([10u8; 32]).next_i64());
 }
 
-pub fn test_ggsw_share_key_rank_mismatch<BE>(module: &Module<BE>)
+pub fn test_mhe_ggsw_share_finalize_rejects_key_rank_mismatch<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     Module<BE>: MHEModuleAlloc<BE> + GGSWMHEProtocol<BE> + GLWESwitchingKeyPreparedFactory<BE>,
@@ -466,9 +476,13 @@ where
     let pat = module.ggsw_share_alloc_from_infos(&layout);
     let key: GLWESwitchingKeyPrepared<AlignedBuf, BE> = module.glwe_switching_key_prepared_alloc_from_infos(&key_layout);
     let mut res: GGSW<AlignedBuf, i64> = module.ggsw_alloc_from_infos(&layout);
-    with_scratch::<BE, _>(module.mhe_ggsw_share_finalize_tmp_bytes(&layout, &key_layout), |s| {
-        module.mhe_ggsw_share_finalize(&mut res, &pat, &key, s)
+    let before = res.clone();
+    super::fixtures::assert_panics_with("invalid finalization: key output rank differs from the GGSW's", || {
+        with_scratch::<BE, _>(module.mhe_ggsw_share_finalize_tmp_bytes(&layout, &key_layout), |s| {
+            module.mhe_ggsw_share_finalize(&mut res, &pat, &key, s)
+        })
     });
+    assert!(res == before);
 }
 
 pub fn test_ggsw_share_key_precision_mismatch<BE>(module: &Module<BE>)

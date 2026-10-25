@@ -118,7 +118,7 @@ where
 }
 
 /// Aggregating switching key shares of different degrees panics.
-pub fn test_glwe_switching_key_degree_mismatch<BE>(module: &Module<BE>)
+pub fn test_mhe_glwe_switching_key_share_aggregate_rejects_degree_mismatch<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     Module<BE>: MHEModuleAlloc<BE> + GLWESwitchingKeyMHEProtocol<BE>,
@@ -127,11 +127,15 @@ where
     let mut a = module.glwe_switching_key_share_alloc_from_infos(&layout);
     let mut b = module.glwe_switching_key_share_alloc_from_infos(&layout);
     b.input_degree = Degree(module.n() as u32);
-    module.mhe_glwe_switching_key_share_aggregate(&mut a, &b);
+    let before = a.clone();
+    super::fixtures::assert_panics_with("invalid aggregation: degrees differ", || {
+        module.mhe_glwe_switching_key_share_aggregate(&mut a, &b);
+    });
+    assert!(a == before);
 }
 
 /// Aggregating switching key shares of different output degrees panics.
-pub fn test_glwe_switching_key_out_degree_mismatch<BE>(module: &Module<BE>)
+pub fn test_mhe_glwe_switching_key_share_aggregate_rejects_out_degree_mismatch<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     Module<BE>: MHEModuleAlloc<BE> + GLWESwitchingKeyMHEProtocol<BE>,
@@ -140,11 +144,15 @@ where
     let mut a = module.glwe_switching_key_share_alloc_from_infos(&layout);
     let mut b = module.glwe_switching_key_share_alloc_from_infos(&layout);
     b.output_degree = Degree(module.n() as u32);
-    module.mhe_glwe_switching_key_share_aggregate(&mut a, &b);
+    let before = a.clone();
+    super::fixtures::assert_panics_with("invalid aggregation: degrees differ", || {
+        module.mhe_glwe_switching_key_share_aggregate(&mut a, &b);
+    });
+    assert!(a == before);
 }
 
 /// Aggregating automorphism key shares of different Galois elements panics.
-pub fn test_glwe_automorphism_key_p_mismatch<BE>(module: &Module<BE>)
+pub fn test_mhe_glwe_automorphism_key_share_aggregate_rejects_p_mismatch<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     Module<BE>: MHEModuleAlloc<BE> + GLWEAutomorphismKeyMHEProtocol<BE>,
@@ -153,7 +161,11 @@ where
     let mut a = module.glwe_automorphism_key_share_alloc_from_infos(&layout);
     let mut b = module.glwe_automorphism_key_share_alloc_from_infos(&layout);
     b.p = P;
-    module.mhe_glwe_automorphism_key_share_aggregate(&mut a, &b);
+    let before = a.clone();
+    super::fixtures::assert_panics_with("invalid aggregation: Galois elements differ", || {
+        module.mhe_glwe_automorphism_key_share_aggregate(&mut a, &b);
+    });
+    assert!(a == before);
 }
 
 /// `sigma_{p^-1}(sk)` prepared: the secret core's automorphism key encrypts under.

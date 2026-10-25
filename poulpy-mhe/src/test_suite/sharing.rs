@@ -15,8 +15,8 @@ use poulpy_hal::{
 };
 
 use super::fixtures::{
-    BASE2K, K, K_OUT, LOG_MESSAGE, PARTIES, SEED_XE, SEEDS, assert_flooded_integers, bounded_integers, encrypt_integers,
-    glwe_layout_at, ideal_secret, integer_plaintext, party_secrets, plaintext_integers, secret_from_seed,
+    BASE2K, K, K_OUT, LOG_MESSAGE, PARTIES, SEED_XE, SEEDS, assert_flooded_integers, assert_panics_with, bounded_integers,
+    encrypt_integers, glwe_layout_at, ideal_secret, integer_plaintext, party_secrets, plaintext_integers, secret_from_seed,
 };
 use super::parity::with_scratch;
 use crate::{
@@ -163,7 +163,7 @@ where
 }
 
 /// A share more precise than the output panics.
-pub fn test_glwe_share_to_enc_precision<BE>(module: &Module<BE>)
+pub fn test_mhe_glwe_share_to_enc_share_gen_rejects_precision<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     Module<BE>: MHEModuleAlloc<BE> + GLWEShareToEncMHEProtocol<BE> + GLWESecretSampling<BE> + GLWESecretPreparedFactory<BE>,
@@ -175,14 +175,20 @@ where
     let secret: GLWEPlaintext<AlignedBuf, i64> = module.glwe_plaintext_alloc_from_infos(&secret_layout);
     let mut res = module.glwe_share_to_enc_share_alloc_from_infos(&layout);
 
-    with_scratch::<BE, _>(
-        module.mhe_glwe_share_to_enc_share_gen_tmp_bytes(&layout, &secret_layout),
-        |s| module.mhe_glwe_share_to_enc_share_gen(&mut res, &secret, &sk, SEEDS[0], &mut Source::new(SEED_XE), s),
-    );
+    let before = res.clone();
+    let mut source_xe = Source::new(SEED_XE);
+    assert_panics_with("invalid share: secret share more precise than the output", || {
+        with_scratch::<BE, _>(
+            module.mhe_glwe_share_to_enc_share_gen_tmp_bytes(&layout, &secret_layout),
+            |s| module.mhe_glwe_share_to_enc_share_gen(&mut res, &secret, &sk, SEEDS[0], &mut source_xe, s),
+        )
+    });
+    assert!(res == before);
+    assert_eq!(source_xe.next_i64(), Source::new(SEED_XE).next_i64());
 }
 
 /// A share less precise than the ciphertext panics.
-pub fn test_glwe_enc_to_share_precision<BE>(module: &Module<BE>)
+pub fn test_mhe_glwe_enc_to_share_share_gen_rejects_precision<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     Module<BE>: GLWEEncToShareMHEProtocol<BE> + GLWESecretSampling<BE> + GLWESecretPreparedFactory<BE>,
@@ -199,22 +205,32 @@ where
         }),
     };
     let mut secret: GLWEPlaintext<AlignedBuf, i64> = module.glwe_plaintext_alloc_from_infos(&secret_layout);
-    with_scratch::<BE, _>(module.mhe_glwe_enc_to_share_share_gen_tmp_bytes(&ct_layout), |s| {
-        module.mhe_glwe_enc_to_share_share_gen(
-            &mut public,
-            &mut secret,
-            &ct,
-            &sk,
-            Noise::Gaussian { sigma: 1024.0 },
-            &mut Source::new([60u8; 32]),
-            &mut Source::new(SEED_XE),
-            s,
-        )
+    let public_before = public.inner.clone();
+    let secret_before = secret.data().clone();
+    let mut source_mask = Source::new([60u8; 32]);
+    let mut source_xe = Source::new(SEED_XE);
+    assert_panics_with("invalid share: share and mask layouts differ", || {
+        with_scratch::<BE, _>(module.mhe_glwe_enc_to_share_share_gen_tmp_bytes(&ct_layout), |s| {
+            module.mhe_glwe_enc_to_share_share_gen(
+                &mut public,
+                &mut secret,
+                &ct,
+                &sk,
+                Noise::Gaussian { sigma: 1024.0 },
+                &mut source_mask,
+                &mut source_xe,
+                s,
+            )
+        })
     });
+    assert!(public.inner == public_before);
+    assert!(*secret.data() == secret_before);
+    assert_eq!(source_mask.next_i64(), Source::new([60u8; 32]).next_i64());
+    assert_eq!(source_xe.next_i64(), Source::new(SEED_XE).next_i64());
 }
 
 /// Finalizing a share whose layout differs from the ciphertext's panics.
-pub fn test_glwe_enc_to_share_finalize_layout_mismatch<BE>(module: &Module<BE>)
+pub fn test_mhe_glwe_enc_to_share_share_finalize_rejects_layout_mismatch<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     Module<BE>: GLWEEncToShareMHEProtocol<BE>,
@@ -230,9 +246,13 @@ where
         inner: module.glwe_alloc_from_infos(&secret_layout),
     };
     let mut secret: GLWEPlaintext<AlignedBuf, i64> = module.glwe_plaintext_alloc_from_infos(&glwe_layout_at(module, K_OUT));
-    with_scratch::<BE, _>(module.mhe_glwe_enc_to_share_share_finalize_tmp_bytes(), |s| {
-        module.mhe_glwe_enc_to_share_share_finalize(&mut secret, &ct, &share, s)
+    let before = secret.data().clone();
+    assert_panics_with("invalid finalization: ciphertext and share layouts differ", || {
+        with_scratch::<BE, _>(module.mhe_glwe_enc_to_share_share_finalize_tmp_bytes(), |s| {
+            module.mhe_glwe_enc_to_share_share_finalize(&mut secret, &ct, &share, s)
+        })
     });
+    assert!(*secret.data() == before);
 }
 
 /// Plaintext shares must be rank zero at both conversion boundaries.

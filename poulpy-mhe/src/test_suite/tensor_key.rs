@@ -124,7 +124,7 @@ where
 }
 
 /// Sharing under a public key less precise than the share panics.
-pub fn test_glwe_tensor_key_pk_precision<BE>(module: &Module<BE>)
+pub fn test_mhe_glwe_tensor_key_share_gen_rejects_pk_precision<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     Module<BE>: MHEModuleAlloc<BE>
@@ -140,20 +140,21 @@ where
     let (sk, _) = secret_from_seed(module, [100u8; 32]);
     let pk: GLWEPublicKeyPrepared<AlignedBuf, BE> = module.glwe_public_key_prepared_alloc_from_infos(&pk_layout);
     let mut res = module.glwe_tensor_key_share_alloc_from_infos(&layout);
-    with_scratch::<BE, _>(module.mhe_glwe_tensor_key_share_gen_tmp_bytes(&layout, &pk_layout), |s| {
-        module.mhe_glwe_tensor_key_share_gen(
-            &mut res,
-            &sk,
-            &pk,
-            &mut Source::new([20u8; 32]),
-            &mut Source::new([10u8; 32]),
-            s,
-        )
+    let before = res.clone();
+    let mut source_a = Source::new([20u8; 32]);
+    let mut source_b = Source::new([10u8; 32]);
+    super::fixtures::assert_panics_with("invalid share: public key less precise than the share", || {
+        with_scratch::<BE, _>(module.mhe_glwe_tensor_key_share_gen_tmp_bytes(&layout, &pk_layout), |s| {
+            module.mhe_glwe_tensor_key_share_gen(&mut res, &sk, &pk, &mut source_a, &mut source_b, s)
+        })
     });
+    assert!(res == before);
+    assert_eq!(source_a.next_i64(), Source::new([20u8; 32]).next_i64());
+    assert_eq!(source_b.next_i64(), Source::new([10u8; 32]).next_i64());
 }
 
 /// Sharing with a secret whose degree differs from the key's panics.
-pub fn test_glwe_tensor_key_secret_degree<BE>(module: &Module<BE>)
+pub fn test_mhe_glwe_tensor_key_share_gen_rejects_secret_degree<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     Module<BE>: MHEModuleAlloc<BE>
@@ -174,16 +175,17 @@ where
     module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut Source::new([100u8; 32]));
     let pk: GLWEPublicKeyPrepared<AlignedBuf, BE> = module.glwe_public_key_prepared_alloc_from_infos(&pk_layout);
     let mut res = module.glwe_tensor_key_share_alloc_from_infos(&layout);
-    with_scratch::<BE, _>(module.mhe_glwe_tensor_key_share_gen_tmp_bytes(&layout, &pk_layout), |s| {
-        module.mhe_glwe_tensor_key_share_gen(
-            &mut res,
-            &sk,
-            &pk,
-            &mut Source::new([20u8; 32]),
-            &mut Source::new([10u8; 32]),
-            s,
-        )
+    let before = res.clone();
+    let mut source_a = Source::new([20u8; 32]);
+    let mut source_b = Source::new([10u8; 32]);
+    super::fixtures::assert_panics_with("invalid share: secret degree differs from the key's", || {
+        with_scratch::<BE, _>(module.mhe_glwe_tensor_key_share_gen_tmp_bytes(&layout, &pk_layout), |s| {
+            module.mhe_glwe_tensor_key_share_gen(&mut res, &sk, &pk, &mut source_a, &mut source_b, s)
+        })
     });
+    assert!(res == before);
+    assert_eq!(source_a.next_i64(), Source::new([20u8; 32]).next_i64());
+    assert_eq!(source_b.next_i64(), Source::new([10u8; 32]).next_i64());
 }
 
 pub(crate) fn tensor_key_layout<BE: Backend>(module: &Module<BE>, dnum: Dnum, dsize: Dsize) -> GLWETensorKeyLayout {
