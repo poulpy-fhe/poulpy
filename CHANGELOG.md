@@ -853,6 +853,8 @@
 - **Behaviour:** the bootstrapping runners also run each preset with the keys of power-of-two rotations only (`BootstrappingPreset::with_power_of_two_keys`), under the preset's name with a `+pow2` suffix (`test_suite::presets::preset_label`), so a filter on a preset name selects both.
 - **Breaking:** `bench_ckks_bootstrapping` requires `PresetRunModule`, `HostStaged` and `CKKSDFTOps`.
 - **Breaking:** the bin-fhe runners and tables require the factories of the prepared keys they allocate: `bin_fhe::runner_blind_rotate` and `blind_rotate_ops` `GGSWPreparedFactory`, `bin_fhe::runner_circuit_bootstrapping` and `circuit_bootstrapping_ops` `BlindRotationKeyPreparedFactory`, `GGLWEToGGSWKeyPreparedFactory` and `GLWEAutomorphismKeyPreparedFactory`, and `bin_fhe_standard_ops` and `bench_binfhe` `GGLWEToGGSWKeyPreparedFactory` and `GLWEAutomorphismKeyPreparedFactory`.
+- **Breaking:** `bench_ckks_bootstrapping` also requires `CKKSEvalModOps`, which `PresetRunModule` now carries with `CKKSDFTOps`; a backend benched through it implements both.
+- **Breaking:** `BlasBenchModule` also requires `BlasEncodingOps<BE, f64>`, `BlasContextPreparedFactory` and `BlasPtOperandPreparedFactory`, and the blas bench runners bound their module by it.
 
 ### Dependencies
 
