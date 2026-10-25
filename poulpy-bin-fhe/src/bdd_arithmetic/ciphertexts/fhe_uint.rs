@@ -298,6 +298,35 @@ impl<D: Data, T: UnsignedInteger> FheUint<D, T, i64> {
         module.glwe_pack(&mut self.bits, cts, log_gap, keys, scratch);
     }
 
+    /// Scratch bytes of [`FheUint::splice_u16`] for operands `a` and `b` into `self`: its two byte splices run one after the other.
+    pub fn splice_u16_tmp_bytes<A, B, H, M, BE>(&self, module: &M, a_infos: &A, b_infos: &B, keys: &H) -> usize
+    where
+        BE: Backend,
+        A: GLWEInfos,
+        B: GLWEInfos,
+        H: GetAutomorphismKey<BE>,
+        M: GLWECopy<BE> + GLWERotate<BE> + GLWETrace<BE>,
+    {
+        self.splice_u8_tmp_bytes(module, a_infos, b_infos, keys)
+            .max(self.splice_u8_tmp_bytes(module, self, b_infos, keys))
+    }
+
+    /// Scratch bytes of [`FheUint::splice_u8`] for operands `a` and `b` into `self`: the copy of `a`, the byte zeroing and the isolation of `b`'s byte run one after the other.
+    pub fn splice_u8_tmp_bytes<A, B, H, M, BE>(&self, module: &M, a_infos: &A, b_infos: &B, keys: &H) -> usize
+    where
+        BE: Backend,
+        A: GLWEInfos,
+        B: GLWEInfos,
+        H: GetAutomorphismKey<BE>,
+        M: GLWECopy<BE> + GLWERotate<BE> + GLWETrace<BE>,
+    {
+        module
+            .glwe_copy_tmp_bytes(self, a_infos)
+            .max(self.zero_byte_tmp_bytes(module, keys))
+            .max(trace_tmp_bytes(module, b_infos, b_infos, keys))
+            .max(module.glwe_rotate_tmp_bytes())
+    }
+
     #[allow(clippy::too_many_arguments)]
     // Self <- ((a.rotate_right(dst<<4) & 0xFFFF_0000) | (b.rotate_right(src<<4) & 0x0000_FFFF)).rotate_left(dst<<4);
     pub fn splice_u16<A, B, H, M, BE>(
@@ -390,6 +419,21 @@ impl<D: Data, T: UnsignedInteger> FheUint<D, T, i64> {
         // Add self[0] += a[0]
         module.glwe_add_assign(self, &tmp_fhe_uint_byte);
     }
+}
+
+/// Scratch bytes of tracing `a_infos` into `res_infos` with the key `keys` provides at their precision.
+fn trace_tmp_bytes<M, R, A, H, BE>(module: &M, res_infos: &R, a_infos: &A, keys: &H) -> usize
+where
+    BE: Backend,
+    R: GLWEInfos,
+    A: GLWEInfos,
+    H: GetAutomorphismKey<BE>,
+    M: GLWETrace<BE>,
+{
+    let atk = keys
+        .get_automorphism_key(-1, res_infos.k().max(a_infos.k()))
+        .unwrap_or_else(|e| panic!("{e}"));
+    module.glwe_trace_tmp_bytes(res_infos, a_infos, &atk)
 }
 
 impl<BE: Backend, D: Data, T: UnsignedInteger> GLWEToBackendRef<BE> for FheUint<D, T, BE::ZnxWord>
@@ -489,6 +533,17 @@ impl<D: Data, T: UnsignedInteger, W: ZnxWord> FheUint<D, T, W> {
         }
     }
 
+    /// Scratch bytes of [`FheUint::get_bit_glwe`] into `res`: the trace of `res`.
+    pub fn get_bit_glwe_tmp_bytes<R, M, H, BE>(&self, module: &M, res_infos: &R, keys: &H) -> usize
+    where
+        BE: Backend,
+        R: GLWEInfos,
+        H: GetAutomorphismKey<BE>,
+        M: GLWETrace<BE>,
+    {
+        trace_tmp_bytes(module, res_infos, res_infos, keys)
+    }
+
     pub fn get_bit_glwe<R, M, H, BE>(&self, module: &M, bit: usize, res: &mut R, keys: &H, scratch: &mut ScratchArena<'_, BE>)
     where
         BE: Backend,
@@ -559,6 +614,16 @@ impl<T: UnsignedInteger> FheUint<AlignedBuf, T, i64> {
 }
 
 impl<D: Data, T: UnsignedInteger> FheUint<D, T, i64> {
+    /// Scratch bytes of [`FheUint::zero_byte`]: the rotations and the trace of `self`.
+    pub(crate) fn zero_byte_tmp_bytes<M, H, BE>(&self, module: &M, keys: &H) -> usize
+    where
+        BE: Backend,
+        H: GetAutomorphismKey<BE>,
+        M: GLWERotate<BE> + GLWETrace<BE>,
+    {
+        module.glwe_rotate_tmp_bytes().max(trace_tmp_bytes(module, self, self, keys))
+    }
+
     pub fn zero_byte<M, H, BE>(&mut self, module: &M, byte: usize, keys: &H, scratch: &mut ScratchArena<'_, BE>)
     where
         BE: Backend<OwnedBuf = D, ZnxWord = i64>,
@@ -591,6 +656,18 @@ impl<D: Data, T: UnsignedInteger> FheUint<D, T, i64> {
 
         // Move a to self and align byte
         module.glwe_rotate_assign(rot, self, scratch);
+    }
+
+    /// Scratch bytes of [`FheUint::sext`]: the trace of the sign bit, then the byte splices and the copies, one after the other.
+    pub fn sext_tmp_bytes<H, M, BE>(&self, module: &M, keys: &H) -> usize
+    where
+        BE: Backend,
+        H: GetAutomorphismKey<BE>,
+        M: GLWECopy<BE> + GLWERotate<BE> + GLWETrace<BE>,
+    {
+        trace_tmp_bytes(module, self, self, keys)
+            .max(module.glwe_copy_tmp_bytes(self, self))
+            .max(self.splice_u8_tmp_bytes(module, self, self, keys))
     }
 
     pub fn sext<M, H, BE>(&mut self, module: &M, byte: usize, keys: &H, scratch: &mut ScratchArena<'_, BE>)
