@@ -354,7 +354,7 @@ where
 }
 
 /// An encryption-to-shares generation over a flag-clear mask is rejected before any draw.
-pub fn test_glwe_enc_to_share_rejects_flag_clear_mask<BE>(module: &Module<BE>)
+pub fn test_mhe_glwe_enc_to_share_share_gen_rejects_flag_clear_mask<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     Module<BE>: GLWEEncToShareMHEProtocol<BE> + GLWESecretSampling<BE> + GLWESecretPreparedFactory<BE>,
@@ -368,7 +368,7 @@ where
         inner: module.glwe_alloc_from_infos(&GLWELayout { rank: Rank(0), ..layout }),
     };
     let mut secret: GLWEPlaintext<AlignedBuf, i64> = module.glwe_plaintext_alloc_from_infos(&layout);
-    let (public_before, secret_before) = (public.clone(), secret.data().clone());
+    let (public_before, secret_before) = (public.clone(), plaintext_state(&secret));
     let mut source_xm = Source::new([60u8; 32]);
     let mut source_smudge = Source::new(SEED_XE);
     super::fixtures::assert_panics_with("invalid share: mask not canonical", || {
@@ -385,7 +385,7 @@ where
             )
         });
     });
-    assert!(public == public_before && *secret.data() == secret_before);
+    assert!(public == public_before && plaintext_state(&secret) == secret_before);
     assert_eq!(source_xm.next_i64(), Source::new([60u8; 32]).next_i64());
     assert_eq!(source_smudge.next_i64(), Source::new(SEED_XE).next_i64());
 }

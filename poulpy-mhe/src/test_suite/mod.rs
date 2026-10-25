@@ -157,8 +157,8 @@ macro_rules! mhe_backend_test_suite {
             }
 
             #[test]
-            fn ggsw_share_key_precision_mismatch() {
-                $crate::test_suite::ggsw::test_ggsw_share_key_precision_mismatch(&Module::<$backend>::new(64));
+            fn mhe_ggsw_share_finalize_rejects_key_precision() {
+                $crate::test_suite::ggsw::test_mhe_ggsw_share_finalize_rejects_key_precision(&Module::<$backend>::new(64));
             }
 
             #[test]
@@ -263,18 +263,28 @@ macro_rules! mhe_backend_test_suite {
             }
 
             #[test]
-            fn glwe_private_keyswitch_rejects_flag_clear_mask() {
-                $crate::test_suite::keyswitch::test_glwe_private_keyswitch_rejects_flag_clear_mask(&Module::<$backend>::new(64));
+            fn mhe_glwe_private_keyswitch_share_gen_rejects_flag_clear_mask() {
+                $crate::test_suite::keyswitch::test_mhe_glwe_private_keyswitch_share_gen_rejects_flag_clear_mask(&Module::<
+                    $backend,
+                >::new(
+                    64
+                ));
             }
 
             #[test]
-            fn glwe_public_keyswitch_rejects_flag_clear_mask() {
-                $crate::test_suite::keyswitch::test_glwe_public_keyswitch_rejects_flag_clear_mask(&Module::<$backend>::new(64));
+            fn mhe_glwe_public_keyswitch_share_gen_rejects_flag_clear_mask() {
+                $crate::test_suite::keyswitch::test_mhe_glwe_public_keyswitch_share_gen_rejects_flag_clear_mask(&Module::<
+                    $backend,
+                >::new(
+                    64
+                ));
             }
 
             #[test]
-            fn glwe_enc_to_share_rejects_flag_clear_mask() {
-                $crate::test_suite::sharing::test_glwe_enc_to_share_rejects_flag_clear_mask(&Module::<$backend>::new(64));
+            fn mhe_glwe_enc_to_share_share_gen_rejects_flag_clear_mask() {
+                $crate::test_suite::sharing::test_mhe_glwe_enc_to_share_share_gen_rejects_flag_clear_mask(
+                    &Module::<$backend>::new(64),
+                );
             }
 
             #[test]

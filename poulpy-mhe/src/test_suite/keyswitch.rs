@@ -695,7 +695,7 @@ where
 }
 
 /// A private key switching share of a flag-clear mask is rejected before any draw.
-pub fn test_glwe_private_keyswitch_rejects_flag_clear_mask<BE>(module: &Module<BE>)
+pub fn test_mhe_glwe_private_keyswitch_share_gen_rejects_flag_clear_mask<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     Module<BE>: GLWEPrivateKeyswitchMHEProtocol<BE> + GLWESecretPreparedFactory<BE>,
@@ -719,7 +719,7 @@ where
 }
 
 /// A public key switching share of a flag-clear mask is rejected before any draw.
-pub fn test_glwe_public_keyswitch_rejects_flag_clear_mask<BE>(module: &Module<BE>)
+pub fn test_mhe_glwe_public_keyswitch_share_gen_rejects_flag_clear_mask<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     Module<BE>: GLWEPublicKeyswitchMHEProtocol<BE> + GLWESecretPreparedFactory<BE> + GLWEPublicKeyPreparedFactory<BE>,

@@ -13,7 +13,7 @@ use poulpy_core::{
 use poulpy_hal::{
     AlignedBuf,
     api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAddScalarAssign, VecZnxFillUniformSource},
-    layouts::{HostBackend, HostDataMut, HostDataRef, Module, ReaderFrom, ScratchOwned, WriterTo},
+    layouts::{DataViewMut, HostBackend, HostDataMut, HostDataRef, Module, ReaderFrom, ScratchOwned, WriterTo},
     source::Source,
     test_suite::vec_znx_backend_mut,
 };
@@ -359,8 +359,8 @@ where
         rank: RANK,
     };
     let share = module.glwe_public_key_share_alloc_from_infos(&layout);
-    let mut pk: GLWEPublicKey<AlignedBuf, i64> = module.glwe_public_key_alloc_from_infos(&layout);
-    let before: GLWEPublicKey<AlignedBuf, i64> = module.glwe_public_key_alloc_from_infos(&layout);
+    let mut pk = dirty_public_key(module, &layout);
+    let before = dirty_public_key(module, &layout);
     super::fixtures::assert_panics_with("invalid distribution: a public key needs a samplable distribution", || {
         with_scratch::<BE, _>(module.mhe_glwe_public_key_share_finalize_tmp_bytes(), |s| {
             module.mhe_glwe_public_key_share_finalize(&mut pk, &share, s)
@@ -386,14 +386,30 @@ where
     };
     let mut share = module.glwe_public_key_share_alloc_from_infos(&layout);
     *share.dist_mut() = Distribution::TernaryProb(0.5);
-    let mut pk: GLWEPublicKey<AlignedBuf, i64> = module.glwe_public_key_alloc_from_infos(&layout);
-    let before: GLWEPublicKey<AlignedBuf, i64> = module.glwe_public_key_alloc_from_infos(&layout);
+    let mut pk = dirty_public_key(module, &layout);
+    let before = dirty_public_key(module, &layout);
     super::fixtures::assert_panics_with("invalid finalization: public key entries share a seed", || {
         with_scratch::<BE, _>(module.mhe_glwe_public_key_share_finalize_tmp_bytes(), |s| {
             module.mhe_glwe_public_key_share_finalize(&mut pk, &share, s)
         })
     });
     assert!(pk == before);
+}
+
+/// A public key of `layout` holding other content than a finalization writes, the same on every call.
+fn dirty_public_key<BE>(module: &Module<BE>, layout: &GLWELayout) -> GLWEPublicKey<AlignedBuf, i64>
+where
+    BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
+    Module<BE>: MHEModuleAlloc<BE>,
+{
+    let mut pk: GLWEPublicKey<AlignedBuf, i64> = module.glwe_public_key_alloc_from_infos(layout);
+    pk.data_mut()
+        .data_mut()
+        .iter_mut()
+        .enumerate()
+        .for_each(|(i, x)| *x = (i as u8).wrapping_mul(29).wrapping_add(11));
+    *pk.dist_mut() = Distribution::BinaryProb(0.5);
+    pk
 }
 
 /// Reading a share of another rank fails.
