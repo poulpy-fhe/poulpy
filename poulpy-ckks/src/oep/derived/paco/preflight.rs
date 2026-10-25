@@ -354,6 +354,7 @@ where
 
 /// Performs layout validation and rejects undersized scratch before an output
 /// ciphertext or encapsulation temporary is mutated.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn preflight<BE, F, K, Src>(
     op: &'static str,
     module: &Module<BE>,

@@ -649,12 +649,12 @@ where
     let mut res_real = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
     let mut res_imag = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
     with_scratch::<BE, _>(
-        module.ckks_eval_mod_tmp_bytes(&res_real, &ct_real, &ctx.eval_mod().unwrap(), &bsk.tensor_key),
+        module.ckks_eval_mod_tmp_bytes(&res_real, &ct_real, ctx.eval_mod().unwrap(), &bsk.tensor_key),
         |s| module.ckks_eval_mod(&mut res_real, &ct_real, ctx.eval_mod().unwrap(), &bsk.tensor_key, s),
     )
     .unwrap();
     with_scratch::<BE, _>(
-        module.ckks_eval_mod_tmp_bytes(&res_imag, &ct_imag, &ctx.eval_mod().unwrap(), &bsk.tensor_key),
+        module.ckks_eval_mod_tmp_bytes(&res_imag, &ct_imag, ctx.eval_mod().unwrap(), &bsk.tensor_key),
         |s| module.ckks_eval_mod(&mut res_imag, &ct_imag, ctx.eval_mod().unwrap(), &bsk.tensor_key, s),
     )
     .unwrap();
@@ -928,12 +928,12 @@ where
     let mut res_real = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
     let mut res_imag = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
     with_scratch::<BE, _>(
-        module.ckks_eval_mod_tmp_bytes(&res_real, &r0_lp, &ctx.eval_mod().unwrap(), &bsk.tensor_key()),
+        module.ckks_eval_mod_tmp_bytes(&res_real, &r0_lp, ctx.eval_mod().unwrap(), &bsk.tensor_key()),
         |s| module.ckks_eval_mod(&mut res_real, &r0_lp, ctx.eval_mod().unwrap(), bsk.tensor_key(), s),
     )
     .unwrap();
     with_scratch::<BE, _>(
-        module.ckks_eval_mod_tmp_bytes(&res_imag, &i0_lp, &ctx.eval_mod().unwrap(), &bsk.tensor_key()),
+        module.ckks_eval_mod_tmp_bytes(&res_imag, &i0_lp, ctx.eval_mod().unwrap(), &bsk.tensor_key()),
         |s| module.ckks_eval_mod(&mut res_imag, &i0_lp, ctx.eval_mod().unwrap(), bsk.tensor_key(), s),
     )
     .unwrap();
