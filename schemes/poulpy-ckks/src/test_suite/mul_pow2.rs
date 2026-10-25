@@ -8,6 +8,7 @@ use super::helpers::{
     assert_decrypt_precision, assert_decrypt_precision_at_log_delta, assert_unary_output_meta, ckks_encrypt, gen_sk,
     test_vector_1, want_div_pow2, want_mul_pow2,
 };
+use super::parity::helpers::with_scratch;
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
     layouts::{HostBytesBackend, Module, Standard},
@@ -45,9 +46,10 @@ where
     );
     let (want_re, want_im) = want_mul_pow2(&re1, &im1, SHIFT_BITS);
     let mut ct_res = alloc_ct(&params, module, params.k);
-    module
-        .ckks_mul_pow2_into(SHIFT_BITS, &mut ct_res, &ct, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_mul_pow2_tmp_bytes(ct_res.max_size()), |s| {
+        module.ckks_mul_pow2_into(SHIFT_BITS, &mut ct_res, &ct, s)
+    })
+    .unwrap();
     assert_unary_output_meta("mul_pow2", &ct_res, params.k, &ct);
     assert_decrypt_precision_at_log_delta(
         "mul_pow2",
@@ -92,9 +94,10 @@ where
     let (want_re, want_im) = want_mul_pow2(&re1, &im1, SHIFT_BITS);
     let dst_k = params.k - params.base2k - 1;
     let mut ct_res = alloc_ct(&params, module, dst_k);
-    module
-        .ckks_mul_pow2_into(SHIFT_BITS, &mut ct_res, &ct, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_mul_pow2_tmp_bytes(ct_res.max_size()), |s| {
+        module.ckks_mul_pow2_into(SHIFT_BITS, &mut ct_res, &ct, s)
+    })
+    .unwrap();
     assert_unary_output_meta("mul_pow2 smaller_output", &ct_res, dst_k, &ct);
     assert_decrypt_precision_at_log_delta(
         "mul_pow2",
@@ -139,9 +142,10 @@ where
     let (want_re, want_im) = want_mul_pow2(&re1, &im1, SHIFT_BITS);
     let expected_log_delta = ct.log_delta();
     let expected_log_budget = ct.log_budget();
-    module
-        .ckks_mul_pow2_assign(SHIFT_BITS, &mut ct, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_mul_pow2_tmp_bytes(ct.max_size()), |s| {
+        module.ckks_mul_pow2_assign(SHIFT_BITS, &mut ct, s)
+    })
+    .unwrap();
     assert_ct_meta("mul_pow2_assign", &ct, expected_log_delta, expected_log_budget);
     assert_decrypt_precision_at_log_delta(
         "mul_pow2_assign",
@@ -185,9 +189,10 @@ where
     );
     let (want_re, want_im) = want_div_pow2(&re1, &im1, SHIFT_BITS);
     let mut ct_res = alloc_ct(&params, module, params.k);
-    module
-        .ckks_div_pow2_into(SHIFT_BITS, &mut ct_res, &ct, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_div_pow2_tmp_bytes(ct_res.max_size()), |s| {
+        module.ckks_div_pow2_into(SHIFT_BITS, &mut ct_res, &ct, s)
+    })
+    .unwrap();
     assert_ct_meta("div_pow2", &ct_res, ct.log_delta() + SHIFT_BITS, ct.log_budget() - SHIFT_BITS);
     assert_decrypt_precision(
         "div_pow2",
@@ -231,9 +236,10 @@ where
     let (want_re, want_im) = want_div_pow2(&re1, &im1, SHIFT_BITS);
     let dst_k = params.k - params.base2k - 1;
     let mut ct_res = alloc_ct(&params, module, dst_k);
-    module
-        .ckks_div_pow2_into(SHIFT_BITS, &mut ct_res, &ct, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_div_pow2_tmp_bytes(ct_res.max_size()), |s| {
+        module.ckks_div_pow2_into(SHIFT_BITS, &mut ct_res, &ct, s)
+    })
+    .unwrap();
     let offset = ct.k().as_usize().saturating_sub(dst_k);
     assert_ct_meta(
         "div_pow2 smaller_output",

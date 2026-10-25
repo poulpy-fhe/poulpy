@@ -26,11 +26,25 @@ use super::helpers::{
     ckks_encrypt_with_prec, ckks_spec, gen_sk_with_raw, gen_tsk, precision_at, quantized_const, quantized_slots, test_vector_1,
     upload_pt,
 };
+use super::parity::helpers::with_scratch;
 use crate::SlotsKind;
+use crate::api::CKKSAllOpsTmpBytes;
+use crate::layouts::CKKSModuleAlloc;
 
 /// Asserts the eval consumed exactly `bsgs.consumed_bits(input_ld, coeff_ld)`
 /// of `log_budget` and preserved `log_delta`. `input_log_budget`/`input_log_delta`
 /// are the original input ciphertext's metadata (level 0).
+/// The documented query of polynomial evaluation and of the power basis it builds: the shared all-operations bound.
+fn poly_scratch_bytes<BE>(params: &CKKSTestParams, module: &Module<BE>) -> usize
+where
+    BE: TestContextBackend<Ring = Standard>,
+    Module<BE>: TestContextModule<BE>,
+{
+    let mut ct = module.ckks_ciphertext_alloc_from_glwe_infos(&params.glwe_layout());
+    ct.set_meta(params.prec().meta);
+    module.ckks_all_ops_tmp_bytes(&ct, &PT_PREC, &params.tsk_layout())
+}
+
 fn assert_consumed_bits<BE, C>(
     label: &str,
     bsgs: &BSGSPolynomial<C>,
@@ -227,9 +241,10 @@ pub fn test_power_basis_populate_degree7<BE, F, E>(
         &mut scratch.borrow(),
     );
     let mut power_basis = PowerBasis::new(Basis::Monomial, x_ct);
-    power_basis
-        .populate(7, 2, Parity::Full, module, &tsk, &mut scratch.borrow())
-        .expect("populate power basis for degree 7");
+    with_scratch::<BE, _>(poly_scratch_bytes(&params, module), |s| {
+        power_basis.populate(7, 2, Parity::Full, module, &tsk, s)
+    })
+    .expect("populate power basis for degree 7");
 
     let zero_im = vec![F::zero(); x_re.len()];
     for power in 1..=4 {
@@ -294,9 +309,10 @@ pub fn test_power_basis_populate_chebyshev_degree7<BE, F, E>(
         &mut scratch.borrow(),
     );
     let mut power_basis = PowerBasis::new(Basis::Chebyshev, x_ct);
-    power_basis
-        .populate(7, 2, Parity::Full, module, &tsk, &mut scratch.borrow())
-        .expect("populate Chebyshev power basis for degree 7");
+    with_scratch::<BE, _>(poly_scratch_bytes(&params, module), |s| {
+        power_basis.populate(7, 2, Parity::Full, module, &tsk, s)
+    })
+    .expect("populate Chebyshev power basis for degree 7");
 
     let want = chebyshev_values(&x_re, 4);
     let zero_im = vec![F::zero(); x_re.len()];
@@ -447,7 +463,10 @@ pub fn test_eval_poly_const_coeffs_cubic<BE, F, E>(
     );
     let (x_ld, x_lb) = (x.log_delta(), x.log_budget());
     let mut x2 = alloc_ct(&params, module, params.k);
-    module.ckks_square_into(&mut x2, &x, &tsk, &mut scratch.borrow()).unwrap();
+    with_scratch::<BE, _>(module.ckks_square_tmp_bytes(&x2, &x, &tsk), |s| {
+        module.ckks_square_into(&mut x2, &x, &tsk, s)
+    })
+    .unwrap();
 
     let mut power_basis = PowerBasis::new(Basis::Monomial, x);
     power_basis.insert(2, x2).expect("insert pre-computed X^2");
@@ -610,8 +629,10 @@ pub fn test_eval_poly_const_coeffs_exp7<BE, F, E>(
     );
     let (x_ld, x_lb) = (x_ct.log_delta(), x_ct.log_budget());
     let mut pb = PowerBasis::new(Basis::Monomial, x_ct);
-    pb.populate(7, bsgs_host.log_split(), Parity::Full, module, &tsk, &mut scratch.borrow())
-        .expect("populate power basis for degree 7");
+    with_scratch::<BE, _>(poly_scratch_bytes(&params, module), |s| {
+        pb.populate(7, bsgs_host.log_split(), Parity::Full, module, &tsk, s)
+    })
+    .expect("populate power basis for degree 7");
 
     let mut res = alloc_ct(&params, module, params.k);
     module
@@ -699,14 +720,9 @@ pub fn test_eval_poly_const_coeffs_even_monomial<BE, F, E>(
     );
     let (x_ld, x_lb) = (x_ct.log_delta(), x_ct.log_budget());
     let mut pb = PowerBasis::new(Basis::Monomial, x_ct);
-    pb.populate(
-        4,
-        bsgs_host.log_split(),
-        bsgs_host.parity(),
-        module,
-        &tsk,
-        &mut scratch.borrow(),
-    )
+    with_scratch::<BE, _>(poly_scratch_bytes(&params, module), |s| {
+        pb.populate(4, bsgs_host.log_split(), bsgs_host.parity(), module, &tsk, s)
+    })
     .expect("populate power basis for degree 4");
 
     let mut res = alloc_ct(&params, module, params.k);
@@ -795,14 +811,9 @@ pub fn test_eval_poly_const_coeffs_odd_monomial<BE, F, E>(
     );
     let (x_ld, x_lb) = (x_ct.log_delta(), x_ct.log_budget());
     let mut pb = PowerBasis::new(Basis::Monomial, x_ct);
-    pb.populate(
-        5,
-        bsgs_host.log_split(),
-        bsgs_host.parity(),
-        module,
-        &tsk,
-        &mut scratch.borrow(),
-    )
+    with_scratch::<BE, _>(poly_scratch_bytes(&params, module), |s| {
+        pb.populate(5, bsgs_host.log_split(), bsgs_host.parity(), module, &tsk, s)
+    })
     .expect("populate power basis for degree 5");
 
     let mut res = alloc_ct(&params, module, params.k);
@@ -880,14 +891,9 @@ pub fn test_eval_poly_const_coeffs_chebyshev_degree31<BE, F, E>(
     );
     let (x_ld, x_lb) = (x_ct.log_delta(), x_ct.log_budget());
     let mut pb = PowerBasis::new(Basis::Chebyshev, x_ct);
-    pb.populate(
-        31,
-        bsgs_host.log_split(),
-        bsgs_host.parity(),
-        module,
-        &tsk,
-        &mut scratch.borrow(),
-    )
+    with_scratch::<BE, _>(poly_scratch_bytes(&params, module), |s| {
+        pb.populate(31, bsgs_host.log_split(), bsgs_host.parity(), module, &tsk, s)
+    })
     .expect("populate Chebyshev power basis for degree 31");
 
     let mut res = alloc_ct(&params, module, params.k);
@@ -965,14 +971,9 @@ pub fn test_eval_poly_const_coeffs_chebyshev_degree31_min_mult<BE, F, E>(
     );
     let (x_ld, x_lb) = (x_ct.log_delta(), x_ct.log_budget());
     let mut pb = PowerBasis::new(Basis::Chebyshev, x_ct);
-    pb.populate(
-        31,
-        bsgs_host.log_split(),
-        bsgs_host.parity(),
-        module,
-        &tsk,
-        &mut scratch.borrow(),
-    )
+    with_scratch::<BE, _>(poly_scratch_bytes(&params, module), |s| {
+        pb.populate(31, bsgs_host.log_split(), bsgs_host.parity(), module, &tsk, s)
+    })
     .expect("populate Chebyshev power basis for degree 31 with MinMult split");
 
     let mut res = alloc_ct(&params, module, params.k);
@@ -1103,9 +1104,10 @@ pub fn test_eval_poly_const_coeffs_parity_folds<BE, F, E>(
         let want_im = vec![F::zero(); m];
         let bsgs = upload_bsgs(module, &bsgs_host);
         let mut res = alloc_ct(&params, module, params.k);
-        module
-            .ckks_eval_poly_real_const_coeffs(&mut res, &input_ct, &bsgs, &tsk, &mut scratch.borrow())
-            .expect("parity-folded evaluation should succeed");
+        with_scratch::<BE, _>(poly_scratch_bytes(&params, module), |s| {
+            module.ckks_eval_poly_real_const_coeffs(&mut res, &input_ct, &bsgs, &tsk, s)
+        })
+        .expect("parity-folded evaluation should succeed");
 
         assert_consumed_bits::<BE, _>(
             label,
@@ -1194,7 +1196,10 @@ pub fn test_eval_poly_const_coeffs_complex_cubic<BE, F, E>(
         &mut scratch.borrow(),
     );
     let mut x2 = alloc_ct(&params, module, params.k);
-    module.ckks_square_into(&mut x2, &x, &tsk, &mut scratch.borrow()).unwrap();
+    with_scratch::<BE, _>(module.ckks_square_tmp_bytes(&x2, &x, &tsk), |s| {
+        module.ckks_square_into(&mut x2, &x, &tsk, s)
+    })
+    .unwrap();
 
     let (x_ld, x_lb) = (x.log_delta(), x.log_budget());
     let mut power_basis = PowerBasis::new(Basis::Monomial, x);
@@ -1309,14 +1314,9 @@ pub fn test_eval_poly_const_coeffs_complex_chebyshev<BE, F, E>(
     );
     let (x_ld, x_lb) = (x.log_delta(), x.log_budget());
     let mut pb = PowerBasis::new(Basis::Chebyshev, x);
-    pb.populate(
-        7,
-        bsgs_host.re.log_split(),
-        bsgs_host.re.parity(),
-        module,
-        &tsk,
-        &mut scratch.borrow(),
-    )
+    with_scratch::<BE, _>(poly_scratch_bytes(&params, module), |s| {
+        pb.populate(7, bsgs_host.re.log_split(), bsgs_host.re.parity(), module, &tsk, s)
+    })
     .expect("populate complex Chebyshev power basis for degree 7");
 
     // Host complex reference: per slot, Σ_k (cre_k + i·cim_k)·T_k(z) via the
@@ -1455,14 +1455,9 @@ pub fn test_eval_poly_const_coeffs_complex_even<BE, F, E>(
     );
     let (x_ld, x_lb) = (x.log_delta(), x.log_budget());
     let mut pb = PowerBasis::new(Basis::Monomial, x);
-    pb.populate(
-        4,
-        bsgs_host.re.log_split(),
-        bsgs_host.re.parity(),
-        module,
-        &tsk,
-        &mut scratch.borrow(),
-    )
+    with_scratch::<BE, _>(poly_scratch_bytes(&params, module), |s| {
+        pb.populate(4, bsgs_host.re.log_split(), bsgs_host.re.parity(), module, &tsk, s)
+    })
     .expect("populate complex even power basis for degree 4");
 
     let mut want_re = vec![F::zero(); m];
@@ -1567,14 +1562,9 @@ pub fn test_eval_poly_const_coeffs_complex_odd<BE, F, E>(
     );
     let (x_ld, x_lb) = (x.log_delta(), x.log_budget());
     let mut pb = PowerBasis::new(Basis::Monomial, x);
-    pb.populate(
-        5,
-        bsgs_host.re.log_split(),
-        bsgs_host.re.parity(),
-        module,
-        &tsk,
-        &mut scratch.borrow(),
-    )
+    with_scratch::<BE, _>(poly_scratch_bytes(&params, module), |s| {
+        pb.populate(5, bsgs_host.re.log_split(), bsgs_host.re.parity(), module, &tsk, s)
+    })
     .expect("populate complex odd power basis for degree 5");
 
     let mut want_re = vec![F::zero(); m];
@@ -1698,9 +1688,10 @@ pub fn test_eval_poly_const_coeffs_complex_fold<BE, F, E>(
 
     let (x_ld, x_lb) = (x.log_delta(), x.log_budget());
     let mut res = alloc_ct(&params, module, params.k);
-    module
-        .ckks_eval_poly_complex_const_coeffs(&mut res, &x, &poly, &tsk, &mut scratch.borrow())
-        .expect("ckks_eval_poly_complex_const_coeffs (fold) should succeed");
+    with_scratch::<BE, _>(poly_scratch_bytes(&params, module), |s| {
+        module.ckks_eval_poly_complex_const_coeffs(&mut res, &x, &poly, &tsk, s)
+    })
+    .expect("ckks_eval_poly_complex_const_coeffs (fold) should succeed");
 
     assert_consumed_bits::<BE, _>("complex_fold", &bsgs_host.re, x_ld, x_lb, PT_PREC.log_delta(), &res);
 
@@ -1797,14 +1788,9 @@ pub fn test_eval_poly_consumed_bits_sweep<BE, F, E>(
             let bsgs = upload_bsgs(&module, &bsgs_host);
 
             let mut pb = PowerBasis::new(Basis::Monomial, src.clone());
-            pb.populate(
-                degree,
-                bsgs_host.log_split(),
-                bsgs_host.parity(),
-                &module,
-                &tsk,
-                &mut scratch.borrow(),
-            )
+            with_scratch::<BE, _>(poly_scratch_bytes(&params, &module), |s| {
+                pb.populate(degree, bsgs_host.log_split(), bsgs_host.parity(), &module, &tsk, s)
+            })
             .expect("populate power basis");
 
             let mut res = alloc_ct(&params, &module, k);

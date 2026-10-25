@@ -20,8 +20,10 @@
 //!    CoeffToSlot must land, slot for slot, on the cleartext model's Eq. 11
 //!    packing relation: `b'_{λ_v}` coefficients in natural order.
 
+use super::parity::helpers::with_scratch;
 use crate::Scale;
 use crate::api::CKKSEncodingOps;
+use poulpy_core::layouts::LWEInfos;
 use std::collections::HashMap;
 
 use poulpy_core::{
@@ -259,21 +261,32 @@ where
 
     // ── Lines 4–7: blind rotation, trace, partial CoeffToSlot ──────────────
     let mut acc = alloc_ct(&params, &module, params.k);
-    module
-        .ckks_mul_pt_vec_into(&mut acc, &bsk[0], &beta_pt[0], &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_mul_pt_vec_tmp_bytes(&acc, &bsk[0], &beta_pt[0]), |s| {
+        module.ckks_mul_pt_vec_into(&mut acc, &bsk[0], &beta_pt[0], s)
+    })
+    .unwrap();
     let mut tmp = alloc_ct(&params, &module, params.k);
     for t in 1..4 {
-        module
-            .ckks_mul_pt_vec_into(&mut tmp, &bsk[t], &beta_pt[t], &mut scratch.borrow())
-            .unwrap();
-        module.ckks_add_assign(&mut acc, &tmp, &mut scratch.borrow()).unwrap();
+        with_scratch::<BE, _>(module.ckks_mul_pt_vec_tmp_bytes(&tmp, &bsk[t], &beta_pt[t]), |s| {
+            module.ckks_mul_pt_vec_into(&mut tmp, &bsk[t], &beta_pt[t], s)
+        })
+        .unwrap();
+        with_scratch::<BE, _>(module.ckks_add_tmp_bytes(acc.max_size()), |s| {
+            module.ckks_add_assign(&mut acc, &tmp, s)
+        })
+        .unwrap();
     }
-    BE::ckks_slot_trace_assign(&module, &mut acc, m_full, n_paco, &atks, &mut scratch.borrow()).unwrap();
+    with_scratch::<BE, _>(
+        BE::ckks_slot_trace_assign_tmp_bytes(&module, &acc, &params.atk_layout()),
+        |s| BE::ckks_slot_trace_assign(&module, &mut acc, m_full, n_paco, &atks, s),
+    )
+    .unwrap();
     for lt in &lts {
-        module
-            .ckks_eval_linear_transformation_self_assign(&mut acc, lt, &atks, &mut scratch.borrow())
-            .unwrap();
+        with_scratch::<BE, _>(
+            module.ckks_eval_linear_transformation_streamed_tmp_bytes(&acc, &lt.index(), &params.atk_layout()),
+            |s| module.ckks_eval_linear_transformation_self_assign(&mut acc, lt, &atks, s),
+        )
+        .unwrap();
     }
 
     // ── Gate: slots must equal the oracle's z_7 (Eq. 11 packing relation) ──

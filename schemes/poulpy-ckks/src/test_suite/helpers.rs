@@ -515,8 +515,8 @@ pub fn precision_at(params: &CKKSTestParams, log_delta: usize) -> CKKSLayout {
 
 // ─── scratch allocation ───────────────────────────────────────────────────────
 
-/// Allocates scratch for common CKKS test operations, including ATK ops.
-/// DFT and EvalMod callers must also cover their selected operation-specific queries.
+/// Allocates the setup arena of a test: encryption, key generation and preparation, decryption and oracles run on it.
+/// A call under test runs on [`with_scratch`](super::parity::helpers::with_scratch) of its own query instead.
 pub fn alloc_scratch<BE>(params: &CKKSTestParams, module: &Module<BE>) -> ScratchOwned<BE>
 where
     BE: TestContextBackend,

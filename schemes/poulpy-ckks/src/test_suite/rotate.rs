@@ -24,6 +24,7 @@ use super::helpers::{
     TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_ct_meta, assert_decrypt_precision,
     assert_unary_output_meta, ckks_encrypt, gen_atk, gen_sk_with_raw, test_vector_1, want_rotate,
 };
+use super::parity::helpers::with_scratch;
 use poulpy_core::layouts::GLWEAutomorphismKeyPrepared;
 use poulpy_core::{GLWEAutomorphism, GLWEShift};
 use poulpy_hal::{
@@ -74,9 +75,10 @@ pub fn test_rotate_aligned<BE, F, E>(
     for &r in rotations {
         let (want_re, want_im) = want_rotate(&re1, &im1, r, m);
         let mut ct_res = alloc_ct(&params, module, params.k);
-        module
-            .ckks_rotate_into(r, &mut ct_res, &ct, &atks, &mut scratch.borrow())
-            .unwrap();
+        with_scratch::<BE, _>(module.ckks_rotate_tmp_bytes(&ct, &params.atk_layout()), |s| {
+            module.ckks_rotate_into(r, &mut ct_res, &ct, &atks, s)
+        })
+        .unwrap();
         assert_unary_output_meta(&format!("rotate({r})"), &ct_res, params.k, &ct);
         assert_decrypt_precision(
             &format!("rotate({r})"),
@@ -134,9 +136,10 @@ pub fn test_rotate_smaller_output<BE, F, E>(
         let (want_re, want_im) = want_rotate(&re1, &im1, r, m);
         let dst_k = params.k - params.base2k - 1;
         let mut ct_res = alloc_ct(&params, module, dst_k);
-        module
-            .ckks_rotate_into(r, &mut ct_res, &ct, &atks, &mut scratch.borrow())
-            .unwrap();
+        with_scratch::<BE, _>(module.ckks_rotate_tmp_bytes(&ct, &params.atk_layout()), |s| {
+            module.ckks_rotate_into(r, &mut ct_res, &ct, &atks, s)
+        })
+        .unwrap();
         assert_unary_output_meta(&format!("rotate smaller_output({r})"), &ct_res, dst_k, &ct);
         assert_decrypt_precision(
             &format!("rotate({r})"),
@@ -194,7 +197,10 @@ pub fn test_rotate_assign<BE, F, E>(
         );
         let expected_log_delta = ct.log_delta();
         let expected_log_budget = ct.log_budget();
-        module.ckks_rotate_assign(r, &mut ct, &atks, &mut scratch.borrow()).unwrap();
+        with_scratch::<BE, _>(module.ckks_rotate_tmp_bytes(&ct, &params.atk_layout()), |s| {
+            module.ckks_rotate_assign(r, &mut ct, &atks, s)
+        })
+        .unwrap();
         assert_ct_meta(&format!("rotate_assign({r})"), &ct, expected_log_delta, expected_log_budget);
         assert_decrypt_precision(
             &format!("rotate_assign({r})"),
@@ -241,9 +247,10 @@ pub fn test_rotate_assign_rejects_missing_key<BE, F, E>(
         &mut scratch.borrow(),
     );
     let empty_keys: HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>> = HashMap::new();
-    let err = module
-        .ckks_rotate_assign(1, &mut ct, &empty_keys, &mut scratch.borrow())
-        .unwrap_err();
+    let err = with_scratch::<BE, _>(module.ckks_rotate_tmp_bytes(&ct, &params.atk_layout()), |s| {
+        module.ckks_rotate_assign(1, &mut ct, &empty_keys, s)
+    })
+    .unwrap_err();
     assert!(
         matches!(
             err.composition(),

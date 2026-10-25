@@ -683,9 +683,10 @@ where
         })
         .unwrap();
         let mut product = alloc_ct(&params, module, dst_k);
-        module
-            .ckks_mul_into(&mut product, a_refs[0], b_refs[0], &tsk, &mut scratch.borrow())
-            .unwrap();
+        with_scratch::<BE, _>(module.ckks_mul_tmp_bytes(&product, a_refs[0], b_refs[0], &tsk), |s| {
+            module.ckks_mul_into(&mut product, a_refs[0], b_refs[0], &tsk, s)
+        })
+        .unwrap();
         assert_eq!(
             snapshot::<BE, _>(&padded),
             snapshot::<BE, _>(&product),
@@ -1239,9 +1240,11 @@ pub fn test_dot_product_pt_vec_aligned<BE, F, E>(
     let pt_refs: Vec<&_> = pts.iter().collect();
 
     let mut ct_res = alloc_ct(&params, module, params.k);
-    module
-        .ckks_dot_product_pt_vec(&mut ct_res, &a_refs, &pt_refs, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(
+        module.ckks_dot_product_pt_vec_tmp_bytes(&ct_res, a_refs[0], pt_refs[0]),
+        |s| module.ckks_dot_product_pt_vec(&mut ct_res, &a_refs, &pt_refs, s),
+    )
+    .unwrap();
     assert_decrypt_precision(
         "dot_product_pt_vec_aligned",
         &params,
@@ -1347,9 +1350,10 @@ where
     );
 
     let mut want = alloc_ct(&params, module, params.k);
-    module
-        .ckks_mul_pt_vec_into(&mut want, &a_cts[0], &pts[0], &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_mul_pt_vec_tmp_bytes(&want, &a_cts[0], &pts[0]), |s| {
+        module.ckks_mul_pt_vec_into(&mut want, &a_cts[0], &pts[0], s)
+    })
+    .unwrap();
     let mut have = alloc_ct(&params, module, params.k);
     with_scratch::<BE, _>(bytes, |s| {
         module.ckks_dot_product_prepared_pt(&mut have, &a[..1], &b[..1], &[1], s)
@@ -1362,9 +1366,7 @@ where
 
     let before = snapshot::<BE, _>(&have);
     let even = [galois[0], 2, galois[2]];
-    let err = module
-        .ckks_dot_product_prepared_pt(&mut have, &a, &b, &even, &mut scratch.borrow())
-        .unwrap_err();
+    let err = with_scratch::<BE, _>(bytes, |s| module.ckks_dot_product_prepared_pt(&mut have, &a, &b, &even, s)).unwrap_err();
     assert_ckks_error(
         "even element",
         &err,
@@ -1374,14 +1376,20 @@ where
         },
     );
     assert!(
-        module
-            .ckks_dot_product_prepared_pt(&mut have, &a, &b[..2], &galois, &mut scratch.borrow())
-            .is_err(),
+        with_scratch::<BE, _>(bytes, |s| module.ckks_dot_product_prepared_pt(
+            &mut have,
+            &a,
+            &b[..2],
+            &galois,
+            s
+        ))
+        .is_err(),
         "{OP}: slices of two lengths"
     );
-    let err = module
-        .ckks_dot_product_prepared_pt(&mut have, &a, &b, &galois[..2], &mut scratch.borrow())
-        .unwrap_err();
+    let err = with_scratch::<BE, _>(bytes, |s| {
+        module.ckks_dot_product_prepared_pt(&mut have, &a, &b, &galois[..2], s)
+    })
+    .unwrap_err();
     assert_ckks_error(
         "two Galois lengths",
         &err,
@@ -1394,9 +1402,10 @@ where
     rescaled.set_log_delta(a_cts[1].log_delta() - 1);
     let rescaled = prepare_left(&rescaled);
     let mixed = [a[0], &rescaled, a[2]];
-    let err = module
-        .ckks_dot_product_prepared_pt(&mut have, &mixed, &b, &galois, &mut scratch.borrow())
-        .unwrap_err();
+    let err = with_scratch::<BE, _>(bytes, |s| {
+        module.ckks_dot_product_prepared_pt(&mut have, &mixed, &b, &galois, s)
+    })
+    .unwrap_err();
     assert_ckks_error(
         "two scales",
         &err,
@@ -1473,9 +1482,11 @@ pub fn test_dot_product_const_aligned<BE, F, E>(
     let const_refs: Vec<&_> = consts.iter().collect();
 
     let mut ct_res = alloc_ct(&params, module, params.k);
-    module
-        .ckks_dot_product_pt_const(&mut ct_res, &a_refs, &const_refs, &pt_coeffs, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(
+        module.ckks_dot_product_pt_const_tmp_bytes(&ct_res, a_refs[0], const_refs[0]),
+        |s| module.ckks_dot_product_pt_const(&mut ct_res, &a_refs, &const_refs, &pt_coeffs, s),
+    )
+    .unwrap();
     assert_decrypt_precision(
         "dot_product_const_aligned",
         &params,

@@ -24,6 +24,7 @@ use super::helpers::{
     encode_and_upload_pt, gen_sk, gen_sk_with_raw, gen_tsk, quantize, quantized_const, quantized_slots, test_vector_1,
     test_vector_2,
 };
+use super::parity::helpers::with_scratch;
 
 use crate::{test_suite::CKKSTestParams, test_suite::reference_encoder::ReferenceEncoder};
 
@@ -115,9 +116,10 @@ where
         &b_im,
         &mut scratch.borrow(),
     );
-    module
-        .ckks_mul_sub_ct_into(&mut dst, &a, &b, &tsk, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_mul_sub_ct_tmp_bytes(&dst, &a, &b, &tsk), |s| {
+        module.ckks_mul_sub_ct_into(&mut dst, &a, &b, &tsk, s)
+    })
+    .unwrap();
     assert_decrypt_precision(
         "mul_sub_ct_aligned",
         &params,
@@ -197,9 +199,10 @@ pub fn test_mul_sub_ct_unaligned_dst<BE, F, E>(
         &b_im,
         &mut scratch.borrow(),
     );
-    module
-        .ckks_mul_sub_ct_into(&mut dst, &a, &b, &tsk, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_mul_sub_ct_tmp_bytes(&dst, &a, &b, &tsk), |s| {
+        module.ckks_mul_sub_ct_into(&mut dst, &a, &b, &tsk, s)
+    })
+    .unwrap();
     assert_decrypt_precision(
         "mul_sub_ct_unaligned_dst",
         &params,
@@ -276,9 +279,10 @@ where
         &b_re_raw,
         &b_im_raw,
     );
-    module
-        .ckks_mul_sub_pt_vec_into(&mut dst, &a, &pt, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_mul_sub_pt_vec_tmp_bytes(&dst, &a, &pt), |s| {
+        module.ckks_mul_sub_pt_vec_into(&mut dst, &a, &pt, s)
+    })
+    .unwrap();
     assert_decrypt_precision(
         "mul_sub_pt_vec_aligned",
         &params,
@@ -355,9 +359,10 @@ pub fn test_mul_sub_pt_vec_into_delta_log_delta<BE, F, E>(
         &b_re_raw,
         &b_im_raw,
     );
-    module
-        .ckks_mul_sub_pt_vec_into(&mut dst, &a, &pt, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_mul_sub_pt_vec_tmp_bytes(&dst, &a, &pt), |s| {
+        module.ckks_mul_sub_pt_vec_into(&mut dst, &a, &pt, s)
+    })
+    .unwrap();
     assert_decrypt_precision_at_log_delta(
         "mul_sub_pt_vec_into_delta_log_delta",
         &params,
@@ -426,9 +431,10 @@ pub fn test_mul_sub_pt_const_into_aligned<BE, F, E>(
         &mut scratch.borrow(),
     );
     let cst = ckks_pt_cst_full::<BE, F>(host_module, module, params.base2k.into(), PT_PREC, m, Some(c_re_f64), None);
-    module
-        .ckks_mul_sub_pt_const_into(&mut dst, &a, &cst, 0, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_mul_sub_pt_const_tmp_bytes(&dst, &a, &cst), |s| {
+        module.ckks_mul_sub_pt_const_into(&mut dst, &a, &cst, 0, s)
+    })
+    .unwrap();
     assert_decrypt_precision(
         "mul_sub_pt_const_into_aligned",
         &params,
@@ -492,9 +498,10 @@ pub fn test_mul_sub_pt_const_zero_preserves_dst_meta<BE, F, E>(
     let dst_meta = ckks_snapshot(&dst);
     let zero_prec = ckks_spec(params.n, params.base2k, 0, PT_PREC.log_budget());
     let cst = ckks_pt_cst_full::<BE, F>(host_module, module, params.base2k.into(), zero_prec, m, None, None);
-    module
-        .ckks_mul_sub_pt_const_into(&mut dst, &a, &cst, 0, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_mul_sub_pt_const_tmp_bytes(&dst, &a, &cst), |s| {
+        module.ckks_mul_sub_pt_const_into(&mut dst, &a, &cst, 0, s)
+    })
+    .unwrap();
 
     assert_ct_meta("mul_sub_pt_const_zero", &dst, dst_meta.log_delta(), dst_meta.log_budget());
     assert_decrypt_precision(

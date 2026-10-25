@@ -92,11 +92,7 @@ where
 /// Materializes the prepared (resident-RHS) form of a plaintext linear
 /// transformation, so the same unified evaluator can be exercised on both the
 /// resident (`P = PreparedDiagonal`) and streamed (`P = CKKSPlaintext`) paths.
-fn prepare_lt<BE>(
-    module: &Module<BE>,
-    lt: &LinearTransformation<CKKSPlaintextOwned<BE>>,
-    scratch: &mut ScratchArena<'_, BE>,
-) -> LinearTransformationPrepared<BE>
+fn prepare_lt<BE>(module: &Module<BE>, lt: &LinearTransformation<CKKSPlaintextOwned<BE>>) -> LinearTransformationPrepared<BE>
 where
     BE: TestContextBackend<Ring = Standard>,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
@@ -105,9 +101,10 @@ where
 {
     let first = lt.first_diagonal_plaintext().expect("linear transformation has no diagonals");
     let mut prepared = LinearTransformationPrepared::<BE>::alloc_prepared_from_index(module, &lt.index(), first);
-    module
-        .ckks_prepare_linear_transformation_rhs(&mut prepared, lt, scratch)
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_prepare_linear_transformation_rhs_tmp_bytes(first), |s| {
+        module.ckks_prepare_linear_transformation_rhs(&mut prepared, lt, s)
+    })
+    .unwrap();
     prepared
 }
 
@@ -167,11 +164,13 @@ where
     );
 
     // transpose = false: dec(lt(enc(a), B)) ≈ B·a. Resident path (prepared RHS).
-    let prepared_left = prepare_lt(module, &lt_left, &mut scratch.borrow());
+    let prepared_left = prepare_lt(module, &lt_left);
     let mut ct_left = alloc_ct(&params, module, params.k);
-    module
-        .ckks_eval_linear_transformation_self_into(&mut ct_left, &ct, &prepared_left, &atks, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(
+        module.ckks_eval_linear_transformation_tmp_bytes(&ct, &key_params.atk_layout()),
+        |s| module.ckks_eval_linear_transformation_self_into(&mut ct_left, &ct, &prepared_left, &atks, s),
+    )
+    .unwrap();
     let (want_left_re, want_left_im) = b.evaluate((a_re.as_slice(), a_im.as_slice()), strategy);
     assert_decrypt_precision(
         "linear_transformation_B_times_a",
@@ -188,9 +187,11 @@ where
     // Streamed (plaintext-RHS) path must match the resident path against the
     // same reference — same unified evaluator, different `P`.
     let mut ct_left_streamed = alloc_ct(&params, module, params.k);
-    module
-        .ckks_eval_linear_transformation_self_into(&mut ct_left_streamed, &ct, &lt_left, &atks, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(
+        module.ckks_eval_linear_transformation_streamed_tmp_bytes(&ct, &key_params.atk_layout()),
+        |s| module.ckks_eval_linear_transformation_self_into(&mut ct_left_streamed, &ct, &lt_left, &atks, s),
+    )
+    .unwrap();
     assert_decrypt_precision(
         "linear_transformation_B_times_a_streamed",
         &params,
@@ -204,11 +205,13 @@ where
     );
 
     // transpose = true: dec(lt(enc(a), Bᵀ)) ≈ Bᵀ·a = a·B. Resident path.
-    let prepared_right = prepare_lt(module, &lt_right, &mut scratch.borrow());
+    let prepared_right = prepare_lt(module, &lt_right);
     let mut ct_right = alloc_ct(&params, module, params.k);
-    module
-        .ckks_eval_linear_transformation_self_into(&mut ct_right, &ct, &prepared_right, &atks, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(
+        module.ckks_eval_linear_transformation_tmp_bytes(&ct, &key_params.atk_layout()),
+        |s| module.ckks_eval_linear_transformation_self_into(&mut ct_right, &ct, &prepared_right, &atks, s),
+    )
+    .unwrap();
     let mut b_t = b.clone();
     b_t.transpose();
     let (want_right_re, want_right_im) = b_t.evaluate((a_re.as_slice(), a_im.as_slice()), strategy);
@@ -257,7 +260,7 @@ pub fn test_linear_transformation_sum<BE, F, E>(
         .iter()
         .map(|b| encode_lt(module, &params, b, n1, false, &mut scratch.borrow()))
         .collect();
-    let prepared: Vec<_> = lts.iter().map(|lt| prepare_lt(module, lt, &mut scratch.borrow())).collect();
+    let prepared: Vec<_> = lts.iter().map(|lt| prepare_lt(module, lt)).collect();
     let keys: HashMap<i64, _> = lts[0]
         .galois_elements(module.cyclotomic_order())
         .into_iter()
@@ -285,9 +288,11 @@ pub fn test_linear_transformation_sum<BE, F, E>(
         .iter()
         .map(|ct| {
             let mut babies = LinearTransformationBabySteps::alloc(module, prepared[0].baby_steps(), ct);
-            module
-                .ckks_prepare_linear_transformation_baby_steps(&mut babies, ct, &keys, &mut scratch.borrow())
-                .unwrap();
+            with_scratch::<BE, _>(
+                module.ckks_prepare_linear_transformation_baby_steps_tmp_bytes(ct, &prepared[0].index(), &params.atk_layout()),
+                |s| module.ckks_prepare_linear_transformation_baby_steps(&mut babies, ct, &keys, s),
+            )
+            .unwrap();
             babies
         })
         .collect();
@@ -295,9 +300,11 @@ pub fn test_linear_transformation_sum<BE, F, E>(
 
     // One term: the single transform, bit for bit.
     let mut single = alloc_ct(&params, module, params.k);
-    module
-        .ckks_eval_linear_transformation_into(&mut single, &cts[0], &babies[0], &prepared[0], &keys, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(
+        module.ckks_eval_linear_transformation_tmp_bytes(&cts[0], &prepared[0].index(), &params.atk_layout()),
+        |s| module.ckks_eval_linear_transformation_into(&mut single, &cts[0], &babies[0], &prepared[0], &keys, s),
+    )
+    .unwrap();
     let single = snapshot::<BE, _>(&single);
     let mut one = alloc_ct(&params, module, params.k);
     with_scratch::<BE, _>(sum_bytes, |scratch| {
@@ -377,7 +384,6 @@ pub fn test_linear_transformation_sum<BE, F, E>(
     let other_schedule = prepare_lt(
         module,
         &encode_lt(module, &params, &bs[1], 2 * n1, false, &mut scratch.borrow()),
-        &mut scratch.borrow(),
     );
     reject(
         &two,
@@ -386,7 +392,7 @@ pub fn test_linear_transformation_sum<BE, F, E>(
         "giant schedule",
         true,
     );
-    let mut bad = prepare_lt(module, &lts[1], &mut scratch.borrow());
+    let mut bad = prepare_lt(module, &lts[1]);
     let scale = bad.first_diagonal_plaintext().unwrap().log_scale();
     bad.set_log_scale(scale + 1);
     reject(
@@ -514,8 +520,8 @@ pub fn test_prepare_linear_transformation_rejects_mixed_diagonals<BE, F, E>(
         false,
         &mut scratch.borrow(),
     );
-    let want = prepare_lt(module, &lt, &mut scratch.borrow());
-    let mut res = prepare_lt(module, &lt, &mut scratch.borrow());
+    let want = prepare_lt(module, &lt);
+    let mut res = prepare_lt(module, &lt);
     for case in ["scale", "slot kind"] {
         // Other values on the same schedule, so a write would show in the destination.
         let mut mixed = encode_lt(
@@ -562,8 +568,8 @@ pub fn test_prepare_linear_transformation_rejects_foreign_layout<BE, F, E>(
         false,
         &mut scratch.borrow(),
     );
-    let want = prepare_lt(module, &lt, &mut scratch.borrow());
-    let mut res = prepare_lt(module, &lt, &mut scratch.borrow());
+    let want = prepare_lt(module, &lt);
+    let mut res = prepare_lt(module, &lt);
     // Other values, so a write would show in the destination.
     let other = complex_diagonals::<F>(&indices, m, 1);
     let other_schedule = encode_lt(module, &params, &other, 4, false, &mut scratch.borrow());
@@ -662,11 +668,13 @@ pub fn test_linear_transformation_pins_operation_precisions<BE, F, E>(
         &mut scratch.borrow(),
     );
 
-    let prepared = prepare_lt(module, &lt, &mut scratch.borrow());
+    let prepared = prepare_lt(module, &lt);
     let mut res = alloc_ct(&params, module, params.k - params.base2k);
-    module
-        .ckks_eval_linear_transformation_self_into(&mut res, &ct, &prepared, &keys, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(
+        module.ckks_eval_linear_transformation_tmp_bytes(&ct, &key_params.atk_layout()),
+        |s| module.ckks_eval_linear_transformation_self_into(&mut res, &ct, &prepared, &keys, s),
+    )
+    .unwrap();
     let dst_k = res.k();
 
     let baby_elements: HashSet<i64> = lt
@@ -766,7 +774,7 @@ pub fn test_linear_transformation_mixed_key_layouts<BE, F, E>(
         &a_im,
         &mut scratch.borrow(),
     );
-    let prepared = prepare_lt(module, &lt, &mut scratch.borrow());
+    let prepared = prepare_lt(module, &lt);
     let mut res = alloc_ct(&params, module, params.k - params.base2k);
 
     // One call reading both layouts takes the larger of their two queries.
