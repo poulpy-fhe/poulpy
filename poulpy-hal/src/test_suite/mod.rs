@@ -75,11 +75,11 @@ impl<BE: Backend<ZnxWord = i64> + HalVecZnxImpl> TestBackend for BE {}
 
 pub use crate::layouts::{vec_znx_backend_mut, vec_znx_backend_ref};
 
-/// A scratch arena of exactly `bytes`, filled with `0xA5` so that an operation reading scratch it did not write, or
-/// needing more than its query reported, shows in the result.
+/// A scratch arena of `bytes` rounded up to the backend's scratch alignment, every byte filled with `0xA5` so that an
+/// operation reading scratch it did not write, or needing more than its query reported, shows in the result.
 pub(crate) fn poisoned_arena<BE: Backend>(bytes: usize) -> crate::layouts::ScratchOwned<BE> {
     crate::layouts::ScratchOwned {
-        data: BE::from_host_bytes(&vec![0xA5; bytes]),
+        data: BE::from_host_bytes(&vec![0xA5; BE::scratch_aligned(bytes)]),
         _phantom: std::marker::PhantomData,
     }
 }

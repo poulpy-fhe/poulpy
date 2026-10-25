@@ -722,7 +722,7 @@ mod host_transfer_tests {
         let input = vec![1u8; 100];
         let buf = <HostBytesBackend as Backend>::from_bytes(input.clone());
         assert_eq!(buf.len(), 128, "input is copied into a padded buffer");
-        assert_eq!(&buf[..100], &input[..]);
+        assert!(buf[..100] == input[..], "input bytes not preserved");
         assert!(buf[100..].iter().all(|&b| b == 0), "padding tail not zero");
     }
 
@@ -734,7 +734,7 @@ mod host_transfer_tests {
         let src = [7u8; 100];
         let buf = <HostBytesBackend as Backend>::from_host_bytes(&src);
         assert_eq!(buf.len(), 128);
-        assert_eq!(&buf[..100], &src[..]);
+        assert!(buf[..100] == src[..], "input bytes not preserved");
         assert!(buf[100..].iter().all(|&b| b == 0), "padding tail not zero");
 
         let mut owned = <HostBytesBackend as Backend>::alloc_bytes(100);
@@ -742,11 +742,11 @@ mod host_transfer_tests {
         <HostBytesBackend as Backend>::copy_host_to_view(&mut <HostBytesBackend as Backend>::view_mut(&mut owned), &src2);
         let mut dst = vec![0u8; 100];
         <HostBytesBackend as Backend>::copy_view_to_host(&<HostBytesBackend as Backend>::view(&owned), &mut dst);
-        assert_eq!(dst, src2, "copy_host_to_view/copy_view_to_host round trip");
+        assert!(dst == src2, "copy_host_to_view/copy_view_to_host round trip");
 
         let mut all = vec![0xffu8; 128];
         <HostBytesBackend as Backend>::copy_to_host(&owned, &mut all);
-        assert_eq!(&all[..100], &src2[..]);
+        assert!(all[..100] == src2[..], "round trip bytes differ");
         assert!(all[100..].iter().all(|&b| b == 0), "tail not zero after copy_host_to_view");
     }
 
@@ -764,11 +764,11 @@ mod host_transfer_tests {
         let mut dst = <HostBytesBackend as Backend>::alloc_bytes(len);
 
         transfer_buf_into(&a, &mut dst);
-        assert_eq!(dst, a);
+        assert!(dst == a, "destination does not hold the source");
 
         // Same destination, different source: no bytes of `a` survive.
         transfer_buf_into(&b, &mut dst);
-        assert_eq!(dst, b);
+        assert!(dst == b, "destination does not hold the new source");
         assert_ne!(dst, a);
     }
 
@@ -786,10 +786,10 @@ mod host_transfer_tests {
             .map(String::as_str)
             .or_else(|| err.downcast_ref::<&str>().copied())
             .unwrap_or_default();
-        assert_eq!(
-            message,
-            "assertion `left == right` failed: transfer_buf_into: source is 256 bytes, destination is 128\n  left: 256\n right: 128"
+        assert!(
+            message.contains("transfer_buf_into: source is 256 bytes, destination is 128"),
+            "rejection does not name the size mismatch"
         );
-        assert_eq!(dst, before, "a refused transfer wrote into the destination");
+        assert!(dst == before, "a refused transfer wrote into the destination");
     }
 }

@@ -1404,8 +1404,9 @@ where
     let cols: usize = 2;
     let mut source: Source = Source::new([0u8; 32]);
 
-    let mut a_backend = module.scalar_znx_alloc(params.n >> 1, cols);
-    let mut res_backend = module.scalar_znx_alloc(params.n, cols);
+    let n: usize = params.n.max(2 * BE::MIN_DEGREE);
+    let mut a_backend = module.scalar_znx_alloc(n >> 1, cols);
+    let mut res_backend = module.scalar_znx_alloc(n, cols);
     for col in 0..cols {
         module.vec_znx_fill_uniform_source(
             base2k,
