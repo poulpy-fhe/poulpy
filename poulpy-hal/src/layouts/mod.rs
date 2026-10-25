@@ -160,7 +160,7 @@ where
 {
 }
 
-/// Host backend of ring `R` (default [`Standard`](crate::layouts::Standard)): the [`Module`](crate::layouts::Module)
+/// Host backend of ring `R` (default [`Standard`]): the [`Module`]
 /// entry point for host-side allocation and encoding, and the default backend of host byte-slice views.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub struct HostBytesBackend<R: Ring = Standard>(PhantomData<R>);
@@ -498,7 +498,7 @@ pub fn transfer_buf_into<S: CopyToHost + ?Sized, D: CopyFromHost + ?Sized>(src: 
     dst.copy_from_host(&staging);
 }
 
-/// A backend that can exchange coefficient data with host [`AlignedBuf`](crate::AlignedBuf) storage.
+/// A backend that can exchange coefficient data with host [`AlignedBuf`] storage.
 ///
 /// Bundles the two requirements of a host-staged transfer: buffers that can be
 /// read out to and written from host bytes, and agreement on the coefficient

@@ -11,16 +11,7 @@ The caller should get the same result through the public API.
 
 ## Choosing an implementation
 
-OEP means **open extension point**: a trait through which the public API calls
-backend code. Core uses the same distinction as HAL:
-
-| Component | Purpose |
-|---|---|
-| `GLWERotate` | Public rotation API on `Module<BE>`. |
-| `GLWERotateImpl` | Backend hook, implemented directly for `BE`. |
-| `GLWERotateReference` | Reusable rotation algorithm built from HAL operations. |
-| `oep::derived` | Crate-private defaults built from other core operations, preserving their backend dispatch. |
-
+Core follows the [layering contract](../../docs/guides/layering-contract.md), of which it is the model above poulpy-hal.
 For example, rotating each GLWE polynomial with HAL's rotation operation is a
 **reference** implementation. Rotating a GGSW by calling core GLWE rotation on
 each row is **derived**. A backend that overrides GLWE rotation also changes the
@@ -28,20 +19,6 @@ rotation used by that derived GGSW operation.
 Reverse subtraction also composes core operations. Multiplication by `X^p - 1`
 uses HAL reference algorithms in both forms, preserving raw-limb arithmetic.
 
-To select the HAL-based rotation algorithm, a backend with the required HAL
-operations can write:
-
-```rust
-poulpy_core::impl_glwe_rotate_reference_full!(MyBackend);
-```
-
-This macro implements `GLWERotateImpl` for `MyBackend`. To replace one method,
-write that implementation yourself and forward unchanged methods to
-`GLWERotateReference`. The reference methods remain callable directly.
-
-Derived methods have default bodies on their `*Impl` traits. A backend can
-inherit those defaults or override them, including their scratch queries.
-The derived helpers themselves are crate-private.
 A directly called reference helper checks its own budget; nested operations use their
 selected backend queries. An override can therefore reserve private workspace
 and pass the remaining arena to a helper.
@@ -81,9 +58,8 @@ before writing it.
 
 ## Matching the result
 
-Every OEP override must implement the same circuit as the reference
-implementation and pass the corresponding [parity tests](../src/test_suite/parity).
-The reference implementation defines the required behavior.
+An override reproduces the reference as the [layering contract](../../docs/guides/layering-contract.md) states and passes
+the corresponding [parity tests](../src/test_suite/parity).
 
 ## Respecting storage and scratch
 

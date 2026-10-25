@@ -1,0 +1,552 @@
+//! Encapsulated modulus raising and the bootstrapping pipeline, including
+//! optimized and fallback shapes.
+use crate::{Scale, ckks_log_delta};
+use std::collections::HashMap;
+
+use super::{
+    helpers::{Snapshot, assert_untagged, fixture_ciphertext, fixture_operand, snapshot, with_scratch},
+    keys::{
+        fixture_gglwe, key_layout, key_layout_bits, key_layout_offset, prepared_automorphism_key, prepared_gglwe,
+        prepared_tensor_key,
+    },
+};
+use crate::{
+    CKKSCtBounds, CKKSInfos, CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, SlotLayout, SlotsKind,
+    api::{CKKSAllOpsTmpBytes, CKKSDFTMatrixOps, CKKSDFTOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar},
+    layouts::{
+        BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys, BootstrappingPipeline,
+        BootstrappingPlan, BootstrappingTechniques, CKKSModuleAlloc, CKKSPlaintextOwned, DFTOutputFormat, DFTPlan, DFTType,
+        EncapsulationKeysLayout, EncodedLut, EvalModPlan, EvalModType, EvalRoundPlus, SparseSecretEncapsulation,
+    },
+    oep::{CKKSBootstrappingImpl, CKKSEncapsulatedModUpImpl},
+    polynomial::SplitStrategy,
+    test_suite::CKKSTestParams,
+};
+use poulpy_core::{
+    GLWEAdd, GLWEMaskFill,
+    layouts::{
+        GGLWEInfos, GGLWELayout, GGLWEPrepared, GGLWEPreparedFactory, GLWEAutomorphismKeyPrepared,
+        GLWEAutomorphismKeyPreparedFactory, GLWELayout, GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory, GLWEToBackendRef,
+        LWEInfos, TorusPrecision,
+        prepared::{GGLWEPreparedToBackendRef, GLWEAutomorphismKeyPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
+    },
+    reference::linear_transformation::DiagonalProd,
+};
+use poulpy_hal::layouts::{Backend, CyclotomicOrder, HostBytesBackend, HostStaged, Module};
+
+fn run<B>(params: CKKSTestParams, module: &Module<B>) -> Vec<(Result<(), String>, Snapshot, Snapshot)>
+where
+    B: Backend<ZnxWord = i64> + CKKSEncapsulatedModUpImpl,
+    Module<B>: GGLWEPreparedFactory<B> + GLWEMaskFill<B> + GLWEAdd<B>,
+{
+    let b = params.base2k;
+    let small = 3 * b + 1;
+    let mut results = Vec::new();
+    // Matching radix and multi-limb digits permit the optimized path. Other
+    // cases require the general composition; widths also cover partial limbs,
+    // no zero-prefix limbs, several full zero-prefix limbs, rejected raises,
+    // and a key stored at one width read through a view at a multiple of it.
+    // Digit widths in bits: whole limbs first, then widths off a limb boundary
+    // with no, one and several zero-prefix digits, a shift ending exactly on a
+    // digit boundary (where the gadget rounding may carry into that digit), a
+    // sub-limb width, and a view of an unaligned key.
+    for (k_digit, view_k_digit, key_b, extra, scale) in [
+        (2 * b, 2 * b, b, 4 * b + 3, 0),
+        (2 * b, 2 * b, b, 3 * b + 5, b + 1),
+        (2 * b, 2 * b, b, 5, 4),
+        (b, b, b, 2 * b + 1, 1),
+        (2 * (b - 1), 2 * (b - 1), b - 1, 2 * b + 3, 0),
+        (2 * b, 2 * b, b, 0, 1),
+        (b, 2 * b, b, 4 * b + 3, 0),
+        (2 * b + 3, 2 * b + 3, b, 4 * b + 3, 0),
+        (2 * b - 1, 2 * b - 1, b, 3 * b + 5, b + 1),
+        (b + 1, b + 1, b, 5, 4),
+        (2 * b - 1, 2 * b - 1, b, 6 * b + 1, 0),
+        (2 * b + 3, 2 * b + 3, b, 4 * b + 6, 0),
+        (b / 2 + 1, b / 2 + 1, b, 2 * b + 1, 1),
+        (b + 1, 2 * b + 2, b, 4 * b + 3, 0),
+    ] {
+        let src_layout = CKKSLayout {
+            glwe_layout: GLWELayout {
+                n: module.n().into(),
+                base2k: b.into(),
+                k: small.into(),
+                rank: params.rank.into(),
+            },
+            meta: GLWEPlaintextMeta {
+                scale: Scale::Log(b),
+                slots: SlotsKind::Complex,
+                log_sparsity: 1,
+                slot_layout: SlotLayout::Full,
+            },
+        };
+        let dst_layout = CKKSLayout {
+            glwe_layout: GLWELayout {
+                k: (small + extra).into(),
+                ..src_layout.glwe_layout
+            },
+            ..src_layout
+        };
+        let d2s_layout = key_layout(module.n(), b, small, 1, params.rank, params.rank);
+        // Covers `dst` through the view too: a read at a coarser digit keeps one
+        // such digit as guard.
+        let s2d_k = if view_k_digit == k_digit {
+            small + extra
+        } else {
+            ((small + extra).div_ceil(view_k_digit) + 1) * view_k_digit
+        };
+        let s2d_layout = key_layout_bits(module.n(), key_b, s2d_k, k_digit, params.rank, params.rank);
+        let mut d2s = module.gglwe_prepared_alloc_from_infos(&d2s_layout);
+        let mut s2d = module.gglwe_prepared_alloc_from_infos(&s2d_layout);
+        for (prepared, layout, seed) in [(&mut d2s, &d2s_layout, 31), (&mut s2d, &s2d_layout, 37)] {
+            let coefficients = fixture_gglwe(module, layout, seed);
+            with_scratch::<B, _>(module.gglwe_prepare_tmp_bytes(layout), |scratch| {
+                module.gglwe_prepare(prepared, &coefficients, scratch)
+            });
+        }
+        let s2d = s2d.with_k_digit(TorusPrecision(view_k_digit as u32)).unwrap();
+        let bytes = B::ckks_encapsulated_mod_up_tmp_bytes(module, &dst_layout, &src_layout, &d2s_layout, &s2d);
+        for (seed, lazy) in [(41, false), (43, true)] {
+            let mut src = fixture_operand(module, &src_layout, seed, lazy);
+            let mut dst = fixture_ciphertext(module, &dst_layout, 47);
+            let result = with_scratch::<B, _>(bytes, |scratch| {
+                B::ckks_encapsulated_mod_up(module, &mut dst, &mut src, scale, &d2s.to_backend_ref(), &s2d, scratch)
+            });
+            assert_eq!(result.is_ok(), extra >= scale, "modulus raise acceptance changed");
+            if result.is_ok() {
+                assert_eq!(
+                    dst.meta(),
+                    GLWEPlaintextMeta {
+                        scale: Scale::Log(ckks_log_delta(&src_layout.meta) + scale),
+                        ..src_layout.meta
+                    }
+                );
+                assert_eq!(dst.k(), dst_layout.glwe_layout.k);
+            }
+            results.push((
+                result.map_err(|error| error.to_string()),
+                snapshot::<B, _>(&src),
+                snapshot::<B, _>(&dst),
+            ));
+        }
+    }
+    // Sparse-to-dense keys whose rows sit lower: the raise is their switch. An
+    // offset equal to the raise's shift switches `src` as it is, a smaller one
+    // first shifts it inside the key's window, a larger one is refused. Digits
+    // on and off a limb boundary, one row or several, and an input at a radix
+    // other than the key's.
+    for (k_digit, extra, scale, k_offset, src_b) in [
+        (2 * b, 4 * b + 3, 0, 4 * b + 3, b),
+        (b, 3 * b + 5, b + 1, 2 * b + 4, b),
+        (4 * b, 4 * b + 3, 0, 4 * b + 3, b),
+        (2 * b, 4 * b + 3, 0, 2 * b, b),
+        (b + 1, 4 * b + 3, 1, 3 * b, b),
+        (2 * b - 1, 3 * b + 5, b + 1, b + 3, b),
+        (2 * b, 2 * b + 1, 0, 2 * b + 2, b),
+        (2 * b, 4 * b + 3, 1, 2 * b, b - 1),
+    ] {
+        let k_large = small + extra;
+        let src_layout = CKKSLayout {
+            glwe_layout: GLWELayout {
+                n: module.n().into(),
+                base2k: src_b.into(),
+                k: small.into(),
+                rank: params.rank.into(),
+            },
+            meta: GLWEPlaintextMeta {
+                scale: Scale::Log(b),
+                slots: SlotsKind::Complex,
+                log_sparsity: 1,
+                slot_layout: SlotLayout::Full,
+            },
+        };
+        let dst_layout = CKKSLayout {
+            glwe_layout: GLWELayout {
+                base2k: b.into(),
+                k: k_large.into(),
+                ..src_layout.glwe_layout
+            },
+            ..src_layout
+        };
+        let d2s_layout = key_layout(module.n(), src_b, small, 1, params.rank, params.rank);
+        let s2d_layout = key_layout_offset(module.n(), b, k_large - k_offset, k_digit, k_offset, params.rank, params.rank);
+        let mut d2s = module.gglwe_prepared_alloc_from_infos(&d2s_layout);
+        let mut s2d = module.gglwe_prepared_alloc_from_infos(&s2d_layout);
+        for (prepared, layout, seed) in [(&mut d2s, &d2s_layout, 53), (&mut s2d, &s2d_layout, 59)] {
+            let coefficients = fixture_gglwe(module, layout, seed);
+            with_scratch::<B, _>(module.gglwe_prepare_tmp_bytes(layout), |scratch| {
+                module.gglwe_prepare(prepared, &coefficients, scratch)
+            });
+        }
+        let bytes = B::ckks_encapsulated_mod_up_tmp_bytes(module, &dst_layout, &src_layout, &d2s_layout, &s2d_layout);
+        for (seed, lazy) in [(61, false), (67, true)] {
+            let mut src = fixture_operand(module, &src_layout, seed, lazy);
+            let mut dst = fixture_ciphertext(module, &dst_layout, 71);
+            let result = with_scratch::<B, _>(bytes, |scratch| {
+                B::ckks_encapsulated_mod_up(
+                    module,
+                    &mut dst,
+                    &mut src,
+                    scale,
+                    &d2s.to_backend_ref(),
+                    &s2d.to_backend_ref(),
+                    scratch,
+                )
+            });
+            assert_eq!(
+                result.is_ok(),
+                k_offset <= extra - scale,
+                "offset modulus raise acceptance changed: k_digit={k_digit} extra={extra} scale={scale} k_offset={k_offset}"
+            );
+            if result.is_ok() {
+                assert_eq!(
+                    dst.meta(),
+                    GLWEPlaintextMeta {
+                        scale: Scale::Log(ckks_log_delta(&src_layout.meta) + scale),
+                        ..src_layout.meta
+                    }
+                );
+                assert_eq!(dst.k(), dst_layout.glwe_layout.k);
+            }
+            results.push((
+                result.map_err(|error| error.to_string()),
+                snapshot::<B, _>(&src),
+                snapshot::<B, _>(&dst),
+            ));
+        }
+    }
+    results
+}
+
+/// Compare selected implementations using the same canonical inputs and key
+/// coefficients. Source mutations, destination metadata, errors, and each
+/// implementation's own exact guarded scratch budget are part of the contract.
+pub fn test_encapsulated_mod_up_parity<BR, BT, F>(params: CKKSTestParams, reference: &Module<BR>, tested: &Module<BT>)
+where
+    BR: Backend<ZnxWord = i64> + CKKSEncapsulatedModUpImpl,
+    BT: Backend<ZnxWord = i64> + CKKSEncapsulatedModUpImpl,
+    Module<BR>: GGLWEPreparedFactory<BR> + GLWEMaskFill<BR> + GLWEAdd<BR>,
+    Module<BT>: GGLWEPreparedFactory<BT> + GLWEMaskFill<BT> + GLWEAdd<BT>,
+{
+    assert_eq!(reference.n(), tested.n());
+    let want = run(params, reference);
+    assert_untagged(
+        "encapsulated ModUp",
+        want.iter().filter(|(result, _, _)| result.is_ok()).map(|(_, _, dst)| dst),
+    );
+    assert_eq!(want, run(params, tested), "encapsulated ModUp differs");
+}
+
+/// Fixture key store of the bootstrapping parity tests: identical coefficients
+/// on every backend, each preparing its own representation.
+pub struct FixtureKeys<B: Backend> {
+    rotation_keys: HashMap<i64, GLWEAutomorphismKeyPrepared<B::OwnedBuf, B>>,
+    tensor_key: GLWETensorKeyPrepared<B::OwnedBuf, B>,
+    encapsulation_keys: Option<(FixtureSwitchingKey<B>, FixtureSwitchingKey<B>)>,
+}
+
+type FixtureSwitchingKey<B> = GGLWEPrepared<<B as Backend>::OwnedBuf, B>;
+
+impl<B: Backend> BootstrappingLinearKeys<B> for FixtureKeys<B>
+where
+    GLWEAutomorphismKeyPrepared<B::OwnedBuf, B>: GLWEAutomorphismKeyPreparedToBackendRef<B>,
+    GGLWEPrepared<B::OwnedBuf, B>: GGLWEPreparedToBackendRef<B> + GGLWEInfos,
+{
+    type RotationKeys = HashMap<i64, GLWEAutomorphismKeyPrepared<B::OwnedBuf, B>>;
+    type SwitchingKey = GGLWEPrepared<B::OwnedBuf, B>;
+
+    fn rotation_keys(&self) -> &Self::RotationKeys {
+        &self.rotation_keys
+    }
+
+    fn encapsulation_keys(&self) -> Option<(&Self::SwitchingKey, Option<&Self::SwitchingKey>)> {
+        self.encapsulation_keys.as_ref().map(|(d2s, s2d)| (d2s, Some(s2d)))
+    }
+}
+
+impl<B: Backend> BootstrappingKeys<B> for FixtureKeys<B>
+where
+    GLWEAutomorphismKeyPrepared<B::OwnedBuf, B>: GLWEAutomorphismKeyPreparedToBackendRef<B>,
+    GLWETensorKeyPrepared<B::OwnedBuf, B>: GLWETensorKeyPreparedToBackendRef<B>,
+    GGLWEPrepared<B::OwnedBuf, B>: GGLWEPreparedToBackendRef<B> + GGLWEInfos,
+{
+    type TensorKey = GLWETensorKeyPrepared<B::OwnedBuf, B>;
+
+    fn tensor_key(&self) -> &Self::TensorKey {
+        &self.tensor_key
+    }
+}
+
+const LOG_MSG_RATIO: usize = 4;
+
+/// A small full-slot recipe: one radix-2 layer per factor and a degree-8 EvalMod.
+fn plan(pipeline: BootstrappingPipeline, log_slots: usize, encapsulate: bool, eval_round: bool) -> BootstrappingPlan {
+    let meta = CoeffsMeta::from_delta_budget;
+    let dft = |kind, log_delta| {
+        DFTPlan::new(
+            kind,
+            vec![(1, 2); log_slots],
+            DFTOutputFormat::SplitRealAndImag,
+            meta(log_delta, 2),
+        )
+        .unwrap()
+    };
+    let s2c_first = pipeline == BootstrappingPipeline::S2CFirst;
+    let plan = BootstrappingPlan::new(
+        pipeline,
+        BootstrappingTechniques {
+            sparse_secret_encapsulation: encapsulate.then_some(SparseSecretEncapsulation { hamming_weight: 8 }),
+            eval_round_plus: eval_round.then(|| EvalRoundPlus {
+                coeffs_to_slots_bypass: dft(DFTType::Encode, 20),
+            }),
+        },
+        dft(DFTType::Encode, 14),
+        EvalModPlan {
+            eval_mod_type: EvalModType::CosHK,
+            log_msg_ratio: LOG_MSG_RATIO,
+            f_mod_degree: 8,
+            f_mod_interval: 4,
+            f_mod_log_interval_reduction: 1,
+            f_mod_inv_degree: None,
+            scaling: None,
+            split_strategy: SplitStrategy::MinDepth,
+            coeffs_meta: meta(16, 2),
+            f_mod_log_delta: 24,
+        },
+        dft(DFTType::Decode, 14)
+            .with_scaling(if s2c_first { 0.5 } else { (LOG_MSG_RATIO as f64).exp2() })
+            .unwrap(),
+    )
+    .unwrap();
+    if s2c_first {
+        plan.with_c2s_guard_bits(2).unwrap()
+    } else {
+        plan
+    }
+}
+
+fn ct_layout(n: usize, base2k: usize, k: usize, log_delta: usize, slots: SlotsKind) -> CKKSLayout {
+    CKKSLayout {
+        glwe_layout: GLWELayout {
+            n: n.into(),
+            base2k: base2k.into(),
+            k: k.into(),
+            rank: 1usize.into(),
+        },
+        meta: GLWEPlaintextMeta {
+            scale: Scale::Log(log_delta),
+            slots,
+            log_sparsity: 0,
+            slot_layout: SlotLayout::Full,
+        },
+    }
+}
+
+fn keys_layout(atk: &GGLWELayout, d2s: &GGLWELayout, s2d: &GGLWELayout, encapsulate: bool) -> BootstrappingKeysLayout {
+    BootstrappingKeysLayout {
+        rotation_keys: Default::default(),
+        first_factor_key: None,
+        conversion_keys: None,
+        automorphism_key: (*atk).into(),
+        tensor_key: (*atk).into(),
+        encapsulation: encapsulate.then(|| EncapsulationKeysLayout {
+            dense_to_sparse: (*d2s).into(),
+            sparse_to_dense: Some((*s2d).into()),
+        }),
+    }
+}
+
+fn fixture_keys<B>(
+    module: &Module<B>,
+    plan: &BootstrappingPlan,
+    atk: &GGLWELayout,
+    d2s: &GGLWELayout,
+    s2d: &GGLWELayout,
+) -> FixtureKeys<B>
+where
+    B: Backend<ZnxWord = i64>,
+    Module<B>: GLWEAutomorphismKeyPreparedFactory<B>
+        + GLWETensorKeyPreparedFactory<B>
+        + GGLWEPreparedFactory<B>
+        + GLWEMaskFill<B>
+        + CyclotomicOrder,
+{
+    let rotation_keys = plan
+        .galois_elements(module.n().ilog2() as usize, module.cyclotomic_order())
+        .into_iter()
+        .chain([-1])
+        .map(|p| (p, prepared_automorphism_key(module, atk, p, (p as u8).wrapping_add(71))))
+        .collect();
+    FixtureKeys {
+        rotation_keys,
+        tensor_key: prepared_tensor_key(module, atk, 73),
+        encapsulation_keys: plan
+            .sparse_secret_hamming_weight()
+            .map(|_| (prepared_gglwe(module, d2s, 79), prepared_gglwe(module, s2d, 83))),
+    }
+}
+
+type Outcome = (Result<(), String>, Vec<Snapshot>);
+
+fn run_bootstrap<B, F>(params: CKKSTestParams, module: &Module<B>) -> Vec<Outcome>
+where
+    B: Backend<ZnxWord = i64> + CKKSBootstrappingImpl + HostStaged,
+    F: CKKSEncodingScalar,
+    Module<B>: CKKSDFTOps<B>
+        + CKKSDFTMatrixOps<B, F>
+        + CKKSEncodingOps<B, F>
+        + CKKSEncodingHostOps<B, F>
+        + CKKSModuleAlloc<B>
+        + CKKSAllOpsTmpBytes<B>
+        + GLWEAutomorphismKeyPreparedFactory<B>
+        + GLWETensorKeyPreparedFactory<B>
+        + GGLWEPreparedFactory<B>
+        + GLWEMaskFill<B>
+        + CyclotomicOrder,
+    CKKSPlaintextOwned<B>: GLWEToBackendRef<B> + CKKSCtBounds + DiagonalProd<B>,
+    FixtureKeys<B>: BootstrappingKeys<B> + Sync,
+    <FixtureKeys<B> as BootstrappingKeys<B>>::TensorKey: Sync,
+{
+    let (n, b) = (module.n(), params.base2k);
+    let log_slots = n.ilog2() as usize - 1;
+    let log_delta = 12;
+    let mut results = Vec::new();
+    let host = Module::<HostBytesBackend>::new(n as u64);
+    let lut = EncodedLut::binary(
+        &host,
+        F::from_f64(3.0).unwrap(),
+        F::from_f64(1.0).unwrap(),
+        8,
+        4,
+        1,
+        b.into(),
+        CoeffsMeta::from_delta_budget(16, b),
+        SplitStrategy::MinDepth,
+    )
+    .unwrap();
+    for (pipeline, encapsulate, eval_round, slots, functional) in [
+        (BootstrappingPipeline::C2SFirst, true, false, SlotsKind::Complex, false),
+        (BootstrappingPipeline::C2SFirst, false, true, SlotsKind::Complex, false),
+        (BootstrappingPipeline::S2CFirst, false, false, SlotsKind::Complex, false),
+        (BootstrappingPipeline::S2CFirst, true, false, SlotsKind::Real, false),
+        (BootstrappingPipeline::S2CFirst, false, true, SlotsKind::Real, false),
+        (BootstrappingPipeline::S2CFirst, false, false, SlotsKind::Complex, true),
+        (BootstrappingPipeline::S2CFirst, false, false, SlotsKind::Real, true),
+    ] {
+        let mut plan = plan(pipeline, log_slots, encapsulate, eval_round);
+        if functional {
+            plan = plan.with_functional_bootstrap(&lut).unwrap();
+        }
+        let log_modulus_in = log_delta + if functional { lut.log_msg_ratio() } else { LOG_MSG_RATIO };
+        let k_in = plan.input_k(log_modulus_in);
+        let output_k = log_modulus_in + 2 * b;
+        let k_boot = if functional {
+            plan.functional_bootstrap_k(output_k, log_delta, &lut).unwrap()
+        } else {
+            plan.bootstrap_k(output_k, log_delta)
+        }
+        .next_multiple_of(b);
+        let in_layout = ct_layout(n, b, k_in, log_delta, slots);
+        let out_layout = ct_layout(n, b, k_boot, log_delta, SlotsKind::Complex);
+        let atk = key_layout(n, b, k_boot, 2, 1, 1);
+        let d2s = key_layout(n, b, k_in, 1, 1, 1);
+        let s2d = key_layout(n, b, k_boot, 2, 1, 1);
+        let layout = keys_layout(&atk, &d2s, &s2d, encapsulate);
+        let pt = ct_layout(n, b, 16 + 2 * b, 16, SlotsKind::Complex);
+        let compile = module
+            .ckks_all_ops_with_atk_tmp_bytes(&out_layout, &atk, &atk, &pt)
+            .max(<Module<B> as CKKSEncodingHostOps<B, F>>::ckks_reim_tmp_bytes(module, n / 2));
+        // Staged compilation: preparation runs with exactly its advertised scratch.
+        let unprepared = with_scratch::<B, _>(compile, |scratch| {
+            BootstrappingContext::<B, F>::compile_unprepared(module, b.into(), &plan, scratch)
+        })
+        .unwrap();
+        let ctx = with_scratch::<B, _>(unprepared.prepare_tmp_bytes(module), |scratch| {
+            unprepared.prepare(module, scratch)
+        });
+        let keys = fixture_keys(module, &plan, &atk, &d2s, &s2d);
+        let ct_in = fixture_ciphertext(module, &in_layout, 89);
+        if functional {
+            let luts = [lut.transfer_to(module)];
+            let mut outs = vec![fixture_ciphertext(module, &out_layout, 97)];
+            let bytes = B::ckks_functional_bootstrap_tmp_bytes_impl(module, &outs[0], &ct_in, &ctx, &luts, &layout);
+            let result = with_scratch::<B, _>(bytes, |scratch| {
+                B::ckks_functional_bootstrap_impl(module, &mut outs, &ct_in, &ctx, &luts, &keys, scratch)
+            });
+            assert!(result.is_ok(), "{pipeline:?}: {result:?}");
+            results.push((result.map_err(|e| e.to_string()), vec![snapshot::<B, _>(&outs[0])]));
+            continue;
+        }
+        let bytes = B::ckks_bootstrap_tmp_bytes_impl(module, &out_layout, &in_layout, &ctx, &layout);
+        let mut out = fixture_ciphertext(module, &out_layout, 97);
+        let result = with_scratch::<B, _>(bytes, |scratch| {
+            B::ckks_bootstrap_impl(module, &mut out, &ct_in, &ctx, &keys, scratch)
+        });
+        assert!(result.is_ok(), "{pipeline:?}: {result:?}");
+        results.push((result.map_err(|e| e.to_string()), vec![snapshot::<B, _>(&out)]));
+        if pipeline == BootstrappingPipeline::C2SFirst {
+            let mut raised = fixture_ciphertext(module, &out_layout, 101);
+            let result = with_scratch::<B, _>(B::ckks_mod_up_tmp_bytes_impl(module, raised.size()), |scratch| {
+                B::ckks_mod_up_into_impl(module, &mut raised, &ct_in, plan.eval_mod(), scratch)
+            });
+            assert!(result.is_ok(), "{pipeline:?}: {result:?}");
+            results.push((result.map_err(|e| e.to_string()), vec![snapshot::<B, _>(&raised)]));
+            let mut raised = fixture_ciphertext(module, &out_layout, 103);
+            let result = with_scratch::<B, _>(bytes, |scratch| {
+                B::ckks_bootstrap_mod_up_impl(module, &mut raised, &ct_in, plan.eval_mod(), &keys, scratch)
+            });
+            assert!(result.is_ok(), "{pipeline:?}: {result:?}");
+            results.push((result.map_err(|e| e.to_string()), vec![snapshot::<B, _>(&raised)]));
+        }
+    }
+    results
+}
+
+/// Compare selected bootstrapping implementations on the same fixture inputs
+/// and key coefficients: C2S-first, S2C-first, real slots, EvalRound+,
+/// encapsulation, functional bootstrapping and the ModUp stages, each within its
+/// own exact guarded scratch budget.
+pub fn test_bootstrapping_parity<BR, BT, F>(params: CKKSTestParams, reference: &Module<BR>, tested: &Module<BT>)
+where
+    BR: Backend<ZnxWord = i64> + CKKSBootstrappingImpl + HostStaged,
+    BT: Backend<ZnxWord = i64> + CKKSBootstrappingImpl + HostStaged,
+    F: CKKSEncodingScalar,
+    Module<BR>: CKKSDFTOps<BR>
+        + CKKSDFTMatrixOps<BR, F>
+        + CKKSEncodingOps<BR, F>
+        + CKKSEncodingHostOps<BR, F>
+        + CKKSModuleAlloc<BR>
+        + CKKSAllOpsTmpBytes<BR>
+        + GLWEAutomorphismKeyPreparedFactory<BR>
+        + GLWETensorKeyPreparedFactory<BR>
+        + GGLWEPreparedFactory<BR>
+        + GLWEMaskFill<BR>
+        + CyclotomicOrder,
+    Module<BT>: CKKSDFTOps<BT>
+        + CKKSDFTMatrixOps<BT, F>
+        + CKKSEncodingOps<BT, F>
+        + CKKSEncodingHostOps<BT, F>
+        + CKKSModuleAlloc<BT>
+        + CKKSAllOpsTmpBytes<BT>
+        + GLWEAutomorphismKeyPreparedFactory<BT>
+        + GLWETensorKeyPreparedFactory<BT>
+        + GGLWEPreparedFactory<BT>
+        + GLWEMaskFill<BT>
+        + CyclotomicOrder,
+    CKKSPlaintextOwned<BR>: GLWEToBackendRef<BR> + CKKSCtBounds + DiagonalProd<BR>,
+    CKKSPlaintextOwned<BT>: GLWEToBackendRef<BT> + CKKSCtBounds + DiagonalProd<BT>,
+    FixtureKeys<BR>: BootstrappingKeys<BR> + Sync,
+    <FixtureKeys<BR> as BootstrappingKeys<BR>>::TensorKey: Sync,
+    FixtureKeys<BT>: BootstrappingKeys<BT> + Sync,
+    <FixtureKeys<BT> as BootstrappingKeys<BT>>::TensorKey: Sync,
+{
+    assert_eq!(reference.n(), tested.n());
+    let want = run_bootstrap::<BR, F>(params, reference);
+    assert_untagged(
+        "bootstrapping",
+        want.iter()
+            .filter(|(result, _)| result.is_ok())
+            .flat_map(|(_, outputs)| outputs),
+    );
+    assert_eq!(want, run_bootstrap::<BT, F>(params, tested), "bootstrapping differs");
+}

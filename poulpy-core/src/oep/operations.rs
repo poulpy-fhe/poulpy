@@ -1,5 +1,5 @@
 use crate::layouts::IntPolyInfos;
-use std::collections::HashMap;
+use std::{collections::HashMap, ops::Range};
 
 use poulpy_hal::layouts::{
     Backend, CnvPVecLBackendRef, CnvPVecLToBackendRef, CnvPVecRBackendRef, CnvPVecRToBackendRef, Module, ScratchArena,
@@ -7,7 +7,7 @@ use poulpy_hal::layouts::{
 };
 
 use crate::layouts::{
-    GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut,
+    Degree, GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut,
     GGSWToBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey,
 };
 
@@ -647,8 +647,8 @@ pub unsafe trait GLWENormalizeImpl: Backend {
 /// Implementations must apply the requested automorphism sequence faithfully, interpret prepared
 /// keys correctly, and keep all accesses within the described ciphertext and scratch regions.
 pub unsafe trait GLWETraceImpl: crate::oep::AutomorphismImpl + GLWEShiftImpl + GLWECopyImpl + GLWENormalizeImpl {
-    fn glwe_trace_galois_elements(module: &Module<Self>) -> Vec<i64> {
-        crate::oep::derived::structure::glwe_trace_galois_elements_derived(module)
+    fn glwe_trace_galois_elements(module: &Module<Self>, n: Degree, levels: Range<usize>, reverse: bool) -> Vec<i64> {
+        crate::oep::derived::structure::glwe_trace_galois_elements_derived::<Self, _>(module, n, levels, reverse)
     }
 
     fn glwe_trace_tmp_bytes<R, A, K>(module: &Module<Self>, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
@@ -668,21 +668,44 @@ pub unsafe trait GLWETraceImpl: crate::oep::AutomorphismImpl + GLWEShiftImpl + G
         crate::oep::derived::structure::glwe_trace_assign_tmp_bytes_derived::<Self, _, _, _>(module, a_infos, key_infos)
     }
 
-    fn glwe_trace<R, A, H>(module: &Module<Self>, res: &mut R, skip: usize, a: &A, keys: &H, scratch: &mut ScratchArena<'_, Self>)
-    where
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the trace's operands, levels, direction and normalization, keys and scratch"
+    )]
+    fn glwe_trace<R, A, H>(
+        module: &Module<Self>,
+        res: &mut R,
+        levels: Range<usize>,
+        reverse: bool,
+        normalize: bool,
+        a: &A,
+        keys: &H,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
         R: GLWEToBackendMut<Self> + GLWEInfos,
         A: GLWEToBackendRef<Self> + GLWEInfos,
         H: GetAutomorphismKey<Self>,
     {
-        crate::oep::derived::structure::glwe_trace_derived::<Self, _, _, _, _>(module, res, skip, a, keys, scratch)
+        crate::oep::derived::structure::glwe_trace_derived::<Self, _, _, _, _>(
+            module, res, levels, reverse, normalize, a, keys, scratch,
+        )
     }
 
-    fn glwe_trace_assign<R, H>(module: &Module<Self>, res: &mut R, skip: usize, keys: &H, scratch: &mut ScratchArena<'_, Self>)
-    where
+    fn glwe_trace_assign<R, H>(
+        module: &Module<Self>,
+        res: &mut R,
+        levels: Range<usize>,
+        reverse: bool,
+        normalize: bool,
+        keys: &H,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
         R: GLWEToBackendMut<Self> + GLWEInfos,
         H: GetAutomorphismKey<Self>,
     {
-        crate::oep::derived::structure::glwe_trace_assign_derived::<Self, _, _, _>(module, res, skip, keys, scratch)
+        crate::oep::derived::structure::glwe_trace_assign_derived::<Self, _, _, _>(
+            module, res, levels, reverse, normalize, keys, scratch,
+        )
     }
 }
 

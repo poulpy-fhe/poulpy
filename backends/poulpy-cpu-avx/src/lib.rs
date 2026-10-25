@@ -1,0 +1,329 @@
+//! AVX2/FMA-accelerated CPU backend for the Poulpy lattice cryptography library.
+//!
+//! This crate provides AVX2/FMA FFT and NTT backends for [`poulpy_hal`],
+//! including the optional Rayon-scheduled [`FFT64AvxRayon`] and
+//! [`NTT4x30AvxRayon`] backends.
+//!
+//! # Architecture
+//!
+//! `poulpy_hal` defines a hardware abstraction layer (HAL) via the [`Backend`](poulpy_hal::layouts::Backend)
+//! trait and a family of _open extension point_ (OEP) traits in [`poulpy_hal::oep`]. This crate
+//! implements every OEP trait for the `FFT64Avx` backend using hand-optimized AVX2/FMA intrinsics
+//! and assembly kernels where profiling demonstrates performance benefits over compiler-generated code.
+//!
+//! The internal modules are organized by operation domain:
+//!
+//! | Module          | Domain                                                    |
+//! |-----------------|-----------------------------------------------------------|
+//! | `module`        | Backend handle lifecycle, FFT table management            |
+//! | `scratch`       | Temporary memory allocation and arena-style sub-allocation|
+//! | `znx_avx`       | Single ring element (`Z[X]/(X^n+1)`) SIMD arithmetic      |
+//! | `vec_znx`       | Vectors of ring elements (limb decomposition)             |
+//! | `vec_znx_big`   | Large-coefficient (multi-word) ring element vectors       |
+//! | `vec_znx_dft`   | Fourier-domain ring element vectors (forward/inverse DFT) |
+//! | `reim`          | Real/imaginary interleaved FFT primitives                 |
+//! | `convolution`   | Polynomial convolution via FFT, by-constant, and pairwise |
+//! | `svp`           | Scalar-vector product in frequency domain                 |
+//!
+//! # Scalar types
+//!
+//! For the `FFT64Avx` backend:
+//!
+//! - `DftWord = f64`: coefficients in the DFT / frequency domain.
+//! - `BigWord  = i64`: coefficients in the large-integer (multi-word) domain.
+//!   meaning each coefficient occupies exactly one scalar word.
+//! - `NTT4x30Avx` uses `CrtWord<Primes30, u32>` in the transform domain and `i128` for large coefficients.
+//!
+//! # CPU requirements
+//!
+//! This backend **requires** x86-64 CPUs with:
+//! - **AVX2**: 256-bit SIMD registers and operations
+//! - **FMA**: Fused multiply-add for reduced rounding error in FFT
+//!
+//! Runtime CPU feature detection is performed in [`Module::new()`](poulpy_hal::api::ModuleNew::new).
+//! If the required features are not present, the constructor panics with a descriptive error message.
+//!
+//! # Compile-time requirements
+//!
+//! To compile this crate, you must enable AVX2 and FMA target features:
+//!
+//! ```text
+//! RUSTFLAGS="-C target-cpu=native" cargo build --release
+//! ```
+//!
+//! Or explicitly:
+//!
+//! ```text
+//! RUSTFLAGS="-C target-feature=+avx2,+fma" cargo build --release
+//! ```
+//!
+//! Failure to enable these features at compile time will result in a compilation error.
+//!
+//! # Correctness guarantees
+//!
+//! ## Determinism
+//!
+//! All operations produce **bit-identical results** across different runs and different backends
+//! (when compared to `poulpy-cpu-portable`). Floating-point operations in FFT are constrained to
+//! maintain error < 0.5 ULP, ensuring correct rounding when converting back to integers.
+//!
+//! ## Overflow handling
+//!
+//! Integer overflow is **intentional** and managed through bivariate polynomial representation.
+//! The normalization functions (`znx_normalize_*`) use wrapping arithmetic to propagate carries
+//! correctly across limbs in base-2^k representation.
+//!
+//! ## Memory alignment
+//!
+//! All data layouts enforce 64-byte alignment (matching cache line size) as specified by
+//! `poulpy_hal::DEFAULTALIGN`. This alignment is verified at buffer allocation and enables
+//! the use of aligned SIMD loads/stores for maximum performance.
+//!
+//! ## Safety invariants
+//!
+//! Many functions are marked `unsafe` and require:
+//! - CPU features (AVX2/FMA) are present (verified at module creation)
+//! - Input slices have matching lengths where documented
+//! - Input values satisfy documented bounds (e.g., `|x| < 2^50` for IEEE 754 conversions)
+//! - Buffers are properly aligned (enforced by HAL allocators)
+//!
+//! Violating these invariants may result in:
+//! - Undefined behavior (e.g., invalid SIMD instructions, out-of-bounds memory access)
+//! - Silent incorrect results (e.g., exceeding numeric bounds in FP conversion)
+//! - Panics (shape/length/alignment mismatches assert in every build; numeric bound
+//!   violations are only checked in debug builds)
+//!
+//! # Performance characteristics
+//!
+//! ## Asymptotic complexity
+//!
+//! - **FFT/IFFT**: O(n log n) for polynomial degree n
+//! - **Convolution**: O(n log n) via FFT-based approach
+//! - **Normalization**: O(n) per limb with vectorized digit extraction
+//!
+//! ## Speedup over the portable backend
+//!
+//! Speedups depend on the host micro-architecture and on the operation profile of the
+//! workload. Run the benches in `poulpy-bench` on the target host for representative
+//! numbers. Qualitative trends:
+//!
+//! - **Ring element arithmetic** (add/sub/negate): bandwidth-bound, modest gains.
+//! - **FFT16 kernels** (hand-written assembly): noticeably ahead of compiler-generated
+//!   intrinsics on supported micro-architectures.
+//! - **Convolution** (large degree): the largest gains, scaling with coefficient size.
+//!
+//! ## Memory layout
+//!
+//! - **Vectorized storage**: Elements packed in groups of 4 (matching AVX2 register width for `i64`)
+//! - **Tail handling**: Scalar fallback for lengths not divisible by 4
+//! - **Cache-friendly**: 64-byte alignment ensures single cache line per vector load
+//!
+//! # Threading and concurrency
+//!
+//! - **`FFT64Avx` is `Send + Sync`**: Zero-sized marker type, no internal state.
+//! - **`Module<FFT64Avx>` is `Send + Sync`**: FFT tables are immutable after construction.
+//! - **Operations require `&mut` for outputs**: Prevents data races at the API level.
+//! - **No internal locking**: All synchronization is caller's responsibility.
+//!
+//! # Feature flags
+//!
+//! - `enable-avx`: exports the AVX2/FMA backends.
+//! - `enable-rayon`: exports `FFT64AvxRayon`, `NTT4x30AvxRayon`, and their crate-owned executor.
+//! - `enable-ckks`: wires the enabled backends into `poulpy-ckks`.
+//! - `enable-blas`: implies `enable-ckks` and wires the enabled backends into `poulpy-blas`.
+//!
+//! # Platform support
+//!
+//! - **Required**: x86-64 architecture with AVX2 and FMA
+//! - **Tested on**: Linux (x86_64), macOS (Intel), Windows (x86_64)
+//! - **Not supported**: ARM, RISC-V, or other architectures
+//!
+//! # Threat model
+//!
+//! This library assumes an **"honest but curious"** adversary model:
+//! - **No malicious inputs**: Callers are trusted to provide well-formed data within documented bounds.
+//! - **No timing attack mitigation**: Operations are not constant-time (performance is prioritized).
+//! - **Memory safety**: Bounds are validated to prevent crashes and corruption, but not for security.
+//!
+//! # Usage
+//!
+//! The public backend marker types are used as type parameters to HAL, core,
+//! CKKS, and bin-FHE generic APIs.
+//!
+//! # Versioning and stability
+//!
+//! This crate follows semantic versioning. The public API consists solely of the `FFT64Avx`
+//! marker type and its trait implementations from `poulpy_hal::oep`. All other items are
+//! implementation details subject to change without notice.
+
+// ─────────────────────────────────────────────────────────────
+// Build the backend **only when ALL conditions are satisfied**
+// ─────────────────────────────────────────────────────────────
+//#![cfg(all(feature = "enable-avx", target_arch = "x86_64", target_feature = "avx2", target_feature = "fma"))]
+
+// If the user enables this backend but targets a non-x86_64 CPU → abort
+#[cfg(all(feature = "enable-avx", not(docsrs), not(target_arch = "x86_64")))]
+compile_error!("feature `enable-avx` requires target_arch = \"x86_64\".");
+
+#[cfg(all(feature = "enable-ckks", not(feature = "enable-avx")))]
+compile_error!(
+    "feature `enable-ckks` requires feature `enable-avx` (without it nothing is built and test runs are silently empty)."
+);
+
+// If the user enables this backend but AVX2 isn't enabled in the target → abort
+#[cfg(all(feature = "enable-avx", not(docsrs), target_arch = "x86_64", not(target_feature = "avx2")))]
+compile_error!("feature `enable-avx` requires AVX2. Build with RUSTFLAGS=\"-C target-feature=+avx2\".");
+
+// If the user enables this backend but FMA isn't enabled in the target → abort
+#[cfg(all(feature = "enable-avx", not(docsrs), target_arch = "x86_64", not(target_feature = "fma")))]
+compile_error!("feature `enable-avx` requires FMA. Build with RUSTFLAGS=\"-C target-feature=+fma\".");
+
+// Keep the crate as a true opt-in backend: without `enable-avx`, none of the
+// AVX modules or their unit tests are compiled.
+#[cfg(all(feature = "enable-avx", feature = "enable-blas"))]
+mod blas_impl;
+#[cfg(all(feature = "enable-avx", feature = "enable-ckks"))]
+mod ckks_impl;
+#[cfg(feature = "enable-avx")]
+mod core_impl;
+#[cfg(feature = "enable-avx")]
+mod fft64;
+#[cfg(feature = "enable-avx")]
+mod hal_impl;
+#[cfg(feature = "enable-avx")]
+mod ntt4x30;
+#[cfg(all(test, feature = "enable-avx"))]
+mod tests;
+#[cfg(feature = "enable-avx")]
+mod znx_avx;
+#[cfg(all(feature = "enable-avx", feature = "enable-rayon"))]
+pub use fft64::FFT64AvxRayon;
+#[cfg(feature = "enable-avx")]
+pub use fft64::{FFT64Avx, ReimFFTAvx, ReimIFFTAvx};
+#[cfg(all(feature = "enable-avx", feature = "enable-ckks"))]
+#[allow(deprecated)]
+pub use fft64::{FFT64AvxEncodingTable, FFT64AvxReimTable};
+#[cfg(feature = "enable-avx")]
+pub use ntt4x30::NTT4x30Avx;
+#[cfg(feature = "enable-rayon")]
+pub use ntt4x30::NTT4x30AvxRayon;
+
+#[cfg(feature = "enable-avx")]
+mod layout_compat;
+
+/// [`FFT64Avx`] over the conjugate invariant ring.
+#[cfg(feature = "enable-avx")]
+pub type FFT64CIAvx = FFT64Avx<poulpy_hal::layouts::ConjugateInvariant>;
+/// [`NTT4x30Avx`] over the conjugate invariant ring.
+#[cfg(feature = "enable-avx")]
+pub type NTT4x30CIAvx = NTT4x30Avx<poulpy_hal::layouts::ConjugateInvariant>;
+/// [`FFT64AvxRayon`] over the conjugate invariant ring.
+#[cfg(all(feature = "enable-avx", feature = "enable-rayon"))]
+pub type FFT64CIAvxRayon = FFT64AvxRayon<poulpy_hal::layouts::ConjugateInvariant>;
+/// [`NTT4x30AvxRayon`] over the conjugate invariant ring.
+#[cfg(all(feature = "enable-avx", feature = "enable-rayon"))]
+pub type NTT4x30CIAvxRayon = NTT4x30AvxRayon<poulpy_hal::layouts::ConjugateInvariant>;
+
+#[cfg(all(test, feature = "enable-avx"))]
+poulpy_cpu_portable::conjugate_invariant_test_suite!(
+    ci_fft64avx,
+    crate::FFT64CIAvx,
+    crate::FFT64Avx,
+    reference = poulpy_cpu_portable::FFT64CIPortable
+);
+
+#[cfg(all(test, feature = "enable-avx"))]
+poulpy_cpu_portable::conjugate_invariant_test_suite!(
+    ci_ntt4x30avx,
+    crate::NTT4x30CIAvx,
+    crate::NTT4x30Avx,
+    reference = poulpy_cpu_portable::NTT4x30CIPortable
+);
+
+#[cfg(all(test, feature = "enable-avx", feature = "enable-rayon"))]
+poulpy_cpu_portable::conjugate_invariant_test_suite!(
+    ci_fft64avxrayon,
+    crate::FFT64CIAvxRayon,
+    crate::FFT64AvxRayon,
+    reference = crate::FFT64CIAvx
+);
+
+#[cfg(all(test, feature = "enable-avx", feature = "enable-rayon"))]
+poulpy_cpu_portable::conjugate_invariant_test_suite!(
+    ci_ntt4x30avxrayon,
+    crate::NTT4x30CIAvxRayon,
+    crate::NTT4x30AvxRayon,
+    reference = crate::NTT4x30CIAvx
+);
+
+#[cfg(all(test, feature = "enable-avx"))]
+poulpy_cpu_portable::conjugate_invariant_core_test_suite!(
+    ci_core_fft64avx,
+    crate::FFT64CIAvx,
+    crate::FFT64Avx,
+    reference = poulpy_cpu_portable::FFT64CIPortable
+);
+
+#[cfg(all(test, feature = "enable-avx"))]
+poulpy_cpu_portable::conjugate_invariant_core_test_suite!(
+    ci_core_ntt4x30avx,
+    crate::NTT4x30CIAvx,
+    crate::NTT4x30Avx,
+    reference = poulpy_cpu_portable::NTT4x30CIPortable
+);
+
+#[cfg(all(test, feature = "enable-avx", feature = "enable-rayon"))]
+poulpy_cpu_portable::conjugate_invariant_core_test_suite!(
+    ci_core_fft64avxrayon,
+    crate::FFT64CIAvxRayon,
+    crate::FFT64AvxRayon,
+    reference = crate::FFT64CIAvx
+);
+
+#[cfg(all(test, feature = "enable-avx", feature = "enable-rayon"))]
+poulpy_cpu_portable::conjugate_invariant_core_test_suite!(
+    ci_core_ntt4x30avxrayon,
+    crate::NTT4x30CIAvxRayon,
+    crate::NTT4x30AvxRayon,
+    reference = crate::NTT4x30CIAvx
+);
+
+#[cfg(all(test, feature = "enable-avx", feature = "enable-ckks"))]
+poulpy_ckks::conjugate_invariant_ckks_test_suite!(
+    ckks_ci_fft64avx,
+    crate::FFT64CIAvx,
+    crate::FFT64Avx,
+    poulpy_ckks::test_suite::BASE19_PARAMS_F64
+);
+
+#[cfg(all(test, feature = "enable-avx", feature = "enable-ckks"))]
+poulpy_ckks::conjugate_invariant_ckks_test_suite!(
+    ckks_ci_ntt4x30avx,
+    crate::NTT4x30CIAvx,
+    crate::NTT4x30Avx,
+    poulpy_ckks::test_suite::BASE52_PARAMS_F64
+);
+
+#[cfg(all(test, feature = "enable-avx", feature = "enable-ckks", feature = "enable-rayon"))]
+poulpy_ckks::conjugate_invariant_ckks_test_suite!(
+    ckks_ci_fft64avxrayon,
+    crate::FFT64CIAvxRayon,
+    crate::FFT64AvxRayon,
+    poulpy_ckks::test_suite::BASE19_PARAMS_F64
+);
+
+#[cfg(all(test, feature = "enable-avx", feature = "enable-ckks", feature = "enable-rayon"))]
+poulpy_ckks::conjugate_invariant_ckks_test_suite!(
+    ckks_ci_ntt4x30avxrayon,
+    crate::NTT4x30CIAvxRayon,
+    crate::NTT4x30AvxRayon,
+    poulpy_ckks::test_suite::BASE52_PARAMS_F64
+);
+
+pub mod capabilities;
+
+#[cfg(all(feature = "enable-avx", feature = "enable-bin-fhe"))]
+mod bin_fhe_impl;
+
+#[cfg(all(feature = "enable-bin-fhe", not(feature = "enable-avx")))]
+compile_error!("feature `enable-bin-fhe` requires `enable-avx` so binary-FHE tests cannot silently run without a backend");

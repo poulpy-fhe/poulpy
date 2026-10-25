@@ -1,9 +1,13 @@
-use poulpy_hal::layouts::{Backend, Module, ScratchArena, Standard};
+use poulpy_hal::{
+    api::VecZnxSwitchRing,
+    layouts::{Backend, Module, ScratchArena, Standard},
+};
 
 use crate::layouts::{GLWEInfos, GLWEToBackendMut, GLWEToBackendRef};
 
 /// Backend-provided maps between conjugate-invariant GLWEs of degree `N` and
-/// standard GLWEs of degree `2N`, executed by a standard backend of degree at least `2N`.
+/// standard GLWEs of degree `2N`, and the degree switch between standard GLWEs of
+/// degrees `N` and `2N`, executed by a standard backend of degree at least `2N`.
 ///
 /// # Safety
 /// Implementations must only read and write the regions described by the provided layouts, respect
@@ -23,6 +27,15 @@ pub unsafe trait GLWECIConversionImpl: Backend<Ring = Standard> {
     where
         R: GLWEToBackendMut<Self> + GLWEInfos,
         A: GLWEToBackendRef<Self> + GLWEInfos;
+
+    fn glwe_switch_degree<R, A>(module: &Module<Self>, res: &mut R, a: &A)
+    where
+        R: GLWEToBackendMut<Self> + GLWEInfos,
+        A: GLWEToBackendRef<Self> + GLWEInfos,
+        Module<Self>: VecZnxSwitchRing<Self>,
+    {
+        crate::reference::ci_conversion::glwe_switch_degree_reference(module, res, a)
+    }
 }
 
 /// Selects the portable HAL algorithms for the conjugate-invariant maps.

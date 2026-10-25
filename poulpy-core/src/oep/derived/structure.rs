@@ -4,51 +4,78 @@
 //! copy, normalization, rotation, or trace operation is reused by these defaults.
 
 mod trace {
-    //! Normalized GLWE trace (projection by Galois averaging).
+    //! GLWE trace over a window of levels, summed or normalized.
     //!
-    //! Each visited level right-shifts the ciphertext by one bit, then adds its
-    //! Galois conjugate. Ignoring finite-precision rounding and key-switch noise,
-    //! the message action is the average of the selected conjugates, not their sum:
-    //! `NormalizedTrace(ct) = 2^(-(log_n - skip)) * sum_{i in S} phi_i(ct)`.
+    //! Level `0` applies the conjugation, on the standard ring only, and level `i >= 1` the rotation by `2^(i-1)`
+    //! slots, up to the level of the rotation by half the slots: a full trace ends at `log2(n)` on the standard ring and
+    //! at `log2(n) + 1` on the conjugate-invariant ring. Each visited level adds its Galois conjugate to the ciphertext,
+    //! `x <- x + phi(x)`, the automorphism reading `x` through a normalized copy and leaving the sum canonical.
+    //! Normalized, `x` is first right-shifted by one bit with the core right-shift's rounding, so the message action is
+    //! the average of the visited conjugates; summed, it is their sum. `reverse` visits the levels from the last down
+    //! to the first, each by its inverse Galois element: the replicate.
     //!
-    //! `skip` omits the initial automorphism levels and must lie in `0..=log_n`.
-    //! With `skip == log_n`, the out-of-place operation copies the input at the
-    //! destination's layout and the assign operation leaves the input unchanged;
-    //! neither path needs an automorphism key. Each nonempty level rounds according
-    //! to the core right-shift contract before its automorphism and addition.
-    //!
-    //! Automorphism keys are indexed by the Galois elements returned from
-    //! [`GLWETrace::glwe_trace_galois_elements`](crate::api::GLWETrace::glwe_trace_galois_elements).
+    //! An empty window copies the input at the destination's layout out of place and leaves it unchanged in place;
+    //! neither path needs an automorphism key. Automorphism keys are indexed by the Galois elements
+    //! [`GLWETrace::glwe_trace_galois_elements`](crate::api::GLWETrace::glwe_trace_galois_elements) returns.
+    use std::ops::Range;
+
     use crate::layouts::{operand_degree, operand_galois_element};
 
     use crate::api::GLWEBytesOf;
     use poulpy_hal::{
         api::ModuleLogN,
-        layouts::{Backend, CyclotomicOrder, GaloisElement, ScratchArena, galois_element},
+        layouts::{Backend, CyclotomicOrder, GaloisElement, Ring, ScratchArena, Standard},
     };
 
     use crate::{
         GLWEAutomorphism, GLWECopy, GLWENormalize, GLWEShift, GLWETrace, ScratchArenaTakeCore,
-        layouts::{GGLWEInfos, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos},
+        layouts::{Degree, GGLWEInfos, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos},
     };
 
-    #[inline(always)]
-    pub(crate) fn trace_galois_elements(log_n: usize, cyclotomic_order: i64) -> Vec<i64> {
-        (0..log_n)
-            .map(|i| {
-                if i == 0 {
-                    -1
-                } else {
-                    galois_element(1 << (i - 1), cyclotomic_order)
-                }
-            })
-            .collect()
+    /// The full trace of a degree-`n` operand: the conjugation first, on the standard ring only since the
+    /// conjugate-invariant ring is fixed by it, then one level per doubling rotation up to half the slots.
+    fn ring_levels<BE: Backend>(n: usize) -> Range<usize> {
+        let first = usize::from(BE::Ring::CYCLOTOMIC_ORDER_FACTOR != Standard::CYCLOTOMIC_ORDER_FACTOR);
+        first..(BE::Ring::CYCLOTOMIC_ORDER_FACTOR as usize * n).ilog2() as usize - 1
+    }
+
+    /// Panics before any write unless `levels` lies within the trace of a degree-`n` operand.
+    fn assert_levels<BE: Backend>(n: usize, levels: &Range<usize>) {
+        let trace = ring_levels::<BE>(n);
+        assert!(
+            levels.start <= levels.end && levels.end <= trace.end,
+            "trace: levels outside the ring's trace"
+        );
+        assert!(
+            levels.is_empty() || levels.start >= trace.start,
+            "trace: the conjugate-invariant ring has no conjugation level"
+        );
+    }
+
+    /// The Galois elements a trace of a degree-`n` operand visits over `levels`, in order.
+    fn trace_rotations<BE: Backend, M: GaloisElement + ?Sized>(
+        module: &M,
+        n: usize,
+        levels: Range<usize>,
+        reverse: bool,
+    ) -> impl Iterator<Item = i64> + use<'_, BE, M> {
+        let slots = BE::Ring::CYCLOTOMIC_ORDER_FACTOR * n as i64 / 4;
+        (0..levels.len()).map(move |t| {
+            let level = if reverse { levels.end - 1 - t } else { levels.start + t };
+            if level == 0 {
+                return -1;
+            }
+            let rotation = 1i64 << (level - 1);
+            operand_galois_element(module, n, if reverse { slots - rotation } else { rotation })
+        })
     }
 
     fn trace_assign_internal<M, H, R, BE: Backend>(
         module: &M,
         res: &mut R,
-        skip: usize,
+        levels: Range<usize>,
+        reverse: bool,
+        normalize: bool,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
@@ -65,12 +92,12 @@ mod trace {
         R: GLWEToBackendMut<BE> + GLWEInfos,
     {
         operand_degree(module.n(), &[res.n()]);
-        let log_n: usize = res.log_n();
-        assert!(skip <= log_n);
+        let n = res.n().as_usize();
+        assert_levels::<BE>(n, &levels);
         // Keys may differ per rotation, so the radix and the scratch bound are read
         // off the first one the source resolves, as on any path sized from a single
         // key layout.
-        let Some(first) = trace_rotations(module, log_n, skip).next() else {
+        let Some(first) = trace_rotations::<BE, _>(module, n, levels.clone(), reverse).next() else {
             return;
         };
         let ksk_infos = keys
@@ -102,7 +129,7 @@ mod trace {
             });
 
             scratch_1 = scratch_1.apply_mut(|scratch| {
-                module.glwe_trace_assign(&mut res_conv, skip, keys, scratch);
+                module.glwe_trace_assign(&mut res_conv, levels, reverse, normalize, keys, scratch);
             });
 
             scratch_1.apply_mut(|scratch| {
@@ -111,28 +138,15 @@ mod trace {
             return;
         }
 
-        for p in trace_rotations(module, log_n, skip) {
-            module.glwe_rsh(1, res, scratch);
+        for p in trace_rotations::<BE, _>(module, n, levels, reverse) {
+            if normalize {
+                module.glwe_rsh(1, res, scratch);
+            }
             let key = keys
                 .get_automorphism_key(p, res.k())
                 .unwrap_or_else(|e| panic!("trace rotation {p}: {e}"));
             module.glwe_automorphism_add_assign(res, &key, scratch);
         }
-    }
-
-    /// Rotations the trace of a degree-`2^log_n` operand visits, in order, as Galois
-    /// elements of the operand's ring.
-    fn trace_rotations<M>(module: &M, log_n: usize, skip: usize) -> impl Iterator<Item = i64> + use<'_, M>
-    where
-        M: GaloisElement + ?Sized,
-    {
-        (skip..log_n).map(move |i| {
-            if i == 0 {
-                -1
-            } else {
-                operand_galois_element(module, 1 << log_n, 1 << (i - 1))
-            }
-        })
     }
 
     pub(crate) fn glwe_trace_assign_tmp_bytes_derived<BE, M, A, K>(module: &M, a_infos: &A, key_infos: &K) -> usize
@@ -171,11 +185,19 @@ mod trace {
             .max(module.glwe_automorphism_tmp_bytes(a_infos, a_infos, key_infos))
     }
 
-    pub(crate) fn glwe_trace_galois_elements_derived<M>(module: &M) -> Vec<i64>
+    pub(crate) fn glwe_trace_galois_elements_derived<BE, M>(
+        module: &M,
+        n: Degree,
+        levels: Range<usize>,
+        reverse: bool,
+    ) -> Vec<i64>
     where
-        M: ModuleLogN + CyclotomicOrder,
+        BE: Backend,
+        M: GaloisElement,
     {
-        trace_galois_elements(module.log_n(), module.cyclotomic_order())
+        let n = operand_degree(module.n(), &[n]);
+        assert_levels::<BE>(n, &levels);
+        trace_rotations::<BE, _>(module, n, levels, reverse).collect()
     }
 
     pub(crate) fn glwe_trace_tmp_bytes_derived<BE, M, R, A, K>(module: &M, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
@@ -212,10 +234,16 @@ mod trace {
         (lvl_0 + lvl_1.max(lvl_2).max(lvl_3)).max(module.glwe_copy_tmp_bytes(res_infos, a_infos))
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the trace's operands, levels, direction and normalization, keys and scratch"
+    )]
     pub(crate) fn glwe_trace_derived<BE, M, R, A, H>(
         module: &M,
         res: &mut R,
-        skip: usize,
+        levels: Range<usize>,
+        reverse: bool,
+        normalize: bool,
         a: &A,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
@@ -235,8 +263,9 @@ mod trace {
         H: GetAutomorphismKey<BE>,
     {
         operand_degree(module.n(), &[res.n(), a.n()]);
-        assert!(skip <= res.log_n(), "trace skip exceeds log_n");
-        let Some(first) = trace_rotations(module, res.log_n(), skip).next() else {
+        let n = res.n().as_usize();
+        assert_levels::<BE>(n, &levels);
+        let Some(first) = trace_rotations::<BE, _>(module, n, levels.clone(), reverse).next() else {
             module.glwe_copy(res, a, scratch);
             res.set_noise(None);
             return;
@@ -264,7 +293,7 @@ mod trace {
 
         {
             scratch_1 = scratch_1.apply_mut(|scratch| {
-                module.glwe_trace_assign(&mut tmp, skip, keys, scratch);
+                module.glwe_trace_assign(&mut tmp, levels, reverse, normalize, keys, scratch);
             });
         }
 
@@ -274,7 +303,9 @@ mod trace {
     pub(crate) fn glwe_trace_assign_derived<BE, M, R, H>(
         module: &M,
         res: &mut R,
-        skip: usize,
+        levels: Range<usize>,
+        reverse: bool,
+        normalize: bool,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
@@ -291,14 +322,14 @@ mod trace {
         R: GLWEToBackendMut<BE> + GLWEInfos,
         H: GetAutomorphismKey<BE>,
     {
-        trace_assign_internal::<M, H, _, BE>(module, res, skip, keys, scratch);
+        trace_assign_internal::<M, H, _, BE>(module, res, levels, reverse, normalize, keys, scratch);
         res.set_noise(None);
     }
 }
 
 pub(crate) use trace::{
     glwe_trace_assign_derived, glwe_trace_assign_tmp_bytes_derived, glwe_trace_derived, glwe_trace_galois_elements_derived,
-    glwe_trace_tmp_bytes_derived, trace_galois_elements,
+    glwe_trace_tmp_bytes_derived,
 };
 
 mod packing {
@@ -392,9 +423,9 @@ mod packing {
     pub(crate) fn glwe_pack_galois_elements_derived<BE, M>(module: &M) -> Vec<i64>
     where
         BE: Backend,
-        M: GLWETrace<BE>,
+        M: GLWETrace<BE> + ModuleLogN,
     {
-        module.glwe_trace_galois_elements()
+        module.glwe_trace_galois_elements(module.n().into(), 0..module.log_n(), false)
     }
 
     pub(crate) fn glwe_pack_tmp_bytes_derived<BE, M, R, A, K>(module: &M, res: &R, a: &A, key: &K) -> usize
@@ -505,7 +536,15 @@ mod packing {
         }
 
         scratch_local.apply_mut(|scratch| {
-            module.glwe_trace(res, log_n - log_gap_out, *a.get_mut(&0).unwrap(), keys, scratch);
+            module.glwe_trace(
+                res,
+                log_n - log_gap_out..log_n,
+                false,
+                true,
+                *a.get_mut(&0).unwrap(),
+                keys,
+                scratch,
+            );
         });
     }
 }

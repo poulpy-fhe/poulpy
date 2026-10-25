@@ -4,7 +4,7 @@
 //! These free `*_reference` functions are the reference algorithms a backend
 //! forwards to from its [`crate::oep::LinearTransformationImpl`] impl (see
 //! [`crate::impl_linear_transformation_reference_full`]). The prepared path
-//! follows docs/linear_transformation.md: hoisted baby rotations, DFT-domain inner
+//! follows docs/guides/linear_transformation.md: hoisted baby rotations, DFT-domain inner
 //! products, lazy giant rotations, and one final BIG normalization.
 
 #![allow(clippy::too_many_arguments)]
@@ -153,7 +153,7 @@ where
 ///
 /// Fills the pre-allocated `cache` with `rot(a, k)` (prepared as `CnvPVecL`) for
 /// every baby rotation `k` it already holds, reusing one DFT of the input mask
-/// across all keys (docs/linear_transformation.md). The LHS is independent of the matrix
+/// across all keys (docs/guides/linear_transformation.md). The LHS is independent of the matrix
 /// diagonals, so the same prepared cache is reused across every giant step and
 /// across transforms that share the input. Forwards to the internal
 /// `glwe_prepare_linear_transformation_baby_steps`.
@@ -196,7 +196,7 @@ pub fn glwe_prepare_linear_transformation_baby_steps_reference<BE, M, A, H>(
 ///
 /// Evaluates `M·v` from the prepared left operand `lhs` (baby rotations, Phase A)
 /// and the right operand `rhs` (matrix diagonals), writing the result into `res`.
-/// This is Phases B/C of docs/linear_transformation.md: per-giant PROD, lazy giant rotations,
+/// This is Phases B/C of docs/guides/linear_transformation.md: per-giant PROD, lazy giant rotations,
 /// and one final normalization. `cnv_offset` is the CKKS-supplied limb alignment
 /// between the input and diagonal scales. The per-giant PROD is dispatched by `P`
 /// via [`DiagonalProd`], so `P = PreparedDiagonal` runs the resident fused path

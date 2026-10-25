@@ -179,7 +179,8 @@
 //!
 //! A computing operation takes no degree argument: its operands share one
 //! degree `N`, read from `res` (or the in-place operand), and every kernel
-//! asserts at entry that the module serves it. An allocation, `bytes_of_*`,
+//! asserts at entry that the module serves it, coefficient-wise reductions and
+//! products excepted (see below). An allocation, `bytes_of_*`,
 //! scratch take or plan has no polynomial operand and takes the degree `n`
 //! as its first argument. The `*_tmp_bytes` are sized at the module's degree,
 //! an upper bound for a call at a smaller one.
@@ -212,7 +213,8 @@
 //! # Preconditions
 //!
 //! The `domain` and `requires` lines give the shape and parameter
-//! preconditions; the backend kernels check them with `assert!` in every
+//! preconditions, and every named column lies below its operand's column
+//! count; the backend kernels check them with `assert!` in every
 //! build, and the delegate layer is pure forwarding and never asserts.
 //! Numeric input bounds and representability are caller obligations and
 //! are not checked by scanning input coefficients.

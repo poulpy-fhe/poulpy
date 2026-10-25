@@ -1,5 +1,5 @@
 use crate::layouts::IntPolyInfos;
-use std::collections::HashMap;
+use std::{collections::HashMap, ops::Range};
 
 use poulpy_hal::layouts::{Backend, CnvPVecLToBackendRef, CnvPVecRToBackendRef, Module, ScratchArena};
 
@@ -10,7 +10,7 @@ use crate::{
         GLWEShift, GLWESub, GLWETensoring, GLWETrace, GLWEZero,
     },
     layouts::{
-        GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut,
+        Degree, GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut,
         GGSWToBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey,
     },
     oep::{
@@ -669,8 +669,8 @@ impl_operations_delegate!(
 impl_operations_delegate!(
     GLWETrace<BE>,
     GLWETraceImpl,
-    fn glwe_trace_galois_elements(&self) -> Vec<i64> {
-        BE::glwe_trace_galois_elements(self)
+    fn glwe_trace_galois_elements(&self, n: Degree, levels: Range<usize>, reverse: bool) -> Vec<i64> {
+        BE::glwe_trace_galois_elements(self, n, levels, reverse)
     },
     fn glwe_trace_tmp_bytes<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
@@ -687,20 +687,35 @@ impl_operations_delegate!(
     {
         BE::glwe_trace_assign_tmp_bytes(self, a_infos, key_infos)
     },
-    fn glwe_trace<R, A, H>(&self, res: &mut R, skip: usize, a: &A, keys: &H, scratch: &mut ScratchArena<'_, BE>)
-    where
+    fn glwe_trace<R, A, H>(
+        &self,
+        res: &mut R,
+        levels: Range<usize>,
+        reverse: bool,
+        normalize: bool,
+        a: &A,
+        keys: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         H: GetAutomorphismKey<BE>,
     {
-        BE::glwe_trace(self, res, skip, a, keys, scratch)
+        BE::glwe_trace(self, res, levels, reverse, normalize, a, keys, scratch)
     },
-    fn glwe_trace_assign<R, H>(&self, res: &mut R, skip: usize, keys: &H, scratch: &mut ScratchArena<'_, BE>)
-    where
+    fn glwe_trace_assign<R, H>(
+        &self,
+        res: &mut R,
+        levels: Range<usize>,
+        reverse: bool,
+        normalize: bool,
+        keys: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         H: GetAutomorphismKey<BE>,
     {
-        BE::glwe_trace_assign(self, res, skip, keys, scratch)
+        BE::glwe_trace_assign(self, res, levels, reverse, normalize, keys, scratch)
     }
 );
 
