@@ -24,8 +24,10 @@ use crate::{
 ///
 /// # Safety
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
-/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
-/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does.
+/// The key encryptions wipe the scratch their query reports before returning.
+/// The memory, layout, synchrony and aliasing rules of
+/// `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait GLWECIConversionImpl: Backend<Ring = Standard> + HalVecZnxImpl + EncryptionImpl {
     /// Reproduces [`glwe_ci_embed_reference`](crate::reference::ci_conversion::glwe_ci_embed_reference) bit for bit;
     /// free in kernels.

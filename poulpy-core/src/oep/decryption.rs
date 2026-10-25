@@ -11,8 +11,10 @@ use crate::layouts::{
 ///
 /// # Safety
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
-/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
-/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does.
+/// Every method taking scratch wipes the scratch its query reports before returning.
+/// The memory, layout, synchrony and aliasing rules of
+/// `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait DecryptionImpl: Backend {
     /// Scratch bound of [`Self::glwe_decrypt`]; may report less than the reference, never less than the body takes.
     fn glwe_decrypt_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
@@ -21,7 +23,7 @@ pub unsafe trait DecryptionImpl: Backend {
 
     /// Reproduces [`glwe_decrypt_reference`](crate::reference::decryption::glwe::glwe_decrypt_reference) bit for bit
     /// under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within [`Self::glwe_decrypt_tmp_bytes`]; free in
-    /// kernels and scratch use.
+    /// kernels and scratch use before the wipe.
     fn glwe_decrypt<R, P, S>(module: &Module<Self>, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, Self>)
     where
         R: GLWEToBackendRef<Self> + GLWEInfos,
@@ -37,7 +39,7 @@ pub unsafe trait DecryptionImpl: Backend {
     /// Reproduces
     /// [`glwe_mask_inner_product_reference`](crate::reference::decryption::glwe::glwe_mask_inner_product_reference)
     /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
-    /// [`Self::glwe_mask_inner_product_tmp_bytes`]; free in kernels and scratch use.
+    /// [`Self::glwe_mask_inner_product_tmp_bytes`]; free in kernels and scratch use before the wipe.
     fn glwe_mask_inner_product<R, A, S>(
         module: &Module<Self>,
         res: &mut R,
@@ -55,7 +57,7 @@ pub unsafe trait DecryptionImpl: Backend {
         A: LWEInfos;
 
     /// Reproduces [`lwe_decrypt_reference`](crate::reference::decryption::lwe::lwe_decrypt_reference) bit for bit,
-    /// within [`Self::lwe_decrypt_tmp_bytes`]; free in kernels and scratch use.
+    /// within [`Self::lwe_decrypt_tmp_bytes`]; free in kernels and scratch use before the wipe.
     fn lwe_decrypt<R, P, S>(module: &Module<Self>, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, Self>)
     where
         R: LWEToBackendRef<Self> + LWEInfos,
@@ -70,7 +72,7 @@ pub unsafe trait DecryptionImpl: Backend {
 
     /// Reproduces
     /// [`lwe_matrix_decrypt_reference`](crate::reference::decryption::lwe_matrix::lwe_matrix_decrypt_reference) bit
-    /// for bit, within [`Self::lwe_matrix_decrypt_tmp_bytes`]; free in kernels and scratch use.
+    /// for bit, within [`Self::lwe_matrix_decrypt_tmp_bytes`]; free in kernels and scratch use before the wipe.
     fn lwe_matrix_decrypt<R, P, S>(module: &Module<Self>, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, Self>)
     where
         R: LWEMatrixToBackendRef<Self> + LWEMatrixInfos,
@@ -80,7 +82,7 @@ pub unsafe trait DecryptionImpl: Backend {
     /// Reproduces
     /// [`glwe_tensor_decrypt_reference`](crate::reference::decryption::glwe_tensor::glwe_tensor_decrypt_reference)
     /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
-    /// [`Self::glwe_tensor_decrypt_tmp_bytes`]; free in kernels and scratch use.
+    /// [`Self::glwe_tensor_decrypt_tmp_bytes`]; free in kernels and scratch use before the wipe.
     fn glwe_tensor_decrypt<R: Data, P: Data, S0: Data, S1: Data>(
         module: &Module<Self>,
         res: &GLWETensor<R, Self::ZnxWord>,

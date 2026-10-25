@@ -27,8 +27,10 @@ use crate::{
 ///
 /// # Safety
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
-/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
-/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does.
+/// Every method taking scratch wipes the scratch its query reports before returning.
+/// The memory, layout, synchrony and aliasing rules of
+/// `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait EncryptionImpl: Backend + SamplingImpl + HalVecZnxImpl + GLWENormalizeImpl + SecretImpl {
     /// Reproduces
     /// [`fill_glwe_mask_from_source_reference`](crate::reference::encryption::GLWEMaskFillReference::fill_glwe_mask_from_source_reference)
@@ -76,7 +78,7 @@ pub unsafe trait EncryptionImpl: Backend + SamplingImpl + HalVecZnxImpl + GLWENo
 
     /// Reproduces
     /// [`lwe_encrypt_sk_reference`](crate::reference::encryption::LWEEncryptSkReference::lwe_encrypt_sk_reference)
-    /// bit for bit, within [`Self::lwe_encrypt_sk_tmp_bytes`]; free in kernels and scratch use.
+    /// bit for bit, within [`Self::lwe_encrypt_sk_tmp_bytes`]; free in kernels and scratch use before the wipe.
     fn lwe_encrypt_sk<R, P, S>(
         module: &Module<Self>,
         res: &mut R,
@@ -99,7 +101,7 @@ pub unsafe trait EncryptionImpl: Backend + SamplingImpl + HalVecZnxImpl + GLWENo
     /// Reproduces
     /// [`glwe_encrypt_sk_reference`](crate::reference::encryption::GLWEEncryptSkReference::glwe_encrypt_sk_reference)
     /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
-    /// [`Self::glwe_encrypt_sk_tmp_bytes`]; free in kernels and scratch use.
+    /// [`Self::glwe_encrypt_sk_tmp_bytes`]; free in kernels and scratch use before the wipe.
     fn glwe_encrypt_sk<R, P, S>(
         module: &Module<Self>,
         res: &mut R,
@@ -116,7 +118,7 @@ pub unsafe trait EncryptionImpl: Backend + SamplingImpl + HalVecZnxImpl + GLWENo
     /// Reproduces
     /// [`glwe_encrypt_zero_sk_reference`](crate::reference::encryption::GLWEEncryptSkReference::glwe_encrypt_zero_sk_reference)
     /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
-    /// [`Self::glwe_encrypt_sk_tmp_bytes`]; free in kernels and scratch use.
+    /// [`Self::glwe_encrypt_sk_tmp_bytes`]; free in kernels and scratch use before the wipe.
     fn glwe_encrypt_zero_sk<R, S>(
         module: &Module<Self>,
         res: &mut R,
@@ -131,7 +133,7 @@ pub unsafe trait EncryptionImpl: Backend + SamplingImpl + HalVecZnxImpl + GLWENo
     /// Reproduces
     /// [`glwe_encrypt_sk_with_mask_reference`](crate::reference::encryption::GLWEEncryptSkReference::glwe_encrypt_sk_with_mask_reference)
     /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
-    /// [`Self::glwe_encrypt_sk_tmp_bytes`]; free in kernels and scratch use.
+    /// [`Self::glwe_encrypt_sk_tmp_bytes`]; free in kernels and scratch use before the wipe.
     fn glwe_encrypt_sk_with_mask<R, P, S>(
         module: &Module<Self>,
         res: &mut R,
@@ -220,7 +222,7 @@ pub unsafe trait EncryptionImpl: Backend + SamplingImpl + HalVecZnxImpl + GLWENo
     /// Reproduces
     /// [`glwe_encrypt_pk_sampled_at_reference`](crate::reference::encryption::GLWEEncryptPkReference::glwe_encrypt_pk_sampled_at_reference)
     /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
-    /// [`Self::glwe_encrypt_pk_tmp_bytes`]; free in kernels and scratch use.
+    /// [`Self::glwe_encrypt_pk_tmp_bytes`]; free in kernels and scratch use before the wipe.
     ///
     /// The caller hands it `pt.0` to add to column `pt.1` (`0` is the body) or `None` for zero, and `k_sample` in
     /// `[res.k(), pk.k()]`, the precision of the fresh errors. Without `body_noise` the body gets no encryption
@@ -352,7 +354,7 @@ pub unsafe trait EncryptionImpl: Backend + SamplingImpl + HalVecZnxImpl + GLWENo
     /// Reproduces
     /// [`gglwe_encrypt_sk_reference`](crate::reference::encryption::GGLWEEncryptSkReference::gglwe_encrypt_sk_reference)
     /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
-    /// [`Self::gglwe_encrypt_sk_tmp_bytes`]; free in kernels and scratch use.
+    /// [`Self::gglwe_encrypt_sk_tmp_bytes`]; free in kernels and scratch use before the wipe.
     fn gglwe_encrypt_sk<R, P, S>(
         module: &Module<Self>,
         res: &mut R,
@@ -375,7 +377,7 @@ pub unsafe trait EncryptionImpl: Backend + SamplingImpl + HalVecZnxImpl + GLWENo
     /// Reproduces
     /// [`ggsw_encrypt_sk_reference`](crate::reference::encryption::GGSWEncryptSkReference::ggsw_encrypt_sk_reference)
     /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
-    /// [`Self::ggsw_encrypt_sk_tmp_bytes`]; free in kernels and scratch use.
+    /// [`Self::ggsw_encrypt_sk_tmp_bytes`]; free in kernels and scratch use before the wipe.
     fn ggsw_encrypt_sk<R, P, S>(
         module: &Module<Self>,
         res: &mut R,
@@ -427,7 +429,7 @@ pub unsafe trait EncryptionImpl: Backend + SamplingImpl + HalVecZnxImpl + GLWENo
 
     /// Reproduces
     /// [`gglwe_to_ggsw_key_encrypt_sk_reference`](crate::reference::encryption::GGLWEToGGSWKeyEncryptSkReference::gglwe_to_ggsw_key_encrypt_sk_reference)
-    /// bit for bit, within [`Self::gglwe_to_ggsw_key_encrypt_sk_tmp_bytes`]; free in kernels and scratch use.
+    /// bit for bit, within [`Self::gglwe_to_ggsw_key_encrypt_sk_tmp_bytes`]; free in kernels and scratch use before the wipe.
     fn gglwe_to_ggsw_key_encrypt_sk<R, S>(
         module: &Module<Self>,
         res: &mut R,
@@ -447,7 +449,7 @@ pub unsafe trait EncryptionImpl: Backend + SamplingImpl + HalVecZnxImpl + GLWENo
 
     /// Reproduces
     /// [`glwe_switching_key_encrypt_sk_reference`](crate::reference::encryption::GLWESwitchingKeyEncryptSkReference::glwe_switching_key_encrypt_sk_reference)
-    /// bit for bit, within [`Self::glwe_switching_key_encrypt_sk_tmp_bytes`]; free in kernels and scratch use.
+    /// bit for bit, within [`Self::glwe_switching_key_encrypt_sk_tmp_bytes`]; free in kernels and scratch use before the wipe.
     fn glwe_switching_key_encrypt_sk<R, S1, S2>(
         module: &Module<Self>,
         res: &mut R,
@@ -497,7 +499,7 @@ pub unsafe trait EncryptionImpl: Backend + SamplingImpl + HalVecZnxImpl + GLWENo
 
     /// Reproduces
     /// [`glwe_to_lwe_key_encrypt_sk_reference`](crate::reference::encryption::GLWEToLWESwitchingKeyEncryptSkReference::glwe_to_lwe_key_encrypt_sk_reference)
-    /// bit for bit, within [`Self::glwe_to_lwe_key_encrypt_sk_tmp_bytes`]; free in kernels and scratch use.
+    /// bit for bit, within [`Self::glwe_to_lwe_key_encrypt_sk_tmp_bytes`]; free in kernels and scratch use before the wipe.
     fn glwe_to_lwe_key_encrypt_sk<R, S1, S2>(
         module: &Module<Self>,
         res: &mut R,
@@ -519,7 +521,7 @@ pub unsafe trait EncryptionImpl: Backend + SamplingImpl + HalVecZnxImpl + GLWENo
 
     /// Reproduces
     /// [`lwe_switching_key_encrypt_sk_reference`](crate::reference::encryption::LWESwitchingKeyEncryptReference::lwe_switching_key_encrypt_sk_reference)
-    /// bit for bit, within [`Self::lwe_switching_key_encrypt_sk_tmp_bytes`]; free in kernels and scratch use.
+    /// bit for bit, within [`Self::lwe_switching_key_encrypt_sk_tmp_bytes`]; free in kernels and scratch use before the wipe.
     fn lwe_switching_key_encrypt_sk<R, S1, S2>(
         module: &Module<Self>,
         res: &mut R,
@@ -542,7 +544,7 @@ pub unsafe trait EncryptionImpl: Backend + SamplingImpl + HalVecZnxImpl + GLWENo
     /// Reproduces
     /// [`lwe_to_glwe_key_encrypt_sk_reference`](crate::reference::encryption::LWEToGLWESwitchingKeyEncryptSkReference::lwe_to_glwe_key_encrypt_sk_reference)
     /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
-    /// [`Self::lwe_to_glwe_key_encrypt_sk_tmp_bytes`]; free in kernels and scratch use.
+    /// [`Self::lwe_to_glwe_key_encrypt_sk_tmp_bytes`]; free in kernels and scratch use before the wipe.
     fn lwe_to_glwe_key_encrypt_sk<R, S1, S2>(
         module: &Module<Self>,
         res: &mut R,
@@ -564,7 +566,7 @@ pub unsafe trait EncryptionImpl: Backend + SamplingImpl + HalVecZnxImpl + GLWENo
 
     /// Reproduces
     /// [`glwe_automorphism_key_encrypt_sk_reference`](crate::reference::encryption::GLWEAutomorphismKeyEncryptSkReference::glwe_automorphism_key_encrypt_sk_reference)
-    /// bit for bit, within [`Self::glwe_automorphism_key_encrypt_sk_tmp_bytes`]; free in kernels and scratch use.
+    /// bit for bit, within [`Self::glwe_automorphism_key_encrypt_sk_tmp_bytes`]; free in kernels and scratch use before the wipe.
     fn glwe_automorphism_key_encrypt_sk<R, S>(
         module: &Module<Self>,
         res: &mut R,
@@ -586,7 +588,7 @@ pub unsafe trait EncryptionImpl: Backend + SamplingImpl + HalVecZnxImpl + GLWENo
     /// Reproduces
     /// [`glwe_compressed_encrypt_sk_reference`](crate::reference::encryption::GLWECompressedEncryptSkReference::glwe_compressed_encrypt_sk_reference)
     /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
-    /// [`Self::glwe_compressed_encrypt_sk_tmp_bytes`]; free in kernels and scratch use.
+    /// [`Self::glwe_compressed_encrypt_sk_tmp_bytes`]; free in kernels and scratch use before the wipe.
     fn glwe_compressed_encrypt_sk<R, P, S>(
         module: &Module<Self>,
         res: &mut R,
@@ -603,7 +605,7 @@ pub unsafe trait EncryptionImpl: Backend + SamplingImpl + HalVecZnxImpl + GLWENo
     /// Reproduces
     /// [`glwe_compressed_encrypt_zero_sk_reference`](crate::reference::encryption::GLWECompressedEncryptSkReference::glwe_compressed_encrypt_zero_sk_reference)
     /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
-    /// [`Self::glwe_compressed_encrypt_sk_tmp_bytes`]; free in kernels and scratch use.
+    /// [`Self::glwe_compressed_encrypt_sk_tmp_bytes`]; free in kernels and scratch use before the wipe.
     fn glwe_compressed_encrypt_zero_sk<R, S>(
         module: &Module<Self>,
         res: &mut R,
@@ -624,7 +626,7 @@ pub unsafe trait EncryptionImpl: Backend + SamplingImpl + HalVecZnxImpl + GLWENo
     /// Reproduces
     /// [`gglwe_compressed_encrypt_sk_reference`](crate::reference::encryption::GGLWECompressedEncryptSkReference::gglwe_compressed_encrypt_sk_reference)
     /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
-    /// [`Self::gglwe_compressed_encrypt_sk_tmp_bytes`]; free in kernels and scratch use.
+    /// [`Self::gglwe_compressed_encrypt_sk_tmp_bytes`]; free in kernels and scratch use before the wipe.
     fn gglwe_compressed_encrypt_sk<R, P, S>(
         module: &Module<Self>,
         res: &mut R,
@@ -647,7 +649,7 @@ pub unsafe trait EncryptionImpl: Backend + SamplingImpl + HalVecZnxImpl + GLWENo
     /// Reproduces
     /// [`ggsw_compressed_encrypt_sk_reference`](crate::reference::encryption::GGSWCompressedEncryptSkReference::ggsw_compressed_encrypt_sk_reference)
     /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
-    /// [`Self::ggsw_compressed_encrypt_sk_tmp_bytes`]; free in kernels and scratch use.
+    /// [`Self::ggsw_compressed_encrypt_sk_tmp_bytes`]; free in kernels and scratch use before the wipe.
     fn ggsw_compressed_encrypt_sk<R, P, S>(
         module: &Module<Self>,
         res: &mut R,
@@ -691,7 +693,7 @@ pub unsafe trait EncryptionImpl: Backend + SamplingImpl + HalVecZnxImpl + GLWENo
     /// Reproduces
     /// [`glwe_automorphism_key_compressed_encrypt_sk_reference`](crate::reference::encryption::GLWEAutomorphismKeyCompressedEncryptSkReference::glwe_automorphism_key_compressed_encrypt_sk_reference)
     /// bit for bit, within [`Self::glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes`]; free in kernels and
-    /// scratch use.
+    /// scratch use before the wipe.
     fn glwe_automorphism_key_compressed_encrypt_sk<R, S>(
         module: &Module<Self>,
         res: &mut R,
