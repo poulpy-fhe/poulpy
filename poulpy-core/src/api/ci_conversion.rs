@@ -89,6 +89,11 @@ pub trait GLWECIKeyEncryptSk<BE: Backend> {
         A: GGLWEInfos;
 
     /// Encrypts the switch from the embedded `sk_ci` to `sk`.
+    ///
+    /// # Panics
+    /// Before writing `res` or embedding `sk_ci`, when twice the degree of `sk_ci` or the degree of `sk` exceeds the
+    /// key's, the rank of `sk_ci` differs from the key's input rank, the rank of `sk` from its output rank, `sk` has
+    /// the `NONE` distribution or the scratch is below [`Self::glwe_ci_key_encrypt_sk_tmp_bytes`].
     fn glwe_ci_embed_key_encrypt_sk<D, S1, S2>(
         &self,
         res: &mut GLWECIEmbedKey<D, BE::ZnxWord>,
@@ -104,6 +109,11 @@ pub trait GLWECIKeyEncryptSk<BE: Backend> {
         S2: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos;
 
     /// Encrypts the switch from `sk` to the embedded `sk_ci`.
+    ///
+    /// # Panics
+    /// Before writing `res` or embedding `sk_ci`, when twice the degree of `sk_ci` or the degree of `sk` exceeds the
+    /// key's, the rank of `sk_ci` differs from the key's output rank, the rank of `sk` from its input rank or the
+    /// scratch is below [`Self::glwe_ci_key_encrypt_sk_tmp_bytes`].
     fn glwe_ci_trace_key_encrypt_sk<D, S1, S2>(
         &self,
         res: &mut GLWECITraceKey<D, BE::ZnxWord>,

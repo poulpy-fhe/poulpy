@@ -42,8 +42,7 @@ pub unsafe trait GLWECIConversionImpl: Backend<Ring = Standard> + HalVecZnxImpl 
         R: GLWESecretToBackendMut<Self> + GetDistributionMut,
         S: GLWESecretToBackendRef<Self>;
 
-    /// Scratch bound of [`Self::glwe_ci_trace`] and [`Self::glwe_ci_trace_key_encrypt_sk`]; may report less than the
-    /// reference, never less than the body takes.
+    /// Scratch bound of [`Self::glwe_ci_trace`]; may report less than the reference, never less than the body takes.
     fn glwe_ci_trace_tmp_bytes<R, A>(module: &Module<Self>, res_infos: &R, a_infos: &A) -> usize
     where
         R: GLWEInfos,
@@ -74,9 +73,9 @@ pub unsafe trait GLWECIConversionImpl: Backend<Ring = Standard> + HalVecZnxImpl 
         crate::oep::derived::ci_conversion::glwe_ci_key_encrypt_sk_tmp_bytes_derived(module, infos)
     }
 
-    /// Default body: `glwe_ci_embed_key_encrypt_sk_derived`, [`Self::glwe_secret_ci_embed`] of `sk_ci`
-    /// into the scratch, then [`EncryptionImpl::glwe_switching_key_encrypt_sk`] from the embedded secret
-    /// to `sk`, then the wipe of [`Self::glwe_ci_key_encrypt_sk_tmp_bytes`].
+    /// Default body: `glwe_ci_embed_key_encrypt_sk_derived`, the operand checks, [`Self::glwe_secret_ci_embed`] of
+    /// `sk_ci` into the scratch, then [`EncryptionImpl::glwe_switching_key_encrypt_sk`] from the embedded secret
+    /// to `sk`, then the wipe of its own query, `glwe_ci_key_encrypt_sk_tmp_bytes_derived`.
     fn glwe_ci_embed_key_encrypt_sk<D, S1, S2>(
         module: &Module<Self>,
         res: &mut GLWECIEmbedKey<D, Self::ZnxWord>,
@@ -96,9 +95,9 @@ pub unsafe trait GLWECIConversionImpl: Backend<Ring = Standard> + HalVecZnxImpl 
         )
     }
 
-    /// Default body: `glwe_ci_trace_key_encrypt_sk_derived`, [`Self::glwe_secret_ci_embed`] of `sk_ci`
-    /// into the scratch, then [`EncryptionImpl::glwe_switching_key_encrypt_sk`] from `sk` to the embedded
-    /// secret, then the wipe of [`Self::glwe_ci_key_encrypt_sk_tmp_bytes`].
+    /// Default body: `glwe_ci_trace_key_encrypt_sk_derived`, the operand checks, [`Self::glwe_secret_ci_embed`] of
+    /// `sk_ci` into the scratch, then [`EncryptionImpl::glwe_switching_key_encrypt_sk`] from `sk` to the embedded
+    /// secret, then the wipe of its own query, `glwe_ci_key_encrypt_sk_tmp_bytes_derived`.
     fn glwe_ci_trace_key_encrypt_sk<D, S1, S2>(
         module: &Module<Self>,
         res: &mut GLWECITraceKey<D, Self::ZnxWord>,
