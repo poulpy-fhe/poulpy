@@ -19,8 +19,9 @@ use crate::{
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait CKKSDotProductImpl: Backend + super::CKKSMulImpl + super::CKKSAddImpl {
     /// Scratch bound of [`Self::ckks_dot_product_ct`] and [`Self::ckks_dot_product_prepared`]; may report less than the
-    /// reference, never less than the body takes. `a` and `b` describe the widest input pair, and prepared operands are
-    /// passed as such, their infos reporting the ciphertexts they were prepared from.
+    /// reference, never less than the body takes. It covers `n` input pairs, `a` and `b` describing the widest pair
+    /// (the internal products are carved at `max(a.k, b.k)`), and prepared operands are passed as such, their infos
+    /// reporting the ciphertexts they were prepared from.
     fn ckks_dot_product_ct_tmp_bytes<R: CKKSCtBounds, A: CKKSCtBounds, B: CKKSCtBounds, T: GGLWEInfos>(
         module: &Module<Self>,
         n: usize,

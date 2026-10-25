@@ -170,8 +170,7 @@ pub unsafe trait BlasMatMulImpl: Backend + CKKSMulImpl {
     ///   same products under either hint;
     /// - the key widths of the Keys table of `poulpy-blas/docs/blas-contracts.md`;
     /// - the errors and their order: the validator's, then poulpy-ckks's budget errors, before any write to `res`: the
-    ///   left terms', then the right terms', then the first block's ct x ct rule. A hot side's come from the product,
-    ///   so a hot preparation of an input short of its budget returns `Ok`.
+    ///   left terms', then the right terms', then the first block's ct x ct rule.
     ///
     /// **Free:** as [`Self::blas_matmul`].
     #[allow(clippy::too_many_arguments)]

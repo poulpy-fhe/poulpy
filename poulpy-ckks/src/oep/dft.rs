@@ -232,8 +232,7 @@ pub unsafe trait DFTImpl:
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait DFTMatrixImpl<F: CKKSEncodingScalar>: Backend<Ring = poulpy_hal::layouts::Standard> {
-    /// Reproduces [`ckks_new_dft_matrix`](crate::reference::dft::ckks_new_dft_matrix) bit for bit; free in kernels and
-    /// scratch use.
+    /// Reproduces [`ckks_new_dft_matrix`](crate::reference::dft::ckks_new_dft_matrix) bit for bit; free in kernels.
     fn ckks_new_dft_matrix<Dir, Fmt>(
         module: &Module<Self>,
         base2k: Base2K,

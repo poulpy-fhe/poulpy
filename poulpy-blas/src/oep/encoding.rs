@@ -13,7 +13,7 @@ use crate::layouts::{
 /// # Safety
 /// Every method reproduces its `_reference` counterpart in
 /// [`BlasEncodingReference`](crate::reference::BlasEncodingReference) bit for bit, every diagonal and its metadata,
-/// within the scratch the matching `_tmp_bytes` reports, and refuses what the reference refuses, as it does. Every
+/// within the scratch the matching `_tmp_bytes` reports, and refuses what the reference refuses. Every
 /// implementation overwrites every allocated byte of `res` without reallocating it, so a refill equals a fresh build.
 /// The memory, layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait BlasEncodingImpl: Backend {

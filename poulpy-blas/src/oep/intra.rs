@@ -97,6 +97,8 @@ pub unsafe trait BlasMatIntraImpl: Backend + CKKSCopyImpl + CKKSAddImpl {
     /// batch stamp: `res_ji = transpose(a_ij)`. The map is `Direct`, as the plan records. Every block of `res` then has
     /// width `min(res.k, a.k - p)` for the map's scale `p`, `a`'s scale and label, `a`'s slot kind joined with `Real`,
     /// and no noise tag; it is canonical.
+    ///
+    /// **Free:** the order of the blocks the hook evaluates.
     fn blas_transpose<R, A, K>(
         module: &Module<Self>,
         res: &mut R,
@@ -134,9 +136,9 @@ pub unsafe trait BlasMatIntraImpl: Backend + CKKSCopyImpl + CKKSAddImpl {
     ///
     /// - `k' = 0`: `ckks_copy` of the block `q` steps along, then a cleared noise tag;
     /// - `m = 1`: psi^k' of each block, one [`Self::blas_map_blocks`] call;
-    /// - otherwise, the block `q` steps along through the first half map and the block `q + 1` steps along through the
-    ///   second, each into a block of `res`'s layout by one [`Self::blas_map_blocks`] call, added by `ckks_add_into`
-    ///   into `res`.
+    /// - otherwise, one [`Self::blas_map_blocks`] call evaluates both half maps of every block of `a` into a heap grid
+    ///   of two blocks of `res`'s layout per block of `a`, and block `t` of `res` is one `ckks_add_into` of the first
+    ///   half map of the block `q` steps along and the second half map of the block `q + 1` steps along.
     ///
     /// Every block of `res` then has width `min(res.k, a.k - p)` for the maps' scale `p`, `a`'s scale and label, `a`'s
     /// slot kind joined with `Real`, and no noise tag; it is canonical, except after the two half maps, whose addition
@@ -182,9 +184,9 @@ pub unsafe trait BlasMatIntraImpl: Backend + CKKSCopyImpl + CKKSAddImpl {
     ///
     /// - `k' = 0`: `ckks_copy` of the block `q` steps along, then a cleared noise tag;
     /// - `m = 1`: phi^k' of each block, one [`Self::blas_map_blocks`] call;
-    /// - otherwise, the block `q` steps along through the first half map and the block `q + 1` steps along through the
-    ///   second, each into a block of `res`'s layout by one [`Self::blas_map_blocks`] call, added by `ckks_add_into`
-    ///   into `res`.
+    /// - otherwise, one [`Self::blas_map_blocks`] call evaluates both half maps of every block of `a` into a heap grid
+    ///   of two blocks of `res`'s layout per block of `a`, and block `t` of `res` is one `ckks_add_into` of the first
+    ///   half map of the block `q` steps along and the second half map of the block `q + 1` steps along.
     ///
     /// Every block of `res` then has width `min(res.k, a.k - p)` for the maps' scale `p`, `a`'s scale and label, `a`'s
     /// slot kind joined with `Real`, and no noise tag; it is canonical, except after the two half maps, whose addition
