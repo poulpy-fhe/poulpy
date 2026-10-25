@@ -10,6 +10,7 @@ use crate::blind_rotation::{
     BlindRotationKeyPrepared, BlindRotationKeyPreparedFactory, LookUpTableLayout, LookupTable, LookupTableFactory, mod_switch_2n,
 };
 
+use crate::test_suite::parity::with_scratch;
 use poulpy_core::api::{GLWESecretSampling, LWESecretSampling};
 use poulpy_core::test_suite::noise::glwe_decrypt_checked;
 use poulpy_core::{
@@ -84,7 +85,15 @@ where
         base2k: base2k.into(),
     };
 
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::<BE>::alloc(BlindRotationKey::encrypt_sk_tmp_bytes(module, &brk_infos));
+    // Setup: key encryption and preparation, the input encryption and the decryption check.
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::<BE>::alloc(
+        BlindRotationKey::encrypt_sk_tmp_bytes(module, &brk_infos)
+            .max(BlindRotationKeyPrepared::<BE::OwnedBuf, BRA, BE>::prepare_tmp_bytes(
+                module, &brk_infos,
+            ))
+            .max(module.lwe_encrypt_sk_tmp_bytes(&lwe_infos))
+            .max(module.glwe_decrypt_tmp_bytes(&glwe_infos)),
+    );
 
     let mut sk_glwe: GLWESecret<AlignedBuf, i64> = module.glwe_secret_alloc_from_infos(&glwe_infos);
     module.glwe_secret_fill_ternary_prob(&mut sk_glwe, 0.5, &mut source_xs);
@@ -93,14 +102,6 @@ where
 
     let mut sk_lwe: LWESecret<AlignedBuf, i64> = module.lwe_secret_alloc(n_lwe.into());
     module.lwe_secret_fill_binary_block(&mut sk_lwe, block_size, &mut source_xs);
-
-    let mut scratch_br: ScratchOwned<BE> = ScratchOwned::<BE>::alloc(BlindRotationKeyPrepared::execute_tmp_bytes(
-        module,
-        block_size,
-        extension_factor,
-        &glwe_infos,
-        &brk_infos,
-    ));
 
     let mut brk: BlindRotationKey<BE::OwnedBuf, BRA, BE::ZnxWord> =
         BlindRotationKey::<AlignedBuf, BRA, i64>::alloc(module, &brk_infos);
@@ -149,9 +150,11 @@ where
     let mut res: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&glwe_infos);
 
     let mut brk_prepared: BlindRotationKeyPrepared<BE::OwnedBuf, BRA, BE> = BlindRotationKeyPrepared::alloc(module, &brk);
-    brk_prepared.prepare(module, &brk, &mut scratch_br.borrow());
+    brk_prepared.prepare(module, &brk, &mut scratch.borrow());
 
-    brk_prepared.execute(module, &mut res, &lwe, &lut, &mut scratch_br.borrow());
+    let execute_bytes =
+        BlindRotationKeyPrepared::execute_tmp_bytes(module, block_size, extension_factor, &glwe_infos, &brk_infos);
+    with_scratch::<BE, _>(execute_bytes, |s| brk_prepared.execute(module, &mut res, &lwe, &lut, s));
 
     let mut pt_have: GLWEPlaintext<AlignedBuf, i64> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
 

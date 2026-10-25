@@ -17,6 +17,7 @@ use poulpy_hal::{
 use rand::Rng;
 
 use crate::test_suite::bdd_arithmetic::{TEST_FHEUINT_BASE2K, TEST_RANK, TestContext};
+use crate::test_suite::parity::with_scratch;
 use crate::{
     bdd_arithmetic::{FheUintPrepared, GLWEBlindSelection},
     blind_rotation::BlindRotationAlgo,
@@ -64,11 +65,15 @@ where
     let mut source_xa: Source = Source::new([2u8; 32]);
     let mut source_xe: Source = Source::new([3u8; 32]);
 
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(1 << 22);
-
     let mut res: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_infos);
 
     let k: u32 = source.next_u32();
+
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+        crate::api::FheUintPreparedEncryptSk::<u32, BE>::fhe_uint_prepared_encrypt_sk_tmp_bytes(module, &ggsw_infos)
+            .max(module.glwe_encrypt_sk_tmp_bytes(&glwe_infos))
+            .max(module.glwe_decrypt_tmp_bytes(&glwe_infos)),
+    );
 
     let mut k_enc_prep: FheUintPrepared<BE::OwnedBuf, u32, BE> =
         FheUintPrepared::<BE::OwnedBuf, u32, BE>::alloc_from_infos(module, &ggsw_infos);
@@ -112,16 +117,11 @@ where
         // How many bits to take
         let bit_size: usize = (32 - bit_start).min(digit);
         let input_infos: Vec<_> = cts_map.values().map(|ct| &**ct).collect();
-        let mut selection_scratch = ScratchOwned::alloc(module.glwe_blind_selection_tmp_bytes(&res, &input_infos, &ggsw_infos));
+        let selection_bytes = module.glwe_blind_selection_tmp_bytes(&res, &input_infos, &ggsw_infos);
 
-        module.glwe_blind_selection(
-            bit_start,
-            bit_size,
-            &mut res,
-            cts_map,
-            &k_enc_prep,
-            &mut selection_scratch.borrow(),
-        );
+        with_scratch::<BE, _>(selection_bytes, |s| {
+            module.glwe_blind_selection(bit_start, bit_size, &mut res, cts_map, &k_enc_prep, s)
+        });
 
         glwe_decrypt_checked(module, &res, &mut pt, sk_glwe_prep, &mut scratch.borrow());
 

@@ -15,6 +15,7 @@ use crate::{
     },
 };
 
+use crate::test_suite::parity::with_scratch;
 use poulpy_core::test_suite::noise::glwe_decrypt_checked;
 use poulpy_core::{
     GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, LWEEncryptSk,
@@ -125,7 +126,18 @@ pub fn test_circuit_bootstrapping_to_exponent<
         rank: rank.into(),
     };
 
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(1 << 23);
+    // Setup: key generation and preparation, encryptions, and the noise, product and decryption checks.
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+        module
+            .lwe_encrypt_sk_tmp_bytes(&lwe_infos)
+            .max(module.circuit_bootstrapping_key_encrypt_sk_tmp_bytes(&cbt_infos))
+            .max(module.circuit_bootstrapping_key_prepare_tmp_bytes(&cbt_infos))
+            .max(module.ggsw_noise_tmp_bytes(&ggsw_infos))
+            .max(module.glwe_encrypt_sk_tmp_bytes(&ggsw_infos))
+            .max(module.ggsw_prepare_tmp_bytes(&ggsw_infos))
+            .max(module.glwe_external_product_tmp_bytes(&ggsw_infos, &ggsw_infos, &ggsw_infos))
+            .max(module.glwe_decrypt_tmp_bytes(&ggsw_infos)),
+    );
 
     let mut source_xs: Source = Source::new([1u8; 32]);
     let mut source_xa: Source = Source::new([1u8; 32]);
@@ -182,15 +194,17 @@ pub fn test_circuit_bootstrapping_to_exponent<
     cbt_prepared.prepare(module, &cbt_key, &mut scratch.borrow());
 
     let now: Instant = Instant::now();
-    cbt_prepared.execute_to_exponent(
-        module,
+    let execute_bytes = module.circuit_bootstrapping_execute_to_exponent_tmp_bytes(
         log_gap_out,
         k_lwe_pt,
+        block_size,
         extension_factor,
-        &mut res,
-        &ct_lwe,
-        &mut scratch.borrow(),
+        &ggsw_infos,
+        &cbt_infos,
     );
+    with_scratch::<BE, _>(execute_bytes, |s| {
+        cbt_prepared.execute_to_exponent(module, log_gap_out, k_lwe_pt, extension_factor, &mut res, &ct_lwe, s)
+    });
     println!("CBT: {} ms", now.elapsed().as_millis());
 
     // X^{data * 2^log_gap_out}
@@ -334,7 +348,18 @@ pub fn test_circuit_bootstrapping_to_constant<
         rank: rank.into(),
     };
 
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(1 << 23);
+    // Setup: key generation and preparation, encryptions, and the noise, product and decryption checks.
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+        module
+            .lwe_encrypt_sk_tmp_bytes(&lwe_infos)
+            .max(module.circuit_bootstrapping_key_encrypt_sk_tmp_bytes(&cbt_infos))
+            .max(module.circuit_bootstrapping_key_prepare_tmp_bytes(&cbt_infos))
+            .max(module.ggsw_noise_tmp_bytes(&ggsw_infos))
+            .max(module.glwe_encrypt_sk_tmp_bytes(&ggsw_infos))
+            .max(module.ggsw_prepare_tmp_bytes(&ggsw_infos))
+            .max(module.glwe_external_product_tmp_bytes(&ggsw_infos, &ggsw_infos, &ggsw_infos))
+            .max(module.glwe_decrypt_tmp_bytes(&ggsw_infos)),
+    );
 
     let mut source_xs: Source = Source::new([1u8; 32]);
     let mut source_xa: Source = Source::new([1u8; 32]);
@@ -389,7 +414,11 @@ pub fn test_circuit_bootstrapping_to_constant<
     cbt_prepared.prepare(module, &cbt_key, &mut scratch.borrow());
 
     let now: Instant = Instant::now();
-    cbt_prepared.execute_to_constant(module, k_lwe_pt, extension_factor, &mut res, &ct_lwe, &mut scratch.borrow());
+    let execute_bytes =
+        module.circuit_bootstrapping_execute_to_constant_tmp_bytes(block_size, extension_factor, &ggsw_infos, &cbt_infos);
+    with_scratch::<BE, _>(execute_bytes, |s| {
+        cbt_prepared.execute_to_constant(module, k_lwe_pt, extension_factor, &mut res, &ct_lwe, s)
+    });
     println!("CBT: {} ms", now.elapsed().as_millis());
 
     // X^{data * 2^log_gap_out}
