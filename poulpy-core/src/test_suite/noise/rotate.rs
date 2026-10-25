@@ -4,6 +4,7 @@ use poulpy_hal::{
     test_suite::TestParams,
 };
 
+use crate::test_suite::poisoned_scratch;
 use crate::{
     GLWERotate,
     layouts::{GLWE, GLWEInfos, GLWELayout, ModuleCoreAlloc},
@@ -63,7 +64,7 @@ pub fn test_glwe_rotate<BE: crate::test_suite::noise::TestBackend + crate::oep::
 
         module.glwe_rotate(shift, &mut out, &src);
 
-        let mut scratch = ScratchOwned::<BE>::alloc(cols * module.glwe_rotate_tmp_bytes());
+        let mut scratch = poisoned_scratch::<BE>(module.glwe_rotate_tmp_bytes());
         module.glwe_rotate_assign(shift, &mut inplace, &mut scratch.borrow());
 
         for col in 0..cols {

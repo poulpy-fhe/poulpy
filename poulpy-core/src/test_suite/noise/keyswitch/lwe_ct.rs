@@ -7,6 +7,7 @@ use poulpy_hal::{
 
 use crate::api::LWESecretSampling;
 use crate::layouts::prepared::GGLWEPreparedToBackendRef;
+use crate::test_suite::poisoned_scratch;
 use crate::{
     LWEDecrypt, LWEEncryptSk, LWEKeyswitch, LWESwitchingKeyEncrypt,
     api::LWESwitchingKeyPreparedFactory,
@@ -67,7 +68,9 @@ where
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         (module).lwe_switching_key_encrypt_sk_tmp_bytes(&key_apply_infos)
-            | module.lwe_keyswitch_tmp_bytes(&lwe_out_infos, &lwe_in_infos, &key_apply_infos),
+            | module.lwe_encrypt_sk_tmp_bytes(&lwe_in_infos)
+            | module.lwe_switching_key_prepare_tmp_bytes(&key_apply_infos)
+            | module.lwe_decrypt_tmp_bytes(&lwe_out_infos),
     );
 
     let mut sk_lwe_in: LWESecret<BE::OwnedBuf, BE::ZnxWord> = module.lwe_secret_alloc(n_lwe_in.into());
@@ -111,7 +114,7 @@ where
         &mut lwe_ct_out,
         &lwe_ct_in,
         &ksk_prepared.to_backend_ref(),
-        &mut scratch.borrow(),
+        &mut poisoned_scratch::<BE>(module.lwe_keyswitch_tmp_bytes(&lwe_out_infos, &lwe_in_infos, &key_apply_infos)).borrow(),
     );
 
     let mut lwe_pt_out: LWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.lwe_plaintext_alloc_from_infos(&lwe_out_infos);

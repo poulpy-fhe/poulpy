@@ -10,6 +10,7 @@ use poulpy_hal::{
 
 use crate::api::GLWESecretSampling;
 use crate::test_suite::noise::glwe_noise_checked;
+use crate::test_suite::poisoned_scratch;
 use crate::{
     GLWEAutomorphismKeyEncryptSk, GLWEDecrypt, GLWEEncryptSk, GLWENoise, GLWEPacking, GLWERotate, GLWESub,
     api::{GLWEAutomorphismKeyPreparedFactory, GLWESecretPreparedFactory},
@@ -72,7 +73,7 @@ pub fn test_glwe_packing<BE: crate::test_suite::noise::TestBackend + crate::oep:
         (module)
             .glwe_encrypt_sk_tmp_bytes(&glwe_out_infos)
             .max((module).glwe_automorphism_key_encrypt_sk_tmp_bytes(&key_infos))
-            .max(module.glwe_pack_tmp_bytes(&glwe_out_infos, &glwe_out_infos, &key_infos)),
+            .max(module.glwe_automorphism_key_prepare_tmp_bytes(&key_infos)),
     );
 
     let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc_from_infos(&glwe_out_infos);
@@ -126,7 +127,13 @@ pub fn test_glwe_packing<BE: crate::test_suite::noise::TestBackend + crate::oep:
 
     let mut res: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_out_infos);
 
-    module.glwe_pack(&mut res, cts_map, 0, &auto_keys, &mut scratch.borrow());
+    module.glwe_pack(
+        &mut res,
+        cts_map,
+        0,
+        &auto_keys,
+        &mut poisoned_scratch::<BE>(module.glwe_pack_tmp_bytes(&glwe_out_infos, &glwe_out_infos, &key_infos)).borrow(),
+    );
 
     let mut pt_want: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_out_infos);
     let mut data: Vec<i64> = vec![0i64; n];

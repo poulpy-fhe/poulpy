@@ -5,6 +5,7 @@ use poulpy_hal::{
     test_suite::{TestParams, scalar_znx_backend_mut},
 };
 
+use crate::test_suite::poisoned_scratch;
 use crate::{
     Distribution, GGLWECopy, GGLWENoise, GGSWCopy, GGSWEncryptSk, GGSWNoise, GLWECopy, GLWESwitchingKeyEncryptSk,
     ScalarZnxFillDistribution,
@@ -52,8 +53,6 @@ where
             let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
                 module
                     .glwe_switching_key_encrypt_sk_tmp_bytes(&layout)
-                    .max(module.gglwe_copy_tmp_bytes(&layout, &layout))
-                    .max(module.glwe_copy_tmp_bytes(&layout, &layout))
                     .max(module.gglwe_noise_tmp_bytes(&layout)),
             );
             let mut source_xs: Source = Source::new([20u8; 32]);
@@ -83,7 +82,11 @@ where
                 };
                 let mut res: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord> =
                     module.glwe_switching_key_alloc_from_infos(&res_layout);
-                module.gglwe_copy(&mut res, &key, &mut scratch.borrow());
+                module.gglwe_copy(
+                    &mut res,
+                    &key,
+                    &mut poisoned_scratch::<BE>(module.gglwe_copy_tmp_bytes(&res_layout, &layout)).borrow(),
+                );
 
                 let mut want: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord> =
                     module.glwe_switching_key_alloc_from_infos(&res_layout);
@@ -92,7 +95,11 @@ where
                     let mut want = GGLWEToBackendMut::<BE>::to_backend_mut(&mut want);
                     for row in 0..digits {
                         for col in 0..rank {
-                            module.glwe_copy(&mut want.at_view_mut(row, col), &a.at_view(row, col), &mut scratch.borrow());
+                            module.glwe_copy(
+                                &mut want.at_view_mut(row, col),
+                                &a.at_view(row, col),
+                                &mut poisoned_scratch::<BE>(module.glwe_copy_tmp_bytes(&layout, &layout)).borrow(),
+                            );
                         }
                     }
                 }
@@ -161,8 +168,6 @@ where
         let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
             module
                 .ggsw_encrypt_sk_tmp_bytes(&layout)
-                .max(module.ggsw_copy_tmp_bytes(&layout, &layout))
-                .max(module.glwe_copy_tmp_bytes(&layout, &layout))
                 .max(module.ggsw_noise_tmp_bytes(&layout)),
         );
         let mut source_xs: Source = Source::new([23u8; 32]);
@@ -196,7 +201,11 @@ where
                 ..layout
             };
             let mut res: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&res_layout);
-            module.ggsw_copy(&mut res, &ggsw, &mut scratch.borrow());
+            module.ggsw_copy(
+                &mut res,
+                &ggsw,
+                &mut poisoned_scratch::<BE>(module.ggsw_copy_tmp_bytes(&res_layout, &layout)).borrow(),
+            );
 
             let mut want: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&res_layout);
             {
@@ -204,7 +213,11 @@ where
                 let mut want = GGSWToBackendMut::<BE>::to_backend_mut(&mut want);
                 for row in 0..digits {
                     for col in 0..rank + 1 {
-                        module.glwe_copy(&mut want.at_view_mut(row, col), &a.at_view(row, col), &mut scratch.borrow());
+                        module.glwe_copy(
+                            &mut want.at_view_mut(row, col),
+                            &a.at_view(row, col),
+                            &mut poisoned_scratch::<BE>(module.glwe_copy_tmp_bytes(&layout, &layout)).borrow(),
+                        );
                     }
                 }
             }

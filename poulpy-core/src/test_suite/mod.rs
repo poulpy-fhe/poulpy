@@ -190,6 +190,15 @@ macro_rules! core_backend_test_suite {
 
 pub use crate::core_backend_test_suite;
 
+/// Builds precisely the advertised scratch capacity, poisoned before each operation.
+/// No other operation or backend's budget can conceal an underestimate.
+pub(crate) fn poisoned_scratch<B: poulpy_hal::layouts::Backend>(bytes: usize) -> poulpy_hal::layouts::ScratchOwned<B> {
+    poulpy_hal::layouts::ScratchOwned {
+        data: B::from_host_bytes(&vec![0xA5; bytes]),
+        _phantom: std::marker::PhantomData,
+    }
+}
+
 /// Runs `op` on exactly `bytes` of poisoned scratch and asserts it left every
 /// byte zero, as an operation that handles a secret must.
 pub fn assert_wipes_scratch<BE: poulpy_hal::layouts::Backend>(

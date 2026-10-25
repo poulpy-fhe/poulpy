@@ -7,6 +7,7 @@ use poulpy_hal::{
 };
 
 use crate::api::GLWESecretSampling;
+use crate::test_suite::poisoned_scratch;
 use crate::{
     GGLWEKeyswitch, GLWEAutomorphismKeyCompressedEncryptSk, GLWEAutomorphismKeyDecompress, GLWEAutomorphismKeyEncryptSk,
     GLWESwitchingKeyCompressedEncryptSk, GLWESwitchingKeyEncryptSk,
@@ -60,11 +61,7 @@ pub fn test_gglwe_automorphism_key_encrypt_sk<BE: crate::test_suite::noise::Test
             let mut source_xe: Source = Source::new([0u8; 32]);
             let mut source_xa: Source = Source::new([0u8; 32]);
 
-            let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
-                (module)
-                    .glwe_automorphism_key_encrypt_sk_tmp_bytes(&atk_infos)
-                    .max(module.gglwe_noise_tmp_bytes(&atk_infos)),
-            );
+            let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.gglwe_noise_tmp_bytes(&atk_infos));
 
             let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc_from_infos(&atk_infos);
             module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
@@ -77,7 +74,7 @@ pub fn test_gglwe_automorphism_key_encrypt_sk<BE: crate::test_suite::noise::Test
                 &sk,
                 &mut source_xe,
                 &mut source_xa,
-                &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
+                &mut poisoned_scratch::<BE>(module.glwe_automorphism_key_encrypt_sk_tmp_bytes(&atk_infos)).borrow(),
             );
 
             let mut sk_out: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = sk.clone();
@@ -165,11 +162,7 @@ pub fn test_gglwe_automorphism_key_compressed_encrypt_sk<BE: crate::test_suite::
             let mut source_xs: Source = Source::new([0u8; 32]);
             let mut source_xe: Source = Source::new([0u8; 32]);
 
-            let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
-                (module)
-                    .glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes(&atk_infos)
-                    .max(module.gglwe_noise_tmp_bytes(&atk_infos)),
-            );
+            let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.gglwe_noise_tmp_bytes(&atk_infos));
 
             let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc_from_infos(&atk_infos);
             module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
@@ -184,7 +177,7 @@ pub fn test_gglwe_automorphism_key_compressed_encrypt_sk<BE: crate::test_suite::
                 &sk,
                 seed_xa,
                 &mut source_xe,
-                &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
+                &mut poisoned_scratch::<BE>(module.glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes(&atk_infos)).borrow(),
             );
 
             let mut sk_out: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = sk.clone();

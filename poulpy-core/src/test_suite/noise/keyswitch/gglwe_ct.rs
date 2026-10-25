@@ -7,6 +7,7 @@ use poulpy_hal::{
 
 use crate::api::GLWESecretSampling;
 use crate::layouts::prepared::GGLWEPreparedToBackendRef;
+use crate::test_suite::poisoned_scratch;
 use crate::{
     GGLWECopy, GGLWEKeyswitch, GGLWENoise, GLWESwitchingKeyEncryptSk,
     api::{GLWESecretPreparedFactory, GLWESwitchingKeyPreparedFactory},
@@ -97,8 +98,8 @@ where
                             | (module).glwe_switching_key_encrypt_sk_tmp_bytes(&gglwe_s1s2_infos)
                             | (module).glwe_switching_key_encrypt_sk_tmp_bytes(&gglwe_s0s2_infos),
                     );
-                    let mut scratch_apply: ScratchOwned<BE> = ScratchOwned::alloc(
-                        module.gglwe_keyswitch_tmp_bytes(&gglwe_s0s2_infos, &gglwe_s0s1_infos, &gglwe_s1s2_infos)
+                    let mut scratch_prep: ScratchOwned<BE> = ScratchOwned::alloc(
+                        module.glwe_switching_key_prepare_tmp_bytes(&gglwe_s1s2_infos)
                             | module.gglwe_noise_tmp_bytes(&gglwe_s0s2_infos),
                     );
 
@@ -137,14 +138,19 @@ where
 
                     let mut gglwe_s1s2_prepared: GLWESwitchingKeyPrepared<BE::OwnedBuf, BE> =
                         module.glwe_switching_key_prepared_alloc_from_infos(&gglwe_s1s2);
-                    module.glwe_switching_key_prepare(&mut gglwe_s1s2_prepared, &gglwe_s1s2, &mut scratch_apply.borrow());
+                    module.glwe_switching_key_prepare(&mut gglwe_s1s2_prepared, &gglwe_s1s2, &mut scratch_prep.borrow());
 
                     // gglwe_{s1}(s0) (x) gglwe_{s2}(s1) = gglwe_{s2}(s0)
                     module.gglwe_keyswitch(
                         &mut gglwe_s0s2,
                         &gglwe_s0s1,
                         &gglwe_s1s2_prepared.to_backend_ref(),
-                        &mut scratch_apply.borrow(),
+                        &mut poisoned_scratch::<BE>(module.gglwe_keyswitch_tmp_bytes(
+                            &gglwe_s0s2_infos,
+                            &gglwe_s0s1_infos,
+                            &gglwe_s1s2_infos,
+                        ))
+                        .borrow(),
                     );
 
                     let max_noise: f64 = gglwe_s1s2_infos.log2_std_noise_keyswitch(
@@ -167,7 +173,7 @@ where
                                     col,
                                     &sk0.data.to_ref(),
                                     &sk2_prepared,
-                                    &mut scratch_apply.borrow(),
+                                    &mut scratch_prep.borrow(),
                                 )
                                 .std()
                                 .log2();
@@ -247,8 +253,8 @@ pub fn test_gglwe_switching_key_keyswitch_assign<BE: crate::test_suite::noise::T
                     (module).glwe_switching_key_encrypt_sk_tmp_bytes(&gglwe_s0s1_infos)
                         | (module).glwe_switching_key_encrypt_sk_tmp_bytes(&gglwe_s1s2_infos),
                 );
-                let mut scratch_apply: ScratchOwned<BE> = ScratchOwned::alloc(
-                    module.gglwe_keyswitch_tmp_bytes(&gglwe_s0s1_infos, &gglwe_s0s1_infos, &gglwe_s1s2_infos)
+                let mut scratch_prep: ScratchOwned<BE> = ScratchOwned::alloc(
+                    module.glwe_switching_key_prepare_tmp_bytes(&gglwe_s1s2_infos)
                         | module.gglwe_noise_tmp_bytes(&gglwe_s0s1_infos),
                 );
 
@@ -305,7 +311,7 @@ pub fn test_gglwe_switching_key_keyswitch_assign<BE: crate::test_suite::noise::T
 
                 let mut gglwe_s1s2_prepared: GLWESwitchingKeyPrepared<BE::OwnedBuf, BE> =
                     module.glwe_switching_key_prepared_alloc_from_infos(&gglwe_s1s2);
-                module.glwe_switching_key_prepare(&mut gglwe_s1s2_prepared, &gglwe_s1s2, &mut scratch_apply.borrow());
+                module.glwe_switching_key_prepare(&mut gglwe_s1s2_prepared, &gglwe_s1s2, &mut scratch_prep.borrow());
 
                 // gglwe_{s1}(s0) (x) gglwe_{s2}(s1) = gglwe_{s2}(s0)
                 println!("{} {} {}", gglwe_s0s1.base2k(), gglwe_s0s1.k(), gglwe_s0s1.size());
@@ -318,7 +324,12 @@ pub fn test_gglwe_switching_key_keyswitch_assign<BE: crate::test_suite::noise::T
                 module.gglwe_keyswitch_assign(
                     &mut gglwe_s0s1,
                     &gglwe_s1s2_prepared.to_backend_ref(),
-                    &mut scratch_apply.borrow(),
+                    &mut poisoned_scratch::<BE>(module.gglwe_keyswitch_tmp_bytes(
+                        &gglwe_s0s1_infos,
+                        &gglwe_s0s1_infos,
+                        &gglwe_s1s2_infos,
+                    ))
+                    .borrow(),
                 );
 
                 let gglwe_s0s2: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord> = gglwe_s0s1;
@@ -343,7 +354,7 @@ pub fn test_gglwe_switching_key_keyswitch_assign<BE: crate::test_suite::noise::T
                                 col,
                                 &sk0.data.to_ref(),
                                 &sk2_prepared,
-                                &mut scratch_apply.borrow(),
+                                &mut scratch_prep.borrow(),
                             )
                             .std()
                             .log2();
@@ -398,7 +409,7 @@ pub fn test_gglwe_switching_key_keyswitch_own_layout<BE: crate::test_suite::nois
         let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
             module
                 .glwe_switching_key_encrypt_sk_tmp_bytes(&layout)
-                .max(module.gglwe_keyswitch_tmp_bytes(&res_layout, &res_layout, &layout))
+                .max(module.glwe_switching_key_prepare_tmp_bytes(&layout))
                 .max(module.gglwe_copy_tmp_bytes(&res_layout, &layout))
                 .max(module.gglwe_noise_tmp_bytes(&res_layout)),
         );
@@ -436,7 +447,11 @@ pub fn test_gglwe_switching_key_keyswitch_own_layout<BE: crate::test_suite::nois
 
         let mut s0s2: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_switching_key_alloc_from_infos(&res_layout);
         module.gglwe_copy(&mut s0s2, &s0s1, &mut scratch.borrow());
-        module.gglwe_keyswitch_assign(&mut s0s2, &s1s2_prepared.to_backend_ref(), &mut scratch.borrow());
+        module.gglwe_keyswitch_assign(
+            &mut s0s2,
+            &s1s2_prepared.to_backend_ref(),
+            &mut poisoned_scratch::<BE>(module.gglwe_keyswitch_tmp_bytes(&res_layout, &res_layout, &layout)).borrow(),
+        );
 
         let max_noise: f64 = layout.log2_std_noise_keyswitch(
             &res_layout,

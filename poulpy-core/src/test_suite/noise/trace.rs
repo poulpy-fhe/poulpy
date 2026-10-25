@@ -12,6 +12,7 @@ use poulpy_hal::{
 
 use crate::api::GLWESecretSampling;
 use crate::test_suite::noise::glwe_decrypt_checked;
+use crate::test_suite::poisoned_scratch;
 use crate::{
     GLWEAutomorphismKeyEncryptSk, GLWEDecrypt, GLWEEncryptSk, GLWETrace,
     api::{GLWEAutomorphismKeyPreparedFactory, GLWESecretPreparedFactory},
@@ -81,7 +82,7 @@ where
             (module).glwe_encrypt_sk_tmp_bytes(&glwe_out_infos)
                 | (module).glwe_decrypt_tmp_bytes(&glwe_out_infos)
                 | (module).glwe_automorphism_key_encrypt_sk_tmp_bytes(&key_infos)
-                | module.glwe_trace_tmp_bytes(&glwe_out_infos, &glwe_out_infos, &key_infos),
+                | module.glwe_automorphism_key_prepare_tmp_bytes(&key_infos),
         );
 
         let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc_from_infos(&glwe_out_infos);
@@ -138,7 +139,7 @@ where
             false,
             true,
             &auto_keys,
-            &mut scratch.borrow(),
+            &mut poisoned_scratch::<BE>(module.glwe_trace_tmp_bytes(&glwe_out_infos, &glwe_out_infos, &key_infos)).borrow(),
         );
         let mut pt_have_backend = upload_glwe_plaintext(module, &pt_template);
         glwe_decrypt_checked(module, &glwe_out, &mut pt_have_backend, &sk_dft, &mut scratch.borrow());
@@ -336,7 +337,7 @@ where
             reverse,
             false,
             &auto_keys,
-            &mut crate::test_suite::parity::poisoned_scratch::<BE>(trace_bytes).borrow(),
+            &mut crate::test_suite::poisoned_scratch::<BE>(trace_bytes).borrow(),
         );
         let mut have = upload_glwe_plaintext(module, &pt_template);
         glwe_decrypt_checked(module, &ct, &mut have, &sk_dft, &mut scratch.borrow());
