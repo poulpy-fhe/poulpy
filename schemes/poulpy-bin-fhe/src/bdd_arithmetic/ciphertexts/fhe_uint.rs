@@ -445,7 +445,7 @@ where
     M: GLWETrace<BE>,
 {
     let first = module
-        .glwe_trace_galois_elements(levels, false)
+        .glwe_trace_galois_elements(res_infos.n(), levels, false)
         .first()
         .copied()
         .unwrap_or(-1);
