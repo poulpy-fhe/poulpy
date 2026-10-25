@@ -19,7 +19,8 @@ use poulpy_hal::{
 };
 
 use super::fixtures::{
-    BASE2K, K, PARTIES, RANK, SEEDS, collective_public_key, gglwe_layout, ideal_secret, party_messages, party_secrets, secret_sum,
+    BASE2K, K, PARTIES, RANK, SEEDS, assert_panics_with, collective_public_key, gglwe_layout, ideal_secret, party_messages,
+    party_secrets, secret_sum,
 };
 use super::parity::with_scratch;
 use crate::{
@@ -292,7 +293,7 @@ where
 }
 
 /// Aggregating shares drawn under different seeds panics.
-pub fn test_pat_aggregate_seed_mismatch<BE>(module: &Module<BE>)
+pub fn test_glwe_pat_compressed_aggregate_assign_rejects_seed_mismatch<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     Module<BE>: MHEModuleAlloc<BE> + GLWEPatCompressedOps<BE>,
@@ -301,11 +302,15 @@ where
     let mut b = module.glwe_pat_compressed_alloc(BASE2K, K, RANK);
     *a.seed_mut() = SEEDS[0];
     *b.seed_mut() = SEEDS[1];
-    module.glwe_pat_compressed_aggregate_assign(&mut a, &b);
+    let before = a.clone();
+    assert_panics_with("invalid aggregation: seeds differ", || {
+        module.glwe_pat_compressed_aggregate_assign(&mut a, &b);
+    });
+    assert!(a == before);
 }
 
 /// Aggregating GGLWE shares drawn under different seeds panics.
-pub fn test_gglwe_pat_compressed_aggregate_seed_mismatch<BE>(module: &Module<BE>)
+pub fn test_gglwe_pat_compressed_aggregate_assign_rejects_seed_mismatch<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     Module<BE>: MHEModuleAlloc<BE> + GGLWEPatCompressedOps<BE>,
@@ -314,22 +319,30 @@ where
     let mut a = module.gglwe_pat_compressed_alloc_from_infos(&layout);
     let mut b = module.gglwe_pat_compressed_alloc_from_infos(&layout);
     b.seed_mut()[0] = SEEDS[1];
-    module.gglwe_pat_compressed_aggregate_assign(&mut a, &b);
+    let before = a.clone();
+    assert_panics_with("invalid aggregation: seeds differ", || {
+        module.gglwe_pat_compressed_aggregate_assign(&mut a, &b);
+    });
+    assert!(a == before);
 }
 
 /// Aggregating PATs of different layouts panics.
-pub fn test_pat_aggregate_layout_mismatch<BE>(module: &Module<BE>)
+pub fn test_glwe_pat_compressed_aggregate_assign_rejects_layout_mismatch<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     Module<BE>: MHEModuleAlloc<BE> + GLWEPatCompressedOps<BE>,
 {
     let mut a = module.glwe_pat_compressed_alloc(BASE2K, K, RANK);
     let b = module.glwe_pat_compressed_alloc(BASE2K, TorusPrecision(K.0 + BASE2K.0), RANK);
-    module.glwe_pat_compressed_aggregate_assign(&mut a, &b);
+    let before = a.clone();
+    assert_panics_with("invalid aggregation: layouts differ", || {
+        module.glwe_pat_compressed_aggregate_assign(&mut a, &b);
+    });
+    assert!(a == before);
 }
 
 /// Finalizing a PAT into a target of a different layout panics.
-pub fn test_pat_finalize_layout_mismatch<BE>(module: &Module<BE>)
+pub fn test_glwe_pat_compressed_finalize_rejects_layout_mismatch<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
@@ -344,9 +357,13 @@ where
         k: TorusPrecision(K.0 + BASE2K.0),
         rank: RANK,
     });
-    with_scratch::<BE, _>(module.glwe_pat_compressed_finalize_tmp_bytes(), |s| {
-        module.glwe_pat_compressed_finalize(&mut res, &pat, s)
+    let before = res.clone();
+    assert_panics_with("invalid finalization: layouts differ", || {
+        with_scratch::<BE, _>(module.glwe_pat_compressed_finalize_tmp_bytes(), |s| {
+            module.glwe_pat_compressed_finalize(&mut res, &pat, s)
+        });
     });
+    assert!(res == before);
 }
 
 /// Every entry of `ct` decrypts to `pt_want` under `sk` within [`aggregate_noise_bound`].

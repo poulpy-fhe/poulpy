@@ -35,27 +35,29 @@ macro_rules! mhe_backend_test_suite {
             }
 
             #[test]
-            #[should_panic(expected = "seeds differ")]
-            fn pat_aggregate_seed_mismatch() {
-                $crate::test_suite::pat::test_pat_aggregate_seed_mismatch(&Module::<$backend>::new(64));
+            fn glwe_pat_compressed_aggregate_assign_rejects_seed_mismatch() {
+                $crate::test_suite::pat::test_glwe_pat_compressed_aggregate_assign_rejects_seed_mismatch(
+                    &Module::<$backend>::new(64),
+                );
             }
 
             #[test]
-            #[should_panic(expected = "seeds differ")]
-            fn gglwe_pat_compressed_aggregate_seed_mismatch() {
-                $crate::test_suite::pat::test_gglwe_pat_compressed_aggregate_seed_mismatch(&Module::<$backend>::new(64));
+            fn gglwe_pat_compressed_aggregate_assign_rejects_seed_mismatch() {
+                $crate::test_suite::pat::test_gglwe_pat_compressed_aggregate_assign_rejects_seed_mismatch(
+                    &Module::<$backend>::new(64),
+                );
             }
 
             #[test]
-            #[should_panic(expected = "invalid aggregation: layouts differ")]
-            fn pat_aggregate_layout_mismatch() {
-                $crate::test_suite::pat::test_pat_aggregate_layout_mismatch(&Module::<$backend>::new(64));
+            fn glwe_pat_compressed_aggregate_assign_rejects_layout_mismatch() {
+                $crate::test_suite::pat::test_glwe_pat_compressed_aggregate_assign_rejects_layout_mismatch(
+                    &Module::<$backend>::new(64),
+                );
             }
 
             #[test]
-            #[should_panic(expected = "invalid finalization: layouts differ")]
-            fn pat_finalize_layout_mismatch() {
-                $crate::test_suite::pat::test_pat_finalize_layout_mismatch(&Module::<$backend>::new(64));
+            fn glwe_pat_compressed_finalize_rejects_layout_mismatch() {
+                $crate::test_suite::pat::test_glwe_pat_compressed_finalize_rejects_layout_mismatch(&Module::<$backend>::new(64));
             }
 
             #[test]
@@ -69,9 +71,10 @@ macro_rules! mhe_backend_test_suite {
             }
 
             #[test]
-            #[should_panic(expected = "samplable distribution")]
-            fn glwe_public_key_finalize_dist_none() {
-                $crate::test_suite::public_key::test_glwe_public_key_finalize_dist_none(&Module::<$backend>::new(64));
+            fn mhe_glwe_public_key_share_finalize_rejects_dist_none() {
+                $crate::test_suite::public_key::test_mhe_glwe_public_key_share_finalize_rejects_dist_none(
+                    &Module::<$backend>::new(64),
+                );
             }
 
             #[test]
@@ -80,27 +83,31 @@ macro_rules! mhe_backend_test_suite {
             }
 
             #[test]
-            #[should_panic(expected = "invalid aggregation: layouts differ")]
-            fn glwe_public_key_aggregate_rank_mismatch() {
-                $crate::test_suite::public_key::test_glwe_public_key_aggregate_rank_mismatch(&Module::<$backend>::new(64));
+            fn mhe_glwe_public_key_share_aggregate_rejects_rank_mismatch() {
+                $crate::test_suite::public_key::test_mhe_glwe_public_key_share_aggregate_rejects_rank_mismatch(
+                    &Module::<$backend>::new(64),
+                );
             }
 
             #[test]
-            #[should_panic(expected = "invalid aggregation: secret distributions differ")]
-            fn glwe_public_key_aggregate_dist_mismatch() {
-                $crate::test_suite::public_key::test_glwe_public_key_aggregate_dist_mismatch(&Module::<$backend>::new(64));
+            fn mhe_glwe_public_key_share_aggregate_rejects_dist_mismatch() {
+                $crate::test_suite::public_key::test_mhe_glwe_public_key_share_aggregate_rejects_dist_mismatch(
+                    &Module::<$backend>::new(64),
+                );
             }
 
             #[test]
-            #[should_panic(expected = "invalid finalization: public key entries share a seed")]
-            fn glwe_public_key_finalize_shared_seed() {
-                $crate::test_suite::public_key::test_glwe_public_key_finalize_shared_seed(&Module::<$backend>::new(64));
+            fn mhe_glwe_public_key_share_finalize_rejects_shared_seed() {
+                $crate::test_suite::public_key::test_mhe_glwe_public_key_share_finalize_rejects_shared_seed(
+                    &Module::<$backend>::new(64),
+                );
             }
 
             #[test]
-            #[should_panic(expected = "invalid secret")]
-            fn glwe_public_key_gen_secret_none() {
-                $crate::test_suite::public_key::test_glwe_public_key_gen_secret_none(&Module::<$backend>::new(64));
+            fn mhe_glwe_public_key_share_gen_rejects_secret_none() {
+                $crate::test_suite::public_key::test_mhe_glwe_public_key_share_gen_rejects_secret_none(&Module::<$backend>::new(
+                    64,
+                ));
             }
 
             #[test]
@@ -129,21 +136,18 @@ macro_rules! mhe_backend_test_suite {
             }
 
             #[test]
-            #[should_panic(expected = "invalid aggregation: seeds differ")]
-            fn ggsw_share_seed_mismatch() {
-                $crate::test_suite::ggsw::test_ggsw_share_seed_mismatch(&Module::<$backend>::new(64));
+            fn mhe_ggsw_share_aggregate_rejects_seed_mismatch() {
+                $crate::test_suite::ggsw::test_mhe_ggsw_share_aggregate_rejects_seed_mismatch(&Module::<$backend>::new(64));
             }
 
             #[test]
-            #[should_panic(expected = "invalid share: ephemeral secret rank differs from the secret's")]
-            fn ggsw_share_ephemeral_rank_mismatch() {
-                $crate::test_suite::ggsw::test_ggsw_share_ephemeral_rank_mismatch(&Module::<$backend>::new(64));
+            fn mhe_ggsw_share_gen_rejects_ephemeral_rank_mismatch() {
+                $crate::test_suite::ggsw::test_mhe_ggsw_share_gen_rejects_ephemeral_rank_mismatch(&Module::<$backend>::new(64));
             }
 
             #[test]
-            #[should_panic(expected = "invalid finalization: key output rank differs from the GGSW's")]
-            fn ggsw_share_key_rank_mismatch() {
-                $crate::test_suite::ggsw::test_ggsw_share_key_rank_mismatch(&Module::<$backend>::new(64));
+            fn mhe_ggsw_share_finalize_rejects_key_rank_mismatch() {
+                $crate::test_suite::ggsw::test_mhe_ggsw_share_finalize_rejects_key_rank_mismatch(&Module::<$backend>::new(64));
             }
 
             #[test]
@@ -162,21 +166,26 @@ macro_rules! mhe_backend_test_suite {
             }
 
             #[test]
-            #[should_panic(expected = "invalid aggregation: degrees differ")]
-            fn glwe_switching_key_degree_mismatch() {
-                $crate::test_suite::evaluation_key::test_glwe_switching_key_degree_mismatch(&Module::<$backend>::new(64));
+            fn mhe_glwe_switching_key_share_aggregate_rejects_degree_mismatch() {
+                $crate::test_suite::evaluation_key::test_mhe_glwe_switching_key_share_aggregate_rejects_degree_mismatch(
+                    &Module::<$backend>::new(64),
+                );
             }
 
             #[test]
-            #[should_panic(expected = "invalid aggregation: degrees differ")]
-            fn glwe_switching_key_out_degree_mismatch() {
-                $crate::test_suite::evaluation_key::test_glwe_switching_key_out_degree_mismatch(&Module::<$backend>::new(64));
+            fn mhe_glwe_switching_key_share_aggregate_rejects_out_degree_mismatch() {
+                $crate::test_suite::evaluation_key::test_mhe_glwe_switching_key_share_aggregate_rejects_out_degree_mismatch(
+                    &Module::<$backend>::new(64),
+                );
             }
 
             #[test]
-            #[should_panic(expected = "invalid aggregation: Galois elements differ")]
-            fn glwe_automorphism_key_p_mismatch() {
-                $crate::test_suite::evaluation_key::test_glwe_automorphism_key_p_mismatch(&Module::<$backend>::new(64));
+            fn mhe_glwe_automorphism_key_share_aggregate_rejects_p_mismatch() {
+                $crate::test_suite::evaluation_key::test_mhe_glwe_automorphism_key_share_aggregate_rejects_p_mismatch(&Module::<
+                    $backend,
+                >::new(
+                    64
+                ));
             }
 
             #[test]
@@ -185,11 +194,10 @@ macro_rules! mhe_backend_test_suite {
             }
 
             #[test]
-            #[should_panic(expected = "invalid aggregation: layouts differ")]
-            fn glwe_private_keyswitch_aggregate_layout_mismatch() {
-                $crate::test_suite::keyswitch::test_glwe_private_keyswitch_aggregate_layout_mismatch(&Module::<$backend>::new(
-                    64,
-                ));
+            fn mhe_glwe_private_keyswitch_share_aggregate_rejects_layout_mismatch() {
+                $crate::test_suite::keyswitch::test_mhe_glwe_private_keyswitch_share_aggregate_rejects_layout_mismatch(
+                    &Module::<$backend>::new(64),
+                );
             }
 
             #[test]
@@ -203,15 +211,19 @@ macro_rules! mhe_backend_test_suite {
             }
 
             #[test]
-            #[should_panic(expected = "invalid finalization: ciphertext and output layouts differ")]
-            fn glwe_public_keyswitch_finalize_layout_mismatch() {
-                $crate::test_suite::keyswitch::test_glwe_public_keyswitch_finalize_layout_mismatch(&Module::<$backend>::new(64));
+            fn mhe_glwe_public_keyswitch_share_finalize_rejects_layout_mismatch() {
+                $crate::test_suite::keyswitch::test_mhe_glwe_public_keyswitch_share_finalize_rejects_layout_mismatch(&Module::<
+                    $backend,
+                >::new(
+                    64
+                ));
             }
 
             #[test]
-            #[should_panic(expected = "invalid share: public key less precise than the share")]
-            fn glwe_public_keyswitch_pk_precision() {
-                $crate::test_suite::keyswitch::test_glwe_public_keyswitch_pk_precision(&Module::<$backend>::new(64));
+            fn mhe_glwe_public_keyswitch_share_gen_rejects_pk_precision() {
+                $crate::test_suite::keyswitch::test_mhe_glwe_public_keyswitch_share_gen_rejects_pk_precision(
+                    &Module::<$backend>::new(64),
+                );
             }
 
             #[test]
@@ -285,21 +297,20 @@ macro_rules! mhe_backend_test_suite {
             }
 
             #[test]
-            #[should_panic(expected = "invalid share: secret share more precise than the output")]
-            fn glwe_share_to_enc_precision() {
-                $crate::test_suite::sharing::test_glwe_share_to_enc_precision(&Module::<$backend>::new(64));
+            fn mhe_glwe_share_to_enc_share_gen_rejects_precision() {
+                $crate::test_suite::sharing::test_mhe_glwe_share_to_enc_share_gen_rejects_precision(&Module::<$backend>::new(64));
             }
 
             #[test]
-            #[should_panic(expected = "invalid share: share and mask layouts differ")]
-            fn glwe_enc_to_share_precision() {
-                $crate::test_suite::sharing::test_glwe_enc_to_share_precision(&Module::<$backend>::new(64));
+            fn mhe_glwe_enc_to_share_share_gen_rejects_precision() {
+                $crate::test_suite::sharing::test_mhe_glwe_enc_to_share_share_gen_rejects_precision(&Module::<$backend>::new(64));
             }
 
             #[test]
-            #[should_panic(expected = "invalid finalization: ciphertext and share layouts differ")]
-            fn glwe_enc_to_share_finalize_layout_mismatch() {
-                $crate::test_suite::sharing::test_glwe_enc_to_share_finalize_layout_mismatch(&Module::<$backend>::new(64));
+            fn mhe_glwe_enc_to_share_share_finalize_rejects_layout_mismatch() {
+                $crate::test_suite::sharing::test_mhe_glwe_enc_to_share_share_finalize_rejects_layout_mismatch(
+                    &Module::<$backend>::new(64),
+                );
             }
 
             #[test]
@@ -308,15 +319,17 @@ macro_rules! mhe_backend_test_suite {
             }
 
             #[test]
-            #[should_panic(expected = "invalid share: public key less precise than the share")]
-            fn glwe_tensor_key_pk_precision() {
-                $crate::test_suite::tensor_key::test_glwe_tensor_key_pk_precision(&Module::<$backend>::new(64));
+            fn mhe_glwe_tensor_key_share_gen_rejects_pk_precision() {
+                $crate::test_suite::tensor_key::test_mhe_glwe_tensor_key_share_gen_rejects_pk_precision(
+                    &Module::<$backend>::new(64),
+                );
             }
 
             #[test]
-            #[should_panic(expected = "invalid share: secret degree differs from the key's")]
-            fn glwe_tensor_key_secret_degree() {
-                $crate::test_suite::tensor_key::test_glwe_tensor_key_secret_degree(&Module::<$backend>::new(64));
+            fn mhe_glwe_tensor_key_share_gen_rejects_secret_degree() {
+                $crate::test_suite::tensor_key::test_mhe_glwe_tensor_key_share_gen_rejects_secret_degree(
+                    &Module::<$backend>::new(64),
+                );
             }
         }
     };

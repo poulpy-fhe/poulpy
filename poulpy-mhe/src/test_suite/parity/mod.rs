@@ -265,13 +265,26 @@ fn poison_public_key<BE: Backend, A: GLWEPublicKeyToBackendMut<BE>>(a: &mut A) {
     poison_view::<BE>(a.to_backend_mut().data_mut().data_mut());
 }
 
-/// Runs `call` on exactly `bytes` of scratch poisoned with `0xA5`.
+/// Runs `call` on exactly `bytes` of scratch poisoned with `0xA5`, surrounded by guards.
 pub(crate) fn with_scratch<BE: Backend, R>(bytes: usize, call: impl FnOnce(&mut ScratchArena<'_, BE>) -> R) -> R {
+    let guard = BE::scratch_aligned(64);
     let mut scratch = ScratchOwned::<BE> {
-        data: BE::from_host_bytes(&vec![0xA5; bytes]),
+        data: BE::from_host_bytes(&vec![0xA5; guard + bytes + guard]),
         _phantom: std::marker::PhantomData,
     };
-    call(&mut scratch.arena())
+    let result = {
+        let (_, rest) = scratch.arena().split_at(guard);
+        let (mut exact, _) = rest.split_at(bytes);
+        assert_eq!(exact.available(), bytes);
+        call(&mut exact)
+    };
+    let host = BE::to_host_bytes(&scratch.data);
+    assert!(host[..guard].iter().all(|v| *v == 0xA5), "scratch prefix overwritten");
+    assert!(
+        host[guard + bytes..guard + bytes + guard].iter().all(|v| *v == 0xA5),
+        "scratch suffix overwritten"
+    );
+    result
 }
 
 type Secrets<D> = Vec<GLWESecret<D, i64>>;
