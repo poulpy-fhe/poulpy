@@ -18,6 +18,7 @@ use super::fixtures::{
     BASE2K, K, K_OUT, LOG_MESSAGE, PARTIES, SEED_XE, SEEDS, assert_flooded_integers, bounded_integers, encrypt_integers,
     glwe_layout_at, ideal_secret, integer_plaintext, party_secrets, plaintext_integers, secret_from_seed,
 };
+use super::parity::with_scratch;
 use crate::{
     api::{GLWEEncToShareMHEProtocol, GLWEShareToEncMHEProtocol},
     layouts::GLWEEncToShareShare,
@@ -44,12 +45,7 @@ where
             let layout = glwe_layout_at(module, k);
             let flood = Noise::Gaussian { sigma };
             let parties = party_secrets(module);
-            let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
-                module
-                    .glwe_encrypt_sk_tmp_bytes(&layout)
-                    .max(module.mhe_glwe_enc_to_share_share_gen_tmp_bytes(&layout))
-                    .max(module.mhe_glwe_enc_to_share_share_finalize_tmp_bytes()),
-            );
+            let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.glwe_encrypt_sk_tmp_bytes(&layout));
             let m = bounded_integers(module.n(), LOG_MESSAGE, [30u8; 32]);
             let ct = encrypt_integers(module, &layout, &m, &ideal_secret(module, &parties), &mut scratch);
 
@@ -127,12 +123,7 @@ where
     // Encryption noise reaches the output grid even when raising the plaintext precision.
     {
         let parties = party_secrets(module);
-        let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
-            module
-                .mhe_glwe_share_to_enc_share_gen_tmp_bytes(&out_layout, &in_layout)
-                .max(module.mhe_glwe_share_to_enc_share_finalize_tmp_bytes())
-                .max(module.glwe_decrypt_tmp_bytes(&out_layout)),
-        );
+        let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.glwe_decrypt_tmp_bytes(&out_layout));
         let shares: Vec<Vec<i64>> = (0..PARTIES)
             .map(|i| bounded_integers(module.n(), K.as_usize(), [70 + i as u8; 32]))
             .collect();
@@ -154,7 +145,9 @@ where
         }
 
         let mut ct: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&out_layout);
-        module.mhe_glwe_share_to_enc_share_finalize(&mut ct, &acc, &mut scratch.borrow());
+        with_scratch::<BE, _>(module.mhe_glwe_share_to_enc_share_finalize_tmp_bytes(), |s| {
+            module.mhe_glwe_share_to_enc_share_finalize(&mut ct, &acc, s)
+        });
         super::fixtures::assert_collective_metadata(&ct, PARTIES);
         super::fixtures::assert_fresh_noise(&ct, PARTIES as f64 * DEFAULT_SIGMA_XE.powi(2), K_OUT);
         // The shares add up modulo 1; the output's extra precision only carries the noise.
@@ -182,15 +175,9 @@ where
     let secret: GLWEPlaintext<AlignedBuf, i64> = module.glwe_plaintext_alloc_from_infos(&secret_layout);
     let mut res = module.glwe_share_to_enc_share_alloc_from_infos(&layout);
 
-    let mut scratch: ScratchOwned<BE> =
-        ScratchOwned::alloc(module.mhe_glwe_share_to_enc_share_gen_tmp_bytes(&layout, &secret_layout));
-    module.mhe_glwe_share_to_enc_share_gen(
-        &mut res,
-        &secret,
-        &sk,
-        SEEDS[0],
-        &mut Source::new(SEED_XE),
-        &mut scratch.borrow(),
+    with_scratch::<BE, _>(
+        module.mhe_glwe_share_to_enc_share_gen_tmp_bytes(&layout, &secret_layout),
+        |s| module.mhe_glwe_share_to_enc_share_gen(&mut res, &secret, &sk, SEEDS[0], &mut Source::new(SEED_XE), s),
     );
 }
 
@@ -212,17 +199,18 @@ where
         }),
     };
     let mut secret: GLWEPlaintext<AlignedBuf, i64> = module.glwe_plaintext_alloc_from_infos(&secret_layout);
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.mhe_glwe_enc_to_share_share_gen_tmp_bytes(&ct_layout));
-    module.mhe_glwe_enc_to_share_share_gen(
-        &mut public,
-        &mut secret,
-        &ct,
-        &sk,
-        Noise::Gaussian { sigma: 1024.0 },
-        &mut Source::new([60u8; 32]),
-        &mut Source::new(SEED_XE),
-        &mut scratch.borrow(),
-    );
+    with_scratch::<BE, _>(module.mhe_glwe_enc_to_share_share_gen_tmp_bytes(&ct_layout), |s| {
+        module.mhe_glwe_enc_to_share_share_gen(
+            &mut public,
+            &mut secret,
+            &ct,
+            &sk,
+            Noise::Gaussian { sigma: 1024.0 },
+            &mut Source::new([60u8; 32]),
+            &mut Source::new(SEED_XE),
+            s,
+        )
+    });
 }
 
 /// Finalizing a share whose layout differs from the ciphertext's panics.
@@ -242,8 +230,9 @@ where
         inner: module.glwe_alloc_from_infos(&secret_layout),
     };
     let mut secret: GLWEPlaintext<AlignedBuf, i64> = module.glwe_plaintext_alloc_from_infos(&glwe_layout_at(module, K_OUT));
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.mhe_glwe_enc_to_share_share_finalize_tmp_bytes());
-    module.mhe_glwe_enc_to_share_share_finalize(&mut secret, &ct, &share, &mut scratch.borrow());
+    with_scratch::<BE, _>(module.mhe_glwe_enc_to_share_share_finalize_tmp_bytes(), |s| {
+        module.mhe_glwe_enc_to_share_share_finalize(&mut secret, &ct, &share, s)
+    });
 }
 
 /// Plaintext shares must be rank zero at both conversion boundaries.
@@ -264,30 +253,30 @@ where
         inner: module.glwe_alloc_from_infos(&layout),
     };
     let mut secret: GLWEPlaintext<AlignedBuf, i64> = module.glwe_plaintext_alloc_from_infos(&layout);
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
-        module
-            .mhe_glwe_enc_to_share_share_gen_tmp_bytes(&layout)
-            .max(module.mhe_glwe_share_to_enc_share_gen_tmp_bytes(&layout, &layout))
-            .max(module.mhe_glwe_enc_to_share_share_finalize_tmp_bytes()),
-    );
     super::fixtures::assert_panics_with("invalid share: additive shares must have rank zero", || {
-        module.mhe_glwe_enc_to_share_share_gen(
-            &mut public,
-            &mut secret,
-            &ct,
-            &sk,
-            Noise::Gaussian { sigma: 1024.0 },
-            &mut Source::new([60u8; 32]),
-            &mut Source::new(SEED_XE),
-            &mut scratch.borrow(),
-        );
+        with_scratch::<BE, _>(module.mhe_glwe_enc_to_share_share_gen_tmp_bytes(&layout), |s| {
+            module.mhe_glwe_enc_to_share_share_gen(
+                &mut public,
+                &mut secret,
+                &ct,
+                &sk,
+                Noise::Gaussian { sigma: 1024.0 },
+                &mut Source::new([60u8; 32]),
+                &mut Source::new(SEED_XE),
+                s,
+            )
+        });
     });
     super::fixtures::assert_panics_with("invalid finalization: additive shares must have rank zero", || {
-        module.mhe_glwe_enc_to_share_share_finalize(&mut secret, &ct, &public, &mut scratch.borrow());
+        with_scratch::<BE, _>(module.mhe_glwe_enc_to_share_share_finalize_tmp_bytes(), |s| {
+            module.mhe_glwe_enc_to_share_share_finalize(&mut secret, &ct, &public, s)
+        });
     });
     let mut pat = module.glwe_share_to_enc_share_alloc_from_infos(&layout);
     super::fixtures::assert_panics_with("invalid share: additive share must have rank zero", || {
-        module.mhe_glwe_share_to_enc_share_gen(&mut pat, &ct, &sk, SEEDS[0], &mut Source::new(SEED_XE), &mut scratch.borrow());
+        with_scratch::<BE, _>(module.mhe_glwe_share_to_enc_share_gen_tmp_bytes(&layout, &layout), |s| {
+            module.mhe_glwe_share_to_enc_share_gen(&mut pat, &ct, &sk, SEEDS[0], &mut Source::new(SEED_XE), s)
+        });
     });
 }
 
@@ -305,7 +294,7 @@ where
         inner: module.glwe_alloc_from_infos(&GLWELayout { rank: Rank(0), ..layout }),
     };
     let mut secret: GLWEPlaintext<AlignedBuf, i64> = module.glwe_plaintext_alloc_from_infos(&layout);
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.mhe_glwe_enc_to_share_share_gen_tmp_bytes(&layout));
+    let gen_bytes = module.mhe_glwe_enc_to_share_share_gen_tmp_bytes(&layout);
     for (noise, message) in [
         (
             Noise::Gaussian { sigma: 0.5 },
@@ -325,16 +314,18 @@ where
         let mut source_xm = Source::new([60u8; 32]);
         let mut source_smudge = Source::new(SEED_XE);
         super::fixtures::assert_panics_with(message, || {
-            module.mhe_glwe_enc_to_share_share_gen(
-                &mut public,
-                &mut secret,
-                &ct,
-                &sk,
-                noise,
-                &mut source_xm,
-                &mut source_smudge,
-                &mut scratch.borrow(),
-            );
+            with_scratch::<BE, _>(gen_bytes, |s| {
+                module.mhe_glwe_enc_to_share_share_gen(
+                    &mut public,
+                    &mut secret,
+                    &ct,
+                    &sk,
+                    noise,
+                    &mut source_xm,
+                    &mut source_smudge,
+                    s,
+                )
+            });
         });
         assert_eq!(source_xm.next_i64(), Source::new([60u8; 32]).next_i64());
         assert_eq!(source_smudge.next_i64(), Source::new(SEED_XE).next_i64());
@@ -357,20 +348,21 @@ where
     };
     let mut secret: GLWEPlaintext<AlignedBuf, i64> = module.glwe_plaintext_alloc_from_infos(&layout);
     let (public_before, secret_before) = (public.clone(), secret.data().clone());
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.mhe_glwe_enc_to_share_share_gen_tmp_bytes(&layout));
     let mut source_xm = Source::new([60u8; 32]);
     let mut source_smudge = Source::new(SEED_XE);
     super::fixtures::assert_panics_with("invalid share: mask not canonical", || {
-        module.mhe_glwe_enc_to_share_share_gen(
-            &mut public,
-            &mut secret,
-            &ct,
-            &sk,
-            Noise::Gaussian { sigma: 1024.0 },
-            &mut source_xm,
-            &mut source_smudge,
-            &mut scratch.borrow(),
-        );
+        with_scratch::<BE, _>(module.mhe_glwe_enc_to_share_share_gen_tmp_bytes(&layout), |s| {
+            module.mhe_glwe_enc_to_share_share_gen(
+                &mut public,
+                &mut secret,
+                &ct,
+                &sk,
+                Noise::Gaussian { sigma: 1024.0 },
+                &mut source_xm,
+                &mut source_smudge,
+                s,
+            )
+        });
     });
     assert!(public == public_before && *secret.data() == secret_before);
     assert_eq!(source_xm.next_i64(), Source::new([60u8; 32]).next_i64());

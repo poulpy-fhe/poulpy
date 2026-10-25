@@ -21,6 +21,7 @@ use poulpy_hal::{
 use super::fixtures::{
     BASE2K, K, PARTIES, RANK, SEEDS, collective_public_key, gglwe_layout, ideal_secret, party_messages, party_secrets, secret_sum,
 };
+use super::parity::with_scratch;
 use crate::{
     api::{GGLWEPatCompressedOps, GGLWEPatOps, GLWEPatCompressedOps, GLWEPublicKeyMHEProtocol},
     layouts::MHEModuleAlloc,
@@ -86,7 +87,6 @@ where
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
             .glwe_compressed_encrypt_sk_tmp_bytes(&layout)
-            .max(module.glwe_pat_compressed_finalize_tmp_bytes())
             .max(module.glwe_noise_tmp_bytes(&layout)),
     );
 
@@ -118,7 +118,9 @@ where
     assert!(acc == before);
 
     let mut res: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
-    module.glwe_pat_compressed_finalize(&mut res, &acc, &mut scratch.borrow());
+    with_scratch::<BE, _>(module.glwe_pat_compressed_finalize_tmp_bytes(), |s| {
+        module.glwe_pat_compressed_finalize(&mut res, &acc, s)
+    });
     super::fixtures::assert_collective_metadata(&res, PARTIES);
     assert!(res.is_canonical());
     let noise: f64 = module
@@ -151,7 +153,6 @@ where
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
             .gglwe_compressed_encrypt_sk_tmp_bytes(&layout)
-            .max(module.gglwe_pat_compressed_finalize_tmp_bytes())
             .max(module.gglwe_noise_tmp_bytes(&layout)),
     );
 
@@ -167,7 +168,9 @@ where
     }
 
     let mut res: GGLWE<AlignedBuf, i64> = module.gglwe_alloc_from_infos(&layout);
-    module.gglwe_pat_compressed_finalize(&mut res, &acc, &mut scratch.borrow());
+    with_scratch::<BE, _>(module.gglwe_pat_compressed_finalize_tmp_bytes(), |s| {
+        module.gglwe_pat_compressed_finalize(&mut res, &acc, s)
+    });
     super::fixtures::assert_collective_metadata(&res, PARTIES);
     assert_gglwe_noise(module, &res, &pt_want, &sk_ideal, &mut scratch);
 }
@@ -213,7 +216,6 @@ where
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
             .glwe_encrypt_pk_tmp_bytes(&pk_layout, &pk_layout)
-            .max(module.gglwe_pat_finalize_tmp_bytes())
             .max(module.glwe_noise_tmp_bytes(&pk_layout)),
     );
 
@@ -265,7 +267,9 @@ where
     }
 
     let mut res: GGLWE<AlignedBuf, i64> = module.gglwe_alloc_from_infos(&layout);
-    module.gglwe_pat_finalize(&mut res, &acc, &mut scratch.borrow());
+    with_scratch::<BE, _>(module.gglwe_pat_finalize_tmp_bytes(), |s| {
+        module.gglwe_pat_finalize(&mut res, &acc, s)
+    });
     super::fixtures::assert_collective_metadata(&res, PARTIES);
     // The public key test variance, times PARTIES independent encryptions.
     let n = module.n() as f64;
@@ -340,8 +344,9 @@ where
         k: TorusPrecision(K.0 + BASE2K.0),
         rank: RANK,
     });
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.glwe_pat_compressed_finalize_tmp_bytes());
-    module.glwe_pat_compressed_finalize(&mut res, &pat, &mut scratch.borrow());
+    with_scratch::<BE, _>(module.glwe_pat_compressed_finalize_tmp_bytes(), |s| {
+        module.glwe_pat_compressed_finalize(&mut res, &pat, s)
+    });
 }
 
 /// Every entry of `ct` decrypts to `pt_want` under `sk` within [`aggregate_noise_bound`].

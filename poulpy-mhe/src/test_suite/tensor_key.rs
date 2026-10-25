@@ -20,6 +20,7 @@ use super::{
     fixtures::{
         BASE2K, DNUM, DSIZE, PARTIES, RANK, collective_public_key, ideal_secret, party_secrets, secret_from_seed, secret_sum,
     },
+    parity::with_scratch,
     pat::assert_gglwe_noise_within,
 };
 use crate::{
@@ -54,7 +55,6 @@ where
         let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
             module
                 .glwe_secret_tensor_prepare_tmp_bytes(RANK)
-                .max(module.mhe_glwe_tensor_key_share_finalize_tmp_bytes())
                 .max(module.gglwe_noise_tmp_bytes(&layout)),
         );
         let mut pt_want: GLWESecretTensor<AlignedBuf, i64> = module.glwe_secret_tensor_alloc(RANK);
@@ -77,7 +77,9 @@ where
         }
 
         let mut res: GLWETensorKey<AlignedBuf, i64> = module.glwe_tensor_key_alloc_from_infos(&layout);
-        module.mhe_glwe_tensor_key_share_finalize(&mut res, &acc, &mut scratch.borrow());
+        with_scratch::<BE, _>(module.mhe_glwe_tensor_key_share_finalize_tmp_bytes(), |s| {
+            module.mhe_glwe_tensor_key_share_finalize(&mut res, &acc, s)
+        });
         super::fixtures::assert_collective_metadata(&res, PARTIES);
         // Each party's pk encryption of zero adds 2 * rank * n * 0.5 * PARTIES * sigma^2 + sigma^2.
         let n = module.n() as f64;
@@ -110,14 +112,9 @@ where
         super::fixtures::assert_panics_with(
             "invalid public key: ephemeral distribution differs from its secret provenance",
             || {
-                module.mhe_glwe_tensor_key_share_gen(
-                    &mut share,
-                    &parties[0].0,
-                    &pk,
-                    &mut source_xu,
-                    &mut source_xe,
-                    &mut scratch.borrow(),
-                );
+                with_scratch::<BE, _>(module.mhe_glwe_tensor_key_share_gen_tmp_bytes(&layout, &pk_layout), |s| {
+                    module.mhe_glwe_tensor_key_share_gen(&mut share, &parties[0].0, &pk, &mut source_xu, &mut source_xe, s)
+                });
             },
         );
         assert!(share == before);
@@ -143,15 +140,16 @@ where
     let (sk, _) = secret_from_seed(module, [100u8; 32]);
     let pk: GLWEPublicKeyPrepared<AlignedBuf, BE> = module.glwe_public_key_prepared_alloc_from_infos(&pk_layout);
     let mut res = module.glwe_tensor_key_share_alloc_from_infos(&layout);
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.mhe_glwe_tensor_key_share_gen_tmp_bytes(&layout, &pk_layout));
-    module.mhe_glwe_tensor_key_share_gen(
-        &mut res,
-        &sk,
-        &pk,
-        &mut Source::new([20u8; 32]),
-        &mut Source::new([10u8; 32]),
-        &mut scratch.borrow(),
-    );
+    with_scratch::<BE, _>(module.mhe_glwe_tensor_key_share_gen_tmp_bytes(&layout, &pk_layout), |s| {
+        module.mhe_glwe_tensor_key_share_gen(
+            &mut res,
+            &sk,
+            &pk,
+            &mut Source::new([20u8; 32]),
+            &mut Source::new([10u8; 32]),
+            s,
+        )
+    });
 }
 
 /// Sharing with a secret whose degree differs from the key's panics.
@@ -176,15 +174,16 @@ where
     module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut Source::new([100u8; 32]));
     let pk: GLWEPublicKeyPrepared<AlignedBuf, BE> = module.glwe_public_key_prepared_alloc_from_infos(&pk_layout);
     let mut res = module.glwe_tensor_key_share_alloc_from_infos(&layout);
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.mhe_glwe_tensor_key_share_gen_tmp_bytes(&layout, &pk_layout));
-    module.mhe_glwe_tensor_key_share_gen(
-        &mut res,
-        &sk,
-        &pk,
-        &mut Source::new([20u8; 32]),
-        &mut Source::new([10u8; 32]),
-        &mut scratch.borrow(),
-    );
+    with_scratch::<BE, _>(module.mhe_glwe_tensor_key_share_gen_tmp_bytes(&layout, &pk_layout), |s| {
+        module.mhe_glwe_tensor_key_share_gen(
+            &mut res,
+            &sk,
+            &pk,
+            &mut Source::new([20u8; 32]),
+            &mut Source::new([10u8; 32]),
+            s,
+        )
+    });
 }
 
 pub(crate) fn tensor_key_layout<BE: Backend>(module: &Module<BE>, dnum: Dnum, dsize: Dsize) -> GLWETensorKeyLayout {
@@ -245,16 +244,16 @@ where
                 *pk.dist_mut() = Distribution::ENCAPSULATED("private distribution label");
             }
             let mut res = module.glwe_tensor_key_share_alloc_from_infos(&layout);
-            let mut scratch: ScratchOwned<BE> =
-                ScratchOwned::alloc(module.mhe_glwe_tensor_key_share_gen_tmp_bytes(&layout, &pk_layout));
-            module.mhe_glwe_tensor_key_share_gen(
-                &mut res,
-                &sk,
-                &pk,
-                &mut Source::new([20u8; 32]),
-                &mut Source::new([10u8; 32]),
-                &mut scratch.borrow(),
-            );
+            with_scratch::<BE, _>(module.mhe_glwe_tensor_key_share_gen_tmp_bytes(&layout, &pk_layout), |s| {
+                module.mhe_glwe_tensor_key_share_gen(
+                    &mut res,
+                    &sk,
+                    &pk,
+                    &mut Source::new([20u8; 32]),
+                    &mut Source::new([10u8; 32]),
+                    s,
+                )
+            });
         });
     }
 }
