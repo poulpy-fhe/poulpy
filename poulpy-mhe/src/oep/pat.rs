@@ -7,8 +7,8 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 /// # Safety
 /// Every method reproduces the reference or derived body its doc names, checks
 /// included, and stays within the scratch its `_tmp_bytes` query returns. The
-/// synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md`
-/// apply.
+/// memory, layout, synchrony and aliasing rules of
+/// `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait GLWEPatCompressedImpl: Backend {
     /// Reproduces `GLWEPatCompressedReference::glwe_pat_compressed_aggregate_assign_reference`: adds `a` into `res` without normalizing.
     /// Panics unless the layouts and the mask seeds agree.
@@ -31,8 +31,8 @@ pub unsafe trait GLWEPatCompressedImpl: Backend {
 /// # Safety
 /// Every method reproduces the reference or derived body its doc names, checks
 /// included, and stays within the scratch its `_tmp_bytes` query returns. The
-/// synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md`
-/// apply.
+/// memory, layout, synchrony and aliasing rules of
+/// `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait GGLWEPatCompressedImpl: Backend {
     /// Reproduces `GGLWEPatCompressedReference::gglwe_pat_compressed_aggregate_assign_reference`: adds `a` into `res` without normalizing.
     /// Panics unless the layouts and the mask seeds agree.
@@ -55,8 +55,8 @@ pub unsafe trait GGLWEPatCompressedImpl: Backend {
 /// # Safety
 /// Every method reproduces the reference or derived body its doc names, checks
 /// included, and stays within the scratch its `_tmp_bytes` query returns. The
-/// synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md`
-/// apply.
+/// memory, layout, synchrony and aliasing rules of
+/// `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait GGLWEPatImpl: Backend {
     /// Reproduces `GGLWEPatReference::gglwe_pat_aggregate_assign_reference`: adds `a` into `res` without normalizing.
     /// Panics unless the layouts agree.

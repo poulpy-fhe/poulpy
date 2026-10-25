@@ -13,9 +13,10 @@ use poulpy_hal::{
 
 /// # Safety
 /// Every method reproduces the reference or derived body its doc names, checks
-/// included, and stays within the scratch its `_tmp_bytes` query returns. The
-/// synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md`
-/// apply.
+/// included, and stays within the scratch its `_tmp_bytes` query returns.
+/// Share generation wipes that scratch before returning.
+/// The memory, layout, synchrony and aliasing rules of
+/// `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait GLWEPrivateKeyswitchMHEProtocolImpl: Backend {
     /// Upper bound on the scratch of `mhe_glwe_private_keyswitch_share_gen`, as `GLWEPrivateKeyswitchMHEProtocolReference::mhe_glwe_private_keyswitch_share_gen_tmp_bytes_reference`; panics unless `infos` has the module's degree.
     fn mhe_glwe_private_keyswitch_share_gen_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
@@ -65,9 +66,10 @@ pub unsafe trait GLWEPrivateKeyswitchMHEProtocolImpl: Backend {
 
 /// # Safety
 /// Every method reproduces the reference or derived body its doc names, checks
-/// included, and stays within the scratch its `_tmp_bytes` query returns. The
-/// synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md`
-/// apply.
+/// included, and stays within the scratch its `_tmp_bytes` query returns.
+/// Share generation wipes that scratch before returning.
+/// The memory, layout, synchrony and aliasing rules of
+/// `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait GLWEPublicKeyswitchMHEProtocolImpl: Backend {
     /// Upper bound on the scratch of `mhe_glwe_public_keyswitch_share_gen`, as `GLWEPublicKeyswitchMHEProtocolReference::mhe_glwe_public_keyswitch_share_gen_tmp_bytes_reference`; panics unless all three layouts have the module's degree.
     fn mhe_glwe_public_keyswitch_share_gen_tmp_bytes<A, B, P>(
