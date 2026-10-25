@@ -45,6 +45,7 @@
 - **Breaking:** every suite scratch arena is `0xA5`-poisoned and sized by the tested operation's own `_tmp_bytes` alone, so an operation that reads scratch it did not write or exceeds its query fails; `test_convolution_by_const`, `test_convolution`, `test_convolution_pairwise`, `test_vmp_apply_dft`, `test_vmp_zero` and `test_mat_znx_normalize` require the `_tmp_bytes` traits of the setup calls they now size separately, and `test_vec_znx_big_normalize` no longer requires `VecZnxBigAutomorphismAssignTmpBytes`.
   No suite function requires `ScratchOwned<_>: ScratchOwnedAlloc<_>` any more.
 - **Behaviour:** an embedded degree is a power of two from `Backend::MIN_DEGREE` to `N`: a right operand of the convolution applies below `MIN_DEGREE` is refused where the contract left the floor to the backend, and `test_convolution_embed` runs only degrees in that domain. Out-of-tree backends refuse a smaller degree in their applies.
+- Add `AlignedBuf::region_mut`, a mutable view of one byte range built from the base pointer; the host backends' `Backend::region_mut` use it, so scratch regions carved from one arena no longer invalidate each other under Stacked Borrows.
 
 ### CPU backends
 

@@ -271,7 +271,7 @@ macro_rules! impl_host_byte_storage {
         }
 
         fn region_mut(buf: &mut Self::OwnedBuf, offset: usize, len: usize) -> Self::BufMut<'_> {
-            &mut buf[offset..offset + len]
+            buf.region_mut(offset, len)
         }
 
         fn region_ref<'a, 'b>(buf: &'a Self::BufRef<'b>, offset: usize, len: usize) -> Self::BufRef<'a>
