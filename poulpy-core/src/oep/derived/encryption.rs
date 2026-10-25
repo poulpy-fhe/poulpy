@@ -348,6 +348,7 @@ pub(crate) fn glwe_tensor_key_encrypt_sk_derived<BE, R, S>(
     );
     operand_degree(module.n(), &[res.n(), sk.n()]);
     crate::layouts::assert_no_row_offset("glwe_tensor_key_encrypt_sk", &*res);
+    crate::layouts::assert_secret_set(sk.dist());
     assert!(
         scratch.available() >= glwe_tensor_key_encrypt_sk_tmp_bytes_derived(module, res),
         "insufficient scratch for GLWE tensor key encryption"
@@ -410,6 +411,7 @@ pub(crate) fn glwe_tensor_key_compressed_encrypt_sk_derived<BE, R, S>(
     );
     operand_degree(module.n(), &[res.n(), sk.n()]);
     crate::layouts::assert_no_row_offset("glwe_tensor_key_compressed_encrypt_sk", &*res);
+    crate::layouts::assert_secret_set(sk.dist());
     assert!(
         scratch.available() >= glwe_tensor_key_compressed_encrypt_sk_tmp_bytes_derived(module, res),
         "insufficient scratch for compressed GLWE tensor key encryption"

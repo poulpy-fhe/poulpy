@@ -165,6 +165,7 @@ where
                 "the ciphertext rank differs from the secret's rank"
             );
             operand_degree(self.n(), &[res.n(), sk_ref.n(), pt_backend.n()]);
+            crate::layouts::assert_secret_set(&sk_ref.dist);
             assert!(
                 scratch.available() >= self.glwe_encrypt_sk_tmp_bytes_reference(res),
                 "scratch.available(): {} < GLWE::encrypt_sk_tmp_bytes: {}",
@@ -212,6 +213,7 @@ where
                 "the ciphertext rank differs from the secret's rank"
             );
             operand_degree(self.n(), &[res.n(), sk_ref.n()]);
+            crate::layouts::assert_secret_set(&sk_ref.dist);
             assert!(
                 scratch.available() >= self.glwe_encrypt_sk_tmp_bytes_reference(res),
                 "scratch.available(): {} < GLWE::encrypt_sk_tmp_bytes: {}",
@@ -261,6 +263,7 @@ where
                 "the ciphertext rank differs from the secret's rank"
             );
             operand_degree(self.n(), &[res.n(), sk_ref.n(), pt_backend.n()]);
+            crate::layouts::assert_secret_set(&sk_ref.dist);
             assert!(
                 scratch.available() >= self.glwe_encrypt_sk_tmp_bytes_reference(res),
                 "scratch.available(): {} < GLWE::encrypt_sk_tmp_bytes: {}",
@@ -593,10 +596,7 @@ where
     {
         let sk = sk.to_backend_ref();
 
-        assert!(
-            sk.dist != Distribution::NONE,
-            "glwe secret distribution is NONE (have you prepared the key?)"
-        );
+        crate::layouts::assert_secret_set(&sk.dist);
         assert!(
             res.cols() == sk.rank().as_usize() + 1,
             "GLWE encryption expects a full ciphertext with pre-sampled mask columns"

@@ -1,13 +1,14 @@
 use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
-    api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniformSource},
-    layouts::{Module, ReaderFrom, ScratchOwned, WriterTo},
+    api::{ScalarZnxAlloc, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniformSource},
+    layouts::{DataViewMut, Module, ReaderFrom, ScratchOwned, WriterTo},
     source::Source,
     test_suite::TestParams,
 };
 
 use crate::api::GLWESecretSampling;
 use crate::test_suite::poisoned_scratch;
+use crate::test_suite::refusal::assert_refusal;
 use crate::{
     Distribution, GGLWECompressedEncryptSk, GGLWEDecompress, GGLWEEncryptSk, GGLWEKeyswitch, GLWESwitchingKeyCompressedEncryptSk,
     GLWESwitchingKeyDecompress, GLWESwitchingKeyEncryptSk, GetDistributionMut,
@@ -399,4 +400,56 @@ where
             }
         }
     }
+}
+
+/// Encrypting a GGLWE under a secret that was never sampled is refused before any draw or carve, with the key, both
+/// sources and the scratch as they were.
+pub fn test_gglwe_encrypt_sk_rejects_unset_secret<BE: crate::test_suite::noise::TestBackend>(
+    params: &TestParams,
+    module: &Module<BE>,
+) where
+    BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: GGLWEEncryptSk<BE> + GLWESecretPreparedFactory<BE> + ScalarZnxAlloc<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let base2k: usize = params.base2k;
+    let infos = GGLWELayout {
+        n: module.n().into(),
+        base2k: base2k.into(),
+        dnum: 2_usize.into(),
+        k_digit: base2k.into(),
+        k_aux: base2k.into(),
+        k_offset: 0_usize.into(),
+        rank_in: 1_usize.into(),
+        rank_out: 2_usize.into(),
+        stride: 1,
+    };
+    let mut key: GGLWE<BE::OwnedBuf, BE::ZnxWord> = module.gglwe_alloc_from_infos(&infos);
+    key.data
+        .data_mut()
+        .iter_mut()
+        .enumerate()
+        .for_each(|(i, x)| *x = (i as u8).wrapping_mul(29).wrapping_add(11));
+    let pt = module.scalar_znx_alloc(module.n(), 1);
+    let sk: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(2_usize.into());
+    let mut scratch: ScratchOwned<BE> = poisoned_scratch::<BE>(module.gglwe_encrypt_sk_tmp_bytes(&infos));
+    let arena = BE::to_host_bytes(&scratch.data);
+    let (mut source_xe, mut source_xa) = (Source::new([7u8; 32]), Source::new([8u8; 32]));
+    assert_refusal(
+        "glwe secret distribution is NONE (have you prepared the key?)",
+        &mut key,
+        |key| key.clone(),
+        |key| module.gglwe_encrypt_sk(key, &pt, &sk, &mut source_xe, &mut source_xa, &mut scratch.borrow()),
+    );
+    assert!(
+        BE::to_host_bytes(&scratch.data) == arena,
+        "a refused call wrote into its scratch"
+    );
+    assert_eq!(
+        (source_xe.next_u128(), source_xa.next_u128()),
+        (Source::new([7u8; 32]).next_u128(), Source::new([8u8; 32]).next_u128()),
+        "a refused call drew from its sources"
+    );
 }

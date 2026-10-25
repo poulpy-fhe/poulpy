@@ -139,6 +139,7 @@ macro_rules! core_backend_test_suite {
                 gglwe_switching_key_compressed_encrypt_sk =>
                     $crate::test_suite::noise::encryption::test_gglwe_switching_key_compressed_encrypt_sk,
                 gglwe_compressed_encrypt_sk => $crate::test_suite::noise::encryption::test_gglwe_compressed_encrypt_sk,
+                gglwe_encrypt_sk_rejects_unset_secret => $crate::test_suite::noise::encryption::test_gglwe_encrypt_sk_rejects_unset_secret,
                 gglwe_automorphism_key_encrypt_sk => $crate::test_suite::noise::encryption::test_gglwe_automorphism_key_encrypt_sk,
                 gglwe_automorphism_key_compressed_encrypt_sk =>
                     $crate::test_suite::noise::encryption::test_gglwe_automorphism_key_compressed_encrypt_sk,

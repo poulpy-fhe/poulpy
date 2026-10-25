@@ -75,6 +75,7 @@ where
             assert!(res.rank_in() == pt_backend.cols() as u32, "res.rank_in() != pt.cols()");
             assert!(res.rank_out() == sk_ref.rank(), "res.rank_out() != sk.rank()");
             operand_degree(self.n(), &[res.n(), sk_ref.n(), pt_backend.n().into()]);
+            crate::layouts::assert_secret_set(&sk_ref.dist);
             assert!(
                 scratch.available() >= GGLWEEncryptSkReference::gglwe_encrypt_sk_tmp_bytes_reference(self, res),
                 "scratch.available(): {} < GGLWEEncryptSk::gglwe_encrypt_sk_tmp_bytes: {}",

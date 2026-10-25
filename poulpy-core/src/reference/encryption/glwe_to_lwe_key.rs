@@ -73,6 +73,7 @@ where
         let sk_glwe = sk_glwe.to_backend_ref();
 
         assert!(sk_lwe.n().0 <= res.n().0);
+        crate::layouts::assert_secret_set(&sk_lwe.dist);
         assert!(
             scratch.available() >= self.glwe_to_lwe_key_encrypt_sk_tmp_bytes_reference(res),
             "scratch.available(): {} < GLWEToLWESwitchingKeyEncryptSk::glwe_to_lwe_key_encrypt_sk_tmp_bytes: {}",
