@@ -258,9 +258,9 @@ pub unsafe trait CKKSPaCoImpl:
         ckks_paco_bootstrap_parallel_into_derived(module, output, input, context, keys, workers, scratch)
     }
 
-    /// Default body: `ckks_slot_trace_assign_tmp_bytes_derived`, the selected `glwe_automorphism_tmp_bytes` of
-    /// `ct_infos` onto itself under `key_infos`. Scratch bound of [`Self::ckks_slot_trace_assign`] under keys laid out
-    /// like `key_infos`; may report less than the reference, never less than the body takes.
+    /// Scratch bound of [`Self::ckks_slot_trace_assign`] under keys laid out like `key_infos`; may report less than the
+    /// reference, never less than the body takes. Default body: `ckks_slot_trace_assign_tmp_bytes_derived`, the
+    /// selected `glwe_automorphism_tmp_bytes` of `ct_infos` onto itself under `key_infos`.
     fn ckks_slot_trace_assign_tmp_bytes<C, K>(module: &Module<Self>, ct_infos: &C, key_infos: &K) -> usize
     where
         C: CKKSCtBounds,

@@ -215,6 +215,16 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     /// `keys` must contain an automorphism key for every non-zero giant rotation
     /// of `lt`. `babies` must cover at least `lt`'s baby rotations; supersets are
     /// allowed (e.g. when sharing a cache across several transforms).
+    ///
+    /// # Errors
+    ///
+    /// Each before any write to `dst`:
+    /// - `InvalidOperand` when the diagonals of `lt` do not share one scale, width and slot kind, or when `src` is of
+    ///   a degree above the module's;
+    /// - `MultiplicationPrecisionUnderflow` or `InsufficientHomomorphicCapacity` when the ciphertext-by-plaintext
+    ///   budget rule leaves no result at `dst`'s width;
+    /// - `MissingAutomorphismKey` for a non-zero giant rotation of `lt` with no key at the output width;
+    /// - `CKKSError::Internal` when `lt` has no diagonals or `babies` lacks one of `lt`'s baby rotations.
     fn ckks_eval_linear_transformation_into<Dst, Src, P, H>(
         &self,
         dst: &mut Dst,

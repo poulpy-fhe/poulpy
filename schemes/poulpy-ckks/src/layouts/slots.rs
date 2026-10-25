@@ -22,8 +22,8 @@ use poulpy_hal::{
 /// Builds the backend-resident constant-`1.0` plaintext used by the
 /// add-one/sub-one facades.
 ///
-/// This currently allocates and uploads a degree-1, single-limb monomial on
-/// each call. The unit-operation scratch query covers the arithmetic workspace.
+/// Each call allocates and uploads a degree-1, single-limb monomial. The
+/// unit-operation scratch query covers the arithmetic workspace.
 pub(crate) fn ckks_one_pt<BE, M>(module: &M, base2k: Base2K) -> Result<CKKSPlaintextOwned<BE>>
 where
     BE: Backend,

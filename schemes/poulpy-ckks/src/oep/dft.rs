@@ -240,7 +240,8 @@ pub unsafe trait DFTMatrixImpl<F: CKKSEncodingScalar>: Backend<Ring = poulpy_hal
         Dir: DftDirection,
         Fmt: DftFormat;
 
-    /// Reproduces [`ckks_new_dft_matrix`](crate::reference::dft::ckks_new_dft_matrix) bit for bit; free in kernels.
+    /// Reproduces [`ckks_new_dft_matrix`](crate::reference::dft::ckks_new_dft_matrix) bit for bit, within
+    /// [`Self::ckks_new_dft_matrix_tmp_bytes`]; free in kernels.
     fn ckks_new_dft_matrix<Dir, Fmt>(
         module: &Module<Self>,
         base2k: Base2K,

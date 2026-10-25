@@ -1,9 +1,9 @@
 //! Homomorphic DFT (CoeffsToSlots / SlotsToCoeffs) — reference implementation.
 //!
-//! Phase 1 hosts the scheme-free factor-matrix generator ([`gen_dft_matrices`]); the
-//! evaluation layer (encode factors, chain linear transforms + rescale, the
-//! real/imag format wrappers) lands in later increments. The homomorphic DFT is
-//! documented as a stage of the bootstrapping pipeline in
+//! Re-exports the scheme-free factor-matrix generator ([`gen_dft_matrices`]) and
+//! holds the evaluation layer: factor encoding, the chain of linear transformations
+//! and the real/imag format wrappers. The homomorphic DFT is documented as a stage
+//! of the bootstrapping pipeline in
 //! [`docs/guides/bootstrapping.md`](https://github.com/poulpy-fhe/poulpy/blob/main/docs/guides/bootstrapping.md).
 
 pub mod eval;
