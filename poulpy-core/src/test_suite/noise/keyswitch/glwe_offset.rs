@@ -333,9 +333,19 @@ where
         let mut single: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&out_infos);
         for (t, input) in inputs.iter().enumerate() {
             if t == 0 {
-                module.glwe_keyswitch(&mut want, input, &ksk.to_backend_ref(), &mut setup.borrow());
+                module.glwe_keyswitch(
+                    &mut want,
+                    input,
+                    &ksk.to_backend_ref(),
+                    &mut poisoned_scratch::<BE>(module.glwe_keyswitch_tmp_bytes(&out_infos, &in_infos, &ksk_infos)).borrow(),
+                );
             } else {
-                module.glwe_keyswitch(&mut single, input, &ksk.to_backend_ref(), &mut setup.borrow());
+                module.glwe_keyswitch(
+                    &mut single,
+                    input,
+                    &ksk.to_backend_ref(),
+                    &mut poisoned_scratch::<BE>(module.glwe_keyswitch_tmp_bytes(&out_infos, &in_infos, &ksk_infos)).borrow(),
+                );
                 module.glwe_add_assign(&mut want, &single);
             }
         }

@@ -172,21 +172,22 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
         | module.vec_znx_big_normalize_tmp_bytes()
         | module.vec_znx_idft_apply_tmp_bytes();
     // The public query sizes one layout at a time, so a caller holding several
-    // takes the max over them; every key set below must fit in exactly that.
+    // takes the max over them; each key set below runs on exactly its own max.
     let plan = LinearTransformationPlan {
         baby_steps: baby_steps.clone(),
         ..Default::default()
     };
-    let mut prep_bytes = 0;
+    let mut stored_bytes = Vec::new();
     for layout in &layouts {
         tmp_bytes |= module.glwe_automorphism_key_encrypt_sk_tmp_bytes(layout)
             | module.glwe_automorphism_tmp_bytes(&ct_infos, &ct_infos, layout)
             | module.glwe_automorphism_key_prepare_tmp_bytes(layout);
-        prep_bytes = prep_bytes.max(module.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(&ct_infos, &plan, layout));
+        stored_bytes.push(module.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(&ct_infos, &plan, layout));
     }
+    let mut coarse_bytes = Vec::new();
     for layout in &coarse {
         tmp_bytes |= module.glwe_automorphism_tmp_bytes(&ct_infos, &ct_infos, layout);
-        prep_bytes = prep_bytes.max(module.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(&ct_infos, &plan, layout));
+        coarse_bytes.push(module.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(&ct_infos, &plan, layout));
     }
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(tmp_bytes);
 
@@ -240,12 +241,18 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
         .skip(1)
         .map(|&rot| module.galois_element(rot))
         .collect();
-    for (atks, layout) in maps.iter().zip(&layouts).take(2) {
+    for (i, (atks, layout)) in maps.iter().zip(&layouts).take(2).enumerate() {
         for coarse_ps in [Vec::new(), half_coarse.clone()] {
             let keys = MixedDsize::<BE> {
                 atks,
                 coarse: TorusPrecision(2 * layout.k_digit.0),
                 coarse_ps: &coarse_ps,
+            };
+            // The mixed set reads two layouts, so its budget is the max of their queries.
+            let prep_bytes = if coarse_ps.is_empty() {
+                stored_bytes[i]
+            } else {
+                stored_bytes[i].max(coarse_bytes[i])
             };
             assert_hoisted_babies_match(
                 module,
@@ -276,7 +283,7 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
         &baby_steps,
         rank,
         product_size,
-        prep_bytes,
+        stored_bytes.iter().copied().fold(0, usize::max),
         &mut scratch,
     );
 }
