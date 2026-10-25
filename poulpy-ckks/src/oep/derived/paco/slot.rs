@@ -49,7 +49,7 @@ where
         let key = keys
             .get_automorphism_key(galois_element(rot, order), ct.k())
             .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
-                op: "paco_slot_trace",
+                op: "ckks_slot_trace_assign",
                 rotation: rot,
                 k: ct.k().into(),
                 source,

@@ -491,6 +491,7 @@
 - **Breaking:** `encoding::ship_coeff_encodings_host(module, ct, plan, base2k, complex)` becomes `(module, base2k, complex, ct, plan)` and `encoding::paco_coeff_encodings_host(module, ct, plan, base2k)` `(module, base2k, ct, plan)`, the order of their API methods, and `poulpy_cpu_portable::ckks_ship::ship_coeff_encodings_staged` and `ckks_paco::paco_coeff_encodings_staged` take the same order; callers reorder their arguments by hand.
 - **Behaviour:** `ShipSecretSpec` implements `Debug` by hand and prints the length of its support only, where it derived `Debug` and printed the support.
 - `ckks_determinism_test_suite!(mod <name>, backend = <type>, f32)` also registers `encoding_determinism_f32`, which the portable and oracle `FFT64` types register in place of their hand-written test.
+- **Behaviour:** the `op` of CKKS errors and of their messages names the invoked public method: `conjugate` and `conjugate_assign` become `ckks_conjugate_into` and `ckks_conjugate_assign`, `rotate` and `rotate_assign` `ckks_rotate_into` and `ckks_rotate_assign`, `div_pow2` and `div_pow2_assign` `ckks_div_pow2_into` and `ckks_div_pow2_assign`, `mul` `ckks_mul` (`ckks_mul_pt` for plaintext products), `mul_prepared` `ckks_mul_prepared`, `linear_transformation` `ckks_eval_linear_transformation` (`ckks_prepare_linear_transformation_baby_steps` when preparing baby steps), `paco_slot_trace` `ckks_slot_trace_assign`, `ship_mux_rotate` and `ship_masking_accumulate` `ckks_ship_mux_rotate` and `ckks_ship_masking_accumulate`.
 
 ### `poulpy-bin-fhe`
 

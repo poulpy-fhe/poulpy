@@ -32,7 +32,7 @@ pub trait CKKSRotateReference<BE: Backend> {
     {
         let offset = ckks_offset_unary(dst, src);
         // Validate before mutating: on error `dst` must remain untouched.
-        let log_budget = checked_log_budget_sub("rotate", src.log_budget(), offset)?;
+        let log_budget = checked_log_budget_sub("ckks_rotate_into", src.log_budget(), offset)?;
 
         // Stamp before the key switch, not after. The key switch normalizes its
         // output at `dst.k()`, so a stale, wider `k` leaves the result carrying

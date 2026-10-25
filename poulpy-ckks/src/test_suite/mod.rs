@@ -50,7 +50,7 @@ impl CKKSTestParams {
         }
     }
 
-    /// `log2(n)`, the ring dimension in bits.
+    /// `log2(n)`: the ring dimension in bits.
     pub fn log_n(&self) -> usize {
         self.n.ilog2() as usize
     }

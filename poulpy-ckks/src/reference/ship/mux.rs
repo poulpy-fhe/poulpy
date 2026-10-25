@@ -77,7 +77,7 @@ where
         + VecZnxGadgetDecompose<BE>
         + GGLWEProductReference<BE>,
 {
-    const OP: &str = "ship_mux_rotate";
+    const OP: &str = "ckks_ship_mux_rotate";
     ckks_ensure!(!keys.is_empty(), "{OP}: empty key group");
     let a_size = ct.size();
     let key_size = keys[0].key.size();

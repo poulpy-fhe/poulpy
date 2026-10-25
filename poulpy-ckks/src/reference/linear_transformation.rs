@@ -195,12 +195,13 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetAutomorphismKey<BE>,
     {
-        let cyclotomic_order = operand_cyclotomic_order("linear_transformation", self, src.n().as_usize())?;
+        let cyclotomic_order =
+            operand_cyclotomic_order("ckks_prepare_linear_transformation_baby_steps", self, src.n().as_usize())?;
         let src_k = src.k();
         for rotation in babies.baby_steps().filter(|&rotation| rotation != 0) {
             if let Err(source) = keys.get_automorphism_key(galois_element(rotation, cyclotomic_order), src_k) {
                 return Err(CKKSCompositionError::MissingAutomorphismKey {
-                    op: "linear_transformation",
+                    op: "ckks_prepare_linear_transformation_baby_steps",
                     rotation,
                     k: src_k.into(),
                     source,
@@ -251,7 +252,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         )?;
         let res_k: TorusPrecision = (res_log_budget + res_log_delta).into();
         debug_assert_eq!(res_k, crate::api::ckks_linear_transformation_output_k(lt, src.k(), dst.k()));
-        let cyclotomic_order = operand_cyclotomic_order("linear_transformation", self, src.n().as_usize())?;
+        let cyclotomic_order = operand_cyclotomic_order("ckks_eval_linear_transformation", self, src.n().as_usize())?;
         check_required_keys(lt, babies, keys, cyclotomic_order, res_k)?;
         // `Σ diag ⊙ rot(src)` has real slots when `src` and the diagonals do, and is sparse where both are: a diagonal is
         // dense at its own degree.
@@ -341,7 +342,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
             pt_max_k,
         )?;
         let res_k: TorusPrecision = (res_log_budget + res_log_delta).into();
-        let cyclotomic_order = operand_cyclotomic_order("linear_transformation", self, dst.n().as_usize())?;
+        let cyclotomic_order = operand_cyclotomic_order("ckks_eval_linear_transformation", self, dst.n().as_usize())?;
         for (&babies_t, &lt_t) in babies.iter().zip(lts) {
             check_required_keys(lt_t, babies_t, keys, cyclotomic_order, res_k)?;
         }
@@ -408,7 +409,7 @@ where
         let gal_el = galois_element(rotation, cyclotomic_order);
         keys.get_automorphism_key(gal_el, giant_k)
             .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
-                op: "linear_transformation",
+                op: "ckks_eval_linear_transformation",
                 rotation,
                 k: giant_k.into(),
                 source,

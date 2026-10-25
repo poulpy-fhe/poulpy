@@ -32,7 +32,7 @@ pub trait CKKSConjugateReference<BE: Backend> {
     {
         let offset = ckks_offset_unary(dst, src);
         // Validate before mutating: on error `dst` must remain untouched.
-        let log_budget = checked_log_budget_sub("conjugate", src.log_budget(), offset)?;
+        let log_budget = checked_log_budget_sub("ckks_conjugate_into", src.log_budget(), offset)?;
 
         // Stamp before the key switch, as in `ckks_rotate_into`: the key switch
         // normalizes at `dst.k()`, so a stale, wider `k` would leave the result

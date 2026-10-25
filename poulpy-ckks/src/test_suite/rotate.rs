@@ -247,7 +247,7 @@ pub fn test_rotate_assign_rejects_missing_key<BE, F, E>(
     assert!(
         matches!(
             err.composition(),
-            Some(CKKSCompositionError::MissingAutomorphismKey { op: "rotate_assign", rotation: 1, k, .. })
+            Some(CKKSCompositionError::MissingAutomorphismKey { op: "ckks_rotate_assign", rotation: 1, k, .. })
                 if *k == params.k as u32
         ),
         "rotate_assign missing_key: unexpected error: {err}"

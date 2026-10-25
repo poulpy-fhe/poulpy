@@ -497,7 +497,7 @@ where
 /// Wide operands into a narrower destination, on a scratch arena of exactly
 /// `ckks_mul_tmp_bytes(res, a, b, tsk)`.
 ///
-/// Regression test: the sizing must account for the operands' widths, the op
+/// Regression test: the sizing must account for the operands' widths: the op
 /// carves its tensor intermediate at `max(a.max_k, b.max_k)`, which exceeds
 /// the destination's width here. Sizing from `res` alone under-allocated and
 /// blew the scratch-arena assert on this documented-legal call.
@@ -1472,7 +1472,7 @@ pub fn test_mul_prepared_assign_rejects_layout_mismatch<BE, F, E>(
         "mul_prepared_layout_mismatch",
         &err,
         CKKSCompositionError::PreparedOperandLayoutMismatch {
-            op: "mul_prepared",
+            op: "ckks_mul_prepared",
             dst_n: params.n,
             dst_base2k: params.base2k,
             dst_rank: 1,
@@ -1653,7 +1653,7 @@ pub fn test_mul_into_rejects_explicit_metadata<BE, F, E>(
         "mul_into_rejects_explicit_metadata",
         &err,
         CKKSCompositionError::MultiplicationPrecisionUnderflow {
-            op: "mul",
+            op: "ckks_mul",
             lhs_log_budget: 8,
             rhs_log_budget: 9,
             lhs_log_delta: params.prec().log_delta(),
