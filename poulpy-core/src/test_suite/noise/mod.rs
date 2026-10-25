@@ -195,7 +195,11 @@ where
     module.glwe_noise(res, pt_want, sk, scratch)
 }
 
-/// Panics unless `op` refuses its input as wider than its key decomposes exactly.
+/// Checks that `op` refuses its input as wider than its key decomposes exactly.
+///
+/// # Panics
+///
+/// Unless `op` panics with that refusal.
 pub fn assert_refuses_uncovered_input(what: &str, op: impl FnOnce()) {
     let err = std::panic::catch_unwind(std::panic::AssertUnwindSafe(op)).expect_err(what);
     let message = crate::test_suite::decryption::panic_message(&*err);

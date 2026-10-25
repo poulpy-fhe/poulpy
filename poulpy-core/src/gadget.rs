@@ -228,7 +228,9 @@ pub fn normalize_input_limb_bound_with_offset(
 /// For `k_offset = 0` and `k_digit = dsize * base2k` this is the scalar added to
 /// limb `(dsize - 1) + row * dsize` and normalized, bit for bit.
 ///
-/// Panics unless the row lies within the precision, `k_offset + (row + 1) * k_digit <= k`.
+/// # Panics
+///
+/// Unless the row lies within the precision, `k_offset + (row + 1) * k_digit <= k`.
 #[allow(clippy::too_many_arguments)]
 pub fn gadget_row_plaintext<BE>(
     module: &poulpy_hal::layouts::Module<BE>,

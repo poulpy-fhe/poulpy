@@ -177,8 +177,11 @@ pub unsafe trait EncryptionImpl: Backend + SamplingImpl + HalVecZnxImpl + GLWENo
     /// Fresh errors are drawn at `k_sample`, which the caller selects in
     /// `[res.k(), pk.k()]`. The product uses the key's leading
     /// `ceil(k_sample / base2k)` limbs and each column is normalized once at
-    /// `res.k()`. Invalid keys, plaintexts, columns or `k_sample` panic before
-    /// the output changes. The caller records the output metadata.
+    /// `res.k()`. The caller records the output metadata.
+    ///
+    /// # Panics
+    ///
+    /// On invalid keys, plaintexts, columns or `k_sample`, before the output changes.
     fn glwe_encrypt_pk_sampled_at<R, P, K>(
         module: &Module<Self>,
         res: &mut R,

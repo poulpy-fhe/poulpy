@@ -28,7 +28,9 @@ pub struct GLWETensorKeyLayout {
 
 /// The tensor key of a stored GGLWE layout (`rank_out` is its rank).
 ///
-/// Panics on a coarsened view (`stride != 1`), which no key is stored as.
+/// # Panics
+///
+/// On a coarsened view (`stride != 1`), which no key is stored as.
 impl From<GGLWELayout> for GLWETensorKeyLayout {
     fn from(layout: GGLWELayout) -> Self {
         assert_eq!(layout.stride, 1, "a coarsened view is not a stored layout");

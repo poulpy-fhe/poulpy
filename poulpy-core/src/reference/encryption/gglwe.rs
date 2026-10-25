@@ -72,20 +72,8 @@ where
             let pt_backend = pt.to_backend_ref();
             let sk_ref = sk.to_backend_ref();
 
-            assert_eq!(
-                res.rank_in(),
-                pt_backend.cols() as u32,
-                "res.rank_in(): {} != pt.cols(): {}",
-                res.rank_in(),
-                pt_backend.cols()
-            );
-            assert_eq!(
-                res.rank_out(),
-                sk_ref.rank(),
-                "res.rank_out(): {} != sk.rank(): {}",
-                res.rank_out(),
-                sk_ref.rank()
-            );
+            assert!(res.rank_in() == pt_backend.cols() as u32, "res.rank_in() != pt.cols()");
+            assert!(res.rank_out() == sk_ref.rank(), "res.rank_out() != sk.rank()");
             assert_eq!(res.n(), sk_ref.n());
             assert_eq!(pt_backend.n() as u32, sk_ref.n());
             assert!(

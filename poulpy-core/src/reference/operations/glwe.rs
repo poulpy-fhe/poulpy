@@ -2627,8 +2627,12 @@ where
 /// Prepares GLWE `b` into the caller-owned scratch `CnvPVecR` `b_prep`.
 ///
 /// `b_prep` holds `b` at width `b_k`: its top `ceil(b_k / base2k)` limbs, which must fit in `b`, normalized first if
-/// its canonical flag is clear, within [`glwe_prepare_right_tmp_bytes`]. Panics unless `b_prep` has that many limbs.
+/// its canonical flag is clear, within [`glwe_prepare_right_tmp_bytes`].
 /// The prepared operand can then be reused across several [`glwe_tensor_apply_prepared_right`] calls.
+///
+/// # Panics
+///
+/// Unless `b_prep` has that many limbs.
 pub fn glwe_prepare_right<BE, M, B, BP>(module: &M, b_prep: &mut BP, b: &B, b_k: usize, scratch: &mut ScratchArena<'_, BE>)
 where
     BE: Backend,

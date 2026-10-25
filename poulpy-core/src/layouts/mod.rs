@@ -191,7 +191,7 @@ pub trait ModuleCoreAlloc {
     /// labelling `k` as the full physical width `size · base2k`. Unlike
     /// [`Self::glwe_alloc`] (which derives `size = ceil(k / base2k)` from a target
     /// `k`), this takes the limb count directly, decoupling the buffer size from
-    /// the effective `k` — relabel the effective `k` afterwards with [`SetK`].
+    /// the effective `k`, relabel the effective `k` afterwards with [`SetK`].
     fn glwe_alloc_with_size(&self, base2k: Base2K, size: usize, rank: Rank) -> GLWE<Self::OwnedBuf, Self::ZnxWord>;
 
     fn gglwe_alloc_from_infos<A: GGLWEInfos>(&self, infos: &A) -> GGLWE<Self::OwnedBuf, Self::ZnxWord>;
@@ -1345,7 +1345,7 @@ newtype_u32!(
 );
 
 newtype_u32!(
-    /// Torus precision in bits — the total number of significant bits
+    /// Torus precision in bits, the total number of significant bits
     /// used to represent elements of the discretised torus *T = R/Z*.
     ///
     /// Wraps a [`u32`] with saturating arithmetic.
@@ -1372,7 +1372,7 @@ newtype_u32!(
 );
 
 newtype_u32!(
-    /// GLWE rank — the number of mask polynomials in a GLWE ciphertext.
+    /// GLWE rank, the number of mask polynomials in a GLWE ciphertext.
     ///
     /// A rank-0 GLWE is equivalent to a plain LWE ciphertext.
     ///
@@ -1668,7 +1668,11 @@ pub(crate) fn validate_noise_components(noise: Option<&crate::ComponentNoise>, c
     Ok(())
 }
 
-/// Panics unless known noise has `components` terms.
+/// Returns `noise` after checking its component count.
+///
+/// # Panics
+///
+/// Unless known noise has `components` terms.
 pub(crate) fn checked_noise(noise: Option<crate::ComponentNoise>, components: usize) -> Option<crate::ComponentNoise> {
     validate_noise_components(noise.as_ref(), components).expect("noise component count does not match the ciphertext");
     noise

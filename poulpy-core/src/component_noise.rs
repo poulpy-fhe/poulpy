@@ -34,7 +34,11 @@ impl std::fmt::Debug for FreshNoiseEstimate {
 
 impl FreshNoiseEstimate {
     /// Records an effective variance in integer coefficient units at `precision`.
-    /// Panics for negative values or NaN; positive infinity is permitted.
+    /// Positive infinity is permitted.
+    ///
+    /// # Panics
+    ///
+    /// For negative values or NaN.
     pub fn new(variance: f64, precision: TorusPrecision) -> Self {
         assert!(variance >= 0.0, "fresh noise variance must be nonnegative and not NaN");
         Self {
@@ -241,7 +245,10 @@ impl ComponentNoise {
     }
 
     /// Replaces all component estimates while preserving the secret provenance.
-    /// Panics for an empty vector or inconsistent creation precisions.
+    ///
+    /// # Panics
+    ///
+    /// For an empty vector or inconsistent creation precisions.
     pub fn with_components(&self, components: Vec<FreshNoiseEstimate>) -> Self {
         assert!(!components.is_empty(), "noise must include a body term");
         let precision = components[0].precision();
@@ -272,8 +279,12 @@ impl ComponentNoise {
         }
     }
 
-    /// Appends zero-noise masks for a layout copy. Panics when reducing rank.
+    /// Appends zero-noise masks for a layout copy.
     /// This preserves the recorded estimates and their creation precision.
+    ///
+    /// # Panics
+    ///
+    /// When reducing rank.
     pub fn with_rank(&self, rank: usize) -> Self {
         assert!(rank >= self.rank(), "cannot truncate noise mask components");
         Self {
@@ -283,7 +294,10 @@ impl ComponentNoise {
     }
 
     /// Combines independent secret shares and their component errors.
-    /// Panics for different base laws, ranks, or an overflowing party count.
+    ///
+    /// # Panics
+    ///
+    /// For different base laws, ranks, or an overflowing party count.
     pub fn aggregate(&self, other: &Self) -> Self {
         assert!(self.secret.base == other.secret.base, "incompatible secret distributions");
         assert!(self.rank() == other.rank(), "incompatible noise component counts");

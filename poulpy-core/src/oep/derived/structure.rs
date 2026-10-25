@@ -39,7 +39,9 @@ mod trace {
         first..(BE::Ring::CYCLOTOMIC_ORDER_FACTOR as usize * n).ilog2() as usize - 1
     }
 
-    /// Panics before any write unless `levels` lies within the trace of a degree-`n` operand.
+    /// # Panics
+    ///
+    /// Before any write, unless `levels` lies within the trace of a degree-`n` operand.
     fn assert_levels<BE: Backend>(n: usize, levels: &Range<usize>) {
         let trace = ring_levels::<BE>(n);
         assert!(

@@ -30,7 +30,9 @@ pub struct GLWEAutomorphismKeyLayout {
 
 /// The automorphism key of a stored GGLWE layout (`rank_out` is its rank).
 ///
-/// Panics on a coarsened view (`stride != 1`), which no key is stored as, and on
+/// # Panics
+///
+/// On a coarsened view (`stride != 1`), which no key is stored as, and on
 /// a row offset, which no automorphism key has.
 impl From<GGLWELayout> for GLWEAutomorphismKeyLayout {
     fn from(layout: GGLWELayout) -> Self {

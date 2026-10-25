@@ -580,9 +580,8 @@ where
             sk.dist != Distribution::NONE,
             "glwe secret distribution is NONE (have you prepared the key?)"
         );
-        assert_eq!(
-            res.cols(),
-            sk.rank().as_usize() + 1,
+        assert!(
+            res.cols() == sk.rank().as_usize() + 1,
             "GLWE encryption expects a full ciphertext with pre-sampled mask columns"
         );
 

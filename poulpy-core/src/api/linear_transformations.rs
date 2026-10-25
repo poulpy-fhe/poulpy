@@ -99,14 +99,16 @@ pub trait GLWELinearTransformations<BE: Backend> {
     ///   convolution domain, so each giant step is one fused accumulation.
     /// - a plaintext diagonal (streamed): each diagonal is prepared on the fly
     ///   into scratch instead of from a materialized
-    ///   `LinearTransformation<PreparedDiagonal>` — lower peak memory, higher
+    ///   `LinearTransformation<PreparedDiagonal>`, lower peak memory, higher
     ///   compute, for implementations constrained by memory bandwidth.
     ///
     /// Both paths share this single evaluator and give the same result. `lhs` may
     /// carry exactly `rhs.baby_steps` or a superset (e.g. the union of baby
     /// rotations needed by several transforms).
     ///
-    /// Panics, before writing `res`, if `rhs` has no diagonal or a giant step
+    /// # Panics
+    ///
+    /// Before writing `res`, if `rhs` has no diagonal or a giant step
     /// without one, if a giant step's first diagonal is not as wide as the
     /// transform's first diagonal, or if `lhs` lacks a baby rotation that `rhs`
     /// reads. The other diagonals are not checked: every diagonal of a
@@ -136,10 +138,11 @@ pub trait GLWELinearTransformations<BE: Backend> {
     /// step's products over every term accumulate in one unnormalized buffer:
     /// pick `base2k` for that many products (`Module::max_base2k`).
     ///
-    /// Panics, before writing `res`, if `babies` is empty or `lts` is not as
+    /// # Panics
+    ///
+    /// Before writing `res`, if `babies` is empty or `lts` is not as
     /// long, if a transform has no diagonal or a giant step without one, or if
-    /// a cache lacks a baby rotation that its transform reads. Also panics before writing `res`
-    /// unless every term shares the first one's giant schedule, source layout,
+    /// a cache lacks a baby rotation that its transform reads, and unless every term shares the first one's giant schedule, source layout,
     /// and first diagonal's layout, width and scale, and every giant step's
     /// first diagonal has that width. The other diagonals are not checked:
     /// every diagonal of a transform shares one width, scale and degree, as the
