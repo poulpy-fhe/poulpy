@@ -485,7 +485,9 @@ where
     assert!(res == before);
 }
 
-pub fn test_ggsw_share_key_precision_mismatch<BE>(module: &Module<BE>)
+/// Finalizing under a key whose `max_input_k` is below the share's precision panics with core's coverage message
+/// and leaves the GGSW unchanged.
+pub fn test_mhe_ggsw_share_finalize_rejects_key_precision<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     Module<BE>: MHEModuleAlloc<BE> + GGSWMHEProtocol<BE> + GLWESwitchingKeyPreparedFactory<BE>,

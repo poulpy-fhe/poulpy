@@ -94,17 +94,17 @@ pub trait LWESecretSampling<BE: Backend> {
 }
 
 /// Allocation and preparation of DFT-domain GLWE secrets.
-pub trait GLWESecretPreparedFactory<B: Backend>
+pub trait GLWESecretPreparedFactory<BE: Backend>
 where
-    Self: GetDegree + SvpPPolBytesOf + SvpPPolAlloc<B>,
+    Self: GetDegree + SvpPPolBytesOf + SvpPPolAlloc<BE>,
 {
-    fn glwe_secret_prepared_alloc(&self, rank: Rank) -> GLWESecretPrepared<B::OwnedBuf, B> {
+    fn glwe_secret_prepared_alloc(&self, rank: Rank) -> GLWESecretPrepared<BE::OwnedBuf, BE> {
         self.glwe_secret_prepared_alloc_from_infos(&GLWESecretLayout {
             n: self.ring_degree(),
             rank,
         })
     }
-    fn glwe_secret_prepared_alloc_from_infos<A>(&self, infos: &A) -> GLWESecretPrepared<B::OwnedBuf, B>
+    fn glwe_secret_prepared_alloc_from_infos<A>(&self, infos: &A) -> GLWESecretPrepared<BE::OwnedBuf, BE>
     where
         A: GLWEInfos,
     {
@@ -133,22 +133,22 @@ where
     /// [`Distribution`] tag onto `res`; it takes no scratch.
     fn glwe_secret_prepare<R, O>(&self, res: &mut R, other: &O)
     where
-        R: GLWESecretPreparedToBackendMut<B> + GetDistributionMut,
-        O: GLWESecretToBackendRef<B> + GetDistribution;
+        R: GLWESecretPreparedToBackendMut<BE> + GetDistributionMut,
+        O: GLWESecretToBackendRef<BE> + GetDistribution;
 }
 
 /// Allocation and preparation of DFT-domain GLWE secret tensors.
-pub trait GLWESecretTensorPreparedFactory<B: Backend>
+pub trait GLWESecretTensorPreparedFactory<BE: Backend>
 where
-    Self: GetDegree + SvpPPolBytesOf + SvpPPolAlloc<B>,
+    Self: GetDegree + SvpPPolBytesOf + SvpPPolAlloc<BE>,
 {
-    fn glwe_secret_tensor_prepared_alloc(&self, rank: Rank) -> GLWESecretTensorPrepared<B::OwnedBuf, B> {
+    fn glwe_secret_tensor_prepared_alloc(&self, rank: Rank) -> GLWESecretTensorPrepared<BE::OwnedBuf, BE> {
         self.glwe_secret_tensor_prepared_alloc_from_infos(&GLWESecretLayout {
             n: self.ring_degree(),
             rank,
         })
     }
-    fn glwe_secret_tensor_prepared_alloc_from_infos<A>(&self, infos: &A) -> GLWESecretTensorPrepared<B::OwnedBuf, B>
+    fn glwe_secret_tensor_prepared_alloc_from_infos<A>(&self, infos: &A) -> GLWESecretTensorPrepared<BE::OwnedBuf, BE>
     where
         A: GLWEInfos,
     {
@@ -187,8 +187,8 @@ where
     /// Before writing `res`, when the ranks or the column counts of `res` and `other` differ.
     fn glwe_secret_tensor_prepared_prepare<R, O>(&self, res: &mut R, other: &O)
     where
-        R: GLWESecretTensorPreparedToBackendMut<B> + GetDistributionMut,
-        O: GLWESecretTensorToBackendRef<B> + GetDistribution;
+        R: GLWESecretTensorPreparedToBackendMut<BE> + GetDistributionMut,
+        O: GLWESecretTensorToBackendRef<BE> + GetDistribution;
 }
 
 /// Tensoring of a GLWE secret with itself.
@@ -213,7 +213,7 @@ pub trait GLWESecretTensorFactory<BE: Backend> {
 }
 
 /// Conversions between LWE and GLWE secrets.
-pub trait SecretConversion<B: Backend> {
+pub trait SecretConversion<BE: Backend> {
     /// Derives the associated rank-1 `GLWESecret` from a `LWESecret` by applying
     /// the X → X⁻¹ automorphism (k = -1). The result is the GLWE polynomial key
     /// whose ring product with a mask decrypts LWE ciphertexts produced by
@@ -225,9 +225,9 @@ pub trait SecretConversion<B: Backend> {
     ///
     /// # Panics
     /// When the degree of `src` differs from the module degree.
-    fn glwe_secret_from_lwe_secret<S>(&self, src: &S) -> GLWESecret<B::OwnedBuf, B::ZnxWord>
+    fn glwe_secret_from_lwe_secret<S>(&self, src: &S) -> GLWESecret<BE::OwnedBuf, BE::ZnxWord>
     where
-        S: LWESecretToBackendRef<B>;
+        S: LWESecretToBackendRef<BE>;
 
     /// Scratch bytes of [`Self::lwe_secret_from_glwe_secret`] for a source GLWE secret of layout `infos`.
     fn lwe_secret_from_glwe_secret_tmp_bytes<A>(&self, infos: &A) -> usize
@@ -264,8 +264,8 @@ pub trait SecretConversion<B: Backend> {
         &self,
         src: &S,
         lwe_n: Degree,
-        scratch: &mut ScratchArena<'_, B>,
-    ) -> LWESecret<B::OwnedBuf, B::ZnxWord>
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> LWESecret<BE::OwnedBuf, BE::ZnxWord>
     where
-        S: GLWESecretToBackendRef<B>;
+        S: GLWESecretToBackendRef<BE>;
 }

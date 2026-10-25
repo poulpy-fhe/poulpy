@@ -194,9 +194,9 @@ pub use crate::core_backend_test_suite;
 
 /// Builds precisely the advertised scratch capacity, poisoned before each operation.
 /// No other operation or backend's budget can conceal an underestimate.
-pub(crate) fn poisoned_scratch<B: poulpy_hal::layouts::Backend>(bytes: usize) -> poulpy_hal::layouts::ScratchOwned<B> {
+pub(crate) fn poisoned_scratch<BE: poulpy_hal::layouts::Backend>(bytes: usize) -> poulpy_hal::layouts::ScratchOwned<BE> {
     poulpy_hal::layouts::ScratchOwned {
-        data: B::from_host_bytes(&vec![0xA5; bytes]),
+        data: BE::from_host_bytes(&vec![0xA5; bytes]),
         _phantom: std::marker::PhantomData,
     }
 }

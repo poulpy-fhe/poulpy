@@ -28,7 +28,7 @@ use crate::{
 /// # Safety
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does.
-/// Every method taking scratch wipes the scratch its query reports before returning.
+/// Every method taking scratch wipes its secret-derived temporaries before returning.
 /// The memory, layout, synchrony and aliasing rules of
 /// `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait EncryptionImpl: Backend + SamplingImpl + HalVecZnxImpl + GLWENormalizeImpl + SecretImpl {
