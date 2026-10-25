@@ -10,5 +10,6 @@ pub mod eval;
 
 pub use crate::layouts::dft_matrices::{gen_dft_matrices, gen_dft_matrices_blockwise};
 pub use eval::{
-    ckks_dft_evaluate_assign, ckks_dft_tmp_bytes, ckks_new_dft_matrix, ckks_prepare_dft_matrix, ckks_prepare_dft_matrix_tmp_bytes,
+    ckks_dft_evaluate_assign, ckks_dft_tmp_bytes, ckks_new_dft_matrix, ckks_new_dft_matrix_tmp_bytes, ckks_prepare_dft_matrix,
+    ckks_prepare_dft_matrix_tmp_bytes,
 };
