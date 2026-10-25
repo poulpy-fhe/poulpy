@@ -146,7 +146,7 @@ pub trait GLWEMulConst<BE: Backend> {
 /// [`Self::glwe_mul_plain_assign`], is an **integer polynomial**, not a Torus
 /// element: LSB-anchored, every encoded limb carries data. The convolution
 /// therefore consumes it at its declared
-/// [`encoded_k()`](crate::layouts::IntPolyInfos::encoded_k), the operand is
+/// [`encoded_k()`](crate::layouts::IntPolyInfos::encoded_k); the operand is
 /// bounded by [`crate::layouts::IntPolyInfos`], so a type that cannot state
 /// its encoded width cannot be passed here. Its `k` labels claimed precision
 /// for budget arithmetic only, and `max_k()` is the allocation, never consumed

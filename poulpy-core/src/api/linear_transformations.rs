@@ -135,7 +135,7 @@ pub trait GLWELinearTransformations<BE: Backend> {
     ///   convolution domain, so each giant step is one fused accumulation.
     /// - a plaintext diagonal (streamed): each diagonal is prepared on the fly
     ///   into scratch instead of from a materialized
-    ///   `LinearTransformation<PreparedDiagonal>`, lower peak memory, higher
+    ///   `LinearTransformation<PreparedDiagonal>`: lower peak memory, higher
     ///   compute, for implementations constrained by memory bandwidth.
     ///
     /// Both paths share this single evaluator and give the same result. `lhs` may
@@ -178,9 +178,10 @@ pub trait GLWELinearTransformations<BE: Backend> {
     ///
     /// Before writing `res`, if `babies` is empty or `lts` is not as
     /// long, if a transform has no diagonal or a giant step without one, or if
-    /// a cache lacks a baby rotation that its transform reads, and unless every term shares the first one's giant schedule, source layout,
-    /// and first diagonal's layout, width and scale, and every giant step's
-    /// first diagonal has that width. The other diagonals are not checked:
+    /// a cache lacks a baby rotation that its transform reads. Also before
+    /// writing `res`, unless every term shares the first one's giant schedule,
+    /// source layout, and first diagonal's layout, width and scale, and every
+    /// giant step's first diagonal has that width. The other diagonals are not checked:
     /// every diagonal of a transform shares one width, scale and degree, as the
     /// encoder produces them, and preparing asserts the degree.
     fn glwe_eval_linear_transformation_sum_into<R, H>(
