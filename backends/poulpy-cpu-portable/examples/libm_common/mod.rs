@@ -74,8 +74,8 @@ impl Setup {
         // Key preparation and function evaluation share this temporary memory.
         let scratch_bytes = operation_tmp_bytes(&self.module, &sizing, &params).max(self.module.ckks_all_ops_tmp_bytes(
             &sizing,
-            &params.tsk_layout(),
             &coeff_layout(),
+            &params.tsk_layout(),
         ));
         let mut scratch = ScratchOwned::<Backend>::alloc(scratch_bytes);
         let (sk_raw, sk) = gen_sk_with_raw(&params, &self.module, &self.host_module, [0x11; 32]);

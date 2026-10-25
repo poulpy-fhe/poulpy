@@ -128,9 +128,9 @@ where
     {
         let bits = exponent.unsigned_abs() as usize;
         if exponent >= 0 {
-            self.ckks_mul_pow2_into(res, input, bits, scratch)?;
+            self.ckks_mul_pow2_into(bits, res, input, scratch)?;
         } else {
-            self.ckks_div_pow2_into(res, input, bits, scratch)?;
+            self.ckks_div_pow2_into(bits, res, input, scratch)?;
         }
         Ok(())
     }

@@ -500,7 +500,7 @@ where
         module.ckks_add_one_assign(&mut sgn, &mut scratch_local)?;
         module.ckks_mul_into(corr, &sgn, &diff, tsk, &mut scratch_local)?;
         let (mut half, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(&*corr);
-        module.ckks_div_pow2_into(&mut half, &*corr, 1, &mut scratch_local)?;
+        module.ckks_div_pow2_into(1, &mut half, &*corr, &mut scratch_local)?;
         module.ckks_copy(corr, &half, &mut scratch_local)?;
         Ok(())
     })

@@ -701,7 +701,7 @@ where
         module.ckks_square_tmp_bytes(input, input, tsk)
     };
     ct + module
-        .ckks_approximation_tmp_bytes(input, input, tsk, approximation)
+        .ckks_approximation_tmp_bytes(input, input, approximation, tsk)
         .max(step)
         .max(module.ckks_copy_tmp_bytes(res, input))
 }

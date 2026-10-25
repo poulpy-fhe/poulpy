@@ -297,7 +297,7 @@ where
                 self.ckks_mul_into(&mut xy, in_half, &it, tsk, &mut scratch_local)?;
                 self.ckks_mul_into(&mut t, &ysqr, &xy, tsk, &mut scratch_local)?;
                 self.ckks_neg_assign(&mut t)?;
-                self.ckks_div_pow2_into(&mut half_y, &it, 1, &mut scratch_local)?;
+                self.ckks_div_pow2_into(1, &mut half_y, &it, &mut scratch_local)?;
                 self.ckks_add_assign(&mut t, &it, &mut scratch_local)?;
                 self.ckks_add_assign(&mut t, &half_y, &mut scratch_local)?;
                 self.ckks_copy(&mut it, &t, &mut scratch_local)?;

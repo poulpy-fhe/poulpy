@@ -104,7 +104,7 @@ macro_rules! impl_unary_op {
             T: poulpy_core::layouts::GGLWEInfos,
             P: poulpy_ckks::CKKSInfos + poulpy_core::layouts::LWEInfos,
         {
-            self.ckks_approximation_tmp_bytes(res, input, tsk, &plan.approximation)
+            self.ckks_approximation_tmp_bytes(res, input, &plan.approximation, tsk)
         }
 
         fn $eval<R, I, P, H>(

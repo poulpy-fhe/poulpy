@@ -320,7 +320,7 @@ where
 {
     module.glwe_trace_assign(res, sum.levels(), sum.reverse, false, keys, scratch);
     if sum.normalize {
-        module.ckks_div_pow2_assign(res, sum.log_count)?;
+        module.ckks_div_pow2_assign(sum.log_count, res)?;
     }
     Ok(())
 }

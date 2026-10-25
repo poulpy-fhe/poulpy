@@ -618,7 +618,7 @@ where
             ckks_sign_into(self, &mut sign, &diff, composite, tsk, conj_key, false, &mut scratch_local)?;
             self.ckks_mul_into(&mut acc, &diff, &sign, tsk, &mut scratch_local)?;
             self.ckks_add_assign(&mut acc, &diff, &mut scratch_local)?;
-            self.ckks_div_pow2_assign(&mut acc, 1)?;
+            self.ckks_div_pow2_assign(1, &mut acc)?;
             self.ckks_copy(res, &acc, &mut scratch_local)?;
             Ok(())
         })

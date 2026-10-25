@@ -79,7 +79,7 @@ Its scale contributes to plaintext multiplication cost and final numerical error
 Transfer the prepared plaintexts to the selected backend with `map_plaintexts` and the application's normal Poulpy host-to-backend transfer path.
 Do not copy the deterministic key generation or encryption helpers from the Poulpy-libm walkthroughs into a production application.
 
-Size scratch memory with `ckks_approximation_tmp_bytes` using the actual input layout, output layout, tensor key layout, and prepared approximation.
+Size scratch memory with `ckks_approximation_tmp_bytes` using the actual output layout, input layout, prepared approximation, and tensor key layout.
 Evaluate with `ckks_eval_approximation`.
 
 ```rust
