@@ -291,10 +291,7 @@ pub(crate) fn shaped_quantize_into<F>(
 where
     F: CKKSEncodingScalar,
 {
-    ensure!(
-        ring_slots == SlotsKind::Complex,
-        "the replicated layout requires the standard ring"
-    );
+    ensure!(ring_slots == SlotsKind::Complex, "{}", crate::shaping::STANDARD_RING_ONLY);
     let period = 2 << layout.log_r();
     ensure!(
         coeffs.len().is_multiple_of(period),

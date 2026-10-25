@@ -38,6 +38,8 @@ pub unsafe trait CKKSRoundImpl: CKKSShapedRoundingImpl {
 /// `0 < lambda <= profile.max_pass_bits()`, so the correction fits
 /// signed 64-bit words. Read every input before overwriting it; `low` is
 /// unchanged. No scratch beyond the supplied buffers is needed.
+/// The reference calls it on standard-ring modules only: the
+/// conjugate-invariant ring refuses replicated layouts.
 pub unsafe trait CKKSShapedRoundingImpl: Backend {
     fn ckks_shaped_round_correction_impl(
         module: &Module<Self>,

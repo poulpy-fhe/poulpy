@@ -47,6 +47,13 @@ pub(crate) fn take_one_pt<'a, BE: Backend + 'a>(
             (1, 1, meta)
         }
         SlotLayout::Replicated(layout) => {
+            if !crate::shaping::supports_ring::<BE>() {
+                return Err(crate::CKKSCompositionError::InvalidOperand {
+                    op: "ckks_one",
+                    reason: crate::shaping::STANDARD_RING_ONLY.into(),
+                }
+                .into());
+            }
             let r = 1usize << layout.log_r();
             let r_inv = Quad::from_usize(r).expect("the period is a small integer").recip();
             let mut coeffs = [Quad::from_usize(0).expect("zero"); MAX_ONE_COEFFS];

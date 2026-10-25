@@ -1,5 +1,5 @@
 use crate::{Scale, ckks_log_delta};
-use poulpy_core::layouts::GLWEPlaintextInfos;
+use poulpy_core::layouts::{GLWEPlaintextInfos, SetGLWEPlaintextInfos};
 use std::collections::HashMap;
 
 use crate::{
@@ -7,14 +7,16 @@ use crate::{
     api::{
         CKKSAddOps, CKKSCIRingMapOps, CKKSCopyOps, CKKSDecryptOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar,
         CKKSEvalModOps, CKKSFoldLayoutOps, CKKSFoldOps, CKKSInnerSumOps, CKKSLinearTransformationOps, CKKSModuleInfos,
-        CKKSMulOps, CKKSNegOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops, CKKSRotateOps, CKKSSubOps,
+        CKKSMulOps, CKKSNegOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops, CKKSRotateOps, CKKSRoundOps, CKKSSubOps,
         LinearTransformationPrepared,
     },
     layouts::{
-        CKKSFoldKeysLayout, CKKSModuleAlloc, RingSwitchKeys,
+        CKKSFoldKeysLayout, CKKSModuleAlloc, ReplicatedConversion, RingSwitchKeys,
         eval_mod::{EvalModPlan, EvalModType, compile_eval_mod},
+        replicated::ReplicatedTransformModule,
     },
     polynomial::SplitStrategy,
+    shaping::ShapingUnit,
 };
 use poulpy_core::{
     GLWECIKeyEncryptSk,
@@ -519,6 +521,52 @@ where
     assert!(module.ckks_encode_coeffs_into(&mut pt, &oversized).is_err());
 }
 
+/// Shaping is negacyclic, so the conjugate-invariant ring refuses replicated
+/// layouts: their encoding, their rounding, the masked one and the conversions.
+pub fn test_conjugate_invariant_replicated_is_refused<BE>(
+    mut params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend<BE::Ring>>,
+) where
+    BE: TestContextBackend<Ring = ConjugateInvariant>,
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
+    Module<BE>: TestContextSharedModule<BE> + CKKSEncodingHostOps<BE, f64> + ReplicatedTransformModule<BE, f64>,
+{
+    params.prec_meta.slots = SlotsKind::Real;
+    let (_, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+    let layout = ShapingUnit::U32_45.layout(2, 24).unwrap();
+    let values = vec![0.0; params.n];
+
+    let mut pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), params.base2k.into(), params.prec().k());
+    pt.set_meta(params.prec().meta());
+    pt.set_slot_layout(SlotLayout::Replicated(layout));
+    assert!(
+        module
+            .ckks_encode_reim_into(&mut pt, &values, &values, &mut scratch.borrow())
+            .is_err()
+    );
+
+    pt.set_slot_layout(SlotLayout::Full);
+    module
+        .ckks_encode_reim_into(&mut pt, &values, &values, &mut scratch.borrow())
+        .unwrap();
+    let mut ct = ckks_encrypt_pt(
+        &params,
+        module,
+        &sk,
+        params.k,
+        &pt.to_host_owned::<BE>(),
+        &mut scratch.borrow(),
+    );
+    ct.set_slot_layout(SlotLayout::Replicated(layout));
+    let mut rounded = alloc_ct(&params, module, params.k - 1);
+    assert!(module.ckks_round_into(&mut rounded, &ct, &mut scratch.borrow()).is_err());
+    assert!(module.ckks_add_one_assign(&mut ct, &mut scratch.borrow()).is_err());
+    assert!(ReplicatedConversion::new::<f64>(module, layout, params.base2k.into(), 20, 30, 8).is_err());
+}
+
 /// Instantiates conjugate invariant encoding and leveled-operation tests.
 #[macro_export]
 macro_rules! conjugate_invariant_ckks_test_suite {
@@ -588,6 +636,13 @@ macro_rules! conjugate_invariant_ckks_test_suite {
                 let module = Module::<$backend>::new(params.n as u64);
                 let host = Module::<HostBytesBackend<<$backend as poulpy_hal::layouts::Backend>::Ring>>::new(params.n as u64);
                 $crate::test_suite::conjugate_invariant::test_conjugate_invariant_inner_sum(params, &module, &host);
+            }
+            #[test]
+            fn ckks_ci_replicated_is_refused() {
+                let params = $params;
+                let module = Module::<$backend>::new(params.n as u64);
+                let host = Module::<HostBytesBackend<<$backend as poulpy_hal::layouts::Backend>::Ring>>::new(params.n as u64);
+                $crate::test_suite::conjugate_invariant::test_conjugate_invariant_replicated_is_refused(params, &module, &host);
             }
             #[test]
             fn ckks_ci_leveled() {

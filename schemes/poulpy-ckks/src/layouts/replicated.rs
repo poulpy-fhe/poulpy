@@ -407,6 +407,11 @@ fn check_period<BE: Backend>(module: &Module<BE>, layout: &ReplicatedLayout) -> 
 where
     Module<BE>: GetDegree,
 {
+    ensure!(
+        crate::shaping::supports_ring::<BE>(),
+        "{}",
+        crate::shaping::STANDARD_RING_ONLY
+    );
     let (k, r) = (1usize << layout.log_k(), 1usize << layout.log_r());
     let half = module.ring_degree().as_usize() / 2;
     ensure!(k * r <= half, "{k} values of period {r} need more than the {half} slots");

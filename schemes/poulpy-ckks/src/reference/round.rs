@@ -9,7 +9,11 @@ use poulpy_hal::{
 };
 
 use crate::oep::CKKSShapedRoundingImpl;
-use crate::{CKKSInfos, ReplicatedLayout, Scale, SetCKKSInfos, SlotLayout, error::CKKSCompositionError, shaping::ShapingProfile};
+use crate::{
+    CKKSInfos, ReplicatedLayout, Scale, SetCKKSInfos, SlotLayout,
+    error::CKKSCompositionError,
+    shaping::{self, ShapingProfile},
+};
 
 /// Scratch required by [`ckks_round_into_reference`].
 pub fn ckks_round_tmp_bytes_reference<BE: Backend, Dst, Src>(module: &Module<BE>, dst: &Dst, src: &Src) -> usize
@@ -55,6 +59,9 @@ where
     let drop = src_k - dst_k;
     if drop > src.log_delta() {
         return Err(invalid(format!("dropping {drop} bits exceeds log_delta={}", src.log_delta())).into());
+    }
+    if matches!(src.slot_layout(), SlotLayout::Replicated(_)) && !shaping::supports_ring::<BE>() {
+        return Err(invalid(shaping::STANDARD_RING_ONLY.into()).into());
     }
     let shaping = match src.slot_layout() {
         SlotLayout::Replicated(layout) if drop > 0 => Some(layout),
