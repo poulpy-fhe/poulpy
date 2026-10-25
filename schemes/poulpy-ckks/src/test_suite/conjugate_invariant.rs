@@ -7,7 +7,7 @@ use crate::{
     api::{
         CKKSAddOps, CKKSCIRingMapOps, CKKSCopyOps, CKKSDecryptOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar,
         CKKSEvalModOps, CKKSFoldLayoutOps, CKKSFoldOps, CKKSInnerSumOps, CKKSLinearTransformationOps, CKKSModuleInfos,
-        CKKSMulOps, CKKSNegOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops, CKKSRotateOps, CKKSRoundOps, CKKSSubOps,
+        CKKSMulOps, CKKSNegOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops, CKKSRotateOps, CKKSSubOps,
         LinearTransformationPrepared,
     },
     layouts::{
@@ -521,8 +521,8 @@ where
     assert!(module.ckks_encode_coeffs_into(&mut pt, &oversized).is_err());
 }
 
-/// Shaping is negacyclic, so the conjugate-invariant ring refuses replicated
-/// layouts: their encoding, their rounding, the masked one and the conversions.
+/// The conjugate-invariant ring refuses the replicated encoding, the masked
+/// one and the conversions.
 pub fn test_conjugate_invariant_replicated_is_refused<BE>(
     mut params: CKKSTestParams,
     module: &Module<BE>,
@@ -561,8 +561,6 @@ pub fn test_conjugate_invariant_replicated_is_refused<BE>(
         &mut scratch.borrow(),
     );
     ct.set_slot_layout(SlotLayout::Replicated(layout));
-    let mut rounded = alloc_ct(&params, module, params.k - 1);
-    assert!(module.ckks_round_into(&mut rounded, &ct, &mut scratch.borrow()).is_err());
     assert!(module.ckks_add_one_assign(&mut ct, &mut scratch.borrow()).is_err());
     assert!(ReplicatedConversion::new::<f64>(module, layout, params.base2k.into(), 20, 30, 8).is_err());
 }
@@ -636,6 +634,13 @@ macro_rules! conjugate_invariant_ckks_test_suite {
                 let module = Module::<$backend>::new(params.n as u64);
                 let host = Module::<HostBytesBackend<<$backend as poulpy_hal::layouts::Backend>::Ring>>::new(params.n as u64);
                 $crate::test_suite::conjugate_invariant::test_conjugate_invariant_inner_sum(params, &module, &host);
+            }
+            #[test]
+            fn ckks_ci_round_error_is_shaped() {
+                let params = $params;
+                let module = Module::<$backend>::new(params.n as u64);
+                let host = Module::<HostBytesBackend<<$backend as poulpy_hal::layouts::Backend>::Ring>>::new(params.n as u64);
+                $crate::test_suite::round::test_round_error_is_shaped_conjugate_invariant(params, &module, &host).unwrap();
             }
             #[test]
             fn ckks_ci_replicated_is_refused() {

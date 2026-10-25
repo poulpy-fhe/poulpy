@@ -32,7 +32,7 @@ The other operations build on it:
 - polynomial evaluation and EvalMod take `MaskedCoeffs` (`encode_bsgs_replicated`, `compile_eval_mod_replicated`), and evaluate each baby step as one shaped linear combination.
 
 Operations that would round plainly or write the guard slots return `InvalidOperand` on a replicated layout: constant additions, rotations by a slot count that is not a multiple of `R`, the full-layout linear transformations and DFT, ModUp, bootstrapping, PaCo and SHIP.
-Shaping is negacyclic, so the conjugate-invariant ring refuses every replicated layout: encoding, rounding, the masked one and the conversion and bootstrapping constructors return an error there.
+The conjugate-invariant ring does not support replicated layouts yet: encoding, the masked one and the conversion and bootstrapping constructors return an error there.
 
 ## Conversions
 

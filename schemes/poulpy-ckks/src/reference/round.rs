@@ -9,11 +9,7 @@ use poulpy_hal::{
 };
 
 use crate::oep::CKKSShapedRoundingImpl;
-use crate::{
-    CKKSInfos, ReplicatedLayout, Scale, SetCKKSInfos, SlotLayout,
-    error::CKKSCompositionError,
-    shaping::{self, ShapingProfile},
-};
+use crate::{CKKSInfos, Scale, SetCKKSInfos, SlotLayout, error::CKKSCompositionError, shaping::ShapingProfile};
 
 /// Scratch required by [`ckks_round_into_reference`].
 pub fn ckks_round_tmp_bytes_reference<BE: Backend, Dst, Src>(module: &Module<BE>, dst: &Dst, src: &Src) -> usize
@@ -60,17 +56,14 @@ where
     if drop > src.log_delta() {
         return Err(invalid(format!("dropping {drop} bits exceeds log_delta={}", src.log_delta())).into());
     }
-    if matches!(src.slot_layout(), SlotLayout::Replicated(_)) && !shaping::supports_ring::<BE>() {
-        return Err(invalid(shaping::STANDARD_RING_ONLY.into()).into());
-    }
     let shaping = match src.slot_layout() {
-        SlotLayout::Replicated(layout) if drop > 0 => Some(layout),
+        SlotLayout::Replicated(layout) if drop > 0 => Some(ShapingProfile::for_ring::<BE::Ring>(&layout)?),
         _ => None,
     };
-    if let Some(layout) = shaping
-        && 2 << layout.log_r() > src.n().as_usize()
+    if let Some(profile) = &shaping
+        && profile.period() > src.n().as_usize()
     {
-        return Err(invalid(format!("period 2^{} exceeds the ring", layout.log_r())).into());
+        return Err(invalid(format!("period 2^{} exceeds the ring", profile.log_r())).into());
     }
 
     crate::ckks_ensure!(
@@ -82,7 +75,7 @@ where
     dst.set_k(dst_k.into());
     match shaping {
         None => module.glwe_normalize(dst, src, scratch),
-        Some(layout) => shaped_round(module, dst, src, &layout, scratch),
+        Some(profile) => shaped_round(module, dst, src, &profile, scratch),
     }
     dst.set_noise(None);
     Ok(())
@@ -97,7 +90,7 @@ fn shaped_round<BE, Dst, Src>(
     module: &Module<BE>,
     dst: &mut Dst,
     src: &Src,
-    layout: &ReplicatedLayout,
+    profile: &ShapingProfile,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: CKKSShapedRoundingImpl,
@@ -105,7 +98,6 @@ fn shaped_round<BE, Dst, Src>(
     Dst: GLWEToBackendMut<BE> + GLWEInfos + CKKSInfos,
     Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
 {
-    let profile = ShapingProfile::new(layout);
     let k = dst.k().as_usize();
     let lambda = (src.k().as_usize() - k).min(profile.max_pass_bits());
     let src_base2k = src.base2k().as_usize();
@@ -138,7 +130,7 @@ fn shaped_round<BE, Dst, Src>(
             &mut carry.to_backend_mut(),
             &mut h.to_backend_mut(),
             &low.to_backend_ref(),
-            &profile,
+            profile,
             lambda,
         );
         // `κ·2^-λ − c·2^-2λ` at radix `λ`, scaled to `κ·2^-k − c·2^-(k+λ)`.

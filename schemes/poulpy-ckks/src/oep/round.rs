@@ -30,16 +30,18 @@ pub unsafe trait CKKSRoundImpl: CKKSShapedRoundingImpl {
 ///
 /// # Safety
 ///
-/// For `g = U(X^(N/(2R)))`, write `h = centered(U^-1 * low mod 2^lambda)`
-/// to `h`, `(low - g*h) / 2^lambda` to limb zero of `carry`, and `-low` to
-/// limb one. Products are negacyclic; inverse multiplication wraps modulo
-/// `2^64`. `low` and `h` have one column and one limb, `carry` one column and
-/// two limbs, all at the same degree divisible by `2R`. The caller provides
-/// `0 < lambda <= profile.max_pass_bits()`, so the correction fits
-/// signed 64-bit words. Read every input before overwriting it; `low` is
-/// unchanged. No scratch beyond the supplied buffers is needed.
-/// The reference calls it on standard-ring modules only: the
-/// conjugate-invariant ring refuses replicated layouts.
+/// For `U = profile.coefficients()` and `g = U(Y)`, write
+/// `h = centered(U^-1 * low mod 2^lambda)` to `h`, `(low - g*h) / 2^lambda`
+/// to limb zero of `carry`, and `-low` to limb one. Products are in the ring
+/// of `profile.ring()`: negacyclic of degree `N` with `Y = X^(N/(2R))` on the
+/// standard ring, and on the conjugate-invariant ring of degree `N` those of
+/// `Z[X]/(X^(2N)+1)` with `Y = X^(N/R)`, on the invariant coefficients.
+/// Inverse multiplication wraps modulo `2^64`. `low` and `h` have one column
+/// and one limb, `carry` one column and two limbs, all at the same degree, a
+/// multiple of `profile.period()`. The caller provides
+/// `0 < lambda <= profile.max_pass_bits()`, so the correction fits signed
+/// 64-bit words. Read every input before overwriting it. `low` is unchanged.
+/// No scratch beyond the supplied buffers is needed.
 pub unsafe trait CKKSShapedRoundingImpl: Backend {
     fn ckks_shaped_round_correction_impl(
         module: &Module<Self>,

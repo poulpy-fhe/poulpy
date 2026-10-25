@@ -1,4 +1,4 @@
-use poulpy_ckks::shaping::ShapingProfile;
+use poulpy_ckks::shaping::{ShapingProfile, ShapingRing};
 use poulpy_hal::layouts::{Backend, HostDataMut, HostDataRef, VecZnxBackendMut, VecZnxBackendRef, ZnxView, ZnxViewMut};
 
 pub(crate) fn shaped_round_correction<BE>(
@@ -19,18 +19,35 @@ pub(crate) fn shaped_round_correction<BE>(
         "ckks_shaped_round_correction: invalid buffers"
     );
     assert!(
-        n.is_multiple_of(2 << profile.log_r()) && lambda > 0 && lambda <= profile.max_pass_bits(),
+        n.is_multiple_of(profile.period()) && lambda > 0 && lambda <= profile.max_pass_bits(),
         "ckks_shaped_round_correction: invalid shaping depth or degree"
     );
-    let stride = n >> (profile.log_r() + 1);
-    let mask = (1u64 << lambda) - 1;
     let c = low.at(0, 0);
+    // The conjugate-invariant ring computes in `Z[X]/(X^(2n)+1)` on the
+    // unfolded coefficients, which the products keep invariant.
+    let unfold = |x: &[i64]| -> Vec<i64> {
+        match profile.ring() {
+            ShapingRing::Standard => x.to_vec(),
+            ShapingRing::ConjugateInvariant => {
+                let mut ambient = vec![0; 2 * n];
+                ambient[..n].copy_from_slice(x);
+                for j in 1..n {
+                    ambient[2 * n - j] = -x[j];
+                }
+                ambient
+            }
+        }
+    };
+    let ambient_c = unfold(c);
+    let m = ambient_c.len();
+    let stride = m / profile.coefficients().len();
+    let mask = (1u64 << lambda) - 1;
     let h = h.at_mut(0, 0);
     for (i, out) in h.iter_mut().enumerate() {
         let mut sum = 0u64;
         for (j, &coefficient) in profile.inverse().iter().enumerate() {
             let shift = j * stride;
-            let term = coefficient.wrapping_mul(c[(i + n - shift) % n] as u64);
+            let term = coefficient.wrapping_mul(ambient_c[(i + m - shift) % m] as u64);
             sum = if i >= shift {
                 sum.wrapping_add(term)
             } else {
@@ -39,11 +56,12 @@ pub(crate) fn shaped_round_correction<BE>(
         }
         *out = ((sum & mask) as i64) << (64 - lambda) >> (64 - lambda);
     }
+    let ambient_h = unfold(h);
     for (i, out) in carry.at_mut(0, 0).iter_mut().enumerate() {
         let mut product = 0i128;
         for (j, &coefficient) in profile.coefficients().iter().enumerate() {
             let shift = j * stride;
-            let term = coefficient as i128 * h[(i + n - shift) % n] as i128;
+            let term = coefficient as i128 * ambient_h[(i + m - shift) % m] as i128;
             product += if i >= shift { term } else { -term };
         }
         *out = ((c[i] as i128 - product) >> lambda) as i64;

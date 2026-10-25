@@ -6,6 +6,7 @@
 //! |----------|----------------|
 //! | [`test_round_unit_shaping_is_plain`] | a replicated layout with `U = 1` rounds as a full layout |
 //! | [`test_round_error_is_shaped`] | the rounding error is `−g·h·2^-(k+λ)` with `\|\|h\|\|_∞ <= 2^(λ−1)` |
+//! | [`test_round_error_is_shaped_conjugate_invariant`] | the same on the conjugate-invariant ring, for the invariant shift of `U` |
 //! | [`test_round_beyond_pass_rounds_plainly_first`] | a drop beyond the pass size rounds plainly to `k + λ`, then shaped |
 //! | [`test_round_rejects_incompatible_layouts`] | mismatched ranks and degrees, and insufficient scratch, leave operands unchanged |
 //! | [`test_round_rejects_invalid_widths`] | a wider destination and a drop beyond `log_delta` |
@@ -14,16 +15,20 @@ use anyhow::Result;
 use poulpy_core::layouts::{GLWEInfos, GLWEToBackendRef, LWEInfos};
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxNormalize, VecZnxNormalizeTmpBytes},
-    layouts::{HostBytesBackend, Module, ScratchOwned, Standard, VecZnxToBackendMut, VecZnxToBackendRef, ZnxView},
+    layouts::{
+        ConjugateInvariant, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchOwned, Standard, VecZnxToBackendMut,
+        VecZnxToBackendRef, ZnxView,
+    },
 };
 
 use super::helpers::{
-    TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, ckks_encrypt, gen_sk, test_vector_1,
+    TestContextBackend, TestContextModule, TestContextSharedModule, TestScalar, alloc_ct, alloc_scratch, ckks_encrypt,
+    ckks_encrypt_pt, gen_sk, gen_sk_with_raw, test_vector_1,
 };
 use crate::{
-    CKKSInfos, GLWEPlaintextInfos, ReplicatedLayout, Scale, SetGLWEPlaintextInfos, SlotLayout,
-    api::CKKSRoundOps,
-    layouts::CKKSCiphertextOwned,
+    CKKSInfos, GLWEPlaintextInfos, ReplicatedLayout, Scale, SetCKKSInfos, SetGLWEPlaintextInfos, SlotLayout, SlotsKind,
+    api::{CKKSEncodingHostOps, CKKSModuleInfos, CKKSRoundOps},
+    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc},
     shaping::{ShapingProfile, ShapingUnit},
     test_suite::{CKKSTestParams, reference_encoder::ReferenceEncoder},
 };
@@ -65,7 +70,7 @@ fn round<BE>(
 ) -> Result<CKKSCiphertextOwned<BE>>
 where
     BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextSharedModule<BE>,
 {
     let mut dst = alloc_ct(params, module, k);
     let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_round_tmp_bytes(&dst, src));
@@ -96,7 +101,7 @@ fn window<BE>(module: &Module<BE>, ct: &CKKSCiphertextOwned<BE>, col: usize, off
 where
     BE: TestContextBackend,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
-    Module<BE>: TestContextModule<BE> + VecZnxNormalize<BE> + VecZnxNormalizeTmpBytes,
+    Module<BE>: TestContextSharedModule<BE> + VecZnxNormalize<BE> + VecZnxNormalizeTmpBytes,
 {
     let mut out = module.vec_znx_alloc(ct.n().as_usize(), 1, 1);
     let mut scratch = ScratchOwned::<BE>::alloc(module.vec_znx_normalize_tmp_bytes());
@@ -204,6 +209,81 @@ where
             .zip(&before)
             .map(|(&a, &b)| centered(a as i128 - b as i128, bits))
             .collect();
+        let h: Vec<i128> = sparse_mul(&inverse, stride, &diff)
+            .into_iter()
+            .map(|x| centered(x, 64))
+            .collect();
+        assert!(h.iter().all(|x| x.abs() <= 1 << (lambda - 1)), "col {col}");
+        assert_eq!(sparse_mul(&g, stride, &h), diff, "col {col}");
+        nonzero |= diff.iter().any(|&x| x != 0);
+    }
+    assert!(nonzero);
+    Ok(())
+}
+
+/// [`test_round_error_is_shaped`] on the conjugate-invariant ring: on the
+/// coefficients unfolded onto `Z[X]/(X^(2N)+1)`, the change is `-g*h` for the
+/// invariant shift of `U`, with `g = (Y^s*U)(X^(N/R))`.
+pub fn test_round_error_is_shaped_conjugate_invariant<BE>(
+    mut params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend<ConjugateInvariant>>,
+) -> Result<()>
+where
+    BE: TestContextBackend<Ring = ConjugateInvariant>,
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
+    Module<BE>: TestContextSharedModule<BE> + CKKSEncodingHostOps<BE, f64> + VecZnxNormalize<BE> + VecZnxNormalizeTmpBytes,
+{
+    params.prec_meta.slots = SlotsKind::Real;
+    let (_, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+    let n = params.n;
+    let values: Vec<f64> = (0..n).map(|i| (i as f64 + 1.0) / (n as f64 + 3.0)).collect();
+    let mut pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), params.base2k.into(), params.prec().k());
+    pt.set_meta(params.prec().meta());
+    module.ckks_encode_reim_into(&mut pt, &values, &vec![0.0; n], &mut scratch.borrow())?;
+    let mut src = ckks_encrypt_pt(
+        &params,
+        module,
+        &sk,
+        params.k,
+        &pt.to_host_owned::<BE>(),
+        &mut scratch.borrow(),
+    );
+    let layout = ShapingUnit::U32_45.layout(0, 8)?;
+    src.set_slot_layout(SlotLayout::Replicated(layout));
+    let lambda = 30.min(src.log_delta());
+    let k = src.k().as_usize() - lambda;
+    let dst = round(module, &src, &params, k)?;
+    assert_eq!(dst.k().as_usize(), k);
+    assert_eq!(dst.log_budget(), src.log_budget());
+    assert_eq!(dst.slot_layout(), SlotLayout::Replicated(layout));
+
+    let profile = ShapingProfile::for_ring::<ConjugateInvariant>(&layout)?;
+    assert_ne!(profile.shift(), 0);
+    let g: Vec<i128> = profile.coefficients().iter().map(|&c| c as i128).collect();
+    let inverse: Vec<i128> = profile.inverse().iter().map(|&c| c as i64 as i128).collect();
+    let unfold = |x: &[i128]| -> Vec<i128> {
+        let mut ambient = vec![0i128; 2 * n];
+        ambient[..n].copy_from_slice(x);
+        for j in 1..n {
+            ambient[2 * n - j] = -x[j];
+        }
+        ambient
+    };
+    let stride = n >> layout.log_r();
+    let bits = lambda + 8;
+    let mut nonzero = false;
+    for col in 0..src.rank().as_usize() + 1 {
+        let before = window(module, &src, col, k as i64 - 8, bits);
+        let after = window(module, &dst, col, k as i64 - 8, bits);
+        let diff: Vec<i128> = after
+            .iter()
+            .zip(&before)
+            .map(|(&a, &b)| centered(a as i128 - b as i128, bits))
+            .collect();
+        let diff = unfold(&diff);
         let h: Vec<i128> = sparse_mul(&inverse, stride, &diff)
             .into_iter()
             .map(|x| centered(x, 64))
