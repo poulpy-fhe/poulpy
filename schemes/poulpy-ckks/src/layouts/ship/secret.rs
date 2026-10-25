@@ -14,9 +14,18 @@ use super::plan::ShipPlan;
 /// The support of a regularly-spaced sparse SHIP secret: the `k`-th nonzero
 /// coefficient sits at `(k*N/h + delta_k) mod N` with `delta_k` in `[-w, w]`
 /// and a uniform sign, all indices distinct, in `k` order.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct ShipSecretSpec {
     support: Vec<(usize, i64)>,
+}
+
+/// Redacting [`Debug`]: the support determines the secret, so only its length is printed.
+impl core::fmt::Debug for ShipSecretSpec {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("ShipSecretSpec")
+            .field("support", &format_args!("<redacted; len {}>", self.support.len()))
+            .finish()
+    }
 }
 
 impl ShipSecretSpec {

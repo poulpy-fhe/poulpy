@@ -329,7 +329,7 @@ where
 }
 
 /// Checks real prepared-basis and one-shot evaluation and folded inputs.
-pub fn test_real_polynomial_parity<BR, BT, F>(params: CKKSTestParams, reference: &Module<BR>, tested: &Module<BT>)
+pub fn test_real_polynomial_parity<BR, BT, F>(params: CKKSTestParams, module_ref: &Module<BR>, module_test: &Module<BT>)
 where
     BR: Backend<ZnxWord = i64> + CKKSPolynomialEvaluationImpl,
     BT: Backend<ZnxWord = i64> + CKKSPolynomialEvaluationImpl,
@@ -337,19 +337,19 @@ where
     Module<BR>: CKKSAllOpsTmpBytes<BR> + GLWETensorKeyPreparedFactory<BR> + GLWEMaskFill<BR>,
     Module<BT>: CKKSAllOpsTmpBytes<BT> + GLWETensorKeyPreparedFactory<BT> + GLWEMaskFill<BT>,
 {
-    assert_eq!(reference.n(), tested.n());
-    let want = real_polynomials::<BR, F>(params, reference);
+    assert_eq!(module_ref.n(), module_test.n());
+    let want = real_polynomials::<BR, F>(params, module_ref);
     assert_untagged("real polynomial", &want);
     assert_eq!(
         want,
-        real_polynomials::<BT, F>(params, tested),
+        real_polynomials::<BT, F>(params, module_test),
         "real polynomial parity differs"
     );
 }
 
 /// Checks complex prepared-basis and one-shot evaluation, folded inputs, and
 /// every EvalMod family with its selected scratch query and unchanged input.
-pub fn test_polynomial_eval_mod_parity<BR, BT, F>(params: CKKSTestParams, reference: &Module<BR>, tested: &Module<BT>)
+pub fn test_polynomial_eval_mod_parity<BR, BT, F>(params: CKKSTestParams, module_ref: &Module<BR>, module_test: &Module<BT>)
 where
     BR: Backend<ZnxWord = i64> + CKKSImpl + CKKSEncodingImpl<F>,
     BT: Backend<ZnxWord = i64> + CKKSImpl + CKKSEncodingImpl<F>,
@@ -357,12 +357,12 @@ where
     Module<BR>: CKKSAllOpsTmpBytes<BR> + CKKSEvalModOps<BR> + GLWETensorKeyPreparedFactory<BR> + GLWEMaskFill<BR>,
     Module<BT>: CKKSAllOpsTmpBytes<BT> + CKKSEvalModOps<BT> + GLWETensorKeyPreparedFactory<BT> + GLWEMaskFill<BT>,
 {
-    assert_eq!(reference.n(), tested.n());
-    let want = complex_polynomials_and_eval_mod::<BR, F>(params, reference);
+    assert_eq!(module_ref.n(), module_test.n());
+    let want = complex_polynomials_and_eval_mod::<BR, F>(params, module_ref);
     assert_untagged("complex polynomial or EvalMod", &want);
     assert_eq!(
         want,
-        complex_polynomials_and_eval_mod::<BT, F>(params, tested),
+        complex_polynomials_and_eval_mod::<BT, F>(params, module_test),
         "complex polynomial or EvalMod parity differs"
     );
 }

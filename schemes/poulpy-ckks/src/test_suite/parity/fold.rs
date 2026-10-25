@@ -583,23 +583,23 @@ where
 /// dense and sparse complex inputs and real pairs at the module degree and below,
 /// under the bootstrap secret and under another secret with ring packing, and
 /// conjugate-invariant batches alone and merged.
-pub fn test_fold_parity<BR, BT, F>(params: CKKSTestParams, reference: &Module<BR>, tested: &Module<BT>)
+pub fn test_fold_parity<BR, BT, F>(params: CKKSTestParams, module_ref: &Module<BR>, module_test: &Module<BT>)
 where
     BR: Backend<ZnxWord = i64, Ring = Standard> + CKKSFoldLayoutImpl + CKKSFoldImpl<Standard> + CKKSFoldImpl<ConjugateInvariant>,
     BT: Backend<ZnxWord = i64, Ring = Standard> + CKKSFoldLayoutImpl + CKKSFoldImpl<Standard> + CKKSFoldImpl<ConjugateInvariant>,
     Module<BR>: CKKSModuleAlloc<BR> + GLWEMaskFill<BR> + GLWEAutomorphismKeyPreparedFactory<BR> + GGLWEPreparedFactory<BR>,
     Module<BT>: CKKSModuleAlloc<BT> + GLWEMaskFill<BT> + GLWEAutomorphismKeyPreparedFactory<BT> + GGLWEPreparedFactory<BT>,
 {
-    assert_eq!(reference.n(), tested.n());
-    check_mixed_radices(reference);
-    check_mixed_radices(tested);
-    check_unfold_errors(reference);
-    check_unfold_errors(tested);
-    check_large_digits(reference);
-    check_large_digits(tested);
-    check_ci_unfold_width(reference);
-    check_ci_unfold_width(tested);
-    let want = run_fold(params, reference);
+    assert_eq!(module_ref.n(), module_test.n());
+    check_mixed_radices(module_ref);
+    check_mixed_radices(module_test);
+    check_unfold_errors(module_ref);
+    check_unfold_errors(module_test);
+    check_large_digits(module_ref);
+    check_large_digits(module_test);
+    check_ci_unfold_width(module_ref);
+    check_ci_unfold_width(module_test);
+    let want = run_fold(params, module_ref);
     assert_untagged("fold", want.iter().flatten().flatten());
-    assert_eq!(want, run_fold(params, tested), "fold differs");
+    assert_eq!(want, run_fold(params, module_test), "fold differs");
 }

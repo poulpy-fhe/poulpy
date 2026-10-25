@@ -44,7 +44,7 @@ where
     results
 }
 
-pub fn test_plaintext_parity<BR, BT, F>(params: CKKSTestParams, r: &Module<BR>, t: &Module<BT>)
+pub fn test_plaintext_parity<BR, BT, F>(params: CKKSTestParams, module_ref: &Module<BR>, module_test: &Module<BT>)
 where
     BR: Backend<ZnxWord = i64> + CKKSPlaintextZnxImpl,
     BT: Backend<ZnxWord = i64> + CKKSPlaintextZnxImpl,
@@ -52,7 +52,7 @@ where
     Module<BT>: GLWEMaskFill<BT>,
 {
     let _scalar = std::marker::PhantomData::<F>;
-    let want = exercise(params, r);
+    let want = exercise(params, module_ref);
     assert_untagged("plaintext", &want);
-    assert_eq!(want, exercise(params, t));
+    assert_eq!(want, exercise(params, module_test));
 }

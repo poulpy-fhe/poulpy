@@ -378,7 +378,7 @@ where
 }
 
 /// Repeated squaring on unit-circle slots should exhaust HE capacity before it blows up numerically.
-pub fn test_repeated_square_exhausts_capacity<BE, F, E>(
+pub fn test_square_into_rejects_exhausted_capacity<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
@@ -439,12 +439,12 @@ pub fn test_repeated_square_exhausts_capacity<BE, F, E>(
     for (idx, (re, im)) in got_re.iter().zip(got_im.iter()).enumerate() {
         assert!(
             re.is_finite() && im.is_finite(),
-            "repeated_square_exhausts_capacity: non-finite slot at index {idx}: ({re:?}, {im:?})"
+            "square_into_rejects_exhausted_capacity: non-finite slot at index {idx}: ({re:?}, {im:?})"
         );
         let norm = *re * *re + *im * *im;
         assert!(
             norm <= F::from_f64(1.25).unwrap(),
-            "repeated_square_exhausts_capacity: slot {idx} escaped unit-circle bound: norm={norm:?}"
+            "square_into_rejects_exhausted_capacity: slot {idx} escaped unit-circle bound: norm={norm:?}"
         );
     }
 
@@ -453,7 +453,7 @@ pub fn test_repeated_square_exhausts_capacity<BE, F, E>(
         .ckks_square_into(&mut no_capacity, &ct, &tsk, &mut scratch.borrow())
         .unwrap_err();
     assert_ckks_error(
-        "repeated_square_exhausts_capacity",
+        "square_into_rejects_exhausted_capacity",
         &err,
         CKKSCompositionError::MultiplicationPrecisionUnderflow {
             op: "mul",

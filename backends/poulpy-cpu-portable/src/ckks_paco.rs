@@ -37,9 +37,9 @@ use poulpy_hal::{
 /// non-representable coefficients, or a failed encoding.
 pub fn paco_coeff_encodings_staged<BE, F, Src>(
     module: &Module<BE>,
+    base2k: Base2K,
     ct: &Src,
     plan: &PaCoPlan,
-    base2k: Base2K,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<[CKKSPlaintextOwned<BE>; 4]>
 where
@@ -58,7 +58,7 @@ where
     let mut owned = module.ckks_ciphertext_alloc_from_infos(ct);
     module.glwe_copy(&mut owned, ct, scratch);
     owned.set_meta_checked(ct.meta())?;
-    paco_coeff_encodings_host::<BE, _, F>(module, &owned, plan, base2k)
+    paco_coeff_encodings_host::<BE, _, F>(module, base2k, &owned, plan)
 }
 
 /// Opts a CPU backend into the reference PaCo coefficient encoding: the
@@ -95,9 +95,9 @@ macro_rules! impl_ckks_paco_coeff_encoding {
             {
                 $crate::ckks_paco::paco_coeff_encodings_staged::<$be, F, Src>(
                     module,
+                    context.base2k(),
                     ciphertext,
                     context.plan(),
-                    context.base2k(),
                     scratch,
                 )
                 .map_err(::poulpy_ckks::CKKSError::from)

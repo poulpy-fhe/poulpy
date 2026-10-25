@@ -139,9 +139,9 @@ macro_rules! impl_oracle_ckks_coeff_encodings {
                 owned.set_meta_checked(ciphertext.meta())?;
                 Ok(::poulpy_ckks::encoding::paco_coeff_encodings_host::<$be, _, S>(
                     module,
+                    context.base2k(),
                     &owned,
                     plan,
-                    context.base2k(),
                 )?)
             }
         }
@@ -191,7 +191,7 @@ macro_rules! impl_oracle_ckks_coeff_encodings {
                 module.glwe_copy(&mut owned, ciphertext, scratch);
                 owned.set_meta_checked(ciphertext.meta())?;
                 Ok(::poulpy_ckks::encoding::ship_coeff_encodings_host::<$be, _, S>(
-                    module, &owned, plan, base2k, complex,
+                    module, base2k, complex, &owned, plan,
                 )?)
             }
         }

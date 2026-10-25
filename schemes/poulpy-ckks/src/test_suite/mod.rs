@@ -50,7 +50,7 @@ impl CKKSTestParams {
         }
     }
 
-    /// `log2(n)` — the ring dimension in bits.
+    /// `log2(n)`, the ring dimension in bits.
     pub fn log_n(&self) -> usize {
         self.n.ilog2() as usize
     }
@@ -206,7 +206,7 @@ pub const BASE52_PARAMS_QUAD: CKKSTestParams = CKKSTestParams {
 /// pow2, rotate, inner sum and replicate, and conjugate.
 ///
 /// The full [`ckks_backend_test_suite!`](crate::ckks_backend_test_suite) hardwires rank-1-only pipelines
-/// (bootstrapping, EvalMod, DFT, PaCo — which reject `rank != 1` by
+/// (bootstrapping, EvalMod, DFT, PaCo, which reject `rank != 1` by
 /// construction), so higher-rank coverage uses this subset instead.
 /// [`BASE52_PARAMS_F64`] at GLWE rank 2, for the rank-generic arithmetic
 /// subset ([`ckks_backend_rank2_test_suite!`](crate::ckks_backend_rank2_test_suite)).
@@ -439,32 +439,32 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::encryption::test_decrypt_extract_lsh_for_larger_log_delta
             );
             run_test!(
-                decrypt_extract_output_hom_rem_too_large,
-                $crate::test_suite::encryption::test_decrypt_extract_output_hom_rem_too_large
+                decrypt_rejects_output_hom_rem_too_large,
+                $crate::test_suite::encryption::test_decrypt_rejects_output_hom_rem_too_large
             );
             run_test!(
-                decrypt_extract_base2k_mismatch_error,
-                $crate::test_suite::encryption::test_decrypt_extract_base2k_mismatch_error
+                decrypt_rejects_base2k_mismatch,
+                $crate::test_suite::encryption::test_decrypt_rejects_base2k_mismatch
             );
             run_test!(
-                decrypt_extract_degree_mismatch_error,
-                $crate::test_suite::encryption::test_decrypt_extract_degree_mismatch_error
+                decrypt_rejects_degree_mismatch,
+                $crate::test_suite::encryption::test_decrypt_rejects_degree_mismatch
             );
             run_test!(
-                add_pt_vec_alignment_error,
-                $crate::test_suite::errors::test_add_pt_vec_alignment_error
+                add_pt_vec_assign_rejects_alignment,
+                $crate::test_suite::errors::test_add_pt_vec_assign_rejects_alignment
             );
             run_test!(
-                encode_linear_transformation_zero_k_error,
-                $crate::test_suite::errors::test_encode_linear_transformation_zero_k_error
+                encode_linear_transformation_from_diagonals_rejects_zero_k,
+                $crate::test_suite::errors::test_encode_linear_transformation_from_diagonals_rejects_zero_k
             );
             run_test!(
                 encode_linear_transformation_into,
                 $crate::test_suite::errors::test_encode_linear_transformation_into
             );
             run_test!(
-                encode_bsgs_zero_k_error,
-                $crate::test_suite::errors::test_encode_bsgs_zero_k_error
+                encode_bsgs_with_rejects_zero_k,
+                $crate::test_suite::errors::test_encode_bsgs_with_rejects_zero_k
             );
             run_test!(add_ct_aligned, $crate::test_suite::add::test_add_ct_aligned);
             run_test!(add_ct_delta_a_lt_b, $crate::test_suite::add::test_add_ct_delta_a_lt_b);
@@ -529,8 +529,8 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::add::test_add_pt_vec_into_smaller_output
             );
             run_test!(
-                add_pt_vec_base2k_mismatch_error,
-                $crate::test_suite::add::test_add_pt_vec_base2k_mismatch_error
+                add_pt_vec_assign_rejects_base2k_mismatch,
+                $crate::test_suite::add::test_add_pt_vec_assign_rejects_base2k_mismatch
             );
             run_test!(sub_ct_aligned, $crate::test_suite::sub::test_sub_ct_aligned);
             run_test!(sub_ct_delta_a_lt_b, $crate::test_suite::sub::test_sub_ct_delta_a_lt_b);
@@ -607,8 +607,8 @@ macro_rules! ckks_backend_test_suite {
                 $rotations
             );
             run_test!(
-                rotate_assign_missing_key_error,
-                $crate::test_suite::rotate::test_rotate_assign_missing_key_error
+                rotate_assign_rejects_missing_key,
+                $crate::test_suite::rotate::test_rotate_assign_rejects_missing_key
             );
             run_test!(
                 linear_transformation,
@@ -780,13 +780,13 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::mul::test_mul_pt_scale_above_ct
             );
             run_test!(
-                mul_prepared_layout_mismatch_error,
-                $crate::test_suite::mul::test_mul_prepared_layout_mismatch_error
+                mul_prepared_assign_rejects_layout_mismatch,
+                $crate::test_suite::mul::test_mul_prepared_assign_rejects_layout_mismatch
             );
             run_test!(prepare_into, $crate::test_suite::mul::test_prepare_into);
             run_test!(
-                mul_ct_explicit_metadata_error,
-                $crate::test_suite::mul::test_mul_ct_explicit_metadata_error
+                mul_into_rejects_explicit_metadata,
+                $crate::test_suite::mul::test_mul_into_rejects_explicit_metadata
             );
             run_test!(mul_pow2_aligned, $crate::test_suite::mul_pow2::test_mul_pow2_aligned);
             run_test!(
@@ -801,8 +801,8 @@ macro_rules! ckks_backend_test_suite {
             );
             run_test!(div_pow2_assign, $crate::test_suite::mul_pow2::test_div_pow2_assign);
             run_test!(
-                div_pow2_assign_explicit_error,
-                $crate::test_suite::mul_pow2::test_div_pow2_assign_explicit_error
+                div_pow2_assign_rejects_insufficient_capacity,
+                $crate::test_suite::mul_pow2::test_div_pow2_assign_rejects_insufficient_capacity
             );
             run_test!(mul_i_aligned, $crate::test_suite::imag::test_mul_i_aligned);
             run_test!(
@@ -824,8 +824,8 @@ macro_rules! ckks_backend_test_suite {
             );
             run_test!(composition_poly2_mul, $crate::test_suite::composition::test_poly2_mul);
             run_test!(
-                composition_repeated_square_exhausts_capacity,
-                $crate::test_suite::composition::test_repeated_square_exhausts_capacity
+                composition_square_into_rejects_exhausted_capacity,
+                $crate::test_suite::composition::test_square_into_rejects_exhausted_capacity
             );
             run_test!(add_many_aligned, $crate::test_suite::add_many::test_add_many_aligned);
             run_test!(

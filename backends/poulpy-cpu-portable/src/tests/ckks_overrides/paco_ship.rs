@@ -61,9 +61,9 @@ unsafe impl poulpy_ckks::oep::CKKSPaCoCoeffEncodingImpl for OverrideBackend {
         with_marked_region::<PACO_ENCODING_EXTRA, _>(scratch, |rest| {
             crate::ckks_paco::paco_coeff_encodings_staged::<Self, F, Src>(
                 module,
+                context.base2k(),
                 ciphertext,
                 context.plan(),
-                context.base2k(),
                 rest,
             )
             .map_err(poulpy_ckks::CKKSError::from)

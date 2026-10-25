@@ -39,7 +39,7 @@ ckks_backend_test_suite!(
     rotations = super::ATK_ROTATIONS,
 );
 
-ckks_determinism_test_suite!(mod ckks_determinism_fft64oracle, backend = crate::FFT64Oracle);
+ckks_determinism_test_suite!(mod ckks_determinism_fft64oracle, backend = crate::FFT64Oracle, f32);
 
 ckks_determinism_test_suite!(mod ckks_determinism_ntt4x30oracle, backend = crate::NTT4x30Oracle);
 
@@ -358,12 +358,4 @@ poulpy_ckks::ckks_encryption_parity_test_suite! {
     backend_ref = crate::FFT64CIOracle,
     backend_test = crate::NTT4x30CIOracle,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
-}
-
-#[test]
-fn ckks_encoding_determinism_f32() {
-    use poulpy_hal::layouts::Module;
-    let module = Module::<crate::FFT64Oracle>::new(4096);
-    poulpy_ckks::test_suite::determinism::encoding_fixtures::<crate::FFT64Oracle, f32>(&module);
-    poulpy_ckks::test_suite::determinism::setup_fixtures::<crate::FFT64Oracle, f32>(&module);
 }

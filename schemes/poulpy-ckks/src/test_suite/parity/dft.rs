@@ -266,7 +266,7 @@ where
 
 /// Checks all DFT dispatch methods, both directions, each valid format, sparse
 /// and dense layouts, prepared and streamed factors, and the shared scratch contract.
-pub fn test_dft_parity<BR, BT, F>(params: CKKSTestParams, reference: &Module<BR>, tested: &Module<BT>)
+pub fn test_dft_parity<BR, BT, F>(params: CKKSTestParams, module_ref: &Module<BR>, module_test: &Module<BT>)
 where
     BR: Backend<ZnxWord = i64> + DFTImpl + DFTMatrixImpl<F> + CKKSEncodingImpl<F>,
     BT: Backend<ZnxWord = i64> + DFTImpl + DFTMatrixImpl<F> + CKKSEncodingImpl<F>,
@@ -274,8 +274,8 @@ where
     Module<BR>: GLWEAutomorphismKeyPreparedFactory<BR> + GLWEMaskFill<BR>,
     Module<BT>: GLWEAutomorphismKeyPreparedFactory<BT> + GLWEMaskFill<BT>,
 {
-    assert_eq!(reference.n(), tested.n());
-    let want = run::<BR, F>(params, reference);
+    assert_eq!(module_ref.n(), module_test.n());
+    let want = run::<BR, F>(params, module_ref);
     assert_untagged("DFT", &want);
-    assert_eq!(want, run::<BT, F>(params, tested), "DFT parity differs");
+    assert_eq!(want, run::<BT, F>(params, module_test), "DFT parity differs");
 }
