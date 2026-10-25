@@ -8,7 +8,7 @@ Generic rules: `docs/review/workspace.md` section 12.
 
 - **Protocol traits.** Every protocol is one API trait `<Thing>MHEProtocol<BE>` (OEP `<Thing>MHEProtocolImpl`, reference `<Thing>MHEProtocolReference<BE>`), `<Thing>` naming the finalized core object (`GGSW`) or the ciphertext-transforming protocol (`GLWEEncToShare`, share `GLWEEncToShareShare`).
 - **Protocol methods.** A protocol's API and OEP traits hold exactly, in this order, `mhe_<thing>_share_gen_tmp_bytes`, `mhe_<thing>_share_gen`, `mhe_<thing>_share_aggregate`, `mhe_<thing>_share_finalize_tmp_bytes`, `mhe_<thing>_share_finalize`, `<thing>` being `<Thing>` in snake case, and its reference trait keeps that order.
-- **One share type per protocol.** Each protocol has its own `<Thing>Share<D, W>` (alias `<Thing>ShareOwned<BE>`) wrapping PAT or core layouts plus its result's metadata, taken instead of a bare PAT.
+- **One share type per protocol.** Each protocol has its own `<Thing>Share<D, W>` (alias `<Thing>ShareOwned<BE>`) wrapping PAT or core layouts plus its result's metadata, taken instead of a bare PAT; share types hold only published data, a party's private share (`secret` in the sharing conversions) staying a caller-owned core layout.
 - **PAT base traits.** Each PAT type has one trait `<PatType>Ops` (OEP `<PatType>Impl`, reference `<PatType>Reference`) with only `<pat>_aggregate_assign(res, a)`, `<pat>_finalize_tmp_bytes()` and `<pat>_finalize(res, pat, scratch)`, operands generic over core's backend-borrow, seed and infos traits.
 - **Non-protocol operations.** An operation outside gen, aggregate and finalize has a trait without `MHEProtocol` and `mhe_`-prefixed methods.
 - **Scheme-specific protocols.** A scheme-specific protocol lives under `poulpy-mhe/src/<scheme>/` mirroring the crate layers, with the scheme in every name (`<Scheme><Thing>MHEProtocol`, `<Scheme><Thing>Share`, `mhe_<scheme>_<thing>_share_*`) and share allocators in `MHE<Scheme>ModuleAlloc: MHEModuleAlloc`; scheme-agnostic protocols stay at the crate root.
@@ -32,10 +32,10 @@ Generic rules: `docs/review/workspace.md` section 3.
 - **Module exports.** `api` and `layouts` are glob re-exported at the crate root, `oep` and `reference` namespaced, `delegates` private, in scheme modules too.
 - **Delegates pass seeds through.** An mhe delegate passes `seed` and every `&mut Source` unchanged, with no child-seed adaptation (`docs/review/workspace.md` section 3).
 - **OEP trait supertraits.** An mhe OEP trait's supertraits are exactly the OEP families its default bodies call, else `Backend` (`docs/review/workspace.md` section 3), and each OEP method's doc names the seeds, degrees, Galois element and checks it reproduces.
-- **Compositions are default bodies.** An aggregation or finalization composing only PAT, hal `MatZnx` or core seeded-mask-fill operations is a default body, its checks or metadata steps in `pub(crate) fn <method>_derived<BE: <families it calls>>(module: &Module<BE>, ..)` of `oep/derived/<stem>.rs` (a pure one-call forward may stay inline) and its query the dispatched family's query.
+- **Compositions are default bodies.** An aggregation or finalization composing only PAT, hal `MatZnx` or core seeded-mask-fill operations is a default body, its checks or metadata steps in `pub(crate) fn <method>_derived<BE: <families it calls>>(module: &Module<BE>, ..)` of `oep/derived/<stem>.rs`, the default body being that one call, and its query the dispatched family's query.
 - **Reference traits.** A family's reference is a public `trait <X>Reference<BE: Backend>` blanket-implemented on `Module<BE>`, with one `<method>_reference` per required OEP method, queries included, and none for a defaulted one, calling the public API on `self` or public core helpers without an API form (`gadget_row_plaintext`); moving a method between default body and reference updates the opt-in macro, its "Operation map" row and the CHANGELOG.
 - **Opt-in macros.** Each OEP trait has one `#[macro_export]` `impl_<family>_reference_full!($be:ty)` (`impl_<family>_derived_full!` when every method defaults), documented "Selects the reference ..." with the methods left to default bodies, implementing exactly its required methods by forwarding to `<::poulpy_hal::layouts::Module<$be> as $crate::reference::<X>Reference<$be>>::<method>_reference`; `impl_mhe_reference_full!` invokes every family macro.
-- **No reference outside the macros.** `layouts`, `api`, `delegates` and `oep` (`oep::derived` included) never import `crate::reference`, without exemption (`docs/review/workspace.md` section 3): shared helpers live in a crate-private module outside `reference`.
+- **No reference outside the macros.** `layouts`, `api`, `delegates` and `oep` (`oep::derived` included) name `crate::reference` only in opt-in macro bodies and rustdoc links (`docs/review/workspace.md` section 3): shared helpers live in a crate-private module outside `reference`.
 
 ## 3. Gen, aggregate and finalize
 
@@ -78,7 +78,7 @@ Generic rule: `docs/review/workspace.md` section 9.
 
 ## 5. Seeds, floods and the threat model
 
-- **Semi-honest threat model.** Each protocol trait documents what a dishonest input reveals instead of checking it (section 10).
+- **Semi-honest threat model.** Each protocol trait documents what a dishonest input reveals instead of checking it (section 8).
 - **Common seed.** Common randomness comes only from `seed: [u8; 32]` (no `source_xa`), further seeds derived by `Source::new(seed)` and `new_seed()` in a trait-documented order (`docs/review/workspace.md` section 10), a seed copied where two parts share masks (each `circ_u[j]` takes `circ_s[j]`'s seeds).
 - **Private streams.** Floods draw from `source_smudge`, never `source_xe`, and library code never seeds a private stream from the common seed.
 - **Caller-owned randomness obligations.** Caller obligations (`docs/review/workspace.md` section 10), documented (section 8) and never enforced: a fresh seed per result, seeds separated by protocol, session and key, private streams independently seeded per party and purpose and never replayed, the secret distribution. Structural checks within one object stay, such as distinct public key entry seeds (section 3.1).
@@ -117,13 +117,4 @@ Generic rules: `docs/review/workspace.md` section 11.
 - **Registration by hand.** Every new test enters `mhe_backend_test_suite!` as `#[test] fn <name without test_>() { $crate::test_suite::<stem>::test_<name>(&Module::<$backend>::new(N)); }`, `N = 256` for correctness and `N = 64` for guards, panics and small checks.
 - **Rejection tests.** A rejection test calls `fixtures::assert_panics_with("<full message>", || ..)` once per message, then compares the output with a pre-call clone and each private stream with a fresh `Source` on its seed (`docs/review/workspace.md` section 15).
 - **Protocol correctness tests.** A correctness test runs `PARTIES` parties with distinct fixed seeds (`Source::new([base + i; 32])`), covers a wider key, `dsize > 1` or off-limb digits, a narrower share and binary and ternary secrets, and checks decryption under `fixtures::ideal_secret` within a stated bound, metadata of shares, aggregate and result (`assert_collective_metadata`, `assert_fresh_noise`, `assert_noise_components`) and measured noise against the recorded estimate.
-- **Parity on every type.** Every backend type registering mhe runs the mhe parity suite (`mhe_parity_test_suite!`) against its attested link (`docs/review/backends.md` section 3.5), and `mhe_backend_test_suite!` runs on the oracle and poulpy-cpu-portable's serial types only (`docs/review/workspace.md` section 15).
-
-## 10. Do not report
-
-In addition to `docs/review/workspace.md` section 18:
-
-- Active-adversary findings: missing commitments, proofs, authentication or provenance checks on shares and inputs, and malicious-party attacks.
-- A missing headroom check or normalization in aggregation, or a missing normalize operation on a PAT or protocol trait.
-- Missing layout or serialization unit tests of a PAT or share wrapper that only forwards to a tested core layout.
-- A point repeated across protocol trait docs, an exception to `docs/review/workspace.md` section 13.
+- **Parity on every type.** Every backend type registering mhe runs the mhe parity suite (`mhe_parity_test_suite!`) against its attested link (`docs/review/backends.md` section 3.5), and `mhe_backend_test_suite!` runs at least on the oracle and poulpy-cpu-portable's serial types (`docs/review/workspace.md` section 15).

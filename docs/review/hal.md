@@ -74,7 +74,7 @@ Generic rules: `docs/review/workspace.md` sections 2 and 3.
 
 ## 4. Delegates
 
-Generic rule: `docs/review/workspace.md` section 3 ("Delegates are a plain dispatch").
+Generic rule: `docs/review/workspace.md` section 3 (delegates are a plain dispatch).
 
 - **Delegates use the family macro.** Ring-arithmetic and query delegates are one `impl_<family>_delegate!` invocation per trait, fenced `Backend<ZnxWord = i64> + Hal<Family>Impl` (standard-only ops via the `monomial` and `ci` arms of `impl_vec_znx_delegate!`), and a new family macro keeps the fence and updates the macro count in the fence comment of `poulpy-hal/src/delegates/vec_znx.rs`.
 - **Support delegates are plain.** Only allocation, `bytes_of_*`, plan-constructor, module and scratch delegates are plain `impl` blocks, bounded only by `B: Backend` (plus `HalModuleImpl` for module hooks, the OEP family for a plan constructor), forwarding to the owned `alloc` or inherent `Module` allocator and to `Backend::bytes_of_<layout>`.
@@ -168,7 +168,7 @@ Generic rules: `docs/review/workspace.md` sections 15 and 16.
 - **Signatures follow the macros.** A HAL test takes `(params: &TestParams, module: &Module<BE>)` for `backend_test_suite!` or `(params: &TestParams, module_ref: &Module<BR>, module_test: &Module<BT>)` for `cross_backend_test_suite!`, another signature only for an object the macros cannot build, called from a backend `#[test]`; its bounds are `TestBackend`, its API traits and, for an `oep::*_derived` call outside `HalVecZnxImpl`, that family.
 - **Suites use the given modules.** A suite function builds no `Module`, runs ops as `module.<op>(..)`, and below the API calls only the pinning tests' `oep::<op>_derived` and module-free `Backend` items (transfer hooks, `bytes_of_*`, `MIN_DEGREE`, capability flags).
 - **Degree sweep.** Suite tests compute at `params.n` (`params.size` is the module degree, not a limb count), adding a `module.n()` leg when needed and filtering lower degrees by `BE::MIN_DEGREE` (a module-independent op: every degree its `domain` admits), and HAL registrations set `n` to `MIN_DEGREE` below `size`, except statistical sampling, named large-ring and core noise suites.
-- **Register on every backend.** A new HAL test joins, in the same PR, the `backend_test_suite!` or `cross_backend_test_suite!` lists of every implementing backend type in every crate (the oracle's conjugate-invariant tables and the FFT64 and NTT families included, where they exist), a default-body pin joining each `derived` suite, and Rayon twins register their overridden ops at sizes past their parallel-work floors.
+- **Register on every backend.** A new HAL test joins, in the same PR, the `backend_test_suite!` or `cross_backend_test_suite!` lists of every implementing backend type in every crate (the oracle's conjugate-invariant tables and the FFT64 and NTT families included, where they exist), a default-body pin joining each `derived` suite, and a Rayon twin registering only the ops it parallelizes or overrides, at sizes past its parallel-work floors.
 - **CI filter tokens.** A HAL test name, or a backend `#[test]` calling a module-free suite function (`raw_transform_matches_contract`), carries a base filter token of `.github/scripts/test-backend.sh` (`test_vec_znx`), a new prefix extending the list.
 - **Arenas are exact.** A HAL arena is a `0xA5`-poisoned `ScratchOwned::alloc` of each side's own queries (`module_ref.<op>_tmp_bytes`, `module_test.<op>_tmp_bytes`), the tested op alone on its arena, and a direct derived call on `<op>_tmp_bytes_derived`.
 - **Cross-backend protocol.** Inputs are drawn once on `module_ref` and uploaded, coefficient results compared bit for bit, `VecZnxBig` results after `vec_znx_big_normalize`, and `VecZnxDft` and prepared results only through `vec_znx_idft_apply` and `vec_znx_big_normalize` (or a product through them).
@@ -183,13 +183,3 @@ Generic rules: `docs/review/workspace.md` sections 15 and 16.
 - **Capability legs are gated.** A leg needing an optional capability runs only when every backend involved declares it (`if BR::DFT_LIMBS_CONTIGUOUS && BT::DFT_LIMBS_CONTIGUOUS`), the op staying tested everywhere.
 - **Shared suite helpers.** A helper shared by suite files lives once, `pub(crate)` in its concept's file (`assert_canonical` in `vec_znx.rs`; `idft_into_alloc`, `dft_of_uploaded_vec_znx`, `idft_apply_to_host` in `vec_znx_dft.rs`), imported, never redefined.
 - **Unsafe code gets Miri tests.** New or changed `unsafe` code in poulpy-hal gets a Miri-sized `#[cfg(test)]` unit test inside `poulpy-hal/src` that reaches it, foreign calls compiling out under `cfg(miri)` (`advise_hugepage`).
-
-## 12. Do not report
-
-Never report or request these, in addition to `docs/review/workspace.md` section 18:
-
-- A missing `MaxBase2k` impl without a failure model or on `HostBytesBackend`, or a request for a placeholder radix or an `Option` return.
-- The empty `unsafe impl` every backend needs for an op's own layout family.
-- HAL `_tmp_bytes` over-reservation below the module degree, or a request for a degree argument on a HAL query.
-- A proposal to store a radix, precision or canonical flag on a HAL layout.
-- The floating-point error of `NegacyclicFFT`.

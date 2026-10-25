@@ -11,7 +11,7 @@ Entry point for reviewing a poulpy diff: the one file a review needs to be given
   4. Read a picked file in full when the change fits no kind, or when the diff adds a crate, a layer, an OEP family or a registration macro.
 - **Kinds.** Classify by what the diff does, not by the files it touches: a pure rename is the names row alone, and a rename that also changes behaviour adds the rows of that behaviour; a fix is the defect-fix row plus the rows of what it fixes.
 - **Reading a section.** Sections are numbered headings (`## 5.`, `### 5.1.`), and a section includes its subsections. List them with `grep -n '^#' <file>` and read from a heading to the next heading of the same or a higher level.
-- **Precedence.** Current owner instructions come first, then these files, then the contract sources (`docs/layering-contract.md`, `poulpy-hal/src/api/mod.rs` and the per-operation contract blocks of `poulpy-hal/src/api`, the crate `docs/*-contracts.md`, `poulpy-hal/docs/backend_safety_contract.md`), then READMEs and `docs/`, then existing code. Check an apparent conflict against the reviewed revision and against any intentional contract change in the diff.
+- **Precedence.** Current owner instructions come first, then these files, then the contract sources (`docs/layering-contract.md`, `poulpy-hal/src/api/mod.rs` and the per-operation contract blocks of `poulpy-hal/src/api`, the crate `poulpy-*/docs/*-contracts.md`, `poulpy-hal/docs/backend_safety_contract.md`), then READMEs and `docs/`, then existing code. Check an apparent conflict against the reviewed revision and against any intentional contract change in the diff.
 - **Deviations are not precedents.** Existing code and docs break some of these rules. Never cite or copy a deviation, never ask a PR to fix one in code it does not touch, and flag every new instance a diff adds, including a copy of an existing deviating pattern into new code.
 - **Verify before claiming.** Check each finding against the code, including the backend path a call actually selects, its overrides and its tests. A rule is a reason to look, not proof of a defect.
 - **Actionable findings.** A finding names the changed code, the rule it breaks (file and section) and a concrete affected case or cost. Keep demonstrated defects apart from questions and from unmeasured optimizations, and stay within the PR's scope.
@@ -33,18 +33,19 @@ Entry point for reviewing a poulpy diff: the one file a review needs to be given
 | touches `docs/layering-contract.md` | these sections alone, picking no file: `hal.md` sections 1 and 5, `core.md` section 1, `ckks.md` section 1, `bin-fhe.md` section 1, `mhe.md` section 2, `blas.md` section 1, `backends.md` sections 3 and 4 |
 | touches a crate's manifest, README or `docs/` directory | that crate's file |
 | touches `docs/bootstrapping.md` | `ckks.md` |
+| touches `docs/base2k-failure-probability.md` | these sections alone, picking no file: `hal.md` section 6, `ckks.md` section 7, `blas.md` section 7, `backends.md` section 5.7 |
 
 ## 3. Sections read whenever a file is picked
 
 | File | Sections |
 |---|---|
-| `hal.md` | 1, 2, 10, 12 |
-| `core.md` | 1, 2, 14 |
-| `ckks.md` | 1, 2, 16 |
-| `bin-fhe.md` | 1, 2, 12 |
-| `mhe.md` | 1, 2, 10 |
-| `blas.md` | 0, 1, 2, 12 |
-| `backends.md` | 0, 1, 2, 3, 14 |
+| `hal.md` | 1, 2, 10 |
+| `core.md` | 1, 2 |
+| `ckks.md` | 1, 2 |
+| `bin-fhe.md` | 1, 2 |
+| `mhe.md` | 1, 2 |
+| `blas.md` | 0, 1, 2 |
+| `backends.md` | 0, 1, 2, 3 |
 | `bench.md` | 1, 2, 3, 4, 5 |
 
 ## 4. Sections by kind of change
@@ -56,18 +57,18 @@ Each cell lists the sections to read in that file for that kind of change, on to
 | New or changed operation: API or OEP method, reference or derived body, its query | 3, 4, 5, 6, 7, 8, 9, 11 | 3, 4, 5, 6, 7, 8, 9, 13 | 3, 4, 5, 6, 7, 8, 15 | 3, 8, 9, 10, 11 | 3, 4, 5, 7, 8, 9 | 3, 4, 5, 6, 7, 8, 9, 10, 11 | 4, 8, 9, 13.2, 13.5 |
 | Backend override, kernel or backend registration | 3.2, 5, 6, 7, 8, 9, 11 | 3, 7, 8, 9, 10, 13.1 | 3, 5, 6, 7, 8, 10, 15.1 | 3, 4, 5, 8, 9, 11 | 4, 5, 7, 9 | 3, 4, 5, 6, 7, 8, 9 | all |
 | Backend contract: a `Backend` constant, capability flag, sizing default or layout marker | 6, 7, 8, 11 | - | - | - | - | - | 5.5, 5.7, 13 |
-| Setup: plans, contexts, presets, key sets, LUTs | - | - | 3, 4, 5, 10, 12, 15.3 | 4 | - | 4 | - |
-| Scratch: a query, a carve, an arena, per-worker scratch | 3.2, 5, 6, 8 | 4, 5 | 4, 13 | 3 | 3.5 | 8 | 5.4, 8 |
+| Setup: plans, contexts, presets, key sets, LUTs | - | - | 3, 4, 5, 9, 10, 12, 15.3 | 4, 7 | - | 4, 6, 9 | - |
+| Scratch: a query, a carve, an arena, per-worker scratch | 3.2, 5, 6, 8 | 4, 5 | 4, 13 | 3, 5 | 3.5 | 8 | 5.4, 8 |
 | Validation, asserts, panics, errors | 3.2, 9 | 3, 6, 9 | 3 | 9 | 4 | 3 | 5.1 |
 | Normalization, canonical flag, rounding, DFT and IDFT work | 3.2, 9 | 7, 8.3 | 7, 8 | 10 | 3.3 | 7 | 5.3, 5.6, 6 |
 | Metadata: noise, plaintext, scheme or share metadata | - | 9 | 6 | 10 | 3.4 | 5 | - |
 | Keys, encryption, sampling, seeds, secrets | 9 | 5, 10, 11 | 5, 14 | 4 | 5 | 4 | 5.1, 5.8 |
 | Layouts and types: a new layout, field, tier, view, allocation, prepared or compressed form | 6, 7 | 6 | 4, 14 | 4 | 7 | 9 | 5.7 |
 | Serialization | 7 | 12 | 14 | 4.1 | 6 | 9 | - |
-| Degree, ring, Galois elements, modules | 6 | 5 | 5 | 9 | 4 | 5 | 5.5 |
+| Degree, ring, Galois elements, modules | 6 | 5 | 5 | 9 | 4 | 4, 5 | 5.5 |
 | Names, signatures, renames | 3, 5, 9 | 3, 13 | 3, 15 | 11 | 9 | 3, 11 | 5.1, 13 |
 | Docs, comments, contract blocks | 3 | - | 3, 6 | - | 8 | 10 | 12 |
-| Visibility, features, manifests, dependencies, examples | - | - | - | - | - | 10 | 11, 12 |
+| Visibility, features, manifests, dependencies, examples | - | - | 10, 14 | 4 | - | 10 | 11, 12 |
 | Tests and fixtures | 11 | 13 | 15 | 11 | 9 | 11 | 13 |
 | Defect fix | 11 | 13.4 | 15.3 | 11 | 9 | 11 | 13 |
 | CI workflows and scripts | 11 | - | 15.1, 15.4 | - | - | - | 11, 13.7 |

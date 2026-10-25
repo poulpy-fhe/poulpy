@@ -25,7 +25,7 @@ Read with `docs/review/REVIEW.md`; this file adds the rules specific to `poulpy-
 
 - **Compositions are derived defaults.** Serial forms and their queries (calling the `_multi_thread` form with `threads = 1`), per-GGSW-row loops and direct circuit-bootstrapping entry points (prepare, execute) are each a `pub(crate) fn <api method>_derived` behind a one-line default body (`docs/review/workspace.md` section 3).
 - **Composed families are supertraits.** An OEP trait whose defaults dispatch to another family, of any crate, takes that family's `*Impl` as a supertrait (`docs/review/workspace.md` section 3) (`GGSWBlindRotationImpl<T>: Backend + GLWEBlindRotationImpl`), its default methods carrying only their API method's where-clauses.
-- **Constituents through the module.** Reference and derived bodies call constituents through the module's public API (`module.cmux_assign(..)`), bound the module only by API and storage traits (`ModuleCoreAlloc`, `ModuleN`), and use `BE::` only for storage and transfer hooks (`docs/review/workspace.md` section 3).
+- **Constituents through selected implementations.** Reference and derived bodies reach constituents through the module's public API (`module.cmux_assign(..)`) or `BE::`, bounding the module only by API and storage traits (`ModuleCoreAlloc`, `ModuleN`) (`docs/review/workspace.md` section 3).
 - **Reference stays behind the macros.** Only `reference`, the opt-in macro bodies and tests call into `crate::reference`, so helpers shared with derived bodies live outside it (`docs/review/workspace.md` section 3).
 - **Convenience methods forward.** A convenience method on a bin-fhe container or `define_bdd_*_trait!` trait forwards in one line to a public API trait bound as `M: <ApiTrait>`, passing `self` in the operand position, and multi-operation helpers (`FheUint::get_bit_lwe`) call public API traits only.
 - **Stateful helpers compose.** A stateful helper (`GLWEBlindRetriever`) composes selected public operations without an OEP hook, sizes its query methods from theirs at its persistent layout, valid before any input, and checks its capacity before changing state.
@@ -140,10 +140,3 @@ Read with `docs/review/REVIEW.md`; this file adds the rules specific to `poulpy-
 - **Correctness bodies.** Correctness bodies decrypt with `glwe_decrypt_checked`, refill setup arenas before each use (`source.fill_bytes(scratch.data.as_mut())`), and in BDD use the shared `&TestContext<BRA, BE>` and `TEST_*` layouts, each key at its own `base2k` (`docs/review/workspace.md` section 15).
 - **Rejection tests.** A rejection test runs the refused call, `with_scratch` included, in `catch_unwind(AssertUnwindSafe(..))` and compares the destination (every prepared-key component, a retriever's state and output) with a prior snapshot, `#[should_panic(expected = "..")]` serving pure helpers only (`docs/review/workspace.md` section 15).
 - **Unit tests for host helpers.** A new backend-free host helper gets a `#[cfg(test)] mod tests` beside it sweeping its edge cases (signed lower limbs, exact ties, overflow bounds), anything needing a `Module` going into a registered suite.
-
-## 12. Do not report
-
-The owner ruled these out for poulpy-bin-fhe, in addition to `docs/review/workspace.md` section 18:
-
-- A commented section 10 bypass as a dishonest flag, or a request to normalize its value first.
-- An existing operation changed in its grouped family file, or a request to split that file.

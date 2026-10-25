@@ -152,14 +152,4 @@ Generic rules: `docs/review/workspace.md` section 15; backend registrations, mod
 - **Parity stays opaque.** Stricter than `docs/review/workspace.md` section 15, parity and concurrency tests bound both sides only by `BlasParityBackend` (`Backend<ZnxWord = i64> + BlasImpl`) and `BlasParityModule` and read results through poulpy-ckks parity snapshots, coefficients being read only in the functional and conjugate-invariant suites.
 - **Skips are announced.** A case the registration cannot hold returns early after an `eprintln!` naming the test, the case and the bound it needs, and a parity test fails when `BlasParityShapes::log_d` leaves no `log_d`.
 - **Host math in the clear.** Host-side math (map builders, grid helpers, label, batch and key-set arithmetic, layout queries) has `#[cfg(test)] mod tests` beside it on `Module::<HostBytesBackend>` and cleartext diagonals, covering each new map's in-the-clear identity.
-- **Exact, independent fixtures.** Cleartext models use dyadic entries in `[-1, 1]` (`Grid::model`) or small integers, and long-sum tests sum distinct encryptions (`docs/review/workspace.md` section 10).
-
-## 12. Do not report
-
-In addition to `docs/review/workspace.md` section 18:
-
-- Missing circuit privacy: re-randomizing or flooding `res` is the caller's job.
-- A `MissingAutomorphismKey` ahead of a budget error, or a validator or hot preparation checking no CKKS budget (section 3).
-- The source copy a hot (`OneShot`) preparation holds.
-- Replacing the JKLS circuit of `blas_matmul` or `blas_matmul_prepared` with another algorithm.
-- Bit differences between two `BlasPtAlgorithm` paths.
+- **Exact, independent fixtures.** Cleartext models use dyadic entries in `[-1, 1]` (`Grid::model`) or small integers, and long-sum tests sum distinct encryptions (`docs/review/workspace.md` section 8.1).
