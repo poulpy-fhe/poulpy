@@ -9,7 +9,7 @@ use poulpy_core::{
     api::{GGLWEToGGSWKeyPreparedFactory, GGSWPreparedFactory, GLWEAutomorphismKeyPreparedFactory},
     layouts::{LWEInfos, SetGaloisElement},
 };
-use poulpy_hal::layouts::{Backend, ScratchArena};
+use poulpy_hal::layouts::{Backend, Ring, ScratchArena, Standard};
 
 /// Allocates and prepares backend-owned circuit-bootstrap key bundles.
 ///
@@ -45,14 +45,17 @@ pub trait CircuitBootstrappingKeyPreparedFactory<BRA: BlindRotationAlgo, BE: Bac
         CircuitBootstrappingKeyPrepared {
             brk: self.blind_rotation_key_prepared_alloc_from_infos(&infos.brk_infos()),
             tsk: self.gglwe_to_ggsw_key_prepared_alloc_from_infos(&tsk_infos),
-            atk: trace_galois_elements(atk_infos.log_n(), 2 * atk_infos.n().as_usize() as i64)
-                .into_iter()
-                .map(|p| {
-                    let mut key = self.glwe_automorphism_key_prepared_alloc_from_infos(&atk_infos);
-                    key.set_p(p);
-                    (p, key)
-                })
-                .collect(),
+            atk: trace_galois_elements(
+                atk_infos.log_n(),
+                Standard::CYCLOTOMIC_ORDER_FACTOR * atk_infos.n().as_usize() as i64,
+            )
+            .into_iter()
+            .map(|p| {
+                let mut key = self.glwe_automorphism_key_prepared_alloc_from_infos(&atk_infos);
+                key.set_p(p);
+                (p, key)
+            })
+            .collect(),
         }
     }
 

@@ -8,8 +8,8 @@ selects the blind-rotation algorithm, independently of storage and scheduling.
 User-facing contracts have separate operation files under
 [`api/blind_rotation`](../src/api/blind_rotation.rs),
 [`api/circuit_bootstrapping`](../src/api/circuit_bootstrapping.rs), and
-[`api/bdd`](../src/api/bdd.rs). Each family re-exports its traits, as do `api`
-and the crate root. Execution and its matching scratch queries share a trait.
+[`api/bdd`](../src/api/bdd.rs), private modules whose traits `api` and the crate
+root re-export. Execution and its matching scratch queries share a trait.
 All public operation traits follow `API -> delegate -> OEP`, including
 `LookupTableFactory`, whose delegate requires only its backend hook. LUT
 algorithms live in independently callable reference functions; a backend opts
