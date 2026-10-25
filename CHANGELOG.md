@@ -37,6 +37,7 @@
   A backend test list that names them registers the new names, and each now checks that a rejected call leaves its destination unchanged.
 - **Breaking:** every suite scratch arena is `0xA5`-poisoned and sized by the tested operation's own `_tmp_bytes` alone, so an operation that reads scratch it did not write or exceeds its query fails; `test_convolution_by_const`, `test_convolution`, `test_convolution_pairwise`, `test_vmp_apply_dft`, `test_vmp_zero` and `test_mat_znx_normalize` require the `_tmp_bytes` traits of the setup calls they now size separately, and `test_vec_znx_big_normalize` no longer requires `VecZnxBigAutomorphismAssignTmpBytes`.
   No suite function requires `ScratchOwned<_>: ScratchOwnedAlloc<_>` any more.
+- **Behaviour:** an embedded degree is a power of two from `Backend::MIN_DEGREE` to `N`: a right operand of the convolution applies below `MIN_DEGREE` is refused where the contract left the floor to the backend, and `test_convolution_embed` runs only degrees in that domain. Out-of-tree backends refuse a smaller degree in their applies.
 
 ### CPU backends
 
@@ -57,6 +58,7 @@
 - The IFMA linear transformation keeps its fused giant-step rotation for automorphism keys of any digit width: each normalized mask column is laid out on the digit grid with `gadget_dft_apply` before the product, as in the reference lazy giant step.
   Keys whose digits fit in one limb still take the reference, as one-limb aligned keys do.
 - The AVX-512 rank-one relinearization keeps its packed path for tensor keys of any digit width: digits off a limb boundary lay the tensor pairs out on the digit grid with `gadget_dft_apply`, and its scratch covers that operand.
+- **Breaking:** `poulpy_cpu_portable::ckks_ship::ship_coeff_encodings_staged` and `ckks_paco::paco_coeff_encodings_staged` take `(module, base2k, ..)` first, the order of their API methods; callers reorder their arguments by hand.
 - Add `FFT64PortableRayon` and `NTT4x30PortableRayon`, the Rayon variants of the portable backends, with their conjugate-invariant aliases `FFT64CIPortableRayon` and `NTT4x30CIPortableRayon`.
   They live in `poulpy-cpu-rayon`, which already depends on `poulpy-cpu-portable`, behind no feature for the HAL and behind `enable-core`, `enable-ckks`, `enable-bin-fhe` and `enable-mhe` for the scheme layers.
   `NTT4x30PortableRayon` runs the fused interleaved-digit product of `NTT4x30Portable` on per-worker scratch, and transforms the four planes of a limb as separate tasks from degree `2^13`.
@@ -641,7 +643,8 @@
 ### `poulpy-bench`
 
 - **Breaking:** `bench_ckks_bootstrapping` requires `CKKSBootstrappingCIOps`, and runs the presets with EvalMod on the conjugate-invariant ring.
-- **Breaking:** `ckks_rotate_ops` and `runner_ckks_rotate_into` bound the module by `GLWETensorKeyPreparedFactory`, the factory of the key they allocate.
+- **Breaking:** `bench_ckks_bootstrapping` also requires `CKKSDFTOps` and `CKKSEvalModOps`; a backend benched through it implements both.
+- **Breaking:** `BlasBenchModule` also requires `BlasEncodingOps<BE, f64>`, `BlasContextPreparedFactory` and `BlasPtOperandPreparedFactory`, and the blas bench runners bound their module by it.
 - **Breaking:** `blind_rotate_ops`, `circuit_bootstrapping_ops`, `bin_fhe_standard_ops`, `bench_binfhe`, `runner_blind_rotate` and `runner_circuit_bootstrapping` bound the module by the factories of the prepared keys they allocate (`GGSWPreparedFactory`, `BlindRotationKeyPreparedFactory`, `GGLWEToGGSWKeyPreparedFactory`, `GLWEAutomorphismKeyPreparedFactory`).
 
 ## [0.9.0] - 2026-10-08
