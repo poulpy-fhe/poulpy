@@ -1,5 +1,6 @@
 use super::{TestParams, download_vec_znx, upload_vec_znx, vec_znx_backend_mut, vec_znx_backend_ref};
 use crate::AlignedBuf;
+use crate::api::VecZnxBigFromSmall;
 use crate::layouts::CnvPVecLToBackendMut;
 use crate::layouts::CnvPVecLToBackendRef;
 use crate::layouts::CnvPVecRToBackendMut;
@@ -1077,7 +1078,7 @@ pub fn test_cnv_by_const_rejects_degree_mismatch<BE: crate::test_suite::TestBack
     params: &TestParams,
     module: &crate::layouts::Module<BE>,
 ) where
-    crate::layouts::Module<BE>: Convolution<BE> + VecZnxBigAlloc<BE>,
+    crate::layouts::Module<BE>: Convolution<BE> + VecZnxBigAlloc<BE> + VecZnxBigFromSmall<BE>,
 {
     let size = 2usize;
     let mut source = Source::new([6u8; 32]);
@@ -1086,6 +1087,7 @@ pub fn test_cnv_by_const_rejects_degree_mismatch<BE: crate::test_suite::TestBack
     let mut b_be = module.vec_znx_alloc(params.n, 1, size);
     module.vec_znx_fill_uniform_source_all(params.base2k, size * params.base2k, &mut b_be, &mut source);
     let mut res: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(params.n, 1, size);
+    module.vec_znx_big_from_small(&mut res.to_backend_mut(), 0, &vec_znx_backend_ref::<BE>(&b_be), 0);
     let mut scratch_apply: ScratchOwned<BE> = poisoned_arena(module.cnv_by_const_apply_tmp_bytes(0, size, size, size));
     let mut scratch_add: ScratchOwned<BE> = poisoned_arena(module.cnv_by_const_apply_add_tmp_bytes(0, size, size, size));
 

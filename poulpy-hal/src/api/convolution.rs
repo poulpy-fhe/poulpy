@@ -200,7 +200,7 @@ pub trait Convolution<BE: Backend> {
     /// domain     res: a VecZnxDft and a: a CnvPVecL, both of degree N; b: a CnvPVecR of degree N or of a power-of-two degree dividing it, at least MIN_DEGREE; res.size(), a.size() and b.size() >= 1; b_galois odd, 1 for b itself
     /// requires   scratch >= cnv_apply_dft_tmp_bytes(cnv_offset, res.size(), a.size(), b.size())
     /// ensures    the selected inverse column holds the limb window of the convolution, scaled by 2^((cnv_offset + 1) * w) at any radix width w; the remaining limbs are zero-filled
-    /// embed      b may be a prepared right operand of degree n, n a power of two dividing N and not below the backend's minimum embedded degree, prepared at degree n; res and a take degree N; the degree embedding of the api module docs defines the correspondence that reads it
+    /// embed      b may be a prepared right operand of degree n, n a power of two dividing N and not below `MIN_DEGREE`, prepared at degree n; res and a take degree N; the degree embedding of the api module docs defines the correspondence that reads it
     /// test       test_convolution, test_convolution_galois, test_convolution_embed
     /// ```
     fn cnv_apply_dft(
