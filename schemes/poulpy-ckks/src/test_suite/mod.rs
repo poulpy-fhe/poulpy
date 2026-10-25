@@ -355,11 +355,11 @@ macro_rules! ckks_backend_rank2_test_suite {
                 replicated_masked_constants,
                 $crate::test_suite::replicated::test_replicated_masked_constants
             );
-            run_test_result!(
+            run_ring_test_result!(
                 replicated_conversions_round_trip,
                 $crate::test_suite::replicated::test_replicated_conversions_round_trip
             );
-            run_test_result!(
+            run_ring_test_result!(
                 replicated_transforms_apply_matrices,
                 $crate::test_suite::replicated::test_replicated_transforms_apply_matrices
             );
@@ -748,11 +748,11 @@ macro_rules! ckks_backend_test_suite {
                 replicated_masked_constants,
                 $crate::test_suite::replicated::test_replicated_masked_constants
             );
-            run_test_result!(
+            run_ring_test_result!(
                 replicated_conversions_round_trip,
                 $crate::test_suite::replicated::test_replicated_conversions_round_trip
             );
-            run_test_result!(
+            run_ring_test_result!(
                 replicated_transforms_apply_matrices,
                 $crate::test_suite::replicated::test_replicated_transforms_apply_matrices
             );

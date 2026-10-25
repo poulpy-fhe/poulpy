@@ -1184,7 +1184,7 @@ fn encrypt_full<BE, F>(
 where
     BE: TestContextBackend,
     F: TestScalar,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F>,
+    Module<BE>: TestContextSharedModule<BE> + CKKSEncodingOps<BE, F>,
 {
     let mut pt = module.ckks_pt_vec_alloc(
         slots_of(module, SlotLayout::Full, values.0.len()),
@@ -1205,26 +1205,26 @@ where
     Ok(ct)
 }
 
-pub fn test_replicated_conversions_round_trip<BE, F, E>(
+pub fn test_replicated_conversions_round_trip<BE, F>(
     params: CKKSTestParams,
     module: &Module<BE>,
-    host_module: &Module<HostBytesBackend>,
+    host_module: &Module<HostBytesBackend<BE::Ring>>,
 ) -> Result<()>
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>
+    Module<BE>: TestContextSharedModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSReplicatedOps<BE>
         + CKKSLinearTransformationOps<BE>
         + CnvPVecAlloc<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
-    // `R = 8` divides `k = 8`; the return lands on `20 + 16 + log2(N/(2k))`.
+    // `R = 8` divides `k = 8`; the return lands on `20 + extra + log2(S/k)`
+    // for the `S` slots of the ring.
     let (log_k, log_delta_ckks, log_delta, log_delta_diag) = (3u8, 40, 20, 30);
-    let extra_bits = log_delta_ckks - log_delta - (params.n / (2 << log_k)).trailing_zeros() as usize;
+    let extra_bits = log_delta_ckks - log_delta - (module.ckks_max_slots() >> log_k).trailing_zeros() as usize;
     let layout = ShapingUnit::U16_40.layout(log_k, 24)?;
     let len = 1usize << log_k;
     let conv = ReplicatedConversion::new::<F>(
@@ -1259,9 +1259,12 @@ where
     assert_eq!(replicated.log_delta(), log_delta);
     let got = decrypt_batch::<BE, F>(&params, module, &sk, &replicated, len);
     let to_bits = precision((&got.0, &got.1), (&values.0, &values.1));
+    // The map runs `extra_bits` under the replicated scale, which bounds the
+    // result as the fresh encryption does.
+    let working_bits = (log_delta + extra_bits) as f64;
     assert!(
-        to_bits >= fresh_bits - 2.0,
-        "to replicated: {to_bits:.2} bits from {fresh_bits:.2}"
+        to_bits >= fresh_bits.min(working_bits) - 2.0,
+        "to replicated: {to_bits:.2} bits from {fresh_bits:.2}, working at {working_bits}"
     );
 
     let mut back = alloc_ct(&params, module, k);
@@ -1362,21 +1365,22 @@ where
     Ok(())
 }
 
-/// `(Mv)` for `M(c, j) = (cos(c·j + 0.1)/2, sin(c + 2j)/3)`.
-fn matrix<F: TestScalar>(c: usize, j: usize) -> (F, F) {
+/// `(Mv)` for `M(c, j) = (cos(c·j + 0.1)/2, sin(c + 2j)/3)`, real on real slots.
+fn matrix<BE: Backend, F: TestScalar>(c: usize, j: usize) -> (F, F) {
     let value = |x: f64| F::from_f64(x).unwrap();
+    let im = if real_slots::<BE>() { 0.0 } else { 1.0 / 3.0 };
     (
         value(((c * j) as f64 + 0.1).cos() / 2.0),
-        value(((c + 2 * j) as f64).sin() / 3.0),
+        value(((c + 2 * j) as f64).sin() * im),
     )
 }
 
-fn apply_matrix<F: TestScalar>(v: (&[F], &[F])) -> (Vec<F>, Vec<F>) {
+fn apply_matrix<BE: Backend, F: TestScalar>(v: (&[F], &[F])) -> (Vec<F>, Vec<F>) {
     let len = v.0.len();
     let (mut re, mut im) = (vec![F::zero(); len], vec![F::zero(); len]);
     for c in 0..len {
         for j in 0..len {
-            let (a, b) = matrix::<F>(c, j);
+            let (a, b) = matrix::<BE, F>(c, j);
             re[c] = re[c] + a * v.0[j] - b * v.1[j];
             im[c] = im[c] + a * v.1[j] + b * v.0[j];
         }
@@ -1384,34 +1388,37 @@ fn apply_matrix<F: TestScalar>(v: (&[F], &[F])) -> (Vec<F>, Vec<F>) {
     (re, im)
 }
 
-pub fn test_replicated_transforms_apply_matrices<BE, F, E>(
+pub fn test_replicated_transforms_apply_matrices<BE, F>(
     params: CKKSTestParams,
     module: &Module<BE>,
-    host_module: &Module<HostBytesBackend>,
+    host_module: &Module<HostBytesBackend<BE::Ring>>,
 ) -> Result<()>
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: TestContextSharedModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let log_k = 3u8;
     let (len, base2k) = (1usize << log_k, Base2K(params.base2k as u32));
     let layout = ShapingUnit::U16_40.layout(log_k, 24)?;
     let (log_delta_diag, extra_bits) = (36, 16);
+    if real_slots::<BE>() {
+        let imaginary = |_: usize, _: usize| (F::zero(), F::one());
+        assert!(ReplicatedTransform::from_period(module, layout, base2k, 14, true, imaginary).is_err());
+    }
     // Shaped diagonals far coarser than the result: each BSGS giant step needs
     // its own rotated shaping polynomial to keep their error off the data slots.
     let to = ReplicatedTransform::from_period(module, layout, base2k, 14, true, |s, j| {
         if s % (1 << layout.log_r()) == 0 {
-            matrix::<F>((s >> layout.log_r()) % len, j)
+            matrix::<BE, F>((s >> layout.log_r()) % len, j)
         } else {
             (F::zero(), F::zero())
         }
     })?;
-    let gather = ReplicatedTransform::gather(module, layout, base2k, log_delta_diag, false, matrix::<F>)?;
-    let trace: Vec<i64> = (0..(params.n / (2 * len)).trailing_zeros())
+    let gather = ReplicatedTransform::gather(module, layout, base2k, log_delta_diag, false, matrix::<BE, F>)?;
+    let trace: Vec<i64> = (0..(module.ckks_max_slots() / len).trailing_zeros())
         .map(|l| (len << l) as i64)
         .collect();
 
@@ -1428,7 +1435,7 @@ where
         atks.insert(gal, gen_atk(&params, module, gal, &sk_raw, &mut scratch.borrow()));
     }
     let values = unit_batch::<BE, F>(len, 0);
-    let want = apply_matrix((&values.0, &values.1));
+    let want = apply_matrix::<BE, F>((&values.0, &values.1));
     let k = 40 + 2 * log_delta_diag;
     let mut scratch = ScratchOwned::<BE>::alloc(1 << 24);
 

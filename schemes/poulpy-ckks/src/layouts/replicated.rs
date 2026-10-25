@@ -31,12 +31,14 @@ use crate::{
     },
     polynomial::SplitStrategy,
     reference::linear_transformation_diagonals::period_degree,
+    shaping::ShapingRing,
 };
 
 /// Diagonals of the conversions between a CKKS ciphertext of period `k` and
 /// a [`ReplicatedLayout`] of `k` values, each one linear transform.
 ///
-/// With `n = kR` slots and `h = N/(2k)`:
+/// With `n = kR` slots and `h = S/k`, `S` the ring's slots (`N/2` on the
+/// standard ring, `N` on the conjugate-invariant ring):
 ///
 /// - `to`: `k` diagonals writing value `z_(t/R mod k)` on the data slots `R | t`
 ///   and zero on the guards, quantized with shaping;
@@ -89,7 +91,7 @@ impl<BE: Backend> ReplicatedConversion<BE> {
         } else {
             None
         };
-        let h = module.ring_degree().as_usize() / (2 * k);
+        let h = module.ckks_max_slots() / k;
         let trace = (0..h.trailing_zeros()).map(|l| (k << l) as i64).collect();
         Ok(Self {
             layout,
@@ -284,6 +286,11 @@ impl<BE: Backend> ReplicatedTransform<BE> {
         Module<BE>: ReplicatedTransformModule<BE, F>,
     {
         let n = weights.first().map_or(0, |(_, w)| w.len());
+        ensure!(
+            ShapingRing::of::<BE::Ring>() == ShapingRing::Standard
+                || weights.iter().all(|(_, w)| w.iter().all(|(_, im)| im.is_zero())),
+            "the real slots of the conjugate-invariant ring take real diagonals"
+        );
         let largest = weights
             .iter()
             .flat_map(|(_, w)| w.iter().map(|(re, im)| re.abs().max(im.abs())))
@@ -405,16 +412,11 @@ impl<BE: Backend, F: CKKSEncodingScalar, M> ReplicatedTransformModule<BE, F> for
 /// `(k, kR)` of a layout that fits the ring's slots.
 fn check_period<BE: Backend>(module: &Module<BE>, layout: &ReplicatedLayout) -> Result<(usize, usize)>
 where
-    Module<BE>: GetDegree,
+    Module<BE>: CKKSModuleInfos,
 {
-    ensure!(
-        crate::shaping::supports_ring::<BE>(),
-        "{}",
-        crate::shaping::STANDARD_RING_ONLY
-    );
     let (k, r) = (1usize << layout.log_k(), 1usize << layout.log_r());
-    let half = module.ring_degree().as_usize() / 2;
-    ensure!(k * r <= half, "{k} values of period {r} need more than the {half} slots");
+    let slots = module.ckks_max_slots();
+    ensure!(k * r <= slots, "{k} values of period {r} need more than the {slots} slots");
     Ok((k, k * r))
 }
 
@@ -632,6 +634,10 @@ impl<BE: Backend, F: CKKSEncodingScalar> ReplicatedBootstrapping<BE, F> {
         Module<BE>: ReplicatedTransformModule<BE, F>,
     {
         let layout = plan.layout;
+        ensure!(
+            ShapingRing::of::<BE::Ring>() == ShapingRing::Standard,
+            "the replicated bootstrapping runs on the standard ring"
+        );
         check_period(module, &layout)?;
         let (k, r) = (1usize << layout.log_k(), 1usize << layout.log_r());
         ensure!(r <= k, "bootstrapping needs the period {r} to divide the batch size {k}");

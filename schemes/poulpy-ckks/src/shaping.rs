@@ -22,7 +22,7 @@
 use std::sync::OnceLock;
 
 use poulpy_core::layouts::ReplicatedLayout;
-use poulpy_hal::layouts::{Backend, Ring, Standard};
+use poulpy_hal::layouts::{Ring, Standard};
 
 use num_traits::{FromPrimitive, ToPrimitive, Zero};
 
@@ -33,15 +33,6 @@ pub const MAX_PASS_BITS: usize = 62;
 
 /// Largest number of coefficients of a shaping polynomial, `2R`.
 const MAX_COEFFS: usize = 2 << ReplicatedLayout::MAX_LOG_R;
-
-/// Refusal of a replicated layout on a ring that shaping does not support.
-pub(crate) const STANDARD_RING_ONLY: &str = "the replicated layout requires the standard ring";
-
-/// Whether shaping supports the ring of `BE`. Its products are negacyclic of
-/// the module's degree, which the conjugate-invariant ring's are not.
-pub(crate) fn supports_ring<BE: Backend>() -> bool {
-    BE::Ring::CYCLOTOMIC_ORDER_FACTOR == Standard::CYCLOTOMIC_ORDER_FACTOR
-}
 
 /// Ring a [`ShapingProfile`] multiplies in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
