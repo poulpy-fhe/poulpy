@@ -8,10 +8,11 @@ operation runs its validator first. The BLAS
 crate imports no backend crate: each backend crate wires its own types.
 
 This file holds the rules every family shares. What an implementation of one
-family must reproduce, and what it may change, is the `# Safety` section of
-that family's trait; the output metadata and the errors of each operation are
-on its API method. Parity is bit-exact, so an override computes the
-reference's circuit: anything a `# Safety` section does not list as free
+family must reproduce, and what it may change, is the doc of each method and
+hook of that family's trait (its **Fixed** and **Free** lists), the trait's
+`# Safety` holding what the methods share; the output metadata and the errors of
+each operation are on its API method. Parity is bit-exact, so an override
+computes the reference's circuit: anything a method's doc does not list as free
 changes bits.
 
 ## Families
@@ -92,8 +93,8 @@ the same `#[cfg]` gates as `ckks_impl.rs`:
 To replace a family, replace the type's `impl_blas_reference_full!` line with
 the macros of the four families it keeps, as the [layering contract](../../docs/layering-contract.md)
 states. The expansion of each family macro, in [`oep`](../src/oep/), spells out
-every signature and its forwarding call, and each family's `# Safety` section
-states what an implementation must reproduce. Three replacements cover most needs:
+every signature and its forwarding call, and the docs of each family's methods
+and hooks state what an implementation must reproduce. Three replacements cover most needs:
 
 - **The map hook**, for a backend that evaluates maps its own way. It covers
   the transpose, both shifts, the cold preparations and the hot sides of the

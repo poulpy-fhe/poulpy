@@ -11,15 +11,11 @@ use crate::layouts::{
 /// required. The encoding scalar `F` is a method parameter bounded by `Self: CKKSEncodingImpl<F>`.
 ///
 /// # Safety
-///
 /// Every method reproduces its `_reference` counterpart in
 /// [`BlasEncodingReference`](crate::reference::BlasEncodingReference) bit for bit, every diagonal and its metadata,
-/// within the scratch the matching `_tmp_bytes` reports, and refuses what the reference refuses, as it does: an
-/// encoding returns poulpy-ckks's errors, after which `res` is unspecified, and panics on a `res` allocated for another
-/// module's slots or ring; a preparation panics on `res` and `other` of different layouts before any write, and on a
-/// scratch short of its query or a map whose diagonals do not share one scale, width and slot kind. Every
+/// within the scratch the matching `_tmp_bytes` reports, and refuses what the reference refuses, as it does. Every
 /// implementation overwrites every allocated byte of `res` without reallocating it, so a refill equals a fresh build.
-/// The memory, layout and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
+/// The memory, layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait BlasEncodingImpl: Backend {
     /// Scratch bound of [`Self::blas_pt_operand_encode_into`]; may report less than
     /// [`BlasEncodingReference::blas_pt_operand_encode_tmp_bytes_reference`](crate::reference::BlasEncodingReference::blas_pt_operand_encode_tmp_bytes_reference),
@@ -39,6 +35,9 @@ pub unsafe trait BlasEncodingImpl: Backend {
     /// at the operand's `coeffs_meta`, map after map in the order of
     /// [`BlasPtOperandUnprepared::maps`](crate::layouts::BlasPtOperandUnprepared::maps), the first error stopping it.
     /// **Free:** its kernels and its scratch use.
+    ///
+    /// It returns poulpy-ckks's errors, after which `res` is unspecified, and panics on a `res` allocated for
+    /// another module's slots or ring.
     fn blas_pt_operand_encode_into<F, S>(
         module: &Module<Self>,
         res: &mut BlasPtOperandUnprepared<Self, S>,
@@ -67,6 +66,9 @@ pub unsafe trait BlasEncodingImpl: Backend {
     /// encoding by poulpy-ckks's `ckks_encode_linear_transformation_into` at the context's `coeffs_meta`, map after map
     /// in the order of [`BlasContextUnprepared::maps`], the first error stopping it. **Free:** its kernels and its scratch
     /// use.
+    ///
+    /// It returns poulpy-ckks's errors, after which `res` is unspecified, and panics on a `res` allocated for
+    /// another module's slots or ring.
     fn blas_context_encode_into<F>(
         module: &Module<Self>,
         res: &mut BlasContextUnprepared<Self>,
@@ -88,6 +90,9 @@ pub unsafe trait BlasEncodingImpl: Backend {
     /// **Fixed:** poulpy-ckks's `ckks_prepare_linear_transformation_rhs` of every map, and under `JklsStored` and
     /// `JklsGalois` its `ckks_prepare_right_into` of each term's one plaintext. **Free:** the prepared form, kernels,
     /// scratch use and the order of the maps.
+    ///
+    /// It panics on `res` and `other` of different layouts before any write, and on a scratch short of its
+    /// query or a map whose diagonals do not share one scale, width and slot kind.
     fn blas_pt_operand_prepare<S: BlasPtSide>(
         module: &Module<Self>,
         res: &mut BlasPtOperand<Self, S>,
@@ -106,6 +111,9 @@ pub unsafe trait BlasEncodingImpl: Backend {
     ///
     /// **Fixed:** poulpy-ckks's `ckks_prepare_linear_transformation_rhs` of every map. **Free:** the prepared form,
     /// kernels, scratch use and the order of the maps.
+    ///
+    /// It panics on `res` and `other` of different layouts before any write, and on a scratch short of its
+    /// query or a map whose diagonals do not share one scale, width and slot kind.
     fn blas_context_prepare(
         module: &Module<Self>,
         res: &mut BlasContext<Self>,
