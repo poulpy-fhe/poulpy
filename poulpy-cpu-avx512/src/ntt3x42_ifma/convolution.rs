@@ -16,7 +16,7 @@ use crate::ntt3x42_ifma::{
 };
 use poulpy_cpu_portable::kernels::{RightRead, right_read_ntt};
 use poulpy_hal::execution::TaskExecutor;
-use poulpy_hal::layouts::{CnvDftAccTerm, Ring};
+use poulpy_hal::layouts::{Backend, CnvDftAccTerm, Ring};
 use poulpy_hal::layouts::{
     CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, DataView, DataViewMut, Module,
     VecZnxBackendRef, VecZnxDftBackendMut, ZnxView, check_degree,
@@ -924,7 +924,7 @@ pub(crate) unsafe fn cnv_apply_dft_ifma<R: Ring, E: TaskExecutor>(
     let n = res.n();
     check_degree::<NTT3x42Ifma<R>>(module.n(), n);
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let b_read = right_read_ntt::<R>(n, b.n(), b_galois);
+    let b_read = right_read_ntt::<R>(n, b.n(), b_galois, <NTT3x42Ifma<R> as Backend>::MIN_DEGREE);
     let res_size = res.size();
     let a_size = a.size();
     let b_size = b.size();
@@ -966,7 +966,7 @@ pub(crate) unsafe fn cnv_apply_dft_add_ifma<R: Ring, E: TaskExecutor>(
     let n = res.n();
     check_degree::<NTT3x42Ifma<R>>(module.n(), n);
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let b_read = right_read_ntt::<R>(n, b.n(), b_galois);
+    let b_read = right_read_ntt::<R>(n, b.n(), b_galois, <NTT3x42Ifma<R> as Backend>::MIN_DEGREE);
     let res_size = res.size();
     let a_size = a.size();
     let b_size = b.size();
@@ -1174,7 +1174,12 @@ pub(crate) unsafe fn cnv_apply_dft_sum_ifma<R: Ring, E: TaskExecutor>(
     let mut max_b_size = 0;
     let prepared: Vec<_> = terms
         .iter()
-        .map(|term| (term, right_read_ntt::<R>(n, term.b.n(), term.b_galois)))
+        .map(|term| {
+            (
+                term,
+                right_read_ntt::<R>(n, term.b.n(), term.b_galois, <NTT3x42Ifma<R> as Backend>::MIN_DEGREE),
+            )
+        })
         .filter(|(term, _)| term.a.size() != 0 && term.b.size() != 0)
         .map(|(term, b_read)| {
             let a_size = term.a.size();
@@ -1340,7 +1345,7 @@ pub(crate) unsafe fn cnv_pairwise_apply_dft_ifma<R: Ring, E: TaskExecutor>(
     let n = res.n();
     check_degree::<NTT3x42Ifma<R>>(module.n(), n);
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let b_read = RightRead::embedded(n, b.n());
+    let b_read = RightRead::embedded(n, b.n(), <NTT3x42Ifma<R> as Backend>::MIN_DEGREE);
     let res_size = res.size();
     let a_size = a.size();
     let b_size = b.size();

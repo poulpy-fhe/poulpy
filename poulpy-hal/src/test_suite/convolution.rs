@@ -1204,7 +1204,8 @@ type ConvolutionForm<'a, BE> = dyn Fn(&mut VecZnxDftOwned<BE>, &CnvPVecROwned<BE
 /// degree: `cnv_prepare_left`, `cnv_prepare_right` and `cnv_prepare_self` with a
 /// degree-`n/2` input into a degree-`n` destination panic, `cnv_prepare_self`
 /// rejects a `right` whose degree differs from `left`'s, and `cnv_apply_dft`
-/// rejects a prepared left operand whose degree differs from `res`'s.
+/// rejects a prepared left operand whose degree differs from `res`'s, and
+/// `cnv_apply_dft` rejects a right operand below `BE::MIN_DEGREE` without writing `res`.
 pub fn test_convolution_embed<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: ModuleN
@@ -1355,6 +1356,52 @@ where
                 );
             });
         }
+    }
+
+    // A right operand below the backend's minimum degree is rejected, with the dirty destination untouched.
+    let below = BE::MIN_DEGREE / 2;
+    if below >= 1 {
+        let mut dirty: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(params.n, 2, res_size);
+        let mut seed_be = module.vec_znx_alloc(n, cols, b_size);
+        module.vec_znx_fill_uniform_source_all(base2k, b_size * base2k, &mut seed_be, &mut source);
+        let mut seed_right: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(params.n, cols, b_size, PrepareHint::Reuse);
+        module.cnv_prepare_right(
+            &mut seed_right.to_backend_mut(),
+            &vec_znx_backend_ref::<BE>(&seed_be),
+            &mut prepare_right_arena().arena(),
+        );
+        module.cnv_apply_dft(
+            0,
+            &mut dirty.to_backend_mut(),
+            res_col,
+            &a_prep.to_backend_ref(),
+            0,
+            &seed_right.to_backend_ref(),
+            1,
+            1,
+            &mut apply_arena().arena(),
+        );
+        let narrow_right: CnvPVecROwned<BE> = CnvPVecR::alloc(below, cols, b_size, PrepareHint::Reuse);
+        let before = BE::to_host_bytes(DataView::data(&dirty));
+        let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            module.cnv_apply_dft(
+                0,
+                &mut dirty.to_backend_mut(),
+                res_col,
+                &a_prep.to_backend_ref(),
+                0,
+                &narrow_right.to_backend_ref(),
+                1,
+                1,
+                &mut apply_arena().arena(),
+            );
+        }))
+        .is_err();
+        assert!(panicked, "cnv_apply_dft accepted b.n() < BE::MIN_DEGREE instead of panicking");
+        assert!(
+            before == BE::to_host_bytes(DataView::data(&dirty)),
+            "cnv_apply_dft wrote its destination before rejecting b.n() < BE::MIN_DEGREE"
+        );
     }
 
     // No prepare is sparsity-aware: under the degree-N module a degree-N/2 input is
