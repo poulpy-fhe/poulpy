@@ -46,6 +46,10 @@ macro_rules! core_backend_test_suite {
                 glwe_encrypt_zero_pk_rejects_nan_ephemeral => $crate::test_suite::noise::encryption::test_glwe_encrypt_zero_pk_rejects_nan_ephemeral,
                 #[should_panic(expected = "invalid public key: rank must be at least 1")]
                 glwe_public_key_alloc_rejects_rank_zero => $crate::test_suite::noise::encryption::test_glwe_public_key_alloc_rejects_rank_zero,
+                glwe_ci_embed_key_encrypt_sk_rejects_mismatched_secrets =>
+                    $crate::test_suite::noise::encryption::test_glwe_ci_embed_key_encrypt_sk_rejects_mismatched_secrets,
+                glwe_ci_trace_key_encrypt_sk_rejects_mismatched_secrets =>
+                    $crate::test_suite::noise::encryption::test_glwe_ci_trace_key_encrypt_sk_rejects_mismatched_secrets,
                 scalar_znx_fill_distribution => $crate::test_suite::sampling::test_scalar_znx_fill_distribution,
                 glwe_base2k_conv => $crate::test_suite::noise::test_glwe_base2k_conversion,
                 glwe_copy => $crate::test_suite::copy::test_glwe_copy,
