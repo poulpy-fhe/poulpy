@@ -1,7 +1,4 @@
-use std::{
-    fmt::Debug,
-    panic::{AssertUnwindSafe, catch_unwind},
-};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use poulpy_hal::layouts::{Backend, CnvPVecL, DataView};
 
@@ -12,7 +9,7 @@ use crate::{
 };
 
 /// Runs `call` on `state` and asserts it panics with exactly `message` and leaves `snapshot(state)` as it was.
-pub(crate) fn assert_refusal<S, V: PartialEq + Debug>(
+pub(crate) fn assert_refusal<S, V: PartialEq>(
     message: &str,
     state: &mut S,
     snapshot: impl Fn(&S) -> V,
@@ -21,7 +18,7 @@ pub(crate) fn assert_refusal<S, V: PartialEq + Debug>(
     let before = snapshot(state);
     let err = catch_unwind(AssertUnwindSafe(|| call(state))).expect_err("the call was accepted");
     assert_eq!(panic_message(&*err), message);
-    assert_eq!(snapshot(state), before, "a refused call wrote into its destination");
+    assert!(snapshot(state) == before, "a refused call wrote into its destination");
 }
 
 /// Data and metadata of a GLWE: everything a refused call must leave alone.

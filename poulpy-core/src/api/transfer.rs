@@ -551,7 +551,7 @@ mod tests {
     fn assert_transfer_refused<S, D, V>(src: &S, dst: &mut D, message: &str, snapshot: impl Fn(&D) -> V)
     where
         S: TransferInto<D>,
-        V: PartialEq + std::fmt::Debug,
+        V: PartialEq,
     {
         assert_refusal(message, dst, snapshot, |dst| src.transfer_into(dst));
     }
