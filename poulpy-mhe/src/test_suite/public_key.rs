@@ -360,13 +360,13 @@ where
     };
     let share = module.glwe_public_key_share_alloc_from_infos(&layout);
     let mut pk: GLWEPublicKey<AlignedBuf, i64> = module.glwe_public_key_alloc_from_infos(&layout);
-    let before = pk.data().clone();
+    let before: GLWEPublicKey<AlignedBuf, i64> = module.glwe_public_key_alloc_from_infos(&layout);
     super::fixtures::assert_panics_with("invalid distribution: a public key needs a samplable distribution", || {
         with_scratch::<BE, _>(module.mhe_glwe_public_key_share_finalize_tmp_bytes(), |s| {
             module.mhe_glwe_public_key_share_finalize(&mut pk, &share, s)
         })
     });
-    assert!(*pk.data() == before);
+    assert!(pk == before);
 }
 
 /// Entries sharing a seed share their masks, which makes encryption rank 1 in the ephemerals; a fresh share has zero seeds.
@@ -387,13 +387,13 @@ where
     let mut share = module.glwe_public_key_share_alloc_from_infos(&layout);
     *share.dist_mut() = Distribution::TernaryProb(0.5);
     let mut pk: GLWEPublicKey<AlignedBuf, i64> = module.glwe_public_key_alloc_from_infos(&layout);
-    let before = pk.data().clone();
+    let before: GLWEPublicKey<AlignedBuf, i64> = module.glwe_public_key_alloc_from_infos(&layout);
     super::fixtures::assert_panics_with("invalid finalization: public key entries share a seed", || {
         with_scratch::<BE, _>(module.mhe_glwe_public_key_share_finalize_tmp_bytes(), |s| {
             module.mhe_glwe_public_key_share_finalize(&mut pk, &share, s)
         })
     });
-    assert!(*pk.data() == before);
+    assert!(pk == before);
 }
 
 /// Reading a share of another rank fails.

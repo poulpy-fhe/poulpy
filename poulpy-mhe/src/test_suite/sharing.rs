@@ -16,7 +16,8 @@ use poulpy_hal::{
 
 use super::fixtures::{
     BASE2K, K, K_OUT, LOG_MESSAGE, PARTIES, SEED_XE, SEEDS, assert_flooded_integers, assert_panics_with, bounded_integers,
-    encrypt_integers, glwe_layout_at, ideal_secret, integer_plaintext, party_secrets, plaintext_integers, secret_from_seed,
+    encrypt_integers, glwe_layout_at, ideal_secret, integer_plaintext, party_secrets, plaintext_integers, plaintext_state,
+    secret_from_seed,
 };
 use super::parity::with_scratch;
 use crate::{
@@ -206,7 +207,7 @@ where
     };
     let mut secret: GLWEPlaintext<AlignedBuf, i64> = module.glwe_plaintext_alloc_from_infos(&secret_layout);
     let public_before = public.inner.clone();
-    let secret_before = secret.data().clone();
+    let secret_before = plaintext_state(&secret);
     let mut source_mask = Source::new([60u8; 32]);
     let mut source_xe = Source::new(SEED_XE);
     assert_panics_with("invalid share: share and mask layouts differ", || {
@@ -224,7 +225,7 @@ where
         })
     });
     assert!(public.inner == public_before);
-    assert!(*secret.data() == secret_before);
+    assert!(plaintext_state(&secret) == secret_before);
     assert_eq!(source_mask.next_i64(), Source::new([60u8; 32]).next_i64());
     assert_eq!(source_xe.next_i64(), Source::new(SEED_XE).next_i64());
 }
@@ -246,13 +247,13 @@ where
         inner: module.glwe_alloc_from_infos(&secret_layout),
     };
     let mut secret: GLWEPlaintext<AlignedBuf, i64> = module.glwe_plaintext_alloc_from_infos(&glwe_layout_at(module, K_OUT));
-    let before = secret.data().clone();
+    let before = plaintext_state(&secret);
     assert_panics_with("invalid finalization: ciphertext and share layouts differ", || {
         with_scratch::<BE, _>(module.mhe_glwe_enc_to_share_share_finalize_tmp_bytes(), |s| {
             module.mhe_glwe_enc_to_share_share_finalize(&mut secret, &ct, &share, s)
         })
     });
-    assert!(*secret.data() == before);
+    assert!(plaintext_state(&secret) == before);
 }
 
 /// Plaintext shares must be rank zero at both conversion boundaries.
