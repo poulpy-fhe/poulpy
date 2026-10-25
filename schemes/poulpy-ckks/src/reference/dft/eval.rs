@@ -119,7 +119,8 @@ where
 /// operand of `res`, so repeated evaluation no longer materializes them per factor,
 /// and `res` takes `dft`'s resolved plan. A `res` of another factor count, factor
 /// schedule or diagonal degree, radix or width, or a factor whose diagonals do not
-/// share one scale, width and slot kind, is `InvalidOperand`, before any write.
+/// share one scale, width and slot kind, is `InvalidOperand`, and an arena below
+/// [`ckks_prepare_dft_matrix_tmp_bytes`] is `CKKSError::Internal`, both before any write.
 /// Build the input via [`ckks_new_dft_matrix`].
 pub fn ckks_prepare_dft_matrix<Dir, Fmt, BE, P>(
     module: &Module<BE>,
@@ -144,6 +145,10 @@ where
         ensure_prepared_transformation_layout(OP, prepared, lt)?;
         ensure_uniform_diagonals(OP, lt, |pt| (pt.log_delta(), pt.encoded_k().as_usize(), pt.slots()))?;
     }
+    ckks_ensure!(
+        scratch.available() >= ckks_prepare_dft_matrix_tmp_bytes(module, dft),
+        "{OP}: scratch below its query"
+    );
     for (prepared, lt) in res.inner.factors.iter_mut().zip(dft.factor_operands()) {
         module.ckks_prepare_linear_transformation_rhs(prepared, lt, scratch)?;
     }

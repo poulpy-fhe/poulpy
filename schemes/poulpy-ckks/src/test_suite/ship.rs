@@ -22,7 +22,7 @@ use crate::{
     encoding::ship::masks::{ship_pre_rotated_masks, ship_pre_rotated_masks_omega2},
     layouts::CKKSPlaintextVecHostCodec,
     layouts::{
-        CKKSModuleAlloc, ShipKeySet, ShipKeysLayout, ShipPlan, ShipSecretSpec,
+        CKKSCiphertextOwned, CKKSModuleAlloc, ShipKeySet, ShipKeysLayout, ShipPlan, ShipSecretSpec,
         ship::keyset::{HMuxRotKeyPrepared, hmux_rot_key_encrypt_sk},
     },
     oep::{CKKSEncodingImpl, CKKSShipCoeffEncodingImpl, CKKSShipImpl, derived::ship::ship_mux_plans},
@@ -30,10 +30,10 @@ use crate::{
 };
 
 use super::helpers::{
-    TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_decrypt_precision, ckks_decrypt_decode,
-    ckks_encrypt, ckks_encrypt_pt, ckks_spec, test_vector_1, want_rotate,
+    TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_ckks_internal, assert_decrypt_precision,
+    ckks_decrypt_decode, ckks_encrypt, ckks_encrypt_pt, ckks_spec, test_vector_1, want_rotate,
 };
-use super::parity::helpers::with_scratch;
+use super::parity::helpers::{snapshot, with_scratch};
 use poulpy_core::api::GLWESecretSampling;
 
 /// SHIP suite plan on the test ring: sparse weight 32, full offset window,
@@ -530,14 +530,33 @@ fn ship_bootstrap_case<BE, F, E>(
 
     let mut out = alloc_ct(&big, module, kk);
     let ship_bytes = CKKSShipOps::<BE, F>::ckks_ship_bootstrap_tmp_bytes(module, &out, &ct0, &keys).unwrap();
-    with_scratch::<BE, _>(ship_bytes, |s| {
-        if complex {
-            CKKSShipOps::<BE, F>::ckks_ship_bootstrap_complex_into(module, &mut out, &ct0, &keys, s)
-        } else {
-            CKKSShipOps::<BE, F>::ckks_ship_bootstrap_into(module, &mut out, &ct0, &keys, s)
-        }
-    })
-    .unwrap();
+    let bootstrap = |out: &mut CKKSCiphertextOwned<BE>, bytes: usize| {
+        with_scratch::<BE, _>(bytes, |s| {
+            if complex {
+                CKKSShipOps::<BE, F>::ckks_ship_bootstrap_complex_into(module, out, &ct0, &keys, s)
+            } else {
+                CKKSShipOps::<BE, F>::ckks_ship_bootstrap_into(module, out, &ct0, &keys, s)
+            }
+        })
+    };
+    let op = if complex {
+        "ckks_ship_bootstrap_complex_into"
+    } else {
+        "ckks_ship_bootstrap_into"
+    };
+    let before = snapshot::<BE, _>(&out);
+    let err = bootstrap(&mut out, ship_bytes - 1).unwrap_err();
+    assert_ckks_internal(
+        "ship_bootstrap: one byte short",
+        &err,
+        &format!("{op}: scratch below its query"),
+    );
+    assert_eq!(
+        snapshot::<BE, _>(&out),
+        before,
+        "ship_bootstrap: a refused call wrote the output"
+    );
+    bootstrap(&mut out, ship_bytes).unwrap();
     assert_eq!(
         out.slots(),
         if complex { SlotsKind::Complex } else { SlotsKind::Real },

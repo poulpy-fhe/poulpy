@@ -95,7 +95,30 @@ where
     H: GetAutomorphismKey<BE>,
     TH: GetTensorKey<BE>,
 {
+    const OP: &str = "ckks_slot_product_assign";
     let rotations = checked_fold_rotations(module, a, b)?;
+    let Some(&first) = rotations.first() else {
+        return Ok(());
+    };
+    // The first rotation and product look their keys up at `ct.k()`, the widest the fold switches.
+    let k = ct.k();
+    let key = keys
+        .get_automorphism_key(galois_element(first, module.cyclotomic_order()), k)
+        .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
+            op: OP,
+            rotation: first,
+            k: k.into(),
+            source,
+        })?;
+    let tensor_key = tsk
+        .get_tensor_key(k)
+        .map_err(|source| CKKSCompositionError::MissingRelinearizationKey {
+            op: OP,
+            k: k.into(),
+            source,
+        })?;
+    let bytes = ckks_slot_product_assign_tmp_bytes_derived(module, &*ct, &key, &tensor_key);
+    ckks_ensure!(scratch.available() >= bytes, "{OP}: scratch below its query");
     scratch.scope(|scratch_local| {
         let (mut tmp, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(ct);
         for k in rotations {
