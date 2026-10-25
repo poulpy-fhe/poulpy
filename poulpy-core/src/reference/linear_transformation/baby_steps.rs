@@ -42,7 +42,6 @@ use crate::{
 
 use super::{BsgsRotations, LinearTransformationBabySteps, LinearTransformationLayout};
 use crate::layouts::{ModuleCoreAlloc, digits_aligned, operand_galois_element};
-use poulpy_hal::layouts::ScratchOwned;
 
 const BABY_ROTATION_WORKERS: usize = 4;
 
@@ -63,8 +62,8 @@ impl<BE: Backend> LinearTransformationBabySteps<BE> {
         Self::alloc_with(module, baby_steps, BsgsRotations::PerRotation, a)
     }
 
-    /// Pre-allocates a baby-step cache prepared as `rotations` says, holding the rotations
-    /// [`BsgsRotations::baby_closure`] gives for `baby_steps`.
+    /// Pre-allocates a baby-step cache prepared as `rotations` says, holding `baby_steps` and,
+    /// with [`BsgsRotations::PowersOfTwo`], every rotation a doubling pass reads to reach them.
     pub fn alloc_with<M, A>(module: &M, baby_steps: &[i64], rotations: BsgsRotations, a: &A) -> Self
     where
         M: ModuleN + CnvPVecAlloc<BE>,
@@ -462,8 +461,7 @@ fn glwe_prepare_baby_steps_doubling<BE, M, H>(
                 + BE::scratch_aligned(BE::bytes_of_vec_znx(n, cols, a_size)))
     };
     // The rotations as ciphertexts and the buffers of the widest pass, carved from the scratch
-    // when it holds them beside the work of a rotation
-    // ([`glwe_prepare_baby_doubling_tmp_bytes`]), else allocated.
+    // beside the work of a rotation ([`glwe_prepare_baby_doubling_tmp_bytes`]).
     let need = rotations.len() * BE::scratch_aligned(module.glwe_bytes_of_from_infos(a))
         + passes
             .iter()
@@ -477,16 +475,11 @@ fn glwe_prepare_baby_steps_doubling<BE, M, H>(
         .map(|key| glwe_prepare_linear_transformation_baby_steps_tmp_bytes::<BE, _, _, _>(module, a, key))
         .max()
         .unwrap_or(0);
-    let mut owned: Option<ScratchOwned<BE>> = None;
-    let arena = if scratch.available() >= need + work {
-        scratch.borrow()
-    } else {
-        let owned = owned.insert(<ScratchOwned<BE> as poulpy_hal::api::ScratchOwnedAlloc<BE>>::alloc(
-            need + work,
-        ));
-        poulpy_hal::api::ScratchOwnedBorrow::borrow(owned)
-    };
-    let (mut rotated, mut work) = arena.take_glwe_slice_scratch(rotations.len(), a);
+    assert!(
+        scratch.available() >= need + work,
+        "glwe_prepare_linear_transformation_baby_steps: scratch below its query"
+    );
+    let (mut rotated, mut work) = scratch.borrow().take_glwe_slice_scratch(rotations.len(), a);
     let index = |rot: i64| rotations.binary_search(&rot).unwrap();
     for ((_, pairs), key) in passes.iter().zip(&pass_keys) {
         if !hoisted(key) {

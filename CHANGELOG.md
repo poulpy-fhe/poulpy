@@ -140,11 +140,13 @@
 
 ### `poulpy-core`
 
-- Add the evaluation of BSGS linear transformations with the keys of power-of-two rotations only (`LinearTransformationStrategy::BsgsPowersOfTwo`, `BsgsRotations::PowersOfTwo`, `GiantTreeLevel`): the baby rotations come from doubling passes, whose sources share the pass's key and are switched a task each on a parallel executor, and the giant steps are summed as a binary tree over the two's-complement digits of their index, each level switching with one key.
+- Add the evaluation of BSGS linear transformations with the keys of power-of-two rotations only (`LinearTransformationStrategy::BsgsPowersOfTwo`, `BsgsRotations::PowersOfTwo`, with `BsgsRotations::giant_key_switches`): the baby rotations come from doubling passes, whose sources share the pass's key and are switched a task each on a parallel executor, and the giant steps are summed as a binary tree over the two's-complement digits of their index, each level switching with one key.
   The key switches are as many as with a key per rotation, the keys about `log2(n1) + log2(n2)` instead of `n1 + n2`, and a product goes through more switches.
-  The doubling and the tree carve their buffers from the scratch when it holds them (`glwe_prepare_baby_doubling_tmp_bytes`, `glwe_eval_giant_tree_tmp_bytes`) and allocate them otherwise.
+  The doubling and the tree carve their buffers from the scratch, which must also hold `glwe_prepare_baby_doubling_tmp_bytes` and `glwe_eval_giant_tree_tmp_bytes`; they panic with less.
+  A tree over keys at another radix normalizes each product with one `vec_znx_idft_normalize` and its root into `res` with one `glwe_normalize`.
   `test_glwe_linear_transformation_powers_of_two` and `test_linear_transformation_powers_of_two_parity` check them.
-- **Breaking:** `LinearTransformationLayout` gains `rotations`; `BsgsRotations::PerRotation` evaluates as before.
+- **Breaking:** `LinearTransformation<P>` and `LinearTransformationPlan` gain the public field `rotations`, so a struct literal adds `rotations: BsgsRotations::PerRotation`, which evaluates as before, as poulpy-blas does.
+  `LinearTransformationStrategy` gains `BsgsPowersOfTwo`, which an exhaustive match handles.
 - The lazy giant steps of a linear transformation normalize each mask column from its inverse transform with `vec_znx_idft_normalize`, where they took an inverse transform into a BIG buffer and normalized it, with the same outputs.
 - Add `gglwe_copy` and `ggsw_copy` (`GGLWECopy`, `GGSWCopy`, `GGLWECopyImpl`, `GGSWCopyImpl`, `impl_gglwe_copy_reference_full!`, `impl_ggsw_copy_reference_full!`), the copy of the first rows of a GGLWE or a GGSW into one of the same gadget and as many or fewer digits, each row as `glwe_copy` copies it.
   A key never covers its own layout but covers such a copy, which the `_assign` key switches and automorphisms switch in place; an automorphism key's Galois element is not copied.
@@ -268,6 +270,7 @@
 - Add `DFTPlan::with_power_of_two_keys` and `BootstrappingPreset::with_power_of_two_keys`, the transforms evaluated with the keys of power-of-two rotations only (`BsgsPowersOfTwo`): `n16_d35_k685_p19_s2c_ffr_ci` takes 21 rotation keys instead of 35, 3419 MiB instead of 5149, at the same widths.
   The preset keeps a key per rotation.
   `preset_label` marks it `+pow2`, and `small_s2c_preset_meets_precision` runs it on both rings.
+  A diagonal set compiled with `BsgsPowersOfTwo { giant_step: 0 }` is refused as with `Bsgs`, and `max_backend_base2k` counts the tree's key switches of a power-of-two plan.
 - Add the modulus raise that applies the first `CoeffsToSlots` factor on the raised ciphertext while it is small (`DFTPlan::with_first_factor_on_raise`, after ePrint 2025/1403): the factor consumes no modulus, and the raised width drops by one CoeffsToSlots scale.
   Each diagonal's term is rotated with no key and switched to the dense secret by a `GLWESwitchingKey` of its own, from the rotated raise secret, whose rows sit `k_offset` bits under the term's few limbs and end at the raise's working width (`BootstrappingKeysLayout::first_factor_key`, `BootstrappingLinearKeys::first_factor_key`); the switches are summed with `glwe_keyswitch_dft_add` and rounded once.
   The sparse-to-dense switch is not used, nor its key generated.
@@ -521,7 +524,7 @@
   The point-caching helper of the BLAS runners moves to the crate root, shared by both layers.
 - **Breaking:** `bench_ckks_bootstrapping` requires `CKKSBootstrappingCIOps`, and runs the presets with EvalMod on the conjugate-invariant ring.
 - **Breaking:** `bench_ckks_bootstrapping` takes no `FIXTURE_BASE2K`: it runs each preset at the radix `test_suite::presets::preset_for_backend` selects for the backend, so the ids of its NTT4x30 and FFT64 runs read `base2k=53` and `base2k=17` instead of 52 and 18.
-- **Breaking:** `hal::suites::bench_normalization` requires `VecZnxGadgetDecompose` and `VecZnxGadgetDecomposeTmpBytes`, and also sweeps `vec_znx_gadget_decompose` over the 27-limb key-switch columns of a bootstrap at radix 53 (`GadgetDecomposeSweepParams`, `default_bench_params_gadget_decompose`).
+- **Breaking:** `hal::suites::bench_normalization` requires `VecZnxGadgetDecompose` and `VecZnxGadgetDecomposeTmpBytes`, and also sweeps `vec_znx_gadget_decompose` over the 27-limb key-switch columns of a bootstrap at radix 53 (`runner_vec_znx_gadget_decompose`, `GadgetDecomposeSweepParams`, `default_bench_params_gadget_decompose`).
 
 ### Dependencies
 

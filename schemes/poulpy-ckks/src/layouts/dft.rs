@@ -968,6 +968,52 @@ impl<BE: Backend, Dir, Fmt: DftFormat, R> DFTMatrix<BE, Dir, Fmt, R> {
     }
 }
 
+/// The last factor `M` of the transform `plan` describes at degree `2^log_n`,
+/// left-multiplied by each map of `scales` and encoded as that factor is: the
+/// factors `scale·M`, for a slot-wise product folded into it, in a matrix of
+/// `plan` to prepare as the others. `plan` is a resolved plan, such as the one a
+/// [`DFTMatrix`] stores.
+pub(crate) fn ckks_scaled_last_factors<BE, F>(
+    module: &Module<BE>,
+    base2k: poulpy_core::layouts::Base2K,
+    plan: &DFTPlan,
+    log_n: usize,
+    scales: &[crate::layouts::ComplexDiagonals<F>],
+    scratch: &mut poulpy_hal::layouts::ScratchArena<'_, BE>,
+) -> crate::CKKSResult<DFTMatrix<BE, crate::layouts::Encode, crate::layouts::Split>>
+where
+    BE: Backend,
+    Module<BE>: crate::layouts::CKKSModuleAlloc<BE> + crate::api::CKKSEncodingOps<BE, F>,
+    F: crate::reference::dft::DftScalar + crate::api::CKKSEncodingScalar,
+{
+    let last = crate::reference::dft::gen_dft_matrices::<F>(plan, log_n)
+        .pop()
+        .expect("a DFT plan has at least one factor");
+    let strategy = plan.factor_strategy(
+        plan.schedule
+            .steps
+            .last()
+            .expect("a DFT plan has at least one factor")
+            .giant_step,
+    );
+    let factors = scales
+        .iter()
+        .map(|scale| {
+            crate::reference::ckks_encode_linear_transformation_from_diagonals::<BE, F>(
+                module,
+                base2k,
+                plan.coeffs_meta,
+                &scale.compose(&last),
+                strategy,
+                false,
+                scratch,
+            )
+        })
+        .collect::<core::result::Result<Vec<_>, ::anyhow::Error>>()
+        .map_err(crate::CKKSError::from)?;
+    Ok(DFTMatrix::from_factors(DFTMatrixFactors::new(plan.clone(), factors)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

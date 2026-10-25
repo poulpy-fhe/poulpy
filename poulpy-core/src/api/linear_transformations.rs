@@ -23,6 +23,9 @@ use crate::layouts::{
 /// [`LinearTransformationBabySteps::alloc`] for the allocation half.
 pub trait GLWELinearTransformations<BE: Backend> {
     /// Scratch bytes required by [`Self::glwe_eval_linear_transformation_into`].
+    /// A transform on [`BsgsRotations::PowersOfTwo`](crate::layouts::BsgsRotations::PowersOfTwo)
+    /// also needs [`glwe_eval_giant_tree_tmp_bytes`](crate::reference::linear_transformation::glwe_eval_giant_tree_tmp_bytes)
+    /// for its giant steps; the evaluation panics with less.
     fn glwe_eval_linear_transformation_tmp_bytes<R, A, B, K>(&self, res: &R, a: &A, pt: &B, key: &K) -> usize
     where
         R: GLWEInfos,
@@ -50,6 +53,9 @@ pub trait GLWELinearTransformations<BE: Backend> {
         K: GGLWEInfos;
 
     /// Scratch bytes required by [`Self::glwe_prepare_linear_transformation_baby_steps`].
+    /// A cache on [`BsgsRotations::PowersOfTwo`](crate::layouts::BsgsRotations::PowersOfTwo)
+    /// also needs [`glwe_prepare_baby_doubling_tmp_bytes`](crate::reference::linear_transformation::glwe_prepare_baby_doubling_tmp_bytes)
+    /// for its rotations; the preparation panics with less.
     fn glwe_prepare_linear_transformation_baby_steps_tmp_bytes<A, K>(&self, a: &A, key: &K) -> usize
     where
         A: GLWEInfos,

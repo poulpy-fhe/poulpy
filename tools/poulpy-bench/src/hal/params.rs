@@ -241,7 +241,7 @@ impl Display for GadgetDecomposeSweepParams {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{}/a_size={}/k={}/k_digit={}",
+            "{}/a_size={}/base2k={}/k_digit={}",
             self.shape, self.a_size, self.base2k, self.k_digit
         )
     }

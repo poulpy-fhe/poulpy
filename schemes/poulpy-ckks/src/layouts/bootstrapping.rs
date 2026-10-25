@@ -42,7 +42,7 @@ use crate::{
         EvalModPlan, Split,
         eval_mod::{EvalModType, compile_eval_mod},
     },
-    reference::dft::{DftScalar, eval::ckks_scaled_last_factors},
+    reference::dft::DftScalar,
 };
 
 /// Stage ordering for the ModUp/EvalMod bootstrapping family.
@@ -1030,7 +1030,7 @@ where
                 let scales = [slot_scales(vec![one_half], vec![-one_half]), slot_scales(odd_re, odd_im)];
                 let dft = &mut context.coeffs_to_slots.inner;
                 dft.factors.pop();
-                CIPreUnprepared::Folded(ckks_scaled_last_factors::<BE, F>(
+                CIPreUnprepared::Folded(crate::layouts::dft::ckks_scaled_last_factors::<BE, F>(
                     module,
                     base2k,
                     &dft.plan,

@@ -68,7 +68,7 @@ where
     let gadget = [BenchOp {
         layer: "hal",
         name: "vec_znx_gadget_decompose",
-        runner: vec_znx::runner_vec_znx_gadget_decompose_sweep::<B, WallTime>,
+        runner: vec_znx::runner_vec_znx_gadget_decompose::<B, WallTime>,
     }];
     bench_ops(PhantomData::<B>, &gadget, default_bench_params_gadget_decompose(), c);
 }

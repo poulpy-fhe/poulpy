@@ -55,8 +55,8 @@ use std::collections::BTreeMap;
 
 use anyhow::{Context, Result, ensure};
 use poulpy_core::layouts::{
-    Base2K, Degree, GGLWEInfos, GGLWELayout, GLWELayout, GLWESwitchingKeyLayout, LWEInfos, LinearTransformationLayout,
-    LinearTransformationStrategy, Rank, TorusPrecision,
+    Base2K, BsgsRotations, Degree, GGLWEInfos, GGLWELayout, GLWELayout, GLWESwitchingKeyLayout, LWEInfos,
+    LinearTransformationLayout, Rank, TorusPrecision,
 };
 use poulpy_hal::layouts::{MaxBase2k, Module};
 
@@ -398,15 +398,27 @@ impl BootstrappingPreset {
             let meta = dft.coeffs_meta();
             let diagonal_limbs = (meta.log_delta() + meta.log_budget()).div_ceil(base2k);
             for (indexes, giant_step) in dft.diagonal_indexes(log_n).into_iter().zip(dft.schedule().giant_steps()) {
+                // With the plan's own schedule: the tree of power-of-two keys switches more.
                 let index = LinearTransformationLayout {
                     indexes,
                     slots: 1 << log_n,
-                    strategy: LinearTransformationStrategy::Bsgs { giant_step },
+                    strategy: dft.factor_strategy(giant_step),
                 }
                 .index();
                 let diagonals: usize = index.index.iter().map(Vec::len).sum();
                 let giants = index.index.iter().filter(|babies| !babies.is_empty()).count();
-                products = products.max(diagonals * diagonal_limbs + giants * operand);
+                let switches = match index.rotations {
+                    BsgsRotations::PerRotation => giants,
+                    BsgsRotations::PowersOfTwo { .. } => index.rotations.giant_key_switches(
+                        index
+                            .giant_steps
+                            .iter()
+                            .zip(&index.index)
+                            .filter(|(_, babies)| !babies.is_empty())
+                            .map(|(&rot, _)| rot),
+                    ),
+                };
+                products = products.max(diagonals * diagonal_limbs + switches * operand);
                 passes += 1;
             }
         }

@@ -217,6 +217,7 @@ mod core {
             gglwe_product_digits_strided => poulpy_core::test_suite::parity::test_gglwe_product_digits_strided_parity,
             tensor_relinearize_decrypt => poulpy_core::test_suite::parity::test_tensor_relinearize_decrypt_parity,
             linear_transformation => poulpy_core::test_suite::parity::test_linear_transformation_parity,
+            linear_transformation_powers_of_two => poulpy_core::test_suite::parity::test_linear_transformation_powers_of_two_parity,
             glwe_tensor => poulpy_core::test_suite::parity::test_glwe_tensor_parity,
         }
     }

@@ -104,7 +104,8 @@ The decomposition is controlled by the choice of `n1`, expressed through the `Li
 - `BsgsPowersOfTwo { giant_step }` is the same schedule evaluated with the keys of the power-of-two multiples of the baby and giant steps only (`BsgsRotations::PowersOfTwo`).
   The baby rotation `k·b` is the rotation of `(k - 2^i)·b` by `2^i·b`, `2^i` the top bit of `k`, so the rotations of one doubling pass share a key and are switched together.
   The giant steps are summed as a binary tree over the two's-complement digits of `j`, `T(u; G) = T(u_even; 2G) + rot(G)(T(u_odd; 2G))`, so the switches of one tree level share a key.
-  The number of key switches is the same, the number of distinct keys is about `log2(n1) + log2(n2)` instead of `n1 + n2`, and a product goes through more switches.
+  The baby rotations take as many key switches as with a key per rotation; the tree can take more, at most about one more per level: the giant digits `{-1, 0, 1}` take 3 switches instead of 2, and `{-2, ..., 2}` take 5 instead of 4.
+  The number of distinct keys is about `log2(n1) + log2(n2)` instead of `n1 + n2`, and a product goes through more switches.
 
 For the cost-optimal width, call the `optimal_bsgs_giant_step` helper and feed its result into `Bsgs { giant_step }`. It returns `1`, which degenerates to the `Direct` schedule, for a single diagonal or fewer. Otherwise it only considers giant steps that are multiples of the smallest gap between consecutive diagonals, which is cheap for stride structured matrices, and selects the one that balances the baby and giant counts near the square root of the number of diagonals.
 

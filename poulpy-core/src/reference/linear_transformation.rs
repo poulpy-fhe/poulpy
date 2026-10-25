@@ -24,8 +24,8 @@ mod tests;
 // crate root.
 pub use crate::layouts::prepared::{LinearTransformationBabySteps, LinearTransformationPrepared, PreparedDiagonal};
 pub use crate::layouts::{
-    BsgsRotations, GiantTreeLevel, LinearTransformation, LinearTransformationDiagonal, LinearTransformationGiantStep,
-    LinearTransformationLayout, LinearTransformationPlan, LinearTransformationStrategy, optimal_bsgs_giant_step,
+    BsgsRotations, LinearTransformation, LinearTransformationDiagonal, LinearTransformationGiantStep, LinearTransformationLayout,
+    LinearTransformationPlan, LinearTransformationStrategy, optimal_bsgs_giant_step,
 };
 
 // Reference implementations forwarded to from `crate::oep::LinearTransformationImpl`.

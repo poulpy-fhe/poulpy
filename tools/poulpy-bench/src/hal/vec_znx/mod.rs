@@ -5,6 +5,7 @@
 
 mod add;
 mod automorphism;
+mod gadget_decompose;
 mod mul_xp_minus_one;
 mod negate;
 mod normalize;
@@ -14,12 +15,10 @@ mod sub;
 
 pub use add::{runner_vec_znx_add, runner_vec_znx_add_assign, runner_vec_znx_add_scalar_assign};
 pub use automorphism::{runner_vec_znx_automorphism, runner_vec_znx_automorphism_assign};
+pub use gadget_decompose::runner_vec_znx_gadget_decompose;
 pub use mul_xp_minus_one::{runner_vec_znx_mul_xp_minus_one, runner_vec_znx_mul_xp_minus_one_assign};
 pub use negate::{runner_vec_znx_negate, runner_vec_znx_negate_assign};
-pub use normalize::{
-    runner_vec_znx_gadget_decompose_sweep, runner_vec_znx_normalize, runner_vec_znx_normalize_assign,
-    runner_vec_znx_normalize_sweep,
-};
+pub use normalize::{runner_vec_znx_normalize, runner_vec_znx_normalize_assign, runner_vec_znx_normalize_sweep};
 pub use rotate::{runner_vec_znx_rotate, runner_vec_znx_rotate_assign};
 pub use shift::{
     runner_vec_znx_lsh, runner_vec_znx_lsh_add, runner_vec_znx_lsh_assign, runner_vec_znx_lsh_sub, runner_vec_znx_rsh,

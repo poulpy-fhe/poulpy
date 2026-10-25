@@ -154,18 +154,18 @@ pub enum BsgsRotations {
 
 /// One level of the giant-step tree of [`BsgsRotations::PowersOfTwo`].
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct GiantTreeLevel {
+pub(crate) struct GiantTreeLevel {
     /// The rotation of the level's key, in `[0, slots)`.
-    pub rot: i64,
+    pub(crate) rot: i64,
     /// `(even, odd)` node pairs, parent `even / 2`: node `odd` rotated by `rot` is added to
     /// node `even`, absent when no giant step lies under it.
-    pub pairs: Vec<(Option<usize>, usize)>,
+    pub(crate) pairs: Vec<(Option<usize>, usize)>,
 }
 
 impl BsgsRotations {
     /// The baby rotations the cache holds for the needed rotations `babies`: themselves and,
     /// with [`Self::PowersOfTwo`], every non-zero rotation a doubling reads.
-    pub fn baby_closure(&self, babies: impl IntoIterator<Item = i64>) -> Vec<i64> {
+    pub(crate) fn baby_closure(&self, babies: impl IntoIterator<Item = i64>) -> Vec<i64> {
         let mut closure: BTreeSet<i64> = babies.into_iter().collect();
         if let Self::PowersOfTwo { baby_step, .. } = *self {
             for baby in closure.clone() {
@@ -182,7 +182,7 @@ impl BsgsRotations {
     /// The doubling passes of [`Self::PowersOfTwo`] over the cached rotations `babies` (a
     /// [`Self::baby_closure`]): `(key rotation, [(source, target)])`, pass `i` rotating by
     /// `2^i·baby_step` the targets whose top bit is `2^i`. Empty for [`Self::PerRotation`].
-    pub fn baby_passes(&self, babies: impl IntoIterator<Item = i64>) -> Vec<(i64, Vec<(i64, i64)>)> {
+    pub(crate) fn baby_passes(&self, babies: impl IntoIterator<Item = i64>) -> Vec<(i64, Vec<(i64, i64)>)> {
         let Self::PowersOfTwo { baby_step, .. } = *self else {
             return Vec::new();
         };
@@ -203,7 +203,7 @@ impl BsgsRotations {
     /// The giant-step tree of [`Self::PowersOfTwo`] over the giant rotations `giants`: the
     /// leaf of each giant step, and the levels from the leaves up; the root is node 0.
     /// `None` for [`Self::PerRotation`].
-    pub fn giant_tree(&self, giants: impl IntoIterator<Item = i64>) -> Option<(Vec<usize>, Vec<GiantTreeLevel>)> {
+    pub(crate) fn giant_tree(&self, giants: impl IntoIterator<Item = i64>) -> Option<(Vec<usize>, Vec<GiantTreeLevel>)> {
         let Self::PowersOfTwo { giant_step, slots, .. } = *self else {
             return None;
         };
@@ -252,6 +252,18 @@ impl BsgsRotations {
                 .filter(|level| !level.pairs.is_empty())
                 .map(|level| level.rot)
                 .collect(),
+        }
+    }
+
+    /// The key switches the evaluation of the giant rotations `giants` takes: one per non-zero
+    /// rotation for [`Self::PerRotation`], one per pair of a level of the tree for
+    /// [`Self::PowersOfTwo`], which can be more.
+    pub fn giant_key_switches(&self, giants: impl IntoIterator<Item = i64>) -> usize {
+        match self {
+            Self::PerRotation => giants.into_iter().filter(|&rot| rot != 0).count(),
+            Self::PowersOfTwo { .. } => self
+                .giant_tree(giants)
+                .map_or(0, |(_, levels)| levels.iter().map(|level| level.pairs.len()).sum()),
         }
     }
 
