@@ -28,7 +28,7 @@ pub unsafe trait CKKSPolynomialEvaluationImpl:
 {
     /// Reproduces
     /// [`ckks_eval_poly_real_const_coeffs_from_power_basis_reference`](crate::reference::polynomial_evaluation::PolynomialEvaluationReference::ckks_eval_poly_real_const_coeffs_from_power_basis_reference)
-    /// bit for bit; free in kernels and scratch use. No `_tmp_bytes` query bounds it.
+    /// bit for bit; free in kernels and scratch use. Its scratch is bounded by [`CKKSAllOpsTmpBytes::ckks_all_ops_tmp_bytes`](crate::api::CKKSAllOpsTmpBytes::ckks_all_ops_tmp_bytes).
     fn ckks_eval_poly_real_const_coeffs_from_power_basis<R, B, A, G, H>(
         module: &Module<Self>,
         res: &mut R,
@@ -81,7 +81,7 @@ pub unsafe trait CKKSPolynomialEvaluationImpl:
 pub unsafe trait CKKSComplexPolynomialEvaluationImpl: CKKSPolynomialEvaluationImpl + super::CKKSImagImpl {
     /// Reproduces
     /// [`ckks_eval_poly_complex_const_coeffs_from_power_basis_reference`](crate::reference::polynomial_evaluation::PolynomialEvaluationReference::ckks_eval_poly_complex_const_coeffs_from_power_basis_reference)
-    /// bit for bit; free in kernels and scratch use. No `_tmp_bytes` query bounds it.
+    /// bit for bit; free in kernels and scratch use. Its scratch is bounded by [`CKKSAllOpsTmpBytes::ckks_all_ops_tmp_bytes`](crate::api::CKKSAllOpsTmpBytes::ckks_all_ops_tmp_bytes).
     fn ckks_eval_poly_complex_const_coeffs_from_power_basis<R, C, A, G, H>(
         module: &Module<Self>,
         res: &mut R,
