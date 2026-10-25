@@ -800,7 +800,7 @@ where
         module.ckks_prepare_dft_matrix(&mut res, &dft, scratch)
     })
     .unwrap();
-    assert_eq!(buffers(&res), buffers(&fresh), "prepare-into differs from prepare");
+    assert!(buffers(&res) == buffers(&fresh), "prepare-into differs from prepare");
     assert_eq!(infos(&res), infos(&fresh), "prepare-into infos differ from prepare");
 
     let before = addresses(&res);
@@ -814,7 +814,7 @@ where
     })
     .unwrap();
     assert_eq!(addresses(&res), before, "the refill reallocated");
-    assert_eq!(buffers(&res), buffers(&fresh), "the refill differs from prepare");
+    assert!(buffers(&res) == buffers(&fresh), "the refill differs from prepare");
     if prepare_bytes > 0 {
         let (want_buffers, want_infos) = (buffers(&res), infos(&res));
         let err = with_scratch::<BE, _>(prepare_bytes - 1, |scratch| {
@@ -856,9 +856,8 @@ where
             "{reason}: {err:?}"
         );
         assert!(err.to_string().contains(reason), "expected {reason:?}, got: {err}");
-        assert_eq!(
-            buffers(&res),
-            want_buffers,
+        assert!(
+            buffers(&res) == want_buffers,
             "{reason}: a rejected matrix changed the prepared bytes"
         );
         assert_eq!(

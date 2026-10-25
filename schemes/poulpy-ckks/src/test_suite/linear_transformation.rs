@@ -11,8 +11,8 @@ use crate::api::CKKSEncodingOps;
 use std::collections::{HashMap, HashSet};
 
 use poulpy_core::layouts::{
-    Diagonals, Evaluate, GGLWEInfos, GetAutomorphismKey, LWEInfos, LinearTransformationStrategy, SetGLWEPlaintextInfos,
-    TorusPrecision, k_digit_of,
+    Diagonals, Evaluate, GGLWEInfos, GetAutomorphismKey, LWEInfos, LinearTransformationPlan, LinearTransformationStrategy,
+    SetGLWEPlaintextInfos, TorusPrecision, k_digit_of,
     prepared::{GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedBackendRef, GLWEAutomorphismKeyPreparedToBackendRef},
 };
 use poulpy_hal::{
@@ -163,13 +163,24 @@ where
         &mut scratch.borrow(),
     );
 
+    // The documented bound of `self_into`: the larger of the baby-step and evaluation queries.
+    let self_into_bytes = |plan: &LinearTransformationPlan, streamed: bool| {
+        let eval = if streamed {
+            module.ckks_eval_linear_transformation_streamed_tmp_bytes(&ct, plan, &key_params.atk_layout())
+        } else {
+            module.ckks_eval_linear_transformation_tmp_bytes(&ct, plan, &key_params.atk_layout())
+        };
+        module
+            .ckks_prepare_linear_transformation_baby_steps_tmp_bytes(&ct, plan, &key_params.atk_layout())
+            .max(eval)
+    };
+
     // transpose = false: dec(lt(enc(a), B)) ≈ B·a. Resident path (prepared RHS).
     let prepared_left = prepare_lt(module, &lt_left);
     let mut ct_left = alloc_ct(&params, module, params.k);
-    with_scratch::<BE, _>(
-        module.ckks_eval_linear_transformation_tmp_bytes(&ct, &key_params.atk_layout()),
-        |s| module.ckks_eval_linear_transformation_self_into(&mut ct_left, &ct, &prepared_left, &atks, s),
-    )
+    with_scratch::<BE, _>(self_into_bytes(&lt_left.index(), false), |s| {
+        module.ckks_eval_linear_transformation_self_into(&mut ct_left, &ct, &prepared_left, &atks, s)
+    })
     .unwrap();
     let (want_left_re, want_left_im) = b.evaluate((a_re.as_slice(), a_im.as_slice()), strategy);
     assert_decrypt_precision(
@@ -187,10 +198,9 @@ where
     // Streamed (plaintext-RHS) path must match the resident path against the
     // same reference — same unified evaluator, different `P`.
     let mut ct_left_streamed = alloc_ct(&params, module, params.k);
-    with_scratch::<BE, _>(
-        module.ckks_eval_linear_transformation_streamed_tmp_bytes(&ct, &key_params.atk_layout()),
-        |s| module.ckks_eval_linear_transformation_self_into(&mut ct_left_streamed, &ct, &lt_left, &atks, s),
-    )
+    with_scratch::<BE, _>(self_into_bytes(&lt_left.index(), true), |s| {
+        module.ckks_eval_linear_transformation_self_into(&mut ct_left_streamed, &ct, &lt_left, &atks, s)
+    })
     .unwrap();
     assert_decrypt_precision(
         "linear_transformation_B_times_a_streamed",
@@ -207,10 +217,9 @@ where
     // transpose = true: dec(lt(enc(a), Bᵀ)) ≈ Bᵀ·a = a·B. Resident path.
     let prepared_right = prepare_lt(module, &lt_right);
     let mut ct_right = alloc_ct(&params, module, params.k);
-    with_scratch::<BE, _>(
-        module.ckks_eval_linear_transformation_tmp_bytes(&ct, &key_params.atk_layout()),
-        |s| module.ckks_eval_linear_transformation_self_into(&mut ct_right, &ct, &prepared_right, &atks, s),
-    )
+    with_scratch::<BE, _>(self_into_bytes(&lt_right.index(), false), |s| {
+        module.ckks_eval_linear_transformation_self_into(&mut ct_right, &ct, &prepared_right, &atks, s)
+    })
     .unwrap();
     let mut b_t = b.clone();
     b_t.transpose();
@@ -722,7 +731,9 @@ pub fn test_linear_transformation_pins_operation_precisions<BE, F, E>(
     let prepared = prepare_lt(module, &lt);
     let mut res = alloc_ct(&params, module, params.k - params.base2k);
     with_scratch::<BE, _>(
-        module.ckks_eval_linear_transformation_tmp_bytes(&ct, &key_params.atk_layout()),
+        module
+            .ckks_prepare_linear_transformation_baby_steps_tmp_bytes(&ct, &lt.index(), &key_params.atk_layout())
+            .max(module.ckks_eval_linear_transformation_tmp_bytes(&ct, &lt.index(), &key_params.atk_layout())),
         |s| module.ckks_eval_linear_transformation_self_into(&mut res, &ct, &prepared, &keys, s),
     )
     .unwrap();
@@ -828,9 +839,11 @@ pub fn test_linear_transformation_mixed_key_layouts<BE, F, E>(
     let prepared = prepare_lt(module, &lt);
     let mut res = alloc_ct(&params, module, params.k - params.base2k);
 
-    // One call reading both layouts takes the larger of their two queries.
+    // One call reading both layouts takes the larger of the baby-step and evaluation queries at each.
     let eval_bytes = module
-        .ckks_eval_linear_transformation_tmp_bytes(&ct, &prepared.index(), &stored_infos)
+        .ckks_prepare_linear_transformation_baby_steps_tmp_bytes(&ct, &prepared.index(), &stored_infos)
+        .max(module.ckks_prepare_linear_transformation_baby_steps_tmp_bytes(&ct, &prepared.index(), &coarse_infos))
+        .max(module.ckks_eval_linear_transformation_tmp_bytes(&ct, &prepared.index(), &stored_infos))
         .max(module.ckks_eval_linear_transformation_tmp_bytes(&ct, &prepared.index(), &coarse_infos));
     with_scratch::<BE, _>(eval_bytes, |s| {
         module.ckks_eval_linear_transformation_self_into(&mut res, &ct, &prepared, &keys, s)

@@ -39,9 +39,9 @@ use crate::{
 
 use super::helpers::{
     PT_PREC, TestContextBackend, TestContextModule, TestScalar, TestVector, alloc_ct, alloc_scratch, assert_ckks_error,
-    assert_decrypt_precision, assert_decrypt_precision_at_log_delta, ckks_encrypt, ckks_encrypt_with_prec, ckks_pt_cst_full,
-    encode_and_upload_pt, gen_sk_with_raw, gen_tsk, precision_at, quantize, quantized_const, quantized_vector, test_vector_1,
-    test_vector_2, want_mul, want_rotate,
+    assert_ckks_internal, assert_decrypt_precision, assert_decrypt_precision_at_log_delta, ckks_encrypt, ckks_encrypt_with_prec,
+    ckks_pt_cst_full, encode_and_upload_pt, gen_sk_with_raw, gen_tsk, precision_at, quantize, quantized_const, quantized_vector,
+    test_vector_1, test_vector_2, want_mul, want_rotate,
 };
 use super::parity::helpers::{snapshot, with_scratch};
 
@@ -1375,17 +1375,11 @@ where
             reason: "a Galois element is even".into(),
         },
     );
-    assert!(
-        with_scratch::<BE, _>(bytes, |s| module.ckks_dot_product_prepared_pt(
-            &mut have,
-            &a,
-            &b[..2],
-            &galois,
-            s
-        ))
-        .is_err(),
-        "{OP}: slices of two lengths"
-    );
+    let err = with_scratch::<BE, _>(bytes, |s| {
+        module.ckks_dot_product_prepared_pt(&mut have, &a, &b[..2], &galois, s)
+    })
+    .unwrap_err();
+    assert_ckks_internal("slices of two lengths", &err, &format!("{OP}: length mismatch"));
     let err = with_scratch::<BE, _>(bytes, |s| {
         module.ckks_dot_product_prepared_pt(&mut have, &a, &b, &galois[..2], s)
     })
