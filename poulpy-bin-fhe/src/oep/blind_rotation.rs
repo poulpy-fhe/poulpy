@@ -10,11 +10,17 @@ use crate::blind_rotation::{
 use poulpy_core::{GetDistribution, layouts::*};
 use poulpy_hal::{layouts::*, source::Source};
 
-/// Backend implementation of the blind-rotation operation family, on the standard ring only.
+/// Backend implementation contract for [`BlindRotationExecute`](crate::api::BlindRotationExecute), on the standard ring
+/// only.
 ///
 /// # Safety
-/// Preserve the reference circuit, metadata, and advertised scratch bounds.
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait BlindRotationExecuteImpl<BRA: BlindRotationAlgo>: Backend<Ring = Standard> {
+    /// Scratch bound of [`Self::blind_rotation_execute`]; may report less than the reference, never less than the body
+    /// takes. A block key reserves the products of a whole block, each with its own worker scratch, exactly when
+    /// `TaskExecutor::IS_PARALLEL`.
     fn blind_rotation_execute_tmp_bytes<G, B>(
         module: &Module<Self>,
         block_size: usize,
@@ -25,6 +31,10 @@ pub unsafe trait BlindRotationExecuteImpl<BRA: BlindRotationAlgo>: Backend<Ring 
     where
         G: GLWEInfos,
         B: BlindRotationKeyInfos;
+    /// Reproduces
+    /// [`blind_rotation_execute_reference`](crate::reference::blind_rotation::blind_rotation_execute_reference) bit for
+    /// bit, within [`Self::blind_rotation_execute_tmp_bytes`]; free in kernels and scratch use, bit-identical for every
+    /// executor and pool width.
     fn blind_rotation_execute<R, L>(
         module: &Module<Self>,
         res: &mut R,
@@ -86,14 +96,23 @@ macro_rules! impl_blind_rotation_execute_reference_full {
     };
 }
 
-/// Backend implementation of the blind-rotation operation family.
+/// Backend implementation contract for [`BlindRotationKeyEncryptSk`](crate::api::BlindRotationKeyEncryptSk).
 ///
 /// # Safety
-/// Preserve the reference circuit, metadata, and advertised scratch bounds.
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does.
+/// Every method taking scratch wipes the scratch its query reports before returning.
+/// The memory, layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait BlindRotationKeyEncryptSkImpl<BRA: BlindRotationAlgo>: Backend {
+    /// Scratch bound of [`Self::blind_rotation_key_encrypt_sk`]; may report less than the reference, never less than the
+    /// body takes.
     fn blind_rotation_key_encrypt_sk_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GGSWInfos;
+    /// Reproduces
+    /// [`blind_rotation_key_encrypt_sk_reference`](crate::reference::blind_rotation::blind_rotation_key_encrypt_sk_reference)
+    /// bit for bit, within [`Self::blind_rotation_key_encrypt_sk_tmp_bytes`]; free in kernels and scratch use before the
+    /// wipe.
     fn blind_rotation_key_encrypt_sk<S0, S1>(
         module: &Module<Self>,
         res: &mut BlindRotationKey<Self::OwnedBuf, BRA, Self::ZnxWord>,
@@ -150,14 +169,24 @@ macro_rules! impl_blind_rotation_key_encrypt_sk_reference_full {
     };
 }
 
-/// Backend implementation of the blind-rotation operation family.
+/// Backend implementation contract for
+/// [`BlindRotationKeyCompressedEncryptSk`](crate::api::BlindRotationKeyCompressedEncryptSk).
 ///
 /// # Safety
-/// Preserve the reference circuit, metadata, and advertised scratch bounds.
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does.
+/// Every method taking scratch wipes the scratch its query reports before returning.
+/// The memory, layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait BlindRotationKeyCompressedEncryptSkImpl<BRA: BlindRotationAlgo>: Backend {
+    /// Scratch bound of [`Self::blind_rotation_key_compressed_encrypt_sk`]; may report less than the reference, never
+    /// less than the body takes.
     fn blind_rotation_key_compressed_encrypt_sk_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GGSWInfos;
+    /// Reproduces
+    /// [`blind_rotation_key_compressed_encrypt_sk_reference`](crate::reference::blind_rotation::blind_rotation_key_compressed_encrypt_sk_reference)
+    /// bit for bit, within [`Self::blind_rotation_key_compressed_encrypt_sk_tmp_bytes`]; free in kernels and scratch use
+    /// before the wipe.
     fn blind_rotation_key_compressed_encrypt_sk<S0, S1>(
         module: &Module<Self>,
         res: &mut BlindRotationKeyCompressed<Self::OwnedBuf, BRA, Self::ZnxWord>,
@@ -216,14 +245,21 @@ macro_rules! impl_blind_rotation_key_compressed_encrypt_sk_reference_full {
     };
 }
 
-/// Backend implementation of the blind-rotation operation family.
+/// Backend implementation contract for [`BlindRotationKeyPreparedFactory`](crate::api::BlindRotationKeyPreparedFactory).
 ///
 /// # Safety
-/// Preserve the reference circuit, metadata, and advertised scratch bounds.
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait BlindRotationKeyPreparedImpl<BRA: BlindRotationAlgo>: Backend {
+    /// Scratch bound of [`Self::blind_rotation_key_prepare`]; may report less than the reference, never less than the
+    /// body takes.
     fn blind_rotation_key_prepare_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: BlindRotationKeyInfos;
+    /// Reproduces
+    /// [`blind_rotation_key_prepare_reference`](crate::reference::blind_rotation::blind_rotation_key_prepare_reference)
+    /// bit for bit, within [`Self::blind_rotation_key_prepare_tmp_bytes`]; free in kernels and scratch use.
     fn blind_rotation_key_prepare(
         module: &Module<Self>,
         res: &mut BlindRotationKeyPrepared<Self::OwnedBuf, BRA, Self>,
@@ -260,11 +296,15 @@ macro_rules! impl_blind_rotation_key_prepared_reference_full {
     };
 }
 
-/// Backend staging of blind-rotation indices into host-visible exponent values.
+/// Backend implementation contract for [`BlindRotationModSwitch`](crate::api::BlindRotationModSwitch), the host staging
+/// boundary of the exponents.
 ///
 /// # Safety
-/// Match the canonical signed-limb rounding and rotation-direction convention.
+/// Implementations reproduce the bodies their methods document bit for bit and refuse as the reference does.
+/// The memory, layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait BlindRotationModSwitchImpl: Backend<ZnxWord = i64> {
+    /// Reproduces [`mod_switch_2n`](crate::blind_rotation::mod_switch_2n) bit for bit; free in kernels. A host step, it
+    /// reads the coefficients of `lwe` and writes the body then the mask into `res`.
     fn blind_rotation_mod_switch<L: LWEToBackendRef<Self> + LWEInfos>(
         module: &Module<Self>,
         modulus: usize,
@@ -273,12 +313,19 @@ pub unsafe trait BlindRotationModSwitchImpl: Backend<ZnxWord = i64> {
         lwe: &L,
     );
 }
-/// Backend coefficient-domain key decompression.
+/// Backend implementation contract for [`BlindRotationKeyDecompress`](crate::api::BlindRotationKeyDecompress).
 ///
 /// # Safety
-/// Reproduce the source key metadata and mask sampling circuit within the budget.
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait BlindRotationKeyDecompressImpl<BRA: BlindRotationAlgo>: Backend {
+    /// Scratch bound of [`Self::blind_rotation_key_decompress`]; may report less than the reference, never less than the
+    /// body takes.
     fn blind_rotation_key_decompress_tmp_bytes<A: BlindRotationKeyInfos>(module: &Module<Self>, infos: &A) -> usize;
+    /// Reproduces
+    /// [`blind_rotation_key_decompress_reference`](crate::reference::blind_rotation::blind_rotation_key_decompress_reference)
+    /// bit for bit, within [`Self::blind_rotation_key_decompress_tmp_bytes`]; free in kernels and scratch use.
     fn blind_rotation_key_decompress(
         module: &Module<Self>,
         res: &mut BlindRotationKey<Self::OwnedBuf, BRA, Self::ZnxWord>,

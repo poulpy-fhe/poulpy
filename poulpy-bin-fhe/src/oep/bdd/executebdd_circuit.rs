@@ -1,17 +1,23 @@
 use crate::bdd_arithmetic::*;
 use poulpy_core::layouts::*;
 use poulpy_hal::layouts::*;
-/// Backend implementation contract for [`ExecuteBDDCircuit`].
+/// Backend implementation contract for [`ExecuteBDDCircuit`](crate::api::ExecuteBDDCircuit).
 ///
 /// # Safety
-/// Implementations must preserve the canonical circuit, buffer bounds, metadata,
-/// and the paired scratch query contract.
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait ExecuteBDDCircuitImpl: Backend {
+    /// Scratch bound of one worker of [`Self::execute_bdd_circuit_multi_thread`] for a circuit with at most `state_size`
+    /// live intermediate values, before the rounding for the worker alignment; may report less than the reference, never
+    /// less than the body takes.
     #[allow(clippy::too_many_arguments)]
     fn execute_bdd_circuit_tmp_bytes<R, G>(module: &Module<Self>, state_size: usize, res_infos: &R, ggsw_infos: &G) -> usize
     where
         R: GLWEInfos,
         G: GGSWInfos;
+    /// Default body: `execute_bdd_circuit_tmp_bytes_for_derived`, the selected [`Self::execute_bdd_circuit_tmp_bytes`] at
+    /// `circuit.max_state_size()`.
     #[allow(clippy::too_many_arguments)]
     fn execute_bdd_circuit_tmp_bytes_for<R, G, C>(module: &Module<Self>, res_infos: &R, ggsw_infos: &G, circuit: &C) -> usize
     where
@@ -23,6 +29,8 @@ pub unsafe trait ExecuteBDDCircuitImpl: Backend {
             module, res_infos, ggsw_infos, circuit,
         )
     }
+    /// Default body: `execute_bdd_circuit_derived`, the selected [`Self::execute_bdd_circuit_multi_thread`] with `threads
+    /// = 1`.
     #[allow(clippy::too_many_arguments)]
     fn execute_bdd_circuit<C, G, O>(
         module: &Module<Self>,
@@ -37,6 +45,10 @@ pub unsafe trait ExecuteBDDCircuitImpl: Backend {
     {
         crate::oep::derived::bdd::execute_bdd_circuit_derived::<Self, _, _, _>(module, out, inputs, circuit, scratch)
     }
+    /// Reproduces
+    /// [`execute_bdd_circuit_multi_thread_reference`](crate::reference::bdd::execute_bdd_circuit_multi_thread_reference)
+    /// bit for bit, within [`Self::execute_bdd_circuit_tmp_bytes`]; free in kernels, scheduling and scratch use within
+    /// one worker bound per active worker, output bit-identical for every `threads` and executor.
     #[allow(clippy::too_many_arguments)]
     fn execute_bdd_circuit_multi_thread<C, G, O>(
         module: &Module<Self>,
