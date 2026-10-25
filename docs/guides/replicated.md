@@ -69,6 +69,29 @@ The sparse-to-dense key covers the 49-bit lifted ModUp input, with a row offset 
 
 The logN14 preset advertises 21 bits of precision on the data slots and the logN15 preset 20 bits, which the precision test asserts. The test covers offset and full-width return keys on matched ciphertexts.
 
+## Conjugate-invariant ring
+
+The layout also runs on the conjugate-invariant ring of degree `N`, the subring of `Z[X]/(X^(2N)+1)` fixed by `X -> X^-1`, and its `N` real slots.
+A batch of `k` real values takes `kR` slots, slot `t` in class `t mod R` as on the standard ring, and the period repeats `N/(kR)` times.
+The shaping polynomial must be invariant too, `g = U(X^(N/R))` with `U` in `Z[Y + Y^-1]`.
+Every unit of `Z[Y]/(Y^(2R)+1)` is a power of `Y` times an invariant unit with the same class magnitudes and norm, so this ring shapes with `Y^s*U` for the shift `s` that `ShapingProfile::for_ring` finds (`ShapingProfile::shift`).
+Every `ShapingUnit` has one, and a `U` without one is refused.
+Rounding reads the invariant coefficients, which keeps `h` invariant and rounds each tie once.
+
+Leveled operations, polynomial evaluation, EvalMod and the conversions take the same calls as on the standard ring.
+Masked constants and the masked one keep their real part, as the slot encoder does.
+The conjugation, complex polynomials, the packed EvalMod and diagonals with an imaginary part are standard-only.
+
+`CKKSReplicatedCIBootstrapOps::ckks_replicated_ci_bootstrap_into` bootstraps through the standard ring of degree `2N`, where the `ReplicatedBootstrapping` is compiled:
+
+1. The input is embedded (`GLWECIEmbedKey`) at the shaping depth under its scale, then rounded with shaping to its width.
+2. The standard bootstrapping refreshes it, one bit wider than the output.
+3. The relative trace (`GLWECITraceKey`) brings it back at the shaping depth under the leveled scale, then a shaped rounding gives the output width.
+
+The key switches of the ring maps and the halving of the trace stay under the shaping depth, so the data slots keep the precision of the standard bootstrapping.
+The two keys switch between the conjugate-invariant secret and the standard secret of the bootstrapping keys (`GLWECIKeyEncryptSk`), and cover the widths of the ring maps.
+`ReplicatedBootstrapping::new` refuses a conjugate-invariant module, and the presets are sized for the standard ring.
+
 ## Construction outline
 
 ```rust,ignore
@@ -101,4 +124,5 @@ The bootstrap workspace is reusable for the same output width and plan. Concurre
 
 The CKKS test suite checks every shaped operation against the full layout on the data slots (`test_replicated_*`), that operations which would round plainly reject a replicated input, and the bootstrapping on a small ring.
 `test_replicated_parity` checks that the shaped operations give the same digits on every pair of CPU backends.
+`conjugate_invariant_ckks_test_suite!` runs the tests that apply to the conjugate-invariant ring, the shaped rounding on the unfolded coefficients and `test_replicated_ci_bootstrap`, and the conjugate-invariant parity suites run `test_replicated_ring_parity`.
 The ignored test `replicated_bootstrapping_presets_meet_precision`, registered on the NTT backends, runs every preset at both batch sizes and asserts the advertised precision; the benchmark `bench_ckks_replicated_bootstrapping` of `poulpy-bench` runs the same configurations.

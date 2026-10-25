@@ -379,6 +379,7 @@ Leveled operations are invoked through traits implemented on
 | `CKKSRoundOps` | rounding to a smaller width, with shaping on a replicated layout |
 | `CKKSReplicatedOps` | conversions between CKKS and a replicated slot layout (see [`docs/guides/replicated.md`](../../docs/guides/replicated.md)) |
 | `CKKSReplicatedBootstrapOps` | bootstrapping of a replicated slot layout (see [`docs/guides/replicated.md`](../../docs/guides/replicated.md)) |
+| `CKKSReplicatedCIBootstrapOps` | bootstrapping of a replicated slot layout on the conjugate-invariant ring, through the standard ring |
 | `CKKSAllOpsTmpBytes` | scratch size queries for all operations |
 
 For example, ciphertext addition uses `CKKSAddOps<BE>` and is called through
@@ -457,6 +458,8 @@ Standard modules embed CI ciphertexts of degree `N` into the standard ring of de
 `2N` and map them back by the relative trace (`CKKSCIRingMapOps`), which CI modules do not implement.
 Each map switches between the CI secret and a standard secret with its key,
 `GLWECIEmbedKey` or `GLWECITraceKey` (`GLWECIKeyEncryptSk`).
+
+Replicated slot layouts run on CI backends too, with an invariant shift of the shaping polynomial, and bootstrap through the standard ring of degree `2N` (`CKKSReplicatedCIBootstrapOps`, see [`docs/guides/replicated.md`](../../docs/guides/replicated.md)).
 
 ## Where to look next
 

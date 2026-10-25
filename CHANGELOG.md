@@ -44,7 +44,7 @@
 - **Breaking:** `impl_cpu_core_defaults!` registers the core trace on both rings, where each standard backend registered it apart: an out-of-tree backend calling it drops its own `impl_glwe_trace_derived_full!`, which now conflicts.
 - `conjugate_invariant_core_test_suite!` also runs `test_glwe_trace_parity`.
 - `impl_cpu_ckks_defaults!` selects poulpy-ckks's provided inner sum and replicate, `impl_ckks_inner_sum_derived_full!`.
-- CPU backends register `CKKSShapedRoundingImpl` with `impl_cpu_ckks_shaped_rounding!`, while the oracle computes the correction independently.
+- CPU backends register `CKKSShapedRoundingImpl` with `impl_cpu_ckks_shaped_rounding!`, while the oracle computes the correction independently, on both rings.
 - `ckks_replicated_workspace` checks prepared-buffer reuse across distinct conversion inputs.
 - Every conjugate-invariant backend type has a `max_base2k` model: each backend implements `MaxBase2k` once for both rings, where the conjugate-invariant types returned `None`.
 - The AVX-512 rank-one relinearization and the fused IFMA giant step refuse a key that does not cover their input, as the reference does.
@@ -313,7 +313,7 @@
 - `test_suite::parity::test_replicated_parity` checks that shaped rounding, products, automorphisms and polynomial evaluation with masked constants of a replicated layout give the same digits and metadata on two backends, each within its queried scratch; every CPU backend registers it with its standard-ring parity suites.
 - `ckks_eval_linear_transformation_into`, `_sum_into` and `_self_into` label their result with the full slot layout.
 - `ShapingProfile::for_ring` builds the profile of a layout on a backend ring, reported by `ShapingProfile::ring` as a `ShapingRing`. The conjugate-invariant ring shapes with `Y^s*U`, the shift of `U` onto an invariant polynomial (`ShapingProfile::shift`), which keeps the class magnitudes and the norm, and refuses a `U` without one. Every preset unit has one.
-  **Breaking:** `ShapingProfile::shaped_multiple_host` drops its stride argument and reads it from the length of its input, a multiple of `ShapingProfile::period`.
+  `ShapingProfile::shaped_multiple_host` reads the stride of `Y` from the length of its input, a multiple of `ShapingProfile::period`.
 - `ckks_round_into` rounds a replicated layout with shaping on the conjugate-invariant ring, with the profile of the backend ring: the CPU correction multiplies by the invariant coefficients, and the oracle computes it independently on the coefficients unfolded onto the ring of degree `2N`. `test_round_error_is_shaped_conjugate_invariant` checks it in the conjugate-invariant suite.
 - Leveled replicated operations run on the conjugate-invariant ring: a batch of `k` real values takes `kR` of its `N` real slots, encoding and encryption shape with the invariant shift of `U`, and `ckks_encode_masked_constant_into` and `ckks_{add,sub}_one_assign` hold `pi_S`, invariant, by its first `R` coefficients, dropping the imaginary part as the slot encoder does. Products and rotations by multiples of `R` round with shaping.
   The leveled replicated tests take no encoder type and run in `conjugate_invariant_ckks_test_suite!` too, with `test_replicated_rotations_are_shaped` for the rotations, the conjugation staying in `test_replicated_automorphisms_are_shaped`.

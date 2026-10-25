@@ -1222,7 +1222,7 @@ where
         + CnvPVecAlloc<BE>,
     F: TestScalar,
 {
-    // `R = 8` divides `k = 8`; the return lands on `20 + extra + log2(S/k)`
+    // `R = 8` divides `k = 8`. The return lands on `20 + extra + log2(S/k)`
     // for the `S` slots of the ring.
     let (log_k, log_delta_ckks, log_delta, log_delta_diag) = (3u8, 40, 20, 30);
     let extra_bits = log_delta_ckks - log_delta - (module.ckks_max_slots() >> log_k).trailing_zeros() as usize;

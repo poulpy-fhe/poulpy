@@ -256,9 +256,9 @@ pub trait CKKSEncodingHostOps<BE: Backend, F: CKKSEncodingScalar>: CKKSEncodingO
     /// zero on the guards. `π_S`, one on the data class, lies in `R[Y]`,
     /// `Y = X^(N/(2R))`, with coefficients `cos(π·j/(2R))/R`, and `i·π_S = Y^R·π_S`,
     /// so the constant has `2R` coefficients, quantized with shaped rounding.
-    /// `π_S` is invariant, so the conjugate-invariant ring, where `Y = X^(N/R)`,
-    /// holds `re*π_S` by its first `R` coefficients and drops `im`, as its slot
-    /// encoder does.
+    /// The mask is invariant, so the conjugate-invariant ring, where
+    /// `Y = X^(N/R)`, holds the real constant by its first `R` coefficients and
+    /// drops `im`, as its slot encoder does.
     fn ckks_encode_masked_constant_into<P>(&self, pt: &mut P, re: F, im: F, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         P: CKKSPlaintextToBackendMut<BE> + IntPolyInfos + SetCKKSInfos,
