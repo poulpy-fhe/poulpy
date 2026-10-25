@@ -100,8 +100,9 @@ pub trait CKKSEncryptionReference<BE: Backend> {
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         Dpt: GLWEToBackendMut<BE> + CKKSInfos + IntPolyInfos + SetCKKSInfos,
         Dct: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
-        Self: GLWEDecrypt<BE> + CKKSPlaintextReference<BE> + VecZnxLsh<BE> + VecZnxRsh<BE> + VecZnxSwitchRing<BE>,
+        Self: ModuleN + GLWEDecrypt<BE> + CKKSPlaintextReference<BE> + VecZnxLsh<BE> + VecZnxRsh<BE> + VecZnxSwitchRing<BE>,
     {
+        ensure_encryption_degrees("ckks_decrypt", self.n(), ct.n().as_usize(), sk.n().as_usize())?;
         let (ct_n, pt_n) = (ct.n().as_usize(), pt.n().as_usize());
         // Every `ct_n / pt_n`-th coefficient holds the message only when the slots repeat that often.
         if pt_n != ct_n && !(pt_n < ct_n && ct_n.is_multiple_of(pt_n) && (ct_n / pt_n).ilog2() as usize <= ct.log_sparsity()) {

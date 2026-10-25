@@ -1,9 +1,25 @@
 use crate::{
-    CKKSCompositionError, CKKSCtBounds, CKKSResult, SetCKKSInfos, layouts::slots::conj_rotate_galois_element,
-    oep::CKKSConjugateImpl,
+    CKKSCompositionError, CKKSCtBounds, CKKSResult, SetCKKSInfos, api::CKKSConjugateOps,
+    layouts::slots::conj_rotate_galois_element, oep::CKKSConjugateImpl,
 };
 use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey};
 use poulpy_hal::layouts::{CyclotomicOrder, Module, ScratchArena};
+
+pub(crate) fn ckks_conjugate_into_derived<BE, Dst, Src, H>(
+    module: &Module<BE>,
+    dst: &mut Dst,
+    src: &Src,
+    keys: &H,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> CKKSResult<()>
+where
+    BE: CKKSConjugateImpl,
+    Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+    Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+    H: GetAutomorphismKey<BE>,
+{
+    module.ckks_conjugate_rotate_into(0, dst, src, keys, scratch)
+}
 
 pub(crate) fn ckks_conjugate_rotate_into_derived<BE, Dst, Src, H>(
     module: &Module<BE>,

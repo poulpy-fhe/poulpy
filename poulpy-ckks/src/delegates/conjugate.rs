@@ -16,6 +16,21 @@ impl<BE: Backend + CKKSConjugateImpl> CKKSConjugateOps<BE> for Module<BE> {
         BE::ckks_conjugate_tmp_bytes(self, ct_infos, key_infos)
     }
 
+    fn ckks_conjugate_into<Dst, Src, H>(
+        &self,
+        dst: &mut Dst,
+        src: &Src,
+        keys: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+        H: GetAutomorphismKey<BE>,
+    {
+        BE::ckks_conjugate_into(self, dst, src, keys, scratch)
+    }
+
     fn ckks_conjugate_rotate_into<Dst, Src, H>(
         &self,
         k: i64,
