@@ -4,7 +4,7 @@
 
 ### Workspace
 
-- The basis crates `poulpy-hal`, `poulpy-core` and `poulpy-mhe` stay at the root, and the other crates move into four folders by role: `schemes/` (`poulpy-ckks`, `poulpy-bin-fhe`), `libs/` (`poulpy-blas`), `backends/` (the `poulpy-cpu-*` crates) and `tools/` (`poulpy-bench`).
+- The basis crates `poulpy-hal`, `poulpy-core` and `poulpy-mhe` stay at the root, and the other crates move into four folders by role: `schemes/` (`poulpy-ckks`, `poulpy-bin-fhe`), `libs/` (`poulpy-blas`, `poulpy-libm`), `backends/` (the `poulpy-cpu-*` crates) and `tools/` (`poulpy-bench`).
   Crate names and features are unchanged. A path dependency on a local clone takes the new folder.
 - The crates inherit `version`, `edition`, `license`, `repository` and `homepage` from `[workspace.package]` in the root `Cargo.toml`.
 - The guides move from `docs/` to `docs/guides/` and the logo to `docs/img/`. The unused `cspell.json` is removed.
@@ -135,6 +135,8 @@
 - The portable `vec_znx_gadget_decompose` kernel bounds-checks its columns once and reads its limbs through raw pointers, where it called `at` and `at_mut` per limb and per chunk of coefficients ([#460](https://github.com/poulpy-fhe/poulpy/issues/460)). Results are unchanged.
 - **Breaking:** `impl_cpu_ckks_defaults!` registers `impl_ckks_eval_mod_reference!` on both rings, which the standard backends no longer do on their own; the conjugate-invariant oracle backends register it too.
   An out-of-tree backend that registers both removes its own `impl_ckks_eval_mod_reference!` next to `impl_cpu_ckks_defaults!`.
+- The portable, AVX2, AVX-512 and NEON backends register the `poulpy-libm` suite on their NTT4x30 types with `enable-ckks`, and `poulpy-cpu-avx512` also on `NTT3x42Ifma` with `enable-ifma`.
+  CI runs it on the portable, native AVX2 and NEON backends. The emulated AVX job does not build it, and the AVX-512 jobs filter it out: their results are byte-identical to the other backends'.
 
 ### `poulpy-core`
 
@@ -485,12 +487,38 @@
 - Calls with distinct `res` and `scratch` may run concurrently over a shared module, context, public operands, prepared operands and key stores, and an override keeps no state across calls.
 - `blas-contracts.md` links `docs/layering-contract.md` instead of restating it.
 
+### `poulpy-libm`
+
+- Moves into the workspace from [poulpy-libm](https://github.com/poulpy-fhe/poulpy-libm) 0.1.0 (`5cfddab`), published on crates.io: CKKS math functions with `libm` names, built on the approximation machinery of `poulpy-ckks`.
+  It is versioned and released with the other crates from 0.9.0.
+- **Breaking:** ported to the current Poulpy API.
+  Operations take any operand implementing the backend view and CKKS info traits, and tensor keys as `GetTensorKey<BE>` sources, rotation and conjugation keys as `GetAutomorphismKey<BE>` sources.
+  `ckks_sum_slots`, `ckks_fmax_slots`, `ckks_fmin_slots` and `ckks_softmax` lose their key type parameter, and the operations that conjugate require `Backend<Ring = Standard>`.
+  No operation requires `HostStaged`.
+- **Breaking:** every `*_tmp_bytes` query takes one layout per operand, in operation order (`ckks_exp_tmp_bytes(res, input, tsk, plan)`, `ckks_fma_tmp_bytes(res, a, b, c, tsk)`), and covers its whole body, the squarings of the `exp` family included: a query sized on `res` alone under-reported the scratch of an input wider than `res`.
+  `ckks_inverse_tmp_bytes` is split into `ckks_goldschmidt_division_tmp_bytes` and `ckks_rsqrt_tmp_bytes`, and `ckks_div_sqrt_tmp_bytes` into `ckks_div_tmp_bytes` and `ckks_sqrt_tmp_bytes`.
+  Add `ckks_interval_normalization_tmp_bytes`, `ckks_comparison_const_tmp_bytes` (`_const` forms and `ckks_clamp`), `ckks_select_tmp_bytes` and `ckks_sincos_tmp_bytes`.
+  `ckks_fmax_slots_tmp_bytes` takes the rotation and the conjugation key layouts apart, and `ckks_scalbn_tmp_bytes` takes the destination.
+- **Breaking:** plan fields are private behind accessors, so a plan is validated once, by its constructor.
+- **Breaking, behaviour:** every operation leaves `res`, and the operand of an in-place operation, unchanged on `Err`: compositions run on scratch temporaries and write their output with their last call, and the `exp` family checks its whole budget at entry.
+  `ckks_interval_normalization` writes `ct`, then `norm`, with its two final copies, and `ckks_sincos` evaluates `cos` before copying `sin`.
+- Errors keep their source chain: the context of a libm operation wraps the `poulpy-ckks` error, which still downcasts to `CKKSError`.
+- Add `ckks_sum_slots_galois_elements`, the Galois elements of the rotation keys `ckks_sum_slots`, `ckks_fmax_slots`, `ckks_fmin_slots` and `ckks_softmax` look up.
+- `docs/api.md` states the input budget an evaluation needs: the plan's consumption plus the headroom of the result, `max(1, floor(log2(M)) + 2)` bits for a largest result magnitude `M`.
+  A budget just above the consumption, which the guide asked for, could wrap the result without an error.
+- **Breaking:** the features `ref`, `avx`, `avx512`, `ifma` and `all-backends` are removed with the crate's dependencies on the backends.
+  `libm_backend_test_suite!` registers the libm suite for a backend under `test-utils`, `precision_tuning_log_n12` included, and the CPU backends register it.
+  The suite runs every operation on exactly its query's bytes with `res` narrower, as wide and wider than its input, checks every evaluation-time rejection leaves its outputs unchanged, and checks `ckks_exp` at exactly the documented budget.
+- The benchmarks move to `poulpy-bench` and the walkthroughs to the `libm_exp`, `libm_trig`, `libm_inference` and `libm_signal` examples of `poulpy-cpu-portable`, whose tests `cargo test` runs.
+
 ### `poulpy-cpu-arm`
 
 - Add the full-size bootstrapping preset precision test for `NTT4x30NeonRayon`.
 
 ### `poulpy-bench`
 
+- Add the `libm` layer: `runner_ckks_exp`, `runner_ckks_log` and `runner_ckks_pow` over `default_bench_params_libm`, in the `libm_ops` table, with `bench_libm` in the full, standard and light tiers, which the tier binaries of `poulpy-cpu-portable`, `poulpy-cpu-avx`, `poulpy-cpu-avx512` and `poulpy-cpu-arm` register on their NTT backend.
+  The point-caching helper of the BLAS runners moves to the crate root, shared by both layers.
 - **Breaking:** `bench_ckks_bootstrapping` requires `CKKSBootstrappingCIOps`, and runs the presets with EvalMod on the conjugate-invariant ring.
 - **Breaking:** `bench_ckks_bootstrapping` takes no `FIXTURE_BASE2K`: it runs each preset at the radix `test_suite::presets::preset_for_backend` selects for the backend, so the ids of its NTT4x30 and FFT64 runs read `base2k=53` and `base2k=17` instead of 52 and 18.
 - **Breaking:** `hal::suites::bench_normalization` requires `VecZnxGadgetDecompose` and `VecZnxGadgetDecomposeTmpBytes`, and also sweeps `vec_znx_gadget_decompose` over the 27-limb key-switch columns of a bootstrap at radix 53 (`GadgetDecomposeSweepParams`, `default_bench_params_gadget_decompose`).

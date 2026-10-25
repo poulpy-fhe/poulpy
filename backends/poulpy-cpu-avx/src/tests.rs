@@ -2,6 +2,8 @@
 mod blas_tests;
 #[cfg(feature = "enable-ckks")]
 mod ckks_tests;
+#[cfg(feature = "enable-ckks")]
+mod libm_tests;
 
 /// Bounds only explicitly emulated CI runs. Native runs retain their original
 /// degrees; all modules are constructed from the same adjusted parameters.

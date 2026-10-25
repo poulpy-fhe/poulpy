@@ -9,11 +9,7 @@
 //! Entries of the encrypted matrices lie in `[-1, 1)`, those of the second ciphertext factor and of the public matrices
 //! in `[-1/d, 1/d)`, so that the products stay in `[-1, 1)`. A public matrix is one matrix shared by every matrix slot.
 
-use std::{
-    cell::RefCell,
-    collections::{BTreeSet, HashMap},
-    hint::black_box,
-};
+use std::collections::{BTreeSet, HashMap};
 
 use criterion::{Bencher, measurement::Measurement};
 use poulpy_blas::{
@@ -51,7 +47,7 @@ use poulpy_hal::{
     source::Source,
 };
 
-use crate::{backend_name, blas::params::BlasBenchParams};
+use crate::{backend_name, blas::params::BlasBenchParams, timed};
 
 /// Secret-key Hamming weight.
 const HW: usize = 192;
@@ -163,37 +159,6 @@ fn verify<BE>(op: &str, bp: &BlasBenchParams, max_err: f64, max_base2k: Option<u
         max_err <= bound,
         "{op}: the first call deviates from the cleartext beyond the error bound"
     );
-}
-
-/// One call of a built point's operation.
-type Call = Box<dyn FnMut()>;
-
-thread_local! {
-    static POINT: RefCell<Option<(String, Call)>> = const { RefCell::new(None) };
-}
-
-/// Criterion calls a runner once per warm-up round and once per sample, and building a point (maps, keys, encryptions)
-/// costs far more than one call of its operation: the first call of a point builds it, `build` returning one call of the
-/// operation, and the later calls reuse it. Only one point is kept, so the keys of the previous one are freed before the
-/// next are made.
-fn timed<BE: 'static, M: Measurement>(
-    bencher: &mut Bencher<'_, M>,
-    op: &str,
-    bp: &BlasBenchParams,
-    build: impl FnOnce() -> Call,
-) {
-    let id = format!("{}/{op}/{bp}", backend_name::<BE>());
-    POINT.with_borrow_mut(|point| {
-        if point.as_ref().is_none_or(|(have, _)| *have != id) {
-            *point = None;
-            *point = Some((id, build()));
-        }
-        let (_, call) = point.as_mut().expect("the point was just built");
-        bencher.iter(|| {
-            call();
-            black_box(())
-        });
-    });
 }
 
 /// What a runner asks of a module beyond the operation itself: the key generation, encryption and decryption of
@@ -398,7 +363,7 @@ where
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     M: Measurement,
 {
-    timed::<BE, M>(bencher, "blas_transpose", bp, || {
+    timed::<BE, M, _>(bencher, "blas_transpose", bp, || {
         let mut client = Client::<BE>::new(bp);
         let ctx = client.context(bp);
         let ct_a = client.encrypt(bp, bp.batch(), a_entry);
@@ -430,7 +395,7 @@ where
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     M: Measurement,
 {
-    timed::<BE, M>(bencher, op, bp, || {
+    timed::<BE, M, _>(bencher, op, bp, || {
         let mut client = Client::<BE>::new(bp);
         let ctx = client.context(bp);
         let right = if dense { bp.batch() } else { 1 };
@@ -505,7 +470,7 @@ where
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     M: Measurement,
 {
-    timed::<BE, M>(bencher, op, bp, || {
+    timed::<BE, M, _>(bencher, op, bp, || {
         let mut client = Client::<BE>::new(bp);
         let pt = client.public::<Right>(bp, algorithm);
         let ctx = client.context(bp);
@@ -568,7 +533,7 @@ where
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     M: Measurement,
 {
-    timed::<BE, M>(bencher, op, bp, || {
+    timed::<BE, M, _>(bencher, op, bp, || {
         let mut client = Client::<BE>::new(bp);
         let pt = client.public::<Left>(bp, algorithm);
         let ctx = client.context(bp);
