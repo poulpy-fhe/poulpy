@@ -134,6 +134,21 @@ macro_rules! bin_fhe_backend_test_suite {
                 }
 
                 #[test]
+                fn fhe_uint_get_byte() {
+                    test_suite::test_fhe_uint_get_byte(&CTX);
+                }
+
+                #[test]
+                fn fhe_uint_get_bit_lwe() {
+                    test_suite::test_fhe_uint_get_bit_lwe(&CTX);
+                }
+
+                #[test]
+                fn fhe_uint_from_fhe_uint_prepared() {
+                    test_suite::test_fhe_uint_from_fhe_uint_prepared(&CTX);
+                }
+
+                #[test]
                 fn fhe_uint_sext() {
                     test_suite::test_fhe_uint_sext(&CTX);
                 }

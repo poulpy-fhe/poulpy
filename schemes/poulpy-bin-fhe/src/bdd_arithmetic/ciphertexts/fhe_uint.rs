@@ -3,9 +3,9 @@ use poulpy_core::{
     GLWEAdd, GLWECopy, GLWEDecrypt, GLWEEncryptSk, GLWEKeyswitch, GLWENoise, GLWEPacking, GLWERotate, GLWESub, GLWETrace,
     LWEFromGLWE, ScratchArenaTakeCore, TransferInto,
     layouts::{
-        Base2K, GGLWEInfos, GLWE, GLWEInfos, GLWEPlaintext, GLWEPlaintextLayout, GLWESecretPreparedToBackendRef,
-        GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, LWEToBackendMut, ModuleCoreAlloc, Rank, SetK,
-        TorusPrecision,
+        Base2K, GGLWEInfos, GGSWInfos, GLWE, GLWEInfos, GLWELayout, GLWEPlaintext, GLWEPlaintextLayout,
+        GLWESecretPreparedToBackendRef, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, LWEToBackendMut,
+        ModuleCoreAlloc, Rank, SetK, TorusPrecision,
     },
 };
 use poulpy_hal::AlignedBuf;
@@ -510,7 +510,52 @@ impl<'a, T: UnsignedInteger, BE: Backend> ScratchArenaTakeBDD<'a, T, BE> for Scr
 {
 }
 
+/// The `k` a switch reads: each switch takes its input at the precision its key decomposes exactly, the bits below being dropped by narrowing, not by the key.
+fn max_input_k<BE: Backend>(key: &GGLWEPreparedBackendRef<'_, BE>) -> TorusPrecision {
+    key.gglwe_layout().max_input_k()
+}
+
+/// The precision `a` is narrowed to before [`FheUint::get_bit_lwe`] switches it, by the first key it meets.
+fn extraction_input_k<BE: Backend>(
+    a: &impl GLWEInfos,
+    ks_glwe: Option<&GGLWEPreparedBackendRef<'_, BE>>,
+    ks_lwe: &GGLWEPreparedBackendRef<'_, BE>,
+) -> TorusPrecision {
+    a.k().min(ks_glwe.map_or(max_input_k(ks_lwe), max_input_k))
+}
+
 impl<D: Data, T: UnsignedInteger, W: ZnxWord> FheUint<D, T, W> {
+    /// Scratch bytes of [`FheUint::get_bit_lwe`] into `res`: the key switch of the narrowed input to the layout of `ks_glwe`, when given, then the extraction at the precision of `ks_lwe`, one after the other.
+    pub fn get_bit_lwe_tmp_bytes<R, M, BE>(
+        &self,
+        module: &M,
+        res_infos: &R,
+        ks_glwe: Option<&GGLWEPreparedBackendRef<'_, BE>>,
+        ks_lwe: &GGLWEPreparedBackendRef<'_, BE>,
+    ) -> usize
+    where
+        BE: Backend,
+        R: LWEInfos,
+        M: GLWEKeyswitch<BE> + LWEFromGLWE<BE>,
+    {
+        let mut a = self.glwe_layout();
+        a.k = extraction_input_k(self, ks_glwe, ks_lwe);
+        match ks_glwe {
+            Some(ks_glwe) => {
+                let switched = GLWELayout {
+                    n: a.n,
+                    base2k: ks_glwe.base2k(),
+                    k: ks_glwe.k().min(max_input_k(ks_lwe)),
+                    rank: ks_glwe.rank_out(),
+                };
+                module
+                    .glwe_keyswitch_tmp_bytes(&switched, &a, ks_glwe)
+                    .max(module.lwe_from_glwe_tmp_bytes(res_infos, &switched, ks_lwe))
+            }
+            None => module.lwe_from_glwe_tmp_bytes(res_infos, &a, ks_lwe),
+        }
+    }
+
     pub fn get_bit_lwe<R, M, BE>(
         &self,
         module: &M,
@@ -530,11 +575,8 @@ impl<D: Data, T: UnsignedInteger, W: ZnxWord> FheUint<D, T, W> {
             + GLWEKeyswitch<BE>,
     {
         let log_gap: usize = module.log_n() - T::LOG_BITS as usize;
-        // Each switch reads its input at the precision its key decomposes exactly:
-        // the bits below are dropped here, by narrowing, not by the key.
-        let max_input_k = |key: &GGLWEPreparedBackendRef<'_, BE>| key.gglwe_layout().max_input_k();
         let mut a = GLWEToBackendRef::<BE>::to_backend_ref(self);
-        a.set_k(a.k().min(ks_glwe.map_or(max_input_k(ks_lwe), max_input_k)));
+        a.set_k(extraction_input_k(self, ks_glwe, ks_lwe));
         // The keyswitch reads a lazy sum as is, which its margin tolerates.
         a.set_canonical(true);
         if let Some(ks_glwe) = ks_glwe {
@@ -582,6 +624,21 @@ impl<D: Data, T: UnsignedInteger, W: ZnxWord> FheUint<D, T, W> {
         module.glwe_trace_assign(res, 0..log_n, false, true, keys, scratch);
     }
 
+    /// Scratch bytes of [`FheUint::get_byte`] into `res`: the trace of `res` over the byte levels.
+    ///
+    /// # Panics
+    ///
+    /// If `keys` lacks a key the trace reads.
+    pub fn get_byte_tmp_bytes<R, M, H, BE>(&self, module: &M, res_infos: &R, keys: &H) -> usize
+    where
+        BE: Backend,
+        R: GLWEInfos,
+        H: GetAutomorphismKey<BE>,
+        M: GLWETrace<BE>,
+    {
+        trace_tmp_bytes(module, byte_levels::<T>(res_infos), res_infos, res_infos, keys)
+    }
+
     pub fn get_byte<R, M, H, BE>(&self, module: &M, byte: usize, res: &mut R, keys: &H, scratch: &mut ScratchArena<'_, BE>)
     where
         BE: Backend,
@@ -600,6 +657,26 @@ impl<D: Data, T: UnsignedInteger, W: ZnxWord> FheUint<D, T, W> {
 }
 
 impl<T: UnsignedInteger> FheUint<AlignedBuf, T, i64> {
+    /// Scratch bytes of [`FheUint::from_fhe_uint_prepared`] from bits laid out as `bit_infos`: the bit selections, then the packing, one after the other.
+    ///
+    /// # Panics
+    ///
+    /// If `keys` lacks the key of the packing trace.
+    pub fn from_fhe_uint_prepared_tmp_bytes<A, H, M, BE>(&self, module: &M, bit_infos: &A, keys: &H) -> usize
+    where
+        BE: Backend,
+        A: GGSWInfos,
+        H: GetAutomorphismKey<BE>,
+        M: Cmux<BE> + GLWEPacking<BE>,
+    {
+        let atk = keys
+            .get_automorphism_key(-1, self.k())
+            .unwrap_or_else(|e| panic!("packing trace -1: {e}"));
+        module
+            .cmux_tmp_bytes(self, self, bit_infos)
+            .max(module.glwe_pack_tmp_bytes(self, self, &atk))
+    }
+
     pub fn from_fhe_uint_prepared<M, H, BE>(
         &mut self,
         module: &M,
