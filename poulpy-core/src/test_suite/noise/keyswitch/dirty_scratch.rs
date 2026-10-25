@@ -11,6 +11,7 @@
 //! `0x00` and once with `0xFF`, and require bit-identical results.
 
 use crate::layouts::prepared::GGLWEPreparedToBackendRef;
+use crate::test_suite::poisoned_scratch;
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniformSource},
     layouts::{DigestU64, Module, ScalarZnx, ScratchOwned, ZnxViewMut},
@@ -111,7 +112,7 @@ pub fn test_glwe_keyswitch_ignores_dirty_scratch<BE: crate::test_suite::noise::T
         let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
             module.glwe_switching_key_encrypt_sk_tmp_bytes(&ksk_infos)
                 | module.glwe_encrypt_sk_tmp_bytes(&glwe_in_infos)
-                | module.glwe_keyswitch_tmp_bytes(&glwe_out_infos, &glwe_in_infos, &ksk_infos),
+                | module.glwe_switching_key_prepare_tmp_bytes(&ksk_infos),
         );
 
         let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank.into());
@@ -136,20 +137,22 @@ pub fn test_glwe_keyswitch_ignores_dirty_scratch<BE: crate::test_suite::noise::T
 
         // 0x00 then 0xFF: as `f64` the poison is NaN and as `i64` it is -1, so any
         // limb read before being written shows up in the digest.
-        <BE::OwnedBuf as AsMut<[u8]>>::as_mut(&mut scratch.data).fill(0x00);
+        let mut tested: ScratchOwned<BE> =
+            poisoned_scratch::<BE>(module.glwe_keyswitch_tmp_bytes(&glwe_out_infos, &glwe_in_infos, &ksk_infos));
+        <BE::OwnedBuf as AsMut<[u8]>>::as_mut(&mut tested.data).fill(0x00);
         module.glwe_keyswitch(
             &mut over_zeroed,
             &glwe_in,
             &ksk_prepared.to_backend_ref(),
-            &mut scratch.borrow(),
+            &mut tested.borrow(),
         );
 
-        <BE::OwnedBuf as AsMut<[u8]>>::as_mut(&mut scratch.data).fill(0xFF);
+        <BE::OwnedBuf as AsMut<[u8]>>::as_mut(&mut tested.data).fill(0xFF);
         module.glwe_keyswitch(
             &mut over_poisoned,
             &glwe_in,
             &ksk_prepared.to_backend_ref(),
-            &mut scratch.borrow(),
+            &mut tested.borrow(),
         );
 
         assert_eq!(
@@ -241,7 +244,7 @@ pub fn test_glwe_external_product_ignores_dirty_scratch<BE: crate::test_suite::n
         let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
             module.ggsw_encrypt_sk_tmp_bytes(&ggsw_infos)
                 | module.glwe_encrypt_sk_tmp_bytes(&glwe_in_infos)
-                | module.glwe_external_product_tmp_bytes(&glwe_out_infos, &glwe_in_infos, &ggsw_infos),
+                | module.ggsw_prepare_tmp_bytes(&ggsw_infos),
         );
 
         let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank.into());
@@ -272,20 +275,22 @@ pub fn test_glwe_external_product_ignores_dirty_scratch<BE: crate::test_suite::n
 
         // 0x00 then 0xFF: as `f64` the poison is NaN and as `i64` it is -1, so any
         // limb read before being written shows up in the digest.
-        <BE::OwnedBuf as AsMut<[u8]>>::as_mut(&mut scratch.data).fill(0x00);
+        let mut tested: ScratchOwned<BE> =
+            poisoned_scratch::<BE>(module.glwe_external_product_tmp_bytes(&glwe_out_infos, &glwe_in_infos, &ggsw_infos));
+        <BE::OwnedBuf as AsMut<[u8]>>::as_mut(&mut tested.data).fill(0x00);
         module.glwe_external_product(
             &mut over_zeroed,
             &glwe_in,
             &ggsw_prepared.to_backend_ref(),
-            &mut scratch.borrow(),
+            &mut tested.borrow(),
         );
 
-        <BE::OwnedBuf as AsMut<[u8]>>::as_mut(&mut scratch.data).fill(0xFF);
+        <BE::OwnedBuf as AsMut<[u8]>>::as_mut(&mut tested.data).fill(0xFF);
         module.glwe_external_product(
             &mut over_poisoned,
             &glwe_in,
             &ggsw_prepared.to_backend_ref(),
-            &mut scratch.borrow(),
+            &mut tested.borrow(),
         );
 
         assert_eq!(

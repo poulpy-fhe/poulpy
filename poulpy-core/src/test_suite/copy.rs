@@ -7,6 +7,7 @@ use poulpy_hal::{
     test_suite::TestParams,
 };
 
+use crate::test_suite::poisoned_scratch;
 use crate::{
     GLWEAdd, GLWECopy, GLWENormalize, GLWERotate, GLWEShift, GLWESub,
     layouts::{GLWE, GLWEInfos, LWEInfos, ModuleCoreAlloc, SetK},
@@ -88,7 +89,7 @@ where
                     if dst_base == base && dst_k >= src_k {
                         assert_eq!(tmp_bytes, 0, "a lossless same-radix copy needs no scratch");
                     }
-                    let mut scratch = ScratchOwned::<BE>::alloc(tmp_bytes);
+                    let mut scratch = poisoned_scratch::<BE>(tmp_bytes);
                     module.glwe_copy(&mut dst, &src, &mut scratch.borrow());
                     assert_eq!(dst.glwe_layout(), layout, "copy changed destination layout");
                     let expected_noise = if dst_k < src_k {
@@ -142,7 +143,7 @@ where
     }
     let mut dst: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&src);
     assert_eq!(module.glwe_copy_tmp_bytes(&dst, &src), 0);
-    let mut scratch = ScratchOwned::<BE>::alloc(0);
+    let mut scratch = poisoned_scratch::<BE>(0);
     module.glwe_copy(&mut dst, &src, &mut scratch.borrow());
     assert_eq!(dst.data, src.data);
 
@@ -157,13 +158,13 @@ where
     src.noise = stale_provenance(1);
     module.glwe_add_assign(&mut dst, &src);
     assert_eq!(dst.noise(), None);
-    let mut scratch = ScratchOwned::<BE>::alloc(module.glwe_normalize_tmp_bytes());
+    let mut scratch = poisoned_scratch::<BE>(module.glwe_normalize_tmp_bytes());
     module.glwe_normalize(&mut dst, &src, &mut scratch.borrow());
     assert_eq!(dst.noise(), None);
 
     // Plaintext arithmetic also invalidates the fresh-encryption estimate.
     src.noise = provenance(1);
-    let mut scratch = ScratchOwned::<BE>::alloc(module.glwe_shift_tmp_bytes(dst.data.size()));
+    let shift_bytes = module.glwe_shift_tmp_bytes(dst.data.size());
     for rank in [0usize, 1] {
         let mut other: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc(base.into(), (2 * base).into(), rank.into());
         for metadata in [None, provenance(rank), stale_provenance(rank)] {
@@ -188,10 +189,10 @@ where
             assert_eq!(dst.noise(), expected, "sub negate assign: rank={rank}");
             let mask = dst.data.at(1, 0).to_vec();
             dst.noise = provenance(1);
-            module.glwe_lsh_add(&mut dst, &other, 1, &mut scratch.borrow());
+            module.glwe_lsh_add(&mut dst, &other, 1, &mut poisoned_scratch::<BE>(shift_bytes).borrow());
             assert_eq!(dst.noise(), expected, "shift add: rank={rank}");
             dst.noise = provenance(1);
-            module.glwe_lsh_sub(&mut dst, &other, 1, &mut scratch.borrow());
+            module.glwe_lsh_sub(&mut dst, &other, 1, &mut poisoned_scratch::<BE>(shift_bytes).borrow());
             assert_eq!(dst.noise(), expected, "shift sub: rank={rank}");
             if rank == 0 {
                 assert_eq!(dst.data.at(1, 0), mask, "plaintext shifts changed the mask");

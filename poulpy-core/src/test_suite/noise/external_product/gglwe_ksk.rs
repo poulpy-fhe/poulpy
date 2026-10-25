@@ -7,6 +7,7 @@ use poulpy_hal::{
 
 use crate::api::GLWESecretSampling;
 use crate::layouts::prepared::GGSWPreparedToBackendRef;
+use crate::test_suite::poisoned_scratch;
 use crate::{
     GGLWEExternalProduct, GGLWENoise, GGSWEncryptSk, GLWESwitchingKeyEncryptSk,
     api::{GGSWPreparedFactory, GLWESecretPreparedFactory},
@@ -95,7 +96,8 @@ pub fn test_gglwe_switching_key_external_product<BE: crate::test_suite::noise::T
 
                 let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
                     (module).glwe_switching_key_encrypt_sk_tmp_bytes(&gglwe_in_infos)
-                        | module.gglwe_external_product_tmp_bytes(&gglwe_out_infos, &gglwe_in_infos, &ggsw_infos)
+                        | module.ggsw_prepare_tmp_bytes(&ggsw_infos)
+                        | module.gglwe_noise_tmp_bytes(&gglwe_out_infos)
                         | (module).ggsw_encrypt_sk_tmp_bytes(&ggsw_infos),
                 );
 
@@ -142,7 +144,12 @@ pub fn test_gglwe_switching_key_external_product<BE: crate::test_suite::noise::T
                     &mut ct_gglwe_out,
                     &ct_gglwe_in,
                     &ct_rgsw_prepared.to_backend_ref(),
-                    &mut scratch.borrow(),
+                    &mut poisoned_scratch::<BE>(module.gglwe_external_product_tmp_bytes(
+                        &gglwe_out_infos,
+                        &gglwe_in_infos,
+                        &ggsw_infos,
+                    ))
+                    .borrow(),
                 );
 
                 {
@@ -256,7 +263,8 @@ pub fn test_gglwe_switching_key_external_product_assign<BE: crate::test_suite::n
 
                 let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
                     (module).glwe_switching_key_encrypt_sk_tmp_bytes(&gglwe_out_infos)
-                        | module.gglwe_external_product_tmp_bytes(&gglwe_out_infos, &gglwe_out_infos, &ggsw_infos)
+                        | module.ggsw_prepare_tmp_bytes(&ggsw_infos)
+                        | module.gglwe_noise_tmp_bytes(&gglwe_out_infos)
                         | (module).ggsw_encrypt_sk_tmp_bytes(&ggsw_infos),
                 );
 
@@ -299,7 +307,16 @@ pub fn test_gglwe_switching_key_external_product_assign<BE: crate::test_suite::n
                 module.ggsw_prepare(&mut ct_rgsw_prepared, &ct_rgsw, &mut scratch.borrow());
 
                 // gglwe_(m) (x) RGSW_(X^k) = gglwe_(m * X^k)
-                module.gglwe_external_product_assign(&mut ct_gglwe, &ct_rgsw_prepared.to_backend_ref(), &mut scratch.borrow());
+                module.gglwe_external_product_assign(
+                    &mut ct_gglwe,
+                    &ct_rgsw_prepared.to_backend_ref(),
+                    &mut poisoned_scratch::<BE>(module.gglwe_external_product_tmp_bytes(
+                        &gglwe_out_infos,
+                        &gglwe_out_infos,
+                        &ggsw_infos,
+                    ))
+                    .borrow(),
+                );
 
                 {
                     let mut sk_in_as_vec = crate::test_suite::noise::scalar_znx_as_vec_znx_backend_mut::<BE>(&mut sk_in.data);

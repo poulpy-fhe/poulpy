@@ -6,6 +6,7 @@ use poulpy_hal::{
 };
 
 use crate::api::GLWESecretSampling;
+use crate::test_suite::poisoned_scratch;
 use crate::{
     GGLWENoise, GGLWEToGGSWKeyCompressedEncryptSk, GGLWEToGGSWKeyDecompress, GGLWEToGGSWKeyEncryptSk,
     api::{GLWESecretPreparedFactory, GLWESecretTensorFactory},
@@ -54,8 +55,7 @@ where
 
         let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
             module
-                .gglwe_to_ggsw_key_encrypt_sk_tmp_bytes(&key_infos)
-                .max(module.glwe_secret_tensor_prepare_tmp_bytes(rank.into()))
+                .glwe_secret_tensor_prepare_tmp_bytes(rank.into())
                 .max(module.gglwe_noise_tmp_bytes(&key_infos)),
         );
 
@@ -69,7 +69,7 @@ where
             &sk,
             &mut source_xe,
             &mut source_xa,
-            &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
+            &mut poisoned_scratch::<BE>(module.gglwe_to_ggsw_key_encrypt_sk_tmp_bytes(&key_infos)).borrow(),
         );
 
         let mut sk_tensor: GLWESecretTensor<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_tensor_alloc_from_infos(&sk);
@@ -152,8 +152,7 @@ pub fn test_gglwe_to_ggsw_compressed_encrypt_sk<BE: crate::test_suite::noise::Te
 
         let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
             module
-                .gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes(&key_infos)
-                .max(module.glwe_secret_tensor_prepare_tmp_bytes(rank.into()))
+                .glwe_secret_tensor_prepare_tmp_bytes(rank.into())
                 .max(module.gglwe_noise_tmp_bytes(&key_infos)),
         );
 
@@ -169,7 +168,7 @@ pub fn test_gglwe_to_ggsw_compressed_encrypt_sk<BE: crate::test_suite::noise::Te
             &sk,
             seed_xa,
             &mut source_xe,
-            &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
+            &mut poisoned_scratch::<BE>(module.gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes(&key_infos)).borrow(),
         );
 
         let mut key: GGLWEToGGSWKey<BE::OwnedBuf, BE::ZnxWord> = module.gglwe_to_ggsw_key_alloc_from_infos(&key_infos);

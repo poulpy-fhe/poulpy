@@ -1,3 +1,4 @@
+use crate::test_suite::poisoned_scratch;
 use crate::test_suite::refusal::{assert_refusal, glwe_state};
 use poulpy_hal::layouts::CnvPVecLToBackendRef;
 use poulpy_hal::layouts::CnvPVecRToBackendMut;
@@ -204,7 +205,7 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
             coarse: coarse_dsize,
             coarse_ps: &coarse_ps,
         };
-        let mut prep_scratch: ScratchOwned<BE> = ScratchOwned::alloc(prep_bytes);
+        let mut prep_scratch: ScratchOwned<BE> = poisoned_scratch::<BE>(prep_bytes);
         let mut prepared_babies = LinearTransformationBabySteps::alloc(module, &baby_steps, &ct);
         module.glwe_prepare_linear_transformation_baby_steps(&mut prepared_babies, &ct, &keys, &mut prep_scratch.borrow());
         assert_eq!(prepared_babies.baby_steps().collect::<Vec<_>>(), baby_steps);
@@ -346,7 +347,7 @@ pub fn test_glwe_prepare_linear_transformation_rhs_rejects_wide_diagonal<BE: cra
     };
     let mut prepared: LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE>> =
         LinearTransformation::alloc_prepared(module, &schedule, &diagonal);
-    let mut scratch = ScratchOwned::<BE>::alloc(module.glwe_prepare_linear_transformation_rhs_tmp_bytes(&layout));
+    let mut scratch = poisoned_scratch::<BE>(module.glwe_prepare_linear_transformation_rhs_tmp_bytes(&layout));
     let lt = LinearTransformation {
         baby_steps: vec![0],
         giant_steps: vec![LinearTransformationGiantStep {
@@ -443,8 +444,7 @@ where
             | module.glwe_decrypt_tmp_bytes(&ct_infos)
             | module.glwe_noise_tmp_bytes(&ct_infos)
             | module.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(&ct_infos, &atk_infos)
-            | module.glwe_prepare_linear_transformation_rhs_tmp_bytes(&pt_infos)
-            | module.glwe_eval_linear_transformation_sum_tmp_bytes(&ct_infos, &ct_infos, &pt_infos, &atk_infos),
+            | module.glwe_prepare_linear_transformation_rhs_tmp_bytes(&pt_infos),
     );
     let mut source_xs = Source::new([6u8; 32]);
     let mut source_xe = Source::new([7u8; 32]);
@@ -514,18 +514,58 @@ where
     let (babies, lts): (Vec<_>, Vec<_>) = (babies.iter().collect(), lts.iter().collect());
 
     let mut single: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ct_infos);
-    module.glwe_eval_linear_transformation_into(base2k, &mut single, babies[0], lts[0], &keys, &mut scratch.borrow());
+    module.glwe_eval_linear_transformation_into(
+        base2k,
+        &mut single,
+        babies[0],
+        lts[0],
+        &keys,
+        &mut poisoned_scratch::<BE>(
+            module.glwe_eval_linear_transformation_tmp_bytes(&ct_infos, &ct_infos, &pt_infos, &atk_infos),
+        )
+        .borrow(),
+    );
     let mut one: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ct_infos);
-    module.glwe_eval_linear_transformation_sum_into(base2k, &mut one, &babies[..1], &lts[..1], &keys, &mut scratch.borrow());
+    module.glwe_eval_linear_transformation_sum_into(
+        base2k,
+        &mut one,
+        &babies[..1],
+        &lts[..1],
+        &keys,
+        &mut poisoned_scratch::<BE>(
+            module.glwe_eval_linear_transformation_sum_tmp_bytes(&ct_infos, &ct_infos, &pt_infos, &atk_infos),
+        )
+        .borrow(),
+    );
     assert_eq!(one, single, "a one-term sum is not the single linear transformation");
     assert!(one.is_canonical());
 
     let mut sum: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ct_infos);
-    module.glwe_eval_linear_transformation_sum_into(base2k, &mut sum, &babies, &lts, &keys, &mut scratch.borrow());
+    module.glwe_eval_linear_transformation_sum_into(
+        base2k,
+        &mut sum,
+        &babies,
+        &lts,
+        &keys,
+        &mut poisoned_scratch::<BE>(
+            module.glwe_eval_linear_transformation_sum_tmp_bytes(&ct_infos, &ct_infos, &pt_infos, &atk_infos),
+        )
+        .borrow(),
+    );
     let mut want = single;
     for (&cache, &lt) in babies[1..].iter().zip(&lts[1..]) {
         let mut term: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ct_infos);
-        module.glwe_eval_linear_transformation_into(base2k, &mut term, cache, lt, &keys, &mut scratch.borrow());
+        module.glwe_eval_linear_transformation_into(
+            base2k,
+            &mut term,
+            cache,
+            lt,
+            &keys,
+            &mut poisoned_scratch::<BE>(
+                module.glwe_eval_linear_transformation_tmp_bytes(&ct_infos, &ct_infos, &pt_infos, &atk_infos),
+            )
+            .borrow(),
+        );
         module.glwe_add_assign(&mut want, &term);
     }
     let mut pt_want: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&ct_infos);
@@ -918,7 +958,7 @@ fn eval_without_keys<BE: crate::test_suite::noise::TestBackend>(
 {
     let keys: HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>> = HashMap::new();
     let mut res: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&limbs_layout(params, module, 1, 1));
-    let mut scratch = ScratchOwned::<BE>::alloc(0);
+    let mut scratch = poisoned_scratch::<BE>(0);
     // Limb offset 1: a one-limb source by a one- or two-limb diagonal gives one product limb either way.
     let cnv_offset = 2 * params.base2k;
     assert_refusal(message, &mut res, glwe_state::<BE>, |res| {

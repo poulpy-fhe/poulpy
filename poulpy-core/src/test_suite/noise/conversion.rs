@@ -12,6 +12,7 @@ use byteorder::{LittleEndian, WriteBytesExt};
 use crate::api::{GLWESecretSampling, LWESecretSampling};
 use crate::layouts::prepared::GGLWEPreparedToBackendRef;
 use crate::test_suite::noise::{glwe_decrypt_checked, glwe_noise_checked};
+use crate::test_suite::poisoned_scratch;
 use crate::{
     DEFAULT_SIGMA_XE, GLWEDecrypt, GLWEEncryptSk, GLWEExpandLWE, GLWEExpandLWEMatrix, GLWEFromLWE, GLWEMaskFill, GLWENoise,
     GLWENormalize, GLWEToLWESwitchingKeyEncryptSk, LWEDecrypt, LWEEncryptSk, LWEFromGLWE, LWEMatrixDecrypt,
@@ -164,7 +165,11 @@ where
             ct_in.data().decode_vec_float(ct_in.base2k().into(), 0, &mut data);
 
             module.fill_glwe_from_source(&mut ct_out, &mut source_xa);
-            module.glwe_normalize(&mut ct_out, &ct_in, &mut scratch.borrow());
+            module.glwe_normalize(
+                &mut ct_out,
+                &ct_in,
+                &mut poisoned_scratch::<BE>(module.glwe_normalize_tmp_bytes()).borrow(),
+            );
 
             let mut data_conv: Vec<FBig<HalfEven>> = (0..module.n()).map(|_| FBig::ZERO).collect();
             ct_out.data().decode_vec_float(ct_out.base2k().into(), 0, &mut data_conv);
@@ -231,7 +236,7 @@ pub fn test_lwe_to_glwe<BE: crate::test_suite::noise::TestBackend + crate::oep::
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         (module).lwe_to_glwe_key_encrypt_sk_tmp_bytes(&lwe_to_glwe_infos)
-            | (module).glwe_from_lwe_tmp_bytes(&glwe_infos, &lwe_infos, &lwe_to_glwe_infos)
+            | (module).lwe_to_glwe_key_prepare_tmp_bytes(&lwe_to_glwe_infos)
             | (module).glwe_decrypt_tmp_bytes(&glwe_infos),
     );
 
@@ -275,7 +280,12 @@ pub fn test_lwe_to_glwe<BE: crate::test_suite::noise::TestBackend + crate::oep::
     let mut ksk_prepared: LWEToGLWEKeyPrepared<BE::OwnedBuf, BE> = module.lwe_to_glwe_key_prepared_alloc_from_infos(&ksk);
     module.lwe_to_glwe_key_prepare(&mut ksk_prepared, &ksk, &mut scratch.borrow());
 
-    module.glwe_from_lwe(&mut glwe_ct, &lwe_ct, &ksk_prepared.to_backend_ref(), &mut scratch.borrow());
+    module.glwe_from_lwe(
+        &mut glwe_ct,
+        &lwe_ct,
+        &ksk_prepared.to_backend_ref(),
+        &mut poisoned_scratch::<BE>(module.glwe_from_lwe_tmp_bytes(&glwe_infos, &lwe_infos, &lwe_to_glwe_infos)).borrow(),
+    );
 
     let mut glwe_pt: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
     glwe_decrypt_checked(module, &glwe_ct, &mut glwe_pt, &sk_glwe_prepared, &mut scratch.borrow());
@@ -352,8 +362,9 @@ pub fn test_glwe_to_lwe<BE: crate::test_suite::noise::TestBackend + crate::oep::
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         (module).glwe_to_lwe_key_encrypt_sk_tmp_bytes(&glwe_to_lwe_infos)
-            | (module).lwe_from_glwe_tmp_bytes(&lwe_infos, &glwe_infos, &glwe_to_lwe_infos)
-            | (module).glwe_decrypt_tmp_bytes(&glwe_infos),
+            | (module).glwe_to_lwe_key_prepare_tmp_bytes(&glwe_to_lwe_infos)
+            | (module).glwe_encrypt_sk_tmp_bytes(&glwe_infos)
+            | (module).lwe_decrypt_tmp_bytes(&lwe_infos),
     );
 
     let mut sk_glwe: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc_from_infos(&glwe_infos);
@@ -403,7 +414,7 @@ pub fn test_glwe_to_lwe<BE: crate::test_suite::noise::TestBackend + crate::oep::
         &glwe_ct,
         a_idx,
         &ksk_prepared.to_backend_ref(),
-        &mut scratch.borrow(),
+        &mut poisoned_scratch::<BE>(module.lwe_from_glwe_tmp_bytes(&lwe_infos, &glwe_infos, &glwe_to_lwe_infos)).borrow(),
     );
 
     let mut lwe_pt: LWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.lwe_plaintext_alloc_from_infos(&lwe_infos);
@@ -473,7 +484,7 @@ pub fn test_glwe_expand_lwe<BE: crate::test_suite::noise::TestBackend + crate::o
         let sk_lwe = module.lwe_secret_from_glwe_secret(
             &sk_glwe,
             lwe_infos.n,
-            &mut ScratchOwned::alloc(module.lwe_secret_from_glwe_secret_tmp_bytes(&sk_glwe)).borrow(),
+            &mut poisoned_scratch::<BE>(module.lwe_secret_from_glwe_secret_tmp_bytes(&sk_glwe)).borrow(),
         );
 
         let a_idx: usize = 3;
@@ -483,11 +494,8 @@ pub fn test_glwe_expand_lwe<BE: crate::test_suite::noise::TestBackend + crate::o
         let mut glwe_pt: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
         glwe_pt.encode_vec_i64(&data, k_pt);
 
-        let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
-            module.glwe_encrypt_sk_tmp_bytes(&glwe_infos)
-                | module.lwe_decrypt_tmp_bytes(&lwe_infos)
-                | module.glwe_expand_lwe_tmp_bytes(&lwe_infos, &glwe_infos),
-        );
+        let mut scratch: ScratchOwned<BE> =
+            ScratchOwned::alloc(module.glwe_encrypt_sk_tmp_bytes(&glwe_infos) | module.lwe_decrypt_tmp_bytes(&lwe_infos));
 
         let mut glwe_ct: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_infos);
         module.glwe_encrypt_sk(
@@ -500,7 +508,11 @@ pub fn test_glwe_expand_lwe<BE: crate::test_suite::noise::TestBackend + crate::o
         );
 
         let mut lwe_cts: Vec<LWE<BE::OwnedBuf, BE::ZnxWord>> = (0..n).map(|_| module.lwe_alloc_from_infos(&lwe_infos)).collect();
-        module.glwe_expand_lwe(lwe_cts.as_mut_slice(), &glwe_ct, &mut scratch.borrow());
+        module.glwe_expand_lwe(
+            lwe_cts.as_mut_slice(),
+            &glwe_ct,
+            &mut poisoned_scratch::<BE>(module.glwe_expand_lwe_tmp_bytes(&lwe_infos, &glwe_infos)).borrow(),
+        );
 
         let mut lwe_pt: LWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.lwe_plaintext_alloc_from_infos(&lwe_infos);
         module.lwe_decrypt(&lwe_cts[a_idx], &mut lwe_pt, &sk_lwe, &mut scratch.borrow());
@@ -566,7 +578,7 @@ pub fn test_glwe_expand_lwe_rejects_incompatible_lwe_layout<
         "glwe_expand_lwe_tmp_bytes must reject incompatible LWE layout"
     );
 
-    let mut scratch = ScratchOwned::<BE>::alloc(0);
+    let mut scratch = poisoned_scratch::<BE>(0);
     assert!(
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             module.glwe_expand_lwe(std::slice::from_mut(&mut lwe_out), &glwe_ct, &mut scratch.borrow());
@@ -623,7 +635,7 @@ pub fn test_glwe_expand_lwe_matrix_decrypt<BE: crate::test_suite::noise::TestBac
         let sk_lwe = module.lwe_secret_from_glwe_secret(
             &sk_glwe,
             matrix_infos.n,
-            &mut ScratchOwned::alloc(module.lwe_secret_from_glwe_secret_tmp_bytes(&sk_glwe)).borrow(),
+            &mut poisoned_scratch::<BE>(module.lwe_secret_from_glwe_secret_tmp_bytes(&sk_glwe)).borrow(),
         );
 
         let mut data: Vec<i64> = vec![0i64; n];
@@ -636,9 +648,7 @@ pub fn test_glwe_expand_lwe_matrix_decrypt<BE: crate::test_suite::noise::TestBac
 
         let scratch_bytes = module
             .glwe_encrypt_sk_tmp_bytes(&glwe_infos)
-            .max(module.glwe_decrypt_tmp_bytes(&glwe_infos))
-            .max(module.glwe_expand_lwe_matrix_tmp_bytes(&matrix_infos, &glwe_infos))
-            .max(module.lwe_matrix_decrypt_tmp_bytes(&matrix_infos));
+            .max(module.glwe_decrypt_tmp_bytes(&glwe_infos));
         let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(scratch_bytes);
 
         let mut glwe_ct: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_infos);
@@ -655,10 +665,19 @@ pub fn test_glwe_expand_lwe_matrix_decrypt<BE: crate::test_suite::noise::TestBac
         glwe_decrypt_checked(module, &glwe_ct, &mut glwe_pt_dec, &sk_glwe_prep, &mut scratch.borrow());
 
         let mut lwe_matrix = module.lwe_matrix_alloc_from_infos(&matrix_infos);
-        module.glwe_expand_lwe_matrix(&mut lwe_matrix, &glwe_ct, &mut scratch.borrow());
+        module.glwe_expand_lwe_matrix(
+            &mut lwe_matrix,
+            &glwe_ct,
+            &mut poisoned_scratch::<BE>(module.glwe_expand_lwe_matrix_tmp_bytes(&matrix_infos, &glwe_infos)).borrow(),
+        );
 
         let mut matrix_pt = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
-        module.lwe_matrix_decrypt(&lwe_matrix, &mut matrix_pt, &sk_lwe, &mut scratch.borrow());
+        module.lwe_matrix_decrypt(
+            &lwe_matrix,
+            &mut matrix_pt,
+            &sk_lwe,
+            &mut poisoned_scratch::<BE>(module.lwe_matrix_decrypt_tmp_bytes(&matrix_infos)).borrow(),
+        );
 
         for limb in 0..glwe_pt_dec.data.size() {
             assert_eq!(
