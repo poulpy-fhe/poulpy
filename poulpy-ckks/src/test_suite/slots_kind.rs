@@ -12,10 +12,10 @@ use poulpy_hal::{
 };
 
 use super::helpers::{
-    TestContextBackend, TestContextModule, TestScalar, add_sub_const_pt, alloc_ct, alloc_scratch, ckks_encrypt, gen_sk_with_raw,
-    gen_tsk,
+    TestContextBackend, TestContextModule, TestScalar, add_sub_const_pt, alloc_ct, alloc_scratch, assert_ckks_internal,
+    ckks_encrypt, gen_sk_with_raw, gen_tsk,
 };
-use super::parity::helpers::with_scratch;
+use super::parity::helpers::{snapshot, with_scratch};
 use crate::{
     SlotsKind,
     api::{CKKSAddOps, CKKSImagOps, CKKSMulOps, CKKSNegOps, CKKSPow2Ops, CKKSSubOps},
@@ -181,14 +181,26 @@ where
     // Halving an integer need not give an integer, so division refuses
     // `Integer` slots rather than carry a false claim.
     a.set_slots(SlotsKind::Integer);
-    assert!(
-        with_scratch::<BE, _>(module.ckks_div_pow2_tmp_bytes(res.max_size()), |s| module
-            .ckks_div_pow2_into(1, &mut res, &a, s))
-        .is_err()
+    let before = snapshot::<BE, _>(&res);
+    let err = with_scratch::<BE, _>(module.ckks_div_pow2_tmp_bytes(res.max_size()), |s| {
+        module.ckks_div_pow2_into(1, &mut res, &a, s)
+    })
+    .unwrap_err();
+    assert_ckks_internal(
+        "div_pow2_into of Integer slots",
+        &err,
+        "ckks_div_pow2_into: dividing Integer slots",
     );
+    assert_eq!(snapshot::<BE, _>(&res), before, "a refused division wrote res");
     let mut acc = a.clone();
-    assert!(module.ckks_div_pow2_assign(1, &mut acc).is_err());
-    assert_eq!(acc.slots(), SlotsKind::Integer, "a refused division is a no-op");
+    let before = snapshot::<BE, _>(&acc);
+    let err = module.ckks_div_pow2_assign(1, &mut acc).unwrap_err();
+    assert_ckks_internal(
+        "div_pow2_assign of Integer slots",
+        &err,
+        "ckks_div_pow2_assign: dividing Integer slots",
+    );
+    assert_eq!(snapshot::<BE, _>(&acc), before, "a refused division is a no-op");
     module.ckks_div_pow2_assign(0, &mut acc).unwrap();
     assert_eq!(acc.slots(), SlotsKind::Integer, "dividing by one keeps integers");
 }

@@ -3,7 +3,7 @@ use poulpy_core::layouts::GLWEPlaintextInfos;
 use std::collections::HashMap;
 
 use crate::{
-    CKKSInfos, CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos, SlotsKind,
+    CKKSCompositionError, CKKSInfos, CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos, SlotsKind,
     api::{
         CKKSAddOps, CKKSCIRingMapOps, CKKSCopyOps, CKKSDecryptOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar,
         CKKSEvalModOps, CKKSFoldLayoutOps, CKKSFoldOps, CKKSLinearTransformationOps, CKKSModuleInfos, CKKSMulOps, CKKSNegOps,
@@ -231,15 +231,16 @@ pub fn test_conjugate_invariant_leveled<BE>(
     assert_output!(&narrowed, &re1);
     let mut exhausted = alloc_ct(&params, module, ct1.log_delta() - 1);
     let exhausted_before = exhausted.clone();
+    let err = with_scratch::<BE, _>(rotation_bytes, |s| {
+        module.ckks_rotate_into(0, &mut exhausted, &ct1, &empty, s)
+    })
+    .unwrap_err();
     assert!(
-        with_scratch::<BE, _>(rotation_bytes, |s| module.ckks_rotate_into(
-            0,
-            &mut exhausted,
-            &ct1,
-            &empty,
-            s
-        ))
-        .is_err()
+        matches!(
+            err.composition(),
+            Some(CKKSCompositionError::InsufficientHomomorphicCapacity { op: "ckks_copy", .. })
+        ),
+        "identity rotation into a destination below the scale: {err}"
     );
     assert_eq!(exhausted.meta(), exhausted_before.meta());
     assert_eq!(exhausted.k(), exhausted_before.k());
