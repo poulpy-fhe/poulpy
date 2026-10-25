@@ -8,19 +8,26 @@ use crate::layouts::{
 /// Backend hook for GLWE external products.
 ///
 /// # Safety
-/// Implementors must preserve the semantics, scratch requirements, and aliasing
-/// guarantees expected by the public and reference external-product layers.
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait GLWEExternalProductImpl: Backend {
-    /// Workspace for the selected DFT-domain external product.
+    /// Scratch bound of [`Self::glwe_external_product_dft`]; may report less than the reference, never less than the
+    /// body takes.
     fn glwe_external_product_internal_tmp_bytes<R, A, B>(module: &Module<Self>, res_infos: &R, a_infos: &A, b_infos: &B) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
         B: GGSWInfos;
 
-    /// Fills the full DFT output at the key radix, normalizing a noncanonical input.
-    /// The input radix must match the key; integer output after inverse transform
-    /// and rounding must agree with the public external product.
+    /// Reproduces
+    /// [`glwe_external_product_dft_reference`](crate::reference::external_product::glwe::GLWEExternalProductDftReference::glwe_external_product_dft_reference)
+    /// in the integers under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
+    /// [`Self::glwe_external_product_internal_tmp_bytes`]: after inverse transform and rounding its output is bit for
+    /// bit the reference's, whatever the DFT representation; free in kernels and scratch use.
+    ///
+    /// It fills the full DFT output at the key radix, normalizing a noncanonical input whose radix must match the
+    /// key.
     fn glwe_external_product_dft<'r, A>(
         module: &Module<Self>,
         res_dft: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'r, Self>,
@@ -30,12 +37,18 @@ pub unsafe trait GLWEExternalProductImpl: Backend {
     ) where
         A: GLWEToBackendRef<Self>;
 
+    /// Scratch bound of [`Self::glwe_external_product`] and [`Self::glwe_external_product_assign`]; may report less
+    /// than the reference, never less than the body takes.
     fn glwe_external_product_tmp_bytes<R, A, B>(module: &Module<Self>, res_infos: &R, a_infos: &A, b_infos: &B) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
         B: GGSWInfos;
 
+    /// Reproduces
+    /// [`glwe_external_product_reference`](crate::reference::external_product::glwe::glwe_external_product_reference)
+    /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
+    /// [`Self::glwe_external_product_tmp_bytes`]; free in kernels and scratch use.
     fn glwe_external_product<R, A>(
         module: &Module<Self>,
         res: &mut R,
@@ -46,6 +59,10 @@ pub unsafe trait GLWEExternalProductImpl: Backend {
         R: GLWEToBackendMut<Self> + GLWEInfos,
         A: GLWEToBackendRef<Self> + GLWEInfos;
 
+    /// Reproduces
+    /// [`glwe_external_product_assign_reference`](crate::reference::external_product::glwe::glwe_external_product_assign_reference)
+    /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
+    /// [`Self::glwe_external_product_tmp_bytes`]; free in kernels and scratch use.
     fn glwe_external_product_assign<R>(
         module: &Module<Self>,
         res: &mut R,
@@ -58,9 +75,12 @@ pub unsafe trait GLWEExternalProductImpl: Backend {
 /// Backend hook for batched GGLWE external products.
 ///
 /// # Safety
-/// Implementors must preserve the semantics, scratch requirements, and aliasing
-/// guarantees expected by the public and reference external-product layers.
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait GGLWEExternalProductImpl: Backend + GLWEExternalProductImpl + crate::oep::GLWEZeroImpl {
+    /// Default body: `gglwe_external_product_tmp_bytes_derived`,
+    /// [`GLWEExternalProductImpl::glwe_external_product_tmp_bytes`](crate::oep::GLWEExternalProductImpl::glwe_external_product_tmp_bytes).
     fn gglwe_external_product_tmp_bytes<R, A, B>(module: &Module<Self>, res_infos: &R, a_infos: &A, b_infos: &B) -> usize
     where
         R: GGLWEInfos,
@@ -72,6 +92,12 @@ pub unsafe trait GGLWEExternalProductImpl: Backend + GLWEExternalProductImpl + c
         )
     }
 
+    /// Default body: `gglwe_external_product_derived`,
+    /// [`GLWEExternalProductImpl::glwe_external_product`](crate::oep::GLWEExternalProductImpl::glwe_external_product)
+    /// on each entry of the first `min(res.dnum(), a.dnum())` rows, then
+    /// [`GLWEZeroImpl::glwe_zero`](crate::oep::GLWEZeroImpl::glwe_zero) on the remaining rows, within
+    /// [`Self::gglwe_external_product_tmp_bytes`], under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint) of its
+    /// prepared operands.
     fn gglwe_external_product<R, A>(
         module: &Module<Self>,
         res: &mut R,
@@ -85,6 +111,10 @@ pub unsafe trait GGLWEExternalProductImpl: Backend + GLWEExternalProductImpl + c
         crate::oep::derived::external_product::gglwe_external_product_derived::<Self, _, _, _>(module, res, a, b, scratch)
     }
 
+    /// Default body: `gglwe_external_product_assign_derived`,
+    /// [`GLWEExternalProductImpl::glwe_external_product_assign`](crate::oep::GLWEExternalProductImpl::glwe_external_product_assign)
+    /// on each entry of `res`, within [`Self::gglwe_external_product_tmp_bytes`], under any
+    /// [`PrepareHint`](poulpy_hal::layouts::PrepareHint) of its prepared operands.
     fn gglwe_external_product_assign<R>(
         module: &Module<Self>,
         res: &mut R,
@@ -100,9 +130,12 @@ pub unsafe trait GGLWEExternalProductImpl: Backend + GLWEExternalProductImpl + c
 /// Backend hook for GGSW external products.
 ///
 /// # Safety
-/// Implementors must preserve the semantics, scratch requirements, and aliasing
-/// guarantees expected by the public and reference external-product layers.
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait GGSWExternalProductImpl: Backend + GLWEExternalProductImpl + crate::oep::GLWEZeroImpl {
+    /// Default body: `ggsw_external_product_tmp_bytes_derived`,
+    /// [`GLWEExternalProductImpl::glwe_external_product_tmp_bytes`](crate::oep::GLWEExternalProductImpl::glwe_external_product_tmp_bytes).
     fn ggsw_external_product_tmp_bytes<R, A, B>(module: &Module<Self>, res_infos: &R, a_infos: &A, b_infos: &B) -> usize
     where
         R: GGSWInfos,
@@ -114,6 +147,12 @@ pub unsafe trait GGSWExternalProductImpl: Backend + GLWEExternalProductImpl + cr
         )
     }
 
+    /// Default body: `ggsw_external_product_derived`,
+    /// [`GLWEExternalProductImpl::glwe_external_product`](crate::oep::GLWEExternalProductImpl::glwe_external_product)
+    /// on each entry of the first `min(res.dnum(), a.dnum())` rows, then
+    /// [`GLWEZeroImpl::glwe_zero`](crate::oep::GLWEZeroImpl::glwe_zero) on the remaining rows, within
+    /// [`Self::ggsw_external_product_tmp_bytes`], under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint) of its
+    /// prepared operands.
     fn ggsw_external_product<R, A>(
         module: &Module<Self>,
         res: &mut R,
@@ -127,6 +166,10 @@ pub unsafe trait GGSWExternalProductImpl: Backend + GLWEExternalProductImpl + cr
         crate::oep::derived::external_product::ggsw_external_product_derived::<Self, _, _, _>(module, res, a, b, scratch)
     }
 
+    /// Default body: `ggsw_external_product_assign_derived`,
+    /// [`GLWEExternalProductImpl::glwe_external_product_assign`](crate::oep::GLWEExternalProductImpl::glwe_external_product_assign)
+    /// on each entry of `res`, within [`Self::ggsw_external_product_tmp_bytes`], under any
+    /// [`PrepareHint`](poulpy_hal::layouts::PrepareHint) of its prepared operands.
     fn ggsw_external_product_assign<R>(
         module: &Module<Self>,
         res: &mut R,

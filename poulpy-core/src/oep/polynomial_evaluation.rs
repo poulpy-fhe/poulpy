@@ -14,9 +14,12 @@ use crate::{
 /// policy. They preserve that policy's dispatch and do not implement HAL kernels.
 ///
 /// # Safety
-/// Implementations must preserve the BSGS schedule semantics and the precision
-/// metadata contract expected by the scheme-supplied operations.
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait PolynomialEvaluationImpl: Backend {
+    /// Default body: `glwe_eval_baby_step_derived`, the parity schedule of one baby step over the caller's
+    /// [`BSGSOps`], seeding the accumulator from the highest power.
     #[allow(clippy::too_many_arguments)]
     fn glwe_eval_baby_step<Ops, V, P, A, G>(
         module: &Module<Self>,
@@ -45,6 +48,9 @@ pub unsafe trait PolynomialEvaluationImpl: Backend {
         )
     }
 
+    /// Default body: `glwe_eval_giant_steps_derived`, the giant-step schedule over the caller's [`BSGSOps`],
+    /// preparing each level's the giant-step power once and reusing it across the level's pairs, under any
+    /// [`PrepareHint`](poulpy_hal::layouts::PrepareHint) of its prepared operands.
     #[allow(clippy::too_many_arguments)]
     fn glwe_eval_giant_steps<Ops, R, B, V, P, A, G, H>(
         module: &Module<Self>,

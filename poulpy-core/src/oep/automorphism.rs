@@ -11,15 +11,24 @@ use crate::layouts::{
 /// Backend hook for automorphism-family operations.
 ///
 /// # Safety
-/// Implementors must preserve the semantics, scratch requirements, aliasing
-/// guarantees, and backend bit-parity contract expected by end-to-end pipelines.
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait AutomorphismImpl: Backend + crate::oep::GGSWConversionImpl {
+    /// Scratch bound of [`Self::glwe_automorphism`], [`Self::glwe_automorphism_assign`],
+    /// [`Self::glwe_automorphism_add`], [`Self::glwe_automorphism_add_assign`], [`Self::glwe_automorphism_sub`],
+    /// [`Self::glwe_automorphism_sub_negate`], [`Self::glwe_automorphism_sub_assign`] and
+    /// [`Self::glwe_automorphism_sub_negate_assign`]; may report less than the reference, never less than the body
+    /// takes.
     fn glwe_automorphism_tmp_bytes<R, A, K>(module: &Module<Self>, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
         K: GGLWEInfos;
 
+    /// Reproduces [`glwe_automorphism_reference`](crate::reference::automorphism::glwe::glwe_automorphism_reference)
+    /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
+    /// [`Self::glwe_automorphism_tmp_bytes`]; free in kernels and scratch use.
     fn glwe_automorphism<R, A>(
         module: &Module<Self>,
         res: &mut R,
@@ -30,6 +39,10 @@ pub unsafe trait AutomorphismImpl: Backend + crate::oep::GGSWConversionImpl {
         R: GLWEToBackendMut<Self> + GLWEInfos,
         A: GLWEToBackendRef<Self> + GLWEInfos;
 
+    /// Reproduces
+    /// [`glwe_automorphism_assign_reference`](crate::reference::automorphism::glwe::glwe_automorphism_assign_reference)
+    /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
+    /// [`Self::glwe_automorphism_tmp_bytes`]; free in kernels and scratch use.
     fn glwe_automorphism_assign<R>(
         module: &Module<Self>,
         res: &mut R,
@@ -38,6 +51,10 @@ pub unsafe trait AutomorphismImpl: Backend + crate::oep::GGSWConversionImpl {
     ) where
         R: GLWEToBackendMut<Self> + GLWEInfos;
 
+    /// Reproduces
+    /// [`glwe_automorphism_add_reference`](crate::reference::automorphism::glwe::glwe_automorphism_add_reference) bit
+    /// for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
+    /// [`Self::glwe_automorphism_tmp_bytes`]; free in kernels and scratch use.
     fn glwe_automorphism_add<R, A>(
         module: &Module<Self>,
         res: &mut R,
@@ -48,6 +65,10 @@ pub unsafe trait AutomorphismImpl: Backend + crate::oep::GGSWConversionImpl {
         R: GLWEToBackendMut<Self> + GLWEInfos,
         A: GLWEToBackendRef<Self> + GLWEInfos;
 
+    /// Reproduces
+    /// [`glwe_automorphism_add_assign_reference`](crate::reference::automorphism::glwe::glwe_automorphism_add_assign_reference)
+    /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
+    /// [`Self::glwe_automorphism_tmp_bytes`]; free in kernels and scratch use.
     fn glwe_automorphism_add_assign<R>(
         module: &Module<Self>,
         res: &mut R,
@@ -56,6 +77,10 @@ pub unsafe trait AutomorphismImpl: Backend + crate::oep::GGSWConversionImpl {
     ) where
         R: GLWEToBackendMut<Self> + GLWEInfos;
 
+    /// Reproduces
+    /// [`glwe_automorphism_sub_reference`](crate::reference::automorphism::glwe::glwe_automorphism_sub_reference) bit
+    /// for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
+    /// [`Self::glwe_automorphism_tmp_bytes`]; free in kernels and scratch use.
     fn glwe_automorphism_sub<R, A>(
         module: &Module<Self>,
         res: &mut R,
@@ -66,6 +91,10 @@ pub unsafe trait AutomorphismImpl: Backend + crate::oep::GGSWConversionImpl {
         R: GLWEToBackendMut<Self> + GLWEInfos,
         A: GLWEToBackendRef<Self> + GLWEInfos;
 
+    /// Reproduces
+    /// [`glwe_automorphism_sub_negate_reference`](crate::reference::automorphism::glwe::glwe_automorphism_sub_negate_reference)
+    /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
+    /// [`Self::glwe_automorphism_tmp_bytes`]; free in kernels and scratch use.
     fn glwe_automorphism_sub_negate<R, A>(
         module: &Module<Self>,
         res: &mut R,
@@ -76,6 +105,10 @@ pub unsafe trait AutomorphismImpl: Backend + crate::oep::GGSWConversionImpl {
         R: GLWEToBackendMut<Self> + GLWEInfos,
         A: GLWEToBackendRef<Self> + GLWEInfos;
 
+    /// Reproduces
+    /// [`glwe_automorphism_sub_assign_reference`](crate::reference::automorphism::glwe::glwe_automorphism_sub_assign_reference)
+    /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
+    /// [`Self::glwe_automorphism_tmp_bytes`]; free in kernels and scratch use.
     fn glwe_automorphism_sub_assign<R>(
         module: &Module<Self>,
         res: &mut R,
@@ -84,6 +117,10 @@ pub unsafe trait AutomorphismImpl: Backend + crate::oep::GGSWConversionImpl {
     ) where
         R: GLWEToBackendMut<Self> + GLWEInfos;
 
+    /// Reproduces
+    /// [`glwe_automorphism_sub_negate_assign_reference`](crate::reference::automorphism::glwe::glwe_automorphism_sub_negate_assign_reference)
+    /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
+    /// [`Self::glwe_automorphism_tmp_bytes`]; free in kernels and scratch use.
     fn glwe_automorphism_sub_negate_assign<R>(
         module: &Module<Self>,
         res: &mut R,
@@ -92,6 +129,8 @@ pub unsafe trait AutomorphismImpl: Backend + crate::oep::GGSWConversionImpl {
     ) where
         R: GLWEToBackendMut<Self> + GLWEInfos;
 
+    /// Default body: `ggsw_automorphism_tmp_bytes_derived`, the larger of [`Self::glwe_automorphism_tmp_bytes`] and
+    /// [`GGSWConversionImpl::ggsw_expand_rows_tmp_bytes`](crate::oep::GGSWConversionImpl::ggsw_expand_rows_tmp_bytes).
     fn ggsw_automorphism_tmp_bytes<R, A, K, T>(
         module: &Module<Self>,
         res_infos: &R,
@@ -110,6 +149,10 @@ pub unsafe trait AutomorphismImpl: Backend + crate::oep::GGSWConversionImpl {
         )
     }
 
+    /// Default body: `ggsw_automorphism_derived`, [`Self::glwe_automorphism`] on the first column of each row, then
+    /// [`GGSWConversionImpl::ggsw_expand_row`](crate::oep::GGSWConversionImpl::ggsw_expand_row), within
+    /// [`Self::ggsw_automorphism_tmp_bytes`], under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint) of its
+    /// prepared operands.
     fn ggsw_automorphism<R, A>(
         module: &Module<Self>,
         res: &mut R,
@@ -124,6 +167,10 @@ pub unsafe trait AutomorphismImpl: Backend + crate::oep::GGSWConversionImpl {
         crate::oep::derived::automorphism::ggsw_automorphism_derived::<Self, _, _, _>(module, res, a, key, tsk, scratch)
     }
 
+    /// Default body: `ggsw_automorphism_assign_derived`, [`Self::glwe_automorphism_assign`] on the first column of
+    /// each row, then [`GGSWConversionImpl::ggsw_expand_row`](crate::oep::GGSWConversionImpl::ggsw_expand_row),
+    /// within [`Self::ggsw_automorphism_tmp_bytes`], under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint) of
+    /// its prepared operands.
     fn ggsw_automorphism_assign<R>(
         module: &Module<Self>,
         res: &mut R,
@@ -136,6 +183,9 @@ pub unsafe trait AutomorphismImpl: Backend + crate::oep::GGSWConversionImpl {
         crate::oep::derived::automorphism::ggsw_automorphism_assign_derived::<Self, _, _>(module, res, key, tsk, scratch)
     }
 
+    /// Scratch bound of [`Self::glwe_automorphism_key_automorphism`] and
+    /// [`Self::glwe_automorphism_key_automorphism_assign`]; may report less than the reference, never less than the
+    /// body takes.
     fn glwe_automorphism_key_automorphism_tmp_bytes<R, A, K>(
         module: &Module<Self>,
         res_infos: &R,
@@ -147,6 +197,10 @@ pub unsafe trait AutomorphismImpl: Backend + crate::oep::GGSWConversionImpl {
         A: GGLWEInfos,
         K: GGLWEInfos;
 
+    /// Reproduces
+    /// [`glwe_automorphism_key_automorphism_reference`](crate::reference::automorphism::gglwe::glwe_automorphism_key_automorphism_reference)
+    /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
+    /// [`Self::glwe_automorphism_key_automorphism_tmp_bytes`]; free in kernels and scratch use.
     fn glwe_automorphism_key_automorphism<R, A>(
         module: &Module<Self>,
         res: &mut R,
@@ -157,6 +211,10 @@ pub unsafe trait AutomorphismImpl: Backend + crate::oep::GGSWConversionImpl {
         R: GGLWEToBackendMut<Self> + SetGaloisElement + GGLWEInfos,
         A: GGLWEToBackendRef<Self> + GetGaloisElement + GGLWEInfos;
 
+    /// Reproduces
+    /// [`glwe_automorphism_key_automorphism_assign_reference`](crate::reference::automorphism::gglwe::glwe_automorphism_key_automorphism_assign_reference)
+    /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
+    /// [`Self::glwe_automorphism_key_automorphism_tmp_bytes`]; free in kernels and scratch use.
     fn glwe_automorphism_key_automorphism_assign<R>(
         module: &Module<Self>,
         res: &mut R,
