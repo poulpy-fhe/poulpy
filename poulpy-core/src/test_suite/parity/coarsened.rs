@@ -375,15 +375,15 @@ where
 
         let mut tsk_prep: GLWETensorKeyPrepared<BE::OwnedBuf, BE> = module.alloc_tensor_key_prepared_from_infos(&stored);
         let mut twin_prep: GLWETensorKeyPrepared<BE::OwnedBuf, BE> = module.alloc_tensor_key_prepared_from_infos(&twin);
-        module.prepare_tensor_key(
+        module.glwe_tensor_key_prepare(
             &mut tsk_prep,
             &tsk,
-            &mut poisoned_scratch::<BE>(module.prepare_tensor_key_tmp_bytes(&stored)).borrow(),
+            &mut poisoned_scratch::<BE>(module.glwe_tensor_key_prepare_tmp_bytes(&stored)).borrow(),
         );
-        module.prepare_tensor_key(
+        module.glwe_tensor_key_prepare(
             &mut twin_prep,
             &tsk_twin,
-            &mut poisoned_scratch::<BE>(module.prepare_tensor_key_tmp_bytes(&twin)).borrow(),
+            &mut poisoned_scratch::<BE>(module.glwe_tensor_key_prepare_tmp_bytes(&twin)).borrow(),
         );
 
         let ct_infos = GLWELayout {

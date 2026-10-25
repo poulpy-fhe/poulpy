@@ -137,18 +137,18 @@ impl_preparation_delegate!(
 
 impl_preparation_delegate!(
     GLWETensorKeyPreparedFactory<BE>,
-    fn prepare_tensor_key_tmp_bytes<A>(&self, infos: &A) -> usize
+    fn glwe_tensor_key_prepare_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos,
     {
-        BE::prepare_tensor_key_tmp_bytes(self, infos)
+        BE::glwe_tensor_key_prepare_tmp_bytes(self, infos)
     },
-    fn prepare_tensor_key<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_tensor_key_prepare<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GGLWEPreparedToBackendMut<BE>,
         O: GGLWEToBackendRef<BE>,
     {
-        BE::prepare_tensor_key(self, res, other, scratch)
+        BE::glwe_tensor_key_prepare(self, res, other, scratch)
     }
 );
 

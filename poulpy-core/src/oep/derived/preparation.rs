@@ -76,7 +76,7 @@ pub(crate) fn glwe_switching_key_prepare_derived<BE, R, O>(
     *res.output_degree() = *other.output_degree();
 }
 
-pub(crate) fn prepare_tensor_key_tmp_bytes_derived<BE, A>(module: &Module<BE>, infos: &A) -> usize
+pub(crate) fn glwe_tensor_key_prepare_tmp_bytes_derived<BE, A>(module: &Module<BE>, infos: &A) -> usize
 where
     BE: PreparationImpl,
     A: GGLWEInfos,
@@ -84,7 +84,7 @@ where
     BE::gglwe_prepare_tmp_bytes(module, infos)
 }
 
-pub(crate) fn prepare_tensor_key_derived<BE, R, O>(
+pub(crate) fn glwe_tensor_key_prepare_derived<BE, R, O>(
     module: &Module<BE>,
     res: &mut R,
     other: &O,
@@ -96,11 +96,11 @@ pub(crate) fn prepare_tensor_key_derived<BE, R, O>(
 {
     let tmp_bytes = {
         let res_infos = res.to_backend_mut();
-        prepare_tensor_key_tmp_bytes_derived(module, &res_infos)
+        glwe_tensor_key_prepare_tmp_bytes_derived(module, &res_infos)
     };
     assert!(
         scratch.available() >= tmp_bytes,
-        "scratch.available(): {} < GLWETensorKeyPreparedFactory::prepare_tensor_key_tmp_bytes: {}",
+        "scratch.available(): {} < GLWETensorKeyPreparedFactory::glwe_tensor_key_prepare_tmp_bytes: {}",
         scratch.available(),
         tmp_bytes
     );

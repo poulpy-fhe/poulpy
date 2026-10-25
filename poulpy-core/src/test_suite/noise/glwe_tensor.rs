@@ -120,7 +120,7 @@ where
                 .max(module.glwe_tensor_decrypt_tmp_bytes(&glwe_out_infos))
                 .max(module.glwe_secret_tensor_prepare_tmp_bytes(rank.into()))
                 .max(module.glwe_tensor_key_encrypt_sk_tmp_bytes(&tsk_infos))
-                .max(module.prepare_tensor_key_tmp_bytes(&tsk_infos)),
+                .max(module.glwe_tensor_key_prepare_tmp_bytes(&tsk_infos)),
         );
         let apply_bytes = module.glwe_tensor_apply_tmp_bytes(&res_tensor, &a, &b);
         let apply_prepared_bytes = module.glwe_tensor_apply_prepared_tmp_bytes(
@@ -165,7 +165,7 @@ where
         );
 
         let mut tsk_prep: GLWETensorKeyPrepared<BE::OwnedBuf, BE> = module.alloc_tensor_key_prepared_from_infos(&tsk_infos);
-        module.prepare_tensor_key(&mut tsk_prep, &tsk, &mut scratch.borrow());
+        module.glwe_tensor_key_prepare(&mut tsk_prep, &tsk, &mut scratch.borrow());
 
         let scale: usize = 2 * in_base2k;
 
@@ -395,7 +395,7 @@ where
                 let tsk = tsk_infos(dsize);
                 module
                     .glwe_tensor_key_encrypt_sk_tmp_bytes(&tsk)
-                    .max(module.prepare_tensor_key_tmp_bytes(&tsk))
+                    .max(module.glwe_tensor_key_prepare_tmp_bytes(&tsk))
             })
             .fold(0, usize::max)
             .max(module.glwe_encrypt_sk_tmp_bytes(&key_infos))
@@ -439,10 +439,10 @@ where
             &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
         );
         let mut tsk_prep: GLWETensorKeyPrepared<BE::OwnedBuf, BE> = module.alloc_tensor_key_prepared_from_infos(&tsk_infos);
-        module.prepare_tensor_key(&mut tsk_prep, &tsk, &mut scratch.borrow());
+        module.glwe_tensor_key_prepare(&mut tsk_prep, &tsk, &mut scratch.borrow());
         // A key without noise metadata, which the one-pass model rejects.
         let mut outside: GLWETensorKeyPrepared<BE::OwnedBuf, BE> = module.alloc_tensor_key_prepared_from_infos(&tsk_infos);
-        module.prepare_tensor_key(&mut outside, &tsk, &mut scratch.borrow());
+        module.glwe_tensor_key_prepare(&mut outside, &tsk, &mut scratch.borrow());
         outside.0.noise = None;
 
         let key_noise = tsk_prep.noise().unwrap();
@@ -656,9 +656,9 @@ where
             .glwe_encrypt_sk_tmp_bytes(&glwe_infos)
             .max(module.glwe_decrypt_tmp_bytes(&glwe_infos))
             .max(module.glwe_tensor_key_encrypt_sk_tmp_bytes(&tsk_infos))
-            .max(module.prepare_tensor_key_tmp_bytes(&tsk_infos))
+            .max(module.glwe_tensor_key_prepare_tmp_bytes(&tsk_infos))
             .max(module.glwe_tensor_key_encrypt_sk_tmp_bytes(&wide_tsk_infos))
-            .max(module.prepare_tensor_key_tmp_bytes(&wide_tsk_infos)),
+            .max(module.glwe_tensor_key_prepare_tmp_bytes(&wide_tsk_infos)),
     );
     let mul_bytes = module.glwe_mul_relinearize_tmp_bytes(&glwe_infos, size, size, TorusPrecision(k as u32), &tsk_infos);
 
@@ -680,7 +680,7 @@ where
         &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
     );
     let mut tsk_prep: GLWETensorKeyPrepared<BE::OwnedBuf, BE> = module.alloc_tensor_key_prepared_from_infos(&tsk_infos);
-    module.prepare_tensor_key(&mut tsk_prep, &tsk, &mut scratch.borrow());
+    module.glwe_tensor_key_prepare(&mut tsk_prep, &tsk, &mut scratch.borrow());
     let mut wide_tsk: GLWETensorKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_tensor_key_alloc_from_infos(&wide_tsk_infos);
     module.glwe_tensor_key_encrypt_sk(
         &mut wide_tsk,
@@ -690,7 +690,7 @@ where
         &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
     );
     let mut wide_tsk_prep: GLWETensorKeyPrepared<BE::OwnedBuf, BE> = module.alloc_tensor_key_prepared_from_infos(&wide_tsk_infos);
-    module.prepare_tensor_key(&mut wide_tsk_prep, &wide_tsk, &mut scratch.borrow());
+    module.glwe_tensor_key_prepare(&mut wide_tsk_prep, &wide_tsk, &mut scratch.borrow());
 
     let scale: usize = 2 * base2k;
     let mut data = vec![0i64; n];
@@ -1278,7 +1278,7 @@ where
                 .max((module).glwe_decrypt_tmp_bytes(&glwe_out_infos))
                 .max(module.glwe_secret_tensor_prepare_tmp_bytes(rank.into()))
                 .max(module.glwe_tensor_key_encrypt_sk_tmp_bytes(&tsk_infos))
-                .max(module.prepare_tensor_key_tmp_bytes(&tsk_infos)),
+                .max(module.glwe_tensor_key_prepare_tmp_bytes(&tsk_infos)),
         );
         let square_bytes = module.glwe_tensor_square_apply_tmp_bytes(&res_square, &a);
         let apply_bytes = module.glwe_tensor_apply_tmp_bytes(&res_tensor, &a, &a);
@@ -1307,7 +1307,7 @@ where
         );
 
         let mut tsk_prep: GLWETensorKeyPrepared<BE::OwnedBuf, BE> = module.alloc_tensor_key_prepared_from_infos(&tsk_infos);
-        module.prepare_tensor_key(&mut tsk_prep, &tsk, &mut scratch.borrow());
+        module.glwe_tensor_key_prepare(&mut tsk_prep, &tsk, &mut scratch.borrow());
 
         let scale: usize = 2 * in_base2k;
 
@@ -1830,7 +1830,7 @@ pub fn test_glwe_tensor_relinearize_cross_radix<BE: crate::test_suite::noise::Te
                 .max(module.glwe_tensor_apply_tmp_bytes(&res_tensor, &a, &a))
                 .max(module.glwe_secret_tensor_prepare_tmp_bytes(rank.into()))
                 .max(module.glwe_tensor_key_encrypt_sk_tmp_bytes(&cross_infos))
-                .max(module.prepare_tensor_key_tmp_bytes(&cross_infos)),
+                .max(module.glwe_tensor_key_prepare_tmp_bytes(&cross_infos)),
         );
 
         let mut source_xs: Source = Source::new([0u8; 32]);
@@ -1861,7 +1861,7 @@ pub fn test_glwe_tensor_relinearize_cross_radix<BE: crate::test_suite::noise::Te
             &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
         );
         let mut tsk_prep: GLWETensorKeyPrepared<BE::OwnedBuf, BE> = module.alloc_tensor_key_prepared_from_infos(&cross_infos);
-        module.prepare_tensor_key(&mut tsk_prep, &tsk, &mut scratch.borrow());
+        module.glwe_tensor_key_prepare(&mut tsk_prep, &tsk, &mut scratch.borrow());
         // Reaching the end is the regression: deriving the operand width from
         // the storage precision hands the product a limb count its bound does
         // not accept, and it rejects the call before doing any work; a query

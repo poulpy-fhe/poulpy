@@ -285,7 +285,7 @@ impl<D: Data, W: ZnxWord> BootstrappingKeySet<D, W> {
     {
         self.prepare_with(module, scratch, |tensor_key, scratch| {
             let mut prepared = module.alloc_tensor_key_prepared_from_infos(tensor_key);
-            module.prepare_tensor_key(&mut prepared, tensor_key, scratch);
+            module.glwe_tensor_key_prepare(&mut prepared, tensor_key, scratch);
             prepared
         })
     }
@@ -459,7 +459,7 @@ impl BootstrappingKeysLayout {
         for layout in self.raise_key_layouts() {
             bytes = bytes.max(module.glwe_switching_key_prepare_tmp_bytes(&layout));
         }
-        (bytes, ci.prepare_tensor_key_tmp_bytes(&self.tensor_key))
+        (bytes, ci.glwe_tensor_key_prepare_tmp_bytes(&self.tensor_key))
     }
 }
 
@@ -790,7 +790,7 @@ impl<D: Data, W: ZnxWord> BootstrappingKeySet<D, W> {
         };
         let mut keys = self.prepare_with(module, scratch, |tensor_key, _| {
             let mut prepared = ci.alloc_tensor_key_prepared_from_infos(tensor_key);
-            ci.prepare_tensor_key(&mut prepared, tensor_key, scratch_ci);
+            ci.glwe_tensor_key_prepare(&mut prepared, tensor_key, scratch_ci);
             prepared
         });
         let mut trace_key = module.glwe_ci_trace_key_prepared_alloc_from_infos(trace);

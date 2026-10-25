@@ -509,11 +509,11 @@ where
         self.gglwe_prepared_bytes_of_from_infos(&tensor_key_layout(infos))
     }
 
-    fn prepare_tensor_key_tmp_bytes<A>(&self, infos: &A) -> usize
+    fn glwe_tensor_key_prepare_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos;
 
-    fn prepare_tensor_key<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, B>)
+    fn glwe_tensor_key_prepare<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, B>)
     where
         R: GGLWEPreparedToBackendMut<B>,
         O: GGLWEToBackendRef<B>;

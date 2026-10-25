@@ -177,7 +177,7 @@ fn main() -> Result<()> {
         let mut tsk_raw = module.glwe_tensor_key_alloc_from_infos(&layout);
         module.glwe_tensor_key_encrypt_sk(&mut tsk_raw, &sk_raw, xe, xa, scratch);
         let mut tsk = module.alloc_tensor_key_prepared_from_infos(&layout);
-        module.prepare_tensor_key(&mut tsk, &tsk_raw, scratch);
+        module.glwe_tensor_key_prepare(&mut tsk, &tsk_raw, scratch);
         tsk
     };
 

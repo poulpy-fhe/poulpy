@@ -64,8 +64,8 @@ where
 {
     let coefficients = fixture_gglwe(module, layout, seed);
     let mut prepared = module.alloc_tensor_key_prepared_from_infos(layout);
-    with_scratch::<BE, _>(module.prepare_tensor_key_tmp_bytes(layout), |scratch| {
-        module.prepare_tensor_key(&mut prepared, &coefficients, scratch);
+    with_scratch::<BE, _>(module.glwe_tensor_key_prepare_tmp_bytes(layout), |scratch| {
+        module.glwe_tensor_key_prepare(&mut prepared, &coefficients, scratch);
     });
     prepared
 }
