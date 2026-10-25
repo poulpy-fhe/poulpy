@@ -23,9 +23,12 @@ use crate::{
 /// [`HalVecZnxImpl::vec_znx_switch_ring`] on each column.
 ///
 /// # Safety
-/// Implementations must only read and write the regions described by the provided layouts, respect
-/// scratch-space requirements, and produce results equivalent to the reference maps.
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait GLWECIConversionImpl: Backend<Ring = Standard> + HalVecZnxImpl + EncryptionImpl {
+    /// Reproduces [`glwe_ci_embed_reference`](crate::reference::ci_conversion::glwe_ci_embed_reference) bit for bit;
+    /// free in kernels.
     fn glwe_ci_embed<R, A>(module: &Module<Self>, res: &mut R, a: &A)
     where
         R: GLWEToBackendMut<Self> + GLWEInfos,
@@ -39,11 +42,15 @@ pub unsafe trait GLWECIConversionImpl: Backend<Ring = Standard> + HalVecZnxImpl 
         R: GLWESecretToBackendMut<Self> + GetDistributionMut,
         S: GLWESecretToBackendRef<Self>;
 
+    /// Scratch bound of [`Self::glwe_ci_trace`] and [`Self::glwe_ci_trace_key_encrypt_sk`]; may report less than the
+    /// reference, never less than the body takes.
     fn glwe_ci_trace_tmp_bytes<R, A>(module: &Module<Self>, res_infos: &R, a_infos: &A) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos;
 
+    /// Reproduces [`glwe_ci_trace_reference`](crate::reference::ci_conversion::glwe_ci_trace_reference) bit for bit,
+    /// within [`Self::glwe_ci_trace_tmp_bytes`]; free in kernels and scratch use.
     fn glwe_ci_trace<R, A>(module: &Module<Self>, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, Self>)
     where
         R: GLWEToBackendMut<Self> + GLWEInfos,

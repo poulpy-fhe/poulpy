@@ -14,15 +14,21 @@ use crate::layouts::{
 /// Backend-provided GLWE constant-multiplication operations.
 ///
 /// # Safety
-/// Implementations must respect the provided layout metadata, conversion offset, and scratch-space
-/// contracts, and must not read or write outside the specified backend-owned buffers.
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait GLWEMulConstImpl: Backend {
+    /// Scratch bound of [`Self::glwe_mul_const`] and [`Self::glwe_mul_const_assign`]; may report less than the
+    /// reference, never less than the body takes.
     fn glwe_mul_const_tmp_bytes<R, A, B>(module: &Module<Self>, res: &R, a: &A, b: &B) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
         B: GLWEInfos;
 
+    /// Reproduces
+    /// [`glwe_mul_const_reference`](crate::reference::operations::GLWEMulConstReference::glwe_mul_const_reference)
+    /// bit for bit, within [`Self::glwe_mul_const_tmp_bytes`]; free in kernels and scratch use.
     fn glwe_mul_const<R, A, B>(
         module: &Module<Self>,
         cnv_offset: usize,
@@ -36,6 +42,9 @@ pub unsafe trait GLWEMulConstImpl: Backend {
         A: GLWEToBackendRef<Self> + GLWEInfos,
         B: GLWEToBackendRef<Self> + GLWEInfos;
 
+    /// Reproduces
+    /// [`glwe_mul_const_assign_reference`](crate::reference::operations::GLWEMulConstReference::glwe_mul_const_assign_reference)
+    /// bit for bit, within [`Self::glwe_mul_const_tmp_bytes`]; free in kernels and scratch use.
     fn glwe_mul_const_assign<R, B>(
         module: &Module<Self>,
         cnv_offset: usize,
@@ -51,15 +60,21 @@ pub unsafe trait GLWEMulConstImpl: Backend {
 /// Backend-provided GLWE-by-plaintext multiplication operations.
 ///
 /// # Safety
-/// Implementations must interpret the plaintext and ciphertext layouts consistently with the
-/// backend and preserve all aliasing and buffer-bound invariants.
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait GLWEMulPlainImpl: Backend {
+    /// Scratch bound of [`Self::glwe_mul_plain`] and [`Self::glwe_mul_plain_assign`]; may report less than the
+    /// reference, never less than the body takes.
     fn glwe_mul_plain_tmp_bytes<R, A, B>(module: &Module<Self>, res: &R, a: &A, b: &B) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
         B: GLWEInfos;
 
+    /// Reproduces
+    /// [`glwe_mul_plain_reference`](crate::reference::operations::GLWEMulPlainReference::glwe_mul_plain_reference)
+    /// bit for bit, within [`Self::glwe_mul_plain_tmp_bytes`]; free in kernels and scratch use.
     #[allow(clippy::too_many_arguments)]
     fn glwe_mul_plain<R, A, B>(
         module: &Module<Self>,
@@ -73,6 +88,9 @@ pub unsafe trait GLWEMulPlainImpl: Backend {
         A: GLWEToBackendRef<Self> + GLWEInfos,
         B: GLWEToBackendRef<Self> + IntPolyInfos + GLWEInfos;
 
+    /// Reproduces
+    /// [`glwe_mul_plain_assign_reference`](crate::reference::operations::GLWEMulPlainReference::glwe_mul_plain_assign_reference)
+    /// bit for bit, within [`Self::glwe_mul_plain_tmp_bytes`]; free in kernels and scratch use.
     fn glwe_mul_plain_assign<R, A>(
         module: &Module<Self>,
         cnv_offset: usize,
@@ -87,13 +105,20 @@ pub unsafe trait GLWEMulPlainImpl: Backend {
 /// Backend-provided sums of products of prepared GLWE ciphertexts by prepared plaintexts read through Galois elements.
 ///
 /// # Safety
-/// Implementations must interpret the prepared operands consistently with the backend's convolution layout and
-/// preserve all aliasing and buffer-bound invariants.
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait GLWEMulPreparedPlainSumImpl: Backend {
+    /// Scratch bound of [`Self::glwe_mul_prepared_plain_sum`]; may report less than the reference, never less than
+    /// the body takes.
     fn glwe_mul_prepared_plain_sum_tmp_bytes<R>(module: &Module<Self>, res: &R, a_size: usize, b_size: usize) -> usize
     where
         R: GLWEInfos;
 
+    /// Reproduces
+    /// [`glwe_mul_prepared_plain_sum_reference`](crate::reference::operations::GLWEMulPreparedPlainSumReference::glwe_mul_prepared_plain_sum_reference)
+    /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
+    /// [`Self::glwe_mul_prepared_plain_sum_tmp_bytes`]; free in kernels and scratch use.
     #[allow(clippy::too_many_arguments)]
     fn glwe_mul_prepared_plain_sum<R, AP, BP>(
         module: &Module<Self>,
@@ -115,10 +140,12 @@ pub unsafe trait GLWEMulPreparedPlainSumImpl: Backend {
 /// Backend-provided GLWE tensoring and relinearization operations.
 ///
 /// # Safety
-/// Implementations must preserve tensor layout semantics, respect the temporary-size contracts,
-/// and only touch backend-owned storage regions that belong to the supplied operands.
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait GLWETensoringImpl: Backend {
-    /// Scratch required by the prepared-right tensor implementation.
+    /// Scratch bound of [`Self::glwe_tensor_apply_prepared_right`]; may report less than the reference, never less
+    /// than the body takes.
     fn glwe_tensor_apply_prepared_right_tmp_bytes<R, A>(
         module: &Module<Self>,
         res: &R,
@@ -130,7 +157,10 @@ pub unsafe trait GLWETensoringImpl: Backend {
         R: GLWEInfos,
         A: GLWEInfos;
 
-    /// Prepared-right tensor product with the same rounding and mutation contract as the reference.
+    /// Reproduces
+    /// [`glwe_tensor_apply_prepared_right_reference`](crate::reference::operations::GLWETensoringReference::glwe_tensor_apply_prepared_right_reference)
+    /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
+    /// [`Self::glwe_tensor_apply_prepared_right_tmp_bytes`]; free in kernels and scratch use.
     fn glwe_tensor_apply_prepared_right<R, A, BP>(
         module: &Module<Self>,
         cnv_offset: usize,
@@ -144,17 +174,24 @@ pub unsafe trait GLWETensoringImpl: Backend {
         A: GLWEToBackendRef<Self> + GLWEInfos,
         BP: CnvPVecRToBackendRef<Self>;
 
+    /// Scratch bound of [`Self::glwe_tensor_apply`]; may report less than the reference, never less than the body
+    /// takes.
     fn glwe_tensor_apply_tmp_bytes<R, A, B>(module: &Module<Self>, res: &R, a: &A, b: &B) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
         B: GLWEInfos;
 
+    /// Scratch bound of [`Self::glwe_tensor_square_apply`]; may report less than the reference, never less than the
+    /// body takes.
     fn glwe_tensor_square_apply_tmp_bytes<R, A>(module: &Module<Self>, res: &R, a: &A) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos;
 
+    /// Reproduces
+    /// [`glwe_tensor_apply_reference`](crate::reference::operations::GLWETensoringReference::glwe_tensor_apply_reference)
+    /// bit for bit, within [`Self::glwe_tensor_apply_tmp_bytes`]; free in kernels and scratch use.
     fn glwe_tensor_apply<R, A, B>(
         module: &Module<Self>,
         cnv_offset: usize,
@@ -167,6 +204,9 @@ pub unsafe trait GLWETensoringImpl: Backend {
         A: GLWEToBackendRef<Self> + GLWEInfos,
         B: GLWEToBackendRef<Self> + GLWEInfos;
 
+    /// Reproduces
+    /// [`glwe_tensor_square_apply_reference`](crate::reference::operations::GLWETensoringReference::glwe_tensor_square_apply_reference)
+    /// bit for bit, within [`Self::glwe_tensor_square_apply_tmp_bytes`]; free in kernels and scratch use.
     fn glwe_tensor_square_apply<R, A>(
         module: &Module<Self>,
         cnv_offset: usize,
@@ -177,19 +217,28 @@ pub unsafe trait GLWETensoringImpl: Backend {
         R: GLWEToBackendMut<Self> + GLWEInfos,
         A: GLWEToBackendRef<Self> + GLWEInfos;
 
+    /// Reproduces
+    /// [`glwe_tensor_relinearize_reference`](crate::reference::operations::GLWETensoringReference::glwe_tensor_relinearize_reference)
+    /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
+    /// [`Self::glwe_tensor_relinearize_tmp_bytes`]; free in kernels and scratch use.
     fn glwe_tensor_relinearize<R, A, H>(module: &Module<Self>, res: &mut R, a: &A, tsk: &H, scratch: &mut ScratchArena<'_, Self>)
     where
         R: GLWEToBackendMut<Self> + GLWEInfos,
         A: GLWEToBackendRef<Self> + GLWEInfos,
         H: GetTensorKey<Self>;
 
+    /// Scratch bound of [`Self::glwe_tensor_relinearize`]; may report less than the reference, never less than the
+    /// body takes.
     fn glwe_tensor_relinearize_tmp_bytes<R, A, B>(module: &Module<Self>, res: &R, a: &A, tsk: &B) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
         B: GGLWEInfos;
 
-    /// Scratch bytes of [`Self::glwe_mul_relinearize`].
+    /// Scratch bound of [`Self::glwe_mul_relinearize`], [`Self::glwe_mul_relinearize_assign`],
+    /// [`Self::glwe_square_relinearize`], [`Self::glwe_square_relinearize_assign`],
+    /// [`Self::glwe_mul_prepared_relinearize`] and [`Self::glwe_mul_prepared_relinearize_assign`]; may report less
+    /// than the reference, never less than the body takes.
     fn glwe_mul_relinearize_tmp_bytes<R, B>(
         module: &Module<Self>,
         res: &R,
@@ -202,9 +251,10 @@ pub unsafe trait GLWETensoringImpl: Backend {
         R: GLWEInfos,
         B: GGLWEInfos;
 
-    /// The one-pass products of [`GLWETensoring`](crate::api::GLWETensoring), one hook per method of the same name.
-    /// Overrides must reproduce
-    /// [`GLWETensoringReference`](crate::reference::operations::GLWETensoringReference) bit for bit.
+    /// Reproduces
+    /// [`glwe_mul_relinearize_reference`](crate::reference::operations::GLWETensoringReference::glwe_mul_relinearize_reference)
+    /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
+    /// [`Self::glwe_mul_relinearize_tmp_bytes`]; free in kernels and scratch use.
     #[allow(clippy::too_many_arguments)]
     fn glwe_mul_relinearize<R, A, B, H>(
         module: &Module<Self>,
@@ -221,7 +271,10 @@ pub unsafe trait GLWETensoringImpl: Backend {
         B: GLWEToBackendRef<Self> + GLWEInfos,
         H: GetTensorKey<Self>;
 
-    /// See [`Self::glwe_mul_relinearize`].
+    /// Reproduces
+    /// [`glwe_mul_relinearize_assign_reference`](crate::reference::operations::GLWETensoringReference::glwe_mul_relinearize_assign_reference)
+    /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
+    /// [`Self::glwe_mul_relinearize_tmp_bytes`]; free in kernels and scratch use.
     fn glwe_mul_relinearize_assign<R, A, H>(
         module: &Module<Self>,
         cnv_offset: usize,
@@ -235,7 +288,10 @@ pub unsafe trait GLWETensoringImpl: Backend {
         A: GLWEToBackendRef<Self> + GLWEInfos,
         H: GetTensorKey<Self>;
 
-    /// See [`Self::glwe_mul_relinearize`].
+    /// Reproduces
+    /// [`glwe_square_relinearize_reference`](crate::reference::operations::GLWETensoringReference::glwe_square_relinearize_reference)
+    /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
+    /// [`Self::glwe_mul_relinearize_tmp_bytes`]; free in kernels and scratch use.
     fn glwe_square_relinearize<R, A, H>(
         module: &Module<Self>,
         cnv_offset: usize,
@@ -249,7 +305,10 @@ pub unsafe trait GLWETensoringImpl: Backend {
         A: GLWEToBackendRef<Self> + GLWEInfos,
         H: GetTensorKey<Self>;
 
-    /// See [`Self::glwe_mul_relinearize`].
+    /// Reproduces
+    /// [`glwe_square_relinearize_assign_reference`](crate::reference::operations::GLWETensoringReference::glwe_square_relinearize_assign_reference)
+    /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
+    /// [`Self::glwe_mul_relinearize_tmp_bytes`]; free in kernels and scratch use.
     fn glwe_square_relinearize_assign<R, H>(
         module: &Module<Self>,
         cnv_offset: usize,
@@ -261,7 +320,10 @@ pub unsafe trait GLWETensoringImpl: Backend {
         R: GLWEToBackendMut<Self> + GLWEInfos,
         H: GetTensorKey<Self>;
 
-    /// See [`Self::glwe_mul_relinearize`].
+    /// Reproduces
+    /// [`glwe_mul_prepared_relinearize_reference`](crate::reference::operations::GLWETensoringReference::glwe_mul_prepared_relinearize_reference)
+    /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
+    /// [`Self::glwe_mul_relinearize_tmp_bytes`]; free in kernels and scratch use.
     #[allow(clippy::too_many_arguments)]
     fn glwe_mul_prepared_relinearize<R, A, BP, H>(
         module: &Module<Self>,
@@ -280,7 +342,10 @@ pub unsafe trait GLWETensoringImpl: Backend {
         BP: CnvPVecRToBackendRef<Self>,
         H: GetTensorKey<Self>;
 
-    /// See [`Self::glwe_mul_relinearize`].
+    /// Reproduces
+    /// [`glwe_mul_prepared_relinearize_assign_reference`](crate::reference::operations::GLWETensoringReference::glwe_mul_prepared_relinearize_assign_reference)
+    /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
+    /// [`Self::glwe_mul_relinearize_tmp_bytes`]; free in kernels and scratch use.
     #[allow(clippy::too_many_arguments)]
     fn glwe_mul_prepared_relinearize_assign<R, AP, H>(
         module: &Module<Self>,
@@ -297,12 +362,13 @@ pub unsafe trait GLWETensoringImpl: Backend {
         AP: CnvPVecRToBackendRef<Self>,
         H: GetTensorKey<Self>;
 
-    /// The three product columns of the one-pass products, from prepared rank-1 operands: see
-    /// [`GLWETensoringReference::glwe_mul_columns_reference`](crate::reference::operations::GLWETensoringReference::glwe_mul_columns_reference).
+    /// Reproduces
+    /// [`glwe_mul_columns_reference`](crate::reference::operations::GLWETensoringReference::glwe_mul_columns_reference)
+    /// bit for bit; free in kernels and scratch use.
     ///
-    /// It receives the scratch left once the operands and the columns are allocated: a kernel that needs more
-    /// than the reference convolutions adds it to [`Self::glwe_mul_relinearize_tmp_bytes`].
-    /// Overrides must reproduce the reference bit for bit.
+    /// The caller hands it the prepared rank-one operands, the two column buffers and the scratch left once those are
+    /// allocated; a kernel needing more than the reference convolutions adds it to
+    /// [`Self::glwe_mul_relinearize_tmp_bytes`]. It records no metadata.
     fn glwe_mul_columns(
         module: &Module<Self>,
         cnv_offset_hi: usize,
@@ -313,7 +379,8 @@ pub unsafe trait GLWETensoringImpl: Backend {
         scratch: &mut ScratchArena<'_, Self>,
     );
 
-    /// Scratch bytes of [`Self::glwe_mul_relinearize_sum`], whatever the number of pairs.
+    /// Scratch bound of [`Self::glwe_mul_relinearize_sum`]; may report less than the reference, never less than the
+    /// body takes.
     fn glwe_mul_relinearize_sum_tmp_bytes<R, B>(
         module: &Module<Self>,
         res: &R,
@@ -326,10 +393,10 @@ pub unsafe trait GLWETensoringImpl: Backend {
         R: GLWEInfos,
         B: GGLWEInfos;
 
-    /// The summed one-pass product of [`GLWEMulRelinearizeSum`](crate::api::GLWEMulRelinearizeSum). Overrides must
-    /// reproduce
-    /// [`GLWETensoringReference::glwe_mul_relinearize_sum_reference`](crate::reference::operations::GLWETensoringReference::glwe_mul_relinearize_sum_reference)
-    /// bit for bit.
+    /// Reproduces
+    /// [`glwe_mul_relinearize_sum_reference`](crate::reference::operations::GLWETensoringReference::glwe_mul_relinearize_sum_reference)
+    /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
+    /// [`Self::glwe_mul_relinearize_sum_tmp_bytes`]; free in kernels and scratch use.
     #[expect(
         clippy::too_many_arguments,
         reason = "the two operand slices of a sum beside the product's operands"
@@ -349,7 +416,8 @@ pub unsafe trait GLWETensoringImpl: Backend {
         B: GLWEToBackendRef<Self> + GLWEInfos,
         H: GetTensorKey<Self>;
 
-    /// Scratch bytes of [`Self::glwe_mul_prepared_relinearize_sum`], whatever the number of pairs.
+    /// Scratch bound of [`Self::glwe_mul_prepared_relinearize_sum`]; may report less than the reference, never less
+    /// than the body takes.
     fn glwe_mul_prepared_relinearize_sum_tmp_bytes<R, B>(
         module: &Module<Self>,
         res: &R,
@@ -362,11 +430,10 @@ pub unsafe trait GLWETensoringImpl: Backend {
         R: GLWEInfos,
         B: GGLWEInfos;
 
-    /// The summed one-pass product over prepared pairs of
-    /// [`GLWEPreparedTensoring`](crate::api::GLWEPreparedTensoring). Overrides must reproduce
-    /// [`GLWETensoringReference::glwe_mul_prepared_relinearize_sum_reference`](crate::reference::operations::GLWETensoringReference::glwe_mul_prepared_relinearize_sum_reference)
-    /// bit for bit, whatever the hint each operand was prepared under, and run one pair within
-    /// [`Self::glwe_mul_relinearize_tmp_bytes`].
+    /// Reproduces
+    /// [`glwe_mul_prepared_relinearize_sum_reference`](crate::reference::operations::GLWETensoringReference::glwe_mul_prepared_relinearize_sum_reference)
+    /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
+    /// [`Self::glwe_mul_prepared_relinearize_sum_tmp_bytes`]; free in kernels and scratch use.
     #[allow(clippy::too_many_arguments)]
     fn glwe_mul_prepared_relinearize_sum<R, AP, BP, H>(
         module: &Module<Self>,
@@ -387,7 +454,8 @@ pub unsafe trait GLWETensoringImpl: Backend {
         BP: CnvPVecRToBackendRef<Self>,
         H: GetTensorKey<Self>;
 
-    /// Scratch bytes of [`Self::glwe_tensor_apply_prepared`].
+    /// Scratch bound of [`Self::glwe_tensor_apply_prepared`]; may report less than the reference, never less than the
+    /// body takes.
     fn glwe_tensor_apply_prepared_tmp_bytes<R>(
         module: &Module<Self>,
         res: &R,
@@ -398,10 +466,10 @@ pub unsafe trait GLWETensoringImpl: Backend {
     where
         R: GLWEInfos;
 
-    /// The tensor product of prepared operands of [`GLWEPreparedTensoring`](crate::api::GLWEPreparedTensoring).
-    /// Overrides must reproduce
-    /// [`GLWETensoringReference::glwe_tensor_apply_prepared_reference`](crate::reference::operations::GLWETensoringReference::glwe_tensor_apply_prepared_reference)
-    /// bit for bit, whatever the hint each operand was prepared under.
+    /// Reproduces
+    /// [`glwe_tensor_apply_prepared_reference`](crate::reference::operations::GLWETensoringReference::glwe_tensor_apply_prepared_reference)
+    /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
+    /// [`Self::glwe_tensor_apply_prepared_tmp_bytes`]; free in kernels and scratch use.
     #[allow(clippy::too_many_arguments)]
     fn glwe_tensor_apply_prepared<R, AP, BP>(
         module: &Module<Self>,
@@ -422,14 +490,22 @@ pub unsafe trait GLWETensoringImpl: Backend {
 /// Backend-provided GLWE addition operations.
 ///
 /// # Safety
-/// Implementations must preserve GLWE layout invariants and respect all backend buffer bounds.
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait GLWEAddImpl: Backend {
+    /// Reproduces
+    /// [`glwe_add_into_reference`](crate::reference::operations::GLWEAddReference::glwe_add_into_reference) bit for
+    /// bit; free in kernels.
     fn glwe_add_into<R, A, B>(module: &Module<Self>, res: &mut R, a: &A, b: &B)
     where
         R: GLWEToBackendMut<Self>,
         A: GLWEToBackendRef<Self>,
         B: GLWEToBackendRef<Self>;
 
+    /// Reproduces
+    /// [`glwe_add_assign_reference`](crate::reference::operations::GLWEAddReference::glwe_add_assign_reference) bit
+    /// for bit; free in kernels.
     fn glwe_add_assign<R, A>(module: &Module<Self>, res: &mut R, a: &A)
     where
         R: GLWEToBackendMut<Self>,
@@ -439,13 +515,20 @@ pub unsafe trait GLWEAddImpl: Backend {
 /// Backend-provided GLWE negation operations.
 ///
 /// # Safety
-/// Implementations must preserve GLWE layout invariants and respect all backend buffer bounds.
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait GLWENegateImpl: Backend {
+    /// Reproduces [`glwe_negate_reference`](crate::reference::operations::GLWENegateReference::glwe_negate_reference)
+    /// bit for bit; free in kernels.
     fn glwe_negate<R, A>(module: &Module<Self>, res: &mut R, a: &A)
     where
         R: GLWEToBackendMut<Self>,
         A: GLWEToBackendRef<Self>;
 
+    /// Reproduces
+    /// [`glwe_negate_assign_reference`](crate::reference::operations::GLWENegateReference::glwe_negate_assign_reference)
+    /// bit for bit; free in kernels.
     fn glwe_negate_assign<R>(module: &Module<Self>, res: &mut R)
     where
         R: GLWEToBackendMut<Self>;
@@ -454,19 +537,29 @@ pub unsafe trait GLWENegateImpl: Backend {
 /// Backend-provided GLWE subtraction operations.
 ///
 /// # Safety
-/// Implementations must preserve GLWE layout invariants and respect all backend buffer bounds.
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait GLWESubImpl: GLWEAddImpl + GLWENegateImpl {
+    /// Reproduces [`glwe_sub_reference`](crate::reference::operations::GLWESubReference::glwe_sub_reference) bit for
+    /// bit; free in kernels.
     fn glwe_sub<R, A, B>(module: &Module<Self>, res: &mut R, a: &A, b: &B)
     where
         R: GLWEToBackendMut<Self>,
         A: GLWEToBackendRef<Self>,
         B: GLWEToBackendRef<Self>;
 
+    /// Reproduces
+    /// [`glwe_sub_assign_reference`](crate::reference::operations::GLWESubReference::glwe_sub_assign_reference) bit
+    /// for bit; free in kernels.
     fn glwe_sub_assign<R, A>(module: &Module<Self>, res: &mut R, a: &A)
     where
         R: GLWEToBackendMut<Self>,
         A: GLWEToBackendRef<Self>;
 
+    /// Default body: `glwe_sub_negate_assign_derived`,
+    /// [`GLWENegateImpl::glwe_negate_assign`](crate::oep::GLWENegateImpl::glwe_negate_assign) of `res`, then
+    /// [`GLWEAddImpl::glwe_add_assign`](crate::oep::GLWEAddImpl::glwe_add_assign) of `a`.
     fn glwe_sub_negate_assign<R, A>(module: &Module<Self>, res: &mut R, a: &A)
     where
         R: GLWEToBackendMut<Self>,
@@ -479,9 +572,12 @@ pub unsafe trait GLWESubImpl: GLWEAddImpl + GLWENegateImpl {
 /// Backend-provided GLWE zeroing operations.
 ///
 /// # Safety
-/// Implementations must zero every polynomial column in the GLWE without violating layout or
-/// backend buffer invariants.
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait GLWEZeroImpl: Backend {
+    /// Reproduces [`glwe_zero_reference`](crate::reference::operations::GLWEZeroReference::glwe_zero_reference) bit
+    /// for bit; free in kernels.
     fn glwe_zero<R>(module: &Module<Self>, res: &mut R)
     where
         R: GLWEToBackendMut<Self>;
@@ -490,11 +586,15 @@ pub unsafe trait GLWEZeroImpl: Backend {
 /// Backend-provided GLWE copy operations.
 ///
 /// # Safety
-/// Implementations must honor [`crate::GLWECopy`]'s rounding and layout contract,
-/// stay within the advertised scratch size, and respect all backend buffer bounds.
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait GLWECopyImpl: Backend {
+    /// Scratch bound of [`Self::glwe_copy`]; may report less than the reference, never less than the body takes.
     fn glwe_copy_tmp_bytes<R: GLWEInfos, A: GLWEInfos>(module: &Module<Self>, res: &R, a: &A) -> usize;
 
+    /// Reproduces [`glwe_copy_reference`](crate::reference::operations::GLWECopyReference::glwe_copy_reference) bit
+    /// for bit, within [`Self::glwe_copy_tmp_bytes`]; free in kernels and scratch use.
     fn glwe_copy<R, A>(module: &Module<Self>, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, Self>)
     where
         R: GLWEToBackendMut<Self>,
@@ -504,11 +604,15 @@ pub unsafe trait GLWECopyImpl: Backend {
 /// Backend-provided GGLWE copy operations.
 ///
 /// # Safety
-/// Implementations must honor [`crate::GGLWECopy`]'s rounding and layout contract,
-/// stay within the advertised scratch size, and respect all backend buffer bounds.
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait GGLWECopyImpl: Backend {
+    /// Scratch bound of [`Self::gglwe_copy`]; may report less than the reference, never less than the body takes.
     fn gglwe_copy_tmp_bytes<R: GGLWEInfos, A: GGLWEInfos>(module: &Module<Self>, res: &R, a: &A) -> usize;
 
+    /// Reproduces [`gglwe_copy_reference`](crate::reference::operations::GGLWECopyReference::gglwe_copy_reference)
+    /// bit for bit, within [`Self::gglwe_copy_tmp_bytes`]; free in kernels and scratch use.
     fn gglwe_copy<R, A>(module: &Module<Self>, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, Self>)
     where
         R: GGLWEToBackendMut<Self> + GGLWEInfos,
@@ -518,11 +622,15 @@ pub unsafe trait GGLWECopyImpl: Backend {
 /// Backend-provided GGSW copy operations.
 ///
 /// # Safety
-/// Implementations must honor [`crate::GGSWCopy`]'s rounding and layout contract,
-/// stay within the advertised scratch size, and respect all backend buffer bounds.
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait GGSWCopyImpl: Backend {
+    /// Scratch bound of [`Self::ggsw_copy`]; may report less than the reference, never less than the body takes.
     fn ggsw_copy_tmp_bytes<R: GGSWInfos, A: GGSWInfos>(module: &Module<Self>, res: &R, a: &A) -> usize;
 
+    /// Reproduces [`ggsw_copy_reference`](crate::reference::operations::GGSWCopyReference::ggsw_copy_reference) bit
+    /// for bit, within [`Self::ggsw_copy_tmp_bytes`]; free in kernels and scratch use.
     fn ggsw_copy<R, A>(module: &Module<Self>, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, Self>)
     where
         R: GGSWToBackendMut<Self> + GGSWInfos,
@@ -532,16 +640,24 @@ pub unsafe trait GGSWCopyImpl: Backend {
 /// Backend-provided GLWE rotation operations, on the standard ring only.
 ///
 /// # Safety
-/// Implementations must perform rotations according to the polynomial layout without violating
-/// scratch-space, aliasing, or buffer-bound guarantees.
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait GLWERotateImpl: Backend<Ring = Standard> {
+    /// Scratch bound of [`Self::glwe_rotate_assign`]; may report less than the reference, never less than the body
+    /// takes.
     fn glwe_rotate_tmp_bytes(module: &Module<Self>) -> usize;
 
+    /// Reproduces [`glwe_rotate_reference`](crate::reference::operations::GLWERotateReference::glwe_rotate_reference)
+    /// bit for bit; free in kernels.
     fn glwe_rotate<R, A>(module: &Module<Self>, k: i64, res: &mut R, a: &A)
     where
         R: GLWEToBackendMut<Self>,
         A: GLWEToBackendRef<Self>;
 
+    /// Reproduces
+    /// [`glwe_rotate_assign_reference`](crate::reference::operations::GLWERotateReference::glwe_rotate_assign_reference)
+    /// bit for bit, within [`Self::glwe_rotate_tmp_bytes`]; free in kernels and scratch use.
     fn glwe_rotate_assign<R>(module: &Module<Self>, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, Self>)
     where
         R: GLWEToBackendMut<Self>;
@@ -550,13 +666,18 @@ pub unsafe trait GLWERotateImpl: Backend<Ring = Standard> {
 /// Backend-provided GGSW rotation operations, on the standard ring only.
 ///
 /// # Safety
-/// Implementations must preserve the GGSW structure for the backend and may only use scratch space
-/// and in-place mutation in ways compatible with the advertised contracts.
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait GGSWRotateImpl: GLWERotateImpl {
+    /// Default body: `ggsw_rotate_tmp_bytes_derived`,
+    /// [`GLWERotateImpl::glwe_rotate_tmp_bytes`](crate::oep::GLWERotateImpl::glwe_rotate_tmp_bytes).
     fn ggsw_rotate_tmp_bytes(module: &Module<Self>) -> usize {
         crate::oep::derived::operations::ggsw_rotate_tmp_bytes_derived::<Self>(module)
     }
 
+    /// Default body: `ggsw_rotate_derived`, [`GLWERotateImpl::glwe_rotate`](crate::oep::GLWERotateImpl::glwe_rotate)
+    /// on each entry.
     fn ggsw_rotate<R, A>(module: &Module<Self>, k: i64, res: &mut R, a: &A)
     where
         R: GGSWToBackendMut<Self> + GGSWAtViewMut<Self> + GGSWInfos,
@@ -565,6 +686,9 @@ pub unsafe trait GGSWRotateImpl: GLWERotateImpl {
         crate::oep::derived::operations::ggsw_rotate_derived::<Self, _, _>(module, k, res, a)
     }
 
+    /// Default body: `ggsw_rotate_assign_derived`,
+    /// [`GLWERotateImpl::glwe_rotate_assign`](crate::oep::GLWERotateImpl::glwe_rotate_assign) on each entry of `res`,
+    /// within [`Self::ggsw_rotate_tmp_bytes`].
     fn ggsw_rotate_assign<R>(module: &Module<Self>, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, Self>)
     where
         R: GGSWToBackendMut<Self> + GGSWInfos,
@@ -576,16 +700,25 @@ pub unsafe trait GGSWRotateImpl: GLWERotateImpl {
 /// Backend-provided multiplication by `X^p - 1` operations, on the standard ring only.
 ///
 /// # Safety
-/// Implementations must apply the requested ring operation without violating the layout or memory
-/// invariants of the supplied ciphertext buffers.
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait GLWEMulXpMinusOneImpl: Backend<Ring = Standard> {
+    /// Scratch bound of [`Self::glwe_mul_xp_minus_one_assign`]; may report less than the reference, never less than
+    /// the body takes.
     fn glwe_mul_xp_minus_one_assign_tmp_bytes(module: &Module<Self>, res_size: usize) -> usize;
 
+    /// Reproduces
+    /// [`glwe_mul_xp_minus_one_reference`](crate::reference::operations::GLWEMulXpMinusOneReference::glwe_mul_xp_minus_one_reference)
+    /// bit for bit; free in kernels.
     fn glwe_mul_xp_minus_one<R, A>(module: &Module<Self>, k: i64, res: &mut R, a: &A)
     where
         R: GLWEToBackendMut<Self>,
         A: GLWEToBackendRef<Self>;
 
+    /// Reproduces
+    /// [`glwe_mul_xp_minus_one_assign_reference`](crate::reference::operations::GLWEMulXpMinusOneReference::glwe_mul_xp_minus_one_assign_reference)
+    /// bit for bit, within [`Self::glwe_mul_xp_minus_one_assign_tmp_bytes`]; free in kernels and scratch use.
     fn glwe_mul_xp_minus_one_assign<R>(module: &Module<Self>, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, Self>)
     where
         R: GLWEToBackendMut<Self>;
@@ -594,29 +727,45 @@ pub unsafe trait GLWEMulXpMinusOneImpl: Backend<Ring = Standard> {
 /// Backend-provided GLWE shift operations.
 ///
 /// # Safety
-/// Implementations must respect the polynomial/ciphertext layout and scratch requirements, and may
-/// not read or write beyond the backend-owned regions described by the inputs.
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait GLWEShiftImpl: Backend {
+    /// Scratch bound of [`Self::glwe_rsh`], [`Self::glwe_lsh_assign`], [`Self::glwe_lsh`], [`Self::glwe_lsh_add`] and
+    /// [`Self::glwe_lsh_sub`]; may report less than the reference, never less than the body takes.
     fn glwe_shift_tmp_bytes(module: &Module<Self>, res_size: usize) -> usize;
 
+    /// Reproduces [`glwe_rsh_reference`](crate::reference::operations::GLWEShiftReference::glwe_rsh_reference) bit
+    /// for bit, within [`Self::glwe_shift_tmp_bytes`]; free in kernels and scratch use.
     fn glwe_rsh<R>(module: &Module<Self>, k: usize, res: &mut R, scratch: &mut ScratchArena<'_, Self>)
     where
         R: GLWEToBackendMut<Self>;
 
+    /// Reproduces
+    /// [`glwe_lsh_assign_reference`](crate::reference::operations::GLWEShiftReference::glwe_lsh_assign_reference) bit
+    /// for bit, within [`Self::glwe_shift_tmp_bytes`]; free in kernels and scratch use.
     fn glwe_lsh_assign<R>(module: &Module<Self>, res: &mut R, k: usize, scratch: &mut ScratchArena<'_, Self>)
     where
         R: GLWEToBackendMut<Self>;
 
+    /// Reproduces [`glwe_lsh_reference`](crate::reference::operations::GLWEShiftReference::glwe_lsh_reference) bit
+    /// for bit, within [`Self::glwe_shift_tmp_bytes`]; free in kernels and scratch use.
     fn glwe_lsh<R, A>(module: &Module<Self>, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, Self>)
     where
         R: GLWEToBackendMut<Self>,
         A: GLWEToBackendRef<Self>;
 
+    /// Reproduces
+    /// [`glwe_lsh_add_reference`](crate::reference::operations::GLWEShiftReference::glwe_lsh_add_reference) bit for
+    /// bit, within [`Self::glwe_shift_tmp_bytes`]; free in kernels and scratch use.
     fn glwe_lsh_add<R, A>(module: &Module<Self>, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, Self>)
     where
         R: GLWEToBackendMut<Self>,
         A: GLWEToBackendRef<Self>;
 
+    /// Reproduces
+    /// [`glwe_lsh_sub_reference`](crate::reference::operations::GLWEShiftReference::glwe_lsh_sub_reference) bit for
+    /// bit, within [`Self::glwe_shift_tmp_bytes`]; free in kernels and scratch use.
     fn glwe_lsh_sub<R, A>(module: &Module<Self>, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, Self>)
     where
         R: GLWEToBackendMut<Self>,
@@ -626,16 +775,25 @@ pub unsafe trait GLWEShiftImpl: Backend {
 /// Backend-provided GLWE normalization operations.
 ///
 /// # Safety
-/// Implementations must return views that remain valid for the advertised lifetime, preserve
-/// normalization semantics, and avoid aliasing or out-of-bounds access across temporary buffers.
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait GLWENormalizeImpl: Backend {
+    /// Scratch bound of [`Self::glwe_normalize`] and [`Self::glwe_normalize_assign`]; may report less than the
+    /// reference, never less than the body takes.
     fn glwe_normalize_tmp_bytes(module: &Module<Self>) -> usize;
 
+    /// Reproduces
+    /// [`glwe_normalize_reference`](crate::reference::operations::GLWENormalizeReference::glwe_normalize_reference)
+    /// bit for bit, within [`Self::glwe_normalize_tmp_bytes`]; free in kernels and scratch use.
     fn glwe_normalize<R, A>(module: &Module<Self>, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, Self>)
     where
         R: GLWEToBackendMut<Self>,
         A: GLWEToBackendRef<Self>;
 
+    /// Reproduces
+    /// [`glwe_normalize_assign_reference`](crate::reference::operations::GLWENormalizeReference::glwe_normalize_assign_reference)
+    /// bit for bit, within [`Self::glwe_normalize_tmp_bytes`]; free in kernels and scratch use.
     fn glwe_normalize_assign<R>(module: &Module<Self>, res: &mut R, scratch: &mut ScratchArena<'_, Self>)
     where
         R: GLWEToBackendMut<Self>;
@@ -644,13 +802,21 @@ pub unsafe trait GLWENormalizeImpl: Backend {
 /// Backend-provided GLWE trace operations.
 ///
 /// # Safety
-/// Implementations must apply the requested automorphism sequence faithfully, interpret prepared
-/// keys correctly, and keep all accesses within the described ciphertext and scratch regions.
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait GLWETraceImpl: crate::oep::AutomorphismImpl + GLWEShiftImpl + GLWECopyImpl + GLWENormalizeImpl {
+    /// Default body: `glwe_trace_galois_elements_derived`, the Galois elements of the visited levels of a degree-`n`
+    /// operand, in visiting order.
     fn glwe_trace_galois_elements(module: &Module<Self>, n: Degree, levels: Range<usize>, reverse: bool) -> Vec<i64> {
         crate::oep::derived::structure::glwe_trace_galois_elements_derived::<Self, _>(module, n, levels, reverse)
     }
 
+    /// Default body: `glwe_trace_tmp_bytes_derived`, a normalized copy of the input plus the larger of
+    /// [`GLWECopyImpl::glwe_copy_tmp_bytes`](crate::oep::GLWECopyImpl::glwe_copy_tmp_bytes),
+    /// [`GLWEShiftImpl::glwe_shift_tmp_bytes`](crate::oep::GLWEShiftImpl::glwe_shift_tmp_bytes),
+    /// [`GLWENormalizeImpl::glwe_normalize_tmp_bytes`](crate::oep::GLWENormalizeImpl::glwe_normalize_tmp_bytes) and
+    /// [`AutomorphismImpl::glwe_automorphism_tmp_bytes`](crate::oep::AutomorphismImpl::glwe_automorphism_tmp_bytes).
     fn glwe_trace_tmp_bytes<R, A, K>(module: &Module<Self>, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
         R: GLWEInfos,
@@ -660,6 +826,13 @@ pub unsafe trait GLWETraceImpl: crate::oep::AutomorphismImpl + GLWEShiftImpl + G
         crate::oep::derived::structure::glwe_trace_tmp_bytes_derived::<Self, _, _, _, _>(module, res_infos, a_infos, key_infos)
     }
 
+    /// Default body: `glwe_trace_derived`, each visited level adds the Galois conjugate of the running sum through
+    /// [`AutomorphismImpl::glwe_automorphism_add_assign`](crate::oep::AutomorphismImpl::glwe_automorphism_add_assign),
+    /// after [`GLWEShiftImpl::glwe_rsh`](crate::oep::GLWEShiftImpl::glwe_rsh) by one bit when normalizing, working on
+    /// a normalized copy made by [`GLWECopyImpl::glwe_copy`](crate::oep::GLWECopyImpl::glwe_copy) and
+    /// [`GLWENormalizeImpl::glwe_normalize`](crate::oep::GLWENormalizeImpl::glwe_normalize); an empty window is
+    /// [`GLWECopyImpl::glwe_copy`](crate::oep::GLWECopyImpl::glwe_copy), within [`Self::glwe_trace_tmp_bytes`], under
+    /// any [`PrepareHint`](poulpy_hal::layouts::PrepareHint) of its prepared operands.
     #[expect(
         clippy::too_many_arguments,
         reason = "the trace's operands, levels, direction and normalization, keys and scratch"
@@ -683,6 +856,12 @@ pub unsafe trait GLWETraceImpl: crate::oep::AutomorphismImpl + GLWEShiftImpl + G
         )
     }
 
+    /// Default body: `glwe_trace_assign_derived`, the levels of [`Self::glwe_trace`] applied to `res` in place,
+    /// through [`GLWENormalizeImpl::glwe_normalize`](crate::oep::GLWENormalizeImpl::glwe_normalize),
+    /// [`GLWEShiftImpl::glwe_rsh`](crate::oep::GLWEShiftImpl::glwe_rsh) and
+    /// [`AutomorphismImpl::glwe_automorphism_add_assign`](crate::oep::AutomorphismImpl::glwe_automorphism_add_assign),
+    /// within [`Self::glwe_trace_tmp_bytes`], under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint) of its
+    /// prepared operands.
     fn glwe_trace_assign<R, H>(
         module: &Module<Self>,
         res: &mut R,
@@ -704,15 +883,25 @@ pub unsafe trait GLWETraceImpl: crate::oep::AutomorphismImpl + GLWEShiftImpl + G
 /// Backend-provided GLWE packing operations, on the standard ring only.
 ///
 /// # Safety
-/// Implementations must maintain ciphertext correctness while combining inputs, and must respect
-/// all backend buffer, aliasing, and scratch-space invariants expected by the higher layers.
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait GLWEPackImpl:
     GLWETraceImpl + crate::oep::AutomorphismImpl + GLWERotateImpl + GLWESubImpl + GLWEAddImpl + GLWEShiftImpl + GLWENormalizeImpl
 {
+    /// Default body: `glwe_pack_galois_elements_derived`,
+    /// [`GLWETraceImpl::glwe_trace_galois_elements`](crate::oep::GLWETraceImpl::glwe_trace_galois_elements) over
+    /// every level.
     fn glwe_pack_galois_elements(module: &Module<Self>) -> Vec<i64> {
         crate::oep::derived::structure::glwe_pack_galois_elements_derived::<Self, _>(module)
     }
 
+    /// Default body: `glwe_pack_tmp_bytes_derived`, an input-sized temporary plus the larger of
+    /// [`GLWERotateImpl::glwe_rotate_tmp_bytes`](crate::oep::GLWERotateImpl::glwe_rotate_tmp_bytes),
+    /// [`GLWEShiftImpl::glwe_shift_tmp_bytes`](crate::oep::GLWEShiftImpl::glwe_shift_tmp_bytes),
+    /// [`GLWENormalizeImpl::glwe_normalize_tmp_bytes`](crate::oep::GLWENormalizeImpl::glwe_normalize_tmp_bytes) and
+    /// [`AutomorphismImpl::glwe_automorphism_tmp_bytes`](crate::oep::AutomorphismImpl::glwe_automorphism_tmp_bytes),
+    /// or [`GLWETraceImpl::glwe_trace_tmp_bytes`](crate::oep::GLWETraceImpl::glwe_trace_tmp_bytes) if larger.
     fn glwe_pack_tmp_bytes<R, A, K>(module: &Module<Self>, res: &R, a: &A, key: &K) -> usize
     where
         R: GLWEInfos,
@@ -722,6 +911,15 @@ pub unsafe trait GLWEPackImpl:
         crate::oep::derived::structure::glwe_pack_tmp_bytes_derived::<Self, _, _, _, _>(module, res, a, key)
     }
 
+    /// Default body: `glwe_pack_derived`, a binary merge tree of
+    /// [`GLWERotateImpl::glwe_rotate_assign`](crate::oep::GLWERotateImpl::glwe_rotate_assign),
+    /// [`GLWESubImpl::glwe_sub`](crate::oep::GLWESubImpl::glwe_sub),
+    /// [`GLWEShiftImpl::glwe_rsh`](crate::oep::GLWEShiftImpl::glwe_rsh),
+    /// [`GLWEAddImpl::glwe_add_assign`](crate::oep::GLWEAddImpl::glwe_add_assign),
+    /// [`AutomorphismImpl::glwe_automorphism_assign`](crate::oep::AutomorphismImpl::glwe_automorphism_assign) and
+    /// [`GLWENormalizeImpl::glwe_normalize_assign`](crate::oep::GLWENormalizeImpl::glwe_normalize_assign), closed by
+    /// [`GLWETraceImpl::glwe_trace`](crate::oep::GLWETraceImpl::glwe_trace), within [`Self::glwe_pack_tmp_bytes`],
+    /// under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint) of its prepared operands.
     fn glwe_pack<R, A, H>(
         module: &Module<Self>,
         res: &mut R,

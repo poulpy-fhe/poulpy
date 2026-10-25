@@ -31,8 +31,11 @@ use crate::{Distribution, Noise};
 /// # Safety
 /// Implementations must preserve the requested distribution and write only
 /// within the selected column and precision. The scheme's security relies on
-/// these distribution and precision guarantees.
+/// these distribution and precision guarantees. The memory, layout, synchrony and aliasing rules of
+/// `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait SamplingImpl: Backend {
+    /// Fills column `res_col` of `res` with a draw of `dist` from `seed`. No reference body exists: the trait's
+    /// sampling contract is the specification, and the stream is the backend's own.
     fn scalar_znx_fill_distribution(
         module: &Module<Self>,
         res: &mut ScalarZnxBackendMut<'_, Self>,
@@ -41,6 +44,9 @@ pub unsafe trait SamplingImpl: Backend {
         seed: [u8; 32],
     );
 
+    /// Adds a draw of `noise` at precision `k` and radix `base2k` to column `res_col` of `res`, from `seed`. No
+    /// reference body exists: the trait's sampling contract is the specification, and the stream is the backend's
+    /// own.
     fn vec_znx_add_noise(
         module: &Module<Self>,
         base2k: usize,
@@ -51,6 +57,9 @@ pub unsafe trait SamplingImpl: Backend {
         seed: [u8; 32],
     );
 
+    /// Adds a draw of `noise` at precision `k` and radix `base2k` to column `res_col` of the big-coefficient `res`,
+    /// from `seed`. No reference body exists: the trait's sampling contract is the specification, and the stream is
+    /// the backend's own.
     fn vec_znx_big_add_noise(
         module: &Module<Self>,
         base2k: usize,

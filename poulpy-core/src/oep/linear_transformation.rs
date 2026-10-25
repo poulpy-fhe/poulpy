@@ -11,9 +11,12 @@ use crate::layouts::{
 /// Backend hook for the linear-transformation family.
 ///
 /// # Safety
-/// Implementors must preserve the semantics, scratch requirements, aliasing
-/// guarantees, and backend bit-parity contract expected by end-to-end pipelines.
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait LinearTransformationImpl: Backend {
+    /// Scratch bound of [`Self::glwe_eval_linear_transformation_into`]; may report less than the reference, never
+    /// less than the body takes.
     fn glwe_eval_linear_transformation_tmp_bytes<R, A, B, K>(
         module: &Module<Self>,
         res: &R,
@@ -28,6 +31,8 @@ pub unsafe trait LinearTransformationImpl: Backend {
         B: GLWEInfos,
         K: GGLWEInfos;
 
+    /// Scratch bound of [`Self::glwe_eval_linear_transformation_into`] when the right-hand side is streamed, an
+    /// unprepared plaintext diagonal; may report less than the reference, never less than the body takes.
     fn glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes<R, A, B, K>(
         module: &Module<Self>,
         res: &R,
@@ -42,6 +47,8 @@ pub unsafe trait LinearTransformationImpl: Backend {
         B: GLWEInfos,
         K: GGLWEInfos;
 
+    /// Scratch bound of [`Self::glwe_eval_linear_transformation_sum_into`]; may report less than the reference, never
+    /// less than the body takes.
     fn glwe_eval_linear_transformation_sum_tmp_bytes<R, A, B, K>(
         module: &Module<Self>,
         res: &R,
@@ -56,6 +63,8 @@ pub unsafe trait LinearTransformationImpl: Backend {
         B: GLWEInfos,
         K: GGLWEInfos;
 
+    /// Scratch bound of [`Self::glwe_prepare_linear_transformation_baby_steps`]; may report less than the reference,
+    /// never less than the body takes.
     fn glwe_prepare_linear_transformation_baby_steps_tmp_bytes<A, K>(
         module: &Module<Self>,
         a: &A,
@@ -66,10 +75,16 @@ pub unsafe trait LinearTransformationImpl: Backend {
         A: GLWEInfos,
         K: GGLWEInfos;
 
+    /// Scratch bound of [`Self::glwe_prepare_linear_transformation_rhs`]; may report less than the reference, never
+    /// less than the body takes.
     fn glwe_prepare_linear_transformation_rhs_tmp_bytes<P>(module: &Module<Self>, pt_infos: &P) -> usize
     where
         P: LWEInfos;
 
+    /// Reproduces
+    /// [`glwe_prepare_linear_transformation_rhs_reference`](crate::reference::linear_transformation::glwe_prepare_linear_transformation_rhs_reference)
+    /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
+    /// [`Self::glwe_prepare_linear_transformation_rhs_tmp_bytes`]; free in kernels and scratch use.
     fn glwe_prepare_linear_transformation_rhs<P>(
         module: &Module<Self>,
         prepared: &mut LinearTransformation<PreparedDiagonal<Self::OwnedBuf, Self>>,
@@ -78,6 +93,10 @@ pub unsafe trait LinearTransformationImpl: Backend {
     ) where
         P: GLWEToBackendRef<Self> + GLWEInfos;
 
+    /// Reproduces
+    /// [`glwe_prepare_linear_transformation_baby_steps_reference`](crate::reference::linear_transformation::glwe_prepare_linear_transformation_baby_steps_reference)
+    /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
+    /// [`Self::glwe_prepare_linear_transformation_baby_steps_tmp_bytes`]; free in kernels and scratch use.
     fn glwe_prepare_linear_transformation_baby_steps<A, H>(
         module: &Module<Self>,
         cache: &mut LinearTransformationBabySteps<Self>,
@@ -88,8 +107,10 @@ pub unsafe trait LinearTransformationImpl: Backend {
         A: GLWEToBackendRef<Self> + GLWEInfos,
         H: GetAutomorphismKey<Self>;
 
-    /// Checks `rhs` and `lhs` before writing `res`; see
-    /// [`crate::GLWELinearTransformations::glwe_eval_linear_transformation_into`].
+    /// Reproduces
+    /// [`glwe_eval_linear_transformation_into_reference`](crate::reference::linear_transformation::glwe_eval_linear_transformation_into_reference)
+    /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
+    /// [`Self::glwe_eval_linear_transformation_tmp_bytes`]; free in kernels and scratch use.
     fn glwe_eval_linear_transformation_into<R, P, H>(
         module: &Module<Self>,
         cnv_offset: usize,
@@ -103,8 +124,10 @@ pub unsafe trait LinearTransformationImpl: Backend {
         P: crate::layouts::DiagonalProd<Self>,
         H: GetAutomorphismKey<Self>;
 
-    /// Checks every term before writing `res`; see
-    /// [`crate::GLWELinearTransformations::glwe_eval_linear_transformation_sum_into`].
+    /// Reproduces
+    /// [`glwe_eval_linear_transformation_sum_into_reference`](crate::reference::linear_transformation::glwe_eval_linear_transformation_sum_into_reference)
+    /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
+    /// [`Self::glwe_eval_linear_transformation_sum_tmp_bytes`]; free in kernels and scratch use.
     fn glwe_eval_linear_transformation_sum_into<R, H>(
         module: &Module<Self>,
         cnv_offset: usize,
