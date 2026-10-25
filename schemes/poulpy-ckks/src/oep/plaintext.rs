@@ -6,14 +6,19 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{CKKSInfos, SetCKKSInfos};
 
-/// # Safety
+/// Backend contract of [`CKKSPlaintextVecOps`](crate::api::CKKSPlaintextVecOps).
 ///
-/// Implementations must satisfy the contracts of all trait methods, including
-/// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
-/// associated method signatures.
+/// # Safety
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait CKKSPlaintextZnxImpl: Backend {
+    /// Scratch bound of [`Self::ckks_extract_pt`]; may report less than the reference, never less than the body takes.
     fn ckks_extract_pt_tmp_bytes(module: &Module<Self>, res_size: usize) -> usize;
 
+    /// Reproduces
+    /// [`ckks_extract_pt_reference`](crate::reference::plaintext::CKKSPlaintextReference::ckks_extract_pt_reference)
+    /// bit for bit, within [`Self::ckks_extract_pt_tmp_bytes`]; free in kernels and scratch use.
     fn ckks_extract_pt<D, S>(module: &Module<Self>, dst: &mut D, src: &S, scratch: &mut ScratchArena<'_, Self>) -> Result<()>
     where
         D: GLWEToBackendMut<Self> + CKKSInfos + IntPolyInfos + SetCKKSInfos,

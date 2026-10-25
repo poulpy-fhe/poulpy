@@ -11,16 +11,21 @@ use crate::{
     oep::derived::rotate::{ckks_rotate_assign_derived, ckks_rotate_into_derived, ckks_rotate_tmp_bytes_derived},
 };
 
-/// # Safety
+/// Backend contract of [`CKKSRotateOps`](crate::api::CKKSRotateOps).
 ///
-/// Implementations must satisfy the contracts of all trait methods, including
-/// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
-/// associated method signatures.
+/// # Safety
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait CKKSRotateImpl: Backend + super::CKKSCopyImpl {
-    /// Scratch of [`Self::ckks_rotate_with_key_into`] and [`Self::ckks_rotate_with_key_assign`].
+    /// Scratch bound of [`Self::ckks_rotate_with_key_into`] and [`Self::ckks_rotate_with_key_assign`]; may report less
+    /// than the reference, never less than the body takes.
     fn ckks_rotate_with_key_tmp_bytes<C: GLWEInfos, K: GGLWEInfos>(module: &Module<Self>, ct_infos: &C, key_infos: &K) -> usize;
 
-    /// Hook without an API twin: the rotation under the automorphism key its caller looked up.
+    /// Hook without an API twin. Reproduces
+    /// [`ckks_rotate_with_key_into_reference`](crate::reference::rotate::CKKSRotateReference::ckks_rotate_with_key_into_reference)
+    /// bit for bit, within [`Self::ckks_rotate_with_key_tmp_bytes`]; free in kernels and scratch use. The caller hands
+    /// the automorphism key it looked up, and the hook stamps the output metadata as the reference does.
     fn ckks_rotate_with_key_into<Dst, Src>(
         module: &Module<Self>,
         dst: &mut Dst,
@@ -32,7 +37,10 @@ pub unsafe trait CKKSRotateImpl: Backend + super::CKKSCopyImpl {
         Dst: GLWEToBackendMut<Self> + GLWEInfos + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<Self> + GLWEInfos + CKKSCtBounds;
 
-    /// In-place [`Self::ckks_rotate_with_key_into`].
+    /// Hook without an API twin. Reproduces
+    /// [`ckks_rotate_with_key_assign_reference`](crate::reference::rotate::CKKSRotateReference::ckks_rotate_with_key_assign_reference)
+    /// bit for bit, within [`Self::ckks_rotate_with_key_tmp_bytes`]; free in kernels and scratch use. The caller hands
+    /// the automorphism key it looked up, and the hook stamps the output metadata as the reference does.
     fn ckks_rotate_with_key_assign<Dst>(
         module: &Module<Self>,
         dst: &mut Dst,
@@ -42,13 +50,17 @@ pub unsafe trait CKKSRotateImpl: Backend + super::CKKSCopyImpl {
     where
         Dst: GLWEToBackendMut<Self> + GLWEInfos + CKKSCtBounds + SetCKKSInfos;
 
-    /// Scratch of a rotation by a slot shift: the keyed rotation or the identity copy.
+    /// Default body: `ckks_rotate_tmp_bytes_derived`, the larger of [`Self::ckks_rotate_with_key_tmp_bytes`] and the
+    /// selected `ckks_copy_tmp_bytes` of `ct_infos` onto itself, the copy serving the identity shift. Bounds
+    /// [`Self::ckks_rotate_into`] and [`Self::ckks_rotate_assign`].
     fn ckks_rotate_tmp_bytes<C: CKKSCtBounds, K: GGLWEInfos>(module: &Module<Self>, ct_infos: &C, key_infos: &K) -> usize {
         ckks_rotate_tmp_bytes_derived(module, ct_infos, key_infos)
     }
 
-    /// Rotation by `k` slots through the key of `ckks_galois_element(k)`; a
-    /// shift by a multiple of the slot count is a copy and needs no key.
+    /// Default body: `ckks_rotate_into_derived`. A shift whose Galois element `ckks_galois_element(k)` is `1` (a
+    /// multiple of the slot count) is the selected `ckks_copy` then the noise record cleared, with no key lookup. Any
+    /// other shift looks up the automorphism key of the element at `min(src.k(), dst.k())`, then
+    /// [`Self::ckks_rotate_with_key_into`]. A missing key is `MissingAutomorphismKey`.
     fn ckks_rotate_into<Dst, Src, H>(
         module: &Module<Self>,
         k: i64,
@@ -65,7 +77,9 @@ pub unsafe trait CKKSRotateImpl: Backend + super::CKKSCopyImpl {
         ckks_rotate_into_derived(module, k, dst, src, keys, scratch)
     }
 
-    /// In-place [`Self::ckks_rotate_into`]; the identity leaves `dst` unchanged.
+    /// Default body: `ckks_rotate_assign_derived`. A shift whose Galois element is `1` clears the noise record and does
+    /// nothing else. Any other shift looks up the automorphism key of the element at `dst.k()`, then
+    /// [`Self::ckks_rotate_with_key_assign`]. A missing key is `MissingAutomorphismKey`.
     fn ckks_rotate_assign<Dst, H>(
         module: &Module<Self>,
         k: i64,

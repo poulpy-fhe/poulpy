@@ -4,14 +4,18 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{CKKSCtBounds, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos};
 
-/// # Safety
+/// Backend contract of [`CKKSCopyOps`](crate::api::CKKSCopyOps).
 ///
-/// Implementations must satisfy the contracts of all trait methods, including
-/// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
-/// associated method signatures.
+/// # Safety
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait CKKSCopyImpl: Backend {
+    /// Scratch bound of [`Self::ckks_copy`]; may report less than the reference, never less than the body takes.
     fn ckks_copy_tmp_bytes<Dst: CKKSCtBounds, Src: CKKSCtBounds>(module: &Module<Self>, dst: &Dst, src: &Src) -> usize;
 
+    /// Reproduces [`ckks_copy_reference`](crate::reference::copy::CKKSCopyReference::ckks_copy_reference) bit for bit,
+    /// within [`Self::ckks_copy_tmp_bytes`]; free in kernels and scratch use.
     fn ckks_copy<Dst, Src>(module: &Module<Self>, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, Self>) -> Result<()>
     where
         Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,

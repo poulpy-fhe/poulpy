@@ -11,12 +11,16 @@ use crate::{
     },
 };
 
-/// # Safety
+/// Backend contract of [`CKKSDotProductOps`](crate::api::CKKSDotProductOps).
 ///
-/// Implementations must satisfy the contracts of all trait methods, including
-/// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
-/// associated method signatures. See `poulpy-hal/docs/backend_safety_contract.md`.
+/// # Safety
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait CKKSDotProductImpl: Backend + super::CKKSMulImpl + super::CKKSAddImpl {
+    /// Scratch bound of [`Self::ckks_dot_product_ct`] and [`Self::ckks_dot_product_prepared`]; may report less than the
+    /// reference, never less than the body takes. `a` and `b` describe the widest input pair, and prepared operands are
+    /// passed as such, their infos reporting the ciphertexts they were prepared from.
     fn ckks_dot_product_ct_tmp_bytes<R: CKKSCtBounds, A: CKKSCtBounds, B: CKKSCtBounds, T: GGLWEInfos>(
         module: &Module<Self>,
         n: usize,
@@ -26,7 +30,10 @@ pub unsafe trait CKKSDotProductImpl: Backend + super::CKKSMulImpl + super::CKKSA
         tsk: &T,
     ) -> usize;
 
-    /// Scratch of [`Self::ckks_dot_product_pt_vec`]: a `res`-shaped term and the product or addition.
+    /// Default body: `ckks_dot_product_pt_vec_tmp_bytes_derived`, the bytes of a `res`-shaped temporary plus the larger
+    /// of the selected `ckks_mul_pt_vec_tmp_bytes` and `ckks_add_tmp_bytes` at `res.size()`. Scratch bound of
+    /// [`Self::ckks_dot_product_pt_vec`], whatever the number of terms; may report less than the reference, never less
+    /// than the body takes.
     fn ckks_dot_product_pt_vec_tmp_bytes<R: CKKSCtBounds, A: CKKSCtBounds, P: CKKSInfos>(
         module: &Module<Self>,
         res: &R,
@@ -36,7 +43,10 @@ pub unsafe trait CKKSDotProductImpl: Backend + super::CKKSMulImpl + super::CKKSA
         ckks_dot_product_pt_vec_tmp_bytes_derived(module, res, a, b)
     }
 
-    /// Scratch of [`Self::ckks_dot_product_pt_const`]: a `res`-shaped term and the product or addition.
+    /// Default body: `ckks_dot_product_pt_const_tmp_bytes_derived`, the bytes of a `res`-shaped temporary plus the
+    /// larger of the selected `ckks_mul_pt_const_tmp_bytes` and `ckks_add_tmp_bytes` at `res.size()`. Scratch bound of
+    /// [`Self::ckks_dot_product_pt_const`], whatever the number of terms; may report less than the reference, never
+    /// less than the body takes.
     fn ckks_dot_product_pt_const_tmp_bytes<R: CKKSCtBounds, A: CKKSCtBounds, P: CKKSInfos>(
         module: &Module<Self>,
         res: &R,
@@ -46,6 +56,9 @@ pub unsafe trait CKKSDotProductImpl: Backend + super::CKKSMulImpl + super::CKKSA
         ckks_dot_product_pt_const_tmp_bytes_derived(module, res, a, b)
     }
 
+    /// Reproduces
+    /// [`ckks_dot_product_ct_reference`](crate::reference::CKKSDotProductReference::ckks_dot_product_ct_reference) bit
+    /// for bit, within [`Self::ckks_dot_product_ct_tmp_bytes`]; free in kernels and scratch use.
     fn ckks_dot_product_ct<Dst, A, B, H>(
         module: &Module<Self>,
         dst: &mut Dst,
@@ -60,6 +73,9 @@ pub unsafe trait CKKSDotProductImpl: Backend + super::CKKSMulImpl + super::CKKSA
         B: GLWEToBackendRef<Self> + CKKSCtBounds,
         H: GetTensorKey<Self>;
 
+    /// Reproduces
+    /// [`ckks_dot_product_prepared_reference`](crate::reference::CKKSDotProductReference::ckks_dot_product_prepared_reference)
+    /// bit for bit, within [`Self::ckks_dot_product_ct_tmp_bytes`]; free in kernels and scratch use.
     fn ckks_dot_product_prepared<Dst, H>(
         module: &Module<Self>,
         dst: &mut Dst,
@@ -72,7 +88,9 @@ pub unsafe trait CKKSDotProductImpl: Backend + super::CKKSMulImpl + super::CKKSA
         Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
         H: GetTensorKey<Self>;
 
-    /// `ckks_mul_pt_vec_into` of the first pair, then each later pair's product added to it.
+    /// Default body: `ckks_dot_product_pt_vec_derived`. An empty or length-mismatched pair of slices is a refusal. Then
+    /// `ckks_mul_pt_vec_into` of the first pair into `dst`, and for each later pair `ckks_mul_pt_vec_into` into a
+    /// `dst`-shaped scratch temporary followed by `ckks_add_assign` into `dst`.
     fn ckks_dot_product_pt_vec<Dst: Data, D: Data, E>(
         module: &Module<Self>,
         dst: &mut CKKSCiphertext<Dst, Self::ZnxWord, Self::Ring>,
@@ -88,7 +106,10 @@ pub unsafe trait CKKSDotProductImpl: Backend + super::CKKSMulImpl + super::CKKSA
         ckks_dot_product_pt_vec_derived(module, dst, a, b, scratch)
     }
 
-    /// `ckks_mul_pt_const_into` of the first pair, then each later pair's product added to it.
+    /// Default body: `ckks_dot_product_pt_const_derived`. An empty slice, a length mismatch between the ciphertexts and
+    /// the plaintexts or one between the ciphertexts and `pt_coeffs` is a refusal. Then `ckks_mul_pt_const_into` of the
+    /// first pair at its coefficient into `dst`, and for each later pair `ckks_mul_pt_const_into` at its coefficient
+    /// into a `dst`-shaped scratch temporary followed by `ckks_add_assign` into `dst`.
     fn ckks_dot_product_pt_const<Dst: Data, D: Data, E>(
         module: &Module<Self>,
         dst: &mut CKKSCiphertext<Dst, Self::ZnxWord, Self::Ring>,
@@ -105,6 +126,9 @@ pub unsafe trait CKKSDotProductImpl: Backend + super::CKKSMulImpl + super::CKKSA
         ckks_dot_product_pt_const_derived(module, dst, a, b, pt_coeffs, scratch)
     }
 
+    /// Scratch bound of [`Self::ckks_dot_product_prepared_pt`]; may report less than the reference, never less than the
+    /// body takes. It does not grow with the number of terms. `a` and `b` are the prepared operands, whose infos report
+    /// their sources, or those sources.
     fn ckks_dot_product_prepared_pt_tmp_bytes<R: CKKSCtBounds, A: GLWEInfos, P: GLWEInfos>(
         module: &Module<Self>,
         res: &R,
@@ -112,6 +136,9 @@ pub unsafe trait CKKSDotProductImpl: Backend + super::CKKSMulImpl + super::CKKSA
         b: &P,
     ) -> usize;
 
+    /// Reproduces
+    /// [`ckks_dot_product_prepared_pt_reference`](crate::reference::CKKSDotProductReference::ckks_dot_product_prepared_pt_reference)
+    /// bit for bit, within [`Self::ckks_dot_product_prepared_pt_tmp_bytes`]; free in kernels and scratch use.
     fn ckks_dot_product_prepared_pt<Dst>(
         module: &Module<Self>,
         dst: &mut Dst,

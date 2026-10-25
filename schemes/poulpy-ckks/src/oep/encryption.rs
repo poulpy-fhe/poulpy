@@ -11,16 +11,22 @@ use poulpy_hal::{
 
 use crate::{CKKSCtBounds, CKKSInfos, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos};
 
-/// # Safety
+/// Backend contract of [`CKKSEncryptOps`](crate::api::CKKSEncryptOps) and
+/// [`CKKSDecryptOps`](crate::api::CKKSDecryptOps).
 ///
-/// Implementations must satisfy the contracts of all trait methods, including
-/// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
-/// associated method signatures.
+/// # Safety
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait CKKSEncryptionImpl: Backend {
+    /// Scratch bound of [`Self::ckks_encrypt_sk`]; may report less than the reference, never less than the body takes.
     fn ckks_encrypt_sk_tmp_bytes<A>(module: &Module<Self>, ct_infos: &A) -> usize
     where
         A: CKKSCtBounds;
 
+    /// Reproduces
+    /// [`ckks_encrypt_sk_reference`](crate::reference::encryption::CKKSEncryptionReference::ckks_encrypt_sk_reference)
+    /// bit for bit, within [`Self::ckks_encrypt_sk_tmp_bytes`]; free in kernels and scratch use.
     fn ckks_encrypt_sk<Dct, Dpt, S>(
         module: &Module<Self>,
         ct: &mut Dct,
@@ -35,11 +41,15 @@ pub unsafe trait CKKSEncryptionImpl: Backend {
         Dct: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
         S: GLWESecretPreparedToBackendRef<Self>;
 
+    /// Scratch bound of [`Self::ckks_decrypt`]; may report less than the reference, never less than the body takes.
     fn ckks_decrypt_tmp_bytes<Pt, Ct>(module: &Module<Self>, pt_infos: &Pt, ct_infos: &Ct) -> usize
     where
         Pt: CKKSInfos,
         Ct: CKKSCtBounds;
 
+    /// Reproduces
+    /// [`ckks_decrypt_reference`](crate::reference::encryption::CKKSEncryptionReference::ckks_decrypt_reference) bit
+    /// for bit, within [`Self::ckks_decrypt_tmp_bytes`]; free in kernels and scratch use.
     fn ckks_decrypt<Dpt, Dct, S>(
         module: &Module<Self>,
         pt: &mut Dpt,

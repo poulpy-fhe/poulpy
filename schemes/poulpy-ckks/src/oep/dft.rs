@@ -23,8 +23,9 @@ use crate::{
 /// Backend hook for the homomorphic-DFT family.
 ///
 /// # Safety
-/// Implementors must preserve the semantics, scratch requirements, aliasing
-/// guarantees, and backend bit-parity contract expected by end-to-end pipelines.
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait DFTImpl:
     Backend
     + super::CKKSCopyImpl
@@ -34,7 +35,8 @@ pub unsafe trait DFTImpl:
     + super::CKKSImagImpl
     + super::CKKSRotateImpl
 {
-    /// Workspace for the selected matrix preparation implementation.
+    /// Scratch bound of [`Self::ckks_prepare_dft_matrix`] and [`Self::ckks_prepare_dft_matrix_alloc`]; may report less
+    /// than the reference, never less than the body takes.
     fn ckks_prepare_dft_matrix_tmp_bytes<Dir, Fmt, P>(
         module: &Module<Self>,
         dft: &DFTMatrix<Self, Dir, Fmt, LinearTransformation<P>>,
@@ -42,7 +44,10 @@ pub unsafe trait DFTImpl:
     where
         P: poulpy_core::layouts::LWEInfos;
 
-    /// Workspace shared by the selected raw evaluation and format wrappers.
+    /// Scratch bound of [`Self::ckks_dft_evaluate_assign`], [`Self::ckks_coeffs_to_slots`],
+    /// [`Self::ckks_slots_to_coeffs`], [`Self::ckks_coeffs_to_slots_split`], [`Self::ckks_slots_to_coeffs_split`],
+    /// [`Self::ckks_coeffs_to_slots_repack`] and [`Self::ckks_slots_to_coeffs_repack`]; may report less than the
+    /// reference, never less than the body takes.
     fn ckks_dft_tmp_bytes<Dir, Fmt, P, Dst, Src, K>(
         module: &Module<Self>,
         dst: &Dst,
@@ -56,8 +61,10 @@ pub unsafe trait DFTImpl:
         Src: CKKSCtBounds,
         K: poulpy_core::layouts::GGLWEInfos;
 
-    /// Prepares every factor of `dft` into `res`, with no allocation. A `res` allocated for another matrix layout, or a
-    /// factor whose diagonals do not share one scale, width and slot kind, is `InvalidOperand`, before any write.
+    /// Reproduces [`ckks_prepare_dft_matrix`](crate::reference::dft::ckks_prepare_dft_matrix) bit for bit, within
+    /// [`Self::ckks_prepare_dft_matrix_tmp_bytes`]; free in kernels, prepared form and scratch use. A `res` allocated
+    /// for another matrix layout, or a factor whose diagonals do not share one scale, width and slot kind, is
+    /// `InvalidOperand`, before any write.
     fn ckks_prepare_dft_matrix<Dir, Fmt, P>(
         module: &Module<Self>,
         res: &mut DFTMatrixPrepared<Self, Dir, Fmt>,
@@ -67,9 +74,9 @@ pub unsafe trait DFTImpl:
     where
         P: GLWEToBackendRef<Self> + IntPolyInfos + CKKSCtBounds + DiagonalProd<Self>;
 
-    /// [`Self::ckks_prepare_dft_matrix`] into
-    /// [`CKKSModuleAlloc::ckks_dft_matrix_prepared_alloc_from_infos`](crate::layouts::CKKSModuleAlloc::ckks_dft_matrix_prepared_alloc_from_infos)
-    /// of `dft`.
+    /// Default body: `ckks_prepare_dft_matrix_alloc_derived`, a prepared matrix allocated from `dft` with
+    /// [`ckks_dft_matrix_prepared_alloc_from_infos`](crate::layouts::CKKSModuleAlloc::ckks_dft_matrix_prepared_alloc_from_infos),
+    /// then [`Self::ckks_prepare_dft_matrix`] into it.
     fn ckks_prepare_dft_matrix_alloc<Dir, Fmt, P>(
         module: &Module<Self>,
         dft: &DFTMatrix<Self, Dir, Fmt, LinearTransformation<P>>,
@@ -81,6 +88,8 @@ pub unsafe trait DFTImpl:
         crate::oep::derived::dft::ckks_prepare_dft_matrix_alloc_derived(module, dft, scratch)
     }
 
+    /// Reproduces [`ckks_dft_evaluate_assign`](crate::reference::dft::ckks_dft_evaluate_assign) bit for bit, within
+    /// [`Self::ckks_dft_tmp_bytes`]; free in kernels and scratch use.
     fn ckks_dft_evaluate_assign<Dir, Fmt, P, Dst, H>(
         module: &Module<Self>,
         ct: &mut Dst,
@@ -93,6 +102,8 @@ pub unsafe trait DFTImpl:
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<Self>;
 
+    /// Default body: `ckks_coeffs_to_slots_assign_derived`, the selected `ckks_dft_evaluate_assign` of the encode
+    /// matrix.
     fn ckks_coeffs_to_slots<P, Dst, H>(
         module: &Module<Self>,
         ct: &mut Dst,
@@ -108,6 +119,8 @@ pub unsafe trait DFTImpl:
         crate::oep::derived::dft::ckks_coeffs_to_slots_assign_derived(module, ct, dft, keys, scratch)
     }
 
+    /// Default body: `ckks_slots_to_coeffs_assign_derived`, the selected `ckks_dft_evaluate_assign` of the decode
+    /// matrix.
     fn ckks_slots_to_coeffs<P, Dst, H>(
         module: &Module<Self>,
         ct: &mut Dst,
@@ -123,6 +136,10 @@ pub unsafe trait DFTImpl:
         crate::oep::derived::dft::ckks_slots_to_coeffs_assign_derived(module, ct, dft, keys, scratch)
     }
 
+    /// Default body: `ckks_coeffs_to_slots_split_derived`, `ckks_copy` of `ct_in` into `ct_real`,
+    /// `ckks_dft_evaluate_assign` on it, `ckks_conjugate_into` of the result into `ct_imag`, `ckks_sub_into` of the two
+    /// into an allocated temporary, `ckks_add_assign` of `ct_imag` into `ct_real`, `ckks_div_i_into` of the temporary
+    /// into `ct_imag`, then both slot kinds set to real.
     fn ckks_coeffs_to_slots_split<P, Dst, Src, H>(
         module: &Module<Self>,
         ct_real: &mut Dst,
@@ -141,6 +158,8 @@ pub unsafe trait DFTImpl:
         crate::oep::derived::dft::ckks_coeffs_to_slots_split_derived(module, ct_real, ct_imag, ct_in, dft, keys, scratch)
     }
 
+    /// Default body: `ckks_slots_to_coeffs_split_derived`, `ckks_mul_i_into` of `ct_imag` into `op_out`,
+    /// `ckks_add_assign` of `ct_real`, then `ckks_dft_evaluate_assign` on `op_out`.
     fn ckks_slots_to_coeffs_split<P, Dst, Src, H>(
         module: &Module<Self>,
         op_out: &mut Dst,
@@ -159,6 +178,12 @@ pub unsafe trait DFTImpl:
         crate::oep::derived::dft::ckks_slots_to_coeffs_split_derived(module, op_out, ct_real, ct_imag, dft, keys, scratch)
     }
 
+    /// Default body: `ckks_coeffs_to_slots_repack_derived`, `ckks_copy` of `ct_in` into `ct_out`,
+    /// `ckks_dft_evaluate_assign` on it, `ckks_conjugate_into` of the result into an allocated temporary,
+    /// `ckks_sub_into` of the two into a second allocated temporary, `ckks_div_i_assign` on that one,
+    /// `ckks_add_assign` of the conjugate into `ct_out`, `ckks_rotate_assign` of the second temporary by the slot
+    /// count, `ckks_add_assign` of it into `ct_out`, then the input's `log_sparsity` less one (saturating) and real
+    /// slots on `ct_out`.
     fn ckks_coeffs_to_slots_repack<P, Dst, Src, H>(
         module: &Module<Self>,
         ct_out: &mut Dst,
@@ -176,6 +201,8 @@ pub unsafe trait DFTImpl:
         crate::oep::derived::dft::ckks_coeffs_to_slots_repack_derived(module, ct_out, ct_in, dft, keys, scratch)
     }
 
+    /// Default body: `ckks_slots_to_coeffs_repack_derived`, `ckks_copy` of `ct_in` into `op_out`,
+    /// `ckks_dft_evaluate_assign` on it, then the input's `log_sparsity` plus one on `op_out`.
     fn ckks_slots_to_coeffs_repack<P, Dst, Src, H>(
         module: &Module<Self>,
         op_out: &mut Dst,
@@ -201,9 +228,12 @@ pub unsafe trait DFTImpl:
 /// custom implementations only need the method's backend-resident signature.
 ///
 /// # Safety
-/// Implementors must preserve the semantics, scratch requirements, aliasing
-/// guarantees, and backend bit-parity contract expected by end-to-end pipelines.
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait DFTMatrixImpl<F: CKKSEncodingScalar>: Backend<Ring = poulpy_hal::layouts::Standard> {
+    /// Reproduces [`ckks_new_dft_matrix`](crate::reference::dft::ckks_new_dft_matrix) bit for bit; free in kernels and
+    /// scratch use.
     fn ckks_new_dft_matrix<Dir, Fmt>(
         module: &Module<Self>,
         base2k: Base2K,

@@ -23,14 +23,17 @@ use crate::{
 /// query.
 ///
 /// # Safety
-///
-/// Implementations uphold `poulpy-hal/docs/backend_safety_contract.md` for every
-/// operand and scratch region they touch.
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait CKKSApproximationImpl:
     Backend + CKKSAddImpl + CKKSAffineImpl + CKKSCopyImpl + CKKSPow2Impl + CKKSPolynomialEvaluationImpl
 {
-    /// Scratch of [`Self::ckks_eval_approximation`]: the shared `ckks_all_ops_tmp_bytes` bound at
-    /// both layouts, plus the mapped input and its map when the approximation has one.
+    /// Default body: `ckks_approximation_tmp_bytes_derived`, the larger of the selected `ckks_all_ops_tmp_bytes` at
+    /// `res` and at `input`, both against the first baby-step coefficient layout and `tsk`. An approximation with an
+    /// affine map adds the bytes of an `input`-shaped temporary and, unless it has a power-of-two scale, folds in the
+    /// larger of that bound and the selected `ckks_affine_pt_const_tmp_bytes`. Scratch bound of
+    /// [`Self::ckks_eval_approximation`]; may report less than the reference, never less than the body takes.
     fn ckks_approximation_tmp_bytes<R, I, T, P>(
         module: &Module<Self>,
         res: &R,
@@ -48,10 +51,12 @@ pub unsafe trait CKKSApproximationImpl:
         ckks_approximation_tmp_bytes_derived(module, res, input, approximation, tsk)
     }
 
-    /// Checks the budget, maps `input` into a scratch temporary (`ckks_mul_pow2_into`
-    /// or `ckks_copy` and `ckks_div_pow2_assign` then `ckks_add_pt_const_assign`, or
-    /// `ckks_affine_pt_const_into`) when the approximation carries a map, then
-    /// `ckks_eval_poly_real_const_coeffs`.
+    /// Default body: `ckks_eval_approximation_derived`. A `log_budget` below the bits the approximation consumes at the
+    /// input's `log_delta` is a refusal. An approximation with an affine map first fills an `input`-shaped scratch
+    /// temporary: with a positive power-of-two scale `ckks_mul_pow2_into`, with a non-positive one `ckks_copy` (slot
+    /// kind joined with real) then `ckks_div_pow2_assign`, either then `ckks_add_pt_const_assign` of the affine
+    /// constant at coefficient 0; without a power-of-two scale `ckks_affine_pt_const_into` with offset 0 and scale 1.
+    /// Then `ckks_eval_poly_real_const_coeffs` of the temporary, or of `input` itself when there is no map.
     fn ckks_eval_approximation<R, I, P, H>(
         module: &Module<Self>,
         res: &mut R,

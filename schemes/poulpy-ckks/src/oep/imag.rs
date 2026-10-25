@@ -5,14 +5,19 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena, Standard};
 
 use crate::{CKKSCtBounds, SetCKKSInfos};
 
-/// # Safety
+/// Backend contract of [`CKKSImagOps`](crate::api::CKKSImagOps), on the standard ring.
 ///
-/// Implementations must satisfy the contracts of all trait methods, including
-/// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
-/// associated method signatures.
+/// # Safety
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait CKKSImagImpl: Backend<Ring = Standard> {
+    /// Scratch bound of [`Self::ckks_mul_i_into`] and [`Self::ckks_mul_i_assign`]; may report less than the reference,
+    /// never less than the body takes.
     fn ckks_mul_i_tmp_bytes(module: &Module<Self>, res_size: usize) -> usize;
 
+    /// Reproduces [`ckks_mul_i_into_reference`](crate::reference::imag::CKKSImagReference::ckks_mul_i_into_reference)
+    /// bit for bit, within [`Self::ckks_mul_i_tmp_bytes`]; free in kernels and scratch use.
     fn ckks_mul_i_into<Dst, Src>(
         module: &Module<Self>,
         dst: &mut Dst,
@@ -23,12 +28,19 @@ pub unsafe trait CKKSImagImpl: Backend<Ring = Standard> {
         Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<Self> + GLWEInfos + CKKSCtBounds;
 
+    /// Reproduces
+    /// [`ckks_mul_i_assign_reference`](crate::reference::imag::CKKSImagReference::ckks_mul_i_assign_reference) bit for
+    /// bit, within [`Self::ckks_mul_i_tmp_bytes`]; free in kernels and scratch use.
     fn ckks_mul_i_assign<Dst>(module: &Module<Self>, dst: &mut Dst, scratch: &mut ScratchArena<'_, Self>) -> Result<()>
     where
         Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos;
 
+    /// Scratch bound of [`Self::ckks_div_i_into`] and [`Self::ckks_div_i_assign`]; may report less than the reference,
+    /// never less than the body takes.
     fn ckks_div_i_tmp_bytes(module: &Module<Self>, res_size: usize) -> usize;
 
+    /// Reproduces [`ckks_div_i_into_reference`](crate::reference::imag::CKKSImagReference::ckks_div_i_into_reference)
+    /// bit for bit, within [`Self::ckks_div_i_tmp_bytes`]; free in kernels and scratch use.
     fn ckks_div_i_into<Dst, Src>(
         module: &Module<Self>,
         dst: &mut Dst,
@@ -39,6 +51,9 @@ pub unsafe trait CKKSImagImpl: Backend<Ring = Standard> {
         Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<Self> + GLWEInfos + CKKSCtBounds;
 
+    /// Reproduces
+    /// [`ckks_div_i_assign_reference`](crate::reference::imag::CKKSImagReference::ckks_div_i_assign_reference) bit for
+    /// bit, within [`Self::ckks_div_i_tmp_bytes`]; free in kernels and scratch use.
     fn ckks_div_i_assign<Dst>(module: &Module<Self>, dst: &mut Dst, scratch: &mut ScratchArena<'_, Self>) -> Result<()>
     where
         Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos;
