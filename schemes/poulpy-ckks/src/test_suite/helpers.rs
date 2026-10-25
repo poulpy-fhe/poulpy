@@ -754,7 +754,7 @@ where
     let mut tsk = module.glwe_tensor_key_alloc_from_infos(&tsk_infos);
     module.glwe_tensor_key_encrypt_sk(&mut tsk, sk_raw, &mut xe, &mut xa, scratch);
     let mut tsk_prepared = module.alloc_tensor_key_prepared_from_infos(&tsk_infos);
-    module.prepare_tensor_key(&mut tsk_prepared, &tsk, scratch);
+    module.glwe_tensor_key_prepare(&mut tsk_prepared, &tsk, scratch);
     tsk_prepared
 }
 

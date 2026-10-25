@@ -132,22 +132,22 @@ pub unsafe trait PreparationImpl: Backend + HalVmpImpl {
         super::derived::preparation::glwe_switching_key_prepare_derived(module, res, other, scratch)
     }
 
-    /// Default body: `prepare_tensor_key_tmp_bytes_derived`, [`Self::gglwe_prepare_tmp_bytes`].
-    fn prepare_tensor_key_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
+    /// Default body: `glwe_tensor_key_prepare_tmp_bytes_derived`, [`Self::gglwe_prepare_tmp_bytes`].
+    fn glwe_tensor_key_prepare_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GGLWEInfos,
     {
-        super::derived::preparation::prepare_tensor_key_tmp_bytes_derived(module, infos)
+        super::derived::preparation::glwe_tensor_key_prepare_tmp_bytes_derived(module, infos)
     }
 
-    /// Default body: `prepare_tensor_key_derived`, [`Self::gglwe_prepare`] after checking the scratch against
-    /// [`Self::prepare_tensor_key_tmp_bytes`].
-    fn prepare_tensor_key<R, O>(module: &Module<Self>, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, Self>)
+    /// Default body: `glwe_tensor_key_prepare_derived`, [`Self::gglwe_prepare`] after checking the scratch against
+    /// [`Self::glwe_tensor_key_prepare_tmp_bytes`].
+    fn glwe_tensor_key_prepare<R, O>(module: &Module<Self>, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, Self>)
     where
         R: GGLWEPreparedToBackendMut<Self>,
         O: GGLWEToBackendRef<Self>,
     {
-        super::derived::preparation::prepare_tensor_key_derived(module, res, other, scratch)
+        super::derived::preparation::glwe_tensor_key_prepare_derived(module, res, other, scratch)
     }
 
     /// Default body: `glwe_to_lwe_key_prepare_tmp_bytes_derived`, [`Self::glwe_switching_key_prepare_tmp_bytes`].

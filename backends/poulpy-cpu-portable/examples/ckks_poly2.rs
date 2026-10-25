@@ -232,7 +232,7 @@ fn setup() -> Result<SetupArtifacts> {
     let mut tsk_prepared = module.alloc_tensor_key_prepared_from_infos(&tsk_layout());
     {
         let mut scratch_local = scratch.borrow();
-        module.prepare_tensor_key(&mut tsk_prepared, &tsk, &mut scratch_local);
+        module.glwe_tensor_key_prepare(&mut tsk_prepared, &tsk, &mut scratch_local);
     }
     println!("  prepared tensor key");
 

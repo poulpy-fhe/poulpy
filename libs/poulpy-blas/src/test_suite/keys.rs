@@ -712,7 +712,7 @@ pub fn test_blas_key_stores_from_queries<BE, F, E>(
             let mut raw = module.glwe_tensor_key_alloc_from_infos(&infos);
             module.glwe_tensor_key_encrypt_sk(&mut raw, &sk_raw, &mut xe, &mut xa, &mut scratch.borrow());
             let mut prepared = module.alloc_tensor_key_prepared_from_infos(&infos);
-            module.prepare_tensor_key(&mut prepared, &raw, &mut scratch.borrow());
+            module.glwe_tensor_key_prepare(&mut prepared, &raw, &mut scratch.borrow());
             keys.tsks.insert(width.as_u32(), prepared);
         }
 

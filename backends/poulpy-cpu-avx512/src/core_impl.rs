@@ -1659,8 +1659,8 @@ mod relinearize_tests {
                             }
                         }
                         let mut prepared = module.alloc_tensor_key_prepared_from_infos(&key_layout);
-                        let mut prep_scratch = ScratchOwned::<$be>::alloc(module.prepare_tensor_key_tmp_bytes(&key_layout));
-                        module.prepare_tensor_key(&mut prepared, &key, &mut prep_scratch.borrow());
+                        let mut prep_scratch = ScratchOwned::<$be>::alloc(module.glwe_tensor_key_prepare_tmp_bytes(&key_layout));
+                        module.glwe_tensor_key_prepare(&mut prepared, &key, &mut prep_scratch.borrow());
                         for (res_base2k, res_k) in [(52usize, 311usize), (26, 415)] {
                             let output_layout = GLWELayout {
                                 base2k: res_base2k.into(),

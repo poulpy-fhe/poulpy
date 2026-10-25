@@ -269,10 +269,10 @@ where
                 k,
                 rank.as_usize(),
             ));
-            m.prepare_tensor_key(
+            m.glwe_tensor_key_prepare(
                 &mut prepared,
                 &source,
-                &mut poisoned_scratch::<BE>(m.prepare_tensor_key_tmp_bytes(&source)).borrow(),
+                &mut poisoned_scratch::<BE>(m.glwe_tensor_key_prepare_tmp_bytes(&source)).borrow(),
             );
             let borrowed = GLWETensorKeyPreparedToBackendRef::<BE>::to_backend_ref(&prepared);
             let borrowed_ref = &borrowed;

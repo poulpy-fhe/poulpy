@@ -91,7 +91,7 @@ where
             )
             .max(self.ckks_mul_pt_vec_tmp_bytes(ct_infos, ct_infos, pt_prec))
             .max(self.ckks_mul_pt_const_tmp_bytes(ct_infos, ct_infos, pt_prec))
-            .max(self.prepare_tensor_key_tmp_bytes(tsk_infos))
+            .max(self.glwe_tensor_key_prepare_tmp_bytes(tsk_infos))
             .max(self.glwe_tensor_key_encrypt_sk_tmp_bytes(tsk_infos))
     }
 
