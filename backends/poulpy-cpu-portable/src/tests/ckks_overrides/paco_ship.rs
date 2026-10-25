@@ -104,7 +104,7 @@ unsafe impl poulpy_ckks::oep::CKKSPaCoImpl for OverrideBackend {
                 let key = keys
                     .get_automorphism_key(galois_element(rotation, module.cyclotomic_order()), ct.k())
                     .map_err(|source| poulpy_ckks::CKKSCompositionError::MissingAutomorphismKey {
-                        op: "paco_slot_trace",
+                        op: "ckks_slot_trace_assign",
                         rotation,
                         k: ct.k().into(),
                         source,

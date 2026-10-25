@@ -104,7 +104,7 @@ pub mod numerics;
 ///
 /// `use poulpy_ckks::prelude::*;` brings in the op traits (add/sub/mul/…,
 /// encrypt/decrypt, scratch sizing), the ciphertext/plaintext containers with
-/// their allocation helpers, and the metadata types, everything the
+/// their allocation helpers, and the metadata types: everything the
 /// encode → encrypt → evaluate → decrypt → decode loop needs from this crate.
 /// Key material and the `Module`/scratch machinery come from `poulpy-core` and
 /// `poulpy-hal`.
@@ -283,7 +283,7 @@ pub struct CKKSLayout {
 ///
 /// The reduced form of a [`CKKSLayout`]: only the torus width `k` the operand
 /// plaintexts are allocated with and the [`GLWEPlaintextMeta`] they are stamped with.
-/// Plans carry no ring or radix information, `n` follows the module and
+/// Plans carry no ring or radix information: `n` follows the module and
 /// `base2k` is passed explicitly at compile time, so there is nothing to fill
 /// with placeholders.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -545,7 +545,7 @@ mod offset_tests {
     #[test]
     fn offset_binary_charges_natural_result_width() {
         // Deltas AND budgets differ: natural width = 30 + 20 = 50, while
-        // min(a.k, b.k) = 55, the old formula charged 5 spurious bits.
+        // min(a.k, b.k) = 55: the old formula charged 5 spurious bits.
         let a = layout(40, 20); // k = 60
         let b = layout(30, 25); // k = 55
         let res = layout(30, 20); // max_k = 50

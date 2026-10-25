@@ -662,7 +662,7 @@ pub(crate) fn get_mul_prepared_params<BE: Backend, D: GLWEInfos + CKKSInfos>(
     dst: &D,
     prepared: &CKKSPreparedRight<BE>,
 ) -> Result<(usize, usize, usize, TorusPrecision)> {
-    check_prepared_layout("mul_prepared", dst, prepared)?;
+    check_prepared_layout("ckks_mul_prepared", dst, prepared)?;
     let tensor_k = dst.k().max(prepared.k());
     let (log_budget, log_delta, cnv_offset) = mul_ct_params_raw(
         dst.k().as_usize(),
@@ -695,7 +695,7 @@ pub(crate) fn mul_ct_params_raw(
     let a_log_budget = a_k.saturating_sub(a_log_delta);
     let b_log_budget = b_k.saturating_sub(b_log_delta);
 
-    let res_log_budget = checked_mul_ct_log_budget("mul", a_log_budget, b_log_budget, a_log_delta, b_log_delta)?;
+    let res_log_budget = checked_mul_ct_log_budget("ckks_mul", a_log_budget, b_log_budget, a_log_delta, b_log_delta)?;
     let res_log_delta = a_log_delta.min(b_log_delta);
 
     let res_offset = (res_log_budget + res_log_delta).saturating_sub(res_max_k);
@@ -709,7 +709,7 @@ pub(crate) fn mul_ct_params_raw(
     let cnv_offset = a_log_budget.max(b_log_budget) + a_log_delta.max(b_log_delta) + res_offset;
 
     Ok((
-        checked_log_budget_sub("mul", res_log_budget, res_offset)?,
+        checked_log_budget_sub("ckks_mul", res_log_budget, res_offset)?,
         res_log_delta,
         cnv_offset,
     ))
@@ -741,13 +741,13 @@ pub(crate) fn mul_pt_params_raw(
     b_log_budget: usize,
     b_max_k: usize,
 ) -> Result<(usize, usize, usize)> {
-    let res_log_budget = checked_mul_pt_log_budget("mul", a_log_budget, b_log_budget, a_log_delta, b_log_delta)?;
+    let res_log_budget = checked_mul_pt_log_budget("ckks_mul_pt", a_log_budget, b_log_budget, a_log_delta, b_log_delta)?;
     let res_log_delta = a_log_delta;
     let res_offset = (res_log_budget + res_log_delta).saturating_sub(res_max_k);
     let cnv_offset = b_max_k + res_offset;
 
     Ok((
-        checked_log_budget_sub("mul", res_log_budget, res_offset)?,
+        checked_log_budget_sub("ckks_mul_pt", res_log_budget, res_offset)?,
         res_log_delta,
         cnv_offset,
     ))

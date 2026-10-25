@@ -41,7 +41,7 @@ where
     let key = keys
         .get_automorphism_key(p, switch_k)
         .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
-            op: "rotate",
+            op: "ckks_rotate_into",
             rotation: k,
             k: switch_k.into(),
             source,
@@ -69,7 +69,7 @@ where
     let key = keys
         .get_automorphism_key(p, dst.k())
         .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
-            op: "rotate_assign",
+            op: "ckks_rotate_assign",
             rotation: k,
             k: dst.k().into(),
             source,

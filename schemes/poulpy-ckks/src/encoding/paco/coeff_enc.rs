@@ -280,7 +280,7 @@ where
 /// Reads column `col` of a host-accessible GLWE data buffer as balanced
 /// (signed) representatives modulo `2^k` (`k` the ciphertext's torus
 /// precision), recomposed from the limbs by [`VecZnx::decode_vec_i64`]. No
-/// reduction is applied, every consumer, including [`psi`] and centered
+/// reduction is applied: every consumer, including [`psi`] and centered
 /// representative conversion in the test model, depends only on the residue
 /// class.
 pub(crate) fn glwe_column_residues<D: HostDataRef>(
@@ -316,7 +316,7 @@ pub(crate) fn glwe_column_residues<D: HostDataRef>(
 /// Algorithm 3 (getCoeffEnc) on a **real** exhausted ciphertext: reads the
 /// body (`ct0`) and mask (`ct1`) residues modulo `q = 2^{log_q}` off the
 /// base2k limbs and builds the four packed β_t slot vectors. Poulpy decrypts
-/// as `body + mask·s`, matching the paper's `m = ct0 + s·ct1`, no sign
+/// as `body + mask·s`, matching the paper's `m = ct0 + s·ct1`; no sign
 /// adjustment is needed.
 pub(crate) fn exhausted_ciphertext_residues<D: HostDataRef>(
     ct: &CKKSCiphertext<D, i64, Standard>,

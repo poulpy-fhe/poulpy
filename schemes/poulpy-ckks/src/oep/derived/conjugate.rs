@@ -25,7 +25,7 @@ where
     let key = keys
         .get_automorphism_key(p, switch_k)
         .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
-            op: "conjugate",
+            op: "ckks_conjugate_into",
             rotation: k,
             k: switch_k.into(),
             source,
@@ -47,7 +47,7 @@ where
     let key = keys
         .get_automorphism_key(-1, dst.k())
         .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
-            op: "conjugate_assign",
+            op: "ckks_conjugate_assign",
             rotation: 0,
             k: dst.k().into(),
             source,

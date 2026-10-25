@@ -335,7 +335,7 @@ pub fn test_div_pow2_assign_rejects_insufficient_capacity<BE, F, E>(
         "div_pow2_assign_rejects_insufficient_capacity",
         &err,
         CKKSCompositionError::InsufficientHomomorphicCapacity {
-            op: "div_pow2_assign",
+            op: "ckks_div_pow2_assign",
             available_log_budget,
             required_bits,
         },

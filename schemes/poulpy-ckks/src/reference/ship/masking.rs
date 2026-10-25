@@ -70,7 +70,7 @@ where
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BE>,
 {
-    const OP: &str = "ship_masking_accumulate";
+    const OP: &str = "ckks_ship_masking_accumulate";
     ckks_ensure!(
         !masks.is_empty() && masks.len() == pis.len(),
         "{OP}: empty or mismatched operands"

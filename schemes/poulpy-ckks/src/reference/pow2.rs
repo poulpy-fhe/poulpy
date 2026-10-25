@@ -74,10 +74,10 @@ pub trait CKKSPow2Reference<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
     {
-        ensure_not_integer("div_pow2", src.slots(), bits)?;
+        ensure_not_integer("ckks_div_pow2_into", src.slots(), bits)?;
         // The `bits` charged to the budget move under `log_delta` inside the
         // stamp, so the shift normalizes at the width the result reports.
-        crate::ckks_shift_stamp_unary(self, "div_pow2", dst, src, 0, bits, bits, scratch)?;
+        crate::ckks_shift_stamp_unary(self, "ckks_div_pow2_into", dst, src, 0, bits, bits, scratch)?;
         Ok(())
     }
 
@@ -88,8 +88,8 @@ pub trait CKKSPow2Reference<BE: Backend> {
         // Lossless relabel, mirroring `_into` with `offset = 0`: the `bits`
         // charged to the budget move under `log_delta`, leaving `k`, and so the
         // canonical flag, unchanged.
-        ensure_not_integer("div_pow2_assign", dst.slots(), bits)?;
-        checked_log_budget_sub("div_pow2_assign", dst.log_budget(), bits)?;
+        ensure_not_integer("ckks_div_pow2_assign", dst.slots(), bits)?;
+        checked_log_budget_sub("ckks_div_pow2_assign", dst.log_budget(), bits)?;
         let mut meta = dst.meta();
         meta.scale = Scale::Log(ckks_log_delta(&meta) + bits);
         dst.set_meta(meta);
