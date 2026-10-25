@@ -77,6 +77,7 @@ where
             sk.rank() == res.rank_out(),
             "the secret's rank differs from the key's output rank"
         );
+        crate::layouts::assert_secret_set(&sk.dist);
         assert!(
             scratch.available() >= self.glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes_reference(res),
             "scratch.available(): {} < GLWEAutomorphismKeyCompressedEncryptSk::glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes: {}",

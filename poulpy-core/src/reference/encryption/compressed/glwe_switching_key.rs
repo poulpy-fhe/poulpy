@@ -74,6 +74,7 @@ where
 
         assert!(sk_in.n().0 <= res.n().0);
         assert!(sk_out_ref.n().0 <= res.n().0);
+        crate::layouts::assert_secret_set(sk_out.dist());
         assert!(
             scratch.available() >= self.glwe_switching_key_compressed_encrypt_sk_tmp_bytes_reference(res),
             "scratch.available(): {} < GLWESwitchingKeyCompressedEncryptSk::glwe_switching_key_compressed_encrypt_sk_tmp_bytes: {}",

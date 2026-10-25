@@ -70,6 +70,7 @@ where
         {
             assert!(res.rank() == sk.rank(), "the ciphertext rank differs from the secret's rank");
             operand_degree(self.n(), &[res.n(), pt.n().into(), sk.n()]);
+            crate::layouts::assert_secret_set(&sk.to_backend_ref().dist);
             assert!(
                 scratch.available() >= self.ggsw_encrypt_sk_tmp_bytes_reference(res),
                 "scratch.available(): {} < GGSWEncryptSk::ggsw_encrypt_sk_tmp_bytes: {}",

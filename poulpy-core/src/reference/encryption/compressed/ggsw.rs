@@ -80,6 +80,7 @@ where
                 "the ciphertext rank differs from the secret's rank"
             );
             operand_degree(self.n(), &[pt_backend.n().into(), res.n(), sk_ref.n()]);
+            crate::layouts::assert_secret_set(&sk_ref.dist);
             assert!(
                 scratch.available() >= self.ggsw_compressed_encrypt_sk_tmp_bytes_reference(res),
                 "scratch.available(): {} < GGSWCompressedEncryptSk::ggsw_compressed_encrypt_sk_tmp_bytes: {}",

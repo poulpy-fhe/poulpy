@@ -74,6 +74,7 @@ where
 
             let rank: usize = res.rank_out().as_usize();
             let tmp_bytes: usize = self.gglwe_to_ggsw_key_encrypt_sk_tmp_bytes_reference(&res);
+            crate::layouts::assert_secret_set(sk.dist());
             assert!(
                 scratch.available() >= tmp_bytes,
                 "insufficient scratch for GGLWE-to-GGSW key encryption"

@@ -80,6 +80,7 @@ where
         {
             {
                 let mut res_backend = res.to_backend_mut();
+                crate::layouts::assert_secret_set(&sk.to_backend_ref().dist);
                 assert!(
                     scratch.available() >= self.glwe_compressed_encrypt_sk_tmp_bytes_reference(&res_backend),
                     "scratch.available(): {} < GLWECompressedEncryptSk::glwe_compressed_encrypt_sk_tmp_bytes: {}",
@@ -121,6 +122,7 @@ where
         let metadata = crate::component_noise::fresh_sk_noise(sk.to_backend_ref().dist, &res.to_backend_ref());
         {
             let mut res_backend = res.to_backend_mut();
+            crate::layouts::assert_secret_set(&sk.to_backend_ref().dist);
             assert!(
                 scratch.available() >= self.glwe_compressed_encrypt_sk_tmp_bytes_reference(&res_backend),
                 "scratch.available(): {} < GLWECompressedEncryptSk::glwe_compressed_encrypt_sk_tmp_bytes: {}",

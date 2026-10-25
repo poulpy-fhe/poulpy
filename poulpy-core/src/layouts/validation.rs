@@ -3,10 +3,25 @@
 
 use poulpy_hal::layouts::Backend;
 
-use crate::layouts::{
-    DiagonalProd, GGLWEInfos, GLWEInfos, LWEInfos, LinearTransformation, LinearTransformationBabySteps,
-    LinearTransformationPrepared, TorusPrecision,
+use crate::{
+    Distribution,
+    layouts::{
+        DiagonalProd, GGLWEInfos, GLWEInfos, LWEInfos, LinearTransformation, LinearTransformationBabySteps,
+        LinearTransformationPrepared, TorusPrecision,
+    },
 };
+
+/// Checks that the secret an encryption reads has been sampled, before the encryption draws or carves.
+///
+/// # Panics
+///
+/// On the `NONE` distribution.
+pub(crate) fn assert_secret_set(dist: &Distribution) {
+    assert!(
+        *dist != Distribution::NONE,
+        "glwe secret distribution is NONE (have you prepared the key?)"
+    );
+}
 
 /// Checks that `key` has no row offset: `op` adds its input back at the input's
 /// own place, which only an offset-free key's product matches.

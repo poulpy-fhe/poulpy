@@ -81,6 +81,7 @@ where
         assert!(sk_lwe_in.n().0 <= res.n().0);
         assert!(sk_lwe_out.n().0 <= res.n().0);
         operand_degree(self.n(), &[res.n()]);
+        crate::layouts::assert_secret_set(&sk_lwe_out.dist);
         assert!(
             scratch.available() >= self.lwe_switching_key_encrypt_sk_tmp_bytes_reference(res),
             "scratch.available(): {} < LWESwitchingKeyEncrypt::lwe_switching_key_encrypt_sk_tmp_bytes: {}",
