@@ -9,7 +9,6 @@ use poulpy_hal::{
 use crate::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
     api::{CKKSDecryptOps, CKKSEncryptOps},
-    error::ensure_encryption_degrees,
     oep::CKKSEncryptionImpl,
 };
 
@@ -55,7 +54,6 @@ impl<BE: Backend + CKKSEncryptionImpl> CKKSDecryptOps<BE> for Module<BE> {
         Dpt: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + IntPolyInfos,
         Dct: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        ensure_encryption_degrees("ckks_decrypt", self.n(), ct.n().as_usize(), sk.n().as_usize())?;
         BE::ckks_decrypt(self, pt, ct, sk, scratch)
     }
 }

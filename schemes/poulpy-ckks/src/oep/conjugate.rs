@@ -15,6 +15,23 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait CKKSConjugateImpl: Backend<Ring = Standard> {
+    /// Default body: `ckks_conjugate_into_derived`, the selected `ckks_conjugate_rotate_into` with `k = 0`, within
+    /// [`Self::ckks_conjugate_tmp_bytes`].
+    fn ckks_conjugate_into<Dst, Src, H>(
+        module: &Module<Self>,
+        dst: &mut Dst,
+        src: &Src,
+        keys: &H,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<Self> + CKKSCtBounds,
+        H: GetAutomorphismKey<Self>,
+    {
+        super::derived::conjugate::ckks_conjugate_into_derived(module, dst, src, keys, scratch)
+    }
+
     /// Default body: `ckks_conjugate_rotate_into_derived`, the lookup of the automorphism key of the conjugate-rotate
     /// Galois element of `k` at the switch width `min(src.k(), dst.k())`, then [`Self::ckks_conjugate_with_key_into`]
     /// with it. A missing key is `MissingAutomorphismKey`.

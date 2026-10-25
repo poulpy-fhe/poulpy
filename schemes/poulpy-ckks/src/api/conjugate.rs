@@ -48,10 +48,7 @@ pub trait CKKSConjugateOps<BE: Backend> {
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: GetAutomorphismKey<BE>,
-    {
-        self.ckks_conjugate_rotate_into(0, dst, src, keys, scratch)
-    }
+        H: GetAutomorphismKey<BE>;
 
     /// Computes `dst = conj(dst)` in-place, preserving CKKS layout and scale metadata.
     /// Component noise metadata is cleared.

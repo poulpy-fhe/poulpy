@@ -24,7 +24,7 @@ use super::helpers::{
     PT_PREC, TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_ct_meta,
     assert_decrypt_precision, assert_unary_output_meta, ckks_encrypt, gen_atk, gen_sk_with_raw, test_vector_1, want_conjugate,
 };
-use super::parity::helpers::with_scratch;
+use super::parity::helpers::{snapshot, with_scratch};
 use poulpy_core::{GLWEAutomorphism, GLWEShift, layouts::LWEInfos};
 use poulpy_hal::api::{NegacyclicFFT, NegacyclicFFTNew, ScratchAvailable, ScratchOwnedBorrow};
 use poulpy_hal::layouts::{HostBytesBackend, Module, ScratchArena, Standard};
@@ -73,6 +73,15 @@ where
         module.ckks_conjugate_into(&mut ct_res, &ct1, &conj_key, s)
     })
     .unwrap();
+    let mut ct_rotated = alloc_ct(&params, module, params.k);
+    with_scratch::<BE, _>(module.ckks_conjugate_tmp_bytes(&ct1, &params.atk_layout()), |s| {
+        module.ckks_conjugate_rotate_into(0, &mut ct_rotated, &ct1, &conj_key, s)
+    })
+    .unwrap();
+    assert!(
+        snapshot::<BE, _>(&ct_res) == snapshot::<BE, _>(&ct_rotated),
+        "ckks_conjugate_into is not ckks_conjugate_rotate_into at k = 0"
+    );
     assert_unary_output_meta("conjugate", &ct_res, params.k, &ct1);
     assert_decrypt_precision(
         "conjugate",
