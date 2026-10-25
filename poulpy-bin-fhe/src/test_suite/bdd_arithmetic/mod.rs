@@ -124,7 +124,12 @@ impl<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64> +
         let mut source_xa: Source = Source::new([2u8; 32]);
         let mut source_xe: Source = Source::new([3u8; 32]);
 
-        let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(1 << 22);
+        let bdd_key_infos: BDDKeyLayout = TEST_BDD_KEY_LAYOUT;
+        let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+            module
+                .bdd_key_encrypt_sk_tmp_bytes(&bdd_key_infos)
+                .max(module.bdd_key_prepare_tmp_bytes(&bdd_key_infos)),
+        );
 
         let mut sk_glwe: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(TEST_RANK.into());
         module.glwe_secret_fill_ternary_prob(&mut sk_glwe, 0.5, &mut source_xs);
@@ -135,7 +140,6 @@ impl<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64> +
         let block_size: u32 = TEST_BLOCK_SIZE;
         let mut sk_lwe: LWESecret<BE::OwnedBuf, BE::ZnxWord> = module.lwe_secret_alloc(n_lwe.into());
         module.lwe_secret_fill_binary_block(&mut sk_lwe, block_size as usize, &mut source_xs);
-        let bdd_key_infos: BDDKeyLayout = TEST_BDD_KEY_LAYOUT;
         let mut bdd_key: BDDKey<BE::OwnedBuf, BRA, BE::ZnxWord> = BDDKey::alloc_from_infos(&module, &bdd_key_infos);
 
         bdd_key.encrypt_sk(

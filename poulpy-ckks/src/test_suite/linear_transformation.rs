@@ -789,14 +789,12 @@ pub fn test_linear_transformation_mixed_key_layouts<BE, F, E>(
     let prepared = prepare_lt(module, &lt, &mut scratch.borrow());
     let mut res = alloc_ct(&params, module, params.k - params.base2k);
 
-    // Exactly the budget a caller can derive: the larger of the two per-layout
-    // queries, nothing rounded up on top.
-    let mut eval_scratch = <poulpy_hal::layouts::ScratchOwned<BE> as poulpy_hal::api::ScratchOwnedAlloc<BE>>::alloc(
-        module
-            .ckks_eval_linear_transformation_tmp_bytes(&ct, &stored_infos)
-            .max(module.ckks_eval_linear_transformation_tmp_bytes(&ct, &coarse_infos)),
-    );
-    module
-        .ckks_eval_linear_transformation_self_into(&mut res, &ct, &prepared, &keys, &mut eval_scratch.borrow())
-        .unwrap();
+    // One call reading both layouts takes the larger of their two queries.
+    let eval_bytes = module
+        .ckks_eval_linear_transformation_tmp_bytes(&ct, &stored_infos)
+        .max(module.ckks_eval_linear_transformation_tmp_bytes(&ct, &coarse_infos));
+    with_scratch::<BE, _>(eval_bytes, |s| {
+        module.ckks_eval_linear_transformation_self_into(&mut res, &ct, &prepared, &keys, s)
+    })
+    .unwrap();
 }

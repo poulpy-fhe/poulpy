@@ -21,8 +21,8 @@ use poulpy_core::{
     layouts::{GGLWEInfos, GLWEAutomorphismKeyPrepared, GLWEInfos, GLWELayout, LWEInfos, ModuleCoreAlloc},
 };
 use poulpy_hal::{
-    api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{ConjugateInvariant, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchOwned, Standard},
+    api::ScratchOwnedBorrow,
+    layouts::{ConjugateInvariant, HostBytesBackend, HostDataMut, HostDataRef, Module, Standard},
     source::Source,
 };
 
@@ -34,6 +34,7 @@ use super::{
         ckks_decrypt_with_prec, ckks_encrypt_coeffs, ckks_encrypt_pt, gen_atk, gen_ci_keys, gen_sk_with_raw, gen_tsk,
         next_test_seed, precision_at, precision_stats,
     },
+    parity::helpers::with_scratch,
 };
 use crate::encoding::ckks_encode_linear_transformation_from_diagonals;
 use poulpy_hal::api::CnvPVecAlloc;
@@ -190,30 +191,38 @@ pub fn test_conjugate_invariant_leveled<BE>(
     }
 
     let empty = HashMap::<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>>::new();
+    let rotation_bytes = module.ckks_rotate_tmp_bytes(&ct1, &params.atk_layout());
     for rotation in [0, slots as i64, -(slots as i64), i64::MIN] {
         let mut rotated = ct1.clone();
-        module
-            .ckks_rotate_into(rotation, &mut rotated, &ct1, &empty, &mut scratch.arena())
-            .unwrap();
-        module
-            .ckks_rotate_assign(rotation, &mut rotated, &empty, &mut scratch.arena())
-            .unwrap();
+        with_scratch::<BE, _>(rotation_bytes, |s| {
+            module.ckks_rotate_into(rotation, &mut rotated, &ct1, &empty, s)
+        })
+        .unwrap();
+        with_scratch::<BE, _>(rotation_bytes, |s| {
+            module.ckks_rotate_assign(rotation, &mut rotated, &empty, s)
+        })
+        .unwrap();
         assert_output!(&rotated, &re1);
     }
-    let mut rotation_scratch = ScratchOwned::<BE>::alloc(module.ckks_rotate_tmp_bytes(&ct1, &params.atk_layout()));
     let mut narrowed = alloc_ct(&params, module, params.k - params.base2k);
-    module
-        .ckks_rotate_into(slots as i64, &mut narrowed, &ct1, &empty, &mut rotation_scratch.arena())
-        .unwrap();
+    with_scratch::<BE, _>(rotation_bytes, |s| {
+        module.ckks_rotate_into(slots as i64, &mut narrowed, &ct1, &empty, s)
+    })
+    .unwrap();
     assert_eq!(narrowed.log_budget(), ct1.log_budget() - params.base2k);
     assert_eq!(narrowed.meta(), ct1.meta());
     assert_output!(&narrowed, &re1);
     let mut exhausted = alloc_ct(&params, module, ct1.log_delta() - 1);
     let exhausted_before = exhausted.clone();
     assert!(
-        module
-            .ckks_rotate_into(0, &mut exhausted, &ct1, &empty, &mut rotation_scratch.arena())
-            .is_err()
+        with_scratch::<BE, _>(rotation_bytes, |s| module.ckks_rotate_into(
+            0,
+            &mut exhausted,
+            &ct1,
+            &empty,
+            s
+        ))
+        .is_err()
     );
     assert_eq!(exhausted.meta(), exhausted_before.meta());
     assert_eq!(exhausted.k(), exhausted_before.k());
@@ -265,12 +274,7 @@ pub fn test_conjugate_invariant_leveled<BE>(
 
     use crate::layouts::ComplexDiagonals;
     use poulpy_core::layouts::{Diagonals, Evaluate, LinearTransformationStrategy};
-    use poulpy_hal::{
-        api::ScratchOwnedAlloc,
-        layouts::{CyclotomicOrder, ScratchOwned},
-    };
-    let mut lt_scratch =
-        ScratchOwned::<BE>::alloc(module.ckks_eval_linear_transformation_streamed_tmp_bytes(&ct1, &params.atk_layout()));
+    use poulpy_hal::layouts::CyclotomicOrder;
     for diagonal_slots in [slots, pt_slots] {
         let mut re = Diagonals::new(diagonal_slots);
         for d in [0, 1, 3, 5] {
@@ -315,18 +319,24 @@ pub fn test_conjugate_invariant_leveled<BE>(
             let (want, _) = diagonals.evaluate((values, &im[..diagonal_slots]), strategy);
             let want = (0..slots).map(|i| want[i % diagonal_slots]).collect::<Vec<_>>();
             let mut result = alloc_ct(&params, module, params.k);
-            module
-                .ckks_eval_linear_transformation_self_into(&mut result, input, &lt, &keys, &mut lt_scratch.arena())
-                .unwrap();
+            let streamed_bytes = module.ckks_eval_linear_transformation_streamed_tmp_bytes(input, &params.atk_layout());
+            with_scratch::<BE, _>(streamed_bytes, |s| {
+                module.ckks_eval_linear_transformation_self_into(&mut result, input, &lt, &keys, s)
+            })
+            .unwrap();
             assert_output!(&result, &want);
             let first = lt.first_diagonal_plaintext().unwrap();
             let mut prepared = LinearTransformationPrepared::<BE>::alloc_prepared_from_index(module, &lt.index(), first);
-            module
-                .ckks_prepare_linear_transformation_rhs(&mut prepared, &lt, &mut lt_scratch.arena())
-                .unwrap();
-            module
-                .ckks_eval_linear_transformation_self_into(&mut result, input, &prepared, &keys, &mut lt_scratch.arena())
-                .unwrap();
+            let prepare_bytes = module.ckks_prepare_linear_transformation_rhs_tmp_bytes(first);
+            with_scratch::<BE, _>(prepare_bytes, |s| {
+                module.ckks_prepare_linear_transformation_rhs(&mut prepared, &lt, s)
+            })
+            .unwrap();
+            let resident_bytes = module.ckks_eval_linear_transformation_tmp_bytes(input, &params.atk_layout());
+            with_scratch::<BE, _>(resident_bytes, |s| {
+                module.ckks_eval_linear_transformation_self_into(&mut result, input, &prepared, &keys, s)
+            })
+            .unwrap();
             assert_output!(&result, &want);
         }
     }
@@ -346,12 +356,12 @@ where
     Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
 {
     use crate::{GLWEPlaintextMeta, api::CKKSEncodingOps, layouts::CKKSEncodingBuffer};
-    use poulpy_hal::{AlignedBuf, api::ScratchOwnedAlloc, layouts::ScratchOwned};
+    use poulpy_hal::AlignedBuf;
 
     assert_eq!(module.ckks_max_slots(), module.n());
-    let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_reim_tmp_bytes(module.n()));
     for log_slots in 0..=module.n().ilog2() {
         let slots = 1usize << log_slots;
+        let reim_bytes = module.ckks_reim_tmp_bytes(slots);
         let re = (0..slots)
             .map(|i| F::from_f64(((17 * i + 3) % 31) as f64 / 37.0).unwrap())
             .collect::<Vec<_>>();
@@ -363,22 +373,18 @@ where
                 slots: SlotsKind::Complex,
                 log_sparsity: 0,
             });
-            module.ckks_encode_reim_into(&mut pt, &re, &im, &mut scratch.arena()).unwrap();
+            with_scratch::<BE, _>(reim_bytes, |s| module.ckks_encode_reim_into(&mut pt, &re, &im, s)).unwrap();
             assert_eq!(pt.slots(), SlotsKind::Real);
             let mut got_re = vec![F::zero(); slots];
             let mut got_im = vec![F::one(); slots];
-            module
-                .ckks_decode_reim_into(&pt, &mut got_re, &mut got_im, &mut scratch.arena())
-                .unwrap();
+            with_scratch::<BE, _>(reim_bytes, |s| module.ckks_decode_reim_into(&pt, &mut got_re, &mut got_im, s)).unwrap();
             for (got, expected) in got_re.iter().zip(&re) {
                 assert!((*got - *expected).abs().to_f64().unwrap() < tolerance);
             }
             assert!(got_im.iter().all(|&value| value == F::zero()));
 
             let mut coefficients = vec![F::zero(); slots];
-            module
-                .ckks_decode_coeffs_host_into(&pt, &mut coefficients, &mut scratch.arena())
-                .unwrap();
+            with_scratch::<BE, _>(reim_bytes, |s| module.ckks_decode_coeffs_host_into(&pt, &mut coefficients, s)).unwrap();
             let mut power = 1usize;
             for value in &re {
                 let expected = coefficients[0].to_f64().unwrap()
@@ -396,12 +402,14 @@ where
 
             let mut raw = module.ckks_plaintext_alloc(pt.n(), pt.base2k(), pt.k());
             raw.set_meta(pt.meta());
-            module
-                .ckks_encode_coeffs_host_into(&mut raw, &coefficients, &mut scratch.arena())
-                .unwrap();
-            module
-                .ckks_decode_reim_into(&raw, &mut got_re, &mut got_im, &mut scratch.arena())
-                .unwrap();
+            with_scratch::<BE, _>(reim_bytes, |s| {
+                module.ckks_encode_coeffs_host_into(&mut raw, &coefficients, s)
+            })
+            .unwrap();
+            with_scratch::<BE, _>(reim_bytes, |s| {
+                module.ckks_decode_reim_into(&raw, &mut got_re, &mut got_im, s)
+            })
+            .unwrap();
             for (got, expected) in got_re.iter().zip(&re) {
                 assert!((*got - *expected).abs().to_f64().unwrap() < tolerance);
             }
@@ -535,8 +543,11 @@ pub fn test_conjugate_invariant_eval_mod<BE>(
         rank: 1,
         ..params
     };
-    let mut compile_scratch = ScratchOwned::<BE>::alloc(module.ckks_reim_tmp_bytes(params.n));
-    let eval_mod = compile_eval_mod::<BE, f64>(params.base2k.into(), lit, module, &mut compile_scratch.borrow()).unwrap();
+    let compile_bytes = module.ckks_reim_tmp_bytes(params.n);
+    let eval_mod = with_scratch::<BE, _>(compile_bytes, |s| {
+        compile_eval_mod::<BE, f64>(params.base2k.into(), lit, module, s)
+    })
+    .unwrap();
 
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [3u8; 32]);
     let res_k = params.k + lit.f_mod_log_delta - input_log_delta;
@@ -573,10 +584,7 @@ pub fn test_conjugate_invariant_eval_mod<BE>(
         &mut scratch.borrow(),
     );
 
-    crate::test_suite::parity::helpers::with_scratch::<BE, _>(bytes, |scratch| {
-        module.ckks_eval_mod(&mut res, &ct, &eval_mod, &tsk, scratch)
-    })
-    .unwrap();
+    with_scratch::<BE, _>(bytes, |scratch| module.ckks_eval_mod(&mut res, &ct, &eval_mod, &tsk, scratch)).unwrap();
     assert_eq!(res.slots(), SlotsKind::Real);
     let mut prec = precision_at(&params, res.log_delta());
     prec.meta = res.meta();
@@ -605,7 +613,10 @@ pub fn test_conjugate_invariant_eval_mod<BE>(
         f_mod_log_interval_reduction: 2,
         ..lit
     };
-    let complex = compile_eval_mod::<BE, f64>(params.base2k.into(), complex, module, &mut compile_scratch.borrow()).unwrap();
+    let complex = with_scratch::<BE, _>(compile_bytes, |s| {
+        compile_eval_mod::<BE, f64>(params.base2k.into(), complex, module, s)
+    })
+    .unwrap();
     let before = res.to_host_owned::<BE>();
     let err = module
         .ckks_eval_mod(&mut res, &ct, &complex, &tsk, &mut scratch.borrow())
@@ -885,18 +896,14 @@ where
             meta: ins[0].meta(),
         };
         let folded_layout = standard.ckks_fold_layout(degree, &ins[0], &keys_layout);
-        let mut fold_scratch = ScratchOwned::<STD>::alloc(standard.ckks_fold_tmp_bytes(degree, &output, &ins[0], &keys_layout));
+        let fold_bytes = standard.ckks_fold_tmp_bytes(degree, &output, &ins[0], &keys_layout);
         let mut folded: Vec<_> = (0..count)
             .map(|_| standard.ckks_ciphertext_alloc_from_glwe_infos(&folded_layout))
             .collect();
-        standard
-            .ckks_fold(
-                &mut folded,
-                &ins,
-                ring_switch.map(|keys| &keys.inbound),
-                &mut fold_scratch.borrow(),
-            )
-            .unwrap();
+        with_scratch::<STD, _>(fold_bytes, |s| {
+            standard.ckks_fold(&mut folded, &ins, ring_switch.map(|keys| &keys.inbound), s)
+        })
+        .unwrap();
 
         for ct in &folded {
             assert_eq!(ct.noise(), None, "folded provenance, {label}");
@@ -940,15 +947,16 @@ where
                 out
             })
             .collect();
-        standard
-            .ckks_unfold(
+        with_scratch::<STD, _>(fold_bytes, |s| {
+            standard.ckks_unfold(
                 &mut outs,
                 &mut refreshed,
                 automorphisms,
                 ring_switch.map(|keys| &keys.outbound),
-                &mut fold_scratch.borrow(),
+                s,
             )
-            .unwrap();
+        })
+        .unwrap();
         for (i, (out, msg)) in outs.iter().zip(&msgs).enumerate() {
             assert_eq!(
                 (out.meta(), out.log_sparsity()),

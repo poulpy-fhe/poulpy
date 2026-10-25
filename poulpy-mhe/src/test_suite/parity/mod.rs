@@ -266,7 +266,7 @@ fn poison_public_key<BE: Backend, A: GLWEPublicKeyToBackendMut<BE>>(a: &mut A) {
 }
 
 /// Runs `call` on exactly `bytes` of scratch poisoned with `0xA5`.
-fn with_scratch<BE: Backend, R>(bytes: usize, call: impl FnOnce(&mut ScratchArena<'_, BE>) -> R) -> R {
+pub(crate) fn with_scratch<BE: Backend, R>(bytes: usize, call: impl FnOnce(&mut ScratchArena<'_, BE>) -> R) -> R {
     let mut scratch = ScratchOwned::<BE> {
         data: BE::from_host_bytes(&vec![0xA5; bytes]),
         _phantom: std::marker::PhantomData,

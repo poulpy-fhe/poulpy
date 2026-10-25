@@ -62,6 +62,7 @@ use crate::{
             TestContextBackend, TestContextModule, TestScalar, assert_canonical_at_k, ckks_encrypt_with_prec, ckks_spec,
             gen_sk_with_raw, next_test_seed, precision_stats, test_vector_1,
         },
+        parity::helpers::with_scratch,
         presets::bootstrap_setup_tmp_bytes,
     },
 };
@@ -281,9 +282,6 @@ where
         assert_eq!(ctx.coeffs_to_slots().num_factors() + 1, plan.coeffs_to_slots().num_factors());
         assert!(first.giant_steps.iter().all(|giant| giant.diagonals.len() == 1));
         let boot_tmp = module.ckks_bootstrap_tmp_bytes(&boot_spec, &in_spec, &ctx, &keys_layout);
-        if boot_tmp > BE::len_bytes(&scratch.data) {
-            scratch = ScratchOwned::<BE>::alloc(boot_tmp);
-        }
 
         let (sk_raw, sk) = gen_sk_with_raw(&tp, &module, &host_module, next_test_seed(0));
         let (mut src_xs, mut src_xa, mut src_xe) = (
@@ -325,25 +323,16 @@ where
             let mut src = module.ckks_ciphertext_alloc(base2k.into(), k_small.into());
             src.set_meta(small_spec.meta);
             let mut dst = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
-            let mut exact = ScratchOwned::<BE>::alloc(raise_tmp);
-            BE::ckks_mod_up_first_factor(
-                &module,
-                &mut dst,
-                &mut src,
-                raised - k_small,
-                first,
-                &bsk,
-                &mut exact.borrow(),
-            )
+            with_scratch::<BE, _>(raise_tmp, |s| {
+                BE::ckks_mod_up_first_factor(&module, &mut dst, &mut src, raised - k_small, first, &bsk, s)
+            })
             .unwrap();
         }
 
         // Keys laid out for the raise refuse a narrower bootstrap before any work.
         let mut narrow = module.ckks_ciphertext_alloc(base2k.into(), (k_boot - base2k).into());
         let ct_any = module.ckks_ciphertext_alloc(base2k.into(), k_in.into());
-        let err = module
-            .ckks_bootstrap(&mut narrow, &ct_any, &ctx, &bsk, &mut scratch.borrow())
-            .unwrap_err();
+        let err = with_scratch::<BE, _>(boot_tmp, |s| module.ckks_bootstrap(&mut narrow, &ct_any, &ctx, &bsk, s)).unwrap_err();
         assert!(err.to_string().contains("first-factor"), "{err}");
 
         let (re, im) = test_vector_1::<F>(m);
@@ -363,9 +352,7 @@ where
             );
             ct0.set_slots(slots);
             let mut ct_bs = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
-            module
-                .ckks_bootstrap(&mut ct_bs, &ct0, &ctx, &bsk, &mut scratch.borrow())
-                .unwrap();
+            with_scratch::<BE, _>(boot_tmp, |s| module.ckks_bootstrap(&mut ct_bs, &ct0, &ctx, &bsk, s)).unwrap();
             assert_eq!((ct_bs.log_delta(), ct_bs.slots()), (log_delta, slots));
             let scale_drop = if s2c_first {
                 0
@@ -487,17 +474,15 @@ where
 
     let (sk_raw, sk) = gen_sk_with_raw(&tp, &module, &host_module, [0u8; 32]);
 
-    // The compiled pipeline adds its live intermediates to the setup scratch.
-    {
-        let boot_tmp = module.ckks_bootstrap_tmp_bytes(
-            &ckks_spec(n, base2k, log_delta, k_boot - log_delta),
-            &ckks_spec(n, base2k, log_delta, log_modulus_in - log_delta),
-            &ctx,
-            &keys_layout,
-        );
-        if boot_tmp > BE::len_bytes(&scratch.data) {
-            scratch = ScratchOwned::<BE>::alloc(boot_tmp);
-        }
+    // The explicit stages below run on the setup arena, which the bootstrap query bounds.
+    let boot_tmp = module.ckks_bootstrap_tmp_bytes(
+        &ckks_spec(n, base2k, log_delta, k_boot - log_delta),
+        &ckks_spec(n, base2k, log_delta, log_modulus_in - log_delta),
+        &ctx,
+        &keys_layout,
+    );
+    if boot_tmp > BE::len_bytes(&scratch.data) {
+        scratch = ScratchOwned::<BE>::alloc(boot_tmp);
     }
     let (mut src_xs, mut src_xa, mut src_xe) = (Source::new([7u8; 32]), Source::new([1u8; 32]), Source::new([2u8; 32]));
     // `generate_keys` returns the keys *unprepared* (the serializable / GPU-resident
@@ -550,9 +535,7 @@ where
             .unwrap();
         let wide_k = (narrow_k + last * c2s.coeffs_meta().log_delta() + 1).next_multiple_of(base2k);
         let mut ct_wide = module.ckks_ciphertext_alloc(base2k.into(), wide_k.into());
-        let err = module
-            .ckks_bootstrap(&mut ct_wide, &ct0, &ctx, &bsk, &mut scratch.borrow())
-            .unwrap_err();
+        let err = with_scratch::<BE, _>(boot_tmp, |s| module.ckks_bootstrap(&mut ct_wide, &ct0, &ctx, &bsk, s)).unwrap_err();
         match err.composition() {
             Some(CKKSCompositionError::MissingAutomorphismKey {
                 op: "ckks_bootstrap",
@@ -566,9 +549,7 @@ where
     // Compare the public orchestrator with the explicit pipeline below.
     let ct_bs = {
         let mut ct_bs = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
-        module
-            .ckks_bootstrap(&mut ct_bs, &ct0, &ctx, &bsk, &mut scratch.borrow())
-            .unwrap();
+        with_scratch::<BE, _>(boot_tmp, |s| module.ckks_bootstrap(&mut ct_bs, &ct0, &ctx, &bsk, s)).unwrap();
         assert_eq!(ct_bs.log_delta(), log_delta);
         assert_eq!(
             ct_bs.k().as_usize(),
@@ -608,9 +589,7 @@ where
         );
         ct_real.set_slots(SlotsKind::Real);
         let mut ct_bs = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
-        module
-            .ckks_bootstrap(&mut ct_bs, &ct_real, &ctx, &bsk, &mut scratch.borrow())
-            .unwrap();
+        with_scratch::<BE, _>(boot_tmp, |s| module.ckks_bootstrap(&mut ct_bs, &ct_real, &ctx, &bsk, s)).unwrap();
         assert_eq!(ct_bs.slots(), SlotsKind::Real, "standard output slot kind");
         assert_eq!(ct_bs.log_delta(), log_delta);
         assert_eq!(
@@ -830,17 +809,15 @@ where
 
     let (sk_raw, sk) = gen_sk_with_raw(&tp, &module, &host_module, [0u8; 32]);
 
-    // The compiled pipeline adds its live intermediates to the setup scratch.
-    {
-        let boot_tmp = module.ckks_bootstrap_tmp_bytes(
-            &ckks_spec(n, base2k, log_delta, k_boot - log_delta),
-            &ckks_spec(n, base2k, log_delta, log_modulus_in - log_delta),
-            &ctx,
-            &keys_layout,
-        );
-        if boot_tmp > BE::len_bytes(&scratch.data) {
-            scratch = ScratchOwned::<BE>::alloc(boot_tmp);
-        }
+    // The explicit stages below run on the setup arena, which the bootstrap query bounds.
+    let boot_tmp = module.ckks_bootstrap_tmp_bytes(
+        &ckks_spec(n, base2k, log_delta, k_boot - log_delta),
+        &ckks_spec(n, base2k, log_delta, log_modulus_in - log_delta),
+        &ctx,
+        &keys_layout,
+    );
+    if boot_tmp > BE::len_bytes(&scratch.data) {
+        scratch = ScratchOwned::<BE>::alloc(boot_tmp);
     }
     let (mut src_xs, mut src_xa, mut src_xe) = (Source::new([7u8; 32]), Source::new([1u8; 32]), Source::new([2u8; 32]));
     // Generated unprepared (serializable / GPU-resident), then prepared up front.
@@ -875,9 +852,7 @@ where
     // Compare the public EvalRound+ orchestrator with the explicit pipeline below.
     let ct_bs = {
         let mut ct_bs = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
-        module
-            .ckks_bootstrap(&mut ct_bs, &ct0, &ctx, &bsk, &mut scratch.borrow())
-            .unwrap();
+        with_scratch::<BE, _>(boot_tmp, |s| module.ckks_bootstrap(&mut ct_bs, &ct0, &ctx, &bsk, s)).unwrap();
         assert_eq!(ct_bs.log_delta(), log_delta);
         assert_eq!(
             ct_bs.k().as_usize(),
@@ -917,9 +892,7 @@ where
         );
         ct_real.set_slots(SlotsKind::Real);
         let mut ct_bs = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
-        module
-            .ckks_bootstrap(&mut ct_bs, &ct_real, &ctx, &bsk, &mut scratch.borrow())
-            .unwrap();
+        with_scratch::<BE, _>(boot_tmp, |s| module.ckks_bootstrap(&mut ct_bs, &ct_real, &ctx, &bsk, s)).unwrap();
         assert_eq!(ct_bs.slots(), SlotsKind::Real, "evalround output slot kind");
         assert_eq!(ct_bs.log_delta(), log_delta);
         assert_eq!(
@@ -1165,17 +1138,12 @@ where
 
     let (sk_raw, sk) = gen_sk_with_raw(&tp, &module, &host_module, [0u8; 32]);
 
-    {
-        let boot_tmp = module.ckks_bootstrap_tmp_bytes(
-            &ckks_spec(n, base2k, log_delta, k_boot - log_delta),
-            &ckks_spec(n, base2k, log_delta, k_in - log_delta),
-            &ctx,
-            &keys_layout,
-        );
-        if boot_tmp > BE::len_bytes(&scratch.data) {
-            scratch = ScratchOwned::<BE>::alloc(boot_tmp);
-        }
-    }
+    let boot_tmp = module.ckks_bootstrap_tmp_bytes(
+        &ckks_spec(n, base2k, log_delta, k_boot - log_delta),
+        &ckks_spec(n, base2k, log_delta, k_in - log_delta),
+        &ctx,
+        &keys_layout,
+    );
     let (mut src_xs, mut src_xa, mut src_xe) = (Source::new([7u8; 32]), Source::new([1u8; 32]), Source::new([2u8; 32]));
     let bsk = ctx
         .generate_keys(
@@ -1206,9 +1174,7 @@ where
 
     let (bs_re, bs_im) = {
         let mut ct_bs = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
-        module
-            .ckks_bootstrap(&mut ct_bs, &ct0, &ctx, &bsk, &mut scratch.borrow())
-            .unwrap();
+        with_scratch::<BE, _>(boot_tmp, |s| module.ckks_bootstrap(&mut ct_bs, &ct0, &ctx, &bsk, s)).unwrap();
         assert_eq!(ct_bs.k().as_usize(), k_boot - plan.post_mod_up_consumed_bits());
         assert_eq!(ct_bs.log_delta(), log_delta);
         decrypt(&module, &encoder, &ct_bs, &sk, &mut scratch.borrow())
@@ -1232,9 +1198,7 @@ where
         ct_real.set_slots(SlotsKind::Real);
         let (real_bs_re, real_bs_im) = {
             let mut ct_bs = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
-            module
-                .ckks_bootstrap(&mut ct_bs, &ct_real, &ctx, &bsk, &mut scratch.borrow())
-                .unwrap();
+            with_scratch::<BE, _>(boot_tmp, |s| module.ckks_bootstrap(&mut ct_bs, &ct_real, &ctx, &bsk, s)).unwrap();
             assert_eq!(ct_bs.slots(), SlotsKind::Real);
             assert_eq!(ct_bs.k().as_usize(), k_boot - plan.post_mod_up_consumed_bits());
             assert_eq!(ct_bs.log_delta(), log_delta);
@@ -1260,9 +1224,10 @@ where
         &mut scratch.borrow(),
     );
     let mut ct_out = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
-    let err = module
-        .ckks_bootstrap(&mut ct_out, &ct_insufficient, &ctx, &bsk, &mut scratch.borrow())
-        .unwrap_err();
+    let err = with_scratch::<BE, _>(boot_tmp, |s| {
+        module.ckks_bootstrap(&mut ct_out, &ct_insufficient, &ctx, &bsk, s)
+    })
+    .unwrap_err();
     assert!(matches!(
         err.composition(),
         Some(CKKSCompositionError::MultiplicationPrecisionUnderflow { .. })

@@ -25,6 +25,7 @@ use super::fixtures::{
     BASE2K, K, LOG_MESSAGE, PARTIES, SEEDS, Secret, assert_decrypts_to, bounded_integers, encrypt_integers, ggsw_layout,
     glwe_layout_at, ideal_secret, secret_from_seed_at,
 };
+use super::parity::with_scratch;
 use crate::{
     api::{GGSWMHEProtocol, GLWESwitchingKeyMHEProtocol},
     layouts::MHEModuleAlloc,
@@ -151,11 +152,7 @@ where
     let key_layout = ephemeral_key_layout(module, layout);
     let mut key = ephemeral_key(module, &ephemerals, &secrets, &key_layout, trial);
 
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
-        module
-            .mhe_ggsw_share_gen_tmp_bytes(layout)
-            .max(module.mhe_ggsw_share_finalize_tmp_bytes(layout, &key_layout)),
-    );
+    let finalize_bytes = module.mhe_ggsw_share_finalize_tmp_bytes(layout, &key_layout);
 
     let mut acc = module.ggsw_share_alloc_from_infos(layout);
     let mut share = module.ggsw_share_alloc_from_infos(layout);
@@ -175,16 +172,16 @@ where
     if trial == 0 {
         let saved_noise = key.noise();
         GGLWEPreparedToBackendMut::<BE>::set_noise(&mut key, None);
-        module.mhe_ggsw_share_finalize(&mut res, &acc, &key, &mut scratch.borrow());
+        with_scratch::<BE, _>(finalize_bytes, |s| module.mhe_ggsw_share_finalize(&mut res, &acc, &key, s));
         assert!(res.noise().unwrap().phase_noise(module.n()).variance().is_infinite());
         let wrong = ComponentNoise::from_secret_at(Distribution::BinaryProb(0.25), key.k(), key.rank_out().as_usize());
         GGLWEPreparedToBackendMut::<BE>::set_noise(&mut key, Some(wrong));
         super::fixtures::assert_panics_with("invalid finalization: output key provenance differs", || {
-            module.mhe_ggsw_share_finalize(&mut res, &acc, &key, &mut scratch.borrow());
+            with_scratch::<BE, _>(finalize_bytes, |s| module.mhe_ggsw_share_finalize(&mut res, &acc, &key, s));
         });
         GGLWEPreparedToBackendMut::<BE>::set_noise(&mut key, saved_noise);
     }
-    module.mhe_ggsw_share_finalize(&mut res, &acc, &key, &mut scratch.borrow());
+    with_scratch::<BE, _>(finalize_bytes, |s| module.mhe_ggsw_share_finalize(&mut res, &acc, &key, s));
     assert_eq!(res.noise().unwrap().parties(), PARTIES as u64);
     assert_eq!(
         res.noise().unwrap().secret_distribution().base(),
@@ -394,7 +391,6 @@ where
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
             .ggsw_prepare_tmp_bytes(&layout)
-            .max(module.glwe_external_product_tmp_bytes(&glwe_layout, &glwe_layout, &layout))
             .max(module.glwe_encrypt_sk_tmp_bytes(&glwe_layout))
             .max(module.glwe_decrypt_tmp_bytes(&glwe_layout)),
     );
@@ -404,7 +400,10 @@ where
     let data = bounded_integers(n, LOG_MESSAGE, [90u8; 32]);
     let ct = encrypt_integers(module, &glwe_layout, &data, &sk, &mut scratch);
     let mut res: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&glwe_layout);
-    module.glwe_external_product(&mut res, &ct, &ggsw_prepared.to_backend_ref(), &mut scratch.borrow());
+    with_scratch::<BE, _>(
+        module.glwe_external_product_tmp_bytes(&glwe_layout, &glwe_layout, &layout),
+        |s| module.glwe_external_product(&mut res, &ct, &ggsw_prepared.to_backend_ref(), s),
+    );
     assert_eq!(res.noise(), None);
     let want: Vec<i64> = (0..n)
         .map(|i| if i >= SHIFT { data[i - SHIFT] } else { -data[n + i - SHIFT] })
@@ -424,19 +423,12 @@ where
 
     let (secrets, ephemerals) = parties(module, layout.rank, 0);
     let m: ScalarZnx<AlignedBuf, i64> = module.scalar_znx_alloc(module.n(), 1);
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.mhe_ggsw_share_gen_tmp_bytes(&layout));
     let [mut a, b] = [0, 1].map(|i| {
         let mut share = module.ggsw_share_alloc_from_infos(&layout);
         let mut source_xe = Source::new([10 + i as u8; 32]);
-        module.mhe_ggsw_share_gen(
-            &mut share,
-            &m,
-            &secrets[i].1,
-            &ephemerals[i].1,
-            SEEDS[i],
-            &mut source_xe,
-            &mut scratch.borrow(),
-        );
+        with_scratch::<BE, _>(module.mhe_ggsw_share_gen_tmp_bytes(&layout), |s| {
+            module.mhe_ggsw_share_gen(&mut share, &m, &secrets[i].1, &ephemerals[i].1, SEEDS[i], &mut source_xe, s)
+        });
         share
     });
     module.mhe_ggsw_share_aggregate(&mut a, &b);
@@ -455,16 +447,9 @@ where
     let u = secret_from_seed_at(module, Rank(1), [9u8; 32]);
     let m: ScalarZnx<AlignedBuf, i64> = module.scalar_znx_alloc(module.n(), 1);
     let mut share = module.ggsw_share_alloc_from_infos(&layout);
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.mhe_ggsw_share_gen_tmp_bytes(&layout));
-    module.mhe_ggsw_share_gen(
-        &mut share,
-        &m,
-        &secrets[0].1,
-        &u.1,
-        SEEDS[0],
-        &mut Source::new([10u8; 32]),
-        &mut scratch.borrow(),
-    );
+    with_scratch::<BE, _>(module.mhe_ggsw_share_gen_tmp_bytes(&layout), |s| {
+        module.mhe_ggsw_share_gen(&mut share, &m, &secrets[0].1, &u.1, SEEDS[0], &mut Source::new([10u8; 32]), s)
+    });
 }
 
 pub fn test_ggsw_share_key_rank_mismatch<BE>(module: &Module<BE>)
@@ -481,8 +466,9 @@ where
     let pat = module.ggsw_share_alloc_from_infos(&layout);
     let key: GLWESwitchingKeyPrepared<AlignedBuf, BE> = module.glwe_switching_key_prepared_alloc_from_infos(&key_layout);
     let mut res: GGSW<AlignedBuf, i64> = module.ggsw_alloc_from_infos(&layout);
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.mhe_ggsw_share_finalize_tmp_bytes(&layout, &key_layout));
-    module.mhe_ggsw_share_finalize(&mut res, &pat, &key, &mut scratch.borrow());
+    with_scratch::<BE, _>(module.mhe_ggsw_share_finalize_tmp_bytes(&layout, &key_layout), |s| {
+        module.mhe_ggsw_share_finalize(&mut res, &pat, &key, s)
+    });
 }
 
 pub fn test_ggsw_share_key_precision_mismatch<BE>(module: &Module<BE>)
@@ -500,10 +486,13 @@ where
     let key: GLWESwitchingKeyPrepared<AlignedBuf, BE> = module.glwe_switching_key_prepared_alloc_from_infos(&key_layout);
     let mut res: GGSW<AlignedBuf, i64> = module.ggsw_alloc_from_infos(&layout);
     let before = res.clone();
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.mhe_ggsw_share_finalize_tmp_bytes(&layout, &key_layout));
     super::fixtures::assert_panics_with(
         "mhe_ggsw_share_finalize: the input is wider than the key's max_input_k",
-        || module.mhe_ggsw_share_finalize(&mut res, &pat, &key, &mut scratch.borrow()),
+        || {
+            with_scratch::<BE, _>(module.mhe_ggsw_share_finalize_tmp_bytes(&layout, &key_layout), |s| {
+                module.mhe_ggsw_share_finalize(&mut res, &pat, &key, s)
+            })
+        },
     );
     assert!(res == before);
 }
@@ -542,9 +531,9 @@ where
                     ..key_layout
                 });
                 let mut res = module.ggsw_alloc_from_infos(&layout);
-                let mut scratch: ScratchOwned<BE> =
-                    ScratchOwned::alloc(module.mhe_ggsw_share_finalize_tmp_bytes(&layout, &key_layout));
-                module.mhe_ggsw_share_finalize(&mut res, &pat, &key, &mut scratch.borrow());
+                with_scratch::<BE, _>(module.mhe_ggsw_share_finalize_tmp_bytes(&layout, &key_layout), |s| {
+                    module.mhe_ggsw_share_finalize(&mut res, &pat, &key, s)
+                });
                 return;
             }
             let small_sk = small_module.glwe_secret_prepared_alloc(layout.rank);
@@ -555,16 +544,9 @@ where
             );
             let sk = if case == 0 { &small_sk } else { &secrets[0].1 };
             let u = if case == 1 { &small_u } else { &ephemerals[0].1 };
-            let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.mhe_ggsw_share_gen_tmp_bytes(&layout));
-            module.mhe_ggsw_share_gen(
-                &mut pat,
-                &pt,
-                sk,
-                u,
-                SEEDS[0],
-                &mut Source::new([10u8; 32]),
-                &mut scratch.borrow(),
-            );
+            with_scratch::<BE, _>(module.mhe_ggsw_share_gen_tmp_bytes(&layout), |s| {
+                module.mhe_ggsw_share_gen(&mut pat, &pt, sk, u, SEEDS[0], &mut Source::new([10u8; 32]), s)
+            });
         });
     }
 }

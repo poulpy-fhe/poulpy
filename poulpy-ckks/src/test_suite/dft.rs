@@ -25,7 +25,7 @@ use std::collections::HashMap;
 
 use poulpy_core::layouts::Base2K;
 use poulpy_hal::{
-    api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
+    api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
     layouts::{
         Backend, CyclotomicOrder, DataView, DataViewMut, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchOwned,
     },
@@ -120,37 +120,33 @@ fn plan(log_slots: usize, kind: DFTType, format: DFTOutputFormat, log_delta: usi
     DFTPlan::new(kind, vec![(1usize, 2usize); log_slots], format, factor_meta(log_delta)).unwrap()
 }
 
-/// Prepares a test matrix and grows scratch for the selected preparation and evaluation implementations.
-fn prepare_dft<BE, Dir, Fmt>(
-    params: &CKKSTestParams,
-    module: &Module<BE>,
-    matrix: &DFTMatrix<BE, Dir, Fmt>,
-    scratch: &mut ScratchOwned<BE>,
-) -> DFTMatrixPrepared<BE, Dir, Fmt>
+/// Prepares a test matrix on exactly the query of its preparation.
+fn prepare_dft<BE, Dir, Fmt>(module: &Module<BE>, matrix: &DFTMatrix<BE, Dir, Fmt>) -> DFTMatrixPrepared<BE, Dir, Fmt>
 where
     BE: TestContextBackend,
     Module<BE>: CKKSDFTOps<BE>,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
-    let prepare_bytes = module.ckks_prepare_dft_matrix_tmp_bytes(matrix);
-    if prepare_bytes > BE::len_bytes(&scratch.data) {
-        *scratch = ScratchOwned::<BE>::alloc(prepare_bytes);
-    }
     let mut prepared = module.ckks_dft_matrix_prepared_alloc_from_infos(matrix);
-    module
-        .ckks_prepare_dft_matrix(&mut prepared, matrix, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_prepare_dft_matrix_tmp_bytes(matrix), |s| {
+        module.ckks_prepare_dft_matrix(&mut prepared, matrix, s)
+    })
+    .unwrap();
+    prepared
+}
+
+/// The query of evaluating `prepared` on ciphertexts of the test layout.
+fn dft_eval_bytes<BE, Dir, Fmt>(params: &CKKSTestParams, module: &Module<BE>, prepared: &DFTMatrixPrepared<BE, Dir, Fmt>) -> usize
+where
+    BE: TestContextBackend,
+    Module<BE>: CKKSDFTOps<BE>,
+{
     let layout = ckks_spec(
         params.n,
         params.base2k,
         params.prec().log_delta(),
         params.k - params.prec().log_delta(),
     );
-    let eval_bytes = module.ckks_dft_tmp_bytes(&layout, &layout, &prepared, &params.atk_layout());
-    if eval_bytes > BE::len_bytes(&scratch.data) {
-        *scratch = ScratchOwned::<BE>::alloc(eval_bytes);
-    }
-    prepared
+    module.ckks_dft_tmp_bytes(&layout, &layout, prepared, &params.atk_layout())
 }
 
 /// Bit-reversal permutation over `DENSE_LOG_SLOTS` bits (poulpy's slot map order).
@@ -234,7 +230,7 @@ pub fn test_dft_coeffs_to_slots_standard<BE, F, E>(
             &mut scratch.borrow(),
         )
         .unwrap();
-    let enc_dft = prepare_dft(&params, &module, &enc_lt, &mut scratch);
+    let enc_dft = prepare_dft(&module, &enc_lt);
 
     let order = module.cyclotomic_order();
     let mut atks = HashMap::new();
@@ -257,9 +253,10 @@ pub fn test_dft_coeffs_to_slots_standard<BE, F, E>(
         &mut scratch.borrow(),
     );
 
-    module
-        .ckks_coeffs_to_slots(&mut ct, &enc_dft, &atks, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(dft_eval_bytes(&params, &module, &enc_dft), |s| {
+        module.ckks_coeffs_to_slots(&mut ct, &enc_dft, &atks, s)
+    })
+    .unwrap();
 
     // Reference: a plaintext holding the expected slots (re, im) at the output
     // scale. Measure the error via GLWE noise (std of the per-coefficient error,
@@ -309,7 +306,7 @@ pub fn test_dft_slots_to_coeffs_standard<BE, F, E>(
             &mut scratch.borrow(),
         )
         .unwrap();
-    let dec_dft = prepare_dft(&params, &module, &dec_lt, &mut scratch);
+    let dec_dft = prepare_dft(&module, &dec_lt);
 
     let order = module.cyclotomic_order();
     let mut atks = HashMap::new();
@@ -332,9 +329,10 @@ pub fn test_dft_slots_to_coeffs_standard<BE, F, E>(
         &mut scratch.borrow(),
     );
 
-    module
-        .ckks_slots_to_coeffs(&mut ct, &dec_dft, &atks, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(dft_eval_bytes(&params, &module, &dec_dft), |s| {
+        module.ckks_slots_to_coeffs(&mut ct, &dec_dft, &atks, s)
+    })
+    .unwrap();
 
     // Reference: a plaintext whose coefficients hold bitrev(re) || bitrev(im) at
     // the output scale. Measure the error via GLWE noise and bound its log2.
@@ -384,7 +382,7 @@ pub fn test_dft_coeffs_to_slots_split<BE, F, E>(
             &mut scratch.borrow(),
         )
         .unwrap();
-    let enc_dft = prepare_dft(&params, &module, &enc_lt, &mut scratch);
+    let enc_dft = prepare_dft(&module, &enc_lt);
 
     let order = module.cyclotomic_order();
     let mut atks = HashMap::new();
@@ -411,9 +409,10 @@ pub fn test_dft_coeffs_to_slots_split<BE, F, E>(
 
     let mut ct_real = alloc_ct(&params, &module, params.k);
     let mut ct_imag = alloc_ct(&params, &module, params.k);
-    module
-        .ckks_coeffs_to_slots_split(&mut ct_real, &mut ct_imag, &ct_in, &enc_dft, &atks, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(dft_eval_bytes(&params, &module, &enc_dft), |s| {
+        module.ckks_coeffs_to_slots_split(&mut ct_real, &mut ct_imag, &ct_in, &enc_dft, &atks, s)
+    })
+    .unwrap();
 
     // Reference: ct_real holds slots (re, 0), ct_imag holds slots (im, 0). Measure
     // each via GLWE noise and bound the worst log2.
@@ -468,7 +467,7 @@ pub fn test_dft_coeffs_to_slots_repack_sparse<BE, F, E>(
             &mut scratch.borrow(),
         )
         .unwrap();
-    let enc_dft = prepare_dft(&params, &module, &enc_lt, &mut scratch);
+    let enc_dft = prepare_dft(&module, &enc_lt);
     assert!(enc_dft.is_sparse(), "expected sparse repack path");
 
     let order = module.cyclotomic_order();
@@ -504,9 +503,10 @@ pub fn test_dft_coeffs_to_slots_repack_sparse<BE, F, E>(
     ct_in.set_log_sparsity(3);
 
     let mut ct_out = alloc_ct(&params, &module, params.k);
-    module
-        .ckks_coeffs_to_slots_repack(&mut ct_out, &ct_in, &enc_dft, &atks, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(dft_eval_bytes(&params, &module, &enc_dft), |s| {
+        module.ckks_coeffs_to_slots_repack(&mut ct_out, &ct_in, &enc_dft, &atks, s)
+    })
+    .unwrap();
 
     // Reference at 2·slots resolution: real part = [re | im], imag part = 0.
     // Sparse-encode that expected vector and measure the error via GLWE noise.
@@ -561,7 +561,7 @@ pub fn test_dft_slots_to_coeffs_split<BE, F, E>(
             &mut scratch.borrow(),
         )
         .unwrap();
-    let dec_dft = prepare_dft(&params, &module, &dec_lt, &mut scratch);
+    let dec_dft = prepare_dft(&module, &dec_lt);
 
     let order = module.cyclotomic_order();
     let mut atks = HashMap::new();
@@ -597,9 +597,10 @@ pub fn test_dft_slots_to_coeffs_split<BE, F, E>(
     );
 
     let mut op_out = alloc_ct(&params, &module, params.k);
-    module
-        .ckks_slots_to_coeffs_split(&mut op_out, &ct_real, &ct_imag, &dec_dft, &atks, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(dft_eval_bytes(&params, &module, &dec_dft), |s| {
+        module.ckks_slots_to_coeffs_split(&mut op_out, &ct_real, &ct_imag, &dec_dft, &atks, s)
+    })
+    .unwrap();
 
     // Reference: coefficients bitrev(re) || bitrev(im) at the output scale.
     let want = coeff_layout(&re, &im, params.n);
@@ -649,7 +650,7 @@ pub fn test_dft_slots_to_coeffs_repack_sparse<BE, F, E>(
             &mut scratch.borrow(),
         )
         .unwrap();
-    let dec_dft = prepare_dft(&params, &module, &dec_lt, &mut scratch);
+    let dec_dft = prepare_dft(&module, &dec_lt);
     assert!(dec_dft.is_sparse(), "expected sparse repack path");
 
     let order = module.cyclotomic_order();
@@ -683,9 +684,10 @@ pub fn test_dft_slots_to_coeffs_repack_sparse<BE, F, E>(
     ct_in.set_log_sparsity(2);
 
     let mut op_out = alloc_ct(&params, &module, params.k);
-    module
-        .ckks_slots_to_coeffs_repack(&mut op_out, &ct_in, &dec_dft, &atks, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(dft_eval_bytes(&params, &module, &dec_dft), |s| {
+        module.ckks_slots_to_coeffs_repack(&mut op_out, &ct_in, &dec_dft, &atks, s)
+    })
+    .unwrap();
     assert_eq!(op_out.log_sparsity(), 3, "repack-decode halves the live slot count");
 
     // Reference: the sparse coefficient layout bitrev(re) at gap, bitrev(im) at

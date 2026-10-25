@@ -21,6 +21,7 @@ use poulpy_hal::{
 
 use super::{
     fixtures::{P, PARTIES, SEEDS, Secret, gglwe_layout, ideal_secret, party_secrets, secret_from_seed, secret_sum},
+    parity::with_scratch,
     pat::assert_gglwe_noise,
 };
 use crate::{
@@ -47,26 +48,25 @@ where
     let parties_out = party_secrets(module);
     let pt_want = secret_sum(module, &parties_in);
     let sk_out_ideal = ideal_secret(module, &parties_out);
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
-        module
-            .mhe_glwe_switching_key_share_gen_tmp_bytes(&layout)
-            .max(module.mhe_glwe_switching_key_share_finalize_tmp_bytes())
-            .max(module.gglwe_noise_tmp_bytes(&layout)),
-    );
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.gglwe_noise_tmp_bytes(&layout));
 
     let mut acc = module.glwe_switching_key_share_alloc_from_infos(&layout);
     let mut share = module.glwe_switching_key_share_alloc_from_infos(&layout);
     for (i, ((sk_in, _), (sk_out, _))) in parties_in.iter().zip(&parties_out).enumerate() {
         let dst = if i == 0 { &mut acc } else { &mut share };
         let mut source_xe = Source::new([10 + i as u8; 32]);
-        module.mhe_glwe_switching_key_share_gen(dst, sk_in, sk_out, SEEDS[0], &mut source_xe, &mut scratch.borrow());
+        with_scratch::<BE, _>(module.mhe_glwe_switching_key_share_gen_tmp_bytes(&layout), |s| {
+            module.mhe_glwe_switching_key_share_gen(dst, sk_in, sk_out, SEEDS[0], &mut source_xe, s)
+        });
         if i > 0 {
             module.mhe_glwe_switching_key_share_aggregate(&mut acc, &share);
         }
     }
 
     let mut res: GLWESwitchingKey<AlignedBuf, i64> = module.glwe_switching_key_alloc_from_infos(&layout);
-    module.mhe_glwe_switching_key_share_finalize(&mut res, &acc, &mut scratch.borrow());
+    with_scratch::<BE, _>(module.mhe_glwe_switching_key_share_finalize_tmp_bytes(), |s| {
+        module.mhe_glwe_switching_key_share_finalize(&mut res, &acc, s)
+    });
     super::fixtures::assert_collective_metadata(&res, PARTIES);
     let n = Degree(module.n() as u32);
     assert_eq!((*res.input_degree(), *res.output_degree()), (n, n));
@@ -93,26 +93,25 @@ where
     let parties = party_secrets(module);
     let pt_want = secret_sum(module, &parties);
     let sk_out = automorphism_inv_prepared(module, &pt_want, P);
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
-        module
-            .mhe_glwe_automorphism_key_share_gen_tmp_bytes(&layout)
-            .max(module.mhe_glwe_automorphism_key_share_finalize_tmp_bytes())
-            .max(module.gglwe_noise_tmp_bytes(&layout)),
-    );
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.gglwe_noise_tmp_bytes(&layout));
 
     let mut acc = module.glwe_automorphism_key_share_alloc_from_infos(&layout);
     let mut share = module.glwe_automorphism_key_share_alloc_from_infos(&layout);
     for (i, (sk, _)) in parties.iter().enumerate() {
         let dst = if i == 0 { &mut acc } else { &mut share };
         let mut source_xe = Source::new([10 + i as u8; 32]);
-        module.mhe_glwe_automorphism_key_share_gen(dst, P, sk, SEEDS[0], &mut source_xe, &mut scratch.borrow());
+        with_scratch::<BE, _>(module.mhe_glwe_automorphism_key_share_gen_tmp_bytes(&layout), |s| {
+            module.mhe_glwe_automorphism_key_share_gen(dst, P, sk, SEEDS[0], &mut source_xe, s)
+        });
         if i > 0 {
             module.mhe_glwe_automorphism_key_share_aggregate(&mut acc, &share);
         }
     }
 
     let mut res: GLWEAutomorphismKey<AlignedBuf, i64> = module.glwe_automorphism_key_alloc_from_infos(&layout);
-    module.mhe_glwe_automorphism_key_share_finalize(&mut res, &acc, &mut scratch.borrow());
+    with_scratch::<BE, _>(module.mhe_glwe_automorphism_key_share_finalize_tmp_bytes(), |s| {
+        module.mhe_glwe_automorphism_key_share_finalize(&mut res, &acc, s)
+    });
     super::fixtures::assert_collective_metadata(&res, PARTIES);
     assert_eq!(res.p(), P);
     assert_gglwe_noise(module, &res, &pt_want, &sk_out, &mut scratch);
@@ -216,8 +215,6 @@ where
             let mut source_xe = Source::new([10u8; 32]);
             if matches!(case, 0 | 1 | 5 | 6) {
                 let mut share = module.glwe_switching_key_share_alloc_from_infos(&layout);
-                let mut scratch: ScratchOwned<BE> =
-                    ScratchOwned::alloc(module.mhe_glwe_switching_key_share_gen_tmp_bytes(&layout));
                 let sk_in = match case {
                     0 => &rank_one,
                     5 => &large_sk,
@@ -228,30 +225,25 @@ where
                     6 => &large_sk,
                     _ => &sk,
                 };
-                module.mhe_glwe_switching_key_share_gen(
-                    &mut share,
-                    sk_in,
-                    sk_out,
-                    SEEDS[0],
-                    &mut source_xe,
-                    &mut scratch.borrow(),
-                );
+                with_scratch::<BE, _>(module.mhe_glwe_switching_key_share_gen_tmp_bytes(&layout), |s| {
+                    module.mhe_glwe_switching_key_share_gen(&mut share, sk_in, sk_out, SEEDS[0], &mut source_xe, s)
+                });
             } else {
                 let mut key_layout = layout;
                 if case == 3 {
                     key_layout.rank_in = Rank(1);
                 }
                 let mut share = module.glwe_automorphism_key_share_alloc_from_infos(&key_layout);
-                let mut scratch: ScratchOwned<BE> =
-                    ScratchOwned::alloc(module.mhe_glwe_automorphism_key_share_gen_tmp_bytes(&key_layout));
-                module.mhe_glwe_automorphism_key_share_gen(
-                    &mut share,
-                    if case == 4 { 2 } else { P },
-                    if case == 2 { &small_sk } else { &sk },
-                    SEEDS[0],
-                    &mut source_xe,
-                    &mut scratch.borrow(),
-                );
+                with_scratch::<BE, _>(module.mhe_glwe_automorphism_key_share_gen_tmp_bytes(&key_layout), |s| {
+                    module.mhe_glwe_automorphism_key_share_gen(
+                        &mut share,
+                        if case == 4 { 2 } else { P },
+                        if case == 2 { &small_sk } else { &sk },
+                        SEEDS[0],
+                        &mut source_xe,
+                        s,
+                    )
+                });
             }
         });
     }
@@ -265,15 +257,9 @@ where
     let mut key_layout = layout;
     key_layout.rank_in = Rank(1);
     let mut share = module.glwe_switching_key_share_alloc_from_infos(&key_layout);
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.mhe_glwe_switching_key_share_gen_tmp_bytes(&key_layout));
-    module.mhe_glwe_switching_key_share_gen(
-        &mut share,
-        &sk_in,
-        &sk,
-        SEEDS[0],
-        &mut Source::new([10u8; 32]),
-        &mut scratch.borrow(),
-    );
+    with_scratch::<BE, _>(module.mhe_glwe_switching_key_share_gen_tmp_bytes(&key_layout), |s| {
+        module.mhe_glwe_switching_key_share_gen(&mut share, &sk_in, &sk, SEEDS[0], &mut Source::new([10u8; 32]), s)
+    });
     assert_eq!(*share.input_degree(), Degree((module.n() / 2) as u32));
     assert_eq!(*share.output_degree(), Degree(module.n() as u32));
 }

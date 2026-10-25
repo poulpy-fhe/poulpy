@@ -38,6 +38,7 @@ use crate::{
             TestContextBackend, TestContextModule, TestScalar, alloc_scratch, ckks_encrypt, ckks_encrypt_coeffs, ckks_spec,
             gen_atk, gen_tsk,
         },
+        parity::helpers::with_scratch,
     },
 };
 
@@ -229,19 +230,16 @@ pub fn test_paco_parallel_bootstrap<BE, F, E>(
     // Public-entry validation must reject malformed schedules and layouts
     // before touching the caller's output.
     let mut rejected = module.ckks_ciphertext_alloc(ctx.base2k(), k_out);
-    // Sized by the operation, not the generic all-ops budget: PaCo's branch
-    // working precision is wider than any single op that budget covers.
     let paco_bytes: usize = module
         .ckks_paco_bootstrap_direct_tmp_bytes(&rejected, &ct_in, &ctx, &keys)
-        .unwrap()
-        .max(scratch.borrow().available());
-    let mut scratch = ScratchOwned::<BE>::alloc(paco_bytes);
+        .unwrap();
     let mut too_sparse = ct_in.clone();
     too_sparse.set_log_sparsity((p.n() / p.c()).trailing_zeros() as usize + 1);
     let before = rejected.to_host_owned::<BE>();
-    let error = module
-        .ckks_paco_bootstrap_direct_into::<_, _>(&mut rejected, &too_sparse, &ctx, &keys, &mut scratch.borrow())
-        .expect_err("an input with fewer live coefficients than C must be rejected");
+    let error = with_scratch::<BE, _>(paco_bytes, |s| {
+        module.ckks_paco_bootstrap_direct_into::<_, _>(&mut rejected, &too_sparse, &ctx, &keys, s)
+    })
+    .expect_err("an input with fewer live coefficients than C must be rejected");
     assert!(
         error.to_string().contains("fewer than the plan's"),
         "unexpected sparsity error: {error:#}"
@@ -252,18 +250,19 @@ pub fn test_paco_parallel_bootstrap<BE, F, E>(
         .ckks_paco_bootstrap_direct_tmp_bytes(&rejected, &ct_in, &ctx, &keys)
         .unwrap();
     assert!(required > 0, "a PaCo branch must require non-zero scratch");
-    let mut no_scratch = ScratchOwned::<BE>::alloc(0);
     let before = rejected.to_host_owned::<BE>();
-    let error = module
-        .ckks_paco_bootstrap_direct_into::<_, _>(&mut rejected, &ct_in, &ctx, &keys, &mut no_scratch.borrow())
-        .expect_err("undersized caller scratch must be rejected");
+    let error = with_scratch::<BE, _>(0, |s| {
+        module.ckks_paco_bootstrap_direct_into::<_, _>(&mut rejected, &ct_in, &ctx, &keys, s)
+    })
+    .expect_err("undersized caller scratch must be rejected");
     assert!(error.to_string().contains("scratch bytes"), "unexpected error: {error:#}");
     assert_ciphertext_unchanged::<BE>(&before, &rejected);
 
     let before = rejected.to_host_owned::<BE>();
-    let error = module
-        .ckks_paco_bootstrap_into::<_, _>(&mut rejected, &ct_in, &ctx, &keys, &mut scratch.borrow())
-        .expect_err("encapsulated mode must require an encapsulation key");
+    let error = with_scratch::<BE, _>(paco_bytes, |s| {
+        module.ckks_paco_bootstrap_into::<_, _>(&mut rejected, &ct_in, &ctx, &keys, s)
+    })
+    .expect_err("encapsulated mode must require an encapsulation key");
     assert!(
         error.to_string().contains("dense-to-PaCo switching key"),
         "unexpected error: {error:#}"
@@ -284,9 +283,10 @@ pub fn test_paco_parallel_bootstrap<BE, F, E>(
     };
     let mut bad_output = module.ckks_ciphertext_alloc(bad_base2k.into(), keys.bootstrapping_keys()[0].k());
     let before = bad_output.to_host_owned::<BE>();
-    let error = module
-        .ckks_paco_bootstrap_direct_into::<_, _>(&mut bad_output, &ct_in, &ctx, &keys, &mut scratch.borrow())
-        .expect_err("an output with the wrong radix must be rejected");
+    let error = with_scratch::<BE, _>(paco_bytes, |s| {
+        module.ckks_paco_bootstrap_direct_into::<_, _>(&mut bad_output, &ct_in, &ctx, &keys, s)
+    })
+    .expect_err("an output with the wrong radix must be rejected");
     assert!(error.to_string().contains("output base2k"), "unexpected error: {error:#}");
     assert_ciphertext_unchanged::<BE>(&before, &bad_output);
 
@@ -300,9 +300,10 @@ pub fn test_paco_parallel_bootstrap<BE, F, E>(
     );
     let mut too_high_output = module.ckks_ciphertext_alloc(ctx.base2k(), too_high_k);
     let before = too_high_output.to_host_owned::<BE>();
-    let error = module
-        .ckks_paco_bootstrap_direct_into::<_, _>(&mut too_high_output, &ct_in, &ctx, &keys, &mut scratch.borrow())
-        .expect_err("an output level above k_out must be rejected");
+    let error = with_scratch::<BE, _>(paco_bytes, |s| {
+        module.ckks_paco_bootstrap_direct_into::<_, _>(&mut too_high_output, &ct_in, &ctx, &keys, s)
+    })
+    .expect_err("an output level above k_out must be rejected");
     assert!(
         error.to_string().contains("exceeds the maximum bootstrap output level"),
         "unexpected error: {error:#}"
@@ -312,21 +313,21 @@ pub fn test_paco_parallel_bootstrap<BE, F, E>(
     // Worker modules and scratch are preflighted before any branch starts.
     let mut worker_rejected = module.ckks_ciphertext_alloc(ctx.base2k(), k_out);
     let before = worker_rejected.to_host_owned::<BE>();
-    let mut rejected_caller_scratch = ScratchOwned::<BE>::alloc(paco_bytes);
     let mut undersized_workers = vec![PaCoWorker::new(
         Module::<BE>::new(params.n as u64),
         ScratchOwned::<BE>::alloc(0),
     )];
-    let error = module
-        .ckks_paco_bootstrap_parallel_direct_into::<_, _>(
+    let error = with_scratch::<BE, _>(paco_bytes, |s| {
+        module.ckks_paco_bootstrap_parallel_direct_into::<_, _>(
             &mut worker_rejected,
             &ct_in,
             &ctx,
             &keys,
             &mut undersized_workers,
-            &mut rejected_caller_scratch.borrow(),
+            s,
         )
-        .expect_err("undersized worker scratch must be reported");
+    })
+    .expect_err("undersized worker scratch must be reported");
     assert!(error.to_string().contains("worker 1 needs"), "unexpected error: {error:#}");
     assert_ciphertext_unchanged::<BE>(&before, &worker_rejected);
 
@@ -335,25 +336,26 @@ pub fn test_paco_parallel_bootstrap<BE, F, E>(
         Module::<BE>::new((params.n / 2) as u64),
         alloc_scratch(&params, &module),
     )];
-    let error = module
-        .ckks_paco_bootstrap_parallel_direct_into::<_, _>(
+    let error = with_scratch::<BE, _>(paco_bytes, |s| {
+        module.ckks_paco_bootstrap_parallel_direct_into::<_, _>(
             &mut worker_rejected,
             &ct_in,
             &ctx,
             &keys,
             &mut wrong_degree_workers,
-            &mut rejected_caller_scratch.borrow(),
+            s,
         )
-        .expect_err("a worker module for the wrong ring must be rejected");
+    })
+    .expect_err("a worker module for the wrong ring must be rejected");
     assert!(error.to_string().contains("module degree"), "unexpected error: {error:#}");
     assert_ciphertext_unchanged::<BE>(&before, &worker_rejected);
 
     // ── Sequential driver: all D coefficient classes recovered ────────────
     let mut seq = module.ckks_ciphertext_alloc(ctx.base2k(), k_out);
-    let mut exact_scratch = ScratchOwned::<BE>::alloc(required);
-    module
-        .ckks_paco_bootstrap_direct_into::<_, _>(&mut seq, &ct_in, &ctx, &keys, &mut exact_scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(required, |s| {
+        module.ckks_paco_bootstrap_direct_into::<_, _>(&mut seq, &ct_in, &ctx, &keys, s)
+    })
+    .unwrap();
     let expected_sparsity = stride.trailing_zeros() as usize;
     assert_eq!(seq.log_sparsity(), expected_sparsity, "sequential output sparsity");
 
@@ -390,9 +392,10 @@ pub fn test_paco_parallel_bootstrap<BE, F, E>(
     let mut workers = (0..2)
         .map(|_| PaCoWorker::new(Module::<BE>::new(params.n as u64), ScratchOwned::<BE>::alloc(paco_bytes)))
         .collect::<Vec<_>>();
-    module
-        .ckks_paco_bootstrap_parallel_direct_into::<_, _>(&mut par, &ct_in, &ctx, &keys, &mut workers, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(paco_bytes, |s| {
+        module.ckks_paco_bootstrap_parallel_direct_into::<_, _>(&mut par, &ct_in, &ctx, &keys, &mut workers, s)
+    })
+    .unwrap();
 
     assert_eq!(seq.log_delta(), par.log_delta(), "metadata must match");
     assert_eq!(seq.log_budget(), par.log_budget(), "metadata must match");
@@ -402,16 +405,10 @@ pub fn test_paco_parallel_bootstrap<BE, F, E>(
 
     // Worker modules and arenas remain reusable across calls.
     let mut par_reused = module.ckks_ciphertext_alloc(ctx.base2k(), k_out);
-    module
-        .ckks_paco_bootstrap_parallel_direct_into::<_, _>(
-            &mut par_reused,
-            &ct_in,
-            &ctx,
-            &keys,
-            &mut workers,
-            &mut scratch.borrow(),
-        )
-        .unwrap();
+    with_scratch::<BE, _>(paco_bytes, |s| {
+        module.ckks_paco_bootstrap_parallel_direct_into::<_, _>(&mut par_reused, &ct_in, &ctx, &keys, &mut workers, s)
+    })
+    .unwrap();
     assert_eq!(
         seq_host.data(),
         par_reused.to_host_owned::<BE>().data(),
@@ -554,14 +551,11 @@ pub fn test_paco_encapsulated_bootstrap<BE, F, E>(
     ct_in.set_log_sparsity(stride.trailing_zeros() as usize);
 
     let mut out = module.ckks_ciphertext_alloc(ctx.base2k(), k_out);
-    let paco_bytes: usize = module
-        .ckks_paco_bootstrap_tmp_bytes(&out, &ct_in, &ctx, &prepared)
-        .unwrap()
-        .max(scratch.borrow().available());
-    let mut scratch = ScratchOwned::<BE>::alloc(paco_bytes);
-    module
-        .ckks_paco_bootstrap_into::<_, _>(&mut out, &ct_in, &ctx, &prepared, &mut scratch.borrow())
-        .unwrap();
+    let paco_bytes: usize = module.ckks_paco_bootstrap_tmp_bytes(&out, &ct_in, &ctx, &prepared).unwrap();
+    with_scratch::<BE, _>(paco_bytes, |s| {
+        module.ckks_paco_bootstrap_into::<_, _>(&mut out, &ct_in, &ctx, &prepared, s)
+    })
+    .unwrap();
     let expected_sparsity = stride.trailing_zeros() as usize;
     assert_eq!(out.log_sparsity(), expected_sparsity, "sequential output sparsity");
 
@@ -572,9 +566,10 @@ pub fn test_paco_encapsulated_bootstrap<BE, F, E>(
         Module::<BE>::new(params.n as u64),
         ScratchOwned::<BE>::alloc(paco_bytes),
     )];
-    module
-        .ckks_paco_bootstrap_parallel_into::<_, _>(&mut par, &ct_in, &ctx, &prepared, &mut workers, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(paco_bytes, |s| {
+        module.ckks_paco_bootstrap_parallel_into::<_, _>(&mut par, &ct_in, &ctx, &prepared, &mut workers, s)
+    })
+    .unwrap();
     assert_eq!(out.log_delta(), par.log_delta(), "metadata must match");
     assert_eq!(out.log_budget(), par.log_budget(), "metadata must match");
     assert_eq!(par.log_sparsity(), expected_sparsity, "parallel output sparsity");

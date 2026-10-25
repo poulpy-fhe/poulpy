@@ -36,6 +36,7 @@ use crate::{
         PrecisionStats, TestContextBackend, TestContextModule, TestContextSharedModule, assert_canonical_at_k, ckks_spec,
         precision_stats, test_vector_1,
     },
+    test_suite::parity::helpers::with_scratch,
 };
 
 /// Plaintext budget bits (above `log_delta`) used to measure the output precision.
@@ -499,20 +500,18 @@ where
     module.glwe_secret_fill_ternary_hw(&mut sk_raw, preset.dense_secret_hamming_weight(), &mut Source::new([0; 32]));
     let context = compile_ci(&module, &ci, &preset);
     let compiled = {
-        let mut scratch = ScratchOwned::<BE>::alloc(bootstrap_setup_tmp_bytes(
-            &module,
-            &standard.bootstrap_layout(),
-            standard.plan(),
-            standard.keys_layout(),
-        ));
-        BootstrappingContext::<BE, f64>::compile(&module, preset.base2k().into(), standard.plan(), &mut scratch.borrow()).unwrap()
+        let bytes = bootstrap_setup_tmp_bytes(&module, &standard.bootstrap_layout(), standard.plan(), standard.keys_layout());
+        with_scratch::<BE, _>(bytes, |s| {
+            BootstrappingContext::<BE, f64>::compile(&module, preset.base2k().into(), standard.plan(), s)
+        })
+        .unwrap()
     };
     // Key generation leaves nothing of the CI secret, nor of the encryptions, in the CI scratch.
     let (bytes, bytes_ci) = preset.keys_layout().generate_ci_tmp_bytes(&module, &ci);
     poulpy_core::test_suite::assert_wipes_scratch::<CIBackend<BE>>(bytes_ci, |scratch_ci| {
         let (mut source_xs, mut source_xa, mut source_xe) = (Source::new([7; 32]), Source::new([1; 32]), Source::new([2; 32]));
-        context
-            .generate_keys_ci(
+        with_scratch::<BE, _>(bytes, |s| {
+            context.generate_keys_ci(
                 &module,
                 &ci,
                 &sk_raw,
@@ -520,10 +519,11 @@ where
                 &mut source_xs,
                 &mut source_xe,
                 &mut source_xa,
-                &mut ScratchOwned::<BE>::alloc(bytes).borrow(),
+                s,
                 scratch_ci,
             )
-            .unwrap();
+        })
+        .unwrap();
     });
     let keys_for = |layout: &BootstrappingKeysLayout| {
         prepare_keys_ci(
@@ -562,21 +562,13 @@ where
                             context: &BootstrappingContext<BE, f64>,
                             keys: &crate::layouts::BootstrappingKeysPrepared<BE::OwnedBuf, BE, CIBackend<BE>>,
                             (bytes, bytes_ci): (usize, usize)| {
-        let (mut scratch, mut scratch_ci) = (
-            ScratchOwned::<BE>::alloc(bytes),
-            ScratchOwned::<CIBackend<BE>>::alloc(bytes_ci),
-        );
         output.set_k(preset.bootstrap_k().into());
         let before = output.to_host_owned::<BE>();
-        let result = module.ckks_bootstrap_ci_into(
-            &ci,
-            &mut output,
-            &input,
-            context,
-            keys,
-            &mut scratch.borrow(),
-            &mut scratch_ci.borrow(),
-        );
+        let result = with_scratch::<BE, _>(bytes, |s| {
+            with_scratch::<CIBackend<BE>, _>(bytes_ci, |sc| {
+                module.ckks_bootstrap_ci_into(&ci, &mut output, &input, context, keys, s, sc)
+            })
+        });
         // A refusal leaves the output as it was.
         if result.is_err() {
             let after = output.to_host_owned::<BE>();
@@ -635,19 +627,14 @@ where
     Module<CIBackend<BE>>: TestContextSharedModule<CIBackend<BE>> + CKKSEncodingOps<CIBackend<BE>, f64>,
 {
     let (bytes, bytes_ci) = BootstrappingContext::<BE, f64>::compile_ci_unprepared_tmp_bytes(module, ci);
-    let unprepared = BootstrappingContext::<BE, f64>::compile_ci_unprepared(
-        module,
-        ci,
-        preset.base2k().into(),
-        preset.plan(),
-        &mut ScratchOwned::<BE>::alloc(bytes).borrow(),
-        &mut ScratchOwned::<CIBackend<BE>>::alloc(bytes_ci).borrow(),
-    )
+    let unprepared = with_scratch::<BE, _>(bytes, |s| {
+        with_scratch::<CIBackend<BE>, _>(bytes_ci, |sc| {
+            BootstrappingContext::<BE, f64>::compile_ci_unprepared(module, ci, preset.base2k().into(), preset.plan(), s, sc)
+        })
+    })
     .unwrap();
     let bytes = unprepared.prepare_tmp_bytes(module);
-    unprepared
-        .prepare(module, &mut ScratchOwned::<BE>::alloc(bytes).borrow())
-        .unwrap()
+    with_scratch::<BE, _>(bytes, |s| unprepared.prepare(module, s)).unwrap()
 }
 
 /// [`BootstrappingContext::generate_keys_ci`] of `layout`, on arenas of exactly its query.
@@ -666,19 +653,22 @@ where
 {
     let (bytes, bytes_ci) = layout.generate_ci_tmp_bytes(module, ci);
     let (mut source_xs, mut source_xa, mut source_xe) = (Source::new([7; 32]), Source::new([1; 32]), Source::new([2; 32]));
-    context
-        .generate_keys_ci(
-            module,
-            ci,
-            sk_raw,
-            layout,
-            &mut source_xs,
-            &mut source_xe,
-            &mut source_xa,
-            &mut ScratchOwned::<BE>::alloc(bytes).borrow(),
-            &mut ScratchOwned::<CIBackend<BE>>::alloc(bytes_ci).borrow(),
-        )
-        .unwrap()
+    with_scratch::<BE, _>(bytes, |s| {
+        with_scratch::<CIBackend<BE>, _>(bytes_ci, |sc| {
+            context.generate_keys_ci(
+                module,
+                ci,
+                sk_raw,
+                layout,
+                &mut source_xs,
+                &mut source_xe,
+                &mut source_xa,
+                s,
+                sc,
+            )
+        })
+    })
+    .unwrap()
 }
 
 /// [`BootstrappingKeySet::prepare_ci`](crate::layouts::BootstrappingKeySet::prepare_ci) of `keys`, generated for
@@ -696,12 +686,9 @@ where
     Module<CIBackend<BE>>: TestContextSharedModule<CIBackend<BE>>,
 {
     let (bytes, bytes_ci) = layout.prepare_ci_tmp_bytes(module, ci);
-    keys.prepare_ci(
-        module,
-        ci,
-        &mut ScratchOwned::<BE>::alloc(bytes).borrow(),
-        &mut ScratchOwned::<CIBackend<BE>>::alloc(bytes_ci).borrow(),
-    )
+    with_scratch::<BE, _>(bytes, |s| {
+        with_scratch::<CIBackend<BE>, _>(bytes_ci, |sc| keys.prepare_ci(module, ci, s, sc))
+    })
     .unwrap()
 }
 
