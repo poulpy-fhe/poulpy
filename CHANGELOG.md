@@ -631,7 +631,7 @@
 - Calls with distinct `res` and `scratch` may run concurrently over a shared module, context, public operands, prepared operands and key stores, and an override keeps no state across calls.
 - `blas-contracts.md` links `docs/layering-contract.md` instead of restating it.
 - OEP methods have their API method's name and the hooks are `blas_map_blocks`, `blas_map_blocks_tmp_bytes`, `blas_jkls_block` and `blas_jkls_block_tmp_bytes`; each opt-in macro is named after its OEP trait (`impl_blas_mat_inter_reference_full!`, `impl_blas_mat_intra_reference_full!`, `impl_blas_mat_mul_reference_full!`, `impl_blas_jkls_reference_full!`, `impl_blas_encoding_reference_full!`).
-- `blas_pt_operand_prepare` and `blas_context_prepare` panic, naming the operation, on a map whose diagonals do not share one scale, width and slot kind, which `ckks_prepare_linear_transformation_rhs` refuses, and `BlasMatMulOperandPreparedFactory` allocates and sizes its terms through `CKKSModuleAlloc`.
+- `blas_pt_operand_prepare` and `blas_context_prepare` panic, naming the operation and carrying its refusal, on a map `ckks_prepare_linear_transformation_rhs` refuses, one whose diagonals do not share one scale, width and slot kind, which `test_blas_context` pins, and `BlasMatMulOperandPreparedFactory` allocates and sizes its terms through `CKKSModuleAlloc`.
 
 ### `poulpy-cpu-arm`
 

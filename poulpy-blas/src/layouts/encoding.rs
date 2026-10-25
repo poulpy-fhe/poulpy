@@ -207,8 +207,8 @@ where
 }
 
 /// Prepares every map of `maps` into the allocation `res` yields at the same position, once `scratch` holds the largest
-/// preparation's bytes; `op` names the caller in the scratch assertion and in the panic on a map whose diagonals do not
-/// share one scale, width and slot kind.
+/// preparation's bytes; `op` names the caller in the scratch assertion and prefixes the panic carrying poulpy-ckks's
+/// refusal of a map, one whose diagonals do not share one scale, width and slot kind.
 pub(crate) fn prepare_maps_into<'a, BE, M>(
     module: &M,
     op: &'static str,
@@ -227,8 +227,8 @@ pub(crate) fn prepare_maps_into<'a, BE, M>(
         .unwrap_or(0);
     assert_scratch(op, bytes, scratch);
     for (dst, src) in res.zip(maps) {
-        if module.ckks_prepare_linear_transformation_rhs(dst, src, scratch).is_err() {
-            panic!("{op}: a map's diagonals do not share one scale, width and slot kind");
+        if let Err(err) = module.ckks_prepare_linear_transformation_rhs(dst, src, scratch) {
+            panic!("{op}: {err}");
         }
     }
 }

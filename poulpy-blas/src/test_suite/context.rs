@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use poulpy_ckks::{
-    CKKSModuleInfos, CoeffsMeta,
+    CKKSModuleInfos, CoeffsMeta, GLWEPlaintextInfos, SetGLWEPlaintextInfos, SlotsKind,
     api::{
         CKKSEncodingOps, CKKSLinearTransformationOps, CKKSMulOps, LinearTransformation, LinearTransformationPrepared,
         PreparedDiagonal,
@@ -18,12 +18,12 @@ use poulpy_core::layouts::{Base2K, DiagonalArithmetic, GetDegree, LWEInfos};
 use poulpy_hal::{
     AlignedBuf,
     api::{CnvPVecAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, CyclotomicOrder, DataView, DataViewMut, HostBytesBackend, Module, ScratchArena, Standard},
+    layouts::{Backend, CyclotomicOrder, DataView, DataViewMut, HostBytesBackend, Module, Standard},
 };
 
 use super::helpers::{
     MASKED_PT_ALGORITHMS, PT_ALGORITHMS, assert_panics, assert_short_scratch_panics, encoded_context, map_galois_elements,
-    pt_operand,
+    poisoned_scratch, pt_operand,
 };
 use crate::{
     api::{BlasContextPreparedFactory, BlasEncodingOps, BlasPtOperandPreparedFactory},
@@ -250,6 +250,27 @@ pub fn test_blas_context<BE, F, E>(
     );
     let mut ctx_prepared = module.blas_context_prepared_alloc_from_infos(&ctx_base);
     let ctx_bytes = module.blas_context_prepare_tmp_bytes(&ctx_base);
+    let mut ctx_mixed = module.blas_context_alloc_from_infos(&ctx_base);
+    module.blas_context_encode(&mut ctx_mixed, &mut scratch.borrow()).unwrap();
+    let map = ctx_mixed
+        .maps
+        .iter_mut()
+        .find(|lt| lt.giant_steps.iter().map(|gs| gs.diagonals.len()).sum::<usize>() > 1)
+        .unwrap();
+    let last = diagonals_mut([map]).last().unwrap();
+    last.set_slots(if last.slots() == SlotsKind::Complex {
+        SlotsKind::Real
+    } else {
+        SlotsKind::Complex
+    });
+    assert_panics(
+        "context prepare of a map with mixed diagonals",
+        "blas_context_prepare: ckks_prepare_linear_transformation_rhs: invalid operand: linear transformation diagonals are not uniform",
+        || {
+            let mut res = module.blas_context_prepared_alloc_from_infos(&ctx_base);
+            module.blas_context_prepare(&mut res, &ctx_mixed, &mut poisoned_scratch::<BE>(ctx_bytes).borrow())
+        },
+    );
     assert_short_scratch_panics::<BE, _>("blas_context_prepare", ctx_bytes, |s| {
         module.blas_context_prepare(&mut ctx_prepared, &ctx, s)
     });
@@ -410,13 +431,8 @@ fn check_refill<U, P>(
 }
 
 /// A public operand of `plan` on side `S` through [`check_refill`], its second fill from other matrices than its first.
-fn refill_operand<BE, F, S>(
-    module: &Module<BE>,
-    plan: BlasPlan,
-    base2k: Base2K,
-    meta: CoeffsMeta,
-    scratch: &mut ScratchArena<'_, BE>,
-) where
+fn refill_operand<BE, F, S>(module: &Module<BE>, plan: BlasPlan, base2k: Base2K, meta: CoeffsMeta)
+where
     BE: TestContextBackend + BlasEncodingImpl,
     Module<BE>:
         CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F> + BlasEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CKKSMulOps<BE>,
@@ -442,10 +458,16 @@ fn refill_operand<BE, F, S>(
         },
         |op, p, again| {
             let entry = if again { second } else { first };
+            let mut encode_scratch = poisoned_scratch::<BE>(module.blas_pt_operand_encode_tmp_bytes(&layout));
             module
-                .blas_pt_operand_encode(op, |m, r, c| F::from_f64(entry(m, r, c)).unwrap(), scratch)
+                .blas_pt_operand_encode(
+                    op,
+                    |m, r, c| F::from_f64(entry(m, r, c)).unwrap(),
+                    &mut encode_scratch.borrow(),
+                )
                 .unwrap();
-            module.blas_pt_operand_prepare(p, op, scratch);
+            let mut prepare_scratch = poisoned_scratch::<BE>(module.blas_pt_operand_prepare_tmp_bytes(&layout));
+            module.blas_pt_operand_prepare(p, op, &mut prepare_scratch.borrow());
         },
     );
 }
@@ -463,7 +485,6 @@ pub fn test_blas_refill<BE, F, E>(
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + BlasEncodingOps<BE, F> + CKKSLinearTransformationOps<BE>,
     F: TestScalar + DiagonalArithmetic,
 {
-    let mut scratch = alloc_scratch(&params, module);
     let (base2k, meta): (Base2K, CoeffsMeta) = (params.base2k.into(), params.prec().into());
     let layout = BlasContextLayout {
         plan: BlasPlan::new(log_d),
@@ -487,13 +508,15 @@ pub fn test_blas_refill<BE, F, E>(
             poison_prepared::<BE>(p.maps.iter_mut());
         },
         |c, p, _| {
-            module.blas_context_encode(c, &mut scratch.borrow()).unwrap();
-            module.blas_context_prepare(p, c, &mut scratch.borrow());
+            let mut encode_scratch = poisoned_scratch::<BE>(module.blas_context_encode_tmp_bytes(&layout));
+            module.blas_context_encode(c, &mut encode_scratch.borrow()).unwrap();
+            let mut prepare_scratch = poisoned_scratch::<BE>(module.blas_context_prepare_tmp_bytes(&layout));
+            module.blas_context_prepare(p, c, &mut prepare_scratch.borrow());
         },
     );
     for algorithm in [BlasPtAlgorithm::Diagonal, BlasPtAlgorithm::Jkls] {
         let plan = BlasPlan::new(log_d).with_pt_algorithm(algorithm);
-        refill_operand::<BE, F, Right>(module, plan, base2k, meta, &mut scratch.borrow());
-        refill_operand::<BE, F, Left>(module, plan, base2k, meta, &mut scratch.borrow());
+        refill_operand::<BE, F, Right>(module, plan, base2k, meta);
+        refill_operand::<BE, F, Left>(module, plan, base2k, meta);
     }
 }
