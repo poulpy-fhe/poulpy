@@ -1,19 +1,20 @@
 use poulpy_core::{
-    GLWEAdd, GLWECopy, GLWEDecrypt, GLWEEncryptSk, GLWERotate, GLWESub, GLWETrace,
-    layouts::{GLWELayout, GLWESecretPrepared, LWEInfos},
+    GLWEAdd, GLWECopy, GLWEDecrypt, GLWEEncryptSk, GLWEKeyswitch, GLWEPacking, GLWERotate, GLWESub, GLWETrace, LWEFromGLWE,
+    layouts::{GGLWEPreparedToBackendRef, GGSWLayout, GLWELayout, GLWESecretPrepared, LWE, LWEInfos, ModuleCoreAlloc},
 };
-use poulpy_hal::layouts::HostDataRef;
+use poulpy_hal::AlignedBuf;
+use poulpy_hal::layouts::{HostDataRef, WriterTo};
 use poulpy_hal::{
     layouts::{Backend, HostBackend, HostDataMut, Module},
     source::Source,
 };
 use rand::Rng;
 
-use crate::test_suite::bdd_arithmetic::{TEST_GLWE_INFOS, TestContext};
+use crate::test_suite::bdd_arithmetic::{TEST_GGSW_INFOS, TEST_GLWE_INFOS, TestContext};
 use crate::test_suite::parity::with_scratch;
 use crate::{
-    bdd_arithmetic::{BDDKeyPrepared, FheUint, ToBits},
-    blind_rotation::BlindRotationAlgo,
+    bdd_arithmetic::{BDDKeyPrepared, Cmux, FheUint, FheUintPrepared, FheUintPreparedEncryptSk, FheUintPreparedFactory, ToBits},
+    blind_rotation::{BlindRotationAlgo, BlindRotationKeyInfos},
 };
 
 pub fn test_fhe_uint_sext<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64> + HostBackend>(
@@ -225,4 +226,128 @@ pub fn test_fhe_uint_get_bit_glwe<
             with_scratch::<BE, _>(c_enc.decrypt_tmp_bytes(module), |s| c_enc.decrypt(module, sk, s))
         );
     }
+}
+
+pub fn test_fhe_uint_get_byte<
+    BRA: BlindRotationAlgo,
+    BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64> + HostBackend,
+>(
+    test_context: &TestContext<BRA, BE>,
+) where
+    Module<BE>: GLWEEncryptSk<BE> + GLWERotate<BE> + GLWETrace<BE> + GLWESub<BE> + GLWEAdd<BE> + GLWEDecrypt<BE>,
+{
+    let glwe_infos: GLWELayout = TEST_GLWE_INFOS;
+
+    let module: &Module<BE> = &test_context.module;
+    let sk: &GLWESecretPrepared<BE::OwnedBuf, BE> = &test_context.sk_glwe;
+    let keys: &BDDKeyPrepared<BE::OwnedBuf, BRA, BE> = &test_context.bdd_key;
+
+    let mut source_xa: Source = Source::new([2u8; 32]);
+    let mut source_xe: Source = Source::new([3u8; 32]);
+
+    let mut a_enc: FheUint<BE::OwnedBuf, u32, BE::ZnxWord> =
+        FheUint::<BE::OwnedBuf, u32, i64>::alloc_from_infos(module, &glwe_infos);
+    let mut c_enc: FheUint<BE::OwnedBuf, u32, BE::ZnxWord> =
+        FheUint::<BE::OwnedBuf, u32, i64>::alloc_from_infos(module, &glwe_infos);
+
+    let a: u32 = source_xa.next_u32();
+
+    with_scratch::<BE, _>(a_enc.encrypt_sk_tmp_bytes(module), |s| {
+        a_enc.encrypt_sk(module, a, sk, &mut source_xe, &mut source_xa, s)
+    });
+
+    for byte in 0..4 {
+        with_scratch::<BE, _>(a_enc.get_byte_tmp_bytes(module, &c_enc, keys), |s| {
+            a_enc.get_byte(module, byte, &mut c_enc, keys, s)
+        });
+        assert_eq!(
+            (a >> (8 * byte)) & 0xFF,
+            with_scratch::<BE, _>(c_enc.decrypt_tmp_bytes(module), |s| c_enc.decrypt(module, sk, s))
+        );
+    }
+}
+
+/// The extraction on exactly its query matches the one on a larger arena, guards intact.
+pub fn test_fhe_uint_get_bit_lwe<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64> + HostBackend>(
+    test_context: &TestContext<BRA, BE>,
+) where
+    Module<BE>: GLWEEncryptSk<BE> + GLWEKeyswitch<BE> + LWEFromGLWE<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
+    for<'a> BE::BufRef<'a>: HostDataRef,
+{
+    let glwe_infos: GLWELayout = TEST_GLWE_INFOS;
+
+    let module: &Module<BE> = &test_context.module;
+    let sk: &GLWESecretPrepared<BE::OwnedBuf, BE> = &test_context.sk_glwe;
+    let keys: &BDDKeyPrepared<BE::OwnedBuf, BRA, BE> = &test_context.bdd_key;
+
+    let mut source_xa: Source = Source::new([2u8; 32]);
+    let mut source_xe: Source = Source::new([3u8; 32]);
+
+    let mut a_enc: FheUint<BE::OwnedBuf, u32, BE::ZnxWord> =
+        FheUint::<BE::OwnedBuf, u32, i64>::alloc_from_infos(module, &glwe_infos);
+    let a: u32 = source_xa.next_u32();
+    with_scratch::<BE, _>(a_enc.encrypt_sk_tmp_bytes(module), |s| {
+        a_enc.encrypt_sk(module, a, sk, &mut source_xe, &mut source_xa, s)
+    });
+
+    let mut lwe_infos = a_enc.lwe_layout();
+    lwe_infos.n = keys.cbt.blind_rotation_key().n_lwe();
+    let ks_glwe = keys.ks_glwe.as_ref().map(|k| k.to_backend_ref());
+    let ks_lwe = keys.ks_lwe.to_backend_ref();
+    let bytes = a_enc.get_bit_lwe_tmp_bytes(module, &lwe_infos, ks_glwe.as_ref(), &ks_lwe);
+
+    for bit in [0usize, 1, 17, 31] {
+        let extract = |scratch_bytes: usize| -> Vec<u8> {
+            let mut lwe: LWE<BE::OwnedBuf, BE::ZnxWord> = module.lwe_alloc_from_infos(&lwe_infos);
+            with_scratch::<BE, _>(scratch_bytes, |s| {
+                a_enc.get_bit_lwe(module, bit, &mut lwe, ks_glwe.as_ref(), &ks_lwe, s)
+            });
+            let mut out = Vec::new();
+            lwe.write_to(&mut out).unwrap();
+            out
+        };
+        assert_eq!(extract(bytes), extract(bytes + 4096), "bit {bit}");
+    }
+}
+
+pub fn test_fhe_uint_from_fhe_uint_prepared<
+    BRA: BlindRotationAlgo,
+    BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64> + HostBackend,
+>(
+    test_context: &TestContext<BRA, BE>,
+) where
+    Module<BE>: GLWEEncryptSk<BE>
+        + GLWEDecrypt<BE>
+        + Cmux<BE>
+        + GLWEPacking<BE>
+        + GLWECopy<BE>
+        + FheUintPreparedEncryptSk<u32, BE>
+        + FheUintPreparedFactory<u32, BE>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
+{
+    let ggsw_infos: GGSWLayout = TEST_GGSW_INFOS;
+
+    let module: &Module<BE> = &test_context.module;
+    let sk: &GLWESecretPrepared<BE::OwnedBuf, BE> = &test_context.sk_glwe;
+    let keys: &BDDKeyPrepared<BE::OwnedBuf, BRA, BE> = &test_context.bdd_key;
+
+    let mut source_xa: Source = Source::new([2u8; 32]);
+    let mut source_xe: Source = Source::new([3u8; 32]);
+
+    let value: u32 = source_xa.next_u32();
+    let mut prepared: FheUintPrepared<BE::OwnedBuf, u32, BE> = FheUintPrepared::alloc_from_infos(module, &ggsw_infos);
+    with_scratch::<BE, _>(
+        FheUintPreparedEncryptSk::<u32, BE>::fhe_uint_prepared_encrypt_sk_tmp_bytes(module, &ggsw_infos),
+        |s| prepared.encrypt_sk(module, value, sk, &mut source_xe, &mut source_xa, s),
+    );
+
+    let mut c_enc: FheUint<BE::OwnedBuf, u32, BE::ZnxWord> =
+        FheUint::<BE::OwnedBuf, u32, i64>::alloc_from_infos(module, &TEST_GLWE_INFOS);
+    with_scratch::<BE, _>(c_enc.from_fhe_uint_prepared_tmp_bytes(module, &prepared, keys), |s| {
+        c_enc.from_fhe_uint_prepared(module, &prepared, keys, s)
+    });
+    assert_eq!(
+        value,
+        with_scratch::<BE, _>(c_enc.decrypt_tmp_bytes(module), |s| c_enc.decrypt(module, sk, s))
+    );
 }
