@@ -1,6 +1,6 @@
 //! Plaintexts of `m < N/2` slots: every consumer reads one as its `m` slots repeated over the ciphertext's.
 
-use super::parity::helpers::with_scratch;
+use super::parity::helpers::{snapshot, with_scratch};
 use std::collections::HashMap;
 
 use poulpy_core::layouts::{Diagonals, Evaluate, LWEInfos, LinearTransformationStrategy};
@@ -10,7 +10,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSInfos, SetCKKSInfos,
+    CKKSCompositionError, CKKSInfos, SetCKKSInfos,
     api::{
         CKKSAddOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSLinearTransformationOps, CKKSMulOps, CKKSSubOps,
         LinearTransformation, LinearTransformationPrepared,
@@ -19,8 +19,9 @@ use crate::{
     test_suite::{
         CKKSTestParams,
         helpers::{
-            TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_decrypt_precision, ckks_encrypt,
-            gen_atk, gen_sk, gen_sk_with_raw, quantize, test_vector_1, test_vector_2, upload_pt, want_add, want_mul,
+            TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_ckks_error,
+            assert_decrypt_precision, ckks_encrypt, gen_atk, gen_sk, gen_sk_with_raw, quantize, test_vector_1, test_vector_2,
+            upload_pt, want_add, want_mul,
         },
         reference_encoder::ReferenceEncoder,
     },
@@ -112,12 +113,21 @@ pub fn test_plaintext_slots_add_sub_mul<BE, F, E>(
         .is_err(),
         "ckks_add_pt_vec_into accepted a plaintext of degree 3"
     );
-    assert!(
-        with_scratch::<BE, _>(module.ckks_mul_pt_vec_tmp_bytes(&res, &ct, &odd), |s| module
-            .ckks_mul_pt_vec_into(&mut res, &ct, &odd, s))
-        .is_err(),
-        "ckks_mul_pt_vec_into accepted a plaintext of degree 3"
+    let before = snapshot::<BE, _>(&res);
+    let err = with_scratch::<BE, _>(module.ckks_mul_pt_vec_tmp_bytes(&res, &ct, &odd), |s| {
+        module.ckks_mul_pt_vec_into(&mut res, &ct, &odd, s)
+    })
+    .unwrap_err();
+    assert_ckks_error(
+        "ckks_mul_pt_vec_into of a plaintext of degree 3",
+        &err,
+        CKKSCompositionError::PlaintextDegreeMismatch {
+            op: "ckks_mul_pt_vec_into",
+            ct_n: ct.n().as_usize(),
+            pt_n: 3,
+        },
     );
+    assert_eq!(snapshot::<BE, _>(&res), before, "a refused ckks_mul_pt_vec_into wrote res");
     // A degree below the backend floor is an error too.
     let mut tiny = host_module.ckks_pt_coeffs_alloc(BE::MIN_DEGREE / 2, params.base2k.into(), prec.k());
     tiny.set_meta(prec.meta());
