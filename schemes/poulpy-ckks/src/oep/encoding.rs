@@ -81,9 +81,10 @@ pub unsafe trait CKKSEncodingImpl<F: CKKSEncodingScalar>: Backend {
 
     /// Hook without an API twin. Reproduces
     /// [`EncodingPermutation::slots_to_coeffs_assign`](crate::reference::encoding::EncodingPermutation::slots_to_coeffs_assign)
-    /// bit for bit (permutation and IFFT), in place under the cached `plans`, on a buffer
-    /// [`Self::ckks_slots_to_coeffs_assign`] validated; free in layouts and scheduling. Invariant modules discard imaginary slots and store the independent coefficients
-    /// in the first half of the buffer.
+    /// bit for bit (permutation and IFFT; the determinism fixtures pin the bytes across backends), in place under the
+    /// cached `plans`, on a buffer [`Self::ckks_slots_to_coeffs_assign`] validated; free in layouts and scheduling.
+    /// Invariant modules discard imaginary slots and store the independent coefficients in the first half of the
+    /// buffer.
     fn ckks_slots_to_coeffs_assign_with_plan(
         module: &Module<Self>,
         plans: &Self::Plans,
@@ -92,9 +93,9 @@ pub unsafe trait CKKSEncodingImpl<F: CKKSEncodingScalar>: Backend {
 
     /// Hook without an API twin. Reproduces
     /// [`EncodingPermutation::coeffs_to_slots_assign`](crate::reference::encoding::EncodingPermutation::coeffs_to_slots_assign)
-    /// bit for bit (FFT and permutation), in place under the cached `plans`, on a buffer
-    /// [`Self::ckks_coeffs_to_slots_assign`] validated; free in layouts and scheduling. Invariant modules read independent coefficients from the first half and return
-    /// zero imaginary parts.
+    /// bit for bit (FFT and permutation; the determinism fixtures pin the bytes across backends), in place under the
+    /// cached `plans`, on a buffer [`Self::ckks_coeffs_to_slots_assign`] validated; free in layouts and scheduling.
+    /// Invariant modules read independent coefficients from the first half and return zero imaginary parts.
     fn ckks_coeffs_to_slots_assign_with_plan(
         module: &Module<Self>,
         plans: &Self::Plans,
