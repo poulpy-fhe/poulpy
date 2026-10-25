@@ -9,7 +9,7 @@ use poulpy_core::layouts::{
     LWEInfos,
 };
 use poulpy_hal::{
-    api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
+    api::ScratchOwnedBorrow,
     layouts::{Backend, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchOwned, Standard},
     source::Source,
 };
@@ -24,6 +24,7 @@ use crate::{
             TestContextBackend, TestContextModule, TestContextSharedModule, TestScalar, alloc_scratch, assert_precision,
             ckks_decrypt_with_prec, ckks_encrypt_coeffs, gen_atk, gen_sk_with_raw,
         },
+        parity::helpers::with_scratch,
     },
 };
 
@@ -149,18 +150,14 @@ where
             meta: ins[0].meta(),
         };
         let folded_layout = module.ckks_fold_layout(degree, &ins[0], &keys_layout);
-        let mut fold_scratch = ScratchOwned::<BE>::alloc(module.ckks_fold_tmp_bytes(degree, &output, &ins[0], &keys_layout));
+        let fold_bytes = module.ckks_fold_tmp_bytes(degree, &output, &ins[0], &keys_layout);
         let mut folded: Vec<_> = (0..count)
             .map(|_| module.ckks_ciphertext_alloc_from_glwe_infos(&folded_layout))
             .collect();
-        module
-            .ckks_fold(
-                &mut folded,
-                &ins,
-                ring_switch.map(|keys| &keys.inbound),
-                &mut fold_scratch.borrow(),
-            )
-            .unwrap();
+        with_scratch::<BE, _>(fold_bytes, |s| {
+            module.ckks_fold(&mut folded, &ins, ring_switch.map(|keys| &keys.inbound), s)
+        })
+        .unwrap();
 
         for ct in &folded {
             assert_eq!(ct.noise(), None, "folded provenance, {label}");
@@ -217,15 +214,16 @@ where
                 out
             })
             .collect();
-        module
-            .ckks_unfold(
+        with_scratch::<BE, _>(fold_bytes, |s| {
+            module.ckks_unfold(
                 &mut outs,
                 &mut refreshed,
                 automorphisms,
                 ring_switch.map(|keys| &keys.outbound),
-                &mut fold_scratch.borrow(),
+                s,
             )
-            .unwrap();
+        })
+        .unwrap();
         for (i, (out, msg)) in outs.iter().zip(&msgs).enumerate() {
             assert_eq!(
                 (out.meta(), out.log_sparsity()),
@@ -239,14 +237,10 @@ where
 
         if ring_switch.is_none() {
             GLWEToBackendMut::<BE>::set_noise(&mut ins[1], None);
-            module
-                .ckks_fold(
-                    &mut folded,
-                    &ins,
-                    ring_switch.map(|keys| &keys.inbound),
-                    &mut fold_scratch.borrow(),
-                )
-                .unwrap();
+            with_scratch::<BE, _>(fold_bytes, |s| {
+                module.ckks_fold(&mut folded, &ins, ring_switch.map(|keys| &keys.inbound), s)
+            })
+            .unwrap();
             for ct in &folded {
                 assert_eq!(ct.noise(), None, "mixed folded provenance, {label}");
             }

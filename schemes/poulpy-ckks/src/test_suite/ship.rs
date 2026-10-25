@@ -11,7 +11,7 @@ use poulpy_core::{
     layouts::{BackendGLWESecret, GGLWEInfos, LWEInfos, ModuleCoreAlloc, prepared::GLWESecretPrepared},
 };
 use poulpy_hal::{
-    api::{CnvPVecAlloc, CnvPVecBytesOf, Convolution, NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
+    api::{CnvPVecAlloc, CnvPVecBytesOf, Convolution, NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
     layouts::{HostBytesBackend, Module, ScratchOwned, Standard},
     source::Source,
 };
@@ -33,6 +33,7 @@ use super::helpers::{
     TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_decrypt_precision, ckks_decrypt_decode,
     ckks_encrypt, ckks_encrypt_pt, ckks_spec, test_vector_1, want_rotate,
 };
+use super::parity::helpers::with_scratch;
 use poulpy_core::api::GLWESecretSampling;
 
 /// SHIP suite plan on the test ring: sparse weight 32, full offset window,
@@ -315,13 +316,13 @@ where
             gen_key(mux_k_digit, false, 5, &mut scratch),
         ];
 
-        let mux_bytes =
-            BE::ckks_ship_mux_rotate_tmp_bytes(module, &alloc_ct(&params, module, k), &group_rot[0].key, group_rot.len());
+        let mux_bytes = |group: &[HMuxRotKeyPrepared<BE::OwnedBuf, BE>]| {
+            BE::ckks_ship_mux_rotate_tmp_bytes(module, &alloc_ct(&params, module, k), &group[0].key, group.len())
+        };
         let plans = ship_mux_plans(
             module,
             [group_rot.as_slice(), group_id.as_slice(), group_zero.as_slice()].into_iter(),
         );
-        let mut mux_scratch = ScratchOwned::<BE>::alloc(mux_bytes);
 
         let ct = ckks_encrypt(
             &params,
@@ -339,7 +340,10 @@ where
         let (want_re, want_im) = want_rotate(&re1, &im1, -5, m);
         let mut out = alloc_ct(&params, module, k);
         module.ckks_copy(&mut out, &ct, &mut scratch.borrow()).unwrap();
-        BE::ckks_ship_mux_rotate(module, &mut out, &group_rot, &plans, &mut mux_scratch.borrow()).unwrap();
+        with_scratch::<BE, _>(mux_bytes(&group_rot), |s| {
+            BE::ckks_ship_mux_rotate(module, &mut out, &group_rot, &plans, s)
+        })
+        .unwrap();
         assert_eq!(out.log_delta(), ct.log_delta());
         assert_eq!(out.log_budget(), ct.log_budget());
         assert_decrypt_precision(
@@ -357,7 +361,10 @@ where
         // digit = 0: identity.
         let mut out_id = alloc_ct(&params, module, k);
         module.ckks_copy(&mut out_id, &ct, &mut scratch.borrow()).unwrap();
-        BE::ckks_ship_mux_rotate(module, &mut out_id, &group_id, &plans, &mut mux_scratch.borrow()).unwrap();
+        with_scratch::<BE, _>(mux_bytes(&group_id), |s| {
+            BE::ckks_ship_mux_rotate(module, &mut out_id, &group_id, &plans, s)
+        })
+        .unwrap();
         assert_decrypt_precision(
             "mux_rotate(digit=0)",
             &params,
@@ -374,7 +381,10 @@ where
         let zeros = vec![F::zero(); m];
         let mut out_zero = alloc_ct(&params, module, k);
         module.ckks_copy(&mut out_zero, &ct, &mut scratch.borrow()).unwrap();
-        BE::ckks_ship_mux_rotate(module, &mut out_zero, &group_zero, &plans, &mut mux_scratch.borrow()).unwrap();
+        with_scratch::<BE, _>(mux_bytes(&group_zero), |s| {
+            BE::ckks_ship_mux_rotate(module, &mut out_zero, &group_zero, &plans, s)
+        })
+        .unwrap();
         assert_decrypt_precision(
             "mux_rotate(empty)",
             &params,
@@ -400,14 +410,9 @@ where
             .map(|(&k_digit, rot)| gen_key(k_digit, false, rot, &mut scratch))
             .collect();
         let plans = ship_mux_plans(module, [group.as_slice()].into_iter());
-        let mut mux_scratch = ScratchOwned::<BE>::alloc(BE::ckks_ship_mux_rotate_tmp_bytes(
-            module,
-            &alloc_ct(&params, module, k),
-            &group[0].key,
-            group.len(),
-        ));
+        let bytes = BE::ckks_ship_mux_rotate_tmp_bytes(module, &alloc_ct(&params, module, k), &group[0].key, group.len());
         let mut out = alloc_ct(&params, module, k);
-        let err = BE::ckks_ship_mux_rotate(module, &mut out, &group, &plans, &mut mux_scratch.borrow()).unwrap_err();
+        let err = with_scratch::<BE, _>(bytes, |s| BE::ckks_ship_mux_rotate(module, &mut out, &group, &plans, s)).unwrap_err();
         assert!(
             err.to_string().contains("differ in width or count"),
             "mux_rotate({label}): {err}"
@@ -417,14 +422,9 @@ where
     let group: Vec<_> = [0, 5].map(|rot| gen_key(b, false, rot, &mut scratch)).into();
     let wide_k = group[0].key.gglwe_layout().max_input_k().as_usize() + 1;
     let plans = ship_mux_plans(module, [group.as_slice()].into_iter());
-    let mut mux_scratch = ScratchOwned::<BE>::alloc(BE::ckks_ship_mux_rotate_tmp_bytes(
-        module,
-        &alloc_ct(&params, module, wide_k),
-        &group[0].key,
-        group.len(),
-    ));
+    let bytes = BE::ckks_ship_mux_rotate_tmp_bytes(module, &alloc_ct(&params, module, wide_k), &group[0].key, group.len());
     let mut out = alloc_ct(&params, module, wide_k);
-    let err = BE::ckks_ship_mux_rotate(module, &mut out, &group, &plans, &mut mux_scratch.borrow()).unwrap_err();
+    let err = with_scratch::<BE, _>(bytes, |s| BE::ckks_ship_mux_rotate(module, &mut out, &group, &plans, s)).unwrap_err();
     assert!(
         err.to_string().contains("wider than a key's max_input_k"),
         "mux_rotate(input one bit past its keys): {err}"
@@ -524,13 +524,14 @@ fn ship_bootstrap_case<BE, F, E>(
 
     let mut out = alloc_ct(&big, module, kk);
     let ship_bytes = CKKSShipOps::<BE, F>::ckks_ship_bootstrap_tmp_bytes(module, &out, &ct0, &keys).unwrap();
-    let mut ship_scratch = ScratchOwned::<BE>::alloc(ship_bytes);
-    if complex {
-        CKKSShipOps::<BE, F>::ckks_ship_bootstrap_complex_into(module, &mut out, &ct0, &keys, &mut ship_scratch.borrow())
-            .unwrap();
-    } else {
-        CKKSShipOps::<BE, F>::ckks_ship_bootstrap_into(module, &mut out, &ct0, &keys, &mut ship_scratch.borrow()).unwrap();
-    }
+    with_scratch::<BE, _>(ship_bytes, |s| {
+        if complex {
+            CKKSShipOps::<BE, F>::ckks_ship_bootstrap_complex_into(module, &mut out, &ct0, &keys, s)
+        } else {
+            CKKSShipOps::<BE, F>::ckks_ship_bootstrap_into(module, &mut out, &ct0, &keys, s)
+        }
+    })
+    .unwrap();
     assert_eq!(
         out.slots(),
         if complex { SlotsKind::Complex } else { SlotsKind::Real },

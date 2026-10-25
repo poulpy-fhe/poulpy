@@ -57,8 +57,8 @@ use poulpy_core::layouts::{GLWEToBackendMut, LWEInfos};
 
 use poulpy_hal::{
     AlignedBuf,
-    api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{DataView, DataViewMut, HostBytesBackend, Module, PrepareHint, ScratchArena, ScratchOwned, Standard},
+    api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
+    layouts::{DataView, DataViewMut, HostBytesBackend, Module, PrepareHint, ScratchArena, Standard},
 };
 
 use super::helpers::{
@@ -67,6 +67,7 @@ use super::helpers::{
     assert_mul_pt_output_meta, ckks_encrypt, ckks_encrypt_with_prec, ckks_pt_cst_full, ckks_snapshot, encode_and_upload_pt,
     gen_sk_with_raw, gen_tsk, precision_at, quantize, quantized_const, quantized_vector, want_mul, want_square,
 };
+use super::parity::helpers::with_scratch;
 
 use crate::{SetCKKSInfos, test_suite::CKKSTestParams, test_suite::reference_encoder::ReferenceEncoder};
 
@@ -547,10 +548,7 @@ pub fn test_mul_ct_smaller_output_exact_scratch<BE, F, E>(
     let dst_k = params.k - params.base2k - 1;
     let mut ct_res = alloc_ct(&params, module, dst_k);
     let exact_bytes = module.ckks_mul_tmp_bytes(&ct_res, &ct1, &ct2, &tsk);
-    let mut mul_scratch = ScratchOwned::<BE>::alloc(exact_bytes);
-    module
-        .ckks_mul_into(&mut ct_res, &ct1, &ct2, &tsk, &mut mul_scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(exact_bytes, |s| module.ckks_mul_into(&mut ct_res, &ct1, &ct2, &tsk, s)).unwrap();
     assert_mul_ct_output_meta("mul_ct smaller_output_exact_scratch", &ct_res, dst_k, &ct1, &ct2);
     assert_decrypt_precision(
         "mul_ct smaller_output_exact_scratch",

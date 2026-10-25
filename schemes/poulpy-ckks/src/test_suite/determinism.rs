@@ -21,8 +21,8 @@ use std::{
 
 use poulpy_core::layouts::{Base2K, LWEInfos, TorusPrecision};
 use poulpy_hal::{
-    api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, Module, Ring, ScratchOwned, Standard, ZnxView},
+    api::ModuleNew,
+    layouts::{Backend, Module, Ring, Standard, ZnxView},
 };
 
 use crate::{
@@ -36,7 +36,7 @@ use crate::{
     },
     polynomial::SplitStrategy,
     reference::gen_dft_matrices,
-    test_suite::helpers::TestScalar,
+    test_suite::{helpers::TestScalar, parity::helpers::with_scratch},
 };
 
 const FIXTURES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/src/test_suite/determinism.txt");
@@ -153,7 +153,6 @@ where
     };
     let bits = precision::<F>();
     let max_slots = module.ckks_max_slots();
-    let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_reim_tmp_bytes(max_slots));
     let mut log_slots_set = vec![0, 1, 3, 6];
     log_slots_set.push(max_slots.ilog2() as usize);
     for log_slots in log_slots_set {
@@ -180,22 +179,17 @@ where
                 slots: SlotsKind::Complex,
                 log_sparsity: 0,
             });
-            module
-                .ckks_encode_reim_into(&mut pt, &re, &im, &mut scratch.borrow())
-                .unwrap();
+            let reim_bytes = module.ckks_reim_tmp_bytes(slots);
+            with_scratch::<BE, _>(reim_bytes, |s| module.ckks_encode_reim_into(&mut pt, &re, &im, s)).unwrap();
             check_plaintext::<BE>(&format!("{key}-delta{log_delta}-plaintext"), &pt);
 
             let mut got_re = vec![F::zero(); slots];
             let mut got_im = vec![F::zero(); slots];
-            module
-                .ckks_decode_reim_into(&pt, &mut got_re, &mut got_im, &mut scratch.borrow())
-                .unwrap();
+            with_scratch::<BE, _>(reim_bytes, |s| module.ckks_decode_reim_into(&pt, &mut got_re, &mut got_im, s)).unwrap();
             check_scalars(&format!("{key}-delta{log_delta}-decoded"), &[got_re, got_im].concat());
 
             let mut coefficients = vec![F::zero(); coeffs];
-            module
-                .ckks_decode_coeffs_host_into(&pt, &mut coefficients, &mut scratch.borrow())
-                .unwrap();
+            with_scratch::<BE, _>(reim_bytes, |s| module.ckks_decode_coeffs_host_into(&pt, &mut coefficients, s)).unwrap();
             check_scalars(&format!("{key}-delta{log_delta}-dequantized"), &coefficients);
         }
     }
@@ -265,7 +259,7 @@ where
     .unwrap();
     check_scalars(&format!("setup-f{bits}-minimax"), &fit.poly.coeffs);
 
-    let mut scratch = ScratchOwned::<BE>::alloc(1 << 22);
+    let compile_bytes = module.ckks_reim_tmp_bytes(module.ckks_max_slots());
     for kind in [
         EvalModType::SinCheby,
         EvalModType::CosCheby,
@@ -285,7 +279,7 @@ where
             coeffs_meta: CoeffsMeta::from_delta_budget(100, 10),
             f_mod_log_delta: 110,
         };
-        let compiled = compile_eval_mod::<BE, F>(Base2K(20), plan, module, &mut scratch.borrow()).unwrap();
+        let compiled = with_scratch::<BE, _>(compile_bytes, |s| compile_eval_mod::<BE, F>(Base2K(20), plan, module, s)).unwrap();
         let scalars = match &compiled.f_mod_poly {
             EvalModPoly::Real(p) => p.coeffs.clone(),
             EvalModPoly::Complex(p) => p.re.iter().chain(&p.im).copied().collect(),
