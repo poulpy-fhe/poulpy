@@ -294,6 +294,7 @@ where
 /// Scratch bytes for one public PaCo call. With `encapsulated`, includes the
 /// one-time dense-to-structured key switch in addition to a direct branch.
 fn paco_bootstrap_tmp_bytes<BE, F, K, Src>(
+    op: &'static str,
     module: &Module<BE>,
     output: &CKKSCiphertextOwned<BE>,
     input: &Src,
@@ -307,7 +308,7 @@ where
     K: PaCoKeys<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
-    validate_runtime(module, context, output, input, keys)?;
+    validate_runtime(op, module, context, output, input, keys)?;
     Ok(call_tmp_bytes_validated(module, output, input, context, keys, encapsulated)?.0)
 }
 
@@ -324,7 +325,15 @@ where
     K: PaCoKeys<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
-    paco_bootstrap_tmp_bytes(module, output, input, context, keys, false)
+    paco_bootstrap_tmp_bytes(
+        "ckks_paco_bootstrap_direct_tmp_bytes",
+        module,
+        output,
+        input,
+        context,
+        keys,
+        false,
+    )
 }
 
 pub(crate) fn ckks_paco_bootstrap_tmp_bytes_derived<BE, F, K, Src>(
@@ -340,12 +349,13 @@ where
     K: PaCoKeys<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
-    paco_bootstrap_tmp_bytes(module, output, input, context, keys, true)
+    paco_bootstrap_tmp_bytes("ckks_paco_bootstrap_tmp_bytes", module, output, input, context, keys, true)
 }
 
 /// Performs layout validation and rejects undersized scratch before an output
 /// ciphertext or encapsulation temporary is mutated.
 pub(super) fn preflight<BE, F, K, Src>(
+    op: &'static str,
     module: &Module<BE>,
     output: &CKKSCiphertextOwned<BE>,
     input: &Src,
@@ -360,7 +370,7 @@ where
     K: PaCoKeys<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
-    let output_meta = validate_runtime(module, context, output, input, keys)?;
+    let output_meta = validate_runtime(op, module, context, output, input, keys)?;
     let (required, direct) = call_tmp_bytes_validated(module, output, input, context, keys, encapsulated)?;
     ckks_ensure!(
         scratch.available() >= required,

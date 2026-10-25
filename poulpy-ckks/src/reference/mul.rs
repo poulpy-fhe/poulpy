@@ -81,7 +81,7 @@ pub trait CKKSMulReference<BE: Backend> {
                 source,
             })?;
 
-        let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params(dst, a, b)?;
+        let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params("ckks_mul_into", dst, a, b)?;
 
         let one_pass = mul_one_pass(dst, &[a.base2k(), b.base2k()], a.k().max(b.k()), cnv_offset, tsk).then_some(
             |dst: &mut Dst, res_k, s: &mut ScratchArena<'_, BE>| self.glwe_mul_relinearize(cnv_offset, dst, res_k, a, b, tsk, s),
@@ -126,7 +126,7 @@ pub trait CKKSMulReference<BE: Backend> {
                 source,
             })?;
 
-        let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params(dst, dst, a)?;
+        let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params("ckks_mul_assign", dst, dst, a)?;
 
         let one_pass = mul_one_pass(dst, &[a.base2k()], dst.k().max(a.k()), cnv_offset, tsk).then_some(
             |dst: &mut Dst, res_k, s: &mut ScratchArena<'_, BE>| {
@@ -308,7 +308,7 @@ pub trait CKKSMulReference<BE: Backend> {
                 source,
             })?;
 
-        let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params(dst, a, a)?;
+        let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params("ckks_square_into", dst, a, a)?;
 
         let one_pass = mul_one_pass(dst, &[a.base2k()], a.k(), cnv_offset, tsk).then_some(
             |dst: &mut Dst, res_k, s: &mut ScratchArena<'_, BE>| self.glwe_square_relinearize(cnv_offset, dst, res_k, a, tsk, s),
@@ -345,7 +345,7 @@ pub trait CKKSMulReference<BE: Backend> {
                 source,
             })?;
 
-        let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params(dst, dst, dst)?;
+        let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params("ckks_square_assign", dst, dst, dst)?;
 
         let one_pass =
             mul_one_pass(dst, &[], dst.k(), cnv_offset, tsk).then_some(|dst: &mut Dst, res_k, s: &mut ScratchArena<'_, BE>| {
@@ -416,7 +416,7 @@ pub trait CKKSMulReference<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
     {
-        let (res_log_budget, res_log_delta, cnv_offset) = get_mul_pt_params(dst, a, pt)?;
+        let (res_log_budget, res_log_delta, cnv_offset) = get_mul_pt_params("ckks_mul_pt_vec_into", dst, a, pt)?;
         ensure_plaintext_degree_embeds("ckks_mul_pt_vec", a.n().as_usize(), pt.n().as_usize(), BE::MIN_DEGREE)?;
         // Set the result metadata first: `dst.size()` is meta-derived and a fresh
         // `dst` carries zero meta, so `glwe_mul_plain` (which writes `res.size()`
@@ -437,7 +437,7 @@ pub trait CKKSMulReference<BE: Backend> {
         Self: GLWECopy<BE> + GLWEMulPlain<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord> + VecZnxCopy<BE>,
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
     {
-        let (res_log_budget, res_log_delta, cnv_offset) = get_mul_pt_params(dst, dst, pt)?;
+        let (res_log_budget, res_log_delta, cnv_offset) = get_mul_pt_params("ckks_mul_pt_vec_assign", dst, dst, pt)?;
         ensure_plaintext_degree_embeds(
             "ckks_mul_pt_vec_assign",
             dst.n().as_usize(),
@@ -472,7 +472,7 @@ pub trait CKKSMulReference<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
     {
-        let (res_log_budget, res_log_delta, cnv_offset) = get_mul_pt_params(dst, a, pt)?;
+        let (res_log_budget, res_log_delta, cnv_offset) = get_mul_pt_params("ckks_mul_pt_const_into", dst, a, pt)?;
         // Set the result metadata first: `dst.size()` is meta-derived and a fresh
         // `dst` carries zero meta, so `glwe_mul_const` (which writes `res.size()`
         // limbs) would otherwise produce an empty output.
@@ -499,7 +499,7 @@ pub trait CKKSMulReference<BE: Backend> {
         Self: GLWECopy<BE> + GLWEMulConst<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord> + VecZnxCopy<BE>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
     {
-        let (res_log_budget, res_log_delta, cnv_offset) = get_mul_pt_params(dst, dst, cnst)?;
+        let (res_log_budget, res_log_delta, cnv_offset) = get_mul_pt_params("ckks_mul_pt_const_assign", dst, dst, cnst)?;
         scratch.scope(|scratch_local| {
             let (mut input, mut op_scratch) = scratch_local.take_glwe_scratch(&*dst);
             self.glwe_copy(&mut input, &*dst, &mut op_scratch);
@@ -662,9 +662,11 @@ pub(crate) fn get_mul_prepared_params<BE: Backend, D: GLWEInfos + CKKSInfos>(
     dst: &D,
     prepared: &CKKSPreparedRight<BE>,
 ) -> Result<(usize, usize, usize, TorusPrecision)> {
-    check_prepared_layout("ckks_mul_prepared", dst, prepared)?;
+    const OP: &str = "ckks_mul_prepared_assign";
+    check_prepared_layout(OP, dst, prepared)?;
     let tensor_k = dst.k().max(prepared.k());
     let (log_budget, log_delta, cnv_offset) = mul_ct_params_raw(
+        OP,
         dst.k().as_usize(),
         dst.log_delta(),
         dst.k().into(),
@@ -673,19 +675,27 @@ pub(crate) fn get_mul_prepared_params<BE: Backend, D: GLWEInfos + CKKSInfos>(
     )?;
     Ok((log_budget, log_delta, cnv_offset, tensor_k))
 }
-pub(crate) fn get_mul_ct_params<R, A, B>(res: &R, a: &A, b: &B) -> Result<(usize, usize, usize)>
+pub(crate) fn get_mul_ct_params<R, A, B>(op: &'static str, res: &R, a: &A, b: &B) -> Result<(usize, usize, usize)>
 where
     R: CKKSInfos,
     A: CKKSInfos,
     B: CKKSInfos,
 {
-    mul_ct_params_raw(res.k().as_usize(), a.log_delta(), a.k().into(), b.log_delta(), b.k().into())
+    mul_ct_params_raw(
+        op,
+        res.k().as_usize(),
+        a.log_delta(),
+        a.k().into(),
+        b.log_delta(),
+        b.k().into(),
+    )
 }
 
 /// Shared `(log_budget, log_delta, cnv_offset)` rule for ct × ct multiplication,
 /// expressed on raw values so the BSGS driver computes bit-identical parameters.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn mul_ct_params_raw(
+    op: &'static str,
     res_max_k: usize,
     a_log_delta: usize,
     a_k: usize,
@@ -695,7 +705,7 @@ pub(crate) fn mul_ct_params_raw(
     let a_log_budget = a_k.saturating_sub(a_log_delta);
     let b_log_budget = b_k.saturating_sub(b_log_delta);
 
-    let res_log_budget = checked_mul_ct_log_budget("ckks_mul", a_log_budget, b_log_budget, a_log_delta, b_log_delta)?;
+    let res_log_budget = checked_mul_ct_log_budget(op, a_log_budget, b_log_budget, a_log_delta, b_log_delta)?;
     let res_log_delta = a_log_delta.min(b_log_delta);
 
     let res_offset = (res_log_budget + res_log_delta).saturating_sub(res_max_k);
@@ -709,19 +719,20 @@ pub(crate) fn mul_ct_params_raw(
     let cnv_offset = a_log_budget.max(b_log_budget) + a_log_delta.max(b_log_delta) + res_offset;
 
     Ok((
-        checked_log_budget_sub("ckks_mul", res_log_budget, res_offset)?,
+        checked_log_budget_sub(op, res_log_budget, res_offset)?,
         res_log_delta,
         cnv_offset,
     ))
 }
 
-pub(crate) fn get_mul_pt_params<R, A, B>(res: &R, a: &A, b: &B) -> Result<(usize, usize, usize)>
+pub(crate) fn get_mul_pt_params<R, A, B>(op: &'static str, res: &R, a: &A, b: &B) -> Result<(usize, usize, usize)>
 where
     R: CKKSInfos,
     A: CKKSInfos,
     B: CKKSInfos + IntPolyInfos,
 {
     mul_pt_params_raw(
+        op,
         res.k().as_usize(),
         a.log_delta(),
         a.log_budget(),
@@ -734,6 +745,7 @@ where
 /// Shared `(log_budget, log_delta, cnv_offset)` rule for ct × pt multiplication,
 /// expressed on raw values so the BSGS driver computes bit-identical parameters.
 pub(crate) fn mul_pt_params_raw(
+    op: &'static str,
     res_max_k: usize,
     a_log_delta: usize,
     a_log_budget: usize,
@@ -741,13 +753,13 @@ pub(crate) fn mul_pt_params_raw(
     b_log_budget: usize,
     b_max_k: usize,
 ) -> Result<(usize, usize, usize)> {
-    let res_log_budget = checked_mul_pt_log_budget("ckks_mul_pt", a_log_budget, b_log_budget, a_log_delta, b_log_delta)?;
+    let res_log_budget = checked_mul_pt_log_budget(op, a_log_budget, b_log_budget, a_log_delta, b_log_delta)?;
     let res_log_delta = a_log_delta;
     let res_offset = (res_log_budget + res_log_delta).saturating_sub(res_max_k);
     let cnv_offset = b_max_k + res_offset;
 
     Ok((
-        checked_log_budget_sub("ckks_mul_pt", res_log_budget, res_offset)?,
+        checked_log_budget_sub(op, res_log_budget, res_offset)?,
         res_log_delta,
         cnv_offset,
     ))

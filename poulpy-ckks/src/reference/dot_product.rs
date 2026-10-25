@@ -210,6 +210,7 @@ pub trait CKKSDotProductReference<BE: Backend>: Sized {
         let (a0, b0, base2k) = (a[0], b[0], dst.base2k());
         ensure_plaintext_degree_embeds(OP, dst.n().as_usize(), b0.n().as_usize(), BE::MIN_DEGREE)?;
         let (log_budget, log_delta, cnv_offset) = mul_pt_params_raw(
+            OP,
             dst.k().as_usize(),
             a0.log_delta(),
             a0.log_budget(),
@@ -288,7 +289,7 @@ where
             k: tensor_layout.k.into(),
             source,
         })?;
-    let (log_budget, log_delta, cnv_offset) = get_mul_ct_params(dst, a[0], b[0])?;
+    let (log_budget, log_delta, cnv_offset) = get_mul_ct_params(op, dst, a[0], b[0])?;
     // The eager sum's label and slot kind: the smallest label and the join over every operand.
     let metas = || a.iter().map(|ct| ct.meta()).chain(b.iter().map(|ct| ct.meta()));
     let stamp = MulStamp {

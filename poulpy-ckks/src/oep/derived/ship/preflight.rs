@@ -38,7 +38,7 @@ where
     let params = keys.parameters();
     let plan = params.plan();
     let base2k = params.base2k();
-    validate_runtime(module, output, input, keys, params.complex())?;
+    validate_runtime("ckks_ship_bootstrap_tmp_bytes", module, output, input, keys, params.complex())?;
 
     let kk = plan.raised_k(base2k);
     let bottom = ship_bottom_layout(plan, base2k);

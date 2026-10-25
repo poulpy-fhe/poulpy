@@ -456,7 +456,7 @@ pub fn test_square_into_rejects_exhausted_capacity<BE, F, E>(
         "square_into_rejects_exhausted_capacity",
         &err,
         CKKSCompositionError::MultiplicationPrecisionUnderflow {
-            op: "ckks_mul",
+            op: "ckks_square_into",
             lhs_log_budget: ct.log_budget(),
             rhs_log_budget: ct.log_budget(),
             lhs_log_delta: ct.log_delta(),

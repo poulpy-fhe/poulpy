@@ -39,6 +39,7 @@ fn ship_root_layout<BE: Backend>(module: &Module<BE>, base2k: Base2K, k: TorusPr
 
 /// Validates the runtime ciphertexts against the key bundle's parameters.
 pub(crate) fn validate_runtime<BE, Src>(
+    op: &'static str,
     module: &Module<BE>,
     output: &CKKSCiphertextOwned<BE>,
     input: &Src,
@@ -49,46 +50,45 @@ where
     BE: Backend,
     Src: CKKSCtBounds,
 {
-    const OP: &str = "ckks_ship_bootstrap";
     let params = keys.parameters();
     let plan = params.plan();
     let base2k = params.base2k();
     ckks_ensure!(
         module.n() == plan.n(),
-        "{OP}: module degree {} does not match plan degree {}",
+        "{op}: module degree {} does not match plan degree {}",
         module.n(),
         plan.n()
     );
     ckks_ensure!(
         !complex || params.complex(),
-        "{OP}: keys lack the omega_2 masks (generate with complex)"
+        "{op}: keys lack the omega_2 masks (generate with complex)"
     );
     ckks_ensure!(
         input.n().as_usize() == plan.n() && input.rank().as_usize() == 1,
-        "{OP}: input degree {} / rank {} does not match the plan",
+        "{op}: input degree {} / rank {} does not match the plan",
         input.n(),
         input.rank()
     );
     ckks_ensure!(
         input.base2k().as_usize() == base2k && input.k().as_usize() == base2k,
-        "{OP}: input must span a single limb of base2k {base2k}, got base2k {} and width {}",
+        "{op}: input must span a single limb of base2k {base2k}, got base2k {} and width {}",
         input.base2k(),
         input.k()
     );
     ckks_ensure!(
         output.n().as_usize() == plan.n() && output.rank().as_usize() == 1,
-        "{OP}: output degree {} / rank {} does not match the plan",
+        "{op}: output degree {} / rank {} does not match the plan",
         output.n(),
         output.rank()
     );
     ckks_ensure!(
         output.base2k().as_usize() == base2k,
-        "{OP}: output base2k {} does not match the key radix {base2k}",
+        "{op}: output base2k {} does not match the key radix {base2k}",
         output.base2k()
     );
     ckks_ensure!(
         output.max_k().as_usize() >= plan.raised_k(base2k),
-        "{OP}: output capacity {} is below the raised precision {}",
+        "{op}: output capacity {} is below the raised precision {}",
         output.max_k(),
         plan.raised_k(base2k)
     );
@@ -99,6 +99,7 @@ where
 /// rotations and product tree per coefficient half, returning the product-tree
 /// roots in half order.
 fn ship_bootstrap_roots<BE, F, Src>(
+    op: &'static str,
     module: &Module<BE>,
     input: &Src,
     keys: &ShipKeysPrepared<BE::OwnedBuf, BE>,
@@ -110,7 +111,6 @@ where
     F: ShipScalar,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
-    const OP: &str = "ckks_ship_bootstrap";
     let params = keys.parameters();
     let plan = *params.plan();
     let base2k = params.base2k();
@@ -136,7 +136,7 @@ where
     })?;
     ckks_ensure!(
         enc.pi.len() == plan.sparse_hamming_weight() && (!complex || enc.pt0_2.is_some()),
-        "{OP}: malformed coefficient encodings"
+        "{op}: malformed coefficient encodings"
     );
 
     // The plan's Hamming weight sets the leaf count, so the leaves and their product tree stay on the heap.
@@ -173,7 +173,7 @@ where
     );
     for (slot, ik) in keys.index_keys().iter().enumerate() {
         let pi = &enc.pi[slot];
-        ckks_ensure!(pi.len() == 4 * theta, "{OP}: malformed pi encodings at slot {slot}");
+        ckks_ensure!(pi.len() == 4 * theta, "{op}: malformed pi encodings at slot {slot}");
         for (half, half_leaves) in leaves.iter_mut().enumerate() {
             let masks = if half == 0 { ik.masks() } else { ik.masks2() };
             let mut acc = module.ckks_ciphertext_alloc(b2k_t, TorusPrecision(kk as u32));
@@ -197,7 +197,7 @@ where
                     Some(y) => {
                         let budget = x.log_budget().min(y.log_budget());
                         let consumed = x.log_delta().max(y.log_delta());
-                        ckks_ensure!(budget >= consumed, "{OP}: product tree exhausts the budget");
+                        ckks_ensure!(budget >= consumed, "{op}: product tree exhausts the budget");
                         let k_dst = budget - consumed + x.log_delta().min(y.log_delta());
                         let mut dst = module.ckks_ciphertext_alloc(b2k_t, TorusPrecision(k_dst as u32));
                         module.ckks_mul_into(&mut dst, &x, &y, keys.tensor_key(), scratch)?;
@@ -226,9 +226,9 @@ where
     F: ShipScalar,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
-    validate_runtime(module, output, input, keys, false)?;
+    validate_runtime("ckks_ship_bootstrap_into", module, output, input, keys, false)?;
     let base2k: poulpy_core::layouts::Base2K = keys.parameters().base2k().into();
-    let mut roots = ship_bootstrap_roots::<BE, F, _>(module, input, keys, false, scratch)?;
+    let mut roots = ship_bootstrap_roots::<BE, F, _>("ckks_ship_bootstrap_into", module, input, keys, false, scratch)?;
 
     let root = roots.pop().expect("real bootstrap has one root");
     let (mut conj, mut scratch_rest) = scratch
@@ -255,9 +255,9 @@ where
     F: ShipScalar,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
-    validate_runtime(module, output, input, keys, true)?;
+    validate_runtime("ckks_ship_bootstrap_complex_into", module, output, input, keys, true)?;
     let base2k: poulpy_core::layouts::Base2K = keys.parameters().base2k().into();
-    let mut roots = ship_bootstrap_roots::<BE, F, _>(module, input, keys, true, scratch)?;
+    let mut roots = ship_bootstrap_roots::<BE, F, _>("ckks_ship_bootstrap_complex_into", module, input, keys, true, scratch)?;
 
     let v2 = roots.pop().expect("complex bootstrap has two roots");
     let v1 = roots.pop().expect("complex bootstrap has two roots");

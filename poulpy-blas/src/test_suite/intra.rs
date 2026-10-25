@@ -468,15 +468,27 @@ pub fn test_blas_intra_guards<BE, F, E>(
         alloc_grid(&params, module, log_d, rows, cols, narrow),
         alloc_grid(&params, module, log_d, cols, rows, narrow),
     );
-    assert_guard::<BE, _>("budget", "mul", Budget, &mut narrow_res_t, |res| {
-        module.blas_transpose(res, &ct, &ctx, &keys, &mut op_scratch.borrow())
-    });
-    assert_guard::<BE, _>("budget", "mul", Budget, &mut narrow_res, |res| {
-        module.blas_rotate_rows(1, res, &ct, &ctx, &keys, &mut op_scratch.borrow())
-    });
-    assert_guard::<BE, _>("budget", "mul", Budget, &mut narrow_res, |res| {
-        module.blas_rotate_cols(1, res, &ct, &ctx, &keys, &mut op_scratch.borrow())
-    });
+    assert_guard::<BE, _>(
+        "budget",
+        "ckks_eval_linear_transformation_into",
+        Budget,
+        &mut narrow_res_t,
+        |res| module.blas_transpose(res, &ct, &ctx, &keys, &mut op_scratch.borrow()),
+    );
+    assert_guard::<BE, _>(
+        "budget",
+        "ckks_eval_linear_transformation_into",
+        Budget,
+        &mut narrow_res,
+        |res| module.blas_rotate_rows(1, res, &ct, &ctx, &keys, &mut op_scratch.borrow()),
+    );
+    assert_guard::<BE, _>(
+        "budget",
+        "ckks_eval_linear_transformation_into",
+        Budget,
+        &mut narrow_res,
+        |res| module.blas_rotate_cols(1, res, &ct, &ctx, &keys, &mut op_scratch.borrow()),
+    );
 
     // A shift by 1 takes both half maps along two or three blocks, the whole map along one.
     let (one_row, one_column) = (corner::<BE>(&ct, 1, ct.cols()), corner::<BE>(&ct, ct.rows(), 1));

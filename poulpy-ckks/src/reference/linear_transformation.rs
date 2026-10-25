@@ -237,12 +237,14 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         // match the width the diagonal data was positioned at in `cnv_prepare_right`
         // (its effective `k`), which can be below the rounded physical `max_k`.
         let (pt_log_scale, pt_max_k, pt_slots) = (first.lt_log_scale(), first.encoded_k().as_usize(), first.lt_slots());
-        ensure_uniform_diagonals("ckks_eval_linear_transformation_into", lt, lt_diagonal_meta)?;
+        const OP: &str = "ckks_eval_linear_transformation_into";
+        ensure_uniform_diagonals(OP, lt, lt_diagonal_meta)?;
         // ct × (plaintext diagonal): the ct × pt convolution rule, with the diagonal
         // described by just its scale (`pt_log_scale` → rhs `log_delta`) and storage
         // width (`pt_max_k` → rhs `max_k`). Its `log_budget` is dead in this math
         // (`checked_mul_pt_log_budget` reads the rhs budget only for diagnostics), so 0.
         let (res_log_budget, res_log_delta, cnv_offset) = mul_pt_params_raw(
+            OP,
             dst.k().as_usize(),
             src.log_delta(),
             src.log_budget(),
@@ -252,8 +254,8 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         )?;
         let res_k: TorusPrecision = (res_log_budget + res_log_delta).into();
         debug_assert_eq!(res_k, crate::api::ckks_linear_transformation_output_k(lt, src.k(), dst.k()));
-        let cyclotomic_order = operand_cyclotomic_order("ckks_eval_linear_transformation", self, src.n().as_usize())?;
-        check_required_keys(lt, babies, keys, cyclotomic_order, res_k)?;
+        let cyclotomic_order = operand_cyclotomic_order(OP, self, src.n().as_usize())?;
+        check_required_keys(OP, lt, babies, keys, cyclotomic_order, res_k)?;
         // `Σ diag ⊙ rot(src)` has real slots when `src` and the diagonals do, and is sparse where both are: a diagonal is
         // dense at its own degree.
         let slots = src.slots().join(pt_slots);
@@ -281,6 +283,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetAutomorphismKey<BE>,
     {
+        const OP: &str = "ckks_eval_linear_transformation_sum_into";
         if babies.len() != srcs.len() || lts.len() != srcs.len() {
             return Err(invalid_sum("srcs, babies and lts differ in length".into()));
         }
@@ -329,11 +332,12 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
             }
         }
         for &lt_t in lts {
-            ensure_uniform_diagonals("ckks_eval_linear_transformation_sum_into", lt_t, lt_diagonal_meta)?;
+            ensure_uniform_diagonals(OP, lt_t, lt_diagonal_meta)?;
         }
         // The terms share the source and diagonal metadata, so the first term's
         // ct × pt rule holds for all of them (see `ckks_eval_linear_transformation_into`).
         let (res_log_budget, res_log_delta, cnv_offset) = mul_pt_params_raw(
+            OP,
             dst.k().as_usize(),
             src.log_delta(),
             src.log_budget(),
@@ -342,9 +346,9 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
             pt_max_k,
         )?;
         let res_k: TorusPrecision = (res_log_budget + res_log_delta).into();
-        let cyclotomic_order = operand_cyclotomic_order("ckks_eval_linear_transformation", self, dst.n().as_usize())?;
+        let cyclotomic_order = operand_cyclotomic_order(OP, self, dst.n().as_usize())?;
         for (&babies_t, &lt_t) in babies.iter().zip(lts) {
-            check_required_keys(lt_t, babies_t, keys, cyclotomic_order, res_k)?;
+            check_required_keys(OP, lt_t, babies_t, keys, cyclotomic_order, res_k)?;
         }
         // The sum has real slots when every source and the diagonals do, and is sparse where all of them are.
         let slots = srcs.iter().fold(pt_slots, |slots, src_t| slots.join(src_t.slots()));
@@ -389,6 +393,7 @@ fn check_babies<BE: Backend, P>(lt: &LinearTransformation<P>, babies: &LinearTra
 /// Verifies that `babies` covers every baby rotation `lt` needs and that all
 /// automorphism keys required by `lt` are present (keyed by Galois element).
 fn check_required_keys<BE: Backend, P, H>(
+    op: &'static str,
     lt: &LinearTransformation<P>,
     babies: &LinearTransformationBabySteps<BE>,
     keys: &H,
@@ -409,7 +414,7 @@ where
         let gal_el = galois_element(rotation, cyclotomic_order);
         keys.get_automorphism_key(gal_el, giant_k)
             .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
-                op: "ckks_eval_linear_transformation",
+                op,
                 rotation,
                 k: giant_k.into(),
                 source,
