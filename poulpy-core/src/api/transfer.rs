@@ -145,6 +145,7 @@ where
         assert_eq!(self.base2k, dst.base2k, "transfer_into: GGLWE base2k");
         assert_eq!(self.k_aux, dst.k_aux, "transfer_into: GGLWE k_aux");
         assert_eq!(self.k_digit, dst.k_digit, "transfer_into: GGLWE k_digit");
+        assert_eq!(self.k_offset, dst.k_offset, "transfer_into: GGLWE k_offset");
         move_mat_znx(&self.data, &mut dst.data);
         dst.noise = self.noise.clone();
     }
@@ -384,14 +385,18 @@ mod tests {
     fn module_transfer_gglwe_roundtrip() {
         let src_module: Module<SrcBackend> = Module::new(64);
         let dst_module: Module<DstBackend> = Module::new(64);
-        let mut src: GGLWE<<SrcBackend as Backend>::OwnedBuf, <SrcBackend as Backend>::ZnxWord> = src_module.gglwe_alloc(
-            Base2K(12),
-            Dnum(3),
-            TorusPrecision(12),
-            TorusPrecision(12 + 6),
-            Rank(1),
-            Rank(2),
-        );
+        let mut src: GGLWE<<SrcBackend as Backend>::OwnedBuf, <SrcBackend as Backend>::ZnxWord> = src_module
+            .gglwe_alloc_from_infos(&GGLWELayout {
+                n: 64usize.into(),
+                base2k: Base2K(12),
+                dnum: Dnum(3),
+                k_digit: TorusPrecision(12),
+                k_aux: TorusPrecision(12 + 6),
+                k_offset: TorusPrecision(5),
+                rank_in: Rank(1),
+                rank_out: Rank(2),
+                stride: 1,
+            });
         fill_bytes(src.data.data_mut());
         src.noise = Some(
             ComponentNoise::from_secret_at(Distribution::BinaryFixed(11), TorusPrecision(54), 2).with_components(
@@ -610,6 +615,37 @@ mod tests {
             &src,
             &mut dst,
             "assertion `left == right` failed: transfer_into: GGLWECompressed k_offset\n  left: TorusPrecision(0)\n right: TorusPrecision(1)",
+            |dst| dst.clone(),
+        );
+    }
+
+    /// A row offset that leaves the limb count unchanged still differs.
+    #[test]
+    fn test_transfer_into_rejects_gglwe_offset_mismatch() {
+        let src_module: Module<SrcBackend> = Module::new(64);
+        let dst_module: Module<DstBackend> = Module::new(64);
+        let layout = GGLWELayout {
+            n: 64usize.into(),
+            base2k: Base2K(12),
+            dnum: Dnum(2),
+            k_digit: TorusPrecision(12),
+            k_aux: TorusPrecision(18),
+            k_offset: TorusPrecision(0),
+            rank_in: Rank(1),
+            rank_out: Rank(1),
+            stride: 1,
+        };
+        let src = src_module.gglwe_alloc_from_infos(&layout);
+        let mut dst = dst_module.gglwe_alloc_from_infos(&GGLWELayout {
+            k_offset: TorusPrecision(1),
+            ..layout
+        });
+        fill_bytes(dst.data.data_mut());
+        assert_eq!(src.data.size(), dst.data.size());
+        assert_transfer_refused(
+            &src,
+            &mut dst,
+            "assertion `left == right` failed: transfer_into: GGLWE k_offset\n  left: TorusPrecision(0)\n right: TorusPrecision(1)",
             |dst| dst.clone(),
         );
     }
