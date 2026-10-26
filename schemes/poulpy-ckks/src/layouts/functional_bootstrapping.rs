@@ -2,8 +2,10 @@
 //!
 //! Table entries are indexed by integer messages `0..p`. A general LUT uses
 //! trigonometric Hermite interpolation after EvalMod; a binary LUT uses a
-//! cosine approximation and avoids EvalMod. Both forms plug into an
-//! S2C-first bootstrapping recipe.
+//! cosine approximation with its output map folded in and avoids EvalMod.
+//! Both forms plug into an S2C-first bootstrapping recipe.
+
+use std::num::NonZeroUsize;
 
 use anyhow::{Result, anyhow, ensure};
 use num_traits::{Float, FloatConst};
@@ -35,9 +37,41 @@ pub(crate) enum EncodedLutKind<P> {
     General(ComplexBSGSPolynomial<P>),
     Binary {
         cos: BSGSPolynomial<P>,
-        affine: P,
-        log_interval_reduction: usize,
+        /// Absent without interval reduction.
+        chain: Option<DoubleAngleChain<P>>,
     },
+}
+
+/// The double-angle steps of a binary LUT, at least one.
+pub(crate) struct DoubleAngleChain<P> {
+    /// One constant per step: subtracted from the square in every step but
+    /// the last, then `f1`.
+    consts: P,
+    steps: NonZeroUsize,
+    /// Whether the last square is subtracted from `f1` instead of added to it.
+    negate: bool,
+}
+
+impl<P> DoubleAngleChain<P> {
+    pub(crate) fn consts(&self) -> &P {
+        &self.consts
+    }
+
+    pub(crate) fn steps(&self) -> NonZeroUsize {
+        self.steps
+    }
+
+    pub(crate) fn negate(&self) -> bool {
+        self.negate
+    }
+
+    fn map<Q>(&self, f: impl FnOnce(&P) -> Q) -> DoubleAngleChain<Q> {
+        DoubleAngleChain {
+            consts: f(&self.consts),
+            steps: self.steps,
+            negate: self.negate,
+        }
+    }
 }
 
 impl EncodedLut<CKKSPlaintextOwned<HostBytesBackend>> {
@@ -72,6 +106,8 @@ impl EncodedLut<CKKSPlaintextOwned<HostBytesBackend>> {
     /// `degree` controls the approximation polynomial, `k_interval` is its
     /// initial interpolation interval, and `log_interval_reduction` is the
     /// number of double-angle reduction steps applied after evaluation.
+    /// The map from the cosine to `[f0, f1]` is folded into the polynomial
+    /// and the double-angle constants, so it consumes no budget.
     pub fn binary<F>(
         host_module: &Module<HostBytesBackend>,
         f0: F,
@@ -86,19 +122,27 @@ impl EncodedLut<CKKSPlaintextOwned<HostBytesBackend>> {
     where
         F: CKKSScalar + Float + FloatConst,
     {
-        let (cos_poly, affine) = cos_hermite_binary(f0, f1, degree, k_interval, log_interval_reduction)?;
-        let cos = <Polynomial<F> as EncodeBSGS>::encode_bsgs_with(&cos_poly, host_module, base2k, coeffs_meta, strategy)?;
-        let mut affine_pt = host_module.ckks_pt_coeffs_alloc(2, base2k, coeffs_meta.k);
-        let mut affine_meta = coeffs_meta.meta;
-        affine_meta.slots = SlotsKind::Real;
-        affine_pt.set_meta(affine_meta);
-        affine_pt.encode_host_floats(&affine).map_err(|e| anyhow!("affine: {e}"))?;
+        let binary = cos_hermite_binary(f0, f1, degree, k_interval, log_interval_reduction)?;
+        let cos = <Polynomial<F> as EncodeBSGS>::encode_bsgs_with(&binary.poly, host_module, base2k, coeffs_meta, strategy)?;
+        let chain = match NonZeroUsize::new(binary.consts.len()) {
+            None => None,
+            Some(steps) => {
+                let mut consts = host_module.ckks_pt_coeffs_alloc(steps.get(), base2k, coeffs_meta.k);
+                let mut meta = coeffs_meta.meta;
+                meta.slots = SlotsKind::Real;
+                consts.set_meta(meta);
+                consts
+                    .encode_host_floats(&binary.consts)
+                    .map_err(|e| anyhow!("double-angle constants: {e}"))?;
+                Some(DoubleAngleChain {
+                    consts,
+                    steps,
+                    negate: binary.negate,
+                })
+            }
+        };
         Ok(Self {
-            kind: EncodedLutKind::Binary {
-                cos,
-                affine: affine_pt,
-                log_interval_reduction,
-            },
+            kind: EncodedLutKind::Binary { cos, chain },
             log_msg_ratio: 1,
             message_modulus: 2,
         })
@@ -123,14 +167,9 @@ impl<P> EncodedLut<P> {
     fn map<Q>(&self, mut f: impl FnMut(&P) -> Q) -> EncodedLut<Q> {
         let kind = match &self.kind {
             EncodedLutKind::General(series) => EncodedLutKind::General(series.map_baby_steps_ref(&mut f)),
-            EncodedLutKind::Binary {
-                cos,
-                affine,
-                log_interval_reduction,
-            } => EncodedLutKind::Binary {
+            EncodedLutKind::Binary { cos, chain } => EncodedLutKind::Binary {
                 cos: cos.map_baby_steps_ref(&mut f),
-                affine: f(affine),
-                log_interval_reduction: *log_interval_reduction,
+                chain: chain.as_ref().map(|chain| chain.map(&mut f)),
             },
         };
         EncodedLut {
@@ -165,11 +204,9 @@ impl<P> EncodedLut<P> {
         let coeff_log_delta = self.coeffs().log_delta();
         match &self.kind {
             EncodedLutKind::General(series) => series.re.consumed_bits(log_delta, coeff_log_delta),
-            EncodedLutKind::Binary {
-                cos,
-                log_interval_reduction,
-                ..
-            } => cos.consumed_bits(log_delta, coeff_log_delta) + log_interval_reduction * log_delta + coeff_log_delta,
+            EncodedLutKind::Binary { cos, chain } => {
+                cos.consumed_bits(log_delta, coeff_log_delta) + chain.as_ref().map_or(0, |chain| chain.steps().get()) * log_delta
+            }
         }
     }
 

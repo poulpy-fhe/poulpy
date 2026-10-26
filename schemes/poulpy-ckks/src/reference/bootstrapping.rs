@@ -16,8 +16,8 @@ use poulpy_hal::{
 use crate::{
     CKKSCtBounds, CKKSInfos, CKKSLayout, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotsKind,
     api::{
-        CKKSAddOps, CKKSAffineOps, CKKSAllOpsTmpBytes, CKKSComplexPolynomialEvaluationOps, CKKSConjugateOps, CKKSCopyOps,
-        CKKSDFTOps, CKKSEvalModOps, CKKSImagOps, CKKSLinearTransformationOps, CKKSMulOps, CKKSPolynomialEvaluationOps,
+        CKKSAddOps, CKKSAllOpsTmpBytes, CKKSComplexPolynomialEvaluationOps, CKKSConjugateOps, CKKSCopyOps, CKKSDFTOps,
+        CKKSEvalModOps, CKKSImagOps, CKKSLinearTransformationOps, CKKSMulOps, CKKSNegOps, CKKSPolynomialEvaluationOps,
         CKKSPow2Ops, CKKSSubOps, LinearTransformationBabySteps,
     },
     eval_lut::{ckks_eval_lut, ckks_eval_lut_binary, ckks_eval_lut_from_basis, ckks_lut_power_basis},
@@ -416,7 +416,7 @@ pub trait CKKSBootstrappingReference<BE: Backend> {
             + CKKSCopyOps<BE>
             + CKKSMulOps<BE>
             + CKKSPow2Ops<BE>
-            + CKKSAffineOps<BE>
+            + CKKSNegOps<BE>
             + GLWENormalize<BE>,
         K: BootstrappingKeys<BE>,
         CKKSCiphertextOwned<BE>:
@@ -735,7 +735,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl> CKKSBoo
             + CKKSCopyOps<BE>
             + CKKSMulOps<BE>
             + CKKSPow2Ops<BE>
-            + CKKSAffineOps<BE>
+            + CKKSNegOps<BE>
             + GLWENormalize<BE>,
         K: BootstrappingKeys<BE>,
         CKKSCiphertextOwned<BE>:
@@ -1995,7 +1995,7 @@ where
         + CKKSComplexPolynomialEvaluationOps<BE>
         + CKKSMulOps<BE>
         + CKKSPow2Ops<BE>
-        + CKKSAffineOps<BE>
+        + CKKSNegOps<BE>
         + GLWENormalize<BE>,
     K: BootstrappingKeys<BE>,
     C: GLWEToBackendRef<BE> + CKKSCtBounds,
@@ -2014,20 +2014,9 @@ where
             keys.tensor_key(),
             scratch,
         )?,
-        EncodedLutKind::Binary {
-            cos,
-            affine,
-            log_interval_reduction,
-        } => ckks_eval_lut_binary(
-            module,
-            ct_out,
-            ct_in,
-            cos,
-            *log_interval_reduction,
-            affine,
-            keys.tensor_key(),
-            scratch,
-        )?,
+        EncodedLutKind::Binary { cos, chain } => {
+            ckks_eval_lut_binary(module, ct_out, ct_in, cos, chain.as_ref(), keys.tensor_key(), scratch)?
+        }
     }
     Ok(())
 }
@@ -2058,7 +2047,7 @@ where
         + CKKSCopyOps<BE>
         + CKKSMulOps<BE>
         + CKKSPow2Ops<BE>
-        + CKKSAffineOps<BE>
+        + CKKSNegOps<BE>
         + GLWENormalize<BE>,
     K: BootstrappingKeys<BE>,
     C: GLWEToBackendRef<BE> + CKKSCtBounds,

@@ -157,6 +157,7 @@ Real slots are selected by the input's metadata rather than by a separate entry 
 
 `EncodedLut::binary` is specialized for two entries.
 Its cosine polynomial is controlled by `degree`, `k_interval`, and `log_interval_reduction`; it skips EvalMod and is cheaper than the general construction.
+The map from the cosine to `[f0, f1]` is folded into the polynomial and the double-angle steps, so it consumes no scale.
 For now it still uses a `BootstrappingPlan` containing an EvalMod plan because EvalMod is not optional in the compiled context, although those tables are not evaluated by the binary path.
 
 ### EvalMod on the conjugate-invariant ring
