@@ -142,7 +142,7 @@ impl<F: DFTFamily, R: OracleRing> Backend for Oracle<F, R> {
         &buf[offset..offset + len]
     }
     fn region_mut(buf: &mut AlignedBuf, offset: usize, len: usize) -> &mut [u8] {
-        &mut buf[offset..offset + len]
+        buf.region_mut(offset, len)
     }
     fn region_ref<'a, 'b>(buf: &'a &'b [u8], offset: usize, len: usize) -> &'a [u8]
     where

@@ -299,7 +299,7 @@ impl Backend for OpaqueBackend<'_> {
         OpaqueRef(&buf.0[offset..offset + len])
     }
     fn region_mut(buf: &mut Self::OwnedBuf, offset: usize, len: usize) -> OpaqueMut<'_> {
-        OpaqueMut(&mut buf.0[offset..offset + len])
+        OpaqueMut(buf.0.region_mut(offset, len))
     }
     fn region_ref<'a, 'b>(buf: &'a Self::BufRef<'b>, offset: usize, len: usize) -> Self::BufRef<'a>
     where

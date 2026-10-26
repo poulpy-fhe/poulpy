@@ -29,7 +29,8 @@ chooses the order of those calls.
 
 `impl_core_reference_full!` selects the available reference algorithms and
 derived defaults, except sampling and the monomial families (LWE conversion,
-packing, GLWE/GGSW rotate, `mul_xp_minus_one`). Use individual family macros when replacing
+packing, GLWE/GGSW rotate, `mul_xp_minus_one`), which bound `Backend<Ring = Standard>`
+and register on standard backends only. Use individual family macros when replacing
 a family, so its `*Impl` is defined only once. Sampling is supplied through
 the mandatory `SamplingImpl`, including full-width flooding.
 Preparation and decompression helpers reuse selected operations;

@@ -129,6 +129,7 @@ mod tests {
             };
             poulpy_core::test_suite::parity::test_glwe_encryption_parity(&params, &shapes, &reference, tested);
             poulpy_core::test_suite::parity::test_lwe_encryption_parity(&params, &shapes, &reference, tested);
+            poulpy_core::test_suite::parity::test_lwe_matrix_decrypt_parity(&params, &shapes, &reference, tested);
         });
     }
 }

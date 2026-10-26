@@ -1,12 +1,12 @@
 use crate::bdd_arithmetic::*;
 use poulpy_core::layouts::*;
 use poulpy_hal::layouts::*;
-/// Backend implementation contract for [`ExecuteBDDCircuit2WTo1W`].
+/// Backend implementation contract for [`ExecuteBDDCircuit2WTo1W`], on the standard ring only.
 ///
 /// # Safety
 /// Implementations must preserve the canonical circuit, buffer bounds, metadata,
 /// and the paired scratch query contract.
-pub unsafe trait ExecuteBDDCircuit2WTo1WImpl: Backend {
+pub unsafe trait ExecuteBDDCircuit2WTo1WImpl: Backend<Ring = Standard> {
     #[allow(clippy::too_many_arguments)]
     fn execute_bdd_circuit_2w_to_1w<C, H, T>(
         module: &Module<Self>,

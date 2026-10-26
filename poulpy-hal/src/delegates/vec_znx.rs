@@ -11,7 +11,7 @@ use crate::{
     },
     layouts::{
         Backend, Module, ScalarZnxBackendMut, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef,
-        VecZnxToBackendMut, scalar_znx_as_vec_znx_backend_mut_from_mut, scalar_znx_as_vec_znx_backend_ref_from_ref,
+        VecZnxToBackendMut,
     },
     oep::{HalVecZnxCIImpl, HalVecZnxImpl, HalVecZnxMonomialImpl},
     source::Source,
@@ -415,9 +415,7 @@ impl_vec_znx_delegate!(
         a: &ScalarZnxBackendRef<'_, B>,
         a_col: usize,
     ) {
-        let mut res_vec = scalar_znx_as_vec_znx_backend_mut_from_mut::<B>(res);
-        let a_vec = scalar_znx_as_vec_znx_backend_ref_from_ref::<B>(a);
-        B::vec_znx_automorphism(self, k, &mut res_vec, res_col, &a_vec, a_col)
+        B::scalar_znx_automorphism(self, k, res, res_col, a, a_col);
     }
 );
 
@@ -479,9 +477,7 @@ impl_vec_znx_delegate!(
 impl_vec_znx_delegate!(
     ci ScalarZnxCIEmbed<B>,
     fn scalar_znx_ci_embed(&self, res: &mut ScalarZnxBackendMut<'_, B>, res_col: usize, a: &ScalarZnxBackendRef<'_, B>, a_col: usize) {
-        let mut res_vec = scalar_znx_as_vec_znx_backend_mut_from_mut::<B>(res);
-        let a_vec = scalar_znx_as_vec_znx_backend_ref_from_ref::<B>(a);
-        B::vec_znx_ci_embed(self, &mut res_vec, res_col, &a_vec, a_col);
+        B::scalar_znx_ci_embed(self, res, res_col, a, a_col);
     }
 );
 

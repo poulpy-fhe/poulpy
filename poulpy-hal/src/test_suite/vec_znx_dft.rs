@@ -4,15 +4,16 @@ use crate::layouts::VecZnxBigToBackendRef;
 use crate::layouts::VecZnxDftToBackendMut;
 use crate::layouts::VecZnxDftToBackendRef;
 
+use crate::test_suite::{PoisonedArena, poisoned_arena};
 use crate::{
     api::{
-        ScratchOwnedAlloc, VecZnxAutomorphism, VecZnxBigAddSmallAssign, VecZnxBigAlloc, VecZnxBigFromSmall, VecZnxBigNormalize,
+        VecZnxAutomorphism, VecZnxBigAddSmallAssign, VecZnxBigAlloc, VecZnxBigFromSmall, VecZnxBigNormalize,
         VecZnxBigNormalizeTmpBytes, VecZnxDftAdd, VecZnxDftAddAssign, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftAutomorphism,
         VecZnxDftAutomorphismAddWithPlanTmpBytes, VecZnxDftAutomorphismPlan, VecZnxDftCopy, VecZnxDftSub, VecZnxDftSubAssign,
         VecZnxDftSubNegateAssign, VecZnxDftZero, VecZnxFillUniformSourceAll, VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
         VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes,
     },
-    layouts::{Module, ScratchOwned, VecZnx, VecZnxOwned, VecZnxToBackendMut, VecZnxToBackendRef, ZnxView, ZnxViewMut},
+    layouts::{Module, VecZnx, VecZnxOwned, VecZnxToBackendMut, VecZnxToBackendRef, ZnxView, ZnxViewMut},
     source::Source,
 };
 
@@ -35,7 +36,6 @@ where
         + VecZnxDftZero<BE>
         + VecZnxDftAutomorphism<BE>
         + VecZnxDftAutomorphismAddWithPlanTmpBytes,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
     use crate::layouts::VecZnxShape;
     use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -55,7 +55,7 @@ where
         for (degree, res_col, a_col) in [(n, cols, 0), (n, 0, cols), (other_n, 0, 0)] {
             let a = seeded(degree, size);
             let mut res = seeded(n, size);
-            let mut scratch = ScratchOwned::alloc(module.vec_znx_dft_automorphism_add_with_plan_tmp_bytes(size, size));
+            let mut scratch = poisoned_arena(module.vec_znx_dft_automorphism_add_with_plan_tmp_bytes(size, size));
             macro_rules! rejects {
                 ($op:expr) => {{
                     let before = BE::to_host_bytes(&res.data);
@@ -139,7 +139,6 @@ pub fn test_vec_znx_dft_transforms_reject_invalid_operands<BE: crate::test_suite
     module: &Module<BE>,
 ) where
     Module<BE>: VecZnxDftApply<BE> + VecZnxIdftApply<BE> + VecZnxIdftApplyTmpBytes,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
     use crate::layouts::VecZnxShape;
     use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -198,7 +197,7 @@ pub fn test_vec_znx_dft_transforms_reject_invalid_operands<BE: crate::test_suite
             let mut big = module
                 .vec_znx_big_alloc(n, cols, 2 * (size + 1))
                 .with_shape(VecZnxShape::new(n, cols, size));
-            let mut scratch = ScratchOwned::alloc(module.vec_znx_idft_apply_tmp_bytes());
+            let mut scratch = poisoned_arena(module.vec_znx_idft_apply_tmp_bytes());
             rejects!(
                 big,
                 module.vec_znx_idft_apply(
@@ -217,10 +216,9 @@ pub(crate) fn idft_into_alloc<BE>(module: &Module<BE>, a: &VecZnxDftOwned<BE>) -
 where
     BE: crate::test_suite::TestBackend,
     Module<BE>: VecZnxBigAlloc<BE> + VecZnxIdftApply<BE> + VecZnxIdftApplyTmpBytes,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
     let mut res = module.vec_znx_big_alloc(a.n(), a.cols(), a.size());
-    let mut scratch = ScratchOwned::alloc(module.vec_znx_idft_apply_tmp_bytes());
+    let mut scratch = poisoned_arena(module.vec_znx_idft_apply_tmp_bytes());
     for j in 0..a.cols() {
         module.vec_znx_idft_apply(&mut res.to_backend_mut(), j, &a.to_backend_ref(), j, &mut scratch.arena());
     }
@@ -255,12 +253,11 @@ fn normalize_big_to_host<BE>(
     module: &Module<BE>,
     base2k: usize,
     big: &VecZnxBigOwned<BE>,
-    scratch: &mut ScratchOwned<BE>,
+    scratch: &mut PoisonedArena<BE>,
 ) -> VecZnxOwned<BE::ZnxWord>
 where
     BE: crate::test_suite::TestBackend,
     Module<BE>: VecZnxBigNormalize<BE>,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
     let mut backend = module.vec_znx_alloc(big.n(), big.cols(), big.size());
     for j in 0..big.cols() {
@@ -283,12 +280,11 @@ fn idft_to_host<BE>(
     module: &Module<BE>,
     base2k: usize,
     dft: &VecZnxDftOwned<BE>,
-    scratch: &mut ScratchOwned<BE>,
+    scratch: &mut PoisonedArena<BE>,
 ) -> VecZnxOwned<BE::ZnxWord>
 where
     BE: crate::test_suite::TestBackend,
     Module<BE>: VecZnxBigAlloc<BE> + VecZnxIdftApply<BE> + VecZnxIdftApplyTmpBytes + VecZnxBigNormalize<BE>,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
     let big = idft_into_alloc(module, dft);
     normalize_big_to_host(module, base2k, &big, scratch)
@@ -299,16 +295,22 @@ pub(crate) fn idft_apply_to_host<BE>(
     base2k: usize,
     dft: &VecZnxDftOwned<BE>,
     res_size: usize,
-    scratch: &mut ScratchOwned<BE>,
+    scratch: &mut PoisonedArena<BE>,
 ) -> VecZnxOwned<BE::ZnxWord>
 where
     BE: crate::test_suite::TestBackend,
-    Module<BE>: VecZnxBigAlloc<BE> + VecZnxIdftApply<BE> + VecZnxBigNormalize<BE>,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
+    Module<BE>: VecZnxBigAlloc<BE> + VecZnxIdftApply<BE> + VecZnxIdftApplyTmpBytes + VecZnxBigNormalize<BE>,
 {
     let mut big = module.vec_znx_big_alloc(dft.n(), dft.cols(), res_size);
+    let mut scratch_idft = poisoned_arena(module.vec_znx_idft_apply_tmp_bytes());
     for j in 0..dft.cols() {
-        module.vec_znx_idft_apply(&mut big.to_backend_mut(), j, &dft.to_backend_ref(), j, &mut scratch.arena());
+        module.vec_znx_idft_apply(
+            &mut big.to_backend_mut(),
+            j,
+            &dft.to_backend_ref(),
+            j,
+            &mut scratch_idft.arena(),
+        );
     }
     normalize_big_to_host(module, base2k, &big, scratch)
 }
@@ -334,16 +336,14 @@ pub fn test_vec_znx_dft_add<BR: crate::test_suite::TestBackend, BT: crate::test_
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BT>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     let base2k = params.base2k;
     assert_eq!(module_ref.n(), module_test.n());
 
     let cols: usize = 2;
     let mut source = Source::new([0u8; 32]);
-    let mut scratch_ref = ScratchOwned::alloc(module_ref.vec_znx_big_normalize_tmp_bytes());
-    let mut scratch_test = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_ref = poisoned_arena(module_ref.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_test = poisoned_arena(module_test.vec_znx_big_normalize_tmp_bytes());
 
     for a_size in [1, 2, 3, 4] {
         let mut a = module_ref.vec_znx_alloc(params.n, cols, a_size);
@@ -410,16 +410,14 @@ pub fn test_vec_znx_dft_add_assign<BR: crate::test_suite::TestBackend, BT: crate
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BT>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     let base2k = params.base2k;
     assert_eq!(module_ref.n(), module_test.n());
     let _n = params.n;
     let cols = 2;
     let mut source = Source::new([0u8; 32]);
-    let mut scratch_ref = ScratchOwned::alloc(module_ref.vec_znx_big_normalize_tmp_bytes());
-    let mut scratch_test = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_ref = poisoned_arena(module_ref.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_test = poisoned_arena(module_test.vec_znx_big_normalize_tmp_bytes());
 
     for a_size in [1, 2, 3, 4] {
         let mut a = module_ref.vec_znx_alloc(params.n, cols, a_size);
@@ -447,30 +445,45 @@ pub fn test_vec_znx_dft_add_assign<BR: crate::test_suite::TestBackend, BT: crate
 }
 
 /// `step == 0` is outside the contract of `vec_znx_dft_apply` and
-/// `vec_znx_dft_copy`. Every kernel must reject it, rather than read the same
-/// source limb into every output limb.
-pub fn test_vec_znx_dft_step_zero_rejected<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
+/// `vec_znx_dft_copy`. Every kernel must reject it, writing nothing, rather
+/// than read the same source limb into every output limb.
+pub fn test_vec_znx_dft_rejects_zero_step<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: VecZnxDftAlloc<BE> + VecZnxDftApply<BE> + VecZnxDftCopy<BE>,
 {
     let (cols, size) = (1usize, 2usize);
     let mut source = Source::new([7u8; 32]);
-    let mut a_be = module.vec_znx_alloc(params.size, cols, size);
+    let mut a_be = module.vec_znx_alloc(params.n, cols, size);
     module.vec_znx_fill_uniform_source_all(params.base2k, size * params.base2k, &mut a_be, &mut source);
+    let mut seed = module.vec_znx_alloc(params.n, cols, size);
+    module.vec_znx_fill_uniform_source_all(params.base2k, size * params.base2k, &mut seed, &mut source);
 
-    let mut dft = module.vec_znx_dft_alloc(params.n, cols, size);
-    let apply_panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        module.vec_znx_dft_apply(0, 0, &mut dft.to_backend_mut(), 0, &vec_znx_backend_ref::<BE>(&a_be), 0);
-    }))
-    .is_err();
-    assert!(apply_panicked, "vec_znx_dft_apply accepted step == 0 instead of panicking");
+    macro_rules! rejects {
+        ($op:literal, $dst:ident, $call:expr) => {{
+            let before = BE::to_host_bytes(&$dst.data);
+            let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| $call)).is_err();
+            assert!(panicked, concat!($op, " accepted step == 0 instead of panicking"));
+            assert!(
+                before == BE::to_host_bytes(&$dst.data),
+                concat!($op, " wrote its destination before rejecting step == 0")
+            );
+        }};
+    }
 
-    let mut res = module.vec_znx_dft_alloc(params.n, cols, size);
-    let copy_panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        module.vec_znx_dft_copy(0, 0, &mut res.to_backend_mut(), 0, &dft.to_backend_ref(), 0);
-    }))
-    .is_err();
-    assert!(copy_panicked, "vec_znx_dft_copy accepted step == 0 instead of panicking");
+    let mut dft = dft_of_uploaded_vec_znx(module, &seed, 1, 0);
+    rejects!(
+        "vec_znx_dft_apply",
+        dft,
+        module.vec_znx_dft_apply(0, 0, &mut dft.to_backend_mut(), 0, &vec_znx_backend_ref::<BE>(&a_be), 0)
+    );
+
+    let src = dft_of_uploaded_vec_znx(module, &seed, 1, 0);
+    let mut res = dft_of_uploaded_vec_znx(module, &seed, 1, 0);
+    rejects!(
+        "vec_znx_dft_copy",
+        res,
+        module.vec_znx_dft_copy(0, 0, &mut res.to_backend_mut(), 0, &src.to_backend_ref(), 0)
+    );
 }
 
 pub fn test_vec_znx_dft_copy<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
@@ -494,15 +507,13 @@ pub fn test_vec_znx_dft_copy<BR: crate::test_suite::TestBackend, BT: crate::test
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BT>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     let base2k = params.base2k;
     assert_eq!(module_ref.n(), module_test.n());
     let cols = 2;
     let mut source = Source::new([0u8; 32]);
-    let mut scratch_ref = ScratchOwned::alloc(module_ref.vec_znx_big_normalize_tmp_bytes());
-    let mut scratch_test = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_ref = poisoned_arena(module_ref.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_test = poisoned_arena(module_test.vec_znx_big_normalize_tmp_bytes());
 
     for a_size in [1, 2, 6, 11] {
         let mut a = module_ref.vec_znx_alloc(params.n, cols, a_size);
@@ -558,7 +569,7 @@ fn assert_idft_integer_limbs<BE>(
     module: &Module<BE>,
     big: &VecZnxBigOwned<BE>,
     expected: &VecZnxOwned<i64>,
-    scratch: &mut ScratchOwned<BE>,
+    scratch: &mut PoisonedArena<BE>,
 ) where
     BE: crate::test_suite::TestBackend,
     Module<BE>: VecZnxBigNormalize<BE>,
@@ -641,22 +652,14 @@ pub fn test_vec_znx_idft_apply<BR: crate::test_suite::TestBackend, BT: crate::te
         + VecZnxBigNormalizeTmpBytes
         + VecZnxIdftApply<BT>
         + VecZnxIdftApplyTmpBytes,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     assert_eq!(module_ref.n(), module_test.n());
     let cols = 2;
     let mut source = Source::new([0u8; 32]);
-    let mut scratch_ref = ScratchOwned::alloc(
-        module_ref
-            .vec_znx_big_normalize_tmp_bytes()
-            .max(module_ref.vec_znx_idft_apply_tmp_bytes()),
-    );
-    let mut scratch_test = ScratchOwned::alloc(
-        module_test
-            .vec_znx_big_normalize_tmp_bytes()
-            .max(module_test.vec_znx_idft_apply_tmp_bytes()),
-    );
+    let mut scratch_ref_idft = poisoned_arena(module_ref.vec_znx_idft_apply_tmp_bytes());
+    let mut scratch_test_idft = poisoned_arena(module_test.vec_znx_idft_apply_tmp_bytes());
+    let mut scratch_ref = poisoned_arena(module_ref.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_test = poisoned_arena(module_test.vec_znx_big_normalize_tmp_bytes());
 
     for a_size in [1, 2, 3, 4] {
         let mut a = module_ref.vec_znx_alloc(params.n, cols, a_size);
@@ -678,14 +681,14 @@ pub fn test_vec_znx_idft_apply<BR: crate::test_suite::TestBackend, BT: crate::te
                             col,
                             &dft_ref.to_backend_ref(),
                             col,
-                            &mut scratch_ref.arena(),
+                            &mut scratch_ref_idft.arena(),
                         );
                         module_test.vec_znx_idft_apply(
                             &mut big_test.to_backend_mut(),
                             col,
                             &dft_test.to_backend_ref(),
                             col,
-                            &mut scratch_test.arena(),
+                            &mut scratch_test_idft.arena(),
                         );
                         set_expected_idft_column(&mut expected, col, &a_host, step, offset);
                         assert_idft_integer_limbs(module_ref, &big_ref, &expected, &mut scratch_ref);
@@ -718,16 +721,14 @@ pub fn test_vec_znx_dft_sub<BR: crate::test_suite::TestBackend, BT: crate::test_
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BT>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     let base2k = params.base2k;
     assert_eq!(module_ref.n(), module_test.n());
     let _n = params.n;
     let cols = 2;
     let mut source = Source::new([0u8; 32]);
-    let mut scratch_ref = ScratchOwned::alloc(module_ref.vec_znx_big_normalize_tmp_bytes());
-    let mut scratch_test = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_ref = poisoned_arena(module_ref.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_test = poisoned_arena(module_test.vec_znx_big_normalize_tmp_bytes());
 
     for a_size in [1, 2, 3, 4] {
         let mut a = module_ref.vec_znx_alloc(params.n, cols, a_size);
@@ -794,16 +795,14 @@ pub fn test_vec_znx_dft_sub_assign<BR: crate::test_suite::TestBackend, BT: crate
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BT>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     let base2k = params.base2k;
     assert_eq!(module_ref.n(), module_test.n());
     let _n = params.n;
     let cols = 2;
     let mut source = Source::new([0u8; 32]);
-    let mut scratch_ref = ScratchOwned::alloc(module_ref.vec_znx_big_normalize_tmp_bytes());
-    let mut scratch_test = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_ref = poisoned_arena(module_ref.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_test = poisoned_arena(module_test.vec_znx_big_normalize_tmp_bytes());
 
     for a_size in [1, 2, 3, 4] {
         let mut a = module_ref.vec_znx_alloc(params.n, cols, a_size);
@@ -851,16 +850,14 @@ pub fn test_vec_znx_dft_sub_negate_assign<BR: crate::test_suite::TestBackend, BT
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BT>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     let base2k = params.base2k;
     assert_eq!(module_ref.n(), module_test.n());
     let _n = params.n;
     let cols = 2;
     let mut source = Source::new([0u8; 32]);
-    let mut scratch_ref = ScratchOwned::alloc(module_ref.vec_znx_big_normalize_tmp_bytes());
-    let mut scratch_test = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_ref = poisoned_arena(module_ref.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_test = poisoned_arena(module_test.vec_znx_big_normalize_tmp_bytes());
 
     for a_size in [1, 2, 3, 4] {
         let mut a = module_ref.vec_znx_alloc(params.n, cols, a_size);
@@ -894,7 +891,7 @@ fn contract_check_one_backend<BE>(
     base2k: usize,
     n: usize,
     module: &Module<BE>,
-    scratch: &mut ScratchOwned<BE>,
+    scratch: &mut PoisonedArena<BE>,
     cols: usize,
     p_values: &[i64],
 ) where
@@ -908,7 +905,6 @@ fn contract_check_one_backend<BE>(
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes
         + VecZnxAutomorphism<BE>,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
     let mut source = Source::new([0u8; 32]);
 
@@ -976,14 +972,12 @@ pub fn test_vec_znx_dft_automorphism<BR: crate::test_suite::TestBackend, BT: cra
         + VecZnxBigNormalize<BT>
         + VecZnxBigNormalizeTmpBytes
         + VecZnxAutomorphism<BT>,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     let base2k = params.base2k;
     assert_eq!(module_ref.n(), module_test.n());
     let cols = 2;
-    let mut scratch_ref = ScratchOwned::alloc(module_ref.vec_znx_big_normalize_tmp_bytes());
-    let mut scratch_test = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_ref = poisoned_arena(module_ref.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_test = poisoned_arena(module_test.vec_znx_big_normalize_tmp_bytes());
 
     // Cover both residue classes mod 4 to exercise the conj/no-conj arms
     // of the floating-point FFT plan and a range of orbits under odd-p multiplication.
@@ -1000,7 +994,7 @@ fn automorphism_add_check_one_backend<BE>(
     base2k: usize,
     n: usize,
     module: &Module<BE>,
-    scratch: &mut ScratchOwned<BE>,
+    scratch: &mut PoisonedArena<BE>,
     cols: usize,
     p_values: &[i64],
 ) where
@@ -1015,7 +1009,6 @@ fn automorphism_add_check_one_backend<BE>(
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
     let mut source = Source::new([1u8; 32]);
 
@@ -1027,8 +1020,8 @@ fn automorphism_add_check_one_backend<BE>(
 
         // Sized by the op's own `_tmp_bytes` alone, so a default that
         // under-reports its scratch panics here.
-        let mut op_scratch: ScratchOwned<BE> =
-            ScratchOwned::alloc(module.vec_znx_dft_automorphism_add_with_plan_tmp_bytes(res_size, a_size));
+        let mut op_scratch: PoisonedArena<BE> =
+            poisoned_arena(module.vec_znx_dft_automorphism_add_with_plan_tmp_bytes(res_size, a_size));
 
         for &p in p_values {
             let plan = module.vec_znx_dft_automorphism_plan(n, p);
@@ -1093,14 +1086,12 @@ pub fn test_vec_znx_dft_automorphism_add<BR: crate::test_suite::TestBackend, BT:
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BT>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     let base2k = params.base2k;
     assert_eq!(module_ref.n(), module_test.n());
     let cols = 2;
-    let mut scratch_ref = ScratchOwned::alloc(module_ref.vec_znx_big_normalize_tmp_bytes());
-    let mut scratch_test = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_ref = poisoned_arena(module_ref.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_test = poisoned_arena(module_test.vec_znx_big_normalize_tmp_bytes());
 
     let p_values: &[i64] = &[1, 5, 3, 7, -1, -5];
 
@@ -1124,7 +1115,6 @@ where
         + VecZnxBigAlloc<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
     let mut source = Source::new([2u8; 32]);
 
@@ -1137,12 +1127,10 @@ where
                 module.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut addend_backend, &mut source);
                 let addend_ref = vec_znx_backend_ref::<BE>(&addend_backend);
 
-                let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
-                    module
-                        .vec_znx_idft_normalize_tmp_bytes(res_size, a_size)
-                        .max(module.vec_znx_idft_apply_tmp_bytes())
-                        .max(module.vec_znx_big_normalize_tmp_bytes()),
-                );
+                let mut scratch_fused: PoisonedArena<BE> =
+                    poisoned_arena(module.vec_znx_idft_normalize_tmp_bytes(res_size, a_size));
+                let mut scratch_idft: PoisonedArena<BE> = poisoned_arena(module.vec_znx_idft_apply_tmp_bytes());
+                let mut scratch_normalize: PoisonedArena<BE> = poisoned_arena(module.vec_znx_big_normalize_tmp_bytes());
 
                 // Zero, a few bits either way, and more than one limb.
                 let offsets = [0i64, 7, -5, base2k as i64 + 3];
@@ -1161,7 +1149,7 @@ where
                         col,
                         base2k,
                         with_addend.then_some((&addend_ref, 0)),
-                        &mut scratch.arena(),
+                        &mut scratch_fused.arena(),
                     );
                     let res_have = download_vec_znx::<BE>(&res_have_backend);
 
@@ -1173,7 +1161,7 @@ where
                         0,
                         &a_dft.to_backend_ref(),
                         col,
-                        &mut scratch.arena(),
+                        &mut scratch_idft.arena(),
                     );
                     if with_addend {
                         module.vec_znx_big_add_small_assign(&mut big.to_backend_mut(), 0, &addend_ref, 0);
@@ -1188,7 +1176,7 @@ where
                         &big.to_backend_ref(),
                         base2k,
                         0,
-                        &mut scratch.arena(),
+                        &mut scratch_normalize.arena(),
                     );
                     let res_want = download_vec_znx::<BE>(&res_want_backend);
 
@@ -1231,8 +1219,6 @@ pub fn test_vec_znx_idft_normalize<BR: crate::test_suite::TestBackend, BT: crate
         + VecZnxBigAlloc<BT>
         + VecZnxBigNormalize<BT>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     let base2k = params.base2k;
     assert_eq!(module_ref.n(), module_test.n());
@@ -1264,16 +1250,14 @@ pub fn test_vec_znx_dft_apply<BR: crate::test_suite::TestBackend, BT: crate::tes
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BT>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     let base2k: usize = params.base2k;
     assert_eq!(module_ref.n(), module_test.n());
 
     let cols: usize = 2;
     let mut source: Source = Source::new([0u8; 32]);
-    let mut scratch_ref: ScratchOwned<BR> = ScratchOwned::alloc(module_ref.vec_znx_big_normalize_tmp_bytes());
-    let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_ref: PoisonedArena<BR> = poisoned_arena(module_ref.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_test: PoisonedArena<BT> = poisoned_arena(module_test.vec_znx_big_normalize_tmp_bytes());
 
     for a_size in [1, 2, 5, 8] {
         let mut a_ref = module_ref.vec_znx_alloc(params.n, cols, a_size);
@@ -1342,16 +1326,14 @@ pub fn test_vec_znx_dft_zero<BR: crate::test_suite::TestBackend, BT: crate::test
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BT>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     let base2k: usize = params.base2k;
     assert_eq!(module_ref.n(), module_test.n());
 
     let cols: usize = 2;
     let mut source: Source = Source::new([0u8; 32]);
-    let mut scratch_ref: ScratchOwned<BR> = ScratchOwned::alloc(module_ref.vec_znx_big_normalize_tmp_bytes());
-    let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_ref: PoisonedArena<BR> = poisoned_arena(module_ref.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_test: PoisonedArena<BT> = poisoned_arena(module_test.vec_znx_big_normalize_tmp_bytes());
 
     for size in [1, 2, 5] {
         let mut a = module_ref.vec_znx_alloc(params.n, cols, size);
