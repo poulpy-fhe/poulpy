@@ -271,7 +271,7 @@ macro_rules! impl_host_byte_storage {
         }
 
         fn region_mut(buf: &mut Self::OwnedBuf, offset: usize, len: usize) -> Self::BufMut<'_> {
-            &mut buf[offset..offset + len]
+            buf.region_mut(offset, len)
         }
 
         fn region_ref<'a, 'b>(buf: &'a Self::BufRef<'b>, offset: usize, len: usize) -> Self::BufRef<'a>
@@ -722,7 +722,7 @@ mod host_transfer_tests {
         let input = vec![1u8; 100];
         let buf = <HostBytesBackend as Backend>::from_bytes(input.clone());
         assert_eq!(buf.len(), 128, "input is copied into a padded buffer");
-        assert_eq!(&buf[..100], &input[..]);
+        assert!(buf[..100] == input[..], "input bytes not preserved");
         assert!(buf[100..].iter().all(|&b| b == 0), "padding tail not zero");
     }
 
@@ -734,7 +734,7 @@ mod host_transfer_tests {
         let src = [7u8; 100];
         let buf = <HostBytesBackend as Backend>::from_host_bytes(&src);
         assert_eq!(buf.len(), 128);
-        assert_eq!(&buf[..100], &src[..]);
+        assert!(buf[..100] == src[..], "input bytes not preserved");
         assert!(buf[100..].iter().all(|&b| b == 0), "padding tail not zero");
 
         let mut owned = <HostBytesBackend as Backend>::alloc_bytes(100);
@@ -742,11 +742,54 @@ mod host_transfer_tests {
         <HostBytesBackend as Backend>::copy_host_to_view(&mut <HostBytesBackend as Backend>::view_mut(&mut owned), &src2);
         let mut dst = vec![0u8; 100];
         <HostBytesBackend as Backend>::copy_view_to_host(&<HostBytesBackend as Backend>::view(&owned), &mut dst);
-        assert_eq!(dst, src2, "copy_host_to_view/copy_view_to_host round trip");
+        assert!(dst == src2, "copy_host_to_view/copy_view_to_host round trip");
 
         let mut all = vec![0xffu8; 128];
         <HostBytesBackend as Backend>::copy_to_host(&owned, &mut all);
-        assert_eq!(&all[..100], &src2[..]);
+        assert!(all[..100] == src2[..], "round trip bytes differ");
         assert!(all[100..].iter().all(|&b| b == 0), "tail not zero after copy_host_to_view");
+    }
+
+    /// `transfer_buf_into` writes into a destination the caller already owns, so a
+    /// loop can hoist the allocation out.
+    #[test]
+    fn transfer_buf_into_reuses_destination() {
+        let len = 256usize;
+        let mut a = <HostBytesBackend as Backend>::alloc_bytes(len);
+        let mut b = <HostBytesBackend as Backend>::alloc_bytes(len);
+        a.iter_mut()
+            .enumerate()
+            .for_each(|(i, x)| *x = (i as u8).wrapping_mul(17).wrapping_add(3));
+        b.iter_mut().enumerate().for_each(|(i, x)| *x = (i as u8).wrapping_mul(31));
+        let mut dst = <HostBytesBackend as Backend>::alloc_bytes(len);
+
+        transfer_buf_into(&a, &mut dst);
+        assert!(dst == a, "destination does not hold the source");
+
+        // Same destination, different source: no bytes of `a` survive.
+        transfer_buf_into(&b, &mut dst);
+        assert!(dst == b, "destination does not hold the new source");
+        assert_ne!(dst, a);
+    }
+
+    /// The size check lives in the shared move, so no implementor can skip it.
+    #[test]
+    fn transfer_buf_into_rejects_size_mismatch() {
+        let src = <HostBytesBackend as Backend>::alloc_bytes(256);
+        let mut dst = <HostBytesBackend as Backend>::alloc_bytes(128);
+        dst.fill(0x5a);
+        let before = dst.clone();
+        let err = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| transfer_buf_into(&src, &mut dst)))
+            .expect_err("a size mismatch was accepted");
+        let message = err
+            .downcast_ref::<String>()
+            .map(String::as_str)
+            .or_else(|| err.downcast_ref::<&str>().copied())
+            .unwrap_or_default();
+        assert!(
+            message.contains("transfer_buf_into: source is 256 bytes, destination is 128"),
+            "rejection does not name the size mismatch"
+        );
+        assert!(dst == before, "a refused transfer wrote into the destination");
     }
 }

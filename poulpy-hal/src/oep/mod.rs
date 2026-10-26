@@ -39,20 +39,21 @@
 //! composition graph, expressed as supertraits:
 //!
 //! ```text
-//! HalVecZnxImpl        (root)
-//! HalVecZnxMonomialImpl -> HalVecZnxImpl
-//! HalMatZnxImpl       -> HalVecZnxImpl
-//! HalVecZnxBigImpl     (root)
-//! HalVecZnxDftImpl    -> HalVecZnxBigImpl
-//! HalSvpImpl          -> HalVecZnxDftImpl
-//! HalVmpImpl          -> HalVecZnxDftImpl
-//! HalConvolutionImpl  -> HalVecZnxDftImpl, HalVecZnxBigImpl
+//! HalVecZnxImpl         (root)
+//! HalVecZnxMonomialImpl -> HalVecZnxImpl, Backend<Ring = Standard>
+//! HalVecZnxCIImpl       -> HalVecZnxImpl, Backend<Ring = Standard>
+//! HalMatZnxImpl         -> HalVecZnxImpl
+//! HalVecZnxBigImpl      (root)
+//! HalVecZnxDftImpl      -> HalVecZnxBigImpl
+//! HalSvpImpl            -> HalVecZnxDftImpl
+//! HalVmpImpl            -> HalVecZnxDftImpl
+//! HalConvolutionImpl    -> HalVecZnxDftImpl, HalVecZnxBigImpl
 //! ```
 //!
 //! The graph is acyclic; a new backend implements the families in topological
-//! order: `HalModuleImpl`, `HalVecZnxImpl` (and `HalVecZnxMonomialImpl` outside
-//! the conjugate-invariant ring), `HalMatZnxImpl`, `HalVecZnxBigImpl`,
-//! `HalVecZnxDftImpl`, then `HalSvpImpl` / `HalVmpImpl` /
+//! order: `HalModuleImpl`, `HalVecZnxImpl` (and, on the standard ring,
+//! `HalVecZnxMonomialImpl` and `HalVecZnxCIImpl`), `HalMatZnxImpl`,
+//! `HalVecZnxBigImpl`, `HalVecZnxDftImpl`, then `HalSvpImpl` / `HalVmpImpl` /
 //! `HalConvolutionImpl` in any order.
 
 pub mod derived;

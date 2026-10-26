@@ -21,38 +21,40 @@
 //! different non-canonical digits, the accumulating shifts, the comparison
 //! is on canonical forms, as in the `rsh_sub` argument.
 
+use crate::test_suite::{PoisonedArena, poisoned_arena};
 use crate::{
     api::{
-        CnvPVecAlloc, Convolution, MatZnxAlloc, ModuleN, ScratchOwnedAlloc, ScratchOwnedBorrow, SvpApplyDftToDft, SvpPPolAlloc,
-        SvpPrepare, VecZnxAdd, VecZnxAddAssign, VecZnxAddScalarAssign, VecZnxAlloc, VecZnxBigAddAssign, VecZnxBigAddSmall,
-        VecZnxBigAddSmallAssign, VecZnxBigAlloc, VecZnxBigFromSmall, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
-        VecZnxBigSubAssign, VecZnxBigSubNegateAssign, VecZnxBigSubSmallA, VecZnxBigSubSmallB, VecZnxCopy, VecZnxDftAddAssign,
-        VecZnxDftAlloc, VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftAutomorphismPlan, VecZnxDftZero, VecZnxFillUniformSource,
-        VecZnxFillUniformSourceAll, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxLsh, VecZnxLshAdd, VecZnxLshAssign,
-        VecZnxLshSub, VecZnxLshTmpBytes, VecZnxMulXpMinusOne, VecZnxMulXpMinusOneAssign, VecZnxMulXpMinusOneAssignTmpBytes,
-        VecZnxNormalize, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxRotate, VecZnxRsh, VecZnxRshAdd, VecZnxRshAssign,
-        VecZnxRshSub, VecZnxRshTmpBytes, VecZnxSub, VecZnxSubAssign, VmpApplyDft, VmpApplyDftTmpBytes, VmpApplyDftToDft,
-        VmpApplyDftToDftAdd, VmpApplyDftToDftAddTmpBytes, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
+        CnvPVecAlloc, Convolution, MatZnxAlloc, ModuleN, ScalarZnxAutomorphism, ScalarZnxCIEmbed, SvpApplyDftToDft, SvpPPolAlloc,
+        SvpPrepare, VecZnxAdd, VecZnxAddAssign, VecZnxAddScalarAssign, VecZnxAlloc, VecZnxAutomorphism, VecZnxBigAddAssign,
+        VecZnxBigAddSmall, VecZnxBigAddSmallAssign, VecZnxBigAlloc, VecZnxBigFromSmall, VecZnxBigNormalize,
+        VecZnxBigNormalizeTmpBytes, VecZnxBigSubAssign, VecZnxBigSubNegateAssign, VecZnxBigSubSmallA, VecZnxBigSubSmallB,
+        VecZnxCIEmbed, VecZnxCopy, VecZnxDftAddAssign, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftAutomorphism,
+        VecZnxDftAutomorphismPlan, VecZnxDftZero, VecZnxFillUniformSource, VecZnxFillUniformSourceAll, VecZnxIdftApply,
+        VecZnxIdftApplyTmpBytes, VecZnxLsh, VecZnxLshAdd, VecZnxLshAssign, VecZnxLshSub, VecZnxLshTmpBytes, VecZnxMulXpMinusOne,
+        VecZnxMulXpMinusOneAssign, VecZnxMulXpMinusOneAssignTmpBytes, VecZnxNormalize, VecZnxNormalizeAssign,
+        VecZnxNormalizeTmpBytes, VecZnxRotate, VecZnxRsh, VecZnxRshAdd, VecZnxRshAssign, VecZnxRshSub, VecZnxRshTmpBytes,
+        VecZnxSub, VecZnxSubAssign, VmpApplyDft, VmpApplyDftTmpBytes, VmpApplyDftToDft, VmpApplyDftToDftAdd,
+        VmpApplyDftToDftAddTmpBytes, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
     },
     layouts::{
         CnvDftAccTerm, CnvPVecLOwned, CnvPVecLToBackendMut, CnvPVecLToBackendRef, CnvPVecROwned, CnvPVecRToBackendMut,
-        CnvPVecRToBackendRef, MatZnx, MatZnxAtBackendMut, MatZnxInfos, MatZnxToBackendRef, Module, PrepareHint,
-        ScalarZnxAsVecZnxBackendMut, ScratchOwned, SvpPPolOwned, SvpPPolToBackendMut, SvpPPolToBackendRef, VecZnx,
+        CnvPVecRToBackendRef, HostDataRef, MatZnx, MatZnxAtBackendMut, MatZnxInfos, MatZnxToBackendRef, Module, PrepareHint,
+        ScalarZnx, ScalarZnxAsVecZnxBackendMut, SvpPPolOwned, SvpPPolToBackendMut, SvpPPolToBackendRef, VecZnx,
         VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxInfos, VecZnxOwned,
         VmpPMatToBackendMut, VmpPMatToBackendRef, ZnxInfos, ZnxView, ZnxViewMut, vec_znx_backend_mut, vec_znx_backend_ref,
     },
     oep::{
-        HalConvolutionImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVecZnxMonomialImpl, HalVmpImpl,
-        cnv_apply_dft_add_derived, cnv_apply_dft_add_tmp_bytes_derived, cnv_apply_dft_sum_derived,
-        cnv_apply_dft_sum_tmp_bytes_derived, cnv_by_const_apply_add_derived, cnv_by_const_apply_add_tmp_bytes_derived,
-        cnv_pairwise_apply_dft_derived, cnv_pairwise_apply_dft_tmp_bytes_derived, cnv_prepare_self_derived,
-        cnv_prepare_self_tmp_bytes_derived, vmp_apply_dft_derived, vmp_apply_dft_to_dft_add_derived,
+        HalConvolutionImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxCIImpl, HalVecZnxDftImpl, HalVecZnxImpl,
+        HalVecZnxMonomialImpl, HalVmpImpl, cnv_apply_dft_add_derived, cnv_apply_dft_add_tmp_bytes_derived,
+        cnv_apply_dft_sum_derived, cnv_apply_dft_sum_tmp_bytes_derived, cnv_by_const_apply_add_derived,
+        cnv_by_const_apply_add_tmp_bytes_derived, cnv_pairwise_apply_dft_derived, cnv_pairwise_apply_dft_tmp_bytes_derived,
+        cnv_prepare_self_derived, cnv_prepare_self_tmp_bytes_derived, vmp_apply_dft_derived, vmp_apply_dft_to_dft_add_derived,
         vmp_apply_dft_to_dft_add_tmp_bytes_derived,
     },
     source::Source,
     test_suite::{
-        TestBackend, TestParams, download_scalar_znx, download_vec_znx, scalar_znx_backend_ref, upload_vec_znx,
-        vec_znx::assert_canonical,
+        TestBackend, TestParams, download_scalar_znx, download_vec_znx, scalar_znx_backend_mut, scalar_znx_backend_ref,
+        upload_scalar_znx, upload_vec_znx, vec_znx::assert_canonical,
     },
 };
 
@@ -77,7 +79,6 @@ where
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
     let (rows, cols_in, cols_out, size) = (4usize, 2usize, 2usize, 4usize);
@@ -100,10 +101,13 @@ where
         }
     }
 
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+    let mut scratch_derived: PoisonedArena<BE> = poisoned_arena(crate::oep::vmp_apply_dft_tmp_bytes_derived::<BE>(
+        module, size, size, rows, cols_in, cols_out, size,
+    ));
+    let mut scratch_setup: PoisonedArena<BE> = poisoned_arena(
         module
             .vmp_prepare_tmp_bytes(rows, cols_in, cols_out, size)
-            .max(module.vmp_apply_dft_tmp_bytes(size, size, rows, cols_in, cols_out, size))
+            .max(module.vmp_apply_dft_to_dft_tmp_bytes(size, size, rows, cols_in, cols_out, size))
             .max(module.vec_znx_big_normalize_tmp_bytes())
             .max(module.vec_znx_idft_apply_tmp_bytes()),
     );
@@ -112,7 +116,7 @@ where
     module.vmp_prepare(
         &mut pmat.to_backend_mut(),
         &<MatZnx<BE::OwnedBuf, i64> as MatZnxToBackendRef<BE>>::to_backend_ref(&mat_backend),
-        &mut scratch.borrow(),
+        &mut scratch_setup.borrow(),
     );
 
     let a_ref = vec_znx_backend_ref::<BE>(&a_backend);
@@ -143,11 +147,11 @@ where
         &a_dft_oracle.to_backend_ref(),
         &pmat_ref,
         0,
-        &mut scratch.borrow(),
+        &mut scratch_setup.borrow(),
     );
 
     let mut res_derived = module.vec_znx_dft_alloc(params.n, cols_out, size);
-    vmp_apply_dft_derived::<BE, _>(module, &mut res_derived, &a_ref, &pmat_ref, &mut scratch.borrow());
+    vmp_apply_dft_derived::<BE, _>(module, &mut res_derived, &a_ref, &pmat_ref, &mut scratch_derived.borrow());
 
     let mut big = module.vec_znx_big_alloc(params.n, 1, size);
     for col in 0..cols_out {
@@ -161,7 +165,7 @@ where
             0,
             &res_oracle.to_backend_ref(),
             col,
-            &mut scratch.borrow(),
+            &mut scratch_setup.borrow(),
         );
         module.vec_znx_big_normalize(
             &mut vec_znx_backend_mut::<BE>(&mut want_backend),
@@ -172,14 +176,14 @@ where
             &big.to_backend_ref(),
             base2k,
             0,
-            &mut scratch.borrow(),
+            &mut scratch_setup.borrow(),
         );
         module.vec_znx_idft_apply(
             &mut big.to_backend_mut(),
             0,
             &res_derived.to_backend_ref(),
             col,
-            &mut scratch.borrow(),
+            &mut scratch_setup.borrow(),
         );
         module.vec_znx_big_normalize(
             &mut vec_znx_backend_mut::<BE>(&mut have_backend),
@@ -190,7 +194,7 @@ where
             &big.to_backend_ref(),
             base2k,
             0,
-            &mut scratch.borrow(),
+            &mut scratch_setup.borrow(),
         );
 
         let want = download_vec_znx::<BE>(&want_backend);
@@ -231,7 +235,6 @@ where
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
     // `cols_out >= 2`, `cols_in != cols_out` on the second shape, and, for two
@@ -266,20 +269,21 @@ where
         let mut res_init_backend = module.vec_znx_alloc(params.n, cols_out, res_size);
         module.vec_znx_fill_uniform_source_all(base2k, res_size * base2k, &mut res_init_backend, &mut source);
 
-        let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+        let mut scratch_setup: PoisonedArena<BE> = poisoned_arena(
             module
                 .vmp_prepare_tmp_bytes(rows, cols_in, cols_out, mat_size)
                 .max(module.vmp_apply_dft_to_dft_tmp_bytes(res_size, a_size, rows, cols_in, cols_out, mat_size))
-                .max(module.vmp_apply_dft_to_dft_add_tmp_bytes(res_size, a_size, rows, cols_in, cols_out, mat_size))
                 .max(module.vec_znx_big_normalize_tmp_bytes())
                 .max(module.vec_znx_idft_apply_tmp_bytes()),
         );
+        let mut scratch: PoisonedArena<BE> =
+            poisoned_arena(module.vmp_apply_dft_to_dft_add_tmp_bytes(res_size, a_size, rows, cols_in, cols_out, mat_size));
 
         let mut pmat = module.vmp_pmat_alloc(params.n, rows, cols_in, cols_out, mat_size, PrepareHint::Reuse);
         module.vmp_prepare(
             &mut pmat.to_backend_mut(),
             &<MatZnx<BE::OwnedBuf, i64> as MatZnxToBackendRef<BE>>::to_backend_ref(&mat_backend),
-            &mut scratch.borrow(),
+            &mut scratch_setup.borrow(),
         );
         let pmat_ref = pmat.to_backend_ref();
 
@@ -313,7 +317,7 @@ where
                 &a_dft_ref,
                 &pmat_ref,
                 limb_offset,
-                &mut scratch.borrow(),
+                &mut scratch_setup.borrow(),
             );
             for j in 0..cols_out {
                 module.vec_znx_dft_add_assign(&mut res_oracle.to_backend_mut(), j, &fresh.to_backend_ref(), j);
@@ -322,7 +326,7 @@ where
             // The derived free function, dispatched directly (bypassing the
             // OEP method entirely) with an arena sized only by its own
             // `_tmp_bytes_derived` sibling.
-            let mut derived_scratch: ScratchOwned<BE> = ScratchOwned::alloc(vmp_apply_dft_to_dft_add_tmp_bytes_derived::<BE>(
+            let mut derived_scratch: PoisonedArena<BE> = poisoned_arena(vmp_apply_dft_to_dft_add_tmp_bytes_derived::<BE>(
                 module, res_size, a_size, rows, cols_in, cols_out, mat_size,
             ));
             vmp_apply_dft_to_dft_add_derived::<BE>(
@@ -357,7 +361,7 @@ where
                     0,
                     &res_oracle.to_backend_ref(),
                     j,
-                    &mut scratch.borrow(),
+                    &mut scratch_setup.borrow(),
                 );
                 module.vec_znx_big_normalize(
                     &mut vec_znx_backend_mut::<BE>(&mut oracle_backend),
@@ -368,14 +372,14 @@ where
                     &big.to_backend_ref(),
                     base2k,
                     0,
-                    &mut scratch.borrow(),
+                    &mut scratch_setup.borrow(),
                 );
                 module.vec_znx_idft_apply(
                     &mut big.to_backend_mut(),
                     0,
                     &res_derived.to_backend_ref(),
                     j,
-                    &mut scratch.borrow(),
+                    &mut scratch_setup.borrow(),
                 );
                 module.vec_znx_big_normalize(
                     &mut vec_znx_backend_mut::<BE>(&mut derived_backend),
@@ -386,14 +390,14 @@ where
                     &big.to_backend_ref(),
                     base2k,
                     0,
-                    &mut scratch.borrow(),
+                    &mut scratch_setup.borrow(),
                 );
                 module.vec_znx_idft_apply(
                     &mut big.to_backend_mut(),
                     0,
                     &res_module.to_backend_ref(),
                     j,
-                    &mut scratch.borrow(),
+                    &mut scratch_setup.borrow(),
                 );
                 module.vec_znx_big_normalize(
                     &mut vec_znx_backend_mut::<BE>(&mut module_backend),
@@ -404,7 +408,7 @@ where
                     &big.to_backend_ref(),
                     base2k,
                     0,
-                    &mut scratch.borrow(),
+                    &mut scratch_setup.borrow(),
                 );
 
                 let want = download_vec_znx::<BE>(&oracle_backend);
@@ -432,7 +436,6 @@ where
 pub fn test_vec_znx_lsh_derived<BE: TestBackend + HalVecZnxImpl>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: VecZnxLsh<BE> + VecZnxLshTmpBytes + VecZnxNormalize<BE>,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
     let mut source: Source = Source::new([0u8; 32]);
@@ -442,7 +445,8 @@ where
         module.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a_backend, &mut source);
 
         for res_size in [1usize, 2, 4] {
-            let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.vec_znx_lsh_tmp_bytes(res_size));
+            let mut scratch: PoisonedArena<BE> = poisoned_arena(module.vec_znx_lsh_tmp_bytes(res_size));
+            let mut scratch_oracle: PoisonedArena<BE> = poisoned_arena(module.vec_znx_normalize_tmp_bytes());
 
             for k in 0..=(res_size * base2k) {
                 let mut have_backend = module.vec_znx_alloc(params.n, 1, res_size);
@@ -470,7 +474,7 @@ where
                     &vec_znx_backend_ref::<BE>(&a_backend),
                     base2k,
                     0,
-                    &mut scratch.borrow(),
+                    &mut scratch_oracle.borrow(),
                 );
 
                 assert_eq!(
@@ -491,7 +495,6 @@ where
 pub fn test_vec_znx_rsh_derived<BE: TestBackend + HalVecZnxImpl>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: VecZnxRsh<BE> + VecZnxRshTmpBytes + VecZnxNormalize<BE>,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
     let mut source: Source = Source::new([0u8; 32]);
@@ -501,7 +504,8 @@ where
         module.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a_backend, &mut source);
 
         for res_size in [1usize, 2, 4] {
-            let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.vec_znx_rsh_tmp_bytes(res_size));
+            let mut scratch: PoisonedArena<BE> = poisoned_arena(module.vec_znx_rsh_tmp_bytes(res_size));
+            let mut scratch_oracle: PoisonedArena<BE> = poisoned_arena(module.vec_znx_normalize_tmp_bytes());
 
             for k in 0..=(res_size * base2k) {
                 let mut have_backend = module.vec_znx_alloc(params.n, 1, res_size);
@@ -529,7 +533,7 @@ where
                     &vec_znx_backend_ref::<BE>(&a_backend),
                     base2k,
                     0,
-                    &mut scratch.borrow(),
+                    &mut scratch_oracle.borrow(),
                 );
 
                 assert_eq!(
@@ -548,7 +552,7 @@ where
         let k: usize = res_size * base2k + 3;
         let mut a_backend = module.vec_znx_alloc(params.n, 1, 2);
         module.vec_znx_fill_uniform_source_all(base2k, 2 * base2k, &mut a_backend, &mut source);
-        let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.vec_znx_rsh_tmp_bytes(res_size));
+        let mut scratch: PoisonedArena<BE> = poisoned_arena(module.vec_znx_rsh_tmp_bytes(res_size));
         let mut have_backend = module.vec_znx_alloc(params.n, 1, res_size);
         module.vec_znx_fill_uniform_source_all(base2k, res_size * base2k, &mut have_backend, &mut source);
         module.vec_znx_rsh(
@@ -583,7 +587,6 @@ where
         + VecZnxLshTmpBytes
         + VecZnxNormalizeAssign<BE>
         + VecZnxNormalizeTmpBytes,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
     let mut source: Source = Source::new([0u8; 32]);
@@ -593,7 +596,8 @@ where
         module.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a_backend, &mut source);
 
         for res_size in [1usize, 2, 4] {
-            let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+            let mut scratch: PoisonedArena<BE> = poisoned_arena(module.vec_znx_lsh_tmp_bytes(res_size));
+            let mut scratch_oracle: PoisonedArena<BE> = poisoned_arena(
                 module
                     .vec_znx_lsh_tmp_bytes(res_size)
                     .max(module.vec_znx_normalize_tmp_bytes()),
@@ -625,7 +629,7 @@ where
                     0,
                     &vec_znx_backend_ref::<BE>(&a_backend),
                     0,
-                    &mut scratch.borrow(),
+                    &mut scratch_oracle.borrow(),
                 );
                 module.vec_znx_add(
                     &mut vec_znx_backend_mut::<BE>(&mut want_backend),
@@ -643,7 +647,7 @@ where
                         0,
                         &mut vec_znx_backend_mut::<BE>(backend),
                         0,
-                        &mut scratch.borrow(),
+                        &mut scratch_oracle.borrow(),
                     );
                 }
 
@@ -670,7 +674,6 @@ where
         + VecZnxLshTmpBytes
         + VecZnxNormalizeAssign<BE>
         + VecZnxNormalizeTmpBytes,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
     let mut source: Source = Source::new([0u8; 32]);
@@ -680,7 +683,8 @@ where
         module.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a_backend, &mut source);
 
         for res_size in [1usize, 2, 4] {
-            let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+            let mut scratch: PoisonedArena<BE> = poisoned_arena(module.vec_znx_lsh_tmp_bytes(res_size));
+            let mut scratch_oracle: PoisonedArena<BE> = poisoned_arena(
                 module
                     .vec_znx_lsh_tmp_bytes(res_size)
                     .max(module.vec_znx_normalize_tmp_bytes()),
@@ -712,7 +716,7 @@ where
                     0,
                     &vec_znx_backend_ref::<BE>(&a_backend),
                     0,
-                    &mut scratch.borrow(),
+                    &mut scratch_oracle.borrow(),
                 );
                 module.vec_znx_sub(
                     &mut vec_znx_backend_mut::<BE>(&mut want_backend),
@@ -730,7 +734,7 @@ where
                         0,
                         &mut vec_znx_backend_mut::<BE>(backend),
                         0,
-                        &mut scratch.borrow(),
+                        &mut scratch_oracle.borrow(),
                     );
                 }
 
@@ -757,7 +761,6 @@ where
         + VecZnxRshTmpBytes
         + VecZnxNormalizeAssign<BE>
         + VecZnxNormalizeTmpBytes,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
     let mut source: Source = Source::new([0u8; 32]);
@@ -767,7 +770,8 @@ where
         module.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a_backend, &mut source);
 
         for res_size in [1usize, 2, 4] {
-            let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+            let mut scratch: PoisonedArena<BE> = poisoned_arena(module.vec_znx_rsh_tmp_bytes(res_size));
+            let mut scratch_oracle: PoisonedArena<BE> = poisoned_arena(
                 module
                     .vec_znx_rsh_tmp_bytes(res_size)
                     .max(module.vec_znx_normalize_tmp_bytes()),
@@ -799,7 +803,7 @@ where
                     0,
                     &vec_znx_backend_ref::<BE>(&a_backend),
                     0,
-                    &mut scratch.borrow(),
+                    &mut scratch_oracle.borrow(),
                 );
                 module.vec_znx_add(
                     &mut vec_znx_backend_mut::<BE>(&mut want_backend),
@@ -817,7 +821,7 @@ where
                         0,
                         &mut vec_znx_backend_mut::<BE>(backend),
                         0,
-                        &mut scratch.borrow(),
+                        &mut scratch_oracle.borrow(),
                     );
                 }
 
@@ -844,7 +848,6 @@ where
         + VecZnxRshTmpBytes
         + VecZnxNormalizeAssign<BE>
         + VecZnxNormalizeTmpBytes,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
     let mut source: Source = Source::new([0u8; 32]);
@@ -854,7 +857,8 @@ where
         module.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a_backend, &mut source);
 
         for res_size in [1usize, 2, 4] {
-            let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+            let mut scratch: PoisonedArena<BE> = poisoned_arena(module.vec_znx_rsh_tmp_bytes(res_size));
+            let mut scratch_oracle: PoisonedArena<BE> = poisoned_arena(
                 module
                     .vec_znx_rsh_tmp_bytes(res_size)
                     .max(module.vec_znx_normalize_tmp_bytes()),
@@ -886,7 +890,7 @@ where
                     0,
                     &vec_znx_backend_ref::<BE>(&a_backend),
                     0,
-                    &mut scratch.borrow(),
+                    &mut scratch_oracle.borrow(),
                 );
                 module.vec_znx_sub(
                     &mut vec_znx_backend_mut::<BE>(&mut want_backend),
@@ -904,7 +908,7 @@ where
                         0,
                         &mut vec_znx_backend_mut::<BE>(backend),
                         0,
-                        &mut scratch.borrow(),
+                        &mut scratch_oracle.borrow(),
                     );
                 }
 
@@ -934,13 +938,15 @@ where
         + VecZnxLshTmpBytes
         + VecZnxNormalizeAssign<BE>
         + VecZnxNormalizeTmpBytes,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
     let mut source: Source = Source::new([0u8; 32]);
 
     for res_size in [1usize, 2, 4] {
-        let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+        let mut scratch: PoisonedArena<BE> = poisoned_arena(module.vec_znx_lsh_tmp_bytes(res_size));
+        let mut scratch_derived: PoisonedArena<BE> =
+            poisoned_arena(crate::oep::vec_znx_lsh_tmp_bytes_derived::<BE>(module, res_size));
+        let mut scratch_oracle: PoisonedArena<BE> = poisoned_arena(
             module
                 .vec_znx_lsh_tmp_bytes(res_size)
                 .max(module.vec_znx_normalize_tmp_bytes()),
@@ -960,7 +966,7 @@ where
                 k,
                 &mut vec_znx_backend_mut::<BE>(&mut have_backend),
                 0,
-                &mut scratch.borrow(),
+                &mut scratch_derived.borrow(),
             );
 
             module.vec_znx_lsh_assign(
@@ -980,7 +986,7 @@ where
                 0,
                 &vec_znx_backend_ref::<BE>(&orig_backend),
                 0,
-                &mut scratch.borrow(),
+                &mut scratch_oracle.borrow(),
             );
             module.vec_znx_copy(
                 &mut vec_znx_backend_mut::<BE>(&mut want_backend),
@@ -1002,7 +1008,7 @@ where
                     0,
                     &mut vec_znx_backend_mut::<BE>(backend),
                     0,
-                    &mut scratch.borrow(),
+                    &mut scratch_oracle.borrow(),
                 );
             }
 
@@ -1027,13 +1033,13 @@ where
         + VecZnxRshTmpBytes
         + VecZnxNormalizeAssign<BE>
         + VecZnxNormalizeTmpBytes,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
     let mut source: Source = Source::new([0u8; 32]);
 
     for res_size in [1usize, 2, 4] {
-        let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+        let mut scratch: PoisonedArena<BE> = poisoned_arena(module.vec_znx_rsh_tmp_bytes(res_size));
+        let mut scratch_oracle: PoisonedArena<BE> = poisoned_arena(
             module
                 .vec_znx_rsh_tmp_bytes(res_size)
                 .max(module.vec_znx_normalize_tmp_bytes()),
@@ -1063,7 +1069,7 @@ where
                 0,
                 &vec_znx_backend_ref::<BE>(&orig_backend),
                 0,
-                &mut scratch.borrow(),
+                &mut scratch_oracle.borrow(),
             );
             module.vec_znx_copy(
                 &mut vec_znx_backend_mut::<BE>(&mut want_backend),
@@ -1079,7 +1085,7 @@ where
                     0,
                     &mut vec_znx_backend_mut::<BE>(backend),
                     0,
-                    &mut scratch.borrow(),
+                    &mut scratch_oracle.borrow(),
                 );
             }
 
@@ -1178,7 +1184,6 @@ pub fn test_vec_znx_mul_xp_minus_one_assign_derived<BE: TestBackend + HalVecZnxM
     module: &Module<BE>,
 ) where
     Module<BE>: VecZnxMulXpMinusOne<BE> + VecZnxMulXpMinusOneAssign<BE> + VecZnxMulXpMinusOneAssignTmpBytes,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
     let mut source: Source = Source::new([0u8; 32]);
@@ -1186,10 +1191,10 @@ pub fn test_vec_znx_mul_xp_minus_one_assign_derived<BE: TestBackend + HalVecZnxM
     for size in [1usize, 2, 4] {
         // Each body gets its own `_tmp_bytes(size)` alone, so one that
         // under-reports its scratch panics here.
-        let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(crate::oep::vec_znx_mul_xp_minus_one_assign_tmp_bytes_derived::<
-            BE,
-        >(module, size));
-        let mut scratch_api: ScratchOwned<BE> = ScratchOwned::alloc(module.vec_znx_mul_xp_minus_one_assign_tmp_bytes(size));
+        let mut scratch: PoisonedArena<BE> = poisoned_arena(crate::oep::vec_znx_mul_xp_minus_one_assign_tmp_bytes_derived::<BE>(
+            module, size,
+        ));
+        let mut scratch_api: PoisonedArena<BE> = poisoned_arena(module.vec_znx_mul_xp_minus_one_assign_tmp_bytes(size));
 
         for p in [1i64, 5, -3, params.n as i64] {
             let mut a_backend = module.vec_znx_alloc(params.n, 1, size);
@@ -1296,6 +1301,172 @@ where
     }
 }
 
+/// `scalar_znx_automorphism`: the OEP default body and whatever `module`
+/// dispatches to, both versus `vec_znx_automorphism` on one-limb `VecZnx`
+/// copies of the operands, bit for bit, every column of the destination
+/// compared.
+pub fn test_scalar_znx_automorphism_derived<BE: TestBackend + HalVecZnxImpl>(params: &TestParams, module: &Module<BE>)
+where
+    Module<BE>: ScalarZnxAutomorphism<BE> + VecZnxAutomorphism<BE>,
+{
+    let base2k: usize = params.base2k;
+    let cols: usize = 2;
+    let mut source: Source = Source::new([0u8; 32]);
+
+    let mut a_backend = module.scalar_znx_alloc(params.n, cols);
+    let mut res_backend = module.scalar_znx_alloc(params.n, cols);
+    for col in 0..cols {
+        module.vec_znx_fill_uniform_source(
+            base2k,
+            base2k,
+            &mut ScalarZnxAsVecZnxBackendMut::<BE>::as_vec_znx_backend_mut(&mut a_backend),
+            col,
+            &mut source,
+        );
+        module.vec_znx_fill_uniform_source(
+            base2k,
+            base2k,
+            &mut ScalarZnxAsVecZnxBackendMut::<BE>::as_vec_znx_backend_mut(&mut res_backend),
+            col,
+            &mut source,
+        );
+    }
+    let res = download_scalar_znx::<BE>(&res_backend);
+    let a_vec_backend = upload_vec_znx::<BE>(&one_limb_vec_znx(&download_scalar_znx::<BE>(&a_backend)));
+
+    for k in [-5i64, -1, 1, 5, 2 * params.n as i64 - 1] {
+        for (res_col, a_col) in [(0usize, 0usize), (1, 0), (0, 1)] {
+            let mut have_backend = upload_scalar_znx::<BE>(&res);
+            crate::oep::scalar_znx_automorphism_derived::<BE>(
+                module,
+                k,
+                &mut scalar_znx_backend_mut::<BE>(&mut have_backend),
+                res_col,
+                &scalar_znx_backend_ref::<BE>(&a_backend),
+                a_col,
+            );
+
+            let mut got_backend = upload_scalar_znx::<BE>(&res);
+            module.scalar_znx_automorphism(
+                k,
+                &mut scalar_znx_backend_mut::<BE>(&mut got_backend),
+                res_col,
+                &scalar_znx_backend_ref::<BE>(&a_backend),
+                a_col,
+            );
+
+            // Oracle: the vector automorphism on one-limb copies of res and a.
+            let mut want_backend = upload_vec_znx::<BE>(&one_limb_vec_znx(&res));
+            module.vec_znx_automorphism(
+                k,
+                &mut vec_znx_backend_mut::<BE>(&mut want_backend),
+                res_col,
+                &vec_znx_backend_ref::<BE>(&a_vec_backend),
+                a_col,
+            );
+
+            let want = download_vec_znx::<BE>(&want_backend);
+            let have = download_scalar_znx::<BE>(&have_backend);
+            let got = download_scalar_znx::<BE>(&got_backend);
+            for col in 0..cols {
+                assert!(
+                    have.at(col, 0) == want.at(col, 0),
+                    "scalar_znx_automorphism: default body != vec_znx_automorphism (k {k} res_col {res_col} a_col {a_col} col {col})"
+                );
+                assert!(
+                    got.at(col, 0) == want.at(col, 0),
+                    "scalar_znx_automorphism: dispatched op != vec_znx_automorphism (k {k} res_col {res_col} a_col {a_col} col {col})"
+                );
+            }
+        }
+    }
+}
+
+/// `scalar_znx_ci_embed`: the OEP default body and whatever `module`
+/// dispatches to, both versus `vec_znx_ci_embed` on one-limb `VecZnx` copies
+/// of the operands, bit for bit, every column of the destination compared.
+pub fn test_scalar_znx_ci_embed_derived<BE: TestBackend + HalVecZnxCIImpl>(params: &TestParams, module: &Module<BE>)
+where
+    Module<BE>: ScalarZnxCIEmbed<BE> + VecZnxCIEmbed<BE>,
+{
+    let base2k: usize = params.base2k;
+    let cols: usize = 2;
+    let mut source: Source = Source::new([0u8; 32]);
+
+    let n: usize = params.n.max(2 * BE::MIN_DEGREE);
+    let mut a_backend = module.scalar_znx_alloc(n >> 1, cols);
+    let mut res_backend = module.scalar_znx_alloc(n, cols);
+    for col in 0..cols {
+        module.vec_znx_fill_uniform_source(
+            base2k,
+            base2k,
+            &mut ScalarZnxAsVecZnxBackendMut::<BE>::as_vec_znx_backend_mut(&mut a_backend),
+            col,
+            &mut source,
+        );
+        module.vec_znx_fill_uniform_source(
+            base2k,
+            base2k,
+            &mut ScalarZnxAsVecZnxBackendMut::<BE>::as_vec_znx_backend_mut(&mut res_backend),
+            col,
+            &mut source,
+        );
+    }
+    let res = download_scalar_znx::<BE>(&res_backend);
+    let a_vec_backend = upload_vec_znx::<BE>(&one_limb_vec_znx(&download_scalar_znx::<BE>(&a_backend)));
+
+    for (res_col, a_col) in [(0usize, 0usize), (1, 0), (0, 1)] {
+        let mut have_backend = upload_scalar_znx::<BE>(&res);
+        crate::oep::scalar_znx_ci_embed_derived::<BE>(
+            module,
+            &mut scalar_znx_backend_mut::<BE>(&mut have_backend),
+            res_col,
+            &scalar_znx_backend_ref::<BE>(&a_backend),
+            a_col,
+        );
+
+        let mut got_backend = upload_scalar_znx::<BE>(&res);
+        module.scalar_znx_ci_embed(
+            &mut scalar_znx_backend_mut::<BE>(&mut got_backend),
+            res_col,
+            &scalar_znx_backend_ref::<BE>(&a_backend),
+            a_col,
+        );
+
+        // Oracle: the vector embedding on one-limb copies of res and a.
+        let mut want_backend = upload_vec_znx::<BE>(&one_limb_vec_znx(&res));
+        module.vec_znx_ci_embed(
+            &mut vec_znx_backend_mut::<BE>(&mut want_backend),
+            res_col,
+            &vec_znx_backend_ref::<BE>(&a_vec_backend),
+            a_col,
+        );
+
+        let want = download_vec_znx::<BE>(&want_backend);
+        let have = download_scalar_znx::<BE>(&have_backend);
+        let got = download_scalar_znx::<BE>(&got_backend);
+        for col in 0..cols {
+            assert!(
+                have.at(col, 0) == want.at(col, 0),
+                "scalar_znx_ci_embed: default body != vec_znx_ci_embed (res_col {res_col} a_col {a_col} col {col})"
+            );
+            assert!(
+                got.at(col, 0) == want.at(col, 0),
+                "scalar_znx_ci_embed: dispatched op != vec_znx_ci_embed (res_col {res_col} a_col {a_col} col {col})"
+            );
+        }
+    }
+}
+
+/// A host `ScalarZnx` copied into a one-limb `VecZnx` of the same degree and columns.
+fn one_limb_vec_znx(scalar: &ScalarZnx<impl HostDataRef, i64>) -> VecZnxOwned<i64> {
+    let mut vec = VecZnxOwned::<i64>::alloc(scalar.n(), scalar.cols(), 1);
+    for col in 0..scalar.cols() {
+        vec.at_mut(col, 0).copy_from_slice(scalar.at(col, 0));
+    }
+    vec
+}
+
 /// `vec_znx_big_add_small`: the scratch-free OEP default against an
 /// independent oracle, `from_small(b)` then `add_assign(a)`, written out
 /// through the public api traits (a different call path from the free
@@ -1311,11 +1482,10 @@ where
         + VecZnxBigAddSmall<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
     let mut source: Source = Source::new([0u8; 32]);
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch: PoisonedArena<BE> = poisoned_arena(module.vec_znx_big_normalize_tmp_bytes());
 
     // (big operand size, small operand size, res size): res longer than both,
     // small shorter than big, small longer than big, res shorter than both, res
@@ -1453,11 +1623,10 @@ where
         + VecZnxBigSubSmallA<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
     let mut source: Source = Source::new([0u8; 32]);
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch: PoisonedArena<BE> = poisoned_arena(module.vec_znx_big_normalize_tmp_bytes());
 
     // (small operand size, big operand size, res size): res longer than both,
     // small shorter than big, small longer than big, res shorter than both, res
@@ -1595,11 +1764,10 @@ where
         + VecZnxBigSubSmallB<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
     let mut source: Source = Source::new([0u8; 32]);
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch: PoisonedArena<BE> = poisoned_arena(module.vec_znx_big_normalize_tmp_bytes());
 
     // (big operand size, small operand size, res size): res longer than both,
     // small shorter than big, small longer than big, res shorter than both, res
@@ -1741,11 +1909,10 @@ where
         + VecZnxBigAddSmallAssign<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
     let mut source: Source = Source::new([0u8; 32]);
-    let mut oracle_scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+    let mut oracle_scratch: PoisonedArena<BE> = poisoned_arena(
         module
             .vec_znx_big_normalize_tmp_bytes()
             .max(module.vec_znx_idft_apply_tmp_bytes()),
@@ -1759,7 +1926,7 @@ where
         module.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut addend_backend, &mut source);
         let addend_ref = vec_znx_backend_ref::<BE>(&addend_backend);
 
-        let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(crate::oep::vec_znx_idft_normalize_tmp_bytes_derived::<BE>(
+        let mut scratch: PoisonedArena<BE> = poisoned_arena(crate::oep::vec_znx_idft_normalize_tmp_bytes_derived::<BE>(
             module, res_size, a_size,
         ));
 
@@ -1847,11 +2014,10 @@ pub fn test_vec_znx_dft_automorphism_add_with_plan_derived<BE: TestBackend + Hal
         + VecZnxBigAlloc<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
     let mut source: Source = Source::new([1u8; 32]);
-    let mut oracle_scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+    let mut oracle_scratch: PoisonedArena<BE> = poisoned_arena(
         module
             .vec_znx_big_normalize_tmp_bytes()
             .max(module.vec_znx_idft_apply_tmp_bytes()),
@@ -1878,7 +2044,7 @@ pub fn test_vec_znx_dft_automorphism_add_with_plan_derived<BE: TestBackend + Hal
             );
         }
 
-        let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+        let mut scratch: PoisonedArena<BE> = poisoned_arena(
             crate::oep::vec_znx_dft_automorphism_add_with_plan_tmp_bytes_derived::<BE>(module, res_size, a_size),
         );
 
@@ -1976,11 +2142,10 @@ where
         + VecZnxBigAlloc<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
     let mut source: Source = Source::new([1u8; 32]);
-    let mut oracle_scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+    let mut oracle_scratch: PoisonedArena<BE> = poisoned_arena(
         module
             .vec_znx_big_normalize_tmp_bytes()
             .max(module.vec_znx_idft_apply_tmp_bytes()),
@@ -2086,11 +2251,10 @@ where
         + SvpPPolAlloc<BE>
         + SvpPrepare<BE>
         + SvpApplyDftToDft<BE>,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
     let mut source: Source = Source::new([2u8; 32]);
-    let mut oracle_scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+    let mut oracle_scratch: PoisonedArena<BE> = poisoned_arena(
         module
             .vec_znx_big_normalize_tmp_bytes()
             .max(module.vec_znx_idft_apply_tmp_bytes()),
@@ -2125,8 +2289,7 @@ where
         let mut seed_backend = module.vec_znx_alloc(params.n, cols, res_size);
         module.vec_znx_fill_uniform_source_all(base2k, res_size * base2k, &mut seed_backend, &mut source);
 
-        let mut scratch: ScratchOwned<BE> =
-            ScratchOwned::alloc(crate::oep::svp_apply_dft_tmp_bytes_derived::<BE>(module, b_size));
+        let mut scratch: PoisonedArena<BE> = poisoned_arena(crate::oep::svp_apply_dft_tmp_bytes_derived::<BE>(module, b_size));
 
         // Every column starts on the same seed on both sides, so the limbs the
         // product has to zero are asserted and a write outside `col` shows up.
@@ -2235,7 +2398,6 @@ where
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
     let cols: usize = 2;
@@ -2284,7 +2446,7 @@ where
             module.vec_znx_dft_add_assign(&mut res_oracle.to_backend_mut(), res_col, &fresh.to_backend_ref(), 0);
 
             // The derived free function, with an arena sized only by its own sibling.
-            let mut derived_scratch: ScratchOwned<BE> = ScratchOwned::alloc(cnv_apply_dft_add_tmp_bytes_derived::<BE>(
+            let mut derived_scratch: PoisonedArena<BE> = poisoned_arena(cnv_apply_dft_add_tmp_bytes_derived::<BE>(
                 module, cnv_offset, res_size, a_size, b_size,
             ));
             cnv_apply_dft_add_derived::<BE>(
@@ -2300,7 +2462,9 @@ where
                 &mut derived_scratch.borrow(),
             );
 
-            // The backend's own dispatch through the OEP method.
+            // The backend's own dispatch through the OEP method, on an arena of the api `_tmp_bytes` alone.
+            let mut module_scratch: PoisonedArena<BE> =
+                poisoned_arena(module.cnv_apply_dft_add_tmp_bytes(cnv_offset, res_size, a_size, b_size));
             module.cnv_apply_dft_add(
                 cnv_offset,
                 &mut res_module.to_backend_mut(),
@@ -2310,7 +2474,7 @@ where
                 &b_prep.to_backend_ref(),
                 0,
                 1,
-                &mut scratch.borrow(),
+                &mut module_scratch.borrow(),
             );
 
             let want = normalize_dft_column::<BE>(module, base2k, &mut big, &mut res_oracle, res_col, &mut scratch);
@@ -2350,7 +2514,6 @@ where
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
     let cols: usize = 2;
@@ -2416,7 +2579,7 @@ where
                 .collect();
 
             // The derived free function, with an arena sized only by its own sibling.
-            let mut derived_scratch: ScratchOwned<BE> = ScratchOwned::alloc(cnv_apply_dft_sum_tmp_bytes_derived::<BE>(
+            let mut derived_scratch: PoisonedArena<BE> = poisoned_arena(cnv_apply_dft_sum_tmp_bytes_derived::<BE>(
                 module, cnv_offset, res_size, a_size, b_size,
             ));
             cnv_apply_dft_sum_derived::<BE>(
@@ -2431,8 +2594,8 @@ where
             // The backend's own dispatch through the OEP method, with an arena
             // sized only by the api `_tmp_bytes` (a fused override may need
             // more than the shared convolution arena carries).
-            let mut module_scratch: ScratchOwned<BE> =
-                ScratchOwned::alloc(module.cnv_apply_dft_sum_tmp_bytes(cnv_offset, res_size, a_size, b_size));
+            let mut module_scratch: PoisonedArena<BE> =
+                poisoned_arena(module.cnv_apply_dft_sum_tmp_bytes(cnv_offset, res_size, a_size, b_size));
             module.cnv_apply_dft_sum(
                 cnv_offset,
                 &mut res_module.to_backend_mut(),
@@ -2471,7 +2634,6 @@ where
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
     let cols: usize = 2;
@@ -2517,7 +2679,7 @@ where
                 }
             }
 
-            let mut derived_scratch: ScratchOwned<BE> = ScratchOwned::alloc(cnv_pairwise_apply_dft_tmp_bytes_derived::<BE>(
+            let mut derived_scratch: PoisonedArena<BE> = poisoned_arena(cnv_pairwise_apply_dft_tmp_bytes_derived::<BE>(
                 module, cnv_offset, res_size, a_size, b_size,
             ));
             cnv_pairwise_apply_dft_derived::<BE>(
@@ -2532,6 +2694,8 @@ where
                 &mut derived_scratch.borrow(),
             );
 
+            let mut module_scratch: PoisonedArena<BE> =
+                poisoned_arena(module.cnv_pairwise_apply_dft_tmp_bytes(cnv_offset, res_size, a_size, b_size));
             module.cnv_pairwise_apply_dft(
                 cnv_offset,
                 &mut res_module.to_backend_mut(),
@@ -2540,7 +2704,7 @@ where
                 &b_prep.to_backend_ref(),
                 i,
                 j,
-                &mut scratch.borrow(),
+                &mut module_scratch.borrow(),
             );
 
             let want = normalize_dft_column::<BE>(module, base2k, &mut big, &mut res_oracle, res_col, &mut scratch);
@@ -2576,7 +2740,6 @@ where
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
     let cols: usize = 2;
@@ -2589,14 +2752,15 @@ where
     module.vec_znx_fill_uniform_source_all(17, a_size * 17, &mut a_backend, &mut source);
     let a_ref = vec_znx_backend_ref::<BE>(&a_backend);
 
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+    let mut scratch: PoisonedArena<BE> = poisoned_arena(
         module
             .cnv_prepare_left_tmp_bytes(a_size, a_size)
             .max(module.cnv_prepare_right_tmp_bytes(a_size, a_size))
-            .max(module.cnv_prepare_self_tmp_bytes(a_size, a_size))
             .max(module.cnv_apply_dft_tmp_bytes(0, res_size, a_size, a_size))
+            .max(module.vec_znx_idft_apply_tmp_bytes())
             .max(module.vec_znx_big_normalize_tmp_bytes()),
     );
+    let mut module_scratch: PoisonedArena<BE> = poisoned_arena(module.cnv_prepare_self_tmp_bytes(a_size, a_size));
 
     // Oracle: the two prepares, driven separately.
     let mut left_oracle: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(params.n, cols, a_size, PrepareHint::Reuse);
@@ -2607,8 +2771,7 @@ where
     // The derived free function, with an arena sized only by its own sibling.
     let mut left_derived: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(params.n, cols, a_size, PrepareHint::Reuse);
     let mut right_derived: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(params.n, cols, a_size, PrepareHint::Reuse);
-    let mut derived_scratch: ScratchOwned<BE> =
-        ScratchOwned::alloc(cnv_prepare_self_tmp_bytes_derived::<BE>(module, a_size, a_size));
+    let mut derived_scratch: PoisonedArena<BE> = poisoned_arena(cnv_prepare_self_tmp_bytes_derived::<BE>(module, a_size, a_size));
     cnv_prepare_self_derived::<BE>(
         module,
         &mut left_derived.to_backend_mut(),
@@ -2624,13 +2787,13 @@ where
         &mut left_module.to_backend_mut(),
         &mut right_module.to_backend_mut(),
         &a_ref,
-        &mut scratch.borrow(),
+        &mut module_scratch.borrow(),
     );
 
     let mut res_dft = module.vec_znx_dft_alloc(params.n, 2, res_size);
     let mut big = module.vec_znx_big_alloc(params.n, 1, res_size);
     let mut product =
-        |left: &CnvPVecLOwned<BE>, right: &CnvPVecROwned<BE>, col: usize, cnv_offset: usize, scratch: &mut ScratchOwned<BE>| {
+        |left: &CnvPVecLOwned<BE>, right: &CnvPVecROwned<BE>, col: usize, cnv_offset: usize, scratch: &mut PoisonedArena<BE>| {
             module.cnv_apply_dft(
                 cnv_offset,
                 &mut res_dft.to_backend_mut(),
@@ -2676,7 +2839,6 @@ where
         + VecZnxBigAddAssign<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
     let a_cols: usize = 2;
@@ -2692,10 +2854,9 @@ where
     let a_ref = vec_znx_backend_ref::<BE>(&a_backend);
     let b_ref = vec_znx_backend_ref::<BE>(&b_backend);
 
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+    let mut scratch: PoisonedArena<BE> = poisoned_arena(
         module
             .cnv_by_const_apply_tmp_bytes(0, res_size, a_size, b_size)
-            .max(module.cnv_by_const_apply_add_tmp_bytes(0, res_size, a_size, b_size))
             .max(module.vec_znx_big_normalize_tmp_bytes()),
     );
 
@@ -2733,7 +2894,7 @@ where
         );
         module.vec_znx_big_add_assign(&mut acc_oracle.to_backend_mut(), 0, &fresh.to_backend_ref(), 0);
 
-        let mut derived_scratch: ScratchOwned<BE> = ScratchOwned::alloc(cnv_by_const_apply_add_tmp_bytes_derived::<BE>(
+        let mut derived_scratch: PoisonedArena<BE> = poisoned_arena(cnv_by_const_apply_add_tmp_bytes_derived::<BE>(
             module, cnv_offset, res_size, a_size, b_size,
         ));
         cnv_by_const_apply_add_derived::<BE>(
@@ -2749,6 +2910,8 @@ where
             &mut derived_scratch.borrow(),
         );
 
+        let mut module_scratch: PoisonedArena<BE> =
+            poisoned_arena(module.cnv_by_const_apply_add_tmp_bytes(cnv_offset, res_size, a_size, b_size));
         module.cnv_by_const_apply_add(
             cnv_offset,
             &mut acc_module.to_backend_mut(),
@@ -2758,10 +2921,10 @@ where
             &b_ref,
             0,
             1,
-            &mut scratch.borrow(),
+            &mut module_scratch.borrow(),
         );
 
-        let normalize = |big: &crate::layouts::VecZnxBigOwned<BE>, scratch: &mut ScratchOwned<BE>| {
+        let normalize = |big: &crate::layouts::VecZnxBigOwned<BE>, scratch: &mut PoisonedArena<BE>| {
             let template = VecZnxOwned::<i64>::alloc(params.n, 1, res_size);
             let mut backend = upload_vec_znx::<BE>(&template);
             module.vec_znx_big_normalize(
@@ -2802,10 +2965,9 @@ fn prepare_convolution_operands<BE: TestBackend + HalConvolutionImpl>(
     a_size: usize,
     b_size: usize,
     fill_base2k: usize,
-) -> (CnvPVecLOwned<BE>, CnvPVecROwned<BE>, ScratchOwned<BE>)
+) -> (CnvPVecLOwned<BE>, CnvPVecROwned<BE>, PoisonedArena<BE>)
 where
     Module<BE>: ModuleN + Convolution<BE> + CnvPVecAlloc<BE> + VecZnxAlloc<BE> + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let res_size: usize = a_size + b_size;
     let mut source: Source = Source::new([0u8; 32]);
@@ -2815,11 +2977,10 @@ where
     let mut b_backend = module.vec_znx_alloc(n, cols, b_size);
     module.vec_znx_fill_uniform_source_all(fill_base2k, b_size * fill_base2k, &mut b_backend, &mut source);
 
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+    let mut scratch: PoisonedArena<BE> = poisoned_arena(
         module
             .cnv_apply_dft_tmp_bytes(0, res_size, a_size, b_size)
             .max(module.cnv_apply_dft_add_tmp_bytes(0, res_size, a_size, b_size))
-            .max(module.cnv_pairwise_apply_dft_tmp_bytes(0, res_size, a_size, b_size))
             .max(module.cnv_prepare_left_tmp_bytes(a_size, a_size))
             .max(module.cnv_prepare_right_tmp_bytes(b_size, b_size))
             .max(module.vec_znx_big_normalize_tmp_bytes())
@@ -2850,11 +3011,10 @@ fn normalize_dft_column<BE: TestBackend>(
     big: &mut crate::layouts::VecZnxBigOwned<BE>,
     res: &mut crate::layouts::VecZnxDftOwned<BE>,
     res_col: usize,
-    scratch: &mut ScratchOwned<BE>,
+    scratch: &mut PoisonedArena<BE>,
 ) -> crate::layouts::VecZnxOwned<i64>
 where
     Module<BE>: ModuleN + VecZnxAlloc<BE> + VecZnxIdftApply<BE> + VecZnxIdftApplyTmpBytes + VecZnxBigNormalize<BE>,
-    ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
 {
     let size: usize = ZnxInfos::size(big);
     let template: VecZnxOwned<i64> = VecZnx::alloc(big.n(), 1, size);

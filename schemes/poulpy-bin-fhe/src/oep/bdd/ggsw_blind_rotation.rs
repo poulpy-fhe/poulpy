@@ -1,7 +1,7 @@
 use crate::bdd_arithmetic::*;
 use poulpy_core::layouts::*;
 use poulpy_hal::layouts::*;
-/// Backend implementation contract for [`GGSWBlindRotation`].
+/// Backend implementation contract for [`GGSWBlindRotation`], on the standard ring only.
 ///
 /// # Safety
 /// Implementations must preserve the canonical circuit, buffer bounds, metadata,

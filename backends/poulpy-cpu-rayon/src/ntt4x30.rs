@@ -222,7 +222,7 @@ pub trait PackedNtt4x30Base: PackedWord + HalVecZnxDftImpl {
             }
             return;
         };
-        terms.iter().for_each(|term| poulpy_hal::layouts::check_galois(term.b_galois));
+        poulpy_hal::layouts::check_cnv_dft_terms::<BE>(res.n(), terms);
         Self::cnv_apply_dft::<BE, E>(
             base,
             module,
