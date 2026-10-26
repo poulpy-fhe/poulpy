@@ -201,10 +201,7 @@ where
     });
     module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
     let bytes = module.glwe_ci_key_encrypt_sk_tmp_bytes(&layout);
-    let short = format!(
-        "scratch.available(): {} < GLWECIKeyEncryptSk::glwe_ci_key_encrypt_sk_tmp_bytes: {bytes}",
-        bytes - 1
-    );
+    let short = "insufficient scratch for conjugate-invariant key encryption";
     let (mut source_xe, mut source_xa) = (Source::new([7u8; 32]), Source::new([8u8; 32]));
 
     let mut embed: GLWECIKey<BE::OwnedBuf, BE::ZnxWord, crate::layouts::CIEmbed> =

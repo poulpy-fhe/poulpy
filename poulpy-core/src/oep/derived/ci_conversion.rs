@@ -90,9 +90,7 @@ pub(crate) fn glwe_ci_embed_key_encrypt_sk_derived<BE, D, S1, S2>(
     let tmp_bytes: usize = glwe_ci_key_encrypt_sk_tmp_bytes_derived(module, res);
     assert!(
         scratch.available() >= tmp_bytes,
-        "scratch.available(): {} < GLWECIKeyEncryptSk::glwe_ci_key_encrypt_sk_tmp_bytes: {}",
-        scratch.available(),
-        tmp_bytes
+        "insufficient scratch for conjugate-invariant key encryption"
     );
     {
         let sk_ci_ref = sk_ci.to_backend_ref();
@@ -124,9 +122,7 @@ pub(crate) fn glwe_ci_trace_key_encrypt_sk_derived<BE, D, S1, S2>(
     let tmp_bytes: usize = glwe_ci_key_encrypt_sk_tmp_bytes_derived(module, res);
     assert!(
         scratch.available() >= tmp_bytes,
-        "scratch.available(): {} < GLWECIKeyEncryptSk::glwe_ci_key_encrypt_sk_tmp_bytes: {}",
-        scratch.available(),
-        tmp_bytes
+        "insufficient scratch for conjugate-invariant key encryption"
     );
     {
         let sk_ci_ref = sk_ci.to_backend_ref();
