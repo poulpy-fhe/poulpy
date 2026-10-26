@@ -91,7 +91,7 @@ pub trait BlasMatInterReference<BE: Backend> {
         self.ckks_inner_sum_tmp_bytes(&res.block_layout(), &a.block_layout(), atk)
     }
 
-    /// Per block, poulpy-ckks's `ckks_inner_sum` over `mat_slots` batches of `d^2` slots, not normalized:
+    /// Per block, poulpy-ckks's `ckks_inner_sum` over `mat_slots` batches of `d^2` slots, a sum rather than a mean:
     /// `res = a`, then `res += rot(res, 2^i d^2)` for every `i < log2(mat_slots)` in order.
     fn blas_sum_reference<R, A, K>(&self, res: &mut R, a: &A, atk: &K, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where

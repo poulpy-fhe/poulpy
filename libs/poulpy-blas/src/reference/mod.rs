@@ -10,8 +10,7 @@ pub use inter::{
 };
 pub use intra::{
     BlasMatIntraReference, blas_rotate_cols_key_uses, blas_rotate_cols_output_layout, blas_rotate_rows_key_uses,
-    blas_rotate_rows_output_layout, blas_sum_cols_key_uses, blas_sum_cols_output_layout, blas_sum_rows_key_uses,
-    blas_sum_rows_output_layout, blas_transpose_key_uses, blas_transpose_output_layout,
+    blas_rotate_rows_output_layout, blas_transpose_key_uses, blas_transpose_output_layout,
 };
 pub use matmul::{
     BlasMatMulReference, blas_matmul_key_uses, blas_matmul_max_base2k, blas_matmul_output_layout,
@@ -22,52 +21,20 @@ pub use matmul::{
 };
 
 use poulpy_ckks::{
-    CKKSCtBounds, CKKSResult as Result, GLWEPlaintextInfos,
-    api::{CKKSLinearTransformationOps, CKKSModuleInfos, LinearTransformation, LtDiagonalMeta, PreparedDiagonal},
+    CKKSCtBounds, GLWEPlaintextInfos,
+    api::{CKKSLinearTransformationOps, LinearTransformation, LtDiagonalMeta, PreparedDiagonal},
 };
 use poulpy_core::layouts::{GGLWEInfos, LWEInfos, LinearTransformationPlan, TorusPrecision};
-use poulpy_hal::layouts::{Backend, Data, Module};
+use poulpy_hal::layouts::{Backend, Data};
 
 use crate::layouts::{
-    BlasContextInfos, BlasGridInfos, BlasPlan, BlasPtOperandInfos, BlasPtSide,
+    BlasContextInfos, BlasGridInfos, BlasKeyUses, BlasPlan, BlasPtOperandInfos, BlasPtSide,
     ciphertext::mat_slots_in,
     context::context_shapes,
     encoding::{DiagonalShape, shape},
     pt_operand::{OperandMaps, layouts_of},
-    validate::{UseSink, context_masks},
+    validate::context_masks,
 };
-
-/// The keys an operation looks up, by the widths it looks them up at: the Galois elements that rotating by each
-/// rotation of its linear transformations, rotations and sums takes, with the width of the input it key-switches, the
-/// identity (element 1) which poulpy-ckks applies without a key left out, and the width of the tensor key where it
-/// relinearizes. These are the very look-ups its validator makes, in sets: pairs sorted by element then width, with no
-/// repeats.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct BlasKeyUses {
-    /// `(Galois element, width)` of every rotation key looked up.
-    pub rotations: Vec<(i64, TorusPrecision)>,
-    /// The width of the tensor key looked up, if the operation relinearizes.
-    pub tensor: Option<TorusPrecision>,
-}
-
-impl BlasKeyUses {
-    /// Collects the look-ups an enumerator makes, and the tensor key's width.
-    pub(crate) fn collect<BE: Backend>(
-        module: &Module<BE>,
-        tensor: Option<TorusPrecision>,
-        uses: impl FnOnce(UseSink<'_>) -> Result<()>,
-    ) -> Self {
-        let mut rotations = Vec::new();
-        let _ = uses(&mut |u| {
-            rotations.push((module.ckks_galois_element(u.rotation), u.k));
-            Ok(())
-        });
-        rotations.retain(|&(p, _)| p != 1);
-        rotations.sort_unstable_by_key(|&(p, k)| (p, k.as_usize()));
-        rotations.dedup();
-        Self { rotations, tensor }
-    }
-}
 
 /// The label of a product of `a` by `count` public matrices, with `slots` slots per block, the operand's:
 /// `min(a.log_sparsity, log2(slots / (count d^2)))`, the smaller of `a`'s label and the largest one `count` distinct

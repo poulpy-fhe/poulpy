@@ -62,7 +62,10 @@ use crate::{
         sum_galois_elements,
         validate::{MASKLESS, MAX_BASE2K},
     },
-    oep::BlasImpl,
+    oep::{
+        BlasImpl,
+        derived::intra::{sum_line, sum_line_tmp_bytes},
+    },
     reference::{blas_matmul_max_base2k, blas_matmul_pt_left_max_base2k, blas_matmul_pt_right_max_base2k},
 };
 
@@ -495,7 +498,8 @@ where
 /// and `2 d`, copies of the block one and two steps along, whose noise tag must clear. Shifts of a one-row grid (psi)
 /// and of a one-column grid (phi), and of the lazy grid: rows by 1, then rows and columns by `d`, copies. Shifts of a
 /// one-row grid labelled one matrix: rows by 1 and `d + 1`, rotations, and columns by 1 (phi). The row and column sums
-/// of every grid, of the replicated grids, whose rows sum without the projection, and into `res` one limb narrower.
+/// of every grid, of the replicated grids, whose rows sum without the projection, and into `res` one limb narrower, and
+/// their line sum of lazy, mixed and canonical blocks at bounds that normalize every addition or go block by block.
 /// Then, through maps at scales below and above the operands' ([`other_scales`]), whose scale they consume in place of
 /// the operands', the transpose, the row and column shifts through both half maps and both sums.
 fn intra<B, F>(params: CKKSTestParams, module: &Module<B>, log_d: usize) -> Vec<Output>
@@ -589,6 +593,19 @@ where
         .chain([(&a, narrower), (&one, narrower)]);
     for (src, k) in sums {
         out.extend([sum(true, src, k, &ctx), sum(false, src, k, &ctx)]);
+    }
+    // The line sum at bounds no registered radix reaches: where `max_lazy_terms` binds, at radix 61 and 62, no backend
+    // key-switches exactly.
+    let (lazy_line, canonical_line): (Vec<_>, Vec<_>) = (lazy.blocks().iter().collect(), a.blocks().iter().collect());
+    let mixed_line: Vec<_> = lazy_line.iter().zip(&canonical_line).flat_map(|(l, c)| [*l, *c]).collect();
+    let layout = a.block_layout();
+    for (line, terms) in [(&lazy_line, 4), (&lazy_line, 3), (&mixed_line, 2), (&canonical_line, 2)] {
+        let mut res = operand(params, module, log_d, 1, 1, 100);
+        with_scratch::<B, _>(sum_line_tmp_bytes(module, &layout, terms), |s| {
+            sum_line(module, &mut res.blocks_mut()[0], line, terms, s)
+        })
+        .unwrap();
+        out.push(output("sum_line", &res, &keys));
     }
     for p in other_scales(params) {
         let ctx = context::<B, F>(params, module, log_d, p);

@@ -73,7 +73,7 @@ pub trait BlasMatInterOps<BE: Backend> {
     /// # Metadata
     ///
     /// Every block of `res` is poulpy-ckks's `ckks_inner_sum` of the matching block of `a`, `mat_slots` batches of
-    /// `d^2` slots, not normalized: a copy, then its own rotation by `2^i d^2` slots added for each
+    /// `d^2` slots, a sum rather than a mean: a copy, then its own rotation by `2^i d^2` slots added for each
     /// `i < log2(mat_slots)` in turn:
     ///
     /// ```text
@@ -81,7 +81,7 @@ pub trait BlasMatInterOps<BE: Backend> {
     /// log_delta    = a.log_delta
     /// log_sparsity = a.log_sparsity
     /// slots        = a.slots
-    /// canonical    = false, or the copy's flag on a batch of one matrix
+    /// canonical    = true, or the copy's flag on a batch of one matrix
     /// noise        = None
     /// mat_slots    = a's batch
     /// ```

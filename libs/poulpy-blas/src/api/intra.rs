@@ -170,13 +170,13 @@ pub trait BlasMatIntraOps<BE: Backend> {
         K: GetAutomorphismKey<BE> + Sync;
 
     /// Scratch bytes [`Self::blas_sum_rows`] needs into `res` from `a` with the maps of `ctx` and rotation keys of
-    /// layout `atk`.
+    /// layout `keys`.
     ///
     /// # Panics
     ///
     /// As [`Self::blas_transpose_tmp_bytes`], on layouts [`validate_blas_sum_rows`](crate::layouts::validate_blas_sum_rows)
     /// rejects.
-    fn blas_sum_rows_tmp_bytes<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContext<BE>, atk: &K) -> usize
+    fn blas_sum_rows_tmp_bytes<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContext<BE>, keys: &K) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
@@ -187,7 +187,7 @@ pub trait BlasMatIntraOps<BE: Backend> {
     /// # Metadata
     ///
     /// For each block column `j`, a block `u` of `a`'s layout is poulpy-ckks's `ckks_add_many` of the blocks of the
-    /// column. Its inner sum over `d` batches of `d` slots, not normalized, adds its own rotation by `2^i d` slots for
+    /// column. Its inner sum over `d` batches of `d` slots, a sum rather than a mean, adds its own rotation by `2^i d` slots for
     /// each `i < log2(d)` in turn and leaves the column sums in row 0, and on a replicated `a`
     /// ([`replicated`](crate::layouts::replicated)), whose rotations by multiples of `d` wrap inside a block, in every
     /// row: block `(0, j)` of `res` is then `ckks_inner_sum` of `u`, at `res`'s width. Otherwise `u` takes its
@@ -202,19 +202,20 @@ pub trait BlasMatIntraOps<BE: Backend> {
     /// log_delta    = a.log_delta               a.log_delta
     /// log_sparsity = a.log_sparsity            a.log_sparsity
     /// slots        = a.slots                   a.slots.join(Real)
-    /// canonical    = false                     false
+    /// canonical    = true                      true
     /// noise        = None                      None
     /// mat_slots    = a's batch                 a's batch
     /// ```
     ///
     /// The sum of the blocks normalizes in place at the bound the Lazy sums section of
-    /// `poulpy-blas/docs/blas-contracts.md` states.
+    /// `libs/poulpy-blas/docs/blas-contracts.md` states. A flag-clear block of `a` holds at most two canonical digits per
+    /// coefficient, the sum of two canonical values: a caller obligation, unchecked.
     ///
     /// # Errors
     ///
     /// - The implementation runs [`validate_blas_sum_rows`](crate::layouts::validate_blas_sum_rows) before any write, so
     ///   on its errors `res`, its batch record and `a` are untouched: `InvalidOperand` for a grid, shape, layout or
-    ///   context it rejects, then, key by key, `MissingAutomorphismKey` for a rotation key `atk` lacks, the tree's at
+    ///   context it rejects, then, key by key, `MissingAutomorphismKey` for a rotation key `keys` lacks, the tree's at
     ///   `a.k`, or at `min(res.k, a.k)` on a replicated `a`, and the broadcast's at the result's `k`, or
     ///   `InvalidOperand` for one of another rank than `a`'s blocks.
     /// - poulpy-ckks's budget errors come from inside the backend before any write, and leave them untouched too: on a
@@ -226,7 +227,7 @@ pub trait BlasMatIntraOps<BE: Backend> {
         res: &mut R,
         a: &A,
         ctx: &BlasContext<BE>,
-        atk: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -235,13 +236,13 @@ pub trait BlasMatIntraOps<BE: Backend> {
         K: GetAutomorphismKey<BE> + Sync;
 
     /// Scratch bytes [`Self::blas_sum_cols`] needs into `res` from `a` with the maps of `ctx` and rotation keys of
-    /// layout `atk`.
+    /// layout `keys`.
     ///
     /// # Panics
     ///
     /// As [`Self::blas_transpose_tmp_bytes`], on layouts [`validate_blas_sum_cols`](crate::layouts::validate_blas_sum_cols)
     /// rejects.
-    fn blas_sum_cols_tmp_bytes<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContext<BE>, atk: &K) -> usize
+    fn blas_sum_cols_tmp_bytes<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContext<BE>, keys: &K) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
@@ -253,10 +254,10 @@ pub trait BlasMatIntraOps<BE: Backend> {
     ///
     /// As [`Self::blas_sum_rows`] along the block rows, with the inner sum and the replicate over `d` batches of one
     /// slot, rotations by `2^i` and `-2^i` slots, and the projection on column 0 ([`BlasContext::first_col`]) between
-    /// them, on every grid: a rotation by `2^i` slots crosses
-    /// into the next row, replicated or not, and the broadcast never does, since `2^(i+1) <= d`. For each block row `i`,
-    /// `u` sums the blocks of the row, block `(i, 0)` of `res` receives the projection and the broadcast, and the other
-    /// blocks of the row are copies of it. The column "otherwise" of the table of [`Self::blas_sum_rows`] holds.
+    /// them, on every grid: a rotation by `2^i` slots crosses into the next row, replicated or not, and the broadcast
+    /// never does, since `2^(i+1) <= d`. For each block row `i`, `u` sums the blocks of the row, block `(i, 0)` of `res`
+    /// receives the projection and the broadcast, and the other blocks of the row are copies of it. The column
+    /// "otherwise" of the table of [`Self::blas_sum_rows`] holds, and so does its caller obligation on flag-clear blocks.
     ///
     /// # Errors
     ///
@@ -266,7 +267,7 @@ pub trait BlasMatIntraOps<BE: Backend> {
         res: &mut R,
         a: &A,
         ctx: &BlasContext<BE>,
-        atk: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where

@@ -33,7 +33,7 @@ use crate::{
     layouts::{BlasCiphertextOwned, BlasContext, BlasContextInfos, BlasGridInfos, BlasPlan, replicated},
     oep::{
         BlasMatIntraImpl,
-        derived::{sum_line, sum_line_tmp_bytes},
+        derived::intra::{sum_line, sum_line_tmp_bytes},
     },
 };
 
@@ -340,10 +340,6 @@ pub fn test_blas_sum_rows_cols<BE, F, E>(
             let res_widths = if (rows, cols) == (2, 3) { &widths[..] } else { &widths[..1] };
             for &res_k in res_widths {
                 let mut res = alloc_grid(&params, module, log_d, rows, cols, res_k);
-                let bytes = module
-                    .blas_sum_rows_tmp_bytes(&res, &ct, &ctx, &atk)
-                    .max(module.blas_sum_cols_tmp_bytes(&res, &ct, &ctx, &atk));
-                let mut op_scratch = poisoned_scratch::<BE>(bytes);
                 let label = format!("{rows}x{cols} replicated={rep} res_k={res_k}");
                 // A replicated grid sums its rows without the projection, so at `a`'s scale and width.
                 let rows_layout = if rep {
@@ -351,6 +347,7 @@ pub fn test_blas_sum_rows_cols<BE, F, E>(
                 } else {
                     mapped_layout(&ct, rows, cols, res_k, p)
                 };
+                let mut op_scratch = poisoned_scratch::<BE>(module.blas_sum_rows_tmp_bytes(&res, &ct, &ctx, &atk));
                 module
                     .blas_sum_rows(&mut res, &ct, &ctx, &row_keys, &mut op_scratch.borrow())
                     .unwrap();
@@ -365,6 +362,7 @@ pub fn test_blas_sum_rows_cols<BE, F, E>(
                     &rows_layout,
                     &mut scratch.borrow(),
                 );
+                let mut op_scratch = poisoned_scratch::<BE>(module.blas_sum_cols_tmp_bytes(&res, &ct, &ctx, &atk));
                 module
                     .blas_sum_cols(&mut res, &ct, &ctx, &col_keys, &mut op_scratch.borrow())
                     .unwrap();
@@ -388,16 +386,13 @@ pub fn test_blas_sum_rows_cols<BE, F, E>(
                 let maps = at_scale(&params, p);
                 let ctx = blas_context::<BE, F>(&maps, module, log_d, &mut scratch.borrow());
                 let mut res = alloc_grid(&params, module, log_d, rows, cols, params.k);
-                let bytes = module
-                    .blas_sum_rows_tmp_bytes(&res, &ct, &ctx, &atk)
-                    .max(module.blas_sum_cols_tmp_bytes(&res, &ct, &ctx, &atk));
-                let mut op_scratch = poisoned_scratch::<BE>(bytes);
                 let layout = mapped_layout(&ct, rows, cols, params.k, p);
                 let rows_layout = if rep {
                     copied_layout(&ct, rows, cols, params.k)
                 } else {
                     layout
                 };
+                let mut op_scratch = poisoned_scratch::<BE>(module.blas_sum_rows_tmp_bytes(&res, &ct, &ctx, &atk));
                 module
                     .blas_sum_rows(&mut res, &ct, &ctx, &row_keys, &mut op_scratch.borrow())
                     .unwrap();
@@ -413,6 +408,7 @@ pub fn test_blas_sum_rows_cols<BE, F, E>(
                     &rows_layout,
                     &mut scratch.borrow(),
                 );
+                let mut op_scratch = poisoned_scratch::<BE>(module.blas_sum_cols_tmp_bytes(&res, &ct, &ctx, &atk));
                 module
                     .blas_sum_cols(&mut res, &ct, &ctx, &col_keys, &mut op_scratch.borrow())
                     .unwrap();
@@ -432,12 +428,14 @@ pub fn test_blas_sum_rows_cols<BE, F, E>(
     }
 }
 
-/// The line sum of the axis reductions, of canonical blocks and of blocks each the sum of two canonical ones, holds the
-/// bound it is given in canonical digits per coefficient: through `ckks_add_many` at 4 terms, a flag-clear block
+/// The line sum of [`blas_sum_rows`](BlasMatIntraOps::blas_sum_rows) and
+/// [`blas_sum_cols`](BlasMatIntraOps::blas_sum_cols), of canonical blocks and of blocks each the sum of two canonical
+/// ones, holds the bound it is given in canonical digits per coefficient, given since the radixes where
+/// `max_lazy_terms` binds, 61 and 62, take key switches no backend computes exactly: through `ckks_add_many` at 4 terms, a flag-clear block
 /// counting two, and block by block at 3 and 2 terms, where two flag-clear blocks exceed them, and through
 /// `ckks_add_many` at 2 on canonical blocks alone, each within exactly the scratch its query reports. Never
 /// normalized, each line exceeds the largest bound it is tested at, and every sum of a line normalizes to its digits.
-pub fn test_blas_lazy_sums<BE, F, E>(
+pub fn test_blas_sum_rows_cols_lazy<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,

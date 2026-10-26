@@ -33,28 +33,27 @@ use crate::{
     layouts::{
         BlasCiphertext, BlasCiphertextOwned, BlasContextInfos, BlasGridInfos, BlasLayout, BlasModuleAlloc, BlasPlan, Left, Right,
         blas_matmul_left_operand_layout, blas_matmul_left_term_layout, blas_matmul_right_operand_layout,
-        blas_matmul_right_term_layout, replicated, sum_galois_elements,
+        blas_matmul_right_term_layout, blas_sum_cols_output_layout, blas_sum_rows_output_layout, replicated, sum_galois_elements,
     },
     oep::BlasImpl,
     reference::{
         blas_matmul_output_layout, blas_matmul_prepared_output_layout, blas_matmul_pt_left_output_layout,
         blas_matmul_pt_right_output_layout, blas_rotate_cols_output_layout, blas_rotate_output_layout,
-        blas_rotate_rows_output_layout, blas_sum_cols_output_layout, blas_sum_output_layout, blas_sum_rows_output_layout,
-        blas_transpose_output_layout,
+        blas_rotate_rows_output_layout, blas_sum_output_layout, blas_transpose_output_layout,
     },
 };
 
 /// Every per-matrix map, the matrix-slot rotation and the sum give their result the metadata [`copied_layout`] or
 /// [`mapped_layout`] derives from their input, whatever `res` held, and the values of their cleartext model: transpose,
 /// row and column rotations across blocks, within one block and by whole blocks, row rotations of a grid one block high
-/// holding one matrix, which copy its layout, row and column sums, the products by public matrices on either side and
+/// holding one matrix, which copy its layout, row and column sums, canonical, the products by public matrices on either side and
 /// the rotation, from a half-full batch into a fresh grid and from a full batch into a grid labelled and recorded half
 /// full. The operand preparations report their hint, their input's dimensions, batch and layout as
 /// their source, and as their layout their input's when hot and that of their terms when cold, sigma (tau) then a
 /// shift of its blocks, at no scale on a right input holding one matrix, which [`blas_matmul_left_term_layout`]
 /// ([`blas_matmul_right_term_layout`]) gives, as [`blas_matmul_left_operand_layout`]
 /// ([`blas_matmul_right_operand_layout`]) gives them all before preparing. Summing a transposed half-full batch adds
-/// each of its matrices once and records them. The sum of one matrix copies it, the transpose of a real batch keeps its
+/// each of its matrices once, canonical, and records them. The sum of one matrix copies it, the transpose of a real batch keeps its
 /// slots real, and the terms of an integer batch are real, while its hot operand reports its own slots. On one matrix
 /// slot no batch is half full: only the full one runs.
 pub fn test_blas_result_meta<BE, F, E>(
@@ -265,6 +264,8 @@ pub fn test_blas_result_meta<BE, F, E>(
                 };
                 let op = label(&format!("{op} {rows}x{cols}"));
                 assert_eq!(query, layout, "{op}: query");
+                // The last inner sum or replicate leaves every block canonical.
+                assert!(res.blocks().iter().all(|block| block.is_canonical()), "{op}: canonical");
                 check(&op, &res, &want, &layout, &mut scratch.borrow());
             }
         }
@@ -347,6 +348,7 @@ pub fn test_blas_result_meta<BE, F, E>(
         let want = half.0.transpose().sum_lanes();
         let layout = copied_layout(&transposed, 2, 1, k);
         assert_eq!(blas_sum_output_layout(&res, &transposed), layout, "sum query");
+        assert!(res.blocks().iter().all(|block| block.is_canonical()), "sum: canonical");
         check("sum of a half-full transpose", &res, &want, &layout, &mut scratch.borrow());
     }
 

@@ -13,6 +13,7 @@ use poulpy_hal::{
 use crate::{
     BenchOp, bench_ops,
     blas::{
+        intra,
         matmul::{self, BlasBenchModule},
         params::{BlasBenchParams, default_bench_params_blas},
     },
@@ -37,7 +38,7 @@ where
         BenchOp {
             layer: "blas",
             name: "blas_sum_rows",
-            runner: matmul::runner_blas_sum_rows::<BE, _>,
+            runner: intra::runner_blas_sum_rows::<BE, _>,
         },
     ]
 }
@@ -86,17 +87,17 @@ where
         BenchOp {
             layer: "blas",
             name: "blas_sum_rows_replicated",
-            runner: matmul::runner_blas_sum_rows_replicated::<BE, _>,
+            runner: intra::runner_blas_sum_rows_replicated::<BE, _>,
         },
         BenchOp {
             layer: "blas",
             name: "blas_sum_cols",
-            runner: matmul::runner_blas_sum_cols::<BE, _>,
+            runner: intra::runner_blas_sum_cols::<BE, _>,
         },
         BenchOp {
             layer: "blas",
             name: "blas_rotate_rows_replicated",
-            runner: matmul::runner_blas_rotate_rows_replicated::<BE, _>,
+            runner: intra::runner_blas_rotate_rows_replicated::<BE, _>,
         },
     ]
 }

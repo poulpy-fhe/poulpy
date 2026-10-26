@@ -30,24 +30,23 @@ use super::{
 /// How the products by public matrices are evaluated, which a plan records for the public operands encoded from it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum BlasPtAlgorithm {
-    /// One map per block of the public operand, `2d - 1` diagonals, `d` on the left when one matrix fills the slots:
-    /// one scale. A left operand of one public matrix on more than one matrix slot also holds, per block, the
-    /// `d`-diagonal map for a replicated input
-    /// ([`BlasPtOperand::block_replicated`](super::BlasPtOperand::block_replicated)), `d^2` slot values per diagonal:
-    /// `(3d - 1) d^2` slot values per block where the other operands hold `(2d - 1) d^2`.
+    /// One map per block of the public operand, `2d - 1` diagonals, `d` on the left when one matrix fills the slots
+    /// ([`maps::right_mul`], [`maps::left_mul`]): one scale. A left operand of one public matrix on more than one matrix
+    /// slot also holds, per block, the `d`-diagonal map for a replicated input ([`maps::left_mul_rep`]), `d^2` slot
+    /// values per diagonal: `(3d - 1) d^2` slot values per block where the other operands hold `(2d - 1) d^2`.
     #[default]
     Diagonal,
-    /// JKLS: sigma (on the right) or tau (on the left) of every block of the encrypted grid, once, then one map per
-    /// block of the public operand: two scales. Against `Diagonal`, for the same keys, it spends a second scale,
-    /// evaluates one more map per block of the encrypted grid, its first, whose noise it adds, and holds that map in
-    /// the operand; for one public matrix (`count = 1`) its blocks on the right store `d^2` slots per diagonal where
-    /// `Diagonal` stores `d`, up to `d` times the memory.
+    /// JKLS: sigma (on the right) or tau (on the left) of every block of the encrypted grid, once, then one map per block
+    /// of the public operand ([`maps::right_jkls`], [`maps::left_jkls`]): two scales. Against `Diagonal`, for the same
+    /// keys, it spends a second scale, evaluates one more map per block of the encrypted grid, its first, whose noise it
+    /// adds, and holds that map in the operand; for one public matrix (`count = 1`) its blocks on the right store `d^2`
+    /// slots per diagonal where [`maps::right_mul`] stores `d`, up to `d` times the memory.
     Jkls,
     /// JKLS with its masks on the ciphertext: sigma (tau on the left) of every block of the encrypted grid, once, then
     /// the context's masks of its results, phi^k on the right and the column halves of psi^k on the left
-    /// ([`BlasContext::rows_left`], [`BlasContext::rows_right`]), then one sum of products by prepared public
-    /// plaintexts, `d` per block on the right, `psi^k(tau(B))`, and `2d - 1` on the left, `Rot_j(sigma(B))` for
-    /// `-d < j < d`: three scales. On the right it takes one public matrix.
+    /// ([`maps::rows_left`], [`maps::rows_right`]), then one sum of products by prepared public plaintexts, `d` per
+    /// block on the right, `psi^k(tau(B))`, and `2d - 1` on the left, `Rot_j(sigma(B))` for `-d < j < d`: three scales.
+    /// On the right it takes one public matrix.
     JklsStored,
     /// [`Self::JklsStored`] with one public plaintext per block, tau (sigma) of its matrices, read through the Galois
     /// element of each rotation.
@@ -607,8 +606,7 @@ impl<BE: Backend> BlasContext<BE> {
         self.maps.tau()
     }
 
-    /// JKLS tau of a replicated input: `d` diagonals at the offsets `c d`, each the mask of column `c`, scheduled at
-    /// tau's giant step.
+    /// JKLS tau of a replicated input ([`maps::tau_rep`]): `d` diagonals, scheduled at tau's giant step.
     pub fn tau_rep(&self) -> &LinearTransformationPrepared<BE> {
         self.maps.tau_rep()
     }
@@ -618,12 +616,12 @@ impl<BE: Backend> BlasContext<BE> {
         self.maps.transpose()
     }
 
-    /// Projection on row 0 of every matrix: one diagonal at offset 0, `Direct`.
+    /// Projection on row 0 of every matrix ([`maps::first_row`]): one diagonal at offset 0, `Direct`.
     pub fn first_row(&self) -> &LinearTransformationPrepared<BE> {
         self.maps.first_row()
     }
 
-    /// Projection on column 0 of every matrix: one diagonal at offset 0, `Direct`.
+    /// Projection on column 0 of every matrix ([`maps::first_col`]): one diagonal at offset 0, `Direct`.
     pub fn first_col(&self) -> &LinearTransformationPrepared<BE> {
         self.maps.first_col()
     }
@@ -633,7 +631,7 @@ impl<BE: Backend> BlasContext<BE> {
         self.maps.rotate_rows(k)
     }
 
-    /// psi^k of a replicated input: the rotation by `k d`, one all-ones diagonal, at no scale. Panics unless
+    /// psi^k of a replicated input ([`maps::rotate_rows_rep`]): the rotation by `k d`, at no scale. Panics unless
     /// `1 <= k < d`.
     pub fn rotate_rows_rep(&self, k: usize) -> &LinearTransformationPrepared<BE> {
         self.maps.rotate_rows_rep(k)
@@ -664,13 +662,13 @@ impl<BE: Backend> BlasContext<BE> {
         self.maps.cols_right(k)
     }
 
-    /// The columns of psi^k that phi^k keeps in the block, `c + k < d`. Panics unless
+    /// The columns of psi^k that phi^k keeps in the block, `c + k < d` ([`maps::rows_left`]). Panics unless
     /// `1 <= k < d` and the plan selects [`BlasPtAlgorithm::JklsStored`] or [`BlasPtAlgorithm::JklsGalois`].
     pub fn rows_left(&self, k: usize) -> &LinearTransformationPrepared<BE> {
         self.maps.rows_left(k)
     }
 
-    /// The columns of psi^k that phi^k wraps, `c + k >= d`. Panics as [`Self::rows_left`].
+    /// The columns of psi^k that phi^k wraps, `c + k >= d` ([`maps::rows_right`]). Panics as [`Self::rows_left`].
     pub fn rows_right(&self, k: usize) -> &LinearTransformationPrepared<BE> {
         self.maps.rows_right(k)
     }

@@ -21,10 +21,7 @@ use poulpy_blas::{
         replicated,
     },
     oep::{BlasMatIntraImpl, BlasMatMulImpl},
-    reference::{
-        BlasKeyUses, blas_matmul_max_base2k, blas_matmul_pt_left_max_base2k, blas_matmul_pt_right_max_base2k,
-        blas_rotate_rows_key_uses, blas_sum_cols_key_uses, blas_sum_rows_key_uses,
-    },
+    reference::{blas_matmul_max_base2k, blas_matmul_pt_left_max_base2k, blas_matmul_pt_right_max_base2k},
 };
 use poulpy_ckks::{
     CKKSInfos, CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotsKind,
@@ -88,7 +85,7 @@ fn key_shape(bp: &BlasBenchParams) -> (TorusPrecision, Dnum, TorusPrecision) {
     (k_digit, dnum, TorusPrecision(k_digit.0 + bp.n.ilog2()))
 }
 
-fn atk_layout(bp: &BlasBenchParams) -> GLWEAutomorphismKeyLayout {
+pub(super) fn atk_layout(bp: &BlasBenchParams) -> GLWEAutomorphismKeyLayout {
     let (k_digit, dnum, k_aux) = key_shape(bp);
     GLWEAutomorphismKeyLayout {
         n: Degree(bp.n as u32),
@@ -122,12 +119,12 @@ fn entry(tag: u64, s: usize, r: usize, c: usize) -> f64 {
 }
 
 /// The encrypted matrices.
-fn a_entry(s: usize, r: usize, c: usize) -> f64 {
+pub(super) fn a_entry(s: usize, r: usize, c: usize) -> f64 {
     entry(1, s, r, c)
 }
 
 /// The second ciphertext factor, scaled so that the products stay in `[-1, 1)`.
-fn b_entry(d: usize) -> impl Fn(usize, usize, usize) -> f64 {
+pub(super) fn b_entry(d: usize) -> impl Fn(usize, usize, usize) -> f64 {
     move |s, r, c| entry(2, s, r, c) / d as f64
 }
 
@@ -149,7 +146,7 @@ pub fn error_bound(bp: &BlasBenchParams) -> f64 {
 }
 
 /// Prints the error of a runner's first call and asserts it within [`error_bound`].
-fn verify<BE>(op: &str, bp: &BlasBenchParams, max_err: f64, max_base2k: Option<usize>, keys: usize) {
+pub(super) fn verify<BE>(op: &str, bp: &BlasBenchParams, max_err: f64, max_base2k: Option<usize>, keys: usize) {
     let bound = error_bound(bp);
     println!(
         "PRECISION backend={} op={op} params={bp} max_err={max_err:.3e} ({:.1} bits) bound={bound:.3e} ({:.1} bits) max_base2k={} keys={keys}",
@@ -178,8 +175,8 @@ impl<BE: Backend, M> BlasBenchModule<BE> for M where
 
 /// The client side of a point: the module, the secret key, and one arena for key generation, encoding, encryption and
 /// decryption.
-struct Client<BE: Backend> {
-    module: Module<BE>,
+pub(super) struct Client<BE: Backend> {
+    pub(super) module: Module<BE>,
     sk_raw: BackendGLWESecret<BE>,
     sk: GLWESecretPrepared<BE::OwnedBuf, BE>,
     arena: ScratchOwned<BE>,
@@ -193,7 +190,7 @@ where
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
-    fn new(bp: &BlasBenchParams) -> Self {
+    pub(super) fn new(bp: &BlasBenchParams) -> Self {
         let module = Module::<BE>::new(bp.n as u64);
         let layout = block_layout(bp);
         let mut xs = Source::new([0u8; 32]);
@@ -218,7 +215,7 @@ where
     }
 
     /// The prepared maps of the context at scale `p`.
-    fn context(&self, bp: &BlasBenchParams) -> BlasContext<BE> {
+    pub(super) fn context(&self, bp: &BlasBenchParams) -> BlasContext<BE> {
         let module = &self.module;
         let meta = CoeffsMeta::from_delta_budget(bp.p, HEADROOM);
         let mut ctx = module.blas_context_alloc(BlasPlan::new(bp.log_d), base2k(bp), meta);
@@ -253,7 +250,7 @@ where
     }
 
     /// One prepared rotation key for each Galois element, and no other.
-    fn rotation_keys(
+    pub(super) fn rotation_keys(
         &mut self,
         bp: &BlasBenchParams,
         elements: Vec<i64>,
@@ -293,7 +290,7 @@ where
 
     /// One block holding `matrices` matrices of `entry`, from a plaintext of `matrices d^2` slots, repeated up to the
     /// backend's minimum degree: the block's label proves their number, or the larger batch that degree holds.
-    fn encrypt(
+    pub(super) fn encrypt(
         &mut self,
         bp: &BlasBenchParams,
         matrices: usize,
@@ -319,14 +316,14 @@ where
     }
 
     /// A result grid of one block at the width of a fresh ciphertext.
-    fn result(&self, bp: &BlasBenchParams) -> BlasCiphertextOwned<BE> {
+    pub(super) fn result(&self, bp: &BlasBenchParams) -> BlasCiphertextOwned<BE> {
         self.module
             .blas_ciphertext_alloc(bp.log_d, 1, 1, base2k(bp), TorusPrecision(bp.k as u32))
     }
 
     /// The largest distance of the decrypted block of `res` to `want(s, r, c)`, entry `(r, c)` of matrix `s`, over the
     /// matrices of the batch, and of its imaginary part to zero.
-    fn max_error(
+    pub(super) fn max_error(
         &mut self,
         bp: &BlasBenchParams,
         res: &BlasCiphertextOwned<BE>,
@@ -384,139 +381,6 @@ where
         Box::new(move || {
             module
                 .blas_transpose(&mut res, &ct_a, &ctx, &atks, &mut scratch.borrow())
-                .unwrap()
-        })
-    });
-}
-
-/// `blas_sum_rows` (`rows`) or `blas_sum_cols` of `matrices` matrices, `bp.batch()` distinct ones or one whose compact
-/// encryption proves it, which sums its rows without the projection. Their entries lie in `[-1/d, 1/d)`, so that the
-/// sums stay in `[-1, 1)`.
-fn reduction<BE, M>(bencher: &mut Bencher<'_, M>, bp: &BlasBenchParams, op: &'static str, rows: bool, matrices: usize)
-where
-    BE: Backend<Ring = Standard> + 'static + BlasMatIntraImpl,
-    Module<BE>: BlasBenchModule<BE>,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    M: Measurement,
-{
-    timed::<BE, M, _>(bencher, op, bp, || {
-        let mut client = Client::<BE>::new(bp);
-        let ctx = client.context(bp);
-        let entry = b_entry(bp.d());
-        let ct_a = client.encrypt(bp, matrices, &entry);
-        assert!(
-            replicated::<Standard>(&ct_a) == (matrices == 1),
-            "{op}: the grid is not the one the runner names"
-        );
-        let mut res = client.result(bp);
-        // The keys of the path the grid's label selects, without the broadcast's on a replicated grid.
-        let uses = if rows {
-            blas_sum_rows_key_uses(&client.module, &res, &ct_a, &ctx)
-        } else {
-            blas_sum_cols_key_uses(&client.module, &res, &ct_a, &ctx)
-        };
-        let atks = client.rotation_keys(bp, elements_of(&uses));
-        let atk = atk_layout(bp);
-        let bytes = if rows {
-            client.module.blas_sum_rows_tmp_bytes(&res, &ct_a, &ctx, &atk)
-        } else {
-            client.module.blas_sum_cols_tmp_bytes(&res, &ct_a, &ctx, &atk)
-        };
-        let mut scratch = ScratchOwned::<BE>::alloc(bytes);
-        let keys = atks.len();
-        let call = move |module: &Module<BE>, res: &mut BlasCiphertextOwned<BE>, scratch: &mut ScratchOwned<BE>| {
-            if rows {
-                module.blas_sum_rows(res, &ct_a, &ctx, &atks, &mut scratch.borrow()).unwrap()
-            } else {
-                module.blas_sum_cols(res, &ct_a, &ctx, &atks, &mut scratch.borrow()).unwrap()
-            }
-        };
-        call(&client.module, &mut res, &mut scratch);
-        let max_err = client.max_error(bp, &res, |s, r, c| {
-            (0..bp.d())
-                .map(|l| {
-                    if rows {
-                        entry(s % matrices, l, c)
-                    } else {
-                        entry(s % matrices, r, l)
-                    }
-                })
-                .sum()
-        });
-        verify::<BE>(op, bp, max_err, None, keys);
-        let module = client.module;
-        Box::new(move || call(&module, &mut res, &mut scratch))
-    });
-}
-
-/// The Galois elements of `uses`.
-fn elements_of(uses: &BlasKeyUses) -> Vec<i64> {
-    uses.rotations.iter().map(|&(p, _)| p).collect()
-}
-
-/// `blas_sum_rows` of `bp.batch()` distinct matrices: needs `bp.batch() > 1`.
-pub fn runner_blas_sum_rows<BE, M>(bencher: &mut Bencher<'_, M>, bp: &BlasBenchParams)
-where
-    BE: Backend<Ring = Standard> + 'static + BlasMatIntraImpl,
-    Module<BE>: BlasBenchModule<BE>,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    M: Measurement,
-{
-    reduction::<BE, M>(bencher, bp, "blas_sum_rows", true, bp.batch());
-}
-
-/// `blas_sum_rows` of one matrix in every matrix slot, at no scale.
-pub fn runner_blas_sum_rows_replicated<BE, M>(bencher: &mut Bencher<'_, M>, bp: &BlasBenchParams)
-where
-    BE: Backend<Ring = Standard> + 'static + BlasMatIntraImpl,
-    Module<BE>: BlasBenchModule<BE>,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    M: Measurement,
-{
-    reduction::<BE, M>(bencher, bp, "blas_sum_rows_replicated", true, 1);
-}
-
-/// `blas_sum_cols` of `bp.batch()` matrices.
-pub fn runner_blas_sum_cols<BE, M>(bencher: &mut Bencher<'_, M>, bp: &BlasBenchParams)
-where
-    BE: Backend<Ring = Standard> + 'static + BlasMatIntraImpl,
-    Module<BE>: BlasBenchModule<BE>,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    M: Measurement,
-{
-    reduction::<BE, M>(bencher, bp, "blas_sum_cols", false, bp.batch());
-}
-
-/// `blas_rotate_rows` by one row of one matrix in every matrix slot: a rotation by `d` slots, at no scale.
-pub fn runner_blas_rotate_rows_replicated<BE, M>(bencher: &mut Bencher<'_, M>, bp: &BlasBenchParams)
-where
-    BE: Backend<Ring = Standard> + 'static + BlasMatIntraImpl,
-    Module<BE>: BlasBenchModule<BE>,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    M: Measurement,
-{
-    let op = "blas_rotate_rows_replicated";
-    timed::<BE, M, _>(bencher, op, bp, || {
-        let mut client = Client::<BE>::new(bp);
-        let ctx = client.context(bp);
-        let ct_a = client.encrypt(bp, 1, a_entry);
-        assert!(replicated::<Standard>(&ct_a), "{op}: the grid does not hold one matrix");
-        let mut res = client.result(bp);
-        let uses = blas_rotate_rows_key_uses(&client.module, &res, &ct_a, 1, &ctx);
-        let atks = client.rotation_keys(bp, elements_of(&uses));
-        let bytes = client.module.blas_rotate_rows_tmp_bytes(&res, &ct_a, &ctx, &atk_layout(bp));
-        let mut scratch = ScratchOwned::<BE>::alloc(bytes);
-        client
-            .module
-            .blas_rotate_rows(&mut res, &ct_a, 1, &ctx, &atks, &mut scratch.borrow())
-            .unwrap();
-        let d = bp.d();
-        let max_err = client.max_error(bp, &res, |_, r, c| a_entry(0, (r + 1) % d, c));
-        verify::<BE>(op, bp, max_err, None, atks.len());
-        let module = client.module;
-        Box::new(move || {
-            module
-                .blas_rotate_rows(&mut res, &ct_a, 1, &ctx, &atks, &mut scratch.borrow())
                 .unwrap()
         })
     });

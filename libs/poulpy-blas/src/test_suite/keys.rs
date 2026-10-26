@@ -48,16 +48,16 @@ use super::matmul::public_entry;
 use crate::{
     api::{BlasMatInterOps, BlasMatIntraOps, BlasMatMulOps},
     layouts::{
-        BlasCiphertext, BlasCiphertextOwned, BlasContextInfos, BlasEncodingOps, BlasGridInfos, BlasMatMulLeft, BlasMatMulRight,
-        BlasModuleAlloc, BlasPlan, BlasPtAlgorithm, BlasPtOperandInfos, BlasPtOperandPreparedFactory, BlasPtSide, Left, Right,
-        context::context_shapes, replicated, sum_galois_elements,
+        BlasCiphertext, BlasCiphertextOwned, BlasContextInfos, BlasEncodingOps, BlasGridInfos, BlasKeyUses, BlasMatMulLeft,
+        BlasMatMulRight, BlasModuleAlloc, BlasPlan, BlasPtAlgorithm, BlasPtOperandInfos, BlasPtOperandPreparedFactory,
+        BlasPtSide, Left, Right, blas_sum_cols_key_uses, blas_sum_rows_key_uses, context::context_shapes, replicated,
+        sum_galois_elements,
     },
     oep::BlasImpl,
     reference::{
-        BlasKeyUses, MapDiagonal, blas_matmul_key_uses, blas_matmul_prepare_left_key_uses, blas_matmul_prepare_right_key_uses,
+        MapDiagonal, blas_matmul_key_uses, blas_matmul_prepare_left_key_uses, blas_matmul_prepare_right_key_uses,
         blas_matmul_prepared_key_uses, blas_matmul_pt_left_key_uses, blas_matmul_pt_right_key_uses, blas_rotate_cols_key_uses,
-        blas_rotate_key_uses, blas_rotate_rows_key_uses, blas_sum_cols_key_uses, blas_sum_key_uses, blas_sum_rows_key_uses,
-        blas_transpose_key_uses, operand_shapes,
+        blas_rotate_key_uses, blas_rotate_rows_key_uses, blas_sum_key_uses, blas_transpose_key_uses, operand_shapes,
     },
 };
 

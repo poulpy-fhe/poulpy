@@ -180,7 +180,7 @@ pub(crate) fn ensure_maps<M: CKKSModuleInfos + ?Sized>(
 
 /// One rotation-key look-up of an operation: the rotation, the width of the input it key-switches, and the rank of the
 /// blocks. The enumerators of an operation's look-ups yield these in the order its validator checks them; a validator
-/// checks each against the store, a [`BlasKeyUses`](crate::reference::BlasKeyUses) query collects them.
+/// checks each against the store, a [`BlasKeyUses`](crate::layouts::BlasKeyUses) query collects them.
 #[derive(Clone, Copy)]
 pub(crate) struct RotationUse {
     pub(crate) rotation: i64,
@@ -450,9 +450,9 @@ pub fn validate_blas_sum_rows<BE: Backend>(
     res: &impl BlasGrid<BE>,
     a: &impl BlasGrid<BE>,
     ctx: &BlasContext<BE>,
-    atk: &impl GetAutomorphismKey<BE>,
+    keys: &impl GetAutomorphismKey<BE>,
 ) -> Result<usize> {
-    validate_reduction(module, res, a, true, ctx, atk)
+    validate_reduction(module, res, a, true, ctx, keys)
 }
 
 /// [`validate_blas_sum_rows`] for [`blas_sum_cols`](crate::api::BlasMatIntraOps::blas_sum_cols).
@@ -465,9 +465,9 @@ pub fn validate_blas_sum_cols<BE: Backend>(
     res: &impl BlasGrid<BE>,
     a: &impl BlasGrid<BE>,
     ctx: &BlasContext<BE>,
-    atk: &impl GetAutomorphismKey<BE>,
+    keys: &impl GetAutomorphismKey<BE>,
 ) -> Result<usize> {
-    validate_reduction(module, res, a, false, ctx, atk)
+    validate_reduction(module, res, a, false, ctx, keys)
 }
 
 /// The checks of an axis reduction along the rows (`rows`) or the columns.
@@ -477,14 +477,14 @@ fn validate_reduction<BE: Backend>(
     a: &impl BlasGrid<BE>,
     rows: bool,
     ctx: &BlasContext<BE>,
-    atk: &impl GetAutomorphismKey<BE>,
+    keys: &impl GetAutomorphismKey<BE>,
 ) -> Result<usize> {
     let op = if rows { "blas_sum_rows" } else { "blas_sum_cols" };
     ensure_intra(op, module, res, a, ctx, a.rows(), a.cols())?;
     if reduction_projection(&ctx.maps, rows, replicated_at(ctx.slots(), a)).is_some() {
         ensure_mapped(op, module, ctx, a)?;
     }
-    reduction_uses(res, a, rows, &ctx.maps, &mut |u| ensure_rotation(op, module, atk, u))?;
+    reduction_uses(res, a, rows, &ctx.maps, &mut |u| ensure_rotation(op, module, keys, u))?;
     Ok(grid_batch::<BE::Ring>(a))
 }
 
@@ -1063,7 +1063,7 @@ mod tests {
     use poulpy_hal::layouts::HostBytesBackend;
 
     use super::*;
-    use crate::layouts::BlasLayout;
+    use crate::layouts::{BlasLayout, BlasModuleAlloc};
 
     #[test]
     fn maps_reject_blocks_of_another_ring_radix_or_a_narrower_width() {
@@ -1087,5 +1087,23 @@ mod tests {
         );
         assert_eq!(check(128, 20, 60), rejected("blocks at base2k=19 read by maps at base2k=20"));
         assert_eq!(check(128, 19, 61), rejected("blocks at k=60 read by maps at k=61"));
+    }
+
+    /// A product into `res` at radix 63 is rejected for that radix before the factors' other radix is compared.
+    #[test]
+    fn products_reject_a_radix_above_62_first() {
+        let module = Module::<HostBytesBackend>::new(256);
+        let grid = |base2k: usize| module.blas_ciphertext_alloc(2, 1, 1, base2k.into(), 120usize.into());
+        let (a, b) = (grid(19), grid(19));
+        let check =
+            |base2k: usize| ensure_product("op", &module, &grid(base2k), &a, &b).map_err(|err| err.composition().cloned());
+        assert!(check(19).is_ok());
+        assert_eq!(
+            check(63),
+            Err(Some(CKKSCompositionError::InvalidOperand {
+                op: "op",
+                reason: "base2k 63 > 62: two canonical tensor digits can overflow an i64".into(),
+            }))
+        );
     }
 }

@@ -1,26 +1,24 @@
-//! The provided methods of [`BlasMatIntraImpl`], the transpose, the row and column shifts and the axis reductions, each
-//! composed over the map hook [`BlasMatIntraImpl::blas_map_blocks_impl`] and poulpy-ckks's copy, addition, rotation,
-//! inner sum and replicate. Each runs its validator before any write and, on `Ok`, stamps the batch record of `res`, as
-//! the references do. They are public so that an override of a provided method can fall back to it; their scratch
-//! assertion over the keys a map looks up is shared with the references.
+//! The provided methods of [`BlasMatIntraImpl`], the transpose and the row and column shifts, each composed over the
+//! map hook [`BlasMatIntraImpl::blas_map_blocks_impl`] and poulpy-ckks's copy, addition and rotation, and, in
+//! `intra`, the axis reductions. Each runs its validator before any write and, on `Ok`, stamps the batch record of
+//! `res`, as the references do. The transpose and the shifts are public so that an override of a provided method can
+//! fall back to it; their scratch assertion over the keys a map looks up is shared with the references.
+
+pub(crate) mod intra;
 
 use std::cell::RefCell;
 
 use poulpy_ckks::{
-    CKKSCtBounds, CKKSLayout, CKKSResult as Result, SetCKKSInfos,
+    CKKSResult as Result,
     api::{
-        CKKSAddManyOps, CKKSAddOps, CKKSCopyOps, CKKSInnerSumOps, CKKSModuleInfos, CKKSRotateOps, LinearTransformation,
-        LinearTransformationPrepared, LtDiagonalMeta,
+        CKKSAddOps, CKKSCopyOps, CKKSModuleInfos, CKKSRotateOps, LinearTransformation, LinearTransformationPrepared,
+        LtDiagonalMeta,
     },
-    layouts::{CKKSModuleAlloc, ScratchArenaTakeCKKS},
+    layouts::CKKSModuleAlloc,
 };
-use poulpy_core::{
-    GLWEBytesOf, GLWENormalize,
-    layouts::{
-        GGLWEInfos, GGLWELayout, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos, Rank,
-        TorusPrecision, max_lazy_terms,
-        prepared::{GLWEAutomorphismKeyPreparedBackendRef, GLWETensorKeyPreparedBackendRef},
-    },
+use poulpy_core::layouts::{
+    GGLWEInfos, GGLWELayout, GLWEInfos, GLWEToBackendMut, GetAutomorphismKey, GetTensorKey, LWEInfos, Rank, TorusPrecision,
+    prepared::{GLWEAutomorphismKeyPreparedBackendRef, GLWETensorKeyPreparedBackendRef},
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
@@ -28,11 +26,9 @@ use super::BlasMatIntraImpl;
 use crate::layouts::{
     BlasContext, BlasContextInfos, BlasGrid, BlasGridInfos, BlasGridMut,
     ciphertext::replicated_at,
-    context::{reduction_projection, shift_maps, shift_rotates},
-    encoding::{copied_block, mapped_block_into},
-    validate::{assert_scratch, ensure_rotation, lt_uses, reduction_uses, shift_uses},
-    validate_blas_rotate_cols, validate_blas_rotate_rows, validate_blas_sum_cols, validate_blas_sum_rows,
-    validate_blas_transpose,
+    context::{shift_maps, shift_rotates},
+    validate::{assert_scratch, ensure_rotation, lt_uses, shift_uses},
+    validate_blas_rotate_cols, validate_blas_rotate_rows, validate_blas_transpose,
 };
 
 /// The provided `blas_transpose_tmp_bytes_impl`: the hook's scratch for the transpose of every block of `a` into a
@@ -297,229 +293,6 @@ where
     for (t, dst) in res.blocks_mut().iter_mut().enumerate() {
         module.ckks_add_into(dst, &halves[2 * src(t, q)], &halves[2 * src(t, q + 1) + 1], scratch)?;
     }
-    Ok(())
-}
-
-/// The provided `blas_sum_rows_tmp_bytes_impl`, as [`reduction_tmp_bytes`].
-#[doc(hidden)]
-pub fn blas_sum_rows_tmp_bytes_derived<BE, R, A, K>(module: &Module<BE>, res: &R, a: &A, ctx: &BlasContext<BE>, atk: &K) -> usize
-where
-    BE: BlasMatIntraImpl,
-    R: BlasGridInfos,
-    A: BlasGridInfos,
-    K: GGLWEInfos,
-{
-    reduction_tmp_bytes(module, res, a, true, ctx, atk)
-}
-
-/// The provided `blas_sum_cols_tmp_bytes_impl`, as [`reduction_tmp_bytes`].
-#[doc(hidden)]
-pub fn blas_sum_cols_tmp_bytes_derived<BE, R, A, K>(module: &Module<BE>, res: &R, a: &A, ctx: &BlasContext<BE>, atk: &K) -> usize
-where
-    BE: BlasMatIntraImpl,
-    R: BlasGridInfos,
-    A: BlasGridInfos,
-    K: GGLWEInfos,
-{
-    reduction_tmp_bytes(module, res, a, false, ctx, atk)
-}
-
-/// Scratch of an axis reduction along the rows (`rows`) or the columns: a block `u` of `a`'s layout, beside a line's sum
-/// into it, with a second block where [`sum_line`] normalizes flag-clear blocks, then the inner sum of `u` into the
-/// line's first block of `res`, or its inner sum in place, the hook with the projection and the replicate on a block of
-/// the layout the projection leaves, then the copies of that block.
-fn reduction_tmp_bytes<BE, R, A, K>(module: &Module<BE>, res: &R, a: &A, rows: bool, ctx: &BlasContext<BE>, atk: &K) -> usize
-where
-    BE: BlasMatIntraImpl,
-    R: BlasGridInfos,
-    A: BlasGridInfos,
-    K: GGLWEInfos,
-{
-    let projection = reduction_projection(&ctx.maps, rows, replicated_at(ctx.slots(), a));
-    let (res, a) = (res.block_layout(), a.block_layout());
-    let sum = sum_line_tmp_bytes(module, &a, lazy_terms(&a));
-    let (first, head) = match projection {
-        None => (module.ckks_inner_sum_tmp_bytes(&res, &a, atk), copied_block(a, res.k())),
-        Some(projection) => {
-            let projected = mapped_block_into(a, projection, res.k());
-            let first = module
-                .ckks_inner_sum_tmp_bytes(&a, &a, atk)
-                .max(BE::blas_map_blocks_tmp_bytes_impl(module, &res, &a, 1, &[projection], atk))
-                .max(module.ckks_inner_sum_tmp_bytes(&projected, &projected, atk));
-            (first, projected)
-        }
-    };
-    BE::scratch_aligned(module.glwe_bytes_of_from_infos(&a)) + sum.max(first).max(module.ckks_copy_tmp_bytes(&res, &head))
-}
-
-/// Canonical digits per coefficient a flag-clear block holds at most: every operation leaves a sum of two canonical
-/// values in one.
-const FLAG_CLEAR_TERMS: usize = 2;
-
-/// The terms a lazy sum of ciphertexts of `layout` holds: poulpy-core's `max_lazy_terms` over their coefficients.
-fn lazy_terms(layout: &impl GLWEInfos) -> usize {
-    max_lazy_terms(
-        layout.base2k(),
-        layout.n().as_usize() * (layout.rank().as_usize() + 1) * layout.size(),
-    )
-}
-
-/// The additions after which a sum of inputs of `weight` terms each normalizes, so that it holds `terms` at most: the
-/// first `n + 1` inputs, and a normalized sum plus `n` of them; 0 where two inputs already exceed `terms`.
-fn lazy_normalize_after(terms: usize, weight: usize) -> usize {
-    (terms / weight).saturating_sub(1)
-}
-
-/// Scratch of [`sum_line`] of blocks of `layout` at `terms`, whatever their flags.
-pub(crate) fn sum_line_tmp_bytes<BE: BlasMatIntraImpl>(module: &Module<BE>, layout: &CKKSLayout, terms: usize) -> usize {
-    let sum = module.ckks_add_many_tmp_bytes(layout, layout);
-    if lazy_normalize_after(terms, FLAG_CLEAR_TERMS) == 0 {
-        BE::scratch_aligned(module.glwe_bytes_of_from_infos(layout)) + sum
-    } else {
-        sum
-    }
-}
-
-/// `u` receives the sum of `blocks`, holding `terms` canonical digits per coefficient at most, a flag-clear block
-/// counting [`FLAG_CLEAR_TERMS`]: by `ckks_add_many`, or, where two blocks exceed `terms`, block by block, each
-/// flag-clear block normalized into a scratch block like it and `u` normalized before each addition.
-pub(crate) fn sum_line<BE, U, B>(
-    module: &Module<BE>,
-    u: &mut U,
-    blocks: &[&B],
-    terms: usize,
-    scratch: &mut ScratchArena<'_, BE>,
-) -> Result<()>
-where
-    BE: BlasMatIntraImpl,
-    U: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-    B: GLWEToBackendRef<BE> + CKKSCtBounds,
-{
-    let weight = if blocks.iter().all(|block| block.is_canonical()) {
-        1
-    } else {
-        FLAG_CLEAR_TERMS
-    };
-    let normalize_after = lazy_normalize_after(terms, weight);
-    if normalize_after > 0 {
-        return module.ckks_add_many(u, blocks, normalize_after, scratch);
-    }
-    module.ckks_copy(u, blocks[0], scratch)?;
-    for &block in &blocks[1..] {
-        if !u.is_canonical() {
-            module.glwe_normalize_assign(u, scratch);
-        }
-        if block.is_canonical() {
-            module.ckks_add_assign(u, block, scratch)?;
-        } else {
-            let (mut v, mut s) = scratch.borrow().take_ckks_ciphertext_like_scratch(block);
-            module.glwe_normalize(&mut v, block, &mut s);
-            module.ckks_add_assign(u, &v, &mut s)?;
-        }
-    }
-    Ok(())
-}
-
-/// The provided `blas_sum_rows_impl`, as [`reduction`].
-#[doc(hidden)]
-pub fn blas_sum_rows_derived<BE, R, A, K>(
-    module: &Module<BE>,
-    res: &mut R,
-    a: &A,
-    ctx: &BlasContext<BE>,
-    atk: &K,
-    scratch: &mut ScratchArena<'_, BE>,
-) -> Result<()>
-where
-    BE: BlasMatIntraImpl,
-    R: BlasGridMut<BE>,
-    A: BlasGrid<BE>,
-    K: GetAutomorphismKey<BE> + Sync,
-{
-    reduction(module, res, a, true, ctx, atk, scratch)
-}
-
-/// The provided `blas_sum_cols_impl`, as [`reduction`].
-#[doc(hidden)]
-pub fn blas_sum_cols_derived<BE, R, A, K>(
-    module: &Module<BE>,
-    res: &mut R,
-    a: &A,
-    ctx: &BlasContext<BE>,
-    atk: &K,
-    scratch: &mut ScratchArena<'_, BE>,
-) -> Result<()>
-where
-    BE: BlasMatIntraImpl,
-    R: BlasGridMut<BE>,
-    A: BlasGrid<BE>,
-    K: GetAutomorphismKey<BE> + Sync,
-{
-    reduction(module, res, a, false, ctx, atk, scratch)
-}
-
-/// Sums every matrix along its rows (`rows`) or its columns, one line of `m` blocks at a time, a block column or a block
-/// row: a scratch block `u` of `a`'s layout sums the line's blocks ([`sum_line`]). The line's first block is the inner
-/// sum of `u` over `d` batches without a projection, else the projection of that inner sum, then its replicate over
-/// `d` batches, and is copied into the others.
-fn reduction<BE, R, A, K>(
-    module: &Module<BE>,
-    res: &mut R,
-    a: &A,
-    rows: bool,
-    ctx: &BlasContext<BE>,
-    atk: &K,
-    scratch: &mut ScratchArena<'_, BE>,
-) -> Result<()>
-where
-    BE: BlasMatIntraImpl,
-    R: BlasGridMut<BE>,
-    A: BlasGrid<BE>,
-    K: GetAutomorphismKey<BE> + Sync,
-{
-    let (op, batch) = if rows {
-        ("blas_sum_rows", validate_blas_sum_rows(module, &*res, a, ctx, atk)?)
-    } else {
-        ("blas_sum_cols", validate_blas_sum_cols(module, &*res, a, ctx, atk)?)
-    };
-    let used = KeyLayouts::new(atk);
-    let _ = reduction_uses(&*res, a, rows, &ctx.maps, &mut |u| ensure_rotation(op, module, &used, u));
-    let bytes = used.max_bytes(|key| reduction_tmp_bytes(module, &*res, a, rows, ctx, key));
-    assert_scratch(op, bytes, scratch);
-    let a_cols = a.cols();
-    let (lines, extent) = if rows { (a_cols, a.rows()) } else { (a.rows(), a_cols) };
-    // Block `t` of a line: row `t` of block column `line`, or column `t` of block row `line`.
-    let at = |line: usize, t: usize| if rows { t * a_cols + line } else { line * a_cols + t };
-    let (log_d, log_batch) = (a.log_d(), if rows { a.log_d() } else { 0 });
-    let projection = reduction_projection(&ctx.maps, rows, replicated_at(ctx.slots(), a));
-    let terms = lazy_terms(&a.block_layout());
-    let (mut u, mut s) = scratch.borrow().take_ckks_ciphertext_like_scratch(&a.block_layout());
-    let mut blocks = Vec::with_capacity(extent);
-    for line in 0..lines {
-        blocks.clear();
-        blocks.extend((0..extent).map(|t| &a.blocks()[at(line, t)]));
-        sum_line(module, &mut u, &blocks, terms, &mut s)?;
-        // The line's first block has the lowest index of its blocks.
-        let first = at(line, 0);
-        let (head, tail) = res.blocks_mut().split_at_mut(first + 1);
-        let head = &mut head[first];
-        match projection {
-            None => module.ckks_inner_sum(head, &u, log_batch, log_d, false, atk, &mut s)?,
-            Some(projection) => {
-                module.ckks_inner_sum_assign(&mut u, log_batch, log_d, false, atk, &mut s)?;
-                let sources = [&u.to_backend_view_ref()];
-                BE::blas_map_blocks_impl(module, std::slice::from_mut(head), &sources, &[projection], atk, &mut s)?;
-                module.ckks_replicate_assign(head, log_batch, log_d, atk, &mut s)?;
-            }
-        }
-        head.set_noise(None);
-        for t in 1..extent {
-            let dst = &mut tail[at(line, t) - first - 1];
-            module.ckks_copy(dst, &*head, &mut s)?;
-            dst.set_noise(None);
-        }
-    }
-    res.set_mat_slots(batch);
     Ok(())
 }
 

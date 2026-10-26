@@ -29,12 +29,12 @@ and is never implemented directly.
 The provided methods, the transpose, both shifts and both reductions, call the
 backend's selected map hook, and the references of the products call its hook
 and its JKLS kernel. So an override of the hook or of the kernel reaches every
-operation built on it. The provided bodies are public in
-`poulpy_blas::oep::derived`, as `blas_transpose_derived`,
-`blas_rotate_rows_derived`, `blas_rotate_cols_derived`,
-`blas_sum_rows_derived` and `blas_sum_cols_derived` with their
-`_tmp_bytes_derived` queries, so an override of a provided method can fall
-back to the provided body, for both the call and its query.
+operation built on it. The provided bodies of the transpose and the shifts
+are public in `poulpy_blas::oep::derived`, as `blas_transpose_derived`,
+`blas_rotate_rows_derived` and `blas_rotate_cols_derived` with their
+`_tmp_bytes_derived` queries, so an override of one of them can fall back to
+the provided body, for both the call and its query; those of the reductions
+are crate-private.
 
 The prepared operands of the products, `BlasMatMulLeft<BE>` and
 `BlasMatMulRight<BE>`, are `poulpy_blas::layouts::BlasMatMulOperand`s of the
@@ -135,9 +135,10 @@ and every operation rejects a grid that breaks this. `BlasCiphertext` over
 owned storage implements both traits on every backend. Borrowed views are not
 grids: a `BufRef` view is `Sync`, but its blocks are not `GLWEToBackendRef`.
 
-Rotation keys come as `atk` and the tensor key as `tsk`, two separate stores:
-the rotations, the sums, the maps, the preparations and the products by public
-matrices take `atk` alone, and the products both. The prepared product looks
+Rotation keys come as `atk` (`keys` in the axis reductions) and the tensor key
+as `tsk`, two separate stores: the rotations, the sums, the maps, the
+preparations and the products by public matrices take the rotation keys alone,
+and the products both. The prepared product looks
 up rotation keys only for a hot operand, whose terms it evaluates: of two cold
 operands it reads `tsk` alone. The traits' `Send` and `Sync` bounds leave an
 implementation its own choice of concurrency ([Parallelism](#parallelism)).
@@ -229,19 +230,20 @@ a store holding its operation's set alone suffices.
 
 ### Key-use queries
 
-Each operation has a query in `poulpy_blas::reference` that lists the keys it
-looks up: `blas_matmul_key_uses`, `blas_matmul_prepare_left_key_uses`,
-`blas_matmul_prepare_right_key_uses`, `blas_matmul_prepared_key_uses`,
-`blas_matmul_pt_right_key_uses`, `blas_matmul_pt_left_key_uses`,
-`blas_transpose_key_uses`, `blas_rotate_rows_key_uses`,
-`blas_rotate_cols_key_uses`, `blas_sum_rows_key_uses`,
-`blas_sum_cols_key_uses`, `blas_rotate_key_uses` and `blas_sum_key_uses`. A
+Each operation has a query that lists the keys it looks up, in
+`poulpy_blas::reference`: `blas_matmul_key_uses`,
+`blas_matmul_prepare_left_key_uses`, `blas_matmul_prepare_right_key_uses`,
+`blas_matmul_prepared_key_uses`, `blas_matmul_pt_right_key_uses`,
+`blas_matmul_pt_left_key_uses`, `blas_transpose_key_uses`,
+`blas_rotate_rows_key_uses`, `blas_rotate_cols_key_uses`,
+`blas_rotate_key_uses` and `blas_sum_key_uses`, and in `poulpy_blas::layouts`:
+`blas_sum_rows_key_uses` and `blas_sum_cols_key_uses`. A
 query takes the grids, operands and context of the operation's `_tmp_bytes`
 query, without the key layouts. It leaves out what the keys do not depend on:
 the result grid of a product of two encrypted grids, and the `PrepareHint` of a
 preparation, which looks up the same keys under either. A rotation and a shift
 take the amount `r` or `k`, which selects their maps. A query returns a
-`BlasKeyUses`:
+`poulpy_blas::layouts::BlasKeyUses`:
 
 - `rotations`, the `(Galois element, width)` pairs the operation looks up,
   sorted and without repeats, the identity (element 1), which takes no key,
@@ -258,8 +260,9 @@ The output-layout queries next to them (`blas_matmul_output_layout`,
 `blas_matmul_prepared_output_layout`, `blas_matmul_pt_right_output_layout`,
 `blas_matmul_pt_left_output_layout`, `blas_transpose_output_layout`,
 `blas_rotate_rows_output_layout`, `blas_rotate_cols_output_layout`,
-`blas_sum_rows_output_layout`, `blas_sum_cols_output_layout`,
-`blas_rotate_output_layout`, `blas_sum_output_layout`) take the input layouts
+`blas_rotate_output_layout`, `blas_sum_output_layout`, and in
+`poulpy_blas::layouts` `blas_sum_rows_output_layout` and
+`blas_sum_cols_output_layout`) take the input layouts
 and the allocated `res` and return the `BlasLayout` the call stamps on `res`,
 whose block gives `k`, `log_delta` and label; the record is the validator's.
 They read a map's effect through the same function the preparations and staged
@@ -332,14 +335,14 @@ The reductions sum the blocks of a line with poulpy-ckks's
 `ckks_add_many`, which normalizes the sum in place after every
 `t / w - 1` additions, so that it holds `t` canonical digits per coefficient at
 most, for `w` the digits a block holds, 1 on a line of canonical blocks and 2
-otherwise, the most any operation leaves in a flag-clear block, and `t`
+otherwise, and `t`
 poulpy-core's `max_lazy_terms` over the sum's `n (rank + 1) size` coefficients,
 the larger of two counts:
 
 - the worst case, `2^(63 - base2k)` digits of magnitude at most
   `2^(base2k - 1)`, whose sum stays in the normalizer's domain
   `[-2^62, 2^62]`;
-- the average case of `docs/base2k-failure-probability.md`: the most
+- the average case of `docs/guides/base2k-failure-probability.md`: the most
   independent centered uniform digits, of deviation `2^base2k / sqrt(12)`,
   whose sum leaves `[-2^62, 2^62]` with probability at most `2^-128` over
   those coefficients, by the Mills-ratio bound on `erfc` and a union bound.
@@ -350,23 +353,28 @@ There two flag-clear blocks already exceed the bound, so such a line is summed
 block by block, each flag-clear block first normalized into a scratch block and
 the sum normalized before each addition. As everywhere in base2k arithmetic,
 the inputs are taken as independent: correlated inputs, such as thousands of
-copies of one block, can overflow, as can a flag-clear block holding more than
-two digits, which no operation leaves; none of this is checked.
+copies of one block, can overflow. A flag-clear input block holds at most two
+canonical digits per coefficient, the sum of two canonical values, as a shift's
+half-map sum or one `ckks_add_into` of canonical blocks leaves it: a caller
+obligation, since a sum of flag-clear blocks or a `ckks_add_many` normalized
+less often holds more. None of this is checked.
 
 The trees of the reductions and `blas_sum` are poulpy-ckks's inner sums, and
-the broadcasts its replicates, none normalized, over poulpy-core's summed
-trace, whose automorphism at each level leaves the sum canonical.
+the broadcasts its replicates, sums rather than means, over poulpy-core's
+summed trace, whose automorphism at each level leaves the sum canonical, so
+their results are canonical.
 
 ## Scratch
 
-Every method runs within the scratch its own `_tmp_bytes_impl` reports for the
-layouts and keys it receives, which may differ from the reference's; the
-reference asserts its bound on entry and panics before any write when it falls
-short, for a call that looks up a key. An override that needs other scratch
-reports it in its own query, and every operation over it follows: the provided
-queries call the selected implementations' queries, and the reference
-`blas_matmul` query is the largest of both reference hot preparations' queries
-and the reference prepared product's on the layouts they give.
+Every method runs within the scratch its own query (`_tmp_bytes_impl`,
+`_tmp_bytes` for the reductions) reports for the layouts and keys it receives,
+which may differ from the reference's; the reference asserts its bound on entry
+and panics before any write when it falls short, for a call that looks up a
+key. An override that needs other scratch reports it in its own query, and
+every operation over it follows: the provided queries call the selected
+implementations' queries, and the reference `blas_matmul` query is the largest
+of both reference hot preparations' queries and the reference prepared
+product's on the layouts they give.
 
 The queries read layouts (`BlasGridInfos`, `CKKSCtBounds`, `GGLWEInfos`), never
 ciphertext data: the prepared product's query receives the prepared operands,
