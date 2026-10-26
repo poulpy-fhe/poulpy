@@ -17,7 +17,7 @@ use poulpy_hal::execution::TaskExecutor;
 use poulpy_hal::layouts::CnvDftAccTerm;
 use poulpy_hal::layouts::{
     Backend, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, CrtWord, HostDataMut, HostDataRef,
-    Module, VecZnxBackendRef, VecZnxDftBackendMut, ZnxView, ZnxViewMut, check_degree, check_galois,
+    Module, VecZnxBackendRef, VecZnxDftBackendMut, ZnxView, ZnxViewMut, check_cnv_dft_term, check_cnv_dft_terms, check_degree,
 };
 use std::mem::size_of;
 
@@ -694,7 +694,7 @@ pub(crate) unsafe fn cnv_apply_dft_sum_neon<BE, E: TaskExecutor>(
     check_degree::<BE>(module.n(), n);
     assert!(n.is_multiple_of(4));
     assert!(res_col < res_cols, "convolution: result column out of range");
-    terms.iter().for_each(|term| check_galois(term.b_galois));
+    check_cnv_dft_terms::<BE>(n, terms);
     let n_blocks = n / 4;
     // Limbs written so far: a group overwrites the limbs no earlier group reached and adds to the others.
     let mut written = 0;
@@ -808,6 +808,8 @@ pub(crate) unsafe fn cnv_pairwise_apply_dft<BE, E: TaskExecutor>(
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
+    check_cnv_dft_term::<BE>(res.n(), a, i, b, i, 1);
+    check_cnv_dft_term::<BE>(res.n(), a, j, b, j, 1);
     if i == j {
         unsafe { apply::<BE, E, false, false>(module, cnv_offset, res, res_col, a, i, i, b, i, i, 1) };
     } else {

@@ -39,9 +39,9 @@ use crate::{
         MatZnxBackendRef, MatZnxInfos, Module, ScalarZnxBackendMut, ScalarZnxBackendRef, ScratchArena, SvpPPolBackendRef,
         VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxBigBackendRef, VecZnxBigToBackendRef, VecZnxDftBackendMut,
         VecZnxDftBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxInfos, VecZnxToBackendMut, VecZnxToBackendRef,
-        VmpPMatBackendRef, ZnxInfos, check_galois, mat_znx_at_backend_mut_from_mut, mat_znx_at_backend_ref_from_ref,
-        scalar_znx_as_vec_znx_backend_mut_from_mut, scalar_znx_as_vec_znx_backend_ref_from_ref, vec_znx_backend_ref_from_mut,
-        vec_znx_dft_backend_ref_from_mut, vec_znx_reborrow_backend_mut,
+        VmpPMatBackendRef, ZnxInfos, check_cnv_dft_term, check_cnv_dft_terms, mat_znx_at_backend_mut_from_mut,
+        mat_znx_at_backend_ref_from_ref, scalar_znx_as_vec_znx_backend_mut_from_mut, scalar_znx_as_vec_znx_backend_ref_from_ref,
+        vec_znx_backend_ref_from_mut, vec_znx_dft_backend_ref_from_mut, vec_znx_reborrow_backend_mut,
     },
     oep::{
         HalConvolutionImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxCIImpl, HalVecZnxDftImpl, HalVecZnxImpl,
@@ -945,7 +945,7 @@ pub fn cnv_apply_dft_sum_derived<BE>(
         BE::vec_znx_dft_zero(module, res, res_col);
         return;
     }
-    terms.iter().for_each(|term| check_galois(term.b_galois));
+    check_cnv_dft_terms::<BE>(ZnxInfos::n(res), terms);
     for (idx, term) in terms.iter().enumerate() {
         if idx == 0 {
             BE::cnv_apply_dft(
@@ -1050,6 +1050,9 @@ pub fn cnv_pairwise_apply_dft_derived<BE>(
 ) where
     BE: HalConvolutionImpl,
 {
+    let n: usize = ZnxInfos::n(res);
+    check_cnv_dft_term::<BE>(n, a, i, b, i, 1);
+    check_cnv_dft_term::<BE>(n, a, j, b, j, 1);
     BE::cnv_apply_dft(module, cnv_offset, res, res_col, a, i, b, i, 1, scratch);
     if i == j {
         return;

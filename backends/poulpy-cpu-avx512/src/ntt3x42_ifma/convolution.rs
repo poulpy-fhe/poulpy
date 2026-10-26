@@ -19,7 +19,7 @@ use poulpy_hal::execution::TaskExecutor;
 use poulpy_hal::layouts::{Backend, CnvDftAccTerm, Ring};
 use poulpy_hal::layouts::{
     CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, DataView, DataViewMut, Module,
-    VecZnxBackendRef, VecZnxDftBackendMut, ZnxView, check_degree,
+    VecZnxBackendRef, VecZnxDftBackendMut, ZnxView, check_cnv_dft_terms, check_degree,
 };
 
 use super::{
@@ -1167,6 +1167,7 @@ pub(crate) unsafe fn cnv_apply_dft_sum_ifma<R: Ring, E: TaskExecutor>(
 ) {
     let n = res.n();
     check_degree::<NTT3x42Ifma<R>>(module.n(), n);
+    check_cnv_dft_terms::<NTT3x42Ifma<R>>(n, terms);
     let res_size = res.size();
     let n_groups = n / 8;
     let mut max_size = 0;

@@ -1404,6 +1404,55 @@ where
             before == BE::to_host_bytes(DataView::data(&dirty)),
             "cnv_apply_dft wrote its destination before rejecting b.n() < BE::MIN_DEGREE"
         );
+
+        // The invalid term comes after more valid terms than any fused group holds.
+        let mut terms: Vec<CnvDftAccTerm<'_, BE>> = (0..17)
+            .map(|_| CnvDftAccTerm {
+                a: a_prep.to_backend_ref(),
+                a_col: 0,
+                b: seed_right.to_backend_ref(),
+                b_col: 1,
+                b_galois: 1,
+            })
+            .collect();
+        terms.push(CnvDftAccTerm {
+            a: a_prep.to_backend_ref(),
+            a_col: 0,
+            b: narrow_right.to_backend_ref(),
+            b_col: 1,
+            b_galois: 1,
+        });
+        let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            module.cnv_apply_dft_sum(0, &mut dirty.to_backend_mut(), res_col, &terms, &mut sum_arena().arena());
+        }))
+        .is_err();
+        assert!(
+            panicked,
+            "cnv_apply_dft_sum accepted a last term with b.n() < BE::MIN_DEGREE instead of panicking"
+        );
+        assert!(
+            before == BE::to_host_bytes(DataView::data(&dirty)),
+            "cnv_apply_dft_sum wrote its destination before rejecting its last term"
+        );
+
+        let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            module.cnv_pairwise_apply_dft(
+                0,
+                &mut dirty.to_backend_mut(),
+                res_col,
+                &a_prep.to_backend_ref(),
+                &seed_right.to_backend_ref(),
+                0,
+                cols,
+                &mut pairwise_arena().arena(),
+            );
+        }))
+        .is_err();
+        assert!(panicked, "cnv_pairwise_apply_dft accepted j >= cols instead of panicking");
+        assert!(
+            before == BE::to_host_bytes(DataView::data(&dirty)),
+            "cnv_pairwise_apply_dft wrote its destination before rejecting j >= cols"
+        );
     }
 
     // No prepare is sparsity-aware: under the degree-N module a degree-N/2 input is

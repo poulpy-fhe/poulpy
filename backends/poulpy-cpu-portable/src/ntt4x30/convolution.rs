@@ -10,7 +10,7 @@ use poulpy_hal::execution::TaskExecutor;
 use poulpy_hal::layouts::CnvDftAccTerm;
 use poulpy_hal::layouts::{
     Backend, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, CrtWord, HostDataMut, HostDataRef,
-    Module, VecZnxBackendRef, VecZnxDftBackendMut, ZnxView, ZnxViewMut, check_degree, check_galois,
+    Module, VecZnxBackendRef, VecZnxDftBackendMut, ZnxView, ZnxViewMut, check_cnv_dft_terms, check_degree,
 };
 use std::mem::size_of;
 
@@ -484,7 +484,7 @@ pub fn cnv_apply_dft_sum<BE, E: TaskExecutor>(
 {
     let (n, res_size) = (res.n(), res.size());
     check_degree::<BE>(module.n(), n);
-    terms.iter().for_each(|term| check_galois(term.b_galois));
+    check_cnv_dft_terms::<BE>(n, terms);
     // Limbs written so far: a group overwrites the limbs no earlier group reached and adds to the others.
     let mut written = 0;
     for group in terms.chunks(SUM_TERMS) {
