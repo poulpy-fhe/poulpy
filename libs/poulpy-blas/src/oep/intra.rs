@@ -1,7 +1,7 @@
 use poulpy_ckks::{
     CKKSCtBounds, CKKSResult as Result, SetCKKSInfos,
     api::LinearTransformationPrepared,
-    oep::{CKKSAddImpl, CKKSCopyImpl, CKKSInnerSumImpl, CKKSRotateImpl},
+    oep::{CKKSAddImpl, CKKSAddManyImpl, CKKSCopyImpl, CKKSInnerSumImpl, CKKSRotateImpl},
 };
 use poulpy_core::{
     layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey},
@@ -81,7 +81,7 @@ use crate::layouts::{BlasContext, BlasGrid, BlasGridInfos, BlasGridMut};
 /// ([`crate::layouts::BlasGridMut::set_mat_slots`]), as the provided methods do. Any other `Err` but the budget error
 /// is a backend fault (a validator gap or a device failure), and `res` is then unspecified.
 pub unsafe trait BlasMatIntraImpl:
-    Backend + CKKSCopyImpl + CKKSAddImpl + CKKSRotateImpl + CKKSInnerSumImpl + GLWENormalizeImpl
+    Backend + CKKSCopyImpl + CKKSAddImpl + CKKSAddManyImpl + CKKSRotateImpl + CKKSInnerSumImpl + GLWENormalizeImpl
 {
     /// Scratch bytes of [`Self::blas_map_blocks_impl`] from `sources` blocks of layout `src` into blocks of layout `dst`
     /// through `lts`, with rotation keys of layout `atk`.

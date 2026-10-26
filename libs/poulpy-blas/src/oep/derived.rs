@@ -272,7 +272,7 @@ where
         assert_scratch(op, used.max_bytes(bytes), scratch);
         let rotation = (k1 << ctx.log_d()) as i64;
         for (dst, src) in res.blocks_mut().iter_mut().zip(a.blocks()) {
-            module.ckks_rotate_into(dst, src, rotation, atk, scratch)?;
+            module.ckks_rotate_into(rotation, dst, src, atk, scratch)?;
         }
         return Ok(());
     }
