@@ -1,6 +1,6 @@
 # Poulpy review guidelines
 
-Entry point for reviewing a poulpy diff: the one file a review needs to be given. It routes the reviewer to the rules that apply, which live next to it in `docs/review/`: `workspace.md` holds the rules shared by every crate, and one file per crate holds the rest. Apply the selected rules to the diff and to the callers it affects; generic Rust correctness, safety and API review still applies on top.
+Entry point for reviewing a poulpy diff: the one file a review needs to be given. It routes the reviewer to the rules that apply, which live next to it in `docs/review/`: `workspace.md` holds the rules shared by every crate, and one file per crate holds the rest (`backends.md` for the CPU backends, `gpu.md` for the GPU one). Apply the selected rules to the diff and to the callers it affects; generic Rust correctness, safety and API review still applies on top.
 
 ## 1. How to review with these files
 
@@ -27,7 +27,8 @@ Entry point for reviewing a poulpy diff: the one file a review needs to be given
 | touches `poulpy-mhe/` | `mhe.md` |
 | touches `libs/poulpy-blas/` | `blas.md` |
 | touches `backends/poulpy-cpu-*/` (portable, rayon, avx, avx512, arm, oracle) | `backends.md` and `hal.md` (also its sections 6, 7, 9 and 11), plus the file of every crate whose OEP trait or test suite the change implements, overrides or registers, and of the crate an example under `backends/poulpy-cpu-portable/examples` demonstrates |
-| adds or changes an OEP trait, OEP method, opt-in or registration macro, or public test suite, in any crate | `backends.md` (the backend side must follow) |
+| touches `backends/poulpy-gpu-portable/` | `gpu.md` and `hal.md` (also its sections 6, 7, 9 and 11), plus the file of every crate whose OEP trait or test suite the change implements, overrides or registers |
+| adds or changes an OEP trait, OEP method, opt-in or registration macro, or public test suite, in any crate | `backends.md` and `gpu.md` (the backend side must follow) |
 | touches `tools/poulpy-bench/` or any `benches/` directory, or makes a performance claim (PR description, CHANGELOG, README, `docs/guides/performance.md`, gate constant) | `bench.md` |
 | touches `.github/` | these sections alone, picking no file: `hal.md` section 11, `ckks.md` sections 15.1 and 15.4, `backends.md` sections 11 and 13.7, `bench.md` section 4 |
 | touches `docs/guides/layering-contract.md` | these sections alone, picking no file: `hal.md` sections 1, 4 and 5, `core.md` sections 1 and 2, `ckks.md` sections 1 and 2, `bin-fhe.md` sections 1 and 2, `mhe.md` sections 1 and 2, `blas.md` sections 1 and 2, `backends.md` sections 3 and 4 |
@@ -46,6 +47,7 @@ Entry point for reviewing a poulpy diff: the one file a review needs to be given
 | `mhe.md` | 1, 2 |
 | `blas.md` | 0, 1, 2 |
 | `backends.md` | 0, 1, 2, 3 |
+| `gpu.md` | all |
 | `bench.md` | 1, 2, 3, 4, 5 |
 
 ## 4. Sections by kind of change
