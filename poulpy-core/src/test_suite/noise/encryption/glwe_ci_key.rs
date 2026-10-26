@@ -11,7 +11,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    ComponentNoise, Distribution, GLWECIKeyEncryptSk, GetDistributionMut,
+    ComponentNoise, Distribution, GLWECIKeyEncryptSk, GLWESecretSampling, GetDistributionMut,
     layouts::{GGLWELayout, GLWECIKey, GLWESecret, GLWESecretLayout, ModuleCoreAlloc},
     oep::GLWECIConversionImpl,
     test_suite::{decryption::panic_message, poisoned_scratch},
@@ -81,7 +81,7 @@ where
             n,
             2,
             Distribution::NONE,
-            "conjugate-invariant key encryption: secret distribution is NONE",
+            "glwe secret distribution is NONE (have you prepared the key?)",
         ),
     ];
     assert_ci_key_refusals(
@@ -95,8 +95,8 @@ where
 }
 
 /// Encrypting a trace key from a secret wider than the key or of a rank other than its input rank, to a
-/// conjugate-invariant secret of more than half the key degree or of a rank other than the key's output rank, is
-/// refused with the key, the sources and the scratch as they were.
+/// conjugate-invariant secret of more than half the key degree, of a rank other than the key's output rank or of the
+/// `NONE` law, is refused with the key, the sources and the scratch as they were.
 pub fn test_glwe_ci_trace_key_encrypt_sk_rejects_mismatched_secrets<BE>(params: &TestParams, module: &Module<BE>)
 where
     BE: crate::test_suite::noise::TestBackend + GLWECIConversionImpl,
@@ -108,7 +108,7 @@ where
 {
     let n = module.n();
     let law = Distribution::TernaryProb(0.5);
-    let cases: [Case; 4] = [
+    let cases: [Case; 5] = [
         (
             n,
             n,
@@ -145,6 +145,15 @@ where
             law,
             "conjugate-invariant key encryption: secret rank differs from the key's",
         ),
+        (
+            n,
+            n / 2,
+            2,
+            n,
+            1,
+            law,
+            "glwe secret distribution is NONE (have you prepared the key?)",
+        ),
     ];
     assert_ci_key_refusals(
         params,
@@ -156,8 +165,87 @@ where
     );
 }
 
-/// Runs each case on a key of input rank 1 and output rank 2 holding other content, on an empty arena and on exactly
-/// the query's poisoned bytes, and asserts the full message, then the key, both sources and the arena unchanged.
+/// Encrypting an embed key and a trace key on exactly their query's poisoned bytes leaves the scratch wiped, and one
+/// byte below the query is refused at entry.
+pub fn test_glwe_ci_key_encrypt_sk_wipes_scratch<BE>(params: &TestParams, module: &Module<BE>)
+where
+    BE: crate::test_suite::noise::TestBackend + GLWECIConversionImpl,
+    BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: GLWECIKeyEncryptSk<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let n = module.n();
+    let base2k = params.base2k;
+    let layout = GGLWELayout {
+        n: n.into(),
+        base2k: base2k.into(),
+        dnum: 2_usize.into(),
+        k_digit: base2k.into(),
+        k_aux: base2k.into(),
+        k_offset: 0_usize.into(),
+        rank_in: 1_usize.into(),
+        rank_out: 1_usize.into(),
+        stride: 1,
+    };
+    let mut source_xs = Source::new([6u8; 32]);
+    let mut sk_ci: Secret<BE> = module.glwe_secret_alloc_from_infos(&GLWESecretLayout {
+        n: (n / 2).into(),
+        rank: 1_usize.into(),
+    });
+    module.glwe_secret_fill_ternary_prob(&mut sk_ci, 0.5, &mut source_xs);
+    let mut sk: Secret<BE> = module.glwe_secret_alloc_from_infos(&GLWESecretLayout {
+        n: n.into(),
+        rank: 1_usize.into(),
+    });
+    module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
+    let bytes = module.glwe_ci_key_encrypt_sk_tmp_bytes(&layout);
+    let short = format!(
+        "scratch.available(): {} < GLWECIKeyEncryptSk::glwe_ci_key_encrypt_sk_tmp_bytes: {bytes}",
+        bytes - 1
+    );
+    let (mut source_xe, mut source_xa) = (Source::new([7u8; 32]), Source::new([8u8; 32]));
+
+    let mut embed: GLWECIKey<BE::OwnedBuf, BE::ZnxWord, crate::layouts::CIEmbed> =
+        GLWECIKey(module.glwe_switching_key_alloc_from_infos(&layout), PhantomData);
+    crate::test_suite::assert_wipes_scratch::<BE>(bytes, |scratch| {
+        module.glwe_ci_embed_key_encrypt_sk(&mut embed, &sk_ci, &sk, &mut source_xe, &mut source_xa, scratch)
+    });
+    let err = catch_unwind(AssertUnwindSafe(|| {
+        module.glwe_ci_embed_key_encrypt_sk(
+            &mut embed,
+            &sk_ci,
+            &sk,
+            &mut source_xe,
+            &mut source_xa,
+            &mut poisoned_scratch::<BE>(bytes - 1).borrow(),
+        )
+    }))
+    .expect_err("the call was accepted");
+    assert_eq!(panic_message(&*err), short);
+
+    let mut trace: GLWECIKey<BE::OwnedBuf, BE::ZnxWord, crate::layouts::CITrace> =
+        GLWECIKey(module.glwe_switching_key_alloc_from_infos(&layout), PhantomData);
+    crate::test_suite::assert_wipes_scratch::<BE>(bytes, |scratch| {
+        module.glwe_ci_trace_key_encrypt_sk(&mut trace, &sk_ci, &sk, &mut source_xe, &mut source_xa, scratch)
+    });
+    let err = catch_unwind(AssertUnwindSafe(|| {
+        module.glwe_ci_trace_key_encrypt_sk(
+            &mut trace,
+            &sk_ci,
+            &sk,
+            &mut source_xe,
+            &mut source_xa,
+            &mut poisoned_scratch::<BE>(bytes - 1).borrow(),
+        )
+    }))
+    .expect_err("the call was accepted");
+    assert_eq!(panic_message(&*err), short);
+}
+
+/// Runs each case on a key of input rank 1 and output rank 2 holding other content, with `sk_ci` of the `NONE` law, on
+/// an empty arena and on exactly the query's poisoned bytes, and asserts the full message, then the key, both sources and the arena unchanged.
 fn assert_ci_key_refusals<BE, M>(
     params: &TestParams,
     module: &Module<BE>,
@@ -217,7 +305,7 @@ fn assert_ci_key_refusals<BE, M>(
                 2,
             ));
             let before = res.clone();
-            let mut scratch: ScratchOwned<BE> = poisoned_scratch::<BE>(bytes);
+            let mut scratch = poisoned_scratch::<BE>(bytes);
             let arena = BE::to_host_bytes(&scratch.data);
             let (mut source_xe, mut source_xa) = (Source::new([7u8; 32]), Source::new([8u8; 32]));
             let err = catch_unwind(AssertUnwindSafe(|| {

@@ -53,6 +53,9 @@ pub trait LWEFillMask<BE: Backend> {
         R: LWEToBackendMut<BE>;
 }
 
+/// # Panics
+///
+/// When the encrypting secret has the `NONE` distribution, before any draw or write.
 pub trait LWEEncryptSk<BE: Backend> {
     fn lwe_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
@@ -72,6 +75,9 @@ pub trait LWEEncryptSk<BE: Backend> {
         S: LWESecretToBackendRef<BE>;
 }
 
+/// # Panics
+///
+/// When the encrypting secret has the `NONE` distribution, before any draw or write.
 pub trait GLWEEncryptSk<BE: Backend> {
     fn glwe_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
@@ -236,6 +242,9 @@ pub trait GLWEPublicKeyCompressedGenerate<BE: Backend> {
         S: GLWESecretPreparedToBackendRef<BE> + GetDistribution;
 }
 
+/// # Panics
+///
+/// When the encrypting secret has the `NONE` distribution, before any draw or write.
 pub trait GGLWEEncryptSk<BE: Backend> {
     fn gglwe_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
@@ -255,6 +264,9 @@ pub trait GGLWEEncryptSk<BE: Backend> {
         S: GLWESecretPreparedToBackendRef<BE>;
 }
 
+/// # Panics
+///
+/// When the encrypting secret has the `NONE` distribution, before any draw or write.
 pub trait GGSWEncryptSk<BE: Backend> {
     fn ggsw_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
@@ -345,6 +357,9 @@ pub trait GGSWEncryptPk<BE: Backend> {
         K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos;
 }
 
+/// # Panics
+///
+/// When the encrypting secret has the `NONE` distribution, before any draw or write.
 pub trait GGLWEToGGSWKeyEncryptSk<BE: Backend> {
     fn gglwe_to_ggsw_key_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
@@ -362,6 +377,9 @@ pub trait GGLWEToGGSWKeyEncryptSk<BE: Backend> {
         S: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos;
 }
 
+/// # Panics
+///
+/// When the encrypting secret has the `NONE` distribution, before any draw or write.
 pub trait GLWESwitchingKeyEncryptSk<BE: Backend> {
     fn glwe_switching_key_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
@@ -381,6 +399,9 @@ pub trait GLWESwitchingKeyEncryptSk<BE: Backend> {
         S2: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos;
 }
 
+/// # Panics
+///
+/// When the encrypting secret has the `NONE` distribution, before any draw or write.
 pub trait GLWETensorKeyEncryptSk<BE: Backend> {
     fn glwe_tensor_key_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
@@ -398,6 +419,9 @@ pub trait GLWETensorKeyEncryptSk<BE: Backend> {
         S: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos;
 }
 
+/// # Panics
+///
+/// When the encrypting secret has the `NONE` distribution, before any draw or write.
 pub trait GLWEToLWESwitchingKeyEncryptSk<BE: Backend> {
     fn glwe_to_lwe_key_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
@@ -417,6 +441,9 @@ pub trait GLWEToLWESwitchingKeyEncryptSk<BE: Backend> {
         R: GGLWEToBackendMut<BE> + GGLWEInfos;
 }
 
+/// # Panics
+///
+/// When the encrypting secret has the `NONE` distribution, before any draw or write.
 pub trait LWESwitchingKeyEncrypt<BE: Backend> {
     fn lwe_switching_key_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
@@ -436,6 +463,9 @@ pub trait LWESwitchingKeyEncrypt<BE: Backend> {
         S2: LWESecretToBackendRef<BE>;
 }
 
+/// # Panics
+///
+/// When the encrypting secret has the `NONE` distribution, before any draw or write.
 pub trait LWEToGLWESwitchingKeyEncryptSk<BE: Backend> {
     fn lwe_to_glwe_key_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
@@ -455,6 +485,9 @@ pub trait LWEToGLWESwitchingKeyEncryptSk<BE: Backend> {
         R: GGLWEToBackendMut<BE> + GGLWEInfos;
 }
 
+/// # Panics
+///
+/// When the encrypting secret has the `NONE` distribution, before any draw or write.
 pub trait GLWEAutomorphismKeyEncryptSk<BE: Backend> {
     fn glwe_automorphism_key_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
@@ -473,6 +506,9 @@ pub trait GLWEAutomorphismKeyEncryptSk<BE: Backend> {
         S: GLWESecretToBackendRef<BE> + GLWEInfos;
 }
 
+/// # Panics
+///
+/// When the encrypting secret has the `NONE` distribution, before any draw or write.
 pub trait GLWECompressedEncryptSk<BE: Backend> {
     fn glwe_compressed_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
@@ -506,6 +542,9 @@ pub trait GLWECompressedEncryptSk<BE: Backend> {
         S: GLWESecretPreparedToBackendRef<BE>;
 }
 
+/// # Panics
+///
+/// When the encrypting secret has the `NONE` distribution, before any draw or write.
 pub trait GGLWECompressedEncryptSk<BE: Backend> {
     fn gglwe_compressed_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
@@ -525,6 +564,9 @@ pub trait GGLWECompressedEncryptSk<BE: Backend> {
         S: GLWESecretPreparedToBackendRef<BE>;
 }
 
+/// # Panics
+///
+/// When the encrypting secret has the `NONE` distribution, before any draw or write.
 pub trait GGSWCompressedEncryptSk<BE: Backend> {
     fn ggsw_compressed_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
@@ -544,6 +586,9 @@ pub trait GGSWCompressedEncryptSk<BE: Backend> {
         S: GLWESecretPreparedToBackendRef<BE>;
 }
 
+/// # Panics
+///
+/// When the encrypting secret has the `NONE` distribution, before any draw or write.
 pub trait GLWESwitchingKeyCompressedEncryptSk<BE: Backend> {
     fn glwe_switching_key_compressed_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
@@ -563,6 +608,9 @@ pub trait GLWESwitchingKeyCompressedEncryptSk<BE: Backend> {
         S2: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos;
 }
 
+/// # Panics
+///
+/// When the encrypting secret has the `NONE` distribution, before any draw or write.
 pub trait GLWEAutomorphismKeyCompressedEncryptSk<BE: Backend> {
     fn glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
@@ -581,6 +629,9 @@ pub trait GLWEAutomorphismKeyCompressedEncryptSk<BE: Backend> {
         S: GLWESecretToBackendRef<BE> + GLWEInfos;
 }
 
+/// # Panics
+///
+/// When the encrypting secret has the `NONE` distribution, before any draw or write.
 pub trait GLWETensorKeyCompressedEncryptSk<BE: Backend> {
     fn glwe_tensor_key_compressed_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
@@ -598,6 +649,9 @@ pub trait GLWETensorKeyCompressedEncryptSk<BE: Backend> {
         S: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos;
 }
 
+/// # Panics
+///
+/// When the encrypting secret has the `NONE` distribution, before any draw or write.
 pub trait GGLWEToGGSWKeyCompressedEncryptSk<BE: Backend> {
     fn gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where

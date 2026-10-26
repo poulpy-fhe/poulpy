@@ -328,7 +328,7 @@ fn assert_hoisted_babies_match<BE: crate::test_suite::noise::TestBackend, K: Get
         + VecZnxFillUniformSource<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
-    let mut prep_scratch: ScratchOwned<BE> = poisoned_scratch::<BE>(prep_bytes);
+    let mut prep_scratch = poisoned_scratch::<BE>(prep_bytes);
     let mut prepared_babies = LinearTransformationBabySteps::alloc(module, baby_steps, ct);
     module.glwe_prepare_linear_transformation_baby_steps(&mut prepared_babies, ct, keys, &mut prep_scratch.borrow());
     assert_eq!(prepared_babies.baby_steps().collect::<Vec<_>>(), baby_steps);

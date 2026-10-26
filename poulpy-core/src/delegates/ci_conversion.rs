@@ -97,7 +97,7 @@ impl<BE: Backend + GLWECIConversionImpl> GLWECIKeyEncryptSk<BE> for Module<BE> {
     ) where
         D: Data,
         GLWECITraceKey<D, BE::ZnxWord>: GGLWEToBackendMut<BE>,
-        S1: GLWESecretToBackendRef<BE>,
+        S1: GLWESecretToBackendRef<BE> + GetDistribution,
         S2: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
     {
         BE::glwe_ci_trace_key_encrypt_sk(self, res, sk_ci, sk, source_xe, source_xa, scratch)

@@ -118,7 +118,7 @@ pub(crate) fn glwe_decrypt_backend_inner<'arena, 'scratch, M, BE: Backend>(
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
 {
-    debug_assert!(res.rank() == sk.rank(), "the ciphertext rank differs from the secret's rank");
+    assert!(res.rank() == sk.rank(), "the ciphertext rank differs from the secret's rank");
     operand_degree(module.n(), &[res.n(), pt.n(), sk.n()]);
     assert!(
         scratch.available() >= glwe_decrypt_body_tmp_bytes::<M, _>(module, res),

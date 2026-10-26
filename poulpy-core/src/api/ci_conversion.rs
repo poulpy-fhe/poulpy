@@ -112,8 +112,8 @@ pub trait GLWECIKeyEncryptSk<BE: Backend> {
     ///
     /// # Panics
     /// Before writing `res` or embedding `sk_ci`, when twice the degree of `sk_ci` or the degree of `sk` exceeds the
-    /// key's, the rank of `sk_ci` differs from the key's output rank, the rank of `sk` from its input rank or the
-    /// scratch is below [`Self::glwe_ci_key_encrypt_sk_tmp_bytes`].
+    /// key's, the rank of `sk_ci` differs from the key's output rank, the rank of `sk` from its input rank, `sk_ci` has
+    /// the `NONE` distribution or the scratch is below [`Self::glwe_ci_key_encrypt_sk_tmp_bytes`].
     fn glwe_ci_trace_key_encrypt_sk<D, S1, S2>(
         &self,
         res: &mut GLWECITraceKey<D, BE::ZnxWord>,
@@ -125,6 +125,6 @@ pub trait GLWECIKeyEncryptSk<BE: Backend> {
     ) where
         D: Data,
         GLWECITraceKey<D, BE::ZnxWord>: GGLWEToBackendMut<BE>,
-        S1: GLWESecretToBackendRef<BE>,
+        S1: GLWESecretToBackendRef<BE> + GetDistribution,
         S2: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos;
 }

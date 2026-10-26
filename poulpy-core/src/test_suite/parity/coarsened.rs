@@ -308,7 +308,7 @@ where
             &key_twin,
             &mut poisoned_scratch::<BE>(module.glwe_automorphism_key_prepare_tmp_bytes(&twin)).borrow(),
         );
-        trace_bytes = trace_bytes.max(module.glwe_trace_tmp_bytes(&twin, &twin, &key_prep.with_k_digit(effective).unwrap()));
+        trace_bytes = trace_bytes.max(module.glwe_trace_assign_tmp_bytes(&twin, &key_prep.with_k_digit(effective).unwrap()));
 
         keys.insert(*gal_el, key_prep);
         twins.insert(*gal_el, twin_prep);

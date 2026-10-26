@@ -815,11 +815,7 @@ pub unsafe trait GLWETraceImpl: crate::oep::AutomorphismImpl + GLWEShiftImpl + G
 
     /// Default body: `glwe_trace_tmp_bytes_derived`, a temporary at the key's radix plus the larger of the copies
     /// into and out of it ([`GLWECopyImpl::glwe_copy_tmp_bytes`](crate::oep::GLWECopyImpl::glwe_copy_tmp_bytes)) and
-    /// the in-place trace, itself the larger of
-    /// [`GLWEShiftImpl::glwe_shift_tmp_bytes`](crate::oep::GLWEShiftImpl::glwe_shift_tmp_bytes),
-    /// [`AutomorphismImpl::glwe_automorphism_tmp_bytes`](crate::oep::AutomorphismImpl::glwe_automorphism_tmp_bytes)
-    /// and, on a radix mismatch, a converted copy with
-    /// [`GLWENormalizeImpl::glwe_normalize_tmp_bytes`](crate::oep::GLWENormalizeImpl::glwe_normalize_tmp_bytes).
+    /// [`Self::glwe_trace_assign_tmp_bytes`] on the temporary.
     fn glwe_trace_tmp_bytes<R, A, K>(module: &Module<Self>, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
         R: GLWEInfos,
@@ -827,6 +823,19 @@ pub unsafe trait GLWETraceImpl: crate::oep::AutomorphismImpl + GLWEShiftImpl + G
         K: GGLWEInfos,
     {
         crate::oep::derived::structure::glwe_trace_tmp_bytes_derived::<Self, _, _, _, _>(module, res_infos, a_infos, key_infos)
+    }
+
+    /// Default body: `glwe_trace_assign_tmp_bytes_derived`, the larger of
+    /// [`GLWEShiftImpl::glwe_shift_tmp_bytes`](crate::oep::GLWEShiftImpl::glwe_shift_tmp_bytes) and
+    /// [`AutomorphismImpl::glwe_automorphism_tmp_bytes`](crate::oep::AutomorphismImpl::glwe_automorphism_tmp_bytes)
+    /// and, on a radix mismatch, a converted copy with
+    /// [`GLWENormalizeImpl::glwe_normalize_tmp_bytes`](crate::oep::GLWENormalizeImpl::glwe_normalize_tmp_bytes).
+    fn glwe_trace_assign_tmp_bytes<A, K>(module: &Module<Self>, a_infos: &A, key_infos: &K) -> usize
+    where
+        A: GLWEInfos,
+        K: GGLWEInfos,
+    {
+        crate::oep::derived::structure::glwe_trace_assign_tmp_bytes_derived::<Self, _, _, _>(module, a_infos, key_infos)
     }
 
     /// Default body: `glwe_trace_derived`, [`GLWECopyImpl::glwe_copy`](crate::oep::GLWECopyImpl::glwe_copy) of `a`
@@ -863,8 +872,8 @@ pub unsafe trait GLWETraceImpl: crate::oep::AutomorphismImpl + GLWEShiftImpl + G
     /// after [`GLWEShiftImpl::glwe_rsh`](crate::oep::GLWEShiftImpl::glwe_rsh) by one bit when normalizing; only when
     /// `res`'s radix differs from the keys' does the work run on a copy at the keys' radix, converted by
     /// [`GLWENormalizeImpl::glwe_normalize`](crate::oep::GLWENormalizeImpl::glwe_normalize), within
-    /// [`Self::glwe_trace_tmp_bytes`], under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint) of its prepared
-    /// operands.
+    /// [`Self::glwe_trace_assign_tmp_bytes`], under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint) of its
+    /// prepared operands.
     fn glwe_trace_assign<R, H>(
         module: &Module<Self>,
         res: &mut R,

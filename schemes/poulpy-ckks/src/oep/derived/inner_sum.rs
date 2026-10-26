@@ -60,7 +60,7 @@ where
 {
     module
         .ckks_copy_tmp_bytes(res, a)
-        .max(module.glwe_trace_tmp_bytes(res, res, key))
+        .max(module.glwe_trace_assign_tmp_bytes(res, key))
 }
 
 #[expect(

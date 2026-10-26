@@ -6,7 +6,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    Distribution, GetDistribution, ScratchArenaTakeCore,
+    GetDistribution, ScratchArenaTakeCore,
     api::GLWEBytesOf,
     layouts::{
         Degree, GGLWEInfos, GGLWEToBackendMut, GLWECIEmbedKey, GLWECITraceKey, GLWEInfos, GLWESecretToBackendRef,
@@ -86,14 +86,13 @@ pub(crate) fn glwe_ci_embed_key_encrypt_sk_derived<BE, D, S1, S2>(
     S2: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
 {
     assert_ci_key_secrets::<BE, _, _, _>(res, sk_ci, sk, res.rank_in(), res.rank_out());
-    assert!(
-        *sk.dist() != Distribution::NONE,
-        "conjugate-invariant key encryption: secret distribution is NONE"
-    );
+    crate::layouts::assert_secret_set(sk.dist());
     let tmp_bytes: usize = glwe_ci_key_encrypt_sk_tmp_bytes_derived(module, res);
     assert!(
         scratch.available() >= tmp_bytes,
-        "insufficient scratch for conjugate-invariant key encryption"
+        "scratch.available(): {} < GLWECIKeyEncryptSk::glwe_ci_key_encrypt_sk_tmp_bytes: {}",
+        scratch.available(),
+        tmp_bytes
     );
     {
         let sk_ci_ref = sk_ci.to_backend_ref();
@@ -117,14 +116,17 @@ pub(crate) fn glwe_ci_trace_key_encrypt_sk_derived<BE, D, S1, S2>(
     BE: GLWECIConversionImpl,
     D: Data,
     GLWECITraceKey<D, BE::ZnxWord>: GGLWEToBackendMut<BE>,
-    S1: GLWESecretToBackendRef<BE>,
+    S1: GLWESecretToBackendRef<BE> + GetDistribution,
     S2: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
 {
     assert_ci_key_secrets::<BE, _, _, _>(res, sk_ci, sk, res.rank_out(), res.rank_in());
+    crate::layouts::assert_secret_set(sk_ci.dist());
     let tmp_bytes: usize = glwe_ci_key_encrypt_sk_tmp_bytes_derived(module, res);
     assert!(
         scratch.available() >= tmp_bytes,
-        "insufficient scratch for conjugate-invariant key encryption"
+        "scratch.available(): {} < GLWECIKeyEncryptSk::glwe_ci_key_encrypt_sk_tmp_bytes: {}",
+        scratch.available(),
+        tmp_bytes
     );
     {
         let sk_ci_ref = sk_ci.to_backend_ref();

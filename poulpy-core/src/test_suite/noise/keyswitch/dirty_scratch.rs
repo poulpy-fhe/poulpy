@@ -137,8 +137,7 @@ pub fn test_glwe_keyswitch_ignores_dirty_scratch<BE: crate::test_suite::noise::T
 
         // 0x00 then 0xFF: as `f64` the poison is NaN and as `i64` it is -1, so any
         // limb read before being written shows up in the digest.
-        let mut tested: ScratchOwned<BE> =
-            poisoned_scratch::<BE>(module.glwe_keyswitch_tmp_bytes(&glwe_out_infos, &glwe_in_infos, &ksk_infos));
+        let mut tested = poisoned_scratch::<BE>(module.glwe_keyswitch_tmp_bytes(&glwe_out_infos, &glwe_in_infos, &ksk_infos));
         <BE::OwnedBuf as AsMut<[u8]>>::as_mut(&mut tested.data).fill(0x00);
         module.glwe_keyswitch(
             &mut over_zeroed,
@@ -275,7 +274,7 @@ pub fn test_glwe_external_product_ignores_dirty_scratch<BE: crate::test_suite::n
 
         // 0x00 then 0xFF: as `f64` the poison is NaN and as `i64` it is -1, so any
         // limb read before being written shows up in the digest.
-        let mut tested: ScratchOwned<BE> =
+        let mut tested =
             poisoned_scratch::<BE>(module.glwe_external_product_tmp_bytes(&glwe_out_infos, &glwe_in_infos, &ggsw_infos));
         <BE::OwnedBuf as AsMut<[u8]>>::as_mut(&mut tested.data).fill(0x00);
         module.glwe_external_product(

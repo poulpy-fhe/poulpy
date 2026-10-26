@@ -35,13 +35,10 @@ where
     let res = res.to_backend_ref();
     let sk = sk.to_backend_ref();
 
-    #[cfg(debug_assertions)]
-    {
-        assert!(
-            res.n() == sk.n(),
-            "the ciphertext dimension differs from the secret's dimension"
-        );
-    }
+    assert!(
+        res.n() == sk.n(),
+        "the ciphertext dimension differs from the secret's dimension"
+    );
     assert!(
         scratch.available() >= lwe_decrypt_tmp_bytes_reference::<M, BE, _>(module, &res),
         "scratch.available(): {} < LWEDecrypt::lwe_decrypt_tmp_bytes: {}",

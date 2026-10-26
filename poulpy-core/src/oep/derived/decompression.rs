@@ -156,21 +156,13 @@ where
         let mut res = res.to_backend_mut();
         let other = other.to_backend_ref();
         assert_eq!(res.keys.len(), other.keys.len());
-        for i in 0..res.keys.len() {
-            let mut a = res.at_view_mut(i);
-            let b = other.at_view(i);
+        for (a, b) in res.keys.iter().zip(other.keys.iter()) {
             assert_eq!(a.k_digit(), b.k_digit());
+            assert_eq!(a.k_offset(), b.k_offset(), "decompress_gglwe_to_ggsw_key: row offsets differ");
             assert!(a.dnum() <= b.dnum());
-
-            let rank_in: usize = a.rank_in().into();
-            let dnum: usize = a.dnum().into();
-            for col_i in 0..rank_in {
-                for row_i in 0..dnum {
-                    let mut dst = a.at_view_mut(row_i, col_i);
-                    let src = b.at_view(row_i, col_i);
-                    BE::decompress_glwe(module, &mut dst, &src);
-                }
-            }
+        }
+        for i in 0..res.keys.len() {
+            BE::decompress_gglwe(module, &mut res.at_view_mut(i), &other.at_view(i));
         }
     }
     res.set_noise(noise);

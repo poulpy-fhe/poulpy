@@ -8,7 +8,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    LWEFillMask, Noise, VecZnxBigAddNoise,
+    Distribution, LWEFillMask, Noise, VecZnxBigAddNoise,
     layouts::{LWEInfos, LWEPlaintextToBackendRef, LWESecretToBackendRef, LWEToBackendMut},
 };
 
@@ -105,13 +105,14 @@ where
             let pt = pt.to_backend_ref();
             let sk = sk.to_backend_ref();
 
-            #[cfg(debug_assertions)]
-            {
-                assert!(
-                    res.n() == sk.n(),
-                    "the ciphertext dimension differs from the secret's dimension"
-                );
-            }
+            assert!(
+                sk.dist != Distribution::NONE,
+                "lwe secret distribution is NONE (have you prepared the key?)"
+            );
+            assert!(
+                res.n() == sk.n(),
+                "the ciphertext dimension differs from the secret's dimension"
+            );
 
             assert!(
                 scratch.available() >= self.lwe_encrypt_sk_tmp_bytes_reference(res),

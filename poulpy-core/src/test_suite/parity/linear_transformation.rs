@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use poulpy_hal::{
-    api::{CnvPVecAlloc, CnvPVecBytesOf, Convolution, ModuleN, ScratchOwnedBorrow},
+    api::{CnvPVecAlloc, CnvPVecBytesOf, Convolution, ModuleN},
     layouts::{Backend, Data, DataViewMut, GaloisElement, HostDataMut, Module, ScratchArena, VecZnxDftBackendMut, ZnxViewMut},
     source::Source,
     test_suite::TestParams,

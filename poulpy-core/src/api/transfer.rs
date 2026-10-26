@@ -679,4 +679,126 @@ mod tests {
             |dst| (dst.data.data().clone(), dst.seed.clone(), dst.noise.clone(), dst.dist),
         );
     }
+
+    /// Every layout parameter of a compressed GLWE is checked before the move.
+    #[test]
+    fn test_transfer_into_rejects_glwe_compressed_layout_mismatch() {
+        let src_module: Module<SrcBackend> = Module::new(64);
+        let dst_module: Module<DstBackend> = Module::new(64);
+        let src = src_module.glwe_compressed_alloc(Base2K(12), TorusPrecision(24), Rank(1));
+        for (base2k, k, message) in [
+            (
+                8,
+                24,
+                "assertion `left == right` failed: transfer_into: GLWECompressed base2k\n  left: Base2K(12)\n right: Base2K(8)",
+            ),
+            (
+                12,
+                23,
+                "assertion `left == right` failed: transfer_into: GLWECompressed k\n  left: TorusPrecision(24)\n right: TorusPrecision(23)",
+            ),
+        ] {
+            let mut dst = dst_module.glwe_compressed_alloc(Base2K(base2k), TorusPrecision(k), Rank(1));
+            fill_bytes(dst.data.data_mut());
+            assert_transfer_refused(&src, &mut dst, message, |dst| dst.clone());
+        }
+    }
+
+    /// Every layout parameter and the seed count of a compressed GGLWE are checked before the move.
+    #[test]
+    fn test_transfer_into_rejects_gglwe_compressed_layout_mismatch() {
+        let src_module: Module<SrcBackend> = Module::new(64);
+        let dst_module: Module<DstBackend> = Module::new(64);
+        let layout = GGLWELayout {
+            n: 64usize.into(),
+            base2k: Base2K(12),
+            dnum: Dnum(2),
+            k_digit: TorusPrecision(12),
+            k_aux: TorusPrecision(18),
+            k_offset: TorusPrecision(0),
+            rank_in: Rank(1),
+            rank_out: Rank(1),
+            stride: 1,
+        };
+        let src = src_module.gglwe_compressed_alloc_from_infos(&layout);
+        for (dst_layout, message) in [
+            (
+                GGLWELayout {
+                    base2k: Base2K(8),
+                    ..layout
+                },
+                "assertion `left == right` failed: transfer_into: GGLWECompressed base2k\n  left: Base2K(12)\n right: Base2K(8)",
+            ),
+            (
+                GGLWELayout {
+                    k_aux: TorusPrecision(19),
+                    ..layout
+                },
+                "assertion `left == right` failed: transfer_into: GGLWECompressed k_aux\n  left: TorusPrecision(18)\n right: TorusPrecision(19)",
+            ),
+            (
+                GGLWELayout {
+                    k_digit: TorusPrecision(11),
+                    ..layout
+                },
+                "assertion `left == right` failed: transfer_into: GGLWECompressed k_digit\n  left: TorusPrecision(12)\n right: TorusPrecision(11)",
+            ),
+            (
+                GGLWELayout {
+                    rank_out: Rank(2),
+                    ..layout
+                },
+                "assertion `left == right` failed: transfer_into: GGLWECompressed rank_out\n  left: Rank(1)\n right: Rank(2)",
+            ),
+            (
+                GGLWELayout { dnum: Dnum(3), ..layout },
+                "assertion `left == right` failed: transfer_into: GGLWECompressed seed count\n  left: 2\n right: 3",
+            ),
+        ] {
+            let mut dst = dst_module.gglwe_compressed_alloc_from_infos(&dst_layout);
+            fill_bytes(dst.data.data_mut());
+            assert_transfer_refused(&src, &mut dst, message, |dst| dst.clone());
+        }
+    }
+
+    #[test]
+    fn test_transfer_into_rejects_glwe_public_key_radix_mismatch() {
+        let src_module: Module<SrcBackend> = Module::new(64);
+        let dst_module: Module<DstBackend> = Module::new(64);
+        let src = src_module.glwe_public_key_alloc(Base2K(12), TorusPrecision(24), Rank(1));
+        let mut dst = dst_module.glwe_public_key_alloc(Base2K(8), TorusPrecision(24), Rank(1));
+        fill_bytes(dst.data.data_mut());
+        assert_transfer_refused(
+            &src,
+            &mut dst,
+            "assertion `left == right` failed: transfer_into: GLWEPublicKey base2k\n  left: Base2K(12)\n right: Base2K(8)",
+            |dst| (dst.data.data().clone(), dst.noise.clone(), dst.dist),
+        );
+    }
+
+    /// The radix and the seed count of a compressed public key are checked before the move.
+    #[test]
+    fn test_transfer_into_rejects_glwe_public_key_compressed_layout_mismatch() {
+        let src_module: Module<SrcBackend> = Module::new(64);
+        let dst_module: Module<DstBackend> = Module::new(64);
+        let src = src_module.glwe_public_key_compressed_alloc(Base2K(12), TorusPrecision(24), Rank(1));
+        for (base2k, rank, message) in [
+            (
+                8,
+                1,
+                "assertion `left == right` failed: transfer_into: GLWEPublicKeyCompressed base2k\n  left: Base2K(12)\n right: Base2K(8)",
+            ),
+            (
+                12,
+                2,
+                "assertion `left == right` failed: transfer_into: GLWEPublicKeyCompressed seed count\n  left: 1\n right: 2",
+            ),
+        ] {
+            let mut dst = dst_module.glwe_public_key_compressed_alloc(Base2K(base2k), TorusPrecision(24), Rank(rank));
+            fill_bytes(dst.data.data_mut());
+            assert_transfer_refused(&src, &mut dst, message, |dst| {
+                (dst.data.data().clone(), dst.seed.clone(), dst.noise.clone(), dst.dist)
+            });
+        }
+    }
 }

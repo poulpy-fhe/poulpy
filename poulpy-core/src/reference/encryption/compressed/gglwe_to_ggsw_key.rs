@@ -69,7 +69,10 @@ where
     {
         let metadata = crate::component_noise::fresh_sk_noise(sk.to_backend_ref().dist, &res.to_backend_ref());
         {
-            assert!(res.rank() == sk.rank(), "the key rank differs from the secret's rank");
+            assert!(
+                res.rank() == sk.rank(),
+                "gglwe_to_ggsw_key_compressed_encrypt_sk: the key rank differs from the secret's rank"
+            );
             operand_degree(self.n(), &[res.n(), sk.n()]);
             let tmp_bytes: usize = self.gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes_reference(res);
             crate::layouts::assert_secret_set(sk.dist());

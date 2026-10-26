@@ -17,35 +17,20 @@ use crate::{
     GetDistribution, GetDistributionMut, ScratchArenaTakeCore,
     api::{GLWEBytesOf, GLWESecretPreparedFactory},
     layouts::{
-        Degree, GLWEInfos, GLWESecret, GLWESecretPreparedToBackendMut, GLWESecretTensorPreparedToBackendMut,
-        GLWESecretTensorToBackendMut, GLWESecretTensorToBackendRef, GLWESecretToBackendMut, GLWESecretToBackendRef, LWEInfos,
-        LWESecret, LWESecretToBackendMut, LWESecretToBackendRef, ModuleCoreAlloc, Rank, operand_degree,
+        Degree, GLWEInfos, GLWESecretTensorToBackendMut, GLWESecretToBackendMut, GLWESecretToBackendRef, LWEInfos, LWESecret,
+        LWESecretToBackendMut, ModuleCoreAlloc, Rank, operand_degree,
     },
 };
 
-/// Reference secret bodies. Backend dispatch is selected independently through
-/// [`SecretImpl`](crate::oep::SecretImpl).
+/// Reference bodies of the required [`SecretImpl`](crate::oep::SecretImpl) methods, which
+/// [`impl_secret_reference_full!`](crate::impl_secret_reference_full) forwards to.
 pub trait SecretReference<BE: Backend> {
-    fn glwe_secret_prepare_reference<R, O>(&self, res: &mut R, other: &O)
-    where
-        R: GLWESecretPreparedToBackendMut<BE> + GetDistributionMut,
-        O: GLWESecretToBackendRef<BE> + GetDistribution;
-
-    fn glwe_secret_tensor_prepared_prepare_reference<R, O>(&self, res: &mut R, other: &O)
-    where
-        R: GLWESecretTensorPreparedToBackendMut<BE> + GetDistributionMut,
-        O: GLWESecretTensorToBackendRef<BE> + GetDistribution;
-
     fn glwe_secret_tensor_prepare_tmp_bytes_reference(&self, rank: Rank) -> usize;
 
     fn glwe_secret_tensor_prepare_reference<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWESecretTensorToBackendMut<BE> + GetDistributionMut + GLWEInfos,
         O: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos;
-
-    fn glwe_secret_from_lwe_secret_reference<S>(&self, src: &S) -> GLWESecret<BE::OwnedBuf, BE::ZnxWord>
-    where
-        S: LWESecretToBackendRef<BE>;
 
     fn lwe_secret_from_glwe_secret_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
@@ -78,47 +63,6 @@ where
         + VecZnxIdftApply<BE>
         + VecZnxIdftApplyTmpBytes,
 {
-    fn glwe_secret_prepare_reference<R, O>(&self, res: &mut R, other: &O)
-    where
-        R: GLWESecretPreparedToBackendMut<BE> + GetDistributionMut,
-        O: GLWESecretToBackendRef<BE> + GetDistribution,
-    {
-        {
-            let mut res = res.to_backend_mut();
-            let other = other.to_backend_ref();
-            for i in 0..res.rank().into() {
-                self.svp_prepare(&mut res.data, i, &other.data, i);
-            }
-        }
-
-        *res.dist_mut() = *other.dist();
-    }
-
-    fn glwe_secret_tensor_prepared_prepare_reference<R, O>(&self, res: &mut R, other: &O)
-    where
-        R: GLWESecretTensorPreparedToBackendMut<BE> + GetDistributionMut,
-        O: GLWESecretTensorToBackendRef<BE> + GetDistribution,
-    {
-        {
-            let mut res = res.to_backend_mut();
-            let other = other.to_backend_ref();
-            assert!(
-                res.rank == other.rank,
-                "prepared tensor rank differs from the source tensor rank"
-            );
-            let cols: usize = other.data.cols();
-            assert!(
-                res.data.cols() == cols,
-                "prepared tensor column count differs from the source tensor"
-            );
-            for i in 0..cols {
-                self.svp_prepare(&mut res.data, i, &other.data, i);
-            }
-        }
-
-        *res.dist_mut() = *other.dist();
-    }
-
     fn glwe_secret_tensor_prepare_tmp_bytes_reference(&self, rank: Rank) -> usize {
         let n: usize = self.n();
         BE::scratch_aligned(self.glwe_secret_prepared_bytes_of(rank))
@@ -143,7 +87,10 @@ where
 
             // `res.rank()` is the rank of the base secret the tensor is derived
             // from; its column count is `pairs(rank)`.
-            assert!(res.rank() == a.rank(), "tensor rank differs from the secret rank");
+            assert!(
+                res.rank() == a.rank(),
+                "glwe_secret_tensor_prepare: tensor rank differs from the secret rank"
+            );
             let n: usize = operand_degree(self.n(), &[res.n(), a.n()]);
             assert!(
                 scratch.available() >= tmp_bytes,
@@ -219,21 +166,6 @@ where
         *res.dist_mut() = distribution;
     }
 
-    fn glwe_secret_from_lwe_secret_reference<S>(&self, src: &S) -> GLWESecret<BE::OwnedBuf, BE::ZnxWord>
-    where
-        S: LWESecretToBackendRef<BE>,
-    {
-        let src = src.to_backend_ref();
-        assert!(src.n().as_usize() == self.n(), "secret degree differs from the module degree");
-        let mut res = self.glwe_secret_alloc(Rank(1));
-        res.dist = src.dist;
-        {
-            let mut res_ref = GLWESecretToBackendMut::<BE>::to_backend_mut(&mut res);
-            self.scalar_znx_automorphism(-1, res_ref.data_mut(), 0, src.data(), 0);
-        }
-        res
-    }
-
     fn lwe_secret_from_glwe_secret_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GLWEInfos,
@@ -266,7 +198,6 @@ where
         );
 
         let mut res: LWESecret<BE::OwnedBuf, BE::ZnxWord> = self.lwe_secret_alloc(lwe_n);
-        res.dist = src.dist;
         {
             // Scratch secret shaped like the source (rank cols, ring N) so the
             // per-column automorphism dimensions match. The result is then packed
@@ -301,6 +232,7 @@ where
             }
         }
         scratch.wipe(tmp_bytes);
+        res.dist = src.dist;
         res
     }
 }

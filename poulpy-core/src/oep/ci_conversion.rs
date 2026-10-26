@@ -111,7 +111,7 @@ pub unsafe trait GLWECIConversionImpl: Backend<Ring = Standard> + HalVecZnxImpl 
     ) where
         D: Data,
         GLWECITraceKey<D, Self::ZnxWord>: GGLWEToBackendMut<Self>,
-        S1: GLWESecretToBackendRef<Self>,
+        S1: GLWESecretToBackendRef<Self> + GetDistribution,
         S2: GLWESecretToBackendRef<Self> + GetDistribution + GLWEInfos,
     {
         crate::oep::derived::ci_conversion::glwe_ci_trace_key_encrypt_sk_derived(

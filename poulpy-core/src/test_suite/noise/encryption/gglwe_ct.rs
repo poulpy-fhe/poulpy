@@ -284,8 +284,7 @@ pub fn test_gglwe_switching_key_compressed_encrypt_sk<BE: crate::test_suite::noi
         let mut source_xs: Source = Source::new([0u8; 32]);
         let mut source_xe: Source = Source::new([0u8; 32]);
         let seed_xa = [1u8; 32];
-        let mut scratch: ScratchOwned<BE> =
-            poisoned_scratch::<BE>(module.glwe_switching_key_compressed_encrypt_sk_tmp_bytes(&gglwe_infos));
+        let mut scratch = poisoned_scratch::<BE>(module.glwe_switching_key_compressed_encrypt_sk_tmp_bytes(&gglwe_infos));
 
         let mut sk_in: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(1_u32.into());
         module.glwe_secret_fill_ternary_prob(&mut sk_in, 0.5, &mut source_xs);
@@ -434,7 +433,7 @@ pub fn test_gglwe_encrypt_sk_rejects_unset_secret<BE: crate::test_suite::noise::
         .for_each(|(i, x)| *x = (i as u8).wrapping_mul(29).wrapping_add(11));
     let pt = module.scalar_znx_alloc(module.n(), 1);
     let sk: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(2_usize.into());
-    let mut scratch: ScratchOwned<BE> = poisoned_scratch::<BE>(module.gglwe_encrypt_sk_tmp_bytes(&infos));
+    let mut scratch = poisoned_scratch::<BE>(0);
     let arena = BE::to_host_bytes(&scratch.data);
     let (mut source_xe, mut source_xa) = (Source::new([7u8; 32]), Source::new([8u8; 32]));
     assert_refusal(

@@ -109,10 +109,10 @@ mod trace {
         assert_eq!(ksk_infos.rank_in(), res.rank());
         assert_eq!(ksk_infos.rank_out(), res.rank());
         assert!(
-            scratch.available() >= glwe_trace_assign_scratch::<BE, _, _, _>(module, res, &ksk_infos),
-            "scratch.available(): {} < GLWETrace::glwe_trace_assign scratch: {}",
+            scratch.available() >= glwe_trace_assign_tmp_bytes_derived::<BE, _, _, _>(module, res, &ksk_infos),
+            "scratch.available(): {} < GLWETrace::glwe_trace_assign_tmp_bytes: {}",
             scratch.available(),
-            glwe_trace_assign_scratch::<BE, _, _, _>(module, res, &ksk_infos)
+            glwe_trace_assign_tmp_bytes_derived::<BE, _, _, _>(module, res, &ksk_infos)
         );
 
         if res.base2k() != ksk_infos.base2k() {
@@ -151,7 +151,7 @@ mod trace {
         }
     }
 
-    fn glwe_trace_assign_scratch<BE, M, A, K>(module: &M, a_infos: &A, key_infos: &K) -> usize
+    pub(crate) fn glwe_trace_assign_tmp_bytes_derived<BE, M, A, K>(module: &M, a_infos: &A, key_infos: &K) -> usize
     where
         BE: Backend,
         M: GLWEBytesOf<BE>
@@ -178,7 +178,7 @@ mod trace {
             let lvl_0: usize = BE::scratch_aligned(module.glwe_bytes_of_from_infos(&a_conv_infos));
             let lvl_1: usize = module
                 .glwe_normalize_tmp_bytes()
-                .max(glwe_trace_assign_scratch::<BE, _, _, _>(module, &a_conv_infos, key_infos));
+                .max(module.glwe_trace_assign_tmp_bytes(&a_conv_infos, key_infos));
             return lvl_0 + lvl_1;
         }
 
@@ -228,14 +228,12 @@ mod trace {
         };
         let lvl_0: usize = BE::scratch_aligned(module.glwe_bytes_of_from_infos(&tmp_infos));
         let lvl_1 = module.glwe_copy_tmp_bytes(&tmp_infos, a_infos);
-        let lvl_2: usize = glwe_trace_assign_scratch::<BE, _, _, _>(module, &tmp_infos, key_infos);
+        let lvl_2: usize = module.glwe_trace_assign_tmp_bytes(&tmp_infos, key_infos);
         let lvl_3 = module.glwe_copy_tmp_bytes(res_infos, &tmp_infos);
 
         // An empty trace copies directly without consulting a key; a backend's
         // direct-copy scratch requirement may differ from the two-stage path.
-        (lvl_0 + lvl_1.max(lvl_2).max(lvl_3))
-            .max(module.glwe_copy_tmp_bytes(res_infos, a_infos))
-            .max(glwe_trace_assign_scratch::<BE, _, _, _>(module, res_infos, key_infos))
+        (lvl_0 + lvl_1.max(lvl_2).max(lvl_3)).max(module.glwe_copy_tmp_bytes(res_infos, a_infos))
     }
 
     #[expect(
@@ -332,7 +330,8 @@ mod trace {
 }
 
 pub(crate) use trace::{
-    glwe_trace_assign_derived, glwe_trace_derived, glwe_trace_galois_elements_derived, glwe_trace_tmp_bytes_derived,
+    glwe_trace_assign_derived, glwe_trace_assign_tmp_bytes_derived, glwe_trace_derived, glwe_trace_galois_elements_derived,
+    glwe_trace_tmp_bytes_derived,
 };
 
 mod packing {

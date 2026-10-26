@@ -84,7 +84,9 @@ where
 }
 
 /// Embeds each column of `src` into `res`, a standard secret of twice its degree, tagged
-/// [`Distribution::ENCAPSULATED`].
+/// [`Distribution::ENCAPSULATED`]: the reference body of
+/// [`GLWECIConversionImpl::glwe_secret_ci_embed`](crate::oep::GLWECIConversionImpl::glwe_secret_ci_embed), which
+/// [`impl_glwe_ci_conversion_reference_full!`](crate::impl_glwe_ci_conversion_reference_full) forwards to.
 pub fn glwe_secret_ci_embed_reference<BE, R, S>(module: &Module<BE>, res: &mut R, src: &S)
 where
     BE: Backend,
@@ -97,7 +99,7 @@ where
         let mut res_ref = res.to_backend_mut();
         assert!(
             res_ref.n().as_usize() == 2 * src.n().as_usize(),
-            "embedded secret degree is not twice the source degree"
+            "glwe_secret_ci_embed: embedded secret degree is not twice the source degree"
         );
         assert!(
             res_ref.n().as_usize() <= module.n(),
@@ -105,7 +107,7 @@ where
         );
         assert!(
             res_ref.rank() == src.rank(),
-            "embedded secret rank differs from the source rank"
+            "glwe_secret_ci_embed: embedded secret rank differs from the source rank"
         );
         for j in 0..src.rank().as_usize() {
             module.scalar_znx_ci_embed(res_ref.data_mut(), j, src.data(), j);

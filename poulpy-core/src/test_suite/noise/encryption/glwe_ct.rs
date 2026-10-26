@@ -741,7 +741,7 @@ pub fn test_glwe_encrypt_pk_rejects_imprecise_key<BE: crate::test_suite::noise::
         ct.canonical = false;
         let pt = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
         let pk = module.glwe_public_key_prepared_alloc_from_infos(&pk_layout);
-        let mut scratch: ScratchOwned<BE> = poisoned_scratch::<BE>(module.glwe_encrypt_pk_tmp_bytes(&glwe_infos, &pk_layout));
+        let mut scratch = poisoned_scratch::<BE>(module.glwe_encrypt_pk_tmp_bytes(&glwe_infos, &pk_layout));
         let (mut source_xu, mut source_xe) = (Source::new([5u8; 32]), Source::new([6u8; 32]));
         assert_refusal(&message, &mut ct, glwe_state::<BE>, |ct| {
             module.glwe_encrypt_pk(ct, &pt, &pk, &mut source_xu, &mut source_xe, &mut scratch.borrow());
@@ -1111,7 +1111,7 @@ fn encrypt_zero_pk_with_ephemeral<BE: crate::test_suite::noise::TestBackend>(
     let mut ct: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&infos);
     let mut pk: GLWEPublicKeyPrepared<BE::OwnedBuf, BE> = module.glwe_public_key_prepared_alloc_from_infos(&infos);
     *pk.dist_mut() = dist;
-    let mut scratch: ScratchOwned<BE> = poisoned_scratch::<BE>(module.glwe_encrypt_pk_tmp_bytes(&infos, &infos));
+    let mut scratch = poisoned_scratch::<BE>(module.glwe_encrypt_pk_tmp_bytes(&infos, &infos));
     let (mut source_xu, mut source_xe) = (Source::new([7u8; 32]), Source::new([8u8; 32]));
     assert_refusal(
         "invalid public key: zero ephemeral distribution",

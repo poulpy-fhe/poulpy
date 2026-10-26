@@ -49,7 +49,7 @@ pub unsafe trait PolynomialEvaluationImpl: Backend {
     }
 
     /// Default body: `glwe_eval_giant_steps_derived`, the giant-step schedule over the caller's [`BSGSOps`],
-    /// preparing each level's the giant-step power once and reusing it across the level's pairs, under any
+    /// preparing each level's giant-step power once and reusing it across the level's pairs, under any
     /// [`PrepareHint`](poulpy_hal::layouts::PrepareHint) of its prepared operands.
     #[allow(clippy::too_many_arguments)]
     fn glwe_eval_giant_steps<Ops, R, B, V, P, A, G, H>(

@@ -73,7 +73,7 @@ Read with `docs/review/REVIEW.md`; this file adds the rules specific to `poulpy-
 
 ### 4.2. Key encryption
 
-- **Key encryption workspace.** A key encryption's query is its component queries' maximum plus the live prepared GLWE secret, it carves every secret (prepared GLWE secret, LWE-secret plaintexts, bridge secret) from the arena, and its reference wipes `<op>_tmp_bytes_reference(..)` bytes (`docs/review/workspace.md` sections 4 and 10).
+- **Key encryption workspace.** A key encryption's query is its component queries' maximum plus the live prepared GLWE secret, it carves every secret (prepared GLWE secret, LWE-secret plaintexts, bridge secret) from the arena, and its reference wipes `<op>_tmp_bytes_reference(..)` bytes (`docs/review/workspace.md` sections 5 and 10).
 - **Composite draw order.** Composite key encryptions draw in this order, checked in `bin_fhe_reference_test_suite!` (`docs/review/workspace.md` section 10):
   - circuit-bootstrapping keys: automorphism keys by ascending Galois element, blind-rotation key, tensor key;
   - BDD keys: optional bridge `ks_glwe` (its intermediate secret first, from `source_xe`), GLWE-to-LWE key, circuit-bootstrapping key.
@@ -120,7 +120,7 @@ Read with `docs/review/REVIEW.md`; this file adds the rules specific to `poulpy-
 
 ## 10. Canonical-flag bypasses and metadata
 
-- **A bypass feeds one reader.** A bypass sets the flag only on a local temporary or borrowed view fed straight to an external product, key switch or LWE extraction, with one of these comments (`docs/review/workspace.md` section 8):
+- **A bypass feeds one reader.** A bypass sets the flag only on a local temporary or borrowed view fed straight to an external product or key switch, with one of these comments (`docs/review/workspace.md` section 8):
   - "The difference feeds the external product unnormalized, as the FFT margin allows."
   - "The lazy accumulator feeds the next external product unnormalized, as the FFT margin allows."
   - "The keyswitch reads a lazy sum as is, which its margin tolerates."

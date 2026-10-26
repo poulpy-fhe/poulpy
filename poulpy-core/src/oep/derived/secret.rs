@@ -1,16 +1,85 @@
-//! Secret fills composed from the selected sampler's draws and the selected `vec_znx_zero`.
+//! Secret fills composed from the selected sampler's draws and the selected `vec_znx_zero`, and the
+//! secret preparations and the GLWE secret from an LWE secret, one selected HAL operation per column.
 use poulpy_hal::{
     layouts::{Module, scalar_znx_as_vec_znx_backend_mut_from_mut},
     source::Source,
 };
 
 use crate::{
-    GetDistributionMut,
+    GetDistribution, GetDistributionMut,
     api::ScalarZnxFillDistribution,
     dist::Distribution,
-    layouts::{GLWEInfos, GLWESecretToBackendMut, LWESecretToBackendMut},
+    layouts::{
+        GLWEInfos, GLWESecret, GLWESecretPreparedToBackendMut, GLWESecretTensorPreparedToBackendMut,
+        GLWESecretTensorToBackendRef, GLWESecretToBackendMut, GLWESecretToBackendRef, LWEInfos, LWESecretToBackendMut,
+        LWESecretToBackendRef, ModuleCoreAlloc, Rank,
+    },
     oep::SecretImpl,
 };
+
+pub(crate) fn glwe_secret_prepare_derived<BE, R, O>(module: &Module<BE>, res: &mut R, other: &O)
+where
+    BE: SecretImpl,
+    R: GLWESecretPreparedToBackendMut<BE> + GetDistributionMut,
+    O: GLWESecretToBackendRef<BE> + GetDistribution,
+{
+    {
+        let mut res = res.to_backend_mut();
+        let other = other.to_backend_ref();
+        assert!(
+            res.rank() == other.rank(),
+            "glwe_secret_prepare: prepared secret rank differs from the source secret rank"
+        );
+        for i in 0..res.rank().into() {
+            BE::svp_prepare(module, &mut res.data, i, &other.data, i);
+        }
+    }
+    *res.dist_mut() = *other.dist();
+}
+
+pub(crate) fn glwe_secret_tensor_prepared_prepare_derived<BE, R, O>(module: &Module<BE>, res: &mut R, other: &O)
+where
+    BE: SecretImpl,
+    R: GLWESecretTensorPreparedToBackendMut<BE> + GetDistributionMut,
+    O: GLWESecretTensorToBackendRef<BE> + GetDistribution,
+{
+    {
+        let mut res = res.to_backend_mut();
+        let other = other.to_backend_ref();
+        assert!(
+            res.rank == other.rank,
+            "glwe_secret_tensor_prepared_prepare: prepared tensor rank differs from the source tensor rank"
+        );
+        let cols: usize = other.data.cols();
+        assert!(
+            res.data.cols() == cols,
+            "glwe_secret_tensor_prepared_prepare: prepared tensor column count differs from the source tensor"
+        );
+        for i in 0..cols {
+            BE::svp_prepare(module, &mut res.data, i, &other.data, i);
+        }
+    }
+    *res.dist_mut() = *other.dist();
+}
+
+pub(crate) fn glwe_secret_from_lwe_secret_derived<BE, S>(module: &Module<BE>, src: &S) -> GLWESecret<BE::OwnedBuf, BE::ZnxWord>
+where
+    BE: SecretImpl,
+    S: LWESecretToBackendRef<BE>,
+{
+    let src = src.to_backend_ref();
+    assert!(
+        src.n().as_usize() == module.n(),
+        "secret degree differs from the module degree"
+    );
+    let mut res = module.glwe_secret_alloc(Rank(1));
+    {
+        let mut res_ref = GLWESecretToBackendMut::<BE>::to_backend_mut(&mut res);
+        BE::scalar_znx_automorphism(module, -1, res_ref.data_mut(), 0, src.data(), 0);
+    }
+    res.dist = src.dist;
+    res
+}
 
 pub(crate) fn glwe_secret_fill_ternary_prob_derived<BE, S>(module: &Module<BE>, sk: &mut S, prob: f64, source: &mut Source)
 where

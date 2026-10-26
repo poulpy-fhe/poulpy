@@ -127,9 +127,8 @@ pub unsafe trait DecompressionImpl: Backend {
         super::derived::decompression::decompress_lwe_to_glwe_key_derived(module, res, other)
     }
 
-    /// Default body: `decompress_gglwe_to_ggsw_key_derived`, `decompress_glwe` on each `(row, column)` entry of
-    /// each key, after checking the key count, each key's digit width and row count, then the source's noise on
-    /// `res`.
+    /// Default body: `decompress_gglwe_to_ggsw_key_derived`, after checking the key count and each key's digit
+    /// width, row offset and row count, [`Self::decompress_gglwe`] on each key, then the source's noise on `res`.
     fn decompress_gglwe_to_ggsw_key<R, O>(module: &Module<Self>, res: &mut R, other: &O)
     where
         R: GGLWEToGGSWKeyToBackendMut<Self>,

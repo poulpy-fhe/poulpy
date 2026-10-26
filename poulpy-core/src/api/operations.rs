@@ -37,6 +37,12 @@ pub trait GLWETrace<BE: Backend> {
         A: GLWEInfos,
         K: GGLWEInfos;
 
+    /// Scratch required by the selected in-place trace implementation.
+    fn glwe_trace_assign_tmp_bytes<A, K>(&self, a_infos: &A, key_infos: &K) -> usize
+    where
+        A: GLWEInfos,
+        K: GGLWEInfos;
+
     #[expect(
         clippy::too_many_arguments,
         reason = "the trace's operands, levels, direction and normalization, keys and scratch"

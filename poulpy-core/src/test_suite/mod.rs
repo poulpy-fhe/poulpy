@@ -50,6 +50,26 @@ macro_rules! core_backend_test_suite {
                     $crate::test_suite::noise::encryption::test_glwe_ci_embed_key_encrypt_sk_rejects_mismatched_secrets,
                 glwe_ci_trace_key_encrypt_sk_rejects_mismatched_secrets =>
                     $crate::test_suite::noise::encryption::test_glwe_ci_trace_key_encrypt_sk_rejects_mismatched_secrets,
+                glwe_ci_key_encrypt_sk_wipes_scratch =>
+                    $crate::test_suite::noise::encryption::test_glwe_ci_key_encrypt_sk_wipes_scratch,
+                lwe_encrypt_sk_rejects_unset_secret =>
+                    $crate::test_suite::noise::encryption::test_lwe_encrypt_sk_rejects_unset_secret,
+                glwe_encrypt_sk_rejects_unset_secret =>
+                    $crate::test_suite::noise::encryption::test_glwe_encrypt_sk_rejects_unset_secret,
+                glwe_compressed_encrypt_sk_rejects_unset_secret =>
+                    $crate::test_suite::noise::encryption::test_glwe_compressed_encrypt_sk_rejects_unset_secret,
+                gglwe_compressed_encrypt_sk_rejects_unset_secret =>
+                    $crate::test_suite::noise::encryption::test_gglwe_compressed_encrypt_sk_rejects_unset_secret,
+                ggsw_encrypt_sk_rejects_unset_secret =>
+                    $crate::test_suite::noise::encryption::test_ggsw_encrypt_sk_rejects_unset_secret,
+                glwe_switching_key_encrypt_sk_rejects_unset_secret =>
+                    $crate::test_suite::noise::encryption::test_glwe_switching_key_encrypt_sk_rejects_unset_secret,
+                glwe_automorphism_key_encrypt_sk_rejects_unset_secret =>
+                    $crate::test_suite::noise::encryption::test_glwe_automorphism_key_encrypt_sk_rejects_unset_secret,
+                glwe_tensor_key_encrypt_sk_rejects_unset_secret =>
+                    $crate::test_suite::noise::encryption::test_glwe_tensor_key_encrypt_sk_rejects_unset_secret,
+                lwe_switching_key_encrypt_sk_rejects_unset_secret =>
+                    $crate::test_suite::noise::encryption::test_lwe_switching_key_encrypt_sk_rejects_unset_secret,
                 scalar_znx_fill_distribution => $crate::test_suite::sampling::test_scalar_znx_fill_distribution,
                 glwe_base2k_conv => $crate::test_suite::noise::test_glwe_base2k_conversion,
                 glwe_copy => $crate::test_suite::copy::test_glwe_copy,
@@ -197,10 +217,45 @@ pub use crate::core_backend_test_suite;
 
 /// Builds precisely the advertised scratch capacity, poisoned before each operation.
 /// No other operation or backend's budget can conceal an underestimate.
-pub(crate) fn poisoned_scratch<BE: poulpy_hal::layouts::Backend>(bytes: usize) -> poulpy_hal::layouts::ScratchOwned<BE> {
-    poulpy_hal::layouts::ScratchOwned {
-        data: BE::from_host_bytes(&vec![0xA5; bytes]),
-        _phantom: std::marker::PhantomData,
+pub(crate) fn poisoned_scratch<BE: poulpy_hal::layouts::Backend>(bytes: usize) -> PoisonedScratch<BE> {
+    PoisonedScratch {
+        owned: poulpy_hal::layouts::ScratchOwned {
+            data: BE::from_host_bytes(&vec![0xA5; bytes]),
+            _phantom: std::marker::PhantomData,
+        },
+        bytes,
+    }
+}
+
+/// The owner of a [`poisoned_scratch`] arena.
+pub(crate) struct PoisonedScratch<BE: poulpy_hal::layouts::Backend> {
+    owned: poulpy_hal::layouts::ScratchOwned<BE>,
+    bytes: usize,
+}
+
+impl<BE: poulpy_hal::layouts::Backend> PoisonedScratch<BE> {
+    /// The first `bytes` of the buffer: the allocation is padded to the backend's alignment, the arena is not.
+    pub(crate) fn borrow(&mut self) -> poulpy_hal::layouts::ScratchArena<'_, BE> {
+        self.owned.arena().split_at(self.bytes).0
+    }
+
+    /// Same as [`Self::borrow`].
+    pub(crate) fn arena(&mut self) -> poulpy_hal::layouts::ScratchArena<'_, BE> {
+        self.borrow()
+    }
+}
+
+impl<BE: poulpy_hal::layouts::Backend> std::ops::Deref for PoisonedScratch<BE> {
+    type Target = poulpy_hal::layouts::ScratchOwned<BE>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.owned
+    }
+}
+
+impl<BE: poulpy_hal::layouts::Backend> std::ops::DerefMut for PoisonedScratch<BE> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.owned
     }
 }
 
@@ -210,13 +265,10 @@ pub fn assert_wipes_scratch<BE: poulpy_hal::layouts::Backend>(
     bytes: usize,
     op: impl FnOnce(&mut poulpy_hal::layouts::ScratchArena<'_, BE>),
 ) {
-    let mut scratch: poulpy_hal::layouts::ScratchOwned<BE> = poulpy_hal::layouts::ScratchOwned {
-        data: BE::from_host_bytes(&vec![0xA5; bytes]),
-        _phantom: std::marker::PhantomData,
-    };
+    let mut scratch = poisoned_scratch::<BE>(bytes);
     op(&mut scratch.arena());
     assert!(
-        BE::to_host_bytes(&scratch.data).iter().all(|&b| b == 0),
+        BE::to_host_bytes(&scratch.data)[..bytes].iter().all(|&b| b == 0),
         "the operation left data in its scratch"
     );
 }

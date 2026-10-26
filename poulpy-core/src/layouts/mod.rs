@@ -1955,4 +1955,23 @@ mod gadget_sizing_tests {
         assert_eq!(gadget_product_limbs(Base2K(30), 1 << 16), 3);
         assert_eq!(gadget_product_limbs(Base2K(19), 1 << 20), 4);
     }
+    #[test]
+    fn ggsw_compressed_bytes_of_matches_the_allocation() {
+        use poulpy_hal::layouts::{Backend, DataView, Module};
+        type BE = crate::test_backend::SrcBackend;
+        let module: Module<BE> = Module::new(64);
+        let layout = GGSWLayout {
+            n: Degree(64),
+            base2k: Base2K(12),
+            dnum: Dnum(2),
+            k_digit: TorusPrecision(10),
+            k_aux: TorusPrecision(18),
+            rank: Rank(2),
+        };
+        let ggsw = module.ggsw_compressed_alloc_from_infos(&layout);
+        assert_eq!(
+            module.ggsw_compressed_bytes_of_from_infos(&layout),
+            BE::len_bytes(ggsw.data.data())
+        );
+    }
 }

@@ -64,14 +64,14 @@ fn compare<BR, BT, FR, FT>(
         &mut crate::layouts::BackendGLWE<BR>,
         &crate::layouts::BackendGLWE<BR>,
         &crate::layouts::BackendGLWE<BR>,
-        &mut ScratchOwned<BR>,
+        &mut crate::test_suite::PoisonedScratch<BR>,
     ),
     FT: Fn(
         &Module<BT>,
         &mut crate::layouts::BackendGLWE<BT>,
         &crate::layouts::BackendGLWE<BT>,
         &crate::layouts::BackendGLWE<BT>,
-        &mut ScratchOwned<BT>,
+        &mut crate::test_suite::PoisonedScratch<BT>,
     ),
 {
     assert!(params.n <= module_ref.n() && params.n <= module_test.n());

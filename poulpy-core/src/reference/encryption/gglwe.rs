@@ -72,8 +72,14 @@ where
             let pt_backend = pt.to_backend_ref();
             let sk_ref = sk.to_backend_ref();
 
-            assert!(res.rank_in() == pt_backend.cols() as u32, "res.rank_in() != pt.cols()");
-            assert!(res.rank_out() == sk_ref.rank(), "res.rank_out() != sk.rank()");
+            assert!(
+                res.rank_in() == pt_backend.cols() as u32,
+                "the plaintext's column count differs from the key's input rank"
+            );
+            assert!(
+                res.rank_out() == sk_ref.rank(),
+                "the secret's rank differs from the key's output rank"
+            );
             operand_degree(self.n(), &[res.n(), sk_ref.n(), pt_backend.n().into()]);
             crate::layouts::assert_secret_set(&sk_ref.dist);
             assert!(

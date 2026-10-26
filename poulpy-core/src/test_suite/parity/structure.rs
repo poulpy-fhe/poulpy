@@ -154,7 +154,7 @@ where
                 reverse,
                 normalize,
                 &keys_r,
-                &mut poisoned_scratch::<BR>(r.glwe_trace_tmp_bytes(&g, &g, &k)).borrow(),
+                &mut poisoned_scratch::<BR>(r.glwe_trace_assign_tmp_bytes(&g, &k)).borrow(),
             );
             t.glwe_trace_assign(
                 &mut out_t,
@@ -162,7 +162,7 @@ where
                 reverse,
                 normalize,
                 &keys_t,
-                &mut poisoned_scratch::<BT>(t.glwe_trace_tmp_bytes(&g, &g, &k)).borrow(),
+                &mut poisoned_scratch::<BT>(t.glwe_trace_assign_tmp_bytes(&g, &k)).borrow(),
             );
             out_t.transfer_into(&mut have);
             assert_glwe_eq!(out_r, have, "trace assign {label}");

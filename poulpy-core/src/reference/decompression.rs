@@ -13,8 +13,8 @@ use crate::{
     },
 };
 
-/// Reference decompression bodies. Backend dispatch is selected independently through
-/// [`DecompressionImpl`](crate::oep::DecompressionImpl).
+/// Reference bodies of the required [`DecompressionImpl`](crate::oep::DecompressionImpl) methods, which
+/// [`impl_decompression_reference_full!`](crate::impl_decompression_reference_full) forwards to.
 pub trait DecompressionReference<BE: Backend> {
     fn decompress_glwe_reference<R, O>(&self, res: &mut R, other: &O)
     where

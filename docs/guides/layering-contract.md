@@ -10,10 +10,10 @@ its own rules, and links here.
 | Layer | What it is |
 |---|---|
 | API trait | The public operation, implemented on `Module<BE>` (`GLWERotate`). |
-| Delegate | The blanket `impl Api<BE> for Module<BE>`. It forwards every call, unchanged, to the backend's OEP method and checks nothing. |
+| Delegate | The blanket `impl Api<BE> for Module<BE>`. It forwards every call, unchanged, to the backend's OEP method and checks nothing; a sampler's delegate passes `source.new_seed()` for its seeded method. |
 | OEP family | An `unsafe` trait the backend implements (`GLWERotateImpl`); OEP means open extension point. Its methods take `module: &Module<Self>`, then the API method's parameters. |
 | Reference | A public `<ApiTrait>Reference<BE>` trait, blanket-implemented on `Module<BE>`, whose `<op>_reference` methods define the result by composing lower-layer operations through their public APIs. |
-| Derived default | The default body of an OEP method that composes operations of the same layer. It calls one crate-private `<op>_derived` function, which reaches its constituents through the backend's selected implementations. |
+| Derived default | The default body of an OEP method that only composes or forwards to operations of its layer or of its supertrait OEP families, one lower-layer operation per column, row or key included. It calls one crate-private `<op>_derived` function, which reaches its constituents through the backend's selected implementations. |
 
 A call runs `api -> delegate -> oep`. Only the reference and derived bodies
 define a result: an OEP method forwards to the reference, inherits its derived

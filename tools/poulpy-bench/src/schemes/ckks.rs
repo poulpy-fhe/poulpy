@@ -131,7 +131,7 @@ pub fn runner_ckks_rotate_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>
     bencher: &mut Bencher<'_, M>,
     cp: &CkksBenchParams,
 ) where
-    Module<BE>: ModuleNew<BE> + CKKSRotateOps<BE> + GLWEAutomorphismKeyPreparedFactory<BE> + GLWETensorKeyPreparedFactory<BE>,
+    Module<BE>: ModuleNew<BE> + CKKSRotateOps<BE> + GLWEAutomorphismKeyPreparedFactory<BE>,
 {
     let module = Module::<BE>::new(cp.n as u64);
 
@@ -145,12 +145,11 @@ pub fn runner_ckks_rotate_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>
     ct_dst.set_meta_checked(meta).unwrap();
 
     let mut atks = HashMap::new();
-    let ak = module.alloc_tensor_key_prepared_from_infos(&atk_layout);
     let mut rotate_key = module.glwe_automorphism_key_prepared_alloc_from_infos(&atk_layout);
     rotate_key.set_p(module.galois_element(ROTATION));
     atks.insert(module.galois_element(ROTATION), rotate_key);
 
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_rotate_tmp_bytes(&ct_a, &ak));
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_rotate_tmp_bytes(&ct_a, &atk_layout));
 
     bencher.iter(|| {
         module
