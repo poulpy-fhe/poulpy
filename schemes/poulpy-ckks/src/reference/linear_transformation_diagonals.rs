@@ -41,7 +41,9 @@ fn validate_compile_inputs<F>(
         slots <= full_slots && full_slots.is_multiple_of(slots),
         "linear-transformation slot count {slots} must divide the ring's {full_slots} CKKS slots",
     );
-    if let LinearTransformationStrategy::Bsgs { giant_step } = strategy {
+    if let LinearTransformationStrategy::Bsgs { giant_step } | LinearTransformationStrategy::BsgsPowersOfTwo { giant_step } =
+        strategy
+    {
         ensure!(giant_step > 0, "linear-transformation giant step must be non-zero");
     }
     Ok(())
@@ -274,5 +276,6 @@ mod tests {
         re.set(0, vec![1.0; 4]);
         let valid = ComplexDiagonals::new(re, Diagonals::new(4));
         assert!(validate_compile_inputs(8, &valid, LinearTransformationStrategy::Bsgs { giant_step: 0 },).is_err());
+        assert!(validate_compile_inputs(8, &valid, LinearTransformationStrategy::BsgsPowersOfTwo { giant_step: 0 }).is_err());
     }
 }

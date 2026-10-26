@@ -28,7 +28,8 @@ use std::collections::BTreeMap;
 use crate::layouts::{CKKSPlaintext, CKKSPlaintextOwned};
 use anyhow::{Result, ensure};
 use poulpy_core::{
-    layouts::{Base2K, GLWEToBackendRef, LWEInfos, LinearTransformation},
+    LinearTransformationPrepared,
+    layouts::{Base2K, Diagonals, GLWEToBackendRef, LWEInfos, LinearTransformation},
     reference::linear_transformation::DiagonalProd,
 };
 use poulpy_hal::layouts::{Backend, ConjugateInvariant, Module, ScratchArena};
@@ -37,9 +38,11 @@ use crate::{
     CKKSCtBounds, CKKSInfos, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotsKind,
     api::{CKKSDFTMatrixOps, CKKSDFTOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar},
     layouts::{
-        CKKSModuleAlloc, DFTMatrix, DFTMatrixPrepared, DFTPlan, DFTType, Decode, Encode, EncodedLut, EvalMod, EvalModPlan, Split,
+        CKKSModuleAlloc, ComplexDiagonals, DFTMatrix, DFTMatrixPrepared, DFTPlan, DFTType, Decode, Encode, EncodedLut, EvalMod,
+        EvalModPlan, Split,
         eval_mod::{EvalModType, compile_eval_mod},
     },
+    reference::dft::DftScalar,
 };
 
 /// Stage ordering for the ModUp/EvalMod bootstrapping family.
@@ -58,9 +61,30 @@ pub enum EvalModRing {
     #[default]
     Standard,
     /// The conjugate-invariant ring of the same degree, once for all `N`
-    /// coefficients, reached through the standard ring of degree `2N`: the
-    /// products by `u` before EvalMod and `v` after it consume these scales, in bits.
-    ConjugateInvariant { pre_log_delta: usize, post_log_delta: usize },
+    /// coefficients, reached through the standard ring of degree `2N`: by `u`
+    /// before EvalMod, `pre`, and `v` after it, `post`.
+    ConjugateInvariant { pre: CIConversion, post: CIConversion },
+}
+
+/// How a conversion of [`EvalModRing::ConjugateInvariant`] reaches the ciphertext.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CIConversion {
+    /// A product by its plaintext, at scale `2^log_delta`, which consumes `log_delta` bits.
+    Product { log_delta: usize },
+    /// Folded into the adjacent DFT factor, which then runs twice, on the even and
+    /// the odd part of the plaintext: no product and no budget. Only `u`, into
+    /// the last CoeffsToSlots factor.
+    Folded,
+}
+
+impl CIConversion {
+    /// Budget the conversion consumes.
+    pub fn consumed_bits(&self) -> usize {
+        match *self {
+            Self::Product { log_delta } => log_delta,
+            Self::Folded => 0,
+        }
+    }
 }
 
 impl EvalModRing {
@@ -68,17 +92,14 @@ impl EvalModRing {
     pub fn consumed_bits(&self) -> usize {
         match *self {
             Self::Standard => 0,
-            Self::ConjugateInvariant {
-                pre_log_delta,
-                post_log_delta,
-            } => pre_log_delta + post_log_delta,
+            Self::ConjugateInvariant { pre, post } => pre.consumed_bits() + post.consumed_bits(),
         }
     }
 
-    fn pre_log_delta(&self) -> usize {
+    fn pre_consumed_bits(&self) -> usize {
         match *self {
             Self::Standard => 0,
-            Self::ConjugateInvariant { pre_log_delta, .. } => pre_log_delta,
+            Self::ConjugateInvariant { pre, .. } => pre.consumed_bits(),
         }
     }
 }
@@ -268,16 +289,23 @@ impl BootstrappingPlan {
     }
 
     /// Selects the ring EvalMod runs on. The conjugate-invariant ring takes an
-    /// S2C-first plan with a real EvalMod, without EvalRound+ or a LUT.
+    /// S2C-first plan with a real EvalMod, without a LUT; `u` folds
+    /// into a CoeffsToSlots factor the matrix evaluates, `v` does not fold.
     pub fn with_eval_mod_ring(mut self, ring: EvalModRing) -> Result<Self> {
         ensure!(
             ring == EvalModRing::Standard
                 || (self.pipeline == BootstrappingPipeline::S2CFirst
-                    && self.coeffs_to_slots_bypass().is_none()
                     && self.functional_message_modulus.is_none()
                     && self.eval_mod.eval_mod_type != EvalModType::ExpCmplx),
-            "EvalMod on the conjugate-invariant ring takes an S2C-first plan with a real EvalMod, without EvalRound+ or a LUT"
+            "EvalMod on the conjugate-invariant ring takes an S2C-first plan with a real EvalMod, without a LUT"
         );
+        if let EvalModRing::ConjugateInvariant { pre, post } = ring {
+            ensure!(post != CIConversion::Folded, "the product by v after EvalMod does not fold");
+            ensure!(
+                pre != CIConversion::Folded || self.coeffs_to_slots.num_evaluated_factors() > 0,
+                "folding u takes a CoeffsToSlots factor the matrix evaluates"
+            );
+        }
         self.eval_mod_ring = ring;
         Ok(self)
     }
@@ -343,17 +371,18 @@ impl BootstrappingPlan {
     ///
     /// EvalRound+ evaluates its bypass in parallel with the low-precision
     /// CoeffsToSlots + EvalMod branch, so the wider of the two branch costs is
-    /// charged before any trailing SlotsToCoeffs.
-    /// S2C-first also charges the CoeffsToSlots guard bits and the conversions
-    /// to the ring EvalMod runs on.
+    /// charged before any trailing SlotsToCoeffs. The conversions to the ring
+    /// EvalMod runs on belong to that branch.
+    /// S2C-first also charges the CoeffsToSlots guard bits.
     pub fn post_mod_up_consumed_bits(&self) -> usize {
-        let c2s_eval_mod = self.coeffs_to_slots.consumed_bits() + self.eval_mod.consumed_bits();
+        let c2s_eval_mod =
+            self.coeffs_to_slots.consumed_bits() + self.eval_mod.consumed_bits() + self.eval_mod_ring.consumed_bits();
         let eval_round = self
             .coeffs_to_slots_bypass()
             .map_or(c2s_eval_mod, |bypass| c2s_eval_mod.max(bypass.consumed_bits()));
         match self.pipeline {
             BootstrappingPipeline::C2SFirst => eval_round + self.slots_to_coeffs.consumed_bits(),
-            BootstrappingPipeline::S2CFirst => eval_round + self.c2s_guard_bits + self.eval_mod_ring.consumed_bits(),
+            BootstrappingPipeline::S2CFirst => eval_round + self.c2s_guard_bits,
         }
     }
 
@@ -490,7 +519,7 @@ pub struct EvalModCI<BE: Backend, F> {
     pub(crate) eval_mod: EvalMod<F, CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, ConjugateInvariant>>,
     /// `u`, `1` on slot `j` and `−i` on slot `j + N/2`: the trace of `u·z(X²)`
     /// holds the real parts of `z_j` and `−i·z_j`, `c_j` and `c_{j+N/2}`.
-    pub(crate) pre: CKKSPlaintextOwned<BE>,
+    pub(crate) pre: CIPre<BE>,
     /// `v`, `2` on slot `j` and `2i` on slot `j + N/2`, which pairs them back and restores the
     /// factor 2 of the conjugate pair.
     pub(crate) post: CKKSPlaintextOwned<BE>,
@@ -503,7 +532,7 @@ impl<BE: Backend, F> EvalModCI<BE, F> {
     }
 
     /// `u`, the conversion before EvalMod.
-    pub fn pre(&self) -> &CKKSPlaintextOwned<BE> {
+    pub fn pre(&self) -> &CIPre<BE> {
         &self.pre
     }
 
@@ -511,6 +540,52 @@ impl<BE: Backend, F> EvalModCI<BE, F> {
     pub fn post(&self) -> &CKKSPlaintextOwned<BE> {
         &self.post
     }
+}
+
+/// `u` of [`EvalModCI`], as its [`CIConversion`] applies it.
+pub struct CIPre<BE: Backend>(pub(crate) CIPreForm<BE>);
+
+pub(crate) enum CIPreForm<BE: Backend> {
+    Product(CKKSPlaintextOwned<BE>),
+    Folded {
+        even: LinearTransformationPrepared<BE>,
+        odd: LinearTransformationPrepared<BE>,
+    },
+}
+
+impl<BE: Backend> CIPre<BE> {
+    /// `u` as a plaintext of degree `2N`, for [`CIConversion::Product`].
+    pub fn product(&self) -> Option<&CKKSPlaintextOwned<BE>> {
+        match &self.0 {
+            CIPreForm::Product(u) => Some(u),
+            CIPreForm::Folded { .. } => None,
+        }
+    }
+
+    /// For [`CIConversion::Folded`], the last CoeffsToSlots factor `M` times the
+    /// slots of the even and odd parts of `u = u_e(X²) + X·u_o(X²)`, in that order:
+    /// with `a = u_e·M(w)` and `b = u_o·M(w)` of degree `N`, `u·z(X²) = a(X²) + X·b(X²)`.
+    /// The CoeffsToSlots matrix of the context then holds the other factors.
+    pub fn folded(&self) -> Option<[&LinearTransformationPrepared<BE>; 2]> {
+        match &self.0 {
+            CIPreForm::Product(_) => None,
+            CIPreForm::Folded { even, odd } => Some([even, odd]),
+        }
+    }
+}
+
+/// [`EvalModCI`] before its folded factors are prepared.
+struct EvalModCIUnprepared<BE: Backend, F> {
+    eval_mod: EvalMod<F, CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, ConjugateInvariant>>,
+    pre: CIPreUnprepared<BE>,
+    post: CKKSPlaintextOwned<BE>,
+}
+
+/// [`CIPre`] before its folded factors are prepared.
+enum CIPreUnprepared<BE: Backend> {
+    Product(CKKSPlaintextOwned<BE>),
+    /// The even and odd factors, in a matrix of the CoeffsToSlots plan.
+    Folded(DFTMatrix<BE, Encode, Split>),
 }
 
 /// The widths, in bits, at which a bootstrap uses its keys, given the width it
@@ -582,7 +657,7 @@ impl KeyWidths<'_> {
 
     /// Width of EvalMod's input: what CoeffsToSlots and the product by `u` leave.
     fn eval_mod_k(&self, bootstrap_k: usize) -> usize {
-        bootstrap_k.saturating_sub(self.coeffs_to_slots.consumed_bits() + self.eval_mod_ring.pre_log_delta())
+        bootstrap_k.saturating_sub(self.coeffs_to_slots.consumed_bits() + self.eval_mod_ring.pre_consumed_bits())
     }
 
     /// `(k_small, k_small + scale_up)` of the ciphertext ModUp raises for a
@@ -722,7 +797,7 @@ pub struct BootstrappingContextUnprepared<BE: Backend, F> {
     eval_mod_plan: EvalModPlan,
     eval_mod: Option<EvalMod<F, CKKSPlaintextOwned<BE>>>,
     eval_mod_ring: EvalModRing,
-    eval_mod_ci: Option<EvalModCI<BE, F>>,
+    eval_mod_ci: Option<EvalModCIUnprepared<BE, F>>,
     pipeline: BootstrappingPipeline,
     sparse_secret_hamming_weight: Option<usize>,
 }
@@ -740,6 +815,9 @@ impl<BE: Backend, F> BootstrappingContextUnprepared<BE, F> {
             .max(module.ckks_prepare_dft_matrix_tmp_bytes(&self.slots_to_coeffs));
         if let Some(bypass) = &self.coeffs_to_slots_bypass {
             bytes = bytes.max(module.ckks_prepare_dft_matrix_tmp_bytes(bypass));
+        }
+        if let Some(CIPreUnprepared::Folded(folded)) = self.eval_mod_ci.as_ref().map(|ci| &ci.pre) {
+            bytes = bytes.max(module.ckks_prepare_dft_matrix_tmp_bytes(folded));
         }
         bytes
     }
@@ -775,6 +853,22 @@ impl<BE: Backend, F> BootstrappingContextUnprepared<BE, F> {
         };
         let coeffs_to_slots_bypass =
             coeffs_to_slots_bypass.map(|unprepared| module.ckks_prepare_dft_matrix(&unprepared, scratch));
+        let eval_mod_ci = eval_mod_ci.map(|ci| EvalModCI {
+            eval_mod: ci.eval_mod,
+            pre: match ci.pre {
+                CIPreUnprepared::Product(pre) => CIPre(CIPreForm::Product(pre)),
+                CIPreUnprepared::Folded(folded) => {
+                    let [even, odd]: [_; 2] = module
+                        .ckks_prepare_dft_matrix(&folded, scratch)
+                        .inner
+                        .factors
+                        .try_into()
+                        .unwrap_or_else(|_| unreachable!("an even and an odd factor"));
+                    CIPre(CIPreForm::Folded { even, odd })
+                }
+            },
+            post: ci.post,
+        });
         BootstrappingContext {
             c2s_guard_bits,
             functional_message_modulus,
@@ -838,6 +932,7 @@ where
     ) -> Result<Self>
     where
         BCI: Backend<Ring = ConjugateInvariant, OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
+        F: DftScalar,
         Module<BE>: CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F> + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
         Module<BCI>: CKKSModuleAlloc<BCI> + CKKSEncodingOps<BCI, F>,
         CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE>,
@@ -877,11 +972,7 @@ where
         Module<BE>: CKKSDFTMatrixOps<BE, F> + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
         Module<BCI>: CKKSModuleAlloc<BCI> + CKKSEncodingOps<BCI, F>,
     {
-        let EvalModRing::ConjugateInvariant {
-            pre_log_delta,
-            post_log_delta,
-        } = plan.eval_mod_ring
-        else {
+        let EvalModRing::ConjugateInvariant { pre, post } = plan.eval_mod_ring else {
             anyhow::bail!("compile_ci takes a plan with EvalMod on the conjugate-invariant ring");
         };
         ensure!(
@@ -909,10 +1000,47 @@ where
             });
             module.ckks_encode_reim_into(&mut pt, &re, &im, scratch).map(|_| pt)
         };
-        // `v` also carries the factor 2 of the conjugate pair, which the even
-        // coefficients of degree `2N` keep once back at degree `N`.
-        let (pre, post) = (pair(1.0, -1.0, pre_log_delta)?, pair(2.0, 1.0, post_log_delta)?);
-        context.eval_mod_ci = Some(EvalModCI {
+        // `v`, a product since the plan refuses to fold it, also carries the factor 2
+        // of the conjugate pair, which the even coefficients of degree `2N` keep once
+        // back at degree `N`.
+        let post = pair(2.0, 1.0, post.consumed_bits())?;
+        let pre = match pre {
+            CIConversion::Product { log_delta } => CIPreUnprepared::Product(pair(1.0, -1.0, log_delta)?),
+            CIConversion::Folded => {
+                // `u` is `1` at the roots `ω_j = ζ_{4N}^{5^j}` of slots `j` and `−i` at
+                // `−ω_j`, slots `j + N/2`: `u_e = (1 − i)/2` and `u_o = (1 + i)/(2ω_j)`
+                // on slot `j` of degree `N`, at the root `ω_j²`.
+                let order = 4 * ci.n() as u64;
+                let one_half = F::from_f64(0.5).unwrap();
+                let slot_scales = |re: Vec<F>, im: Vec<F>| {
+                    let mut scales = ComplexDiagonals::new(Diagonals::new(half), Diagonals::new(half));
+                    scales.re.set(0, re);
+                    scales.im.set(0, im);
+                    scales
+                };
+                let (mut odd_re, mut odd_im) = (Vec::with_capacity(half), Vec::with_capacity(half));
+                let mut pow5 = 1u64;
+                for _ in 0..half {
+                    // (1 + i)/2 times the conjugate root `1/ω_j`.
+                    let (cos, sin) = F::ckks_root_of_unity(order - pow5, order.trailing_zeros());
+                    odd_re.push((cos - sin) * one_half);
+                    odd_im.push((cos + sin) * one_half);
+                    pow5 = pow5 * 5 % order;
+                }
+                let scales = [slot_scales(vec![one_half], vec![-one_half]), slot_scales(odd_re, odd_im)];
+                let dft = &mut context.coeffs_to_slots.inner;
+                dft.factors.pop();
+                CIPreUnprepared::Folded(crate::layouts::dft::ckks_scaled_last_factors::<BE, F>(
+                    module,
+                    base2k,
+                    &dft.plan,
+                    ci.log_n(),
+                    &scales,
+                    scratch,
+                )?)
+            }
+        };
+        context.eval_mod_ci = Some(EvalModCIUnprepared {
             eval_mod: compile_eval_mod(base2k, plan.eval_mod, ci, scratch_ci)?,
             pre,
             post,
@@ -1070,6 +1198,37 @@ mod tests {
             eval_mod(f_mod_interval),
             dft(DFTType::Decode),
         )
+    }
+
+    #[test]
+    fn conjugate_invariant_ring_refuses_what_does_not_fold() {
+        let ring = |pre, post| EvalModRing::ConjugateInvariant { pre, post };
+        let s2c = plan(BootstrappingPipeline::S2CFirst, BootstrappingTechniques::default(), 16).unwrap();
+        let err = s2c
+            .clone()
+            .with_eval_mod_ring(ring(CIConversion::Product { log_delta: 46 }, CIConversion::Folded))
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("the product by v after EvalMod does not fold"),
+            "{err}"
+        );
+        // A CoeffsToSlots of one factor, left to the raise, leaves `u` no factor to fold into.
+        let raised_only = BootstrappingPlan::new(
+            BootstrappingPipeline::S2CFirst,
+            BootstrappingTechniques::default(),
+            dft(DFTType::Encode).with_first_factor_on_raise(),
+            eval_mod(16),
+            dft(DFTType::Decode),
+        )
+        .unwrap();
+        let folded = ring(CIConversion::Folded, CIConversion::Product { log_delta: 38 });
+        let err = raised_only.with_eval_mod_ring(folded).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("folding u takes a CoeffsToSlots factor the matrix evaluates"),
+            "{err}"
+        );
+        assert!(s2c.with_eval_mod_ring(folded).is_ok());
     }
 
     #[test]

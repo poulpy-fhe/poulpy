@@ -272,8 +272,12 @@ pub fn test_conjugate_invariant_leveled<BE>(
         api::ScratchOwnedAlloc,
         layouts::{CyclotomicOrder, ScratchOwned},
     };
-    let mut lt_scratch =
-        ScratchOwned::<BE>::alloc(module.ckks_eval_linear_transformation_streamed_tmp_bytes(&ct1, &params.atk_layout()));
+    // The transforms below take a key per rotation, which every plan of that kind sizes alike.
+    let mut lt_scratch = ScratchOwned::<BE>::alloc(module.ckks_eval_linear_transformation_streamed_tmp_bytes(
+        &ct1,
+        &poulpy_core::layouts::LinearTransformationPlan::default(),
+        &params.atk_layout(),
+    ));
     for diagonal_slots in [slots, pt_slots] {
         let mut re = Diagonals::new(diagonal_slots);
         for d in [0, 1, 3, 5] {

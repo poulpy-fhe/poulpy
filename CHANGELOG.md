@@ -13,6 +13,8 @@
 
 - Add `mat_znx_copy` (`MatZnxCopy`, `HalMatZnxImpl::mat_znx_copy`), the copy of one output column of every entry of a matrix, a `vec_znx_copy` on each entry by default.
   `mat_znx_normalize` takes a destination of any number of rows: its rows past the source's are zero, and the source's rows past it are not read.
+- Add `MaxBase2k::max_base2k_squares` and `Module::max_base2k_squares`, the radix for an accumulation of `products` terms of which only `squares` are squares, as an output of the convolution of a vector with itself, which holds one square and pairs its other terms; `max_base2k_ntt_squares` is the NTT model of it, which takes the mean of a square on the conjugate-invariant ring once per square instead of once per term.
+  The default counts every term as a square when any is, as `max_base2k` does; the NTT backends forward to `max_base2k_ntt_squares`, and the FFT64 backends keep the default.
 - **Breaking:** `vec_znx_idft_normalize_consume` and `vec_znx_idft_normalize_consume_tmp_bytes` become `vec_znx_idft_normalize` and `vec_znx_idft_normalize_tmp_bytes`, the traits `VecZnxIdftNormalizeConsume` and `VecZnxIdftNormalizeConsumeTmpBytes` become `VecZnxIdftNormalize` and `VecZnxIdftNormalizeTmpBytes`, and the tests `test_vec_znx_idft_normalize_consume` and `test_vec_znx_idft_normalize_consume_derived` become `test_vec_znx_idft_normalize` and `test_vec_znx_idft_normalize_derived` ([#430](https://github.com/poulpy-fhe/poulpy/issues/430)).
   The operation still clobbers `a[a_col]`, as its `&mut` source and its contract state.
 - **Breaking:** `cnv_apply_dft` and `cnv_apply_dft_add` take a Galois element `b_galois` after `b_col`, and `CnvDftAccTerm` has a `b_galois` field: the applies read their prepared right operand through `σ_{b_galois}`, so products by the automorphisms of one prepared operand store it once; `1` reads it as before.
@@ -53,6 +55,8 @@
 - **Breaking:** `impl_cpu_core_defaults!` registers the core trace on both rings, where each standard backend registered it apart: an out-of-tree backend calling it drops its own `impl_glwe_trace_derived_full!`, which now conflicts.
 - `conjugate_invariant_core_test_suite!` also runs `test_glwe_trace_parity`.
 - `impl_cpu_ckks_defaults!` selects poulpy-ckks's provided inner sum and replicate, `impl_ckks_inner_sum_derived_full!`.
+- Every CPU backend registers `test_linear_transformation_powers_of_two_parity`.
+- The fused IFMA giant step leaves power-of-two rotation schedules to the reference rotation tree, avoiding requests for direct rotation keys absent from those schedules.
 - Every conjugate-invariant backend type has a `max_base2k` model: each backend implements `MaxBase2k` once for both rings, where the conjugate-invariant types returned `None`.
 - The AVX-512 rank-one relinearization and the fused IFMA giant step refuse a key that does not cover their input, as the reference does.
 - The native CKKS encapsulated modulus raise (portable, AVX2, AVX-512, and their Rayon variants) and the fused IFMA giant step leave a key with a row offset to the reference, which refuses it, and the AVX-512 rank-one relinearization refuses one, instead of using it as an offset-free key.
@@ -63,6 +67,12 @@
 - **Breaking:** `embed_log_gap_portable`, `RightRead::new`, `RightRead::embedded`, `right_read_fft64` and `right_read_ntt` take the backend's `MIN_DEGREE` as a last argument, in place of the literal floor 8: every caller passes its own backend's `BE::MIN_DEGREE`.
 - **Behaviour:** the FFT64Avx512 convolution applies refuse a right operand below its `MIN_DEGREE` of 16 where they accepted degree 8, and the oracle backend refuses a right operand below `MIN_DEGREE` as the kernels do.
 - Every CPU backend implements `vec_znx_gadget_decompose` with one portable kernel, a single limb-major pass with exact carries that needs no scratch, and the oracle backend with an independent big-integer implementation.
+- The Rayon backends, those built with the shared macros and the IFMA one, lay gadget digits out in parallel over coefficient ranges (`poulpy_cpu_rayon::normalize::vec_znx_gadget_decompose_par`, over `vec_znx_gadget_decompose_range_raw_portable`), bit for bit as the serial kernel.
+  On an Apple M5 Pro, `NTT4x30NeonRayon/hal/vec_znx_gadget_decompose/65536x(1x28)/a_size=27/k=53/k_digit=208` takes 0.33 ms where `NTT4x30Neon/hal/vec_znx_gadget_decompose/65536x(1x28)/a_size=27/k=53/k_digit=208` takes 1.49 ms (0.22x), and the split already pays at `8192x(1x28)` (80 µs against 103 µs), so the layout reuses the normalization task floor `NORMALIZE_MIN_TASK`.
+  `hal_impl_vec_znx_without_normalize!` expands to `hal_impl_vec_znx_gadget_decompose!` and `hal_impl_vec_znx_without_normalize_or_decompose!`, the latter for a backend that provides its own layout.
+  Their conformance suites check the layout against the serial backend at a ring degree past the parallel floor.
+- `NTT3x42Ifma` checks that the bootstrapping presets take radix 56 within their key bounds (`ifma_radix`).
+- `NTT4x30Oracle` and `FFT64Oracle` implement `MaxBase2k` on both rings with the models of the other backends of each transform, so that the bootstrapping preset tests run at the radix the model selects.
 - **Breaking, behaviour:** the CPU backends no longer override the CKKS encapsulated ModUp: `NTT4x30Avx`, `NTT4x30Avx512`, `NTT3x42Ifma` and their Rayon variants install the reference body (`impl_ckks_encapsulated_mod_up_reference!`), as `NTT4x30Portable` and `NTT4x30PortableRayon` do.
   Their bodies skipped the limbs that the raise leaves at zero. A sparse-to-dense key with a row offset, the bootstrapping presets' key, leaves none: its switch reads the raised ciphertext at its own width, and no preset took them.
 - The IFMA linear transformation keeps its fused giant-step rotation for automorphism keys of any digit width: each normalized mask column is laid out on the digit grid with `gadget_dft_apply` before the product, as in the reference lazy giant step.
@@ -142,6 +152,16 @@
 
 ### `poulpy-core`
 
+- Add the evaluation of BSGS linear transformations with the keys of power-of-two rotations only (`LinearTransformationStrategy::BsgsPowersOfTwo`, `BsgsRotations::PowersOfTwo`, with `BsgsRotations::giant_key_switches`): the baby rotations come from doubling passes, whose sources share the pass's key and are switched a task each on a parallel executor, and the giant steps are summed as a binary tree over the two's-complement digits of their index, each level switching with one key.
+  For the baby steps `0..n1` and contiguous giant digits, the key switches are as many as with a key per rotation, up to one more per level of the tree, the keys about `log2(n1) + log2(n2)` instead of `n1 + n2`, and a product goes through more switches.
+  The doubling and the tree carve their buffers from the scratch, which the queries count from the plan they take: a tree holds a buffer per giant step and at most one per key switch.
+  The lazy tree normalizes its root into `res` with one `vec_znx_idft_normalize` per column; a tree over keys at another radix normalizes each product with one `vec_znx_idft_normalize` and its root into `res` with one `glwe_normalize`.
+  `test_glwe_linear_transformation_powers_of_two` and `test_linear_transformation_powers_of_two_parity` check them, the latter also on giant digits `{0, 15}`.
+- **Breaking:** `LinearTransformation<P>` and `LinearTransformationPlan` gain the public field `rotations`, so a struct literal adds `rotations: BsgsRotations::PerRotation`, which evaluates as before, as poulpy-blas does.
+  `LinearTransformationStrategy` gains `BsgsPowersOfTwo`, which an exhaustive match handles.
+- **Breaking:** `glwe_eval_linear_transformation_tmp_bytes`, `glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes` and `glwe_prepare_linear_transformation_baby_steps_tmp_bytes`, their `LinearTransformationImpl` methods and their `_reference` functions take the transform's `LinearTransformationPlan` before the key, from which they count the doubling and the giant-step tree of `BsgsRotations::PowersOfTwo`.
+  A plan with a key per rotation returns the bytes they returned before, `LinearTransformationPlan::default()`, an empty one, included.
+- The lazy giant steps of a linear transformation normalize each mask column from its inverse transform with `vec_znx_idft_normalize`, where they took an inverse transform into a BIG buffer and normalized it, with the same outputs.
 - Add `gglwe_copy` and `ggsw_copy` (`GGLWECopy`, `GGSWCopy`, `GGLWECopyImpl`, `GGSWCopyImpl`, `impl_gglwe_copy_reference_full!`, `impl_ggsw_copy_reference_full!`), the copy of the first rows of a GGLWE or a GGSW into one of the same gadget and as many or fewer digits, each row as `glwe_copy` copies it.
   A key never covers its own layout but covers such a copy, which the `_assign` key switches and automorphisms switch in place; an automorphism key's Galois element is not copied.
 - `GLWESecretViewMut` implements `GetDistributionMut`, as the other secret views do, so a secret carved from scratch can be sampled.
@@ -219,7 +239,7 @@
 - `reference::keyswitching::glwe::gglwe_product_limbs` returns the `product_limbs` the reference key switch passes to `GGLWEProductDigitsStridedImpl`, so that backend overrides derive the same.
 - The scratch of GLWE encryption, decryption, plaintext multiplication, tensoring, relinearization, linear transformations and GGSW noise covers `vec_znx_idft_apply_tmp_bytes`.
 - **Breaking:** `LinearTransformationImpl` requires `glwe_eval_linear_transformation_sum_into` and `glwe_eval_linear_transformation_sum_tmp_bytes`; a hand-written impl forwards them to `glwe_eval_linear_transformation_sum_into_reference` and `glwe_eval_linear_transformation_sum_tmp_bytes_reference`.
-- Add `GLWELinearTransformations::glwe_eval_linear_transformation_sum_into` and its `_tmp_bytes`: `Σ_t M_t(a_t)` over resident transforms that share one giant schedule, at the giant key-switch cost of one transform.
+- Add `GLWELinearTransformations::glwe_eval_linear_transformation_sum_into` and its `_tmp_bytes`, which takes the first term's `LinearTransformationPlan`: `Σ_t M_t(a_t)` over resident transforms that share one giant schedule, at the giant key-switch cost of one transform.
   It takes the baby caches `babies[t]` of the `a_t` and the transforms `lts[t]` as two slices of one length, so a caller passes its own without building pairs.
 - `reference::linear_transformation` exports the checks its evaluations run before reading a key, `assert_linear_transformation_into` and `assert_linear_transformation_sum`, so that overrides fail as the reference does.
 - **Breaking:** `GLWETensoringImpl` requires `glwe_mul_relinearize_sum`, `glwe_mul_prepared_relinearize_sum`, `glwe_tensor_apply_prepared` and their `_tmp_bytes`; a hand-written impl forwards them to the `GLWETensoringReference` methods of the same names with the `_reference` suffix.
@@ -256,9 +276,17 @@
   `reverse` visits the levels from the last down, each by its inverse element, and a nonempty trace leaves its output canonical, summed or normalized.
   The test suite adds `test_glwe_trace_sum` and `test_glwe_trace_parity`, which takes over the trace cases of `test_trace_packing_parity`, runs on both rings and covers summed and reversed windows: register it beside `test_trace_packing_parity`.
 - `docs/layering-contract.md` states the layering rules that `core-contracts.md` restated, and the `# Canonical flag` doc of `GLWE` names the exception of a documented canonical precondition.
+- The hoisted baby steps of a linear transformation lay their input out once per class of keys that read the same operand, whole-limb digits or one digit width over one digit count, where a key set mixing classes was evaluated rotation by rotation, laying the input out and transforming it again for each.
+  Outputs are unchanged; `test_glwe_hoisted_baby_rotations_match_automorphism` also checks key sets off a limb boundary, their coarser views and one mixing three widths.
 
 ### `poulpy-ckks`
 
+- Add `DFTPlan::with_power_of_two_keys` and `BootstrappingPreset::with_power_of_two_keys`, the transforms evaluated with the keys of power-of-two rotations only (`BsgsPowersOfTwo`): `n16_d35_k685_p19_s2c_ffr_ci` takes 21 rotation keys instead of 35, 3419 MiB instead of 5149, at the same widths.
+  The preset keeps a key per rotation.
+  `preset_label` marks it `+pow2`, and `small_s2c_preset_meets_precision` runs it on both rings.
+  A diagonal set compiled with `BsgsPowersOfTwo { giant_step: 0 }` is refused as with `Bsgs`, and `max_backend_base2k` counts the tree's key switches of a power-of-two plan.
+- **Breaking:** `ckks_prepare_linear_transformation_baby_steps_tmp_bytes`, `ckks_eval_linear_transformation_tmp_bytes` and `ckks_eval_linear_transformation_streamed_tmp_bytes`, their `CKKSLinearTransformationImpl` methods and `CKKSLinearTransformationReference` functions take the transform's `LinearTransformationPlan`, as the `poulpy-core` queries they forward to.
+  `ckks_dft_tmp_bytes` and the bootstrap's queries size each transform with its own plan, so the doubling and the giant-step tree of power-of-two keys come from them; `ckks_all_ops_with_atk_tmp_bytes` covers the transforms with a key per rotation.
 - Add the modulus raise that applies the first `CoeffsToSlots` factor on the raised ciphertext while it is small (`DFTPlan::with_first_factor_on_raise`, after ePrint 2025/1403): the factor consumes no modulus, and the raised width drops by one CoeffsToSlots scale.
   Each diagonal's term is rotated with no key and switched to the dense secret by a `GLWESwitchingKey` of its own, from the rotated raise secret, whose rows sit `k_offset` bits under the term's few limbs and end at the raise's working width (`BootstrappingKeysLayout::first_factor_key`, `BootstrappingLinearKeys::first_factor_key`); the switches are summed with `glwe_keyswitch_dft_add` and rounded once.
   The sparse-to-dense switch is not used, nor its key generated.
@@ -269,6 +297,7 @@
   `DFTPlan::with_optimal_bsgs` keeps the one diagonal per giant step of a first factor left to the raise.
 - **Breaking:** the sparse-to-dense key is optional, absent exactly when the first factor is applied on the raise: `EncapsulationKeysLayout::sparse_to_dense` is an `Option`, the second key of `BootstrappingKeySet::encapsulation_keys` and `BootstrappingKeysPrepared::encapsulation_keys` too, and `BootstrappingLinearKeys::encapsulation_keys` returns `Option<(&SwitchingKey, Option<&SwitchingKey>)>`; add the alias `EncapsulationKeys`. Key generation rejects a layout whose sparse-to-dense key disagrees with the recipe.
 - Add S2C-first bootstrapping with EvalMod once on the conjugate-invariant ring instead of twice on the halves of the slots (`EvalModRing`, `BootstrappingPlan::with_eval_mod_ring`, `BootstrappingPreset::with_eval_mod_ring`), run by `CKKSBootstrappingCIOps::ckks_bootstrap_ci_into` on a context of `BootstrappingContext::compile_ci` (`EvalModCI`) and keys of `BootstrappingContext::generate_keys_ci` and `BootstrappingKeySet::prepare_ci`; `docs/bootstrapping.md` details the conversions.
+  `EvalModRing::ConjugateInvariant { pre, post }` takes a `CIConversion` per conversion, a product by a plaintext of scale `2^log_delta` (`CIConversion::Product { log_delta }`), and `EvalModCI::pre` returns the product's plaintext or the folded factors (`CIPre`).
   Key generation samples the CI secret in scratch, which it wipes before returning.
   The switching keys lift the dense secret to degree `2N` themselves.
   The bootstrap checks every key at entry, the conversion keys and the encapsulation keys included, and carves its CI ciphertexts from the CI scratch, which `ckks_bootstrap_ci_tmp_bytes` counts with the reference stages the bootstrap runs.
@@ -277,8 +306,8 @@
   Backends override it through `CKKSBootstrappingCIImpl`, whose associated type `CI` names the conjugate-invariant twin, and which `impl_ckks_bootstrapping_ci_reference!($be, $ci)` wires to the reference; `CKKSBootstrappingCIOps::CI` exposes the twin.
   The entry points take one standard module of degree at least `2N`, which serves the conversions and the stages of degree `N`, and the CI module of degree `N`.
 - **Fix:** CKKS linear transformations, the first-factor raise and bootstrapping key generation read Galois elements at their operands' degree, not the module's, so a module of a larger degree serves them.
-- Add the preset `n16_d35_k685_p19_s2c_ffr_ci` to `presets::bootstrapping::all`: `n16_d35_k733_p20_s2c` with the first factor on the raise and EvalMod on the CI ring, 19 bits of precision and 15 levels, for about 22% less time per bootstrap on the NEON Rayon backend.
-  Measured on an Apple M5 Pro: `NTT4x30NeonRayon/ckks/ckks_bootstrapping/n16_d35_k685_p19_s2c_ffr_ci` takes 0.72 s, `NTT4x30NeonRayon/ckks/ckks_bootstrapping/n16_d35_k733_p20_s2c` 0.92 s.
+- Add the preset `n16_d35_k685_p19_s2c_ffr_ci` to `presets::bootstrapping::all`: `n16_d35_k733_p20_s2c` with the first factor on the raise, CoeffsToSlots in four factors of three layers after it and EvalMod on the CI ring, 19 bits of precision and 15 levels, for about 20% less time per bootstrap on the NEON Rayon backend.
+  Measured on an Apple M5 Pro: `NTT4x30NeonRayon/ckks/ckks_bootstrapping/n16_d35_k685_p19_s2c_ffr_ci` takes 0.65 s, `NTT4x30NeonRayon/ckks/ckks_bootstrapping/n16_d35_k733_p20_s2c` 0.81 s (0.80x), at 19.61 bits of minimum precision.
 - **Breaking:** `BootstrappingKeys` is split: `BootstrappingLinearKeys` holds the rotation, encapsulation and first-factor keys, `BootstrappingKeys` adds the tensor key of the standard ring, and `BootstrappingCIKeys<BE, BCI>` the tensor key on the CI ring and the conversion keys (`TraceKey`, `EmbedKey`, `conversion_keys()`), so `ckks_bootstrap_ci_into` takes any key store.
   A key store implements `BootstrappingLinearKeys` beside `BootstrappingKeys`; `CKKSModUpFirstFactorImpl::ckks_mod_up_first_factor` takes `BootstrappingLinearKeys`.
   `BootstrappingKeysPrepared` takes the backend EvalMod runs on as a last type parameter, the bootstrap's by default; it, `BootstrappingKeysLayout` and `BootstrappingKeySet` gain `conversion_keys`.
@@ -286,6 +315,22 @@
 - **Breaking:** `BootstrappingContext::eval_mod` returns an `Option`, `None` for EvalMod on the conjugate-invariant ring, whose context encodes no EvalMod on the standard ring; `BootstrappingContext::eval_mod_plan` gives the plan on either ring.
 - `test_suite::presets::bootstrapping_presets_meet_precision` and `small_s2c_preset_meets_precision` require `CKKSBootstrappingCIOps`, and run the presets with EvalMod on the conjugate-invariant ring, on its twin `test_suite::presets::CIBackend`, at the fixture radix too.
 - Add `test_suite::presets::ci_bootstrap_refuses_invalid_inputs`, and `conjugate_invariant_ckks_test_suite!` runs EvalMod on the conjugate-invariant ring, the refusal of `ExpCmplx` included.
+- Add `BootstrappingPreset::max_backend_base2k` and `with_backend_base2k`: the largest radix at which every accumulation of the bootstrap fits the extended precision of a backend, and of its conjugate-invariant backend for EvalMod on that ring, with a failure probability of at most `2^-failure_bits` over the bootstrap, by the model of `Module::max_base2k`, and the preset re-derived at the largest such radix its modulus bounds admit.
+  The model counts the products of each transform's giant-step passes, EvalMod's ciphertext products (`EvalModPlan::max_ciphertext_products`, one square per output limb, `Module::max_base2k_squares`) and on the CI ring the two conversions of degree `2N`.
+- **Breaking:** `test_suite::presets::bootstrapping_presets_meet_precision` takes no fixture radix: each preset runs at the radix `test_suite::presets::preset_for_backend` selects for a failure probability of `2^-128` per bootstrap (`BOOTSTRAP_FAILURE_BITS`).
+  That radix is 53 on NTT4x30 (52 before), 17 on FFT64 (18 before, which the model only admits at `2^-64`), and 56 on NTT3x42 (52 before).
+  A preset with EvalMod on the CI ring runs at 52 on NTT4x30, as before, and at 14 on FFT64, whose model of that ring takes less.
+- The raise that applies the first `CoeffsToSlots` factor prepares the raised ciphertext once for all its diagonals instead of once per product, through `glwe_prepare_left`, `glwe_prepare_right` and `glwe_mul_prepared_plain_sum`, with the same outputs.
+- Add the folding of `u` into the last CoeffsToSlots factor (`CIConversion::Folded`): that factor then runs twice from the same baby steps, on the even and the odd part of `u` (`CIPre::folded`), and costs no level.
+  `v` does not fold.
+  Folding narrows the raised width of `n16_d35_k685_p19_s2c_ffr_ci` from 1431 to 1385 bits and its key set from 5759 to 4959 MiB, at 19.57 bits of minimum precision.
+  The preset keeps the product.
+  `BootstrappingPreset::max_backend_base2k` counts the second pass of the folded factor.
+  `small_s2c_preset_meets_precision` runs it, and `preset_label` marks it `+fold_u`.
+- EvalRound+ runs with EvalMod on the conjugate-invariant ring, `u` folded or not: the cancellation `EvalMod(x) − K·x` runs on EvalMod's input on that ring and the bypass is added back at degree `N`, so `v`'s scale must also carry the integer part.
+  `BootstrappingPlan::post_mod_up_consumed_bits` counts the conversions in the branch the bypass runs beside.
+  `BootstrappingPreset::max_backend_base2k` counts the cancellation as one more pass.
+- Add `BootstrappingPreset::with_eval_round_plus`, a bypass of the CoeffsToSlots schedule that shares its rotation keys; `small_s2c_preset_meets_precision` runs EvalRound+ on both rings and `preset_label` marks it `+erp`.
 - **Breaking:** `impl_ckks_bootstrapping_reference!` requires `CKKSModUpFirstFactorImpl` (`impl_ckks_mod_up_first_factor_reference!`) beside `CKKSEncapsulatedModUpImpl`; `BootstrappingKeysLayout`, `BootstrappingKeySet` and `BootstrappingKeysPrepared` gain the first-factor key fields; `BootstrappingContext::generate_keys` requires `VecZnxAutomorphism`.
 - `reference::first_factor` exposes `first_factor_work`, `first_factor_small_bits` and `first_factor_diagonal_growth`, the widths a first-factor key is laid out from.
 - The encapsulated ModUp takes a sparse-to-dense key with a row offset (`k_offset` of `poulpy-core`): its switch is the raise, from the raised ciphertext at its own width, integer part included, with no zero-padded copy and no transform of zero limbs.
@@ -300,7 +345,7 @@
 - **Breaking:** the C2S-first logN16 preset `n16_d35_k600_p19_c2s` is replaced by `n16_d35_k636_p20_c2s`: three factors per transform, as the S2C-first preset (C2S at scale `2^51`, S2C at `2^35`), and log message ratio 6 for at least 20 bits of precision (20.8 measured, 23.0 on average), a 41-bit input, 595 usable bits (17 levels instead of 16) and a raised modulus of 1381 bits instead of 1427.
 - **Breaking:** `n15_d35_k180_p18_c2s` runs CoeffsToSlots at scale `2^50` and SlotsToCoeffs at `2^29` (were `2^49` and `2^30`), at the same widths, and keeps its 18 bits of precision (18.4 measured, 20.3 on average) with a single tensor key.
 - **Breaking:** the S2C-first logN16 preset `n16_d35_k720_p19_s2c` is replaced by `n16_d35_k733_p20_s2c`: three factors per transform (C2S `[(5, 4096), (5, 256), (5, 8)]` at scale `2^50`, S2C `[(4, 4), (5, 128), (6, 4096)]` at `2^30`) for at least 20 bits of precision (20.4 measured, 23.0 on average), a 138-bit input, 595 usable bits (17 levels instead of 16) and a raised modulus of 1353 bits instead of 1382.
-- The FFT64 bootstrapping benchmarks (portable, AVX2, AVX-512) and preset precision tests (portable, AVX2, oracle) run the presets at `base2k = 18` instead of 19, and `docs/bootstrapping.md` and `docs/performance.md` follow.
+- The FFT64 bootstrapping benchmarks (portable, AVX2, AVX-512) and preset precision tests (portable, AVX2, oracle) run the presets below `base2k = 19`, at the radix `preset_for_backend` selects (17), and `docs/bootstrapping.md` and `docs/performance.md` follow.
   At logN16 the giant steps of CoeffsToSlots and SlotsToCoeffs accumulate several hundred key-switch products in the DFT domain before one inverse transform, which `f64` no longer represents exactly at `base2k = 19`: the bootstrap returned garbage there, and returns 19.85 bits at 18.
 - `CKKSCiphertext` implements `WriterTo` and `ReaderFrom` in the format of its inner `GLWE`, so a flag-clear ciphertext is rejected with `InvalidInput`; the ring stays a type parameter.
   `CKKSModuleAlloc::ckks_linear_transformation_alloc_from_infos` allocates a transform of a `LinearTransformationLayout`'s schedule with a zero plaintext of the given infos at every diagonal, the receiver of an encoding.
@@ -335,7 +380,7 @@
   A group whose keys are not all whole-limb must share one digit width and count, and returns an error otherwise.
   The mux key generation takes the digit width in bits, and the mux test also runs widths below a limb, one bit past a limb and one bit short of two, and checks that a mixed group is rejected.
 - `test_suite::parity::keys::key_layout_bits` builds a key layout of any digit width, and the encapsulated ModUp parity also sweeps widths off a limb boundary, with zero digit prefixes of none, one and several digits and a shift ending on a digit boundary.
-- Add `CKKSLinearTransformationOps::ckks_eval_linear_transformation_sum_into` and its `_tmp_bytes`: `Σ_t M_t · src_t`, over the slices `srcs`, `babies` and `lts` of one length, for resident transforms that share one giant schedule, at the giant key-switch cost of one transform, with the single transform's metadata.
+- Add `CKKSLinearTransformationOps::ckks_eval_linear_transformation_sum_into` and its `_tmp_bytes`, which takes the first term's `LinearTransformationPlan`: `Σ_t M_t · src_t`, over the slices `srcs`, `babies` and `lts` of one length, for resident transforms that share one giant schedule, at the giant key-switch cost of one transform, with the single transform's metadata.
   Slices of different lengths, or a term that does not share the first one's schedule, diagonals, source or baby-cache layout, are `InvalidOperand`, returned before `dst` is written.
 - **Breaking, behaviour:** `ckks_dot_product_ct` relinearizes once for pairs that share layouts, which changes its bits: with two pairs or more, `dst.base2k() <= 62`, one layout and scale for every `a[i]` and one for every `b[i]`, it relinearizes once into a canonical `dst`, with the tensor key at `ckks_mul_into`'s width.
   Whichever of its two circuits it takes, that path validates the lengths, the tensor key and the budget before writing `dst`, and a long sum is no longer rejected; other pairs keep the eager path and its bits.
@@ -494,6 +539,8 @@
 - Add the `libm` layer: `runner_ckks_exp`, `runner_ckks_log` and `runner_ckks_pow` over `default_bench_params_libm`, in the `libm_ops` table, with `bench_libm` in the full, standard and light tiers, which the tier binaries of `poulpy-cpu-portable`, `poulpy-cpu-avx`, `poulpy-cpu-avx512` and `poulpy-cpu-arm` register on their NTT backend.
   The point-caching helper of the BLAS runners moves to the crate root, shared by both layers.
 - **Breaking:** `bench_ckks_bootstrapping` requires `CKKSBootstrappingCIOps`, and runs the presets with EvalMod on the conjugate-invariant ring.
+- **Breaking:** `bench_ckks_bootstrapping` takes no `FIXTURE_BASE2K`: it runs each preset at the radix `test_suite::presets::preset_for_backend` selects for the backend, so the ids of its NTT4x30 and FFT64 runs read `base2k=53` and `base2k=17` instead of 52 and 18.
+- **Breaking:** `hal::suites::bench_normalization` requires `VecZnxGadgetDecompose` and `VecZnxGadgetDecomposeTmpBytes`, and also sweeps `vec_znx_gadget_decompose` over the 27-limb key-switch columns of a bootstrap at radix 53 (`runner_vec_znx_gadget_decompose`, `GadgetDecomposeSweepParams`, `default_bench_params_gadget_decompose`).
 
 ### Dependencies
 

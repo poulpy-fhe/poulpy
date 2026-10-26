@@ -97,6 +97,10 @@ where
     fn max_base2k(n: usize, products: usize, failure_bits: usize, squaring: bool) -> usize {
         <NTT3x42Ifma<R> as poulpy_hal::layouts::MaxBase2k>::max_base2k(n, products, failure_bits, squaring)
     }
+
+    fn max_base2k_squares(n: usize, products: usize, squares: usize, failure_bits: usize) -> usize {
+        <NTT3x42Ifma<R> as poulpy_hal::layouts::MaxBase2k>::max_base2k_squares(n, products, squares, failure_bits)
+    }
 }
 
 #[cfg(feature = "enable-rayon")]

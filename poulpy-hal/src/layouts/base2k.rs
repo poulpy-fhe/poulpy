@@ -16,8 +16,26 @@ pub trait MaxBase2k: Backend {
     /// coefficients within each input and independent inputs across terms.
     /// `squaring` allows equal operands within a term.
     /// Their Gaussian failure estimates are not guarantees; other correlations,
-    /// including operand reuse across terms, require a separate model.
+    /// including operand reuse across terms, require a separate model, such as
+    /// [`Self::max_base2k_squares`] for a vector's convolution with itself.
     fn max_base2k(n: usize, products: usize, failure_bits: usize, squaring: bool) -> usize;
+
+    /// As [`Self::max_base2k`], for `products` terms of which only `squares`
+    /// are squares. By default every term is a square when any is, as
+    /// [`Self::max_base2k`] counts them.
+    ///
+    /// Besides the independent terms of [`Self::max_base2k`], this covers the
+    /// convolution of a vector of independent centered polynomials with itself,
+    /// `sum_{i+j=l} a_i * a_j`, which reuses operands across terms: `squares`
+    /// counts its diagonal terms `a_i * a_i`. Its other terms come in equal pairs
+    /// `a_i * a_j + a_j * a_i`, whose variance is four times a product's `v`, what
+    /// two terms take when any term is a square (`2v` each); a diagonal term takes
+    /// at most `2v`; and the terms are uncorrelated, each covariance having an
+    /// independent centered factor. So the variance stays within the model's, at
+    /// equality, and only the diagonal terms carry a square's mean.
+    fn max_base2k_squares(n: usize, products: usize, squares: usize, failure_bits: usize) -> usize {
+        Self::max_base2k(n, products, failure_bits, squares > 0)
+    }
 }
 
 /// NTT radix for independent products or squares of centered uniform inputs.
@@ -34,6 +52,26 @@ pub trait MaxBase2k: Backend {
 /// Panics unless `log2_modulus` is finite and positive, `n` is a power of two
 /// at least 2, and `products` and `failure_bits` are positive.
 pub fn max_base2k_ntt<B: Backend>(log2_modulus: f64, n: usize, products: usize, failure_bits: usize, squaring: bool) -> usize {
+    max_base2k_ntt_squares::<B>(log2_modulus, n, products, if squaring { products } else { 0 }, failure_bits)
+}
+
+/// [`max_base2k_ntt`] for `products` terms of which `squares` are squares: the
+/// variance is that of [`max_base2k_ntt`] when any term is a square, and the
+/// mean of a square on the conjugate-invariant ring is taken `squares` times.
+/// It also models a vector's convolution with itself, `squares` counting its
+/// diagonal terms ([`MaxBase2k::max_base2k_squares`]).
+///
+/// # Panics
+/// As [`max_base2k_ntt`], and unless `squares <= products`.
+pub fn max_base2k_ntt_squares<B: Backend>(
+    log2_modulus: f64,
+    n: usize,
+    products: usize,
+    squares: usize,
+    failure_bits: usize,
+) -> usize {
+    assert!(squares <= products, "squares are counted among the products");
+    let squaring = squares > 0;
     assert!(
         log2_modulus.is_finite() && log2_modulus > 0.0,
         "the modulus logarithm must be finite and positive"
@@ -52,8 +90,9 @@ pub fn max_base2k_ntt<B: Backend>(log2_modulus: f64, n: usize, products: usize, 
     // A square repeats off-diagonal pairs: variance is at most twice a product's.
     let log2_variance = weight.log2() + d.log2() + if squaring { 1.0 } else { 0.0 };
     let log2_x = log2_modulus + 12.0_f64.log2() - 1.5 - 0.5 * log2_variance;
+    // The squares' mean in units of the threshold's `sqrt(2) * sigma`.
     let shift = if squaring {
-        square_mean * (d / weight).sqrt() / 2.0
+        square_mean * squares as f64 / (2.0 * (d * weight).sqrt())
     } else {
         0.0
     };
@@ -177,5 +216,24 @@ mod tests {
         assert_eq!(max_base2k_fft64::<Ci>(1 << 16, 32, 545, false), 17);
         assert_eq!(max_base2k_fft64::<Ci>(1 << 16, 32, 143, true), 15);
         assert_eq!(max_base2k_fft64::<Ci>(1 << 16, 32, 144, true), 14);
+    }
+
+    #[test]
+    fn squares_take_their_mean_once_each() {
+        type Ci = HostBytesBackend<ConjugateInvariant>;
+        let log2_q = 119.886_155_257_481_1;
+        // Every term a square, or none, is the boolean form.
+        for products in [1, 27, 32] {
+            for (squares, squaring) in [(products, true), (0, false)] {
+                assert_eq!(
+                    max_base2k_ntt_squares::<Ci>(log2_q, 1 << 16, products, squares, 128),
+                    max_base2k_ntt::<Ci>(log2_q, 1 << 16, products, 128, squaring)
+                );
+            }
+        }
+        // 27 terms of which one is a square, as an output limb of a ciphertext's
+        // square: the mean of one square, not of 27.
+        assert_eq!(max_base2k_ntt::<Ci>(log2_q, 1 << 16, 27, 128, true), 50);
+        assert_eq!(max_base2k_ntt_squares::<Ci>(log2_q, 1 << 16, 27, 1, 128), 52);
     }
 }

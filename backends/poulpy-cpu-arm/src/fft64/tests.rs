@@ -245,7 +245,8 @@ cross_backend_test_suite! {
     }
 }
 
-// Fused-op conformance on the Rayon variant; the size crosses the parallel-work floors of the overrides that have them.
+// Fused-op conformance on the Rayon variant; the size crosses the parallel-work floors of the overrides that have them,
+// the gadget digit layout among them.
 #[cfg(feature = "enable-rayon")]
 cross_backend_test_suite! {
     mod vec_znx_dft_rayon,
@@ -256,6 +257,7 @@ cross_backend_test_suite! {
         test_vec_znx_dft_copy => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_copy,
         test_vec_znx_dft_automorphism_add => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_automorphism_add,
         test_vec_znx_idft_normalize => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_normalize,
+        test_vec_znx_gadget_decompose => poulpy_hal::test_suite::vec_znx::test_vec_znx_gadget_decompose,
     }
 }
 

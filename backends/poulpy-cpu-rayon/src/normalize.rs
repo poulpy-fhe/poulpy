@@ -1,10 +1,11 @@
-//! Coefficient-range-parallel normalization: carries propagate across limbs
-//! per coefficient, so disjoint coefficient ranges split freely.
+//! Coefficient-range-parallel normalization and gadget digit layout: carries
+//! propagate across limbs per coefficient, so disjoint coefficient ranges split
+//! freely.
 
 use poulpy_cpu_portable::kernels::{
     vec_znx::{
-        vec_znx_normalize_assign_portable, vec_znx_normalize_assign_range_raw_portable, vec_znx_normalize_portable,
-        vec_znx_normalize_range_raw_portable,
+        vec_znx_gadget_decompose_portable, vec_znx_gadget_decompose_range_raw_portable, vec_znx_normalize_assign_portable,
+        vec_znx_normalize_assign_range_raw_portable, vec_znx_normalize_portable, vec_znx_normalize_range_raw_portable,
     },
     vec_znx_big_normalize::{vec_znx_big_normalize_portable, vec_znx_big_normalize_range_raw_portable},
     znx_normalize::ZnxNormalize,
@@ -41,6 +42,56 @@ where
     (0..n.div_ceil(chunk)).into_par_iter().for_each(|t| {
         let start = t * chunk;
         run(start, chunk.min(n - start));
+    });
+}
+
+/// Parallel [`vec_znx_gadget_decompose`](poulpy_hal::api::VecZnxGadgetDecompose),
+/// split over coefficient ranges as normalization is: every coefficient's digits
+/// depend on that coefficient alone, so the result is the serial one bit for bit.
+pub fn vec_znx_gadget_decompose_par<B, T>(
+    res: &mut VecZnxBackendMut<'_, B>,
+    res_col: usize,
+    a: &VecZnxBackendRef<'_, B>,
+    a_col: usize,
+    base2k: usize,
+    k_digit: usize,
+) where
+    B: Backend<ZnxWord = i64>,
+    for<'x> B: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8]>,
+    B: 'static,
+    T: RayonTuning,
+{
+    let n = res.n();
+    let tasks = normalize_tasks::<T>(n);
+    if tasks < 2 {
+        return vec_znx_gadget_decompose_portable::<B>(res, res_col, a, a_col, base2k, k_digit);
+    }
+
+    assert!(res_col < res.cols(), "operand column out of range");
+    if res.size() > 0 {
+        let _ = res.at_ptr(res_col, res.size() - 1);
+    }
+    let res_shape = res.shape();
+    let a_shape = a.shape();
+    let res_ptr = SendPtr::new(res.base_mut_ptr());
+    let a_data: &[u8] = a.data();
+    for_each_range(n, tasks, |start, len| {
+        let a_view: VecZnxBackendRef<'_, B> = VecZnx::from_shape(a_data, a_shape);
+        // SAFETY: `res` is bounds-checked above and exclusive, and does not alias `a`; tasks
+        // write disjoint coefficient ranges.
+        unsafe {
+            vec_znx_gadget_decompose_range_raw_portable::<B>(
+                res_ptr.get(),
+                res_shape,
+                res_col,
+                &a_view,
+                a_col,
+                base2k,
+                k_digit,
+                start,
+                len,
+            )
+        }
     });
 }
 

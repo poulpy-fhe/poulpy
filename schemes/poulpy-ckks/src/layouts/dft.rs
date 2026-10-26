@@ -100,6 +100,9 @@ pub struct DFTPlan {
     /// ciphertext while it is still small. Set via
     /// [`Self::with_first_factor_on_raise`].
     pub(crate) first_factor_on_raise: bool,
+    /// The factors switch with the keys of power-of-two rotations only. Set via
+    /// [`Self::with_power_of_two_keys`].
+    pub(crate) power_of_two_keys: bool,
 }
 
 /// Single source of truth for the radix-2 merge geometry, shared by the factor
@@ -290,6 +293,7 @@ impl DFTPlan {
             bit_reversed: false,
             coeffs_meta,
             first_factor_on_raise: false,
+            power_of_two_keys: false,
         };
         plan.schedule.check("DFTPlan")?;
         if plan.num_factors().checked_mul(plan.coeffs_meta.log_delta()).is_none() {
@@ -339,6 +343,33 @@ impl DFTPlan {
         self.first_factor_on_raise = true;
         self.schedule.steps[0].giant_step = 1;
         self
+    }
+
+    /// Evaluates every factor with a giant step with the keys of the power-of-two
+    /// multiples of its baby and giant steps
+    /// ([`BsgsRotations::PowersOfTwo`](poulpy_core::layouts::BsgsRotations::PowersOfTwo)):
+    /// the key switches of a key per rotation, up to one more per level of the
+    /// giant-step tree, half as many keys for a factor of four baby and eight
+    /// giant steps, each switching several ciphertexts at once.
+    pub fn with_power_of_two_keys(mut self, power_of_two_keys: bool) -> Self {
+        self.power_of_two_keys = power_of_two_keys;
+        self
+    }
+
+    /// Whether the factors switch with the keys of power-of-two rotations only
+    /// ([`Self::with_power_of_two_keys`]).
+    pub fn power_of_two_keys(&self) -> bool {
+        self.power_of_two_keys
+    }
+
+    /// The schedule strategy of a factor with giant step `giant_step`: a direct
+    /// factor reads one key per diagonal either way.
+    pub(crate) fn factor_strategy(&self, giant_step: usize) -> LinearTransformationStrategy {
+        if self.power_of_two_keys && giant_step > 1 {
+            LinearTransformationStrategy::BsgsPowersOfTwo { giant_step }
+        } else {
+            LinearTransformationStrategy::Bsgs { giant_step }
+        }
     }
 
     /// Whether the first factor is left to the modulus raise
@@ -660,9 +691,7 @@ impl DFTPlan {
                 let layout = LinearTransformationLayout {
                     indexes,
                     slots: slot_count,
-                    strategy: LinearTransformationStrategy::Bsgs {
-                        giant_step: step.giant_step,
-                    },
+                    strategy: self.factor_strategy(step.giant_step),
                 };
                 let mut set: BTreeSet<i64> = layout.galois_elements(cyclotomic_order).into_iter().collect();
                 set.remove(&identity);
@@ -938,6 +967,52 @@ impl<BE: Backend, Dir, Fmt: DftFormat, R> DFTMatrix<BE, Dir, Fmt, R> {
     pub fn is_sparse(&self) -> bool {
         Fmt::FORMAT == DFTOutputFormat::RepackImagAsReal
     }
+}
+
+/// The last factor `M` of the transform `plan` describes at degree `2^log_n`,
+/// left-multiplied by each map of `scales` and encoded as that factor is: the
+/// factors `scale·M`, for a slot-wise product folded into it, in a matrix of
+/// `plan` to prepare as the others. `plan` is a resolved plan, such as the one a
+/// [`DFTMatrix`] stores.
+pub(crate) fn ckks_scaled_last_factors<BE, F>(
+    module: &Module<BE>,
+    base2k: poulpy_core::layouts::Base2K,
+    plan: &DFTPlan,
+    log_n: usize,
+    scales: &[crate::layouts::ComplexDiagonals<F>],
+    scratch: &mut poulpy_hal::layouts::ScratchArena<'_, BE>,
+) -> crate::CKKSResult<DFTMatrix<BE, crate::layouts::Encode, crate::layouts::Split>>
+where
+    BE: Backend,
+    Module<BE>: crate::layouts::CKKSModuleAlloc<BE> + crate::api::CKKSEncodingOps<BE, F>,
+    F: crate::reference::dft::DftScalar + crate::api::CKKSEncodingScalar,
+{
+    let last = crate::reference::dft::gen_dft_matrices::<F>(plan, log_n)
+        .pop()
+        .expect("a DFT plan has at least one factor");
+    let strategy = plan.factor_strategy(
+        plan.schedule
+            .steps
+            .last()
+            .expect("a DFT plan has at least one factor")
+            .giant_step,
+    );
+    let factors = scales
+        .iter()
+        .map(|scale| {
+            crate::reference::ckks_encode_linear_transformation_from_diagonals::<BE, F>(
+                module,
+                base2k,
+                plan.coeffs_meta,
+                &scale.compose(&last),
+                strategy,
+                false,
+                scratch,
+            )
+        })
+        .collect::<core::result::Result<Vec<_>, ::anyhow::Error>>()
+        .map_err(crate::CKKSError::from)?;
+    Ok(DFTMatrix::from_factors(DFTMatrixFactors::new(plan.clone(), factors)))
 }
 
 #[cfg(test)]

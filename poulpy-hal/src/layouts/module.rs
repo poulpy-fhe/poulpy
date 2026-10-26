@@ -417,6 +417,24 @@ impl<B: Backend> Module<B> {
         B::max_base2k(n, products, failure_bits, squaring)
     }
 
+    /// As [`Self::max_base2k`], for `products` terms of which only `squares` are
+    /// squares ([`MaxBase2k::max_base2k_squares`](super::MaxBase2k::max_base2k_squares)).
+    ///
+    /// # Panics
+    /// As [`Self::max_base2k`], and unless `squares <= products`.
+    #[inline]
+    pub fn max_base2k_squares(n: usize, products: usize, squares: usize, failure_bits: usize) -> usize
+    where
+        B: super::MaxBase2k,
+    {
+        assert!(n.is_power_of_two(), "n must be a power of two");
+        assert!(n >= B::MIN_DEGREE, "n is below the backend's minimum degree");
+        assert!(products > 0, "products must be positive");
+        assert!(squares <= products, "squares are counted among the products");
+        assert!(failure_bits > 0, "failure_bits must be positive");
+        B::max_base2k_squares(n, products, squares, failure_bits)
+    }
+
     /// Creates a backend module for ring degree `N`.
     #[inline]
     pub fn new(n: u64) -> Self

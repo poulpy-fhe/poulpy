@@ -12,6 +12,7 @@ use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::layouts::{
     GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, LinearTransformation,
+    LinearTransformationPlan,
     prepared::{LinearTransformationBabySteps, LinearTransformationPrepared, PreparedDiagonal},
 };
 
@@ -22,8 +23,19 @@ use crate::layouts::{
 /// [`LinearTransformation::alloc_prepared`] and
 /// [`LinearTransformationBabySteps::alloc`] for the allocation half.
 pub trait GLWELinearTransformations<BE: Backend> {
-    /// Scratch bytes required by [`Self::glwe_eval_linear_transformation_into`].
-    fn glwe_eval_linear_transformation_tmp_bytes<R, A, B, K>(&self, res: &R, a: &A, pt: &B, key: &K) -> usize
+    /// Scratch bytes required by [`Self::glwe_eval_linear_transformation_into`] for a transform
+    /// with the schedule `plan` ([`LinearTransformation::index`]), which gives the giant-step
+    /// tree of [`BsgsRotations::PowersOfTwo`](crate::layouts::BsgsRotations::PowersOfTwo); every
+    /// plan with a key per rotation gives the same bytes. `key` is the widest key the transform
+    /// switches with.
+    fn glwe_eval_linear_transformation_tmp_bytes<R, A, B, K>(
+        &self,
+        res: &R,
+        a: &A,
+        pt: &B,
+        plan: &LinearTransformationPlan,
+        key: &K,
+    ) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
@@ -32,8 +44,16 @@ pub trait GLWELinearTransformations<BE: Backend> {
 
     /// Scratch bytes required by [`Self::glwe_eval_linear_transformation_into`] when
     /// the RHS is *streamed* (an unprepared plaintext-diagonal `P`): the streamed
-    /// inner product additionally holds one resident `CnvPVecR` diagonal slot.
-    fn glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes<R, A, B, K>(&self, res: &R, a: &A, pt: &B, key: &K) -> usize
+    /// inner product additionally holds one resident `CnvPVecR` diagonal slot. `plan`
+    /// as in [`Self::glwe_eval_linear_transformation_tmp_bytes`].
+    fn glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes<R, A, B, K>(
+        &self,
+        res: &R,
+        a: &A,
+        pt: &B,
+        plan: &LinearTransformationPlan,
+        key: &K,
+    ) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
@@ -41,16 +61,32 @@ pub trait GLWELinearTransformations<BE: Backend> {
         K: GGLWEInfos;
 
     /// Scratch bytes required by [`Self::glwe_eval_linear_transformation_sum_into`]:
-    /// [`Self::glwe_eval_linear_transformation_tmp_bytes`] plus one giant-step product buffer.
-    fn glwe_eval_linear_transformation_sum_tmp_bytes<R, A, B, K>(&self, res: &R, a: &A, pt: &B, key: &K) -> usize
+    /// [`Self::glwe_eval_linear_transformation_tmp_bytes`] plus one giant-step product buffer,
+    /// `plan` the schedule of the first term.
+    fn glwe_eval_linear_transformation_sum_tmp_bytes<R, A, B, K>(
+        &self,
+        res: &R,
+        a: &A,
+        pt: &B,
+        plan: &LinearTransformationPlan,
+        key: &K,
+    ) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
         B: GLWEInfos,
         K: GGLWEInfos;
 
-    /// Scratch bytes required by [`Self::glwe_prepare_linear_transformation_baby_steps`].
-    fn glwe_prepare_linear_transformation_baby_steps_tmp_bytes<A, K>(&self, a: &A, key: &K) -> usize
+    /// Scratch bytes required by [`Self::glwe_prepare_linear_transformation_baby_steps`] for a
+    /// cache of the baby steps of `plan`, which gives the doubling of
+    /// [`BsgsRotations::PowersOfTwo`](crate::layouts::BsgsRotations::PowersOfTwo); every plan with
+    /// a key per rotation gives the same bytes.
+    fn glwe_prepare_linear_transformation_baby_steps_tmp_bytes<A, K>(
+        &self,
+        a: &A,
+        plan: &LinearTransformationPlan,
+        key: &K,
+    ) -> usize
     where
         A: GLWEInfos,
         K: GGLWEInfos;
