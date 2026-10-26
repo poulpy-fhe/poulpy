@@ -202,8 +202,8 @@
 //! degree-`n` right operand is prepared at degree `n`, like any dense
 //! prepare, and the degree-`N` apply forms read it through the backend's slot
 //! correspondence, while the left operand and the result take the degree `N`
-//! of the call. A backend may reject an embedded degree below its transform
-//! block width in the apply; the coefficient-domain add and sub families
+//! of the call. The convolution applies reject an embedded degree below
+//! `MIN_DEGREE`; the coefficient-domain add and sub families
 //! accept any power-of-two divisor. `switch_ring` states both directions of
 //! the coefficient map explicitly.
 //!

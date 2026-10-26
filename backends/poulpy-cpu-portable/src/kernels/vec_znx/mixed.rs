@@ -3,7 +3,7 @@
 //! A degree-`n` operand, `n` a power-of-two divisor of the destination degree
 //! `N`, stands for its ring embedding: coefficient `k` lands on coefficient
 //! `k * N / n` of the destination and every other coefficient of the embedding
-//! is zero (spec 4.5, #266). These kernels read the `n` stored coefficients
+//! is zero. These kernels read the `n` stored coefficients
 //! with a stride and never build the embedding. They are the fallback the
 //! dense portable kernels take when an operand's degree differs from the
 //! destination's; a call whose operands all share the destination degree

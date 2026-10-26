@@ -4,18 +4,18 @@
 //! gives, bit for bit in the coefficient domain and after normalization in the
 //! big domain.
 
+use crate::test_suite::{PoisonedArena, poisoned_arena};
 use crate::{
     api::{
-        ModuleN, ScratchOwnedAlloc, VecZnxAdd, VecZnxAddAssign, VecZnxBigAdd, VecZnxBigAddAssign, VecZnxBigAddSmall,
-        VecZnxBigAddSmallAssign, VecZnxBigAlloc, VecZnxBigFromSmall, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
-        VecZnxBigSub, VecZnxBigSubAssign, VecZnxBigSubNegateAssign, VecZnxBigSubSmallA, VecZnxBigSubSmallAssign,
-        VecZnxBigSubSmallB, VecZnxBigSubSmallNegateAssign, VecZnxFillUniformSourceAll, VecZnxLshAdd, VecZnxLshSub,
-        VecZnxLshTmpBytes, VecZnxRshAdd, VecZnxRshSub, VecZnxRshTmpBytes, VecZnxSub, VecZnxSubAssign, VecZnxSubNegateAssign,
-        VecZnxSwitchRing,
+        ModuleN, VecZnxAdd, VecZnxAddAssign, VecZnxBigAdd, VecZnxBigAddAssign, VecZnxBigAddSmall, VecZnxBigAddSmallAssign,
+        VecZnxBigAlloc, VecZnxBigFromSmall, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxBigSub, VecZnxBigSubAssign,
+        VecZnxBigSubNegateAssign, VecZnxBigSubSmallA, VecZnxBigSubSmallAssign, VecZnxBigSubSmallB, VecZnxBigSubSmallNegateAssign,
+        VecZnxFillUniformSourceAll, VecZnxLshAdd, VecZnxLshSub, VecZnxLshTmpBytes, VecZnxRshAdd, VecZnxRshSub, VecZnxRshTmpBytes,
+        VecZnxSub, VecZnxSubAssign, VecZnxSubNegateAssign, VecZnxSwitchRing,
     },
     layouts::{
-        Module, ScratchOwned, VecZnx, VecZnxBackendMut, VecZnxBackendRef, VecZnxBig, VecZnxBigBackendMut, VecZnxBigBackendRef,
-        VecZnxBigOwned, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxOwned,
+        Module, VecZnx, VecZnxBackendMut, VecZnxBackendRef, VecZnxBig, VecZnxBigBackendMut, VecZnxBigBackendRef, VecZnxBigOwned,
+        VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxOwned,
     },
     source::Source,
     test_suite::{TestBackend, TestParams, download_vec_znx, upload_vec_znx, vec_znx_backend_mut, vec_znx_backend_ref},
@@ -155,7 +155,6 @@ where
         + VecZnxLshSub<BE>
         + VecZnxRshTmpBytes
         + VecZnxLshTmpBytes,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
     let n = params.n;
     let base2k = params.base2k;
@@ -212,11 +211,8 @@ where
             );
 
             // The shift family: the default body's temporary takes a's degree.
-            let scratch = core::cell::RefCell::new(ScratchOwned::<BE>::alloc(
-                module
-                    .vec_znx_rsh_tmp_bytes(res_size)
-                    .max(module.vec_znx_lsh_tmp_bytes(res_size)),
-            ));
+            let rsh_arena = || poisoned_arena::<BE>(module.vec_znx_rsh_tmp_bytes(res_size));
+            let lsh_arena = || poisoned_arena::<BE>(module.vec_znx_lsh_tmp_bytes(res_size));
             for k in [0usize, 3, base2k, base2k + 5] {
                 let mut a = module.vec_znx_alloc(embed_n, cols, a_size);
                 module.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a, &mut source);
@@ -228,7 +224,7 @@ where
                     &a,
                     base2k,
                     &mut source,
-                    |r, rc, x, xc| module.vec_znx_rsh_add(base2k, k, r, rc, x, xc, &mut scratch.borrow_mut().arena()),
+                    |r, rc, x, xc| module.vec_znx_rsh_add(base2k, k, r, rc, x, xc, &mut rsh_arena().arena()),
                 );
                 check_assign(
                     module,
@@ -238,7 +234,7 @@ where
                     &a,
                     base2k,
                     &mut source,
-                    |r, rc, x, xc| module.vec_znx_lsh_add(base2k, k, r, rc, x, xc, &mut scratch.borrow_mut().arena()),
+                    |r, rc, x, xc| module.vec_znx_lsh_add(base2k, k, r, rc, x, xc, &mut lsh_arena().arena()),
                 );
                 check_assign(
                     module,
@@ -248,7 +244,7 @@ where
                     &a,
                     base2k,
                     &mut source,
-                    |r, rc, x, xc| module.vec_znx_rsh_sub(base2k, k, r, rc, x, xc, &mut scratch.borrow_mut().arena()),
+                    |r, rc, x, xc| module.vec_znx_rsh_sub(base2k, k, r, rc, x, xc, &mut rsh_arena().arena()),
                 );
                 check_assign(
                     module,
@@ -258,7 +254,7 @@ where
                     &a,
                     base2k,
                     &mut source,
-                    |r, rc, x, xc| module.vec_znx_lsh_sub(base2k, k, r, rc, x, xc, &mut scratch.borrow_mut().arena()),
+                    |r, rc, x, xc| module.vec_znx_lsh_sub(base2k, k, r, rc, x, xc, &mut lsh_arena().arena()),
                 );
             }
         }
@@ -310,7 +306,7 @@ fn normalized<BE: TestBackend>(
     module: &Module<BE>,
     base2k: usize,
     big: &VecZnxBigOwned<BE>,
-    scratch: &mut ScratchOwned<BE>,
+    scratch: &mut PoisonedArena<BE>,
 ) -> VecZnxOwned<i64>
 where
     Module<BE>: ModuleN + VecZnxBigNormalize<BE>,
@@ -360,13 +356,12 @@ where
         + VecZnxBigSubSmallAssign<BE>
         + VecZnxBigSubSmallB<BE>
         + VecZnxBigSubSmallNegateAssign<BE>,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
     let n = params.n;
     let base2k = params.base2k;
     let cols = 2;
     let mut source = Source::new([9u8; 32]);
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch: PoisonedArena<BE> = poisoned_arena(module.vec_znx_big_normalize_tmp_bytes());
 
     let big_bin: [(&str, BigBin<'_, BE>); 2] = [
         ("vec_znx_big_add", &|r, rc, x, xc, y, yc| {

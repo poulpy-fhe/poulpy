@@ -1323,7 +1323,7 @@ mod tests {
                                 a_size,
                                 &b,
                                 b_size,
-                                RightRead::embedded(2 * m, 2 * m),
+                                RightRead::embedded(2 * m, 2 * m, <crate::FFT64Avx as poulpy_hal::layouts::Backend>::MIN_DEGREE),
                                 &mut tmp,
                             )
                         };

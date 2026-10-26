@@ -266,6 +266,8 @@ where
         R: VecZnxDftToBackendMut<Self>,
     {
         let mut res_ref = res.to_backend_mut();
+        poulpy_hal::layouts::check_cnv_dft_term::<Self>(res_ref.n(), a, i, b, i, 1);
+        poulpy_hal::layouts::check_cnv_dft_term::<Self>(res_ref.n(), a, j, b, j, 1);
         let per_worker = convolution_pairwise_apply_dft_tmp_bytes_portable(res_ref.size(), a.size(), b.size());
         let bytes = reim4_block_workers_within::<Self>(res_ref.n(), per_worker, scratch.available()) * per_worker;
         let (tmp, _) = take_host_typed::<Self, f64>(scratch.borrow(), bytes / size_of::<f64>());
@@ -612,6 +614,8 @@ where
         R: VecZnxDftToBackendMut<Self>,
     {
         let mut res_ref = res.to_backend_mut();
+        poulpy_hal::layouts::check_cnv_dft_term::<Self>(res_ref.n(), a, i, b, i, 1);
+        poulpy_hal::layouts::check_cnv_dft_term::<Self>(res_ref.n(), a, j, b, j, 1);
         let per_worker = ntt4x30_cnv_pairwise_apply_dft_tmp_bytes_portable(res_ref.size(), a.size(), b.size());
         let bytes = cnv_group_workers_within::<Self>(res_ref.n(), per_worker, scratch.available()) * per_worker;
         let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);

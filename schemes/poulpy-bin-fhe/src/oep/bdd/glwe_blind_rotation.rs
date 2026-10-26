@@ -1,12 +1,12 @@
 use crate::bdd_arithmetic::*;
 use poulpy_core::layouts::*;
 use poulpy_hal::layouts::*;
-/// Backend implementation contract for [`GLWEBlindRotation`].
+/// Backend implementation contract for [`GLWEBlindRotation`], on the standard ring only.
 ///
 /// # Safety
 /// Implementations must preserve the canonical circuit, buffer bounds, metadata,
 /// and the paired scratch query contract.
-pub unsafe trait GLWEBlindRotationImpl: Backend {
+pub unsafe trait GLWEBlindRotationImpl: Backend<Ring = Standard> {
     #[allow(clippy::too_many_arguments)]
     fn glwe_blind_rotation_tmp_bytes<R, A, K>(module: &Module<Self>, res_infos: &R, a_infos: &A, k_infos: &K) -> usize
     where
