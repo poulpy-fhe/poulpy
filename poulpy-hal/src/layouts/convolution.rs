@@ -344,6 +344,35 @@ pub fn check_galois(b_galois: i64) {
     assert!(b_galois & 1 == 1, "convolution: b_galois must be odd");
 }
 
+/// Asserts that one product is in the domain of `cnv_apply_dft` for a destination of degree `n`: `a` of degree `n`,
+/// both columns in range, `b` of degree `n` or of a power-of-two degree dividing it and at least `BE::MIN_DEGREE`,
+/// and an odd `b_galois`.
+pub fn check_cnv_dft_term<BE: Backend>(
+    n: usize,
+    a: &CnvPVecLBackendRef<'_, BE>,
+    a_col: usize,
+    b: &CnvPVecRBackendRef<'_, BE>,
+    b_col: usize,
+    b_galois: i64,
+) {
+    check_galois(b_galois);
+    assert!(a.n() == n, "convolution: left operand degree differs from the destination's");
+    assert!(a_col < a.cols(), "convolution: left operand column out of range");
+    assert!(b_col < b.cols(), "convolution: right operand column out of range");
+    let b_n = b.n();
+    assert!(
+        b_n == n || (b_n.is_power_of_two() && b_n >= BE::MIN_DEGREE && b_n < n && n.is_multiple_of(b_n)),
+        "convolution: right operand degree does not embed into the destination's"
+    );
+}
+
+/// Asserts [`check_cnv_dft_term`] on every term, so that a sum refuses before its first write.
+pub fn check_cnv_dft_terms<BE: Backend>(n: usize, terms: &[CnvDftAccTerm<'_, BE>]) {
+    for term in terms {
+        check_cnv_dft_term::<BE>(n, &term.a, term.a_col, &term.b, term.b_col, term.b_galois);
+    }
+}
+
 /// Borrow a `CnvPVecR` as a shared reference view.
 /// Owned `CnvPVecR` backed by a backend-owned buffer.
 pub type CnvPVecROwned<B> = CnvPVecR<<B as Backend>::OwnedBuf, <B as Backend>::DftWord, B>;

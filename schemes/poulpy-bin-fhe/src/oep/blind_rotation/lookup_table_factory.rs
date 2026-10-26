@@ -1,13 +1,13 @@
 use crate::blind_rotation::LookupTable;
-use poulpy_hal::layouts::{Backend, Module};
+use poulpy_hal::layouts::{Backend, Module, Standard};
 
-/// Backend implementation of [`LookupTableFactory`](crate::api::LookupTableFactory).
+/// Backend implementation of [`LookupTableFactory`](crate::api::LookupTableFactory), on the standard ring only.
 ///
 /// # Safety
 /// Implementations must preserve the canonical LUT encoding, coefficient and
 /// polynomial ordering, precision, rotation direction, and drift metadata.
 /// Writes must stay within the destination's allocated backend storage.
-pub unsafe trait LookupTableFactoryImpl: Backend {
+pub unsafe trait LookupTableFactoryImpl: Backend<Ring = Standard> {
     /// Encodes host function samples into the backend-owned LUT.
     fn lookup_table_set(module: &Module<Self>, res: &mut LookupTable<Self::OwnedBuf, Self::ZnxWord>, f: &[i64], k: usize);
 

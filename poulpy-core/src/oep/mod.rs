@@ -25,7 +25,7 @@
 //! have `impl_*_derived_full!` macros. [`crate::impl_core_reference_full!`] selects
 //! the provided implementations for all core families except [`SamplingImpl`],
 //! and the standard-only families (monomial operations and the
-//! conjugate-invariant maps), which conjugate-invariant backends do not implement.
+//! conjugate-invariant maps), whose traits bound `Backend<Ring = Standard>`.
 //!
 //! To customize a family, implement its `*Impl` trait yourself. Forward unchanged
 //! required methods to reference helpers and inherit the derived defaults you

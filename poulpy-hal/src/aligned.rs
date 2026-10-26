@@ -115,6 +115,23 @@ impl<T: Copy + Zeroable> AlignedVec<T> {
         unsafe { std::slice::from_raw_parts_mut(self.ptr.as_ptr(), self.len) }
     }
 
+    /// The elements `offset..offset + len` as a mutable slice, borrowing only that range.
+    ///
+    /// Regions carved one after another from the same buffer stay valid together; a reborrow of the whole slice would
+    /// invalidate the earlier ones.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `offset + len` overflows or exceeds the length.
+    pub fn region_mut(&mut self, offset: usize, len: usize) -> &mut [T] {
+        assert!(
+            offset.checked_add(len).is_some_and(|end| end <= self.len),
+            "AlignedBuf::region_mut: range past the end of the buffer"
+        );
+        // SAFETY: the range is in bounds, and it is built from the base pointer so no other range is borrowed.
+        unsafe { std::slice::from_raw_parts_mut(self.ptr.as_ptr().add(offset), len) }
+    }
+
     /// Shortens the buffer to `len` elements; the allocation keeps its layout.
     /// A `len` at or past the current length leaves it unchanged.
     pub fn truncate(&mut self, len: usize) {

@@ -65,17 +65,17 @@ impl RightRead {
     };
 
     /// `stored` and `full` describe the degree-`b_n` operand's transform.
-    pub fn new(module_n: usize, b_n: usize, b_galois: i64, stored: usize, full: usize) -> Self {
+    pub fn new(module_n: usize, b_n: usize, b_galois: i64, stored: usize, full: usize, min_degree: usize) -> Self {
         Self {
-            log_gap: embed_log_gap_portable(module_n, b_n),
+            log_gap: embed_log_gap_portable(module_n, b_n, min_degree),
             galois: GaloisSlots::new(stored, full, b_galois),
         }
     }
 
     /// The identity read of a dense or embedded operand.
-    pub fn embedded(module_n: usize, b_n: usize) -> Self {
+    pub fn embedded(module_n: usize, b_n: usize, min_degree: usize) -> Self {
         Self {
-            log_gap: embed_log_gap_portable(module_n, b_n),
+            log_gap: embed_log_gap_portable(module_n, b_n, min_degree),
             galois: None,
         }
     }
@@ -132,17 +132,17 @@ impl RightRead {
 
 /// The read of a degree-`b_n` FFT64 right operand: complex half spectrum on the standard ring, real slots of the
 /// degree-`2 b_n` spectrum on the conjugate-invariant ring.
-pub fn right_read_fft64<R: Ring>(module_n: usize, b_n: usize, b_galois: i64) -> RightRead {
+pub fn right_read_fft64<R: Ring>(module_n: usize, b_n: usize, b_galois: i64, min_degree: usize) -> RightRead {
     let full = b_n * R::CYCLOTOMIC_ORDER_FACTOR as usize / 2;
     let stored = if full == b_n { b_n / 2 } else { b_n };
-    RightRead::new(module_n, b_n, ring_galois(b_n, full, b_galois), stored, full)
+    RightRead::new(module_n, b_n, ring_galois(b_n, full, b_galois), stored, full, min_degree)
 }
 
 /// The read of a degree-`b_n` NTT right operand: every slot of the degree-`b_n` spectrum on the standard ring,
 /// the first half of the degree-`2 b_n` spectrum on the conjugate-invariant ring.
-pub fn right_read_ntt<R: Ring>(module_n: usize, b_n: usize, b_galois: i64) -> RightRead {
+pub fn right_read_ntt<R: Ring>(module_n: usize, b_n: usize, b_galois: i64, min_degree: usize) -> RightRead {
     let full = b_n * R::CYCLOTOMIC_ORDER_FACTOR as usize / 2;
-    RightRead::new(module_n, b_n, ring_galois(b_n, full, b_galois), b_n, full)
+    RightRead::new(module_n, b_n, ring_galois(b_n, full, b_galois), b_n, full, min_degree)
 }
 
 /// `σ_p = σ_{-p}` on the conjugate-invariant ring (`full > b_n`): its residue `1 mod 4` reads without conjugation,
@@ -156,6 +156,8 @@ mod tests {
     use super::*;
     use crate::kernels::fft64::standard::build_fft64_automorphism_plan_portable;
     use crate::kernels::ntt4x30::standard::build_ntt4x30_automorphism_plan_portable;
+
+    const FLOOR: usize = <crate::FFT64Portable as poulpy_hal::layouts::Backend>::MIN_DEGREE;
 
     fn odd_ps(full: usize) -> Vec<i64> {
         let two_f = 2 * full as i64;
@@ -250,7 +252,7 @@ mod tests {
             for stored in [full, full / 2] {
                 for p in odd_ps(full) {
                     for log_gap in 0..=3 {
-                        let read = RightRead::new(full << log_gap, full, p, stored, full);
+                        let read = RightRead::new(full << log_gap, full, p, stored, full, FLOOR);
                         let (dest, label) = (stored << log_gap, format!("F={full} stored={stored} p={p} log_gap={log_gap}"));
                         check::<2>(read, dest, &label);
                         check::<4>(read, dest, &label);
@@ -264,14 +266,14 @@ mod tests {
     #[test]
     fn right_read_composes_embedding_then_galois() {
         let (module_n, b_n, p) = (64usize, 16usize, 5i64);
-        let read = RightRead::new(module_n, b_n, p, b_n, b_n);
+        let read = RightRead::new(module_n, b_n, p, b_n, b_n, FLOOR);
         let g = GaloisSlots::new(b_n, b_n, p).unwrap();
         for i in 0..module_n {
             assert_eq!(read.source(i), g.source(i >> 2));
         }
-        assert!(RightRead::new(module_n, module_n, 1, module_n, module_n).is_direct());
-        assert!(!RightRead::new(module_n, b_n, 1, b_n, b_n).is_direct());
-        assert!(RightRead::new(module_n, module_n, 1 + 2 * module_n as i64, module_n, module_n).is_direct());
+        assert!(RightRead::new(module_n, module_n, 1, module_n, module_n, FLOOR).is_direct());
+        assert!(!RightRead::new(module_n, b_n, 1, b_n, b_n, FLOOR).is_direct());
+        assert!(RightRead::new(module_n, module_n, 1 + 2 * module_n as i64, module_n, module_n, FLOOR).is_direct());
     }
 
     #[test]
@@ -279,18 +281,18 @@ mod tests {
         use poulpy_hal::layouts::{ConjugateInvariant, Standard};
         for n in [16usize, 64] {
             for p in odd_ps(2 * n) {
-                assert!(!right_read_ntt::<ConjugateInvariant>(n, n, p).conj(), "n={n} p={p}");
-                assert!(!right_read_fft64::<ConjugateInvariant>(n, n, p).conj(), "n={n} p={p}");
+                assert!(!right_read_ntt::<ConjugateInvariant>(n, n, p, FLOOR).conj(), "n={n} p={p}");
+                assert!(!right_read_fft64::<ConjugateInvariant>(n, n, p, FLOOR).conj(), "n={n} p={p}");
             }
-            assert!(right_read_ntt::<ConjugateInvariant>(n, n, -1).is_direct());
-            assert!(right_read_fft64::<ConjugateInvariant>(n, n, -1).is_direct());
-            assert!(right_read_fft64::<Standard>(n, n, -1).conj());
+            assert!(right_read_ntt::<ConjugateInvariant>(n, n, -1, FLOOR).is_direct());
+            assert!(right_read_fft64::<ConjugateInvariant>(n, n, -1, FLOOR).is_direct());
+            assert!(right_read_fft64::<Standard>(n, n, -1, FLOOR).conj());
         }
     }
 
     #[test]
     #[should_panic(expected = "convolution: b_galois must be odd")]
     fn even_galois_rejected() {
-        let _ = RightRead::new(64, 64, 4, 64, 64);
+        let _ = RightRead::new(64, 64, 4, 64, 64, FLOOR);
     }
 }

@@ -17,7 +17,7 @@ use poulpy_hal::execution::TaskExecutor;
 use poulpy_hal::layouts::CnvDftAccTerm;
 use poulpy_hal::layouts::{
     Backend, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, CrtWord, HostDataMut, HostDataRef,
-    Module, VecZnxBackendRef, VecZnxDftBackendMut, ZnxView, ZnxViewMut, check_degree, check_galois,
+    Module, VecZnxBackendRef, VecZnxDftBackendMut, ZnxView, ZnxViewMut, check_cnv_dft_term, check_cnv_dft_terms, check_degree,
 };
 use std::mem::size_of;
 
@@ -552,7 +552,7 @@ unsafe fn apply<BE, E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>(
     check_degree::<BE>(module.n(), n);
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
     assert!(n.is_multiple_of(4));
-    let b_read = right_read_ntt::<BE::Ring>(n, b.n(), b_galois);
+    let b_read = right_read_ntt::<BE::Ring>(n, b.n(), b_galois, BE::MIN_DEGREE);
     if res_size == 0 || a_size == 0 || b_size == 0 {
         if !ACC {
             for limb in 0..res_size {
@@ -694,7 +694,7 @@ pub(crate) unsafe fn cnv_apply_dft_sum_neon<BE, E: TaskExecutor>(
     check_degree::<BE>(module.n(), n);
     assert!(n.is_multiple_of(4));
     assert!(res_col < res_cols, "convolution: result column out of range");
-    terms.iter().for_each(|term| check_galois(term.b_galois));
+    check_cnv_dft_terms::<BE>(n, terms);
     let n_blocks = n / 4;
     // Limbs written so far: a group overwrites the limbs no earlier group reached and adds to the others.
     let mut written = 0;
@@ -714,7 +714,7 @@ pub(crate) unsafe fn cnv_apply_dft_sum_neon<BE, E: TaskExecutor>(
         for (dst, term) in sum_terms.iter_mut().zip(group) {
             let (a_size, b_size) = (term.a.size(), term.b.size());
             assert_eq!(term.a.n(), n, "a.n():{} != res.n():{n}", term.a.n());
-            let b_read = right_read_ntt::<BE::Ring>(n, term.b.n(), term.b_galois);
+            let b_read = right_read_ntt::<BE::Ring>(n, term.b.n(), term.b_galois, BE::MIN_DEGREE);
             if a_size == 0 || b_size == 0 {
                 continue;
             }
@@ -808,6 +808,8 @@ pub(crate) unsafe fn cnv_pairwise_apply_dft<BE, E: TaskExecutor>(
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
+    check_cnv_dft_term::<BE>(res.n(), a, i, b, i, 1);
+    check_cnv_dft_term::<BE>(res.n(), a, j, b, j, 1);
     if i == j {
         unsafe { apply::<BE, E, false, false>(module, cnv_offset, res, res_col, a, i, i, b, i, i, 1) };
     } else {

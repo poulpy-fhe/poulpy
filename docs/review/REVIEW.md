@@ -11,7 +11,7 @@ Entry point for reviewing a poulpy diff: the one file a review needs to be given
   4. Read a picked file in full when the change fits no kind, or when the diff adds a crate, a layer, an OEP family or a registration macro.
 - **Kinds.** Classify by what the diff does, not by the files it touches: a pure rename is the names row alone, and a rename that also changes behaviour adds the rows of that behaviour; a fix is the defect-fix row plus the rows of what it fixes.
 - **Reading a section.** Sections are numbered headings (`## 5.`, `### 5.1.`), and a section includes its subsections. List them with `grep -n '^#' <file>` and read from a heading to the next heading of the same or a higher level.
-- **Precedence.** Current owner instructions come first, then these files, then the contract sources (`docs/layering-contract.md`, `poulpy-hal/src/api/mod.rs` and the per-operation contract blocks of `poulpy-hal/src/api`, the crate `poulpy-*/docs/*-contracts.md`, `poulpy-hal/docs/backend_safety_contract.md`), then READMEs and `docs/`, then existing code. Check an apparent conflict against the reviewed revision and against any intentional contract change in the diff.
+- **Precedence.** Current owner instructions come first, then these files, then the contract sources (`docs/guides/layering-contract.md`, `poulpy-hal/src/api/mod.rs` and the per-operation contract blocks of `poulpy-hal/src/api`, the crate `poulpy-*/docs/*-contracts.md`, `poulpy-hal/docs/backend_safety_contract.md`), then READMEs and `docs/`, then existing code. Check an apparent conflict against the reviewed revision and against any intentional contract change in the diff.
 - **Deviations are not precedents.** Existing code and docs break some of these rules. Never cite or copy a deviation, never ask a PR to fix one in code it does not touch, and flag every new instance a diff adds, including a copy of an existing deviating pattern into new code.
 - **Verify before claiming.** Check each finding against the code, including the backend path a call actually selects, its overrides and its tests. A rule is a reason to look, not proof of a defect.
 - **Actionable findings.** A finding names the changed code, the rule it breaks (file and section) and a concrete affected case or cost. Keep demonstrated defects apart from questions and from unmeasured optimizations, and stay within the PR's scope.
@@ -22,18 +22,18 @@ Entry point for reviewing a poulpy diff: the one file a review needs to be given
 |---|---|
 | touches `poulpy-hal/` | `hal.md` |
 | touches `poulpy-core/` | `core.md` |
-| touches `poulpy-ckks/` | `ckks.md` |
-| touches `poulpy-bin-fhe/` | `bin-fhe.md` |
+| touches `schemes/poulpy-ckks/` | `ckks.md` |
+| touches `schemes/poulpy-bin-fhe/` | `bin-fhe.md` |
 | touches `poulpy-mhe/` | `mhe.md` |
-| touches `poulpy-blas/` | `blas.md` |
-| touches `poulpy-cpu-*/` (portable, rayon, avx, avx512, arm, oracle) | `backends.md` and `hal.md` (also its sections 6, 7, 9 and 11), plus the file of every crate whose OEP trait or test suite the change implements, overrides or registers, and of the crate an example under `poulpy-cpu-portable/examples` demonstrates |
+| touches `libs/poulpy-blas/` | `blas.md` |
+| touches `backends/poulpy-cpu-*/` (portable, rayon, avx, avx512, arm, oracle) | `backends.md` and `hal.md` (also its sections 6, 7, 9 and 11), plus the file of every crate whose OEP trait or test suite the change implements, overrides or registers, and of the crate an example under `backends/poulpy-cpu-portable/examples` demonstrates |
 | adds or changes an OEP trait, OEP method, opt-in or registration macro, or public test suite, in any crate | `backends.md` (the backend side must follow) |
-| touches `poulpy-bench/` or any `benches/` directory, or makes a performance claim (PR description, CHANGELOG, README, `docs/performance.md`, gate constant) | `bench.md` |
+| touches `tools/poulpy-bench/` or any `benches/` directory, or makes a performance claim (PR description, CHANGELOG, README, `docs/guides/performance.md`, gate constant) | `bench.md` |
 | touches `.github/` | these sections alone, picking no file: `hal.md` section 11, `ckks.md` sections 15.1 and 15.4, `backends.md` sections 11 and 13.7, `bench.md` section 4 |
-| touches `docs/layering-contract.md` | these sections alone, picking no file: `hal.md` sections 1 and 5, `core.md` section 1, `ckks.md` section 1, `bin-fhe.md` section 1, `mhe.md` section 2, `blas.md` section 1, `backends.md` sections 3 and 4 |
+| touches `docs/guides/layering-contract.md` | these sections alone, picking no file: `hal.md` sections 1 and 5, `core.md` section 1, `ckks.md` section 1, `bin-fhe.md` section 1, `mhe.md` section 2, `blas.md` section 1, `backends.md` sections 3 and 4 |
 | touches a crate's manifest, README or `docs/` directory | that crate's file |
-| touches `docs/bootstrapping.md` | `ckks.md` |
-| touches `docs/base2k-failure-probability.md` | these sections alone, picking no file: `hal.md` section 6, `ckks.md` section 7, `blas.md` section 7, `backends.md` section 5.7 |
+| touches `docs/guides/bootstrapping.md` | `ckks.md` |
+| touches `docs/guides/base2k-failure-probability.md` | these sections alone, picking no file: `hal.md` section 6, `ckks.md` section 7, `blas.md` section 7, `backends.md` section 5.7 |
 
 ## 3. Sections read whenever a file is picked
 

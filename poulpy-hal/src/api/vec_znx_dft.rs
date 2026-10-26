@@ -42,7 +42,7 @@ pub trait VecZnxDftBytesOf {
 /// definition idft(res)[res_col,j] = a[a_col,offset + j * step]; other columns of res are unchanged
 /// domain     res: a VecZnxDft; a: a dense VecZnx of degree N; step >= 1; offset + j * step fits usize for every 0 <= j < min(res.size(), ceil(a.size() / step))
 /// ensures    the selected source limbs are transformed; result limbs whose source index is at least a.size() are zero
-/// test       test_vec_znx_dft_apply, test_vec_znx_idft_apply, test_vec_znx_dft_step_zero_rejected
+/// test       test_vec_znx_dft_apply, test_vec_znx_idft_apply, test_vec_znx_dft_rejects_zero_step
 /// ```
 pub trait VecZnxDftApply<B: Backend> {
     /// Writes the forward DFT of the limbs of `a` selected by `step` and `offset` into `res`.
@@ -266,7 +266,7 @@ pub trait VecZnxDftSubNegateAssign<B: Backend> {
 /// definition idft(res)[res_col,j] = idft(a)[a_col,offset + j * step]; other columns of res are unchanged
 /// domain     res, a: VecZnxDft of the same degree; step >= 1; offset + j * step fits usize for every 0 <= j < min(res.size(), ceil(a.size() / step))
 /// ensures    the selected source limbs are copied; result limbs whose source index is at least a.size() are zero
-/// test       test_vec_znx_dft_copy, test_vec_znx_dft_step_zero_rejected
+/// test       test_vec_znx_dft_copy, test_vec_znx_dft_rejects_zero_step
 /// ```
 pub trait VecZnxDftCopy<B: Backend> {
     /// Writes the limbs of `a` selected by `step` and `offset` into `res`.
