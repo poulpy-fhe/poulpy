@@ -4,10 +4,10 @@ use poulpy_hal::{
 };
 
 use crate::{
-    GetDistribution,
+    GetDistribution, GetDistributionMut,
     layouts::{
-        GGLWEInfos, GGLWEToBackendMut, GLWECIEmbedKey, GLWECITraceKey, GLWEInfos, GLWESecretToBackendRef, GLWEToBackendMut,
-        GLWEToBackendRef,
+        GGLWEInfos, GGLWEToBackendMut, GLWECIEmbedKey, GLWECITraceKey, GLWEInfos, GLWESecretToBackendMut, GLWESecretToBackendRef,
+        GLWEToBackendMut, GLWEToBackendRef,
     },
 };
 
@@ -15,7 +15,7 @@ use crate::{
 /// degree `2N`, on a standard module of degree at least `2N`.
 ///
 /// The result decrypts under the embedded conjugate-invariant secret
-/// ([`GLWESecretCIEmbed`](crate::layouts::GLWESecretCIEmbed)).
+/// ([`GLWESecretCIEmbed`]).
 pub trait GLWECIEmbed<BE: Backend> {
     /// Writes `a_0 + Σ a_i (X^i + X^-i)` of every column of `a` into `res`, at
     /// the radix of `a`. The digits are exact but not renormalized, so `res` is
@@ -24,6 +24,25 @@ pub trait GLWECIEmbed<BE: Backend> {
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos;
+}
+
+/// Embedding of a conjugate-invariant secret of degree `N` into the standard secret of degree `2N`,
+/// on a standard module of degree at least `2N`.
+pub trait GLWESecretCIEmbed<BE: Backend> {
+    /// Writes into `res` the embedding of the conjugate-invariant secret `src` of degree `N`:
+    /// the standard secret of degree `2N` under which embedded ciphertexts decrypt; the module
+    /// degree is at least `2N`.
+    ///
+    /// `res` is tagged [`Distribution::ENCAPSULATED`](crate::Distribution::ENCAPSULATED):
+    /// its coefficients mirror the source, so it only backs the ring-switching keys.
+    ///
+    /// # Panics
+    /// Before writing `res`, when its degree is not `2N` or exceeds the module degree, or its
+    /// rank differs from that of `src`.
+    fn glwe_secret_ci_embed<R, S>(&self, res: &mut R, src: &S)
+    where
+        R: GLWESecretToBackendMut<BE> + GetDistributionMut,
+        S: GLWESecretToBackendRef<BE>;
 }
 
 /// Switch of a GLWE between ring degrees that divide one another, on a module of
@@ -59,14 +78,22 @@ pub trait GLWECITrace<BE: Backend> {
 
 /// Encryption of the switching keys between the embedding of a conjugate-invariant secret `sk_ci`
 /// of degree `N` and a standard secret `sk` of degree `2N`, on a standard module of degree at least
-/// `2N`; `sk_ci` is embedded internally.
+/// `2N`; `sk_ci` is embedded into the scratch, which is wiped over
+/// [`glwe_ci_key_encrypt_sk_tmp_bytes`](Self::glwe_ci_key_encrypt_sk_tmp_bytes) before returning.
 #[allow(clippy::too_many_arguments)]
 pub trait GLWECIKeyEncryptSk<BE: Backend> {
+    /// Scratch bytes of [`Self::glwe_ci_embed_key_encrypt_sk`] and
+    /// [`Self::glwe_ci_trace_key_encrypt_sk`] for keys of layout `infos`.
     fn glwe_ci_key_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos;
 
     /// Encrypts the switch from the embedded `sk_ci` to `sk`.
+    ///
+    /// # Panics
+    /// Before writing `res` or embedding `sk_ci`, when twice the degree of `sk_ci` or the degree of `sk` exceeds the
+    /// key's, the rank of `sk_ci` differs from the key's input rank, the rank of `sk` from its output rank, `sk` has
+    /// the `NONE` distribution or the scratch is below [`Self::glwe_ci_key_encrypt_sk_tmp_bytes`].
     fn glwe_ci_embed_key_encrypt_sk<D, S1, S2>(
         &self,
         res: &mut GLWECIEmbedKey<D, BE::ZnxWord>,
@@ -82,6 +109,11 @@ pub trait GLWECIKeyEncryptSk<BE: Backend> {
         S2: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos;
 
     /// Encrypts the switch from `sk` to the embedded `sk_ci`.
+    ///
+    /// # Panics
+    /// Before writing `res` or embedding `sk_ci`, when twice the degree of `sk_ci` or the degree of `sk` exceeds the
+    /// key's, the rank of `sk_ci` differs from the key's output rank, the rank of `sk` from its input rank, `sk_ci` has
+    /// the `NONE` distribution or the scratch is below [`Self::glwe_ci_key_encrypt_sk_tmp_bytes`].
     fn glwe_ci_trace_key_encrypt_sk<D, S1, S2>(
         &self,
         res: &mut GLWECITraceKey<D, BE::ZnxWord>,
@@ -93,6 +125,6 @@ pub trait GLWECIKeyEncryptSk<BE: Backend> {
     ) where
         D: Data,
         GLWECITraceKey<D, BE::ZnxWord>: GGLWEToBackendMut<BE>,
-        S1: GLWESecretToBackendRef<BE>,
+        S1: GLWESecretToBackendRef<BE> + GetDistribution,
         S2: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos;
 }

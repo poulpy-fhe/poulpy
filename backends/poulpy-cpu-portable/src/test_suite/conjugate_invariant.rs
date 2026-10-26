@@ -532,7 +532,11 @@ mod tests {
 #[cfg(all(test, feature = "enable-core"))]
 #[test]
 fn conjugate_invariant_key_composition() {
-    use poulpy_core::{GGLWENoise, GLWEAutomorphismKeyAutomorphism, GLWEAutomorphismKeyEncryptSk, layouts::*};
+    use poulpy_core::{
+        GGLWENoise, GLWEAutomorphismKeyAutomorphism, GLWEAutomorphismKeyEncryptSk,
+        api::{GLWEAutomorphismKeyPreparedFactory, GLWESecretPreparedFactory, GLWESecretSampling},
+        layouts::*,
+    };
     use poulpy_hal::{api::*, layouts::*, source::Source};
     type BE = crate::NTT4x30CIPortable;
     let module = Module::<BE>::new(8);

@@ -30,13 +30,13 @@ use poulpy_ckks::{
     polynomial::{BSGSPolynomial, Basis, EncodeBSGS, Polynomial},
     power_basis::{PowerBasis, PowerBasisGen},
 };
-use poulpy_core::layouts::GLWESecretSampling;
+use poulpy_core::api::GLWESecretSampling;
 use poulpy_core::{
     GLWETensorKeyEncryptSk,
+    api::{GLWESecretPreparedFactory, GLWETensorKeyPreparedFactory},
     layouts::{
-        Base2K, Degree, GLWELayout, GLWETensorKeyLayout, GLWETensorKeyPreparedFactory, LWEInfos, ModuleCoreAlloc, Rank,
-        TorusPrecision,
-        prepared::{GLWESecretPrepared, GLWESecretPreparedFactory, GLWETensorKeyPrepared},
+        Base2K, Degree, GLWELayout, GLWETensorKeyLayout, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
+        prepared::{GLWESecretPrepared, GLWETensorKeyPrepared},
     },
 };
 use poulpy_cpu_portable::NTT4x30Portable;
@@ -232,7 +232,7 @@ fn setup() -> Result<SetupArtifacts> {
     let mut tsk_prepared = module.alloc_tensor_key_prepared_from_infos(&tsk_layout());
     {
         let mut scratch_local = scratch.borrow();
-        module.prepare_tensor_key(&mut tsk_prepared, &tsk, &mut scratch_local);
+        module.glwe_tensor_key_prepare(&mut tsk_prepared, &tsk, &mut scratch_local);
     }
     println!("  prepared tensor key");
 

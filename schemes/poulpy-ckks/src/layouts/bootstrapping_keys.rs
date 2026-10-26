@@ -35,13 +35,16 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use anyhow::Result;
 use poulpy_core::{
     GLWEAutomorphismKeyEncryptSk, GLWECIKeyEncryptSk, GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk, ScratchArenaTakeCore,
+    api::{
+        GLWEAutomorphismKeyPreparedFactory, GLWECIKeyPreparedFactory, GLWESwitchingKeyPreparedFactory,
+        GLWETensorKeyPreparedFactory,
+    },
     layouts::{
         BackendGLWESecret, GGLWEInfos, GGLWELayout, GGLWEPreparedToBackendRef, GGLWEToBackendRef, GLWEAutomorphismKey,
-        GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedFactory, GLWECIEmbedKey,
-        GLWECIEmbedKeyPrepared, GLWECIKeyPreparedFactory, GLWECITraceKey, GLWECITraceKeyPrepared, GLWEInfos, GLWESecretLayout,
-        GLWESwitchingKey, GLWESwitchingKeyDegrees, GLWESwitchingKeyLayout, GLWESwitchingKeyPrepared,
-        GLWESwitchingKeyPreparedFactory, GLWETensorKey, GLWETensorKeyLayout, GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory,
-        GetAutomorphismKey, GetGaloisElement, GetTensorKey, LWEInfos, ModuleCoreAlloc,
+        GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPrepared, GLWECIEmbedKey, GLWECIEmbedKeyPrepared, GLWECITraceKey,
+        GLWECITraceKeyPrepared, GLWEInfos, GLWESecretLayout, GLWESwitchingKey, GLWESwitchingKeyDegrees, GLWESwitchingKeyLayout,
+        GLWESwitchingKeyPrepared, GLWETensorKey, GLWETensorKeyLayout, GLWETensorKeyPrepared, GetAutomorphismKey,
+        GetGaloisElement, GetTensorKey, LWEInfos, ModuleCoreAlloc,
         prepared::{GLWEAutomorphismKeyPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
     },
 };
@@ -55,7 +58,8 @@ use poulpy_hal::{
 };
 
 use crate::layouts::{BootstrappingContext, EvalModRing};
-use poulpy_core::layouts::{GLWESecretSampling, GLWESecretViewMut};
+use poulpy_core::api::GLWESecretSampling;
+use poulpy_core::layouts::GLWESecretViewMut;
 use poulpy_core::{Distribution, GetDistribution, GetDistributionMut};
 
 /// Pipeline-facing access to the **prepared** keys of the linear stages of a CKKS
@@ -281,7 +285,7 @@ impl<D: Data, W: ZnxWord> BootstrappingKeySet<D, W> {
     {
         self.prepare_with(module, scratch, |tensor_key, scratch| {
             let mut prepared = module.alloc_tensor_key_prepared_from_infos(tensor_key);
-            module.prepare_tensor_key(&mut prepared, tensor_key, scratch);
+            module.glwe_tensor_key_prepare(&mut prepared, tensor_key, scratch);
             prepared
         })
     }
@@ -455,7 +459,7 @@ impl BootstrappingKeysLayout {
         for layout in self.raise_key_layouts() {
             bytes = bytes.max(module.glwe_switching_key_prepare_tmp_bytes(&layout));
         }
-        (bytes, ci.prepare_tensor_key_tmp_bytes(&self.tensor_key))
+        (bytes, ci.glwe_tensor_key_prepare_tmp_bytes(&self.tensor_key))
     }
 }
 
@@ -791,7 +795,7 @@ impl<D: Data, W: ZnxWord> BootstrappingKeySet<D, W> {
         };
         let mut keys = self.prepare_with(module, scratch, |tensor_key, _| {
             let mut prepared = ci.alloc_tensor_key_prepared_from_infos(tensor_key);
-            ci.prepare_tensor_key(&mut prepared, tensor_key, scratch_ci);
+            ci.glwe_tensor_key_prepare(&mut prepared, tensor_key, scratch_ci);
             prepared
         });
         let mut trace_key = module.glwe_ci_trace_key_prepared_alloc_from_infos(trace);

@@ -16,17 +16,21 @@ use poulpy_hal::{
     },
 };
 
+use crate::gadget::{
+    cnv_offset_to_limb_offset, gadget_dft_apply, gadget_dft_apply_tmp_bytes, gadget_input_size, normalize_input_limb_bound,
+    normalize_input_limb_bound_with_offset, prod_dft_size,
+};
 use crate::layouts::operand_degree;
 use crate::oep::GLWETensoringImpl;
-use crate::reference::keyswitching::glwe::{gadget_dft_apply, gadget_dft_apply_tmp_bytes, gadget_input_size};
 use crate::{
     ScratchArenaTakeCore,
     api::{GLWEBytesOf, GLWENormalize},
+    gadget::gglwe_product_output_size,
     layouts::{
         Base2K, GGLWEInfos, GLWE, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey, IntPolyInfos,
         LWEInfos, TorusPrecision,
     },
-    reference::keyswitching::{GGLWEProductReference, gglwe_product_output_size},
+    reference::keyswitching::GGLWEProductReference,
 };
 
 fn keeps_canonical_digits<BE, R, A>(res: &R, a: &A) -> bool
@@ -1034,7 +1038,7 @@ where
             .borrow()
             .take_vec_znx_dft_scratch(res.n().as_usize(), cols, output_size);
         let a_dft_ref = a_dft.to_backend_ref();
-        crate::reference::keyswitching::glwe::assert_no_row_offset("glwe_tensor_relinearize", &tsk.0);
+        crate::layouts::assert_no_row_offset("glwe_tensor_relinearize", &tsk.0);
         self.gglwe_product_dft_reference(&mut res_dft, &a_dft_ref, &tsk.0, 1, &mut scratch_2);
         let (mut res_big, mut scratch_3) = scratch_2.take_vec_znx_big_scratch(res.n().as_usize(), cols, output_size);
         let res_dft_ref = res_dft.to_backend_ref();
@@ -2120,7 +2124,7 @@ fn glwe_mul_relinearize_one_pass<BE, R, A, B, AP, BP, H>(
     // One more output limb than the two-step path when the alignment adds a limb to d2.
     let ks_size = (output_size + dft_size.saturating_sub(tensor_size)).min(tsk.size());
     let (mut res_dft, mut scratch) = scratch.take_vec_znx_dft_scratch(n, 2, ks_size);
-    crate::reference::keyswitching::glwe::assert_no_row_offset("glwe_mul_relinearize", &tsk.0);
+    crate::layouts::assert_no_row_offset("glwe_mul_relinearize", &tsk.0);
     module.gglwe_product_dft_reference(&mut res_dft, &d2_dft.to_backend_ref(), &tsk.0, 1, &mut scratch.borrow());
     module.vec_znx_dft_add_assign(&mut res_dft, 0, &diag.to_backend_ref(), 0);
     module.vec_znx_dft_add_assign(&mut res_dft, 1, &cross.to_backend_ref(), 0);
@@ -2623,8 +2627,12 @@ where
 /// Prepares GLWE `b` into the caller-owned scratch `CnvPVecR` `b_prep`.
 ///
 /// `b_prep` holds `b` at width `b_k`: its top `ceil(b_k / base2k)` limbs, which must fit in `b`, normalized first if
-/// its canonical flag is clear, within [`glwe_prepare_right_tmp_bytes`]. Panics unless `b_prep` has that many limbs.
+/// its canonical flag is clear, within [`glwe_prepare_right_tmp_bytes`].
 /// The prepared operand can then be reused across several [`glwe_tensor_apply_prepared_right`] calls.
+///
+/// # Panics
+///
+/// Unless `b_prep` has that many limbs.
 pub fn glwe_prepare_right<BE, M, B, BP>(module: &M, b_prep: &mut BP, b: &B, b_k: usize, scratch: &mut ScratchArena<'_, BE>)
 where
     BE: Backend,
@@ -2701,52 +2709,9 @@ fn glwe_prepare_canonical<BE, M, A>(
     prepare(&a.data, &mut scratch);
 }
 
-/// Limbs of the product of an `a_size`-limb operand by a `b_size`-limb operand, from limb `cnv_offset_hi` on.
-///
-/// Limb `k` of a product sums the pairs `i + j = k`, so it has `a_size + b_size - 1` limbs.
-/// One limb more would be zero: it would be transformed and decomposed like the others, and counted as live.
-pub fn prod_dft_size(a_size: usize, b_size: usize, cnv_offset_hi: usize) -> usize {
-    (a_size + b_size - cnv_offset_hi).saturating_sub(1).max(1)
-}
-
-pub fn cnv_offset_to_limb_offset(cnv_offset: usize, base2k: usize) -> (usize, i64) {
-    assert_ne!(base2k, 0);
-    if cnv_offset < base2k {
-        (0, -((base2k - (cnv_offset % base2k)) as i64))
-    } else {
-        ((cnv_offset / base2k).saturating_sub(1), (cnv_offset % base2k) as i64)
-    }
-}
-
-#[inline]
-fn normalize_input_limb_bound(
-    full_size: usize,
-    res_size: usize,
-    res_base2k: usize,
-    in_base2k: usize,
-    offset_bits: usize,
-) -> usize {
-    full_size.min((res_size * res_base2k + offset_bits).div_ceil(in_base2k))
-}
-
 #[inline]
 fn normalize_input_limb_bound_worst_case(full_size: usize, res_size: usize, res_base2k: usize, in_base2k: usize) -> usize {
     normalize_input_limb_bound(full_size, res_size, res_base2k, in_base2k, in_base2k - 1)
-}
-
-#[inline]
-pub fn normalize_input_limb_bound_with_offset(
-    full_size: usize,
-    res_size: usize,
-    res_base2k: usize,
-    in_base2k: usize,
-    res_offset: i64,
-) -> usize {
-    let mut offset_bits = res_offset % in_base2k as i64;
-    if res_offset < 0 && offset_bits != 0 {
-        offset_bits += in_base2k as i64;
-    }
-    normalize_input_limb_bound(full_size, res_size, res_base2k, in_base2k, offset_bits as usize)
 }
 
 /// HAL-based reference implementation, independently callable from backend overrides.

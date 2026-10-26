@@ -11,7 +11,7 @@ use poulpy_ckks::api::{
 };
 use poulpy_core::{
     GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, GLWEMaskFill, LWEEncryptSk, LWEFillMask,
-    layouts::{
+    api::{
         GGSWPreparedFactory, GLWEAutomorphismKeyPreparedFactory, GLWESecretPreparedFactory, GLWESecretSampling,
         GLWETensorKeyPreparedFactory, LWESecretSampling,
     },

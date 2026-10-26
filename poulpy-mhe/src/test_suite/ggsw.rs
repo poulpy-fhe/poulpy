@@ -4,10 +4,10 @@
 
 use poulpy_core::{
     ComponentNoise, DEFAULT_SIGMA_XE, Distribution, GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct,
+    api::{GGSWPreparedFactory, GLWESecretPreparedFactory, GLWESecretSampling, GLWESwitchingKeyPreparedFactory},
     layouts::{
-        Dnum, GGLWEInfos, GGLWELayout, GGLWEPreparedToBackendMut, GGSW, GGSWLayout, GGSWPreparedFactory, GLWE, GLWELayout,
-        GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretSampling, GLWESwitchingKey, GLWESwitchingKeyPrepared,
-        GLWESwitchingKeyPreparedFactory, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
+        Dnum, GGLWEInfos, GGLWELayout, GGLWEPreparedToBackendMut, GGSW, GGSWLayout, GLWE, GLWELayout, GLWESecretPrepared,
+        GLWESwitchingKey, GLWESwitchingKeyPrepared, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
         prepared::{GGSWPrepared, GGSWPreparedToBackendRef},
     },
 };

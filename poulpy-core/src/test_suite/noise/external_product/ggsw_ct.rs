@@ -5,14 +5,16 @@ use poulpy_hal::{
     test_suite::TestParams,
 };
 
-use crate::layouts::GLWESecretSampling;
+use crate::api::GLWESecretSampling;
 use crate::layouts::prepared::GGSWPreparedToBackendRef;
+use crate::test_suite::poisoned_scratch;
 use crate::{Distribution, ScalarZnxFillDistribution};
 use crate::{
     GGSWEncryptSk, GGSWExternalProduct, GGSWNoise,
+    api::{GGSWPreparedFactory, GLWESecretPreparedFactory},
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        GGSW, GGSWInfos, GGSWLayout, GGSWPreparedFactory, GLWEInfos, GLWESecret, GLWESecretPreparedFactory, ModuleCoreAlloc,
+        GGSW, GGSWInfos, GGSWLayout, GLWEInfos, GLWESecret, ModuleCoreAlloc,
         prepared::{GGSWPrepared, GLWESecretPrepared},
     },
     noise::GGSWNoiseModel,
@@ -98,7 +100,8 @@ where
             let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
                 (module).ggsw_encrypt_sk_tmp_bytes(&ggsw_apply_infos)
                     | (module).ggsw_encrypt_sk_tmp_bytes(&ggsw_in_infos)
-                    | module.ggsw_external_product_tmp_bytes(&ggsw_out_infos, &ggsw_in_infos, &ggsw_apply_infos),
+                    | module.ggsw_prepare_tmp_bytes(&ggsw_apply_infos)
+                    | module.ggsw_noise_tmp_bytes(&ggsw_out_infos),
             );
 
             let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank.into());
@@ -132,7 +135,12 @@ where
                 &mut ggsw_out,
                 &ggsw_in,
                 &ct_rhs_prepared.to_backend_ref(),
-                &mut scratch.borrow(),
+                &mut poisoned_scratch::<BE>(module.ggsw_external_product_tmp_bytes(
+                    &ggsw_out_infos,
+                    &ggsw_in_infos,
+                    &ggsw_apply_infos,
+                ))
+                .borrow(),
             );
 
             {
@@ -243,7 +251,8 @@ where
             let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
                 (module).ggsw_encrypt_sk_tmp_bytes(&ggsw_apply_infos)
                     | (module).ggsw_encrypt_sk_tmp_bytes(&ggsw_out_infos)
-                    | module.ggsw_external_product_tmp_bytes(&ggsw_out_infos, &ggsw_out_infos, &ggsw_apply_infos),
+                    | module.ggsw_prepare_tmp_bytes(&ggsw_apply_infos)
+                    | module.ggsw_noise_tmp_bytes(&ggsw_out_infos),
             );
 
             let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank.into());
@@ -273,7 +282,16 @@ where
             let mut ct_rhs_prepared: GGSWPrepared<BE::OwnedBuf, BE> = module.ggsw_prepared_alloc_from_infos(&ggsw_apply);
             module.ggsw_prepare(&mut ct_rhs_prepared, &ggsw_apply, &mut scratch.borrow());
 
-            module.ggsw_external_product_assign(&mut ggsw_out, &ct_rhs_prepared.to_backend_ref(), &mut scratch.borrow());
+            module.ggsw_external_product_assign(
+                &mut ggsw_out,
+                &ct_rhs_prepared.to_backend_ref(),
+                &mut poisoned_scratch::<BE>(module.ggsw_external_product_tmp_bytes(
+                    &ggsw_out_infos,
+                    &ggsw_out_infos,
+                    &ggsw_apply_infos,
+                ))
+                .borrow(),
+            );
 
             {
                 let mut pt_in_as_vec = crate::test_suite::noise::scalar_znx_as_vec_znx_backend_mut::<BE>(&mut pt_in);

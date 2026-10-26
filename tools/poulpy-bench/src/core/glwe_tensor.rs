@@ -3,9 +3,9 @@ use std::hint::black_box;
 use criterion::{Bencher, measurement::Measurement};
 use poulpy_core::{
     GLWEMaskFill, GLWETensoring,
+    api::GLWETensorKeyPreparedFactory,
     layouts::{
-        Base2K, Degree, Dnum, GLWELayout, GLWETensorKey, GLWETensorKeyLayout, GLWETensorKeyPreparedFactory, ModuleCoreAlloc,
-        Rank, TorusPrecision, k_digit_of,
+        Base2K, Degree, Dnum, GLWELayout, GLWETensorKey, GLWETensorKeyLayout, ModuleCoreAlloc, Rank, TorusPrecision, k_digit_of,
     },
     test_suite::keys::fill_by_digit,
 };
@@ -66,10 +66,10 @@ where
     let mut tsk = module.alloc_tensor_key_prepared_from_infos(&tsk_infos);
     let mut scratch = ScratchOwned::<BE>::alloc(
         module
-            .prepare_tensor_key_tmp_bytes(&tsk_infos)
+            .glwe_tensor_key_prepare_tmp_bytes(&tsk_infos)
             .max(module.glwe_tensor_relinearize_tmp_bytes(&res, &tensor, &tsk)),
     );
-    module.prepare_tensor_key(&mut tsk, &tsk_coeffs, &mut scratch.borrow());
+    module.glwe_tensor_key_prepare(&mut tsk, &tsk_coeffs, &mut scratch.borrow());
 
     bencher.iter(|| {
         module.glwe_tensor_relinearize(&mut res, &tensor, &tsk, &mut scratch.borrow());

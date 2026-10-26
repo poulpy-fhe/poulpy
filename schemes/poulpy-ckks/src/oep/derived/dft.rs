@@ -2,8 +2,8 @@
 use crate::api::{CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSDFTOps, CKKSImagOps, CKKSRotateOps, CKKSSubOps, LtDiagonalMeta};
 use crate::layouts::{CKKSModuleAlloc, DFTMatrix, Decode, Encode, Repack, Split, Standard};
 use crate::{CKKSCtBounds, CKKSResult as Result, SetCKKSInfos, SlotsKind};
+use poulpy_core::DiagonalProd;
 use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, IntPolyInfos, LinearTransformation};
-use poulpy_core::reference::linear_transformation::DiagonalProd;
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 /// Homomorphic encoding (CoeffsToSlots), `Standard` format: evaluates the Encode
 /// (IDFT) matrix in place, retaining selected raw DFT dispatch.

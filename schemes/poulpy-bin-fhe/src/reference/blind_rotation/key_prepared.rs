@@ -7,10 +7,7 @@ use poulpy_hal::{
 
 use std::marker::PhantomData;
 
-use poulpy_core::{
-    Distribution,
-    layouts::{GGSWPreparedFactory, LWEInfos},
-};
+use poulpy_core::{Distribution, api::GGSWPreparedFactory, layouts::LWEInfos};
 
 use crate::blind_rotation::{BlindRotationKey, BlindRotationKeyInfos, BlindRotationKeyPrepared, CGGI, utils::set_xai_plus_y};
 

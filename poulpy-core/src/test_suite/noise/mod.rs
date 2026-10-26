@@ -35,7 +35,7 @@ use crate::oep::{
     AutomorphismImpl, DecryptionImpl, GGLWECopyImpl, GGLWEExternalProductImpl, GGLWEKeyswitchImpl, GGLWEProductDigitsStridedImpl,
     GGSWConversionImpl, GGSWCopyImpl, GGSWExternalProductImpl, GGSWKeyswitchImpl, GLWEAddImpl, GLWECopyImpl,
     GLWEExternalProductImpl, GLWEKeyswitchImpl, GLWEMulConstImpl, GLWEMulPlainImpl, GLWENegateImpl, GLWENormalizeImpl,
-    GLWEShiftImpl, GLWESubImpl, GLWETensoringImpl, LWEKeyswitchImpl, SamplingImpl,
+    GLWEShiftImpl, GLWESubImpl, GLWETensoringImpl, LWEKeyswitchImpl, SamplingImpl, SecretImpl,
 };
 use crate::{
     GLWEDecrypt, GLWENoise,
@@ -83,6 +83,7 @@ pub trait TestBackend:
     + GGSWConversionImpl
     + AutomorphismImpl
     + SamplingImpl
+    + SecretImpl
 where
     Self: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     for<'a> Self::BufRef<'a>: HostDataRef,
@@ -116,7 +117,8 @@ where
         + DecryptionImpl
         + GGSWConversionImpl
         + AutomorphismImpl
-        + SamplingImpl,
+        + SamplingImpl
+        + SecretImpl,
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
@@ -193,7 +195,11 @@ where
     module.glwe_noise(res, pt_want, sk, scratch)
 }
 
-/// Panics unless `op` refuses its input as wider than its key decomposes exactly.
+/// Checks that `op` refuses its input as wider than its key decomposes exactly.
+///
+/// # Panics
+///
+/// Unless `op` panics with that refusal.
 pub fn assert_refuses_uncovered_input(what: &str, op: impl FnOnce()) {
     let err = std::panic::catch_unwind(std::panic::AssertUnwindSafe(op)).expect_err(what);
     let message = crate::test_suite::decryption::panic_message(&*err);

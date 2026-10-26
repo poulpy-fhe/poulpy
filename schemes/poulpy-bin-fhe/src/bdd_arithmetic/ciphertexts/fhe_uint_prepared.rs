@@ -2,12 +2,15 @@ pub use crate::api::{FheUintPrepare, FheUintPreparedEncryptSk};
 use poulpy_hal::AlignedBuf;
 use std::marker::PhantomData;
 
-use poulpy_core::layouts::{
-    Base2K, Dnum, GGSWInfos, GGSWPreparedFactory, GLWEInfos, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
-    prepared::{GGSWPrepared, GGSWPreparedBackendMut},
-};
 use poulpy_core::layouts::{GGSWPreparedToBackendMut, GetAutomorphismKey};
 use poulpy_core::{GLWECopy, GLWEDecrypt, GLWEPacking};
+use poulpy_core::{
+    api::GGSWPreparedFactory,
+    layouts::{
+        Base2K, Dnum, GGSWInfos, GLWEInfos, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
+        prepared::{GGSWPrepared, GGSWPreparedBackendMut},
+    },
+};
 
 use poulpy_core::layouts::GLWESecretPreparedToBackendRef;
 use poulpy_hal::api::ModuleLogN;

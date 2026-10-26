@@ -2,12 +2,13 @@ use poulpy_hal::{
     api::{
         ScratchArenaTakeBasic, SvpApplyDftToDftAssign, VecZnxBigAddAssign, VecZnxBigBytesOf, VecZnxBigFromSmall,
         VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftApply, VecZnxDftBytesOf, VecZnxIdftApply,
-        VecZnxIdftApplyTmpBytes, VecZnxNormalize, VecZnxNormalizeTmpBytes, VecZnxSubAssign,
+        VecZnxIdftApplyTmpBytes, VecZnxNormalizeTmpBytes, VecZnxSubAssign,
     },
     layouts::{
         Backend, HostBackend, HostDataMut, HostDataRef, Module, ScalarZnx, ScalarZnxToBackendRef, ScratchArena, Stats,
         VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef,
     },
+    oep::HalVecZnxImpl,
 };
 
 use crate::ScratchArenaTakeCore;
@@ -45,10 +46,9 @@ impl<D: HostDataRef> GGSW<D, i64> {
     }
 }
 
-impl<BE: Backend + HostBackend> GGSWNoise<BE> for Module<BE>
+impl<BE: Backend + HostBackend + HalVecZnxImpl> GGSWNoise<BE> for Module<BE>
 where
-    Module<BE>: VecZnxNormalize<BE>
-        + VecZnxNormalizeTmpBytes
+    Module<BE>: VecZnxNormalizeTmpBytes
         + VecZnxDftApply<BE>
         + SvpApplyDftToDftAssign<BE>
         + VecZnxIdftApply<BE>
@@ -119,7 +119,7 @@ where
             ScalarZnx::from_data(BE::from_host_bytes(pt_want.data), pt_want.n(), pt_want.cols());
         {
             let mut pt_backend = pt.to_backend_mut();
-            crate::reference::encryption::gadget_row_plaintext(
+            crate::gadget::gadget_row_plaintext(
                 self,
                 &mut pt_backend.data,
                 0,

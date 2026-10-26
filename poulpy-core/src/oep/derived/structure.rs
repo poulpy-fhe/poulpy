@@ -39,7 +39,9 @@ mod trace {
         first..(BE::Ring::CYCLOTOMIC_ORDER_FACTOR as usize * n).ilog2() as usize - 1
     }
 
-    /// Panics before any write unless `levels` lies within the trace of a degree-`n` operand.
+    /// # Panics
+    ///
+    /// Before any write, unless `levels` lies within the trace of a degree-`n` operand.
     fn assert_levels<BE: Backend>(n: usize, levels: &Range<usize>) {
         let trace = ring_levels::<BE>(n);
         assert!(
@@ -351,7 +353,7 @@ mod packing {
     };
 
     use crate::{
-        GLWEAdd, GLWEAutomorphism, GLWECopy, GLWENormalize, GLWERotate, GLWEShift, GLWESub, GLWETrace, ScratchArenaTakeCore,
+        GLWEAdd, GLWEAutomorphism, GLWENormalize, GLWERotate, GLWEShift, GLWESub, GLWETrace, ScratchArenaTakeCore,
         layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GetAutomorphismKey, LWEInfos},
     };
 
@@ -474,7 +476,6 @@ mod packing {
             + GLWEShift<BE>
             + GLWEAdd<BE>
             + GLWENormalize<BE>
-            + GLWECopy<BE>
             + GLWETrace<BE>,
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendMut<BE> + GLWEInfos,

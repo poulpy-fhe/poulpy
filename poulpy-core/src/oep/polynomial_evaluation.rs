@@ -4,8 +4,8 @@ use anyhow::Result;
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
+    api::BSGSOps,
     layouts::{BabyStep, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, Parity, PowerBasisHelper},
-    reference::polynomial_evaluation::BSGSOps,
 };
 
 /// Backend-provided Baby-Step / Giant-Step polynomial-evaluation phases.
@@ -14,27 +14,30 @@ use crate::{
 /// policy. They preserve that policy's dispatch and do not implement HAL kernels.
 ///
 /// # Safety
-/// Implementations must preserve the BSGS schedule semantics and the precision
-/// metadata contract expected by the scheme-supplied operations.
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait PolynomialEvaluationImpl: Backend {
+    /// Default body: `glwe_eval_baby_step_derived`, the parity schedule of one baby step over the caller's
+    /// [`BSGSOps`], seeding the accumulator from the highest power.
     #[allow(clippy::too_many_arguments)]
-    fn glwe_eval_baby_step<Ops, R, P, A, G>(
+    fn glwe_eval_baby_step<Ops, V, P, A, G>(
         module: &Module<Self>,
         ops: &Ops,
-        res: &mut R,
+        res: &mut V,
         parity: Parity,
         coeffs: &P,
         power_basis: &G,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        Ops: BSGSOps<Self, R, P, A, R>,
-        R: GLWEToBackendMut<Self> + GLWEToBackendRef<Self>,
+        Ops: BSGSOps<Self, V, P, A, V>,
+        V: GLWEToBackendMut<Self> + GLWEToBackendRef<Self>,
         P: GLWEToBackendRef<Self> + GLWEInfos,
         A: GLWEToBackendRef<Self>,
         G: PowerBasisHelper<Self, A>,
     {
-        crate::oep::derived::polynomial_evaluation::glwe_eval_baby_step_derived::<Self, Ops, R, P, G, A>(
+        crate::oep::derived::polynomial_evaluation::glwe_eval_baby_step_derived::<Self, Ops, V, P, G, A>(
             module,
             ops,
             res,
@@ -45,6 +48,9 @@ pub unsafe trait PolynomialEvaluationImpl: Backend {
         )
     }
 
+    /// Default body: `glwe_eval_giant_steps_derived`, the giant-step schedule over the caller's [`BSGSOps`],
+    /// preparing each level's giant-step power once and reusing it across the level's pairs, under any
+    /// [`PrepareHint`](poulpy_hal::layouts::PrepareHint) of its prepared operands.
     #[allow(clippy::too_many_arguments)]
     fn glwe_eval_giant_steps<Ops, R, B, V, P, A, G, H>(
         module: &Module<Self>,

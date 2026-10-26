@@ -1,10 +1,11 @@
 use poulpy_core::{
     ComponentNoise, FreshNoiseEstimate, GGLWECompressedEncryptSk, GLWEBytesOf, GLWEEncryptSk, GLWEKeyswitch, GLWEMaskFill,
     GLWENormalize, GetDistribution, ScratchArenaTakeCore,
+    api::GLWESecretPreparedFactory,
     layouts::{
         GGLWECompressedSeed, GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWECompressedToBackendRef, GGLWEInfos,
         GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWELayout, LWEInfos, Rank, TorusPrecision, digits_aligned,
-        prepared::{GGLWEPreparedToBackendRef, GLWESecretPreparedFactory, GLWESecretPreparedToBackendRef},
+        prepared::{GGLWEPreparedToBackendRef, GLWESecretPreparedToBackendRef},
     },
 };
 use poulpy_hal::{
@@ -16,6 +17,7 @@ use poulpy_hal::{
         Backend, Module, ScalarZnxToBackendRef, ScratchArena, scalar_znx_as_vec_znx_backend_mut_from_mut,
         vec_znx_backend_ref_from_mut,
     },
+    oep::HalVecZnxImpl,
     source::Source,
 };
 
@@ -57,7 +59,7 @@ pub trait GGSWMHEProtocolReference<BE: Backend> {
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 }
 
-impl<BE: Backend> GGSWMHEProtocolReference<BE> for Module<BE>
+impl<BE: Backend + HalVecZnxImpl> GGSWMHEProtocolReference<BE> for Module<BE>
 where
     Self: GLWESecretPreparedFactory<BE>
         + GLWEEncryptSk<BE>
@@ -172,7 +174,7 @@ where
                     }
                     for (l, col) in cols.iter_mut().enumerate() {
                         if l == j {
-                            poulpy_core::reference::encryption::gadget_row_plaintext(
+                            poulpy_core::gadget_row_plaintext(
                                 self,
                                 row_pt.data_mut(),
                                 0,

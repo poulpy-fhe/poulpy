@@ -9,10 +9,10 @@
 use crate::Scale;
 use poulpy_core::{
     GLWECIKeyEncryptSk,
+    api::{GLWECIKeyPreparedFactory, GLWESecretPreparedFactory, GLWESecretSampling},
     layouts::{
-        GGLWEInfos, GLWECIKeyPreparedFactory, GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretSampling,
-        GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, ModuleCoreAlloc, SetK,
-        prepared::GLWETensorKeyPreparedToBackendRef,
+        GGLWEInfos, GLWESecretPrepared, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, ModuleCoreAlloc,
+        SetK, prepared::GLWETensorKeyPreparedToBackendRef,
     },
 };
 use poulpy_hal::{

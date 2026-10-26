@@ -13,13 +13,14 @@ use crate::ntt3x42_ifma::{
     traits::Ntt3x42IfmaDFTExecute,
 };
 use poulpy_core::{
-    GLWEBytesOf, GLWENormalize, ScratchArenaTakeCore, impl_gglwe_product_digits_strided_reference, impl_glwe_tensoring_reference,
+    GLWEBytesOf, GLWENormalize, ScratchArenaTakeCore, cnv_offset_to_limb_offset, gadget_dft_apply, gadget_dft_apply_tmp_bytes,
+    gadget_input_size, gglwe_product_output_size, impl_gglwe_product_digits_strided_reference_full,
+    impl_glwe_tensoring_reference_full,
     layouts::{Degree, GGLWEInfos, GGLWEPreparedToBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos},
+    normalize_input_limb_bound_with_offset,
     oep::GLWETensoringImpl,
-    reference::keyswitching::glwe::{
-        GGLWEProductReference, gadget_dft_apply, gadget_dft_apply_tmp_bytes, gadget_input_size, gglwe_product_output_size,
-    },
-    reference::operations::{GLWETensoringReference, cnv_offset_to_limb_offset, normalize_input_limb_bound_with_offset},
+    reference::keyswitching::glwe::GGLWEProductReference,
+    reference::operations::GLWETensoringReference,
 };
 use poulpy_cpu_portable::kernels::{
     ntt4x30::{
@@ -46,18 +47,18 @@ use poulpy_hal::{
     },
 };
 
-impl_glwe_tensoring_reference!(FFT64Avx512);
-impl_glwe_tensoring_reference!(FFT64CIAvx512);
+impl_glwe_tensoring_reference_full!(FFT64Avx512);
+impl_glwe_tensoring_reference_full!(FFT64CIAvx512);
 #[cfg(feature = "enable-rayon")]
-impl_glwe_tensoring_reference!(FFT64Avx512Rayon);
+impl_glwe_tensoring_reference_full!(FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
-impl_glwe_tensoring_reference!(FFT64CIAvx512Rayon);
-impl_gglwe_product_digits_strided_reference!(FFT64Avx512);
-impl_gglwe_product_digits_strided_reference!(FFT64CIAvx512);
+impl_glwe_tensoring_reference_full!(FFT64CIAvx512Rayon);
+impl_gglwe_product_digits_strided_reference_full!(FFT64Avx512);
+impl_gglwe_product_digits_strided_reference_full!(FFT64CIAvx512);
 #[cfg(feature = "enable-rayon")]
-impl_gglwe_product_digits_strided_reference!(FFT64Avx512Rayon);
+impl_gglwe_product_digits_strided_reference_full!(FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
-impl_gglwe_product_digits_strided_reference!(FFT64CIAvx512Rayon);
+impl_gglwe_product_digits_strided_reference_full!(FFT64CIAvx512Rayon);
 
 trait RankOneTensorDft: Backend {
     fn tensor_finish_tmp_bytes(module: &Module<Self>, n: usize, size: usize) -> usize
@@ -910,7 +911,7 @@ macro_rules! impl_rank_one_tensoring {
                 if a.base2k() != key.base2k() {
                     return module.glwe_tensor_relinearize_reference(res, a, tsk, scratch);
                 }
-                poulpy_core::reference::keyswitching::glwe::assert_no_row_offset("glwe_tensor_relinearize", &key);
+                poulpy_core::layouts::assert_no_row_offset("glwe_tensor_relinearize", &key);
                 let n = assert_degrees(module, [res.n(), a.n(), key.n()]);
                 assert_eq!(res.rank(), key.rank_out());
                 assert_eq!(a.rank(), key.rank_out());
@@ -1406,14 +1407,14 @@ where
 
 poulpy_cpu_portable::impl_cpu_core_defaults!(super::FFT64Avx512, fft64);
 ::poulpy_core::impl_conversion_reference_full!(super::FFT64Avx512);
-::poulpy_core::impl_glwe_packing_derived_full!(super::FFT64Avx512);
+::poulpy_core::impl_glwe_pack_derived_full!(super::FFT64Avx512);
 ::poulpy_core::impl_glwe_rotate_reference_full!(super::FFT64Avx512);
 ::poulpy_core::impl_ggsw_rotate_derived_full!(super::FFT64Avx512);
 ::poulpy_core::impl_glwe_mul_xp_minus_one_reference_full!(super::FFT64Avx512);
 ::poulpy_core::impl_glwe_ci_conversion_reference_full!(super::FFT64Avx512);
 poulpy_cpu_portable::impl_cpu_core_defaults!(super::NTT4x30Avx512, ntt4x30);
 ::poulpy_core::impl_conversion_reference_full!(super::NTT4x30Avx512);
-::poulpy_core::impl_glwe_packing_derived_full!(super::NTT4x30Avx512);
+::poulpy_core::impl_glwe_pack_derived_full!(super::NTT4x30Avx512);
 ::poulpy_core::impl_glwe_rotate_reference_full!(super::NTT4x30Avx512);
 ::poulpy_core::impl_ggsw_rotate_derived_full!(super::NTT4x30Avx512);
 ::poulpy_core::impl_glwe_mul_xp_minus_one_reference_full!(super::NTT4x30Avx512);
@@ -1423,7 +1424,7 @@ poulpy_cpu_portable::impl_cpu_core_defaults!(super::NTT3x42Ifma, ntt4x30);
 #[cfg(feature = "enable-ifma")]
 ::poulpy_core::impl_conversion_reference_full!(super::NTT3x42Ifma);
 #[cfg(feature = "enable-ifma")]
-::poulpy_core::impl_glwe_packing_derived_full!(super::NTT3x42Ifma);
+::poulpy_core::impl_glwe_pack_derived_full!(super::NTT3x42Ifma);
 #[cfg(feature = "enable-ifma")]
 ::poulpy_core::impl_glwe_rotate_reference_full!(super::NTT3x42Ifma);
 #[cfg(feature = "enable-ifma")]
@@ -1437,7 +1438,7 @@ poulpy_cpu_portable::impl_cpu_core_defaults!(super::FFT64Avx512Rayon, fft64);
 #[cfg(feature = "enable-rayon")]
 ::poulpy_core::impl_conversion_reference_full!(super::FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
-::poulpy_core::impl_glwe_packing_derived_full!(super::FFT64Avx512Rayon);
+::poulpy_core::impl_glwe_pack_derived_full!(super::FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
 ::poulpy_core::impl_glwe_rotate_reference_full!(super::FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
@@ -1451,7 +1452,7 @@ poulpy_cpu_portable::impl_cpu_core_defaults!(super::NTT4x30Avx512Rayon, ntt4x30)
 #[cfg(feature = "enable-rayon")]
 ::poulpy_core::impl_conversion_reference_full!(super::NTT4x30Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
-::poulpy_core::impl_glwe_packing_derived_full!(super::NTT4x30Avx512Rayon);
+::poulpy_core::impl_glwe_pack_derived_full!(super::NTT4x30Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
 ::poulpy_core::impl_glwe_rotate_reference_full!(super::NTT4x30Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
@@ -1465,6 +1466,7 @@ mod ifma_rayon_defaults {
     use super::super::NTT3x42IfmaRayon;
 
     ::poulpy_core::impl_automorphism_reference_full!(NTT3x42IfmaRayon);
+    ::poulpy_core::impl_decompression_reference_full!(NTT3x42IfmaRayon);
     ::poulpy_core::impl_decryption_reference_full!(NTT3x42IfmaRayon);
     ::poulpy_core::impl_ggsw_conversion_reference_full!(NTT3x42IfmaRayon);
     ::poulpy_core::impl_glwe_keyswitch_reference_full!(NTT3x42IfmaRayon);
@@ -1477,13 +1479,15 @@ mod ifma_rayon_defaults {
     ::poulpy_core::impl_ggsw_external_product_derived_full!(NTT3x42IfmaRayon);
     ::poulpy_core::impl_operations_reference_full!(NTT3x42IfmaRayon);
     ::poulpy_core::impl_polynomial_evaluation_derived_full!(NTT3x42IfmaRayon);
+    ::poulpy_core::impl_preparation_reference_full!(NTT3x42IfmaRayon);
+    ::poulpy_core::impl_secret_reference_full!(NTT3x42IfmaRayon);
     ::poulpy_core::impl_glwe_trace_derived_full!(NTT3x42IfmaRayon);
     poulpy_cpu_portable::impl_sampling_host!(NTT3x42IfmaRayon, ntt4x30);
 }
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 ::poulpy_core::impl_conversion_reference_full!(super::NTT3x42IfmaRayon);
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
-::poulpy_core::impl_glwe_packing_derived_full!(super::NTT3x42IfmaRayon);
+::poulpy_core::impl_glwe_pack_derived_full!(super::NTT3x42IfmaRayon);
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 ::poulpy_core::impl_glwe_rotate_reference_full!(super::NTT3x42IfmaRayon);
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
@@ -1602,7 +1606,8 @@ mod relinearize_tests {
     use super::*;
     use poulpy_core::{
         GLWETensoring,
-        layouts::{GGLWEAtBackendMut, GLWELayout, GLWETensorKeyLayout, GLWETensorKeyPreparedFactory, ModuleCoreAlloc},
+        api::GLWETensorKeyPreparedFactory,
+        layouts::{GGLWEAtBackendMut, GLWELayout, GLWETensorKeyLayout, ModuleCoreAlloc},
     };
     use poulpy_hal::{
         api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniformSource, VecZnxFillUniformSourceAll},
@@ -1654,8 +1659,8 @@ mod relinearize_tests {
                             }
                         }
                         let mut prepared = module.alloc_tensor_key_prepared_from_infos(&key_layout);
-                        let mut prep_scratch = ScratchOwned::<$be>::alloc(module.prepare_tensor_key_tmp_bytes(&key_layout));
-                        module.prepare_tensor_key(&mut prepared, &key, &mut prep_scratch.borrow());
+                        let mut prep_scratch = ScratchOwned::<$be>::alloc(module.glwe_tensor_key_prepare_tmp_bytes(&key_layout));
+                        module.glwe_tensor_key_prepare(&mut prepared, &key, &mut prep_scratch.borrow());
                         for (res_base2k, res_k) in [(52usize, 311usize), (26, 415)] {
                             let output_layout = GLWELayout {
                                 base2k: res_base2k.into(),

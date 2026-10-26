@@ -18,6 +18,14 @@
 //! other core operations. The polynomial-evaluation schedule composes the
 //! caller's `BSGSOps` arithmetic policy, which owns scheme precision and rounding.
 //!
+//! A family's supertraits are exactly the OEP families, core, sampling or HAL, that
+//! its default bodies dispatch through, each listed even when another implies it, as
+//! `EncryptionImpl: SamplingImpl + HalVecZnxImpl + GLWENormalizeImpl + SecretImpl`,
+//! so a default reaches each constituent through the backend's selection with no
+//! bound on the module. A family that only a reference body composes bounds that
+//! reference instead, as `GLWEAutomorphismReference` bounds the module by
+//! `GLWEKeyswitch`, and a family without defaults has only `Backend`, with its ring.
+//!
 //! # Selecting an implementation
 //!
 //! `impl_*_reference_full!` macros implement a backend's `*Impl` family with the
@@ -41,9 +49,9 @@
 //! [`GLWEExternalProductImpl`] methods. Other reference algorithms and derived
 //! defaults remain available when their individual requirements are met.
 //!
-//! Prepared factories, decompression, and internal keyswitch helpers reuse core
-//! and HAL operations through their documented bounds. Host-only noise
-//! diagnostics have additional storage-access requirements.
+//! Internal keyswitch helpers reuse core and HAL operations through their
+//! documented bounds. Host-only noise diagnostics have additional
+//! storage-access requirements.
 //!
 //! # Noise metadata
 //!
@@ -75,6 +83,7 @@
 mod automorphism;
 mod ci_conversion;
 mod conversion;
+mod decompression;
 mod decryption;
 pub(crate) mod derived;
 mod encryption;
@@ -83,11 +92,14 @@ mod keyswitching;
 mod linear_transformation;
 mod operations;
 mod polynomial_evaluation;
+mod preparation;
 mod sampling;
+mod secret;
 
 pub use automorphism::*;
 pub use ci_conversion::*;
 pub use conversion::*;
+pub use decompression::*;
 pub use decryption::*;
 pub use encryption::*;
 pub use external_product::*;
@@ -95,7 +107,9 @@ pub use keyswitching::*;
 pub use linear_transformation::*;
 pub use operations::*;
 pub use polynomial_evaluation::*;
+pub use preparation::*;
 pub use sampling::*;
+pub use secret::*;
 
 /// Forwards every core family except sampling and the standard-only families (LWE conversion,
 /// packing, GLWE/GGSW rotate, `mul_xp_minus_one`).
@@ -106,10 +120,13 @@ pub use sampling::*;
 macro_rules! impl_core_reference_full {
     ($be:ty) => {
         $crate::impl_ggsw_conversion_reference_full!($be);
+        $crate::impl_decompression_reference_full!($be);
         $crate::impl_decryption_reference_full!($be);
         $crate::impl_encryption_reference_full!($be);
         $crate::impl_operations_reference_full!($be);
         $crate::impl_polynomial_evaluation_derived_full!($be);
+        $crate::impl_preparation_reference_full!($be);
+        $crate::impl_secret_reference_full!($be);
         $crate::impl_gglwe_external_product_derived_full!($be);
         $crate::impl_gglwe_keyswitch_derived_full!($be);
         $crate::impl_ggsw_external_product_derived_full!($be);
@@ -119,23 +136,24 @@ macro_rules! impl_core_reference_full {
         $crate::impl_glwe_keyswitch_reference_full!($be);
         $crate::impl_linear_transformation_reference_full!($be);
         $crate::impl_lwe_keyswitch_reference_full!($be);
-        $crate::impl_glwe_tensoring_reference!($be);
-        $crate::impl_gglwe_product_digits_strided_reference!($be);
+        $crate::impl_glwe_tensoring_reference_full!($be);
+        $crate::impl_gglwe_product_digits_strided_reference_full!($be);
         $crate::impl_glwe_trace_derived_full!($be);
     };
 }
 
 pub use crate::{
-    impl_automorphism_reference_full, impl_conversion_reference_full, impl_core_reference_full, impl_decryption_reference_full,
-    impl_encryption_reference_full, impl_gglwe_copy_reference_full, impl_gglwe_external_product_derived_full,
-    impl_gglwe_keyswitch_derived_full, impl_gglwe_product_digits_strided_reference, impl_ggsw_conversion_reference_full,
-    impl_ggsw_copy_reference_full, impl_ggsw_external_product_derived_full, impl_ggsw_keyswitch_derived_full,
-    impl_ggsw_rotate_derived_full, impl_glwe_add_reference_full, impl_glwe_ci_conversion_reference_full,
-    impl_glwe_copy_reference_full, impl_glwe_external_product_reference_full, impl_glwe_keyswitch_reference_full,
-    impl_glwe_mul_const_reference_full, impl_glwe_mul_plain_reference_full, impl_glwe_mul_prepared_plain_sum_reference_full,
+    impl_automorphism_reference_full, impl_conversion_reference_full, impl_core_reference_full,
+    impl_decompression_reference_full, impl_decryption_reference_full, impl_encryption_reference_full,
+    impl_gglwe_copy_reference_full, impl_gglwe_external_product_derived_full, impl_gglwe_keyswitch_derived_full,
+    impl_gglwe_product_digits_strided_reference_full, impl_ggsw_conversion_reference_full, impl_ggsw_copy_reference_full,
+    impl_ggsw_external_product_derived_full, impl_ggsw_keyswitch_derived_full, impl_ggsw_rotate_derived_full,
+    impl_glwe_add_reference_full, impl_glwe_ci_conversion_reference_full, impl_glwe_copy_reference_full,
+    impl_glwe_external_product_reference_full, impl_glwe_keyswitch_reference_full, impl_glwe_mul_const_reference_full,
+    impl_glwe_mul_plain_reference_full, impl_glwe_mul_prepared_plain_sum_reference_full,
     impl_glwe_mul_xp_minus_one_reference_full, impl_glwe_negate_reference_full, impl_glwe_normalize_reference_full,
-    impl_glwe_packing_derived_full, impl_glwe_rotate_reference_full, impl_glwe_shift_reference_full,
-    impl_glwe_sub_reference_full, impl_glwe_tensoring_reference, impl_glwe_trace_derived_full, impl_glwe_zero_reference_full,
+    impl_glwe_pack_derived_full, impl_glwe_rotate_reference_full, impl_glwe_shift_reference_full, impl_glwe_sub_reference_full,
+    impl_glwe_tensoring_reference_full, impl_glwe_trace_derived_full, impl_glwe_zero_reference_full,
     impl_linear_transformation_reference_full, impl_lwe_keyswitch_reference_full, impl_operations_reference_full,
-    impl_polynomial_evaluation_derived_full,
+    impl_polynomial_evaluation_derived_full, impl_preparation_reference_full, impl_secret_reference_full,
 };

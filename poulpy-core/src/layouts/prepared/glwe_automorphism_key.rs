@@ -1,10 +1,10 @@
 use crate::error::Result;
-use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Data};
 
 use crate::layouts::prepared::{GGLWEPreparedToBackendMut, GGLWEPreparedToBackendRef};
 use crate::layouts::{
-    Base2K, Degree, Dnum, GGLWEInfos, GGLWEPrepared, GGLWEPreparedBackendMut, GGLWEPreparedBackendRef, GGLWEPreparedFactory,
-    GGLWEToBackendRef, GLWEInfos, GetGaloisElement, LWEInfos, Rank, SetGaloisElement, TorusPrecision,
+    Base2K, Degree, Dnum, GGLWEInfos, GGLWEPrepared, GGLWEPreparedBackendMut, GGLWEPreparedBackendRef, GLWEInfos,
+    GetGaloisElement, LWEInfos, Rank, SetGaloisElement, TorusPrecision,
 };
 use poulpy_hal::layouts::vmp_pmat_backend_ref_from_ref;
 
@@ -83,95 +83,6 @@ impl<D: Data, B: Backend> GGLWEInfos for GLWEAutomorphismKeyPrepared<D, B> {
         self.key.stride()
     }
 }
-
-pub trait GLWEAutomorphismKeyPreparedFactory<B: Backend>
-where
-    Self: GGLWEPreparedFactory<B>,
-{
-    fn glwe_automorphism_key_prepared_alloc(
-        &self,
-        base2k: Base2K,
-        dnum: Dnum,
-        k_digit: TorusPrecision,
-        k_aux: TorusPrecision,
-        rank: Rank,
-    ) -> GLWEAutomorphismKeyPrepared<B::OwnedBuf, B> {
-        GLWEAutomorphismKeyPrepared::<B::OwnedBuf, B> {
-            key: self.gglwe_prepared_alloc(base2k, dnum, k_digit, k_aux, rank, rank),
-            p: 0,
-        }
-    }
-
-    fn glwe_automorphism_key_prepared_alloc_from_infos<A>(&self, infos: &A) -> GLWEAutomorphismKeyPrepared<B::OwnedBuf, B>
-    where
-        A: GGLWEInfos,
-    {
-        assert_eq!(
-            infos.rank_in(),
-            infos.rank_out(),
-            "rank_in != rank_out is not supported for AutomorphismKeyPrepared"
-        );
-        GLWEAutomorphismKeyPrepared::<B::OwnedBuf, B> {
-            key: self.gglwe_prepared_alloc_from_infos(infos),
-            p: 0,
-        }
-    }
-
-    fn glwe_automorphism_key_prepared_bytes_of(
-        &self,
-        base2k: Base2K,
-        dnum: Dnum,
-        k_digit: TorusPrecision,
-        k_aux: TorusPrecision,
-        rank: Rank,
-    ) -> usize {
-        self.gglwe_prepared_bytes_of(base2k, dnum, k_digit, k_aux, rank, rank)
-    }
-
-    fn glwe_automorphism_key_prepared_bytes_of_from_infos<A>(&self, infos: &A) -> usize
-    where
-        A: GGLWEInfos,
-    {
-        assert_eq!(
-            infos.rank_in(),
-            infos.rank_out(),
-            "rank_in != rank_out is not supported for AutomorphismKeyPrepared"
-        );
-        self.gglwe_prepared_bytes_of_from_infos(infos)
-    }
-
-    fn glwe_automorphism_key_prepare_tmp_bytes<A>(&self, infos: &A) -> usize
-    where
-        A: GGLWEInfos,
-    {
-        let lvl_0: usize = self.gglwe_prepare_tmp_bytes(infos);
-        lvl_0
-    }
-
-    fn glwe_automorphism_key_prepare<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, B>)
-    where
-        R: GGLWEPreparedToBackendMut<B> + SetGaloisElement,
-        O: GGLWEToBackendRef<B> + GetGaloisElement,
-    {
-        let tmp_bytes = {
-            let res_infos = res.to_backend_mut();
-            self.glwe_automorphism_key_prepare_tmp_bytes(&res_infos)
-        };
-        assert!(
-            scratch.available() >= tmp_bytes,
-            "scratch.available(): {} < GLWEAutomorphismKeyPreparedFactory::glwe_automorphism_key_prepare_tmp_bytes: {}",
-            scratch.available(),
-            tmp_bytes
-        );
-        self.gglwe_prepare(res, other, scratch);
-        res.set_p(other.p());
-    }
-}
-
-impl<B: Backend> GLWEAutomorphismKeyPreparedFactory<B> for Module<B> where Module<B>: GGLWEPreparedFactory<B> {}
-
-// module-only API: allocation, sizing, and preparation are provided by
-// `GLWEAutomorphismKeyPreparedFactory` on `Module`.
 
 pub type GLWEAutomorphismKeyPreparedBackendRef<'a, B> = GLWEAutomorphismKeyPrepared<<B as Backend>::BufRef<'a>, B>;
 pub type GLWEAutomorphismKeyPreparedBackendMut<'a, B> = GLWEAutomorphismKeyPrepared<<B as Backend>::BufMut<'a>, B>;

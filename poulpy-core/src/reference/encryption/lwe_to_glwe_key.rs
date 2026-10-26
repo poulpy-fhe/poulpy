@@ -11,10 +11,8 @@ use crate::api::GLWEBytesOf;
 use crate::layouts::operand_degree;
 use crate::{
     GGLWEEncryptSk, ScratchArenaTakeCore,
-    layouts::{
-        GGLWEInfos, GGLWEToBackendMut, GLWESecretPreparedFactory, GLWESecretPreparedToBackendRef, LWEInfos,
-        LWESecretToBackendRef, Rank,
-    },
+    api::GLWESecretPreparedFactory,
+    layouts::{GGLWEInfos, GGLWEToBackendMut, GLWESecretPreparedToBackendRef, LWEInfos, LWESecretToBackendRef, Rank},
 };
 
 /// Portable implementation using HAL operations.
@@ -78,6 +76,7 @@ where
         let sk_lwe = sk_lwe.to_backend_ref();
 
         assert!(sk_lwe.n().0 <= res.n().0);
+        crate::layouts::assert_secret_set(&sk_glwe.to_backend_ref().dist);
         assert!(
             scratch.available() >= self.lwe_to_glwe_key_encrypt_sk_tmp_bytes_reference(res),
             "scratch.available(): {} < LWEToGLWESwitchingKeyEncryptSk::lwe_to_glwe_key_encrypt_sk_tmp_bytes: {}",

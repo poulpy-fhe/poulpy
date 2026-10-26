@@ -19,11 +19,16 @@ use crate::layouts::{
 /// is read at any canonical state, and a nonempty trace leaves `res` canonical at `res.k()`. An empty window copies
 /// the input using [`GLWECopy`] semantics; its assign form preserves the destination. Neither needs keys.
 ///
-/// Panics, before writing `res`, if `levels` ends past the ring's trace, starts after its end, or holds level 0 on the
+/// # Panics
+///
+/// Before writing `res`, if `levels` ends past the ring's trace, starts after its end, or holds level 0 on the
 /// conjugate-invariant ring.
 pub trait GLWETrace<BE: Backend> {
-    /// The Galois elements a trace of a degree-`n` operand over `levels` in the direction `reverse` looks up; panics on
-    /// the levels the trace refuses and on a degree above the module's.
+    /// The Galois elements a trace of a degree-`n` operand over `levels` in the direction `reverse` looks up.
+    ///
+    /// # Panics
+    ///
+    /// On the levels the trace refuses and on a degree above the module's.
     fn glwe_trace_galois_elements(&self, n: Degree, levels: Range<usize>, reverse: bool) -> Vec<i64>;
 
     fn glwe_trace_tmp_bytes<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
@@ -73,9 +78,12 @@ pub trait GLWETrace<BE: Backend> {
 ///
 /// The input map must be nonempty, `log_gap_out <= log2(N)`, and every index
 /// must be below `N` and divisible by `2^log_gap_out`. All inputs must have the
-/// same degree, radix, precision and rank. Invalid maps, mixed input layouts or
-/// gaps panic before changing inputs or destination. Valid calls consume and
+/// same degree, radix, precision and rank. Valid calls consume and
 /// mutate the input ciphertexts; their final values are not preserved.
+///
+/// # Panics
+///
+/// On invalid maps, mixed input layouts or gaps, before changing inputs or destination.
 pub trait GLWEPacking<BE: Backend> {
     fn glwe_pack_galois_elements(&self) -> Vec<i64>;
 
@@ -140,11 +148,11 @@ pub trait GLWEMulConst<BE: Backend> {
 
 /// Multiplication of a GLWE ciphertext by a **plaintext** operand.
 ///
-/// The plain operand — `b` in [`Self::glwe_mul_plain`], `a` in
-/// [`Self::glwe_mul_plain_assign`] — is an **integer polynomial**, not a Torus
+/// The plain operand, `b` in [`Self::glwe_mul_plain`], `a` in
+/// [`Self::glwe_mul_plain_assign`], is an **integer polynomial**, not a Torus
 /// element: LSB-anchored, every encoded limb carries data. The convolution
 /// therefore consumes it at its declared
-/// [`encoded_k()`](crate::layouts::IntPolyInfos::encoded_k) — the operand is
+/// [`encoded_k()`](crate::layouts::IntPolyInfos::encoded_k); the operand is
 /// bounded by [`crate::layouts::IntPolyInfos`], so a type that cannot state
 /// its encoded width cannot be passed here. Its `k` labels claimed precision
 /// for budget arithmetic only, and `max_k()` is the allocation, never consumed
@@ -195,7 +203,9 @@ pub trait GLWEMulPreparedPlainSum<BE: Backend> {
     where
         R: GLWEInfos;
 
-    /// Panics, before writing `res`, if `a` is empty or `b` or `galois` is not as long, if a Galois element is even, if
+    /// # Panics
+    ///
+    /// Before writing `res`, if `a` is empty or `b` or `galois` is not as long, if a Galois element is even, if
     /// a prepared ciphertext is not of the degree of `res` with `rank + 1` columns of `a_size` limbs, if a prepared
     /// plaintext is not one column of `b_size` limbs of a degree that embeds into that of `res`, or if `scratch` holds
     /// less than the query.
@@ -442,7 +452,9 @@ pub trait GLWEMulRelinearizeSum<BE: Backend> {
     /// `a.len()` times the products of one pair (`Module::max_base2k`), up to `2 * min(a_size, b_size)` per
     /// output limb in the cross column `a0 * b1 + a1 * b0`.
     ///
-    /// Panics, before writing `res`, if `a` is empty or `b` is not as long, if a pair does not share the first one's
+    /// # Panics
+    ///
+    /// Before writing `res`, if `a` is empty or `b` is not as long, if a pair does not share the first one's
     /// layouts, if `res` or an operand is not of rank 1 or of `res`'s `base2k`, if `cnv_offset < base2k`, if `tsk`
     /// has no key at the tensor width or one of another `base2k`, or if `scratch` holds less than the call needs.
     #[expect(
@@ -494,7 +506,9 @@ pub trait GLWEPreparedTensoring<BE: Backend> {
     /// The pairs feed the product columns where they are, under the conditions of the unprepared sum, whose result
     /// they give.
     ///
-    /// Panics, before writing `res`, if `a` is empty or `b` is not as long, if a given size is not the limb count of
+    /// # Panics
+    ///
+    /// Before writing `res`, if `a` is empty or `b` is not as long, if a given size is not the limb count of
     /// its width, if a prepared operand is not of the degree of `res`, of two columns and of its given size, or under
     /// the conditions of [`GLWEMulRelinearizeSum::glwe_mul_relinearize_sum`].
     #[allow(clippy::too_many_arguments)]
@@ -532,7 +546,9 @@ pub trait GLWEPreparedTensoring<BE: Backend> {
     /// of `b_size` limbs, at radix `base2k`, each with one column per column of a ciphertext of the rank of `res`:
     /// the canonical tensor at `res.k()` that the unprepared product gives.
     ///
-    /// Panics, before writing `res`, if an operand is not of the degree of `res`, of `rank + 1` columns and of its
+    /// # Panics
+    ///
+    /// Before writing `res`, if an operand is not of the degree of `res`, of `rank + 1` columns and of its
     /// given size, or if `scratch` holds less than the call needs.
     #[allow(clippy::too_many_arguments)]
     fn glwe_tensor_apply_prepared<R, AP, BP>(

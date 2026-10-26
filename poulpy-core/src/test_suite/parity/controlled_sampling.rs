@@ -105,7 +105,8 @@ fn provider() -> Arc<dyn SampleProvider> {
 /// A comparison backend's sampling adapter writes these values into its own storage.
 ///
 /// # Panics
-/// Panics outside a [`with_backend_samples`] scope.
+///
+/// Outside a [`with_backend_samples`] scope.
 pub fn scalar_samples(n: usize, dist: Distribution, seed: [u8; 32]) -> Vec<i64> {
     provider().scalar(n, dist, seed)
 }
@@ -114,7 +115,8 @@ pub fn scalar_samples(n: usize, dist: Distribution, seed: [u8; 32]) -> Vec<i64> 
 /// (`big = false`) or wide (`big = true`) sampler, in limb-major order.
 ///
 /// # Panics
-/// Panics outside a [`with_backend_samples`] scope.
+///
+/// Outside a [`with_backend_samples`] scope.
 pub fn noise_samples(n: usize, base2k: usize, k: usize, noise: Noise, seed: [u8; 32], big: bool) -> Vec<i64> {
     provider().noise(n, base2k, k, noise, seed, big)
 }
@@ -123,7 +125,8 @@ pub fn noise_samples(n: usize, base2k: usize, k: usize, noise: Noise, seed: [u8;
 /// checks every sampler makes before writing.
 ///
 /// # Panics
-/// Panics on invalid noise or placement, or outside a [`with_backend_samples`] scope.
+///
+/// On invalid noise or placement, or outside a [`with_backend_samples`] scope.
 #[allow(clippy::too_many_arguments)]
 pub fn add_noise_samples<R: ZnxViewMut>(
     res: &mut R,

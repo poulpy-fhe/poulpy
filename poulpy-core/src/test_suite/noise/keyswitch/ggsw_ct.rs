@@ -5,17 +5,18 @@ use poulpy_hal::{
     test_suite::TestParams,
 };
 
-use crate::layouts::GLWESecretSampling;
+use crate::api::GLWESecretSampling;
 use crate::layouts::LWEInfos;
 use crate::layouts::prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedToBackendRef};
+use crate::test_suite::poisoned_scratch;
 use crate::{Distribution, ScalarZnxFillDistribution};
 use crate::{
     GGLWEToGGSWKeyEncryptSk, GGSWCopy, GGSWEncryptSk, GGSWKeyswitch, GGSWNoise, GLWESwitchingKeyEncryptSk,
+    api::{GGLWEToGGSWKeyPreparedFactory, GLWESecretPreparedFactory, GLWESwitchingKeyPreparedFactory},
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        GGLWEInfos, GGLWEToGGSWKey, GGLWEToGGSWKeyLayout, GGLWEToGGSWKeyPrepared, GGLWEToGGSWKeyPreparedFactory, GGSW, GGSWInfos,
-        GGSWLayout, GLWEInfos, GLWESecret, GLWESecretPreparedFactory, GLWESwitchingKey, GLWESwitchingKeyLayout,
-        GLWESwitchingKeyPreparedFactory, ModuleCoreAlloc,
+        GGLWEInfos, GGLWEToGGSWKey, GGLWEToGGSWKeyLayout, GGLWEToGGSWKeyPrepared, GGSW, GGSWInfos, GGSWLayout, GLWEInfos,
+        GLWESecret, GLWESwitchingKey, GLWESwitchingKeyLayout, ModuleCoreAlloc,
         prepared::{GLWESecretPrepared, GLWESwitchingKeyPrepared},
     },
     noise::GGLWENoiseModel,
@@ -114,7 +115,9 @@ where
                 (module).ggsw_encrypt_sk_tmp_bytes(&ggsw_in_infos)
                     | (module).glwe_switching_key_encrypt_sk_tmp_bytes(&ksk_apply_infos)
                     | (module).gglwe_to_ggsw_key_encrypt_sk_tmp_bytes(&tsk_infos)
-                    | module.ggsw_keyswitch_tmp_bytes(&ggsw_out_infos, &ggsw_in_infos, &ksk_apply_infos, &tsk_infos),
+                    | module.glwe_switching_key_prepare_tmp_bytes(&ksk_apply_infos)
+                    | module.gglwe_to_ggsw_key_prepare_tmp_bytes(&tsk_infos)
+                    | module.ggsw_noise_tmp_bytes(&ggsw_out_infos),
             );
 
             let var_xs: f64 = 0.5;
@@ -176,7 +179,13 @@ where
                 &ggsw_in,
                 &ksk_prepared.to_backend_ref(),
                 &tsk_prepared.to_backend_ref(),
-                &mut scratch.borrow(),
+                &mut poisoned_scratch::<BE>(module.ggsw_keyswitch_tmp_bytes(
+                    &ggsw_out_infos,
+                    &ggsw_in_infos,
+                    &ksk_apply_infos,
+                    &tsk_infos,
+                ))
+                .borrow(),
             );
 
             let max_noise = |col_j: usize| -> f64 {
@@ -291,7 +300,9 @@ where
                 (module).ggsw_encrypt_sk_tmp_bytes(&ggsw_out_infos)
                     | (module).glwe_switching_key_encrypt_sk_tmp_bytes(&ksk_apply_infos)
                     | (module).gglwe_to_ggsw_key_encrypt_sk_tmp_bytes(&tsk_infos)
-                    | module.ggsw_keyswitch_tmp_bytes(&ggsw_out_infos, &ggsw_out_infos, &ksk_apply_infos, &tsk_infos),
+                    | module.glwe_switching_key_prepare_tmp_bytes(&ksk_apply_infos)
+                    | module.gglwe_to_ggsw_key_prepare_tmp_bytes(&tsk_infos)
+                    | module.ggsw_noise_tmp_bytes(&ggsw_out_infos),
             );
 
             let var_xs: f64 = 0.5;
@@ -352,7 +363,13 @@ where
                 &mut ggsw_out,
                 &ksk_prepared.to_backend_ref(),
                 &tsk_prepared.to_backend_ref(),
-                &mut scratch.borrow(),
+                &mut poisoned_scratch::<BE>(module.ggsw_keyswitch_tmp_bytes(
+                    &ggsw_out_infos,
+                    &ggsw_out_infos,
+                    &ksk_apply_infos,
+                    &tsk_infos,
+                ))
+                .borrow(),
             );
 
             let max_noise = |col_j: usize| -> f64 {
@@ -451,7 +468,8 @@ where
                 .ggsw_encrypt_sk_tmp_bytes(&ggsw_layout)
                 .max(module.glwe_switching_key_encrypt_sk_tmp_bytes(&ksk_layout))
                 .max(module.gglwe_to_ggsw_key_encrypt_sk_tmp_bytes(&tsk_layout))
-                .max(module.ggsw_keyswitch_tmp_bytes(&res_layout, &res_layout, &ksk_layout, &tsk_layout))
+                .max(module.glwe_switching_key_prepare_tmp_bytes(&ksk_layout))
+                .max(module.gglwe_to_ggsw_key_prepare_tmp_bytes(&tsk_layout))
                 .max(module.ggsw_copy_tmp_bytes(&res_layout, &ggsw_layout))
                 .max(module.ggsw_noise_tmp_bytes(&res_layout)),
         );
@@ -512,7 +530,8 @@ where
             &mut ggsw_out,
             &ksk_prepared.to_backend_ref(),
             &tsk_prepared.to_backend_ref(),
-            &mut scratch.borrow(),
+            &mut poisoned_scratch::<BE>(module.ggsw_keyswitch_tmp_bytes(&res_layout, &res_layout, &ksk_layout, &tsk_layout))
+                .borrow(),
         );
 
         for row in 0..digits {

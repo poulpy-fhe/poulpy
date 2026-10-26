@@ -1,15 +1,11 @@
 use poulpy_hal::layouts::SvpPPolToBackendMut;
 use poulpy_hal::layouts::SvpPPolToBackendRef;
-use poulpy_hal::{
-    api::{SvpPPolAlloc, SvpPPolBytesOf, SvpPrepare},
-    layouts::{Backend, Data, Module, PrepareHint, SvpPPol, ZnxInfos},
-};
+use poulpy_hal::layouts::{Backend, Data, SvpPPol, ZnxInfos};
 
-use crate::layouts::{GLWESecretLayout, operand_degree};
 use crate::{
     GetDistribution, GetDistributionMut,
     dist::Distribution,
-    layouts::{Base2K, Degree, GLWEInfos, GLWESecretToBackendRef, GetDegree, LWEInfos, Rank},
+    layouts::{Base2K, Degree, GLWEInfos, LWEInfos, Rank},
 };
 
 /// DFT-domain (prepared) variant of [`GLWESecret`](crate::layouts::GLWESecret).
@@ -63,65 +59,6 @@ impl<D: Data, B: Backend> GLWEInfos for GLWESecretPrepared<D, B> {
     }
 }
 
-pub trait GLWESecretPreparedFactory<B: Backend>
-where
-    Self: GetDegree + SvpPPolBytesOf + SvpPPolAlloc<B> + SvpPrepare<B>,
-{
-    fn glwe_secret_prepared_alloc(&self, rank: Rank) -> GLWESecretPrepared<B::OwnedBuf, B> {
-        self.glwe_secret_prepared_alloc_from_infos(&GLWESecretLayout {
-            n: self.ring_degree(),
-            rank,
-        })
-    }
-    fn glwe_secret_prepared_alloc_from_infos<A>(&self, infos: &A) -> GLWESecretPrepared<B::OwnedBuf, B>
-    where
-        A: GLWEInfos,
-    {
-        let n: usize = operand_degree(self.ring_degree().as_usize(), &[infos.n()]);
-        GLWESecretPrepared {
-            data: self.svp_ppol_alloc(n, infos.rank().into(), PrepareHint::Reuse),
-            dist: Distribution::NONE,
-        }
-    }
-
-    fn glwe_secret_prepared_bytes_of(&self, rank: Rank) -> usize {
-        self.glwe_secret_prepared_bytes_of_from_infos(&GLWESecretLayout {
-            n: self.ring_degree(),
-            rank,
-        })
-    }
-    fn glwe_secret_prepared_bytes_of_from_infos<A>(&self, infos: &A) -> usize
-    where
-        A: GLWEInfos,
-    {
-        let n: usize = operand_degree(self.ring_degree().as_usize(), &[infos.n()]);
-        self.bytes_of_svp_ppol(n, infos.rank().into(), PrepareHint::Reuse)
-    }
-
-    fn glwe_secret_prepare<R, O>(&self, res: &mut R, other: &O)
-    where
-        R: GLWESecretPreparedToBackendMut<B> + GetDistributionMut,
-        O: GLWESecretToBackendRef<B> + GetDistribution,
-    {
-        {
-            let mut res = res.to_backend_mut();
-            let other = other.to_backend_ref();
-            for i in 0..res.rank().into() {
-                self.svp_prepare(&mut res.data, i, &other.data, i);
-            }
-        }
-
-        *res.dist_mut() = *other.dist();
-    }
-}
-
-impl<B: Backend> GLWESecretPreparedFactory<B> for Module<B> where
-    Self: GetDegree + SvpPPolBytesOf + SvpPPolAlloc<B> + SvpPrepare<B>
-{
-}
-
-// module-only API: allocation/size helpers are provided by `GLWESecretPreparedFactory` on `Module`.
-
 impl<D: Data, B: Backend> GLWESecretPrepared<D, B> {
     pub fn n(&self) -> Degree {
         Degree(self.data.n() as u32)
@@ -131,8 +68,6 @@ impl<D: Data, B: Backend> GLWESecretPrepared<D, B> {
         Rank(self.data.cols() as u32)
     }
 }
-
-// module-only API: preparation is provided by `GLWESecretPreparedFactory` on `Module`.
 
 pub trait GLWESecretPreparedToBackendRef<B: Backend> {
     fn to_backend_ref(&self) -> GLWESecretPreparedBackendRef<'_, B>;

@@ -10,9 +10,12 @@ use poulpy_ckks::{
     api::{CKKSAddOps, CKKSConjugateOps, CKKSEncodingOps, CKKSMulOps, CKKSNegOps, CKKSPow2Ops, CKKSRotateOps, CKKSSubOps},
     layouts::{CKKSEncodingBuffer, CKKSModuleAlloc},
 };
-use poulpy_core::layouts::{
-    Base2K, Degree, Dnum, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPreparedFactory, GLWELayout, GLWETensorKeyLayout,
-    GLWETensorKeyPreparedFactory, LWEInfos, Rank, SetGaloisElement, TorusPrecision, k_digit_of,
+use poulpy_core::{
+    api::{GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory},
+    layouts::{
+        Base2K, Degree, Dnum, GLWEAutomorphismKeyLayout, GLWELayout, GLWETensorKeyLayout, LWEInfos, Rank, SetGaloisElement,
+        TorusPrecision, k_digit_of,
+    },
 };
 use poulpy_hal::{
     api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
@@ -142,12 +145,11 @@ pub fn runner_ckks_rotate_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>
     ct_dst.set_meta_checked(meta).unwrap();
 
     let mut atks = HashMap::new();
-    let ak = module.alloc_tensor_key_prepared_from_infos(&atk_layout);
     let mut rotate_key = module.glwe_automorphism_key_prepared_alloc_from_infos(&atk_layout);
     rotate_key.set_p(module.galois_element(ROTATION));
     atks.insert(module.galois_element(ROTATION), rotate_key);
 
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_rotate_tmp_bytes(&ct_a, &ak));
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_rotate_tmp_bytes(&ct_a, &atk_layout));
 
     bencher.iter(|| {
         module

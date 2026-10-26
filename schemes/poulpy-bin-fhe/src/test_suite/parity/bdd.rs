@@ -2,7 +2,7 @@
 
 use super::{GlweSnapshot, ParityBackend, fixture_ggsw, fixture_glwe, snapshot_ggsw, snapshot_glwe, with_scratch};
 use crate::{api::*, bdd_arithmetic::*};
-use poulpy_core::{GLWECopy, layouts::*};
+use poulpy_core::{GLWECopy, api::GGSWPreparedFactory, layouts::*};
 use poulpy_hal::layouts::*;
 use std::collections::HashMap;
 

@@ -1,9 +1,9 @@
 use poulpy_core::{
     Distribution, GLWEDecrypt, GLWEEncryptSk, GetDistribution, GetDistributionMut,
+    api::{GLWEPublicKeyPreparedFactory, GLWESecretPreparedFactory, GLWESecretSampling},
     layouts::{
         Base2K, Dnum, Dsize, GGLWELayout, GGSWLayout, GLWE, GLWEInfos, GLWELayout, GLWEPlaintext, GLWEPublicKey,
-        GLWEPublicKeyPrepared, GLWEPublicKeyPreparedFactory, GLWESecret, GLWESecretPrepared, GLWESecretPreparedFactory,
-        GLWESecretSampling, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision, k_digit_of,
+        GLWEPublicKeyPrepared, GLWESecret, GLWESecretPrepared, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision, k_digit_of,
     },
 };
 use poulpy_hal::{

@@ -2,11 +2,9 @@
 
 use crate::{CKKSResult as Result, ckks_ensure};
 use poulpy_core::{
+    gadget_dft_apply, gadget_dft_apply_tmp_bytes, gadget_input_size, gglwe_product_accumulation_output_size,
     layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, digits_aligned, prepared::GGLWEPreparedToBackendRef},
-    reference::keyswitching::glwe::{
-        GGLWEProductReference, gadget_dft_apply, gadget_dft_apply_tmp_bytes, gadget_input_size,
-        gglwe_product_accumulation_output_size,
-    },
+    reference::keyswitching::glwe::GGLWEProductReference,
 };
 use poulpy_hal::{
     api::{

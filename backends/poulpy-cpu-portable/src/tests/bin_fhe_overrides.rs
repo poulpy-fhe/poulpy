@@ -8,8 +8,11 @@ use std::{cell::Cell, marker::PhantomData, ptr::NonNull};
 crate::impl_sampling_host!(OverrideBackend, fft64);
 poulpy_core::impl_conversion_reference_full!(OverrideBackend);
 poulpy_core::impl_ggsw_conversion_reference_full!(OverrideBackend);
+poulpy_core::impl_decompression_reference_full!(OverrideBackend);
 poulpy_core::impl_decryption_reference_full!(OverrideBackend);
 poulpy_core::impl_encryption_reference_full!(OverrideBackend);
+poulpy_core::impl_preparation_reference_full!(OverrideBackend);
+poulpy_core::impl_secret_reference_full!(OverrideBackend);
 poulpy_core::impl_ggsw_rotate_derived_full!(OverrideBackend);
 poulpy_core::impl_glwe_mul_const_reference_full!(OverrideBackend);
 poulpy_core::impl_glwe_mul_plain_reference_full!(OverrideBackend);
@@ -29,12 +32,12 @@ poulpy_core::impl_ggsw_keyswitch_derived_full!(OverrideBackend);
 poulpy_core::impl_automorphism_reference_full!(OverrideBackend);
 poulpy_core::impl_glwe_external_product_reference_full!(OverrideBackend);
 poulpy_core::impl_glwe_keyswitch_reference_full!(OverrideBackend);
-poulpy_core::impl_glwe_packing_derived_full!(OverrideBackend);
+poulpy_core::impl_glwe_pack_derived_full!(OverrideBackend);
 poulpy_core::impl_glwe_trace_derived_full!(OverrideBackend);
 poulpy_core::impl_linear_transformation_reference_full!(OverrideBackend);
 poulpy_core::impl_lwe_keyswitch_reference_full!(OverrideBackend);
-poulpy_core::impl_glwe_tensoring_reference!(OverrideBackend);
-poulpy_core::impl_gglwe_product_digits_strided_reference!(OverrideBackend);
+poulpy_core::impl_glwe_tensoring_reference_full!(OverrideBackend);
+poulpy_core::impl_gglwe_product_digits_strided_reference_full!(OverrideBackend);
 const COPY_PER_LIMB: usize = 4096;
 fn copy_override_bytes<R: GLWEInfos, A: GLWEInfos>(res: &R, source: &A) -> usize {
     // Non-monotonic source costs detect queries that substitute a supposedly
@@ -760,7 +763,7 @@ unsafe impl poulpy_core::oep::GLWEExternalProductImpl for OpaqueBackend<'static>
         panic!("opaque DFT dispatch probe")
     }
 
-    fn glwe_external_product_tmp_bytes<R: GLWEInfos, A: GLWEInfos, G: GGSWInfos>(_: &Module<Self>, _: &R, _: &A, _: &G) -> usize {
+    fn glwe_external_product_tmp_bytes<R: GLWEInfos, A: GLWEInfos, B: GGSWInfos>(_: &Module<Self>, _: &R, _: &A, _: &B) -> usize {
         panic!("unused public external product probe")
     }
 

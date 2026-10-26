@@ -19,6 +19,12 @@ A call runs `api -> delegate -> oep`. Only the reference and derived bodies
 define a result: an OEP method forwards to the reference, inherits its derived
 default, or is an override that reproduces one of them.
 
+The API, delegate, OEP and layout modules name the `reference` module only in
+opt-in macro bodies and rustdoc links. A helper that code outside `reference`
+also calls (a check, a size, a placement) lives outside it, refusal checks in
+`layouts/validation.rs` (`layouts/validate.rs` in poulpy-blas), and
+`reference` imports it.
+
 poulpy-hal has no reference layer. The contract blocks of `poulpy_hal::api`
 define its basis operations, poulpy-cpu-portable implements them and the
 independent poulpy-cpu-oracle checks them. Its derived bodies are

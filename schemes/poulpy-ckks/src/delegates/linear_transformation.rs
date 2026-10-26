@@ -1,10 +1,9 @@
 use crate::CKKSResult as Result;
 use poulpy_core::{
-    LinearTransformation, LinearTransformationBabySteps, LinearTransformationPrepared,
+    DiagonalProd, LinearTransformation, LinearTransformationBabySteps, LinearTransformationPrepared,
     layouts::{
         GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, IntPolyInfos, LWEInfos, LinearTransformationPlan,
     },
-    reference::linear_transformation::DiagonalProd,
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 

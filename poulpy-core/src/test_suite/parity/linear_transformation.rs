@@ -3,23 +3,23 @@
 use std::collections::HashMap;
 
 use poulpy_hal::{
-    api::{CnvPVecAlloc, CnvPVecBytesOf, Convolution, ModuleN, ScratchOwnedBorrow},
+    api::{CnvPVecAlloc, CnvPVecBytesOf, Convolution, ModuleN},
     layouts::{Backend, Data, DataViewMut, GaloisElement, HostDataMut, Module, ScratchArena, VecZnxDftBackendMut, ZnxViewMut},
     source::Source,
     test_suite::TestParams,
 };
 
 use crate::{
-    GLWELinearTransformations,
-    api::TransferInto,
+    DiagonalProd, GLWELinearTransformations,
+    api::{GLWEAutomorphismKeyPreparedFactory, TransferInto},
     layouts::{
         Base2K, Degree, Dnum, GGLWEInfos, GLWE, GLWEAutomorphismKeyLayout, GLWEBackendRef, GLWEInfos, GLWELayout,
         GLWEToBackendRef, IntPolyInfos, LWEInfos, LinearTransformation, LinearTransformationDiagonal,
         LinearTransformationGiantStep, LinearTransformationLayout, LinearTransformationStrategy, ModuleCoreAlloc, Rank,
         TorusPrecision,
-        prepared::{GLWEAutomorphismKeyPreparedFactory, LinearTransformationBabySteps, PreparedDiagonal},
+        prepared::{LinearTransformationBabySteps, PreparedDiagonal},
     },
-    reference::linear_transformation::{DiagonalProd, glwe_accumulate_streamed_baby_steps_dft},
+    reference::linear_transformation::glwe_accumulate_streamed_baby_steps_dft,
     test_suite::{
         keys::fill_by_digit,
         noise::assert_refuses_uncovered_input,

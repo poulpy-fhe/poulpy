@@ -75,7 +75,7 @@ mod gglwe {
             a.k_offset()
         );
         assert_eq!(res.base2k(), a.base2k());
-        crate::reference::keyswitching::glwe::assert_no_row_offset("gglwe_keyswitch", &b);
+        crate::layouts::assert_no_row_offset("gglwe_keyswitch", &b);
         assert!(
             scratch.available() >= gglwe_keyswitch_tmp_bytes_derived::<BE, _, _, _, _>(module, res, a, b),
             "scratch.available(): {} < GGLWEKeyswitch::gglwe_keyswitch_tmp_bytes: {}",
@@ -201,7 +201,7 @@ mod ggsw {
             ggsw_keyswitch_tmp_bytes_derived::<BE, _, _, _, _, _>(module, &res_backend, &a_backend, key, tsk)
         );
 
-        crate::reference::keyswitching::glwe::assert_no_row_offset("ggsw_keyswitch", &key);
+        crate::layouts::assert_no_row_offset("ggsw_keyswitch", &key);
         for row in 0..res_backend.dnum().into() {
             let mut res_at = res_backend.at_view_mut(row, 0);
             let a_at = a_backend.at_view(row, 0);
@@ -244,7 +244,7 @@ pub(crate) use ggsw::*;
 
 mod glwe_dft {
     use poulpy_hal::{
-        api::{ScratchArenaTakeBasic, VecZnxDftAddAssign, VecZnxDftBytesOf},
+        api::{ScratchArenaTakeBasic, VecZnxDftBytesOf},
         layouts::{Module, ScratchArena, VecZnxDftBackendMut, VecZnxDftToBackendRef},
     };
 
@@ -281,7 +281,6 @@ mod glwe_dft {
     ) where
         BE: GLWEKeyswitchImpl,
         A: GLWEToBackendRef<BE> + GLWEInfos,
-        Module<BE>: VecZnxDftAddAssign<BE>,
     {
         let tmp_bytes = glwe_keyswitch_dft_add_tmp_bytes_derived(module, res.size(), a, key);
         assert!(
@@ -295,7 +294,7 @@ mod glwe_dft {
         BE::glwe_keyswitch_dft(module, &mut product, a, key, &mut scratch_1);
         let product = product.to_backend_ref();
         for col in 0..cols {
-            module.vec_znx_dft_add_assign(res, col, &product, col);
+            BE::vec_znx_dft_add_assign(module, res, col, &product, col);
         }
     }
 }

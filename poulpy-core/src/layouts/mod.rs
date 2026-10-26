@@ -57,21 +57,20 @@ mod lwe_to_glwe_key;
 mod plaintext_meta;
 mod polynomial_evaluation;
 mod scratch_views;
+mod validation;
 
 pub mod compressed;
 pub mod prepared;
 
 pub use self::compressed::{
     GGLWECompressed, GGLWECompressedSeed, GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWECompressedToBackendRef,
-    GGLWEDecompress, GGLWEToGGSWKeyCompressed, GGLWEToGGSWKeyCompressedToBackendMut, GGLWEToGGSWKeyCompressedToBackendRef,
-    GGLWEToGGSWKeyDecompress, GGSWCompressed, GGSWCompressedSeed, GGSWCompressedSeedMut, GGSWCompressedToBackendMut,
-    GGSWCompressedToBackendRef, GGSWDecompress, GLWEAutomorphismKeyCompressed, GLWEAutomorphismKeyDecompress, GLWECompressed,
-    GLWECompressedSeed, GLWECompressedSeedMut, GLWECompressedToBackendMut, GLWECompressedToBackendRef, GLWEDecompress,
-    GLWEPublicKeyCompressed, GLWEPublicKeyCompressedSeed, GLWEPublicKeyCompressedSeedMut, GLWEPublicKeyCompressedToBackendMut,
-    GLWEPublicKeyCompressedToBackendRef, GLWEPublicKeyDecompress, GLWESwitchingKeyCompressed, GLWESwitchingKeyDecompress,
-    GLWETensorKeyCompressed, GLWETensorKeyDecompress, GLWEToLWESwitchingKeyCompressed, GLWEToLWESwitchingKeyDecompress,
-    LWECompressed, LWECompressedToBackendMut, LWECompressedToBackendRef, LWEDecompress, LWESwitchingKeyCompressed,
-    LWESwitchingKeyDecompress, LWEToGLWEKeyCompressed, LWEToGLWEKeyDecompress,
+    GGLWEToGGSWKeyCompressed, GGLWEToGGSWKeyCompressedToBackendMut, GGLWEToGGSWKeyCompressedToBackendRef, GGSWCompressed,
+    GGSWCompressedSeed, GGSWCompressedSeedMut, GGSWCompressedToBackendMut, GGSWCompressedToBackendRef,
+    GLWEAutomorphismKeyCompressed, GLWECompressed, GLWECompressedSeed, GLWECompressedSeedMut, GLWECompressedToBackendMut,
+    GLWECompressedToBackendRef, GLWEPublicKeyCompressed, GLWEPublicKeyCompressedSeed, GLWEPublicKeyCompressedSeedMut,
+    GLWEPublicKeyCompressedToBackendMut, GLWEPublicKeyCompressedToBackendRef, GLWESwitchingKeyCompressed,
+    GLWETensorKeyCompressed, GLWEToLWESwitchingKeyCompressed, LWECompressed, LWECompressedToBackendMut,
+    LWECompressedToBackendRef, LWESwitchingKeyCompressed, LWEToGLWEKeyCompressed,
 };
 pub use diagonals::*;
 pub use gglwe::*;
@@ -103,6 +102,7 @@ pub use plaintext_meta::*;
 pub use polynomial_evaluation::*;
 pub use prepared::*;
 pub use scratch_views::*;
+pub use validation::*;
 
 use std::{
     io::{Error, ErrorKind, Read, Result as IoResult},
@@ -191,7 +191,7 @@ pub trait ModuleCoreAlloc {
     /// labelling `k` as the full physical width `size · base2k`. Unlike
     /// [`Self::glwe_alloc`] (which derives `size = ceil(k / base2k)` from a target
     /// `k`), this takes the limb count directly, decoupling the buffer size from
-    /// the effective `k` — relabel the effective `k` afterwards with [`SetK`].
+    /// the effective `k`; relabel the effective `k` afterwards with [`SetK`].
     fn glwe_alloc_with_size(&self, base2k: Base2K, size: usize, rank: Rank) -> GLWE<Self::OwnedBuf, Self::ZnxWord>;
 
     fn gglwe_alloc_from_infos<A: GGLWEInfos>(&self, infos: &A) -> GGLWE<Self::OwnedBuf, Self::ZnxWord>;
@@ -888,6 +888,9 @@ pub trait ModuleCoreCompressedAlloc {
         k_aux: TorusPrecision,
         rank: Rank,
     ) -> GGSWCompressed<Self::OwnedBuf, Self::ZnxWord>;
+    /// Bytes of the backend buffer [`Self::ggsw_compressed_alloc_from_infos`]
+    /// allocates for `infos`, without the host-side mask seeds.
+    fn ggsw_compressed_bytes_of_from_infos<A: GGSWInfos>(&self, infos: &A) -> usize;
 
     fn glwe_public_key_compressed_alloc_from_infos<A: GLWEInfos>(
         &self,
@@ -1025,6 +1028,10 @@ impl<B: Backend> ModuleCoreCompressedAlloc for Module<B> {
 
     fn ggsw_compressed_alloc_from_infos<A: GGSWInfos>(&self, infos: &A) -> GGSWCompressed<B::OwnedBuf, B::ZnxWord> {
         GGSWCompressed::alloc_from_infos::<B, _>(infos)
+    }
+    fn ggsw_compressed_bytes_of_from_infos<A: GGSWInfos>(&self, infos: &A) -> usize {
+        let size: usize = key_size(infos.base2k(), infos.dnum(), infos.k_digit(), infos.k_aux());
+        B::bytes_of_mat_znx(infos.n().into(), infos.dnum().into(), (infos.rank() + 1).into(), 1, size)
     }
     fn ggsw_compressed_alloc(
         &self,
@@ -1338,7 +1345,7 @@ newtype_u32!(
 );
 
 newtype_u32!(
-    /// Torus precision in bits — the total number of significant bits
+    /// Torus precision in bits: the total number of significant bits
     /// used to represent elements of the discretised torus *T = R/Z*.
     ///
     /// Wraps a [`u32`] with saturating arithmetic.
@@ -1365,7 +1372,7 @@ newtype_u32!(
 );
 
 newtype_u32!(
-    /// GLWE rank — the number of mask polynomials in a GLWE ciphertext.
+    /// GLWE rank: the number of mask polynomials in a GLWE ciphertext.
     ///
     /// A rank-0 GLWE is equivalent to a plain LWE ciphertext.
     ///
@@ -1661,7 +1668,11 @@ pub(crate) fn validate_noise_components(noise: Option<&crate::ComponentNoise>, c
     Ok(())
 }
 
-/// Panics unless known noise has `components` terms.
+/// Returns `noise` after checking its component count.
+///
+/// # Panics
+///
+/// Unless known noise has `components` terms.
 pub(crate) fn checked_noise(noise: Option<crate::ComponentNoise>, components: usize) -> Option<crate::ComponentNoise> {
     validate_noise_components(noise.as_ref(), components).expect("noise component count does not match the ciphertext");
     noise
@@ -1943,5 +1954,24 @@ mod gadget_sizing_tests {
         assert_eq!(gadget_product_limbs(Base2K(30), 1), 2);
         assert_eq!(gadget_product_limbs(Base2K(30), 1 << 16), 3);
         assert_eq!(gadget_product_limbs(Base2K(19), 1 << 20), 4);
+    }
+    #[test]
+    fn ggsw_compressed_bytes_of_matches_the_allocation() {
+        use poulpy_hal::layouts::{Backend, DataView, Module};
+        type BE = crate::test_backend::SrcBackend;
+        let module: Module<BE> = Module::new(64);
+        let layout = GGSWLayout {
+            n: Degree(64),
+            base2k: Base2K(12),
+            dnum: Dnum(2),
+            k_digit: TorusPrecision(10),
+            k_aux: TorusPrecision(18),
+            rank: Rank(2),
+        };
+        let ggsw = module.ggsw_compressed_alloc_from_infos(&layout);
+        assert_eq!(
+            module.ggsw_compressed_bytes_of_from_infos(&layout),
+            BE::len_bytes(ggsw.data.data())
+        );
     }
 }

@@ -1,9 +1,9 @@
 use poulpy_core::{
     GLWEAutomorphism, GLWEMaskFill,
+    api::GLWEAutomorphismKeyPreparedFactory,
     layouts::{
         Base2K, Degree, Dnum, GGLWELayout, GLWEAutomorphismKey, GLWELayout, ModuleCoreAlloc, Rank, SetGaloisElement,
-        TorusPrecision, k_digit_of,
-        prepared::{GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedFactory},
+        TorusPrecision, k_digit_of, prepared::GLWEAutomorphismKeyPrepared,
     },
     test_suite::keys::fill_by_digit,
 };

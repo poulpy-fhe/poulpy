@@ -8,6 +8,7 @@ use poulpy_hal::{
     test_suite::TestParams,
 };
 
+use crate::test_suite::poisoned_scratch;
 use crate::{
     GLWEShift,
     layouts::{GLWE, GLWELayout, ModuleCoreAlloc, SetK},
@@ -51,21 +52,21 @@ where
     let layout = partial_layout(params, module.n());
     let mut src: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&layout);
     fill(&mut src.data);
-    let mut scratch = ScratchOwned::<BE>::alloc(module.glwe_shift_tmp_bytes(src.data.size()));
+    let shift_bytes = module.glwe_shift_tmp_bytes(src.data.size());
 
     for &k in &[usize::MAX, 1usize << 63, (1usize << 63) + 1] {
         let mut res: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&layout);
         res.data.raw_mut().copy_from_slice(src.data.raw());
-        module.glwe_rsh(k, &mut res, &mut scratch.borrow());
+        module.glwe_rsh(k, &mut res, &mut poisoned_scratch::<BE>(shift_bytes).borrow());
         assert!(res.data.raw().iter().all(|&d| d == 0), "glwe_rsh by {k} is not zero");
 
         let mut res: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&layout);
-        module.glwe_lsh(&mut res, &src, k, &mut scratch.borrow());
+        module.glwe_lsh(&mut res, &src, k, &mut poisoned_scratch::<BE>(shift_bytes).borrow());
         assert!(res.data.raw().iter().all(|&d| d == 0), "glwe_lsh by {k} is not zero");
 
         let mut res: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&layout);
         res.data.raw_mut().copy_from_slice(src.data.raw());
-        module.glwe_lsh_assign(&mut res, k, &mut scratch.borrow());
+        module.glwe_lsh_assign(&mut res, k, &mut poisoned_scratch::<BE>(shift_bytes).borrow());
         assert!(res.data.raw().iter().all(|&d| d == 0), "glwe_lsh_assign by {k} is not zero");
     }
 }
@@ -85,30 +86,30 @@ where
     fill(&mut src.data);
     // Exactly the advertised scratch: every path must fit, and the three
     // paths that normalize at `k` must leave the destination canonical there.
-    let mut scratch = ScratchOwned::<BE>::alloc(module.glwe_shift_tmp_bytes(src.data.size()));
+    let shift_bytes = module.glwe_shift_tmp_bytes(src.data.size());
 
     for &k in &[0usize, 1, 3, base2k - 1, base2k, base2k + 2] {
         let mut res: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&layout);
         res.data.raw_mut().copy_from_slice(src.data.raw());
-        module.glwe_rsh(k, &mut res, &mut scratch.borrow());
+        module.glwe_rsh(k, &mut res, &mut poisoned_scratch::<BE>(shift_bytes).borrow());
         assert_canonical(&res.data, base2k, k_res);
 
         let mut res: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&layout);
-        module.glwe_lsh(&mut res, &src, k, &mut scratch.borrow());
-        assert_canonical(&res.data, base2k, k_res);
-
-        let mut res: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&layout);
-        res.data.raw_mut().copy_from_slice(src.data.raw());
-        module.glwe_lsh_assign(&mut res, k, &mut scratch.borrow());
+        module.glwe_lsh(&mut res, &src, k, &mut poisoned_scratch::<BE>(shift_bytes).borrow());
         assert_canonical(&res.data, base2k, k_res);
 
         let mut res: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&layout);
         res.data.raw_mut().copy_from_slice(src.data.raw());
-        module.glwe_lsh_add(&mut res, &src, k, &mut scratch.borrow());
+        module.glwe_lsh_assign(&mut res, k, &mut poisoned_scratch::<BE>(shift_bytes).borrow());
+        assert_canonical(&res.data, base2k, k_res);
 
         let mut res: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&layout);
         res.data.raw_mut().copy_from_slice(src.data.raw());
-        module.glwe_lsh_sub(&mut res, &src, k, &mut scratch.borrow());
+        module.glwe_lsh_add(&mut res, &src, k, &mut poisoned_scratch::<BE>(shift_bytes).borrow());
+
+        let mut res: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&layout);
+        res.data.raw_mut().copy_from_slice(src.data.raw());
+        module.glwe_lsh_sub(&mut res, &src, k, &mut poisoned_scratch::<BE>(shift_bytes).borrow());
     }
 
     // A limb-aligned `k` one limb below the allocation, over digits in every
@@ -117,18 +118,18 @@ where
         k: (3 * base2k).into(),
         ..layout
     };
-    let mut scratch = ScratchOwned::<BE>::alloc(module.glwe_shift_tmp_bytes(3));
+    let wide_bytes = module.glwe_shift_tmp_bytes(3);
     for &k in &[1usize, base2k] {
         let mut res: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&wide);
         fill(&mut res.data);
         res.set_k((2 * base2k).into());
-        module.glwe_rsh(k, &mut res, &mut scratch.borrow());
+        module.glwe_rsh(k, &mut res, &mut poisoned_scratch::<BE>(wide_bytes).borrow());
         assert_canonical(&res.data, base2k, 2 * base2k);
 
         let mut res: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&wide);
         fill(&mut res.data);
         res.set_k((2 * base2k).into());
-        module.glwe_lsh_assign(&mut res, k, &mut scratch.borrow());
+        module.glwe_lsh_assign(&mut res, k, &mut poisoned_scratch::<BE>(wide_bytes).borrow());
         assert_canonical(&res.data, base2k, 2 * base2k);
     }
 }

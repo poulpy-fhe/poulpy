@@ -4,10 +4,10 @@ use std::hint::black_box;
 use criterion::{Bencher, measurement::Measurement};
 use poulpy_core::{
     GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, GLWEMaskFill, LWEEncryptSk, LWEFillMask,
+    api::{GGSWPreparedFactory, GLWESecretPreparedFactory, GLWESecretSampling, LWESecretSampling},
     layouts::{
-        Base2K, Dnum, GGLWEToGGSWKeyLayout, GGSW, GGSWLayout, GGSWPreparedFactory, GLWE, GLWEAutomorphismKeyLayout, GLWELayout,
-        GLWESecret, GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretSampling, LWE, LWEInfos, LWELayout, LWESecret,
-        LWESecretSampling, ModuleCoreAlloc, TorusPrecision, k_digit_of,
+        Base2K, Dnum, GGLWEToGGSWKeyLayout, GGSW, GGSWLayout, GLWE, GLWEAutomorphismKeyLayout, GLWELayout, GLWESecret,
+        GLWESecretPrepared, LWE, LWEInfos, LWELayout, LWESecret, ModuleCoreAlloc, TorusPrecision, k_digit_of,
     },
 };
 use poulpy_hal::{

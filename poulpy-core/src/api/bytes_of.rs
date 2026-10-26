@@ -26,7 +26,7 @@ use crate::layouts::{Base2K, Degree, GGLWEInfos, GGSWInfos, GLWEInfos, LWEInfos,
 /// `VmpPMat` and both `CnvPVec` forms), and several domains may share one word
 /// (a backend may use `i64` for both `ZnxWord` and `BigWord`). The DFT-domain
 /// counterpart of this trait is
-/// [`GLWEPreparedFactory::glwe_prepared_bytes_of`](crate::layouts::GLWEPreparedFactory::glwe_prepared_bytes_of).
+/// [`GLWEPreparedFactory::glwe_prepared_bytes_of`](crate::api::GLWEPreparedFactory::glwe_prepared_bytes_of).
 pub trait GLWEBytesOf<BE: Backend> {
     /// Byte size of a [`GLWE`](crate::layouts::GLWE) over this backend.
     fn glwe_bytes_of(&self, n: Degree, base2k: Base2K, k: TorusPrecision, rank: Rank) -> usize;

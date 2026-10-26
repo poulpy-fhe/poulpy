@@ -7,7 +7,12 @@ use crate::{
     oep::*,
     test_suite::CKKSTestParams,
 };
-use poulpy_core::{GLWEAdd, GLWEMaskFill, layouts::*, oep::GLWENormalizeImpl};
+use poulpy_core::{
+    GLWEAdd, GLWEMaskFill,
+    api::{GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory},
+    layouts::*,
+    oep::GLWENormalizeImpl,
+};
 use poulpy_hal::layouts::{Backend, Module, PrepareHint};
 
 pub trait ArithmeticParityBackend:

@@ -18,9 +18,8 @@ use crate::{
 };
 use poulpy_core::{
     GLWECIKeyEncryptSk,
-    layouts::{
-        GGLWEInfos, GLWEAutomorphismKeyPrepared, GLWEInfos, GLWELayout, GLWESecretCIEmbed, GLWESecretPreparedFactory, LWEInfos,
-    },
+    api::{GLWECIKeyPreparedFactory, GLWESecretCIEmbed, GLWESecretPreparedFactory},
+    layouts::{GGLWEInfos, GLWEAutomorphismKeyPrepared, GLWEInfos, GLWELayout, LWEInfos, ModuleCoreAlloc},
 };
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
@@ -743,6 +742,7 @@ where
         + CKKSEncodingOps<STD, f64>
         + CKKSCIRingMapOps<STD>
         + GLWECIKeyEncryptSk<STD>
+        + GLWECIKeyPreparedFactory<STD>
         + poulpy_core::GLWECITrace<STD>,
 {
     params.prec_meta.slots = SlotsKind::Real;
@@ -914,7 +914,8 @@ where
     let mut ci_scratch = alloc_scratch(&ci_params, &ci);
     let mut scratch = alloc_scratch(&std_params, &standard);
     let (ci_sk_raw, ci_sk) = gen_sk_with_raw(&ci_params, &ci, &ci_host, [41; 32]);
-    let embedded = standard.glwe_secret_ci_embed(&ci_sk_raw);
+    let mut embedded = standard.glwe_secret_alloc_from_infos(&embedded_params.glwe_layout());
+    standard.glwe_secret_ci_embed(&mut embedded, &ci_sk_raw);
     let mut embedded_sk = standard.glwe_secret_prepared_alloc_from_infos(&embedded);
     standard.glwe_secret_prepare(&mut embedded_sk, &embedded);
     let (std_sk_raw, std_sk) = gen_sk_with_raw(&std_params, &standard, &std_host, [42; 32]);

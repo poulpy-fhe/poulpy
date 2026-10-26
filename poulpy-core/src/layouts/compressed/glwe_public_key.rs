@@ -6,8 +6,8 @@ use std::{
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use poulpy_hal::AlignedBuf;
 use poulpy_hal::layouts::{
-    Backend, Data, HostDataMut, HostDataRef, MatZnx, MatZnxToBackendMut, MatZnxToBackendRef, Module, ReaderFrom, VecZnx,
-    WriterTo, ZnxWord, mat_znx_at_backend_mut_from_mut, mat_znx_at_backend_ref_from_mut, mat_znx_at_backend_ref_from_ref,
+    Backend, Data, HostDataMut, HostDataRef, MatZnx, MatZnxToBackendMut, MatZnxToBackendRef, ReaderFrom, VecZnx, WriterTo,
+    ZnxWord, mat_znx_at_backend_mut_from_mut, mat_znx_at_backend_ref_from_mut, mat_znx_at_backend_ref_from_ref,
     mat_znx_backend_mut_from_mut, mat_znx_backend_ref_from_mut, mat_znx_backend_ref_from_ref,
 };
 
@@ -15,8 +15,8 @@ use crate::{
     GetDistribution, GetDistributionMut,
     dist::Distribution,
     layouts::{
-        Base2K, Degree, GLWEInfos, GLWEPublicKeyAtViewMut, GLWEPublicKeyToBackendMut, LWEInfos, Rank, TorusPrecision,
-        compressed::{GLWECompressed, GLWECompressedViewMut, GLWECompressedViewRef, GLWEDecompress},
+        Base2K, Degree, GLWEInfos, LWEInfos, Rank, TorusPrecision,
+        compressed::{GLWECompressed, GLWECompressedViewMut, GLWECompressedViewRef},
     },
 };
 
@@ -496,37 +496,6 @@ impl<BE: Backend> GLWEPublicKeyCompressedToBackendMut<BE> for GLWEPublicKeyCompr
         })
     }
 }
-
-/// Decompresses a [`GLWEPublicKeyCompressed`] into a
-/// [`GLWEPublicKey`](crate::layouts::GLWEPublicKey) of the same layout.
-pub trait GLWEPublicKeyDecompress
-where
-    Self: GLWEDecompress,
-{
-    /// Copies each body, regenerates its mask from its seed, and copies the
-    /// distribution.
-    fn decompress_glwe_public_key<R, O>(&self, res: &mut R, other: &O)
-    where
-        R: GLWEPublicKeyToBackendMut<Self::Backend> + GetDistributionMut + GLWEInfos,
-        O: GLWEPublicKeyCompressedToBackendRef<Self::Backend> + GetDistribution + GLWEInfos,
-    {
-        assert!(
-            res.glwe_layout() == other.glwe_layout(),
-            "invalid decompression: layouts differ"
-        );
-        {
-            let mut res = res.to_backend_mut();
-            let other = other.to_backend_ref();
-            for l in 0..other.rank().as_usize() {
-                self.decompress_glwe(&mut res.at_view_mut(l), &other.at_view(l));
-            }
-        }
-        res.set_noise(other.noise());
-        *res.dist_mut() = *other.dist();
-    }
-}
-
-impl<B: Backend> GLWEPublicKeyDecompress for Module<B> where Self: GLWEDecompress {}
 
 #[cfg(test)]
 mod tests {

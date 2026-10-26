@@ -5,15 +5,16 @@ use poulpy_hal::{
     test_suite::TestParams,
 };
 
-use crate::layouts::GLWESecretSampling;
+use crate::api::GLWESecretSampling;
+use crate::test_suite::poisoned_scratch;
 use crate::{
-    GGLWENoise, GLWETensorKeyCompressedEncryptSk, GLWETensorKeyEncryptSk,
+    GGLWENoise, GLWETensorKeyCompressedEncryptSk, GLWETensorKeyDecompress, GLWETensorKeyEncryptSk,
+    api::{GLWESecretPreparedFactory, GLWESecretTensorFactory},
     decryption::GLWEDecrypt,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        Dsize, GGLWEDecompress, GGLWEInfos, GLWESecret, GLWESecretPreparedFactory, GLWESecretTensor, GLWESecretTensorFactory,
-        GLWETensorKey, GLWETensorKeyCompressed, GLWETensorKeyDecompress, GLWETensorKeyLayout, LWEInfos, ModuleCoreAlloc,
-        ModuleCoreCompressedAlloc, prepared::GLWESecretPrepared,
+        Dsize, GGLWEInfos, GLWESecret, GLWESecretTensor, GLWETensorKey, GLWETensorKeyCompressed, GLWETensorKeyLayout, LWEInfos,
+        ModuleCoreAlloc, ModuleCoreCompressedAlloc, prepared::GLWESecretPrepared,
     },
 };
 
@@ -52,9 +53,8 @@ where
         let mut source_xa: Source = Source::new([0u8; 32]);
 
         let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
-            (module)
-                .glwe_tensor_key_encrypt_sk_tmp_bytes(&tensor_key_infos)
-                .max(module.glwe_secret_tensor_prepare_tmp_bytes(rank.into()))
+            module
+                .glwe_secret_tensor_prepare_tmp_bytes(rank.into())
                 .max(module.gglwe_noise_tmp_bytes(&tensor_key_infos)),
         );
 
@@ -68,7 +68,7 @@ where
             &sk,
             &mut source_xe,
             &mut source_xa,
-            &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
+            &mut poisoned_scratch::<BE>(module.glwe_tensor_key_encrypt_sk_tmp_bytes(&tensor_key_infos)).borrow(),
         );
 
         let mut sk_tensor: GLWESecretTensor<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_tensor_alloc_from_infos(&sk);
@@ -113,8 +113,7 @@ pub fn test_gglwe_tensor_key_compressed_encrypt_sk<BE: crate::test_suite::noise:
         + GLWEDecrypt<BE>
         + GLWESecretTensorFactory<BE>
         + GGLWENoise<BE>
-        + GGLWEDecompress
-        + crate::layouts::compressed::GLWEDecompress<Backend = BE>,
+        + GLWETensorKeyDecompress<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
@@ -140,9 +139,8 @@ pub fn test_gglwe_tensor_key_compressed_encrypt_sk<BE: crate::test_suite::noise:
         let mut source_xe: Source = Source::new([0u8; 32]);
 
         let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
-            (module)
-                .glwe_tensor_key_compressed_encrypt_sk_tmp_bytes(&tensor_key_infos)
-                .max(module.glwe_secret_tensor_prepare_tmp_bytes(rank.into()))
+            module
+                .glwe_secret_tensor_prepare_tmp_bytes(rank.into())
                 .max(module.gglwe_noise_tmp_bytes(&tensor_key_infos)),
         );
 
@@ -158,7 +156,7 @@ pub fn test_gglwe_tensor_key_compressed_encrypt_sk<BE: crate::test_suite::noise:
             &sk,
             seed_xa,
             &mut source_xe,
-            &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
+            &mut poisoned_scratch::<BE>(module.glwe_tensor_key_compressed_encrypt_sk_tmp_bytes(&tensor_key_infos)).borrow(),
         );
 
         let mut tensor_key: GLWETensorKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_tensor_key_alloc_from_infos(&tensor_key_infos);

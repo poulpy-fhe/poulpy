@@ -5,13 +5,15 @@ use crate::layouts::LWEInfos;
 use crate::{
     GGLWEExternalProduct, GGSWAutomorphism, GGSWExpandRows, GGSWExternalProduct, GGSWFromGGLWE, GGSWKeyswitch,
     GLWEAutomorphismKeyAutomorphism, GLWEMaskFill,
-    api::TransferInto,
+    api::{
+        GGLWEPreparedFactory, GGLWEToGGSWKeyPreparedFactory, GGSWPreparedFactory, GLWEAutomorphismKeyPreparedFactory,
+        TransferInto,
+    },
     layouts::{
         Base2K, Degree, Dnum, Dsize, GGLWEAtViewMut, GGLWELayout, GGLWEToGGSWKeyLayout, GGSWAtViewMut, GGSWLayout,
         GLWEAutomorphismKeyLayout, ModuleCoreAlloc, Rank, TorusPrecision,
         prepared::{
-            GGLWEPreparedFactory, GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedFactory, GGLWEToGGSWKeyPreparedToBackendRef,
-            GGSWPreparedFactory, GGSWPreparedToBackendRef, GLWEAutomorphismKeyPreparedFactory,
+            GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedToBackendRef, GGSWPreparedToBackendRef,
             GLWEAutomorphismKeyPreparedToBackendRef,
         },
     },

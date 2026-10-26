@@ -1,10 +1,8 @@
 #![allow(clippy::too_many_arguments)]
 
-pub use crate::reference::keyswitching::{GLWEKeyswitchReference, LWEKeyswitchReference};
-
 use poulpy_hal::{
-    api::VecZnxDftAddAssign,
     layouts::{Backend, Module, ScratchArena, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendRef},
+    oep::HalVecZnxDftImpl,
 };
 
 use crate::layouts::{
@@ -30,15 +28,13 @@ pub fn gglwe_product_digit_output_size(res_size: usize, key_size: usize, dsize: 
 
 /// Backend implementation of the interleaved-digit GGLWE product.
 ///
-/// For `dsize >= 2`, it must reproduce
-/// [`gglwe_product_digits_strided_reference`](crate::reference::keyswitching::glwe::gglwe_product_digits_strided_reference)
-/// bit for bit. `product_limbs` is the caller-derived spill width for the full
-/// coefficient-product accumulation.
-///
 /// # Safety
-/// Implementations must honor the supplied layouts and return a scratch bound
-/// sufficient for [`Self::gglwe_product_digits_strided`].
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait GGLWEProductDigitsStridedImpl: Backend {
+    /// Scratch bound of [`Self::gglwe_product_digits_strided`]; may report less than the reference, never less than
+    /// the body takes.
     #[allow(clippy::too_many_arguments)]
     fn gglwe_product_digits_strided_tmp_bytes(
         module: &Module<Self>,
@@ -52,6 +48,14 @@ pub unsafe trait GGLWEProductDigitsStridedImpl: Backend {
         pmat_size: usize,
     ) -> usize;
 
+    /// Reproduces
+    /// [`gglwe_product_digits_strided_reference`](crate::reference::keyswitching::glwe::gglwe_product_digits_strided_reference)
+    /// bit for bit for `dsize >= 2`, within [`Self::gglwe_product_digits_strided_tmp_bytes`]; free in kernels and
+    /// scratch use.
+    ///
+    /// `product_limbs` is the caller-derived spill width of the full coefficient-product accumulation, and digit `di`
+    /// computes the limbs of [`gglwe_product_digit_output_size`](crate::oep::gglwe_product_digit_output_size). The
+    /// caller records no metadata.
     fn gglwe_product_digits_strided(
         module: &Module<Self>,
         res: &mut VecZnxDftBackendMut<'_, Self>,
@@ -63,9 +67,9 @@ pub unsafe trait GGLWEProductDigitsStridedImpl: Backend {
     );
 }
 
-/// keyswitch can still dispatch through that implementation.
+/// Selects the reference implementation of `GGLWEProductDigitsStridedImpl` for `$be`.
 #[macro_export]
-macro_rules! impl_gglwe_product_digits_strided_reference {
+macro_rules! impl_gglwe_product_digits_strided_reference_full {
     ($be:ty) => {
         unsafe impl $crate::oep::GGLWEProductDigitsStridedImpl for $be {
             fn gglwe_product_digits_strided_tmp_bytes(
@@ -118,46 +122,22 @@ macro_rules! impl_gglwe_product_digits_strided_reference {
 /// Backend-provided GLWE key-switching operations.
 ///
 /// # Safety
-/// Implementations must satisfy the documented key-switch semantics, honor layout metadata and
-/// prepared-key interpretation, and keep all reads and writes within the described backend buffers.
-/// # Gadget-digit width contract
-///
-/// An override that fuses the digit loop (rather than forwarding to the reference
-/// body) must reproduce its output widths exactly, because the choice is not
-/// noise-visible: an accumulator one limb too narrow still passes the keyswitch
-/// noise sweep. With `key_size = key.size()` and `res_size = res.size()`, digit
-/// `di` of `0..dsize` contributes to output limb `c` iff
-///
-/// ```text
-/// c < min(key_size - di, compute_size(di))
-/// compute_size(0)  = res_size
-/// compute_size(di) = min(res_size,
-///                        key_size - max(dsize - di - product_limbs, 0))
-///                    for di > 0
-/// ```
-///
-/// Two properties are load-bearing:
-///
-/// - `di == 0` runs at **full** width and is the overwriting pass. The reference
-///   algorithm initializes the output before subsequent digits accumulate into
-///   it, so reversing the digit order requires a different initialization step.
-///   An implementation that writes each output limb exactly once needs no
-///   zeroing but must still match the arithmetic.
-/// - `product_limbs` is the two-limb elementary product plus the coefficient
-///   accumulation growth. Pass `di` consumes `a`'s limbs at offset
-///   `dsize - di - 1`; the product spill reaches further down according to the
-///   ring and matrix shape. Treating this as a constant is silent at small
-///   shapes but truncates live limbs once the accumulation needs a third or
-///   fourth limb.
-///
-/// Validate with parity against a caller-selected comparison backend as well as the noise bound.
-pub unsafe trait GLWEKeyswitchImpl: Backend {
-    fn glwe_keyswitch_tmp_bytes<R, A, K>(module: &Module<Self>, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
+pub unsafe trait GLWEKeyswitchImpl: Backend + HalVecZnxDftImpl {
+    /// Scratch bound of [`Self::glwe_keyswitch`] and [`Self::glwe_keyswitch_assign`]; may report less than the
+    /// reference, never less than the body takes.
+    fn glwe_keyswitch_tmp_bytes<R, A, B>(module: &Module<Self>, res_infos: &R, a_infos: &A, key_infos: &B) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
-        K: GGLWEInfos;
+        B: GGLWEInfos;
 
+    /// Reproduces [`glwe_keyswitch_reference`](crate::reference::keyswitching::glwe::glwe_keyswitch_reference) bit
+    /// for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
+    /// [`Self::glwe_keyswitch_tmp_bytes`]; free in kernels and scratch use, but a fused digit loop keeps the output
+    /// widths of [`Self::glwe_keyswitch_dft`].
     fn glwe_keyswitch<R, A>(
         module: &Module<Self>,
         res: &mut R,
@@ -168,6 +148,11 @@ pub unsafe trait GLWEKeyswitchImpl: Backend {
         R: GLWEToBackendMut<Self> + GLWEInfos,
         A: GLWEToBackendRef<Self> + GLWEInfos;
 
+    /// Reproduces
+    /// [`glwe_keyswitch_assign_reference`](crate::reference::keyswitching::glwe::glwe_keyswitch_assign_reference) bit
+    /// for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
+    /// [`Self::glwe_keyswitch_tmp_bytes`]; free in kernels and scratch use, but a fused digit loop keeps the output
+    /// widths of [`Self::glwe_keyswitch_dft`].
     fn glwe_keyswitch_assign<R>(
         module: &Module<Self>,
         res: &mut R,
@@ -176,11 +161,43 @@ pub unsafe trait GLWEKeyswitchImpl: Backend {
     ) where
         R: GLWEToBackendMut<Self> + GLWEInfos;
 
+    /// Scratch bound of [`Self::glwe_keyswitch_dft`]; may report less than the reference, never less than the body
+    /// takes.
     fn glwe_keyswitch_dft_tmp_bytes<A, K>(module: &Module<Self>, res_size: usize, a_infos: &A, key_infos: &K) -> usize
     where
         A: GLWEInfos,
         K: GGLWEInfos;
 
+    /// Reproduces
+    /// [`glwe_keyswitch_dft_reference`](crate::reference::keyswitching::glwe::glwe_keyswitch_dft_reference) bit for
+    /// bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
+    /// [`Self::glwe_keyswitch_dft_tmp_bytes`]; free in kernels and scratch use.
+    ///
+    /// An override that fuses the digit loop, rather than forwarding to the reference body, reproduces its output
+    /// widths exactly, because the choice is not noise-visible: an accumulator one limb too narrow still passes the
+    /// keyswitch noise sweep. With `key_size = key.size()` and `res_size = res.size()`, digit `di` of `0..dsize`
+    /// contributes to output limb `c` iff
+    ///
+    /// ```text
+    /// c < min(key_size - di, compute_size(di))
+    /// compute_size(0)  = res_size
+    /// compute_size(di) = min(res_size,
+    ///                        key_size - max(dsize - di - product_limbs, 0))
+    ///                    for di > 0
+    /// ```
+    ///
+    /// Two properties are load-bearing:
+    ///
+    /// - `di == 0` runs at **full** width and is the overwriting pass. The reference initializes the output before
+    ///   later digits accumulate into it, so reversing the digit order needs another initialization step. An
+    ///   implementation that writes each output limb exactly once needs no zeroing but must still match the
+    ///   arithmetic.
+    /// - `product_limbs` is the two-limb elementary product plus the coefficient accumulation growth. Pass `di`
+    ///   consumes `a`'s limbs at offset `dsize - di - 1`; the product spill reaches further down according to the
+    ///   ring and matrix shape. Treating it as a constant is silent at small shapes but truncates live limbs once the
+    ///   accumulation needs a third or fourth limb.
+    ///
+    /// Validate with parity against a caller-selected comparison backend as well as the noise bound.
     fn glwe_keyswitch_dft<A>(
         module: &Module<Self>,
         res: &mut VecZnxDftBackendMut<'_, Self>,
@@ -190,6 +207,8 @@ pub unsafe trait GLWEKeyswitchImpl: Backend {
     ) where
         A: GLWEToBackendRef<Self> + GLWEInfos;
 
+    /// Default body: `glwe_keyswitch_dft_add_tmp_bytes_derived`, a DFT temporary of `res_size` limbs plus
+    /// [`Self::glwe_keyswitch_dft_tmp_bytes`].
     fn glwe_keyswitch_dft_add_tmp_bytes<A, K>(module: &Module<Self>, res_size: usize, a_infos: &A, key_infos: &K) -> usize
     where
         A: GLWEInfos,
@@ -198,6 +217,9 @@ pub unsafe trait GLWEKeyswitchImpl: Backend {
         crate::oep::derived::keyswitching::glwe_keyswitch_dft_add_tmp_bytes_derived(module, res_size, a_infos, key_infos)
     }
 
+    /// Default body: `glwe_keyswitch_dft_add_derived`, [`Self::glwe_keyswitch_dft`] into a temporary, added to `res`
+    /// column by column, within [`Self::glwe_keyswitch_dft_add_tmp_bytes`], under any
+    /// [`PrepareHint`](poulpy_hal::layouts::PrepareHint) of its prepared operands.
     fn glwe_keyswitch_dft_add<A>(
         module: &Module<Self>,
         res: &mut VecZnxDftBackendMut<'_, Self>,
@@ -206,7 +228,6 @@ pub unsafe trait GLWEKeyswitchImpl: Backend {
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         A: GLWEToBackendRef<Self> + GLWEInfos,
-        Module<Self>: VecZnxDftAddAssign<Self>,
     {
         crate::oep::derived::keyswitching::glwe_keyswitch_dft_add_derived(module, res, a, key, scratch)
     }
@@ -215,9 +236,12 @@ pub unsafe trait GLWEKeyswitchImpl: Backend {
 /// Backend-provided GGLWE key-switching operations.
 ///
 /// # Safety
-/// Implementations must preserve ciphertext invariants, use scratch space according to the
-/// advertised temporary-size contract, and uphold aliasing guarantees for backend-owned buffers.
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait GGLWEKeyswitchImpl: Backend + GLWEKeyswitchImpl {
+    /// Default body: `gglwe_keyswitch_tmp_bytes_derived`,
+    /// [`GLWEKeyswitchImpl::glwe_keyswitch_tmp_bytes`](crate::oep::GLWEKeyswitchImpl::glwe_keyswitch_tmp_bytes).
     fn gglwe_keyswitch_tmp_bytes<R, A, K>(module: &Module<Self>, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
         R: GGLWEInfos,
@@ -229,6 +253,10 @@ pub unsafe trait GGLWEKeyswitchImpl: Backend + GLWEKeyswitchImpl {
         )
     }
 
+    /// Default body: `gglwe_keyswitch_derived`,
+    /// [`GLWEKeyswitchImpl::glwe_keyswitch`](crate::oep::GLWEKeyswitchImpl::glwe_keyswitch) on each entry of `a`,
+    /// within [`Self::gglwe_keyswitch_tmp_bytes`], under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint) of its
+    /// prepared operands.
     fn gglwe_keyswitch<R, A>(
         module: &Module<Self>,
         res: &mut R,
@@ -242,6 +270,10 @@ pub unsafe trait GGLWEKeyswitchImpl: Backend + GLWEKeyswitchImpl {
         crate::oep::derived::keyswitching::gglwe_keyswitch_derived::<Self, _, _, _>(module, res, a, key, scratch)
     }
 
+    /// Default body: `gglwe_keyswitch_assign_derived`,
+    /// [`GLWEKeyswitchImpl::glwe_keyswitch_assign`](crate::oep::GLWEKeyswitchImpl::glwe_keyswitch_assign) on each
+    /// entry of `res`, within [`Self::gglwe_keyswitch_tmp_bytes`], under any
+    /// [`PrepareHint`](poulpy_hal::layouts::PrepareHint) of its prepared operands.
     fn gglwe_keyswitch_assign<R>(
         module: &Module<Self>,
         res: &mut R,
@@ -257,9 +289,13 @@ pub unsafe trait GGLWEKeyswitchImpl: Backend + GLWEKeyswitchImpl {
 /// Backend-provided GGSW key-switching operations.
 ///
 /// # Safety
-/// Implementations must correctly interpret prepared key material for the backend, respect all
-/// layout-derived bounds, and avoid invalid aliasing or mutation through scratch-backed views.
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait GGSWKeyswitchImpl: Backend + GLWEKeyswitchImpl + crate::oep::GGSWConversionImpl {
+    /// Default body: `ggsw_keyswitch_tmp_bytes_derived`, the larger of
+    /// [`GLWEKeyswitchImpl::glwe_keyswitch_tmp_bytes`](crate::oep::GLWEKeyswitchImpl::glwe_keyswitch_tmp_bytes) and
+    /// [`GGSWConversionImpl::ggsw_expand_rows_tmp_bytes`](crate::oep::GGSWConversionImpl::ggsw_expand_rows_tmp_bytes).
     fn ggsw_keyswitch_tmp_bytes<R, A, K, T>(
         module: &Module<Self>,
         res_infos: &R,
@@ -278,6 +314,11 @@ pub unsafe trait GGSWKeyswitchImpl: Backend + GLWEKeyswitchImpl + crate::oep::GG
         )
     }
 
+    /// Default body: `ggsw_keyswitch_derived`,
+    /// [`GLWEKeyswitchImpl::glwe_keyswitch`](crate::oep::GLWEKeyswitchImpl::glwe_keyswitch) on the first column of
+    /// each row, then [`GGSWConversionImpl::ggsw_expand_row`](crate::oep::GGSWConversionImpl::ggsw_expand_row),
+    /// within [`Self::ggsw_keyswitch_tmp_bytes`], under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint) of its
+    /// prepared operands.
     fn ggsw_keyswitch<R, A>(
         module: &Module<Self>,
         res: &mut R,
@@ -292,6 +333,12 @@ pub unsafe trait GGSWKeyswitchImpl: Backend + GLWEKeyswitchImpl + crate::oep::GG
         crate::oep::derived::keyswitching::ggsw_keyswitch_derived::<Self, _, _, _>(module, res, a, key, tsk, scratch)
     }
 
+    /// Default body: `ggsw_keyswitch_assign_derived`,
+    /// [`GLWEKeyswitchImpl::glwe_keyswitch_assign`](crate::oep::GLWEKeyswitchImpl::glwe_keyswitch_assign) on the
+    /// first column of each row, then
+    /// [`GGSWConversionImpl::ggsw_expand_row`](crate::oep::GGSWConversionImpl::ggsw_expand_row), within
+    /// [`Self::ggsw_keyswitch_tmp_bytes`], under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint) of its
+    /// prepared operands.
     fn ggsw_keyswitch_assign<R>(
         module: &Module<Self>,
         res: &mut R,
@@ -308,15 +355,20 @@ pub unsafe trait GGSWKeyswitchImpl: Backend + GLWEKeyswitchImpl + crate::oep::GG
 /// Backend-provided LWE key-switching operations.
 ///
 /// # Safety
-/// Implementations must only access the ciphertext and key regions described by the layouts and
-/// must produce results matching the logical key-switch operation for the backend.
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait LWEKeyswitchImpl: Backend {
+    /// Scratch bound of [`Self::lwe_keyswitch`]; may report less than the reference, never less than the body takes.
     fn lwe_keyswitch_tmp_bytes<R, A, K>(module: &Module<Self>, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
         R: LWEInfos,
         A: LWEInfos,
         K: GGLWEInfos;
 
+    /// Reproduces [`lwe_keyswitch_reference`](crate::reference::keyswitching::lwe::lwe_keyswitch_reference) bit for
+    /// bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within [`Self::lwe_keyswitch_tmp_bytes`];
+    /// free in kernels and scratch use.
     fn lwe_keyswitch<R, A>(
         module: &Module<Self>,
         res: &mut R,
@@ -335,16 +387,16 @@ pub unsafe trait LWEKeyswitchImpl: Backend {
 macro_rules! impl_glwe_keyswitch_reference_full {
     ($be:ty) => {
         unsafe impl $crate::oep::GLWEKeyswitchImpl for $be {
-            fn glwe_keyswitch_tmp_bytes<R, A, K>(
+            fn glwe_keyswitch_tmp_bytes<R, A, B>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 res_infos: &R,
                 a_infos: &A,
-                key_infos: &K,
+                key_infos: &B,
             ) -> usize
             where
                 R: $crate::layouts::GLWEInfos,
                 A: $crate::layouts::GLWEInfos,
-                K: $crate::layouts::GGLWEInfos,
+                B: $crate::layouts::GGLWEInfos,
             {
                 $crate::reference::keyswitching::glwe::glwe_keyswitch_tmp_bytes_reference::<$be, _, _, _, _>(
                     module, res_infos, a_infos, key_infos,
@@ -457,8 +509,6 @@ macro_rules! impl_ggsw_keyswitch_derived_full {
         unsafe impl $crate::oep::GGSWKeyswitchImpl for $be {}
     };
 }
-
-// Reference helpers remain available through OEP for source compatibility.
 
 #[cfg(test)]
 mod digit_output_size_tests {

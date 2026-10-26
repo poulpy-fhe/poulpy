@@ -12,9 +12,10 @@ use poulpy_ckks::{
 };
 use poulpy_core::{
     GLWEMaskFill, GLWETensorKeyEncryptSk,
+    api::{GLWESecretSampling, GLWETensorKeyPreparedFactory},
     layouts::{
-        Base2K, Degree, Dsize, GGLWELayout, GLWELayout, GLWESecretSampling, GLWETensorKeyLayout, GLWETensorKeyPreparedFactory,
-        ModuleCoreAlloc, Rank, TorusPrecision, k_digit_of, prepared::GLWETensorKeyPrepared,
+        Base2K, Degree, Dsize, GGLWELayout, GLWELayout, GLWETensorKeyLayout, ModuleCoreAlloc, Rank, TorusPrecision, k_digit_of,
+        prepared::GLWETensorKeyPrepared,
     },
 };
 use poulpy_hal::{
@@ -125,12 +126,12 @@ where
         let mut arena = ScratchOwned::<BE>::alloc(
             module
                 .glwe_tensor_key_encrypt_sk_tmp_bytes(&tsk_layout)
-                .max(module.prepare_tensor_key_tmp_bytes(&tsk_layout)),
+                .max(module.glwe_tensor_key_prepare_tmp_bytes(&tsk_layout)),
         );
         let mut tsk_raw = module.glwe_tensor_key_alloc_from_infos(&tsk_layout);
         module.glwe_tensor_key_encrypt_sk(&mut tsk_raw, &sk_raw, &mut source_xe, &mut source_xa, &mut arena.borrow());
         let mut tsk = module.alloc_tensor_key_prepared_from_infos(&tsk_layout);
-        module.prepare_tensor_key(&mut tsk, &tsk_raw, &mut arena.borrow());
+        module.glwe_tensor_key_prepare(&mut tsk, &tsk_raw, &mut arena.borrow());
         let mut filled = || {
             let mut ct = module.ckks_ciphertext_alloc_from_infos(&layout);
             module.fill_glwe_from_source(&mut ct, &mut source_xu);

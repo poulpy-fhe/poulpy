@@ -45,13 +45,12 @@ where
     where
         A: GGLWEInfos,
     {
-        assert_eq!(
-            infos.k_digit().0,
-            infos.base2k().0,
+        assert!(
+            infos.k_digit().0 == infos.base2k().0,
             "LWESwitchingKey uses one-limb digits: k_digit must equal base2k"
         );
-        assert_eq!(infos.rank_in().0, 1, "rank_in > 1 is not supported for LWESwitchingKey");
-        assert_eq!(infos.rank_out().0, 1, "rank_out > 1 is not supported for LWESwitchingKey");
+        assert!(infos.rank_in().0 == 1, "rank_in > 1 is not supported for LWESwitchingKey");
+        assert!(infos.rank_out().0 == 1, "rank_out > 1 is not supported for LWESwitchingKey");
         let n: usize = operand_degree(self.n(), &[infos.n()]);
 
         let lvl_0: usize = self.glwe_secret_bytes_of(n.into(), Rank(1));
@@ -82,6 +81,7 @@ where
         assert!(sk_lwe_in.n().0 <= res.n().0);
         assert!(sk_lwe_out.n().0 <= res.n().0);
         operand_degree(self.n(), &[res.n()]);
+        crate::layouts::assert_secret_set(&sk_lwe_out.dist);
         assert!(
             scratch.available() >= self.lwe_switching_key_encrypt_sk_tmp_bytes_reference(res),
             "scratch.available(): {} < LWESwitchingKeyEncrypt::lwe_switching_key_encrypt_sk_tmp_bytes: {}",

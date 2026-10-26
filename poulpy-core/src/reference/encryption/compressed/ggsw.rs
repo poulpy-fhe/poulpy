@@ -1,8 +1,9 @@
 #![allow(clippy::too_many_arguments)]
 
 use poulpy_hal::{
-    api::{ModuleN, VecZnxCopy, VecZnxNormalize},
+    api::{ModuleN, VecZnxCopy},
     layouts::{Backend, Module, ScalarZnxToBackendRef, ScratchArena},
+    oep::HalVecZnxImpl,
     source::Source,
 };
 
@@ -38,9 +39,9 @@ pub trait GGSWCompressedEncryptSkReference<BE: Backend> {
         S: GLWESecretPreparedToBackendRef<BE>;
 }
 
-impl<BE: Backend> GGSWCompressedEncryptSkReference<BE> for Module<BE>
+impl<BE: Backend + HalVecZnxImpl> GGSWCompressedEncryptSkReference<BE> for Module<BE>
 where
-    Self: ModuleN + GLWEEncryptSkInternal<BE> + GGSWEncryptSk<BE> + GLWEMaskFill<BE> + VecZnxCopy<BE> + VecZnxNormalize<BE>,
+    Self: ModuleN + GLWEEncryptSkInternal<BE> + GGSWEncryptSk<BE> + GLWEMaskFill<BE> + VecZnxCopy<BE>,
 {
     fn ggsw_compressed_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
@@ -74,8 +75,12 @@ where
             let sk_ref = sk.to_backend_ref();
             let pt_backend = pt.to_backend_ref();
 
-            assert_eq!(res.rank(), sk_ref.rank());
+            assert!(
+                res.rank() == sk_ref.rank(),
+                "the ciphertext rank differs from the secret's rank"
+            );
             operand_degree(self.n(), &[pt_backend.n().into(), res.n(), sk_ref.n()]);
+            crate::layouts::assert_secret_set(&sk_ref.dist);
             assert!(
                 scratch.available() >= self.ggsw_compressed_encrypt_sk_tmp_bytes_reference(res),
                 "scratch.available(): {} < GGSWCompressedEncryptSk::ggsw_compressed_encrypt_sk_tmp_bytes: {}",
@@ -97,7 +102,7 @@ where
                 for row_i in 0..res.dnum().into() {
                     scratch_1 = scratch_1.apply_mut(|scratch| {
                         let mut tmp_pt_backend = tmp_pt.to_backend_mut();
-                        crate::reference::encryption::gadget_row_plaintext(
+                        crate::gadget::gadget_row_plaintext(
                             self,
                             &mut tmp_pt_backend.data,
                             0,

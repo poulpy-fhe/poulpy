@@ -3,9 +3,9 @@
 
 use poulpy_core::{
     DEFAULT_SIGMA_XE, Distribution, GGLWENoise, GetDistributionMut,
+    api::{GLWEPublicKeyPreparedFactory, GLWESecretPreparedFactory, GLWESecretSampling, GLWESecretTensorFactory},
     layouts::{
-        Base2K, Dnum, Dsize, GLWELayout, GLWEPublicKeyPrepared, GLWEPublicKeyPreparedFactory, GLWESecret, GLWESecretLayout,
-        GLWESecretPreparedFactory, GLWESecretSampling, GLWESecretTensor, GLWESecretTensorFactory, GLWETensorKey,
+        Base2K, Dnum, Dsize, GLWELayout, GLWEPublicKeyPrepared, GLWESecret, GLWESecretLayout, GLWESecretTensor, GLWETensorKey,
         GLWETensorKeyLayout, LWEInfos, ModuleCoreAlloc, TorusPrecision, k_digit_of,
     },
 };

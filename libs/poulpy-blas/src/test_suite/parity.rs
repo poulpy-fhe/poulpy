@@ -33,9 +33,9 @@ use poulpy_ckks::{
 };
 use poulpy_core::{
     GLWEAdd, GLWEMaskFill,
+    api::{GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory},
     layouts::{
-        DiagonalArithmetic, GGLWELayout, GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory, GetAutomorphismKey,
-        GetDegree, GetTensorKey, LWEInfos, TorusPrecision,
+        DiagonalArithmetic, GGLWELayout, GetAutomorphismKey, GetDegree, GetTensorKey, LWEInfos, TorusPrecision,
         prepared::{GLWEAutomorphismKeyPreparedBackendRef, GLWETensorKeyPreparedBackendRef},
     },
 };

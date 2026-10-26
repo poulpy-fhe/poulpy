@@ -27,8 +27,9 @@ use poulpy_hal::layouts::{
 };
 
 use crate::layouts::{
-    GGLWE, GGLWEToGGSWKey, GGSW, GLWE, GLWEAutomorphismKey, GLWEPlaintext, GLWESecret, GLWESwitchingKey, GLWETensor,
-    GLWETensorKey, GLWEToLWEKey, LWE, LWEPlaintext, LWESecret,
+    GGLWE, GGLWEToGGSWKey, GGSW, GLWE, GLWEAutomorphismKey, GLWEPlaintext, GLWEPublicKey, GLWESecret, GLWESwitchingKey,
+    GLWETensor, GLWETensorKey, GLWEToLWEKey, LWE, LWEPlaintext, LWESecret,
+    compressed::{GGLWECompressed, GLWECompressed, GLWEPublicKeyCompressed},
 };
 
 /// Moves `Self` into an already-allocated destination.
@@ -45,9 +46,9 @@ where
     D2: Data + CopyFromHost,
     W: ZnxWord,
 {
-    assert_eq!(src.n(), dst.n(), "transfer_into: ring degree");
-    assert_eq!(src.cols(), dst.cols(), "transfer_into: cols");
-    assert_eq!(src.size(), dst.size(), "transfer_into: size");
+    assert!(src.n() == dst.n(), "transfer_into: ring degree");
+    assert!(src.cols() == dst.cols(), "transfer_into: cols");
+    assert!(src.size() == dst.size(), "transfer_into: size");
     transfer_buf_into(src.data(), dst.data_mut());
 }
 
@@ -71,8 +72,8 @@ where
     D2: Data + CopyFromHost,
     W: ZnxWord,
 {
-    assert_eq!(src.n(), dst.n(), "transfer_into: ring degree");
-    assert_eq!(src.cols(), dst.cols(), "transfer_into: cols");
+    assert!(src.n() == dst.n(), "transfer_into: ring degree");
+    assert!(src.cols() == dst.cols(), "transfer_into: cols");
     transfer_buf_into(src.data(), dst.data_mut());
 }
 
@@ -99,8 +100,8 @@ where
     W: ZnxWord,
 {
     fn transfer_into(&self, dst: &mut GLWEPlaintext<D2, W>) {
-        assert_eq!(self.base2k, dst.base2k, "transfer_into: GLWEPlaintext base2k");
-        assert_eq!(self.k, dst.k, "transfer_into: GLWEPlaintext k");
+        assert!(self.base2k == dst.base2k, "transfer_into: GLWEPlaintext base2k");
+        assert!(self.k == dst.k, "transfer_into: GLWEPlaintext k");
         move_vec_znx(&self.data, &mut dst.data);
         dst.plaintext_meta = self.plaintext_meta;
     }
@@ -113,8 +114,8 @@ where
     W: ZnxWord,
 {
     fn transfer_into(&self, dst: &mut LWEPlaintext<D2, W>) {
-        assert_eq!(self.base2k, dst.base2k, "transfer_into: LWEPlaintext base2k");
-        assert_eq!(self.k, dst.k, "transfer_into: LWEPlaintext k");
+        assert!(self.base2k == dst.base2k, "transfer_into: LWEPlaintext base2k");
+        assert!(self.k == dst.k, "transfer_into: LWEPlaintext k");
         move_vec_znx(&self.data, &mut dst.data);
     }
 }
@@ -144,6 +145,7 @@ where
         assert_eq!(self.base2k, dst.base2k, "transfer_into: GGLWE base2k");
         assert_eq!(self.k_aux, dst.k_aux, "transfer_into: GGLWE k_aux");
         assert_eq!(self.k_digit, dst.k_digit, "transfer_into: GGLWE k_digit");
+        assert_eq!(self.k_offset, dst.k_offset, "transfer_into: GGLWE k_offset");
         move_mat_znx(&self.data, &mut dst.data);
         dst.noise = self.noise.clone();
     }
@@ -160,6 +162,78 @@ where
         assert_eq!(self.k_aux, dst.k_aux, "transfer_into: GGSW k_aux");
         assert_eq!(self.k_digit, dst.k_digit, "transfer_into: GGSW k_digit");
         move_mat_znx(&self.data, &mut dst.data);
+        dst.noise = self.noise.clone();
+    }
+}
+
+impl<D1, D2, W> TransferInto<GLWECompressed<D2, W>> for GLWECompressed<D1, W>
+where
+    D1: Data + CopyToHost,
+    D2: Data + CopyFromHost,
+    W: ZnxWord,
+{
+    fn transfer_into(&self, dst: &mut GLWECompressed<D2, W>) {
+        assert_eq!(self.base2k, dst.base2k, "transfer_into: GLWECompressed base2k");
+        assert_eq!(self.k, dst.k, "transfer_into: GLWECompressed k");
+        assert_eq!(self.rank, dst.rank, "transfer_into: GLWECompressed rank");
+        move_vec_znx(&self.data, &mut dst.data);
+        dst.seed = self.seed;
+        dst.noise = self.noise.clone();
+        dst.plaintext_meta = self.plaintext_meta;
+    }
+}
+
+impl<D1, D2, W> TransferInto<GGLWECompressed<D2, W>> for GGLWECompressed<D1, W>
+where
+    D1: Data + CopyToHost,
+    D2: Data + CopyFromHost,
+    W: ZnxWord,
+{
+    fn transfer_into(&self, dst: &mut GGLWECompressed<D2, W>) {
+        assert_eq!(self.base2k, dst.base2k, "transfer_into: GGLWECompressed base2k");
+        assert_eq!(self.k_aux, dst.k_aux, "transfer_into: GGLWECompressed k_aux");
+        assert_eq!(self.k_digit, dst.k_digit, "transfer_into: GGLWECompressed k_digit");
+        assert_eq!(self.k_offset, dst.k_offset, "transfer_into: GGLWECompressed k_offset");
+        assert_eq!(self.rank_out, dst.rank_out, "transfer_into: GGLWECompressed rank_out");
+        assert_eq!(self.seed.len(), dst.seed.len(), "transfer_into: GGLWECompressed seed count");
+        move_mat_znx(&self.data, &mut dst.data);
+        dst.seed.copy_from_slice(&self.seed);
+        dst.noise = self.noise.clone();
+    }
+}
+
+impl<D1, D2, W> TransferInto<GLWEPublicKey<D2, W>> for GLWEPublicKey<D1, W>
+where
+    D1: Data + CopyToHost,
+    D2: Data + CopyFromHost,
+    W: ZnxWord,
+{
+    fn transfer_into(&self, dst: &mut GLWEPublicKey<D2, W>) {
+        assert_eq!(self.base2k, dst.base2k, "transfer_into: GLWEPublicKey base2k");
+        assert_eq!(self.k, dst.k, "transfer_into: GLWEPublicKey k");
+        move_mat_znx(&self.data, &mut dst.data);
+        dst.dist = self.dist;
+        dst.noise = self.noise.clone();
+    }
+}
+
+impl<D1, D2, W> TransferInto<GLWEPublicKeyCompressed<D2, W>> for GLWEPublicKeyCompressed<D1, W>
+where
+    D1: Data + CopyToHost,
+    D2: Data + CopyFromHost,
+    W: ZnxWord,
+{
+    fn transfer_into(&self, dst: &mut GLWEPublicKeyCompressed<D2, W>) {
+        assert_eq!(self.base2k, dst.base2k, "transfer_into: GLWEPublicKeyCompressed base2k");
+        assert_eq!(self.k, dst.k, "transfer_into: GLWEPublicKeyCompressed k");
+        assert_eq!(
+            self.seed.len(),
+            dst.seed.len(),
+            "transfer_into: GLWEPublicKeyCompressed seed count"
+        );
+        move_mat_znx(&self.data, &mut dst.data);
+        dst.seed.copy_from_slice(&self.seed);
+        dst.dist = self.dist;
         dst.noise = self.noise.clone();
     }
 }
@@ -259,6 +333,472 @@ where
         assert_eq!(self.keys.len(), dst.keys.len(), "transfer_into: GGLWEToGGSWKey key count");
         for (src, dst) in self.keys.iter().zip(&mut dst.keys) {
             src.transfer_into(dst);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use poulpy_hal::layouts::{Backend, DataView, DataViewMut, Module};
+
+    use super::TransferInto;
+    use crate::{
+        ComponentNoise, Distribution, FreshNoiseEstimate,
+        layouts::{
+            Base2K, Dnum, GGLWE, GGLWELayout, GLWE, GLWEPlaintextMeta, ModuleCoreAlloc, ModuleCoreCompressedAlloc, Rank, Scale,
+            TorusPrecision,
+        },
+        test_backend::{DstBackend, SrcBackend},
+        test_suite::refusal::assert_refusal,
+    };
+
+    fn fill_bytes(buf: &mut [u8]) {
+        for (i, byte) in buf.iter_mut().enumerate() {
+            *byte = (i as u8).wrapping_mul(17).wrapping_add(3);
+        }
+    }
+
+    #[test]
+    fn module_transfer_glwe_roundtrip() {
+        let src_module: Module<SrcBackend> = Module::new(64);
+        let dst_module: Module<DstBackend> = Module::new(64);
+        let mut src: GLWE<<SrcBackend as Backend>::OwnedBuf, <SrcBackend as Backend>::ZnxWord> =
+            src_module.glwe_alloc(Base2K(12), TorusPrecision(33), Rank(2));
+        fill_bytes(src.data.data_mut());
+        src.noise = Some(
+            ComponentNoise::from_secret_at(Distribution::TernaryProb(0.3), TorusPrecision(33), 2).with_components(
+                [1250.0, 3.0, 7.0]
+                    .map(|variance| FreshNoiseEstimate::new(variance, TorusPrecision(47)))
+                    .to_vec(),
+            ),
+        );
+
+        let mut uploaded = dst_module.glwe_alloc_from_infos(&src);
+        src.transfer_into(&mut uploaded);
+        let mut downloaded = src_module.glwe_alloc_from_infos(&src);
+        uploaded.transfer_into(&mut downloaded);
+
+        assert_eq!(downloaded, src);
+    }
+
+    #[test]
+    fn module_transfer_gglwe_roundtrip() {
+        let src_module: Module<SrcBackend> = Module::new(64);
+        let dst_module: Module<DstBackend> = Module::new(64);
+        let mut src: GGLWE<<SrcBackend as Backend>::OwnedBuf, <SrcBackend as Backend>::ZnxWord> = src_module
+            .gglwe_alloc_from_infos(&GGLWELayout {
+                n: 64usize.into(),
+                base2k: Base2K(12),
+                dnum: Dnum(3),
+                k_digit: TorusPrecision(12),
+                k_aux: TorusPrecision(12 + 6),
+                k_offset: TorusPrecision(5),
+                rank_in: Rank(1),
+                rank_out: Rank(2),
+                stride: 1,
+            });
+        fill_bytes(src.data.data_mut());
+        src.noise = Some(
+            ComponentNoise::from_secret_at(Distribution::BinaryFixed(11), TorusPrecision(54), 2).with_components(
+                [2300.0, 5.0, 9.0]
+                    .map(|variance| FreshNoiseEstimate::new(variance, TorusPrecision(61)))
+                    .to_vec(),
+            ),
+        );
+
+        let mut uploaded = dst_module.gglwe_alloc_from_infos(&src);
+        src.transfer_into(&mut uploaded);
+        let mut downloaded = src_module.gglwe_alloc_from_infos(&src);
+        uploaded.transfer_into(&mut downloaded);
+
+        assert_eq!(downloaded, src);
+    }
+
+    /// Noise metadata distinct per `seed`, so a receiver's stale estimate differs from the source's.
+    fn noise(seed: f64, rank: usize) -> Option<ComponentNoise> {
+        Some(
+            ComponentNoise::from_secret_at(Distribution::TernaryProb(0.3), TorusPrecision(33), rank).with_components(
+                (0..=rank)
+                    .map(|i| FreshNoiseEstimate::new(seed + i as f64, TorusPrecision(47)))
+                    .collect(),
+            ),
+        )
+    }
+
+    fn other_bytes(buf: &mut [u8]) {
+        buf.iter_mut()
+            .enumerate()
+            .for_each(|(i, x)| *x = (i as u8).wrapping_mul(29).wrapping_add(11));
+    }
+
+    #[test]
+    fn module_transfer_glwe_compressed_roundtrip() {
+        let src_module: Module<SrcBackend> = Module::new(64);
+        let dst_module: Module<DstBackend> = Module::new(64);
+        let mut src = src_module.glwe_compressed_alloc(Base2K(12), TorusPrecision(33), Rank(2));
+        fill_bytes(src.data.data_mut());
+        src.seed = [7; 32];
+        src.noise = noise(1250.0, 2);
+        src.plaintext_meta = Some(GLWEPlaintextMeta {
+            scale: Scale::Log(17),
+            ..Default::default()
+        });
+
+        let mut uploaded = dst_module.glwe_compressed_alloc_from_infos(&src);
+        other_bytes(uploaded.data.data_mut());
+        uploaded.seed = [9; 32];
+        uploaded.noise = noise(3.0, 2);
+        src.transfer_into(&mut uploaded);
+        let mut downloaded = src_module.glwe_compressed_alloc_from_infos(&src);
+        other_bytes(downloaded.data.data_mut());
+        downloaded.seed = [9; 32];
+        downloaded.noise = noise(3.0, 2);
+        uploaded.transfer_into(&mut downloaded);
+
+        assert_eq!(downloaded, src);
+    }
+
+    #[test]
+    fn module_transfer_gglwe_compressed_roundtrip() {
+        let src_module: Module<SrcBackend> = Module::new(64);
+        let dst_module: Module<DstBackend> = Module::new(64);
+        let layout = GGLWELayout {
+            n: 64usize.into(),
+            base2k: Base2K(12),
+            dnum: Dnum(3),
+            k_digit: TorusPrecision(12),
+            k_aux: TorusPrecision(18),
+            k_offset: TorusPrecision(5),
+            rank_in: Rank(1),
+            rank_out: Rank(2),
+            stride: 1,
+        };
+        let mut src = src_module.gglwe_compressed_alloc_from_infos(&layout);
+        fill_bytes(src.data.data_mut());
+        src.seed
+            .iter_mut()
+            .enumerate()
+            .for_each(|(i, seed)| *seed = [i as u8 + 1; 32]);
+        src.noise = noise(2300.0, 2);
+
+        let mut uploaded = dst_module.gglwe_compressed_alloc_from_infos(&src);
+        other_bytes(uploaded.data.data_mut());
+        uploaded.seed.fill([9; 32]);
+        uploaded.noise = noise(5.0, 2);
+        src.transfer_into(&mut uploaded);
+        let mut downloaded = src_module.gglwe_compressed_alloc_from_infos(&src);
+        other_bytes(downloaded.data.data_mut());
+        downloaded.seed.fill([9; 32]);
+        downloaded.noise = noise(5.0, 2);
+        uploaded.transfer_into(&mut downloaded);
+
+        assert_eq!(downloaded, src);
+    }
+
+    #[test]
+    fn module_transfer_glwe_public_key_roundtrip() {
+        let src_module: Module<SrcBackend> = Module::new(64);
+        let dst_module: Module<DstBackend> = Module::new(64);
+        let mut src = src_module.glwe_public_key_alloc(Base2K(12), TorusPrecision(33), Rank(2));
+        fill_bytes(src.data.data_mut());
+        src.dist = Distribution::TernaryProb(0.3);
+        src.noise = noise(1250.0, 2);
+
+        let mut uploaded = dst_module.glwe_public_key_alloc_from_infos(&src);
+        other_bytes(uploaded.data.data_mut());
+        uploaded.dist = Distribution::BinaryProb(0.5);
+        uploaded.noise = noise(3.0, 2);
+        src.transfer_into(&mut uploaded);
+        let mut downloaded = src_module.glwe_public_key_alloc_from_infos(&src);
+        other_bytes(downloaded.data.data_mut());
+        downloaded.dist = Distribution::BinaryProb(0.5);
+        downloaded.noise = noise(3.0, 2);
+        uploaded.transfer_into(&mut downloaded);
+
+        assert_eq!(downloaded, src);
+    }
+
+    #[test]
+    fn module_transfer_glwe_public_key_compressed_roundtrip() {
+        let src_module: Module<SrcBackend> = Module::new(64);
+        let dst_module: Module<DstBackend> = Module::new(64);
+        let mut src = src_module.glwe_public_key_compressed_alloc(Base2K(12), TorusPrecision(33), Rank(2));
+        fill_bytes(src.data.data_mut());
+        src.seed
+            .iter_mut()
+            .enumerate()
+            .for_each(|(i, seed)| *seed = [i as u8 + 1; 32]);
+        src.dist = Distribution::TernaryProb(0.3);
+        src.noise = noise(1250.0, 2);
+
+        let mut uploaded = dst_module.glwe_public_key_compressed_alloc_from_infos(&src);
+        other_bytes(uploaded.data.data_mut());
+        uploaded.seed.fill([9; 32]);
+        uploaded.dist = Distribution::BinaryProb(0.5);
+        uploaded.noise = noise(3.0, 2);
+        src.transfer_into(&mut uploaded);
+        let mut downloaded = src_module.glwe_public_key_compressed_alloc_from_infos(&src);
+        other_bytes(downloaded.data.data_mut());
+        downloaded.seed.fill([9; 32]);
+        downloaded.dist = Distribution::BinaryProb(0.5);
+        downloaded.noise = noise(3.0, 2);
+        uploaded.transfer_into(&mut downloaded);
+
+        assert_eq!(downloaded, src);
+    }
+
+    /// Moves `src` into `dst` and asserts the move is refused with `message` and `snapshot(dst)` is as it was.
+    fn assert_transfer_refused<S, D, V>(src: &S, dst: &mut D, message: &str, snapshot: impl Fn(&D) -> V)
+    where
+        S: TransferInto<D>,
+        V: PartialEq,
+    {
+        assert_refusal(message, dst, snapshot, |dst| src.transfer_into(dst));
+    }
+
+    /// A layout move checks the whole shape, not just the byte count.
+    #[test]
+    fn test_transfer_into_rejects_shape_mismatch() {
+        let src_module: Module<SrcBackend> = Module::new(64);
+        let dst_module: Module<DstBackend> = Module::new(64);
+        let src = src_module.glwe_alloc(Base2K(12), TorusPrecision(24), Rank(1));
+        let mut dst = dst_module.glwe_alloc(Base2K(12), TorusPrecision(36), Rank(1));
+        fill_bytes(dst.data.data_mut());
+        assert_transfer_refused(
+            &src,
+            &mut dst,
+            "assertion `left == right` failed: transfer_into: GLWE k\n  left: TorusPrecision(24)\n right: TorusPrecision(36)",
+            |dst| dst.clone(),
+        );
+    }
+
+    /// The compressed GLWE body has one column whatever the rank, so the move checks the rank itself.
+    #[test]
+    fn test_transfer_into_rejects_glwe_compressed_rank_mismatch() {
+        let src_module: Module<SrcBackend> = Module::new(64);
+        let dst_module: Module<DstBackend> = Module::new(64);
+        let src = src_module.glwe_compressed_alloc(Base2K(12), TorusPrecision(24), Rank(1));
+        let mut dst = dst_module.glwe_compressed_alloc(Base2K(12), TorusPrecision(24), Rank(2));
+        fill_bytes(dst.data.data_mut());
+        assert_transfer_refused(
+            &src,
+            &mut dst,
+            "assertion `left == right` failed: transfer_into: GLWECompressed rank\n  left: Rank(1)\n right: Rank(2)",
+            |dst| dst.clone(),
+        );
+    }
+
+    /// A row offset that leaves the limb count unchanged still differs.
+    #[test]
+    fn test_transfer_into_rejects_gglwe_compressed_offset_mismatch() {
+        let src_module: Module<SrcBackend> = Module::new(64);
+        let dst_module: Module<DstBackend> = Module::new(64);
+        let layout = GGLWELayout {
+            n: 64usize.into(),
+            base2k: Base2K(12),
+            dnum: Dnum(2),
+            k_digit: TorusPrecision(12),
+            k_aux: TorusPrecision(18),
+            k_offset: TorusPrecision(0),
+            rank_in: Rank(1),
+            rank_out: Rank(1),
+            stride: 1,
+        };
+        let src = src_module.gglwe_compressed_alloc_from_infos(&layout);
+        let mut dst = dst_module.gglwe_compressed_alloc_from_infos(&GGLWELayout {
+            k_offset: TorusPrecision(1),
+            ..layout
+        });
+        fill_bytes(dst.data.data_mut());
+        assert_eq!(src.data.size(), dst.data.size());
+        assert_transfer_refused(
+            &src,
+            &mut dst,
+            "assertion `left == right` failed: transfer_into: GGLWECompressed k_offset\n  left: TorusPrecision(0)\n right: TorusPrecision(1)",
+            |dst| dst.clone(),
+        );
+    }
+
+    /// A row offset that leaves the limb count unchanged still differs.
+    #[test]
+    fn test_transfer_into_rejects_gglwe_offset_mismatch() {
+        let src_module: Module<SrcBackend> = Module::new(64);
+        let dst_module: Module<DstBackend> = Module::new(64);
+        let layout = GGLWELayout {
+            n: 64usize.into(),
+            base2k: Base2K(12),
+            dnum: Dnum(2),
+            k_digit: TorusPrecision(12),
+            k_aux: TorusPrecision(18),
+            k_offset: TorusPrecision(0),
+            rank_in: Rank(1),
+            rank_out: Rank(1),
+            stride: 1,
+        };
+        let src = src_module.gglwe_alloc_from_infos(&layout);
+        let mut dst = dst_module.gglwe_alloc_from_infos(&GGLWELayout {
+            k_offset: TorusPrecision(1),
+            ..layout
+        });
+        fill_bytes(dst.data.data_mut());
+        assert_eq!(src.data.size(), dst.data.size());
+        assert_transfer_refused(
+            &src,
+            &mut dst,
+            "assertion `left == right` failed: transfer_into: GGLWE k_offset\n  left: TorusPrecision(0)\n right: TorusPrecision(1)",
+            |dst| dst.clone(),
+        );
+    }
+
+    #[test]
+    fn test_transfer_into_rejects_glwe_public_key_precision_mismatch() {
+        let src_module: Module<SrcBackend> = Module::new(64);
+        let dst_module: Module<DstBackend> = Module::new(64);
+        let src = src_module.glwe_public_key_alloc(Base2K(12), TorusPrecision(24), Rank(1));
+        let mut dst = dst_module.glwe_public_key_alloc(Base2K(12), TorusPrecision(23), Rank(1));
+        fill_bytes(dst.data.data_mut());
+        assert_transfer_refused(
+            &src,
+            &mut dst,
+            "assertion `left == right` failed: transfer_into: GLWEPublicKey k\n  left: TorusPrecision(24)\n right: TorusPrecision(23)",
+            |dst| (dst.data.data().clone(), dst.noise.clone(), dst.dist),
+        );
+    }
+
+    #[test]
+    fn test_transfer_into_rejects_glwe_public_key_compressed_precision_mismatch() {
+        let src_module: Module<SrcBackend> = Module::new(64);
+        let dst_module: Module<DstBackend> = Module::new(64);
+        let src = src_module.glwe_public_key_compressed_alloc(Base2K(12), TorusPrecision(24), Rank(1));
+        let mut dst = dst_module.glwe_public_key_compressed_alloc(Base2K(12), TorusPrecision(23), Rank(1));
+        fill_bytes(dst.data.data_mut());
+        assert_transfer_refused(
+            &src,
+            &mut dst,
+            "assertion `left == right` failed: transfer_into: GLWEPublicKeyCompressed k\n  left: TorusPrecision(24)\n right: TorusPrecision(23)",
+            |dst| (dst.data.data().clone(), dst.seed.clone(), dst.noise.clone(), dst.dist),
+        );
+    }
+
+    /// Every layout parameter of a compressed GLWE is checked before the move.
+    #[test]
+    fn test_transfer_into_rejects_glwe_compressed_layout_mismatch() {
+        let src_module: Module<SrcBackend> = Module::new(64);
+        let dst_module: Module<DstBackend> = Module::new(64);
+        let src = src_module.glwe_compressed_alloc(Base2K(12), TorusPrecision(24), Rank(1));
+        for (base2k, k, message) in [
+            (
+                8,
+                24,
+                "assertion `left == right` failed: transfer_into: GLWECompressed base2k\n  left: Base2K(12)\n right: Base2K(8)",
+            ),
+            (
+                12,
+                23,
+                "assertion `left == right` failed: transfer_into: GLWECompressed k\n  left: TorusPrecision(24)\n right: TorusPrecision(23)",
+            ),
+        ] {
+            let mut dst = dst_module.glwe_compressed_alloc(Base2K(base2k), TorusPrecision(k), Rank(1));
+            fill_bytes(dst.data.data_mut());
+            assert_transfer_refused(&src, &mut dst, message, |dst| dst.clone());
+        }
+    }
+
+    /// Every layout parameter and the seed count of a compressed GGLWE are checked before the move.
+    #[test]
+    fn test_transfer_into_rejects_gglwe_compressed_layout_mismatch() {
+        let src_module: Module<SrcBackend> = Module::new(64);
+        let dst_module: Module<DstBackend> = Module::new(64);
+        let layout = GGLWELayout {
+            n: 64usize.into(),
+            base2k: Base2K(12),
+            dnum: Dnum(2),
+            k_digit: TorusPrecision(12),
+            k_aux: TorusPrecision(18),
+            k_offset: TorusPrecision(0),
+            rank_in: Rank(1),
+            rank_out: Rank(1),
+            stride: 1,
+        };
+        let src = src_module.gglwe_compressed_alloc_from_infos(&layout);
+        for (dst_layout, message) in [
+            (
+                GGLWELayout {
+                    base2k: Base2K(8),
+                    ..layout
+                },
+                "assertion `left == right` failed: transfer_into: GGLWECompressed base2k\n  left: Base2K(12)\n right: Base2K(8)",
+            ),
+            (
+                GGLWELayout {
+                    k_aux: TorusPrecision(19),
+                    ..layout
+                },
+                "assertion `left == right` failed: transfer_into: GGLWECompressed k_aux\n  left: TorusPrecision(18)\n right: TorusPrecision(19)",
+            ),
+            (
+                GGLWELayout {
+                    k_digit: TorusPrecision(11),
+                    ..layout
+                },
+                "assertion `left == right` failed: transfer_into: GGLWECompressed k_digit\n  left: TorusPrecision(12)\n right: TorusPrecision(11)",
+            ),
+            (
+                GGLWELayout {
+                    rank_out: Rank(2),
+                    ..layout
+                },
+                "assertion `left == right` failed: transfer_into: GGLWECompressed rank_out\n  left: Rank(1)\n right: Rank(2)",
+            ),
+            (
+                GGLWELayout { dnum: Dnum(3), ..layout },
+                "assertion `left == right` failed: transfer_into: GGLWECompressed seed count\n  left: 2\n right: 3",
+            ),
+        ] {
+            let mut dst = dst_module.gglwe_compressed_alloc_from_infos(&dst_layout);
+            fill_bytes(dst.data.data_mut());
+            assert_transfer_refused(&src, &mut dst, message, |dst| dst.clone());
+        }
+    }
+
+    #[test]
+    fn test_transfer_into_rejects_glwe_public_key_radix_mismatch() {
+        let src_module: Module<SrcBackend> = Module::new(64);
+        let dst_module: Module<DstBackend> = Module::new(64);
+        let src = src_module.glwe_public_key_alloc(Base2K(12), TorusPrecision(24), Rank(1));
+        let mut dst = dst_module.glwe_public_key_alloc(Base2K(8), TorusPrecision(24), Rank(1));
+        fill_bytes(dst.data.data_mut());
+        assert_transfer_refused(
+            &src,
+            &mut dst,
+            "assertion `left == right` failed: transfer_into: GLWEPublicKey base2k\n  left: Base2K(12)\n right: Base2K(8)",
+            |dst| (dst.data.data().clone(), dst.noise.clone(), dst.dist),
+        );
+    }
+
+    /// The radix and the seed count of a compressed public key are checked before the move.
+    #[test]
+    fn test_transfer_into_rejects_glwe_public_key_compressed_layout_mismatch() {
+        let src_module: Module<SrcBackend> = Module::new(64);
+        let dst_module: Module<DstBackend> = Module::new(64);
+        let src = src_module.glwe_public_key_compressed_alloc(Base2K(12), TorusPrecision(24), Rank(1));
+        for (base2k, rank, message) in [
+            (
+                8,
+                1,
+                "assertion `left == right` failed: transfer_into: GLWEPublicKeyCompressed base2k\n  left: Base2K(12)\n right: Base2K(8)",
+            ),
+            (
+                12,
+                2,
+                "assertion `left == right` failed: transfer_into: GLWEPublicKeyCompressed seed count\n  left: 1\n right: 2",
+            ),
+        ] {
+            let mut dst = dst_module.glwe_public_key_compressed_alloc(Base2K(base2k), TorusPrecision(24), Rank(rank));
+            fill_bytes(dst.data.data_mut());
+            assert_transfer_refused(&src, &mut dst, message, |dst| {
+                (dst.data.data().clone(), dst.seed.clone(), dst.noise.clone(), dst.dist)
+            });
         }
     }
 }

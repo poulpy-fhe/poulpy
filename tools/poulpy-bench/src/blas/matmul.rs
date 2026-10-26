@@ -34,10 +34,10 @@ use poulpy_ckks::{
 };
 use poulpy_core::{
     GLWEAutomorphismKeyEncryptSk, GLWETensorKeyEncryptSk,
+    api::{GLWEAutomorphismKeyPreparedFactory, GLWESecretPreparedFactory, GLWESecretSampling, GLWETensorKeyPreparedFactory},
     layouts::{
-        BackendGLWESecret, Base2K, Degree, Dnum, Dsize, GGLWELayout, GLWEAutomorphismKeyLayout,
-        GLWEAutomorphismKeyPreparedFactory, GLWELayout, GLWESecretPreparedFactory, GLWESecretSampling, GLWETensorKeyLayout,
-        GLWETensorKeyPreparedFactory, ModuleCoreAlloc, Rank, TorusPrecision, k_digit_of,
+        BackendGLWESecret, Base2K, Degree, Dnum, Dsize, GGLWELayout, GLWEAutomorphismKeyLayout, GLWELayout, GLWETensorKeyLayout,
+        ModuleCoreAlloc, Rank, TorusPrecision, k_digit_of,
         prepared::{GLWEAutomorphismKeyPrepared, GLWESecretPrepared, GLWETensorKeyPrepared},
     },
 };
@@ -284,7 +284,8 @@ where
         self.module
             .glwe_tensor_key_encrypt_sk(&mut tsk, &self.sk_raw, &mut self.xe, &mut self.xa, &mut self.arena.borrow());
         let mut prepared = self.module.alloc_tensor_key_prepared_from_infos(&layout);
-        self.module.prepare_tensor_key(&mut prepared, &tsk, &mut self.arena.borrow());
+        self.module
+            .glwe_tensor_key_prepare(&mut prepared, &tsk, &mut self.arena.borrow());
         prepared
     }
 

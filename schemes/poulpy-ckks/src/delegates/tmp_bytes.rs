@@ -8,7 +8,8 @@ use crate::{
 use poulpy_core::{
     GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWELinearTransformations, GLWEMulConst, GLWEMulPlain, GLWEShift,
     GLWETensorKeyEncryptSk, GLWETensoring,
-    layouts::{GGLWEInfos, GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory, LinearTransformationPlan},
+    api::{GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory},
+    layouts::{GGLWEInfos, LinearTransformationPlan},
 };
 use poulpy_hal::{
     api::{CnvPVecBytesOf, ModuleN, VecZnxLsh, VecZnxLshTmpBytes, VecZnxRsh, VecZnxRshAdd, VecZnxRshSub, VecZnxRshTmpBytes},
@@ -90,7 +91,7 @@ where
             )
             .max(self.ckks_mul_pt_vec_tmp_bytes(ct_infos, ct_infos, pt_prec))
             .max(self.ckks_mul_pt_const_tmp_bytes(ct_infos, ct_infos, pt_prec))
-            .max(self.prepare_tensor_key_tmp_bytes(tsk_infos))
+            .max(self.glwe_tensor_key_prepare_tmp_bytes(tsk_infos))
             .max(self.glwe_tensor_key_encrypt_sk_tmp_bytes(tsk_infos))
     }
 

@@ -1,6 +1,7 @@
 use poulpy_hal::{
-    api::{ModuleN, VecZnxDftBytesOf, VecZnxNormalize, VecZnxNormalizeTmpBytes},
+    api::{ModuleN, VecZnxDftBytesOf, VecZnxNormalizeTmpBytes},
     layouts::{Backend, Module, ScalarZnxToBackendRef, ScratchArena, ZnxInfos},
+    oep::HalVecZnxImpl,
     source::Source,
 };
 
@@ -37,15 +38,9 @@ pub trait GGSWEncryptSkReference<BE: Backend> {
         S: GLWESecretPreparedToBackendRef<BE> + LWEInfos + GLWEInfos;
 }
 
-impl<BE: Backend> GGSWEncryptSkReference<BE> for Module<BE>
+impl<BE: Backend + HalVecZnxImpl> GGSWEncryptSkReference<BE> for Module<BE>
 where
-    Self: ModuleN
-        + GLWEEncryptSkInternal<BE>
-        + GLWEEncryptSk<BE>
-        + GLWEMaskFill<BE>
-        + VecZnxDftBytesOf
-        + VecZnxNormalize<BE>
-        + VecZnxNormalizeTmpBytes,
+    Self: ModuleN + GLWEEncryptSkInternal<BE> + GLWEEncryptSk<BE> + GLWEMaskFill<BE> + VecZnxDftBytesOf + VecZnxNormalizeTmpBytes,
 {
     fn ggsw_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
@@ -73,8 +68,9 @@ where
     {
         let metadata = crate::component_noise::fresh_sk_noise(sk.to_backend_ref().dist, &res.to_backend_ref());
         {
-            assert_eq!(res.rank(), sk.rank());
+            assert!(res.rank() == sk.rank(), "the ciphertext rank differs from the secret's rank");
             operand_degree(self.n(), &[res.n(), pt.n().into(), sk.n()]);
+            crate::layouts::assert_secret_set(&sk.to_backend_ref().dist);
             assert!(
                 scratch.available() >= self.ggsw_encrypt_sk_tmp_bytes_reference(res),
                 "scratch.available(): {} < GGSWEncryptSk::ggsw_encrypt_sk_tmp_bytes: {}",
@@ -89,7 +85,7 @@ where
             let tmp_pt_k = tmp_pt.k().as_usize();
 
             for row_i in 0..res.dnum().into() {
-                super::gadget_row_plaintext(
+                crate::gadget::gadget_row_plaintext(
                     self,
                     &mut tmp_pt.data,
                     0,

@@ -2,11 +2,11 @@ use poulpy_core::{
     GGSWEncryptSk, GLWEAdd, GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWEDecrypt, GLWEEncryptPk, GLWEEncryptSk,
     GLWEExternalProduct, GLWEKeyswitch, GLWEMaskFill, GLWEMulPlain, GLWENormalize, GLWEPublicKeyGenerate, GLWESub,
     GLWESwitchingKeyEncryptSk, GLWETensoring,
-    layouts::{
-        GGSWPreparedFactory, GLWEAutomorphismKeyPreparedFactory, GLWEPublicKeyPreparedFactory, GLWESecretPreparedFactory,
-        GLWESecretSampling, GLWESwitchingKeyPreparedFactory, GLWETensorKeyPreparedFactory, ModuleCoreAlloc,
-        prepared::GGLWEPreparedFactory,
+    api::{
+        GGLWEPreparedFactory, GGSWPreparedFactory, GLWEAutomorphismKeyPreparedFactory, GLWEPublicKeyPreparedFactory,
+        GLWESecretPreparedFactory, GLWESecretSampling, GLWESwitchingKeyPreparedFactory, GLWETensorKeyPreparedFactory,
     },
+    layouts::ModuleCoreAlloc,
 };
 use poulpy_hal::{
     api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},

@@ -1,10 +1,8 @@
 use poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef;
 use poulpy_core::{
     GLWEKeyswitch, GLWEMaskFill,
-    layouts::{
-        Base2K, Degree, Dnum, GGLWELayout, GLWELayout, ModuleCoreAlloc, Rank, TorusPrecision, k_digit_of,
-        prepared::GGLWEPreparedFactory,
-    },
+    api::GGLWEPreparedFactory,
+    layouts::{Base2K, Degree, Dnum, GGLWELayout, GLWELayout, ModuleCoreAlloc, Rank, TorusPrecision, k_digit_of},
     test_suite::keys::fill_by_digit,
 };
 use poulpy_hal::{

@@ -10,12 +10,14 @@
 use std::collections::HashMap;
 
 use anyhow::{Context, Result, ensure};
-use poulpy_core::layouts::{
-    GGLWEInfos, GGLWEPreparedToBackendRef, GGLWEToBackendRef, GLWEAutomorphismKey, GLWEAutomorphismKeyPrepared,
-    GLWEAutomorphismKeyPreparedFactory, GLWESwitchingKey, GLWESwitchingKeyDegrees, GLWESwitchingKeyPrepared,
-    GLWESwitchingKeyPreparedFactory, GLWETensorKey, GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory,
-    GLWETensorKeyPreparedToBackendRef, GLWEToBackendRef, GetAutomorphismKey, GetGaloisElement, GetTensorKey, LWEInfos,
-    ModuleCoreAlloc, prepared::GLWEAutomorphismKeyPreparedToBackendRef,
+use poulpy_core::{
+    api::{GLWEAutomorphismKeyPreparedFactory, GLWESwitchingKeyPreparedFactory, GLWETensorKeyPreparedFactory},
+    layouts::{
+        GGLWEInfos, GGLWEPreparedToBackendRef, GGLWEToBackendRef, GLWEAutomorphismKey, GLWEAutomorphismKeyPrepared,
+        GLWESwitchingKey, GLWESwitchingKeyDegrees, GLWESwitchingKeyPrepared, GLWETensorKey, GLWETensorKeyPrepared,
+        GLWETensorKeyPreparedToBackendRef, GLWEToBackendRef, GetAutomorphismKey, GetGaloisElement, GetTensorKey, LWEInfos,
+        ModuleCoreAlloc, prepared::GLWEAutomorphismKeyPreparedToBackendRef,
+    },
 };
 use poulpy_hal::layouts::{Backend, Data, HostDataRef, Module, ScratchArena, Standard, ZnxWord};
 
@@ -370,7 +372,7 @@ where
         + GLWETensorKeyPreparedFactory<BE>
         + GLWESwitchingKeyPreparedFactory<BE>,
 {
-    let mut required_scratch = module.prepare_tensor_key_tmp_bytes(tensor_key);
+    let mut required_scratch = module.glwe_tensor_key_prepare_tmp_bytes(tensor_key);
     for key in rotation_keys.values() {
         required_scratch = required_scratch.max(module.glwe_automorphism_key_prepare_tmp_bytes(key));
     }
@@ -392,7 +394,7 @@ where
 
     let prepared_tensor = {
         let mut prepared = module.alloc_tensor_key_prepared_from_infos(tensor_key);
-        module.prepare_tensor_key(&mut prepared, tensor_key, scratch);
+        module.glwe_tensor_key_prepare(&mut prepared, tensor_key, scratch);
         prepared
     };
 

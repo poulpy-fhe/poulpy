@@ -25,11 +25,11 @@ use poulpy_hal::{
 
 use crate::{
     GLWEAutomorphism, GLWEMaskFill, GLWETensoring, GLWETrace,
+    api::{GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory},
     error::{CoreError, Result},
     layouts::{
-        Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGLWELayout, GLWE, GLWEAutomorphismKeyLayout,
-        GLWEAutomorphismKeyPreparedFactory, GLWEInfos, GLWELayout, GLWETensorKeyLayout, GLWETensorKeyPreparedFactory,
-        GetAutomorphismKey, GetTensorKey, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
+        Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGLWELayout, GLWE, GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout,
+        GLWETensorKeyLayout, GetAutomorphismKey, GetTensorKey, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
         prepared::{
             GGLWEPrepared, GGLWEPreparedToBackendRef, GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedBackendRef,
             GLWETensorKeyPrepared, GLWETensorKeyPreparedBackendRef,
@@ -308,7 +308,7 @@ where
             &key_twin,
             &mut poisoned_scratch::<BE>(module.glwe_automorphism_key_prepare_tmp_bytes(&twin)).borrow(),
         );
-        trace_bytes = trace_bytes.max(module.glwe_trace_tmp_bytes(&twin, &twin, &key_prep.with_k_digit(effective).unwrap()));
+        trace_bytes = trace_bytes.max(module.glwe_trace_assign_tmp_bytes(&twin, &key_prep.with_k_digit(effective).unwrap()));
 
         keys.insert(*gal_el, key_prep);
         twins.insert(*gal_el, twin_prep);
@@ -375,15 +375,15 @@ where
 
         let mut tsk_prep: GLWETensorKeyPrepared<BE::OwnedBuf, BE> = module.alloc_tensor_key_prepared_from_infos(&stored);
         let mut twin_prep: GLWETensorKeyPrepared<BE::OwnedBuf, BE> = module.alloc_tensor_key_prepared_from_infos(&twin);
-        module.prepare_tensor_key(
+        module.glwe_tensor_key_prepare(
             &mut tsk_prep,
             &tsk,
-            &mut poisoned_scratch::<BE>(module.prepare_tensor_key_tmp_bytes(&stored)).borrow(),
+            &mut poisoned_scratch::<BE>(module.glwe_tensor_key_prepare_tmp_bytes(&stored)).borrow(),
         );
-        module.prepare_tensor_key(
+        module.glwe_tensor_key_prepare(
             &mut twin_prep,
             &tsk_twin,
-            &mut poisoned_scratch::<BE>(module.prepare_tensor_key_tmp_bytes(&twin)).borrow(),
+            &mut poisoned_scratch::<BE>(module.glwe_tensor_key_prepare_tmp_bytes(&twin)).borrow(),
         );
 
         let ct_infos = GLWELayout {

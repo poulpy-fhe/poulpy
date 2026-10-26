@@ -36,11 +36,14 @@ use num_traits::{Float, FromPrimitive, ToPrimitive};
 use poulpy_core::{
     GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWECIKeyEncryptSk, GLWEDecrypt, GLWEKeyswitch, GLWEMaskFill, GLWENormalize,
     GLWESub, GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk, ScratchArenaTakeCore, TransferInto,
+    api::{
+        GLWEAutomorphismKeyPreparedFactory, GLWECIKeyPreparedFactory, GLWESecretPreparedFactory, GLWESwitchingKeyPreparedFactory,
+        GLWETensorKeyPreparedFactory,
+    },
     layouts::{
-        BackendGLWESecret, Base2K, Degree, GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedFactory,
-        GLWECIEmbedKeyPrepared, GLWECIKeyPreparedFactory, GLWECITraceKeyPrepared, GLWEInfos, GLWELayout,
-        GLWESecretPreparedFactory, GLWESecretToBackendRef, GLWESwitchingKeyPrepared, GLWESwitchingKeyPreparedFactory,
-        GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory, GetAutomorphismKey, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
+        BackendGLWESecret, Base2K, Degree, GLWEAutomorphismKeyPrepared, GLWECIEmbedKeyPrepared, GLWECITraceKeyPrepared,
+        GLWEInfos, GLWELayout, GLWESecretToBackendRef, GLWESwitchingKeyPrepared, GLWETensorKeyPrepared, GetAutomorphismKey,
+        LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
         prepared::{GLWEAutomorphismKeyPreparedBackendRef, GLWEAutomorphismKeyPreparedToBackendRef, GLWESecretPrepared},
     },
 };
@@ -56,8 +59,8 @@ use poulpy_hal::{
 
 use super::CKKSTestParams;
 use crate::SlotsKind;
-use poulpy_core::layouts::GLWESecretSampling;
-use poulpy_core::{Distribution, GetDistributionMut};
+use poulpy_core::api::GLWESecretSampling;
+use poulpy_core::{Distribution, GetDistribution, GetDistributionMut};
 
 // ─── deterministic per-call RNG seeds ────────────────────────────────────────
 
@@ -751,7 +754,7 @@ where
     let mut tsk = module.glwe_tensor_key_alloc_from_infos(&tsk_infos);
     module.glwe_tensor_key_encrypt_sk(&mut tsk, sk_raw, &mut xe, &mut xa, scratch);
     let mut tsk_prepared = module.alloc_tensor_key_prepared_from_infos(&tsk_infos);
-    module.prepare_tensor_key(&mut tsk_prepared, &tsk, scratch);
+    module.glwe_tensor_key_prepare(&mut tsk_prepared, &tsk, scratch);
     tsk_prepared
 }
 
@@ -848,8 +851,8 @@ pub fn gen_ci_keys<BE, S>(
 )
 where
     BE: TestContextBackend,
-    Module<BE>: TestContextSharedModule<BE> + GLWECIKeyEncryptSk<BE>,
-    S: GLWESecretToBackendRef<BE>,
+    Module<BE>: TestContextSharedModule<BE> + GLWECIKeyEncryptSk<BE> + GLWECIKeyPreparedFactory<BE>,
+    S: GLWESecretToBackendRef<BE> + GetDistribution,
 {
     let infos = params.ksk_layout(k_in);
     let mut xa = Source::new(next_test_seed(1));

@@ -1,9 +1,9 @@
 use poulpy_core::{
     GGSWEncryptSk, GLWEAutomorphismKeyEncryptSk, GLWEEncryptPk, GLWEEncryptSk, GLWEPublicKeyGenerate,
+    api::{GLWEPublicKeyPreparedFactory, GLWESecretPreparedFactory, GLWESecretSampling},
     layouts::{
-        Base2K, Degree, Dnum, GGSWLayout, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout,
-        GLWEPublicKeyPreparedFactory, GLWESecret, GLWESecretPreparedFactory, GLWESecretSampling, ModuleCoreAlloc, Rank,
-        TorusPrecision, k_digit_of,
+        Base2K, Degree, Dnum, GGSWLayout, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout, GLWESecret,
+        ModuleCoreAlloc, Rank, TorusPrecision, k_digit_of,
         prepared::{GLWEPublicKeyPrepared, GLWESecretPrepared},
     },
 };

@@ -120,7 +120,7 @@ pub(crate) fn lwe_from_glwe_derived<BE, M, R, A>(
     let (mut tmp_glwe_rank_1, mut scratch_1) = scratch.take_glwe_scratch(&glwe_layout);
 
     let a_backend_view = &a_backend;
-    crate::reference::keyswitching::glwe::assert_no_row_offset("lwe_from_glwe", &key);
+    crate::layouts::assert_no_row_offset("lwe_from_glwe", &key);
     module.glwe_keyswitch(&mut tmp_glwe_rank_1, &a_backend_view, &key.to_backend_ref(), &mut scratch_1);
     if a_idx != 0 {
         module.glwe_rotate_assign(-(a_idx as i64), &mut tmp_glwe_rank_1, &mut scratch_1);

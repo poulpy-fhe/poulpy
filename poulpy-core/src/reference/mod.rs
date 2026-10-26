@@ -12,6 +12,7 @@
 pub mod automorphism;
 pub mod ci_conversion;
 pub mod conversion;
+pub mod decompression;
 pub mod decryption;
 pub mod encryption;
 pub mod external_product;
@@ -20,3 +21,5 @@ pub mod linear_transformation;
 pub mod noise;
 pub mod operations;
 pub mod polynomial_evaluation;
+pub mod preparation;
+pub mod secret;

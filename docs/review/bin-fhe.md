@@ -24,7 +24,7 @@ Read with `docs/review/REVIEW.md`; this file adds the rules specific to `poulpy-
 ### 1.2. Compositions
 
 - **Compositions are derived defaults.** Serial forms and their queries (calling the `_multi_thread` form with `threads = 1`), per-GGSW-row loops and direct circuit-bootstrapping entry points (prepare, execute) are each a `pub(crate) fn <api method>_derived` behind a one-line default body (`docs/review/workspace.md` section 3).
-- **Composed families are supertraits.** An OEP trait whose defaults dispatch to another family, of any crate, takes that family's `*Impl` as a supertrait (`docs/review/workspace.md` section 3) (`GGSWBlindRotationImpl<T>: Backend + GLWEBlindRotationImpl`), its default methods carrying only their API method's where-clauses.
+- **Composed families are supertraits.** An OEP trait whose defaults dispatch to another poulpy-bin-fhe family takes that family's `*Impl` as a supertrait (`docs/review/workspace.md` section 3) (`GGSWBlindRotationImpl<T>: Backend + GLWEBlindRotationImpl`), its default methods carrying only their API method's where-clauses.
 - **Constituents through selected implementations.** Reference and derived bodies reach constituents through the module's public API (`module.cmux_assign(..)`) or `BE::`, bounding the module only by API and storage traits (`ModuleCoreAlloc`, `ModuleN`) (`docs/review/workspace.md` section 3).
 - **Reference stays behind the macros.** Only `reference`, the opt-in macro bodies and tests call into `crate::reference`, so helpers shared with derived bodies live outside it (`docs/review/workspace.md` section 3).
 - **Convenience methods forward.** A convenience method on a bin-fhe container or `define_bdd_*_trait!` trait forwards in one line to a public API trait bound as `M: <ApiTrait>`, passing `self` in the operand position, and multi-operation helpers (`FheUint::get_bit_lwe`) call public API traits only.
@@ -73,7 +73,7 @@ Read with `docs/review/REVIEW.md`; this file adds the rules specific to `poulpy-
 
 ### 4.2. Key encryption
 
-- **Key encryption workspace.** A key encryption's query is its component queries' maximum plus the live prepared GLWE secret, it carves every secret (prepared GLWE secret, LWE-secret plaintexts, bridge secret) from the arena, and its reference wipes `<op>_tmp_bytes_reference(..)` bytes (`docs/review/workspace.md` sections 4 and 10).
+- **Key encryption workspace.** A key encryption's query is its component queries' maximum plus the live prepared GLWE secret, it carves every secret (prepared GLWE secret, LWE-secret plaintexts, bridge secret) from the arena, and its reference wipes `<op>_tmp_bytes_reference(..)` bytes (`docs/review/workspace.md` sections 5 and 10).
 - **Composite draw order.** Composite key encryptions draw in this order, checked in `bin_fhe_reference_test_suite!` (`docs/review/workspace.md` section 10):
   - circuit-bootstrapping keys: automorphism keys by ascending Galois element, blind-rotation key, tensor key;
   - BDD keys: optional bridge `ks_glwe` (its intermediate secret first, from `source_xe`), GLWE-to-LWE key, circuit-bootstrapping key.
@@ -120,7 +120,7 @@ Read with `docs/review/REVIEW.md`; this file adds the rules specific to `poulpy-
 
 ## 10. Canonical-flag bypasses and metadata
 
-- **A bypass feeds one reader.** A bypass sets the flag only on a local temporary or borrowed view fed straight to an external product, key switch or LWE extraction, with one of these comments (`docs/review/workspace.md` section 8):
+- **A bypass feeds one reader.** A bypass sets the flag only on a local temporary or borrowed view fed straight to an external product or key switch, with one of these comments (`docs/review/workspace.md` section 8):
   - "The difference feeds the external product unnormalized, as the FFT margin allows."
   - "The lazy accumulator feeds the next external product unnormalized, as the FFT margin allows."
   - "The keyswitch reads a lazy sum as is, which its margin tolerates."

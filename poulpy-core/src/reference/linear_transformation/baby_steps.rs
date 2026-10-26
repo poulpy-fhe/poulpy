@@ -29,15 +29,16 @@ use poulpy_hal::{
     },
 };
 
-use crate::reference::keyswitching::glwe::{gadget_dft_apply, gadget_dft_apply_tmp_bytes, gadget_input_size};
+use crate::gadget::{gadget_dft_apply, gadget_dft_apply_tmp_bytes, gadget_input_size};
 use crate::{
     GLWEAutomorphism, GLWENormalize, ScratchArenaTakeCore,
     api::GLWEBytesOf,
+    gadget::gglwe_product_output_size,
     layouts::{
         GGLWEInfos, GLWEBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos,
         prepared::{GGLWEPreparedBackendRef, GLWEAutomorphismKeyPreparedBackendRef},
     },
-    reference::keyswitching::{GGLWEProductReference, gglwe_product_output_size},
+    reference::keyswitching::GGLWEProductReference,
 };
 
 use super::{BsgsRotations, LinearTransformationBabySteps, LinearTransformationLayout, LinearTransformationPlan};
@@ -176,7 +177,7 @@ fn glwe_hoisted_baby_rotation<BE, M, R>(
 
     // `key_size` is this key's own product width; limbs above it stay zeroed.
     let (mut res_dft, mut scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(a.n().as_usize(), cols, key_size);
-    crate::reference::keyswitching::glwe::assert_no_row_offset("glwe_hoisted_baby_rotation", &key_ref);
+    crate::layouts::assert_no_row_offset("glwe_hoisted_baby_rotation", &key_ref);
     module.gglwe_product_dft_reference(&mut res_dft, a_dft_ref, key_ref, 1, &mut scratch_1.borrow());
 
     let baby_base2k = baby.base2k().as_usize();
@@ -487,7 +488,7 @@ fn glwe_prepare_baby_steps_doubling<BE, M, H>(
             }
             continue;
         }
-        crate::reference::keyswitching::glwe::assert_no_row_offset("glwe_hoisted_baby_rotation", &key.key);
+        crate::layouts::assert_no_row_offset("glwe_hoisted_baby_rotation", &key.key);
         let m = pairs.len();
         let (k_digit, dnum) = (key.k_digit(), key.dnum());
         let operand_size = gadget_input_size(a.base2k(), k_digit, dnum, a.k(), a_size);

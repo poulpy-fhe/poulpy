@@ -118,7 +118,7 @@ pub(crate) fn glwe_decrypt_backend_inner<'arena, 'scratch, M, BE: Backend>(
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
 {
-    debug_assert_eq!(res.rank(), sk.rank());
+    assert!(res.rank() == sk.rank(), "the ciphertext rank differs from the secret's rank");
     operand_degree(module.n(), &[res.n(), pt.n(), sk.n()]);
     assert!(
         scratch.available() >= glwe_decrypt_body_tmp_bytes::<M, _>(module, res),
@@ -243,7 +243,7 @@ pub fn glwe_mask_inner_product_reference<M, BE: Backend, R, A, S>(
 {
     operand_degree(module.n(), &[res.n(), mask.n(), sk.n()]);
     assert!(mask.rank().as_usize() > 0, "GLWE mask rank must be positive");
-    assert_eq!(mask.rank(), sk.rank(), "GLWE mask and secret key ranks must match");
+    assert!(mask.rank() == sk.rank(), "GLWE mask and secret key ranks must match");
     let tmp_bytes: usize = glwe_mask_inner_product_tmp_bytes_reference::<M, _>(module, mask);
     assert!(
         scratch.available() >= tmp_bytes,

@@ -6,15 +6,17 @@ use poulpy_hal::{
     test_suite::vec_znx_backend_mut,
 };
 
-use crate::layouts::GLWESecretSampling;
+use crate::api::GLWESecretSampling;
 use crate::layouts::prepared::GLWEAutomorphismKeyPreparedToBackendRef;
 use crate::test_suite::noise::{assert_refuses_uncovered_input, glwe_noise_checked};
+use crate::test_suite::poisoned_scratch;
 use crate::{
     GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWEDecrypt, GLWEEncryptSk, GLWENoise, GLWENormalize,
+    api::{GLWEAutomorphismKeyPreparedFactory, GLWESecretPreparedFactory},
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        GGLWEInfos, GLWE, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPreparedFactory, GLWELayout,
-        GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory, LWEInfos, ModuleCoreAlloc, TorusPrecision,
+        GGLWEInfos, GLWE, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWELayout, GLWEPlaintext, GLWESecret, LWEInfos,
+        ModuleCoreAlloc, TorusPrecision,
         prepared::{GLWEAutomorphismKeyPrepared, GLWESecretPrepared},
     },
     noise::GGLWENoiseModel,
@@ -97,7 +99,8 @@ where
                 (module).glwe_automorphism_key_encrypt_sk_tmp_bytes(&autokey)
                     | (module).glwe_decrypt_tmp_bytes(&ct_out)
                     | (module).glwe_encrypt_sk_tmp_bytes(&ct_in)
-                    | module.glwe_automorphism_tmp_bytes(&ct_out, &ct_in, &autokey),
+                    | module.glwe_automorphism_key_prepare_tmp_bytes(&autokey_infos)
+                    | module.glwe_noise_tmp_bytes(&ct_out),
             );
 
             let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc_from_infos(&ct_out);
@@ -128,7 +131,13 @@ where
                 module.glwe_automorphism_key_prepared_alloc_from_infos(&autokey_infos);
             module.glwe_automorphism_key_prepare(&mut autokey_prepared, &autokey, &mut scratch.borrow());
 
-            module.glwe_automorphism(&mut ct_out, &ct_in, &autokey_prepared.to_backend_ref(), &mut scratch.borrow());
+            let automorphism_bytes = module.glwe_automorphism_tmp_bytes(&ct_out, &ct_in, &autokey);
+            module.glwe_automorphism(
+                &mut ct_out,
+                &ct_in,
+                &autokey_prepared.to_backend_ref(),
+                &mut poisoned_scratch::<BE>(automorphism_bytes).borrow(),
+            );
 
             let max_noise: f64 = autokey_infos.log2_std_noise_keyswitch(
                 &ct_out_infos,
@@ -227,7 +236,8 @@ where
                 (module).glwe_automorphism_key_encrypt_sk_tmp_bytes(&autokey)
                     | (module).glwe_decrypt_tmp_bytes(&ct)
                     | (module).glwe_encrypt_sk_tmp_bytes(&ct)
-                    | module.glwe_automorphism_tmp_bytes(&ct, &ct, &autokey),
+                    | module.glwe_automorphism_key_prepare_tmp_bytes(&autokey)
+                    | module.glwe_noise_tmp_bytes(&ct),
             );
 
             let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc_from_infos(&ct);
@@ -258,7 +268,12 @@ where
                 module.glwe_automorphism_key_prepared_alloc_from_infos(&autokey);
             module.glwe_automorphism_key_prepare(&mut autokey_prepared, &autokey, &mut scratch.borrow());
 
-            module.glwe_automorphism_assign(&mut ct, &autokey_prepared.to_backend_ref(), &mut scratch.borrow());
+            let automorphism_bytes = module.glwe_automorphism_tmp_bytes(&ct, &ct, &autokey);
+            module.glwe_automorphism_assign(
+                &mut ct,
+                &autokey_prepared.to_backend_ref(),
+                &mut poisoned_scratch::<BE>(automorphism_bytes).borrow(),
+            );
 
             let max_noise: f64 = autokey_infos.log2_std_noise_keyswitch(
                 &ct_out_infos,
