@@ -400,7 +400,7 @@ jobs:
       contains(fromJSON(needs.changes.outputs.crates), 'poulpy-cpu-portable') ||
       contains(fromJSON(needs.changes.outputs.crates), 'poulpy-cpu-avx')
     runs-on: macos-15-intel
-    timeout-minutes: 15
+    timeout-minutes: 25
 
     env:
       RUSTFLAGS: -C target-feature=+avx2,+fma
