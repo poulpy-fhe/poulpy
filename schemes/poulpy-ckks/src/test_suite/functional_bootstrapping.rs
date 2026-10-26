@@ -46,7 +46,7 @@ const LUT_LOG_DELTA: usize = 55;
 enum Case {
     General,
     Multi,
-    Binary,
+    Binary([usize; 2]),
     GeneralModulus(usize),
     MultiModulus(usize),
 }
@@ -154,7 +154,11 @@ pub fn test_functional_bootstrapping_binary_e2e<BE, F, E>(
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
     for guard_bits in [0, 6] {
-        run_case::<BE, F, E>(Case::Binary, params, module, host_module, guard_bits, false);
+        run_case::<BE, F, E>(Case::Binary([3, 1]), params, module, host_module, guard_bits, false);
+    }
+    // `f0 < f1` subtracts the last square, and `f0 == f1` folds to a zero polynomial.
+    for table in [[1, 3], [2, 2]] {
+        run_case::<BE, F, E>(Case::Binary(table), params, module, host_module, 0, false);
     }
 }
 
@@ -182,6 +186,7 @@ fn run_case<BE, F, E>(
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
     let native_tables: Vec<Vec<usize>> = match case {
+        Case::Binary(table) => vec![table.to_vec()],
         Case::GeneralModulus(p) => vec![(0..p).map(|m| (m * m + 3 * m + 2) % 7).collect()],
         Case::MultiModulus(p) => vec![
             (0..p).map(|m| (m * m + 3 * m + 2) % 7).collect(),
@@ -192,13 +197,12 @@ fn run_case<BE, F, E>(
     };
     let table_values: Vec<&[usize]> = match case {
         Case::General => vec![&[0, 1, 0, 0]],
-        Case::GeneralModulus(_) | Case::MultiModulus(_) => native_tables.iter().map(Vec::as_slice).collect(),
+        Case::Binary(_) | Case::GeneralModulus(_) | Case::MultiModulus(_) => native_tables.iter().map(Vec::as_slice).collect(),
         Case::Multi => vec![
             &[5, 2, 7, 0, 3, 6, 1, 4],
             &[0, 1, 2, 3, 4, 5, 6, 7],
             &[0, 0, 0, 0, 0, 0, 0, 0],
         ],
-        Case::Binary => vec![&[3, 1]],
     };
     let tables: Vec<Vec<F>> = table_values
         .iter()
@@ -209,7 +213,7 @@ fn run_case<BE, F, E>(
     let coeffs_meta = CoeffsMeta::from_delta_budget(LUT_LOG_DELTA, params.base2k);
 
     let host_luts: Vec<EncodedLut<CKKSPlaintextOwned<HostBytesBackend>>> = match case {
-        Case::Binary => vec![
+        Case::Binary(_) => vec![
             EncodedLut::binary(
                 host_module,
                 tables[0][0],
@@ -284,7 +288,7 @@ fn run_case<BE, F, E>(
     match case {
         Case::General => assert_eq!(functional_k, 769 + guard_bits - free),
         Case::Multi => assert_eq!(functional_k, 814 + guard_bits),
-        Case::Binary => assert_eq!(functional_k, 668 + guard_bits),
+        Case::Binary(_) => assert_eq!(functional_k, 613 + guard_bits),
         Case::GeneralModulus(_) | Case::MultiModulus(_) => {}
     }
     let k_boot = functional_k.next_multiple_of(2 * params.base2k);

@@ -380,6 +380,10 @@
   They refuse, in this order and before any write, a window past the slots of `res`'s degree or a mean of `Integer` slots (`InvalidOperand`), a key missing at `min(res.k, a.k)` (`MissingAutomorphismKey`), a copy or division past the budget (`InsufficientHomomorphicCapacity`) and less scratch than their query (`CKKSError::Internal`).
   The test suite adds `test_inner_sum_aligned` and `test_inner_sum_assign`, also in the rank-2 suite, `test_inner_sum_smaller_output`, `test_inner_sum_window_error`, `test_inner_sum_integer_error`, `test_inner_sum_missing_key_error`, `test_inner_sum_budget_error`, `test_inner_sum_scratch_error`, `test_inner_sum_below_module_degree`, `test_add_many_normalize_after`, `test_add_many_error` and, in `conjugate_invariant_ckks_test_suite!`, `ckks_ci_inner_sum`; `TestContextSharedModule` also requires `GLWEMaskFill`.
   **Breaking:** `CKKSImpl` requires `CKKSInnerSumImpl`: a backend registering the CKKS families one by one adds `impl_ckks_inner_sum_derived_full!`.
+- **Breaking, behaviour:** the binary LUT of functional bootstrapping (`EncodedLut::binary`) folds its final map from the cosine to `[f0, f1]` into the cosine polynomial and the double-angle steps, instead of spending a coefficient scale on a plaintext multiplication.
+  Each double-angle step but the last subtracts a constant from the square instead of doubling it and subtracting one, and the last step adds the square to `f1` or subtracts it from `f1`.
+  `EncodedLut::consumed_bits` and `BootstrappingPlan::functional_bootstrap_k` drop by the LUT's coefficient scale, and outputs change in their low bits at the same precision within about 1 bit (FFT64 oracle, input scale 40 bits, degree 31, `log_interval_reduction` 3 to 5).
+  **Breaking:** `CKKSBootstrappingReference::ckks_functional_bootstrap_reference` requires `CKKSNegOps` instead of `CKKSAffineOps`, so an out-of-tree backend that registers the CKKS families one by one implements `CKKSNegImpl`.
 
 ### `poulpy-bin-fhe`
 
