@@ -1,12 +1,12 @@
 use super::{TestBackend, TestParams, download_mat_znx, upload_mat_znx};
-use crate::test_suite::poisoned_arena;
+use crate::test_suite::{PoisonedArena, poisoned_arena};
 use crate::{
     AlignedBuf,
     api::{
         MatZnxAddAssign, MatZnxAlloc, MatZnxCopy, MatZnxNormalize, MatZnxNormalizeAssign, MatZnxNormalizeTmpBytes, VecZnxCopy,
         VecZnxFillUniformSource, VecZnxNormalize, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxZero,
     },
-    layouts::{MatZnx, MatZnxAtBackendMut, MatZnxAtBackendRef, MatZnxToBackendMut, MatZnxToBackendRef, Module, ScratchOwned},
+    layouts::{MatZnx, MatZnxAtBackendMut, MatZnxAtBackendRef, MatZnxToBackendMut, MatZnxToBackendRef, Module},
     oep::{mat_znx_add_assign_derived, mat_znx_copy_derived, mat_znx_normalize_assign_derived, mat_znx_normalize_derived},
     source::Source,
 };
@@ -244,14 +244,14 @@ pub fn test_mat_znx_normalize<BR: TestBackend, BT: TestBackend>(
 {
     let base2k: usize = params.base2k;
     let mut source: Source = Source::new([1u8; 32]);
-    let mut scratch_ref: ScratchOwned<BR> = poisoned_arena(module_ref.mat_znx_normalize_tmp_bytes());
-    let mut scratch_ref_assign: ScratchOwned<BR> = poisoned_arena(module_ref.mat_znx_normalize_tmp_bytes());
-    let mut scratch_ref_oracle: ScratchOwned<BR> = poisoned_arena(module_ref.vec_znx_normalize_tmp_bytes());
-    let mut scratch_test: ScratchOwned<BT> = poisoned_arena(module_test.mat_znx_normalize_tmp_bytes());
-    let mut scratch_test_assign: ScratchOwned<BT> = poisoned_arena(module_test.mat_znx_normalize_tmp_bytes());
-    let mut scratch_test_derived: ScratchOwned<BT> =
+    let mut scratch_ref: PoisonedArena<BR> = poisoned_arena(module_ref.mat_znx_normalize_tmp_bytes());
+    let mut scratch_ref_assign: PoisonedArena<BR> = poisoned_arena(module_ref.mat_znx_normalize_tmp_bytes());
+    let mut scratch_ref_oracle: PoisonedArena<BR> = poisoned_arena(module_ref.vec_znx_normalize_tmp_bytes());
+    let mut scratch_test: PoisonedArena<BT> = poisoned_arena(module_test.mat_znx_normalize_tmp_bytes());
+    let mut scratch_test_assign: PoisonedArena<BT> = poisoned_arena(module_test.mat_znx_normalize_tmp_bytes());
+    let mut scratch_test_derived: PoisonedArena<BT> =
         poisoned_arena(crate::oep::mat_znx_normalize_tmp_bytes_derived::<BT>(module_test));
-    let mut scratch_test_derived_assign: ScratchOwned<BT> =
+    let mut scratch_test_derived_assign: PoisonedArena<BT> =
         poisoned_arena(crate::oep::mat_znx_normalize_tmp_bytes_derived::<BT>(module_test));
 
     for (res_rows, (rows, cols_in, cols_out, size)) in

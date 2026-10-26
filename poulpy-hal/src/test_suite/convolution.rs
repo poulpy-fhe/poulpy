@@ -11,7 +11,7 @@ use crate::layouts::VecZnxDftToBackendMut;
 use crate::layouts::VecZnxDftToBackendRef;
 use rand::Rng;
 
-use crate::test_suite::poisoned_arena;
+use crate::test_suite::{PoisonedArena, poisoned_arena};
 use crate::{
     api::{
         CnvPVecAlloc, Convolution, ModuleN, VecZnxAdd, VecZnxAlloc, VecZnxAutomorphism, VecZnxBigAlloc, VecZnxBigNormalize,
@@ -19,8 +19,8 @@ use crate::{
         VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxSwitchRing,
     },
     layouts::{
-        CnvDftAccTerm, CnvPVecL, CnvPVecR, DataView, Module, PrepareHint, ScratchArena, ScratchOwned, VecZnx, VecZnxOwned,
-        ZnxView, ZnxViewMut, ZnxZero,
+        CnvDftAccTerm, CnvPVecL, CnvPVecR, DataView, Module, PrepareHint, ScratchArena, VecZnx, VecZnxOwned, ZnxView, ZnxViewMut,
+        ZnxZero,
     },
     source::Source,
 };
@@ -63,8 +63,8 @@ where
     }
 
     let b_backend = upload_vec_znx::<BE>(&b);
-    let mut scratch: ScratchOwned<BE> = poisoned_arena(module.cnv_by_const_apply_tmp_bytes(0, res_size, a_size, b_size));
-    let mut scratch_setup: ScratchOwned<BE> = poisoned_arena(
+    let mut scratch: PoisonedArena<BE> = poisoned_arena(module.cnv_by_const_apply_tmp_bytes(0, res_size, a_size, b_size));
+    let mut scratch_setup: PoisonedArena<BE> = poisoned_arena(
         module
             .vec_znx_big_normalize_tmp_bytes()
             .max(module.vec_znx_normalize_tmp_bytes()),
@@ -145,9 +145,9 @@ where
     let mut acc_have: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(n, 1, res_size);
     let mut acc_want: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(n, 1, res_size);
     let mut term: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(n, 1, res_size);
-    let mut scratch_apply: ScratchOwned<BE> = poisoned_arena(module.cnv_by_const_apply_tmp_bytes(0, res_size, a_size, b_size));
-    let mut scratch_add: ScratchOwned<BE> = poisoned_arena(module.cnv_by_const_apply_add_tmp_bytes(0, res_size, a_size, b_size));
-    let mut scratch_setup: ScratchOwned<BE> = poisoned_arena(module.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_apply: PoisonedArena<BE> = poisoned_arena(module.cnv_by_const_apply_tmp_bytes(0, res_size, a_size, b_size));
+    let mut scratch_add: PoisonedArena<BE> = poisoned_arena(module.cnv_by_const_apply_add_tmp_bytes(0, res_size, a_size, b_size));
+    let mut scratch_setup: PoisonedArena<BE> = poisoned_arena(module.vec_znx_big_normalize_tmp_bytes());
 
     // `cnv_offset` is a limb count; the tail values are clamped out of range.
     for base_offset in [0, 1, 2, res_size / 2, res_size - 1] {
@@ -201,7 +201,7 @@ where
             );
             module.vec_znx_big_add_assign(&mut acc_want.to_backend_mut(), 0, &term.to_backend_ref(), 0);
 
-            let normalized = |big: &VecZnxBigOwned<BE>, scratch: &mut ScratchOwned<BE>| {
+            let normalized = |big: &VecZnxBigOwned<BE>, scratch: &mut PoisonedArena<BE>| {
                 let res_host_template = VecZnx::alloc(n, 1, res_size);
                 let mut res_backend = upload_vec_znx::<BE>(&res_host_template);
                 module.vec_znx_big_normalize(
@@ -270,8 +270,8 @@ where
     let mut a_prep: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(n, a_cols, a_size, PrepareHint::Reuse);
     let mut b_prep: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(n, b_cols, b_size, PrepareHint::Reuse);
 
-    let mut scratch_apply: ScratchOwned<BE> = poisoned_arena(module.cnv_apply_dft_tmp_bytes(0, res_size, a_size, b_size));
-    let mut scratch_setup: ScratchOwned<BE> = poisoned_arena(
+    let mut scratch_apply: PoisonedArena<BE> = poisoned_arena(module.cnv_apply_dft_tmp_bytes(0, res_size, a_size, b_size));
+    let mut scratch_setup: PoisonedArena<BE> = poisoned_arena(
         module
             .cnv_prepare_left_tmp_bytes(res_size, a_size)
             .max(module.cnv_prepare_right_tmp_bytes(res_size, b_size))
@@ -388,9 +388,9 @@ where
     let mut res_ref: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(n, res_cols, res_size);
     let mut tmp_dft: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(n, 1, res_size);
 
-    let mut scratch_apply: ScratchOwned<BE> = poisoned_arena(module.cnv_apply_dft_tmp_bytes(0, res_size, a_size, b_size));
-    let mut scratch_add: ScratchOwned<BE> = poisoned_arena(module.cnv_apply_dft_add_tmp_bytes(0, res_size, a_size, b_size));
-    let mut scratch_setup: ScratchOwned<BE> = poisoned_arena(
+    let mut scratch_apply: PoisonedArena<BE> = poisoned_arena(module.cnv_apply_dft_tmp_bytes(0, res_size, a_size, b_size));
+    let mut scratch_add: PoisonedArena<BE> = poisoned_arena(module.cnv_apply_dft_add_tmp_bytes(0, res_size, a_size, b_size));
+    let mut scratch_setup: PoisonedArena<BE> = poisoned_arena(
         module
             .cnv_prepare_left_tmp_bytes(res_size, a_size)
             .max(module.cnv_prepare_right_tmp_bytes(res_size, b_size)),
@@ -519,10 +519,10 @@ where
     let mut big_fused: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(n, 1, res_size);
     let mut big_ref: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(n, 1, res_size);
 
-    let mut scratch_sum: ScratchOwned<BE> = poisoned_arena(module.cnv_apply_dft_sum_tmp_bytes(0, res_size, a_size, b_size));
-    let mut scratch_apply: ScratchOwned<BE> = poisoned_arena(module.cnv_apply_dft_tmp_bytes(0, res_size, a_size, b_size));
-    let mut scratch_add: ScratchOwned<BE> = poisoned_arena(module.cnv_apply_dft_add_tmp_bytes(0, res_size, a_size, b_size));
-    let mut scratch_setup: ScratchOwned<BE> = poisoned_arena(
+    let mut scratch_sum: PoisonedArena<BE> = poisoned_arena(module.cnv_apply_dft_sum_tmp_bytes(0, res_size, a_size, b_size));
+    let mut scratch_apply: PoisonedArena<BE> = poisoned_arena(module.cnv_apply_dft_tmp_bytes(0, res_size, a_size, b_size));
+    let mut scratch_add: PoisonedArena<BE> = poisoned_arena(module.cnv_apply_dft_add_tmp_bytes(0, res_size, a_size, b_size));
+    let mut scratch_setup: PoisonedArena<BE> = poisoned_arena(
         module
             .cnv_prepare_left_tmp_bytes(res_size, a_size)
             .max(module.cnv_prepare_right_tmp_bytes(res_size, b_size))
@@ -690,9 +690,9 @@ where
     let mut a_prep: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(n, cols, a_size, PrepareHint::Reuse);
     let mut b_prep: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(n, cols, b_size, PrepareHint::Reuse);
 
-    let mut scratch_pairwise: ScratchOwned<BE> =
+    let mut scratch_pairwise: PoisonedArena<BE> =
         poisoned_arena(module.cnv_pairwise_apply_dft_tmp_bytes(0, res_size, a_size, b_size));
-    let mut scratch_setup: ScratchOwned<BE> = poisoned_arena(
+    let mut scratch_setup: PoisonedArena<BE> = poisoned_arena(
         module
             .cnv_prepare_left_tmp_bytes(res_size, a_size)
             .max(module.cnv_prepare_right_tmp_bytes(res_size, b_size))
@@ -979,10 +979,10 @@ pub fn test_cnv_prepare_rejects_mismatched_shape<BE: crate::test_suite::TestBack
     let a_be = operand(cols, size);
     let a_narrow = operand(cols - 1, size);
     let a_short = operand(cols, size - 1);
-    let mut scratch_left: ScratchOwned<BE> = poisoned_arena(module.cnv_prepare_left_tmp_bytes(size, size));
-    let mut scratch_right: ScratchOwned<BE> = poisoned_arena(module.cnv_prepare_right_tmp_bytes(size, size));
-    let mut scratch_self: ScratchOwned<BE> = poisoned_arena(module.cnv_prepare_self_tmp_bytes(size, size));
-    let mut scratch_setup: ScratchOwned<BE> = poisoned_arena(
+    let mut scratch_left: PoisonedArena<BE> = poisoned_arena(module.cnv_prepare_left_tmp_bytes(size, size));
+    let mut scratch_right: PoisonedArena<BE> = poisoned_arena(module.cnv_prepare_right_tmp_bytes(size, size));
+    let mut scratch_self: PoisonedArena<BE> = poisoned_arena(module.cnv_prepare_self_tmp_bytes(size, size));
+    let mut scratch_setup: PoisonedArena<BE> = poisoned_arena(
         module
             .cnv_prepare_left_tmp_bytes(size, size)
             .max(module.cnv_prepare_right_tmp_bytes(size, size)),
@@ -1088,8 +1088,8 @@ pub fn test_cnv_by_const_rejects_degree_mismatch<BE: crate::test_suite::TestBack
     module.vec_znx_fill_uniform_source_all(params.base2k, size * params.base2k, &mut b_be, &mut source);
     let mut res: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(params.n, 1, size);
     module.vec_znx_big_from_small(&mut res.to_backend_mut(), 0, &vec_znx_backend_ref::<BE>(&b_be), 0);
-    let mut scratch_apply: ScratchOwned<BE> = poisoned_arena(module.cnv_by_const_apply_tmp_bytes(0, size, size, size));
-    let mut scratch_add: ScratchOwned<BE> = poisoned_arena(module.cnv_by_const_apply_add_tmp_bytes(0, size, size, size));
+    let mut scratch_apply: PoisonedArena<BE> = poisoned_arena(module.cnv_by_const_apply_tmp_bytes(0, size, size, size));
+    let mut scratch_add: PoisonedArena<BE> = poisoned_arena(module.cnv_by_const_apply_add_tmp_bytes(0, size, size, size));
 
     macro_rules! rejects {
         ($op:literal, $call:expr) => {{

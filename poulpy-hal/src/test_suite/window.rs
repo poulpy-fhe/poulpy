@@ -2,7 +2,7 @@
 //! equals the same operation applied to a dense copy of the window, and
 //! leaves everything outside the window untouched.
 
-use crate::test_suite::poisoned_arena;
+use crate::test_suite::{PoisonedArena, poisoned_arena};
 use crate::{
     AlignedBuf,
     api::{
@@ -13,9 +13,9 @@ use crate::{
         VecZnxRshSub, VecZnxRshTmpBytes, VecZnxSub, VecZnxZero,
     },
     layouts::{
-        Backend, CnvPVecLToBackendMut, DataView, HostDataRef, Module, PrepareHint, ScratchOwned, VecZnx, VecZnxBig,
-        VecZnxBigOwned, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxOwned, VecZnxShape, ZnxView,
-        ZnxViewMut, ZnxWord,
+        Backend, CnvPVecLToBackendMut, DataView, HostDataRef, Module, PrepareHint, VecZnx, VecZnxBig, VecZnxBigOwned,
+        VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxOwned, VecZnxShape, ZnxView, ZnxViewMut,
+        ZnxWord,
     },
     source::Source,
     test_suite::{TestParams, download_vec_znx, upload_vec_znx, vec_znx_backend_mut, vec_znx_backend_ref},
@@ -267,7 +267,7 @@ where
     );
 
     let mut prep = module.cnv_pvec_left_alloc(params.n, cols, size, PrepareHint::Reuse);
-    let mut scratch: ScratchOwned<BE> = poisoned_arena(module.cnv_prepare_left_tmp_bytes(size, size));
+    let mut scratch: PoisonedArena<BE> = poisoned_arena(module.cnv_prepare_left_tmp_bytes(size, size));
     let cnv_panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         module.cnv_prepare_left(
             &mut prep.to_backend_mut(),
@@ -559,7 +559,7 @@ where
     let (cols, size) = (2usize, 4usize);
     let mut source = Source::new([17u8; 32]);
     let base = VecZnxShape::new(n, cols, size);
-    let mut scratch: ScratchOwned<BE> = poisoned_arena(module.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch: PoisonedArena<BE> = poisoned_arena(module.vec_znx_big_normalize_tmp_bytes());
 
     for w in windows(n, size) {
         let shape = shape_of(base, w);

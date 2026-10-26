@@ -7,7 +7,7 @@ use crate::layouts::VecZnxDftToBackendMut;
 use crate::layouts::VecZnxDftToBackendRef;
 use crate::layouts::VmpPMatToBackendMut;
 use crate::layouts::VmpPMatToBackendRef;
-use crate::test_suite::poisoned_arena;
+use crate::test_suite::{PoisonedArena, poisoned_arena};
 use crate::{
     api::{
         VecZnxBigAlloc, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign, VecZnxDftAlloc, VecZnxDftApply,
@@ -15,9 +15,7 @@ use crate::{
         VmpApplyDft, VmpApplyDftTmpBytes, VmpApplyDftToDft, VmpApplyDftToDftAdd, VmpApplyDftToDftAddTmpBytes,
         VmpApplyDftToDftTmpBytes, VmpExtractSelectedRows, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes, VmpZero,
     },
-    layouts::{
-        DigestU64, MatZnx, MatZnxAtBackendMut, MatZnxOwned, MatZnxToBackendRef, Module, PrepareHint, ScratchOwned, VecZnxOwned,
-    },
+    layouts::{DigestU64, MatZnx, MatZnxAtBackendMut, MatZnxOwned, MatZnxToBackendRef, Module, PrepareHint, VecZnxOwned},
     source::Source,
 };
 
@@ -60,12 +58,12 @@ pub fn test_vmp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
     let max_cols: usize = 2;
     let mut source: Source = Source::new([0u8; 32]);
 
-    let mut scratch_ref_setup: ScratchOwned<BR> = poisoned_arena(
+    let mut scratch_ref_setup: PoisonedArena<BR> = poisoned_arena(
         module_ref
             .vmp_prepare_tmp_bytes(max_size, max_cols, max_cols, max_size)
             .max(module_ref.vec_znx_big_normalize_tmp_bytes()),
     );
-    let mut scratch_test_setup: ScratchOwned<BT> = poisoned_arena(
+    let mut scratch_test_setup: PoisonedArena<BT> = poisoned_arena(
         module_test
             .vmp_prepare_tmp_bytes(max_size, max_cols, max_cols, max_size)
             .max(module_test.vec_znx_big_normalize_tmp_bytes()),
@@ -122,9 +120,9 @@ pub fn test_vmp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
                     let mut res_dft_ref: VecZnxDftOwned<BR> = module_ref.vec_znx_dft_alloc(params.n, cols_out, size_out);
                     let mut res_dft_test: VecZnxDftOwned<BT> = module_test.vec_znx_dft_alloc(params.n, cols_out, size_out);
 
-                    let mut scratch_ref_apply: ScratchOwned<BR> =
+                    let mut scratch_ref_apply: PoisonedArena<BR> =
                         poisoned_arena(module_ref.vmp_apply_dft_tmp_bytes(size_out, size_in, rows, cols_in, cols_out, size_out));
-                    let mut scratch_test_apply: ScratchOwned<BT> =
+                    let mut scratch_test_apply: PoisonedArena<BT> =
                         poisoned_arena(module_test.vmp_apply_dft_tmp_bytes(size_out, size_in, rows, cols_in, cols_out, size_out));
 
                     module_ref.vmp_apply_dft(
@@ -223,12 +221,12 @@ pub fn test_vmp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
 
     let mut source: Source = Source::new([0u8; 32]);
 
-    let mut scratch_ref_setup: ScratchOwned<BR> = poisoned_arena(
+    let mut scratch_ref_setup: PoisonedArena<BR> = poisoned_arena(
         module_ref
             .vmp_prepare_tmp_bytes(max_size, max_cols, max_cols, max_size)
             .max(module_ref.vec_znx_big_normalize_tmp_bytes()),
     );
-    let mut scratch_test_setup: ScratchOwned<BT> = poisoned_arena(
+    let mut scratch_test_setup: PoisonedArena<BT> = poisoned_arena(
         module_test
             .vmp_prepare_tmp_bytes(max_size, max_cols, max_cols, max_size)
             .max(module_test.vec_znx_big_normalize_tmp_bytes()),
@@ -327,10 +325,10 @@ pub fn test_vmp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
                     let mut res_dft_ref: VecZnxDftOwned<BR> = module_ref.vec_znx_dft_alloc(params.n, cols_out, size_out);
                     let mut res_dft_test: VecZnxDftOwned<BT> = module_test.vec_znx_dft_alloc(params.n, cols_out, size_out);
 
-                    let mut scratch_ref_apply: ScratchOwned<BR> = poisoned_arena(
+                    let mut scratch_ref_apply: PoisonedArena<BR> = poisoned_arena(
                         module_ref.vmp_apply_dft_to_dft_tmp_bytes(size_out, size_in, rows, cols_in, cols_out, size_out),
                     );
-                    let mut scratch_test_apply: ScratchOwned<BT> = poisoned_arena(
+                    let mut scratch_test_apply: PoisonedArena<BT> = poisoned_arena(
                         module_test.vmp_apply_dft_to_dft_tmp_bytes(size_out, size_in, rows, cols_in, cols_out, size_out),
                     );
 
@@ -411,7 +409,7 @@ where
     let n: usize = params.n;
     let mut source: Source = Source::new([0u8; 32]);
     let (max_cols, size, rows) = (2usize, 4usize, 6usize);
-    let mut scratch: ScratchOwned<BE> = poisoned_arena(module.vmp_prepare_tmp_bytes(rows, max_cols, max_cols, size));
+    let mut scratch: PoisonedArena<BE> = poisoned_arena(module.vmp_prepare_tmp_bytes(rows, max_cols, max_cols, size));
 
     for cols_in in 1..max_cols + 1 {
         for cols_out in 1..max_cols + 1 {
@@ -712,20 +710,20 @@ fn vmp_apply_dft_to_dft_add_case<BR: crate::test_suite::TestBackend, BT: crate::
         limb_offset,
     } = *shape;
     let rows: usize = size_in;
-    let mut scratch_ref_apply: ScratchOwned<BR> =
+    let mut scratch_ref_apply: PoisonedArena<BR> =
         poisoned_arena(module_ref.vmp_apply_dft_to_dft_tmp_bytes(size_out, size_in, size_in, cols_in, cols_out, mat_size));
-    let mut scratch_test_apply: ScratchOwned<BT> =
+    let mut scratch_test_apply: PoisonedArena<BT> =
         poisoned_arena(module_test.vmp_apply_dft_to_dft_tmp_bytes(size_out, size_in, size_in, cols_in, cols_out, mat_size));
-    let mut scratch_ref_add: ScratchOwned<BR> =
+    let mut scratch_ref_add: PoisonedArena<BR> =
         poisoned_arena(module_ref.vmp_apply_dft_to_dft_add_tmp_bytes(size_out, size_in, size_in, cols_in, cols_out, mat_size));
-    let mut scratch_test_add: ScratchOwned<BT> =
+    let mut scratch_test_add: PoisonedArena<BT> =
         poisoned_arena(module_test.vmp_apply_dft_to_dft_add_tmp_bytes(size_out, size_in, size_in, cols_in, cols_out, mat_size));
-    let mut scratch_ref_setup: ScratchOwned<BR> = poisoned_arena(
+    let mut scratch_ref_setup: PoisonedArena<BR> = poisoned_arena(
         module_ref
             .vmp_prepare_tmp_bytes(size_in, cols_in, cols_out, mat_size)
             .max(module_ref.vec_znx_big_normalize_tmp_bytes()),
     );
-    let mut scratch_test_setup: ScratchOwned<BT> = poisoned_arena(
+    let mut scratch_test_setup: PoisonedArena<BT> = poisoned_arena(
         module_test
             .vmp_prepare_tmp_bytes(size_in, cols_in, cols_out, mat_size)
             .max(module_test.vec_znx_big_normalize_tmp_bytes()),
@@ -969,16 +967,16 @@ pub fn test_vmp_zero<BR: crate::test_suite::TestBackend, BT: crate::test_suite::
     let rows: usize = cols;
     let mut source: Source = Source::new([0u8; 32]);
 
-    let mut scratch_ref_apply: ScratchOwned<BR> =
+    let mut scratch_ref_apply: PoisonedArena<BR> =
         poisoned_arena(module_ref.vmp_apply_dft_tmp_bytes(size, size, rows, cols, cols, size));
-    let mut scratch_test_apply: ScratchOwned<BT> =
+    let mut scratch_test_apply: PoisonedArena<BT> =
         poisoned_arena(module_test.vmp_apply_dft_tmp_bytes(size, size, rows, cols, cols, size));
-    let mut scratch_ref_setup: ScratchOwned<BR> = poisoned_arena(
+    let mut scratch_ref_setup: PoisonedArena<BR> = poisoned_arena(
         module_ref
             .vmp_prepare_tmp_bytes(rows, cols, cols, size)
             .max(module_ref.vec_znx_big_normalize_tmp_bytes()),
     );
-    let mut scratch_test_setup: ScratchOwned<BT> = poisoned_arena(
+    let mut scratch_test_setup: PoisonedArena<BT> = poisoned_arena(
         module_test
             .vmp_prepare_tmp_bytes(rows, cols, cols, size)
             .max(module_test.vec_znx_big_normalize_tmp_bytes()),
@@ -1128,9 +1126,9 @@ pub fn test_vmp_apply_dft_to_dft_rejects_column_mismatch<BE: crate::test_suite::
         }
         dft
     };
-    let mut scratch_apply: ScratchOwned<BE> =
+    let mut scratch_apply: PoisonedArena<BE> =
         poisoned_arena(module.vmp_apply_dft_to_dft_tmp_bytes(size, size, rows, cols, cols, size));
-    let mut scratch_add: ScratchOwned<BE> =
+    let mut scratch_add: PoisonedArena<BE> =
         poisoned_arena(module.vmp_apply_dft_to_dft_add_tmp_bytes(size, size, rows, cols, cols, size));
 
     macro_rules! rejects {

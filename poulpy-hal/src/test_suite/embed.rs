@@ -4,7 +4,7 @@
 //! gives, bit for bit in the coefficient domain and after normalization in the
 //! big domain.
 
-use crate::test_suite::poisoned_arena;
+use crate::test_suite::{PoisonedArena, poisoned_arena};
 use crate::{
     api::{
         ModuleN, VecZnxAdd, VecZnxAddAssign, VecZnxBigAdd, VecZnxBigAddAssign, VecZnxBigAddSmall, VecZnxBigAddSmallAssign,
@@ -14,8 +14,8 @@ use crate::{
         VecZnxSub, VecZnxSubAssign, VecZnxSubNegateAssign, VecZnxSwitchRing,
     },
     layouts::{
-        Module, ScratchOwned, VecZnx, VecZnxBackendMut, VecZnxBackendRef, VecZnxBig, VecZnxBigBackendMut, VecZnxBigBackendRef,
-        VecZnxBigOwned, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxOwned,
+        Module, VecZnx, VecZnxBackendMut, VecZnxBackendRef, VecZnxBig, VecZnxBigBackendMut, VecZnxBigBackendRef, VecZnxBigOwned,
+        VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxOwned,
     },
     source::Source,
     test_suite::{TestBackend, TestParams, download_vec_znx, upload_vec_znx, vec_znx_backend_mut, vec_znx_backend_ref},
@@ -306,7 +306,7 @@ fn normalized<BE: TestBackend>(
     module: &Module<BE>,
     base2k: usize,
     big: &VecZnxBigOwned<BE>,
-    scratch: &mut ScratchOwned<BE>,
+    scratch: &mut PoisonedArena<BE>,
 ) -> VecZnxOwned<i64>
 where
     Module<BE>: ModuleN + VecZnxBigNormalize<BE>,
@@ -361,7 +361,7 @@ where
     let base2k = params.base2k;
     let cols = 2;
     let mut source = Source::new([9u8; 32]);
-    let mut scratch: ScratchOwned<BE> = poisoned_arena(module.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch: PoisonedArena<BE> = poisoned_arena(module.vec_znx_big_normalize_tmp_bytes());
 
     let big_bin: [(&str, BigBin<'_, BE>); 2] = [
         ("vec_znx_big_add", &|r, rc, x, xc, y, yc| {
