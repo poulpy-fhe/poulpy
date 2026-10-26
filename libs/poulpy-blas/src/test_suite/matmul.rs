@@ -52,15 +52,16 @@ use super::helpers::{
 use crate::{
     api::{BlasMatIntraOps, BlasMatMulOps},
     layouts::{
-        BlasCiphertext, BlasCiphertextOwned, BlasContext, BlasContextInfos, BlasGridInfos, BlasLayout, BlasMatMulLeft,
-        BlasMatMulOperand, BlasMatMulOperandLayout, BlasMatMulOperandPreparedFactory, BlasMatMulRight, BlasModuleAlloc, BlasPlan,
-        BlasPtAlgorithm, BlasPtOperand, BlasPtOperandInfos, Left, Right, blas_matmul_left_operand_layout,
-        blas_matmul_right_operand_layout, ciphertext::layout_of, replicated, validate::MASKLESS, validate_blas_matmul_prepared,
+        BlasCiphertext, BlasCiphertextOwned, BlasContext, BlasContextInfos, BlasGridInfos, BlasKeyUses, BlasLayout,
+        BlasMatMulLeft, BlasMatMulOperand, BlasMatMulOperandLayout, BlasMatMulOperandPreparedFactory, BlasMatMulRight,
+        BlasModuleAlloc, BlasPlan, BlasPtAlgorithm, BlasPtOperand, BlasPtOperandInfos, Left, Right,
+        blas_matmul_left_operand_layout, blas_matmul_right_operand_layout, ciphertext::layout_of, replicated, validate::MASKLESS,
+        validate_blas_matmul_prepared,
     },
     oep::{BlasImpl, BlasMatMulImpl},
     reference::{
-        BlasKeyUses, BlasMatMulReference, blas_matmul_pt_left_key_uses, blas_matmul_pt_left_output_layout,
-        blas_matmul_pt_right_key_uses, blas_matmul_pt_right_output_layout, pt_label,
+        BlasMatMulReference, blas_matmul_pt_left_key_uses, blas_matmul_pt_left_output_layout, blas_matmul_pt_right_key_uses,
+        blas_matmul_pt_right_output_layout, pt_label,
     },
 };
 
@@ -1975,8 +1976,8 @@ pub fn test_blas_matmul_pt_masked_guards<BE, F, E>(
 /// ([`foreign_layouts`]), whose rank its keys reject; factors and `res` all of another rank than the rotation keys; a
 /// copy relabelled past `log2` of the ring degree; a context encoded on a module of another degree or at another radix,
 /// or at another dimension, which the prepared product of a hot operand rejects too, and that of two cold operands
-/// ignores; a factor at a radix other than the context's; an inner-dimension mismatch; a radix above 62, whose digits
-/// cannot hold two lazy terms of the JKLS kernel's two-pass circuit; a missing rotation or tensor key; and a tensor key
+/// ignores; a factor at a radix other than the context's; an inner-dimension mismatch; a radix above 62, where two
+/// canonical tensor digits can overflow an `i64`; a missing rotation or tensor key; and a tensor key
 /// of another rank than the blocks. The prepared product's validator also rejects operand infos of either hint without
 /// a batch record, at another dimension, without a block, or whose label does not allow their record, and operands and
 /// `res` all of another rank than the keys. poulpy-ckks's budget check rejects a `res` narrower than the factors' scale
@@ -2215,29 +2216,19 @@ pub fn test_blas_matmul_guards<BE, F, E>(
         }
     }
 
-    // `res` at radix 63: its digits hold one lazy term, short of the two the JKLS kernel's two-pass circuit sums at
-    // least. Its radix is not the factors' either, so the reason tells the two checks apart.
+    // `res` at radix 63, above poulpy-ckks's prepared dot product's 62; the radix check, which `validate.rs` pins, comes
+    // before the comparison with the factors' radix.
     let radix_63 = CKKSTestParams { base2k: 63, ..params };
     let mut res = alloc_grid(&radix_63, module, log_d, 1, 1, params.k);
-    let mut errors = vec![
-        module
-            .blas_matmul(&mut res, &ct, &column, &ctx, &keys, &keys, &mut op_scratch.borrow())
-            .unwrap_err(),
-    ];
-    assert_guard::<BE, _>("lazy sums", "blas_matmul", InvalidOperand, &mut res, |res| {
+    assert_guard::<BE, _>("radix 63", "blas_matmul", InvalidOperand, &mut res, |res| {
         module.blas_matmul(res, &ct, &column, &ctx, &keys, &keys, &mut op_scratch.borrow())
     });
     for (hl, hr) in MIXES {
         let (l, r) = (&left[side(hl)], &right[side(hr)]);
-        let mut call = |res: &mut BlasCiphertextOwned<BE>| {
+        let label = &format!("radix 63 {hl:?} x {hr:?}");
+        assert_guard::<BE, _>(label, "blas_matmul_prepared", InvalidOperand, &mut res, |res| {
             module.blas_matmul_prepared(res, l, r, &ctx, &keys, &keys, &mut op_scratch.borrow())
-        };
-        errors.push(call(&mut res).unwrap_err());
-        let label = &format!("lazy sums {hl:?} x {hr:?}");
-        assert_guard::<BE, _>(label, "blas_matmul_prepared", InvalidOperand, &mut res, call);
-    }
-    for e in errors {
-        assert!(e.to_string().contains("lazy terms"), "lazy sums: {e}");
+        });
     }
 
     // Operand infos the prepared product's validator rejects, beside a valid operand, under either hint: without a

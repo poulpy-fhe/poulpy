@@ -205,6 +205,28 @@ pub fn slot_product<F: DiagonalArithmetic>(slots: usize, values: &[F], rotation:
     diagonals
 }
 
+/// Projection on row 0: output `(r, c)` reads `(r, c)` when `r = 0`, else 0. One diagonal at offset 0, stored at
+/// `d^2` slots.
+pub fn first_row<F: DiagonalArithmetic + One>(slots: usize, log_d: usize) -> Diagonals<F> {
+    let d = 1usize << log_d;
+    assert_tiles(slots, d, 1);
+    let mask: Vec<F> = (0..d * d).map(|t| projection(t < d)).collect();
+    slot_product(slots, &mask, 0)
+}
+
+/// Projection on column 0: output `(r, c)` reads `(r, c)` when `c = 0`, else 0. One diagonal at offset 0, stored at `d`
+/// slots.
+pub fn first_col<F: DiagonalArithmetic + One>(slots: usize, log_d: usize) -> Diagonals<F> {
+    let d = 1usize << log_d;
+    assert_tiles(slots, d, 1);
+    let mask: Vec<F> = (0..d).map(|c| projection(c == 0)).collect();
+    slot_product(slots, &mask, 0)
+}
+
+fn projection<F: DiagonalArithmetic + One>(keep: bool) -> F {
+    if keep { F::one() } else { <F as DiagonalArithmetic>::zero() }
+}
+
 /// Right product in every matrix slot: output `(r, c)` of matrix slot `s` is `sum_l in(r, l) b(s mod count, l, c)`.
 ///
 /// Its diagonals are stored at a period fixed by the structure, never by `b`'s values: `d` for one public matrix, whose
@@ -670,5 +692,33 @@ mod tests {
             }
             assert_eq!(left, apply(&left_mul(SLOTS, LOG_D, count, public), &a), "count={count}");
         }
+    }
+
+    /// `x += Rot_{sign 2^i stride}(x)` for every `i < log2(d)`.
+    fn tree(x: &[f64], stride: usize, sign: i64) -> Vec<f64> {
+        (0..LOG_D).fold(x.to_vec(), |x, i| {
+            let shift = (sign * ((stride << i) as i64)).rem_euclid(x.len() as i64) as usize;
+            (0..x.len()).map(|t| x[t] + x[(t + shift) % x.len()]).collect()
+        })
+    }
+
+    /// The axis reductions in the clear. Along the rows, the tree by `2^i d` leaves the column sums in row 0, and in every
+    /// row of a replicated input; projected on row 0 and broadcast by `-2^i d`, in every row. Along the columns, the tree
+    /// by `2^i`, the projection on column 0 and the broadcast by `-2^i` leave each row's sum in every column.
+    #[test]
+    fn reductions_hold_in_the_clear() {
+        let (x, replicated) = (
+            input(22),
+            input(23)[..D * D].iter().copied().cycle().take(SLOTS).collect::<Vec<_>>(),
+        );
+        let column_sums = |x: &[f64]| per_matrix(x, |m, _, c| (0..D).map(|r| m[r * D + c]).sum());
+        let row_sums = per_matrix(&x, |m, r, _| (0..D).map(|c| m[r * D + c]).sum());
+        assert_eq!(tree(&replicated, D, 1), column_sums(&replicated));
+        let rows = apply(&first_row(SLOTS, LOG_D), &tree(&x, D, 1));
+        assert_eq!(tree(&rows, D, -1), column_sums(&x));
+        let cols = apply(&first_col(SLOTS, LOG_D), &tree(&x, 1, 1));
+        assert_eq!(tree(&cols, 1, -1), row_sums);
+        assert_eq!(first_row::<f64>(SLOTS, LOG_D).period(0), Some(D * D));
+        assert_eq!(first_col::<f64>(SLOTS, LOG_D).period(0), Some(D));
     }
 }

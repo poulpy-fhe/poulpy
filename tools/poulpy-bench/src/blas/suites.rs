@@ -13,30 +13,40 @@ use poulpy_hal::{
 use crate::{
     BenchOp, bench_ops,
     blas::{
+        intra,
         matmul::{self, BlasBenchModule},
         params::{BlasBenchParams, default_bench_params_blas},
     },
 };
 
-/// `blas_matmul` by a dense right factor of distinct matrices per matrix slot, kept apart from [`blas_ops`] because it
-/// needs several matrices per ciphertext: at one matrix the right factor is the replicated one.
-pub fn blas_dense_ops<BE, M>() -> [BenchOp<M, BlasBenchParams>; 1]
+/// `blas_matmul` by a dense right factor of distinct matrices per matrix slot and `blas_sum_rows` of distinct matrices,
+/// kept apart from [`blas_ops`] because they need several matrices per ciphertext: at one matrix the right factor and
+/// the summed grid are the replicated ones.
+pub fn blas_dense_ops<BE, M>() -> [BenchOp<M, BlasBenchParams>; 2]
 where
-    BE: Backend<Ring = Standard> + 'static + BlasMatMulImpl + MaxBase2k,
+    BE: Backend<Ring = Standard> + 'static + BlasMatIntraImpl + BlasMatMulImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     M: Measurement,
 {
-    [BenchOp {
-        layer: "blas",
-        name: "blas_matmul",
-        runner: matmul::runner_blas_matmul::<BE, _>,
-    }]
+    [
+        BenchOp {
+            layer: "blas",
+            name: "blas_matmul",
+            runner: matmul::runner_blas_matmul::<BE, _>,
+        },
+        BenchOp {
+            layer: "blas",
+            name: "blas_sum_rows",
+            runner: intra::runner_blas_sum_rows::<BE, _>,
+        },
+    ]
 }
 
 /// The operations that run at every point: `blas_matmul` by a replicated right factor, the products by a public matrix
-/// on either side under `Diagonal` and `Jkls`, and the transpose.
-pub fn blas_ops<BE, M>() -> [BenchOp<M, BlasBenchParams>; 6]
+/// on either side under `Diagonal` and `Jkls`, the transpose, `blas_sum_rows` and `blas_rotate_rows` of a replicated
+/// grid, and `blas_sum_cols`.
+pub fn blas_ops<BE, M>() -> [BenchOp<M, BlasBenchParams>; 9]
 where
     BE: Backend<Ring = Standard> + 'static + BlasMatIntraImpl + BlasMatMulImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
@@ -73,6 +83,21 @@ where
             layer: "blas",
             name: "blas_transpose",
             runner: matmul::runner_blas_transpose::<BE, _>,
+        },
+        BenchOp {
+            layer: "blas",
+            name: "blas_sum_rows_replicated",
+            runner: intra::runner_blas_sum_rows_replicated::<BE, _>,
+        },
+        BenchOp {
+            layer: "blas",
+            name: "blas_sum_cols",
+            runner: intra::runner_blas_sum_cols::<BE, _>,
+        },
+        BenchOp {
+            layer: "blas",
+            name: "blas_rotate_rows_replicated",
+            runner: intra::runner_blas_rotate_rows_replicated::<BE, _>,
         },
     ]
 }

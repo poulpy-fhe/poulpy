@@ -15,7 +15,7 @@
 //!   keyswitch, automorphism, external product, tensoring).
 //! - [`schemes`]: full scheme-level operations (`ckks`, `bin_fhe`).
 //! - [`blas`]: `poulpy-blas` encrypted matrix operations (`blas_matmul`, `blas_matmul_pt_right`, `blas_matmul_pt_left`,
-//!   `blas_transpose`).
+//!   `blas_transpose`, `blas_sum_rows`, `blas_sum_cols`, `blas_rotate_rows`).
 //! - [`libm`]: `poulpy-libm` function plans (`exp`, `log`, `pow`).
 //!
 //! # The runner / `BenchOp` / suite pattern

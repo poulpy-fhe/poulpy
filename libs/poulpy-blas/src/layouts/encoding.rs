@@ -354,6 +354,12 @@ pub(crate) fn mapped_block_into<P: LtDiagonalMeta>(
     mapped
 }
 
+/// `block` copied into a ciphertext of width `dst_k`: at the narrower of the two, as `ckks_copy` leaves it.
+pub(crate) fn copied_block(mut block: CKKSLayout, dst_k: TorusPrecision) -> CKKSLayout {
+    block.glwe_layout.k = block.k().min(dst_k);
+    block
+}
+
 /// [`mapped_block_into`] at `block`'s width.
 pub(crate) fn mapped_block<P: LtDiagonalMeta>(block: CKKSLayout, lt: &LinearTransformation<P>) -> CKKSLayout {
     mapped_block_into(block, lt, block.k())

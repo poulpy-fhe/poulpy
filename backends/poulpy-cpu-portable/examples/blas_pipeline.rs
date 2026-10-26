@@ -27,14 +27,14 @@ use anyhow::Result;
 use poulpy_blas::{
     api::{BlasMatInterOps, BlasMatIntraOps, BlasMatMulOps},
     layouts::{
-        BlasCiphertext, BlasCiphertextOwned, BlasContextPreparedFactory, BlasEncodingOps, BlasGridInfos, BlasLayout,
+        BlasCiphertext, BlasCiphertextOwned, BlasContextPreparedFactory, BlasEncodingOps, BlasGridInfos, BlasKeyUses, BlasLayout,
         BlasModuleAlloc, BlasPlan, BlasPtOperandPreparedFactory, Left, Right,
         grid::{join_blocks, split_into_blocks},
     },
     reference::{
-        BlasKeyUses, blas_matmul_key_uses, blas_matmul_output_layout, blas_matmul_pt_left_key_uses,
-        blas_matmul_pt_left_output_layout, blas_matmul_pt_right_key_uses, blas_matmul_pt_right_output_layout, blas_sum_key_uses,
-        blas_sum_output_layout, blas_transpose_key_uses, blas_transpose_output_layout,
+        blas_matmul_key_uses, blas_matmul_output_layout, blas_matmul_pt_left_key_uses, blas_matmul_pt_left_output_layout,
+        blas_matmul_pt_right_key_uses, blas_matmul_pt_right_output_layout, blas_sum_key_uses, blas_sum_output_layout,
+        blas_transpose_key_uses, blas_transpose_output_layout,
     },
 };
 use poulpy_ckks::prelude::*;

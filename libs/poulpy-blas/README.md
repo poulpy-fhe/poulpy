@@ -8,7 +8,12 @@ its batch, up to `S / d^2` matrices repeated over the slots, from its blocks' la
 `layouts::grid::{split_into_blocks, join_blocks}` move matrices, read and written through element accessors, to and
 from the slot vectors of the blocks.
 
-Intra operations apply one map to every matrix of the batch: `blas_transpose`, `blas_rotate_rows`, `blas_rotate_cols`.
+Intra operations apply one map to every matrix of the batch: `blas_transpose`, `blas_rotate_rows`, `blas_rotate_cols`,
+and the axis reductions `blas_sum_rows` and `blas_sum_cols`, which give every entry the sum of its column or of its row.
+A reduction adds rotations of a block, by `2^i d` slots along the rows and `2^i` along the columns, then projects the
+sums on row 0 (column 0) and broadcasts them back, one scale. On a replicated grid, one matrix repeated over the slots,
+a rotation by a multiple of `d` wraps inside a block, so the rows sum with no projection and no scale, and a grid one
+block high shifts its rows by rotations, also at no scale.
 Inter operations move whole matrices across the batch: `blas_rotate`, `blas_sum`. Products multiply every matrix of the
 batch: `blas_matmul` (JKLS, ciphertext x ciphertext), `blas_matmul_prepare_left`, `blas_matmul_prepare_right` and
 `blas_matmul_prepared` (the same product from prepared operands, bit for bit under the same context), `blas_matmul_pt_right`
@@ -42,30 +47,31 @@ override keeps no state across calls ([Parallelism](docs/blas-contracts.md#paral
 
 A `BlasPlan` fixes the block dimension and how each block map is evaluated. The maps are encoded once from it, at a
 caller-chosen precision, into a `BlasContext`, and public matrices into a `BlasPtOperand`. Operations take the context
-and `Sync` key stores: rotation keys through poulpy-core's `GetAutomorphismKey` (`atk`), the tensor key through
-`GetTensorKey` (`tsk`). The preparations take only `atk`, and `blas_matmul` and `blas_matmul_prepared` both: the latter
-looks up the rotation keys of a hot operand's terms, and of two cold operands the tensor key alone. Every operation
-takes any grid implementing `BlasGrid` (`BlasGridMut` for the result). A prepared operand, a `BlasMatMulOperand`, holds
-poulpy-ckks ciphertexts or prepared terms in the backend's storage, and reports its hint and its input's dimensions,
-batch and layout (`BlasMatMulOperandInfos`). Slot-wise additions, products and rescaling are poulpy-ckks operations
-applied to each block.
+and `Sync` key stores: rotation keys through poulpy-core's `GetAutomorphismKey` (`atk`, `keys` in the axis reductions),
+the tensor key through `GetTensorKey` (`tsk`). The preparations take only `atk`, and `blas_matmul` and
+`blas_matmul_prepared` both: the latter looks up the rotation keys of a hot operand's terms, and of two cold operands
+the tensor key alone. Every operation takes any grid implementing `BlasGrid` (`BlasGridMut` for the result). A prepared
+operand, a `BlasMatMulOperand`, holds poulpy-ckks ciphertexts or prepared terms in the backend's storage, and reports
+its hint and its input's dimensions, batch and layout (`BlasMatMulOperandInfos`). Slot-wise additions, products and
+rescaling are poulpy-ckks operations applied to each block.
 
 The plan lists the rotation keys each operation looks up, from the ring's cyclotomic order alone:
 `transpose_galois_elements`, `rotate_rows_galois_elements(k)`, `rotate_cols_galois_elements(k)`,
-`rotate_galois_elements(r)`, `matmul_galois_elements` (the products and both preparations) and
-`matmul_pt_right_galois_elements` and `matmul_pt_left_galois_elements` (any public matrices, on the right or on the left);
-`galois_elements` covers every map of a context, and
+`sum_rows_galois_elements`, `sum_cols_galois_elements`, `rotate_galois_elements(r)`, `matmul_galois_elements` (the
+products and both preparations) and `matmul_pt_right_galois_elements` and `matmul_pt_left_galois_elements` (any public
+matrices, on the right or on the left); `galois_elements` covers every map of a context and both sums, and
 `sum_galois_elements` lists `blas_sum`'s for a grid's batch. A client therefore plans its keys with no module, context
 or public matrix: it generates the union of its pipeline's sets, and a tensor key only if it calls `blas_matmul` or
 `blas_matmul_prepared`. The server checks each grid's batch, `mat_slots()`, against the one the summed keys were
 planned for.
 
-Each operation also has a key-use query in `poulpy_blas::reference` (`blas_matmul_key_uses`, ...) that lists each key
-it looks up and the width it looks it up at: `(Galois element, width)` pairs and the tensor key's width. The output-layout
-queries (`blas_matmul_output_layout`, ...) give the layout each operation stamps on `res` from its inputs' layouts, so a
-client plans every intermediate grid, and with it every key, before it encrypts or runs anything. Every query takes a
-context or a public operand, or their layouts (`BlasContextLayout`, `BlasPtOperandLayout`), and reads only the shape of
-their maps, so the plan needs no map encoded; the radix queries name their backend, `blas_matmul_max_base2k::<BE>`.
+Each operation also has a key-use query in `poulpy_blas::reference` (`blas_matmul_key_uses`, ...), the reductions' in
+`poulpy_blas::layouts`, that lists each key it looks up and the width it looks it up at: `(Galois element, width)` pairs
+and the tensor key's width. The output-layout queries (`blas_matmul_output_layout`, ...) give the layout each operation
+stamps on `res` from its inputs' layouts, so a client plans every intermediate grid, and with it every key, before it
+encrypts or runs anything. Every query takes a context or a public operand, or their layouts (`BlasContextLayout`,
+`BlasPtOperandLayout`), and reads only the shape of their maps, so the plan needs no map encoded; the radix queries name
+their backend, `blas_matmul_max_base2k::<BE>`.
 
 The [pipeline example](../../backends/poulpy-cpu-portable/examples/blas_pipeline.rs) plans its keys this way, plans every layout from the queries, runs `blas_matmul`,
 `blas_transpose`, `blas_matmul_pt_right`, `blas_matmul_pt_left` and `blas_sum` on a batch of encrypted matrices, prints the
