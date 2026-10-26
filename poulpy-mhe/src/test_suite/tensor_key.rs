@@ -8,6 +8,7 @@ use poulpy_core::{
         Base2K, Dnum, Dsize, GLWELayout, GLWEPublicKeyPrepared, GLWESecret, GLWESecretLayout, GLWESecretTensor, GLWETensorKey,
         GLWETensorKeyLayout, LWEInfos, ModuleCoreAlloc, TorusPrecision, k_digit_of,
     },
+    test_suite::with_scratch,
 };
 use poulpy_hal::{
     AlignedBuf,
@@ -20,7 +21,6 @@ use super::{
     fixtures::{
         BASE2K, DNUM, DSIZE, PARTIES, RANK, collective_public_key, ideal_secret, party_secrets, secret_from_seed, secret_sum,
     },
-    parity::with_scratch,
     pat::assert_gglwe_noise_within,
 };
 use crate::{
@@ -209,8 +209,8 @@ fn public_key_layout<BE: Backend>(module: &Module<BE>, k: TorusPrecision) -> GLW
     }
 }
 
-/// Public key layout mismatches are rejected before core encryption.
-pub fn test_glwe_tensor_key_pk_shape_guards<BE>(module: &Module<BE>)
+/// Sharing under a public key of another degree or radix, or of an encapsulated distribution, panics before any draw.
+pub fn test_mhe_glwe_tensor_key_share_gen_rejects_pk_shape<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     Module<BE>: MHEModuleAlloc<BE>
@@ -229,33 +229,32 @@ where
         "invalid share: public key needs a samplable distribution",
     ];
     for (case, expected) in expected.into_iter().enumerate() {
-        super::fixtures::assert_panics_with(expected, || {
-            let mut pk_layout = public_key_layout(module, layout.k());
-            let mut pk = if case == 0 {
-                module.glwe_public_key_prepared_alloc_from_infos(&GLWELayout {
-                    n: (module.n() / 2).into(),
-                    ..pk_layout
-                })
-            } else {
-                if case == 1 {
-                    pk_layout.base2k = Base2K(BASE2K.0 / 2);
-                }
-                module.glwe_public_key_prepared_alloc_from_infos(&pk_layout)
-            };
-            if case == 2 {
-                *pk.dist_mut() = Distribution::ENCAPSULATED("private distribution label");
+        let mut pk_layout = public_key_layout(module, layout.k());
+        let mut pk = if case == 0 {
+            module.glwe_public_key_prepared_alloc_from_infos(&GLWELayout {
+                n: (module.n() / 2).into(),
+                ..pk_layout
+            })
+        } else {
+            if case == 1 {
+                pk_layout.base2k = Base2K(BASE2K.0 / 2);
             }
-            let mut res = module.glwe_tensor_key_share_alloc_from_infos(&layout);
+            module.glwe_public_key_prepared_alloc_from_infos(&pk_layout)
+        };
+        if case == 2 {
+            *pk.dist_mut() = Distribution::ENCAPSULATED("private distribution label");
+        }
+        let mut res = module.glwe_tensor_key_share_alloc_from_infos(&layout);
+        let before = res.clone();
+        let mut source_a = Source::new([20u8; 32]);
+        let mut source_b = Source::new([10u8; 32]);
+        super::fixtures::assert_panics_with(expected, || {
             with_scratch::<BE, _>(module.mhe_glwe_tensor_key_share_gen_tmp_bytes(&layout, &pk_layout), |s| {
-                module.mhe_glwe_tensor_key_share_gen(
-                    &mut res,
-                    &sk,
-                    &pk,
-                    &mut Source::new([20u8; 32]),
-                    &mut Source::new([10u8; 32]),
-                    s,
-                )
+                module.mhe_glwe_tensor_key_share_gen(&mut res, &sk, &pk, &mut source_a, &mut source_b, s)
             });
         });
+        assert!(res == before);
+        assert_eq!(source_a.next_i64(), Source::new([20u8; 32]).next_i64());
+        assert_eq!(source_b.next_i64(), Source::new([10u8; 32]).next_i64());
     }
 }

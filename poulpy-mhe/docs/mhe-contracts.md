@@ -199,7 +199,7 @@ finalization, with their layouts, noise estimates, flags, seeds and the draws
 left in every private stream. Fixtures are built on `R` and transferred to
 `T`, each call runs on its own query's scratch, and a controlled-sampling
 comparison backend copies `T`'s draws when their samplers differ. Every backend
-type registering mhe runs it; the reference backends also run
+type registering mhe runs it; the comparison backends also run
 `mhe_backend_test_suite!`.
 `impl_mhe_reference_full!` selects every family. Each OEP trait has its own
 opt-in, `impl_<family>_reference_full!` with `<family>` the trait in snake case

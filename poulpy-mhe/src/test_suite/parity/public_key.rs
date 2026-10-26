@@ -1,6 +1,7 @@
 use poulpy_core::{
     api::{GLWESecretPreparedFactory, GLWESecretSampling},
     layouts::{GLWELayout, GLWEPublicKey, GLWEPublicKeyCompressedToBackendMut, GLWESecret, ModuleCoreAlloc, Rank},
+    test_suite::with_scratch,
 };
 use poulpy_hal::{
     AlignedBuf,
@@ -10,7 +11,7 @@ use poulpy_hal::{
 
 use super::{
     ParityBackend, ReferenceBackend, Snapshot, fixture_secrets, poison_public_key, poison_view, prepare_secrets,
-    snapshot_public_key, snapshot_public_key_share, snapshot_source, with_scratch,
+    snapshot_public_key, snapshot_public_key_share, snapshot_source,
 };
 use crate::{
     api::GLWEPublicKeyMHEProtocol,

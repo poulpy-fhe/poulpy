@@ -1,12 +1,13 @@
 use poulpy_core::{
     api::{GLWESecretPreparedFactory, GLWESecretSampling},
     layouts::{GGLWEInfos, GGLWELayout, GLWESecret, GLWESwitchingKeyDegrees, ModuleCoreAlloc, Rank, TorusPrecision},
+    test_suite::with_scratch,
 };
 use poulpy_hal::{layouts::Module, source::Source};
 
 use super::{
     Meta, ParityBackend, ReferenceBackend, Snapshot, fixture_secrets, poison_gglwe, poison_gglwe_compressed, snapshot_gglwe,
-    snapshot_gglwe_compressed, snapshot_source, with_scratch,
+    snapshot_gglwe_compressed, snapshot_source,
 };
 use crate::{
     api::{GLWEAutomorphismKeyMHEProtocol, GLWESwitchingKeyMHEProtocol},

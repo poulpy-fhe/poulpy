@@ -2,12 +2,13 @@ use poulpy_core::{
     GLWEMaskFill, Noise, TransferInto,
     api::{GLWEPublicKeyPreparedFactory, GLWESecretPreparedFactory, GLWESecretSampling},
     layouts::{GLWE, GLWELayout, GLWEPublicKey, GLWESecret, ModuleCoreAlloc, Rank, TorusPrecision},
+    test_suite::with_scratch,
 };
 use poulpy_hal::{AlignedBuf, layouts::Module, source::Source};
 
 use super::{
     ParityBackend, ReferenceBackend, Snapshot, fixture_secrets, poison_glwe, prepare_secrets, public_key::collective_public_key,
-    snapshot_glwe, snapshot_source, with_scratch,
+    snapshot_glwe, snapshot_source,
 };
 use crate::{
     api::{GLWEPrivateKeyswitchMHEProtocol, GLWEPublicKeyMHEProtocol, GLWEPublicKeyswitchMHEProtocol},

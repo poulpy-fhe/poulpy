@@ -102,7 +102,6 @@ pub trait MHEModuleAlloc<BE: Backend>:
     }
 
     fn glwe_switching_key_share_alloc_from_infos<A: GGLWEInfos>(&self, infos: &A) -> GLWESwitchingKeyShareOwned<BE> {
-        assert_degree(self.n(), infos.n());
         GLWESwitchingKeyShare {
             key: self.gglwe_pat_compressed_alloc_from_infos(infos),
             input_degree: Degree(0),
@@ -127,7 +126,6 @@ pub trait MHEModuleAlloc<BE: Backend>:
     }
 
     fn glwe_automorphism_key_share_alloc_from_infos<A: GGLWEInfos>(&self, infos: &A) -> GLWEAutomorphismKeyShareOwned<BE> {
-        assert_degree(self.n(), infos.n());
         GLWEAutomorphismKeyShare {
             key: self.gglwe_pat_compressed_alloc_from_infos(infos),
             p: 0,
@@ -149,7 +147,6 @@ pub trait MHEModuleAlloc<BE: Backend>:
     }
 
     fn glwe_tensor_key_share_alloc_from_infos<A: GGLWEInfos>(&self, infos: &A) -> GLWETensorKeyShareOwned<BE> {
-        assert_degree(self.n(), infos.n());
         GLWETensorKeyShare {
             key: self.gglwe_pat_alloc_from_infos(infos),
         }
@@ -170,7 +167,6 @@ pub trait MHEModuleAlloc<BE: Backend>:
     }
 
     fn ggsw_share_alloc_from_infos<A: GGSWInfos>(&self, infos: &A) -> GGSWShareOwned<BE> {
-        assert_degree(self.n(), infos.n());
         let circ = || -> Vec<GGLWEPatCompressedOwned<BE>> {
             (0..infos.rank().as_usize())
                 .map(|_| self.gglwe_pat_compressed_alloc_from_infos(&ggsw_share_part_layout(infos, infos.rank(), infos.rank())))
@@ -248,7 +244,6 @@ pub trait MHEModuleAlloc<BE: Backend>:
 
     /// A shares-to-encryption share of `infos`, the output layout.
     fn glwe_share_to_enc_share_alloc_from_infos<A: GLWEInfos>(&self, infos: &A) -> GLWEShareToEncShareOwned<BE> {
-        assert_degree(self.n(), infos.n());
         GLWEShareToEncShare {
             inner: self.glwe_pat_compressed_alloc_from_infos(infos),
         }

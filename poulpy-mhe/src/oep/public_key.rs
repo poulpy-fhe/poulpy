@@ -19,13 +19,18 @@ use crate::layouts::GLWEPublicKeyShareOwned;
 /// The memory, layout, synchrony and aliasing rules of
 /// `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait GLWEPublicKeyMHEProtocolImpl: HalMatZnxImpl + EncryptionImpl {
-    /// Upper bound on the scratch of `mhe_glwe_public_key_share_gen`, as `GLWEPublicKeyMHEProtocolReference::mhe_glwe_public_key_share_gen_tmp_bytes_reference`.
+    /// Upper bound on the scratch of `mhe_glwe_public_key_share_gen`, as
+    /// `GLWEPublicKeyMHEProtocolReference::mhe_glwe_public_key_share_gen_tmp_bytes_reference`.
     fn mhe_glwe_public_key_share_gen_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GLWEInfos;
 
-    /// Reproduces `GLWEPublicKeyMHEProtocolReference::mhe_glwe_public_key_share_gen_reference`: one compressed encryption of zero per entry, entry masks drawn from `seed`, errors from `source_xe`.
-    /// Panics unless `res` and `sk` have the module's degree and the share's rank and the secret's distribution is samplable.
+    /// Reproduces
+    /// `GLWEPublicKeyMHEProtocolReference::mhe_glwe_public_key_share_gen_reference`:
+    /// one compressed encryption of zero per entry, entry masks drawn from
+    /// `seed`, errors from `source_xe`.
+    /// Panics unless `res` and `sk` have the module's degree and the share's
+    /// rank and the secret's distribution is samplable.
     #[allow(clippy::too_many_arguments)]
     fn mhe_glwe_public_key_share_gen<S>(
         module: &Module<Self>,
@@ -37,7 +42,8 @@ pub unsafe trait GLWEPublicKeyMHEProtocolImpl: HalMatZnxImpl + EncryptionImpl {
     ) where
         S: GLWESecretPreparedToBackendRef<Self> + GetDistribution;
 
-    /// Default body `mhe_glwe_public_key_share_aggregate_derived`: adds the entries and combines the noise with `aggregate_metadata`.
+    /// Default body `mhe_glwe_public_key_share_aggregate_derived`: adds the
+    /// entries and combines the noise with `aggregate_metadata`.
     /// Panics unless the layouts, secret distributions and entry seeds agree.
     fn mhe_glwe_public_key_share_aggregate(
         module: &Module<Self>,
@@ -52,8 +58,11 @@ pub unsafe trait GLWEPublicKeyMHEProtocolImpl: HalMatZnxImpl + EncryptionImpl {
         Self::mat_znx_normalize_tmp_bytes(module)
     }
 
-    /// Default body `mhe_glwe_public_key_share_finalize_derived`: regenerates every entry mask from its seed, normalizes the bodies and copies the distribution into `res`.
-    /// Panics unless the distribution is samplable, the entry seeds are pairwise distinct and the layouts agree.
+    /// Default body `mhe_glwe_public_key_share_finalize_derived`: regenerates
+    /// every entry mask from its seed, normalizes the bodies and copies the
+    /// distribution into `res`.
+    /// Panics unless the distribution is samplable, the entry seeds are
+    /// pairwise distinct and the layouts agree.
     fn mhe_glwe_public_key_share_finalize<R>(
         module: &Module<Self>,
         res: &mut R,

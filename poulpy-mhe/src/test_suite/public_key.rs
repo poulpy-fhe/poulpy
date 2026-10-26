@@ -9,6 +9,7 @@ use poulpy_core::{
         GLWE, GLWELayout, GLWEPlaintext, GLWEPublicKey, GLWEPublicKeyCompressedSeedMut, GLWEPublicKeyPrepared, GLWESecret,
         GLWESecretPrepared, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
     },
+    test_suite::with_scratch,
 };
 use poulpy_hal::{
     AlignedBuf,
@@ -19,7 +20,6 @@ use poulpy_hal::{
 };
 
 use super::fixtures::{BASE2K, K, PARTIES, RANK, SEEDS, collective_public_key, ideal_secret, party_secrets};
-use super::parity::with_scratch;
 use crate::{api::GLWEPublicKeyMHEProtocol, layouts::MHEModuleAlloc};
 
 pub fn test_glwe_public_key<BE>(module: &Module<BE>)
@@ -491,8 +491,9 @@ where
     assert_eq!(source_xe.next_i64(), Source::new([10u8; 32]).next_i64());
 }
 
-/// Invalid shapes fail at the protocol boundary with an exact static message.
-pub fn test_glwe_public_key_gen_shape_guards<BE>(module: &Module<BE>)
+/// Generating under a secret of another degree or rank panics before any draw, and the scratch query panics on a
+/// layout of another degree than the module's.
+pub fn test_mhe_glwe_public_key_share_gen_rejects_shape<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     Module<BE>: ModuleNew<BE> + MHEModuleAlloc<BE> + GLWEPublicKeyMHEProtocol<BE> + GLWESecretPreparedFactory<BE>,
@@ -506,29 +507,32 @@ where
     };
 
     let small_module = Module::<BE>::new((module.n() / 2) as u64);
-    let expected = [
-        "invalid share: secret degree differs from the share's",
-        "invalid share: secret rank differs from the share's",
-        "invalid layout: degree differs from the module's",
+    let secrets: [(GLWESecretPrepared<AlignedBuf, BE>, &str); 2] = [
+        (
+            small_module.glwe_secret_prepared_alloc(RANK),
+            "invalid share: secret degree differs from the share's",
+        ),
+        (
+            module.glwe_secret_prepared_alloc(Rank(1)),
+            "invalid share: secret rank differs from the share's",
+        ),
     ];
-    for (case, expected) in expected.into_iter().enumerate() {
+    for (sk, expected) in &secrets {
+        let mut res = module.glwe_public_key_share_alloc_from_infos(&layout);
+        let before = res.clone();
+        let mut source_xe = Source::new([10u8; 32]);
         super::fixtures::assert_panics_with(expected, || {
-            if case == 2 {
-                module.mhe_glwe_public_key_share_gen_tmp_bytes(&GLWELayout {
-                    n: (module.n() / 2).into(),
-                    ..layout
-                });
-                return;
-            }
-            let sk = if case == 0 {
-                small_module.glwe_secret_prepared_alloc(RANK)
-            } else {
-                module.glwe_secret_prepared_alloc(Rank(1))
-            };
-            let mut res = module.glwe_public_key_share_alloc_from_infos(&layout);
             with_scratch::<BE, _>(module.mhe_glwe_public_key_share_gen_tmp_bytes(&layout), |s| {
-                module.mhe_glwe_public_key_share_gen(&mut res, &sk, SEEDS[0], &mut Source::new([10u8; 32]), s)
+                module.mhe_glwe_public_key_share_gen(&mut res, sk, SEEDS[0], &mut source_xe, s)
             });
         });
+        assert!(res == before);
+        assert_eq!(source_xe.next_i64(), Source::new([10u8; 32]).next_i64());
     }
+    super::fixtures::assert_panics_with("invalid layout: degree differs from the module's", || {
+        module.mhe_glwe_public_key_share_gen_tmp_bytes(&GLWELayout {
+            n: (module.n() / 2).into(),
+            ..layout
+        });
+    });
 }

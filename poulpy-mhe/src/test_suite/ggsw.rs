@@ -10,6 +10,7 @@ use poulpy_core::{
         GLWESwitchingKey, GLWESwitchingKeyPrepared, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
         prepared::{GGSWPrepared, GGSWPreparedToBackendRef},
     },
+    test_suite::with_scratch,
 };
 use poulpy_hal::{
     AlignedBuf,
@@ -25,7 +26,6 @@ use super::fixtures::{
     BASE2K, K, LOG_MESSAGE, PARTIES, SEEDS, Secret, assert_decrypts_to, bounded_integers, encrypt_integers, ggsw_layout,
     glwe_layout_at, ideal_secret, secret_from_seed_at,
 };
-use super::parity::with_scratch;
 use crate::{
     api::{GGSWMHEProtocol, GLWESwitchingKeyMHEProtocol},
     layouts::MHEModuleAlloc,
@@ -513,8 +513,9 @@ where
     assert!(res == before);
 }
 
-/// Shape errors are rejected before encryption or key switching can print operands.
-pub fn test_ggsw_share_shape_guards<BE>(module: &Module<BE>)
+/// Generating under a secret or ephemeral secret of another degree, or from a message of another degree or with more
+/// than one column, panics before any draw.
+pub fn test_mhe_ggsw_share_gen_rejects_shape<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     Module<BE>: ModuleNew<BE>
@@ -522,7 +523,6 @@ where
         + GGSWMHEProtocol<BE>
         + GLWESecretSampling<BE>
         + GLWESecretPreparedFactory<BE>
-        + GLWESwitchingKeyPreparedFactory<BE>
         + ScalarZnxAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -530,41 +530,56 @@ where
 
     let (secrets, ephemerals) = parties(module, layout.rank, 0);
     let small_module = Module::<BE>::new((module.n() / 2) as u64);
+    let small_sk = small_module.glwe_secret_prepared_alloc(layout.rank);
+    let small_u = small_module.glwe_secret_prepared_alloc(layout.rank);
     let expected = [
         "invalid share: secret degree differs from the transcript's",
         "invalid share: ephemeral secret degree differs from the transcript's",
         "invalid share: message degree differs from the transcript's",
         "invalid share: message must have one column",
-        "invalid finalization: key and GGSW degrees differ",
     ];
     for (case, expected) in expected.into_iter().enumerate() {
+        let pt = module.scalar_znx_alloc(
+            if case == 2 { module.n() / 2 } else { module.n() },
+            if case == 3 { 2 } else { 1 },
+        );
+        let sk = if case == 0 { &small_sk } else { &secrets[0].1 };
+        let u = if case == 1 { &small_u } else { &ephemerals[0].1 };
+        let mut pat = module.ggsw_share_alloc_from_infos(&layout);
+        let before = pat.clone();
+        let mut source_xe = Source::new([10u8; 32]);
         super::fixtures::assert_panics_with(expected, || {
-            let mut pat = module.ggsw_share_alloc_from_infos(&layout);
-            if case == 4 {
-                let key_layout = ephemeral_key_layout(module, &layout);
-                let key = module.glwe_switching_key_prepared_alloc_from_infos(&GGLWELayout {
-                    n: (module.n() / 2).into(),
-                    ..key_layout
-                });
-                let mut res = module.ggsw_alloc_from_infos(&layout);
-                with_scratch::<BE, _>(module.mhe_ggsw_share_finalize_tmp_bytes(&layout, &key_layout), |s| {
-                    module.mhe_ggsw_share_finalize(&mut res, &pat, &key, s)
-                });
-                return;
-            }
-            let small_sk = small_module.glwe_secret_prepared_alloc(layout.rank);
-            let small_u = small_module.glwe_secret_prepared_alloc(layout.rank);
-            let pt = module.scalar_znx_alloc(
-                if case == 2 { module.n() / 2 } else { module.n() },
-                if case == 3 { 2 } else { 1 },
-            );
-            let sk = if case == 0 { &small_sk } else { &secrets[0].1 };
-            let u = if case == 1 { &small_u } else { &ephemerals[0].1 };
             with_scratch::<BE, _>(module.mhe_ggsw_share_gen_tmp_bytes(&layout), |s| {
-                module.mhe_ggsw_share_gen(&mut pat, &pt, sk, u, SEEDS[0], &mut Source::new([10u8; 32]), s)
+                module.mhe_ggsw_share_gen(&mut pat, &pt, sk, u, SEEDS[0], &mut source_xe, s)
             });
         });
+        assert!(pat == before);
+        assert_eq!(source_xe.next_i64(), Source::new([10u8; 32]).next_i64());
     }
+}
+
+/// Finalizing under a key of another degree than the GGSW panics.
+pub fn test_mhe_ggsw_share_finalize_rejects_key_degree_mismatch<BE>(module: &Module<BE>)
+where
+    BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
+    Module<BE>: MHEModuleAlloc<BE> + GGSWMHEProtocol<BE> + GLWESwitchingKeyPreparedFactory<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let layout = ggsw_layout(module);
+    let key_layout = ephemeral_key_layout(module, &layout);
+    let pat = module.ggsw_share_alloc_from_infos(&layout);
+    let key: GLWESwitchingKeyPrepared<AlignedBuf, BE> = module.glwe_switching_key_prepared_alloc_from_infos(&GGLWELayout {
+        n: (module.n() / 2).into(),
+        ..key_layout
+    });
+    let mut res: GGSW<AlignedBuf, i64> = module.ggsw_alloc_from_infos(&layout);
+    let before = res.clone();
+    super::fixtures::assert_panics_with("invalid finalization: key and GGSW degrees differ", || {
+        with_scratch::<BE, _>(module.mhe_ggsw_share_finalize_tmp_bytes(&layout, &key_layout), |s| {
+            module.mhe_ggsw_share_finalize(&mut res, &pat, &key, s)
+        })
+    });
+    assert!(res == before);
 }
 
 /// Reading a share of another rank fails: its parts do not form one GGSW of the allocation's rank.

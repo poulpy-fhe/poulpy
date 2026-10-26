@@ -249,7 +249,7 @@ MHE runs its functional suite (`mhe_backend_test_suite!`) on the oracle and the
 portable serial types, and every type selecting MHE registers bit-exact parity
 through `mhe_parity_test_suite!`: the portable types against
 `ControlledSamplingFFT64Oracle`, the portable Rayon types against their serial
-base, and `NTT4x30Oracle` against `FFT64Oracle`. See
+base, and the two oracle families against each other, both ways. See
 [implementing multiparty operations](poulpy-mhe/docs/mhe-contracts.md).
 
 ```sh

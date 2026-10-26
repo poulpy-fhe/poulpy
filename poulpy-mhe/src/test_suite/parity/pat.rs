@@ -2,12 +2,13 @@ use poulpy_core::{
     GGLWECompressedEncryptSk, GGLWEEncryptSk, GLWECompressedEncryptSk, TransferInto,
     api::{GLWESecretPreparedFactory, GLWESecretSampling},
     layouts::{GGLWELayout, GLWELayout, ModuleCoreAlloc},
+    test_suite::with_scratch,
 };
 use poulpy_hal::{AlignedBuf, api::VecZnxFillUniformSource, layouts::Module, source::Source, test_suite::vec_znx_backend_mut};
 
 use super::{
     ParityBackend, ReferenceBackend, Snapshot, poison_gglwe, poison_glwe, snapshot_gglwe, snapshot_gglwe_compressed,
-    snapshot_glwe, snapshot_glwe_compressed, with_scratch,
+    snapshot_glwe, snapshot_glwe_compressed,
 };
 use crate::{
     api::{GGLWEPatCompressedOps, GGLWEPatOps, GLWEPatCompressedOps},

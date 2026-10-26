@@ -30,7 +30,7 @@ mod fft;
 mod hal;
 mod limbs;
 #[cfg(feature = "enable-mhe")]
-mod mhe_impl;
+mod mhe;
 mod normalize;
 mod ntt;
 mod ring;

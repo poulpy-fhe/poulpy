@@ -10,6 +10,7 @@ use poulpy_core::{
         GLWEPlaintextLayout, GLWESecret, LWEInfos, ModuleCoreAlloc, TorusPrecision,
         compressed::{GGLWECompressedSeedMut, GLWECompressedSeedMut, GLWECompressedToBackendMut},
     },
+    test_suite::with_scratch,
 };
 use poulpy_hal::{
     AlignedBuf,
@@ -22,7 +23,6 @@ use super::fixtures::{
     BASE2K, K, PARTIES, RANK, SEEDS, assert_panics_with, collective_public_key, gglwe_layout, ideal_secret, party_messages,
     party_secrets, secret_sum,
 };
-use super::parity::with_scratch;
 use crate::{
     api::{GGLWEPatCompressedOps, GGLWEPatOps, GLWEPatCompressedOps, GLWEPublicKeyMHEProtocol},
     layouts::MHEModuleAlloc,

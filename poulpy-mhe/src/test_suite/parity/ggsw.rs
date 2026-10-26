@@ -2,6 +2,7 @@ use poulpy_core::{
     TransferInto,
     api::{GLWESecretPreparedFactory, GLWESecretSampling, GLWESwitchingKeyPreparedFactory},
     layouts::{Dnum, GGLWELayout, GGSWLayout, GLWESecret, GLWESwitchingKey, ModuleCoreAlloc, Rank, TorusPrecision},
+    test_suite::with_scratch,
 };
 use poulpy_hal::{
     AlignedBuf,
@@ -12,7 +13,7 @@ use poulpy_hal::{
 
 use super::{
     ParityBackend, ReferenceBackend, Snapshot, fixture_secrets, poison_gglwe_compressed, poison_ggsw, prepare_secrets,
-    snapshot_gglwe_compressed, snapshot_ggsw, snapshot_source, with_scratch,
+    snapshot_gglwe_compressed, snapshot_ggsw, snapshot_source,
 };
 use crate::{
     api::{GGSWMHEProtocol, GLWESwitchingKeyMHEProtocol},

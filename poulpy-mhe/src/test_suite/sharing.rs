@@ -6,6 +6,7 @@ use poulpy_core::{
     DEFAULT_BOUND_XE, DEFAULT_SIGMA_XE, GLWEAdd, GLWEDecrypt, GLWEEncryptSk, GLWENormalize, Noise,
     api::{GLWESecretPreparedFactory, GLWESecretSampling},
     layouts::{GLWE, GLWELayout, GLWEPlaintext, ModuleCoreAlloc, Rank, TorusPrecision},
+    test_suite::with_scratch,
 };
 use poulpy_hal::{
     AlignedBuf,
@@ -19,7 +20,6 @@ use super::fixtures::{
     encrypt_integers, glwe_layout_at, ideal_secret, integer_plaintext, party_secrets, plaintext_integers, plaintext_state,
     secret_from_seed,
 };
-use super::parity::with_scratch;
 use crate::{
     api::{GLWEEncToShareMHEProtocol, GLWEShareToEncMHEProtocol},
     layouts::GLWEEncToShareShare,
@@ -230,7 +230,7 @@ where
     assert_eq!(source_xe.next_i64(), Source::new(SEED_XE).next_i64());
 }
 
-/// Finalizing a share whose layout differs from the ciphertext's panics.
+/// Finalizing a share whose layout differs from the ciphertext's, or that is not of rank zero, panics.
 pub fn test_mhe_glwe_enc_to_share_share_finalize_rejects_layout_mismatch<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
@@ -238,33 +238,38 @@ where
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let ct_layout = glwe_layout_at(module, K);
-    let secret_layout = GLWELayout {
-        rank: Rank(0),
-        ..ct_layout
-    };
     let ct: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&ct_layout);
-    let share = GLWEEncToShareShare {
-        inner: module.glwe_alloc_from_infos(&secret_layout),
-    };
-    let mut secret: GLWEPlaintext<AlignedBuf, i64> = module.glwe_plaintext_alloc_from_infos(&glwe_layout_at(module, K_OUT));
-    let before = plaintext_state(&secret);
-    assert_panics_with("invalid finalization: ciphertext and share layouts differ", || {
-        with_scratch::<BE, _>(module.mhe_glwe_enc_to_share_share_finalize_tmp_bytes(), |s| {
-            module.mhe_glwe_enc_to_share_share_finalize(&mut secret, &ct, &share, s)
-        })
-    });
-    assert!(plaintext_state(&secret) == before);
+    for (share_layout, secret_k, expected) in [
+        (
+            GLWELayout {
+                rank: Rank(0),
+                ..ct_layout
+            },
+            K_OUT,
+            "invalid finalization: ciphertext and share layouts differ",
+        ),
+        (ct_layout, K, "invalid finalization: additive shares must have rank zero"),
+    ] {
+        let share = GLWEEncToShareShare {
+            inner: module.glwe_alloc_from_infos(&share_layout),
+        };
+        let mut secret: GLWEPlaintext<AlignedBuf, i64> =
+            module.glwe_plaintext_alloc_from_infos(&glwe_layout_at(module, secret_k));
+        let before = plaintext_state(&secret);
+        assert_panics_with(expected, || {
+            with_scratch::<BE, _>(module.mhe_glwe_enc_to_share_share_finalize_tmp_bytes(), |s| {
+                module.mhe_glwe_enc_to_share_share_finalize(&mut secret, &ct, &share, s)
+            })
+        });
+        assert!(plaintext_state(&secret) == before);
+    }
 }
 
-/// Plaintext shares must be rank zero at both conversion boundaries.
-pub fn test_glwe_sharing_layout_guards<BE>(module: &Module<BE>)
+/// Generating a public share that is not of rank zero panics before any draw.
+pub fn test_mhe_glwe_enc_to_share_share_gen_rejects_nonzero_rank<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: MHEModuleAlloc<BE>
-        + GLWEEncToShareMHEProtocol<BE>
-        + GLWEShareToEncMHEProtocol<BE>
-        + GLWESecretSampling<BE>
-        + GLWESecretPreparedFactory<BE>,
+    Module<BE>: GLWEEncToShareMHEProtocol<BE> + GLWESecretSampling<BE> + GLWESecretPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let layout = glwe_layout_at(module, K);
@@ -274,7 +279,10 @@ where
         inner: module.glwe_alloc_from_infos(&layout),
     };
     let mut secret: GLWEPlaintext<AlignedBuf, i64> = module.glwe_plaintext_alloc_from_infos(&layout);
-    super::fixtures::assert_panics_with("invalid share: additive shares must have rank zero", || {
+    let (public_before, secret_before) = (public.clone(), plaintext_state(&secret));
+    let mut source_xm = Source::new([60u8; 32]);
+    let mut source_smudge = Source::new(SEED_XE);
+    assert_panics_with("invalid share: additive shares must have rank zero", || {
         with_scratch::<BE, _>(module.mhe_glwe_enc_to_share_share_gen_tmp_bytes(&layout), |s| {
             module.mhe_glwe_enc_to_share_share_gen(
                 &mut public,
@@ -282,27 +290,41 @@ where
                 &ct,
                 &sk,
                 Noise::Gaussian { sigma: 1024.0 },
-                &mut Source::new([60u8; 32]),
-                &mut Source::new(SEED_XE),
+                &mut source_xm,
+                &mut source_smudge,
                 s,
             )
         });
     });
-    super::fixtures::assert_panics_with("invalid finalization: additive shares must have rank zero", || {
-        with_scratch::<BE, _>(module.mhe_glwe_enc_to_share_share_finalize_tmp_bytes(), |s| {
-            module.mhe_glwe_enc_to_share_share_finalize(&mut secret, &ct, &public, s)
-        });
-    });
-    let mut pat = module.glwe_share_to_enc_share_alloc_from_infos(&layout);
-    super::fixtures::assert_panics_with("invalid share: additive share must have rank zero", || {
-        with_scratch::<BE, _>(module.mhe_glwe_share_to_enc_share_gen_tmp_bytes(&layout, &layout), |s| {
-            module.mhe_glwe_share_to_enc_share_gen(&mut pat, &ct, &sk, SEEDS[0], &mut Source::new(SEED_XE), s)
-        });
-    });
+    assert!(public == public_before && plaintext_state(&secret) == secret_before);
+    assert_eq!(source_xm.next_i64(), Source::new([60u8; 32]).next_i64());
+    assert_eq!(source_smudge.next_i64(), Source::new(SEED_XE).next_i64());
 }
 
-/// Reject invalid smudging descriptors before touching the shares.
-pub fn test_glwe_enc_to_share_flood_guards<BE>(module: &Module<BE>)
+/// Generating from an additive share that is not of rank zero panics before any draw.
+pub fn test_mhe_glwe_share_to_enc_share_gen_rejects_nonzero_rank<BE>(module: &Module<BE>)
+where
+    BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
+    Module<BE>: MHEModuleAlloc<BE> + GLWEShareToEncMHEProtocol<BE> + GLWESecretSampling<BE> + GLWESecretPreparedFactory<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let layout = glwe_layout_at(module, K);
+    let (_, sk) = secret_from_seed(module, [100u8; 32]);
+    let share: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
+    let mut res = module.glwe_share_to_enc_share_alloc_from_infos(&layout);
+    let before = res.clone();
+    let mut source_xe = Source::new(SEED_XE);
+    assert_panics_with("invalid share: additive share must have rank zero", || {
+        with_scratch::<BE, _>(module.mhe_glwe_share_to_enc_share_gen_tmp_bytes(&layout, &layout), |s| {
+            module.mhe_glwe_share_to_enc_share_gen(&mut res, &share, &sk, SEEDS[0], &mut source_xe, s)
+        });
+    });
+    assert!(res == before);
+    assert_eq!(source_xe.next_i64(), Source::new(SEED_XE).next_i64());
+}
+
+/// Invalid smudging descriptors panic before any draw or write.
+pub fn test_mhe_glwe_enc_to_share_share_gen_rejects_flood<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     Module<BE>: GLWEEncToShareMHEProtocol<BE> + GLWESecretSampling<BE> + GLWESecretPreparedFactory<BE>,
@@ -315,6 +337,7 @@ where
         inner: module.glwe_alloc_from_infos(&GLWELayout { rank: Rank(0), ..layout }),
     };
     let mut secret: GLWEPlaintext<AlignedBuf, i64> = module.glwe_plaintext_alloc_from_infos(&layout);
+    let (public_before, secret_before) = (public.clone(), plaintext_state(&secret));
     let gen_bytes = module.mhe_glwe_enc_to_share_share_gen_tmp_bytes(&layout);
     for (noise, message) in [
         (
@@ -334,7 +357,7 @@ where
     ] {
         let mut source_xm = Source::new([60u8; 32]);
         let mut source_smudge = Source::new(SEED_XE);
-        super::fixtures::assert_panics_with(message, || {
+        assert_panics_with(message, || {
             with_scratch::<BE, _>(gen_bytes, |s| {
                 module.mhe_glwe_enc_to_share_share_gen(
                     &mut public,
@@ -348,6 +371,7 @@ where
                 )
             });
         });
+        assert!(public == public_before && plaintext_state(&secret) == secret_before);
         assert_eq!(source_xm.next_i64(), Source::new([60u8; 32]).next_i64());
         assert_eq!(source_smudge.next_i64(), Source::new(SEED_XE).next_i64());
     }

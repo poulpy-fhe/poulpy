@@ -2,12 +2,13 @@ use poulpy_core::{
     TransferInto,
     api::{GLWEPublicKeyPreparedFactory, GLWESecretPreparedFactory, GLWESecretSampling},
     layouts::{Dnum, Dsize, GLWEPublicKey, GLWESecret, GLWETensorKeyLayout, LWEInfos, ModuleCoreAlloc, TorusPrecision},
+    test_suite::with_scratch,
 };
 use poulpy_hal::{layouts::Module, source::Source};
 
 use super::{
     ParityBackend, ReferenceBackend, Snapshot, fixture_secrets, poison_gglwe, public_key::collective_public_key, snapshot_gglwe,
-    snapshot_source, with_scratch,
+    snapshot_source,
 };
 use crate::{
     api::{GLWEPublicKeyMHEProtocol, GLWETensorKeyMHEProtocol},

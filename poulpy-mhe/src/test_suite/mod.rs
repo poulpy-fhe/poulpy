@@ -18,7 +18,7 @@ pub mod tensor_key;
 macro_rules! mhe_backend_test_suite {
     (mod $modname:ident, backend = $backend:ty $(,)?) => {
         mod $modname {
-            use poulpy_hal::{api::ModuleNew, layouts::Module};
+            use ::poulpy_hal::{api::ModuleNew, layouts::Module};
 
             #[test]
             fn mhe_module_alloc_rejects_foreign_degree() {
@@ -195,8 +195,17 @@ macro_rules! mhe_backend_test_suite {
             }
 
             #[test]
-            fn glwe_private_keyswitch_flood_bound_guards() {
-                $crate::test_suite::keyswitch::test_glwe_private_keyswitch_flood_bound_guards(&Module::<$backend>::new(64));
+            fn mhe_glwe_private_keyswitch_share_gen_rejects_flood_bound() {
+                $crate::test_suite::keyswitch::test_mhe_glwe_private_keyswitch_share_gen_rejects_flood_bound(
+                    &Module::<$backend>::new(64),
+                );
+            }
+
+            #[test]
+            fn mhe_glwe_public_keyswitch_share_gen_rejects_flood_bound() {
+                $crate::test_suite::keyswitch::test_mhe_glwe_public_keyswitch_share_gen_rejects_flood_bound(
+                    &Module::<$backend>::new(64),
+                );
             }
 
             #[test]
@@ -233,33 +242,55 @@ macro_rules! mhe_backend_test_suite {
             }
 
             #[test]
-            fn glwe_public_key_gen_shape_guards() {
-                $crate::test_suite::public_key::test_glwe_public_key_gen_shape_guards(&Module::<$backend>::new(64));
+            fn mhe_glwe_public_key_share_gen_rejects_shape() {
+                $crate::test_suite::public_key::test_mhe_glwe_public_key_share_gen_rejects_shape(&Module::<$backend>::new(64));
             }
 
             #[test]
-            fn glwe_tensor_key_pk_shape_guards() {
-                $crate::test_suite::tensor_key::test_glwe_tensor_key_pk_shape_guards(&Module::<$backend>::new(64));
+            fn mhe_glwe_tensor_key_share_gen_rejects_pk_shape() {
+                $crate::test_suite::tensor_key::test_mhe_glwe_tensor_key_share_gen_rejects_pk_shape(&Module::<$backend>::new(64));
             }
 
             #[test]
-            fn ggsw_share_shape_guards() {
-                $crate::test_suite::ggsw::test_ggsw_share_shape_guards(&Module::<$backend>::new(64));
+            fn mhe_ggsw_share_gen_rejects_shape() {
+                $crate::test_suite::ggsw::test_mhe_ggsw_share_gen_rejects_shape(&Module::<$backend>::new(64));
             }
 
             #[test]
-            fn glwe_evaluation_key_share_shape_guards() {
-                $crate::test_suite::evaluation_key::test_glwe_evaluation_key_share_shape_guards(&Module::<$backend>::new(64));
+            fn mhe_ggsw_share_finalize_rejects_key_degree_mismatch() {
+                $crate::test_suite::ggsw::test_mhe_ggsw_share_finalize_rejects_key_degree_mismatch(&Module::<$backend>::new(64));
             }
 
             #[test]
-            fn glwe_private_keyswitch_share_layout_guards() {
-                $crate::test_suite::keyswitch::test_glwe_private_keyswitch_share_layout_guards(&Module::<$backend>::new(64));
+            fn mhe_glwe_switching_key_share_gen_rejects_shape() {
+                $crate::test_suite::evaluation_key::test_mhe_glwe_switching_key_share_gen_rejects_shape(
+                    &Module::<$backend>::new(64),
+                );
             }
 
             #[test]
-            fn glwe_public_keyswitch_share_layout_guards() {
-                $crate::test_suite::keyswitch::test_glwe_public_keyswitch_share_layout_guards(&Module::<$backend>::new(64));
+            fn mhe_glwe_automorphism_key_share_gen_rejects_shape() {
+                $crate::test_suite::evaluation_key::test_mhe_glwe_automorphism_key_share_gen_rejects_shape(
+                    &Module::<$backend>::new(64),
+                );
+            }
+
+            #[test]
+            fn mhe_glwe_private_keyswitch_share_gen_rejects_layout_mismatch() {
+                $crate::test_suite::keyswitch::test_mhe_glwe_private_keyswitch_share_gen_rejects_layout_mismatch(&Module::<
+                    $backend,
+                >::new(
+                    64
+                ));
+            }
+
+            #[test]
+            fn mhe_glwe_public_keyswitch_share_gen_rejects_layout_mismatch() {
+                $crate::test_suite::keyswitch::test_mhe_glwe_public_keyswitch_share_gen_rejects_layout_mismatch(&Module::<
+                    $backend,
+                >::new(
+                    64
+                ));
             }
 
             #[test]
@@ -288,18 +319,31 @@ macro_rules! mhe_backend_test_suite {
             }
 
             #[test]
-            fn glwe_private_keyswitch_finalize_layout_guards() {
-                $crate::test_suite::keyswitch::test_glwe_private_keyswitch_finalize_layout_guards(&Module::<$backend>::new(64));
+            fn mhe_glwe_private_keyswitch_share_finalize_rejects_layout_mismatch() {
+                $crate::test_suite::keyswitch::test_mhe_glwe_private_keyswitch_share_finalize_rejects_layout_mismatch(&Module::<
+                    $backend,
+                >::new(
+                    64
+                ));
             }
 
             #[test]
-            fn glwe_enc_to_share_flood_guards() {
-                $crate::test_suite::sharing::test_glwe_enc_to_share_flood_guards(&Module::<$backend>::new(64));
+            fn mhe_glwe_enc_to_share_share_gen_rejects_flood() {
+                $crate::test_suite::sharing::test_mhe_glwe_enc_to_share_share_gen_rejects_flood(&Module::<$backend>::new(64));
             }
 
             #[test]
-            fn glwe_sharing_layout_guards() {
-                $crate::test_suite::sharing::test_glwe_sharing_layout_guards(&Module::<$backend>::new(64));
+            fn mhe_glwe_enc_to_share_share_gen_rejects_nonzero_rank() {
+                $crate::test_suite::sharing::test_mhe_glwe_enc_to_share_share_gen_rejects_nonzero_rank(&Module::<$backend>::new(
+                    64,
+                ));
+            }
+
+            #[test]
+            fn mhe_glwe_share_to_enc_share_gen_rejects_nonzero_rank() {
+                $crate::test_suite::sharing::test_mhe_glwe_share_to_enc_share_gen_rejects_nonzero_rank(&Module::<$backend>::new(
+                    64,
+                ));
             }
 
             #[test]
