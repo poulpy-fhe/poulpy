@@ -17,7 +17,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, HostDataMut, HostDataRef, Module, ReaderFrom, ScratchArena, ScratchOwned, Standard, WriterTo},
+    layouts::{Backend, HostDataMut, HostDataRef, MaxBase2k, Module, ReaderFrom, ScratchArena, ScratchOwned, Standard, WriterTo},
     source::Source,
 };
 
@@ -28,7 +28,7 @@ use crate::{
         CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncryptOps,
     },
     layouts::{
-        BootstrappingContext, BootstrappingKeysLayout, BootstrappingPlan, CKKSCiphertextOwned, CKKSModuleAlloc,
+        BootstrappingContext, BootstrappingKeysLayout, BootstrappingPlan, CIConversion, CKKSCiphertextOwned, CKKSModuleAlloc,
         CKKSPlaintextOwned, EvalModRing,
     },
     presets::bootstrapping::{BootstrappingPreset, all},
@@ -40,6 +40,24 @@ use crate::{
 
 /// Plaintext budget bits (above `log_delta`) used to measure the output precision.
 pub const PRECISION_LOG_BUDGET: usize = 8;
+
+/// Failure probability, `2^-BOOTSTRAP_FAILURE_BITS` per bootstrap, the test and
+/// benchmark radix is selected for (see [`preset_for_backend`]).
+pub const BOOTSTRAP_FAILURE_BITS: usize = 128;
+
+/// The preset at the largest radix backend `BE`, and `BCI` for EvalMod on the
+/// conjugate-invariant ring, take for a bootstrap failure probability of
+/// `2^-BOOTSTRAP_FAILURE_BITS` ([`BootstrappingPreset::max_backend_base2k`]):
+/// above the nominal radix the keys are re-derived as the preset derives them,
+/// below it as [`preset_with_max_base2k`] adapts them.
+pub fn preset_for_backend<BE: MaxBase2k, BCI: MaxBase2k>(preset: &BootstrappingPreset) -> anyhow::Result<BootstrappingPreset> {
+    let max = preset.max_backend_base2k::<BE, BCI>(BOOTSTRAP_FAILURE_BITS);
+    if max > preset.base2k() {
+        preset.with_backend_base2k::<BE, BCI>(BOOTSTRAP_FAILURE_BITS)
+    } else {
+        preset_with_max_base2k(preset, max)
+    }
+}
 
 /// Caps the nominal preset at the caller's explicit test or benchmark radix.
 ///
@@ -328,16 +346,24 @@ where
         layout.glwe_layout.k = k.into();
         let mut output = self.module.ckks_ciphertext_alloc_from_glwe_infos(&layout);
         let err = (self.bootstrap)(&self.module, &mut output, &self.input, &mut self.scratch.borrow()).unwrap_err();
+        // EvalRound+ leaves its rotation keys to the stages' lookups: the sparse-to-dense
+        // key of the raise, checked untyped at entry, refuses first.
+        let refused = if self.preset.plan().coeffs_to_slots_bypass().is_some() {
+            matches!(err, crate::CKKSError::Internal(_))
+                && err.to_string().starts_with("ckks_mod_up: the sparse-to-dense key takes")
+        } else {
+            matches!(err.composition(), Some(CKKSCompositionError::MissingAutomorphismKey { .. }))
+        };
         assert!(
-            matches!(err.composition(), Some(CKKSCompositionError::MissingAutomorphismKey { .. })),
+            refused,
             "{}: expected a key refused at entry, got: {err}",
-            self.preset.name()
+            preset_label(&self.preset)
         );
         let (re, im) = self.precision();
         let preset = &self.preset;
         println!(
             "PRECISION backend={backend} preset={} base2k={} re_min={:.2}b re_avg={:.2}b im_min={:.2}b im_avg={:.2}b (advertised {}b)",
-            preset.name(),
+            preset_label(preset),
             preset.base2k(),
             re.min_log2_prec,
             re.avg_log2_prec,
@@ -349,7 +375,7 @@ where
         assert!(
             re.min_log2_prec >= advertised && im.min_log2_prec >= advertised,
             "preset {} advertises {advertised} bits but measured re_min={:.2} im_min={:.2}",
-            preset.name(),
+            preset_label(preset),
             re.min_log2_prec,
             im.min_log2_prec
         );
@@ -359,18 +385,16 @@ where
 /// Runs every preset once on `BE` and checks the measured output precision
 /// against the precision the preset advertises, and that its keys are refused
 /// at entry past their width. The twin [`CIBackend`] runs EvalMod for the presets that put it on
-/// the conjugate-invariant ring. Every preset runs at the fixture radix as
-/// [`preset_with_max_base2k`] adapts it. The first preset also round-trips every
+/// the conjugate-invariant ring. The first preset also round-trips every
 /// generated key, both encapsulation directions included.
 ///
-/// The caller supplies the fixture radix limit; this precision check does
-/// not establish a failure-probability bound. Every backend uses `f64` DFT
-/// matrices and must reach the advertised precision. Full-size bootstraps are
-/// slow, so backends register this as an ignored test.
-pub fn bootstrapping_presets_meet_precision<BE>(fixture_base2k: usize)
+/// Each preset runs at the radix [`preset_for_backend`] selects for `BE`. Every
+/// backend uses `f64` DFT matrices and must reach the advertised precision.
+/// Full-size bootstraps are slow, so backends register this as an ignored test.
+pub fn bootstrapping_presets_meet_precision<BE>()
 where
-    BE: TestContextBackend<Ring = Standard>,
-    CIBackend<BE>: TestContextBackend,
+    BE: TestContextBackend<Ring = Standard> + MaxBase2k,
+    CIBackend<BE>: TestContextBackend + MaxBase2k,
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, f64>
         + CKKSBootstrappingOps<BE>
@@ -390,12 +414,33 @@ where
     let mut first_ci = true;
     for (index, preset) in all().unwrap().into_iter().enumerate() {
         let ring = preset.plan().eval_mod_ring();
-        let preset = preset_with_max_base2k(&preset, fixture_base2k).unwrap();
+        let preset = preset_for_backend::<BE, CIBackend<BE>>(&preset).unwrap();
         match ring {
             EvalModRing::Standard => BootstrappingPresetRun::<BE>::setup_with_roundtrip(preset, index == 0).check(backend),
             _ => BootstrappingPresetRun::<BE>::setup_ci_with_roundtrip(preset, std::mem::take(&mut first_ci)).check(backend),
         }
     }
+}
+
+/// The preset's name, marked with the variants that keep it: `+erp` with
+/// EvalRound+ ([`BootstrappingPreset::with_eval_round_plus`]), `+fold_u` with
+/// `u` folded into CoeffsToSlots ([`CIConversion::Folded`]).
+pub fn preset_label(preset: &BootstrappingPreset) -> String {
+    let mut label = preset.name().to_string();
+    if preset.plan().coeffs_to_slots_bypass().is_some() {
+        label.push_str("+erp");
+    }
+    if let EvalModRing::ConjugateInvariant {
+        pre: CIConversion::Folded,
+        ..
+    } = preset.plan().eval_mod_ring()
+    {
+        label.push_str("+fold_u");
+    }
+    if preset.plan().coeffs_to_slots().power_of_two_keys() {
+        label.push_str("+pow2");
+    }
+    label
 }
 
 /// Runs the insecure `N = 2^11` S2C-first preset on `BE` and checks its key
@@ -444,12 +489,39 @@ where
 
     let backend = std::any::type_name::<BE>().rsplit("::").next().unwrap();
     BootstrappingPresetRun::<BE>::setup(preset.clone()).check(backend);
+    // EvalMod on the CI ring, with `u` as a product and folded, then all of it with
+    // EvalRound+: CoeffsToSlots at 30 bits feeds EvalMod, the bypass at 50 sets the precision.
+    // The keys of the first run, conversion keys included, go through their serialization.
+    let eval_round_plus = preset.with_eval_round_plus(30, 50).unwrap();
+    BootstrappingPresetRun::<BE>::setup(eval_round_plus.clone()).check(backend);
+    let mut roundtrip = true;
+    for preset in [&preset, &eval_round_plus] {
+        for pre in [CIConversion::Product { log_delta: 46 }, CIConversion::Folded] {
+            // With EvalRound+, `v` rounds `EvalMod(x) − K·x`, which holds the integer part.
+            let post = if preset.plan().coeffs_to_slots_bypass().is_some() {
+                48
+            } else {
+                38
+            };
+            let ci = EvalModRing::ConjugateInvariant {
+                pre,
+                post: CIConversion::Product { log_delta: post },
+            };
+            BootstrappingPresetRun::<BE>::setup_ci_with_roundtrip(
+                preset.with_eval_mod_ring(ci).unwrap(),
+                std::mem::take(&mut roundtrip),
+            )
+            .check(backend);
+        }
+    }
+    // The transforms with the keys of power-of-two rotations, `u` folded on the CI ring.
+    let powers_of_two = preset.with_power_of_two_keys().unwrap();
+    BootstrappingPresetRun::<BE>::setup(powers_of_two.clone()).check(backend);
     let ci = EvalModRing::ConjugateInvariant {
-        pre_log_delta: 46,
-        post_log_delta: 38,
+        pre: CIConversion::Folded,
+        post: CIConversion::Product { log_delta: 38 },
     };
-    // Its keys, conversion keys included, go through their serialization.
-    BootstrappingPresetRun::<BE>::setup_ci_with_roundtrip(preset.with_eval_mod_ring(ci).unwrap(), true).check(backend);
+    BootstrappingPresetRun::<BE>::setup_ci(powers_of_two.with_eval_mod_ring(ci).unwrap()).check(backend);
 }
 
 /// The bootstrap with EvalMod on the conjugate-invariant ring refuses, before any
@@ -477,8 +549,8 @@ where
 {
     let standard = crate::presets::bootstrapping::insecure_n11_d35_k180_p20_s2c().unwrap();
     let ring = EvalModRing::ConjugateInvariant {
-        pre_log_delta: 46,
-        post_log_delta: 38,
+        pre: CIConversion::Product { log_delta: 46 },
+        post: CIConversion::Product { log_delta: 38 },
     };
     let preset = standard.with_eval_mod_ring(ring).unwrap();
     let n = preset.n() as u64;

@@ -593,6 +593,11 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
             gal_set.extend(bypass.galois_elements(order));
         }
         gal_set.extend(self.slots_to_coeffs().galois_elements(order));
+        // The last CoeffsToSlots factor, when `u` is folded into it.
+        if let Some([even, odd]) = self.eval_mod_ci().and_then(|ci| ci.pre().folded()) {
+            gal_set.extend(even.galois_elements(order));
+            gal_set.extend(odd.galois_elements(order));
+        }
         // Conjugation, for the split forward transform.
         if self.eval_mod_ring() == EvalModRing::Standard {
             gal_set.insert(-1);

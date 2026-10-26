@@ -5,12 +5,12 @@ use poulpy_cpu_arm::NTT4x30Neon;
 
 fn parallel(_c: &mut criterion::Criterion) {
     #[cfg(feature = "enable-rayon")]
-    bench_ckks_bootstrapping::<poulpy_cpu_arm::NTT4x30NeonRayon, 52>(_c);
+    bench_ckks_bootstrapping::<poulpy_cpu_arm::NTT4x30NeonRayon>(_c);
 }
 
 criterion_group! {
     name = benches;
     config = poulpy_bench::criterion_config();
-    targets = bench_ckks_bootstrapping::<NTT4x30Neon, 52>, parallel
+    targets = bench_ckks_bootstrapping::<NTT4x30Neon>, parallel
 }
 criterion_main!(benches);

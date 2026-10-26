@@ -7,13 +7,13 @@ use poulpy_hal::{
         VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigNegate, VecZnxBigNegateAssign,
         VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxBigSub, VecZnxBigSubAssign, VecZnxBigSubNegateAssign,
         VecZnxBigSubSmallA, VecZnxBigSubSmallB, VecZnxDftAdd, VecZnxDftAddAssign, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftSub,
-        VecZnxDftSubAssign, VecZnxDftSubNegateAssign, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxIdftNormalize,
-        VecZnxIdftNormalizeTmpBytes, VecZnxLsh, VecZnxLshAdd, VecZnxLshAssign, VecZnxLshSub, VecZnxLshTmpBytes,
-        VecZnxMulXpMinusOne, VecZnxMulXpMinusOneAssign, VecZnxMulXpMinusOneAssignTmpBytes, VecZnxNegate, VecZnxNegateAssign,
-        VecZnxNormalize, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxRotate, VecZnxRotateAssign,
-        VecZnxRotateAssignTmpBytes, VecZnxRsh, VecZnxRshAdd, VecZnxRshAssign, VecZnxRshSub, VecZnxRshTmpBytes, VecZnxSub,
-        VecZnxSubAssign, VecZnxSubNegateAssign, VmpApplyDft, VmpApplyDftTmpBytes, VmpApplyDftToDft, VmpApplyDftToDftAdd,
-        VmpApplyDftToDftAddTmpBytes, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
+        VecZnxDftSubAssign, VecZnxDftSubNegateAssign, VecZnxGadgetDecompose, VecZnxGadgetDecomposeTmpBytes, VecZnxIdftApply,
+        VecZnxIdftApplyTmpBytes, VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes, VecZnxLsh, VecZnxLshAdd, VecZnxLshAssign,
+        VecZnxLshSub, VecZnxLshTmpBytes, VecZnxMulXpMinusOne, VecZnxMulXpMinusOneAssign, VecZnxMulXpMinusOneAssignTmpBytes,
+        VecZnxNegate, VecZnxNegateAssign, VecZnxNormalize, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxRotate,
+        VecZnxRotateAssign, VecZnxRotateAssignTmpBytes, VecZnxRsh, VecZnxRshAdd, VecZnxRshAssign, VecZnxRshSub,
+        VecZnxRshTmpBytes, VecZnxSub, VecZnxSubAssign, VecZnxSubNegateAssign, VmpApplyDft, VmpApplyDftTmpBytes, VmpApplyDftToDft,
+        VmpApplyDftToDftAdd, VmpApplyDftToDftAddTmpBytes, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
     },
     layouts::{Backend, Module, ScratchOwned},
 };
@@ -29,19 +29,23 @@ use crate::{
     hal::{
         convolution,
         params::{
-            CnvSweepParms, HalSweepParms, ReimSweepParams, VmpSweepParms, default_bench_params_cnv, default_bench_params_hal,
-            default_bench_params_normalize, default_bench_params_vmp,
+            CnvSweepParms, HalSweepParms, ReimSweepParams, VmpSweepParms, default_bench_params_cnv,
+            default_bench_params_gadget_decompose, default_bench_params_hal, default_bench_params_normalize,
+            default_bench_params_vmp,
         },
         reim, svp, vec_znx, vec_znx_big, vec_znx_dft, vmp,
     },
 };
 
-/// Small and big normalization across radix widths, offsets, sizes and degrees.
+/// Small and big normalization across radix widths, offsets, sizes and degrees,
+/// and the gadget digit layout of key-switch columns.
 pub fn bench_normalization<B: Backend<ZnxWord = i64>>(c: &mut Criterion<WallTime>)
 where
     Module<B>: ModuleNew<B>
         + VecZnxNormalize<B>
         + VecZnxNormalizeTmpBytes
+        + VecZnxGadgetDecompose<B>
+        + VecZnxGadgetDecomposeTmpBytes
         + VecZnxBigAlloc<B>
         + VecZnxBigNormalize<B>
         + VecZnxBigNormalizeTmpBytes,
@@ -61,6 +65,12 @@ where
         },
     ];
     bench_ops(PhantomData::<B>, &ops, default_bench_params_normalize(), c);
+    let gadget = [BenchOp {
+        layer: "hal",
+        name: "vec_znx_gadget_decompose",
+        runner: vec_znx::runner_vec_znx_gadget_decompose::<B, WallTime>,
+    }];
+    bench_ops(PhantomData::<B>, &gadget, default_bench_params_gadget_decompose(), c);
 }
 
 // Op tables for each HAL capability group. Each function returns the raw

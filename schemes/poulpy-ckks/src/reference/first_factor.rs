@@ -16,7 +16,8 @@
 //! sparse one, and these switches replace the sparse-to-dense one.
 
 use poulpy_core::{
-    GLWECopy, GLWEKeyswitch, GLWEMulPlain, GLWEShift, ScratchArenaTakeCore,
+    GLWEBytesOf, GLWECopy, GLWEKeyswitch, GLWEMulPreparedPlainSum, GLWENormalize, GLWEShift, ScratchArenaTakeCore,
+    glwe_prepare_left, glwe_prepare_left_tmp_bytes, glwe_prepare_right, glwe_prepare_right_tmp_bytes,
     layouts::{
         GGLWEInfos, GGLWELayout, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos, LWEInfos,
         LinearTransformation, Rank, prepared::GGLWEPreparedToBackendRef,
@@ -25,10 +26,12 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{
-        ScratchArenaTakeBasic, VecZnxAddAssign, VecZnxAutomorphism, VecZnxCopy, VecZnxDftAddAssign, VecZnxDftBytesOf,
-        VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes, VecZnxNormalize, VecZnxNormalizeTmpBytes,
+        CnvPVecBytesOf, Convolution, ScratchArenaTakeBasic, VecZnxAddAssign, VecZnxAutomorphism, VecZnxCopy, VecZnxDftAddAssign,
+        VecZnxDftBytesOf, VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes, VecZnxNormalize, VecZnxNormalizeTmpBytes,
     },
-    layouts::{Backend, CyclotomicOrder, Module, ScratchArena, VecZnxDftToBackendMut, VecZnxToBackendRef, galois_element},
+    layouts::{
+        Backend, CyclotomicOrder, Module, PrepareHint, ScratchArena, VecZnxDftToBackendMut, VecZnxToBackendRef, galois_element,
+    },
 };
 
 use crate::{
@@ -117,6 +120,11 @@ where
     res.set_canonical(a_ref.is_canonical());
 }
 
+/// Limbs a diagonal's plaintext holds at radix `base2k`, its encoded width.
+fn diagonal_limbs<P: IntPolyInfos>(diagonal: &P, base2k: usize) -> usize {
+    diagonal.encoded_k().as_usize().div_ceil(base2k)
+}
+
 /// The first-factor key of the rotation `rotation`.
 fn first_factor_key<BE: Backend, K: BootstrappingLinearKeys<BE>>(keys: &K, rotation: i64) -> Result<&K::SwitchingKey> {
     let Some(key) = keys.first_factor_key(rotation) else {
@@ -203,9 +211,13 @@ pub fn ckks_mod_up_first_factor_tmp_bytes_reference<BE, Dst, Src, D2S, K>(
 where
     BE: Backend,
     Module<BE>: GLWEKeyswitch<BE>
-        + GLWEMulPlain<BE>
+        + GLWEMulPreparedPlainSum<BE>
         + GLWEShift<BE>
+        + GLWENormalize<BE>
+        + GLWEBytesOf<BE>
+        + Convolution<BE>
         + VecZnxDftBytesOf
+        + CnvPVecBytesOf
         + VecZnxNormalizeTmpBytes
         + VecZnxIdftNormalizeTmpBytes,
     Dst: CKKSCtBounds,
@@ -233,11 +245,21 @@ where
         factor.giant_steps.len(),
     );
     let carved = 3 * BE::scratch_aligned(BE::bytes_of_vec_znx(n, 2, small))
+        + BE::scratch_aligned(module.bytes_of_cnv_pvec_left(n, 2, small, PrepareHint::Reuse))
         + BE::scratch_aligned(BE::bytes_of_vec_znx(n, 1, small))
         + BE::scratch_aligned(BE::bytes_of_vec_znx(n, 1, acc_size))
         + module.bytes_of_vec_znx_dft(n, 2, acc_size);
-    let ops = module
-        .glwe_mul_plain_tmp_bytes(&small_layout, &small_layout, diagonal)
+    // Each diagonal is prepared beside the raised ciphertext, then multiplied by it.
+    let diagonal_size = diagonal_limbs(diagonal, base2k);
+    let product =
+        BE::scratch_aligned(module.bytes_of_cnv_pvec_right(diagonal.n().into(), 1, diagonal_size, PrepareHint::OneShot))
+            + glwe_prepare_right_tmp_bytes(module, diagonal_size, diagonal).max(module.glwe_mul_prepared_plain_sum_tmp_bytes(
+                &small_layout,
+                small,
+                diagonal_size,
+            ));
+    let ops = glwe_prepare_left_tmp_bytes(module, small, &small_layout)
+        .max(product)
         .max(module.glwe_keyswitch_dft_add_tmp_bytes(acc_size, &small_layout, key_infos))
         .max(module.glwe_shift_tmp_bytes(small))
         .max(module.vec_znx_normalize_tmp_bytes())
@@ -266,13 +288,15 @@ where
     Module<BE>: GLWECopy<BE>
         + GLWEShift<BE>
         + GLWEKeyswitch<BE>
-        + GLWEMulPlain<BE>
         + VecZnxAutomorphism<BE>
         + VecZnxCopy<BE>
         + VecZnxAddAssign<BE>
         + VecZnxDftAddAssign<BE>
         + VecZnxNormalize<BE>
         + VecZnxIdftNormalize<BE>
+        + Convolution<BE>
+        + GLWENormalize<BE>
+        + GLWEMulPreparedPlainSum<BE>
         + CyclotomicOrder,
     K: BootstrappingLinearKeys<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
@@ -335,7 +359,8 @@ where
         let (mut rotated, scratch) = scratch.take_glwe_scratch(&small_layout);
         let (mut bodies, scratch) = scratch.take_vec_znx_scratch(n, 1, small);
         let (mut lowered, scratch) = scratch.take_vec_znx_scratch(n, 1, acc_size);
-        let (mut acc, mut scratch) = scratch.take_vec_znx_dft_scratch(n, 2, acc_size);
+        let (mut acc, scratch) = scratch.take_vec_znx_dft_scratch(n, 2, acc_size);
+        let (mut raised_prepared, mut scratch) = scratch.take_cnv_pvec_left_scratch(n, 2, small, PrepareHint::Reuse);
 
         // The raise: the ciphertext as integers, its last bit `guard` bits (and the
         // lift) above the bottom of the small width, which the keys lower to the
@@ -346,16 +371,37 @@ where
             &mut raised,
             &mut scratch.borrow(),
         );
+        // Every diagonal multiplies the same ciphertext: it is prepared once.
+        glwe_prepare_left(module, &mut raised_prepared, &raised, small * base2k, &mut scratch.borrow());
 
         for (index, giant) in factor.giant_steps.iter().enumerate() {
             // Product and division by the diagonal's scale, at the same width.
-            module.glwe_mul_plain(
-                growth,
-                &mut product,
-                &raised,
-                &giant.diagonals[0].plaintext,
-                &mut scratch.borrow(),
-            );
+            {
+                let diagonal = &giant.diagonals[0].plaintext;
+                let diagonal_size = diagonal_limbs(diagonal, base2k);
+                let (mut diagonal_prepared, mut scratch) =
+                    scratch
+                        .borrow()
+                        .take_cnv_pvec_right_scratch(diagonal.n().into(), 1, diagonal_size, PrepareHint::OneShot);
+                glwe_prepare_right(
+                    module,
+                    &mut diagonal_prepared,
+                    diagonal,
+                    diagonal.encoded_k().as_usize(),
+                    &mut scratch.borrow(),
+                );
+                module.glwe_mul_prepared_plain_sum(
+                    growth,
+                    &mut product,
+                    &[&raised_prepared],
+                    small,
+                    &[&diagonal_prepared],
+                    diagonal_size,
+                    &[1],
+                    base2k.into(),
+                    &mut scratch.borrow(),
+                );
+            }
 
             // The rotation needs no key before the switch.
             let term = if giant.rot == 0 {

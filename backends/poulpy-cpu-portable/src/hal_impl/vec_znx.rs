@@ -2,14 +2,15 @@
 #[macro_export]
 macro_rules! hal_impl_vec_znx_without_normalize {
     () => {
-        fn vec_znx_zero(module: &Module<Self>, res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self>, res_col: usize) {
-            <Self as HalVecZnxDefault>::vec_znx_zero_default(module, res, res_col)
-        }
+        $crate::hal_impl_vec_znx_gadget_decompose!();
+        $crate::hal_impl_vec_znx_without_normalize_or_decompose!();
+    };
+}
 
-        fn vec_znx_normalize_tmp_bytes(module: &Module<Self>) -> usize {
-            <Self as HalVecZnxDefault>::vec_znx_normalize_tmp_bytes_default(module)
-        }
-
+/// HAL `VecZnx` gadget digit layout, through the portable kernel.
+#[macro_export]
+macro_rules! hal_impl_vec_znx_gadget_decompose {
+    () => {
         fn vec_znx_gadget_decompose_tmp_bytes(module: &Module<Self>) -> usize {
             <Self as HalVecZnxDefault>::vec_znx_gadget_decompose_tmp_bytes_default(module)
         }
@@ -26,6 +27,21 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
             <Self as HalVecZnxDefault>::vec_znx_gadget_decompose_default(module, res, res_col, a, a_col, base2k, k_digit, scratch)
+        }
+    };
+}
+
+/// HAL `VecZnx` methods excluding normalization and the gadget digit layout,
+/// for a backend that provides both.
+#[macro_export]
+macro_rules! hal_impl_vec_znx_without_normalize_or_decompose {
+    () => {
+        fn vec_znx_zero(module: &Module<Self>, res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self>, res_col: usize) {
+            <Self as HalVecZnxDefault>::vec_znx_zero_default(module, res, res_col)
+        }
+
+        fn vec_znx_normalize_tmp_bytes(module: &Module<Self>) -> usize {
+            <Self as HalVecZnxDefault>::vec_znx_normalize_tmp_bytes_default(module)
         }
 
         fn vec_znx_add(

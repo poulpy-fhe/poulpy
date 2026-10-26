@@ -6,6 +6,7 @@ use crate::{
     api::GLWELinearTransformations,
     layouts::{
         GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, LinearTransformation,
+        LinearTransformationPlan,
         prepared::{LinearTransformationBabySteps, LinearTransformationPrepared, PreparedDiagonal},
     },
     oep::LinearTransformationImpl,
@@ -15,42 +16,68 @@ impl<BE> GLWELinearTransformations<BE> for Module<BE>
 where
     BE: Backend + LinearTransformationImpl,
 {
-    fn glwe_eval_linear_transformation_tmp_bytes<R, A, B, K>(&self, res: &R, a: &A, pt: &B, key: &K) -> usize
+    fn glwe_eval_linear_transformation_tmp_bytes<R, A, B, K>(
+        &self,
+        res: &R,
+        a: &A,
+        pt: &B,
+        plan: &LinearTransformationPlan,
+        key: &K,
+    ) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
         B: GLWEInfos,
         K: GGLWEInfos,
     {
-        BE::glwe_eval_linear_transformation_tmp_bytes(self, res, a, pt, key)
+        BE::glwe_eval_linear_transformation_tmp_bytes(self, res, a, pt, plan, key)
     }
 
-    fn glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes<R, A, B, K>(&self, res: &R, a: &A, pt: &B, key: &K) -> usize
+    fn glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes<R, A, B, K>(
+        &self,
+        res: &R,
+        a: &A,
+        pt: &B,
+        plan: &LinearTransformationPlan,
+        key: &K,
+    ) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
         B: GLWEInfos,
         K: GGLWEInfos,
     {
-        BE::glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(self, res, a, pt, key)
+        BE::glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(self, res, a, pt, plan, key)
     }
 
-    fn glwe_eval_linear_transformation_sum_tmp_bytes<R, A, B, K>(&self, res: &R, a: &A, pt: &B, key: &K) -> usize
+    fn glwe_eval_linear_transformation_sum_tmp_bytes<R, A, B, K>(
+        &self,
+        res: &R,
+        a: &A,
+        pt: &B,
+        plan: &LinearTransformationPlan,
+        key: &K,
+    ) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
         B: GLWEInfos,
         K: GGLWEInfos,
     {
-        BE::glwe_eval_linear_transformation_sum_tmp_bytes(self, res, a, pt, key)
+        BE::glwe_eval_linear_transformation_sum_tmp_bytes(self, res, a, pt, plan, key)
     }
 
-    fn glwe_prepare_linear_transformation_baby_steps_tmp_bytes<A, K>(&self, a: &A, key: &K) -> usize
+    fn glwe_prepare_linear_transformation_baby_steps_tmp_bytes<A, K>(
+        &self,
+        a: &A,
+        plan: &LinearTransformationPlan,
+        key: &K,
+    ) -> usize
     where
         A: GLWEInfos,
         K: GGLWEInfos,
     {
-        BE::glwe_prepare_linear_transformation_baby_steps_tmp_bytes(self, a, key)
+        BE::glwe_prepare_linear_transformation_baby_steps_tmp_bytes(self, a, plan, key)
     }
 
     fn glwe_prepare_linear_transformation_rhs_tmp_bytes<P>(&self, pt_infos: &P) -> usize

@@ -13,7 +13,9 @@
 //! of the lower limbs is the sign of the last nonzero one emitted. Every
 //! inner loop is branch free.
 
-use poulpy_hal::layouts::{Backend, HostDataMut, HostDataRef, VecZnxBackendMut, VecZnxBackendRef, ZnxView, ZnxViewMut};
+use poulpy_hal::layouts::{
+    Backend, HostDataMut, HostDataRef, VecZnxBackendMut, VecZnxBackendRef, VecZnxShape, ZnxView, ZnxViewMut,
+};
 
 use crate::kernels::znx_normalize::{Limbs, LimbsMut};
 
@@ -32,18 +34,56 @@ pub fn vec_znx_gadget_decompose_portable<'r, 'a, BE>(
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
+    assert!(res_col < res.cols(), "operand column out of range");
+    if res.size() > 0 {
+        let _ = res.at_mut(res_col, res.size() - 1);
+    }
+    let (n, shape) = (res.n(), res.shape());
+    let ptr: *mut i64 = res.base_mut_ptr();
+    // SAFETY: `ptr` and `shape` come from `res`, bounds-checked above, and `&mut res` is exclusive.
+    unsafe { vec_znx_gadget_decompose_range_raw_portable::<BE>(ptr, shape, res_col, a, a_col, base2k, k_digit, 0, n) }
+}
+
+/// [`vec_znx_gadget_decompose_portable`] restricted to the coefficients
+/// `coeff_start..coeff_start + coeff_len` of `res[res_col]`: every coefficient
+/// decomposes on its own, so disjoint ranges split freely.
+///
+/// # Safety
+///
+/// `res_ptr` is the base of the dense buffer `res_shape` describes, and the
+/// selected range of column `res_col` is exclusively writable for this call and
+/// does not overlap `a`. Concurrent calls may share the destination allocation
+/// only with disjoint coefficient ranges.
+#[doc(hidden)]
+pub unsafe fn vec_znx_gadget_decompose_range_raw_portable<'a, BE>(
+    res_ptr: *mut i64,
+    res_shape: VecZnxShape,
+    res_col: usize,
+    a: &VecZnxBackendRef<'a, BE>,
+    a_col: usize,
+    base2k: usize,
+    k_digit: usize,
+    coeff_start: usize,
+    coeff_len: usize,
+) where
+    BE: Backend<ZnxWord = i64>,
+    BE::BufRef<'a>: HostDataRef,
+{
     assert!((1..=62).contains(&base2k), "base2k={base2k} outside 1..=62");
     assert!(k_digit > 0, "k_digit must be positive");
-    assert_eq!(res.n(), a.n());
+    assert_eq!(res_shape.n(), a.n());
+    assert!(res_col < res_shape.cols(), "operand column out of range");
+    assert!(coeff_start + coeff_len <= res_shape.n(), "coefficient range out of bounds");
     let r: usize = k_digit.div_ceil(base2k);
     let rem: usize = k_digit - (r - 1) * base2k;
     assert!(
-        res.size() > 0 && res.size().is_multiple_of(r),
+        res_shape.size() > 0 && res_shape.size().is_multiple_of(r),
         "res.size()={} is not a nonzero multiple of {r} sub-limbs",
-        res.size()
+        res_shape.size()
     );
-    let dnum: usize = res.size() / r;
-    let n: usize = res.n();
+    let res = LimbsMut::new(res_ptr, res_shape, res_col, coeff_start);
+    let dnum: usize = res_shape.size() / r;
+    let n: usize = coeff_len;
     let a_size: usize = a.size();
     let gadget_k: usize = dnum * k_digit;
     // Limb holding bit `gadget_k` (bit 1 is the most significant), and its bits below it.
@@ -51,15 +91,12 @@ pub fn vec_znx_gadget_decompose_portable<'r, 'a, BE>(
     let low: usize = (j0 + 1) * base2k - gadget_k;
     let nothing_dropped: i64 = (j0 + 1 == a_size && low == 0) as i64;
 
-    assert!(res_col < res.cols() && a_col < a.cols(), "operand column out of range");
-    // Bounds-checks the last limb of each column, the farthest one the kernel touches.
+    assert!(a_col < a.cols(), "operand column out of range");
+    // Bounds-checks the last limb of the source column, the farthest one the kernel reads.
     if a_size > 0 {
         let _ = a.at_ptr(a_col, a_size - 1);
     }
-    let _ = res.at_ptr(res_col, res.size() - 1);
-    let a_limbs = Limbs::new(a.base_ptr(), a.shape(), a_col, 0);
-    let res_shape = res.shape();
-    let res_limbs = LimbsMut::new(res.base_mut_ptr(), res_shape, res_col, 0);
+    let a_limbs = Limbs::new(a.base_ptr(), a.shape(), a_col, coeff_start);
 
     let mut acc = [0i64; CHUNK];
     let mut carry = [0i64; CHUNK];
@@ -68,9 +105,11 @@ pub fn vec_znx_gadget_decompose_portable<'r, 'a, BE>(
     while start < n {
         let len = CHUNK.min(n - start);
         let (acc, carry, neg) = (&mut acc[..len], &mut carry[..len], &mut neg[..len]);
-        // SAFETY: every limb of both columns is bounds-checked above, and `res` is exclusive and distinct from `a`.
+        // Both limb views start at `coeff_start`. SAFETY: every limb of `a` is
+        // bounds-checked above; the caller hands the range of each limb of `res`
+        // over for the call, distinct from `a`.
         let a_limb = |j: usize| unsafe { std::slice::from_raw_parts(a_limbs.ptr.add(j * a_limbs.stride + start), len) };
-        let res_limb = |j: usize| unsafe { std::slice::from_raw_parts_mut(res_limbs.ptr.add(j * res_limbs.stride + start), len) };
+        let res_limb = |j: usize| unsafe { std::slice::from_raw_parts_mut(res.ptr.add(j * res.stride + start), len) };
 
         // Ties to even at `gadget_k`: half up, low bit cleared when `acc`, sticky over the dropped remainders, is zero.
         if j0 < a_size {

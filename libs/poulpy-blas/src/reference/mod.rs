@@ -24,7 +24,7 @@ use poulpy_ckks::{
     CKKSCtBounds, CKKSLayout, CKKSResult as Result, GLWEPlaintextInfos,
     api::{CKKSLinearTransformationOps, CKKSModuleInfos, LinearTransformation, LtDiagonalMeta, PreparedDiagonal},
 };
-use poulpy_core::layouts::{GGLWEInfos, LWEInfos, TorusPrecision};
+use poulpy_core::layouts::{GGLWEInfos, LWEInfos, LinearTransformationPlan, TorusPrecision};
 use poulpy_hal::layouts::{Backend, Data, Module};
 
 use crate::layouts::{
@@ -96,19 +96,21 @@ where
 {
     // A `res` of no width is never read: its map fails the budget check before any scratch.
     let live = res.k().as_usize() > 0;
+    // The maps take a key per rotation, which every plan of that kind sizes alike.
+    let plan = LinearTransformationPlan::default();
     let eval = if summed {
-        let res_bytes = live.then(|| module.ckks_eval_linear_transformation_sum_tmp_bytes(res, key));
+        let res_bytes = live.then(|| module.ckks_eval_linear_transformation_sum_tmp_bytes(res, &plan, key));
         module
-            .ckks_eval_linear_transformation_sum_tmp_bytes(a, key)
+            .ckks_eval_linear_transformation_sum_tmp_bytes(a, &plan, key)
             .max(res_bytes.unwrap_or(0))
     } else {
-        let res_bytes = live.then(|| module.ckks_eval_linear_transformation_tmp_bytes(res, key));
+        let res_bytes = live.then(|| module.ckks_eval_linear_transformation_tmp_bytes(res, &plan, key));
         module
-            .ckks_eval_linear_transformation_tmp_bytes(a, key)
+            .ckks_eval_linear_transformation_tmp_bytes(a, &plan, key)
             .max(res_bytes.unwrap_or(0))
     };
     module
-        .ckks_prepare_linear_transformation_baby_steps_tmp_bytes(a, key)
+        .ckks_prepare_linear_transformation_baby_steps_tmp_bytes(a, &plan, key)
         .max(eval)
 }
 

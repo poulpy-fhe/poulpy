@@ -288,7 +288,7 @@ pub fn test_linear_transformation_sum<BE, F, E>(
             babies
         })
         .collect();
-    let sum_bytes = module.ckks_eval_linear_transformation_sum_tmp_bytes(&cts[0], &params.atk_layout());
+    let sum_bytes = module.ckks_eval_linear_transformation_sum_tmp_bytes(&cts[0], &prepared[0].index(), &params.atk_layout());
 
     // One term: the single transform, bit for bit.
     let mut single = alloc_ct(&params, module, params.k);
@@ -368,6 +368,7 @@ pub fn test_linear_transformation_sum<BE, F, E>(
     let empty: LinearTransformationPrepared<BE> = LinearTransformation {
         baby_steps: vec![0],
         giant_steps: Vec::new(),
+        rotations: Default::default(),
     };
     reject(&[&cts[0]], &[&babies[0]], &[&empty], "has no diagonals", true);
     let other_schedule = prepare_lt(
@@ -626,8 +627,8 @@ pub fn test_linear_transformation_mixed_key_layouts<BE, F, E>(
     // queries, nothing rounded up on top.
     let mut eval_scratch = <poulpy_hal::layouts::ScratchOwned<BE> as poulpy_hal::api::ScratchOwnedAlloc<BE>>::alloc(
         module
-            .ckks_eval_linear_transformation_tmp_bytes(&ct, &stored_infos)
-            .max(module.ckks_eval_linear_transformation_tmp_bytes(&ct, &coarse_infos)),
+            .ckks_eval_linear_transformation_tmp_bytes(&ct, &prepared.index(), &stored_infos)
+            .max(module.ckks_eval_linear_transformation_tmp_bytes(&ct, &prepared.index(), &coarse_infos)),
     );
     module
         .ckks_eval_linear_transformation_self_into(&mut res, &ct, &prepared, &keys, &mut eval_scratch.borrow())

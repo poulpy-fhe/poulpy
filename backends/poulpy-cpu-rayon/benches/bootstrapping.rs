@@ -7,6 +7,6 @@ use poulpy_cpu_rayon::NTT4x30PortableRayon;
 criterion_group! {
     name = benches;
     config = poulpy_bench::criterion_config();
-    targets = bench_ckks_bootstrapping::<NTT4x30Portable, 52>, bench_ckks_bootstrapping::<NTT4x30PortableRayon, 52>
+    targets = bench_ckks_bootstrapping::<NTT4x30Portable>, bench_ckks_bootstrapping::<NTT4x30PortableRayon>
 }
 criterion_main!(benches);

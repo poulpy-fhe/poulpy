@@ -256,6 +256,11 @@ into 3 (rows ending in `drop=48` and `drop=48/a_size=4`), and one many-limb row:
 runners `runner_vec_znx_normalize_sweep` and
 `runner_vec_znx_big_normalize_sweep` accept these parameters.
 
+`hal::suites::bench_normalization` also sweeps `vec_znx_gadget_decompose` over the 27-limb key-switch
+columns of a bootstrap at radix 53, whole-limb and off a limb, at degrees `{4096, 8192, 16384, 65536}`
+(`default_bench_params_gadget_decompose`, ids ending in `base2k=53/k_digit=..`), through
+`runner_vec_znx_gadget_decompose`.
+
 The `normalize` benchmark compares small and big normalization on FFT64 and
 NTT4x30, with reference and AVX2 backends, for 4,800 cases. Input generation
 and allocation happen outside the timed loop, using the documented input bounds.

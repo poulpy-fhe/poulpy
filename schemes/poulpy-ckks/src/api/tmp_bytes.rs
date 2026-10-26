@@ -23,8 +23,8 @@ pub trait CKKSAllOpsTmpBytes<BE: Backend> {
         P: CKKSInfos;
 
     /// Returns a scratch size large enough for [`Self::ckks_all_ops_tmp_bytes`]
-    /// plus automorphism-key setup, rotation, and core prepared or streamed linear transformations.
-    /// Rotation also bounds the standard-only conjugation.
+    /// plus automorphism-key setup, rotation, and core prepared or streamed linear transformations
+    /// with a key per rotation. Rotation also bounds the standard-only conjugation.
     /// Query DFT preparation and evaluation separately for the selected backend implementation.
     fn ckks_all_ops_with_atk_tmp_bytes<C, T, A, P>(&self, ct_infos: &C, tsk_infos: &T, atk_infos: &A, pt_prec: &P) -> usize
     where
