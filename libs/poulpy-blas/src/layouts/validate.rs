@@ -13,7 +13,7 @@ use super::{
     BlasContext, BlasContextInfos, BlasGrid, BlasGridInfos, BlasMatMulOperandInfos, BlasMatMulOperandLayout, BlasPlan,
     BlasPtOperand, BlasPtOperandInfos, Left,
     ciphertext::{batch_fits, layout_of, replicated_at},
-    context::{ContextMaps, shift_maps, sum_rotations},
+    context::{ContextMaps, reduction_projection, reduction_rotations, shift_maps, shift_rotates, sum_rotations},
     grid_batch,
     matmul_operand::{
         left_operand_layout, left_term_layout, product_terms, right_maps, right_operand_layout, right_term_layout, same_shape,
@@ -21,7 +21,8 @@ use super::{
     pt_operand::OperandMaps,
 };
 
-/// The largest radix of a product: past it two lazy terms can overflow a digit.
+/// The largest radix of a product, as poulpy-ckks's prepared dot product takes: past it two canonical tensor digits can
+/// overflow an `i64`.
 pub(crate) const MAX_BASE2K: usize = 62;
 
 /// The `InvalidOperand` rejection of `op` for `reason`.
@@ -179,7 +180,7 @@ pub(crate) fn ensure_maps<M: CKKSModuleInfos + ?Sized>(
 
 /// One rotation-key look-up of an operation: the rotation, the width of the input it key-switches, and the rank of the
 /// blocks. The enumerators of an operation's look-ups yield these in the order its validator checks them; a validator
-/// checks each against the store, a [`BlasKeyUses`](crate::reference::BlasKeyUses) query collects them.
+/// checks each against the store, a [`BlasKeyUses`](crate::layouts::BlasKeyUses) query collects them.
 #[derive(Clone, Copy)]
 pub(crate) struct RotationUse {
     pub(crate) rotation: i64,
@@ -298,13 +299,13 @@ pub fn validate_blas_rotate<BE: Backend>(
     Ok(grid_batch::<BE::Ring>(a))
 }
 
-/// Checks a [`blas_sum`](crate::api::BlasMatInterOps::blas_sum) call as [`validate_blas_rotate`] does, with a radix
-/// whose digits hold the `log2(mat_slots) + 1` lazy terms the sum adds, and the rotation keys of the batch at the
-/// narrower of `a`'s and `res`'s widths, of `a`'s rank, and returns the batch `res` records, `a`'s.
+/// Checks a [`blas_sum`](crate::api::BlasMatInterOps::blas_sum) call as [`validate_blas_rotate`] does, with the
+/// rotation keys of the batch at the narrower of `a`'s and `res`'s widths, of `a`'s rank, and returns the batch `res`
+/// records, `a`'s.
 ///
 /// # Errors
 ///
-/// `InvalidOperand` for a grid, shape, layout or radix it rejects, then, key by key, `MissingAutomorphismKey`, or
+/// `InvalidOperand` for a grid, shape or layout it rejects, then, key by key, `MissingAutomorphismKey`, or
 /// `InvalidOperand` for a key of another rank.
 pub fn validate_blas_sum<BE: Backend>(
     module: &Module<BE>,
@@ -314,8 +315,6 @@ pub fn validate_blas_sum<BE: Backend>(
 ) -> Result<usize> {
     let op = "blas_sum";
     ensure_same_grids(op, module, res, a)?;
-    let terms = grid_batch::<BE::Ring>(a).ilog2() as usize + 1;
-    ensure_lazy_terms(op, a.block_layout().base2k().as_usize(), terms)?;
     sum_uses::<BE::Ring>(res, a, &mut |u| ensure_rotation(op, module, atk, u))?;
     Ok(grid_batch::<BE::Ring>(a))
 }
@@ -374,14 +373,17 @@ pub fn validate_blas_transpose<BE: Backend>(
     atk: &impl GetAutomorphismKey<BE>,
 ) -> Result<usize> {
     let op = "blas_transpose";
-    ensure_mapped(op, module, res, a, ctx, a.cols(), a.rows())?;
+    ensure_intra(op, module, res, a, ctx, a.cols(), a.rows())?;
+    ensure_mapped(op, module, ctx, a)?;
     transpose_uses(res, a, &ctx.maps, &mut |u| ensure_rotation(op, module, atk, u))?;
     Ok(grid_batch::<BE::Ring>(a))
 }
 
 /// Checks a [`blas_rotate_rows`](crate::api::BlasMatIntraOps::blas_rotate_rows) call as [`validate_blas_transpose`]
-/// does, `res` of `a`'s shape and the keys of the maps the shift by `k` applies, and returns the batch `res` records,
-/// `a`'s.
+/// does, `res` of `a`'s shape and the keys of the maps the shift by `k` applies, or, on a replicated grid one block
+/// high, of its rotation at the narrower of `a`'s and `res`'s widths, and returns the batch `res` records, `a`'s. A
+/// shift that evaluates no map, by a multiple of `d` or that rotation, checks the context's slot count alone, not its
+/// radix and width.
 ///
 /// # Errors
 ///
@@ -414,8 +416,8 @@ pub fn validate_blas_rotate_cols<BE: Backend>(
 }
 
 /// `a` and `res` are grids at the context's `log_d`, `res` of `rows x cols` blocks of `a`'s degree, radix and rank, and
-/// the context's maps read `a`.
-fn ensure_mapped<BE: Backend>(
+/// the context encoded for the module's slot count.
+fn ensure_intra<BE: Backend>(
     op: &'static str,
     module: &Module<BE>,
     res: &impl BlasGrid<BE>,
@@ -428,7 +430,102 @@ fn ensure_mapped<BE: Backend>(
     ensure_grid::<BE::Ring>(op, ctx.log_d(), res, res.blocks())?;
     ensure_shape(op, res, rows, cols)?;
     ensure_layouts(op, module.n(), res, &[a])?;
+    ensure_maps(op, module, ctx.slots(), ctx.base2k(), ctx.coeffs_meta().k, &[])
+}
+
+/// The context's maps read `a`: its blocks at their radix and at least as wide.
+fn ensure_mapped<BE: Backend>(op: &'static str, module: &Module<BE>, ctx: &BlasContext<BE>, a: &impl BlasGrid<BE>) -> Result<()> {
     ensure_maps(op, module, ctx.slots(), ctx.base2k(), ctx.coeffs_meta().k, &[a])
+}
+
+/// Checks a [`blas_sum_rows`](crate::api::BlasMatIntraOps::blas_sum_rows) call as [`validate_blas_rotate_rows`] does,
+/// with the keys of its rotations and of its projection, and returns the batch `res` records, `a`'s. The row sum of a
+/// replicated grid evaluates no projection and checks the context's slot count alone, not its radix and width.
+///
+/// # Errors
+///
+/// As [`validate_blas_transpose`].
+pub fn validate_blas_sum_rows<BE: Backend>(
+    module: &Module<BE>,
+    res: &impl BlasGrid<BE>,
+    a: &impl BlasGrid<BE>,
+    ctx: &BlasContext<BE>,
+    keys: &impl GetAutomorphismKey<BE>,
+) -> Result<usize> {
+    validate_reduction(module, res, a, true, ctx, keys)
+}
+
+/// [`validate_blas_sum_rows`] for [`blas_sum_cols`](crate::api::BlasMatIntraOps::blas_sum_cols).
+///
+/// # Errors
+///
+/// As [`validate_blas_sum_rows`].
+pub fn validate_blas_sum_cols<BE: Backend>(
+    module: &Module<BE>,
+    res: &impl BlasGrid<BE>,
+    a: &impl BlasGrid<BE>,
+    ctx: &BlasContext<BE>,
+    keys: &impl GetAutomorphismKey<BE>,
+) -> Result<usize> {
+    validate_reduction(module, res, a, false, ctx, keys)
+}
+
+/// The checks of an axis reduction along the rows (`rows`) or the columns.
+fn validate_reduction<BE: Backend>(
+    module: &Module<BE>,
+    res: &impl BlasGrid<BE>,
+    a: &impl BlasGrid<BE>,
+    rows: bool,
+    ctx: &BlasContext<BE>,
+    keys: &impl GetAutomorphismKey<BE>,
+) -> Result<usize> {
+    let op = if rows { "blas_sum_rows" } else { "blas_sum_cols" };
+    ensure_intra(op, module, res, a, ctx, a.rows(), a.cols())?;
+    if reduction_projection(&ctx.maps, rows, replicated_at(ctx.slots(), a)).is_some() {
+        ensure_mapped(op, module, ctx, a)?;
+    }
+    reduction_uses(res, a, rows, &ctx.maps, &mut |u| ensure_rotation(op, module, keys, u))?;
+    Ok(grid_batch::<BE::Ring>(a))
+}
+
+/// The look-ups of an axis reduction of `a` into `res` along its rows (`rows`) or columns, of `a`'s rank: along the rows
+/// of a replicated `a`, the rotations of its tree at the narrower of `a`'s and `res`'s widths; otherwise those of its
+/// tree at `a`'s width, of the projection from `a`'s width into `res`'s and of the broadcast at the width the
+/// projection leaves.
+pub(crate) fn reduction_uses<P: LtDiagonalMeta>(
+    res: &impl BlasGridInfos,
+    a: &impl BlasGridInfos,
+    rows: bool,
+    maps: &ContextMaps<LinearTransformation<P>>,
+    f: UseSink<'_>,
+) -> Result<()> {
+    let (block, res_k) = (a.block_layout(), res.block_layout().k());
+    let (a_k, rank) = (block.k(), block.rank());
+    let projection = reduction_projection(maps, rows, replicated_at(maps.slots(), a));
+    let tree_k = if projection.is_some() {
+        a_k
+    } else {
+        rotation_key_width(res, a)
+    };
+    reduction_rotations(a.log_d(), rows).try_for_each(|rotation| {
+        f(RotationUse {
+            rotation,
+            k: tree_k,
+            rank,
+        })
+    })?;
+    let Some(projection) = projection else {
+        return Ok(());
+    };
+    lt_uses(projection, a_k, res_k, rank, &mut *f)?;
+    let k = ckks_linear_transformation_output_k(projection, a_k, res_k);
+    reduction_rotations(a.log_d(), rows).try_for_each(|rotation| {
+        f(RotationUse {
+            rotation: -rotation,
+            k,
+            rank,
+        })
+    })
 }
 
 /// The checks of a row (`rows`) or column shift by `k`.
@@ -442,7 +539,11 @@ fn validate_shift<BE: Backend>(
     atk: &impl GetAutomorphismKey<BE>,
 ) -> Result<usize> {
     let op = if rows { "blas_rotate_rows" } else { "blas_rotate_cols" };
-    ensure_mapped(op, module, res, a, ctx, a.rows(), a.cols())?;
+    ensure_intra(op, module, res, a, ctx, a.rows(), a.cols())?;
+    let extent = if rows { a.rows() } else { a.cols() };
+    if !k.is_multiple_of(1 << ctx.log_d()) && !shift_rotates(rows, extent, replicated_at(ctx.slots(), a)) {
+        ensure_mapped(op, module, ctx, a)?;
+    }
     shift_uses(res, a, k, rows, &ctx.maps, &mut |u| ensure_rotation(op, module, atk, u))?;
     Ok(grid_batch::<BE::Ring>(a))
 }
@@ -458,8 +559,9 @@ pub(crate) fn transpose_uses<P: LtDiagonalMeta>(
     lt_uses(maps.transpose(), block.k(), res_k, block.rank(), f)
 }
 
-/// The look-ups of a row (`rows`) or column shift by `k`: the keys of each of its maps ([`shift_maps`]), from `a`'s width
-/// into `res`'s.
+/// The look-ups of a row (`rows`) or column shift by `k`: the rotation by `k1 d` slots at the narrower of `a`'s and
+/// `res`'s widths where it rotates ([`shift_rotates`]), or else the keys of each of its maps ([`shift_maps`]), from
+/// `a`'s width into `res`'s.
 pub(crate) fn shift_uses<P: LtDiagonalMeta>(
     res: &impl BlasGridInfos,
     a: &impl BlasGridInfos,
@@ -468,9 +570,16 @@ pub(crate) fn shift_uses<P: LtDiagonalMeta>(
     maps: &ContextMaps<LinearTransformation<P>>,
     f: UseSink<'_>,
 ) -> Result<()> {
-    let extent = if rows { a.rows() } else { a.cols() };
+    let (extent, k1) = (if rows { a.rows() } else { a.cols() }, k % (1 << maps.log_d()));
     let (block, res_k) = (a.block_layout(), res.block_layout().k());
-    shift_maps(maps, k % (1 << maps.log_d()), rows, extent)
+    if k1 != 0 && shift_rotates(rows, extent, replicated_at(maps.slots(), a)) {
+        return f(RotationUse {
+            rotation: (k1 << maps.log_d()) as i64,
+            k: rotation_key_width(res, a),
+            rank: block.rank(),
+        });
+    }
+    shift_maps(maps, k1, rows, extent)
         .into_iter()
         .try_for_each(|lt| lt_uses(lt, block.k(), res_k, block.rank(), &mut *f))
 }
@@ -786,8 +895,7 @@ fn ensure_operand<BE: Backend>(op: &'static str, log_d: usize, g: &impl BlasGrid
 }
 
 /// `res` is a grid at `a`'s `log_d` of `a`'s rows and `b`'s columns, `a`'s columns match `b`'s rows, its radix is at
-/// most 62, so that its digits hold the two lazy terms the JKLS kernel's two-pass circuit sums at least, and the blocks
-/// of `res` have the module's degree and `a` and `b` its radix and rank.
+/// most [`MAX_BASE2K`], and the blocks of `res` have the module's degree and `a` and `b` its radix and rank.
 fn ensure_product<BE: Backend>(
     op: &'static str,
     module: &Module<BE>,
@@ -798,17 +906,14 @@ fn ensure_product<BE: Backend>(
     ensure_grid::<BE::Ring>(op, a.log_d(), res, res.blocks())?;
     ensure_inner(op, a.cols(), b.rows())?;
     ensure_shape(op, res, a.rows(), b.cols())?;
-    ensure_lazy_terms(op, res.block_layout().base2k().as_usize(), 2)?;
-    ensure_layouts(op, module.n(), res, &[a, b])
-}
-
-/// Fails unless digits of radix `base2k` hold a sum of `terms` canonical ones, each within `2^(base2k - 1)`, inside
-/// the normalizer's `2^62`.
-fn ensure_lazy_terms(op: &'static str, base2k: usize, terms: usize) -> Result<()> {
-    if terms > 1 << 63usize.saturating_sub(base2k) {
-        return Err(reject(op, format!("{terms} lazy terms risk i64 overflow at base2k={base2k}")));
+    let base2k = res.block_layout().base2k().as_usize();
+    if base2k > MAX_BASE2K {
+        return Err(reject(
+            op,
+            format!("base2k {base2k} > {MAX_BASE2K}: two canonical tensor digits can overflow an i64"),
+        ));
     }
-    Ok(())
+    ensure_layouts(op, module.n(), res, &[a, b])
 }
 
 /// The look-ups of preparing `a`, of `a`'s rank: `first` (sigma or tau) from `a`'s width into a block of `a`'s layout
@@ -958,7 +1063,7 @@ mod tests {
     use poulpy_hal::layouts::HostBytesBackend;
 
     use super::*;
-    use crate::layouts::BlasLayout;
+    use crate::layouts::{BlasLayout, BlasModuleAlloc};
 
     #[test]
     fn maps_reject_blocks_of_another_ring_radix_or_a_narrower_width() {
@@ -984,22 +1089,21 @@ mod tests {
         assert_eq!(check(128, 19, 61), rejected("blocks at k=60 read by maps at k=61"));
     }
 
+    /// A product into `res` at radix 63 is rejected for that radix before the factors' other radix is compared.
     #[test]
-    fn lazy_terms_fit_the_normalizer_domain() {
-        for (base2k, terms) in [(62, 2), (61, 4), (60, 8), (52, 1 << 11)] {
-            assert!(
-                ensure_lazy_terms("op", base2k, terms).is_ok(),
-                "base2k={base2k} terms={terms}"
-            );
-        }
-        for (base2k, terms) in [(63, 2), (62, 3), (61, 5), (60, 9)] {
-            assert_eq!(
-                ensure_lazy_terms("op", base2k, terms).map_err(|err| err.composition().cloned()),
-                Err(Some(CKKSCompositionError::InvalidOperand {
-                    op: "op",
-                    reason: format!("{terms} lazy terms risk i64 overflow at base2k={base2k}"),
-                }))
-            );
-        }
+    fn products_reject_a_radix_above_62_first() {
+        let module = Module::<HostBytesBackend>::new(256);
+        let grid = |base2k: usize| module.blas_ciphertext_alloc(2, 1, 1, base2k.into(), 120usize.into());
+        let (a, b) = (grid(19), grid(19));
+        let check =
+            |base2k: usize| ensure_product("op", &module, &grid(base2k), &a, &b).map_err(|err| err.composition().cloned());
+        assert!(check(19).is_ok());
+        assert_eq!(
+            check(63),
+            Err(Some(CKKSCompositionError::InvalidOperand {
+                op: "op",
+                reason: "base2k 63 > 62: two canonical tensor digits can overflow an i64".into(),
+            }))
+        );
     }
 }

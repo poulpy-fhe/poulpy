@@ -1,9 +1,10 @@
 //! Backend extension points. A backend selects the reference with
 //! [`impl_blas_reference_full!`](crate::impl_blas_reference_full) or overrides a family, and an override reproduces the
-//! reference bit for bit within the scratch its `_tmp_bytes_impl` reports. As the reference does, an implementation first runs its
-//! operation's validator, the public `validate_*` of [`crate::layouts`], before any write, returns its errors with
-//! `res` and its batch record untouched, and on `Ok` stamps `res` with the batch the validator returns
-//! ([`crate::layouts::BlasGridMut::set_mat_slots`]); the delegates dispatch without a check.
+//! reference bit for bit within the scratch its query reports (`_tmp_bytes_impl`, `_tmp_bytes` for the reductions). As
+//! the reference does, an implementation first runs its operation's validator, the public `validate_*` of
+//! [`crate::layouts`], before any write, returns its errors with `res` and its batch record untouched, and on `Ok`
+//! stamps `res` with the batch the validator returns ([`crate::layouts::BlasGridMut::set_mat_slots`]); the delegates
+//! dispatch without a check.
 //!
 //! The references run serially, block after block: concurrency stays inside the backend's kernels, within one
 //! ciphertext operation. An override may choose its own level instead, for example the blocks of an operation on a

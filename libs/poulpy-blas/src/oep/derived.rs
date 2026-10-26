@@ -1,13 +1,19 @@
 //! The provided methods of [`BlasMatIntraImpl`], the transpose and the row and column shifts, each composed over the
-//! map hook [`BlasMatIntraImpl::blas_map_blocks_impl`] and poulpy-ckks's copy and addition. Each runs its validator before any write and, on
-//! `Ok`, stamps the batch record of `res`, as the references do. They are public so that an override of a provided
-//! method can fall back to it; their scratch assertion over the keys a map looks up is shared with the references.
+//! map hook [`BlasMatIntraImpl::blas_map_blocks_impl`] and poulpy-ckks's copy, addition and rotation, and, in
+//! `intra`, the axis reductions. Each runs its validator before any write and, on `Ok`, stamps the batch record of
+//! `res`, as the references do. The transpose and the shifts are public so that an override of a provided method can
+//! fall back to it; their scratch assertion over the keys a map looks up is shared with the references.
+
+pub(crate) mod intra;
 
 use std::cell::RefCell;
 
 use poulpy_ckks::{
     CKKSResult as Result,
-    api::{CKKSAddOps, CKKSCopyOps, CKKSModuleInfos, LinearTransformation, LinearTransformationPrepared, LtDiagonalMeta},
+    api::{
+        CKKSAddOps, CKKSCopyOps, CKKSModuleInfos, CKKSRotateOps, LinearTransformation, LinearTransformationPrepared,
+        LtDiagonalMeta,
+    },
     layouts::CKKSModuleAlloc,
 };
 use poulpy_core::layouts::{
@@ -19,8 +25,9 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 use super::BlasMatIntraImpl;
 use crate::layouts::{
     BlasContext, BlasContextInfos, BlasGrid, BlasGridInfos, BlasGridMut,
-    context::shift_maps,
-    validate::{assert_scratch, ensure_rotation, lt_uses},
+    ciphertext::replicated_at,
+    context::{shift_maps, shift_rotates},
+    validate::{assert_scratch, ensure_rotation, lt_uses, shift_uses},
     validate_blas_rotate_cols, validate_blas_rotate_rows, validate_blas_transpose,
 };
 
@@ -112,8 +119,9 @@ where
     shift_tmp_bytes(module, res, a, false, ctx, atk)
 }
 
-/// Scratch of a row (`rows`) or column shift by any `k`: the copy for `k' = 0`, otherwise for every `k'` the hook with
-/// psi^k' (phi^k') along one block, or with both half maps plus the addition along several.
+/// Scratch of a row (`rows`) or column shift by any `k`: the copy for `k' = 0`, otherwise the rotation where the shift
+/// rotates ([`shift_rotates`]), or else for every `k'` the hook with psi^k' (phi^k') along one block, or with both half
+/// maps plus the addition along several.
 fn shift_tmp_bytes<BE, R, A, K>(module: &Module<BE>, res: &R, a: &A, rows: bool, ctx: &BlasContext<BE>, atk: &K) -> usize
 where
     BE: BlasMatIntraImpl,
@@ -122,7 +130,14 @@ where
     K: GGLWEInfos,
 {
     let extent = if rows { a.rows() } else { a.cols() };
+    let rotates = shift_rotates(rows, extent, replicated_at(ctx.slots(), a));
     let (sources, res, a) = (a.rows() * a.cols(), res.block_layout(), a.block_layout());
+    let copy = module.ckks_copy_tmp_bytes(&res, &a);
+    if rotates {
+        return copy
+            .max(module.ckks_rotate_tmp_bytes(&res, atk))
+            .max(module.ckks_rotate_tmp_bytes(&a, atk));
+    }
     (1..1 << ctx.log_d())
         .map(|k1| {
             let lts = shift_maps(&ctx.maps, k1, rows, extent);
@@ -133,7 +148,7 @@ where
                 hook
             }
         })
-        .fold(module.ckks_copy_tmp_bytes(&res, &a), usize::max)
+        .fold(copy, usize::max)
 }
 
 /// The provided `blas_rotate_rows_impl`, as [`shift`].
@@ -178,8 +193,9 @@ where
 
 /// Shifts every matrix by `k mod m d = q d + k'` rows (`rows`) or columns, along the block axis of extent `m`. With
 /// `src(t, o)` the block `o` steps past block `t` along that axis: `k' = 0` copies `src(t, q)` into block `t`, then
-/// clears its noise tag; `m = 1` is one hook call with psi^k' (phi^k'); otherwise one hook call evaluates both half
-/// maps of every block of `a` into a heap grid `h` of `res`'s block layout, and block `t` is
+/// clears its noise tag; where the shift rotates ([`shift_rotates`]), block `t` is `a`'s rotated by `k' d` slots;
+/// `m = 1` is otherwise one hook call with psi^k' (phi^k'); otherwise one hook call evaluates both half maps of every
+/// block of `a` into a heap grid `h` of `res`'s block layout, and block `t` is
 /// `h[first, src(t, q)] + h[second, src(t, q + 1)]`.
 #[allow(clippy::too_many_arguments)]
 fn shift<BE, R, A, K>(
@@ -249,9 +265,19 @@ where
         }
         return Ok(());
     }
+    let bytes = |key: &GGLWELayout| shift_tmp_bytes(module, &*res, a, rows, ctx, key);
+    if shift_rotates(rows, extent, replicated_at(ctx.slots(), a)) {
+        let used = KeyLayouts::new(atk);
+        let _ = shift_uses(&*res, a, k, rows, &ctx.maps, &mut |u| ensure_rotation(op, module, &used, u));
+        assert_scratch(op, used.max_bytes(bytes), scratch);
+        let rotation = (k1 << ctx.log_d()) as i64;
+        for (dst, src) in res.blocks_mut().iter_mut().zip(a.blocks()) {
+            module.ckks_rotate_into(dst, src, rotation, atk, scratch)?;
+        }
+        return Ok(());
+    }
     let lts = shift_maps(&ctx.maps, k1, rows, extent);
     let (src_k, dst_k, rank) = (a.block_layout().k(), res.block_layout().k(), a.block_layout().rank());
-    let bytes = |key: &GGLWELayout| shift_tmp_bytes(module, &*res, a, rows, ctx, key);
     assert_maps_scratch(op, module, &lts, atk, src_k, dst_k, rank, bytes, scratch);
     let sources: Vec<_> = a.blocks().iter().collect();
     if lts.len() == 1 {

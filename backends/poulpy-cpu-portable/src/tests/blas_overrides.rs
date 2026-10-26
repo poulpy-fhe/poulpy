@@ -177,14 +177,15 @@ fn assert_rejected<T>(label: &str, result: CKKSResult<T>) {
 }
 
 /// On `2 x 2` grids of `4 x 4` blocks, every operation over a hook enters it as the reference composes it: the
-/// transpose and both shifts across blocks one map-hook call, a cold preparation two per block row (sigma or tau, then
+/// transpose and both shifts across blocks one map-hook call, both sums one per line for its projection, the row shift
+/// and the row sum of a `1 x 2` grid holding one matrix none, a cold preparation two per block row (sigma or tau, then
 /// every shift) and a hot one none, `blas_matmul_prepared` one JKLS call per block of `res` beside two map-hook calls
 /// per block row of a hot `a` and per block column of a hot `b`, which it makes the terms of one at a time, and
 /// `blas_matmul` those of its two hot sides, each unit once, whether it holds `a` or, beside a `2 x 1` grid, `b`; a
 /// JKLS product by public matrices of the `2 x 1` grid enters the map hook once per unit, a block row on the right (two
 /// calls) and a block column on the left (one), and a diagonal one never. Then no call the API rejects enters either
 /// hook: every grid [`rejected_grids`] and [`foreign_layouts`] build, a grid of another shape and one at radix 63, as an
-/// input or as `res` of each of these operations, preparations under either hint and prepared products of every mix (a
+/// input or as `res` of each of these operations, the sums included, preparations under either hint and prepared products of every mix (a
 /// lone preparation input of another shape is valid; one of another rank than the keys is not), an inner-dimension
 /// mismatch, foreign contexts, which a hot side's product rejects too, and key stores without rotation keys, which a hot
 /// side's product needs, or without the tensor key.
@@ -233,8 +234,21 @@ fn blas_hooks_run_on_accepted_calls_alone() {
         &Grid::model(log_d, 2, 1, slots >> (2 * log_d), 8),
         &mut scratch.borrow(),
     );
+    let lanes = slots >> (2 * log_d);
+    let one_matrix = Grid::model(log_d, 1, 2, 1, 9);
+    let one = encrypt_grid::<OverrideBackend, f64, EncodingFFTTable<f64>>(
+        &params,
+        &module,
+        &host_module,
+        &encoder,
+        &sk,
+        params.k,
+        lanes.ilog2() as usize,
+        &Grid::from_fn(log_d, 1, 2, lanes, |_, r, c| one_matrix.at(0, r, c)),
+        &mut scratch.borrow(),
+    );
     let alloc = |rows: usize, cols: usize| alloc_grid(&params, &module, log_d, rows, cols, params.k);
-    let (mut res, mut res_col) = (alloc(2, 2), alloc(2, 1));
+    let (mut res, mut res_col, mut res_one) = (alloc(2, 2), alloc(2, 1), alloc(1, 2));
     let (tsk_layout, atk_layout) = (params.tsk_layout(), params.atk_layout());
     let bytes = module
         .blas_matmul_tmp_bytes(&res, &a, &a, &ctx, &tsk_layout, &atk_layout)
@@ -243,7 +257,11 @@ fn blas_hooks_run_on_accepted_calls_alone() {
         .max(module.blas_matmul_prepare_right_tmp_bytes(&a, &ctx, &atk_layout, Reuse))
         .max(module.blas_transpose_tmp_bytes(&res, &a, &ctx, &atk_layout))
         .max(module.blas_rotate_rows_tmp_bytes(&res, &a, &ctx, &atk_layout))
-        .max(module.blas_rotate_cols_tmp_bytes(&res, &a, &ctx, &atk_layout));
+        .max(module.blas_rotate_cols_tmp_bytes(&res, &a, &ctx, &atk_layout))
+        .max(module.blas_sum_rows_tmp_bytes(&res, &a, &ctx, &atk_layout))
+        .max(module.blas_sum_cols_tmp_bytes(&res, &a, &ctx, &atk_layout))
+        .max(module.blas_rotate_rows_tmp_bytes(&res_one, &one, &ctx, &atk_layout))
+        .max(module.blas_sum_rows_tmp_bytes(&res_one, &one, &ctx, &atk_layout));
     let mut op_scratch = ScratchOwned::<OverrideBackend>::alloc(bytes);
 
     assert_enters("blas_transpose", (1, 0), || {
@@ -254,6 +272,18 @@ fn blas_hooks_run_on_accepted_calls_alone() {
     });
     assert_enters("blas_rotate_cols", (1, 0), || {
         module.blas_rotate_cols(&mut res, &a, 1, &ctx, &keys, &mut op_scratch.borrow())
+    });
+    assert_enters("blas_sum_rows", (2, 0), || {
+        module.blas_sum_rows(&mut res, &a, &ctx, &keys, &mut op_scratch.borrow())
+    });
+    assert_enters("blas_sum_cols", (2, 0), || {
+        module.blas_sum_cols(&mut res, &a, &ctx, &keys, &mut op_scratch.borrow())
+    });
+    assert_enters("blas_rotate_rows of one matrix", (0, 0), || {
+        module.blas_rotate_rows(&mut res_one, &one, 1, &ctx, &keys, &mut op_scratch.borrow())
+    });
+    assert_enters("blas_sum_rows of one matrix", (0, 0), || {
+        module.blas_sum_rows(&mut res_one, &one, &ctx, &keys, &mut op_scratch.borrow())
     });
     // Hot operands at `side(OneShot)`, cold ones at `side(Reuse)`.
     let side = |hint| usize::from(hint == Reuse);
@@ -330,6 +360,10 @@ fn blas_hooks_run_on_accepted_calls_alone() {
         rejected("rotate_rows res", module.blas_rotate_rows(&mut bad, &a, 1, &ctx, &keys, s));
         rejected("rotate_cols a", module.blas_rotate_cols(res, &bad, 1, &ctx, &keys, s));
         rejected("rotate_cols res", module.blas_rotate_cols(&mut bad, &a, 1, &ctx, &keys, s));
+        rejected("sum_rows a", module.blas_sum_rows(res, &bad, &ctx, &keys, s));
+        rejected("sum_rows res", module.blas_sum_rows(&mut bad, &a, &ctx, &keys, s));
+        rejected("sum_cols a", module.blas_sum_cols(res, &bad, &ctx, &keys, s));
+        rejected("sum_cols res", module.blas_sum_cols(&mut bad, &a, &ctx, &keys, s));
         rejected("matmul a", module.blas_matmul(res, &bad, &a, &ctx, &keys, &keys, s));
         rejected("matmul b", module.blas_matmul(res, &a, &bad, &ctx, &keys, &keys, s));
         rejected("matmul res", module.blas_matmul(&mut bad, &a, &a, &ctx, &keys, &keys, s));
@@ -359,6 +393,8 @@ fn blas_hooks_run_on_accepted_calls_alone() {
         rejected("transpose", module.blas_transpose(&mut res, &a, ctx, &keys, s));
         rejected("rotate_rows", module.blas_rotate_rows(&mut res, &a, 1, ctx, &keys, s));
         rejected("rotate_cols", module.blas_rotate_cols(&mut res, &a, 1, ctx, &keys, s));
+        rejected("sum_rows", module.blas_sum_rows(&mut res, &a, ctx, &keys, s));
+        rejected("sum_cols", module.blas_sum_cols(&mut res, &a, ctx, &keys, s));
         rejected("matmul", module.blas_matmul(&mut res, &a, &a, ctx, &keys, &keys, s));
         for hint in HINTS {
             assert_rejected(
@@ -389,6 +425,12 @@ fn blas_hooks_run_on_accepted_calls_alone() {
     rejected("transpose", module.blas_transpose(&mut res, &a, &ctx, &no_atks, s));
     rejected("rotate_rows", module.blas_rotate_rows(&mut res, &a, 1, &ctx, &no_atks, s));
     rejected("rotate_cols", module.blas_rotate_cols(&mut res, &a, 1, &ctx, &no_atks, s));
+    rejected("sum_rows", module.blas_sum_rows(&mut res, &a, &ctx, &no_atks, s));
+    rejected("sum_cols", module.blas_sum_cols(&mut res, &a, &ctx, &no_atks, s));
+    rejected(
+        "rotate_rows of one matrix",
+        module.blas_rotate_rows(&mut res_one, &one, 1, &ctx, &no_atks, s),
+    );
     rejected("matmul", module.blas_matmul(&mut res, &a, &a, &ctx, &no_atks, &no_atks, s));
     for hint in HINTS {
         assert_rejected(
