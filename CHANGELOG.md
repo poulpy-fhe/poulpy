@@ -153,12 +153,14 @@
 ### `poulpy-core`
 
 - Add the evaluation of BSGS linear transformations with the keys of power-of-two rotations only (`LinearTransformationStrategy::BsgsPowersOfTwo`, `BsgsRotations::PowersOfTwo`, with `BsgsRotations::giant_key_switches`): the baby rotations come from doubling passes, whose sources share the pass's key and are switched a task each on a parallel executor, and the giant steps are summed as a binary tree over the two's-complement digits of their index, each level switching with one key.
-  The key switches are as many as with a key per rotation, the keys about `log2(n1) + log2(n2)` instead of `n1 + n2`, and a product goes through more switches.
-  The doubling and the tree carve their buffers from the scratch, which must also hold `glwe_prepare_baby_doubling_tmp_bytes` and `glwe_eval_giant_tree_tmp_bytes`; they panic with less.
-  A tree over keys at another radix normalizes each product with one `vec_znx_idft_normalize` and its root into `res` with one `glwe_normalize`.
-  `test_glwe_linear_transformation_powers_of_two` and `test_linear_transformation_powers_of_two_parity` check them.
+  For the baby steps `0..n1` and contiguous giant digits, the key switches are as many as with a key per rotation, up to one more per level of the tree, the keys about `log2(n1) + log2(n2)` instead of `n1 + n2`, and a product goes through more switches.
+  The doubling and the tree carve their buffers from the scratch, which the queries count from the plan they take: a tree holds a buffer per giant step and at most one per key switch.
+  The lazy tree normalizes its root into `res` with one `vec_znx_idft_normalize` per column; a tree over keys at another radix normalizes each product with one `vec_znx_idft_normalize` and its root into `res` with one `glwe_normalize`.
+  `test_glwe_linear_transformation_powers_of_two` and `test_linear_transformation_powers_of_two_parity` check them, the latter also on giant digits `{0, 15}`.
 - **Breaking:** `LinearTransformation<P>` and `LinearTransformationPlan` gain the public field `rotations`, so a struct literal adds `rotations: BsgsRotations::PerRotation`, which evaluates as before, as poulpy-blas does.
   `LinearTransformationStrategy` gains `BsgsPowersOfTwo`, which an exhaustive match handles.
+- **Breaking:** `glwe_eval_linear_transformation_tmp_bytes`, `glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes` and `glwe_prepare_linear_transformation_baby_steps_tmp_bytes`, their `LinearTransformationImpl` methods and their `_reference` functions take the transform's `LinearTransformationPlan` before the key, from which they count the doubling and the giant-step tree of `BsgsRotations::PowersOfTwo`.
+  A plan with a key per rotation returns the bytes they returned before, `LinearTransformationPlan::default()`, an empty one, included.
 - The lazy giant steps of a linear transformation normalize each mask column from its inverse transform with `vec_znx_idft_normalize`, where they took an inverse transform into a BIG buffer and normalized it, with the same outputs.
 - Add `gglwe_copy` and `ggsw_copy` (`GGLWECopy`, `GGSWCopy`, `GGLWECopyImpl`, `GGSWCopyImpl`, `impl_gglwe_copy_reference_full!`, `impl_ggsw_copy_reference_full!`), the copy of the first rows of a GGLWE or a GGSW into one of the same gadget and as many or fewer digits, each row as `glwe_copy` copies it.
   A key never covers its own layout but covers such a copy, which the `_assign` key switches and automorphisms switch in place; an automorphism key's Galois element is not copied.
@@ -237,7 +239,7 @@
 - `reference::keyswitching::glwe::gglwe_product_limbs` returns the `product_limbs` the reference key switch passes to `GGLWEProductDigitsStridedImpl`, so that backend overrides derive the same.
 - The scratch of GLWE encryption, decryption, plaintext multiplication, tensoring, relinearization, linear transformations and GGSW noise covers `vec_znx_idft_apply_tmp_bytes`.
 - **Breaking:** `LinearTransformationImpl` requires `glwe_eval_linear_transformation_sum_into` and `glwe_eval_linear_transformation_sum_tmp_bytes`; a hand-written impl forwards them to `glwe_eval_linear_transformation_sum_into_reference` and `glwe_eval_linear_transformation_sum_tmp_bytes_reference`.
-- Add `GLWELinearTransformations::glwe_eval_linear_transformation_sum_into` and its `_tmp_bytes`: `Σ_t M_t(a_t)` over resident transforms that share one giant schedule, at the giant key-switch cost of one transform.
+- Add `GLWELinearTransformations::glwe_eval_linear_transformation_sum_into` and its `_tmp_bytes`, which takes the first term's `LinearTransformationPlan`: `Σ_t M_t(a_t)` over resident transforms that share one giant schedule, at the giant key-switch cost of one transform.
   It takes the baby caches `babies[t]` of the `a_t` and the transforms `lts[t]` as two slices of one length, so a caller passes its own without building pairs.
 - `reference::linear_transformation` exports the checks its evaluations run before reading a key, `assert_linear_transformation_into` and `assert_linear_transformation_sum`, so that overrides fail as the reference does.
 - **Breaking:** `GLWETensoringImpl` requires `glwe_mul_relinearize_sum`, `glwe_mul_prepared_relinearize_sum`, `glwe_tensor_apply_prepared` and their `_tmp_bytes`; a hand-written impl forwards them to the `GLWETensoringReference` methods of the same names with the `_reference` suffix.
@@ -283,6 +285,8 @@
   The preset keeps a key per rotation.
   `preset_label` marks it `+pow2`, and `small_s2c_preset_meets_precision` runs it on both rings.
   A diagonal set compiled with `BsgsPowersOfTwo { giant_step: 0 }` is refused as with `Bsgs`, and `max_backend_base2k` counts the tree's key switches of a power-of-two plan.
+- **Breaking:** `ckks_prepare_linear_transformation_baby_steps_tmp_bytes`, `ckks_eval_linear_transformation_tmp_bytes` and `ckks_eval_linear_transformation_streamed_tmp_bytes`, their `CKKSLinearTransformationImpl` methods and `CKKSLinearTransformationReference` functions take the transform's `LinearTransformationPlan`, as the `poulpy-core` queries they forward to.
+  `ckks_dft_tmp_bytes` and the bootstrap's queries size each transform with its own plan, so the doubling and the giant-step tree of power-of-two keys come from them; `ckks_all_ops_with_atk_tmp_bytes` covers the transforms with a key per rotation.
 - Add the modulus raise that applies the first `CoeffsToSlots` factor on the raised ciphertext while it is small (`DFTPlan::with_first_factor_on_raise`, after ePrint 2025/1403): the factor consumes no modulus, and the raised width drops by one CoeffsToSlots scale.
   Each diagonal's term is rotated with no key and switched to the dense secret by a `GLWESwitchingKey` of its own, from the rotated raise secret, whose rows sit `k_offset` bits under the term's few limbs and end at the raise's working width (`BootstrappingKeysLayout::first_factor_key`, `BootstrappingLinearKeys::first_factor_key`); the switches are summed with `glwe_keyswitch_dft_add` and rounded once.
   The sparse-to-dense switch is not used, nor its key generated.
@@ -376,7 +380,7 @@
   A group whose keys are not all whole-limb must share one digit width and count, and returns an error otherwise.
   The mux key generation takes the digit width in bits, and the mux test also runs widths below a limb, one bit past a limb and one bit short of two, and checks that a mixed group is rejected.
 - `test_suite::parity::keys::key_layout_bits` builds a key layout of any digit width, and the encapsulated ModUp parity also sweeps widths off a limb boundary, with zero digit prefixes of none, one and several digits and a shift ending on a digit boundary.
-- Add `CKKSLinearTransformationOps::ckks_eval_linear_transformation_sum_into` and its `_tmp_bytes`: `Σ_t M_t · src_t`, over the slices `srcs`, `babies` and `lts` of one length, for resident transforms that share one giant schedule, at the giant key-switch cost of one transform, with the single transform's metadata.
+- Add `CKKSLinearTransformationOps::ckks_eval_linear_transformation_sum_into` and its `_tmp_bytes`, which takes the first term's `LinearTransformationPlan`: `Σ_t M_t · src_t`, over the slices `srcs`, `babies` and `lts` of one length, for resident transforms that share one giant schedule, at the giant key-switch cost of one transform, with the single transform's metadata.
   Slices of different lengths, or a term that does not share the first one's schedule, diagonals, source or baby-cache layout, are `InvalidOperand`, returned before `dst` is written.
 - **Breaking, behaviour:** `ckks_dot_product_ct` relinearizes once for pairs that share layouts, which changes its bits: with two pairs or more, `dst.base2k() <= 62`, one layout and scale for every `a[i]` and one for every `b[i]`, it relinearizes once into a canonical `dst`, with the tensor key at `ckks_mul_into`'s width.
   Whichever of its two circuits it takes, that path validates the lengths, the tensor key and the budget before writing `dst`, and a long sum is no longer rejected; other pairs keep the eager path and its bits.

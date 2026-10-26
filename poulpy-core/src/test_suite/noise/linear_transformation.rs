@@ -27,8 +27,8 @@ use crate::{
     layouts::{
         GGLWEInfos, GLWE, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWELayout, GLWEPlaintext, GLWESecret,
         GLWESecretPreparedFactory, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, LinearTransformation,
-        LinearTransformationDiagonal, LinearTransformationGiantStep, LinearTransformationLayout, LinearTransformationStrategy,
-        ModuleCoreAlloc, SetK, TorusPrecision,
+        LinearTransformationDiagonal, LinearTransformationGiantStep, LinearTransformationLayout, LinearTransformationPlan,
+        LinearTransformationStrategy, ModuleCoreAlloc, SetK, TorusPrecision,
         prepared::{
             GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedBackendRef, GLWEAutomorphismKeyPreparedFactory,
             GLWEAutomorphismKeyPreparedToBackendRef, GLWESecretPrepared, PreparedDiagonal,
@@ -170,16 +170,20 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
         | module.vec_znx_idft_apply_tmp_bytes();
     // The public query sizes one layout at a time, so a caller holding several
     // takes the max over them; every key set below must fit in exactly that.
+    let plan = LinearTransformationPlan {
+        baby_steps: baby_steps.clone(),
+        ..Default::default()
+    };
     let mut prep_bytes = 0;
     for layout in &layouts {
         tmp_bytes |= module.glwe_automorphism_key_encrypt_sk_tmp_bytes(layout)
             | module.glwe_automorphism_tmp_bytes(&ct_infos, &ct_infos, layout)
             | module.glwe_automorphism_key_prepare_tmp_bytes(layout);
-        prep_bytes = prep_bytes.max(module.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(&ct_infos, layout));
+        prep_bytes = prep_bytes.max(module.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(&ct_infos, &plan, layout));
     }
     for layout in &coarse {
         tmp_bytes |= module.glwe_automorphism_tmp_bytes(&ct_infos, &ct_infos, layout);
-        prep_bytes = prep_bytes.max(module.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(&ct_infos, layout));
+        prep_bytes = prep_bytes.max(module.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(&ct_infos, &plan, layout));
     }
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(tmp_bytes);
 
@@ -528,9 +532,9 @@ where
             | module.glwe_encrypt_sk_tmp_bytes(&ct_infos)
             | module.glwe_decrypt_tmp_bytes(&ct_infos)
             | module.glwe_noise_tmp_bytes(&ct_infos)
-            | module.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(&ct_infos, &atk_infos)
+            | module.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(&ct_infos, &plan, &atk_infos)
             | module.glwe_prepare_linear_transformation_rhs_tmp_bytes(&pt_infos)
-            | module.glwe_eval_linear_transformation_sum_tmp_bytes(&ct_infos, &ct_infos, &pt_infos, &atk_infos),
+            | module.glwe_eval_linear_transformation_sum_tmp_bytes(&ct_infos, &ct_infos, &pt_infos, &plan, &atk_infos),
     );
     let mut source_xs = Source::new([6u8; 32]);
     let mut source_xe = Source::new([7u8; 32]);
@@ -694,30 +698,20 @@ pub fn test_glwe_linear_transformation_powers_of_two<BE: crate::test_suite::nois
     elements.dedup();
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
-        (module.glwe_automorphism_key_encrypt_sk_tmp_bytes(&atk_infos)
+        module.glwe_automorphism_key_encrypt_sk_tmp_bytes(&atk_infos)
             | module.glwe_automorphism_key_prepare_tmp_bytes(&atk_infos)
             | module.glwe_encrypt_sk_tmp_bytes(&ct_infos)
             | module.glwe_decrypt_tmp_bytes(&ct_infos)
             | module.glwe_noise_tmp_bytes(&ct_infos)
-            | module.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(&ct_infos, &atk_infos)
             | module.glwe_prepare_linear_transformation_rhs_tmp_bytes(&pt_infos)
-            | module.glwe_eval_linear_transformation_tmp_bytes(&ct_infos, &ct_infos, &pt_infos, &atk_infos))
-            // The doubling and the tree of the power-of-two schedule hold their buffers there.
-            + {
-                let plan = schedules[1].index();
-                crate::reference::linear_transformation::glwe_prepare_baby_doubling_tmp_bytes::<BE, _, _>(
-                    &plan.baby_steps,
-                    plan.rotations,
-                    &ct_infos,
-                    &atk_infos,
-                )
-                .max(crate::reference::linear_transformation::glwe_eval_giant_tree_tmp_bytes::<BE, _, _, _>(
-                    plan.giant_steps.len(),
-                    &ct_infos,
-                    &pt_infos,
-                    &atk_infos,
-                ))
-            },
+            | schedules
+                .iter()
+                .map(|schedule| {
+                    let plan = schedule.index();
+                    module.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(&ct_infos, &plan, &atk_infos)
+                        | module.glwe_eval_linear_transformation_tmp_bytes(&ct_infos, &ct_infos, &pt_infos, &plan, &atk_infos)
+                })
+                .fold(0, usize::max),
     );
     let mut source_xs = Source::new([9u8; 32]);
     let mut source_xe = Source::new([10u8; 32]);

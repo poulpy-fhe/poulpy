@@ -12,8 +12,8 @@ use poulpy_hal::{
         CnvPVecBytesOf, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxBigAddAssign, VecZnxBigAlloc,
         VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf, VecZnxBigFromSmall,
         VecZnxBigNormalize, VecZnxCopy, VecZnxDftAddAssign, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftAutomorphism,
-        VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxNormalizeAssign,
-        VecZnxNormalizeTmpBytes,
+        VecZnxDftAutomorphismAddWithPlanTmpBytes, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero, VecZnxGadgetDecomposeTmpBytes,
+        VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxIdftNormalizeTmpBytes, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes,
     },
     layouts::{
         Backend, GaloisElement, PrepareHint, ScratchArena, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftBackendMut,
@@ -24,9 +24,11 @@ use poulpy_hal::{
 use std::collections::BTreeMap;
 
 use crate::{
-    GLWEAdd, GLWEAutomorphism, GLWECopy, GLWEMulPlain, LinearTransformation, LinearTransformationGiantStep,
+    GLWEAdd, GLWEAutomorphism, GLWECopy, GLWEMulPlain, LinearTransformation, LinearTransformationGiantStep, ScratchArenaTakeCore,
+    api::GLWENormalize,
     layouts::{
-        GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, ModuleCoreAlloc,
+        GGLWEInfos, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, LinearTransformationPlan,
+        ModuleCoreAlloc,
         prepared::{GLWEAutomorphismKeyPreparedBackendRef, PreparedDiagonal},
     },
     reference::{
@@ -41,7 +43,7 @@ use crate::{
                 glwe_lazy_giant_automorphism_from_dft_tmp_bytes, glwe_normalize_big_into,
             },
         },
-        operations::cnv_offset_to_limb_offset,
+        operations::{cnv_offset_to_limb_offset, prod_dft_size},
     },
 };
 
@@ -487,12 +489,9 @@ fn glwe_eval_giant_tree<BE, M, R, P, H>(
         + VecZnxDftBytesOf
         + VecZnxDftCopy<BE>
         + VecZnxDftZero<BE>
-        + VecZnxIdftApply<BE>
         + poulpy_hal::api::VecZnxIdftNormalize<BE>
         + VecZnxNormalizeAssign<BE>
         + poulpy_hal::api::VecZnxBigBytesOf
-        + poulpy_hal::api::VecZnxBigNormalizeTmpBytes
-        + VecZnxIdftApplyTmpBytes
         + poulpy_hal::api::VecZnxIdftNormalizeTmpBytes
         + poulpy_hal::api::VecZnxDftAutomorphismAddWithPlanTmpBytes
         + poulpy_hal::api::VecZnxGadgetDecompose<BE>
@@ -523,13 +522,32 @@ fn glwe_eval_giant_tree<BE, M, R, P, H>(
         .flatten()
         .all(|key| res_base2k == key.base2k() && prod_base2k == key.base2k());
 
+    let diagonal_size = lts[0].giant_steps[0].diagonals[0].plaintext.size();
+    let shape = GiantTreeShape {
+        cnv_offset_hi: tree.cnv_offset_hi,
+        baby_size: babies[0].size(),
+        diagonal_size,
+        prod_size: tree.prod_size,
+        res_size: res.size(),
+        terms: babies.len(),
+    };
+
     if !lazy {
-        // The products, then each as a normalized ciphertext, carved from the scratch
-        // ([`glwe_eval_giant_tree_tmp_bytes`]).
+        // The products, then each as a normalized ciphertext, carved from the scratch beside the
+        // work of the tree ([`glwe_eval_giant_tree_tmp_bytes`]).
+        let need = steps * giant_tree_fallback_buffer_bytes::<BE, _>(module, n, cols, &shape)
+            + level_keys
+                .iter()
+                .flatten()
+                .map(|key| giant_tree_switch_bytes::<BE, _, _, _>(module, res, key, false, 0))
+                .fold(giant_tree_work_bytes::<BE, _, _>(module, res, false, &shape, 0), usize::max);
+        assert!(
+            scratch.available() >= need,
+            "glwe_eval_linear_transformation: scratch below its query"
+        );
         let (mut prods, scratch_1) = scratch
             .borrow()
             .take_vec_znx_dft_slice_scratch(n, steps, cols, tree.prod_size);
-        use crate::ScratchArenaTakeCore;
         let (mut leaves, mut scratch_1) = scratch_1.take_glwe_slice_scratch(steps, res);
         for (g, prod) in prods.iter_mut().enumerate() {
             sum_giant_prod(
@@ -646,32 +664,18 @@ fn glwe_eval_giant_tree<BE, M, R, P, H>(
         .iter()
         .map(|&size| BE::scratch_aligned(module.bytes_of_vec_znx_dft(n, cols, size)))
         .sum();
-    // The work beside the buffers: the products, an operand and its switch, the root.
-    let diagonal_size = lts[0].giant_steps[0].diagonals[0].plaintext.size();
-    let bucket = if babies.len() > 1 {
-        BE::scratch_aligned(module.bytes_of_vec_znx_dft(n, cols, tree.prod_size))
-    } else {
-        0
-    };
-    let prods_work =
-        glwe_accumulate_prepared_baby_steps_dft_tmp_bytes::<BE, _>(module, tree.cnv_offset_hi, babies[0].size(), diagonal_size)
-            + module.bytes_of_cnv_pvec_right(n, 1, diagonal_size, PrepareHint::OneShot)
-            + module.cnv_prepare_right_tmp_bytes(diagonal_size, diagonal_size)
-            + bucket;
-    let switch_work = level_keys
-        .iter()
-        .flatten()
-        .map(|key| glwe_lazy_giant_automorphism_from_dft_tmp_bytes::<BE, _, _>(module, cols - 1, node_size, &key.key))
-        .max()
-        .unwrap_or(0);
-    let root_work = BE::scratch_aligned(module.bytes_of_vec_znx_big(n, cols, node_size))
-        + module
-            .vec_znx_idft_apply_tmp_bytes()
-            .max(module.vec_znx_big_normalize_tmp_bytes());
-    let work = prods_work.max(switch_work).max(root_work);
-    // Carved from the scratch beside that work ([`glwe_eval_giant_tree_tmp_bytes`]).
+    // Carved from the scratch beside the work of the tree ([`glwe_eval_giant_tree_tmp_bytes`]).
+    let need = node_bytes
+        + level_keys
+            .iter()
+            .flatten()
+            .map(|key| giant_tree_switch_bytes::<BE, _, _, _>(module, res, key, true, node_size))
+            .fold(
+                giant_tree_work_bytes::<BE, _, _>(module, res, true, &shape, node_size),
+                usize::max,
+            );
     assert!(
-        scratch.available() >= node_bytes + work,
+        scratch.available() >= need,
         "glwe_eval_linear_transformation: scratch below its query"
     );
     let mut arena = scratch.borrow();
@@ -733,17 +737,26 @@ fn glwe_eval_giant_tree<BE, M, R, P, H>(
             held[dst] = node_size;
         }
     }
-    let root = &buffers[root];
-    let (mut root_big, mut scratch_1) = arena.take_vec_znx_big_scratch(n, cols, root.size());
-    glwe_idft_dft_into_big(module, &mut root_big.to_backend_mut(), &root.to_backend_ref(), &mut scratch_1);
-    glwe_normalize_big_into(
-        module,
-        res,
-        &root_big.to_backend_ref(),
-        prod_base2k.as_usize(),
-        tree.cnv_offset_lo,
-        &mut scratch_1,
-    );
+    // The root is read no more: one inverse transform and normalization per column, over the
+    // limbs it holds.
+    let res_k = res.k().as_usize();
+    let mut res_backend = res.to_backend_mut();
+    let mut root_backend = buffers[root].to_backend_mut();
+    let mut root_view = root_backend.with_limb_range_mut(0, held[root]);
+    for col in 0..cols {
+        module.vec_znx_idft_normalize(
+            &mut res_backend.data,
+            res_base2k.as_usize(),
+            res_k,
+            tree.cnv_offset_lo,
+            col,
+            &mut root_view,
+            col,
+            prod_base2k.as_usize(),
+            None,
+            &mut arena.borrow(),
+        );
+    }
 }
 
 /// `buffers[dst]` beside `buffers[src]`, both mutable, `dst != src`.
@@ -770,20 +783,148 @@ fn two_buffers<T>(buffers: &mut [T], dst: usize, src: usize) -> (&mut T, &T) {
     }
 }
 
-/// Bytes the giant-step tree of [`crate::layouts::BsgsRotations::PowersOfTwo`] takes from the
-/// scratch for a transform of `giant_steps` giant steps on top of the per-rotation budget, so
-/// that it holds its nodes there instead of allocating them: `a` is the source, `pt` a
-/// diagonal and `key` the widest giant key.
-pub fn glwe_eval_giant_tree_tmp_bytes<BE, A, B, K>(giant_steps: usize, a: &A, pt: &B, key: &K) -> usize
+/// The sizes the giant-step tree lays its scratch out from: a transform's in its evaluation,
+/// upper bounds of them in [`glwe_eval_giant_tree_tmp_bytes`].
+struct GiantTreeShape {
+    cnv_offset_hi: usize,
+    /// Limbs of a baby rotation.
+    baby_size: usize,
+    /// Limbs of a diagonal.
+    diagonal_size: usize,
+    /// Limbs of a giant step's product.
+    prod_size: usize,
+    /// Limbs of the destination.
+    res_size: usize,
+    /// Terms of a sum, one for a single transform.
+    terms: usize,
+}
+
+/// Bytes of the buffers of a giant step on the route on ciphertexts: its product and that
+/// product normalized.
+fn giant_tree_fallback_buffer_bytes<BE, M>(module: &M, n: usize, cols: usize, shape: &GiantTreeShape) -> usize
 where
     BE: Backend,
+    M: VecZnxDftBytesOf,
+{
+    BE::scratch_aligned(module.bytes_of_vec_znx_dft(n, cols, shape.prod_size))
+        + BE::scratch_aligned(BE::bytes_of_vec_znx(n, cols, shape.res_size))
+}
+
+/// Bytes of the work of the giant-step tree beside its buffers that no key sizes: a product,
+/// then the normalizations, of the root of `node_size` limbs on the lazy route, of each
+/// product and of the root on the route on ciphertexts.
+fn giant_tree_work_bytes<BE, M, R>(module: &M, res: &R, lazy: bool, shape: &GiantTreeShape, node_size: usize) -> usize
+where
+    BE: Backend,
+    M: Convolution<BE> + CnvPVecBytesOf + VecZnxDftBytesOf + VecZnxIdftNormalizeTmpBytes + GLWENormalize<BE>,
+    R: GLWEInfos,
+{
+    let (n, cols) = (res.n().as_usize(), res.rank().as_usize() + 1);
+    // A later term of a sum is computed into a bucket, a streamed diagonal prepared into a slot
+    // and multiplied a diagonal at a time.
+    let bucket = if shape.terms > 1 {
+        BE::scratch_aligned(module.bytes_of_vec_znx_dft(n, cols, shape.prod_size))
+    } else {
+        0
+    };
+    let prod = bucket
+        + BE::scratch_aligned(module.bytes_of_cnv_pvec_right(n, 1, shape.diagonal_size, PrepareHint::OneShot))
+        + glwe_accumulate_prepared_baby_steps_dft_tmp_bytes::<BE, _>(
+            module,
+            shape.cnv_offset_hi,
+            shape.baby_size,
+            shape.diagonal_size,
+        )
+        .max(module.cnv_apply_dft_tmp_bytes(shape.cnv_offset_hi, shape.prod_size, shape.baby_size, shape.diagonal_size))
+        .max(module.cnv_prepare_right_tmp_bytes(shape.diagonal_size, shape.diagonal_size));
+    let normalize = if lazy {
+        module.vec_znx_idft_normalize_tmp_bytes(shape.res_size, node_size)
+    } else {
+        module
+            .vec_znx_idft_normalize_tmp_bytes(shape.res_size, shape.prod_size)
+            .max(module.glwe_normalize_tmp_bytes())
+    };
+    prod.max(normalize)
+}
+
+/// Bytes of a switch of the giant-step tree with `key`: of a node of `node_size` limbs on the
+/// lazy route, of a ciphertext of the layout of `res` on the other.
+fn giant_tree_switch_bytes<BE, M, R, K>(module: &M, res: &R, key: &K, lazy: bool, node_size: usize) -> usize
+where
+    BE: Backend,
+    M: ModuleN
+        + GLWEAutomorphism<BE>
+        + GGLWEProductReference<BE>
+        + VecZnxBigBytesOf
+        + VecZnxDftAutomorphismAddWithPlanTmpBytes
+        + VecZnxDftBytesOf
+        + VecZnxIdftNormalizeTmpBytes
+        + VecZnxGadgetDecomposeTmpBytes,
+    R: GLWEInfos,
+    K: GGLWEInfos,
+{
+    if lazy {
+        glwe_lazy_giant_automorphism_from_dft_tmp_bytes::<BE, _, _>(module, res.rank().as_usize(), node_size, key)
+    } else {
+        module.glwe_automorphism_tmp_bytes(res, res, key)
+    }
+}
+
+/// Bytes the giant-step tree of a transform on [`crate::layouts::BsgsRotations::PowersOfTwo`]
+/// with the schedule `plan` takes from the scratch, the larger of its two routes: `res` is the
+/// destination, `a` the source, `pt` a diagonal and `key` the widest giant key. Zero for
+/// [`crate::layouts::BsgsRotations::PerRotation`].
+pub(super) fn glwe_eval_giant_tree_tmp_bytes<BE, M, R, A, B, K>(
+    module: &M,
+    res: &R,
+    a: &A,
+    pt: &B,
+    plan: &LinearTransformationPlan,
+    key: &K,
+) -> usize
+where
+    BE: Backend,
+    M: ModuleN
+        + Convolution<BE>
+        + CnvPVecBytesOf
+        + GLWEAutomorphism<BE>
+        + GLWENormalize<BE>
+        + GGLWEProductReference<BE>
+        + VecZnxBigBytesOf
+        + VecZnxDftAutomorphismAddWithPlanTmpBytes
+        + VecZnxDftBytesOf
+        + VecZnxIdftNormalizeTmpBytes
+        + VecZnxGadgetDecomposeTmpBytes,
+    R: GLWEInfos,
     A: GLWEInfos,
     B: LWEInfos,
-    K: crate::layouts::GGLWEInfos,
+    K: GGLWEInfos,
 {
-    let (n, cols) = (a.n().as_usize(), a.rank().as_usize() + 1);
-    let node = (a.max_size() + pt.max_size()).max(key.size());
-    2 * giant_steps * BE::scratch_aligned(BE::bytes_of_vec_znx_dft(n, cols, node))
+    let Some((_, levels)) = plan.rotations.giant_tree(plan.giant_steps.iter().copied()) else {
+        return 0;
+    };
+    let (n, cols) = (res.n().as_usize(), res.rank().as_usize() + 1);
+    let steps = plan.giant_steps.len();
+    let switches: usize = levels.iter().map(|level| level.pairs.len()).sum();
+    // No conversion offset retains the widest product; a key-switch output is no wider than
+    // its key, and a tree without one keeps nodes as wide as the destination.
+    let shape = GiantTreeShape {
+        cnv_offset_hi: 0,
+        baby_size: a.max_size(),
+        diagonal_size: pt.max_size(),
+        prod_size: prod_dft_size(a.max_size(), pt.max_size(), 0),
+        res_size: res.max_size(),
+        terms: 1,
+    };
+    let node_size = key.size().max(shape.prod_size).max(shape.res_size);
+    // A buffer per giant step and at most one per switch, as wide as a node.
+    let lazy = (steps + switches) * BE::scratch_aligned(module.bytes_of_vec_znx_dft(n, cols, node_size))
+        + giant_tree_work_bytes::<BE, _, _>(module, res, true, &shape, node_size)
+            .max(giant_tree_switch_bytes::<BE, _, _, _>(module, res, key, true, node_size));
+    let fallback = steps * giant_tree_fallback_buffer_bytes::<BE, _>(module, n, cols, &shape)
+        + giant_tree_work_bytes::<BE, _, _>(module, res, false, &shape, node_size)
+            .max(giant_tree_switch_bytes::<BE, _, _, _>(module, res, key, false, node_size));
+    lazy.max(fallback)
 }
 
 /// PROD of giant step `g` summed over the terms `(babies[t], lts[t])`: the first term writes

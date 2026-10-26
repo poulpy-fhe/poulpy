@@ -16,7 +16,14 @@ use poulpy_core::{
 };
 use poulpy_hal::{api::*, layouts::*};
 unsafe impl poulpy_core::oep::LinearTransformationImpl for BE {
-    fn glwe_eval_linear_transformation_tmp_bytes<R, A, B, K>(module: &Module<BE>, res: &R, a: &A, pt: &B, key: &K) -> usize
+    fn glwe_eval_linear_transformation_tmp_bytes<R, A, B, K>(
+        module: &Module<BE>,
+        res: &R,
+        a: &A,
+        pt: &B,
+        plan: &poulpy_core::layouts::LinearTransformationPlan,
+        key: &K,
+    ) -> usize
     where
         R: poulpy_core::layouts::GLWEInfos,
         A: poulpy_core::layouts::GLWEInfos,
@@ -24,7 +31,7 @@ unsafe impl poulpy_core::oep::LinearTransformationImpl for BE {
         K: poulpy_core::layouts::GGLWEInfos,
     {
         poulpy_core::reference::linear_transformation::glwe_eval_linear_transformation_tmp_bytes_reference::<BE, _, _, _, _, _>(
-            module, res, a, pt, key,
+            module, res, a, pt, plan, key,
         )
     }
 
@@ -33,6 +40,7 @@ unsafe impl poulpy_core::oep::LinearTransformationImpl for BE {
         res: &R,
         a: &A,
         pt: &B,
+        plan: &poulpy_core::layouts::LinearTransformationPlan,
         key: &K,
     ) -> usize
     where
@@ -48,10 +56,17 @@ unsafe impl poulpy_core::oep::LinearTransformationImpl for BE {
             _,
             _,
             _,
-        >(module, res, a, pt, key)
+        >(module, res, a, pt, plan, key)
     }
 
-    fn glwe_eval_linear_transformation_sum_tmp_bytes<R, A, B, K>(module: &Module<BE>, res: &R, a: &A, pt: &B, key: &K) -> usize
+    fn glwe_eval_linear_transformation_sum_tmp_bytes<R, A, B, K>(
+        module: &Module<BE>,
+        res: &R,
+        a: &A,
+        pt: &B,
+        plan: &poulpy_core::layouts::LinearTransformationPlan,
+        key: &K,
+    ) -> usize
     where
         R: poulpy_core::layouts::GLWEInfos,
         A: poulpy_core::layouts::GLWEInfos,
@@ -59,11 +74,16 @@ unsafe impl poulpy_core::oep::LinearTransformationImpl for BE {
         K: poulpy_core::layouts::GGLWEInfos,
     {
         poulpy_core::reference::linear_transformation::glwe_eval_linear_transformation_sum_tmp_bytes_reference::<BE, _, _, _, _, _>(
-            module, res, a, pt, key,
+            module, res, a, pt, plan, key,
         )
     }
 
-    fn glwe_prepare_linear_transformation_baby_steps_tmp_bytes<A, K>(module: &Module<BE>, a: &A, key: &K) -> usize
+    fn glwe_prepare_linear_transformation_baby_steps_tmp_bytes<A, K>(
+        module: &Module<BE>,
+        a: &A,
+        plan: &poulpy_core::layouts::LinearTransformationPlan,
+        key: &K,
+    ) -> usize
     where
         A: poulpy_core::layouts::GLWEInfos,
         K: poulpy_core::layouts::GGLWEInfos,
@@ -73,7 +93,7 @@ unsafe impl poulpy_core::oep::LinearTransformationImpl for BE {
             _,
             _,
             _,
-        >(module, a, key)
+        >(module, a, plan, key)
     }
 
     fn glwe_prepare_linear_transformation_rhs_tmp_bytes<P>(module: &Module<BE>, pt_infos: &P) -> usize

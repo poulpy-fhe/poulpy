@@ -325,8 +325,7 @@ where
     use crate::api::{CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSImagOps, CKKSRotateOps, CKKSSubOps};
     use poulpy_core::{
         GLWEBytesOf, GLWELinearTransformations,
-        layouts::{BsgsRotations, GLWELayout, LWEInfos},
-        reference::linear_transformation::{glwe_eval_giant_tree_tmp_bytes, glwe_prepare_baby_doubling_tmp_bytes},
+        layouts::{GLWELayout, LWEInfos},
     };
     let envelope = |ct: &dyn CKKSCtBounds| crate::CKKSLayout {
         glwe_layout: GLWELayout {
@@ -347,32 +346,25 @@ where
             .max(module.ckks_add_tmp_bytes(ct.max_size()))
             .max(module.ckks_sub_tmp_bytes(ct.max_size()))
             .max(module.ckks_mul_i_tmp_bytes(ct.max_size()))
-            .max(module.ckks_div_i_tmp_bytes(ct.max_size()))
-            .max(module.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(ct, key));
+            .max(module.ckks_div_i_tmp_bytes(ct.max_size()));
         for factor in dft.factor_operands() {
-            // The doubling and the giant-step tree of power-of-two keys hold their
-            // ciphertexts in the scratch beside the per-rotation work.
-            bytes = bytes.max(
-                module.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(ct, key)
-                    + glwe_prepare_baby_doubling_tmp_bytes::<BE, _, _>(factor.baby_steps(), factor.rotations, ct, key),
-            );
+            // Each factor's own schedule, so that a factor on power-of-two keys counts its
+            // doubling and its giant-step tree.
+            let plan = factor.index();
+            bytes = bytes.max(module.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(ct, &plan, key));
             for pt in factor
                 .giant_steps
                 .iter()
                 .flat_map(|giant| &giant.diagonals)
                 .map(|diagonal| &diagonal.plaintext)
             {
-                let tree = match factor.rotations {
-                    BsgsRotations::PerRotation => 0,
-                    _ => glwe_eval_giant_tree_tmp_bytes::<BE, _, _, _>(factor.giant_steps.len(), ct, pt, key),
-                };
                 // Prepared and streamed evaluation are selected independently, so
                 // neither query is assumed to cover the other.
                 let factor_work = module
-                    .glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(ct, ct, pt, key)
-                    .max(module.glwe_eval_linear_transformation_tmp_bytes(ct, ct, pt, key))
+                    .glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(ct, ct, pt, &plan, key)
+                    .max(module.glwe_eval_linear_transformation_tmp_bytes(ct, ct, pt, &plan, key))
                     .max(module.ckks_copy_tmp_bytes(ct, ct));
-                bytes = bytes.max(BE::scratch_aligned(module.glwe_bytes_of_from_infos(ct)) + factor_work + tree);
+                bytes = bytes.max(BE::scratch_aligned(module.glwe_bytes_of_from_infos(ct)) + factor_work);
             }
         }
     }

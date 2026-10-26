@@ -29,7 +29,6 @@ pub use crate::layouts::{
 };
 
 // Reference implementations forwarded to from `crate::oep::LinearTransformationImpl`.
-pub use baby_steps::glwe_prepare_baby_doubling_tmp_bytes;
 pub use eval::{
     assert_linear_transformation_into, assert_linear_transformation_sum, glwe_eval_linear_transformation_into_reference,
     glwe_eval_linear_transformation_sum_into_reference, glwe_eval_linear_transformation_sum_tmp_bytes_reference,
@@ -37,4 +36,4 @@ pub use eval::{
     glwe_prepare_linear_transformation_baby_steps_reference, glwe_prepare_linear_transformation_baby_steps_tmp_bytes_reference,
 };
 pub use prepare::{glwe_prepare_linear_transformation_rhs_reference, glwe_prepare_linear_transformation_rhs_tmp_bytes_reference};
-pub use prepared_giants::{DiagonalProd, glwe_accumulate_streamed_baby_steps_dft, glwe_eval_giant_tree_tmp_bytes};
+pub use prepared_giants::{DiagonalProd, glwe_accumulate_streamed_baby_steps_dft};

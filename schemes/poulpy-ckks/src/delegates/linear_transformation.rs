@@ -1,7 +1,9 @@
 use crate::CKKSResult as Result;
 use poulpy_core::{
     LinearTransformation, LinearTransformationBabySteps, LinearTransformationPrepared,
-    layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, IntPolyInfos, LWEInfos},
+    layouts::{
+        GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, IntPolyInfos, LWEInfos, LinearTransformationPlan,
+    },
     reference::linear_transformation::DiagonalProd,
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
@@ -20,36 +22,41 @@ impl<BE: Backend + CKKSLinearTransformationImpl> CKKSLinearTransformationOps<BE>
         BE::ckks_prepare_linear_transformation_rhs_tmp_bytes_impl(self, pt_infos)
     }
 
-    fn ckks_prepare_linear_transformation_baby_steps_tmp_bytes<C, K>(&self, ct: &C, key: &K) -> usize
+    fn ckks_prepare_linear_transformation_baby_steps_tmp_bytes<C, K>(
+        &self,
+        ct: &C,
+        plan: &LinearTransformationPlan,
+        key: &K,
+    ) -> usize
     where
         C: CKKSCtBounds,
         K: GGLWEInfos,
     {
-        BE::ckks_prepare_linear_transformation_baby_steps_tmp_bytes_impl(self, ct, key)
+        BE::ckks_prepare_linear_transformation_baby_steps_tmp_bytes_impl(self, ct, plan, key)
     }
 
-    fn ckks_eval_linear_transformation_tmp_bytes<C, K>(&self, ct: &C, key: &K) -> usize
+    fn ckks_eval_linear_transformation_tmp_bytes<C, K>(&self, ct: &C, plan: &LinearTransformationPlan, key: &K) -> usize
     where
         C: CKKSCtBounds,
         K: GGLWEInfos,
     {
-        BE::ckks_eval_linear_transformation_tmp_bytes_impl(self, ct, key)
+        BE::ckks_eval_linear_transformation_tmp_bytes_impl(self, ct, plan, key)
     }
 
-    fn ckks_eval_linear_transformation_streamed_tmp_bytes<C, K>(&self, ct: &C, key: &K) -> usize
+    fn ckks_eval_linear_transformation_streamed_tmp_bytes<C, K>(&self, ct: &C, plan: &LinearTransformationPlan, key: &K) -> usize
     where
         C: CKKSCtBounds,
         K: GGLWEInfos,
     {
-        BE::ckks_eval_linear_transformation_streamed_tmp_bytes_impl(self, ct, key)
+        BE::ckks_eval_linear_transformation_streamed_tmp_bytes_impl(self, ct, plan, key)
     }
 
-    fn ckks_eval_linear_transformation_sum_tmp_bytes<C, K>(&self, ct: &C, key: &K) -> usize
+    fn ckks_eval_linear_transformation_sum_tmp_bytes<C, K>(&self, ct: &C, plan: &LinearTransformationPlan, key: &K) -> usize
     where
         C: CKKSCtBounds,
         K: GGLWEInfos,
     {
-        BE::ckks_eval_linear_transformation_sum_tmp_bytes_impl(self, ct, key)
+        BE::ckks_eval_linear_transformation_sum_tmp_bytes_impl(self, ct, plan, key)
     }
 
     fn ckks_prepare_linear_transformation_rhs<P>(

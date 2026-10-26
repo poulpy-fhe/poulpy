@@ -124,29 +124,39 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     where
         P: LWEInfos;
 
-    /// Scratch bytes required by [`Self::ckks_prepare_linear_transformation_baby_steps`].
-    fn ckks_prepare_linear_transformation_baby_steps_tmp_bytes<C, K>(&self, ct: &C, key: &K) -> usize
+    /// Scratch bytes required by [`Self::ckks_prepare_linear_transformation_baby_steps`] for a
+    /// cache of the baby steps of `plan` (see
+    /// [`GLWELinearTransformations::glwe_prepare_linear_transformation_baby_steps_tmp_bytes`](poulpy_core::GLWELinearTransformations::glwe_prepare_linear_transformation_baby_steps_tmp_bytes)).
+    fn ckks_prepare_linear_transformation_baby_steps_tmp_bytes<C, K>(
+        &self,
+        ct: &C,
+        plan: &LinearTransformationPlan,
+        key: &K,
+    ) -> usize
     where
         C: CKKSCtBounds,
         K: GGLWEInfos;
 
     /// Scratch bytes required to evaluate with a **resident** RHS (`P =
-    /// PreparedDiagonal`).
-    fn ckks_eval_linear_transformation_tmp_bytes<C, K>(&self, ct: &C, key: &K) -> usize
+    /// PreparedDiagonal`) a transform with the schedule `plan` (see
+    /// [`GLWELinearTransformations::glwe_eval_linear_transformation_tmp_bytes`](poulpy_core::GLWELinearTransformations::glwe_eval_linear_transformation_tmp_bytes)).
+    fn ckks_eval_linear_transformation_tmp_bytes<C, K>(&self, ct: &C, plan: &LinearTransformationPlan, key: &K) -> usize
     where
         C: CKKSCtBounds,
         K: GGLWEInfos;
 
     /// Scratch bytes required to evaluate with a **streamed** RHS (a plaintext
     /// diagonal `P`): the streamed inner product additionally holds one resident
-    /// `CnvPVecR` diagonal slot, so this is larger than the resident budget.
-    fn ckks_eval_linear_transformation_streamed_tmp_bytes<C, K>(&self, ct: &C, key: &K) -> usize
+    /// `CnvPVecR` diagonal slot, so this is larger than the resident budget. `plan` as in
+    /// [`Self::ckks_eval_linear_transformation_tmp_bytes`].
+    fn ckks_eval_linear_transformation_streamed_tmp_bytes<C, K>(&self, ct: &C, plan: &LinearTransformationPlan, key: &K) -> usize
     where
         C: CKKSCtBounds,
         K: GGLWEInfos;
 
-    /// Scratch bytes required by [`Self::ckks_eval_linear_transformation_sum_into`].
-    fn ckks_eval_linear_transformation_sum_tmp_bytes<C, K>(&self, ct: &C, key: &K) -> usize
+    /// Scratch bytes required by [`Self::ckks_eval_linear_transformation_sum_into`], `plan` the
+    /// schedule of the first term.
+    fn ckks_eval_linear_transformation_sum_tmp_bytes<C, K>(&self, ct: &C, plan: &LinearTransformationPlan, key: &K) -> usize
     where
         C: CKKSCtBounds,
         K: GGLWEInfos;

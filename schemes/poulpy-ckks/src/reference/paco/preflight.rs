@@ -212,10 +212,18 @@ where
     // The assign path evaluates into a branch-shaped scratch copy and stamps
     // the narrower result metadata afterwards, so the copy is sized here too.
     let lt_copy = module.glwe_bytes_of_from_infos(&branch_layout);
+    // PaCo's transforms take a key per rotation, which every plan of that kind sizes alike.
+    let lt_plan = poulpy_core::layouts::LinearTransformationPlan::default();
     for &element in context.galois_elements() {
         let key = automorphism_layout_for::<BE, _>(keys.rotation_keys(), element, working_precision)?;
         let lt = module
-            .glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(&branch_layout, &branch_layout, &factor_layout, &key)
+            .glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(
+                &branch_layout,
+                &branch_layout,
+                &factor_layout,
+                &lt_plan,
+                &key,
+            )
             .checked_add(lt_copy)
             .context("PaCo linear-transformation scratch size overflows usize")?;
         required = required

@@ -40,7 +40,7 @@ use crate::{
     reference::keyswitching::{GGLWEProductReference, gglwe_product_output_size},
 };
 
-use super::{BsgsRotations, LinearTransformationBabySteps, LinearTransformationLayout};
+use super::{BsgsRotations, LinearTransformationBabySteps, LinearTransformationLayout, LinearTransformationPlan};
 use crate::layouts::{ModuleCoreAlloc, digits_aligned, operand_galois_element};
 
 const BABY_ROTATION_WORKERS: usize = 4;
@@ -449,25 +449,16 @@ fn glwe_prepare_baby_steps_doubling<BE, M, H>(
                 .unwrap_or_else(|e| panic!("baby-step doubling {key_rot}: {e}"))
         })
         .collect();
-    // A pass switches its sources together when its key has their base2k: the operand, the
-    // product and the normalized rotation of each, side by side.
+    // A pass switches its sources together when its key has their base2k.
     let hoisted = |key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>| key.base2k() == a.base2k();
-    let pass_bytes = |key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>, sources: usize| {
-        let operand_size = gadget_input_size(a.base2k(), key.k_digit(), key.dnum(), a.k(), a_size);
-        let key_size = gglwe_product_output_size::<BE, _, _, _>(a, a, key);
-        sources
-            * (BE::scratch_aligned(module.bytes_of_vec_znx_dft(n, cols - 1, operand_size))
-                + BE::scratch_aligned(module.bytes_of_vec_znx_dft(n, cols, key_size))
-                + BE::scratch_aligned(BE::bytes_of_vec_znx(n, cols, a_size)))
-    };
     // The rotations as ciphertexts and the buffers of the widest pass, carved from the scratch
     // beside the work of a rotation ([`glwe_prepare_baby_doubling_tmp_bytes`]).
-    let need = rotations.len() * BE::scratch_aligned(module.glwe_bytes_of_from_infos(a))
+    let need = baby_doubling_rotations_bytes::<BE, _, _>(module, a, rotations.len())
         + passes
             .iter()
             .zip(&pass_keys)
             .filter(|(_, key)| hoisted(key))
-            .map(|((_, pairs), key)| pass_bytes(key, pairs.len()))
+            .map(|((_, pairs), key)| baby_doubling_pass_bytes::<BE, _, _, _>(module, a, key, pairs.len()))
             .max()
             .unwrap_or(0);
     let work = pass_keys
@@ -635,26 +626,64 @@ fn glwe_prepare_baby_steps_doubling<BE, M, H>(
     });
 }
 
-/// Bytes the doubling of [`BsgsRotations::PowersOfTwo`] takes from the scratch for a cache of
-/// the rotations `baby_steps` of `a` with keys of the layout `key`, on top of the per-rotation
-/// budget, so that it holds the rotations and the buffers of a pass there instead of allocating
-/// them; zero for [`BsgsRotations::PerRotation`].
-pub fn glwe_prepare_baby_doubling_tmp_bytes<BE, A, K>(baby_steps: &[i64], rotations: BsgsRotations, a: &A, key: &K) -> usize
+/// Bytes of the rotations a doubling holds as ciphertexts of the layout of `a`.
+fn baby_doubling_rotations_bytes<BE, M, A>(module: &M, a: &A, rotations: usize) -> usize
 where
     BE: Backend,
+    M: GLWEBytesOf<BE>,
+    A: GLWEInfos,
+{
+    rotations * BE::scratch_aligned(module.glwe_bytes_of_from_infos(a))
+}
+
+/// Bytes of the buffers of a doubling pass that switches `sources` sources of the layout of `a`
+/// together with `key`: the operand, the product and the normalized rotation of each.
+fn baby_doubling_pass_bytes<BE, M, A, K>(module: &M, a: &A, key: &K, sources: usize) -> usize
+where
+    BE: Backend,
+    M: VecZnxDftBytesOf,
     A: GLWEInfos,
     K: GGLWEInfos,
 {
-    if rotations == BsgsRotations::PerRotation {
-        return 0;
-    }
     let (n, cols, a_size) = (a.n().as_usize(), a.rank().as_usize() + 1, a.size());
-    let count = rotations.baby_closure(baby_steps.iter().copied()).len();
     let operand_size = gadget_input_size(a.base2k(), key.k_digit(), key.dnum(), a.k(), a_size);
     let key_size = gglwe_product_output_size::<BE, _, _, _>(a, a, key);
-    count * BE::scratch_aligned(BE::bytes_of_vec_znx(n, cols, a_size))
-        + count
-            * (BE::scratch_aligned(BE::bytes_of_vec_znx_dft(n, cols - 1, operand_size))
-                + BE::scratch_aligned(BE::bytes_of_vec_znx_dft(n, cols, key_size))
-                + BE::scratch_aligned(BE::bytes_of_vec_znx(n, cols, a_size)))
+    sources
+        * (BE::scratch_aligned(module.bytes_of_vec_znx_dft(n, cols - 1, operand_size))
+            + BE::scratch_aligned(module.bytes_of_vec_znx_dft(n, cols, key_size))
+            + BE::scratch_aligned(BE::bytes_of_vec_znx(n, cols, a_size)))
+}
+
+/// Bytes the doubling of a cache on [`BsgsRotations::PowersOfTwo`] for the schedule `plan`
+/// takes from the scratch on top of the per-rotation budget, with keys of the layout `key`:
+/// the source normalized, the rotations as ciphertexts and the buffers of the widest pass,
+/// beside the work of a rotation, which that budget covers. Zero for
+/// [`BsgsRotations::PerRotation`].
+pub(super) fn glwe_prepare_baby_doubling_tmp_bytes<BE, M, A, K>(
+    module: &M,
+    a: &A,
+    plan: &LinearTransformationPlan,
+    key: &K,
+) -> usize
+where
+    BE: Backend,
+    M: GLWEBytesOf<BE> + VecZnxDftBytesOf,
+    A: GLWEInfos,
+    K: GGLWEInfos,
+{
+    if plan.rotations == BsgsRotations::PerRotation {
+        return 0;
+    }
+    // A cache holds the identity whether or not the plan reads it.
+    let rotations = plan.rotations.baby_closure(plan.baby_steps.iter().copied().chain([0]));
+    let widest_pass = plan
+        .rotations
+        .baby_passes(rotations.iter().copied())
+        .iter()
+        .map(|(_, pairs)| baby_doubling_pass_bytes::<BE, _, _, _>(module, a, key, pairs.len()))
+        .max()
+        .unwrap_or(0);
+    BE::scratch_aligned(module.glwe_bytes_of_from_infos(a))
+        + baby_doubling_rotations_bytes::<BE, _, _>(module, a, rotations.len())
+        + widest_pass
 }

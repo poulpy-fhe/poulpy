@@ -9,6 +9,7 @@ use crate::SlotsKind;
 use crate::{CKKSError, CKKSResult as Result, ckks_ensure, operand_cyclotomic_order};
 use poulpy_core::layouts::GLWEPlaintextInfos;
 use poulpy_core::layouts::IntPolyInfos;
+use poulpy_core::layouts::LinearTransformationPlan;
 use poulpy_core::{
     GLWELinearTransformations, LinearTransformationBabySteps, LinearTransformationGiantStep, LinearTransformationPrepared,
     layouts::{
@@ -102,17 +103,22 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         self.glwe_prepare_linear_transformation_rhs_tmp_bytes(pt_infos)
     }
 
-    fn ckks_prepare_linear_transformation_baby_steps_tmp_bytes_reference<C, K>(&self, ct: &C, key: &K) -> usize
+    fn ckks_prepare_linear_transformation_baby_steps_tmp_bytes_reference<C, K>(
+        &self,
+        ct: &C,
+        plan: &LinearTransformationPlan,
+        key: &K,
+    ) -> usize
     where
         Self: GLWELinearTransformations<BE>,
         C: CKKSCtBounds,
         K: GGLWEInfos,
     {
-        self.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(ct, key)
+        self.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(ct, plan, key)
     }
 
     /// The ciphertext stands in for the diagonal, so the budget is an upper bound for a diagonal below the ring degree.
-    fn ckks_eval_linear_transformation_tmp_bytes_reference<C, K>(&self, ct: &C, key: &K) -> usize
+    fn ckks_eval_linear_transformation_tmp_bytes_reference<C, K>(&self, ct: &C, plan: &LinearTransformationPlan, key: &K) -> usize
     where
         Self: GLWELinearTransformations<BE> + GLWEBytesOf<BE>,
         C: CKKSCtBounds,
@@ -122,11 +128,17 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         // sizes from above, so the result is a safe upper bound. The extra
         // ct-sized buffer is the dst-shaped working copy the `_assign` wrappers
         // carve from scratch (an upper bound for the `_into` paths, which skip it).
-        self.glwe_eval_linear_transformation_tmp_bytes(ct, ct, ct, key) + BE::scratch_aligned(self.glwe_bytes_of_from_infos(ct))
+        self.glwe_eval_linear_transformation_tmp_bytes(ct, ct, ct, plan, key)
+            + BE::scratch_aligned(self.glwe_bytes_of_from_infos(ct))
     }
 
     /// The ciphertext stands in for the diagonal, so the budget is an upper bound for a diagonal below the ring degree.
-    fn ckks_eval_linear_transformation_streamed_tmp_bytes_reference<C, K>(&self, ct: &C, key: &K) -> usize
+    fn ckks_eval_linear_transformation_streamed_tmp_bytes_reference<C, K>(
+        &self,
+        ct: &C,
+        plan: &LinearTransformationPlan,
+        key: &K,
+    ) -> usize
     where
         Self: GLWELinearTransformations<BE> + GLWEBytesOf<BE>,
         C: CKKSCtBounds,
@@ -135,19 +147,24 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         // `ct` doubles as the plaintext-operand proxy (upper bound on diagonal
         // shape). The extra ct-sized buffer covers the `_assign` wrappers'
         // scratch-carved working copy, as above.
-        self.glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(ct, ct, ct, key)
+        self.glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(ct, ct, ct, plan, key)
             + BE::scratch_aligned(self.glwe_bytes_of_from_infos(ct))
     }
 
     /// The ciphertext stands in for the diagonal, so the budget is an upper bound for a diagonal below the ring degree.
-    fn ckks_eval_linear_transformation_sum_tmp_bytes_reference<C, K>(&self, ct: &C, key: &K) -> usize
+    fn ckks_eval_linear_transformation_sum_tmp_bytes_reference<C, K>(
+        &self,
+        ct: &C,
+        plan: &LinearTransformationPlan,
+        key: &K,
+    ) -> usize
     where
         Self: GLWELinearTransformations<BE>,
         C: CKKSCtBounds,
         K: GGLWEInfos,
     {
         // No `_assign` wrapper, so no dst-shaped working copy.
-        self.glwe_eval_linear_transformation_sum_tmp_bytes(ct, ct, ct, key)
+        self.glwe_eval_linear_transformation_sum_tmp_bytes(ct, ct, ct, plan, key)
     }
 
     fn ckks_prepare_linear_transformation_rhs_reference<P>(

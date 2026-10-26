@@ -4,6 +4,7 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::layouts::{
     GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, LinearTransformation,
+    LinearTransformationPlan,
     prepared::{LinearTransformationBabySteps, LinearTransformationPrepared, PreparedDiagonal},
 };
 
@@ -13,7 +14,14 @@ use crate::layouts::{
 /// Implementors must preserve the semantics, scratch requirements, aliasing
 /// guarantees, and backend bit-parity contract expected by end-to-end pipelines.
 pub unsafe trait LinearTransformationImpl: Backend {
-    fn glwe_eval_linear_transformation_tmp_bytes<R, A, B, K>(module: &Module<Self>, res: &R, a: &A, pt: &B, key: &K) -> usize
+    fn glwe_eval_linear_transformation_tmp_bytes<R, A, B, K>(
+        module: &Module<Self>,
+        res: &R,
+        a: &A,
+        pt: &B,
+        plan: &LinearTransformationPlan,
+        key: &K,
+    ) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
@@ -25,6 +33,7 @@ pub unsafe trait LinearTransformationImpl: Backend {
         res: &R,
         a: &A,
         pt: &B,
+        plan: &LinearTransformationPlan,
         key: &K,
     ) -> usize
     where
@@ -33,14 +42,26 @@ pub unsafe trait LinearTransformationImpl: Backend {
         B: GLWEInfos,
         K: GGLWEInfos;
 
-    fn glwe_eval_linear_transformation_sum_tmp_bytes<R, A, B, K>(module: &Module<Self>, res: &R, a: &A, pt: &B, key: &K) -> usize
+    fn glwe_eval_linear_transformation_sum_tmp_bytes<R, A, B, K>(
+        module: &Module<Self>,
+        res: &R,
+        a: &A,
+        pt: &B,
+        plan: &LinearTransformationPlan,
+        key: &K,
+    ) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
         B: GLWEInfos,
         K: GGLWEInfos;
 
-    fn glwe_prepare_linear_transformation_baby_steps_tmp_bytes<A, K>(module: &Module<Self>, a: &A, key: &K) -> usize
+    fn glwe_prepare_linear_transformation_baby_steps_tmp_bytes<A, K>(
+        module: &Module<Self>,
+        a: &A,
+        plan: &LinearTransformationPlan,
+        key: &K,
+    ) -> usize
     where
         A: GLWEInfos,
         K: GGLWEInfos;
@@ -105,7 +126,7 @@ pub unsafe trait LinearTransformationImpl: Backend {
 macro_rules! impl_linear_transformation_reference_full {
     ($be:ty) => {
         unsafe impl $crate::oep::LinearTransformationImpl for $be {
-            fn glwe_eval_linear_transformation_tmp_bytes<R, A, B, K>(module: &::poulpy_hal::layouts::Module<$be>, res: &R, a: &A, pt: &B, key: &K) -> usize
+            fn glwe_eval_linear_transformation_tmp_bytes<R, A, B, K>(module: &::poulpy_hal::layouts::Module<$be>, res: &R, a: &A, pt: &B, plan: &$crate::layouts::LinearTransformationPlan, key: &K) -> usize
             where
                 R: $crate::layouts::GLWEInfos,
                 A: $crate::layouts::GLWEInfos,
@@ -113,7 +134,7 @@ macro_rules! impl_linear_transformation_reference_full {
                 K: $crate::layouts::GGLWEInfos,
             {
                 $crate::reference::linear_transformation::glwe_eval_linear_transformation_tmp_bytes_reference::<$be, _, _, _, _, _>(
-                    module, res, a, pt, key,
+                    module, res, a, pt, plan, key,
                 )
             }
 
@@ -122,6 +143,7 @@ macro_rules! impl_linear_transformation_reference_full {
                 res: &R,
                 a: &A,
                 pt: &B,
+                plan: &$crate::layouts::LinearTransformationPlan,
                 key: &K,
             ) -> usize
             where
@@ -137,10 +159,10 @@ macro_rules! impl_linear_transformation_reference_full {
                     _,
                     _,
                     _,
-                >(module, res, a, pt, key)
+                >(module, res, a, pt, plan, key)
             }
 
-            fn glwe_eval_linear_transformation_sum_tmp_bytes<R, A, B, K>(module: &::poulpy_hal::layouts::Module<$be>, res: &R, a: &A, pt: &B, key: &K) -> usize
+            fn glwe_eval_linear_transformation_sum_tmp_bytes<R, A, B, K>(module: &::poulpy_hal::layouts::Module<$be>, res: &R, a: &A, pt: &B, plan: &$crate::layouts::LinearTransformationPlan, key: &K) -> usize
             where
                 R: $crate::layouts::GLWEInfos,
                 A: $crate::layouts::GLWEInfos,
@@ -148,11 +170,11 @@ macro_rules! impl_linear_transformation_reference_full {
                 K: $crate::layouts::GGLWEInfos,
             {
                 $crate::reference::linear_transformation::glwe_eval_linear_transformation_sum_tmp_bytes_reference::<$be, _, _, _, _, _>(
-                    module, res, a, pt, key,
+                    module, res, a, pt, plan, key,
                 )
             }
 
-            fn glwe_prepare_linear_transformation_baby_steps_tmp_bytes<A, K>(module: &::poulpy_hal::layouts::Module<$be>, a: &A, key: &K) -> usize
+            fn glwe_prepare_linear_transformation_baby_steps_tmp_bytes<A, K>(module: &::poulpy_hal::layouts::Module<$be>, a: &A, plan: &$crate::layouts::LinearTransformationPlan, key: &K) -> usize
             where
                 A: $crate::layouts::GLWEInfos,
                 K: $crate::layouts::GGLWEInfos,
@@ -162,7 +184,7 @@ macro_rules! impl_linear_transformation_reference_full {
                     _,
                     _,
                     _,
-                >(module, a, key)
+                >(module, a, plan, key)
             }
 
             fn glwe_prepare_linear_transformation_rhs_tmp_bytes<P>(module: &::poulpy_hal::layouts::Module<$be>, pt_infos: &P) -> usize

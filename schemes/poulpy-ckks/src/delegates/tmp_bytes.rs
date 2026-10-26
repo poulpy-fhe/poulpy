@@ -8,7 +8,7 @@ use crate::{
 use poulpy_core::{
     GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWELinearTransformations, GLWEMulConst, GLWEMulPlain, GLWEShift,
     GLWETensorKeyEncryptSk, GLWETensoring,
-    layouts::{GGLWEInfos, GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory},
+    layouts::{GGLWEInfos, GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory, LinearTransformationPlan},
 };
 use poulpy_hal::{
     api::{CnvPVecBytesOf, ModuleN, VecZnxLsh, VecZnxLshTmpBytes, VecZnxRsh, VecZnxRshAdd, VecZnxRshSub, VecZnxRshTmpBytes},
@@ -101,10 +101,12 @@ where
         A: GGLWEInfos,
         P: CKKSInfos,
     {
+        // The core linear transformations with a key per rotation, which every plan of that kind sizes alike.
+        let plan = LinearTransformationPlan::default();
         self.ckks_all_ops_tmp_bytes(ct_infos, tsk_infos, pt_prec)
             .max(self.ckks_rotate_tmp_bytes(ct_infos, atk_infos))
-            .max(self.glwe_eval_linear_transformation_tmp_bytes(ct_infos, ct_infos, ct_infos, atk_infos))
-            .max(self.glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(ct_infos, ct_infos, ct_infos, atk_infos))
+            .max(self.glwe_eval_linear_transformation_tmp_bytes(ct_infos, ct_infos, ct_infos, &plan, atk_infos))
+            .max(self.glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(ct_infos, ct_infos, ct_infos, &plan, atk_infos))
             .max(self.glwe_automorphism_key_encrypt_sk_tmp_bytes(atk_infos))
             .max(self.glwe_automorphism_key_prepare_tmp_bytes(atk_infos))
     }

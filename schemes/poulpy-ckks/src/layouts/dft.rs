@@ -348,8 +348,9 @@ impl DFTPlan {
     /// Evaluates every factor with a giant step with the keys of the power-of-two
     /// multiples of its baby and giant steps
     /// ([`BsgsRotations::PowersOfTwo`](poulpy_core::layouts::BsgsRotations::PowersOfTwo)):
-    /// as many key switches, half as many keys for a factor of four baby and
-    /// eight giant steps, each switching several ciphertexts at once.
+    /// the key switches of a key per rotation, up to one more per level of the
+    /// giant-step tree, half as many keys for a factor of four baby and eight
+    /// giant steps, each switching several ciphertexts at once.
     pub fn with_power_of_two_keys(mut self, power_of_two_keys: bool) -> Self {
         self.power_of_two_keys = power_of_two_keys;
         self

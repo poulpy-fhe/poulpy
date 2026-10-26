@@ -140,8 +140,9 @@ pub enum BsgsRotations {
     /// of one pass share a key. The giant steps are summed as a binary tree over the
     /// two's-complement digits of `j`, the giant rotation `j·giant_step` modulo `slots`:
     /// `T(u; G) = T(u_even; 2G) + rot(G)(T(u_odd; 2G))`, the top digit of weight `-2^(b-1)`,
-    /// so the rotations of one level share a key. The number of key switches is that of
-    /// [`Self::PerRotation`]; a product goes through more of them.
+    /// so the rotations of one level share a key. For the baby steps `0..n1` and contiguous
+    /// giant digits, the key switches are those of [`Self::PerRotation`], up to one more per
+    /// level of the tree ([`Self::giant_key_switches`]); a product goes through more of them.
     PowersOfTwo {
         /// Every baby rotation is a multiple of it.
         baby_step: i64,
@@ -367,8 +368,9 @@ impl LinearTransformationLayout {
     }
 }
 
-/// BSGS index schedule for a linear transformation.
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// BSGS index schedule for a linear transformation. The default is an empty schedule with a
+/// key per rotation, which sizes the scratch of any transform with a key per rotation.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct LinearTransformationPlan {
     /// Distinct baby-step rotations used by the schedule.
     pub baby_steps: Vec<i64>,
