@@ -680,11 +680,52 @@ where
     BootstrappingPresetRun::<BE>::setup_ci(powers_of_two.with_eval_mod_ring(ci).unwrap()).check(backend);
 }
 
+/// The insecure `N = 2^11` S2C-first preset of [`small_s2c_preset_meets_precision`] on an
+/// evaluated backend `BE` whose keys and ciphertexts come from the client backend `BC`: once on
+/// the standard ring, and once with EvalMod on the conjugate-invariant ring, `u` folded and the
+/// keys of power-of-two rotations. Small enough for a default test run, it moves every kind of
+/// key and the ciphertexts both ways between two backends.
+pub fn small_s2c_preset_meets_precision_with_client<BE, BC>()
+where
+    BE: Backend<Ring = Standard, ZnxWord = i64> + HostStaged + MaxBase2k + 'static,
+    CIBackend<BE>: MaxBase2k,
+    BC: TestContextBackend<Ring = Standard>,
+    CIBackend<BC>: TestContextBackend,
+    Module<BE>: PresetRunModule<BE> + CKKSDFTOps<BE> + CKKSBootstrappingCIOps<BE> + GLWECIKeyPreparedFactory<BE>,
+    Module<CIBackend<BE>>: ModuleNew<CIBackend<BE>>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+        + CKKSModuleAlloc<CIBackend<BE>>
+        + CKKSEncodingOps<CIBackend<BE>, f64>
+        + GLWETensorKeyPreparedFactory<CIBackend<BE>>,
+    Module<BC>: TestContextModule<BC> + CKKSEncodingOps<BC, f64> + CKKSBootstrappingCIOps<BC> + GLWECIKeyEncryptSk<BC>,
+    Module<CIBackend<BC>>: TestContextSharedModule<CIBackend<BC>>,
+    for<'a> <BC as Backend>::BufRef<'a>: HostDataRef,
+    for<'a> <BC as Backend>::BufMut<'a>: HostDataMut,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
+    ScratchOwned<CIBackend<BE>>: ScratchOwnedAlloc<CIBackend<BE>>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos + CKKSCtBounds + poulpy_core::layouts::DiagonalProd<BE>,
+    CKKSCiphertextOwned<BC>: GLWEToBackendMut<BC> + GLWEToBackendRef<BC> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BC>: GLWEToBackendRef<BC> + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+{
+    let backend = std::any::type_name::<BE>().rsplit("::").next().unwrap();
+    let preset = crate::presets::bootstrapping::insecure_n11_d35_k180_p20_s2c().unwrap();
+    BootstrappingPresetRun::<BE, BC>::setup(preset.clone()).check(backend);
+    let ci = EvalModRing::ConjugateInvariant {
+        pre: CIConversion::Folded,
+        post: CIConversion::Product { log_delta: 38 },
+    };
+    let folded = preset.with_power_of_two_keys().unwrap().with_eval_mod_ring(ci).unwrap();
+    BootstrappingPresetRun::<BE, BC>::setup_ci(folded).check(backend);
+}
+
 /// Key generation from the plan alone ([`BootstrappingPlan::generate_keys`] and
-/// [`BootstrappingPlan::generate_keys_ci`]) takes the keys of the compiled context, Galois
-/// elements, first-factor rotations, encapsulation and conversion keys alike, on the insecure
-/// `N = 2^11` S2C-first preset, with the keys of power-of-two rotations, and with EvalMod on
-/// the conjugate-invariant ring, `u` folded into CoeffsToSlots.
+/// [`BootstrappingPlan::generate_keys_ci`]) takes the keys the matrices of the compiled context
+/// rotate with, Galois elements and first-factor rotations, and the context's own key
+/// generation, from the same plan, the same keys, encapsulation and conversion keys alike, on the
+/// insecure `N = 2^11` S2C-first preset, with the keys of power-of-two rotations, and with EvalMod
+/// on the conjugate-invariant ring, `u` folded into CoeffsToSlots.
 pub fn bootstrapping_plan_keys_match_context<BE>()
 where
     BE: TestContextBackend<Ring = Standard> + HostStaged + MaxBase2k,
@@ -730,6 +771,14 @@ where
         assert_eq!(
             key_set_shape(&from_plan),
             key_set_shape(&from_context),
+            "{}",
+            preset_label(&preset)
+        );
+        // The plan's recipe against the rotations the compiled matrices evaluate.
+        let shape = key_set_shape(&from_plan);
+        assert_eq!(
+            (shape.0, shape.1),
+            compiled_key_rotations(&context, 2 * preset.n() as i64),
             "{}",
             preset_label(&preset)
         );
@@ -782,7 +831,43 @@ where
             "{}",
             preset_label(&preset)
         );
+        // The plan's recipe against the rotations the compiled matrices evaluate.
+        let shape = key_set_shape(&from_plan);
+        assert_eq!(
+            (shape.0, shape.1),
+            compiled_key_rotations(&context, 2 * preset.n() as i64),
+            "{}",
+            preset_label(&preset)
+        );
     }
+}
+
+/// The Galois elements and first-factor rotations the matrices of a compiled context switch
+/// with: the homomorphic DFTs, the bypass, the folded factors, and conjugation with EvalMod on
+/// the standard ring.
+fn compiled_key_rotations<BE: Backend, F>(context: &BootstrappingContext<BE, F>, cyclotomic_order: i64) -> (Vec<i64>, Vec<i64>) {
+    let mut elements: std::collections::BTreeSet<i64> = context
+        .coeffs_to_slots()
+        .galois_elements(cyclotomic_order)
+        .into_iter()
+        .collect();
+    if let Some(bypass) = context.coeffs_to_slots_bypass() {
+        elements.extend(bypass.galois_elements(cyclotomic_order));
+    }
+    elements.extend(context.slots_to_coeffs().galois_elements(cyclotomic_order));
+    if let Some([even, odd]) = context.eval_mod_ci().and_then(|ci| ci.pre().folded()) {
+        elements.extend(even.galois_elements(cyclotomic_order));
+        elements.extend(odd.galois_elements(cyclotomic_order));
+    }
+    if context.eval_mod_ring() == EvalModRing::Standard {
+        elements.insert(-1);
+    }
+    let mut first_factor: Vec<i64> = context
+        .coeffs_to_slots_first_factor()
+        .map(|factor| factor.giant_steps.iter().map(|giant| giant.rot).collect())
+        .unwrap_or_default();
+    first_factor.sort_unstable();
+    (elements.into_iter().collect(), first_factor)
 }
 
 /// The Galois elements of the rotation keys, the rotations of the first-factor keys,

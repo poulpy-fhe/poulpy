@@ -31,7 +31,7 @@ use crate::{
         Base2K, GGLWEInfos, GLWE, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey, IntPolyInfos,
         LWEInfos, TorusPrecision,
     },
-    reference::keyswitching::{GGLWEProductFused, GGLWEProductReference},
+    reference::keyswitching::GGLWEProductReference,
 };
 
 fn keeps_canonical_digits<BE, R, A>(res: &R, a: &A) -> bool
@@ -698,6 +698,16 @@ pub trait GLWETensoringReference<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
+    /// Reference of [`GLWETensoringImpl::glwe_square_prepare`]: both forms of the operand of a
+    /// one-pass square, with `cnv_prepare_self`.
+    fn glwe_square_prepare_reference(
+        &self,
+        left: &mut poulpy_hal::layouts::CnvPVecLBackendMut<'_, BE>,
+        right: &mut poulpy_hal::layouts::CnvPVecRBackendMut<'_, BE>,
+        a: &VecZnxBackendRef<'_, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    );
+
     /// Scratch bytes of [`Self::glwe_mul_relinearize_sum_reference`], whatever the number of pairs:
     /// [`Self::glwe_mul_relinearize_tmp_bytes_reference`], one more set of product columns and one column of digits.
     /// A backend whose [`GLWETensoringImpl::glwe_mul_columns`] needs more than the reference convolutions adds it.
@@ -811,7 +821,7 @@ pub trait GLWETensoringReference<BE: Backend> {
 
 impl<BE: Backend> GLWETensoringReference<BE> for Module<BE>
 where
-    BE: GLWETensoringImpl,
+    BE: GLWETensoringImpl + crate::oep::GGLWEProductDigitsStridedImpl,
     Self: Sized
         + ModuleN
         + poulpy_hal::api::VecZnxGadgetDecompose<BE>
@@ -831,7 +841,6 @@ where
         + VecZnxCopy<BE>
         + VecZnxNegate<BE>
         + GGLWEProductReference<BE>
-        + GGLWEProductFused<BE>
         + VecZnxBigAddSmallAssign<BE>
         + VecZnxNormalizeTmpBytes
         + VecZnxDftAddAssign<BE>
@@ -1446,6 +1455,16 @@ where
         self.vec_znx_dft_sub_assign(cross, 0, &diag_ref, 1);
     }
 
+    fn glwe_square_prepare_reference(
+        &self,
+        left: &mut poulpy_hal::layouts::CnvPVecLBackendMut<'_, BE>,
+        right: &mut poulpy_hal::layouts::CnvPVecRBackendMut<'_, BE>,
+        a: &VecZnxBackendRef<'_, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) {
+        self.cnv_prepare_self(left, right, a, scratch)
+    }
+
     fn glwe_mul_relinearize_sum_tmp_bytes_reference<R, B>(
         &self,
         res: &R,
@@ -1685,14 +1704,13 @@ fn one_pass_tmp_bytes<BE, R, B>(
     summed: bool,
 ) -> usize
 where
-    BE: GLWETensoringImpl,
+    BE: GLWETensoringImpl + crate::oep::GGLWEProductDigitsStridedImpl,
     Module<BE>: GLWETensoringReference<BE>
         + CnvPVecBytesOf
         + Convolution<BE>
         + GLWENormalize<BE>
         + VecZnxIdftNormalizeTmpBytes
         + GGLWEProductReference<BE>
-        + GGLWEProductFused<BE>
         + poulpy_hal::api::VecZnxGadgetDecomposeTmpBytes,
     R: GLWEInfos,
     B: GGLWEInfos,
@@ -1734,7 +1752,7 @@ where
     let product = module.bytes_of_vec_znx_dft(n, 1, gadget_size)
         + gadget_bytes.max(
             module.bytes_of_vec_znx_dft(n, 2, ks_size)
-                + module.gglwe_product_idft_normalize_tmp_bytes(res.size(), ks_size, gadget_size, tsk),
+                + BE::gglwe_product_idft_normalize_tmp_bytes(module, res.size(), ks_size, gadget_size, tsk),
         );
     // Relinearized as a tensor when the gadget does not cover the digits of `d2`.
     let uncovered = if dft_size * base2k > tsk.dnum().as_usize() * tsk.k_digit().as_usize() {
@@ -1809,7 +1827,7 @@ fn glwe_mul_relinearize_one_pass<BE, R, A, B, AP, BP, H>(
     tsk: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: GLWETensoringImpl,
+    BE: GLWETensoringImpl + crate::oep::GGLWEProductDigitsStridedImpl,
     Module<BE>: GLWETensoringReference<BE>
         + ModuleN
         + CnvPVecBytesOf
@@ -1820,7 +1838,6 @@ fn glwe_mul_relinearize_one_pass<BE, R, A, B, AP, BP, H>(
         + VecZnxDftApply<BE>
         + VecZnxDftAddAssign<BE>
         + GGLWEProductReference<BE>
-        + GGLWEProductFused<BE>
         + poulpy_hal::api::VecZnxGadgetDecompose<BE>
         + poulpy_hal::api::VecZnxGadgetDecomposeTmpBytes,
     R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -2137,7 +2154,8 @@ fn glwe_mul_relinearize_one_pass<BE, R, A, B, AP, BP, H>(
     // The key switch of d2 with d0 and d1 added to its columns, inverted and normalized.
     res.set_canonical(true);
     let mut res_backend = res.to_backend_mut();
-    module.gglwe_product_idft_normalize(
+    BE::gglwe_product_idft_normalize(
+        module,
         &mut res_backend.data,
         base2k,
         res_k.as_usize(),
@@ -3525,6 +3543,27 @@ macro_rules! impl_glwe_mul_const_reference_full {
         B: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos {
             <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEMulConstReference<$be>>::glwe_mul_const_assign_reference::<R, B>(module, cnv_offset, res, b, b_coeff, scratch)
         }
+
+            fn glwe_const_combination_tmp_bytes(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                acc_size: usize,
+                a_size: usize,
+                b_size: usize,
+            ) -> usize {
+                $crate::reference::operations::glwe_const_combination_tmp_bytes_reference(module, acc_size, a_size, b_size)
+            }
+
+            fn glwe_const_combination(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                res: &mut ::poulpy_hal::layouts::VecZnxBackendMut<'_, $be>,
+                base2k: usize,
+                res_k: usize,
+                acc_size: usize,
+                terms: &[$crate::oep::ConstTerm<'_, $be>],
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
+            ) {
+                $crate::reference::operations::glwe_const_combination_reference(module, res, base2k, res_k, acc_size, terms, scratch)
+            }
         }
     };
 }
@@ -3792,46 +3831,6 @@ impl<BE: Backend, M> GLWEConstCombinationReference<BE> for M where
 {
 }
 
-/// A constant combination of the CKKS baby step, through the backend's
-/// `GLWEMulConstImpl::glwe_const_combination`.
-pub trait GLWEConstCombination<BE: Backend> {
-    /// Scratch of [`Self::glwe_const_combination`].
-    fn glwe_const_combination_tmp_bytes(&self, acc_size: usize, a_size: usize, b_size: usize) -> usize;
-
-    /// See `GLWEMulConstImpl::glwe_const_combination`.
-    fn glwe_const_combination(
-        &self,
-        res: &mut VecZnxBackendMut<'_, BE>,
-        base2k: usize,
-        res_k: usize,
-        acc_size: usize,
-        terms: &[crate::oep::ConstTerm<'_, BE>],
-        scratch: &mut ScratchArena<'_, BE>,
-    );
-}
-
-impl<BE> GLWEConstCombination<BE> for Module<BE>
-where
-    BE: Backend + crate::oep::GLWEMulConstImpl,
-    Module<BE>: GLWEConstCombinationReference<BE>,
-{
-    fn glwe_const_combination_tmp_bytes(&self, acc_size: usize, a_size: usize, b_size: usize) -> usize {
-        BE::glwe_const_combination_tmp_bytes(self, acc_size, a_size, b_size)
-    }
-
-    fn glwe_const_combination(
-        &self,
-        res: &mut VecZnxBackendMut<'_, BE>,
-        base2k: usize,
-        res_k: usize,
-        acc_size: usize,
-        terms: &[crate::oep::ConstTerm<'_, BE>],
-        scratch: &mut ScratchArena<'_, BE>,
-    ) {
-        BE::glwe_const_combination(self, res, base2k, res_k, acc_size, terms, scratch)
-    }
-}
-
 /// Scratch of [`glwe_const_combination_reference`]: the accumulator and one shifted constant
 /// beside the products, shift and normalization.
 pub fn glwe_const_combination_tmp_bytes_reference<BE, M>(module: &M, acc_size: usize, a_size: usize, b_size: usize) -> usize
@@ -3849,7 +3848,8 @@ where
             .max(module.vec_znx_big_normalize_tmp_bytes())
 }
 
-/// Default of `GLWEMulConstImpl::glwe_const_combination`: per column, the terms shifted and
+/// Reference of [`GLWEMulConstImpl::glwe_const_combination`](crate::oep::GLWEMulConstImpl::glwe_const_combination),
+/// which `impl_glwe_mul_const_reference_full!` forwards to: per column, the terms shifted and
 /// accumulated one by one, then one normalization.
 pub fn glwe_const_combination_reference<BE, M>(
     module: &M,

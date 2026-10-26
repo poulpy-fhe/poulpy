@@ -255,6 +255,13 @@ poulpy_core::impl_ggsw_rotate_derived_full!(ControlledSamplingFFT64Portable);
 poulpy_core::impl_glwe_mul_xp_minus_one_reference_full!(ControlledSamplingFFT64Portable);
 
 #[cfg(test)]
+impl_fft64_delegating_backend!(BatchedGiantStepsFFT64Portable, FFT64Portable);
+#[cfg(test)]
+impl crate::kernels::fft64::ring_arith::Fft64RingArith for BatchedGiantStepsFFT64Portable {
+    crate::fft64_ring_arith_standard!();
+}
+
+#[cfg(test)]
 impl_fft64_delegating_backend!(DifferentSamplingFFT64Portable, FFT64Portable);
 #[cfg(test)]
 impl_fft64_delegating_rotate!(DifferentSamplingFFT64Portable);

@@ -352,7 +352,7 @@ where
     );
 }
 
-/// The HAL operations the default of `GGLWEProductDigitsStridedImpl::gglwe_product_fused` composes.
+/// The HAL operations the references of the step hooks of `GGLWEProductDigitsStridedImpl` compose.
 pub trait GGLWEProductFusedReference<BE: Backend>:
     GGLWEProductReference<BE>
     + poulpy_hal::api::VecZnxDftAddAssign<BE>
@@ -373,129 +373,6 @@ impl<BE: Backend, M> GGLWEProductFusedReference<BE> for M where
 {
 }
 
-/// The gadget product with what follows it in a composite operation, through the backend's
-/// `GGLWEProductDigitsStridedImpl::gglwe_product_fused`.
-pub trait GGLWEProductFused<BE: Backend> {
-    fn gglwe_product_fused_tmp_bytes<K>(&self, res_size: usize, a_size: usize, key_infos: &K) -> usize
-    where
-        K: GGLWEInfos;
-
-    #[allow(clippy::too_many_arguments)]
-    fn gglwe_product_fused(
-        &self,
-        res: &mut VecZnxDftBackendMut<'_, BE>,
-        product_size: usize,
-        a: &VecZnxDftBackendRef<'_, BE>,
-        key: &GGLWEPreparedBackendRef<'_, BE>,
-        term_count: usize,
-        addends: &[Option<(&VecZnxDftBackendRef<'_, BE>, usize)>],
-        automorphism: Option<i64>,
-        accumulate: bool,
-        scratch: &mut ScratchArena<'_, BE>,
-    );
-
-    fn gglwe_product_idft_normalize_tmp_bytes<K>(
-        &self,
-        res_size: usize,
-        product_size: usize,
-        a_size: usize,
-        key_infos: &K,
-    ) -> usize
-    where
-        K: GGLWEInfos;
-
-    /// The product followed at once by its inverse transform and normalization, through the
-    /// backend's `GGLWEProductDigitsStridedImpl::gglwe_product_idft_normalize`.
-    #[allow(clippy::too_many_arguments)]
-    fn gglwe_product_idft_normalize(
-        &self,
-        res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, BE>,
-        res_base2k: usize,
-        res_k: usize,
-        res_offset: i64,
-        res_dft: &mut VecZnxDftBackendMut<'_, BE>,
-        a: &VecZnxDftBackendRef<'_, BE>,
-        key: &GGLWEPreparedBackendRef<'_, BE>,
-        term_count: usize,
-        addends: &[Option<(&VecZnxDftBackendRef<'_, BE>, usize)>],
-        body: Option<(&VecZnxBackendRef<'_, BE>, usize)>,
-        a_base2k: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    );
-}
-
-impl<BE> GGLWEProductFused<BE> for Module<BE>
-where
-    BE: Backend + GGLWEProductDigitsStridedImpl,
-    Module<BE>: GGLWEProductFusedReference<BE>,
-{
-    fn gglwe_product_fused_tmp_bytes<K>(&self, res_size: usize, a_size: usize, key_infos: &K) -> usize
-    where
-        K: GGLWEInfos,
-    {
-        BE::gglwe_product_fused_tmp_bytes(self, res_size, a_size, key_infos)
-    }
-
-    fn gglwe_product_idft_normalize_tmp_bytes<K>(
-        &self,
-        res_size: usize,
-        product_size: usize,
-        a_size: usize,
-        key_infos: &K,
-    ) -> usize
-    where
-        K: GGLWEInfos,
-    {
-        BE::gglwe_product_idft_normalize_tmp_bytes(self, res_size, product_size, a_size, key_infos)
-    }
-
-    fn gglwe_product_fused(
-        &self,
-        res: &mut VecZnxDftBackendMut<'_, BE>,
-        product_size: usize,
-        a: &VecZnxDftBackendRef<'_, BE>,
-        key: &GGLWEPreparedBackendRef<'_, BE>,
-        term_count: usize,
-        addends: &[Option<(&VecZnxDftBackendRef<'_, BE>, usize)>],
-        automorphism: Option<i64>,
-        accumulate: bool,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) {
-        BE::gglwe_product_fused(
-            self,
-            res,
-            product_size,
-            a,
-            key,
-            term_count,
-            addends,
-            automorphism,
-            accumulate,
-            scratch,
-        )
-    }
-
-    fn gglwe_product_idft_normalize(
-        &self,
-        res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, BE>,
-        res_base2k: usize,
-        res_k: usize,
-        res_offset: i64,
-        res_dft: &mut VecZnxDftBackendMut<'_, BE>,
-        a: &VecZnxDftBackendRef<'_, BE>,
-        key: &GGLWEPreparedBackendRef<'_, BE>,
-        term_count: usize,
-        addends: &[Option<(&VecZnxDftBackendRef<'_, BE>, usize)>],
-        body: Option<(&VecZnxBackendRef<'_, BE>, usize)>,
-        a_base2k: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) {
-        BE::gglwe_product_idft_normalize(
-            self, res, res_base2k, res_k, res_offset, res_dft, a, key, term_count, addends, body, a_base2k, scratch,
-        )
-    }
-}
-
 #[doc(hidden)]
 #[allow(clippy::too_many_arguments)]
 pub fn gglwe_product_idft_normalize_reference<BE, M>(
@@ -513,8 +390,8 @@ pub fn gglwe_product_idft_normalize_reference<BE, M>(
     a_base2k: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: Backend + GGLWEProductDigitsStridedImpl,
-    M: GGLWEProductFusedReference<BE> + GGLWEProductFused<BE>,
+    BE: Backend,
+    M: GGLWEProductFusedReference<BE>,
 {
     // The product into `res_dft`, then the addends over the limbs both have.
     module.gglwe_product_dft_reference(res_dft, a, key, term_count, &mut scratch.borrow());
@@ -558,17 +435,24 @@ where
 }
 
 #[doc(hidden)]
-pub fn gglwe_product_fused_tmp_bytes_reference<BE, M, K>(module: &M, res_size: usize, a_size: usize, key_infos: &K) -> usize
+pub fn gglwe_product_fused_tmp_bytes_reference<BE, M, K>(
+    module: &M,
+    res_size: usize,
+    product_size: usize,
+    a_size: usize,
+    key_infos: &K,
+) -> usize
 where
     BE: Backend,
     M: GGLWEProductFusedReference<BE>,
     K: GGLWEInfos,
 {
+    // The product, then its automorphism added into `res`.
     let cols: usize = (key_infos.rank_out() + 1).into();
-    BE::scratch_aligned(module.bytes_of_vec_znx_dft(module.n(), cols, res_size))
+    BE::scratch_aligned(module.bytes_of_vec_znx_dft(module.n(), cols, product_size))
         + module
-            .gglwe_product_dft_tmp_bytes_reference(res_size, a_size, key_infos)
-            .max(module.vec_znx_dft_automorphism_add_with_plan_tmp_bytes(res_size, res_size))
+            .gglwe_product_dft_tmp_bytes_reference(product_size, a_size, key_infos)
+            .max(module.vec_znx_dft_automorphism_add_with_plan_tmp_bytes(res_size, product_size))
 }
 
 #[doc(hidden)]
@@ -581,7 +465,7 @@ pub fn gglwe_product_fused_reference<BE, M>(
     key: &GGLWEPreparedBackendRef<'_, BE>,
     term_count: usize,
     addends: &[Option<(&VecZnxDftBackendRef<'_, BE>, usize)>],
-    automorphism: Option<i64>,
+    p: i64,
     accumulate: bool,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
@@ -600,25 +484,12 @@ pub fn gglwe_product_fused_reference<BE, M>(
         }
     }
     let product = product.to_backend_ref();
-    match automorphism {
-        Some(p) => {
-            let plan = module.vec_znx_dft_automorphism_plan(res.n(), p);
-            for col in 0..cols {
-                if accumulate {
-                    module.vec_znx_dft_automorphism_add_with_plan(&plan, res, col, &product, col, &mut scratch_1);
-                } else {
-                    module.vec_znx_dft_automorphism_with_plan(&plan, res, col, &product, col);
-                }
-            }
-        }
-        None => {
-            for col in 0..cols {
-                if accumulate {
-                    module.vec_znx_dft_add_assign(res, col, &product, col);
-                } else {
-                    module.vec_znx_dft_copy(1, 0, res, col, &product, col);
-                }
-            }
+    let plan = module.vec_znx_dft_automorphism_plan(res.n(), p);
+    for col in 0..cols {
+        if accumulate {
+            module.vec_znx_dft_automorphism_add_with_plan(&plan, res, col, &product, col, &mut scratch_1);
+        } else {
+            module.vec_znx_dft_automorphism_with_plan(&plan, res, col, &product, col);
         }
     }
 }
@@ -781,10 +652,10 @@ fn glwe_keyswitch_operand<BE, M, A>(
 }
 
 #[allow(private_bounds)]
-pub fn glwe_keyswitch_tmp_bytes_reference<BE, M, R, A, K>(module: &M, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
+pub fn glwe_keyswitch_tmp_bytes_reference<BE, R, A, K>(module: &Module<BE>, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
 where
-    BE: Backend,
-    M: GLWEBytesOf<BE>
+    BE: Backend + crate::oep::GGLWEProductDigitsStridedImpl,
+    Module<BE>: GLWEBytesOf<BE>
         + ModuleN
         + GLWEKeyswitchInternal<BE>
         + GLWENormalize<BE>
@@ -793,8 +664,7 @@ where
         + VecZnxIdftApplyTmpBytes
         + VecZnxIdftNormalizeTmpBytes
         + VecZnxBigNormalizeTmpBytes
-        + VecZnxNormalizeTmpBytes
-        + GGLWEProductFused<BE>,
+        + VecZnxNormalizeTmpBytes,
     R: GLWEInfos,
     A: GLWEInfos,
     K: GGLWEInfos,
@@ -848,24 +718,23 @@ where
             .max(module.glwe_keyswitch_internal_tmp_bytes_from_sizes(mask_cols, output_size, a_dft_size, key_infos))
             .max(
                 BE::scratch_aligned(module.bytes_of_vec_znx_dft(n, mask_cols, operand_size))
-                    + module.gglwe_product_idft_normalize_tmp_bytes(res_infos.size(), output_size, operand_size, key_infos),
+                    + BE::gglwe_product_idft_normalize_tmp_bytes(module, res_infos.size(), output_size, operand_size, key_infos),
             )
     };
 
     BE::scratch_aligned(module.glwe_bytes_of_from_infos(a_infos)) + (lvl_0 + lvl_2).max(module.glwe_normalize_tmp_bytes())
 }
 
-pub fn glwe_keyswitch_reference<BE, M, R, A>(
-    module: &M,
+pub fn glwe_keyswitch_reference<BE, R, A>(
+    module: &Module<BE>,
     res: &mut R,
     a: &A,
     key: &GGLWEPreparedBackendRef<'_, BE>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: Backend,
-    M: GLWEBytesOf<BE>
+    BE: Backend + crate::oep::GGLWEProductDigitsStridedImpl,
+    Module<BE>: GLWEBytesOf<BE>
         + GLWEKeyswitchReference<BE>
-        + GGLWEProductFused<BE>
         + ModuleN
         + GLWEKeyswitchInternal<BE>
         + GLWENormalize<BE>
@@ -973,7 +842,8 @@ pub fn glwe_keyswitch_reference<BE, M, R, A>(
         let mut res_ref = res.to_backend_mut();
         // The body adds back only the limbs the input's precision covers.
         let a_body = precision_limbs::<BE>(&a.data, a.base2k(), a.k());
-        module.gglwe_product_idft_normalize(
+        BE::gglwe_product_idft_normalize(
+            module,
             &mut res_ref.data,
             res_base2k,
             res_k,

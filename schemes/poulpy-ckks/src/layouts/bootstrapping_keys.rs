@@ -34,15 +34,17 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use anyhow::Result;
 use poulpy_core::{
-    GLWEAutomorphismKeyEncryptSk, GLWECIKeyEncryptSk, GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk, ScratchArenaTakeCore,
+    GLWEAutomorphismKeyEncryptSk, GLWEBytesOf, GLWECIKeyEncryptSk, GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk,
+    ScratchArenaTakeCore,
     api::{
         GLWEAutomorphismKeyPreparedFactory, GLWECIKeyPreparedFactory, GLWESwitchingKeyPreparedFactory,
         GLWETensorKeyPreparedFactory,
     },
     layouts::{
-        BackendGLWESecret, GGLWEInfos, GGLWELayout, GGLWEPreparedToBackendRef, GGLWEToBackendRef, GLWEAutomorphismKey,
-        GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPrepared, GLWECIEmbedKey, GLWECIEmbedKeyPrepared, GLWECITraceKey,
-        GLWECITraceKeyPrepared, GLWEInfos, GLWESecretLayout, GLWESwitchingKey, GLWESwitchingKeyDegrees, GLWESwitchingKeyLayout,
+        BackendGLWESecret, Degree, GGLWEBackendRef, GGLWEInfos, GGLWELayout, GGLWEPreparedToBackendMut,
+        GGLWEPreparedToBackendRef, GGLWEToBackendRef, GGLWEViewMut, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout,
+        GLWEAutomorphismKeyPrepared, GLWECIEmbedKey, GLWECIEmbedKeyPrepared, GLWECITraceKey, GLWECITraceKeyPrepared, GLWEInfos,
+        GLWESecretLayout, GLWESwitchingKey, GLWESwitchingKeyDegrees, GLWESwitchingKeyDegreesMut, GLWESwitchingKeyLayout,
         GLWESwitchingKeyPrepared, GLWETensorKey, GLWETensorKeyLayout, GLWETensorKeyPrepared, GetAutomorphismKey,
         GetGaloisElement, GetTensorKey, LWEInfos, ModuleCoreAlloc,
         prepared::{GLWEAutomorphismKeyPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
@@ -51,7 +53,7 @@ use poulpy_core::{
 use poulpy_hal::{
     api::VecZnxAutomorphism,
     layouts::{
-        Backend, ConjugateInvariant, CopyFromHost, CopyToHost, CyclotomicOrder, Data, HostDataMut, HostDataRef, Module,
+        Backend, ConjugateInvariant, CopyToHost, CyclotomicOrder, Data, HostDataMut, HostDataRef, Module,
         ScalarZnxAsVecZnxBackendRef, ScratchArena, Standard, ZnxWord, galois_element, scalar_znx_as_vec_znx_backend_mut_from_mut,
     },
     source::Source,
@@ -438,46 +440,59 @@ impl BootstrappingKeysLayout {
     }
 
     /// Scratch of [`BootstrappingKeySet::prepare`] and [`BootstrappingKeySet::transfer_and_prepare`]
-    /// for these layouts: the preparation of each key on `module`.
+    /// for these layouts: the preparation of each key on `module`, beside the copy of it the
+    /// latter carves, which the former leaves unused.
     pub fn prepare_tmp_bytes<BE>(&self, module: &Module<BE>) -> usize
     where
         BE: Backend,
-        Module<BE>:
-            GLWEAutomorphismKeyPreparedFactory<BE> + GLWESwitchingKeyPreparedFactory<BE> + GLWETensorKeyPreparedFactory<BE>,
+        Module<BE>: GLWEAutomorphismKeyPreparedFactory<BE>
+            + GLWESwitchingKeyPreparedFactory<BE>
+            + GLWETensorKeyPreparedFactory<BE>
+            + GLWEBytesOf<BE>,
     {
-        let mut bytes = module.glwe_tensor_key_prepare_tmp_bytes(&self.tensor_key);
+        // Each key's preparation, beside the copy [`BootstrappingKeySet::transfer_and_prepare`]
+        // moves it into.
+        let moved = |layout: &dyn GGLWEInfos| BE::scratch_aligned(module.gglwe_bytes_of_from_infos(&layout));
+        let mut bytes = moved(&self.tensor_key) + module.glwe_tensor_key_prepare_tmp_bytes(&self.tensor_key);
         for layout in self.rotation_key_layouts() {
-            bytes = bytes.max(module.glwe_automorphism_key_prepare_tmp_bytes(&layout));
+            bytes = bytes.max(moved(&layout) + module.glwe_automorphism_key_prepare_tmp_bytes(&layout));
         }
         for layout in self.raise_key_layouts() {
-            bytes = bytes.max(module.glwe_switching_key_prepare_tmp_bytes(&layout));
+            bytes = bytes.max(moved(&layout) + module.glwe_switching_key_prepare_tmp_bytes(&layout));
         }
         bytes
     }
 
     /// Scratch of [`BootstrappingKeySet::prepare_ci`] and [`BootstrappingKeySet::transfer_and_prepare_ci`] for these layouts:
     /// `(scratch, scratch_ci)`, the preparation of each key on `module` and of the
-    /// tensor key on `ci`. Zero without conversion key layouts.
+    /// tensor key on `ci`, each beside the copy of it the latter carves. Zero without conversion
+    /// key layouts.
     pub fn prepare_ci_tmp_bytes<BE, BCI>(&self, module: &Module<BE>, ci: &Module<BCI>) -> (usize, usize)
     where
         BE: Backend,
         BCI: Backend,
-        Module<BE>: GLWEAutomorphismKeyPreparedFactory<BE> + GLWESwitchingKeyPreparedFactory<BE> + GLWECIKeyPreparedFactory<BE>,
-        Module<BCI>: GLWETensorKeyPreparedFactory<BCI>,
+        Module<BE>: GLWEAutomorphismKeyPreparedFactory<BE>
+            + GLWESwitchingKeyPreparedFactory<BE>
+            + GLWECIKeyPreparedFactory<BE>
+            + GLWEBytesOf<BE>,
+        Module<BCI>: GLWETensorKeyPreparedFactory<BCI> + GLWEBytesOf<BCI>,
     {
         let Some((trace, embed)) = &self.conversion_keys else {
             return (0, 0);
         };
-        let mut bytes = module
-            .glwe_ci_key_prepare_tmp_bytes(trace)
-            .max(module.glwe_ci_key_prepare_tmp_bytes(embed));
+        // Each key's preparation, beside the copy [`BootstrappingKeySet::transfer_and_prepare_ci`]
+        // moves it into.
+        let moved = |layout: &dyn GGLWEInfos| BE::scratch_aligned(module.gglwe_bytes_of_from_infos(&layout));
+        let mut bytes = (moved(trace) + module.glwe_ci_key_prepare_tmp_bytes(trace))
+            .max(moved(embed) + module.glwe_ci_key_prepare_tmp_bytes(embed));
         for layout in self.rotation_key_layouts() {
-            bytes = bytes.max(module.glwe_automorphism_key_prepare_tmp_bytes(&layout));
+            bytes = bytes.max(moved(&layout) + module.glwe_automorphism_key_prepare_tmp_bytes(&layout));
         }
         for layout in self.raise_key_layouts() {
-            bytes = bytes.max(module.glwe_switching_key_prepare_tmp_bytes(&layout));
+            bytes = bytes.max(moved(&layout) + module.glwe_switching_key_prepare_tmp_bytes(&layout));
         }
-        (bytes, ci.glwe_tensor_key_prepare_tmp_bytes(&self.tensor_key))
+        let tensor_key = BCI::scratch_aligned(ci.gglwe_bytes_of_from_infos(&self.tensor_key));
+        (bytes, tensor_key + ci.glwe_tensor_key_prepare_tmp_bytes(&self.tensor_key))
     }
 }
 
@@ -548,32 +563,9 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
     {
         // The cyclotomic order of the secret's degree, which the module may exceed.
         let order = crate::operand_cyclotomic_order("generate_keys", module, sk_dense.n().as_usize())?;
-        self.key_recipe(order)
+        self.plan
+            .key_recipe(sk_dense.n().as_usize(), order)?
             .generate_keys(module, sk_dense, layout, source_xs, source_xe, source_xa, scratch)
-    }
-
-    /// The keys' recipe, read from the compiled matrices.
-    fn key_recipe(&self, cyclotomic_order: i64) -> KeyRecipe {
-        let mut galois_elements: BTreeSet<i64> = BTreeSet::new();
-        galois_elements.extend(self.coeffs_to_slots().galois_elements(cyclotomic_order));
-        if let Some(bypass) = self.coeffs_to_slots_bypass() {
-            galois_elements.extend(bypass.galois_elements(cyclotomic_order));
-        }
-        galois_elements.extend(self.slots_to_coeffs().galois_elements(cyclotomic_order));
-        // The last CoeffsToSlots factor, when `u` is folded into it.
-        if let Some([even, odd]) = self.eval_mod_ci().and_then(|ci| ci.pre().folded()) {
-            galois_elements.extend(even.galois_elements(cyclotomic_order));
-            galois_elements.extend(odd.galois_elements(cyclotomic_order));
-        }
-        KeyRecipe::new(
-            galois_elements,
-            self.coeffs_to_slots_first_factor()
-                .map(|factor| factor.giant_steps.iter().map(|giant| giant.rot).collect())
-                .unwrap_or_default(),
-            self.sparse_secret_hamming_weight(),
-            self.eval_mod_ring(),
-            cyclotomic_order,
-        )
     }
 }
 
@@ -618,7 +610,7 @@ impl<BE: Backend<Ring = Standard>, F> BootstrappingContext<BE, F> {
             + GLWESecretSampling<BCI>,
     {
         let order = crate::operand_cyclotomic_order("generate_keys_ci", module, sk_dense.n().as_usize())?;
-        self.key_recipe(order).generate_keys_ci(
+        self.plan.key_recipe(sk_dense.n().as_usize(), order)?.generate_keys_ci(
             module, ci, sk_dense, layout, source_xs, source_xe, source_xa, scratch, scratch_ci,
         )
     }
@@ -699,14 +691,10 @@ impl BootstrappingPlan {
 
     /// The keys' recipe, on a ring of degree `n`, whose slots must hold both transforms, as
     /// compiling the context checks.
-    fn key_recipe(&self, n: usize, cyclotomic_order: i64) -> Result<KeyRecipe> {
+    pub(crate) fn key_recipe(&self, n: usize, cyclotomic_order: i64) -> Result<KeyRecipe> {
         let log_n = n.ilog2() as usize;
         for dft in [self.coeffs_to_slots(), self.slots_to_coeffs()] {
-            anyhow::ensure!(dft.log_slots() < log_n, "DFT exceeds module slot capacity");
-            anyhow::ensure!(
-                dft.format() != crate::layouts::DFTOutputFormat::RepackImagAsReal || dft.log_slots() + 1 < log_n,
-                "dense DFT requires Split instead of Repack"
-            );
+            crate::layouts::dft::check_dft_fits(dft, log_n)?;
         }
         let first_factor_rotations = if self.coeffs_to_slots().first_factor_on_raise() {
             self.coeffs_to_slots().first_factor_rotations(log_n)
@@ -723,9 +711,9 @@ impl BootstrappingPlan {
     }
 }
 
-/// What the keys of a bootstrap depend on, read from the compiled context or
-/// from the plan alone.
-struct KeyRecipe {
+/// What the keys of a bootstrap depend on, read from its plan, by the client and the compiled
+/// context alike.
+pub(crate) struct KeyRecipe {
     /// Galois elements of the homomorphic DFTs and of the bypass, and
     /// conjugation with EvalMod on the standard ring.
     galois_elements: BTreeSet<i64>,
@@ -1039,19 +1027,15 @@ impl<D: Data, W: ZnxWord> BootstrappingKeySet<D, W> {
     ) -> BootstrappingKeysPrepared<BE::OwnedBuf, BE>
     where
         D: CopyToHost,
-        BE: Backend<ZnxWord = W, OwnedBuf: CopyFromHost>,
-        GLWEAutomorphismKey<BE::OwnedBuf, W>: GGLWEToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        GLWETensorKey<BE::OwnedBuf, W>: GGLWEToBackendRef<BE> + GGLWEInfos,
-        GLWESwitchingKey<BE::OwnedBuf, W>: GGLWEToBackendRef<BE> + GLWESwitchingKeyDegrees + GGLWEInfos,
-        Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = W>
-            + GLWEAutomorphismKeyPreparedFactory<BE>
-            + GLWETensorKeyPreparedFactory<BE>
-            + GLWESwitchingKeyPreparedFactory<BE>,
+        BE: Backend<ZnxWord = W>,
+        Module<BE>:
+            GLWEAutomorphismKeyPreparedFactory<BE> + GLWETensorKeyPreparedFactory<BE> + GLWESwitchingKeyPreparedFactory<BE>,
     {
         self.transfer_and_prepare_with(module, scratch, |tensor_key, scratch| {
-            let moved = transfer(tensor_key, module.glwe_tensor_key_alloc_from_infos(tensor_key));
-            let mut prepared = module.alloc_tensor_key_prepared_from_infos(&moved);
-            module.glwe_tensor_key_prepare(&mut prepared, &moved, scratch);
+            let (mut moved, mut scratch) = scratch.borrow().take_gglwe_scratch(tensor_key);
+            tensor_key.transfer_into(&mut moved);
+            let mut prepared = module.alloc_tensor_key_prepared_from_infos(tensor_key);
+            module.glwe_tensor_key_prepare(&mut prepared, &moved, &mut scratch);
             prepared
         })
     }
@@ -1068,38 +1052,31 @@ impl<D: Data, W: ZnxWord> BootstrappingKeySet<D, W> {
     ) -> Result<BootstrappingKeysPrepared<BE::OwnedBuf, BE, BCI>>
     where
         D: CopyToHost,
-        BE: Backend<Ring = Standard, ZnxWord = W, OwnedBuf: CopyFromHost>,
+        BE: Backend<Ring = Standard, ZnxWord = W>,
         BCI: Backend<Ring = ConjugateInvariant, OwnedBuf = BE::OwnedBuf, ZnxWord = W>,
-        GLWEAutomorphismKey<BE::OwnedBuf, W>: GGLWEToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        GLWETensorKey<BE::OwnedBuf, W>: GGLWEToBackendRef<BCI> + GGLWEInfos,
-        GLWESwitchingKey<BE::OwnedBuf, W>: GGLWEToBackendRef<BE> + GLWESwitchingKeyDegrees + GGLWEInfos,
-        Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = W>
-            + GLWEAutomorphismKeyPreparedFactory<BE>
-            + GLWESwitchingKeyPreparedFactory<BE>
-            + GLWECIKeyPreparedFactory<BE>,
-        Module<BCI>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = W> + GLWETensorKeyPreparedFactory<BCI>,
+        Module<BE>: GLWEAutomorphismKeyPreparedFactory<BE> + GLWESwitchingKeyPreparedFactory<BE> + GLWECIKeyPreparedFactory<BE>,
+        Module<BCI>: GLWETensorKeyPreparedFactory<BCI>,
     {
         let Some((trace, embed)) = &self.conversion_keys else {
             anyhow::bail!("the key set has no conversion keys, which EvalMod on the CI ring takes");
         };
         let mut keys = self.transfer_and_prepare_with(module, scratch, |tensor_key, _| {
-            let moved = transfer(tensor_key, ci.glwe_tensor_key_alloc_from_infos(tensor_key));
-            let mut prepared = ci.alloc_tensor_key_prepared_from_infos(&moved);
-            ci.glwe_tensor_key_prepare(&mut prepared, &moved, scratch_ci);
+            let (mut moved, mut scratch_ci) = scratch_ci.borrow().take_gglwe_scratch(tensor_key);
+            tensor_key.transfer_into(&mut moved);
+            let mut prepared = ci.alloc_tensor_key_prepared_from_infos(tensor_key);
+            ci.glwe_tensor_key_prepare(&mut prepared, &moved, &mut scratch_ci);
             prepared
         });
-        let moved = transfer(trace, module.glwe_ci_trace_key_alloc_from_infos(trace));
-        let mut trace_key = module.glwe_ci_trace_key_prepared_alloc_from_infos(&moved);
-        module.glwe_ci_key_prepare(&mut trace_key, &moved, scratch);
-        let moved = transfer(embed, module.glwe_ci_embed_key_alloc_from_infos(embed));
-        let mut embed_key = module.glwe_ci_embed_key_prepared_alloc_from_infos(&moved);
-        module.glwe_ci_key_prepare(&mut embed_key, &moved, scratch);
+        let mut trace_key = module.glwe_ci_trace_key_prepared_alloc_from_infos(trace);
+        prepare_moved_switching_key(module, &mut trace_key, trace, scratch);
+        let mut embed_key = module.glwe_ci_embed_key_prepared_alloc_from_infos(embed);
+        prepare_moved_switching_key(module, &mut embed_key, embed, scratch);
         keys.conversion_keys = Some((trace_key, embed_key));
         Ok(keys)
     }
 
     /// [`Self::transfer_and_prepare`], with the tensor key moved and prepared by `tensor_key`.
-    fn transfer_and_prepare_with<BE: Backend<ZnxWord = W, OwnedBuf: CopyFromHost>, BEM: Backend>(
+    fn transfer_and_prepare_with<BE: Backend<ZnxWord = W>, BEM: Backend>(
         &self,
         module: &Module<BE>,
         scratch: &mut ScratchArena<'_, BE>,
@@ -1107,26 +1084,22 @@ impl<D: Data, W: ZnxWord> BootstrappingKeySet<D, W> {
     ) -> BootstrappingKeysPrepared<BE::OwnedBuf, BE, BEM>
     where
         D: CopyToHost,
-        GLWEAutomorphismKey<BE::OwnedBuf, W>: GGLWEToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        GLWESwitchingKey<BE::OwnedBuf, W>: GGLWEToBackendRef<BE> + GLWESwitchingKeyDegrees + GGLWEInfos,
-        Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = W>
-            + GLWEAutomorphismKeyPreparedFactory<BE>
-            + GLWESwitchingKeyPreparedFactory<BE>,
+        Module<BE>: GLWEAutomorphismKeyPreparedFactory<BE> + GLWESwitchingKeyPreparedFactory<BE>,
     {
         let mut rotation_keys = HashMap::with_capacity(self.rotation_keys.len());
         for (&p, atk) in &self.rotation_keys {
-            let moved = transfer(atk, module.glwe_automorphism_key_alloc_from_infos(atk));
-            let mut prepared = module.glwe_automorphism_key_prepared_alloc_from_infos(&moved);
-            module.glwe_automorphism_key_prepare(&mut prepared, &moved, scratch);
+            let (matrix, mut rest) = scratch.borrow().take_gglwe_scratch(atk);
+            let moved = MovedKey::of(atk, matrix, atk.p(), (atk.n(), atk.n()));
+            let mut prepared = module.glwe_automorphism_key_prepared_alloc_from_infos(atk);
+            module.glwe_automorphism_key_prepare(&mut prepared, &moved, &mut rest);
             rotation_keys.insert(p, prepared);
         }
 
         let tensor_key = tensor_key(&self.tensor_key, scratch);
 
         let mut switching = |key: &GLWESwitchingKey<D, W>| {
-            let moved = transfer(key, module.glwe_switching_key_alloc_from_infos(key));
-            let mut prepared = module.glwe_switching_key_prepared_alloc_from_infos(&moved);
-            module.glwe_switching_key_prepare(&mut prepared, &moved, scratch);
+            let mut prepared = module.glwe_switching_key_prepared_alloc_from_infos(key);
+            prepare_moved_switching_key(module, &mut prepared, key, scratch);
             prepared
         };
         let encapsulation_keys = self
@@ -1149,10 +1122,61 @@ impl<D: Data, W: ZnxWord> BootstrappingKeySet<D, W> {
     }
 }
 
-/// `key` moved into `dst`.
-fn transfer<S: TransferInto<T>, T>(key: &S, mut dst: T) -> T {
-    key.transfer_into(&mut dst);
-    dst
+/// A key's matrix moved into the scratch, with what its preparation reads besides: its Galois
+/// element and its degrees.
+struct MovedKey<'a, BE: Backend> {
+    matrix: GGLWEViewMut<'a, BE>,
+    p: i64,
+    degrees: (Degree, Degree),
+}
+
+impl<'a, BE: Backend> MovedKey<'a, BE> {
+    /// `key`'s matrix moved into `matrix`, carved for its layout.
+    fn of<K: TransferInto<GGLWEViewMut<'a, BE>>>(
+        key: &K,
+        mut matrix: GGLWEViewMut<'a, BE>,
+        p: i64,
+        degrees: (Degree, Degree),
+    ) -> Self {
+        key.transfer_into(&mut matrix);
+        Self { matrix, p, degrees }
+    }
+}
+
+impl<BE: Backend> GGLWEToBackendRef<BE> for MovedKey<'_, BE> {
+    fn to_backend_ref(&self) -> GGLWEBackendRef<'_, BE> {
+        self.matrix.to_backend_ref()
+    }
+}
+
+impl<BE: Backend> GetGaloisElement for MovedKey<'_, BE> {
+    fn p(&self) -> i64 {
+        self.p
+    }
+}
+
+impl<BE: Backend> GLWESwitchingKeyDegrees for MovedKey<'_, BE> {
+    fn input_degree(&self) -> &Degree {
+        &self.degrees.0
+    }
+
+    fn output_degree(&self) -> &Degree {
+        &self.degrees.1
+    }
+}
+
+/// Prepares the switching key `key`, held by another backend, into `prepared` through a copy
+/// carved from `scratch`.
+fn prepare_moved_switching_key<BE, K, R>(module: &Module<BE>, prepared: &mut R, key: &K, scratch: &mut ScratchArena<'_, BE>)
+where
+    BE: Backend,
+    K: GGLWEInfos + GLWESwitchingKeyDegrees + for<'a> TransferInto<GGLWEViewMut<'a, BE>>,
+    R: GGLWEPreparedToBackendMut<BE> + GLWESwitchingKeyDegreesMut,
+    Module<BE>: GLWESwitchingKeyPreparedFactory<BE>,
+{
+    let (matrix, mut rest) = scratch.borrow().take_gglwe_scratch(key);
+    let moved = MovedKey::of(key, matrix, 0, (*key.input_degree(), *key.output_degree()));
+    module.glwe_switching_key_prepare(prepared, &moved, &mut rest);
 }
 
 /// Switching keys between an input secret of degree `n`, lifted to the bootstrap

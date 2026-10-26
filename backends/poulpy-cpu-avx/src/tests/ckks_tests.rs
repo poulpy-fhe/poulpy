@@ -45,7 +45,7 @@ ckks_backend_test_suite!(
 mod bootstrapping_presets {
     use poulpy_ckks::test_suite::presets::{
         bootstrapping_plan_keys_match_context, bootstrapping_presets_meet_precision, ci_bootstrap_refuses_invalid_inputs,
-        small_s2c_preset_meets_precision,
+        small_s2c_preset_meets_precision, small_s2c_preset_meets_precision_with_client,
     };
 
     #[test]
@@ -56,6 +56,12 @@ mod bootstrapping_presets {
     #[test]
     fn ntt4x30_small_s2c_preset_meets_precision() {
         small_s2c_preset_meets_precision::<crate::NTT4x30Avx>();
+    }
+
+    /// Keys and ciphertexts from a portable client: the transfers both ways between two backends.
+    #[test]
+    fn ntt4x30_small_s2c_preset_meets_precision_with_portable_client() {
+        small_s2c_preset_meets_precision_with_client::<crate::NTT4x30Avx, poulpy_cpu_portable::NTT4x30Portable>();
     }
 
     #[test]

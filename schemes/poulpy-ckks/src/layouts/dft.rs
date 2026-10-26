@@ -681,14 +681,7 @@ impl DFTPlan {
     /// sparse path, which belongs to no factor. An element can serve several
     /// factors.
     pub fn galois_elements_per_factor(&self, log_n: usize, cyclotomic_order: i64) -> Vec<Vec<i64>> {
-        let slots = 1i64 << self.log_slots();
-        // The factor diagonals (and thus the BSGS schedule) live in the `2·slots`
-        // working ring on the sparse path, else in `slots`.
-        let slot_count = if self.is_sparse_repack(log_n) {
-            (slots << 1) as usize
-        } else {
-            slots as usize
-        };
+        let slot_count = self.factor_slots(log_n);
         let identity = galois_element(0, cyclotomic_order);
 
         self.diagonal_indexes(log_n)
@@ -710,6 +703,40 @@ impl DFTPlan {
                 set.into_iter().collect()
             })
             .collect()
+    }
+
+    /// The slots the factor diagonals, hence the BSGS schedules, live in: the `2·slots` working
+    /// ring on the sparse path, else `slots`.
+    fn factor_slots(&self, log_n: usize) -> usize {
+        let slots = 1usize << self.log_slots();
+        if self.is_sparse_repack(log_n) { slots << 1 } else { slots }
+    }
+
+    /// The Galois elements of the last factor composed with a map of `slots` slots, which
+    /// [`ComplexDiagonals::compose`](crate::layouts::ComplexDiagonals::compose) retiles at the
+    /// wider of the two tiles, its diagonal indexes kept: the keys of the folded factors of
+    /// [`CIConversion::Folded`](crate::layouts::CIConversion::Folded), whose maps are the last
+    /// factor times diagonals of `slots` slots, none of them zero.
+    pub(crate) fn last_factor_galois_elements_at(&self, log_n: usize, slots: usize, cyclotomic_order: i64) -> Vec<i64> {
+        let tile = self.factor_slots(log_n).max(slots);
+        let last = self
+            .diagonal_indexes(log_n)
+            .pop()
+            .expect("a DFT plan has at least one factor");
+        let step = self.schedule.steps.last().expect("a DFT plan has at least one factor");
+        let layout = LinearTransformationLayout {
+            indexes: last
+                .into_iter()
+                .map(|index| index.rem_euclid(tile as i64))
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect(),
+            slots: tile,
+            strategy: self.factor_strategy(step.giant_step),
+        };
+        let mut set: BTreeSet<i64> = layout.galois_elements(cyclotomic_order).into_iter().collect();
+        set.remove(&galois_element(0, cyclotomic_order));
+        set.into_iter().collect()
     }
 }
 
@@ -907,16 +934,22 @@ where
     }
 }
 
+/// Refuses a transform whose slots a ring of degree `2^log_n` does not hold.
+pub(crate) fn check_dft_fits(plan: &DFTPlan, log_n: usize) -> crate::CKKSResult<()> {
+    crate::ckks_ensure!(plan.log_slots() < log_n, "DFT exceeds module slot capacity");
+    crate::ckks_ensure!(
+        plan.format() != DFTOutputFormat::RepackImagAsReal || plan.log_slots() + 1 < log_n,
+        "dense DFT requires Split instead of Repack"
+    );
+    Ok(())
+}
+
 fn check_factor_operands<BE: Backend, P: GLWEInfos + IntPolyInfos + crate::api::LtDiagonalMeta>(
     module: &Module<BE>,
     plan: &DFTPlan,
     factors: &[LinearTransformation<P>],
 ) -> crate::CKKSResult<()> {
-    crate::ckks_ensure!(plan.log_slots() < module.log_n(), "DFT exceeds module slot capacity");
-    crate::ckks_ensure!(
-        plan.format() != DFTOutputFormat::RepackImagAsReal || plan.log_slots() + 1 < module.log_n(),
-        "dense DFT requires Split instead of Repack"
-    );
+    check_dft_fits(plan, module.log_n())?;
     crate::ckks_ensure!(
         factors.len() == plan.num_evaluated_factors(),
         "DFT factor count does not match its plan"
@@ -1039,6 +1072,48 @@ mod tests {
             CoeffsMeta::from_delta_budget(30, 2),
         )
         .unwrap()
+    }
+
+    /// The keys of the last factor composed with a map of the full slots, as the folded factors
+    /// of [`CIConversion::Folded`](crate::layouts::CIConversion::Folded) are compiled, on a sparse
+    /// plan, whose factors live in fewer slots, with a key per rotation and with the keys of
+    /// power-of-two rotations, whose giant digits read the slot count.
+    #[test]
+    fn last_factor_keys_follow_the_composed_tile() {
+        let log_n = 12;
+        let half = 1usize << (log_n - 1);
+        let order = 2 * (1i64 << log_n);
+        for power_of_two_keys in [false, true] {
+            let plan = plan(DFTType::Encode, &[2, 3], DFTOutputFormat::SplitRealAndImag)
+                .with_optimal_bsgs(log_n)
+                .with_power_of_two_keys(power_of_two_keys)
+                .resolved_at(log_n);
+            assert!(plan.factor_slots(log_n) < half, "a sparse plan");
+            let last = crate::reference::dft::gen_dft_matrices::<f64>(&plan, log_n).pop().unwrap();
+            let mut scale = crate::layouts::ComplexDiagonals::new(
+                poulpy_core::layouts::Diagonals::new(half),
+                poulpy_core::layouts::Diagonals::new(half),
+            );
+            scale.re.set(0, vec![0.5]);
+            scale.im.set(0, vec![-0.5]);
+            let folded = scale.compose(&last);
+            let layout = LinearTransformationLayout {
+                indexes: folded.indexes(),
+                slots: folded.slots(),
+                strategy: plan.factor_strategy(plan.schedule.steps.last().unwrap().giant_step),
+            };
+            let mut want: BTreeSet<i64> = layout.galois_elements(order).into_iter().collect();
+            want.remove(&galois_element(0, order));
+            let want: Vec<i64> = want.into_iter().collect();
+            assert_eq!(
+                plan.last_factor_galois_elements_at(log_n, half, order),
+                want,
+                "power_of_two_keys={power_of_two_keys}"
+            );
+            // The power-of-two keys of the factor's own tile are not those of the composed one.
+            let own_tile = plan.galois_elements_per_factor(log_n, order).pop().unwrap();
+            assert_eq!(own_tile == want, !power_of_two_keys, "power_of_two_keys={power_of_two_keys}");
+        }
     }
 
     #[test]

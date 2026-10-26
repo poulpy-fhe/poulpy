@@ -991,6 +991,8 @@ where
             tmp,
         );
     }
+
+    ::poulpy_core::impl_gglwe_product_step_hooks_reference!();
 }
 
 unsafe impl<R: Ring> HalConvolutionImpl for NTT3x42IfmaRayon<R>

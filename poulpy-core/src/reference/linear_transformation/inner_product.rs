@@ -74,8 +74,15 @@ pub(super) fn glwe_accumulate_prepared_baby_steps_dft<BE, M>(
     }
 }
 
-/// Default of `LinearTransformationImpl::glwe_accumulate_giant_steps`: each
-/// product accumulated on its own with `cnv_apply_dft_sum`.
+/// Reference of [`LinearTransformationImpl::glwe_giant_step_batch`](crate::oep::LinearTransformationImpl::glwe_giant_step_batch),
+/// which `impl_linear_transformation_reference_full!` forwards to: a giant step at a time.
+pub fn glwe_giant_step_batch_reference<BE: Backend>(_module: &poulpy_hal::layouts::Module<BE>) -> usize {
+    1
+}
+
+/// Reference of [`LinearTransformationImpl::glwe_accumulate_giant_steps`](crate::oep::LinearTransformationImpl::glwe_accumulate_giant_steps),
+/// which `impl_linear_transformation_reference_full!` forwards to: each product accumulated on
+/// its own with `cnv_apply_dft_sum`.
 pub fn glwe_accumulate_giant_steps_reference<BE, M>(
     module: &M,
     cnv_offset_hi: usize,

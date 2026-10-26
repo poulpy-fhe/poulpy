@@ -182,9 +182,10 @@ pub trait ScratchArenaTakeCore<'a, B: Backend>: ScratchArenaTakeBasic<'a, B> + S
         B: 'a,
         A: GGLWEInfos,
     {
+        // The shape of an owned GGLWE of these infos: a row per digit.
         let (data, scratch) = self.take_mat_znx_scratch(
             infos.n().into(),
-            infos.dnum().0.div_ceil(infos.dsize().0) as usize,
+            infos.dnum().into(),
             infos.rank_in().into(),
             (infos.rank_out() + 1).into(),
             infos.size(),

@@ -187,6 +187,8 @@ unsafe impl GGLWEProductDigitsStridedImpl for DelegatingFFT64Portable {
         );
         assert!(marker.iter().all(|&byte| byte == 0x39));
     }
+
+    ::poulpy_core::impl_gglwe_product_step_hooks_reference!();
 }
 poulpy_core::impl_conversion_reference_full!(DelegatingFFT64Portable);
 poulpy_core::impl_ggsw_conversion_reference_full!(DelegatingFFT64Portable);

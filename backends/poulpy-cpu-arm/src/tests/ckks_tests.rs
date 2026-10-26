@@ -21,6 +21,15 @@ fn ntt4x30_neon_small_s2c_preset_meets_precision() {
     poulpy_ckks::test_suite::presets::small_s2c_preset_meets_precision::<crate::NTT4x30Neon>();
 }
 
+/// Keys and ciphertexts from a portable client: the transfers both ways between two backends.
+#[test]
+fn ntt4x30_neon_small_s2c_preset_meets_precision_with_portable_client() {
+    poulpy_ckks::test_suite::presets::small_s2c_preset_meets_precision_with_client::<
+        crate::NTT4x30Neon,
+        poulpy_cpu_portable::NTT4x30Portable,
+    >();
+}
+
 #[test]
 fn ntt4x30_neon_ci_bootstrap_refuses_invalid_inputs() {
     poulpy_ckks::test_suite::presets::ci_bootstrap_refuses_invalid_inputs::<crate::NTT4x30Neon>();

@@ -58,12 +58,7 @@ pub unsafe trait GLWEMulConstImpl: Backend {
 
     /// Scratch bytes of [`Self::glwe_const_combination`] for an accumulator of `acc_size` limbs,
     /// terms of at most `a_size` limbs and constants of at most `b_size` limbs.
-    fn glwe_const_combination_tmp_bytes(module: &Module<Self>, acc_size: usize, a_size: usize, b_size: usize) -> usize
-    where
-        Module<Self>: crate::reference::operations::GLWEConstCombinationReference<Self>,
-    {
-        crate::reference::operations::glwe_const_combination_tmp_bytes_reference(module, acc_size, a_size, b_size)
-    }
+    fn glwe_const_combination_tmp_bytes(module: &Module<Self>, acc_size: usize, a_size: usize, b_size: usize) -> usize;
 
     /// A combination of vectors by constants, normalized once:
     ///
@@ -76,7 +71,7 @@ pub unsafe trait GLWEMulConstImpl: Backend {
     /// bits in base `2^base2k`, which is also the base of the terms. `terms` is not empty.
     ///
     /// An internal hook of the CKKS baby-step combination, which records the metadata of `res`.
-    /// The default, [`glwe_const_combination_reference`](crate::reference::operations::glwe_const_combination_reference),
+    /// The reference, [`glwe_const_combination_reference`](crate::reference::operations::glwe_const_combination_reference),
     /// shifts each constant, accumulates with `cnv_by_const_apply` and `cnv_by_const_apply_add`,
     /// then calls `vec_znx_big_normalize`, column by column. Overrides must reproduce it bit for
     /// bit within [`Self::glwe_const_combination_tmp_bytes`].
@@ -88,11 +83,7 @@ pub unsafe trait GLWEMulConstImpl: Backend {
         acc_size: usize,
         terms: &[ConstTerm<'_, Self>],
         scratch: &mut ScratchArena<'_, Self>,
-    ) where
-        Module<Self>: crate::reference::operations::GLWEConstCombinationReference<Self>,
-    {
-        crate::reference::operations::glwe_const_combination_reference(module, res, base2k, res_k, acc_size, terms, scratch)
-    }
+    );
 }
 
 /// One term of [`GLWEMulConstImpl::glwe_const_combination`]: every column of `a` times
@@ -193,6 +184,9 @@ pub unsafe trait GLWEMulPreparedPlainSumImpl: Backend {
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
+/// The square hooks ([`Self::glwe_square_prepare`], [`Self::glwe_square_columns`]) are bit for bit
+/// taken together: an override of `glwe_square_prepare` that leaves `right` unwritten also
+/// overrides `glwe_square_columns`.
 pub unsafe trait GLWETensoringImpl: Backend {
     /// Scratch bound of [`Self::glwe_tensor_apply_prepared_right`]; may report less than the reference, never less
     /// than the body takes.
@@ -539,8 +533,10 @@ pub unsafe trait GLWETensoringImpl: Backend {
 
     /// Prepares the operand of a one-pass square for [`Self::glwe_square_columns`].
     ///
-    /// The default prepares both forms with `cnv_prepare_self`. A backend whose
-    /// [`Self::glwe_square_columns`] reads the left form alone may leave `right` unwritten.
+    /// The reference, [`GLWETensoringReference::glwe_square_prepare_reference`](crate::reference::operations::GLWETensoringReference::glwe_square_prepare_reference),
+    /// prepares both forms with `cnv_prepare_self`. A backend whose [`Self::glwe_square_columns`]
+    /// reads the left form alone may leave `right` unwritten, and only that one: the default
+    /// `glwe_square_columns` reads both forms.
     /// Scratch is `cnv_prepare_self_tmp_bytes`, which the one-pass relinearization queries reserve.
     fn glwe_square_prepare(
         module: &Module<Self>,
@@ -548,12 +544,7 @@ pub unsafe trait GLWETensoringImpl: Backend {
         right: &mut CnvPVecRBackendMut<'_, Self>,
         a: &VecZnxBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
-    ) where
-        Module<Self>: poulpy_hal::api::Convolution<Self>,
-    {
-        use poulpy_hal::api::Convolution;
-        module.cnv_prepare_self(left, right, a, scratch)
-    }
+    );
 
     /// [`Self::glwe_mul_columns`] of a square, on the two forms [`Self::glwe_square_prepare`]
     /// prepared from one operand. The default is [`Self::glwe_mul_columns`].
@@ -1307,6 +1298,18 @@ macro_rules! impl_glwe_tensoring_reference_full {
             ) {
                 <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_mul_columns_reference(
                     module, cnv_offset_hi, diag, cross, a, b, scratch,
+                )
+            }
+
+            fn glwe_square_prepare(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                left: &mut ::poulpy_hal::layouts::CnvPVecLBackendMut<'_, $be>,
+                right: &mut ::poulpy_hal::layouts::CnvPVecRBackendMut<'_, $be>,
+                a: &::poulpy_hal::layouts::VecZnxBackendRef<'_, $be>,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
+            ) {
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_square_prepare_reference(
+                    module, left, right, a, scratch,
                 )
             }
 

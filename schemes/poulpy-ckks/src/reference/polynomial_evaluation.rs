@@ -2,8 +2,8 @@ use crate::{CKKSResult as Result, ckks_ensure};
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{BSGSMeta, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, SetBSGSMeta};
+use poulpy_core::oep::{ConstTerm, GLWEMulConstImpl};
 use poulpy_core::{BSGSOps, GLWEPolynomialEvaluation, GLWEZero};
-use poulpy_core::{oep::ConstTerm, reference::operations::GLWEConstCombination};
 use poulpy_hal::{
     api::{Convolution, VecZnxBigNormalize, VecZnxRsh, VecZnxRshTmpBytes},
     layouts::{Backend, Data, Module, PrepareHint, Ring, ScratchArena, ZnxWord, vec_znx_backend_ref_from_ref},
@@ -22,12 +22,11 @@ use crate::{
 
 /// Scratch upper bound for [`BSGSOps::eval_baby_linear_combination`]: the constant combination
 /// for the widest term (`ct_size`) and constant (`pt_size`) in limbs.
-pub(crate) fn eval_baby_linear_combination_tmp_bytes<BE, M>(module: &M, ct_size: usize, pt_size: usize) -> usize
+pub(crate) fn eval_baby_linear_combination_tmp_bytes<BE>(module: &Module<BE>, ct_size: usize, pt_size: usize) -> usize
 where
-    BE: Backend,
-    M: GLWEConstCombination<BE>,
+    BE: GLWEMulConstImpl,
 {
-    module.glwe_const_combination_tmp_bytes(ct_size + pt_size, ct_size, pt_size)
+    BE::glwe_const_combination_tmp_bytes(module, ct_size + pt_size, ct_size, pt_size)
 }
 
 struct EvaluatedBabyStep<D: Data, W: ZnxWord, R: Ring> {
@@ -65,7 +64,8 @@ struct CKKSBSGSOps;
 
 impl<BE: Backend, V, P, A, R> BSGSOps<BE, V, P, A, R> for CKKSBSGSOps
 where
-    Module<BE>: CKKSAddOps<BE> + CKKSMulOps<BE> + CKKSMulAddOps<BE> + CKKSCopyOps<BE> + GLWEZero<BE> + GLWEConstCombination<BE>,
+    BE: GLWEMulConstImpl,
+    Module<BE>: CKKSAddOps<BE> + CKKSMulOps<BE> + CKKSMulAddOps<BE> + CKKSCopyOps<BE> + GLWEZero<BE>,
     V: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     A: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
@@ -178,7 +178,7 @@ where
             })
             .collect();
         let mut res_bk = res.to_backend_mut();
-        module.glwe_const_combination(res_bk.data_mut(), kb, budget + delta, acc_size, &combination, scratch);
+        BE::glwe_const_combination(module, res_bk.data_mut(), kb, budget + delta, acc_size, &combination, scratch);
         Ok(true)
     }
 
@@ -315,7 +315,8 @@ pub trait PolynomialEvaluationReference<BE: Backend> {
 
 impl<BE: Backend> PolynomialEvaluationReference<BE> for Module<BE>
 where
-    Module<BE>: GLWEPolynomialEvaluation<BE> + GLWEConstCombination<BE>,
+    BE: GLWEMulConstImpl,
+    Module<BE>: GLWEPolynomialEvaluation<BE>,
 {
     fn ckks_eval_poly_real_const_coeffs_from_power_basis_reference<R, B, A, G, H>(
         &self,
