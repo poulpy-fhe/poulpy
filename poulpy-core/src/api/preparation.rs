@@ -11,12 +11,12 @@ use crate::{
     layouts::{
         Base2K, Degree, Dnum, GGLWEInfos, GGLWELayout, GGLWEPrepared, GGLWEPreparedToBackendMut, GGLWEToBackendRef,
         GGLWEToGGSWKeyPrepared, GGLWEToGGSWKeyPreparedToBackendMut, GGLWEToGGSWKeyToBackendRef, GGSWInfos, GGSWLayout,
-        GGSWPrepared, GGSWPreparedToBackendMut, GGSWToBackendRef, GLWEAutomorphismKeyPrepared, GLWECIEmbedKeyPrepared, GLWECIKey,
+        GGSWPrepared, GGSWPreparedToBackendMut, GGSWToBackendRef, GLWEAutomorphismKeyPrepared, GLWECIEmbedKeyPrepared,
         GLWECIKeyPrepared, GLWECITraceKeyPrepared, GLWEInfos, GLWELayout, GLWEPrepared, GLWEPreparedToBackendMut,
-        GLWEPublicKeyPrepared, GLWEPublicKeyPreparedToBackendMut, GLWEPublicKeyToBackendRef, GLWESwitchingKey,
-        GLWESwitchingKeyDegrees, GLWESwitchingKeyDegreesMut, GLWESwitchingKeyPrepared, GLWETensorKeyPrepared, GLWEToBackendRef,
-        GLWEToLWEKeyPrepared, GetDegree, GetGaloisElement, LWESwitchingKeyPrepared, LWEToGLWEKeyPrepared, Rank, SetGaloisElement,
-        TorusPrecision, operand_degree,
+        GLWEPublicKeyPrepared, GLWEPublicKeyPreparedToBackendMut, GLWEPublicKeyToBackendRef, GLWESwitchingKeyDegrees,
+        GLWESwitchingKeyDegreesMut, GLWESwitchingKeyPrepared, GLWETensorKeyPrepared, GLWEToBackendRef, GLWEToLWEKeyPrepared,
+        GetDegree, GetGaloisElement, LWESwitchingKeyPrepared, LWEToGLWEKeyPrepared, Rank, SetGaloisElement, TorusPrecision,
+        operand_degree,
     },
 };
 
@@ -837,15 +837,15 @@ where
     where
         A: GGLWEInfos;
 
-    /// Prepares `other` into `res`; both carry the same direction.
-    fn glwe_ci_key_prepare<DR, DO, M>(
+    /// Prepares `other`, a key of the direction of `res`, into `res`: a [`GLWECIKey`](crate::layouts::GLWECIKey) or its matrix moved to
+    /// any other holder, as [`GLWESwitchingKeyPreparedFactory::glwe_switching_key_prepare`] takes.
+    fn glwe_ci_key_prepare<DR, O, M>(
         &self,
         res: &mut GLWECIKeyPrepared<DR, BE, M>,
-        other: &GLWECIKey<DO, BE::ZnxWord, M>,
+        other: &O,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         DR: Data,
-        DO: Data,
         GLWESwitchingKeyPrepared<DR, BE>: GGLWEPreparedToBackendMut<BE>,
-        GLWESwitchingKey<DO, BE::ZnxWord>: GGLWEToBackendRef<BE>;
+        O: GGLWEToBackendRef<BE> + GLWESwitchingKeyDegrees;
 }

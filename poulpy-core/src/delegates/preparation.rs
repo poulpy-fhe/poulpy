@@ -9,9 +9,9 @@ use crate::{
     },
     layouts::{
         GGLWEInfos, GGLWEPreparedToBackendMut, GGLWEToBackendRef, GGLWEToGGSWKeyPreparedToBackendMut, GGLWEToGGSWKeyToBackendRef,
-        GGSWInfos, GGSWPreparedToBackendMut, GGSWToBackendRef, GLWECIKey, GLWECIKeyPrepared, GLWEInfos, GLWEPreparedToBackendMut,
-        GLWEPublicKeyPreparedToBackendMut, GLWEPublicKeyToBackendRef, GLWESwitchingKey, GLWESwitchingKeyDegrees,
-        GLWESwitchingKeyDegreesMut, GLWESwitchingKeyPrepared, GLWEToBackendRef, GetGaloisElement, SetGaloisElement,
+        GGSWInfos, GGSWPreparedToBackendMut, GGSWToBackendRef, GLWECIKeyPrepared, GLWEInfos, GLWEPreparedToBackendMut,
+        GLWEPublicKeyPreparedToBackendMut, GLWEPublicKeyToBackendRef, GLWESwitchingKeyDegrees, GLWESwitchingKeyDegreesMut,
+        GLWESwitchingKeyPrepared, GLWEToBackendRef, GetGaloisElement, SetGaloisElement,
     },
     oep::PreparationImpl,
 };
@@ -228,16 +228,11 @@ impl_preparation_delegate!(
     {
         BE::glwe_ci_key_prepare_tmp_bytes(self, infos)
     },
-    fn glwe_ci_key_prepare<DR, DO, M>(
-        &self,
-        res: &mut GLWECIKeyPrepared<DR, BE, M>,
-        other: &GLWECIKey<DO, BE::ZnxWord, M>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
+    fn glwe_ci_key_prepare<DR, O, M>(&self, res: &mut GLWECIKeyPrepared<DR, BE, M>, other: &O, scratch: &mut ScratchArena<'_, BE>)
+    where
         DR: Data,
-        DO: Data,
         GLWESwitchingKeyPrepared<DR, BE>: GGLWEPreparedToBackendMut<BE>,
-        GLWESwitchingKey<DO, BE::ZnxWord>: GGLWEToBackendRef<BE>,
+        O: GGLWEToBackendRef<BE> + GLWESwitchingKeyDegrees,
     {
         BE::glwe_ci_key_prepare(self, res, other, scratch)
     }

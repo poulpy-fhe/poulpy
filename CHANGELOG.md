@@ -357,6 +357,7 @@
 - Implement `TransferInto<GGLWEViewMut>` for `GGLWE`, `GLWEAutomorphismKey`, `GLWESwitchingKey`, `GLWETensorKey` and `GLWECIKey`: the matrix of a key, held by any backend, moved into a copy carved from a scratch arena.
 - **Fix:** `take_gglwe_scratch` carves `dnum` rows, the shape of an owned `GGLWE` of the same infos, where it carved `dnum / dsize`, so the carve holds a key of any digit width.
 - **Fix:** `gglwe_bytes_of_from_infos` counts the limbs of a key with a row offset (`k_offset`), as its allocation and `GGLWE::bytes_of_from_infos` do; it counted those of a key without one.
+- **Breaking:** `GLWECIKeyPreparedFactory::glwe_ci_key_prepare` and `PreparationImpl::glwe_ci_key_prepare` take any source `O: GGLWEToBackendRef<BE> + GLWESwitchingKeyDegrees`, as `glwe_switching_key_prepare` does, instead of a `GLWECIKey`, the direction coming from the destination, so a key moved into a scratch carve goes through the backend's own body. A `GLWECIKey` meets the bounds, so callers are unchanged; an override takes the new signature.
 
 ### `poulpy-ckks`
 

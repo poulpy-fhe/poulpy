@@ -43,10 +43,10 @@ use poulpy_core::{
     layouts::{
         BackendGLWESecret, Degree, GGLWEBackendRef, GGLWEInfos, GGLWELayout, GGLWEPreparedToBackendMut,
         GGLWEPreparedToBackendRef, GGLWEToBackendRef, GGLWEViewMut, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout,
-        GLWEAutomorphismKeyPrepared, GLWECIEmbedKey, GLWECIEmbedKeyPrepared, GLWECITraceKey, GLWECITraceKeyPrepared, GLWEInfos,
-        GLWESecretLayout, GLWESwitchingKey, GLWESwitchingKeyDegrees, GLWESwitchingKeyDegreesMut, GLWESwitchingKeyLayout,
-        GLWESwitchingKeyPrepared, GLWETensorKey, GLWETensorKeyLayout, GLWETensorKeyPrepared, GetAutomorphismKey,
-        GetGaloisElement, GetTensorKey, LWEInfos, ModuleCoreAlloc,
+        GLWEAutomorphismKeyPrepared, GLWECIEmbedKey, GLWECIEmbedKeyPrepared, GLWECIKeyPrepared, GLWECITraceKey,
+        GLWECITraceKeyPrepared, GLWEInfos, GLWESecretLayout, GLWESwitchingKey, GLWESwitchingKeyDegrees,
+        GLWESwitchingKeyDegreesMut, GLWESwitchingKeyLayout, GLWESwitchingKeyPrepared, GLWETensorKey, GLWETensorKeyLayout,
+        GLWETensorKeyPrepared, GetAutomorphismKey, GetGaloisElement, GetTensorKey, LWEInfos, ModuleCoreAlloc,
         prepared::{GLWEAutomorphismKeyPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
     },
 };
@@ -1068,9 +1068,9 @@ impl<D: Data, W: ZnxWord> BootstrappingKeySet<D, W> {
             prepared
         });
         let mut trace_key = module.glwe_ci_trace_key_prepared_alloc_from_infos(trace);
-        prepare_moved_switching_key(module, &mut trace_key, trace, scratch);
+        prepare_moved_ci_key(module, &mut trace_key, trace, scratch);
         let mut embed_key = module.glwe_ci_embed_key_prepared_alloc_from_infos(embed);
-        prepare_moved_switching_key(module, &mut embed_key, embed, scratch);
+        prepare_moved_ci_key(module, &mut embed_key, embed, scratch);
         keys.conversion_keys = Some((trace_key, embed_key));
         Ok(keys)
     }
@@ -1177,6 +1177,22 @@ where
     let (matrix, mut rest) = scratch.borrow().take_gglwe_scratch(key);
     let moved = MovedKey::of(key, matrix, 0, (*key.input_degree(), *key.output_degree()));
     module.glwe_switching_key_prepare(prepared, &moved, &mut rest);
+}
+
+/// [`GLWECIKeyPreparedFactory::glwe_ci_key_prepare`] of `key`, moved into a copy carved from `scratch`.
+fn prepare_moved_ci_key<BE, K, M>(
+    module: &Module<BE>,
+    prepared: &mut GLWECIKeyPrepared<BE::OwnedBuf, BE, M>,
+    key: &K,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: Backend,
+    K: GGLWEInfos + GLWESwitchingKeyDegrees + for<'a> TransferInto<GGLWEViewMut<'a, BE>>,
+    Module<BE>: GLWECIKeyPreparedFactory<BE>,
+{
+    let (matrix, mut rest) = scratch.borrow().take_gglwe_scratch(key);
+    let moved = MovedKey::of(key, matrix, 0, (*key.input_degree(), *key.output_degree()));
+    module.glwe_ci_key_prepare(prepared, &moved, &mut rest);
 }
 
 /// Switching keys between an input secret of degree `n`, lifted to the bootstrap
