@@ -7,9 +7,9 @@ use crate::{
     GetDistribution, GetDistributionMut,
     layouts::{
         GGLWEInfos, GGLWEPreparedToBackendMut, GGLWEToBackendRef, GGLWEToGGSWKeyPreparedToBackendMut, GGLWEToGGSWKeyToBackendRef,
-        GGSWInfos, GGSWPreparedToBackendMut, GGSWToBackendRef, GLWECIKey, GLWECIKeyPrepared, GLWEInfos, GLWEPreparedToBackendMut,
-        GLWEPublicKeyPreparedToBackendMut, GLWEPublicKeyToBackendRef, GLWESwitchingKey, GLWESwitchingKeyDegrees,
-        GLWESwitchingKeyDegreesMut, GLWESwitchingKeyPrepared, GLWEToBackendRef, GetGaloisElement, SetGaloisElement,
+        GGSWInfos, GGSWPreparedToBackendMut, GGSWToBackendRef, GLWECIKeyPrepared, GLWEInfos, GLWEPreparedToBackendMut,
+        GLWEPublicKeyPreparedToBackendMut, GLWEPublicKeyToBackendRef, GLWESwitchingKeyDegrees, GLWESwitchingKeyDegreesMut,
+        GLWESwitchingKeyPrepared, GLWEToBackendRef, GetGaloisElement, SetGaloisElement,
     },
 };
 
@@ -229,16 +229,15 @@ pub unsafe trait PreparationImpl: Backend + HalVmpImpl {
 
     /// Default body: `glwe_ci_key_prepare_derived`, [`Self::glwe_switching_key_prepare`] on the inner switching key,
     /// within [`Self::glwe_ci_key_prepare_tmp_bytes`].
-    fn glwe_ci_key_prepare<DR, DO, M>(
+    fn glwe_ci_key_prepare<DR, O, M>(
         module: &Module<Self>,
         res: &mut GLWECIKeyPrepared<DR, Self, M>,
-        other: &GLWECIKey<DO, Self::ZnxWord, M>,
+        other: &O,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         DR: Data,
-        DO: Data,
         GLWESwitchingKeyPrepared<DR, Self>: GGLWEPreparedToBackendMut<Self>,
-        GLWESwitchingKey<DO, Self::ZnxWord>: GGLWEToBackendRef<Self>,
+        O: GGLWEToBackendRef<Self> + GLWESwitchingKeyDegrees,
     {
         super::derived::preparation::glwe_ci_key_prepare_derived(module, res, other, scratch)
     }

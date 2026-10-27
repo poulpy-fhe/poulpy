@@ -4,9 +4,8 @@ use poulpy_hal::layouts::{Data, Module, ScratchArena};
 
 use crate::{
     layouts::{
-        GGLWEInfos, GGLWEPreparedToBackendMut, GGLWEToBackendRef, GGSWPreparedToBackendMut, GLWECIKey, GLWECIKeyPrepared,
-        GLWESwitchingKey, GLWESwitchingKeyDegrees, GLWESwitchingKeyDegreesMut, GLWESwitchingKeyPrepared, GetGaloisElement,
-        SetGaloisElement,
+        GGLWEInfos, GGLWEPreparedToBackendMut, GGLWEToBackendRef, GGSWPreparedToBackendMut, GLWECIKeyPrepared,
+        GLWESwitchingKeyDegrees, GLWESwitchingKeyDegreesMut, GLWESwitchingKeyPrepared, GetGaloisElement, SetGaloisElement,
     },
     oep::PreparationImpl,
 };
@@ -208,19 +207,18 @@ where
     BE::glwe_switching_key_prepare_tmp_bytes(module, infos)
 }
 
-pub(crate) fn glwe_ci_key_prepare_derived<BE, DR, DO, M>(
+pub(crate) fn glwe_ci_key_prepare_derived<BE, DR, O, M>(
     module: &Module<BE>,
     res: &mut GLWECIKeyPrepared<DR, BE, M>,
-    other: &GLWECIKey<DO, BE::ZnxWord, M>,
+    other: &O,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: PreparationImpl,
     DR: Data,
-    DO: Data,
     GLWESwitchingKeyPrepared<DR, BE>: GGLWEPreparedToBackendMut<BE>,
-    GLWESwitchingKey<DO, BE::ZnxWord>: GGLWEToBackendRef<BE>,
+    O: GGLWEToBackendRef<BE> + GLWESwitchingKeyDegrees,
 {
-    BE::glwe_switching_key_prepare(module, &mut res.0, &other.0, scratch);
+    BE::glwe_switching_key_prepare(module, &mut res.0, other, scratch);
 }
 
 pub(crate) fn ggsw_zero_derived<BE, R>(module: &Module<BE>, res: &mut R)

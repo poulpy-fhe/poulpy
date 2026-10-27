@@ -1,3 +1,4 @@
+use poulpy_hal::api::ModuleSynchronize;
 use std::hint::black_box;
 
 use criterion::{Bencher, measurement::Measurement};
@@ -15,7 +16,7 @@ use crate::hal::params::HalSweepParms;
 
 pub fn runner_vec_znx_lsh_assign<B: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
 where
-    Module<B>: VecZnxLshAssign<B> + VecZnxLshTmpBytes + ModuleNew<B> + VecZnxAlloc<B>,
+    Module<B>: VecZnxLshAssign<B> + VecZnxLshTmpBytes + ModuleNew<B> + ModuleSynchronize<B> + VecZnxAlloc<B>,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
 {
     let module: Module<B> = Module::<B>::new(sweep.n as u64);
@@ -34,13 +35,14 @@ where
         for i in 0..sweep.cols {
             module.vec_znx_lsh_assign(base2k, base2k - 1, &mut b, i, &mut scratch.borrow());
         }
+        module.synchronize();
         black_box(());
     });
 }
 
 pub fn runner_vec_znx_lsh<B: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
 where
-    Module<B>: VecZnxLsh<B> + ModuleNew<B> + VecZnxAlloc<B> + VecZnxLshTmpBytes,
+    Module<B>: VecZnxLsh<B> + ModuleNew<B> + ModuleSynchronize<B> + VecZnxAlloc<B> + VecZnxLshTmpBytes,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
 {
     let module: Module<B> = Module::<B>::new(sweep.n as u64);
@@ -61,13 +63,14 @@ where
         for i in 0..sweep.cols {
             module.vec_znx_lsh(base2k, base2k - 1, &mut res, i, &a, i, &mut scratch.borrow());
         }
+        module.synchronize();
         black_box(());
     });
 }
 
 pub fn runner_vec_znx_rsh_assign<B: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
 where
-    Module<B>: VecZnxRshAssign<B> + ModuleNew<B> + VecZnxAlloc<B> + VecZnxRshTmpBytes,
+    Module<B>: VecZnxRshAssign<B> + ModuleNew<B> + ModuleSynchronize<B> + VecZnxAlloc<B> + VecZnxRshTmpBytes,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
 {
     let module: Module<B> = Module::<B>::new(sweep.n as u64);
@@ -86,13 +89,14 @@ where
         for i in 0..sweep.cols {
             module.vec_znx_rsh_assign(base2k, base2k - 1, &mut b, i, &mut scratch.borrow());
         }
+        module.synchronize();
         black_box(());
     });
 }
 
 pub fn runner_vec_znx_rsh<B: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
 where
-    Module<B>: VecZnxRsh<B> + ModuleNew<B> + VecZnxAlloc<B> + VecZnxRshTmpBytes,
+    Module<B>: VecZnxRsh<B> + ModuleNew<B> + ModuleSynchronize<B> + VecZnxAlloc<B> + VecZnxRshTmpBytes,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
 {
     let module: Module<B> = Module::<B>::new(sweep.n as u64);
@@ -113,13 +117,14 @@ where
         for i in 0..sweep.cols {
             module.vec_znx_rsh(base2k, base2k - 1, &mut res, i, &a, i, &mut scratch.borrow());
         }
+        module.synchronize();
         black_box(());
     });
 }
 
 pub fn runner_vec_znx_lsh_add<B: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
 where
-    Module<B>: VecZnxLshAdd<B> + ModuleNew<B> + VecZnxAlloc<B> + VecZnxLshTmpBytes,
+    Module<B>: VecZnxLshAdd<B> + ModuleNew<B> + ModuleSynchronize<B> + VecZnxAlloc<B> + VecZnxLshTmpBytes,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
 {
     let module: Module<B> = Module::<B>::new(sweep.n as u64);
@@ -141,13 +146,14 @@ where
         for i in 0..sweep.cols {
             module.vec_znx_lsh_add(base2k, base2k - 1, &mut res, i, &a, i, &mut scratch.borrow());
         }
+        module.synchronize();
         black_box(());
     });
 }
 
 pub fn runner_vec_znx_lsh_sub<B: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
 where
-    Module<B>: VecZnxLshSub<B> + ModuleNew<B> + VecZnxAlloc<B> + VecZnxLshTmpBytes,
+    Module<B>: VecZnxLshSub<B> + ModuleNew<B> + ModuleSynchronize<B> + VecZnxAlloc<B> + VecZnxLshTmpBytes,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
 {
     let module: Module<B> = Module::<B>::new(sweep.n as u64);
@@ -169,13 +175,14 @@ where
         for i in 0..sweep.cols {
             module.vec_znx_lsh_sub(base2k, base2k - 1, &mut res, i, &a, i, &mut scratch.borrow());
         }
+        module.synchronize();
         black_box(());
     });
 }
 
 pub fn runner_vec_znx_rsh_add<B: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
 where
-    Module<B>: VecZnxRshAdd<B> + ModuleNew<B> + VecZnxAlloc<B> + VecZnxRshTmpBytes,
+    Module<B>: VecZnxRshAdd<B> + ModuleNew<B> + ModuleSynchronize<B> + VecZnxAlloc<B> + VecZnxRshTmpBytes,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
 {
     let module: Module<B> = Module::<B>::new(sweep.n as u64);
@@ -197,13 +204,14 @@ where
         for i in 0..sweep.cols {
             module.vec_znx_rsh_add(base2k, base2k - 1, &mut res, i, &a, i, &mut scratch.borrow());
         }
+        module.synchronize();
         black_box(());
     });
 }
 
 pub fn runner_vec_znx_rsh_sub<B: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
 where
-    Module<B>: VecZnxRshSub<B> + ModuleNew<B> + VecZnxAlloc<B> + VecZnxRshTmpBytes,
+    Module<B>: VecZnxRshSub<B> + ModuleNew<B> + ModuleSynchronize<B> + VecZnxAlloc<B> + VecZnxRshTmpBytes,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
 {
     let module: Module<B> = Module::<B>::new(sweep.n as u64);
@@ -225,6 +233,7 @@ where
         for i in 0..sweep.cols {
             module.vec_znx_rsh_sub(base2k, base2k - 1, &mut res, i, &a, i, &mut scratch.borrow());
         }
+        module.synchronize();
         black_box(());
     });
 }

@@ -1,4 +1,5 @@
 use poulpy_hal::AlignedBuf;
+use poulpy_hal::api::ModuleSynchronize;
 use std::hint::black_box;
 
 use criterion::{Bencher, measurement::Measurement};
@@ -36,6 +37,7 @@ pub fn runner_blind_rotate<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>, BR
 ) where
     Module<BE>: ModuleN
         + ModuleNew<BE>
+        + ModuleSynchronize<BE>
         + BlindRotationKeyEncryptSk<BRA, BE>
         + BlindRotationKeyPreparedFactory<BRA, BE>
         + BlindRotationExecute<BRA, BE>
@@ -119,6 +121,7 @@ pub fn runner_blind_rotate<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>, BR
 
     bencher.iter(|| {
         brk_prepared.execute(&module, &mut res, &lwe, &lut, &mut scratch.borrow());
+        module.synchronize();
         black_box(());
     });
 }
@@ -132,6 +135,7 @@ pub fn runner_circuit_bootstrapping<
     params: &CircuitBootstrappingBenchParam,
 ) where
     Module<BE>: ModuleNew<BE>
+        + ModuleSynchronize<BE>
         + ModuleN
         + GLWESecretPreparedFactory<BE>
         + GLWEExternalProduct<BE>
@@ -233,6 +237,7 @@ pub fn runner_circuit_bootstrapping<
             params.extension_factor,
             &mut scratch.borrow(),
         );
+        module.synchronize();
         black_box(());
     });
 }

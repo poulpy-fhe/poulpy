@@ -23,12 +23,12 @@
 //! its own layouts without editing this one.
 
 use poulpy_hal::layouts::{
-    CopyFromHost, CopyToHost, Data, DataView, DataViewMut, MatZnx, ScalarZnx, VecZnx, ZnxWord, transfer_buf_into,
+    Backend, CopyFromHost, CopyToHost, Data, DataView, DataViewMut, MatZnx, ScalarZnx, VecZnx, ZnxWord, transfer_buf_into,
 };
 
 use crate::layouts::{
-    GGLWE, GGLWEToGGSWKey, GGSW, GLWE, GLWEAutomorphismKey, GLWEPlaintext, GLWEPublicKey, GLWESecret, GLWESwitchingKey,
-    GLWETensor, GLWETensorKey, GLWEToLWEKey, LWE, LWEPlaintext, LWESecret,
+    GGLWE, GGLWEToGGSWKey, GGLWEViewMut, GGSW, GLWE, GLWEAutomorphismKey, GLWECIKey, GLWEPlaintext, GLWEPublicKey, GLWESecret,
+    GLWESwitchingKey, GLWETensor, GLWETensorKey, GLWEToLWEKey, LWE, LWEPlaintext, LWESecret,
     compressed::{GGLWECompressed, GLWECompressed, GLWEPublicKeyCompressed},
 };
 
@@ -151,6 +151,73 @@ where
     }
 }
 
+/// A GGLWE moved into a matrix of the same shape carved from a scratch arena
+/// ([`take_gglwe_scratch`](crate::ScratchArenaTakeCore::take_gglwe_scratch)): the carve
+/// holds the first bytes of an owned source, which may be padded past them.
+impl<D1, BE> TransferInto<GGLWEViewMut<'_, BE>> for GGLWE<D1, BE::ZnxWord>
+where
+    D1: Data + CopyToHost,
+    BE: Backend,
+{
+    fn transfer_into(&self, dst: &mut GGLWEViewMut<'_, BE>) {
+        let dst: &mut GGLWE<BE::BufMut<'_>, BE::ZnxWord> = dst;
+        assert_eq!(self.base2k, dst.base2k, "transfer_into: GGLWE base2k");
+        assert_eq!(self.k_aux, dst.k_aux, "transfer_into: GGLWE k_aux");
+        assert_eq!(self.k_digit, dst.k_digit, "transfer_into: GGLWE k_digit");
+        assert_eq!(self.k_offset, dst.k_offset, "transfer_into: GGLWE k_offset");
+        let (src, view) = (&self.data, &mut dst.data);
+        assert_eq!(src.n(), view.n(), "transfer_into: ring degree");
+        assert_eq!(src.rows(), view.rows(), "transfer_into: rows");
+        assert_eq!(src.cols_in(), view.cols_in(), "transfer_into: cols_in");
+        assert_eq!(src.cols_out(), view.cols_out(), "transfer_into: cols_out");
+        assert_eq!(src.size(), view.size(), "transfer_into: size");
+        let len = BE::len_bytes_mut(view.data());
+        let src = src.data();
+        assert!(src.len_bytes() >= len, "transfer_into: source shorter than its shape");
+        match src.as_host_bytes() {
+            Some(bytes) => BE::copy_host_to_view(view.data_mut(), &bytes[..len]),
+            None => {
+                let mut staging = vec![0u8; src.len_bytes()];
+                src.copy_to_host(&mut staging);
+                BE::copy_host_to_view(view.data_mut(), &staging[..len]);
+            }
+        }
+        dst.noise = self.noise.clone();
+    }
+}
+
+/// The matrix of a key moved into a carved [`GGLWEViewMut`], as for a [`GGLWE`]; what the key
+/// holds besides (its Galois element, its degrees) is the caller's to keep.
+macro_rules! transfer_key_matrix_into_view {
+    ($($key:ty => $($field:tt).+;)+) => {$(
+        impl<D1, BE> TransferInto<GGLWEViewMut<'_, BE>> for $key
+        where
+            D1: Data + CopyToHost,
+            BE: Backend,
+        {
+            fn transfer_into(&self, dst: &mut GGLWEViewMut<'_, BE>) {
+                self.$($field).+.transfer_into(dst);
+            }
+        }
+    )+};
+}
+
+transfer_key_matrix_into_view! {
+    GLWEAutomorphismKey<D1, BE::ZnxWord> => key;
+    GLWESwitchingKey<D1, BE::ZnxWord> => key;
+    GLWETensorKey<D1, BE::ZnxWord> => 0;
+}
+
+impl<D1, BE, M> TransferInto<GGLWEViewMut<'_, BE>> for GLWECIKey<D1, BE::ZnxWord, M>
+where
+    D1: Data + CopyToHost,
+    BE: Backend,
+{
+    fn transfer_into(&self, dst: &mut GGLWEViewMut<'_, BE>) {
+        self.0.transfer_into(dst);
+    }
+}
+
 impl<D1, D2, W> TransferInto<GGSW<D2, W>> for GGSW<D1, W>
 where
     D1: Data + CopyToHost,
@@ -260,6 +327,17 @@ where
     fn transfer_into(&self, dst: &mut GLWEAutomorphismKey<D2, W>) {
         self.key.transfer_into(&mut dst.key);
         dst.p = self.p;
+    }
+}
+
+impl<D1, D2, W, M> TransferInto<GLWECIKey<D2, W, M>> for GLWECIKey<D1, W, M>
+where
+    D1: Data + CopyToHost,
+    D2: Data + CopyFromHost,
+    W: ZnxWord,
+{
+    fn transfer_into(&self, dst: &mut GLWECIKey<D2, W, M>) {
+        self.0.transfer_into(&mut dst.0);
     }
 }
 

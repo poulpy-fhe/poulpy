@@ -1,3 +1,4 @@
+use poulpy_hal::api::ModuleSynchronize;
 use std::hint::black_box;
 
 use criterion::{Bencher, measurement::Measurement};
@@ -16,7 +17,7 @@ use crate::hal::params::HalSweepParms;
 
 pub fn runner_vec_znx_automorphism<B: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
 where
-    Module<B>: VecZnxAutomorphism<B> + ModuleNew<B>,
+    Module<B>: VecZnxAutomorphism<B> + ModuleNew<B> + ModuleSynchronize<B>,
 {
     let module: Module<B> = Module::<B>::new(sweep.n as u64);
 
@@ -33,6 +34,7 @@ where
         for i in 0..sweep.cols {
             module.vec_znx_automorphism(-7, &mut res, i, &a, i);
         }
+        module.synchronize();
         black_box(());
     });
 }
@@ -41,7 +43,7 @@ pub fn runner_vec_znx_automorphism_assign<B: Backend<ZnxWord = i64>, M: Measurem
     bencher: &mut Bencher<'_, M>,
     sweep: &HalSweepParms,
 ) where
-    Module<B>: VecZnxAutomorphismAssign<B> + ModuleNew<B> + VecZnxAutomorphismAssignTmpBytes,
+    Module<B>: VecZnxAutomorphismAssign<B> + ModuleNew<B> + ModuleSynchronize<B> + VecZnxAutomorphismAssignTmpBytes,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
 {
     let module: Module<B> = Module::<B>::new(sweep.n as u64);
@@ -58,6 +60,7 @@ pub fn runner_vec_znx_automorphism_assign<B: Backend<ZnxWord = i64>, M: Measurem
         for i in 0..sweep.cols {
             module.vec_znx_automorphism_assign(-7, &mut res, i, &mut scratch.borrow());
         }
+        module.synchronize();
         black_box(());
     });
 }

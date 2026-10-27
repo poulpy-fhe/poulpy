@@ -452,9 +452,11 @@ impl BootstrappingPlan {
 
     /// Distinct Galois elements the pipeline's rotation keys must cover: the union
     /// of the CoeffsToSlots and SlotsToCoeffs transforms
-    /// ([`DFTPlan::galois_elements`]), for a ring of degree `2^log_n` and the given
-    /// `cyclotomic_order`. The split forward transform's conjugation key is
-    /// separate (generate it from Galois element `−1`) and not included here.
+    /// ([`DFTPlan::galois_elements`]), of the bypass, and, with `u` folded into the
+    /// last CoeffsToSlots factor ([`CIConversion::Folded`]), of the two folded factors,
+    /// for a ring of degree `2^log_n` and the given `cyclotomic_order`. The split
+    /// forward transform's conjugation key is separate (generate it from Galois
+    /// element `−1`) and not included here.
     pub fn galois_elements(&self, log_n: usize, cyclotomic_order: i64) -> Vec<i64> {
         let mut set: std::collections::BTreeSet<i64> = std::collections::BTreeSet::new();
         set.extend(self.coeffs_to_slots.galois_elements(log_n, cyclotomic_order));
@@ -462,6 +464,19 @@ impl BootstrappingPlan {
             set.extend(bypass.galois_elements(log_n, cyclotomic_order));
         }
         set.extend(self.slots_to_coeffs.galois_elements(log_n, cyclotomic_order));
+        // The folded factors are the last CoeffsToSlots factor times diagonals of the full
+        // slots, as `compile_ci` builds them.
+        if let EvalModRing::ConjugateInvariant {
+            pre: CIConversion::Folded,
+            ..
+        } = self.eval_mod_ring
+        {
+            set.extend(self.coeffs_to_slots.resolved_at(log_n).last_factor_galois_elements_at(
+                log_n,
+                1 << (log_n - 1),
+                cyclotomic_order,
+            ));
+        }
         set.into_iter().collect()
     }
 }
@@ -473,6 +488,9 @@ impl BootstrappingPlan {
 /// `SplitRealAndImag` format is used for both transforms so the real and
 /// imaginary coefficient halves can be reduced independently by EvalMod.
 pub struct BootstrappingContext<BE: Backend, F> {
+    /// The plan the context was compiled from, at the degree it was compiled for: the recipe
+    /// of its keys.
+    pub(crate) plan: BootstrappingPlan,
     c2s_guard_bits: usize,
     functional_message_modulus: Option<usize>,
     /// Prepared CoeffsToSlots matrix (homomorphic encoding).
@@ -787,6 +805,7 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
 /// [`Self::prepare_tmp_bytes`], which follows the backend's selected
 /// preparation budget.
 pub struct BootstrappingContextUnprepared<BE: Backend, F> {
+    plan: BootstrappingPlan,
     c2s_guard_bits: usize,
     functional_message_modulus: Option<usize>,
     coeffs_to_slots: DFTMatrix<BE, Encode, Split>,
@@ -829,6 +848,7 @@ impl<BE: Backend, F> BootstrappingContextUnprepared<BE, F> {
         CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE>,
     {
         let Self {
+            plan,
             c2s_guard_bits,
             functional_message_modulus,
             coeffs_to_slots,
@@ -869,6 +889,7 @@ impl<BE: Backend, F> BootstrappingContextUnprepared<BE, F> {
             post: ci.post,
         });
         BootstrappingContext {
+            plan,
             c2s_guard_bits,
             functional_message_modulus,
             coeffs_to_slots,
@@ -1077,6 +1098,7 @@ where
         };
 
         Ok(BootstrappingContextUnprepared {
+            plan: plan.clone(),
             c2s_guard_bits: plan.c2s_guard_bits,
             functional_message_modulus: plan.functional_message_modulus,
             coeffs_to_slots,

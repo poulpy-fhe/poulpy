@@ -320,6 +320,8 @@ macro_rules! impl_digits_strided {
                     tmp,
                 );
             }
+
+            ::poulpy_core::impl_gglwe_product_step_hooks_reference!();
         }
     };
 }

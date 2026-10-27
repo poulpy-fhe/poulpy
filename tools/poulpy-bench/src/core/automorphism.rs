@@ -7,6 +7,7 @@ use poulpy_core::{
     },
     test_suite::keys::fill_by_digit,
 };
+use poulpy_hal::api::ModuleSynchronize;
 use poulpy_hal::{
     api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{Backend, Module, ScratchOwned},
@@ -25,6 +26,7 @@ use poulpy_core::layouts::prepared::GLWEAutomorphismKeyPreparedToBackendRef;
 pub fn runner_glwe_automorphism<BE: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CoreParams)
 where
     Module<BE>: ModuleNew<BE>
+        + ModuleSynchronize<BE>
         + GLWEAutomorphism<BE>
         + GLWEAutomorphismKeyPreparedFactory<BE>
         + GLWEMaskFill<BE>
@@ -75,6 +77,7 @@ where
 
     bencher.iter(|| {
         module.glwe_automorphism(&mut ct_out, &ct_in, &atk_prepared.to_backend_ref(), &mut scratch.borrow());
+        module.synchronize();
         black_box(());
     });
 }

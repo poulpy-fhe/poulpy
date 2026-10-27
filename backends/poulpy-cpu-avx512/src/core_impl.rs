@@ -1129,6 +1129,18 @@ macro_rules! impl_rank_one_tensoring {
                 }
             }
 
+            fn glwe_square_prepare(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                left: &mut ::poulpy_hal::layouts::CnvPVecLBackendMut<'_, $be>,
+                right: &mut ::poulpy_hal::layouts::CnvPVecRBackendMut<'_, $be>,
+                a: &::poulpy_hal::layouts::VecZnxBackendRef<'_, $be>,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
+            ) {
+                <::poulpy_hal::layouts::Module<$be> as poulpy_core::reference::operations::GLWETensoringReference<$be>>::glwe_square_prepare_reference(
+                    module, left, right, a, scratch,
+                )
+            }
+
             fn glwe_mul_relinearize_sum_tmp_bytes<R, B>(
                 module: &Module<$be>,
                 res: &R,
@@ -1349,6 +1361,8 @@ where
             tmp,
         );
     }
+
+    ::poulpy_core::impl_gglwe_product_step_hooks_reference!();
 }
 
 #[cfg(feature = "enable-ifma")]
@@ -1403,6 +1417,8 @@ where
             tmp,
         );
     }
+
+    ::poulpy_core::impl_gglwe_product_step_hooks_reference!();
 }
 
 poulpy_cpu_portable::impl_cpu_core_defaults!(super::FFT64Avx512, fft64);

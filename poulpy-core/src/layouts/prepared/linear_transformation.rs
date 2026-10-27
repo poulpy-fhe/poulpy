@@ -13,7 +13,7 @@ use std::collections::BTreeMap;
 
 use poulpy_hal::{
     api::{CnvPVecBytesOf, Convolution, ModuleN},
-    layouts::{Backend, CnvPVecR, Data, ScratchArena, VecZnxDftBackendMut},
+    layouts::{Backend, CnvPVecR, Data, Module, ScratchArena, VecZnxDftBackendMut},
 };
 
 use crate::layouts::{
@@ -228,4 +228,30 @@ pub trait DiagonalProd<BE: Backend>: LWEInfos + Sized {
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         M: CnvPVecBytesOf + Convolution<BE> + ModuleN;
+
+    /// Most giant steps [`Self::accumulate_giant_prods`] takes per call, at least 1.
+    fn giant_step_batch(_module: &Module<BE>) -> usize
+    where
+        BE: crate::oep::LinearTransformationImpl,
+    {
+        1
+    }
+
+    /// Runs the PROD inner products of several giant steps, `prods[g]` receiving step `steps[g]`.
+    fn accumulate_giant_prods(
+        module: &Module<BE>,
+        cnv_offset_hi: usize,
+        prods: &mut [VecZnxDftBackendMut<'_, BE>],
+        lhs: &LinearTransformationBabySteps<BE>,
+        steps: &[LinearTransformationGiantStep<Self>],
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        BE: crate::oep::LinearTransformationImpl,
+        Module<BE>: CnvPVecBytesOf + Convolution<BE> + ModuleN,
+    {
+        assert_eq!(prods.len(), steps.len());
+        for (prod, step) in prods.iter_mut().zip(steps) {
+            Self::accumulate_giant_prod(module, cnv_offset_hi, prod, lhs, step, scratch);
+        }
+    }
 }

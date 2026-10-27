@@ -35,5 +35,6 @@ pub use eval::{
     glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes_reference, glwe_prepare_linear_transformation_baby_steps_reference,
     glwe_prepare_linear_transformation_baby_steps_tmp_bytes_reference,
 };
+pub use inner_product::{glwe_accumulate_giant_steps_reference, glwe_giant_step_batch_reference};
 pub use prepare::{glwe_prepare_linear_transformation_rhs_reference, glwe_prepare_linear_transformation_rhs_tmp_bytes_reference};
 pub use prepared_giants::glwe_accumulate_streamed_baby_steps_dft;

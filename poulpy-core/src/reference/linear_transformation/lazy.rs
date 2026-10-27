@@ -7,12 +7,14 @@
 //! and cross-giant accumulation remain in DFT. The sub-limb `cnv_offset_lo`
 //! shift is folded into the single final normalize at Phase C.
 
+use poulpy_hal::api::VecZnxIdftNormalizeTmpBytes as _;
+use poulpy_hal::layouts::Module;
 use poulpy_hal::layouts::vec_znx_dft_backend_ref_from_mut;
 use poulpy_hal::{
     api::{
         ModuleN, ScratchArenaTakeBasic, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf, VecZnxBigNormalize,
-        VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftAutomorphismAddWithPlanTmpBytes, VecZnxDftBytesOf,
-        VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
+        VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApply,
+        VecZnxIdftApplyTmpBytes,
     },
     layouts::{
         Backend, ScratchArena, VecZnxBigBackendMut, VecZnxBigBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef,
@@ -23,7 +25,7 @@ use poulpy_hal::{
 use crate::{
     gadget::{gadget_dft_apply, gadget_dft_apply_tmp_bytes, gadget_input_size},
     layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, LWEInfos, TorusPrecision, prepared::GGLWEPreparedBackendRef},
-    reference::keyswitching::{GGLWEProductReference, GLWEKeyswitchInternal},
+    reference::keyswitching::GLWEKeyswitchInternal,
 };
 
 pub(super) fn glwe_lazy_giant_automorphism_tmp_bytes<BE, M, R, K>(module: &M, a_infos: &R, key_infos: &K) -> usize
@@ -45,24 +47,21 @@ where
 }
 
 /// Scratch bytes for [`glwe_lazy_giant_automorphism_from_dft`].
-pub(super) fn glwe_lazy_giant_automorphism_from_dft_tmp_bytes<BE, M, K>(
-    module: &M,
+pub(super) fn glwe_lazy_giant_automorphism_from_dft_tmp_bytes<BE, K>(
+    module: &Module<BE>,
     rank: usize,
     prod_size: usize,
     key_infos: &K,
 ) -> usize
 where
-    BE: Backend,
-    M: ModuleN
-        + GGLWEProductReference<BE>
+    BE: Backend + crate::oep::GGLWEProductDigitsStridedImpl,
+    Module<BE>: ModuleN
         + VecZnxBigBytesOf
-        + VecZnxDftAutomorphismAddWithPlanTmpBytes
         + VecZnxDftBytesOf
         + poulpy_hal::api::VecZnxIdftNormalizeTmpBytes
         + poulpy_hal::api::VecZnxGadgetDecomposeTmpBytes,
     K: GGLWEInfos,
 {
-    let cols = rank + 1;
     let key_size = key_infos.size();
     let mask_small_size = prod_size.min(key_size);
     // Each mask column is the gadget operand, at most `mask_small_size` full limbs.
@@ -71,16 +70,15 @@ where
     let operand_size = gadget_input_size(base2k, k_digit, dnum, mask_k, mask_small_size);
     let mask_dft = module.bytes_of_vec_znx_dft(module.n(), rank, operand_size);
     let mask_small = mask_small_size * core::mem::size_of::<i64>() * module.n();
-    let ks_dft = module.bytes_of_vec_znx_dft(module.n(), cols, key_size);
-    let inner = module
-        .gglwe_product_dft_tmp_bytes_reference(key_size, operand_size, key_infos)
-        .max(module.vec_znx_dft_automorphism_add_with_plan_tmp_bytes(key_size, key_size));
+    // The product over at most the key's limbs, its body and the automorphism into a node of at
+    // most `prod_size` or the key's limbs.
+    let fused = BE::gglwe_product_fused_tmp_bytes(module, prod_size.max(key_size), key_size, operand_size, key_infos);
     let digits = gadget_dft_apply_tmp_bytes::<BE, _>(module, base2k, k_digit, dnum, mask_k, mask_small_size);
 
     let mask_work = module
         .vec_znx_idft_normalize_tmp_bytes(mask_small_size, prod_size)
         .max(digits);
-    BE::scratch_aligned(mask_dft) + BE::scratch_aligned(mask_small) + mask_work + BE::scratch_aligned(ks_dft) + inner
+    BE::scratch_aligned(mask_dft) + BE::scratch_aligned(mask_small) + mask_work + fused
 }
 
 /// ROT for a giant step whose PROD result is still in `VecZnxDft`.
@@ -91,8 +89,8 @@ where
 /// the caller folds the contribution into the accumulator. The mask columns of
 /// `prod_dft` are unspecified afterwards.
 #[allow(clippy::too_many_arguments)]
-pub(super) fn glwe_lazy_giant_automorphism_from_dft<BE, M>(
-    module: &M,
+pub(super) fn glwe_lazy_giant_automorphism_from_dft<BE>(
+    module: &Module<BE>,
     res_dft: &mut VecZnxDftBackendMut<'_, BE>,
     prod_dft: &mut VecZnxDftBackendMut<'_, BE>,
     prod_base2k: usize,
@@ -103,14 +101,11 @@ pub(super) fn glwe_lazy_giant_automorphism_from_dft<BE, M>(
     accumulate: bool,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: Backend,
-    M: ModuleN
-        + GGLWEProductReference<BE>
+    BE: Backend + crate::oep::GGLWEProductDigitsStridedImpl,
+    Module<BE>: ModuleN
         + VecZnxBigBytesOf
         + VecZnxBigNormalize<BE>
-        + VecZnxDftAddAssign<BE>
         + VecZnxDftApply<BE>
-        + VecZnxDftAutomorphism<BE>
         + VecZnxDftBytesOf
         + VecZnxDftZero<BE>
         + poulpy_hal::api::VecZnxIdftNormalize<BE>
@@ -126,23 +121,22 @@ pub(super) fn glwe_lazy_giant_automorphism_from_dft<BE, M>(
     let (mut a_dft, mut scratch_1) = scratch.take_vec_znx_dft_scratch(res_dft.n(), cols - 1, operand_size);
     glwe_lazy_giant_operand(module, &mut a_dft, prod_dft, prod_base2k, key, output_size, &mut scratch_1);
 
-    let (mut ks_dft, mut scratch_2) = scratch_1.take_vec_znx_dft_scratch(res_dft.n(), cols, output_size);
     crate::layouts::assert_no_row_offset("glwe_eval_linear_transformation", &key);
-    module.gglwe_product_dft_reference(&mut ks_dft, &a_dft.to_backend_ref(), key, term_count, &mut scratch_2.borrow());
-
-    // Carry the body in DFT. `vec_znx_dft_add_assign` truncates to `output_size`,
-    // matching the existing BIG lazy path's rotated contribution size.
-    module.vec_znx_dft_add_assign(&mut ks_dft, 0, &vec_znx_dft_backend_ref_from_mut(prod_dft), 0);
-
-    let plan = module.vec_znx_dft_automorphism_plan(ks_dft.n(), p);
-    let ks_dft_ref = ks_dft.to_backend_ref();
-    for col in 0..cols {
-        if accumulate {
-            module.vec_znx_dft_automorphism_add_with_plan(&plan, res_dft, col, &ks_dft_ref, col, &mut scratch_2);
-        } else {
-            module.vec_znx_dft_automorphism_with_plan(&plan, res_dft, col, &ks_dft_ref, col);
-        }
-    }
+    // The product over `output_size` limbs, the body carried in DFT (added over
+    // those limbs, as the BIG lazy path's rotated contribution), then the giant
+    // automorphism stored or accumulated into `res_dft`.
+    BE::gglwe_product_fused(
+        module,
+        res_dft,
+        output_size,
+        &a_dft.to_backend_ref(),
+        key,
+        term_count,
+        &[Some((&vec_znx_dft_backend_ref_from_mut(prod_dft), 0))],
+        p,
+        accumulate,
+        &mut scratch_1,
+    );
 }
 
 /// Limbs of the gadget operand [`glwe_lazy_giant_operand`] lays out for `key` from a product of

@@ -67,6 +67,8 @@ where
         }
         gglwe_product_digits_strided::<R, SerialTaskExecutor>(res, a, dsize, product_limbs, pmat, None, scratch);
     }
+
+    ::poulpy_core::impl_gglwe_product_step_hooks_reference!();
 }
 
 crate::impl_cpu_core_defaults!(super::FFT64Portable, fft64);

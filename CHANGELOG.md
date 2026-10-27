@@ -150,6 +150,9 @@
   An out-of-tree backend that registers both removes its own `impl_ckks_eval_mod_reference!` next to `impl_cpu_ckks_defaults!`.
 - The portable, AVX2, AVX-512 and NEON backends register the `poulpy-libm` suite on their NTT4x30 types with `enable-ckks`, and `poulpy-cpu-avx512` also on `NTT3x42Ifma` with `enable-ifma`.
   CI runs it on the portable, native AVX2 and NEON backends. The emulated AVX job does not build it, and the AVX-512 jobs filter it out: their results are byte-identical to the other backends'.
+- Every hand-written `GGLWEProductDigitsStridedImpl` adds `poulpy_core::impl_gglwe_product_step_hooks_reference!()`, the `GLWETensoringImpl` of the AVX-512 NTT4x30 types forwards `glwe_square_prepare`, and the `LinearTransformationImpl` of `NTT3x42Ifma` forwards the giant-step batch hooks.
+- poulpy-cpu-portable runs the linear-transformation parity suites on `BatchedGiantStepsFFT64Portable`, a fixture whose `glwe_giant_step_batch` is 3, so that the batched giant-step products and their scratch run in CI.
+- poulpy-cpu-portable, poulpy-cpu-avx and poulpy-cpu-arm register `bootstrapping_plan_keys_match_context`, and `NTT4x30Avx` and `NTT4x30Neon` register `small_s2c_preset_meets_precision_with_client` with an `NTT4x30Portable` client.
 
 ### `poulpy-core`
 
@@ -345,6 +348,16 @@
 - **Behaviour:** `glwe_prepare` checks the rank, degree, limbs, precision and radix of its destination and its scratch before carving, where it normalized a flag-clear source into the scratch first, and `gglwe_to_ggsw_key_prepare` checks the key count before its scratch.
 - **Behaviour:** `lwe_encrypt_sk` and `lwe_decrypt` check the ciphertext dimension against the secret's, and `glwe_decrypt` the ciphertext rank against the secret's, in every build, where they did so only with debug assertions.
 - **Behaviour:** the core suites run each call on an arena of exactly its query, where the arena of `test_suite::poisoned_scratch` was padded to the backend's alignment, and `test_suite::assert_wipes_scratch` checks those bytes.
+- Implement `TransferInto` for `GLWECIKey`, the conversion keys of a CI bootstrap.
+- Add step hooks, so a backend fuses one step of a composite operation without re-implementing it: `GGLWEProductDigitsStridedImpl::gglwe_product_fused` (a gadget product over `product_size` limbs, addends per output column, stored or accumulated through the automorphism of `p`), `GGLWEProductDigitsStridedImpl::gglwe_product_idft_normalize` (a gadget product, its transform-domain addends, the inverse transform and the normalization as one step), `GLWETensoringImpl::glwe_square_prepare` and `glwe_square_columns`, `LinearTransformationImpl::glwe_giant_step_batch` (at least 1) and `glwe_accumulate_giant_steps` (with `DiagonalProd::giant_step_batch` and `DiagonalProd::accumulate_giant_prods`), and `GLWEMulConstImpl::glwe_const_combination` with `ConstTerm` (constants shifted by a sub-limb amount, products summed and normalized once), each with its query.
+  `glwe_square_columns` defaults to `glwe_mul_columns`; the other hooks are required and have reference bodies (`gglwe_product_fused_reference`, `gglwe_product_idft_normalize_reference`, `GLWETensoringReference::glwe_square_prepare_reference`, `glwe_giant_step_batch_reference`, `glwe_accumulate_giant_steps_reference`, `glwe_const_combination_reference`, with their queries), which the `*_reference*!` macros forward to and the reference bodies call through `BE::`, bounded by the HAL bundles `GGLWEProductFusedReference` and `GLWEConstCombinationReference`; `impl_gglwe_product_step_hooks_reference!()` forwards the step hooks inside an `impl` of `GGLWEProductDigitsStridedImpl` written by hand.
+  The key switch, the hoisted baby rotations and the one-pass relinearization call `gglwe_product_idft_normalize`, the lazy giant rotation calls `gglwe_product_fused`, the lazy evaluation of a transformation accumulates its giant steps in batches through `accumulate_giant_prods`, and the one-pass square calls the square hooks; baby rotations apply their automorphism out of place. Results are unchanged.
+- **Breaking:** `GGLWEProductDigitsStridedImpl`, `GLWETensoringImpl` (`glwe_square_prepare`), `LinearTransformationImpl` and `GLWEMulConstImpl` require their step hooks: an `impl` written by hand adds `impl_gglwe_product_step_hooks_reference!()` to the first and forwards the others to their reference bodies.
+  The public reference functions of the key switch and of the linear transformations take `module: &Module<BE>` instead of a module type parameter, one generic argument fewer for a caller that names them, and with those of the one-pass relinearization require the families whose hooks they call.
+- Implement `TransferInto<GGLWEViewMut>` for `GGLWE`, `GLWEAutomorphismKey`, `GLWESwitchingKey`, `GLWETensorKey` and `GLWECIKey`: the matrix of a key, held by any backend, moved into a copy carved from a scratch arena.
+- **Fix:** `take_gglwe_scratch` carves `dnum` rows, the shape of an owned `GGLWE` of the same infos, where it carved `dnum / dsize`, so the carve holds a key of any digit width.
+- **Fix:** `gglwe_bytes_of_from_infos` counts the limbs of a key with a row offset (`k_offset`), as its allocation and `GGLWE::bytes_of_from_infos` do; it counted those of a key without one.
+- **Breaking:** `GLWECIKeyPreparedFactory::glwe_ci_key_prepare` and `PreparationImpl::glwe_ci_key_prepare` take any source `O: GGLWEToBackendRef<BE> + GLWESwitchingKeyDegrees`, as `glwe_switching_key_prepare` does, instead of a `GLWECIKey`, the direction coming from the destination, so a key moved into a scratch carve goes through the backend's own body. A `GLWECIKey` meets the bounds, so callers are unchanged; an override takes the new signature.
 
 ### `poulpy-ckks`
 
@@ -363,7 +376,7 @@
   `generate_keys` carves each rotated raise secret from its scratch, which it wipes before returning.
   `DFTPlan::with_optimal_bsgs` keeps the one diagonal per giant step of a first factor left to the raise.
 - **Breaking:** the sparse-to-dense key is optional, absent exactly when the first factor is applied on the raise: `EncapsulationKeysLayout::sparse_to_dense` is an `Option`, the second key of `BootstrappingKeySet::encapsulation_keys` and `BootstrappingKeysPrepared::encapsulation_keys` too, and `BootstrappingLinearKeys::encapsulation_keys` returns `Option<(&SwitchingKey, Option<&SwitchingKey>)>`; add the alias `EncapsulationKeys`. Key generation rejects a layout whose sparse-to-dense key disagrees with the recipe.
-- Add S2C-first bootstrapping with EvalMod once on the conjugate-invariant ring instead of twice on the halves of the slots (`EvalModRing`, `BootstrappingPlan::with_eval_mod_ring`, `BootstrappingPreset::with_eval_mod_ring`), run by `CKKSBootstrappingCIOps::ckks_bootstrap_ci_into` on a context of `BootstrappingContext::compile_ci` (`EvalModCI`) and keys of `BootstrappingContext::generate_keys_ci` and `BootstrappingKeySet::prepare_ci`; `docs/bootstrapping.md` details the conversions.
+- Add S2C-first bootstrapping with EvalMod once on the conjugate-invariant ring instead of twice on the halves of the slots (`EvalModRing`, `BootstrappingPlan::with_eval_mod_ring`, `BootstrappingPreset::with_eval_mod_ring`), run by `CKKSBootstrappingCIOps::ckks_bootstrap_ci_into` on a context of `BootstrappingContext::compile_ci` (`EvalModCI`) and keys of `BootstrappingContext::generate_keys_ci`, on a `'static` CI backend, and `BootstrappingKeySet::prepare_ci`; `docs/bootstrapping.md` details the conversions.
   `EvalModRing::ConjugateInvariant { pre, post }` takes a `CIConversion` per conversion, a product by a plaintext of scale `2^log_delta` (`CIConversion::Product { log_delta }`), and `EvalModCI::pre` returns the product's plaintext or the folded factors (`CIPre`).
   Key generation samples the CI secret in scratch, which it wipes before returning.
   The switching keys lift the dense secret to degree `2N` themselves.
@@ -508,6 +521,12 @@
   Each double-angle step but the last subtracts a constant from the square instead of doubling it and subtracting one, and the last step adds the square to `f1` or subtracts it from `f1`.
   `EncodedLut::consumed_bits` and `BootstrappingPlan::functional_bootstrap_k` drop by the LUT's coefficient scale, and outputs change in their low bits at the same precision within about 1 bit (FFT64 oracle, input scale 40 bits, degree 31, `log_interval_reduction` 3 to 5).
   **Breaking:** `CKKSBootstrappingReference::ckks_functional_bootstrap_reference` requires `CKKSNegOps` instead of `CKKSAffineOps`, so an out-of-tree backend that registers the CKKS families one by one implements `CKKSNegImpl`.
+- Add `BootstrappingPlan::generate_keys` and `BootstrappingPlan::generate_keys_ci`, which generate the keys the compiled context generates from the plan alone, with `DFTPlan::first_factor_rotations`, and `BootstrappingKeySet::transfer_and_prepare` and `transfer_and_prepare_ci`, which move a key set to the evaluating backends and prepare it there one key at a time, each moved into a copy carved from the scratch, whose bytes `BootstrappingKeysLayout::prepare_tmp_bytes` and `prepare_ci_tmp_bytes` count.
+  The context's `generate_keys` and `generate_keys_ci` derive the keys from the plan it was compiled from, as the plan's do, and `BootstrappingPlan::galois_elements` covers the folded CoeffsToSlots factors of `CIConversion::Folded`.
+- **Breaking:** `test_suite::presets::BootstrappingPresetRun<BE, BC = BE>` takes a client backend `BC` that samples the secret, generates the keys from the plan, encrypts and decrypts, while `BE` compiles the context, prepares the keys and bootstraps; the CI presets run on the twins of both backends (`CIBackend`), and the evaluating module's bounds are `PresetRunModule`. `bootstrap` synchronizes the evaluating backend; `bootstrap_queued` and `synchronize` split the two steps.
+- Add `test_suite::presets::bootstrapping_presets_meet_precision_with_client`; `small_s2c_preset_meets_precision_with_client`, the insecure `N = 2^11` preset on both rings with keys and ciphertexts from a client backend, fast enough for a default run; and `bootstrapping_plan_keys_match_context`, the keys of the plan against those of the compiled context and the rotations of its matrices.
+- **Breaking:** `test_suite::presets::bootstrapping_presets_meet_precision` and `small_s2c_preset_meets_precision` require `PresetRunModule`, `HostStaged` and `CKKSDFTOps`.
+- **Breaking:** the polynomial-evaluation reference requires `GLWEMulConstImpl`: its baby step is one `glwe_const_combination` of all its terms. Results are unchanged.
 
 ### `poulpy-bin-fhe`
 
@@ -612,6 +631,7 @@
 ### `poulpy-cpu-arm`
 
 - Add the full-size bootstrapping preset precision test for `NTT4x30NeonRayon`.
+- Add the full-size bootstrapping preset precision test of `NTT4x30Neon` and `NTT4x30CINeon` with keys and ciphertexts from an `NTT4x30Portable` client.
 
 ### `poulpy-bench`
 
@@ -621,6 +641,10 @@
 - **Breaking:** `bench_ckks_bootstrapping` requires `CKKSBootstrappingCIOps`, and runs the presets with EvalMod on the conjugate-invariant ring.
 - **Breaking:** `bench_ckks_bootstrapping` takes no `FIXTURE_BASE2K`: it runs each preset at the radix `test_suite::presets::preset_for_backend` selects for the backend, so the ids of its NTT4x30 and FFT64 runs read `base2k=53` and `base2k=17` instead of 52 and 18.
 - **Breaking:** `hal::suites::bench_normalization` requires `VecZnxGadgetDecompose` and `VecZnxGadgetDecomposeTmpBytes`, and also sweeps `vec_znx_gadget_decompose` over the 27-limb key-switch columns of a bootstrap at radix 53 (`runner_vec_znx_gadget_decompose`, `GadgetDecomposeSweepParams`, `default_bench_params_gadget_decompose`).
+- Every timed closure of the HAL, core and scheme runners ends with `Module::synchronize`, so a backend that queues its work is timed to completion.
+- The HAL, core and CKKS runners and suites no longer bound `OwnedBuf = AlignedBuf` or host buffer views, except `bench_ckks_bootstrapping`, whose client stages the keys on the host; the bin-fhe ones still do.
+- Add `bench_ckks_bootstrapping_with_client`.
+- **Breaking:** `bench_ckks_bootstrapping` requires `PresetRunModule`, `HostStaged` and `CKKSDFTOps`.
 
 ### Dependencies
 

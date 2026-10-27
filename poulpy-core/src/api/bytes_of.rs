@@ -99,7 +99,9 @@ impl<B: Backend> GLWEBytesOf<B> for Module<B> {
     }
 
     fn gglwe_bytes_of_from_infos<A: GGLWEInfos>(&self, infos: &A) -> usize {
-        let size: usize = key_size(infos.base2k(), infos.dnum(), infos.k_digit(), infos.k_aux());
+        // The limbs of an owned GGLWE of these infos, its row offset included.
+        let size: usize =
+            crate::layouts::offset_key_size(infos.base2k(), infos.k_offset(), infos.dnum(), infos.k_digit(), infos.k_aux());
         B::bytes_of_mat_znx(
             infos.n().into(),
             infos.dnum().into(),

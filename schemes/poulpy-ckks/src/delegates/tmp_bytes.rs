@@ -18,6 +18,7 @@ use poulpy_hal::{
 
 impl<BE: Backend> CKKSAllOpsTmpBytes<BE> for Module<BE>
 where
+    BE: poulpy_core::oep::GLWEMulConstImpl,
     Self: CKKSEncryptOps<BE>
         + CKKSDecryptOps<BE>
         + CKKSAddOps<BE>

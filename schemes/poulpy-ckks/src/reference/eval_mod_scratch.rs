@@ -54,7 +54,7 @@ impl GLWEPlaintextInfos for EvalModWorkCtInfos {
 
 impl CKKSInfos for EvalModWorkCtInfos {}
 
-pub fn ckks_eval_mod_tmp_bytes_reference<BE: Backend, R, C, P, F, T>(
+pub fn ckks_eval_mod_tmp_bytes_reference<BE: Backend + poulpy_core::oep::GLWEMulConstImpl, R, C, P, F, T>(
     module: &Module<BE>,
     res: &R,
     ct: &C,

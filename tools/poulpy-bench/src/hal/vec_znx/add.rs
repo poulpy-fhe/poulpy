@@ -1,3 +1,4 @@
+use poulpy_hal::api::ModuleSynchronize;
 use std::hint::black_box;
 
 use criterion::{Bencher, measurement::Measurement};
@@ -15,7 +16,7 @@ use crate::hal::params::HalSweepParms;
 
 pub fn runner_vec_znx_add<B: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
 where
-    Module<B>: VecZnxAdd<B> + ModuleNew<B> + VecZnxAlloc<B>,
+    Module<B>: VecZnxAdd<B> + ModuleNew<B> + ModuleSynchronize<B> + VecZnxAlloc<B>,
 {
     let module: Module<B> = Module::<B>::new(sweep.n as u64);
 
@@ -34,13 +35,14 @@ where
         for i in 0..sweep.cols {
             module.vec_znx_add(&mut c, i, &a, i, &b, i);
         }
+        module.synchronize();
         black_box(());
     });
 }
 
 pub fn runner_vec_znx_add_assign<B: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
 where
-    Module<B>: VecZnxAddAssign<B> + ModuleNew<B> + VecZnxAlloc<B>,
+    Module<B>: VecZnxAddAssign<B> + ModuleNew<B> + ModuleSynchronize<B> + VecZnxAlloc<B>,
 {
     let module: Module<B> = Module::<B>::new(sweep.n as u64);
 
@@ -56,6 +58,7 @@ where
         for i in 0..sweep.cols {
             module.vec_znx_add_assign(&mut b, i, &a, i);
         }
+        module.synchronize();
         black_box(());
     });
 }
@@ -64,7 +67,7 @@ pub fn runner_vec_znx_add_scalar_assign<B: Backend<ZnxWord = i64>, M: Measuremen
     bencher: &mut Bencher<'_, M>,
     sweep: &HalSweepParms,
 ) where
-    Module<B>: VecZnxAddScalarAssign<B> + ModuleNew<B> + VecZnxAlloc<B> + ScalarZnxAlloc<B>,
+    Module<B>: VecZnxAddScalarAssign<B> + ModuleNew<B> + ModuleSynchronize<B> + VecZnxAlloc<B> + ScalarZnxAlloc<B>,
 {
     let module: Module<B> = Module::<B>::new(sweep.n as u64);
 
@@ -81,6 +84,7 @@ pub fn runner_vec_znx_add_scalar_assign<B: Backend<ZnxWord = i64>, M: Measuremen
         for i in 0..sweep.cols {
             module.vec_znx_add_scalar_assign(&mut res, i, sweep.size - 1, &a, i);
         }
+        module.synchronize();
         black_box(());
     });
 }

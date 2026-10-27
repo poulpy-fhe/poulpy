@@ -80,6 +80,8 @@ where
             tmp,
         );
     }
+
+    ::poulpy_core::impl_gglwe_product_step_hooks_reference!();
 }
 
 poulpy_cpu_portable::impl_cpu_core_defaults!(super::FFT64Avx, fft64);

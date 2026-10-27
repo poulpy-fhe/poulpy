@@ -2,6 +2,7 @@ use poulpy_core::{
     GLWEAdd, GLWEMaskFill, GLWEMulPlain, GLWENormalize, GLWESub,
     layouts::{Base2K, Degree, GLWE, GLWELayout, GLWEPlaintext, ModuleCoreAlloc, Rank, TorusPrecision},
 };
+use poulpy_hal::api::ModuleSynchronize;
 use poulpy_hal::{
     api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{Backend, Module, ScratchOwned},
@@ -25,7 +26,11 @@ fn glwe_layout(cp: &CoreParams) -> GLWELayout {
 
 pub fn runner_glwe_add_into<BE: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CoreParams)
 where
-    Module<BE>: ModuleNew<BE> + GLWEAdd<BE> + GLWEMaskFill<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
+    Module<BE>: ModuleNew<BE>
+        + ModuleSynchronize<BE>
+        + GLWEAdd<BE>
+        + GLWEMaskFill<BE>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
 {
     let infos = glwe_layout(cp);
     let module: Module<BE> = Module::<BE>::new(cp.n as u64);
@@ -40,13 +45,18 @@ where
 
     bencher.iter(|| {
         module.glwe_add_into(&mut res, &a, &b);
+        module.synchronize();
         black_box(());
     });
 }
 
 pub fn runner_glwe_add_assign<BE: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CoreParams)
 where
-    Module<BE>: ModuleNew<BE> + GLWEAdd<BE> + GLWEMaskFill<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
+    Module<BE>: ModuleNew<BE>
+        + ModuleSynchronize<BE>
+        + GLWEAdd<BE>
+        + GLWEMaskFill<BE>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
 {
     let infos = glwe_layout(cp);
     let module: Module<BE> = Module::<BE>::new(cp.n as u64);
@@ -59,13 +69,18 @@ where
 
     bencher.iter(|| {
         module.glwe_add_assign(&mut res, &b);
+        module.synchronize();
         black_box(());
     });
 }
 
 pub fn runner_glwe_sub<BE: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CoreParams)
 where
-    Module<BE>: ModuleNew<BE> + GLWESub<BE> + GLWEMaskFill<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
+    Module<BE>: ModuleNew<BE>
+        + ModuleSynchronize<BE>
+        + GLWESub<BE>
+        + GLWEMaskFill<BE>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
 {
     let infos = glwe_layout(cp);
     let module: Module<BE> = Module::<BE>::new(cp.n as u64);
@@ -80,13 +95,18 @@ where
 
     bencher.iter(|| {
         module.glwe_sub(&mut res, &a, &b);
+        module.synchronize();
         black_box(());
     });
 }
 
 pub fn runner_glwe_sub_assign<BE: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CoreParams)
 where
-    Module<BE>: ModuleNew<BE> + GLWESub<BE> + GLWEMaskFill<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
+    Module<BE>: ModuleNew<BE>
+        + ModuleSynchronize<BE>
+        + GLWESub<BE>
+        + GLWEMaskFill<BE>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
 {
     let infos = glwe_layout(cp);
     let module: Module<BE> = Module::<BE>::new(cp.n as u64);
@@ -99,13 +119,18 @@ where
 
     bencher.iter(|| {
         module.glwe_sub_assign(&mut res, &b);
+        module.synchronize();
         black_box(());
     });
 }
 
 pub fn runner_glwe_normalize<BE: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CoreParams)
 where
-    Module<BE>: ModuleNew<BE> + GLWENormalize<BE> + GLWEMaskFill<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
+    Module<BE>: ModuleNew<BE>
+        + ModuleSynchronize<BE>
+        + GLWENormalize<BE>
+        + GLWEMaskFill<BE>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let infos = glwe_layout(cp);
@@ -120,13 +145,18 @@ where
 
     bencher.iter(|| {
         module.glwe_normalize(&mut res, &a, &mut scratch.borrow());
+        module.synchronize();
         black_box(());
     });
 }
 
 pub fn runner_glwe_normalize_assign<BE: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CoreParams)
 where
-    Module<BE>: ModuleNew<BE> + GLWENormalize<BE> + GLWEMaskFill<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
+    Module<BE>: ModuleNew<BE>
+        + ModuleSynchronize<BE>
+        + GLWENormalize<BE>
+        + GLWEMaskFill<BE>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let infos = glwe_layout(cp);
@@ -139,13 +169,18 @@ where
 
     bencher.iter(|| {
         module.glwe_normalize_assign(&mut res, &mut scratch.borrow());
+        module.synchronize();
         black_box(());
     });
 }
 
 pub fn runner_glwe_mul_plain<BE: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CoreParams)
 where
-    Module<BE>: ModuleNew<BE> + GLWEMulPlain<BE> + GLWEMaskFill<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
+    Module<BE>: ModuleNew<BE>
+        + ModuleSynchronize<BE>
+        + GLWEMulPlain<BE>
+        + GLWEMaskFill<BE>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let infos = glwe_layout(cp);
@@ -162,13 +197,18 @@ where
 
     bencher.iter(|| {
         module.glwe_mul_plain(0, &mut ct_out, &ct_in, &pt, &mut scratch.borrow());
+        module.synchronize();
         black_box(());
     });
 }
 
 pub fn runner_glwe_mul_plain_assign<BE: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CoreParams)
 where
-    Module<BE>: ModuleNew<BE> + GLWEMulPlain<BE> + GLWEMaskFill<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
+    Module<BE>: ModuleNew<BE>
+        + ModuleSynchronize<BE>
+        + GLWEMulPlain<BE>
+        + GLWEMaskFill<BE>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let infos = glwe_layout(cp);
@@ -183,6 +223,7 @@ where
 
     bencher.iter(|| {
         module.glwe_mul_plain_assign(0, &mut ct, &pt, &mut scratch.borrow());
+        module.synchronize();
         black_box(());
     });
 }

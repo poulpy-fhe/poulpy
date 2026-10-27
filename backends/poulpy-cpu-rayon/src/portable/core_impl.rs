@@ -117,6 +117,8 @@ macro_rules! impl_digits_strided {
                 }
                 $helpers::apply(res, a, dsize, product_limbs, pmat, None, scratch);
             }
+
+            ::poulpy_core::impl_gglwe_product_step_hooks_reference!();
         }
     };
 }
