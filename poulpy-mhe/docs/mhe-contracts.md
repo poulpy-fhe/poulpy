@@ -14,7 +14,7 @@ trait, named
 `mhe_*_share_finalize` on the protocol's share type; the prefix keeps them apart
 from core's operations. Every
 operation that takes caller scratch has a matching `_tmp_bytes` query in the
-same trait.
+same trait, and panics before any draw or write when given less.
 
 ## Operation map
 

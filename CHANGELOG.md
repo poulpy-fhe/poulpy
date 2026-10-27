@@ -577,6 +577,8 @@
   `mhe-contracts.md` and the `oep` docs state that an override passes it.
 - `GLWEPatCompressed`, `GGLWEPatCompressed` and `GGLWEPat` implement `poulpy_core::TransferInto`, forwarding to their core layout, which the parity suite moves its fixtures through.
 - **Behaviour:** refusal messages on secret paths no longer print operand values: the aggregation of shares with different component ranks panics with the static message "invalid aggregation: component ranks differ" only, where it also printed left and right values.
+- **Behaviour:** a share generation or finalization given an arena below its `_tmp_bytes` query panics with `"invalid share: insufficient scratch"` or `"invalid finalization: insufficient scratch"` before any draw or write, where it panicked at a later carve with its output partly written; the three PAT finalizations and the public key finalization check too, and the evaluation key and public key share generations keep core's refusal.
+  Each functional suite runs its calls once one byte below their query and checks the outputs unchanged and the streams undrawn.
 
 ### `poulpy-blas`
 

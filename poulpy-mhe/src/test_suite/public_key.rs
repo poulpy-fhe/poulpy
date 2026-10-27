@@ -19,7 +19,9 @@ use poulpy_hal::{
     test_suite::vec_znx_backend_mut,
 };
 
-use super::fixtures::{BASE2K, K, PARTIES, RANK, SEEDS, collective_public_key, ideal_secret, party_secrets};
+use super::fixtures::{
+    BASE2K, K, PARTIES, RANK, SEEDS, assert_short_scratch_panics, collective_public_key, ideal_secret, party_secrets,
+};
 use crate::{api::GLWEPublicKeyMHEProtocol, layouts::MHEModuleAlloc};
 
 pub fn test_glwe_public_key<BE>(module: &Module<BE>)
@@ -55,7 +57,20 @@ where
     let mut acc = module.glwe_public_key_share_alloc_from_infos(&layout);
     let mut share = module.glwe_public_key_share_alloc_from_infos(&layout);
     for (i, dst) in [&mut acc, &mut share].into_iter().enumerate() {
-        with_scratch::<BE, _>(module.mhe_glwe_public_key_share_gen_tmp_bytes(&layout), |s| {
+        let gen_bytes = module.mhe_glwe_public_key_share_gen_tmp_bytes(&layout);
+        if i == 0 {
+            let before = dst.clone();
+            let mut source_xe = Source::new([70u8; 32]);
+            // The core generation, the body's only call, checks the same query.
+            assert_short_scratch_panics::<BE>(
+                gen_bytes,
+                "insufficient scratch for compressed GLWE public key generation",
+                |s| module.mhe_glwe_public_key_share_gen(dst, &parties[0].1, SEEDS[0], &mut source_xe, s),
+            );
+            assert!(*dst == before);
+            assert_eq!(source_xe.next_i64(), Source::new([70u8; 32]).next_i64());
+        }
+        with_scratch::<BE, _>(gen_bytes, |s| {
             module.mhe_glwe_public_key_share_gen(dst, &parties[i].1, SEEDS[0], &mut Source::new([70 + i as u8; 32]), s)
         });
     }
@@ -180,7 +195,13 @@ where
         decoded.read_from(&mut encoded.as_slice()).unwrap();
         assert!(decoded == aggregate);
         let mut collective: GLWEPublicKey<AlignedBuf, i64> = module.glwe_public_key_alloc_from_infos(&key_layout);
-        with_scratch::<BE, _>(module.mhe_glwe_public_key_share_finalize_tmp_bytes(), |s| {
+        let finalize_bytes = module.mhe_glwe_public_key_share_finalize_tmp_bytes();
+        let before: GLWEPublicKey<AlignedBuf, i64> = module.glwe_public_key_alloc_from_infos(&key_layout);
+        assert_short_scratch_panics::<BE>(finalize_bytes, "invalid finalization: insufficient scratch", |s| {
+            module.mhe_glwe_public_key_share_finalize(&mut collective, &decoded, s)
+        });
+        assert!(collective == before);
+        with_scratch::<BE, _>(finalize_bytes, |s| {
             module.mhe_glwe_public_key_share_finalize(&mut collective, &decoded, s)
         });
         assert_noise_tag(&collective, base, PARTIES, PARTIES as f64 * sigma2, key_k);

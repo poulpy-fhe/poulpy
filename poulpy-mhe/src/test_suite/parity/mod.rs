@@ -233,11 +233,10 @@ fn snapshot_source(label: &'static str, source: &mut Source) -> Snapshot {
     }
 }
 
-/// Fills a GLWE output with `0xA5` bytes and clears its canonical flag.
+/// Fills a GLWE output with `0xA5` bytes and clears its owner's canonical flag.
 fn poison_glwe<BE: Backend, A: GLWEToBackendMut<BE>>(a: &mut A) {
-    let mut view = a.to_backend_mut();
-    poison_view::<BE>(view.data_mut().data_mut());
-    view.set_canonical(false);
+    poison_view::<BE>(a.to_backend_mut().data_mut().data_mut());
+    a.set_canonical(false);
 }
 
 fn poison_glwe_compressed<BE: Backend, A: GLWECompressedToBackendMut<BE>>(a: &mut A) {
@@ -256,7 +255,7 @@ fn poison_ggsw<BE: Backend, A: GGSWToBackendMut<BE>>(a: &mut A) {
     let mut view = a.to_backend_mut();
     for row in 0..view.dnum().as_usize() {
         for col in 0..=view.rank().as_usize() {
-            poison_glwe::<BE, _>(&mut view.at_view_mut(row, col));
+            poison_view::<BE>(view.at_view_mut(row, col).data_mut().data_mut());
         }
     }
 }

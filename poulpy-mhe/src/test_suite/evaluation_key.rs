@@ -21,7 +21,10 @@ use poulpy_hal::{
 };
 
 use super::{
-    fixtures::{P, PARTIES, SEEDS, Secret, gglwe_layout, ideal_secret, party_secrets, secret_from_seed, secret_sum},
+    fixtures::{
+        P, PARTIES, SEEDS, Secret, assert_short_scratch_panics, gglwe_layout, ideal_secret, party_secrets, secret_from_seed,
+        secret_sum,
+    },
     pat::assert_gglwe_noise,
 };
 use crate::{
@@ -55,7 +58,22 @@ where
     for (i, ((sk_in, _), (sk_out, _))) in parties_in.iter().zip(&parties_out).enumerate() {
         let dst = if i == 0 { &mut acc } else { &mut share };
         let mut source_xe = Source::new([10 + i as u8; 32]);
-        with_scratch::<BE, _>(module.mhe_glwe_switching_key_share_gen_tmp_bytes(&layout), |s| {
+        let gen_bytes = module.mhe_glwe_switching_key_share_gen_tmp_bytes(&layout);
+        if i == 0 {
+            let before = dst.clone();
+            // The core encryption, the body's only call, checks the same query.
+            let expected = format!(
+                "scratch.available(): {} < GLWESwitchingKeyCompressedEncryptSk::glwe_switching_key_compressed_encrypt_sk_tmp_bytes: {gen_bytes}",
+                gen_bytes.saturating_sub(1)
+            );
+            assert_short_scratch_panics::<BE>(gen_bytes, &expected, |s| {
+                module.mhe_glwe_switching_key_share_gen(dst, sk_in, sk_out, SEEDS[0], &mut source_xe, s)
+            });
+            assert!(*dst == before);
+            assert_eq!(source_xe.next_i64(), Source::new([10u8; 32]).next_i64());
+            source_xe = Source::new([10u8; 32]);
+        }
+        with_scratch::<BE, _>(gen_bytes, |s| {
             module.mhe_glwe_switching_key_share_gen(dst, sk_in, sk_out, SEEDS[0], &mut source_xe, s)
         });
         if i > 0 {
@@ -64,7 +82,13 @@ where
     }
 
     let mut res: GLWESwitchingKey<AlignedBuf, i64> = module.glwe_switching_key_alloc_from_infos(&layout);
-    with_scratch::<BE, _>(module.mhe_glwe_switching_key_share_finalize_tmp_bytes(), |s| {
+    let finalize_bytes = module.mhe_glwe_switching_key_share_finalize_tmp_bytes();
+    let before = res.clone();
+    assert_short_scratch_panics::<BE>(finalize_bytes, "invalid finalization: insufficient scratch", |s| {
+        module.mhe_glwe_switching_key_share_finalize(&mut res, &acc, s)
+    });
+    assert!(res == before);
+    with_scratch::<BE, _>(finalize_bytes, |s| {
         module.mhe_glwe_switching_key_share_finalize(&mut res, &acc, s)
     });
     super::fixtures::assert_collective_metadata(&res, PARTIES);
@@ -100,7 +124,22 @@ where
     for (i, (sk, _)) in parties.iter().enumerate() {
         let dst = if i == 0 { &mut acc } else { &mut share };
         let mut source_xe = Source::new([10 + i as u8; 32]);
-        with_scratch::<BE, _>(module.mhe_glwe_automorphism_key_share_gen_tmp_bytes(&layout), |s| {
+        let gen_bytes = module.mhe_glwe_automorphism_key_share_gen_tmp_bytes(&layout);
+        if i == 0 {
+            let before = dst.clone();
+            // The core encryption, the body's only call, checks the same query.
+            let expected = format!(
+                "scratch.available(): {} < GLWEAutomorphismKeyCompressedEncryptSk::glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes: {gen_bytes}",
+                gen_bytes.saturating_sub(1)
+            );
+            assert_short_scratch_panics::<BE>(gen_bytes, &expected, |s| {
+                module.mhe_glwe_automorphism_key_share_gen(dst, P, sk, SEEDS[0], &mut source_xe, s)
+            });
+            assert!(*dst == before);
+            assert_eq!(source_xe.next_i64(), Source::new([10u8; 32]).next_i64());
+            source_xe = Source::new([10u8; 32]);
+        }
+        with_scratch::<BE, _>(gen_bytes, |s| {
             module.mhe_glwe_automorphism_key_share_gen(dst, P, sk, SEEDS[0], &mut source_xe, s)
         });
         if i > 0 {
@@ -109,7 +148,13 @@ where
     }
 
     let mut res: GLWEAutomorphismKey<AlignedBuf, i64> = module.glwe_automorphism_key_alloc_from_infos(&layout);
-    with_scratch::<BE, _>(module.mhe_glwe_automorphism_key_share_finalize_tmp_bytes(), |s| {
+    let finalize_bytes = module.mhe_glwe_automorphism_key_share_finalize_tmp_bytes();
+    let before = res.clone();
+    assert_short_scratch_panics::<BE>(finalize_bytes, "invalid finalization: insufficient scratch", |s| {
+        module.mhe_glwe_automorphism_key_share_finalize(&mut res, &acc, s)
+    });
+    assert!(res == before);
+    with_scratch::<BE, _>(finalize_bytes, |s| {
         module.mhe_glwe_automorphism_key_share_finalize(&mut res, &acc, s)
     });
     super::fixtures::assert_collective_metadata(&res, PARTIES);

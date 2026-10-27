@@ -23,8 +23,8 @@ use poulpy_hal::{
 };
 
 use super::fixtures::{
-    BASE2K, K, LOG_MESSAGE, PARTIES, SEEDS, Secret, assert_decrypts_to, bounded_integers, encrypt_integers, ggsw_layout,
-    glwe_layout_at, ideal_secret, secret_from_seed_at,
+    BASE2K, K, LOG_MESSAGE, PARTIES, SEEDS, Secret, assert_decrypts_to, assert_short_scratch_panics, bounded_integers,
+    encrypt_integers, ggsw_layout, glwe_layout_at, ideal_secret, secret_from_seed_at,
 };
 use crate::{
     api::{GGSWMHEProtocol, GLWESwitchingKeyMHEProtocol},
@@ -159,8 +159,18 @@ where
     for (i, (((_, sk), (_, u)), m)) in secrets.iter().zip(&ephemerals).zip(messages).enumerate() {
         let dst = if i == 0 { &mut acc } else { &mut share };
         let mut source_xe = Source::new(trial_seed(10 + i as u8, trial));
+        let gen_bytes = module.mhe_ggsw_share_gen_tmp_bytes(layout);
+        if i == 0 && trial == 0 {
+            let before = dst.clone();
+            assert_short_scratch_panics::<BE>(gen_bytes, "invalid share: insufficient scratch", |s| {
+                module.mhe_ggsw_share_gen(dst, m, sk, u, trial_seed(1, trial), &mut source_xe, s)
+            });
+            assert!(*dst == before);
+            assert_eq!(source_xe.next_i64(), Source::new(trial_seed(10, trial)).next_i64());
+            source_xe = Source::new(trial_seed(10, trial));
+        }
         // The message and the secret-derived products would be left in the scratch.
-        poulpy_core::test_suite::assert_wipes_scratch::<BE>(module.mhe_ggsw_share_gen_tmp_bytes(layout), |scratch| {
+        poulpy_core::test_suite::assert_wipes_scratch::<BE>(gen_bytes, |scratch| {
             module.mhe_ggsw_share_gen(dst, m, sk, u, trial_seed(1, trial), &mut source_xe, scratch)
         });
         if i > 0 {
@@ -180,6 +190,11 @@ where
             with_scratch::<BE, _>(finalize_bytes, |s| module.mhe_ggsw_share_finalize(&mut res, &acc, &key, s));
         });
         GGLWEPreparedToBackendMut::<BE>::set_noise(&mut key, saved_noise);
+        let before = res.clone();
+        assert_short_scratch_panics::<BE>(finalize_bytes, "invalid finalization: insufficient scratch", |s| {
+            module.mhe_ggsw_share_finalize(&mut res, &acc, &key, s)
+        });
+        assert!(res == before);
     }
     with_scratch::<BE, _>(finalize_bytes, |s| module.mhe_ggsw_share_finalize(&mut res, &acc, &key, s));
     assert_eq!(res.noise().unwrap().parties(), PARTIES as u64);

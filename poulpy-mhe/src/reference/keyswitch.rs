@@ -114,6 +114,7 @@ where
         let (base2k, k) = (res.base2k().as_usize(), res.k().as_usize());
         flood.assert_valid_for(base2k, k);
         let tmp_bytes = self.mhe_glwe_private_keyswitch_share_gen_tmp_bytes_reference(mask);
+        assert!(scratch.available() >= tmp_bytes, "invalid share: insufficient scratch");
         {
             let (mut pt_in, scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(mask);
             let (mut pt_out, mut scratch_2) = scratch_1.take_glwe_plaintext_scratch(mask);
@@ -182,6 +183,10 @@ where
         assert!(
             share.n() == ct.n() && share.base2k() == ct.base2k() && share.rank() == 0,
             "invalid finalization: share layout differs from the ciphertext body"
+        );
+        assert!(
+            scratch.available() >= self.mhe_glwe_private_keyswitch_share_finalize_tmp_bytes_reference(),
+            "invalid finalization: insufficient scratch"
         );
         self.glwe_add_into(res, ct, share);
         self.glwe_normalize_assign(res, scratch);
@@ -303,6 +308,7 @@ where
         flood.assert_valid_for(res.base2k().as_usize(), res.k().as_usize());
         super::assert_public_key_distribution::<BE, _>(pk_out);
         let tmp_bytes = self.mhe_glwe_public_keyswitch_share_gen_tmp_bytes_reference(mask, &*res, pk_out);
+        assert!(scratch.available() >= tmp_bytes, "invalid share: insufficient scratch");
         {
             let (mut pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(mask);
             self.glwe_mask_inner_product(&mut pt, mask, sk_in, &mut scratch_1);
@@ -356,6 +362,10 @@ where
         assert!(
             share.n() == res.n() && share.rank() == res.rank(),
             "invalid finalization: share and output layouts differ"
+        );
+        assert!(
+            scratch.available() >= self.mhe_glwe_public_keyswitch_share_finalize_tmp_bytes_reference(),
+            "invalid finalization: insufficient scratch"
         );
         self.glwe_normalize(res, share, scratch);
         res.set_canonical(false);

@@ -110,6 +110,7 @@ where
         let base2k = public.base2k().as_usize();
         flood.assert_valid_for(base2k, k);
         let tmp_bytes = self.mhe_glwe_enc_to_share_share_gen_tmp_bytes_reference(mask);
+        assert!(scratch.available() >= tmp_bytes, "invalid share: insufficient scratch");
         {
             let (mut pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(mask);
             self.glwe_mask_inner_product(&mut pt, mask, sk, &mut scratch_1);
@@ -177,10 +178,12 @@ where
             secret.rank().as_usize() == 0 && public.rank().as_usize() == 0,
             "invalid finalization: additive shares must have rank zero"
         );
+        let tmp_bytes = self.mhe_glwe_enc_to_share_share_finalize_tmp_bytes_reference();
+        assert!(scratch.available() >= tmp_bytes, "invalid finalization: insufficient scratch");
         self.glwe_add_assign(secret, public);
         self.vec_znx_add_assign(secret.to_backend_mut().data_mut(), 0, ct.to_backend_ref().data(), 0);
         self.glwe_normalize_assign(secret, scratch);
-        scratch.wipe(self.mhe_glwe_enc_to_share_share_finalize_tmp_bytes_reference());
+        scratch.wipe(tmp_bytes);
     }
 }
 
@@ -247,6 +250,7 @@ where
         let infos = res.glwe_layout();
         // Encryption samples directly on the output's grid, down to its low bits.
         let tmp_bytes = self.mhe_glwe_share_to_enc_share_gen_tmp_bytes_reference(&infos, secret);
+        assert!(scratch.available() >= tmp_bytes, "invalid share: insufficient scratch");
         {
             let (mut pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(&infos);
             self.glwe_copy(&mut pt, secret, &mut scratch_1);

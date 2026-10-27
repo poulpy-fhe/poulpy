@@ -139,6 +139,7 @@ where
             "invalid share: ephemeral secret rank differs from the secret's"
         );
         let tmp_bytes: usize = self.mhe_ggsw_share_gen_tmp_bytes_reference(&*res);
+        assert!(scratch.available() >= tmp_bytes, "invalid share: insufficient scratch");
         {
             let (n, r) = (res.n().as_usize(), rank.as_usize());
             let (dnum, k_digit, base2k) = (res.dnum().as_usize(), res.k_digit().as_usize(), res.base2k().as_usize());
@@ -262,6 +263,10 @@ where
                 _ => true,
             },
             "invalid finalization: output key provenance differs"
+        );
+        assert!(
+            scratch.available() >= self.mhe_ggsw_share_finalize_tmp_bytes_reference(&*res, key),
+            "invalid finalization: insufficient scratch"
         );
         let metadata = fresh_ggsw_metadata::<BE, K>(share, key);
         let key = key.to_backend_ref();

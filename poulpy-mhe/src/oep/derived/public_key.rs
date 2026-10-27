@@ -51,6 +51,10 @@ pub(crate) fn mhe_glwe_public_key_share_finalize_derived<BE: HalMatZnxImpl + Enc
         res.glwe_layout() == share.glwe_layout(),
         "invalid finalization: layouts differ"
     );
+    assert!(
+        scratch.available() >= BE::mat_znx_normalize_tmp_bytes(module),
+        "invalid finalization: insufficient scratch"
+    );
     let (base2k, k): (usize, usize) = (res.base2k().into(), res.k().into());
     BE::mat_znx_normalize(
         module,

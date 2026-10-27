@@ -20,8 +20,8 @@ use poulpy_hal::{
 };
 
 use super::fixtures::{
-    BASE2K, K, PARTIES, RANK, Secret, assert_panics_with, collective_public_key, ideal_secret, party_secrets, secret_from_seed,
-    secret_from_seed_at,
+    BASE2K, K, PARTIES, RANK, Secret, assert_panics_with, assert_short_scratch_panics, collective_public_key, ideal_secret,
+    party_secrets, secret_from_seed, secret_from_seed_at,
 };
 use crate::{
     api::{GLWEPrivateKeyswitchMHEProtocol, GLWEPublicKeyMHEProtocol, GLWEPublicKeyswitchMHEProtocol},
@@ -72,13 +72,20 @@ where
             let dst = if i == 0 { &mut acc } else { &mut share };
             dst.inner.set_canonical(false);
             let mut source_smudge = Source::new([10 + i as u8; 32]);
+            let gen_bytes = module.mhe_glwe_private_keyswitch_share_gen_tmp_bytes(&layout);
+            if i == 0 {
+                let before = dst.clone();
+                assert_short_scratch_panics::<BE>(gen_bytes, "invalid share: insufficient scratch", |s| {
+                    module.mhe_glwe_private_keyswitch_share_gen(dst, &mask, sk_in, sk_out_i, FLOOD, &mut source_smudge, s)
+                });
+                assert!(*dst == before);
+                assert_eq!(source_smudge.next_i64(), Source::new([10u8; 32]).next_i64());
+                source_smudge = Source::new([10u8; 32]);
+            }
             // The inner products with both secrets would be left in the scratch.
-            poulpy_core::test_suite::assert_wipes_scratch::<BE>(
-                module.mhe_glwe_private_keyswitch_share_gen_tmp_bytes(&layout),
-                |scratch| {
-                    module.mhe_glwe_private_keyswitch_share_gen(dst, &mask, sk_in, sk_out_i, FLOOD, &mut source_smudge, scratch)
-                },
-            );
+            poulpy_core::test_suite::assert_wipes_scratch::<BE>(gen_bytes, |scratch| {
+                module.mhe_glwe_private_keyswitch_share_gen(dst, &mask, sk_in, sk_out_i, FLOOD, &mut source_smudge, scratch)
+            });
             assert!(dst.inner.is_canonical());
             if i > 0 {
                 module.mhe_glwe_private_keyswitch_share_aggregate(&mut acc, &share);
@@ -91,7 +98,13 @@ where
         super::fixtures::assert_noise_components(&acc, &[PARTIES as f64 * (SIGMA_FLOOD.powi(2) + rounding)]);
 
         let mut res: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
-        with_scratch::<BE, _>(module.mhe_glwe_private_keyswitch_share_finalize_tmp_bytes(), |s| {
+        let finalize_bytes = module.mhe_glwe_private_keyswitch_share_finalize_tmp_bytes();
+        let before = res.clone();
+        assert_short_scratch_panics::<BE>(finalize_bytes, "invalid finalization: insufficient scratch", |s| {
+            module.mhe_glwe_private_keyswitch_share_finalize(&mut res, &ct, &acc, s)
+        });
+        assert!(res == before);
+        with_scratch::<BE, _>(finalize_bytes, |s| {
             module.mhe_glwe_private_keyswitch_share_finalize(&mut res, &ct, &acc, s)
         });
         assert_eq!(res.noise(), None);
@@ -166,6 +179,28 @@ where
             let mut source_xu = Source::new([20 + i as u8; 32]);
             let mut source_xe = Source::new([10 + i as u8; 32]);
             let mut source_smudge = Source::new([30 + i as u8; 32]);
+            if i == 0 {
+                let before = dst.clone();
+                assert_short_scratch_panics::<BE>(share_bytes, "invalid share: insufficient scratch", |s| {
+                    module.mhe_glwe_public_keyswitch_share_gen(
+                        dst,
+                        &mask,
+                        sk_in,
+                        &pk_out,
+                        FLOOD,
+                        &mut source_xu,
+                        &mut source_xe,
+                        &mut source_smudge,
+                        s,
+                    )
+                });
+                assert!(*dst == before);
+                assert_eq!(source_xu.next_i64(), Source::new([20u8; 32]).next_i64());
+                assert_eq!(source_xe.next_i64(), Source::new([10u8; 32]).next_i64());
+                assert_eq!(source_smudge.next_i64(), Source::new([30u8; 32]).next_i64());
+                (source_xu, source_xe, source_smudge) =
+                    (Source::new([20u8; 32]), Source::new([10u8; 32]), Source::new([30u8; 32]));
+            }
             // The inner product with the input secret would be left in the scratch.
             poulpy_core::test_suite::assert_wipes_scratch::<BE>(share_bytes, |scratch| {
                 module.mhe_glwe_public_keyswitch_share_gen(
@@ -198,7 +233,13 @@ where
         super::fixtures::assert_collective_metadata(&acc, PARTIES);
 
         let mut res: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&share_layout);
-        with_scratch::<BE, _>(module.mhe_glwe_public_keyswitch_share_finalize_tmp_bytes(), |s| {
+        let finalize_bytes = module.mhe_glwe_public_keyswitch_share_finalize_tmp_bytes();
+        let before = res.clone();
+        assert_short_scratch_panics::<BE>(finalize_bytes, "invalid finalization: insufficient scratch", |s| {
+            module.mhe_glwe_public_keyswitch_share_finalize(&mut res, &ct, &acc, s)
+        });
+        assert!(res == before);
+        with_scratch::<BE, _>(finalize_bytes, |s| {
             module.mhe_glwe_public_keyswitch_share_finalize(&mut res, &ct, &acc, s)
         });
         assert_eq!(res.noise(), None);

@@ -20,8 +20,8 @@ use poulpy_hal::{
 };
 
 use super::fixtures::{
-    BASE2K, K, PARTIES, RANK, SEEDS, assert_panics_with, collective_public_key, gglwe_layout, ideal_secret, party_messages,
-    party_secrets, secret_sum,
+    BASE2K, K, PARTIES, RANK, SEEDS, assert_panics_with, assert_short_scratch_panics, collective_public_key, gglwe_layout,
+    ideal_secret, party_messages, party_secrets, secret_sum,
 };
 use crate::{
     api::{GGLWEPatCompressedOps, GGLWEPatOps, GLWEPatCompressedOps, GLWEPublicKeyMHEProtocol},
@@ -119,9 +119,13 @@ where
     assert!(acc == before);
 
     let mut res: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
-    with_scratch::<BE, _>(module.glwe_pat_compressed_finalize_tmp_bytes(), |s| {
+    let finalize_bytes = module.glwe_pat_compressed_finalize_tmp_bytes();
+    let before = res.clone();
+    assert_short_scratch_panics::<BE>(finalize_bytes, "invalid finalization: insufficient scratch", |s| {
         module.glwe_pat_compressed_finalize(&mut res, &acc, s)
     });
+    assert!(res == before);
+    with_scratch::<BE, _>(finalize_bytes, |s| module.glwe_pat_compressed_finalize(&mut res, &acc, s));
     super::fixtures::assert_collective_metadata(&res, PARTIES);
     assert!(res.is_canonical());
     let noise: f64 = module
@@ -169,9 +173,13 @@ where
     }
 
     let mut res: GGLWE<AlignedBuf, i64> = module.gglwe_alloc_from_infos(&layout);
-    with_scratch::<BE, _>(module.gglwe_pat_compressed_finalize_tmp_bytes(), |s| {
+    let finalize_bytes = module.gglwe_pat_compressed_finalize_tmp_bytes();
+    let before = res.clone();
+    assert_short_scratch_panics::<BE>(finalize_bytes, "invalid finalization: insufficient scratch", |s| {
         module.gglwe_pat_compressed_finalize(&mut res, &acc, s)
     });
+    assert!(res == before);
+    with_scratch::<BE, _>(finalize_bytes, |s| module.gglwe_pat_compressed_finalize(&mut res, &acc, s));
     super::fixtures::assert_collective_metadata(&res, PARTIES);
     assert_gglwe_noise(module, &res, &pt_want, &sk_ideal, &mut scratch);
 }
@@ -268,9 +276,13 @@ where
     }
 
     let mut res: GGLWE<AlignedBuf, i64> = module.gglwe_alloc_from_infos(&layout);
-    with_scratch::<BE, _>(module.gglwe_pat_finalize_tmp_bytes(), |s| {
+    let finalize_bytes = module.gglwe_pat_finalize_tmp_bytes();
+    let before = res.clone();
+    assert_short_scratch_panics::<BE>(finalize_bytes, "invalid finalization: insufficient scratch", |s| {
         module.gglwe_pat_finalize(&mut res, &acc, s)
     });
+    assert!(res == before);
+    with_scratch::<BE, _>(finalize_bytes, |s| module.gglwe_pat_finalize(&mut res, &acc, s));
     super::fixtures::assert_collective_metadata(&res, PARTIES);
     // The public key test variance, times PARTIES independent encryptions.
     let n = module.n() as f64;

@@ -16,9 +16,9 @@ use poulpy_hal::{
 };
 
 use super::fixtures::{
-    BASE2K, K, K_OUT, LOG_MESSAGE, PARTIES, SEED_XE, SEEDS, assert_flooded_integers, assert_panics_with, bounded_integers,
-    encrypt_integers, glwe_layout_at, ideal_secret, integer_plaintext, party_secrets, plaintext_integers, plaintext_state,
-    secret_from_seed,
+    BASE2K, K, K_OUT, LOG_MESSAGE, PARTIES, SEED_XE, SEEDS, assert_flooded_integers, assert_panics_with,
+    assert_short_scratch_panics, bounded_integers, encrypt_integers, glwe_layout_at, ideal_secret, integer_plaintext,
+    party_secrets, plaintext_integers, plaintext_state, secret_from_seed,
 };
 use crate::{
     api::{GLWEEncToShareMHEProtocol, GLWEShareToEncMHEProtocol},
@@ -60,22 +60,30 @@ where
                 dst.inner.set_canonical(false);
                 let mut source_xm = Source::new([60 + i as u8; 32]);
                 let mut source_smudge = Source::new([90 + i as u8; 32]);
+                let gen_bytes = module.mhe_glwe_enc_to_share_share_gen_tmp_bytes(&layout);
+                if i == 0 {
+                    let (public_before, secret_before) = (dst.clone(), plaintext_state(secret));
+                    assert_short_scratch_panics::<BE>(gen_bytes, "invalid share: insufficient scratch", |s| {
+                        module.mhe_glwe_enc_to_share_share_gen(dst, secret, &ct, sk, flood, &mut source_xm, &mut source_smudge, s)
+                    });
+                    assert!(*dst == public_before && plaintext_state(secret) == secret_before);
+                    assert_eq!(source_xm.next_i64(), Source::new([60u8; 32]).next_i64());
+                    assert_eq!(source_smudge.next_i64(), Source::new([90u8; 32]).next_i64());
+                    (source_xm, source_smudge) = (Source::new([60u8; 32]), Source::new([90u8; 32]));
+                }
                 // The inner product with the party's secret would be left in the scratch.
-                poulpy_core::test_suite::assert_wipes_scratch::<BE>(
-                    module.mhe_glwe_enc_to_share_share_gen_tmp_bytes(&layout),
-                    |scratch| {
-                        module.mhe_glwe_enc_to_share_share_gen(
-                            dst,
-                            secret,
-                            &ct,
-                            sk,
-                            flood,
-                            &mut source_xm,
-                            &mut source_smudge,
-                            scratch,
-                        )
-                    },
-                );
+                poulpy_core::test_suite::assert_wipes_scratch::<BE>(gen_bytes, |scratch| {
+                    module.mhe_glwe_enc_to_share_share_gen(
+                        dst,
+                        secret,
+                        &ct,
+                        sk,
+                        flood,
+                        &mut source_xm,
+                        &mut source_smudge,
+                        scratch,
+                    )
+                });
                 assert!(dst.inner.is_canonical());
                 if i > 0 {
                     module.mhe_glwe_enc_to_share_share_aggregate(&mut acc, &public);
@@ -89,11 +97,16 @@ where
                 assert!(mask.iter().any(|x| x & 1 == 1));
             }
 
+            let finalize_bytes = module.mhe_glwe_enc_to_share_share_finalize_tmp_bytes();
+            let before = plaintext_state(&secrets[0]);
+            assert_short_scratch_panics::<BE>(finalize_bytes, "invalid finalization: insufficient scratch", |s| {
+                module.mhe_glwe_enc_to_share_share_finalize(&mut secrets[0], &ct, &acc, s)
+            });
+            assert!(plaintext_state(&secrets[0]) == before);
             // Normalization can leave carries depending on the private share in scratch.
-            poulpy_core::test_suite::assert_wipes_scratch::<BE>(
-                module.mhe_glwe_enc_to_share_share_finalize_tmp_bytes(),
-                |scratch| module.mhe_glwe_enc_to_share_share_finalize(&mut secrets[0], &ct, &acc, scratch),
-            );
+            poulpy_core::test_suite::assert_wipes_scratch::<BE>(finalize_bytes, |scratch| {
+                module.mhe_glwe_enc_to_share_share_finalize(&mut secrets[0], &ct, &acc, scratch)
+            });
             let mut sum = vec![0i64; module.n()];
             for secret in &secrets {
                 for (s, x) in sum.iter_mut().zip(plaintext_integers(secret)) {
@@ -135,18 +148,33 @@ where
             let dst = if i == 0 { &mut acc } else { &mut share };
             let secret = integer_plaintext(module, &in_layout, data);
             let mut source_xe = Source::new([80 + i as u8; 32]);
+            let gen_bytes = module.mhe_glwe_share_to_enc_share_gen_tmp_bytes(&out_layout, &in_layout);
+            if i == 0 {
+                let before = dst.clone();
+                assert_short_scratch_panics::<BE>(gen_bytes, "invalid share: insufficient scratch", |s| {
+                    module.mhe_glwe_share_to_enc_share_gen(dst, &secret, sk, SEEDS[0], &mut source_xe, s)
+                });
+                assert!(*dst == before);
+                assert_eq!(source_xe.next_i64(), Source::new([80u8; 32]).next_i64());
+                source_xe = Source::new([80u8; 32]);
+            }
             // The party's raised share would be left in the scratch.
-            poulpy_core::test_suite::assert_wipes_scratch::<BE>(
-                module.mhe_glwe_share_to_enc_share_gen_tmp_bytes(&out_layout, &in_layout),
-                |scratch| module.mhe_glwe_share_to_enc_share_gen(dst, &secret, sk, SEEDS[0], &mut source_xe, scratch),
-            );
+            poulpy_core::test_suite::assert_wipes_scratch::<BE>(gen_bytes, |scratch| {
+                module.mhe_glwe_share_to_enc_share_gen(dst, &secret, sk, SEEDS[0], &mut source_xe, scratch)
+            });
             if i > 0 {
                 module.mhe_glwe_share_to_enc_share_aggregate(&mut acc, &share);
             }
         }
 
         let mut ct: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&out_layout);
-        with_scratch::<BE, _>(module.mhe_glwe_share_to_enc_share_finalize_tmp_bytes(), |s| {
+        let finalize_bytes = module.mhe_glwe_share_to_enc_share_finalize_tmp_bytes();
+        let before = ct.clone();
+        assert_short_scratch_panics::<BE>(finalize_bytes, "invalid finalization: insufficient scratch", |s| {
+            module.mhe_glwe_share_to_enc_share_finalize(&mut ct, &acc, s)
+        });
+        assert!(ct == before);
+        with_scratch::<BE, _>(finalize_bytes, |s| {
             module.mhe_glwe_share_to_enc_share_finalize(&mut ct, &acc, s)
         });
         super::fixtures::assert_collective_metadata(&ct, PARTIES);

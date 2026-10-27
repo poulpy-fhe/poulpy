@@ -325,6 +325,17 @@ pub(crate) fn assert_panics_with(expected: &str, f: impl FnOnce()) {
     assert_eq!(message, Some(expected));
 }
 
+/// Runs `call` one byte below its query `bytes`, expecting `expected`; a zero query has no shorter arena.
+pub(crate) fn assert_short_scratch_panics<BE: Backend>(
+    bytes: usize,
+    expected: &str,
+    call: impl FnOnce(&mut poulpy_hal::layouts::ScratchArena<'_, BE>),
+) {
+    if let Some(short) = bytes.checked_sub(1) {
+        assert_panics_with(expected, || poulpy_core::test_suite::with_scratch::<BE, _>(short, call));
+    }
+}
+
 /// The aggregate preserves the base law and records the number of independent
 /// secret contributions, including after conversion to a prepared key.
 pub(crate) fn assert_collective_metadata<A: poulpy_core::layouts::LWEInfos>(infos: &A, parties: usize) {

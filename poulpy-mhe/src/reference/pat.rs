@@ -57,6 +57,10 @@ where
         P: GLWECompressedToBackendRef<BE> + GLWECompressedSeed + GLWEInfos,
     {
         assert!(res.glwe_layout() == pat.glwe_layout(), "invalid finalization: layouts differ");
+        assert!(
+            scratch.available() >= self.glwe_pat_compressed_finalize_tmp_bytes_reference(),
+            "invalid finalization: insufficient scratch"
+        );
         res.set_canonical(true);
         {
             let (base2k, k): (usize, usize) = (res.base2k().into(), res.k().into());
@@ -116,6 +120,10 @@ where
             res.gglwe_layout() == pat.gglwe_layout(),
             "invalid finalization: layouts differ"
         );
+        assert!(
+            scratch.available() >= self.gglwe_pat_compressed_finalize_tmp_bytes_reference(),
+            "invalid finalization: insufficient scratch"
+        );
         self.decompress_gglwe(res, pat);
         let (base2k, k): (usize, usize) = (res.base2k().into(), res.k().into());
         let mut res_be = res.to_backend_mut();
@@ -170,6 +178,10 @@ where
         assert!(
             res.gglwe_layout() == pat.gglwe_layout(),
             "invalid finalization: layouts differ"
+        );
+        assert!(
+            scratch.available() >= self.gglwe_pat_finalize_tmp_bytes_reference(),
+            "invalid finalization: insufficient scratch"
         );
         let (res_base2k, res_k, pat_base2k): (usize, usize, usize) = (res.base2k().into(), res.k().into(), pat.base2k().into());
         let cols: usize = res.rank_out().as_usize() + 1;

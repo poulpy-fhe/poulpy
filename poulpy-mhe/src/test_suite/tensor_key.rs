@@ -19,7 +19,8 @@ use poulpy_hal::{
 
 use super::{
     fixtures::{
-        BASE2K, DNUM, DSIZE, PARTIES, RANK, collective_public_key, ideal_secret, party_secrets, secret_from_seed, secret_sum,
+        BASE2K, DNUM, DSIZE, PARTIES, RANK, assert_short_scratch_panics, collective_public_key, ideal_secret, party_secrets,
+        secret_from_seed, secret_sum,
     },
     pat::assert_gglwe_noise_within,
 };
@@ -66,18 +67,34 @@ where
             let dst = if i == 0 { &mut acc } else { &mut share };
             let mut source_xu = Source::new([20 + i as u8; 32]);
             let mut source_xe = Source::new([10 + i as u8; 32]);
+            let gen_bytes = module.mhe_glwe_tensor_key_share_gen_tmp_bytes(&layout, &pk_layout);
+            if i == 0 {
+                let before = dst.clone();
+                assert_short_scratch_panics::<BE>(gen_bytes, "invalid share: insufficient scratch", |s| {
+                    module.mhe_glwe_tensor_key_share_gen(dst, sk, &pk, &mut source_xu, &mut source_xe, s)
+                });
+                assert!(*dst == before);
+                assert_eq!(source_xu.next_i64(), Source::new([20u8; 32]).next_i64());
+                assert_eq!(source_xe.next_i64(), Source::new([10u8; 32]).next_i64());
+                (source_xu, source_xe) = (Source::new([20u8; 32]), Source::new([10u8; 32]));
+            }
             // The secret components and their encryptions would be left in the scratch.
-            poulpy_core::test_suite::assert_wipes_scratch::<BE>(
-                module.mhe_glwe_tensor_key_share_gen_tmp_bytes(&layout, &pk_layout),
-                |scratch| module.mhe_glwe_tensor_key_share_gen(dst, sk, &pk, &mut source_xu, &mut source_xe, scratch),
-            );
+            poulpy_core::test_suite::assert_wipes_scratch::<BE>(gen_bytes, |scratch| {
+                module.mhe_glwe_tensor_key_share_gen(dst, sk, &pk, &mut source_xu, &mut source_xe, scratch)
+            });
             if i > 0 {
                 module.mhe_glwe_tensor_key_share_aggregate(&mut acc, &share);
             }
         }
 
         let mut res: GLWETensorKey<AlignedBuf, i64> = module.glwe_tensor_key_alloc_from_infos(&layout);
-        with_scratch::<BE, _>(module.mhe_glwe_tensor_key_share_finalize_tmp_bytes(), |s| {
+        let finalize_bytes = module.mhe_glwe_tensor_key_share_finalize_tmp_bytes();
+        let before = res.clone();
+        assert_short_scratch_panics::<BE>(finalize_bytes, "invalid finalization: insufficient scratch", |s| {
+            module.mhe_glwe_tensor_key_share_finalize(&mut res, &acc, s)
+        });
+        assert!(res == before);
+        with_scratch::<BE, _>(finalize_bytes, |s| {
             module.mhe_glwe_tensor_key_share_finalize(&mut res, &acc, s)
         });
         super::fixtures::assert_collective_metadata(&res, PARTIES);
