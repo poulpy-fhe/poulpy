@@ -48,9 +48,10 @@ the same underlying `*_ops` tables.
 | [`hal`](src/hal) | `poulpy-hal` trait operations: `vec_znx`, `vec_znx_dft`, `vec_znx_big`, `svp`, `vmp`, `convolution`, `reim` |
 | [`core`](src/core) | `poulpy-core` GLWE/GGSW operations: encryption, decryption, keyswitch, automorphism, external product, tensoring |
 | [`schemes`](src/schemes) | `poulpy-ckks` (CKKS) and `poulpy-bin-fhe` (blind rotation, circuit bootstrapping) |
-| [`blas`](src/blas) | `poulpy-blas` encrypted matrix operations on one `d x d` block: `blas_matmul` by a dense and by a replicated right factor, `blas_matmul_pt_right` and `blas_matmul_pt_left` under `Diagonal` and `Jkls`, `blas_transpose` |
+| [`blas`](src/blas) | `poulpy-blas` encrypted matrix operations on one `d x d` block: `blas_matmul` by a dense and by a replicated right factor, `blas_matmul_pt_right` and `blas_matmul_pt_left` under `Diagonal` and `Jkls`, `blas_transpose`, `blas_sum_rows`, `blas_sum_cols` and `blas_rotate_rows` of a replicated grid |
+| [`libm`](src/libm) | `poulpy-libm` function plans on one ciphertext: `ckks_exp`, `ckks_log`, `ckks_pow` |
 
-Each of `hal`, `core`, `schemes` and `blas` has its own `params` submodule (e.g.
+Each of `hal`, `core`, `schemes`, `blas` and `libm` has its own `params` submodule (e.g.
 [`hal::params`](src/hal/params.rs)) holding that layer's sweep-parameter
 structs and `default_bench_params_*` builders, so every backend sweeps the
 same reasonable defaults.
@@ -60,7 +61,7 @@ same reasonable defaults.
 For a backend implementing the full HAL/core/CKKS/bin-fhe surface, add
 `poulpy-bench` as a dev-dependency and register the ready-made `bench_*`
 functions directly in `criterion_group!` — each layer's `suites` module
-(`hal::suites`, `core::suites`, `schemes::suites`, and `blas::suites` for the
+(`hal::suites`, `core::suites`, `schemes::suites`, `libm::suites`, and `blas::suites` for the
 BLAS layer, see [below](#blas-benchmarks)) exposes them for all three tiers:
 
 - `bench_hal_ckks`/`bench_hal_binfhe`, `bench_core_ckks`/`bench_core_binfhe`,
@@ -172,6 +173,9 @@ cargo bench -p poulpy-cpu-portable --bench standard --features enable-ckks -- --
 `n15_d35_k180_p18_c2s` (four recovered levels, 18-bit minimum precision)
 and the logN16 presets. The reference, AVX and AVX-512 `full` binaries register this runner.
 Each case checks its measured precision against the preset's advertised minimum.
+`schemes::suites::bench_ckks_bootstrapping_with_client::<BE, BC>` runs the same cases on `BE` with the
+secret, keys and ciphertexts of a client backend `BC`, for an evaluating backend that generates no keys;
+it times the bootstrap on `BE` to completion.
 
 ```sh
 # List the logN15 cases without allocating bootstrapping keys
@@ -179,6 +183,20 @@ cargo bench -p poulpy-cpu-portable --bench full --features enable-ckks -- n15_d3
 
 # Run the logN15 preset on the portable NTT backend
 cargo bench -p poulpy-cpu-portable --bench full --features enable-ckks -- 'NTT4x30Portable/ckks/ckks_bootstrapping/n15_d35_k180_p18_c2s'
+```
+
+### libm benchmarks
+
+`libm::suites` benchmarks `poulpy-libm` on NTT backends, on one ciphertext at radix `base2k` 52 and scale `log_delta = 40`: `ckks_exp` and `ckks_log` of plans on `[0.5, 1.5]`, and `ckks_pow` of a plan for bases in `[0.5, 1.5]` and exponents in `[-1, 1]`, all at default options.
+The sweep is over the ring degree: light `2^14`, standard `2^13`, `2^14` and `2^15`, full adds `2^16`.
+
+A runner builds its point once: the plan on a host module, transferred to the backend, the tensor key, an input and a destination filled on the backend at the width the plan needs, and the scratch its `*_tmp_bytes` reports.
+The timed circuit does not depend on the slot values, so the inputs are uniform fills and no precision is checked.
+The tier binaries register `bench_libm::<Ntt>` in their main group.
+
+```sh
+# The light tier of the libm layer only
+cargo bench -p poulpy-cpu-portable --bench light --features enable-ckks,enable-bin-fhe -- libm
 ```
 
 ### BLAS benchmarks
@@ -193,6 +211,10 @@ and scales `log_delta = p = 40`:
 | `blas_matmul_pt_right_diagonal`, `blas_matmul_pt_right_jkls` | one public matrix shared by the batch, on the right |
 | `blas_matmul_pt_left_diagonal`, `blas_matmul_pt_left_jkls` | one public matrix shared by the batch, on the left |
 | `blas_transpose` | |
+| `blas_sum_rows` | distinct matrices per matrix slot (not run where one matrix fills the slots) |
+| `blas_sum_rows_replicated` | one matrix whose compact encryption proves it, summed with no projection |
+| `blas_sum_cols` | the batch's matrices |
+| `blas_rotate_rows_replicated` | by one row, one matrix whose compact encryption proves it, a rotation at no scale |
 
 The sweep is over the ring degree `N` and the block dimension `d`, which fill the `N / 2` slots with `N / (2 d^2)`
 matrices: light `(2^14, 64)`; standard `(2^13, 32)`, `(2^14, 64)`, `(2^15, 128)`; full adds `(2^15, 64)`, `(2^16, 64)`
@@ -240,6 +262,11 @@ into 3 (rows ending in `drop=48` and `drop=48/a_size=4`), and one many-limb row:
 32 limbs, base 50 (`16384x(1x32)`). The Criterion
 runners `runner_vec_znx_normalize_sweep` and
 `runner_vec_znx_big_normalize_sweep` accept these parameters.
+
+`hal::suites::bench_normalization` also sweeps `vec_znx_gadget_decompose` over the 27-limb key-switch
+columns of a bootstrap at radix 53, whole-limb and off a limb, at degrees `{4096, 8192, 16384, 65536}`
+(`default_bench_params_gadget_decompose`, ids ending in `base2k=53/k_digit=..`), through
+`runner_vec_znx_gadget_decompose`.
 
 The `normalize` benchmark compares small and big normalization on FFT64 and
 NTT4x30, with reference and AVX2 backends, for 4,800 cases. Input generation

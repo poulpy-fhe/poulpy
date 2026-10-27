@@ -12,16 +12,15 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSResult as Result, GLWEPlaintextInfos, SetCKKSInfos, SlotLayout, SlotsKind,
     api::{CKKSAddOps, CKKSMulOps},
-    ensure_plaintext_degree_embeds,
+    ensure_plaintext_degree_embeds, get_mul_ct_params,
     layouts::{CKKSPreparedLeft, CKKSPreparedRight},
+    mul_pt_params_raw,
     oep::derived::dot_product::{accumulate, check_lengths},
-    reference::mul::{
-        MulStamp, StampOrder, check_prepared_layout, get_mul_ct_params, mul_one_pass, mul_pt_params_raw, tensor_mul_core,
-    },
+    reference::mul::{MulStamp, StampOrder, check_prepared_layout, mul_one_pass, tensor_mul_core},
 };
 
 /// The reference algorithms of [`CKKSDotProductImpl`](crate::oep::CKKSDotProductImpl), which
-/// `impl_ckks_dot_product_reference!` forwards to and an override can call for the methods it keeps.
+/// `impl_ckks_dot_product_reference_full!` forwards to and an override can call for the methods it keeps.
 pub trait CKKSDotProductReference<BE: Backend>: Sized {
     fn ckks_dot_product_ct_tmp_bytes_reference<R, A, B, T>(&self, n: usize, res: &R, a: &A, b: &B, tsk: &T) -> usize
     where
@@ -218,6 +217,7 @@ pub trait CKKSDotProductReference<BE: Backend>: Sized {
         let (a0, b0, base2k) = (a[0], b[0], dst.base2k());
         ensure_plaintext_degree_embeds(OP, dst.n().as_usize(), b0.n().as_usize(), BE::MIN_DEGREE)?;
         let (log_budget, log_delta, cnv_offset) = mul_pt_params_raw(
+            OP,
             dst.k().as_usize(),
             a0.log_delta(),
             a0.log_budget(),
@@ -297,7 +297,7 @@ where
             k: tensor_layout.k.into(),
             source,
         })?;
-    let (log_budget, log_delta, cnv_offset) = get_mul_ct_params(dst, a[0], b[0])?;
+    let (log_budget, log_delta, cnv_offset) = get_mul_ct_params(op, dst, a[0], b[0])?;
     // The eager sum's label and slot kind: the smallest label and the join over every operand.
     let metas = || a.iter().map(|ct| ct.meta()).chain(b.iter().map(|ct| ct.meta()));
     let slot_layout = a[0].slot_layout();

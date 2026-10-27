@@ -1,19 +1,11 @@
-use crate::layouts::operand_degree;
 use poulpy_hal::AlignedBuf;
-use poulpy_hal::{
-    api::VecZnxCopy,
-    layouts::{
-        Backend, Data, HostDataMut, HostDataRef, Module, ReaderFrom, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef, WriterTo,
-        vec_znx_alloc_zeroed,
-    },
+use poulpy_hal::layouts::{
+    Backend, Data, HostDataMut, HostDataRef, ReaderFrom, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef, WriterTo,
+    vec_znx_alloc_zeroed,
 };
 
-use crate::{
-    api::GLWEMaskFill,
-    layouts::{
-        Base2K, Degree, GLWEInfos, GLWEPlaintextInfos, GLWEPlaintextMeta, GLWEToBackendMut, GetDegree, LWEInfos, Rank, SetBase2k,
-        SetGLWEPlaintextInfos, TorusPrecision,
-    },
+use crate::layouts::{
+    Base2K, Degree, GLWEInfos, GLWEPlaintextInfos, GLWEPlaintextMeta, LWEInfos, Rank, SetGLWEPlaintextInfos, TorusPrecision,
 };
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use poulpy_hal::layouts::ZnxWord;
@@ -340,50 +332,6 @@ impl<D: HostDataRef, W: ZnxWord> WriterTo for GLWECompressed<D, W> {
     }
 }
 
-/// Trait for decompressing a [`GLWECompressed`] into a standard [`GLWE`](crate::layouts::GLWE).
-///
-/// Copies the stored data from the compressed ciphertext and regenerates
-/// the mask polynomials from the stored PRNG seed.
-pub trait GLWEDecompress
-where
-    Self: GetDegree + GLWEMaskFill<Self::Backend> + VecZnxCopy<Self::Backend>,
-{
-    type Backend: Backend;
-
-    /// Decompresses `other` into `res` by copying the stored data and regenerating the mask.
-    fn decompress_glwe<R, O>(&self, res: &mut R, other: &O)
-    where
-        R: GLWEToBackendMut<Self::Backend> + SetBase2k + SetGLWEPlaintextInfos,
-        O: GLWECompressedToBackendRef<Self::Backend> + GLWEInfos,
-    {
-        let noise = other.to_backend_ref().noise();
-        let other = other.to_backend_ref();
-        let plaintext_meta = other.plaintext_meta;
-        {
-            let res = &mut res.to_backend_mut();
-            operand_degree(self.ring_degree().as_usize(), &[res.n(), other.n()]);
-
-            assert_eq!(res.glwe_layout(), other.glwe_layout());
-
-            self.vec_znx_copy(&mut res.data, 0, &other.data, 0);
-        }
-        res.set_base2k(other.base2k());
-        self.fill_glwe_mask_from_seed(res, other.seed);
-        res.set_noise(noise);
-        res.set_canonical(true);
-        res.set_plaintext_meta(plaintext_meta);
-    }
-}
-
-impl<B: Backend> GLWEDecompress for Module<B>
-where
-    Self: GetDegree + GLWEMaskFill<B> + VecZnxCopy<B>,
-{
-    type Backend = B;
-}
-
-// module-only API: decompression is provided by `GLWEDecompress` on `Module`.
-
 pub trait GLWECompressedToBackendRef<BE: Backend> {
     fn to_backend_ref(&self) -> GLWECompressedBackendRef<'_, BE>;
 }
@@ -473,5 +421,32 @@ impl<BE: Backend> GLWECompressedToBackendMut<BE> for GLWECompressedViewMut<'_, B
             rank: self.inner.rank,
             data: poulpy_hal::layouts::vec_znx_backend_mut_from_mut::<BE>(&mut self.inner.data),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use poulpy_hal::layouts::{HostBytesBackend, Module};
+
+    use crate::layouts::{
+        ModuleCoreCompressedAlloc, TorusPrecision,
+        glwe::tests::{assert_accepts_larger_serialized_degree, assert_rejects_sparsity_exceeding_serialized_degree, layout},
+    };
+
+    #[test]
+    fn compressed_glwe_reader_accepts_sparsity_for_larger_serialized_degree() {
+        let module = Module::<HostBytesBackend>::new(128);
+        let source = module.glwe_compressed_alloc_from_infos(&layout(128, 16));
+        let mut receiver = module.glwe_compressed_alloc_from_infos(&layout(64, 32));
+        receiver.k = TorusPrecision(16);
+        assert_accepts_larger_serialized_degree(source, receiver);
+    }
+
+    #[test]
+    fn compressed_glwe_reader_rejects_sparsity_exceeding_smaller_serialized_degree() {
+        let module = Module::<HostBytesBackend>::new(128);
+        let source = module.glwe_compressed_alloc_from_infos(&layout(64, 16));
+        let receiver = module.glwe_compressed_alloc_from_infos(&layout(128, 16));
+        assert_rejects_sparsity_exceeding_serialized_degree(source, receiver);
     }
 }

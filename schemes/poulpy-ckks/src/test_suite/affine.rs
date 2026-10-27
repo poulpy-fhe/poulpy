@@ -27,6 +27,7 @@ use super::helpers::{
     ADD_SUB_CONST, MUL_CONST, PT_PREC, TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch,
     assert_ct_meta, assert_decrypt_precision, ckks_encrypt, ckks_pt_cst_full, gen_sk, quantized_const, test_vector_1,
 };
+use super::parity::helpers::with_scratch;
 
 use crate::{test_suite::CKKSTestParams, test_suite::reference_encoder::ReferenceEncoder};
 
@@ -90,9 +91,10 @@ pub fn test_affine_pt_const_into_aligned<BE, F, E>(
     let affine_const = encode_affine_const::<F>(host_module, params.base2k.into(), offset, scale, PT_PREC);
     let mut dst = alloc_ct(&params, module, params.k);
 
-    module
-        .ckks_affine_pt_const_into(&mut dst, &a, &affine_const, 0, 1, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_affine_pt_const_tmp_bytes(&dst, &a, &affine_const), |s| {
+        module.ckks_affine_pt_const_into(&mut dst, &a, &affine_const, 0, 1, s)
+    })
+    .unwrap();
     assert_decrypt_precision(
         "affine_pt_const_into_aligned",
         &params,
@@ -147,9 +149,10 @@ pub fn test_affine_pt_const_zero_bias_matches_mul<BE, F, E>(
     let affine_const = encode_affine_const::<F>(host_module, params.base2k.into(), F::zero(), scale, PT_PREC);
     let mut dst = alloc_ct(&params, module, params.k);
 
-    module
-        .ckks_affine_pt_const_into(&mut dst, &a, &affine_const, 0, 1, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_affine_pt_const_tmp_bytes(&dst, &a, &affine_const), |s| {
+        module.ckks_affine_pt_const_into(&mut dst, &a, &affine_const, 0, 1, s)
+    })
+    .unwrap();
 
     assert_ct_meta(
         "affine_pt_const_zero_bias",
@@ -212,9 +215,10 @@ pub fn test_affine_pt_const_assign_aligned<BE, F, E>(
     );
     let affine_const = encode_affine_const::<F>(host_module, params.base2k.into(), offset, scale, PT_PREC);
 
-    module
-        .ckks_affine_pt_const_assign(&mut ct, &affine_const, 0, 1, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_affine_pt_const_tmp_bytes(&ct, &ct, &affine_const), |s| {
+        module.ckks_affine_pt_const_assign(&mut ct, &affine_const, 0, 1, s)
+    })
+    .unwrap();
     assert_decrypt_precision(
         "affine_pt_const_assign_aligned",
         &params,
@@ -272,9 +276,10 @@ pub fn test_affine_pt_vec_into_aligned<BE, F, E>(
     let offset_pt = ckks_pt_cst_full::<BE, F>(host_module, module, params.base2k.into(), PT_PREC, m, Some(offset_f64), None);
     let mut dst = alloc_ct(&params, module, params.k);
 
-    module
-        .ckks_affine_pt_vec_into(&mut dst, &a, &scale_pt, &offset_pt, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_affine_pt_vec_tmp_bytes(&dst, &a, &scale_pt), |s| {
+        module.ckks_affine_pt_vec_into(&mut dst, &a, &scale_pt, &offset_pt, s)
+    })
+    .unwrap();
     assert_decrypt_precision(
         "affine_pt_vec_into_aligned",
         &params,
@@ -331,9 +336,10 @@ pub fn test_affine_pt_vec_assign_aligned<BE, F, E>(
     let scale_pt = ckks_pt_cst_full::<BE, F>(host_module, module, params.base2k.into(), PT_PREC, m, Some(scale_f64), None);
     let offset_pt = ckks_pt_cst_full::<BE, F>(host_module, module, params.base2k.into(), PT_PREC, m, Some(offset_f64), None);
 
-    module
-        .ckks_affine_pt_vec_assign(&mut ct, &scale_pt, &offset_pt, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_affine_pt_vec_tmp_bytes(&ct, &ct, &scale_pt), |s| {
+        module.ckks_affine_pt_vec_assign(&mut ct, &scale_pt, &offset_pt, s)
+    })
+    .unwrap();
     assert_decrypt_precision(
         "affine_pt_vec_assign_aligned",
         &params,
@@ -345,4 +351,119 @@ pub fn test_affine_pt_vec_assign_aligned<BE, F, E>(
         &want_im,
         &mut scratch.borrow(),
     );
+}
+
+/// An offset coefficient past the constant's degree is `PlaintextCoefficientOutOfRange` of the affine form, before the
+/// product writes `dst`, on an empty arena and on the query, out of place and in place.
+pub fn test_affine_pt_const_into_rejects_offset_coeff_out_of_range<BE, F, E>(
+    params: crate::test_suite::CKKSTestParams,
+    module: &poulpy_hal::layouts::Module<BE>,
+    _host_module: &poulpy_hal::layouts::Module<poulpy_hal::layouts::HostBytesBackend>,
+) where
+    BE: crate::test_suite::helpers::TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
+    poulpy_hal::layouts::Module<BE>: crate::test_suite::helpers::TestContextModule<BE>,
+    F: crate::test_suite::helpers::TestScalar,
+    E: poulpy_hal::api::NegacyclicFFT<F> + poulpy_hal::api::NegacyclicFFTNew<F>,
+{
+    use crate::test_suite::{
+        helpers::assert_ckks_error,
+        parity::{
+            helpers::{fixture_ciphertext, fixture_plaintext, snapshot, with_scratch},
+            layout,
+        },
+    };
+    use crate::{CKKSCompositionError, SlotsKind};
+    use poulpy_core::layouts::LWEInfos;
+    let b = params.base2k;
+    let ct_layout = layout(params, params.rank, 3 * b + 5, b - 1, 0, SlotsKind::Complex);
+    let pt_layout = layout(params, 0, b + 3, b - 1, 0, SlotsKind::Complex);
+    use crate::api::CKKSAffineOps;
+    let a = fixture_ciphertext(module, &ct_layout, 41);
+    let cst = fixture_plaintext(module, &pt_layout, 43);
+    let n = cst.n().as_usize();
+    let mut res = fixture_ciphertext(module, &ct_layout, 31);
+    let query = module.ckks_affine_pt_const_tmp_bytes(&res, &a, &cst);
+    for bytes in [0, query] {
+        let before = snapshot::<BE, _>(&res);
+        let err = with_scratch::<BE, _>(bytes, |s| module.ckks_affine_pt_const_into(&mut res, &a, &cst, n, 0, s)).unwrap_err();
+        let want = |op| CKKSCompositionError::PlaintextCoefficientOutOfRange {
+            op,
+            role: "plaintext",
+            coeff: n,
+            n,
+        };
+        assert_ckks_error(
+            "affine_pt_const_into: offset past the constant",
+            &err,
+            want("ckks_affine_pt_const_into"),
+        );
+        assert_eq!(snapshot::<BE, _>(&res), before, "a refused affine form wrote dst");
+        let err = with_scratch::<BE, _>(bytes, |s| module.ckks_affine_pt_const_assign(&mut res, &cst, n, 0, s)).unwrap_err();
+        assert_ckks_error(
+            "affine_pt_const_assign: offset past the constant",
+            &err,
+            want("ckks_affine_pt_const_assign"),
+        );
+        assert_eq!(snapshot::<BE, _>(&res), before, "a refused affine form wrote dst");
+    }
+}
+
+/// An offset of another radix is `PlaintextBase2KMismatch` of the affine form, before the product writes `dst`, on an
+/// empty arena and on the query, out of place and in place.
+pub fn test_affine_pt_vec_into_rejects_offset_base2k_mismatch<BE, F, E>(
+    params: crate::test_suite::CKKSTestParams,
+    module: &poulpy_hal::layouts::Module<BE>,
+    _host_module: &poulpy_hal::layouts::Module<poulpy_hal::layouts::HostBytesBackend>,
+) where
+    BE: crate::test_suite::helpers::TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
+    poulpy_hal::layouts::Module<BE>: crate::test_suite::helpers::TestContextModule<BE>,
+    F: crate::test_suite::helpers::TestScalar,
+    E: poulpy_hal::api::NegacyclicFFT<F> + poulpy_hal::api::NegacyclicFFTNew<F>,
+{
+    use crate::test_suite::{
+        helpers::assert_ckks_error,
+        parity::{
+            helpers::{fixture_ciphertext, fixture_plaintext, snapshot, with_scratch},
+            layout,
+        },
+    };
+    use crate::{CKKSCompositionError, CKKSLayout, SlotsKind};
+    let b = params.base2k;
+    let ct_layout = layout(params, params.rank, 3 * b + 5, b - 1, 0, SlotsKind::Complex);
+    let pt_layout = layout(params, 0, b + 3, b - 1, 0, SlotsKind::Complex);
+    let other_radix = CKKSLayout {
+        glwe_layout: poulpy_core::layouts::GLWELayout {
+            base2k: (b - 1).into(),
+            ..pt_layout.glwe_layout
+        },
+        meta: pt_layout.meta,
+    };
+    use crate::api::CKKSAffineOps;
+    let a = fixture_ciphertext(module, &ct_layout, 41);
+    let scale = fixture_plaintext(module, &pt_layout, 43);
+    let offset = fixture_plaintext(module, &other_radix, 44);
+    let mut res = fixture_ciphertext(module, &ct_layout, 31);
+    let query = module.ckks_affine_pt_vec_tmp_bytes(&res, &a, &scale);
+    let want = |op| CKKSCompositionError::PlaintextBase2KMismatch {
+        op,
+        ct_base2k: b,
+        pt_base2k: b - 1,
+    };
+    for bytes in [0, query] {
+        let before = snapshot::<BE, _>(&res);
+        let err = with_scratch::<BE, _>(bytes, |s| module.ckks_affine_pt_vec_into(&mut res, &a, &scale, &offset, s)).unwrap_err();
+        assert_ckks_error(
+            "affine_pt_vec_into: offset of another radix",
+            &err,
+            want("ckks_affine_pt_vec_into"),
+        );
+        assert_eq!(snapshot::<BE, _>(&res), before, "a refused affine form wrote dst");
+        let err = with_scratch::<BE, _>(bytes, |s| module.ckks_affine_pt_vec_assign(&mut res, &scale, &offset, s)).unwrap_err();
+        assert_ckks_error(
+            "affine_pt_vec_assign: offset of another radix",
+            &err,
+            want("ckks_affine_pt_vec_assign"),
+        );
+        assert_eq!(snapshot::<BE, _>(&res), before, "a refused affine form wrote dst");
+    }
 }

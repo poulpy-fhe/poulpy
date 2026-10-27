@@ -48,6 +48,8 @@ pub struct LinearTransformation<P> {
     pub baby_steps: Vec<i64>,
     /// The giant steps.
     pub giant_steps: Vec<LinearTransformationGiantStep<P>>,
+    /// How the evaluation reaches the baby and giant rotations.
+    pub rotations: BsgsRotations,
 }
 
 impl<P> LinearTransformation<P> {
@@ -94,7 +96,7 @@ impl<P> LinearTransformation<P> {
                 babies.insert(d.baby);
             }
         }
-        let baby_steps: Vec<i64> = used_babies.into_iter().collect();
+        let baby_steps = self.rotations.baby_closure(used_babies);
         let mut giant_steps = Vec::with_capacity(by_giant.len());
         let mut index = Vec::with_capacity(by_giant.len());
         for (rot, babies) in by_giant {
@@ -105,6 +107,7 @@ impl<P> LinearTransformation<P> {
             baby_steps,
             giant_steps,
             index,
+            rotations: self.rotations,
         }
     }
 
@@ -117,7 +120,193 @@ impl<P> LinearTransformation<P> {
     pub fn galois_elements(&self, cyclotomic_order: i64) -> Vec<i64> {
         let babies = self.giant_steps.iter().flat_map(|gs| gs.diagonals.iter()).map(|d| d.baby);
         let giants = self.giant_steps.iter().filter(|gs| !gs.diagonals.is_empty()).map(|gs| gs.rot);
-        galois_elements_from_rotations(babies.chain(giants), cyclotomic_order)
+        self.rotations.galois_elements(babies, giants, cyclotomic_order)
+    }
+}
+
+// ===================================================================
+// Rotation schedule
+// ===================================================================
+
+/// How a BSGS evaluation reaches its baby and giant rotations.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum BsgsRotations {
+    /// One key per baby rotation, applied to the input, and one per giant rotation.
+    #[default]
+    PerRotation,
+    /// Keys of the power-of-two multiples of the two steps only, each applied to several
+    /// ciphertexts at once. The baby rotation `k·baby_step` is the rotation of
+    /// `(k - 2^i)·baby_step` by `2^i·baby_step`, `2^i` the top bit of `k`, so the rotations
+    /// of one pass share a key. The giant steps are summed as a binary tree over the
+    /// two's-complement digits of `j`, the giant rotation `j·giant_step` modulo `slots`:
+    /// `T(u; G) = T(u_even; 2G) + rot(G)(T(u_odd; 2G))`, the top digit of weight `-2^(b-1)`,
+    /// so the rotations of one level share a key. For the baby steps `0..n1` and contiguous
+    /// giant digits, the key switches are those of [`Self::PerRotation`], up to one more per
+    /// level of the tree ([`Self::giant_key_switches`]); a product goes through more of them.
+    PowersOfTwo {
+        /// Every baby rotation is a multiple of it.
+        baby_step: i64,
+        /// Every giant rotation is a multiple of it.
+        giant_step: i64,
+        /// The slot count, the modulus of the rotations.
+        slots: i64,
+    },
+}
+
+/// One level of the giant-step tree of [`BsgsRotations::PowersOfTwo`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct GiantTreeLevel {
+    /// The rotation of the level's key, in `[0, slots)`.
+    pub(crate) rot: i64,
+    /// `(even, odd)` node pairs, parent `even / 2`: node `odd` rotated by `rot` is added to
+    /// node `even`, absent when no giant step lies under it.
+    pub(crate) pairs: Vec<(Option<usize>, usize)>,
+}
+
+impl BsgsRotations {
+    /// The baby rotations the cache holds for the needed rotations `babies`: themselves and,
+    /// with [`Self::PowersOfTwo`], every non-zero rotation a doubling reads.
+    pub(crate) fn baby_closure(&self, babies: impl IntoIterator<Item = i64>) -> Vec<i64> {
+        let mut closure: BTreeSet<i64> = babies.into_iter().collect();
+        if let Self::PowersOfTwo { baby_step, .. } = *self {
+            for baby in closure.clone() {
+                let mut k = baby_multiple(baby, baby_step);
+                while k != 0 {
+                    closure.insert(k * baby_step);
+                    k &= !(1 << k.ilog2());
+                }
+            }
+        }
+        closure.into_iter().collect()
+    }
+
+    /// The doubling passes of [`Self::PowersOfTwo`] over the cached rotations `babies` (a
+    /// [`Self::baby_closure`]): `(key rotation, [(source, target)])`, pass `i` rotating by
+    /// `2^i·baby_step` the targets whose top bit is `2^i`. Empty for [`Self::PerRotation`].
+    pub(crate) fn baby_passes(&self, babies: impl IntoIterator<Item = i64>) -> Vec<(i64, Vec<(i64, i64)>)> {
+        let Self::PowersOfTwo { baby_step, .. } = *self else {
+            return Vec::new();
+        };
+        let mut passes: BTreeMap<u32, Vec<(i64, i64)>> = BTreeMap::new();
+        for baby in babies {
+            let k = baby_multiple(baby, baby_step);
+            if k != 0 {
+                let top = k.ilog2();
+                passes.entry(top).or_default().push(((k - (1 << top)) * baby_step, baby));
+            }
+        }
+        passes
+            .into_iter()
+            .map(|(top, pairs)| ((1i64 << top) * baby_step, pairs))
+            .collect()
+    }
+
+    /// The giant-step tree of [`Self::PowersOfTwo`] over the giant rotations `giants`: the
+    /// leaf of each giant step, and the levels from the leaves up; the root is node 0.
+    /// `None` for [`Self::PerRotation`].
+    pub(crate) fn giant_tree(&self, giants: impl IntoIterator<Item = i64>) -> Option<(Vec<usize>, Vec<GiantTreeLevel>)> {
+        let Self::PowersOfTwo { giant_step, slots, .. } = *self else {
+            return None;
+        };
+        let digits: Vec<i64> = giants.into_iter().map(|rot| giant_digit(rot, giant_step, slots)).collect();
+        // The fewest digits whose two's complement holds every `j`.
+        let bits = (1..63)
+            .find(|&b| digits.iter().all(|&j| (-(1i64 << (b - 1))..(1i64 << (b - 1))).contains(&j)))
+            .unwrap();
+        let leaves: Vec<usize> = digits.iter().map(|&j| j.rem_euclid(1 << bits) as usize).collect();
+        let mut nodes: BTreeSet<usize> = leaves.iter().copied().collect();
+        let mut levels = Vec::with_capacity(bits);
+        for i in 0..bits {
+            // In `[0, slots)`: a negative generator is a conjugation, not the opposite rotation.
+            let rot = (if i + 1 == bits { -(1i64 << i) } else { 1i64 << i } * giant_step).rem_euclid(slots);
+            let pairs = nodes
+                .iter()
+                .filter(|&&node| node & 1 == 1)
+                .map(|&odd| (nodes.contains(&(odd - 1)).then_some(odd - 1), odd))
+                .collect();
+            levels.push(GiantTreeLevel { rot, pairs });
+            nodes = nodes.into_iter().map(|node| node >> 1).collect();
+        }
+        Some((leaves, levels))
+    }
+
+    /// The non-zero rotations whose keys the preparation of the baby rotations `babies`
+    /// switches with.
+    pub fn baby_key_rotations(&self, babies: impl IntoIterator<Item = i64>) -> Vec<i64> {
+        match self {
+            Self::PerRotation => babies.into_iter().filter(|&rot| rot != 0).collect(),
+            Self::PowersOfTwo { .. } => self
+                .baby_passes(self.baby_closure(babies))
+                .into_iter()
+                .map(|(rot, _)| rot)
+                .collect(),
+        }
+    }
+
+    /// The non-zero rotations whose keys the evaluation of the giant rotations `giants`
+    /// switches with.
+    pub fn giant_key_rotations(&self, giants: impl IntoIterator<Item = i64>) -> Vec<i64> {
+        match self.giant_tree(giants) {
+            None => Vec::new(),
+            Some((_, levels)) => levels
+                .into_iter()
+                .filter(|level| !level.pairs.is_empty())
+                .map(|level| level.rot)
+                .collect(),
+        }
+    }
+
+    /// The key switches the evaluation of the giant rotations `giants` takes: one per non-zero
+    /// rotation for [`Self::PerRotation`], one per pair of a level of the tree for
+    /// [`Self::PowersOfTwo`], which can be more.
+    pub fn giant_key_switches(&self, giants: impl IntoIterator<Item = i64>) -> usize {
+        match self {
+            Self::PerRotation => giants.into_iter().filter(|&rot| rot != 0).count(),
+            Self::PowersOfTwo { .. } => self
+                .giant_tree(giants)
+                .map_or(0, |(_, levels)| levels.iter().map(|level| level.pairs.len()).sum()),
+        }
+    }
+
+    /// The Galois elements of the keys the evaluation of the baby rotations `babies` and the
+    /// giant rotations `giants` switches with.
+    pub fn galois_elements(
+        &self,
+        babies: impl IntoIterator<Item = i64>,
+        giants: impl IntoIterator<Item = i64>,
+        cyclotomic_order: i64,
+    ) -> Vec<i64> {
+        let giants: Vec<i64> = match self {
+            Self::PerRotation => giants.into_iter().collect(),
+            Self::PowersOfTwo { .. } => self.giant_key_rotations(giants),
+        };
+        galois_elements_from_rotations(self.baby_key_rotations(babies).into_iter().chain(giants), cyclotomic_order)
+    }
+}
+
+/// `k` of the baby rotation `k·baby_step`.
+fn baby_multiple(baby: i64, baby_step: i64) -> i64 {
+    assert!(
+        baby >= 0 && baby % baby_step == 0,
+        "baby rotation {baby} is not a multiple of the baby step {baby_step}"
+    );
+    baby / baby_step
+}
+
+/// `j` of the giant rotation `j·giant_step`, the representative of least magnitude modulo
+/// `slots` when `giant_step` divides it, `-slots / (2·giant_step)` included.
+fn giant_digit(rot: i64, giant_step: i64, slots: i64) -> i64 {
+    let rot = rot.rem_euclid(slots);
+    assert!(
+        rot % giant_step == 0,
+        "giant rotation {rot} is not a multiple of the giant step {giant_step}"
+    );
+    let j = rot / giant_step;
+    let period = slots / giant_step;
+    if slots % giant_step == 0 && 2 * j >= period {
+        j - period
+    } else {
+        j
     }
 }
 
@@ -132,6 +321,9 @@ pub enum LinearTransformationStrategy {
     /// Use an explicit BSGS giant-step width. For the cost-optimal width, call
     /// [`optimal_bsgs_giant_step`] and pass the result here.
     Bsgs { giant_step: usize },
+    /// The BSGS schedule of [`Self::Bsgs`], evaluated with the keys of
+    /// [`BsgsRotations::PowersOfTwo`].
+    BsgsPowersOfTwo { giant_step: usize },
     /// Use one giant step per diagonal and no baby rotations.
     Direct,
 }
@@ -176,8 +368,9 @@ impl LinearTransformationLayout {
     }
 }
 
-/// BSGS index schedule for a linear transformation.
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// BSGS index schedule for a linear transformation. The default is an empty schedule with a
+/// key per rotation, which sizes the scratch of any transform with a key per rotation.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct LinearTransformationPlan {
     /// Distinct baby-step rotations used by the schedule.
     pub baby_steps: Vec<i64>,
@@ -189,13 +382,18 @@ pub struct LinearTransformationPlan {
     /// `giant_steps[g]`. The corresponding diagonal is
     /// `giant_steps[g] + k` modulo the slot count.
     pub index: Vec<Vec<i64>>,
+    /// How the evaluation reaches the rotations.
+    pub rotations: BsgsRotations,
 }
 
 impl LinearTransformationPlan {
     /// Galois elements required for all non-zero baby- and giant-step rotations.
     pub fn galois_elements(&self, cyclotomic_order: i64) -> Vec<i64> {
-        let rots = self.baby_steps.iter().copied().chain(self.giant_steps.iter().copied());
-        galois_elements_from_rotations(rots, cyclotomic_order)
+        self.rotations.galois_elements(
+            self.baby_steps.iter().copied(),
+            self.giant_steps.iter().copied(),
+            cyclotomic_order,
+        )
     }
 }
 
@@ -244,6 +442,7 @@ where
         baby_steps,
         giant_steps,
         index,
+        rotations: BsgsRotations::PerRotation,
     }
 }
 
@@ -311,6 +510,20 @@ where
 {
     match strategy {
         LinearTransformationStrategy::Bsgs { giant_step } => linear_transformation_plan(diagonal_indexes, slots, giant_step),
+        LinearTransformationStrategy::BsgsPowersOfTwo { giant_step } => {
+            let plan = linear_transformation_plan(diagonal_indexes, slots, giant_step);
+            let baby_step = plan.baby_steps.iter().fold(0, |gcd, &baby| gcd_i64(gcd, baby)).max(1);
+            let rotations = BsgsRotations::PowersOfTwo {
+                baby_step,
+                giant_step: giant_step as i64,
+                slots: slots as i64,
+            };
+            LinearTransformationPlan {
+                baby_steps: rotations.baby_closure(plan.baby_steps),
+                rotations,
+                ..plan
+            }
+        }
         LinearTransformationStrategy::Direct => {
             let diagonals: BTreeSet<usize> = diagonal_indexes
                 .into_iter()
@@ -320,7 +533,12 @@ where
                 baby_steps: vec![0],
                 giant_steps: diagonals.iter().map(|&diagonal| diagonal as i64).collect(),
                 index: diagonals.into_iter().map(|_| vec![0]).collect(),
+                rotations: BsgsRotations::PerRotation,
             }
         }
     }
+}
+
+fn gcd_i64(a: i64, b: i64) -> i64 {
+    if b == 0 { a } else { gcd_i64(b, a % b) }
 }

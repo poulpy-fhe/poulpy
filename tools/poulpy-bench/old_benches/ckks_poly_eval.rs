@@ -36,7 +36,8 @@ const COEFF_META: CKKSLayout = CKKSLayout { glwe_layout: GLWELayout {
         base2k: Base2K(BASE2K as u32),
         k: TorusPrecision((LOG_DELTA + 1) as u32),
         rank: Rank(1),
-    }, meta: GLWEPlaintextMeta { scale: Scale::Log(LOG_DELTA), slots: SlotsKind::Complex, log_sparsity: 0 } };
+    }, meta: GLWEPlaintextMeta {
+        slot_layout: poulpy_core::layouts::SlotLayout::Full, scale: Scale::Log(LOG_DELTA), slots: SlotsKind::Complex, log_sparsity: 0 } };
 
 fn glwe_layout() -> GLWELayout {
     GLWELayout {
@@ -77,7 +78,8 @@ fn $fn(c: &mut Criterion) {
     let host_module = Module::<HostBytesBackend>::new(N as u64);
     let glwe_layout = glwe_layout();
     let tsk_layout = tsk_layout();
-    let input_meta = GLWEPlaintextMeta { scale: Scale::Log(LOG_DELTA), slots: SlotsKind::Complex, log_sparsity: 0 };
+    let input_meta = GLWEPlaintextMeta {
+        slot_layout: poulpy_core::layouts::SlotLayout::Full, scale: Scale::Log(LOG_DELTA), slots: SlotsKind::Complex, log_sparsity: 0 };
 
     let ct_template = module.ckks_ciphertext_alloc_from_glwe_infos(&glwe_layout);
     // The all-ops aggregate already includes the giant-step engine's scratch.

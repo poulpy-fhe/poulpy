@@ -11,9 +11,8 @@ use crate::api::GLWEBytesOf;
 use crate::layouts::operand_degree;
 use crate::{
     GGLWEEncryptSk, ScratchArenaTakeCore,
-    layouts::{
-        GGLWEInfos, GGLWEToBackendMut, GLWEInfos, GLWESecretPreparedFactory, GLWESecretToBackendRef, LWEInfos, SetGaloisElement,
-    },
+    api::GLWESecretPreparedFactory,
+    layouts::{GGLWEInfos, GGLWEToBackendMut, GLWEInfos, GLWESecretToBackendRef, LWEInfos, SetGaloisElement},
 };
 
 /// Portable implementation using HAL operations.
@@ -45,9 +44,8 @@ where
     where
         A: GGLWEInfos,
     {
-        assert_eq!(
-            infos.rank_in(),
-            infos.rank_out(),
+        assert!(
+            infos.rank_in() == infos.rank_out(),
             "rank_in != rank_out is not supported for GLWEAutomorphismKey"
         );
         operand_degree(self.n(), &[infos.n()]);
@@ -76,9 +74,13 @@ where
     {
         let sk = sk.to_backend_ref();
 
-        assert_eq!(res.n(), sk.n());
-        assert_eq!(res.rank_out(), res.rank_in());
-        assert_eq!(sk.rank(), res.rank_out());
+        operand_degree(self.n(), &[res.n(), sk.n()]);
+        assert!(res.rank_out() == res.rank_in(), "the key's input and output ranks differ");
+        assert!(
+            sk.rank() == res.rank_out(),
+            "the secret's rank differs from the key's output rank"
+        );
+        crate::layouts::assert_secret_set(&sk.dist);
         assert!(
             scratch.available() >= self.glwe_automorphism_key_encrypt_sk_tmp_bytes_reference(res),
             "scratch.available(): {} < GLWEAutomorphismKeyEncryptSk::glwe_automorphism_key_encrypt_sk_tmp_bytes: {}",

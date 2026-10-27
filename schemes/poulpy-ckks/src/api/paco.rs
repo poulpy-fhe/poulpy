@@ -72,16 +72,18 @@ impl PaCoScalar for crate::Quad {
 ///
 /// The scalar is a trait parameter so the methods stay free of backend
 /// bounds: the delegating impl on `Module<BE>` requires the
-/// [`CKKSPaCoCoeffEncodingImpl`](crate::oep::CKKSPaCoCoeffEncodingImpl) and
-/// [`CKKSEncodingImpl`](crate::oep::CKKSEncodingImpl) seams at the impl
+/// [`CKKSPaCoImpl`](crate::oep::CKKSPaCoImpl) family, whose coefficient
+/// encoding is [`CKKSPaCoCoeffEncodingImpl`](crate::oep::CKKSPaCoCoeffEncodingImpl),
+/// and the [`CKKSEncodingImpl`](crate::oep::CKKSEncodingImpl) seam at the impl
 /// level, and a backend overrides those seams independently of any bounds
 /// the reference implementation carries.
 pub trait CKKSPaCoOps<BE: Backend, F: PaCoScalar> {
     /// Scratch bytes required by direct sequential or parallel PaCo.
     ///
-    /// The bound covers one branch on the caller module; every parallel
-    /// worker arena must provide at least the returned size. The ciphertext,
-    /// context, and key layouts are validated while computing the bound.
+    /// The bound covers one branch on the caller module, with the branch
+    /// output the sequential driver carves; every parallel worker arena must
+    /// provide at least the returned size. The ciphertext, context, and key
+    /// layouts are validated while computing the bound.
     fn ckks_paco_bootstrap_direct_tmp_bytes<K, Src>(
         &self,
         output: &CKKSCiphertextOwned<BE>,
@@ -95,10 +97,11 @@ pub trait CKKSPaCoOps<BE: Backend, F: PaCoScalar> {
 
     /// Scratch bytes required by encapsulated sequential or parallel PaCo.
     ///
-    /// This is the maximum of the direct branch bound and the one-time
-    /// dense-to-PaCo key switch. It fails if the key bundle has no
-    /// encapsulation key. Parallel worker arenas only need the direct bound
-    /// returned by [`Self::ckks_paco_bootstrap_direct_tmp_bytes`].
+    /// This is the switched input, carved from the caller's arena, plus the
+    /// maximum of the direct branch bound and the one-time dense-to-PaCo key
+    /// switch. It fails if the key bundle has no encapsulation key. Parallel
+    /// worker arenas only need the direct bound returned by
+    /// [`Self::ckks_paco_bootstrap_direct_tmp_bytes`].
     fn ckks_paco_bootstrap_tmp_bytes<K, Src>(
         &self,
         output: &CKKSCiphertextOwned<BE>,

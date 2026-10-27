@@ -1,6 +1,6 @@
 use poulpy_ckks::CKKSModuleInfos;
 use poulpy_ckks::Scale;
-use poulpy_hal::AlignedBuf;
+use poulpy_hal::api::ModuleSynchronize;
 use std::{collections::HashMap, hint::black_box};
 
 use crate::schemes::params::CkksBenchParams;
@@ -10,9 +10,12 @@ use poulpy_ckks::{
     api::{CKKSAddOps, CKKSConjugateOps, CKKSEncodingOps, CKKSMulOps, CKKSNegOps, CKKSPow2Ops, CKKSRotateOps, CKKSSubOps},
     layouts::{CKKSEncodingBuffer, CKKSModuleAlloc},
 };
-use poulpy_core::layouts::{
-    Base2K, Degree, Dnum, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPreparedFactory, GLWELayout, GLWETensorKeyLayout,
-    GLWETensorKeyPreparedFactory, LWEInfos, Rank, SetGaloisElement, TorusPrecision, k_digit_of,
+use poulpy_core::{
+    api::{GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory},
+    layouts::{
+        Base2K, Degree, Dnum, GLWEAutomorphismKeyLayout, GLWELayout, GLWETensorKeyLayout, LWEInfos, Rank, SetGaloisElement,
+        TorusPrecision, k_digit_of,
+    },
 };
 use poulpy_hal::{
     api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
@@ -66,11 +69,9 @@ fn atk_layout(cp: &CkksBenchParams) -> GLWEAutomorphismKeyLayout {
     }
 }
 
-pub fn runner_ckks_add_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>, M: Measurement>(
-    bencher: &mut Bencher<'_, M>,
-    cp: &CkksBenchParams,
-) where
-    Module<BE>: ModuleNew<BE> + CKKSAddOps<BE>,
+pub fn runner_ckks_add_into<BE: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CkksBenchParams)
+where
+    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CKKSAddOps<BE>,
 {
     let module = Module::<BE>::new(cp.n as u64);
 
@@ -90,15 +91,14 @@ pub fn runner_ckks_add_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>, M
         module
             .ckks_add_into(&mut ct_dst, &ct_a, &ct_b, &mut scratch.borrow())
             .unwrap();
+        module.synchronize();
         black_box(());
     });
 }
 
-pub fn runner_ckks_mul_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>, M: Measurement>(
-    bencher: &mut Bencher<'_, M>,
-    cp: &CkksBenchParams,
-) where
-    Module<BE>: ModuleNew<BE> + CKKSMulOps<BE> + GLWETensorKeyPreparedFactory<BE>,
+pub fn runner_ckks_mul_into<BE: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CkksBenchParams)
+where
+    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CKKSMulOps<BE> + GLWETensorKeyPreparedFactory<BE>,
 {
     let module = Module::<BE>::new(cp.n as u64);
 
@@ -121,15 +121,14 @@ pub fn runner_ckks_mul_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>, M
         module
             .ckks_mul_into(&mut ct_dst, &ct_a, &ct_b, &tsk, &mut scratch.borrow())
             .unwrap();
+        module.synchronize();
         black_box(());
     });
 }
 
-pub fn runner_ckks_rotate_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>, M: Measurement>(
-    bencher: &mut Bencher<'_, M>,
-    cp: &CkksBenchParams,
-) where
-    Module<BE>: ModuleNew<BE> + CKKSRotateOps<BE> + GLWEAutomorphismKeyPreparedFactory<BE>,
+pub fn runner_ckks_rotate_into<BE: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CkksBenchParams)
+where
+    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CKKSRotateOps<BE> + GLWEAutomorphismKeyPreparedFactory<BE>,
 {
     let module = Module::<BE>::new(cp.n as u64);
 
@@ -143,26 +142,24 @@ pub fn runner_ckks_rotate_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>
     ct_dst.set_meta_checked(meta).unwrap();
 
     let mut atks = HashMap::new();
-    let ak = module.alloc_tensor_key_prepared_from_infos(&atk_layout);
     let mut rotate_key = module.glwe_automorphism_key_prepared_alloc_from_infos(&atk_layout);
     rotate_key.set_p(module.galois_element(ROTATION));
     atks.insert(module.galois_element(ROTATION), rotate_key);
 
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_rotate_tmp_bytes(&ct_a, &ak));
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_rotate_tmp_bytes(&ct_a, &atk_layout));
 
     bencher.iter(|| {
         module
-            .ckks_rotate_into(&mut ct_dst, &ct_a, ROTATION, &atks, &mut scratch.borrow())
+            .ckks_rotate_into(ROTATION, &mut ct_dst, &ct_a, &atks, &mut scratch.borrow())
             .unwrap();
+        module.synchronize();
         black_box(());
     });
 }
 
-pub fn runner_ckks_conjugate_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>, M: Measurement>(
-    bencher: &mut Bencher<'_, M>,
-    cp: &CkksBenchParams,
-) where
-    Module<BE>: ModuleNew<BE> + CKKSConjugateOps<BE> + GLWEAutomorphismKeyPreparedFactory<BE>,
+pub fn runner_ckks_conjugate_into<BE: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CkksBenchParams)
+where
+    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CKKSConjugateOps<BE> + GLWEAutomorphismKeyPreparedFactory<BE>,
 {
     let module = Module::<BE>::new(cp.n as u64);
 
@@ -184,15 +181,14 @@ pub fn runner_ckks_conjugate_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i
         module
             .ckks_conjugate_into(&mut ct_dst, &ct_a, &conjugate_key, &mut scratch.borrow())
             .unwrap();
+        module.synchronize();
         black_box(());
     });
 }
 
-pub fn runner_ckks_add_pt_vec_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>, M: Measurement>(
-    bencher: &mut Bencher<'_, M>,
-    cp: &CkksBenchParams,
-) where
-    Module<BE>: ModuleNew<BE> + CKKSAddOps<BE>,
+pub fn runner_ckks_add_pt_vec_into<BE: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CkksBenchParams)
+where
+    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CKKSAddOps<BE>,
 {
     let module = Module::<BE>::new(cp.n as u64);
 
@@ -213,15 +209,16 @@ pub fn runner_ckks_add_pt_vec_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = 
         module
             .ckks_add_pt_vec_into(&mut ct_dst, &ct_a, &pt, &mut scratch.borrow())
             .unwrap();
+        module.synchronize();
         black_box(());
     });
 }
 
-pub fn runner_ckks_add_pt_const_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>, M: Measurement>(
+pub fn runner_ckks_add_pt_const_into<BE: Backend<ZnxWord = i64>, M: Measurement>(
     bencher: &mut Bencher<'_, M>,
     cp: &CkksBenchParams,
 ) where
-    Module<BE>: ModuleNew<BE> + CKKSAddOps<BE>,
+    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CKKSAddOps<BE>,
 {
     let module = Module::<BE>::new(cp.n as u64);
 
@@ -240,17 +237,16 @@ pub fn runner_ckks_add_pt_const_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord 
 
     bencher.iter(|| {
         module
-            .ckks_add_pt_const_into(&mut ct_dst, &ct_a, 0, &cst, 0, &mut scratch.borrow())
+            .ckks_add_pt_const_into(&mut ct_dst, 0, &ct_a, &cst, 0, &mut scratch.borrow())
             .unwrap();
+        module.synchronize();
         black_box(());
     });
 }
 
-pub fn runner_ckks_sub_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>, M: Measurement>(
-    bencher: &mut Bencher<'_, M>,
-    cp: &CkksBenchParams,
-) where
-    Module<BE>: ModuleNew<BE> + CKKSSubOps<BE>,
+pub fn runner_ckks_sub_into<BE: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CkksBenchParams)
+where
+    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CKKSSubOps<BE>,
 {
     let module = Module::<BE>::new(cp.n as u64);
 
@@ -270,15 +266,14 @@ pub fn runner_ckks_sub_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>, M
         module
             .ckks_sub_into(&mut ct_dst, &ct_a, &ct_b, &mut scratch.borrow())
             .unwrap();
+        module.synchronize();
         black_box(());
     });
 }
 
-pub fn runner_ckks_sub_pt_vec_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>, M: Measurement>(
-    bencher: &mut Bencher<'_, M>,
-    cp: &CkksBenchParams,
-) where
-    Module<BE>: ModuleNew<BE> + CKKSSubOps<BE>,
+pub fn runner_ckks_sub_pt_vec_into<BE: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CkksBenchParams)
+where
+    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CKKSSubOps<BE>,
 {
     let module = Module::<BE>::new(cp.n as u64);
 
@@ -299,15 +294,16 @@ pub fn runner_ckks_sub_pt_vec_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = 
         module
             .ckks_sub_pt_vec_into(&mut ct_dst, &ct_a, &pt, &mut scratch.borrow())
             .unwrap();
+        module.synchronize();
         black_box(());
     });
 }
 
-pub fn runner_ckks_sub_pt_const_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>, M: Measurement>(
+pub fn runner_ckks_sub_pt_const_into<BE: Backend<ZnxWord = i64>, M: Measurement>(
     bencher: &mut Bencher<'_, M>,
     cp: &CkksBenchParams,
 ) where
-    Module<BE>: ModuleNew<BE> + CKKSSubOps<BE>,
+    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CKKSSubOps<BE>,
 {
     let module = Module::<BE>::new(cp.n as u64);
 
@@ -326,17 +322,16 @@ pub fn runner_ckks_sub_pt_const_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord 
 
     bencher.iter(|| {
         module
-            .ckks_sub_pt_const_into(&mut ct_dst, &ct_a, 0, &cst, 0, &mut scratch.borrow())
+            .ckks_sub_pt_const_into(&mut ct_dst, 0, &ct_a, &cst, 0, &mut scratch.borrow())
             .unwrap();
+        module.synchronize();
         black_box(());
     });
 }
 
-pub fn runner_ckks_neg_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>, M: Measurement>(
-    bencher: &mut Bencher<'_, M>,
-    cp: &CkksBenchParams,
-) where
-    Module<BE>: ModuleNew<BE> + CKKSNegOps<BE>,
+pub fn runner_ckks_neg_into<BE: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CkksBenchParams)
+where
+    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CKKSNegOps<BE>,
 {
     let module = Module::<BE>::new(cp.n as u64);
 
@@ -352,15 +347,14 @@ pub fn runner_ckks_neg_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>, M
 
     bencher.iter(|| {
         module.ckks_neg_into(&mut ct_dst, &ct_a, &mut scratch.borrow()).unwrap();
+        module.synchronize();
         black_box(());
     });
 }
 
-pub fn runner_ckks_mul_pow2_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>, M: Measurement>(
-    bencher: &mut Bencher<'_, M>,
-    cp: &CkksBenchParams,
-) where
-    Module<BE>: ModuleNew<BE> + CKKSPow2Ops<BE>,
+pub fn runner_ckks_mul_pow2_into<BE: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CkksBenchParams)
+where
+    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CKKSPow2Ops<BE>,
 {
     let module = Module::<BE>::new(cp.n as u64);
 
@@ -376,17 +370,16 @@ pub fn runner_ckks_mul_pow2_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i6
 
     bencher.iter(|| {
         module
-            .ckks_mul_pow2_into(&mut ct_dst, &ct_a, POW2_BITS, &mut scratch.borrow())
+            .ckks_mul_pow2_into(POW2_BITS, &mut ct_dst, &ct_a, &mut scratch.borrow())
             .unwrap();
+        module.synchronize();
         black_box(());
     });
 }
 
-pub fn runner_ckks_div_pow2_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>, M: Measurement>(
-    bencher: &mut Bencher<'_, M>,
-    cp: &CkksBenchParams,
-) where
-    Module<BE>: ModuleNew<BE> + CKKSPow2Ops<BE>,
+pub fn runner_ckks_div_pow2_into<BE: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CkksBenchParams)
+where
+    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CKKSPow2Ops<BE>,
 {
     let module = Module::<BE>::new(cp.n as u64);
 
@@ -402,17 +395,16 @@ pub fn runner_ckks_div_pow2_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i6
 
     bencher.iter(|| {
         module
-            .ckks_div_pow2_into(&mut ct_dst, &ct_a, POW2_BITS, &mut scratch.borrow())
+            .ckks_div_pow2_into(POW2_BITS, &mut ct_dst, &ct_a, &mut scratch.borrow())
             .unwrap();
+        module.synchronize();
         black_box(());
     });
 }
 
-pub fn runner_ckks_square_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>, M: Measurement>(
-    bencher: &mut Bencher<'_, M>,
-    cp: &CkksBenchParams,
-) where
-    Module<BE>: ModuleNew<BE> + CKKSMulOps<BE> + GLWETensorKeyPreparedFactory<BE>,
+pub fn runner_ckks_square_into<BE: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CkksBenchParams)
+where
+    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CKKSMulOps<BE> + GLWETensorKeyPreparedFactory<BE>,
 {
     let module = Module::<BE>::new(cp.n as u64);
 
@@ -433,15 +425,14 @@ pub fn runner_ckks_square_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>
         module
             .ckks_square_into(&mut ct_dst, &ct_a, &tsk, &mut scratch.borrow())
             .unwrap();
+        module.synchronize();
         black_box(());
     });
 }
 
-pub fn runner_ckks_mul_pt_vec_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>, M: Measurement>(
-    bencher: &mut Bencher<'_, M>,
-    cp: &CkksBenchParams,
-) where
-    Module<BE>: ModuleNew<BE> + CKKSMulOps<BE>,
+pub fn runner_ckks_mul_pt_vec_into<BE: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CkksBenchParams)
+where
+    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CKKSMulOps<BE>,
 {
     let module = Module::<BE>::new(cp.n as u64);
 
@@ -462,15 +453,16 @@ pub fn runner_ckks_mul_pt_vec_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = 
         module
             .ckks_mul_pt_vec_into(&mut ct_dst, &ct_a, &pt, &mut scratch.borrow())
             .unwrap();
+        module.synchronize();
         black_box(());
     });
 }
 
-pub fn runner_ckks_mul_pt_const_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>, M: Measurement>(
+pub fn runner_ckks_mul_pt_const_into<BE: Backend<ZnxWord = i64>, M: Measurement>(
     bencher: &mut Bencher<'_, M>,
     cp: &CkksBenchParams,
 ) where
-    Module<BE>: ModuleNew<BE> + CKKSMulOps<BE>,
+    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CKKSMulOps<BE>,
 {
     let module = Module::<BE>::new(cp.n as u64);
 
@@ -491,6 +483,7 @@ pub fn runner_ckks_mul_pt_const_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord 
         module
             .ckks_mul_pt_const_into(&mut ct_dst, &ct_a, &const_full, 0, &mut scratch.borrow())
             .unwrap();
+        module.synchronize();
         black_box(());
     });
 }
@@ -499,11 +492,11 @@ fn ckks_encoding_values(len: usize) -> Vec<f64> {
     (0..len).map(|i| (i as f64 + 1.0) / len as f64).collect()
 }
 
-pub fn runner_ckks_encode_slots_assign_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>, M: Measurement>(
+pub fn runner_ckks_encode_slots_assign_into<BE: Backend<ZnxWord = i64>, M: Measurement>(
     bencher: &mut Bencher<'_, M>,
     cp: &CkksBenchParams,
 ) where
-    Module<BE>: ModuleNew<BE> + CKKSEncodingOps<BE, f64>,
+    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CKKSEncodingOps<BE, f64>,
 {
     let module = Module::<BE>::new(cp.n as u64);
 
@@ -515,15 +508,16 @@ pub fn runner_ckks_encode_slots_assign_into<BE: Backend<OwnedBuf = AlignedBuf, Z
 
     bencher.iter(|| {
         module.ckks_encode_slots_assign_into(&mut pt, &mut slots).unwrap();
+        module.synchronize();
         black_box(());
     });
 }
 
-pub fn runner_ckks_decode_slots_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>, M: Measurement>(
+pub fn runner_ckks_decode_slots_into<BE: Backend<ZnxWord = i64>, M: Measurement>(
     bencher: &mut Bencher<'_, M>,
     cp: &CkksBenchParams,
 ) where
-    Module<BE>: ModuleNew<BE> + CKKSEncodingOps<BE, f64>,
+    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CKKSEncodingOps<BE, f64>,
 {
     let module = Module::<BE>::new(cp.n as u64);
 
@@ -538,15 +532,16 @@ pub fn runner_ckks_decode_slots_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord 
 
     bencher.iter(|| {
         module.ckks_decode_slots_into(&pt, &mut slots).unwrap();
+        module.synchronize();
         black_box(());
     });
 }
 
-pub fn runner_ckks_encode_coeffs_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>, M: Measurement>(
+pub fn runner_ckks_encode_coeffs_into<BE: Backend<ZnxWord = i64>, M: Measurement>(
     bencher: &mut Bencher<'_, M>,
     cp: &CkksBenchParams,
 ) where
-    Module<BE>: ModuleNew<BE> + CKKSEncodingOps<BE, f64>,
+    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CKKSEncodingOps<BE, f64>,
 {
     let module = Module::<BE>::new(cp.n as u64);
 
@@ -558,15 +553,16 @@ pub fn runner_ckks_encode_coeffs_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord
 
     bencher.iter(|| {
         module.ckks_encode_coeffs_into(&mut pt, &coeffs).unwrap();
+        module.synchronize();
         black_box(());
     });
 }
 
-pub fn runner_ckks_decode_coeffs_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>, M: Measurement>(
+pub fn runner_ckks_decode_coeffs_into<BE: Backend<ZnxWord = i64>, M: Measurement>(
     bencher: &mut Bencher<'_, M>,
     cp: &CkksBenchParams,
 ) where
-    Module<BE>: ModuleNew<BE> + CKKSEncodingOps<BE, f64>,
+    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CKKSEncodingOps<BE, f64>,
 {
     let module = Module::<BE>::new(cp.n as u64);
 
@@ -581,6 +577,7 @@ pub fn runner_ckks_decode_coeffs_into<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord
 
     bencher.iter(|| {
         module.ckks_decode_coeffs_into(&pt, &mut coeffs).unwrap();
+        module.synchronize();
         black_box(());
     });
 }

@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use poulpy_ckks::{
-    CKKSModuleInfos, CoeffsMeta,
+    CKKSInfos, CKKSModuleInfos, CoeffsMeta, Scale, SetCKKSInfos,
     api::{
         CKKSEncodingOps, CKKSLinearTransformationOps, CKKSMulOps, LinearTransformation, LinearTransformationPrepared,
         PreparedDiagonal,
@@ -12,13 +12,17 @@ use poulpy_ckks::{
     test_suite::{
         CKKSTestParams,
         helpers::{TestContextBackend, TestContextModule, TestScalar, alloc_scratch},
+        parity::helpers::with_scratch,
     },
 };
 use poulpy_core::layouts::{Base2K, DiagonalArithmetic, GetDegree, LWEInfos};
 use poulpy_hal::{
     AlignedBuf,
     api::{CnvPVecAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, CyclotomicOrder, DataView, DataViewMut, HostBytesBackend, Module, ScratchArena, Standard},
+    layouts::{
+        Backend, CyclotomicOrder, DataView, DataViewMut, HostBytesBackend, Module, ScratchArena, Standard,
+        galois_elements_from_rotations,
+    },
 };
 
 use super::helpers::{
@@ -48,12 +52,14 @@ fn operand_maps<BE: Backend, S: BlasPtSide>(b: &BlasPtOperand<BE, S>) -> Vec<&Li
 /// whatever their values, and a JKLS operand's first map and blocks rotate by its side's set; under `JklsStored` and
 /// `JklsGalois`, a context of a masked plan holds the masks, and an operand's first map and the context's masks of its
 /// side, phi^k on the right and the column halves of psi^k on the left, rotate by that side's set. The union of these
-/// sets, and the plan's own, equals the context's, for a plan of each kind. The context panics at its allocation on
-/// matrices wider than the slots, a zero torus width, `coeffs_meta.k = 0`, a radix outside `1..=63` and a prepared
-/// allocation or size of the same; a public operand whose count does not divide the matrix slots, or of a zero torus
-/// width, panics at its allocation, prepared or not, and so does its prepared size. The prepare scratch query panics on
-/// a layout of other slots, and a preparation into an operand of another layout, or one scratch byte short of its
-/// query, panics. Each panic carries its own message.
+/// sets, and the plan's own, equals the context's, for a plan of each kind. The row and column sums rotate by `2^i d`
+/// and `2^i` and their opposites, within the context's set, and their projections take no key. The context panics at
+/// its allocation on matrices wider than the slots, a zero torus width, `coeffs_meta.k = 0`, a radix outside `1..=63`
+/// and a prepared allocation or size of the same; a public operand whose count does not divide the matrix slots, or of
+/// a zero torus width, panics at its allocation, prepared or not, and so does its prepared size. The prepare scratch
+/// query panics on a layout of other slots, and a preparation into an operand of another layout, or one scratch byte
+/// short of its query, panics, as does the preparation of an operand map whose diagonals differ in scale, before any map
+/// is prepared. Each panic carries its own message.
 pub fn test_blas_context<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -192,6 +198,21 @@ pub fn test_blas_context<BE, F, E>(
         let every = encoded(ctx.maps().collect());
         assert_eq!(union, every, "union {plan:?}");
         assert_eq!(plan.galois_elements(order), every, "galois_elements {plan:?}");
+        assert!(
+            encoded(vec![ctx.first_row(), ctx.first_col()]).is_empty(),
+            "projections {plan:?}"
+        );
+        for (label, set, stride) in [
+            ("sum_rows", plan.sum_rows_galois_elements(order), d),
+            ("sum_cols", plan.sum_cols_galois_elements(order), 1),
+        ] {
+            let strides = (0..log_d).flat_map(|i| [(stride << i) as i64, (slots - (stride << i)) as i64]);
+            assert_eq!(set, galois_elements_from_rotations(strides, order), "{label} {plan:?}");
+            assert!(
+                set.iter().all(|p| every.contains(p)),
+                "{label} {plan:?}: outside the context's set"
+            );
+        }
     }
 
     // The slots hold no matrix one dimension past the largest that fits; 2^40 x 2^40 has more entries than a usize
@@ -303,6 +324,58 @@ pub fn test_blas_context<BE, F, E>(
     assert_short_scratch_panics::<BE, _>("blas_pt_operand_prepare", bytes, |s| {
         module.blas_pt_operand_prepare(&mut prepared, &op, s)
     });
+    // One diagonal at another scale makes its map non-uniform.
+    let map = op
+        .maps
+        .iter_mut()
+        .find(|lt| lt.giant_steps.iter().map(|gs| gs.diagonals.len()).sum::<usize>() > 1)
+        .expect("an operand map of two diagonals");
+    let last = &mut map.giant_steps.last_mut().unwrap().diagonals.last_mut().unwrap().plaintext;
+    let mut last_meta = last.meta();
+    last_meta.scale = Scale::Log(last.log_delta() + 1);
+    last.set_meta(last_meta);
+    assert_panics(
+        "a non-uniform map",
+        "blas_pt_operand_prepare: a map's diagonals do not share one scale, width and slot kind",
+        || with_scratch::<BE, _>(bytes, |s| module.blas_pt_operand_prepare(&mut prepared, &op, s)),
+    );
+    // A later map non-uniform, the operand encoded again from other matrices: the refusal comes before the first map
+    // is prepared, on an empty arena and on the query, every prepared map keeping its bytes.
+    let grid = with(|l| {
+        l.rows = 2;
+        l.cols = 2;
+    });
+    let mut op = module.blas_pt_operand_alloc_from_infos(&grid);
+    module.blas_pt_operand_encode_into(&mut op, f, &mut scratch.borrow()).unwrap();
+    let mut prepared = module.blas_pt_operand_prepared_alloc_from_infos(&grid);
+    let bytes = module.blas_pt_operand_prepare_tmp_bytes(&grid);
+    with_scratch::<BE, _>(bytes, |s| module.blas_pt_operand_prepare(&mut prepared, &op, s));
+    let before = buffers(prepared.maps(), prepared_diagonal::<BE>);
+    let other = |m: usize, r: usize, c: usize| F::from_f64(((m * 7 + r + c * 2) % 9) as f64 / 4.0 - 1.0).unwrap();
+    module
+        .blas_pt_operand_encode_into(&mut op, other, &mut scratch.borrow())
+        .unwrap();
+    let map = op
+        .maps
+        .iter_mut()
+        .skip(1)
+        .find(|lt| lt.giant_steps.iter().map(|gs| gs.diagonals.len()).sum::<usize>() > 1)
+        .expect("a later operand map of two diagonals");
+    let last = &mut map.giant_steps.last_mut().unwrap().diagonals.last_mut().unwrap().plaintext;
+    let mut last_meta = last.meta();
+    last_meta.scale = Scale::Log(last.log_delta() + 1);
+    last.set_meta(last_meta);
+    for arena in [0, bytes] {
+        assert_panics(
+            &format!("a later non-uniform map, arena of {arena} bytes"),
+            "blas_pt_operand_prepare: a map's diagonals do not share one scale, width and slot kind",
+            || with_scratch::<BE, _>(arena, |s| module.blas_pt_operand_prepare(&mut prepared, &op, s)),
+        );
+        assert!(
+            buffers(prepared.maps(), prepared_diagonal::<BE>) == before,
+            "a refused preparation changed a prepared map"
+        );
+    }
 
     // `coeffs_meta.k = 0` is rejected at allocation: the context and every public operand, either side.
     let zero = CoeffsMeta::from_delta_budget(0, 0);

@@ -5,13 +5,12 @@
 //! leveled scale and the preset's input width), runs the bootstrap, and
 //! measures the precision of the data slots. The benchmarks and the precision
 //! pin test ([`replicated_bootstrapping_presets_meet_precision`]) both drive it.
+use poulpy_core::GLWESecretPreparedFactory;
+use poulpy_core::GLWESecretSampling;
 
 use poulpy_core::{
     GLWETrace,
-    layouts::{
-        GGLWEInfos, GGLWELayout, GLWELayout, GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretSampling, LWEInfos,
-        ModuleCoreAlloc, Rank,
-    },
+    layouts::{GGLWEInfos, GGLWELayout, GLWELayout, GLWESecretPrepared, LWEInfos, ModuleCoreAlloc, Rank},
 };
 use poulpy_hal::{
     api::{CnvPVecAlloc, ScratchOwnedAlloc, ScratchOwnedBorrow},

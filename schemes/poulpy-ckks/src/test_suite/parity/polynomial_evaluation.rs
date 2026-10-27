@@ -21,36 +21,37 @@ use crate::{
 };
 use poulpy_core::{
     GLWEMaskFill,
-    layouts::{GGLWELayout, GLWELayout, GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory, LWEInfos},
+    api::GLWETensorKeyPreparedFactory,
+    layouts::{GGLWELayout, GLWELayout, GLWETensorKeyPrepared, LWEInfos},
 };
 use poulpy_hal::{
     layouts::{Backend, HostBytesBackend, Module},
     test_suite::upload_vec_znx,
 };
 
-fn upload<B: Backend<ZnxWord = i64>>(
-    module: &Module<B>,
-    pt: &CKKSPlaintextOwned<HostBytesBackend<B::Ring>>,
-) -> CKKSPlaintextOwned<B> {
+fn upload<BE: Backend<ZnxWord = i64>>(
+    module: &Module<BE>,
+    pt: &CKKSPlaintextOwned<HostBytesBackend<BE::Ring>>,
+) -> CKKSPlaintextOwned<BE> {
     let mut out = module.ckks_plaintext_alloc_from_infos(pt);
-    *out.data_mut() = upload_vec_znx::<B>(pt.data());
+    *out.data_mut() = upload_vec_znx::<BE>(pt.data());
     out
 }
 
 /// Shape, tensor key and scratch shared by the polynomial runs.
-struct Setup<B: Backend> {
+struct Setup<BE: Backend> {
     layout: CKKSLayout,
     key: GGLWELayout,
-    prepared_key: GLWETensorKeyPrepared<B::OwnedBuf, B>,
+    prepared_key: GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
     coeff_meta: CoeffsMeta,
     bytes: usize,
-    host: Module<HostBytesBackend<B::Ring>>,
+    host: Module<HostBytesBackend<BE::Ring>>,
 }
 
-fn setup<B>(params: CKKSTestParams, module: &Module<B>) -> Setup<B>
+fn setup<BE>(params: CKKSTestParams, module: &Module<BE>) -> Setup<BE>
 where
-    B: Backend<ZnxWord = i64>,
-    Module<B>: CKKSAllOpsTmpBytes<B> + GLWETensorKeyPreparedFactory<B> + GLWEMaskFill<B>,
+    BE: Backend<ZnxWord = i64>,
+    Module<BE>: CKKSAllOpsTmpBytes<BE> + GLWETensorKeyPreparedFactory<BE> + GLWEMaskFill<BE>,
 {
     let b = params.base2k;
     let layout = CKKSLayout {
@@ -78,8 +79,8 @@ where
         },
         meta: coeff_meta.meta,
     };
-    let bytes = module.ckks_all_ops_tmp_bytes(&layout, &key, &pt_layout);
-    let host = Module::<HostBytesBackend<B::Ring>>::new(module.n() as u64);
+    let bytes = module.ckks_all_ops_tmp_bytes(&layout, &pt_layout, &key);
+    let host = Module::<HostBytesBackend<BE::Ring>>::new(module.n() as u64);
     Setup {
         layout,
         key,
@@ -108,11 +109,11 @@ fn folded<F: CKKSEncodingScalar>(basis: Basis, parity: Parity) -> Polynomial<F> 
     Polynomial::new_with_parity(basis, coeffs.into_iter().map(|v| F::from_f64(v).unwrap()).collect(), parity)
 }
 
-fn real_polynomials<B, F>(params: CKKSTestParams, module: &Module<B>) -> Vec<Snapshot>
+fn real_polynomials<BE, F>(params: CKKSTestParams, module: &Module<BE>) -> Vec<Snapshot>
 where
-    B: Backend<ZnxWord = i64> + CKKSPolynomialEvaluationImpl,
+    BE: Backend<ZnxWord = i64> + CKKSPolynomialEvaluationImpl,
     F: CKKSEncodingScalar,
-    Module<B>: CKKSAllOpsTmpBytes<B> + GLWETensorKeyPreparedFactory<B> + GLWEMaskFill<B>,
+    Module<BE>: CKKSAllOpsTmpBytes<BE> + GLWETensorKeyPreparedFactory<BE> + GLWEMaskFill<BE>,
 {
     let b = params.base2k;
     let Setup {
@@ -130,9 +131,9 @@ where
             .unwrap()
             .map_baby_steps_ref(|pt| upload(module, pt));
         let input = fixture_ciphertext(module, &layout, 127);
-        let before = snapshot::<B, _>(&input);
+        let before = snapshot::<BE, _>(&input);
         let mut powers = PowerBasis::new(basis, fixture_ciphertext(module, &layout, 127));
-        with_scratch::<B, _>(bytes, |scratch| {
+        with_scratch::<BE, _>(bytes, |scratch| {
             powers.populate(
                 encoded.degree(),
                 encoded.log_split(),
@@ -144,27 +145,27 @@ where
         })
         .unwrap();
         let mut prepared_out = fixture_ciphertext(module, &layout, 131);
-        with_scratch::<B, _>(bytes, |scratch| {
-            module.ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<B>, _, _>(
+        with_scratch::<BE, _>(bytes, |scratch| {
+            module.ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
                 &mut prepared_out,
-                &encoded,
                 &powers,
+                &encoded,
                 &prepared_key,
                 scratch,
             )
         })
         .unwrap();
         let mut one_shot = fixture_ciphertext(module, &layout, 131);
-        with_scratch::<B, _>(bytes, |scratch| {
+        with_scratch::<BE, _>(bytes, |scratch| {
             module.ckks_eval_poly_real_const_coeffs(&mut one_shot, &input, &encoded, &prepared_key, scratch)
         })
         .unwrap();
         assert_eq!(
-            snapshot::<B, _>(&prepared_out),
-            snapshot::<B, _>(&one_shot),
+            snapshot::<BE, _>(&prepared_out),
+            snapshot::<BE, _>(&one_shot),
             "prepared and one-shot real evaluation differ"
         );
-        results.push(snapshot::<B, _>(&one_shot));
+        results.push(snapshot::<BE, _>(&one_shot));
         // Exercise x², x²·x, T₂, and T₂·x input folds through production dispatch.
         for parity in [Parity::Even, Parity::Odd] {
             let encoded = folded::<F>(basis, parity)
@@ -172,22 +173,22 @@ where
                 .unwrap()
                 .map_baby_steps_ref(|pt| upload(module, pt));
             let mut out = fixture_ciphertext(module, &layout, 139);
-            with_scratch::<B, _>(bytes, |scratch| {
+            with_scratch::<BE, _>(bytes, |scratch| {
                 module.ckks_eval_poly_real_const_coeffs(&mut out, &input, &encoded, &prepared_key, scratch)
             })
             .unwrap();
-            results.push(snapshot::<B, _>(&out));
+            results.push(snapshot::<BE, _>(&out));
         }
-        assert_eq!(before, snapshot::<B, _>(&input));
+        assert_eq!(before, snapshot::<BE, _>(&input));
     }
     results
 }
 
-fn complex_polynomials_and_eval_mod<B, F>(params: CKKSTestParams, module: &Module<B>) -> Vec<Snapshot>
+fn complex_polynomials_and_eval_mod<BE, F>(params: CKKSTestParams, module: &Module<BE>) -> Vec<Snapshot>
 where
-    B: Backend<ZnxWord = i64> + CKKSImpl + CKKSEncodingImpl<F>,
+    BE: Backend<ZnxWord = i64> + CKKSImpl + CKKSEncodingImpl<F>,
     F: CKKSEncodingScalar,
-    Module<B>: CKKSAllOpsTmpBytes<B> + CKKSEvalModOps<B> + GLWETensorKeyPreparedFactory<B> + GLWEMaskFill<B>,
+    Module<BE>: CKKSAllOpsTmpBytes<BE> + CKKSEvalModOps<BE> + GLWETensorKeyPreparedFactory<BE> + GLWEMaskFill<BE>,
 {
     let b = params.base2k;
     let Setup {
@@ -211,9 +212,9 @@ where
             im: encode(),
         };
         let input = fixture_ciphertext(module, &layout, 127);
-        let before = snapshot::<B, _>(&input);
+        let before = snapshot::<BE, _>(&input);
         let mut powers = PowerBasis::new(basis, fixture_ciphertext(module, &layout, 127));
-        with_scratch::<B, _>(bytes, |scratch| {
+        with_scratch::<BE, _>(bytes, |scratch| {
             powers.populate(
                 complex.re.degree(),
                 complex.re.log_split(),
@@ -225,27 +226,27 @@ where
         })
         .unwrap();
         let mut prepared_out = fixture_ciphertext(module, &layout, 137);
-        with_scratch::<B, _>(bytes, |scratch| {
-            module.ckks_eval_poly_complex_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<B>, _, _>(
+        with_scratch::<BE, _>(bytes, |scratch| {
+            module.ckks_eval_poly_complex_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
                 &mut prepared_out,
-                &complex,
                 &powers,
+                &complex,
                 &prepared_key,
                 scratch,
             )
         })
         .unwrap();
         let mut one_shot = fixture_ciphertext(module, &layout, 137);
-        with_scratch::<B, _>(bytes, |scratch| {
+        with_scratch::<BE, _>(bytes, |scratch| {
             module.ckks_eval_poly_complex_const_coeffs(&mut one_shot, &input, &complex, &prepared_key, scratch)
         })
         .unwrap();
         assert_eq!(
-            snapshot::<B, _>(&prepared_out),
-            snapshot::<B, _>(&one_shot),
+            snapshot::<BE, _>(&prepared_out),
+            snapshot::<BE, _>(&one_shot),
             "prepared and one-shot complex evaluation differ"
         );
-        results.push(snapshot::<B, _>(&one_shot));
+        results.push(snapshot::<BE, _>(&one_shot));
         for parity in [Parity::Even, Parity::Odd] {
             let poly = folded::<F>(basis, parity);
             let encode_folded = || {
@@ -258,11 +259,11 @@ where
                 im: encode_folded(),
             };
             let mut out = fixture_ciphertext(module, &layout, 143);
-            with_scratch::<B, _>(bytes, |scratch| {
+            with_scratch::<BE, _>(bytes, |scratch| {
                 module.ckks_eval_poly_complex_const_coeffs(&mut out, &input, &complex, &prepared_key, scratch)
             })
             .unwrap();
-            results.push(snapshot::<B, _>(&out));
+            results.push(snapshot::<BE, _>(&out));
 
             // Reject inconsistent real/imaginary input schedules before the
             // input transform can allocate or mutate any ciphertext.
@@ -273,9 +274,9 @@ where
                     .map_baby_steps_ref(|pt| upload(module, pt)),
                 im: complex.im,
             };
-            let untouched = snapshot::<B, _>(&out);
+            let untouched = snapshot::<BE, _>(&out);
             assert!(
-                with_scratch::<B, _>(0, |scratch| module.ckks_eval_poly_complex_const_coeffs(
+                with_scratch::<BE, _>(0, |scratch| module.ckks_eval_poly_complex_const_coeffs(
                     &mut out,
                     &input,
                     &incompatible,
@@ -284,9 +285,9 @@ where
                 ))
                 .is_err()
             );
-            assert_eq!(untouched, snapshot::<B, _>(&out));
+            assert_eq!(untouched, snapshot::<BE, _>(&out));
         }
-        assert_eq!(before, snapshot::<B, _>(&input));
+        assert_eq!(before, snapshot::<BE, _>(&input));
     }
     for kind in [
         EvalModType::SinCheby,
@@ -310,26 +311,26 @@ where
                 coeffs_meta: coeff_meta,
                 f_mod_log_delta: 10,
             };
-            let encoding = <Module<B> as CKKSEncodingHostOps<B, F>>::ckks_reim_tmp_bytes(module, module.n() / 2);
+            let encoding = <Module<BE> as CKKSEncodingHostOps<BE, F>>::ckks_reim_tmp_bytes(module, module.n() / 2);
             let compiled =
-                with_scratch::<B, _>(encoding, |scratch| compile_eval_mod::<B, F>(b.into(), plan, module, scratch)).unwrap();
+                with_scratch::<BE, _>(encoding, |scratch| compile_eval_mod::<BE, F>(b.into(), plan, module, scratch)).unwrap();
             let input = fixture_ciphertext(module, &layout, 149);
-            let before = snapshot::<B, _>(&input);
+            let before = snapshot::<BE, _>(&input);
             let mut out = fixture_ciphertext(module, &layout, 151);
             let eval_bytes = module.ckks_eval_mod_tmp_bytes(&out, &input, &compiled, &key);
-            with_scratch::<B, _>(eval_bytes, |scratch| {
+            with_scratch::<BE, _>(eval_bytes, |scratch| {
                 module.ckks_eval_mod(&mut out, &input, &compiled, &prepared_key, scratch)
             })
             .unwrap();
-            assert_eq!(before, snapshot::<B, _>(&input));
-            results.push(snapshot::<B, _>(&out));
+            assert_eq!(before, snapshot::<BE, _>(&input));
+            results.push(snapshot::<BE, _>(&out));
         }
     }
     results
 }
 
 /// Checks real prepared-basis and one-shot evaluation and folded inputs.
-pub fn test_real_polynomial_parity<BR, BT, F>(params: CKKSTestParams, reference: &Module<BR>, tested: &Module<BT>)
+pub fn test_real_polynomial_parity<BR, BT, F>(params: CKKSTestParams, module_ref: &Module<BR>, module_test: &Module<BT>)
 where
     BR: Backend<ZnxWord = i64> + CKKSPolynomialEvaluationImpl,
     BT: Backend<ZnxWord = i64> + CKKSPolynomialEvaluationImpl,
@@ -337,19 +338,19 @@ where
     Module<BR>: CKKSAllOpsTmpBytes<BR> + GLWETensorKeyPreparedFactory<BR> + GLWEMaskFill<BR>,
     Module<BT>: CKKSAllOpsTmpBytes<BT> + GLWETensorKeyPreparedFactory<BT> + GLWEMaskFill<BT>,
 {
-    assert_eq!(reference.n(), tested.n());
-    let want = real_polynomials::<BR, F>(params, reference);
+    assert_eq!(module_ref.n(), module_test.n());
+    let want = real_polynomials::<BR, F>(params, module_ref);
     assert_untagged("real polynomial", &want);
     assert_eq!(
         want,
-        real_polynomials::<BT, F>(params, tested),
+        real_polynomials::<BT, F>(params, module_test),
         "real polynomial parity differs"
     );
 }
 
 /// Checks complex prepared-basis and one-shot evaluation, folded inputs, and
 /// every EvalMod family with its selected scratch query and unchanged input.
-pub fn test_polynomial_eval_mod_parity<BR, BT, F>(params: CKKSTestParams, reference: &Module<BR>, tested: &Module<BT>)
+pub fn test_polynomial_eval_mod_parity<BR, BT, F>(params: CKKSTestParams, module_ref: &Module<BR>, module_test: &Module<BT>)
 where
     BR: Backend<ZnxWord = i64> + CKKSImpl + CKKSEncodingImpl<F>,
     BT: Backend<ZnxWord = i64> + CKKSImpl + CKKSEncodingImpl<F>,
@@ -357,12 +358,12 @@ where
     Module<BR>: CKKSAllOpsTmpBytes<BR> + CKKSEvalModOps<BR> + GLWETensorKeyPreparedFactory<BR> + GLWEMaskFill<BR>,
     Module<BT>: CKKSAllOpsTmpBytes<BT> + CKKSEvalModOps<BT> + GLWETensorKeyPreparedFactory<BT> + GLWEMaskFill<BT>,
 {
-    assert_eq!(reference.n(), tested.n());
-    let want = complex_polynomials_and_eval_mod::<BR, F>(params, reference);
+    assert_eq!(module_ref.n(), module_test.n());
+    let want = complex_polynomials_and_eval_mod::<BR, F>(params, module_ref);
     assert_untagged("complex polynomial or EvalMod", &want);
     assert_eq!(
         want,
-        complex_polynomials_and_eval_mod::<BT, F>(params, tested),
+        complex_polynomials_and_eval_mod::<BT, F>(params, module_test),
         "complex polynomial or EvalMod parity differs"
     );
 }

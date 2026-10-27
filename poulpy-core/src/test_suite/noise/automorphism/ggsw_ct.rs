@@ -5,16 +5,18 @@ use poulpy_hal::{
     test_suite::TestParams,
 };
 
-use crate::layouts::GLWESecretSampling;
+use crate::api::GLWESecretSampling;
 use crate::layouts::LWEInfos;
 use crate::layouts::prepared::{GGLWEToGGSWKeyPreparedToBackendRef, GLWEAutomorphismKeyPreparedToBackendRef};
+use crate::test_suite::poisoned_scratch;
 use crate::{Distribution, ScalarZnxFillDistribution};
 use crate::{
     GGLWEToGGSWKeyEncryptSk, GGSWAutomorphism, GGSWEncryptSk, GGSWNoise, GLWEAutomorphismKeyEncryptSk,
+    api::{GGLWEToGGSWKeyPreparedFactory, GLWEAutomorphismKeyPreparedFactory, GLWESecretPreparedFactory},
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        GGLWEToGGSWKey, GGLWEToGGSWKeyLayout, GGLWEToGGSWKeyPreparedFactory, GGSW, GGSWInfos, GGSWLayout, GLWEAutomorphismKey,
-        GLWEAutomorphismKeyPreparedFactory, GLWEInfos, GLWESecret, GLWESecretPreparedFactory, ModuleCoreAlloc,
+        GGLWEToGGSWKey, GGLWEToGGSWKeyLayout, GGSW, GGSWInfos, GGSWLayout, GLWEAutomorphismKey, GLWEInfos, GLWESecret,
+        ModuleCoreAlloc,
         prepared::{GGLWEToGGSWKeyPrepared, GLWEAutomorphismKeyPrepared, GLWESecretPrepared},
     },
     noise::GGLWENoiseModel,
@@ -114,7 +116,9 @@ where
                 (module).ggsw_encrypt_sk_tmp_bytes(&ggsw_in_layout)
                     | (module).glwe_automorphism_key_encrypt_sk_tmp_bytes(&auto_key_layout)
                     | (module).gglwe_to_ggsw_key_encrypt_sk_tmp_bytes(&tsk_layout)
-                    | module.ggsw_automorphism_tmp_bytes(&ggsw_out_layout, &ggsw_in_layout, &auto_key_layout, &tsk_layout),
+                    | module.glwe_automorphism_key_prepare_tmp_bytes(&auto_key_layout)
+                    | module.gglwe_to_ggsw_key_prepare_tmp_bytes(&tsk_layout)
+                    | module.ggsw_noise_tmp_bytes(&ggsw_out_layout),
             );
 
             let var_xs: f64 = 0.5;
@@ -177,7 +181,13 @@ where
                 &ct_in,
                 &auto_key_prepared.to_backend_ref(),
                 &tsk_prepared.to_backend_ref(),
-                &mut scratch.borrow(),
+                &mut poisoned_scratch::<BE>(module.ggsw_automorphism_tmp_bytes(
+                    &ggsw_out_layout,
+                    &ggsw_in_layout,
+                    &auto_key_layout,
+                    &tsk_layout,
+                ))
+                .borrow(),
             );
 
             {
@@ -296,7 +306,9 @@ where
                 (module).ggsw_encrypt_sk_tmp_bytes(&ggsw_out_layout)
                     | (module).glwe_automorphism_key_encrypt_sk_tmp_bytes(&auto_key_layout)
                     | (module).gglwe_to_ggsw_key_encrypt_sk_tmp_bytes(&tsk_layout)
-                    | module.ggsw_automorphism_tmp_bytes(&ggsw_out_layout, &ggsw_out_layout, &auto_key_layout, &tsk_layout),
+                    | module.glwe_automorphism_key_prepare_tmp_bytes(&auto_key_layout)
+                    | module.gglwe_to_ggsw_key_prepare_tmp_bytes(&tsk_layout)
+                    | module.ggsw_noise_tmp_bytes(&ggsw_out_layout),
             );
 
             let var_xs: f64 = 0.5;
@@ -357,7 +369,13 @@ where
                 &mut ct,
                 &auto_key_prepared.to_backend_ref(),
                 &tsk_prepared.to_backend_ref(),
-                &mut scratch.borrow(),
+                &mut poisoned_scratch::<BE>(module.ggsw_automorphism_tmp_bytes(
+                    &ggsw_out_layout,
+                    &ggsw_out_layout,
+                    &auto_key_layout,
+                    &tsk_layout,
+                ))
+                .borrow(),
             );
 
             {

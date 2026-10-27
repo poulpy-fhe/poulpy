@@ -1,51 +1,21 @@
-use crate::{CKKSResult as Result, ckks_ensure};
-use poulpy_core::{
-    GLWEAutomorphism, GLWEKeyswitch, GLWELinearTransformations, GLWERotate,
-    layouts::{GLWEToBackendMut, GLWEToBackendRef},
-};
+use crate::CKKSResult as Result;
+use poulpy_core::layouts::GLWEToBackendRef;
 use poulpy_hal::{
     api::ScratchOwnedBorrow,
-    layouts::{Backend, CyclotomicOrder, Module, ScratchArena, ScratchOwned},
+    layouts::{Backend, Module, ScratchArena, ScratchOwned},
 };
 
 use crate::{
     CKKSCtBounds,
-    api::{
-        CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSLinearTransformationOps, CKKSMulOps, CKKSPaCoOps, CKKSRotateOps,
-        CKKSSubOps, PaCoScalar,
-    },
-    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, PaCoContext, PaCoKeys, PaCoWorker},
-    oep::{CKKSEncodingImpl, CKKSPaCoCoeffEncodingImpl},
-    reference::paco::{
-        ops::PaCoSlotOps,
-        parallel::{
-            paco_bootstrap_direct_into, paco_bootstrap_into, paco_bootstrap_parallel_direct_into, paco_bootstrap_parallel_into,
-        },
-        preflight::paco_bootstrap_tmp_bytes,
-    },
+    api::{CKKSPaCoOps, PaCoScalar},
+    layouts::{CKKSCiphertextOwned, CKKSPlaintextOwned, PaCoContext, PaCoKeys, PaCoWorker},
+    oep::{CKKSEncodingImpl, CKKSPaCoCoeffEncodingImpl, CKKSPaCoImpl},
 };
 
 impl<BE, F> CKKSPaCoOps<BE, F> for Module<BE>
 where
-    BE: Backend + CKKSPaCoCoeffEncodingImpl + CKKSEncodingImpl<F>,
+    BE: Backend + CKKSPaCoImpl + CKKSPaCoCoeffEncodingImpl + CKKSEncodingImpl<F>,
     F: PaCoScalar,
-    Module<BE>: CKKSMulOps<BE>
-        + CKKSAddOps<BE>
-        + CKKSSubOps<BE>
-        + CKKSConjugateOps<BE>
-        + CKKSCopyOps<BE>
-        + CKKSRotateOps<BE>
-        + PaCoSlotOps<BE>
-        + CKKSLinearTransformationOps<BE>
-        + CKKSModuleAlloc<BE>
-        + GLWERotate<BE>
-        + GLWEAutomorphism<BE>
-        + GLWELinearTransformations<BE>
-        + GLWEKeyswitch<BE>
-        + CyclotomicOrder,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + Send + Sync,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
-    BE::OwnedBuf: Sync,
 {
     fn ckks_paco_bootstrap_direct_tmp_bytes<K, Src>(
         &self,
@@ -58,7 +28,7 @@ where
         K: PaCoKeys<BE>,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        paco_bootstrap_tmp_bytes(self, output, input, context, keys, false)
+        BE::ckks_paco_bootstrap_direct_tmp_bytes(self, output, input, context, keys)
     }
 
     fn ckks_paco_bootstrap_tmp_bytes<K, Src>(
@@ -72,7 +42,11 @@ where
         K: PaCoKeys<BE>,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        paco_bootstrap_tmp_bytes(self, output, input, context, keys, true)
+        BE::ckks_paco_bootstrap_tmp_bytes(self, output, input, context, keys)
+    }
+
+    fn ckks_paco_coeff_encodings_tmp_bytes(&self, context: &PaCoContext<BE, F>) -> Result<usize> {
+        BE::ckks_paco_coeff_encodings_tmp_bytes(self, context)
     }
 
     fn ckks_paco_coeff_encodings<Src>(
@@ -84,17 +58,7 @@ where
     where
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        let required = BE::ckks_paco_coeff_encodings_tmp_bytes_impl::<F>(self, context.plan())?;
-        ckks_ensure!(
-            scratch.available() >= required,
-            "PaCo coefficient encoding needs {required} scratch bytes, but only {} are available",
-            scratch.available()
-        );
-        BE::ckks_paco_coeff_encodings_impl::<F, Src>(self, ciphertext, context.plan(), context.base2k(), scratch)
-    }
-
-    fn ckks_paco_coeff_encodings_tmp_bytes(&self, context: &PaCoContext<BE, F>) -> Result<usize> {
-        BE::ckks_paco_coeff_encodings_tmp_bytes_impl::<F>(self, context.plan())
+        BE::ckks_paco_coeff_encodings(self, ciphertext, context, scratch)
     }
 
     fn ckks_paco_bootstrap_direct_into<K, Src>(
@@ -113,7 +77,7 @@ where
             "ckks_paco_bootstrap_direct_into",
             crate::GLWEPlaintextInfos::slot_layout(input),
         )?;
-        paco_bootstrap_direct_into::<BE, F, K, Src>(self, output, input, context, keys, scratch)
+        BE::ckks_paco_bootstrap_direct_into(self, output, input, context, keys, scratch)
     }
 
     fn ckks_paco_bootstrap_into<K, Src>(
@@ -129,7 +93,7 @@ where
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
         crate::reference::mul::ensure_full_layout("ckks_paco_bootstrap_into", crate::GLWEPlaintextInfos::slot_layout(input))?;
-        paco_bootstrap_into::<BE, F, K, Src>(self, output, input, context, keys, scratch)
+        BE::ckks_paco_bootstrap_into(self, output, input, context, keys, scratch)
     }
 
     fn ckks_paco_bootstrap_parallel_direct_into<K, Src>(
@@ -150,7 +114,7 @@ where
             "ckks_paco_bootstrap_parallel_direct_into",
             crate::GLWEPlaintextInfos::slot_layout(input),
         )?;
-        paco_bootstrap_parallel_direct_into::<BE, F, K, Src>(self, output, input, context, keys, workers, scratch)
+        BE::ckks_paco_bootstrap_parallel_direct_into(self, output, input, context, keys, workers, scratch)
     }
 
     fn ckks_paco_bootstrap_parallel_into<K, Src>(
@@ -171,6 +135,6 @@ where
             "ckks_paco_bootstrap_parallel_into",
             crate::GLWEPlaintextInfos::slot_layout(input),
         )?;
-        paco_bootstrap_parallel_into::<BE, F, K, Src>(self, output, input, context, keys, workers, scratch)
+        BE::ckks_paco_bootstrap_parallel_into(self, output, input, context, keys, workers, scratch)
     }
 }

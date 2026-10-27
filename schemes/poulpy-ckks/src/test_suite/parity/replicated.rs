@@ -13,24 +13,24 @@ use crate::{
     },
     layouts::{CKKSCiphertextOwned, encode_bsgs_replicated},
     oep::{
-        CKKSAddImpl, CKKSCopyImpl, CKKSDotProductImpl, CKKSEncodingImpl, CKKSImpl, CKKSMulImpl, CKKSPlaintextZnxImpl,
+        CKKSAddImpl, CKKSCopyImpl, CKKSDotProductImpl, CKKSEncodingImpl, CKKSImpl, CKKSMulImpl, CKKSPlaintextVecImpl,
         CKKSPolynomialEvaluationImpl, CKKSPow2Impl, CKKSRotateImpl, CKKSRoundImpl, CKKSSubImpl,
     },
     polynomial::{Basis, Polynomial, SplitStrategy},
     shaping::ShapingUnit,
     test_suite::CKKSTestParams,
 };
+use poulpy_core::GLWEAutomorphismKeyPreparedFactory;
+use poulpy_core::GLWETensorKeyPreparedFactory;
 use poulpy_core::{
     GLWEMaskFill,
-    layouts::{
-        GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedFactory, GLWELayout, GLWETensorKeyPreparedFactory, LWEInfos,
-    },
+    layouts::{GLWEAutomorphismKeyPrepared, GLWELayout, LWEInfos},
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 /// The CKKS families of both rings that the shaped operations use.
 pub trait ReplicatedRingImpl:
-    CKKSPlaintextZnxImpl
+    CKKSPlaintextVecImpl
     + CKKSCopyImpl
     + CKKSAddImpl
     + CKKSSubImpl
@@ -44,7 +44,7 @@ pub trait ReplicatedRingImpl:
 }
 
 impl<B> ReplicatedRingImpl for B where
-    B: CKKSPlaintextZnxImpl
+    B: CKKSPlaintextVecImpl
         + CKKSCopyImpl
         + CKKSAddImpl
         + CKKSSubImpl
@@ -123,7 +123,7 @@ where
 
     let mut out = fixture_ciphertext(module, &lr, 99);
     with_scratch::<B, _>(module.ckks_rotate_tmp_bytes(&a, &atk_layout), |s| {
-        module.ckks_rotate_into(&mut out, &a, shift, &rot, s)
+        module.ckks_rotate_into(shift, &mut out, &a, &rot, s)
     })
     .unwrap();
     results.push(("rotate_into", snapshot::<B, _>(&out)));
@@ -133,7 +133,7 @@ where
         module,
         module.ckks_galois_element(8),
         &mut results,
-        |module, dst, src, key, scratch| module.ckks_rotate_into(dst, src, 8, key, scratch),
+        |module, dst, src, key, scratch| module.ckks_rotate_into(8, dst, src, key, scratch),
     );
 
     for (label, add) in [("add_one_assign", true), ("sub_one_assign", false)] {
@@ -179,7 +179,7 @@ where
         meta: coeff_meta.meta,
     };
     let mut out = fixture_ciphertext(module, &la, 99);
-    with_scratch::<B, _>(module.ckks_all_ops_tmp_bytes(&la, &tsk_layout, &pt_layout), |s| {
+    with_scratch::<B, _>(module.ckks_all_ops_tmp_bytes(&la, &pt_layout, &tsk_layout), |s| {
         module.ckks_eval_poly_real_const_coeffs(&mut out, &a, &bsgs, &tsk, s)
     })
     .unwrap();
@@ -207,7 +207,7 @@ fn narrow_automorphisms<B>(
     results: &mut Vec<(&'static str, Snapshot)>,
     apply: Automorphism<B>,
 ) where
-    B: Backend<ZnxWord = i64> + CKKSPlaintextZnxImpl + CKKSRotateImpl,
+    B: Backend<ZnxWord = i64> + CKKSPlaintextVecImpl + CKKSRotateImpl,
     Module<B>: GLWEAutomorphismKeyPreparedFactory<B> + GLWEMaskFill<B>,
 {
     let b = params.base2k;
@@ -216,7 +216,7 @@ fn narrow_automorphisms<B>(
     source_layout.meta.scale = crate::Scale::Log(40);
     source_layout.meta.log_sparsity = 0;
     let shaped_layout = ShapingUnit::U16_40.layout(1, 24).unwrap();
-    let label = if p == -1 { "conjugate" } else { "rotate" };
+    let label = if p == -1 { "ckks_conjugate_into" } else { "ckks_rotate_into" };
     for slot_layout in [SlotLayout::Full, SlotLayout::Replicated(shaped_layout)] {
         source_layout.meta.slot_layout = slot_layout;
         let source = fixture_ciphertext(module, &source_layout, 91);
@@ -234,7 +234,8 @@ fn narrow_automorphisms<B>(
                 let err = result.unwrap_err();
                 let required = 110 + crate::shaping::ShapingProfile::new(&shaped_layout).shaping_depth(40, shaped_layout.w());
                 assert!(
-                    matches!(err.composition(), Some(crate::CKKSCompositionError::MissingAutomorphismKey { op, k, .. }) if *op == label && *k as usize == required)
+                    matches!(err.composition(), Some(crate::CKKSCompositionError::MissingAutomorphismKey { op, k, .. }) if *op == label && *k as usize == required),
+                    "{err:?}"
                 );
                 assert_eq!(snapshot::<B, _>(&destination), before);
             } else {

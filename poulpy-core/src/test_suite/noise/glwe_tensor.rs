@@ -11,17 +11,19 @@ use poulpy_hal::{
 use rand::Rng;
 use std::f64::consts::SQRT_2;
 
-use crate::layouts::GLWESecretSampling;
+use crate::api::GLWESecretSampling;
 use crate::test_suite::noise::{assert_refuses_uncovered_input, glwe_decrypt_checked};
+use crate::test_suite::poisoned_scratch;
+use crate::test_suite::refusal::{assert_refusal, cnv_pvec_left_state, glwe_state, glwe_tensor_state};
 use crate::{
     GLWEAdd, GLWECopy, GLWEDecrypt, GLWEEncryptSk, GLWEMaskFill, GLWEMulConst, GLWEMulPlain, GLWEMulRelinearizeSum,
-    GLWENormalize, GLWEPreparedTensoring, GLWESub, GLWETensorDecrypt, GLWETensorKeyEncryptSk, GLWETensoring, glwe_prepare_left,
-    glwe_prepare_left_tmp_bytes, glwe_prepare_right, glwe_prepare_right_tmp_bytes,
+    GLWENormalize, GLWEPreparedTensoring, GLWESub, GLWETensorDecrypt, GLWETensorKeyEncryptSk, GLWETensoring,
+    api::{GLWESecretPreparedFactory, GLWESecretTensorFactory, GLWESecretTensorPreparedFactory, GLWETensorKeyPreparedFactory},
+    glwe_prepare_left, glwe_prepare_left_tmp_bytes, glwe_prepare_right, glwe_prepare_right_tmp_bytes,
     layouts::{
-        Dnum, Dsize, GGLWEInfos, GLWE, GLWELayout, GLWEPlaintext, GLWEPlaintextLayout, GLWESecret, GLWESecretPreparedFactory,
-        GLWESecretTensor, GLWESecretTensorFactory, GLWESecretTensorPrepared, GLWESecretTensorPreparedFactory, GLWETensor,
-        GLWETensorKey, GLWETensorKeyLayout, GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory, LWEInfos, ModuleCoreAlloc,
-        TorusPrecision, prepared::GLWESecretPrepared,
+        Dnum, Dsize, GGLWEInfos, GLWE, GLWELayout, GLWEPlaintext, GLWEPlaintextLayout, GLWESecret, GLWESecretTensor,
+        GLWESecretTensorPrepared, GLWETensor, GLWETensorKey, GLWETensorKeyLayout, GLWETensorKeyPrepared, LWEInfos,
+        ModuleCoreAlloc, TorusPrecision, prepared::GLWESecretPrepared,
     },
     log2_std_noise_glwe_tensor, log2_std_noise_glwe_tensor_relinearized,
 };
@@ -115,18 +117,19 @@ where
             (module)
                 .glwe_encrypt_sk_tmp_bytes(&glwe_in_infos)
                 .max((module).glwe_decrypt_tmp_bytes(&glwe_out_infos))
-                .max(module.glwe_tensor_apply_tmp_bytes(&res_tensor, &a, &b))
-                .max(module.glwe_tensor_apply_prepared_tmp_bytes(
-                    &res_tensor,
-                    k.div_ceil(in_base2k),
-                    k.div_ceil(in_base2k),
-                    in_base2k.into(),
-                ))
-                .max(glwe_prepare_left_tmp_bytes(module, k.div_ceil(in_base2k), &a))
-                .max(glwe_prepare_right_tmp_bytes(module, k.div_ceil(in_base2k), &b))
+                .max(module.glwe_tensor_decrypt_tmp_bytes(&glwe_out_infos))
                 .max(module.glwe_secret_tensor_prepare_tmp_bytes(rank.into()))
-                .max(module.glwe_tensor_relinearize_tmp_bytes(&res_relin, &res_tensor, &tsk_infos)),
+                .max(module.glwe_tensor_key_encrypt_sk_tmp_bytes(&tsk_infos))
+                .max(module.glwe_tensor_key_prepare_tmp_bytes(&tsk_infos)),
         );
+        let apply_bytes = module.glwe_tensor_apply_tmp_bytes(&res_tensor, &a, &b);
+        let apply_prepared_bytes = module.glwe_tensor_apply_prepared_tmp_bytes(
+            &res_tensor,
+            k.div_ceil(in_base2k),
+            k.div_ceil(in_base2k),
+            in_base2k.into(),
+        );
+        let relinearize_bytes = module.glwe_tensor_relinearize_tmp_bytes(&res_relin, &res_tensor, &tsk_infos);
 
         // Distinct seeds: with a shared one the secret, the mask and the error
         // are all drawn from the same byte stream, correlating `s` with `a` and
@@ -162,7 +165,7 @@ where
         );
 
         let mut tsk_prep: GLWETensorKeyPrepared<BE::OwnedBuf, BE> = module.alloc_tensor_key_prepared_from_infos(&tsk_infos);
-        module.prepare_tensor_key(&mut tsk_prep, &tsk, &mut scratch.borrow());
+        module.glwe_tensor_key_prepare(&mut tsk_prep, &tsk, &mut scratch.borrow());
 
         let scale: usize = 2 * in_base2k;
 
@@ -228,13 +231,31 @@ where
         // The same product of operands prepared once, under either hint.
         let size: usize = k.div_ceil(in_base2k);
         let mut a_prep = module.cnv_pvec_left_alloc(n, rank + 1, size, PrepareHint::OneShot);
-        glwe_prepare_left(module, &mut a_prep, &a, k, &mut scratch.borrow());
+        glwe_prepare_left(
+            module,
+            &mut a_prep,
+            &a,
+            k,
+            &mut poisoned_scratch::<BE>(glwe_prepare_left_tmp_bytes(module, k.div_ceil(in_base2k), &a)).borrow(),
+        );
         let mut b_prep = module.cnv_pvec_right_alloc(n, rank + 1, size, PrepareHint::Reuse);
-        glwe_prepare_right(module, &mut b_prep, &b, k, &mut scratch.borrow());
+        glwe_prepare_right(
+            module,
+            &mut b_prep,
+            &b,
+            k,
+            &mut poisoned_scratch::<BE>(glwe_prepare_right_tmp_bytes(module, k.div_ceil(in_base2k), &b)).borrow(),
+        );
         let mut res_prepared: GLWETensor<BE::OwnedBuf, BE::ZnxWord> = module.glwe_tensor_alloc_from_infos(&glwe_out_infos);
 
         for res_offset in 0..scale {
-            module.glwe_tensor_apply(scale + res_offset, &mut res_tensor, &a, &b, &mut scratch.borrow());
+            module.glwe_tensor_apply(
+                scale + res_offset,
+                &mut res_tensor,
+                &a,
+                &b,
+                &mut poisoned_scratch::<BE>(apply_bytes).borrow(),
+            );
             assert_canonical(res_tensor.data(), out_base2k, k);
             module.glwe_tensor_apply_prepared(
                 scale + res_offset,
@@ -244,7 +265,7 @@ where
                 &b_prep,
                 size,
                 in_base2k.into(),
-                &mut scratch.borrow(),
+                &mut poisoned_scratch::<BE>(apply_prepared_bytes).borrow(),
             );
             assert!(
                 res_prepared.data() == res_tensor.data(),
@@ -283,7 +304,12 @@ where
                 noise_want(res_offset)
             );
 
-            module.glwe_tensor_relinearize(&mut res_relin, &res_tensor, &tsk_prep, &mut scratch.borrow());
+            module.glwe_tensor_relinearize(
+                &mut res_relin,
+                &res_tensor,
+                &tsk_prep,
+                &mut poisoned_scratch::<BE>(relinearize_bytes).borrow(),
+            );
             glwe_decrypt_checked(module, &res_relin, &mut pt_have, &sk_dft, &mut scratch.borrow());
 
             module.glwe_sub(&mut pt_tmp, &pt_have, &pt_want);
@@ -310,7 +336,12 @@ where
             ..glwe_out_infos
         });
         assert_refuses_uncovered_input("glwe_tensor_relinearize took a tensor one bit past its key", || {
-            module.glwe_tensor_relinearize(&mut res_relin, &wide, &tsk_prep, &mut scratch.borrow())
+            module.glwe_tensor_relinearize(
+                &mut res_relin,
+                &wide,
+                &tsk_prep,
+                &mut poisoned_scratch::<BE>(relinearize_bytes).borrow(),
+            )
         });
     }
 
@@ -357,8 +388,6 @@ where
         rank: 1u32.into(),
         k_digit: crate::layouts::k_digit_of(base2k, Dsize(dsize as u32)),
     };
-    let size = key_k.div_ceil(base2k);
-
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         [1, 2]
             .iter()
@@ -366,15 +395,11 @@ where
                 let tsk = tsk_infos(dsize);
                 module
                     .glwe_tensor_key_encrypt_sk_tmp_bytes(&tsk)
-                    .max(module.prepare_tensor_key_tmp_bytes(&tsk))
-                    .max(module.glwe_mul_relinearize_tmp_bytes(&key_infos, size, size, TorusPrecision(key_k as u32), &tsk))
-                    .max(module.glwe_tensor_relinearize_tmp_bytes(&key_infos, &key_infos, &tsk))
+                    .max(module.glwe_tensor_key_prepare_tmp_bytes(&tsk))
             })
             .fold(0, usize::max)
             .max(module.glwe_encrypt_sk_tmp_bytes(&key_infos))
-            .max(module.glwe_decrypt_tmp_bytes(&key_infos))
-            .max(module.glwe_tensor_apply_tmp_bytes(&key_infos, &key_infos, &key_infos))
-            .max(module.glwe_tensor_square_apply_tmp_bytes(&key_infos, &key_infos)),
+            .max(module.glwe_decrypt_tmp_bytes(&key_infos)),
     );
 
     let mut source_xs: Source = Source::new([6u8; 32]);
@@ -414,10 +439,10 @@ where
             &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
         );
         let mut tsk_prep: GLWETensorKeyPrepared<BE::OwnedBuf, BE> = module.alloc_tensor_key_prepared_from_infos(&tsk_infos);
-        module.prepare_tensor_key(&mut tsk_prep, &tsk, &mut scratch.borrow());
+        module.glwe_tensor_key_prepare(&mut tsk_prep, &tsk, &mut scratch.borrow());
         // A key without noise metadata, which the one-pass model rejects.
         let mut outside: GLWETensorKeyPrepared<BE::OwnedBuf, BE> = module.alloc_tensor_key_prepared_from_infos(&tsk_infos);
-        module.prepare_tensor_key(&mut outside, &tsk, &mut scratch.borrow());
+        module.glwe_tensor_key_prepare(&mut outside, &tsk, &mut scratch.borrow());
         outside.0.noise = None;
 
         let key_noise = tsk_prep.noise().unwrap();
@@ -495,11 +520,14 @@ where
                     let role = if square { "square" } else { "product" };
                     let (var_one_pass, var_two_step) = model(if square { 4.0 } else { 2.0 } * var_msg);
                     if square {
-                        module.glwe_tensor_square_apply(cnv_offset, &mut tensor, &a, &mut scratch.borrow());
+                        let bytes = module.glwe_tensor_square_apply_tmp_bytes(&tensor, &a);
+                        module.glwe_tensor_square_apply(cnv_offset, &mut tensor, &a, &mut poisoned_scratch::<BE>(bytes).borrow());
                     } else {
-                        module.glwe_tensor_apply(cnv_offset, &mut tensor, &a, &b, &mut scratch.borrow());
+                        let bytes = module.glwe_tensor_apply_tmp_bytes(&tensor, &a, &b);
+                        module.glwe_tensor_apply(cnv_offset, &mut tensor, &a, &b, &mut poisoned_scratch::<BE>(bytes).borrow());
                     }
-                    module.glwe_tensor_relinearize(&mut res, &tensor, &tsk_prep, &mut scratch.borrow());
+                    let bytes = module.glwe_tensor_relinearize_tmp_bytes(&res, &tensor, &tsk_infos);
+                    module.glwe_tensor_relinearize(&mut res, &tensor, &tsk_prep, &mut poisoned_scratch::<BE>(bytes).borrow());
                     let (two_step_max, two_step) = error(&res, &mut scratch);
                     assert!(
                         two_step_max < 1 << 20 && two_step <= 0.5 * var_two_step.log2() + TENSOR_NOISE_MARGIN,
@@ -507,11 +535,20 @@ where
                          against {}",
                         0.5 * var_two_step.log2()
                     );
-                    let mut one_pass_with = |key: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>, have: &mut GLWE<_, _>| {
+                    let one_pass_bytes = module.glwe_mul_relinearize_tmp_bytes(
+                        &res_infos,
+                        infos.size(),
+                        infos.size(),
+                        TorusPrecision(k as u32),
+                        &tsk_infos,
+                    );
+                    let one_pass_with = |key: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>, have: &mut GLWE<_, _>| {
+                        let mut owned = poisoned_scratch::<BE>(one_pass_bytes);
+                        let scratch = &mut owned.borrow();
                         if square {
-                            module.glwe_square_relinearize(cnv_offset, have, res_k.into(), &a, key, &mut scratch.borrow());
+                            module.glwe_square_relinearize(cnv_offset, have, res_k.into(), &a, key, scratch);
                         } else {
-                            module.glwe_mul_relinearize(cnv_offset, have, res_k.into(), &a, &b, key, &mut scratch.borrow());
+                            module.glwe_mul_relinearize(cnv_offset, have, res_k.into(), &a, &b, key, scratch);
                         }
                         assert_canonical(have.data(), base2k, res_k);
                     };
@@ -619,13 +656,11 @@ where
             .glwe_encrypt_sk_tmp_bytes(&glwe_infos)
             .max(module.glwe_decrypt_tmp_bytes(&glwe_infos))
             .max(module.glwe_tensor_key_encrypt_sk_tmp_bytes(&tsk_infos))
-            .max(module.prepare_tensor_key_tmp_bytes(&tsk_infos))
+            .max(module.glwe_tensor_key_prepare_tmp_bytes(&tsk_infos))
             .max(module.glwe_tensor_key_encrypt_sk_tmp_bytes(&wide_tsk_infos))
-            .max(module.prepare_tensor_key_tmp_bytes(&wide_tsk_infos))
-            .max(module.glwe_mul_relinearize_tmp_bytes(&glwe_infos, size, size, TorusPrecision(k as u32), &tsk_infos))
-            .max(glwe_prepare_left_tmp_bytes(module, size, &glwe_infos))
-            .max(glwe_prepare_right_tmp_bytes(module, size, &glwe_infos)),
+            .max(module.glwe_tensor_key_prepare_tmp_bytes(&wide_tsk_infos)),
     );
+    let mul_bytes = module.glwe_mul_relinearize_tmp_bytes(&glwe_infos, size, size, TorusPrecision(k as u32), &tsk_infos);
 
     let mut source_xs: Source = Source::new([3u8; 32]);
     let mut source_xe: Source = Source::new([4u8; 32]);
@@ -645,7 +680,7 @@ where
         &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
     );
     let mut tsk_prep: GLWETensorKeyPrepared<BE::OwnedBuf, BE> = module.alloc_tensor_key_prepared_from_infos(&tsk_infos);
-    module.prepare_tensor_key(&mut tsk_prep, &tsk, &mut scratch.borrow());
+    module.glwe_tensor_key_prepare(&mut tsk_prep, &tsk, &mut scratch.borrow());
     let mut wide_tsk: GLWETensorKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_tensor_key_alloc_from_infos(&wide_tsk_infos);
     module.glwe_tensor_key_encrypt_sk(
         &mut wide_tsk,
@@ -655,7 +690,7 @@ where
         &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
     );
     let mut wide_tsk_prep: GLWETensorKeyPrepared<BE::OwnedBuf, BE> = module.alloc_tensor_key_prepared_from_infos(&wide_tsk_infos);
-    module.prepare_tensor_key(&mut wide_tsk_prep, &wide_tsk, &mut scratch.borrow());
+    module.glwe_tensor_key_prepare(&mut wide_tsk_prep, &wide_tsk, &mut scratch.borrow());
 
     let scale: usize = 2 * base2k;
     let mut data = vec![0i64; n];
@@ -725,13 +760,7 @@ where
     );
 
     // The sums run on exactly their scratch, whatever the number of pairs.
-    let mut sum_scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.glwe_mul_relinearize_sum_tmp_bytes(
-        &glwe_infos,
-        size,
-        size,
-        TorusPrecision(k as u32),
-        &tsk_infos,
-    ));
+    let sum_bytes = module.glwe_mul_relinearize_sum_tmp_bytes(&glwe_infos, size, size, TorusPrecision(k as u32), &tsk_infos);
     let zero: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_infos);
 
     // The same pairs prepared once, under both hints on each side, `s = a + c` among them: its canonical flag is
@@ -747,20 +776,27 @@ where
         .map(|(i, (l, r))| {
             let (l_hint, r_hint) = crate::test_suite::prepare_hints(i);
             let mut l_prep = module.cnv_pvec_left_alloc(n, 2, size, l_hint);
-            glwe_prepare_left(module, &mut l_prep, *l, k, &mut scratch.borrow());
+            glwe_prepare_left(
+                module,
+                &mut l_prep,
+                *l,
+                k,
+                &mut poisoned_scratch::<BE>(glwe_prepare_left_tmp_bytes(module, size, &glwe_infos)).borrow(),
+            );
             let mut r_prep = module.cnv_pvec_right_alloc(n, 2, size, r_hint);
-            glwe_prepare_right(module, &mut r_prep, *r, k, &mut scratch.borrow());
+            glwe_prepare_right(
+                module,
+                &mut r_prep,
+                *r,
+                k,
+                &mut poisoned_scratch::<BE>(glwe_prepare_right_tmp_bytes(module, size, &glwe_infos)).borrow(),
+            );
             (l_prep, r_prep)
         })
         .collect();
     let (prepared_a, prepared_b): (Vec<_>, Vec<_>) = prepared.iter().map(|(l, r)| (l, r)).unzip();
-    let mut prepared_scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.glwe_mul_prepared_relinearize_sum_tmp_bytes(
-        &glwe_infos,
-        size,
-        size,
-        TorusPrecision(k as u32),
-        &tsk_infos,
-    ));
+    let prepared_sum_bytes =
+        module.glwe_mul_prepared_relinearize_sum_tmp_bytes(&glwe_infos, size, size, TorusPrecision(k as u32), &tsk_infos);
 
     let res_k = TorusPrecision(k as u32);
     for res_offset in [0, 1, base2k - 1] {
@@ -772,7 +808,7 @@ where
             &mixed_a,
             &mixed_b,
             &tsk_prep,
-            &mut sum_scratch.borrow(),
+            &mut poisoned_scratch::<BE>(sum_bytes).borrow(),
         );
         let mut have: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_infos);
         module.glwe_mul_prepared_relinearize_sum(
@@ -786,7 +822,7 @@ where
             size,
             glwe_infos.k,
             &tsk_prep,
-            &mut prepared_scratch.borrow(),
+            &mut poisoned_scratch::<BE>(prepared_sum_bytes).borrow(),
         );
         assert!(
             have.data() == want.data() && have.is_canonical(),
@@ -808,13 +844,29 @@ where
             );
             let cnv_offset = scale + res_offset;
             if role == "left is the destination" {
-                module.glwe_copy(&mut res, &a, &mut scratch.borrow());
+                module.glwe_copy(
+                    &mut res,
+                    &a,
+                    &mut poisoned_scratch::<BE>(module.glwe_copy_tmp_bytes(&glwe_infos, &glwe_infos)).borrow(),
+                );
             }
             match role {
-                "square" => module.glwe_square_relinearize(cnv_offset, &mut res, res_k, &a, &tsk_prep, &mut scratch.borrow()),
-                "left is the destination" => {
-                    module.glwe_mul_relinearize_assign(cnv_offset, &mut res, res_k, &b, &tsk_prep, &mut scratch.borrow())
-                }
+                "square" => module.glwe_square_relinearize(
+                    cnv_offset,
+                    &mut res,
+                    res_k,
+                    &a,
+                    &tsk_prep,
+                    &mut poisoned_scratch::<BE>(mul_bytes).borrow(),
+                ),
+                "left is the destination" => module.glwe_mul_relinearize_assign(
+                    cnv_offset,
+                    &mut res,
+                    res_k,
+                    &b,
+                    &tsk_prep,
+                    &mut poisoned_scratch::<BE>(mul_bytes).borrow(),
+                ),
                 "sum of three products" => module.glwe_mul_relinearize_sum(
                     cnv_offset,
                     &mut res,
@@ -822,10 +874,18 @@ where
                     &[&a, &b, &c],
                     &[&b, &c, &a],
                     &tsk_prep,
-                    &mut sum_scratch.borrow(),
+                    &mut poisoned_scratch::<BE>(sum_bytes).borrow(),
                 ),
                 _ => {
-                    module.glwe_mul_relinearize(cnv_offset, &mut res, res_k, &a, &b, &tsk_prep, &mut scratch.borrow());
+                    module.glwe_mul_relinearize(
+                        cnv_offset,
+                        &mut res,
+                        res_k,
+                        &a,
+                        &b,
+                        &tsk_prep,
+                        &mut poisoned_scratch::<BE>(mul_bytes).borrow(),
+                    );
                     let (sum_a, sum_b) = ([&a, &zero], [&b, &zero]);
                     for len in 1..=2 {
                         // A fresh result each time, so that a sum which left it unwritten fails.
@@ -837,7 +897,7 @@ where
                             &sum_a[..len],
                             &sum_b[..len],
                             &tsk_prep,
-                            &mut sum_scratch.borrow(),
+                            &mut poisoned_scratch::<BE>(sum_bytes).borrow(),
                         );
                         assert!(
                             sum.data() == res.data(),
@@ -869,13 +929,7 @@ where
     }
 
     let mut wide: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&wide_infos);
-    let mut wide_scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.glwe_mul_relinearize_tmp_bytes(
-        &wide_infos,
-        size,
-        size,
-        TorusPrecision(k as u32),
-        &wide_tsk_infos,
-    ));
+    let wide_bytes = module.glwe_mul_relinearize_tmp_bytes(&wide_infos, size, size, TorusPrecision(k as u32), &wide_tsk_infos);
     module.glwe_mul_relinearize(
         scale,
         &mut wide,
@@ -883,7 +937,7 @@ where
         &a,
         &b,
         &wide_tsk_prep,
-        &mut wide_scratch.borrow(),
+        &mut poisoned_scratch::<BE>(wide_bytes).borrow(),
     );
     assert_canonical(wide.data(), base2k, wide_infos.k.as_usize());
 }
@@ -894,7 +948,7 @@ where
     Module<BE>: GLWEMulRelinearizeSum<BE> + GLWETensorKeyPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
-    rejected_sum(params, module, SumCase::NoPairs);
+    rejected_sum(params, module, SumCase::NoPairs, "one-pass product sum has no pairs");
 }
 
 /// Every pair of a sum shares the first one's layouts, checked before `res` is written.
@@ -903,7 +957,12 @@ where
     Module<BE>: GLWEMulRelinearizeSum<BE> + GLWETensorKeyPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
-    rejected_sum(params, module, SumCase::NarrowPair);
+    rejected_sum(
+        params,
+        module,
+        SumCase::NarrowPair,
+        "summed product 1 does not share the first pair's layouts",
+    );
 }
 
 /// A sum takes as many right operands as left ones, checked before `res` is written.
@@ -912,7 +971,12 @@ where
     Module<BE>: GLWEMulRelinearizeSum<BE> + GLWETensorKeyPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
-    rejected_sum(params, module, SumCase::UnequalLengths);
+    rejected_sum(
+        params,
+        module,
+        SumCase::UnequalLengths,
+        "assertion `left == right` failed: one-pass product sum: a and b differ in length\n  left: 2\n right: 1",
+    );
 }
 
 enum SumCase {
@@ -924,7 +988,7 @@ enum SumCase {
 }
 
 /// Runs a sum without scratch and with an unfilled key.
-fn rejected_sum<BE: Backend>(params: &TestParams, module: &Module<BE>, case: SumCase)
+fn rejected_sum<BE: Backend>(params: &TestParams, module: &Module<BE>, case: SumCase, message: &str)
 where
     Module<BE>: GLWEMulRelinearizeSum<BE> + GLWETensorKeyPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
@@ -955,15 +1019,17 @@ where
         SumCase::NarrowPair => (vec![&a, &narrow], vec![&a, &a]),
         SumCase::UnequalLengths => (vec![&a, &a], vec![&a]),
     };
-    module.glwe_mul_relinearize_sum(
-        base2k,
-        &mut res,
-        infos.k,
-        &left,
-        &right,
-        &tsk,
-        &mut ScratchOwned::alloc(0).borrow(),
-    );
+    assert_refusal(message, &mut res, glwe_state::<BE>, |res| {
+        module.glwe_mul_relinearize_sum(
+            base2k,
+            res,
+            infos.k,
+            &left,
+            &right,
+            &tsk,
+            &mut poisoned_scratch::<BE>(0).borrow(),
+        );
+    });
 }
 
 /// A sum of prepared pairs needs a pair.
@@ -972,7 +1038,7 @@ where
     Module<BE>: GLWEPreparedTensoring<BE> + GLWETensorKeyPreparedFactory<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
-    rejected_prepared_sum(params, module, PreparedSumCase::NoPairs);
+    rejected_prepared_sum(params, module, PreparedSumCase::NoPairs, "one-pass product sum has no pairs");
 }
 
 /// Every prepared pair of a sum is of the degree of `res`, of rank 1 and of the given sizes, checked before anything
@@ -982,7 +1048,12 @@ where
     Module<BE>: GLWEPreparedTensoring<BE> + GLWETensorKeyPreparedFactory<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
-    rejected_prepared_sum(params, module, PreparedSumCase::NarrowPair);
+    rejected_prepared_sum(
+        params,
+        module,
+        PreparedSumCase::NarrowPair,
+        "prepared pair 1 does not match res's degree, rank 1 and the given sizes",
+    );
 }
 
 /// The given sizes of a prepared sum are the limb counts of the given widths, checked before anything else.
@@ -991,7 +1062,12 @@ where
     Module<BE>: GLWEPreparedTensoring<BE> + GLWETensorKeyPreparedFactory<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
-    rejected_prepared_sum(params, module, PreparedSumCase::WiderLeftWidth);
+    rejected_prepared_sum(
+        params,
+        module,
+        PreparedSumCase::WiderLeftWidth,
+        "prepared sizes are not ceil(a_k / base2k) and ceil(b_k / base2k)",
+    );
 }
 
 /// A prepared sum takes as many right operands as left ones, checked before anything else.
@@ -1000,7 +1076,12 @@ where
     Module<BE>: GLWEPreparedTensoring<BE> + GLWETensorKeyPreparedFactory<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
-    rejected_prepared_sum(params, module, PreparedSumCase::UnequalLengths);
+    rejected_prepared_sum(
+        params,
+        module,
+        PreparedSumCase::UnequalLengths,
+        "assertion `left == right` failed: one-pass product sum: a and b differ in length\n  left: 2\n right: 1",
+    );
 }
 
 enum PreparedSumCase {
@@ -1014,7 +1095,7 @@ enum PreparedSumCase {
 }
 
 /// Runs a sum of prepared pairs without scratch and with an unfilled key.
-fn rejected_prepared_sum<BE: Backend>(params: &TestParams, module: &Module<BE>, case: PreparedSumCase)
+fn rejected_prepared_sum<BE: Backend>(params: &TestParams, module: &Module<BE>, case: PreparedSumCase, message: &str)
 where
     Module<BE>: GLWEPreparedTensoring<BE> + GLWETensorKeyPreparedFactory<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
@@ -1045,19 +1126,21 @@ where
         PreparedSumCase::WiderLeftWidth => (vec![&a], vec![&b], (3 * base2k).into()),
         PreparedSumCase::UnequalLengths => (vec![&a, &a], vec![&b], infos.k),
     };
-    module.glwe_mul_prepared_relinearize_sum(
-        base2k,
-        &mut res,
-        infos.k,
-        &left,
-        &right,
-        2,
-        a_k,
-        2,
-        infos.k,
-        &tsk,
-        &mut ScratchOwned::alloc(0).borrow(),
-    );
+    assert_refusal(message, &mut res, glwe_state::<BE>, |res| {
+        module.glwe_mul_prepared_relinearize_sum(
+            base2k,
+            res,
+            infos.k,
+            &left,
+            &right,
+            2,
+            a_k,
+            2,
+            infos.k,
+            &tsk,
+            &mut poisoned_scratch::<BE>(0).borrow(),
+        );
+    });
 }
 
 /// The prepared operands of a tensor product are of the degree and rank of `res` and of the given sizes, checked
@@ -1078,15 +1161,22 @@ where
     let a = module.cnv_pvec_left_alloc(n, 2, 2, PrepareHint::Reuse);
     let narrow = module.cnv_pvec_right_alloc(n, 2, 1, PrepareHint::Reuse);
     let mut res: GLWETensor<BE::OwnedBuf, BE::ZnxWord> = module.glwe_tensor_alloc_from_infos(&infos);
-    module.glwe_tensor_apply_prepared(
-        base2k,
+    assert_refusal(
+        "prepared operands do not match res's degree and rank and the given sizes",
         &mut res,
-        &a,
-        2,
-        &narrow,
-        2,
-        infos.base2k,
-        &mut ScratchOwned::alloc(0).borrow(),
+        glwe_tensor_state::<BE>,
+        |res| {
+            module.glwe_tensor_apply_prepared(
+                base2k,
+                res,
+                &a,
+                2,
+                &narrow,
+                2,
+                infos.base2k,
+                &mut poisoned_scratch::<BE>(0).borrow(),
+            );
+        },
     );
 }
 
@@ -1107,12 +1197,19 @@ where
     };
     let a: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&infos);
     let mut a_prep = module.cnv_pvec_left_alloc(n, 2, 3, PrepareHint::Reuse);
-    glwe_prepare_left(
-        module,
+    assert_refusal(
+        "assertion `left == right` failed: prepared operand size != ceil(a_k / base2k)\n  left: 3\n right: 2",
         &mut a_prep,
-        &a,
-        infos.k.as_usize(),
-        &mut ScratchOwned::alloc(0).borrow(),
+        cnv_pvec_left_state::<BE>,
+        |a_prep| {
+            glwe_prepare_left(
+                module,
+                a_prep,
+                &a,
+                infos.k.as_usize(),
+                &mut poisoned_scratch::<BE>(0).borrow(),
+            );
+        },
     );
 }
 
@@ -1179,12 +1276,14 @@ where
             (module)
                 .glwe_encrypt_sk_tmp_bytes(&glwe_in_infos)
                 .max((module).glwe_decrypt_tmp_bytes(&glwe_out_infos))
-                .max(module.glwe_tensor_square_apply_tmp_bytes(&res_square, &a))
-                .max(module.glwe_tensor_apply_tmp_bytes(&res_tensor, &a, &a))
                 .max(module.glwe_secret_tensor_prepare_tmp_bytes(rank.into()))
-                .max(module.glwe_tensor_relinearize_tmp_bytes(&res_relin_square, &res_square, &tsk_infos))
-                .max(module.glwe_tensor_relinearize_tmp_bytes(&res_relin_tensor, &res_tensor, &tsk_infos)),
+                .max(module.glwe_tensor_key_encrypt_sk_tmp_bytes(&tsk_infos))
+                .max(module.glwe_tensor_key_prepare_tmp_bytes(&tsk_infos)),
         );
+        let square_bytes = module.glwe_tensor_square_apply_tmp_bytes(&res_square, &a);
+        let apply_bytes = module.glwe_tensor_apply_tmp_bytes(&res_tensor, &a, &a);
+        let relin_square_bytes = module.glwe_tensor_relinearize_tmp_bytes(&res_relin_square, &res_square, &tsk_infos);
+        let relin_tensor_bytes = module.glwe_tensor_relinearize_tmp_bytes(&res_relin_tensor, &res_tensor, &tsk_infos);
 
         // Distinct seeds: with a shared one the secret, the mask and the error
         // are all drawn from the same byte stream, correlating `s` with `a` and
@@ -1208,7 +1307,7 @@ where
         );
 
         let mut tsk_prep: GLWETensorKeyPrepared<BE::OwnedBuf, BE> = module.alloc_tensor_key_prepared_from_infos(&tsk_infos);
-        module.prepare_tensor_key(&mut tsk_prep, &tsk, &mut scratch.borrow());
+        module.glwe_tensor_key_prepare(&mut tsk_prep, &tsk, &mut scratch.borrow());
 
         let scale: usize = 2 * in_base2k;
 
@@ -1220,13 +1319,34 @@ where
         module.glwe_encrypt_sk(&mut a, &pt_in, &sk_dft, &mut source_xe, &mut source_xa, &mut scratch.borrow());
 
         for res_offset in 0..scale {
-            module.glwe_tensor_square_apply(scale + res_offset, &mut res_square, &a, &mut scratch.borrow());
-            module.glwe_tensor_apply(scale + res_offset, &mut res_tensor, &a, &a, &mut scratch.borrow());
+            module.glwe_tensor_square_apply(
+                scale + res_offset,
+                &mut res_square,
+                &a,
+                &mut poisoned_scratch::<BE>(square_bytes).borrow(),
+            );
+            module.glwe_tensor_apply(
+                scale + res_offset,
+                &mut res_tensor,
+                &a,
+                &a,
+                &mut poisoned_scratch::<BE>(apply_bytes).borrow(),
+            );
             assert_canonical(res_square.data(), out_base2k, k);
             assert_canonical(res_tensor.data(), out_base2k, k);
 
-            module.glwe_tensor_relinearize(&mut res_relin_square, &res_square, &tsk_prep, &mut scratch.borrow());
-            module.glwe_tensor_relinearize(&mut res_relin_tensor, &res_tensor, &tsk_prep, &mut scratch.borrow());
+            module.glwe_tensor_relinearize(
+                &mut res_relin_square,
+                &res_square,
+                &tsk_prep,
+                &mut poisoned_scratch::<BE>(relin_square_bytes).borrow(),
+            );
+            module.glwe_tensor_relinearize(
+                &mut res_relin_tensor,
+                &res_tensor,
+                &tsk_prep,
+                &mut poisoned_scratch::<BE>(relin_tensor_bytes).borrow(),
+            );
 
             // Decrypt one side to ensure the square path remains functionally valid.
             glwe_decrypt_checked(module, &res_relin_square, &mut pt_have, &sk_dft, &mut scratch.borrow());
@@ -1345,10 +1465,16 @@ where
 
         module.glwe_encrypt_sk(&mut a, &pt_a, &sk_dft, &mut source_xe, &mut source_xa, &mut scratch.borrow());
 
-        let mut scratch_cnv = ScratchOwned::alloc(module.glwe_mul_plain_tmp_bytes(&res, &a, &pt_b));
+        let mul_bytes = module.glwe_mul_plain_tmp_bytes(&res, &a, &pt_b);
 
         for res_offset in 0..scale {
-            module.glwe_mul_plain(scale + res_offset, &mut res, &a, &pt_b, &mut scratch_cnv.borrow());
+            module.glwe_mul_plain(
+                scale + res_offset,
+                &mut res,
+                &a,
+                &pt_b,
+                &mut poisoned_scratch::<BE>(mul_bytes).borrow(),
+            );
 
             glwe_decrypt_checked(module, &res, &mut pt_have, &sk_dft, &mut scratch.borrow());
             module.vec_znx_normalize(
@@ -1428,15 +1554,22 @@ where
             for cnv_offset in [0usize, base2k] {
                 let mut res_small: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&layout);
                 let mut res_dense: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&layout);
-                // The assign form multiplies `res` in place, so its budget is
-                // the product one taken at `res` for both ciphertext operands.
-                let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
-                    module
-                        .glwe_mul_plain_tmp_bytes(&res_dense, &a, &pt_dense)
-                        .max(module.glwe_mul_plain_tmp_bytes(&res_dense, &res_dense, &pt_dense)),
+                let small_bytes = module.glwe_mul_plain_tmp_bytes(&res_small, &a, &pt_small);
+                let dense_bytes = module.glwe_mul_plain_tmp_bytes(&res_dense, &a, &pt_dense);
+                module.glwe_mul_plain(
+                    cnv_offset,
+                    &mut res_small,
+                    &a,
+                    &pt_small,
+                    &mut poisoned_scratch::<BE>(small_bytes).borrow(),
                 );
-                module.glwe_mul_plain(cnv_offset, &mut res_small, &a, &pt_small, &mut scratch.borrow());
-                module.glwe_mul_plain(cnv_offset, &mut res_dense, &a, &pt_dense, &mut scratch.borrow());
+                module.glwe_mul_plain(
+                    cnv_offset,
+                    &mut res_dense,
+                    &a,
+                    &pt_dense,
+                    &mut poisoned_scratch::<BE>(dense_bytes).borrow(),
+                );
                 assert_eq!(
                     res_small.data(),
                     res_dense.data(),
@@ -1447,8 +1580,22 @@ where
                 let mut assign_dense: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&layout);
                 assign_small.data_mut().raw_mut().copy_from_slice(a.data().raw());
                 assign_dense.data_mut().raw_mut().copy_from_slice(a.data().raw());
-                module.glwe_mul_plain_assign(cnv_offset, &mut assign_small, &pt_small, &mut scratch.borrow());
-                module.glwe_mul_plain_assign(cnv_offset, &mut assign_dense, &pt_dense, &mut scratch.borrow());
+                // The assign form multiplies `res` in place, so its budget is the product one taken at `res` for both
+                // ciphertext operands.
+                let small_bytes = module.glwe_mul_plain_tmp_bytes(&assign_small, &assign_small, &pt_small);
+                let dense_bytes = module.glwe_mul_plain_tmp_bytes(&assign_dense, &assign_dense, &pt_dense);
+                module.glwe_mul_plain_assign(
+                    cnv_offset,
+                    &mut assign_small,
+                    &pt_small,
+                    &mut poisoned_scratch::<BE>(small_bytes).borrow(),
+                );
+                module.glwe_mul_plain_assign(
+                    cnv_offset,
+                    &mut assign_dense,
+                    &pt_dense,
+                    &mut poisoned_scratch::<BE>(dense_bytes).borrow(),
+                );
                 assert_eq!(
                     assign_small.data(),
                     assign_dense.data(),
@@ -1508,9 +1655,9 @@ where
         let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
             (module)
                 .glwe_encrypt_sk_tmp_bytes(&glwe_in_infos)
-                .max((module).glwe_decrypt_tmp_bytes(&glwe_out_infos))
-                .max(module.glwe_mul_const_tmp_bytes(&res, &a, &pt_b)),
+                .max((module).glwe_decrypt_tmp_bytes(&glwe_out_infos)),
         );
+        let mul_bytes = module.glwe_mul_const_tmp_bytes(&res, &a, &pt_b);
 
         // Distinct seeds: with a shared one the secret, the mask and the error
         // are all drawn from the same byte stream, correlating `s` with `a` and
@@ -1560,7 +1707,14 @@ where
         module.glwe_encrypt_sk(&mut a, &pt_a, &sk_dft, &mut source_xe, &mut source_xa, &mut scratch.borrow());
 
         for res_offset in 0..scale {
-            module.glwe_mul_const(scale + res_offset, &mut res, &a, &pt_b, b_coeff, &mut scratch.borrow());
+            module.glwe_mul_const(
+                scale + res_offset,
+                &mut res,
+                &a,
+                &pt_b,
+                b_coeff,
+                &mut poisoned_scratch::<BE>(mul_bytes).borrow(),
+            );
 
             glwe_decrypt_checked(module, &res, &mut pt_have, &sk_dft, &mut scratch.borrow());
             module.vec_znx_normalize(
@@ -1676,7 +1830,7 @@ pub fn test_glwe_tensor_relinearize_cross_radix<BE: crate::test_suite::noise::Te
                 .max(module.glwe_tensor_apply_tmp_bytes(&res_tensor, &a, &a))
                 .max(module.glwe_secret_tensor_prepare_tmp_bytes(rank.into()))
                 .max(module.glwe_tensor_key_encrypt_sk_tmp_bytes(&cross_infos))
-                .max(module.glwe_tensor_relinearize_tmp_bytes(&res_cross, &res_tensor, &cross_infos)),
+                .max(module.glwe_tensor_key_prepare_tmp_bytes(&cross_infos)),
         );
 
         let mut source_xs: Source = Source::new([0u8; 32]);
@@ -1707,13 +1861,17 @@ pub fn test_glwe_tensor_relinearize_cross_radix<BE: crate::test_suite::noise::Te
             &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
         );
         let mut tsk_prep: GLWETensorKeyPrepared<BE::OwnedBuf, BE> = module.alloc_tensor_key_prepared_from_infos(&cross_infos);
-        module.prepare_tensor_key(&mut tsk_prep, &tsk, &mut scratch.borrow());
+        module.glwe_tensor_key_prepare(&mut tsk_prep, &tsk, &mut scratch.borrow());
         // Reaching the end is the regression: deriving the operand width from
         // the storage precision hands the product a limb count its bound does
         // not accept, and it rejects the call before doing any work; a query
         // short of what the call takes runs out of this exact scratch.
-        let mut exact =
-            ScratchOwned::<BE>::alloc(module.glwe_tensor_relinearize_tmp_bytes(&res_cross, &res_tensor, &cross_infos));
-        module.glwe_tensor_relinearize(&mut res_cross, &res_tensor, &tsk_prep, &mut exact.borrow());
+        let exact = module.glwe_tensor_relinearize_tmp_bytes(&res_cross, &res_tensor, &cross_infos);
+        module.glwe_tensor_relinearize(
+            &mut res_cross,
+            &res_tensor,
+            &tsk_prep,
+            &mut poisoned_scratch::<BE>(exact).borrow(),
+        );
     }
 }

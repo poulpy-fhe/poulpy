@@ -81,21 +81,25 @@ impl<D: Data, W: ZnxWord, R: Ring> CKKSCiphertext<D, W, R> {
     /// This is intended for callers that build ciphertext buffers manually.
     /// Normal CKKS operations update metadata themselves.
     pub fn set_meta_checked(&mut self, meta: GLWEPlaintextMeta) -> Result<()> {
-        // The budget now lives in the wrapped GLWE's torus width `k`; this only
-        // validates that the claimed width fits the allocated storage and that the
-        // requested scale fits within it.
-        anyhow::ensure!(
-            self.k().as_usize() <= self.max_k().as_usize() && ckks_log_delta(&meta) <= self.k().as_usize(),
-            CKKSCompositionError::LimbReallocationShrinksBelowMetadata {
-                max_k: self.max_k().as_usize(),
-                log_delta: ckks_log_delta(&meta),
-                base2k: self.base2k().as_usize(),
-                requested_limbs: self.max_size(),
-            }
-        );
+        ensure_meta_fits(self, &meta)?;
         self.set_meta(meta);
         Ok(())
     }
+}
+
+/// The budget lives in the wrapped GLWE's torus width `k`, so this only validates that the claimed width fits the
+/// allocated storage and that the requested scale fits within it.
+fn ensure_meta_fits(ct: &impl GLWEInfos, meta: &GLWEPlaintextMeta) -> Result<()> {
+    anyhow::ensure!(
+        ct.k().as_usize() <= ct.max_k().as_usize() && ckks_log_delta(meta) <= ct.k().as_usize(),
+        CKKSCompositionError::LimbReallocationShrinksBelowMetadata {
+            max_k: ct.max_k().as_usize(),
+            log_delta: ckks_log_delta(meta),
+            base2k: ct.base2k().as_usize(),
+            requested_limbs: ct.max_size(),
+        }
+    );
+    Ok(())
 }
 
 // Binding `R` to `BE::Ring` in the backend conversions below rejects a
@@ -316,6 +320,13 @@ impl<'a, BE: Backend + 'a> CKKSCiphertextViewMut<'a, BE> {
         let mut ct = Self { inner };
         ct.set_meta(meta);
         ct
+    }
+
+    /// As [`CKKSCiphertext::set_meta_checked`].
+    pub(crate) fn set_meta_checked(&mut self, meta: GLWEPlaintextMeta) -> Result<()> {
+        ensure_meta_fits(self, &meta)?;
+        self.set_meta(meta);
+        Ok(())
     }
 
     /// Reborrows this view read-only, in the backend's shared buffer type.

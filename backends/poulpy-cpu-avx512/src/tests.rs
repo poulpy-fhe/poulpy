@@ -5,6 +5,8 @@ mod ckks_tests;
 mod core_emulated_tensor;
 #[cfg(feature = "enable-rayon")]
 mod idft_normalize_parity;
+#[cfg(feature = "enable-ckks")]
+mod libm_tests;
 #[cfg(feature = "enable-ifma")]
 mod one_pass_parity;
 
@@ -83,6 +85,7 @@ poulpy_core::core_parity_test_suite! {
         trace_packing => poulpy_core::test_suite::parity::test_trace_packing_parity,
         tensor_relinearize_decrypt => poulpy_core::test_suite::parity::test_tensor_relinearize_decrypt_parity,
         linear_transformation => poulpy_core::test_suite::parity::test_linear_transformation_parity,
+        linear_transformation_powers_of_two => poulpy_core::test_suite::parity::test_linear_transformation_powers_of_two_parity,
         sampling => poulpy_core::test_suite::sampling::test_sampling_contract,
         preparation => poulpy_core::test_suite::parity::test_preparation_contract,
         glwe_add => poulpy_core::test_suite::parity::test_glwe_add_parity,
@@ -119,6 +122,7 @@ poulpy_core::core_parity_test_suite! {
         trace_packing => poulpy_core::test_suite::parity::test_trace_packing_parity,
         tensor_relinearize_decrypt => poulpy_core::test_suite::parity::test_tensor_relinearize_decrypt_parity,
         linear_transformation => poulpy_core::test_suite::parity::test_linear_transformation_parity,
+        linear_transformation_powers_of_two => poulpy_core::test_suite::parity::test_linear_transformation_powers_of_two_parity,
         sampling => poulpy_core::test_suite::sampling::test_sampling_contract,
         preparation => poulpy_core::test_suite::parity::test_preparation_contract,
         glwe_add => poulpy_core::test_suite::parity::test_glwe_add_parity,
@@ -158,6 +162,7 @@ poulpy_core::core_parity_test_suite! {
         trace_packing => poulpy_core::test_suite::parity::test_trace_packing_parity,
         tensor_relinearize_decrypt => poulpy_core::test_suite::parity::test_tensor_relinearize_decrypt_parity,
         linear_transformation => poulpy_core::test_suite::parity::test_linear_transformation_parity,
+        linear_transformation_powers_of_two => poulpy_core::test_suite::parity::test_linear_transformation_powers_of_two_parity,
         sampling => poulpy_core::test_suite::sampling::test_sampling_contract,
         preparation => poulpy_core::test_suite::parity::test_preparation_contract,
         glwe_add => poulpy_core::test_suite::parity::test_glwe_add_parity,
@@ -294,6 +299,7 @@ poulpy_core::core_parity_test_suite! {
         trace_packing => poulpy_core::test_suite::parity::test_trace_packing_parity,
         tensor_relinearize_decrypt => poulpy_core::test_suite::parity::test_tensor_relinearize_decrypt_parity,
         linear_transformation => poulpy_core::test_suite::parity::test_linear_transformation_parity,
+        linear_transformation_powers_of_two => poulpy_core::test_suite::parity::test_linear_transformation_powers_of_two_parity,
         sampling => poulpy_core::test_suite::sampling::test_sampling_contract,
         preparation => poulpy_core::test_suite::parity::test_preparation_contract,
         glwe_add => poulpy_core::test_suite::parity::test_glwe_add_parity,
@@ -333,6 +339,7 @@ poulpy_core::core_parity_test_suite! {
         trace_packing => poulpy_core::test_suite::parity::test_trace_packing_parity,
         tensor_relinearize_decrypt => poulpy_core::test_suite::parity::test_tensor_relinearize_decrypt_parity,
         linear_transformation => poulpy_core::test_suite::parity::test_linear_transformation_parity,
+        linear_transformation_powers_of_two => poulpy_core::test_suite::parity::test_linear_transformation_powers_of_two_parity,
         sampling => poulpy_core::test_suite::sampling::test_sampling_contract,
         preparation => poulpy_core::test_suite::parity::test_preparation_contract,
         glwe_add => poulpy_core::test_suite::parity::test_glwe_add_parity,
@@ -453,6 +460,7 @@ poulpy_core::core_parity_test_suite! {
         trace_packing => poulpy_core::test_suite::parity::test_trace_packing_parity,
         tensor_relinearize_decrypt => poulpy_core::test_suite::parity::test_tensor_relinearize_decrypt_parity,
         linear_transformation => poulpy_core::test_suite::parity::test_linear_transformation_parity,
+        linear_transformation_powers_of_two => poulpy_core::test_suite::parity::test_linear_transformation_powers_of_two_parity,
         sampling => poulpy_core::test_suite::sampling::test_sampling_contract,
         preparation => poulpy_core::test_suite::parity::test_preparation_contract,
         glwe_add => poulpy_core::test_suite::parity::test_glwe_add_parity,

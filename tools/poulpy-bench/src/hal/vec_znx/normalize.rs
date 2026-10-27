@@ -1,3 +1,4 @@
+use poulpy_hal::api::ModuleSynchronize;
 use std::hint::black_box;
 
 use criterion::{Bencher, measurement::Measurement};
@@ -15,7 +16,7 @@ use crate::hal::params::{HalSweepParms, NormalizeSweepParams};
 
 pub fn runner_vec_znx_normalize<B: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
 where
-    Module<B>: VecZnxNormalize<B> + ModuleNew<B> + VecZnxNormalizeTmpBytes,
+    Module<B>: VecZnxNormalize<B> + ModuleNew<B> + ModuleSynchronize<B> + VecZnxNormalizeTmpBytes,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
 {
     runner_vec_znx_normalize_sweep::<B, M>(
@@ -35,7 +36,7 @@ pub fn runner_vec_znx_normalize_sweep<B: Backend<ZnxWord = i64>, M: Measurement>
     bencher: &mut Bencher<'_, M>,
     params: &NormalizeSweepParams,
 ) where
-    Module<B>: VecZnxNormalize<B> + ModuleNew<B> + VecZnxNormalizeTmpBytes,
+    Module<B>: VecZnxNormalize<B> + ModuleNew<B> + ModuleSynchronize<B> + VecZnxNormalizeTmpBytes,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
 {
     let sweep = &params.shape;
@@ -66,6 +67,7 @@ pub fn runner_vec_znx_normalize_sweep<B: Backend<ZnxWord = i64>, M: Measurement>
                 &mut scratch.borrow(),
             );
         }
+        module.synchronize();
         black_box(());
     });
 }
@@ -74,7 +76,7 @@ pub fn runner_vec_znx_normalize_assign<B: Backend<ZnxWord = i64>, M: Measurement
     bencher: &mut Bencher<'_, M>,
     sweep: &HalSweepParms,
 ) where
-    Module<B>: VecZnxNormalizeAssign<B> + ModuleNew<B> + VecZnxNormalizeTmpBytes,
+    Module<B>: VecZnxNormalizeAssign<B> + ModuleNew<B> + ModuleSynchronize<B> + VecZnxNormalizeTmpBytes,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
 {
     let module: Module<B> = Module::<B>::new(sweep.n as u64);
@@ -93,6 +95,7 @@ pub fn runner_vec_znx_normalize_assign<B: Backend<ZnxWord = i64>, M: Measurement
         for i in 0..sweep.cols {
             module.vec_znx_normalize_assign(base2k, sweep.size * base2k, 0, &mut a, i, &mut scratch.borrow());
         }
+        module.synchronize();
         black_box(());
     });
 }

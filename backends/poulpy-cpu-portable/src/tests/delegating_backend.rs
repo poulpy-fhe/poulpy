@@ -2,11 +2,14 @@ mod external_product;
 
 use poulpy_core::{
     GLWEMaskFill,
-    api::{GGSWRotate, GLWEAdd, GLWEAutomorphism, GLWEMulXpMinusOne, GLWENormalize, GLWERotate, GLWEShift, GLWETrace},
+    api::{
+        GGSWRotate, GLWEAdd, GLWEAutomorphism, GLWEAutomorphismKeyPreparedFactory, GLWEMulXpMinusOne, GLWENormalize, GLWERotate,
+        GLWEShift, GLWETrace,
+    },
     layouts::{
         Base2K, Degree, Dnum, GGLWEInfos, GGSWAtViewMut, GGSWInfos, GGSWLayout, GGSWToBackendMut, GLWE,
         GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos,
-        ModuleCoreAlloc, Rank, SetGaloisElement, TorusPrecision, prepared::GLWEAutomorphismKeyPreparedFactory,
+        ModuleCoreAlloc, Rank, SetGaloisElement, TorusPrecision,
     },
     oep::{GGLWEProductDigitsStridedImpl, GGSWRotateImpl, GLWEAddImpl, GLWERotateImpl, GLWETraceImpl},
     reference::operations::{GLWEAddReference, GLWERotateReference},
@@ -129,6 +132,8 @@ poulpy_core::impl_glwe_shift_reference_full!(DelegatingFFT64Portable);
 poulpy_core::impl_glwe_keyswitch_reference_full!(DelegatingFFT64Portable);
 poulpy_core::impl_encryption_reference_full!(DelegatingFFT64Portable);
 poulpy_core::impl_decryption_reference_full!(DelegatingFFT64Portable);
+poulpy_core::impl_preparation_reference_full!(DelegatingFFT64Portable);
+poulpy_core::impl_secret_reference_full!(DelegatingFFT64Portable);
 crate::impl_sampling_host!(DelegatingFFT64Portable, fft64);
 // The pairwise suite must use a selected comparison backend's implementation
 // and its own scratch query, even when that backend delegates its arithmetic.
@@ -182,6 +187,8 @@ unsafe impl GGLWEProductDigitsStridedImpl for DelegatingFFT64Portable {
         );
         assert!(marker.iter().all(|&byte| byte == 0x39));
     }
+
+    ::poulpy_core::impl_gglwe_product_step_hooks_reference!();
 }
 poulpy_core::impl_conversion_reference_full!(DelegatingFFT64Portable);
 poulpy_core::impl_ggsw_conversion_reference_full!(DelegatingFFT64Portable);

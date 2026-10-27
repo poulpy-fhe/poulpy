@@ -1,10 +1,12 @@
 use poulpy_core::{
     GLWEExternalProduct, GLWEMaskFill,
+    api::GGSWPreparedFactory,
     layouts::{
         Base2K, Degree, Dnum, GGSW, GGSWAtViewMut, GGSWLayout, GLWELayout, ModuleCoreAlloc, Rank, TorusPrecision, k_digit_of,
-        prepared::{GGSWPrepared, GGSWPreparedFactory},
+        prepared::GGSWPrepared,
     },
 };
+use poulpy_hal::api::ModuleSynchronize;
 use poulpy_hal::{
     api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{Backend, Module, ScratchOwned},
@@ -42,6 +44,7 @@ fn layouts(cp: &CoreParams) -> (GLWELayout, GGSWLayout) {
 pub fn runner_glwe_external_product<BE: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CoreParams)
 where
     Module<BE>: ModuleNew<BE>
+        + ModuleSynchronize<BE>
         + GLWEExternalProduct<BE>
         + GGSWPreparedFactory<BE>
         + GLWEMaskFill<BE>
@@ -80,6 +83,7 @@ where
             &ggsw_prepared.to_backend_ref(),
             &mut scratch.borrow(),
         );
+        module.synchronize();
         black_box(());
     });
 }
@@ -90,6 +94,7 @@ pub fn runner_glwe_external_product_assign<BE: Backend<ZnxWord = i64>, M: Measur
     cp: &CoreParams,
 ) where
     Module<BE>: ModuleNew<BE>
+        + ModuleSynchronize<BE>
         + GLWEExternalProduct<BE>
         + GGSWPreparedFactory<BE>
         + GLWEMaskFill<BE>
@@ -122,6 +127,7 @@ pub fn runner_glwe_external_product_assign<BE: Backend<ZnxWord = i64>, M: Measur
 
     bencher.iter(|| {
         module.glwe_external_product_assign(&mut ct_glwe, &ggsw_prepared.to_backend_ref(), &mut scratch.borrow());
+        module.synchronize();
         black_box(());
     });
 }

@@ -8,7 +8,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    LWEFillMask, Noise, VecZnxBigAddNoise,
+    Distribution, LWEFillMask, Noise, VecZnxBigAddNoise,
     layouts::{LWEInfos, LWEPlaintextToBackendRef, LWESecretToBackendRef, LWEToBackendMut},
 };
 
@@ -30,7 +30,7 @@ where
         R: LWEToBackendMut<BE>,
     {
         let mut res = res.to_backend_mut();
-        assert_eq!(res.mask.cols(), 1, "fill_lwe_mask_from_source: LWE mask cols must be 1");
+        assert!(res.mask.cols() == 1, "fill_lwe_mask_from_source: LWE mask cols must be 1");
         self.vec_znx_fill_uniform_source(base2k, res.k().as_usize(), &mut res.mask, 0, source_xa);
     }
 }
@@ -105,10 +105,14 @@ where
             let pt = pt.to_backend_ref();
             let sk = sk.to_backend_ref();
 
-            #[cfg(debug_assertions)]
-            {
-                assert_eq!(res.n(), sk.n())
-            }
+            assert!(
+                sk.dist != Distribution::NONE,
+                "lwe secret distribution is NONE (have you prepared the key?)"
+            );
+            assert!(
+                res.n() == sk.n(),
+                "the ciphertext dimension differs from the secret's dimension"
+            );
 
             assert!(
                 scratch.available() >= self.lwe_encrypt_sk_tmp_bytes_reference(res),

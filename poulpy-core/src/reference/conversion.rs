@@ -19,16 +19,14 @@ use poulpy_hal::{
 use crate::layouts::operand_degree;
 use crate::{
     ScratchArenaTakeCore,
+    gadget::{gadget_dft_apply, gadget_dft_apply_tmp_bytes, gadget_input_size, gglwe_product_output_size},
     layouts::{
         GGLWEInfos, GGSWAtViewMut, GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef,
         GLWEViewMut, GLWEViewRef, LWEInfos, LWEMatrixInfos, LWEMatrixToBackendMut, LWEToBackendMut, LWEToBackendRef, Rank,
         glwe_backend_ref_from_mut,
         prepared::{GGLWEPreparedBackendRef, GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedBackendRef},
     },
-    reference::keyswitching::{
-        GGLWEProductReference, gglwe_product_output_size,
-        glwe::{gadget_dft_apply, gadget_dft_apply_tmp_bytes, gadget_input_size},
-    },
+    reference::keyswitching::GGLWEProductReference,
 };
 
 pub fn lwe_sample_extract_reference<BE, M, R, A>(module: &M, res: &mut R, a: &A)
@@ -356,7 +354,7 @@ pub fn glwe_from_lwe_reference<BE, M, R, A>(
     let glwe_ref = glwe_backend_ref_from_mut::<BE>(&glwe);
     let glwe_view = &glwe_ref;
     let mut res_view = &mut res_backend;
-    crate::reference::keyswitching::glwe::assert_no_row_offset("glwe_from_lwe", &ksk);
+    crate::layouts::assert_no_row_offset("glwe_from_lwe", &ksk);
     module.glwe_keyswitch(&mut res_view, &glwe_view, &ksk.to_backend_ref(), &mut scratch_1)
 }
 
@@ -443,8 +441,8 @@ pub fn ggsw_expand_row_reference<BE, M, R>(
     let cols: usize = rank + 1;
     // Checked once, before any write.
     for col in 0..rank {
-        crate::reference::keyswitching::glwe::assert_no_row_offset("ggsw_expand_rows", &tsk.at(col));
-        crate::reference::keyswitching::glwe::assert_key_covers("ggsw_expand_rows", res_backend.k(), &tsk.at(col));
+        crate::layouts::assert_no_row_offset("ggsw_expand_rows", &tsk.at(col));
+        crate::layouts::assert_key_covers("ggsw_expand_rows", res_backend.k(), &tsk.at(col));
     }
 
     let res_conv_size: usize = res_backend.k().as_usize().div_ceil(tsk_base2k);

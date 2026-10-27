@@ -18,6 +18,10 @@ mod ckks_tests;
 #[cfg(feature = "enable-core")]
 mod delegating_backend;
 mod derived_scratch;
+#[cfg(feature = "enable-ckks")]
+mod libm_tests;
+#[cfg(feature = "enable-core")]
+mod linear_transformation_batch;
 
 /// A square's constant coefficient has mean `(2n - 1) * 2^(2K) / 12` on the conjugate-invariant ring: one radix past
 /// the model's, it exceeds `Q/2` by itself.
@@ -69,21 +73,52 @@ fn conjugate_invariant_square_mean_sets_the_ntt_radix() {
 }
 
 #[test]
-fn bootstrapping_presets_keep_fixture_radices() {
-    use poulpy_ckks::{presets::bootstrapping::all, test_suite::presets::preset_with_max_base2k};
+fn bootstrapping_presets_take_the_backend_radix() {
+    use poulpy_ckks::{
+        layouts::EvalModRing,
+        presets::bootstrapping::all,
+        test_suite::presets::{BOOTSTRAP_FAILURE_BITS, preset_for_backend},
+    };
     use poulpy_core::layouts::LWEInfos;
 
-    for preset in all().unwrap() {
-        let fft = preset_with_max_base2k(&preset, 19).unwrap();
-        let ntt = preset_with_max_base2k(&preset, 52).unwrap();
-        let fft_dsize = if preset.log_n() == 15 { 2 } else { 7 };
+    let (standard, ci): (Vec<_>, Vec<_>) = all()
+        .unwrap()
+        .into_iter()
+        .partition(|preset| preset.plan().eval_mod_ring() == EvalModRing::Standard);
+    for preset in ci {
+        // An output limb of EvalMod's squares on the CI ring holds one square: its mean keeps
+        // the radix at the nominal 52 on NTT4x30. FFT64's model of the CI ring takes 14, at
+        // which the preset is re-derived with digits of 7 limbs.
         assert_eq!(
-            (fft.base2k(), fft.key_dsize(), fft.dense_to_sparse_dsize()),
-            (19, fft_dsize, 1)
+            preset.max_backend_base2k::<NTT4x30Portable, crate::NTT4x30CIPortable>(BOOTSTRAP_FAILURE_BITS),
+            52
+        );
+        let adapted = preset_for_backend::<NTT4x30Portable, crate::NTT4x30CIPortable>(&preset).unwrap();
+        assert_eq!((adapted.base2k(), adapted.bootstrap_k()), (52, preset.bootstrap_k()));
+        let fft = preset_for_backend::<FFT64Portable, crate::FFT64CIPortable>(&preset).unwrap();
+        assert_eq!(
+            (fft.base2k(), fft.key_dsize(), fft.bootstrap_k()),
+            (14, 7, preset.bootstrap_k())
+        );
+    }
+    for preset in standard {
+        // At `N = 2^16` and `2^15`, the giant-step passes sum a few hundred products:
+        // NTT4x30 takes one bit above the nominal radix, FFT64 drops to 17.
+        assert_eq!(
+            preset.max_backend_base2k::<NTT4x30Portable, crate::NTT4x30CIPortable>(BOOTSTRAP_FAILURE_BITS),
+            53
         );
         assert_eq!(
-            (ntt.base2k(), ntt.key_dsize(), ntt.dense_to_sparse_dsize()),
-            (preset.base2k(), preset.key_dsize(), preset.dense_to_sparse_dsize())
+            preset.max_backend_base2k::<FFT64Portable, crate::FFT64CIPortable>(BOOTSTRAP_FAILURE_BITS),
+            17
+        );
+        let ntt = preset_for_backend::<NTT4x30Portable, crate::NTT4x30CIPortable>(&preset).unwrap();
+        let fft = preset_for_backend::<FFT64Portable, crate::FFT64CIPortable>(&preset).unwrap();
+        let fft_dsize = if preset.log_n() == 15 { 2 } else { 7 };
+        assert_eq!((ntt.base2k(), ntt.dense_to_sparse_dsize()), (53, 1));
+        assert_eq!(
+            (fft.base2k(), fft.key_dsize(), fft.dense_to_sparse_dsize()),
+            (17, fft_dsize, 1)
         );
         for adapted in [fft, ntt] {
             assert_eq!(
@@ -629,6 +664,8 @@ backend_test_suite! {
         test_vec_znx_mul_xp_minus_one_assign_derived => poulpy_hal::test_suite::derived::test_vec_znx_mul_xp_minus_one_assign_derived,
         test_vec_znx_fill_uniform_source_all_derived => poulpy_hal::test_suite::derived::test_vec_znx_fill_uniform_source_all_derived,
         test_vec_znx_add_scalar_assign_derived => poulpy_hal::test_suite::derived::test_vec_znx_add_scalar_assign_derived,
+        test_scalar_znx_automorphism_derived => poulpy_hal::test_suite::derived::test_scalar_znx_automorphism_derived,
+        test_scalar_znx_ci_embed_derived => poulpy_hal::test_suite::derived::test_scalar_znx_ci_embed_derived,
         test_vec_znx_big_add_small_derived => poulpy_hal::test_suite::derived::test_vec_znx_big_add_small_derived,
         test_vec_znx_big_sub_small_a_derived => poulpy_hal::test_suite::derived::test_vec_znx_big_sub_small_a_derived,
         test_vec_znx_big_sub_small_b_derived => poulpy_hal::test_suite::derived::test_vec_znx_big_sub_small_b_derived,
@@ -663,6 +700,8 @@ backend_test_suite! {
         test_vec_znx_mul_xp_minus_one_assign_derived => poulpy_hal::test_suite::derived::test_vec_znx_mul_xp_minus_one_assign_derived,
         test_vec_znx_fill_uniform_source_all_derived => poulpy_hal::test_suite::derived::test_vec_znx_fill_uniform_source_all_derived,
         test_vec_znx_add_scalar_assign_derived => poulpy_hal::test_suite::derived::test_vec_znx_add_scalar_assign_derived,
+        test_scalar_znx_automorphism_derived => poulpy_hal::test_suite::derived::test_scalar_znx_automorphism_derived,
+        test_scalar_znx_ci_embed_derived => poulpy_hal::test_suite::derived::test_scalar_znx_ci_embed_derived,
         test_vec_znx_big_add_small_derived => poulpy_hal::test_suite::derived::test_vec_znx_big_add_small_derived,
         test_vec_znx_big_sub_small_a_derived => poulpy_hal::test_suite::derived::test_vec_znx_big_sub_small_a_derived,
         test_vec_znx_big_sub_small_b_derived => poulpy_hal::test_suite::derived::test_vec_znx_big_sub_small_b_derived,
@@ -722,14 +761,14 @@ backend_test_suite! {
         test_vec_znx_window_normalize_ops => poulpy_hal::test_suite::window::test_vec_znx_window_normalize_ops,
         test_vec_znx_big_window_normalize => poulpy_hal::test_suite::window::test_vec_znx_big_window_normalize,
         test_vec_znx_window_rejected_by_ring_ops => poulpy_hal::test_suite::window::test_vec_znx_window_rejected_by_ring_ops,
-        test_vec_znx_dft_step_zero_rejected => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_step_zero_rejected,
-        test_convolution_prepare_shape_rejected => poulpy_hal::test_suite::convolution::test_convolution_prepare_shape_rejected,
-        test_vmp_apply_dft_to_dft_shape_rejected => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft_shape_rejected,
+        test_vec_znx_dft_rejects_zero_step => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_rejects_zero_step,
+        test_cnv_prepare_rejects_mismatched_shape => poulpy_hal::test_suite::convolution::test_cnv_prepare_rejects_mismatched_shape,
+        test_vmp_apply_dft_to_dft_rejects_column_mismatch => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft_rejects_column_mismatch,
         test_vec_znx_embed_add_sub => poulpy_hal::test_suite::embed::test_vec_znx_embed_add_sub,
         test_vec_znx_big_embed_add_sub => poulpy_hal::test_suite::embed::test_vec_znx_big_embed_add_sub,
         test_convolution_embed => poulpy_hal::test_suite::convolution::test_convolution_embed,
         test_convolution_galois => poulpy_hal::test_suite::convolution::test_convolution_galois,
-        test_convolution_by_const_degree_rejected => poulpy_hal::test_suite::convolution::test_convolution_by_const_degree_rejected,
+        test_cnv_by_const_rejects_degree_mismatch => poulpy_hal::test_suite::convolution::test_cnv_by_const_rejects_degree_mismatch,
         test_transfer_padded_lengths => poulpy_hal::test_suite::transfer::test_transfer_padded_lengths,
     }
 }
@@ -744,14 +783,14 @@ backend_test_suite! {
         test_vec_znx_window_normalize_ops => poulpy_hal::test_suite::window::test_vec_znx_window_normalize_ops,
         test_vec_znx_big_window_normalize => poulpy_hal::test_suite::window::test_vec_znx_big_window_normalize,
         test_vec_znx_window_rejected_by_ring_ops => poulpy_hal::test_suite::window::test_vec_znx_window_rejected_by_ring_ops,
-        test_vec_znx_dft_step_zero_rejected => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_step_zero_rejected,
-        test_convolution_prepare_shape_rejected => poulpy_hal::test_suite::convolution::test_convolution_prepare_shape_rejected,
-        test_vmp_apply_dft_to_dft_shape_rejected => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft_shape_rejected,
+        test_vec_znx_dft_rejects_zero_step => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_rejects_zero_step,
+        test_cnv_prepare_rejects_mismatched_shape => poulpy_hal::test_suite::convolution::test_cnv_prepare_rejects_mismatched_shape,
+        test_vmp_apply_dft_to_dft_rejects_column_mismatch => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft_rejects_column_mismatch,
         test_vec_znx_embed_add_sub => poulpy_hal::test_suite::embed::test_vec_znx_embed_add_sub,
         test_vec_znx_big_embed_add_sub => poulpy_hal::test_suite::embed::test_vec_znx_big_embed_add_sub,
         test_convolution_embed => poulpy_hal::test_suite::convolution::test_convolution_embed,
         test_convolution_galois => poulpy_hal::test_suite::convolution::test_convolution_galois,
-        test_convolution_by_const_degree_rejected => poulpy_hal::test_suite::convolution::test_convolution_by_const_degree_rejected,
+        test_cnv_by_const_rejects_degree_mismatch => poulpy_hal::test_suite::convolution::test_cnv_by_const_rejects_degree_mismatch,
         test_transfer_padded_lengths => poulpy_hal::test_suite::transfer::test_transfer_padded_lengths,
     }
 }
@@ -921,6 +960,7 @@ poulpy_core::core_parity_test_suite! {
         trace_packing => poulpy_core::test_suite::parity::test_trace_packing_parity,
         tensor_relinearize_decrypt => poulpy_core::test_suite::parity::test_tensor_relinearize_decrypt_parity,
         linear_transformation => poulpy_core::test_suite::parity::test_linear_transformation_parity,
+        linear_transformation_powers_of_two => poulpy_core::test_suite::parity::test_linear_transformation_powers_of_two_parity,
         sampling => poulpy_core::test_suite::sampling::test_sampling_contract,
         preparation => poulpy_core::test_suite::parity::test_preparation_contract,
         glwe_add => poulpy_core::test_suite::parity::test_glwe_add_parity,
@@ -958,6 +998,7 @@ poulpy_core::core_parity_test_suite! {
         trace_packing => poulpy_core::test_suite::parity::test_trace_packing_parity,
         tensor_relinearize_decrypt => poulpy_core::test_suite::parity::test_tensor_relinearize_decrypt_parity,
         linear_transformation => poulpy_core::test_suite::parity::test_linear_transformation_parity,
+        linear_transformation_powers_of_two => poulpy_core::test_suite::parity::test_linear_transformation_powers_of_two_parity,
         sampling => poulpy_core::test_suite::sampling::test_sampling_contract,
         preparation => poulpy_core::test_suite::parity::test_preparation_contract,
         glwe_add => poulpy_core::test_suite::parity::test_glwe_add_parity,
@@ -1639,6 +1680,7 @@ poulpy_core::core_parity_test_suite! {
         trace_packing => poulpy_core::test_suite::parity::test_trace_packing_parity,
         tensor_relinearize_decrypt => poulpy_core::test_suite::parity::test_tensor_relinearize_decrypt_parity,
         linear_transformation => poulpy_core::test_suite::parity::test_linear_transformation_parity,
+        linear_transformation_powers_of_two => poulpy_core::test_suite::parity::test_linear_transformation_powers_of_two_parity,
         sampling => poulpy_core::test_suite::sampling::test_sampling_contract,
         preparation => poulpy_core::test_suite::parity::test_preparation_contract,
         glwe_add => poulpy_core::test_suite::parity::test_glwe_add_parity,
@@ -1678,6 +1720,7 @@ poulpy_core::core_parity_test_suite! {
         trace_packing => poulpy_core::test_suite::parity::test_trace_packing_parity,
         tensor_relinearize_decrypt => poulpy_core::test_suite::parity::test_tensor_relinearize_decrypt_parity,
         linear_transformation => poulpy_core::test_suite::parity::test_linear_transformation_parity,
+        linear_transformation_powers_of_two => poulpy_core::test_suite::parity::test_linear_transformation_powers_of_two_parity,
         sampling => poulpy_core::test_suite::sampling::test_sampling_contract,
         preparation => poulpy_core::test_suite::parity::test_preparation_contract,
         glwe_add => poulpy_core::test_suite::parity::test_glwe_add_parity,

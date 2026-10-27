@@ -183,3 +183,44 @@ fn align_up<B: Backend>(offset: usize) -> usize {
     assert!(B::SCRATCH_ALIGN != 0, "B::SCRATCH_ALIGN must be non-zero");
     B::scratch_aligned(offset)
 }
+
+#[cfg(test)]
+mod tests {
+    use std::marker::PhantomData;
+
+    use crate::{
+        api::ScratchArenaTakeBasic,
+        layouts::{Backend, HostBytesBackend, ScratchOwned},
+    };
+
+    #[test]
+    fn scratch_arena_split_yields_independent_chunks() {
+        let mut scratch: ScratchOwned<HostBytesBackend> = ScratchOwned {
+            data: <HostBytesBackend as Backend>::alloc_bytes(1 << 12),
+            _phantom: PhantomData,
+        };
+        let arena = scratch.arena();
+        // Sized from the same source as `take_vec_znx_scratch`, so a backend overriding its sizing stays in step.
+        let chunk_len = <HostBytesBackend as Backend>::bytes_of_vec_znx(64, 2, 2);
+        let (chunks, rem) = arena.split(2, chunk_len);
+
+        assert!(rem.available() < (1 << 12));
+        assert_eq!(chunks.len(), 2);
+
+        let mut it = chunks.into_iter();
+        let (mut lhs, _) = it.next().expect("missing first scratch chunk").take_vec_znx_scratch(64, 2, 2);
+        let (mut rhs, _) = it
+            .next()
+            .expect("missing second scratch chunk")
+            .take_vec_znx_scratch(64, 2, 2);
+
+        let lhs_bytes = lhs.data_mut();
+        let rhs_bytes = rhs.data_mut();
+        lhs_bytes[0] = 1;
+        rhs_bytes[0] = 2;
+
+        let lhs_ptr = lhs_bytes.as_mut_ptr() as usize;
+        let rhs_ptr = rhs_bytes.as_mut_ptr() as usize;
+        assert!(lhs_ptr + lhs_bytes.len() <= rhs_ptr || rhs_ptr + rhs_bytes.len() <= lhs_ptr);
+    }
+}

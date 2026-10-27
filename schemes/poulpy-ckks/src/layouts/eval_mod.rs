@@ -376,6 +376,17 @@ impl EvalModPlan {
         self.eval_mod_type == EvalModType::CosHKEven && self.base_degree() / 2 >= 2
     }
 
+    /// Upper bound on the ciphertext products EvalMod takes: baby-step giant-step
+    /// evaluation of a polynomial of degree `d` takes `g - 1` baby powers, at most
+    /// `log2(d)` giant powers and at most `d / g` products to combine them, fewer
+    /// than `2d` together; the fold of an even base, each range-extension step and
+    /// each part of a complex polynomial add theirs.
+    pub fn max_ciphertext_products(&self) -> usize {
+        let (degree, fold) = self.encoded_base_degree();
+        let parts = if self.eval_mod_type == EvalModType::ExpCmplx { 2 } else { 1 };
+        parts * 2 * degree + usize::from(fold) + self.f_mod_log_interval_reduction + 2 * self.f_mod_inv_degree.unwrap_or(0)
+    }
+
     fn encoded_base_degree(&self) -> (usize, bool) {
         if self.folds_even_base() {
             (self.base_degree() / 2, true)

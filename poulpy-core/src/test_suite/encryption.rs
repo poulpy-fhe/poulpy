@@ -6,11 +6,8 @@ use poulpy_hal::{
     source::Source,
 };
 
-use super::decryption::panic_message;
-use crate::{
-    GLWEEncryptSk,
-    layouts::{GLWESecretPreparedFactory, ModuleCoreAlloc},
-};
+use super::{decryption::panic_message, poisoned_scratch};
+use crate::{GLWEEncryptSk, api::GLWESecretPreparedFactory, layouts::ModuleCoreAlloc};
 
 /// Secret-key encryption rejects mismatched operand degrees and degrees above the module in all builds.
 pub fn test_glwe_encrypt_degree_mismatch<BE: Backend>()
@@ -19,7 +16,7 @@ where
 {
     let n = 2 * BE::MIN_DEGREE.max(16);
     let module = Module::<BE>::new(n as u64);
-    let mut scratch = ScratchOwned::<BE>::alloc(0);
+    let mut scratch = poisoned_scratch::<BE>(0);
     let mut xe = Source::new([1; 32]);
     let mut xa = Source::new([2; 32]);
 
@@ -108,7 +105,7 @@ pub fn test_gadget_row_plaintext<BE: crate::test_suite::noise::TestBackend>(
                 };
                 let mut res = vec_znx_alloc_zeroed::<BE>(n, 2, size);
                 garbage(&mut res, 9);
-                crate::reference::encryption::gadget_row_plaintext(
+                crate::gadget::gadget_row_plaintext(
                     module,
                     &mut vec_znx_backend_mut::<BE>(&mut res),
                     res_col,
@@ -119,7 +116,7 @@ pub fn test_gadget_row_plaintext<BE: crate::test_suite::noise::TestBackend>(
                     k_offset,
                     &scalar_znx_backend_ref::<BE>(&pt),
                     pt_col,
-                    &mut scratch.borrow(),
+                    &mut poisoned_scratch::<BE>(module.vec_znx_normalize_tmp_bytes()).borrow(),
                 );
 
                 let limb: usize = position.div_ceil(b) - 1;

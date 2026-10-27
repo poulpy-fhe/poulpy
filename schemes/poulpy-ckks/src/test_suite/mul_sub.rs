@@ -19,11 +19,12 @@ use poulpy_hal::{
 use crate::{CKKSInfos, api::CKKSMulSubOps};
 
 use super::helpers::{
-    MUL_CONST, PT_PREC, TestContextBackend, TestContextModule, TestScalar, alloc_scratch, assert_ct_meta,
+    MUL_CONST, PT_PREC, TestContextBackend, TestContextModule, TestScalar, alloc_scratch, assert_ckks_internal, assert_ct_meta,
     assert_decrypt_precision, assert_decrypt_precision_at_log_delta, ckks_encrypt, ckks_pt_cst_full, ckks_snapshot, ckks_spec,
     encode_and_upload_pt, gen_sk, gen_sk_with_raw, gen_tsk, quantize, quantized_const, quantized_slots, test_vector_1,
     test_vector_2,
 };
+use super::parity::helpers::{snapshot, with_scratch};
 
 use crate::{test_suite::CKKSTestParams, test_suite::reference_encoder::ReferenceEncoder};
 
@@ -115,9 +116,20 @@ where
         &b_im,
         &mut scratch.borrow(),
     );
-    module
-        .ckks_mul_sub_ct_into(&mut dst, &a, &b, &tsk, &mut scratch.borrow())
-        .unwrap();
+    let bytes = module.ckks_mul_sub_ct_tmp_bytes(&dst, &a, &b, &tsk);
+    let before = snapshot::<BE, _>(&dst);
+    let err = with_scratch::<BE, _>(bytes - 1, |s| module.ckks_mul_sub_ct_into(&mut dst, &a, &b, &tsk, s)).unwrap_err();
+    assert_ckks_internal(
+        "ckks_mul_sub_ct_into: one byte short",
+        &err,
+        "ckks_mul_sub_ct_into: scratch below its query",
+    );
+    assert_eq!(
+        snapshot::<BE, _>(&dst),
+        before,
+        "ckks_mul_sub_ct_into: a refused call wrote dst"
+    );
+    with_scratch::<BE, _>(bytes, |s| module.ckks_mul_sub_ct_into(&mut dst, &a, &b, &tsk, s)).unwrap();
     assert_decrypt_precision(
         "mul_sub_ct_aligned",
         &params,
@@ -197,9 +209,10 @@ pub fn test_mul_sub_ct_unaligned_dst<BE, F, E>(
         &b_im,
         &mut scratch.borrow(),
     );
-    module
-        .ckks_mul_sub_ct_into(&mut dst, &a, &b, &tsk, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_mul_sub_ct_tmp_bytes(&dst, &a, &b, &tsk), |s| {
+        module.ckks_mul_sub_ct_into(&mut dst, &a, &b, &tsk, s)
+    })
+    .unwrap();
     assert_decrypt_precision(
         "mul_sub_ct_unaligned_dst",
         &params,
@@ -276,9 +289,20 @@ where
         &b_re_raw,
         &b_im_raw,
     );
-    module
-        .ckks_mul_sub_pt_vec_into(&mut dst, &a, &pt, &mut scratch.borrow())
-        .unwrap();
+    let bytes = module.ckks_mul_sub_pt_vec_tmp_bytes(&dst, &a, &pt);
+    let before = snapshot::<BE, _>(&dst);
+    let err = with_scratch::<BE, _>(bytes - 1, |s| module.ckks_mul_sub_pt_vec_into(&mut dst, &a, &pt, s)).unwrap_err();
+    assert_ckks_internal(
+        "ckks_mul_sub_pt_vec_into: one byte short",
+        &err,
+        "ckks_mul_sub_pt_vec_into: scratch below its query",
+    );
+    assert_eq!(
+        snapshot::<BE, _>(&dst),
+        before,
+        "ckks_mul_sub_pt_vec_into: a refused call wrote dst"
+    );
+    with_scratch::<BE, _>(bytes, |s| module.ckks_mul_sub_pt_vec_into(&mut dst, &a, &pt, s)).unwrap();
     assert_decrypt_precision(
         "mul_sub_pt_vec_aligned",
         &params,
@@ -355,9 +379,10 @@ pub fn test_mul_sub_pt_vec_into_delta_log_delta<BE, F, E>(
         &b_re_raw,
         &b_im_raw,
     );
-    module
-        .ckks_mul_sub_pt_vec_into(&mut dst, &a, &pt, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_mul_sub_pt_vec_tmp_bytes(&dst, &a, &pt), |s| {
+        module.ckks_mul_sub_pt_vec_into(&mut dst, &a, &pt, s)
+    })
+    .unwrap();
     assert_decrypt_precision_at_log_delta(
         "mul_sub_pt_vec_into_delta_log_delta",
         &params,
@@ -426,9 +451,20 @@ pub fn test_mul_sub_pt_const_into_aligned<BE, F, E>(
         &mut scratch.borrow(),
     );
     let cst = ckks_pt_cst_full::<BE, F>(host_module, module, params.base2k.into(), PT_PREC, m, Some(c_re_f64), None);
-    module
-        .ckks_mul_sub_pt_const_into(&mut dst, &a, &cst, 0, &mut scratch.borrow())
-        .unwrap();
+    let bytes = module.ckks_mul_sub_pt_const_tmp_bytes(&dst, &a, &cst);
+    let before = snapshot::<BE, _>(&dst);
+    let err = with_scratch::<BE, _>(bytes - 1, |s| module.ckks_mul_sub_pt_const_into(&mut dst, &a, &cst, 0, s)).unwrap_err();
+    assert_ckks_internal(
+        "ckks_mul_sub_pt_const_into: one byte short",
+        &err,
+        "ckks_mul_sub_pt_const_into: scratch below its query",
+    );
+    assert_eq!(
+        snapshot::<BE, _>(&dst),
+        before,
+        "ckks_mul_sub_pt_const_into: a refused call wrote dst"
+    );
+    with_scratch::<BE, _>(bytes, |s| module.ckks_mul_sub_pt_const_into(&mut dst, &a, &cst, 0, s)).unwrap();
     assert_decrypt_precision(
         "mul_sub_pt_const_into_aligned",
         &params,
@@ -492,9 +528,10 @@ pub fn test_mul_sub_pt_const_zero_preserves_dst_meta<BE, F, E>(
     let dst_meta = ckks_snapshot(&dst);
     let zero_prec = ckks_spec(params.n, params.base2k, 0, PT_PREC.log_budget());
     let cst = ckks_pt_cst_full::<BE, F>(host_module, module, params.base2k.into(), zero_prec, m, None, None);
-    module
-        .ckks_mul_sub_pt_const_into(&mut dst, &a, &cst, 0, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_mul_sub_pt_const_tmp_bytes(&dst, &a, &cst), |s| {
+        module.ckks_mul_sub_pt_const_into(&mut dst, &a, &cst, 0, s)
+    })
+    .unwrap();
 
     assert_ct_meta("mul_sub_pt_const_zero", &dst, dst_meta.log_delta(), dst_meta.log_budget());
     assert_decrypt_precision(
@@ -508,4 +545,65 @@ pub fn test_mul_sub_pt_const_zero_preserves_dst_meta<BE, F, E>(
         &dst_im,
         &mut scratch.borrow(),
     );
+}
+
+/// A plaintext of another radix is the product's `PlaintextBase2KMismatch` of the multiply-accumulate form, before its
+/// arena check, on an empty arena and on the query, for both plaintext forms.
+pub fn test_mul_sub_pt_vec_into_rejects_base2k_mismatch<BE, F, E>(
+    params: crate::test_suite::CKKSTestParams,
+    module: &poulpy_hal::layouts::Module<BE>,
+    _host_module: &poulpy_hal::layouts::Module<poulpy_hal::layouts::HostBytesBackend>,
+) where
+    BE: crate::test_suite::helpers::TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
+    poulpy_hal::layouts::Module<BE>: crate::test_suite::helpers::TestContextModule<BE>,
+    F: crate::test_suite::helpers::TestScalar,
+    E: poulpy_hal::api::NegacyclicFFT<F> + poulpy_hal::api::NegacyclicFFTNew<F>,
+{
+    use crate::test_suite::{
+        helpers::assert_ckks_error,
+        parity::{
+            helpers::{fixture_ciphertext, fixture_plaintext, snapshot, with_scratch},
+            layout,
+        },
+    };
+    use crate::{CKKSCompositionError, CKKSLayout, SlotsKind};
+    let b = params.base2k;
+    let ct_layout = layout(params, params.rank, 3 * b + 5, b - 1, 0, SlotsKind::Complex);
+    let pt_layout = layout(params, 0, b + 3, b - 1, 0, SlotsKind::Complex);
+    let other_radix = CKKSLayout {
+        glwe_layout: poulpy_core::layouts::GLWELayout {
+            base2k: (b - 1).into(),
+            ..pt_layout.glwe_layout
+        },
+        meta: pt_layout.meta,
+    };
+    use crate::api::CKKSMulSubOps;
+    let a = fixture_ciphertext(module, &ct_layout, 41);
+    let pt = fixture_plaintext(module, &other_radix, 43);
+    let mut res = fixture_ciphertext(module, &ct_layout, 31);
+    let want = |op| CKKSCompositionError::PlaintextBase2KMismatch {
+        op,
+        ct_base2k: b,
+        pt_base2k: b - 1,
+    };
+    for bytes in [0, module.ckks_mul_sub_pt_vec_tmp_bytes(&res, &a, &pt)] {
+        let before = snapshot::<BE, _>(&res);
+        let err = with_scratch::<BE, _>(bytes, |s| module.ckks_mul_sub_pt_vec_into(&mut res, &a, &pt, s)).unwrap_err();
+        assert_ckks_error(
+            "mul_sub_pt_vec_into: plaintext of another radix",
+            &err,
+            want("ckks_mul_sub_pt_vec_into"),
+        );
+        assert_eq!(snapshot::<BE, _>(&res), before, "a refused multiply-accumulate wrote dst");
+    }
+    for bytes in [0, module.ckks_mul_sub_pt_const_tmp_bytes(&res, &a, &pt)] {
+        let before = snapshot::<BE, _>(&res);
+        let err = with_scratch::<BE, _>(bytes, |s| module.ckks_mul_sub_pt_const_into(&mut res, &a, &pt, 0, s)).unwrap_err();
+        assert_ckks_error(
+            "mul_sub_pt_const_into: plaintext of another radix",
+            &err,
+            want("ckks_mul_sub_pt_const_into"),
+        );
+        assert_eq!(snapshot::<BE, _>(&res), before, "a refused multiply-accumulate wrote dst");
+    }
 }

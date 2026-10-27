@@ -24,7 +24,7 @@
 //! ```ignore
 //! // setup, once per transform / per input shape
 //! let mut prepared = LinearTransformation::alloc_prepared(module, &layout, lt.first_diagonal_plaintext().unwrap());
-//! module.ckks_prepare_linear_transformation_rhs(&mut prepared, &lt, &mut scratch);
+//! module.ckks_prepare_linear_transformation_rhs(&mut prepared, &lt, &mut scratch)?;
 //! let mut babies = LinearTransformationBabySteps::alloc(module, prepared.baby_steps(), &ct);
 //!
 //! // per evaluation
@@ -35,8 +35,8 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
+    DiagonalProd,
     layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, TorusPrecision},
-    reference::linear_transformation::DiagonalProd,
 };
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
@@ -124,29 +124,39 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     where
         P: LWEInfos;
 
-    /// Scratch bytes required by [`Self::ckks_prepare_linear_transformation_baby_steps`].
-    fn ckks_prepare_linear_transformation_baby_steps_tmp_bytes<C, K>(&self, ct: &C, key: &K) -> usize
+    /// Scratch bytes required by [`Self::ckks_prepare_linear_transformation_baby_steps`] for a
+    /// cache of the baby steps of `plan` (see
+    /// [`GLWELinearTransformations::glwe_prepare_linear_transformation_baby_steps_tmp_bytes`](poulpy_core::GLWELinearTransformations::glwe_prepare_linear_transformation_baby_steps_tmp_bytes)).
+    fn ckks_prepare_linear_transformation_baby_steps_tmp_bytes<C, K>(
+        &self,
+        ct: &C,
+        plan: &LinearTransformationPlan,
+        key: &K,
+    ) -> usize
     where
         C: CKKSCtBounds,
         K: GGLWEInfos;
 
     /// Scratch bytes required to evaluate with a **resident** RHS (`P =
-    /// PreparedDiagonal`).
-    fn ckks_eval_linear_transformation_tmp_bytes<C, K>(&self, ct: &C, key: &K) -> usize
+    /// PreparedDiagonal`) a transform with the schedule `plan` (see
+    /// [`GLWELinearTransformations::glwe_eval_linear_transformation_tmp_bytes`](poulpy_core::GLWELinearTransformations::glwe_eval_linear_transformation_tmp_bytes)).
+    fn ckks_eval_linear_transformation_tmp_bytes<C, K>(&self, ct: &C, plan: &LinearTransformationPlan, key: &K) -> usize
     where
         C: CKKSCtBounds,
         K: GGLWEInfos;
 
     /// Scratch bytes required to evaluate with a **streamed** RHS (a plaintext
     /// diagonal `P`): the streamed inner product additionally holds one resident
-    /// `CnvPVecR` diagonal slot, so this is larger than the resident budget.
-    fn ckks_eval_linear_transformation_streamed_tmp_bytes<C, K>(&self, ct: &C, key: &K) -> usize
+    /// `CnvPVecR` diagonal slot, so this is larger than the resident budget. `plan` as in
+    /// [`Self::ckks_eval_linear_transformation_tmp_bytes`].
+    fn ckks_eval_linear_transformation_streamed_tmp_bytes<C, K>(&self, ct: &C, plan: &LinearTransformationPlan, key: &K) -> usize
     where
         C: CKKSCtBounds,
         K: GGLWEInfos;
 
-    /// Scratch bytes required by [`Self::ckks_eval_linear_transformation_sum_into`].
-    fn ckks_eval_linear_transformation_sum_tmp_bytes<C, K>(&self, ct: &C, key: &K) -> usize
+    /// Scratch bytes required by [`Self::ckks_eval_linear_transformation_sum_into`], `plan` the
+    /// schedule of the first term.
+    fn ckks_eval_linear_transformation_sum_tmp_bytes<C, K>(&self, ct: &C, plan: &LinearTransformationPlan, key: &K) -> usize
     where
         C: CKKSCtBounds,
         K: GGLWEInfos;
@@ -161,12 +171,19 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     /// `lt`. Performs zero `CnvPVecR` allocations. The proxy must also carry the
     /// diagonals' degree, which may be below the ring degree;
     /// `lt.first_diagonal_plaintext()` is the proxy every caller should pass.
+    ///
+    /// # Errors
+    ///
+    /// `InvalidOperand`, before any write to `prepared`, when `prepared` was allocated for another schedule or
+    /// diagonal degree, radix or width than `lt`'s, or when the diagonals of `lt` do not share one scale, width and
+    /// slot kind.
     fn ckks_prepare_linear_transformation_rhs<P>(
         &self,
         prepared: &mut LinearTransformationPrepared<BE>,
         lt: &LinearTransformation<P>,
         scratch: &mut ScratchArena<'_, BE>,
-    ) where
+    ) -> Result<()>
+    where
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + DiagonalProd<BE>;
 
     /// Fills `babies` with the prepared baby-step rotations of `src`.
@@ -198,6 +215,16 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     /// `keys` must contain an automorphism key for every non-zero giant rotation
     /// of `lt`. `babies` must cover at least `lt`'s baby rotations; supersets are
     /// allowed (e.g. when sharing a cache across several transforms).
+    ///
+    /// # Errors
+    ///
+    /// Each before any write to `dst`:
+    /// - `InvalidOperand` when the diagonals of `lt` do not share one scale, width and slot kind, or when `src` is of
+    ///   a degree above the module's;
+    /// - `MultiplicationPrecisionUnderflow` or `InsufficientHomomorphicCapacity` when the ciphertext-by-plaintext
+    ///   budget rule leaves no result at `dst`'s width;
+    /// - `MissingAutomorphismKey` for a non-zero giant rotation of `lt` with no key at the output width;
+    /// - `CKKSError::Internal` when `lt` has no diagonals or `babies` lacks one of `lt`'s baby rotations.
     fn ckks_eval_linear_transformation_into<Dst, Src, P, H>(
         &self,
         dst: &mut Dst,

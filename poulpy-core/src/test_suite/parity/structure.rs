@@ -3,15 +3,14 @@ use super::{ParityBackend, ParityShapes, poisoned_scratch, ref_glwe, unnormalize
 use crate::{
     Distribution, GLWEMaskFill, GLWEMulRelinearizeSum, GLWENormalize, GLWEPacking, GLWEPreparedTensoring, GLWETensorDecrypt,
     GLWETensoring, GLWETrace, GetDistribution,
-    api::TransferInto,
+    api::{
+        GLWEAutomorphismKeyPreparedFactory, GLWESecretPreparedFactory, GLWESecretTensorFactory, GLWESecretTensorPreparedFactory,
+        GLWETensorKeyPreparedFactory, TransferInto,
+    },
     glwe_prepare_left, glwe_prepare_left_tmp_bytes, glwe_prepare_right, glwe_prepare_right_tmp_bytes,
     layouts::{
         Base2K, Degree, Dnum, GGLWEInfos, GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout, GLWESecretLayout,
-        GLWESecretTensorFactory, GLWETensorKeyLayout, ModuleCoreAlloc, Rank, TorusPrecision,
-        prepared::{
-            GLWEAutomorphismKeyPreparedFactory, GLWESecretPreparedFactory, GLWESecretTensorPreparedFactory,
-            GLWETensorKeyPreparedFactory,
-        },
+        GLWETensorKeyLayout, ModuleCoreAlloc, Rank, TorusPrecision,
     },
     test_suite::{decryption::panic_message, keys::fill_by_digit, noise::assert_refuses_uncovered_input},
 };
@@ -647,15 +646,15 @@ pub fn test_tensor_relinearize_decrypt_parity_roles<BR, BT>(
                 key_r.transfer_into(&mut key_t);
                 let mut kp_r = r.alloc_tensor_key_prepared_from_infos(&key);
                 let mut kp_t = t.alloc_tensor_key_prepared_from_infos(&key);
-                r.prepare_tensor_key(
+                r.glwe_tensor_key_prepare(
                     &mut kp_r,
                     &key_r,
-                    &mut poisoned_scratch::<BR>(r.prepare_tensor_key_tmp_bytes(&key)).borrow(),
+                    &mut poisoned_scratch::<BR>(r.glwe_tensor_key_prepare_tmp_bytes(&key)).borrow(),
                 );
-                t.prepare_tensor_key(
+                t.glwe_tensor_key_prepare(
                     &mut kp_t,
                     &key_t,
-                    &mut poisoned_scratch::<BT>(t.prepare_tensor_key_tmp_bytes(&key)).borrow(),
+                    &mut poisoned_scratch::<BT>(t.glwe_tensor_key_prepare_tmp_bytes(&key)).borrow(),
                 );
                 let mut out_r = ref_glwe(r, &g, &mut source);
                 let mut out_t = t.glwe_alloc_from_infos(&g);

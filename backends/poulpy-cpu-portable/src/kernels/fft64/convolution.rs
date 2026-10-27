@@ -330,7 +330,7 @@ pub fn convolution_apply_dft_portable<BE>(
 {
     let n: usize = res.n();
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let b_read: RightRead = right_read_fft64::<BE::Ring>(n, b.n(), b_galois);
+    let b_read: RightRead = right_read_fft64::<BE::Ring>(n, b.n(), b_galois, BE::MIN_DEGREE);
     let m: usize = n >> 1;
 
     let res_size: usize = res.size();
@@ -387,7 +387,7 @@ pub fn convolution_apply_dft_add_portable<BE>(
 {
     let n: usize = res.n();
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let b_read: RightRead = right_read_fft64::<BE::Ring>(n, b.n(), b_galois);
+    let b_read: RightRead = right_read_fft64::<BE::Ring>(n, b.n(), b_galois, BE::MIN_DEGREE);
     let m: usize = n >> 1;
 
     let res_size: usize = res.size();
@@ -448,7 +448,7 @@ pub fn convolution_pairwise_apply_dft_portable<BE>(
     let m: usize = n >> 1;
 
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let b_read: RightRead = RightRead::embedded(n, b.n());
+    let b_read: RightRead = RightRead::embedded(n, b.n(), BE::MIN_DEGREE);
 
     let res_size: usize = res.size();
     let a_size: usize = a.size();

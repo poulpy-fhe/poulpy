@@ -35,6 +35,7 @@ The basis crates sit at the root of the repository, and the other crates are gro
 ### [`libs/`](libs): libraries built on a scheme
 
 - **`poulpy-blas`**: backend-agnostic encrypted matrix arithmetic built on **`poulpy-ckks`**: grids of CKKS block ciphertexts, and the encoded maps and public matrices its operations read.
+- **`poulpy-libm`**: backend-agnostic CKKS math functions with `libm` names built on **`poulpy-ckks`**: exponentials, logarithms, powers and roots, trigonometric, hyperbolic and special functions, comparisons, and slot reductions, each from a reusable plan prepared for an input interval and a precision.
 
 ### [`backends/`](backends): concrete implementations of the layers
 
@@ -57,7 +58,8 @@ The basis crates sit at the root of the repository, and the other crates are gro
 poulpy-hal                  ← hardware abstraction: layouts and operation traits
 └── poulpy-core              ← scheme-agnostic Module-LWE arithmetic (LWE, GLWE, GGLWE, GGSW)
     ├── poulpy-ckks           ← leveled CKKS evaluator
-    │   └── poulpy-blas        ← encrypted matrix arithmetic (JKLS)
+    │   ├── poulpy-blas        ← encrypted matrix arithmetic (JKLS)
+    │   └── poulpy-libm        ← CKKS math functions (libm-style)
     ├── poulpy-bin-fhe        ← binary / gate-level FHE
     └── poulpy-mhe            ← multiparty HE
 
@@ -115,7 +117,7 @@ bootstrap another.
 1. Define a backend struct and implement the `Backend` trait from `poulpy-hal`.
 2. Implement each required HAL OEP method and inherit or override its derived defaults.
 3. Implement the core `*Impl` traits, or use family macros to select reference algorithms and derived defaults.
-4. Optionally, do the same for `poulpy-ckks` using the `impl_ckks_*_reference!` macros or direct OEP trait implementations.
+4. Optionally, do the same for `poulpy-ckks` using its opt-in macros (`impl_<family>_reference_full!`) or direct OEP trait implementations.
 5. Optionally, do the same for `poulpy-blas` using `impl_blas_reference_full!`, its per-family macros or direct OEP trait implementations; see [implementing BLAS operations](libs/poulpy-blas/docs/blas-contracts.md).
 
 A family macro and a handwritten implementation of the same trait are mutually
@@ -158,8 +160,10 @@ Coverage degrades rather than switching off. A backend with a narrower envelope 
 
 The noise suite runs in `poulpy-cpu-portable` alone: the scheme-level model is backend-independent, and accelerated backends validate their outputs through parity with an already validated backend.
 
-Backend crates register the core and CKKS suites for portable FFT/NTT, AVX,
-AVX-512/IFMA, NEON and supported Rayon variants. Native CI runs the full registered
+Backend crates register the core and CKKS parity suites and
+`ckks_determinism_test_suite!` for portable FFT/NTT, AVX, AVX-512/IFMA, NEON and
+supported Rayon variants; the CKKS functional suite runs on the oracle and the
+portable serial types only. Native CI runs the full registered
 sweeps. AVX and AVX-512 jobs fall back to Intel SDE for HAL and core contracts, and
 the AVX-512 job also for BLAS parity (below); CKKS runs natively, with an additional
 optional NEON run under QEMU.
@@ -178,12 +182,17 @@ cargo test -p poulpy-cpu-portable --lib --profile ci --features enable-core -- \
   core_parity core_encryption --test-threads=2
 ```
 
-CKKS keeps its independent mathematical conformance tests and adds caller-selected
-circuit parity through `ckks_parity_test_suite!`. Registrations cover `f64` and
-`Quad` on all 16 CPU backend types, with Rayon variants compared against their
-serial siblings. Portable encoding and DFT matrix/evaluation parity also exercise `f32`. Native CI and optional QEMU
-runs include the `ckks_parity` groups, including controlled-sampling encryption.
-See [implementing a CKKS backend](schemes/poulpy-ckks/docs/ckks-contracts.md).
+CKKS keeps its independent mathematical conformance tests
+(`ckks_backend_test_suite!`, on the oracle and the portable serial types) and
+adds caller-selected circuit parity through `ckks_parity_test_suite!`.
+Registrations cover `f64` and `Quad` on all 16 CPU backend types, with Rayon
+variants compared against their serial siblings. Every standard-ring CKKS type
+also registers `ckks_determinism_test_suite!`, which checks its encodings and
+setup constants in `f64`, `f32` and `Quad` against frozen fixtures. Portable encoding
+and DFT matrix/evaluation parity also exercise `f32`. Native CI and optional
+QEMU runs include the `ckks_parity` groups, including controlled-sampling
+encryption. See
+[implementing a CKKS backend](schemes/poulpy-ckks/docs/ckks-contracts.md).
 
 Run portable CKKS parity, the full conformance suite, or the
 [polynomial example](backends/poulpy-cpu-portable/examples/ckks_poly2.rs) with:
@@ -243,6 +252,26 @@ poulpy-blas = {git = "https://github.com/poulpy-fhe/poulpy", rev = "<rev>", feat
 poulpy-cpu-oracle = {git = "https://github.com/poulpy-fhe/poulpy", rev = "<rev>", features = ["enable-blas"]}
 ```
 
+MHE runs its functional suite (`mhe_backend_test_suite!`) on the oracle and the
+portable serial types, and every type selecting MHE registers bit-exact parity
+through `mhe_parity_test_suite!`: the portable types against
+`ControlledSamplingFFT64Oracle`, the portable Rayon types against their serial
+base, and the two oracle families against each other, both ways. See
+[implementing multiparty operations](poulpy-mhe/docs/mhe-contracts.md).
+
+```sh
+cargo test -p poulpy-cpu-portable --lib --profile ci --features enable-mhe -- mhe_parity
+```
+
+libm registers its suite through `libm_backend_test_suite!`: precision and exact budget consumption of every function, on the NTT4x30 type of each CPU backend and on `NTT3x42Ifma`, with the backends' `enable-ckks`.
+[`libm_tests.rs`](backends/poulpy-cpu-portable/src/tests/libm_tests.rs) shows the registration.
+CI runs it on the portable, native AVX2 and NEON backends. The emulated AVX job does not build it, and the AVX-512 jobs filter it out, since their results are byte-identical to the other backends'.
+Run it on the portable backend with:
+
+```sh
+cargo test -p poulpy-cpu-portable --lib --profile ci --features enable-ckks -- libm_tests
+```
+
 ## Bivariate Polynomial Representation
 
 Existing FHE implementations (such as [Lattigo](https://github.com/tuneinsight/lattigo) or [OpenFHE](https://github.com/openfheorg/openfhe-development)) use the [residue number system](https://en.wikipedia.org/wiki/Residue_number_system) (RNS) to represent large integers. Although the parallelism and carry-less arithmetic offered by the RNS representation provide efficient modular arithmetic over large integers, RNS also has drawbacks in the context of FHE. The main idea behind the bivariate representation is to decouple cyclotomic arithmetic from large-number arithmetic. Instead of using the RNS representation for large integers, integers are decomposed in base $2^{-K}$ over the Torus $\mathbb{T}_{N}[X]$.
@@ -271,6 +300,7 @@ The bivariate representation recovers bit-granular scale and capacity management
 - **`poulpy-bin-fhe`**: https://crates.io/crates/poulpy-bin-fhe
 - **`poulpy-mhe`**: https://crates.io/crates/poulpy-mhe
 - **`poulpy-blas`**: https://crates.io/crates/poulpy-blas
+- **`poulpy-libm`**: https://crates.io/crates/poulpy-libm
 - **`poulpy-cpu-portable`**: https://crates.io/crates/poulpy-cpu-portable
 - **`poulpy-cpu-rayon`**: https://crates.io/crates/poulpy-cpu-rayon
 - **`poulpy-cpu-avx`**: https://crates.io/crates/poulpy-cpu-avx
@@ -302,10 +332,6 @@ poulpy-cpu-portable = "0.9.0"
 ## Built with Poulpy
 
 Projects building on Poulpy. Open a pull request to add yours.
-
-**Function evaluation**
-
-- [`poulpy-libm`](https://github.com/poulpy-fhe/poulpy-libm): homomorphic evaluation of libm-style mathematical functions on CKKS ciphertexts, built on `poulpy-ckks`'s Remez approximation planning.
 
 **Private information retrieval**
 

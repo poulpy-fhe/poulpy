@@ -44,6 +44,8 @@ pub trait CKKSConjugateOps<BE: Backend> {
     /// # Errors
     /// Returns [`crate::CKKSCompositionError::MissingAutomorphismKey`] for
     /// missing keys or insufficient coverage, before changing `dst`.
+    ///
+    /// As [`Self::ckks_conjugate_rotate_into`] with `k = 0`.
     fn ckks_conjugate_into<Dst, Src, H>(
         &self,
         dst: &mut Dst,
@@ -54,13 +56,14 @@ pub trait CKKSConjugateOps<BE: Backend> {
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: GetAutomorphismKey<BE>,
-    {
-        self.ckks_conjugate_rotate_into(dst, src, 0, keys, scratch)
-    }
+        H: GetAutomorphismKey<BE>;
 
     /// Computes `dst = conj(dst)` in-place, preserving CKKS layout and scale metadata.
     /// Component noise metadata is cleared.
+    ///
+    /// # Errors
+    ///
+    /// `MissingAutomorphismKey` when `keys` has no conjugation key covering `dst.k()`. `dst` is untouched on `Err`.
     fn ckks_conjugate_assign<Dst, H>(&self, dst: &mut Dst, keys: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
@@ -70,11 +73,17 @@ pub trait CKKSConjugateOps<BE: Backend> {
     /// of `k` slots, as one key switch under the Galois element
     /// `-galois_element(k)`. PaCo's psi tail is the caller; `k = 0` is plain
     /// conjugation, spelled [`Self::ckks_conjugate_into`].
+    ///
+    /// # Errors
+    ///
+    /// `MissingAutomorphismKey` when `keys` has no key for the conjugate rotation covering
+    /// `min(src.k(), dst.k())`, and `InsufficientHomomorphicCapacity` when `dst` is narrower
+    /// than `src` by more than its budget. `dst` is untouched on `Err`.
     fn ckks_conjugate_rotate_into<Dst, Src, H>(
         &self,
+        k: i64,
         dst: &mut Dst,
         src: &Src,
-        k: i64,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>

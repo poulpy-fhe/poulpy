@@ -10,13 +10,14 @@ use crate::blind_rotation::{
     BlindRotationKeyPrepared, BlindRotationKeyPreparedFactory, LookUpTableLayout, LookupTable, LookupTableFactory, mod_switch_2n,
 };
 
-use poulpy_core::layouts::{GLWESecretSampling, LWESecretSampling};
+use poulpy_core::api::{GLWESecretSampling, LWESecretSampling};
 use poulpy_core::test_suite::noise::glwe_decrypt_checked;
 use poulpy_core::{
     GLWEDecrypt, LWEEncryptSk,
+    api::GLWESecretPreparedFactory,
     layouts::{
-        GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory, LWE, LWEInfos, LWELayout, LWEPlaintext,
-        LWESecret, ModuleCoreAlloc, prepared::GLWESecretPrepared,
+        GLWE, GLWELayout, GLWEPlaintext, GLWESecret, LWE, LWEInfos, LWELayout, LWEPlaintext, LWESecret, ModuleCoreAlloc,
+        prepared::GLWESecretPrepared,
     },
 };
 

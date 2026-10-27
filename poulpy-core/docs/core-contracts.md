@@ -29,11 +29,14 @@ chooses the order of those calls.
 
 `impl_core_reference_full!` selects the available reference algorithms and
 derived defaults, except sampling and the monomial families (LWE conversion,
-packing, GLWE/GGSW rotate, `mul_xp_minus_one`). Use individual family macros when replacing
+packing, GLWE/GGSW rotate, `mul_xp_minus_one`), which bound `Backend<Ring = Standard>`
+and register on standard backends only. Use individual family macros when replacing
 a family, so its `*Impl` is defined only once. Sampling is supplied through
 the mandatory `SamplingImpl`, including full-width flooding.
-Preparation and decompression helpers reuse selected operations;
-see the [OEP documentation](../src/oep/mod.rs) for the available hooks and macros.
+Preparation, decompression and the secret operations dispatch through
+`PreparationImpl`, `DecompressionImpl` and `SecretImpl`, whose method docs name the
+required or derived body of each method; see the
+[OEP documentation](../src/oep/mod.rs) for the available hooks and macros.
 
 Prepared-right tensor multiplication is a `GLWETensoring` operation. Its
 `glwe_tensor_apply_prepared_right_tmp_bytes` query sizes the selected implementation;
@@ -112,8 +115,13 @@ in place.
 `GetAutomorphismKey::get_automorphism_key` and `GetTensorKey::get_tensor_key`
 return `CoreError::GGLWEKeyUse` for a key that does not cover the width asked
 for, so a scheme can report it as an error. An operation given a key directly
-panics through `reference::keyswitching::glwe::assert_key_covers`. An override
-refuses the same inputs.
+panics through `layouts::assert_key_covers`. An override refuses the same
+inputs.
+
+References, derived defaults and overrides share the gadget operand, product
+window and limb placement helpers of `poulpy_core::gadget` and the refusal
+checks of `poulpy_core::layouts` (`assert_key_covers`, `assert_no_row_offset`,
+`assert_linear_transformation_into`, `assert_linear_transformation_sum`).
 
 ## Public keys
 

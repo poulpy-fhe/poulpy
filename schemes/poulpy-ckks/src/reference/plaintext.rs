@@ -9,8 +9,8 @@ use poulpy_hal::{
 use crate::GLWEToBackendRef;
 
 use crate::{
-    CKKSInfos, GLWEPlaintextMeta, SetCKKSInfos, ckks_log_delta, ensure_base2k_match, ensure_plaintext_alignment,
-    ensure_plaintext_coeff_in_range, ensure_plaintext_degree_embeds,
+    CKKSInfos, GLWEPlaintextMeta, SetCKKSInfos, ckks_log_delta, ensure_base2k_match, ensure_plaintext_const_operand,
+    ensure_plaintext_vec_operand,
 };
 
 #[derive(Clone, Copy)]
@@ -29,17 +29,21 @@ fn plaintext_shift<P: CKKSInfos + IntPolyInfos>(ct_log_budget: usize, pt: &P) ->
     }
 }
 
-pub trait CKKSPlaintextReference<BE: Backend> {
+pub trait CKKSPlaintextVecReference<BE: Backend> {
     fn ckks_add_pt_vec_into_reference<Dst, A>(&self, ct: &mut Dst, pt: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Self: VecZnxRshAdd<BE> + VecZnxLshAdd<BE>,
         Dst: GLWEToBackendMut<BE> + CKKSInfos,
         A: GLWEToBackendRef<BE> + IntPolyInfos + CKKSInfos,
     {
-        const OP: &str = "ckks_add_pt_vec";
-        ensure_base2k_match(OP, ct.base2k().as_usize(), pt.base2k().as_usize())?;
-        ensure_plaintext_degree_embeds(OP, ct.n().as_usize(), pt.n().as_usize(), BE::MIN_DEGREE)?;
-        ensure_plaintext_alignment(OP, ct.log_budget(), pt.log_delta(), pt.log_delta() + pt.log_budget())?;
+        ensure_plaintext_vec_operand(
+            "ckks_add_pt_vec",
+            ct.base2k().as_usize(),
+            ct.n().as_usize(),
+            ct.log_budget(),
+            pt,
+            BE::MIN_DEGREE,
+        )?;
         let shift = plaintext_shift(ct.log_budget(), pt);
         let base2k = ct.base2k().as_usize();
         ct.set_canonical(false);
@@ -65,11 +69,15 @@ pub trait CKKSPlaintextReference<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + CKKSInfos,
         A: GLWEToBackendRef<BE> + IntPolyInfos + CKKSInfos,
     {
-        const OP: &str = "ckks_add_pt_const";
-        ensure_base2k_match(OP, ct.base2k().as_usize(), pt.base2k().as_usize())?;
-        ensure_plaintext_coeff_in_range(OP, "ciphertext", coeff_ct, ct.n().as_usize())?;
-        ensure_plaintext_coeff_in_range(OP, "plaintext", coeff_pt, pt.n().as_usize())?;
-        ensure_plaintext_alignment(OP, ct.log_budget(), pt.log_delta(), pt.log_delta() + pt.log_budget())?;
+        ensure_plaintext_const_operand(
+            "ckks_add_pt_const",
+            ct.base2k().as_usize(),
+            ct.n().as_usize(),
+            coeff_ct,
+            ct.log_budget(),
+            pt,
+            coeff_pt,
+        )?;
         let shift = plaintext_shift(ct.log_budget(), pt);
         let base2k = ct.base2k().as_usize();
         ct.set_canonical(false);
@@ -98,11 +106,15 @@ pub trait CKKSPlaintextReference<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + CKKSInfos,
         A: GLWEToBackendRef<BE> + IntPolyInfos + CKKSInfos,
     {
-        const OP: &str = "ckks_sub_pt_const";
-        ensure_base2k_match(OP, ct.base2k().as_usize(), pt.base2k().as_usize())?;
-        ensure_plaintext_coeff_in_range(OP, "ciphertext", coeff_ct, ct.n().as_usize())?;
-        ensure_plaintext_coeff_in_range(OP, "plaintext", coeff_pt, pt.n().as_usize())?;
-        ensure_plaintext_alignment(OP, ct.log_budget(), pt.log_delta(), pt.log_delta() + pt.log_budget())?;
+        ensure_plaintext_const_operand(
+            "ckks_sub_pt_const",
+            ct.base2k().as_usize(),
+            ct.n().as_usize(),
+            coeff_ct,
+            ct.log_budget(),
+            pt,
+            coeff_pt,
+        )?;
         let shift = plaintext_shift(ct.log_budget(), pt);
         let base2k = ct.base2k().as_usize();
         ct.set_canonical(false);
@@ -124,10 +136,14 @@ pub trait CKKSPlaintextReference<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + CKKSInfos,
         A: GLWEToBackendRef<BE> + IntPolyInfos + CKKSInfos,
     {
-        const OP: &str = "ckks_sub_pt_vec";
-        ensure_base2k_match(OP, ct.base2k().as_usize(), pt.base2k().as_usize())?;
-        ensure_plaintext_degree_embeds(OP, ct.n().as_usize(), pt.n().as_usize(), BE::MIN_DEGREE)?;
-        ensure_plaintext_alignment(OP, ct.log_budget(), pt.log_delta(), pt.log_delta() + pt.log_budget())?;
+        ensure_plaintext_vec_operand(
+            "ckks_sub_pt_vec",
+            ct.base2k().as_usize(),
+            ct.n().as_usize(),
+            ct.log_budget(),
+            pt,
+            BE::MIN_DEGREE,
+        )?;
         let shift = plaintext_shift(ct.log_budget(), pt);
         let base2k = ct.base2k().as_usize();
         ct.set_canonical(false);
@@ -225,4 +241,4 @@ pub trait CKKSPlaintextReference<BE: Backend> {
     }
 }
 
-impl<BE: Backend> CKKSPlaintextReference<BE> for poulpy_hal::layouts::Module<BE> {}
+impl<BE: Backend> CKKSPlaintextVecReference<BE> for poulpy_hal::layouts::Module<BE> {}

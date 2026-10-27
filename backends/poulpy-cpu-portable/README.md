@@ -116,16 +116,18 @@ To implement your own backend (SIMD or accelerator):
    (`fft64_ring_arith_standard!` or `fft64_ring_arith_ci!`); NTT4x30 backends
    implement `NttDFTExecute` for their ring's tables.
 3. Implement the core `*Impl` traits, or use family macros to select reference algorithms and derived defaults.
-4. Optionally, do the same for `poulpy-ckks` behind a backend-owned `enable-ckks` feature using the `impl_ckks_*_reference!` macros or direct OEP trait implementations.
+4. Optionally, do the same for `poulpy-ckks` behind a backend-owned `enable-ckks` feature: the umbrella `impl_ckks_reference_full!` selects every family serving both rings (`poulpy_cpu_portable::impl_cpu_ckks_defaults!` adds the encoding), a standard-ring backend adds each standard-only family with its own `impl_<family>_reference_full!` or, for a family of derived defaults only, `impl_<family>_derived_full!`, and an overriding backend writes that family's `*Impl` and registers the others individually.
 
 CPU backends share their common registrations through `impl_cpu_core_defaults!`
-and `impl_cpu_ckks_defaults!`. Tensoring, strided digit products, encoding
-transforms, and encapsulated ModUp remain explicit backend choices, as do the
-standard-only families (`hal_impl_vec_znx_monomial!`, LWE conversion, packing,
-rotate, `mul_xp_minus_one`) and the standard-only CKKS families
-(conjugation, `i`, complex polynomial evaluation, DFT, PaCo/SHIP coefficient
-encodings), which only standard-ring backends register. Backends that
-override other families can register the individual operation macros.
+and `impl_cpu_ckks_defaults!` (`impl_ckks_reference_full!` and the encoding).
+Tensoring, strided digit products, encoding transforms, encapsulated ModUp and
+its first factor remain explicit per-type choices, as do the standard-only core
+families (`hal_impl_vec_znx_monomial!`, LWE conversion, packing, rotate,
+`mul_xp_minus_one`) and the standard-only CKKS families (conjugation, `i`,
+complex polynomial evaluation, the DFT and its matrices, the conjugate-invariant
+ring maps, fold, bootstrapping, PaCo and SHIP with their coefficient encodings),
+which only standard-ring backends register, each with its own macro. Backends
+that override other families can register the individual operation macros.
 
 Use either a family macro or a handwritten implementation of the same core
 `*Impl` trait. Reference helpers remain callable for methods you forward, while

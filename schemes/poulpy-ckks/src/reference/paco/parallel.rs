@@ -6,42 +6,42 @@
 //! caller-bounded number of workers and a distinct backend [`Module`] handle
 //! per worker; this avoids assuming that one backend handle is reentrant.
 //!
-//! Memory model: per-branch **outputs** are deliberately heap-allocated (owned
-//! ciphertexts) rather than scratch-carved — they cross worker-thread
-//! boundaries into the ordered merge and their count (`κ`) is
+//! Memory model: the per-branch **outputs** of the parallel driver are deliberately
+//! heap-allocated (owned ciphertexts) rather than scratch-carved: they cross
+//! worker-thread boundaries into the ordered merge and their count (`κ`) is
 //! schedule-dependent. Stage-internal working memory, by contrast, comes from
-//! each worker's own scratch arena (`PaCoWorker`), sized per worker.
+//! each worker's own scratch arena (`PaCoWorker`), sized per worker, and the
+//! sequential driver's branch output and the encapsulated input from the caller's.
 
 use crate::layouts::CKKSCiphertextOwned;
-use crate::layouts::CKKSPlaintextOwned;
-use crate::{CKKSError, CKKSResult as Result, ckks_ensure};
+use crate::{CKKSError, CKKSResult as Result, ckks_ensure, ckks_ensure_operand};
 use poulpy_core::layouts::SetGLWEPlaintextInfos;
 use poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef;
 use std::{sync::mpsc::sync_channel, thread};
 
 use anyhow::Context;
 use poulpy_core::{
-    GLWEAutomorphism, GLWEKeyswitch, GLWELinearTransformations, GLWERotate,
-    layouts::{GLWEToBackendMut, GLWEToBackendRef, LWEInfos, TorusPrecision},
+    GLWEKeyswitch, GLWERotate,
+    layouts::{GLWEToBackendMut, GLWEToBackendRef, TorusPrecision},
 };
 use poulpy_hal::{
     api::ScratchOwnedBorrow,
-    layouts::{Backend, CyclotomicOrder, Module, ScratchArena, ScratchOwned},
+    layouts::{Backend, Module, ScratchArena, ScratchOwned},
 };
 
 use super::{
     bootstrap::paco_bootstrap_branch_validated_into,
-    ops::PaCoSlotOps,
-    preflight::{branch_schedule, checked_branch_shift, direct_tmp_bytes_validated, preflight, validate_encapsulation_key},
+    preflight::{
+        branch_schedule, branch_tmp_bytes_validated, checked_branch_shift, encapsulated_input_layout, preflight,
+        validate_encapsulation_key,
+    },
 };
 use crate::layouts::paco::{context::PaCoContext, keyset::PaCoKeys};
 use crate::{
-    CKKSCtBounds,
-    api::{
-        CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSLinearTransformationOps, CKKSMulOps, CKKSRotateOps, CKKSSubOps, PaCoScalar,
-    },
-    layouts::{CKKSModuleAlloc, PaCoWorker},
-    oep::{CKKSEncodingImpl, CKKSPaCoCoeffEncodingImpl},
+    CKKSCtBounds, GLWEPlaintextMeta, SetCKKSInfos,
+    api::{CKKSAddOps, CKKSCopyOps, PaCoScalar},
+    layouts::{CKKSCiphertextViewMut, CKKSModuleAlloc, PaCoWorker, ScratchArenaTakeCKKS},
+    oep::CKKSEncodingImpl,
 };
 
 #[derive(Clone, Copy)]
@@ -58,10 +58,10 @@ struct ValidatedSchedule {
     required_scratch: usize,
 }
 
-/// Evaluates one shifted branch into `output`.
-fn run_branch_into<BE, F, K, Src>(
+/// Evaluates one shifted branch into `output`, the shifted input carved from `scratch`.
+fn run_branch_into<BE, F, K, Dst, Src>(
     module: &Module<BE>,
-    output: &mut CKKSCiphertextOwned<BE>,
+    output: &mut Dst,
     input: &Src,
     context: &PaCoContext<BE, F>,
     keys: &K,
@@ -69,29 +69,14 @@ fn run_branch_into<BE, F, K, Src>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: Backend + CKKSPaCoCoeffEncodingImpl + CKKSEncodingImpl<F>,
-    Module<BE>: CKKSMulOps<BE>
-        + CKKSAddOps<BE>
-        + CKKSSubOps<BE>
-        + CKKSConjugateOps<BE>
-        + CKKSCopyOps<BE>
-        + CKKSRotateOps<BE>
-        + PaCoSlotOps<BE>
-        + CKKSLinearTransformationOps<BE>
-        + CKKSModuleAlloc<BE>
-        + GLWERotate<BE>
-        + GLWEAutomorphism<BE>
-        + GLWELinearTransformations<BE>
-        + GLWEKeyswitch<BE>
-        + CyclotomicOrder,
+    BE: super::PaCoBackend + CKKSEncodingImpl<F>,
     K: PaCoKeys<BE>,
     F: PaCoScalar,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
+    Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     if branch.shift == 0 {
-        return paco_bootstrap_branch_validated_into::<BE, F, K, _>(
+        return paco_bootstrap_branch_validated_into::<BE, F, K, _, _>(
             module,
             output,
             input,
@@ -102,16 +87,26 @@ where
         );
     }
 
-    let mut shifted = module.ckks_ciphertext_alloc_from_infos(input);
-    // Copy first: it normalizes a non-canonical `input` the rotate would truncate.
-    module.ckks_copy(&mut shifted, input, scratch)?;
-    module.glwe_rotate_assign(-branch.shift, &mut shifted, scratch);
-    paco_bootstrap_branch_validated_into::<BE, F, K, _>(module, output, &shifted, context, keys, branch.output_meta, scratch)?;
+    {
+        let (mut shifted, mut scratch_rest) = scratch.borrow().take_ckks_ciphertext_like_scratch(input);
+        // Copy first: it normalizes a non-canonical `input` the rotate would truncate.
+        module.ckks_copy(&mut shifted, input, &mut scratch_rest.borrow())?;
+        module.glwe_rotate_assign(-branch.shift, &mut shifted, &mut scratch_rest.borrow());
+        paco_bootstrap_branch_validated_into::<BE, F, K, _, _>(
+            module,
+            output,
+            &shifted,
+            context,
+            keys,
+            branch.output_meta,
+            &mut scratch_rest,
+        )?;
+    }
     module.glwe_rotate_assign(branch.shift, output, scratch);
     Ok(())
 }
 
-fn set_recombined_sparsity<BE: Backend + CKKSPaCoCoeffEncodingImpl, F: PaCoScalar>(
+fn set_recombined_sparsity<BE: Backend, F: PaCoScalar>(
     output: &mut CKKSCiphertextOwned<BE>,
     context: &PaCoContext<BE, F>,
     kappa: usize,
@@ -125,8 +120,8 @@ fn set_recombined_sparsity<BE: Backend + CKKSPaCoCoeffEncodingImpl, F: PaCoScala
     Ok(())
 }
 
-/// Sequential direct-mode driver shared by the public operation delegate.
-pub(crate) fn paco_bootstrap_direct_into<BE, F, K, Src>(
+/// Sequential direct-mode driver.
+pub(super) fn ckks_paco_bootstrap_direct_into<BE, F, K, Src>(
     module: &Module<BE>,
     output: &mut CKKSCiphertextOwned<BE>,
     input: &Src,
@@ -135,29 +130,14 @@ pub(crate) fn paco_bootstrap_direct_into<BE, F, K, Src>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: Backend + CKKSPaCoCoeffEncodingImpl + CKKSEncodingImpl<F>,
-    Module<BE>: CKKSMulOps<BE>
-        + CKKSAddOps<BE>
-        + CKKSSubOps<BE>
-        + CKKSConjugateOps<BE>
-        + CKKSCopyOps<BE>
-        + CKKSRotateOps<BE>
-        + PaCoSlotOps<BE>
-        + CKKSLinearTransformationOps<BE>
-        + CKKSModuleAlloc<BE>
-        + GLWERotate<BE>
-        + GLWEAutomorphism<BE>
-        + GLWELinearTransformations<BE>
-        + GLWEKeyswitch<BE>
-        + CyclotomicOrder,
+    BE: super::PaCoBackend + CKKSEncodingImpl<F>,
     K: PaCoKeys<BE>,
     F: PaCoScalar,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
-    let (kappa, stride) = branch_schedule(context, input.log_sparsity())?;
-    let (output_meta, required_scratch) = preflight(module, output, input, context, keys, false, scratch)?;
+    const OP: &str = "ckks_paco_bootstrap_direct_into";
+    let (kappa, stride) = branch_schedule(OP, context, input.log_sparsity())?;
+    let (output_meta, required_scratch) = preflight(OP, module, output, input, context, keys, false, scratch)?;
     let schedule = ValidatedSchedule {
         kappa,
         stride,
@@ -179,25 +159,9 @@ fn paco_bootstrap_direct_validated_into<BE, F, K, Src>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: Backend + CKKSPaCoCoeffEncodingImpl + CKKSEncodingImpl<F>,
-    Module<BE>: CKKSMulOps<BE>
-        + CKKSAddOps<BE>
-        + CKKSSubOps<BE>
-        + CKKSConjugateOps<BE>
-        + CKKSCopyOps<BE>
-        + CKKSRotateOps<BE>
-        + PaCoSlotOps<BE>
-        + CKKSLinearTransformationOps<BE>
-        + CKKSModuleAlloc<BE>
-        + GLWERotate<BE>
-        + GLWEAutomorphism<BE>
-        + GLWELinearTransformations<BE>
-        + GLWEKeyswitch<BE>
-        + CyclotomicOrder,
+    BE: super::PaCoBackend + CKKSEncodingImpl<F>,
     K: PaCoKeys<BE>,
     F: PaCoScalar,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     ckks_ensure!(
@@ -206,7 +170,7 @@ where
         schedule.required_scratch,
         scratch.available(),
     );
-    run_branch_into::<BE, F, K, _>(
+    run_branch_into::<BE, F, K, _, _>(
         module,
         output,
         input,
@@ -221,12 +185,12 @@ where
     if schedule.kappa == 1 {
         return set_recombined_sparsity(output, context, schedule.kappa);
     }
+    // Each branch overwrites the whole branch output through its final copy, so one carve serves every branch.
+    let (mut branch_output, mut scratch_rest) = scratch
+        .borrow()
+        .take_ckks_ciphertext_scratch(output, GLWEPlaintextMeta::default());
     for branch in 1..schedule.kappa {
-        // Keep branch temporaries fresh: reusing a backing buffer across
-        // branches would let later automorphisms observe stale limbs from a
-        // previous branch.
-        let mut branch_output = module.ckks_ciphertext_alloc(context.base2k(), output.k());
-        run_branch_into::<BE, F, K, _>(
+        run_branch_into::<BE, F, K, _, _>(
             module,
             &mut branch_output,
             input,
@@ -236,40 +200,40 @@ where
                 shift: checked_branch_shift(branch, schedule.stride)?,
                 output_meta: schedule.output_meta,
             },
-            scratch,
+            &mut scratch_rest.borrow(),
         )?;
-        module.ckks_add_assign(output, &branch_output, scratch)?;
+        module.ckks_add_assign(output, &branch_output, &mut scratch_rest.borrow())?;
     }
     set_recombined_sparsity(output, context, schedule.kappa)
 }
 
-/// Performs the optional dense-to-PaCo switch once, preserving the exhausted
-/// ciphertext metadata for the direct branch driver.
-fn encapsulate_input<BE, F, K, Src>(
+/// Performs the optional dense-to-PaCo switch once, into a ciphertext carved from
+/// `scratch`, preserving the exhausted ciphertext metadata for the direct branch
+/// driver, which runs on the returned remainder.
+fn encapsulate_input<'s, BE, F, K, Src>(
+    op: &'static str,
     module: &Module<BE>,
     input: &Src,
     context: &PaCoContext<BE, F>,
     keys: &K,
-    scratch: &mut ScratchArena<'_, BE>,
-) -> Result<CKKSCiphertextOwned<BE>>
+    scratch: ScratchArena<'s, BE>,
+) -> Result<(CKKSCiphertextViewMut<'s, BE>, ScratchArena<'s, BE>)>
 where
-    BE: Backend + CKKSPaCoCoeffEncodingImpl + CKKSEncodingImpl<F>,
+    BE: super::PaCoBackend + CKKSEncodingImpl<F>,
     F: PaCoScalar,
-    Module<BE>: CKKSModuleAlloc<BE> + GLWEKeyswitch<BE>,
     K: PaCoKeys<BE>,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
-    let switching_key = validate_encapsulation_key(input, context, keys)?;
+    let switching_key = validate_encapsulation_key(op, input, context, keys)?;
 
-    let mut structured = module.ckks_ciphertext_alloc(context.base2k(), input.k());
-    module.glwe_keyswitch(&mut structured, input, &switching_key.to_backend_ref(), scratch);
+    let (mut structured, mut scratch) = scratch.take_ckks_ciphertext_like_scratch(&encapsulated_input_layout(input, context));
+    module.glwe_keyswitch(&mut structured, input, &switching_key.to_backend_ref(), &mut scratch.borrow());
     structured.set_meta_checked(input.meta())?;
-    Ok(structured)
+    Ok((structured, scratch))
 }
 
-/// Sequential encapsulated driver shared by the public operation delegate.
-pub(crate) fn paco_bootstrap_into<BE, F, K, Src>(
+/// Sequential encapsulated driver.
+pub(super) fn ckks_paco_bootstrap_into<BE, F, K, Src>(
     module: &Module<BE>,
     output: &mut CKKSCiphertextOwned<BE>,
     input: &Src,
@@ -278,37 +242,22 @@ pub(crate) fn paco_bootstrap_into<BE, F, K, Src>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: Backend + CKKSPaCoCoeffEncodingImpl + CKKSEncodingImpl<F>,
-    Module<BE>: CKKSMulOps<BE>
-        + CKKSAddOps<BE>
-        + CKKSSubOps<BE>
-        + CKKSConjugateOps<BE>
-        + CKKSCopyOps<BE>
-        + CKKSRotateOps<BE>
-        + PaCoSlotOps<BE>
-        + CKKSLinearTransformationOps<BE>
-        + CKKSModuleAlloc<BE>
-        + GLWERotate<BE>
-        + GLWEAutomorphism<BE>
-        + GLWELinearTransformations<BE>
-        + GLWEKeyswitch<BE>
-        + CyclotomicOrder,
+    BE: super::PaCoBackend + CKKSEncodingImpl<F>,
     K: PaCoKeys<BE>,
     F: PaCoScalar,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
-    let (kappa, stride) = branch_schedule(context, input.log_sparsity())?;
-    let (output_meta, required_scratch) = preflight(module, output, input, context, keys, true, scratch)?;
+    const OP: &str = "ckks_paco_bootstrap_into";
+    let (kappa, stride) = branch_schedule(OP, context, input.log_sparsity())?;
+    let (output_meta, required_scratch) = preflight(OP, module, output, input, context, keys, true, scratch)?;
     let schedule = ValidatedSchedule {
         kappa,
         stride,
         output_meta,
         required_scratch,
     };
-    let structured = encapsulate_input(module, input, context, keys, scratch)?;
-    paco_bootstrap_direct_validated_into::<BE, F, K, _>(module, output, &structured, context, keys, schedule, scratch)
+    let (structured, mut scratch_rest) = encapsulate_input(OP, module, input, context, keys, scratch.borrow())?;
+    paco_bootstrap_direct_validated_into::<BE, F, K, _>(module, output, &structured, context, keys, schedule, &mut scratch_rest)
 }
 
 /// Parallel direct-mode driver with reusable caller-owned workers and ordered
@@ -317,7 +266,7 @@ where
     clippy::too_many_arguments,
     reason = "the internal driver mirrors the explicit caller-allocated public parallel operation"
 )]
-pub(crate) fn paco_bootstrap_parallel_direct_into<BE, F, K, Src>(
+pub(super) fn ckks_paco_bootstrap_parallel_direct_into<BE, F, K, Src>(
     module: &Module<BE>,
     output: &mut CKKSCiphertextOwned<BE>,
     input: &Src,
@@ -327,31 +276,16 @@ pub(crate) fn paco_bootstrap_parallel_direct_into<BE, F, K, Src>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: Backend + CKKSPaCoCoeffEncodingImpl + CKKSEncodingImpl<F>,
-    Module<BE>: CKKSMulOps<BE>
-        + CKKSAddOps<BE>
-        + CKKSSubOps<BE>
-        + CKKSConjugateOps<BE>
-        + CKKSCopyOps<BE>
-        + CKKSRotateOps<BE>
-        + PaCoSlotOps<BE>
-        + CKKSLinearTransformationOps<BE>
-        + CKKSModuleAlloc<BE>
-        + GLWERotate<BE>
-        + GLWEAutomorphism<BE>
-        + GLWELinearTransformations<BE>
-        + GLWEKeyswitch<BE>
-        + CyclotomicOrder,
+    BE: super::PaCoBackend + CKKSEncodingImpl<F>,
     K: PaCoKeys<BE> + Sync,
     F: PaCoScalar,
     ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
-    PaCoContext<BE, F>: Sync,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + Send + Sync,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds + Sync,
 {
-    let (kappa, stride) = branch_schedule(context, input.log_sparsity())?;
-    let (output_meta, required_scratch) = preflight(module, output, input, context, keys, false, scratch)?;
+    const OP: &str = "ckks_paco_bootstrap_parallel_direct_into";
+    let (kappa, stride) = branch_schedule(OP, context, input.log_sparsity())?;
+    check_worker_degrees(OP, context, workers, kappa)?;
+    let (output_meta, required_scratch) = preflight(OP, module, output, input, context, keys, false, scratch)?;
     let schedule = ValidatedSchedule {
         kappa,
         stride,
@@ -377,27 +311,10 @@ fn paco_bootstrap_parallel_direct_validated_into<BE, F, K, Src>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: Backend + CKKSPaCoCoeffEncodingImpl + CKKSEncodingImpl<F>,
-    Module<BE>: CKKSMulOps<BE>
-        + CKKSAddOps<BE>
-        + CKKSSubOps<BE>
-        + CKKSConjugateOps<BE>
-        + CKKSCopyOps<BE>
-        + CKKSRotateOps<BE>
-        + PaCoSlotOps<BE>
-        + CKKSLinearTransformationOps<BE>
-        + CKKSModuleAlloc<BE>
-        + GLWERotate<BE>
-        + GLWEAutomorphism<BE>
-        + GLWELinearTransformations<BE>
-        + GLWEKeyswitch<BE>
-        + CyclotomicOrder,
+    BE: super::PaCoBackend + CKKSEncodingImpl<F>,
     K: PaCoKeys<BE> + Sync,
     F: PaCoScalar,
     ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
-    PaCoContext<BE, F>: Sync,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + Send + Sync,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds + Sync,
 {
     // The caller thread evaluates branch zero while the remaining execution
@@ -412,14 +329,7 @@ where
     // module because backend handles may have configuration-specific bounds.
     for (worker, worker_context) in workers[..background_workers].iter_mut().enumerate() {
         let (worker_module, worker_scratch) = worker_context.parts_mut();
-        ckks_ensure!(
-            worker_module.n() == context.plan().n(),
-            "PaCo worker {} module degree {} does not match plan degree {}",
-            worker + 1,
-            worker_module.n(),
-            context.plan().n(),
-        );
-        let worker_required = direct_tmp_bytes_validated(worker_module, output, context, keys)
+        let worker_required = branch_tmp_bytes_validated(worker_module, output, input, context, keys)
             .with_context(|| format!("cannot size PaCo worker {} scratch", worker + 1))?;
         let worker_available = worker_scratch.borrow().available();
         ckks_ensure!(
@@ -449,7 +359,7 @@ where
                         let result = (|| -> Result<(usize, CKKSCiphertextOwned<BE>)> {
                             let mut branch_output = worker_module
                                 .ckks_ciphertext_alloc(context.base2k(), TorusPrecision(schedule.output_meta.1 as u32));
-                            run_branch_into::<BE, F, K, _>(
+                            run_branch_into::<BE, F, K, _, _>(
                                 worker_module,
                                 &mut branch_output,
                                 input,
@@ -488,7 +398,7 @@ where
         // This runs concurrently with all successfully spawned workers and
         // never shares the caller's Module handle with another thread.
         let branch_zero = if spawn_error.is_none() {
-            run_branch_into::<BE, F, K, _>(
+            run_branch_into::<BE, F, K, _, _>(
                 module,
                 output,
                 input,
@@ -556,13 +466,39 @@ where
     set_recombined_sparsity(output, context, schedule.kappa)
 }
 
+/// `InvalidOperand` for `op` unless every worker that runs one of the `kappa` branches serves the plan's degree.
+fn check_worker_degrees<BE, F>(
+    op: &'static str,
+    context: &PaCoContext<BE, F>,
+    workers: &mut [PaCoWorker<BE>],
+    kappa: usize,
+) -> Result<()>
+where
+    BE: Backend,
+    ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
+{
+    let background_workers = workers.len().min(kappa.saturating_sub(1));
+    for (worker, worker_context) in workers[..background_workers].iter_mut().enumerate() {
+        let (worker_module, _) = worker_context.parts_mut();
+        ckks_ensure_operand!(
+            op,
+            worker_module.n() == context.plan().n(),
+            "PaCo worker {} module degree {} does not match plan degree {}",
+            worker + 1,
+            worker_module.n(),
+            context.plan().n(),
+        );
+    }
+    Ok(())
+}
+
 /// Parallel encapsulated driver. Encapsulation is deliberately performed once
 /// on the caller's module before read-only branch sharing begins.
 #[allow(
     clippy::too_many_arguments,
     reason = "the internal driver mirrors the explicit caller-allocated public parallel operation"
 )]
-pub(crate) fn paco_bootstrap_parallel_into<BE, F, K, Src>(
+pub(super) fn ckks_paco_bootstrap_parallel_into<BE, F, K, Src>(
     module: &Module<BE>,
     output: &mut CKKSCiphertextOwned<BE>,
     input: &Src,
@@ -572,46 +508,31 @@ pub(crate) fn paco_bootstrap_parallel_into<BE, F, K, Src>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: Backend + CKKSPaCoCoeffEncodingImpl + CKKSEncodingImpl<F>,
-    Module<BE>: CKKSMulOps<BE>
-        + CKKSAddOps<BE>
-        + CKKSSubOps<BE>
-        + CKKSConjugateOps<BE>
-        + CKKSCopyOps<BE>
-        + CKKSRotateOps<BE>
-        + PaCoSlotOps<BE>
-        + CKKSLinearTransformationOps<BE>
-        + CKKSModuleAlloc<BE>
-        + GLWERotate<BE>
-        + GLWEAutomorphism<BE>
-        + GLWELinearTransformations<BE>
-        + GLWEKeyswitch<BE>
-        + CyclotomicOrder,
+    BE: super::PaCoBackend + CKKSEncodingImpl<F>,
     K: PaCoKeys<BE> + Sync,
     F: PaCoScalar,
     ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
-    PaCoContext<BE, F>: Sync,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + Send + Sync,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
-    let (kappa, stride) = branch_schedule(context, input.log_sparsity())?;
-    let (output_meta, required_scratch) = preflight(module, output, input, context, keys, true, scratch)?;
+    const OP: &str = "ckks_paco_bootstrap_parallel_into";
+    let (kappa, stride) = branch_schedule(OP, context, input.log_sparsity())?;
+    check_worker_degrees(OP, context, workers, kappa)?;
+    let (output_meta, required_scratch) = preflight(OP, module, output, input, context, keys, true, scratch)?;
     let schedule = ValidatedSchedule {
         kappa,
         stride,
         output_meta,
         required_scratch,
     };
-    let structured = encapsulate_input(module, input, context, keys, scratch)?;
+    let (structured, mut scratch_rest) = encapsulate_input(OP, module, input, context, keys, scratch.borrow())?;
     paco_bootstrap_parallel_direct_validated_into::<BE, F, K, _>(
         module,
         output,
-        &structured,
+        &structured.to_backend_view_ref(),
         context,
         keys,
         schedule,
         workers,
-        scratch,
+        &mut scratch_rest,
     )
 }

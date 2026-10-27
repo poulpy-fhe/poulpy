@@ -1,5 +1,5 @@
 use crate::{bdd_arithmetic::*, blind_rotation::BlindRotationAlgo, circuit_bootstrapping::*};
-use poulpy_core::layouts::*;
+use poulpy_core::api::{GLWESwitchingKeyPreparedFactory, GLWEToLWEKeyPreparedFactory};
 use poulpy_hal::layouts::*;
 #[allow(clippy::too_many_arguments)]
 /// Independently callable canonical implementation of [`BDDKeyPreparedFactory::alloc_bdd_key_from_infos`].

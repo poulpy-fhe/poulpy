@@ -1,9 +1,6 @@
 #![allow(clippy::too_many_arguments)]
 
-use poulpy_hal::{
-    api::VecZnxDftAddAssign,
-    layouts::{Backend, ScratchArena, VecZnxDftBackendMut},
-};
+use poulpy_hal::layouts::{Backend, ScratchArena, VecZnxDftBackendMut};
 
 use crate::layouts::{
     GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEInfos, GLWEToBackendMut,
@@ -65,8 +62,7 @@ pub trait GLWEKeyswitch<BE: Backend> {
         key: &GGLWEPreparedBackendRef<'_, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-        Self: VecZnxDftAddAssign<BE>;
+        A: GLWEToBackendRef<BE> + GLWEInfos;
 }
 
 pub trait GGLWEKeyswitch<BE: Backend> {

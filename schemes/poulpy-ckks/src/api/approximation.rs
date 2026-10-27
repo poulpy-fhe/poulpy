@@ -13,8 +13,8 @@ pub trait CKKSApproximationOps<BE: Backend> {
         &self,
         res: &R,
         input: &I,
-        tsk: &T,
         approximation: &PolynomialApproximation<P>,
+        tsk: &T,
     ) -> usize
     where
         R: CKKSCtBounds,

@@ -19,6 +19,12 @@ A call runs `api -> delegate -> oep`. Only the reference and derived bodies
 define a result: an OEP method forwards to the reference, inherits its derived
 default, or is an override that reproduces one of them.
 
+The API, delegate, OEP and layout modules name the `reference` module only in
+opt-in macro bodies and rustdoc links. A helper that code outside `reference`
+also calls (a check, a size, a placement) lives outside it, refusal checks in
+`layouts/validation.rs` (`layouts/validate.rs` in poulpy-blas), and
+`reference` imports it.
+
 poulpy-hal has no reference layer. The contract blocks of `poulpy_hal::api`
 define its basis operations, poulpy-cpu-portable implements them and the
 independent poulpy-cpu-oracle checks them. Its derived bodies are
@@ -39,7 +45,9 @@ per family:
 
   A family whose methods all have default bodies has
   `impl_<family>_derived_full!`, an empty `unsafe impl`. Each crate has one
-  umbrella, `impl_<crate>_reference_full!`, that expands to its family macros.
+  umbrella, `impl_<crate>_reference_full!`, that expands to its family macros;
+  poulpy-ckks's covers the families serving both rings, a standard backend
+  adding the standard-only ones.
 - **A hand-written `unsafe impl` of the family.** It implements the methods it
   replaces, forwards the other required methods and their `_tmp_bytes` queries
   to the reference, and keeps the derived defaults.
@@ -80,7 +88,7 @@ macro is named after its OEP family (`GLWEAddImpl`:
 |---|---|---|---|---|
 | poulpy-hal | the API name | none | `#[doc(hidden)] pub fn <op>_derived` in `oep::derived` | `hal_impl_*!` in poulpy-cpu-portable |
 | poulpy-core | the API name | `<Trait>Reference<BE>` | `pub(crate) fn <op>_derived` | `impl_<family>_reference_full!`, `impl_<family>_derived_full!`, `impl_core_reference_full!` |
-| poulpy-ckks | `<op>_impl` | `CKKS<Family>Reference<BE>` | `pub(crate)`, with public fallbacks in `oep::defaults` | `impl_ckks_<family>_reference!`, no umbrella |
-| poulpy-bin-fhe | the API name | free functions `<op>_reference` | `pub(crate) fn <op>_derived` | `impl_bin_fhe_<op>_reference!`, `impl_bin_fhe_<op>_derived!`, group umbrellas, `impl_bin_fhe_reference_full!` |
-| poulpy-mhe | the API name | `<Thing>MHEProtocolReference<BE>`, `<PatType>Reference<BE>` | `pub(crate) fn <op>_derived` | `impl_mhe_<stem>_reference!`, `impl_mhe_reference_full!` |
-| poulpy-blas | `blas_<op>_impl` | `BlasMat<Family>Reference<BE>` | `#[doc(hidden)] pub fn blas_<op>_derived` | `impl_blas_<family>_reference!`, `impl_blas_reference_full!` |
+| poulpy-ckks | the API name; hooks: keyed `ckks_{rotate,conjugate}_with_key_*`, encoding `ckks_{quantize,dequantize}_coeffs_into`, `ckks_{slots_to_coeffs,coeffs_to_slots}_assign_with_plan`, `ckks_encoding_plan_cache` and `ckks_encoding_plans_create`, ModUp `ckks_encapsulated_mod_up` and `ckks_mod_up_first_factor`, PaCo `ckks_slot_{trace,product}_assign`, SHIP `ckks_ship_{masking_accumulate,mux_rotate}` | `CKKS<Family>Reference<BE>` | `pub(crate) fn <op>_derived` | `impl_<family>_reference_full!`, `impl_<family>_derived_full!`, `impl_ckks_reference_full!` (both-ring families) |
+| poulpy-bin-fhe | the API name | free functions `<op>_reference` | `pub(crate) fn <op>_derived` | `impl_<family>_reference_full!`, `impl_<family>_derived_full!`, group umbrellas `impl_<group>_reference_full!`, `impl_bin_fhe_reference_full!` |
+| poulpy-mhe | the API name | `<Thing>MHEProtocolReference<BE>`, `<PatType>Reference<BE>` | `pub(crate) fn <op>_derived` | `impl_<family>_reference_full!`, `impl_mhe_reference_full!` |
+| poulpy-blas | the API name; hooks `blas_<hook>` | `BlasMat<Family>Reference<BE>` | `#[doc(hidden)] pub fn blas_<op>_derived` | `impl_<family>_reference_full!`, `impl_blas_reference_full!` |

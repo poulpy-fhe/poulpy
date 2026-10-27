@@ -11,16 +11,17 @@ use poulpy_hal::{
     test_suite::{TestParams, vec_znx_backend_mut},
 };
 
-use crate::layouts::GLWESecretSampling;
+use crate::api::GLWESecretSampling;
 use crate::layouts::prepared::{GGLWEPreparedToBackendRef, GGSWPreparedToBackendRef};
 use crate::test_suite::noise::glwe_noise_checked;
+use crate::test_suite::poisoned_scratch;
 use crate::{
     GGSWEncryptSk, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, GLWEKeyswitch, GLWENoise, GLWENormalize,
     GLWESwitchingKeyEncryptSk,
+    api::{GGSWPreparedFactory, GLWESecretPreparedFactory, GLWESwitchingKeyPreparedFactory},
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        GGSW, GGSWLayout, GGSWPreparedFactory, GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory,
-        GLWESwitchingKey, GLWESwitchingKeyLayout, GLWESwitchingKeyPreparedFactory, ModuleCoreAlloc,
+        GGSW, GGSWLayout, GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESwitchingKey, GLWESwitchingKeyLayout, ModuleCoreAlloc,
         prepared::{GGSWPrepared, GLWESecretPrepared, GLWESwitchingKeyPrepared},
     },
     noise::{GGLWENoiseModel, GGSWNoiseModel},
@@ -103,7 +104,8 @@ where
                 | module.glwe_encrypt_sk_tmp_bytes(&glwe_in_infos)
                 | module.glwe_noise_tmp_bytes(&glwe_out_infos)
                 | module.glwe_decrypt_tmp_bytes(&glwe_in_infos)
-                | module.glwe_keyswitch_tmp_bytes(&glwe_out_infos, &glwe_in_infos, &ksk_infos),
+                | module.glwe_switching_key_prepare_tmp_bytes(&ksk_infos)
+                | module.glwe_normalize_tmp_bytes(),
         );
 
         let mut sk_in: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank.into());
@@ -134,7 +136,12 @@ where
         let mut ksk_prepared: GLWESwitchingKeyPrepared<BE::OwnedBuf, BE> =
             module.glwe_switching_key_prepared_alloc_from_infos(&ksk);
         module.glwe_switching_key_prepare(&mut ksk_prepared, &ksk, &mut scratch.borrow());
-        module.glwe_keyswitch(&mut glwe_out, &glwe_in, &ksk_prepared.to_backend_ref(), &mut scratch.borrow());
+        module.glwe_keyswitch(
+            &mut glwe_out,
+            &glwe_in,
+            &ksk_prepared.to_backend_ref(),
+            &mut poisoned_scratch::<BE>(module.glwe_keyswitch_tmp_bytes(&glwe_out_infos, &glwe_in_infos, &ksk_infos)).borrow(),
+        );
 
         let model: f64 = ksk_infos.log2_std_noise_keyswitch(
             &glwe_out_infos,
@@ -246,7 +253,8 @@ where
                     | module.glwe_encrypt_sk_tmp_bytes(&glwe_in_infos)
                     | module.glwe_noise_tmp_bytes(&glwe_out_infos)
                     | module.glwe_decrypt_tmp_bytes(&glwe_in_infos)
-                    | module.glwe_external_product_tmp_bytes(&glwe_out_infos, &glwe_in_infos, &ggsw_infos),
+                    | module.ggsw_prepare_tmp_bytes(&ggsw_infos)
+                    | module.glwe_normalize_tmp_bytes(),
             );
             let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank.into());
             module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
@@ -275,7 +283,8 @@ where
                 &mut glwe_out,
                 &glwe_in,
                 &ggsw_prepared.to_backend_ref(),
-                &mut scratch.borrow(),
+                &mut poisoned_scratch::<BE>(module.glwe_external_product_tmp_bytes(&glwe_out_infos, &glwe_in_infos, &ggsw_infos))
+                    .borrow(),
             );
 
             module.vec_znx_rotate_assign(

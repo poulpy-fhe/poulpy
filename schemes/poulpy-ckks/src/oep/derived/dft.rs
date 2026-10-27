@@ -1,13 +1,32 @@
 //! Format compositions over the selected CKKS DFT and arithmetic contracts.
 use crate::api::{CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSDFTOps, CKKSImagOps, CKKSRotateOps, CKKSSubOps, LtDiagonalMeta};
-use crate::layouts::{CKKSModuleAlloc, DFTMatrix, Decode, Encode, Repack, Split, Standard};
+use crate::layouts::{
+    CKKSModuleAlloc, DFTMatrix, DFTMatrixPrepared, Decode, Encode, Repack, ScratchArenaTakeCKKS, Split, Standard,
+};
+use crate::oep::CKKSDFTImpl;
 use crate::{CKKSCtBounds, CKKSResult as Result, SetCKKSInfos, SlotsKind};
+use poulpy_core::DiagonalProd;
 use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, IntPolyInfos, LinearTransformation};
-use poulpy_core::reference::linear_transformation::DiagonalProd;
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+
+/// A prepared matrix of `dft`'s layout, allocated then prepared into from `dft`.
+pub(crate) fn ckks_prepare_dft_matrix_alloc_derived<BE, Dir, Fmt, P>(
+    module: &Module<BE>,
+    dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<DFTMatrixPrepared<BE, Dir, Fmt>>
+where
+    BE: CKKSDFTImpl,
+    P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + DiagonalProd<BE>,
+{
+    let mut res = module.ckks_dft_matrix_prepared_alloc_from_infos(dft);
+    BE::ckks_prepare_dft_matrix(module, &mut res, dft, scratch)?;
+    Ok(res)
+}
+
 /// Homomorphic encoding (CoeffsToSlots), `Standard` format: evaluates the Encode
 /// (IDFT) matrix in place, retaining selected raw DFT dispatch.
-pub fn ckks_coeffs_to_slots_assign<BE, P, Dst, H>(
+pub(crate) fn ckks_coeffs_to_slots_assign_derived<BE, P, Dst, H>(
     module: &Module<BE>,
     ct: &mut Dst,
     dft: &DFTMatrix<BE, Encode, Standard, LinearTransformation<P>>,
@@ -26,7 +45,7 @@ where
 
 /// Homomorphic decoding (SlotsToCoeffs), `Standard` format: evaluates the Decode
 /// (DFT) matrix in place, retaining selected raw DFT dispatch.
-pub fn ckks_slots_to_coeffs_assign<BE, P, Dst, H>(
+pub(crate) fn ckks_slots_to_coeffs_assign_derived<BE, P, Dst, H>(
     module: &Module<BE>,
     ct: &mut Dst,
     dft: &DFTMatrix<BE, Decode, Standard, LinearTransformation<P>>,
@@ -53,7 +72,7 @@ where
 /// key (Galois element `−1`). On return, `ct_real` holds the real parts and
 /// `ct_imag` the imaginary parts. Consumes `ct_in` by reference (copied).
 #[allow(clippy::too_many_arguments)]
-pub fn ckks_coeffs_to_slots_split<BE, P, Dst, Src, H>(
+pub(crate) fn ckks_coeffs_to_slots_split_derived<BE, P, Dst, Src, H>(
     module: &Module<BE>,
     ct_real: &mut Dst,
     ct_imag: &mut Dst,
@@ -84,10 +103,12 @@ where
     module.ckks_conjugate_into(ct_imag, ct_real, keys, scratch)?;
 
     // tmp := z − conj(z); ct_real := z + conj(z) = 2·Re(z); ct_imag := −i·tmp = 2·Im(z).
-    let mut tmp = module.ckks_ciphertext_alloc_from_infos(ct_real);
-    module.ckks_sub_into(&mut tmp, ct_real, ct_imag, scratch)?;
-    module.ckks_add_assign(ct_real, ct_imag, scratch)?;
-    module.ckks_div_i_into(ct_imag, &tmp, scratch)?;
+    scratch.scope(|scratch_local| -> Result<()> {
+        let (mut tmp, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(&*ct_real);
+        module.ckks_sub_into(&mut tmp, ct_real, ct_imag, &mut scratch_local.borrow())?;
+        module.ckks_add_assign(ct_real, ct_imag, &mut scratch_local.borrow())?;
+        module.ckks_div_i_into(ct_imag, &tmp, &mut scratch_local)
+    })?;
     // Both halves are the (real) coefficients of the input polynomial.
     ct_real.set_slots(SlotsKind::Real);
     ct_imag.set_slots(SlotsKind::Real);
@@ -99,7 +120,7 @@ where
 ///
 /// Combines `ct_real + i·ct_imag`, then evaluates the Decode matrix. Writes the
 /// result into `op_out`.
-pub fn ckks_slots_to_coeffs_split<BE, P, Dst, Src, H>(
+pub(crate) fn ckks_slots_to_coeffs_split_derived<BE, P, Dst, Src, H>(
     module: &Module<BE>,
     op_out: &mut Dst,
     ct_real: &Src,
@@ -130,7 +151,7 @@ where
 /// `Re` in the left `slots` and `Im` in the right `slots` of each `2·slots` period.
 /// The live slot count doubles, so `ct_out.log_sparsity` is decremented by one.
 #[allow(clippy::too_many_arguments)]
-pub fn ckks_coeffs_to_slots_repack<BE, P, Dst, Src, H>(
+pub(crate) fn ckks_coeffs_to_slots_repack_derived<BE, P, Dst, Src, H>(
     module: &Module<BE>,
     ct_out: &mut Dst,
     ct_in: &Src,
@@ -160,16 +181,18 @@ where
     module.ckks_dft_evaluate_assign(ct_out, dft, keys, scratch)?;
 
     // conj := conj(z); imag := −i·(z − conj) = 2·Im(z); ct_out := z + conj = 2·Re(z).
-    let mut conj = module.ckks_ciphertext_alloc_from_infos(ct_out);
-    module.ckks_conjugate_into(&mut conj, ct_out, keys, scratch)?;
-    let mut imag = module.ckks_ciphertext_alloc_from_infos(ct_out);
-    module.ckks_sub_into(&mut imag, ct_out, &conj, scratch)?;
-    module.ckks_div_i_assign(&mut imag, scratch)?;
-    module.ckks_add_assign(ct_out, &conj, scratch)?;
+    scratch.scope(|scratch_local| -> Result<()> {
+        let (mut conj, scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(&*ct_out);
+        let (mut imag, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(&*ct_out);
+        module.ckks_conjugate_into(&mut conj, ct_out, keys, &mut scratch_local.borrow())?;
+        module.ckks_sub_into(&mut imag, ct_out, &conj, &mut scratch_local.borrow())?;
+        module.ckks_div_i_assign(&mut imag, &mut scratch_local.borrow())?;
+        module.ckks_add_assign(ct_out, &conj, &mut scratch_local.borrow())?;
 
-    // Repack: rotate Im by `slots` and add into Re → [Re | Im] per 2·slots period.
-    module.ckks_rotate_assign(&mut imag, slots, keys, scratch)?;
-    module.ckks_add_assign(ct_out, &imag, scratch)?;
+        // Repack: rotate Im by `slots` and add into Re → [Re | Im] per 2·slots period.
+        module.ckks_rotate_assign(slots, &mut imag, keys, &mut scratch_local.borrow())?;
+        module.ckks_add_assign(ct_out, &imag, &mut scratch_local)
+    })?;
 
     // The repack doubles the live slot count.
     let log_sparsity = ct_in.log_sparsity().saturating_sub(1);
@@ -180,13 +203,13 @@ where
 }
 
 /// Sparse `SlotsToCoeffs` from a single repacked ciphertext (the inverse of
-/// [`ckks_coeffs_to_slots_repack`]; `DFTOutputFormat::RepackImagAsReal`, sparse).
+/// [`ckks_coeffs_to_slots_repack_derived`]; `DFTOutputFormat::RepackImagAsReal`, sparse).
 ///
 /// The Decode matrices already embed the repack matrix that recombines the
 /// `[Re | Im]` real packing into the complex form, so this is just an in-place
 /// evaluation. The live slot count halves, so `op_out.log_sparsity` is incremented
 /// by one.
-pub fn ckks_slots_to_coeffs_repack<BE, P, Dst, Src, H>(
+pub(crate) fn ckks_slots_to_coeffs_repack_derived<BE, P, Dst, Src, H>(
     module: &Module<BE>,
     op_out: &mut Dst,
     ct_in: &Src,

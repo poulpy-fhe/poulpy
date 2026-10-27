@@ -2,17 +2,18 @@
 //! encoding of a map into its allocation.
 
 use poulpy_ckks::{
-    CKKSLayout, CKKSResult, CoeffsMeta, SlotsKind,
+    CKKSInfos, CKKSLayout, CKKSResult, CoeffsMeta, SlotsKind,
     api::{
         CKKSEncodingOps, CKKSEncodingScalar, CKKSLinearTransformationOps, CKKSModuleInfos, Diagonal, GiantStep,
         LinearTransformation, LinearTransformationLayout, LinearTransformationPlan, LinearTransformationPrepared, LtDiagonalMeta,
         ckks_linear_transformation_output_layout,
     },
+    encoding::{ckks_encode_linear_transformation_into, ckks_encode_linear_transformation_tmp_bytes},
     layouts::{CKKSModuleAlloc, CKKSPlaintextOwned, ComplexDiagonals},
-    reference::{ckks_encode_linear_transformation_into, ckks_encode_linear_transformation_tmp_bytes},
 };
 use poulpy_core::layouts::{
-    Base2K, DiagonalArithmetic, Diagonals, GLWELayout, GetDegree, LWEInfos, LinearTransformationStrategy, Rank, TorusPrecision,
+    Base2K, DiagonalArithmetic, Diagonals, GLWELayout, GLWEPlaintextInfos, GetDegree, IntPolyInfos, LWEInfos,
+    LinearTransformationStrategy, Rank, TorusPrecision,
 };
 use poulpy_hal::{
     api::CnvPVecAlloc,
@@ -135,6 +136,7 @@ impl MapLayout {
 pub(crate) fn skeleton<P: Copy>(plan: &LinearTransformationPlan, diagonal: P) -> LinearTransformation<P> {
     LinearTransformation {
         baby_steps: plan.baby_steps.clone(),
+        rotations: plan.rotations,
         giant_steps: plan
             .giant_steps
             .iter()
@@ -209,8 +211,20 @@ where
     ckks_encode_linear_transformation_into(module, lt, map.meta.meta, &map.map, map.strategy, scratch)
 }
 
-/// Prepares every map of `maps` into the allocation `res` yields at the same position, once `scratch` holds the largest
-/// preparation's bytes; `op` names the caller in the scratch assertion.
+/// Whether every diagonal of `map` shares the first one's scale, encoded width and slot kind, which its preparation
+/// requires.
+fn uniform<BE: Backend>(map: &Encoded<BE>) -> bool {
+    let mut diagonals = map
+        .giant_steps
+        .iter()
+        .flat_map(|gs| &gs.diagonals)
+        .map(|d| (d.plaintext.log_delta(), d.plaintext.encoded_k(), d.plaintext.slots()));
+    diagonals.next().is_none_or(|first| diagonals.all(|d| d == first))
+}
+
+/// Prepares every map of `maps` into the allocation `res` yields at the same position, once every map has diagonals of
+/// one scale, width and slot kind and `scratch` holds the largest preparation's bytes; `op` names the caller in the
+/// panics of both checks, which run before the first map is prepared.
 pub(crate) fn prepare_maps_into<'a, BE, M>(
     module: &M,
     op: &'static str,
@@ -221,6 +235,10 @@ pub(crate) fn prepare_maps_into<'a, BE, M>(
     BE: Backend + 'a,
     M: CKKSLinearTransformationOps<BE>,
 {
+    assert!(
+        maps.clone().all(uniform::<BE>),
+        "{op}: a map's diagonals do not share one scale, width and slot kind"
+    );
     let bytes = maps
         .clone()
         .filter_map(LinearTransformation::first_diagonal_plaintext)
@@ -229,7 +247,9 @@ pub(crate) fn prepare_maps_into<'a, BE, M>(
         .unwrap_or(0);
     assert_scratch(op, bytes, scratch);
     for (dst, src) in res.zip(maps) {
-        module.ckks_prepare_linear_transformation_rhs(dst, src, scratch);
+        if module.ckks_prepare_linear_transformation_rhs(dst, src, scratch).is_err() {
+            panic!("{op}: a map's diagonals do not share one scale, width and slot kind");
+        }
     }
 }
 
@@ -351,6 +371,12 @@ pub(crate) fn mapped_block_into<P: LtDiagonalMeta>(
     let mut mapped = ckks_linear_transformation_output_layout(lt, block, dst_k);
     mapped.meta.log_sparsity = block.meta.log_sparsity;
     mapped
+}
+
+/// `block` copied into a ciphertext of width `dst_k`: at the narrower of the two, as `ckks_copy` leaves it.
+pub(crate) fn copied_block(mut block: CKKSLayout, dst_k: TorusPrecision) -> CKKSLayout {
+    block.glwe_layout.k = block.k().min(dst_k);
+    block
 }
 
 /// [`mapped_block_into`] at `block`'s width.

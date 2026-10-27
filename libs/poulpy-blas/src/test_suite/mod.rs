@@ -75,6 +75,8 @@ macro_rules! blas_backend_test_suite {
             run_test_with_arg!(inter_guards, $crate::test_suite::inter::test_blas_inter_guards, log_d());
             run_test_with_arg!(transpose, $crate::test_suite::intra::test_blas_transpose, log_d());
             run_test_with_arg!(rotate_rows_cols, $crate::test_suite::intra::test_blas_rotate_rows_cols, log_d());
+            run_test_with_arg!(sum_rows_cols, $crate::test_suite::intra::test_blas_sum_rows_cols, log_d());
+            run_test_with_arg!(sum_rows_cols_lazy, $crate::test_suite::intra::test_blas_sum_rows_cols_lazy, log_d());
             run_test_with_arg!(intra_guards, $crate::test_suite::intra::test_blas_intra_guards, log_d());
             run_test_with_arg!(matmul, $crate::test_suite::matmul::test_blas_matmul, log_d());
             run_test_with_arg!(matmul_pt_right, $crate::test_suite::matmul::test_blas_matmul_pt_right, log_d());

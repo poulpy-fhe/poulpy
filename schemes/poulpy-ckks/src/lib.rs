@@ -75,7 +75,7 @@
 //! | [`api::CKKSPaCoOps`] | PaCo bootstrapping without ModUp or EvalMod; parameterized by [`layouts::PaCoPlan`] and a compiled [`layouts::PaCoContext`] |
 
 use poulpy_core::layouts::{
-    Base2K, Degree, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank, SetK, TorusPrecision,
+    Base2K, Degree, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos, LWEInfos, Rank, SetK, TorusPrecision,
 };
 pub use poulpy_core::layouts::{
     GLWEPlaintextInfos, GLWEPlaintextMeta, ReplicatedLayout, Scale, SetGLWEPlaintextInfos, SlotLayout, SlotsKind,
@@ -88,16 +88,9 @@ use poulpy_hal::layouts::galois_element;
 pub mod api;
 pub mod approximation;
 pub(crate) mod cosine;
-pub(crate) mod delegates;
+mod delegates;
 pub mod reference;
 
-/// Re-exports for use inside this crate's exported macros (e.g.
-/// [`impl_ckks_dft_reference`]), so an invoking backend crate does not need
-/// `anyhow` as a direct dependency. Not part of the public API.
-#[doc(hidden)]
-pub mod __macro_reexports {
-    pub use anyhow;
-}
 pub mod encoding;
 mod error;
 mod eval_lut;
@@ -107,7 +100,7 @@ pub mod numerics;
 ///
 /// `use poulpy_ckks::prelude::*;` brings in the op traits (add/sub/mul/…,
 /// encrypt/decrypt, scratch sizing), the ciphertext/plaintext containers with
-/// their allocation helpers, and the metadata types — everything the
+/// their allocation helpers, and the metadata types: everything the
 /// encode → encrypt → evaluate → decrypt → decode loop needs from this crate.
 /// Key material and the `Module`/scratch machinery come from `poulpy-core` and
 /// `poulpy-hal`.
@@ -135,8 +128,9 @@ pub mod shaping;
 pub mod test_suite;
 pub use error::{CKKSCompositionError, CKKSError, CKKSResult};
 pub(crate) use error::{
-    checked_log_budget_sub, checked_mul_ct_log_budget, checked_mul_pt_log_budget, ckks_bail, ckks_ensure, ensure_base2k_match,
-    ensure_plaintext_alignment, ensure_plaintext_coeff_in_range, ensure_plaintext_degree_embeds,
+    checked_log_budget_sub, checked_mul_ct_log_budget, checked_mul_pt_log_budget, ckks_bail, ckks_ensure, ckks_ensure_operand,
+    ensure_base2k_match, ensure_plaintext_alignment, ensure_plaintext_coeff_in_range, ensure_plaintext_const_operand,
+    ensure_plaintext_degree_embeds, ensure_plaintext_vec_operand, invalid_operand,
 };
 /// Quad-precision (IEEE 754 binary128) CKKS scalar.
 ///
@@ -144,7 +138,7 @@ pub(crate) use error::{
 /// every configuration. Under the `libquadmath` feature on non-Apple x86_64
 /// only its libm-backed math is routed through libquadmath (faster for
 /// on-the-fly FFT-table builds); storage, codecs, and exact arithmetic are
-/// unchanged, so the type — and its `bytemuck::Pod` encoding — is identical
+/// unchanged, so the type, and its `bytemuck::Pod` encoding, is identical
 /// across features.
 pub use scalar::Quad;
 
@@ -270,8 +264,8 @@ impl<T: CKKSInfos + SetGLWEPlaintextInfos + SetK + ?Sized> SetCKKSInfos for T {}
 
 /// Allocation / precision spec for a CKKS value.
 ///
-/// Bundles a core [`GLWELayout`] — which carries `n`, `base2k`, the torus width
-/// `k`, and `rank` — with the [`GLWEPlaintextMeta`]. The
+/// Bundles a core [`GLWELayout`], which carries `n`, `base2k`, the torus width
+/// `k`, and `rank`, with the [`GLWEPlaintextMeta`]. The
 /// budget is derived as `log_budget = k - log_delta`, so `k` lives in the GLWE
 /// layout exactly as it does on a wrapped ciphertext/plaintext.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -287,8 +281,8 @@ pub struct CKKSLayout {
 ///
 /// The reduced form of a [`CKKSLayout`]: only the torus width `k` the operand
 /// plaintexts are allocated with and the [`GLWEPlaintextMeta`] they are stamped with.
-/// Plans carry no ring or radix information — `n` follows the module and
-/// `base2k` is passed explicitly at compile time — so there is nothing to fill
+/// Plans carry no ring or radix information: `n` follows the module and
+/// `base2k` is passed explicitly at compile time, so there is nothing to fill
 /// with placeholders.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CoeffsMeta {
@@ -379,8 +373,8 @@ impl GLWEPlaintextInfos for CKKSLayout {
 impl CKKSInfos for CKKSLayout {}
 
 /// Bits a binary add/sub must shift its result down to fit `res`: the excess of
-/// the **natural result width** — `min(log_delta) + min(log_budget)`, the meta
-/// the operation stamps — over the destination's requested `res.k()`. Using the natural width (rather
+/// the **natural result width**, `min(log_delta) + min(log_budget)`, the meta
+/// the operation stamps, over the destination's requested `res.k()`. Using the natural width (rather
 /// than `min(a.k, b.k)`, which is `≥` it whenever deltas *and* budgets both
 /// differ) charges exactly the budget the narrower destination forces and no
 /// more; the larger-delta operand's truncated tail lies below the claimed
@@ -402,6 +396,129 @@ where
     A: CKKSInfos + ?Sized,
 {
     a.k().as_usize().saturating_sub(res.k().as_usize())
+}
+
+pub(crate) fn get_mul_ct_params<R, A, B>(op: &'static str, res: &R, a: &A, b: &B) -> CKKSResult<(usize, usize, usize)>
+where
+    R: CKKSInfos,
+    A: CKKSInfos,
+    B: CKKSInfos,
+{
+    mul_ct_params_raw(
+        op,
+        res.k().as_usize(),
+        a.log_delta(),
+        a.k().into(),
+        b.log_delta(),
+        b.k().into(),
+    )
+}
+
+/// Shared `(log_budget, log_delta, cnv_offset)` rule for ct × ct multiplication,
+/// expressed on raw values so the BSGS driver computes bit-identical parameters.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn mul_ct_params_raw(
+    op: &'static str,
+    res_max_k: usize,
+    a_log_delta: usize,
+    a_k: usize,
+    b_log_delta: usize,
+    b_k: usize,
+) -> CKKSResult<(usize, usize, usize)> {
+    let a_log_budget = a_k.saturating_sub(a_log_delta);
+    let b_log_budget = b_k.saturating_sub(b_log_delta);
+
+    let res_log_budget = checked_mul_ct_log_budget(op, a_log_budget, b_log_budget, a_log_delta, b_log_delta)?;
+    let res_log_delta = a_log_delta.min(b_log_delta);
+
+    let res_offset = (res_log_budget + res_log_delta).saturating_sub(res_max_k);
+    // An operand holds its message at `2^-log_budget` on the torus and the
+    // convolution returns `a * b * 2^cnv_offset`, so lifting the product from
+    // `2^-(a_log_budget + b_log_budget)` to the stamped budget
+    // `min(log_budget) - max(log_delta) - res_offset` takes
+    // `max(log_budget) + max(log_delta) + res_offset`. That is
+    // `max(a_k, b_k) + res_offset` only when the operand with the larger budget
+    // also has the larger or equal scale.
+    let cnv_offset = a_log_budget.max(b_log_budget) + a_log_delta.max(b_log_delta) + res_offset;
+
+    Ok((
+        checked_log_budget_sub(op, res_log_budget, res_offset)?,
+        res_log_delta,
+        cnv_offset,
+    ))
+}
+
+pub(crate) fn get_mul_pt_params<R, A, B>(op: &'static str, res: &R, a: &A, b: &B) -> CKKSResult<(usize, usize, usize)>
+where
+    R: CKKSInfos,
+    A: CKKSInfos,
+    B: CKKSInfos + IntPolyInfos,
+{
+    mul_pt_params_raw(
+        op,
+        res.k().as_usize(),
+        a.log_delta(),
+        a.log_budget(),
+        b.log_delta(),
+        b.log_budget(),
+        b.encoded_k().as_usize(),
+    )
+}
+
+/// Shared `(log_budget, log_delta, cnv_offset)` rule for ct × pt multiplication,
+/// expressed on raw values so the BSGS driver computes bit-identical parameters.
+pub(crate) fn mul_pt_params_raw(
+    op: &'static str,
+    res_max_k: usize,
+    a_log_delta: usize,
+    a_log_budget: usize,
+    b_log_delta: usize,
+    b_log_budget: usize,
+    b_max_k: usize,
+) -> CKKSResult<(usize, usize, usize)> {
+    let res_log_budget = checked_mul_pt_log_budget(op, a_log_budget, b_log_budget, a_log_delta, b_log_delta)?;
+    let res_log_delta = a_log_delta;
+    let res_offset = (res_log_budget + res_log_delta).saturating_sub(res_max_k);
+    let cnv_offset = b_max_k + res_offset;
+
+    Ok((
+        checked_log_budget_sub(op, res_log_budget, res_offset)?,
+        res_log_delta,
+        cnv_offset,
+    ))
+}
+
+/// The operand checks of a product of `a` by the plaintext polynomial `pt` into `res`, in their order: the radix,
+/// the degree embedding, then the budget. Returns the product's `(log_budget, log_delta, cnv_offset)`.
+pub(crate) fn ckks_mul_pt_vec_checks<BE, R, A, P>(op: &'static str, res: &R, a: &A, pt: &P) -> CKKSResult<(usize, usize, usize)>
+where
+    BE: Backend,
+    R: CKKSInfos,
+    A: CKKSInfos,
+    P: CKKSInfos + IntPolyInfos,
+{
+    ensure_base2k_match(op, a.base2k().as_usize(), pt.base2k().as_usize())?;
+    ensure_plaintext_degree_embeds(op, a.n().as_usize(), pt.n().as_usize(), BE::MIN_DEGREE)?;
+    get_mul_pt_params(op, res, a, pt)
+}
+
+/// The operand checks of a product of `a` by coefficient `pt_coeff` of `pt` into `res`, in their order: the radix,
+/// the coefficient index, then the budget. Returns the product's `(log_budget, log_delta, cnv_offset)`.
+pub(crate) fn ckks_mul_pt_const_checks<R, A, P>(
+    op: &'static str,
+    res: &R,
+    a: &A,
+    pt: &P,
+    pt_coeff: usize,
+) -> CKKSResult<(usize, usize, usize)>
+where
+    R: CKKSInfos,
+    A: CKKSInfos,
+    P: CKKSInfos + IntPolyInfos,
+{
+    ensure_base2k_match(op, a.base2k().as_usize(), pt.base2k().as_usize())?;
+    ensure_plaintext_coeff_in_range(op, "plaintext", pt_coeff, pt.n().as_usize())?;
+    get_mul_pt_params(op, res, a, pt)
 }
 
 /// Whether a limb-wise op can read `a` into `res` without normalizing: `res`
@@ -546,12 +663,12 @@ mod offset_tests {
     }
 
     /// The binary offset charges exactly the natural result width's excess over
-    /// the destination — not `min(a.k, b.k)`, which over-charges when deltas
+    /// the destination, not `min(a.k, b.k)`, which over-charges when deltas
     /// and budgets both differ.
     #[test]
     fn offset_binary_charges_natural_result_width() {
         // Deltas AND budgets differ: natural width = 30 + 20 = 50, while
-        // min(a.k, b.k) = 55 — the old formula charged 5 spurious bits.
+        // min(a.k, b.k) = 55: the old formula charged 5 spurious bits.
         let a = layout(40, 20); // k = 60
         let b = layout(30, 25); // k = 55
         let res = layout(30, 20); // max_k = 50

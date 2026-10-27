@@ -29,6 +29,11 @@ The [`guides/`](guides) folder holds the guides and design notes, [`spec/`](spec
 
 - [Implementing BLAS operations](../libs/poulpy-blas/docs/blas-contracts.md), the rules every BLAS family shares: batches, key sets and widths, validation and error order, scratch and parallelism.
 
+## libm
+
+- [libm API guide](../libs/poulpy-libm/docs/api.md), the supported functions with their intervals and circuit costs.
+- [Custom approximations](../libs/poulpy-libm/docs/custom-approximation.md), fitting and evaluating a function outside the libm scope with the approximation API of `poulpy-ckks`.
+
 ## Specifications
 
 The [`spec/`](spec) folder holds lower-level implementation specifications and code walkthroughs.

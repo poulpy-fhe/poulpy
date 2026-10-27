@@ -6,9 +6,9 @@
 //! halves (rank-1) the serialised size at the cost of a
 //! decompression step before use.
 //!
-//! Every compressed type has a `decompress` / `GLWEDecompress`
-//! method that expands it back into the corresponding standard
-//! layout.
+//! Every compressed type expands back into the corresponding standard
+//! layout through a decompression operation of [`crate::api`], such as
+//! [`GLWEDecompress`](crate::api::GLWEDecompress).
 
 macro_rules! impl_gglwe_compressed_to_backend_for_field {
     ($ty:ty, $field:tt, $inner:ty) => {

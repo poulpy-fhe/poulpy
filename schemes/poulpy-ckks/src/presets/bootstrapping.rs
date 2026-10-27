@@ -55,18 +55,21 @@ use std::collections::BTreeMap;
 
 use anyhow::{Context, Result, ensure};
 use poulpy_core::layouts::{
-    Base2K, Degree, GGLWEInfos, GGLWELayout, GLWELayout, GLWESwitchingKeyLayout, LWEInfos, Rank, TorusPrecision,
+    Base2K, BsgsRotations, Degree, GGLWEInfos, GGLWELayout, GLWELayout, GLWESwitchingKeyLayout, LWEInfos,
+    LinearTransformationLayout, Rank, TorusPrecision,
 };
+use poulpy_hal::layouts::{MaxBase2k, Module};
 
 use crate::numerics::CKKSFloat;
 use crate::{
     CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, Scale, SlotLayout, SlotsKind,
     layouts::{
-        BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques, DFTOutputFormat, DFTPlan,
-        DFTType, EncapsulationKeysLayout, EvalModPlan, EvalModRing, EvalModType, SparseSecretEncapsulation,
+        BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques, CIConversion,
+        DFTOutputFormat, DFTPlan, DFTType, EncapsulationKeysLayout, EvalModPlan, EvalModRing, EvalModType, EvalRoundPlus,
+        SparseSecretEncapsulation,
     },
     polynomial::SplitStrategy,
-    reference::first_factor::{first_factor_diagonal_growth, first_factor_small_bits, first_factor_work},
+    presets::first_factor::{first_factor_diagonal_growth, first_factor_small_bits, first_factor_work},
 };
 
 /// Three factors of five layers for the logN16 presets, with the giant steps that
@@ -138,10 +141,15 @@ struct PresetSpec {
     c2s_schedule: &'static [(usize, usize)],
     /// The first CoeffsToSlots factor is applied by the raise, for no modulus.
     c2s_first_factor_on_raise: bool,
+    /// The transforms switch with the keys of power-of-two rotations only.
+    power_of_two_keys: bool,
     eval_mod_ring: EvalModRing,
     c2s_guard_bits: usize,
     c2s_log_delta: usize,
     c2s_log_budget: usize,
+    /// Scale of the high-precision CoeffsToSlots of EvalRound+, with the schedule
+    /// of `c2s_schedule`, or `None` without EvalRound+.
+    c2s_bypass_log_delta: Option<usize>,
     s2c_schedule: &'static [(usize, usize)],
     s2c_log_delta: usize,
     s2c_log_budget: usize,
@@ -276,6 +284,29 @@ impl BootstrappingPreset {
         })
     }
 
+    /// Re-derives the preset with EvalRound+: CoeffsToSlots at scale
+    /// `2^c2s_log_delta` feeds EvalMod, and a high-precision CoeffsToSlots of the
+    /// same schedule at `2^bypass_log_delta`, which shares its rotation keys,
+    /// gives the output its precision.
+    pub fn with_eval_round_plus(&self, c2s_log_delta: usize, bypass_log_delta: usize) -> Result<Self> {
+        build(PresetSpec {
+            c2s_log_delta,
+            c2s_bypass_log_delta: Some(bypass_log_delta),
+            ..self.spec
+        })
+    }
+
+    /// Re-derives the preset with the transforms evaluated with the keys of
+    /// power-of-two rotations only ([`DFTPlan::with_power_of_two_keys`]): the
+    /// same key switches, half the CoeffsToSlots and SlotsToCoeffs keys, each
+    /// switching several ciphertexts at once, and a product through more switches.
+    pub fn with_power_of_two_keys(&self) -> Result<Self> {
+        build(PresetSpec {
+            power_of_two_keys: true,
+            ..self.spec
+        })
+    }
+
     /// Re-derives the preset with EvalMod on `eval_mod_ring`: the conversions to
     /// the conjugate-invariant ring widen the raised width by their scales.
     pub fn with_eval_mod_ring(&self, eval_mod_ring: EvalModRing) -> Result<Self> {
@@ -295,6 +326,115 @@ impl BootstrappingPreset {
             dense_to_sparse_dsize,
             ..self.spec
         })
+    }
+
+    /// Largest limb radix at which every accumulation of the bootstrap stays
+    /// within the extended precision of backend `BE`, and of `BCI` for EvalMod on
+    /// the conjugate-invariant ring, with a failure probability of at most
+    /// `2^-failure_bits` over the whole bootstrap, by the model of
+    /// [`Module::max_base2k`](poulpy_hal::layouts::Module::max_base2k); zero when
+    /// no radix fits.
+    ///
+    /// The widest accumulations are the giant-step passes of the transforms: an
+    /// output limb sums, without normalizing, the product of every diagonal of a
+    /// factor with a baby rotation, over the diagonal's limbs, and the key switch
+    /// of every giant step, over the operand limbs. A first factor on the raise
+    /// sums one key switch per diagonal over fewer limbs, which that count covers,
+    /// a folded `u` runs the last CoeffsToSlots pass twice, and EvalRound+ adds the
+    /// pass of its cancellation.
+    /// An output limb of each of EvalMod's ciphertext products, as many as
+    /// [`EvalModPlan::max_ciphertext_products`] bounds, sums a product per limb,
+    /// one of them a square. On the CI ring EvalMod runs on `BCI`, and the two
+    /// conversions of degree `2N` sum a key-switch product per operand limb on `BE`.
+    /// The failure budget is split over the outputs of every pass, and the radix
+    /// ignores the security bounds, which [`Self::with_backend_base2k`] applies.
+    pub fn max_backend_base2k<BE: MaxBase2k, BCI: MaxBase2k>(&self, failure_bits: usize) -> usize {
+        let n = self.n;
+        let ci = self.plan.eval_mod_ring() != EvalModRing::Standard;
+        for base2k in (1..=62).rev() {
+            let limbs = self.bootstrap_k.div_ceil(base2k);
+            let (products, transform_passes) = self.transform_accumulations(base2k);
+            let passes = transform_passes + self.plan.eval_mod().max_ciphertext_products() + if ci { 2 } else { 0 };
+            // Each accumulation's output polynomials: two columns, every limb.
+            let failure_bits = failure_bits + (passes * 2 * limbs).next_power_of_two().ilog2() as usize;
+            let transforms = Module::<BE>::max_base2k(n, products, failure_bits, false);
+            let eval_mod = if ci {
+                Module::<BCI>::max_base2k_squares(n, limbs, 1, failure_bits).min(Module::<BE>::max_base2k(
+                    2 * n,
+                    limbs,
+                    failure_bits,
+                    false,
+                ))
+            } else {
+                Module::<BE>::max_base2k_squares(n, limbs, 1, failure_bits)
+            };
+            if transforms.min(eval_mod) >= base2k {
+                return base2k;
+            }
+        }
+        0
+    }
+
+    /// Re-derives the preset at the largest radix [`Self::max_backend_base2k`]
+    /// allows on backends `BE` and `BCI` and the modulus bounds admit (see
+    /// [`Self::with_base2k`]).
+    pub fn with_backend_base2k<BE: MaxBase2k, BCI: MaxBase2k>(&self, failure_bits: usize) -> Result<Self> {
+        let max = self.max_backend_base2k::<BE, BCI>(failure_bits);
+        (1..=max)
+            .rev()
+            .find_map(|base2k| self.with_base2k(base2k).ok())
+            .with_context(|| format!("no radix up to {max} fits the modulus bounds of {}", self.name()))
+    }
+
+    /// Worst count of degree-`N` products an output limb of a transform pass
+    /// accumulates at radix `base2k`, and the number of such passes.
+    fn transform_accumulations(&self, base2k: usize) -> (usize, usize) {
+        let log_n = self.spec.log_n;
+        let operand = self.bootstrap_k.div_ceil(base2k);
+        let mut transforms = vec![self.plan.coeffs_to_slots(), self.plan.slots_to_coeffs()];
+        transforms.extend(self.plan.coeffs_to_slots_bypass());
+        let (mut products, mut passes) = (1, 0);
+        for dft in transforms {
+            let meta = dft.coeffs_meta();
+            let diagonal_limbs = (meta.log_delta() + meta.log_budget()).div_ceil(base2k);
+            for (indexes, giant_step) in dft.diagonal_indexes(log_n).into_iter().zip(dft.schedule().giant_steps()) {
+                // With the plan's own schedule: the tree of power-of-two keys switches more.
+                let index = LinearTransformationLayout {
+                    indexes,
+                    slots: 1 << log_n,
+                    strategy: dft.factor_strategy(giant_step),
+                }
+                .index();
+                let diagonals: usize = index.index.iter().map(Vec::len).sum();
+                let giants = index.index.iter().filter(|babies| !babies.is_empty()).count();
+                let switches = match index.rotations {
+                    BsgsRotations::PerRotation => giants,
+                    BsgsRotations::PowersOfTwo { .. } => index.rotations.giant_key_switches(
+                        index
+                            .giant_steps
+                            .iter()
+                            .zip(&index.index)
+                            .filter(|(_, babies)| !babies.is_empty())
+                            .map(|(&rot, _)| rot),
+                    ),
+                };
+                products = products.max(diagonals * diagonal_limbs + switches * operand);
+                passes += 1;
+            }
+        }
+        // EvalRound+ subtracts `K·x` from EvalMod's output: one more pass, of two terms.
+        if self.plan.coeffs_to_slots_bypass().is_some() {
+            passes += 1;
+        }
+        // A folded `u` runs the last CoeffsToSlots factor twice, on the same diagonals.
+        if let EvalModRing::ConjugateInvariant {
+            pre: CIConversion::Folded,
+            ..
+        } = self.plan.eval_mod_ring()
+        {
+            passes += 1;
+        }
+        (products, passes)
     }
 
     /// Width required by an input ciphertext, i.e. the width the application
@@ -384,10 +524,12 @@ pub fn n16_d35_k636_p20_c2s() -> Result<BootstrappingPreset> {
         log_msg_ratio: 6,
         c2s_schedule: &C2S_SCHEDULE,
         c2s_first_factor_on_raise: false,
+        power_of_two_keys: false,
         eval_mod_ring: EvalModRing::Standard,
         c2s_guard_bits: 0,
         c2s_log_delta: 51,
         c2s_log_budget: 2,
+        c2s_bypass_log_delta: None,
         s2c_schedule: &S2C_SCHEDULE,
         s2c_log_delta: 35,
         s2c_log_budget: 2,
@@ -421,10 +563,12 @@ pub fn n16_d35_k733_p20_s2c() -> Result<BootstrappingPreset> {
         log_msg_ratio: 13,
         c2s_schedule: &C2S_SCHEDULE,
         c2s_first_factor_on_raise: false,
+        power_of_two_keys: false,
         eval_mod_ring: EvalModRing::Standard,
         c2s_guard_bits: 6,
         c2s_log_delta: 50,
         c2s_log_budget: 3,
+        c2s_bypass_log_delta: None,
         s2c_schedule: &S2C_SCHEDULE,
         s2c_log_delta: 30,
         s2c_log_budget: 2,
@@ -455,10 +599,12 @@ pub fn n15_d35_k180_p18_c2s() -> Result<BootstrappingPreset> {
         log_msg_ratio: 5,
         c2s_schedule: &[(7, 2048), (7, 16)],
         c2s_first_factor_on_raise: false,
+        power_of_two_keys: false,
         eval_mod_ring: EvalModRing::Standard,
         c2s_guard_bits: 0,
         c2s_log_delta: 50,
         c2s_log_budget: 2,
+        c2s_bypass_log_delta: None,
         s2c_schedule: &[(7, 16), (7, 2048)],
         s2c_log_delta: 29,
         s2c_log_budget: 2,
@@ -499,10 +645,12 @@ pub(crate) fn insecure_n11_d35_k180_p20_s2c() -> Result<BootstrappingPreset> {
         log_msg_ratio: 13,
         c2s_schedule: &[(4, 4), (3, 4), (3, 4)],
         c2s_first_factor_on_raise: false,
+        power_of_two_keys: false,
         eval_mod_ring: EvalModRing::Standard,
         c2s_guard_bits: 6,
         c2s_log_delta: 50,
         c2s_log_budget: 3,
+        c2s_bypass_log_delta: None,
         s2c_schedule: &[(2, 4), (4, 4), (4, 4)],
         s2c_log_delta: 30,
         s2c_log_budget: 2,
@@ -511,21 +659,22 @@ pub(crate) fn insecure_n11_d35_k180_p20_s2c() -> Result<BootstrappingPreset> {
 }
 
 /// [`n16_d35_k733_p20_s2c`] tuned for speed: 685-bit ciphertexts with at least
-/// 19 bits of precision (19.4 measured, the minimum over the slots), 15 usable levels. The first CoeffsToSlots factor is
-/// applied by the raise, three factors of four layers follow, EvalMod runs once
+/// 19 bits of precision (19.6 measured, the minimum over the slots), 15 usable levels. The first CoeffsToSlots factor is
+/// applied by the raise, four factors of three layers follow, EvalMod runs once
 /// on the conjugate-invariant ring ([`EvalModRing::ConjugateInvariant`], 84 bits
-/// of conversions), and SlotsToCoeffs has four factors. The raised width is 1383 bits.
+/// of conversions), and SlotsToCoeffs has four factors. The raised width is 1431 bits.
 pub fn n16_d35_k685_p19_s2c_ffr_ci() -> Result<BootstrappingPreset> {
     build(PresetSpec {
         name: "n16_d35_k685_p19_s2c_ffr_ci",
         output_k: 685,
         log2_precision: 19,
-        c2s_schedule: &[(3, 1), (4, 1024), (4, 64), (4, 4)],
+        c2s_schedule: &[(3, 1), (3, 2048), (3, 256), (3, 32), (3, 4)],
         c2s_first_factor_on_raise: true,
+        power_of_two_keys: false,
         // `u` carries the overflow of the raise, `v` only the message.
         eval_mod_ring: EvalModRing::ConjugateInvariant {
-            pre_log_delta: 46,
-            post_log_delta: 38,
+            pre: CIConversion::Product { log_delta: 46 },
+            post: CIConversion::Product { log_delta: 38 },
         },
         c2s_log_delta: 48,
         s2c_schedule: &[(3, 4), (4, 32), (4, 512), (4, 8192)],
@@ -582,13 +731,15 @@ fn build(spec: PresetSpec) -> Result<BootstrappingPreset> {
     .with_scaling(match spec.pipeline {
         BootstrappingPipeline::C2SFirst => (spec.log_msg_ratio as f64).ckks_exp2(),
         BootstrappingPipeline::S2CFirst => 0.5,
-    })?;
+    })?
+    .with_power_of_two_keys(spec.power_of_two_keys);
     let coeffs_to_slots = DFTPlan::new(
         DFTType::Encode,
         spec.c2s_schedule.to_vec(),
         DFTOutputFormat::SplitRealAndImag,
         CoeffsMeta::from_delta_budget(spec.c2s_log_delta, spec.c2s_log_budget),
-    )?;
+    )?
+    .with_power_of_two_keys(spec.power_of_two_keys);
     let coeffs_to_slots = if spec.c2s_first_factor_on_raise {
         coeffs_to_slots.with_first_factor_on_raise()
     } else {
@@ -600,7 +751,19 @@ fn build(spec: PresetSpec) -> Result<BootstrappingPreset> {
             sparse_secret_encapsulation: Some(SparseSecretEncapsulation {
                 hamming_weight: spec.sparse_secret.hamming_weight,
             }),
-            eval_round_plus: None,
+            eval_round_plus: match spec.c2s_bypass_log_delta {
+                Some(log_delta) => Some(EvalRoundPlus {
+                    coeffs_to_slots_bypass: DFTPlan::new(
+                        DFTType::Encode,
+                        spec.c2s_schedule.to_vec(),
+                        DFTOutputFormat::SplitRealAndImag,
+                        CoeffsMeta::from_delta_budget(log_delta, spec.c2s_log_budget),
+                    )?
+                    .with_scaling(1.0)?
+                    .with_power_of_two_keys(spec.power_of_two_keys),
+                }),
+                None => None,
+            },
         },
         coeffs_to_slots,
         EvalModPlan {
@@ -913,7 +1076,7 @@ mod tests {
 
     use super::*;
     use crate::CKKSInfos;
-    use crate::reference::first_factor::FIRST_FACTOR_GUARD_BITS;
+    use crate::presets::first_factor::FIRST_FACTOR_GUARD_BITS;
 
     #[test]
     fn n15_d35_k180_p18_c2s_is_composable_and_within_bounds() {
@@ -1036,10 +1199,10 @@ mod tests {
         assert_eq!(preset.plan().eval_mod().eval_mod_type, EvalModType::CosHKEven);
         assert_eq!(preset.plan().eval_mod().consumed_bits(), 464);
         assert_eq!(preset.plan().eval_mod_ring().consumed_bits(), 84);
-        assert_eq!(preset.plan().coeffs_to_slots().consumed_bits(), 144);
+        assert_eq!(preset.plan().coeffs_to_slots().consumed_bits(), 192);
         assert_eq!(preset.plan().c2s_guard_bits(), 6);
         assert_eq!(preset.plan().slots_to_coeffs().consumed_bits(), 112);
-        assert_eq!((preset.input_k(), preset.output_k(), preset.bootstrap_k()), (160, 685, 1383));
+        assert_eq!((preset.input_k(), preset.output_k(), preset.bootstrap_k()), (160, 685, 1431));
         assert_eq!(preset.log2_precision(), 19);
         assert_eq!(
             preset.output_layout().log_budget() - preset.input_layout().log_budget(),
@@ -1070,7 +1233,7 @@ mod tests {
         let first = keys.first_factor_key.unwrap();
         assert_eq!(
             (first.k_digit.as_usize(), first.dnum.as_usize(), first.k_offset.as_usize()),
-            (104, 1, 1300)
+            (104, 1, 1352)
         );
         // The trace key switches the raised CoeffsToSlots output, the embed key the EvalMod output.
         let (trace, embed) = keys.conversion_keys.unwrap();
@@ -1228,7 +1391,7 @@ mod tests {
     #[test]
     fn n16_d35_k685_p19_s2c_ffr_ci_runs_eval_mod_on_the_ci_ring() {
         let preset = n16_d35_k685_p19_s2c_ffr_ci().unwrap();
-        assert_eq!((preset.input_k(), preset.output_k(), preset.bootstrap_k()), (160, 685, 1383));
+        assert_eq!((preset.input_k(), preset.output_k(), preset.bootstrap_k()), (160, 685, 1431));
         assert_eq!(preset.plan().eval_mod_ring().consumed_bits(), 84);
         // The tensor key is of the CI ring of degree N, the conversion keys of degree 2N.
         let keys = preset.keys_layout();
@@ -1240,6 +1403,34 @@ mod tests {
     }
 
     #[test]
+    fn folding_u_narrows_n16_d35_k685_p19_s2c_ffr_ci() {
+        let preset = n16_d35_k685_p19_s2c_ffr_ci().unwrap();
+        let folded = preset
+            .with_eval_mod_ring(EvalModRing::ConjugateInvariant {
+                pre: CIConversion::Folded,
+                post: CIConversion::Product { log_delta: 38 },
+            })
+            .unwrap();
+        // The product by `u` no longer takes its 46 bits.
+        assert_eq!((folded.input_k(), folded.output_k(), folded.bootstrap_k()), (160, 685, 1385));
+        assert_eq!(folded.plan().eval_mod_ring().consumed_bits(), 38);
+        // The rotation keys follow the narrower raised width: 4959 MiB against 5759.
+        assert_eq!(key_set_bytes(&folded).map(|bytes| bytes >> 20), [4357, 99, 3, 240, 260]);
+    }
+
+    #[test]
+    fn power_of_two_keys_halve_the_rotation_keys_of_n16_d35_k685_p19_s2c_ffr_ci() {
+        let preset = n16_d35_k685_p19_s2c_ffr_ci().unwrap();
+        let powers = preset.with_power_of_two_keys().unwrap();
+        let count = |p: &BootstrappingPreset| p.plan().galois_elements(p.log_n(), 2 * p.n() as i64).len();
+        // Fewer keys per paid factor: 21 rotation keys against 35, 3419 MiB against 5149,
+        // every width unchanged.
+        assert_eq!((count(&preset), count(&powers)), (35, 21));
+        assert_eq!(key_set_bytes(&powers).map(|bytes| bytes >> 20), [3419, 99, 3, 248, 260]);
+        assert_eq!((powers.input_k(), powers.output_k(), powers.bootstrap_k()), (160, 685, 1431));
+    }
+
+    #[test]
     fn n16_d35_k685_p19_s2c_ffr_ci_has_a_smaller_key_set() {
         let mib = |bytes: usize| {
             assert!(bytes.is_multiple_of(1 << 20));
@@ -1247,20 +1438,21 @@ mod tests {
         };
         // Rotation keys with conjugation, the tensor key and the encapsulation keys: 8022 MiB.
         assert_eq!(key_set_bytes(&n16_d35_k733_p20_s2c().unwrap()).map(mib), [7891, 99, 32, 0, 0]);
-        // 43 rotation keys and no conjugation, the CI tensor key, the dense-to-sparse key,
-        // eight first-factor keys and the trace and embed keys of degree 2N: 6845 MiB.
+        // 35 rotation keys and no conjugation, the CI tensor key, the dense-to-sparse key,
+        // eight first-factor keys and the trace and embed keys of degree 2N: 5759 MiB.
         let preset = n16_d35_k685_p19_s2c_ffr_ci().unwrap();
-        assert_eq!(key_set_bytes(&preset).map(mib), [6243, 99, 3, 240, 260]);
+        assert_eq!(key_set_bytes(&preset).map(mib), [5149, 99, 3, 248, 260]);
         // With the first factor evaluated by the matrix, every paid factor runs 48 bits
-        // wider and the sparse-to-dense key comes back: 8001 MiB.
+        // wider and the sparse-to-dense key comes back: 8756 MiB.
         let without = build(PresetSpec {
-            c2s_schedule: &[(3, 8), (4, 1024), (4, 64), (4, 4)],
+            c2s_schedule: &[(3, 8), (3, 2048), (3, 256), (3, 32), (3, 4)],
             c2s_first_factor_on_raise: false,
+            power_of_two_keys: false,
             ..preset.spec
         })
         .unwrap();
-        assert_eq!(without.bootstrap_k(), 1431);
-        assert_eq!(key_set_bytes(&without).map(mib), [7609, 99, 33, 0, 260]);
+        assert_eq!(without.bootstrap_k(), 1479);
+        assert_eq!(key_set_bytes(&without).map(mib), [8363, 99, 34, 0, 260]);
     }
 
     #[test]

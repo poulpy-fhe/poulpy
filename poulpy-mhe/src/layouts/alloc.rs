@@ -1,7 +1,10 @@
 use poulpy_core::layouts::{
     Base2K, Degree, Dnum, GGLWEInfos, GGSWInfos, GLWEInfos, ModuleCoreAlloc, ModuleCoreCompressedAlloc, Rank, TorusPrecision,
 };
-use poulpy_hal::layouts::{Backend, Module};
+use poulpy_hal::{
+    api::ModuleN,
+    layouts::{Backend, Module},
+};
 
 use crate::layouts::{
     GGLWEPat, GGLWEPatCompressed, GGLWEPatCompressedOwned, GGLWEPatOwned, GGSWShare, GGSWShareOwned, GLWEAutomorphismKeyShare,
@@ -11,17 +14,27 @@ use crate::layouts::{
     GLWESwitchingKeyShare, GLWESwitchingKeyShareOwned, GLWETensorKeyShare, GLWETensorKeyShareOwned, ggsw_share_part_layout,
 };
 
+fn assert_degree(module_n: usize, infos_n: Degree) {
+    assert!(
+        infos_n.as_usize() == module_n,
+        "invalid layout: degree differs from the module's"
+    );
+}
+
 /// PAT and share allocation on a backend module.
 ///
 /// Every method is default-bodied over the core allocation supertraits, so the
 /// blanket impl for `Module<BE>` is empty. A fresh PAT or share is zero; share
 /// metadata starts as in core (degrees `0`, Galois element `0`, distribution
-/// `NONE`).
+/// `NONE`). Every `*_alloc_from_infos` panics unless the infos degree is the
+/// module's.
 pub trait MHEModuleAlloc<BE: Backend>:
-    ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+    ModuleN
+    + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
     + ModuleCoreCompressedAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
 {
     fn glwe_pat_compressed_alloc_from_infos<A: GLWEInfos>(&self, infos: &A) -> GLWEPatCompressedOwned<BE> {
+        assert_degree(self.n(), infos.n());
         GLWEPatCompressed {
             inner: self.glwe_compressed_alloc_from_infos(infos),
         }
@@ -34,6 +47,7 @@ pub trait MHEModuleAlloc<BE: Backend>:
     }
 
     fn gglwe_pat_compressed_alloc_from_infos<A: GGLWEInfos>(&self, infos: &A) -> GGLWEPatCompressedOwned<BE> {
+        assert_degree(self.n(), infos.n());
         GGLWEPatCompressed {
             inner: self.gglwe_compressed_alloc_from_infos(infos),
         }
@@ -54,6 +68,7 @@ pub trait MHEModuleAlloc<BE: Backend>:
     }
 
     fn gglwe_pat_alloc_from_infos<A: GGLWEInfos>(&self, infos: &A) -> GGLWEPatOwned<BE> {
+        assert_degree(self.n(), infos.n());
         GGLWEPat {
             inner: self.gglwe_alloc_from_infos(infos),
         }
@@ -74,6 +89,7 @@ pub trait MHEModuleAlloc<BE: Backend>:
     }
 
     fn glwe_public_key_share_alloc_from_infos<A: GLWEInfos>(&self, infos: &A) -> GLWEPublicKeyShareOwned<BE> {
+        assert_degree(self.n(), infos.n());
         GLWEPublicKeyShare {
             key: self.glwe_public_key_compressed_alloc_from_infos(infos),
         }
@@ -185,6 +201,7 @@ pub trait MHEModuleAlloc<BE: Backend>:
 
     /// A key switching share of `infos`, the ciphertext layout, at rank 0.
     fn glwe_private_keyswitch_share_alloc_from_infos<A: GLWEInfos>(&self, infos: &A) -> GLWEPrivateKeyswitchShareOwned<BE> {
+        assert_degree(self.n(), infos.n());
         self.glwe_private_keyswitch_share_alloc(infos.base2k(), infos.k())
     }
 
@@ -196,6 +213,7 @@ pub trait MHEModuleAlloc<BE: Backend>:
 
     /// A public key switching share of `infos`, the share layout.
     fn glwe_public_keyswitch_share_alloc_from_infos<A: GLWEInfos>(&self, infos: &A) -> GLWEPublicKeyswitchShareOwned<BE> {
+        assert_degree(self.n(), infos.n());
         GLWEPublicKeyswitchShare {
             inner: self.glwe_alloc_from_infos(infos),
         }
@@ -214,6 +232,7 @@ pub trait MHEModuleAlloc<BE: Backend>:
 
     /// An encryption-to-shares public share of `infos`, the ciphertext layout, at rank 0.
     fn glwe_enc_to_share_share_alloc_from_infos<A: GLWEInfos>(&self, infos: &A) -> GLWEEncToShareShareOwned<BE> {
+        assert_degree(self.n(), infos.n());
         self.glwe_enc_to_share_share_alloc(infos.base2k(), infos.k())
     }
 
@@ -238,7 +257,8 @@ pub trait MHEModuleAlloc<BE: Backend>:
 }
 
 impl<BE: Backend> MHEModuleAlloc<BE> for Module<BE> where
-    Self: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+    Self: ModuleN
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
         + ModuleCoreCompressedAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
 {
 }

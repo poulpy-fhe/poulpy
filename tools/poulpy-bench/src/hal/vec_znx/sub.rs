@@ -1,3 +1,4 @@
+use poulpy_hal::api::ModuleSynchronize;
 use std::hint::black_box;
 
 use criterion::{Bencher, measurement::Measurement};
@@ -13,7 +14,7 @@ use crate::hal::params::HalSweepParms;
 
 pub fn runner_vec_znx_sub<B: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
 where
-    Module<B>: VecZnxSub<B> + ModuleNew<B>,
+    Module<B>: VecZnxSub<B> + ModuleNew<B> + ModuleSynchronize<B>,
 {
     let module: Module<B> = Module::<B>::new(sweep.n as u64);
 
@@ -33,13 +34,14 @@ where
         for i in 0..sweep.cols {
             module.vec_znx_sub(&mut c, i, &a, i, &b, i);
         }
+        module.synchronize();
         black_box(());
     });
 }
 
 pub fn runner_vec_znx_sub_assign<B: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
 where
-    Module<B>: VecZnxSubAssign<B> + ModuleNew<B>,
+    Module<B>: VecZnxSubAssign<B> + ModuleNew<B> + ModuleSynchronize<B>,
 {
     let module: Module<B> = Module::<B>::new(sweep.n as u64);
 
@@ -56,6 +58,7 @@ where
         for i in 0..sweep.cols {
             module.vec_znx_sub_assign(&mut b, i, &a, i);
         }
+        module.synchronize();
         black_box(());
     });
 }
@@ -64,7 +67,7 @@ pub fn runner_vec_znx_sub_negate_assign<B: Backend<ZnxWord = i64>, M: Measuremen
     bencher: &mut Bencher<'_, M>,
     sweep: &HalSweepParms,
 ) where
-    Module<B>: VecZnxSubNegateAssign<B> + ModuleNew<B>,
+    Module<B>: VecZnxSubNegateAssign<B> + ModuleNew<B> + ModuleSynchronize<B>,
 {
     let module: Module<B> = Module::<B>::new(sweep.n as u64);
 
@@ -81,6 +84,7 @@ pub fn runner_vec_znx_sub_negate_assign<B: Backend<ZnxWord = i64>, M: Measuremen
         for i in 0..sweep.cols {
             module.vec_znx_sub_negate_assign(&mut b, i, &a, i);
         }
+        module.synchronize();
         black_box(());
     });
 }

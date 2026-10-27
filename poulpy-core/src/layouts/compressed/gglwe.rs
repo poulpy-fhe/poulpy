@@ -1,13 +1,13 @@
 use poulpy_hal::AlignedBuf;
 use poulpy_hal::layouts::ZnxWord;
 use poulpy_hal::layouts::{
-    Backend, Data, HostDataMut, HostDataRef, MatZnx, MatZnxToBackendMut, MatZnxToBackendRef, Module, ReaderFrom, WriterTo,
+    Backend, Data, HostDataMut, HostDataRef, MatZnx, MatZnxToBackendMut, MatZnxToBackendRef, ReaderFrom, WriterTo,
     mat_znx_at_backend_mut_from_mut, mat_znx_at_backend_ref_from_ref, mat_znx_backend_mut_from_mut, mat_znx_backend_ref_from_mut,
 };
 
 use crate::layouts::{
-    Base2K, Degree, Dnum, GGLWE, GGLWEInfos, GGLWEToBackendMut, GLWEInfos, LWEInfos, Rank, TorusPrecision,
-    compressed::{GLWECompressed, GLWECompressedBackendMut, GLWECompressedViewMut, GLWECompressedViewRef, GLWEDecompress},
+    Base2K, Degree, Dnum, GGLWE, GGLWEInfos, GLWEInfos, LWEInfos, Rank, TorusPrecision,
+    compressed::{GLWECompressed, GLWECompressedBackendMut, GLWECompressedViewMut, GLWECompressedViewRef},
 };
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::{
@@ -422,47 +422,6 @@ impl<D: HostDataRef, W: ZnxWord> WriterTo for GGLWECompressed<D, W> {
         self.data.write_to(writer)
     }
 }
-
-/// Trait for decompressing a [`GGLWECompressed`] into a standard [`GGLWE`].
-///
-/// Iterates over every (row, column) entry, decompressing each
-/// compressed GLWE row individually via [`GLWEDecompress`].
-pub trait GGLWEDecompress
-where
-    Self: GLWEDecompress,
-{
-    /// Decompresses `other` into `res`.
-    fn decompress_gglwe<R, O>(&self, res: &mut R, other: &O)
-    where
-        R: GGLWEToBackendMut<Self::Backend> + GGLWEInfos,
-        O: GGLWECompressedToBackendRef<Self::Backend> + GGLWEInfos,
-    {
-        let noise = other.to_backend_ref().noise();
-        {
-            let mut res = res.to_backend_mut();
-            let other = other.to_backend_ref();
-
-            assert_eq!(res.k_digit(), other.k_digit());
-            assert_eq!(res.k_offset(), other.k_offset(), "decompress_gglwe: row offsets differ");
-            assert!(res.dnum() <= other.dnum());
-
-            let rank_in: usize = res.rank_in().into();
-            let dnum: usize = res.dnum().into();
-            for col_i in 0..rank_in {
-                for row_i in 0..dnum {
-                    let mut dst = res.at_view_mut(row_i, col_i);
-                    let src = other.at_view(row_i, col_i);
-                    self.decompress_glwe(&mut dst, &src);
-                }
-            }
-        }
-        res.set_noise(noise);
-    }
-}
-
-impl<B: Backend> GGLWEDecompress for Module<B> where Self: GLWEDecompress {}
-
-// module-only API: decompression is provided by `GGLWEDecompress` on `Module`.
 
 pub trait GGLWECompressedToBackendRef<BE: Backend> {
     fn to_backend_ref(&self) -> GGLWECompressedBackendRef<'_, BE>;

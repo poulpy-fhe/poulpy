@@ -1,4 +1,5 @@
 use crate::layouts::prepared::GGLWEPreparedToBackendRef;
+use crate::test_suite::poisoned_scratch;
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniformSource},
     layouts::{Module, ScratchOwned},
@@ -6,14 +7,15 @@ use poulpy_hal::{
     test_suite::{TestParams, vec_znx_backend_mut},
 };
 
-use crate::layouts::GLWESecretSampling;
+use crate::api::GLWESecretSampling;
 use crate::test_suite::noise::{assert_refuses_uncovered_input, glwe_noise_checked};
 use crate::{
     GLWEEncryptSk, GLWEKeyswitch, GLWENoise, GLWENormalize, GLWESwitchingKeyEncryptSk,
+    api::{GLWESecretPreparedFactory, GLWESwitchingKeyPreparedFactory},
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        GGLWEInfos, GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory, GLWESwitchingKey,
-        GLWESwitchingKeyLayout, GLWESwitchingKeyPreparedFactory, LWEInfos, ModuleCoreAlloc,
+        GGLWEInfos, GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESwitchingKey, GLWESwitchingKeyLayout, LWEInfos,
+        ModuleCoreAlloc,
         prepared::{GLWESecretPrepared, GLWESwitchingKeyPrepared},
     },
     noise::GGLWENoiseModel,
@@ -97,7 +99,9 @@ where
                 let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
                     (module).glwe_switching_key_encrypt_sk_tmp_bytes(&ksk_infos)
                         | (module).glwe_encrypt_sk_tmp_bytes(&glwe_in_infos)
-                        | module.glwe_keyswitch_tmp_bytes(&glwe_out_infos, &glwe_in_infos, &ksk_infos),
+                        | module.glwe_switching_key_prepare_tmp_bytes(&ksk_infos)
+                        | module.glwe_noise_tmp_bytes(&glwe_out_infos)
+                        | module.glwe_normalize_tmp_bytes(),
                 );
 
                 let mut sk_in: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank_in.into());
@@ -135,7 +139,13 @@ where
                     module.glwe_switching_key_prepared_alloc_from_infos(&ksk);
                 module.glwe_switching_key_prepare(&mut ksk_prepared, &ksk, &mut scratch.borrow());
 
-                module.glwe_keyswitch(&mut glwe_out, &glwe_in, &ksk_prepared.to_backend_ref(), &mut scratch.borrow());
+                module.glwe_keyswitch(
+                    &mut glwe_out,
+                    &glwe_in,
+                    &ksk_prepared.to_backend_ref(),
+                    &mut poisoned_scratch::<BE>(module.glwe_keyswitch_tmp_bytes(&glwe_out_infos, &glwe_in_infos, &ksk_infos))
+                        .borrow(),
+                );
 
                 let noise_max: f64 = ksk_infos.log2_std_noise_keyswitch(
                     &glwe_out_infos,
@@ -164,7 +174,13 @@ where
                     ..glwe_in_infos
                 });
                 assert_refuses_uncovered_input("glwe_keyswitch took an input one bit past its key", || {
-                    module.glwe_keyswitch(&mut glwe_out, &wide, &ksk_prepared.to_backend_ref(), &mut scratch.borrow())
+                    module.glwe_keyswitch(
+                        &mut glwe_out,
+                        &wide,
+                        &ksk_prepared.to_backend_ref(),
+                        &mut poisoned_scratch::<BE>(module.glwe_keyswitch_tmp_bytes(&glwe_out_infos, &glwe_in_infos, &ksk_infos))
+                            .borrow(),
+                    )
                 });
             }
         }
@@ -232,7 +248,8 @@ where
             let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
                 (module).glwe_switching_key_encrypt_sk_tmp_bytes(&ksk_infos)
                     | (module).glwe_encrypt_sk_tmp_bytes(&glwe_out_infos)
-                    | module.glwe_keyswitch_tmp_bytes(&glwe_out_infos, &glwe_out_infos, &ksk_infos),
+                    | module.glwe_switching_key_prepare_tmp_bytes(&ksk_infos)
+                    | module.glwe_noise_tmp_bytes(&glwe_out_infos),
             );
 
             let mut sk_in: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank.into());
@@ -269,7 +286,12 @@ where
                 module.glwe_switching_key_prepared_alloc_from_infos(&ksk);
             module.glwe_switching_key_prepare(&mut ksk_prepared, &ksk, &mut scratch.borrow());
 
-            module.glwe_keyswitch_assign(&mut glwe_out, &ksk_prepared.to_backend_ref(), &mut scratch.borrow());
+            module.glwe_keyswitch_assign(
+                &mut glwe_out,
+                &ksk_prepared.to_backend_ref(),
+                &mut poisoned_scratch::<BE>(module.glwe_keyswitch_tmp_bytes(&glwe_out_infos, &glwe_out_infos, &ksk_infos))
+                    .borrow(),
+            );
 
             let noise_max: f64 = ksk_infos.log2_std_noise_keyswitch(
                 &glwe_out_infos,

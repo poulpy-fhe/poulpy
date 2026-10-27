@@ -1,35 +1,45 @@
 //! Backend-generic SHIP half-bootstrap circuit (Algorithm 1).
 
-use crate::{CKKSResult as Result, ckks_ensure};
+use crate::{CKKSResult as Result, checked_mul_ct_log_budget, ckks_ensure, ckks_ensure_operand};
 use poulpy_core::layouts::SetGLWEPlaintextInfos;
 use poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef;
 use poulpy_core::{
     GLWEKeyswitch, GLWEZero,
-    layouts::{GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, TorusPrecision},
-    reference::keyswitching::glwe::GGLWEProductReference,
+    layouts::{Base2K, GLWEInfos, GLWELayout, GLWEToBackendRef, LWEInfos, Rank, TorusPrecision},
 };
-use poulpy_hal::{
-    api::{
-        CnvPVecBytesOf, Convolution, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign,
-        VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApply,
-        VecZnxIdftApplyTmpBytes, VmpApplyDftToDft, VmpApplyDftToDftTmpBytes,
-    },
-    layouts::{Backend, Module, ScratchArena},
-};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
-use super::{
-    masking::ship_masking_accumulate,
-    mux::{ship_mux_plans, ship_mux_rotate},
-};
+use super::ship_mux_plans;
 use crate::{
     CKKSCtBounds, CKKSInfos, GLWEPlaintextMeta, Scale, SlotLayout, SlotsKind,
     api::{CKKSAddOps, CKKSConjugateOps, CKKSImagOps, CKKSMulOps, CKKSSubOps, ShipScalar},
-    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, ShipKeysPrepared},
-    oep::{CKKSEncodingImpl, CKKSShipCoeffEncodingImpl},
+    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, ScratchArenaTakeCKKS, ShipKeysPrepared, ShipPlan},
+    oep::CKKSEncodingImpl,
 };
 
+/// The layout of the bottom ciphertext the dense-to-sparse switch writes: one limb of the key radix.
+pub(super) fn ship_bottom_layout(plan: &ShipPlan, base2k: usize) -> GLWELayout {
+    GLWELayout {
+        n: (plan.n() as u32).into(),
+        base2k: base2k.into(),
+        k: base2k.into(),
+        rank: Rank(1),
+    }
+}
+
+/// The layout of a temporary of the final combination of the product-tree roots, at width `k`.
+fn ship_root_layout<BE: Backend>(module: &Module<BE>, base2k: Base2K, k: TorusPrecision) -> GLWELayout {
+    GLWELayout {
+        n: (module.n() as u32).into(),
+        base2k,
+        k,
+        rank: Rank(1),
+    }
+}
+
 /// Validates the runtime ciphertexts against the key bundle's parameters.
-pub(crate) fn validate_runtime<BE, Src>(
+pub(super) fn validate_runtime<BE, Src>(
+    op: &'static str,
     module: &Module<BE>,
     output: &CKKSCiphertextOwned<BE>,
     input: &Src,
@@ -40,49 +50,60 @@ where
     BE: Backend,
     Src: CKKSCtBounds,
 {
-    const OP: &str = "ckks_ship_bootstrap";
     let params = keys.parameters();
     let plan = params.plan();
     let base2k = params.base2k();
-    ckks_ensure!(
+    ckks_ensure_operand!(
+        op,
         module.n() == plan.n(),
-        "{OP}: module degree {} does not match plan degree {}",
+        "{op}: module degree {} does not match plan degree {}",
         module.n(),
         plan.n()
     );
-    ckks_ensure!(
+    ckks_ensure_operand!(
+        op,
         !complex || params.complex(),
-        "{OP}: keys lack the omega_2 masks (generate with complex)"
+        "{op}: keys lack the omega_2 masks (generate with complex)"
     );
-    ckks_ensure!(
+    ckks_ensure_operand!(
+        op,
         input.n().as_usize() == plan.n() && input.rank().as_usize() == 1,
-        "{OP}: input degree {} / rank {} does not match the plan",
+        "{op}: input degree {} / rank {} does not match the plan",
         input.n(),
         input.rank()
     );
-    ckks_ensure!(
+    ckks_ensure_operand!(
+        op,
         input.base2k().as_usize() == base2k && input.k().as_usize() == base2k,
-        "{OP}: input must span a single limb of base2k {base2k}, got base2k {} and width {}",
+        "{op}: input must span a single limb of base2k {base2k}, got base2k {} and width {}",
         input.base2k(),
         input.k()
     );
-    ckks_ensure!(
+    ckks_ensure_operand!(
+        op,
         output.n().as_usize() == plan.n() && output.rank().as_usize() == 1,
-        "{OP}: output degree {} / rank {} does not match the plan",
+        "{op}: output degree {} / rank {} does not match the plan",
         output.n(),
         output.rank()
     );
-    ckks_ensure!(
+    ckks_ensure_operand!(
+        op,
         output.base2k().as_usize() == base2k,
-        "{OP}: output base2k {} does not match the key radix {base2k}",
+        "{op}: output base2k {} does not match the key radix {base2k}",
         output.base2k()
     );
-    ckks_ensure!(
+    ckks_ensure_operand!(
+        op,
         output.max_k().as_usize() >= plan.raised_k(base2k),
-        "{OP}: output capacity {} is below the raised precision {}",
+        "{op}: output capacity {} is below the raised precision {}",
         output.max_k(),
         plan.raised_k(base2k)
     );
+    // The masking leaves each leaf at the raised precision less the scale of its pi encodings, the working scale.
+    let masked = TorusPrecision((plan.raised_k(base2k) - plan.log_delta_work()) as u32);
+    for group in keys.index_keys().iter().flat_map(|ik| ik.mux_keys()) {
+        super::mux::ensure_mux_group(op, masked, base2k.into(), group)?;
+    }
     Ok(())
 }
 
@@ -90,6 +111,7 @@ where
 /// rotations and product tree per coefficient half, returning the product-tree
 /// roots in half order.
 fn ship_bootstrap_roots<BE, F, Src>(
+    op: &'static str,
     module: &Module<BE>,
     input: &Src,
     keys: &ShipKeysPrepared<BE::OwnedBuf, BE>,
@@ -97,39 +119,10 @@ fn ship_bootstrap_roots<BE, F, Src>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<Vec<CKKSCiphertextOwned<BE>>>
 where
-    BE: Backend + CKKSShipCoeffEncodingImpl + CKKSEncodingImpl<F>,
+    BE: super::ShipBackend + CKKSEncodingImpl<F>,
     F: ShipScalar,
-    Module<BE>: CKKSMulOps<BE>
-        + GGLWEProductReference<BE>
-        + poulpy_hal::api::VecZnxGadgetDecompose<BE>
-        + poulpy_hal::api::VecZnxGadgetDecomposeTmpBytes
-        + CKKSAddOps<BE>
-        + CKKSSubOps<BE>
-        + CKKSImagOps<BE>
-        + CKKSConjugateOps<BE>
-        + CKKSModuleAlloc<BE>
-        + GLWEKeyswitch<BE>
-        + GLWEZero<BE>
-        + Convolution<BE>
-        + CnvPVecBytesOf
-        + VecZnxDftApply<BE>
-        + VecZnxDftZero<BE>
-        + VecZnxDftCopy<BE>
-        + VecZnxDftAddAssign<BE>
-        + VecZnxDftAutomorphism<BE>
-        + VecZnxIdftApply<BE>
-        + VecZnxIdftApplyTmpBytes
-        + VecZnxBigNormalize<BE>
-        + VmpApplyDftToDft<BE>
-        + VecZnxDftBytesOf
-        + VecZnxBigBytesOf
-        + VmpApplyDftToDftTmpBytes
-        + VecZnxBigNormalizeTmpBytes,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
-    const OP: &str = "ckks_ship_bootstrap";
     let params = keys.parameters();
     let plan = *params.plan();
     let base2k = params.base2k();
@@ -141,16 +134,24 @@ where
 
     // Encapsulation: switch the bottom ciphertext from the dense to the
     // sparse secret at the bottom modulus.
-    let mut a_sparse = module.ckks_ciphertext_alloc(b2k_t, TorusPrecision(base2k as u32));
-    module.glwe_keyswitch(&mut a_sparse, input, &keys.dense_to_sparse().to_backend_ref(), scratch);
-    a_sparse.set_meta_checked(input.meta())?;
-
-    let enc = BE::ckks_ship_coeff_encodings_impl::<F, _>(module, &a_sparse, &plan, b2k_t, complex, scratch)?;
+    let enc = scratch.scope(|scratch_local| -> Result<_> {
+        let (mut a_sparse, mut scratch_local) =
+            scratch_local.take_ckks_ciphertext_scratch(&ship_bottom_layout(&plan, base2k), GLWEPlaintextMeta::default());
+        module.glwe_keyswitch(
+            &mut a_sparse,
+            input,
+            &keys.dense_to_sparse().to_backend_ref(),
+            &mut scratch_local.borrow(),
+        );
+        a_sparse.set_meta_checked(input.meta())?;
+        BE::ckks_ship_coeff_encodings::<F, _>(module, b2k_t, complex, &a_sparse, &plan, &mut scratch_local)
+    })?;
     ckks_ensure!(
         enc.pi.len() == plan.sparse_hamming_weight() && (!complex || enc.pt0_2.is_some()),
-        "{OP}: malformed coefficient encodings"
+        "{op}: malformed coefficient encodings"
     );
 
+    // The plan's Hamming weight sets the leaf count, so the leaves and their product tree stay on the heap.
     // Leaf 0 per half: trivial encryption of pt0 / pt0_2.
     let mut leaves: Vec<Vec<CKKSCiphertextOwned<BE>>> = Vec::with_capacity(halves);
     for half in 0..halves {
@@ -185,13 +186,13 @@ where
     );
     for (slot, ik) in keys.index_keys().iter().enumerate() {
         let pi = &enc.pi[slot];
-        ckks_ensure!(pi.len() == 4 * theta, "{OP}: malformed pi encodings at slot {slot}");
+        ckks_ensure!(pi.len() == 4 * theta, "{op}: malformed pi encodings at slot {slot}");
         for (half, half_leaves) in leaves.iter_mut().enumerate() {
             let masks = if half == 0 { ik.masks() } else { ik.masks2() };
             let mut acc = module.ckks_ciphertext_alloc(b2k_t, TorusPrecision(kk as u32));
-            ship_masking_accumulate(module, &mut acc, &plan, masks, pi, scratch)?;
+            BE::ckks_ship_masking_accumulate(module, &mut acc, &plan, masks, pi, scratch)?;
             for group in ik.mux_keys() {
-                ship_mux_rotate(module, &mut acc, group, &plans, scratch)?;
+                BE::ckks_ship_mux_rotate(module, &mut acc, group, &plans, scratch)?;
             }
             half_leaves.push(acc);
         }
@@ -207,10 +208,8 @@ where
             while let Some(x) = iter.next() {
                 match iter.next() {
                     Some(y) => {
-                        let budget = x.log_budget().min(y.log_budget());
-                        let consumed = x.log_delta().max(y.log_delta());
-                        ckks_ensure!(budget >= consumed, "{OP}: product tree exhausts the budget");
-                        let k_dst = budget - consumed + x.log_delta().min(y.log_delta());
+                        let k_dst = checked_mul_ct_log_budget(op, x.log_budget(), y.log_budget(), x.log_delta(), y.log_delta())?
+                            + x.log_delta().min(y.log_delta());
                         let mut dst = module.ckks_ciphertext_alloc(b2k_t, TorusPrecision(k_dst as u32));
                         module.ckks_mul_into(&mut dst, &x, &y, keys.tensor_key(), scratch)?;
                         next.push(dst);
@@ -226,7 +225,7 @@ where
 }
 
 /// Real-case SHIP bootstrap: `output = root + Conj(root)`.
-pub(crate) fn ship_bootstrap_into<BE, F, Src>(
+pub(super) fn ckks_ship_bootstrap_into<BE, F, Src>(
     module: &Module<BE>,
     output: &mut CKKSCiphertextOwned<BE>,
     input: &Src,
@@ -234,46 +233,23 @@ pub(crate) fn ship_bootstrap_into<BE, F, Src>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: Backend + CKKSShipCoeffEncodingImpl + CKKSEncodingImpl<F>,
+    BE: super::ShipBackend + CKKSEncodingImpl<F>,
     F: ShipScalar,
-    Module<BE>: CKKSMulOps<BE>
-        + GGLWEProductReference<BE>
-        + poulpy_hal::api::VecZnxGadgetDecompose<BE>
-        + poulpy_hal::api::VecZnxGadgetDecomposeTmpBytes
-        + CKKSAddOps<BE>
-        + CKKSSubOps<BE>
-        + CKKSImagOps<BE>
-        + CKKSConjugateOps<BE>
-        + CKKSModuleAlloc<BE>
-        + GLWEKeyswitch<BE>
-        + GLWEZero<BE>
-        + Convolution<BE>
-        + CnvPVecBytesOf
-        + VecZnxDftApply<BE>
-        + VecZnxDftZero<BE>
-        + VecZnxDftCopy<BE>
-        + VecZnxDftAddAssign<BE>
-        + VecZnxDftAutomorphism<BE>
-        + VecZnxIdftApply<BE>
-        + VecZnxIdftApplyTmpBytes
-        + VecZnxBigNormalize<BE>
-        + VmpApplyDftToDft<BE>
-        + VecZnxDftBytesOf
-        + VecZnxBigBytesOf
-        + VmpApplyDftToDftTmpBytes
-        + VecZnxBigNormalizeTmpBytes,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
-    validate_runtime(module, output, input, keys, false)?;
+    const OP: &str = "ckks_ship_bootstrap_into";
+    validate_runtime(OP, module, output, input, keys, false)?;
+    let bytes = super::preflight::ckks_ship_bootstrap_tmp_bytes::<BE, F, _>(module, &*output, input, keys)?;
+    ckks_ensure!(scratch.available() >= bytes, "{OP}: scratch below its query");
     let base2k: poulpy_core::layouts::Base2K = keys.parameters().base2k().into();
-    let mut roots = ship_bootstrap_roots::<BE, F, _>(module, input, keys, false, scratch)?;
+    let mut roots = ship_bootstrap_roots::<BE, F, _>(OP, module, input, keys, false, scratch)?;
 
     let root = roots.pop().expect("real bootstrap has one root");
-    let mut conj = module.ckks_ciphertext_alloc(base2k, root.k());
-    module.ckks_conjugate_into(&mut conj, &root, keys.conjugation_key(), scratch)?;
-    module.ckks_add_into(output, &root, &conj, scratch)?;
+    let (mut conj, mut scratch_rest) = scratch
+        .borrow()
+        .take_ckks_ciphertext_scratch(&ship_root_layout(module, base2k, root.k()), GLWEPlaintextMeta::default());
+    module.ckks_conjugate_into(&mut conj, &root, keys.conjugation_key(), &mut scratch_rest.borrow())?;
+    module.ckks_add_into(output, &root, &conj, &mut scratch_rest)?;
     // `root + conj(root) = 2·Re(root)`.
     output.set_slots(SlotsKind::Real);
     Ok(())
@@ -281,7 +257,7 @@ where
 
 /// Complex-case SHIP bootstrap:
 /// `output = (v1 + i*v2) + Conj(v1 - i*v2)` over the two per-half roots.
-pub(crate) fn ship_bootstrap_complex_into<BE, F, Src>(
+pub(super) fn ckks_ship_bootstrap_complex_into<BE, F, Src>(
     module: &Module<BE>,
     output: &mut CKKSCiphertextOwned<BE>,
     input: &Src,
@@ -289,53 +265,33 @@ pub(crate) fn ship_bootstrap_complex_into<BE, F, Src>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: Backend + CKKSShipCoeffEncodingImpl + CKKSEncodingImpl<F>,
+    BE: super::ShipBackend + CKKSEncodingImpl<F>,
     F: ShipScalar,
-    Module<BE>: CKKSMulOps<BE>
-        + GGLWEProductReference<BE>
-        + poulpy_hal::api::VecZnxGadgetDecompose<BE>
-        + poulpy_hal::api::VecZnxGadgetDecomposeTmpBytes
-        + CKKSAddOps<BE>
-        + CKKSSubOps<BE>
-        + CKKSImagOps<BE>
-        + CKKSConjugateOps<BE>
-        + CKKSModuleAlloc<BE>
-        + GLWEKeyswitch<BE>
-        + GLWEZero<BE>
-        + Convolution<BE>
-        + CnvPVecBytesOf
-        + VecZnxDftApply<BE>
-        + VecZnxDftZero<BE>
-        + VecZnxDftCopy<BE>
-        + VecZnxDftAddAssign<BE>
-        + VecZnxDftAutomorphism<BE>
-        + VecZnxIdftApply<BE>
-        + VecZnxIdftApplyTmpBytes
-        + VecZnxBigNormalize<BE>
-        + VmpApplyDftToDft<BE>
-        + VecZnxDftBytesOf
-        + VecZnxBigBytesOf
-        + VmpApplyDftToDftTmpBytes
-        + VecZnxBigNormalizeTmpBytes,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
-    validate_runtime(module, output, input, keys, true)?;
+    const OP: &str = "ckks_ship_bootstrap_complex_into";
+    validate_runtime(OP, module, output, input, keys, true)?;
+    let bytes = super::preflight::ckks_ship_bootstrap_tmp_bytes::<BE, F, _>(module, &*output, input, keys)?;
+    ckks_ensure!(scratch.available() >= bytes, "{OP}: scratch below its query");
     let base2k: poulpy_core::layouts::Base2K = keys.parameters().base2k().into();
-    let mut roots = ship_bootstrap_roots::<BE, F, _>(module, input, keys, true, scratch)?;
+    let mut roots = ship_bootstrap_roots::<BE, F, _>(OP, module, input, keys, true, scratch)?;
 
     let v2 = roots.pop().expect("complex bootstrap has two roots");
     let v1 = roots.pop().expect("complex bootstrap has two roots");
     let k_eff = v1.k();
-    let mut iv2 = module.ckks_ciphertext_alloc(base2k, v2.k());
-    module.ckks_mul_i_into(&mut iv2, &v2, scratch)?;
-    let mut w_plus = module.ckks_ciphertext_alloc(base2k, k_eff);
-    module.ckks_add_into(&mut w_plus, &v1, &iv2, scratch)?;
-    let mut w_minus = module.ckks_ciphertext_alloc(base2k, k_eff);
-    module.ckks_sub_into(&mut w_minus, &v1, &iv2, scratch)?;
-    let mut conj = module.ckks_ciphertext_alloc(base2k, w_minus.k());
-    module.ckks_conjugate_into(&mut conj, &w_minus, keys.conjugation_key(), scratch)?;
-    module.ckks_add_into(output, &w_plus, &conj, scratch)?;
+    let (mut iv2, scratch_rest) = scratch
+        .borrow()
+        .take_ckks_ciphertext_scratch(&ship_root_layout(module, base2k, v2.k()), GLWEPlaintextMeta::default());
+    let (mut w_plus, scratch_rest) =
+        scratch_rest.take_ckks_ciphertext_scratch(&ship_root_layout(module, base2k, k_eff), GLWEPlaintextMeta::default());
+    let (mut w_minus, mut scratch_rest) =
+        scratch_rest.take_ckks_ciphertext_scratch(&ship_root_layout(module, base2k, k_eff), GLWEPlaintextMeta::default());
+    module.ckks_mul_i_into(&mut iv2, &v2, &mut scratch_rest.borrow())?;
+    module.ckks_add_into(&mut w_plus, &v1, &iv2, &mut scratch_rest.borrow())?;
+    module.ckks_sub_into(&mut w_minus, &v1, &iv2, &mut scratch_rest.borrow())?;
+    let (mut conj, mut scratch_rest) =
+        scratch_rest.take_ckks_ciphertext_scratch(&ship_root_layout(module, base2k, w_minus.k()), GLWEPlaintextMeta::default());
+    module.ckks_conjugate_into(&mut conj, &w_minus, keys.conjugation_key(), &mut scratch_rest.borrow())?;
+    module.ckks_add_into(output, &w_plus, &conj, &mut scratch_rest)?;
     Ok(())
 }

@@ -18,12 +18,13 @@ use poulpy_hal::{
 use crate::{
     ScratchArenaTakeCore,
     api::GLWEExternalProductInternal,
+    gadget::{gadget_input_size, precision_limbs},
     layouts::{
         GGSWInfos, GGSWPreparedBackendRef, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
         gadget_product_limbs,
     },
-    oep::{GLWEExternalProductReference, gglwe_product_digit_output_size},
-    reference::keyswitching::glwe::{gadget_input_size, precision_limbs},
+    oep::gglwe_product_digit_output_size,
+    reference::external_product::GLWEExternalProductReference,
 };
 
 /// Limbs of the external-product operand of `a_infos` against `ggsw_infos`,

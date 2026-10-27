@@ -1,8 +1,8 @@
 #![allow(clippy::too_many_arguments)]
 
 use poulpy_hal::{
-    api::{VecZnxNormalize, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes},
     layouts::{Backend, Module, ScalarZnxToBackendRef, ScratchArena, ZnxInfos},
+    oep::HalVecZnxImpl,
     source::Source,
 };
 
@@ -17,18 +17,30 @@ use crate::{
         compressed::{GLWEPublicKeyCompressedSeedMut, GLWEPublicKeyCompressedToBackendMut},
         prepared::{GLWEPublicKeyPreparedToBackendRef, GLWESecretPreparedToBackendRef},
     },
+    oep::{GLWENormalizeImpl, SamplingImpl, SecretImpl},
 };
 
-/// # Safety
+/// Backend-provided encryption, key generation and mask sampling.
 ///
-/// Implementations must satisfy the contracts of all trait methods, including
-/// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
-/// associated method signatures.
-pub unsafe trait EncryptionImpl: Backend {
+/// Methods that sample draw through [`SamplingImpl`], whose streams are the backend's own, so a body is
+/// reproduced given the same sampled values.
+///
+/// # Safety
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does.
+/// Every method taking scratch wipes the scratch its query reports before returning.
+/// The memory, layout, synchrony and aliasing rules of
+/// `poulpy-hal/docs/backend_safety_contract.md` apply.
+pub unsafe trait EncryptionImpl: Backend + SamplingImpl + HalVecZnxImpl + GLWENormalizeImpl + SecretImpl {
+    /// Reproduces
+    /// [`fill_glwe_mask_from_source_reference`](crate::reference::encryption::GLWEMaskFillReference::fill_glwe_mask_from_source_reference)
+    /// bit for bit; free in kernels.
     fn fill_glwe_mask_from_source<R>(module: &Module<Self>, res: &mut R, source_xa: &mut Source)
     where
         R: GLWEToBackendMut<Self>;
 
+    /// Default body: `fill_glwe_mask_from_seed_derived`, [`Self::fill_glwe_mask_from_source`] on a `Source` built
+    /// from the seed.
     fn fill_glwe_mask_from_seed<R>(module: &Module<Self>, res: &mut R, seed_xa: [u8; 32])
     where
         R: GLWEToBackendMut<Self>,
@@ -36,14 +48,22 @@ pub unsafe trait EncryptionImpl: Backend {
         super::derived::encryption::fill_glwe_mask_from_seed_derived(module, res, seed_xa)
     }
 
+    /// Reproduces
+    /// [`fill_glwe_from_source_reference`](crate::reference::encryption::GLWEMaskFillReference::fill_glwe_from_source_reference)
+    /// bit for bit; free in kernels.
     fn fill_glwe_from_source<R>(module: &Module<Self>, res: &mut R, source: &mut Source)
     where
         R: GLWEToBackendMut<Self>;
 
+    /// Reproduces
+    /// [`fill_lwe_mask_from_source_reference`](crate::reference::encryption::LWEFillMaskReference::fill_lwe_mask_from_source_reference)
+    /// bit for bit; free in kernels.
     fn fill_lwe_mask_from_source<R>(module: &Module<Self>, base2k: usize, res: &mut R, source_xa: &mut Source)
     where
         R: LWEToBackendMut<Self>;
 
+    /// Default body: `fill_lwe_mask_from_seed_derived`, [`Self::fill_lwe_mask_from_source`] on a `Source` built from
+    /// the seed.
     fn fill_lwe_mask_from_seed<R>(module: &Module<Self>, base2k: usize, res: &mut R, seed_xa: [u8; 32])
     where
         R: LWEToBackendMut<Self>,
@@ -51,10 +71,14 @@ pub unsafe trait EncryptionImpl: Backend {
         super::derived::encryption::fill_lwe_mask_from_seed_derived(module, base2k, res, seed_xa)
     }
 
+    /// Scratch bound of [`Self::lwe_encrypt_sk`]; may report less than the reference, never less than the body takes.
     fn lwe_encrypt_sk_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: LWEInfos;
 
+    /// Reproduces
+    /// [`lwe_encrypt_sk_reference`](crate::reference::encryption::LWEEncryptSkReference::lwe_encrypt_sk_reference)
+    /// bit for bit, within [`Self::lwe_encrypt_sk_tmp_bytes`]; free in kernels and scratch use before the wipe.
     fn lwe_encrypt_sk<R, P, S>(
         module: &Module<Self>,
         res: &mut R,
@@ -68,10 +92,16 @@ pub unsafe trait EncryptionImpl: Backend {
         P: LWEPlaintextToBackendRef<Self>,
         S: LWESecretToBackendRef<Self>;
 
+    /// Scratch bound of [`Self::glwe_encrypt_sk`], [`Self::glwe_encrypt_zero_sk`] and
+    /// [`Self::glwe_encrypt_sk_with_mask`]; may report less than the reference, never less than the body takes.
     fn glwe_encrypt_sk_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GLWEInfos;
 
+    /// Reproduces
+    /// [`glwe_encrypt_sk_reference`](crate::reference::encryption::GLWEEncryptSkReference::glwe_encrypt_sk_reference)
+    /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
+    /// [`Self::glwe_encrypt_sk_tmp_bytes`]; free in kernels and scratch use before the wipe.
     fn glwe_encrypt_sk<R, P, S>(
         module: &Module<Self>,
         res: &mut R,
@@ -85,6 +115,10 @@ pub unsafe trait EncryptionImpl: Backend {
         P: GLWEToBackendRef<Self>,
         S: GLWESecretPreparedToBackendRef<Self>;
 
+    /// Reproduces
+    /// [`glwe_encrypt_zero_sk_reference`](crate::reference::encryption::GLWEEncryptSkReference::glwe_encrypt_zero_sk_reference)
+    /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
+    /// [`Self::glwe_encrypt_sk_tmp_bytes`]; free in kernels and scratch use before the wipe.
     fn glwe_encrypt_zero_sk<R, S>(
         module: &Module<Self>,
         res: &mut R,
@@ -96,6 +130,10 @@ pub unsafe trait EncryptionImpl: Backend {
         R: GLWEToBackendMut<Self>,
         S: GLWESecretPreparedToBackendRef<Self>;
 
+    /// Reproduces
+    /// [`glwe_encrypt_sk_with_mask_reference`](crate::reference::encryption::GLWEEncryptSkReference::glwe_encrypt_sk_with_mask_reference)
+    /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
+    /// [`Self::glwe_encrypt_sk_tmp_bytes`]; free in kernels and scratch use before the wipe.
     fn glwe_encrypt_sk_with_mask<R, P, S>(
         module: &Module<Self>,
         res: &mut R,
@@ -108,11 +146,17 @@ pub unsafe trait EncryptionImpl: Backend {
         P: GLWEToBackendRef<Self>,
         S: GLWESecretPreparedToBackendRef<Self>;
 
+    /// Scratch bound of [`Self::glwe_encrypt_pk`], [`Self::glwe_encrypt_zero_pk`], [`Self::glwe_encrypt_pk_at_col`]
+    /// and [`Self::glwe_encrypt_pk_sampled_at`]; may report less than the reference, never less than the body takes.
     fn glwe_encrypt_pk_tmp_bytes<R, K>(module: &Module<Self>, res_infos: &R, pk_infos: &K) -> usize
     where
         R: GLWEInfos,
         K: GLWEInfos;
 
+    /// Default body: `glwe_encrypt_pk_derived`, `glwe_encrypt_pk_at_col_derived` with `pt` added to the body:
+    /// [`Self::glwe_encrypt_pk_sampled_at`] at the precision the noise model selects, then its noise estimate on
+    /// `res`, within [`Self::glwe_encrypt_pk_tmp_bytes`], under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint)
+    /// of its prepared operands.
     fn glwe_encrypt_pk<R, P, K>(
         module: &Module<Self>,
         res: &mut R,
@@ -129,6 +173,9 @@ pub unsafe trait EncryptionImpl: Backend {
         super::derived::encryption::glwe_encrypt_pk_derived(module, res, pt, pk, source_xu, source_xe, scratch)
     }
 
+    /// Default body: `glwe_encrypt_zero_pk_derived`, as [`Self::glwe_encrypt_pk`] with no plaintext, within
+    /// [`Self::glwe_encrypt_pk_tmp_bytes`], under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint) of its
+    /// prepared operands.
     fn glwe_encrypt_zero_pk<R, K>(
         module: &Module<Self>,
         res: &mut R,
@@ -143,6 +190,10 @@ pub unsafe trait EncryptionImpl: Backend {
         super::derived::encryption::glwe_encrypt_zero_pk_derived(module, res, pk, source_xu, source_xe, scratch)
     }
 
+    /// Default body: `glwe_encrypt_pk_at_col_derived`, [`Self::glwe_encrypt_pk_sampled_at`] with `pt` added to column
+    /// `col`, drawn at the precision the noise model selects, then its noise estimate on `res`, within
+    /// [`Self::glwe_encrypt_pk_tmp_bytes`], under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint) of its
+    /// prepared operands.
     fn glwe_encrypt_pk_at_col<R, P, K>(
         module: &Module<Self>,
         res: &mut R,
@@ -168,16 +219,20 @@ pub unsafe trait EncryptionImpl: Backend {
         )
     }
 
-    /// Encrypts under `pk` with `pt.0` added to column `pt.1` (`0` is the
-    /// body), or zero when `pt` is `None`: every public-key encryption derives
-    /// from it. Without `body_noise`, the body gets no encryption error: the
-    /// caller floods it, see [`Self::glwe_encrypt_pk_smudged`].
+    /// Reproduces
+    /// [`glwe_encrypt_pk_sampled_at_reference`](crate::reference::encryption::GLWEEncryptPkReference::glwe_encrypt_pk_sampled_at_reference)
+    /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
+    /// [`Self::glwe_encrypt_pk_tmp_bytes`]; free in kernels and scratch use before the wipe.
     ///
-    /// Fresh errors are drawn at `k_sample`, which the caller selects in
-    /// `[res.k(), pk.k()]`. The product uses the key's leading
-    /// `ceil(k_sample / base2k)` limbs and each column is normalized once at
-    /// `res.k()`. Invalid keys, plaintexts, columns or `k_sample` panic before
-    /// the output changes. The caller records the output metadata.
+    /// The caller hands it `pt.0` to add to column `pt.1` (`0` is the body) or `None` for zero, and `k_sample` in
+    /// `[res.k(), pk.k()]`, the precision of the fresh errors. Without `body_noise` the body gets no encryption
+    /// error: the caller floods it, see [`Self::glwe_encrypt_pk_smudged`]. The product uses the key's leading
+    /// `ceil(k_sample / base2k)` limbs and each column is normalized once at `res.k()`. The caller records the output
+    /// metadata.
+    ///
+    /// # Panics
+    ///
+    /// On invalid keys, plaintexts, columns or `k_sample`, before the output changes.
     fn glwe_encrypt_pk_sampled_at<R, P, K>(
         module: &Module<Self>,
         res: &mut R,
@@ -193,17 +248,20 @@ pub unsafe trait EncryptionImpl: Backend {
         P: GLWEToBackendRef<Self> + GLWEInfos,
         K: GLWEPublicKeyPreparedToBackendRef<Self> + GLWEInfos;
 
+    /// Default body: `glwe_encrypt_pk_smudged_tmp_bytes_derived`, the larger of [`Self::glwe_encrypt_pk_tmp_bytes`]
+    /// and `vec_znx_normalize_tmp_bytes`.
     fn glwe_encrypt_pk_smudged_tmp_bytes<R, K>(module: &Module<Self>, res_infos: &R, pk_infos: &K) -> usize
     where
         R: GLWEInfos,
         K: GLWEInfos,
-        Module<Self>: VecZnxNormalizeTmpBytes,
     {
         super::derived::encryption::glwe_encrypt_pk_smudged_tmp_bytes_derived(module, res_infos, pk_infos)
     }
 
-    /// [`Self::glwe_encrypt_pk_sampled_at`] of `pt` into the body without its error,
-    /// then `flood` on the body at the output's precision, drawn from `source_smudge`.
+    /// Default body: `glwe_encrypt_pk_smudged_derived`, [`Self::glwe_encrypt_pk_sampled_at`] of `pt` into the body
+    /// without its error, then `flood` on the body at the output's precision, drawn from `source_smudge`, normalized
+    /// once more, then the wipe of its query, within [`Self::glwe_encrypt_pk_smudged_tmp_bytes`], under any
+    /// [`PrepareHint`](poulpy_hal::layouts::PrepareHint) of its prepared operands.
     fn glwe_encrypt_pk_smudged<R, P, K>(
         module: &Module<Self>,
         res: &mut R,
@@ -218,7 +276,6 @@ pub unsafe trait EncryptionImpl: Backend {
         R: GLWEToBackendMut<Self> + GLWEInfos,
         P: GLWEToBackendRef<Self> + GLWEInfos,
         K: GLWEPublicKeyPreparedToBackendRef<Self> + GLWEInfos,
-        Module<Self>: crate::VecZnxAddNoise<Self> + VecZnxNormalizeAssign<Self> + VecZnxNormalizeTmpBytes,
     {
         super::derived::encryption::glwe_encrypt_pk_smudged_derived(
             module,
@@ -233,14 +290,20 @@ pub unsafe trait EncryptionImpl: Backend {
         )
     }
 
+    /// Default body: `glwe_public_key_generate_tmp_bytes_derived`, the larger of [`Self::glwe_encrypt_sk_tmp_bytes`]
+    /// and [`GLWENormalizeImpl::glwe_normalize_tmp_bytes`](crate::oep::GLWENormalizeImpl::glwe_normalize_tmp_bytes).
     fn glwe_public_key_generate_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GLWEInfos,
-        Module<Self>: crate::GLWENormalize<Self>,
     {
         super::derived::encryption::glwe_public_key_generate_tmp_bytes_derived(module, infos)
     }
 
+    /// Default body: `glwe_public_key_generate_derived`, [`Self::glwe_encrypt_zero_sk`] then
+    /// [`GLWENormalizeImpl::glwe_normalize_assign`](crate::oep::GLWENormalizeImpl::glwe_normalize_assign) on each of
+    /// the `rank` entries, then the wipe of its query and the secret's noise estimate and distribution on `res`, within
+    /// [`Self::glwe_public_key_generate_tmp_bytes`], under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint) of
+    /// its prepared operands.
     fn glwe_public_key_generate<R, S>(
         module: &Module<Self>,
         res: &mut R,
@@ -251,11 +314,12 @@ pub unsafe trait EncryptionImpl: Backend {
     ) where
         R: GLWEPublicKeyToBackendMut<Self> + GetDistributionMut + GLWEInfos,
         S: GLWESecretPreparedToBackendRef<Self> + GetDistribution,
-        Module<Self>: crate::GLWENormalize<Self>,
     {
         super::derived::encryption::glwe_public_key_generate_derived(module, res, sk, source_xe, source_xa, scratch)
     }
 
+    /// Default body: `glwe_public_key_compressed_generate_tmp_bytes_derived`,
+    /// [`Self::glwe_compressed_encrypt_sk_tmp_bytes`].
     fn glwe_public_key_compressed_generate_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GLWEInfos,
@@ -263,6 +327,10 @@ pub unsafe trait EncryptionImpl: Backend {
         super::derived::encryption::glwe_public_key_compressed_generate_tmp_bytes_derived(module, infos)
     }
 
+    /// Default body: `glwe_public_key_compressed_generate_derived`, [`Self::glwe_compressed_encrypt_zero_sk`] on each
+    /// of the `rank` entries with its own derived seed, within
+    /// [`Self::glwe_public_key_compressed_generate_tmp_bytes`], under any
+    /// [`PrepareHint`](poulpy_hal::layouts::PrepareHint) of its prepared operands.
     fn glwe_public_key_compressed_generate<R, S>(
         module: &Module<Self>,
         res: &mut R,
@@ -277,10 +345,16 @@ pub unsafe trait EncryptionImpl: Backend {
         super::derived::encryption::glwe_public_key_compressed_generate_derived(module, res, sk, seed, source_xe, scratch)
     }
 
+    /// Scratch bound of [`Self::gglwe_encrypt_sk`]; may report less than the reference, never less than the body
+    /// takes.
     fn gglwe_encrypt_sk_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GGLWEInfos;
 
+    /// Reproduces
+    /// [`gglwe_encrypt_sk_reference`](crate::reference::encryption::GGLWEEncryptSkReference::gglwe_encrypt_sk_reference)
+    /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
+    /// [`Self::gglwe_encrypt_sk_tmp_bytes`]; free in kernels and scratch use before the wipe.
     fn gglwe_encrypt_sk<R, P, S>(
         module: &Module<Self>,
         res: &mut R,
@@ -294,10 +368,16 @@ pub unsafe trait EncryptionImpl: Backend {
         P: ScalarZnxToBackendRef<Self>,
         S: GLWESecretPreparedToBackendRef<Self>;
 
+    /// Scratch bound of [`Self::ggsw_encrypt_sk`]; may report less than the reference, never less than the body
+    /// takes.
     fn ggsw_encrypt_sk_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GGSWInfos;
 
+    /// Reproduces
+    /// [`ggsw_encrypt_sk_reference`](crate::reference::encryption::GGSWEncryptSkReference::ggsw_encrypt_sk_reference)
+    /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
+    /// [`Self::ggsw_encrypt_sk_tmp_bytes`]; free in kernels and scratch use before the wipe.
     fn ggsw_encrypt_sk<R, P, S>(
         module: &Module<Self>,
         res: &mut R,
@@ -311,15 +391,20 @@ pub unsafe trait EncryptionImpl: Backend {
         P: ScalarZnxToBackendRef<Self> + ZnxInfos,
         S: GLWESecretPreparedToBackendRef<Self> + LWEInfos + GLWEInfos;
 
+    /// Default body: `ggsw_encrypt_pk_tmp_bytes_derived`, a GLWE plaintext temporary plus the larger of
+    /// [`Self::glwe_encrypt_pk_tmp_bytes`] and `vec_znx_normalize_tmp_bytes`.
     fn ggsw_encrypt_pk_tmp_bytes<R, K>(module: &Module<Self>, res_infos: &R, pk_infos: &K) -> usize
     where
         R: GGSWInfos,
         K: GLWEInfos,
-        Module<Self>: VecZnxNormalizeTmpBytes,
     {
         super::derived::encryption::ggsw_encrypt_pk_tmp_bytes_derived(module, res_infos, pk_infos)
     }
 
+    /// Default body: `ggsw_encrypt_pk_derived`, for each gadget row, the row's plaintext into a temporary, then
+    /// [`Self::glwe_encrypt_pk_sampled_at`] on each column, then the noise estimate on `res`, within
+    /// [`Self::ggsw_encrypt_pk_tmp_bytes`], under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint) of its
+    /// prepared operands.
     fn ggsw_encrypt_pk<R, P, K>(
         module: &Module<Self>,
         res: &mut R,
@@ -332,15 +417,19 @@ pub unsafe trait EncryptionImpl: Backend {
         R: GGSWToBackendMut<Self> + GGSWInfos + GGSWAtViewMut<Self>,
         P: ScalarZnxToBackendRef<Self> + ZnxInfos,
         K: GLWEPublicKeyPreparedToBackendRef<Self> + GLWEInfos,
-        Module<Self>: VecZnxNormalize<Self> + VecZnxNormalizeTmpBytes,
     {
         super::derived::encryption::ggsw_encrypt_pk_derived(module, res, pt, pk, source_xu, source_xe, scratch)
     }
 
+    /// Scratch bound of [`Self::gglwe_to_ggsw_key_encrypt_sk`]; may report less than the reference, never less than
+    /// the body takes.
     fn gglwe_to_ggsw_key_encrypt_sk_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GGLWEInfos;
 
+    /// Reproduces
+    /// [`gglwe_to_ggsw_key_encrypt_sk_reference`](crate::reference::encryption::GGLWEToGGSWKeyEncryptSkReference::gglwe_to_ggsw_key_encrypt_sk_reference)
+    /// bit for bit, within [`Self::gglwe_to_ggsw_key_encrypt_sk_tmp_bytes`]; free in kernels and scratch use before the wipe.
     fn gglwe_to_ggsw_key_encrypt_sk<R, S>(
         module: &Module<Self>,
         res: &mut R,
@@ -352,10 +441,15 @@ pub unsafe trait EncryptionImpl: Backend {
         R: GGLWEToGGSWKeyToBackendMut<Self>,
         S: GLWESecretToBackendRef<Self> + GetDistribution + GLWEInfos;
 
+    /// Scratch bound of [`Self::glwe_switching_key_encrypt_sk`]; may report less than the reference, never less than
+    /// the body takes.
     fn glwe_switching_key_encrypt_sk_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GGLWEInfos;
 
+    /// Reproduces
+    /// [`glwe_switching_key_encrypt_sk_reference`](crate::reference::encryption::GLWESwitchingKeyEncryptSkReference::glwe_switching_key_encrypt_sk_reference)
+    /// bit for bit, within [`Self::glwe_switching_key_encrypt_sk_tmp_bytes`]; free in kernels and scratch use before the wipe.
     fn glwe_switching_key_encrypt_sk<R, S1, S2>(
         module: &Module<Self>,
         res: &mut R,
@@ -369,14 +463,20 @@ pub unsafe trait EncryptionImpl: Backend {
         S1: GLWESecretToBackendRef<Self> + GLWEInfos,
         S2: GLWESecretToBackendRef<Self> + GetDistribution + GLWEInfos;
 
+    /// Default body: `glwe_tensor_key_encrypt_sk_tmp_bytes_derived`, the prepared secret and its tensor plus the
+    /// larger of the tensor preparation and [`Self::gglwe_encrypt_sk_tmp_bytes`].
     fn glwe_tensor_key_encrypt_sk_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GGLWEInfos,
-        Module<Self>: crate::layouts::GLWESecretPreparedFactory<Self> + crate::layouts::GLWESecretTensorFactory<Self>,
     {
         super::derived::encryption::glwe_tensor_key_encrypt_sk_tmp_bytes_derived(module, infos)
     }
 
+    /// Default body: `glwe_tensor_key_encrypt_sk_derived`, the secret prepared by
+    /// [`SecretImpl::glwe_secret_prepare`](crate::oep::SecretImpl::glwe_secret_prepare) and its tensor by
+    /// [`SecretImpl::glwe_secret_tensor_prepare`](crate::oep::SecretImpl::glwe_secret_tensor_prepare), then
+    /// [`Self::gglwe_encrypt_sk`] of the tensor under the prepared secret, within
+    /// [`Self::glwe_tensor_key_encrypt_sk_tmp_bytes`].
     fn glwe_tensor_key_encrypt_sk<R, S>(
         module: &Module<Self>,
         res: &mut R,
@@ -387,15 +487,19 @@ pub unsafe trait EncryptionImpl: Backend {
     ) where
         R: GGLWEToBackendMut<Self> + GGLWEInfos,
         S: GLWESecretToBackendRef<Self> + GetDistribution + GLWEInfos,
-        Module<Self>: crate::layouts::GLWESecretPreparedFactory<Self> + crate::layouts::GLWESecretTensorFactory<Self>,
     {
         super::derived::encryption::glwe_tensor_key_encrypt_sk_derived(module, res, sk, source_xe, source_xa, scratch)
     }
 
+    /// Scratch bound of [`Self::glwe_to_lwe_key_encrypt_sk`]; may report less than the reference, never less than the
+    /// body takes.
     fn glwe_to_lwe_key_encrypt_sk_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GGLWEInfos;
 
+    /// Reproduces
+    /// [`glwe_to_lwe_key_encrypt_sk_reference`](crate::reference::encryption::GLWEToLWESwitchingKeyEncryptSkReference::glwe_to_lwe_key_encrypt_sk_reference)
+    /// bit for bit, within [`Self::glwe_to_lwe_key_encrypt_sk_tmp_bytes`]; free in kernels and scratch use before the wipe.
     fn glwe_to_lwe_key_encrypt_sk<R, S1, S2>(
         module: &Module<Self>,
         res: &mut R,
@@ -409,10 +513,15 @@ pub unsafe trait EncryptionImpl: Backend {
         S2: GLWESecretToBackendRef<Self>,
         R: GGLWEToBackendMut<Self> + GGLWEInfos;
 
+    /// Scratch bound of [`Self::lwe_switching_key_encrypt_sk`]; may report less than the reference, never less than
+    /// the body takes.
     fn lwe_switching_key_encrypt_sk_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GGLWEInfos;
 
+    /// Reproduces
+    /// [`lwe_switching_key_encrypt_sk_reference`](crate::reference::encryption::LWESwitchingKeyEncryptReference::lwe_switching_key_encrypt_sk_reference)
+    /// bit for bit, within [`Self::lwe_switching_key_encrypt_sk_tmp_bytes`]; free in kernels and scratch use before the wipe.
     fn lwe_switching_key_encrypt_sk<R, S1, S2>(
         module: &Module<Self>,
         res: &mut R,
@@ -426,10 +535,16 @@ pub unsafe trait EncryptionImpl: Backend {
         S1: LWESecretToBackendRef<Self>,
         S2: LWESecretToBackendRef<Self>;
 
+    /// Scratch bound of [`Self::lwe_to_glwe_key_encrypt_sk`]; may report less than the reference, never less than the
+    /// body takes.
     fn lwe_to_glwe_key_encrypt_sk_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GGLWEInfos;
 
+    /// Reproduces
+    /// [`lwe_to_glwe_key_encrypt_sk_reference`](crate::reference::encryption::LWEToGLWESwitchingKeyEncryptSkReference::lwe_to_glwe_key_encrypt_sk_reference)
+    /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
+    /// [`Self::lwe_to_glwe_key_encrypt_sk_tmp_bytes`]; free in kernels and scratch use before the wipe.
     fn lwe_to_glwe_key_encrypt_sk<R, S1, S2>(
         module: &Module<Self>,
         res: &mut R,
@@ -443,10 +558,15 @@ pub unsafe trait EncryptionImpl: Backend {
         S2: GLWESecretPreparedToBackendRef<Self>,
         R: GGLWEToBackendMut<Self> + GGLWEInfos;
 
+    /// Scratch bound of [`Self::glwe_automorphism_key_encrypt_sk`]; may report less than the reference, never less
+    /// than the body takes.
     fn glwe_automorphism_key_encrypt_sk_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GGLWEInfos;
 
+    /// Reproduces
+    /// [`glwe_automorphism_key_encrypt_sk_reference`](crate::reference::encryption::GLWEAutomorphismKeyEncryptSkReference::glwe_automorphism_key_encrypt_sk_reference)
+    /// bit for bit, within [`Self::glwe_automorphism_key_encrypt_sk_tmp_bytes`]; free in kernels and scratch use before the wipe.
     fn glwe_automorphism_key_encrypt_sk<R, S>(
         module: &Module<Self>,
         res: &mut R,
@@ -459,10 +579,16 @@ pub unsafe trait EncryptionImpl: Backend {
         R: GGLWEToBackendMut<Self> + SetGaloisElement + GGLWEInfos,
         S: GLWESecretToBackendRef<Self> + GLWEInfos;
 
+    /// Scratch bound of [`Self::glwe_compressed_encrypt_sk`] and [`Self::glwe_compressed_encrypt_zero_sk`]; may
+    /// report less than the reference, never less than the body takes.
     fn glwe_compressed_encrypt_sk_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GLWEInfos;
 
+    /// Reproduces
+    /// [`glwe_compressed_encrypt_sk_reference`](crate::reference::encryption::GLWECompressedEncryptSkReference::glwe_compressed_encrypt_sk_reference)
+    /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
+    /// [`Self::glwe_compressed_encrypt_sk_tmp_bytes`]; free in kernels and scratch use before the wipe.
     fn glwe_compressed_encrypt_sk<R, P, S>(
         module: &Module<Self>,
         res: &mut R,
@@ -476,6 +602,10 @@ pub unsafe trait EncryptionImpl: Backend {
         P: GLWEToBackendRef<Self>,
         S: GLWESecretPreparedToBackendRef<Self>;
 
+    /// Reproduces
+    /// [`glwe_compressed_encrypt_zero_sk_reference`](crate::reference::encryption::GLWECompressedEncryptSkReference::glwe_compressed_encrypt_zero_sk_reference)
+    /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
+    /// [`Self::glwe_compressed_encrypt_sk_tmp_bytes`]; free in kernels and scratch use before the wipe.
     fn glwe_compressed_encrypt_zero_sk<R, S>(
         module: &Module<Self>,
         res: &mut R,
@@ -487,10 +617,16 @@ pub unsafe trait EncryptionImpl: Backend {
         R: GLWECompressedToBackendMut<Self> + GLWECompressedSeedMut,
         S: GLWESecretPreparedToBackendRef<Self>;
 
+    /// Scratch bound of [`Self::gglwe_compressed_encrypt_sk`]; may report less than the reference, never less than
+    /// the body takes.
     fn gglwe_compressed_encrypt_sk_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GGLWEInfos;
 
+    /// Reproduces
+    /// [`gglwe_compressed_encrypt_sk_reference`](crate::reference::encryption::GGLWECompressedEncryptSkReference::gglwe_compressed_encrypt_sk_reference)
+    /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
+    /// [`Self::gglwe_compressed_encrypt_sk_tmp_bytes`]; free in kernels and scratch use before the wipe.
     fn gglwe_compressed_encrypt_sk<R, P, S>(
         module: &Module<Self>,
         res: &mut R,
@@ -504,10 +640,16 @@ pub unsafe trait EncryptionImpl: Backend {
         P: ScalarZnxToBackendRef<Self>,
         S: GLWESecretPreparedToBackendRef<Self>;
 
+    /// Scratch bound of [`Self::ggsw_compressed_encrypt_sk`]; may report less than the reference, never less than the
+    /// body takes.
     fn ggsw_compressed_encrypt_sk_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GGSWInfos;
 
+    /// Reproduces
+    /// [`ggsw_compressed_encrypt_sk_reference`](crate::reference::encryption::GGSWCompressedEncryptSkReference::ggsw_compressed_encrypt_sk_reference)
+    /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
+    /// [`Self::ggsw_compressed_encrypt_sk_tmp_bytes`]; free in kernels and scratch use before the wipe.
     fn ggsw_compressed_encrypt_sk<R, P, S>(
         module: &Module<Self>,
         res: &mut R,
@@ -521,10 +663,16 @@ pub unsafe trait EncryptionImpl: Backend {
         P: ScalarZnxToBackendRef<Self>,
         S: GLWESecretPreparedToBackendRef<Self>;
 
+    /// Scratch bound of [`Self::gglwe_to_ggsw_key_compressed_encrypt_sk`]; may report less than the reference, never
+    /// less than the body takes.
     fn gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GGLWEInfos;
 
+    /// Reproduces
+    /// [`gglwe_to_ggsw_key_compressed_encrypt_sk_reference`](crate::reference::encryption::GGLWEToGGSWKeyCompressedEncryptSkReference::gglwe_to_ggsw_key_compressed_encrypt_sk_reference)
+    /// bit for bit, within [`Self::gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes`]; free in kernels and scratch
+    /// use.
     fn gglwe_to_ggsw_key_compressed_encrypt_sk<R, S>(
         module: &Module<Self>,
         res: &mut R,
@@ -536,10 +684,16 @@ pub unsafe trait EncryptionImpl: Backend {
         R: GGLWEToGGSWKeyCompressedToBackendMut<Self> + GGLWEInfos,
         S: GLWESecretToBackendRef<Self> + GetDistribution + GLWEInfos;
 
+    /// Scratch bound of [`Self::glwe_automorphism_key_compressed_encrypt_sk`]; may report less than the reference,
+    /// never less than the body takes.
     fn glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GGLWEInfos;
 
+    /// Reproduces
+    /// [`glwe_automorphism_key_compressed_encrypt_sk_reference`](crate::reference::encryption::GLWEAutomorphismKeyCompressedEncryptSkReference::glwe_automorphism_key_compressed_encrypt_sk_reference)
+    /// bit for bit, within [`Self::glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes`]; free in kernels and
+    /// scratch use before the wipe.
     fn glwe_automorphism_key_compressed_encrypt_sk<R, S>(
         module: &Module<Self>,
         res: &mut R,
@@ -552,10 +706,16 @@ pub unsafe trait EncryptionImpl: Backend {
         R: GGLWECompressedToBackendMut<Self> + GGLWECompressedSeedMut + SetGaloisElement + GGLWEInfos,
         S: GLWESecretToBackendRef<Self> + GLWEInfos;
 
+    /// Scratch bound of [`Self::glwe_switching_key_compressed_encrypt_sk`]; may report less than the reference, never
+    /// less than the body takes.
     fn glwe_switching_key_compressed_encrypt_sk_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GGLWEInfos;
 
+    /// Reproduces
+    /// [`glwe_switching_key_compressed_encrypt_sk_reference`](crate::reference::encryption::GLWESwitchingKeyCompressedEncryptSkReference::glwe_switching_key_compressed_encrypt_sk_reference)
+    /// bit for bit, within [`Self::glwe_switching_key_compressed_encrypt_sk_tmp_bytes`]; free in kernels and scratch
+    /// use.
     fn glwe_switching_key_compressed_encrypt_sk<R, S1, S2>(
         module: &Module<Self>,
         res: &mut R,
@@ -569,14 +729,20 @@ pub unsafe trait EncryptionImpl: Backend {
         S1: GLWESecretToBackendRef<Self> + GLWEInfos,
         S2: GLWESecretToBackendRef<Self> + GetDistribution + GLWEInfos;
 
+    /// Default body: `glwe_tensor_key_compressed_encrypt_sk_tmp_bytes_derived`, the prepared secret and its tensor
+    /// plus the larger of the tensor preparation and [`Self::gglwe_compressed_encrypt_sk_tmp_bytes`].
     fn glwe_tensor_key_compressed_encrypt_sk_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GGLWEInfos,
-        Module<Self>: crate::layouts::GLWESecretPreparedFactory<Self> + crate::layouts::GLWESecretTensorFactory<Self>,
     {
         super::derived::encryption::glwe_tensor_key_compressed_encrypt_sk_tmp_bytes_derived(module, infos)
     }
 
+    /// Default body: `glwe_tensor_key_compressed_encrypt_sk_derived`, the secret prepared by
+    /// [`SecretImpl::glwe_secret_prepare`](crate::oep::SecretImpl::glwe_secret_prepare) and its tensor by
+    /// [`SecretImpl::glwe_secret_tensor_prepare`](crate::oep::SecretImpl::glwe_secret_tensor_prepare), then
+    /// [`Self::gglwe_compressed_encrypt_sk`] of the tensor under the prepared secret, within
+    /// [`Self::glwe_tensor_key_compressed_encrypt_sk_tmp_bytes`].
     fn glwe_tensor_key_compressed_encrypt_sk<R, S>(
         module: &Module<Self>,
         res: &mut R,
@@ -587,7 +753,6 @@ pub unsafe trait EncryptionImpl: Backend {
     ) where
         R: GGLWECompressedToBackendMut<Self> + GGLWEInfos + GGLWECompressedSeedMut,
         S: GLWESecretToBackendRef<Self> + GetDistribution + GLWEInfos,
-        Module<Self>: crate::layouts::GLWESecretPreparedFactory<Self> + crate::layouts::GLWESecretTensorFactory<Self>,
     {
         super::derived::encryption::glwe_tensor_key_compressed_encrypt_sk_derived(module, res, sk, seed_xa, source_xe, scratch)
     }

@@ -1,12 +1,11 @@
 use poulpy_hal::AlignedBuf;
-use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, Module, ReaderFrom, WriterTo};
+use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, WriterTo};
 
 use crate::layouts::{
-    Base2K, Degree, Dnum, GGLWEInfos, GGLWEToBackendMut, GLWEInfos, GLWESwitchingKeyDegrees, GLWESwitchingKeyDegreesMut,
-    LWEInfos, Rank, TorusPrecision,
+    Base2K, Degree, Dnum, GGLWEInfos, GLWEInfos, GLWESwitchingKeyDegrees, LWEInfos, Rank, TorusPrecision,
     compressed::{
         GGLWECompressedBackendMut, GGLWECompressedBackendRef, GGLWECompressedToBackendMut, GGLWECompressedToBackendRef,
-        GLWESwitchingKeyCompressed, GLWESwitchingKeyDecompress,
+        GLWESwitchingKeyCompressed,
     },
 };
 use poulpy_hal::layouts::ZnxWord;
@@ -163,23 +162,6 @@ impl<D: Data, W: ZnxWord> LWEToGLWEKeyCompressed<D, W> {
         GLWESwitchingKeyCompressed::<AlignedBuf, W>::bytes_of(n, base2k, dnum, TorusPrecision::from(base2k), k_aux, Rank(1))
     }
 }
-
-pub trait LWEToGLWEKeyDecompress
-where
-    Self: GLWESwitchingKeyDecompress,
-{
-    fn decompress_lwe_to_glwe_key<R, O>(&self, res: &mut R, other: &O)
-    where
-        R: GGLWEToBackendMut<Self::Backend> + GGLWEInfos + GLWESwitchingKeyDegreesMut,
-        O: GGLWECompressedToBackendRef<Self::Backend> + GGLWEInfos + GLWESwitchingKeyDegrees,
-    {
-        self.decompress_glwe_switching_key(res, other);
-    }
-}
-
-impl<B: Backend> LWEToGLWEKeyDecompress for Module<B> where Self: GLWESwitchingKeyDecompress {}
-
-// module-only API: decompression is provided by `LWEToGLWEKeyDecompress` on `Module`.
 
 impl_gglwe_compressed_to_backend_for_field!(
     LWEToGLWEKeyCompressed<BE::OwnedBuf, BE::ZnxWord>,

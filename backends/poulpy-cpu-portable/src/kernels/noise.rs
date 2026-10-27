@@ -152,6 +152,9 @@ trait Exact: Clone + PartialOrd + From<u64> {
     fn mul(&self, other: &Self) -> Self;
     fn div(&self, other: &Self) -> Self;
     fn rem(&self, other: &Self) -> Self;
+    /// `self * factor`, or `None` when it does not fit.
+    fn checked_mul_u64(&self, factor: u64) -> Option<Self>;
+    fn to_ubig(&self) -> UBig;
     /// A uniform integer below `self > 0`, by exact rejection.
     fn below(&self, source: &mut Source) -> Self;
 }
@@ -174,6 +177,12 @@ impl Exact for u128 {
     }
     fn rem(&self, other: &Self) -> Self {
         self % other
+    }
+    fn checked_mul_u64(&self, factor: u64) -> Option<Self> {
+        self.checked_mul(factor as u128)
+    }
+    fn to_ubig(&self) -> UBig {
+        UBig::from(*self)
     }
     fn below(&self, source: &mut Source) -> Self {
         if *self == 1 {
@@ -219,6 +228,12 @@ impl Exact for UBig {
     fn rem(&self, other: &Self) -> Self {
         self % other
     }
+    fn checked_mul_u64(&self, factor: u64) -> Option<Self> {
+        Some(self * factor)
+    }
+    fn to_ubig(&self) -> UBig {
+        self.clone()
+    }
     fn below(&self, source: &mut Source) -> Self {
         if self == &UBig::ONE {
             return UBig::ZERO;
@@ -246,10 +261,24 @@ impl Exact for UBig {
 /// Exact Bernoulli(exp(-num/den)) for a ratio in [0, 1].
 fn bernoulli_exp_unit<T: Exact>(num: &T, den: &T, source: &mut Source) -> bool {
     let mut j = 1u64;
-    while den.mul(&T::from(j)).below(source) < *num {
+    loop {
+        let continues = match den.checked_mul_u64(j) {
+            Some(limit) => limit.below(source) < *num,
+            None => series_continues_wide(num, den, j, source),
+        };
+        if !continues {
+            return j & 1 == 1;
+        }
         j += 1;
     }
-    j & 1 == 1
+}
+
+/// The series test of [`bernoulli_exp_unit`] when `den * j` overflows `T`.
+/// Both widths draw identical entropy, so this matches the `UBig` sampler.
+#[cold]
+#[inline(never)]
+fn series_continues_wide<T: Exact>(num: &T, den: &T, j: u64, source: &mut Source) -> bool {
+    (den.to_ubig() * j).below(source) < num.to_ubig()
 }
 
 fn bernoulli_exp<T: Exact>(num: &T, den: &T, source: &mut Source) -> bool {
@@ -281,8 +310,9 @@ impl<T: Exact> RejectionGaussian<T> {
         let variance_num = &num * &num;
         let variance_den = &den * &den;
         let acceptance_den = &variance_num * &variance_den * &t * &t * 2u8;
-        // Every product stays below `largest`, given Bernoulli series indices
-        // below 2^8 (reaching 2^8 has probability below 1/255!).
+        // Every product stays below `largest` while Bernoulli series indices
+        // are at most 2^8. Larger indices, reached with probability below
+        // 1/256!, take the exact `UBig` fallback of `bernoulli_exp_unit`.
         let difference = &bound * &t * &variance_den + &variance_num;
         let largest = (&difference * &difference).max(&acceptance_den << 8);
         T::from_exact(&largest)?;
@@ -858,6 +888,23 @@ mod tests {
             }
         }
         assert!(RejectionGaussian::<u128>::new(2f64.powi(31)).is_none());
+    }
+
+    #[test]
+    fn bernoulli_series_overflow_replays_bignum() {
+        // `den * 2` overflows `u128`, and the first series test passes with
+        // probability `num / den`.
+        for (num, den) in [(u128::MAX, u128::MAX), (1 << 127, (1 << 127) + 1), (3 << 125, u128::MAX - 1)] {
+            let mut source = Source::new([83; 32]);
+            let mut replay = Source::new([83; 32]);
+            for _ in 0..10_000 {
+                assert_eq!(
+                    bernoulli_exp_unit(&num, &den, &mut source),
+                    bernoulli_exp_unit(&UBig::from(num), &UBig::from(den), &mut replay)
+                );
+            }
+            assert_eq!(source.new_seed(), replay.new_seed());
+        }
     }
 
     #[test]

@@ -2,7 +2,7 @@ use crate::CKKSResult as Result;
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
 
-use poulpy_core::layouts::{GGLWEInfos, GLWEInfos, LWEInfos, TorusPrecision};
+use poulpy_core::layouts::{GGLWEInfos, GLWEInfos, LWEInfos};
 use poulpy_hal::layouts::{Backend, Module, PrepareHint, ScratchArena};
 
 use crate::{
@@ -10,86 +10,91 @@ use crate::{
     layouts::{CKKSPreparedLeft, CKKSPreparedRight},
 };
 
-/// # Safety
+/// Backend contract of [`CKKSMulOps`](crate::api::CKKSMulOps).
 ///
-/// Implementations must satisfy the contracts of all trait methods, including
-/// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
-/// associated method signatures.
+/// # Safety
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait CKKSMulImpl: Backend {
-    fn ckks_mul_tmp_bytes_impl<R: CKKSCtBounds, A: CKKSCtBounds, B: CKKSCtBounds, T: GGLWEInfos>(
+    /// Scratch bound of [`Self::ckks_mul_into`], [`Self::ckks_mul_assign`] and [`Self::ckks_mul_prepared_assign`]; may
+    /// report less than the reference, never less than the body takes. The operands are passed, a prepared right
+    /// operand through its infos.
+    fn ckks_mul_tmp_bytes<R: CKKSCtBounds, A: CKKSCtBounds, B: CKKSCtBounds, T: GGLWEInfos>(
         module: &Module<Self>,
         res: &R,
         a: &A,
         b: &B,
         tsk: &T,
     ) -> usize;
-    fn ckks_square_tmp_bytes_impl<R: CKKSCtBounds, A: CKKSCtBounds, T: GGLWEInfos>(
+
+    /// Scratch bound of [`Self::ckks_square_into`] and [`Self::ckks_square_assign`]; may report less than the
+    /// reference, never less than the body takes.
+    fn ckks_square_tmp_bytes<R: CKKSCtBounds, A: CKKSCtBounds, T: GGLWEInfos>(
         module: &Module<Self>,
         res: &R,
         a: &A,
         tsk: &T,
     ) -> usize;
-    fn ckks_mul_pt_vec_tmp_bytes_impl<R: CKKSCtBounds, A: CKKSCtBounds>(
-        module: &Module<Self>,
-        res: &R,
-        a: &A,
-        b_k: TorusPrecision,
-    ) -> usize;
-    fn ckks_mul_pt_const_tmp_bytes_impl<R: CKKSCtBounds, A: CKKSCtBounds>(
-        module: &Module<Self>,
-        res: &R,
-        a: &A,
-        b_k: TorusPrecision,
-    ) -> usize;
-    fn ckks_mul_into_impl<Dst, A, B, T>(
+
+    /// Scratch bound of [`Self::ckks_mul_pt_vec_into`] and [`Self::ckks_mul_pt_vec_assign`]; may report less than the
+    /// reference, never less than the body takes.
+    fn ckks_mul_pt_vec_tmp_bytes<R, A, P>(module: &Module<Self>, res: &R, a: &A, b: &P) -> usize
+    where
+        R: CKKSCtBounds,
+        A: CKKSCtBounds,
+        P: CKKSInfos;
+
+    /// Scratch bound of [`Self::ckks_mul_pt_const_into`] and [`Self::ckks_mul_pt_const_assign`]; may report less than
+    /// the reference, never less than the body takes.
+    fn ckks_mul_pt_const_tmp_bytes<R, A, P>(module: &Module<Self>, res: &R, a: &A, b: &P) -> usize
+    where
+        R: CKKSCtBounds,
+        A: CKKSCtBounds,
+        P: CKKSInfos;
+
+    /// Reproduces [`ckks_mul_into_reference`](crate::reference::mul::CKKSMulReference::ckks_mul_into_reference) bit for
+    /// bit, within [`Self::ckks_mul_tmp_bytes`]; free in kernels and scratch use.
+    fn ckks_mul_into<Dst, A, B, H>(
         module: &Module<Self>,
         dst: &mut Dst,
         a: &A,
         b: &B,
-        tsk: &T,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<Self> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<Self> + CKKSInfos + GLWEInfos,
         B: GLWEToBackendRef<Self> + CKKSInfos + GLWEInfos,
-        T: GetTensorKey<Self>;
-    fn ckks_mul_assign_impl<Dst, A, T>(
+        H: GetTensorKey<Self>;
+
+    /// Reproduces [`ckks_mul_assign_reference`](crate::reference::mul::CKKSMulReference::ckks_mul_assign_reference) bit
+    /// for bit, within [`Self::ckks_mul_tmp_bytes`]; free in kernels and scratch use.
+    fn ckks_mul_assign<Dst, A, H>(
         module: &Module<Self>,
         dst: &mut Dst,
         a: &A,
-        tsk: &T,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<Self> + CKKSInfos + GLWEInfos,
-        T: GetTensorKey<Self>;
-    /// Scratch bytes of [`Self::ckks_prepare_left_impl`], [`Self::ckks_prepare_right_impl`] and their `_into_impl`
-    /// forms for an operand shaped like `a`, which [`Self::ckks_mul_tmp_bytes_impl`] of a product reading such an
-    /// operand covers, as the API promises.
-    fn ckks_prepare_tmp_bytes_impl<A: GLWEInfos>(module: &Module<Self>, a: &A) -> usize;
-    /// The bytes [`Self::ckks_prepared_left_alloc_from_infos_impl`] allocates for `infos` under `hint`.
-    fn ckks_prepared_left_bytes_of_from_infos_impl<A: GLWEInfos>(module: &Module<Self>, infos: &A, hint: PrepareHint) -> usize;
-    /// The bytes [`Self::ckks_prepared_right_alloc_from_infos_impl`] allocates for `infos` under `hint`.
-    fn ckks_prepared_right_bytes_of_from_infos_impl<A: GLWEInfos>(module: &Module<Self>, infos: &A, hint: PrepareHint) -> usize;
-    /// A left operand of a ciphertext of `infos`, in the representation `hint` selects, which
-    /// [`Self::ckks_prepare_left_into_impl`] fills; its infos report `infos` and no metadata until then.
-    fn ckks_prepared_left_alloc_from_infos_impl<A: GLWEInfos>(
-        module: &Module<Self>,
-        infos: &A,
-        hint: PrepareHint,
-    ) -> CKKSPreparedLeft<Self>;
-    /// As [`Self::ckks_prepared_left_alloc_from_infos_impl`], for a right operand.
-    fn ckks_prepared_right_alloc_from_infos_impl<A: GLWEInfos>(
-        module: &Module<Self>,
-        infos: &A,
-        hint: PrepareHint,
-    ) -> CKKSPreparedRight<Self>;
-    /// Prepares `a` into `res`, with no allocation: `res` then reports `a`'s layout and metadata, and the products
-    /// that read it give the reference's bits. An `a` of another layout than `res` was allocated for is
-    /// `InvalidOperand`, before any write to `res`.
-    fn ckks_prepare_left_into_impl<A>(
+        H: GetTensorKey<Self>;
+
+    /// Scratch bound of [`Self::ckks_prepare_left`], [`Self::ckks_prepare_right`] and their `_into` forms for an
+    /// operand shaped like `a`; may report less than the reference, never less than the body takes.
+    /// [`Self::ckks_mul_tmp_bytes`] of a product reading such an operand covers it, as the API promises.
+    fn ckks_prepare_tmp_bytes<A: GLWEInfos>(module: &Module<Self>, a: &A) -> usize;
+
+    /// Reproduces
+    /// [`ckks_prepare_left_into_reference`](crate::reference::mul::CKKSMulReference::ckks_prepare_left_into_reference)
+    /// bit for bit, within [`Self::ckks_prepare_tmp_bytes`]; free in kernels and scratch use. Prepares `a` into `res`,
+    /// with no allocation: `res` then reports `a`'s layout and metadata, and the products that read it give the
+    /// reference's bits. An `a` of another layout than `res` was allocated for is `InvalidOperand`, before any write to
+    /// `res`.
+    fn ckks_prepare_left_into<A>(
         module: &Module<Self>,
         res: &mut CKKSPreparedLeft<Self>,
         a: &A,
@@ -97,8 +102,12 @@ pub unsafe trait CKKSMulImpl: Backend {
     ) -> Result<()>
     where
         A: GLWEToBackendRef<Self> + CKKSInfos + GLWEInfos;
-    /// As [`Self::ckks_prepare_left_into_impl`], into a right operand.
-    fn ckks_prepare_right_into_impl<A>(
+
+    /// Reproduces
+    /// [`ckks_prepare_right_into_reference`](crate::reference::mul::CKKSMulReference::ckks_prepare_right_into_reference)
+    /// bit for bit, within [`Self::ckks_prepare_tmp_bytes`]; free in kernels and scratch use. As
+    /// [`Self::ckks_prepare_left_into`], into a right operand.
+    fn ckks_prepare_right_into<A>(
         module: &Module<Self>,
         res: &mut CKKSPreparedRight<Self>,
         a: &A,
@@ -106,9 +115,11 @@ pub unsafe trait CKKSMulImpl: Backend {
     ) -> Result<()>
     where
         A: GLWEToBackendRef<Self> + CKKSInfos + GLWEInfos;
-    /// Prepares a left operand: [`Self::ckks_prepare_left_into_impl`] into
-    /// [`Self::ckks_prepared_left_alloc_from_infos_impl`] of `a` under `hint`.
-    fn ckks_prepare_left_impl<A>(
+
+    /// Default body: `ckks_prepare_left_derived`, a left operand allocated from `a` under `hint` with
+    /// [`ckks_prepared_left_alloc_from_infos`](crate::layouts::CKKSModuleAlloc::ckks_prepared_left_alloc_from_infos),
+    /// then [`Self::ckks_prepare_left_into`] into it.
+    fn ckks_prepare_left<A>(
         module: &Module<Self>,
         a: &A,
         hint: PrepareHint,
@@ -117,11 +128,13 @@ pub unsafe trait CKKSMulImpl: Backend {
     where
         A: GLWEToBackendRef<Self> + CKKSInfos + GLWEInfos,
     {
-        super::derived::mul::ckks_prepare_left(module, a, hint, scratch)
+        super::derived::mul::ckks_prepare_left_derived(module, a, hint, scratch)
     }
-    /// Prepares a right operand: [`Self::ckks_prepare_right_into_impl`] into
-    /// [`Self::ckks_prepared_right_alloc_from_infos_impl`] of `a` under `hint`.
-    fn ckks_prepare_right_impl<A>(
+
+    /// Default body: `ckks_prepare_right_derived`, a right operand allocated from `a` under `hint` with
+    /// [`ckks_prepared_right_alloc_from_infos`](crate::layouts::CKKSModuleAlloc::ckks_prepared_right_alloc_from_infos),
+    /// then [`Self::ckks_prepare_right_into`] into it.
+    fn ckks_prepare_right<A>(
         module: &Module<Self>,
         a: &A,
         hint: PrepareHint,
@@ -130,39 +143,54 @@ pub unsafe trait CKKSMulImpl: Backend {
     where
         A: GLWEToBackendRef<Self> + CKKSInfos + GLWEInfos,
     {
-        super::derived::mul::ckks_prepare_right(module, a, hint, scratch)
+        super::derived::mul::ckks_prepare_right_derived(module, a, hint, scratch)
     }
-    fn ckks_mul_prepared_assign_impl<Dst, T>(
+
+    /// Reproduces
+    /// [`ckks_mul_prepared_assign_reference`](crate::reference::mul::CKKSMulReference::ckks_mul_prepared_assign_reference)
+    /// bit for bit, within [`Self::ckks_mul_tmp_bytes`]; free in kernels and scratch use.
+    fn ckks_mul_prepared_assign<Dst, H>(
         module: &Module<Self>,
         dst: &mut Dst,
         prepared: &CKKSPreparedRight<Self>,
-        tsk: &T,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSInfos + SetCKKSInfos + GLWEInfos,
-        T: GetTensorKey<Self>;
-    fn ckks_square_into_impl<Dst, A, T>(
+        H: GetTensorKey<Self>;
+
+    /// Reproduces [`ckks_square_into_reference`](crate::reference::mul::CKKSMulReference::ckks_square_into_reference)
+    /// bit for bit, within [`Self::ckks_square_tmp_bytes`]; free in kernels and scratch use.
+    fn ckks_square_into<Dst, A, H>(
         module: &Module<Self>,
         dst: &mut Dst,
         a: &A,
-        tsk: &T,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<Self> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<Self> + CKKSInfos + GLWEInfos,
-        T: GetTensorKey<Self>;
-    fn ckks_square_assign_impl<Dst, T>(
+        H: GetTensorKey<Self>;
+
+    /// Reproduces
+    /// [`ckks_square_assign_reference`](crate::reference::mul::CKKSMulReference::ckks_square_assign_reference) bit for
+    /// bit, within [`Self::ckks_square_tmp_bytes`]; free in kernels and scratch use.
+    fn ckks_square_assign<Dst, H>(
         module: &Module<Self>,
         dst: &mut Dst,
-        tsk: &T,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSInfos + SetCKKSInfos + GLWEInfos,
-        T: GetTensorKey<Self>;
-    fn ckks_mul_pt_vec_into_impl<Dst, A, P>(
+        H: GetTensorKey<Self>;
+
+    /// Reproduces
+    /// [`ckks_mul_pt_vec_into_reference`](crate::reference::mul::CKKSMulReference::ckks_mul_pt_vec_into_reference) bit
+    /// for bit, within [`Self::ckks_mul_pt_vec_tmp_bytes`]; free in kernels and scratch use.
+    fn ckks_mul_pt_vec_into<Dst, A, P>(
         module: &Module<Self>,
         dst: &mut Dst,
         a: &A,
@@ -173,7 +201,11 @@ pub unsafe trait CKKSMulImpl: Backend {
         Dst: GLWEToBackendMut<Self> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<Self> + CKKSInfos + GLWEInfos,
         P: GLWEToBackendRef<Self> + LWEInfos + IntPolyInfos + CKKSCtBounds;
-    fn ckks_mul_pt_vec_assign_impl<Dst, P>(
+
+    /// Reproduces
+    /// [`ckks_mul_pt_vec_assign_reference`](crate::reference::mul::CKKSMulReference::ckks_mul_pt_vec_assign_reference)
+    /// bit for bit, within [`Self::ckks_mul_pt_vec_tmp_bytes`]; free in kernels and scratch use.
+    fn ckks_mul_pt_vec_assign<Dst, P>(
         module: &Module<Self>,
         dst: &mut Dst,
         pt: &P,
@@ -182,7 +214,11 @@ pub unsafe trait CKKSMulImpl: Backend {
     where
         Dst: GLWEToBackendMut<Self> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         P: GLWEToBackendRef<Self> + LWEInfos + IntPolyInfos + CKKSCtBounds;
-    fn ckks_mul_pt_const_into_impl<Dst, A, P>(
+
+    /// Reproduces
+    /// [`ckks_mul_pt_const_into_reference`](crate::reference::mul::CKKSMulReference::ckks_mul_pt_const_into_reference)
+    /// bit for bit, within [`Self::ckks_mul_pt_const_tmp_bytes`]; free in kernels and scratch use.
+    fn ckks_mul_pt_const_into<Dst, A, P>(
         module: &Module<Self>,
         dst: &mut Dst,
         a: &A,
@@ -194,7 +230,11 @@ pub unsafe trait CKKSMulImpl: Backend {
         Dst: GLWEToBackendMut<Self> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<Self> + CKKSInfos + GLWEInfos,
         P: GLWEToBackendRef<Self> + LWEInfos + IntPolyInfos + CKKSCtBounds;
-    fn ckks_mul_pt_const_assign_impl<Dst, P>(
+
+    /// Reproduces
+    /// [`ckks_mul_pt_const_assign_reference`](crate::reference::mul::CKKSMulReference::ckks_mul_pt_const_assign_reference)
+    /// bit for bit, within [`Self::ckks_mul_pt_const_tmp_bytes`]; free in kernels and scratch use.
+    fn ckks_mul_pt_const_assign<Dst, P>(
         module: &Module<Self>,
         dst: &mut Dst,
         pt: &P,
@@ -206,12 +246,12 @@ pub unsafe trait CKKSMulImpl: Backend {
         P: GLWEToBackendRef<Self> + LWEInfos + IntPolyInfos + CKKSCtBounds;
 }
 
-/// Implements this contract with the callable reference algorithms.
+/// Selects the reference implementation of `CKKSMulImpl` for `$be`.
 #[macro_export]
-macro_rules! impl_ckks_mul_reference {
+macro_rules! impl_ckks_mul_reference_full {
     ($be:ty) => {
         unsafe impl $crate::oep::CKKSMulImpl for $be {
-            fn ckks_mul_tmp_bytes_impl<
+            fn ckks_mul_tmp_bytes<
                 R: $crate::CKKSCtBounds,
                 A: $crate::CKKSCtBounds,
                 B: $crate::CKKSCtBounds,
@@ -226,11 +266,7 @@ macro_rules! impl_ckks_mul_reference {
                 $crate::reference::mul::CKKSMulReference::ckks_mul_tmp_bytes_reference(module, res, a, b, tsk)
             }
 
-            fn ckks_square_tmp_bytes_impl<
-                R: $crate::CKKSCtBounds,
-                A: $crate::CKKSCtBounds,
-                T: ::poulpy_core::layouts::GGLWEInfos,
-            >(
+            fn ckks_square_tmp_bytes<R: $crate::CKKSCtBounds, A: $crate::CKKSCtBounds, T: ::poulpy_core::layouts::GGLWEInfos>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 res: &R,
                 a: &A,
@@ -239,30 +275,30 @@ macro_rules! impl_ckks_mul_reference {
                 $crate::reference::mul::CKKSMulReference::ckks_square_tmp_bytes_reference(module, res, a, tsk)
             }
 
-            fn ckks_mul_pt_vec_tmp_bytes_impl<R: $crate::CKKSCtBounds, A: $crate::CKKSCtBounds>(
-                module: &::poulpy_hal::layouts::Module<Self>,
-                res: &R,
-                a: &A,
-                b_k: ::poulpy_core::layouts::TorusPrecision,
-            ) -> usize {
-                $crate::reference::mul::CKKSMulReference::ckks_mul_pt_vec_tmp_bytes_reference(module, res, a, b_k)
+            fn ckks_mul_pt_vec_tmp_bytes<R, A, P>(module: &::poulpy_hal::layouts::Module<Self>, res: &R, a: &A, b: &P) -> usize
+            where
+                R: $crate::CKKSCtBounds,
+                A: $crate::CKKSCtBounds,
+                P: $crate::CKKSInfos,
+            {
+                $crate::reference::mul::CKKSMulReference::ckks_mul_pt_vec_tmp_bytes_reference(module, res, a, b)
             }
 
-            fn ckks_mul_pt_const_tmp_bytes_impl<R: $crate::CKKSCtBounds, A: $crate::CKKSCtBounds>(
-                module: &::poulpy_hal::layouts::Module<Self>,
-                res: &R,
-                a: &A,
-                b_k: ::poulpy_core::layouts::TorusPrecision,
-            ) -> usize {
-                $crate::reference::mul::CKKSMulReference::ckks_mul_pt_const_tmp_bytes_reference(module, res, a, b_k)
+            fn ckks_mul_pt_const_tmp_bytes<R, A, P>(module: &::poulpy_hal::layouts::Module<Self>, res: &R, a: &A, b: &P) -> usize
+            where
+                R: $crate::CKKSCtBounds,
+                A: $crate::CKKSCtBounds,
+                P: $crate::CKKSInfos,
+            {
+                $crate::reference::mul::CKKSMulReference::ckks_mul_pt_const_tmp_bytes_reference(module, res, a, b)
             }
 
-            fn ckks_mul_into_impl<Dst, A, B, T>(
+            fn ckks_mul_into<Dst, A, B, H>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
                 a: &A,
                 b: &B,
-                tsk: &T,
+                tsk: &H,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
             where
@@ -272,16 +308,16 @@ macro_rules! impl_ckks_mul_reference {
                     + ::poulpy_core::layouts::GLWEInfos,
                 A: ::poulpy_core::layouts::GLWEToBackendRef<Self> + $crate::CKKSInfos + ::poulpy_core::layouts::GLWEInfos,
                 B: ::poulpy_core::layouts::GLWEToBackendRef<Self> + $crate::CKKSInfos + ::poulpy_core::layouts::GLWEInfos,
-                T: ::poulpy_core::layouts::GetTensorKey<Self>,
+                H: ::poulpy_core::layouts::GetTensorKey<Self>,
             {
                 $crate::reference::mul::CKKSMulReference::ckks_mul_into_reference(module, dst, a, b, tsk, scratch)
             }
 
-            fn ckks_mul_assign_impl<Dst, A, T>(
+            fn ckks_mul_assign<Dst, A, H>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
                 a: &A,
-                tsk: &T,
+                tsk: &H,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
             where
@@ -291,51 +327,19 @@ macro_rules! impl_ckks_mul_reference {
                     + $crate::SetCKKSInfos
                     + ::poulpy_core::layouts::GLWEInfos,
                 A: ::poulpy_core::layouts::GLWEToBackendRef<Self> + $crate::CKKSInfos + ::poulpy_core::layouts::GLWEInfos,
-                T: ::poulpy_core::layouts::GetTensorKey<Self>,
+                H: ::poulpy_core::layouts::GetTensorKey<Self>,
             {
                 $crate::reference::mul::CKKSMulReference::ckks_mul_assign_reference(module, dst, a, tsk, scratch)
             }
 
-            fn ckks_prepare_tmp_bytes_impl<A: ::poulpy_core::layouts::GLWEInfos>(
+            fn ckks_prepare_tmp_bytes<A: ::poulpy_core::layouts::GLWEInfos>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 a: &A,
             ) -> usize {
                 $crate::reference::mul::CKKSMulReference::ckks_prepare_tmp_bytes_reference(module, a)
             }
 
-            fn ckks_prepared_left_bytes_of_from_infos_impl<A: ::poulpy_core::layouts::GLWEInfos>(
-                module: &::poulpy_hal::layouts::Module<Self>,
-                infos: &A,
-                hint: ::poulpy_hal::layouts::PrepareHint,
-            ) -> usize {
-                $crate::reference::mul::CKKSMulReference::ckks_prepared_left_bytes_of_from_infos_reference(module, infos, hint)
-            }
-
-            fn ckks_prepared_right_bytes_of_from_infos_impl<A: ::poulpy_core::layouts::GLWEInfos>(
-                module: &::poulpy_hal::layouts::Module<Self>,
-                infos: &A,
-                hint: ::poulpy_hal::layouts::PrepareHint,
-            ) -> usize {
-                $crate::reference::mul::CKKSMulReference::ckks_prepared_right_bytes_of_from_infos_reference(module, infos, hint)
-            }
-
-            fn ckks_prepared_left_alloc_from_infos_impl<A: ::poulpy_core::layouts::GLWEInfos>(
-                module: &::poulpy_hal::layouts::Module<Self>,
-                infos: &A,
-                hint: ::poulpy_hal::layouts::PrepareHint,
-            ) -> $crate::layouts::CKKSPreparedLeft<Self> {
-                $crate::reference::mul::CKKSMulReference::ckks_prepared_left_alloc_from_infos_reference(module, infos, hint)
-            }
-
-            fn ckks_prepared_right_alloc_from_infos_impl<A: ::poulpy_core::layouts::GLWEInfos>(
-                module: &::poulpy_hal::layouts::Module<Self>,
-                infos: &A,
-                hint: ::poulpy_hal::layouts::PrepareHint,
-            ) -> $crate::layouts::CKKSPreparedRight<Self> {
-                $crate::reference::mul::CKKSMulReference::ckks_prepared_right_alloc_from_infos_reference(module, infos, hint)
-            }
-
-            fn ckks_prepare_left_into_impl<A>(
+            fn ckks_prepare_left_into<A>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 res: &mut $crate::layouts::CKKSPreparedLeft<Self>,
                 a: &A,
@@ -347,7 +351,7 @@ macro_rules! impl_ckks_mul_reference {
                 $crate::reference::mul::CKKSMulReference::ckks_prepare_left_into_reference(module, res, a, scratch)
             }
 
-            fn ckks_prepare_right_into_impl<A>(
+            fn ckks_prepare_right_into<A>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 res: &mut $crate::layouts::CKKSPreparedRight<Self>,
                 a: &A,
@@ -359,11 +363,11 @@ macro_rules! impl_ckks_mul_reference {
                 $crate::reference::mul::CKKSMulReference::ckks_prepare_right_into_reference(module, res, a, scratch)
             }
 
-            fn ckks_mul_prepared_assign_impl<Dst, T>(
+            fn ckks_mul_prepared_assign<Dst, H>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
                 prepared: &$crate::layouts::CKKSPreparedRight<Self>,
-                tsk: &T,
+                tsk: &H,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
             where
@@ -372,16 +376,16 @@ macro_rules! impl_ckks_mul_reference {
                     + $crate::CKKSInfos
                     + $crate::SetCKKSInfos
                     + ::poulpy_core::layouts::GLWEInfos,
-                T: ::poulpy_core::layouts::GetTensorKey<Self>,
+                H: ::poulpy_core::layouts::GetTensorKey<Self>,
             {
                 $crate::reference::mul::CKKSMulReference::ckks_mul_prepared_assign_reference(module, dst, prepared, tsk, scratch)
             }
 
-            fn ckks_square_into_impl<Dst, A, T>(
+            fn ckks_square_into<Dst, A, H>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
                 a: &A,
-                tsk: &T,
+                tsk: &H,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
             where
@@ -390,15 +394,15 @@ macro_rules! impl_ckks_mul_reference {
                     + $crate::SetCKKSInfos
                     + ::poulpy_core::layouts::GLWEInfos,
                 A: ::poulpy_core::layouts::GLWEToBackendRef<Self> + $crate::CKKSInfos + ::poulpy_core::layouts::GLWEInfos,
-                T: ::poulpy_core::layouts::GetTensorKey<Self>,
+                H: ::poulpy_core::layouts::GetTensorKey<Self>,
             {
                 $crate::reference::mul::CKKSMulReference::ckks_square_into_reference(module, dst, a, tsk, scratch)
             }
 
-            fn ckks_square_assign_impl<Dst, T>(
+            fn ckks_square_assign<Dst, H>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
-                tsk: &T,
+                tsk: &H,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
             where
@@ -407,12 +411,12 @@ macro_rules! impl_ckks_mul_reference {
                     + $crate::CKKSInfos
                     + $crate::SetCKKSInfos
                     + ::poulpy_core::layouts::GLWEInfos,
-                T: ::poulpy_core::layouts::GetTensorKey<Self>,
+                H: ::poulpy_core::layouts::GetTensorKey<Self>,
             {
                 $crate::reference::mul::CKKSMulReference::ckks_square_assign_reference(module, dst, tsk, scratch)
             }
 
-            fn ckks_mul_pt_vec_into_impl<Dst, A, P>(
+            fn ckks_mul_pt_vec_into<Dst, A, P>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
                 a: &A,
@@ -433,7 +437,7 @@ macro_rules! impl_ckks_mul_reference {
                 $crate::reference::mul::CKKSMulReference::ckks_mul_pt_vec_into_reference(module, dst, a, pt, scratch)
             }
 
-            fn ckks_mul_pt_vec_assign_impl<Dst, P>(
+            fn ckks_mul_pt_vec_assign<Dst, P>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
                 pt: &P,
@@ -452,7 +456,7 @@ macro_rules! impl_ckks_mul_reference {
                 $crate::reference::mul::CKKSMulReference::ckks_mul_pt_vec_assign_reference(module, dst, pt, scratch)
             }
 
-            fn ckks_mul_pt_const_into_impl<Dst, A, P>(
+            fn ckks_mul_pt_const_into<Dst, A, P>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
                 a: &A,
@@ -474,7 +478,7 @@ macro_rules! impl_ckks_mul_reference {
                 $crate::reference::mul::CKKSMulReference::ckks_mul_pt_const_into_reference(module, dst, a, pt, pt_coeff, scratch)
             }
 
-            fn ckks_mul_pt_const_assign_impl<Dst, P>(
+            fn ckks_mul_pt_const_assign<Dst, P>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
                 pt: &P,
@@ -497,4 +501,4 @@ macro_rules! impl_ckks_mul_reference {
         }
     };
 }
-pub use crate::impl_ckks_mul_reference;
+pub use crate::impl_ckks_mul_reference_full;

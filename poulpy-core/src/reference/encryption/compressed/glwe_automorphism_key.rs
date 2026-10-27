@@ -13,9 +13,10 @@ use crate::api::GLWEBytesOf;
 use crate::layouts::operand_degree;
 use crate::{
     GGLWECompressedEncryptSk, ScratchArenaTakeCore,
+    api::GLWESecretPreparedFactory,
     layouts::{
-        GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWEInfos, GLWEInfos, GLWESecretPreparedFactory,
-        GLWESecretToBackendRef, LWEInfos, SetGaloisElement,
+        GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWEInfos, GLWEInfos, GLWESecretToBackendRef, LWEInfos,
+        SetGaloisElement,
     },
 };
 
@@ -70,9 +71,13 @@ where
         S: GLWESecretToBackendRef<BE> + GLWEInfos,
     {
         let sk = sk.to_backend_ref();
-        assert_eq!(res.n(), sk.n());
-        assert_eq!(res.rank_out(), res.rank_in());
-        assert_eq!(sk.rank(), res.rank_out());
+        operand_degree(self.n(), &[res.n(), sk.n()]);
+        assert!(res.rank_out() == res.rank_in(), "the key's input and output ranks differ");
+        assert!(
+            sk.rank() == res.rank_out(),
+            "the secret's rank differs from the key's output rank"
+        );
+        crate::layouts::assert_secret_set(&sk.dist);
         assert!(
             scratch.available() >= self.glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes_reference(res),
             "scratch.available(): {} < GLWEAutomorphismKeyCompressedEncryptSk::glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes: {}",

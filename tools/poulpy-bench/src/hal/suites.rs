@@ -1,3 +1,4 @@
+use poulpy_hal::api::ModuleSynchronize;
 use poulpy_hal::{
     api::{
         CnvPVecAlloc, Convolution, ModuleNew, ScalarZnxAlloc, ScratchOwnedAlloc, ScratchOwnedBorrow, SvpApplyDft,
@@ -7,13 +8,13 @@ use poulpy_hal::{
         VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigNegate, VecZnxBigNegateAssign,
         VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxBigSub, VecZnxBigSubAssign, VecZnxBigSubNegateAssign,
         VecZnxBigSubSmallA, VecZnxBigSubSmallB, VecZnxDftAdd, VecZnxDftAddAssign, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftSub,
-        VecZnxDftSubAssign, VecZnxDftSubNegateAssign, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxIdftNormalize,
-        VecZnxIdftNormalizeTmpBytes, VecZnxLsh, VecZnxLshAdd, VecZnxLshAssign, VecZnxLshSub, VecZnxLshTmpBytes,
-        VecZnxMulXpMinusOne, VecZnxMulXpMinusOneAssign, VecZnxMulXpMinusOneAssignTmpBytes, VecZnxNegate, VecZnxNegateAssign,
-        VecZnxNormalize, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxRotate, VecZnxRotateAssign,
-        VecZnxRotateAssignTmpBytes, VecZnxRsh, VecZnxRshAdd, VecZnxRshAssign, VecZnxRshSub, VecZnxRshTmpBytes, VecZnxSub,
-        VecZnxSubAssign, VecZnxSubNegateAssign, VmpApplyDft, VmpApplyDftTmpBytes, VmpApplyDftToDft, VmpApplyDftToDftAdd,
-        VmpApplyDftToDftAddTmpBytes, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
+        VecZnxDftSubAssign, VecZnxDftSubNegateAssign, VecZnxGadgetDecompose, VecZnxGadgetDecomposeTmpBytes, VecZnxIdftApply,
+        VecZnxIdftApplyTmpBytes, VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes, VecZnxLsh, VecZnxLshAdd, VecZnxLshAssign,
+        VecZnxLshSub, VecZnxLshTmpBytes, VecZnxMulXpMinusOne, VecZnxMulXpMinusOneAssign, VecZnxMulXpMinusOneAssignTmpBytes,
+        VecZnxNegate, VecZnxNegateAssign, VecZnxNormalize, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxRotate,
+        VecZnxRotateAssign, VecZnxRotateAssignTmpBytes, VecZnxRsh, VecZnxRshAdd, VecZnxRshAssign, VecZnxRshSub,
+        VecZnxRshTmpBytes, VecZnxSub, VecZnxSubAssign, VecZnxSubNegateAssign, VmpApplyDft, VmpApplyDftTmpBytes, VmpApplyDftToDft,
+        VmpApplyDftToDftAdd, VmpApplyDftToDftAddTmpBytes, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
     },
     layouts::{Backend, Module, ScratchOwned},
 };
@@ -29,24 +30,28 @@ use crate::{
     hal::{
         convolution,
         params::{
-            CnvSweepParms, HalSweepParms, ReimSweepParams, VmpSweepParms, default_bench_params_cnv, default_bench_params_hal,
-            default_bench_params_normalize, default_bench_params_vmp,
+            CnvSweepParms, HalSweepParms, ReimSweepParams, VmpSweepParms, default_bench_params_cnv,
+            default_bench_params_gadget_decompose, default_bench_params_hal, default_bench_params_normalize,
+            default_bench_params_vmp,
         },
         reim, svp, vec_znx, vec_znx_big, vec_znx_dft, vmp,
     },
 };
 
-/// Small and big normalization across radix widths, offsets, sizes and degrees.
+/// Small and big normalization across radix widths, offsets, sizes and degrees,
+/// and the gadget digit layout of key-switch columns.
 pub fn bench_normalization<B: Backend<ZnxWord = i64>>(c: &mut Criterion<WallTime>)
 where
     Module<B>: ModuleNew<B>
+        + ModuleSynchronize<B>
         + VecZnxNormalize<B>
         + VecZnxNormalizeTmpBytes
+        + VecZnxGadgetDecompose<B>
+        + VecZnxGadgetDecomposeTmpBytes
         + VecZnxBigAlloc<B>
         + VecZnxBigNormalize<B>
         + VecZnxBigNormalizeTmpBytes,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
-    B::OwnedBuf: AsRef<[u8]> + AsMut<[u8]>,
 {
     let ops = [
         BenchOp {
@@ -61,6 +66,12 @@ where
         },
     ];
     bench_ops(PhantomData::<B>, &ops, default_bench_params_normalize(), c);
+    let gadget = [BenchOp {
+        layer: "hal",
+        name: "vec_znx_gadget_decompose",
+        runner: vec_znx::runner_vec_znx_gadget_decompose::<B, WallTime>,
+    }];
+    bench_ops(PhantomData::<B>, &gadget, default_bench_params_gadget_decompose(), c);
 }
 
 // Op tables for each HAL capability group. Each function returns the raw
@@ -75,6 +86,7 @@ where
     Module<B>: VecZnxIdftNormalize<B>
         + VecZnxIdftNormalizeTmpBytes
         + ModuleNew<B>
+        + ModuleSynchronize<B>
         + VecZnxDftAlloc<B>
         + VecZnxBigAlloc<B>
         + VecZnxDftAdd<B>
@@ -138,6 +150,7 @@ where
 pub fn vec_znx_big_ops<B: Backend<ZnxWord = i64> + 'static, M: Measurement>() -> [BenchOp<M, HalSweepParms>; 16]
 where
     Module<B>: ModuleNew<B>
+        + ModuleSynchronize<B>
         + VecZnxAlloc<B>
         + VecZnxBigAlloc<B>
         + VecZnxBigAdd<B>
@@ -159,7 +172,6 @@ where
         + VecZnxBigSubSmallA<B>
         + VecZnxBigSubSmallB<B>,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
-    B::OwnedBuf: AsRef<[u8]> + AsMut<[u8]>,
 {
     [
         BenchOp {
@@ -250,6 +262,7 @@ where
 pub fn svp_ops<B: Backend<ZnxWord = i64> + 'static, M: Measurement>() -> [BenchOp<M, HalSweepParms>; 4]
 where
     Module<B>: ModuleNew<B>
+        + ModuleSynchronize<B>
         + SvpPPolAlloc<B>
         + VecZnxDftAlloc<B>
         + SvpPrepare<B>
@@ -288,6 +301,7 @@ where
 pub fn vec_znx_ops<B: Backend<ZnxWord = i64> + 'static, M: Measurement>() -> [BenchOp<M, HalSweepParms>; 24]
 where
     Module<B>: ModuleNew<B>
+        + ModuleSynchronize<B>
         + VecZnxAlloc<B>
         + VecZnxAdd<B>
         + VecZnxAddAssign<B>
@@ -321,7 +335,6 @@ where
         + VecZnxSubAssign<B>
         + VecZnxSubNegateAssign<B>,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
-    B::OwnedBuf: AsMut<[u8]>,
 {
     [
         BenchOp {
@@ -454,6 +467,7 @@ where
     Module<B>: VmpApplyDftToDftAdd<B>
         + VmpApplyDftToDftAddTmpBytes
         + ModuleNew<B>
+        + ModuleSynchronize<B>
         + VmpPMatAlloc<B>
         + VmpPrepare<B>
         + VmpPrepareTmpBytes
@@ -492,7 +506,7 @@ where
 
 pub fn convolution_ops<B: Backend<ZnxWord = i64> + 'static, M: Measurement>() -> [BenchOp<M, CnvSweepParms>; 11]
 where
-    Module<B>: ModuleNew<B> + Convolution<B> + CnvPVecAlloc<B> + VecZnxDftAlloc<B> + VecZnxBigAlloc<B>,
+    Module<B>: ModuleNew<B> + ModuleSynchronize<B> + Convolution<B> + CnvPVecAlloc<B> + VecZnxDftAlloc<B> + VecZnxBigAlloc<B>,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
 {
     [
@@ -580,6 +594,7 @@ pub fn reim_ops<T: NegacyclicFFT<f64> + NegacyclicFFTNew<f64>, M: Measurement>()
 pub fn all_vec_znx_ops<B: Backend<ZnxWord = i64> + 'static, M: Measurement>() -> Vec<BenchOp<M, HalSweepParms>>
 where
     Module<B>: ModuleNew<B>
+        + ModuleSynchronize<B>
         + VecZnxAlloc<B>
         + VecZnxAdd<B>
         + VecZnxAddAssign<B>
@@ -641,7 +656,6 @@ where
         + VecZnxBigSubSmallA<B>
         + VecZnxBigSubSmallB<B>,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
-    B::OwnedBuf: AsRef<[u8]> + AsMut<[u8]>,
 {
     let mut ops: Vec<BenchOp<M, HalSweepParms>> = Vec::new();
     ops.extend(vec_znx_ops::<B, M>());
@@ -660,6 +674,7 @@ pub fn standard_ops<B: Backend<ZnxWord = i64> + 'static, M: Measurement>()
 -> (Vec<BenchOp<M, HalSweepParms>>, [BenchOp<M, VmpSweepParms>; 1])
 where
     Module<B>: ModuleNew<B>
+        + ModuleSynchronize<B>
         + VecZnxDftApply<B>
         + VecZnxDftAlloc<B>
         + VecZnxIdftApply<B>
@@ -680,7 +695,6 @@ where
         + VmpApplyDftToDft<B>
         + VmpApplyDftToDftTmpBytes,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
-    B::OwnedBuf: AsRef<[u8]> + AsMut<[u8]>,
 {
     let hal_ops = vec![
         BenchOp {
@@ -738,6 +752,7 @@ pub fn bench_hal_ckks<B>(c: &mut Criterion<WallTime>)
 where
     B: Backend<ZnxWord = i64> + 'static,
     Module<B>: ModuleNew<B>
+        + ModuleSynchronize<B>
         + VecZnxAlloc<B>
         + VecZnxAdd<B>
         + VecZnxAddAssign<B>
@@ -816,7 +831,6 @@ where
         + VecZnxRshAdd<B>
         + VecZnxRshSub<B>,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
-    B::OwnedBuf: AsRef<[u8]> + AsMut<[u8]>,
 {
     bench_ops(
         PhantomData::<B>,
@@ -844,6 +858,7 @@ pub fn bench_hal_binfhe<B>(c: &mut Criterion<WallTime>)
 where
     B: Backend<ZnxWord = i64> + 'static,
     Module<B>: ModuleNew<B>
+        + ModuleSynchronize<B>
         + VecZnxAlloc<B>
         + VecZnxAdd<B>
         + VecZnxAddAssign<B>
@@ -922,7 +937,6 @@ where
         + VecZnxRshAdd<B>
         + VecZnxRshSub<B>,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
-    B::OwnedBuf: AsRef<[u8]> + AsMut<[u8]>,
 {
     bench_ops(
         PhantomData::<B>,
@@ -976,6 +990,7 @@ pub mod standard {
     where
         B: Backend<ZnxWord = i64> + 'static,
         Module<B>: ModuleNew<B>
+            + poulpy_hal::api::ModuleSynchronize<B>
             + VecZnxDftApply<B>
             + VecZnxDftAlloc<B>
             + VecZnxIdftApply<B>
@@ -996,7 +1011,6 @@ pub mod standard {
             + VmpApplyDftToDft<B>
             + VmpApplyDftToDftTmpBytes,
         ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
-        B::OwnedBuf: AsRef<[u8]> + AsMut<[u8]>,
     {
         let (hal_ops, vmp_ops) = standard_ops::<B, WallTime>();
         bench_ops(
@@ -1019,6 +1033,7 @@ pub mod standard {
     where
         B: Backend<ZnxWord = i64> + 'static,
         Module<B>: ModuleNew<B>
+            + poulpy_hal::api::ModuleSynchronize<B>
             + VecZnxDftApply<B>
             + VecZnxDftAlloc<B>
             + VecZnxIdftApply<B>
@@ -1039,7 +1054,6 @@ pub mod standard {
             + VmpApplyDftToDft<B>
             + VmpApplyDftToDftTmpBytes,
         ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
-        B::OwnedBuf: AsRef<[u8]> + AsMut<[u8]>,
     {
         let (hal_ops, vmp_ops) = standard_ops::<B, WallTime>();
         bench_ops(
@@ -1082,6 +1096,7 @@ pub mod light {
     where
         B: Backend<ZnxWord = i64> + 'static,
         Module<B>: ModuleNew<B>
+            + poulpy_hal::api::ModuleSynchronize<B>
             + VecZnxDftApply<B>
             + VecZnxDftAlloc<B>
             + VecZnxIdftApply<B>
@@ -1102,7 +1117,6 @@ pub mod light {
             + VmpApplyDftToDft<B>
             + VmpApplyDftToDftTmpBytes,
         ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
-        B::OwnedBuf: AsRef<[u8]> + AsMut<[u8]>,
     {
         let (hal_ops, vmp_ops) = standard_ops::<B, WallTime>();
         bench_ops(
@@ -1125,6 +1139,7 @@ pub mod light {
     where
         B: Backend<ZnxWord = i64> + 'static,
         Module<B>: ModuleNew<B>
+            + poulpy_hal::api::ModuleSynchronize<B>
             + VecZnxDftApply<B>
             + VecZnxDftAlloc<B>
             + VecZnxIdftApply<B>
@@ -1145,7 +1160,6 @@ pub mod light {
             + VmpApplyDftToDft<B>
             + VmpApplyDftToDftTmpBytes,
         ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
-        B::OwnedBuf: AsRef<[u8]> + AsMut<[u8]>,
     {
         let (hal_ops, vmp_ops) = standard_ops::<B, WallTime>();
         bench_ops(

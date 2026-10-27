@@ -4,10 +4,11 @@
 //!
 //! All test logic lives in `poulpy_ckks::test_suite` as backend-generic
 //! functions; this file only instantiates that suite for each concrete
-//! `(backend, scalar, encoder, params)` combination via `ckks_backend_test_suite!`.
+//! `(backend, scalar, encoder, params)` combination via `ckks_backend_test_suite!`,
+//! and the determinism fixtures of each type via `ckks_determinism_test_suite!`.
 //! There should be no hand-written test here.
 
-use poulpy_ckks::{ckks_backend_rank2_test_suite, ckks_backend_test_suite};
+use poulpy_ckks::{ckks_backend_rank2_test_suite, ckks_backend_test_suite, ckks_determinism_test_suite};
 
 const ATK_ROTATIONS: &[i64] = &[1, 7];
 
@@ -38,6 +39,10 @@ ckks_backend_test_suite!(
     rotations = super::ATK_ROTATIONS,
 );
 
+ckks_determinism_test_suite!(mod ckks_determinism_fft64oracle, backend = crate::FFT64Oracle, f32);
+
+ckks_determinism_test_suite!(mod ckks_determinism_ntt4x30oracle, backend = crate::NTT4x30Oracle, f32);
+
 // Rank-2 coverage: the rank-generic arithmetic subset (the full suite's
 // bootstrapping/EvalMod/DFT/PaCo pipelines are rank-1 by construction).
 ckks_backend_rank2_test_suite!(
@@ -61,13 +66,13 @@ mod bootstrapping_presets {
     #[test]
     #[ignore = "runs a full logN16 bootstrap per preset; opt in with --ignored"]
     fn ntt4x30_presets_meet_precision() {
-        bootstrapping_presets_meet_precision::<crate::NTT4x30Oracle>(52);
+        bootstrapping_presets_meet_precision::<crate::NTT4x30Oracle>();
     }
 
     #[test]
     #[ignore = "runs a full logN16 bootstrap per preset; opt in with --ignored"]
     fn fft64_presets_meet_precision() {
-        bootstrapping_presets_meet_precision::<crate::FFT64Oracle>(18);
+        bootstrapping_presets_meet_precision::<crate::FFT64Oracle>();
     }
 }
 
@@ -361,12 +366,4 @@ poulpy_ckks::ckks_encryption_parity_test_suite! {
     backend_ref = crate::FFT64CIOracle,
     backend_test = crate::NTT4x30CIOracle,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
-}
-
-#[test]
-fn ckks_encoding_determinism_f32() {
-    use poulpy_hal::layouts::Module;
-    let module = Module::<crate::FFT64Oracle>::new(4096);
-    poulpy_ckks::test_suite::determinism::encoding_fixtures::<crate::FFT64Oracle, f32>(&module);
-    poulpy_ckks::test_suite::determinism::setup_fixtures::<crate::FFT64Oracle, f32>(&module);
 }

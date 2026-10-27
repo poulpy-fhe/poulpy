@@ -2,7 +2,7 @@
 //!
 //! The bottom ciphertext `(body, mask)` at the one-limb modulus `q0 =
 //! 2^base2k` is consumed in the clear: its public coefficients yield the
-//! hoisted plaintext material of Algorithm 1 — `pt0 = Ecd((gamma/(4*i*pi)) *
+//! hoisted plaintext material of Algorithm 1: `pt0 = Ecd((gamma/(4*i*pi)) *
 //! w^{b_i})` from the body phases, and every rotated `Ecd(pi_k(a))` vector
 //! gathered from the mask phases without further trigonometry.
 
@@ -64,17 +64,17 @@ where
 
 /// Scheme-defining SHIP coefficient encoding: reads the bottom ciphertext's
 /// public residues at `q0 = 2^base2k` and builds the hoisted plaintext
-/// material consumed by the SHIP pipeline — `pt0` (and `pt0_2` when
+/// material consumed by the SHIP pipeline: `pt0` (and `pt0_2` when
 /// `complex`) at the raised width, plus the `4*theta` rotated `pi` vectors per
 /// support slot at the working width. Device backends bypass this host
 /// reference path through
 /// [`CKKSShipCoeffEncodingImpl`](crate::oep::CKKSShipCoeffEncodingImpl).
 pub fn ship_coeff_encodings_host<BE, D, F>(
     module: &Module<BE>,
-    ct: &CKKSCiphertext<D, BE::ZnxWord, Standard>,
-    plan: &ShipPlan,
     base2k: Base2K,
     complex: bool,
+    ct: &CKKSCiphertext<D, BE::ZnxWord, Standard>,
+    plan: &ShipPlan,
 ) -> Result<ShipCoeffEncodings<BE::OwnedBuf, BE::ZnxWord>>
 where
     // Host reference encoder: recomposes the ciphertext limbs through the i64

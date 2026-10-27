@@ -27,6 +27,7 @@ env:
     poulpy-core/enable-core
     poulpy-cpu-oracle/enable-ckks
     poulpy-cpu-oracle/enable-bin-fhe
+    poulpy-cpu-oracle/enable-mhe
     poulpy-cpu-oracle/enable-blas
     poulpy-cpu-portable/enable-core
     poulpy-cpu-portable/enable-ckks
@@ -80,8 +81,31 @@ env:
     poulpy-bin-fhe/enable-bin-fhe
 
 jobs:
-  portable:
-    name: Portable features
+  # Pull requests run only the jobs whose crates the change touches or depends on; other events run all.
+  changes:
+    name: Affected crates
+    runs-on: ubuntu-latest
+    outputs:
+      crates: ${{ steps.affected.outputs.crates }}
+
+    steps:
+      # The pull request merge commit and its base parent.
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: List affected crates
+        id: affected
+        env:
+          # Reading manifests needs no pinned toolchain.
+          RUSTUP_TOOLCHAIN: stable
+        run: |
+          crates=$(bash .github/scripts/affected-crates.sh ${{ github.event_name == 'pull_request' && 'HEAD^1' || '' }})
+          echo "crates=$crates" | tee -a "$GITHUB_OUTPUT"
+
+  portable_lint:
+    name: Portable lint
     runs-on: ubuntu-latest
 
     steps:
@@ -103,9 +127,9 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-portable-${{ hashFiles('**/Cargo.lock', 'Cargo.toml') }}
+          key: ${{ runner.os }}-cargo-portable-lint-${{ hashFiles('**/Cargo.lock', 'Cargo.toml') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-portable-
+            ${{ runner.os }}-cargo-portable-lint-
             ${{ runner.os }}-cargo-
 
       - name: Format
@@ -117,19 +141,188 @@ jobs:
       - name: Clippy all non-AVX features
         run: cargo clippy --workspace --all-targets --features "$PORTABLE_FEATURES" -- -D warnings
 
-      - name: Test all non-AVX features
-        shell: bash
-        run: cargo test --workspace --profile ci --features "$PORTABLE_FEATURES"
-
       - name: Check scheme documentation
-        run: RUSTDOCFLAGS="-D warnings" cargo doc -p poulpy-core -p poulpy-ckks -p poulpy-bin-fhe -p poulpy-mhe -p poulpy-blas --no-deps --features poulpy-core/enable-core,poulpy-ckks/test-utils,poulpy-blas/test-utils
+        run: RUSTDOCFLAGS="-D warnings" cargo doc -p poulpy-core -p poulpy-ckks -p poulpy-bin-fhe -p poulpy-mhe -p poulpy-blas -p poulpy-libm --no-deps --features poulpy-core/enable-core,poulpy-ckks/test-utils,poulpy-blas/test-utils,poulpy-libm/test-utils
+
+  portable_libs:
+    name: Portable libraries and doctests
+    runs-on: ubuntu-latest
+
+    env:
+      CARGO_PROFILE_CI_DEBUG: 0
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - name: Cache cargo deps
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-portable-libs-${{ hashFiles('**/Cargo.lock', 'Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-portable-libs-
+            ${{ runner.os }}-cargo-
+
+      # The excluded backends run in the sharded portable_test job.
+      - name: Test libraries
+        run: >-
+          cargo test --workspace --profile ci
+          --exclude poulpy-cpu-portable --exclude poulpy-cpu-oracle --exclude poulpy-cpu-rayon
+          --features "poulpy-core/enable-core poulpy-bin-fhe/enable-bin-fhe"
+
+      - name: Test all non-AVX doctests
+        run: cargo test --workspace --doc --profile ci --features "$PORTABLE_FEATURES"
+
+  portable_quad:
+    name: Portable libquadmath determinism
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.crates), 'poulpy-cpu-portable')
+    runs-on: ubuntu-latest
+
+    env:
+      CARGO_PROFILE_CI_DEBUG: 0
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - name: Cache cargo deps
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-portable-quad-${{ hashFiles('**/Cargo.lock', 'Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-portable-quad-
+            ${{ runner.os }}-cargo-
 
       # CKKS setup math uses the pure-Rust binary128 backing whatever the `Quad` routing.
       - name: Test CKKS encoding determinism with libquadmath
         run: cargo test -p poulpy-cpu-portable --lib --profile ci --features "enable-ckks,poulpy-ckks/libquadmath" determinism
 
+  # Each backend test binary compiles once; portable_test runs it in round-robin shards.
+  portable_build:
+    name: Portable build (${{ matrix.backend }})
+    needs: changes
+    if: >-
+      contains(fromJSON(needs.changes.outputs.crates), 'poulpy-cpu-portable') ||
+      contains(fromJSON(needs.changes.outputs.crates), 'poulpy-cpu-oracle') ||
+      contains(fromJSON(needs.changes.outputs.crates), 'poulpy-cpu-rayon')
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        # Per-backend split of PORTABLE_FEATURES.
+        include:
+          - backend: portable
+            features: enable-core enable-ckks enable-bin-fhe enable-mhe enable-blas
+          - backend: oracle
+            features: enable-ckks enable-bin-fhe enable-blas
+          - backend: rayon
+            features: enable-ckks enable-bin-fhe enable-mhe enable-blas
+
+    env:
+      CARGO_PROFILE_CI_DEBUG: 0
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - name: Cache cargo deps
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-portable-${{ matrix.backend }}-${{ hashFiles('**/Cargo.lock', 'Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-portable-${{ matrix.backend }}-
+            ${{ runner.os }}-cargo-
+
+      - name: Compile test binaries
+        shell: bash
+        run: |
+          cargo test -p poulpy-cpu-${{ matrix.backend }} --profile ci --features "${{ matrix.features }}" \
+            --no-run --message-format=json-render-diagnostics |
+            bash .github/scripts/test-shard.sh pack "$RUNNER_TEMP/tests"
+          # A tarball keeps the executable bits that artifact zips drop.
+          tar -C "$RUNNER_TEMP" -cf "$RUNNER_TEMP/tests.tar" tests
+
+      - name: Upload test binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: portable-tests-${{ matrix.backend }}
+          path: ${{ runner.temp }}/tests.tar
+          retention-days: 1
+
+  portable_test:
+    name: Portable tests (${{ matrix.backend }} ${{ matrix.shard }}/${{ matrix.shards }})
+    needs: portable_build
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # More oracle shards barely help: its longest test (bootstrap refusal) takes about four minutes.
+        include:
+          - {backend: portable, shard: 1, shards: 2}
+          - {backend: portable, shard: 2, shards: 2}
+          - {backend: oracle, shard: 1, shards: 4}
+          - {backend: oracle, shard: 2, shards: 4}
+          - {backend: oracle, shard: 3, shards: 4}
+          - {backend: oracle, shard: 4, shards: 4}
+          - {backend: rayon, shard: 1, shards: 1}
+
+    steps:
+      # Some tests read sources and fixtures from the checkout.
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Download test binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: portable-tests-${{ matrix.backend }}
+          path: ${{ runner.temp }}
+
+      - name: Test shard
+        run: |
+          tar -C "$RUNNER_TEMP" -xf "$RUNNER_TEMP/tests.tar"
+          bash .github/scripts/test-shard.sh run "$RUNNER_TEMP/tests" ${{ matrix.shard }} ${{ matrix.shards }}
+
   avx:
     name: AVX backend (native or SDE)
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.crates), 'poulpy-cpu-avx')
     runs-on: ubuntu-24.04
     # Cold compilation is separate from the eight-minute test execution budget.
     timeout-minutes: 22
@@ -201,6 +394,11 @@ jobs:
 
   intel_macos_avx:
     name: Intel macOS AVX smoke
+    needs: changes
+    if: >-
+      contains(fromJSON(needs.changes.outputs.crates), 'poulpy-ckks') ||
+      contains(fromJSON(needs.changes.outputs.crates), 'poulpy-cpu-portable') ||
+      contains(fromJSON(needs.changes.outputs.crates), 'poulpy-cpu-avx')
     runs-on: macos-15-intel
     timeout-minutes: 15
 
@@ -264,6 +462,11 @@ jobs:
 
   macos_arm_quad:
     name: Apple Silicon Quad smoke
+    needs: changes
+    if: >-
+      contains(fromJSON(needs.changes.outputs.crates), 'poulpy-ckks') ||
+      contains(fromJSON(needs.changes.outputs.crates), 'poulpy-cpu-portable') ||
+      contains(fromJSON(needs.changes.outputs.crates), 'poulpy-cpu-arm')
     runs-on: macos-latest
     timeout-minutes: 10
 
@@ -304,24 +507,18 @@ jobs:
           --features "poulpy-cpu-portable/enable-ckks,poulpy-cpu-arm/enable-neon,poulpy-cpu-arm/enable-ckks"
           determinism
 
-  # Run natively when every required CPU feature is usable; otherwise use SDE.
-  avx512:
-    name: AVX-512 backend (native or SDE)
+  avx512_lint:
+    name: AVX-512 lint
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.crates), 'poulpy-cpu-avx512')
     runs-on: ubuntu-24.04
-    # Cold compilation is separate from the twelve-minute SDE execution budget; SDE runs BLAS under a second one.
-    timeout-minutes: 36
+    timeout-minutes: 15
 
-    # Hosted runners need not expose AVX-512, so we keep AVX-512 flags
-    # off the host toolchain (build scripts, proc-macros). We pin --target and
-    # use the target-scoped CARGO_TARGET_<TRIPLE>_RUSTFLAGS variable so host
-    # artifacts stay portable while the workspace itself builds for AVX-512.
+    # Same target-scoped flags as avx512_build.
     env:
       CARGO_BUILD_TARGET: x86_64-unknown-linux-gnu
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C target-feature=+avx2,+fma,+avx512f,+avx512ifma,+avx512vl,+bmi2,+adx
       RUSTDOCFLAGS: -C target-feature=+avx2,+fma,+avx512f,+avx512ifma,+avx512vl,+bmi2,+adx
-      CARGO_PROFILE_CI_DEBUG: 0
-      # Exercise the Rayon overrides with a bounded pool under emulation.
-      RAYON_NUM_THREADS: 2
 
     steps:
       - name: Checkout
@@ -343,13 +540,108 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-avx512-lint-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-cargo-avx512-lint-${{ env.RUST_TOOLCHAIN }}-
+
+      - name: Clippy AVX-512 backend
+        run: cargo clippy --workspace --all-targets --features "$AVX512_FEATURES" -- -D warnings
+
+  avx512_build:
+    name: AVX-512 build
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.crates), 'poulpy-cpu-avx512')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+
+    # Hosted runners need not expose AVX-512, so we keep AVX-512 flags
+    # off the host toolchain (build scripts, proc-macros). We pin --target and
+    # use the target-scoped CARGO_TARGET_<TRIPLE>_RUSTFLAGS variable so host
+    # artifacts stay portable while the workspace itself builds for AVX-512.
+    env:
+      CARGO_BUILD_TARGET: x86_64-unknown-linux-gnu
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C target-feature=+avx2,+fma,+avx512f,+avx512ifma,+avx512vl,+bmi2,+adx
+      RUSTDOCFLAGS: -C target-feature=+avx2,+fma,+avx512f,+avx512ifma,+avx512vl,+bmi2,+adx
+      CARGO_PROFILE_CI_DEBUG: 0
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: x86_64-unknown-linux-gnu
+
+      - name: Cache cargo deps
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
           key: ${{ runner.os }}-${{ runner.arch }}-cargo-avx512-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-cargo-avx512-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}-
             ${{ runner.os }}-${{ runner.arch }}-cargo-avx512-${{ env.RUST_TOOLCHAIN }}-
 
-      - name: Clippy AVX-512 backend
-        run: cargo clippy --workspace --all-targets --features "$AVX512_FEATURES" -- -D warnings
+      - name: Compile AVX-512 test binary
+        shell: bash
+        run: |
+          # The native feature set includes the emulated one, so one binary serves both modes.
+          cargo test -p poulpy-cpu-avx512 --lib --profile ci --features enable-ifma,enable-rayon,enable-ckks,enable-bin-fhe,enable-blas \
+            --no-run --message-format=json-render-diagnostics |
+            bash .github/scripts/test-shard.sh pack "$RUNNER_TEMP/tests"
+          tar -C "$RUNNER_TEMP" -cf "$RUNNER_TEMP/tests.tar" tests
+
+      - name: Upload test binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: avx512-tests
+          path: ${{ runner.temp }}/tests.tar
+          retention-days: 1
+
+  # Each shard runs natively when its runner exposes every required CPU feature, otherwise under SDE.
+  avx512_test:
+    name: AVX-512 tests (${{ matrix.group }} ${{ matrix.shard }}/${{ matrix.shards }})
+    needs: avx512_build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # `blas` keeps the BLAS tests emulation can afford; native runners also cover them under `contracts`.
+        # Four of its matmul tests take two to three minutes each under SDE; more shards barely help.
+        include:
+          - {group: contracts, shard: 1, shards: 4}
+          - {group: contracts, shard: 2, shards: 4}
+          - {group: contracts, shard: 3, shards: 4}
+          - {group: contracts, shard: 4, shards: 4}
+          - {group: blas, shard: 1, shards: 3}
+          - {group: blas, shard: 2, shards: 3}
+          - {group: blas, shard: 3, shards: 3}
+
+    env:
+      # Exercise the Rayon overrides with a bounded pool under emulation.
+      RAYON_NUM_THREADS: 2
+      RUST_TEST_THREADS: 2
+
+    steps:
+      # Some tests read sources and fixtures from the checkout.
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # Only for the CPU feature probe.
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
 
       - name: Detect native AVX-512 support
         id: avx512
@@ -386,25 +678,36 @@ jobs:
           tar --extract --xz --file "$RUNNER_TEMP/$SDE_ARCHIVE" --directory "$RUNNER_TEMP/intel-sde" --strip-components=1
           # Pin/SDE may need to attach to its parent on Ubuntu; this hosted VM is ephemeral.
           sudo sysctl -w kernel.yama.ptrace_scope=0
-          # Only target executables run under SDE; Cargo and build scripts remain native.
           # Ice Lake includes AVX-512F, AVX-512VL and IFMA.
-          echo "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER=$RUNNER_TEMP/intel-sde/sde64 -icl --" >> "$GITHUB_ENV"
+          echo "TEST_RUNNER=$RUNNER_TEMP/intel-sde/sde64 -icl --" >> "$GITHUB_ENV"
 
-      - name: Compile AVX-512 test binary
-        run: bash .github/scripts/test-backend.sh build avx512 '${{ steps.avx512.outputs.mode }}'
+      - name: Download test binary
+        uses: actions/download-artifact@v4
+        with:
+          name: avx512-tests
+          path: ${{ runner.temp }}
 
-      - name: Test AVX-512 backend
-        timeout-minutes: 14
-        run: bash .github/scripts/test-backend.sh test avx512 '${{ steps.avx512.outputs.mode }}'
-
-      # Native runs every BLAS test above; SDE runs each serial AVX-512/IFMA type once, under its own budget.
-      - name: Test AVX-512 BLAS under SDE
-        if: steps.avx512.outputs.mode == 'emulated'
+      - name: Test shard
         timeout-minutes: 10
-        run: bash .github/scripts/test-backend.sh test avx512 emulated blas
+        shell: bash
+        run: |
+          mode='${{ steps.avx512.outputs.mode }}'
+          group='${{ matrix.group }}'
+          [[ "$group" == blas ]] || group=
+          if [[ "$mode" == emulated ]]; then export POULPY_TEST_EMULATED=1; fi
+          # Native-only tests need an AVX-512 CPU, so a run covers those of the shards that land on one.
+          if [[ "$mode" == emulated && -z "$group" ]]; then
+            echo "::notice title=AVX-512 ${{ matrix.group }} ${{ matrix.shard }}/${{ matrix.shards }}::No AVX-512 on this runner: the shard ran under SDE and skipped its native-only tests."
+          fi
+          filters=$(bash .github/scripts/test-backend.sh filters avx512 "$mode" $group)
+          mapfile -t filters <<< "$filters"
+          tar -C "$RUNNER_TEMP" -xf "$RUNNER_TEMP/tests.tar"
+          bash .github/scripts/test-shard.sh run "$RUNNER_TEMP/tests" ${{ matrix.shard }} ${{ matrix.shards }} "${filters[@]}"
 
   neon:
     name: NEON backend (aarch64 native)
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.crates), 'poulpy-cpu-arm')
     runs-on: ubuntu-24.04-arm
 
     steps:
@@ -495,6 +798,8 @@ jobs:
 
   miri:
     name: Miri (poulpy-hal unit tests)
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.crates), 'poulpy-hal')
     runs-on: ubuntu-latest
 
     steps:
@@ -531,11 +836,18 @@ jobs:
     name: build-and-test
     runs-on: ubuntu-latest
     needs:
-      - portable
+      - changes
+      - portable_lint
+      - portable_libs
+      - portable_quad
+      - portable_build
+      - portable_test
       - avx
       - intel_macos_avx
       - macos_arm_quad
-      - avx512
+      - avx512_lint
+      - avx512_build
+      - avx512_test
       - neon
       - neon_hal
       - miri
@@ -543,50 +855,21 @@ jobs:
 
     steps:
       - name: Check CI jobs
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+          # Pull requests skip the jobs their changes cannot affect; other events run every job.
+          ALLOWED: ${{ github.event_name == 'pull_request' && 'success skipped' || 'success' }}
+          NEON_QEMU: ${{ github.event_name == 'workflow_dispatch' && inputs.run_neon_qemu }}
         run: |
-          if [ "${{ needs.portable.result }}" != "success" ]; then
-            echo "Portable features job finished with: ${{ needs.portable.result }}"
+          failed=$(jq -r --arg allowed "$ALLOWED" --arg qemu "$NEON_QEMU" '
+            to_entries[]
+            | (if .key == "changes" then "success"
+               elif .key == "neon_hal" then (if $qemu == "true" then "success" else "skipped" end)
+               else $allowed end | split(" ")) as $ok
+            | select(.value.result as $result | $ok | index($result) == null)
+            | "\(.key) finished with: \(.value.result)"' <<< "$RESULTS")
+          if [ -n "$failed" ]; then
+            echo "$failed"
             exit 1
           fi
-
-          if [ "${{ needs.avx.result }}" != "success" ]; then
-            echo "AVX backend job finished with: ${{ needs.avx.result }}"
-            exit 1
-          fi
-
-          if [ "${{ needs.intel_macos_avx.result }}" != "success" ]; then
-            echo "Intel macOS AVX job finished with: ${{ needs.intel_macos_avx.result }}"
-            exit 1
-          fi
-
-          if [ "${{ needs.macos_arm_quad.result }}" != "success" ]; then
-            echo "Apple Silicon Quad job finished with: ${{ needs.macos_arm_quad.result }}"
-            exit 1
-          fi
-
-          if [ "${{ needs.avx512.result }}" != "success" ]; then
-            echo "AVX-512 backend job finished with: ${{ needs.avx512.result }}"
-            exit 1
-          fi
-
-          if [ "${{ needs.neon.result }}" != "success" ]; then
-            echo "NEON backend job finished with: ${{ needs.neon.result }}"
-            exit 1
-          fi
-
-          if [ "${{ github.event_name == 'workflow_dispatch' && inputs.run_neon_qemu }}" = "true" ]; then
-            if [ "${{ needs.neon_hal.result }}" != "success" ]; then
-              echo "Requested NEON QEMU job finished with: ${{ needs.neon_hal.result }}"
-              exit 1
-            fi
-          elif [ "${{ needs.neon_hal.result }}" != "skipped" ]; then
-            echo "NEON QEMU job was not requested but finished with: ${{ needs.neon_hal.result }}"
-            exit 1
-          fi
-
-          if [ "${{ needs.miri.result }}" != "success" ]; then
-            echo "Miri job finished with: ${{ needs.miri.result }}"
-            exit 1
-          fi
-
           echo "All required CI jobs passed, including NEON QEMU when requested."

@@ -65,6 +65,7 @@ pub use polynomial_evaluation::*;
 pub use preparation::*;
 pub use structure::*;
 
+pub(crate) use super::poisoned_scratch;
 use crate::oep::EncryptionImpl;
 use poulpy_hal::layouts::{ZnxView, ZnxViewMut};
 use poulpy_hal::oep::HalVecZnxImpl;
@@ -135,15 +136,6 @@ impl ParityShapes {
 pub trait ParityBackend: Backend<ZnxWord = i64, OwnedBuf: CopyToHost + CopyFromHost> + EncryptionImpl + HalVecZnxImpl {}
 
 impl<BE: Backend<ZnxWord = i64, OwnedBuf: CopyToHost + CopyFromHost> + EncryptionImpl + HalVecZnxImpl> ParityBackend for BE {}
-
-/// Builds precisely the advertised scratch capacity, poisoned before each operation.
-/// No other operation or backend's budget can conceal an underestimate.
-pub(crate) fn poisoned_scratch<B: Backend>(bytes: usize) -> poulpy_hal::layouts::ScratchOwned<B> {
-    poulpy_hal::layouts::ScratchOwned {
-        data: B::from_host_bytes(&vec![0xA5; bytes]),
-        _phantom: std::marker::PhantomData,
-    }
-}
 
 /// Allocates a GLWE on the reference module and fills it with uniform noise,
 /// canonical at the `k` it reports. It carries a fresh noise estimate, so an

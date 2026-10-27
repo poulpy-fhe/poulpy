@@ -8,9 +8,10 @@ use crate::{
 /// The compositions shared by both rings.
 macro_rules! impl_oracle_core {
     ($be:ty) => {
-        ::poulpy_core::impl_glwe_tensoring_reference!($be);
-        ::poulpy_core::impl_gglwe_product_digits_strided_reference!($be);
+        ::poulpy_core::impl_glwe_tensoring_reference_full!($be);
+        ::poulpy_core::impl_gglwe_product_digits_strided_reference_full!($be);
         ::poulpy_core::impl_automorphism_reference_full!($be);
+        ::poulpy_core::impl_decompression_reference_full!($be);
         ::poulpy_core::impl_decryption_reference_full!($be);
         ::poulpy_core::impl_ggsw_conversion_reference_full!($be);
         ::poulpy_core::impl_glwe_keyswitch_reference_full!($be);
@@ -24,6 +25,8 @@ macro_rules! impl_oracle_core {
         ::poulpy_core::impl_linear_transformation_reference_full!($be);
         ::poulpy_core::impl_operations_reference_full!($be);
         ::poulpy_core::impl_polynomial_evaluation_derived_full!($be);
+        ::poulpy_core::impl_preparation_reference_full!($be);
+        ::poulpy_core::impl_secret_reference_full!($be);
         ::poulpy_core::impl_glwe_trace_derived_full!($be);
     };
 }
@@ -32,7 +35,7 @@ macro_rules! impl_oracle_core {
 macro_rules! impl_oracle_core_standard {
     ($be:ty) => {
         ::poulpy_core::impl_conversion_reference_full!($be);
-        ::poulpy_core::impl_glwe_packing_derived_full!($be);
+        ::poulpy_core::impl_glwe_pack_derived_full!($be);
         ::poulpy_core::impl_glwe_rotate_reference_full!($be);
         ::poulpy_core::impl_ggsw_rotate_derived_full!($be);
         ::poulpy_core::impl_glwe_mul_xp_minus_one_reference_full!($be);

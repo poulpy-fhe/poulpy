@@ -93,6 +93,7 @@ where
             mask.n().as_usize() == self.n() && sk.n() == mask.n() && sk.rank() == mask.rank(),
             "invalid share: secret and mask layouts differ"
         );
+        assert!(mask.to_mask_backend_ref().is_canonical(), "invalid share: mask not canonical");
         assert!(
             public.rank().as_usize() == 0 && secret.rank().as_usize() == 0,
             "invalid share: additive shares must have rank zero"
@@ -109,6 +110,7 @@ where
         let base2k = public.base2k().as_usize();
         flood.assert_valid_for(base2k, k);
         let tmp_bytes = self.mhe_glwe_enc_to_share_share_gen_tmp_bytes_reference(mask);
+        assert!(scratch.available() >= tmp_bytes, "invalid share: insufficient scratch");
         {
             let (mut pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(mask);
             self.glwe_mask_inner_product(&mut pt, mask, sk, &mut scratch_1);
@@ -142,7 +144,7 @@ where
         a: &GLWEEncToShareShareOwned<BE>,
     ) {
         assert!(res.glwe_layout() == a.glwe_layout(), "invalid aggregation: layouts differ");
-        let metadata = super::aggregate_metadata(res.noise(), a.noise());
+        let metadata = crate::metadata::aggregate_metadata(res.noise(), a.noise());
         self.glwe_add_assign(&mut res.inner, &a.inner);
         GLWEToBackendMut::<BE>::set_noise(res, metadata);
     }
@@ -176,10 +178,12 @@ where
             secret.rank().as_usize() == 0 && public.rank().as_usize() == 0,
             "invalid finalization: additive shares must have rank zero"
         );
+        let tmp_bytes = self.mhe_glwe_enc_to_share_share_finalize_tmp_bytes_reference();
+        assert!(scratch.available() >= tmp_bytes, "invalid finalization: insufficient scratch");
         self.glwe_add_assign(secret, public);
         self.vec_znx_add_assign(secret.to_backend_mut().data_mut(), 0, ct.to_backend_ref().data(), 0);
         self.glwe_normalize_assign(secret, scratch);
-        scratch.wipe(self.mhe_glwe_enc_to_share_share_finalize_tmp_bytes_reference());
+        scratch.wipe(tmp_bytes);
     }
 }
 
@@ -246,6 +250,7 @@ where
         let infos = res.glwe_layout();
         // Encryption samples directly on the output's grid, down to its low bits.
         let tmp_bytes = self.mhe_glwe_share_to_enc_share_gen_tmp_bytes_reference(&infos, secret);
+        assert!(scratch.available() >= tmp_bytes, "invalid share: insufficient scratch");
         {
             let (mut pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(&infos);
             self.glwe_copy(&mut pt, secret, &mut scratch_1);

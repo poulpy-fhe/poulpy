@@ -1,7 +1,10 @@
-use crate::{CKKSCompositionError, CKKSResult as Result, ckks_ensure, ckks_log_delta, layouts::eval_mod::EvalModPlan};
+use crate::{
+    CKKSCompositionError, CKKSResult as Result, checked_log_budget_sub, ckks_ensure, ckks_ensure_operand, ckks_log_delta,
+    layouts::eval_mod::EvalModPlan,
+};
 use poulpy_core::layouts::{GLWEPlaintextInfos, SetGLWEPlaintextInfos};
 use poulpy_core::{
-    GLWECIEmbed, GLWECITrace, GLWECopy, GLWEKeyswitch, GLWEShift, GLWESwitchDegree,
+    GLWECIEmbed, GLWECITrace, GLWECopy, GLWEKeyswitch, GLWERotate, GLWEShift, GLWESwitchDegree, LinearTransformationPrepared,
     layouts::{
         BSGSMeta, GGLWEInfos, GLWEInfos, GLWELayout, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef,
         GetAutomorphismKey, GetTensorKey, LWEInfos, LinearTransformation, Rank, SetBSGSMeta, SetK, TorusPrecision,
@@ -16,14 +19,15 @@ use poulpy_hal::{
 use crate::{
     CKKSCtBounds, CKKSInfos, CKKSLayout, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotsKind,
     api::{
-        CKKSAddOps, CKKSAffineOps, CKKSAllOpsTmpBytes, CKKSComplexPolynomialEvaluationOps, CKKSConjugateOps, CKKSCopyOps,
-        CKKSDFTOps, CKKSEvalModOps, CKKSImagOps, CKKSMulOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops, CKKSSubOps,
+        CKKSAddOps, CKKSAllOpsTmpBytes, CKKSComplexPolynomialEvaluationOps, CKKSConjugateOps, CKKSCopyOps, CKKSDFTOps,
+        CKKSEvalModOps, CKKSImagOps, CKKSLinearTransformationOps, CKKSMulOps, CKKSNegOps, CKKSPolynomialEvaluationOps,
+        CKKSPow2Ops, CKKSSubOps, LinearTransformationBabySteps,
     },
     eval_lut::{ckks_eval_lut, ckks_eval_lut_binary, ckks_eval_lut_from_basis, ckks_lut_power_basis},
     layouts::{
         BootstrappingCIKeys, BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys,
-        BootstrappingPipeline, CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, EncodedLut, EncodedLutKind, EvalModRing,
-        EvalModType, ScratchArenaTakeCKKS,
+        BootstrappingPipeline, CKKSCiphertextOwned, CKKSCiphertextViewMut, CKKSModuleAlloc, CKKSPlaintextOwned, EncodedLut,
+        EncodedLutKind, EvalModRing, EvalModType, ScratchArenaTakeCKKS,
     },
     oep::{CKKSEncapsulatedModUpImpl, CKKSModUpFirstFactorImpl},
 };
@@ -111,8 +115,8 @@ where
     // wider digit, which can need more scratch than the wide key.
     for atk in &keys_layout.rotation_key_layouts() {
         nested = nested
-            .max(module.ckks_all_ops_with_atk_tmp_bytes(&boot_layout, tsk, atk, &coeffs_layout))
-            .max(module.ckks_all_ops_with_atk_tmp_bytes(&in_layout, tsk, atk, &coeffs_layout))
+            .max(module.ckks_all_ops_with_atk_tmp_bytes(&boot_layout, &coeffs_layout, tsk, atk))
+            .max(module.ckks_all_ops_with_atk_tmp_bytes(&in_layout, &coeffs_layout, tsk, atk))
             .max(module.ckks_dft_tmp_bytes(&boot_layout, &boot_layout, ctx.coeffs_to_slots(), atk))
             .max(module.ckks_dft_tmp_bytes(s2c_dst, s2c_src, ctx.slots_to_coeffs(), atk));
         if let Some(bypass) = ctx.coeffs_to_slots_bypass() {
@@ -215,13 +219,14 @@ where
             .get_tensor_key(k)
             .map_err(|source| CKKSCompositionError::MissingRelinearizationKey { op, k: k.into(), source })?;
     }
-    check_raise_keys(ct_out, ct_in, ctx, keys)
+    check_raise_keys(op, ct_out, ct_in, ctx, keys)
 }
 
 /// Keys with a row offset are laid out for the raise: fails before any work
 /// unless the first-factor keys, or a sparse-to-dense key with an offset, fit
 /// the raise of `ct_in` into `ct_out.k()` bits.
 pub(crate) fn check_raise_keys<BE, F, K, C1, C2>(
+    op: &'static str,
     ct_out: &C1,
     ct_in: &C2,
     ctx: &BootstrappingContext<BE, F>,
@@ -237,6 +242,7 @@ where
     let (k_small, raised) = ctx.key_widths().raise(ct_in.k().as_usize());
     if let Some(factor) = ctx.coeffs_to_slots_first_factor() {
         crate::reference::first_factor::check_first_factor_raise(
+            op,
             ct_out.base2k().as_usize(),
             ct_out.n().as_usize().ilog2() as usize,
             bootstrap_k,
@@ -247,7 +253,7 @@ where
     } else if let Some((_, Some(sparse_to_dense))) = keys.encapsulation_keys()
         && sparse_to_dense.k_offset().as_usize() > 0
     {
-        check_offset_raise(bootstrap_k, k_small, raised - k_small, sparse_to_dense)?;
+        check_offset_raise(op, bootstrap_k, k_small, raised - k_small, sparse_to_dense)?;
     }
     Ok(())
 }
@@ -282,7 +288,7 @@ where
 }
 
 /// Backend-generic reference of the CKKS bootstrapping pipeline, selected by
-/// [`impl_ckks_bootstrapping_reference`](crate::oep::impl_ckks_bootstrapping_reference).
+/// [`impl_ckks_bootstrapping_reference_full`](crate::oep::impl_ckks_bootstrapping_reference_full).
 pub trait CKKSBootstrappingReference<BE: Backend> {
     fn ckks_mod_up_tmp_bytes_reference(&self, res_size: usize) -> usize
     where
@@ -415,7 +421,7 @@ pub trait CKKSBootstrappingReference<BE: Backend> {
             + CKKSCopyOps<BE>
             + CKKSMulOps<BE>
             + CKKSPow2Ops<BE>
-            + CKKSAffineOps<BE>
+            + CKKSNegOps<BE>
             + GLWENormalize<BE>,
         K: BootstrappingKeys<BE>,
         CKKSCiphertextOwned<BE>:
@@ -481,8 +487,8 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl> CKKSBoo
         for atk in &keys_layout.rotation_key_layouts() {
             for lut in luts {
                 nested = nested
-                    .max(self.ckks_all_ops_with_atk_tmp_bytes(&boot_layout, tsk, atk, lut.coeffs()))
-                    .max(self.ckks_all_ops_with_atk_tmp_bytes(&in_layout, tsk, atk, lut.coeffs()));
+                    .max(self.ckks_all_ops_with_atk_tmp_bytes(&boot_layout, lut.coeffs(), tsk, atk))
+                    .max(self.ckks_all_ops_with_atk_tmp_bytes(&in_layout, lut.coeffs(), tsk, atk));
             }
         }
         base.max(carved + nested)
@@ -501,7 +507,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl> CKKSBoo
         Src: GLWEToBackendRef<BE> + CKKSInfos,
     {
         let scale_up = eval_mod.raised_scale_up(src.log_delta())?;
-        ckks_mod_up_scaled_reference(self, dst, src, scale_up, scratch)?;
+        ckks_mod_up_scaled_reference("ckks_mod_up_into", self, dst, src, scale_up, scratch)?;
         let mut meta = dst.meta();
         meta.scale = Scale::Log(ckks_log_delta(&meta) + eval_mod.log_msg_ratio);
         dst.set_meta(meta);
@@ -555,28 +561,32 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl> CKKSBoo
             GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
         GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     {
-        ckks_ensure!(
+        const OP: &str = "ckks_bootstrap";
+        ckks_ensure_operand!(
+            OP,
             ctx.functional_message_modulus().is_none() && ctx.eval_mod_ring() == EvalModRing::Standard,
-            "ckks_bootstrap requires an identity bootstrapping context with EvalMod on the standard ring"
+            "requires an identity bootstrapping context with EvalMod on the standard ring"
         );
         // All pipeline intermediates are rank-1 working ciphertexts carved from
         // scratch (accounted for by `ckks_bootstrap_tmp_bytes`); reject
         // higher-rank inputs up front.
-        ckks_ensure!(
+        ckks_ensure_operand!(
+            OP,
             ct_in.rank().as_usize() == 1 && ct_out.rank().as_usize() == 1,
-            "ckks_bootstrap supports rank-1 ciphertexts only, got rank {} -> {}",
+            "supports rank-1 ciphertexts only, got rank {} -> {}",
             ct_in.rank().as_usize(),
             ct_out.rank().as_usize()
         );
 
         let encapsulation_keys = keys.encapsulation_keys();
-        ckks_ensure!(
+        ckks_ensure_operand!(
+            OP,
             encapsulation_keys.is_some() == ctx.sparse_secret_hamming_weight().is_some(),
             "bootstrapping key encapsulation does not match the compiled recipe (expected {}, got {})",
             ctx.sparse_secret_hamming_weight().is_some(),
             encapsulation_keys.is_some()
         );
-        check_key_widths("ckks_bootstrap", ct_out, ct_in, ctx, keys, keys.tensor_key())?;
+        check_key_widths(OP, ct_out, ct_in, ctx, keys, keys.tensor_key())?;
 
         if ctx.pipeline() == BootstrappingPipeline::S2CFirst {
             // Known-real slots skip the imaginary nonlinear branch: one EvalMod
@@ -676,7 +686,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl> CKKSBoo
                         keys.tensor_key(),
                         &mut scratch_local,
                     )?;
-                    self.ckks_mul_pow2_assign(&mut r0, log2_k, &mut scratch_local)?;
+                    self.ckks_mul_pow2_assign(log2_k, &mut r0, &mut scratch_local)?;
                     self.ckks_sub_assign(&mut r0_hp, &r0, &mut scratch_local)?;
                     self.ckks_add_assign(&mut r0_hp, &ct, &mut scratch_local)?;
 
@@ -688,7 +698,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl> CKKSBoo
                         keys.tensor_key(),
                         &mut scratch_local,
                     )?;
-                    self.ckks_mul_pow2_assign(&mut i0, log2_k, &mut scratch_local)?;
+                    self.ckks_mul_pow2_assign(log2_k, &mut i0, &mut scratch_local)?;
                     self.ckks_sub_assign(&mut i0_hp, &i0, &mut scratch_local)?;
                     self.ckks_add_assign(&mut i0_hp, &r0, &mut scratch_local)?;
 
@@ -734,49 +744,56 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl> CKKSBoo
             + CKKSCopyOps<BE>
             + CKKSMulOps<BE>
             + CKKSPow2Ops<BE>
-            + CKKSAffineOps<BE>
+            + CKKSNegOps<BE>
             + GLWENormalize<BE>,
         K: BootstrappingKeys<BE>,
         CKKSCiphertextOwned<BE>:
             GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
         GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     {
-        ckks_ensure!(!luts.is_empty(), "functional bootstrap requires at least one LUT");
-        ckks_ensure!(
+        const OP: &str = "ckks_functional_bootstrap";
+        ckks_ensure_operand!(OP, !luts.is_empty(), "functional bootstrap requires at least one LUT");
+        ckks_ensure_operand!(
+            OP,
             ct_outs.len() == luts.len(),
             "functional bootstrap ct_outs/luts length mismatch ({} vs {})",
             ct_outs.len(),
             luts.len()
         );
-        ckks_ensure!(
+        ckks_ensure_operand!(
+            OP,
             ctx.pipeline() == BootstrappingPipeline::S2CFirst,
             "functional bootstrapping requires an S2C-first context"
         );
         let log_msg_ratio = luts[0].log_msg_ratio();
-        ckks_ensure!(
+        ckks_ensure_operand!(
+            OP,
             luts.iter().all(|lut| lut.message_modulus() == luts[0].message_modulus()),
             "functional bootstrap LUTs must have the same message modulus"
         );
         if luts.iter().any(EncodedLut::requires_eval_mod) {
-            ensure_unit_circle_exp_context(ctx)?;
+            ensure_unit_circle_exp_context(OP, ctx)?;
         }
         let head = &ct_outs[0];
         let (out_n, out_k) = (head.n(), head.k());
-        ckks_ensure!(
+        ckks_ensure_operand!(
+            OP,
             ct_in.rank().as_usize() == 1
                 && ct_outs.iter().all(|ct| {
                     ct.rank().as_usize() == 1 && ct.n() == head.n() && ct.base2k() == head.base2k() && ct.k() == head.k()
                 }),
             "functional bootstrapping outputs must share one rank-1 layout"
         );
-        ckks_ensure!(
+        ckks_ensure_operand!(
+            OP,
             keys.encapsulation_keys().is_some() == ctx.sparse_secret_hamming_weight().is_some(),
             "bootstrapping key encapsulation does not match the compiled recipe"
         );
-        ensure_functional_message_ratio(ct_in, ctx.slots_to_coeffs().consumed_bits(), log_msg_ratio)?;
+        ensure_functional_message_ratio(OP, ct_in, ctx.slots_to_coeffs().consumed_bits(), log_msg_ratio)?;
         // Keys laid out for the raise fail here rather than after SlotsToCoeffs.
-        check_raise_keys(head, ct_in, ctx, keys)?;
-        ckks_ensure!(
+        check_raise_keys(OP, head, ct_in, ctx, keys)?;
+        ckks_ensure_operand!(
+            OP,
             ctx.functional_message_modulus().unwrap_or(1usize << log_msg_ratio) == luts[0].message_modulus(),
             "functional bootstrap context must be configured for message modulus {}",
             luts[0].message_modulus()
@@ -784,7 +801,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl> CKKSBoo
         let output_contracts = ct_outs
             .iter()
             .zip(luts)
-            .map(|(ct_out, lut)| functional_output_contract(ct_in, ctx, lut, ct_out.k().as_usize()))
+            .map(|(ct_out, lut)| functional_output_contract(OP, ct_in, ctx, lut, ct_out.k().as_usize()))
             .collect::<Result<Vec<_>>>()?;
 
         let shared = luts.len() > 1 && luts.iter().all(|lut| lut.general_series().is_some());
@@ -871,6 +888,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl> CKKSBoo
 /// `scale_up` lifts the message that many bits above its natural magnitude,
 /// fused into the widening shift rather than costing a second pass.
 pub(crate) fn ckks_mod_up_scaled_reference<BE, Dst, Src>(
+    op: &'static str,
     module: &Module<BE>,
     dst: &mut Dst,
     src: &Src,
@@ -890,10 +908,7 @@ where
     let k_large: usize = dst.k().as_usize();
     let k_small: usize = src.k().as_usize();
 
-    ckks_ensure!(
-        k_large >= k_small + scale_up,
-        "ckks_mod_up: dst.k ({k_large}) < src.k ({k_small}) + scale_up ({scale_up}); ModUp must widen, not shrink, the modulus"
-    );
+    ensure_mod_up_widens(op, k_large, k_small, scale_up)?;
 
     // MSB-align `src` into the wider `dst`: the value occupies the top
     // `k_small` bits and the freshly-introduced low-order limbs are zero.
@@ -944,9 +959,10 @@ where
 {
     // The pipeline carves rank-1 intermediates, so reject higher-rank inputs
     // rather than silently copying into a rank-1 scratch ciphertext.
-    ckks_ensure!(
+    ckks_ensure_operand!(
+        "ckks_bootstrap_mod_up",
         src.rank().as_usize() == 1 && dst.rank().as_usize() == 1,
-        "ckks_bootstrap_mod_up supports rank-1 ciphertexts only, got rank {} -> {}",
+        "supports rank-1 ciphertexts only, got rank {} -> {}",
         src.rank().as_usize(),
         dst.rank().as_usize()
     );
@@ -1005,7 +1021,7 @@ where
         let log_delta: usize = src.log_delta();
         let scale_up_in = plan.input_scale_up(k, log_delta)?;
         if scale_up_in != 0 {
-            module.ckks_mul_pow2_assign(src, scale_up_in, scratch)?;
+            module.ckks_mul_pow2_assign(scale_up_in, src, scratch)?;
             // Not `set_log_delta`: it preserves `log_budget` and grows `k`, which
             // cancels the shift. The lift spends budget at a fixed modulus.
             let mut meta = src.meta();
@@ -1023,7 +1039,8 @@ where
 
     match keys.encapsulation_keys() {
         Some((dense_to_sparse, sparse_to_dense)) => {
-            ckks_ensure!(
+            ckks_ensure_operand!(
+                "ckks_bootstrap_mod_up",
                 sparse_to_dense.is_some(),
                 "the encapsulated ModUp needs a sparse-to-dense key, which a key set for the first factor on the raise has not"
             );
@@ -1038,7 +1055,7 @@ where
                 scratch,
             )?;
         }
-        None => ckks_mod_up_scaled_reference(module, dst, src, scale_up, scratch)?,
+        None => ckks_mod_up_scaled_reference("ckks_bootstrap_mod_up", module, dst, src, scale_up, scratch)?,
     }
     Ok(())
 }
@@ -1239,8 +1256,8 @@ where
                     ctx.eval_mod_plan().f_mod_interval
                 );
                 let log2_k = ctx.eval_mod_plan().f_mod_interval.trailing_zeros() as usize;
-                module.ckks_mul_pow2_assign(&mut r0, log2_k, &mut scratch_local)?;
-                module.ckks_mul_pow2_assign(&mut i0, log2_k, &mut scratch_local)?;
+                module.ckks_mul_pow2_assign(log2_k, &mut r0, &mut scratch_local)?;
+                module.ckks_mul_pow2_assign(log2_k, &mut i0, &mut scratch_local)?;
                 module.ckks_sub_assign(&mut r0_hp, &r0, &mut scratch_local)?;
                 module.ckks_sub_assign(&mut i0_hp, &i0, &mut scratch_local)?;
                 module.ckks_add_assign(&mut r0_hp, ct_out, &mut scratch_local)?;
@@ -1427,8 +1444,16 @@ pub fn ckks_bootstrap_ci_tmp_bytes_reference<BE, BCI, C1, C2, F>(
 where
     BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl,
     BCI: Backend,
-    Module<BE>:
-        GLWEBytesOf<BE> + CKKSDFTOps<BE> + CKKSPow2Ops<BE> + GLWEShift<BE> + GLWEKeyswitch<BE> + GLWECITrace<BE> + CKKSMulOps<BE>,
+    Module<BE>: GLWEBytesOf<BE>
+        + CKKSDFTOps<BE>
+        + CKKSPow2Ops<BE>
+        + GLWEShift<BE>
+        + GLWEKeyswitch<BE>
+        + GLWECITrace<BE>
+        + CKKSMulOps<BE>
+        + CKKSAddOps<BE>
+        + CKKSLinearTransformationOps<BE>
+        + GLWERotate<BE>,
     Module<BCI>: GLWEBytesOf<BCI> + CKKSEvalModOps<BCI>,
     C1: CKKSCtBounds,
     C2: CKKSCtBounds,
@@ -1450,17 +1475,81 @@ where
         + module
             .glwe_keyswitch_tmp_bytes(&embedded, &embedded, trace_key)
             .max(module.glwe_ci_trace_tmp_bytes(&boot_layout, &embedded));
-    let conversions = module
-        .ckks_mul_pt_vec_tmp_bytes(&embedded, &embedded, &eval_mod_ci.pre)
+    let pre = match &eval_mod_ci.pre.0 {
+        crate::layouts::bootstrapping::CIPreForm::Product(u) => module.ckks_mul_pt_vec_tmp_bytes(&embedded, &embedded, u),
+        // The outputs of the two folded factors beside their evaluation, then the odd
+        // one's embedding beside its rotation.
+        crate::layouts::bootstrapping::CIPreForm::Folded { even, odd } => {
+            // The baby steps of `even`, which `odd` shares, and each factor on its own schedule,
+            // which counts the doubling and the giant-step tree of power-of-two keys.
+            let (even_plan, odd_plan) = (even.index(), odd.index());
+            let mut factors = 0;
+            for atk in &keys_layout.rotation_key_layouts() {
+                factors = factors
+                    .max(module.ckks_prepare_linear_transformation_baby_steps_tmp_bytes(&boot_layout, &even_plan, atk))
+                    .max(module.ckks_eval_linear_transformation_tmp_bytes(&boot_layout, &even_plan, atk))
+                    .max(module.ckks_eval_linear_transformation_tmp_bytes(&boot_layout, &odd_plan, atk));
+            }
+            2 * BE::scratch_aligned(module.glwe_bytes_of_from_infos(&boot_layout))
+                + factors.max(embedded_bytes + module.glwe_rotate_tmp_bytes().max(module.ckks_add_tmp_bytes(embedded.size())))
+        }
+    };
+    let conversions = pre
         .max(module.ckks_mul_pt_vec_tmp_bytes(&embedded, &embedded, &eval_mod_ci.post))
         .max(module.glwe_keyswitch_tmp_bytes(&embedded, &embedded, embed_key))
         .max(trace);
-    let linear = s2c_first_linear_tmp_bytes(module, &boot_layout, ct_in, ctx, keys_layout);
+    let mut linear = s2c_first_linear_tmp_bytes(module, &boot_layout, ct_in, ctx, keys_layout);
+    let ct_bytes = BE::scratch_aligned(module.glwe_bytes_of_from_infos(&boot_layout));
+    // EvalRound+ holds the high-precision CoeffsToSlots beside the rest of the bootstrap.
+    let bypass = match ctx.coeffs_to_slots_bypass() {
+        Some(bypass) => {
+            for atk in &keys_layout.rotation_key_layouts() {
+                linear = linear.max(module.ckks_dft_tmp_bytes(&boot_layout, &boot_layout, bypass, atk));
+            }
+            ct_bytes
+        }
+        None => 0,
+    };
     let ci_bytes = BCI::scratch_aligned(ci.glwe_bytes_of_from_infos(&boot_layout));
     (
-        BE::scratch_aligned(module.glwe_bytes_of_from_infos(&boot_layout)) + linear.max(embedded_bytes + conversions),
+        ct_bytes + bypass + linear.max(embedded_bytes + conversions),
         2 * ci_bytes + ci.ckks_eval_mod_tmp_bytes(&boot_layout, &boot_layout, &eval_mod_ci.eval_mod, &keys_layout.tensor_key),
     )
+}
+
+/// `u·z(X²)` into `embedded`, of degree `2N`, from the input `w` of the last
+/// CoeffsToSlots factor folded with `u` ([`CIPre::Folded`]): `a(X²) + X·b(X²)`,
+/// with `a` and `b` the even and odd factors on `w`, which share its baby steps.
+fn ci_folded_pre<BE, R, H>(
+    module: &Module<BE>,
+    embedded: &mut R,
+    w: &CKKSCiphertextViewMut<'_, BE>,
+    [even, odd]: [&LinearTransformationPrepared<BE>; 2],
+    keys: &H,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<()>
+where
+    BE: Backend,
+    Module<BE>: CKKSLinearTransformationOps<BE> + GLWERotate<BE> + CKKSAddOps<BE> + GLWESwitchDegree<BE>,
+    R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    H: GetAutomorphismKey<BE>,
+{
+    let mut babies = LinearTransformationBabySteps::alloc_for(module, even, w);
+    module.ckks_prepare_linear_transformation_baby_steps(&mut babies, w, keys, scratch)?;
+    let (mut a, scratch_1) = scratch.borrow().take_ckks_ciphertext_scratch(w, w.meta());
+    let (mut b, mut scratch_1) = scratch_1.take_ckks_ciphertext_scratch(w, w.meta());
+    module.ckks_eval_linear_transformation_into(&mut a, w, &babies, even, keys, &mut scratch_1)?;
+    module.ckks_eval_linear_transformation_into(&mut b, w, &babies, odd, keys, &mut scratch_1)?;
+    let (mut odd_wide, mut scratch_2) = scratch_1.take_ckks_ciphertext_scratch(embedded, b.meta());
+    odd_wide.set_k(b.k());
+    module.glwe_switch_degree(&mut odd_wide, &b);
+    // `X·b(X²)` fills the odd coefficients, which `a(X²)` leaves at zero.
+    module.glwe_rotate_assign(1, &mut odd_wide, &mut scratch_2);
+    embedded.set_meta(a.meta());
+    embedded.set_k(a.k());
+    module.glwe_switch_degree(embedded, &a);
+    module.ckks_add_assign(embedded, &odd_wide, &mut scratch_2)?;
+    Ok(())
 }
 
 /// The S2C-first bootstrap with EvalMod once on the conjugate-invariant ring
@@ -1491,9 +1580,13 @@ where
         + GLWEKeyswitch<BE>
         + GLWECITrace<BE>
         + GLWECIEmbed<BE>
+        + GLWERotate<BE>
+        + CKKSSubOps<BE>
+        + CKKSLinearTransformationOps<BE>
         + CKKSCopyOps<BE>
         + CKKSPow2Ops<BE>
         + CKKSMulOps<BE>
+        + CKKSAddOps<BE>
         + CKKSDFTOps<BE>
         + GLWESwitchDegree<BE>,
     Module<BCI>: CKKSEvalModOps<BCI>,
@@ -1571,6 +1664,16 @@ where
     scratch.scope(|scratch| {
         let (mut z, mut scratch) = scratch.take_ckks_ciphertext_scratch(&boot_layout, ct_in.meta());
         ckks_bootstrap_s2c_mod_up(module, &mut z, ct_in, ctx, keys, &mut scratch)?;
+        // EvalRound+: the high-precision CoeffsToSlots of the raised ciphertext, without the split.
+        let (mut z_hp, mut scratch) = match ctx.coeffs_to_slots_bypass() {
+            Some(bypass) => {
+                let (mut z_hp, mut scratch) = scratch.borrow().take_ckks_ciphertext_scratch(&boot_layout, z.meta());
+                module.ckks_copy(&mut z_hp, &z, &mut scratch)?;
+                module.ckks_dft_evaluate_assign(&mut z_hp, bypass, keys.rotation_keys(), &mut scratch)?;
+                (Some(z_hp), scratch)
+            }
+            None => (None, scratch.borrow()),
+        };
         // CoeffsToSlots without the split: the complex slots `z_j = c_j + i·c_{j+N/2}`,
         // embedded as `z(X²)`.
         module.ckks_dft_evaluate_assign(&mut z, ctx.coeffs_to_slots(), keys.rotation_keys(), &mut scratch)?;
@@ -1579,13 +1682,20 @@ where
             ..boot_layout
         };
         let (mut embedded, mut scratch) = scratch.borrow().take_ckks_ciphertext_scratch(&wide_layout, z.meta());
-        embedded.set_k(z.k());
-        module.glwe_switch_degree(&mut embedded, &z);
 
         // `z(X²)` times `u`, traced onto the CI ring without halving: `2·Re(u·z)`, the
         // split EvalMod input. The CI ciphertexts are carved from `scratch_ci`; the
         // two backends share their buffers, so `module` writes and reads them.
-        module.ckks_mul_pt_vec_assign(&mut embedded, &eval_mod_ci.pre, &mut scratch)?;
+        match &eval_mod_ci.pre.0 {
+            crate::layouts::bootstrapping::CIPreForm::Product(u) => {
+                embedded.set_k(z.k());
+                module.glwe_switch_degree(&mut embedded, &z);
+                module.ckks_mul_pt_vec_assign(&mut embedded, u, &mut scratch)?;
+            }
+            crate::layouts::bootstrapping::CIPreForm::Folded { even, odd } => {
+                ci_folded_pre(module, &mut embedded, &z, [even, odd], keys.rotation_keys(), &mut scratch)?
+            }
+        }
         let meta = GLWEPlaintextMeta {
             slots: SlotsKind::Real,
             ..embedded.meta()
@@ -1611,10 +1721,25 @@ where
             keys.tensor_key(),
             &mut scratch_ci,
         )?;
+        let mut reduced = reduced.rebind::<BE>();
+        // EvalRound+: `EvalMod(x) − K·x` on the very input `x` of EvalMod, so that the
+        // error of the low-precision CoeffsToSlots cancels; the bypass is added back
+        // at the end. Both are coefficient-wise, the same on either ring.
+        if ctx.coeffs_to_slots_bypass().is_some() {
+            // The plan constructor rejects this, but re-check before the power-of-two shift.
+            ckks_ensure!(
+                ctx.eval_mod_plan().f_mod_interval.is_power_of_two(),
+                "EvalRound+ requires a power-of-two f_mod_interval, got {}",
+                ctx.eval_mod_plan().f_mod_interval
+            );
+            let mut traced = traced.rebind::<BE>();
+            let log2_k = ctx.eval_mod_plan().f_mod_interval.trailing_zeros() as usize;
+            module.ckks_mul_pow2_assign(log2_k, &mut traced, &mut scratch)?;
+            module.ckks_sub_assign(&mut reduced, &traced, &mut scratch)?;
+        }
 
         // Back to degree `2N` and times `v`, which carries the factor 2 of the
         // conjugate pair: `r_j + i·r_{j+N/2}` on the even coefficients, under `s(X²)`.
-        let reduced = reduced.rebind::<BE>();
         embedded.set_meta(GLWEPlaintextMeta {
             slots: SlotsKind::Real,
             ..reduced.meta()
@@ -1626,6 +1751,14 @@ where
         ct_out.set_k(embedded.k());
         module.glwe_switch_degree(ct_out, &embedded);
         ct_out.set_meta(embedded.meta());
+
+        // EvalRound+: `2·z_hp`, the bypass on the packed halves, which the split
+        // CoeffsToSlots of the standard ring doubles as `2·Re` and `2·Im`.
+        if let Some(z_hp) = z_hp.as_mut() {
+            module.ckks_mul_pow2_assign(1, z_hp, &mut scratch)?;
+            module.ckks_add_assign(z_hp, ct_out, &mut scratch)?;
+            module.ckks_copy(ct_out, z_hp, &mut scratch)?;
+        }
         Result::Ok(())
     })?;
     // Keep the C2S guard bits through EvalMod, then relabel at the output width.
@@ -1657,14 +1790,22 @@ where
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
+    const OP: &str = "ckks_bootstrap_mod_up";
     ensure_encapsulation_covers(dst, src, dense_to_sparse, sparse_to_dense)?;
+    // The switch keeps the width of `src`: the raise's checks run before it.
+    let (k_large, k_small) = (dst.k().as_usize(), src.k().as_usize());
+    if sparse_to_dense.k_offset().as_usize() > 0 {
+        check_offset_raise(OP, k_large, k_small, scale_up, sparse_to_dense)?;
+    } else {
+        ensure_mod_up_widens(OP, k_large, k_small, scale_up)?;
+    }
     module.glwe_keyswitch_assign(src, &dense_to_sparse.to_backend_ref(), scratch);
     if sparse_to_dense.k_offset().as_usize() > 0 {
         return ckks_mod_up_offset_reference(module, dst, src, scale_up, sparse_to_dense, scratch);
     }
     // The lift is fused into ModUp, so the message is already at its final scale
     // when sparse-to-dense adds its noise.
-    ckks_mod_up_scaled_reference(module, dst, src, scale_up, scratch)?;
+    ckks_mod_up_scaled_reference(OP, module, dst, src, scale_up, scratch)?;
     module.glwe_keyswitch_assign(dst, &sparse_to_dense.to_backend_ref(), scratch);
     Ok(())
 }
@@ -1675,31 +1816,42 @@ fn offset_key_window<K: GGLWEInfos>(dst_k: usize, key: &K) -> usize {
     dst_k.saturating_sub(key.k_offset().as_usize())
 }
 
+/// `InvalidOperand` for `op` unless the raise of a `k_small`-bit ciphertext lifted by `scale_up` into `k_large` bits
+/// widens it.
+fn ensure_mod_up_widens(op: &'static str, k_large: usize, k_small: usize, scale_up: usize) -> Result<()> {
+    ckks_ensure_operand!(
+        op,
+        k_large >= k_small + scale_up,
+        "dst.k ({k_large}) < src.k ({k_small}) + scale_up ({scale_up}); ModUp must widen, not shrink, the modulus"
+    );
+    Ok(())
+}
+
 /// Checks that a sparse-to-dense key with a row offset serves the raise of a
 /// `k_small`-bit ciphertext lifted by `scale_up` into `k_large` bits, and
 /// returns the raise's shift and the bits the key's window then holds.
 pub(crate) fn check_offset_raise<K: GGLWEInfos>(
+    op: &'static str,
     k_large: usize,
     k_small: usize,
     scale_up: usize,
     key: &K,
 ) -> Result<(usize, usize)> {
-    ckks_ensure!(
-        k_large >= k_small + scale_up,
-        "ckks_mod_up: dst.k ({k_large}) < src.k ({k_small}) + scale_up ({scale_up}); ModUp must widen, not shrink, the modulus"
-    );
+    ensure_mod_up_widens(op, k_large, k_small, scale_up)?;
     let shift = k_large - k_small - scale_up;
     let k_offset = key.k_offset().as_usize();
-    ckks_ensure!(
+    ckks_ensure_operand!(
+        op,
         k_offset <= shift,
-        "ckks_mod_up: the sparse-to-dense key lowers its input by {k_offset} bits, more than the raise's {shift}"
+        "the sparse-to-dense key lowers its input by {k_offset} bits, more than the raise's {shift}"
     );
     let window = offset_key_window(k_large, key) - scale_up;
     let max_input_k = key.gglwe_layout().max_input_k().as_usize();
     let reach = k_offset + key.gglwe_layout().gadget_k().as_usize();
-    ckks_ensure!(
+    ckks_ensure_operand!(
+        op,
         window <= max_input_k && k_large <= reach,
-        "ckks_mod_up: the sparse-to-dense key takes {max_input_k} bits of input and reaches bit {reach}; the raise needs {window} bits up to bit {k_large}"
+        "the sparse-to-dense key takes {max_input_k} bits of input and reaches bit {reach}; the raise needs {window} bits up to bit {k_large}"
     );
     Ok((shift, window))
 }
@@ -1726,7 +1878,7 @@ where
 {
     let k_large: usize = dst.k().as_usize();
     let k_small: usize = src.k().as_usize();
-    let (shift, window) = check_offset_raise(k_large, k_small, scale_up, sparse_to_dense)?;
+    let (shift, window) = check_offset_raise("ckks_bootstrap_mod_up", k_large, k_small, scale_up, sparse_to_dense)?;
     let k_offset = sparse_to_dense.k_offset().as_usize();
     let key = sparse_to_dense.to_backend_ref();
     if shift == k_offset {
@@ -1768,7 +1920,7 @@ fn ensure_encapsulation_covers<Dst: CKKSCtBounds, Src: CKKSCtBounds, D2S: GGLWEI
         sparse_to_dense.k_offset().as_usize() > 0 || dst.k() <= sparse_to_dense.gglwe_layout().max_input_k();
     if src.k() > dense_to_sparse.gglwe_layout().max_input_k() || !sparse_to_dense_covers {
         return Err(CKKSCompositionError::InvalidOperand {
-            op: "ckks_encapsulated_mod_up",
+            op: "ckks_bootstrap_mod_up",
             reason: "the input is wider than an encapsulation key's max_input_k".into(),
         }
         .into());
@@ -1812,12 +1964,14 @@ where
         .max(module.glwe_keyswitch_tmp_bytes(dst_infos, dst_infos, sparse_to_dense_infos))
 }
 
-fn ensure_unit_circle_exp_context<BE: Backend, F>(ctx: &BootstrappingContext<BE, F>) -> Result<()> {
-    ckks_ensure!(
+fn ensure_unit_circle_exp_context<BE: Backend, F>(op: &'static str, ctx: &BootstrappingContext<BE, F>) -> Result<()> {
+    ckks_ensure_operand!(
+        op,
         ctx.eval_mod_plan().eval_mod_type == EvalModType::ExpCmplx,
         "general functional bootstrapping requires an ExpCmplx EvalMod context"
     );
-    ckks_ensure!(
+    ckks_ensure_operand!(
+        op,
         ctx.eval_mod_plan().scaling == Some(std::f64::consts::TAU),
         "general functional bootstrapping requires a unit-circle ExpCmplx context (scaling = 2π)"
     );
@@ -1825,6 +1979,7 @@ fn ensure_unit_circle_exp_context<BE: Backend, F>(ctx: &BootstrappingContext<BE,
 }
 
 fn functional_output_contract<BE: Backend, F>(
+    op: &'static str,
     ct_in: &CKKSCiphertextOwned<BE>,
     ctx: &BootstrappingContext<BE, F>,
     lut: &EncodedLut<CKKSPlaintextOwned<BE>>,
@@ -1846,12 +2001,14 @@ fn functional_output_contract<BE: Backend, F>(
         .and_then(|bits| bits.checked_add(eval_mod))
         .and_then(|bits| bits.checked_add(lut.consumed_bits(log_delta)))
         .ok_or_else(|| crate::CKKSError::Internal(anyhow::anyhow!("functional bootstrap budget overflow")))?;
-    let output_k = bootstrap_k.checked_sub(consumed).ok_or_else(|| {
-        crate::CKKSError::Internal(anyhow::anyhow!(
-            "functional bootstrap output width {bootstrap_k} is smaller than its {consumed}-bit post-ModUp cost"
-        ))
-    })?;
-    ckks_ensure!(
+    ckks_ensure_operand!(
+        op,
+        bootstrap_k >= consumed,
+        "functional bootstrap output width {bootstrap_k} is smaller than its {consumed}-bit post-ModUp cost"
+    );
+    let output_k = bootstrap_k - consumed;
+    ckks_ensure_operand!(
+        op,
         output_k >= log_delta,
         "functional bootstrap leaves output k={output_k} below log_delta={log_delta}"
     );
@@ -1886,7 +2043,7 @@ where
         + CKKSComplexPolynomialEvaluationOps<BE>
         + CKKSMulOps<BE>
         + CKKSPow2Ops<BE>
-        + CKKSAffineOps<BE>
+        + CKKSNegOps<BE>
         + GLWENormalize<BE>,
     K: BootstrappingKeys<BE>,
     C: GLWEToBackendRef<BE> + CKKSCtBounds,
@@ -1905,20 +2062,9 @@ where
             keys.tensor_key(),
             scratch,
         )?,
-        EncodedLutKind::Binary {
-            cos,
-            affine,
-            log_interval_reduction,
-        } => ckks_eval_lut_binary(
-            module,
-            ct_out,
-            ct_in,
-            cos,
-            *log_interval_reduction,
-            affine,
-            keys.tensor_key(),
-            scratch,
-        )?,
+        EncodedLutKind::Binary { cos, chain } => {
+            ckks_eval_lut_binary(module, ct_out, ct_in, cos, chain.as_ref(), keys.tensor_key(), scratch)?
+        }
     }
     Ok(())
 }
@@ -1949,7 +2095,7 @@ where
         + CKKSCopyOps<BE>
         + CKKSMulOps<BE>
         + CKKSPow2Ops<BE>
-        + CKKSAffineOps<BE>
+        + CKKSNegOps<BE>
         + GLWENormalize<BE>,
     K: BootstrappingKeys<BE>,
     C: GLWEToBackendRef<BE> + CKKSCtBounds,
@@ -1983,17 +2129,13 @@ where
     Ok(())
 }
 
-fn ensure_functional_message_ratio<C>(ct_in: &C, s2c_consumed_bits: usize, expected: usize) -> Result<()>
+fn ensure_functional_message_ratio<C>(op: &'static str, ct_in: &C, s2c_consumed_bits: usize, expected: usize) -> Result<()>
 where
     C: CKKSInfos,
 {
-    let log_budget = ct_in.log_budget();
-    ckks_ensure!(
-        log_budget >= s2c_consumed_bits,
-        "functional bootstrap needs log_budget >= {s2c_consumed_bits}, got {log_budget}"
-    );
-    let actual = log_budget - s2c_consumed_bits;
-    ckks_ensure!(
+    let actual = checked_log_budget_sub(op, ct_in.log_budget(), s2c_consumed_bits)?;
+    ckks_ensure_operand!(
+        op,
         actual == expected,
         "functional bootstrap LUT requires log_msg_ratio {expected}, got {actual}"
     );

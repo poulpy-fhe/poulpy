@@ -1,55 +1,37 @@
-use poulpy_ckks::ckks_backend_test_suite;
+use poulpy_ckks::ckks_determinism_test_suite;
 
-const ATK_ROTATIONS: &[i64] = &[1, 7];
+ckks_determinism_test_suite!(mod ckks_determinism_fft64avx, backend = crate::FFT64Avx, f32);
 
-ckks_backend_test_suite!(
-    mod fft64_f64,
-    backend = crate::FFT64Avx,
-    scalar = f64,
-    encoder = crate::FFT64AvxEncodingTable,
-    params = poulpy_ckks::test_suite::BASE19_PARAMS_F64,
-    rotations = super::ATK_ROTATIONS,
-);
+ckks_determinism_test_suite!(mod ckks_determinism_ntt4x30avx, backend = crate::NTT4x30Avx, f32);
 
 #[cfg(feature = "enable-rayon")]
-ckks_backend_test_suite!(
-    mod fft64_rayon_f64,
-    backend = crate::FFT64AvxRayon,
-    scalar = f64,
-    encoder = crate::FFT64AvxEncodingTable,
-    params = poulpy_ckks::test_suite::BASE19_PARAMS_F64,
-    rotations = super::ATK_ROTATIONS,
-);
+ckks_determinism_test_suite!(mod ckks_determinism_fft64avxrayon, backend = crate::FFT64AvxRayon, f32);
 
 #[cfg(feature = "enable-rayon")]
-ckks_backend_test_suite!(
-    mod ntt4x30_rayon_f64,
-    backend = crate::NTT4x30AvxRayon,
-    scalar = f64,
-    encoder = crate::FFT64AvxEncodingTable,
-    params = poulpy_ckks::test_suite::BASE52_PARAMS_F64,
-    rotations = super::ATK_ROTATIONS,
-);
-
-ckks_backend_test_suite!(
-    mod ntt4x30_f64,
-    backend = crate::NTT4x30Avx,
-    scalar = f64,
-    encoder = crate::FFT64AvxEncodingTable,
-    params = poulpy_ckks::test_suite::BASE52_PARAMS_F64,
-    rotations = super::ATK_ROTATIONS,
-);
+ckks_determinism_test_suite!(mod ckks_determinism_ntt4x30avxrayon, backend = crate::NTT4x30AvxRayon, f32);
 
 /// Full logN16 bootstraps per preset: slow, so opt in with `--ignored`. The
 /// small S2C-first preset runs by default.
 mod bootstrapping_presets {
     use poulpy_ckks::test_suite::presets::{
-        bootstrapping_presets_meet_precision, ci_bootstrap_refuses_invalid_inputs, small_s2c_preset_meets_precision,
+        bootstrapping_plan_keys_match_context, bootstrapping_presets_meet_precision, ci_bootstrap_refuses_invalid_inputs,
+        small_s2c_preset_meets_precision, small_s2c_preset_meets_precision_with_client,
     };
+
+    #[test]
+    fn ntt4x30_bootstrapping_plan_keys_match_context() {
+        bootstrapping_plan_keys_match_context::<crate::NTT4x30Avx>();
+    }
 
     #[test]
     fn ntt4x30_small_s2c_preset_meets_precision() {
         small_s2c_preset_meets_precision::<crate::NTT4x30Avx>();
+    }
+
+    /// Keys and ciphertexts from a portable client: the transfers both ways between two backends.
+    #[test]
+    fn ntt4x30_small_s2c_preset_meets_precision_with_portable_client() {
+        small_s2c_preset_meets_precision_with_client::<crate::NTT4x30Avx, poulpy_cpu_portable::NTT4x30Portable>();
     }
 
     #[test]
@@ -66,13 +48,13 @@ mod bootstrapping_presets {
     #[test]
     #[ignore = "runs a full logN16 bootstrap per preset; opt in with --ignored"]
     fn ntt4x30_presets_meet_precision() {
-        bootstrapping_presets_meet_precision::<crate::NTT4x30Avx>(52);
+        bootstrapping_presets_meet_precision::<crate::NTT4x30Avx>();
     }
 
     #[test]
     #[ignore = "runs a full logN16 bootstrap per preset; opt in with --ignored"]
     fn fft64_presets_meet_precision() {
-        bootstrapping_presets_meet_precision::<crate::FFT64Avx>(18);
+        bootstrapping_presets_meet_precision::<crate::FFT64Avx>();
     }
 }
 

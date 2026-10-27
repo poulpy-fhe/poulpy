@@ -1,0 +1,25 @@
+[package]
+name = "poulpy-libm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+readme = "README.md"
+description = "CKKS math functions (libm-style) built on poulpy-ckks"
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/poulpy-libm"
+
+[features]
+# Compiles the exported test suite for backend crates, which enable it from their dev-dependencies.
+test-utils = ["poulpy-ckks/test-utils"]
+
+[dependencies]
+poulpy-hal = {workspace = true}
+poulpy-core = {workspace = true}
+poulpy-ckks = {workspace = true}
+anyhow = {workspace = true}
+libm = {workspace = true}
+num-traits = {workspace = true}
+
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"

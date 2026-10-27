@@ -10,10 +10,8 @@ use crate::api::GLWEBytesOf;
 use crate::layouts::operand_degree;
 use crate::{
     GGLWECompressedEncryptSk, GetDistribution, ScratchArenaTakeCore,
-    layouts::{
-        GGLWEInfos, GGLWEToGGSWKeyCompressedToBackendMut, GLWEInfos, GLWESecretTensorFactory, GLWESecretToBackendRef,
-        prepared::GLWESecretPreparedFactory,
-    },
+    api::{GLWESecretPreparedFactory, GLWESecretTensorFactory},
+    layouts::{GGLWEInfos, GGLWEToGGSWKeyCompressedToBackendMut, GLWEInfos, GLWESecretToBackendRef},
 };
 
 /// Portable implementation using HAL operations.
@@ -71,9 +69,13 @@ where
     {
         let metadata = crate::component_noise::fresh_sk_noise(sk.to_backend_ref().dist, &res.to_backend_ref());
         {
-            assert_eq!(res.rank(), sk.rank());
-            assert_eq!(res.n(), sk.n());
+            assert!(
+                res.rank() == sk.rank(),
+                "gglwe_to_ggsw_key_compressed_encrypt_sk: the key rank differs from the secret's rank"
+            );
+            operand_degree(self.n(), &[res.n(), sk.n()]);
             let tmp_bytes: usize = self.gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes_reference(res);
+            crate::layouts::assert_secret_set(sk.dist());
             assert!(
                 scratch.available() >= tmp_bytes,
                 "insufficient scratch for compressed GGLWE-to-GGSW key encryption"

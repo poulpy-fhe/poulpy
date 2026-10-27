@@ -15,10 +15,13 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 use crate::{
     CKKSCtBounds, SetCKKSInfos, SlotsKind,
     api::{
-        Basis, CKKSAddOps, CKKSAffineOps, CKKSComplexPolynomialEvaluationOps, CKKSConjugateOps, CKKSCopyOps, CKKSEvalModOps,
-        CKKSMulOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops, CKKSSubOps,
+        Basis, CKKSAddOps, CKKSComplexPolynomialEvaluationOps, CKKSConjugateOps, CKKSCopyOps, CKKSEvalModOps, CKKSMulOps,
+        CKKSNegOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops, CKKSSubOps,
     },
-    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, EncodedLut, ScratchArenaTakeCKKS, eval_mod::EvalMod},
+    layouts::{
+        CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, EncodedLut, ScratchArenaTakeCKKS, eval_mod::EvalMod,
+        functional_bootstrapping::DoubleAngleChain,
+    },
     numerics::CKKSFloat,
     polynomial::{BSGSPolynomial, ComplexBSGSPolynomial, ComplexPolynomial, Polynomial},
     power_basis::{PowerBasis, PowerBasisGen},
@@ -195,8 +198,8 @@ where
         .ok_or_else(|| anyhow!("ckks_eval_lut_from_basis: shared evaluation supports general LUTs only"))?;
     module.ckks_eval_poly_complex_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
         res,
-        series,
         power_basis,
+        series,
         tsk,
         scratch,
     )?;
@@ -216,13 +219,31 @@ where
     Ok(())
 }
 
+/// Cosine approximation of the binary table `[f0, f1]` with its output map
+/// folded in, so that the map consumes no budget.
+///
+/// With `a = (f0 + f1)/2`, `b = (f0 - f1)/2` and `r = log_interval_reduction`,
+/// the table is `a + b*c_r`, where `c_0` approximates `cos(2*pi*x)` on the
+/// reduced interval and `c_i = 2*c_{i-1}^2 - 1`. Without reduction the
+/// polynomial is `a + b*c_0` itself. Otherwise the scale is pushed back through
+/// the chain: `d_i = s_i*c_i` satisfies `d_i = d_{i-1}^2 - s_i` when
+/// `s_{i-1} = sqrt(2*s_i)`, and `s_{r-1} = sqrt(|f0 - f1|)` gives
+/// `a + b*c_r = f1 + sign(b)*d_{r-1}^2`. The polynomial approximates `d_0`.
+pub(crate) struct BinaryCos<F> {
+    pub(crate) poly: Polynomial<F>,
+    /// `[s_1, ..., s_{r-1}, f1]`, empty without reduction.
+    pub(crate) consts: Vec<F>,
+    /// Whether the last square is subtracted, when `f0 < f1`.
+    pub(crate) negate: bool,
+}
+
 pub(crate) fn cos_hermite_binary<F>(
     f0: F,
     f1: F,
     degree: usize,
     k_interval: usize,
     log_interval_reduction: usize,
-) -> Result<(Polynomial<F>, [F; 2])>
+) -> Result<BinaryCos<F>>
 where
     F: CKKSFloat + FloatConst + FromPrimitive + std::fmt::Debug,
 {
@@ -236,43 +257,71 @@ where
     let k_eff = F::from_usize(k_interval).ok_or_else(|| anyhow!("cannot represent interval bound {k_interval}"))?
         / F::from_usize(1usize << log_interval_reduction)
             .ok_or_else(|| anyhow!("cannot represent interval reduction 2^{log_interval_reduction}"))?;
-    let cos = Polynomial::chebyshev_interpolate_with_cos(degree, -k_eff, k_eff, |x| (two_pi * x).ckks_cos(), F::ckks_cos)?;
-    Ok((cos, [(f0 + f1) / two, (f0 - f1) / two]))
+    let (scale, offset, consts) = if log_interval_reduction == 0 {
+        ((f0 - f1) / two, (f0 + f1) / two, Vec::new())
+    } else {
+        let mut consts = vec![F::zero(); log_interval_reduction];
+        consts[log_interval_reduction - 1] = f1;
+        let mut sigma = (f0 - f1).abs().ckks_sqrt();
+        for c in consts[..log_interval_reduction - 1].iter_mut().rev() {
+            *c = sigma;
+            sigma = (two * sigma).ckks_sqrt();
+        }
+        (sigma, F::zero(), consts)
+    };
+    let poly = Polynomial::chebyshev_interpolate_with_cos(
+        degree,
+        -k_eff,
+        k_eff,
+        |x| offset + scale * (two_pi * x).ckks_cos(),
+        F::ckks_cos,
+    )?;
+    Ok(BinaryCos {
+        poly,
+        consts,
+        negate: log_interval_reduction > 0 && f0 < f1,
+    })
 }
 
-#[allow(clippy::too_many_arguments)]
+/// Evaluates a [`BinaryCos`] encoding: the polynomial, then the double-angle
+/// chain if any.
 pub(crate) fn ckks_eval_lut_binary<BE, C, R, H>(
     module: &Module<BE>,
     res: &mut R,
     ct: &C,
     cos_bsgs: &BSGSPolynomial<CKKSPlaintextOwned<BE>>,
-    log_interval_reduction: usize,
-    affine: &CKKSPlaintextOwned<BE>,
+    chain: Option<&DoubleAngleChain<CKKSPlaintextOwned<BE>>>,
     tsk: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
     BE: Backend,
-    Module<BE>: CKKSPolynomialEvaluationOps<BE>
-        + CKKSMulOps<BE>
-        + CKKSPow2Ops<BE>
-        + CKKSSubOps<BE>
-        + CKKSAffineOps<BE>
-        + CKKSModuleAlloc<BE>,
+    Module<BE>:
+        CKKSPolynomialEvaluationOps<BE> + CKKSMulOps<BE> + CKKSAddOps<BE> + CKKSSubOps<BE> + CKKSNegOps<BE> + CKKSModuleAlloc<BE>,
     C: GLWEToBackendRef<BE> + CKKSCtBounds,
     R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     H: GetTensorKey<BE>,
 {
     module.ckks_eval_poly_real_const_coeffs(res, ct, cos_bsgs, tsk, scratch)?;
+    let Some(chain) = chain else {
+        return Ok(());
+    };
+    let consts = chain.consts();
+    let last = chain.steps().get() - 1;
 
     let mut squared = module.ckks_ciphertext_alloc_from_infos(&*res);
-    for _ in 0..log_interval_reduction {
+    for i in 0..last {
         module.ckks_square_into(&mut squared, &*res, tsk, scratch)?;
-        module.ckks_double_into(res, &squared, scratch)?;
-        module.ckks_sub_one_assign(res, scratch)?;
+        module.ckks_sub_pt_const_into(res, 0, &squared, consts, i, scratch)?;
     }
 
-    module.ckks_affine_pt_const_assign(res, affine, 0, 1, scratch)?;
+    module.ckks_square_into(&mut squared, &*res, tsk, scratch)?;
+    if chain.negate() {
+        module.ckks_sub_pt_const_into(res, 0, &squared, consts, last, scratch)?;
+        module.ckks_neg_assign(res)?;
+    } else {
+        module.ckks_add_pt_const_into(res, 0, &squared, consts, last, scratch)?;
+    }
 
     Ok(())
 }
@@ -331,6 +380,35 @@ mod tests {
                 }
                 assert!((value - expected).abs() < 1e-12, "p={p}, m={m}: {value} != {expected}");
                 assert!(derivative.abs() < 1e-12, "p={p}, m={m}: derivative={derivative}");
+            }
+        }
+    }
+
+    #[test]
+    fn binary_lut_folds_output_map_into_chain() {
+        let k_interval = 2;
+        for (f0, f1) in [(0.0, 1.0), (1.0, 0.0), (3.0, 1.0), (-2.5, 7.0), (0.25, 0.25)] {
+            for r in [0, 1, 3] {
+                let lut = cos_hermite_binary::<f64>(f0, f1, 31, k_interval, r).unwrap();
+                assert_eq!(lut.consts.len(), r);
+                let (u, w) = lut.poly.change_of_basis();
+                for j in -(k_interval as i64)..(k_interval as i64) {
+                    for (m, expected) in [(0.0, f0), (0.5, f1)] {
+                        let x = (j as f64 + m) / (1u64 << r) as f64;
+                        let mut d = lut.poly.evaluate(u * x + w);
+                        if r > 0 {
+                            for &sigma in &lut.consts[..r - 1] {
+                                d = d * d - sigma;
+                            }
+                            d = if lut.negate {
+                                lut.consts[r - 1] - d * d
+                            } else {
+                                lut.consts[r - 1] + d * d
+                            };
+                        }
+                        assert!((d - expected).abs() < 1e-6, "f=({f0}, {f1}), r={r}, x={x}: {d} != {expected}");
+                    }
+                }
             }
         }
     }

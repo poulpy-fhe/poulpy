@@ -1,25 +1,11 @@
-use poulpy_hal::layouts::VecZnxBigToBackendRef;
-use poulpy_hal::layouts::VecZnxDftToBackendMut;
-use poulpy_hal::layouts::VecZnxDftToBackendRef;
-use poulpy_hal::layouts::{VecZnxBigToBackendMut, ZnxWord};
+use poulpy_hal::layouts::ZnxWord;
+use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ScalarZnx, ScalarZnxToBackendRef, ZnxView, ZnxViewMut};
 use poulpy_hal::{AlignedBuf, alloc_aligned};
-use poulpy_hal::{
-    api::{
-        ModuleN, ScratchArenaTakeBasic, SvpApplyDftToDft, SvpPrepare, VecZnxBigBytesOf, VecZnxBigNormalize,
-        VecZnxBigNormalizeTmpBytes, VecZnxDftApply, VecZnxDftBytesOf, VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
-    },
-    layouts::{
-        Backend, Data, HostDataMut, HostDataRef, Module, ScalarZnx, ScalarZnxToBackendRef, ScratchArena,
-        SvpPPolReborrowBackendMut, SvpPPolReborrowBackendRef, ZnxView, ZnxViewMut, scalar_znx_as_vec_znx_backend_mut_from_mut,
-        scalar_znx_as_vec_znx_backend_ref_from_ref,
-    },
-};
 
-use crate::layouts::operand_degree;
 use crate::{
-    GetDistribution, GetDistributionMut, ScratchArenaTakeCore,
+    GetDistribution, GetDistributionMut,
     dist::Distribution,
-    layouts::{Base2K, Degree, GLWEInfos, GLWESecretPreparedFactory, GLWESecretToBackendRef, LWEInfos, Rank},
+    layouts::{Base2K, Degree, GLWEInfos, LWEInfos, Rank},
 };
 
 /// Number of distinct unordered secret-key products for a rank-`r` tensor key.
@@ -127,7 +113,7 @@ pub type GLWESecretTensorBackendMut<'a, BE> = GLWESecretTensor<<BE as Backend>::
 
 /// Backend view of a tensor secret.
 ///
-/// Deliberately distinct from [`GLWESecretToBackendRef`]: a tensor secret is
+/// Deliberately distinct from [`GLWESecretToBackendRef`](crate::layouts::GLWESecretToBackendRef): a tensor secret is
 /// not interchangeable with the base secret it was derived from, so it is
 /// not accepted by APIs that ask for a [`GLWESecret`](crate::layouts::GLWESecret).
 pub trait GLWESecretTensorToBackendRef<BE: Backend> {
@@ -195,137 +181,5 @@ impl<W: ZnxWord> GLWESecretTensor<AlignedBuf, W> {
 
     pub fn bytes_of(n: Degree, rank: Rank) -> usize {
         ScalarZnx::<AlignedBuf, W>::bytes_of(n.into(), pairs(rank.into()))
-    }
-}
-
-// module-only API: secret tensor preparation is provided by `GLWESecretTensorFactory` on `Module`.
-
-pub trait GLWESecretTensorFactory<BE: Backend> {
-    fn glwe_secret_tensor_prepare_tmp_bytes(&self, rank: Rank) -> usize;
-
-    /// Fills `res` with the pairwise products `s_i * s_j` of the base secret
-    /// `other`.
-    ///
-    /// `res` inherits `other`'s [`Distribution`] tag. That tag keeps
-    /// describing the base secret: the products written into `res` follow a
-    /// different (derived) distribution, which no tag variant encodes.
-    fn glwe_secret_tensor_prepare<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: GLWESecretTensorToBackendMut<BE> + GetDistributionMut + GLWEInfos,
-        O: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos;
-}
-
-impl<BE: Backend> GLWESecretTensorFactory<BE> for Module<BE>
-where
-    Self: ModuleN
-        + GLWESecretPreparedFactory<BE>
-        + VecZnxBigNormalize<BE>
-        + VecZnxDftApply<BE>
-        + SvpApplyDftToDft<BE>
-        + VecZnxIdftApply<BE>
-        + VecZnxIdftApplyTmpBytes
-        + VecZnxBigNormalize<BE>
-        + VecZnxDftBytesOf
-        + VecZnxBigBytesOf
-        + VecZnxBigNormalizeTmpBytes,
-{
-    fn glwe_secret_tensor_prepare_tmp_bytes(&self, rank: Rank) -> usize {
-        let n: usize = self.n();
-        BE::scratch_aligned(self.glwe_secret_prepared_bytes_of(rank))
-            + BE::scratch_aligned(self.bytes_of_vec_znx_dft(n, rank.into(), 1))
-            + BE::scratch_aligned(self.bytes_of_vec_znx_dft(n, 1, 1))
-            + BE::scratch_aligned(self.bytes_of_vec_znx_big(n, 1, 1))
-            + self
-                .vec_znx_big_normalize_tmp_bytes()
-                .max(self.vec_znx_idft_apply_tmp_bytes())
-    }
-
-    fn glwe_secret_tensor_prepare<R, A>(&self, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: GLWESecretTensorToBackendMut<BE> + GetDistributionMut + GLWEInfos,
-        A: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
-    {
-        let distribution = *a.dist();
-        let tmp_bytes: usize = self.glwe_secret_tensor_prepare_tmp_bytes(a.rank());
-        {
-            let res = &mut res.to_backend_mut();
-            let a = a.to_backend_ref();
-
-            // `res.rank()` is the rank of the base secret the tensor is derived
-            // from; its column count is `pairs(rank)`.
-            assert_eq!(res.rank(), a.rank());
-            let n: usize = operand_degree(self.n(), &[res.n(), a.n()]);
-            assert!(
-                scratch.available() >= tmp_bytes,
-                "insufficient scratch for GLWE secret tensor preparation"
-            );
-
-            let rank: usize = a.rank().into();
-
-            let scratch = scratch.borrow();
-            let (mut a_prepared, scratch_1) = scratch.take_glwe_secret_prepared_scratch(a.n(), rank.into());
-            let (mut a_dft, scratch_2) = scratch_1.take_vec_znx_dft_scratch(n, rank, 1);
-            let (mut a_ij_dft, scratch_3) = scratch_2.take_vec_znx_dft_scratch(n, 1, 1);
-            let (mut a_ij_big_backend, mut scratch_4) = scratch_3.take_vec_znx_big_scratch(n, 1, 1);
-            {
-                let mut a_prepared_data = a_prepared.data.reborrow_backend_mut();
-                for i in 0..rank {
-                    self.svp_prepare(&mut a_prepared_data, i, a.data(), i);
-                }
-            }
-            a_prepared.dist = *a.dist();
-
-            let base2k: usize = 17;
-
-            let a_backend_vec = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(a.data());
-            for i in 0..rank {
-                let mut a_dft_backend = a_dft.to_backend_mut();
-                self.vec_znx_dft_apply(1, 0, &mut a_dft_backend, i, &a_backend_vec, i);
-            }
-
-            let a_prepared_backend_ref = a_prepared.data.reborrow_backend_ref();
-            // Tag of the base secret `a`, carried over as-is: the products below
-            // are not distributed like `a`, but their statistics derive from it.
-            res.dist = *a.dist();
-            let mut res_backend = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(res.data_mut());
-
-            // sk_tensor = sk (x) sk
-            // For example: (s0, s1) (x) (s0, s1) = (s0^2, s0s1, s1^2)
-            for i in 0..rank {
-                for j in i..rank {
-                    let idx: usize = i * rank + j - (i * (i + 1) / 2);
-                    let a_dft_ref = a_dft.to_backend_ref();
-                    {
-                        let mut a_ij_dft_backend = a_ij_dft.to_backend_mut();
-                        self.svp_apply_dft_to_dft(&mut a_ij_dft_backend, 0, &a_prepared_backend_ref, j, &a_dft_ref, i);
-                    }
-                    self.vec_znx_idft_apply(
-                        &mut a_ij_big_backend.to_backend_mut(),
-                        0,
-                        &a_ij_dft.to_backend_ref(),
-                        0,
-                        &mut scratch_4.borrow(),
-                    );
-                    {
-                        let a_ij_big = a_ij_big_backend.to_backend_ref();
-                        let res_k = res_backend.size() * base2k;
-                        self.vec_znx_big_normalize(
-                            &mut res_backend,
-                            base2k,
-                            res_k,
-                            0,
-                            idx,
-                            &a_ij_big,
-                            base2k,
-                            0,
-                            &mut scratch_4.borrow(),
-                        );
-                    }
-                }
-            }
-        }
-        scratch.wipe(tmp_bytes);
-        // Backend views carry copied metadata; commit to the owning object.
-        *res.dist_mut() = distribution;
     }
 }

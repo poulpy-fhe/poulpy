@@ -6,10 +6,11 @@
 //! aggregates and finalized keys are fresh constructions and record the estimates
 //! of the share metadata contract in `docs/mhe-contracts.md`.
 //!
-//! A backend selects the reference implementation with the `impl_mhe_*_reference!`
-//! opt-ins or implements an `*Impl` contract itself. An override must compute the
-//! same result as the reference and pass parity against a validated backend; the
-//! parity suite arrives with the first override.
+//! A backend selects the reference implementation with the
+//! `impl_<family>_reference_full!` opt-ins or implements an `*Impl` contract
+//! itself. An override must compute the same result as the reference and pass
+//! [`mhe_parity_test_suite!`](crate::mhe_parity_test_suite) against a
+//! validated backend.
 pub(crate) mod derived;
 pub mod evaluation_key;
 pub mod ggsw;
@@ -30,12 +31,17 @@ pub use tensor_key::*;
 #[macro_export]
 macro_rules! impl_mhe_reference_full {
     ($be:ty) => {
-        $crate::impl_mhe_pat_reference!($be);
-        $crate::impl_mhe_evaluation_key_reference!($be);
-        $crate::impl_mhe_ggsw_reference!($be);
-        $crate::impl_mhe_keyswitch_reference!($be);
-        $crate::impl_mhe_public_key_reference!($be);
-        $crate::impl_mhe_sharing_reference!($be);
-        $crate::impl_mhe_tensor_key_reference!($be);
+        $crate::impl_glwe_pat_compressed_reference_full!($be);
+        $crate::impl_gglwe_pat_compressed_reference_full!($be);
+        $crate::impl_gglwe_pat_reference_full!($be);
+        $crate::impl_glwe_switching_key_mhe_protocol_reference_full!($be);
+        $crate::impl_glwe_automorphism_key_mhe_protocol_reference_full!($be);
+        $crate::impl_ggsw_mhe_protocol_reference_full!($be);
+        $crate::impl_glwe_private_keyswitch_mhe_protocol_reference_full!($be);
+        $crate::impl_glwe_public_keyswitch_mhe_protocol_reference_full!($be);
+        $crate::impl_glwe_public_key_mhe_protocol_reference_full!($be);
+        $crate::impl_glwe_enc_to_share_mhe_protocol_reference_full!($be);
+        $crate::impl_glwe_share_to_enc_mhe_protocol_reference_full!($be);
+        $crate::impl_glwe_tensor_key_mhe_protocol_reference_full!($be);
     };
 }

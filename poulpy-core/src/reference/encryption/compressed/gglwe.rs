@@ -1,8 +1,9 @@
 #![allow(clippy::too_many_arguments)]
 
 use poulpy_hal::{
-    api::{ModuleN, VecZnxCopy, VecZnxDftBytesOf, VecZnxNormalize, VecZnxNormalizeTmpBytes},
+    api::{ModuleN, VecZnxCopy, VecZnxDftBytesOf, VecZnxNormalizeTmpBytes},
     layouts::{Backend, Module, ScalarZnxToBackendRef, ScratchArena},
+    oep::HalVecZnxImpl,
     source::Source,
 };
 
@@ -39,7 +40,7 @@ pub trait GGLWECompressedEncryptSkReference<BE: Backend> {
         S: GLWESecretPreparedToBackendRef<BE>;
 }
 
-impl<BE: Backend> GGLWECompressedEncryptSkReference<BE> for Module<BE>
+impl<BE: Backend + HalVecZnxImpl> GGLWECompressedEncryptSkReference<BE> for Module<BE>
 where
     Self: ModuleN
         + GLWEEncryptSkInternal<BE>
@@ -47,7 +48,6 @@ where
         + GLWEMaskFill<BE>
         + VecZnxCopy<BE>
         + VecZnxDftBytesOf
-        + VecZnxNormalize<BE>
         + VecZnxNormalizeTmpBytes,
 {
     fn gglwe_compressed_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
@@ -86,22 +86,16 @@ where
                 let pt_backend = pt.to_backend_ref();
                 let sk_ref = sk.to_backend_ref();
 
-                assert_eq!(
-                    res.rank_in(),
-                    pt_backend.cols() as u32,
-                    "res.rank_in(): {} != pt.cols(): {}",
-                    res.rank_in(),
-                    pt_backend.cols()
+                assert!(
+                    res.rank_in() == pt_backend.cols() as u32,
+                    "the plaintext's column count differs from the key's input rank"
                 );
-                assert_eq!(
-                    res.rank_out(),
-                    sk_ref.rank(),
-                    "res.rank_out(): {} != sk.rank(): {}",
-                    res.rank_out(),
-                    sk_ref.rank()
+                assert!(
+                    res.rank_out() == sk_ref.rank(),
+                    "the secret's rank differs from the key's output rank"
                 );
-                assert_eq!(res.n(), sk_ref.n());
-                assert_eq!(pt_backend.n() as u32, sk_ref.n());
+                operand_degree(self.n(), &[res.n(), sk_ref.n(), pt_backend.n().into()]);
+                crate::layouts::assert_secret_set(&sk_ref.dist);
                 assert!(
                     scratch.available() >= self.gglwe_compressed_encrypt_sk_tmp_bytes_reference(&res),
                     "scratch.available(): {} < GGLWECompressedEncryptSk::gglwe_compressed_encrypt_sk_tmp_bytes: {}",
@@ -129,7 +123,7 @@ where
                     for row_i in 0..dnum {
                         scratch_1 = scratch_1.apply_mut(|scratch| {
                             let mut tmp_pt_backend = tmp_pt.to_backend_mut();
-                            crate::reference::encryption::gadget_row_plaintext(
+                            crate::gadget::gadget_row_plaintext(
                                 self,
                                 &mut tmp_pt_backend.data,
                                 0,

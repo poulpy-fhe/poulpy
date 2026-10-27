@@ -10,13 +10,11 @@ use poulpy_hal::{
 use crate::layouts::operand_degree;
 use crate::{
     ScratchArenaTakeCore,
+    api::GLWESecretPreparedFactory,
     decryption::{glwe::glwe_decrypt_body_tmp_bytes, glwe_decrypt_backend_inner},
     layouts::{
         GLWEInfos, GLWEPlaintext, GLWESecretPrepared, GLWESecretTensorPrepared, GLWETensor, GLWEToBackendMut, GLWEToBackendRef,
-        prepared::{
-            GLWESecretPreparedFactory, GLWESecretPreparedToBackendMut, GLWESecretPreparedToBackendRef,
-            GLWESecretTensorPreparedToBackendRef,
-        },
+        prepared::{GLWESecretPreparedToBackendMut, GLWESecretPreparedToBackendRef, GLWESecretTensorPreparedToBackendRef},
     },
 };
 

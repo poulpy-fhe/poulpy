@@ -1,10 +1,11 @@
 use poulpy_core::{
     ComponentNoise, FreshNoiseEstimate, GGLWECompressedEncryptSk, GLWEBytesOf, GLWEEncryptSk, GLWEKeyswitch, GLWEMaskFill,
     GLWENormalize, GetDistribution, ScratchArenaTakeCore,
+    api::GLWESecretPreparedFactory,
     layouts::{
         GGLWECompressedSeed, GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWECompressedToBackendRef, GGLWEInfos,
         GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWELayout, LWEInfos, Rank, TorusPrecision, digits_aligned,
-        prepared::{GGLWEPreparedToBackendRef, GLWESecretPreparedFactory, GLWESecretPreparedToBackendRef},
+        prepared::{GGLWEPreparedToBackendRef, GLWESecretPreparedToBackendRef},
     },
 };
 use poulpy_hal::{
@@ -16,6 +17,7 @@ use poulpy_hal::{
         Backend, Module, ScalarZnxToBackendRef, ScratchArena, scalar_znx_as_vec_znx_backend_mut_from_mut,
         vec_znx_backend_ref_from_mut,
     },
+    oep::HalVecZnxImpl,
     source::Source,
 };
 
@@ -57,7 +59,7 @@ pub trait GGSWMHEProtocolReference<BE: Backend> {
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 }
 
-impl<BE: Backend> GGSWMHEProtocolReference<BE> for Module<BE>
+impl<BE: Backend + HalVecZnxImpl> GGSWMHEProtocolReference<BE> for Module<BE>
 where
     Self: GLWESecretPreparedFactory<BE>
         + GLWEEncryptSk<BE>
@@ -137,6 +139,7 @@ where
             "invalid share: ephemeral secret rank differs from the secret's"
         );
         let tmp_bytes: usize = self.mhe_ggsw_share_gen_tmp_bytes_reference(&*res);
+        assert!(scratch.available() >= tmp_bytes, "invalid share: insufficient scratch");
         {
             let (n, r) = (res.n().as_usize(), rank.as_usize());
             let (dnum, k_digit, base2k) = (res.dnum().as_usize(), res.k_digit().as_usize(), res.base2k().as_usize());
@@ -172,7 +175,7 @@ where
                     }
                     for (l, col) in cols.iter_mut().enumerate() {
                         if l == j {
-                            poulpy_core::reference::encryption::gadget_row_plaintext(
+                            poulpy_core::gadget_row_plaintext(
                                 self,
                                 row_pt.data_mut(),
                                 0,
@@ -252,10 +255,7 @@ where
             key.rank_out() == share.rank(),
             "invalid finalization: key output rank differs from the GGSW's"
         );
-        assert!(
-            key.gglwe_layout().max_input_k().as_usize() >= share.k().as_usize(),
-            "invalid finalization: key does not cover the GGSW precision"
-        );
+        poulpy_core::layouts::assert_key_covers("mhe_ggsw_share_finalize", share.k(), key);
         let (dnum, rank) = (share.dnum().as_usize(), share.rank().as_usize());
         assert!(
             match (share.noise(), key.noise()) {
@@ -263,6 +263,10 @@ where
                 _ => true,
             },
             "invalid finalization: output key provenance differs"
+        );
+        assert!(
+            scratch.available() >= self.mhe_ggsw_share_finalize_tmp_bytes_reference(&*res, key),
+            "invalid finalization: insufficient scratch"
         );
         let metadata = fresh_ggsw_metadata::<BE, K>(share, key);
         let key = key.to_backend_ref();

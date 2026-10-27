@@ -8,18 +8,29 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
-    oep::derived::rotate::{ckks_rotate_by_assign, ckks_rotate_by_into, ckks_rotate_by_tmp_bytes},
+    oep::derived::rotate::{ckks_rotate_assign_derived, ckks_rotate_into_derived, ckks_rotate_tmp_bytes_derived},
 };
 
-/// # Safety
+/// Backend contract of [`CKKSRotateOps`](crate::api::CKKSRotateOps).
 ///
-/// Implementations must satisfy the contracts of all trait methods, including
-/// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
-/// associated method signatures.
+/// # Safety
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait CKKSRotateImpl: Backend + super::CKKSCopyImpl {
-    fn ckks_rotate_tmp_bytes_impl<C: CKKSCtBounds, K: GGLWEInfos>(module: &Module<Self>, ct_infos: &C, key_infos: &K) -> usize;
+    /// Scratch bound of [`Self::ckks_rotate_with_key_into`] and [`Self::ckks_rotate_with_key_assign`]; may report less
+    /// than the reference, never less than the body takes.
+    fn ckks_rotate_with_key_tmp_bytes<C: CKKSCtBounds, K: GGLWEInfos>(
+        module: &Module<Self>,
+        ct_infos: &C,
+        key_infos: &K,
+    ) -> usize;
 
-    fn ckks_rotate_into_impl<Dst, Src>(
+    /// Hook without an API twin. Reproduces
+    /// [`ckks_rotate_with_key_into_reference`](crate::reference::rotate::CKKSRotateReference::ckks_rotate_with_key_into_reference)
+    /// bit for bit, within [`Self::ckks_rotate_with_key_tmp_bytes`]; free in kernels and scratch use. The caller hands
+    /// the automorphism key it looked up, and the hook stamps the output metadata as the reference does.
+    fn ckks_rotate_with_key_into<Dst, Src>(
         module: &Module<Self>,
         dst: &mut Dst,
         src: &Src,
@@ -30,7 +41,11 @@ pub unsafe trait CKKSRotateImpl: Backend + super::CKKSCopyImpl {
         Dst: GLWEToBackendMut<Self> + GLWEInfos + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<Self> + GLWEInfos + CKKSCtBounds;
 
-    fn ckks_rotate_assign_impl<Dst>(
+    /// Hook without an API twin. Reproduces
+    /// [`ckks_rotate_with_key_assign_reference`](crate::reference::rotate::CKKSRotateReference::ckks_rotate_with_key_assign_reference)
+    /// bit for bit, within [`Self::ckks_rotate_with_key_tmp_bytes`]; free in kernels and scratch use. The caller hands
+    /// the automorphism key it looked up, and the hook stamps the output metadata as the reference does.
+    fn ckks_rotate_with_key_assign<Dst>(
         module: &Module<Self>,
         dst: &mut Dst,
         key: &GLWEAutomorphismKeyPreparedBackendRef<'_, Self>,
@@ -39,22 +54,22 @@ pub unsafe trait CKKSRotateImpl: Backend + super::CKKSCopyImpl {
     where
         Dst: GLWEToBackendMut<Self> + GLWEInfos + CKKSCtBounds + SetCKKSInfos;
 
-    /// Scratch of a rotation by a slot shift: the keyed rotation or the identity copy.
-    fn ckks_rotate_by_tmp_bytes_impl<C: CKKSCtBounds, K: GGLWEInfos>(
-        module: &Module<Self>,
-        ct_infos: &C,
-        key_infos: &K,
-    ) -> usize {
-        ckks_rotate_by_tmp_bytes(module, ct_infos, key_infos)
+    /// Default body: `ckks_rotate_tmp_bytes_derived`, the larger of [`Self::ckks_rotate_with_key_tmp_bytes`] and the
+    /// selected `ckks_copy_tmp_bytes` of `ct_infos` onto itself, the copy serving the identity shift. Bounds
+    /// [`Self::ckks_rotate_into`] and [`Self::ckks_rotate_assign`].
+    fn ckks_rotate_tmp_bytes<C: CKKSCtBounds, K: GGLWEInfos>(module: &Module<Self>, ct_infos: &C, key_infos: &K) -> usize {
+        ckks_rotate_tmp_bytes_derived(module, ct_infos, key_infos)
     }
 
-    /// Rotation by `k` slots through the key of `ckks_galois_element(k)`; a
-    /// shift by a multiple of the slot count is a copy and needs no key.
-    fn ckks_rotate_by_into_impl<Dst, Src, H>(
+    /// Default body: `ckks_rotate_into_derived`. A shift whose Galois element `ckks_galois_element(k)` is `1` (a
+    /// multiple of the slot count) is the selected `ckks_copy` then the noise record cleared, with no key lookup. Any
+    /// other shift looks up the automorphism key of the element at `min(src.k(), dst.k())`, then
+    /// [`Self::ckks_rotate_with_key_into`]. A missing key is `MissingAutomorphismKey`.
+    fn ckks_rotate_into<Dst, Src, H>(
         module: &Module<Self>,
+        k: i64,
         dst: &mut Dst,
         src: &Src,
-        k: i64,
         keys: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
@@ -63,14 +78,16 @@ pub unsafe trait CKKSRotateImpl: Backend + super::CKKSCopyImpl {
         Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<Self> + CKKSCtBounds,
     {
-        ckks_rotate_by_into(module, dst, src, k, keys, scratch)
+        ckks_rotate_into_derived(module, k, dst, src, keys, scratch)
     }
 
-    /// In-place [`Self::ckks_rotate_by_into_impl`]; the identity leaves `dst` unchanged.
-    fn ckks_rotate_by_assign_impl<Dst, H>(
+    /// Default body: `ckks_rotate_assign_derived`. A shift whose Galois element is `1` clears the noise record and does
+    /// nothing else. Any other shift looks up the automorphism key of the element at `dst.k()`, then
+    /// [`Self::ckks_rotate_with_key_assign`]. A missing key is `MissingAutomorphismKey`.
+    fn ckks_rotate_assign<Dst, H>(
         module: &Module<Self>,
-        dst: &mut Dst,
         k: i64,
+        dst: &mut Dst,
         keys: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
@@ -78,24 +95,26 @@ pub unsafe trait CKKSRotateImpl: Backend + super::CKKSCopyImpl {
         H: GetAutomorphismKey<Self>,
         Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
     {
-        ckks_rotate_by_assign(module, dst, k, keys, scratch)
+        ckks_rotate_assign_derived(module, k, dst, keys, scratch)
     }
 }
 
-/// Implements this contract with the callable reference algorithms.
+/// Selects the reference implementation of `CKKSRotateImpl` for `$be`.
 #[macro_export]
-macro_rules! impl_ckks_rotate_reference {
+macro_rules! impl_ckks_rotate_reference_full {
     ($be:ty) => {
         unsafe impl $crate::oep::CKKSRotateImpl for $be {
-            fn ckks_rotate_tmp_bytes_impl<C: $crate::CKKSCtBounds, K: ::poulpy_core::layouts::GGLWEInfos>(
+            fn ckks_rotate_with_key_tmp_bytes<C: $crate::CKKSCtBounds, K: ::poulpy_core::layouts::GGLWEInfos>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 ct_infos: &C,
                 key_infos: &K,
             ) -> usize {
-                $crate::reference::rotate::CKKSRotateReference::ckks_rotate_tmp_bytes_reference(module, ct_infos, key_infos)
+                $crate::reference::rotate::CKKSRotateReference::ckks_rotate_with_key_tmp_bytes_reference(
+                    module, ct_infos, key_infos,
+                )
             }
 
-            fn ckks_rotate_into_impl<Dst, Src>(
+            fn ckks_rotate_with_key_into<Dst, Src>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
                 src: &Src,
@@ -109,10 +128,12 @@ macro_rules! impl_ckks_rotate_reference {
                     + $crate::SetCKKSInfos,
                 Src: ::poulpy_core::layouts::GLWEToBackendRef<Self> + ::poulpy_core::layouts::GLWEInfos + $crate::CKKSCtBounds,
             {
-                $crate::reference::rotate::CKKSRotateReference::ckks_rotate_into_reference(module, dst, src, key, scratch)
+                $crate::reference::rotate::CKKSRotateReference::ckks_rotate_with_key_into_reference(
+                    module, dst, src, key, scratch,
+                )
             }
 
-            fn ckks_rotate_assign_impl<Dst>(
+            fn ckks_rotate_with_key_assign<Dst>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
                 key: &::poulpy_core::layouts::prepared::GLWEAutomorphismKeyPreparedBackendRef<'_, Self>,
@@ -124,9 +145,9 @@ macro_rules! impl_ckks_rotate_reference {
                     + $crate::CKKSCtBounds
                     + $crate::SetCKKSInfos,
             {
-                $crate::reference::rotate::CKKSRotateReference::ckks_rotate_assign_reference(module, dst, key, scratch)
+                $crate::reference::rotate::CKKSRotateReference::ckks_rotate_with_key_assign_reference(module, dst, key, scratch)
             }
         }
     };
 }
-pub use crate::impl_ckks_rotate_reference;
+pub use crate::impl_ckks_rotate_reference_full;

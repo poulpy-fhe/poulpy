@@ -27,23 +27,24 @@ use anyhow::Result;
 use poulpy_blas::{
     api::{BlasMatInterOps, BlasMatIntraOps, BlasMatMulOps},
     layouts::{
-        BlasCiphertext, BlasCiphertextOwned, BlasContextPreparedFactory, BlasEncodingOps, BlasGridInfos, BlasLayout,
+        BlasCiphertext, BlasCiphertextOwned, BlasContextPreparedFactory, BlasEncodingOps, BlasGridInfos, BlasKeyUses, BlasLayout,
         BlasModuleAlloc, BlasPlan, BlasPtOperandPreparedFactory, Left, Right,
         grid::{join_blocks, split_into_blocks},
     },
     reference::{
-        BlasKeyUses, blas_matmul_key_uses, blas_matmul_output_layout, blas_matmul_pt_left_key_uses,
-        blas_matmul_pt_left_output_layout, blas_matmul_pt_right_key_uses, blas_matmul_pt_right_output_layout, blas_sum_key_uses,
-        blas_sum_output_layout, blas_transpose_key_uses, blas_transpose_output_layout,
+        blas_matmul_key_uses, blas_matmul_output_layout, blas_matmul_pt_left_key_uses, blas_matmul_pt_left_output_layout,
+        blas_matmul_pt_right_key_uses, blas_matmul_pt_right_output_layout, blas_sum_key_uses, blas_sum_output_layout,
+        blas_transpose_key_uses, blas_transpose_output_layout,
     },
 };
 use poulpy_ckks::prelude::*;
 use poulpy_core::{
     GLWEAutomorphismKeyEncryptSk, GLWETensorKeyEncryptSk,
+    api::{GLWEAutomorphismKeyPreparedFactory, GLWESecretPreparedFactory, GLWESecretSampling, GLWETensorKeyPreparedFactory},
     layouts::{
-        Base2K, Degree, GGLWELayout, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPreparedFactory, GLWELayout,
-        GLWESecretSampling, GLWETensorKeyLayout, GLWETensorKeyPreparedFactory, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
-        prepared::{GLWEAutomorphismKeyPrepared, GLWESecretPreparedFactory, GLWETensorKeyPrepared},
+        Base2K, Degree, GGLWELayout, GLWEAutomorphismKeyLayout, GLWELayout, GLWETensorKeyLayout, LWEInfos, ModuleCoreAlloc, Rank,
+        TorusPrecision,
+        prepared::{GLWEAutomorphismKeyPrepared, GLWETensorKeyPrepared},
     },
 };
 use poulpy_cpu_portable::FFT64Portable;
@@ -160,7 +161,7 @@ fn main() -> Result<()> {
     module.glwe_secret_prepare(&mut sk, &sk_raw);
 
     // One arena for key generation, encryption and decryption.
-    let mut scratch = Arena::alloc(module.ckks_all_ops_with_atk_tmp_bytes(&CT, &tsk_layout(), &atk_layout(), &CT));
+    let mut scratch = Arena::alloc(module.ckks_all_ops_with_atk_tmp_bytes(&CT, &CT, &tsk_layout(), &atk_layout()));
 
     let gen_atk = |p: i64, width: usize, xe: &mut Source, xa: &mut Source, scratch: &mut ScratchArena<'_, BackendImpl>| -> Atk {
         let layout = atk_at(width);
@@ -176,7 +177,7 @@ fn main() -> Result<()> {
         let mut tsk_raw = module.glwe_tensor_key_alloc_from_infos(&layout);
         module.glwe_tensor_key_encrypt_sk(&mut tsk_raw, &sk_raw, xe, xa, scratch);
         let mut tsk = module.alloc_tensor_key_prepared_from_infos(&layout);
-        module.prepare_tensor_key(&mut tsk, &tsk_raw, scratch);
+        module.glwe_tensor_key_prepare(&mut tsk, &tsk_raw, scratch);
         tsk
     };
 

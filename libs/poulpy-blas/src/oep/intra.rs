@@ -1,16 +1,20 @@
 use poulpy_ckks::{
     CKKSCtBounds, CKKSResult as Result, SetCKKSInfos,
     api::LinearTransformationPrepared,
-    oep::{CKKSAddImpl, CKKSCopyImpl},
+    oep::{CKKSAddImpl, CKKSAddManyImpl, CKKSCopyImpl, CKKSInnerSumImpl, CKKSRotateImpl},
 };
-use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey};
+use poulpy_core::{
+    layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey},
+    oep::GLWENormalizeImpl,
+};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use super::derived;
 use crate::layouts::{BlasContext, BlasGrid, BlasGridInfos, BlasGridMut};
 
 /// Extension point of [`crate::api::BlasMatIntraOps`]: the map hook [`Self::blas_map_blocks_impl`] and its query are
-/// required, and the transpose and both shifts are provided over the hook, poulpy-ckks's copy and its addition.
+/// required, and the transpose, both shifts and both axis reductions are provided over the hook, poulpy-ckks's copy,
+/// addition, rotation, inner sum and replicate, and poulpy-core's normalization.
 ///
 /// # Safety
 ///
@@ -41,25 +45,44 @@ use crate::layouts::{BlasContext, BlasGrid, BlasGridInfos, BlasGridMut};
 /// - `blas_transpose`: `res_ji = transpose(a_ij)`;
 /// - `blas_rotate_rows` and `blas_rotate_cols`, with `k mod m d = q d + k'` along a block axis of extent `m`:
 ///   - `k' = 0`: `ckks_copy` of the block `q` steps along, then a cleared noise tag;
-///   - `m = 1`: psi^k' (phi^k') of each block;
+///   - `m = 1`, rows, on a grid whose label proves one matrix: `ckks_rotate_into` of each block by `k' d` slots;
+///   - `m = 1` otherwise: psi^k' (phi^k') of each block;
 ///   - otherwise, the block `q` steps along through the first half map and the block `q + 1` steps along through the
 ///     second, each into a block of `res`'s layout, added by `ckks_add_into` into `res`.
+/// - `blas_sum_rows` and `blas_sum_cols`, line by line, a block column (row) of `m` blocks at a time, with batches of
+///   `b = d` (`1`) slots: a scratch block `u` of `a`'s layout receives the line's blocks summed in order by
+///   `ckks_add_many`, normalized after every `t / w - 1` additions, for `t` poulpy-core's `max_lazy_terms` over
+///   the coefficients of `u` and `w` the terms a block counts, 1 on a line of canonical blocks and 2 otherwise. Where
+///   `t / w < 2`, `u` is instead a `ckks_copy` of the first block, then, for each other block in order, normalized in
+///   place by poulpy-core's `glwe_normalize_assign` when flag-clear, plus by `ckks_add_assign` that block, first
+///   normalized by poulpy-core's `glwe_normalize` into a scratch block of `a`'s layout when flag-clear. A flag-clear
+///   block of `a` holds at most two canonical digits per coefficient, a caller obligation left unchecked. Every inner
+///   sum and replicate below is over `d` batches of `b` slots, with `normalize` clear. Along the rows of a grid whose label proves
+///   one matrix, `ckks_inner_sum` of `u` into the line's first block of `res`; otherwise `ckks_inner_sum_assign`
+///   of `u`, the projection (`first_row`, `first_col`) of `u` through the hook into that block, then
+///   `ckks_replicate_assign` of it. Then `ckks_copy` of that block into the other blocks of the line. Every block of
+///   `res` then gets a cleared noise tag.
 ///
 /// Every block of `res` then has width `min(res.k, a.k - p)` for the maps' scale `p`, `a`'s scale and label, `a`'s
 /// slot kind joined with `Real`, and no noise tag; it is canonical, except after the two half maps, whose addition
-/// leaves it unnormalized. A copy (`k' = 0`) has width `min(res.k, a.k)` and `a`'s metadata, as `ckks_copy` gives.
+/// leaves it unnormalized, a reduction's last inner sum or replicate leaving it canonical too. A copy (`k' = 0`), a
+/// rotation and a reduction without a projection have width `min(res.k, a.k)` and `a`'s metadata, as `ckks_copy`,
+/// `ckks_rotate_into` and `ckks_inner_sum` give.
 ///
-/// The shift maps are `Direct`, as the plan records. Each method returns `Ok` within the scratch its `_tmp_bytes_impl`
-/// reports, or poulpy-ckks's budget error before any write to `res`, and panics before any write with less scratch when
-/// it looks up a key. The provided shifts hold two heap blocks per block of `a`, across both half maps; an override may
-/// chunk them.
+/// The shift maps and the projections are `Direct`, as the plan records. Each method returns `Ok` within the scratch its
+/// query reports, or poulpy-ckks's budget error before any write to `res`, and panics before any write with
+/// less scratch when it looks up a key. The provided shifts hold two heap blocks per block of `a`, across both half
+/// maps; an override may chunk them.
 ///
-/// A method first runs [`crate::layouts::validate_blas_transpose`], [`crate::layouts::validate_blas_rotate_rows`] or
-/// [`crate::layouts::validate_blas_rotate_cols`], before any write, returns its errors with `res` and its batch record
+/// A method first runs [`crate::layouts::validate_blas_transpose`], [`crate::layouts::validate_blas_rotate_rows`],
+/// [`crate::layouts::validate_blas_rotate_cols`], [`crate::layouts::validate_blas_sum_rows`] or
+/// [`crate::layouts::validate_blas_sum_cols`], before any write, returns its errors with `res` and its batch record
 /// untouched, and after `Ok` stamps `res` with the batch the validator returns
 /// ([`crate::layouts::BlasGridMut::set_mat_slots`]), as the provided methods do. Any other `Err` but the budget error
 /// is a backend fault (a validator gap or a device failure), and `res` is then unspecified.
-pub unsafe trait BlasMatIntraImpl: Backend + CKKSCopyImpl + CKKSAddImpl {
+pub unsafe trait BlasMatIntraImpl:
+    Backend + CKKSCopyImpl + CKKSAddImpl + CKKSAddManyImpl + CKKSRotateImpl + CKKSInnerSumImpl + GLWENormalizeImpl
+{
     /// Scratch bytes of [`Self::blas_map_blocks_impl`] from `sources` blocks of layout `src` into blocks of layout `dst`
     /// through `lts`, with rotation keys of layout `atk`.
     fn blas_map_blocks_tmp_bytes_impl<D, S, K>(
@@ -166,10 +189,60 @@ pub unsafe trait BlasMatIntraImpl: Backend + CKKSCopyImpl + CKKSAddImpl {
     {
         derived::blas_rotate_cols_derived(module, res, a, k, ctx, atk, scratch)
     }
+
+    fn blas_sum_rows_tmp_bytes<R, A, K>(module: &Module<Self>, res: &R, a: &A, ctx: &BlasContext<Self>, keys: &K) -> usize
+    where
+        R: BlasGridInfos,
+        A: BlasGridInfos,
+        K: GGLWEInfos,
+    {
+        derived::intra::blas_sum_rows_tmp_bytes_derived(module, res, a, ctx, keys)
+    }
+
+    fn blas_sum_rows<R, A, K>(
+        module: &Module<Self>,
+        res: &mut R,
+        a: &A,
+        ctx: &BlasContext<Self>,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) -> Result<()>
+    where
+        R: BlasGridMut<Self>,
+        A: BlasGrid<Self>,
+        K: GetAutomorphismKey<Self> + Sync,
+    {
+        derived::intra::blas_sum_rows_derived(module, res, a, ctx, keys, scratch)
+    }
+
+    fn blas_sum_cols_tmp_bytes<R, A, K>(module: &Module<Self>, res: &R, a: &A, ctx: &BlasContext<Self>, keys: &K) -> usize
+    where
+        R: BlasGridInfos,
+        A: BlasGridInfos,
+        K: GGLWEInfos,
+    {
+        derived::intra::blas_sum_cols_tmp_bytes_derived(module, res, a, ctx, keys)
+    }
+
+    fn blas_sum_cols<R, A, K>(
+        module: &Module<Self>,
+        res: &mut R,
+        a: &A,
+        ctx: &BlasContext<Self>,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) -> Result<()>
+    where
+        R: BlasGridMut<Self>,
+        A: BlasGrid<Self>,
+        K: GetAutomorphismKey<Self> + Sync,
+    {
+        derived::intra::blas_sum_cols_derived(module, res, a, ctx, keys, scratch)
+    }
 }
 
 /// Selects [`BlasMatIntraReference`](crate::reference::BlasMatIntraReference) for `$be`: the map hook and its query,
-/// under the provided transpose and shifts.
+/// under the provided transpose, shifts and reductions.
 #[macro_export]
 macro_rules! impl_blas_intra_reference {
     ($be:ty) => {

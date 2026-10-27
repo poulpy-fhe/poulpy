@@ -1,21 +1,22 @@
 //! Hoisted base-B mux blind rotation (SHIP §5.1, Algorithm 5).
 
-use crate::{CKKSResult as Result, ckks_ensure};
+use crate::{CKKSResult as Result, ckks_ensure_operand};
 use poulpy_core::{
-    layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, digits_aligned, prepared::GGLWEPreparedToBackendRef},
-    reference::keyswitching::glwe::{
-        GGLWEProductReference, gadget_dft_apply, gadget_dft_apply_tmp_bytes, gadget_input_size,
-        gglwe_product_accumulation_output_size,
+    gadget_dft_apply, gadget_dft_apply_tmp_bytes, gadget_input_size, gglwe_product_accumulation_output_size,
+    layouts::{
+        Base2K, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, TorusPrecision, digits_aligned,
+        prepared::GGLWEPreparedToBackendRef,
     },
+    reference::keyswitching::glwe::GGLWEProductReference,
 };
 use poulpy_hal::{
     api::{
-        ScratchArenaTakeBasic, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign,
+        ModuleN, ScratchArenaTakeBasic, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign,
         VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftAutomorphismPlan, VecZnxDftBytesOf, VecZnxDftZero, VecZnxGadgetDecompose,
         VecZnxGadgetDecomposeTmpBytes, VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
     },
     layouts::{
-        Backend, Module, ScratchArena, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef,
+        Backend, ScratchArena, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef,
     },
 };
 
@@ -23,39 +24,14 @@ use std::collections::HashMap;
 
 use crate::layouts::{CKKSCiphertextOwned, ship::keyset::HMuxRotKeyPrepared};
 
-/// Automorphism plans of the mux output twists, keyed by Galois element.
-pub(crate) type ShipMuxPlans<BE> = HashMap<i64, <Module<BE> as VecZnxDftAutomorphismPlan<BE>>::Plan>;
-
-/// Builds the automorphism plans of every distinct mux Galois element once;
-/// the same rotation amounts recur across all support slots.
-pub(crate) fn ship_mux_plans<'a, BE>(
-    module: &Module<BE>,
-    groups: impl Iterator<Item = &'a [HMuxRotKeyPrepared<BE::OwnedBuf, BE>]>,
-) -> ShipMuxPlans<BE>
-where
-    BE: Backend + 'a,
-    Module<BE>: VecZnxDftAutomorphismPlan<BE>,
-{
-    let mut plans = ShipMuxPlans::<BE>::new();
-    for group in groups {
-        for key in group {
-            if key.gal_el != 1 {
-                plans
-                    .entry(key.gal_el)
-                    .or_insert_with(|| module.vec_znx_dft_automorphism_plan(module.n(), key.gal_el));
-            }
-        }
-    }
-    plans
-}
-
 /// Scratch bytes for [`ship_mux_rotate`].
-pub(crate) fn ship_mux_rotate_tmp_bytes<BE, C, K>(module: &Module<BE>, ct: &C, key: &K, term_count: usize) -> usize
+pub(crate) fn ship_mux_rotate_tmp_bytes<BE, M, C, K>(module: &M, ct: &C, key: &K, term_count: usize) -> usize
 where
     BE: Backend,
     C: LWEInfos,
     K: GGLWEInfos,
-    Module<BE>: VecZnxDftBytesOf
+    M: ModuleN
+        + VecZnxDftBytesOf
         + VecZnxBigBytesOf
         + VecZnxBigNormalizeTmpBytes
         + VecZnxIdftApplyTmpBytes
@@ -78,21 +54,62 @@ where
         + layout.max(module.bytes_of_vec_znx_dft(module.n(), 2, output_size) + mux.max(finalize))
 }
 
+/// `InvalidOperand` for `op` unless `keys`, one mux digit position, rotate ciphertexts `k` bits wide of radix `base2k`
+/// through one gadget operand: a nonempty group of that radix, each covering `k`, with digits on a limb boundary or of
+/// one width and count, of one size and with no row offset.
+pub(crate) fn ensure_mux_group<BE: Backend>(
+    op: &'static str,
+    k: TorusPrecision,
+    base2k: Base2K,
+    keys: &[HMuxRotKeyPrepared<BE::OwnedBuf, BE>],
+) -> Result<()> {
+    ckks_ensure_operand!(op, !keys.is_empty(), "empty key group");
+    let first = &keys[0].key;
+    ckks_ensure_operand!(op, first.base2k() == base2k, "ciphertext/key base2k mismatch");
+    ckks_ensure_operand!(
+        op,
+        keys.iter().all(|key| k <= key.key.gglwe_layout().max_input_k()),
+        "the input is wider than a key's max_input_k"
+    );
+    // One operand serves every key of the group: whole-limb digits read the
+    // input limbs whatever their width, other widths must share one digit grid.
+    ckks_ensure_operand!(
+        op,
+        keys.iter().all(|key| digits_aligned(key.key.base2k(), key.key.k_digit()))
+            || keys
+                .iter()
+                .all(|key| (key.key.k_digit(), key.key.dnum()) == (first.k_digit(), first.dnum())),
+        "key digits off a limb boundary differ in width or count within the group"
+    );
+    ckks_ensure_operand!(
+        op,
+        keys.iter().all(|key| key.key.size() == first.size()),
+        "inconsistent key sizes in group"
+    );
+    ckks_ensure_operand!(
+        op,
+        keys.iter().all(|key| key.key.k_offset().0 == 0),
+        "keys with a row offset are not supported"
+    );
+    Ok(())
+}
+
 /// Hoisted B-to-1 mux-rotate: `ct <- sum_d beta_d * Rot_{rot_d}(ct)` over the
 /// keys of one digit position. The rank-2 input `(0, a_mask, a_body)` is
 /// DFT'd once and shared by every key; each key contributes one VMP followed
 /// by its DFT-domain output automorphism, and a single IDFT + normalize
 /// closes the position.
-pub(crate) fn ship_mux_rotate<BE>(
-    module: &Module<BE>,
+pub(crate) fn ship_mux_rotate<BE, M>(
+    module: &M,
     ct: &mut CKKSCiphertextOwned<BE>,
     keys: &[HMuxRotKeyPrepared<BE::OwnedBuf, BE>],
-    plans: &ShipMuxPlans<BE>,
+    plans: &HashMap<i64, <M as VecZnxDftAutomorphismPlan<BE>>::Plan>,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
     BE: Backend,
-    Module<BE>: VecZnxDftApply<BE>
+    M: ModuleN
+        + VecZnxDftApply<BE>
         + VecZnxDftZero<BE>
         + VecZnxDftAddAssign<BE>
         + VecZnxDftAutomorphism<BE>
@@ -102,31 +119,13 @@ where
         + VecZnxDftBytesOf
         + VecZnxGadgetDecompose<BE>
         + GGLWEProductReference<BE>,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
 {
-    const OP: &str = "ship_mux_rotate";
-    ckks_ensure!(!keys.is_empty(), "{OP}: empty key group");
+    ensure_mux_group("ckks_ship_bootstrap_into", ct.k(), ct.base2k(), keys)?;
     let a_size = ct.size();
-    let key_size = keys[0].key.size();
     let output_size = gglwe_product_accumulation_output_size::<BE, _, _, _>(ct, ct, &keys[0].key, keys.len());
     let base2k = ct.base2k().as_usize();
-    ckks_ensure!(
-        keys[0].key.base2k().as_usize() == base2k,
-        "{OP}: ciphertext/key base2k mismatch"
-    );
-    ckks_ensure!(
-        keys.iter().all(|key| ct.k() <= key.key.gglwe_layout().max_input_k()),
-        "{OP}: the input is wider than a key's max_input_k"
-    );
-    // One operand serves every key of the group: whole-limb digits read the
-    // input limbs whatever their width, other widths must share one digit grid.
     let (k_digit, dnum) = (keys[0].key.k_digit(), keys[0].key.dnum());
     let key_base2k = keys[0].key.base2k();
-    ckks_ensure!(
-        keys.iter().all(|key| digits_aligned(key.key.base2k(), key.key.k_digit()))
-            || keys.iter().all(|key| (key.key.k_digit(), key.key.dnum()) == (k_digit, dnum)),
-        "{OP}: key digits off a limb boundary differ in width or count within the group"
-    );
     let operand_size = gadget_input_size(key_base2k, k_digit, dnum, ct.k(), a_size);
 
     let scratch = scratch.borrow();
@@ -161,8 +160,6 @@ where
         let (mut prod_dft, scratch_3) = scratch_2.borrow().take_vec_znx_dft_scratch(module.n(), 2, output_size);
         let (mut rot_dft, mut scratch_4) = scratch_3.take_vec_znx_dft_scratch(module.n(), 2, output_size);
         for key in keys {
-            ckks_ensure!(key.key.size() == key_size, "{OP}: inconsistent key sizes in group");
-            ckks_ensure!(key.key.k_offset().0 == 0, "{OP}: keys with a row offset are not supported");
             {
                 let mut prod_dft_mut = prod_dft.to_backend_mut();
                 module.gglwe_product_dft_reference(
@@ -179,9 +176,12 @@ where
                     module.vec_znx_dft_add_assign(&mut sum_dft_mut, col, &prod_ref, col);
                 }
             } else {
-                let plan = plans
-                    .get(&key.gal_el)
-                    .ok_or_else(|| anyhow::anyhow!("{OP}: missing automorphism plan for Galois element {}", key.gal_el))?;
+                let plan = plans.get(&key.gal_el).ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "ckks_ship_bootstrap_into: missing automorphism plan for Galois element {}",
+                        key.gal_el
+                    )
+                })?;
                 {
                     let prod_ref = prod_dft.to_backend_ref();
                     let mut rot_dft_mut = rot_dft.to_backend_mut();
@@ -206,10 +206,10 @@ where
         }
     }
     let k = ct.k().as_usize();
-    ct.set_canonical(true);
+    GLWEToBackendMut::<BE>::set_canonical(ct, true);
     {
         let res_big_ref = res_big.to_backend_ref();
-        let mut ct_mut = ct.to_backend_mut();
+        let mut ct_mut = GLWEToBackendMut::<BE>::to_backend_mut(ct);
         for col in 0..2 {
             module.vec_znx_big_normalize(
                 ct_mut.data_mut(),

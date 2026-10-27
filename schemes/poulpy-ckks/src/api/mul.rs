@@ -1,7 +1,7 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::GLWEToBackendMut;
 use poulpy_core::layouts::IntPolyInfos;
-use poulpy_core::layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendRef, GetTensorKey};
+use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendRef, GetTensorKey};
 use poulpy_hal::layouts::{Backend, PrepareHint, ScratchArena};
 
 use crate::{
@@ -165,29 +165,6 @@ pub trait CKKSMulOps<BE: Backend> {
     where
         A: CKKSCtBounds;
 
-    /// Bytes of a left operand [`Self::ckks_prepared_left_alloc_from_infos`] allocates for `infos` under `hint`.
-    fn ckks_prepared_left_bytes_of_from_infos<A>(&self, infos: &A, hint: PrepareHint) -> usize
-    where
-        A: GLWEInfos;
-
-    /// Bytes of a right operand [`Self::ckks_prepared_right_alloc_from_infos`] allocates for `infos` under `hint`.
-    fn ckks_prepared_right_bytes_of_from_infos<A>(&self, infos: &A, hint: PrepareHint) -> usize
-    where
-        A: GLWEInfos;
-
-    /// A left operand for a ciphertext of `infos`, on its `ceil(k / base2k)` limbs and `rank + 1` columns, in the
-    /// representation `hint` selects, as [`Self::ckks_prepare_right`] describes it, which
-    /// [`Self::ckks_prepare_left_into`] fills. Its contents are unspecified until then, and its infos report `infos`
-    /// and no metadata.
-    fn ckks_prepared_left_alloc_from_infos<A>(&self, infos: &A, hint: PrepareHint) -> CKKSPreparedLeft<BE>
-    where
-        A: GLWEInfos;
-
-    /// As [`Self::ckks_prepared_left_alloc_from_infos`], a right operand, which [`Self::ckks_prepare_right_into`] fills.
-    fn ckks_prepared_right_alloc_from_infos<A>(&self, infos: &A, hint: PrepareHint) -> CKKSPreparedRight<BE>
-    where
-        A: GLWEInfos;
-
     /// Prepares `a` into `res`, a left operand allocated for `a`'s layout, with no allocation: [`Self::ckks_prepare_left`]
     /// of `a` under `res`'s hint, bit for bit. `res` then reports `a`'s layout and metadata; preparing again into it
     /// refills it. Takes [`Self::ckks_prepare_tmp_bytes`] of scratch.
@@ -235,7 +212,8 @@ pub trait CKKSMulOps<BE: Backend> {
     /// scratch once produced, and its infos report `a`'s layout and metadata
     /// (no noise estimate: only fresh ciphertexts carry one). Producing it takes [`Self::ckks_prepare_tmp_bytes`] of
     /// scratch, which [`Self::ckks_mul_tmp_bytes`] covers. It is [`Self::ckks_prepare_right_into`] of `a` into
-    /// [`Self::ckks_prepared_right_alloc_from_infos`] of `a` under `hint`.
+    /// [`CKKSModuleAlloc::ckks_prepared_right_alloc_from_infos`](crate::layouts::CKKSModuleAlloc::ckks_prepared_right_alloc_from_infos)
+    /// of `a` under `hint`.
     fn ckks_prepare_right<A>(
         &self,
         a: &A,

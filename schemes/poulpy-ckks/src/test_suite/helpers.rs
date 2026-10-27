@@ -36,11 +36,14 @@ use num_traits::{Float, FromPrimitive, ToPrimitive};
 use poulpy_core::{
     GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWECIKeyEncryptSk, GLWEDecrypt, GLWEKeyswitch, GLWEMaskFill, GLWENormalize,
     GLWESub, GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk, ScratchArenaTakeCore, TransferInto,
+    api::{
+        GLWEAutomorphismKeyPreparedFactory, GLWECIKeyPreparedFactory, GLWESecretPreparedFactory, GLWESwitchingKeyPreparedFactory,
+        GLWETensorKeyPreparedFactory,
+    },
     layouts::{
-        BackendGLWESecret, Base2K, Degree, GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedFactory,
-        GLWECIEmbedKeyPrepared, GLWECIKeyPreparedFactory, GLWECITraceKeyPrepared, GLWEInfos, GLWELayout,
-        GLWESecretPreparedFactory, GLWESecretToBackendRef, GLWESwitchingKeyPrepared, GLWESwitchingKeyPreparedFactory,
-        GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory, GetAutomorphismKey, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
+        BackendGLWESecret, Base2K, Degree, GLWEAutomorphismKeyPrepared, GLWECIEmbedKeyPrepared, GLWECITraceKeyPrepared,
+        GLWEInfos, GLWELayout, GLWESecretToBackendRef, GLWESwitchingKeyPrepared, GLWETensorKeyPrepared, GetAutomorphismKey,
+        LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
         prepared::{GLWEAutomorphismKeyPreparedBackendRef, GLWEAutomorphismKeyPreparedToBackendRef, GLWESecretPrepared},
     },
 };
@@ -56,8 +59,8 @@ use poulpy_hal::{
 
 use super::CKKSTestParams;
 use crate::SlotsKind;
-use poulpy_core::layouts::GLWESecretSampling;
-use poulpy_core::{Distribution, GetDistributionMut};
+use poulpy_core::api::GLWESecretSampling;
+use poulpy_core::{Distribution, GetDistribution, GetDistributionMut};
 
 // ─── deterministic per-call RNG seeds ────────────────────────────────────────
 
@@ -517,8 +520,8 @@ pub fn precision_at(params: &CKKSTestParams, log_delta: usize) -> CKKSLayout {
 
 // ─── scratch allocation ───────────────────────────────────────────────────────
 
-/// Allocates scratch for common CKKS test operations, including ATK ops.
-/// DFT and EvalMod callers must also cover their selected operation-specific queries.
+/// Allocates the setup arena of a test: encryption, key generation and preparation, decryption and oracles run on it.
+/// A call under test runs on [`with_scratch`](super::parity::helpers::with_scratch) of its own query instead.
 pub fn alloc_scratch<BE>(params: &CKKSTestParams, module: &Module<BE>) -> ScratchOwned<BE>
 where
     BE: TestContextBackend,
@@ -529,7 +532,7 @@ where
     ct.set_meta(params.prec().meta);
     let tsk_infos = params.tsk_layout();
     let atk_infos = params.atk_layout();
-    let scratch_size = module.ckks_all_ops_with_atk_tmp_bytes(&ct, &tsk_infos, &atk_infos, &PT_PREC);
+    let scratch_size = module.ckks_all_ops_with_atk_tmp_bytes(&ct, &PT_PREC, &tsk_infos, &atk_infos);
     ScratchOwned::<BE>::alloc(scratch_size)
 }
 
@@ -756,7 +759,7 @@ where
     let mut tsk = module.glwe_tensor_key_alloc_from_infos(&tsk_infos);
     module.glwe_tensor_key_encrypt_sk(&mut tsk, sk_raw, &mut xe, &mut xa, scratch);
     let mut tsk_prepared = module.alloc_tensor_key_prepared_from_infos(&tsk_infos);
-    module.prepare_tensor_key(&mut tsk_prepared, &tsk, scratch);
+    module.glwe_tensor_key_prepare(&mut tsk_prepared, &tsk, scratch);
     tsk_prepared
 }
 
@@ -853,8 +856,8 @@ pub fn gen_ci_keys<BE, S>(
 )
 where
     BE: TestContextBackend,
-    Module<BE>: TestContextSharedModule<BE> + GLWECIKeyEncryptSk<BE>,
-    S: GLWESecretToBackendRef<BE>,
+    Module<BE>: TestContextSharedModule<BE> + GLWECIKeyEncryptSk<BE> + GLWECIKeyPreparedFactory<BE>,
+    S: GLWESecretToBackendRef<BE> + GetDistribution,
 {
     let infos = params.ksk_layout(k_in);
     let mut xa = Source::new(next_test_seed(1));
@@ -1435,6 +1438,23 @@ pub fn assert_ckks_error(label: &str, err: &crate::CKKSError, want: CKKSComposit
     // No downcast needed: typed operations surface semantic failures as
     // `CKKSError::Composition` directly.
     assert_eq!(err.composition(), Some(&want), "{label}: unexpected error: {err}");
+}
+
+/// Asserts that `err` is [`CKKSCompositionError::InvalidOperand`] of `op` whose reason contains `reason`, for reasons
+/// carrying values the test does not recompute.
+pub fn assert_invalid_operand(label: &str, err: &crate::CKKSError, op: &str, reason: &str) {
+    assert!(
+        matches!(err.composition(), Some(CKKSCompositionError::InvalidOperand { op: got, reason: why }) if *got == op && why.contains(reason)),
+        "{label}: unexpected error: {err}"
+    );
+}
+
+/// Asserts that `err` is the untyped [`CKKSError::Internal`](crate::CKKSError::Internal) whose message contains `message`.
+pub fn assert_ckks_internal(label: &str, err: &crate::CKKSError, message: &str) {
+    assert!(
+        matches!(err, crate::CKKSError::Internal(_)) && err.to_string().contains(message),
+        "{label}: unexpected error: {err}"
+    );
 }
 
 /// Asserts the metadata a unary op stamps on `ct`: `input`'s, less the bits by which

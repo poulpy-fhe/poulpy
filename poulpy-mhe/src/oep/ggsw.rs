@@ -11,13 +11,25 @@ use super::derived::ggsw as derived;
 use crate::{layouts::GGSWShareOwned, oep::GGLWEPatCompressedImpl};
 
 /// # Safety
-/// Reproduce the reference share, mask seeds included, and the reference
-/// finalized GGSW, within the queried scratch budgets.
+/// Every method reproduces the reference or derived body its doc names, checks
+/// included, and stays within the scratch its `_tmp_bytes` query returns.
+/// Share generation wipes that scratch before returning.
+/// The memory, layout, synchrony and aliasing rules of
+/// `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait GGSWMHEProtocolImpl: GGLWEPatCompressedImpl {
+    /// Upper bound on the scratch of `mhe_ggsw_share_gen`, as
+    /// `GGSWMHEProtocolReference::mhe_ggsw_share_gen_tmp_bytes_reference`;
+    /// panics unless `infos` has the module's degree.
     fn mhe_ggsw_share_gen_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GGSWInfos;
 
+    /// Reproduces `GGSWMHEProtocolReference::mhe_ggsw_share_gen_reference`: the
+    /// child seeds of the part masks derive from `seed` in the reference order,
+    /// `source_xe` supplies the errors, and the message-half masks reuse the
+    /// key-half seeds.
+    /// Panics unless `res`, `pt` and both secrets have the module's degree, the
+    /// secrets have the share's rank and `pt` has one column.
     #[allow(clippy::too_many_arguments)]
     fn mhe_ggsw_share_gen<P, S, U>(
         module: &Module<Self>,
@@ -33,15 +45,30 @@ pub unsafe trait GGSWMHEProtocolImpl: GGLWEPatCompressedImpl {
         S: GLWESecretPreparedToBackendRef<Self> + GLWEInfos,
         U: GLWESecretPreparedToBackendRef<Self> + GLWEInfos;
 
+    /// Default body `mhe_ggsw_share_aggregate_derived`: aggregates every part
+    /// with the compressed PAT aggregation and combines the noise with
+    /// `aggregate_metadata`.
+    /// Panics unless the GGSW layouts and every part's mask seeds agree.
     fn mhe_ggsw_share_aggregate(module: &Module<Self>, res: &mut GGSWShareOwned<Self>, a: &GGSWShareOwned<Self>) {
         derived::mhe_ggsw_share_aggregate_derived(module, res, a)
     }
 
+    /// Upper bound on the scratch of `mhe_ggsw_share_finalize`, as
+    /// `GGSWMHEProtocolReference::mhe_ggsw_share_finalize_tmp_bytes_reference`;
+    /// panics unless `res_infos` and `key_infos` have the module's degree.
     fn mhe_ggsw_share_finalize_tmp_bytes<R, K>(module: &Module<Self>, res_infos: &R, key_infos: &K) -> usize
     where
         R: GGSWInfos,
         K: GGLWEInfos;
 
+    /// Reproduces
+    /// `GGSWMHEProtocolReference::mhe_ggsw_share_finalize_reference`:
+    /// regenerates the masks from the share's seeds, normalizes the bodies,
+    /// then expands the rows with the tensor key.
+    /// Panics unless the degrees are the module's, `res` has the share's
+    /// layout, the key ranks equal the share's, `share.k()` is within the key's
+    /// `max_input_k` (`assert_key_covers`) and the key and share are tagged
+    /// with one secret.
     fn mhe_ggsw_share_finalize<R, K>(
         module: &Module<Self>,
         res: &mut R,
@@ -56,7 +83,7 @@ pub unsafe trait GGSWMHEProtocolImpl: GGLWEPatCompressedImpl {
 /// Selects the reference share generation and finalization; aggregation keeps
 /// its derived default.
 #[macro_export]
-macro_rules! impl_mhe_ggsw_reference {
+macro_rules! impl_ggsw_mhe_protocol_reference_full {
     ($be:ty) => {
         unsafe impl $crate::oep::GGSWMHEProtocolImpl for $be {
             fn mhe_ggsw_share_gen_tmp_bytes<A>(module: &::poulpy_hal::layouts::Module<$be>, infos: &A) -> usize

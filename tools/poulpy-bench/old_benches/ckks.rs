@@ -232,9 +232,13 @@ fn ckks_layout() -> GLWELayout {
     }
 }
 
-fn ckks_ct_meta() -> GLWEPlaintextMeta { GLWEPlaintextMeta { scale: Scale::Log(LOG_DELTA), slots: SlotsKind::Complex, log_sparsity: 0 } }
+fn ckks_ct_meta() -> GLWEPlaintextMeta {
+        slot_layout: poulpy_core::layouts::SlotLayout::Full, GLWEPlaintextMeta {
+        slot_layout: poulpy_core::layouts::SlotLayout::Full, scale: Scale::Log(LOG_DELTA), slots: SlotsKind::Complex, log_sparsity: 0 } }
 
-fn ckks_pt_meta() -> GLWEPlaintextMeta { GLWEPlaintextMeta { scale: Scale::Log(LOG_DELTA), slots: SlotsKind::Complex, log_sparsity: 0 } }
+fn ckks_pt_meta() -> GLWEPlaintextMeta {
+        slot_layout: poulpy_core::layouts::SlotLayout::Full, GLWEPlaintextMeta {
+        slot_layout: poulpy_core::layouts::SlotLayout::Full, scale: Scale::Log(LOG_DELTA), slots: SlotsKind::Complex, log_sparsity: 0 } }
 
 fn tsk_layout() -> GLWETensorKeyLayout {
     let (dnum, k_aux) = crate::params::key_dnum_k_aux((K + DSIZE * BASE2K) as u32, BASE2K as u32, DSIZE as u32);
@@ -728,7 +732,9 @@ fn mul_ckks_layout(p: &CkksMulParams) -> GLWELayout {
     }
 }
 
-fn mul_ckks_ct_meta(p: &CkksMulParams) -> GLWEPlaintextMeta { GLWEPlaintextMeta { scale: Scale::Log(p.log_delta), slots: SlotsKind::Complex, log_sparsity: 0 } }
+fn mul_ckks_ct_meta(p: &CkksMulParams) -> GLWEPlaintextMeta {
+        slot_layout: poulpy_core::layouts::SlotLayout::Full, GLWEPlaintextMeta {
+        slot_layout: poulpy_core::layouts::SlotLayout::Full, scale: Scale::Log(p.log_delta), slots: SlotsKind::Complex, log_sparsity: 0 } }
 
 fn mul_tsk_layout(p: &CkksMulParams) -> GLWETensorKeyLayout {
     let (dnum, k_aux) = crate::params::key_dnum_k_aux((p.k + p.dsize * p.base2k) as u32, p.base2k as u32, p.dsize as u32);

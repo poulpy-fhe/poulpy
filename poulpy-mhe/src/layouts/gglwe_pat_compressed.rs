@@ -1,13 +1,16 @@
 use std::fmt;
 
-use poulpy_core::layouts::{
-    Base2K, Degree, Dnum, GGLWEInfos, GLWEInfos, LWEInfos, Rank, TorusPrecision,
-    compressed::{
-        GGLWECompressed, GGLWECompressedBackendMut, GGLWECompressedBackendRef, GGLWECompressedSeed, GGLWECompressedSeedMut,
-        GGLWECompressedToBackendMut, GGLWECompressedToBackendRef,
+use poulpy_core::{
+    TransferInto,
+    layouts::{
+        Base2K, Degree, Dnum, GGLWEInfos, GLWEInfos, LWEInfos, Rank, TorusPrecision,
+        compressed::{
+            GGLWECompressed, GGLWECompressedBackendMut, GGLWECompressedBackendRef, GGLWECompressedSeed, GGLWECompressedSeedMut,
+            GGLWECompressedToBackendMut, GGLWECompressedToBackendRef,
+        },
     },
 };
-use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, WriterTo, ZnxWord};
+use poulpy_hal::layouts::{Backend, CopyFromHost, CopyToHost, Data, HostDataMut, HostDataRef, ReaderFrom, WriterTo, ZnxWord};
 
 pub type GGLWEPatCompressedOwned<BE> = GGLWEPatCompressed<<BE as Backend>::OwnedBuf, <BE as Backend>::ZnxWord>;
 
@@ -141,5 +144,16 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GGLWEPatCompressed<D, W> {
 impl<D: HostDataRef, W: ZnxWord> WriterTo for GGLWEPatCompressed<D, W> {
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
         self.inner.write_to(writer)
+    }
+}
+
+impl<D1, D2, W> TransferInto<GGLWEPatCompressed<D2, W>> for GGLWEPatCompressed<D1, W>
+where
+    D1: Data + CopyToHost,
+    D2: Data + CopyFromHost,
+    W: ZnxWord,
+{
+    fn transfer_into(&self, dst: &mut GGLWEPatCompressed<D2, W>) {
+        self.inner.transfer_into(&mut dst.inner);
     }
 }

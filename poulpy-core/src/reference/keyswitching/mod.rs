@@ -39,6 +39,7 @@ pub trait GLWEKeyswitchReference<BE: Backend> {
 
 impl<BE: Backend> GLWEKeyswitchReference<BE> for ::poulpy_hal::layouts::Module<BE>
 where
+    BE: crate::oep::GGLWEProductDigitsStridedImpl,
     Module<BE>: crate::api::GLWEBytesOf<BE>
         + poulpy_hal::api::ModuleN
         + crate::reference::keyswitching::GLWEKeyswitchInternal<BE>
@@ -62,9 +63,7 @@ where
         A: crate::layouts::GLWEInfos,
         K: crate::layouts::GGLWEInfos,
     {
-        crate::reference::keyswitching::glwe::glwe_keyswitch_tmp_bytes_reference::<BE, _, _, _, _>(
-            self, res_infos, a_infos, key_infos,
-        )
+        crate::reference::keyswitching::glwe::glwe_keyswitch_tmp_bytes_reference(self, res_infos, a_infos, key_infos)
     }
 
     fn glwe_keyswitch_reference<R, A>(
@@ -77,7 +76,7 @@ where
         R: crate::layouts::GLWEToBackendMut<BE> + crate::layouts::GLWEInfos,
         A: crate::layouts::GLWEToBackendRef<BE> + crate::layouts::GLWEInfos,
     {
-        crate::reference::keyswitching::glwe::glwe_keyswitch_reference::<BE, _, _, _>(self, res, a, key, scratch)
+        crate::reference::keyswitching::glwe::glwe_keyswitch_reference(self, res, a, key, scratch)
     }
 
     fn glwe_keyswitch_assign_reference<R>(

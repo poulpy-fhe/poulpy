@@ -14,10 +14,10 @@ use crate::{
 use poulpy_core::{
     GGLWEToGGSWKeyEncryptSk, GGSWEncryptSk, GLWEAutomorphismKeyEncryptSk, GLWEExternalProduct, GLWESwitchingKeyEncryptSk,
     GLWEToLWESwitchingKeyEncryptSk, TransferInto,
+    api::{GGSWPreparedFactory, GLWESecretPreparedFactory, GLWESecretSampling, LWESecretSampling},
     layouts::{
-        GGLWEToGGSWKeyLayout, GGSWInfos, GGSWLayout, GGSWPreparedFactory, GGSWPreparedToBackendRef, GLWEAutomorphismKeyLayout,
-        GLWEInfos, GLWELayout, GLWESecretPreparedFactory, GLWESecretSampling, GLWESwitchingKeyLayout, GLWEToLWEKeyLayout,
-        LWEInfos, LWESecretSampling, ModuleCoreAlloc,
+        GGLWEToGGSWKeyLayout, GGSWInfos, GGSWLayout, GGSWPreparedToBackendRef, GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout,
+        GLWESwitchingKeyLayout, GLWEToLWEKeyLayout, LWEInfos, ModuleCoreAlloc,
     },
 };
 use poulpy_hal::{

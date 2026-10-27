@@ -43,12 +43,13 @@ use super::helpers::{
     ckks_pt_cst_full, ckks_spec, gen_atk, gen_ci_keys, gen_sk, gen_sk_with_raw, gen_tsk, upload_pt,
 };
 use crate::{
-    CKKSInfos, CoeffsMeta, GLWEPlaintextInfos, GLWEPlaintextMeta, ReplicatedLayout, Scale, SetCKKSInfos, SlotLayout, SlotsKind,
+    CKKSInfos, CKKSLayout, CoeffsMeta, GLWEPlaintextInfos, GLWEPlaintextMeta, ReplicatedLayout, Scale, SetCKKSInfos, SlotLayout,
+    SlotsKind,
     api::{
-        CKKSAddOps, CKKSAffineOps, CKKSAllOpsTmpBytes, CKKSComplexPolynomialEvaluationOps, CKKSConjugateOps, CKKSDecryptOps,
-        CKKSDotProductOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncryptOps, CKKSEvalModOps, CKKSLinearTransformationOps,
-        CKKSModuleInfos, CKKSMulOps, CKKSPolynomialEvaluationOps, CKKSReplicatedBootstrapOps, CKKSReplicatedCIBootstrapOps,
-        CKKSReplicatedOps, CKKSRotateOps, CKKSSubOps,
+        CKKSAddOps, CKKSAffineOps, CKKSAllOpsTmpBytes, CKKSComplexPolynomialEvaluationOps, CKKSConjugateOps, CKKSCopyOps,
+        CKKSDecryptOps, CKKSDotProductOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncryptOps, CKKSEvalModOps,
+        CKKSLinearTransformationOps, CKKSModuleInfos, CKKSMulOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops,
+        CKKSReplicatedBootstrapOps, CKKSReplicatedCIBootstrapOps, CKKSReplicatedOps, CKKSRotateOps, CKKSRoundOps, CKKSSubOps,
     },
     layouts::{
         CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, EvalModPlan, EvalModPoly, EvalModType, ReplicatedBootstrapPlan,
@@ -105,10 +106,11 @@ where
 /// Slots holding a batch of `len` values in `slot_layout`; a full layout
 /// repeats the batch up to the backend's smallest plaintext.
 fn slots_of<BE: Backend>(module: &Module<BE>, slot_layout: SlotLayout, len: usize) -> usize {
-    match slot_layout {
-        SlotLayout::Full => len.max(module.ckks_slots_of_degree(BE::MIN_DEGREE)),
+    let slots = match slot_layout {
+        SlotLayout::Full => len,
         SlotLayout::Replicated(layout) => len << layout.log_r(),
-    }
+    };
+    slots.max(module.ckks_slots_of_degree(BE::MIN_DEGREE))
 }
 
 /// Bits of precision: `-log2 max |got - want|` over both parts.
@@ -337,7 +339,7 @@ where
     // A few bits of budget hold the unit-scale message.
     let budget = ct.log_budget().min(10);
     let mut pt = module.ckks_pt_vec_alloc(
-        module.ckks_slots_of_degree(ct.n().as_usize() >> ct.log_sparsity()),
+        module.ckks_slots_of_degree((ct.n().as_usize() >> ct.log_sparsity()).max(BE::MIN_DEGREE)),
         Base2K(params.base2k as u32),
         TorusPrecision((ct.log_delta() + budget) as u32),
     );
@@ -529,7 +531,7 @@ where
         Some(CONSTANT),
         None,
     );
-    assert!(module.ckks_add_pt_const_into(&mut out, &shaped, 0, &cst, 0, s).is_err());
+    assert!(module.ckks_add_pt_const_into(&mut out, 0, &shaped, &cst, 0, s).is_err());
     module.ckks_mul_pt_const_into(&mut out, &shaped, &cst, 0, s)?;
     Ok(())
 }
@@ -735,7 +737,7 @@ where
     let x = encrypt_batch(params, module, &sk, slot_layout, (&xs, &zero), k, 1)?;
     let out = alloc_ct(params, module, k);
     let coeff_prec = ckks_spec(params.n, params.base2k, LOG_DELTA, 10);
-    let scratch = ScratchOwned::<BE>::alloc(module.ckks_all_ops_tmp_bytes(&x, &params.tsk_layout(), &coeff_prec));
+    let scratch = ScratchOwned::<BE>::alloc(module.ckks_all_ops_tmp_bytes(&x, &coeff_prec, &params.tsk_layout()));
     let encoding = ScratchOwned::<BE>::alloc(module.ckks_reim_tmp_bytes(params.n));
     Ok(PolynomialSetup {
         sk,
@@ -956,8 +958,8 @@ where
     let ct = encrypt_batch(params, module, &sk, slot_layout, (&values.0, &values.1), k, 1)?;
     let mut rotated = alloc_ct(params, module, k);
     let s = &mut scratch.borrow();
-    module.ckks_rotate_into(&mut rotated, &ct, step, &atks, s)?;
-    module.ckks_rotate_assign(&mut rotated, step, &atks, s)?;
+    module.ckks_rotate_into(step, &mut rotated, &ct, &atks, s)?;
+    module.ckks_rotate_assign(step, &mut rotated, &atks, s)?;
     let mut out = alloc_ct(params, module, k);
     module.ckks_conjugate_into(&mut out, &rotated, &conj, s)?;
     assert_eq!(out.slot_layout(), slot_layout);
@@ -1020,8 +1022,8 @@ where
     let ct = encrypt_batch(params, module, &sk, slot_layout, (&values.0, &values.1), k, 1)?;
     let mut out = alloc_ct(params, module, k);
     let s = &mut scratch.borrow();
-    module.ckks_rotate_into(&mut out, &ct, step, &atks, s)?;
-    module.ckks_rotate_assign(&mut out, step, &atks, s)?;
+    module.ckks_rotate_into(step, &mut out, &ct, &atks, s)?;
+    module.ckks_rotate_assign(step, &mut out, &atks, s)?;
     assert_eq!(out.slot_layout(), slot_layout);
 
     let want_re: Vec<F> = (0..len).map(|i| values.0[(i + 2) % len]).collect();
@@ -1083,9 +1085,9 @@ where
     )?;
     let mut out = alloc_ct(&params, module, 3 * LOG_DELTA);
     let s = &mut scratch.borrow();
-    assert!(module.ckks_rotate_into(&mut out, &ct, 1, &atks, s).is_err());
-    assert!(module.ckks_rotate_assign(&mut ct, -1, &atks, s).is_err());
-    module.ckks_rotate_into(&mut out, &ct, 1 << layout().log_r(), &atks, s)?;
+    assert!(module.ckks_rotate_into(1, &mut out, &ct, &atks, s).is_err());
+    assert!(module.ckks_rotate_assign(-1, &mut ct, &atks, s).is_err());
+    module.ckks_rotate_into(1 << layout().log_r(), &mut out, &ct, &atks, s)?;
     Ok(())
 }
 
@@ -1438,9 +1440,23 @@ where
     let values = unit_batch::<BE, F>(len, 0);
     let want = apply_matrix::<BE, F>((&values.0, &values.1));
     let k = 40 + 2 * log_delta_diag;
-    let mut scratch = ScratchOwned::<BE>::alloc(1 << 24);
-
     let ckks = encrypt_full(&params, module, &sk, (&values.0, &values.1), 40, k)?;
+    let wide = CKKSLayout {
+        glwe_layout: GLWELayout {
+            k: (k + extra_bits + trace.len()).into(),
+            ..ckks.glwe_layout()
+        },
+        meta: ckks.meta(),
+    };
+    let buffers = 3 * BE::scratch_aligned(BE::bytes_of_vec_znx(params.n, wide.rank().as_usize() + 1, wide.size()));
+    let atk_infos = params.atk_layout();
+    let ops = crate::reference::replicated::transform_tmp_bytes(module, &wide, &atk_infos)
+        .max(module.ckks_rotate_tmp_bytes(&wide, &atk_infos))
+        .max(module.ckks_add_tmp_bytes(wide.size()))
+        .max(module.ckks_copy_tmp_bytes(&wide, &ckks))
+        .max(module.ckks_round_tmp_bytes(&ckks, &wide))
+        .max(module.ckks_div_pow2_tmp_bytes(wide.size()));
+    let mut scratch = ScratchOwned::<BE>::alloc(buffers + ops);
     let mut onto = alloc_ct(&params, module, k);
     let mut to_workspace = to.alloc_workspace(
         module,
@@ -1785,7 +1801,7 @@ pub fn test_replicated_ci_bootstrap<BE, STD>(params: CKKSTestParams, ci: Module<
 where
     BE: TestContextBackend<Ring = ConjugateInvariant>
         + for<'a> Backend<BufRef<'a> = STD::BufRef<'a>, BufMut<'a> = STD::BufMut<'a>>,
-    STD: TestContextBackend<Ring = Standard> + CKKSEncapsulatedModUpImpl,
+    STD: TestContextBackend<Ring = Standard> + CKKSEncapsulatedModUpImpl + poulpy_core::oep::PreparationImpl,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextSharedModule<BE> + CKKSEncodingOps<BE, f64> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,

@@ -22,10 +22,13 @@ use poulpy_ckks::{
         reference_encoder::ReferenceEncoder,
     },
 };
-use poulpy_core::layouts::{
-    BackendGLWESecret, DiagonalArithmetic, GLWETensorKeyLayout, GLWEToBackendMut, GetAutomorphismKey, LWEInfos, Rank,
-    TorusPrecision,
-    prepared::{GLWEAutomorphismKeyPreparedBackendRef, GLWESecretPrepared, GLWETensorKeyPreparedFactory},
+use poulpy_core::{
+    api::GLWETensorKeyPreparedFactory,
+    layouts::{
+        BackendGLWESecret, DiagonalArithmetic, GLWETensorKeyLayout, GLWEToBackendMut, GetAutomorphismKey, LWEInfos, Rank,
+        TorusPrecision,
+        prepared::{GLWEAutomorphismKeyPreparedBackendRef, GLWESecretPrepared},
+    },
 };
 use poulpy_hal::{
     AlignedBuf,
@@ -49,15 +52,16 @@ use super::helpers::{
 use crate::{
     api::{BlasMatIntraOps, BlasMatMulOps},
     layouts::{
-        BlasCiphertext, BlasCiphertextOwned, BlasContext, BlasContextInfos, BlasGridInfos, BlasLayout, BlasMatMulLeft,
-        BlasMatMulOperand, BlasMatMulOperandLayout, BlasMatMulOperandPreparedFactory, BlasMatMulRight, BlasModuleAlloc, BlasPlan,
-        BlasPtAlgorithm, BlasPtOperand, BlasPtOperandInfos, Left, Right, blas_matmul_left_operand_layout,
-        blas_matmul_right_operand_layout, ciphertext::layout_of, replicated, validate::MASKLESS, validate_blas_matmul_prepared,
+        BlasCiphertext, BlasCiphertextOwned, BlasContext, BlasContextInfos, BlasGridInfos, BlasKeyUses, BlasLayout,
+        BlasMatMulLeft, BlasMatMulOperand, BlasMatMulOperandLayout, BlasMatMulOperandPreparedFactory, BlasMatMulRight,
+        BlasModuleAlloc, BlasPlan, BlasPtAlgorithm, BlasPtOperand, BlasPtOperandInfos, Left, Right,
+        blas_matmul_left_operand_layout, blas_matmul_right_operand_layout, ciphertext::layout_of, replicated, validate::MASKLESS,
+        validate_blas_matmul_prepared,
     },
     oep::{BlasImpl, BlasMatMulImpl},
     reference::{
-        BlasKeyUses, BlasMatMulReference, blas_matmul_pt_left_key_uses, blas_matmul_pt_left_output_layout,
-        blas_matmul_pt_right_key_uses, blas_matmul_pt_right_output_layout, pt_label,
+        BlasMatMulReference, blas_matmul_pt_left_key_uses, blas_matmul_pt_left_output_layout, blas_matmul_pt_right_key_uses,
+        blas_matmul_pt_right_output_layout, pt_label,
     },
 };
 
@@ -829,9 +833,13 @@ pub fn test_blas_matmul_pt_right_guards<BE, F, E>(
     // inside the implementation, before any write.
     let input = grid_snapshot::<BE, _>(&ct);
     let mut narrow_res = res_below_scale(&params, module, log_d, ct.block_layout().log_delta());
-    assert_guard::<BE, _>("budget", "mul", Budget, &mut narrow_res, |res| {
-        module.blas_matmul_pt_right(res, &ct, &b, &ctx, &keys, &mut op_scratch.borrow())
-    });
+    assert_guard::<BE, _>(
+        "budget",
+        "ckks_eval_linear_transformation_sum_into",
+        Budget,
+        &mut narrow_res,
+        |res| module.blas_matmul_pt_right(res, &ct, &b, &ctx, &keys, &mut op_scratch.borrow()),
+    );
     assert!(grid_snapshot::<BE, _>(&ct) == input, "budget: blas_matmul_pt_right changed a");
 
     let jkls = pt_operand::<BE, F, Right>(
@@ -861,9 +869,17 @@ pub fn test_blas_matmul_pt_right_guards<BE, F, E>(
         let input = grid_snapshot::<BE, _>(&short);
         let mut res = alloc_grid(&params, module, log_d, 1, 1, params.k);
         let bytes = module.blas_matmul_pt_right_tmp_bytes(&res, &short, &jkls, &ctx, &params.atk_layout());
-        assert_guard::<BE, _>(label, "mul", Budget, &mut res, |res| {
-            module.blas_matmul_pt_right(res, &short, &jkls, &ctx, &keys, &mut poisoned_scratch::<BE>(bytes).borrow())
-        });
+        assert_guard::<BE, _>(
+            label,
+            if label == "jkls second map" {
+                "ckks_eval_linear_transformation_sum_into"
+            } else {
+                "ckks_eval_linear_transformation_into"
+            },
+            Budget,
+            &mut res,
+            |res| module.blas_matmul_pt_right(res, &short, &jkls, &ctx, &keys, &mut poisoned_scratch::<BE>(bytes).borrow()),
+        );
         assert!(
             grid_snapshot::<BE, _>(&short) == input,
             "{label}: blas_matmul_pt_right changed a"
@@ -1496,9 +1512,13 @@ pub fn test_blas_matmul_pt_left_guards<BE, F, E>(
     // inside the implementation, before any write.
     let input = grid_snapshot::<BE, _>(&ct);
     let mut narrow_res = res_below_scale(&params, module, log_d, ct.block_layout().log_delta());
-    assert_guard::<BE, _>("budget", "mul", Budget, &mut narrow_res, |res| {
-        module.blas_matmul_pt_left(res, &b, &ct, &ctx, &keys, &mut op_scratch.borrow())
-    });
+    assert_guard::<BE, _>(
+        "budget",
+        "ckks_eval_linear_transformation_sum_into",
+        Budget,
+        &mut narrow_res,
+        |res| module.blas_matmul_pt_left(res, &b, &ct, &ctx, &keys, &mut op_scratch.borrow()),
+    );
     assert!(grid_snapshot::<BE, _>(&ct) == input, "budget: blas_matmul_pt_left changed a");
 
     let jkls = pt_operand::<BE, F, Left>(
@@ -1528,9 +1548,17 @@ pub fn test_blas_matmul_pt_left_guards<BE, F, E>(
         let input = grid_snapshot::<BE, _>(&short);
         let mut res = alloc_grid(&params, module, log_d, 1, 1, params.k);
         let bytes = module.blas_matmul_pt_left_tmp_bytes(&res, &jkls, &short, &ctx, &params.atk_layout());
-        assert_guard::<BE, _>(label, "mul", Budget, &mut res, |res| {
-            module.blas_matmul_pt_left(res, &jkls, &short, &ctx, &keys, &mut poisoned_scratch::<BE>(bytes).borrow())
-        });
+        assert_guard::<BE, _>(
+            label,
+            if label == "jkls second map" {
+                "ckks_eval_linear_transformation_sum_into"
+            } else {
+                "ckks_eval_linear_transformation_into"
+            },
+            Budget,
+            &mut res,
+            |res| module.blas_matmul_pt_left(res, &jkls, &short, &ctx, &keys, &mut poisoned_scratch::<BE>(bytes).borrow()),
+        );
         assert!(
             grid_snapshot::<BE, _>(&short) == input,
             "{label}: blas_matmul_pt_left changed a"
@@ -1972,8 +2000,8 @@ pub fn test_blas_matmul_pt_masked_guards<BE, F, E>(
 /// ([`foreign_layouts`]), whose rank its keys reject; factors and `res` all of another rank than the rotation keys; a
 /// copy relabelled past `log2` of the ring degree; a context encoded on a module of another degree or at another radix,
 /// or at another dimension, which the prepared product of a hot operand rejects too, and that of two cold operands
-/// ignores; a factor at a radix other than the context's; an inner-dimension mismatch; a radix above 62, whose digits
-/// cannot hold two lazy terms of the JKLS kernel's two-pass circuit; a missing rotation or tensor key; and a tensor key
+/// ignores; a factor at a radix other than the context's; an inner-dimension mismatch; a radix above 62, where two
+/// canonical tensor digits can overflow an `i64`; a missing rotation or tensor key; and a tensor key
 /// of another rank than the blocks. The prepared product's validator also rejects operand infos of either hint without
 /// a batch record, at another dimension, without a block, or whose label does not allow their record, and operands and
 /// `res` all of another rank than the keys. poulpy-ckks's budget check rejects a `res` narrower than the factors' scale
@@ -2212,29 +2240,19 @@ pub fn test_blas_matmul_guards<BE, F, E>(
         }
     }
 
-    // `res` at radix 63: its digits hold one lazy term, short of the two the JKLS kernel's two-pass circuit sums at
-    // least. Its radix is not the factors' either, so the reason tells the two checks apart.
+    // `res` at radix 63, above poulpy-ckks's prepared dot product's 62; the radix check, which `validate.rs` pins, comes
+    // before the comparison with the factors' radix.
     let radix_63 = CKKSTestParams { base2k: 63, ..params };
     let mut res = alloc_grid(&radix_63, module, log_d, 1, 1, params.k);
-    let mut errors = vec![
-        module
-            .blas_matmul(&mut res, &ct, &column, &ctx, &keys, &keys, &mut op_scratch.borrow())
-            .unwrap_err(),
-    ];
-    assert_guard::<BE, _>("lazy sums", "blas_matmul", InvalidOperand, &mut res, |res| {
+    assert_guard::<BE, _>("radix 63", "blas_matmul", InvalidOperand, &mut res, |res| {
         module.blas_matmul(res, &ct, &column, &ctx, &keys, &keys, &mut op_scratch.borrow())
     });
     for (hl, hr) in MIXES {
         let (l, r) = (&left[side(hl)], &right[side(hr)]);
-        let mut call = |res: &mut BlasCiphertextOwned<BE>| {
+        let label = &format!("radix 63 {hl:?} x {hr:?}");
+        assert_guard::<BE, _>(label, "blas_matmul_prepared", InvalidOperand, &mut res, |res| {
             module.blas_matmul_prepared(res, l, r, &ctx, &keys, &keys, &mut op_scratch.borrow())
-        };
-        errors.push(call(&mut res).unwrap_err());
-        let label = &format!("lazy sums {hl:?} x {hr:?}");
-        assert_guard::<BE, _>(label, "blas_matmul_prepared", InvalidOperand, &mut res, call);
-    }
-    for e in errors {
-        assert!(e.to_string().contains("lazy terms"), "lazy sums: {e}");
+        });
     }
 
     // Operand infos the prepared product's validator rejects, beside a valid operand, under either hint: without a
@@ -2316,14 +2334,18 @@ pub fn test_blas_matmul_guards<BE, F, E>(
     let infos = || (left.each_ref().map(operand_infos), right.each_ref().map(operand_infos));
     let operands = infos();
     let mut narrow_res = res_below_scale(&params, module, log_d, ct.block_layout().log_delta());
-    assert_guard::<BE, _>("budget", "mul", Budget, &mut narrow_res, |res| {
+    assert_guard::<BE, _>("budget", "ckks_dot_product_prepared", Budget, &mut narrow_res, |res| {
         module.blas_matmul(res, &ct, &column, &ctx, &keys, &keys, &mut op_scratch.borrow())
     });
     for (hl, hr) in MIXES {
         let (l, r) = (&left[side(hl)], &right[side(hr)]);
-        assert_guard::<BE, _>(&format!("budget {hl:?} x {hr:?}"), "mul", Budget, &mut narrow_res, |res| {
-            module.blas_matmul_prepared(res, l, r, &ctx, &keys, &keys, &mut op_scratch.borrow())
-        });
+        assert_guard::<BE, _>(
+            &format!("budget {hl:?} x {hr:?}"),
+            "ckks_dot_product_prepared",
+            Budget,
+            &mut narrow_res,
+            |res| module.blas_matmul_prepared(res, l, r, &ctx, &keys, &keys, &mut op_scratch.borrow()),
+        );
     }
     assert!(
         [&ct, &column].map(grid_snapshot::<BE, _>) == factors,
@@ -2355,22 +2377,36 @@ pub fn test_blas_matmul_guards<BE, F, E>(
     }
     let inputs = [&short, &short_right].map(grid_snapshot::<BE, _>);
     let left_short = matmul_left_operand(module, &short, &ctx, &keys, Reuse, &mut op_scratch.borrow());
-    assert_rejected("budget", "mul", Budget, left_short);
+    assert_rejected("budget", "ckks_eval_linear_transformation_into", Budget, left_short);
     let right_short = matmul_right_operand(module, &short_right, &ctx, &keys, Reuse, &mut op_scratch.borrow());
-    assert_rejected("budget", "mul", Budget, right_short);
-    assert_guard::<BE, _>("budget factor", "mul", Budget, &mut res, |res| {
-        module.blas_matmul(res, &short, &column, &ctx, &keys, &keys, &mut op_scratch.borrow())
-    });
+    assert_rejected("budget", "ckks_eval_linear_transformation_into", Budget, right_short);
+    assert_guard::<BE, _>(
+        "budget factor",
+        "ckks_eval_linear_transformation_into",
+        Budget,
+        &mut res,
+        |res| module.blas_matmul(res, &short, &column, &ctx, &keys, &keys, &mut op_scratch.borrow()),
+    );
     let hot_short = matmul_left_operand(module, &short, &ctx, &keys, OneShot, &mut op_scratch.borrow()).unwrap();
-    assert_guard::<BE, _>("budget hot left", "mul", Budget, &mut res, |res| {
-        module.blas_matmul_prepared(res, &hot_short, cold_right, &ctx, &keys, &keys, &mut op_scratch.borrow())
-    });
+    assert_guard::<BE, _>(
+        "budget hot left",
+        "ckks_eval_linear_transformation_into",
+        Budget,
+        &mut res,
+        |res| module.blas_matmul_prepared(res, &hot_short, cold_right, &ctx, &keys, &keys, &mut op_scratch.borrow()),
+    );
     // `short_right` is 1 x 2: on the right, it multiplies `column`'s 2 x 1 operand into 2 x 2.
     let hot_short = matmul_right_operand(module, &short_right, &ctx, &keys, OneShot, &mut op_scratch.borrow()).unwrap();
-    assert_guard::<BE, _>("budget hot right", "mul", Budget, &mut alloc(2, 2), |res| {
-        let left = &left_column[side(Reuse)];
-        module.blas_matmul_prepared(res, left, &hot_short, &ctx, &keys, &keys, &mut op_scratch.borrow())
-    });
+    assert_guard::<BE, _>(
+        "budget hot right",
+        "ckks_eval_linear_transformation_into",
+        Budget,
+        &mut alloc(2, 2),
+        |res| {
+            let left = &left_column[side(Reuse)];
+            module.blas_matmul_prepared(res, left, &hot_short, &ctx, &keys, &keys, &mut op_scratch.borrow())
+        },
+    );
     assert!(
         [&short, &short_right].map(grid_snapshot::<BE, _>) == inputs,
         "budget: a preparation changed its input"
@@ -2408,11 +2444,17 @@ pub fn test_blas_matmul_guards<BE, F, E>(
             "{label}: one error for both sides"
         );
         let mut both = None;
-        assert_guard::<BE, _>(&format!("budget {label}"), "mul", Budget, &mut res, |res| {
-            let result = matmul(short_a, short_b, res);
-            both = error(&result);
-            result
-        });
+        assert_guard::<BE, _>(
+            &format!("budget {label}"),
+            "ckks_eval_linear_transformation_into",
+            Budget,
+            &mut res,
+            |res| {
+                let result = matmul(short_a, short_b, res);
+                both = error(&result);
+                result
+            },
+        );
         assert_eq!(both, left_error, "{label}: blas_matmul returned the right terms' error first");
         let s = &mut op_scratch.borrow();
         let hot_a = matmul_left_operand(module, short_a, &ctx, &keys, OneShot, s).unwrap();
@@ -2671,9 +2713,9 @@ pub fn test_blas_replicated_shifts<BE, F, E>(
         let mut via_rotation = alloc_grid(&params, module, log_d, 1, 1, params.k);
         module
             .ckks_rotate_into(
+                (k * d) as i64,
                 via_rotation.block_mut(0, 0),
                 ct.block(0, 0),
-                (k * d) as i64,
                 &keys,
                 &mut scratch.borrow(),
             )
@@ -2799,7 +2841,7 @@ pub fn test_blas_matmul_operands<BE, F, E>(
 
         let mut left_rejected = vec![("narrow", &narrow, InvalidOperand, "blas_matmul_prepare_left")];
         if hint == Reuse {
-            left_rejected.push(("budget", &short, Budget, "mul"));
+            left_rejected.push(("budget", &short, Budget, "ckks_eval_linear_transformation_into"));
         }
         check_operand_refill(
             &format!("left {hint:?}"),

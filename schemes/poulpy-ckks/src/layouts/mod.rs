@@ -105,6 +105,7 @@ pub mod bootstrapping_keys;
 pub mod ciphertext;
 pub mod complex_diagonals;
 pub mod dft;
+pub(crate) mod dft_matrices;
 mod encoding_buffer;
 pub mod eval_mod;
 pub mod functional_bootstrapping;
@@ -114,13 +115,14 @@ pub mod paco;
 pub mod plaintext;
 pub mod replicated;
 pub mod ship;
+pub(crate) mod slots;
 pub(crate) mod validation;
 
 pub use alloc::CKKSModuleAlloc;
 pub use approximation::PolynomialApproximation;
 pub use bootstrapping::{
     BootstrappingContext, BootstrappingContextUnprepared, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques,
-    EvalModCI, EvalModRing, EvalRoundPlus, SparseSecretEncapsulation,
+    CIConversion, CIPre, EvalModCI, EvalModRing, EvalRoundPlus, SparseSecretEncapsulation,
 };
 pub use bootstrapping_keys::{
     BootstrappingCIKeys, BootstrappingKeySet, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingKeysPrepared,
@@ -132,8 +134,8 @@ pub use ciphertext::{
 };
 pub use complex_diagonals::ComplexDiagonals;
 pub use dft::{
-    DFTMatrix, DFTMatrixFactors, DFTMatrixPrepared, DFTOutputFormat, DFTPlan, DFTType, Decode, DftDirection, DftFormat, Encode,
-    Repack, Split, Standard,
+    DFTMatrix, DFTMatrixFactors, DFTMatrixPrepared, DFTOutputFormat, DFTPlan, DFTType, Decode, DftDirection, DftFormat,
+    DftScalar, Encode, Repack, Split, Standard,
 };
 pub use encoding_buffer::{
     CKKSEncodingBuffer, CKKSEncodingBufferBackendMut, CKKSEncodingBufferBackendRef, CKKSEncodingBufferInfos,

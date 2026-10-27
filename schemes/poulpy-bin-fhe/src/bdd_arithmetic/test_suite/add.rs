@@ -1,6 +1,7 @@
 use poulpy_core::{
     GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWENoise,
-    layouts::{GGSWLayout, GLWELayout, GLWESecretPrepared, GLWESecretPreparedFactory},
+    api::GLWESecretPreparedFactory,
+    layouts::{GGSWLayout, GLWELayout, GLWESecretPrepared},
 };
 use poulpy_hal::layouts::HostDataRef;
 use poulpy_hal::{

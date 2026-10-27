@@ -15,7 +15,8 @@ pub trait GLWEDecrypt<BE: Backend> {
     /// Decrypts a GLWE ciphertext into the destination plaintext.
     ///
     /// # Panics
-    /// Panics if the ciphertext, plaintext and prepared secret key degrees differ
+    ///
+    /// If the ciphertext, plaintext and prepared secret key degrees differ
     /// or exceed the module degree, including in release builds.
     fn glwe_decrypt<R, P, S>(&self, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, BE>)
     where
@@ -36,7 +37,8 @@ pub trait GLWEMaskInnerProduct<BE: Backend> {
     /// precision of `res`.
     ///
     /// # Panics
-    /// Panics if the mask is not canonical, if the output, mask and secret degrees
+    ///
+    /// If the mask is not canonical, if the output, mask and secret degrees
     /// differ or exceed the module degree, or if the mask rank is zero or differs
     /// from the secret's.
     fn glwe_mask_inner_product<R, A, S>(&self, res: &mut R, mask: &A, sk: &S, scratch: &mut ScratchArena<'_, BE>)

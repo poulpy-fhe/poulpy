@@ -2,10 +2,11 @@
 //!
 //! All test logic lives in `poulpy_ckks::test_suite` as backend-generic
 //! functions; this file only instantiates that suite for each concrete
-//! `(backend, scalar, encoder, params)` combination via `ckks_backend_test_suite!`.
+//! `(backend, scalar, encoder, params)` combination via `ckks_backend_test_suite!`,
+//! and the determinism fixtures of each type via `ckks_determinism_test_suite!`.
 //! There should be no hand-written test here.
 
-use poulpy_ckks::{ckks_backend_rank2_test_suite, ckks_backend_test_suite};
+use poulpy_ckks::{ckks_backend_rank2_test_suite, ckks_backend_test_suite, ckks_determinism_test_suite};
 
 const ATK_ROTATIONS: &[i64] = &[1, 7];
 
@@ -36,6 +37,10 @@ ckks_backend_test_suite!(
     rotations = super::ATK_ROTATIONS,
 );
 
+ckks_determinism_test_suite!(mod ckks_determinism_fft64portable, backend = crate::FFT64Portable, f32);
+
+ckks_determinism_test_suite!(mod ckks_determinism_ntt4x30portable, backend = crate::NTT4x30Portable, f32);
+
 // Rank-2 coverage: the rank-generic arithmetic subset (the full suite's
 // bootstrapping/EvalMod/DFT/PaCo pipelines are rank-1 by construction).
 ckks_backend_rank2_test_suite!(
@@ -51,8 +56,14 @@ ckks_backend_rank2_test_suite!(
 /// small S2C-first preset runs by default.
 mod bootstrapping_presets {
     use poulpy_ckks::test_suite::presets::{
-        bootstrapping_presets_meet_precision, ci_bootstrap_refuses_invalid_inputs, small_s2c_preset_meets_precision,
+        bootstrapping_plan_keys_match_context, bootstrapping_presets_meet_precision, ci_bootstrap_refuses_invalid_inputs,
+        small_s2c_preset_meets_precision,
     };
+
+    #[test]
+    fn ntt4x30_bootstrapping_plan_keys_match_context() {
+        bootstrapping_plan_keys_match_context::<crate::NTT4x30Portable>();
+    }
 
     #[test]
     fn ntt4x30_small_s2c_preset_meets_precision() {
@@ -67,13 +78,13 @@ mod bootstrapping_presets {
     #[test]
     #[ignore = "runs a full logN16 bootstrap per preset; opt in with --ignored"]
     fn ntt4x30_presets_meet_precision() {
-        bootstrapping_presets_meet_precision::<crate::NTT4x30Portable>(52);
+        bootstrapping_presets_meet_precision::<crate::NTT4x30Portable>();
     }
 
     #[test]
     #[ignore = "runs a full logN16 bootstrap per preset; opt in with --ignored"]
     fn fft64_presets_meet_precision() {
-        bootstrapping_presets_meet_precision::<crate::FFT64Portable>(18);
+        bootstrapping_presets_meet_precision::<crate::FFT64Portable>();
     }
 }
 
@@ -430,12 +441,4 @@ poulpy_ckks::ckks_encryption_parity_test_suite! {
     backend_ref = poulpy_cpu_oracle::test_suite::ControlledSamplingFFT64CIOracle,
     backend_test = crate::NTT4x30CIPortable,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
-}
-
-#[test]
-fn ckks_encoding_determinism_f32() {
-    use poulpy_hal::layouts::Module;
-    let module = Module::<crate::FFT64Portable>::new(4096);
-    poulpy_ckks::test_suite::determinism::encoding_fixtures::<crate::FFT64Portable, f32>(&module);
-    poulpy_ckks::test_suite::determinism::setup_fixtures::<crate::FFT64Portable, f32>(&module);
 }

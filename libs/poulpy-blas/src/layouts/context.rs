@@ -152,6 +152,18 @@ impl BlasPlan {
         self.elements(cyclotomic_order, |slots| self.shift_maps(slots, k, false))
     }
 
+    /// Galois elements `blas_sum_rows` looks up, on a grid of any label: its tree's rotations by `2^i d` and, off a
+    /// replicated grid, its broadcast's by `-2^i d`, for `i < log2(d)`.
+    pub fn sum_rows_galois_elements(&self, cyclotomic_order: i64) -> Vec<i64> {
+        self.reduction_elements(cyclotomic_order, true)
+    }
+
+    /// Galois elements `blas_sum_cols` looks up: its tree's rotations by `2^i` and its broadcast's by `-2^i`, for
+    /// `i < log2(d)`.
+    pub fn sum_cols_galois_elements(&self, cyclotomic_order: i64) -> Vec<i64> {
+        self.reduction_elements(cyclotomic_order, false)
+    }
+
     /// Galois elements `blas_rotate` by `r` matrix slots looks up; none when the matrix slot count divides `r`.
     pub fn rotate_galois_elements(&self, cyclotomic_order: i64, r: i64) -> Vec<i64> {
         let Some(slots) = self.slots(cyclotomic_order) else {
@@ -195,6 +207,16 @@ impl BlasPlan {
             list.extend((1..1 << self.log_d).flat_map(|k| self.masked_rows(slots, k)));
             list
         })
+    }
+
+    /// The rotations of an axis reduction along the rows (`rows`) or the columns, tree and broadcast; none when a block
+    /// does not fit the slots.
+    fn reduction_elements(&self, cyclotomic_order: i64, rows: bool) -> Vec<i64> {
+        let Some(slots) = self.slots(cyclotomic_order) else {
+            return Vec::new();
+        };
+        let tree = reduction_rotations(self.log_d, rows);
+        galois_elements_from_rotations(tree.flat_map(|r| [r, (-r).rem_euclid(slots as i64)]), cyclotomic_order)
     }
 
     /// The slot count of a ring of cyclotomic order `cyclotomic_order`, if a block fits it.
@@ -259,7 +281,7 @@ impl BlasPlan {
 /// The host diagonals of a shift map at `k`, on `slots` slots and blocks of `2^log_d`.
 type ShiftMap<F> = fn(usize, usize, usize) -> Diagonals<F>;
 
-/// One map of a context: one of its four single maps, or the map at `k` of one of its seven families of shifts, nine
+/// One map of a context: one of its six single maps, or the map at `k` of one of its seven families of shifts, nine
 /// under `JklsStored` and `JklsGalois`.
 #[derive(Clone, Copy)]
 pub(crate) enum MapId {
@@ -271,7 +293,9 @@ const SIGMA: usize = 0;
 const TAU: usize = 1;
 const TAU_REP: usize = 2;
 const TRANSPOSE: usize = 3;
-const SINGLES: usize = 4;
+const FIRST_ROW: usize = 4;
+const FIRST_COL: usize = 5;
+const SINGLES: usize = 6;
 
 const ROTATE_ROWS: usize = 0;
 const ROTATE_ROWS_REP: usize = 1;
@@ -362,6 +386,14 @@ impl<T> ContextMaps<T> {
         &self.singles[TRANSPOSE]
     }
 
+    pub(crate) fn first_row(&self) -> &T {
+        &self.singles[FIRST_ROW]
+    }
+
+    pub(crate) fn first_col(&self) -> &T {
+        &self.singles[FIRST_COL]
+    }
+
     pub(crate) fn rotate_rows(&self, k: usize) -> &T {
         &self.shifts[ROTATE_ROWS][k - 1]
     }
@@ -416,7 +448,8 @@ fn unit(meta: CoeffsMeta) -> CoeffsMeta {
 }
 
 /// Map `id` of a context of `layout`, scheduled as the plan schedules it and at the context's metadata, but tau on a
-/// replicated input, scheduled at tau's giant step, and psi^k on a replicated input, at no scale.
+/// replicated input, scheduled at tau's giant step, psi^k on a replicated input, at no scale, and the projections on
+/// row 0 and column 0, one diagonal at offset 0, `Direct`.
 pub(crate) fn context_map<F: DiagonalArithmetic + One + PartialEq>(layout: &BlasContextLayout, id: MapId) -> Scheduled<F> {
     let (plan, slots, meta) = (layout.plan, layout.slots, layout.coeffs_meta);
     let log_d = plan.log_d();
@@ -431,7 +464,9 @@ pub(crate) fn context_map<F: DiagonalArithmetic + One + PartialEq>(layout: &Blas
             let strategy = plan.strategy(&maps::tau::<F>(slots, log_d), false);
             real_map(maps::tau_rep(slots, log_d), strategy, meta)
         }
-        MapId::Single(_) => scheduled(maps::transpose(slots, log_d), false, meta),
+        MapId::Single(TRANSPOSE) => scheduled(maps::transpose(slots, log_d), false, meta),
+        MapId::Single(FIRST_ROW) => scheduled(maps::first_row(slots, log_d), true, meta),
+        MapId::Single(_) => scheduled(maps::first_col(slots, log_d), true, meta),
         MapId::Shift(family, k) => {
             let families: [ShiftMap<F>; FAMILIES] = [
                 maps::rotate_rows,
@@ -546,10 +581,10 @@ impl<BE: Backend> BlasContextInfos for BlasContext<BE> {
 }
 
 impl<BE: Backend> BlasContextUnprepared<BE> {
-    /// Every encoded map, in the order encoding and preparation walk them: sigma, tau, tau on a replicated input and
-    /// the transpose, then psi^k, psi^k on a replicated input, phi^k and the halves of psi^k and of phi^k, then, under
-    /// `JklsStored` and `JklsGalois`, the column halves of psi^k ([`BlasContext::rows_left`], [`BlasContext::rows_right`]),
-    /// each family for `k = 1..d`.
+    /// Every encoded map, in the order encoding and preparation walk them: sigma, tau, tau on a replicated input, the
+    /// transpose and the projections on row 0 and column 0, then psi^k, psi^k on a replicated input, phi^k and the
+    /// halves of psi^k and of phi^k, then, under `JklsStored` and `JklsGalois`, the column halves of psi^k
+    /// ([`BlasContext::rows_left`], [`BlasContext::rows_right`]), each family for `k = 1..d`.
     pub fn maps(&self) -> impl Iterator<Item = &LinearTransformation<CKKSPlaintextOwned<BE>>> {
         self.maps.iter()
     }
@@ -579,6 +614,16 @@ impl<BE: Backend> BlasContext<BE> {
     /// Per-matrix transpose.
     pub fn transpose(&self) -> &LinearTransformationPrepared<BE> {
         self.maps.transpose()
+    }
+
+    /// Projection on row 0 of every matrix ([`maps::first_row`]): one diagonal at offset 0, `Direct`.
+    pub fn first_row(&self) -> &LinearTransformationPrepared<BE> {
+        self.maps.first_row()
+    }
+
+    /// Projection on column 0 of every matrix ([`maps::first_col`]): one diagonal at offset 0, `Direct`.
+    pub fn first_col(&self) -> &LinearTransformationPrepared<BE> {
+        self.maps.first_col()
     }
 
     /// psi^k. Panics unless `1 <= k < d`.
@@ -761,8 +806,9 @@ pub trait BlasContextPreparedFactory<BE: Backend>:
     ///
     /// # Panics
     ///
-    /// Panics if `res` and `other` were allocated from different layouts, or if `scratch` holds less than
-    /// [`Self::blas_context_prepare_tmp_bytes`].
+    /// Panics if `res` and `other` were allocated from different layouts, if `scratch` holds less than
+    /// [`Self::blas_context_prepare_tmp_bytes`], or if a map of `other` has diagonals of more than one scale, width or
+    /// slot kind.
     fn blas_context_prepare(
         &self,
         res: &mut BlasContext<BE>,
@@ -808,6 +854,29 @@ pub(crate) fn shift_maps<T>(maps: &ContextMaps<T>, k1: usize, rows: bool, extent
     }
 }
 
+/// Whether a row shift (`rows`) by `k1 = k mod d` on a grid one block high (`extent = 1`) whose label proves one matrix
+/// (`replicated`) rotates by `k1 d` slots in place of psi^k1: the rotation wraps inside a block, at no scale.
+pub(crate) fn shift_rotates(rows: bool, extent: usize, replicated: bool) -> bool {
+    rows && extent == 1 && replicated
+}
+
+/// The tree of an axis reduction on `2^log_d x 2^log_d` blocks: by `2^i` rows (`rows`) or columns for `i < log_d`,
+/// `2^i d` or `2^i` slots. Its broadcast rotates by their opposites.
+pub(crate) fn reduction_rotations(log_d: usize, rows: bool) -> impl Iterator<Item = i64> {
+    let stride = if rows { log_d } else { 0 };
+    (0..log_d).map(move |i| 1i64 << (i + stride))
+}
+
+/// The projection an axis reduction along the rows (`rows`) or the columns evaluates after its tree: on row 0 or on
+/// column 0. None along the rows of a `replicated` grid, where the tree leaves the sums in every row.
+pub(crate) fn reduction_projection<T>(maps: &ContextMaps<T>, rows: bool, replicated: bool) -> Option<&T> {
+    match (rows, replicated) {
+        (true, true) => None,
+        (true, false) => Some(maps.first_row()),
+        (false, _) => Some(maps.first_col()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -822,8 +891,9 @@ mod tests {
         let module = Module::<HostBytesBackend>::new(256);
         let layout = module_layout(&module, BlasPlan::new(2), Base2K(19), CoeffsMeta::from_delta_budget(20, 19));
         let ctx = module.blas_context_alloc_from_infos(&layout);
-        // Sigma, tau, tau on a replicated input and the transpose, then seven families of shifts for k = 1, 2, 3.
-        assert_eq!(ctx.maps().count(), 4 + 7 * 3);
+        // Sigma, tau, tau on a replicated input, the transpose and both projections, then seven families of shifts for
+        // k = 1, 2, 3.
+        assert_eq!(ctx.maps().count(), 6 + 7 * 3);
         assert_eq!(ctx.blas_context_layout(), layout);
         // psi^k on a replicated input is encoded at no scale, every other map at the layout's.
         let scales: Vec<usize> = ctx
@@ -831,7 +901,7 @@ mod tests {
             .map(|lt| lt.first_diagonal_plaintext().unwrap().log_delta())
             .collect();
         assert_eq!(scales.iter().filter(|&&s| s == 0).count(), 3);
-        assert_eq!(scales.iter().filter(|&&s| s == 20).count(), 4 + 6 * 3);
+        assert_eq!(scales.iter().filter(|&&s| s == 20).count(), 6 + 6 * 3);
     }
 
     /// A context holds the column halves of psi^k, two more families, exactly when its plan's products by public
@@ -849,7 +919,7 @@ mod tests {
             let layout = module_layout(&module, BlasPlan::new(2).with_pt_algorithm(algorithm), Base2K(19), meta);
             let ctx = module.blas_context_alloc_from_infos(&layout);
             let families = if algorithm.masked() { 9 } else { 7 };
-            assert_eq!(ctx.maps().count(), 4 + families * 3, "{algorithm:?}");
+            assert_eq!(ctx.maps().count(), 6 + families * 3, "{algorithm:?}");
             assert_eq!(MapId::all(layout.plan).count(), ctx.maps().count(), "{algorithm:?}");
         }
     }
@@ -984,6 +1054,8 @@ mod tests {
         assert_eq!(plan.matmul_pt_left_galois_elements(ORDER), rotations(&[2, 126]));
         assert_eq!(plan.matmul_galois_elements(ORDER), rotations(&[1, 2, 126, 127]));
         assert_eq!(plan.galois_elements(ORDER), rotations(&[1, 2, 126, 127]));
+        assert_eq!(plan.sum_rows_galois_elements(ORDER), rotations(&[2, 126]));
+        assert_eq!(plan.sum_cols_galois_elements(ORDER), rotations(&[1, 127]));
         for k in [1, 3] {
             assert_eq!(plan.rotate_rows_galois_elements(ORDER, k), rotations(&[2, 126]), "k={k}");
             assert_eq!(plan.rotate_cols_galois_elements(ORDER, k), rotations(&[1, 127]), "k={k}");
@@ -1007,6 +1079,12 @@ mod tests {
         assert_eq!(plan.matmul_galois_elements(ORDER), rotations(&matmul));
         let every: Vec<i64> = matmul.into_iter().chain([2, 3, 5, 6, 114, 120]).collect();
         assert_eq!(plan.galois_elements(ORDER), rotations(&every));
+        // The reductions: trees by 4 and 8 (1 and 2), broadcasts by their opposites, within the context's set.
+        assert_eq!(plan.sum_rows_galois_elements(ORDER), rotations(&[4, 8, 120, 124]));
+        assert_eq!(plan.sum_cols_galois_elements(ORDER), rotations(&[1, 2, 126, 127]));
+        for set in [plan.sum_rows_galois_elements(ORDER), plan.sum_cols_galois_elements(ORDER)] {
+            assert!(set.iter().all(|p| plan.galois_elements(ORDER).contains(p)));
+        }
         for k in 1..8 {
             let k1 = (k % 4) as i64;
             let (rows, cols) = (
@@ -1048,6 +1126,8 @@ mod tests {
                 plan.rotate_rows_galois_elements(ORDER, 1),
                 plan.rotate_cols_galois_elements(ORDER, 1),
                 plan.rotate_galois_elements(ORDER, 1),
+                plan.sum_rows_galois_elements(ORDER),
+                plan.sum_cols_galois_elements(ORDER),
                 plan.matmul_galois_elements(ORDER),
                 plan.matmul_pt_right_galois_elements(ORDER),
                 plan.matmul_pt_left_galois_elements(ORDER),

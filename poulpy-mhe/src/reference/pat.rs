@@ -1,9 +1,9 @@
 use poulpy_core::{
-    GLWEMaskFill,
+    GGLWEDecompress, GLWEMaskFill,
     layouts::{
-        GGLWECompressedSeed, GGLWECompressedToBackendMut, GGLWECompressedToBackendRef, GGLWEDecompress, GGLWEInfos,
-        GGLWEToBackendMut, GGLWEToBackendRef, GLWECompressedSeed, GLWECompressedToBackendMut, GLWECompressedToBackendRef,
-        GLWEDecompress, GLWEInfos, GLWEToBackendMut, LWEInfos,
+        GGLWECompressedSeed, GGLWECompressedToBackendMut, GGLWECompressedToBackendRef, GGLWEInfos, GGLWEToBackendMut,
+        GGLWEToBackendRef, GLWECompressedSeed, GLWECompressedToBackendMut, GLWECompressedToBackendRef, GLWEInfos,
+        GLWEToBackendMut, LWEInfos,
     },
 };
 use poulpy_hal::{
@@ -39,7 +39,7 @@ where
     {
         assert!(res.glwe_layout() == a.glwe_layout(), "invalid aggregation: layouts differ");
         assert!(res.seed() == a.seed(), "invalid aggregation: seeds differ");
-        let metadata = super::aggregate_metadata(res.noise(), a.noise());
+        let metadata = crate::metadata::aggregate_metadata(res.noise(), a.noise());
         let mut res_be = res.to_backend_mut();
         let a_be = a.to_backend_ref();
         self.vec_znx_add_assign(res_be.data_mut(), 0, a_be.data(), 0);
@@ -57,6 +57,10 @@ where
         P: GLWECompressedToBackendRef<BE> + GLWECompressedSeed + GLWEInfos,
     {
         assert!(res.glwe_layout() == pat.glwe_layout(), "invalid finalization: layouts differ");
+        assert!(
+            scratch.available() >= self.glwe_pat_compressed_finalize_tmp_bytes_reference(),
+            "invalid finalization: insufficient scratch"
+        );
         res.set_canonical(true);
         {
             let (base2k, k): (usize, usize) = (res.base2k().into(), res.k().into());
@@ -86,11 +90,7 @@ pub trait GGLWEPatCompressedReference<BE: Backend> {
 
 impl<BE: Backend> GGLWEPatCompressedReference<BE> for Module<BE>
 where
-    Self: MatZnxAddAssign<BE>
-        + MatZnxNormalizeTmpBytes
-        + MatZnxNormalizeAssign<BE>
-        + GLWEDecompress<Backend = BE>
-        + GGLWEDecompress,
+    Self: MatZnxAddAssign<BE> + MatZnxNormalizeTmpBytes + MatZnxNormalizeAssign<BE> + GGLWEDecompress<BE>,
 {
     fn gglwe_pat_compressed_aggregate_assign_reference<R, A>(&self, res: &mut R, a: &A)
     where
@@ -99,7 +99,7 @@ where
     {
         assert!(res.gglwe_layout() == a.gglwe_layout(), "invalid aggregation: layouts differ");
         assert!(res.seed() == a.seed(), "invalid aggregation: seeds differ");
-        let metadata = super::aggregate_metadata(res.noise(), a.noise());
+        let metadata = crate::metadata::aggregate_metadata(res.noise(), a.noise());
         let mut res_be = res.to_backend_mut();
         let a_be = a.to_backend_ref();
         self.mat_znx_add_assign(res_be.data_mut(), a_be.data());
@@ -119,6 +119,10 @@ where
         assert!(
             res.gglwe_layout() == pat.gglwe_layout(),
             "invalid finalization: layouts differ"
+        );
+        assert!(
+            scratch.available() >= self.gglwe_pat_compressed_finalize_tmp_bytes_reference(),
+            "invalid finalization: insufficient scratch"
         );
         self.decompress_gglwe(res, pat);
         let (base2k, k): (usize, usize) = (res.base2k().into(), res.k().into());
@@ -154,7 +158,7 @@ where
         A: GGLWEToBackendRef<BE> + GGLWEInfos,
     {
         assert!(res.gglwe_layout() == a.gglwe_layout(), "invalid aggregation: layouts differ");
-        let metadata = super::aggregate_common_key_metadata(res.noise(), a.noise(), res.n().as_usize());
+        let metadata = crate::metadata::aggregate_common_key_metadata(res.noise(), a.noise(), res.n().as_usize());
         let mut res_be = res.to_backend_mut();
         let a_be = a.to_backend_ref();
         self.mat_znx_add_assign(res_be.data_mut(), a_be.data());
@@ -174,6 +178,10 @@ where
         assert!(
             res.gglwe_layout() == pat.gglwe_layout(),
             "invalid finalization: layouts differ"
+        );
+        assert!(
+            scratch.available() >= self.gglwe_pat_finalize_tmp_bytes_reference(),
+            "invalid finalization: insufficient scratch"
         );
         let (res_base2k, res_k, pat_base2k): (usize, usize, usize) = (res.base2k().into(), res.k().into(), pat.base2k().into());
         let cols: usize = res.rank_out().as_usize() + 1;

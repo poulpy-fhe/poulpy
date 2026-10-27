@@ -4,8 +4,9 @@ use poulpy_core::{
     layouts::{GGLWEInfos, GGLWEToBackendMut, GLWEInfos, GLWEPublicKeyPreparedToBackendRef, GLWESecretToBackendRef, LWEInfos},
 };
 use poulpy_hal::{
-    api::{VecZnxNormalize, VecZnxNormalizeTmpBytes},
+    api::VecZnxNormalizeTmpBytes,
     layouts::{Backend, Module, ScratchArena},
+    oep::HalVecZnxImpl,
     source::Source,
 };
 
@@ -31,9 +32,9 @@ pub trait GLWETensorKeyMHEProtocolReference<BE: Backend> {
         K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos;
 }
 
-impl<BE: Backend> GLWETensorKeyMHEProtocolReference<BE> for Module<BE>
+impl<BE: Backend + HalVecZnxImpl> GLWETensorKeyMHEProtocolReference<BE> for Module<BE>
 where
-    Self: GLWEEncryptPk<BE> + GLWEBytesOf<BE> + VecZnxNormalize<BE> + VecZnxNormalizeTmpBytes,
+    Self: GLWEEncryptPk<BE> + GLWEBytesOf<BE> + VecZnxNormalizeTmpBytes,
 {
     fn mhe_glwe_tensor_key_share_gen_tmp_bytes_reference<A, B>(&self, res_infos: &A, pk_infos: &B) -> usize
     where
@@ -76,7 +77,7 @@ where
             "invalid share: secret rank differs from the key's"
         );
         assert!(sk.n() == res.n(), "invalid share: secret degree differs from the key's");
-        poulpy_core::reference::keyswitching::glwe::assert_no_row_offset("mhe_glwe_tensor_key_share_gen", &*res);
+        poulpy_core::layouts::assert_no_row_offset("mhe_glwe_tensor_key_share_gen", &*res);
         assert!(
             pk.rank().as_usize() == rank,
             "invalid share: public key rank differs from the key's"
@@ -97,6 +98,7 @@ where
         super::assert_public_key_distribution::<BE, _>(pk);
         let (dnum, k_digit): (usize, usize) = (res.dnum().into(), res.k_digit().as_usize());
         let tmp_bytes: usize = self.mhe_glwe_tensor_key_share_gen_tmp_bytes_reference(&*res, pk);
+        assert!(scratch.available() >= tmp_bytes, "invalid share: insufficient scratch");
         let mut metadata = None;
         {
             let sk = sk.to_backend_ref();
@@ -106,7 +108,7 @@ where
             for row in 0..dnum {
                 for a in 0..rank {
                     for b in a..rank {
-                        poulpy_core::reference::encryption::gadget_row_plaintext(
+                        poulpy_core::gadget_row_plaintext(
                             self,
                             pt.data_mut(),
                             0,

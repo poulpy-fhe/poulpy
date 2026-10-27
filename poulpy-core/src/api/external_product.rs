@@ -1,4 +1,4 @@
-use poulpy_hal::layouts::{Backend, ScratchArena, VecZnxDft};
+use poulpy_hal::layouts::{Backend, ScratchArena, VecZnxDftBackendMut};
 
 use crate::layouts::{
     GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut,
@@ -44,7 +44,7 @@ pub trait GLWEExternalProductInternal<BE: Backend> {
 
     fn glwe_external_product_dft<'r, A>(
         &self,
-        res_dft: &mut VecZnxDft<<BE as Backend>::BufMut<'r>, BE::DftWord, BE>,
+        res_dft: &mut VecZnxDftBackendMut<'r, BE>,
         a: &A,
         ggsw: &GGSWPreparedBackendRef<'_, BE>,
         scratch: &mut ScratchArena<'_, BE>,

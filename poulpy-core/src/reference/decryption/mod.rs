@@ -96,7 +96,7 @@ where
         + poulpy_hal::api::VecZnxBigBytesOf
         + poulpy_hal::api::VecZnxBigNormalizeTmpBytes
         + poulpy_hal::api::SvpPPolBytesOf
-        + crate::layouts::prepared::GLWESecretPreparedFactory<BE>
+        + crate::api::GLWESecretPreparedFactory<BE>
         + poulpy_hal::api::VecZnxBigFromSmall<BE>
         + poulpy_hal::api::VecZnxDftApply<BE>
         + poulpy_hal::api::SvpApplyDftToDftAssign<BE>

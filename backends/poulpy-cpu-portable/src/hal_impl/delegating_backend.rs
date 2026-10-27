@@ -42,6 +42,10 @@ macro_rules! impl_fft64_delegating_backend {
             fn max_base2k(n: usize, products: usize, failure_bits: usize, squaring: bool) -> usize {
                 <$from as poulpy_hal::layouts::MaxBase2k>::max_base2k(n, products, failure_bits, squaring)
             }
+
+            fn max_base2k_squares(n: usize, products: usize, squares: usize, failure_bits: usize) -> usize {
+                <$from as poulpy_hal::layouts::MaxBase2k>::max_base2k_squares(n, products, squares, failure_bits)
+            }
         }
 
         impl ZnxAdd for $be {
@@ -245,10 +249,17 @@ fn test_znx_normalize_delegating_fft64_portable() {
 
 poulpy_core::impl_core_reference_full!(ControlledSamplingFFT64Portable);
 poulpy_core::impl_conversion_reference_full!(ControlledSamplingFFT64Portable);
-poulpy_core::impl_glwe_packing_derived_full!(ControlledSamplingFFT64Portable);
+poulpy_core::impl_glwe_pack_derived_full!(ControlledSamplingFFT64Portable);
 poulpy_core::impl_glwe_rotate_reference_full!(ControlledSamplingFFT64Portable);
 poulpy_core::impl_ggsw_rotate_derived_full!(ControlledSamplingFFT64Portable);
 poulpy_core::impl_glwe_mul_xp_minus_one_reference_full!(ControlledSamplingFFT64Portable);
+
+#[cfg(test)]
+impl_fft64_delegating_backend!(BatchedGiantStepsFFT64Portable, FFT64Portable);
+#[cfg(test)]
+impl crate::kernels::fft64::ring_arith::Fft64RingArith for BatchedGiantStepsFFT64Portable {
+    crate::fft64_ring_arith_standard!();
+}
 
 #[cfg(test)]
 impl_fft64_delegating_backend!(DifferentSamplingFFT64Portable, FFT64Portable);
@@ -268,7 +279,7 @@ poulpy_core::impl_core_reference_full!(DifferentSamplingFFT64Portable);
 #[cfg(test)]
 poulpy_core::impl_conversion_reference_full!(DifferentSamplingFFT64Portable);
 #[cfg(test)]
-poulpy_core::impl_glwe_packing_derived_full!(DifferentSamplingFFT64Portable);
+poulpy_core::impl_glwe_pack_derived_full!(DifferentSamplingFFT64Portable);
 #[cfg(test)]
 poulpy_core::impl_glwe_rotate_reference_full!(DifferentSamplingFFT64Portable);
 #[cfg(test)]

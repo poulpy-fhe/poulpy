@@ -18,12 +18,11 @@
 use anyhow::Result;
 use poulpy_ckks::SlotsKind;
 use poulpy_ckks::prelude::*;
-use poulpy_core::layouts::GLWESecretSampling;
+use poulpy_core::api::GLWESecretSampling;
 use poulpy_core::{
     GLWETensorKeyEncryptSk,
-    layouts::{
-        GLWELayout, GLWETensorKeyLayout, GLWETensorKeyPreparedFactory, ModuleCoreAlloc, Rank, prepared::GLWESecretPreparedFactory,
-    },
+    api::{GLWESecretPreparedFactory, GLWETensorKeyPreparedFactory},
+    layouts::{GLWELayout, GLWETensorKeyLayout, ModuleCoreAlloc, Rank},
 };
 use poulpy_cpu_portable::NTT4x30Portable;
 use poulpy_hal::AlignedBuf;
@@ -87,12 +86,12 @@ fn main() -> Result<()> {
         log_sparsity: 0,
         slot_layout: SlotLayout::Full,
     };
-    let mut scratch = ScratchOwned::<BackendImpl>::alloc(module.ckks_all_ops_tmp_bytes(&ct_infos, &tsk_layout(), &ct_infos));
+    let mut scratch = ScratchOwned::<BackendImpl>::alloc(module.ckks_all_ops_tmp_bytes(&ct_infos, &ct_infos, &tsk_layout()));
 
     let mut tsk = module.glwe_tensor_key_alloc_from_infos(&tsk_layout());
     module.glwe_tensor_key_encrypt_sk(&mut tsk, &sk_raw, &mut source_xa, &mut source_xe, &mut scratch.borrow());
     let mut tsk_prepared = module.alloc_tensor_key_prepared_from_infos(&tsk_layout());
-    module.prepare_tensor_key(&mut tsk_prepared, &tsk, &mut scratch.borrow());
+    module.glwe_tensor_key_prepare(&mut tsk_prepared, &tsk, &mut scratch.borrow());
 
     // ── 2. encode + encrypt two slot vectors ────────────────────────────────
     let a_re: Vec<f64> = (0..M).map(|i| i as f64 / M as f64 - 0.5).collect();
@@ -117,7 +116,7 @@ fn main() -> Result<()> {
     println!("after mul: log_delta={} log_budget={}", ct.log_delta(), ct.log_budget());
     // Trade 5 bits of headroom for 5 extra fraction bits under the scale — the
     // closest analogue of an RNS "rescale" in this base-2^base2k model.
-    module.ckks_div_pow2_assign(&mut ct, 5)?;
+    module.ckks_div_pow2_assign(5, &mut ct)?;
 
     // ── 4. decrypt + decode + verify ────────────────────────────────────────
     let mut pt_out = module.ckks_plaintext_alloc_from_infos(&ct);

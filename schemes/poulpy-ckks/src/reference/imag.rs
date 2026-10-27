@@ -32,7 +32,7 @@ pub trait CKKSImagReference<BE: Backend> {
         let offset = ckks_offset_unary(dst, src);
         let exact = ckks_unary_exact(dst, src);
         // Validate before mutating: on error `dst` must remain untouched.
-        let log_budget = checked_log_budget_sub("mul_i", src.log_budget(), offset)?;
+        let log_budget = checked_log_budget_sub("ckks_mul_i_into", src.log_budget(), offset)?;
         let k = (src.n().as_usize() / 2) as i64;
         // Stamp before the write: the shift normalizes at `dst.k()`.
         dst.set_meta(src.meta());
@@ -75,7 +75,7 @@ pub trait CKKSImagReference<BE: Backend> {
         let offset = ckks_offset_unary(dst, src);
         let exact = ckks_unary_exact(dst, src);
         // Validate before mutating: on error `dst` must remain untouched.
-        let log_budget = checked_log_budget_sub("div_i", src.log_budget(), offset)?;
+        let log_budget = checked_log_budget_sub("ckks_div_i_into", src.log_budget(), offset)?;
         let k = -((src.n().as_usize() / 2) as i64);
         // Stamp before the write: the shift normalizes at `dst.k()`.
         dst.set_meta(src.meta());

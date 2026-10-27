@@ -7,11 +7,11 @@
 //! | [`test_inner_sum_aligned`] | sums, means and replicates over batches of one, two and a quarter of the slots, and the keyless empty window, at the input's width |
 //! | [`test_inner_sum_smaller_output`] | the same into a destination one limb and a bit narrower, every key looked up at its width |
 //! | [`test_inner_sum_assign`] | the in-place forms against the out-of-place ones |
-//! | [`test_inner_sum_window_error`] | a window past the slots, refused before the missing keys, and its Galois query |
-//! | [`test_inner_sum_integer_error`] | a mean of `Integer` slots, refused before the missing keys |
-//! | [`test_inner_sum_missing_key_error`] | an absent key, refused before the budget, and a key one bit narrower than the sum |
-//! | [`test_inner_sum_budget_error`] | the budget of the copy and of the division |
-//! | [`test_inner_sum_scratch_error`] | an arena one byte below the query |
+//! | [`test_inner_sum_rejects_window`] | a window past the slots, refused before the missing keys, and its Galois query |
+//! | [`test_inner_sum_rejects_integer_slots`] | a mean of `Integer` slots, refused before the missing keys |
+//! | [`test_inner_sum_rejects_missing_key`] | an absent key, refused before the budget, and a key one bit narrower than the sum |
+//! | [`test_inner_sum_rejects_budget`] | the budget of the copy and of the division |
+//! | [`test_inner_sum_rejects_short_scratch`] | an arena one byte below the query |
 //! | [`test_inner_sum_below_module_degree`] | every sum on a module of twice the ciphertext's degree, and a window past the ciphertext's slots |
 
 use std::{
@@ -60,8 +60,8 @@ const KINDS: [Kind; 3] = [Kind::Sum, Kind::Mean, Kind::Replicate];
 impl Kind {
     fn op(self) -> &'static str {
         match self {
-            Kind::Sum | Kind::Mean => "inner_sum",
-            Kind::Replicate => "replicate",
+            Kind::Sum | Kind::Mean => "ckks_inner_sum",
+            Kind::Replicate => "ckks_replicate",
         }
     }
 
@@ -95,9 +95,9 @@ impl Kind {
         Module<BE>: CKKSInnerSumOps<BE>,
     {
         match self {
-            Kind::Sum => module.ckks_inner_sum(res, a, log_batch, log_count, false, keys, scratch),
-            Kind::Mean => module.ckks_inner_sum(res, a, log_batch, log_count, true, keys, scratch),
-            Kind::Replicate => module.ckks_replicate(res, a, log_batch, log_count, keys, scratch),
+            Kind::Sum => module.ckks_inner_sum(log_batch, log_count, false, res, a, keys, scratch),
+            Kind::Mean => module.ckks_inner_sum(log_batch, log_count, true, res, a, keys, scratch),
+            Kind::Replicate => module.ckks_replicate(log_batch, log_count, res, a, keys, scratch),
         }
     }
 
@@ -114,9 +114,9 @@ impl Kind {
         Module<BE>: CKKSInnerSumOps<BE>,
     {
         match self {
-            Kind::Sum => module.ckks_inner_sum_assign(res, log_batch, log_count, false, keys, scratch),
-            Kind::Mean => module.ckks_inner_sum_assign(res, log_batch, log_count, true, keys, scratch),
-            Kind::Replicate => module.ckks_replicate_assign(res, log_batch, log_count, keys, scratch),
+            Kind::Sum => module.ckks_inner_sum_assign(log_batch, log_count, false, res, keys, scratch),
+            Kind::Mean => module.ckks_inner_sum_assign(log_batch, log_count, true, res, keys, scratch),
+            Kind::Replicate => module.ckks_replicate_assign(log_batch, log_count, res, keys, scratch),
         }
     }
 }
@@ -372,8 +372,11 @@ fn assert_refused<BE>(
 
 /// A window of `2^log_count` batches of `2^log_batch` slots past the slot count is refused with `InvalidOperand`,
 /// before the absent keys, by every form on an empty arena, and its Galois query panics.
-pub fn test_inner_sum_window_error<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
-where
+pub fn test_inner_sum_rejects_window<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
     BE: TestContextBackend<Ring = Standard>,
     for<'a> <BE as Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
@@ -412,8 +415,11 @@ where
 
 /// A mean of `Integer` slots is refused with `InvalidOperand`, before the absent keys, on an empty arena; a sum of
 /// them is not refused for its slots, and neither is an empty mean, which divides by one.
-pub fn test_inner_sum_integer_error<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
-where
+pub fn test_inner_sum_rejects_integer_slots<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
     BE: TestContextBackend<Ring = Standard>,
     for<'a> <BE as Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
@@ -427,7 +433,10 @@ where
     let integer = |err: &CKKSError| {
         matches!(
             err.composition(),
-            Some(CKKSCompositionError::InvalidOperand { op: "inner_sum", .. })
+            Some(CKKSCompositionError::InvalidOperand {
+                op: "ckks_inner_sum",
+                ..
+            })
         )
     };
     let mut res = dirty_ct(module, &f.ct, params.k);
@@ -463,7 +472,7 @@ where
 /// An absent key is refused with `MissingAutomorphismKey` at the sum's width, before the budget, on an empty arena,
 /// and so is a key of `max_input_k` one bit below the width the sum switches at, which a destination at that
 /// `max_input_k` accepts.
-pub fn test_inner_sum_missing_key_error<BE, F, E>(
+pub fn test_inner_sum_rejects_missing_key<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
@@ -529,8 +538,11 @@ pub fn test_inner_sum_missing_key_error<BE, F, E>(
 
 /// A copy into a destination below the input's `log_delta`, and a mean dividing by more than the budget the copy
 /// leaves, are refused with `InsufficientHomomorphicCapacity`, on an empty arena.
-pub fn test_inner_sum_budget_error<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
-where
+pub fn test_inner_sum_rejects_budget<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
     BE: TestContextBackend<Ring = Standard>,
     for<'a> <BE as Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
@@ -563,7 +575,7 @@ where
     let before = snapshot::<BE, _>(&res);
     let result = with_scratch::<BE, _>(0, |s| Kind::Mean.run(module, &mut res, &f.ct, 0, LOG_COUNT, &keys, s));
     let want = CKKSCompositionError::InsufficientHomomorphicCapacity {
-        op: "inner_sum",
+        op: "ckks_inner_sum",
         available_log_budget: LOG_COUNT - 1,
         required_bits: LOG_COUNT,
     };
@@ -581,8 +593,11 @@ where
 }
 
 /// One byte below the query, every form returns `CKKSError::Internal` before any write.
-pub fn test_inner_sum_scratch_error<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
-where
+pub fn test_inner_sum_rejects_short_scratch<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
     BE: TestContextBackend<Ring = Standard>,
     for<'a> <BE as Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,

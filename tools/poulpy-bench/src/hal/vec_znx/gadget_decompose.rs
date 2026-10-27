@@ -1,0 +1,46 @@
+use std::hint::black_box;
+
+use criterion::{Bencher, measurement::Measurement};
+
+use poulpy_hal::{
+    api::{
+        ModuleNew, ModuleSynchronize, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxGadgetDecompose, VecZnxGadgetDecomposeTmpBytes,
+    },
+    layouts::{Backend, Module, ScratchOwned},
+    source::Source,
+};
+
+use crate::hal::helpers::{
+    random_host_vec_znx, random_normalization_vec_znx, upload_host_vec_znx, vec_znx_backend_mut, vec_znx_backend_ref,
+};
+use crate::hal::params::GadgetDecomposeSweepParams;
+
+pub fn runner_vec_znx_gadget_decompose<B: Backend<ZnxWord = i64>, M: Measurement>(
+    bencher: &mut Bencher<'_, M>,
+    params: &GadgetDecomposeSweepParams,
+) where
+    Module<B>: VecZnxGadgetDecompose<B> + ModuleNew<B> + ModuleSynchronize<B> + VecZnxGadgetDecomposeTmpBytes,
+    ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
+{
+    let sweep = &params.shape;
+    let module: Module<B> = Module::<B>::new(sweep.n as u64);
+
+    let mut source: Source = Source::new([0u8; 32]);
+
+    let a = random_normalization_vec_znx(module.n(), sweep.cols, params.a_size, &mut source);
+    let a = upload_host_vec_znx::<B>(&a);
+    let res = random_host_vec_znx(module.n(), sweep.cols, sweep.size, &mut source);
+    let mut res = upload_host_vec_znx::<B>(&res);
+
+    let mut scratch: ScratchOwned<B> = ScratchOwned::alloc(module.vec_znx_gadget_decompose_tmp_bytes());
+
+    bencher.iter(|| {
+        let a = vec_znx_backend_ref::<B>(&a);
+        let mut res = vec_znx_backend_mut::<B>(&mut res);
+        for i in 0..sweep.cols {
+            module.vec_znx_gadget_decompose(&mut res, i, &a, i, params.base2k, params.k_digit, &mut scratch.borrow());
+        }
+        module.synchronize();
+        black_box(());
+    });
+}

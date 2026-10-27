@@ -1,19 +1,32 @@
-use poulpy_ckks::ckks_backend_test_suite;
+use poulpy_ckks::ckks_determinism_test_suite;
 
-const ATK_ROTATIONS: &[i64] = &[1, 7];
+ckks_determinism_test_suite!(mod ckks_determinism_fft64neon, backend = crate::FFT64Neon, f32);
 
-ckks_backend_test_suite!(
-    mod fft64_f64,
-    backend = crate::FFT64Neon,
-    scalar = f64,
-    encoder = crate::FFT64NeonEncodingTable,
-    params = poulpy_ckks::test_suite::BASE19_PARAMS_F64,
-    rotations = super::ATK_ROTATIONS,
-);
+ckks_determinism_test_suite!(mod ckks_determinism_ntt4x30neon, backend = crate::NTT4x30Neon, f32);
+
+#[cfg(feature = "enable-rayon")]
+ckks_determinism_test_suite!(mod ckks_determinism_fft64neonrayon, backend = crate::FFT64NeonRayon, f32);
+
+#[cfg(feature = "enable-rayon")]
+ckks_determinism_test_suite!(mod ckks_determinism_ntt4x30neonrayon, backend = crate::NTT4x30NeonRayon, f32);
+
+#[test]
+fn ntt4x30_neon_bootstrapping_plan_keys_match_context() {
+    poulpy_ckks::test_suite::presets::bootstrapping_plan_keys_match_context::<crate::NTT4x30Neon>();
+}
 
 #[test]
 fn ntt4x30_neon_small_s2c_preset_meets_precision() {
     poulpy_ckks::test_suite::presets::small_s2c_preset_meets_precision::<crate::NTT4x30Neon>();
+}
+
+/// Keys and ciphertexts from a portable client: the transfers both ways between two backends.
+#[test]
+fn ntt4x30_neon_small_s2c_preset_meets_precision_with_portable_client() {
+    poulpy_ckks::test_suite::presets::small_s2c_preset_meets_precision_with_client::<
+        crate::NTT4x30Neon,
+        poulpy_cpu_portable::NTT4x30Portable,
+    >();
 }
 
 #[test]
@@ -28,65 +41,25 @@ fn ntt4x30_neon_rayon_ci_bootstrap_refuses_invalid_inputs() {
 }
 
 /// Full logN16 bootstraps per preset: slow, so opt in with `--ignored`.
-#[cfg(feature = "enable-rayon")]
 mod bootstrapping_presets {
+    #[cfg(feature = "enable-rayon")]
     use poulpy_ckks::test_suite::presets::bootstrapping_presets_meet_precision;
+    use poulpy_ckks::test_suite::presets::bootstrapping_presets_meet_precision_with_client;
 
+    /// Keys and ciphertexts come from another backend and reach the evaluated one by transfer.
+    #[test]
+    #[ignore = "full logN16 bootstrapping presets with a portable client"]
+    fn ntt4x30_neon_with_portable_client() {
+        bootstrapping_presets_meet_precision_with_client::<crate::NTT4x30Neon, poulpy_cpu_portable::NTT4x30Portable>();
+    }
+
+    #[cfg(feature = "enable-rayon")]
     #[test]
     #[ignore = "full logN16 bootstrapping presets"]
     fn ntt4x30_neon_rayon() {
-        bootstrapping_presets_meet_precision::<crate::NTT4x30NeonRayon>(52);
+        bootstrapping_presets_meet_precision::<crate::NTT4x30NeonRayon>();
     }
 }
-
-#[cfg(feature = "enable-rayon")]
-ckks_backend_test_suite!(
-    mod fft64_rayon_f64,
-    backend = crate::FFT64NeonRayon,
-    scalar = f64,
-    encoder = crate::FFT64NeonEncodingTable,
-    params = poulpy_ckks::test_suite::BASE19_PARAMS_F64,
-    rotations = super::ATK_ROTATIONS,
-);
-
-ckks_backend_test_suite!(
-    mod ntt4x30_f64,
-    backend = crate::NTT4x30Neon,
-    scalar = f64,
-    encoder = crate::FFT64NeonEncodingTable,
-    params = poulpy_ckks::test_suite::BASE52_PARAMS_F64,
-    rotations = super::ATK_ROTATIONS,
-);
-
-#[cfg(feature = "enable-rayon")]
-ckks_backend_test_suite!(
-    mod ntt4x30_rayon_f64,
-    backend = crate::NTT4x30NeonRayon,
-    scalar = f64,
-    encoder = crate::FFT64NeonEncodingTable,
-    params = poulpy_ckks::test_suite::BASE52_PARAMS_F64,
-    rotations = super::ATK_ROTATIONS,
-);
-
-// binary128 path on aarch64: `Quad` scalar with the reference encoder.
-ckks_backend_test_suite!(
-    mod ntt4x30_f128,
-    backend = crate::NTT4x30Neon,
-    scalar = poulpy_ckks::Quad,
-    encoder = poulpy_cpu_portable::ckks_encoding::EncodingFFTTable<poulpy_ckks::Quad>,
-    params = poulpy_ckks::test_suite::BASE52_PARAMS_QUAD,
-    rotations = super::ATK_ROTATIONS,
-);
-
-#[cfg(feature = "enable-rayon")]
-ckks_backend_test_suite!(
-    mod ntt4x30_rayon_f128,
-    backend = crate::NTT4x30NeonRayon,
-    scalar = poulpy_ckks::Quad,
-    encoder = poulpy_cpu_portable::ckks_encoding::EncodingFFTTable<poulpy_ckks::Quad>,
-    params = poulpy_ckks::test_suite::BASE52_PARAMS_QUAD,
-    rotations = super::ATK_ROTATIONS,
-);
 
 // Paired OEP validation. Serial backends validate against portable implementations;
 // Rayon backends validate against their serial counterparts.

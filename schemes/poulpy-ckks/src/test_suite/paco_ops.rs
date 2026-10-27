@@ -1,9 +1,9 @@
 //! Tests for the PaCo slot-fold composites and conjugate rotation.
 //!
-//! - **`Tr_{a→b}`** (`PaCoSlotOps::ckks_slot_trace_assign`): fold by
+//! - **`Tr_{a→b}`** (`CKKSPaCoImpl::ckks_slot_trace_assign`): fold by
 //!   addition. Checked against the cleartext recurrence (`trace_slots`) for several
 //!   `(a, b)` pairs; consumes **zero** budget.
-//! - **`Pr_{a→b}`** (`PaCoSlotOps::ckks_slot_product_assign`): fold by
+//! - **`Pr_{a→b}`** (`CKKSPaCoImpl::ckks_slot_product_assign`): fold by
 //!   multiplication with tensor-key relinearization — seqPaCo's EvalMod
 //!   replacement. Inputs are unit-circle slot values (as in the real
 //!   pipeline). Checked against `product_slots`; consumes
@@ -12,6 +12,7 @@
 //!   signed Galois element `−5^k` applied through the
 //!   plain conjugation op must equal `conj(rotate(·, k))`, in one keyswitch.
 
+use super::parity::helpers::{snapshot, with_scratch};
 use crate::CKKSModuleInfos;
 use crate::Scale;
 use poulpy_core::layouts::IntPolyInfos;
@@ -27,14 +28,15 @@ use crate::{
     CKKSInfos, GLWEPlaintextMeta, SetCKKSInfos, SlotLayout,
     api::CKKSConjugateOps,
     encoding::paco::cpx::Cpx,
+    layouts::slots::fold_rotations,
     layouts::{CKKSCiphertextOwned, CKKSModuleAlloc},
-    reference::paco::ops::{PaCoSlotOps, fold_rotations},
+    oep::CKKSPaCoImpl,
     test_suite::reference_encoder::ReferenceEncoder,
     test_suite::{
         CKKSTestParams,
         helpers::{
-            TestContextBackend, TestContextModule, TestScalar, alloc_scratch, ckks_encrypt, gen_atk, gen_sk_with_raw, gen_tsk,
-            test_vector_1,
+            TestContextBackend, TestContextModule, TestScalar, alloc_scratch, assert_ckks_internal, ckks_encrypt, gen_atk,
+            gen_sk_with_raw, gen_tsk, test_vector_1,
         },
         paco_reference_model::{conjugate, product_slots, rotate_left, trace_slots},
     },
@@ -156,8 +158,8 @@ pub(crate) fn assert_slots<BE, F, E>(
 /// `Tr_{a→b}` matches the cleartext fold and consumes no budget.
 pub fn test_paco_slot_trace<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
-    Module<BE>: TestContextModule<BE> + PaCoSlotOps<BE>,
+    BE: TestContextBackend<Ring = Standard> + CKKSPaCoImpl,
+    Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
@@ -187,9 +189,10 @@ where
             &mut scratch.borrow(),
         );
         let budget_before = ct.log_budget();
-        module
-            .ckks_slot_trace_assign(&mut ct, a, b, &atks, &mut scratch.borrow())
-            .unwrap();
+        with_scratch::<BE, _>(BE::ckks_slot_trace_assign_tmp_bytes(module, &ct, &params.atk_layout()), |s| {
+            BE::ckks_slot_trace_assign(module, &mut ct, a, b, &atks, s)
+        })
+        .unwrap();
         assert_eq!(ct.log_budget(), budget_before, "trace({a}->{b}) must consume no budget");
         assert_slots::<BE, F, E>(
             &format!("paco_slot_trace({a}->{b})"),
@@ -209,8 +212,8 @@ where
 /// exactly `log(a/b) · log_delta` budget bits.
 pub fn test_paco_slot_product<BE, F, E>(params: CKKSTestParams, _module: &Module<BE>, _host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
-    Module<BE>: TestContextModule<BE> + PaCoSlotOps<BE>,
+    BE: TestContextBackend<Ring = Standard> + CKKSPaCoImpl,
+    Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
@@ -252,9 +255,26 @@ where
             &mut scratch.borrow(),
         );
         let budget_before = ct.log_budget();
-        module
-            .ckks_slot_product_assign(&mut ct, a, b, &atks, &tsk, &mut scratch.borrow())
-            .unwrap();
+        let bytes = BE::ckks_slot_product_assign_tmp_bytes(&module, &ct, &params.atk_layout(), &params.tsk_layout());
+        let before = snapshot::<BE, _>(&ct);
+        let err = with_scratch::<BE, _>(bytes - 1, |s| {
+            BE::ckks_slot_product_assign(&module, &mut ct, a, b, &atks, &tsk, s)
+        })
+        .unwrap_err();
+        assert_ckks_internal(
+            &format!("paco_slot_product({a}->{b}): one byte short"),
+            &err,
+            "ckks_slot_product_assign: scratch below its query",
+        );
+        assert_eq!(
+            snapshot::<BE, _>(&ct),
+            before,
+            "paco_slot_product({a}->{b}): a refused fold wrote ct"
+        );
+        with_scratch::<BE, _>(bytes, |s| {
+            BE::ckks_slot_product_assign(&module, &mut ct, a, b, &atks, &tsk, s)
+        })
+        .unwrap();
         assert_eq!(
             budget_before - ct.log_budget(),
             levels * log_delta,
@@ -304,9 +324,10 @@ where
             &mut scratch.borrow(),
         );
         let mut out = module.ckks_ciphertext_alloc_from_infos(&ct);
-        module
-            .ckks_conjugate_rotate_into(&mut out, &ct, k, &key, &mut scratch.borrow())
-            .unwrap();
+        with_scratch::<BE, _>(module.ckks_conjugate_tmp_bytes(&ct, &params.atk_layout()), |s| {
+            module.ckks_conjugate_rotate_into(k, &mut out, &ct, &key, s)
+        })
+        .unwrap();
         assert_eq!(out.log_budget(), ct.log_budget(), "conj_rotate must consume no budget");
         assert_slots::<BE, F, E>(
             &format!("paco_conj_rotate(k={k})"),
@@ -319,5 +340,105 @@ where
             noise_bound(params.prec().log_delta()),
             &mut scratch.borrow(),
         );
+    }
+}
+
+/// A fold whose second rotation has no key is `MissingAutomorphismKey` of that rotation before the first product writes
+/// `ct`, on an empty arena and on the query.
+pub fn test_slot_product_assign_rejects_missing_later_key<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend<Ring = Standard> + CKKSPaCoImpl,
+    Module<BE>: TestContextModule<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    use super::parity::{
+        helpers::{fixture_ciphertext, snapshot, with_scratch},
+        layout,
+    };
+    use crate::CKKSCompositionError;
+    let m = params.n / 2;
+    let rotations = fold_rotations(m, m / 4);
+    let params = leveled_params(&params, rotations.len());
+    let mut scratch = alloc_scratch(&params, module);
+    let (sk_raw, _) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
+    let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
+    let first = galois_element(rotations[0], module.cyclotomic_order());
+    let keys = HashMap::from([(first, gen_atk(&params, module, first, &sk_raw, &mut scratch.borrow()))]);
+    let log_delta = params.prec().log_delta();
+    let mut ct = fixture_ciphertext(
+        module,
+        &layout(params, params.rank, params.k, log_delta, 0, SlotsKind::Complex),
+        41,
+    );
+    let query = BE::ckks_slot_product_assign_tmp_bytes(module, &ct, &params.atk_layout(), &params.tsk_layout());
+    for bytes in [0, query] {
+        let before = snapshot::<BE, _>(&ct);
+        let err = with_scratch::<BE, _>(bytes, |s| {
+            BE::ckks_slot_product_assign(module, &mut ct, m, m / 4, &keys, &tsk, s)
+        })
+        .unwrap_err();
+        assert!(
+            matches!(
+                err.composition(),
+                Some(CKKSCompositionError::MissingAutomorphismKey { op: "ckks_slot_product_assign", rotation, .. })
+                    if *rotation == rotations[1]
+            ),
+            "slot_product_assign: missing second key: {err}"
+        );
+        assert_eq!(snapshot::<BE, _>(&ct), before, "a refused product fold wrote ct");
+    }
+}
+
+/// A fold whose second rotation has no key is `MissingAutomorphismKey` of that rotation before the first
+/// automorphism-add writes `ct`, on an empty arena and on the query.
+pub fn test_slot_trace_assign_rejects_missing_later_key<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend<Ring = Standard> + CKKSPaCoImpl,
+    Module<BE>: TestContextModule<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    use super::parity::{
+        helpers::{fixture_ciphertext, snapshot, with_scratch},
+        layout,
+    };
+    use crate::CKKSCompositionError;
+    let m = params.n / 2;
+    let rotations = fold_rotations(m, m / 4);
+    let mut scratch = alloc_scratch(&params, module);
+    let (sk_raw, _) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
+    let first = galois_element(rotations[0], module.cyclotomic_order());
+    let keys = HashMap::from([(first, gen_atk(&params, module, first, &sk_raw, &mut scratch.borrow()))]);
+    let mut ct = fixture_ciphertext(
+        module,
+        &layout(
+            params,
+            params.rank,
+            params.k,
+            params.prec().log_delta(),
+            0,
+            SlotsKind::Complex,
+        ),
+        41,
+    );
+    for bytes in [0, BE::ckks_slot_trace_assign_tmp_bytes(module, &ct, &params.atk_layout())] {
+        let before = snapshot::<BE, _>(&ct);
+        let err = with_scratch::<BE, _>(bytes, |s| BE::ckks_slot_trace_assign(module, &mut ct, m, m / 4, &keys, s)).unwrap_err();
+        assert!(
+            matches!(
+                err.composition(),
+                Some(CKKSCompositionError::MissingAutomorphismKey { op: "ckks_slot_trace_assign", rotation, .. })
+                    if *rotation == rotations[1]
+            ),
+            "slot_trace_assign: missing second key: {err}"
+        );
+        assert_eq!(snapshot::<BE, _>(&ct), before, "a refused trace fold wrote ct");
     }
 }

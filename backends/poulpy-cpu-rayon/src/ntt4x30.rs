@@ -222,7 +222,7 @@ pub trait PackedNtt4x30Base: PackedWord + HalVecZnxDftImpl {
             }
             return;
         };
-        terms.iter().for_each(|term| poulpy_hal::layouts::check_galois(term.b_galois));
+        poulpy_hal::layouts::check_cnv_dft_terms::<BE>(res.n(), terms);
         Self::cnv_apply_dft::<BE, E>(
             base,
             module,
@@ -588,6 +588,10 @@ where
     fn max_base2k(n: usize, products: usize, failure_bits: usize, squaring: bool) -> usize {
         <$base as $crate::__private::poulpy_hal::layouts::MaxBase2k>::max_base2k(n, products, failure_bits, squaring)
     }
+
+    fn max_base2k_squares(n: usize, products: usize, squares: usize, failure_bits: usize) -> usize {
+        <$base as $crate::__private::poulpy_hal::layouts::MaxBase2k>::max_base2k_squares(n, products, squares, failure_bits)
+    }
 }
 
 fn base_module(module: &Module<$rayon>) -> &Module<$base> {
@@ -772,7 +776,24 @@ unsafe impl $crate::__private::poulpy_hal::oep::HalMatZnxImpl for $rayon {}
 
 unsafe impl HalVecZnxImpl for $rayon
 {
-    $crate::__private::poulpy_cpu_portable::hal_impl_vec_znx_without_normalize!();
+    $crate::__private::poulpy_cpu_portable::hal_impl_vec_znx_without_normalize_or_decompose!();
+
+    fn vec_znx_gadget_decompose_tmp_bytes(module: &Module<Self>) -> usize {
+        <Self as HalVecZnxDefault>::vec_znx_gadget_decompose_tmp_bytes_default(module)
+    }
+
+    fn vec_znx_gadget_decompose(
+        _module: &Module<Self>,
+        res: &mut VecZnxBackendMut<'_, Self>,
+        res_col: usize,
+        a: &VecZnxBackendRef<'_, Self>,
+        a_col: usize,
+        base2k: usize,
+        k_digit: usize,
+        _scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        $crate::normalize::vec_znx_gadget_decompose_par::<Self, Self>(res, res_col, a, a_col, base2k, k_digit);
+    }
 
     fn vec_znx_normalize(
         _module: &Module<Self>,

@@ -5,7 +5,7 @@ use crate::{Distribution, Noise};
 /// Backend-provided secret and noise sampling.
 ///
 /// Scalar sampling overwrites the chosen column with the requested secret
-/// distribution as defined by [`Distribution`]; `NONE` and `ENCAPSULATED` must panic. Noise sampling adds an
+/// distribution as defined by [`Distribution`]. Noise sampling adds an
 /// integer distributed according to [`Noise`], multiplied by `2^-k`, to the
 /// chosen column. Digits use radix `2^base2k`; padding below precision `k`
 /// stays zero. A sample that fits in one digit changes only the last limb.
@@ -23,12 +23,19 @@ use crate::{Distribution, Noise};
 /// 128-bit cumulative table with statistical distance at most `B * 2^-128`.
 /// Larger Gaussians and uniform noise must be sampled exactly.
 ///
+/// # Panics
+///
+/// Scalar sampling panics on `NONE` and `ENCAPSULATED`. Noise sampling panics on invalid noise or placement
+/// parameters, before writing.
+///
 /// # Safety
 /// Implementations must preserve the requested distribution and write only
-/// within the selected column and precision. Invalid noise or placement
-/// parameters must panic before writing. The scheme's security relies on
-/// these distribution and precision guarantees.
+/// within the selected column and precision. The scheme's security relies on
+/// these distribution and precision guarantees. The memory, layout, synchrony and aliasing rules of
+/// `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait SamplingImpl: Backend {
+    /// Fills column `res_col` of `res` with a draw of `dist` from `seed`. No reference body exists: the trait's
+    /// sampling contract is the specification, and the stream is the backend's own.
     fn scalar_znx_fill_distribution(
         module: &Module<Self>,
         res: &mut ScalarZnxBackendMut<'_, Self>,
@@ -37,6 +44,9 @@ pub unsafe trait SamplingImpl: Backend {
         seed: [u8; 32],
     );
 
+    /// Adds a draw of `noise` at precision `k` and radix `base2k` to column `res_col` of `res`, from `seed`. No
+    /// reference body exists: the trait's sampling contract is the specification, and the stream is the backend's
+    /// own.
     fn vec_znx_add_noise(
         module: &Module<Self>,
         base2k: usize,
@@ -47,6 +57,9 @@ pub unsafe trait SamplingImpl: Backend {
         seed: [u8; 32],
     );
 
+    /// Adds a draw of `noise` at precision `k` and radix `base2k` to column `res_col` of the big-coefficient `res`,
+    /// from `seed`. No reference body exists: the trait's sampling contract is the specification, and the stream is
+    /// the backend's own.
     fn vec_znx_big_add_noise(
         module: &Module<Self>,
         base2k: usize,

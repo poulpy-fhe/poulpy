@@ -15,9 +15,9 @@ use poulpy_hal::{
 
 use crate::{
     LinearTransformationGiantStep,
+    gadget::prod_dft_size,
     layouts::IntPolyInfos,
     layouts::{GLWEInfos, GLWEToBackendRef, prepared::PreparedDiagonal},
-    reference::operations::prod_dft_size,
 };
 
 use super::LinearTransformationBabySteps;
@@ -71,6 +71,32 @@ pub(super) fn glwe_accumulate_prepared_baby_steps_dft<BE, M>(
             })
             .collect();
         module.cnv_apply_dft_sum(cnv_offset_hi, prod_dft, col, &terms, scratch);
+    }
+}
+
+/// Reference of [`LinearTransformationImpl::glwe_giant_step_batch`](crate::oep::LinearTransformationImpl::glwe_giant_step_batch),
+/// which `impl_linear_transformation_reference_full!` forwards to: a giant step at a time.
+pub fn glwe_giant_step_batch_reference<BE: Backend>(_module: &poulpy_hal::layouts::Module<BE>) -> usize {
+    1
+}
+
+/// Reference of [`LinearTransformationImpl::glwe_accumulate_giant_steps`](crate::oep::LinearTransformationImpl::glwe_accumulate_giant_steps),
+/// which `impl_linear_transformation_reference_full!` forwards to: each product accumulated on
+/// its own with `cnv_apply_dft_sum`.
+pub fn glwe_accumulate_giant_steps_reference<BE, M>(
+    module: &M,
+    cnv_offset_hi: usize,
+    prods: &mut [VecZnxDftBackendMut<'_, BE>],
+    lhs: &LinearTransformationBabySteps<BE>,
+    steps: &[LinearTransformationGiantStep<PreparedDiagonal<BE::OwnedBuf, BE>>],
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: Backend,
+    M: Convolution<BE>,
+{
+    assert_eq!(prods.len(), steps.len());
+    for (prod, step) in prods.iter_mut().zip(steps) {
+        glwe_accumulate_prepared_baby_steps_dft(module, cnv_offset_hi, prod, lhs, step, scratch);
     }
 }
 

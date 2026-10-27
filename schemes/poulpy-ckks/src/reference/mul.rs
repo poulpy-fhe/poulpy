@@ -10,8 +10,8 @@ use poulpy_core::{
     },
 };
 use poulpy_hal::{
-    api::{CnvPVecAlloc, CnvPVecBytesOf, Convolution, VecZnxCopy},
-    layouts::{Backend, PrepareHint, ScratchArena},
+    api::{Convolution, VecZnxCopy},
+    layouts::{Backend, ScratchArena},
 };
 
 use crate::{
@@ -21,9 +21,9 @@ use crate::{
     shaping::{MAX_PASS_BITS, ShapingProfile},
 };
 use crate::{
-    CKKSInfos, GLWEPlaintextInfos, SetCKKSInfos, checked_log_budget_sub, checked_mul_ct_log_budget, checked_mul_pt_log_budget,
-    ensure_plaintext_degree_embeds,
+    CKKSInfos, GLWEPlaintextInfos, SetCKKSInfos, ckks_mul_pt_const_checks, ckks_mul_pt_vec_checks, get_mul_ct_params,
     layouts::{CKKSPreparedLeft, CKKSPreparedRight},
+    mul_ct_params_raw,
 };
 use poulpy_core::GLWEBytesOf;
 
@@ -31,7 +31,7 @@ pub trait CKKSMulReference<BE: Backend> {
     fn ckks_mul_tmp_bytes_reference<R, A, B, T>(&self, res: &R, a: &A, b: &B, tsk: &T) -> usize
     where
         Self: GLWEBytesOf<BE> + CKKSRoundOps<BE>,
-        R: GLWEInfos,
+        R: CKKSCtBounds,
         A: CKKSCtBounds,
         B: CKKSCtBounds,
         T: GGLWEInfos,
@@ -84,7 +84,7 @@ pub trait CKKSMulReference<BE: Backend> {
             })?;
 
         let slot_layout = product_layout("ckks_mul_into", &[a.slot_layout(), b.slot_layout()])?;
-        let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params(dst, a, b)?;
+        let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params("ckks_mul_into", dst, a, b)?;
         let stamp = MulStamp {
             log_budget: res_log_budget,
             log_delta: res_log_delta,
@@ -126,7 +126,7 @@ pub trait CKKSMulReference<BE: Backend> {
             })?;
 
         let slot_layout = product_layout("ckks_mul_assign", &[dst.slot_layout(), a.slot_layout()])?;
-        let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params(dst, dst, a)?;
+        let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params("ckks_mul_assign", dst, dst, a)?;
         if let Some(lambda) = product_depth(slot_layout, res_log_delta) {
             let stamp = MulStamp {
                 log_budget: res_log_budget,
@@ -172,55 +172,6 @@ pub trait CKKSMulReference<BE: Backend> {
         A: GLWEInfos,
     {
         glwe_prepare_left_tmp_bytes(self, a.size(), a).max(glwe_prepare_right_tmp_bytes(self, a.size(), a))
-    }
-
-    /// The bytes of a left operand of `infos` under `hint`: its convolution operand on `ceil(k / base2k)` limbs and
-    /// `rank + 1` columns.
-    fn ckks_prepared_left_bytes_of_from_infos_reference<A>(&self, infos: &A, hint: PrepareHint) -> usize
-    where
-        Self: CnvPVecBytesOf,
-        A: GLWEInfos,
-    {
-        self.bytes_of_cnv_pvec_left(infos.n().as_usize(), infos.rank().as_usize() + 1, infos.size(), hint)
-    }
-
-    /// As [`Self::ckks_prepared_left_bytes_of_from_infos_reference`], for a right operand.
-    fn ckks_prepared_right_bytes_of_from_infos_reference<A>(&self, infos: &A, hint: PrepareHint) -> usize
-    where
-        Self: CnvPVecBytesOf,
-        A: GLWEInfos,
-    {
-        self.bytes_of_cnv_pvec_right(infos.n().as_usize(), infos.rank().as_usize() + 1, infos.size(), hint)
-    }
-
-    /// A left operand of `infos` under `hint`, of unspecified contents, reporting `infos` and no metadata.
-    fn ckks_prepared_left_alloc_from_infos_reference<A>(&self, infos: &A, hint: PrepareHint) -> CKKSPreparedLeft<BE>
-    where
-        Self: CnvPVecAlloc<BE>,
-        A: GLWEInfos,
-    {
-        let size = infos.size();
-        CKKSPreparedLeft {
-            prep: self.cnv_pvec_left_alloc(infos.n().as_usize(), infos.rank().as_usize() + 1, size, hint),
-            size,
-            layout: infos.glwe_layout(),
-            meta: None,
-        }
-    }
-
-    /// As [`Self::ckks_prepared_left_alloc_from_infos_reference`], for a right operand.
-    fn ckks_prepared_right_alloc_from_infos_reference<A>(&self, infos: &A, hint: PrepareHint) -> CKKSPreparedRight<BE>
-    where
-        Self: CnvPVecAlloc<BE>,
-        A: GLWEInfos,
-    {
-        let size = infos.size();
-        CKKSPreparedRight {
-            prep: self.cnv_pvec_right_alloc(infos.n().as_usize(), infos.rank().as_usize() + 1, size, hint),
-            size,
-            layout: infos.glwe_layout(),
-            meta: None,
-        }
     }
 
     /// `glwe_prepare_left` of `a`, normalized first if its canonical flag is clear, on its `ceil(k / base2k)` limbs,
@@ -344,7 +295,7 @@ pub trait CKKSMulReference<BE: Backend> {
     fn ckks_square_tmp_bytes_reference<R, A, T>(&self, res: &R, a: &A, tsk: &T) -> usize
     where
         Self: GLWEBytesOf<BE> + CKKSRoundOps<BE>,
-        R: GLWEInfos,
+        R: CKKSCtBounds,
         A: CKKSCtBounds,
         T: GGLWEInfos,
         Self: GLWETensoring<BE>,
@@ -391,7 +342,7 @@ pub trait CKKSMulReference<BE: Backend> {
                 source,
             })?;
 
-        let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params(dst, a, a)?;
+        let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params("ckks_square_into", dst, a, a)?;
         let stamp = MulStamp {
             log_budget: res_log_budget,
             log_delta: res_log_delta,
@@ -424,7 +375,7 @@ pub trait CKKSMulReference<BE: Backend> {
                 source,
             })?;
 
-        let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params(dst, dst, dst)?;
+        let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params("ckks_square_assign", dst, dst, dst)?;
         if let Some(lambda) = product_depth(dst.slot_layout(), res_log_delta) {
             let stamp = MulStamp {
                 log_budget: res_log_budget,
@@ -463,36 +414,38 @@ pub trait CKKSMulReference<BE: Backend> {
         )
     }
 
-    fn ckks_mul_pt_vec_tmp_bytes_reference<R, A>(&self, res: &R, a: &A, b_k: TorusPrecision) -> usize
+    fn ckks_mul_pt_vec_tmp_bytes_reference<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
     where
         Self: GLWEBytesOf<BE> + CKKSRoundOps<BE>,
-        R: GLWEInfos,
+        R: CKKSCtBounds,
         A: CKKSCtBounds,
+        P: CKKSInfos,
         Self: GLWEMulPlain<BE>,
     {
         let plain = |res: &GLWELayout, _: TorusPrecision| {
             let b_infos = GLWEPlaintextLayout {
                 n: res.n(),
                 base2k: res.base2k(),
-                k: b_k,
+                k: b.k(),
             };
             self.glwe_bytes_of_from_infos(a) + self.glwe_mul_plain_tmp_bytes(res, a, &b_infos)
         };
         with_shaped_bytes(self, res, a.k(), is_replicated(a), plain)
     }
 
-    fn ckks_mul_pt_const_tmp_bytes_reference<R, A>(&self, res: &R, a: &A, b_k: TorusPrecision) -> usize
+    fn ckks_mul_pt_const_tmp_bytes_reference<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
     where
         Self: GLWEBytesOf<BE> + CKKSRoundOps<BE>,
-        R: GLWEInfos,
+        R: CKKSCtBounds,
         A: CKKSCtBounds,
+        P: CKKSInfos,
         Self: GLWEMulConst<BE>,
     {
         let plain = |res: &GLWELayout, _: TorusPrecision| {
             let b_infos = GLWEPlaintextLayout {
                 n: res.n(),
                 base2k: res.base2k(),
-                k: b_k,
+                k: b.k(),
             };
             self.glwe_bytes_of_from_infos(res) + self.glwe_mul_const_tmp_bytes(res, a, &b_infos)
         };
@@ -517,8 +470,8 @@ pub trait CKKSMulReference<BE: Backend> {
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
     {
         let slot_layout = product_layout("ckks_mul_pt_vec", &[a.slot_layout(), pt.slot_layout()])?;
-        let (res_log_budget, res_log_delta, cnv_offset) = get_mul_pt_params(dst, a, pt)?;
-        ensure_plaintext_degree_embeds("ckks_mul_pt_vec", a.n().as_usize(), pt.n().as_usize(), BE::MIN_DEGREE)?;
+        let (res_log_budget, res_log_delta, cnv_offset) =
+            ckks_mul_pt_vec_checks::<BE, _, _, _>("ckks_mul_pt_vec_into", dst, a, pt)?;
         let stamp = MulStamp {
             log_budget: res_log_budget,
             log_delta: res_log_delta,
@@ -551,13 +504,8 @@ pub trait CKKSMulReference<BE: Backend> {
             + CKKSRoundOps<BE>,
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
     {
-        let (res_log_budget, res_log_delta, cnv_offset) = get_mul_pt_params(dst, dst, pt)?;
-        ensure_plaintext_degree_embeds(
-            "ckks_mul_pt_vec_assign",
-            dst.n().as_usize(),
-            pt.n().as_usize(),
-            BE::MIN_DEGREE,
-        )?;
+        let (res_log_budget, res_log_delta, cnv_offset) =
+            ckks_mul_pt_vec_checks::<BE, _, _, _>("ckks_mul_pt_vec_assign", dst, dst, pt)?;
         let slot_layout = product_layout("ckks_mul_pt_vec_assign", &[dst.slot_layout(), pt.slot_layout()])?;
         let log_sparsity = dst.log_sparsity().min(dst.log_n() - pt.log_n());
         let slots = dst.slots().join(pt.slots());
@@ -600,7 +548,8 @@ pub trait CKKSMulReference<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
     {
-        let (res_log_budget, res_log_delta, cnv_offset) = get_mul_pt_params(dst, a, pt)?;
+        let (res_log_budget, res_log_delta, cnv_offset) =
+            ckks_mul_pt_const_checks("ckks_mul_pt_const_into", dst, a, pt, pt_coeff)?;
         // A scalar-constant multiply preserves the operand's sparsity pattern,
         // slot kind and layout.
         let stamp = MulStamp {
@@ -648,7 +597,8 @@ pub trait CKKSMulReference<BE: Backend> {
             + CKKSRoundOps<BE>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
     {
-        let (res_log_budget, res_log_delta, cnv_offset) = get_mul_pt_params(dst, dst, cnst)?;
+        let (res_log_budget, res_log_delta, cnv_offset) =
+            ckks_mul_pt_const_checks("ckks_mul_pt_const_assign", dst, dst, cnst, cnst_coeff)?;
         if let Some(lambda) = product_depth(dst.slot_layout(), cnst.log_delta()) {
             let stamp = MulStamp {
                 log_budget: res_log_budget,
@@ -850,9 +800,11 @@ pub(crate) fn get_mul_prepared_params<BE: Backend, D: GLWEInfos + CKKSInfos>(
     dst: &D,
     prepared: &CKKSPreparedRight<BE>,
 ) -> Result<(usize, usize, usize, TorusPrecision)> {
-    check_prepared_layout("mul_prepared", dst, prepared)?;
+    const OP: &str = "ckks_mul_prepared_assign";
+    check_prepared_layout(OP, dst, prepared)?;
     let tensor_k = dst.k().max(prepared.k());
     let (log_budget, log_delta, cnv_offset) = mul_ct_params_raw(
+        OP,
         dst.k().as_usize(),
         dst.log_delta(),
         dst.k().into(),
@@ -861,86 +813,6 @@ pub(crate) fn get_mul_prepared_params<BE: Backend, D: GLWEInfos + CKKSInfos>(
     )?;
     Ok((log_budget, log_delta, cnv_offset, tensor_k))
 }
-pub(crate) fn get_mul_ct_params<R, A, B>(res: &R, a: &A, b: &B) -> Result<(usize, usize, usize)>
-where
-    R: CKKSInfos,
-    A: CKKSInfos,
-    B: CKKSInfos,
-{
-    mul_ct_params_raw(res.k().as_usize(), a.log_delta(), a.k().into(), b.log_delta(), b.k().into())
-}
-
-/// Shared `(log_budget, log_delta, cnv_offset)` rule for ct × ct multiplication,
-/// expressed on raw values so the BSGS driver computes bit-identical parameters.
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn mul_ct_params_raw(
-    res_max_k: usize,
-    a_log_delta: usize,
-    a_k: usize,
-    b_log_delta: usize,
-    b_k: usize,
-) -> Result<(usize, usize, usize)> {
-    let a_log_budget = a_k.saturating_sub(a_log_delta);
-    let b_log_budget = b_k.saturating_sub(b_log_delta);
-
-    let res_log_budget = checked_mul_ct_log_budget("mul", a_log_budget, b_log_budget, a_log_delta, b_log_delta)?;
-    let res_log_delta = a_log_delta.min(b_log_delta);
-
-    let res_offset = (res_log_budget + res_log_delta).saturating_sub(res_max_k);
-    // An operand holds its message at `2^-log_budget` on the torus and the
-    // convolution returns `a * b * 2^cnv_offset`, so lifting the product from
-    // `2^-(a_log_budget + b_log_budget)` to the stamped budget
-    // `min(log_budget) - max(log_delta) - res_offset` takes
-    // `max(log_budget) + max(log_delta) + res_offset`. That is
-    // `max(a_k, b_k) + res_offset` only when the operand with the larger budget
-    // also has the larger or equal scale.
-    let cnv_offset = a_log_budget.max(b_log_budget) + a_log_delta.max(b_log_delta) + res_offset;
-
-    Ok((
-        checked_log_budget_sub("mul", res_log_budget, res_offset)?,
-        res_log_delta,
-        cnv_offset,
-    ))
-}
-
-pub(crate) fn get_mul_pt_params<R, A, B>(res: &R, a: &A, b: &B) -> Result<(usize, usize, usize)>
-where
-    R: CKKSInfos,
-    A: CKKSInfos,
-    B: CKKSInfos + IntPolyInfos,
-{
-    mul_pt_params_raw(
-        res.k().as_usize(),
-        a.log_delta(),
-        a.log_budget(),
-        b.log_delta(),
-        b.log_budget(),
-        b.encoded_k().as_usize(),
-    )
-}
-
-/// Shared `(log_budget, log_delta, cnv_offset)` rule for ct × pt multiplication,
-/// expressed on raw values so the BSGS driver computes bit-identical parameters.
-pub(crate) fn mul_pt_params_raw(
-    res_max_k: usize,
-    a_log_delta: usize,
-    a_log_budget: usize,
-    b_log_delta: usize,
-    b_log_budget: usize,
-    b_max_k: usize,
-) -> Result<(usize, usize, usize)> {
-    let res_log_budget = checked_mul_pt_log_budget("mul", a_log_budget, b_log_budget, a_log_delta, b_log_delta)?;
-    let res_log_delta = a_log_delta;
-    let res_offset = (res_log_budget + res_log_delta).saturating_sub(res_max_k);
-    let cnv_offset = b_max_k + res_offset;
-
-    Ok((
-        checked_log_budget_sub("mul", res_log_budget, res_offset)?,
-        res_log_delta,
-        cnv_offset,
-    ))
-}
-
 impl<BE: Backend> CKKSMulReference<BE> for poulpy_hal::layouts::Module<BE> {}
 
 /// The common slot layout of a product's operands.
@@ -1032,7 +904,8 @@ where
             source,
         })?;
     let max_k = wide.k().as_usize().saturating_sub(lambda);
-    let (log_budget, log_delta, cnv_offset) = mul_ct_params_raw(max_k, a.log_delta(), k.into(), a.log_delta(), k.into())?;
+    let (log_budget, log_delta, cnv_offset) =
+        mul_ct_params_raw("ckks_square_wide", max_k, a.log_delta(), k.into(), a.log_delta(), k.into())?;
     let stamp = MulStamp {
         log_budget,
         log_delta,

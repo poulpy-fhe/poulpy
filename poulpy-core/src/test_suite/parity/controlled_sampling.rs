@@ -105,7 +105,8 @@ fn provider() -> Arc<dyn SampleProvider> {
 /// A comparison backend's sampling adapter writes these values into its own storage.
 ///
 /// # Panics
-/// Panics outside a [`with_backend_samples`] scope.
+///
+/// Outside a [`with_backend_samples`] scope.
 pub fn scalar_samples(n: usize, dist: Distribution, seed: [u8; 32]) -> Vec<i64> {
     provider().scalar(n, dist, seed)
 }
@@ -114,7 +115,8 @@ pub fn scalar_samples(n: usize, dist: Distribution, seed: [u8; 32]) -> Vec<i64> 
 /// (`big = false`) or wide (`big = true`) sampler, in limb-major order.
 ///
 /// # Panics
-/// Panics outside a [`with_backend_samples`] scope.
+///
+/// Outside a [`with_backend_samples`] scope.
 pub fn noise_samples(n: usize, base2k: usize, k: usize, noise: Noise, seed: [u8; 32], big: bool) -> Vec<i64> {
     provider().noise(n, base2k, k, noise, seed, big)
 }
@@ -123,7 +125,8 @@ pub fn noise_samples(n: usize, base2k: usize, k: usize, noise: Noise, seed: [u8;
 /// checks every sampler makes before writing.
 ///
 /// # Panics
-/// Panics on invalid noise or placement, or outside a [`with_backend_samples`] scope.
+///
+/// On invalid noise or placement, or outside a [`with_backend_samples`] scope.
 #[allow(clippy::too_many_arguments)]
 pub fn add_noise_samples<R: ZnxViewMut>(
     res: &mut R,
@@ -159,6 +162,8 @@ pub fn add_noise_samples<R: ZnxViewMut>(
 ///
 /// `params` is optional and defaults to degree 256 with radix 12. Callers may
 /// select another supported degree; both modules use the supplied module size.
+/// Both backends are on the standard ring, which the LWE-matrix decryption case
+/// needs for `glwe_expand_lwe_matrix`.
 #[macro_export]
 macro_rules! core_encryption_parity_test_suite {
     (mod $name:ident, backend_ref = $backend_ref:ty, backend_test = $backend_test:ty $(,)?) => {
@@ -248,6 +253,29 @@ macro_rules! core_encryption_parity_test_suite {
                     |tested| {
                         let reference = Module::<$backend_ref>::new(params.size as u64);
                         test_lwe_encryption_parity(
+                            &params,
+                            &ParityShapes::default(),
+                            &reference,
+                            tested,
+                        );
+                    },
+                );
+            }
+            #[test]
+            fn lwe_matrix_decrypt() {
+                use ::poulpy_hal::{layouts::Module, test_suite::TestParams};
+                use $crate::test_suite::parity::{ParityShapes, test_lwe_matrix_decrypt_parity};
+                let params: TestParams = $params;
+                $crate::test_suite::parity::controlled_sampling::with_backend_samples(
+                    Module::<$backend_test>::new({
+                        #[allow(unused_mut)]
+                        let mut size = params.size;
+                        $( size = $test_size; )?
+                        size
+                    } as u64),
+                    |tested| {
+                        let reference = Module::<$backend_ref>::new(params.size as u64);
+                        test_lwe_matrix_decrypt_parity(
                             &params,
                             &ParityShapes::default(),
                             &reference,

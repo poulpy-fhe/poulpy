@@ -14,15 +14,15 @@ use poulpy_core::{
     },
 };
 use poulpy_hal::{
-    layouts::{Backend, Module, ScratchArena},
+    layouts::{Backend, Module, ScratchArena, Standard},
     source::Source,
 };
-/// Backend contract for circuit bootstrapping.
+/// Backend contract for circuit bootstrapping, on the standard ring only.
 ///
 /// # Safety
 /// Preserve the canonical circuit, metadata, and input invariants. Execution must
 /// stay within the selected scratch query; validate overrides with caller-selected parity.
-pub unsafe trait CircuitBootstrappingExecuteImpl<BRA: BlindRotationAlgo>: Backend<ZnxWord = i64> {
+pub unsafe trait CircuitBootstrappingExecuteImpl<BRA: BlindRotationAlgo>: Backend<ZnxWord = i64, Ring = Standard> {
     fn circuit_bootstrapping_execute_tmp_bytes<R, A>(
         module: &Module<Self>,
         block_size: usize,

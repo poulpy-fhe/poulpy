@@ -8,7 +8,11 @@
 //! Every prepared type is parametrised by `B: Backend` in addition
 //! to `D: Data`, making it tied to a specific backend instance.
 //! Prepared layouts are created from their standard counterparts
-//! via `prepare` / `prepare_*` methods.
+//! via `prepare` / `prepare_*` methods. The factories of [`crate::api`]
+//! allocate and size them; the ciphertext, public-key and
+//! evaluation-key preparations dispatch through
+//! [`PreparationImpl`](crate::oep::PreparationImpl) and the secret
+//! preparations through [`SecretImpl`](crate::oep::SecretImpl).
 
 pub(crate) mod gglwe;
 mod gglwe_to_ggsw_key;

@@ -13,8 +13,8 @@ use poulpy_hal::{
 use crate::{
     CKKSCtBounds, CKKSInfos, CKKSModuleInfos, CoeffsMeta, ReplicatedLayout, SetCKKSInfos, SlotLayout, SlotsKind,
     api::{CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar},
+    encoding::linear_transformation::period_degree,
     polynomial::{BSGSPolynomial, ComplexBSGSPolynomial, ComplexPolynomial, Polynomial, SplitStrategy},
-    reference::linear_transformation_diagonals::period_degree,
 };
 
 use super::{

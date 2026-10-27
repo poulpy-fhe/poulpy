@@ -16,7 +16,7 @@ use crate::{
         glwe_backend_ref_from_mut,
         prepared::{GGLWEPreparedToBackendRef, GLWEAutomorphismKeyPreparedBackendRef},
     },
-    oep::GGLWEAutomorphismReference,
+    reference::automorphism::GGLWEAutomorphismReference,
 };
 
 pub fn glwe_automorphism_key_automorphism_tmp_bytes_reference<BE, M, R, A, K>(

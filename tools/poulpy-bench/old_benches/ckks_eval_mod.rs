@@ -39,13 +39,15 @@ const PT_LAYOUT: CKKSLayout = CKKSLayout { glwe_layout: GLWELayout {
         base2k: Base2K(BASE2K as u32),
         k: TorusPrecision((EVAL_MOD_LOG_DELTA + BASE2K) as u32),
         rank: Rank(1),
-    }, meta: GLWEPlaintextMeta { scale: Scale::Log(EVAL_MOD_LOG_DELTA), slots: SlotsKind::Complex, log_sparsity: 0 } };
+    }, meta: GLWEPlaintextMeta {
+        slot_layout: poulpy_core::layouts::SlotLayout::Full, scale: Scale::Log(EVAL_MOD_LOG_DELTA), slots: SlotsKind::Complex, log_sparsity: 0 } };
 
 // Coefficient meta the EvalMod operands are encoded with; equals
 // `CoeffsMeta::from_delta_budget(EVAL_MOD_LOG_DELTA, BASE2K)`.
 const COEFF_META: CoeffsMeta = CoeffsMeta {
     k: TorusPrecision((EVAL_MOD_LOG_DELTA + BASE2K) as u32),
-    meta: GLWEPlaintextMeta { scale: Scale::Log(EVAL_MOD_LOG_DELTA), slots: SlotsKind::Complex, log_sparsity: 0 },
+    meta: GLWEPlaintextMeta {
+        slot_layout: poulpy_core::layouts::SlotLayout::Full, scale: Scale::Log(EVAL_MOD_LOG_DELTA), slots: SlotsKind::Complex, log_sparsity: 0 },
 };
 
 struct Case {
@@ -159,7 +161,8 @@ fn bench_ntt4x30_portable(c: &mut Criterion) {
     let module = Module::<BE>::new(N as u64);
     let glwe_layout = glwe_layout();
     let tsk_layout = tsk_layout();
-    let input_meta = GLWEPlaintextMeta { scale: Scale::Log(LOG_DELTA), slots: SlotsKind::Complex, log_sparsity: 0 };
+    let input_meta = GLWEPlaintextMeta {
+        slot_layout: poulpy_core::layouts::SlotLayout::Full, scale: Scale::Log(LOG_DELTA), slots: SlotsKind::Complex, log_sparsity: 0 };
 
     let ct_template = module.ckks_ciphertext_alloc_from_glwe_infos(&glwe_layout);
     let mul_bytes = module.ckks_mul_tmp_bytes(&ct_template, &ct_template, &ct_template, &tsk_layout);

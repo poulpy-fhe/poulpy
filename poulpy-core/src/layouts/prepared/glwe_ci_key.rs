@@ -1,15 +1,14 @@
 use std::marker::PhantomData;
 
-use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Data};
 
 use crate::layouts::{
     Base2K, CIEmbed, CITrace, Degree, Dnum, GGLWEInfos, GGLWEPrepared, GGLWEPreparedBackendMut, GGLWEPreparedBackendRef,
-    GGLWEPreparedToBackendMut, GGLWEPreparedToBackendRef, GGLWEToBackendRef, GLWECIKey, GLWEInfos, GLWESwitchingKey,
-    GLWESwitchingKeyDegrees, GLWESwitchingKeyDegreesMut, LWEInfos, Rank, TorusPrecision,
-    prepared::{GLWESwitchingKeyPrepared, GLWESwitchingKeyPreparedFactory},
+    GGLWEPreparedToBackendMut, GGLWEPreparedToBackendRef, GLWEInfos, GLWESwitchingKeyDegrees, GLWESwitchingKeyDegreesMut,
+    LWEInfos, Rank, TorusPrecision, prepared::GLWESwitchingKeyPrepared,
 };
 
-/// DFT-domain (prepared) [`GLWECIKey`].
+/// DFT-domain (prepared) [`GLWECIKey`](crate::layouts::GLWECIKey).
 #[derive(PartialEq)]
 pub struct GLWECIKeyPrepared<D: Data, B: Backend, M>(pub(crate) GLWESwitchingKeyPrepared<D, B>, pub(crate) PhantomData<M>);
 
@@ -118,53 +117,3 @@ impl<D: Data, B: Backend, M> GLWESwitchingKeyDegrees for GLWECIKeyPrepared<D, B,
         &self.0.output_degree
     }
 }
-
-pub trait GLWECIKeyPreparedFactory<B: Backend>
-where
-    Self: GLWESwitchingKeyPreparedFactory<B>,
-{
-    fn glwe_ci_embed_key_prepared_alloc_from_infos<A>(&self, infos: &A) -> GLWECIEmbedKeyPrepared<B::OwnedBuf, B>
-    where
-        A: GGLWEInfos,
-    {
-        GLWECIKeyPrepared(self.glwe_switching_key_prepared_alloc_from_infos(infos), PhantomData)
-    }
-
-    fn glwe_ci_trace_key_prepared_alloc_from_infos<A>(&self, infos: &A) -> GLWECITraceKeyPrepared<B::OwnedBuf, B>
-    where
-        A: GGLWEInfos,
-    {
-        GLWECIKeyPrepared(self.glwe_switching_key_prepared_alloc_from_infos(infos), PhantomData)
-    }
-
-    fn glwe_ci_key_prepared_bytes_of_from_infos<A>(&self, infos: &A) -> usize
-    where
-        A: GGLWEInfos,
-    {
-        self.glwe_switching_key_prepared_bytes_of_from_infos(infos)
-    }
-
-    fn glwe_ci_key_prepare_tmp_bytes<A>(&self, infos: &A) -> usize
-    where
-        A: GGLWEInfos,
-    {
-        self.glwe_switching_key_prepare_tmp_bytes(infos)
-    }
-
-    /// Prepares `other` into `res`; both carry the same direction.
-    fn glwe_ci_key_prepare<DR, DO, M>(
-        &self,
-        res: &mut GLWECIKeyPrepared<DR, B, M>,
-        other: &GLWECIKey<DO, B::ZnxWord, M>,
-        scratch: &mut ScratchArena<'_, B>,
-    ) where
-        DR: Data,
-        DO: Data,
-        GLWESwitchingKeyPrepared<DR, B>: GGLWEPreparedToBackendMut<B>,
-        GLWESwitchingKey<DO, B::ZnxWord>: GGLWEToBackendRef<B>,
-    {
-        self.glwe_switching_key_prepare(&mut res.0, &other.0, scratch);
-    }
-}
-
-impl<B: Backend> GLWECIKeyPreparedFactory<B> for Module<B> where Self: GLWESwitchingKeyPreparedFactory<B> {}

@@ -75,6 +75,36 @@ impl<BE: Backend<ZnxWord = i64> + HalVecZnxImpl> TestBackend for BE {}
 
 pub use crate::layouts::{vec_znx_backend_mut, vec_znx_backend_ref};
 
+/// A scratch arena of exactly `bytes`, every byte filled with `0xA5` so that an operation reading scratch it did not
+/// write, or needing more than its query reported, shows in the result.
+pub(crate) fn poisoned_arena<BE: Backend>(bytes: usize) -> PoisonedArena<BE> {
+    PoisonedArena {
+        owned: crate::layouts::ScratchOwned {
+            data: BE::from_host_bytes(&vec![0xA5; BE::scratch_aligned(bytes)]),
+            _phantom: std::marker::PhantomData,
+        },
+        bytes,
+    }
+}
+
+/// The owner of a [`poisoned_arena`].
+pub(crate) struct PoisonedArena<BE: Backend> {
+    owned: crate::layouts::ScratchOwned<BE>,
+    bytes: usize,
+}
+
+impl<BE: Backend> PoisonedArena<BE> {
+    /// The first `bytes` of the buffer: the allocation is padded to the backend's alignment, the arena is not.
+    pub(crate) fn arena(&mut self) -> crate::layouts::ScratchArena<'_, BE> {
+        self.owned.arena().split_at(self.bytes).0
+    }
+
+    /// Same as [`Self::arena`], under the name `ScratchOwnedBorrow` gives a `ScratchOwned`.
+    pub(crate) fn borrow(&mut self) -> crate::layouts::ScratchArena<'_, BE> {
+        self.arena()
+    }
+}
+
 /// Mutable backend view narrowed to `size` limbs, leaving the allocation intact.
 ///
 /// Lets a test hand a kernel fewer limbs than were allocated, so that writes
@@ -221,4 +251,23 @@ macro_rules! cross_backend_test_suite {
             )+
         }
     };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::poisoned_arena;
+    use crate::layouts::HostBytesBackend;
+
+    #[test]
+    fn poisoned_arena_is_exact() {
+        let mut owner = poisoned_arena::<HostBytesBackend>(511);
+        assert_eq!(owner.arena().available(), 511);
+        let (region, _) = owner.arena().take_region(511);
+        assert!(region.iter().all(|&b| b == 0xA5), "the arena is not poisoned");
+        let refused = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            owner.arena().take_region(512);
+        }))
+        .is_err();
+        assert!(refused, "a 511-byte arena accepted a 512-byte carve");
+    }
 }

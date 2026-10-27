@@ -13,7 +13,7 @@ use poulpy_hal::{
 
 use crate::layouts::{Base2K, GLWEInfos, GLWEToBackendMut, operand_degree};
 
-use super::cnv_offset_to_limb_offset;
+use crate::gadget::cnv_offset_to_limb_offset;
 
 /// The reference algorithm of [`GLWEMulPreparedPlainSumImpl`](crate::oep::GLWEMulPreparedPlainSumImpl), which
 /// `impl_glwe_mul_prepared_plain_sum_reference_full!` forwards to and an override can call.

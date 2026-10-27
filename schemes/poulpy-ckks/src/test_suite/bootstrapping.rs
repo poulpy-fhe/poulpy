@@ -15,7 +15,7 @@
 //! 4. EvalMod removes `q·I_j` from each.
 //! 5. SlotsToCoeffs maps the slots back to coefficients — a refreshed `z`.
 //!
-//! Scale bridge (see [`BootstrappingContext`]): CoeffsToSlots is pre-scaled by
+//! Scale bridge (see [`BootstrappingContext`](crate::layouts::BootstrappingContext)): CoeffsToSlots is pre-scaled by
 //! `1/K` (`K = f_mod_interval`) into EvalMod's `[-1, 1]` domain; after ModUp the
 //! ciphertext is relabeled at the input-modulus scale (free division by the
 //! message ratio), restored by a `2^R` scale-up after SlotsToCoeffs.
@@ -34,7 +34,7 @@ use crate::layouts::CKKSPlaintextOwned;
 
 use poulpy_core::layouts::{
     GGLWEInfos, GLWEInfos, GLWEPlaintextInfos, GLWESecretPreparedToBackendRef, GLWETensorKeyPrepared, GLWEToBackendMut,
-    GLWEToBackendRef, LWEInfos, SetGLWEPlaintextInfos, prepared::GLWETensorKeyPreparedToBackendRef,
+    GLWEToBackendRef, LWEInfos, LinearTransformation, SetGLWEPlaintextInfos, prepared::GLWETensorKeyPreparedToBackendRef,
 };
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
@@ -49,8 +49,8 @@ use crate::{
         CKKSAddOps, CKKSBootstrappingOps, CKKSDFTMatrixOps, CKKSDFTOps, CKKSDecryptOps, CKKSEvalModOps, CKKSPow2Ops, CKKSSubOps,
     },
     layouts::{
-        BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys, BootstrappingPipeline,
-        BootstrappingPlan, BootstrappingTechniques, CKKSModuleAlloc, DFTOutputFormat, DFTPlan, DFTType, EncapsulationKeysLayout,
+        BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys, BootstrappingPipeline, BootstrappingPlan,
+        BootstrappingTechniques, CKKSModuleAlloc, DFTMatrix, DFTOutputFormat, DFTPlan, DFTType, EncapsulationKeysLayout,
         EvalRoundPlus, SparseSecretEncapsulation,
         eval_mod::{EvalModPlan, EvalModType},
     },
@@ -59,12 +59,35 @@ use crate::{
     test_suite::{
         CKKSTestParams,
         helpers::{
-            TestContextBackend, TestContextModule, TestScalar, assert_canonical_at_k, ckks_encrypt_with_prec, ckks_spec,
-            gen_sk_with_raw, next_test_seed, precision_stats, test_vector_1,
+            TestContextBackend, TestContextModule, TestScalar, assert_canonical_at_k, assert_ckks_error, assert_invalid_operand,
+            ckks_encrypt_with_prec, ckks_spec, gen_sk_with_raw, next_test_seed, precision_stats, test_vector_1,
         },
-        presets::bootstrap_setup_tmp_bytes,
+        parity::helpers::{fixture_ciphertext, snapshot, with_scratch},
+        presets::{bootstrap_setup_tmp_bytes, compile_context},
     },
 };
+
+/// Scratch of one DFT stage from `src` to `dst`, under the largest of the rotation key layouts of `keys`.
+fn dft_stage_bytes<BE, Dir, Fmt, P, Dst, Src>(
+    module: &Module<BE>,
+    keys: &BootstrappingKeysLayout,
+    dst: &Dst,
+    src: &Src,
+    dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
+) -> usize
+where
+    BE: Backend,
+    Module<BE>: CKKSDFTOps<BE>,
+    P: GLWEInfos,
+    Dst: CKKSCtBounds,
+    Src: CKKSCtBounds,
+{
+    keys.rotation_key_layouts()
+        .iter()
+        .map(|atk| module.ckks_dft_tmp_bytes(dst, src, dft, atk))
+        .max()
+        .unwrap()
+}
 
 /// `log2` of the live complex slot count (ring degree `n = 2·2^LOG_SLOTS`), kept
 /// small to bound the depth — and modulus width — of a self-contained test.
@@ -188,7 +211,12 @@ fn plan_with_encapsulation(
 pub fn test_bootstrapping_first_factor_on_raise<BE, F, E>(params: CKKSTestParams)
 where
     BE: TestContextBackend<Ring = Standard>,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSBootstrappingOps<BE> + CKKSDFTMatrixOps<BE, F>,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + CKKSBootstrappingOps<BE>
+        + CKKSDFTOps<BE>
+        + CKKSEvalModOps<BE>
+        + CKKSDFTMatrixOps<BE, F>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
@@ -263,13 +291,7 @@ where
         let boot_spec = ckks_spec(n, base2k, log_delta, k_boot - log_delta);
         let in_spec = ckks_spec(n, base2k, log_delta, k_in - log_delta);
         let mut scratch = ScratchOwned::<BE>::alloc(bootstrap_setup_tmp_bytes(&module, &boot_spec, &plan, &keys_layout));
-        let unprepared =
-            BootstrappingContext::<BE, F>::compile_unprepared(&module, base2k.into(), &plan, &mut scratch.borrow()).unwrap();
-        let prepare_scratch = unprepared.prepare_tmp_bytes(&module);
-        if prepare_scratch > BE::len_bytes(&scratch.data) {
-            scratch = ScratchOwned::<BE>::alloc(prepare_scratch);
-        }
-        let ctx = unprepared.prepare(&module, &mut scratch.borrow());
+        let ctx = compile_context::<BE, F>(&module, base2k.into(), &plan);
         // The matrix holds the paid factors; the first one stands apart, a rotation per diagonal.
         let first = ctx
             .coeffs_to_slots_first_factor()
@@ -277,9 +299,6 @@ where
         assert_eq!(ctx.coeffs_to_slots().num_factors() + 1, plan.coeffs_to_slots().num_factors());
         assert!(first.giant_steps.iter().all(|giant| giant.diagonals.len() == 1));
         let boot_tmp = module.ckks_bootstrap_tmp_bytes(&boot_spec, &in_spec, &ctx, &keys_layout);
-        if boot_tmp > BE::len_bytes(&scratch.data) {
-            scratch = ScratchOwned::<BE>::alloc(boot_tmp);
-        }
 
         let (sk_raw, sk) = gen_sk_with_raw(&tp, &module, &host_module, next_test_seed(0));
         let (mut src_xs, mut src_xa, mut src_xe) = (
@@ -321,26 +340,37 @@ where
             let mut src = module.ckks_ciphertext_alloc(base2k.into(), k_small.into());
             src.set_meta(small_spec.meta);
             let mut dst = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
-            let mut exact = ScratchOwned::<BE>::alloc(raise_tmp);
-            BE::ckks_mod_up_first_factor(
-                &module,
-                &mut dst,
-                &mut src,
-                raised - k_small,
-                first,
-                &bsk,
-                &mut exact.borrow(),
-            )
+            with_scratch::<BE, _>(raise_tmp, |s| {
+                BE::ckks_mod_up_first_factor(&module, &mut dst, &mut src, raised - k_small, first, &bsk, s)
+            })
             .unwrap();
         }
 
         // Keys laid out for the raise refuse a narrower bootstrap before any work.
-        let mut narrow = module.ckks_ciphertext_alloc(base2k.into(), (k_boot - base2k).into());
+        let mut narrow = fixture_ciphertext(&module, &ckks_spec(n, base2k, log_delta, k_boot - base2k - log_delta), 23);
         let ct_any = module.ckks_ciphertext_alloc(base2k.into(), k_in.into());
-        let err = module
-            .ckks_bootstrap(&mut narrow, &ct_any, &ctx, &bsk, &mut scratch.borrow())
-            .unwrap_err();
-        assert!(err.to_string().contains("first-factor"), "{err}");
+        let before = snapshot::<BE, _>(&narrow);
+        let err = with_scratch::<BE, _>(0, |s| module.ckks_bootstrap(&mut narrow, &ct_any, &ctx, &bsk, s)).unwrap_err();
+        assert_invalid_operand(
+            "a bootstrap narrower than its raise keys",
+            &err,
+            "ckks_bootstrap",
+            "the first-factor keys switch",
+        );
+        assert_eq!(snapshot::<BE, _>(&narrow), before, "a refused bootstrap wrote res");
+        let mut rank2 = in_spec;
+        rank2.glwe_layout.rank = 2usize.into();
+        let ct_rank2 = fixture_ciphertext(&module, &rank2, 29);
+        let err = with_scratch::<BE, _>(0, |s| module.ckks_bootstrap(&mut narrow, &ct_rank2, &ctx, &bsk, s)).unwrap_err();
+        assert_ckks_error(
+            "a bootstrap of a rank-2 input",
+            &err,
+            CKKSCompositionError::InvalidOperand {
+                op: "ckks_bootstrap",
+                reason: "supports rank-1 ciphertexts only, got rank 2 -> 1".into(),
+            },
+        );
+        assert_eq!(snapshot::<BE, _>(&narrow), before, "a refused bootstrap wrote res");
 
         let (re, im) = test_vector_1::<F>(m);
         let im_zero = vec![F::zero(); m];
@@ -359,9 +389,7 @@ where
             );
             ct0.set_slots(slots);
             let mut ct_bs = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
-            module
-                .ckks_bootstrap(&mut ct_bs, &ct0, &ctx, &bsk, &mut scratch.borrow())
-                .unwrap();
+            with_scratch::<BE, _>(boot_tmp, |s| module.ckks_bootstrap(&mut ct_bs, &ct0, &ctx, &bsk, s)).unwrap();
             assert_eq!((ct_bs.log_delta(), ct_bs.slots()), (log_delta, slots));
             let scale_drop = if s2c_first {
                 0
@@ -390,7 +418,12 @@ where
 pub fn test_bootstrapping_standard_e2e<BE, F, E>(params: CKKSTestParams)
 where
     BE: TestContextBackend<Ring = Standard>,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSBootstrappingOps<BE> + CKKSDFTMatrixOps<BE, F>,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + CKKSBootstrappingOps<BE>
+        + CKKSDFTOps<BE>
+        + CKKSEvalModOps<BE>
+        + CKKSDFTMatrixOps<BE, F>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
@@ -469,28 +502,16 @@ where
     );
     let mut scratch = ScratchOwned::<BE>::alloc(scratch_size);
 
-    let unprepared =
-        BootstrappingContext::<BE, F>::compile_unprepared(&module, base2k.into(), &plan, &mut scratch.borrow()).unwrap();
-    let prepare_scratch = unprepared.prepare_tmp_bytes(&module);
-    if prepare_scratch > BE::len_bytes(&scratch.data) {
-        scratch = ScratchOwned::<BE>::alloc(prepare_scratch);
-    }
-    let ctx = unprepared.prepare(&module, &mut scratch.borrow());
+    let ctx = compile_context::<BE, F>(&module, base2k.into(), &plan);
 
     let (sk_raw, sk) = gen_sk_with_raw(&tp, &module, &host_module, [0u8; 32]);
 
-    // The compiled pipeline adds its live intermediates to the setup scratch.
-    {
-        let boot_tmp = module.ckks_bootstrap_tmp_bytes(
-            &ckks_spec(n, base2k, log_delta, k_boot - log_delta),
-            &ckks_spec(n, base2k, log_delta, log_modulus_in - log_delta),
-            &ctx,
-            &keys_layout,
-        );
-        if boot_tmp > BE::len_bytes(&scratch.data) {
-            scratch = ScratchOwned::<BE>::alloc(boot_tmp);
-        }
-    }
+    let boot_tmp = module.ckks_bootstrap_tmp_bytes(
+        &ckks_spec(n, base2k, log_delta, k_boot - log_delta),
+        &ckks_spec(n, base2k, log_delta, log_modulus_in - log_delta),
+        &ctx,
+        &keys_layout,
+    );
     let (mut src_xs, mut src_xa, mut src_xe) = (Source::new([7u8; 32]), Source::new([1u8; 32]), Source::new([2u8; 32]));
     // `generate_keys` returns the keys *unprepared* (the serializable / GPU-resident
     // form); `prepare` preprocesses the whole set up front for this CPU path.
@@ -541,10 +562,9 @@ where
             .min()
             .unwrap();
         let wide_k = (narrow_k + last * c2s.coeffs_meta().log_delta() + 1).next_multiple_of(base2k);
-        let mut ct_wide = module.ckks_ciphertext_alloc(base2k.into(), wide_k.into());
-        let err = module
-            .ckks_bootstrap(&mut ct_wide, &ct0, &ctx, &bsk, &mut scratch.borrow())
-            .unwrap_err();
+        let mut ct_wide = fixture_ciphertext(&module, &ckks_spec(n, base2k, log_delta, wide_k - log_delta), 23);
+        let before = snapshot::<BE, _>(&ct_wide);
+        let err = with_scratch::<BE, _>(0, |s| module.ckks_bootstrap(&mut ct_wide, &ct0, &ctx, &bsk, s)).unwrap_err();
         match err.composition() {
             Some(CKKSCompositionError::MissingAutomorphismKey {
                 op: "ckks_bootstrap",
@@ -553,14 +573,13 @@ where
             }) => assert!(source.to_string().contains("wider than the key's max_input_k"), "{err}"),
             _ => panic!("expected a key refused at entry, got: {err}"),
         }
+        assert_eq!(snapshot::<BE, _>(&ct_wide), before, "a refused bootstrap wrote res");
     }
 
     // Compare the public orchestrator with the explicit pipeline below.
     let ct_bs = {
         let mut ct_bs = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
-        module
-            .ckks_bootstrap(&mut ct_bs, &ct0, &ctx, &bsk, &mut scratch.borrow())
-            .unwrap();
+        with_scratch::<BE, _>(boot_tmp, |s| module.ckks_bootstrap(&mut ct_bs, &ct0, &ctx, &bsk, s)).unwrap();
         assert_eq!(ct_bs.log_delta(), log_delta);
         assert_eq!(
             ct_bs.k().as_usize(),
@@ -600,9 +619,7 @@ where
         );
         ct_real.set_slots(SlotsKind::Real);
         let mut ct_bs = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
-        module
-            .ckks_bootstrap(&mut ct_bs, &ct_real, &ctx, &bsk, &mut scratch.borrow())
-            .unwrap();
+        with_scratch::<BE, _>(boot_tmp, |s| module.ckks_bootstrap(&mut ct_bs, &ct_real, &ctx, &bsk, s)).unwrap();
         assert_eq!(ct_bs.slots(), SlotsKind::Real, "standard output slot kind");
         assert_eq!(ct_bs.log_delta(), log_delta);
         assert_eq!(
@@ -620,9 +637,11 @@ where
     //    message ratio: `I(X)·q` becomes the integer part, the message the
     //    residue `Δ·c/q`.
     let mut ct = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
-    module
-        .ckks_bootstrap_mod_up(&mut ct, &ct0, plan.eval_mod(), &bsk, &mut scratch.borrow())
-        .unwrap();
+    // `ckks_bootstrap_tmp_bytes` is the query of the raise step.
+    with_scratch::<BE, _>(boot_tmp, |s| {
+        module.ckks_bootstrap_mod_up(&mut ct, &ct0, plan.eval_mod(), &bsk, s)
+    })
+    .unwrap();
 
     let mut log_budget_check = k_boot - ct.log_delta();
 
@@ -632,16 +651,11 @@ where
     // 2) CoeffsToSlots (split): coefficients → (real, imag) slots.
     let mut ct_real = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
     let mut ct_imag = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
-    module
-        .ckks_coeffs_to_slots_split(
-            &mut ct_real,
-            &mut ct_imag,
-            &ct,
-            ctx.coeffs_to_slots(),
-            bsk.rotation_keys(),
-            &mut scratch.borrow(),
-        )
-        .unwrap();
+    let bytes = dft_stage_bytes(&module, &keys_layout, &ct_real, &ct, ctx.coeffs_to_slots());
+    with_scratch::<BE, _>(bytes, |s| {
+        module.ckks_coeffs_to_slots_split(&mut ct_real, &mut ct_imag, &ct, ctx.coeffs_to_slots(), bsk.rotation_keys(), s)
+    })
+    .unwrap();
 
     log_budget_check -= plan.coeffs_to_slots().consumed_bits();
 
@@ -658,24 +672,16 @@ where
     //    computes at.
     let mut res_real = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
     let mut res_imag = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
-    module
-        .ckks_eval_mod(
-            &mut res_real,
-            &ct_real,
-            ctx.eval_mod().unwrap(),
-            &bsk.tensor_key,
-            &mut scratch.borrow(),
-        )
-        .unwrap();
-    module
-        .ckks_eval_mod(
-            &mut res_imag,
-            &ct_imag,
-            ctx.eval_mod().unwrap(),
-            &bsk.tensor_key,
-            &mut scratch.borrow(),
-        )
-        .unwrap();
+    with_scratch::<BE, _>(
+        module.ckks_eval_mod_tmp_bytes(&res_real, &ct_real, ctx.eval_mod().unwrap(), &bsk.tensor_key),
+        |s| module.ckks_eval_mod(&mut res_real, &ct_real, ctx.eval_mod().unwrap(), &bsk.tensor_key, s),
+    )
+    .unwrap();
+    with_scratch::<BE, _>(
+        module.ckks_eval_mod_tmp_bytes(&res_imag, &ct_imag, ctx.eval_mod().unwrap(), &bsk.tensor_key),
+        |s| module.ckks_eval_mod(&mut res_imag, &ct_imag, ctx.eval_mod().unwrap(), &bsk.tensor_key, s),
+    )
+    .unwrap();
 
     log_budget_check -= plan.eval_mod().consumed_bits();
 
@@ -687,16 +693,18 @@ where
 
     // 4) SlotsToCoeffs (split), then restore the message ratio EvalMod divided out.
     let mut ct_out = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
-    module
-        .ckks_slots_to_coeffs_split(
+    let bytes = dft_stage_bytes(&module, &keys_layout, &ct_out, &res_real, ctx.slots_to_coeffs());
+    with_scratch::<BE, _>(bytes, |s| {
+        module.ckks_slots_to_coeffs_split(
             &mut ct_out,
             &res_real,
             &res_imag,
             ctx.slots_to_coeffs(),
             bsk.rotation_keys(),
-            &mut scratch.borrow(),
+            s,
         )
-        .unwrap();
+    })
+    .unwrap();
 
     log_budget_check -= plan.slots_to_coeffs().consumed_bits();
 
@@ -747,7 +755,12 @@ where
 pub fn test_bootstrapping_evalround_e2e<BE, F, E>(params: CKKSTestParams)
 where
     BE: TestContextBackend<Ring = Standard>,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSBootstrappingOps<BE> + CKKSDFTMatrixOps<BE, F>,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + CKKSBootstrappingOps<BE>
+        + CKKSDFTOps<BE>
+        + CKKSEvalModOps<BE>
+        + CKKSDFTMatrixOps<BE, F>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
@@ -808,28 +821,16 @@ where
     );
     let mut scratch = ScratchOwned::<BE>::alloc(scratch_size);
 
-    let unprepared =
-        BootstrappingContext::<BE, F>::compile_unprepared(&module, base2k.into(), &plan, &mut scratch.borrow()).unwrap();
-    let prepare_scratch = unprepared.prepare_tmp_bytes(&module);
-    if prepare_scratch > BE::len_bytes(&scratch.data) {
-        scratch = ScratchOwned::<BE>::alloc(prepare_scratch);
-    }
-    let ctx = unprepared.prepare(&module, &mut scratch.borrow());
+    let ctx = compile_context::<BE, F>(&module, base2k.into(), &plan);
 
     let (sk_raw, sk) = gen_sk_with_raw(&tp, &module, &host_module, [0u8; 32]);
 
-    // The compiled pipeline adds its live intermediates to the setup scratch.
-    {
-        let boot_tmp = module.ckks_bootstrap_tmp_bytes(
-            &ckks_spec(n, base2k, log_delta, k_boot - log_delta),
-            &ckks_spec(n, base2k, log_delta, log_modulus_in - log_delta),
-            &ctx,
-            &keys_layout,
-        );
-        if boot_tmp > BE::len_bytes(&scratch.data) {
-            scratch = ScratchOwned::<BE>::alloc(boot_tmp);
-        }
-    }
+    let boot_tmp = module.ckks_bootstrap_tmp_bytes(
+        &ckks_spec(n, base2k, log_delta, k_boot - log_delta),
+        &ckks_spec(n, base2k, log_delta, log_modulus_in - log_delta),
+        &ctx,
+        &keys_layout,
+    );
     let (mut src_xs, mut src_xa, mut src_xe) = (Source::new([7u8; 32]), Source::new([1u8; 32]), Source::new([2u8; 32]));
     // Generated unprepared (serializable / GPU-resident), then prepared up front.
     let bsk = ctx
@@ -863,9 +864,7 @@ where
     // Compare the public EvalRound+ orchestrator with the explicit pipeline below.
     let ct_bs = {
         let mut ct_bs = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
-        module
-            .ckks_bootstrap(&mut ct_bs, &ct0, &ctx, &bsk, &mut scratch.borrow())
-            .unwrap();
+        with_scratch::<BE, _>(boot_tmp, |s| module.ckks_bootstrap(&mut ct_bs, &ct0, &ctx, &bsk, s)).unwrap();
         assert_eq!(ct_bs.log_delta(), log_delta);
         assert_eq!(
             ct_bs.k().as_usize(),
@@ -905,9 +904,7 @@ where
         );
         ct_real.set_slots(SlotsKind::Real);
         let mut ct_bs = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
-        module
-            .ckks_bootstrap(&mut ct_bs, &ct_real, &ctx, &bsk, &mut scratch.borrow())
-            .unwrap();
+        with_scratch::<BE, _>(boot_tmp, |s| module.ckks_bootstrap(&mut ct_bs, &ct_real, &ctx, &bsk, s)).unwrap();
         assert_eq!(ct_bs.slots(), SlotsKind::Real, "evalround output slot kind");
         assert_eq!(ct_bs.log_delta(), log_delta);
         assert_eq!(
@@ -922,58 +919,49 @@ where
     // 1) The whole raise step: lift, (encapsulate) denseToSparse / ModUp /
     //    sparseToDense, relabel by the message ratio.
     let mut ct = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
-    module
-        .ckks_bootstrap_mod_up(&mut ct, &ct0, plan.eval_mod(), &bsk, &mut scratch.borrow())
-        .unwrap();
+    // `ckks_bootstrap_tmp_bytes` is the query of the raise step.
+    with_scratch::<BE, _>(boot_tmp, |s| {
+        module.ckks_bootstrap_mod_up(&mut ct, &ct0, plan.eval_mod(), &bsk, s)
+    })
+    .unwrap();
 
     // 2) CoeffsToSlots (split): LP (low precision, `1/K` scaling) for the round, and
     //    HP (full precision, natural scaling) for the high-precision `Δm + I·q`.
     let mut r0_lp = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
     let mut i0_lp = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
-    module
-        .ckks_coeffs_to_slots_split(
-            &mut r0_lp,
-            &mut i0_lp,
-            &ct,
-            ctx.coeffs_to_slots(),
-            bsk.rotation_keys(),
-            &mut scratch.borrow(),
-        )
-        .unwrap();
+    let bytes = dft_stage_bytes(&module, &keys_layout, &r0_lp, &ct, ctx.coeffs_to_slots());
+    with_scratch::<BE, _>(bytes, |s| {
+        module.ckks_coeffs_to_slots_split(&mut r0_lp, &mut i0_lp, &ct, ctx.coeffs_to_slots(), bsk.rotation_keys(), s)
+    })
+    .unwrap();
     let mut r0_hp = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
     let mut i0_hp = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
-    module
-        .ckks_coeffs_to_slots_split(
+    let bytes = dft_stage_bytes(&module, &keys_layout, &r0_hp, &ct, ctx.coeffs_to_slots_bypass().unwrap());
+    with_scratch::<BE, _>(bytes, |s| {
+        module.ckks_coeffs_to_slots_split(
             &mut r0_hp,
             &mut i0_hp,
             &ct,
             ctx.coeffs_to_slots_bypass().unwrap(),
             bsk.rotation_keys(),
-            &mut scratch.borrow(),
+            s,
         )
-        .unwrap();
+    })
+    .unwrap();
 
     // 3) EvalMod each LP half: the residue `Δm + e` at natural scale.
     let mut res_real = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
     let mut res_imag = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
-    module
-        .ckks_eval_mod(
-            &mut res_real,
-            &r0_lp,
-            ctx.eval_mod().unwrap(),
-            bsk.tensor_key(),
-            &mut scratch.borrow(),
-        )
-        .unwrap();
-    module
-        .ckks_eval_mod(
-            &mut res_imag,
-            &i0_lp,
-            ctx.eval_mod().unwrap(),
-            bsk.tensor_key(),
-            &mut scratch.borrow(),
-        )
-        .unwrap();
+    with_scratch::<BE, _>(
+        module.ckks_eval_mod_tmp_bytes(&res_real, &r0_lp, ctx.eval_mod().unwrap(), &bsk.tensor_key()),
+        |s| module.ckks_eval_mod(&mut res_real, &r0_lp, ctx.eval_mod().unwrap(), bsk.tensor_key(), s),
+    )
+    .unwrap();
+    with_scratch::<BE, _>(
+        module.ckks_eval_mod_tmp_bytes(&res_imag, &i0_lp, ctx.eval_mod().unwrap(), &bsk.tensor_key()),
+        |s| module.ckks_eval_mod(&mut res_imag, &i0_lp, ctx.eval_mod().unwrap(), bsk.tensor_key(), s),
+    )
+    .unwrap();
 
     // 4) r1 = r0_hp − K·r0_lp + EvalMod(r0_lp) = IDFT(Δ·m).
     //    EvalMod emits the residue at natural scale while the LP C2S is at `1/K`, so
@@ -981,29 +969,38 @@ where
     //    `(Δm+I·q) − (Δm+I·q+e) + (Δm+e) = Δm`: the integer part and the LP error `e`
     //    both cancel, leaving the message at the HP CoeffsToSlots' precision.
     let log2_k = FMOD_INTERVAL.trailing_zeros() as usize;
-    module
-        .ckks_mul_pow2_assign(&mut r0_lp, log2_k, &mut scratch.borrow())
-        .unwrap();
-    module
-        .ckks_mul_pow2_assign(&mut i0_lp, log2_k, &mut scratch.borrow())
-        .unwrap();
-    module.ckks_sub_assign(&mut r0_hp, &r0_lp, &mut scratch.borrow()).unwrap();
-    module.ckks_sub_assign(&mut i0_hp, &i0_lp, &mut scratch.borrow()).unwrap();
-    module.ckks_add_assign(&mut r0_hp, &res_real, &mut scratch.borrow()).unwrap();
-    module.ckks_add_assign(&mut i0_hp, &res_imag, &mut scratch.borrow()).unwrap();
+    with_scratch::<BE, _>(module.ckks_mul_pow2_tmp_bytes(r0_lp.max_size()), |s| {
+        module.ckks_mul_pow2_assign(log2_k, &mut r0_lp, s)
+    })
+    .unwrap();
+    with_scratch::<BE, _>(module.ckks_mul_pow2_tmp_bytes(i0_lp.max_size()), |s| {
+        module.ckks_mul_pow2_assign(log2_k, &mut i0_lp, s)
+    })
+    .unwrap();
+    with_scratch::<BE, _>(module.ckks_sub_tmp_bytes(r0_hp.max_size()), |s| {
+        module.ckks_sub_assign(&mut r0_hp, &r0_lp, s)
+    })
+    .unwrap();
+    with_scratch::<BE, _>(module.ckks_sub_tmp_bytes(i0_hp.max_size()), |s| {
+        module.ckks_sub_assign(&mut i0_hp, &i0_lp, s)
+    })
+    .unwrap();
+    with_scratch::<BE, _>(module.ckks_add_tmp_bytes(r0_hp.max_size()), |s| {
+        module.ckks_add_assign(&mut r0_hp, &res_real, s)
+    })
+    .unwrap();
+    with_scratch::<BE, _>(module.ckks_add_tmp_bytes(i0_hp.max_size()), |s| {
+        module.ckks_add_assign(&mut i0_hp, &res_imag, s)
+    })
+    .unwrap();
 
     // 5) SlotsToCoeffs (split): IDFT(Δ·m) slots → refreshed message coefficients.
     let mut ct_out = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
-    module
-        .ckks_slots_to_coeffs_split(
-            &mut ct_out,
-            &r0_hp,
-            &i0_hp,
-            ctx.slots_to_coeffs(),
-            bsk.rotation_keys(),
-            &mut scratch.borrow(),
-        )
-        .unwrap();
+    let bytes = dft_stage_bytes(&module, &keys_layout, &ct_out, &r0_hp, ctx.slots_to_coeffs());
+    with_scratch::<BE, _>(bytes, |s| {
+        module.ckks_slots_to_coeffs_split(&mut ct_out, &r0_hp, &i0_hp, ctx.slots_to_coeffs(), bsk.rotation_keys(), s)
+    })
+    .unwrap();
 
     ct_out.set_log_delta(log_delta);
     assert_same_bootstrap::<BE>(&ct_out, &ct_bs);
@@ -1033,7 +1030,12 @@ where
 pub fn test_bootstrapping_s2c_first_e2e<BE, F, E>(params: CKKSTestParams)
 where
     BE: TestContextBackend<Ring = Standard>,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSBootstrappingOps<BE> + CKKSDFTMatrixOps<BE, F>,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + CKKSBootstrappingOps<BE>
+        + CKKSDFTOps<BE>
+        + CKKSEvalModOps<BE>
+        + CKKSDFTMatrixOps<BE, F>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
@@ -1070,7 +1072,12 @@ fn run_s2c_first_case<BE, F, E>(
 ) -> (f64, f64)
 where
     BE: TestContextBackend<Ring = Standard>,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSBootstrappingOps<BE> + CKKSDFTMatrixOps<BE, F>,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + CKKSBootstrappingOps<BE>
+        + CKKSDFTOps<BE>
+        + CKKSEvalModOps<BE>
+        + CKKSDFTMatrixOps<BE, F>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
@@ -1134,27 +1141,16 @@ where
     );
     let mut scratch = ScratchOwned::<BE>::alloc(scratch_size);
 
-    let unprepared =
-        BootstrappingContext::<BE, F>::compile_unprepared(&module, base2k.into(), &plan, &mut scratch.borrow()).unwrap();
-    let prepare_scratch = unprepared.prepare_tmp_bytes(&module);
-    if prepare_scratch > BE::len_bytes(&scratch.data) {
-        scratch = ScratchOwned::<BE>::alloc(prepare_scratch);
-    }
-    let ctx = unprepared.prepare(&module, &mut scratch.borrow());
+    let ctx = compile_context::<BE, F>(&module, base2k.into(), &plan);
 
     let (sk_raw, sk) = gen_sk_with_raw(&tp, &module, &host_module, [0u8; 32]);
 
-    {
-        let boot_tmp = module.ckks_bootstrap_tmp_bytes(
-            &ckks_spec(n, base2k, log_delta, k_boot - log_delta),
-            &ckks_spec(n, base2k, log_delta, k_in - log_delta),
-            &ctx,
-            &keys_layout,
-        );
-        if boot_tmp > BE::len_bytes(&scratch.data) {
-            scratch = ScratchOwned::<BE>::alloc(boot_tmp);
-        }
-    }
+    let boot_tmp = module.ckks_bootstrap_tmp_bytes(
+        &ckks_spec(n, base2k, log_delta, k_boot - log_delta),
+        &ckks_spec(n, base2k, log_delta, k_in - log_delta),
+        &ctx,
+        &keys_layout,
+    );
     let (mut src_xs, mut src_xa, mut src_xe) = (Source::new([7u8; 32]), Source::new([1u8; 32]), Source::new([2u8; 32]));
     let bsk = ctx
         .generate_keys(
@@ -1185,9 +1181,7 @@ where
 
     let (bs_re, bs_im) = {
         let mut ct_bs = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
-        module
-            .ckks_bootstrap(&mut ct_bs, &ct0, &ctx, &bsk, &mut scratch.borrow())
-            .unwrap();
+        with_scratch::<BE, _>(boot_tmp, |s| module.ckks_bootstrap(&mut ct_bs, &ct0, &ctx, &bsk, s)).unwrap();
         assert_eq!(ct_bs.k().as_usize(), k_boot - plan.post_mod_up_consumed_bits());
         assert_eq!(ct_bs.log_delta(), log_delta);
         decrypt(&module, &encoder, &ct_bs, &sk, &mut scratch.borrow())
@@ -1211,9 +1205,7 @@ where
         ct_real.set_slots(SlotsKind::Real);
         let (real_bs_re, real_bs_im) = {
             let mut ct_bs = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
-            module
-                .ckks_bootstrap(&mut ct_bs, &ct_real, &ctx, &bsk, &mut scratch.borrow())
-                .unwrap();
+            with_scratch::<BE, _>(boot_tmp, |s| module.ckks_bootstrap(&mut ct_bs, &ct_real, &ctx, &bsk, s)).unwrap();
             assert_eq!(ct_bs.slots(), SlotsKind::Real);
             assert_eq!(ct_bs.k().as_usize(), k_boot - plan.post_mod_up_consumed_bits());
             assert_eq!(ct_bs.log_delta(), log_delta);
@@ -1238,14 +1230,18 @@ where
         ckks_spec(n, base2k, log_delta, insufficient_k - log_delta),
         &mut scratch.borrow(),
     );
-    let mut ct_out = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
-    let err = module
-        .ckks_bootstrap(&mut ct_out, &ct_insufficient, &ctx, &bsk, &mut scratch.borrow())
-        .unwrap_err();
+    let mut ct_out = fixture_ciphertext(&module, &ckks_spec(n, base2k, log_delta, k_boot - log_delta), 24);
+    // The S2C-first budget refusal comes from its first stage, after the pipeline carved its working ciphertexts.
+    let before = snapshot::<BE, _>(&ct_out);
+    let err = with_scratch::<BE, _>(boot_tmp, |s| {
+        module.ckks_bootstrap(&mut ct_out, &ct_insufficient, &ctx, &bsk, s)
+    })
+    .unwrap_err();
     assert!(matches!(
         err.composition(),
         Some(CKKSCompositionError::MultiplicationPrecisionUnderflow { .. })
     ));
+    assert_eq!(snapshot::<BE, _>(&ct_out), before, "a refused bootstrap wrote res");
 
     let s_re = precision_stats(&bs_re, &re, log_delta);
     let s_im = precision_stats(&bs_im, &im, log_delta);

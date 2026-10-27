@@ -4,6 +4,7 @@
 //! operand is `Real`, and any op that leaves the reals (multiplication by `i`,
 //! a linear transformation with complex diagonals) yields `Complex`.
 
+use poulpy_core::layouts::LWEInfos;
 use poulpy_core::layouts::{GLWEPlaintextInfos, SetGLWEPlaintextInfos};
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
@@ -11,11 +12,12 @@ use poulpy_hal::{
 };
 
 use super::helpers::{
-    TestContextBackend, TestContextModule, TestScalar, add_sub_const_pt, alloc_ct, alloc_scratch, ckks_encrypt, gen_sk_with_raw,
-    gen_tsk,
+    TestContextBackend, TestContextModule, TestScalar, add_sub_const_pt, alloc_ct, alloc_scratch, assert_ckks_error,
+    ckks_encrypt, gen_sk_with_raw, gen_tsk,
 };
+use super::parity::helpers::{snapshot, with_scratch};
 use crate::{
-    SlotsKind,
+    CKKSCompositionError, SlotsKind,
     api::{CKKSAddOps, CKKSImagOps, CKKSMulOps, CKKSNegOps, CKKSPow2Ops, CKKSSubOps},
     test_suite::{CKKSTestParams, reference_encoder::ReferenceEncoder},
 };
@@ -66,45 +68,75 @@ where
         a.set_slots(a_kind);
         b.set_slots(b_kind);
 
-        module.ckks_add_into(&mut res, &a, &b, &mut scratch.borrow()).unwrap();
+        with_scratch::<BE, _>(module.ckks_add_tmp_bytes(res.max_size()), |s| {
+            module.ckks_add_into(&mut res, &a, &b, s)
+        })
+        .unwrap();
         assert_eq!(res.slots(), want, "add_into({a_kind:?}, {b_kind:?})");
 
-        module.ckks_sub_into(&mut res, &a, &b, &mut scratch.borrow()).unwrap();
+        with_scratch::<BE, _>(module.ckks_sub_tmp_bytes(res.max_size()), |s| {
+            module.ckks_sub_into(&mut res, &a, &b, s)
+        })
+        .unwrap();
         assert_eq!(res.slots(), want, "sub_into({a_kind:?}, {b_kind:?})");
 
-        module.ckks_mul_into(&mut res, &a, &b, &tsk, &mut scratch.borrow()).unwrap();
+        with_scratch::<BE, _>(module.ckks_mul_tmp_bytes(&res, &a, &b, &tsk), |s| {
+            module.ckks_mul_into(&mut res, &a, &b, &tsk, s)
+        })
+        .unwrap();
         assert_eq!(res.slots(), want, "mul_into({a_kind:?}, {b_kind:?})");
 
         let mut acc = a.clone();
-        module.ckks_add_assign(&mut acc, &b, &mut scratch.borrow()).unwrap();
+        with_scratch::<BE, _>(module.ckks_add_tmp_bytes(acc.max_size()), |s| {
+            module.ckks_add_assign(&mut acc, &b, s)
+        })
+        .unwrap();
         assert_eq!(acc.slots(), want, "add_assign({a_kind:?}, {b_kind:?})");
 
         let mut acc = a.clone();
-        module.ckks_mul_assign(&mut acc, &b, &tsk, &mut scratch.borrow()).unwrap();
+        with_scratch::<BE, _>(module.ckks_mul_tmp_bytes(&acc, &acc, &b, &tsk), |s| {
+            module.ckks_mul_assign(&mut acc, &b, &tsk, s)
+        })
+        .unwrap();
         assert_eq!(acc.slots(), want, "mul_assign({a_kind:?}, {b_kind:?})");
     }
 
     // Squaring and negation stay inside whichever subfield the operand is in.
     for kind in [SlotsKind::Real, SlotsKind::Complex] {
         a.set_slots(kind);
-        module.ckks_square_into(&mut res, &a, &tsk, &mut scratch.borrow()).unwrap();
+        with_scratch::<BE, _>(module.ckks_square_tmp_bytes(&res, &a, &tsk), |s| {
+            module.ckks_square_into(&mut res, &a, &tsk, s)
+        })
+        .unwrap();
         assert_eq!(res.slots(), kind, "square_into({kind:?})");
 
-        module.ckks_neg_into(&mut res, &a, &mut scratch.borrow()).unwrap();
+        with_scratch::<BE, _>(module.ckks_neg_tmp_bytes(res.max_size()), |s| {
+            module.ckks_neg_into(&mut res, &a, s)
+        })
+        .unwrap();
         assert_eq!(res.slots(), kind, "neg_into({kind:?})");
     }
 
     // Multiplying by `i` maps the reals onto the imaginary axis.
     a.set_slots(SlotsKind::Real);
-    module.ckks_mul_i_into(&mut res, &a, &mut scratch.borrow()).unwrap();
+    with_scratch::<BE, _>(module.ckks_mul_i_tmp_bytes(res.max_size()), |s| {
+        module.ckks_mul_i_into(&mut res, &a, s)
+    })
+    .unwrap();
     assert_eq!(res.slots(), SlotsKind::Complex);
 
     let mut acc = a.clone();
-    module.ckks_mul_i_assign(&mut acc, &mut scratch.borrow()).unwrap();
+    with_scratch::<BE, _>(module.ckks_mul_i_tmp_bytes(acc.max_size()), |s| {
+        module.ckks_mul_i_assign(&mut acc, s)
+    })
+    .unwrap();
     assert_eq!(acc.slots(), SlotsKind::Complex);
 
     let mut acc = a.clone();
-    module.ckks_div_i_assign(&mut acc, &mut scratch.borrow()).unwrap();
+    with_scratch::<BE, _>(module.ckks_div_i_tmp_bytes(acc.max_size()), |s| {
+        module.ckks_div_i_assign(&mut acc, s)
+    })
+    .unwrap();
     assert_eq!(acc.slots(), SlotsKind::Complex);
 
     // A constant is one quantized coefficient, always a real scalar, so the
@@ -116,39 +148,62 @@ where
 
     let mut acc = a.clone();
     acc.set_slots(SlotsKind::Real);
-    module
-        .ckks_add_pt_const_assign(&mut acc, 0, &cst, 0, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_add_pt_const_tmp_bytes(acc.max_size()), |s| {
+        module.ckks_add_pt_const_assign(&mut acc, 0, &cst, 0, s)
+    })
+    .unwrap();
     assert_eq!(acc.slots(), SlotsKind::Real, "a real constant term keeps real slots");
 
     let mut acc = a.clone();
     acc.set_slots(SlotsKind::Real);
-    module
-        .ckks_add_pt_const_assign(&mut acc, m, &cst, 0, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_add_pt_const_tmp_bytes(acc.max_size()), |s| {
+        module.ckks_add_pt_const_assign(&mut acc, m, &cst, 0, s)
+    })
+    .unwrap();
     assert_eq!(acc.slots(), SlotsKind::Complex, "an imaginary constant term leaves the reals");
 
     let mut acc = a.clone();
     acc.set_slots(SlotsKind::Real);
-    module
-        .ckks_sub_pt_const_assign(&mut acc, m, &cst, 0, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_sub_pt_const_tmp_bytes(acc.max_size()), |s| {
+        module.ckks_sub_pt_const_assign(&mut acc, m, &cst, 0, s)
+    })
+    .unwrap();
     assert_eq!(acc.slots(), SlotsKind::Complex, "subtracting one is no different");
 
     let mut acc = a.clone();
     acc.set_slots(SlotsKind::Real);
-    module
-        .ckks_mul_pt_const_assign(&mut acc, &cst, 0, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_mul_pt_const_tmp_bytes(&acc, &acc, &cst), |s| {
+        module.ckks_mul_pt_const_assign(&mut acc, &cst, 0, s)
+    })
+    .unwrap();
     assert_eq!(acc.slots(), SlotsKind::Real, "a real scalar multiplier keeps real slots");
 
     // Halving an integer need not give an integer, so division refuses
     // `Integer` slots rather than carry a false claim.
     a.set_slots(SlotsKind::Integer);
-    assert!(module.ckks_div_pow2_into(&mut res, &a, 1, &mut scratch.borrow()).is_err());
+    let before = snapshot::<BE, _>(&res);
+    let err = with_scratch::<BE, _>(0, |s| module.ckks_div_pow2_into(1, &mut res, &a, s)).unwrap_err();
+    assert_ckks_error(
+        "div_pow2_into of Integer slots",
+        &err,
+        CKKSCompositionError::InvalidOperand {
+            op: "ckks_div_pow2_into",
+            reason: "dividing Integer slots by 2^1 need not give integers; relabel them Real first".into(),
+        },
+    );
+    assert_eq!(snapshot::<BE, _>(&res), before, "a refused division wrote res");
     let mut acc = a.clone();
-    assert!(module.ckks_div_pow2_assign(&mut acc, 1).is_err());
-    assert_eq!(acc.slots(), SlotsKind::Integer, "a refused division is a no-op");
-    module.ckks_div_pow2_assign(&mut acc, 0).unwrap();
+    let before = snapshot::<BE, _>(&acc);
+    let err = module.ckks_div_pow2_assign(1, &mut acc).unwrap_err();
+    assert_ckks_error(
+        "div_pow2_assign of Integer slots",
+        &err,
+        CKKSCompositionError::InvalidOperand {
+            op: "ckks_div_pow2_assign",
+            reason: "dividing Integer slots by 2^1 need not give integers; relabel them Real first".into(),
+        },
+    );
+    assert_eq!(snapshot::<BE, _>(&acc), before, "a refused division is a no-op");
+    module.ckks_div_pow2_assign(0, &mut acc).unwrap();
     assert_eq!(acc.slots(), SlotsKind::Integer, "dividing by one keeps integers");
 }

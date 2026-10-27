@@ -23,10 +23,8 @@
 use crate::{CKKSResult as Result, ckks_ensure};
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
-    layouts::{
-        Base2K, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LinearTransformation, LinearTransformationStrategy,
-    },
-    reference::linear_transformation::DiagonalProd,
+    DiagonalProd,
+    layouts::{Base2K, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LinearTransformation},
 };
 use poulpy_hal::{
     api::CnvPVecAlloc,
@@ -36,14 +34,16 @@ use poulpy_hal::{
 use crate::{
     CKKSCompositionError, CKKSCtBounds, SetCKKSInfos,
     api::{
-        CKKSEncodingOps, CKKSEncodingScalar, CKKSLinearTransformationOps, LinearTransformationBabySteps,
-        LinearTransformationPrepared, LtDiagonalMeta,
+        CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, CKKSLinearTransformationOps, LinearTransformationBabySteps,
+        LtDiagonalMeta,
     },
     layouts::{
-        CKKSModuleAlloc, CKKSPlaintextOwned, DFTMatrix, DFTMatrixFactors, DFTMatrixPrepared, DFTPlan, DftDirection, DftFormat,
+        CKKSModuleAlloc, CKKSPlaintextOwned, ComplexDiagonals, DFTMatrix, DFTMatrixFactors, DFTMatrixPrepared, DFTPlan,
+        DftDirection, DftFormat, DftScalar,
+        dft_matrices::gen_dft_matrices,
+        validation::{ensure_prepared_transformation_layout, ensure_uniform_diagonals},
     },
     oep::CKKSEncodingImpl,
-    reference::dft::matrices::{DftScalar, gen_dft_matrices},
 };
 
 /// One unprepared factor: the diagonals of a single DFT factor matrix encoded
@@ -54,18 +54,32 @@ fn checked_dft_log_slots(literal: &DFTPlan, log_n: usize) -> Result<usize> {
     // Shape validity (including a non-overflowing layer sum) is guaranteed by
     // `DFTPlan::new`; only the plan-vs-ring clause remains to check here.
     let log_slots = literal.log_slots();
-    ckks_ensure!(
-        log_slots < log_n,
-        "DFT has 2^{log_slots} slots, but a degree-2^{log_n} CKKS ring supports at most 2^{} slots",
-        log_n.saturating_sub(1),
-    );
+    if log_slots >= log_n {
+        return Err(CKKSCompositionError::InvalidPlan {
+            plan: "DFTPlan",
+            reason: format!(
+                "DFT has 2^{log_slots} slots, but a degree-2^{log_n} CKKS ring supports at most 2^{} slots",
+                log_n.saturating_sub(1)
+            ),
+        }
+        .into());
+    }
     Ok(log_slots)
 }
 
-/// Resolves the plan and generates + encodes each factor into an (unprepared)
-/// CKKS linear transformation (the plaintext factors of an unprepared
-/// [`DFTMatrix`]); [`ckks_prepare_dft_matrix`] later prepares each factor into a
-/// `CnvPVec` to produce the resident [`DFTMatrixPrepared`].
+/// Resolves the plan against the ring degree, so the stored `format` is canonical and `plan.is_sparse()` is exact, and
+/// generates the diagonals of each factor. The per-factor scale is carried by `literal.coeffs_meta`.
+fn dft_plan_diagonals<F: DftScalar>(literal: &DFTPlan, log_n: usize) -> Result<(DFTPlan, Vec<ComplexDiagonals<F>>)> {
+    checked_dft_log_slots(literal, log_n)?;
+    let plan = literal.resolved_at(log_n);
+    let factors = gen_dft_matrices::<F>(&plan, log_n);
+    Ok((plan, factors))
+}
+
+/// Encodes each factor's generated diagonals into an (unprepared) CKKS linear
+/// transformation (the plaintext factors of an unprepared [`DFTMatrix`]);
+/// [`ckks_prepare_dft_matrix`] later prepares each factor into a `CnvPVec` of the
+/// resident [`DFTMatrixPrepared`].
 #[allow(clippy::too_many_arguments)]
 fn dft_factor_lts<BE, F>(
     module: &Module<BE>,
@@ -78,14 +92,7 @@ where
     Module<BE>: CnvPVecAlloc<BE> + CKKSLinearTransformationOps<BE> + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
     F: DftScalar + CKKSEncodingScalar,
 {
-    checked_dft_log_slots(literal, module.log_n())?;
-
-    // Resolve the plan against the ring degree, so the stored `format` is canonical
-    // and `plan.is_sparse()` is exact. The per-factor scale is carried by
-    // `literal.coeffs_meta`.
-    let plan = literal.resolved_at(module.log_n());
-
-    let factors_cd = gen_dft_matrices::<F>(&plan, module.log_n());
+    let (plan, factors_cd) = dft_plan_diagonals::<F>(literal, module.log_n())?;
 
     // Each factor's BSGS width is taken from the plan's schedule; the library
     // applies no implicit optimum. `giant_step == 1` is the direct schedule.
@@ -93,10 +100,8 @@ where
         .iter()
         .zip(&plan.schedule.steps)
         .map(|(cd, step)| {
-            let strategy = LinearTransformationStrategy::Bsgs {
-                giant_step: step.giant_step,
-            };
-            crate::reference::ckks_encode_linear_transformation_from_diagonals::<BE, F>(
+            let strategy = plan.factor_strategy(step.giant_step);
+            crate::encoding::ckks_encode_linear_transformation_from_diagonals::<BE, F>(
                 module,
                 base2k,
                 plan.coeffs_meta,
@@ -112,37 +117,48 @@ where
     Ok((plan, lts))
 }
 
-/// Prepares an unprepared (host plaintext) [`DFTMatrix`] into its resident
-/// convolution-domain form [`DFTMatrixPrepared`], preserving the `Dir`/`Fmt`
-/// type-state.
+/// Prepares an unprepared (host plaintext) [`DFTMatrix`] into `res`, its resident
+/// convolution-domain form [`DFTMatrixPrepared`], with no allocation.
 ///
-/// Each factor's plaintext diagonals are prepared into a `CnvPVec` right operand
-/// (resident), so repeated evaluation no longer materializes them per factor. The
-/// resolved plan is preserved; only the factor storage changes. Build the input
-/// via [`ckks_new_dft_matrix`].
+/// Each factor's plaintext diagonals are prepared into the matching `CnvPVec` right
+/// operand of `res`, so repeated evaluation no longer materializes them per factor,
+/// and `res` takes `dft`'s resolved plan. A `res` of another factor count, factor
+/// schedule or diagonal degree, radix or width, or a factor whose diagonals do not
+/// share one scale, width and slot kind, is `InvalidOperand`, and an arena below
+/// [`ckks_prepare_dft_matrix_tmp_bytes`] is `CKKSError::Internal`, both before any write.
+/// Build the input via [`ckks_new_dft_matrix`].
 pub fn ckks_prepare_dft_matrix<Dir, Fmt, BE, P>(
     module: &Module<BE>,
+    res: &mut DFTMatrixPrepared<BE, Dir, Fmt>,
     dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
     scratch: &mut ScratchArena<'_, BE>,
-) -> DFTMatrixPrepared<BE, Dir, Fmt>
+) -> Result<()>
 where
     BE: Backend,
-    Module<BE>: CnvPVecAlloc<BE> + CKKSLinearTransformationOps<BE>,
+    Module<BE>: CKKSLinearTransformationOps<BE>,
     P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + DiagonalProd<BE>,
 {
-    let inner = dft.inner();
-    let plan = inner.plan.clone();
-
-    let mut factors = Vec::with_capacity(inner.factors.len());
-    for lt in &inner.factors {
-        let first_pt = lt.first_diagonal_plaintext().expect("dft factor has no diagonals");
-        let mut prepared = LinearTransformationPrepared::<BE>::alloc_prepared_from_index(module, &lt.index(), first_pt);
-        module.ckks_prepare_linear_transformation_rhs(&mut prepared, lt, scratch);
-        factors.push(prepared);
+    const OP: &str = "ckks_prepare_dft_matrix";
+    if res.factor_operands().len() != dft.factor_operands().len() {
+        return Err(CKKSCompositionError::InvalidOperand {
+            op: OP,
+            reason: "the matrix's factor count differs from the prepared matrix's".into(),
+        }
+        .into());
     }
-
-    // Same direction/format as the input; only `R` changes.
-    DFTMatrix::from_factors(DFTMatrixFactors::new(plan, factors))
+    for (prepared, lt) in res.factor_operands().iter().zip(dft.factor_operands()) {
+        ensure_prepared_transformation_layout(OP, prepared, lt)?;
+        ensure_uniform_diagonals(OP, lt, |pt| (pt.log_delta(), pt.encoded_k().as_usize(), pt.slots()))?;
+    }
+    ckks_ensure!(
+        scratch.available() >= ckks_prepare_dft_matrix_tmp_bytes(module, dft),
+        "{OP}: scratch below its query"
+    );
+    for (prepared, lt) in res.inner.factors.iter_mut().zip(dft.factor_operands()) {
+        module.ckks_prepare_linear_transformation_rhs(prepared, lt, scratch)?;
+    }
+    res.inner.plan = dft.plan().clone();
+    Ok(())
 }
 
 /// Builds the backend-owned, unprepared homomorphic (I)DFT for direction `Dir` and
@@ -153,7 +169,7 @@ where
 /// are ignored, like `factor_log_delta`). Each factor matrix is encoded into a
 /// CKKS linear transformation whose diagonals are kept as plaintexts (the default
 /// [`DFTMatrix`]); evaluating it materializes each diagonal on the fly per factor.
-/// Promote it to the resident form with [`ckks_prepare_dft_matrix`].
+/// Prepare it into the resident form with [`ckks_prepare_dft_matrix`].
 ///
 /// Returns an error when the plan is invalid, a generated diagonal cannot be
 /// encoded at the requested metadata, or `Fmt = Repack` is requested with
@@ -195,6 +211,31 @@ where
     }
 
     Ok(DFTMatrix::from_factors(DFTMatrixFactors::new(plan, lts)))
+}
+
+/// Scratch bytes of [`ckks_new_dft_matrix`] for `literal`: the factors are encoded one after the other on the same
+/// scratch, so the largest slot encoding of one factor's diagonals, at that factor's period.
+///
+/// # Errors
+///
+/// The plan-versus-ring error of [`ckks_new_dft_matrix`] for a plan with more slots than the ring supports.
+pub fn ckks_new_dft_matrix_tmp_bytes<Dir, Fmt, BE, F>(module: &Module<BE>, literal: &DFTPlan) -> Result<usize>
+where
+    Dir: DftDirection,
+    Fmt: DftFormat,
+    BE: Backend,
+    Module<BE>: CKKSEncodingHostOps<BE, F>,
+    F: DftScalar + CKKSEncodingScalar,
+{
+    let mut literal = literal.clone();
+    literal.kind = Dir::KIND;
+    literal.format = Fmt::FORMAT;
+    let (_, factors) = dft_plan_diagonals::<F>(&literal, module.log_n())?;
+    Ok(factors
+        .iter()
+        .map(|factor| crate::encoding::ckks_encode_linear_transformation_tmp_bytes::<BE, _, F>(module, factor.period()))
+        .max()
+        .unwrap_or(0))
 }
 
 impl<BE: Backend, Dir, Fmt: DftFormat, P> DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>> {
@@ -277,7 +318,7 @@ where
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     H: GetAutomorphismKey<BE>,
 {
-    let mut babies = LinearTransformationBabySteps::alloc(module, factor.baby_steps(), running);
+    let mut babies = LinearTransformationBabySteps::alloc_for(module, factor, running);
     module.ckks_prepare_linear_transformation_baby_steps(&mut babies, running, keys, scratch)?;
     module.ckks_eval_linear_transformation_assign(running, &babies, factor, keys, scratch)?;
     Ok(())
@@ -350,22 +391,37 @@ where
             .max(module.ckks_add_tmp_bytes(ct.max_size()))
             .max(module.ckks_sub_tmp_bytes(ct.max_size()))
             .max(module.ckks_mul_i_tmp_bytes(ct.max_size()))
-            .max(module.ckks_div_i_tmp_bytes(ct.max_size()))
-            .max(module.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(ct, key));
-        for pt in dft
-            .factor_operands()
-            .iter()
-            .flat_map(|factor| &factor.giant_steps)
-            .flat_map(|giant| &giant.diagonals)
-            .map(|diagonal| &diagonal.plaintext)
-        {
-            // Prepared and streamed evaluation are selected independently, so
-            // neither query is assumed to cover the other.
-            let factor_work = module
-                .glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(ct, ct, pt, key)
-                .max(module.glwe_eval_linear_transformation_tmp_bytes(ct, ct, pt, key))
-                .max(module.ckks_copy_tmp_bytes(ct, ct));
-            bytes = bytes.max(BE::scratch_aligned(module.glwe_bytes_of_from_infos(ct)) + factor_work);
+            .max(module.ckks_div_i_tmp_bytes(ct.max_size()));
+        // The split and repack formats carve at most two temporaries shaped like their destination.
+        let temporaries = 2 * BE::scratch_aligned(module.glwe_bytes_of_from_infos(ct));
+        bytes = bytes.max(
+            temporaries
+                + module
+                    .ckks_conjugate_tmp_bytes(ct, key)
+                    .max(module.ckks_rotate_tmp_bytes(ct, key))
+                    .max(module.ckks_add_tmp_bytes(ct.max_size()))
+                    .max(module.ckks_sub_tmp_bytes(ct.max_size()))
+                    .max(module.ckks_div_i_tmp_bytes(ct.max_size())),
+        );
+        for factor in dft.factor_operands() {
+            // Each factor's own schedule, so that a factor on power-of-two keys counts its
+            // doubling and its giant-step tree.
+            let plan = factor.index();
+            bytes = bytes.max(module.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(ct, &plan, key));
+            for pt in factor
+                .giant_steps
+                .iter()
+                .flat_map(|giant| &giant.diagonals)
+                .map(|diagonal| &diagonal.plaintext)
+            {
+                // Prepared and streamed evaluation are selected independently, so
+                // neither query is assumed to cover the other.
+                let factor_work = module
+                    .glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(ct, ct, pt, &plan, key)
+                    .max(module.glwe_eval_linear_transformation_tmp_bytes(ct, ct, pt, &plan, key))
+                    .max(module.ckks_copy_tmp_bytes(ct, ct));
+                bytes = bytes.max(BE::scratch_aligned(module.glwe_bytes_of_from_infos(ct)) + factor_work);
+            }
         }
     }
     bytes
@@ -394,6 +450,13 @@ mod validation_tests {
         // A valid plan can still be too wide for a given ring.
         let error =
             checked_dft_log_slots(&plan(vec![4]).unwrap(), 4).expect_err("a DFT cannot expose more slots than its CKKS ring");
-        assert!(error.to_string().contains("supports at most"), "unexpected error: {error:#}");
+        assert_eq!(
+            error.composition(),
+            Some(&CKKSCompositionError::InvalidPlan {
+                plan: "DFTPlan",
+                reason: "DFT has 2^4 slots, but a degree-2^4 CKKS ring supports at most 2^3 slots".into(),
+            }),
+            "unexpected error: {error:#}"
+        );
     }
 }

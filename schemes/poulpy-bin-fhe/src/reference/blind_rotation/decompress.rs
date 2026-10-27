@@ -1,5 +1,5 @@
 use crate::blind_rotation::{BlindRotationKey, BlindRotationKeyCompressed, BlindRotationKeyInfos, CGGI};
-use poulpy_core::layouts::{GGSWDecompress, GLWEDecompress};
+use poulpy_core::api::GGSWDecompress;
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 /// Scratch for coefficient-domain decompression; the core composition needs none.
@@ -17,7 +17,7 @@ pub fn blind_rotation_key_decompress_ref<BE: Backend>(
     src: &BlindRotationKeyCompressed<BE::OwnedBuf, CGGI, BE::ZnxWord>,
     _scratch: &mut ScratchArena<'_, BE>,
 ) where
-    Module<BE>: GGSWDecompress + GLWEDecompress<Backend = BE>,
+    Module<BE>: GGSWDecompress<BE>,
 {
     assert_eq!(res.keys.len(), src.keys.len());
     for (output, input) in res.keys.iter_mut().zip(&src.keys) {

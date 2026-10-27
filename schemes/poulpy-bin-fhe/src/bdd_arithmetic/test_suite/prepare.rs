@@ -1,6 +1,7 @@
 use poulpy_core::{
     DEFAULT_SIGMA_XE, GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWENoise,
-    layouts::{GGSWInfos, GGSWLayout, GLWEInfos, GLWELayout, GLWESecretPreparedFactory, LWEInfos, prepared::GLWESecretPrepared},
+    api::GLWESecretPreparedFactory,
+    layouts::{GGSWInfos, GGSWLayout, GLWEInfos, GLWELayout, LWEInfos, prepared::GLWESecretPrepared},
 };
 use poulpy_hal::AlignedBuf;
 use poulpy_hal::{

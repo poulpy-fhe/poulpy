@@ -1,22 +1,41 @@
-use poulpy_ckks::ckks_backend_test_suite;
-
-const ATK_ROTATIONS: &[i64] = &[1, 7];
+use poulpy_ckks::ckks_determinism_test_suite;
 
 #[cfg(feature = "enable-ifma")]
 mod bootstrapping_presets {
-    use poulpy_ckks::test_suite::presets::bootstrapping_presets_meet_precision;
+    use poulpy_ckks::{
+        layouts::EvalModRing,
+        test_suite::presets::{BOOTSTRAP_FAILURE_BITS, bootstrapping_presets_meet_precision, preset_for_backend},
+    };
+    use poulpy_core::layouts::LWEInfos;
+
+    #[test]
+    fn ifma_radix() {
+        let presets = poulpy_ckks::presets::bootstrapping::all().unwrap().into_iter();
+        for preset in presets.filter(|preset| preset.plan().eval_mod_ring() == EvalModRing::Standard) {
+            // The 126-bit prime product leaves three bits more than NTT4x30's.
+            assert_eq!(
+                preset.max_backend_base2k::<crate::NTT3x42Ifma, crate::NTT3x42CIIfma>(BOOTSTRAP_FAILURE_BITS),
+                56
+            );
+            let adapted = preset_for_backend::<crate::NTT3x42Ifma, crate::NTT3x42CIIfma>(&preset).unwrap();
+            assert_eq!(adapted.base2k(), 56);
+            assert!(adapted.keys_layout().automorphism_key.k().as_usize() <= adapted.max_dense_modulus());
+            let small_key = &adapted.keys_layout().encapsulation.as_ref().unwrap().dense_to_sparse;
+            assert!(small_key.k().as_usize() <= adapted.max_sparse_modulus());
+        }
+    }
 
     #[test]
     #[ignore = "full logN16 bootstrapping presets"]
     fn ifma() {
-        bootstrapping_presets_meet_precision::<crate::NTT3x42Ifma>(52);
+        bootstrapping_presets_meet_precision::<crate::NTT3x42Ifma>();
     }
 
     #[cfg(feature = "enable-rayon")]
     #[test]
     #[ignore = "full logN16 bootstrapping presets"]
     fn ifma_rayon() {
-        bootstrapping_presets_meet_precision::<crate::NTT3x42IfmaRayon>(52);
+        bootstrapping_presets_meet_precision::<crate::NTT3x42IfmaRayon>();
     }
 }
 
@@ -31,92 +50,21 @@ mod replicated_bootstrapping_presets {
     }
 }
 
-ckks_backend_test_suite!(
-    mod fft64_avx512_f64,
-    backend = crate::FFT64Avx512,
-    scalar = f64,
-    encoder = crate::FFT64Avx512EncodingTable,
-    params = poulpy_ckks::test_suite::BASE19_PARAMS_F64,
-    rotations = super::ATK_ROTATIONS,
-);
+ckks_determinism_test_suite!(mod ckks_determinism_fft64avx512, backend = crate::FFT64Avx512, f32);
 
-#[cfg(feature = "enable-rayon")]
-ckks_backend_test_suite!(
-    mod fft64_avx512_rayon_f64,
-    backend = crate::FFT64Avx512Rayon,
-    scalar = f64,
-    encoder = crate::FFT64Avx512EncodingTable,
-    params = poulpy_ckks::test_suite::BASE19_PARAMS_F64,
-    rotations = super::ATK_ROTATIONS,
-);
-
-ckks_backend_test_suite!(
-    mod ntt4x30_avx512_f64,
-    backend = crate::NTT4x30Avx512,
-    scalar = f64,
-    encoder = crate::FFT64Avx512EncodingTable,
-    params = poulpy_ckks::test_suite::BASE52_PARAMS_F64,
-    rotations = super::ATK_ROTATIONS,
-);
-
-ckks_backend_test_suite!(
-    mod ntt4x30_avx512_f128,
-    backend = crate::NTT4x30Avx512,
-    scalar = poulpy_ckks::Quad,
-    encoder = poulpy_cpu_portable::ckks_encoding::EncodingFFTTable<poulpy_ckks::Quad>,
-    params = poulpy_ckks::test_suite::BASE52_PARAMS_QUAD,
-    rotations = super::ATK_ROTATIONS,
-);
-
-#[cfg(feature = "enable-rayon")]
-ckks_backend_test_suite!(
-    mod ntt4x30_avx512_rayon_f64,
-    backend = crate::NTT4x30Avx512Rayon,
-    scalar = f64,
-    encoder = crate::FFT64Avx512EncodingTable,
-    params = poulpy_ckks::test_suite::BASE52_PARAMS_F64,
-    rotations = super::ATK_ROTATIONS,
-);
-
-#[cfg(feature = "enable-rayon")]
-ckks_backend_test_suite!(
-    mod ntt4x30_avx512_rayon_f128,
-    backend = crate::NTT4x30Avx512Rayon,
-    scalar = poulpy_ckks::Quad,
-    encoder = poulpy_cpu_portable::ckks_encoding::EncodingFFTTable<poulpy_ckks::Quad>,
-    params = poulpy_ckks::test_suite::BASE52_PARAMS_QUAD,
-    rotations = super::ATK_ROTATIONS,
-);
+ckks_determinism_test_suite!(mod ckks_determinism_ntt4x30avx512, backend = crate::NTT4x30Avx512, f32);
 
 #[cfg(feature = "enable-ifma")]
-ckks_backend_test_suite!(
-    mod ntt3x42_ifma_f64,
-    backend = crate::NTT3x42Ifma,
-    scalar = f64,
-    encoder = crate::FFT64Avx512EncodingTable,
-    params = poulpy_ckks::test_suite::BASE52_PARAMS_F64,
-    rotations = super::ATK_ROTATIONS,
-);
+ckks_determinism_test_suite!(mod ckks_determinism_ntt3x42ifma, backend = crate::NTT3x42Ifma, f32);
 
-#[cfg(feature = "enable-ifma")]
-ckks_backend_test_suite!(
-    mod ntt3x42_ifma_f128,
-    backend = crate::NTT3x42Ifma,
-    scalar = poulpy_ckks::Quad,
-    encoder = poulpy_cpu_portable::ckks_encoding::EncodingFFTTable<poulpy_ckks::Quad>,
-    params = poulpy_ckks::test_suite::BASE52_PARAMS_QUAD,
-    rotations = super::ATK_ROTATIONS,
-);
+#[cfg(feature = "enable-rayon")]
+ckks_determinism_test_suite!(mod ckks_determinism_fft64avx512rayon, backend = crate::FFT64Avx512Rayon, f32);
+
+#[cfg(feature = "enable-rayon")]
+ckks_determinism_test_suite!(mod ckks_determinism_ntt4x30avx512rayon, backend = crate::NTT4x30Avx512Rayon, f32);
 
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
-ckks_backend_test_suite!(
-    mod ntt3x42_ifma_rayon_f64,
-    backend = crate::NTT3x42IfmaRayon,
-    scalar = f64,
-    encoder = crate::FFT64Avx512EncodingTable,
-    params = poulpy_ckks::test_suite::BASE52_PARAMS_F64,
-    rotations = super::ATK_ROTATIONS,
-);
+ckks_determinism_test_suite!(mod ckks_determinism_ntt3x42ifmarayon, backend = crate::NTT3x42IfmaRayon, f32);
 
 // Paired OEP validation. Serial backends follow AVX -> AVX-512 -> IFMA.
 // Rayon backends validate against their serial counterparts.

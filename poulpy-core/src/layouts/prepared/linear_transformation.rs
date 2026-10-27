@@ -11,9 +11,14 @@
 use poulpy_hal::layouts::{CnvPVecLBackendMut, CnvPVecLOwned, CnvPVecLToBackendMut};
 use std::collections::BTreeMap;
 
-use poulpy_hal::layouts::{Backend, CnvPVecR, Data};
+use poulpy_hal::{
+    api::{CnvPVecBytesOf, Convolution, ModuleN},
+    layouts::{Backend, CnvPVecR, Data, Module, ScratchArena, VecZnxDftBackendMut},
+};
 
-use crate::layouts::{Base2K, Degree, GLWEInfos, LWEInfos, LinearTransformation, Rank, TorusPrecision};
+use crate::layouts::{
+    Base2K, Degree, GLWEInfos, LWEInfos, LinearTransformation, LinearTransformationGiantStep, Rank, TorusPrecision,
+};
 
 /// A resident (prepared) linear transformation: the BSGS transform with every
 /// diagonal stored as a convolution-domain [`PreparedDiagonal`].
@@ -130,9 +135,16 @@ impl<D: Data, BE: Backend> GLWEInfos for PreparedDiagonal<D, BE> {
 /// cache is sized via [`LinearTransformationBabySteps::alloc`].
 pub struct LinearTransformationBabySteps<BE: Backend> {
     pub(crate) values: BTreeMap<i64, CnvPVecLOwned<BE>>,
+    /// How the preparation reaches the rotations.
+    pub(crate) rotations: crate::layouts::BsgsRotations,
 }
 
 impl<BE: Backend> LinearTransformationBabySteps<BE> {
+    /// How the preparation reaches the rotations.
+    pub fn rotations(&self) -> crate::layouts::BsgsRotations {
+        self.rotations
+    }
+
     pub fn size(&self) -> usize {
         let (_, cnv_pvec) = self.values.first_key_value().unwrap();
         cnv_pvec.size()
@@ -182,5 +194,64 @@ impl<BE: Backend> LinearTransformationBabySteps<BE> {
     /// neither the cache keys nor the operand shapes.
     pub fn baby_steps_mut(&mut self) -> impl ExactSizeIterator<Item = (i64, CnvPVecLBackendMut<'_, BE>)> + '_ {
         self.values.iter_mut().map(|(&rot, operand)| (rot, operand.to_backend_mut()))
+    }
+}
+
+/// Per-giant PROD, provided by the diagonal representation itself.
+///
+/// The shared evaluator `glwe_eval_giant_steps` is generic over the diagonal
+/// type `P` stored in the [`LinearTransformation`]; the only per-flavor step is
+/// how one giant step's `Σ_k ũ_{j,k} ⊙ rot(v,k)` is computed. Each concrete
+/// diagonal type implements this once:
+///
+/// - [`PreparedDiagonal`] (resident): diagonals are already in convolution
+///   domain, so the whole giant step is one fused accumulation
+///   (`glwe_accumulate_prepared_baby_steps_dft`).
+/// - a plaintext diagonal (streamed): each diagonal is prepared on the fly
+///   through one reused scratch slot
+///   (`glwe_accumulate_unprepared_baby_steps_dft`); implemented by the scheme
+///   layer for its plaintext type.
+///
+/// Dispatching per concrete type, rather than via a blanket keyed on
+/// [`GLWEToBackendRef`](crate::layouts::GLWEToBackendRef), is what keeps the
+/// impls coherent: the backend type parameter prevents the compiler from
+/// ruling out a downstream `GLWEToBackendRef` impl for [`PreparedDiagonal`], so
+/// a blanket would clash with the resident impl.
+pub trait DiagonalProd<BE: Backend>: LWEInfos + Sized {
+    /// Runs the PROD inner product of one giant step into `prod_dft`.
+    fn accumulate_giant_prod<M>(
+        module: &M,
+        cnv_offset_hi: usize,
+        prod_dft: &mut VecZnxDftBackendMut<'_, BE>,
+        lhs: &LinearTransformationBabySteps<BE>,
+        gs: &LinearTransformationGiantStep<Self>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        M: CnvPVecBytesOf + Convolution<BE> + ModuleN;
+
+    /// Most giant steps [`Self::accumulate_giant_prods`] takes per call, at least 1.
+    fn giant_step_batch(_module: &Module<BE>) -> usize
+    where
+        BE: crate::oep::LinearTransformationImpl,
+    {
+        1
+    }
+
+    /// Runs the PROD inner products of several giant steps, `prods[g]` receiving step `steps[g]`.
+    fn accumulate_giant_prods(
+        module: &Module<BE>,
+        cnv_offset_hi: usize,
+        prods: &mut [VecZnxDftBackendMut<'_, BE>],
+        lhs: &LinearTransformationBabySteps<BE>,
+        steps: &[LinearTransformationGiantStep<Self>],
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        BE: crate::oep::LinearTransformationImpl,
+        Module<BE>: CnvPVecBytesOf + Convolution<BE> + ModuleN,
+    {
+        assert_eq!(prods.len(), steps.len());
+        for (prod, step) in prods.iter_mut().zip(steps) {
+            Self::accumulate_giant_prod(module, cnv_offset_hi, prod, lhs, step, scratch);
+        }
     }
 }

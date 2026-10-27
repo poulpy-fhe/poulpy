@@ -12,19 +12,21 @@ use poulpy_hal::{
     test_suite::{TestParams, vec_znx_backend_mut, vec_znx_backend_ref},
 };
 
-use crate::layouts::GLWESecretSampling;
+use crate::api::GLWESecretSampling;
 use crate::test_suite::noise::glwe_noise_checked;
+use crate::test_suite::poisoned_scratch;
 use crate::{
     GGLWEKeyswitch, GLWEAdd, GLWECopy, GLWEDecrypt, GLWEEncryptSk, GLWEKeyswitch, GLWENoise, GLWENormalize, GLWEShift,
     GLWESwitchingKeyEncryptSk,
+    api::{GLWESecretPreparedFactory, GLWESwitchingKeyPreparedFactory},
     encryption::DEFAULT_SIGMA_XE,
+    gadget::gglwe_product_accumulation_output_size,
     layouts::{
-        GGLWEInfos, GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory, GLWESwitchingKey,
-        GLWESwitchingKeyLayout, GLWESwitchingKeyPreparedFactory, LWEInfos, ModuleCoreAlloc, TorusPrecision,
+        GGLWEInfos, GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESwitchingKey, GLWESwitchingKeyLayout, LWEInfos,
+        ModuleCoreAlloc, TorusPrecision,
         prepared::{GGLWEPreparedToBackendRef, GLWESecretPrepared, GLWESwitchingKeyPrepared},
     },
     noise::GGLWENoiseModel,
-    reference::keyswitching::glwe::gglwe_product_accumulation_output_size,
 };
 
 struct Case {
@@ -127,10 +129,10 @@ where
                 .glwe_switching_key_encrypt_sk_tmp_bytes(&ksk_infos)
                 .max(module.glwe_switching_key_encrypt_sk_tmp_bytes(&ref_infos))
                 .max(module.glwe_encrypt_sk_tmp_bytes(&in_infos))
-                .max(module.glwe_keyswitch_tmp_bytes(&out_infos, &in_infos, &ksk_infos))
-                .max(module.glwe_keyswitch_tmp_bytes(&out_infos, &wide_infos, &ref_infos))
-                .max(module.glwe_shift_tmp_bytes(wide_infos.size()))
-                .max(module.glwe_decrypt_tmp_bytes(&out_infos)),
+                .max(module.glwe_switching_key_prepare_tmp_bytes(&ksk_infos))
+                .max(module.glwe_switching_key_prepare_tmp_bytes(&ref_infos))
+                .max(module.glwe_decrypt_tmp_bytes(&out_infos))
+                .max(module.glwe_noise_tmp_bytes(&out_infos)),
         );
         let (mut source_xs, mut source_xe, mut source_xa) =
             (Source::new([1u8; 32]), Source::new([2u8; 32]), Source::new([3u8; 32]));
@@ -178,13 +180,31 @@ where
         );
 
         let mut glwe_out: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&out_infos);
-        module.glwe_keyswitch(&mut glwe_out, &glwe_in, &ksk.to_backend_ref(), &mut scratch.borrow());
+        module.glwe_keyswitch(
+            &mut glwe_out,
+            &glwe_in,
+            &ksk.to_backend_ref(),
+            &mut poisoned_scratch::<BE>(module.glwe_keyswitch_tmp_bytes(&out_infos, &in_infos, &ksk_infos)).borrow(),
+        );
 
         let mut glwe_wide: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&wide_infos);
-        module.glwe_copy(&mut glwe_wide, &glwe_in, &mut scratch.borrow());
-        module.glwe_rsh(k_offset, &mut glwe_wide, &mut scratch.borrow());
+        module.glwe_copy(
+            &mut glwe_wide,
+            &glwe_in,
+            &mut poisoned_scratch::<BE>(module.glwe_copy_tmp_bytes(&wide_infos, &in_infos)).borrow(),
+        );
+        module.glwe_rsh(
+            k_offset,
+            &mut glwe_wide,
+            &mut poisoned_scratch::<BE>(module.glwe_shift_tmp_bytes(wide_infos.size())).borrow(),
+        );
         let mut glwe_ref: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&out_infos);
-        module.glwe_keyswitch(&mut glwe_ref, &glwe_wide, &ksk_ref.to_backend_ref(), &mut scratch.borrow());
+        module.glwe_keyswitch(
+            &mut glwe_ref,
+            &glwe_wide,
+            &ksk_ref.to_backend_ref(),
+            &mut poisoned_scratch::<BE>(module.glwe_keyswitch_tmp_bytes(&out_infos, &wide_infos, &ref_infos)).borrow(),
+        );
 
         let mut pt_ref: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&out_infos);
         module.glwe_decrypt(&glwe_ref, &mut pt_ref, &sk_out_prepared, &mut scratch.borrow());
@@ -313,9 +333,19 @@ where
         let mut single: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&out_infos);
         for (t, input) in inputs.iter().enumerate() {
             if t == 0 {
-                module.glwe_keyswitch(&mut want, input, &ksk.to_backend_ref(), &mut setup.borrow());
+                module.glwe_keyswitch(
+                    &mut want,
+                    input,
+                    &ksk.to_backend_ref(),
+                    &mut poisoned_scratch::<BE>(module.glwe_keyswitch_tmp_bytes(&out_infos, &in_infos, &ksk_infos)).borrow(),
+                );
             } else {
-                module.glwe_keyswitch(&mut single, input, &ksk.to_backend_ref(), &mut setup.borrow());
+                module.glwe_keyswitch(
+                    &mut single,
+                    input,
+                    &ksk.to_backend_ref(),
+                    &mut poisoned_scratch::<BE>(module.glwe_keyswitch_tmp_bytes(&out_infos, &in_infos, &ksk_infos)).borrow(),
+                );
                 module.glwe_add_assign(&mut want, &single);
             }
         }
@@ -323,24 +353,22 @@ where
 
         // The accumulated products, each with exactly the scratch it advertises.
         let mut acc = module.vec_znx_dft_alloc(n, rank_out + 1, acc_size);
-        let mut scratch_dft: ScratchOwned<BE> =
-            ScratchOwned::alloc(module.glwe_keyswitch_dft_tmp_bytes(acc_size, &in_infos, &ksk_infos));
-        let mut scratch_add: ScratchOwned<BE> =
-            ScratchOwned::alloc(module.glwe_keyswitch_dft_add_tmp_bytes(acc_size, &in_infos, &ksk_infos));
+        let dft_bytes = module.glwe_keyswitch_dft_tmp_bytes(acc_size, &in_infos, &ksk_infos);
+        let add_bytes = module.glwe_keyswitch_dft_add_tmp_bytes(acc_size, &in_infos, &ksk_infos);
         for (t, input) in inputs.iter().enumerate() {
             if t == 0 {
                 module.glwe_keyswitch_dft(
                     &mut acc.to_backend_mut(),
                     input,
                     &ksk.to_backend_ref(),
-                    &mut scratch_dft.arena(),
+                    &mut poisoned_scratch::<BE>(dft_bytes).borrow(),
                 );
             } else {
                 module.glwe_keyswitch_dft_add(
                     &mut acc.to_backend_mut(),
                     input,
                     &ksk.to_backend_ref(),
-                    &mut scratch_add.arena(),
+                    &mut poisoned_scratch::<BE>(add_bytes).borrow(),
                 );
             }
         }
@@ -463,12 +491,10 @@ pub fn test_glwe_keyswitch_row_offset_refusals<BE: crate::test_suite::noise::Tes
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
             .glwe_switching_key_encrypt_sk_tmp_bytes(&offset_infos)
-            .max(module.glwe_encrypt_sk_tmp_bytes(&wide_infos))
-            .max(module.glwe_keyswitch_tmp_bytes(&out_infos, &wide_infos, &offset_infos))
-            .max(module.glwe_keyswitch_tmp_bytes(&in_infos, &in_infos, &offset_infos))
-            .max(module.glwe_keyswitch_tmp_bytes(&past_rows_infos, &in_infos, &offset_infos))
-            .max(module.gglwe_keyswitch_tmp_bytes(&offset_infos, &offset_infos, &offset_infos))
-            .max(module.gglwe_keyswitch_tmp_bytes(&free_infos, &offset_infos, &free_infos)),
+            .max(module.glwe_switching_key_encrypt_sk_tmp_bytes(&free_infos))
+            .max(module.glwe_switching_key_prepare_tmp_bytes(&offset_infos))
+            .max(module.glwe_switching_key_prepare_tmp_bytes(&free_infos))
+            .max(module.glwe_encrypt_sk_tmp_bytes(&wide_infos)),
     );
     let (mut source_xs, mut source_xe, mut source_xa) = (Source::new([7u8; 32]), Source::new([8u8; 32]), Source::new([9u8; 32]));
     let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(1_usize.into());
@@ -507,7 +533,12 @@ pub fn test_glwe_keyswitch_row_offset_refusals<BE: crate::test_suite::noise::Tes
     let mut out: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&out_infos);
 
     let mut past_rows: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&past_rows_infos);
-    module.glwe_keyswitch(&mut past_rows, &ct, &ksk_offset.to_backend_ref(), &mut scratch.borrow());
+    module.glwe_keyswitch(
+        &mut past_rows,
+        &ct,
+        &ksk_offset.to_backend_ref(),
+        &mut poisoned_scratch::<BE>(module.glwe_keyswitch_tmp_bytes(&past_rows_infos, &in_infos, &offset_infos)).borrow(),
+    );
 
     let refused = |what: &str, message: &str, op: &mut dyn FnMut()| {
         let err = catch_unwind(AssertUnwindSafe(op)).expect_err(what);
@@ -517,12 +548,25 @@ pub fn test_glwe_keyswitch_row_offset_refusals<BE: crate::test_suite::noise::Tes
     refused(
         "glwe_keyswitch_assign accepted a key with a row offset",
         "keys with a row offset",
-        &mut || module.glwe_keyswitch_assign(&mut ct, &ksk_offset.to_backend_ref(), &mut scratch.borrow()),
+        &mut || {
+            module.glwe_keyswitch_assign(
+                &mut ct,
+                &ksk_offset.to_backend_ref(),
+                &mut poisoned_scratch::<BE>(module.glwe_keyswitch_tmp_bytes(&in_infos, &in_infos, &offset_infos)).borrow(),
+            )
+        },
     );
     refused(
         "glwe_keyswitch accepted an input past the offset key's max_input_k",
         "max_input_k",
-        &mut || module.glwe_keyswitch(&mut out, &wide, &ksk_offset.to_backend_ref(), &mut scratch.borrow()),
+        &mut || {
+            module.glwe_keyswitch(
+                &mut out,
+                &wide,
+                &ksk_offset.to_backend_ref(),
+                &mut poisoned_scratch::<BE>(module.glwe_keyswitch_tmp_bytes(&out_infos, &wide_infos, &offset_infos)).borrow(),
+            )
+        },
     );
     let mut res_offset: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_switching_key_alloc_from_infos(&offset_infos);
     refused(
@@ -533,7 +577,8 @@ pub fn test_glwe_keyswitch_row_offset_refusals<BE: crate::test_suite::noise::Tes
                 &mut res_offset,
                 &key_offset,
                 &ksk_offset.to_backend_ref(),
-                &mut scratch.borrow(),
+                &mut poisoned_scratch::<BE>(module.gglwe_keyswitch_tmp_bytes(&offset_infos, &offset_infos, &offset_infos))
+                    .borrow(),
             )
         },
     );
@@ -541,6 +586,13 @@ pub fn test_glwe_keyswitch_row_offset_refusals<BE: crate::test_suite::noise::Tes
     refused(
         "gglwe_keyswitch wrote rows with an offset into a result without one",
         "res k_offset",
-        &mut || module.gglwe_keyswitch(&mut res_free, &key_offset, &ksk_free.to_backend_ref(), &mut scratch.borrow()),
+        &mut || {
+            module.gglwe_keyswitch(
+                &mut res_free,
+                &key_offset,
+                &ksk_free.to_backend_ref(),
+                &mut poisoned_scratch::<BE>(module.gglwe_keyswitch_tmp_bytes(&free_infos, &offset_infos, &free_infos)).borrow(),
+            )
+        },
     );
 }

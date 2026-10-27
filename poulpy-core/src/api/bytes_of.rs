@@ -26,7 +26,7 @@ use crate::layouts::{Base2K, Degree, GGLWEInfos, GGSWInfos, GLWEInfos, LWEInfos,
 /// `VmpPMat` and both `CnvPVec` forms), and several domains may share one word
 /// (a backend may use `i64` for both `ZnxWord` and `BigWord`). The DFT-domain
 /// counterpart of this trait is
-/// [`GLWEPreparedFactory::glwe_prepared_bytes_of`](crate::layouts::GLWEPreparedFactory::glwe_prepared_bytes_of).
+/// [`GLWEPreparedFactory::glwe_prepared_bytes_of`](crate::api::GLWEPreparedFactory::glwe_prepared_bytes_of).
 pub trait GLWEBytesOf<BE: Backend> {
     /// Byte size of a [`GLWE`](crate::layouts::GLWE) over this backend.
     fn glwe_bytes_of(&self, n: Degree, base2k: Base2K, k: TorusPrecision, rank: Rank) -> usize;
@@ -99,7 +99,9 @@ impl<B: Backend> GLWEBytesOf<B> for Module<B> {
     }
 
     fn gglwe_bytes_of_from_infos<A: GGLWEInfos>(&self, infos: &A) -> usize {
-        let size: usize = key_size(infos.base2k(), infos.dnum(), infos.k_digit(), infos.k_aux());
+        // The limbs of an owned GGLWE of these infos, its row offset included.
+        let size: usize =
+            crate::layouts::offset_key_size(infos.base2k(), infos.k_offset(), infos.dnum(), infos.k_digit(), infos.k_aux());
         B::bytes_of_mat_znx(
             infos.n().into(),
             infos.dnum().into(),

@@ -21,7 +21,7 @@ pub(crate) fn mhe_glwe_public_key_share_aggregate_derived<BE: HalMatZnxImpl>(
     assert!(res.glwe_layout() == a.glwe_layout(), "invalid aggregation: layouts differ");
     assert!(res.dist() == a.dist(), "invalid aggregation: secret distributions differ");
     assert!(res.seed() == a.seed(), "invalid aggregation: seeds differ");
-    let metadata = crate::reference::aggregate_metadata(res.noise(), a.noise());
+    let metadata = crate::metadata::aggregate_metadata(res.noise(), a.noise());
     BE::mat_znx_add_assign(
         module,
         &mut MatZnxToBackendMut::<BE>::to_backend_mut(res.key.data_mut()),
@@ -50,6 +50,10 @@ pub(crate) fn mhe_glwe_public_key_share_finalize_derived<BE: HalMatZnxImpl + Enc
     assert!(
         res.glwe_layout() == share.glwe_layout(),
         "invalid finalization: layouts differ"
+    );
+    assert!(
+        scratch.available() >= BE::mat_znx_normalize_tmp_bytes(module),
+        "invalid finalization: insufficient scratch"
     );
     let (base2k, k): (usize, usize) = (res.base2k().into(), res.k().into());
     BE::mat_znx_normalize(

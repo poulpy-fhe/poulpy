@@ -137,9 +137,9 @@ where
     Module<BE>: CKKSRotateOps<BE> + CKKSAddOps<BE> + CKKSPow2Ops<BE>,
     H: GetAutomorphismKey<BE>,
 {
-    module.ckks_div_pow2_assign(ct, shifts.len())?;
+    module.ckks_div_pow2_assign(shifts.len(), ct)?;
     for &shift in shifts {
-        module.ckks_rotate_into(rotated, &*ct, shift, keys, scratch)?;
+        module.ckks_rotate_into(shift, rotated, &*ct, keys, scratch)?;
         module.ckks_add_assign(ct, &*rotated, scratch)?;
     }
     if shifts
@@ -194,8 +194,16 @@ where
     K: GGLWEInfos,
 {
     module
-        .ckks_prepare_linear_transformation_baby_steps_tmp_bytes(wide, key_infos)
-        .max(module.ckks_eval_linear_transformation_tmp_bytes(wide, key_infos))
+        .ckks_prepare_linear_transformation_baby_steps_tmp_bytes(
+            wide,
+            &poulpy_core::layouts::LinearTransformationPlan::default(),
+            key_infos,
+        )
+        .max(module.ckks_eval_linear_transformation_tmp_bytes(
+            wide,
+            &poulpy_core::layouts::LinearTransformationPlan::default(),
+            key_infos,
+        ))
 }
 
 fn ct_bytes<BE: Backend>(layout: &GLWELayout) -> usize {
@@ -652,7 +660,7 @@ where
     if let Some(double) = ctx.packed {
         // The second batch came out times `i`: one rotation by `k` values adds it.
         let k = 1i64 << double.log_k();
-        module.ckks_rotate_into(&mut re, &out, (k / 2) << double.log_r(), rotation_keys, &mut scratch)?;
+        module.ckks_rotate_into((k / 2) << double.log_r(), &mut re, &out, rotation_keys, &mut scratch)?;
         module.ckks_add_assign(&mut out, &re, &mut scratch)?;
         out.set_log_sparsity(GLWEPlaintextInfos::log_sparsity(&out) + 1);
     } else {

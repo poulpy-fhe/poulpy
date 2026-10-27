@@ -8,19 +8,19 @@ use crate::{
     oep::CKKSRotateImpl,
 };
 
-pub(crate) fn ckks_rotate_by_tmp_bytes<BE: CKKSRotateImpl, C: CKKSCtBounds, K: GGLWEInfos>(
+pub(crate) fn ckks_rotate_tmp_bytes_derived<BE: CKKSRotateImpl, C: CKKSCtBounds, K: GGLWEInfos>(
     module: &Module<BE>,
     ct_infos: &C,
     key_infos: &K,
 ) -> usize {
-    BE::ckks_rotate_tmp_bytes_impl(module, ct_infos, key_infos).max(module.ckks_copy_tmp_bytes(ct_infos, ct_infos))
+    BE::ckks_rotate_with_key_tmp_bytes(module, ct_infos, key_infos).max(module.ckks_copy_tmp_bytes(ct_infos, ct_infos))
 }
 
-pub(crate) fn ckks_rotate_by_into<BE, Dst, Src, H>(
+pub(crate) fn ckks_rotate_into_derived<BE, Dst, Src, H>(
     module: &Module<BE>,
+    k: i64,
     dst: &mut Dst,
     src: &Src,
-    k: i64,
     keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
@@ -41,18 +41,18 @@ where
     let key = keys
         .get_automorphism_key(p, switch_k)
         .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
-            op: "rotate",
+            op: "ckks_rotate_into",
             rotation: k,
             k: switch_k.into(),
             source,
         })?;
-    BE::ckks_rotate_into_impl(module, dst, src, &key, scratch)
+    BE::ckks_rotate_with_key_into(module, dst, src, &key, scratch)
 }
 
-pub(crate) fn ckks_rotate_by_assign<BE, Dst, H>(
+pub(crate) fn ckks_rotate_assign_derived<BE, Dst, H>(
     module: &Module<BE>,
-    dst: &mut Dst,
     k: i64,
+    dst: &mut Dst,
     keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
@@ -70,10 +70,10 @@ where
     let key = keys
         .get_automorphism_key(p, dst.k())
         .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
-            op: "rotate_assign",
+            op: "ckks_rotate_assign",
             rotation: k,
             k: dst.k().into(),
             source,
         })?;
-    BE::ckks_rotate_assign_impl(module, dst, &key, scratch)
+    BE::ckks_rotate_with_key_assign(module, dst, &key, scratch)
 }

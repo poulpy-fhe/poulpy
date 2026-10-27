@@ -9,11 +9,7 @@
 //! Entries of the encrypted matrices lie in `[-1, 1)`, those of the second ciphertext factor and of the public matrices
 //! in `[-1/d, 1/d)`, so that the products stay in `[-1, 1)`. A public matrix is one matrix shared by every matrix slot.
 
-use std::{
-    cell::RefCell,
-    collections::{BTreeSet, HashMap},
-    hint::black_box,
-};
+use std::collections::{BTreeSet, HashMap};
 
 use criterion::{Bencher, measurement::Measurement};
 use poulpy_blas::{
@@ -38,10 +34,10 @@ use poulpy_ckks::{
 };
 use poulpy_core::{
     GLWEAutomorphismKeyEncryptSk, GLWETensorKeyEncryptSk,
+    api::{GLWEAutomorphismKeyPreparedFactory, GLWESecretPreparedFactory, GLWESecretSampling, GLWETensorKeyPreparedFactory},
     layouts::{
-        BackendGLWESecret, Base2K, Degree, Dnum, Dsize, GGLWELayout, GLWEAutomorphismKeyLayout,
-        GLWEAutomorphismKeyPreparedFactory, GLWELayout, GLWESecretPreparedFactory, GLWESecretSampling, GLWETensorKeyLayout,
-        GLWETensorKeyPreparedFactory, ModuleCoreAlloc, Rank, TorusPrecision, k_digit_of,
+        BackendGLWESecret, Base2K, Degree, Dnum, Dsize, GGLWELayout, GLWEAutomorphismKeyLayout, GLWELayout, GLWETensorKeyLayout,
+        ModuleCoreAlloc, Rank, TorusPrecision, k_digit_of,
         prepared::{GLWEAutomorphismKeyPrepared, GLWESecretPrepared, GLWETensorKeyPrepared},
     },
 };
@@ -51,7 +47,7 @@ use poulpy_hal::{
     source::Source,
 };
 
-use crate::{backend_name, blas::params::BlasBenchParams};
+use crate::{backend_name, blas::params::BlasBenchParams, timed};
 
 /// Secret-key Hamming weight.
 const HW: usize = 192;
@@ -90,7 +86,7 @@ fn key_shape(bp: &BlasBenchParams) -> (TorusPrecision, Dnum, TorusPrecision) {
     (k_digit, dnum, TorusPrecision(k_digit.0 + bp.n.ilog2()))
 }
 
-fn atk_layout(bp: &BlasBenchParams) -> GLWEAutomorphismKeyLayout {
+pub(super) fn atk_layout(bp: &BlasBenchParams) -> GLWEAutomorphismKeyLayout {
     let (k_digit, dnum, k_aux) = key_shape(bp);
     GLWEAutomorphismKeyLayout {
         n: Degree(bp.n as u32),
@@ -124,12 +120,12 @@ fn entry(tag: u64, s: usize, r: usize, c: usize) -> f64 {
 }
 
 /// The encrypted matrices.
-fn a_entry(s: usize, r: usize, c: usize) -> f64 {
+pub(super) fn a_entry(s: usize, r: usize, c: usize) -> f64 {
     entry(1, s, r, c)
 }
 
 /// The second ciphertext factor, scaled so that the products stay in `[-1, 1)`.
-fn b_entry(d: usize) -> impl Fn(usize, usize, usize) -> f64 {
+pub(super) fn b_entry(d: usize) -> impl Fn(usize, usize, usize) -> f64 {
     move |s, r, c| entry(2, s, r, c) / d as f64
 }
 
@@ -151,7 +147,7 @@ pub fn error_bound(bp: &BlasBenchParams) -> f64 {
 }
 
 /// Prints the error of a runner's first call and asserts it within [`error_bound`].
-fn verify<BE>(op: &str, bp: &BlasBenchParams, max_err: f64, max_base2k: Option<usize>, keys: usize) {
+pub(super) fn verify<BE>(op: &str, bp: &BlasBenchParams, max_err: f64, max_base2k: Option<usize>, keys: usize) {
     let bound = error_bound(bp);
     println!(
         "PRECISION backend={} op={op} params={bp} max_err={max_err:.3e} ({:.1} bits) bound={bound:.3e} ({:.1} bits) max_base2k={} keys={keys}",
@@ -164,37 +160,6 @@ fn verify<BE>(op: &str, bp: &BlasBenchParams, max_err: f64, max_base2k: Option<u
         max_err <= bound,
         "{op}: the first call deviates from the cleartext beyond the error bound"
     );
-}
-
-/// One call of a built point's operation.
-type Call = Box<dyn FnMut()>;
-
-thread_local! {
-    static POINT: RefCell<Option<(String, Call)>> = const { RefCell::new(None) };
-}
-
-/// Criterion calls a runner once per warm-up round and once per sample, and building a point (maps, keys, encryptions)
-/// costs far more than one call of its operation: the first call of a point builds it, `build` returning one call of the
-/// operation, and the later calls reuse it. Only one point is kept, so the keys of the previous one are freed before the
-/// next are made.
-fn timed<BE: 'static, M: Measurement>(
-    bencher: &mut Bencher<'_, M>,
-    op: &str,
-    bp: &BlasBenchParams,
-    build: impl FnOnce() -> Call,
-) {
-    let id = format!("{}/{op}/{bp}", backend_name::<BE>());
-    POINT.with_borrow_mut(|point| {
-        if point.as_ref().is_none_or(|(have, _)| *have != id) {
-            *point = None;
-            *point = Some((id, build()));
-        }
-        let (_, call) = point.as_mut().expect("the point was just built");
-        bencher.iter(|| {
-            call();
-            black_box(())
-        });
-    });
 }
 
 /// What a runner asks of a module beyond the operation itself: the key generation, encryption and decryption of
@@ -211,8 +176,8 @@ impl<BE: Backend, M> BlasBenchModule<BE> for M where
 
 /// The client side of a point: the module, the secret key, and one arena for key generation, encoding, encryption and
 /// decryption.
-struct Client<BE: Backend> {
-    module: Module<BE>,
+pub(super) struct Client<BE: Backend> {
+    pub(super) module: Module<BE>,
     sk_raw: BackendGLWESecret<BE>,
     sk: GLWESecretPrepared<BE::OwnedBuf, BE>,
     arena: ScratchOwned<BE>,
@@ -226,7 +191,7 @@ where
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
-    fn new(bp: &BlasBenchParams) -> Self {
+    pub(super) fn new(bp: &BlasBenchParams) -> Self {
         let module = Module::<BE>::new(bp.n as u64);
         let layout = block_layout(bp);
         let mut xs = Source::new([0u8; 32]);
@@ -235,7 +200,7 @@ where
         let mut sk = module.glwe_secret_prepared_alloc_from_infos(&layout);
         module.glwe_secret_prepare(&mut sk, &sk_raw);
         let bytes = module
-            .ckks_all_ops_with_atk_tmp_bytes(&layout, &tsk_layout(bp), &atk_layout(bp), &layout)
+            .ckks_all_ops_with_atk_tmp_bytes(&layout, &layout, &tsk_layout(bp), &atk_layout(bp))
             .max(<Module<BE> as CKKSEncodingHostOps<BE, f64>>::ckks_reim_tmp_bytes(
                 &module,
                 bp.slots(),
@@ -251,7 +216,7 @@ where
     }
 
     /// The prepared maps of the context at scale `p`.
-    fn context(&self, bp: &BlasBenchParams) -> BlasContext<BE> {
+    pub(super) fn context(&self, bp: &BlasBenchParams) -> BlasContext<BE> {
         let module = &self.module;
         let meta = CoeffsMeta::from_delta_budget(bp.p, HEADROOM);
         let mut ctx = module.blas_context_alloc(BlasPlan::new(bp.log_d), base2k(bp), meta);
@@ -286,7 +251,7 @@ where
     }
 
     /// One prepared rotation key for each Galois element, and no other.
-    fn rotation_keys(
+    pub(super) fn rotation_keys(
         &mut self,
         bp: &BlasBenchParams,
         elements: Vec<i64>,
@@ -320,13 +285,14 @@ where
         self.module
             .glwe_tensor_key_encrypt_sk(&mut tsk, &self.sk_raw, &mut self.xe, &mut self.xa, &mut self.arena.borrow());
         let mut prepared = self.module.alloc_tensor_key_prepared_from_infos(&layout);
-        self.module.prepare_tensor_key(&mut prepared, &tsk, &mut self.arena.borrow());
+        self.module
+            .glwe_tensor_key_prepare(&mut prepared, &tsk, &mut self.arena.borrow());
         prepared
     }
 
     /// One block holding `matrices` matrices of `entry`, from a plaintext of `matrices d^2` slots, repeated up to the
     /// backend's minimum degree: the block's label proves their number, or the larger batch that degree holds.
-    fn encrypt(
+    pub(super) fn encrypt(
         &mut self,
         bp: &BlasBenchParams,
         matrices: usize,
@@ -352,14 +318,14 @@ where
     }
 
     /// A result grid of one block at the width of a fresh ciphertext.
-    fn result(&self, bp: &BlasBenchParams) -> BlasCiphertextOwned<BE> {
+    pub(super) fn result(&self, bp: &BlasBenchParams) -> BlasCiphertextOwned<BE> {
         self.module
             .blas_ciphertext_alloc(bp.log_d, 1, 1, base2k(bp), TorusPrecision(bp.k as u32))
     }
 
     /// The largest distance of the decrypted block of `res` to `want(s, r, c)`, entry `(r, c)` of matrix `s`, over the
     /// matrices of the batch, and of its imaginary part to zero.
-    fn max_error(
+    pub(super) fn max_error(
         &mut self,
         bp: &BlasBenchParams,
         res: &BlasCiphertextOwned<BE>,
@@ -400,7 +366,7 @@ where
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     M: Measurement,
 {
-    timed::<BE, M>(bencher, "blas_transpose", bp, || {
+    timed::<BE, M, _>(bencher, "blas_transpose", bp, || {
         let mut client = Client::<BE>::new(bp);
         let ctx = client.context(bp);
         let ct_a = client.encrypt(bp, bp.batch(), a_entry);
@@ -432,7 +398,7 @@ where
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     M: Measurement,
 {
-    timed::<BE, M>(bencher, op, bp, || {
+    timed::<BE, M, _>(bencher, op, bp, || {
         let mut client = Client::<BE>::new(bp);
         let ctx = client.context(bp);
         let right = if dense { bp.batch() } else { 1 };
@@ -507,7 +473,7 @@ where
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     M: Measurement,
 {
-    timed::<BE, M>(bencher, op, bp, || {
+    timed::<BE, M, _>(bencher, op, bp, || {
         let mut client = Client::<BE>::new(bp);
         let pt = client.public::<Right>(bp, algorithm);
         let ctx = client.context(bp);
@@ -570,7 +536,7 @@ where
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     M: Measurement,
 {
-    timed::<BE, M>(bencher, op, bp, || {
+    timed::<BE, M, _>(bencher, op, bp, || {
         let mut client = Client::<BE>::new(bp);
         let pt = client.public::<Left>(bp, algorithm);
         let ctx = client.context(bp);

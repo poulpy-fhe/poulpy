@@ -10,7 +10,7 @@ use poulpy_hal::{
 
 use crate::{
     CKKSInfos, SetCKKSInfos, checked_log_budget_sub, ckks_offset_binary,
-    reference::{CKKSPlaintextReference, carry_verb::ckks_carry_verb_reference},
+    reference::{CKKSPlaintextVecReference, carry_verb::ckks_carry_verb_reference},
 };
 
 ckks_carry_verb_reference! {

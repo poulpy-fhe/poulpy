@@ -16,46 +16,30 @@
 //! sparse one, and these switches replace the sparse-to-dense one.
 
 use poulpy_core::{
-    GLWECopy, GLWEKeyswitch, GLWEMulPlain, GLWEShift, ScratchArenaTakeCore,
+    GLWEBytesOf, GLWECopy, GLWEKeyswitch, GLWEMulPreparedPlainSum, GLWENormalize, GLWEShift, ScratchArenaTakeCore,
+    gglwe_product_accumulation_output_size, glwe_prepare_left, glwe_prepare_left_tmp_bytes, glwe_prepare_right,
+    glwe_prepare_right_tmp_bytes,
     layouts::{
         GGLWEInfos, GGLWELayout, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos, LWEInfos,
         LinearTransformation, Rank, prepared::GGLWEPreparedToBackendRef,
     },
-    reference::keyswitching::glwe::gglwe_product_accumulation_output_size,
 };
 use poulpy_hal::{
     api::{
-        ScratchArenaTakeBasic, VecZnxAddAssign, VecZnxAutomorphism, VecZnxCopy, VecZnxDftAddAssign, VecZnxDftBytesOf,
-        VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes, VecZnxNormalize, VecZnxNormalizeTmpBytes,
+        CnvPVecBytesOf, Convolution, ScratchArenaTakeBasic, VecZnxAddAssign, VecZnxAutomorphism, VecZnxCopy, VecZnxDftAddAssign,
+        VecZnxDftBytesOf, VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes, VecZnxNormalize, VecZnxNormalizeTmpBytes,
     },
-    layouts::{Backend, CyclotomicOrder, Module, ScratchArena, VecZnxDftToBackendMut, VecZnxToBackendRef, galois_element},
+    layouts::{
+        Backend, CyclotomicOrder, Module, PrepareHint, ScratchArena, VecZnxDftToBackendMut, VecZnxToBackendRef, galois_element,
+    },
 };
 
 use crate::{
-    CKKSCtBounds, CKKSInfos, CKKSResult as Result, CoeffsMeta, GLWEPlaintextMeta, Scale, SetCKKSInfos, ckks_bail, ckks_ensure,
+    CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSResult as Result, GLWEPlaintextMeta, Scale, SetCKKSInfos, ckks_bail,
+    ckks_ensure, ckks_ensure_operand,
     layouts::{BootstrappingLinearKeys, CKKSPlaintextOwned},
+    presets::first_factor::{first_factor_small_bits, first_factor_work},
 };
-
-/// Fewest bits the raise keeps below the raised precision while it applies
-/// the factor: the bits a division by a diagonal's scale leaves below the
-/// raised ciphertext's last one, rounded once with the sum of the terms.
-pub const FIRST_FACTOR_GUARD_BITS: usize = 16;
-
-/// Limbs a raise to `k_large` bits works at, and the bits its working width
-/// keeps below them. The first-factor keys' rows end at that width.
-pub fn first_factor_work(base2k: usize, k_large: usize) -> (usize, usize) {
-    let work = (k_large + FIRST_FACTOR_GUARD_BITS).div_ceil(base2k);
-    (work, work * base2k - k_large)
-}
-
-/// Bits of the small ciphertext a first-factor key switches, for a raise into
-/// `k_large` bits of a ciphertext that fills `raised` bits once lifted: those,
-/// the guard of the working width below them, and above them the growth of a
-/// product by a diagonal of `diagonal_growth` bits over `2^log_n` terms.
-pub fn first_factor_small_bits(base2k: usize, log_n: usize, k_large: usize, raised: usize, diagonal_growth: usize) -> usize {
-    let (_, guard) = first_factor_work(base2k, k_large);
-    raised + guard + diagonal_growth + log_n + 2
-}
 
 /// Bits a diagonal's product adds once divided by its scale: its encoded width
 /// past its scale.
@@ -63,26 +47,21 @@ fn diagonal_growth<P: IntPolyInfos + CKKSInfos>(diagonal: &P) -> usize {
     diagonal.encoded_k().as_usize() - diagonal.log_delta()
 }
 
-/// Bits a product by a diagonal of a transform of `meta`, encoded at radix
-/// `base2k`, adds once divided by its scale: the diagonals are allocated to
-/// whole limbs.
-pub fn first_factor_diagonal_growth(base2k: usize, meta: &CoeffsMeta) -> usize {
-    meta.k.as_usize().div_ceil(base2k) * base2k - meta.log_delta()
-}
-
 /// Limbs of the small ciphertext a first-factor key switches: its rows sit
 /// under it and end at the working width.
-fn small_limbs<K: GGLWEInfos>(base2k: usize, k_large: usize, key: &K) -> Result<usize> {
+fn small_limbs<K: GGLWEInfos>(op: &'static str, base2k: usize, k_large: usize, key: &K) -> Result<usize> {
     let (work, _) = first_factor_work(base2k, k_large);
     let k_offset = key.k_offset().as_usize();
-    ckks_ensure!(
+    ckks_ensure_operand!(
+        op,
         key.base2k().as_usize() == base2k && k_offset.is_multiple_of(base2k) && k_offset < work * base2k,
         "a first-factor key lowers its input by {k_offset} bits, not a whole number of {base2k}-bit limbs below the raise's {work} limbs"
     );
     let small = work - k_offset / base2k;
     let layout = key.gglwe_layout();
     let reach = k_offset + layout.gadget_k().as_usize();
-    ckks_ensure!(
+    ckks_ensure_operand!(
+        op,
         layout.max_input_k().as_usize() >= small * base2k && reach >= k_large,
         "a first-factor key takes {} bits of input and reaches bit {reach}; the raise switches {} bits up to bit {k_large}",
         layout.max_input_k(),
@@ -117,10 +96,23 @@ where
     res.set_canonical(a_ref.is_canonical());
 }
 
-/// The first-factor key of the rotation `rotation`.
-fn first_factor_key<BE: Backend, K: BootstrappingLinearKeys<BE>>(keys: &K, rotation: i64) -> Result<&K::SwitchingKey> {
+/// Limbs a diagonal's plaintext holds at radix `base2k`, its encoded width.
+fn diagonal_limbs<P: IntPolyInfos>(diagonal: &P, base2k: usize) -> usize {
+    diagonal.encoded_k().as_usize().div_ceil(base2k)
+}
+
+/// The first-factor key of the rotation `rotation`, `InvalidOperand` for `op` when `keys` has none.
+fn first_factor_key<'k, BE: Backend, K: BootstrappingLinearKeys<BE>>(
+    op: &'static str,
+    keys: &'k K,
+    rotation: i64,
+) -> Result<&'k K::SwitchingKey> {
     let Some(key) = keys.first_factor_key(rotation) else {
-        ckks_bail!("no first-factor key for the rotation {rotation}");
+        return Err(CKKSCompositionError::InvalidOperand {
+            op,
+            reason: format!("no first-factor key for the rotation {rotation}"),
+        }
+        .into());
     };
     Ok(key)
 }
@@ -140,8 +132,10 @@ pub(crate) struct FirstFactorRaise {
 /// `k_large` bits at radix `base2k` of a ciphertext that fills `raised` bits
 /// once lifted: one diagonal per giant step and no baby step, all diagonals of
 /// one scale and width, and one key per rotation, all of one layout that fits
-/// the raise.
+/// the raise. The factor's shape is the compiled context's invariant; the keys' presence, layouts and coverage are
+/// `InvalidOperand` for `op`.
 pub(crate) fn check_first_factor_raise<BE, K>(
+    op: &'static str,
     base2k: usize,
     log_n: usize,
     k_large: usize,
@@ -155,29 +149,31 @@ where
     CKKSPlaintextOwned<BE>: IntPolyInfos + CKKSInfos,
 {
     let Some(diagonal) = factor.first_diagonal_plaintext() else {
-        ckks_bail!("the first factor has no diagonal");
+        ckks_bail!("{op}: the first factor has no diagonal");
     };
     let (growth, width) = (diagonal_growth(diagonal), diagonal.encoded_k());
-    let key_layout = first_factor_key(keys, factor.giant_steps[0].rot)?.gglwe_layout();
+    let key_layout = first_factor_key(op, keys, factor.giant_steps[0].rot)?.gglwe_layout();
     for giant in &factor.giant_steps {
         ckks_ensure!(
             giant.diagonals.len() == 1 && giant.diagonals[0].baby == 0,
-            "a first factor on the raise has one diagonal per rotation and no baby step"
+            "{op}: a first factor on the raise has one diagonal per rotation and no baby step"
         );
         let diagonal = &giant.diagonals[0].plaintext;
         ckks_ensure!(
             diagonal_growth(diagonal) == growth && diagonal.encoded_k() == width,
-            "the diagonals of the first factor differ in scale or width"
+            "{op}: the diagonals of the first factor differ in scale or width"
         );
-        ckks_ensure!(
-            first_factor_key(keys, giant.rot)?.gglwe_layout() == key_layout,
+        ckks_ensure_operand!(
+            op,
+            first_factor_key(op, keys, giant.rot)?.gglwe_layout() == key_layout,
             "the first-factor key of the rotation {} differs in layout from the others",
             giant.rot
         );
     }
-    let small = small_limbs(base2k, k_large, &key_layout)?;
+    let small = small_limbs(op, base2k, k_large, &key_layout)?;
     let needed = first_factor_small_bits(base2k, log_n, k_large, raised, growth);
-    ckks_ensure!(
+    ckks_ensure_operand!(
+        op,
         needed <= small * base2k,
         "the first-factor keys switch {} bits, the raise of a ciphertext filling {raised} bits needs {needed}",
         small * base2k
@@ -203,9 +199,13 @@ pub fn ckks_mod_up_first_factor_tmp_bytes_reference<BE, Dst, Src, D2S, K>(
 where
     BE: Backend,
     Module<BE>: GLWEKeyswitch<BE>
-        + GLWEMulPlain<BE>
+        + GLWEMulPreparedPlainSum<BE>
         + GLWEShift<BE>
+        + GLWENormalize<BE>
+        + GLWEBytesOf<BE>
+        + Convolution<BE>
         + VecZnxDftBytesOf
+        + CnvPVecBytesOf
         + VecZnxNormalizeTmpBytes
         + VecZnxIdftNormalizeTmpBytes,
     Dst: CKKSCtBounds,
@@ -221,7 +221,7 @@ where
     let k_large = dst_infos.k().as_usize();
     let d2s = d2s_infos.map_or(0, |key| module.glwe_keyswitch_tmp_bytes(src_infos, src_infos, key));
     // A key that does not fit the raise makes it fail before it takes more.
-    let Ok(small) = small_limbs(base2k, k_large, key_infos) else {
+    let Ok(small) = small_limbs("ckks_bootstrap_mod_up", base2k, k_large, key_infos) else {
         return d2s;
     };
     let small_layout = layout(dst_infos, small);
@@ -233,11 +233,21 @@ where
         factor.giant_steps.len(),
     );
     let carved = 3 * BE::scratch_aligned(BE::bytes_of_vec_znx(n, 2, small))
+        + BE::scratch_aligned(module.bytes_of_cnv_pvec_left(n, 2, small, PrepareHint::Reuse))
         + BE::scratch_aligned(BE::bytes_of_vec_znx(n, 1, small))
         + BE::scratch_aligned(BE::bytes_of_vec_znx(n, 1, acc_size))
         + module.bytes_of_vec_znx_dft(n, 2, acc_size);
-    let ops = module
-        .glwe_mul_plain_tmp_bytes(&small_layout, &small_layout, diagonal)
+    // Each diagonal is prepared beside the raised ciphertext, then multiplied by it.
+    let diagonal_size = diagonal_limbs(diagonal, base2k);
+    let product =
+        BE::scratch_aligned(module.bytes_of_cnv_pvec_right(diagonal.n().into(), 1, diagonal_size, PrepareHint::OneShot))
+            + glwe_prepare_right_tmp_bytes(module, diagonal_size, diagonal).max(module.glwe_mul_prepared_plain_sum_tmp_bytes(
+                &small_layout,
+                small,
+                diagonal_size,
+            ));
+    let ops = glwe_prepare_left_tmp_bytes(module, small, &small_layout)
+        .max(product)
         .max(module.glwe_keyswitch_dft_add_tmp_bytes(acc_size, &small_layout, key_infos))
         .max(module.glwe_shift_tmp_bytes(small))
         .max(module.vec_znx_normalize_tmp_bytes())
@@ -266,29 +276,34 @@ where
     Module<BE>: GLWECopy<BE>
         + GLWEShift<BE>
         + GLWEKeyswitch<BE>
-        + GLWEMulPlain<BE>
         + VecZnxAutomorphism<BE>
         + VecZnxCopy<BE>
         + VecZnxAddAssign<BE>
         + VecZnxDftAddAssign<BE>
         + VecZnxNormalize<BE>
         + VecZnxIdftNormalize<BE>
+        + Convolution<BE>
+        + GLWENormalize<BE>
+        + GLWEMulPreparedPlainSum<BE>
         + CyclotomicOrder,
     K: BootstrappingLinearKeys<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds,
 {
+    const OP: &str = "ckks_bootstrap_mod_up";
     let base2k: usize = dst.base2k().as_usize();
     let k_large: usize = dst.k().as_usize();
-    ckks_ensure!(
+    ckks_ensure_operand!(
+        OP,
         dst.rank().as_usize() == 1 && src.rank().as_usize() == 1,
         "the first factor is applied on a raise of rank-1 ciphertexts only"
     );
     // The dense-to-sparse switch leaves `src.k()` as it is: every check runs
     // before any work.
     let k_small: usize = src.k().as_usize();
-    ckks_ensure!(
+    ckks_ensure_operand!(
+        OP,
         k_large >= k_small + scale_up,
         "the raise must widen: dst.k ({k_large}) < src.k ({k_small}) + scale_up ({scale_up})"
     );
@@ -298,6 +313,7 @@ where
         small,
         growth,
     } = check_first_factor_raise(
+        OP,
         base2k,
         dst.n().as_usize().ilog2() as usize,
         k_large,
@@ -314,7 +330,7 @@ where
     let (_, guard) = first_factor_work(base2k, k_large);
     let small_layout = layout(dst, small);
     // The cyclotomic order of the bootstrap's degree, which the module may exceed.
-    let order = crate::operand_cyclotomic_order("ckks_mod_up_first_factor", module, dst.n().as_usize())?;
+    let order = crate::operand_cyclotomic_order(OP, module, dst.n().as_usize())?;
     let meta = GLWEPlaintextMeta {
         scale: Scale::Log(src.log_delta() + scale_up),
         slots: src.slots(),
@@ -336,7 +352,8 @@ where
         let (mut rotated, scratch) = scratch.take_glwe_scratch(&small_layout);
         let (mut bodies, scratch) = scratch.take_vec_znx_scratch(n, 1, small);
         let (mut lowered, scratch) = scratch.take_vec_znx_scratch(n, 1, acc_size);
-        let (mut acc, mut scratch) = scratch.take_vec_znx_dft_scratch(n, 2, acc_size);
+        let (mut acc, scratch) = scratch.take_vec_znx_dft_scratch(n, 2, acc_size);
+        let (mut raised_prepared, mut scratch) = scratch.take_cnv_pvec_left_scratch(n, 2, small, PrepareHint::Reuse);
 
         // The raise: the ciphertext as integers, its last bit `guard` bits (and the
         // lift) above the bottom of the small width, which the keys lower to the
@@ -347,16 +364,37 @@ where
             &mut raised,
             &mut scratch.borrow(),
         );
+        // Every diagonal multiplies the same ciphertext: it is prepared once.
+        glwe_prepare_left(module, &mut raised_prepared, &raised, small * base2k, &mut scratch.borrow());
 
         for (index, giant) in factor.giant_steps.iter().enumerate() {
             // Product and division by the diagonal's scale, at the same width.
-            module.glwe_mul_plain(
-                growth,
-                &mut product,
-                &raised,
-                &giant.diagonals[0].plaintext,
-                &mut scratch.borrow(),
-            );
+            {
+                let diagonal = &giant.diagonals[0].plaintext;
+                let diagonal_size = diagonal_limbs(diagonal, base2k);
+                let (mut diagonal_prepared, mut scratch) =
+                    scratch
+                        .borrow()
+                        .take_cnv_pvec_right_scratch(diagonal.n().into(), 1, diagonal_size, PrepareHint::OneShot);
+                glwe_prepare_right(
+                    module,
+                    &mut diagonal_prepared,
+                    diagonal,
+                    diagonal.encoded_k().as_usize(),
+                    &mut scratch.borrow(),
+                );
+                module.glwe_mul_prepared_plain_sum(
+                    growth,
+                    &mut product,
+                    &[&raised_prepared],
+                    small,
+                    &[&diagonal_prepared],
+                    diagonal_size,
+                    &[1],
+                    base2k.into(),
+                    &mut scratch.borrow(),
+                );
+            }
 
             // The rotation needs no key before the switch.
             let term = if giant.rot == 0 {
@@ -368,7 +406,7 @@ where
 
             // The masked part of the switch joins the others in the transform domain;
             // the bodies are summed limb by limb, their integer part kept.
-            let key = first_factor_key(keys, giant.rot)?.to_backend_ref();
+            let key = first_factor_key(OP, keys, giant.rot)?.to_backend_ref();
             let term_ref = term.to_backend_ref();
             if index == 0 {
                 module.glwe_keyswitch_dft(&mut acc.to_backend_mut(), term, &key, &mut scratch.borrow());

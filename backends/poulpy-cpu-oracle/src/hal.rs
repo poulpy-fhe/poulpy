@@ -1023,7 +1023,15 @@ unsafe impl<F: DFTFamily, R: OracleRing> HalConvolutionImpl for Oracle<F, R> {
         assert!(b_galois & 1 == 1, "convolution: b_galois must be odd");
         let n = res.n();
         assert_eq!(n, a.n());
-        assert!(b.n().is_power_of_two() && n.is_multiple_of(b.n()));
+        assert!(
+            b.n() == n
+                || (b.n().is_power_of_two()
+                    && b.n() >= <Self as poulpy_hal::layouts::Backend>::MIN_DEGREE
+                    && b.n() < n
+                    && n.is_multiple_of(b.n())),
+            "operand of degree {} does not embed into the module degree {n}",
+            b.n()
+        );
         let lifted: Option<Vec<Vec<F::Dft>>> = (b.n() != n || b_galois != 1).then(|| {
             (0..b.size())
                 .map(|l| {

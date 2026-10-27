@@ -10,32 +10,32 @@ use crate::{
 };
 
 impl<BE: Backend + CKKSFoldLayoutImpl> CKKSFoldLayoutOps<BE> for Module<BE> {
-    fn ckks_fold_layout<C>(&self, ct_in: &C, degree: Degree, keys: &CKKSFoldKeysLayout) -> GLWELayout
+    fn ckks_fold_layout<C>(&self, degree: Degree, ct_in: &C, keys: &CKKSFoldKeysLayout) -> GLWELayout
     where
         C: CKKSCtBounds,
     {
-        BE::ckks_fold_layout_impl(self, ct_in, degree, keys)
+        BE::ckks_fold_layout(self, degree, ct_in, keys)
     }
 
-    fn ckks_fold_tmp_bytes<C1, C2>(&self, ct_out: &C1, ct_in: &C2, degree: Degree, keys: &CKKSFoldKeysLayout) -> usize
+    fn ckks_fold_tmp_bytes<C1, C2>(&self, degree: Degree, ct_out: &C1, ct_in: &C2, keys: &CKKSFoldKeysLayout) -> usize
     where
         C1: CKKSCtBounds,
         C2: CKKSCtBounds,
     {
-        BE::ckks_fold_tmp_bytes_impl(self, ct_out, ct_in, degree, keys)
+        BE::ckks_fold_tmp_bytes(self, degree, ct_out, ct_in, keys)
     }
 }
 
 impl<BE: Backend + CKKSFoldImpl<R>, R: Ring> CKKSFoldOps<BE, R> for Module<BE> {
-    fn ckks_fold_count(&self, ins: &[CKKSRingCiphertext<BE, R>], degree: Degree) -> usize {
-        BE::ckks_fold_count_impl(self, ins, degree)
+    fn ckks_fold_count(&self, degree: Degree, ins: &[CKKSRingCiphertext<BE, R>]) -> usize {
+        BE::ckks_fold_count(self, degree, ins)
     }
 
     fn ckks_unfold_galois_elements<C>(&self, ct_in: &C) -> Vec<i64>
     where
         C: CKKSCtBounds,
     {
-        BE::ckks_unfold_galois_elements_impl(self, ct_in)
+        BE::ckks_unfold_galois_elements(self, ct_in)
     }
 
     fn ckks_fold<S>(
@@ -51,15 +51,15 @@ impl<BE: Backend + CKKSFoldImpl<R>, R: Ring> CKKSFoldOps<BE, R> for Module<BE> {
         for ct in ins {
             crate::reference::mul::ensure_full_layout("ckks_fold", crate::GLWEPlaintextInfos::slot_layout(ct))?;
         }
-        BE::ckks_fold_impl(self, folded, ins, inbound, scratch)
+        BE::ckks_fold(self, folded, ins, inbound, scratch)
     }
 
     fn ckks_unfold<S, H>(
         &self,
         outs: &mut [CKKSRingCiphertext<BE, R>],
         folded: &mut [CKKSCiphertextOwned<BE>],
-        outbound: Option<&S>,
         automorphisms: Option<&H>,
+        outbound: Option<&S>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -69,6 +69,6 @@ impl<BE: Backend + CKKSFoldImpl<R>, R: Ring> CKKSFoldOps<BE, R> for Module<BE> {
         for ct in folded.iter() {
             crate::reference::mul::ensure_full_layout("ckks_unfold", crate::GLWEPlaintextInfos::slot_layout(ct))?;
         }
-        BE::ckks_unfold_impl(self, outs, folded, outbound, automorphisms, scratch)
+        BE::ckks_unfold(self, outs, folded, automorphisms, outbound, scratch)
     }
 }

@@ -14,9 +14,18 @@ use super::plan::ShipPlan;
 /// The support of a regularly-spaced sparse SHIP secret: the `k`-th nonzero
 /// coefficient sits at `(k*N/h + delta_k) mod N` with `delta_k` in `[-w, w]`
 /// and a uniform sign, all indices distinct, in `k` order.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct ShipSecretSpec {
     support: Vec<(usize, i64)>,
+}
+
+/// Redacting [`Debug`]: the support determines the secret, so only its length is printed.
+impl core::fmt::Debug for ShipSecretSpec {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("ShipSecretSpec")
+            .field("support", &format_args!("<redacted; len {}>", self.support.len()))
+            .finish()
+    }
 }
 
 impl ShipSecretSpec {
@@ -49,23 +58,16 @@ impl ShipSecretSpec {
     pub fn from_support(plan: &ShipPlan, support: Vec<(usize, i64)>) -> Result<Self> {
         let n = plan.n();
         let h = plan.sparse_hamming_weight();
-        ensure!(
-            support.len() == h,
-            "SHIP support has {} entries, expected the sparse Hamming weight {h}",
-            support.len()
-        );
+        ensure!(support.len() == h, "SHIP support size differs from the sparse Hamming weight");
         let mut used = vec![false; n];
         for (k, &(idx, sign)) in support.iter().enumerate() {
-            ensure!(idx < n, "SHIP support index {idx} exceeds the ring degree {n}");
-            ensure!(
-                sign == 1 || sign == -1,
-                "SHIP support sign at slot {k} must be +-1, got {sign}"
-            );
-            ensure!(!used[idx], "SHIP support index {idx} is duplicated");
+            ensure!(idx < n, "SHIP support index exceeds the ring degree");
+            ensure!(sign == 1 || sign == -1, "SHIP support sign must be +-1");
+            ensure!(!used[idx], "SHIP support index is duplicated");
             used[idx] = true;
             ensure!(
                 offset_of(plan, k, idx) <= 2 * plan.window(),
-                "SHIP support index {idx} lies outside the window of slot {k}"
+                "SHIP support index lies outside the window of its slot"
             );
         }
         Ok(Self { support })
@@ -85,9 +87,7 @@ impl ShipSecretSpec {
     pub fn fill_glwe_secret(&self, plan: &ShipPlan, sk: &mut GLWESecret<AlignedBuf, i64>) -> Result<()> {
         ensure!(
             sk.n().as_usize() == plan.n(),
-            "SHIP secret degree {} does not match plan degree {}",
-            sk.n(),
-            plan.n()
+            "SHIP secret degree does not match the plan degree"
         );
         sk.data_mut().zero();
         let col = sk.data_mut().at_mut(0, 0);

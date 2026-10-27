@@ -61,6 +61,30 @@ name = "blas_pipeline"
 required-features = ["enable-blas"]
 
 [[example]]
+name = "libm_exp"
+required-features = ["enable-ckks"]
+# Runs the walkthrough under `cargo test`.
+test = true
+
+[[example]]
+name = "libm_trig"
+required-features = ["enable-ckks"]
+# Runs the walkthrough under `cargo test`.
+test = true
+
+[[example]]
+name = "libm_inference"
+required-features = ["enable-ckks"]
+# Runs the walkthrough under `cargo test`.
+test = true
+
+[[example]]
+name = "libm_signal"
+required-features = ["enable-ckks"]
+# Runs the walkthrough under `cargo test`.
+test = true
+
+[[example]]
 name = "core_encryption"
 required-features = ["enable-core"]
 
@@ -85,10 +109,11 @@ name = "ckks_replicated_workspace"
 required-features = ["enable-ckks"]
 
 [dev-dependencies]
-poulpy-cpu-oracle = {workspace = true, features = ["enable-ckks", "enable-bin-fhe", "enable-blas"]}
+poulpy-cpu-oracle = {workspace = true, features = ["enable-ckks", "enable-bin-fhe", "enable-mhe", "enable-blas"]}
 paste = {workspace = true}
 poulpy-ckks = {workspace = true, features = ["test-utils"]}
 poulpy-blas = {workspace = true, features = ["test-utils"]}
+poulpy-libm = {workspace = true, features = ["test-utils"]}
 poulpy-bin-fhe = {workspace = true}
 criterion = {workspace = true}
 # TODO: poulpy-bench's lib is currently #![cfg]-gated on its bench features

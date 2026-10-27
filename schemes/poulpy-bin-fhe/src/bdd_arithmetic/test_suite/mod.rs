@@ -40,10 +40,10 @@ pub use sub::*;
 pub use swap::*;
 pub use xor::*;
 
+use poulpy_core::api::{GLWESecretPreparedFactory, GLWESecretSampling, LWESecretSampling};
 use poulpy_core::layouts::{
     Base2K, Degree, Dnum, GGLWEToGGSWKeyLayout, GGSWLayout, GLWEAutomorphismKeyLayout, GLWELayout, GLWESecret,
-    GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretSampling, GLWESwitchingKeyLayout, GLWEToLWEKeyLayout, LWESecret,
-    LWESecretSampling, ModuleCoreAlloc, Rank, TorusPrecision,
+    GLWESecretPrepared, GLWESwitchingKeyLayout, GLWEToLWEKeyLayout, LWESecret, ModuleCoreAlloc, Rank, TorusPrecision,
 };
 
 use crate::{

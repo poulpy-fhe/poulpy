@@ -17,10 +17,10 @@ use poulpy_ckks::{
 };
 use poulpy_core::{
     GLWEAutomorphismKeyEncryptSk, GLWETensorKeyEncryptSk,
+    api::{GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory},
     layouts::{
-        Base2K, DiagonalArithmetic, GGLWELayout, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPreparedFactory,
-        GLWETensorKeyLayout, GLWETensorKeyPreparedFactory, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos,
-        ModuleCoreAlloc, TorusPrecision,
+        Base2K, DiagonalArithmetic, GGLWELayout, GLWEAutomorphismKeyLayout, GLWETensorKeyLayout, GLWEToBackendRef,
+        GetAutomorphismKey, GetTensorKey, LWEInfos, ModuleCoreAlloc, TorusPrecision,
         prepared::{
             GLWEAutomorphismKeyPreparedBackendRef, GLWEAutomorphismKeyPreparedToBackendRef, GLWETensorKeyPreparedBackendRef,
             GLWETensorKeyPreparedToBackendRef,
@@ -41,20 +41,21 @@ use super::helpers::{
     Grid, HINTS, MASKED_PT_ALGORITHMS, MIXES, PT_ALGORITHMS,
     Rejection::{MissingKey, MissingTensorKey},
     StrictKeys, TestKeys, alloc_grid, assert_grid_decrypt, assert_guard_on, at_scale, blas_context, context_and_keys,
-    encoded_context, encrypt_grid, grid_snapshot, lt_key_uses, mapped_layout, matmul_left_operand, matmul_right_operand,
-    other_scales, poisoned_scratch, product_layout, pt_operand,
+    copied_layout, encoded_context, encrypt_grid, grid_snapshot, lt_key_uses, mapped_layout, matmul_left_operand,
+    matmul_right_operand, other_scales, poisoned_scratch, product_layout, pt_operand,
 };
 use super::matmul::public_entry;
 use crate::{
     api::{BlasMatInterOps, BlasMatIntraOps, BlasMatMulOps},
     layouts::{
-        BlasCiphertext, BlasCiphertextOwned, BlasContextInfos, BlasEncodingOps, BlasGridInfos, BlasMatMulLeft, BlasMatMulRight,
-        BlasModuleAlloc, BlasPlan, BlasPtAlgorithm, BlasPtOperandInfos, BlasPtOperandPreparedFactory, BlasPtSide, Left, Right,
-        context::context_shapes, replicated, sum_galois_elements,
+        BlasCiphertext, BlasCiphertextOwned, BlasContextInfos, BlasEncodingOps, BlasGridInfos, BlasKeyUses, BlasMatMulLeft,
+        BlasMatMulRight, BlasModuleAlloc, BlasPlan, BlasPtAlgorithm, BlasPtOperandInfos, BlasPtOperandPreparedFactory,
+        BlasPtSide, Left, Right, blas_sum_cols_key_uses, blas_sum_rows_key_uses, context::context_shapes, replicated,
+        sum_galois_elements,
     },
     oep::BlasImpl,
     reference::{
-        BlasKeyUses, MapDiagonal, blas_matmul_key_uses, blas_matmul_prepare_left_key_uses, blas_matmul_prepare_right_key_uses,
+        MapDiagonal, blas_matmul_key_uses, blas_matmul_prepare_left_key_uses, blas_matmul_prepare_right_key_uses,
         blas_matmul_prepared_key_uses, blas_matmul_pt_left_key_uses, blas_matmul_pt_right_key_uses, blas_rotate_cols_key_uses,
         blas_rotate_key_uses, blas_rotate_rows_key_uses, blas_sum_key_uses, blas_transpose_key_uses, operand_shapes,
     },
@@ -129,14 +130,18 @@ fn assert_key_widths<BE, X>(
 }
 
 /// With a key store answering only at the widths poulpy-ckks uses each key at, read off real results (a rotation at the
-/// narrower of its input's and its result's widths, a sum's rotations at its result's, baby steps at the source's width, giant steps at the result's, the
-/// tensor key at the wider of the products' term widths), every operation runs and matches its result under the full
-/// store bit for bit, and rejects the store short of any one of these keys before it writes. Rotations, sums,
-/// transposes, row and column shifts and products by public matrices, on either side and under `Diagonal` and `Jkls`,
-/// write results half as wide as their inputs, narrower than any map's output, then one limb wider than their inputs; a
-/// JKLS product by public matrices looks up its first map's keys from its input's width and its blocks' from the width
-/// that map leaves. The matrix products run on factors of one width, then on a narrower left or right factor; a right
-/// factor holding one matrix takes [`crate::layouts::BlasContext::tau_rep`] and
+/// narrower of its input's and its result's widths, a sum's rotations at its result's, baby steps at the source's
+/// width, giant steps at the result's, the tensor key at the wider of the products' term widths), every operation runs
+/// and matches its result under the full store bit for bit, and rejects the store short of any one of these keys before
+/// it writes. Rotations, sums, transposes, row and column shifts, row and column sums and products by public matrices,
+/// on either side and under `Diagonal` and `Jkls`, write results half as wide as their inputs, narrower than any map's
+/// output, then one limb wider than their inputs; a row shift of a grid one block high holding one matrix looks up its
+/// rotation at the narrower of its input's and result's widths; a row or column sum looks up its tree's rotations at
+/// its input's width and its broadcast's at its result's, and along the rows of a grid holding one matrix its tree's
+/// alone, at the narrower of its input's and result's widths; a JKLS
+/// product by public matrices looks up its first map's keys from its input's width and its blocks' from the width that
+/// map leaves. The matrix products run on factors of one width, then on a narrower left or right factor; a right factor
+/// holding one matrix takes [`crate::layouts::BlasContext::tau_rep`] and
 /// [`crate::layouts::BlasContext::rotate_rows_rep`]. The context's maps and the public matrices sit a quarter of the
 /// inputs' scale below it ([`other_scales`]), where a width taken from the inputs' scale in place of the maps' `p` or
 /// the public matrices' `p_B`, or capped by it, finds no key. The preparations, under either hint, look up every
@@ -309,7 +314,11 @@ pub fn test_blas_key_widths<BE, F, E>(
             } else {
                 vec![ctx.rows_upper(1), ctx.rows_lower(1)]
             };
-            let used: Vec<(i64, usize)> = maps.into_iter().flat_map(|lt| uses(lt, a_k, width(&full))).collect();
+            let used: Vec<(i64, usize)> = if rows == 1 && replicated::<Standard>(a) {
+                vec![(module.ckks_galois_element(d as i64), a_k.min(width(&full)))]
+            } else {
+                maps.into_iter().flat_map(|lt| uses(lt, a_k, width(&full))).collect()
+            };
             assert_key_widths(
                 &format!("rotate_rows {case}"),
                 "blas_rotate_rows",
@@ -345,6 +354,69 @@ pub fn test_blas_key_widths<BE, F, E>(
                 |g| g,
                 |res, keys| module.blas_rotate_cols(res, a, 1, &ctx, keys, &mut own(bytes).borrow()),
             );
+        }
+
+        // Along the rows of a grid holding one matrix, the tree at the narrower of the input's and result's widths;
+        // otherwise the tree at the input's width, the projection and the broadcast at the width the projection
+        // leaves, the result's.
+        let reduction = |a: &BlasCiphertextOwned<BE>, along_rows: bool, res_k: usize| -> Vec<(i64, usize)> {
+            let stride = if along_rows { d } else { 1 };
+            let rotations =
+                |sign: i64, k: usize| (0..log_d).map(move |i| (module.ckks_galois_element(sign * (stride << i) as i64), k));
+            if along_rows && replicated::<Standard>(a) {
+                return rotations(1, a_k.min(res_k)).collect();
+            }
+            let projection = if along_rows { ctx.first_row() } else { ctx.first_col() };
+            rotations(1, a_k)
+                .chain(uses(projection, a_k, res_k))
+                .chain(rotations(-1, res_k))
+                .collect()
+        };
+        for (a, along_rows) in [
+            (&row, true),
+            (&row, false),
+            (&column, true),
+            (&column, false),
+            (&column_one, true),
+        ] {
+            let (rows, cols) = (a.rows(), a.cols());
+            let case = format!("{rows}x{cols} replicated={} res_k={res_k}", replicated::<Standard>(a));
+            let mut full = alloc(rows, cols, res_k);
+            if along_rows {
+                let bytes = module.blas_sum_rows_tmp_bytes(&full, a, &ctx, &atk_layout);
+                module
+                    .blas_sum_rows(&mut full, a, &ctx, &keys, &mut own(bytes).borrow())
+                    .unwrap();
+                assert_key_widths(
+                    &format!("sum_rows {case}"),
+                    "blas_sum_rows",
+                    &keys,
+                    blas_sum_rows_key_uses(module, &full, a, &ctx),
+                    reduction(a, true, width(&full)),
+                    [],
+                    &full,
+                    &mut alloc(rows, cols, res_k),
+                    |g| g,
+                    |res, keys| module.blas_sum_rows(res, a, &ctx, keys, &mut own(bytes).borrow()),
+                );
+            } else {
+                let bytes = module.blas_sum_cols_tmp_bytes(&full, a, &ctx, &atk_layout);
+                module
+                    .blas_sum_cols(&mut full, a, &ctx, &keys, &mut own(bytes).borrow())
+                    .unwrap();
+                assert_key_widths(
+                    &format!("sum_cols {case}"),
+                    "blas_sum_cols",
+                    &keys,
+                    blas_sum_cols_key_uses(module, &full, a, &ctx),
+                    reduction(a, false, width(&full)),
+                    [],
+                    &full,
+                    &mut alloc(rows, cols, res_k),
+                    |g| g,
+                    |res, keys| module.blas_sum_cols(res, a, &ctx, keys, &mut own(bytes).borrow()),
+                );
+            }
         }
 
         for (algorithm, pt, pt_left) in &operands {
@@ -616,7 +688,8 @@ impl<BE: Backend, A, T: GLWETensorKeyPreparedToBackendRef<BE>> GetTensorKey<BE> 
 }
 
 /// With a store holding one key per `(element, width)` the key-use queries list, generated for that width and no other,
-/// a product of two encrypted grids and a product by public matrices run and decrypt as under the full keys.
+/// a product of two encrypted grids, a product by public matrices and row and column sums run and decrypt as under the
+/// full keys.
 pub fn test_blas_key_stores_from_queries<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -658,9 +731,12 @@ pub fn test_blas_key_stores_from_queries<BE, F, E>(
     );
 
     let alloc = |k: usize| alloc_grid(&params, module, log_d, 1, 1, k);
+    let alloc_like_a = || alloc_grid(&params, module, log_d, 1, 2, params.k);
     let uses = [
         blas_matmul_key_uses(module, &a, &b, &ctx),
         blas_matmul_pt_right_key_uses(module, &alloc(params.k), &a, &public, &ctx),
+        blas_sum_rows_key_uses(module, &alloc_like_a(), &a, &ctx),
+        blas_sum_cols_key_uses(module, &alloc_like_a(), &a, &ctx),
     ];
 
     // One key per `(element, width)` the queries list, laid out for that width; then one key per element, at the widest
@@ -712,7 +788,7 @@ pub fn test_blas_key_stores_from_queries<BE, F, E>(
             let mut raw = module.glwe_tensor_key_alloc_from_infos(&infos);
             module.glwe_tensor_key_encrypt_sk(&mut raw, &sk_raw, &mut xe, &mut xa, &mut scratch.borrow());
             let mut prepared = module.alloc_tensor_key_prepared_from_infos(&infos);
-            module.prepare_tensor_key(&mut prepared, &raw, &mut scratch.borrow());
+            module.glwe_tensor_key_prepare(&mut prepared, &raw, &mut scratch.borrow());
             keys.tsks.insert(width.as_u32(), prepared);
         }
 
@@ -760,6 +836,43 @@ pub fn test_blas_key_stores_from_queries<BE, F, E>(
             &sk,
             &grid_a.matmul_public(1, 1, public_entry),
             &mapped_layout(&a, 1, 1, params.k, params.prec().log_delta()),
+            &mut scratch.borrow(),
+        );
+        let p = params.prec().log_delta();
+        let mut sums = alloc_like_a();
+        let bytes = module.blas_sum_rows_tmp_bytes(&sums, &a, &ctx, &atk_layout);
+        module
+            .blas_sum_rows(&mut sums, &a, &ctx, &keys, &mut poisoned_scratch::<BE>(bytes).borrow())
+            .unwrap();
+        let rows_layout = if replicated::<Standard>(&a) {
+            copied_layout(&a, 1, 2, params.k)
+        } else {
+            mapped_layout(&a, 1, 2, params.k, p)
+        };
+        assert_grid_decrypt::<BE, F, E>(
+            &format!("sum_rows under the queries' keys, {mode}"),
+            &params,
+            module,
+            &encoder,
+            &sums,
+            &sk,
+            &grid_a.sum_rows(),
+            &rows_layout,
+            &mut scratch.borrow(),
+        );
+        let bytes = module.blas_sum_cols_tmp_bytes(&sums, &a, &ctx, &atk_layout);
+        module
+            .blas_sum_cols(&mut sums, &a, &ctx, &keys, &mut poisoned_scratch::<BE>(bytes).borrow())
+            .unwrap();
+        assert_grid_decrypt::<BE, F, E>(
+            &format!("sum_cols under the queries' keys, {mode}"),
+            &params,
+            module,
+            &encoder,
+            &sums,
+            &sk,
+            &grid_a.sum_cols(),
+            &mapped_layout(&a, 1, 2, params.k, p),
             &mut scratch.borrow(),
         );
     }

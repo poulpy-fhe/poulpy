@@ -10,11 +10,9 @@ pub use crate::api::GLWESwitchingKeyEncryptSk;
 use crate::layouts::operand_degree;
 use crate::{
     GetDistribution, ScratchArenaTakeCore,
+    api::GLWESecretPreparedFactory,
     encryption::gglwe::GGLWEEncryptSk,
-    layouts::{
-        GGLWEInfos, GGLWEToBackendMut, GLWEInfos, GLWESecretToBackendRef, GLWESwitchingKeyDegreesMut, LWEInfos,
-        prepared::GLWESecretPreparedFactory,
-    },
+    layouts::{GGLWEInfos, GGLWEToBackendMut, GLWEInfos, GLWESecretToBackendRef, GLWESwitchingKeyDegreesMut, LWEInfos},
 };
 
 /// Portable implementation using HAL operations.
@@ -75,6 +73,7 @@ where
 
         assert!(sk_in.n().0 <= res.n().0);
         assert!(sk_out_ref.n().0 <= res.n().0);
+        crate::layouts::assert_secret_set(sk_out.dist());
         assert!(
             scratch.available()
                 >= GLWESwitchingKeyEncryptSkReference::glwe_switching_key_encrypt_sk_tmp_bytes_reference(self, res),

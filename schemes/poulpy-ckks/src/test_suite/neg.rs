@@ -17,11 +17,13 @@
 //! | [`test_neg_assign`] | in-place negation |
 
 use crate::{CKKSInfos, api::CKKSNegOps};
+use poulpy_core::layouts::LWEInfos;
 
 use super::helpers::{
     TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_ct_meta, assert_decrypt_precision,
     assert_unary_output_meta, ckks_encrypt, gen_sk, test_vector_1, want_neg,
 };
+use super::parity::helpers::with_scratch;
 use anyhow::Result;
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
@@ -65,7 +67,9 @@ where
     );
     let (want_re, want_im) = want_neg(&re1, &im1);
     let mut ct_res = alloc_ct(&params, module, params.k);
-    module.ckks_neg_into(&mut ct_res, &ct1, &mut scratch.borrow())?;
+    with_scratch::<BE, _>(module.ckks_neg_tmp_bytes(ct_res.max_size()), |s| {
+        module.ckks_neg_into(&mut ct_res, &ct1, s)
+    })?;
     assert_unary_output_meta("neg", &ct_res, params.k, &ct1);
     assert_decrypt_precision(
         "neg",
@@ -115,7 +119,9 @@ where
     let (want_re, want_im) = want_neg(&re1, &im1);
     let dst_k = params.k - params.base2k - 1;
     let mut ct_res = alloc_ct(&params, module, dst_k);
-    module.ckks_neg_into(&mut ct_res, &ct1, &mut scratch.borrow())?;
+    with_scratch::<BE, _>(module.ckks_neg_tmp_bytes(ct_res.max_size()), |s| {
+        module.ckks_neg_into(&mut ct_res, &ct1, s)
+    })?;
     assert_unary_output_meta("neg smaller_output", &ct_res, dst_k, &ct1);
     assert_decrypt_precision(
         "neg",
@@ -169,7 +175,9 @@ where
     let (want_re, want_im) = want_neg(&re1, &im1);
     let dst_k = params.k + params.base2k;
     let mut ct_res = alloc_ct(&params, module, dst_k);
-    module.ckks_neg_into(&mut ct_res, &ct1, &mut scratch.borrow())?;
+    with_scratch::<BE, _>(module.ckks_neg_tmp_bytes(ct_res.max_size()), |s| {
+        module.ckks_neg_into(&mut ct_res, &ct1, s)
+    })?;
     assert_unary_output_meta("neg wider_output", &ct_res, dst_k, &ct1);
     assert_decrypt_precision(
         "neg",

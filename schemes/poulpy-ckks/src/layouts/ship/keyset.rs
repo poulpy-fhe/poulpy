@@ -13,11 +13,15 @@ use anyhow::{Result, ensure};
 use poulpy_core::{Distribution, GetDistribution, GetDistributionMut};
 use poulpy_core::{
     GLWEAutomorphismKeyEncryptSk, GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk, TransferInto,
+    api::{
+        GLWEAutomorphismKeyPreparedFactory, GLWESecretPreparedFactory, GLWESwitchingKeyPreparedFactory,
+        GLWETensorKeyPreparedFactory,
+    },
     layouts::{
         Base2K, GGLWEInfos, GGLWEToBackendRef, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPrepared,
-        GLWEAutomorphismKeyPreparedFactory, GLWEInfos, GLWESecret, GLWESecretLayout, GLWESecretPreparedFactory, GLWESwitchingKey,
-        GLWESwitchingKeyLayout, GLWESwitchingKeyPrepared, GLWESwitchingKeyPreparedFactory, GLWETensorKey, GLWETensorKeyLayout,
-        GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory, GLWEToBackendRef, GetGaloisElement, LWEInfos, ModuleCoreAlloc, Rank,
+        GLWEInfos, GLWESecret, GLWESecretLayout, GLWESwitchingKey, GLWESwitchingKeyLayout, GLWESwitchingKeyPrepared,
+        GLWETensorKey, GLWETensorKeyLayout, GLWETensorKeyPrepared, GLWEToBackendRef, GetGaloisElement, LWEInfos, ModuleCoreAlloc,
+        Rank,
     },
 };
 use poulpy_hal::AlignedBuf;
@@ -249,7 +253,7 @@ impl<D: Data, W: ZnxWord> ShipKeySet<D, W> {
 
         let mut required = module
             .glwe_switching_key_prepare_tmp_bytes(&self.dense_to_sparse)
-            .max(module.prepare_tensor_key_tmp_bytes(&self.tensor_key))
+            .max(module.glwe_tensor_key_prepare_tmp_bytes(&self.tensor_key))
             .max(module.glwe_automorphism_key_prepare_tmp_bytes(&self.conjugation_key))
             .max(module.cnv_prepare_left_tmp_bytes(mask_size, mask_size));
         for ik in &self.index_keys {
@@ -305,7 +309,7 @@ impl<D: Data, W: ZnxWord> ShipKeySet<D, W> {
         let mut dense_to_sparse = module.glwe_switching_key_prepared_alloc_from_infos(&self.dense_to_sparse);
         module.glwe_switching_key_prepare(&mut dense_to_sparse, &self.dense_to_sparse, scratch);
         let mut tensor_key = module.alloc_tensor_key_prepared_from_infos(&self.tensor_key);
-        module.prepare_tensor_key(&mut tensor_key, &self.tensor_key, scratch);
+        module.glwe_tensor_key_prepare(&mut tensor_key, &self.tensor_key, scratch);
         let mut conjugation_key = module.glwe_automorphism_key_prepared_alloc_from_infos(&self.conjugation_key);
         module.glwe_automorphism_key_prepare(&mut conjugation_key, &self.conjugation_key, scratch);
 

@@ -1,6 +1,7 @@
 //! Linear maps, conversions and bootstrapping of a replicated slot layout, the
 //! small-batch scheme of [ePrint 2026/2513](https://eprint.iacr.org/2026/2513)
 //! (see `docs/guides/replicated.md`).
+use poulpy_core::GLWESecretSampling;
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -9,9 +10,9 @@ use poulpy_core::{
     Distribution, GLWEAutomorphismKeyEncryptSk, GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk, GLWETrace, GetDistributionMut,
     layouts::{
         BackendGLWESecret, Base2K, Degree, Diagonals, GGLWELayout, GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout,
-        GLWESecretLayout, GLWESecretSampling, GLWESwitchingKeyLayout, GLWETensorKeyLayout, GetDegree, LWEInfos,
-        LinearTransformationBabySteps, LinearTransformationLayout, LinearTransformationPrepared, LinearTransformationStrategy,
-        ModuleCoreAlloc, Rank, TorusPrecision,
+        GLWESecretLayout, GLWESwitchingKeyLayout, GLWETensorKeyLayout, GetDegree, LWEInfos, LinearTransformationBabySteps,
+        LinearTransformationLayout, LinearTransformationPrepared, LinearTransformationStrategy, ModuleCoreAlloc, Rank,
+        TorusPrecision,
     },
 };
 use poulpy_hal::{
@@ -24,13 +25,13 @@ use crate::{
     CKKSLayout, CKKSModuleInfos, CoeffsMeta, GLWEPlaintextMeta, ReplicatedLayout, Scale, SetCKKSInfos, SetGLWEPlaintextInfos,
     SlotLayout, SlotsKind,
     api::{CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, CKKSLinearTransformationOps},
+    encoding::linear_transformation::period_degree,
     layouts::{
         BootstrappingKeySet, BootstrappingKeysLayout, CKKSModuleAlloc, CKKSPlaintextOwned, ComplexDiagonals,
         EncapsulationKeysLayout, MaskedCoeffs,
         eval_mod::{EvalMod, EvalModPlan, EvalModType, compile_eval_mod_replicated, compile_eval_mod_replicated_packed},
     },
     polynomial::SplitStrategy,
-    reference::linear_transformation_diagonals::period_degree,
     shaping::ShapingRing,
 };
 
@@ -369,7 +370,7 @@ impl<BE: Backend> ReplicatedTransform<BE> {
         let first = lt.first_diagonal_plaintext().context("a transform has a diagonal")?;
         let mut prepared = LinearTransformationPrepared::<BE>::alloc_prepared_from_index(module, &lt.index(), first);
         let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_prepare_linear_transformation_rhs_tmp_bytes(first));
-        module.ckks_prepare_linear_transformation_rhs(&mut prepared, &lt, &mut scratch.borrow());
+        module.ckks_prepare_linear_transformation_rhs(&mut prepared, &lt, &mut scratch.borrow())?;
         Ok(Self { lt: prepared })
     }
 }

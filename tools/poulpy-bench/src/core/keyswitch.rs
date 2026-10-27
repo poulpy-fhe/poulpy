@@ -1,12 +1,11 @@
 use poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef;
 use poulpy_core::{
     GLWEKeyswitch, GLWEMaskFill,
-    layouts::{
-        Base2K, Degree, Dnum, GGLWELayout, GLWELayout, ModuleCoreAlloc, Rank, TorusPrecision, k_digit_of,
-        prepared::GGLWEPreparedFactory,
-    },
+    api::GGLWEPreparedFactory,
+    layouts::{Base2K, Degree, Dnum, GGLWELayout, GLWELayout, ModuleCoreAlloc, Rank, TorusPrecision, k_digit_of},
     test_suite::keys::fill_by_digit,
 };
+use poulpy_hal::api::ModuleSynchronize;
 use poulpy_hal::{
     api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{Backend, Module, ScratchOwned},
@@ -33,6 +32,7 @@ use crate::core::params::{CoreParams, switching_key_dnum_k_aux};
 pub fn runner_glwe_keyswitch<BE: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CoreParams)
 where
     Module<BE>: ModuleNew<BE>
+        + ModuleSynchronize<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>
         + GLWEKeyswitch<BE>
         + GGLWEPreparedFactory<BE>
@@ -82,6 +82,7 @@ where
 
     bencher.iter(|| {
         module.glwe_keyswitch(&mut ct_out, &ct_in, &key.to_backend_ref(), &mut scratch.borrow());
+        module.synchronize();
         black_box(());
     });
 }

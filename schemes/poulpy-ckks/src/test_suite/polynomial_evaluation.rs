@@ -1,7 +1,9 @@
 use crate::{Scale, ckks_log_delta};
 use poulpy_core::{
     layouts::GLWETensorKeyPrepared,
-    layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, prepared::GLWETensorKeyPreparedToBackendRef},
+    layouts::{
+        GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos, LWEInfos, prepared::GLWETensorKeyPreparedToBackendRef,
+    },
 };
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
@@ -9,8 +11,8 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSCtBounds, CKKSInfos, GLWEPlaintextMeta, SetCKKSInfos, SlotLayout,
-    api::{CKKSComplexPolynomialEvaluationOps, CKKSMulOps, CKKSPolynomialEvaluationOps},
+    CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSResult, GLWEPlaintextMeta, SetCKKSInfos, SlotLayout,
+    api::{BSGSPolynomialInfos, CKKSComplexPolynomialEvaluationOps, CKKSMulOps, CKKSPolynomialEvaluationOps},
     layouts::{CKKSCiphertextOwned, CKKSPlaintextOwned, CKKSPlaintextVecHostCodec},
     polynomial::{
         BSGSPolynomial, Basis, ComplexBSGSPolynomial, ComplexPolynomial, EncodeBSGS, Parity, Polynomial,
@@ -22,11 +24,25 @@ use crate::{
 };
 
 use super::helpers::{
-    PT_PREC, TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_decrypt_precision, ckks_encrypt,
-    ckks_encrypt_with_prec, ckks_spec, gen_sk_with_raw, gen_tsk, precision_at, quantized_const, quantized_slots, test_vector_1,
-    upload_pt,
+    PT_PREC, TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_ckks_error,
+    assert_decrypt_precision, ckks_encrypt, ckks_encrypt_with_prec, ckks_spec, dirty_ct, gen_sk_with_raw, gen_tsk, precision_at,
+    quantized_const, quantized_slots, test_vector_1, upload_pt,
 };
+use super::parity::helpers::{snapshot, with_scratch};
 use crate::SlotsKind;
+use crate::api::CKKSAllOpsTmpBytes;
+use crate::layouts::CKKSModuleAlloc;
+
+/// The documented query of polynomial evaluation and of the power basis it builds: the shared all-operations bound.
+fn poly_scratch_bytes<BE>(params: &CKKSTestParams, module: &Module<BE>) -> usize
+where
+    BE: TestContextBackend<Ring = Standard>,
+    Module<BE>: TestContextModule<BE>,
+{
+    let mut ct = module.ckks_ciphertext_alloc_from_glwe_infos(&params.glwe_layout());
+    ct.set_meta(params.prec().meta);
+    module.ckks_all_ops_tmp_bytes(&ct, &PT_PREC, &params.tsk_layout())
+}
 
 /// Asserts the eval consumed exactly `bsgs.consumed_bits(input_ld, coeff_ld)`
 /// of `log_budget` and preserved `log_delta`. `input_log_budget`/`input_log_delta`
@@ -227,9 +243,10 @@ pub fn test_power_basis_populate_degree7<BE, F, E>(
         &mut scratch.borrow(),
     );
     let mut power_basis = PowerBasis::new(Basis::Monomial, x_ct);
-    power_basis
-        .populate(7, 2, Parity::Full, module, &tsk, &mut scratch.borrow())
-        .expect("populate power basis for degree 7");
+    with_scratch::<BE, _>(poly_scratch_bytes(&params, module), |s| {
+        power_basis.populate(7, 2, Parity::Full, module, &tsk, s)
+    })
+    .expect("populate power basis for degree 7");
 
     let zero_im = vec![F::zero(); x_re.len()];
     for power in 1..=4 {
@@ -294,9 +311,10 @@ pub fn test_power_basis_populate_chebyshev_degree7<BE, F, E>(
         &mut scratch.borrow(),
     );
     let mut power_basis = PowerBasis::new(Basis::Chebyshev, x_ct);
-    power_basis
-        .populate(7, 2, Parity::Full, module, &tsk, &mut scratch.borrow())
-        .expect("populate Chebyshev power basis for degree 7");
+    with_scratch::<BE, _>(poly_scratch_bytes(&params, module), |s| {
+        power_basis.populate(7, 2, Parity::Full, module, &tsk, s)
+    })
+    .expect("populate Chebyshev power basis for degree 7");
 
     let want = chebyshev_values(&x_re, 4);
     let zero_im = vec![F::zero(); x_re.len()];
@@ -447,7 +465,10 @@ pub fn test_eval_poly_const_coeffs_cubic<BE, F, E>(
     );
     let (x_ld, x_lb) = (x.log_delta(), x.log_budget());
     let mut x2 = alloc_ct(&params, module, params.k);
-    module.ckks_square_into(&mut x2, &x, &tsk, &mut scratch.borrow()).unwrap();
+    with_scratch::<BE, _>(module.ckks_square_tmp_bytes(&x2, &x, &tsk), |s| {
+        module.ckks_square_into(&mut x2, &x, &tsk, s)
+    })
+    .unwrap();
 
     let mut power_basis = PowerBasis::new(Basis::Monomial, x);
     power_basis.insert(2, x2).expect("insert pre-computed X^2");
@@ -461,15 +482,16 @@ pub fn test_eval_poly_const_coeffs_cubic<BE, F, E>(
     scale_add(&mut want_re, &x3_re, c3);
 
     let mut res = alloc_ct(&params, module, params.k);
-    module
-        .ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
+    with_scratch::<BE, _>(poly_scratch_bytes(&params, module), |s| {
+        module.ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
             &mut res,
-            &poly,
             &power_basis,
+            &poly,
             &tsk,
-            &mut scratch.borrow(),
+            s,
         )
-        .unwrap();
+    })
+    .unwrap();
 
     assert_consumed_bits::<BE, _>("cubic", &bsgs_host, x_ld, x_lb, PT_PREC.log_delta(), &res);
 
@@ -526,23 +548,229 @@ pub fn test_eval_poly_rejects_power_basis_mismatch<BE, F, E>(
         &x_im_raw,
         &mut scratch.borrow(),
     );
+    let mut res = dirty_ct(module, &x_ct, params.k);
     let power_basis = PowerBasis::new(Basis::Chebyshev, x_ct);
-
-    let mut res = alloc_ct(&params, module, params.k);
-    let err = module
-        .ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
+    let before = snapshot::<BE, _>(&res);
+    let err = with_scratch::<BE, _>(0, |s| {
+        module.ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
             &mut res,
-            &bsgs,
             &power_basis,
+            &bsgs,
             &tsk,
-            &mut scratch.borrow(),
+            s,
         )
-        .expect_err("basis mismatch should be rejected");
+    })
+    .expect_err("basis mismatch should be rejected");
+    assert_ckks_error(
+        "eval_poly_rejects_power_basis_mismatch",
+        &err,
+        CKKSCompositionError::InvalidOperand {
+            op: "ckks_eval_poly_real_const_coeffs_from_power_basis",
+            reason: "polynomial basis Monomial does not match power basis Chebyshev".into(),
+        },
+    );
+    assert_eq!(snapshot::<BE, _>(&res), before, "a refused evaluation wrote res");
+}
 
-    let err = err.to_string();
-    assert!(
-        err.contains("polynomial basis Monomial does not match power basis Chebyshev"),
-        "unexpected basis mismatch error: {err}"
+/// A real polynomial reporting no baby step, which a custom [`BSGSPolynomialInfos`] may.
+struct NoBabySteps<'a, C>(&'a BSGSPolynomial<C>);
+
+impl<BE, C> BSGSPolynomialInfos<BE> for NoBabySteps<'_, C>
+where
+    BE: poulpy_hal::layouts::Backend,
+    C: GLWEToBackendRef<BE> + poulpy_core::layouts::GLWEInfos + poulpy_core::layouts::BSGSMeta + IntPolyInfos,
+{
+    type Coeffs = C;
+
+    fn degree(&self) -> usize {
+        self.0.degree()
+    }
+
+    fn baby_steps(&self) -> usize {
+        0
+    }
+
+    fn baby_step(&self, i: usize) -> &C {
+        self.0.baby_step(i)
+    }
+
+    fn basis(&self) -> Basis {
+        self.0.basis()
+    }
+
+    fn parity(&self) -> Parity {
+        self.0.parity()
+    }
+
+    fn log_split(&self) -> usize {
+        self.0.log_split()
+    }
+
+    fn split_strategy(&self) -> SplitStrategy {
+        BSGSPolynomialInfos::<BE>::split_strategy(self.0)
+    }
+}
+
+/// Polynomials the evaluation cannot run are `InvalidOperand` of the invoked method on an empty arena, `res`
+/// untouched: a real polynomial without baby step, complex parts differing in baby-step count, degree, parity, basis or
+/// the length of a baby step, a complex basis other than the power basis', and, for the one-shot form, complex parts
+/// of different input transforms.
+pub fn test_eval_poly_rejects_malformed_polynomials<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend<Ring = Standard>,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE> + CKKSComplexPolynomialEvaluationOps<BE>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    const REAL: &str = "ckks_eval_poly_real_const_coeffs";
+    const REAL_FROM_BASIS: &str = "ckks_eval_poly_real_const_coeffs_from_power_basis";
+    const COMPLEX: &str = "ckks_eval_poly_complex_const_coeffs";
+    const COMPLEX_FROM_BASIS: &str = "ckks_eval_poly_complex_const_coeffs_from_power_basis";
+    let (sk_raw, _) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+    let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
+    let x = alloc_ct(&params, module, params.k);
+    let mut res = dirty_ct(module, &x, params.k);
+    let encode = |basis: Basis, coeffs: &[f64], parity: Option<Parity>| {
+        let poly = match parity {
+            Some(parity) => Polynomial::new_with_parity(basis, coeffs.to_vec(), parity),
+            None => Polynomial::new(basis, coeffs.to_vec()),
+        };
+        poly.encode_bsgs(host_module, params.base2k.into(), PT_PREC.into()).unwrap()
+    };
+    let upload = |poly: &BSGSPolynomial<CKKSPlaintextOwned<HostBytesBackend>>| upload_bsgs(module, poly);
+    let mut refused =
+        |label: &str, op: &'static str, reason: &str, call: &dyn Fn(&mut CKKSCiphertextOwned<BE>) -> CKKSResult<()>| {
+            let before = snapshot::<BE, _>(&res);
+            let err = call(&mut res).expect_err(label);
+            assert_ckks_error(
+                label,
+                &err,
+                CKKSCompositionError::InvalidOperand {
+                    op,
+                    reason: reason.into(),
+                },
+            );
+            assert_eq!(snapshot::<BE, _>(&res), before, "{label}: a refused evaluation wrote res");
+        };
+
+    // Degree 3: two baby steps of two coefficients; degree 2: two baby steps of two and one; degree 7: three.
+    let cubic = [0.125, -0.25, 0.0625, 0.03125];
+    let quadratic = [0.125, -0.25, 0.0625];
+    let mono3 = upload(&encode(Basis::Monomial, &cubic, None));
+    let monomial_basis = PowerBasis::new(Basis::Monomial, alloc_ct(&params, module, params.k));
+    let no_baby_steps = NoBabySteps(&mono3);
+    refused("no baby step", REAL_FROM_BASIS, "the polynomial has no baby step", &|res| {
+        with_scratch::<BE, _>(0, |s| {
+            module.ckks_eval_poly_real_const_coeffs_from_power_basis(res, &monomial_basis, &no_baby_steps, &tsk, s)
+        })
+    });
+    refused("no baby step, one-shot", REAL, "the polynomial has no baby step", &|res| {
+        with_scratch::<BE, _>(0, |s| {
+            module.ckks_eval_poly_real_const_coeffs(res, &x, &no_baby_steps, &tsk, s)
+        })
+    });
+
+    let mono2_host = encode(Basis::Monomial, &quadratic, None);
+    let steps = mono2_host.baby_steps();
+    assert_ne!(
+        steps[0].n(),
+        steps[1].n(),
+        "test precondition: the quadratic's baby steps differ in length"
+    );
+    let mut i = steps.len();
+    let mono2_reversed = mono2_host.map_baby_steps_ref(|_| {
+        i -= 1;
+        upload_pt(module, &steps[i])
+    });
+    let part = |coeffs: &[f64], basis: Basis, parity: Option<Parity>| upload(&encode(basis, coeffs, parity));
+    let odd = [0.0, -0.25, 0.0, 0.03125];
+    let cases = [
+        (
+            "baby-step count",
+            part(&[0.125, -0.25, 0.0625, 0.03125, 0.1, 0.1, 0.1, 0.1], Basis::Monomial, None),
+            "real/imag baby-step schedules differ",
+        ),
+        ("degree", upload(&mono2_host), "real/imag degrees differ"),
+        ("basis", part(&cubic, Basis::Chebyshev, None), "real/imag bases differ"),
+    ];
+    for (label, im, reason) in cases {
+        let poly = ComplexBSGSPolynomial {
+            re: upload(&encode(Basis::Monomial, &cubic, None)),
+            im,
+        };
+        refused(label, COMPLEX_FROM_BASIS, reason, &|res| {
+            with_scratch::<BE, _>(0, |s| {
+                module.ckks_eval_poly_complex_const_coeffs_from_power_basis(res, &monomial_basis, &poly, &tsk, s)
+            })
+        });
+        refused(&format!("{label}, one-shot"), COMPLEX, reason, &|res| {
+            with_scratch::<BE, _>(0, |s| module.ckks_eval_poly_complex_const_coeffs(res, &x, &poly, &tsk, s))
+        });
+    }
+    let parities = ComplexBSGSPolynomial {
+        re: part(&odd, Basis::Monomial, Some(Parity::Odd)),
+        im: part(&odd, Basis::Monomial, Some(Parity::Full)),
+    };
+    let lengths = ComplexBSGSPolynomial {
+        re: upload(&mono2_host),
+        im: mono2_reversed,
+    };
+    for (label, poly, reason) in [
+        ("parity", &parities, "real/imag parities differ"),
+        ("baby-step length", &lengths, "real/imag baby-step lengths differ"),
+    ] {
+        refused(label, COMPLEX_FROM_BASIS, reason, &|res| {
+            with_scratch::<BE, _>(0, |s| {
+                module.ckks_eval_poly_complex_const_coeffs_from_power_basis(res, &monomial_basis, poly, &tsk, s)
+            })
+        });
+        refused(&format!("{label}, one-shot"), COMPLEX, reason, &|res| {
+            with_scratch::<BE, _>(0, |s| module.ckks_eval_poly_complex_const_coeffs(res, &x, poly, &tsk, s))
+        });
+    }
+
+    let complex = ComplexBSGSPolynomial {
+        re: part(&cubic, Basis::Monomial, None),
+        im: part(&cubic, Basis::Monomial, None),
+    };
+    let chebyshev_basis = PowerBasis::new(Basis::Chebyshev, alloc_ct(&params, module, params.k));
+    refused(
+        "power basis",
+        COMPLEX_FROM_BASIS,
+        "polynomial basis Monomial does not match power basis Chebyshev",
+        &|res| {
+            with_scratch::<BE, _>(0, |s| {
+                module.ckks_eval_poly_complex_const_coeffs_from_power_basis(res, &chebyshev_basis, &complex, &tsk, s)
+            })
+        },
+    );
+
+    // The even quartic folds into a quadratic in x², the schedule of the plain quadratic.
+    let folded = Polynomial::new_with_parity(Basis::Monomial, vec![0.125, 0.0, 0.0625, 0.0, 0.03125], Parity::Even)
+        .encode_bsgs_folded_with(host_module, params.base2k.into(), PT_PREC.into(), SplitStrategy::MinDepth)
+        .unwrap();
+    let transforms = ComplexBSGSPolynomial {
+        re: upload(&folded),
+        im: upload(&mono2_host),
+    };
+    refused(
+        "input transform",
+        COMPLEX,
+        "real and imaginary input transforms differ",
+        &|res| {
+            with_scratch::<BE, _>(0, |s| {
+                module.ckks_eval_poly_complex_const_coeffs(res, &x, &transforms, &tsk, s)
+            })
+        },
     );
 }
 
@@ -610,19 +838,18 @@ pub fn test_eval_poly_const_coeffs_exp7<BE, F, E>(
     );
     let (x_ld, x_lb) = (x_ct.log_delta(), x_ct.log_budget());
     let mut pb = PowerBasis::new(Basis::Monomial, x_ct);
-    pb.populate(7, bsgs_host.log_split(), Parity::Full, module, &tsk, &mut scratch.borrow())
-        .expect("populate power basis for degree 7");
+    with_scratch::<BE, _>(poly_scratch_bytes(&params, module), |s| {
+        pb.populate(7, bsgs_host.log_split(), Parity::Full, module, &tsk, s)
+    })
+    .expect("populate power basis for degree 7");
 
     let mut res = alloc_ct(&params, module, params.k);
-    module
-        .ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
-            &mut res,
-            &bsgs,
-            &pb,
-            &tsk,
-            &mut scratch.borrow(),
+    with_scratch::<BE, _>(poly_scratch_bytes(&params, module), |s| {
+        module.ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
+            &mut res, &pb, &bsgs, &tsk, s,
         )
-        .expect("ckks_eval_poly_real_const_coeffs_from_power_basis should succeed");
+    })
+    .expect("ckks_eval_poly_real_const_coeffs_from_power_basis should succeed");
 
     assert_consumed_bits::<BE, _>("exp7", &bsgs_host, x_ld, x_lb, PT_PREC.log_delta(), &res);
 
@@ -699,26 +926,18 @@ pub fn test_eval_poly_const_coeffs_even_monomial<BE, F, E>(
     );
     let (x_ld, x_lb) = (x_ct.log_delta(), x_ct.log_budget());
     let mut pb = PowerBasis::new(Basis::Monomial, x_ct);
-    pb.populate(
-        4,
-        bsgs_host.log_split(),
-        bsgs_host.parity(),
-        module,
-        &tsk,
-        &mut scratch.borrow(),
-    )
+    with_scratch::<BE, _>(poly_scratch_bytes(&params, module), |s| {
+        pb.populate(4, bsgs_host.log_split(), bsgs_host.parity(), module, &tsk, s)
+    })
     .expect("populate power basis for degree 4");
 
     let mut res = alloc_ct(&params, module, params.k);
-    module
-        .ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
-            &mut res,
-            &bsgs,
-            &pb,
-            &tsk,
-            &mut scratch.borrow(),
+    with_scratch::<BE, _>(poly_scratch_bytes(&params, module), |s| {
+        module.ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
+            &mut res, &pb, &bsgs, &tsk, s,
         )
-        .expect("ckks_eval_poly_real_const_coeffs_from_power_basis should succeed");
+    })
+    .expect("ckks_eval_poly_real_const_coeffs_from_power_basis should succeed");
 
     assert_consumed_bits::<BE, _>("even_monomial", &bsgs_host, x_ld, x_lb, PT_PREC.log_delta(), &res);
 
@@ -795,26 +1014,18 @@ pub fn test_eval_poly_const_coeffs_odd_monomial<BE, F, E>(
     );
     let (x_ld, x_lb) = (x_ct.log_delta(), x_ct.log_budget());
     let mut pb = PowerBasis::new(Basis::Monomial, x_ct);
-    pb.populate(
-        5,
-        bsgs_host.log_split(),
-        bsgs_host.parity(),
-        module,
-        &tsk,
-        &mut scratch.borrow(),
-    )
+    with_scratch::<BE, _>(poly_scratch_bytes(&params, module), |s| {
+        pb.populate(5, bsgs_host.log_split(), bsgs_host.parity(), module, &tsk, s)
+    })
     .expect("populate power basis for degree 5");
 
     let mut res = alloc_ct(&params, module, params.k);
-    module
-        .ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
-            &mut res,
-            &bsgs,
-            &pb,
-            &tsk,
-            &mut scratch.borrow(),
+    with_scratch::<BE, _>(poly_scratch_bytes(&params, module), |s| {
+        module.ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
+            &mut res, &pb, &bsgs, &tsk, s,
         )
-        .expect("ckks_eval_poly_real_const_coeffs_from_power_basis should succeed");
+    })
+    .expect("ckks_eval_poly_real_const_coeffs_from_power_basis should succeed");
 
     assert_consumed_bits::<BE, _>("odd_monomial", &bsgs_host, x_ld, x_lb, PT_PREC.log_delta(), &res);
 
@@ -880,26 +1091,18 @@ pub fn test_eval_poly_const_coeffs_chebyshev_degree31<BE, F, E>(
     );
     let (x_ld, x_lb) = (x_ct.log_delta(), x_ct.log_budget());
     let mut pb = PowerBasis::new(Basis::Chebyshev, x_ct);
-    pb.populate(
-        31,
-        bsgs_host.log_split(),
-        bsgs_host.parity(),
-        module,
-        &tsk,
-        &mut scratch.borrow(),
-    )
+    with_scratch::<BE, _>(poly_scratch_bytes(&params, module), |s| {
+        pb.populate(31, bsgs_host.log_split(), bsgs_host.parity(), module, &tsk, s)
+    })
     .expect("populate Chebyshev power basis for degree 31");
 
     let mut res = alloc_ct(&params, module, params.k);
-    module
-        .ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
-            &mut res,
-            &bsgs,
-            &pb,
-            &tsk,
-            &mut scratch.borrow(),
+    with_scratch::<BE, _>(poly_scratch_bytes(&params, module), |s| {
+        module.ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
+            &mut res, &pb, &bsgs, &tsk, s,
         )
-        .expect("ckks_eval_poly_real_const_coeffs_from_power_basis should succeed");
+    })
+    .expect("ckks_eval_poly_real_const_coeffs_from_power_basis should succeed");
 
     assert_consumed_bits::<BE, _>("chebyshev31", &bsgs_host, x_ld, x_lb, PT_PREC.log_delta(), &res);
 
@@ -965,26 +1168,18 @@ pub fn test_eval_poly_const_coeffs_chebyshev_degree31_min_mult<BE, F, E>(
     );
     let (x_ld, x_lb) = (x_ct.log_delta(), x_ct.log_budget());
     let mut pb = PowerBasis::new(Basis::Chebyshev, x_ct);
-    pb.populate(
-        31,
-        bsgs_host.log_split(),
-        bsgs_host.parity(),
-        module,
-        &tsk,
-        &mut scratch.borrow(),
-    )
+    with_scratch::<BE, _>(poly_scratch_bytes(&params, module), |s| {
+        pb.populate(31, bsgs_host.log_split(), bsgs_host.parity(), module, &tsk, s)
+    })
     .expect("populate Chebyshev power basis for degree 31 with MinMult split");
 
     let mut res = alloc_ct(&params, module, params.k);
-    module
-        .ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
-            &mut res,
-            &bsgs,
-            &pb,
-            &tsk,
-            &mut scratch.borrow(),
+    with_scratch::<BE, _>(poly_scratch_bytes(&params, module), |s| {
+        module.ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
+            &mut res, &pb, &bsgs, &tsk, s,
         )
-        .expect("ckks_eval_poly_real_const_coeffs_from_power_basis should succeed with MinMult split");
+    })
+    .expect("ckks_eval_poly_real_const_coeffs_from_power_basis should succeed with MinMult split");
 
     assert_consumed_bits::<BE, _>("chebyshev31_min_mult", &bsgs_host, x_ld, x_lb, PT_PREC.log_delta(), &res);
 
@@ -1103,9 +1298,10 @@ pub fn test_eval_poly_const_coeffs_parity_folds<BE, F, E>(
         let want_im = vec![F::zero(); m];
         let bsgs = upload_bsgs(module, &bsgs_host);
         let mut res = alloc_ct(&params, module, params.k);
-        module
-            .ckks_eval_poly_real_const_coeffs(&mut res, &input_ct, &bsgs, &tsk, &mut scratch.borrow())
-            .expect("parity-folded evaluation should succeed");
+        with_scratch::<BE, _>(poly_scratch_bytes(&params, module), |s| {
+            module.ckks_eval_poly_real_const_coeffs(&mut res, &input_ct, &bsgs, &tsk, s)
+        })
+        .expect("parity-folded evaluation should succeed");
 
         assert_consumed_bits::<BE, _>(
             label,
@@ -1194,7 +1390,10 @@ pub fn test_eval_poly_const_coeffs_complex_cubic<BE, F, E>(
         &mut scratch.borrow(),
     );
     let mut x2 = alloc_ct(&params, module, params.k);
-    module.ckks_square_into(&mut x2, &x, &tsk, &mut scratch.borrow()).unwrap();
+    with_scratch::<BE, _>(module.ckks_square_tmp_bytes(&x2, &x, &tsk), |s| {
+        module.ckks_square_into(&mut x2, &x, &tsk, s)
+    })
+    .unwrap();
 
     let (x_ld, x_lb) = (x.log_delta(), x.log_budget());
     let mut power_basis = PowerBasis::new(Basis::Monomial, x);
@@ -1218,15 +1417,16 @@ pub fn test_eval_poly_const_coeffs_complex_cubic<BE, F, E>(
     }
 
     let mut res = alloc_ct(&params, module, params.k);
-    module
-        .ckks_eval_poly_complex_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
+    with_scratch::<BE, _>(poly_scratch_bytes(&params, module), |s| {
+        module.ckks_eval_poly_complex_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
             &mut res,
-            &poly,
             &power_basis,
+            &poly,
             &tsk,
-            &mut scratch.borrow(),
+            s,
         )
-        .expect("ckks_eval_poly_complex_const_coeffs_from_power_basis should succeed");
+    })
+    .expect("ckks_eval_poly_complex_const_coeffs_from_power_basis should succeed");
 
     assert_consumed_bits::<BE, _>("complex_cubic", &bsgs_host.re, x_ld, x_lb, PT_PREC.log_delta(), &res);
 
@@ -1309,14 +1509,9 @@ pub fn test_eval_poly_const_coeffs_complex_chebyshev<BE, F, E>(
     );
     let (x_ld, x_lb) = (x.log_delta(), x.log_budget());
     let mut pb = PowerBasis::new(Basis::Chebyshev, x);
-    pb.populate(
-        7,
-        bsgs_host.re.log_split(),
-        bsgs_host.re.parity(),
-        module,
-        &tsk,
-        &mut scratch.borrow(),
-    )
+    with_scratch::<BE, _>(poly_scratch_bytes(&params, module), |s| {
+        pb.populate(7, bsgs_host.re.log_split(), bsgs_host.re.parity(), module, &tsk, s)
+    })
     .expect("populate complex Chebyshev power basis for degree 7");
 
     // Host complex reference: per slot, Σ_k (cre_k + i·cim_k)·T_k(z) via the
@@ -1350,15 +1545,12 @@ pub fn test_eval_poly_const_coeffs_complex_chebyshev<BE, F, E>(
     }
 
     let mut res = alloc_ct(&params, module, params.k);
-    module
-        .ckks_eval_poly_complex_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
-            &mut res,
-            &poly,
-            &pb,
-            &tsk,
-            &mut scratch.borrow(),
+    with_scratch::<BE, _>(poly_scratch_bytes(&params, module), |s| {
+        module.ckks_eval_poly_complex_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
+            &mut res, &pb, &poly, &tsk, s,
         )
-        .expect("ckks_eval_poly_complex_const_coeffs_from_power_basis (Chebyshev) should succeed");
+    })
+    .expect("ckks_eval_poly_complex_const_coeffs_from_power_basis (Chebyshev) should succeed");
 
     assert_consumed_bits::<BE, _>("complex_chebyshev", &bsgs_host.re, x_ld, x_lb, PT_PREC.log_delta(), &res);
 
@@ -1455,14 +1647,9 @@ pub fn test_eval_poly_const_coeffs_complex_even<BE, F, E>(
     );
     let (x_ld, x_lb) = (x.log_delta(), x.log_budget());
     let mut pb = PowerBasis::new(Basis::Monomial, x);
-    pb.populate(
-        4,
-        bsgs_host.re.log_split(),
-        bsgs_host.re.parity(),
-        module,
-        &tsk,
-        &mut scratch.borrow(),
-    )
+    with_scratch::<BE, _>(poly_scratch_bytes(&params, module), |s| {
+        pb.populate(4, bsgs_host.re.log_split(), bsgs_host.re.parity(), module, &tsk, s)
+    })
     .expect("populate complex even power basis for degree 4");
 
     let mut want_re = vec![F::zero(); m];
@@ -1474,15 +1661,12 @@ pub fn test_eval_poly_const_coeffs_complex_even<BE, F, E>(
     }
 
     let mut res = alloc_ct(&params, module, params.k);
-    module
-        .ckks_eval_poly_complex_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
-            &mut res,
-            &poly,
-            &pb,
-            &tsk,
-            &mut scratch.borrow(),
+    with_scratch::<BE, _>(poly_scratch_bytes(&params, module), |s| {
+        module.ckks_eval_poly_complex_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
+            &mut res, &pb, &poly, &tsk, s,
         )
-        .expect("ckks_eval_poly_complex_const_coeffs_from_power_basis (even) should succeed");
+    })
+    .expect("ckks_eval_poly_complex_const_coeffs_from_power_basis (even) should succeed");
 
     assert_consumed_bits::<BE, _>("complex_even", &bsgs_host.re, x_ld, x_lb, PT_PREC.log_delta(), &res);
 
@@ -1567,14 +1751,9 @@ pub fn test_eval_poly_const_coeffs_complex_odd<BE, F, E>(
     );
     let (x_ld, x_lb) = (x.log_delta(), x.log_budget());
     let mut pb = PowerBasis::new(Basis::Monomial, x);
-    pb.populate(
-        5,
-        bsgs_host.re.log_split(),
-        bsgs_host.re.parity(),
-        module,
-        &tsk,
-        &mut scratch.borrow(),
-    )
+    with_scratch::<BE, _>(poly_scratch_bytes(&params, module), |s| {
+        pb.populate(5, bsgs_host.re.log_split(), bsgs_host.re.parity(), module, &tsk, s)
+    })
     .expect("populate complex odd power basis for degree 5");
 
     let mut want_re = vec![F::zero(); m];
@@ -1586,15 +1765,12 @@ pub fn test_eval_poly_const_coeffs_complex_odd<BE, F, E>(
     }
 
     let mut res = alloc_ct(&params, module, params.k);
-    module
-        .ckks_eval_poly_complex_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
-            &mut res,
-            &poly,
-            &pb,
-            &tsk,
-            &mut scratch.borrow(),
+    with_scratch::<BE, _>(poly_scratch_bytes(&params, module), |s| {
+        module.ckks_eval_poly_complex_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
+            &mut res, &pb, &poly, &tsk, s,
         )
-        .expect("ckks_eval_poly_complex_const_coeffs_from_power_basis (odd) should succeed");
+    })
+    .expect("ckks_eval_poly_complex_const_coeffs_from_power_basis (odd) should succeed");
 
     assert_consumed_bits::<BE, _>("complex_odd", &bsgs_host.re, x_ld, x_lb, PT_PREC.log_delta(), &res);
 
@@ -1698,9 +1874,10 @@ pub fn test_eval_poly_const_coeffs_complex_fold<BE, F, E>(
 
     let (x_ld, x_lb) = (x.log_delta(), x.log_budget());
     let mut res = alloc_ct(&params, module, params.k);
-    module
-        .ckks_eval_poly_complex_const_coeffs(&mut res, &x, &poly, &tsk, &mut scratch.borrow())
-        .expect("ckks_eval_poly_complex_const_coeffs (fold) should succeed");
+    with_scratch::<BE, _>(poly_scratch_bytes(&params, module), |s| {
+        module.ckks_eval_poly_complex_const_coeffs(&mut res, &x, &poly, &tsk, s)
+    })
+    .expect("ckks_eval_poly_complex_const_coeffs (fold) should succeed");
 
     assert_consumed_bits::<BE, _>("complex_fold", &bsgs_host.re, x_ld, x_lb, PT_PREC.log_delta(), &res);
 
@@ -1798,26 +1975,18 @@ pub fn test_eval_poly_consumed_bits_sweep<BE, F, E>(
             let bsgs = upload_bsgs(&module, &bsgs_host);
 
             let mut pb = PowerBasis::new(Basis::Monomial, src.clone());
-            pb.populate(
-                degree,
-                bsgs_host.log_split(),
-                bsgs_host.parity(),
-                &module,
-                &tsk,
-                &mut scratch.borrow(),
-            )
+            with_scratch::<BE, _>(poly_scratch_bytes(&params, &module), |s| {
+                pb.populate(degree, bsgs_host.log_split(), bsgs_host.parity(), &module, &tsk, s)
+            })
             .expect("populate power basis");
 
             let mut res = alloc_ct(&params, &module, k);
-            module
-                .ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
-                    &mut res,
-                    &bsgs,
-                    &pb,
-                    &tsk,
-                    &mut scratch.borrow(),
+            with_scratch::<BE, _>(poly_scratch_bytes(&params, &module), |s| {
+                module.ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
+                    &mut res, &pb, &bsgs, &tsk, s,
                 )
-                .expect("eval poly");
+            })
+            .expect("eval poly");
 
             assert_eq!(
                 res.log_delta(),
@@ -1831,5 +2000,81 @@ pub fn test_eval_poly_consumed_bits_sweep<BE, F, E>(
                 bsgs_host.eval_depth(),
             );
         }
+    }
+}
+
+/// An input whose budget cannot pay the approximation is `InsufficientHomomorphicCapacity` of `ckks_eval_approximation`
+/// before any write, on an empty arena and on the query.
+pub fn test_eval_approximation_rejects_insufficient_capacity<BE, F, E>(
+    params: crate::test_suite::CKKSTestParams,
+    module: &poulpy_hal::layouts::Module<BE>,
+    host_module: &poulpy_hal::layouts::Module<poulpy_hal::layouts::HostBytesBackend>,
+) where
+    BE: crate::test_suite::helpers::TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
+    poulpy_hal::layouts::Module<BE>: crate::test_suite::helpers::TestContextModule<BE> + crate::api::CKKSApproximationOps<BE>,
+    F: crate::test_suite::helpers::TestScalar,
+    E: poulpy_hal::api::NegacyclicFFT<F> + poulpy_hal::api::NegacyclicFFTNew<F>,
+{
+    use crate::test_suite::{
+        helpers::{alloc_scratch, assert_ckks_error, gen_sk_with_raw, gen_tsk},
+        parity::{
+            helpers::{fixture_ciphertext, snapshot, with_scratch},
+            layout,
+        },
+    };
+    use crate::{
+        CKKSCompositionError, CKKSInfos, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotsKind,
+        api::CKKSApproximationOps,
+        layouts::{CKKSModuleAlloc, CKKSPlaintextOwned, PolynomialApproximation},
+        polynomial::{BSGSPolynomial, Basis, Polynomial, SplitStrategy},
+    };
+    let b = params.base2k;
+    let coeffs = |count: usize| -> anyhow::Result<CKKSPlaintextOwned<BE>> {
+        let mut pt = module.ckks_pt_coeffs_alloc(count, b.into(), (2 * b).into());
+        pt.set_meta(GLWEPlaintextMeta {
+            scale: Scale::Log(b / 2),
+            ..Default::default()
+        });
+        Ok(pt)
+    };
+    let poly: BSGSPolynomial<CKKSPlaintextOwned<BE>> = Polynomial::new(Basis::Monomial, vec![0.0f64, 1.0])
+        .decompose_bsgs_with(SplitStrategy::MinDepth, |c| coeffs(c.len()))
+        .unwrap();
+    let approximation = PolynomialApproximation {
+        poly,
+        affine: Some(coeffs(2).unwrap()),
+        scale_pow2: None,
+        coeff_log_delta: b / 2,
+    };
+    let mut scratch = alloc_scratch(&params, module);
+    let (sk_raw, _) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
+    let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
+    let input = fixture_ciphertext(module, &layout(params, params.rank, b - 1, b - 1, 0, SlotsKind::Complex), 41);
+    let required = approximation.consumed_bits(input.log_delta());
+    assert!(required > 0, "the approximation consumes no budget");
+    let mut res = fixture_ciphertext(
+        module,
+        &layout(params, params.rank, 3 * b + 5, b - 1, 0, SlotsKind::Complex),
+        31,
+    );
+    for bytes in [
+        0,
+        module.ckks_approximation_tmp_bytes(&res, &input, &approximation, &params.tsk_layout()),
+    ] {
+        let before = snapshot::<BE, _>(&res);
+        let err = with_scratch::<BE, _>(bytes, |s| {
+            module.ckks_eval_approximation(&mut res, &input, &approximation, &tsk, s)
+        })
+        .unwrap_err();
+        assert_ckks_error(
+            "eval_approximation: input without budget",
+            &err,
+            CKKSCompositionError::InsufficientHomomorphicCapacity {
+                op: "ckks_eval_approximation",
+                available_log_budget: 0,
+                required_bits: required,
+            },
+        );
+        assert_eq!(snapshot::<BE, _>(&res), before, "a refused approximation wrote res");
     }
 }

@@ -54,7 +54,7 @@ impl GLWEPlaintextInfos for EvalModWorkCtInfos {
 
 impl CKKSInfos for EvalModWorkCtInfos {}
 
-pub fn ckks_eval_mod_tmp_bytes_reference<BE: Backend, R, C, P, F, T>(
+pub fn ckks_eval_mod_tmp_bytes_reference<BE: Backend + poulpy_core::oep::GLWEMulConstImpl, R, C, P, F, T>(
     module: &Module<BE>,
     res: &R,
     ct: &C,
@@ -137,7 +137,7 @@ where
         base.max(params.f_mod_inv_bsgs.as_ref().map_or(0, poly_max))
     };
     let fused_baby =
-        crate::reference::polynomial_evaluation::eval_baby_linear_combination_tmp_bytes(module, work.max_size(), pt_size_max);
+        crate::oep::derived::polynomial_evaluation::eval_baby_linear_combination_tmp_bytes(module, work.max_size(), pt_size_max);
 
     // A replicated layout holds one working-width ciphertext while it takes
     // masked products, squares its last step or rounds between scales.

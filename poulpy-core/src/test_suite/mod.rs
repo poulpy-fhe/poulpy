@@ -19,6 +19,7 @@ pub mod encryption;
 pub mod keys;
 pub mod noise;
 pub mod parity;
+pub(crate) mod refusal;
 pub mod sampling;
 pub mod serialization;
 
@@ -39,44 +40,56 @@ macro_rules! core_backend_test_suite {
                 glwe_compressed_encrypt_sk => $crate::test_suite::noise::encryption::test_glwe_compressed_encrypt_sk,
                 glwe_encrypt_zero_sk => $crate::test_suite::noise::encryption::test_glwe_encrypt_zero_sk,
                 glwe_encrypt_pk => $crate::test_suite::noise::encryption::test_glwe_encrypt_pk,
-                #[should_panic(expected = "invalid public key: less precise than the output")]
-                glwe_encrypt_pk_imprecise_key => $crate::test_suite::noise::encryption::test_glwe_encrypt_pk_imprecise_key,
+                glwe_encrypt_pk_rejects_imprecise_key => $crate::test_suite::noise::encryption::test_glwe_encrypt_pk_rejects_imprecise_key,
                 glwe_encrypt_pk_replay => $crate::test_suite::noise::encryption::test_glwe_encrypt_pk_replay,
-                #[should_panic(expected = "invalid public key: zero ephemeral distribution")]
-                glwe_encrypt_pk_zero_ephemeral => $crate::test_suite::noise::encryption::test_glwe_encrypt_pk_zero_ephemeral,
-                #[should_panic(expected = "invalid public key: zero ephemeral distribution")]
-                glwe_encrypt_pk_nan_ephemeral => $crate::test_suite::noise::encryption::test_glwe_encrypt_pk_nan_ephemeral,
+                glwe_encrypt_zero_pk_rejects_zero_ephemeral => $crate::test_suite::noise::encryption::test_glwe_encrypt_zero_pk_rejects_zero_ephemeral,
+                glwe_encrypt_zero_pk_rejects_nan_ephemeral => $crate::test_suite::noise::encryption::test_glwe_encrypt_zero_pk_rejects_nan_ephemeral,
                 #[should_panic(expected = "invalid public key: rank must be at least 1")]
-                glwe_public_key_rank_zero => $crate::test_suite::noise::encryption::test_glwe_public_key_rank_zero,
+                glwe_public_key_alloc_rejects_rank_zero => $crate::test_suite::noise::encryption::test_glwe_public_key_alloc_rejects_rank_zero,
+                glwe_ci_embed_key_encrypt_sk_rejects_mismatched_secrets =>
+                    $crate::test_suite::noise::encryption::test_glwe_ci_embed_key_encrypt_sk_rejects_mismatched_secrets,
+                glwe_ci_trace_key_encrypt_sk_rejects_mismatched_secrets =>
+                    $crate::test_suite::noise::encryption::test_glwe_ci_trace_key_encrypt_sk_rejects_mismatched_secrets,
+                glwe_ci_key_encrypt_sk_wipes_scratch =>
+                    $crate::test_suite::noise::encryption::test_glwe_ci_key_encrypt_sk_wipes_scratch,
+                lwe_encrypt_sk_rejects_unset_secret =>
+                    $crate::test_suite::noise::encryption::test_lwe_encrypt_sk_rejects_unset_secret,
+                glwe_encrypt_sk_rejects_unset_secret =>
+                    $crate::test_suite::noise::encryption::test_glwe_encrypt_sk_rejects_unset_secret,
+                glwe_compressed_encrypt_sk_rejects_unset_secret =>
+                    $crate::test_suite::noise::encryption::test_glwe_compressed_encrypt_sk_rejects_unset_secret,
+                gglwe_compressed_encrypt_sk_rejects_unset_secret =>
+                    $crate::test_suite::noise::encryption::test_gglwe_compressed_encrypt_sk_rejects_unset_secret,
+                ggsw_encrypt_sk_rejects_unset_secret =>
+                    $crate::test_suite::noise::encryption::test_ggsw_encrypt_sk_rejects_unset_secret,
+                glwe_switching_key_encrypt_sk_rejects_unset_secret =>
+                    $crate::test_suite::noise::encryption::test_glwe_switching_key_encrypt_sk_rejects_unset_secret,
+                glwe_automorphism_key_encrypt_sk_rejects_unset_secret =>
+                    $crate::test_suite::noise::encryption::test_glwe_automorphism_key_encrypt_sk_rejects_unset_secret,
+                glwe_tensor_key_encrypt_sk_rejects_unset_secret =>
+                    $crate::test_suite::noise::encryption::test_glwe_tensor_key_encrypt_sk_rejects_unset_secret,
+                lwe_switching_key_encrypt_sk_rejects_unset_secret =>
+                    $crate::test_suite::noise::encryption::test_lwe_switching_key_encrypt_sk_rejects_unset_secret,
                 scalar_znx_fill_distribution => $crate::test_suite::sampling::test_scalar_znx_fill_distribution,
                 glwe_base2k_conv => $crate::test_suite::noise::test_glwe_base2k_conversion,
                 glwe_copy => $crate::test_suite::copy::test_glwe_copy,
                 test_glwe_tensoring => $crate::test_suite::noise::glwe_tensor::test_glwe_tensoring,
-                #[should_panic(expected = "one-pass product sum has no pairs")]
                 glwe_mul_relinearize_sum_rejects_no_pairs =>
                     $crate::test_suite::noise::glwe_tensor::test_glwe_mul_relinearize_sum_rejects_no_pairs,
-                #[should_panic(expected = "summed product 1 does not share the first pair's layouts")]
                 glwe_mul_relinearize_sum_rejects_mismatched_layouts =>
                     $crate::test_suite::noise::glwe_tensor::test_glwe_mul_relinearize_sum_rejects_mismatched_layouts,
-                #[should_panic(expected = "one-pass product sum: a and b differ in length")]
                 glwe_mul_relinearize_sum_rejects_unequal_lengths =>
                     $crate::test_suite::noise::glwe_tensor::test_glwe_mul_relinearize_sum_rejects_unequal_lengths,
-                #[should_panic(expected = "one-pass product sum has no pairs")]
                 glwe_mul_prepared_relinearize_sum_rejects_no_pairs =>
                     $crate::test_suite::noise::glwe_tensor::test_glwe_mul_prepared_relinearize_sum_rejects_no_pairs,
-                #[should_panic(expected = "prepared pair 1 does not match res's degree, rank 1 and the given sizes")]
                 glwe_mul_prepared_relinearize_sum_rejects_mismatched_pairs =>
                     $crate::test_suite::noise::glwe_tensor::test_glwe_mul_prepared_relinearize_sum_rejects_mismatched_pairs,
-                #[should_panic(expected = "prepared sizes are not ceil(a_k / base2k) and ceil(b_k / base2k)")]
                 glwe_mul_prepared_relinearize_sum_rejects_size_of_another_width =>
                     $crate::test_suite::noise::glwe_tensor::test_glwe_mul_prepared_relinearize_sum_rejects_size_of_another_width,
-                #[should_panic(expected = "one-pass product sum: a and b differ in length")]
                 glwe_mul_prepared_relinearize_sum_rejects_unequal_lengths =>
                     $crate::test_suite::noise::glwe_tensor::test_glwe_mul_prepared_relinearize_sum_rejects_unequal_lengths,
-                #[should_panic(expected = "prepared operands do not match res's degree and rank and the given sizes")]
                 glwe_tensor_apply_prepared_rejects_mismatched_operands =>
                     $crate::test_suite::noise::glwe_tensor::test_glwe_tensor_apply_prepared_rejects_mismatched_operands,
-                #[should_panic(expected = "prepared operand size != ceil(a_k / base2k)")]
                 glwe_prepare_left_rejects_size_of_another_width =>
                     $crate::test_suite::noise::glwe_tensor::test_glwe_prepare_left_rejects_size_of_another_width,
                 test_glwe_tensor_square => $crate::test_suite::noise::glwe_tensor::test_glwe_tensor_square,
@@ -110,50 +123,37 @@ macro_rules! core_backend_test_suite {
                 glwe_trace_coarsened => $crate::test_suite::parity::test_glwe_trace_coarsened,
                 glwe_hoisted_baby_rotations_match_automorphism =>
                     $crate::test_suite::noise::linear_transformation::test_glwe_hoisted_baby_rotations_match_automorphism,
-                #[should_panic(expected = "linear transformation plaintext size does not match its effective precision")]
                 glwe_prepare_linear_transformation_rhs_rejects_wide_diagonal =>
                     $crate::test_suite::noise::linear_transformation::test_glwe_prepare_linear_transformation_rhs_rejects_wide_diagonal,
                 glwe_linear_transformation_sum => $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_sum,
-                #[should_panic(expected = "summed linear transformation 1 does not share the first one's giant schedule")]
+                glwe_linear_transformation_powers_of_two =>
+                    $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_powers_of_two,
                 glwe_linear_transformation_sum_rejects_mismatched_schedule =>
                     $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_sum_rejects_mismatched_schedule,
-                #[should_panic(expected = "summed linear transformation 1 does not share the first one's diagonal layout, width and scale")]
                 glwe_linear_transformation_sum_rejects_mismatched_diagonal_width =>
                     $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_sum_rejects_mismatched_diagonal_width,
-                #[should_panic(expected = "summed linear transformation 1 does not share the first one's diagonal layout, width and scale")]
                 glwe_linear_transformation_sum_rejects_mismatched_diagonal_scale =>
                     $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_sum_rejects_mismatched_diagonal_scale,
-                #[should_panic(expected = "summed linear transformation 1 does not share the first one's source layout")]
                 glwe_linear_transformation_sum_rejects_mismatched_source =>
                     $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_sum_rejects_mismatched_source,
-                #[should_panic(expected = "linear transformation sum has no terms")]
                 glwe_linear_transformation_sum_rejects_no_terms =>
                     $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_sum_rejects_no_terms,
-                #[should_panic(expected = "linear transformation sum: babies and lts differ in length")]
                 glwe_linear_transformation_sum_rejects_unequal_lengths =>
                     $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_sum_rejects_unequal_lengths,
-                #[should_panic(expected = "linear transformation has no non-empty giant steps")]
                 glwe_linear_transformation_sum_rejects_first_term_without_giant_steps =>
                     $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_sum_rejects_first_term_without_giant_steps,
-                #[should_panic(expected = "linear transformation has no non-empty giant steps")]
                 glwe_linear_transformation_rejects_no_giant_steps =>
                     $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_rejects_no_giant_steps,
-                #[should_panic(expected = "giant step 1 of linear transformation 0 has no diagonals")]
                 glwe_linear_transformation_rejects_empty_giant_step =>
                     $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_rejects_empty_giant_step,
-                #[should_panic(expected = "giant step 1 of linear transformation 1 has no diagonals")]
                 glwe_linear_transformation_sum_rejects_empty_giant_step =>
                     $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_sum_rejects_empty_giant_step,
-                #[should_panic(expected = "missing prepared baby-step rotation 1 of linear transformation 1")]
                 glwe_linear_transformation_sum_rejects_missing_baby_step =>
                     $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_sum_rejects_missing_baby_step,
-                #[should_panic(expected = "missing prepared baby-step rotation 0 of linear transformation 1")]
                 glwe_linear_transformation_sum_rejects_empty_cache =>
                     $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_sum_rejects_empty_cache,
-                #[should_panic(expected = "giant step 1 of linear transformation 0 is not as wide as the first diagonal")]
                 glwe_linear_transformation_rejects_uneven_giant_step_width =>
                     $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_rejects_uneven_giant_step_width,
-                #[should_panic(expected = "giant step 1 of linear transformation 1 is not as wide as the first diagonal")]
                 glwe_linear_transformation_sum_rejects_uneven_giant_step_width =>
                     $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_sum_rejects_uneven_giant_step_width,
                 glwe_packing => $crate::test_suite::noise::test_glwe_packing,
@@ -161,6 +161,7 @@ macro_rules! core_backend_test_suite {
                 gglwe_switching_key_compressed_encrypt_sk =>
                     $crate::test_suite::noise::encryption::test_gglwe_switching_key_compressed_encrypt_sk,
                 gglwe_compressed_encrypt_sk => $crate::test_suite::noise::encryption::test_gglwe_compressed_encrypt_sk,
+                gglwe_encrypt_sk_rejects_unset_secret => $crate::test_suite::noise::encryption::test_gglwe_encrypt_sk_rejects_unset_secret,
                 gglwe_automorphism_key_encrypt_sk => $crate::test_suite::noise::encryption::test_gglwe_automorphism_key_encrypt_sk,
                 gglwe_automorphism_key_compressed_encrypt_sk =>
                     $crate::test_suite::noise::encryption::test_gglwe_automorphism_key_compressed_encrypt_sk,
@@ -214,21 +215,87 @@ macro_rules! core_backend_test_suite {
 
 pub use crate::core_backend_test_suite;
 
+/// Builds precisely the advertised scratch capacity, poisoned before each operation.
+/// No other operation or backend's budget can conceal an underestimate.
+pub(crate) fn poisoned_scratch<BE: poulpy_hal::layouts::Backend>(bytes: usize) -> PoisonedScratch<BE> {
+    PoisonedScratch {
+        owned: poulpy_hal::layouts::ScratchOwned {
+            data: BE::from_host_bytes(&vec![0xA5; bytes]),
+            _phantom: std::marker::PhantomData,
+        },
+        bytes,
+    }
+}
+
+/// The owner of a [`poisoned_scratch`] arena.
+pub(crate) struct PoisonedScratch<BE: poulpy_hal::layouts::Backend> {
+    owned: poulpy_hal::layouts::ScratchOwned<BE>,
+    bytes: usize,
+}
+
+impl<BE: poulpy_hal::layouts::Backend> PoisonedScratch<BE> {
+    /// The first `bytes` of the buffer: the allocation is padded to the backend's alignment, the arena is not.
+    pub(crate) fn borrow(&mut self) -> poulpy_hal::layouts::ScratchArena<'_, BE> {
+        self.owned.arena().split_at(self.bytes).0
+    }
+
+    /// Same as [`Self::borrow`].
+    pub(crate) fn arena(&mut self) -> poulpy_hal::layouts::ScratchArena<'_, BE> {
+        self.borrow()
+    }
+}
+
+impl<BE: poulpy_hal::layouts::Backend> std::ops::Deref for PoisonedScratch<BE> {
+    type Target = poulpy_hal::layouts::ScratchOwned<BE>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.owned
+    }
+}
+
+impl<BE: poulpy_hal::layouts::Backend> std::ops::DerefMut for PoisonedScratch<BE> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.owned
+    }
+}
+
 /// Runs `op` on exactly `bytes` of poisoned scratch and asserts it left every
 /// byte zero, as an operation that handles a secret must.
 pub fn assert_wipes_scratch<BE: poulpy_hal::layouts::Backend>(
     bytes: usize,
     op: impl FnOnce(&mut poulpy_hal::layouts::ScratchArena<'_, BE>),
 ) {
-    let mut scratch: poulpy_hal::layouts::ScratchOwned<BE> = poulpy_hal::layouts::ScratchOwned {
-        data: BE::from_host_bytes(&vec![0xA5; bytes]),
-        _phantom: std::marker::PhantomData,
-    };
+    let mut scratch = poisoned_scratch::<BE>(bytes);
     op(&mut scratch.arena());
     assert!(
-        BE::to_host_bytes(&scratch.data).iter().all(|&b| b == 0),
+        BE::to_host_bytes(&scratch.data)[..bytes].iter().all(|&b| b == 0),
         "the operation left data in its scratch"
     );
+}
+
+/// Runs `call` on exactly `bytes` of scratch poisoned with `0xA5`, surrounded by guards it asserts untouched.
+pub fn with_scratch<BE: poulpy_hal::layouts::Backend, R>(
+    bytes: usize,
+    call: impl FnOnce(&mut poulpy_hal::layouts::ScratchArena<'_, BE>) -> R,
+) -> R {
+    let guard = BE::scratch_aligned(64);
+    let mut scratch = poulpy_hal::layouts::ScratchOwned::<BE> {
+        data: BE::from_host_bytes(&vec![0xA5; guard + bytes + guard]),
+        _phantom: std::marker::PhantomData,
+    };
+    let result = {
+        let (_, rest) = scratch.arena().split_at(guard);
+        let (mut exact, _) = rest.split_at(bytes);
+        assert_eq!(exact.available(), bytes);
+        call(&mut exact)
+    };
+    let host = BE::to_host_bytes(&scratch.data);
+    assert!(host[..guard].iter().all(|v| *v == 0xA5), "scratch prefix overwritten");
+    assert!(
+        host[guard + bytes..guard + bytes + guard].iter().all(|v| *v == 0xA5),
+        "scratch suffix overwritten"
+    );
+    result
 }
 
 /// The left and right hints of prepared pair `i`: they swap from one pair to the next, so that two pairs cover both

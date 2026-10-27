@@ -20,10 +20,10 @@ use poulpy_hal::{
 
 use crate::{
     GGLWEKeyswitch, GLWEKeyswitch, GLWEMaskFill,
-    api::TransferInto,
+    api::{GGLWEPreparedFactory, TransferInto},
     layouts::{
         Base2K, Degree, Dnum, Dsize, GGLWELayout, GGLWEPrepared, GGLWEPreparedBackendRef, GLWELayout, LWEInfos, ModuleCoreAlloc,
-        Rank, TorusPrecision, gadget_product_limbs, key_size, prepared::GGLWEPreparedFactory,
+        Rank, TorusPrecision, gadget_product_limbs, key_size,
     },
     oep::GGLWEProductDigitsStridedImpl,
     reference::keyswitching::GGLWEProductReference,

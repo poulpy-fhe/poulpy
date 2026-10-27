@@ -10,14 +10,14 @@ impl<BE: Backend + CKKSRotateImpl> CKKSRotateOps<BE> for Module<BE> {
         C: CKKSCtBounds,
         K: GGLWEInfos,
     {
-        BE::ckks_rotate_by_tmp_bytes_impl(self, ct_infos, key_infos)
+        BE::ckks_rotate_tmp_bytes(self, ct_infos, key_infos)
     }
 
     fn ckks_rotate_into<Dst, Src, H>(
         &self,
+        k: i64,
         dst: &mut Dst,
         src: &Src,
-        k: i64,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -26,14 +26,14 @@ impl<BE: Backend + CKKSRotateImpl> CKKSRotateOps<BE> for Module<BE> {
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        BE::ckks_rotate_by_into_impl(self, dst, src, k, keys, scratch)
+        BE::ckks_rotate_into(self, k, dst, src, keys, scratch)
     }
 
-    fn ckks_rotate_assign<Dst, H>(&self, dst: &mut Dst, k: i64, keys: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_rotate_assign<Dst, H>(&self, k: i64, dst: &mut Dst, keys: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         H: GetAutomorphismKey<BE>,
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     {
-        BE::ckks_rotate_by_assign_impl(self, dst, k, keys, scratch)
+        BE::ckks_rotate_assign(self, k, dst, keys, scratch)
     }
 }

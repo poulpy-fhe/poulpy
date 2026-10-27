@@ -1,14 +1,12 @@
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use poulpy_hal::{
-    api::{ModuleNew, ScratchOwnedAlloc},
-    layouts::{Backend, Module, ScratchOwned},
+    api::ModuleNew,
+    layouts::{Backend, Module},
 };
 
-use crate::{
-    GLWEDecrypt,
-    layouts::{GLWESecretPreparedFactory, ModuleCoreAlloc},
-};
+use super::poisoned_scratch;
+use crate::{GLWEDecrypt, api::GLWESecretPreparedFactory, layouts::ModuleCoreAlloc};
 
 /// Decryption rejects mismatched operand degrees and degrees above the module in all builds.
 pub fn test_glwe_decrypt_degree_mismatch<BE: Backend>()
@@ -17,7 +15,7 @@ where
 {
     let n = 2 * BE::MIN_DEGREE.max(16);
     let module = Module::<BE>::new(n as u64);
-    let mut scratch = ScratchOwned::<BE>::alloc(0);
+    let mut scratch = poisoned_scratch::<BE>(0);
     for other_n in [n / 2, n * 2] {
         let other = Module::<BE>::new(other_n as u64);
         for (ct_module, pt_module, sk_module, message) in [

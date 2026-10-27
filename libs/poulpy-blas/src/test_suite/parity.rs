@@ -33,9 +33,9 @@ use poulpy_ckks::{
 };
 use poulpy_core::{
     GLWEAdd, GLWEMaskFill,
+    api::{GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory},
     layouts::{
-        DiagonalArithmetic, GGLWELayout, GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory, GetAutomorphismKey,
-        GetDegree, GetTensorKey, LWEInfos, TorusPrecision,
+        DiagonalArithmetic, GGLWELayout, GetAutomorphismKey, GetDegree, GetTensorKey, LWEInfos, TorusPrecision,
         prepared::{GLWEAutomorphismKeyPreparedBackendRef, GLWETensorKeyPreparedBackendRef},
     },
 };
@@ -62,7 +62,10 @@ use crate::{
         sum_galois_elements,
         validate::{MASKLESS, MAX_BASE2K},
     },
-    oep::BlasImpl,
+    oep::{
+        BlasImpl,
+        derived::intra::{sum_line, sum_line_tmp_bytes},
+    },
     reference::{blas_matmul_max_base2k, blas_matmul_pt_left_max_base2k, blas_matmul_pt_right_max_base2k},
 };
 
@@ -493,9 +496,12 @@ where
 /// column shifts of the `2 x 3` grid, three blocks along the shifted axis, by `k`: `k mod d != 0` through both half
 /// maps, within the first block and past it (column shifts by `k d / 2` keep `k mod d != 0` at `d = 2`), then `k = d`
 /// and `2 d`, copies of the block one and two steps along, whose noise tag must clear. Shifts of a one-row grid (psi)
-/// and of a one-column grid (phi), and of the lazy grid: rows by 1, then rows and columns by `d`, copies. Then, through
-/// maps at scales below and above the operands' ([`other_scales`]), whose scale they consume in place of the operands',
-/// the transpose and the row and column shifts through both half maps.
+/// and of a one-column grid (phi), and of the lazy grid: rows by 1, then rows and columns by `d`, copies. Shifts of a
+/// one-row grid labelled one matrix: rows by 1 and `d + 1`, rotations, and columns by 1 (phi). The row and column sums
+/// of every grid, of the replicated grids, whose rows sum without the projection, and into `res` one limb narrower, and
+/// their line sum of lazy, mixed and canonical blocks at bounds that normalize every addition or go block by block.
+/// Then, through maps at scales below and above the operands' ([`other_scales`]), whose scale they consume in place of
+/// the operands', the transpose, the row and column shifts through both half maps and both sums.
 fn intra<B, F>(params: CKKSTestParams, module: &Module<B>, log_d: usize) -> Vec<Output>
 where
     B: BlasParityBackend,
@@ -510,7 +516,10 @@ where
     let a_row = operand(params, module, log_d, 1, 2, 110);
     let a_col = operand(params, module, log_d, 2, 1, 113);
     let lazy = lazy_real(params, module, log_d, 2, 3, 117);
-    let inputs = [&a, &tall, &a_row, &a_col, &lazy];
+    let one_layout = block(params, w, one_slot(module, log_d), SlotsKind::Complex);
+    let one = grid_of(module, &one_layout, log_d, 2, 3, 127, false);
+    let one_row = grid_of(module, &one_layout, log_d, 1, 2, 135, false);
+    let inputs = [&a, &tall, &a_row, &a_col, &lazy, &one, &one_row];
     let before = snapshots::<B>(&inputs);
     let mut out = Vec::new();
     let keys = fixture_keys(params, module, &plan.transpose_galois_elements(order), false);
@@ -536,6 +545,9 @@ where
         (true, &lazy, 1),
         (true, &lazy, d),
         (false, &lazy, d),
+        (true, &one_row, 1),
+        (true, &one_row, d + 1),
+        (false, &one_row, 1),
     ];
     let shift = |rows: bool, src: &BlasCiphertextOwned<B>, k: usize, ctx: &BlasContext<B>| {
         let mut res = operand(params, module, log_d, src.rows(), src.cols(), 100);
@@ -556,6 +568,45 @@ where
         }
     };
     out.extend(shifts.into_iter().map(|(rows, src, k)| shift(rows, src, k, &ctx)));
+    let sum = |rows: bool, src: &BlasCiphertextOwned<B>, k: usize, ctx: &BlasContext<B>| {
+        let mut res = sized(params, module, log_d, src.rows(), src.cols(), k, 100);
+        if rows {
+            let keys = fixture_keys(params, module, &plan.sum_rows_galois_elements(order), false);
+            with_scratch::<B, _>(module.blas_sum_rows_tmp_bytes(&res, src, ctx, &key), |s| {
+                module.blas_sum_rows(&mut res, src, ctx, &keys, s)
+            })
+            .unwrap();
+            output("blas_sum_rows", &res, &keys)
+        } else {
+            let keys = fixture_keys(params, module, &plan.sum_cols_galois_elements(order), false);
+            with_scratch::<B, _>(module.blas_sum_cols_tmp_bytes(&res, src, ctx, &key), |s| {
+                module.blas_sum_cols(&mut res, src, ctx, &keys, s)
+            })
+            .unwrap();
+            output("blas_sum_cols", &res, &keys)
+        }
+    };
+    let narrower = w - params.base2k;
+    let sums = [&a, &tall, &a_row, &a_col, &lazy, &one, &one_row]
+        .map(|src| (src, w))
+        .into_iter()
+        .chain([(&a, narrower), (&one, narrower)]);
+    for (src, k) in sums {
+        out.extend([sum(true, src, k, &ctx), sum(false, src, k, &ctx)]);
+    }
+    // The line sum at bounds no registered radix reaches: where `max_lazy_terms` binds, at radix 61 and 62, no backend
+    // key-switches exactly.
+    let (lazy_line, canonical_line): (Vec<_>, Vec<_>) = (lazy.blocks().iter().collect(), a.blocks().iter().collect());
+    let mixed_line: Vec<_> = lazy_line.iter().zip(&canonical_line).flat_map(|(l, c)| [*l, *c]).collect();
+    let layout = a.block_layout();
+    for (line, terms) in [(&lazy_line, 4), (&lazy_line, 3), (&mixed_line, 2), (&canonical_line, 2)] {
+        let mut res = operand(params, module, log_d, 1, 1, 100);
+        with_scratch::<B, _>(sum_line_tmp_bytes(module, &layout, terms), |s| {
+            sum_line(module, &mut res.blocks_mut()[0], line, terms, s)
+        })
+        .unwrap();
+        out.push(output("sum_line", &res, &keys));
+    }
     for p in other_scales(params) {
         let ctx = context::<B, F>(params, module, log_d, p);
         let mut res = operand(params, module, log_d, 3, 2, 90);
@@ -565,13 +616,14 @@ where
         .unwrap();
         out.push(output("blas_transpose", &res, &keys));
         out.extend([shift(true, &tall, 1, &ctx), shift(false, &a, d / 2, &ctx)]);
+        out.extend([sum(true, &a, w, &ctx), sum(false, &a, w, &ctx)]);
     }
     assert_unchanged::<B>(&format!("intra, log_d {log_d}"), &inputs, &before);
     out
 }
 
-/// A transpose and both shifts across blocks into [`narrow`] grids, which poulpy-ckks rejects for the budget of their
-/// first map inside the implementation.
+/// A transpose, both shifts across blocks and both sums into [`narrow`] grids, which poulpy-ckks rejects for the budget
+/// of their first map inside the implementation.
 fn intra_budget<B, F>(params: CKKSTestParams, module: &Module<B>, log_d: usize) -> Vec<Output>
 where
     B: BlasParityBackend,
@@ -584,6 +636,8 @@ where
     let transpose = fixture_keys(params, module, &plan.transpose_galois_elements(order), false);
     let rows = fixture_keys(params, module, &plan.rotate_rows_galois_elements(order, 1), false);
     let cols = fixture_keys(params, module, &plan.rotate_cols_galois_elements(order, d / 2), false);
+    let sum_rows = fixture_keys(params, module, &plan.sum_rows_galois_elements(order), false);
+    let sum_cols = fixture_keys(params, module, &plan.sum_cols_galois_elements(order), false);
     let a = operand(params, module, log_d, 2, 3, 80);
     let (mut res, mut res_t) = (
         narrow(params, module, log_d, 2, 3, 100),
@@ -603,6 +657,16 @@ where
         failure::<B>("blas_rotate_cols", &mut res, &[&a], &cols, |res| {
             with_scratch::<B, _>(module.blas_rotate_cols_tmp_bytes(res, &a, &ctx, &key), |s| {
                 module.blas_rotate_cols(res, &a, d / 2, &ctx, &cols, s)
+            })
+        }),
+        failure::<B>("blas_sum_rows", &mut res, &[&a], &sum_rows, |res| {
+            with_scratch::<B, _>(module.blas_sum_rows_tmp_bytes(res, &a, &ctx, &key), |s| {
+                module.blas_sum_rows(res, &a, &ctx, &sum_rows, s)
+            })
+        }),
+        failure::<B>("blas_sum_cols", &mut res, &[&a], &sum_cols, |res| {
+            with_scratch::<B, _>(module.blas_sum_cols_tmp_bytes(res, &a, &ctx, &key), |s| {
+                module.blas_sum_cols(res, &a, &ctx, &sum_cols, s)
             })
         }),
     ]
@@ -1119,9 +1183,9 @@ where
     }
 }
 
-/// Transposes and row and column rotations agree bit for bit at every swept `log_d`, through every branch of the
-/// shifts, a narrower `res`, lazy real inputs, and maps at scales other than the inputs', and fail alike on a budget
-/// poulpy-ckks rejects, leaving `res` and `a` unchanged.
+/// Transposes, row and column rotations and row and column sums agree bit for bit at every swept `log_d`, through every
+/// branch of the shifts and of the sums, a narrower `res`, lazy real inputs, and maps at scales other than the inputs',
+/// and fail alike on a budget poulpy-ckks rejects, leaving `res` and `a` unchanged.
 pub fn test_blas_intra_parity<BR, BT, F>(params: CKKSTestParams, shapes: &BlasParityShapes, r: &Module<BR>, t: &Module<BT>)
 where
     BR: BlasParityBackend,

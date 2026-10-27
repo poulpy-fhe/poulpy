@@ -26,44 +26,6 @@ use crate::{
 };
 
 macro_rules! impl_encryption_delegate {
-    (tensor $trait:ty, $($body:item),+ $(,)?) => {
-        impl<BE> $trait for Module<BE>
-        where
-            BE: Backend + EncryptionImpl,
-            Module<BE>: crate::layouts::GLWESecretPreparedFactory<BE> + crate::layouts::GLWESecretTensorFactory<BE>,
-        {
-            $($body)+
-        }
-    };
-    (vec_znx $trait:ty, $($body:item),+ $(,)?) => {
-        impl<BE> $trait for Module<BE>
-        where
-            BE: Backend + EncryptionImpl,
-            Module<BE>: poulpy_hal::api::VecZnxNormalize<BE> + poulpy_hal::api::VecZnxNormalizeTmpBytes,
-        {
-            $($body)+
-        }
-    };
-    (smudge $trait:ty, $($body:item),+ $(,)?) => {
-        impl<BE> $trait for Module<BE>
-        where
-            BE: Backend + EncryptionImpl,
-            Module<BE>: crate::VecZnxAddNoise<BE>
-                + poulpy_hal::api::VecZnxNormalizeAssign<BE>
-                + poulpy_hal::api::VecZnxNormalizeTmpBytes,
-        {
-            $($body)+
-        }
-    };
-    (normalize $trait:ty, $($body:item),+ $(,)?) => {
-        impl<BE> $trait for Module<BE>
-        where
-            BE: Backend + EncryptionImpl,
-            Module<BE>: crate::GLWENormalize<BE>,
-        {
-            $($body)+
-        }
-    };
     ($trait:ty, $($body:item),+ $(,)?) => {
         impl<BE> $trait for Module<BE>
         where
@@ -245,7 +207,7 @@ impl_encryption_delegate!(
 );
 
 impl_encryption_delegate!(
-    smudge GLWEEncryptPkSmudged<BE>,
+    GLWEEncryptPkSmudged<BE>,
     fn glwe_encrypt_pk_smudged_tmp_bytes<R, K>(&self, res_infos: &R, pk_infos: &K) -> usize
     where
         R: GLWEInfos,
@@ -268,22 +230,12 @@ impl_encryption_delegate!(
         P: GLWEToBackendRef<BE> + GLWEInfos,
         K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
     {
-        BE::glwe_encrypt_pk_smudged(
-            self,
-            res,
-            pt,
-            pk,
-            flood,
-            source_xu,
-            source_xe,
-            source_smudge,
-            scratch,
-        )
+        BE::glwe_encrypt_pk_smudged(self, res, pt, pk, flood, source_xu, source_xe, source_smudge, scratch)
     }
 );
 
 impl_encryption_delegate!(
-    normalize GLWEPublicKeyGenerate<BE>,
+    GLWEPublicKeyGenerate<BE>,
     fn glwe_public_key_generate_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GLWEInfos,
@@ -379,7 +331,7 @@ impl_encryption_delegate!(
 );
 
 impl_encryption_delegate!(
-    vec_znx GGSWEncryptPk<BE>,
+    GGSWEncryptPk<BE>,
     fn ggsw_encrypt_pk_tmp_bytes<R, K>(&self, res_infos: &R, pk_infos: &K) -> usize
     where
         R: GGSWInfos,
@@ -453,7 +405,7 @@ impl_encryption_delegate!(
 );
 
 impl_encryption_delegate!(
-    tensor GLWETensorKeyEncryptSk<BE>,
+    GLWETensorKeyEncryptSk<BE>,
     fn glwe_tensor_key_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos,
@@ -735,7 +687,7 @@ impl_encryption_delegate!(
 );
 
 impl_encryption_delegate!(
-    tensor GLWETensorKeyCompressedEncryptSk<BE>,
+    GLWETensorKeyCompressedEncryptSk<BE>,
     fn glwe_tensor_key_compressed_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos,

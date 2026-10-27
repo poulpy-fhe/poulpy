@@ -18,11 +18,12 @@ use itertools::Itertools;
 use poulpy_core::{
     Distribution, GGLWEToGGSWKeyEncryptSk, GGSWExpandRows, GLWEAutomorphismKeyEncryptSk, GLWEBytesOf, GLWECopy, GLWEPacking,
     GLWERotate, GLWETrace, GetDistribution, ScratchArenaTakeCore,
+    api::{GGLWEToGGSWKeyPreparedFactory, GLWEAutomorphismKeyPreparedFactory, GLWESecretPreparedFactory},
     layouts::{
-        GGLWEInfos, GGLWELayout, GGLWEToGGSWKeyLayout, GGLWEToGGSWKeyPreparedFactory, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos,
-        GGSWToBackendMut, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPreparedFactory, GLWEInfos, GLWELayout,
-        GLWESecretPreparedFactory, GLWESecretToBackendRef, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos,
-        LWESecretToBackendRef, LWEToBackendRef, ModuleCoreAlloc, SetGaloisElement, prepared::GGLWEToGGSWKeyPreparedToBackendRef,
+        GGLWEInfos, GGLWELayout, GGLWEToGGSWKeyLayout, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut,
+        GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout, GLWESecretToBackendRef, GLWEToBackendMut, GLWEToBackendRef,
+        GetAutomorphismKey, LWEInfos, LWESecretToBackendRef, LWEToBackendRef, ModuleCoreAlloc, SetGaloisElement,
+        prepared::GGLWEToGGSWKeyPreparedToBackendRef,
     },
 };
 use poulpy_hal::{
@@ -387,7 +388,7 @@ where
     assert_eq!(res_infos.rank(), key.tsk.rank());
     assert_eq!(res_infos.n(), key.atk_infos().n);
     assert_eq!(res_infos.n(), key.tsk.n());
-    poulpy_core::reference::keyswitching::glwe::assert_key_covers("circuit_bootstrapping", res_infos.k(), &key.tsk);
+    poulpy_core::layouts::assert_key_covers("circuit_bootstrapping", res_infos.k(), &key.tsk);
     let res_base2k = res_infos.base2k().as_usize();
     let dnum_res = res_infos.dnum().as_usize();
     assert!(

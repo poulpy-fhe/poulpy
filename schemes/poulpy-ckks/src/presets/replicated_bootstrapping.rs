@@ -244,6 +244,7 @@ mod tests {
                 assert!(keys.tensor_key.k().as_usize() <= preset.spec.max_dense_modulus);
                 assert!(encapsulation.dense_to_sparse.k().as_usize() <= preset.spec.max_sparse_modulus);
                 crate::reference::bootstrapping::check_offset_raise(
+                    "replicated_bootstrapping_preset",
                     raised,
                     plan.log_delta + plan.eval_mod.log_msg_ratio,
                     plan.mod_up_extra_bits,
@@ -252,6 +253,7 @@ mod tests {
                 .unwrap();
                 assert!(
                     crate::reference::bootstrapping::check_offset_raise(
+                        "replicated_bootstrapping_preset",
                         raised + 1,
                         plan.log_delta + plan.eval_mod.log_msg_ratio,
                         plan.mod_up_extra_bits,

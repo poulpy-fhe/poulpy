@@ -15,7 +15,7 @@ use crate::{
         GGLWEInfos, GLWELayout, LWEInfos, LWEToBackendMut, LWEToBackendRef, Rank, glwe_backend_ref_from_mut,
         prepared::{GGLWEPreparedBackendRef, GGLWEPreparedToBackendRef},
     },
-    oep::LWEKeyswitchReference,
+    reference::keyswitching::LWEKeyswitchReference,
 };
 
 pub fn lwe_keyswitch_tmp_bytes_reference<BE, M, R, A, K>(module: &M, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
@@ -108,7 +108,7 @@ pub fn lwe_keyswitch_reference<BE, M, R, A>(
 
     let glwe_in_ref = glwe_backend_ref_from_mut::<BE>(&glwe_in);
     let glwe_in_view = &glwe_in_ref;
-    crate::reference::keyswitching::glwe::assert_no_row_offset("lwe_keyswitch", &ksk);
+    crate::layouts::assert_no_row_offset("lwe_keyswitch", &ksk);
     module.glwe_keyswitch(&mut glwe_out, &glwe_in_view, &ksk.to_backend_ref(), &mut scratch_2);
 
     let mut res_backend = res.to_backend_mut();

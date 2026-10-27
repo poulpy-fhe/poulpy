@@ -4,21 +4,24 @@
 use poulpy_core::{
     DEFAULT_SIGMA_XE, Distribution, GLWEEncryptPk, GLWEEncryptPkSmudged, GLWEEncryptSk, GLWENoise, GLWEPublicKeyGenerate,
     GetDistributionMut, Noise,
+    api::{GLWEPublicKeyPreparedFactory, GLWESecretPreparedFactory, GLWESecretSampling},
     layouts::{
-        GLWE, GLWELayout, GLWEPlaintext, GLWEPublicKey, GLWEPublicKeyCompressedSeedMut, GLWEPublicKeyPrepared,
-        GLWEPublicKeyPreparedFactory, GLWESecret, GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretSampling, LWEInfos,
-        ModuleCoreAlloc, Rank, TorusPrecision,
+        GLWE, GLWELayout, GLWEPlaintext, GLWEPublicKey, GLWEPublicKeyCompressedSeedMut, GLWEPublicKeyPrepared, GLWESecret,
+        GLWESecretPrepared, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
     },
+    test_suite::with_scratch,
 };
 use poulpy_hal::{
     AlignedBuf,
     api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAddScalarAssign, VecZnxFillUniformSource},
-    layouts::{HostBackend, HostDataMut, HostDataRef, Module, ReaderFrom, ScratchOwned, WriterTo},
+    layouts::{DataViewMut, HostBackend, HostDataMut, HostDataRef, Module, ReaderFrom, ScratchOwned, WriterTo},
     source::Source,
     test_suite::vec_znx_backend_mut,
 };
 
-use super::fixtures::{BASE2K, K, PARTIES, RANK, SEEDS, collective_public_key, ideal_secret, party_secrets};
+use super::fixtures::{
+    BASE2K, K, PARTIES, RANK, SEEDS, assert_short_scratch_panics, collective_public_key, ideal_secret, party_secrets,
+};
 use crate::{api::GLWEPublicKeyMHEProtocol, layouts::MHEModuleAlloc};
 
 pub fn test_glwe_public_key<BE>(module: &Module<BE>)
@@ -47,25 +50,29 @@ where
     let parties = party_secrets(module);
     let sk_ideal = ideal_secret(module, &parties);
     let pk_prepared = collective_public_key(module, &parties, &layout);
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
-        module
-            .glwe_encrypt_pk_tmp_bytes(&layout, &layout)
-            .max(module.glwe_noise_tmp_bytes(&layout))
-            .max(module.mhe_glwe_public_key_share_gen_tmp_bytes(&layout)),
-    );
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.glwe_noise_tmp_bytes(&layout));
 
     // A mismatch in the last entry must be rejected before an earlier entry
     // changes, including its coefficients and the aggregate's provenance.
     let mut acc = module.glwe_public_key_share_alloc_from_infos(&layout);
     let mut share = module.glwe_public_key_share_alloc_from_infos(&layout);
     for (i, dst) in [&mut acc, &mut share].into_iter().enumerate() {
-        module.mhe_glwe_public_key_share_gen(
-            dst,
-            &parties[i].1,
-            SEEDS[0],
-            &mut Source::new([70 + i as u8; 32]),
-            &mut scratch.borrow(),
-        );
+        let gen_bytes = module.mhe_glwe_public_key_share_gen_tmp_bytes(&layout);
+        if i == 0 {
+            let before = dst.clone();
+            let mut source_xe = Source::new([70u8; 32]);
+            // The core generation, the body's only call, checks the same query.
+            assert_short_scratch_panics::<BE>(
+                gen_bytes,
+                "insufficient scratch for compressed GLWE public key generation",
+                |s| module.mhe_glwe_public_key_share_gen(dst, &parties[0].1, SEEDS[0], &mut source_xe, s),
+            );
+            assert!(*dst == before);
+            assert_eq!(source_xe.next_i64(), Source::new([70u8; 32]).next_i64());
+        }
+        with_scratch::<BE, _>(gen_bytes, |s| {
+            module.mhe_glwe_public_key_share_gen(dst, &parties[i].1, SEEDS[0], &mut Source::new([70 + i as u8; 32]), s)
+        });
     }
     share.seed_mut()[RANK.as_usize() - 1][0] ^= 1;
     let unchanged = acc.clone();
@@ -84,14 +91,16 @@ where
         &mut Source::new([30u8; 32]),
     );
     let mut ct: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
-    module.glwe_encrypt_pk(
-        &mut ct,
-        &pt,
-        &pk_prepared,
-        &mut Source::new([31u8; 32]),
-        &mut Source::new([32u8; 32]),
-        &mut scratch.borrow(),
-    );
+    with_scratch::<BE, _>(module.glwe_encrypt_pk_tmp_bytes(&layout, &layout), |s| {
+        module.glwe_encrypt_pk(
+            &mut ct,
+            &pt,
+            &pk_prepared,
+            &mut Source::new([31u8; 32]),
+            &mut Source::new([32u8; 32]),
+            s,
+        )
+    });
 
     super::fixtures::assert_collective_metadata(&ct, PARTIES);
 
@@ -139,14 +148,9 @@ where
     let rank_n = RANK.as_usize() as f64 * module.n() as f64;
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
-            .glwe_encrypt_sk_tmp_bytes(&key_layout)
-            .max(module.glwe_noise_tmp_bytes(&key_layout))
-            .max(module.glwe_encrypt_pk_tmp_bytes(&key_layout, &key_layout))
-            .max(module.glwe_encrypt_pk_smudged_tmp_bytes(&key_layout, &key_layout))
+            .glwe_noise_tmp_bytes(&key_layout)
             .max(module.glwe_public_key_generate_tmp_bytes(&key_layout))
-            .max(module.glwe_public_key_prepare_tmp_bytes(&key_layout))
-            .max(module.mhe_glwe_public_key_share_gen_tmp_bytes(&key_layout))
-            .max(module.mhe_glwe_public_key_share_finalize_tmp_bytes()),
+            .max(module.glwe_public_key_prepare_tmp_bytes(&key_layout)),
     );
 
     for base in [
@@ -172,13 +176,9 @@ where
             let mut prepared: GLWESecretPrepared<AlignedBuf, BE> = module.glwe_secret_prepared_alloc(RANK);
             module.glwe_secret_prepare(&mut prepared, &sk);
             let dst = if i == 0 { &mut aggregate } else { &mut share };
-            module.mhe_glwe_public_key_share_gen(
-                dst,
-                &prepared,
-                SEEDS[0],
-                &mut Source::new([110 + i as u8; 32]),
-                &mut scratch.borrow(),
-            );
+            with_scratch::<BE, _>(module.mhe_glwe_public_key_share_gen_tmp_bytes(&key_layout), |s| {
+                module.mhe_glwe_public_key_share_gen(dst, &prepared, SEEDS[0], &mut Source::new([110 + i as u8; 32]), s)
+            });
             if i > 0 {
                 module.mhe_glwe_public_key_share_aggregate(&mut aggregate, &share);
             }
@@ -195,7 +195,15 @@ where
         decoded.read_from(&mut encoded.as_slice()).unwrap();
         assert!(decoded == aggregate);
         let mut collective: GLWEPublicKey<AlignedBuf, i64> = module.glwe_public_key_alloc_from_infos(&key_layout);
-        module.mhe_glwe_public_key_share_finalize(&mut collective, &decoded, &mut scratch.borrow());
+        let finalize_bytes = module.mhe_glwe_public_key_share_finalize_tmp_bytes();
+        let before: GLWEPublicKey<AlignedBuf, i64> = module.glwe_public_key_alloc_from_infos(&key_layout);
+        assert_short_scratch_panics::<BE>(finalize_bytes, "invalid finalization: insufficient scratch", |s| {
+            module.mhe_glwe_public_key_share_finalize(&mut collective, &decoded, s)
+        });
+        assert!(collective == before);
+        with_scratch::<BE, _>(finalize_bytes, |s| {
+            module.mhe_glwe_public_key_share_finalize(&mut collective, &decoded, s)
+        });
         assert_noise_tag(&collective, base, PARTIES, PARTIES as f64 * sigma2, key_k);
         let mut collective_prepared: GLWEPublicKeyPrepared<AlignedBuf, BE> =
             module.glwe_public_key_prepared_alloc_from_infos(&key_layout);
@@ -226,14 +234,10 @@ where
             let mut source_xe = Source::new([131; 32]);
             let mut source_xa = Source::new([132; 32]);
             let mut source_smudge = Source::new([133; 32]);
-            module.glwe_encrypt_sk(
-                &mut ct,
-                &pt,
-                &secrets[0].1,
-                &mut source_xe,
-                &mut source_xa,
-                &mut scratch.borrow(),
-            );
+            let sk_bytes = module.glwe_encrypt_sk_tmp_bytes(&layout);
+            with_scratch::<BE, _>(sk_bytes, |s| {
+                module.glwe_encrypt_sk(&mut ct, &pt, &secrets[0].1, &mut source_xe, &mut source_xa, s)
+            });
             assert_noise_tag(&ct, base, 1, sigma2, k);
             let mut sk_components = vec![0.0; RANK.as_usize() + 1];
             sk_components[0] = sigma2;
@@ -272,7 +276,10 @@ where
                     rank_n * second * phase_fold * (tau * tau + v_t) + phase_fold * component_rounding + excess;
                 let ordinary = inherited + (mask_error + sigma2) * fresh_scale + tail_and_rounding;
                 let without_body = inherited + mask_error * fresh_scale + tail_and_rounding;
-                module.glwe_encrypt_pk(&mut ct, &pt, pk, &mut source_xu, &mut source_xe, &mut scratch.borrow());
+                let pk_bytes = module.glwe_encrypt_pk_tmp_bytes(&layout, &key_layout);
+                with_scratch::<BE, _>(pk_bytes, |s| {
+                    module.glwe_encrypt_pk(&mut ct, &pt, pk, &mut source_xu, &mut source_xe, s)
+                });
                 assert_noise_tag(&ct, base, parties, ordinary, k);
                 // A single binary secret sets the coherent means the estimate
                 // averages over: one key may sit far from it. The core suite
@@ -281,7 +288,9 @@ where
                     let decrypt_key = if parties == 1 { &secrets[0].1 } else { &collective_secret };
                     let mut measured = 0.0;
                     for _ in 0..32 {
-                        module.glwe_encrypt_pk(&mut ct, &pt, pk, &mut source_xu, &mut source_xe, &mut scratch.borrow());
+                        with_scratch::<BE, _>(pk_bytes, |s| {
+                            module.glwe_encrypt_pk(&mut ct, &pt, pk, &mut source_xu, &mut source_xe, s)
+                        });
                         measured += module
                             .glwe_noise(&ct, &pt, decrypt_key, &mut scratch.borrow())
                             .second_moment();
@@ -302,17 +311,13 @@ where
                     components[0] += inherited;
                     super::fixtures::assert_noise_components(&ct, &components);
                 }
-                module.glwe_encrypt_pk_at_col(
-                    &mut ct,
-                    &zero_pt,
-                    RANK.as_usize(),
-                    pk,
-                    &mut source_xu,
-                    &mut source_xe,
-                    &mut scratch.borrow(),
-                );
+                with_scratch::<BE, _>(pk_bytes, |s| {
+                    module.glwe_encrypt_pk_at_col(&mut ct, &zero_pt, RANK.as_usize(), pk, &mut source_xu, &mut source_xe, s)
+                });
                 assert_noise_tag(&ct, base, parties, ordinary, k);
-                module.glwe_encrypt_zero_pk(&mut ct, pk, &mut source_xu, &mut source_xe, &mut scratch.borrow());
+                with_scratch::<BE, _>(pk_bytes, |s| {
+                    module.glwe_encrypt_zero_pk(&mut ct, pk, &mut source_xu, &mut source_xe, s)
+                });
                 assert_noise_tag(&ct, base, parties, ordinary, k);
                 for (flood, variance) in [
                     // Even the default Gaussian is a flood at `k`, not a body error at `sample`.
@@ -320,16 +325,19 @@ where
                     (Noise::Uniform { bits: 4 }, 21.25),
                     (Noise::Gaussian { sigma: 128.0 }, 16384.0),
                 ] {
-                    module.glwe_encrypt_pk_smudged(
-                        &mut ct,
-                        &pt,
-                        pk,
-                        flood,
-                        &mut source_xu,
-                        &mut source_xe,
-                        &mut source_smudge,
-                        &mut scratch.borrow(),
-                    );
+                    let smudged_bytes = module.glwe_encrypt_pk_smudged_tmp_bytes(&layout, &key_layout);
+                    with_scratch::<BE, _>(smudged_bytes, |s| {
+                        module.glwe_encrypt_pk_smudged(
+                            &mut ct,
+                            &pt,
+                            pk,
+                            flood,
+                            &mut source_xu,
+                            &mut source_xe,
+                            &mut source_smudge,
+                            s,
+                        )
+                    });
                     assert_noise_tag(&ct, base, parties, without_body + variance, k);
                     if extra_bits <= 1 {
                         let mut components = vec![sigma2 * fresh_scale + component_rounding; RANK.as_usize() + 1];
@@ -340,14 +348,9 @@ where
             }
             // Reusing a collective-PK ciphertext for SK encryption must clear
             // both its amplified estimate and its collective party count.
-            module.glwe_encrypt_sk(
-                &mut ct,
-                &pt,
-                &secrets[0].1,
-                &mut source_xe,
-                &mut source_xa,
-                &mut scratch.borrow(),
-            );
+            with_scratch::<BE, _>(sk_bytes, |s| {
+                module.glwe_encrypt_sk(&mut ct, &pt, &secrets[0].1, &mut source_xe, &mut source_xa, s)
+            });
             assert_noise_tag(&ct, base, 1, sigma2, k);
         }
     }
@@ -362,7 +365,7 @@ fn assert_noise_tag(value: &impl LWEInfos, base: Distribution, parties: usize, v
 }
 
 /// Finalizing a share without a samplable distribution panics; a fresh share has `NONE`.
-pub fn test_glwe_public_key_finalize_dist_none<BE>(module: &Module<BE>)
+pub fn test_mhe_glwe_public_key_share_finalize_rejects_dist_none<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
@@ -377,13 +380,18 @@ where
         rank: RANK,
     };
     let share = module.glwe_public_key_share_alloc_from_infos(&layout);
-    let mut pk: GLWEPublicKey<AlignedBuf, i64> = module.glwe_public_key_alloc_from_infos(&layout);
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.mhe_glwe_public_key_share_finalize_tmp_bytes());
-    module.mhe_glwe_public_key_share_finalize(&mut pk, &share, &mut scratch.borrow());
+    let mut pk = dirty_public_key(module, &layout);
+    let before = dirty_public_key(module, &layout);
+    super::fixtures::assert_panics_with("invalid distribution: a public key needs a samplable distribution", || {
+        with_scratch::<BE, _>(module.mhe_glwe_public_key_share_finalize_tmp_bytes(), |s| {
+            module.mhe_glwe_public_key_share_finalize(&mut pk, &share, s)
+        })
+    });
+    assert!(pk == before);
 }
 
 /// Entries sharing a seed share their masks, which makes encryption rank 1 in the ephemerals; a fresh share has zero seeds.
-pub fn test_glwe_public_key_finalize_shared_seed<BE>(module: &Module<BE>)
+pub fn test_mhe_glwe_public_key_share_finalize_rejects_shared_seed<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
@@ -399,9 +407,30 @@ where
     };
     let mut share = module.glwe_public_key_share_alloc_from_infos(&layout);
     *share.dist_mut() = Distribution::TernaryProb(0.5);
-    let mut pk: GLWEPublicKey<AlignedBuf, i64> = module.glwe_public_key_alloc_from_infos(&layout);
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.mhe_glwe_public_key_share_finalize_tmp_bytes());
-    module.mhe_glwe_public_key_share_finalize(&mut pk, &share, &mut scratch.borrow());
+    let mut pk = dirty_public_key(module, &layout);
+    let before = dirty_public_key(module, &layout);
+    super::fixtures::assert_panics_with("invalid finalization: public key entries share a seed", || {
+        with_scratch::<BE, _>(module.mhe_glwe_public_key_share_finalize_tmp_bytes(), |s| {
+            module.mhe_glwe_public_key_share_finalize(&mut pk, &share, s)
+        })
+    });
+    assert!(pk == before);
+}
+
+/// A public key of `layout` holding other content than a finalization writes, the same on every call.
+fn dirty_public_key<BE>(module: &Module<BE>, layout: &GLWELayout) -> GLWEPublicKey<AlignedBuf, i64>
+where
+    BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
+    Module<BE>: MHEModuleAlloc<BE>,
+{
+    let mut pk: GLWEPublicKey<AlignedBuf, i64> = module.glwe_public_key_alloc_from_infos(layout);
+    pk.data_mut()
+        .data_mut()
+        .iter_mut()
+        .enumerate()
+        .for_each(|(i, x)| *x = (i as u8).wrapping_mul(29).wrapping_add(11));
+    *pk.dist_mut() = Distribution::BinaryProb(0.5);
+    pk
 }
 
 /// Reading a share of another rank fails.
@@ -418,18 +447,22 @@ where
 }
 
 /// Aggregating shares of different ranks panics.
-pub fn test_glwe_public_key_aggregate_rank_mismatch<BE>(module: &Module<BE>)
+pub fn test_mhe_glwe_public_key_share_aggregate_rejects_rank_mismatch<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     Module<BE>: MHEModuleAlloc<BE> + GLWEPublicKeyMHEProtocol<BE>,
 {
     let mut a = module.glwe_public_key_share_alloc(BASE2K, K, RANK);
     let b = module.glwe_public_key_share_alloc(BASE2K, K, Rank(1));
-    module.mhe_glwe_public_key_share_aggregate(&mut a, &b);
+    let before = a.clone();
+    super::fixtures::assert_panics_with("invalid aggregation: layouts differ", || {
+        module.mhe_glwe_public_key_share_aggregate(&mut a, &b);
+    });
+    assert!(a == before);
 }
 
 /// Aggregating shares generated under secrets of different distributions panics.
-pub fn test_glwe_public_key_aggregate_dist_mismatch<BE>(module: &Module<BE>)
+pub fn test_mhe_glwe_public_key_share_aggregate_rejects_dist_mismatch<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     Module<BE>: MHEModuleAlloc<BE> + GLWEPublicKeyMHEProtocol<BE>,
@@ -443,11 +476,15 @@ where
     let mut a = module.glwe_public_key_share_alloc_from_infos(&layout);
     let mut b = module.glwe_public_key_share_alloc_from_infos(&layout);
     *b.dist_mut() = Distribution::TernaryProb(0.5);
-    module.mhe_glwe_public_key_share_aggregate(&mut a, &b);
+    let before = a.clone();
+    super::fixtures::assert_panics_with("invalid aggregation: secret distributions differ", || {
+        module.mhe_glwe_public_key_share_aggregate(&mut a, &b);
+    });
+    assert!(a == before);
 }
 
 /// Sharing under a secret without a samplable distribution panics.
-pub fn test_glwe_public_key_gen_secret_none<BE>(module: &Module<BE>)
+pub fn test_mhe_glwe_public_key_share_gen_rejects_secret_none<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
@@ -464,12 +501,20 @@ where
 
     let sk: GLWESecretPrepared<AlignedBuf, BE> = module.glwe_secret_prepared_alloc(RANK);
     let mut res = module.glwe_public_key_share_alloc_from_infos(&layout);
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.mhe_glwe_public_key_share_gen_tmp_bytes(&layout));
-    module.mhe_glwe_public_key_share_gen(&mut res, &sk, SEEDS[0], &mut Source::new([10u8; 32]), &mut scratch.borrow());
+    let before = res.clone();
+    let mut source_xe = Source::new([10u8; 32]);
+    super::fixtures::assert_panics_with("invalid secret: a public key share needs a samplable distribution", || {
+        with_scratch::<BE, _>(module.mhe_glwe_public_key_share_gen_tmp_bytes(&layout), |s| {
+            module.mhe_glwe_public_key_share_gen(&mut res, &sk, SEEDS[0], &mut source_xe, s)
+        })
+    });
+    assert!(res == before);
+    assert_eq!(source_xe.next_i64(), Source::new([10u8; 32]).next_i64());
 }
 
-/// Invalid shapes fail at the protocol boundary with an exact static message.
-pub fn test_glwe_public_key_gen_shape_guards<BE>(module: &Module<BE>)
+/// Generating under a secret of another degree or rank panics before any draw, and the scratch query panics on a
+/// layout of another degree than the module's.
+pub fn test_mhe_glwe_public_key_share_gen_rejects_shape<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     Module<BE>: ModuleNew<BE> + MHEModuleAlloc<BE> + GLWEPublicKeyMHEProtocol<BE> + GLWESecretPreparedFactory<BE>,
@@ -483,28 +528,32 @@ where
     };
 
     let small_module = Module::<BE>::new((module.n() / 2) as u64);
-    let expected = [
-        "invalid share: secret degree differs from the share's",
-        "invalid share: secret rank differs from the share's",
-        "invalid layout: degree differs from the module's",
+    let secrets: [(GLWESecretPrepared<AlignedBuf, BE>, &str); 2] = [
+        (
+            small_module.glwe_secret_prepared_alloc(RANK),
+            "invalid share: secret degree differs from the share's",
+        ),
+        (
+            module.glwe_secret_prepared_alloc(Rank(1)),
+            "invalid share: secret rank differs from the share's",
+        ),
     ];
-    for (case, expected) in expected.into_iter().enumerate() {
+    for (sk, expected) in &secrets {
+        let mut res = module.glwe_public_key_share_alloc_from_infos(&layout);
+        let before = res.clone();
+        let mut source_xe = Source::new([10u8; 32]);
         super::fixtures::assert_panics_with(expected, || {
-            if case == 2 {
-                module.mhe_glwe_public_key_share_gen_tmp_bytes(&GLWELayout {
-                    n: (module.n() / 2).into(),
-                    ..layout
-                });
-                return;
-            }
-            let sk = if case == 0 {
-                small_module.glwe_secret_prepared_alloc(RANK)
-            } else {
-                module.glwe_secret_prepared_alloc(Rank(1))
-            };
-            let mut res = module.glwe_public_key_share_alloc_from_infos(&layout);
-            let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.mhe_glwe_public_key_share_gen_tmp_bytes(&layout));
-            module.mhe_glwe_public_key_share_gen(&mut res, &sk, SEEDS[0], &mut Source::new([10u8; 32]), &mut scratch.borrow());
+            with_scratch::<BE, _>(module.mhe_glwe_public_key_share_gen_tmp_bytes(&layout), |s| {
+                module.mhe_glwe_public_key_share_gen(&mut res, sk, SEEDS[0], &mut source_xe, s)
+            });
         });
+        assert!(res == before);
+        assert_eq!(source_xe.next_i64(), Source::new([10u8; 32]).next_i64());
     }
+    super::fixtures::assert_panics_with("invalid layout: degree differs from the module's", || {
+        module.mhe_glwe_public_key_share_gen_tmp_bytes(&GLWELayout {
+            n: (module.n() / 2).into(),
+            ..layout
+        });
+    });
 }

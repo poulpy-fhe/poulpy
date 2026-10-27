@@ -1,61 +1,18 @@
-use crate::{CKKSResult as Result, ckks_ensure};
-use poulpy_core::{
-    GLWEKeyswitch, GLWEZero,
-    layouts::{Base2K, GLWEToBackendMut, GLWEToBackendRef},
-    reference::keyswitching::glwe::GGLWEProductReference,
-};
-use poulpy_hal::{
-    api::{
-        CnvPVecBytesOf, Convolution, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign,
-        VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApply,
-        VecZnxIdftApplyTmpBytes, VmpApplyDftToDft, VmpApplyDftToDftTmpBytes,
-    },
-    layouts::{Backend, Module, ScratchArena},
-};
+use crate::CKKSResult as Result;
+use poulpy_core::layouts::{Base2K, GLWEToBackendRef};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
     CKKSCtBounds,
-    api::{CKKSAddOps, CKKSConjugateOps, CKKSImagOps, CKKSMulOps, CKKSShipOps, CKKSSubOps, ShipScalar},
-    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, ShipCoeffEncodings, ShipKeysPrepared, ShipPlan},
-    oep::{CKKSEncodingImpl, CKKSShipCoeffEncodingImpl},
-    reference::ship::{
-        bootstrap::{ship_bootstrap_complex_into, ship_bootstrap_into},
-        preflight::ship_bootstrap_tmp_bytes,
-    },
+    api::{CKKSShipOps, ShipScalar},
+    layouts::{CKKSCiphertextOwned, ShipCoeffEncodings, ShipKeysPrepared, ShipPlan},
+    oep::{CKKSEncodingImpl, CKKSShipCoeffEncodingImpl, CKKSShipImpl},
 };
 
 impl<BE, F> CKKSShipOps<BE, F> for Module<BE>
 where
-    BE: Backend + CKKSShipCoeffEncodingImpl + CKKSEncodingImpl<F>,
+    BE: Backend + CKKSShipImpl + CKKSShipCoeffEncodingImpl + CKKSEncodingImpl<F>,
     F: ShipScalar,
-    Module<BE>: CKKSMulOps<BE>
-        + GGLWEProductReference<BE>
-        + poulpy_hal::api::VecZnxGadgetDecompose<BE>
-        + poulpy_hal::api::VecZnxGadgetDecomposeTmpBytes
-        + CKKSAddOps<BE>
-        + CKKSSubOps<BE>
-        + CKKSImagOps<BE>
-        + CKKSConjugateOps<BE>
-        + CKKSModuleAlloc<BE>
-        + GLWEKeyswitch<BE>
-        + GLWEZero<BE>
-        + Convolution<BE>
-        + CnvPVecBytesOf
-        + VecZnxDftApply<BE>
-        + VecZnxDftZero<BE>
-        + VecZnxDftCopy<BE>
-        + VecZnxDftAddAssign<BE>
-        + VecZnxDftAutomorphism<BE>
-        + VecZnxIdftApply<BE>
-        + VecZnxIdftApplyTmpBytes
-        + VecZnxBigNormalize<BE>
-        + VmpApplyDftToDft<BE>
-        + VecZnxDftBytesOf
-        + VecZnxBigBytesOf
-        + VmpApplyDftToDftTmpBytes
-        + VecZnxBigNormalizeTmpBytes,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
 {
     fn ckks_ship_bootstrap_tmp_bytes<Src>(
         &self,
@@ -66,31 +23,25 @@ where
     where
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        ship_bootstrap_tmp_bytes::<BE, F, _>(self, output, input, keys)
+        BE::ckks_ship_bootstrap_tmp_bytes::<F, Src>(self, output, input, keys)
     }
 
-    fn ckks_ship_coeff_encodings_tmp_bytes(&self, plan: &ShipPlan, base2k: Base2K, complex: bool) -> Result<usize> {
-        BE::ckks_ship_coeff_encodings_tmp_bytes_impl::<F>(self, plan, base2k, complex)
+    fn ckks_ship_coeff_encodings_tmp_bytes(&self, base2k: Base2K, complex: bool, plan: &ShipPlan) -> Result<usize> {
+        BE::ckks_ship_coeff_encodings_tmp_bytes::<F>(self, base2k, complex, plan)
     }
 
     fn ckks_ship_coeff_encodings<Src>(
         &self,
-        ciphertext: &Src,
-        plan: &ShipPlan,
         base2k: Base2K,
         complex: bool,
+        ciphertext: &Src,
+        plan: &ShipPlan,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<ShipCoeffEncodings<BE::OwnedBuf, BE::ZnxWord>>
     where
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        let required = BE::ckks_ship_coeff_encodings_tmp_bytes_impl::<F>(self, plan, base2k, complex)?;
-        ckks_ensure!(
-            scratch.available() >= required,
-            "SHIP coefficient encoding needs {required} scratch bytes, but only {} are available",
-            scratch.available()
-        );
-        BE::ckks_ship_coeff_encodings_impl::<F, Src>(self, ciphertext, plan, base2k, complex, scratch)
+        BE::ckks_ship_coeff_encodings::<F, Src>(self, base2k, complex, ciphertext, plan, scratch)
     }
 
     fn ckks_ship_bootstrap_into<Src>(
@@ -104,7 +55,7 @@ where
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
         crate::reference::mul::ensure_full_layout("ckks_ship_bootstrap_into", crate::GLWEPlaintextInfos::slot_layout(input))?;
-        ship_bootstrap_into::<BE, F, _>(self, output, input, keys, scratch)
+        BE::ckks_ship_bootstrap_into::<F, Src>(self, output, input, keys, scratch)
     }
 
     fn ckks_ship_bootstrap_complex_into<Src>(
@@ -121,6 +72,6 @@ where
             "ckks_ship_bootstrap_complex_into",
             crate::GLWEPlaintextInfos::slot_layout(input),
         )?;
-        ship_bootstrap_complex_into::<BE, F, _>(self, output, input, keys, scratch)
+        BE::ckks_ship_bootstrap_complex_into::<F, Src>(self, output, input, keys, scratch)
     }
 }
