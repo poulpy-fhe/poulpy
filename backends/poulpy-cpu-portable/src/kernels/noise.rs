@@ -131,6 +131,26 @@ fn cumulative_table(sigma: f64) -> Vec<u128> {
     }
 }
 
+/// `floor(2^128 P(|z| <= i))` for `i < floor(6 sigma)`, the cumulative table of
+/// the discrete Gaussian of `sigma` truncated at six sigma, certified as
+/// [`add_noise_portable`] samples it. A device backend scanning the same
+/// table draws the same law.
+///
+/// # Panics
+///
+/// Panics unless `sigma` is finite, at least 1 and `floor(6 sigma) <= 64`.
+pub fn gaussian_cumulative_table_portable(sigma: f64) -> Vec<u128> {
+    let noise = Noise::Gaussian { sigma };
+    noise.validate();
+    let (_, _, bound) = Noise::gaussian_parts(sigma);
+    assert!(bound <= UBig::from(64u8), "the cumulative table serves bounds up to 64");
+    if noise == Noise::ENCRYPTION {
+        ENCRYPTION_CDT.to_vec()
+    } else {
+        cumulative_table(sigma)
+    }
+}
+
 // ponytail: one table per thread, for the last sigma; key a map by sigma if callers alternate.
 fn gaussian_table(sigma: f64) -> Rc<[u128]> {
     thread_local!(static LAST: RefCell<Option<(u64, Rc<[u128]>)>> = const { RefCell::new(None) });
@@ -294,6 +314,44 @@ fn bernoulli_exp<T: Exact>(num: &T, den: &T, source: &mut Source) -> bool {
     bernoulli_exp_unit(&num.rem(den), den, source)
 }
 
+/// The integers of the exact rejection sampler of a Gaussian of bound above
+/// 64 (Canonne, Kamath and Steinke (2020), Algorithm 3), as
+/// [`add_noise_portable`] draws it: `sigma = num / den`, the support bound
+/// `floor(6 sigma)`, `t = floor(sigma) + 1`, the variance `num^2 / den^2` and
+/// the denominator `2 num^2 den^2 t^2` of the acceptance test.
+pub struct RejectionConstants {
+    pub t: UBig,
+    pub bound: UBig,
+    pub variance_num: UBig,
+    pub variance_den: UBig,
+    pub acceptance_den: UBig,
+}
+
+impl RejectionConstants {
+    /// The largest integer the sampler forms while the indices of its
+    /// Bernoulli series stay below `2^series_bits`.
+    pub fn largest(&self, series_bits: usize) -> UBig {
+        let difference = &self.bound * &self.t * &self.variance_den + &self.variance_num;
+        (&difference * &difference).max(&self.acceptance_den << series_bits)
+    }
+}
+
+/// The [`RejectionConstants`] of the Gaussian of `sigma`.
+pub fn gaussian_rejection_constants_portable(sigma: f64) -> RejectionConstants {
+    let (num, den, bound) = Noise::gaussian_parts(sigma);
+    let t = &num / &den + 1u8;
+    let variance_num = &num * &num;
+    let variance_den = &den * &den;
+    let acceptance_den = &variance_num * &variance_den * &t * &t * 2u8;
+    RejectionConstants {
+        t,
+        bound,
+        variance_num,
+        variance_den,
+        acceptance_den,
+    }
+}
+
 struct RejectionGaussian<T> {
     variance_num: T,
     variance_den: T,
@@ -305,23 +363,17 @@ struct RejectionGaussian<T> {
 impl<T: Exact> RejectionGaussian<T> {
     /// `None` when an intermediate product may not fit `T`.
     fn new(sigma: f64) -> Option<Self> {
-        let (num, den, bound) = Noise::gaussian_parts(sigma);
-        let t = &num / &den + 1u8;
-        let variance_num = &num * &num;
-        let variance_den = &den * &den;
-        let acceptance_den = &variance_num * &variance_den * &t * &t * 2u8;
+        let constants = gaussian_rejection_constants_portable(sigma);
         // Every product stays below `largest` while Bernoulli series indices
         // are at most 2^8. Larger indices, reached with probability below
         // 1/256!, take the exact `UBig` fallback of `bernoulli_exp_unit`.
-        let difference = &bound * &t * &variance_den + &variance_num;
-        let largest = (&difference * &difference).max(&acceptance_den << 8);
-        T::from_exact(&largest)?;
+        T::from_exact(&constants.largest(8))?;
         Some(Self {
-            variance_num: T::from_exact(&variance_num)?,
-            variance_den: T::from_exact(&variance_den)?,
-            t: T::from_exact(&t)?,
-            bound: T::from_exact(&bound)?,
-            acceptance_den: T::from_exact(&acceptance_den)?,
+            variance_num: T::from_exact(&constants.variance_num)?,
+            variance_den: T::from_exact(&constants.variance_den)?,
+            t: T::from_exact(&constants.t)?,
+            bound: T::from_exact(&constants.bound)?,
+            acceptance_den: T::from_exact(&constants.acceptance_den)?,
         })
     }
 

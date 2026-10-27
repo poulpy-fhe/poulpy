@@ -23,8 +23,9 @@ use poulpy_hal::{
 /// add-one/sub-one facades.
 ///
 /// Each call allocates and uploads a degree-1, single-limb monomial. The
-/// unit-operation scratch query covers the arithmetic workspace.
-pub(crate) fn ckks_one_pt<BE, M>(module: &M, base2k: Base2K) -> Result<CKKSPlaintextOwned<BE>>
+/// unit-operation scratch query covers the arithmetic workspace. A backend
+/// that keeps the constant builds it here, once per module and radix.
+pub fn ckks_one_pt<BE, M>(module: &M, base2k: Base2K) -> Result<CKKSPlaintextOwned<BE>>
 where
     BE: Backend,
     M: CKKSModuleAlloc<BE> + ?Sized,

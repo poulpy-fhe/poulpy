@@ -52,6 +52,7 @@
 
 ### CPU backends
 
+- `poulpy-cpu-portable` exports `kernels::noise::gaussian_cumulative_table_portable` and `gaussian_rejection_constants_portable`, the cumulative table and the rejection constants its Gaussian samplers draw with, which the GPU backend samples by.
 - **Breaking:** `impl_cpu_core_defaults!` registers the core trace on both rings, where each standard backend registered it apart: an out-of-tree backend calling it drops its own `impl_glwe_trace_derived_full!`, which now conflicts.
 - `conjugate_invariant_core_test_suite!` also runs `test_glwe_trace_parity`.
 - `impl_cpu_ckks_defaults!` selects poulpy-ckks's inner sum and replicate reference, `impl_ckks_inner_sum_reference_full!`, through `impl_ckks_reference_full!`.
@@ -172,6 +173,7 @@
 
 ### `poulpy-core`
 
+- Add `ModuleCoreAlloc::glwe_host_alloc_from_infos`, a zeroed host GLWE of a layout allocated through a module of any backend, for the host copies of host-staged operations.
 - Add the evaluation of BSGS linear transformations with the keys of power-of-two rotations only (`LinearTransformationStrategy::BsgsPowersOfTwo`, `BsgsRotations::PowersOfTwo`, with `BsgsRotations::giant_key_switches`): the baby rotations come from doubling passes, whose sources share the pass's key and are switched a task each on a parallel executor, and the giant steps are summed as a binary tree over the two's-complement digits of their index, each level switching with one key.
   For the baby steps `0..n1` and contiguous giant digits, the key switches are as many as with a key per rotation, up to one more per level of the tree, the keys about `log2(n1) + log2(n2)` instead of `n1 + n2`, and a product goes through more switches.
   The doubling and the tree carve their buffers from the scratch, which the queries count from the plan they take: a tree holds a buffer per giant step and at most one per key switch.
@@ -378,6 +380,8 @@
 
 ### `poulpy-ckks`
 
+- **Behaviour:** `test_suite::presets::bootstrapping_presets_meet_precision` and its client form also run each preset with the keys of power-of-two rotations only (`BootstrappingPreset::with_power_of_two_keys`).
+- Add `layouts::ckks_one_pt`, the constant-`1.0` plaintext of the add-one and sub-one operations, for a backend that caches it.
 - Add `DFTPlan::with_power_of_two_keys` and `BootstrappingPreset::with_power_of_two_keys`, the transforms evaluated with the keys of power-of-two rotations only (`BsgsPowersOfTwo`): `n16_d35_k685_p19_s2c_ffr_ci` takes 21 rotation keys instead of 35, 3419 MiB instead of 5149, at the same widths.
   The preset keeps a key per rotation.
   `preset_label` marks it `+pow2`, and `small_s2c_preset_meets_precision` runs it on both rings.
@@ -768,6 +772,15 @@
 - Add the full-size bootstrapping preset precision test for `NTT4x30NeonRayon`.
 - Add the full-size bootstrapping preset precision test of `NTT4x30Neon` and `NTT4x30CINeon` with keys and ciphertexts from an `NTT4x30Portable` client.
 
+### `poulpy-gpu-portable`
+
+- New crate: the `NTT4x30` subfamily on GPUs through CubeCL 0.11, bit-identical to `NTT4x30Portable`, for both rings.
+  One implementation behind `NTT4x30Cuda`, `NTT4x30Hip` and `NTT4x30Wgpu` (`enable-cuda`, `enable-hip`, `enable-metal`, `enable-vulkan`, `enable-wgpu`), with `enable-core` and `enable-ckks`.
+  CKKS encoding and decoding, the uniform fill of a coefficient column and the normalizations at radices above 62 bits are staged through the host, and everything else runs on the device, sampling included.
+  `Replay` records a repeated sequence of calls and replays it as one graph.
+  `handle` reaches a module's `GpuHandle`, which sets the convolution capacity step (`set_convolution_capacity_step`).
+  See `docs/guides/backends.md`.
+
 ### `poulpy-bench`
 
 - Add the `libm` layer: `runner_ckks_exp`, `runner_ckks_log` and `runner_ckks_pow` over `default_bench_params_libm`, in the `libm_ops` table, with `bench_libm` in the full, standard and light tiers, which the tier binaries of `poulpy-cpu-portable`, `poulpy-cpu-avx`, `poulpy-cpu-avx512` and `poulpy-cpu-arm` register on their NTT backend.
@@ -778,12 +791,15 @@
 - **Breaking:** `hal::suites::bench_normalization` requires `VecZnxGadgetDecompose` and `VecZnxGadgetDecomposeTmpBytes`, and also sweeps `vec_znx_gadget_decompose` over the 27-limb key-switch columns of a bootstrap at radix 53 (`runner_vec_znx_gadget_decompose`, `GadgetDecomposeSweepParams`, `default_bench_params_gadget_decompose`).
 - Every timed closure of the HAL, core and scheme runners ends with `Module::synchronize`, so a backend that queues its work is timed to completion.
 - The HAL, core and CKKS runners and suites no longer bound `OwnedBuf = AlignedBuf` or host buffer views, except `bench_ckks_bootstrapping`, whose client stages the keys on the host; the bin-fhe ones still do.
-- Add `bench_ckks_bootstrapping_with_client`.
+- Add `bench_ckks_bootstrapping_with_client`, and `bench_ckks_bootstrapping_replayed_with_client`, which times the replays of a bootstrap recorded through a closure the backend passes.
+- **Behaviour:** the bootstrapping runners also run each preset with the keys of power-of-two rotations only (`BootstrappingPreset::with_power_of_two_keys`), under the preset's name with a `+pow2` suffix (`test_suite::presets::preset_label`), so a filter on a preset name selects both.
 - **Breaking:** `bench_ckks_bootstrapping` requires `PresetRunModule`, `HostStaged` and `CKKSDFTOps`.
 
 ### Dependencies
 
 - Lock `chacha20`, a dependency of `rand`, at 0.10.2, as 0.10.0 is yanked.
+- `poulpy-gpu-portable` depends on `cubecl` and `cubecl-environment`, pinned at 0.11.3, and on `pollster` 0.4.0.
+- The lock bumps `cc` from 1.2.57 to 1.9.0, `bitflags` from 2.11.0 to 2.13.2 and `wasm-bindgen` from 0.2.99 to 0.2.129, with the CubeCL dependencies.
 
 ## [0.9.0] - 2026-10-08
 

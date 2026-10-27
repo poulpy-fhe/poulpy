@@ -508,7 +508,9 @@ where
     }
 }
 
-/// Runs every preset once on `BE` and checks the measured output precision
+/// Runs every preset once on `BE`, and once more with the keys of power-of-two
+/// rotations only ([`BootstrappingPreset::with_power_of_two_keys`]), and
+/// checks the measured output precision
 /// against the precision the preset advertises, and that its keys are refused
 /// at entry past their width. The twin [`CIBackend`] runs EvalMod for the presets that put it on
 /// the conjugate-invariant ring. The first preset also round-trips every
@@ -570,19 +572,25 @@ where
     let backend = std::any::type_name::<BE>().rsplit("::").next().unwrap();
     // The keys of the first preset of each ring go through their serialization.
     let mut first_ci = true;
-    for (index, preset) in all().unwrap().into_iter().enumerate() {
-        let ring = preset.plan().eval_mod_ring();
-        let preset = preset_for_backend::<BE, CIBackend<BE>>(&preset).unwrap();
-        match ring {
-            EvalModRing::Standard => BootstrappingPresetRun::<BE, BC>::setup_with_roundtrip(preset, index == 0).check(backend),
-            _ => BootstrappingPresetRun::<BE, BC>::setup_ci_with_roundtrip(preset, std::mem::take(&mut first_ci)).check(backend),
+    for (index, nominal) in all().unwrap().into_iter().enumerate() {
+        let ring = nominal.plan().eval_mod_ring();
+        // Each preset, then its variant with the keys of power-of-two rotations only.
+        for preset in [nominal.clone(), nominal.with_power_of_two_keys().unwrap()] {
+            let roundtrip = index == 0 && !preset.plan().coeffs_to_slots().power_of_two_keys();
+            let preset = preset_for_backend::<BE, CIBackend<BE>>(&preset).unwrap();
+            match ring {
+                EvalModRing::Standard => BootstrappingPresetRun::<BE, BC>::setup_with_roundtrip(preset, roundtrip).check(backend),
+                _ => BootstrappingPresetRun::<BE, BC>::setup_ci_with_roundtrip(preset, std::mem::take(&mut first_ci))
+                    .check(backend),
+            }
         }
     }
 }
 
 /// The preset's name, marked with the variants that keep it: `+erp` with
 /// EvalRound+ ([`BootstrappingPreset::with_eval_round_plus`]), `+fold_u` with
-/// `u` folded into CoeffsToSlots ([`CIConversion::Folded`]).
+/// `u` folded into CoeffsToSlots ([`CIConversion::Folded`]), `+pow2` with the
+/// keys of power-of-two rotations only ([`BootstrappingPreset::with_power_of_two_keys`]).
 pub fn preset_label(preset: &BootstrappingPreset) -> String {
     let mut label = preset.name().to_string();
     if preset.plan().coeffs_to_slots_bypass().is_some() {
