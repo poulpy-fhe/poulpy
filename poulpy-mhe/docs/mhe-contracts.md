@@ -5,18 +5,16 @@ Public `api` traits follow the [layering contract](../../docs/guides/layering-co
 
 ## Public API organization
 
-`api::pat` holds one trait per PAT type with its operations, `api::public_key`
-the collective public key protocol, `api::evaluation_key` the collective
-switching and automorphism key protocols, `api::keyswitch` the collective key
-switching protocols, `api::tensor_key` the collective tensor key protocol,
-`api::ggsw` the collective GGSW protocol and `api::sharing` the
-encryption-to-shares and shares-to-encryption protocols. A protocol
+The `api` traits cover the PAT types and their operations, the collective
+public key, switching and automorphism key, key switching, tensor key and GGSW
+protocols, and the encryption-to-shares and shares-to-encryption protocols, all
+at the single path `poulpy_mhe::api` (also re-exported at the crate root). A protocol
 trait, named
 `*MHEProtocol`, holds `mhe_*_share_gen`, `mhe_*_share_aggregate` and
 `mhe_*_share_finalize` on the protocol's share type; the prefix keeps them apart
-from core's operations. All are re-exported by `api` and the crate root. Every
+from core's operations. Every
 operation that takes caller scratch has a matching `_tmp_bytes` query in the
-same trait.
+same trait, and panics before any draw or write when given less.
 
 ## Operation map
 
@@ -193,14 +191,29 @@ certify a security level, and neither can statistical tests.
 ## Replacing an operation
 
 An override reproduces the reference, its seed and layout checks included,
-as the [layering contract](../../docs/guides/layering-contract.md) states; the parity suite arrives with the
-first override.
-`impl_mhe_reference_full!` selects every family; select
-`impl_mhe_pat_reference!`, which covers every PAT type,
-`impl_mhe_public_key_reference!`, `impl_mhe_evaluation_key_reference!`,
-`impl_mhe_tensor_key_reference!`, `impl_mhe_ggsw_reference!`, `impl_mhe_keyswitch_reference!` or
-`impl_mhe_sharing_reference!` alone when replacing another one. The
-reference traits stay callable from an override.
+as the [layering contract](../../docs/guides/layering-contract.md) states.
+`mhe_parity_test_suite!(mod <name>, backend_ref = R, backend_test = T)`
+checks a backend bit for bit against a validated one: each protocol's shares,
+aggregates and finalized output and each PAT type's aggregation and
+finalization, with their layouts, noise estimates, flags, seeds and the draws
+left in every private stream. Fixtures are built on `R` and transferred to
+`T`, each call runs on its own query's scratch, and a controlled-sampling
+comparison backend copies `T`'s draws when their samplers differ. Every backend
+type registering mhe runs it; the comparison backends also run
+`mhe_backend_test_suite!`.
+`impl_mhe_reference_full!` selects every family. Each OEP trait has its own
+opt-in, `impl_<family>_reference_full!` with `<family>` the trait in snake case
+without `Impl`; a backend replacing one family selects the others alone:
+`impl_glwe_pat_compressed_reference_full!`, `impl_gglwe_pat_compressed_reference_full!`,
+`impl_gglwe_pat_reference_full!`, `impl_glwe_public_key_mhe_protocol_reference_full!`,
+`impl_glwe_switching_key_mhe_protocol_reference_full!`,
+`impl_glwe_automorphism_key_mhe_protocol_reference_full!`,
+`impl_glwe_tensor_key_mhe_protocol_reference_full!`, `impl_ggsw_mhe_protocol_reference_full!`,
+`impl_glwe_private_keyswitch_mhe_protocol_reference_full!`,
+`impl_glwe_public_keyswitch_mhe_protocol_reference_full!`,
+`impl_glwe_enc_to_share_mhe_protocol_reference_full!` and
+`impl_glwe_share_to_enc_mhe_protocol_reference_full!`. The reference traits
+stay callable from an override.
 
 ## Workspace
 

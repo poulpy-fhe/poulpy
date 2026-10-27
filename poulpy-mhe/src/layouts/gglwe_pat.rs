@@ -1,10 +1,13 @@
 use std::fmt;
 
-use poulpy_core::layouts::{
-    Base2K, Degree, Dnum, GGLWE, GGLWEBackendMut, GGLWEBackendRef, GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GLWEInfos,
-    LWEInfos, Rank, TorusPrecision,
+use poulpy_core::{
+    TransferInto,
+    layouts::{
+        Base2K, Degree, Dnum, GGLWE, GGLWEBackendMut, GGLWEBackendRef, GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef,
+        GLWEInfos, LWEInfos, Rank, TorusPrecision,
+    },
 };
-use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, WriterTo, ZnxWord};
+use poulpy_hal::layouts::{Backend, CopyFromHost, CopyToHost, Data, HostDataMut, HostDataRef, ReaderFrom, WriterTo, ZnxWord};
 
 pub type GGLWEPatOwned<BE> = GGLWEPat<<BE as Backend>::OwnedBuf, <BE as Backend>::ZnxWord>;
 
@@ -126,5 +129,16 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GGLWEPat<D, W> {
 impl<D: HostDataRef, W: ZnxWord> WriterTo for GGLWEPat<D, W> {
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
         self.inner.write_to(writer)
+    }
+}
+
+impl<D1, D2, W> TransferInto<GGLWEPat<D2, W>> for GGLWEPat<D1, W>
+where
+    D1: Data + CopyToHost,
+    D2: Data + CopyFromHost,
+    W: ZnxWord,
+{
+    fn transfer_into(&self, dst: &mut GGLWEPat<D2, W>) {
+        self.inner.transfer_into(&mut dst.inner);
     }
 }

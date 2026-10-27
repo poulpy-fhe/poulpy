@@ -10,6 +10,7 @@ use poulpy_core::{
         GLWEPlaintextLayout, GLWESecret, LWEInfos, ModuleCoreAlloc, TorusPrecision,
         compressed::{GGLWECompressedSeedMut, GLWECompressedSeedMut, GLWECompressedToBackendMut},
     },
+    test_suite::with_scratch,
 };
 use poulpy_hal::{
     AlignedBuf,
@@ -19,7 +20,8 @@ use poulpy_hal::{
 };
 
 use super::fixtures::{
-    BASE2K, K, PARTIES, RANK, SEEDS, collective_public_key, gglwe_layout, ideal_secret, party_messages, party_secrets, secret_sum,
+    BASE2K, K, PARTIES, RANK, SEEDS, assert_panics_with, assert_short_scratch_panics, collective_public_key, gglwe_layout,
+    ideal_secret, party_messages, party_secrets, secret_sum,
 };
 use crate::{
     api::{GGLWEPatCompressedOps, GGLWEPatOps, GLWEPatCompressedOps, GLWEPublicKeyMHEProtocol},
@@ -86,7 +88,6 @@ where
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
             .glwe_compressed_encrypt_sk_tmp_bytes(&layout)
-            .max(module.glwe_pat_compressed_finalize_tmp_bytes())
             .max(module.glwe_noise_tmp_bytes(&layout)),
     );
 
@@ -118,7 +119,13 @@ where
     assert!(acc == before);
 
     let mut res: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
-    module.glwe_pat_compressed_finalize(&mut res, &acc, &mut scratch.borrow());
+    let finalize_bytes = module.glwe_pat_compressed_finalize_tmp_bytes();
+    let before = res.clone();
+    assert_short_scratch_panics::<BE>(finalize_bytes, "invalid finalization: insufficient scratch", |s| {
+        module.glwe_pat_compressed_finalize(&mut res, &acc, s)
+    });
+    assert!(res == before);
+    with_scratch::<BE, _>(finalize_bytes, |s| module.glwe_pat_compressed_finalize(&mut res, &acc, s));
     super::fixtures::assert_collective_metadata(&res, PARTIES);
     assert!(res.is_canonical());
     let noise: f64 = module
@@ -151,7 +158,6 @@ where
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
             .gglwe_compressed_encrypt_sk_tmp_bytes(&layout)
-            .max(module.gglwe_pat_compressed_finalize_tmp_bytes())
             .max(module.gglwe_noise_tmp_bytes(&layout)),
     );
 
@@ -167,7 +173,13 @@ where
     }
 
     let mut res: GGLWE<AlignedBuf, i64> = module.gglwe_alloc_from_infos(&layout);
-    module.gglwe_pat_compressed_finalize(&mut res, &acc, &mut scratch.borrow());
+    let finalize_bytes = module.gglwe_pat_compressed_finalize_tmp_bytes();
+    let before = res.clone();
+    assert_short_scratch_panics::<BE>(finalize_bytes, "invalid finalization: insufficient scratch", |s| {
+        module.gglwe_pat_compressed_finalize(&mut res, &acc, s)
+    });
+    assert!(res == before);
+    with_scratch::<BE, _>(finalize_bytes, |s| module.gglwe_pat_compressed_finalize(&mut res, &acc, s));
     super::fixtures::assert_collective_metadata(&res, PARTIES);
     assert_gglwe_noise(module, &res, &pt_want, &sk_ideal, &mut scratch);
 }
@@ -213,7 +225,6 @@ where
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
             .glwe_encrypt_pk_tmp_bytes(&pk_layout, &pk_layout)
-            .max(module.gglwe_pat_finalize_tmp_bytes())
             .max(module.glwe_noise_tmp_bytes(&pk_layout)),
     );
 
@@ -256,7 +267,7 @@ where
         if i == 1 {
             // Backend borrows stand in for the owned PATs. A mutable borrow
             // carries no tag, so the owner is stamped afterwards.
-            let metadata = crate::reference::aggregate_common_key_metadata(acc.noise(), share.noise(), module.n());
+            let metadata = crate::metadata::aggregate_common_key_metadata(acc.noise(), share.noise(), module.n());
             module.gglwe_pat_aggregate_assign(&mut acc.to_backend_mut(), &share.to_backend_ref());
             GGLWEToBackendMut::<BE>::set_noise(&mut acc, metadata);
         } else if i > 1 {
@@ -265,7 +276,13 @@ where
     }
 
     let mut res: GGLWE<AlignedBuf, i64> = module.gglwe_alloc_from_infos(&layout);
-    module.gglwe_pat_finalize(&mut res, &acc, &mut scratch.borrow());
+    let finalize_bytes = module.gglwe_pat_finalize_tmp_bytes();
+    let before = res.clone();
+    assert_short_scratch_panics::<BE>(finalize_bytes, "invalid finalization: insufficient scratch", |s| {
+        module.gglwe_pat_finalize(&mut res, &acc, s)
+    });
+    assert!(res == before);
+    with_scratch::<BE, _>(finalize_bytes, |s| module.gglwe_pat_finalize(&mut res, &acc, s));
     super::fixtures::assert_collective_metadata(&res, PARTIES);
     // The public key test variance, times PARTIES independent encryptions.
     let n = module.n() as f64;
@@ -288,7 +305,7 @@ where
 }
 
 /// Aggregating shares drawn under different seeds panics.
-pub fn test_pat_aggregate_seed_mismatch<BE>(module: &Module<BE>)
+pub fn test_glwe_pat_compressed_aggregate_assign_rejects_seed_mismatch<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     Module<BE>: MHEModuleAlloc<BE> + GLWEPatCompressedOps<BE>,
@@ -297,11 +314,15 @@ where
     let mut b = module.glwe_pat_compressed_alloc(BASE2K, K, RANK);
     *a.seed_mut() = SEEDS[0];
     *b.seed_mut() = SEEDS[1];
-    module.glwe_pat_compressed_aggregate_assign(&mut a, &b);
+    let before = a.clone();
+    assert_panics_with("invalid aggregation: seeds differ", || {
+        module.glwe_pat_compressed_aggregate_assign(&mut a, &b);
+    });
+    assert!(a == before);
 }
 
 /// Aggregating GGLWE shares drawn under different seeds panics.
-pub fn test_gglwe_pat_compressed_aggregate_seed_mismatch<BE>(module: &Module<BE>)
+pub fn test_gglwe_pat_compressed_aggregate_assign_rejects_seed_mismatch<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     Module<BE>: MHEModuleAlloc<BE> + GGLWEPatCompressedOps<BE>,
@@ -310,22 +331,30 @@ where
     let mut a = module.gglwe_pat_compressed_alloc_from_infos(&layout);
     let mut b = module.gglwe_pat_compressed_alloc_from_infos(&layout);
     b.seed_mut()[0] = SEEDS[1];
-    module.gglwe_pat_compressed_aggregate_assign(&mut a, &b);
+    let before = a.clone();
+    assert_panics_with("invalid aggregation: seeds differ", || {
+        module.gglwe_pat_compressed_aggregate_assign(&mut a, &b);
+    });
+    assert!(a == before);
 }
 
 /// Aggregating PATs of different layouts panics.
-pub fn test_pat_aggregate_layout_mismatch<BE>(module: &Module<BE>)
+pub fn test_glwe_pat_compressed_aggregate_assign_rejects_layout_mismatch<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     Module<BE>: MHEModuleAlloc<BE> + GLWEPatCompressedOps<BE>,
 {
     let mut a = module.glwe_pat_compressed_alloc(BASE2K, K, RANK);
     let b = module.glwe_pat_compressed_alloc(BASE2K, TorusPrecision(K.0 + BASE2K.0), RANK);
-    module.glwe_pat_compressed_aggregate_assign(&mut a, &b);
+    let before = a.clone();
+    assert_panics_with("invalid aggregation: layouts differ", || {
+        module.glwe_pat_compressed_aggregate_assign(&mut a, &b);
+    });
+    assert!(a == before);
 }
 
 /// Finalizing a PAT into a target of a different layout panics.
-pub fn test_pat_finalize_layout_mismatch<BE>(module: &Module<BE>)
+pub fn test_glwe_pat_compressed_finalize_rejects_layout_mismatch<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
@@ -340,8 +369,13 @@ where
         k: TorusPrecision(K.0 + BASE2K.0),
         rank: RANK,
     });
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.glwe_pat_compressed_finalize_tmp_bytes());
-    module.glwe_pat_compressed_finalize(&mut res, &pat, &mut scratch.borrow());
+    let before = res.clone();
+    assert_panics_with("invalid finalization: layouts differ", || {
+        with_scratch::<BE, _>(module.glwe_pat_compressed_finalize_tmp_bytes(), |s| {
+            module.glwe_pat_compressed_finalize(&mut res, &pat, s)
+        });
+    });
+    assert!(res == before);
 }
 
 /// Every entry of `ct` decrypts to `pt_want` under `sk` within [`aggregate_noise_bound`].

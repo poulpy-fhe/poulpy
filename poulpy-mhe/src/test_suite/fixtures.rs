@@ -298,6 +298,23 @@ pub(crate) fn assert_flooded_integers(got: &[i64], want: &[i64], sigma: f64, oth
     );
 }
 
+/// Every field of a plaintext that a refused call must leave alone; the canonical flag is always set on a plaintext and is not stored.
+pub(crate) fn plaintext_state(
+    pt: &GLWEPlaintext<AlignedBuf, i64>,
+) -> (
+    poulpy_hal::layouts::VecZnx<AlignedBuf, i64>,
+    TorusPrecision,
+    Base2K,
+    Option<poulpy_core::layouts::GLWEPlaintextMeta>,
+) {
+    (
+        pt.data().clone(),
+        pt.k(),
+        pt.base2k(),
+        poulpy_core::layouts::GLWEPlaintextInfos::plaintext_meta(pt),
+    )
+}
+
 /// Assert a protocol boundary rejects a layout with the exact static message.
 pub(crate) fn assert_panics_with(expected: &str, f: impl FnOnce()) {
     let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).expect_err("expected a layout rejection");
@@ -306,6 +323,17 @@ pub(crate) fn assert_panics_with(expected: &str, f: impl FnOnce()) {
         .copied()
         .or_else(|| panic.downcast_ref::<String>().map(String::as_str));
     assert_eq!(message, Some(expected));
+}
+
+/// Runs `call` one byte below its query `bytes`, expecting `expected`; a zero query has no shorter arena.
+pub(crate) fn assert_short_scratch_panics<BE: Backend>(
+    bytes: usize,
+    expected: &str,
+    call: impl FnOnce(&mut poulpy_hal::layouts::ScratchArena<'_, BE>),
+) {
+    if let Some(short) = bytes.checked_sub(1) {
+        assert_panics_with(expected, || poulpy_core::test_suite::with_scratch::<BE, _>(short, call));
+    }
 }
 
 /// The aggregate preserves the base law and records the number of independent

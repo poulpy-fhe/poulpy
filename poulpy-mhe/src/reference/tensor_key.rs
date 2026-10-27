@@ -98,6 +98,7 @@ where
         super::assert_public_key_distribution::<BE, _>(pk);
         let (dnum, k_digit): (usize, usize) = (res.dnum().into(), res.k_digit().as_usize());
         let tmp_bytes: usize = self.mhe_glwe_tensor_key_share_gen_tmp_bytes_reference(&*res, pk);
+        assert!(scratch.available() >= tmp_bytes, "invalid share: insufficient scratch");
         let mut metadata = None;
         {
             let sk = sk.to_backend_ref();

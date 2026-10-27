@@ -273,6 +273,31 @@ pub fn assert_wipes_scratch<BE: poulpy_hal::layouts::Backend>(
     );
 }
 
+/// Runs `call` on exactly `bytes` of scratch poisoned with `0xA5`, surrounded by guards it asserts untouched.
+pub fn with_scratch<BE: poulpy_hal::layouts::Backend, R>(
+    bytes: usize,
+    call: impl FnOnce(&mut poulpy_hal::layouts::ScratchArena<'_, BE>) -> R,
+) -> R {
+    let guard = BE::scratch_aligned(64);
+    let mut scratch = poulpy_hal::layouts::ScratchOwned::<BE> {
+        data: BE::from_host_bytes(&vec![0xA5; guard + bytes + guard]),
+        _phantom: std::marker::PhantomData,
+    };
+    let result = {
+        let (_, rest) = scratch.arena().split_at(guard);
+        let (mut exact, _) = rest.split_at(bytes);
+        assert_eq!(exact.available(), bytes);
+        call(&mut exact)
+    };
+    let host = BE::to_host_bytes(&scratch.data);
+    assert!(host[..guard].iter().all(|v| *v == 0xA5), "scratch prefix overwritten");
+    assert!(
+        host[guard + bytes..guard + bytes + guard].iter().all(|v| *v == 0xA5),
+        "scratch suffix overwritten"
+    );
+    result
+}
+
 /// The left and right hints of prepared pair `i`: they swap from one pair to the next, so that two pairs cover both
 /// hints on each side.
 pub(crate) fn prepare_hints(i: usize) -> (poulpy_hal::layouts::PrepareHint, poulpy_hal::layouts::PrepareHint) {
