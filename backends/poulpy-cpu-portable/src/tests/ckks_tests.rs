@@ -39,7 +39,7 @@ ckks_backend_test_suite!(
 
 ckks_determinism_test_suite!(mod ckks_determinism_fft64portable, backend = crate::FFT64Portable, f32);
 
-ckks_determinism_test_suite!(mod ckks_determinism_ntt4x30portable, backend = crate::NTT4x30Portable);
+ckks_determinism_test_suite!(mod ckks_determinism_ntt4x30portable, backend = crate::NTT4x30Portable, f32);
 
 // Rank-2 coverage: the rank-generic arithmetic subset (the full suite's
 // bootstrapping/EvalMod/DFT/PaCo pipelines are rank-1 by construction).

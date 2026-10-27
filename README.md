@@ -188,7 +188,7 @@ adds caller-selected circuit parity through `ckks_parity_test_suite!`.
 Registrations cover `f64` and `Quad` on all 16 CPU backend types, with Rayon
 variants compared against their serial siblings. Every standard-ring CKKS type
 also registers `ckks_determinism_test_suite!`, which checks its encodings and
-setup constants in `f64` and `Quad` against frozen fixtures. Portable encoding
+setup constants in `f64`, `f32` and `Quad` against frozen fixtures. Portable encoding
 and DFT matrix/evaluation parity also exercise `f32`. Native CI and optional
 QEMU runs include the `ckks_parity` groups, including controlled-sampling
 encryption. See

@@ -1,14 +1,14 @@
 use poulpy_ckks::ckks_determinism_test_suite;
 
-ckks_determinism_test_suite!(mod ckks_determinism_fft64neon, backend = crate::FFT64Neon);
+ckks_determinism_test_suite!(mod ckks_determinism_fft64neon, backend = crate::FFT64Neon, f32);
 
-ckks_determinism_test_suite!(mod ckks_determinism_ntt4x30neon, backend = crate::NTT4x30Neon);
-
-#[cfg(feature = "enable-rayon")]
-ckks_determinism_test_suite!(mod ckks_determinism_fft64neonrayon, backend = crate::FFT64NeonRayon);
+ckks_determinism_test_suite!(mod ckks_determinism_ntt4x30neon, backend = crate::NTT4x30Neon, f32);
 
 #[cfg(feature = "enable-rayon")]
-ckks_determinism_test_suite!(mod ckks_determinism_ntt4x30neonrayon, backend = crate::NTT4x30NeonRayon);
+ckks_determinism_test_suite!(mod ckks_determinism_fft64neonrayon, backend = crate::FFT64NeonRayon, f32);
+
+#[cfg(feature = "enable-rayon")]
+ckks_determinism_test_suite!(mod ckks_determinism_ntt4x30neonrayon, backend = crate::NTT4x30NeonRayon, f32);
 
 #[test]
 fn ntt4x30_neon_bootstrapping_plan_keys_match_context() {

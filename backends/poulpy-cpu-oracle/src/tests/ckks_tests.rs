@@ -41,7 +41,7 @@ ckks_backend_test_suite!(
 
 ckks_determinism_test_suite!(mod ckks_determinism_fft64oracle, backend = crate::FFT64Oracle, f32);
 
-ckks_determinism_test_suite!(mod ckks_determinism_ntt4x30oracle, backend = crate::NTT4x30Oracle);
+ckks_determinism_test_suite!(mod ckks_determinism_ntt4x30oracle, backend = crate::NTT4x30Oracle, f32);
 
 // Rank-2 coverage: the rank-generic arithmetic subset (the full suite's
 // bootstrapping/EvalMod/DFT/PaCo pipelines are rank-1 by construction).

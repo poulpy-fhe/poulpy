@@ -15,13 +15,17 @@ impl_ckks_mod_up_first_factor_reference_full!(NTT4x30Avx);
 impl_ckks_encapsulated_mod_up_reference_full!(super::NTT4x30AvxRayon);
 #[cfg(feature = "enable-rayon")]
 impl_ckks_mod_up_first_factor_reference_full!(super::NTT4x30AvxRayon);
-// `f64` encodes through the AVX2/FMA kernels and `Quad` through the portable
-// kernels, both on the canonical twiddles. Rust has no specialization, so
+// `f64` encodes through the AVX2/FMA kernels and `f32` and `Quad` through the
+// portable kernels, all on the canonical twiddles. Rust has no specialization, so
 // accelerated backends list their precisions explicitly.
 macro_rules! select_avx_encoding_transform {
     ($be:ty) => {
         impl ::poulpy_cpu_portable::ckks_encoding::CKKSEncodingTransform<f64> for $be {
             type Fft = super::FFT64AvxEncodingTable;
+        }
+
+        impl ::poulpy_cpu_portable::ckks_encoding::CKKSEncodingTransform<f32> for $be {
+            type Fft = ::poulpy_cpu_portable::ckks_encoding::EncodingFFTTable<f32>;
         }
 
         impl ::poulpy_cpu_portable::ckks_encoding::CKKSEncodingTransform<poulpy_ckks::Quad> for $be {

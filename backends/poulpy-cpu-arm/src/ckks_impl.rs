@@ -11,13 +11,17 @@ impl_ckks_encapsulated_mod_up_reference_full!(FFT64Neon);
 impl_ckks_mod_up_first_factor_reference_full!(FFT64Neon);
 impl_ckks_encapsulated_mod_up_reference_full!(NTT4x30Neon);
 impl_ckks_mod_up_first_factor_reference_full!(NTT4x30Neon);
-// `f64` encodes through the NEON kernels and `Quad` through the portable
-// kernels, both on the canonical twiddles. Rust has no specialization, so
+// `f64` encodes through the NEON kernels and `f32` and `Quad` through the
+// portable kernels, all on the canonical twiddles. Rust has no specialization, so
 // accelerated backends list their precisions explicitly.
 macro_rules! select_neon_encoding_transform {
     ($be:ty) => {
         impl ::poulpy_cpu_portable::ckks_encoding::CKKSEncodingTransform<f64> for $be {
             type Fft = super::FFT64NeonEncodingTable;
+        }
+
+        impl ::poulpy_cpu_portable::ckks_encoding::CKKSEncodingTransform<f32> for $be {
+            type Fft = ::poulpy_cpu_portable::ckks_encoding::EncodingFFTTable<f32>;
         }
 
         impl ::poulpy_cpu_portable::ckks_encoding::CKKSEncodingTransform<poulpy_ckks::Quad> for $be {

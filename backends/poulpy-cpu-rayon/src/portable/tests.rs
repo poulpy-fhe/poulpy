@@ -261,9 +261,9 @@ mod core {
 
 #[cfg(feature = "enable-ckks")]
 mod ckks {
-    poulpy_ckks::ckks_determinism_test_suite!(mod determinism_fft64, backend = crate::FFT64PortableRayon);
+    poulpy_ckks::ckks_determinism_test_suite!(mod determinism_fft64, backend = crate::FFT64PortableRayon, f32);
 
-    poulpy_ckks::ckks_determinism_test_suite!(mod determinism_ntt4x30, backend = crate::NTT4x30PortableRayon);
+    poulpy_ckks::ckks_determinism_test_suite!(mod determinism_ntt4x30, backend = crate::NTT4x30PortableRayon, f32);
 
     poulpy_ckks::conjugate_invariant_ckks_test_suite!(
         ckks_ci_fft64,

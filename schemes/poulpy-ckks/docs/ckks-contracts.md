@@ -116,8 +116,9 @@ controlled-sampling comparison adapter; retain the separate sampling contract
 tests and independent mathematical conformance suite.
 
 Register `ckks_determinism_test_suite!(mod <name>, backend = <type>)` for each
-standard-ring type. It checks the encoding and the setup constants, in `f64` and
-`Quad`, against the frozen fixtures of
+standard-ring type, adding `, f32` when the type encodes in `f32`. It checks the
+encoding and the setup constants, in `f64` and `Quad` (and `f32`), against the
+frozen fixtures of
 [`test_suite/determinism.txt`](../src/test_suite/determinism.txt), which every
 backend reproduces byte for byte.
 
