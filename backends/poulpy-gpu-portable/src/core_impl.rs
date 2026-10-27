@@ -489,8 +489,8 @@ macro_rules! impl_tensoring {
                 b: &::poulpy_hal::layouts::CnvPVecRBackendRef<'_, $be>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) {
-                let _ = (module, scratch);
-                crate::hal_impl::glwe_mul_columns(cnv_offset_hi, diag, cross, a, b)
+                let _ = scratch;
+                crate::hal_impl::glwe_mul_columns(module, cnv_offset_hi, diag, cross, a, b)
             }
 
             fn glwe_square_prepare(

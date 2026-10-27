@@ -46,14 +46,20 @@ impl<RT: GpuRuntime> GpuHandle<RT> {
     /// allocator, which recycles freed memory, so that threads sharing the
     /// module never share a temporary. The temporary is zeroed before it is
     /// released: it may hold secret-derived words, out of reach of the
-    /// caller's `ScratchArena::wipe`. On an Apple M5 Pro (Metal), the zeroing
-    /// costs `vec_znx_idft_apply` of the standard bench 4% at degree `2^14`
-    /// and 10 to 14% at `2^15`.
+    /// caller's `ScratchArena::wipe`, also when `f` panics. The zeroing costs
+    /// `NTT4x30Gpu<Wgpu>/hal/vec_znx_idft_apply` of the standard bench 1.03x to 1.05x at
+    /// `16384x(2x32)` and 1.10x to 1.14x at `32768x(2x64)` against no zeroing,
+    /// on an Apple M5 Pro (Metal, CubeCL 0.11.3), two runs of each back to back.
     pub(crate) fn with_temp<T>(&self, len: usize, f: impl FnOnce(&mut GpuBuf<RT>) -> T) -> T {
-        let mut temp = GpuBuf::uninit(len);
-        let result = f(&mut temp);
-        temp.wipe();
-        result
+        /// Zeroes the temporary when dropped, on return or unwind.
+        struct Wiped<RT: GpuRuntime>(GpuBuf<RT>);
+        impl<RT: GpuRuntime> Drop for Wiped<RT> {
+            fn drop(&mut self) {
+                self.0.wipe();
+            }
+        }
+        let mut temp = Wiped(GpuBuf::uninit(len));
+        f(&mut temp.0)
     }
 }
 

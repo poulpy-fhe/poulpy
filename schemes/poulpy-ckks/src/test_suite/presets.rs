@@ -505,7 +505,8 @@ where
 }
 
 /// Runs every preset once on `BE`, and once more with the keys of power-of-two
-/// rotations only ([`BootstrappingPreset::with_power_of_two_keys`]), and checks the measured output precision
+/// rotations only ([`BootstrappingPreset::with_power_of_two_keys`]), and
+/// checks the measured output precision
 /// against the precision the preset advertises, and that its keys are refused
 /// at entry past their width. The twin [`CIBackend`] runs EvalMod for the presets that put it on
 /// the conjugate-invariant ring. The first preset also round-trips every
@@ -584,7 +585,8 @@ where
 
 /// The preset's name, marked with the variants that keep it: `+erp` with
 /// EvalRound+ ([`BootstrappingPreset::with_eval_round_plus`]), `+fold_u` with
-/// `u` folded into CoeffsToSlots ([`CIConversion::Folded`]).
+/// `u` folded into CoeffsToSlots ([`CIConversion::Folded`]), `+pow2` with the
+/// keys of power-of-two rotations only ([`BootstrappingPreset::with_power_of_two_keys`]).
 pub fn preset_label(preset: &BootstrappingPreset) -> String {
     let mut label = preset.name().to_string();
     if preset.plan().coeffs_to_slots_bypass().is_some() {

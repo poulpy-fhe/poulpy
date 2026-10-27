@@ -256,6 +256,7 @@ fn mul_columns_case<R: Ring>(
         &mut scratch.arena(),
     );
     crate::hal_impl::glwe_mul_columns(
+        module,
         offset,
         &mut diag_have.to_backend_mut(),
         &mut cross_have.to_backend_mut(),
@@ -291,6 +292,51 @@ fn glwe_mul_columns_matches_reference() {
         mul_columns_case(&MODULE, n, b_n, a_size, b_size, diag_size, cross_size, offset);
     }
     mul_columns_case(&MODULE_CI, N, 16, 6, 5, 8, 8, 3);
+}
+
+/// The fused tensor product refuses what its reference composition refuses
+/// before writing either destination: here a right operand below `MIN_DEGREE`.
+#[test]
+fn glwe_mul_columns_rejects_a_right_operand_below_the_minimum_degree() {
+    let module = &*MODULE;
+    let (n, size) = (N, 3);
+    let mut seed = 0x0dd0_0dd0_0dd0_0dd0u64;
+    let a = vector::<poulpy_hal::layouts::Standard>(n, 2, size, &mut seed);
+    let mut left = module.cnv_pvec_left_alloc(n, 2, size, PrepareHint::Reuse);
+    module.cnv_prepare_left(
+        &mut poulpy_hal::layouts::CnvPVecLToBackendMut::to_backend_mut(&mut left),
+        &vec_znx_backend_ref::<Gpu>(&a),
+        &mut ScratchOwned::<Gpu>::alloc(module.cnv_prepare_left_tmp_bytes(size, size)).arena(),
+    );
+    let narrow: poulpy_hal::layouts::CnvPVecROwned<Gpu> =
+        poulpy_hal::layouts::CnvPVecR::alloc(Gpu::MIN_DEGREE / 2, 2, size, PrepareHint::Reuse);
+    let mut diag = transformed(module, n, 2, size, &mut seed);
+    let mut cross = transformed(module, n, 1, size, &mut seed);
+    let before = (Gpu::to_host_bytes(diag.data()), Gpu::to_host_bytes(cross.data()));
+    let refusal = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        crate::hal_impl::glwe_mul_columns(
+            module,
+            0,
+            &mut diag.to_backend_mut(),
+            &mut cross.to_backend_mut(),
+            &poulpy_hal::layouts::CnvPVecLToBackendRef::to_backend_ref(&left),
+            &poulpy_hal::layouts::CnvPVecRToBackendRef::to_backend_ref(&narrow),
+        )
+    }))
+    .expect_err("glwe_mul_columns accepted a right operand below MIN_DEGREE");
+    let message = refusal
+        .downcast_ref::<&str>()
+        .map(|message| message.to_string())
+        .or_else(|| refusal.downcast_ref::<String>().cloned())
+        .unwrap_or_default();
+    assert_eq!(
+        message,
+        "convolution: right operand degree does not embed into the destination's"
+    );
+    assert!(
+        before == (Gpu::to_host_bytes(diag.data()), Gpu::to_host_bytes(cross.data())),
+        "glwe_mul_columns wrote a destination before refusing"
+    );
 }
 
 /// The streamed sum of right operands of one limb, each term read through
@@ -425,7 +471,7 @@ macro_rules! bootstrap_shapes {
     };
     (@tensor kernel, $module:expr, $offset:expr, $diag:expr, $cross:expr, $left:expr, $right:expr, $bytes:expr) => {{
         let _ = $bytes;
-        crate::hal_impl::glwe_mul_columns($offset, &mut $diag.to_backend_mut(), &mut $cross.to_backend_mut(), $left, $right)
+        crate::hal_impl::glwe_mul_columns(&$module, $offset, &mut $diag.to_backend_mut(), &mut $cross.to_backend_mut(), $left, $right)
     }};
     (@tensor reference, $module:expr, $offset:expr, $diag:expr, $cross:expr, $left:expr, $right:expr, $bytes:expr) => {
         $module.glwe_mul_columns_reference(

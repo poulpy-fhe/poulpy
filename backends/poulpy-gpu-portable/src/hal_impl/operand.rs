@@ -41,10 +41,16 @@ fn elems(dims: &[usize]) -> usize {
 fn column(binding: Option<Binding>, shape: VecZnxShape, col: usize, words: u32) -> Option<Column> {
     assert!(col < shape.cols(), "operand column out of range");
     let binding = binding?;
-    let base = binding.base::<u64>() as usize + shape.scalar_offset(col, 0) * words as usize;
-    let stride = shape.limb_step() * shape.cols() * shape.n_full() * words as usize;
+    let overflow = "operand size overflows usize";
+    let base = elems(&[shape.scalar_offset(col, 0), words as usize])
+        .checked_add(binding.base::<u64>() as usize)
+        .expect(overflow);
+    let stride = elems(&[shape.limb_step(), shape.cols(), shape.n_full(), words as usize]);
     // The kernels index in 32 bits: the last word of the column must be in range.
-    let end = base + stride * shape.size().saturating_sub(1) + shape.n() * words as usize;
+    let end = elems(&[stride, shape.size().saturating_sub(1)])
+        .checked_add(elems(&[shape.n(), words as usize]))
+        .and_then(|span| span.checked_add(base))
+        .expect(overflow);
     assert!(u32::try_from(end).is_ok(), "device column ends beyond the 32-bit word range");
     if shape.size() > 0 {
         assert_holds::<u64>(&binding, end - binding.base::<u64>() as usize);

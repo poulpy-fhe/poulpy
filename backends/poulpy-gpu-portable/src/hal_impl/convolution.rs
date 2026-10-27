@@ -27,20 +27,26 @@ use crate::{
 // The body of the core hook `GLWETensoringImpl::glwe_mul_columns`.
 #[cfg_attr(not(feature = "enable-core"), allow(dead_code))]
 pub(crate) fn glwe_mul_columns<RT: GpuRuntime, R: Ring>(
+    module: &Module<NTT4x30Gpu<RT, R>>,
     cnv_offset: usize,
     diag: &mut VecZnxDftBackendMut<'_, NTT4x30Gpu<RT, R>>,
     cross: &mut VecZnxDftBackendMut<'_, NTT4x30Gpu<RT, R>>,
     a: &CnvPVecLBackendRef<'_, NTT4x30Gpu<RT, R>>,
     b: &CnvPVecRBackendRef<'_, NTT4x30Gpu<RT, R>>,
 ) {
-    assert!(
-        diag.cols() >= 2 && a.cols() >= 2 && b.cols() >= 2,
-        "glwe_mul_columns: rank-1 operands have two columns"
-    );
-    assert!(
-        a.n() == diag.n() && cross.n() == diag.n(),
-        "glwe_mul_columns: operand degrees differ"
-    );
+    // The checks of the reference composition, two `cnv_apply_dft` into
+    // `diag` and one `cnv_pairwise_apply_dft` into `cross`, in its order.
+    type BE<RT, R> = NTT4x30Gpu<RT, R>;
+    for col in [0, 1] {
+        check_degree::<BE<RT, R>>(module.n(), diag.n());
+        check_cnv_dft_term::<BE<RT, R>>(diag.n(), a, col, b, col, 1);
+        assert!(col < diag.cols(), "operand column out of range");
+    }
+    check_degree::<BE<RT, R>>(module.n(), cross.n());
+    for col in [0, 1] {
+        check_cnv_dft_term::<BE<RT, R>>(cross.n(), a, col, b, col, 1);
+    }
+    assert!(cross.cols() > 0, "operand column out of range");
     let column = |column: Option<DftColumn>| column.expect("glwe_mul_columns: an operand holds no storage");
     convolution_tensor::<RT>(
         &column(dft_column_mut(diag, 0)),
