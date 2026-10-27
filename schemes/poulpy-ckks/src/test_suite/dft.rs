@@ -735,7 +735,7 @@ fn assert_factor_degrees<BE: Backend, Dir, Fmt: DftFormat>(
 /// the allocating preparation's bytes, preparing into it again after poisoning it keeps its buffers and gives them
 /// again, and a matrix of another schedule or with non-uniform diagonals is refused as `InvalidOperand` before any write
 /// and any scratch, its bytes and infos unchanged.
-pub fn test_dft_prepare_into<BE, F, E>(params: CKKSTestParams, _module: &Module<BE>, _host_module: &Module<HostBytesBackend>)
+pub fn test_prepare_dft_matrix<BE, F, E>(params: CKKSTestParams, _module: &Module<BE>, _host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F>,

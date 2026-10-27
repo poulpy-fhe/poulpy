@@ -11,7 +11,7 @@ use poulpy_hal::layouts::{Module, ScratchArena};
 use crate::{
     CKKSCtBounds, CKKSInfos, CKKSResult as Result, SetCKKSInfos, SlotsKind,
     api::{CKKSAddOps, CKKSAffineOps, CKKSAllOpsTmpBytes, CKKSCopyOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops},
-    ckks_ensure,
+    checked_log_budget_sub, ckks_ensure,
     layouts::{PolynomialApproximation, ScratchArenaTakeCKKS},
     oep::CKKSApproximationImpl,
 };
@@ -37,7 +37,7 @@ where
         .max(module.ckks_all_ops_tmp_bytes(input, coeffs, tsk));
     match &approximation.affine {
         Some(affine) => {
-            let ct = module.glwe_bytes_of_from_infos(input);
+            let ct = BE::scratch_aligned(module.glwe_bytes_of_from_infos(input));
             let map = if approximation.scale_pow2.is_some() {
                 eval
             } else {
@@ -47,6 +47,25 @@ where
         }
         None => eval,
     }
+}
+
+/// The input-shaped temporary of an affine map plus the larger of its map step's selected queries, sized without a
+/// tensor key: the polynomial evaluation that follows checks its constituents' queries itself.
+fn map_tmp_bytes<BE, I, P>(module: &Module<BE>, input: &I, approximation: &PolynomialApproximation<P>, affine: &P) -> usize
+where
+    BE: CKKSApproximationImpl,
+    I: CKKSCtBounds,
+    P: CKKSCtBounds,
+{
+    let map = if approximation.scale_pow2.is_some() {
+        module
+            .ckks_mul_pow2_tmp_bytes(input.size())
+            .max(module.ckks_copy_tmp_bytes(input, input))
+            .max(module.ckks_add_pt_const_tmp_bytes(input.size()))
+    } else {
+        module.ckks_affine_pt_const_tmp_bytes(input, input, affine)
+    };
+    BE::scratch_aligned(module.glwe_bytes_of_from_infos(input)) + map
 }
 
 pub(crate) fn ckks_eval_approximation_derived<BE, R, I, P, H>(
@@ -64,14 +83,13 @@ where
     P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta + IntPolyInfos,
     H: GetTensorKey<BE>,
 {
-    let required = approximation.consumed_bits(input.log_delta());
-    ckks_ensure!(
-        input.log_budget() >= required,
-        "ckks_eval_approximation: log_budget {} < {required} bits required at log_delta {}",
-        input.log_budget(),
-        input.log_delta()
-    );
+    const OP: &str = "ckks_eval_approximation";
+    checked_log_budget_sub(OP, input.log_budget(), approximation.consumed_bits(input.log_delta()))?;
     if let Some(affine) = &approximation.affine {
+        ckks_ensure!(
+            scratch.available() >= map_tmp_bytes(module, input, approximation, affine),
+            "{OP}: scratch below its query"
+        );
         scratch.scope(|scratch_local| {
             let (mut normalized, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(input);
             if let Some(exponent) = approximation.scale_pow2 {

@@ -10,7 +10,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSCtBounds, CKKSInfos, CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos,
+    CKKSCompositionError, CKKSCtBounds, CKKSInfos, CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos,
     api::{CKKSAllOpsTmpBytes, CKKSEncodingHostOps, CKKSEvalModOps},
     layouts::{
         CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned,
@@ -22,10 +22,10 @@ use crate::{
 };
 
 use super::helpers::{
-    TestContextBackend, TestContextModule, TestScalar, ckks_decrypt_decode, ckks_encrypt_with_prec, ckks_spec, gen_sk_with_raw,
-    gen_tsk, precision_stats,
+    TestContextBackend, TestContextModule, TestScalar, assert_ckks_error, ckks_decrypt_decode, ckks_encrypt_with_prec, ckks_spec,
+    gen_sk_with_raw, gen_tsk, precision_stats,
 };
-use super::parity::helpers::with_scratch;
+use super::parity::helpers::{fixture_ciphertext, snapshot, with_scratch};
 use crate::SlotsKind;
 
 fn alloc_scratch_eval_mod<BE>(params: &super::CKKSTestParams, module: &Module<BE>, res_k: usize) -> ScratchOwned<BE>
@@ -218,6 +218,40 @@ fn run_eval_mod_case<BE, F, E>(
     let (in_ld, in_lb) = (ct_input.log_delta(), ct_input.log_budget());
     let mut res = module.ckks_ciphertext_alloc(test_params.base2k.into(), res_k.into());
     let eval_bytes = module.ckks_eval_mod_tmp_bytes(&res, &ct_input, &params_be, &tsk);
+
+    // An input of rank 2, or of less budget than the evaluation consumes, is refused on an empty arena.
+    let consumed = params_be.consumed_bits();
+    let mut rank2 = test_params.prec();
+    rank2.glwe_layout.rank = 2usize.into();
+    let short = ckks_spec(test_params.n, test_params.base2k, input_log_delta, consumed - 1);
+    for (case, input, want) in [
+        (
+            "rank 2",
+            fixture_ciphertext(module, &rank2, 71),
+            CKKSCompositionError::InvalidOperand {
+                op: "ckks_eval_mod",
+                reason: "supports rank-1 ciphertexts only, got rank 2".into(),
+            },
+        ),
+        (
+            "short budget",
+            fixture_ciphertext(module, &short, 72),
+            CKKSCompositionError::InsufficientHomomorphicCapacity {
+                op: "ckks_eval_mod",
+                available_log_budget: consumed - 1,
+                required_bits: consumed,
+            },
+        ),
+    ] {
+        let before = snapshot::<BE, _>(&res);
+        let err = with_scratch::<BE, _>(0, |s| module.ckks_eval_mod(&mut res, &input, &params_be, &tsk, s)).unwrap_err();
+        assert_ckks_error(&format!("{label}: {case}"), &err, want);
+        assert_eq!(
+            snapshot::<BE, _>(&res),
+            before,
+            "{label}: {case}: a refused EvalMod wrote res"
+        );
+    }
     with_scratch::<BE, _>(eval_bytes, |s| module.ckks_eval_mod(&mut res, &ct_input, &params_be, &tsk, s)).expect("ckks_eval_mod");
 
     // Exact externally visible bit-consumption: EvalMod arithmetic is charged at

@@ -162,8 +162,8 @@ The noise suite runs in `poulpy-cpu-portable` alone: the scheme-level model is b
 
 Backend crates register the core and CKKS parity suites and
 `ckks_determinism_test_suite!` for portable FFT/NTT, AVX, AVX-512/IFMA, NEON and
-supported Rayon variants; the functional suites of every layer run on the oracle
-and the portable serial types only. Native CI runs the full registered
+supported Rayon variants; the CKKS functional suite runs on the oracle and the
+portable serial types only. Native CI runs the full registered
 sweeps. AVX and AVX-512 jobs fall back to Intel SDE for HAL and core contracts, and
 the AVX-512 job also for BLAS parity (below); CKKS runs natively, with an additional
 optional NEON run under QEMU.

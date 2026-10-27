@@ -491,7 +491,7 @@ where
         let (mut sgn, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(x);
         match subtrahend {
             Diff::Ct(op1) => module.ckks_sub_into(&mut diff, x, op1, &mut scratch_local)?,
-            Diff::Const(bound, coeff) => module.ckks_sub_pt_const_into(&mut diff, x, 0, bound, coeff, &mut scratch_local)?,
+            Diff::Const(bound, coeff) => module.ckks_sub_pt_const_into(&mut diff, 0, x, bound, coeff, &mut scratch_local)?,
         }
         if reverse {
             module.ckks_neg_assign(&mut diff)?;

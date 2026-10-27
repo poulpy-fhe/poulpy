@@ -89,7 +89,7 @@ pub unsafe trait CKKSDotProductImpl: Backend + super::CKKSMulImpl + super::CKKSA
         Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
         H: GetTensorKey<Self>;
 
-    /// Default body: `ckks_dot_product_pt_vec_derived`. An empty or length-mismatched pair of slices is a refusal. Then
+    /// Default body: `ckks_dot_product_pt_vec_derived`. An empty or length-mismatched pair of slices is `InvalidOperand`. Then
     /// `ckks_mul_pt_vec_into` of the first pair into `dst`, and for each later pair `ckks_mul_pt_vec_into` into a
     /// `dst`-shaped scratch temporary followed by `ckks_add_assign` into `dst`.
     fn ckks_dot_product_pt_vec<Dst: Data, D: Data, E>(
@@ -108,7 +108,7 @@ pub unsafe trait CKKSDotProductImpl: Backend + super::CKKSMulImpl + super::CKKSA
     }
 
     /// Default body: `ckks_dot_product_pt_const_derived`. An empty slice, a length mismatch between the ciphertexts and
-    /// the plaintexts or one between the ciphertexts and `pt_coeffs` is a refusal. Then `ckks_mul_pt_const_into` of the
+    /// the plaintexts or one between the ciphertexts and `pt_coeffs` is `InvalidOperand`. Then `ckks_mul_pt_const_into` of the
     /// first pair at its coefficient into `dst`, and for each later pair `ckks_mul_pt_const_into` at its coefficient
     /// into a `dst`-shaped scratch temporary followed by `ckks_add_assign` into `dst`.
     fn ckks_dot_product_pt_const<Dst: Data, D: Data, E>(

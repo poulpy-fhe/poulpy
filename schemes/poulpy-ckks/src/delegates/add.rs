@@ -68,8 +68,8 @@ impl<BE: Backend + CKKSAddImpl> CKKSAddOps<BE> for Module<BE> {
     fn ckks_add_pt_const_into<Dst, A, P>(
         &self,
         dst: &mut Dst,
-        a: &A,
         dst_coeff: usize,
+        a: &A,
         pt: &P,
         pt_coeff: usize,
         scratch: &mut ScratchArena<'_, BE>,
@@ -79,7 +79,7 @@ impl<BE: Backend + CKKSAddImpl> CKKSAddOps<BE> for Module<BE> {
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
-        BE::ckks_add_pt_const_into(self, dst, a, dst_coeff, pt, pt_coeff, scratch)
+        BE::ckks_add_pt_const_into(self, dst, dst_coeff, a, pt, pt_coeff, scratch)
     }
 
     fn ckks_add_pt_const_assign<Dst, P>(

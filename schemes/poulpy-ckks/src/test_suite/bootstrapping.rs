@@ -59,10 +59,10 @@ use crate::{
     test_suite::{
         CKKSTestParams,
         helpers::{
-            TestContextBackend, TestContextModule, TestScalar, assert_canonical_at_k, ckks_encrypt_with_prec, ckks_spec,
-            gen_sk_with_raw, next_test_seed, precision_stats, test_vector_1,
+            TestContextBackend, TestContextModule, TestScalar, assert_canonical_at_k, assert_ckks_error, assert_invalid_operand,
+            ckks_encrypt_with_prec, ckks_spec, gen_sk_with_raw, next_test_seed, precision_stats, test_vector_1,
         },
-        parity::helpers::with_scratch,
+        parity::helpers::{fixture_ciphertext, snapshot, with_scratch},
         presets::{bootstrap_setup_tmp_bytes, compile_context},
     },
 };
@@ -346,10 +346,30 @@ where
         }
 
         // Keys laid out for the raise refuse a narrower bootstrap before any work.
-        let mut narrow = module.ckks_ciphertext_alloc(base2k.into(), (k_boot - base2k).into());
+        let mut narrow = fixture_ciphertext(&module, &ckks_spec(n, base2k, log_delta, k_boot - base2k - log_delta), 23);
         let ct_any = module.ckks_ciphertext_alloc(base2k.into(), k_in.into());
-        let err = with_scratch::<BE, _>(boot_tmp, |s| module.ckks_bootstrap(&mut narrow, &ct_any, &ctx, &bsk, s)).unwrap_err();
-        assert!(err.to_string().contains("first-factor"), "{err}");
+        let before = snapshot::<BE, _>(&narrow);
+        let err = with_scratch::<BE, _>(0, |s| module.ckks_bootstrap(&mut narrow, &ct_any, &ctx, &bsk, s)).unwrap_err();
+        assert_invalid_operand(
+            "a bootstrap narrower than its raise keys",
+            &err,
+            "ckks_bootstrap",
+            "the first-factor keys switch",
+        );
+        assert_eq!(snapshot::<BE, _>(&narrow), before, "a refused bootstrap wrote res");
+        let mut rank2 = in_spec;
+        rank2.glwe_layout.rank = 2usize.into();
+        let ct_rank2 = fixture_ciphertext(&module, &rank2, 29);
+        let err = with_scratch::<BE, _>(0, |s| module.ckks_bootstrap(&mut narrow, &ct_rank2, &ctx, &bsk, s)).unwrap_err();
+        assert_ckks_error(
+            "a bootstrap of a rank-2 input",
+            &err,
+            CKKSCompositionError::InvalidOperand {
+                op: "ckks_bootstrap",
+                reason: "supports rank-1 ciphertexts only, got rank 2 -> 1".into(),
+            },
+        );
+        assert_eq!(snapshot::<BE, _>(&narrow), before, "a refused bootstrap wrote res");
 
         let (re, im) = test_vector_1::<F>(m);
         let im_zero = vec![F::zero(); m];
@@ -540,8 +560,9 @@ where
             .min()
             .unwrap();
         let wide_k = (narrow_k + last * c2s.coeffs_meta().log_delta() + 1).next_multiple_of(base2k);
-        let mut ct_wide = module.ckks_ciphertext_alloc(base2k.into(), wide_k.into());
-        let err = with_scratch::<BE, _>(boot_tmp, |s| module.ckks_bootstrap(&mut ct_wide, &ct0, &ctx, &bsk, s)).unwrap_err();
+        let mut ct_wide = fixture_ciphertext(&module, &ckks_spec(n, base2k, log_delta, wide_k - log_delta), 23);
+        let before = snapshot::<BE, _>(&ct_wide);
+        let err = with_scratch::<BE, _>(0, |s| module.ckks_bootstrap(&mut ct_wide, &ct0, &ctx, &bsk, s)).unwrap_err();
         match err.composition() {
             Some(CKKSCompositionError::MissingAutomorphismKey {
                 op: "ckks_bootstrap",
@@ -550,6 +571,7 @@ where
             }) => assert!(source.to_string().contains("wider than the key's max_input_k"), "{err}"),
             _ => panic!("expected a key refused at entry, got: {err}"),
         }
+        assert_eq!(snapshot::<BE, _>(&ct_wide), before, "a refused bootstrap wrote res");
     }
 
     // Compare the public orchestrator with the explicit pipeline below.
@@ -1204,7 +1226,9 @@ where
         ckks_spec(n, base2k, log_delta, insufficient_k - log_delta),
         &mut scratch.borrow(),
     );
-    let mut ct_out = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
+    let mut ct_out = fixture_ciphertext(&module, &ckks_spec(n, base2k, log_delta, k_boot - log_delta), 24);
+    // The S2C-first budget refusal comes from its first stage, after the pipeline carved its working ciphertexts.
+    let before = snapshot::<BE, _>(&ct_out);
     let err = with_scratch::<BE, _>(boot_tmp, |s| {
         module.ckks_bootstrap(&mut ct_out, &ct_insufficient, &ctx, &bsk, s)
     })
@@ -1213,6 +1237,7 @@ where
         err.composition(),
         Some(CKKSCompositionError::MultiplicationPrecisionUnderflow { .. })
     ));
+    assert_eq!(snapshot::<BE, _>(&ct_out), before, "a refused bootstrap wrote res");
 
     let s_re = precision_stats(&bs_re, &re, log_delta);
     let s_im = precision_stats(&bs_im, &im, log_delta);

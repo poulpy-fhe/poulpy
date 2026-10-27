@@ -279,7 +279,7 @@ pub fn test_blas_inter_guards<BE, F, E>(
     assert_guard::<BE, _>("budget", rotate, Budget, &mut narrow, |res| {
         module.blas_rotate(res, &ct, 1, &sum_keys, &mut op_scratch.borrow())
     });
-    assert_guard::<BE, _>("budget", "inner_sum", Budget, &mut narrow, |res| {
+    assert_guard::<BE, _>("budget", "ckks_inner_sum", Budget, &mut narrow, |res| {
         module.blas_sum(res, &ct, &sum_keys, &mut op_scratch.borrow())
     });
 

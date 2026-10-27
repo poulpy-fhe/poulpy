@@ -8,7 +8,7 @@ use super::helpers::{
     assert_decrypt_precision, assert_decrypt_precision_at_log_delta, assert_unary_output_meta, ckks_encrypt, gen_sk,
     test_vector_1, want_div_pow2, want_mul_pow2,
 };
-use super::parity::helpers::with_scratch;
+use super::parity::helpers::{snapshot, with_scratch};
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
     layouts::{HostBytesBackend, Module, Standard},
@@ -336,6 +336,7 @@ pub fn test_div_pow2_assign_rejects_insufficient_capacity<BE, F, E>(
     );
     let available_log_budget = ct.log_budget();
     let required_bits = available_log_budget + 1;
+    let before = snapshot::<BE, _>(&ct);
     let err = module.ckks_div_pow2_assign(required_bits, &mut ct).unwrap_err();
     assert_ckks_error(
         "div_pow2_assign_rejects_insufficient_capacity",
@@ -346,4 +347,47 @@ pub fn test_div_pow2_assign_rejects_insufficient_capacity<BE, F, E>(
             required_bits,
         },
     );
+    assert_eq!(snapshot::<BE, _>(&ct), before, "a refused ckks_div_pow2_assign wrote res");
+}
+
+/// A destination narrower than the scale of `a` sends the doubling through the aligning shift, whose budget refusal
+/// is `InsufficientHomomorphicCapacity` of `ckks_double_into`, before any write, on an empty arena and on the query.
+pub fn test_double_into_rejects_insufficient_capacity<BE, F, E>(
+    params: crate::test_suite::CKKSTestParams,
+    module: &poulpy_hal::layouts::Module<BE>,
+    _host_module: &poulpy_hal::layouts::Module<poulpy_hal::layouts::HostBytesBackend>,
+) where
+    BE: crate::test_suite::helpers::TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
+    poulpy_hal::layouts::Module<BE>: crate::test_suite::helpers::TestContextModule<BE>,
+    F: crate::test_suite::helpers::TestScalar,
+    E: poulpy_hal::api::NegacyclicFFT<F> + poulpy_hal::api::NegacyclicFFTNew<F>,
+{
+    use crate::test_suite::{
+        helpers::assert_ckks_error,
+        parity::{
+            helpers::{fixture_ciphertext, snapshot, with_scratch},
+            layout,
+        },
+    };
+    use crate::{CKKSCompositionError, SlotsKind};
+    use poulpy_core::layouts::LWEInfos;
+    let b = params.base2k;
+    let ct_layout = layout(params, params.rank, 3 * b + 5, b - 1, 0, SlotsKind::Complex);
+    use crate::api::CKKSPow2Ops;
+    let a = fixture_ciphertext(module, &ct_layout, 41);
+    let mut res = fixture_ciphertext(module, &layout(params, params.rank, b - 2, b - 3, 0, SlotsKind::Complex), 31);
+    for bytes in [0, module.ckks_mul_pow2_tmp_bytes(res.max_size())] {
+        let before = snapshot::<BE, _>(&res);
+        let err = with_scratch::<BE, _>(bytes, |s| module.ckks_double_into(&mut res, &a, s)).unwrap_err();
+        assert_ckks_error(
+            "double_into: destination below the scale",
+            &err,
+            CKKSCompositionError::InsufficientHomomorphicCapacity {
+                op: "ckks_double_into",
+                available_log_budget: 2 * b + 6,
+                required_bits: 2 * b + 7,
+            },
+        );
+        assert_eq!(snapshot::<BE, _>(&res), before, "a refused doubling wrote dst");
+    }
 }

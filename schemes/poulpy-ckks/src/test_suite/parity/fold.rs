@@ -24,8 +24,8 @@ use poulpy_core::{
 use poulpy_hal::layouts::{Backend, ConjugateInvariant, Data, Module, Ring, Standard, ZnxWord};
 
 type Outcome = [Vec<Snapshot>; 2];
-type SwitchKeys<B> = RingSwitchKeys<GGLWEPrepared<<B as Backend>::OwnedBuf, B>>;
-type AutomorphismKeys<B> = HashMap<i64, GLWEAutomorphismKeyPrepared<<B as Backend>::OwnedBuf, B>>;
+type SwitchKeys<BE> = RingSwitchKeys<GGLWEPrepared<<BE as Backend>::OwnedBuf, BE>>;
+type AutomorphismKeys<BE> = HashMap<i64, GLWEAutomorphismKeyPrepared<<BE as Backend>::OwnedBuf, BE>>;
 
 fn layout(n: usize, base2k: usize, k: usize, log_delta: usize, slots: SlotsKind) -> CKKSLayout {
     CKKSLayout {
@@ -51,19 +51,19 @@ fn relabel<D: Data, W: ZnxWord, S: Ring, R: Ring>(ct: CKKSCiphertext<D, W, S>) -
 /// Folds `ins` into ciphertexts of `degree` and unfolds fixture refreshed ciphertexts
 /// of width `k_refreshed` into outputs of the layout of `out` labeled like `ins`, each
 /// within its exact guarded scratch.
-fn run_case<B, R>(
-    module: &Module<B>,
+fn run_case<BE, R>(
+    module: &Module<BE>,
     degree: usize,
-    ins: &[CKKSRingCiphertext<B, R>],
+    ins: &[CKKSRingCiphertext<BE, R>],
     out: &CKKSLayout,
     k_refreshed: usize,
-    ring_switch: Option<&SwitchKeys<B>>,
-    automorphisms: Option<&AutomorphismKeys<B>>,
+    ring_switch: Option<&SwitchKeys<BE>>,
+    automorphisms: Option<&AutomorphismKeys<BE>>,
 ) -> Outcome
 where
-    B: Backend<ZnxWord = i64> + CKKSFoldLayoutImpl + CKKSFoldImpl<R>,
+    BE: Backend<ZnxWord = i64> + CKKSFoldLayoutImpl + CKKSFoldImpl<R>,
     R: Ring,
-    Module<B>: CKKSModuleAlloc<B> + GLWEMaskFill<B>,
+    Module<BE>: CKKSModuleAlloc<BE> + GLWEMaskFill<BE>,
 {
     let keys_layout = CKKSFoldKeysLayout {
         ring_switch: ring_switch.map(RingSwitchKeys::gglwe_layout),
@@ -71,19 +71,19 @@ where
             .and_then(|keys| keys.values().next())
             .map(|key| key.gglwe_layout()),
     };
-    let bytes = B::ckks_fold_tmp_bytes(module, degree.into(), out, &ins[0], &keys_layout);
+    let bytes = BE::ckks_fold_tmp_bytes(module, degree.into(), out, &ins[0], &keys_layout);
     let folded_layout = CKKSLayout {
-        glwe_layout: B::ckks_fold_layout(module, degree.into(), &ins[0], &keys_layout),
+        glwe_layout: BE::ckks_fold_layout(module, degree.into(), &ins[0], &keys_layout),
         meta: ins[0].meta(),
     };
-    let mut folded: Vec<_> = (0..B::ckks_fold_count(module, degree.into(), ins))
+    let mut folded: Vec<_> = (0..BE::ckks_fold_count(module, degree.into(), ins))
         .map(|i| fixture_ciphertext(module, &folded_layout, 150 + i as u8))
         .collect();
-    with_scratch::<B, _>(bytes, |scratch| {
-        B::ckks_fold(module, &mut folded, ins, ring_switch.map(|keys| &keys.inbound), scratch)
+    with_scratch::<BE, _>(bytes, |scratch| {
+        BE::ckks_fold(module, &mut folded, ins, ring_switch.map(|keys| &keys.inbound), scratch)
     })
     .expect("fold");
-    let folded_snapshot = folded.iter().map(snapshot::<B, _>).collect();
+    let folded_snapshot = folded.iter().map(snapshot::<BE, _>).collect();
     let mut refreshed: Vec<_> = folded
         .iter()
         .enumerate()
@@ -98,7 +98,7 @@ where
             fixture_ciphertext(module, &refreshed, 170 + i as u8)
         })
         .collect();
-    let mut outs: Vec<CKKSRingCiphertext<B, R>> = ins
+    let mut outs: Vec<CKKSRingCiphertext<BE, R>> = ins
         .iter()
         .enumerate()
         .map(|(i, ct)| {
@@ -109,8 +109,8 @@ where
             ))
         })
         .collect();
-    with_scratch::<B, _>(bytes, |scratch| {
-        B::ckks_unfold(
+    with_scratch::<BE, _>(bytes, |scratch| {
+        BE::ckks_unfold(
             module,
             &mut outs,
             &mut refreshed,
@@ -123,15 +123,15 @@ where
     [
         folded_snapshot,
         outs.into_iter()
-            .map(|ct| snapshot::<B, _>(&relabel::<_, _, R, Standard>(ct)))
+            .map(|ct| snapshot::<BE, _>(&relabel::<_, _, R, Standard>(ct)))
             .collect(),
     ]
 }
 
-fn run_fold<B>(params: CKKSTestParams, module: &Module<B>) -> Vec<Outcome>
+fn run_fold<BE>(params: CKKSTestParams, module: &Module<BE>) -> Vec<Outcome>
 where
-    B: Backend<ZnxWord = i64, Ring = Standard> + CKKSFoldLayoutImpl + CKKSFoldImpl<Standard> + CKKSFoldImpl<ConjugateInvariant>,
-    Module<B>: CKKSModuleAlloc<B> + GLWEMaskFill<B> + GLWEAutomorphismKeyPreparedFactory<B> + GGLWEPreparedFactory<B>,
+    BE: Backend<ZnxWord = i64, Ring = Standard> + CKKSFoldLayoutImpl + CKKSFoldImpl<Standard> + CKKSFoldImpl<ConjugateInvariant>,
+    Module<BE>: CKKSModuleAlloc<BE> + GLWEMaskFill<BE> + GLWEAutomorphismKeyPreparedFactory<BE> + GGLWEPreparedFactory<BE>,
 {
     let (n, b) = (module.n(), params.base2k);
     let (log_delta, k_in, k_refreshed, k_out) = (12, 3 * b, 4 * b, 6 * b);
@@ -164,7 +164,7 @@ where
     ] {
         let mut key_input = layout(degree, b, k_in, log_delta, SlotsKind::Real);
         key_input.meta.log_sparsity = log_sparsity;
-        let automorphisms = <B as CKKSFoldImpl<Standard>>::ckks_unfold_galois_elements(module, &key_input)
+        let automorphisms = <BE as CKKSFoldImpl<Standard>>::ckks_unfold_galois_elements(module, &key_input)
             .into_iter()
             .zip(key_seed..)
             .map(|(p, seed)| {
@@ -202,7 +202,7 @@ where
     }
     // Conjugate-invariant inputs, at half the degree and merged two per bootstrap at a quarter.
     for degree in [n / 2, n / 4] {
-        let ins: Vec<CKKSRingCiphertext<B, ConjugateInvariant>> = [199u8, 211, 223]
+        let ins: Vec<CKKSRingCiphertext<BE, ConjugateInvariant>> = [199u8, 211, 223]
             .map(|seed| {
                 relabel(fixture_ciphertext(
                     module,
@@ -211,7 +211,7 @@ where
                 ))
             })
             .into();
-        outcomes.push(run_case::<B, ConjugateInvariant>(
+        outcomes.push(run_case::<BE, ConjugateInvariant>(
             module,
             n,
             &ins,
@@ -224,7 +224,7 @@ where
     // Sixteen sparse conjugate-invariant inputs at an eighth of the degree: embedded
     // and paired at a quarter, filled four per position, then merged four per bootstrap
     // into a single folded ciphertext.
-    let sparse_ci: Vec<CKKSRingCiphertext<B, ConjugateInvariant>> = (0..16u8)
+    let sparse_ci: Vec<CKKSRingCiphertext<BE, ConjugateInvariant>> = (0..16u8)
         .map(|i| {
             let ci = CKKSLayout {
                 meta: GLWEPlaintextMeta {
@@ -236,9 +236,9 @@ where
             relabel(fixture_ciphertext(module, &ci, 227 + i))
         })
         .collect();
-    assert_eq!(B::ckks_fold_count(module, n.into(), &sparse_ci), 1);
+    assert_eq!(BE::ckks_fold_count(module, n.into(), &sparse_ci), 1);
     let ci_automorphisms: HashMap<i64, _> =
-        <B as CKKSFoldImpl<ConjugateInvariant>>::ckks_unfold_galois_elements(module, &sparse_ci[0])
+        <BE as CKKSFoldImpl<ConjugateInvariant>>::ckks_unfold_galois_elements(module, &sparse_ci[0])
             .into_iter()
             .zip(79u8..)
             .map(|(p, seed)| {
@@ -248,7 +248,7 @@ where
                 )
             })
             .collect();
-    outcomes.push(run_case::<B, ConjugateInvariant>(
+    outcomes.push(run_case::<BE, ConjugateInvariant>(
         module,
         n,
         &sparse_ci,
@@ -269,11 +269,11 @@ where
 /// A transparent ciphertext with three exactly representable dyadic terms. The
 /// zero mask keeps switching noise out, while the low terms detect limb copying
 /// across radices. Real inputs use a constant polynomial, complex ones also X.
-fn transparent<B: Backend<ZnxWord = i64, Ring = Standard>>(
-    module: &Module<B>,
+fn transparent<BE: Backend<ZnxWord = i64, Ring = Standard>>(
+    module: &Module<BE>,
     ct_layout: &CKKSLayout,
     value: i64,
-) -> CKKSCiphertextOwned<B> {
+) -> CKKSCiphertextOwned<BE> {
     let mut ct = module.ckks_ciphertext_alloc_from_infos(ct_layout);
     let (n, b) = (ct.n().as_usize(), ct.base2k().as_usize());
     let mut digits = vec![0; 2 * n * ct.max_size()];
@@ -284,20 +284,20 @@ fn transparent<B: Backend<ZnxWord = i64, Ring = Standard>>(
     if ct.slots() == SlotsKind::Complex {
         digits[1] = 1 << (b - 8);
     }
-    B::copy_from_host(ct.inner.data_mut().data_mut(), bytemuck::cast_slice(&digits));
+    BE::copy_from_host(ct.inner.data_mut().data_mut(), bytemuck::cast_slice(&digits));
     ct.inner.set_canonical(true);
     ct
 }
 
 /// Key providers may resolve lazily: the preflight must retain its answer.
-struct Once<'a, B: Backend>(&'a AutomorphismKeys<B>, Cell<bool>);
+struct Once<'a, BE: Backend>(&'a AutomorphismKeys<BE>, Cell<bool>);
 
-impl<B: Backend> GetAutomorphismKey<B> for Once<'_, B> {
+impl<BE: Backend> GetAutomorphismKey<BE> for Once<'_, BE> {
     fn lookup_automorphism_key(
         &self,
         p: i64,
         k: TorusPrecision,
-    ) -> poulpy_core::Result<GLWEAutomorphismKeyPreparedBackendRef<'_, B>> {
+    ) -> poulpy_core::Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
         if self.1.replace(true) {
             return Err(poulpy_core::CoreError::GGLWEKeyUse {
                 op: "fold test",
@@ -308,10 +308,10 @@ impl<B: Backend> GetAutomorphismKey<B> for Once<'_, B> {
     }
 }
 
-fn check_mixed_radices<B>(module: &Module<B>)
+fn check_mixed_radices<BE>(module: &Module<BE>)
 where
-    B: Backend<ZnxWord = i64, Ring = Standard> + CKKSFoldLayoutImpl + CKKSFoldImpl<Standard>,
-    Module<B>: CKKSModuleAlloc<B> + GLWEMaskFill<B> + GLWEAutomorphismKeyPreparedFactory<B> + GGLWEPreparedFactory<B>,
+    BE: Backend<ZnxWord = i64, Ring = Standard> + CKKSFoldLayoutImpl + CKKSFoldImpl<Standard>,
+    Module<BE>: CKKSModuleAlloc<BE> + GLWEMaskFill<BE> + GLWEAutomorphismKeyPreparedFactory<BE> + GGLWEPreparedFactory<BE>,
 {
     let n = module.n();
     let ring_switch = RingSwitchKeys {
@@ -336,15 +336,15 @@ where
             .iter()
             .map(|ct| fixture_ciphertext(module, &layout(degree, 19, 80, 12, ct.slots()), 207))
             .collect();
-        let folded_layout: GLWELayout = B::ckks_fold_layout(module, n.into(), &ins[0], &keys_layout);
-        let mut folded: Vec<_> = (0..B::ckks_fold_count(module, n.into(), &ins))
+        let folded_layout: GLWELayout = BE::ckks_fold_layout(module, n.into(), &ins[0], &keys_layout);
+        let mut folded: Vec<_> = (0..BE::ckks_fold_count(module, n.into(), &ins))
             .map(|_| module.ckks_ciphertext_alloc_from_glwe_infos(&folded_layout))
             .collect();
-        let bytes = B::ckks_fold_tmp_bytes(module, n.into(), &outs[0], &ins[0], &keys_layout);
+        let bytes = BE::ckks_fold_tmp_bytes(module, n.into(), &outs[0], &ins[0], &keys_layout);
         let once = Once(&automorphisms, Cell::new(false));
-        with_scratch::<B, _>(bytes, |scratch| {
-            B::ckks_fold(module, &mut folded, &ins, Some(&ring_switch.inbound), scratch).unwrap();
-            B::ckks_unfold(
+        with_scratch::<BE, _>(bytes, |scratch| {
+            BE::ckks_fold(module, &mut folded, &ins, Some(&ring_switch.inbound), scratch).unwrap();
+            BE::ckks_unfold(
                 module,
                 &mut outs,
                 &mut folded,
@@ -359,11 +359,11 @@ where
             let paired = i > 0;
             let mut expected = transparent(module, &layout(degree, 19, 80, 12, ins[i].slots()), i as i64 + 1);
             expected.set_k((60 - usize::from(paired)).into());
-            let mut expected = snapshot::<B, _>(&expected);
+            let mut expected = snapshot::<BE, _>(&expected);
             if paired {
                 expected.digits.iter_mut().for_each(|digit| *digit *= 2);
             }
-            let actual = snapshot::<B, _>(out);
+            let actual = snapshot::<BE, _>(out);
             assert_eq!(
                 actual.layout, expected.layout,
                 "unfold metadata at degree {degree}, input {i}"
@@ -376,14 +376,14 @@ where
     }
 }
 
-fn check_unfold_errors<B>(module: &Module<B>)
+fn check_unfold_errors<BE>(module: &Module<BE>)
 where
-    B: Backend<ZnxWord = i64, Ring = Standard> + CKKSFoldLayoutImpl + CKKSFoldImpl<Standard>,
-    Module<B>: CKKSModuleAlloc<B> + GLWEMaskFill<B> + GLWEAutomorphismKeyPreparedFactory<B> + GGLWEPreparedFactory<B>,
+    BE: Backend<ZnxWord = i64, Ring = Standard> + CKKSFoldLayoutImpl + CKKSFoldImpl<Standard>,
+    Module<BE>: CKKSModuleAlloc<BE> + GLWEMaskFill<BE> + GLWEAutomorphismKeyPreparedFactory<BE> + GGLWEPreparedFactory<BE>,
 {
     let n = module.n();
     let outbound = prepared_gglwe(module, &key_layout(n, 17, 60, 2, 1, 1), 211);
-    let empty = AutomorphismKeys::<B>::new();
+    let empty = AutomorphismKeys::<BE>::new();
     let short = HashMap::from([(
         -1,
         prepared_automorphism_key(module, &key_layout(n, 13, 20, 1, 1, 1), -1, 213),
@@ -414,11 +414,11 @@ where
                 ct
             })
             .collect();
-        let mut folded: Vec<_> = (0..B::ckks_fold_count(module, n.into(), &outs))
+        let mut folded: Vec<_> = (0..BE::ckks_fold_count(module, n.into(), &outs))
             .map(|_| fixture_ciphertext(module, &layout(n, 15, 60, 12, SlotsKind::Complex), 219))
             .collect();
-        let before_out: Vec<_> = outs.iter().map(snapshot::<B, _>).collect();
-        let before_folded: Vec<_> = folded.iter().map(snapshot::<B, _>).collect();
+        let before_out: Vec<_> = outs.iter().map(snapshot::<BE, _>).collect();
+        let before_folded: Vec<_> = folded.iter().map(snapshot::<BE, _>).collect();
         let keys_layout = CKKSFoldKeysLayout {
             ring_switch: Some(RingSwitchKeys {
                 inbound: outbound.gglwe_layout(),
@@ -426,19 +426,19 @@ where
             }),
             automorphism: keys.and_then(|keys| keys.values().next()).map(GGLWEInfos::gglwe_layout),
         };
-        let bytes = B::ckks_fold_tmp_bytes(module, n.into(), &outs[0], &folded[0], &keys_layout);
-        let result = with_scratch::<B, _>(bytes, |scratch| {
-            B::ckks_unfold(module, &mut outs, &mut folded, keys, Some(&outbound), scratch)
+        let bytes = BE::ckks_fold_tmp_bytes(module, n.into(), &outs[0], &folded[0], &keys_layout);
+        let result = with_scratch::<BE, _>(bytes, |scratch| {
+            BE::ckks_unfold(module, &mut outs, &mut folded, keys, Some(&outbound), scratch)
         });
         assert!(result.is_err(), "{name}: invalid unfold should fail");
         assert_eq!(
             before_out,
-            outs.iter().map(snapshot::<B, _>).collect::<Vec<_>>(),
+            outs.iter().map(snapshot::<BE, _>).collect::<Vec<_>>(),
             "{name}: failed unfold changed outputs"
         );
         assert_eq!(
             before_folded,
-            folded.iter().map(snapshot::<B, _>).collect::<Vec<_>>(),
+            folded.iter().map(snapshot::<BE, _>).collect::<Vec<_>>(),
             "{name}: failed unfold changed folded ciphertexts"
         );
     }
@@ -448,10 +448,10 @@ where
 /// dense masks, and pairs add `i·y` to `x`. Uniform digits at the largest radix, and
 /// the same values with non-canonical digits and a limb past their width, fold alike,
 /// standard and conjugate-invariant.
-fn check_large_digits<B>(module: &Module<B>)
+fn check_large_digits<BE>(module: &Module<BE>)
 where
-    B: Backend<ZnxWord = i64, Ring = Standard> + CKKSFoldLayoutImpl + CKKSFoldImpl<Standard> + CKKSFoldImpl<ConjugateInvariant>,
-    Module<B>: CKKSModuleAlloc<B> + GLWEMaskFill<B>,
+    BE: Backend<ZnxWord = i64, Ring = Standard> + CKKSFoldLayoutImpl + CKKSFoldImpl<Standard> + CKKSFoldImpl<ConjugateInvariant>,
+    Module<BE>: CKKSModuleAlloc<BE> + GLWEMaskFill<BE>,
 {
     let (n, b) = (module.n(), (i64::BITS - 2) as usize);
     for degree in [n, n / 2] {
@@ -475,7 +475,7 @@ where
         let (want, have) = if degree == n {
             (fold_snapshots(module, &canonical), fold_snapshots(module, &denormalized))
         } else {
-            let ci = |cts: Vec<CKKSCiphertextOwned<B>>| -> Vec<CKKSRingCiphertext<B, ConjugateInvariant>> {
+            let ci = |cts: Vec<CKKSCiphertextOwned<BE>>| -> Vec<CKKSRingCiphertext<BE, ConjugateInvariant>> {
                 cts.into_iter().skip(1).map(relabel).collect()
             };
             (
@@ -488,53 +488,53 @@ where
 }
 
 /// Folds `ins` into ciphertexts of the module degree, under the bootstrap secret.
-fn fold_snapshots<B, R>(module: &Module<B>, ins: &[CKKSRingCiphertext<B, R>]) -> Vec<Snapshot>
+fn fold_snapshots<BE, R>(module: &Module<BE>, ins: &[CKKSRingCiphertext<BE, R>]) -> Vec<Snapshot>
 where
-    B: Backend<ZnxWord = i64> + CKKSFoldLayoutImpl + CKKSFoldImpl<R>,
+    BE: Backend<ZnxWord = i64> + CKKSFoldLayoutImpl + CKKSFoldImpl<R>,
     R: Ring,
-    Module<B>: CKKSModuleAlloc<B>,
+    Module<BE>: CKKSModuleAlloc<BE>,
 {
     let n = module.n();
     let keys = CKKSFoldKeysLayout {
         ring_switch: None,
         automorphism: None,
     };
-    let folded_layout = B::ckks_fold_layout(module, n.into(), &ins[0], &keys);
-    let mut folded: Vec<_> = (0..B::ckks_fold_count(module, n.into(), ins))
+    let folded_layout = BE::ckks_fold_layout(module, n.into(), &ins[0], &keys);
+    let mut folded: Vec<_> = (0..BE::ckks_fold_count(module, n.into(), ins))
         .map(|_| module.ckks_ciphertext_alloc_from_glwe_infos(&folded_layout))
         .collect();
-    let bytes = B::ckks_fold_tmp_bytes(module, n.into(), &ins[0], &ins[0], &keys);
-    with_scratch::<B, _>(bytes, |scratch| {
-        B::ckks_fold(module, &mut folded, ins, None::<&GGLWEPrepared<B::OwnedBuf, B>>, scratch)
+    let bytes = BE::ckks_fold_tmp_bytes(module, n.into(), &ins[0], &ins[0], &keys);
+    with_scratch::<BE, _>(bytes, |scratch| {
+        BE::ckks_fold(module, &mut folded, ins, None::<&GGLWEPrepared<BE::OwnedBuf, BE>>, scratch)
     })
     .unwrap();
-    folded.iter().map(snapshot::<B, _>).collect()
+    folded.iter().map(snapshot::<BE, _>).collect()
 }
 
 /// Unfolding conjugate-invariant outputs at a larger scale than the refreshed
 /// ciphertext relabels them without widening them past their storage.
-fn check_ci_unfold_width<B>(module: &Module<B>)
+fn check_ci_unfold_width<BE>(module: &Module<BE>)
 where
-    B: Backend<ZnxWord = i64, Ring = Standard> + CKKSFoldLayoutImpl + CKKSFoldImpl<ConjugateInvariant>,
-    Module<B>: CKKSModuleAlloc<B> + GLWEMaskFill<B>,
+    BE: Backend<ZnxWord = i64, Ring = Standard> + CKKSFoldLayoutImpl + CKKSFoldImpl<ConjugateInvariant>,
+    Module<BE>: CKKSModuleAlloc<BE> + GLWEMaskFill<BE>,
 {
     let n = module.n();
     let mut refreshed = vec![fixture_ciphertext(module, &layout(n, 12, 48, 8, SlotsKind::Complex), 241)];
-    let mut outs: Vec<CKKSRingCiphertext<B, ConjugateInvariant>> = [243u8, 244]
+    let mut outs: Vec<CKKSRingCiphertext<BE, ConjugateInvariant>> = [243u8, 244]
         .map(|seed| relabel(fixture_ciphertext(module, &layout(n / 2, 12, 48, 12, SlotsKind::Real), seed)))
         .into();
     let keys = CKKSFoldKeysLayout {
         ring_switch: None,
         automorphism: None,
     };
-    let bytes = B::ckks_fold_tmp_bytes(module, n.into(), &outs[0], &outs[0], &keys);
-    with_scratch::<B, _>(bytes, |scratch| {
-        B::ckks_unfold(
+    let bytes = BE::ckks_fold_tmp_bytes(module, n.into(), &outs[0], &outs[0], &keys);
+    with_scratch::<BE, _>(bytes, |scratch| {
+        BE::ckks_unfold(
             module,
             &mut outs,
             &mut refreshed,
-            None::<&AutomorphismKeys<B>>,
-            None::<&GGLWEPrepared<B::OwnedBuf, B>>,
+            None::<&AutomorphismKeys<BE>>,
+            None::<&GGLWEPrepared<BE::OwnedBuf, BE>>,
             scratch,
         )
     })
@@ -550,10 +550,10 @@ where
 
 /// `ct` with each digit below its top limb moved by `±2^b` and borrowed from the limb
 /// above, starting from a stored limb past its width: the same value, non-canonical.
-fn denormalize<B>(module: &Module<B>, ct: &CKKSCiphertextOwned<B>) -> CKKSCiphertextOwned<B>
+fn denormalize<BE>(module: &Module<BE>, ct: &CKKSCiphertextOwned<BE>) -> CKKSCiphertextOwned<BE>
 where
-    B: Backend<ZnxWord = i64, Ring = Standard>,
-    Module<B>: CKKSModuleAlloc<B>,
+    BE: Backend<ZnxWord = i64, Ring = Standard>,
+    Module<BE>: CKKSModuleAlloc<BE>,
 {
     let (n, b, k) = (ct.n().as_usize(), ct.base2k().as_usize(), ct.k());
     let size = k.as_usize().div_ceil(b);
@@ -564,7 +564,7 @@ where
         },
         meta: ct.meta(),
     });
-    let mut digits = snapshot::<B, _>(ct).digits;
+    let mut digits = snapshot::<BE, _>(ct).digits;
     digits.resize(2 * n * (size + 1), 0);
     for j in (1..=size).rev() {
         for i in 0..2 * n {
@@ -573,7 +573,7 @@ where
             digits[(j - 1) * 2 * n + i] += t;
         }
     }
-    B::copy_from_host(out.inner.data_mut().data_mut(), bytemuck::cast_slice(&digits));
+    BE::copy_from_host(out.inner.data_mut().data_mut(), bytemuck::cast_slice(&digits));
     out.set_k(k);
     out.inner.set_canonical(false);
     out

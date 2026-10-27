@@ -10,7 +10,7 @@
 //! | [`test_add_many_delta_log_delta`] | inputs at different `log_delta` |
 //! | [`test_add_many_smaller_output`] | output narrower than inputs (`offset > 0`) |
 //! | [`test_add_many_normalize_after`] | normalization after every `normalize_after` additions, aligned, into a narrower output and at unaligned budgets |
-//! | [`test_add_many_error`] | a zero `normalize_after`, an empty slice and an arena one byte below the query |
+//! | [`test_add_many_rejects_invalid_calls`] | a zero `normalize_after`, an empty slice and an arena one byte below the query |
 
 use poulpy_core::{GLWENormalize, layouts::LWEInfos};
 use poulpy_hal::{
@@ -72,7 +72,7 @@ where
     Module<BE>: CKKSAddManyOps<BE>,
 {
     with_scratch::<BE, _>(module.ckks_add_many_tmp_bytes(&*res, a[0]), |s| {
-        module.ckks_add_many(res, a, normalize_after, s)
+        module.ckks_add_many(normalize_after, res, a, s)
     })
 }
 
@@ -445,8 +445,11 @@ pub fn test_add_many_normalize_after<BE, F, E>(
 /// A zero `normalize_after`, checked before an empty slice, and an empty slice are refused with `InvalidOperand` on an
 /// empty arena, and one byte below the query, for one input or several, returns `CKKSError::Internal`, each before
 /// `res` changes.
-pub fn test_add_many_error<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
-where
+pub fn test_add_many_rejects_invalid_calls<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
     BE: TestContextBackend<Ring = Standard>,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
@@ -494,10 +497,10 @@ where
             "normalize_after must be at least 1",
         ),
     ] {
-        let result = with_scratch::<BE, _>(0, |s| module.ckks_add_many(&mut res, a, 0, s));
+        let result = with_scratch::<BE, _>(0, |s| module.ckks_add_many(0, &mut res, a, s));
         refused(label, result, &res, &invalid(reason));
     }
-    let result = with_scratch::<BE, _>(0, |s| module.ckks_add_many(&mut res, &empty, 1, s));
+    let result = with_scratch::<BE, _>(0, |s| module.ckks_add_many(1, &mut res, &empty, s));
     refused("empty", result, &res, &invalid("a must contain at least one ciphertext"));
 
     let internal = |err: &CKKSError| {
@@ -508,7 +511,7 @@ where
     };
     for (label, a) in [("one input", &several[..1]), ("three inputs", &several[..])] {
         let bytes = module.ckks_add_many_tmp_bytes(&res, a[0]);
-        let result = with_scratch::<BE, _>(bytes - 1, |s| module.ckks_add_many(&mut res, a, 1, s));
+        let result = with_scratch::<BE, _>(bytes - 1, |s| module.ckks_add_many(1, &mut res, a, s));
         refused(&format!("{label} one byte short"), result, &res, &internal);
     }
 }

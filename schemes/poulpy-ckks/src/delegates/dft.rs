@@ -1,4 +1,4 @@
-//! Delegating impl of the public [`CKKSDFTOps`] API onto the [`DFTImpl`] backend
+//! Delegating impl of the public [`CKKSDFTOps`] API onto the [`CKKSDFTImpl`] backend
 //! hook, completing the `api → oep → delegates ← reference` chain for the
 //! homomorphic DFT.
 
@@ -16,10 +16,10 @@ use crate::{
     CKKSCtBounds, SetCKKSInfos,
     api::{CKKSDFTMatrixOps, CKKSDFTOps, CKKSEncodingScalar, LtDiagonalMeta},
     layouts::{DFTMatrix, DFTMatrixPrepared, DFTPlan, Decode, DftDirection, DftFormat, Encode, Repack, Split, Standard},
-    oep::{DFTImpl, DFTMatrixImpl},
+    oep::{CKKSDFTImpl, CKKSDFTMatrixImpl},
 };
 
-impl<BE: Backend + DFTImpl> CKKSDFTOps<BE> for Module<BE> {
+impl<BE: Backend + CKKSDFTImpl> CKKSDFTOps<BE> for Module<BE> {
     fn ckks_prepare_dft_matrix_tmp_bytes<Dir, Fmt, P>(&self, dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>) -> usize
     where
         P: poulpy_core::layouts::LWEInfos,
@@ -184,7 +184,7 @@ impl<BE: Backend + DFTImpl> CKKSDFTOps<BE> for Module<BE> {
 
 impl<BE, F> CKKSDFTMatrixOps<BE, F> for Module<BE>
 where
-    BE: Backend + DFTMatrixImpl<F>,
+    BE: Backend + CKKSDFTMatrixImpl<F>,
     F: CKKSEncodingScalar,
 {
     fn ckks_new_dft_matrix_tmp_bytes<Dir, Fmt>(&self, literal: &DFTPlan) -> Result<usize>

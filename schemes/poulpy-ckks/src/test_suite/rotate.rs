@@ -24,7 +24,7 @@ use super::helpers::{
     TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_ct_meta, assert_decrypt_precision,
     assert_unary_output_meta, ckks_encrypt, gen_atk, gen_sk_with_raw, test_vector_1, want_rotate,
 };
-use super::parity::helpers::with_scratch;
+use super::parity::helpers::{snapshot, with_scratch};
 use poulpy_core::layouts::GLWEAutomorphismKeyPrepared;
 use poulpy_core::{GLWEAutomorphism, GLWEShift};
 use poulpy_hal::{
@@ -247,10 +247,8 @@ pub fn test_rotate_assign_rejects_missing_key<BE, F, E>(
         &mut scratch.borrow(),
     );
     let empty_keys: HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>> = HashMap::new();
-    let err = with_scratch::<BE, _>(module.ckks_rotate_tmp_bytes(&ct, &params.atk_layout()), |s| {
-        module.ckks_rotate_assign(1, &mut ct, &empty_keys, s)
-    })
-    .unwrap_err();
+    let before = snapshot::<BE, _>(&ct);
+    let err = with_scratch::<BE, _>(0, |s| module.ckks_rotate_assign(1, &mut ct, &empty_keys, s)).unwrap_err();
     assert!(
         matches!(
             err.composition(),
@@ -259,4 +257,5 @@ pub fn test_rotate_assign_rejects_missing_key<BE, F, E>(
         ),
         "rotate_assign missing_key: unexpected error: {err}"
     );
+    assert_eq!(snapshot::<BE, _>(&ct), before, "a refused ckks_rotate_assign wrote res");
 }

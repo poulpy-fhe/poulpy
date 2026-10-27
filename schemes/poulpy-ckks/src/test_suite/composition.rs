@@ -2,10 +2,10 @@
 
 use super::helpers::{
     PT_PREC, TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_ckks_error,
-    assert_decrypt_precision, ckks_decrypt_decode, ckks_encrypt, encode_and_upload_pt, gen_sk, gen_sk_with_raw, gen_tsk,
-    quantized_const, test_vector_1, test_vector_2,
+    assert_decrypt_precision, ckks_decrypt_decode, ckks_encrypt, dirty_ct, encode_and_upload_pt, gen_sk, gen_sk_with_raw,
+    gen_tsk, quantized_const, test_vector_1, test_vector_2,
 };
-use super::parity::helpers::with_scratch;
+use super::parity::helpers::{snapshot, with_scratch};
 use crate::{
     CKKSCompositionError, CKKSInfos,
     api::{CKKSAddOps, CKKSMulOps},
@@ -484,11 +484,9 @@ pub fn test_square_into_rejects_exhausted_capacity<BE, F, E>(
         );
     }
 
-    let mut no_capacity = alloc_ct(&params, module, params.k);
-    let err = with_scratch::<BE, _>(module.ckks_square_tmp_bytes(&no_capacity, &ct, &tsk), |s| {
-        module.ckks_square_into(&mut no_capacity, &ct, &tsk, s)
-    })
-    .unwrap_err();
+    let mut no_capacity = dirty_ct(module, &ct, params.k);
+    let before = snapshot::<BE, _>(&no_capacity);
+    let err = with_scratch::<BE, _>(0, |s| module.ckks_square_into(&mut no_capacity, &ct, &tsk, s)).unwrap_err();
     assert_ckks_error(
         "square_into_rejects_exhausted_capacity",
         &err,
@@ -499,5 +497,10 @@ pub fn test_square_into_rejects_exhausted_capacity<BE, F, E>(
             lhs_log_delta: ct.log_delta(),
             rhs_log_delta: ct.log_delta(),
         },
+    );
+    assert_eq!(
+        snapshot::<BE, _>(&no_capacity),
+        before,
+        "a refused ckks_square_into wrote res"
     );
 }

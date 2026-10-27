@@ -12,12 +12,11 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSResult as Result, GLWEPlaintextInfos, SetCKKSInfos, SlotsKind,
     api::{CKKSAddOps, CKKSMulOps},
-    ensure_plaintext_degree_embeds,
+    ensure_plaintext_degree_embeds, get_mul_ct_params,
     layouts::{CKKSPreparedLeft, CKKSPreparedRight},
+    mul_pt_params_raw,
     oep::derived::dot_product::{accumulate, check_lengths},
-    reference::mul::{
-        MulStamp, StampOrder, check_prepared_layout, get_mul_ct_params, mul_one_pass, mul_pt_params_raw, tensor_mul_core,
-    },
+    reference::mul::{MulStamp, StampOrder, check_prepared_layout, mul_one_pass, tensor_mul_core},
 };
 
 /// The reference algorithms of [`CKKSDotProductImpl`](crate::oep::CKKSDotProductImpl), which

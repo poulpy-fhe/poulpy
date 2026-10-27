@@ -4,15 +4,15 @@
 //! The concurrency-bearing branch drivers live in [`parallel`](super::parallel); keeping them free of validation logic keeps that code independently reviewable.
 
 use crate::layouts::CKKSCiphertextOwned;
-use crate::{CKKSResult as Result, ckks_ensure};
+use crate::{CKKSResult as Result, ckks_ensure, ckks_ensure_operand, invalid_operand};
 
 use anyhow::Context;
 use poulpy_core::layouts::prepared::{GLWEAutomorphismKeyPreparedBackendRef, GLWETensorKeyPreparedBackendRef};
 use poulpy_core::{
     GLWEBytesOf, GLWEKeyswitch, GLWERotate,
     layouts::{
-        Degree, GGLWEPreparedToBackendRef, GLWEInfos, GLWELayout, GLWEPlaintextInfos, GLWEPlaintextMeta, GLWESwitchingKeyDegrees,
-        GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos, Rank, Scale, TorusPrecision,
+        Degree, GGLWEInfos, GGLWEPreparedToBackendRef, GLWEInfos, GLWELayout, GLWEPlaintextInfos, GLWEPlaintextMeta,
+        GLWESwitchingKeyDegrees, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos, Rank, Scale, TorusPrecision,
     },
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
@@ -26,7 +26,7 @@ use crate::layouts::paco::{
 use crate::{
     CKKSCtBounds, CKKSInfos, CKKSLayout,
     api::{CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSLinearTransformationOps, CKKSMulOps, CKKSSubOps, PaCoScalar},
-    oep::{CKKSEncodingImpl, CKKSPaCoImpl},
+    oep::CKKSEncodingImpl,
 };
 
 /// Ciphertext layout used to conservatively size every phase of a branch.
@@ -114,7 +114,7 @@ pub(super) fn branch_tmp_bytes_validated<BE, F, K, I>(
     keys: &K,
 ) -> Result<usize>
 where
-    BE: CKKSPaCoImpl + CKKSEncodingImpl<F>,
+    BE: super::PaCoBackend + CKKSEncodingImpl<F>,
     F: PaCoScalar,
     K: PaCoKeys<BE>,
     I: CKKSCtBounds,
@@ -253,7 +253,7 @@ pub(super) fn direct_tmp_bytes_validated<BE, F, K, I>(
     keys: &K,
 ) -> Result<usize>
 where
-    BE: CKKSPaCoImpl + CKKSEncodingImpl<F>,
+    BE: super::PaCoBackend + CKKSEncodingImpl<F>,
     F: PaCoScalar,
     K: PaCoKeys<BE>,
     I: CKKSCtBounds,
@@ -268,6 +268,7 @@ where
 /// validation: with `encapsulated`, the structured input is carved first, the key switch filling it and the driver
 /// running on the remainder.
 fn call_tmp_bytes_validated<BE, F, K, Src>(
+    op: &'static str,
     module: &Module<BE>,
     output: &CKKSCiphertextOwned<BE>,
     input: &Src,
@@ -276,7 +277,7 @@ fn call_tmp_bytes_validated<BE, F, K, Src>(
     encapsulated: bool,
 ) -> Result<(usize, usize)>
 where
-    BE: CKKSPaCoImpl + CKKSEncodingImpl<F>,
+    BE: super::PaCoBackend + CKKSEncodingImpl<F>,
     F: PaCoScalar,
     K: PaCoKeys<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
@@ -285,7 +286,7 @@ where
         let direct = direct_tmp_bytes_validated(module, output, input, context, keys)?;
         return Ok((direct, direct));
     }
-    let switching_key = validate_encapsulation_key(input, context, keys)?;
+    let switching_key = validate_encapsulation_key(op, input, context, keys)?;
     let structured = encapsulated_input_layout(input, context);
     let direct = direct_tmp_bytes_validated(module, output, &structured, context, keys)?;
     let required = BE::scratch_aligned(module.glwe_bytes_of_from_infos(&structured))
@@ -306,16 +307,16 @@ fn paco_bootstrap_tmp_bytes<BE, F, K, Src>(
     encapsulated: bool,
 ) -> Result<usize>
 where
-    BE: CKKSPaCoImpl + CKKSEncodingImpl<F>,
+    BE: super::PaCoBackend + CKKSEncodingImpl<F>,
     F: PaCoScalar,
     K: PaCoKeys<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     validate_runtime(op, module, context, output, input, keys)?;
-    Ok(call_tmp_bytes_validated(module, output, input, context, keys, encapsulated)?.0)
+    Ok(call_tmp_bytes_validated(op, module, output, input, context, keys, encapsulated)?.0)
 }
 
-pub(crate) fn ckks_paco_bootstrap_direct_tmp_bytes_derived<BE, F, K, Src>(
+pub(super) fn ckks_paco_bootstrap_direct_tmp_bytes<BE, F, K, Src>(
     module: &Module<BE>,
     output: &CKKSCiphertextOwned<BE>,
     input: &Src,
@@ -323,7 +324,7 @@ pub(crate) fn ckks_paco_bootstrap_direct_tmp_bytes_derived<BE, F, K, Src>(
     keys: &K,
 ) -> Result<usize>
 where
-    BE: CKKSPaCoImpl + CKKSEncodingImpl<F>,
+    BE: super::PaCoBackend + CKKSEncodingImpl<F>,
     F: PaCoScalar,
     K: PaCoKeys<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
@@ -339,7 +340,7 @@ where
     )
 }
 
-pub(crate) fn ckks_paco_bootstrap_tmp_bytes_derived<BE, F, K, Src>(
+pub(super) fn ckks_paco_bootstrap_tmp_bytes<BE, F, K, Src>(
     module: &Module<BE>,
     output: &CKKSCiphertextOwned<BE>,
     input: &Src,
@@ -347,7 +348,7 @@ pub(crate) fn ckks_paco_bootstrap_tmp_bytes_derived<BE, F, K, Src>(
     keys: &K,
 ) -> Result<usize>
 where
-    BE: CKKSPaCoImpl + CKKSEncodingImpl<F>,
+    BE: super::PaCoBackend + CKKSEncodingImpl<F>,
     F: PaCoScalar,
     K: PaCoKeys<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
@@ -369,13 +370,13 @@ pub(super) fn preflight<BE, F, K, Src>(
     scratch: &ScratchArena<'_, BE>,
 ) -> Result<((usize, usize), usize)>
 where
-    BE: CKKSPaCoImpl + CKKSEncodingImpl<F>,
+    BE: super::PaCoBackend + CKKSEncodingImpl<F>,
     F: PaCoScalar,
     K: PaCoKeys<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     let output_meta = validate_runtime(op, module, context, output, input, keys)?;
-    let (required, direct) = call_tmp_bytes_validated(module, output, input, context, keys, encapsulated)?;
+    let (required, direct) = call_tmp_bytes_validated(op, module, output, input, context, keys, encapsulated)?;
     ckks_ensure!(
         scratch.available() >= required,
         "PaCo bootstrap needs {required} scratch bytes, but only {} are available",
@@ -396,19 +397,22 @@ where
 /// coefficient is refreshed once, and no branch spends work on a coefficient
 /// the sparsity guarantees is zero.
 pub(super) fn branch_schedule<BE: Backend, F: PaCoScalar>(
+    op: &'static str,
     context: &PaCoContext<BE, F>,
     log_sparsity: usize,
 ) -> Result<(usize, usize)> {
     let (n, c) = (context.plan().n(), context.plan().c());
-    let stride = 1usize
-        .checked_shl(log_sparsity as u32)
-        .context("PaCo input sparsity 2^log_sparsity overflows usize")?;
-    let live = c.checked_mul(stride).context("PaCo C*2^log_sparsity overflows usize")?;
-    ckks_ensure!(
-        live <= n,
-        "PaCo input at log_sparsity={log_sparsity} has {} live coefficients, fewer than the plan's C={c} classes",
-        n / stride,
-    );
+    let stride = u32::try_from(log_sparsity).ok().and_then(|log| 1usize.checked_shl(log));
+    let live = stride.and_then(|stride| c.checked_mul(stride)).filter(|&live| live <= n);
+    let (Some(stride), Some(live)) = (stride, live) else {
+        let coefficients = stride.map_or(0, |stride| n / stride);
+        return Err(invalid_operand(
+            op,
+            format!(
+                "PaCo input at log_sparsity={log_sparsity} has {coefficients} live coefficients, fewer than the plan's C={c} classes"
+            ),
+        ));
+    };
     ckks_ensure!(
         n.is_multiple_of(live),
         "PaCo C*2^log_sparsity={live} must divide the ring degree {n}"
@@ -431,6 +435,7 @@ pub(super) fn checked_branch_shift(branch: usize, stride: usize) -> Result<i64> 
 /// Resolves and validates the dense-to-PaCo switching key an encapsulated
 /// call requires, without touching the input ciphertext.
 pub(super) fn validate_encapsulation_key<'a, BE, F, K, Src>(
+    op: &'static str,
     input: &Src,
     context: &PaCoContext<BE, F>,
     keys: &'a K,
@@ -441,15 +446,19 @@ where
     K: PaCoKeys<BE>,
     Src: CKKSCtBounds,
 {
-    let switching_key = keys
-        .encapsulation_key()
-        .context("PaCo encapsulated bootstrap requires a dense-to-PaCo switching key")?;
-    ckks_ensure!(
+    let Some(switching_key) = keys.encapsulation_key() else {
+        return Err(invalid_operand(
+            op,
+            "PaCo encapsulated bootstrap requires a dense-to-PaCo switching key",
+        ));
+    };
+    ckks_ensure_operand!(
+        op,
         input.n().as_usize() == context.plan().n(),
         "PaCo encapsulation input has incompatible degree {}",
         input.n()
     );
-    ckks_ensure!(input.rank().as_usize() == 1, "PaCo encapsulation input must have rank 1");
+    ckks_ensure_operand!(op, input.rank().as_usize() == 1, "PaCo encapsulation input must have rank 1");
     let structured_size = input.k().as_usize().div_ceil(context.base2k().as_usize());
     let switching_key_view = GGLWEPreparedToBackendRef::to_backend_ref(switching_key);
     validate_gadget_backend_view(
@@ -459,18 +468,19 @@ where
         context.plan().n(),
         context.base2k(),
         structured_size,
-    )?;
-    ckks_ensure!(
+    )
+    .map_err(|e| invalid_operand(op, e))?;
+    ckks_ensure_operand!(
+        op,
         switching_key.input_degree().as_usize() == context.plan().n()
             && switching_key.output_degree().as_usize() == context.plan().n(),
         "PaCo encapsulation-key input/output degrees must both equal {}",
         context.plan().n(),
     );
-    ckks_ensure!(
-        switching_key.k().as_usize() >= input.k().as_usize(),
-        "PaCo encapsulation-key width {} is smaller than input width {}",
-        switching_key.k(),
-        input.k(),
+    ckks_ensure_operand!(
+        op,
+        input.k() <= switching_key.gglwe_layout().max_input_k(),
+        "the input is wider than an encapsulation key's max_input_k"
     );
     Ok(switching_key)
 }

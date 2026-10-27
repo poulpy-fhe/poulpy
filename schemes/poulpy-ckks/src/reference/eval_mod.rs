@@ -2,13 +2,13 @@
 //! of CKKS bootstrapping.
 //!
 //! This module holds the *evaluation* — the backend-generic reference
-//! [`CKKSEvalModOpsReference`] and the `eval_mod` pipeline. The parameterization
+//! [`CKKSEvalModReference`] and the `eval_mod` pipeline. The parameterization
 //! it consumes (the periodic-function approximation polynomials and their
 //! encoding) lives in [`crate::layouts::eval_mod`]; see there for the maths and
 //! the [`EvalMod`] structure. The public entry point is
 //! [`CKKSEvalModOps`](crate::api::CKKSEvalModOps).
 
-use crate::{CKKSResult as Result, ckks_ensure};
+use crate::{CKKSResult as Result, checked_log_budget_sub, ckks_ensure_operand};
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
@@ -43,7 +43,7 @@ use crate::{
 /// forwards to [`Self::ckks_eval_mod_reference`].
 ///
 /// [`CKKSEvalModOps`]: crate::api::CKKSEvalModOps
-pub trait CKKSEvalModOpsReference<BE: Backend> {
+pub trait CKKSEvalModReference<BE: Backend> {
     /// Reference `x mod 1` evaluation: see [`crate::layouts::eval_mod`] for the
     /// base-polynomial / range-extension / inverse pipeline and the `eval_mod`
     /// function for the implementation.
@@ -72,7 +72,7 @@ pub trait CKKSEvalModOpsReference<BE: Backend> {
         CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos;
 }
 
-impl<BE: Backend> CKKSEvalModOpsReference<BE> for Module<BE>
+impl<BE: Backend> CKKSEvalModReference<BE> for Module<BE>
 where
     Module<BE>: CKKSPolynomialEvaluationOps<BE>
         + CKKSEvalModComplexOps<BE, BE::Ring>
@@ -156,21 +156,16 @@ where
     if matches!(params.f_mod_bsgs, EvalModBsgs::Complex(_)) && !module.ckks_eval_mod_complex_supported() {
         return Err(complex_refused());
     }
-    ckks_ensure!(
+    ckks_ensure_operand!(
+        "ckks_eval_mod",
         ct.rank().as_usize() == 1,
-        "ckks_eval_mod supports rank-1 ciphertexts only, got rank {}",
+        "supports rank-1 ciphertexts only, got rank {}",
         ct.rank().as_usize()
     );
     let s_in = ct.log_delta();
     let s_eval = params.plan.f_mod_log_delta;
     let s_budget = ct.log_budget();
-
-    let required = params.consumed_bits();
-    ckks_ensure!(
-        ct.log_budget() >= required,
-        "ckks_eval_mod: input log_budget {got} < {required} bits required (consumed at scale {s_eval})",
-        got = ct.log_budget(),
-    );
+    checked_log_budget_sub("ckks_eval_mod", s_budget, params.consumed_bits())?;
 
     let work_layout = GLWELayout {
         n: ct.n(),

@@ -1,6 +1,6 @@
 //! Public CKKS-facing API for the homomorphic DFT (CoeffsToSlots / SlotsToCoeffs).
 //!
-//! Calls dispatch through [`crate::oep::DFTImpl`], including the selected
+//! Calls dispatch through [`crate::oep::CKKSDFTImpl`], including the selected
 //! generic DFT operation used by derived format wrappers.
 //! The homomorphic DFT is documented as a stage of the bootstrapping pipeline in
 //! [`docs/guides/bootstrapping.md`](https://github.com/poulpy-fhe/poulpy/blob/main/docs/guides/bootstrapping.md).
@@ -198,7 +198,7 @@ pub trait CKKSDFTOps<BE: Backend> {
 ///
 /// Split from [`CKKSDFTOps`] so the scalar is a trait parameter and the method
 /// stays free of backend bounds: the delegating impl on `Module<BE>` requires
-/// the [`DFTMatrixImpl<F>`](crate::oep::DFTMatrixImpl) seam at the impl
+/// the [`CKKSDFTMatrixImpl<F>`](crate::oep::CKKSDFTMatrixImpl) seam at the impl
 /// level, and a backend overrides that seam independently of any bounds the
 /// reference implementation carries.
 pub trait CKKSDFTMatrixOps<BE: Backend, F: CKKSEncodingScalar> {

@@ -54,11 +54,16 @@ fn checked_dft_log_slots(literal: &DFTPlan, log_n: usize) -> Result<usize> {
     // Shape validity (including a non-overflowing layer sum) is guaranteed by
     // `DFTPlan::new`; only the plan-vs-ring clause remains to check here.
     let log_slots = literal.log_slots();
-    ckks_ensure!(
-        log_slots < log_n,
-        "DFT has 2^{log_slots} slots, but a degree-2^{log_n} CKKS ring supports at most 2^{} slots",
-        log_n.saturating_sub(1),
-    );
+    if log_slots >= log_n {
+        return Err(CKKSCompositionError::InvalidPlan {
+            plan: "DFTPlan",
+            reason: format!(
+                "DFT has 2^{log_slots} slots, but a degree-2^{log_n} CKKS ring supports at most 2^{} slots",
+                log_n.saturating_sub(1)
+            ),
+        }
+        .into());
+    }
     Ok(log_slots)
 }
 
@@ -387,6 +392,17 @@ where
             .max(module.ckks_sub_tmp_bytes(ct.max_size()))
             .max(module.ckks_mul_i_tmp_bytes(ct.max_size()))
             .max(module.ckks_div_i_tmp_bytes(ct.max_size()));
+        // The split and repack formats carve at most two temporaries shaped like their destination.
+        let temporaries = 2 * BE::scratch_aligned(module.glwe_bytes_of_from_infos(ct));
+        bytes = bytes.max(
+            temporaries
+                + module
+                    .ckks_conjugate_tmp_bytes(ct, key)
+                    .max(module.ckks_rotate_tmp_bytes(ct, key))
+                    .max(module.ckks_add_tmp_bytes(ct.max_size()))
+                    .max(module.ckks_sub_tmp_bytes(ct.max_size()))
+                    .max(module.ckks_div_i_tmp_bytes(ct.max_size())),
+        );
         for factor in dft.factor_operands() {
             // Each factor's own schedule, so that a factor on power-of-two keys counts its
             // doubling and its giant-step tree.
@@ -434,6 +450,13 @@ mod validation_tests {
         // A valid plan can still be too wide for a given ring.
         let error =
             checked_dft_log_slots(&plan(vec![4]).unwrap(), 4).expect_err("a DFT cannot expose more slots than its CKKS ring");
-        assert!(error.to_string().contains("supports at most"), "unexpected error: {error:#}");
+        assert_eq!(
+            error.composition(),
+            Some(&CKKSCompositionError::InvalidPlan {
+                plan: "DFTPlan",
+                reason: "DFT has 2^4 slots, but a degree-2^4 CKKS ring supports at most 2^3 slots".into(),
+            }),
+            "unexpected error: {error:#}"
+        );
     }
 }

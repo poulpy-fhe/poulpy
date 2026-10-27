@@ -64,13 +64,13 @@ pub trait CKKSArithmeticOps<BE: Backend> {
     /// # Errors
     ///
     /// The errors of that call, with `res` untouched.
-    fn ckks_scalbn<R, I>(&self, res: &mut R, input: &I, exponent: i32, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_scalbn<R, I>(&self, exponent: i32, res: &mut R, input: &I, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         I: GLWEToBackendRef<BE> + CKKSCtBounds;
 
     /// Alias of [`Self::ckks_scalbn`].
-    fn ckks_ldexp<R, I>(&self, res: &mut R, input: &I, exponent: i32, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_ldexp<R, I>(&self, exponent: i32, res: &mut R, input: &I, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         I: GLWEToBackendRef<BE> + CKKSCtBounds;
@@ -121,7 +121,7 @@ where
             .max(self.ckks_div_pow2_tmp_bytes(res.size()))
     }
 
-    fn ckks_scalbn<R, I>(&self, res: &mut R, input: &I, exponent: i32, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_scalbn<R, I>(&self, exponent: i32, res: &mut R, input: &I, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         I: GLWEToBackendRef<BE> + CKKSCtBounds,
@@ -135,11 +135,11 @@ where
         Ok(())
     }
 
-    fn ckks_ldexp<R, I>(&self, res: &mut R, input: &I, exponent: i32, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_ldexp<R, I>(&self, exponent: i32, res: &mut R, input: &I, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         I: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        self.ckks_scalbn(res, input, exponent, scratch)
+        self.ckks_scalbn(exponent, res, input, scratch)
     }
 }

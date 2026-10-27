@@ -470,10 +470,13 @@ where
         let mut output = self.module.ckks_ciphertext_alloc_from_glwe_infos(&layout);
         let err = (self.bootstrap)(&self.module, &mut output, &self.input, &mut self.scratch.borrow()).unwrap_err();
         // EvalRound+ leaves its rotation keys to the stages' lookups: the sparse-to-dense
-        // key of the raise, checked untyped at entry, refuses first.
+        // key of the raise, checked at entry, refuses first.
         let refused = if self.preset.plan().coeffs_to_slots_bypass().is_some() {
-            matches!(err, crate::CKKSError::Internal(_))
-                && err.to_string().starts_with("ckks_mod_up: the sparse-to-dense key takes")
+            matches!(
+                err.composition(),
+                Some(CKKSCompositionError::InvalidOperand { op: "ckks_bootstrap" | "ckks_bootstrap_ci_into", reason })
+                    if reason.starts_with("the sparse-to-dense key takes")
+            )
         } else {
             matches!(err.composition(), Some(CKKSCompositionError::MissingAutomorphismKey { .. }))
         };

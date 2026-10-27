@@ -102,7 +102,7 @@ fn run() -> Result<()> {
     let mut log_power = context.output();
     context
         .module
-        .ckks_scalbn(&mut log_power, &log_magnitude, 1, &mut context.scratch.borrow())?;
+        .ckks_scalbn(1, &mut log_power, &log_magnitude, &mut context.scratch.borrow())?;
     assert_eq!(log_magnitude.log_budget(), log_power.log_budget());
 
     // Verify the complete pipeline against ln(I^2 + Q^2), not its intermediate stages.

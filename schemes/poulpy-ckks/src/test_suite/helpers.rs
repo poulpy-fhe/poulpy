@@ -1432,6 +1432,15 @@ pub fn assert_ckks_error(label: &str, err: &crate::CKKSError, want: CKKSComposit
     assert_eq!(err.composition(), Some(&want), "{label}: unexpected error: {err}");
 }
 
+/// Asserts that `err` is [`CKKSCompositionError::InvalidOperand`] of `op` whose reason contains `reason`, for reasons
+/// carrying values the test does not recompute.
+pub fn assert_invalid_operand(label: &str, err: &crate::CKKSError, op: &str, reason: &str) {
+    assert!(
+        matches!(err.composition(), Some(CKKSCompositionError::InvalidOperand { op: got, reason: why }) if *got == op && why.contains(reason)),
+        "{label}: unexpected error: {err}"
+    );
+}
+
 /// Asserts that `err` is the untyped [`CKKSError::Internal`](crate::CKKSError::Internal) whose message contains `message`.
 pub fn assert_ckks_internal(label: &str, err: &crate::CKKSError, message: &str) {
     assert!(

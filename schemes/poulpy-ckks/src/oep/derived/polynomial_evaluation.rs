@@ -1,5 +1,5 @@
+use crate::CKKSResult as Result;
 use crate::api::{CKKSComplexPolynomialEvaluationOps, CKKSPolynomialEvaluationOps};
-use crate::{CKKSResult as Result, ckks_ensure};
 use poulpy_core::GLWENormalize;
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
@@ -88,6 +88,7 @@ where
     H: GetTensorKey<BE>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
+    crate::reference::polynomial_evaluation::ensure_baby_steps("ckks_eval_poly_real_const_coeffs", bsgs)?;
     let transform = bsgs.input_transform();
     let x1 = polynomial_input(module, src, transform, tsk, scratch)?;
     let mut power_basis = PowerBasis::new(bsgs.basis(), x1);
@@ -124,10 +125,13 @@ where
     H: GetTensorKey<BE>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
+    const OP: &str = "ckks_eval_poly_complex_const_coeffs";
+    crate::reference::polynomial_evaluation::ensure_complex_schedules::<BE, C>(OP, poly)?;
     let transform = poly.re.input_transform();
-    ckks_ensure!(
+    crate::ckks_ensure_operand!(
+        OP,
         transform == poly.im.input_transform(),
-        "ckks_eval_poly_complex_const_coeffs: real and imaginary input transforms differ"
+        "real and imaginary input transforms differ"
     );
     let x1 = polynomial_input(module, src, transform, tsk, scratch)?;
     let mut power_basis = PowerBasis::new(poly.re.basis(), x1);

@@ -303,7 +303,7 @@ where
             let (mut numerator, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(input);
             scratch_local.scope(|stage| {
                 let (mut shifted, mut stage) = stage.take_ckks_ciphertext_like_scratch(input);
-                self.ckks_add_pt_const_into(&mut shifted, input, 0, &plan.constants, 0, &mut stage)?;
+                self.ckks_add_pt_const_into(&mut shifted, 0, input, &plan.constants, 0, &mut stage)?;
                 self.ckks_exp(&mut numerator, &shifted, &plan.exp, tsk, &mut stage)
             })?;
             scratch_local.scope(|stage| {

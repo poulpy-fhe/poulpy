@@ -1,4 +1,4 @@
-use crate::{CKKSResult as Result, ckks_ensure};
+use crate::{CKKSResult as Result, ckks_ensure_operand};
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{BSGSMeta, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, SetBSGSMeta};
@@ -13,7 +13,7 @@ use crate::CKKSCtBounds;
 use crate::{
     SetCKKSInfos,
     api::{
-        BSGSPolynomialInfos, BabyStep as BabyStepInfos, CKKSAddOps, CKKSCopyOps, CKKSImagOps, CKKSMulAddOps, CKKSMulOps,
+        BSGSPolynomialInfos, BabyStep as BabyStepInfos, Basis, CKKSAddOps, CKKSCopyOps, CKKSImagOps, CKKSMulAddOps, CKKSMulOps,
         PowerBasisHelper,
     },
     layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPreparedRight},
@@ -86,7 +86,7 @@ where
         coeffs: &P,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> anyhow::Result<bool> {
-        use crate::reference::mul::mul_pt_params_raw;
+        use crate::mul_pt_params_raw;
 
         let Some(&(seed, _)) = terms.last() else {
             return Ok(false);
@@ -249,7 +249,7 @@ where
     }
 }
 
-pub trait PolynomialEvaluationReference<BE: Backend> {
+pub trait CKKSPolynomialEvaluationReference<BE: Backend> {
     fn ckks_eval_poly_real_const_coeffs_from_power_basis_reference<R, B, A, G, H>(
         &self,
         res: &mut R,
@@ -305,7 +305,7 @@ pub trait PolynomialEvaluationReference<BE: Backend> {
         H: GetTensorKey<BE>;
 }
 
-impl<BE: Backend> PolynomialEvaluationReference<BE> for Module<BE>
+impl<BE: Backend> CKKSPolynomialEvaluationReference<BE> for Module<BE>
 where
     BE: GLWEMulConstImpl,
     Module<BE>: GLWEPolynomialEvaluation<BE>,
@@ -338,16 +338,9 @@ where
         G: PowerBasisHelper<BE, A>,
         H: GetTensorKey<BE>,
     {
-        ckks_ensure!(
-            poly.baby_steps() > 0,
-            "ckks_eval_poly_real_const_coeffs_from_power_basis: polynomial must contain at least one baby step"
-        );
-        let poly_basis = poly.basis();
-        let power_basis_basis = power_basis.basis();
-        ckks_ensure!(
-            poly_basis == power_basis_basis,
-            "ckks_eval_poly_real_const_coeffs_from_power_basis: polynomial basis {poly_basis:?} does not match power basis {power_basis_basis:?}"
-        );
+        const OP: &str = "ckks_eval_poly_real_const_coeffs_from_power_basis";
+        ensure_baby_steps(OP, poly)?;
+        ensure_power_basis(OP, poly.basis(), power_basis.basis())?;
 
         let n_baby = poly.baby_steps();
         let last_coeffs = poly.baby_step(n_baby - 1);
@@ -419,35 +412,12 @@ where
         G: PowerBasisHelper<BE, A>,
         H: GetTensorKey<BE>,
     {
+        const OP: &str = "ckks_eval_poly_complex_const_coeffs_from_power_basis";
         let poly_re = &poly.re;
         let poly_im = &poly.im;
+        ensure_complex_schedules::<BE, C>(OP, poly)?;
+        ensure_power_basis(OP, BSGSPolynomialInfos::<BE>::basis(poly_re), power_basis.basis())?;
         let n_baby = BSGSPolynomialInfos::<BE>::baby_steps(poly_re);
-        ckks_ensure!(
-            n_baby > 0,
-            "ckks_eval_poly_complex_const_coeffs_from_power_basis: polynomial must contain at least one baby step"
-        );
-        ckks_ensure!(
-            BSGSPolynomialInfos::<BE>::baby_steps(poly_im) == n_baby,
-            "ckks_eval_poly_complex_const_coeffs_from_power_basis: real/imag baby-step schedules differ"
-        );
-        ckks_ensure!(
-            BSGSPolynomialInfos::<BE>::degree(poly_im) == BSGSPolynomialInfos::<BE>::degree(poly_re),
-            "ckks_eval_poly_complex_const_coeffs_from_power_basis: real/imag degrees differ"
-        );
-        ckks_ensure!(
-            BSGSPolynomialInfos::<BE>::parity(poly_im) == BSGSPolynomialInfos::<BE>::parity(poly_re),
-            "ckks_eval_poly_complex_const_coeffs_from_power_basis: real/imag parities differ"
-        );
-        ckks_ensure!(
-            BSGSPolynomialInfos::<BE>::basis(poly_im) == BSGSPolynomialInfos::<BE>::basis(poly_re),
-            "ckks_eval_poly_complex_const_coeffs_from_power_basis: real/imag bases differ"
-        );
-        let poly_basis = BSGSPolynomialInfos::<BE>::basis(poly_re);
-        let power_basis_basis = power_basis.basis();
-        ckks_ensure!(
-            poly_basis == power_basis_basis,
-            "ckks_eval_poly_complex_const_coeffs_from_power_basis: polynomial basis {poly_basis:?} does not match power basis {power_basis_basis:?}"
-        );
 
         // Fold the trailing lone constant via the highest power when present.
         let last_re = BSGSPolynomialInfos::<BE>::baby_step(poly_re, n_baby - 1);
@@ -465,10 +435,6 @@ where
         for i in 0..n_to_process {
             let re_coeffs = BSGSPolynomialInfos::<BE>::baby_step(poly_re, i);
             let im_coeffs = BSGSPolynomialInfos::<BE>::baby_step(poly_im, i);
-            ckks_ensure!(
-                im_coeffs.n() == re_coeffs.n(),
-                "ckks_eval_poly_complex_const_coeffs_from_power_basis: real/imag baby-step {i} lengths differ"
-            );
             let degree = re_coeffs.n().as_usize() - 1;
 
             let mut value = self.ckks_ciphertext_alloc_from_infos(x);
@@ -510,10 +476,6 @@ where
         if can_fold {
             // res += a·x^fold + i·(b·x^fold), with a = last_re[0], b = last_im[0].
             let last_im = BSGSPolynomialInfos::<BE>::baby_step(poly_im, n_baby - 1);
-            ckks_ensure!(
-                last_im.n() == last_re.n(),
-                "ckks_eval_poly_complex_const_coeffs_from_power_basis: real/imag trailing baby-step lengths differ"
-            );
             let xpow = power_basis.get(fold_power)?;
             self.ckks_mul_add_pt_const_into(res, xpow, last_re, 0, scratch)?;
             let mut im_fold = self.ckks_ciphertext_alloc_from_infos(res);
@@ -524,4 +486,57 @@ where
 
         Ok(())
     }
+}
+
+/// `InvalidOperand` for `op` unless `poly` has a baby step.
+pub(crate) fn ensure_baby_steps<BE: Backend, B: BSGSPolynomialInfos<BE>>(op: &'static str, poly: &B) -> Result<()> {
+    ckks_ensure_operand!(op, poly.baby_steps() > 0, "the polynomial has no baby step");
+    Ok(())
+}
+
+fn ensure_power_basis(op: &'static str, poly: Basis, power_basis: Basis) -> Result<()> {
+    ckks_ensure_operand!(
+        op,
+        poly == power_basis,
+        "polynomial basis {poly:?} does not match power basis {power_basis:?}"
+    );
+    Ok(())
+}
+
+/// `InvalidOperand` for `op` unless the real and imaginary parts of `poly` share a nonempty baby-step schedule, each
+/// step of one length, and their degree, parity and basis.
+pub(crate) fn ensure_complex_schedules<BE, C>(op: &'static str, poly: &ComplexBSGSPolynomial<C>) -> Result<()>
+where
+    BE: Backend,
+    C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + IntPolyInfos,
+{
+    let (re, im) = (&poly.re, &poly.im);
+    ensure_baby_steps::<BE, _>(op, re)?;
+    let n_baby = BSGSPolynomialInfos::<BE>::baby_steps(re);
+    ckks_ensure_operand!(
+        op,
+        BSGSPolynomialInfos::<BE>::baby_steps(im) == n_baby,
+        "real/imag baby-step schedules differ"
+    );
+    ckks_ensure_operand!(
+        op,
+        BSGSPolynomialInfos::<BE>::degree(im) == BSGSPolynomialInfos::<BE>::degree(re),
+        "real/imag degrees differ"
+    );
+    ckks_ensure_operand!(
+        op,
+        BSGSPolynomialInfos::<BE>::parity(im) == BSGSPolynomialInfos::<BE>::parity(re),
+        "real/imag parities differ"
+    );
+    ckks_ensure_operand!(
+        op,
+        BSGSPolynomialInfos::<BE>::basis(im) == BSGSPolynomialInfos::<BE>::basis(re),
+        "real/imag bases differ"
+    );
+    ckks_ensure_operand!(
+        op,
+        (0..n_baby).all(|i| BSGSPolynomialInfos::<BE>::baby_step(im, i).n() == BSGSPolynomialInfos::<BE>::baby_step(re, i).n()),
+        "real/imag baby-step lengths differ"
+    );
+    Ok(())
 }

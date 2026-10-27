@@ -65,6 +65,10 @@ pub trait CKKSPow2Ops<BE: Backend> {
     ///
     /// Left-shifts the torus polynomial by `bits` positions.
     /// See the trait-level documentation for the metadata rule.
+    ///
+    /// # Errors
+    ///
+    /// `InsufficientHomomorphicCapacity` when `dst` is narrower than `src` by more than its budget. `dst` is untouched on `Err`.
     fn ckks_mul_pow2_into<Dst, Src>(
         &self,
         bits: usize,
@@ -88,6 +92,10 @@ pub trait CKKSPow2Ops<BE: Backend> {
     /// not normalized, unless `dst` is narrower than `src`: the doubling is then
     /// the normalizing shift of [`Self::ckks_mul_pow2_into`]. Size scratch with
     /// [`Self::ckks_mul_pow2_tmp_bytes`].
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::ckks_mul_pow2_into`], under the op `ckks_double_into`.
     fn ckks_double_into<Dst, Src>(&self, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
@@ -99,6 +107,11 @@ pub trait CKKSPow2Ops<BE: Backend> {
     ///
     /// Right-shifts the torus polynomial by `bits` positions.
     /// See the trait-level documentation for the metadata rule.
+    ///
+    /// # Errors
+    ///
+    /// `InvalidOperand` for `Integer` slots and `bits > 0`, then `InsufficientHomomorphicCapacity`
+    /// when `bits` plus the narrowing of `dst` exceed the budget of `src`. `dst` is untouched on `Err`.
     fn ckks_div_pow2_into<Dst, Src>(
         &self,
         bits: usize,
@@ -117,7 +130,10 @@ pub trait CKKSPow2Ops<BE: Backend> {
     /// log_budget_out = dst.log_budget − bits
     /// ```
     ///
-    /// Errors with `InsufficientHomomorphicCapacity` if `bits > dst.log_budget`.
+    /// # Errors
+    ///
+    /// `InvalidOperand` for `Integer` slots and `bits > 0`, then `InsufficientHomomorphicCapacity`
+    /// when `bits > dst.log_budget`. `dst` is untouched on `Err`.
     fn ckks_div_pow2_assign<Dst>(&self, bits: usize, dst: &mut Dst) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;

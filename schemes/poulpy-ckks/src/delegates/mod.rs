@@ -22,4 +22,3 @@ mod ring_map;
 mod rotate;
 mod ship;
 mod sub;
-mod tmp_bytes;

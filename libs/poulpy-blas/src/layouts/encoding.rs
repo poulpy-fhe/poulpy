@@ -2,7 +2,7 @@
 //! encoding of a map into its allocation.
 
 use poulpy_ckks::{
-    CKKSLayout, CKKSResult, CoeffsMeta, SlotsKind,
+    CKKSInfos, CKKSLayout, CKKSResult, CoeffsMeta, SlotsKind,
     api::{
         CKKSEncodingOps, CKKSEncodingScalar, CKKSLinearTransformationOps, CKKSModuleInfos, Diagonal, GiantStep,
         LinearTransformation, LinearTransformationLayout, LinearTransformationPlan, LinearTransformationPrepared, LtDiagonalMeta,
@@ -12,7 +12,8 @@ use poulpy_ckks::{
     layouts::{CKKSModuleAlloc, CKKSPlaintextOwned, ComplexDiagonals},
 };
 use poulpy_core::layouts::{
-    Base2K, DiagonalArithmetic, Diagonals, GLWELayout, GetDegree, LWEInfos, LinearTransformationStrategy, Rank, TorusPrecision,
+    Base2K, DiagonalArithmetic, Diagonals, GLWELayout, GLWEPlaintextInfos, GetDegree, IntPolyInfos, LWEInfos,
+    LinearTransformationStrategy, Rank, TorusPrecision,
 };
 use poulpy_hal::{
     api::CnvPVecAlloc,
@@ -210,9 +211,20 @@ where
     ckks_encode_linear_transformation_into(module, lt, map.meta.meta, &map.map, map.strategy, scratch)
 }
 
-/// Prepares every map of `maps` into the allocation `res` yields at the same position, once `scratch` holds the largest
-/// preparation's bytes; `op` names the caller in the scratch assertion and in the panic on a map whose diagonals do not
-/// share one scale, width and slot kind.
+/// Whether every diagonal of `map` shares the first one's scale, encoded width and slot kind, which its preparation
+/// requires.
+fn uniform<BE: Backend>(map: &Encoded<BE>) -> bool {
+    let mut diagonals = map
+        .giant_steps
+        .iter()
+        .flat_map(|gs| &gs.diagonals)
+        .map(|d| (d.plaintext.log_delta(), d.plaintext.encoded_k(), d.plaintext.slots()));
+    diagonals.next().is_none_or(|first| diagonals.all(|d| d == first))
+}
+
+/// Prepares every map of `maps` into the allocation `res` yields at the same position, once every map has diagonals of
+/// one scale, width and slot kind and `scratch` holds the largest preparation's bytes; `op` names the caller in the
+/// panics of both checks, which run before the first map is prepared.
 pub(crate) fn prepare_maps_into<'a, BE, M>(
     module: &M,
     op: &'static str,
@@ -223,6 +235,10 @@ pub(crate) fn prepare_maps_into<'a, BE, M>(
     BE: Backend + 'a,
     M: CKKSLinearTransformationOps<BE>,
 {
+    assert!(
+        maps.clone().all(uniform::<BE>),
+        "{op}: a map's diagonals do not share one scale, width and slot kind"
+    );
     let bytes = maps
         .clone()
         .filter_map(LinearTransformation::first_diagonal_plaintext)

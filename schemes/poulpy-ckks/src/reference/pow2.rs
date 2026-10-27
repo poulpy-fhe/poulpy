@@ -54,7 +54,7 @@ pub trait CKKSPow2Reference<BE: Backend> {
         Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
     {
         if !ckks_unary_exact(dst, src) {
-            return self.ckks_mul_pow2_into_reference(1, dst, src, scratch);
+            return crate::ckks_shift_stamp_unary(self, "ckks_double_into", dst, src, 1, 0, 0, scratch);
         }
         self.glwe_add_into(dst, src, src);
         dst.set_meta(src.meta());
@@ -103,9 +103,10 @@ impl<BE: Backend> CKKSPow2Reference<BE> for poulpy_hal::layouts::Module<BE> {}
 /// Halving an integer need not give an integer, so `Integer` slots cannot be
 /// carried through a division; relabel them `Real` first.
 fn ensure_not_integer(op: &'static str, slots: SlotsKind, bits: usize) -> Result<()> {
-    crate::ckks_ensure!(
+    crate::ckks_ensure_operand!(
+        op,
         bits == 0 || slots != SlotsKind::Integer,
-        "{op}: dividing Integer slots by 2^{bits} need not give integers; relabel them Real first"
+        "dividing Integer slots by 2^{bits} need not give integers; relabel them Real first"
     );
     Ok(())
 }

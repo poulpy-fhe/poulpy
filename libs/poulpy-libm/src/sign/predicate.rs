@@ -546,9 +546,9 @@ where
             let (mut lower, scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(x);
             let (mut gate, scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(x);
             let (mut diff, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(x);
-            self.ckks_sub_pt_const_into(&mut diff, x, 0, bounds, lo_coeff, &mut scratch_local)?;
+            self.ckks_sub_pt_const_into(&mut diff, 0, x, bounds, lo_coeff, &mut scratch_local)?;
             ckks_sign_into(self, &mut lower, &diff, composite, tsk, conj_key, true, &mut scratch_local)?;
-            self.ckks_sub_pt_const_into(&mut diff, x, 0, bounds, hi_coeff, &mut scratch_local)?;
+            self.ckks_sub_pt_const_into(&mut diff, 0, x, bounds, hi_coeff, &mut scratch_local)?;
             self.ckks_neg_assign(&mut diff)?;
             ckks_sign_into(self, &mut gate, &diff, composite, tsk, conj_key, true, &mut scratch_local)?;
             self.ckks_mul_into(res, &lower, &gate, tsk, &mut scratch_local)?;

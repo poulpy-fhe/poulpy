@@ -2,8 +2,16 @@ use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSResult, SetCKKSInfos, api::CKKSConjugateOps,
     layouts::slots::conj_rotate_galois_element, oep::CKKSConjugateImpl,
 };
-use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey};
+use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey};
 use poulpy_hal::layouts::{CyclotomicOrder, Module, ScratchArena};
+
+pub(crate) fn ckks_conjugate_tmp_bytes_derived<BE: CKKSConjugateImpl, C: CKKSCtBounds, K: GGLWEInfos>(
+    module: &Module<BE>,
+    ct_infos: &C,
+    key_infos: &K,
+) -> usize {
+    BE::ckks_conjugate_with_key_tmp_bytes(module, ct_infos, key_infos)
+}
 
 pub(crate) fn ckks_conjugate_into_derived<BE, Dst, Src, H>(
     module: &Module<BE>,

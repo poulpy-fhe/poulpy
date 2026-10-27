@@ -1,131 +1,216 @@
 use crate::CKKSResult as Result;
 
-use poulpy_core::{
-    layouts::{Degree, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey},
-    oep::GLWETraceImpl,
-};
-use poulpy_hal::layouts::{Module, ScratchArena};
+use poulpy_core::layouts::{Degree, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
-use crate::{
-    CKKSCtBounds, SetCKKSInfos,
-    oep::derived::inner_sum::{
-        ckks_inner_sum_assign_derived, ckks_inner_sum_derived, ckks_inner_sum_galois_elements_derived,
-        ckks_inner_sum_tmp_bytes_derived, ckks_replicate_assign_derived, ckks_replicate_derived,
-        ckks_replicate_galois_elements_derived,
-    },
-};
+use crate::{CKKSCtBounds, SetCKKSInfos};
 
-/// Extension point of [`crate::api::CKKSInnerSumOps`]. Every method is provided, composed over the selected copy,
-/// poulpy-core's trace and the division by a power of two.
+/// Backend contract of [`CKKSInnerSumOps`](crate::api::CKKSInnerSumOps).
 ///
 /// # Safety
-///
-/// An override reproduces the provided body of the method it replaces bit for bit, digits, metadata, canonical flag,
-/// noise and refusals included, in their order and before any write, choosing only its kernels and its scratch use:
-/// - `ckks_inner_sum_galois_elements` and `ckks_replicate_galois_elements` return poulpy-core's
-///   `glwe_trace_galois_elements` at their degree over the levels of the sum, forward and reversed, and panic on the
-///   same windows;
-/// - `ckks_inner_sum_tmp_bytes` covers the scratch the four sums take at its arguments, which may be less than the
-///   provided query, never less than an overriding sum takes;
-/// - `ckks_inner_sum`, `ckks_inner_sum_assign`, `ckks_replicate` and `ckks_replicate_assign` give the result of
-///   `ckks_copy` (out of place), poulpy-core's summed `glwe_trace_assign` and, for a normalized inner sum,
-///   `ckks_div_pow2_assign`, fusing each level's key switch and addition if they wish.
-///
-/// Memory, layout, synchrony and aliasing follow `poulpy-hal/docs/backend_safety_contract.md`.
-pub unsafe trait CKKSInnerSumImpl: super::CKKSCopyImpl + super::CKKSPow2Impl + GLWETraceImpl {
-    fn ckks_inner_sum_galois_elements(module: &Module<Self>, n: Degree, log_batch: usize, log_count: usize) -> Vec<i64> {
-        ckks_inner_sum_galois_elements_derived(module, n, log_batch, log_count)
-    }
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
+pub unsafe trait CKKSInnerSumImpl: Backend {
+    /// Returns
+    /// [`ckks_inner_sum_galois_elements_reference`](crate::reference::inner_sum::CKKSInnerSumReference::ckks_inner_sum_galois_elements_reference),
+    /// panicking on the same windows.
+    fn ckks_inner_sum_galois_elements(module: &Module<Self>, n: Degree, log_batch: usize, log_count: usize) -> Vec<i64>;
 
-    fn ckks_replicate_galois_elements(module: &Module<Self>, n: Degree, log_batch: usize, log_count: usize) -> Vec<i64> {
-        ckks_replicate_galois_elements_derived(module, n, log_batch, log_count)
-    }
+    /// Returns
+    /// [`ckks_replicate_galois_elements_reference`](crate::reference::inner_sum::CKKSInnerSumReference::ckks_replicate_galois_elements_reference),
+    /// panicking on the same windows.
+    fn ckks_replicate_galois_elements(module: &Module<Self>, n: Degree, log_batch: usize, log_count: usize) -> Vec<i64>;
 
+    /// Scratch bound of the four sums of this trait; may report less than the reference, never less than the body
+    /// takes.
     fn ckks_inner_sum_tmp_bytes<R, A, K>(module: &Module<Self>, res: &R, a: &A, key: &K) -> usize
     where
         R: CKKSCtBounds,
         A: CKKSCtBounds,
-        K: GGLWEInfos,
-    {
-        ckks_inner_sum_tmp_bytes_derived(module, res, a, key)
-    }
+        K: GGLWEInfos;
 
+    /// Reproduces
+    /// [`ckks_inner_sum_reference`](crate::reference::inner_sum::CKKSInnerSumReference::ckks_inner_sum_reference) bit
+    /// for bit, within [`Self::ckks_inner_sum_tmp_bytes`]; free in kernels and scratch use.
     #[expect(
         clippy::too_many_arguments,
         reason = "the sum's operands, batch, count and normalization, keys and scratch"
     )]
     fn ckks_inner_sum<R, A, H>(
         module: &Module<Self>,
-        res: &mut R,
-        a: &A,
         log_batch: usize,
         log_count: usize,
         normalize: bool,
+        res: &mut R,
+        a: &A,
         keys: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
         R: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<Self> + CKKSCtBounds,
-        H: GetAutomorphismKey<Self>,
-    {
-        ckks_inner_sum_derived(module, res, a, log_batch, log_count, normalize, keys, scratch)
-    }
+        H: GetAutomorphismKey<Self>;
 
+    /// Reproduces
+    /// [`ckks_inner_sum_assign_reference`](crate::reference::inner_sum::CKKSInnerSumReference::ckks_inner_sum_assign_reference)
+    /// bit for bit, within [`Self::ckks_inner_sum_tmp_bytes`]; free in kernels and scratch use.
     fn ckks_inner_sum_assign<R, H>(
         module: &Module<Self>,
-        res: &mut R,
         log_batch: usize,
         log_count: usize,
         normalize: bool,
+        res: &mut R,
         keys: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
         R: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
-        H: GetAutomorphismKey<Self>,
-    {
-        ckks_inner_sum_assign_derived(module, res, log_batch, log_count, normalize, keys, scratch)
-    }
+        H: GetAutomorphismKey<Self>;
 
+    /// Reproduces
+    /// [`ckks_replicate_reference`](crate::reference::inner_sum::CKKSInnerSumReference::ckks_replicate_reference) bit
+    /// for bit, within [`Self::ckks_inner_sum_tmp_bytes`]; free in kernels and scratch use.
     fn ckks_replicate<R, A, H>(
         module: &Module<Self>,
-        res: &mut R,
-        a: &A,
         log_batch: usize,
         log_count: usize,
+        res: &mut R,
+        a: &A,
         keys: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
         R: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<Self> + CKKSCtBounds,
-        H: GetAutomorphismKey<Self>,
-    {
-        ckks_replicate_derived(module, res, a, log_batch, log_count, keys, scratch)
-    }
+        H: GetAutomorphismKey<Self>;
 
+    /// Reproduces
+    /// [`ckks_replicate_assign_reference`](crate::reference::inner_sum::CKKSInnerSumReference::ckks_replicate_assign_reference)
+    /// bit for bit, within [`Self::ckks_inner_sum_tmp_bytes`]; free in kernels and scratch use.
     fn ckks_replicate_assign<R, H>(
         module: &Module<Self>,
-        res: &mut R,
         log_batch: usize,
         log_count: usize,
+        res: &mut R,
         keys: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
         R: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
-        H: GetAutomorphismKey<Self>,
-    {
-        ckks_replicate_assign_derived(module, res, log_batch, log_count, keys, scratch)
-    }
+        H: GetAutomorphismKey<Self>;
 }
 
-/// Selects every provided method of [`CKKSInnerSumImpl`] for `$be`.
+/// Selects the reference implementation of `CKKSInnerSumImpl` for `$be`.
 #[macro_export]
-macro_rules! impl_ckks_inner_sum_derived_full {
+macro_rules! impl_ckks_inner_sum_reference_full {
     ($be:ty) => {
-        unsafe impl $crate::oep::CKKSInnerSumImpl for $be {}
+        unsafe impl $crate::oep::CKKSInnerSumImpl for $be {
+            fn ckks_inner_sum_galois_elements(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                n: ::poulpy_core::layouts::Degree,
+                log_batch: usize,
+                log_count: usize,
+            ) -> ::std::vec::Vec<i64> {
+                $crate::reference::inner_sum::CKKSInnerSumReference::ckks_inner_sum_galois_elements_reference(
+                    module, n, log_batch, log_count,
+                )
+            }
+
+            fn ckks_replicate_galois_elements(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                n: ::poulpy_core::layouts::Degree,
+                log_batch: usize,
+                log_count: usize,
+            ) -> ::std::vec::Vec<i64> {
+                $crate::reference::inner_sum::CKKSInnerSumReference::ckks_replicate_galois_elements_reference(
+                    module, n, log_batch, log_count,
+                )
+            }
+
+            fn ckks_inner_sum_tmp_bytes<R, A, K>(module: &::poulpy_hal::layouts::Module<Self>, res: &R, a: &A, key: &K) -> usize
+            where
+                R: $crate::CKKSCtBounds,
+                A: $crate::CKKSCtBounds,
+                K: ::poulpy_core::layouts::GGLWEInfos,
+            {
+                $crate::reference::inner_sum::CKKSInnerSumReference::ckks_inner_sum_tmp_bytes_reference(module, res, a, key)
+            }
+
+            fn ckks_inner_sum<R, A, H>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                log_batch: usize,
+                log_count: usize,
+                normalize: bool,
+                res: &mut R,
+                a: &A,
+                keys: &H,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
+            ) -> $crate::CKKSResult<()>
+            where
+                R: ::poulpy_core::layouts::GLWEToBackendMut<Self> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
+                A: ::poulpy_core::layouts::GLWEToBackendRef<Self> + $crate::CKKSCtBounds,
+                H: ::poulpy_core::layouts::GetAutomorphismKey<Self>,
+            {
+                $crate::reference::inner_sum::CKKSInnerSumReference::ckks_inner_sum_reference(
+                    module, log_batch, log_count, normalize, res, a, keys, scratch,
+                )
+            }
+
+            fn ckks_inner_sum_assign<R, H>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                log_batch: usize,
+                log_count: usize,
+                normalize: bool,
+                res: &mut R,
+                keys: &H,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
+            ) -> $crate::CKKSResult<()>
+            where
+                R: ::poulpy_core::layouts::GLWEToBackendMut<Self> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
+                H: ::poulpy_core::layouts::GetAutomorphismKey<Self>,
+            {
+                $crate::reference::inner_sum::CKKSInnerSumReference::ckks_inner_sum_assign_reference(
+                    module, log_batch, log_count, normalize, res, keys, scratch,
+                )
+            }
+
+            fn ckks_replicate<R, A, H>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                log_batch: usize,
+                log_count: usize,
+                res: &mut R,
+                a: &A,
+                keys: &H,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
+            ) -> $crate::CKKSResult<()>
+            where
+                R: ::poulpy_core::layouts::GLWEToBackendMut<Self> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
+                A: ::poulpy_core::layouts::GLWEToBackendRef<Self> + $crate::CKKSCtBounds,
+                H: ::poulpy_core::layouts::GetAutomorphismKey<Self>,
+            {
+                $crate::reference::inner_sum::CKKSInnerSumReference::ckks_replicate_reference(
+                    module, log_batch, log_count, res, a, keys, scratch,
+                )
+            }
+
+            fn ckks_replicate_assign<R, H>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                log_batch: usize,
+                log_count: usize,
+                res: &mut R,
+                keys: &H,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
+            ) -> $crate::CKKSResult<()>
+            where
+                R: ::poulpy_core::layouts::GLWEToBackendMut<Self> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
+                H: ::poulpy_core::layouts::GetAutomorphismKey<Self>,
+            {
+                $crate::reference::inner_sum::CKKSInnerSumReference::ckks_replicate_assign_reference(
+                    module, log_batch, log_count, res, keys, scratch,
+                )
+            }
+        }
     };
 }
-pub use crate::impl_ckks_inner_sum_derived_full;
+pub use crate::impl_ckks_inner_sum_reference_full;

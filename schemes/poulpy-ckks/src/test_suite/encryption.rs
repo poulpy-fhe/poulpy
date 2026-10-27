@@ -222,10 +222,7 @@ where
     // A plaintext scale above the ciphertext precision fails before encryption.
     let sk = module.glwe_secret_prepared_alloc(1usize.into());
     pt.set_log_delta(9);
-    let err = with_scratch::<BE, _>(module.ckks_encrypt_sk_tmp_bytes(&ct), |s| {
-        module.ckks_encrypt_sk(&mut ct, &pt, &sk, &mut xe, &mut xa, s)
-    })
-    .unwrap_err();
+    let err = with_scratch::<BE, _>(0, |s| module.ckks_encrypt_sk(&mut ct, &pt, &sk, &mut xe, &mut xa, s)).unwrap_err();
     assert_ckks_error(
         "encrypt_insufficient_budget",
         &err,
@@ -384,15 +381,13 @@ pub fn test_decrypt_rejects_output_hom_rem_too_large<BE, F, E>(
         slots: SlotsKind::Complex,
         log_sparsity: 0,
     });
-    let err = with_scratch::<BE, _>(module.ckks_decrypt_tmp_bytes(&pt, &ct), |s| {
-        module.ckks_decrypt(&mut pt, &ct, &sk, s)
-    })
-    .unwrap_err();
+    let (pt_before, ct_before) = (snapshot::<BE, _>(&pt), snapshot::<BE, _>(&ct));
+    let err = with_scratch::<BE, _>(0, |s| module.ckks_decrypt(&mut pt, &ct, &sk, s)).unwrap_err();
     assert_ckks_error(
         "decrypt_rejects_output_hom_rem_too_large",
         &err,
         CKKSCompositionError::PlaintextAlignmentImpossible {
-            op: "ckks_extract_pt",
+            op: "ckks_decrypt",
             ct_log_budget: src_prec.log_budget(),
             pt_log_delta: src_prec.log_delta(),
             // Alignment is checked against the output plaintext's effective
@@ -400,6 +395,8 @@ pub fn test_decrypt_rejects_output_hom_rem_too_large<BE, F, E>(
             pt_k: src_prec.log_delta() + src_prec.log_budget() + 1,
         },
     );
+    assert_eq!(snapshot::<BE, _>(&pt), pt_before, "a refused ckks_decrypt wrote res");
+    assert_eq!(snapshot::<BE, _>(&ct), ct_before, "a refused ckks_decrypt changed its source");
 }
 
 pub fn test_decrypt_rejects_base2k_mismatch<BE, F, E>(
@@ -436,19 +433,19 @@ pub fn test_decrypt_rejects_base2k_mismatch<BE, F, E>(
     let mismatched_base2k = (params.base2k / 2).into();
     let mut pt = host_module.ckks_pt_vec_alloc(host_module.ckks_max_slots(), mismatched_base2k, src_prec.k());
     pt.set_meta(src_prec.meta());
-    let err = with_scratch::<BE, _>(module.ckks_decrypt_tmp_bytes(&pt, &ct), |s| {
-        module.ckks_decrypt(&mut pt, &ct, &sk, s)
-    })
-    .unwrap_err();
+    let (pt_before, ct_before) = (snapshot::<BE, _>(&pt), snapshot::<BE, _>(&ct));
+    let err = with_scratch::<BE, _>(0, |s| module.ckks_decrypt(&mut pt, &ct, &sk, s)).unwrap_err();
     assert_ckks_error(
         "decrypt_extract_base2k_mismatch",
         &err,
         CKKSCompositionError::PlaintextBase2KMismatch {
-            op: "ckks_extract_pt",
+            op: "ckks_decrypt",
             ct_base2k: params.base2k,
             pt_base2k: mismatched_base2k.as_usize(),
         },
     );
+    assert_eq!(snapshot::<BE, _>(&pt), pt_before, "a refused ckks_decrypt wrote res");
+    assert_eq!(snapshot::<BE, _>(&ct), ct_before, "a refused ckks_decrypt changed its source");
 }
 
 /// Decrypting a dense ciphertext into a plaintext of half its degree is a `PlaintextDegreeMismatch`; a ciphertext
@@ -486,10 +483,8 @@ pub fn test_decrypt_rejects_degree_mismatch<BE, F, E>(
     );
     let mut pt = host_module.ckks_pt_vec_alloc(m / 2, params.base2k.into(), src_prec.k());
     pt.set_meta(src_prec.meta());
-    let err = with_scratch::<BE, _>(module.ckks_decrypt_tmp_bytes(&pt, &ct), |s| {
-        module.ckks_decrypt(&mut pt, &ct, &sk, s)
-    })
-    .unwrap_err();
+    let (pt_before, ct_before) = (snapshot::<BE, _>(&pt), snapshot::<BE, _>(&ct));
+    let err = with_scratch::<BE, _>(0, |s| module.ckks_decrypt(&mut pt, &ct, &sk, s)).unwrap_err();
     assert_ckks_error(
         "decrypt_extract_degree_mismatch",
         &err,
@@ -499,6 +494,8 @@ pub fn test_decrypt_rejects_degree_mismatch<BE, F, E>(
             pt_n: params.n / 2,
         },
     );
+    assert_eq!(snapshot::<BE, _>(&pt), pt_before, "a refused ckks_decrypt wrote res");
+    assert_eq!(snapshot::<BE, _>(&ct), ct_before, "a refused ckks_decrypt changed its source");
 
     let half = ReferenceEncoder::<E>::new(m / 2).unwrap();
     let (re2, im2) = test_vector_1::<F>(m / 2);
@@ -538,4 +535,150 @@ pub fn test_decrypt_rejects_degree_mismatch<BE, F, E>(
         src_prec.log_delta(),
         params.n,
     );
+}
+
+/// `ckks_decrypt` leaves no byte of its query in the arena, into a plaintext of the ciphertext's degree and into one of
+/// half its degree.
+pub fn test_decrypt_wipes_scratch<BE, F, E>(
+    params: crate::test_suite::CKKSTestParams,
+    module: &poulpy_hal::layouts::Module<BE>,
+    host_module: &poulpy_hal::layouts::Module<poulpy_hal::layouts::HostBytesBackend>,
+) where
+    BE: crate::test_suite::helpers::TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
+    poulpy_hal::layouts::Module<BE>: crate::test_suite::helpers::TestContextModule<BE>,
+    F: crate::test_suite::helpers::TestScalar,
+    E: poulpy_hal::api::NegacyclicFFT<F> + poulpy_hal::api::NegacyclicFFTNew<F>,
+{
+    let m = params.n / 2;
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
+    let sk = gen_sk(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+    let (re, im) = test_vector_1::<F>(m);
+    let mut ct = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &re,
+        &im,
+        &mut scratch.borrow(),
+    );
+    // Half the degree reads every second coefficient, which a sparsity of one allows.
+    poulpy_core::layouts::SetGLWEPlaintextInfos::set_log_sparsity(&mut ct, 1);
+    for slots in [module.ckks_max_slots(), module.ckks_max_slots() / 2] {
+        let mut pt = module.ckks_pt_vec_alloc(slots, params.base2k.into(), ct.k());
+        pt.set_meta(ct.meta());
+        let bytes = module.ckks_decrypt_tmp_bytes(&pt, &ct);
+        poulpy_core::test_suite::assert_wipes_scratch::<BE>(bytes, |s| module.ckks_decrypt(&mut pt, &ct, &sk, s).unwrap());
+    }
+}
+
+/// A plaintext wider than the ciphertext's budget aligns is `PlaintextAlignmentImpossible` of `ckks_decrypt` before
+/// the secret-derived decryption, on an empty arena and on the query, the plaintext unchanged.
+pub fn test_decrypt_rejects_alignment_on_empty_arena<BE, F, E>(
+    params: crate::test_suite::CKKSTestParams,
+    module: &poulpy_hal::layouts::Module<BE>,
+    host_module: &poulpy_hal::layouts::Module<poulpy_hal::layouts::HostBytesBackend>,
+) where
+    BE: crate::test_suite::helpers::TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
+    poulpy_hal::layouts::Module<BE>: crate::test_suite::helpers::TestContextModule<BE>,
+    F: crate::test_suite::helpers::TestScalar,
+    E: poulpy_hal::api::NegacyclicFFT<F> + poulpy_hal::api::NegacyclicFFTNew<F>,
+{
+    use super::parity::{helpers::fixture_ciphertext, layout};
+    let b = params.base2k;
+    let sk = gen_sk(&params, module, host_module, [0u8; 32]);
+    let ct = fixture_ciphertext(
+        module,
+        &layout(params, params.rank, 3 * b + 5, b - 1, 0, SlotsKind::Complex),
+        41,
+    );
+    let mut pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), b.into(), (3 * b + 6).into());
+    pt.set_meta(GLWEPlaintextMeta {
+        scale: Scale::Log(b - 1),
+        slots: SlotsKind::Complex,
+        log_sparsity: 0,
+    });
+    for bytes in [0, module.ckks_decrypt_tmp_bytes(&pt, &ct)] {
+        let before = snapshot::<BE, _>(&pt);
+        let err = with_scratch::<BE, _>(bytes, |s| module.ckks_decrypt(&mut pt, &ct, &sk, s)).unwrap_err();
+        assert_ckks_error(
+            "decrypt: plaintext wider than the budget",
+            &err,
+            CKKSCompositionError::PlaintextAlignmentImpossible {
+                op: "ckks_decrypt",
+                ct_log_budget: 2 * b + 6,
+                pt_log_delta: b - 1,
+                pt_k: 3 * b + 6,
+            },
+        );
+        assert_eq!(snapshot::<BE, _>(&pt), before, "a refused decryption wrote the plaintext");
+    }
+}
+
+/// A plaintext of another radix is `PlaintextBase2KMismatch` of `ckks_encrypt_sk` before the first draw, on an empty
+/// arena and on the query, the ciphertext and both sources unchanged.
+pub fn test_encrypt_sk_rejects_plaintext_base2k_mismatch<BE, F, E>(
+    params: crate::test_suite::CKKSTestParams,
+    module: &poulpy_hal::layouts::Module<BE>,
+    host_module: &poulpy_hal::layouts::Module<poulpy_hal::layouts::HostBytesBackend>,
+) where
+    BE: crate::test_suite::helpers::TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
+    poulpy_hal::layouts::Module<BE>: crate::test_suite::helpers::TestContextModule<BE>,
+    F: crate::test_suite::helpers::TestScalar,
+    E: poulpy_hal::api::NegacyclicFFT<F> + poulpy_hal::api::NegacyclicFFTNew<F>,
+{
+    use super::parity::{
+        helpers::{fixture_ciphertext, fixture_plaintext},
+        layout,
+    };
+    let b = params.base2k;
+    let sk = gen_sk(&params, module, host_module, [0u8; 32]);
+    let mut ct = fixture_ciphertext(
+        module,
+        &layout(params, params.rank, 3 * b + 5, b - 1, 0, SlotsKind::Complex),
+        41,
+    );
+    let pt_layout = layout(params, 0, b + 3, b - 1, 0, SlotsKind::Complex);
+    let pt = fixture_plaintext(
+        module,
+        &CKKSLayout {
+            glwe_layout: GLWELayout {
+                base2k: (b - 1).into(),
+                ..pt_layout.glwe_layout
+            },
+            meta: pt_layout.meta,
+        },
+        43,
+    );
+    for bytes in [0, module.ckks_encrypt_sk_tmp_bytes(&ct)] {
+        let before = snapshot::<BE, _>(&ct);
+        let (mut source_xe, mut source_xa) = (Source::new([5u8; 32]), Source::new([6u8; 32]));
+        let err = with_scratch::<BE, _>(bytes, |s| {
+            module.ckks_encrypt_sk(&mut ct, &pt, &sk, &mut source_xe, &mut source_xa, s)
+        })
+        .unwrap_err();
+        assert_ckks_error(
+            "encrypt_sk: plaintext of another radix",
+            &err,
+            CKKSCompositionError::PlaintextBase2KMismatch {
+                op: "ckks_encrypt_sk",
+                ct_base2k: b,
+                pt_base2k: b - 1,
+            },
+        );
+        assert_eq!(snapshot::<BE, _>(&ct), before, "a refused encryption wrote the ciphertext");
+        assert_eq!(
+            source_xe.new_seed(),
+            Source::new([5u8; 32]).new_seed(),
+            "a refused encryption drew from source_xe"
+        );
+        assert_eq!(
+            source_xa.new_seed(),
+            Source::new([6u8; 32]).new_seed(),
+            "a refused encryption drew from source_xa"
+        );
+    }
 }

@@ -52,9 +52,9 @@ pub trait CKKSAddManyOps<BE: Backend> {
     /// less scratch than [`Self::ckks_add_many_tmp_bytes`] reports for `res` and `a[0]`.
     fn ckks_add_many<R, A>(
         &self,
+        normalize_after: usize,
         res: &mut R,
         a: &[&A],
-        normalize_after: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -485,7 +485,7 @@ pub trait CKKSDotProductOps<BE: Backend> {
     ///
     /// # Errors
     ///
-    /// Before writing `dst`: an error for `a` and `b` empty or of two lengths; `InvalidOperand` for `galois` of another
+    /// Before writing `dst`: `InvalidOperand` for `a` and `b` empty or of two lengths, or for `galois` of another
     /// length; as [`Self::ckks_dot_product_prepared`], `PreparedOperandLayoutMismatch` for a term of another degree,
     /// `base2k` or rank than `dst`; `InvalidOperand` for an even Galois element, a plaintext not of rank 0 at `dst`'s `base2k`, or a side whose operands do not share one
     /// layout and scale; `PlaintextDegreeMismatch` for a plaintext whose degree does not embed into `dst`'s; and the

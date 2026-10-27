@@ -923,8 +923,9 @@ where
     /// `EvalModPlan::meta`), including the CoeffsToSlots scaling resolved by
     /// [`BootstrappingPlan::new`].
     ///
-    /// `scratch` serves both generation and preparation, so it must also cover
-    /// [`BootstrappingContextUnprepared::prepare_tmp_bytes`]. That value is only
+    /// `scratch` serves both generation and preparation, so it must cover
+    /// [`Self::compile_unprepared_tmp_bytes`] and
+    /// [`BootstrappingContextUnprepared::prepare_tmp_bytes`]. The latter is only
     /// known once the matrices exist: use [`Self::compile_unprepared`] followed by
     /// [`BootstrappingContextUnprepared::prepare`] to size preparation exactly.
     pub fn compile(

@@ -19,9 +19,6 @@ impl<BE: Backend + CKKSMulImpl> CKKSMulOps<BE> for Module<BE> {
         B: CKKSCtBounds,
         T: GGLWEInfos,
     {
-        // Sizing takes the key, not a decomposition: which effective `dsize` the
-        // helper dispatches at is resolved during execution, and the budget
-        // below covers every one this key admits.
         BE::ckks_mul_tmp_bytes(self, res, a, b, tsk)
     }
 

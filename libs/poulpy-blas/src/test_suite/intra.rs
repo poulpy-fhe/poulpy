@@ -851,7 +851,7 @@ pub fn test_blas_intra_guards<BE, F, E>(
     );
     // A replicated grid sums its rows without the projection: the inner sum into `res` rejects the budget.
     let sum_rows_op = if replicated::<Standard>(&ct) {
-        "inner_sum"
+        "ckks_inner_sum"
     } else {
         "ckks_eval_linear_transformation_into"
     };

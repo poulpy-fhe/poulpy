@@ -752,7 +752,7 @@ pub fn test_sub_pt_const_into_aligned<BE, F, E>(
     let mut ct_res = alloc_ct(&params, module, params.k);
     let cst = add_sub_const_pt::<BE, F>(host_module, module, params.base2k.into());
     with_scratch::<BE, _>(module.ckks_sub_pt_const_tmp_bytes(ct_res.max_size()), |s| {
-        module.ckks_sub_pt_const_into(&mut ct_res, &ct, 0, &cst, 0, s)
+        module.ckks_sub_pt_const_into(&mut ct_res, 0, &ct, &cst, 0, s)
     })
     .unwrap();
     with_scratch::<BE, _>(module.ckks_sub_pt_const_tmp_bytes(ct_res.max_size()), |s| {
@@ -825,7 +825,7 @@ pub fn test_sub_const_into_lsh_alignment<BE, F, E>(
         ct.log_budget() + cst.log_delta()
     );
     with_scratch::<BE, _>(module.ckks_sub_pt_const_tmp_bytes(ct_res.max_size()), |s| {
-        module.ckks_sub_pt_const_into(&mut ct_res, &ct, 0, &cst, 0, s)
+        module.ckks_sub_pt_const_into(&mut ct_res, 0, &ct, &cst, 0, s)
     })
     .unwrap();
     with_scratch::<BE, _>(module.ckks_sub_pt_const_tmp_bytes(ct_res.max_size()), |s| {
@@ -892,4 +892,75 @@ where
         &want_im,
         &mut scratch.borrow(),
     );
+}
+
+/// A narrower destination, which the copy of `a` would write, keeps its content when the plaintext's checks refuse:
+/// a plaintext of another radix (`PlaintextBase2KMismatch`) and a coefficient past the plaintext's degree
+/// (`PlaintextCoefficientOutOfRange`), on an empty arena and on the query.
+pub fn test_sub_pt_vec_into_rejects_plaintext_before_copy<BE, F, E>(
+    params: crate::test_suite::CKKSTestParams,
+    module: &poulpy_hal::layouts::Module<BE>,
+    _host_module: &poulpy_hal::layouts::Module<poulpy_hal::layouts::HostBytesBackend>,
+) where
+    BE: crate::test_suite::helpers::TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
+    poulpy_hal::layouts::Module<BE>: crate::test_suite::helpers::TestContextModule<BE>,
+    F: crate::test_suite::helpers::TestScalar,
+    E: poulpy_hal::api::NegacyclicFFT<F> + poulpy_hal::api::NegacyclicFFTNew<F>,
+{
+    use crate::test_suite::{
+        helpers::assert_ckks_error,
+        parity::{
+            helpers::{fixture_ciphertext, fixture_plaintext, snapshot, with_scratch},
+            layout,
+        },
+    };
+    use crate::{CKKSCompositionError, CKKSLayout, SlotsKind};
+    use poulpy_core::layouts::LWEInfos;
+    let b = params.base2k;
+    let ct_layout = layout(params, params.rank, 3 * b + 5, b - 1, 0, SlotsKind::Complex);
+    let pt_layout = layout(params, 0, b + 3, b - 1, 0, SlotsKind::Complex);
+    let other_radix = CKKSLayout {
+        glwe_layout: poulpy_core::layouts::GLWELayout {
+            base2k: (b - 1).into(),
+            ..pt_layout.glwe_layout
+        },
+        meta: pt_layout.meta,
+    };
+    use crate::api::CKKSSubOps;
+    let a = fixture_ciphertext(module, &ct_layout, 41);
+    let pt = fixture_plaintext(module, &other_radix, 43);
+    let same_radix = fixture_plaintext(module, &pt_layout, 44);
+    let n = same_radix.n().as_usize();
+    let mut res = fixture_ciphertext(
+        module,
+        &layout(params, params.rank, 2 * b + 3, b - 1, 0, SlotsKind::Complex),
+        31,
+    );
+    let radix = CKKSCompositionError::PlaintextBase2KMismatch {
+        op: "ckks_sub_pt_vec",
+        ct_base2k: b,
+        pt_base2k: b - 1,
+    };
+    for bytes in [0, module.ckks_sub_pt_vec_tmp_bytes(res.max_size())] {
+        let before = snapshot::<BE, _>(&res);
+        let err = with_scratch::<BE, _>(bytes, |s| module.ckks_sub_pt_vec_into(&mut res, &a, &pt, s)).unwrap_err();
+        assert_ckks_error("sub_pt_vec_into: plaintext of another radix", &err, radix.clone());
+        assert_eq!(snapshot::<BE, _>(&res), before, "a refused plaintext form wrote dst");
+    }
+    for bytes in [0, module.ckks_sub_pt_const_tmp_bytes(res.max_size())] {
+        let before = snapshot::<BE, _>(&res);
+        let err =
+            with_scratch::<BE, _>(bytes, |s| module.ckks_sub_pt_const_into(&mut res, 0, &a, &same_radix, n, s)).unwrap_err();
+        assert_ckks_error(
+            "sub_pt_const_into: coefficient past the plaintext",
+            &err,
+            CKKSCompositionError::PlaintextCoefficientOutOfRange {
+                op: "ckks_sub_pt_const",
+                role: "plaintext",
+                coeff: n,
+                n,
+            },
+        );
+        assert_eq!(snapshot::<BE, _>(&res), before, "a refused plaintext form wrote dst");
+    }
 }

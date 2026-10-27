@@ -20,12 +20,12 @@ impl<BE: Backend + CKKSAddManyImpl> CKKSAddManyOps<BE> for Module<BE> {
         BE::ckks_add_many_tmp_bytes(self, res, a)
     }
 
-    fn ckks_add_many<R, A>(&self, res: &mut R, a: &[&A], normalize_after: usize, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_add_many<R, A>(&self, normalize_after: usize, res: &mut R, a: &[&A], scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        BE::ckks_add_many(self, res, a, normalize_after, scratch)
+        BE::ckks_add_many(self, normalize_after, res, a, scratch)
     }
 }
 
@@ -256,8 +256,6 @@ impl<BE: Backend + CKKSMulSubImpl> CKKSMulSubOps<BE> for Module<BE> {
         BE::ckks_mul_sub_pt_const_into(self, dst, a, pt, pt_coeff, scratch)
     }
 }
-
-// --- CKKSDotProductOps ---
 
 impl<BE: Backend + CKKSDotProductImpl> CKKSDotProductOps<BE> for Module<BE> {
     fn ckks_dot_product_ct_tmp_bytes<R, A, B, T>(&self, n: usize, res: &R, a: &A, b: &B, tsk: &T) -> usize

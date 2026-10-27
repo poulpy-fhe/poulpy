@@ -4,11 +4,11 @@ use super::FFT64Avx512Rayon;
 use super::NTT3x42Ifma;
 use super::{FFT64Avx512, NTT4x30Avx512};
 use poulpy_ckks::{
-    impl_ckks_bootstrapping_ci_reference_full, impl_ckks_bootstrapping_reference_full,
+    impl_ckks_bootstrapping_ci_reference_full, impl_ckks_bootstrapping_reference_full, impl_ckks_ci_ring_map_reference_full,
     impl_ckks_complex_polynomial_evaluation_reference_full, impl_ckks_conjugate_reference_full,
-    impl_ckks_encapsulated_mod_up_reference_full, impl_ckks_fold_layout_reference_full, impl_ckks_fold_reference_full,
-    impl_ckks_imag_reference_full, impl_ckks_mod_up_first_factor_reference_full, impl_ckks_paco_derived_full,
-    impl_ckks_ring_map_derived_full, impl_ckks_ship_reference_full, impl_dft_matrix_reference_full, impl_dft_reference_full,
+    impl_ckks_dft_matrix_reference_full, impl_ckks_dft_reference_full, impl_ckks_encapsulated_mod_up_reference_full,
+    impl_ckks_fold_layout_reference_full, impl_ckks_fold_reference_full, impl_ckks_imag_reference_full,
+    impl_ckks_mod_up_first_factor_reference_full, impl_ckks_paco_reference_full, impl_ckks_ship_reference_full,
 };
 
 impl_ckks_encapsulated_mod_up_reference_full!(FFT64Avx512);
@@ -63,12 +63,12 @@ impl_ckks_bootstrapping_ci_reference_full!(super::FFT64Avx512, super::FFT64CIAvx
 impl_ckks_fold_layout_reference_full!(super::FFT64Avx512);
 impl_ckks_fold_reference_full!(super::FFT64Avx512);
 impl_ckks_complex_polynomial_evaluation_reference_full!(super::FFT64Avx512);
-impl_dft_reference_full!(super::FFT64Avx512);
-impl_dft_matrix_reference_full!(super::FFT64Avx512);
+impl_ckks_dft_reference_full!(super::FFT64Avx512);
+impl_ckks_dft_matrix_reference_full!(super::FFT64Avx512);
 poulpy_cpu_portable::impl_ckks_paco_coeff_encoding!(super::FFT64Avx512);
 poulpy_cpu_portable::impl_ckks_ship_coeff_encoding!(super::FFT64Avx512);
-impl_ckks_ring_map_derived_full!(super::FFT64Avx512);
-impl_ckks_paco_derived_full!(super::FFT64Avx512);
+impl_ckks_ci_ring_map_reference_full!(super::FFT64Avx512);
+impl_ckks_paco_reference_full!(super::FFT64Avx512);
 impl_ckks_ship_reference_full!(super::FFT64Avx512);
 poulpy_cpu_portable::impl_cpu_ckks_defaults!(super::NTT4x30Avx512);
 impl_ckks_conjugate_reference_full!(super::NTT4x30Avx512);
@@ -78,12 +78,12 @@ impl_ckks_bootstrapping_ci_reference_full!(super::NTT4x30Avx512, super::NTT4x30C
 impl_ckks_fold_layout_reference_full!(super::NTT4x30Avx512);
 impl_ckks_fold_reference_full!(super::NTT4x30Avx512);
 impl_ckks_complex_polynomial_evaluation_reference_full!(super::NTT4x30Avx512);
-impl_dft_reference_full!(super::NTT4x30Avx512);
-impl_dft_matrix_reference_full!(super::NTT4x30Avx512);
+impl_ckks_dft_reference_full!(super::NTT4x30Avx512);
+impl_ckks_dft_matrix_reference_full!(super::NTT4x30Avx512);
 poulpy_cpu_portable::impl_ckks_paco_coeff_encoding!(super::NTT4x30Avx512);
 poulpy_cpu_portable::impl_ckks_ship_coeff_encoding!(super::NTT4x30Avx512);
-impl_ckks_ring_map_derived_full!(super::NTT4x30Avx512);
-impl_ckks_paco_derived_full!(super::NTT4x30Avx512);
+impl_ckks_ci_ring_map_reference_full!(super::NTT4x30Avx512);
+impl_ckks_paco_reference_full!(super::NTT4x30Avx512);
 impl_ckks_ship_reference_full!(super::NTT4x30Avx512);
 #[cfg(feature = "enable-ifma")]
 poulpy_cpu_portable::impl_cpu_ckks_defaults!(super::NTT3x42Ifma);
@@ -100,20 +100,19 @@ impl_ckks_fold_layout_reference_full!(super::NTT3x42Ifma);
 #[cfg(feature = "enable-ifma")]
 impl_ckks_fold_reference_full!(super::NTT3x42Ifma);
 #[cfg(feature = "enable-ifma")]
-#[cfg(feature = "enable-ifma")]
 impl_ckks_complex_polynomial_evaluation_reference_full!(super::NTT3x42Ifma);
 #[cfg(feature = "enable-ifma")]
-impl_dft_reference_full!(super::NTT3x42Ifma);
+impl_ckks_dft_reference_full!(super::NTT3x42Ifma);
 #[cfg(feature = "enable-ifma")]
-impl_dft_matrix_reference_full!(super::NTT3x42Ifma);
+impl_ckks_dft_matrix_reference_full!(super::NTT3x42Ifma);
 #[cfg(feature = "enable-ifma")]
 poulpy_cpu_portable::impl_ckks_paco_coeff_encoding!(super::NTT3x42Ifma);
 #[cfg(feature = "enable-ifma")]
 poulpy_cpu_portable::impl_ckks_ship_coeff_encoding!(super::NTT3x42Ifma);
 #[cfg(feature = "enable-ifma")]
-impl_ckks_ring_map_derived_full!(super::NTT3x42Ifma);
+impl_ckks_ci_ring_map_reference_full!(super::NTT3x42Ifma);
 #[cfg(feature = "enable-ifma")]
-impl_ckks_paco_derived_full!(super::NTT3x42Ifma);
+impl_ckks_paco_reference_full!(super::NTT3x42Ifma);
 #[cfg(feature = "enable-ifma")]
 impl_ckks_ship_reference_full!(super::NTT3x42Ifma);
 #[cfg(feature = "enable-rayon")]
@@ -131,20 +130,19 @@ impl_ckks_fold_layout_reference_full!(super::FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
 impl_ckks_fold_reference_full!(super::FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
-#[cfg(feature = "enable-rayon")]
 impl_ckks_complex_polynomial_evaluation_reference_full!(super::FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
-impl_dft_reference_full!(super::FFT64Avx512Rayon);
+impl_ckks_dft_reference_full!(super::FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
-impl_dft_matrix_reference_full!(super::FFT64Avx512Rayon);
+impl_ckks_dft_matrix_reference_full!(super::FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
 poulpy_cpu_portable::impl_ckks_paco_coeff_encoding!(super::FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
 poulpy_cpu_portable::impl_ckks_ship_coeff_encoding!(super::FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
-impl_ckks_ring_map_derived_full!(super::FFT64Avx512Rayon);
+impl_ckks_ci_ring_map_reference_full!(super::FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
-impl_ckks_paco_derived_full!(super::FFT64Avx512Rayon);
+impl_ckks_paco_reference_full!(super::FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
 impl_ckks_ship_reference_full!(super::FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
@@ -162,20 +160,19 @@ impl_ckks_fold_layout_reference_full!(super::NTT4x30Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
 impl_ckks_fold_reference_full!(super::NTT4x30Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
-#[cfg(feature = "enable-rayon")]
 impl_ckks_complex_polynomial_evaluation_reference_full!(super::NTT4x30Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
-impl_dft_reference_full!(super::NTT4x30Avx512Rayon);
+impl_ckks_dft_reference_full!(super::NTT4x30Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
-impl_dft_matrix_reference_full!(super::NTT4x30Avx512Rayon);
+impl_ckks_dft_matrix_reference_full!(super::NTT4x30Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
 poulpy_cpu_portable::impl_ckks_paco_coeff_encoding!(super::NTT4x30Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
 poulpy_cpu_portable::impl_ckks_ship_coeff_encoding!(super::NTT4x30Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
-impl_ckks_ring_map_derived_full!(super::NTT4x30Avx512Rayon);
+impl_ckks_ci_ring_map_reference_full!(super::NTT4x30Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
-impl_ckks_paco_derived_full!(super::NTT4x30Avx512Rayon);
+impl_ckks_paco_reference_full!(super::NTT4x30Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
 impl_ckks_ship_reference_full!(super::NTT4x30Avx512Rayon);
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
@@ -193,20 +190,19 @@ impl_ckks_fold_layout_reference_full!(super::NTT3x42IfmaRayon);
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 impl_ckks_fold_reference_full!(super::NTT3x42IfmaRayon);
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
-#[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 impl_ckks_complex_polynomial_evaluation_reference_full!(super::NTT3x42IfmaRayon);
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
-impl_dft_reference_full!(super::NTT3x42IfmaRayon);
+impl_ckks_dft_reference_full!(super::NTT3x42IfmaRayon);
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
-impl_dft_matrix_reference_full!(super::NTT3x42IfmaRayon);
+impl_ckks_dft_matrix_reference_full!(super::NTT3x42IfmaRayon);
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 poulpy_cpu_portable::impl_ckks_paco_coeff_encoding!(super::NTT3x42IfmaRayon);
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 poulpy_cpu_portable::impl_ckks_ship_coeff_encoding!(super::NTT3x42IfmaRayon);
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
-impl_ckks_ring_map_derived_full!(super::NTT3x42IfmaRayon);
+impl_ckks_ci_ring_map_reference_full!(super::NTT3x42IfmaRayon);
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
-impl_ckks_paco_derived_full!(super::NTT3x42IfmaRayon);
+impl_ckks_paco_reference_full!(super::NTT3x42IfmaRayon);
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 impl_ckks_ship_reference_full!(super::NTT3x42IfmaRayon);
 poulpy_cpu_portable::impl_cpu_ckks_defaults!(super::FFT64CIAvx512);

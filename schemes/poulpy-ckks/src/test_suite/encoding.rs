@@ -58,3 +58,104 @@ pub fn test_encode_decode_reim_roundtrip<BE, F, E>(
     assert_precision_for_log_delta("encode_decode_reim re", &re_out, &re_in, log_delta, params.n);
     assert_precision_for_log_delta("encode_decode_reim im", &im_out, &im_in, log_delta, params.n);
 }
+
+/// A coefficient buffer of another length than the plaintext's degree is `InvalidOperand` of `ckks_encode_coeffs_into`
+/// before any write.
+pub fn test_encode_coeffs_into_rejects_coefficient_count<BE, F, E>(
+    params: crate::test_suite::CKKSTestParams,
+    module: &poulpy_hal::layouts::Module<BE>,
+    host_module: &poulpy_hal::layouts::Module<poulpy_hal::layouts::HostBytesBackend>,
+) where
+    BE: crate::test_suite::helpers::TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
+    poulpy_hal::layouts::Module<BE>: crate::test_suite::helpers::TestContextModule<BE> + crate::api::CKKSEncodingOps<BE, F>,
+    F: crate::test_suite::helpers::TestScalar,
+    E: poulpy_hal::api::NegacyclicFFT<F> + poulpy_hal::api::NegacyclicFFTNew<F>,
+{
+    use crate::test_suite::{
+        helpers::assert_ckks_error,
+        parity::{
+            helpers::{fixture_plaintext, snapshot},
+            layout,
+        },
+    };
+    use crate::{CKKSCompositionError, SlotsKind, api::CKKSEncodingOps, layouts::CKKSEncodingBuffer};
+    use poulpy_core::layouts::LWEInfos;
+    let _ = host_module;
+    let b = params.base2k;
+    let mut pt = fixture_plaintext(module, &layout(params, 0, b + 3, b - 1, 0, SlotsKind::Complex), 43);
+    let n = pt.n().as_usize();
+    let coeffs = CKKSEncodingBuffer::<BE::OwnedBuf, F>::from_host::<BE>(&vec![F::from_f64(0.0).unwrap(); n - 1]);
+    let before = snapshot::<BE, _>(&pt);
+    let err = module.ckks_encode_coeffs_into(&mut pt, &coeffs).unwrap_err();
+    assert_ckks_error(
+        "encode_coeffs_into: one coefficient short",
+        &err,
+        CKKSCompositionError::InvalidOperand {
+            op: "ckks_encode_coeffs_into",
+            reason: format!("coefficient count {} must equal plaintext degree {n}", n - 1),
+        },
+    );
+    assert_eq!(snapshot::<BE, _>(&pt), before, "a refused encoding wrote the plaintext");
+}
+
+/// The host slot adapters refuse real and imaginary slices of two lengths, and a slot count that is not a nonzero
+/// power of two, as `InvalidOperand` of the invoked adapter on an empty arena, the plaintext and slices untouched.
+pub fn test_encode_reim_into_rejects_slot_counts<BE, F, E>(
+    params: crate::test_suite::CKKSTestParams,
+    module: &poulpy_hal::layouts::Module<BE>,
+    host_module: &poulpy_hal::layouts::Module<poulpy_hal::layouts::HostBytesBackend>,
+) where
+    BE: crate::test_suite::helpers::TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
+    poulpy_hal::layouts::Module<BE>: crate::test_suite::helpers::TestContextModule<BE> + crate::api::CKKSEncodingOps<BE, F>,
+    F: crate::test_suite::helpers::TestScalar,
+    E: poulpy_hal::api::NegacyclicFFT<F> + poulpy_hal::api::NegacyclicFFTNew<F>,
+{
+    use crate::test_suite::{
+        helpers::assert_ckks_error,
+        parity::{
+            helpers::{fixture_plaintext, snapshot, with_scratch},
+            layout,
+        },
+    };
+    use crate::{CKKSCompositionError, SlotsKind, api::CKKSEncodingHostOps};
+    let _ = host_module;
+    let b = params.base2k;
+    let mut pt = fixture_plaintext(module, &layout(params, 0, b + 3, b - 1, 0, SlotsKind::Complex), 47);
+    let value = |i: usize| F::from_f64(i as f64 / 64.0).unwrap();
+    for (case, re_len, im_len, reason) in [
+        ("two lengths", 4, 2, "real and imaginary slot counts differ".to_string()),
+        ("no slot", 0, 0, "slot count must be a non-zero power of two, got 0".into()),
+        (
+            "three slots",
+            3,
+            3,
+            "slot count must be a non-zero power of two, got 3".into(),
+        ),
+    ] {
+        let (mut re, mut im): (Vec<F>, Vec<F>) = ((0..re_len).map(value).collect(), (0..im_len).map(value).collect());
+        let before = (snapshot::<BE, _>(&pt), re.clone(), im.clone());
+        let err = with_scratch::<BE, _>(0, |s| module.ckks_encode_reim_into(&mut pt, &re, &im, s)).unwrap_err();
+        assert_ckks_error(
+            &format!("encode_reim_into: {case}"),
+            &err,
+            CKKSCompositionError::InvalidOperand {
+                op: "ckks_encode_reim_into",
+                reason: reason.clone(),
+            },
+        );
+        let err = with_scratch::<BE, _>(0, |s| module.ckks_decode_reim_into(&pt, &mut re, &mut im, s)).unwrap_err();
+        assert_ckks_error(
+            &format!("decode_reim_into: {case}"),
+            &err,
+            CKKSCompositionError::InvalidOperand {
+                op: "ckks_decode_reim_into",
+                reason,
+            },
+        );
+        assert_eq!(
+            (snapshot::<BE, _>(&pt), re, im),
+            before,
+            "{case}: a refused adapter wrote the plaintext or slices"
+        );
+    }
+}

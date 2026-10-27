@@ -5,9 +5,9 @@ use poulpy_core::layouts::{
 };
 use poulpy_hal::layouts::{Backend, ConjugateInvariant, Data, Module, ScratchArena};
 
-use crate::{CKKSCtBounds, SetCKKSInfos, api::CKKSCIRingMapOps, layouts::CKKSCiphertext, oep::CKKSRingMapImpl};
+use crate::{CKKSCtBounds, SetCKKSInfos, api::CKKSCIRingMapOps, layouts::CKKSCiphertext, oep::CKKSCIRingMapImpl};
 
-impl<BE: Backend + CKKSRingMapImpl> CKKSCIRingMapOps<BE> for Module<BE> {
+impl<BE: Backend + CKKSCIRingMapImpl> CKKSCIRingMapOps<BE> for Module<BE> {
     fn ckks_ci_embed_tmp_bytes<R, K>(&self, res_infos: &R, key_infos: &K) -> usize
     where
         R: GLWEInfos,

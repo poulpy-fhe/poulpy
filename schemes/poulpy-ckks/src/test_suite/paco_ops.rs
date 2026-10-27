@@ -340,3 +340,103 @@ where
         );
     }
 }
+
+/// A fold whose second rotation has no key is `MissingAutomorphismKey` of that rotation before the first product writes
+/// `ct`, on an empty arena and on the query.
+pub fn test_slot_product_assign_rejects_missing_later_key<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend<Ring = Standard> + CKKSPaCoImpl,
+    Module<BE>: TestContextModule<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    use super::parity::{
+        helpers::{fixture_ciphertext, snapshot, with_scratch},
+        layout,
+    };
+    use crate::CKKSCompositionError;
+    let m = params.n / 2;
+    let rotations = fold_rotations(m, m / 4);
+    let params = leveled_params(&params, rotations.len());
+    let mut scratch = alloc_scratch(&params, module);
+    let (sk_raw, _) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
+    let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
+    let first = galois_element(rotations[0], module.cyclotomic_order());
+    let keys = HashMap::from([(first, gen_atk(&params, module, first, &sk_raw, &mut scratch.borrow()))]);
+    let log_delta = params.prec().log_delta();
+    let mut ct = fixture_ciphertext(
+        module,
+        &layout(params, params.rank, params.k, log_delta, 0, SlotsKind::Complex),
+        41,
+    );
+    let query = BE::ckks_slot_product_assign_tmp_bytes(module, &ct, &params.atk_layout(), &params.tsk_layout());
+    for bytes in [0, query] {
+        let before = snapshot::<BE, _>(&ct);
+        let err = with_scratch::<BE, _>(bytes, |s| {
+            BE::ckks_slot_product_assign(module, &mut ct, m, m / 4, &keys, &tsk, s)
+        })
+        .unwrap_err();
+        assert!(
+            matches!(
+                err.composition(),
+                Some(CKKSCompositionError::MissingAutomorphismKey { op: "ckks_slot_product_assign", rotation, .. })
+                    if *rotation == rotations[1]
+            ),
+            "slot_product_assign: missing second key: {err}"
+        );
+        assert_eq!(snapshot::<BE, _>(&ct), before, "a refused product fold wrote ct");
+    }
+}
+
+/// A fold whose second rotation has no key is `MissingAutomorphismKey` of that rotation before the first
+/// automorphism-add writes `ct`, on an empty arena and on the query.
+pub fn test_slot_trace_assign_rejects_missing_later_key<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend<Ring = Standard> + CKKSPaCoImpl,
+    Module<BE>: TestContextModule<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    use super::parity::{
+        helpers::{fixture_ciphertext, snapshot, with_scratch},
+        layout,
+    };
+    use crate::CKKSCompositionError;
+    let m = params.n / 2;
+    let rotations = fold_rotations(m, m / 4);
+    let mut scratch = alloc_scratch(&params, module);
+    let (sk_raw, _) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
+    let first = galois_element(rotations[0], module.cyclotomic_order());
+    let keys = HashMap::from([(first, gen_atk(&params, module, first, &sk_raw, &mut scratch.borrow()))]);
+    let mut ct = fixture_ciphertext(
+        module,
+        &layout(
+            params,
+            params.rank,
+            params.k,
+            params.prec().log_delta(),
+            0,
+            SlotsKind::Complex,
+        ),
+        41,
+    );
+    for bytes in [0, BE::ckks_slot_trace_assign_tmp_bytes(module, &ct, &params.atk_layout())] {
+        let before = snapshot::<BE, _>(&ct);
+        let err = with_scratch::<BE, _>(bytes, |s| BE::ckks_slot_trace_assign(module, &mut ct, m, m / 4, &keys, s)).unwrap_err();
+        assert!(
+            matches!(
+                err.composition(),
+                Some(CKKSCompositionError::MissingAutomorphismKey { op: "ckks_slot_trace_assign", rotation, .. })
+                    if *rotation == rotations[1]
+            ),
+            "slot_trace_assign: missing second key: {err}"
+        );
+        assert_eq!(snapshot::<BE, _>(&ct), before, "a refused trace fold wrote ct");
+    }
+}

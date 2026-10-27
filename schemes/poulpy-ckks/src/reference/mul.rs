@@ -16,9 +16,9 @@ use poulpy_hal::{
 
 use crate::{CKKSCompositionError, SlotsKind};
 use crate::{
-    CKKSInfos, GLWEPlaintextInfos, SetCKKSInfos, checked_log_budget_sub, checked_mul_ct_log_budget, checked_mul_pt_log_budget,
-    ensure_plaintext_degree_embeds,
+    CKKSInfos, GLWEPlaintextInfos, SetCKKSInfos, ckks_mul_pt_const_checks, ckks_mul_pt_vec_checks, get_mul_ct_params,
     layouts::{CKKSPreparedLeft, CKKSPreparedRight},
+    mul_ct_params_raw,
 };
 use poulpy_core::GLWEBytesOf;
 
@@ -416,9 +416,8 @@ pub trait CKKSMulReference<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
     {
-        const OP: &str = "ckks_mul_pt_vec_into";
-        ensure_plaintext_degree_embeds(OP, a.n().as_usize(), pt.n().as_usize(), BE::MIN_DEGREE)?;
-        let (res_log_budget, res_log_delta, cnv_offset) = get_mul_pt_params(OP, dst, a, pt)?;
+        let (res_log_budget, res_log_delta, cnv_offset) =
+            ckks_mul_pt_vec_checks::<BE, _, _, _>("ckks_mul_pt_vec_into", dst, a, pt)?;
         // Set the result metadata first: `dst.size()` is meta-derived and a fresh
         // `dst` carries zero meta, so `glwe_mul_plain` (which writes `res.size()`
         // limbs) would otherwise produce an empty output.
@@ -438,9 +437,8 @@ pub trait CKKSMulReference<BE: Backend> {
         Self: GLWECopy<BE> + GLWEMulPlain<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord> + VecZnxCopy<BE>,
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
     {
-        const OP: &str = "ckks_mul_pt_vec_assign";
-        ensure_plaintext_degree_embeds(OP, dst.n().as_usize(), pt.n().as_usize(), BE::MIN_DEGREE)?;
-        let (res_log_budget, res_log_delta, cnv_offset) = get_mul_pt_params(OP, dst, dst, pt)?;
+        let (res_log_budget, res_log_delta, cnv_offset) =
+            ckks_mul_pt_vec_checks::<BE, _, _, _>("ckks_mul_pt_vec_assign", dst, dst, pt)?;
         let log_sparsity = dst.log_sparsity().min(dst.log_n() - pt.log_n());
         let slots = dst.slots().join(pt.slots());
         scratch.scope(|scratch_local| {
@@ -469,7 +467,8 @@ pub trait CKKSMulReference<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
     {
-        let (res_log_budget, res_log_delta, cnv_offset) = get_mul_pt_params("ckks_mul_pt_const_into", dst, a, pt)?;
+        let (res_log_budget, res_log_delta, cnv_offset) =
+            ckks_mul_pt_const_checks("ckks_mul_pt_const_into", dst, a, pt, pt_coeff)?;
         // Set the result metadata first: `dst.size()` is meta-derived and a fresh
         // `dst` carries zero meta, so `glwe_mul_const` (which writes `res.size()`
         // limbs) would otherwise produce an empty output.
@@ -496,7 +495,8 @@ pub trait CKKSMulReference<BE: Backend> {
         Self: GLWECopy<BE> + GLWEMulConst<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord> + VecZnxCopy<BE>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
     {
-        let (res_log_budget, res_log_delta, cnv_offset) = get_mul_pt_params("ckks_mul_pt_const_assign", dst, dst, cnst)?;
+        let (res_log_budget, res_log_delta, cnv_offset) =
+            ckks_mul_pt_const_checks("ckks_mul_pt_const_assign", dst, dst, cnst, cnst_coeff)?;
         scratch.scope(|scratch_local| {
             let (mut input, mut op_scratch) = scratch_local.take_glwe_scratch(&*dst);
             self.glwe_copy(&mut input, &*dst, &mut op_scratch);
@@ -672,94 +672,4 @@ pub(crate) fn get_mul_prepared_params<BE: Backend, D: GLWEInfos + CKKSInfos>(
     )?;
     Ok((log_budget, log_delta, cnv_offset, tensor_k))
 }
-pub(crate) fn get_mul_ct_params<R, A, B>(op: &'static str, res: &R, a: &A, b: &B) -> Result<(usize, usize, usize)>
-where
-    R: CKKSInfos,
-    A: CKKSInfos,
-    B: CKKSInfos,
-{
-    mul_ct_params_raw(
-        op,
-        res.k().as_usize(),
-        a.log_delta(),
-        a.k().into(),
-        b.log_delta(),
-        b.k().into(),
-    )
-}
-
-/// Shared `(log_budget, log_delta, cnv_offset)` rule for ct × ct multiplication,
-/// expressed on raw values so the BSGS driver computes bit-identical parameters.
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn mul_ct_params_raw(
-    op: &'static str,
-    res_max_k: usize,
-    a_log_delta: usize,
-    a_k: usize,
-    b_log_delta: usize,
-    b_k: usize,
-) -> Result<(usize, usize, usize)> {
-    let a_log_budget = a_k.saturating_sub(a_log_delta);
-    let b_log_budget = b_k.saturating_sub(b_log_delta);
-
-    let res_log_budget = checked_mul_ct_log_budget(op, a_log_budget, b_log_budget, a_log_delta, b_log_delta)?;
-    let res_log_delta = a_log_delta.min(b_log_delta);
-
-    let res_offset = (res_log_budget + res_log_delta).saturating_sub(res_max_k);
-    // An operand holds its message at `2^-log_budget` on the torus and the
-    // convolution returns `a * b * 2^cnv_offset`, so lifting the product from
-    // `2^-(a_log_budget + b_log_budget)` to the stamped budget
-    // `min(log_budget) - max(log_delta) - res_offset` takes
-    // `max(log_budget) + max(log_delta) + res_offset`. That is
-    // `max(a_k, b_k) + res_offset` only when the operand with the larger budget
-    // also has the larger or equal scale.
-    let cnv_offset = a_log_budget.max(b_log_budget) + a_log_delta.max(b_log_delta) + res_offset;
-
-    Ok((
-        checked_log_budget_sub(op, res_log_budget, res_offset)?,
-        res_log_delta,
-        cnv_offset,
-    ))
-}
-
-pub(crate) fn get_mul_pt_params<R, A, B>(op: &'static str, res: &R, a: &A, b: &B) -> Result<(usize, usize, usize)>
-where
-    R: CKKSInfos,
-    A: CKKSInfos,
-    B: CKKSInfos + IntPolyInfos,
-{
-    mul_pt_params_raw(
-        op,
-        res.k().as_usize(),
-        a.log_delta(),
-        a.log_budget(),
-        b.log_delta(),
-        b.log_budget(),
-        b.encoded_k().as_usize(),
-    )
-}
-
-/// Shared `(log_budget, log_delta, cnv_offset)` rule for ct × pt multiplication,
-/// expressed on raw values so the BSGS driver computes bit-identical parameters.
-pub(crate) fn mul_pt_params_raw(
-    op: &'static str,
-    res_max_k: usize,
-    a_log_delta: usize,
-    a_log_budget: usize,
-    b_log_delta: usize,
-    b_log_budget: usize,
-    b_max_k: usize,
-) -> Result<(usize, usize, usize)> {
-    let res_log_budget = checked_mul_pt_log_budget(op, a_log_budget, b_log_budget, a_log_delta, b_log_delta)?;
-    let res_log_delta = a_log_delta;
-    let res_offset = (res_log_budget + res_log_delta).saturating_sub(res_max_k);
-    let cnv_offset = b_max_k + res_offset;
-
-    Ok((
-        checked_log_budget_sub(op, res_log_budget, res_offset)?,
-        res_log_delta,
-        cnv_offset,
-    ))
-}
-
 impl<BE: Backend> CKKSMulReference<BE> for poulpy_hal::layouts::Module<BE> {}

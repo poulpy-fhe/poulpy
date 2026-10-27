@@ -104,7 +104,7 @@ pub unsafe trait CKKSEncodingImpl<F: CKKSEncodingScalar>: Backend {
 
     /// Default body: `ckks_encode_slots_assign_into_derived`. A buffer length that is not a power of two between 2 and
     /// twice the maximum slot count, a plaintext of nonzero rank or above the module degree, or a coefficient count
-    /// different from the plaintext degree is a refusal. Then [`Self::ckks_slots_to_coeffs_assign`] on the buffer and
+    /// different from the plaintext degree is `InvalidOperand`. Then [`Self::ckks_slots_to_coeffs_assign`] on the buffer and
     /// [`Self::ckks_encode_coeffs_into`] of its leading coefficients.
     fn ckks_encode_slots_assign_into<P, C>(module: &Module<Self>, pt: &mut P, slots: &mut C) -> Result<()>
     where
@@ -126,7 +126,7 @@ pub unsafe trait CKKSEncodingImpl<F: CKKSEncodingScalar>: Backend {
     }
 
     /// Default body: `ckks_encode_coeffs_into_derived`. A plaintext of nonzero rank or above the module degree, or a
-    /// coefficient count different from the plaintext degree, is a refusal. Then [`Self::ckks_quantize_coeffs_into`].
+    /// coefficient count different from the plaintext degree, is `InvalidOperand`. Then [`Self::ckks_quantize_coeffs_into`].
     fn ckks_encode_coeffs_into<P, C>(module: &Module<Self>, pt: &mut P, coeffs: &C) -> Result<()>
     where
         P: CKKSPlaintextToBackendMut<Self> + IntPolyInfos + SetCKKSInfos,
@@ -146,7 +146,7 @@ pub unsafe trait CKKSEncodingImpl<F: CKKSEncodingScalar>: Backend {
     }
 
     /// Default body: `ckks_slots_to_coeffs_assign_derived`. A buffer length that is not a power of two between 2 and
-    /// twice the maximum slot count is a refusal. Then [`Self::ckks_slots_to_coeffs_assign_with_plan`] under the plans
+    /// twice the maximum slot count is `InvalidOperand`. Then [`Self::ckks_slots_to_coeffs_assign_with_plan`] under the plans
     /// of [`Self::ckks_encoding_plan_cache`], created once by [`Self::ckks_encoding_plans_create`].
     fn ckks_slots_to_coeffs_assign<C>(module: &Module<Self>, values: &mut C) -> Result<()>
     where

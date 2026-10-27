@@ -64,10 +64,11 @@ use poulpy_hal::{
 use super::helpers::{
     MUL_CONST, PT_PREC, TestContextBackend, TestContextModule, TestScalar, TestVector, alloc_ct, alloc_scratch,
     assert_ckks_error, assert_decrypt_precision, assert_decrypt_precision_at_log_delta, assert_mul_ct_output_meta,
-    assert_mul_pt_output_meta, ckks_encrypt, ckks_encrypt_with_prec, ckks_pt_cst_full, ckks_snapshot, encode_and_upload_pt,
-    gen_sk_with_raw, gen_tsk, precision_at, quantize, quantized_const, quantized_vector, want_mul, want_square,
+    assert_mul_pt_output_meta, ckks_encrypt, ckks_encrypt_with_prec, ckks_pt_cst_full, ckks_snapshot, dirty_ct,
+    encode_and_upload_pt, gen_sk_with_raw, gen_tsk, precision_at, quantize, quantized_const, quantized_vector, want_mul,
+    want_square,
 };
-use super::parity::helpers::with_scratch;
+use super::parity::helpers::{snapshot, with_scratch};
 
 use crate::{SetCKKSInfos, test_suite::CKKSTestParams, test_suite::reference_encoder::ReferenceEncoder};
 
@@ -1506,6 +1507,7 @@ pub fn test_mul_prepared_assign_rejects_layout_mismatch<BE, F, E>(
         module.ckks_prepare_right(&other, PrepareHint::Reuse, s)
     })
     .unwrap();
+    let before = snapshot::<BE, _>(&dst);
     let err = with_scratch::<BE, _>(0, |s| module.ckks_mul_prepared_assign(&mut dst, &prepared, &tsk, s)).unwrap_err();
     assert_ckks_error(
         "mul_prepared_layout_mismatch",
@@ -1519,6 +1521,11 @@ pub fn test_mul_prepared_assign_rejects_layout_mismatch<BE, F, E>(
             prep_base2k: mismatched_base2k,
             prep_rank: 1,
         },
+    );
+    assert_eq!(
+        snapshot::<BE, _>(&dst),
+        before,
+        "a refused ckks_mul_prepared_assign wrote res"
     );
 }
 
@@ -1616,21 +1623,23 @@ fn check_prepare_into<
     let mut res = alloc();
     assert_eq!(view(&res).len(), bytes_of, "{label}: bytes_of");
     with_scratch::<BE, _>(bytes(a), |s| into(&mut res, a, s)).unwrap();
-    assert_eq!(view(&res)[..], view(&fresh)[..], "{label}: prepare-into differs from prepare");
+    assert!(
+        view(&res)[..] == view(&fresh)[..],
+        "{label}: prepare-into differs from prepare"
+    );
     let address = view(&res).as_ptr();
     view_mut(&mut res).as_mut().fill(0xA5);
     with_scratch::<BE, _>(bytes(a), |s| into(&mut res, a, s)).unwrap();
     assert_eq!(view(&res).as_ptr(), address, "{label}: the refill reallocated");
-    assert_eq!(view(&res)[..], view(&fresh)[..], "{label}: the refill differs from prepare");
+    assert!(view(&res)[..] == view(&fresh)[..], "{label}: the refill differs from prepare");
     let infos = (res.glwe_layout(), res.meta());
-    let err = with_scratch::<BE, _>(bytes(other), |s| into(&mut res, other, s)).unwrap_err();
+    let err = with_scratch::<BE, _>(0, |s| into(&mut res, other, s)).unwrap_err();
     assert!(
         matches!(err.composition(), Some(CKKSCompositionError::InvalidOperand { op: got, .. }) if *got == op),
         "{label}: unexpected error: {err}"
     );
-    assert_eq!(
-        view(&res)[..],
-        view(&fresh)[..],
+    assert!(
+        view(&res)[..] == view(&fresh)[..],
         "{label}: a rejected source changed the operand"
     );
     assert_eq!(
@@ -1684,11 +1693,9 @@ pub fn test_mul_into_rejects_explicit_metadata<BE, F, E>(
     );
     ct1.set_log_budget(8);
     ct2.set_log_budget(9);
-    let mut ct_res = alloc_ct(&params, module, params.k);
-    let err = with_scratch::<BE, _>(module.ckks_mul_tmp_bytes(&ct_res, &ct1, &ct2, &tsk), |s| {
-        module.ckks_mul_into(&mut ct_res, &ct1, &ct2, &tsk, s)
-    })
-    .unwrap_err();
+    let mut ct_res = dirty_ct(module, &ct1, params.k);
+    let before = snapshot::<BE, _>(&ct_res);
+    let err = with_scratch::<BE, _>(0, |s| module.ckks_mul_into(&mut ct_res, &ct1, &ct2, &tsk, s)).unwrap_err();
     assert_ckks_error(
         "mul_into_rejects_explicit_metadata",
         &err,
@@ -1700,4 +1707,133 @@ pub fn test_mul_into_rejects_explicit_metadata<BE, F, E>(
             rhs_log_delta: params.prec().log_delta(),
         },
     );
+    assert_eq!(snapshot::<BE, _>(&ct_res), before, "a refused ckks_mul_into wrote res");
+}
+
+/// A plaintext of another radix than the ciphertext is `PlaintextBase2KMismatch`, and a constant coefficient past the
+/// plaintext's degree `PlaintextCoefficientOutOfRange`, before any write, on an empty arena and on the query.
+pub fn test_mul_pt_const_into_rejects_base2k_mismatch<BE, F, E>(
+    params: crate::test_suite::CKKSTestParams,
+    module: &poulpy_hal::layouts::Module<BE>,
+    _host_module: &poulpy_hal::layouts::Module<poulpy_hal::layouts::HostBytesBackend>,
+) where
+    BE: crate::test_suite::helpers::TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
+    poulpy_hal::layouts::Module<BE>: crate::test_suite::helpers::TestContextModule<BE>,
+    F: crate::test_suite::helpers::TestScalar,
+    E: poulpy_hal::api::NegacyclicFFT<F> + poulpy_hal::api::NegacyclicFFTNew<F>,
+{
+    use crate::test_suite::{
+        helpers::assert_ckks_error,
+        parity::{
+            helpers::{fixture_ciphertext, fixture_plaintext, snapshot, with_scratch},
+            layout,
+        },
+    };
+    use crate::{CKKSCompositionError, CKKSLayout, SlotsKind};
+    use poulpy_core::layouts::LWEInfos;
+    let b = params.base2k;
+    let ct_layout = layout(params, params.rank, 3 * b + 5, b - 1, 0, SlotsKind::Complex);
+    let pt_layout = layout(params, 0, b + 3, b - 1, 0, SlotsKind::Complex);
+    let other_radix = CKKSLayout {
+        glwe_layout: poulpy_core::layouts::GLWELayout {
+            base2k: (b - 1).into(),
+            ..pt_layout.glwe_layout
+        },
+        meta: pt_layout.meta,
+    };
+    use crate::api::CKKSMulOps;
+    let a = fixture_ciphertext(module, &ct_layout, 41);
+    let pt = fixture_plaintext(module, &other_radix, 43);
+    let same_radix = fixture_plaintext(module, &pt_layout, 44);
+    let n = same_radix.n().as_usize();
+    let mut res = fixture_ciphertext(module, &ct_layout, 31);
+    let radix = |op| CKKSCompositionError::PlaintextBase2KMismatch {
+        op,
+        ct_base2k: b,
+        pt_base2k: b - 1,
+    };
+    for bytes in [0, module.ckks_mul_pt_const_tmp_bytes(&res, &a, &pt)] {
+        let before = snapshot::<BE, _>(&res);
+        let err = with_scratch::<BE, _>(bytes, |s| module.ckks_mul_pt_const_into(&mut res, &a, &pt, 0, s)).unwrap_err();
+        assert_ckks_error(
+            "mul_pt_const_into: plaintext of another radix",
+            &err,
+            radix("ckks_mul_pt_const_into"),
+        );
+        let err = with_scratch::<BE, _>(bytes, |s| module.ckks_mul_pt_const_assign(&mut res, &pt, 0, s)).unwrap_err();
+        assert_ckks_error(
+            "mul_pt_const_assign: plaintext of another radix",
+            &err,
+            radix("ckks_mul_pt_const_assign"),
+        );
+        let err = with_scratch::<BE, _>(bytes, |s| module.ckks_mul_pt_const_into(&mut res, &a, &same_radix, n, s)).unwrap_err();
+        assert_ckks_error(
+            "mul_pt_const_into: coefficient past the plaintext",
+            &err,
+            CKKSCompositionError::PlaintextCoefficientOutOfRange {
+                op: "ckks_mul_pt_const_into",
+                role: "plaintext",
+                coeff: n,
+                n,
+            },
+        );
+        assert_eq!(snapshot::<BE, _>(&res), before, "a refused product wrote dst");
+    }
+}
+
+/// A plaintext of another radix than the ciphertext is `PlaintextBase2KMismatch` before any write, on an empty arena
+/// and on the query, out of place and in place.
+pub fn test_mul_pt_vec_into_rejects_base2k_mismatch<BE, F, E>(
+    params: crate::test_suite::CKKSTestParams,
+    module: &poulpy_hal::layouts::Module<BE>,
+    _host_module: &poulpy_hal::layouts::Module<poulpy_hal::layouts::HostBytesBackend>,
+) where
+    BE: crate::test_suite::helpers::TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
+    poulpy_hal::layouts::Module<BE>: crate::test_suite::helpers::TestContextModule<BE>,
+    F: crate::test_suite::helpers::TestScalar,
+    E: poulpy_hal::api::NegacyclicFFT<F> + poulpy_hal::api::NegacyclicFFTNew<F>,
+{
+    use crate::test_suite::{
+        helpers::assert_ckks_error,
+        parity::{
+            helpers::{fixture_ciphertext, fixture_plaintext, snapshot, with_scratch},
+            layout,
+        },
+    };
+    use crate::{CKKSCompositionError, CKKSLayout, SlotsKind};
+    let b = params.base2k;
+    let ct_layout = layout(params, params.rank, 3 * b + 5, b - 1, 0, SlotsKind::Complex);
+    let pt_layout = layout(params, 0, b + 3, b - 1, 0, SlotsKind::Complex);
+    let other_radix = CKKSLayout {
+        glwe_layout: poulpy_core::layouts::GLWELayout {
+            base2k: (b - 1).into(),
+            ..pt_layout.glwe_layout
+        },
+        meta: pt_layout.meta,
+    };
+    use crate::api::CKKSMulOps;
+    let a = fixture_ciphertext(module, &ct_layout, 41);
+    let pt = fixture_plaintext(module, &other_radix, 43);
+    let mut res = fixture_ciphertext(module, &ct_layout, 31);
+    let radix = |op| CKKSCompositionError::PlaintextBase2KMismatch {
+        op,
+        ct_base2k: b,
+        pt_base2k: b - 1,
+    };
+    for bytes in [0, module.ckks_mul_pt_vec_tmp_bytes(&res, &a, &pt)] {
+        let before = snapshot::<BE, _>(&res);
+        let err = with_scratch::<BE, _>(bytes, |s| module.ckks_mul_pt_vec_into(&mut res, &a, &pt, s)).unwrap_err();
+        assert_ckks_error(
+            "mul_pt_vec_into: plaintext of another radix",
+            &err,
+            radix("ckks_mul_pt_vec_into"),
+        );
+        let err = with_scratch::<BE, _>(bytes, |s| module.ckks_mul_pt_vec_assign(&mut res, &pt, s)).unwrap_err();
+        assert_ckks_error(
+            "mul_pt_vec_assign: plaintext of another radix",
+            &err,
+            radix("ckks_mul_pt_vec_assign"),
+        );
+        assert_eq!(snapshot::<BE, _>(&res), before, "a refused product wrote dst");
+    }
 }

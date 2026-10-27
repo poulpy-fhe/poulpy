@@ -17,7 +17,7 @@ use poulpy_hal::{
 use crate::{
     CKKSInfos, SetCKKSInfos,
     layouts::{CKKSCiphertextOwned, CKKSPlaintextOwned, ShipPlan},
-    reference::mul::mul_pt_params_raw,
+    mul_pt_params_raw,
 };
 
 /// Scratch bytes for [`ship_masking_accumulate`].

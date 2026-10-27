@@ -1,4 +1,7 @@
-use crate::{CKKSCompositionError, CKKSResult as Result, ckks_ensure, ckks_log_delta, layouts::eval_mod::EvalModPlan};
+use crate::{
+    CKKSCompositionError, CKKSResult as Result, checked_log_budget_sub, ckks_ensure, ckks_ensure_operand, ckks_log_delta,
+    layouts::eval_mod::EvalModPlan,
+};
 use poulpy_core::layouts::{GLWEPlaintextInfos, SetGLWEPlaintextInfos};
 use poulpy_core::{
     GLWECIEmbed, GLWECITrace, GLWECopy, GLWEKeyswitch, GLWERotate, GLWEShift, GLWESwitchDegree, LinearTransformationPrepared,
@@ -216,13 +219,14 @@ where
             .get_tensor_key(k)
             .map_err(|source| CKKSCompositionError::MissingRelinearizationKey { op, k: k.into(), source })?;
     }
-    check_raise_keys(ct_out, ct_in, ctx, keys)
+    check_raise_keys(op, ct_out, ct_in, ctx, keys)
 }
 
 /// Keys with a row offset are laid out for the raise: fails before any work
 /// unless the first-factor keys, or a sparse-to-dense key with an offset, fit
 /// the raise of `ct_in` into `ct_out.k()` bits.
 pub(crate) fn check_raise_keys<BE, F, K, C1, C2>(
+    op: &'static str,
     ct_out: &C1,
     ct_in: &C2,
     ctx: &BootstrappingContext<BE, F>,
@@ -238,6 +242,7 @@ where
     let (k_small, raised) = ctx.key_widths().raise(ct_in.k().as_usize());
     if let Some(factor) = ctx.coeffs_to_slots_first_factor() {
         crate::reference::first_factor::check_first_factor_raise(
+            op,
             ct_out.base2k().as_usize(),
             ct_out.n().as_usize().ilog2() as usize,
             bootstrap_k,
@@ -248,7 +253,7 @@ where
     } else if let Some((_, Some(sparse_to_dense))) = keys.encapsulation_keys()
         && sparse_to_dense.k_offset().as_usize() > 0
     {
-        check_offset_raise(bootstrap_k, k_small, raised - k_small, sparse_to_dense)?;
+        check_offset_raise(op, bootstrap_k, k_small, raised - k_small, sparse_to_dense)?;
     }
     Ok(())
 }
@@ -502,7 +507,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl> CKKSBoo
         Src: GLWEToBackendRef<BE> + CKKSInfos,
     {
         let scale_up = eval_mod.raised_scale_up(src.log_delta())?;
-        ckks_mod_up_scaled_reference(self, dst, src, scale_up, scratch)?;
+        ckks_mod_up_scaled_reference("ckks_mod_up_into", self, dst, src, scale_up, scratch)?;
         let mut meta = dst.meta();
         meta.scale = Scale::Log(ckks_log_delta(&meta) + eval_mod.log_msg_ratio);
         dst.set_meta(meta);
@@ -556,28 +561,32 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl> CKKSBoo
             GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
         GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     {
-        ckks_ensure!(
+        const OP: &str = "ckks_bootstrap";
+        ckks_ensure_operand!(
+            OP,
             ctx.functional_message_modulus().is_none() && ctx.eval_mod_ring() == EvalModRing::Standard,
-            "ckks_bootstrap requires an identity bootstrapping context with EvalMod on the standard ring"
+            "requires an identity bootstrapping context with EvalMod on the standard ring"
         );
         // All pipeline intermediates are rank-1 working ciphertexts carved from
         // scratch (accounted for by `ckks_bootstrap_tmp_bytes`); reject
         // higher-rank inputs up front.
-        ckks_ensure!(
+        ckks_ensure_operand!(
+            OP,
             ct_in.rank().as_usize() == 1 && ct_out.rank().as_usize() == 1,
-            "ckks_bootstrap supports rank-1 ciphertexts only, got rank {} -> {}",
+            "supports rank-1 ciphertexts only, got rank {} -> {}",
             ct_in.rank().as_usize(),
             ct_out.rank().as_usize()
         );
 
         let encapsulation_keys = keys.encapsulation_keys();
-        ckks_ensure!(
+        ckks_ensure_operand!(
+            OP,
             encapsulation_keys.is_some() == ctx.sparse_secret_hamming_weight().is_some(),
             "bootstrapping key encapsulation does not match the compiled recipe (expected {}, got {})",
             ctx.sparse_secret_hamming_weight().is_some(),
             encapsulation_keys.is_some()
         );
-        check_key_widths("ckks_bootstrap", ct_out, ct_in, ctx, keys, keys.tensor_key())?;
+        check_key_widths(OP, ct_out, ct_in, ctx, keys, keys.tensor_key())?;
 
         if ctx.pipeline() == BootstrappingPipeline::S2CFirst {
             // Known-real slots skip the imaginary nonlinear branch: one EvalMod
@@ -742,42 +751,49 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl> CKKSBoo
             GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
         GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     {
-        ckks_ensure!(!luts.is_empty(), "functional bootstrap requires at least one LUT");
-        ckks_ensure!(
+        const OP: &str = "ckks_functional_bootstrap";
+        ckks_ensure_operand!(OP, !luts.is_empty(), "functional bootstrap requires at least one LUT");
+        ckks_ensure_operand!(
+            OP,
             ct_outs.len() == luts.len(),
             "functional bootstrap ct_outs/luts length mismatch ({} vs {})",
             ct_outs.len(),
             luts.len()
         );
-        ckks_ensure!(
+        ckks_ensure_operand!(
+            OP,
             ctx.pipeline() == BootstrappingPipeline::S2CFirst,
             "functional bootstrapping requires an S2C-first context"
         );
         let log_msg_ratio = luts[0].log_msg_ratio();
-        ckks_ensure!(
+        ckks_ensure_operand!(
+            OP,
             luts.iter().all(|lut| lut.message_modulus() == luts[0].message_modulus()),
             "functional bootstrap LUTs must have the same message modulus"
         );
         if luts.iter().any(EncodedLut::requires_eval_mod) {
-            ensure_unit_circle_exp_context(ctx)?;
+            ensure_unit_circle_exp_context(OP, ctx)?;
         }
         let head = &ct_outs[0];
         let (out_n, out_k) = (head.n(), head.k());
-        ckks_ensure!(
+        ckks_ensure_operand!(
+            OP,
             ct_in.rank().as_usize() == 1
                 && ct_outs.iter().all(|ct| {
                     ct.rank().as_usize() == 1 && ct.n() == head.n() && ct.base2k() == head.base2k() && ct.k() == head.k()
                 }),
             "functional bootstrapping outputs must share one rank-1 layout"
         );
-        ckks_ensure!(
+        ckks_ensure_operand!(
+            OP,
             keys.encapsulation_keys().is_some() == ctx.sparse_secret_hamming_weight().is_some(),
             "bootstrapping key encapsulation does not match the compiled recipe"
         );
-        ensure_functional_message_ratio(ct_in, ctx.slots_to_coeffs().consumed_bits(), log_msg_ratio)?;
+        ensure_functional_message_ratio(OP, ct_in, ctx.slots_to_coeffs().consumed_bits(), log_msg_ratio)?;
         // Keys laid out for the raise fail here rather than after SlotsToCoeffs.
-        check_raise_keys(head, ct_in, ctx, keys)?;
-        ckks_ensure!(
+        check_raise_keys(OP, head, ct_in, ctx, keys)?;
+        ckks_ensure_operand!(
+            OP,
             ctx.functional_message_modulus().unwrap_or(1usize << log_msg_ratio) == luts[0].message_modulus(),
             "functional bootstrap context must be configured for message modulus {}",
             luts[0].message_modulus()
@@ -785,7 +801,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl> CKKSBoo
         let output_contracts = ct_outs
             .iter()
             .zip(luts)
-            .map(|(ct_out, lut)| functional_output_contract(ct_in, ctx, lut, ct_out.k().as_usize()))
+            .map(|(ct_out, lut)| functional_output_contract(OP, ct_in, ctx, lut, ct_out.k().as_usize()))
             .collect::<Result<Vec<_>>>()?;
 
         let shared = luts.len() > 1 && luts.iter().all(|lut| lut.general_series().is_some());
@@ -872,6 +888,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl> CKKSBoo
 /// `scale_up` lifts the message that many bits above its natural magnitude,
 /// fused into the widening shift rather than costing a second pass.
 pub(crate) fn ckks_mod_up_scaled_reference<BE, Dst, Src>(
+    op: &'static str,
     module: &Module<BE>,
     dst: &mut Dst,
     src: &Src,
@@ -891,10 +908,7 @@ where
     let k_large: usize = dst.k().as_usize();
     let k_small: usize = src.k().as_usize();
 
-    ckks_ensure!(
-        k_large >= k_small + scale_up,
-        "ckks_mod_up: dst.k ({k_large}) < src.k ({k_small}) + scale_up ({scale_up}); ModUp must widen, not shrink, the modulus"
-    );
+    ensure_mod_up_widens(op, k_large, k_small, scale_up)?;
 
     // MSB-align `src` into the wider `dst`: the value occupies the top
     // `k_small` bits and the freshly-introduced low-order limbs are zero.
@@ -944,9 +958,10 @@ where
 {
     // The pipeline carves rank-1 intermediates, so reject higher-rank inputs
     // rather than silently copying into a rank-1 scratch ciphertext.
-    ckks_ensure!(
+    ckks_ensure_operand!(
+        "ckks_bootstrap_mod_up",
         src.rank().as_usize() == 1 && dst.rank().as_usize() == 1,
-        "ckks_bootstrap_mod_up supports rank-1 ciphertexts only, got rank {} -> {}",
+        "supports rank-1 ciphertexts only, got rank {} -> {}",
         src.rank().as_usize(),
         dst.rank().as_usize()
     );
@@ -1022,7 +1037,8 @@ where
 
     match keys.encapsulation_keys() {
         Some((dense_to_sparse, sparse_to_dense)) => {
-            ckks_ensure!(
+            ckks_ensure_operand!(
+                "ckks_bootstrap_mod_up",
                 sparse_to_dense.is_some(),
                 "the encapsulated ModUp needs a sparse-to-dense key, which a key set for the first factor on the raise has not"
             );
@@ -1037,7 +1053,7 @@ where
                 scratch,
             )?;
         }
-        None => ckks_mod_up_scaled_reference(module, dst, src, scale_up, scratch)?,
+        None => ckks_mod_up_scaled_reference("ckks_bootstrap_mod_up", module, dst, src, scale_up, scratch)?,
     }
     Ok(())
 }
@@ -1768,14 +1784,22 @@ where
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
+    const OP: &str = "ckks_bootstrap_mod_up";
     ensure_encapsulation_covers(dst, src, dense_to_sparse, sparse_to_dense)?;
+    // The switch keeps the width of `src`: the raise's checks run before it.
+    let (k_large, k_small) = (dst.k().as_usize(), src.k().as_usize());
+    if sparse_to_dense.k_offset().as_usize() > 0 {
+        check_offset_raise(OP, k_large, k_small, scale_up, sparse_to_dense)?;
+    } else {
+        ensure_mod_up_widens(OP, k_large, k_small, scale_up)?;
+    }
     module.glwe_keyswitch_assign(src, &dense_to_sparse.to_backend_ref(), scratch);
     if sparse_to_dense.k_offset().as_usize() > 0 {
         return ckks_mod_up_offset_reference(module, dst, src, scale_up, sparse_to_dense, scratch);
     }
     // The lift is fused into ModUp, so the message is already at its final scale
     // when sparse-to-dense adds its noise.
-    ckks_mod_up_scaled_reference(module, dst, src, scale_up, scratch)?;
+    ckks_mod_up_scaled_reference(OP, module, dst, src, scale_up, scratch)?;
     module.glwe_keyswitch_assign(dst, &sparse_to_dense.to_backend_ref(), scratch);
     Ok(())
 }
@@ -1786,31 +1810,42 @@ fn offset_key_window<K: GGLWEInfos>(dst_k: usize, key: &K) -> usize {
     dst_k.saturating_sub(key.k_offset().as_usize())
 }
 
+/// `InvalidOperand` for `op` unless the raise of a `k_small`-bit ciphertext lifted by `scale_up` into `k_large` bits
+/// widens it.
+fn ensure_mod_up_widens(op: &'static str, k_large: usize, k_small: usize, scale_up: usize) -> Result<()> {
+    ckks_ensure_operand!(
+        op,
+        k_large >= k_small + scale_up,
+        "dst.k ({k_large}) < src.k ({k_small}) + scale_up ({scale_up}); ModUp must widen, not shrink, the modulus"
+    );
+    Ok(())
+}
+
 /// Checks that a sparse-to-dense key with a row offset serves the raise of a
 /// `k_small`-bit ciphertext lifted by `scale_up` into `k_large` bits, and
 /// returns the raise's shift and the bits the key's window then holds.
 pub(crate) fn check_offset_raise<K: GGLWEInfos>(
+    op: &'static str,
     k_large: usize,
     k_small: usize,
     scale_up: usize,
     key: &K,
 ) -> Result<(usize, usize)> {
-    ckks_ensure!(
-        k_large >= k_small + scale_up,
-        "ckks_mod_up: dst.k ({k_large}) < src.k ({k_small}) + scale_up ({scale_up}); ModUp must widen, not shrink, the modulus"
-    );
+    ensure_mod_up_widens(op, k_large, k_small, scale_up)?;
     let shift = k_large - k_small - scale_up;
     let k_offset = key.k_offset().as_usize();
-    ckks_ensure!(
+    ckks_ensure_operand!(
+        op,
         k_offset <= shift,
-        "ckks_mod_up: the sparse-to-dense key lowers its input by {k_offset} bits, more than the raise's {shift}"
+        "the sparse-to-dense key lowers its input by {k_offset} bits, more than the raise's {shift}"
     );
     let window = offset_key_window(k_large, key) - scale_up;
     let max_input_k = key.gglwe_layout().max_input_k().as_usize();
     let reach = k_offset + key.gglwe_layout().gadget_k().as_usize();
-    ckks_ensure!(
+    ckks_ensure_operand!(
+        op,
         window <= max_input_k && k_large <= reach,
-        "ckks_mod_up: the sparse-to-dense key takes {max_input_k} bits of input and reaches bit {reach}; the raise needs {window} bits up to bit {k_large}"
+        "the sparse-to-dense key takes {max_input_k} bits of input and reaches bit {reach}; the raise needs {window} bits up to bit {k_large}"
     );
     Ok((shift, window))
 }
@@ -1837,7 +1872,7 @@ where
 {
     let k_large: usize = dst.k().as_usize();
     let k_small: usize = src.k().as_usize();
-    let (shift, window) = check_offset_raise(k_large, k_small, scale_up, sparse_to_dense)?;
+    let (shift, window) = check_offset_raise("ckks_bootstrap_mod_up", k_large, k_small, scale_up, sparse_to_dense)?;
     let k_offset = sparse_to_dense.k_offset().as_usize();
     let key = sparse_to_dense.to_backend_ref();
     if shift == k_offset {
@@ -1922,12 +1957,14 @@ where
         .max(module.glwe_keyswitch_tmp_bytes(dst_infos, dst_infos, sparse_to_dense_infos))
 }
 
-fn ensure_unit_circle_exp_context<BE: Backend, F>(ctx: &BootstrappingContext<BE, F>) -> Result<()> {
-    ckks_ensure!(
+fn ensure_unit_circle_exp_context<BE: Backend, F>(op: &'static str, ctx: &BootstrappingContext<BE, F>) -> Result<()> {
+    ckks_ensure_operand!(
+        op,
         ctx.eval_mod_plan().eval_mod_type == EvalModType::ExpCmplx,
         "general functional bootstrapping requires an ExpCmplx EvalMod context"
     );
-    ckks_ensure!(
+    ckks_ensure_operand!(
+        op,
         ctx.eval_mod_plan().scaling == Some(std::f64::consts::TAU),
         "general functional bootstrapping requires a unit-circle ExpCmplx context (scaling = 2π)"
     );
@@ -1935,6 +1972,7 @@ fn ensure_unit_circle_exp_context<BE: Backend, F>(ctx: &BootstrappingContext<BE,
 }
 
 fn functional_output_contract<BE: Backend, F>(
+    op: &'static str,
     ct_in: &CKKSCiphertextOwned<BE>,
     ctx: &BootstrappingContext<BE, F>,
     lut: &EncodedLut<CKKSPlaintextOwned<BE>>,
@@ -1956,12 +1994,14 @@ fn functional_output_contract<BE: Backend, F>(
         .and_then(|bits| bits.checked_add(eval_mod))
         .and_then(|bits| bits.checked_add(lut.consumed_bits(log_delta)))
         .ok_or_else(|| crate::CKKSError::Internal(anyhow::anyhow!("functional bootstrap budget overflow")))?;
-    let output_k = bootstrap_k.checked_sub(consumed).ok_or_else(|| {
-        crate::CKKSError::Internal(anyhow::anyhow!(
-            "functional bootstrap output width {bootstrap_k} is smaller than its {consumed}-bit post-ModUp cost"
-        ))
-    })?;
-    ckks_ensure!(
+    ckks_ensure_operand!(
+        op,
+        bootstrap_k >= consumed,
+        "functional bootstrap output width {bootstrap_k} is smaller than its {consumed}-bit post-ModUp cost"
+    );
+    let output_k = bootstrap_k - consumed;
+    ckks_ensure_operand!(
+        op,
         output_k >= log_delta,
         "functional bootstrap leaves output k={output_k} below log_delta={log_delta}"
     );
@@ -2081,17 +2121,13 @@ where
     Ok(())
 }
 
-fn ensure_functional_message_ratio<C>(ct_in: &C, s2c_consumed_bits: usize, expected: usize) -> Result<()>
+fn ensure_functional_message_ratio<C>(op: &'static str, ct_in: &C, s2c_consumed_bits: usize, expected: usize) -> Result<()>
 where
     C: CKKSInfos,
 {
-    let log_budget = ct_in.log_budget();
-    ckks_ensure!(
-        log_budget >= s2c_consumed_bits,
-        "functional bootstrap needs log_budget >= {s2c_consumed_bits}, got {log_budget}"
-    );
-    let actual = log_budget - s2c_consumed_bits;
-    ckks_ensure!(
+    let actual = checked_log_budget_sub(op, ct_in.log_budget(), s2c_consumed_bits)?;
+    ckks_ensure_operand!(
+        op,
         actual == expected,
         "functional bootstrap LUT requires log_msg_ratio {expected}, got {actual}"
     );

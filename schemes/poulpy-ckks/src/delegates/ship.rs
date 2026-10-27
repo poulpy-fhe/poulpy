@@ -6,12 +6,12 @@ use crate::{
     CKKSCtBounds,
     api::{CKKSShipOps, ShipScalar},
     layouts::{CKKSCiphertextOwned, ShipCoeffEncodings, ShipKeysPrepared, ShipPlan},
-    oep::{CKKSEncodingImpl, CKKSShipImpl},
+    oep::{CKKSEncodingImpl, CKKSShipCoeffEncodingImpl, CKKSShipImpl},
 };
 
 impl<BE, F> CKKSShipOps<BE, F> for Module<BE>
 where
-    BE: Backend + CKKSShipImpl + CKKSEncodingImpl<F>,
+    BE: Backend + CKKSShipImpl + CKKSShipCoeffEncodingImpl + CKKSEncodingImpl<F>,
     F: ShipScalar,
 {
     fn ckks_ship_bootstrap_tmp_bytes<Src>(

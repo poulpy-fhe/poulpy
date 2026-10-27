@@ -21,7 +21,7 @@ use super::{
         TestContextBackend, TestContextModule, TestScalar, alloc_scratch, assert_ckks_error, ckks_encrypt, download_pt, gen_sk,
         test_vector_1,
     },
-    parity::helpers::with_scratch,
+    parity::helpers::{snapshot, with_scratch},
 };
 
 use crate::{test_suite::CKKSTestParams, test_suite::reference_encoder::ReferenceEncoder};
@@ -58,10 +58,8 @@ pub fn test_add_pt_vec_assign_rejects_alignment<BE, F, E>(
     ct.set_log_budget(0);
     let mut pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), params.base2k.into(), params.prec().k());
     pt.set_meta(params.prec().meta());
-    let err = with_scratch::<BE, _>(module.ckks_add_pt_vec_tmp_bytes(ct.max_size()), |s| {
-        module.ckks_add_pt_vec_assign(&mut ct, &pt, s)
-    })
-    .unwrap_err();
+    let before = snapshot::<BE, _>(&ct);
+    let err = with_scratch::<BE, _>(0, |s| module.ckks_add_pt_vec_assign(&mut ct, &pt, s)).unwrap_err();
     assert_ckks_error(
         "add_pt_vec_alignment",
         &err,
@@ -74,6 +72,7 @@ pub fn test_add_pt_vec_assign_rejects_alignment<BE, F, E>(
             pt_k: params.prec().log_delta() + params.prec().log_budget(),
         },
     );
+    assert_eq!(snapshot::<BE, _>(&ct), before, "a refused ckks_add_pt_vec_assign wrote res");
 }
 
 /// `ckks_encode_linear_transformation_from_diagonals` rejects a zero torus width, `coeffs_meta.k = 0`, with
@@ -167,7 +166,7 @@ pub fn test_encode_linear_transformation_into<BE, F, E>(
     let mut lt = encode(&ones, coeffs_meta).unwrap();
     let before = digits(&lt);
     let other = map(&[0, 1, 2], 2.0);
-    let err = with_scratch::<BE, _>(bytes(&other), |scratch| {
+    let err = with_scratch::<BE, _>(0, |scratch| {
         ckks_encode_linear_transformation_into(module, &mut lt, coeffs_meta.meta, &other, strategy, scratch)
     })
     .unwrap_err();
@@ -179,11 +178,20 @@ pub fn test_encode_linear_transformation_into<BE, F, E>(
             reason: "the transform's schedule is not the diagonals'".into(),
         },
     );
+    assert_eq!(digits(&lt), before, "a rejected schedule wrote the transform");
     let zero_giant_step = LinearTransformationStrategy::Bsgs { giant_step: 0 };
-    let res = with_scratch::<BE, _>(bytes(&twos), |scratch| {
+    let err = with_scratch::<BE, _>(0, |scratch| {
         ckks_encode_linear_transformation_into(module, &mut lt, coeffs_meta.meta, &twos, zero_giant_step, scratch)
-    });
-    assert!(res.is_err(), "a zero giant step was accepted");
+    })
+    .unwrap_err();
+    assert_ckks_error(
+        "a zero giant step",
+        &err,
+        CKKSCompositionError::InvalidOperand {
+            op: "ckks_encode_linear_transformation_into",
+            reason: "linear-transformation giant step must be non-zero".into(),
+        },
+    );
     assert_eq!(digits(&lt), before, "a rejected encoding wrote the transform");
 
     with_scratch::<BE, _>(bytes(&twos), |scratch| {

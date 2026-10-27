@@ -26,7 +26,7 @@ use crate::{
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait DFTImpl:
+pub unsafe trait CKKSDFTImpl:
     Backend
     + super::CKKSCopyImpl
     + super::CKKSConjugateImpl
@@ -224,7 +224,7 @@ pub unsafe trait DFTImpl:
 
 /// Backend hook for homomorphic-DFT matrix generation at scalar precision `F`.
 ///
-/// Separate from [`DFTImpl`] so scalar precision belongs to the contract.
+/// Separate from [`CKKSDFTImpl`] so scalar precision belongs to the contract.
 /// Reference matrix generation carries its own scalar and encoding bounds;
 /// custom implementations only need the method's backend-resident signature.
 ///
@@ -232,7 +232,7 @@ pub unsafe trait DFTImpl:
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait DFTMatrixImpl<F: CKKSEncodingScalar>: Backend<Ring = poulpy_hal::layouts::Standard> {
+pub unsafe trait CKKSDFTMatrixImpl<F: CKKSEncodingScalar>: Backend<Ring = poulpy_hal::layouts::Standard> {
     /// Scratch bound of [`Self::ckks_new_dft_matrix`]; may report less than the reference, never less than the body takes.
     /// The reference reports the largest slot encoding of one factor's diagonals.
     fn ckks_new_dft_matrix_tmp_bytes<Dir, Fmt>(module: &Module<Self>, literal: &DFTPlan) -> Result<usize>
@@ -255,15 +255,15 @@ pub unsafe trait DFTMatrixImpl<F: CKKSEncodingScalar>: Backend<Ring = poulpy_hal
 
 /// Selects the reference DFT-matrix preparation and evaluation.
 #[macro_export]
-macro_rules! impl_dft_reference_full {
+macro_rules! impl_ckks_dft_reference_full {
     ($be:ty) => {
-        unsafe impl $crate::oep::DFTImpl for $be {
+        unsafe impl $crate::oep::CKKSDFTImpl for $be {
             fn ckks_prepare_dft_matrix_tmp_bytes<Dir, Fmt, P>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dft: &$crate::layouts::DFTMatrix<Self, Dir, Fmt, ::poulpy_core::layouts::LinearTransformation<P>>,
             ) -> usize
             where
-                P: poulpy_core::layouts::LWEInfos,
+                P: ::poulpy_core::layouts::LWEInfos,
             {
                 $crate::reference::dft::ckks_prepare_dft_matrix_tmp_bytes(module, dft)
             }
@@ -276,10 +276,10 @@ macro_rules! impl_dft_reference_full {
                 key: &K,
             ) -> usize
             where
-                P: poulpy_core::layouts::GLWEInfos,
+                P: ::poulpy_core::layouts::GLWEInfos,
                 Dst: $crate::CKKSCtBounds,
                 Src: $crate::CKKSCtBounds,
-                K: poulpy_core::layouts::GGLWEInfos,
+                K: ::poulpy_core::layouts::GGLWEInfos,
             {
                 $crate::reference::dft::ckks_dft_tmp_bytes(module, dst, src, dft, key)
             }
@@ -320,9 +320,9 @@ macro_rules! impl_dft_reference_full {
 
 /// Selects the reference DFT-matrix generation for every encoding scalar of the backend.
 #[macro_export]
-macro_rules! impl_dft_matrix_reference_full {
+macro_rules! impl_ckks_dft_matrix_reference_full {
     ($be:ty) => {
-        unsafe impl<F: $crate::api::CKKSEncodingScalar + $crate::layouts::DftScalar> $crate::oep::DFTMatrixImpl<F> for $be
+        unsafe impl<F: $crate::api::CKKSEncodingScalar + $crate::layouts::DftScalar> $crate::oep::CKKSDFTMatrixImpl<F> for $be
         where
             $be: $crate::oep::CKKSEncodingImpl<F>,
         {
@@ -352,5 +352,5 @@ macro_rules! impl_dft_matrix_reference_full {
         }
     };
 }
-pub use crate::impl_dft_matrix_reference_full;
-pub use crate::impl_dft_reference_full;
+pub use crate::impl_ckks_dft_matrix_reference_full;
+pub use crate::impl_ckks_dft_reference_full;

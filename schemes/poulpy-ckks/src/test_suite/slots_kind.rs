@@ -12,12 +12,12 @@ use poulpy_hal::{
 };
 
 use super::helpers::{
-    TestContextBackend, TestContextModule, TestScalar, add_sub_const_pt, alloc_ct, alloc_scratch, assert_ckks_internal,
+    TestContextBackend, TestContextModule, TestScalar, add_sub_const_pt, alloc_ct, alloc_scratch, assert_ckks_error,
     ckks_encrypt, gen_sk_with_raw, gen_tsk,
 };
 use super::parity::helpers::{snapshot, with_scratch};
 use crate::{
-    SlotsKind,
+    CKKSCompositionError, SlotsKind,
     api::{CKKSAddOps, CKKSImagOps, CKKSMulOps, CKKSNegOps, CKKSPow2Ops, CKKSSubOps},
     test_suite::{CKKSTestParams, reference_encoder::ReferenceEncoder},
 };
@@ -182,23 +182,26 @@ where
     // `Integer` slots rather than carry a false claim.
     a.set_slots(SlotsKind::Integer);
     let before = snapshot::<BE, _>(&res);
-    let err = with_scratch::<BE, _>(module.ckks_div_pow2_tmp_bytes(res.max_size()), |s| {
-        module.ckks_div_pow2_into(1, &mut res, &a, s)
-    })
-    .unwrap_err();
-    assert_ckks_internal(
+    let err = with_scratch::<BE, _>(0, |s| module.ckks_div_pow2_into(1, &mut res, &a, s)).unwrap_err();
+    assert_ckks_error(
         "div_pow2_into of Integer slots",
         &err,
-        "ckks_div_pow2_into: dividing Integer slots",
+        CKKSCompositionError::InvalidOperand {
+            op: "ckks_div_pow2_into",
+            reason: "dividing Integer slots by 2^1 need not give integers; relabel them Real first".into(),
+        },
     );
     assert_eq!(snapshot::<BE, _>(&res), before, "a refused division wrote res");
     let mut acc = a.clone();
     let before = snapshot::<BE, _>(&acc);
     let err = module.ckks_div_pow2_assign(1, &mut acc).unwrap_err();
-    assert_ckks_internal(
+    assert_ckks_error(
         "div_pow2_assign of Integer slots",
         &err,
-        "ckks_div_pow2_assign: dividing Integer slots",
+        CKKSCompositionError::InvalidOperand {
+            op: "ckks_div_pow2_assign",
+            reason: "dividing Integer slots by 2^1 need not give integers; relabel them Real first".into(),
+        },
     );
     assert_eq!(snapshot::<BE, _>(&acc), before, "a refused division is a no-op");
     module.ckks_div_pow2_assign(0, &mut acc).unwrap();

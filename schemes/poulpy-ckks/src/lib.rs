@@ -74,7 +74,7 @@
 //! | [`api::CKKSPaCoOps`] | PaCo bootstrapping without ModUp or EvalMod; parameterized by [`layouts::PaCoPlan`] and a compiled [`layouts::PaCoContext`] |
 
 use poulpy_core::layouts::{
-    Base2K, Degree, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank, SetK, TorusPrecision,
+    Base2K, Degree, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos, LWEInfos, Rank, SetK, TorusPrecision,
 };
 pub use poulpy_core::layouts::{GLWEPlaintextInfos, GLWEPlaintextMeta, Scale, SetGLWEPlaintextInfos, SlotsKind};
 use poulpy_hal::layouts::Backend;
@@ -88,13 +88,6 @@ pub(crate) mod cosine;
 mod delegates;
 pub mod reference;
 
-/// Re-exports for use inside this crate's exported macros (e.g.
-/// [`impl_dft_matrix_reference_full`]), so an invoking backend crate does not need
-/// `anyhow` as a direct dependency. Not part of the public API.
-#[doc(hidden)]
-pub mod __macro_reexports {
-    pub use anyhow;
-}
 pub mod encoding;
 mod error;
 mod eval_lut;
@@ -131,8 +124,9 @@ pub mod scalar;
 pub mod test_suite;
 pub use error::{CKKSCompositionError, CKKSError, CKKSResult};
 pub(crate) use error::{
-    checked_log_budget_sub, checked_mul_ct_log_budget, checked_mul_pt_log_budget, ckks_bail, ckks_ensure, ensure_base2k_match,
-    ensure_plaintext_alignment, ensure_plaintext_coeff_in_range, ensure_plaintext_degree_embeds,
+    checked_log_budget_sub, checked_mul_ct_log_budget, checked_mul_pt_log_budget, ckks_bail, ckks_ensure, ckks_ensure_operand,
+    ensure_base2k_match, ensure_plaintext_alignment, ensure_plaintext_coeff_in_range, ensure_plaintext_const_operand,
+    ensure_plaintext_degree_embeds, ensure_plaintext_vec_operand, invalid_operand,
 };
 /// Quad-precision (IEEE 754 binary128) CKKS scalar.
 ///
@@ -397,6 +391,129 @@ where
     A: CKKSInfos + ?Sized,
 {
     a.k().as_usize().saturating_sub(res.k().as_usize())
+}
+
+pub(crate) fn get_mul_ct_params<R, A, B>(op: &'static str, res: &R, a: &A, b: &B) -> CKKSResult<(usize, usize, usize)>
+where
+    R: CKKSInfos,
+    A: CKKSInfos,
+    B: CKKSInfos,
+{
+    mul_ct_params_raw(
+        op,
+        res.k().as_usize(),
+        a.log_delta(),
+        a.k().into(),
+        b.log_delta(),
+        b.k().into(),
+    )
+}
+
+/// Shared `(log_budget, log_delta, cnv_offset)` rule for ct × ct multiplication,
+/// expressed on raw values so the BSGS driver computes bit-identical parameters.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn mul_ct_params_raw(
+    op: &'static str,
+    res_max_k: usize,
+    a_log_delta: usize,
+    a_k: usize,
+    b_log_delta: usize,
+    b_k: usize,
+) -> CKKSResult<(usize, usize, usize)> {
+    let a_log_budget = a_k.saturating_sub(a_log_delta);
+    let b_log_budget = b_k.saturating_sub(b_log_delta);
+
+    let res_log_budget = checked_mul_ct_log_budget(op, a_log_budget, b_log_budget, a_log_delta, b_log_delta)?;
+    let res_log_delta = a_log_delta.min(b_log_delta);
+
+    let res_offset = (res_log_budget + res_log_delta).saturating_sub(res_max_k);
+    // An operand holds its message at `2^-log_budget` on the torus and the
+    // convolution returns `a * b * 2^cnv_offset`, so lifting the product from
+    // `2^-(a_log_budget + b_log_budget)` to the stamped budget
+    // `min(log_budget) - max(log_delta) - res_offset` takes
+    // `max(log_budget) + max(log_delta) + res_offset`. That is
+    // `max(a_k, b_k) + res_offset` only when the operand with the larger budget
+    // also has the larger or equal scale.
+    let cnv_offset = a_log_budget.max(b_log_budget) + a_log_delta.max(b_log_delta) + res_offset;
+
+    Ok((
+        checked_log_budget_sub(op, res_log_budget, res_offset)?,
+        res_log_delta,
+        cnv_offset,
+    ))
+}
+
+pub(crate) fn get_mul_pt_params<R, A, B>(op: &'static str, res: &R, a: &A, b: &B) -> CKKSResult<(usize, usize, usize)>
+where
+    R: CKKSInfos,
+    A: CKKSInfos,
+    B: CKKSInfos + IntPolyInfos,
+{
+    mul_pt_params_raw(
+        op,
+        res.k().as_usize(),
+        a.log_delta(),
+        a.log_budget(),
+        b.log_delta(),
+        b.log_budget(),
+        b.encoded_k().as_usize(),
+    )
+}
+
+/// Shared `(log_budget, log_delta, cnv_offset)` rule for ct × pt multiplication,
+/// expressed on raw values so the BSGS driver computes bit-identical parameters.
+pub(crate) fn mul_pt_params_raw(
+    op: &'static str,
+    res_max_k: usize,
+    a_log_delta: usize,
+    a_log_budget: usize,
+    b_log_delta: usize,
+    b_log_budget: usize,
+    b_max_k: usize,
+) -> CKKSResult<(usize, usize, usize)> {
+    let res_log_budget = checked_mul_pt_log_budget(op, a_log_budget, b_log_budget, a_log_delta, b_log_delta)?;
+    let res_log_delta = a_log_delta;
+    let res_offset = (res_log_budget + res_log_delta).saturating_sub(res_max_k);
+    let cnv_offset = b_max_k + res_offset;
+
+    Ok((
+        checked_log_budget_sub(op, res_log_budget, res_offset)?,
+        res_log_delta,
+        cnv_offset,
+    ))
+}
+
+/// The operand checks of a product of `a` by the plaintext polynomial `pt` into `res`, in their order: the radix,
+/// the degree embedding, then the budget. Returns the product's `(log_budget, log_delta, cnv_offset)`.
+pub(crate) fn ckks_mul_pt_vec_checks<BE, R, A, P>(op: &'static str, res: &R, a: &A, pt: &P) -> CKKSResult<(usize, usize, usize)>
+where
+    BE: Backend,
+    R: CKKSInfos,
+    A: CKKSInfos,
+    P: CKKSInfos + IntPolyInfos,
+{
+    ensure_base2k_match(op, a.base2k().as_usize(), pt.base2k().as_usize())?;
+    ensure_plaintext_degree_embeds(op, a.n().as_usize(), pt.n().as_usize(), BE::MIN_DEGREE)?;
+    get_mul_pt_params(op, res, a, pt)
+}
+
+/// The operand checks of a product of `a` by coefficient `pt_coeff` of `pt` into `res`, in their order: the radix,
+/// the coefficient index, then the budget. Returns the product's `(log_budget, log_delta, cnv_offset)`.
+pub(crate) fn ckks_mul_pt_const_checks<R, A, P>(
+    op: &'static str,
+    res: &R,
+    a: &A,
+    pt: &P,
+    pt_coeff: usize,
+) -> CKKSResult<(usize, usize, usize)>
+where
+    R: CKKSInfos,
+    A: CKKSInfos,
+    P: CKKSInfos + IntPolyInfos,
+{
+    ensure_base2k_match(op, a.base2k().as_usize(), pt.base2k().as_usize())?;
+    ensure_plaintext_coeff_in_range(op, "plaintext", pt_coeff, pt.n().as_usize())?;
+    get_mul_pt_params(op, res, a, pt)
 }
 
 /// Whether a limb-wise op can read `a` into `res` without normalizing: `res`

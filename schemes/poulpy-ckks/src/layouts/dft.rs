@@ -895,7 +895,7 @@ impl<BE: Backend, Dir, Fmt, R> DFTMatrix<BE, Dir, Fmt, R> {
     where
         P: GLWEInfos + IntPolyInfos + crate::api::LtDiagonalMeta,
     {
-        check_factor_operands(module, self.plan(), &factors)?;
+        check_factor_operands("try_with_factor_operands", module, self.plan(), &factors)?;
         Ok(DFTMatrix::from_factors(DFTMatrixFactors::new(self.plan().clone(), factors)))
     }
 
@@ -929,40 +929,53 @@ where
         plan: DFTPlan,
         factors: Vec<LinearTransformation<P>>,
     ) -> crate::CKKSResult<Self> {
-        crate::ckks_ensure!(plan.kind() == Dir::KIND, "DFT direction does not match its marker");
-        crate::ckks_ensure!(plan.format() == Fmt::FORMAT, "DFT format does not match its marker");
-        check_factor_operands(module, &plan, &factors)?;
+        const OP: &str = "try_from_factor_operands";
+        crate::ckks_ensure_operand!(OP, plan.kind() == Dir::KIND, "DFT direction does not match its marker");
+        crate::ckks_ensure_operand!(OP, plan.format() == Fmt::FORMAT, "DFT format does not match its marker");
+        check_factor_operands(OP, module, &plan, &factors)?;
         Ok(Self::from_factors(DFTMatrixFactors::new(plan, factors)))
     }
 }
 
-/// Refuses a transform whose slots a ring of degree `2^log_n` does not hold.
+/// `InvalidPlan` for a transform whose slots a ring of degree `2^log_n` does not hold.
 pub(crate) fn check_dft_fits(plan: &DFTPlan, log_n: usize) -> crate::CKKSResult<()> {
-    crate::ckks_ensure!(plan.log_slots() < log_n, "DFT exceeds module slot capacity");
-    crate::ckks_ensure!(
-        plan.format() != DFTOutputFormat::RepackImagAsReal || plan.log_slots() + 1 < log_n,
-        "dense DFT requires Split instead of Repack"
-    );
+    let invalid = |reason: &str| -> crate::CKKSResult<()> {
+        Err(crate::CKKSCompositionError::InvalidPlan {
+            plan: "DFTPlan",
+            reason: reason.into(),
+        }
+        .into())
+    };
+    if plan.log_slots() >= log_n {
+        return invalid("DFT exceeds module slot capacity");
+    }
+    if plan.format() == DFTOutputFormat::RepackImagAsReal && plan.log_slots() + 1 >= log_n {
+        return invalid("dense DFT requires Split instead of Repack");
+    }
     Ok(())
 }
 
+/// `InvalidOperand` for `op` unless `factors` are the evaluated factors of `plan` on `module`, after `plan`'s own fit.
 fn check_factor_operands<BE: Backend, P: GLWEInfos + IntPolyInfos + crate::api::LtDiagonalMeta>(
+    op: &'static str,
     module: &Module<BE>,
     plan: &DFTPlan,
     factors: &[LinearTransformation<P>],
 ) -> crate::CKKSResult<()> {
     check_dft_fits(plan, module.log_n())?;
-    crate::ckks_ensure!(
+    crate::ckks_ensure_operand!(
+        op,
         factors.len() == plan.num_evaluated_factors(),
         "DFT factor count does not match its plan"
     );
     let mut base2k = None;
     for factor in factors {
         let first = factor.first_diagonal_plaintext();
-        crate::ckks_ensure!(first.is_some(), "DFT factor has no diagonals");
+        crate::ckks_ensure_operand!(op, first.is_some(), "DFT factor has no diagonals");
         let first = first.unwrap();
         let n = first.n().as_usize();
-        crate::ckks_ensure!(
+        crate::ckks_ensure_operand!(
+            op,
             n.is_power_of_two() && n >= BE::MIN_DEGREE && n <= module.n(),
             "DFT diagonal degree does not embed in the module"
         );
@@ -973,14 +986,20 @@ fn check_factor_operands<BE: Backend, P: GLWEInfos + IntPolyInfos + crate::api::
         for giant in &factor.giant_steps {
             for diagonal in &giant.diagonals {
                 let pt = &diagonal.plaintext;
-                crate::ckks_ensure!(factor.baby_steps.contains(&diagonal.baby), "DFT diagonal has no baby step");
-                crate::ckks_ensure!(
+                crate::ckks_ensure_operand!(
+                    op,
+                    factor.baby_steps.contains(&diagonal.baby),
+                    "DFT diagonal has no baby step"
+                );
+                crate::ckks_ensure_operand!(
+                    op,
                     entries.insert((giant.rot, diagonal.baby)),
                     "DFT factor repeats the diagonal (giant rot {}, baby {})",
                     giant.rot,
                     diagonal.baby
                 );
-                crate::ckks_ensure!(
+                crate::ckks_ensure_operand!(
+                    op,
                     pt.n() == first.n()
                         && pt.rank().as_usize() == 0
                         && pt.base2k() == expected_base2k
@@ -990,14 +1009,16 @@ fn check_factor_operands<BE: Backend, P: GLWEInfos + IntPolyInfos + crate::api::
                 );
                 // Preparation stores `size()` whole limbs and reports their full bit width.
                 // Preserve the exact encoded width so convolution offsets cannot change.
-                crate::ckks_ensure!(
+                crate::ckks_ensure_operand!(
+                    op,
                     pt.encoded_k().as_usize() == pt.size() * expected_base2k.as_usize(),
                     "DFT diagonal is encoded across {} bits but its precision {} selects {} limbs",
                     pt.encoded_k().as_usize(),
                     pt.k().as_usize(),
                     pt.size()
                 );
-                crate::ckks_ensure!(
+                crate::ckks_ensure_operand!(
+                    op,
                     pt.encoded_k() == first.encoded_k() && pt.lt_slots() == first.lt_slots(),
                     "DFT factor diagonals do not share one encoded width and slot kind"
                 );

@@ -301,7 +301,7 @@ where
             module,
             &layout,
             |r| module.ckks_powi_tmp_bytes(r, &a, &tl),
-            |r, s| module.ckks_powi(r, &a, 5, tsk, s),
+            |r, s| module.ckks_powi(5, r, &a, tsk, s),
         );
         check_exact(
             &l("ckks_hypot"),
@@ -322,7 +322,7 @@ where
             module,
             &layout,
             |r| module.ckks_scalbn_tmp_bytes(r),
-            |r, s| module.ckks_scalbn(r, &a, -3, s),
+            |r, s| module.ckks_scalbn(-3, r, &a, s),
         );
     }
 }

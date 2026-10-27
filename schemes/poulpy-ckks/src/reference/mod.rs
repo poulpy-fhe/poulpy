@@ -6,12 +6,13 @@
 //! Overrides must reproduce the circuit and pass the reusable parity tests
 //! against a caller-selected comparison backend.
 //!
-//! Same-layer compositions, the PaCo and SHIP drivers included, are private
-//! derived defaults in [`crate::oep`].
+//! Compositions of selected CKKS operations alone are private derived defaults
+//! in [`crate::oep`].
 
 pub mod add;
 pub mod bootstrapping;
 pub(crate) mod carry_verb;
+pub mod composite;
 pub mod conjugate;
 pub mod copy;
 pub mod dft;
@@ -23,12 +24,15 @@ mod eval_mod_scratch;
 pub mod first_factor;
 pub mod fold;
 pub mod imag;
+pub mod inner_sum;
 pub mod linear_transformation;
 pub mod mul;
 pub mod neg;
+pub mod paco;
 pub mod plaintext;
 pub mod polynomial_evaluation;
 pub mod pow2;
+pub mod ring_map;
 pub mod rotate;
 pub mod ship;
 pub mod sub;
@@ -36,8 +40,8 @@ pub mod sub;
 pub use add::CKKSAddReference;
 pub use dft::gen_dft_matrices;
 pub use dot_product::CKKSDotProductReference;
-pub use eval_mod::CKKSEvalModOpsReference;
+pub use eval_mod::CKKSEvalModReference;
 pub use linear_transformation::CKKSLinearTransformationReference;
-pub use plaintext::CKKSPlaintextReference;
-pub use polynomial_evaluation::PolynomialEvaluationReference;
+pub use plaintext::CKKSPlaintextVecReference;
+pub use polynomial_evaluation::CKKSPolynomialEvaluationReference;
 pub use sub::CKKSSubReference;

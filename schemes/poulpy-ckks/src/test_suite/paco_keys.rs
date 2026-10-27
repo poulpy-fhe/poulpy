@@ -282,10 +282,15 @@ where
     )
     .unwrap();
     for lt in &lts {
-        with_scratch::<BE, _>(
-            module.ckks_eval_linear_transformation_streamed_tmp_bytes(&acc, &lt.index(), &params.atk_layout()),
-            |s| module.ckks_eval_linear_transformation_self_assign(&mut acc, lt, &atks, s),
-        )
+        // The documented bound of `self_assign`: a working copy of `acc` plus the larger of the baby-step and evaluation
+        // queries.
+        let bytes = BE::scratch_aligned(poulpy_core::GLWEBytesOf::glwe_bytes_of_from_infos(&module, &acc))
+            + module
+                .ckks_prepare_linear_transformation_baby_steps_tmp_bytes(&acc, &lt.index(), &params.atk_layout())
+                .max(module.ckks_eval_linear_transformation_streamed_tmp_bytes(&acc, &lt.index(), &params.atk_layout()));
+        with_scratch::<BE, _>(bytes, |s| {
+            module.ckks_eval_linear_transformation_self_assign(&mut acc, lt, &atks, s)
+        })
         .unwrap();
     }
 

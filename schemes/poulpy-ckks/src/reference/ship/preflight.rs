@@ -16,7 +16,7 @@ use crate::{
     CKKSCtBounds,
     api::{CKKSAddOps, CKKSConjugateOps, CKKSImagOps, CKKSMulOps, CKKSSubOps, ShipScalar},
     layouts::{CKKSCiphertextOwned, ShipKeysPrepared},
-    oep::{CKKSEncodingImpl, CKKSShipImpl},
+    oep::CKKSEncodingImpl,
 };
 
 /// Caller-arena bound of one SHIP bootstrap call; validates the runtime
@@ -24,14 +24,14 @@ use crate::{
 /// variant whenever the key bundle carries its masks: the bottom ciphertext
 /// carved for the encapsulation, then the temporaries of the roots' final
 /// combination, each with the stages it spans.
-pub(crate) fn ckks_ship_bootstrap_tmp_bytes_derived<BE, F, Src>(
+pub(super) fn ckks_ship_bootstrap_tmp_bytes<BE, F, Src>(
     module: &Module<BE>,
     output: &CKKSCiphertextOwned<BE>,
     input: &Src,
     keys: &ShipKeysPrepared<BE::OwnedBuf, BE>,
 ) -> Result<usize>
 where
-    BE: CKKSShipImpl + CKKSEncodingImpl<F>,
+    BE: super::ShipBackend + CKKSEncodingImpl<F>,
     F: ShipScalar,
     Src: CKKSCtBounds,
 {

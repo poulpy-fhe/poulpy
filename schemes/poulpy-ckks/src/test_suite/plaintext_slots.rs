@@ -107,17 +107,19 @@ pub fn test_plaintext_slots_add_sub_mul<BE, F, E>(
     let mut odd = host_module.ckks_pt_coeffs_alloc(3, params.base2k.into(), prec.k());
     odd.set_meta(prec.meta());
     let odd = upload_pt(module, &odd);
-    assert!(
-        with_scratch::<BE, _>(module.ckks_add_pt_vec_tmp_bytes(res.max_size()), |s| module
-            .ckks_add_pt_vec_into(&mut res, &ct, &odd, s))
-        .is_err(),
-        "ckks_add_pt_vec_into accepted a plaintext of degree 3"
-    );
     let before = snapshot::<BE, _>(&res);
-    let err = with_scratch::<BE, _>(module.ckks_mul_pt_vec_tmp_bytes(&res, &ct, &odd), |s| {
-        module.ckks_mul_pt_vec_into(&mut res, &ct, &odd, s)
-    })
-    .unwrap_err();
+    let err = with_scratch::<BE, _>(0, |s| module.ckks_add_pt_vec_into(&mut res, &ct, &odd, s)).unwrap_err();
+    assert_ckks_error(
+        "ckks_add_pt_vec_into of a plaintext of degree 3",
+        &err,
+        CKKSCompositionError::PlaintextDegreeMismatch {
+            op: "ckks_add_pt_vec",
+            ct_n: ct.n().as_usize(),
+            pt_n: 3,
+        },
+    );
+    assert_eq!(snapshot::<BE, _>(&res), before, "a refused ckks_add_pt_vec_into wrote res");
+    let err = with_scratch::<BE, _>(0, |s| module.ckks_mul_pt_vec_into(&mut res, &ct, &odd, s)).unwrap_err();
     assert_ckks_error(
         "ckks_mul_pt_vec_into of a plaintext of degree 3",
         &err,
@@ -132,12 +134,17 @@ pub fn test_plaintext_slots_add_sub_mul<BE, F, E>(
     let mut tiny = host_module.ckks_pt_coeffs_alloc(BE::MIN_DEGREE / 2, params.base2k.into(), prec.k());
     tiny.set_meta(prec.meta());
     let tiny = upload_pt(module, &tiny);
-    assert!(
-        with_scratch::<BE, _>(module.ckks_add_pt_vec_tmp_bytes(res.max_size()), |s| module
-            .ckks_add_pt_vec_into(&mut res, &ct, &tiny, s))
-        .is_err(),
-        "ckks_add_pt_vec_into accepted a plaintext below the backend floor"
+    let err = with_scratch::<BE, _>(0, |s| module.ckks_add_pt_vec_into(&mut res, &ct, &tiny, s)).unwrap_err();
+    assert_ckks_error(
+        "ckks_add_pt_vec_into of a plaintext below the backend floor",
+        &err,
+        CKKSCompositionError::PlaintextDegreeMismatch {
+            op: "ckks_add_pt_vec",
+            ct_n: ct.n().as_usize(),
+            pt_n: BE::MIN_DEGREE / 2,
+        },
     );
+    assert_eq!(snapshot::<BE, _>(&res), before, "a refused ckks_add_pt_vec_into wrote res");
 }
 
 /// A six-diagonal complex matrix on `m` slots (the shape `linear_transformation.rs` uses).
@@ -244,9 +251,11 @@ pub fn test_linear_transformation_diagonal_slots<BE, F, E>(
         module.ckks_prepare_linear_transformation_rhs(&mut prepared, &lt, s)
     })
     .unwrap();
+    // The documented bound of `self_into`: the larger of the baby-step and evaluation queries.
+    let baby_bytes = module.ckks_prepare_linear_transformation_baby_steps_tmp_bytes(&ct, &lt.index(), &key_params.atk_layout());
     let mut ct_out = alloc_ct(&params, module, params.k);
     with_scratch::<BE, _>(
-        module.ckks_eval_linear_transformation_tmp_bytes(&ct, &lt.index(), &key_params.atk_layout()),
+        baby_bytes.max(module.ckks_eval_linear_transformation_tmp_bytes(&ct, &lt.index(), &key_params.atk_layout())),
         |s| module.ckks_eval_linear_transformation_self_into(&mut ct_out, &ct, &prepared, &atks, s),
     )
     .unwrap();
@@ -266,7 +275,7 @@ pub fn test_linear_transformation_diagonal_slots<BE, F, E>(
     // prepared on the fly at their degree.
     let mut ct_streamed = alloc_ct(&params, module, params.k);
     with_scratch::<BE, _>(
-        module.ckks_eval_linear_transformation_streamed_tmp_bytes(&ct, &lt.index(), &key_params.atk_layout()),
+        baby_bytes.max(module.ckks_eval_linear_transformation_streamed_tmp_bytes(&ct, &lt.index(), &key_params.atk_layout())),
         |s| module.ckks_eval_linear_transformation_self_into(&mut ct_streamed, &ct, &lt, &atks, s),
     )
     .unwrap();

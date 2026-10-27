@@ -546,3 +546,64 @@ pub fn test_mul_sub_pt_const_zero_preserves_dst_meta<BE, F, E>(
         &mut scratch.borrow(),
     );
 }
+
+/// A plaintext of another radix is the product's `PlaintextBase2KMismatch` of the multiply-accumulate form, before its
+/// arena check, on an empty arena and on the query, for both plaintext forms.
+pub fn test_mul_sub_pt_vec_into_rejects_base2k_mismatch<BE, F, E>(
+    params: crate::test_suite::CKKSTestParams,
+    module: &poulpy_hal::layouts::Module<BE>,
+    _host_module: &poulpy_hal::layouts::Module<poulpy_hal::layouts::HostBytesBackend>,
+) where
+    BE: crate::test_suite::helpers::TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
+    poulpy_hal::layouts::Module<BE>: crate::test_suite::helpers::TestContextModule<BE>,
+    F: crate::test_suite::helpers::TestScalar,
+    E: poulpy_hal::api::NegacyclicFFT<F> + poulpy_hal::api::NegacyclicFFTNew<F>,
+{
+    use crate::test_suite::{
+        helpers::assert_ckks_error,
+        parity::{
+            helpers::{fixture_ciphertext, fixture_plaintext, snapshot, with_scratch},
+            layout,
+        },
+    };
+    use crate::{CKKSCompositionError, CKKSLayout, SlotsKind};
+    let b = params.base2k;
+    let ct_layout = layout(params, params.rank, 3 * b + 5, b - 1, 0, SlotsKind::Complex);
+    let pt_layout = layout(params, 0, b + 3, b - 1, 0, SlotsKind::Complex);
+    let other_radix = CKKSLayout {
+        glwe_layout: poulpy_core::layouts::GLWELayout {
+            base2k: (b - 1).into(),
+            ..pt_layout.glwe_layout
+        },
+        meta: pt_layout.meta,
+    };
+    use crate::api::CKKSMulSubOps;
+    let a = fixture_ciphertext(module, &ct_layout, 41);
+    let pt = fixture_plaintext(module, &other_radix, 43);
+    let mut res = fixture_ciphertext(module, &ct_layout, 31);
+    let want = |op| CKKSCompositionError::PlaintextBase2KMismatch {
+        op,
+        ct_base2k: b,
+        pt_base2k: b - 1,
+    };
+    for bytes in [0, module.ckks_mul_sub_pt_vec_tmp_bytes(&res, &a, &pt)] {
+        let before = snapshot::<BE, _>(&res);
+        let err = with_scratch::<BE, _>(bytes, |s| module.ckks_mul_sub_pt_vec_into(&mut res, &a, &pt, s)).unwrap_err();
+        assert_ckks_error(
+            "mul_sub_pt_vec_into: plaintext of another radix",
+            &err,
+            want("ckks_mul_sub_pt_vec_into"),
+        );
+        assert_eq!(snapshot::<BE, _>(&res), before, "a refused multiply-accumulate wrote dst");
+    }
+    for bytes in [0, module.ckks_mul_sub_pt_const_tmp_bytes(&res, &a, &pt)] {
+        let before = snapshot::<BE, _>(&res);
+        let err = with_scratch::<BE, _>(bytes, |s| module.ckks_mul_sub_pt_const_into(&mut res, &a, &pt, 0, s)).unwrap_err();
+        assert_ckks_error(
+            "mul_sub_pt_const_into: plaintext of another radix",
+            &err,
+            want("ckks_mul_sub_pt_const_into"),
+        );
+        assert_eq!(snapshot::<BE, _>(&res), before, "a refused multiply-accumulate wrote dst");
+    }
+}

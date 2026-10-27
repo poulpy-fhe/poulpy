@@ -312,15 +312,15 @@ where
     let mut squared = module.ckks_ciphertext_alloc_from_infos(&*res);
     for i in 0..last {
         module.ckks_square_into(&mut squared, &*res, tsk, scratch)?;
-        module.ckks_sub_pt_const_into(res, &squared, 0, consts, i, scratch)?;
+        module.ckks_sub_pt_const_into(res, 0, &squared, consts, i, scratch)?;
     }
 
     module.ckks_square_into(&mut squared, &*res, tsk, scratch)?;
     if chain.negate() {
-        module.ckks_sub_pt_const_into(res, &squared, 0, consts, last, scratch)?;
+        module.ckks_sub_pt_const_into(res, 0, &squared, consts, last, scratch)?;
         module.ckks_neg_assign(res)?;
     } else {
-        module.ckks_add_pt_const_into(res, &squared, 0, consts, last, scratch)?;
+        module.ckks_add_pt_const_into(res, 0, &squared, consts, last, scratch)?;
     }
 
     Ok(())

@@ -5,7 +5,7 @@ use poulpy_hal::layouts::{Backend, Module};
 use crate::{
     CKKSPlaintextToBackendMut, CKKSPlaintextToBackendRef, CKKSResult as Result, SetCKKSInfos,
     api::{CKKSEncodingScalar, CKKSModuleInfos},
-    ckks_ensure,
+    ckks_ensure_operand,
     layouts::{
         CKKSEncodingBuffer, CKKSEncodingBufferBackendMut, CKKSEncodingBufferToBackendMut, CKKSEncodingBufferToBackendRef,
         CKKSEncodingBufferViewMut, slot_coeff_count,
@@ -16,23 +16,29 @@ use crate::{
 /// Plan-cache key of the encoding plans at precision `F`.
 struct CKKSEncodingPlanKey<F>(std::marker::PhantomData<fn() -> F>);
 
-fn validate_coefficients<P: GLWEInfos>(max_n: usize, pt: &P, coeff_count: usize) -> Result<()> {
+fn validate_coefficients<P: GLWEInfos>(op: &'static str, max_n: usize, pt: &P, coeff_count: usize) -> Result<()> {
     let n = pt.n().as_usize();
-    ckks_ensure!(pt.rank().as_usize() == 0, "CKKS plaintext encoding expects rank zero");
-    ckks_ensure!(n <= max_n, "plaintext degree {n} exceeds module capacity {max_n}");
-    ckks_ensure!(
+    ckks_ensure_operand!(op, pt.rank().as_usize() == 0, "CKKS plaintext encoding expects rank zero");
+    ckks_ensure_operand!(op, n <= max_n, "plaintext degree {n} exceeds module capacity {max_n}");
+    ckks_ensure_operand!(
+        op,
         coeff_count == n,
         "coefficient count {coeff_count} must equal plaintext degree {n}"
     );
     Ok(())
 }
 
-fn validate_transform(max_n: usize, len: usize) -> Result<()> {
-    ckks_ensure!(
+fn validate_transform(op: &'static str, max_n: usize, len: usize) -> Result<()> {
+    ckks_ensure_operand!(
+        op,
         len >= 2 && len.is_power_of_two(),
         "encoding buffer length must be a power of two >= 2, got {len}"
     );
-    ckks_ensure!(len <= max_n, "encoding buffer length {len} exceeds module capacity {max_n}");
+    ckks_ensure_operand!(
+        op,
+        len <= max_n,
+        "encoding buffer length {len} exceeds module capacity {max_n}"
+    );
     Ok(())
 }
 
@@ -54,9 +60,9 @@ where
     P: CKKSPlaintextToBackendMut<BE> + IntPolyInfos + SetCKKSInfos,
     C: CKKSEncodingBufferToBackendMut<BE, F>,
 {
-    validate_transform(2 * module.ckks_max_slots(), slots.len())?;
+    validate_transform("ckks_encode_slots_assign_into", 2 * module.ckks_max_slots(), slots.len())?;
     let count = slot_coeff_count(module, slots.len());
-    validate_coefficients(module.max_n(), pt, count)?;
+    validate_coefficients("ckks_encode_slots_assign_into", module.max_n(), pt, count)?;
     BE::ckks_slots_to_coeffs_assign(module, slots)?;
     BE::ckks_encode_coeffs_into(module, pt, &prefix(&mut slots.to_backend_mut(), count))
 }
@@ -68,9 +74,9 @@ where
     P: CKKSPlaintextToBackendRef<BE> + IntPolyInfos,
     C: CKKSEncodingBufferToBackendMut<BE, F>,
 {
-    validate_transform(2 * module.ckks_max_slots(), slots.len())?;
+    validate_transform("ckks_decode_slots_into", 2 * module.ckks_max_slots(), slots.len())?;
     let count = slot_coeff_count(module, slots.len());
-    validate_coefficients(module.max_n(), pt, count)?;
+    validate_coefficients("ckks_decode_slots_into", module.max_n(), pt, count)?;
     BE::ckks_decode_coeffs_into(module, pt, &mut prefix(&mut slots.to_backend_mut(), count))?;
     BE::ckks_coeffs_to_slots_assign(module, slots)
 }
@@ -82,7 +88,7 @@ where
     P: CKKSPlaintextToBackendMut<BE> + IntPolyInfos + SetCKKSInfos,
     C: CKKSEncodingBufferToBackendRef<BE, F>,
 {
-    validate_coefficients(module.max_n(), pt, coeffs.len())?;
+    validate_coefficients("ckks_encode_coeffs_into", module.max_n(), pt, coeffs.len())?;
     BE::ckks_quantize_coeffs_into(module, pt, &coeffs.to_backend_ref())
 }
 
@@ -93,7 +99,7 @@ where
     P: CKKSPlaintextToBackendRef<BE> + IntPolyInfos,
     C: CKKSEncodingBufferToBackendMut<BE, F>,
 {
-    validate_coefficients(module.max_n(), pt, coeffs.len())?;
+    validate_coefficients("ckks_decode_coeffs_into", module.max_n(), pt, coeffs.len())?;
     BE::ckks_dequantize_coeffs_into(module, pt, &mut coeffs.to_backend_mut())
 }
 
@@ -103,7 +109,7 @@ where
     F: CKKSEncodingScalar,
     C: CKKSEncodingBufferToBackendMut<BE, F>,
 {
-    validate_transform(2 * module.ckks_max_slots(), values.len())?;
+    validate_transform("ckks_slots_to_coeffs_assign", 2 * module.ckks_max_slots(), values.len())?;
     let mut values = values.to_backend_mut();
     BE::ckks_encoding_plan_cache(module).with_or_create::<CKKSEncodingPlanKey<F>, _, _>(
         || BE::ckks_encoding_plans_create(module).map_err(::anyhow::Error::from),
@@ -117,7 +123,7 @@ where
     F: CKKSEncodingScalar,
     C: CKKSEncodingBufferToBackendMut<BE, F>,
 {
-    validate_transform(2 * module.ckks_max_slots(), values.len())?;
+    validate_transform("ckks_coeffs_to_slots_assign", 2 * module.ckks_max_slots(), values.len())?;
     let mut values = values.to_backend_mut();
     BE::ckks_encoding_plan_cache(module).with_or_create::<CKKSEncodingPlanKey<F>, _, _>(
         || BE::ckks_encoding_plans_create(module).map_err(::anyhow::Error::from),

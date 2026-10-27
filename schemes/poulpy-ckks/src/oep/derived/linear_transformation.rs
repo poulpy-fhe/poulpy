@@ -1,7 +1,7 @@
 //! The `_assign` and self-caching evaluations compose the evaluation over a caller's baby cache with a copy and a
 //! baby-step preparation.
 use poulpy_core::{
-    DiagonalProd, LinearTransformation, LinearTransformationBabySteps,
+    DiagonalProd, GLWEBytesOf, LinearTransformation, LinearTransformationBabySteps,
     layouts::{GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, IntPolyInfos},
 };
 use poulpy_hal::layouts::{Module, ScratchArena};
@@ -9,6 +9,7 @@ use poulpy_hal::layouts::{Module, ScratchArena};
 use crate::{
     CKKSCtBounds, CKKSResult as Result, SetCKKSInfos,
     api::{CKKSCopyOps, LtDiagonalMeta},
+    ckks_ensure,
     layouts::ScratchArenaTakeCKKS,
     oep::CKKSLinearTransformationImpl,
 };
@@ -27,7 +28,11 @@ where
     P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
     H: GetAutomorphismKey<BE>,
 {
-    // The working copy is carved from scratch, which `ckks_eval_linear_transformation_tmp_bytes` covers.
+    // The evaluation checks its own query on what the working copy leaves.
+    ckks_ensure!(
+        scratch.available() >= BE::scratch_aligned(module.glwe_bytes_of_from_infos(&*dst)),
+        "ckks_eval_linear_transformation_assign: scratch below its query"
+    );
     scratch.scope(|scratch_local| {
         let (mut tmp, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(dst);
         BE::ckks_eval_linear_transformation_into(module, &mut tmp, dst, babies, lt, keys, &mut scratch_local)?;
@@ -70,6 +75,11 @@ where
     P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
     H: GetAutomorphismKey<BE>,
 {
+    // The evaluation checks its own query on what the working copy leaves.
+    ckks_ensure!(
+        scratch.available() >= BE::scratch_aligned(module.glwe_bytes_of_from_infos(&*dst)),
+        "ckks_eval_linear_transformation_self_assign: scratch below its query"
+    );
     scratch.scope(|scratch_local| {
         let (mut tmp, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(dst);
         BE::ckks_eval_linear_transformation_self_into(module, &mut tmp, dst, lt, keys, &mut scratch_local)?;

@@ -206,31 +206,6 @@ macro_rules! impl_oracle_ckks {
     };
 }
 
-/// [`impl_oracle_ckks`] without EvalMod, whose standard-ring reference needs a complex polynomial evaluation.
-macro_rules! impl_oracle_ckks_without_eval_mod {
-    ($be:ty) => {
-        impl_oracle_ckks_encoding!($be);
-        ::poulpy_ckks::impl_ckks_copy_reference_full!($be);
-        ::poulpy_ckks::impl_ckks_encryption_reference_full!($be);
-        ::poulpy_ckks::impl_ckks_mul_reference_full!($be);
-        ::poulpy_ckks::impl_ckks_dot_product_reference_full!($be);
-        ::poulpy_ckks::impl_ckks_linear_transformation_reference_full!($be);
-        ::poulpy_ckks::impl_ckks_neg_reference_full!($be);
-        ::poulpy_ckks::impl_ckks_pow2_reference_full!($be);
-        ::poulpy_ckks::impl_ckks_rotate_reference_full!($be);
-        ::poulpy_ckks::impl_ckks_inner_sum_derived_full!($be);
-        ::poulpy_ckks::impl_ckks_add_reference_full!($be);
-        ::poulpy_ckks::impl_ckks_sub_reference_full!($be);
-        ::poulpy_ckks::impl_ckks_plaintext_znx_reference_full!($be);
-        ::poulpy_ckks::impl_ckks_polynomial_evaluation_reference_full!($be);
-        ::poulpy_ckks::impl_ckks_add_many_derived_full!($be);
-        ::poulpy_ckks::impl_ckks_mul_add_derived_full!($be);
-        ::poulpy_ckks::impl_ckks_affine_derived_full!($be);
-        ::poulpy_ckks::impl_ckks_mul_sub_derived_full!($be);
-        ::poulpy_ckks::impl_ckks_approximation_derived_full!($be);
-    };
-}
-
 /// The CKKS compositions of the standard ring, with bootstrapping.
 macro_rules! impl_oracle_ckks_standard {
     ($be:ty, $ci:ty) => {
@@ -245,10 +220,10 @@ macro_rules! impl_oracle_ckks_standard {
         ::poulpy_ckks::impl_ckks_fold_layout_reference_full!($be);
         ::poulpy_ckks::impl_ckks_fold_reference_full!($be);
         ::poulpy_ckks::impl_ckks_complex_polynomial_evaluation_reference_full!($be);
-        ::poulpy_ckks::impl_dft_reference_full!($be);
-        ::poulpy_ckks::impl_dft_matrix_reference_full!($be);
-        ::poulpy_ckks::impl_ckks_ring_map_derived_full!($be);
-        ::poulpy_ckks::impl_ckks_paco_derived_full!($be);
+        ::poulpy_ckks::impl_ckks_dft_reference_full!($be);
+        ::poulpy_ckks::impl_ckks_dft_matrix_reference_full!($be);
+        ::poulpy_ckks::impl_ckks_ci_ring_map_reference_full!($be);
+        ::poulpy_ckks::impl_ckks_paco_reference_full!($be);
         ::poulpy_ckks::impl_ckks_ship_reference_full!($be);
     };
 }
@@ -257,5 +232,8 @@ impl_oracle_ckks_standard!(FFT64Oracle, FFT64CIOracle);
 impl_oracle_ckks_standard!(NTT4x30Oracle, NTT4x30CIOracle);
 impl_oracle_ckks!(FFT64CIOracle);
 impl_oracle_ckks!(NTT4x30CIOracle);
-impl_oracle_ckks_without_eval_mod!(crate::test_suite::ControlledSamplingFFT64Oracle);
-impl_oracle_ckks_without_eval_mod!(crate::test_suite::ControlledSamplingFFT64CIOracle);
+impl_oracle_ckks_standard!(
+    crate::test_suite::ControlledSamplingFFT64Oracle,
+    crate::test_suite::ControlledSamplingFFT64CIOracle
+);
+impl_oracle_ckks!(crate::test_suite::ControlledSamplingFFT64CIOracle);

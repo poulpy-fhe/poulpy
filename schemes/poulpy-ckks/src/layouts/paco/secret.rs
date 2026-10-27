@@ -243,7 +243,7 @@ impl PaCoSecretSpec {
             let position = shift
                 .checked_mul(h4)
                 .and_then(|offset| offset.checked_add(lambda))
-                .with_context(|| format!("PaCo secret coefficient position for index {lambda} overflows usize"))?;
+                .context("PaCo secret coefficient position overflows usize")?;
             ensure!(position < p.n(), "PaCo secret coefficient position exceeds the degree N");
         }
         for v in 0..p.h() {
@@ -295,7 +295,7 @@ impl PaCoSecretSpec {
                 let position = self.u[lambda]
                     .checked_mul(h4)
                     .and_then(|offset| offset.checked_add(lambda))
-                    .with_context(|| format!("PaCo secret coefficient position for index {lambda} overflows usize"))?;
+                    .context("PaCo secret coefficient position overflows usize")?;
                 s[position] = 1;
             }
         }

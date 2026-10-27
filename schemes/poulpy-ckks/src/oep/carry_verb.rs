@@ -88,8 +88,8 @@ macro_rules! ckks_carry_verb_oep {
                 fn [<ckks_ $verb _pt_const_into>]<Dst, A, P>(
                     module: &Module<Self>,
                     dst: &mut Dst,
-                    a: &A,
                     dst_coeff: usize,
+                    a: &A,
                     pt: &P,
                     pt_coeff: usize,
                     scratch: &mut ScratchArena<'_, Self>,
@@ -193,8 +193,8 @@ macro_rules! ckks_carry_verb_oep {
                         fn [<ckks_ $verb _pt_const_into>]<Dst, A, P>(
                             module: &::poulpy_hal::layouts::Module<Self>,
                             dst: &mut Dst,
-                            a: &A,
                             dst_coeff: usize,
+                            a: &A,
                             pt: &P,
                             pt_coeff: usize,
                             scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
@@ -205,7 +205,7 @@ macro_rules! ckks_carry_verb_oep {
                             P: ::poulpy_core::layouts::GLWEToBackendRef<Self> + $crate::CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos,
                         {
                             $crate::reference::$verb::$Reference::[<ckks_ $verb _pt_const_into_reference>](
-                                module, dst, a, dst_coeff, pt, pt_coeff, scratch,
+                                module, dst, dst_coeff, a, pt, pt_coeff, scratch,
                             )
                         }
 

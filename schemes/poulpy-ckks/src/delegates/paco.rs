@@ -9,12 +9,12 @@ use crate::{
     CKKSCtBounds,
     api::{CKKSPaCoOps, PaCoScalar},
     layouts::{CKKSCiphertextOwned, CKKSPlaintextOwned, PaCoContext, PaCoKeys, PaCoWorker},
-    oep::{CKKSEncodingImpl, CKKSPaCoImpl},
+    oep::{CKKSEncodingImpl, CKKSPaCoCoeffEncodingImpl, CKKSPaCoImpl},
 };
 
 impl<BE, F> CKKSPaCoOps<BE, F> for Module<BE>
 where
-    BE: Backend + CKKSPaCoImpl + CKKSEncodingImpl<F>,
+    BE: Backend + CKKSPaCoImpl + CKKSPaCoCoeffEncodingImpl + CKKSEncodingImpl<F>,
     F: PaCoScalar,
 {
     fn ckks_paco_bootstrap_direct_tmp_bytes<K, Src>(

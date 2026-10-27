@@ -69,11 +69,11 @@ pub trait CKKSInnerSumOps<BE: Backend> {
     )]
     fn ckks_inner_sum<R, A, H>(
         &self,
-        res: &mut R,
-        a: &A,
         log_batch: usize,
         log_count: usize,
         normalize: bool,
+        res: &mut R,
+        a: &A,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -85,10 +85,10 @@ pub trait CKKSInnerSumOps<BE: Backend> {
     /// [`Self::ckks_inner_sum`] on `res` in place.
     fn ckks_inner_sum_assign<R, H>(
         &self,
-        res: &mut R,
         log_batch: usize,
         log_count: usize,
         normalize: bool,
+        res: &mut R,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -99,10 +99,10 @@ pub trait CKKSInnerSumOps<BE: Backend> {
     /// `res = sum_{j < 2^log_count} Rot(a, -j 2^log_batch)`.
     fn ckks_replicate<R, A, H>(
         &self,
-        res: &mut R,
-        a: &A,
         log_batch: usize,
         log_count: usize,
+        res: &mut R,
+        a: &A,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -114,9 +114,9 @@ pub trait CKKSInnerSumOps<BE: Backend> {
     /// [`Self::ckks_replicate`] on `res` in place.
     fn ckks_replicate_assign<R, H>(
         &self,
-        res: &mut R,
         log_batch: usize,
         log_count: usize,
+        res: &mut R,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>

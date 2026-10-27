@@ -61,10 +61,23 @@ pub trait CKKSFoldOps<BE: Backend, R: Ring> {
     /// `inbound` switches the packed inputs from their secret to the bootstrap secret:
     /// the prepared [`RingSwitchKeys::inbound`](crate::layouts::RingSwitchKeys::inbound)
     /// of [`RingSwitchKeysLayout::generate`](crate::layouts::RingSwitchKeysLayout::generate),
-    /// whose gadget covers the input width. Inputs already under the bootstrap secret
+    /// whose `max_input_k` covers the input width. Inputs already under the bootstrap secret
     /// at its degree pass `None`. Any prepared gadget key fits `S`: the fold checks its
     /// layout ([`GGLWEInfos`]) and hands its backend view
     /// ([`GGLWEPreparedToBackendRef`]) to the key switch.
+    ///
+    /// # Errors
+    ///
+    /// `InvalidOperand` when `folded` is empty, of more than one degree, of a rank other
+    /// than 1 or claims more width than it stores, when `ins` is empty, claims more width
+    /// than it stores, has a radix the backend cannot hold, a rank other than 1, a scale
+    /// above its width, or members differing in layout, scale or sparsity, when the fold
+    /// degree exceeds the module's, the input sparsity reaches the packed degree, the
+    /// packed degree does not divide the fold degree, or inputs of a smaller degree come
+    /// without `inbound`, when `inbound` has a radix the backend cannot hold, a gadget
+    /// layout its backend view or the fold degree contradicts, or a `max_input_k` below the
+    /// input width, and when `folded` does not hold [`Self::ckks_fold_count`] ciphertexts.
+    /// `folded` is untouched on `Err`.
     fn ckks_fold<S>(
         &self,
         folded: &mut [CKKSCiphertextOwned<BE>],
@@ -84,11 +97,22 @@ pub trait CKKSFoldOps<BE: Backend, R: Ring> {
     ///
     /// `outbound` switches `folded` back from the bootstrap secret to the input secret:
     /// the prepared [`RingSwitchKeys::outbound`](crate::layouts::RingSwitchKeys::outbound),
-    /// whose gadget covers the width of `folded`; `None` when [`Self::ckks_fold`] took
+    /// whose `max_input_k` covers the width of `folded`; `None` when [`Self::ckks_fold`] took
     /// none. `automorphisms`, keys of the input secret for the elements of
     /// [`Self::ckks_unfold_galois_elements`], split real pairs and sparse
     /// inputs, the sparse ones decomposing `log_sparsity` bits beyond the width of
     /// `folded`; `None` when there are neither.
+    ///
+    /// # Errors
+    ///
+    /// `InvalidOperand` as [`Self::ckks_fold`] for `folded`, `outs` in place of the inputs
+    /// and `outbound` in place of `inbound`, and when a ciphertext of `folded` has a radix
+    /// the backend cannot hold, a scale above its width, no bit of message budget above its
+    /// scale, or a width above that of `outs`, or `outbound` does not cover that width.
+    /// `MissingAutomorphismKey` when `automorphisms` is `None` or refuses an element of
+    /// [`Self::ckks_unfold_galois_elements`] at the width it splits, and `InvalidOperand`
+    /// when the key it returns has a gadget layout its backend view or the packed degree
+    /// contradicts. `outs` and `folded` are untouched on `Err`.
     fn ckks_unfold<S, H>(
         &self,
         outs: &mut [CKKSRingCiphertext<BE, R>],

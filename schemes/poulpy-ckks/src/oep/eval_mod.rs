@@ -27,7 +27,7 @@ pub unsafe trait CKKSEvalModImpl: Backend {
         T: poulpy_core::layouts::GGLWEInfos;
 
     /// Reproduces
-    /// [`ckks_eval_mod_reference`](crate::reference::eval_mod::CKKSEvalModOpsReference::ckks_eval_mod_reference) bit
+    /// [`ckks_eval_mod_reference`](crate::reference::eval_mod::CKKSEvalModReference::ckks_eval_mod_reference) bit
     /// for bit, within [`Self::ckks_eval_mod_tmp_bytes`]; free in kernels and scratch use.
     fn ckks_eval_mod<R, C, P, F, H>(
         module: &Module<Self>,
@@ -60,7 +60,7 @@ macro_rules! impl_ckks_eval_mod_reference_full {
                 R: $crate::CKKSCtBounds,
                 C: $crate::CKKSCtBounds,
                 P: $crate::CKKSCtBounds,
-                T: poulpy_core::layouts::GGLWEInfos,
+                T: ::poulpy_core::layouts::GGLWEInfos,
             {
                 $crate::reference::eval_mod::ckks_eval_mod_tmp_bytes_reference(module, res, ct, params, tsk)
             }
@@ -85,9 +85,7 @@ macro_rules! impl_ckks_eval_mod_reference_full {
                     + ::poulpy_core::layouts::BSGSMeta,
                 H: ::poulpy_core::layouts::GetTensorKey<Self>,
             {
-                $crate::reference::eval_mod::CKKSEvalModOpsReference::ckks_eval_mod_reference(
-                    module, res, ct, params, tsk, scratch,
-                )
+                $crate::reference::eval_mod::CKKSEvalModReference::ckks_eval_mod_reference(module, res, ct, params, tsk, scratch)
             }
         }
     };

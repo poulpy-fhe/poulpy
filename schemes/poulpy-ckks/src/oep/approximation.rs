@@ -31,7 +31,7 @@ pub unsafe trait CKKSApproximationImpl:
 {
     /// Default body: `ckks_approximation_tmp_bytes_derived`, the larger of the selected `ckks_all_ops_tmp_bytes` at
     /// `res` and at `input`, both against the first baby-step coefficient layout and `tsk`. An approximation with an
-    /// affine map adds the bytes of an `input`-shaped temporary and, unless it has a power-of-two scale, folds in the
+    /// affine map adds the aligned bytes of an `input`-shaped temporary and, unless it has a power-of-two scale, folds in the
     /// larger of that bound and the selected `ckks_affine_pt_const_tmp_bytes`. Scratch bound of
     /// [`Self::ckks_eval_approximation`]; may report less than the reference, never less than the body takes.
     fn ckks_approximation_tmp_bytes<R, I, T, P>(
@@ -52,7 +52,9 @@ pub unsafe trait CKKSApproximationImpl:
     }
 
     /// Default body: `ckks_eval_approximation_derived`. A `log_budget` below the bits the approximation consumes at the
-    /// input's `log_delta` is a refusal. An approximation with an affine map first fills an `input`-shaped scratch
+    /// input's `log_delta` is `InsufficientHomomorphicCapacity`, then, with an affine map, an arena below the
+    /// temporary plus its map step's selected queries a refusal. An approximation with an affine map first fills an
+    /// `input`-shaped scratch
     /// temporary: with a positive power-of-two scale `ckks_mul_pow2_into`, with a non-positive one `ckks_copy` (slot
     /// kind joined with real) then `ckks_div_pow2_assign`, either then `ckks_add_pt_const_assign` of the affine
     /// constant at coefficient 0; without a power-of-two scale `ckks_affine_pt_const_into` with offset 0 and scale 1.

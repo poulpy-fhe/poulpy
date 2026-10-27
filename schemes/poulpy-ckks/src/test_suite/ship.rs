@@ -17,7 +17,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSInfos, SetCKKSInfos, SlotsKind,
+    CKKSCompositionError, CKKSInfos, SetCKKSInfos, SlotsKind,
     api::{CKKSCopyOps, CKKSEncodingOps, CKKSShipOps, ShipScalar},
     encoding::ship::masks::{ship_pre_rotated_masks, ship_pre_rotated_masks_omega2},
     layouts::CKKSPlaintextVecHostCodec,
@@ -25,15 +25,16 @@ use crate::{
         CKKSCiphertextOwned, CKKSModuleAlloc, ShipKeySet, ShipKeysLayout, ShipPlan, ShipSecretSpec,
         ship::keyset::{HMuxRotKeyPrepared, hmux_rot_key_encrypt_sk},
     },
-    oep::{CKKSEncodingImpl, CKKSShipCoeffEncodingImpl, CKKSShipImpl, derived::ship::ship_mux_plans},
+    oep::{CKKSEncodingImpl, CKKSShipCoeffEncodingImpl, CKKSShipImpl},
+    reference::ship::ship_mux_plans,
     test_suite::CKKSTestParams,
 };
 
 use super::helpers::{
-    TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_ckks_internal, assert_decrypt_precision,
-    ckks_decrypt_decode, ckks_encrypt, ckks_encrypt_pt, ckks_spec, test_vector_1, want_rotate,
+    TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_ckks_error, assert_ckks_internal,
+    assert_decrypt_precision, ckks_decrypt_decode, ckks_encrypt, ckks_encrypt_pt, ckks_spec, test_vector_1, want_rotate,
 };
-use super::parity::helpers::{snapshot, with_scratch};
+use super::parity::helpers::{fixture_ciphertext, snapshot, with_scratch};
 use poulpy_core::api::GLWESecretSampling;
 
 /// SHIP suite plan on the test ring: sparse weight 32, full offset window,
@@ -256,7 +257,7 @@ where
 /// all-zero group yields (an encryption of) zero.
 pub fn test_ship_mux_rotate<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard> + CKKSShipImpl,
+    BE: TestContextBackend<Ring = Standard> + CKKSShipImpl + poulpy_hal::oep::HalVecZnxDftImpl,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -406,6 +407,8 @@ where
 
     // One operand serves the whole group: keys off a limb boundary must share
     // their digit width, and whole-limb keys cannot join them.
+    let log_delta = params.prec().log_delta();
+    let dirty = |k: usize| fixture_ciphertext(module, &ckks_spec(params.n, params.base2k, log_delta, k - log_delta), 77);
     for (label, k_digits) in [
         ("off-limb widths", [b / 2 + 1, b + 1]),
         ("whole-limb and off-limb", [params.dsize.max(4) * b, b + 1]),
@@ -416,25 +419,35 @@ where
             .map(|(&k_digit, rot)| gen_key(k_digit, false, rot, &mut scratch))
             .collect();
         let plans = ship_mux_plans(module, [group.as_slice()].into_iter());
-        let bytes = BE::ckks_ship_mux_rotate_tmp_bytes(module, &alloc_ct(&params, module, k), &group[0].key, group.len());
-        let mut out = alloc_ct(&params, module, k);
-        let err = with_scratch::<BE, _>(bytes, |s| BE::ckks_ship_mux_rotate(module, &mut out, &group, &plans, s)).unwrap_err();
-        assert!(
-            err.to_string().contains("differ in width or count"),
-            "mux_rotate({label}): {err}"
+        let mut out = dirty(k);
+        let before = snapshot::<BE, _>(&out);
+        let err = with_scratch::<BE, _>(0, |s| BE::ckks_ship_mux_rotate(module, &mut out, &group, &plans, s)).unwrap_err();
+        assert_ckks_error(
+            label,
+            &err,
+            CKKSCompositionError::InvalidOperand {
+                op: "ckks_ship_bootstrap_into",
+                reason: "key digits off a limb boundary differ in width or count within the group".into(),
+            },
         );
+        assert_eq!(snapshot::<BE, _>(&out), before, "a refused mux_rotate wrote its ciphertext");
     }
 
     let group: Vec<_> = [0, 5].map(|rot| gen_key(b, false, rot, &mut scratch)).into();
     let wide_k = group[0].key.gglwe_layout().max_input_k().as_usize() + 1;
     let plans = ship_mux_plans(module, [group.as_slice()].into_iter());
-    let bytes = BE::ckks_ship_mux_rotate_tmp_bytes(module, &alloc_ct(&params, module, wide_k), &group[0].key, group.len());
-    let mut out = alloc_ct(&params, module, wide_k);
-    let err = with_scratch::<BE, _>(bytes, |s| BE::ckks_ship_mux_rotate(module, &mut out, &group, &plans, s)).unwrap_err();
-    assert!(
-        err.to_string().contains("wider than a key's max_input_k"),
-        "mux_rotate(input one bit past its keys): {err}"
+    let mut out = dirty(wide_k);
+    let before = snapshot::<BE, _>(&out);
+    let err = with_scratch::<BE, _>(0, |s| BE::ckks_ship_mux_rotate(module, &mut out, &group, &plans, s)).unwrap_err();
+    assert_ckks_error(
+        "input one bit past its keys",
+        &err,
+        CKKSCompositionError::InvalidOperand {
+            op: "ckks_ship_bootstrap_into",
+            reason: "the input is wider than a key's max_input_k".into(),
+        },
     );
+    assert_eq!(snapshot::<BE, _>(&out), before, "a refused mux_rotate wrote its ciphertext");
 }
 
 /// End-to-end SHIP bootstrap driver: a one-limb bottom ciphertext under the
@@ -621,4 +634,91 @@ where
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     ship_bootstrap_case::<BE, F, E>(params, module, host_module, true);
+}
+
+/// The runtime validation of the SHIP drivers refuses with `InvalidOperand` of the invoked driver before any write, on
+/// an empty arena: an output of another radix, and the complex driver on keys without the second mask set.
+pub fn test_ship_bootstrap_into_rejects_output_radix<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend<Ring = Standard> + CKKSShipCoeffEncodingImpl + CKKSEncodingImpl<F>,
+    Module<BE>: TestContextModule<BE>
+        + CKKSShipOps<BE, F>
+        + CKKSEncodingOps<BE, F>
+        + GLWEZero<BE>
+        + Convolution<BE>
+        + CnvPVecAlloc<BE>
+        + CnvPVecBytesOf,
+    F: TestScalar + ShipScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    use super::parity::{helpers::fixture_ciphertext, layout};
+    use crate::{CKKSCompositionError, CKKSError};
+    let base2k = params.base2k;
+    let plan = ship_suite_plan(&params);
+    let kk = plan.raised_k(base2k);
+    let big = CKKSTestParams { k: kk, ..params };
+    let (sk_dense_host, _, _) = gen_sk_with_host(&big, module, host_module, [0u8; 32]);
+    let spec = ShipSecretSpec::sample(&plan, &mut Source::new([9u8; 32]));
+    let keys_layout = ShipKeysLayout {
+        mux_dsize: params.dsize,
+        tensor_key: big.tsk_layout(),
+        conjugation_key: big.atk_layout(),
+        complex: false,
+    };
+    let mut scratch = alloc_scratch(&big, module);
+    let key_set = ShipKeySet::generate::<BE, F>(
+        module,
+        host_module,
+        &plan,
+        base2k.into(),
+        &spec,
+        &sk_dense_host,
+        &keys_layout,
+        &mut Source::new([11u8; 32]),
+        &mut Source::new([12u8; 32]),
+        &mut scratch.borrow(),
+    )
+    .unwrap();
+    let keys = key_set.prepare(module, &mut scratch.borrow()).unwrap();
+    let ct0 = fixture_ciphertext(module, &layout(params, 1, base2k, base2k, 0, SlotsKind::Complex), 41);
+    let refused = |op: &'static str, what: &str, err: &CKKSError| {
+        assert!(
+            matches!(
+                err.composition(),
+                Some(CKKSCompositionError::InvalidOperand { op: got, reason }) if *got == op && reason.contains(what)
+            ),
+            "{op}: {what}: {err}"
+        );
+    };
+
+    let mut bad = fixture_ciphertext(module, &layout(big, 1, kk, base2k, 0, SlotsKind::Complex), 31);
+    let mut bad_radix = fixture_ciphertext(
+        module,
+        &crate::CKKSLayout {
+            glwe_layout: poulpy_core::layouts::GLWELayout {
+                base2k: (base2k - 1).into(),
+                ..layout(big, 1, kk, base2k, 0, SlotsKind::Complex).glwe_layout
+            },
+            meta: bad.meta(),
+        },
+        32,
+    );
+    let before = snapshot::<BE, _>(&bad_radix);
+    let err = with_scratch::<BE, _>(0, |s| {
+        CKKSShipOps::<BE, F>::ckks_ship_bootstrap_into(module, &mut bad_radix, &ct0, &keys, s)
+    })
+    .unwrap_err();
+    refused("ckks_ship_bootstrap_into", "output base2k", &err);
+    assert_eq!(snapshot::<BE, _>(&bad_radix), before, "a refused bootstrap wrote the output");
+
+    let before = snapshot::<BE, _>(&bad);
+    let err = with_scratch::<BE, _>(0, |s| {
+        CKKSShipOps::<BE, F>::ckks_ship_bootstrap_complex_into(module, &mut bad, &ct0, &keys, s)
+    })
+    .unwrap_err();
+    refused("ckks_ship_bootstrap_complex_into", "omega_2 masks", &err);
+    assert_eq!(snapshot::<BE, _>(&bad), before, "a refused bootstrap wrote the output");
 }

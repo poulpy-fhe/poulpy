@@ -28,15 +28,15 @@ use poulpy_hal::{
 
 use crate::SlotsKind;
 use crate::{
-    CKKSInfos, GLWEPlaintextMeta,
+    CKKSCompositionError, CKKSInfos, GLWEPlaintextMeta,
     api::{CKKSLinearTransformationOps, CKKSPaCoOps, PaCoScalar},
     layouts::{CKKSModuleAlloc, PaCoContext, PaCoDFTPlan, PaCoKeySet, PaCoKeysPrepared, PaCoPlan, PaCoSecretSpec, PaCoWorker},
     test_suite::reference_encoder::ReferenceEncoder,
     test_suite::{
         CKKSTestParams,
         helpers::{
-            TestContextBackend, TestContextModule, TestScalar, alloc_scratch, ckks_encrypt, ckks_encrypt_coeffs, ckks_spec,
-            gen_atk, gen_tsk,
+            TestContextBackend, TestContextModule, TestScalar, alloc_scratch, assert_ckks_error, ckks_encrypt,
+            ckks_encrypt_coeffs, ckks_spec, gen_atk, gen_tsk,
         },
         parity::helpers::with_scratch,
     },
@@ -236,7 +236,7 @@ pub fn test_paco_parallel_bootstrap<BE, F, E>(
     let mut too_sparse = ct_in.clone();
     too_sparse.set_log_sparsity((p.n() / p.c()).trailing_zeros() as usize + 1);
     let before = rejected.to_host_owned::<BE>();
-    let error = with_scratch::<BE, _>(paco_bytes, |s| {
+    let error = with_scratch::<BE, _>(0, |s| {
         module.ckks_paco_bootstrap_direct_into::<_, _>(&mut rejected, &too_sparse, &ctx, &keys, s)
     })
     .expect_err("an input with fewer live coefficients than C must be rejected");
@@ -259,7 +259,7 @@ pub fn test_paco_parallel_bootstrap<BE, F, E>(
     assert_ciphertext_unchanged::<BE>(&before, &rejected);
 
     let before = rejected.to_host_owned::<BE>();
-    let error = with_scratch::<BE, _>(paco_bytes, |s| {
+    let error = with_scratch::<BE, _>(0, |s| {
         module.ckks_paco_bootstrap_into::<_, _>(&mut rejected, &ct_in, &ctx, &keys, s)
     })
     .expect_err("encapsulated mode must require an encapsulation key");
@@ -283,7 +283,7 @@ pub fn test_paco_parallel_bootstrap<BE, F, E>(
     };
     let mut bad_output = module.ckks_ciphertext_alloc(bad_base2k.into(), keys.bootstrapping_keys()[0].k());
     let before = bad_output.to_host_owned::<BE>();
-    let error = with_scratch::<BE, _>(paco_bytes, |s| {
+    let error = with_scratch::<BE, _>(0, |s| {
         module.ckks_paco_bootstrap_direct_into::<_, _>(&mut bad_output, &ct_in, &ctx, &keys, s)
     })
     .expect_err("an output with the wrong radix must be rejected");
@@ -300,7 +300,7 @@ pub fn test_paco_parallel_bootstrap<BE, F, E>(
     );
     let mut too_high_output = module.ckks_ciphertext_alloc(ctx.base2k(), too_high_k);
     let before = too_high_output.to_host_owned::<BE>();
-    let error = with_scratch::<BE, _>(paco_bytes, |s| {
+    let error = with_scratch::<BE, _>(0, |s| {
         module.ckks_paco_bootstrap_direct_into::<_, _>(&mut too_high_output, &ct_in, &ctx, &keys, s)
     })
     .expect_err("an output level above k_out must be rejected");
@@ -336,7 +336,8 @@ pub fn test_paco_parallel_bootstrap<BE, F, E>(
         Module::<BE>::new((params.n / 2) as u64),
         alloc_scratch(&params, &module),
     )];
-    let error = with_scratch::<BE, _>(paco_bytes, |s| {
+    // The worker degrees are operands: checked before the arena.
+    let error = with_scratch::<BE, _>(0, |s| {
         module.ckks_paco_bootstrap_parallel_direct_into::<_, _>(
             &mut worker_rejected,
             &ct_in,
@@ -347,7 +348,18 @@ pub fn test_paco_parallel_bootstrap<BE, F, E>(
         )
     })
     .expect_err("a worker module for the wrong ring must be rejected");
-    assert!(error.to_string().contains("module degree"), "unexpected error: {error:#}");
+    assert_ckks_error(
+        "wrong-degree worker",
+        &error,
+        CKKSCompositionError::InvalidOperand {
+            op: "ckks_paco_bootstrap_parallel_direct_into",
+            reason: format!(
+                "PaCo worker 1 module degree {} does not match plan degree {}",
+                params.n / 2,
+                params.n
+            ),
+        },
+    );
     assert_ciphertext_unchanged::<BE>(&before, &worker_rejected);
 
     // ── Sequential driver: all D coefficient classes recovered ────────────
@@ -602,4 +614,179 @@ pub fn test_paco_encapsulated_bootstrap<BE, F, E>(
         "encapsulated PaCo recovery: max coefficient error log2={:.1} (bound {bound:.1})",
         max_err.log2()
     );
+}
+
+/// An encapsulation key whose gadget decomposes fewer bits than the input holds is `InvalidOperand` of the invoked
+/// encapsulated call, from its query and from the drivers on an empty arena, and an output of another radix is
+/// `InvalidOperand` of the driver, the output unchanged.
+pub fn test_paco_bootstrap_into_rejects_narrow_encapsulation_key<BE, F, E>(
+    params: CKKSTestParams,
+    _module: &Module<BE>,
+    _host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend<Ring = Standard>,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + CKKSLinearTransformationOps<BE>
+        + CKKSPaCoOps<BE, F>
+        + CnvPVecAlloc<BE>
+        + GLWERotate<BE>
+        + Sync,
+    F: TestScalar + PaCoScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F> + Sync,
+{
+    use crate::test_suite::helpers::gen_sk_with_raw;
+    use crate::{CKKSCompositionError, CKKSError};
+    use poulpy_core::{
+        GLWEAutomorphismKeyEncryptSk, GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk,
+        layouts::{GLWESwitchingKeyLayout, TorusPrecision},
+    };
+
+    let log_delta = params.prec().log_delta();
+    let k_in = (log_delta - 2).min(52);
+    let log_msg = k_in - 10;
+    let plan = PaCoPlan::new(params.n.trailing_zeros() as usize, PACO_H, PACO_C, k_in as u32)
+        .unwrap()
+        .with_evaluation(
+            log_delta,
+            16,
+            PaCoDFTPlan::new(vec![4, 1], vec![2, 2], log_delta, 16, 1.0).unwrap(),
+            PaCoDFTPlan::uniform(3, 2, 2, log_delta, 16).unwrap(),
+        )
+        .unwrap();
+    let p = plan.clone();
+    let k_boot = plan.k_boot(params.base2k, log_msg + 8).unwrap();
+    let params = CKKSTestParams { k: k_boot, ..params };
+
+    let module = Module::<BE>::new(params.n as u64);
+    let host_module = Module::<HostBytesBackend>::new(params.n as u64);
+    let encoder_full = ReferenceEncoder::<E>::new::<F>(params.n / 2).unwrap();
+    let encoder_block = ReferenceEncoder::<E>::new::<F>(2 * p.c()).unwrap();
+    let mut scratch = alloc_scratch(&params, &module);
+
+    let (sk_dense_raw, sk_dense) = gen_sk_with_raw(&params, &module, &host_module, [21u8; 32]);
+    let mut source = Source::new([22u8; 32]);
+    let spec = PaCoSecretSpec::sample(&p, &mut source).unwrap();
+    let glwe_infos = params.glwe_layout();
+    let mut sk_paco_host = host_module.glwe_secret_alloc_from_infos(&glwe_infos);
+    spec.fill_glwe_secret(&p, &mut sk_paco_host).unwrap();
+    let mut sk_paco_raw = module.glwe_secret_alloc_from_infos(&sk_paco_host);
+    sk_paco_host.transfer_into(&mut sk_paco_raw);
+
+    let (mut xa, mut xe) = (Source::new([1u8; 32]), Source::new([2u8; 32]));
+    let mut rotation_keys = HashMap::new();
+    for p_el in plan.galois_elements() {
+        let mut atk = module.glwe_automorphism_key_alloc_from_infos(&params.atk_layout());
+        module.glwe_automorphism_key_encrypt_sk(&mut atk, p_el, &sk_dense_raw, &mut xe, &mut xa, &mut scratch.borrow());
+        rotation_keys.insert(p_el, atk);
+    }
+    let mut tensor_key = module.glwe_tensor_key_alloc_from_infos(&params.tsk_layout());
+    module.glwe_tensor_key_encrypt_sk(&mut tensor_key, &sk_dense_raw, &mut xe, &mut xa, &mut scratch.borrow());
+
+    // Digits one bit short of the input in all, with the storage the switch needs.
+    let full = params.ksk_layout(k_in);
+    let narrow = GLWESwitchingKeyLayout {
+        k_digit: TorusPrecision(((k_in - 1) / full.dnum.as_usize()) as u32),
+        k_aux: TorusPrecision(full.k_aux.0 + 2 * full.k_digit.0),
+        ..full
+    };
+    let mut dense_to_paco = module.glwe_switching_key_alloc_from_infos(&narrow);
+    module.glwe_switching_key_encrypt_sk(
+        &mut dense_to_paco,
+        &sk_dense_raw,
+        &sk_paco_raw,
+        &mut xe,
+        &mut xa,
+        &mut scratch.borrow(),
+    );
+    assert!(
+        poulpy_core::layouts::GGLWEInfos::gglwe_layout(&dense_to_paco)
+            .max_input_k()
+            .as_usize()
+            < k_in,
+        "the encapsulation key covers the input"
+    );
+
+    let bsk = std::array::from_fn(|t| {
+        let s = spec
+            .sigma_slots_with(&p, t, &mut |coeffs, re, im| encoder_block.unpack_reim_coeffs(coeffs, re, im))
+            .unwrap();
+        let re: Vec<F> = s.iter().map(|x| x.re).collect();
+        let im: Vec<F> = s.iter().map(|x| x.im).collect();
+        ckks_encrypt(
+            &params,
+            &module,
+            &host_module,
+            &encoder_full,
+            &sk_dense,
+            k_boot,
+            &re,
+            &im,
+            &mut scratch.borrow(),
+        )
+    });
+    let keyset = PaCoKeySet::new(&plan, bsk, rotation_keys, tensor_key, Some(dense_to_paco)).unwrap();
+    let keys = keyset.into_prepare(&plan, &module, &mut scratch.borrow()).unwrap();
+    let ctx = PaCoContext::<BE, F>::compile(&module, params.base2k.into(), plan, &mut scratch.borrow()).unwrap();
+    let k_out = ctx.max_output_k(&keys).unwrap();
+
+    let coeffs: Vec<F> = (0..params.n).map(|i| F::from_f64((i % 7) as f64 / 16.0).unwrap()).collect();
+    let ct_in = ckks_encrypt_coeffs(
+        &params,
+        &module,
+        &host_module,
+        &sk_dense,
+        k_in,
+        &coeffs,
+        ckks_spec(params.n, params.base2k, log_msg, 10),
+        &mut scratch.borrow(),
+    );
+
+    let narrow_key = |op: &'static str, err: &CKKSError| {
+        assert!(
+            matches!(
+                err.composition(),
+                Some(CKKSCompositionError::InvalidOperand { op: got, reason })
+                    if *got == op && reason == "the input is wider than an encapsulation key's max_input_k"
+            ),
+            "{op}: a narrow encapsulation key: {err}"
+        );
+    };
+    let mut out = module.ckks_ciphertext_alloc(ctx.base2k(), k_out);
+    let err = module.ckks_paco_bootstrap_tmp_bytes(&out, &ct_in, &ctx, &keys).unwrap_err();
+    narrow_key("ckks_paco_bootstrap_tmp_bytes", &err);
+    let before = out.to_host_owned::<BE>();
+    let err = with_scratch::<BE, _>(0, |s| {
+        module.ckks_paco_bootstrap_into::<_, _>(&mut out, &ct_in, &ctx, &keys, s)
+    })
+    .unwrap_err();
+    narrow_key("ckks_paco_bootstrap_into", &err);
+    assert_ciphertext_unchanged::<BE>(&before, &out);
+    let mut workers = vec![PaCoWorker::new(
+        Module::<BE>::new(params.n as u64),
+        ScratchOwned::<BE>::alloc(0),
+    )];
+    let err = with_scratch::<BE, _>(0, |s| {
+        module.ckks_paco_bootstrap_parallel_into::<_, _>(&mut out, &ct_in, &ctx, &keys, &mut workers, s)
+    })
+    .unwrap_err();
+    narrow_key("ckks_paco_bootstrap_parallel_into", &err);
+    assert_ciphertext_unchanged::<BE>(&before, &out);
+
+    let other_radix = params.base2k - 1;
+    let mut bad_output = module.ckks_ciphertext_alloc(other_radix.into(), k_out);
+    let before = bad_output.to_host_owned::<BE>();
+    let err = with_scratch::<BE, _>(0, |s| {
+        module.ckks_paco_bootstrap_direct_into::<_, _>(&mut bad_output, &ct_in, &ctx, &keys, s)
+    })
+    .unwrap_err();
+    assert!(
+        matches!(
+            err.composition(),
+            Some(CKKSCompositionError::InvalidOperand { op: "ckks_paco_bootstrap_direct_into", reason })
+                if reason.starts_with("PaCo output base2k")
+        ),
+        "paco_bootstrap_direct_into: an output of another radix: {err}"
+    );
+    assert_ciphertext_unchanged::<BE>(&before, &bad_output);
 }

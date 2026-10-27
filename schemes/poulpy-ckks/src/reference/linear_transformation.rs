@@ -6,7 +6,7 @@
 //! `docs/guides/linear_transformation.md`.
 
 use crate::SlotsKind;
-use crate::{CKKSError, CKKSResult as Result, ckks_ensure, operand_cyclotomic_order};
+use crate::{CKKSError, CKKSResult as Result, ckks_ensure, ckks_ensure_operand, operand_cyclotomic_order};
 use poulpy_core::layouts::GLWEPlaintextInfos;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::LinearTransformationPlan;
@@ -31,7 +31,7 @@ use crate::{
         CKKSPlaintext,
         validation::{ensure_prepared_transformation_layout, ensure_uniform_diagonals},
     },
-    reference::mul::mul_pt_params_raw,
+    mul_pt_params_raw,
 };
 use poulpy_core::GLWEBytesOf;
 
@@ -252,15 +252,19 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
         H: GetAutomorphismKey<BE>,
     {
-        let first = lt
-            .first_diagonal_plaintext()
-            .ok_or_else(|| anyhow::anyhow!("linear transformation has no diagonals"))?;
+        const OP: &str = "ckks_eval_linear_transformation_into";
+        let first = lt.first_diagonal_plaintext().ok_or_else(|| -> CKKSError {
+            CKKSCompositionError::InvalidOperand {
+                op: OP,
+                reason: "linear transformation has no diagonals".into(),
+            }
+            .into()
+        })?;
         // The diagonal scale (`lt_log_scale`), its effective torus width `k` and the
         // slot kind are read off the first diagonal. The convolution offset must
         // match the width the diagonal data was positioned at in `cnv_prepare_right`
         // (its effective `k`), which can be below the rounded physical `max_k`.
         let (pt_log_scale, pt_max_k, pt_slots) = (first.lt_log_scale(), first.encoded_k().as_usize(), first.lt_slots());
-        const OP: &str = "ckks_eval_linear_transformation_into";
         ensure_uniform_diagonals(OP, lt, lt_diagonal_meta)?;
         // ct × (plaintext diagonal): the ct × pt convolution rule, with the diagonal
         // described by just its scale (`pt_log_scale` → rhs `log_delta`) and storage
@@ -328,7 +332,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         // Core reads each source through its baby cache. A cache without the rotations its transform reads may hold
         // none, so its layout is read only once those are checked.
         let cache = |babies: &LinearTransformationBabySteps<BE>| (babies.size(), babies.cols());
-        check_babies(lt, cache_0)?;
+        check_babies(OP, lt, cache_0)?;
         for (t, ((&src_t, &babies_t), &lt_t)) in srcs.iter().zip(babies).zip(lts).enumerate().skip(1) {
             let mismatch = |what: &str| {
                 Err(invalid_sum(format!(
@@ -349,7 +353,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
             if source(src_t) != source(src) {
                 return mismatch("source layout and scale");
             }
-            check_babies(lt_t, babies_t)?;
+            check_babies(OP, lt_t, babies_t)?;
             if cache(babies_t) != cache(cache_0) {
                 return mismatch("baby-step cache layout");
             }
@@ -402,10 +406,15 @@ fn invalid_sum(reason: String) -> CKKSError {
     .into()
 }
 
-/// Verifies that `babies` covers every baby rotation `lt` needs.
-fn check_babies<BE: Backend, P>(lt: &LinearTransformation<P>, babies: &LinearTransformationBabySteps<BE>) -> Result<()> {
+/// `InvalidOperand` for `op` unless `babies` covers every baby rotation `lt` needs.
+fn check_babies<BE: Backend, P>(
+    op: &'static str,
+    lt: &LinearTransformation<P>,
+    babies: &LinearTransformationBabySteps<BE>,
+) -> Result<()> {
     for rotation in lt.baby_steps().iter().copied() {
-        ckks_ensure!(
+        ckks_ensure_operand!(
+            op,
             babies.contains_baby_step(rotation),
             "missing prepared baby-step rotation {rotation}"
         );
@@ -426,7 +435,7 @@ fn check_required_keys<BE: Backend, P, H>(
 where
     H: GetAutomorphismKey<BE>,
 {
-    check_babies(lt, babies)?;
+    check_babies(op, lt, babies)?;
     let giants = lt.giant_steps.iter().filter(|gs| !gs.diagonals.is_empty()).map(|gs| gs.rot);
     let rotations: Vec<i64> = match lt.rotations {
         BsgsRotations::PerRotation => giants.filter(|&r| r != 0).collect(),

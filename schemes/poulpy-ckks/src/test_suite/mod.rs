@@ -230,7 +230,7 @@ macro_rules! ckks_backend_rank2_test_suite {
 
             use anyhow::Result;
 
-            use poulpy_hal::layouts::{HostBytesBackend, Module};
+            use ::poulpy_hal::layouts::{HostBytesBackend, Module};
 
             static MODULE: LazyLock<Module<$backend>> = LazyLock::new(|| Module::<$backend>::new($params.n as u64));
             static HOST_MODULE: LazyLock<Module<HostBytesBackend>> =
@@ -356,7 +356,7 @@ macro_rules! ckks_backend_test_suite {
 
             use anyhow::Result;
 
-            use poulpy_hal::layouts::{HostBytesBackend, Module};
+            use ::poulpy_hal::layouts::{HostBytesBackend, Module};
 
             static MODULE: LazyLock<Module<$backend>> = LazyLock::new(|| Module::<$backend>::new($params.n as u64));
             static HOST_MODULE: LazyLock<Module<HostBytesBackend>> =
@@ -619,16 +619,24 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::linear_transformation::test_linear_transformation_sum
             );
             run_test!(
-                prepare_linear_transformation_rejects_mixed_diagonals,
-                $crate::test_suite::linear_transformation::test_prepare_linear_transformation_rejects_mixed_diagonals
+                prepare_linear_transformation_rhs_rejects_mixed_diagonals,
+                $crate::test_suite::linear_transformation::test_prepare_linear_transformation_rhs_rejects_mixed_diagonals
             );
             run_test!(
-                prepare_linear_transformation_rejects_foreign_layout,
-                $crate::test_suite::linear_transformation::test_prepare_linear_transformation_rejects_foreign_layout
+                prepare_linear_transformation_rhs_rejects_foreign_layout,
+                $crate::test_suite::linear_transformation::test_prepare_linear_transformation_rhs_rejects_foreign_layout
             );
             run_test!(
-                prepare_linear_transformation_rejects_short_scratch,
-                $crate::test_suite::linear_transformation::test_prepare_linear_transformation_rejects_short_scratch
+                prepare_linear_transformation_rhs_rejects_short_scratch,
+                $crate::test_suite::linear_transformation::test_prepare_linear_transformation_rhs_rejects_short_scratch
+            );
+            run_test!(
+                prepare_linear_transformation_rhs_rejects_malformed_schedule,
+                $crate::test_suite::linear_transformation::test_prepare_linear_transformation_rhs_rejects_malformed_schedule
+            );
+            run_test!(
+                prepare_linear_transformation_rhs_lifecycle,
+                $crate::test_suite::linear_transformation::test_prepare_linear_transformation_rhs_lifecycle
             );
             run_test!(
                 linear_transformation_mixed_key_layouts,
@@ -661,6 +669,14 @@ macro_rules! ckks_backend_test_suite {
             run_test!(paco_slot_product, $crate::test_suite::paco_ops::test_paco_slot_product);
             run_test!(paco_conj_rotate, $crate::test_suite::paco_ops::test_paco_conj_rotate);
             run_test!(
+                slot_product_assign_rejects_missing_later_key,
+                $crate::test_suite::paco_ops::test_slot_product_assign_rejects_missing_later_key
+            );
+            run_test!(
+                slot_trace_assign_rejects_missing_later_key,
+                $crate::test_suite::paco_ops::test_slot_trace_assign_rejects_missing_later_key
+            );
+            run_test!(
                 paco_partial_pipeline,
                 $crate::test_suite::paco_keys::test_paco_partial_pipeline
             );
@@ -676,6 +692,10 @@ macro_rules! ckks_backend_test_suite {
                 paco_encapsulated_bootstrap,
                 $crate::test_suite::paco_parallel::test_paco_encapsulated_bootstrap
             );
+            run_test!(
+                paco_bootstrap_into_rejects_narrow_encapsulation_key,
+                $crate::test_suite::paco_parallel::test_paco_bootstrap_into_rejects_narrow_encapsulation_key
+            );
             run_test_ignored!(
                 paco_paper_scale,
                 $crate::test_suite::paco_bootstrap::test_paco_paper_scale
@@ -686,6 +706,10 @@ macro_rules! ckks_backend_test_suite {
             run_test!(
                 ship_bootstrap_complex,
                 $crate::test_suite::ship::test_ship_bootstrap_complex
+            );
+            run_test!(
+                ship_bootstrap_into_rejects_output_radix,
+                $crate::test_suite::ship::test_ship_bootstrap_into_rejects_output_radix
             );
             run_test!(
                 dft_coeffs_to_slots_standard,
@@ -715,7 +739,7 @@ macro_rules! ckks_backend_test_suite {
                 dft_plan_helpers_match_compiled,
                 $crate::test_suite::dft::test_dft_plan_helpers_match_compiled
             );
-            run_test!(dft_prepare_into, $crate::test_suite::dft::test_dft_prepare_into);
+            run_test!(prepare_dft_matrix, $crate::test_suite::dft::test_prepare_dft_matrix);
             run_test!(mul_ct_aligned, $crate::test_suite::mul::test_mul_ct_aligned);
             run_test!(mul_ct_delta_a_gt_b, $crate::test_suite::mul::test_mul_ct_delta_a_gt_b);
             run_test!(mul_ct_delta_a_lt_b, $crate::test_suite::mul::test_mul_ct_delta_a_lt_b);
@@ -828,7 +852,7 @@ macro_rules! ckks_backend_test_suite {
             );
             run_test!(composition_poly2_mul, $crate::test_suite::composition::test_poly2_mul);
             run_test!(
-                composition_square_into_rejects_exhausted_capacity,
+                square_into_rejects_exhausted_capacity,
                 $crate::test_suite::composition::test_square_into_rejects_exhausted_capacity
             );
             run_test!(add_many_aligned, $crate::test_suite::add_many::test_add_many_aligned);
@@ -852,7 +876,10 @@ macro_rules! ckks_backend_test_suite {
                 add_many_normalize_after,
                 $crate::test_suite::add_many::test_add_many_normalize_after
             );
-            run_test!(add_many_error, $crate::test_suite::add_many::test_add_many_error);
+            run_test!(
+                add_many_rejects_invalid_calls,
+                $crate::test_suite::add_many::test_add_many_rejects_invalid_calls
+            );
             run_test!(inner_sum_aligned, $crate::test_suite::inner_sum::test_inner_sum_aligned);
             run_test!(
                 inner_sum_smaller_output,
@@ -860,24 +887,24 @@ macro_rules! ckks_backend_test_suite {
             );
             run_test!(inner_sum_assign, $crate::test_suite::inner_sum::test_inner_sum_assign);
             run_test!(
-                inner_sum_window_error,
-                $crate::test_suite::inner_sum::test_inner_sum_window_error
+                inner_sum_rejects_window,
+                $crate::test_suite::inner_sum::test_inner_sum_rejects_window
             );
             run_test!(
-                inner_sum_integer_error,
-                $crate::test_suite::inner_sum::test_inner_sum_integer_error
+                inner_sum_rejects_integer_slots,
+                $crate::test_suite::inner_sum::test_inner_sum_rejects_integer_slots
             );
             run_test!(
-                inner_sum_missing_key_error,
-                $crate::test_suite::inner_sum::test_inner_sum_missing_key_error
+                inner_sum_rejects_missing_key,
+                $crate::test_suite::inner_sum::test_inner_sum_rejects_missing_key
             );
             run_test!(
-                inner_sum_budget_error,
-                $crate::test_suite::inner_sum::test_inner_sum_budget_error
+                inner_sum_rejects_budget,
+                $crate::test_suite::inner_sum::test_inner_sum_rejects_budget
             );
             run_test!(
-                inner_sum_scratch_error,
-                $crate::test_suite::inner_sum::test_inner_sum_scratch_error
+                inner_sum_rejects_short_scratch,
+                $crate::test_suite::inner_sum::test_inner_sum_rejects_short_scratch
             );
             run_test!(
                 inner_sum_below_module_degree,
@@ -923,6 +950,10 @@ macro_rules! ckks_backend_test_suite {
             run_test!(
                 eval_poly_rejects_power_basis_mismatch,
                 $crate::test_suite::polynomial_evaluation::test_eval_poly_rejects_power_basis_mismatch
+            );
+            run_test!(
+                eval_poly_rejects_malformed_polynomials,
+                $crate::test_suite::polynomial_evaluation::test_eval_poly_rejects_malformed_polynomials
             );
             run_test!(
                 eval_poly_const_coeffs_exp7,
@@ -993,6 +1024,66 @@ macro_rules! ckks_backend_test_suite {
                 eval_mod_cos_discrete_even,
                 $crate::test_suite::eval_mod::test_eval_mod_cos_discrete_even
             );
+            run_test!(
+                affine_pt_const_into_rejects_offset_coeff_out_of_range,
+                $crate::test_suite::affine::test_affine_pt_const_into_rejects_offset_coeff_out_of_range
+            );
+            run_test!(
+                affine_pt_vec_into_rejects_offset_base2k_mismatch,
+                $crate::test_suite::affine::test_affine_pt_vec_into_rejects_offset_base2k_mismatch
+            );
+            run_test!(
+                mul_add_pt_vec_into_rejects_base2k_mismatch,
+                $crate::test_suite::mul_add::test_mul_add_pt_vec_into_rejects_base2k_mismatch
+            );
+            run_test!(
+                mul_sub_pt_vec_into_rejects_base2k_mismatch,
+                $crate::test_suite::mul_sub::test_mul_sub_pt_vec_into_rejects_base2k_mismatch
+            );
+            run_test!(
+                mul_pt_const_into_rejects_base2k_mismatch,
+                $crate::test_suite::mul::test_mul_pt_const_into_rejects_base2k_mismatch
+            );
+            run_test!(
+                mul_pt_vec_into_rejects_base2k_mismatch,
+                $crate::test_suite::mul::test_mul_pt_vec_into_rejects_base2k_mismatch
+            );
+            run_test!(
+                add_pt_vec_into_rejects_plaintext_before_copy,
+                $crate::test_suite::add::test_add_pt_vec_into_rejects_plaintext_before_copy
+            );
+            run_test!(
+                sub_pt_vec_into_rejects_plaintext_before_copy,
+                $crate::test_suite::sub::test_sub_pt_vec_into_rejects_plaintext_before_copy
+            );
+            run_test!(
+                double_into_rejects_insufficient_capacity,
+                $crate::test_suite::mul_pow2::test_double_into_rejects_insufficient_capacity
+            );
+            run_test!(
+                decrypt_wipes_scratch,
+                $crate::test_suite::encryption::test_decrypt_wipes_scratch
+            );
+            run_test!(
+                decrypt_rejects_alignment_on_empty_arena,
+                $crate::test_suite::encryption::test_decrypt_rejects_alignment_on_empty_arena
+            );
+            run_test!(
+                encrypt_sk_rejects_plaintext_base2k_mismatch,
+                $crate::test_suite::encryption::test_encrypt_sk_rejects_plaintext_base2k_mismatch
+            );
+            run_test!(
+                eval_approximation_rejects_insufficient_capacity,
+                $crate::test_suite::polynomial_evaluation::test_eval_approximation_rejects_insufficient_capacity
+            );
+            run_test!(
+                encode_coeffs_into_rejects_coefficient_count,
+                $crate::test_suite::encoding::test_encode_coeffs_into_rejects_coefficient_count
+            );
+            run_test!(
+                encode_reim_into_rejects_slot_counts,
+                $crate::test_suite::encoding::test_encode_reim_into_rejects_slot_counts
+            );
             run_params_test!(
                 bootstrapping_standard_e2e,
                 $crate::test_suite::bootstrapping::test_bootstrapping_standard_e2e
@@ -1010,6 +1101,14 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::bootstrapping::test_bootstrapping_s2c_first_e2e
             );
             run_test!(fold_unfold, $crate::test_suite::fold::test_fold_unfold);
+            run_test!(
+                fold_rejects_invalid_operands,
+                $crate::test_suite::fold::test_fold_rejects_invalid_operands
+            );
+            run_test!(
+                unfold_rejects_invalid_operands,
+                $crate::test_suite::fold::test_unfold_rejects_invalid_operands
+            );
             run_test!(
                 functional_bootstrapping_e2e,
                 $crate::test_suite::functional_bootstrapping::test_functional_bootstrapping_e2e

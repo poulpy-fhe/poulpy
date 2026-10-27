@@ -67,13 +67,22 @@ pub unsafe trait CKKSConjugateImpl: Backend<Ring = Standard> {
     }
 
     /// Scratch bound of [`Self::ckks_conjugate_with_key_into`] and [`Self::ckks_conjugate_with_key_assign`]; may report
-    /// less than the reference, never less than the body takes. It also bounds the conjugate and conjugate-rotate
-    /// forms, which call them.
-    fn ckks_conjugate_tmp_bytes<C: GLWEInfos, K: GGLWEInfos>(module: &Module<Self>, ct_infos: &C, key_infos: &K) -> usize;
+    /// less than the reference, never less than the body takes.
+    fn ckks_conjugate_with_key_tmp_bytes<C: GLWEInfos, K: GGLWEInfos>(
+        module: &Module<Self>,
+        ct_infos: &C,
+        key_infos: &K,
+    ) -> usize;
+
+    /// Default body: `ckks_conjugate_tmp_bytes_derived`, [`Self::ckks_conjugate_with_key_tmp_bytes`]. Bounds
+    /// [`Self::ckks_conjugate_into`], [`Self::ckks_conjugate_rotate_into`] and [`Self::ckks_conjugate_assign`].
+    fn ckks_conjugate_tmp_bytes<C: CKKSCtBounds, K: GGLWEInfos>(module: &Module<Self>, ct_infos: &C, key_infos: &K) -> usize {
+        super::derived::conjugate::ckks_conjugate_tmp_bytes_derived(module, ct_infos, key_infos)
+    }
 
     /// Hook without an API twin. Reproduces
     /// [`ckks_conjugate_with_key_into_reference`](crate::reference::conjugate::CKKSConjugateReference::ckks_conjugate_with_key_into_reference)
-    /// bit for bit, within [`Self::ckks_conjugate_tmp_bytes`]; free in kernels and scratch use. The caller hands the
+    /// bit for bit, within [`Self::ckks_conjugate_with_key_tmp_bytes`]; free in kernels and scratch use. The caller hands the
     /// automorphism key it looked up, and the hook stamps the output metadata as the reference does.
     fn ckks_conjugate_with_key_into<Dst, Src>(
         module: &Module<Self>,
@@ -88,7 +97,7 @@ pub unsafe trait CKKSConjugateImpl: Backend<Ring = Standard> {
 
     /// Hook without an API twin. Reproduces
     /// [`ckks_conjugate_with_key_assign_reference`](crate::reference::conjugate::CKKSConjugateReference::ckks_conjugate_with_key_assign_reference)
-    /// bit for bit, within [`Self::ckks_conjugate_tmp_bytes`]; free in kernels and scratch use. The caller hands the
+    /// bit for bit, within [`Self::ckks_conjugate_with_key_tmp_bytes`]; free in kernels and scratch use. The caller hands the
     /// automorphism key it looked up, and the hook stamps the output metadata as the reference does.
     fn ckks_conjugate_with_key_assign<Dst>(
         module: &Module<Self>,
@@ -105,12 +114,12 @@ pub unsafe trait CKKSConjugateImpl: Backend<Ring = Standard> {
 macro_rules! impl_ckks_conjugate_reference_full {
     ($be:ty) => {
         unsafe impl $crate::oep::CKKSConjugateImpl for $be {
-            fn ckks_conjugate_tmp_bytes<C: ::poulpy_core::layouts::GLWEInfos, K: ::poulpy_core::layouts::GGLWEInfos>(
+            fn ckks_conjugate_with_key_tmp_bytes<C: ::poulpy_core::layouts::GLWEInfos, K: ::poulpy_core::layouts::GGLWEInfos>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 ct_infos: &C,
                 key_infos: &K,
             ) -> usize {
-                $crate::reference::conjugate::CKKSConjugateReference::ckks_conjugate_tmp_bytes_reference(
+                $crate::reference::conjugate::CKKSConjugateReference::ckks_conjugate_with_key_tmp_bytes_reference(
                     module, ct_infos, key_infos,
                 )
             }

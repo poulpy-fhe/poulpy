@@ -22,7 +22,7 @@ where
     Ok(res)
 }
 
-/// As [`ckks_prepare_left`], a right operand.
+/// As [`ckks_prepare_left_derived`], for a right operand.
 pub(crate) fn ckks_prepare_right_derived<BE, A>(
     module: &Module<BE>,
     a: &A,

@@ -1,7 +1,9 @@
 //! Format compositions over the selected CKKS DFT and arithmetic contracts.
 use crate::api::{CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSDFTOps, CKKSImagOps, CKKSRotateOps, CKKSSubOps, LtDiagonalMeta};
-use crate::layouts::{CKKSModuleAlloc, DFTMatrix, DFTMatrixPrepared, Decode, Encode, Repack, Split, Standard};
-use crate::oep::DFTImpl;
+use crate::layouts::{
+    CKKSModuleAlloc, DFTMatrix, DFTMatrixPrepared, Decode, Encode, Repack, ScratchArenaTakeCKKS, Split, Standard,
+};
+use crate::oep::CKKSDFTImpl;
 use crate::{CKKSCtBounds, CKKSResult as Result, SetCKKSInfos, SlotsKind};
 use poulpy_core::DiagonalProd;
 use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, IntPolyInfos, LinearTransformation};
@@ -14,7 +16,7 @@ pub(crate) fn ckks_prepare_dft_matrix_alloc_derived<BE, Dir, Fmt, P>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<DFTMatrixPrepared<BE, Dir, Fmt>>
 where
-    BE: DFTImpl,
+    BE: CKKSDFTImpl,
     P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + DiagonalProd<BE>,
 {
     let mut res = module.ckks_dft_matrix_prepared_alloc_from_infos(dft);
@@ -101,10 +103,12 @@ where
     module.ckks_conjugate_into(ct_imag, ct_real, keys, scratch)?;
 
     // tmp := z − conj(z); ct_real := z + conj(z) = 2·Re(z); ct_imag := −i·tmp = 2·Im(z).
-    let mut tmp = module.ckks_ciphertext_alloc_from_infos(ct_real);
-    module.ckks_sub_into(&mut tmp, ct_real, ct_imag, scratch)?;
-    module.ckks_add_assign(ct_real, ct_imag, scratch)?;
-    module.ckks_div_i_into(ct_imag, &tmp, scratch)?;
+    scratch.scope(|scratch_local| -> Result<()> {
+        let (mut tmp, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(&*ct_real);
+        module.ckks_sub_into(&mut tmp, ct_real, ct_imag, &mut scratch_local.borrow())?;
+        module.ckks_add_assign(ct_real, ct_imag, &mut scratch_local.borrow())?;
+        module.ckks_div_i_into(ct_imag, &tmp, &mut scratch_local)
+    })?;
     // Both halves are the (real) coefficients of the input polynomial.
     ct_real.set_slots(SlotsKind::Real);
     ct_imag.set_slots(SlotsKind::Real);
@@ -177,16 +181,18 @@ where
     module.ckks_dft_evaluate_assign(ct_out, dft, keys, scratch)?;
 
     // conj := conj(z); imag := −i·(z − conj) = 2·Im(z); ct_out := z + conj = 2·Re(z).
-    let mut conj = module.ckks_ciphertext_alloc_from_infos(ct_out);
-    module.ckks_conjugate_into(&mut conj, ct_out, keys, scratch)?;
-    let mut imag = module.ckks_ciphertext_alloc_from_infos(ct_out);
-    module.ckks_sub_into(&mut imag, ct_out, &conj, scratch)?;
-    module.ckks_div_i_assign(&mut imag, scratch)?;
-    module.ckks_add_assign(ct_out, &conj, scratch)?;
+    scratch.scope(|scratch_local| -> Result<()> {
+        let (mut conj, scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(&*ct_out);
+        let (mut imag, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(&*ct_out);
+        module.ckks_conjugate_into(&mut conj, ct_out, keys, &mut scratch_local.borrow())?;
+        module.ckks_sub_into(&mut imag, ct_out, &conj, &mut scratch_local.borrow())?;
+        module.ckks_div_i_assign(&mut imag, &mut scratch_local.borrow())?;
+        module.ckks_add_assign(ct_out, &conj, &mut scratch_local.borrow())?;
 
-    // Repack: rotate Im by `slots` and add into Re → [Re | Im] per 2·slots period.
-    module.ckks_rotate_assign(slots, &mut imag, keys, scratch)?;
-    module.ckks_add_assign(ct_out, &imag, scratch)?;
+        // Repack: rotate Im by `slots` and add into Re → [Re | Im] per 2·slots period.
+        module.ckks_rotate_assign(slots, &mut imag, keys, &mut scratch_local.borrow())?;
+        module.ckks_add_assign(ct_out, &imag, &mut scratch_local)
+    })?;
 
     // The repack doubles the live slot count.
     let log_sparsity = ct_in.log_sparsity().saturating_sub(1);

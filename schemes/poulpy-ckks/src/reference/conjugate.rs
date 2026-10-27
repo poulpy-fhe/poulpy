@@ -8,7 +8,7 @@ use poulpy_hal::layouts::{Backend, ScratchArena};
 use crate::{CKKSInfos, SetCKKSInfos, checked_log_budget_sub, ckks_offset_unary};
 
 pub trait CKKSConjugateReference<BE: Backend> {
-    fn ckks_conjugate_tmp_bytes_reference<C, K>(&self, ct_infos: &C, key_infos: &K) -> usize
+    fn ckks_conjugate_with_key_tmp_bytes_reference<C, K>(&self, ct_infos: &C, key_infos: &K) -> usize
     where
         C: GLWEInfos,
         K: GGLWEInfos,
