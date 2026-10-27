@@ -254,10 +254,24 @@ fn tile_pass(
         r = u >> lw;
         w = u - (r << lw);
     }
-    let tile = (CUBE_POS << lw) + w;
-    let p = tile >> rest;
-    let ti = tile - (p << rest);
-    let active = p < polys as usize;
+    let mut tile = (CUBE_POS << lw) + w;
+    let mut p = tile >> rest;
+    let mut ti = tile - (p << rest);
+    let mut active = p < polys as usize;
+    // A launch that loads coefficients reads each of them once per prime: the
+    // workgroups of the four planes of a limb take the same columns in turn,
+    // so that the planes after the first read the coefficients from the cache.
+    if comptime!(source != SOURCE_RESIDUES && rest >= lw) {
+        let cube = CUBE_POS;
+        let groups = rest - lw;
+        let prime = cube & 3usize;
+        let group = (cube >> 2usize) & ((1usize << groups) - 1usize);
+        let limb = cube >> (groups + 2usize);
+        p = (limb << 2usize) + prime;
+        tile = (group << lw) + w;
+        ti = tile;
+        active = p < polys as usize;
+    }
     let limb = p >> 2usize;
     let pi = u32::cast_from(p) & 3u32;
     let q = sel4(pi, c.q);
