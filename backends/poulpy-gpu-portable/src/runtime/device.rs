@@ -44,6 +44,12 @@ pub struct NttGeometry {
     pub log_threads: u32,
     /// log2 of the least number of tiles in a workgroup.
     pub log_tiles: u32,
+    /// log2 of the least number of tiles in a workgroup of a launch on
+    /// strided columns: its loads and stores are runs of that many adjacent
+    /// words.
+    pub log_strided_tiles: u32,
+    /// log2 of the most lanes a workgroup holds in shared memory.
+    pub log_shared_lanes: u32,
 }
 
 impl NttGeometry {
@@ -60,6 +66,16 @@ impl NttGeometry {
         max_stages: 12,
         log_threads: 7,
         log_tiles: 3,
+        log_strided_tiles: 3,
+        log_shared_lanes: 12,
+    };
+
+    /// [`Self::GPU`] with 16 tiles at least on strided columns: runs of 64
+    /// bytes, two of the 32-byte sectors the memory serves. On an RTX 5090 the
+    /// strided launches of a bootstrap take 0.5 ms less.
+    pub const CUDA: Self = Self {
+        log_strided_tiles: 4,
+        ..Self::GPU
     };
 }
 
@@ -203,7 +219,7 @@ gpu_runtime!(
     Cuda,
     "cuda",
     GPU_GROUP,
-    NttGeometry::GPU,
+    NttGeometry::CUDA,
     |id| matches!(id, RuntimeId::Cuda)
 );
 

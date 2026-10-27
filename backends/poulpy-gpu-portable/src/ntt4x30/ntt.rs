@@ -77,17 +77,24 @@ struct Tile {
 impl Tile {
     /// `mt` stages as `ceil(mt / 4)` sub-passes of near-equal radix, with as
     /// many tiles per workgroup as reach the runtime's thread count (and its
-    /// least tile count) within 16 KiB of shared memory and 1024 threads.
+    /// least tile count, strided or not) within its shared memory and 1024
+    /// threads.
     fn new(geometry: NttGeometry, log_n: u32, first: u32, mt: u32, inverse: bool) -> Self {
         assert!((1..=MAX_TILE_STAGES).contains(&mt) && first + mt <= log_n);
         let nsubs = mt.div_ceil(4);
         let radix = |i: u32| mt / nsubs + (i < mt % nsubs) as u32;
         let log_tpt = mt - radix(nsubs - 1);
-        let mut log_w = geometry.log_threads.saturating_sub(log_tpt).max(geometry.log_tiles);
-        while log_w > 0 && (mt + log_w > 12 || log_tpt + log_w > 10) {
+        let least = if first + mt < log_n {
+            geometry.log_strided_tiles
+        } else {
+            geometry.log_tiles
+        };
+        let lanes = geometry.log_shared_lanes;
+        let mut log_w = geometry.log_threads.saturating_sub(log_tpt).max(least);
+        while log_w > 0 && (mt + log_w > lanes || log_tpt + log_w > 10) {
             log_w -= 1;
         }
-        assert!(mt + log_w <= 12 && log_tpt + log_w <= 10);
+        assert!(mt + log_w <= lanes && log_tpt + log_w <= 10);
         let (mut sub_k, mut sub_a) = ([0; MAX_SUBS], [0; MAX_SUBS]);
         for step in 0..nsubs {
             // Sub-passes in stage order are 0, 1, ..; the inverse runs them backwards.
