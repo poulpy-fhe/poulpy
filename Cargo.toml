@@ -15,6 +15,7 @@ members = [
     "backends/poulpy-cpu-oracle",
     "backends/poulpy-gpu-portable",
     "tools/poulpy-bench",
+    "tools/poulpy-release-bench",
 ]
 default-members = [
     "poulpy-hal",

@@ -3585,6 +3585,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "poulpy-release-bench"
+version = "0.9.0"
+dependencies = [
+ "anyhow",
+ "poulpy-ckks",
+ "poulpy-core",
+ "poulpy-cpu-arm",
+ "poulpy-cpu-avx",
+ "poulpy-cpu-avx512",
+ "poulpy-cpu-portable",
+ "poulpy-cpu-rayon",
+ "poulpy-gpu-portable",
+ "poulpy-hal",
+ "rayon",
+ "serde_json",
+]
+
+[[package]]
 name = "powerfmt"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -1,0 +1,44 @@
+[package]
+name = "poulpy-release-bench"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Release measurements of the CKKS bootstrapping presets on every backend"
+repository.workspace = true
+homepage.workspace = true
+publish = false
+readme = "README.md"
+
+# One feature per build of `tools/release_bench.py`. A build only enables the
+# backends that share its target flags, so that a backend is never measured
+# with the code generation of a wider instruction set.
+[features]
+portable-rayon = ["dep:poulpy-cpu-rayon", "poulpy-cpu-rayon/enable-ckks"]
+avx = ["dep:poulpy-cpu-avx", "poulpy-cpu-avx/enable-avx", "poulpy-cpu-avx/enable-ckks", "poulpy-cpu-avx/enable-rayon"]
+avx512 = [
+    "dep:poulpy-cpu-avx512",
+    "poulpy-cpu-avx512/enable-avx512f",
+    "poulpy-cpu-avx512/enable-ckks",
+    "poulpy-cpu-avx512/enable-rayon",
+]
+ifma = ["avx512", "poulpy-cpu-avx512/enable-ifma"]
+neon = ["dep:poulpy-cpu-arm", "poulpy-cpu-arm/enable-neon", "poulpy-cpu-arm/enable-ckks", "poulpy-cpu-arm/enable-rayon"]
+cuda = ["dep:poulpy-gpu-portable", "poulpy-gpu-portable/enable-cuda", "poulpy-gpu-portable/enable-ckks"]
+hip = ["dep:poulpy-gpu-portable", "poulpy-gpu-portable/enable-hip", "poulpy-gpu-portable/enable-ckks"]
+metal = ["dep:poulpy-gpu-portable", "poulpy-gpu-portable/enable-metal", "poulpy-gpu-portable/enable-ckks"]
+vulkan = ["dep:poulpy-gpu-portable", "poulpy-gpu-portable/enable-vulkan", "poulpy-gpu-portable/enable-ckks"]
+
+[dependencies]
+anyhow = {workspace = true}
+rayon = {workspace = true}
+serde_json = {workspace = true}
+poulpy-hal = {workspace = true}
+poulpy-core = {workspace = true}
+poulpy-ckks = {workspace = true, features = ["test-utils"]}
+# The portable backend is always measured, and is the client of the GPU backends.
+poulpy-cpu-portable = {workspace = true, features = ["enable-ckks"]}
+poulpy-cpu-rayon = {workspace = true, optional = true}
+poulpy-cpu-avx = {workspace = true, optional = true}
+poulpy-cpu-avx512 = {workspace = true, optional = true}
+poulpy-cpu-arm = {workspace = true, optional = true}
+poulpy-gpu-portable = {workspace = true, optional = true}
