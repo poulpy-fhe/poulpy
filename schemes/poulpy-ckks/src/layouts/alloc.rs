@@ -2,9 +2,12 @@ use poulpy_core::layouts::{
     Base2K, Degree, GLWEInfos, GLWEPlaintextLayout, GetDegree, LinearTransformation, LinearTransformationDiagonal,
     LinearTransformationGiantStep, LinearTransformationLayout, ModuleCoreAlloc, Rank, TorusPrecision,
 };
-use poulpy_hal::layouts::{Backend, Module};
+use poulpy_hal::{
+    AlignedBuf, alloc_aligned,
+    layouts::{Backend, Module, VecZnx},
+};
 
-use crate::{CKKSInfos, GLWEPlaintextMeta, SetCKKSInfos, api::CKKSModuleInfos};
+use crate::{CKKSInfos, CKKSResult, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotsKind, api::CKKSModuleInfos, ckks_log_delta};
 
 use super::{CKKSCiphertext, CKKSCiphertextOwned, CKKSPlaintext, CKKSPlaintextOwned};
 
@@ -136,6 +139,47 @@ pub trait CKKSModuleAlloc<BE: Backend>:
 impl<BE: Backend> CKKSModuleAlloc<BE> for Module<BE> where
     Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
 {
+}
+
+/// Builds the backend-resident constant-`1.0` plaintext of the add-one and
+/// sub-one operations: a degree-1 monomial at scale `2^1`, at `base2k`,
+/// allocated and uploaded at each call. A backend that caches it keeps the
+/// result per module and radix.
+pub fn ckks_one_pt<BE, M>(module: &M, base2k: Base2K) -> CKKSResult<CKKSPlaintextOwned<BE>>
+where
+    BE: Backend,
+    M: CKKSModuleAlloc<BE> + ?Sized,
+{
+    let meta = GLWEPlaintextMeta {
+        scale: Scale::Log(1),
+        slots: SlotsKind::Real,
+        log_sparsity: 0,
+    };
+
+    // Monomial plaintext: total torus width is `log_delta` (budget 0).
+    let k_total: usize = ckks_log_delta(&meta);
+
+    // The constant is integer-exact: 1.0 at scale `2^log_delta` is the single
+    // coefficient `1 << log_delta`, so its limbs are built on the host with the
+    // integer codec and uploaded as raw bytes (no float codec, no transfer op).
+    let size = k_total.div_ceil(base2k.as_usize());
+    let mut limbs = VecZnx::<AlignedBuf, i64>::from_data(
+        alloc_aligned::<u8>(VecZnx::<AlignedBuf, i64>::bytes_of(1, 1, size)),
+        1,
+        1,
+        size,
+    );
+    limbs.encode_vec_i64(
+        base2k.as_usize(),
+        0,
+        size * base2k.as_usize(),
+        &[1i64 << ckks_log_delta(&meta)],
+    );
+
+    let mut pt = module.ckks_pt_coeffs_alloc(1, base2k, k_total.into());
+    pt.set_meta(meta);
+    pt.copy_from_host_bytes::<BE>(limbs.data().as_slice());
+    Ok(pt)
 }
 
 #[cfg(test)]

@@ -48,12 +48,33 @@ pub struct NttGeometry {
 
 impl NttGeometry {
     /// A GPU: up to twelve stages per launch, workgroups of 128 threads and 8 tiles at least.
+    ///
+    /// Twelve stages: a tile of `2^12` lanes fills the 16 KiB of workgroup
+    /// memory WebGPU guarantees. 128 threads and 8 tiles: on an Apple M5 Pro
+    /// (Metal through wgpu, CubeCL 0.11.3), no neighbour (64 or 256 threads,
+    /// 4 or 16 tiles) runs `vec_znx_dft_apply` or `vec_znx_idft_apply` of the
+    /// standard bench at degrees `2^13` to `2^15` faster beyond the 3% between
+    /// two baseline runs, while 64 threads is up to 20% slower and 4 or 16
+    /// tiles up to 8% slower.
     pub const GPU: Self = Self {
         max_stages: 12,
         log_threads: 7,
         log_tiles: 3,
     };
 }
+
+/// Workgroup size of every runtime: the default `maxComputeInvocationsPerWorkgroup`
+/// of WebGPU, so the largest workgroup every target accepts without a raised
+/// limit, and a whole number of 32-thread warps and SIMD-groups and of
+/// 64-thread wavefronts.
+#[cfg(any(
+    feature = "enable-cuda",
+    feature = "enable-hip",
+    feature = "enable-metal",
+    feature = "enable-vulkan",
+    feature = "enable-wgpu"
+))]
+const GPU_GROUP: u32 = 256;
 
 /// A CubeCL runtime a backend type is bound to: one of the markers of this
 /// crate. The trait cannot be implemented outside it.
@@ -71,8 +92,6 @@ pub trait GpuRuntime: RuntimeDevice {
 /// What the kernels and the buffers need of a runtime.
 pub trait RuntimeDevice: Send + Sync + 'static {
     /// Threads per workgroup of the kernels whose threads are independent.
-    /// A GPU runs a workgroup on one of its cores at no cost per thread;
-    /// CubeCL's CPU runtime gives every thread of a workgroup its own task.
     const GROUP: u32;
 
     /// The launches and workgroups of the transform.
@@ -139,7 +158,7 @@ fn device_client(name: &str, index: usize, accept: impl Fn(RuntimeId) -> bool) -
     feature = "enable-wgpu"
 ))]
 macro_rules! gpu_runtime {
-    ($(#[$attr:meta])* $marker:ident, $name:literal, $group:literal, $ntt:expr, $accept:expr) => {
+    ($(#[$attr:meta])* $marker:ident, $name:literal, $group:expr, $ntt:expr, $accept:expr) => {
         $(#[$attr])*
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
         pub struct $marker;
@@ -183,7 +202,7 @@ gpu_runtime!(
     /// CubeCL's CUDA runtime.
     Cuda,
     "cuda",
-    256,
+    GPU_GROUP,
     NttGeometry::GPU,
     |id| matches!(id, RuntimeId::Cuda)
 );
@@ -193,7 +212,7 @@ gpu_runtime!(
     /// CubeCL's HIP runtime.
     Hip,
     "hip",
-    256,
+    GPU_GROUP,
     NttGeometry::GPU,
     |id| matches!(id, RuntimeId::Hip)
 );
@@ -203,7 +222,7 @@ gpu_runtime!(
     /// CubeCL's wgpu runtime: Metal, Vulkan and the other wgpu targets.
     Wgpu,
     "wgpu",
-    256,
+    GPU_GROUP,
     NttGeometry::GPU,
     |id| matches!(id, RuntimeId::Wgpu)
 );

@@ -44,8 +44,12 @@ cross_backend_test_suite! {
         test_vec_znx_switch_ring_matches_wrapper => poulpy_hal::test_suite::vec_znx::test_vec_znx_switch_ring_matches_wrapper,
         test_vec_znx_copy_matches_wrapper => poulpy_hal::test_suite::vec_znx::test_vec_znx_copy_matches_wrapper,
         test_vec_znx_ci_embed_trace => poulpy_hal::test_suite::vec_znx::test_vec_znx_ci_embed_trace,
+        test_scalar_znx_ci_embed => poulpy_hal::test_suite::vec_znx::test_scalar_znx_ci_embed,
         test_vec_znx_add_matches_reference => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_matches_reference,
         test_vec_znx_add_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_assign,
+        test_mat_znx_add_assign => poulpy_hal::test_suite::mat_znx::test_mat_znx_add_assign,
+        test_mat_znx_copy => poulpy_hal::test_suite::mat_znx::test_mat_znx_copy,
+        test_mat_znx_normalize => poulpy_hal::test_suite::mat_znx::test_mat_znx_normalize,
         test_vec_znx_add_scalar_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_scalar_assign,
         test_vec_znx_sub => poulpy_hal::test_suite::vec_znx::test_vec_znx_sub,
         test_vec_znx_sub_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_sub_assign,
@@ -60,6 +64,7 @@ cross_backend_test_suite! {
         test_vec_znx_rotate_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_rotate_assign,
         test_vec_znx_automorphism => poulpy_hal::test_suite::vec_znx::test_vec_znx_automorphism,
         test_vec_znx_automorphism_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_automorphism_assign,
+        test_scalar_znx_automorphism => poulpy_hal::test_suite::vec_znx::test_scalar_znx_automorphism,
         test_vec_znx_mul_xp_minus_one => poulpy_hal::test_suite::vec_znx::test_vec_znx_mul_xp_minus_one,
         test_vec_znx_mul_xp_minus_one_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_mul_xp_minus_one_assign,
         test_vec_znx_normalize => poulpy_hal::test_suite::vec_znx::test_vec_znx_normalize,
@@ -388,6 +393,7 @@ cross_backend_test_suite! {
         test_vmp_extract_selected_rows => poulpy_hal::test_suite::vmp::test_vmp_extract_selected_rows,
         test_vmp_apply_dft_to_dft_add => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft_add,
         test_vmp_zero => poulpy_hal::test_suite::vmp::test_vmp_zero,
+        test_word_compat_prepare_hint_sizes => poulpy_hal::test_suite::word_compat::test_word_compat_prepare_hint_sizes,
     }
 }
 

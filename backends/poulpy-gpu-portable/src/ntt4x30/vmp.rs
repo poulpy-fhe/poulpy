@@ -269,8 +269,8 @@ pub(crate) fn digit_product<RT: GpuRuntime>(
     let block = 4 * n;
     assert!(dsize >= 1, "digit size must be positive");
     assert!(res.n == n && a.n == n, "vector-matrix product between different degrees");
-    assert_eq!(a.stride as usize, pmat.cols_in * block, "a.cols() != pmat.cols_in()");
-    assert_eq!(res.stride as usize, pmat.cols_out * block, "res.cols() != pmat.cols_out()");
+    assert!(a.stride as usize == pmat.cols_in * block, "a.cols() != pmat.cols_in()");
+    assert!(res.stride as usize == pmat.cols_out * block, "res.cols() != pmat.cols_out()");
     let limbs = a.size.min(pmat.rows * dsize);
     if res.size == 0 {
         return;

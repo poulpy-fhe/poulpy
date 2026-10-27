@@ -13,7 +13,7 @@ use crate::{
     module::handle,
     ntt4x30::{AutomorphismPlan, DftColumn, DftTerm, automorphism, combine, forward, inverse, to_big},
     runtime::GpuRuntime,
-    znx::{Column, Term, lincomb, normalize_residues},
+    znx::{Column, KERNEL_RADIX, Term, lincomb, normalize, normalize_residues},
 };
 
 impl<RT: GpuRuntime, R: Ring> MaxBase2k for NTT4x30Gpu<RT, R> {
@@ -60,7 +60,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxDftImpl for NTT4x30Gpu<RT, R> {
         assert_dense(a, "vec_znx_dft_apply");
         assert!(step >= 1, "vec_znx_dft_apply: step must be >= 1");
         check_degree::<Self>(module.n(), res.n());
-        assert_eq!(a.n(), res.n(), "vec_znx_dft_apply: a.n() != res.n()");
+        assert!(a.n() == res.n(), "vec_znx_dft_apply: a.n() != res.n()");
         let Some(res) = dft_column_mut(res, res_col) else { return };
         let a = column_ref(a, a_col);
         let limbs = a.as_ref().map_or(0, |a| selected_limbs(res.size, a.size, step, offset));
@@ -91,7 +91,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxDftImpl for NTT4x30Gpu<RT, R> {
     ) {
         assert_dense(res, "vec_znx_idft_apply");
         check_degree::<Self>(module.n(), res.n());
-        assert_eq!(a.n(), res.n(), "vec_znx_idft_apply: a.n() != res.n()");
+        assert!(a.n() == res.n(), "vec_znx_idft_apply: a.n() != res.n()");
         let Some(res) = big_column_mut(res, res_col) else { return };
         let limbs = res.size.min(a.size());
         let Some(a) = dft_column_ref(a, a_col).filter(|_| limbs != 0) else {
@@ -132,16 +132,37 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxDftImpl for NTT4x30Gpu<RT, R> {
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
         check_degree::<Self>(module.n(), a.n());
-        assert_eq!(res.n(), a.n(), "vec_znx_idft_normalize: res.n() != a.n()");
+        assert!(res.n() == a.n(), "vec_znx_idft_normalize: res.n() != a.n()");
         let Some(res) = column_mut(res, res_col) else { return };
         let a = dft_column_mut(a, a_col).expect("vec_znx_idft_normalize: a holds no storage");
         let addend = addend.and_then(|(addend, col)| {
-            assert_eq!(addend.n(), a.n, "vec_znx_idft_normalize: addend.n() != a.n()");
+            assert!(addend.n() == a.n, "vec_znx_idft_normalize: addend.n() != a.n()");
             column_ref(addend, col)
         });
-        let tables = handle(module).tables();
+        let handle = handle(module);
+        let tables = handle.tables();
         inverse::<RT>(tables, &a, &a, a.size);
-        normalize_residues::<RT>(tables, &res, res_base2k, res_k, res_offset, &a, addend.as_ref(), a_base2k);
+        if res_base2k <= KERNEL_RADIX && a_base2k <= KERNEL_RADIX {
+            normalize_residues::<RT>(tables, &res, res_base2k, res_k, res_offset, &a, addend.as_ref(), a_base2k);
+            return;
+        }
+        // The radices the kernel does not handle: the reconstructed `i128`
+        // values take the host stage of `normalize`.
+        handle.with_temp(a.size * a.n * size_of::<i128>(), |temp| {
+            let big = Column {
+                binding: temp.view().binding().expect("temporary holds storage"),
+                base: 0,
+                stride: 2 * a.n as u32,
+                words: 2,
+                n: a.n,
+                size: a.size,
+            };
+            to_big::<RT>(tables, &big, &a);
+            if let Some(addend) = &addend {
+                lincomb::<RT>(&big, big.size.min(addend.size), Term::plus(&big), Term::plus(addend));
+            }
+            normalize::<RT>(&res, res_base2k, res_k, res_offset, &big, a_base2k);
+        });
     }
 
     fn vec_znx_dft_add(
@@ -219,7 +240,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxDftImpl for NTT4x30Gpu<RT, R> {
         a: &VecZnxDftBackendRef<'_, Self>,
         a_col: usize,
     ) {
-        assert_eq!(res.n(), a.n(), "vec_znx_dft_copy: res.n() != a.n()");
+        assert!(res.n() == a.n(), "vec_znx_dft_copy: res.n() != a.n()");
         assert!(step >= 1, "vec_znx_dft_copy: step must be >= 1");
         let Some(res) = dft_column_mut(res, res_col) else { return };
         let a = dft_column_ref(a, a_col).unwrap_or_else(|| empty_dft_like(&res));
@@ -248,7 +269,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxDftImpl for NTT4x30Gpu<RT, R> {
         a_col: usize,
     ) {
         check_degree::<Self>(module.n(), res.n());
-        assert_eq!(a.n(), res.n(), "vec_znx_dft_automorphism: a.n() != res.n()");
+        assert!(a.n() == res.n(), "vec_znx_dft_automorphism: a.n() != res.n()");
         let Some(res) = dft_column_mut(res, res_col) else { return };
         let a = dft_column_ref(a, a_col).unwrap_or_else(|| empty_dft_like(&res));
         automorphism::<RT>(plan, &res, &a, false);
@@ -268,7 +289,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxDftImpl for NTT4x30Gpu<RT, R> {
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
         check_degree::<Self>(module.n(), res.n());
-        assert_eq!(a.n(), res.n(), "vec_znx_dft_automorphism_add: a.n() != res.n()");
+        assert!(a.n() == res.n(), "vec_znx_dft_automorphism_add: a.n() != res.n()");
         let Some(res) = dft_column_mut(res, res_col) else { return };
         let Some(a) = dft_column_ref(a, a_col) else { return };
         automorphism::<RT>(plan, &res, &a, true);

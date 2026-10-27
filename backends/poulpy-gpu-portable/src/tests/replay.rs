@@ -38,16 +38,6 @@ fn body(module: &Module<Gpu>, res: &mut Vector, a: &Vector) {
 }
 
 #[test]
-#[cfg_attr(
-    not(any(
-        feature = "enable-cuda",
-        feature = "enable-hip",
-        feature = "enable-metal",
-        feature = "enable-vulkan",
-        feature = "enable-wgpu"
-    )),
-    ignore = "CubeCL's CPU runtime records no graph"
-)]
 fn a_replay_redoes_the_closure() {
     let module = Module::<Gpu>::new(N as u64);
     let a = vector(|i| i as i64, 2);
@@ -85,16 +75,6 @@ fn a_check_accepts_a_closure_that_repeats_itself() {
 
 #[test]
 #[should_panic(expected = "does not repeat its recording")]
-#[cfg_attr(
-    not(any(
-        feature = "enable-cuda",
-        feature = "enable-hip",
-        feature = "enable-metal",
-        feature = "enable-vulkan",
-        feature = "enable-wgpu"
-    )),
-    ignore = "CubeCL's CPU runtime records no graph"
-)]
 fn a_check_catches_a_closure_that_changes() {
     let module = Module::<Gpu>::new(N as u64);
     let a = vector(|i| i as i64, 2);
@@ -129,16 +109,6 @@ fn a_closure_that_touches_the_host_is_called_at_every_replay() {
 }
 
 #[test]
-#[cfg_attr(
-    not(any(
-        feature = "enable-cuda",
-        feature = "enable-hip",
-        feature = "enable-metal",
-        feature = "enable-vulkan",
-        feature = "enable-wgpu"
-    )),
-    ignore = "CubeCL's CPU runtime records no graph"
-)]
 fn a_replay_calls_the_closure_once_a_bound_buffer_is_dropped() {
     let module = Module::<Gpu>::new(N as u64);
     let a = RefCell::new(vector(|i| i as i64, 2));
@@ -162,16 +132,6 @@ fn a_replay_calls_the_closure_once_a_bound_buffer_is_dropped() {
 /// A capture window records the launches of every thread: the launches of
 /// another thread must wait for it and still take effect.
 #[test]
-#[cfg_attr(
-    not(any(
-        feature = "enable-cuda",
-        feature = "enable-hip",
-        feature = "enable-metal",
-        feature = "enable-vulkan",
-        feature = "enable-wgpu"
-    )),
-    ignore = "CubeCL's CPU runtime records no graph"
-)]
 fn another_thread_keeps_its_launches_while_a_closure_is_recorded() {
     const ROUNDS: usize = 400;
     let module = Module::<Gpu>::new(N as u64);
@@ -200,16 +160,6 @@ fn another_thread_keeps_its_launches_while_a_closure_is_recorded() {
 }
 
 #[test]
-#[cfg_attr(
-    not(any(
-        feature = "enable-cuda",
-        feature = "enable-hip",
-        feature = "enable-metal",
-        feature = "enable-vulkan",
-        feature = "enable-wgpu"
-    )),
-    ignore = "CubeCL's CPU runtime records no graph"
-)]
 fn a_closure_that_panics_leaves_the_device_usable() {
     let module = Module::<Gpu>::new(N as u64);
     let a = vector(|i| i as i64, 2);

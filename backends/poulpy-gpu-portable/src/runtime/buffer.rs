@@ -6,9 +6,11 @@
 //! written by one kernel.
 
 use std::{
+    any::TypeId,
+    collections::BTreeMap,
     marker::PhantomData,
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicBool, Ordering},
     },
 };
@@ -102,6 +104,28 @@ pub(crate) mod parked {
     }
 }
 
+/// The owned allocations alive, by id, with their runtime. CubeCL reports a
+/// launch failure on the buffers the launch writes, not at the barrier, so
+/// [`synchronize`] asks about each of them.
+static LIVE: Mutex<BTreeMap<u64, (TypeId, Handle)>> = Mutex::new(BTreeMap::new());
+
+fn live() -> std::sync::MutexGuard<'static, BTreeMap<u64, (TypeId, Handle)>> {
+    LIVE.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// Waits for the work queued on the runtime and panics on a failure it
+/// reports: a device fault, or a launch failure a live allocation carries.
+pub(crate) fn synchronize<RT: GpuRuntime>() {
+    let handles: Vec<Handle> = live()
+        .values()
+        .filter(|(runtime, _)| *runtime == TypeId::of::<RT>())
+        .map(|(_, handle)| handle.clone())
+        .collect();
+    let _access = access::shared();
+    pollster::block_on(RT::client().sync_buffers(handles.iter()))
+        .unwrap_or_else(|error| panic!("device synchronization failed: {error:?}"));
+}
+
 fn allocate<RT: GpuRuntime>(len: usize) -> Option<Allocation> {
     if len == 0 {
         return None;
@@ -130,11 +154,12 @@ fn allocate<RT: GpuRuntime>(len: usize) -> Option<Allocation> {
             // An allocation the device refused only fails the launches that
             // bind it, and silently when nothing reads their results back.
             if let Err(error) = client.check([&handle]) {
-                panic!("device allocation of {reserved} bytes failed: {error:?}");
+                panic!("device allocation failed: {error:?}");
             }
             handle
         }
     };
+    live().insert(id, (TypeId::of::<RT>(), handle.clone()));
     Some(Allocation {
         id,
         handle,
@@ -145,7 +170,7 @@ fn allocate<RT: GpuRuntime>(len: usize) -> Option<Allocation> {
 
 fn read<RT: GpuRuntime>(allocation: &Option<Allocation>, offset: usize, dst: &mut [u8]) {
     let Some(allocation) = allocation else {
-        assert!(dst.is_empty(), "read of {} bytes from an empty device buffer", dst.len());
+        assert!(dst.is_empty(), "read from an empty device buffer");
         return;
     };
     if dst.is_empty() {
@@ -167,8 +192,13 @@ fn read<RT: GpuRuntime>(allocation: &Option<Allocation>, offset: usize, dst: &mu
 }
 
 fn write<RT: GpuRuntime>(allocation: &Option<Allocation>, offset: usize, src: &[u8]) {
+    write_vec::<RT>(allocation, offset, src.to_vec());
+}
+
+/// [`write`] of a host copy the caller already owns: CubeCL takes it as is.
+fn write_vec<RT: GpuRuntime>(allocation: &Option<Allocation>, offset: usize, src: Vec<u8>) {
     let Some(allocation) = allocation else {
-        assert!(src.is_empty(), "write of {} bytes to an empty device buffer", src.len());
+        assert!(src.is_empty(), "write to an empty device buffer");
         return;
     };
     if src.is_empty() {
@@ -183,7 +213,23 @@ fn write<RT: GpuRuntime>(allocation: &Option<Allocation>, offset: usize, src: &[
         .offset_end((allocation.reserved - end) as u64);
     host_event(HostEvent::Write, allocation.id);
     let _access = access::shared();
-    RT::client().write(&handle, Bytes::from_bytes_vec(src.to_vec()));
+    RT::client().write(&handle, Bytes::from_bytes_vec(src));
+}
+
+/// Writes `src` at byte `offset` of `allocation` and zeroes the following
+/// `len - src.len()` bytes on the device, without a padded host copy when
+/// the zeroed range is 32-bit aligned.
+fn write_prefix_at<RT: GpuRuntime>(allocation: &Option<Allocation>, offset: usize, len: usize, src: &[u8]) {
+    assert!(src.len() <= len, "host slice longer than the device buffer");
+    let end = offset + src.len();
+    if end.is_multiple_of(4) && (offset + len).is_multiple_of(4) {
+        write::<RT>(allocation, offset, src);
+        zero::<RT>(allocation, end, len - src.len());
+    } else {
+        let mut padded = vec![0u8; len];
+        padded[..src.len()].copy_from_slice(src);
+        write_vec::<RT>(allocation, offset, padded);
+    }
 }
 
 fn allocation_of(binding: &Binding) -> Option<Allocation> {
@@ -193,6 +239,16 @@ fn allocation_of(binding: &Binding) -> Option<Allocation> {
         reserved: binding.reserved,
         owned: binding.owned.clone(),
     })
+}
+
+/// Zeroes a host copy of secret-derived words before it is freed, with
+/// volatile stores the compiler cannot drop as dead.
+pub(crate) fn wipe_host(bytes: &mut [u8]) {
+    for byte in bytes.iter_mut() {
+        // SAFETY: `byte` is a valid, exclusive reference.
+        unsafe { std::ptr::write_volatile(byte, 0) };
+    }
+    std::sync::atomic::compiler_fence(Ordering::SeqCst);
 }
 
 /// Reads `dst.len()` bytes at byte `offset` of the allocation `binding` views.
@@ -314,20 +370,17 @@ impl<RT: GpuRuntime> GpuBuf<RT> {
             allocation,
             _runtime: PhantomData,
         };
-        if let Some(allocation) = &buf.allocation {
-            if allocation.reserved == bytes.len() {
-                write::<RT>(&buf.allocation, 0, bytes);
-            } else {
-                let mut padded = vec![0u8; allocation.reserved];
-                padded[..bytes.len()].copy_from_slice(bytes);
-                write::<RT>(&buf.allocation, 0, &padded);
-            }
-        }
+        write_prefix_at::<RT>(&buf.allocation, 0, buf.len, bytes);
         buf
     }
 
     pub(crate) fn len(&self) -> usize {
         self.len
+    }
+
+    /// Zeroes the whole allocation on the device.
+    pub(crate) fn wipe(&mut self) {
+        zero::<RT>(&self.allocation, 0, self.len);
     }
 
     pub(crate) fn to_host(&self) -> Vec<u8> {
@@ -338,11 +391,7 @@ impl<RT: GpuRuntime> GpuBuf<RT> {
 
     /// Writes `src` at the start of the buffer and zeroes the rest.
     pub(crate) fn write_prefix(&mut self, src: &[u8]) {
-        assert!(src.len() <= self.len, "host slice longer than the device buffer");
-        let Some(allocation) = &self.allocation else { return };
-        let mut padded = vec![0u8; allocation.reserved];
-        padded[..src.len()].copy_from_slice(src);
-        write::<RT>(&self.allocation, 0, &padded);
+        write_prefix_at::<RT>(&self.allocation, 0, self.len, src);
     }
 
     pub(crate) fn view(&self) -> GpuRef<'_, RT> {
@@ -426,7 +475,10 @@ macro_rules! view_common {
             }
 
             fn copy_to_host(&self, dst: &mut [u8]) {
-                assert_eq!(dst.len(), self.len);
+                assert!(
+                    dst.len() == self.len,
+                    "host slice length differs from the device buffer"
+                );
                 read::<RT>(&self.allocation, self.offset, dst);
             }
         }
@@ -465,14 +517,7 @@ impl<RT: GpuRuntime> GpuMut<'_, RT> {
 
     /// Writes `src` at the start of the view and zeroes the rest.
     pub(crate) fn write_prefix(&mut self, src: &[u8]) {
-        assert!(src.len() <= self.len, "host slice longer than the device view");
-        if src.len() == self.len {
-            write::<RT>(&self.allocation, self.offset, src);
-        } else {
-            let mut padded = vec![0u8; self.len];
-            padded[..src.len()].copy_from_slice(src);
-            write::<RT>(&self.allocation, self.offset, &padded);
-        }
+        write_prefix_at::<RT>(&self.allocation, self.offset, self.len, src);
     }
 }
 
@@ -482,7 +527,7 @@ impl<RT: GpuRuntime> CopyFromHost for GpuMut<'_, RT> {
     }
 
     fn copy_from_host(&mut self, src: &[u8]) {
-        assert_eq!(src.len(), self.len);
+        assert!(src.len() == self.len, "host slice length differs from the device buffer");
         write::<RT>(&self.allocation, self.offset, src);
     }
 }
@@ -491,6 +536,7 @@ impl<RT: GpuRuntime> Drop for GpuBuf<RT> {
     fn drop(&mut self) {
         if let Some(allocation) = &self.allocation {
             allocation.owned.store(false, Ordering::Release);
+            live().remove(&allocation.id);
             parked::park(allocation.reserved, &allocation.handle);
         }
     }
@@ -512,7 +558,7 @@ impl<RT: GpuRuntime> CopyToHost for GpuBuf<RT> {
     }
 
     fn copy_to_host(&self, dst: &mut [u8]) {
-        assert_eq!(dst.len(), self.len);
+        assert!(dst.len() == self.len, "host slice length differs from the device buffer");
         read::<RT>(&self.allocation, 0, dst);
     }
 }
@@ -523,7 +569,7 @@ impl<RT: GpuRuntime> CopyFromHost for GpuBuf<RT> {
     }
 
     fn copy_from_host(&mut self, src: &[u8]) {
-        assert_eq!(src.len(), self.len);
+        assert!(src.len() == self.len, "host slice length differs from the device buffer");
         self.write_prefix(src);
     }
 }

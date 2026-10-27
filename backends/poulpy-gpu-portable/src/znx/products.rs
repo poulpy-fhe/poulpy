@@ -213,7 +213,7 @@ pub(crate) fn inner_sum<RT: GpuRuntime>(res: &Column, res_coeff: usize, a: &Colu
         return;
     }
     launch!(
-        RT, Label::BigInnerSum, res.size * (a.n + 1) * 16, inner_sum_kernel, (res.size, 1, 1);
+        RT, Label::BigInnerSum, res.size * (a.n + 1) * 16, inner_sum_kernel, (res.size, RT::GROUP, RT::GROUP);
         [
             res.binding => u64,
             a.binding => u64,
@@ -297,7 +297,7 @@ pub(crate) fn convolution_by_const<RT: GpuRuntime>(
     accumulate: bool,
 ) {
     assert!(res.words == 2 && a.words == 1 && b.words == 1);
-    assert_eq!(a.n, res.n, "cnv_by_const_apply: a.n() != res.n()");
+    assert!(a.n == res.n, "cnv_by_const_apply: a.n() != res.n()");
     assert!(b_coeff < b.n || b.size == 0, "cnv_by_const_apply: b_coeff out of range");
     if res.size == 0 || res.n == 0 {
         return;

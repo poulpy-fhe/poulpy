@@ -114,7 +114,7 @@ pub mod plaintext;
 pub mod ship;
 pub(crate) mod validation;
 
-pub use alloc::CKKSModuleAlloc;
+pub use alloc::{CKKSModuleAlloc, ckks_one_pt};
 pub use approximation::PolynomialApproximation;
 pub use bootstrapping::{
     BootstrappingContext, BootstrappingContextUnprepared, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques,

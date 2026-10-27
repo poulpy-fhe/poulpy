@@ -162,8 +162,8 @@ fn to_big_kernel(
 /// `dft`, which holds the output of the inverse transform; limbs past `dft`'s
 /// are zero.
 pub(crate) fn to_big<RT: GpuRuntime>(tables: &Tables<RT>, res: &Column, dft: &DftColumn) {
-    assert_eq!(res.n, dft.n, "reconstruction between different degrees");
-    assert_eq!(res.words, 2, "reconstruction writes `i128` values");
+    assert!(res.n == dft.n, "reconstruction between different degrees");
+    assert!(res.words == 2, "reconstruction writes `i128` values");
     if res.size == 0 {
         return;
     }

@@ -203,7 +203,9 @@ fn convolution_kernel(
     }
 }
 
-/// Terms one launch of the sum sums.
+/// Terms one launch of the sum sums: the width of the signatures of
+/// `convolution_sum_kernel` and `convolution_scale_kernel`, which bind the
+/// operands of each term as buffers of their own (`a0..a3`, `b0..b3`).
 pub(crate) const SUM_TERMS: usize = 4;
 
 /// `res[j] = sum_t sum_{u + v = j + offset} a_t[u] * sigma_t(b_t[v])`, the
@@ -430,37 +432,30 @@ fn convolution_scale_kernel(
     }
 }
 
-fn launch_scale<RT: GpuRuntime>(
-    res: &DftColumn,
-    terms: &[(DftColumn, DftColumn, AutomorphismPlan)],
-    offset: usize,
-    accumulate: bool,
-) {
-    let (a, b, _) = &terms[0];
+fn launch_scale<RT: GpuRuntime>(res: &DftColumn, group: &Group, offset: usize, accumulate: bool) {
+    let (a, b, _) = group.term(0);
     let (n, limbs) = (res.n, res.size);
     assert!(
-        terms.iter().all(|(a, _, _)| a.n == n),
+        group.iter().all(|(a, _, _)| a.n == n),
         "the left operands have the degree of the product"
     );
     assert!(
         b.n.is_power_of_two() && b.n <= n,
-        "the right operand has degree {} which does not divide {n}",
-        b.n
+        "the right operand degree does not divide the product degree"
     );
     assert!(
-        terms.iter().all(|(_, _, plan)| plan.n == b.n),
+        group.iter().all(|(_, _, plan)| plan.n == b.n),
         "the right operands are read through automorphisms of their degree"
     );
     if limbs == 0 {
         return;
     }
-    // Terms beyond the last repeat it: the kernel does not read them.
-    let term = |index: usize| &terms[index.min(terms.len() - 1)];
+    let term = |index: usize| group.term(index);
     let units = 4 * n * limbs;
     let read = limbs.min(a.size.saturating_sub(offset));
-    let bytes = 4 * (terms.len() * 4 * (n * read + b.n) + units * (1 + accumulate as usize));
+    let bytes = 4 * (group.len * 4 * (n * read + b.n) + units * (1 + accumulate as usize));
     launch!(
-        RT, if accumulate { Label::CnvSumAdd } else { Label::CnvSum }, bytes, convolution_scale_kernel, (units, RT::GROUP, RT::GROUP);
+        RT, if accumulate { Label::CnvScaleAdd } else { Label::CnvScale }, bytes, convolution_scale_kernel, (units, RT::GROUP, RT::GROUP);
         [
             res.binding => u32,
             term(0).0.binding => u32,
@@ -498,7 +493,7 @@ fn launch_scale<RT: GpuRuntime>(
             term(0).2.shift,
             offset.min(a.size) as u32,
         ];
-        [Consts::get(), terms.len() as u32, accumulate]
+        [Consts::get(), group.len as u32, accumulate]
     );
 }
 
@@ -506,54 +501,86 @@ fn launch_scale<RT: GpuRuntime>(
 /// every limb of `res`, over the `(a_t, b_t, sigma_t)` of `terms`, added to
 /// `res` when `accumulate`. Terms of the same shape are summed [`SUM_TERMS`]
 /// per launch.
+///
+/// Returns whether some term was launched: without one, `res` is untouched.
 pub(crate) fn convolution_sum<RT: GpuRuntime>(
     res: &DftColumn,
-    terms: &[(DftColumn, DftColumn, AutomorphismPlan)],
+    terms: impl IntoIterator<Item = SumTerm>,
     offset: usize,
     accumulate: bool,
-) {
+) -> bool {
     let mut accumulate = accumulate;
-    let mut rest = terms;
-    while let Some(((a, b, b_plan), _)) = rest.split_first() {
-        let alike = rest
-            .iter()
-            .take(SUM_TERMS)
-            .take_while(|(a_t, b_t, plan_t)| {
-                a_t.size == a.size && b_t.size == b.size && b_t.n == b.n && plan_t.shift == b_plan.shift
-            })
-            .count();
-        let (group, tail) = rest.split_at(alike);
+    let mut launched = false;
+    let mut group = Group::default();
+    for term in terms {
+        if group.len == SUM_TERMS || (group.len != 0 && !group.alike(&term)) {
+            group.launch::<RT>(res, offset, accumulate);
+            (accumulate, launched) = (true, true);
+            group = Group::default();
+        }
+        group.terms[group.len] = Some(term);
+        group.len += 1;
+    }
+    if group.len != 0 {
+        group.launch::<RT>(res, offset, accumulate);
+        launched = true;
+    }
+    launched
+}
+
+/// One term `a * sigma(b)` of [`convolution_sum`].
+pub(crate) type SumTerm = (DftColumn, DftColumn, AutomorphismPlan);
+
+/// Consecutive terms of one shape, at most [`SUM_TERMS`], launched together.
+#[derive(Default)]
+struct Group {
+    terms: [Option<SumTerm>; SUM_TERMS],
+    len: usize,
+}
+
+impl Group {
+    /// Term `index`, terms beyond the last repeating it, which the kernel does not read.
+    fn term(&self, index: usize) -> &SumTerm {
+        self.terms[index.min(self.len - 1)]
+            .as_ref()
+            .expect("a group holds its first terms")
+    }
+
+    fn iter(&self) -> impl Iterator<Item = &SumTerm> {
+        self.terms[..self.len].iter().flatten()
+    }
+
+    /// Whether `term` has the shape of the group's terms.
+    fn alike(&self, (a_t, b_t, plan_t): &SumTerm) -> bool {
+        let (a, b, b_plan) = self.term(0);
+        a_t.size == a.size && b_t.size == b.size && b_t.n == b.n && plan_t.shift == b_plan.shift
+    }
+
+    fn launch<RT: GpuRuntime>(&self, res: &DftColumn, offset: usize, accumulate: bool) {
+        let (a, b, b_plan) = self.term(0);
         if b.size == 1 {
-            launch_scale::<RT>(res, group, offset, accumulate);
-        } else if alike == 1 {
+            launch_scale::<RT>(res, self, offset, accumulate);
+        } else if self.len == 1 {
             convolution::<RT>(res, a, b, b_plan, offset, accumulate);
         } else {
-            launch_sum::<RT>(res, group, offset, accumulate);
+            launch_sum::<RT>(res, self, offset, accumulate);
         }
-        accumulate = true;
-        rest = tail;
     }
 }
 
-fn launch_sum<RT: GpuRuntime>(
-    res: &DftColumn,
-    terms: &[(DftColumn, DftColumn, AutomorphismPlan)],
-    offset: usize,
-    accumulate: bool,
-) {
-    let (a, b, _) = &terms[0];
+fn launch_sum<RT: GpuRuntime>(res: &DftColumn, group: &Group, offset: usize, accumulate: bool) {
+    let (a, b, _) = group.term(0);
     let (n, limbs) = (res.n, res.size);
     assert!(
-        terms.iter().all(|(a, _, _)| a.n == n),
+        group.iter().all(|(a, _, _)| a.n == n),
         "the left operands have the degree of the product"
     );
     assert!(
         b.n.is_power_of_two() && b.n <= n,
-        "the right operand has degree {} which does not divide {n}",
-        b.n
+        "the right operand degree does not divide the product degree"
     );
     assert!(
-        terms.iter().all(|(_, _, plan)| plan.n == b.n),
+        group.iter().all(|(_, _, plan)| plan.n == b.n),
         "the right operands are read through automorphisms of their degree"
     );
     if limbs == 0 {
@@ -561,10 +588,9 @@ fn launch_sum<RT: GpuRuntime>(
     }
     let offset = offset.min(a.size + b.size);
     let ranges = Ranges::new(limbs, offset, a.size, b.size);
-    // Terms beyond the last repeat it: the kernel does not read them.
-    let term = |index: usize| &terms[index.min(terms.len() - 1)];
+    let term = |index: usize| group.term(index);
     let units = 4 * n;
-    let bytes = 4 * (terms.len() * (units * ranges.a_len + 4 * b.n * ranges.b_len) + units * limbs * (1 + accumulate as usize));
+    let bytes = 4 * (group.len * (units * ranges.a_len + 4 * b.n * ranges.b_len) + units * limbs * (1 + accumulate as usize));
     launch!(
         RT, if accumulate { Label::CnvSumAdd } else { Label::CnvSum }, bytes, convolution_sum_kernel, (units, RT::GROUP, RT::GROUP);
         [
@@ -613,7 +639,7 @@ fn launch_sum<RT: GpuRuntime>(
             term(0).2.shift,
             offset as u32,
         ];
-        [Consts::get(), terms.len() as u32, accumulate, ranges.a_cap(), ranges.b_cap()]
+        [Consts::get(), group.len as u32, accumulate, ranges.a_cap(), ranges.b_cap()]
     );
 }
 
@@ -673,14 +699,13 @@ fn launch<RT: GpuRuntime>(
 ) {
     let Operands { a, a2, b, b2, b_plan } = operands;
     let n = res.n;
-    assert_eq!(a.n, n, "the left operand has the degree of the product");
+    assert!(a.n == n, "the left operand has the degree of the product");
     assert!(
         b.n.is_power_of_two() && b.n <= n,
-        "the right operand has degree {} which does not divide {n}",
-        b.n
+        "the right operand degree does not divide the product degree"
     );
-    assert_eq!(
-        b_plan.n, b.n,
+    assert!(
+        b_plan.n == b.n,
         "the right operand is read through an automorphism of its degree"
     );
     if limbs == 0 {
@@ -808,8 +833,8 @@ pub(crate) fn convolution_tensor<RT: GpuRuntime>(
     b1: &DftColumn,
     offset: usize,
 ) {
-    assert_eq!(cross.n, diag0.n, "tensor columns of different degrees");
-    assert_eq!(diag0.size, diag1.size, "the diagonal products are columns of one vector");
+    assert!(cross.n == diag0.n, "tensor columns of different degrees");
+    assert!(diag0.size == diag1.size, "the diagonal products are columns of one vector");
     let limbs = cross.size.max(diag0.size);
     launch::<RT>(
         TENSOR,

@@ -4,7 +4,7 @@
 use std::sync::OnceLock;
 
 use cubecl::prelude::*;
-use poulpy_cpu_portable::kernels::ntt4x30::primes::Primes30;
+use poulpy_cpu_portable::kernels::ntt4x30::{ntt::modq_pow_portable, primes::Primes30};
 use poulpy_hal::layouts::PrimeSet;
 
 pub(crate) const Q: [u32; 4] = <Primes30 as PrimeSet>::Q;
@@ -16,25 +16,13 @@ pub(crate) fn mul_mod(a: u32, b: u32, q: u32) -> u32 {
     ((a as u64 * b as u64) % q as u64) as u32
 }
 
-pub(crate) fn pow_mod(mut a: u32, mut e: u64, q: u32) -> u32 {
-    let mut r = 1;
-    while e != 0 {
-        if e & 1 == 1 {
-            r = mul_mod(r, a, q);
-        }
-        a = mul_mod(a, a, q);
-        e >>= 1;
-    }
-    r
-}
-
 pub(crate) fn inv_mod(a: u32, q: u32) -> u32 {
-    pow_mod(a, q as u64 - 2, q)
+    modq_pow_portable(a, -1, q)
 }
 
 /// `Primes30::OMEGA[k]^(2^log_e)`.
 pub(crate) fn omega_pow2(k: usize, log_e: u32) -> u32 {
-    pow_mod(<Primes30 as PrimeSet>::OMEGA[k], 1u64 << log_e, Q[k])
+    modq_pow_portable(<Primes30 as PrimeSet>::OMEGA[k], 1i64 << log_e, Q[k])
 }
 
 /// Shoup companion `floor(w * 2^32 / q)` of a multiplier `w < q`.

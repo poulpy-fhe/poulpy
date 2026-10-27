@@ -46,10 +46,9 @@ fn product<RT: GpuRuntime, R: Ring>(
         a.n() == res.n() && b.n() == res.n(),
         "vmp_apply_dft_to_dft: operand degrees differ"
     );
-    assert_eq!(a.cols(), b.cols_in(), "vmp_apply_dft_to_dft: a.cols() != pmat.cols_in()");
-    assert_eq!(
-        res.cols(),
-        b.cols_out(),
+    assert!(a.cols() == b.cols_in(), "vmp_apply_dft_to_dft: a.cols() != pmat.cols_in()");
+    assert!(
+        res.cols() == b.cols_out(),
         "vmp_apply_dft_to_dft: res.cols() != pmat.cols_out()"
     );
     let Some(res) = dft_column_mut(res, 0) else { return };
@@ -199,7 +198,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVmpImpl for NTT4x30Gpu<RT, R> {
         first_row: usize,
         row_step: usize,
     ) {
-        assert_eq!(a.hint(), res.hint(), "vmp_extract_selected_rows: a.hint() != res.hint()");
+        assert!(a.hint() == res.hint(), "vmp_extract_selected_rows: a.hint() != res.hint()");
         let Some(res) = pmat(res) else { return };
         let a = pmat(a).expect("vmp_extract_selected_rows: a holds no storage");
         extract_rows::<RT>(&res, &a, first_row, row_step);

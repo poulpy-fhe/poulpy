@@ -151,6 +151,8 @@ labels! {
     CnvSingleAdd => "cnv.single_add",
     CnvSum => "cnv.sum",
     CnvSumAdd => "cnv.sum_add",
+    CnvScale => "cnv.scale",
+    CnvScaleAdd => "cnv.scale_add",
     CnvPairwise => "cnv.pairwise",
     CnvTensor => "cnv.tensor",
     CnvByConst => "cnv.by_const",

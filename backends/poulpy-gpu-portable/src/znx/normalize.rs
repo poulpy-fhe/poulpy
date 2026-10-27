@@ -14,7 +14,7 @@ use cubecl::prelude::*;
 use super::Column;
 use crate::{
     ntt4x30::{Consts, DftColumn, Tables, crt_at},
-    runtime::{GpuRuntime, Label, launch, read_at, write_at},
+    runtime::{GpuRuntime, Label, launch, read_at, wipe_host, write_at},
 };
 
 #[cube(launch_unchecked)]
@@ -235,7 +235,7 @@ enum Source<'a, RT: GpuRuntime> {
 /// `offset <= 0` and both radices are equal: a digit is only written once the
 /// limbs it depends on have been read.
 pub(crate) fn normalize<RT: GpuRuntime>(res: &Column, res_base2k: usize, res_k: usize, offset: i64, a: &Column, a_base2k: usize) {
-    assert_eq!(res.n, a.n, "normalization between different degrees");
+    assert!(res.n == a.n, "normalization between different degrees");
     if a.words == 2 && (res_base2k > KERNEL_RADIX || a_base2k > KERNEL_RADIX) {
         return normalize_big_on_host::<RT>(res, res_base2k, res_k, offset, a, a_base2k);
     }
@@ -244,7 +244,7 @@ pub(crate) fn normalize<RT: GpuRuntime>(res: &Column, res_base2k: usize, res_k: 
 
 /// Widest radix the kernel handles: it keeps its bit stream and its digits
 /// in 64-bit registers.
-const KERNEL_RADIX: usize = 62;
+pub(crate) const KERNEL_RADIX: usize = 62;
 
 /// [`normalize`] of an `i128` source at the radices the kernel does not
 /// handle (a source radix up to 127, a destination radix up to 64), which
@@ -261,9 +261,9 @@ fn normalize_big_on_host<RT: GpuRuntime>(
     use poulpy_cpu_portable::{NTT4x30Portable, kernels::vec_znx_big_normalize::vec_znx_big_normalize_portable};
     use poulpy_hal::{
         AlignedBuf,
-        layouts::{VecZnx, VecZnxBig, VecZnxBigToBackendRef, VecZnxToBackendMut},
+        layouts::{DataViewMut, VecZnx, VecZnxBig, VecZnxBigToBackendRef, VecZnxToBackendMut},
     };
-    assert_eq!(res.words, 1, "normalization writes `i64` limbs");
+    assert!(res.words == 1, "normalization writes `i64` limbs");
     if res.size == 0 || res.n == 0 {
         return;
     }
@@ -274,7 +274,7 @@ fn normalize_big_on_host<RT: GpuRuntime>(
     for j in 0..a.size {
         read_at::<RT>(&a.binding, limb(a, j), &mut source[j * n * 16..(j + 1) * n * 16]);
     }
-    let source = VecZnxBig::<AlignedBuf, i128, NTT4x30Portable>::from_data(source, n, 1, a.size);
+    let mut source = VecZnxBig::<AlignedBuf, i128, NTT4x30Portable>::from_data(source, n, 1, a.size);
     let mut target = VecZnx::<AlignedBuf, i64>::from_data(AlignedBuf::from(vec![0u8; n * res.size * 8]), n, 1, res.size);
     vec_znx_big_normalize_portable::<NTT4x30Portable>(
         &mut VecZnxToBackendMut::<NTT4x30Portable>::to_backend_mut(&mut target),
@@ -289,6 +289,9 @@ fn normalize_big_on_host<RT: GpuRuntime>(
     for j in 0..res.size {
         write_at::<RT>(&res.binding, limb(res, j), &target.data()[j * n * 8..(j + 1) * n * 8]);
     }
+    // A decryption reaches this stage with `c1 * s` in the source.
+    wipe_host(source.data_mut());
+    wipe_host(target.data_mut());
 }
 
 /// Normalizes every limb of `res` from `dft + addend`, `dft` holding the
@@ -305,7 +308,7 @@ pub(crate) fn normalize_residues<RT: GpuRuntime>(
     addend: Option<&Column>,
     a_base2k: usize,
 ) {
-    assert_eq!(res.n, dft.n, "normalization between different degrees");
+    assert!(res.n == dft.n, "normalization between different degrees");
     if let Some(addend) = addend {
         assert!(
             addend.n == res.n && addend.words == 1,
@@ -323,7 +326,7 @@ pub(crate) fn normalize_residues<RT: GpuRuntime>(
 }
 
 fn launch<RT: GpuRuntime>(res: &Column, res_base2k: usize, res_k: usize, offset: i64, source: Source<'_, RT>, a_base2k: usize) {
-    assert_eq!(res.words, 1, "normalization writes `i64` limbs");
+    assert!(res.words == 1, "normalization writes `i64` limbs");
     assert!(
         (1..=KERNEL_RADIX).contains(&res_base2k) && (1..=KERNEL_RADIX).contains(&a_base2k),
         "radix widths must be in 1..={KERNEL_RADIX} (got {a_base2k} to {res_base2k})"

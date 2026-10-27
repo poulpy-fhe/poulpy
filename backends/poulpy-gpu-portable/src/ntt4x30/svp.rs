@@ -55,7 +55,7 @@ pub(crate) fn scale<RT: GpuRuntime>(res: &DftColumn, ppol: &DftColumn, b: &DftCo
         ppol.n == res.n && b.n == res.n,
         "scalar product between operands of different degrees"
     );
-    assert_eq!(ppol.size, 1, "a prepared scalar polynomial has one limb");
+    assert!(ppol.size == 1, "a prepared scalar polynomial has one limb");
     if res.size == 0 {
         return;
     }

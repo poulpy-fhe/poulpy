@@ -2,15 +2,17 @@
 //! against their reference compositions, and views the suites do not build.
 
 use once_cell::sync::Lazy;
+#[cfg(feature = "enable-core")]
+use poulpy_core::reference::operations::GLWETensoringReference;
 use poulpy_hal::{
     api::{
-        CnvPVecAlloc, Convolution, ScratchOwnedAlloc, VecZnxBigAlloc, VecZnxBigNormalize, VecZnxDftAlloc, VecZnxDftApply,
-        VecZnxDftSubAssign, VecZnxIdftApply, VecZnxIdftNormalize, VmpPMatAlloc, VmpPrepare,
+        CnvPVecAlloc, Convolution, ScratchOwnedAlloc, VecZnxBigAlloc, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
+        VecZnxDftAlloc, VecZnxDftApply, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxIdftNormalize,
+        VecZnxIdftNormalizeTmpBytes, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
     },
     layouts::{
         Backend, DataView, MatZnx, Module, PrepareHint, Ring, ScratchOwned, VecZnx, VecZnxBigToBackendMut, VecZnxDftOwned,
         VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxShape, VmpPMatToBackendMut, VmpPMatToBackendRef, ZnxView,
-        vec_znx_dft_backend_ref_from_mut,
     },
     test_suite::{download_vec_znx, vec_znx_backend_mut, vec_znx_backend_ref},
 };
@@ -72,7 +74,11 @@ fn digits_case<R: Ring>(
     extreme: bool,
 ) {
     let mut seed = 0x1234_5678_9abc_def0u64 ^ ((a_size * 131 + dsize * 17 + rows * 7 + res_size) as u64);
-    let mut scratch = ScratchOwned::<BE<R>>::alloc((n << 12).max(1 << 22));
+    let mut scratch = ScratchOwned::<BE<R>>::alloc(module.vmp_prepare_tmp_bytes(rows, cols_in, cols_out, key_size).max(
+        poulpy_core::reference::keyswitching::glwe::gglwe_product_digits_strided_tmp_bytes_reference(
+            module, res_size, cols_in, a_size, dsize, rows, cols_in, cols_out, key_size,
+        ),
+    ));
     let fill = |count: usize, seed: &mut u64| {
         if extreme {
             (-1i64).to_le_bytes().repeat(count)
@@ -192,6 +198,8 @@ fn gglwe_product_digits_strided_folds_across_skipped_digits() {
     digits_case(&MODULE, 8, 30, 5, 6, 2, 2, 12, 9, 2, true);
 }
 
+// The reference is core's, registered on the device with `enable-core`.
+#[cfg(feature = "enable-core")]
 #[allow(clippy::too_many_arguments)]
 fn mul_columns_case<R: Ring>(
     module: &Module<BE<R>>,
@@ -202,9 +210,21 @@ fn mul_columns_case<R: Ring>(
     diag_size: usize,
     cross_size: usize,
     offset: usize,
-) {
+) where
+    Module<BE<R>>: GLWETensoringReference<BE<R>>,
+{
     let mut seed = 0x0fed_cba9_8765_4321u64 ^ ((a_size * 31 + b_size * 7 + diag_size * 3 + cross_size + offset) as u64);
-    let mut scratch = ScratchOwned::<BE<R>>::alloc((n << 12).max(1 << 22));
+    let mut scratch = ScratchOwned::<BE<R>>::alloc(
+        [
+            module.cnv_prepare_left_tmp_bytes(a_size, a_size),
+            module.cnv_prepare_right_tmp_bytes(b_size, b_size),
+            module.cnv_apply_dft_tmp_bytes(offset, diag_size, a_size, b_size),
+            module.cnv_pairwise_apply_dft_tmp_bytes(offset, cross_size, a_size, b_size),
+        ]
+        .into_iter()
+        .max()
+        .unwrap_or(0),
+    );
     let (a, b) = (vector::<R>(n, 2, a_size, &mut seed), vector::<R>(b_n, 2, b_size, &mut seed));
     let mut left = module.cnv_pvec_left_alloc(n, 2, a_size, PrepareHint::Reuse);
     let mut right = module.cnv_pvec_right_alloc(b_n, 2, b_size, PrepareHint::Reuse);
@@ -228,18 +248,14 @@ fn mul_columns_case<R: Ring>(
     let mut cross_want = transformed(module, n, 1, cross_size, &mut cross_seed);
     let mut cross_have = transformed(module, n, 1, cross_size, &mut seed);
 
-    // `glwe_mul_columns_reference` of `poulpy-core`.
-    {
-        let mut diag = diag_want.to_backend_mut();
-        let mut cross = cross_want.to_backend_mut();
-        for i in 0..2 {
-            module.cnv_apply_dft(offset, &mut diag, i, &left, i, &right, i, 1, &mut scratch.arena());
-        }
-        module.cnv_pairwise_apply_dft(offset, &mut cross, 0, &left, &right, 0, 1, &mut scratch.arena());
-        let diag_ref = vec_znx_dft_backend_ref_from_mut(&diag);
-        module.vec_znx_dft_sub_assign(&mut cross, 0, &diag_ref, 0);
-        module.vec_znx_dft_sub_assign(&mut cross, 0, &diag_ref, 1);
-    }
+    module.glwe_mul_columns_reference(
+        offset,
+        &mut diag_want.to_backend_mut(),
+        &mut cross_want.to_backend_mut(),
+        &left,
+        &right,
+        &mut scratch.arena(),
+    );
     crate::hal_impl::glwe_mul_columns(
         offset,
         &mut diag_have.to_backend_mut(),
@@ -255,6 +271,7 @@ fn mul_columns_case<R: Ring>(
     assert!(cross_want == cross_have, "cross product differs from its reference: {shape}");
 }
 
+#[cfg(feature = "enable-core")]
 #[test]
 fn glwe_mul_columns_matches_reference() {
     // (n, b_n, a_size, b_size, diag_size, cross_size, offset)
@@ -283,7 +300,18 @@ fn glwe_mul_columns_matches_reference() {
 fn one_limb_sum_case<R: Ring>(module: &Module<BE<R>>, n: usize, b_n: usize, galois: &[i64]) {
     let (a_size, res_size, offset) = (5, 4, 1);
     let mut seed = 0x5eed_0f0e_e11bu64 ^ ((b_n * 31 + galois.len()) as u64);
-    let mut scratch = ScratchOwned::<BE<R>>::alloc((n << 12).max(1 << 22));
+    let mut scratch = ScratchOwned::<BE<R>>::alloc(
+        [
+            module.cnv_prepare_left_tmp_bytes(a_size, a_size),
+            module.cnv_prepare_right_tmp_bytes(1, 1),
+            module.cnv_apply_dft_tmp_bytes(offset, res_size, a_size, 1),
+            module.cnv_apply_dft_add_tmp_bytes(offset, res_size, a_size, 1),
+            module.cnv_apply_dft_sum_tmp_bytes(offset, res_size, a_size, 1),
+        ]
+        .into_iter()
+        .max()
+        .unwrap_or(0),
+    );
     let prepared: Vec<_> = galois
         .iter()
         .map(|_| {
@@ -315,7 +343,10 @@ fn one_limb_sum_case<R: Ring>(module: &Module<BE<R>>, n: usize, b_n: usize, galo
         })
         .collect();
 
-    let mut want = module.vec_znx_dft_alloc(n, 1, res_size);
+    // Both destinations start from the same unrelated content.
+    let mut destination_seed = seed;
+    let mut want = transformed(module, n, 1, res_size, &mut destination_seed);
+    let mut have = transformed(module, n, 1, res_size, &mut seed);
     for (index, term) in terms.iter().enumerate() {
         let mut res = want.to_backend_mut();
         if index == 0 {
@@ -344,7 +375,6 @@ fn one_limb_sum_case<R: Ring>(module: &Module<BE<R>>, n: usize, b_n: usize, galo
             );
         }
     }
-    let mut have = module.vec_znx_dft_alloc(n, 1, res_size);
     module.cnv_apply_dft_sum(offset, &mut have.to_backend_mut(), 0, &terms, &mut scratch.arena());
     assert!(
         want == have,
@@ -372,8 +402,11 @@ fn products_match_their_references_at_full_degree() {
     let module = Module::<Gpu>::new(n as u64);
     digits_case(&module, n, 27, 4, 7, 1, 2, 33, 30, 2, false);
     digits_case(&module, n, 27, 4, 7, 1, 2, 33, 33, 4, false);
-    mul_columns_case(&module, n, n, 30, 30, 31, 31, 30);
-    mul_columns_case(&module, n, n, 23, 23, 24, 24, 0);
+    #[cfg(feature = "enable-core")]
+    {
+        mul_columns_case(&module, n, n, 30, 30, 31, 31, 30);
+        mul_columns_case(&module, n, n, 23, 23, 24, 24, 0);
+    }
 }
 
 /// The key switches, convolution sums and ciphertext products of one
@@ -381,40 +414,41 @@ fn products_match_their_references_at_full_degree() {
 /// `$path` is `kernel` for the crate's fused products and `reference` for
 /// their reference compositions.
 macro_rules! bootstrap_shapes {
-    (@digits kernel, $module:expr, $res:expr, $a:expr, $dsize:expr, $limbs:expr, $pmat:expr, $scratch:expr) => {
+    // The fused kernels take no scratch, and each reference runs on its own query.
+    (@digits kernel, $module:expr, $res:expr, $a:expr, $dsize:expr, $limbs:expr, $pmat:expr, $bytes:expr) => {{
+        let _ = $bytes;
         crate::hal_impl::gglwe_product_digits_strided($res, $a, $dsize, $limbs, $pmat)
-    };
-    (@digits reference, $module:expr, $res:expr, $a:expr, $dsize:expr, $limbs:expr, $pmat:expr, $scratch:expr) => {
+    }};
+    (@digits reference, $module:expr, $res:expr, $a:expr, $dsize:expr, $limbs:expr, $pmat:expr, $bytes:expr) => {
         poulpy_core::reference::keyswitching::glwe::gglwe_product_digits_strided_reference(
-            $module, $res, $a, $dsize, $limbs, $pmat, $scratch,
+            $module, $res, $a, $dsize, $limbs, $pmat, &mut ScratchOwned::alloc($bytes).arena(),
         )
     };
-    (@tensor kernel, $module:expr, $offset:expr, $diag:expr, $cross:expr, $left:expr, $right:expr, $scratch:expr) => {
+    (@tensor kernel, $module:expr, $offset:expr, $diag:expr, $cross:expr, $left:expr, $right:expr, $bytes:expr) => {{
+        let _ = $bytes;
         crate::hal_impl::glwe_mul_columns($offset, &mut $diag.to_backend_mut(), &mut $cross.to_backend_mut(), $left, $right)
-    };
-    (@tensor reference, $module:expr, $offset:expr, $diag:expr, $cross:expr, $left:expr, $right:expr, $scratch:expr) => {{
-        // `glwe_mul_columns_reference` of `poulpy-core`.
-        let mut diag = $diag.to_backend_mut();
-        let mut cross = $cross.to_backend_mut();
-        for i in 0..2 {
-            $module.cnv_apply_dft($offset, &mut diag, i, $left, i, $right, i, 1, $scratch);
-        }
-        $module.cnv_pairwise_apply_dft($offset, &mut cross, 0, $left, $right, 0, 1, $scratch);
-        let diag_ref = vec_znx_dft_backend_ref_from_mut(&diag);
-        $module.vec_znx_dft_sub_assign(&mut cross, 0, &diag_ref, 0);
-        $module.vec_znx_dft_sub_assign(&mut cross, 0, &diag_ref, 1);
     }};
+    (@tensor reference, $module:expr, $offset:expr, $diag:expr, $cross:expr, $left:expr, $right:expr, $bytes:expr) => {
+        $module.glwe_mul_columns_reference(
+            $offset,
+            &mut $diag.to_backend_mut(),
+            &mut $cross.to_backend_mut(),
+            $left,
+            $right,
+            &mut ScratchOwned::alloc($bytes).arena(),
+        )
+    };
     ($be:ty, $n:expr, $path:ident) => {{
         type B = $be;
         let n: usize = $n;
         let base2k = 52usize;
         let module = Module::<B>::new(n as u64);
-        let mut scratch = ScratchOwned::<B>::alloc(n << 12);
+        let arena = |bytes: usize| ScratchOwned::<B>::alloc(bytes);
         let mut seed = 0x9e37_79b9_7f4a_7c15u64;
         let upload = |n: usize, cols: usize, size: usize, seed: &mut u64| -> VecZnx<<B as Backend>::OwnedBuf, i64> {
             VecZnx::from_data(B::from_host_bytes(&coefficients(n * cols * size, seed)), n, cols, size)
         };
-        let normalized = |dft: &VecZnxDftOwned<B>, scratch: &mut ScratchOwned<B>| -> Vec<u8> {
+        let normalized = |dft: &VecZnxDftOwned<B>| -> Vec<u8> {
             let (cols, size) = (dft.cols(), dft.size());
             let mut big = module.vec_znx_big_alloc(n, cols, size);
             let mut out = upload(n, cols, size, &mut 1);
@@ -424,7 +458,7 @@ macro_rules! bootstrap_shapes {
                     col,
                     &dft.to_backend_ref(),
                     col,
-                    &mut scratch.arena(),
+                    &mut arena(module.vec_znx_idft_apply_tmp_bytes()).arena(),
                 );
                 module.vec_znx_big_normalize(
                     &mut vec_znx_backend_mut::<B>(&mut out),
@@ -435,7 +469,7 @@ macro_rules! bootstrap_shapes {
                     &poulpy_hal::layouts::VecZnxBigToBackendRef::to_backend_ref(&big),
                     base2k,
                     col,
-                    &mut scratch.arena(),
+                    &mut arena(module.vec_znx_big_normalize_tmp_bytes()).arena(),
                 );
             }
             B::to_host_bytes(out.data())
@@ -459,19 +493,19 @@ macro_rules! bootstrap_shapes {
             module.vmp_prepare(
                 &mut pmat.to_backend_mut(),
                 &poulpy_hal::layouts::MatZnxToBackendRef::<B>::to_backend_ref(&matrix),
-                &mut scratch.arena(),
+                &mut arena(module.vmp_prepare_tmp_bytes(rows, 1, 2, key_size)).arena(),
             );
             for a_size in a_sizes {
                 let a = upload(n, 1, a_size, &mut seed);
                 let mut a_dft = module.vec_znx_dft_alloc(n, 1, a_size);
                 module.vec_znx_dft_apply(1, 0, &mut a_dft.to_backend_mut(), 0, &vec_znx_backend_ref::<B>(&a), 0);
                 let mut switched = module.vec_znx_dft_alloc(n, 2, a_size + 2);
+                let bytes = poulpy_core::reference::keyswitching::glwe::gglwe_product_digits_strided_tmp_bytes_reference(
+                    &module, a_size + 2, 1, a_size, dsize, rows, 1, 2, key_size,
+                );
                 bootstrap_shapes!(@digits $path, &module, &mut switched.to_backend_mut(), &a_dft.to_backend_ref(), dsize, 3,
-                    &pmat.to_backend_ref(), &mut scratch.arena());
-                results.push((
-                    format!("key switch dsize={dsize} a_size={a_size}"),
-                    normalized(&switched, &mut scratch),
-                ));
+                    &pmat.to_backend_ref(), bytes);
+                results.push((format!("key switch dsize={dsize} a_size={a_size}"), normalized(&switched)));
             }
         }
 
@@ -501,12 +535,12 @@ macro_rules! bootstrap_shapes {
                 module.cnv_prepare_left(
                     &mut poulpy_hal::layouts::CnvPVecLToBackendMut::to_backend_mut(&mut left),
                     &vec_znx_backend_ref::<B>(&left_source),
-                    &mut scratch.arena(),
+                    &mut arena(module.cnv_prepare_left_tmp_bytes(size, size)).arena(),
                 );
                 module.cnv_prepare_right(
                     &mut poulpy_hal::layouts::CnvPVecRToBackendMut::to_backend_mut(&mut right),
                     &vec_znx_backend_ref::<B>(&right_source),
-                    &mut scratch.arena(),
+                    &mut arena(module.cnv_prepare_right_tmp_bytes(1, 1)).arena(),
                 );
                 lefts.push(left);
                 rights.push(right);
@@ -524,12 +558,10 @@ macro_rules! bootstrap_shapes {
                         b_galois: 1,
                     })
                     .collect();
-                module.cnv_apply_dft_sum(0, &mut summed.to_backend_mut(), col, &terms, &mut scratch.arena());
+                let bytes = module.cnv_apply_dft_sum_tmp_bytes(0, size, size, 1);
+                module.cnv_apply_dft_sum(0, &mut summed.to_backend_mut(), col, &terms, &mut arena(bytes).arena());
             }
-            results.push((
-                format!("convolution sum terms={terms} size={size} ratio={ratio}"),
-                normalized(&summed, &mut scratch),
-            ));
+            results.push((format!("convolution sum terms={terms} size={size} ratio={ratio}"), normalized(&summed)));
         }
 
         // Ciphertext products: (left size, right size, result size, offset).
@@ -551,12 +583,12 @@ macro_rules! bootstrap_shapes {
             module.cnv_prepare_left(
                 &mut poulpy_hal::layouts::CnvPVecLToBackendMut::to_backend_mut(&mut left),
                 &vec_znx_backend_ref::<B>(&left_source),
-                &mut scratch.arena(),
+                &mut arena(module.cnv_prepare_left_tmp_bytes(a_size, a_size)).arena(),
             );
             module.cnv_prepare_right(
                 &mut poulpy_hal::layouts::CnvPVecRToBackendMut::to_backend_mut(&mut right),
                 &vec_znx_backend_ref::<B>(&right_source),
-                &mut scratch.arena(),
+                &mut arena(module.cnv_prepare_right_tmp_bytes(b_size, b_size)).arena(),
             );
             let (left, right) = (
                 poulpy_hal::layouts::CnvPVecLToBackendRef::to_backend_ref(&left),
@@ -564,10 +596,13 @@ macro_rules! bootstrap_shapes {
             );
             let mut diag = module.vec_znx_dft_alloc(n, 2, size);
             let mut cross = module.vec_znx_dft_alloc(n, 1, size);
-            bootstrap_shapes!(@tensor $path, module, offset, diag, cross, &left, &right, &mut scratch.arena());
+            let bytes = module
+                .cnv_apply_dft_tmp_bytes(offset, size, a_size, b_size)
+                .max(module.cnv_pairwise_apply_dft_tmp_bytes(offset, size, a_size, b_size));
+            bootstrap_shapes!(@tensor $path, module, offset, diag, cross, &left, &right, bytes);
             let shape = format!("a_size={a_size} b_size={b_size} offset={offset}");
-            results.push((format!("product diagonal {shape}"), normalized(&diag, &mut scratch)));
-            results.push((format!("product cross {shape}"), normalized(&cross, &mut scratch)));
+            results.push((format!("product diagonal {shape}"), normalized(&diag)));
+            results.push((format!("product cross {shape}"), normalized(&cross)));
         }
         results
     }};
@@ -605,7 +640,7 @@ macro_rules! big_normalized {
     ($be:ty, $bytes:expr, $n:expr, $size:expr, $res_size:expr, $a_base2k:expr, $res_base2k:expr, $offset:expr) => {{
         type B = $be;
         let module = Module::<B>::new(64);
-        let mut scratch = ScratchOwned::<B>::alloc(1 << 16);
+        let mut scratch = ScratchOwned::<B>::alloc(module.vec_znx_big_normalize_tmp_bytes());
         let big = poulpy_hal::layouts::VecZnxBig::<<B as Backend>::OwnedBuf, i128, B>::from_data(
             B::from_host_bytes($bytes),
             $n,
@@ -668,6 +703,58 @@ fn big_normalize_at_wide_radices_matches_portable() {
     }
 }
 
+/// `vec_znx_idft_normalize` on the backend `$be` at the radices `$a_base2k`
+/// to `$res_base2k`, from the transform of the same limbs plus an addend.
+macro_rules! idft_normalized {
+    ($be:ty, $bytes:expr, $addend:expr, $n:expr, $size:expr, $res_size:expr, $a_base2k:expr, $res_base2k:expr) => {{
+        type B = $be;
+        let module = Module::<B>::new($n as u64);
+        let mut scratch = ScratchOwned::<B>::alloc(module.vec_znx_idft_normalize_tmp_bytes($res_size, $size));
+        let source = VecZnx::from_data(B::from_host_bytes($bytes), $n, 1, $size);
+        let addend = VecZnx::from_data(B::from_host_bytes($addend), $n, 1, $size);
+        let mut dft = module.vec_znx_dft_alloc($n, 1, $size);
+        module.vec_znx_dft_apply(1, 0, &mut dft.to_backend_mut(), 0, &vec_znx_backend_ref::<B>(&source), 0);
+        let mut res: VecZnx<<B as Backend>::OwnedBuf, i64> =
+            VecZnx::from_data(B::from_host_bytes(&vec![0u8; $n * $res_size * 8]), $n, 1, $res_size);
+        module.vec_znx_idft_normalize(
+            &mut vec_znx_backend_mut::<B>(&mut res),
+            $res_base2k,
+            $res_size * $res_base2k,
+            0,
+            0,
+            &mut dft.to_backend_mut(),
+            0,
+            $a_base2k,
+            Some((&vec_znx_backend_ref::<B>(&addend), 0)),
+            &mut scratch.arena(),
+        );
+        B::to_host_bytes(res.data())
+    }};
+}
+
+/// The radices of an inverse transform beyond what the kernel handles take
+/// the host stage of the normalization, and agree with the portable backend.
+#[test]
+fn idft_normalize_at_wide_radices_matches_portable() {
+    let (n, size) = (16usize, 3usize);
+    let mut seed = 0x7654_3210_fedc_ba98u64;
+    let (bytes, addend) = (coefficients(n * size, &mut seed), coefficients(n * size, &mut seed));
+    for (a_base2k, res_base2k, res_size) in [(100, 62, 5), (127, 64, 6), (50, 64, 3)] {
+        let have = idft_normalized!(Gpu, &bytes, &addend, n, size, res_size, a_base2k, res_base2k);
+        let want = idft_normalized!(
+            poulpy_cpu_portable::NTT4x30Portable,
+            &bytes,
+            &addend,
+            n,
+            size,
+            res_size,
+            a_base2k,
+            res_base2k
+        );
+        assert!(have == want, "radix {a_base2k} to {res_base2k}");
+    }
+}
+
 /// A limb range of a DFT-domain vector is a view with a non-zero base: what
 /// is written through it lands in those limbs and nowhere else.
 #[test]
@@ -695,7 +782,7 @@ fn dft_limb_range_view() {
             module.vec_znx_dft_apply(1, 0, &mut middle, col, &vec_znx_backend_ref::<Gpu>(&inside), col);
         }
     }
-    let mut scratch = ScratchOwned::<Gpu>::alloc(1 << 16);
+    let mut scratch = ScratchOwned::<Gpu>::alloc(module.vec_znx_idft_apply_tmp_bytes());
     let mut big = module.vec_znx_big_alloc(n, cols, size);
     for col in 0..cols {
         module.vec_znx_idft_apply(
@@ -731,9 +818,9 @@ fn idft_normalize_windows() {
     let module = &*MODULE;
     let (n, base2k) = (N / 2, 50usize);
     let mut seed = 0x0bad_cafe_0bad_cafeu64;
-    let mut scratch = ScratchOwned::<Gpu>::alloc(1 << 16);
     // (coeff_offset, limb_offset, limb_step, limbs) inside vectors of degree `N`.
     for (coeff_offset, limb_offset, limb_step, limbs) in [(N / 4, 1, 2, 2), (0, 0, 1, 3), (N / 2, 2, 3, 2)] {
+        let mut scratch = ScratchOwned::<Gpu>::alloc(module.vec_znx_idft_normalize_tmp_bytes(limbs, 3));
         let shape = VecZnxShape::new(N, 1, 6)
             .window_coeffs(coeff_offset, n)
             .window_limbs(limb_offset, limb_step, limbs);

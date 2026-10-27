@@ -1,7 +1,8 @@
 use poulpy_hal::{
     layouts::{
         CnvDftAccTerm, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, Module, Ring,
-        ScratchArena, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut, assert_dense, check_degree, check_galois,
+        ScratchArena, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut, assert_dense, check_cnv_dft_term,
+        check_cnv_dft_terms, check_degree,
     },
     oep::HalConvolutionImpl,
 };
@@ -63,8 +64,8 @@ fn prepare<RT: GpuRuntime, R: Ring>(
 ) {
     assert_dense(a, "cnv_prepare");
     check_degree::<NTT4x30Gpu<RT, R>>(module.n(), res0.n);
-    assert_eq!(a.n(), res0.n, "cnv_prepare: a.n() != res.n()");
-    assert_eq!(a.cols(), cols, "cnv_prepare: res.cols() != a.cols()");
+    assert!(a.n() == res0.n, "cnv_prepare: a.n() != res.n()");
+    assert!(a.cols() == cols, "cnv_prepare: res.cols() != a.cols()");
     let limbs = res0.size.min(a.size());
     let all = all_dft_blocks(res0, res0.size);
     if let Some(a0) = column_ref(a, 0).filter(|_| limbs != 0) {
@@ -75,13 +76,13 @@ fn prepare<RT: GpuRuntime, R: Ring>(
     combine::<RT>(&tail, tail.size, DftTerm::zero(&tail), DftTerm::zero(&tail));
 }
 
-/// The read of a right operand through `sigma_{b_galois}`, at its own degree.
+/// The read of a right operand through `sigma_{b_galois}`, at its own degree,
+/// `b_galois` being checked by `check_cnv_dft_term`.
 fn right_plan<RT: GpuRuntime, R: Ring>(
     module: &Module<NTT4x30Gpu<RT, R>>,
     b: &CnvPVecRBackendRef<'_, NTT4x30Gpu<RT, R>>,
     b_galois: i64,
 ) -> AutomorphismPlan {
-    check_galois(b_galois);
     AutomorphismPlan::new(b.n(), b_galois, handle(module).tables().invariant())
 }
 
@@ -96,7 +97,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalConvolutionImpl for NTT4x30Gpu<RT, R> {
         a: &VecZnxBackendRef<'_, Self>,
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
-        assert_eq!(a.cols(), res.cols(), "cnv_prepare_left: res.cols() != a.cols()");
+        assert!(a.cols() == res.cols(), "cnv_prepare_left: res.cols() != a.cols()");
         let Some(res0) = cnv_left_column(res, 0) else { return };
         prepare(module, &res0, res.cols(), a);
     }
@@ -111,7 +112,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalConvolutionImpl for NTT4x30Gpu<RT, R> {
         a: &VecZnxBackendRef<'_, Self>,
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
-        assert_eq!(a.cols(), res.cols(), "cnv_prepare_right: res.cols() != a.cols()");
+        assert!(a.cols() == res.cols(), "cnv_prepare_right: res.cols() != a.cols()");
         let Some(res0) = cnv_right_column(res, 0) else { return };
         prepare(module, &res0, res.cols(), a);
     }
@@ -127,10 +128,10 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalConvolutionImpl for NTT4x30Gpu<RT, R> {
         a: &VecZnxBackendRef<'_, Self>,
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
-        assert_eq!(right.size(), left.size(), "cnv_prepare_self: right.size() != left.size()");
-        assert_eq!(right.cols(), left.cols(), "cnv_prepare_self: right.cols() != left.cols()");
-        assert_eq!(right.n(), left.n(), "cnv_prepare_self: right.n() != left.n()");
-        assert_eq!(a.cols(), left.cols(), "cnv_prepare_self: left.cols() != a.cols()");
+        assert!(right.size() == left.size(), "cnv_prepare_self: right.size() != left.size()");
+        assert!(right.cols() == left.cols(), "cnv_prepare_self: right.cols() != left.cols()");
+        assert!(right.n() == left.n(), "cnv_prepare_self: right.n() != left.n()");
+        assert!(a.cols() == left.cols(), "cnv_prepare_self: left.cols() != a.cols()");
         let Some(left0) = cnv_left_column(left, 0) else { return };
         prepare(module, &left0, left.cols(), a);
         // Both prepared forms are the transform: the right one is a copy.
@@ -161,7 +162,8 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalConvolutionImpl for NTT4x30Gpu<RT, R> {
         b_galois: i64,
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
-        assert_eq!(a.n(), res.n(), "cnv_apply_dft: a.n() != res.n()");
+        check_degree::<Self>(module.n(), res.n());
+        check_cnv_dft_term::<Self>(res.n(), a, a_col, b, b_col, b_galois);
         let Some(res) = dft_column_mut(res, res_col) else { return };
         let a = cnv_left_column(a, a_col).unwrap_or_else(|| empty_dft_like(&res));
         let plan = right_plan(module, b, b_galois);
@@ -191,7 +193,8 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalConvolutionImpl for NTT4x30Gpu<RT, R> {
         b_galois: i64,
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
-        assert_eq!(a.n(), res.n(), "cnv_apply_dft_add: a.n() != res.n()");
+        check_degree::<Self>(module.n(), res.n());
+        check_cnv_dft_term::<Self>(res.n(), a, a_col, b, b_col, b_galois);
         let Some(res) = dft_column_mut(res, res_col) else { return };
         let plan = right_plan(module, b, b_galois);
         let (Some(a), Some(b)) = (cnv_left_column(a, a_col), cnv_right_column(b, b_col)) else {
@@ -219,26 +222,20 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalConvolutionImpl for NTT4x30Gpu<RT, R> {
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
         // Every term is checked before the first launch writes `res`.
-        terms.iter().for_each(|term| check_galois(term.b_galois));
+        check_degree::<Self>(module.n(), res.n());
+        check_cnv_dft_terms::<Self>(res.n(), terms);
         let Some(res) = dft_column_mut(res, res_col) else { return };
         // A term with an operand without storage is zero.
-        let terms: Vec<(DftColumn, DftColumn, AutomorphismPlan)> = terms
-            .iter()
-            .filter_map(|term| {
-                assert_eq!(term.a.n(), res.n, "cnv_apply_dft_sum: a.n() != res.n()");
-                let plan = right_plan(module, &term.b, term.b_galois);
-                Some((
-                    cnv_left_column(&term.a, term.a_col)?,
-                    cnv_right_column(&term.b, term.b_col)?,
-                    plan,
-                ))
-            })
-            .collect();
-        if terms.is_empty() {
+        let columns = terms.iter().filter_map(|term| {
+            Some((
+                cnv_left_column(&term.a, term.a_col)?,
+                cnv_right_column(&term.b, term.b_col)?,
+                right_plan(module, &term.b, term.b_galois),
+            ))
+        });
+        if !convolution_sum::<RT>(&res, columns, cnv_offset, false) {
             combine::<RT>(&res, res.size, DftTerm::zero(&res), DftTerm::zero(&res));
-            return;
         }
-        convolution_sum::<RT>(&res, &terms, cnv_offset, false);
     }
 
     fn cnv_pairwise_apply_dft_tmp_bytes(
@@ -252,7 +249,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalConvolutionImpl for NTT4x30Gpu<RT, R> {
     }
 
     fn cnv_pairwise_apply_dft(
-        _module: &Module<Self>,
+        module: &Module<Self>,
         cnv_offset: usize,
         res: &mut VecZnxDftBackendMut<'_, Self>,
         res_col: usize,
@@ -262,7 +259,9 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalConvolutionImpl for NTT4x30Gpu<RT, R> {
         j: usize,
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
-        assert_eq!(a.n(), res.n(), "cnv_pairwise_apply_dft: a.n() != res.n()");
+        check_degree::<Self>(module.n(), res.n());
+        check_cnv_dft_term::<Self>(res.n(), a, i, b, i, 1);
+        check_cnv_dft_term::<Self>(res.n(), a, j, b, j, 1);
         let Some(res) = dft_column_mut(res, res_col) else { return };
         let left = |col: usize| cnv_left_column(a, col).unwrap_or_else(|| empty_dft_like(&res));
         let right = |col: usize| cnv_right_column(b, col).unwrap_or_else(|| empty_dft_like(&res));
@@ -346,7 +345,7 @@ fn by_const<RT: GpuRuntime, R: Ring>(
     assert_dense(res, "cnv_by_const_apply");
     assert_dense(a, "cnv_by_const_apply");
     assert_dense(b, "cnv_by_const_apply");
-    assert_eq!(a.n(), res.n(), "cnv_by_const_apply: a.n() != res.n()");
+    assert!(a.n() == res.n(), "cnv_by_const_apply: a.n() != res.n()");
     let Some(res) = big_column_mut(res, res_col) else { return };
     let (Some(a), Some(b)) = (column_ref(a, a_col), column_ref(b, b_col)) else {
         if !accumulate {

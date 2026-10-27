@@ -69,6 +69,10 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxImpl for NTT4x30Gpu<RT, R> {
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
         assert!(a_offset <= 0, "vec_znx_normalize_assign: a_offset must be <= 0");
+        assert!(
+            a_offset == 0 || k == a.size() * base2k,
+            "vec_znx_normalize_assign: a shifting offset needs the full destination precision"
+        );
         let Some(a) = column_mut(a, a_col) else { return };
         normalize::<RT>(&a, base2k, k, a_offset, &a, base2k);
     }
@@ -148,7 +152,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxImpl for NTT4x30Gpu<RT, R> {
     ) {
         let Some(res) = column_mut(res, res_col) else { return };
         let a = column_ref(a, a_col).unwrap_or_else(|| empty_like(&res));
-        assert_eq!(a.n, res.n);
+        assert!(a.n == res.n, "operand degree differs from the result degree");
         lincomb::<RT>(&res, res.size, Term::minus(&a), Term::zero(&a));
     }
 
@@ -167,7 +171,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxImpl for NTT4x30Gpu<RT, R> {
     ) {
         poulpy_hal::layouts::assert_dense(res, "vec_znx_automorphism");
         poulpy_hal::layouts::assert_dense(a, "vec_znx_automorphism");
-        assert_eq!(a.n(), res.n());
+        assert!(a.n() == res.n(), "operand degree differs from the result degree");
         let Some(res) = column_mut(res, res_col) else { return };
         let a = column_ref(a, a_col).unwrap_or_else(|| empty_like(&res));
         permute::<RT>(&res, &a, automorphism_map::<R>(k));
@@ -210,7 +214,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxImpl for NTT4x30Gpu<RT, R> {
         a: &VecZnxBackendRef<'_, Self>,
         a_col: usize,
     ) {
-        assert_eq!(res.n(), a.n());
+        assert!(res.n() == a.n(), "operand degree differs from the result degree");
         let Some(res) = column_mut(res, res_col) else { return };
         let a = column_ref(a, a_col).unwrap_or_else(|| empty_like(&res));
         lincomb::<RT>(&res, res.size, Term::plus(&a), Term::zero(&a));
@@ -262,7 +266,7 @@ unsafe impl<RT: GpuRuntime> HalVecZnxMonomialImpl for NTT4x30Gpu<RT, Standard> {
     ) {
         poulpy_hal::layouts::assert_dense(res, "vec_znx_rotate");
         poulpy_hal::layouts::assert_dense(a, "vec_znx_rotate");
-        assert_eq!(res.n(), a.n());
+        assert!(res.n() == a.n(), "operand degree differs from the result degree");
         let Some(res) = column_mut(res, res_col) else { return };
         let a = column_ref(a, a_col).unwrap_or_else(|| empty_like(&res));
         permute::<RT>(&res, &a, Map::Rotation { p: k });
@@ -320,3 +324,6 @@ unsafe impl<RT: GpuRuntime> HalVecZnxCIImpl for NTT4x30Gpu<RT, Standard> {
         ci_trace::<RT>(&res, &a);
     }
 }
+
+// The matrix family composes the vector kernels: its derived bodies.
+unsafe impl<RT: GpuRuntime, R: Ring> poulpy_hal::oep::HalMatZnxImpl for NTT4x30Gpu<RT, R> {}

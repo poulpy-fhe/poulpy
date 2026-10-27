@@ -1,12 +1,14 @@
 use poulpy_hal::{
     layouts::{
-        DataView, Module, Ring, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut,
+        Module, Ring, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut,
         VecZnxBigBackendRef,
     },
     oep::HalVecZnxBigImpl,
 };
 
-use super::operand::{automorphism_map, big_column_mut, big_column_ref, column_mut, column_ref, empty_like, permute_assign};
+use super::operand::{
+    automorphism_map, big_column_mut, big_column_ref, column_mut, column_ref, empty_like, permute_assign, scalar_column,
+};
 use crate::{
     NTT4x30Gpu,
     runtime::GpuRuntime,
@@ -164,10 +166,13 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxBigImpl for NTT4x30Gpu<RT, R> {
         );
         let Some(res) = big_column_mut(res, res_col) else { return };
         let a_col_stride = a.shape().n_full() as u32;
+        // The kernel reads columns `0..cols`: the last one is checked against the storage as column 0 is.
+        if cols > 0 {
+            let _ = column_ref(a, cols - 1);
+        }
         let a0 = column_ref(a, 0).unwrap_or_else(|| empty_like(&res));
-        let weights_binding = weights.data().binding().unwrap_or_else(|| res.binding.clone());
-        let weights_base = weights_binding.base::<u64>() + (weights_col * weights.n()) as u32;
-        col_weighted_sum::<RT>(&res, &a0, a_col_stride, &weights_binding, weights_base, cols, coeffs);
+        let weights = scalar_column(weights, weights_col).unwrap_or_else(|| empty_like(&res));
+        col_weighted_sum::<RT>(&res, &a0, a_col_stride, &weights.binding, weights.base, cols, coeffs);
     }
 
     fn vec_znx_scalar_product(
@@ -181,13 +186,12 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxBigImpl for NTT4x30Gpu<RT, R> {
     ) {
         poulpy_hal::layouts::assert_dense(res, "vec_znx_scalar_product");
         poulpy_hal::layouts::assert_dense(a, "vec_znx_scalar_product");
-        assert_eq!(b.n(), a.n(), "vec_znx_scalar_product: b must have a's degree");
-        assert!(b_col < b.cols(), "vec_znx_scalar_product: column {b_col} of b out of range");
+        assert!(b.n() == a.n(), "operand degree differs from the result degree");
+        assert!(b_col < b.cols(), "vec_znx_scalar_product: b_col out of range");
         let Some(res) = big_column_mut(res, res_col) else { return };
         let Some(a) = column_ref(a, a_col) else { return };
-        let Some(b_binding) = b.data().binding() else { return };
-        let b_base = b_binding.base::<u64>() + (b_col * b.n()) as u32;
-        scalar_product::<RT>(&res, &a, &b_binding, b_base);
+        let Some(b) = scalar_column(b, b_col) else { return };
+        scalar_product::<RT>(&res, &a, &b.binding, b.base);
     }
 
     fn vec_znx_big_negate(
@@ -199,7 +203,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxBigImpl for NTT4x30Gpu<RT, R> {
     ) {
         let Some(res) = big_column_mut(res, res_col) else { return };
         let a = big_column_ref(a, a_col).unwrap_or_else(|| empty_like(&res));
-        assert_eq!(a.n, res.n);
+        assert!(a.n == res.n, "operand degree differs from the result degree");
         lincomb::<RT>(&res, res.size, Term::minus(&a), Term::zero(&a));
     }
 
@@ -243,7 +247,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxBigImpl for NTT4x30Gpu<RT, R> {
     ) {
         poulpy_hal::layouts::assert_dense(res, "vec_znx_big_automorphism");
         poulpy_hal::layouts::assert_dense(a, "vec_znx_big_automorphism");
-        assert_eq!(a.n(), res.n());
+        assert!(a.n() == res.n(), "operand degree differs from the result degree");
         let Some(res) = big_column_mut(res, res_col) else { return };
         let a = big_column_ref(a, a_col).unwrap_or_else(|| empty_like(&res));
         permute::<RT>(&res, &a, automorphism_map::<R>(k));

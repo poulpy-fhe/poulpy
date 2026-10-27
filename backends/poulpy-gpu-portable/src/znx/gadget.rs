@@ -132,15 +132,14 @@ fn gadget_decompose_kernel(
 /// Lays `a` out on the digit grid of `k_digit`-bit digits in base `2^base2k`,
 /// into the `size` limbs of `res`, a nonzero multiple of `ceil(k_digit / base2k)`.
 pub(crate) fn gadget_decompose<RT: GpuRuntime>(res: &Column, a: &Column, base2k: usize, k_digit: usize) {
-    assert!((1..=62).contains(&base2k), "base2k={base2k} outside 1..=62");
+    assert!((1..=62).contains(&base2k), "base2k outside 1..=62");
     assert!(k_digit > 0, "k_digit must be positive");
-    assert_eq!(res.n, a.n, "gadget layout between different degrees");
+    assert!(res.n == a.n, "gadget layout between different degrees");
     let r = k_digit.div_ceil(base2k);
     let rem = k_digit - (r - 1) * base2k;
     assert!(
         res.size > 0 && res.size.is_multiple_of(r),
-        "res.size()={} is not a nonzero multiple of {r} sub-limbs",
-        res.size
+        "res.size() is not a nonzero multiple of the digit's sub-limbs"
     );
     if res.n == 0 {
         return;

@@ -301,6 +301,7 @@ The bivariate representation recovers bit-granular scale and capacity management
 - **`poulpy-cpu-avx`**: https://crates.io/crates/poulpy-cpu-avx
 - **`poulpy-cpu-avx512`**: https://crates.io/crates/poulpy-cpu-avx512
 - **`poulpy-cpu-arm`**: https://crates.io/crates/poulpy-cpu-arm
+- **`poulpy-gpu-portable`**: https://crates.io/crates/poulpy-gpu-portable
 
 For example, a CKKS application can depend on:
 

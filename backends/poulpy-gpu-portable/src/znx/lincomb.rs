@@ -140,13 +140,13 @@ fn gaps(res_n: usize, n: usize, decimate: bool) -> (u32, u32) {
     if n < res_n {
         assert!(
             res_n.is_multiple_of(n) && (res_n / n).is_power_of_two(),
-            "operand of degree {n} does not embed into degree {res_n}"
+            "operand degree does not embed into the result degree"
         );
         return ((res_n / n).ilog2(), 0);
     }
     assert!(
         decimate && n.is_multiple_of(res_n) && (n / res_n).is_power_of_two(),
-        "operand of degree {n} does not embed into degree {res_n}"
+        "operand degree does not embed into the result degree"
     );
     (0, (n / res_n).ilog2())
 }

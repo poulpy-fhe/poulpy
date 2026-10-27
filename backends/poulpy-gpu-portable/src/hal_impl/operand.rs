@@ -16,14 +16,23 @@ use crate::{
 
 type Word = CrtWord<Primes30, u32>;
 
-/// Panics unless the view of `binding` holds its first `elems` elements of `T`: the
-/// kernels launch unchecked, so a layout wider than its storage must stop here.
+/// Panics unless the view of `binding` holds its first `elems` elements of `T`,
+/// each at an index in the kernels' 32-bit range: the kernels launch
+/// unchecked, so a layout wider than its storage must stop here.
 fn assert_holds<T>(binding: &Binding, elems: usize) {
-    let start = binding.base::<T>() as usize;
+    let end = binding.base::<T>() as usize + elems;
     assert!(
-        (start + elems) * size_of::<T>() <= binding.offset + binding.len,
+        end * size_of::<T>() <= binding.offset + binding.len,
         "device storage shorter than its layout"
     );
+    assert!(u32::try_from(end).is_ok(), "device column ends beyond the 32-bit word range");
+}
+
+/// The product of layout dimensions, in elements.
+fn elems(dims: &[usize]) -> usize {
+    dims.iter()
+        .try_fold(1usize, |product, &dim| product.checked_mul(dim))
+        .expect("operand size overflows usize")
 }
 
 fn column(binding: Option<Binding>, shape: VecZnxShape, col: usize, words: u32) -> Option<Column> {
@@ -78,7 +87,7 @@ fn dft_column(binding: Option<Binding>, n: usize, cols: usize, size: usize, col:
     assert!(col < cols, "operand column out of range");
     let binding = binding?;
     let block = 4 * n;
-    assert_holds::<u32>(&binding, cols * size * block);
+    assert_holds::<u32>(&binding, elems(&[cols, size, block]));
     Some(DftColumn {
         base: u32::try_from(binding.base::<u32>() as usize + col * block)
             .expect("device view starts beyond the 32-bit word range"),
@@ -147,7 +156,7 @@ pub(crate) fn svp_column<D: Bind, B: Backend<DftWord = Word>>(a: &SvpPPol<D, Wor
 /// A prepared matrix, or `None` when it holds no storage.
 pub(crate) fn pmat<D: Bind, B: Backend<DftWord = Word>>(a: &VmpPMat<D, Word, B>) -> Option<Pmat> {
     let binding = a.data().bind()?;
-    assert_holds::<u32>(&binding, a.rows() * a.cols_in() * a.cols_out() * a.size() * 4 * a.n());
+    assert_holds::<u32>(&binding, elems(&[a.rows(), a.cols_in(), a.cols_out(), a.size(), 4, a.n()]));
     Some(Pmat {
         base: binding.base::<u32>(),
         n: a.n(),
@@ -163,7 +172,7 @@ pub(crate) fn pmat<D: Bind, B: Backend<DftWord = Word>>(a: &VmpPMat<D, Word, B>)
 /// column, in the block order of the prepared matrix.
 pub(crate) fn mat_blocks<D: Bind>(a: &MatZnx<D, i64>) -> Option<Column> {
     let binding = a.data().bind()?;
-    assert_holds::<u64>(&binding, a.rows() * a.cols_in() * a.cols_out() * a.size() * a.n());
+    assert_holds::<u64>(&binding, elems(&[a.rows(), a.cols_in(), a.cols_out(), a.size(), a.n()]));
     Some(Column {
         base: binding.base::<u64>(),
         stride: a.n() as u32,
@@ -178,7 +187,7 @@ pub(crate) fn mat_blocks<D: Bind>(a: &MatZnx<D, i64>) -> Option<Column> {
 pub(crate) fn scalar_column<D: Bind>(a: &ScalarZnx<D, i64>, col: usize) -> Option<Column> {
     assert!(col < a.cols(), "operand column out of range");
     let binding = a.data().bind()?;
-    assert_holds::<u64>(&binding, a.cols() * a.n());
+    assert_holds::<u64>(&binding, elems(&[a.cols(), a.n()]));
     Some(Column {
         base: u32::try_from(binding.base::<u64>() as usize + col * a.n())
             .expect("device view starts beyond the 32-bit word range"),
@@ -194,6 +203,12 @@ pub(crate) fn scalar_column<D: Bind>(a: &ScalarZnx<D, i64>, col: usize) -> Optio
 /// one column: block `limb * cols + col` of the vector is limb
 /// `limb * cols + col` of the result.
 pub(crate) fn all_blocks(column0: &Column, cols: usize, limbs: usize) -> Column {
+    // Column 0 was checked up to its own last limb: the other columns reach further.
+    let start = (column0.base - column0.binding.base::<u64>()) as usize;
+    assert_holds::<u64>(
+        &column0.binding,
+        start + elems(&[limbs, cols, column0.n, column0.words as usize]),
+    );
     Column {
         binding: column0.binding.clone(),
         base: column0.base,

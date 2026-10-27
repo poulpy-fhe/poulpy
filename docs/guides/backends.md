@@ -95,16 +95,24 @@ A backend type owns one device for the life of the process: the first device of 
 
 Buffers live on the device, so data moves explicitly: generate keys and encrypt with a host backend, move the layouts with `TransferInto`, prepare and evaluate on the GPU backend, and move results back to decrypt.
 Operations are queued; `Module::synchronize` returns once they have completed, and a transfer to the host waits for what it reads.
-CKKS encoding goes through the host with the portable transform, which keeps it byte-identical to every other backend.
+Sampling, CKKS encoding and decoding, the uniform fill of a coefficient column and the normalizations at radices above 62 bits are staged through the host, and everything else runs on the device.
+CKKS encoding uses the portable transform there, which keeps it byte-identical to every other backend.
 
 A sequence of calls that is repeated on the same buffers (a bootstrap, say) can be recorded once and replayed as one CubeCL graph:
 
 ```rust
+use std::cell::RefCell;
+
 use poulpy_gpu_portable::{Replay, Wgpu};
 
-let mut replay = Replay::<Wgpu>::record(|| bootstrap(&module, &mut ct_out, &ct_in, &ctx, &keys, &mut scratch));
-// Write new inputs into the same buffers, then:
+// The closure borrows the buffers at each call, so the caller can reach them between replays.
+let (ct_in, ct_out) = (RefCell::new(ct_in), RefCell::new(ct_out));
+let mut replay = Replay::<Wgpu>::record(|| {
+    bootstrap(&module, &mut ct_out.borrow_mut(), &ct_in.borrow(), &ctx, &keys, &mut scratch.borrow())
+});
+// Write new inputs into `ct_in.borrow_mut()`, then:
 replay.replay();
+// and read the result from `ct_out.borrow()`.
 ```
 
 The closure must bind the same buffers and issue the same launches at every call, and must not read from the device, write host data to it or synchronize; `Replay` documents the contract, and `Replay::check` tests a closure against its recording.
@@ -112,9 +120,8 @@ A recording keeps the temporaries of the closure reserved on the device until it
 
 Limits of the GPU backends:
 
-- Normalization runs on the device for radix widths from 1 to 62 bits. The wider radices the HAL admits for a 128-bit source go through the host; no parameter set of `NTT4x30` reaches them.
+- Normalization runs on the device for radix widths from 1 to 62 bits. The wider radices the HAL admits for a 128-bit source or an inverse transform go through the host.
 - A window whose degree is not a power-of-two fraction of its operand's is rejected with a panic.
-- The suites pass on Metal and on HIP (Radeon RX 7900 XTX). The CUDA and Vulkan registrations compile from the same code but have not been run.
 
 ## How to use a backend
 

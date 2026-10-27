@@ -181,6 +181,33 @@ poulpy_ckks::ckks_encryption_parity_test_suite! {
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
 
+poulpy_ckks::ckks_parity_test_suite! {
+    mod ckks_parity_ci_rank2,
+    backend_ref = poulpy_cpu_portable::NTT4x30CIPortable,
+    backend_test = super::GpuCI,
+    scalar = f64,
+    params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 52, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
+    tests = {
+        arithmetic => poulpy_ckks::test_suite::parity::test_arithmetic_parity,
+        multiplication => poulpy_ckks::test_suite::parity::test_multiplication_parity,
+        rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
+    }
+}
+
+poulpy_ckks::ckks_encryption_parity_test_suite! {
+    mod ckks_parity_ci_encryption_rank2,
+    backend_ref = poulpy_cpu_portable::test_suite::ControlledSamplingFFT64CIPortable,
+    backend_test = super::GpuCI,
+    params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
+}
+
+/// The insecure `N = 2^11` S2C-first preset, keys and ciphertexts from the
+/// portable client, on both rings: small enough for a default test run.
+#[test]
+fn small_s2c_preset_meets_precision() {
+    poulpy_ckks::test_suite::presets::small_s2c_preset_meets_precision_with_client::<Gpu, poulpy_cpu_portable::NTT4x30Portable>();
+}
+
 /// Serializes the full-size tests: each takes about 20 GB of device memory, and the
 /// launch counters two of them assert are global to the process.
 static FULL_SIZE: std::sync::Mutex<()> = std::sync::Mutex::new(());

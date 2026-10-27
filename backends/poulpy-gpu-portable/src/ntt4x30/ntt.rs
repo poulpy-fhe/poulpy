@@ -426,7 +426,7 @@ fn passes(geometry: NttGeometry, log_n: u32, inverse: bool) -> Vec<Tile> {
 /// `res[j] = dft(a[j])` for the first `limbs` limbs: the `i64` coefficients of
 /// `a` are reduced by the first launch.
 pub(crate) fn forward<RT: GpuRuntime>(tables: &Tables<RT>, res: &DftColumn, a: &Column, limbs: usize) {
-    assert_eq!(res.n, a.n, "transform between different degrees");
+    assert!(res.n == a.n, "transform between different degrees");
     assert!(a.words == 1 && limbs <= res.size.min(a.size));
     if limbs == 0 {
         return;
@@ -475,7 +475,7 @@ pub(crate) fn forward<RT: GpuRuntime>(tables: &Tables<RT>, res: &DftColumn, a: &
 /// `dst[j] = idft(src[j])` in the negacyclic basis for the first `limbs`
 /// limbs. `dst` may be `src` itself; otherwise `src` is left unchanged.
 pub(crate) fn inverse<RT: GpuRuntime>(tables: &Tables<RT>, dst: &DftColumn, src: &DftColumn, limbs: usize) {
-    assert_eq!(dst.n, src.n, "transform between different degrees");
+    assert!(dst.n == src.n, "transform between different degrees");
     assert!(limbs <= dst.size.min(src.size));
     if limbs == 0 {
         return;

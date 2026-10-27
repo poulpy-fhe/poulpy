@@ -12,7 +12,7 @@ use poulpy_ckks::{
     encoding::{paco_coeff_encodings_host, ship_coeff_encodings_host},
     layouts::{
         CKKSEncodingBuffer, CKKSEncodingBufferBackendMut, CKKSEncodingBufferBackendRef, CKKSEncodingBufferInfos, CKKSModuleAlloc,
-        CKKSPlaintextOwned, PaCoPlan, ShipCoeffEncodings, ShipPlan,
+        CKKSPlaintextOwned, PaCoPlan, ShipCoeffEncodings, ShipPlan, ckks_one_pt,
     },
     oep::CKKSEncodingImpl,
     reference::encoding::{CKKSSlotEmbedding, decode_coeffs_into_host, encode_coeffs_into_host},
@@ -21,7 +21,7 @@ use poulpy_core::{
     ComponentNoise, GLWECopy,
     layouts::{
         Base2K, Degree, GLWE, GLWEBackendMut, GLWEBackendRef, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef,
-        IntPolyInfos, LWEInfos, ModuleCoreAlloc, Rank, SetK, TorusPrecision,
+        IntPolyInfos, LWEInfos, Rank, SetK, TorusPrecision,
     },
 };
 use poulpy_cpu_portable::ckks_encoding::{EncodingFFTTable, OwnedEncodingPlanSet};
@@ -46,9 +46,9 @@ use crate::{
 /// The constant plaintexts `1` of a module, one per radix.
 struct OnePlaintexts<BE: poulpy_hal::layouts::Backend>(Mutex<HashMap<usize, Arc<CKKSPlaintextOwned<BE>>>>);
 
-/// The device plaintext of the constant `1.0`, as `poulpy-ckks` builds it for
-/// its add-one and sub-one operations (one coefficient `2` at scale 2), kept
-/// by the module: only the first request for a radix uploads it.
+/// The device plaintext of the constant `1.0` of the add-one and sub-one
+/// operations, [`ckks_one_pt`], kept by the module: only the first request
+/// for a radix uploads it.
 pub(crate) fn one_plaintext<RT, R>(
     module: &Module<NTT4x30Gpu<RT, R>>,
     base2k: Base2K,
@@ -58,30 +58,6 @@ where
     R: Ring,
     Module<NTT4x30Gpu<RT, R>>: CKKSModuleAlloc<NTT4x30Gpu<RT, R>>,
 {
-    let build = || -> CKKSPlaintextOwned<NTT4x30Gpu<RT, R>> {
-        let log_delta = 1usize;
-        let meta = GLWEPlaintextMeta {
-            scale: poulpy_ckks::Scale::Log(log_delta),
-            slots: poulpy_ckks::SlotsKind::Real,
-            log_sparsity: 0,
-        };
-        // The total torus width is `log_delta`: no budget above the scale.
-        let size = log_delta.div_ceil(base2k.as_usize());
-        let mut limbs = poulpy_hal::layouts::VecZnx::<AlignedBuf, i64>::from_data(
-            AlignedBuf::from(vec![0u8; size * size_of::<i64>()]),
-            1,
-            1,
-            size,
-        );
-        limbs.encode_vec_i64(base2k.as_usize(), 0, size * base2k.as_usize(), &[1i64 << log_delta]);
-        let mut pt = module.ckks_pt_coeffs_alloc(1, base2k, log_delta.into());
-        pt.set_meta(meta);
-        let mut device = GLWEToBackendMut::<NTT4x30Gpu<RT, R>>::to_backend_mut(&mut pt);
-        let storage = device.data_mut().data_mut();
-        let bytes = storage.len();
-        storage.write_prefix(&limbs.data()[..bytes]);
-        pt
-    };
     // Building the constant uses the device. The access is taken before the
     // cache is locked, as everywhere else: a thread that records holds the
     // device and may ask for the constant.
@@ -92,10 +68,15 @@ where
             || Ok(OnePlaintexts(Mutex::new(HashMap::new()))),
             |cache: &OnePlaintexts<NTT4x30Gpu<RT, R>>| {
                 let mut cache = cache.0.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-                cache.entry(base2k.as_usize()).or_insert_with(|| Arc::new(build())).clone()
+                if let Some(one) = cache.get(&base2k.as_usize()) {
+                    return Ok(one.clone());
+                }
+                let one = Arc::new(ckks_one_pt(module, base2k)?);
+                cache.insert(base2k.as_usize(), one.clone());
+                Ok(one)
             },
         )
-        .map_err(CKKSError::from)
+        .map_err(CKKSError::from)?
 }
 
 /// The host backend the staged work is typed with: host bytes, `i64` limbs, the ring of the device backend.
@@ -109,11 +90,11 @@ struct Staged<P> {
 }
 
 /// A zeroed host container with the shape of the device storage `data`.
-fn host_like<R: Ring, D: poulpy_hal::layouts::Data>(data: &GLWE<D, i64>) -> GLWE<AlignedBuf, i64> {
+fn host_like<D: poulpy_hal::layouts::Data>(data: &GLWE<D, i64>) -> GLWE<AlignedBuf, i64> {
     let shape = data.data().shape();
     assert!(shape.is_dense(), "CKKS encoding is staged from dense plaintext storage");
     let base2k = LWEInfos::base2k(data);
-    Module::<Host<R>>::new(8).glwe_alloc_from_infos(&GLWELayout {
+    GLWE::alloc_from_infos(&GLWELayout {
         n: Degree(shape.n() as u32),
         base2k,
         k: TorusPrecision(shape.size() as u32 * base2k.as_u32()),
@@ -244,7 +225,7 @@ where
         let len = CKKSEncodingBufferInfos::len(coeffs);
         let host_coeffs = download::<RT, F>(&coeffs.data, len);
         // The encoder writes every limb of the plaintext: nothing is read back first.
-        let host = host_like::<R, _>(&GLWEToBackendRef::<Self>::to_backend_ref(pt));
+        let host = host_like(&GLWEToBackendRef::<Self>::to_backend_ref(pt));
         let mut staged = Staged { pt, host };
         encode_coeffs_into_host::<Host<R>, F, _>(&mut staged, &CKKSEncodingBuffer::from_data(&host_coeffs[..], len))
             .map_err(CKKSError::from)?;
@@ -269,7 +250,7 @@ where
         let bytes = len * size_of::<F>();
         let host = {
             let device = GLWEToBackendRef::<Self>::to_backend_ref(pt);
-            let mut host = host_like::<R, _>(&device);
+            let mut host = host_like(&device);
             let storage = device.data().data();
             storage.read_prefix(&mut host.data_mut().data_mut()[..storage.len()]);
             host

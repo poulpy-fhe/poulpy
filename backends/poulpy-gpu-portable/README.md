@@ -10,7 +10,8 @@ It implements the extension traits of [`poulpy-hal`](https://github.com/poulpy-f
 | `enable-hip` | `NTT4x30Hip` | ROCm/HIP toolkit |
 | `enable-metal`, `enable-vulkan`, `enable-wgpu` | `NTT4x30Wgpu` | a Metal, Vulkan or WebGPU device |
 
-Key generation, encoding and sampling are staged through the host: a CPU backend such as `NTT4x30Portable` can generate the keys and encrypt, and the GPU backend compiles the bootstrapping context, prepares the keys and bootstraps.
+Sampling, CKKS encoding and decoding, the uniform fill of a coefficient column and the normalizations at radices above 62 bits are staged through the host, and everything else runs on the device.
+A CPU backend such as `NTT4x30Portable` can generate the keys and encrypt, and the GPU backend compiles the bootstrapping context, prepares the keys and bootstraps.
 
 ```bash
 cargo test --release -p poulpy-gpu-portable --features enable-metal,enable-ckks

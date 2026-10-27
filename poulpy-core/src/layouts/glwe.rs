@@ -305,13 +305,10 @@ impl<D: HostDataRef, W: ZnxWord> fmt::Display for GLWE<D, W> {
     }
 }
 
-#[expect(
-    dead_code,
-    reason = "host-owned constructors are kept for serialization and host-only staging"
-)]
 impl<W: ZnxWord> GLWE<AlignedBuf, W> {
-    /// Allocates a new [`GLWE`] with the given parameters.
-    pub(crate) fn alloc_from_infos<A>(infos: &A) -> Self
+    /// Allocates a new zeroed host [`GLWE`] with the layout of `infos`, without
+    /// a module: the host copy of a host-staged operation.
+    pub fn alloc_from_infos<A>(infos: &A) -> Self
     where
         A: GLWEInfos,
     {

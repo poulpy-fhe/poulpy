@@ -29,8 +29,8 @@ pub struct AutomorphismPlan {
 
 impl AutomorphismPlan {
     pub(crate) fn new(n: usize, p: i64, invariant: bool) -> Self {
-        assert!(n.is_power_of_two(), "ring degree must be a power of two, got {n}");
-        assert!(p & 1 == 1, "automorphism exponent must be odd, got {p}");
+        assert!(n.is_power_of_two(), "ring degree must be a power of two");
+        assert!(p & 1 == 1, "automorphism exponent must be odd");
         let shift = 1 + invariant as u32;
         let order = (n as i128) << shift;
         let mut mul = (p as i128).rem_euclid(order);
@@ -93,10 +93,7 @@ fn automorphism_kernel(
 pub(crate) fn automorphism<RT: GpuRuntime>(plan: &AutomorphismPlan, res: &DftColumn, a: &DftColumn, accumulate: bool) {
     assert!(
         res.n == plan.n && a.n == plan.n,
-        "automorphism plan of degree {} applied at degrees {} and {}",
-        plan.n,
-        res.n,
-        a.n
+        "automorphism plan applied at another degree"
     );
     let limbs = if accumulate { res.size.min(a.size) } else { res.size };
     if limbs == 0 {

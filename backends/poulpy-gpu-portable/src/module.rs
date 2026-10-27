@@ -10,7 +10,7 @@ use poulpy_hal::{
 use crate::{
     NTT4x30Gpu,
     ntt4x30::Tables,
-    runtime::{GpuBuf, GpuRuntime, access},
+    runtime::{GpuBuf, GpuRuntime},
 };
 
 /// State a module keeps on the device.
@@ -40,11 +40,18 @@ impl<RT: GpuRuntime> GpuHandle<RT> {
     }
 
     /// Runs `f` on an uninitialized device temporary of `len` bytes, the one of
-    /// the in-place permutations and of the inverse transform that keeps its
-    /// source. Each call takes its own from the allocator, which recycles freed
-    /// memory, so that threads sharing the module never share a temporary.
+    /// the in-place permutations, of the inverse transform that keeps its
+    /// source and of the wide-radix normalization of an inverse transform, whose
+    /// queries cover the kernel paths. Each call takes its own from the
+    /// allocator, which recycles freed memory, so that threads sharing the
+    /// module never share a temporary. The temporary is zeroed before it is
+    /// released: it may hold secret-derived words, out of reach of the
+    /// caller's `ScratchArena::wipe`.
     pub(crate) fn with_temp<T>(&self, len: usize, f: impl FnOnce(&mut GpuBuf<RT>) -> T) -> T {
-        f(&mut GpuBuf::uninit(len))
+        let mut temp = GpuBuf::uninit(len);
+        let result = f(&mut temp);
+        temp.wipe();
+        result
     }
 }
 
@@ -81,7 +88,6 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalModuleImpl for NTT4x30Gpu<RT, R> {
 
     fn synchronize(_module: &Module<Self>) {
         crate::runtime::host_event(crate::runtime::HostEvent::Sync, 0);
-        let _access = access::shared();
-        pollster::block_on(RT::client().sync()).unwrap_or_else(|error| panic!("device synchronization failed: {error:?}"));
+        crate::runtime::synchronize::<RT>();
     }
 }

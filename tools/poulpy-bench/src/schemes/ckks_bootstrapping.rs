@@ -7,6 +7,8 @@
 //! [`BootstrappingPresetRun`] driver, so the benchmark exercises exactly what
 //! the precision pin test checks, EvalMod on the conjugate-invariant ring included.
 
+use std::{cell::RefCell, rc::Rc};
+
 use crate::backend_name;
 use criterion::{BenchmarkGroup, BenchmarkId, Criterion, measurement::WallTime};
 use poulpy_ckks::{
@@ -32,13 +34,17 @@ use poulpy_hal::{
     layouts::{Backend, HostDataMut, HostDataRef, HostStaged, MaxBase2k, Module, ScratchOwned, Standard},
 };
 
+/// Records the queued bootstrap it receives and returns what reruns it.
+type Record<'a> = &'a dyn Fn(Box<dyn FnMut()>) -> Box<dyn FnMut()>;
+
 fn runner_ckks_bootstrapping<BE, BC>(
     group: &mut BenchmarkGroup<'_, WallTime>,
     preset: BootstrappingPreset,
     setup: impl Fn(BootstrappingPreset) -> BootstrappingPresetRun<BE, BC>,
+    record: Option<Record<'_>>,
 ) where
     BE: Backend<Ring = Standard, ZnxWord = i64> + HostStaged + 'static,
-    BC: TestContextBackend<Ring = Standard>,
+    BC: TestContextBackend<Ring = Standard> + 'static,
     Module<BE>: PresetRunModule<BE>,
     Module<BC>: TestContextModule<BC> + CKKSEncodingOps<BC, f64>,
     for<'a> <BC as Backend>::BufRef<'a>: HostDataRef,
@@ -57,12 +63,25 @@ fn runner_ckks_bootstrapping<BE, BC>(
         preset.key_dsize(),
         preset.dense_to_sparse_dsize()
     );
-    let mut run = None;
+    let mut state = None;
     let mut precision = None;
     group.bench_function(BenchmarkId::from_parameter(&id), |bencher| {
-        let run = run.get_or_insert_with(|| setup(preset.clone()));
-        bencher.iter(|| run.bootstrap());
-        precision = Some(run.precision());
+        let (run, replay) = state.get_or_insert_with(|| {
+            let run = Rc::new(RefCell::new(setup(preset.clone())));
+            let replay = record.map(|record| {
+                let body = run.clone();
+                record(Box::new(move || body.borrow_mut().bootstrap_queued()))
+            });
+            (run, replay)
+        });
+        match replay {
+            Some(replay) => bencher.iter(|| {
+                replay();
+                run.borrow().synchronize();
+            }),
+            None => bencher.iter(|| run.borrow_mut().bootstrap()),
+        }
+        precision = Some(run.borrow_mut().precision());
     });
     if let Some((re, im)) = precision {
         let backend = backend_name::<BE>();
@@ -120,7 +139,68 @@ pub fn bench_ckks_bootstrapping_with_client<BE, BC>(c: &mut Criterion<WallTime>)
 where
     BE: Backend<Ring = Standard, ZnxWord = i64> + HostStaged + MaxBase2k + 'static,
     CIBackend<BE>: MaxBase2k,
-    BC: TestContextBackend<Ring = Standard>,
+    BC: TestContextBackend<Ring = Standard> + 'static,
+    CIBackend<BC>: TestContextBackend,
+    Module<BE>: PresetRunModule<BE> + CKKSDFTOps<BE> + CKKSBootstrappingCIOps<BE> + GLWECIKeyPreparedFactory<BE>,
+    Module<CIBackend<BE>>: ModuleNew<CIBackend<BE>>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+        + CKKSModuleAlloc<CIBackend<BE>>
+        + CKKSEncodingOps<CIBackend<BE>, f64>
+        + GLWETensorKeyPreparedFactory<CIBackend<BE>>,
+    Module<BC>: TestContextModule<BC> + CKKSEncodingOps<BC, f64> + CKKSBootstrappingCIOps<BC> + GLWECIKeyEncryptSk<BC>,
+    Module<CIBackend<BC>>: TestContextSharedModule<CIBackend<BC>>,
+    for<'a> <BC as Backend>::BufRef<'a>: HostDataRef,
+    for<'a> <BC as Backend>::BufMut<'a>: HostDataMut,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
+    ScratchOwned<CIBackend<BE>>: ScratchOwnedAlloc<CIBackend<BE>>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos + CKKSCtBounds + poulpy_core::layouts::DiagonalProd<BE>,
+    CKKSCiphertextOwned<BC>: GLWEToBackendMut<BC> + GLWEToBackendRef<BC> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BC>: GLWEToBackendRef<BC> + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+{
+    bootstrapping_group::<BE, BC>(c, "ckks_bootstrapping", None);
+}
+
+/// [`bench_ckks_bootstrapping_with_client`] timing replays of a recorded
+/// bootstrap, as an application that repeats a bootstrap on the same buffers
+/// runs it: `record` receives the queued bootstrap of a preset once and
+/// returns what reruns it, and every iteration is a rerun, synchronized. The
+/// group is `ckks_bootstrapping_replayed`, with the ids of the unrecorded one.
+pub fn bench_ckks_bootstrapping_replayed_with_client<BE, BC>(
+    c: &mut Criterion<WallTime>,
+    record: impl Fn(Box<dyn FnMut()>) -> Box<dyn FnMut()>,
+) where
+    BE: Backend<Ring = Standard, ZnxWord = i64> + HostStaged + MaxBase2k + 'static,
+    CIBackend<BE>: MaxBase2k,
+    BC: TestContextBackend<Ring = Standard> + 'static,
+    CIBackend<BC>: TestContextBackend,
+    Module<BE>: PresetRunModule<BE> + CKKSDFTOps<BE> + CKKSBootstrappingCIOps<BE> + GLWECIKeyPreparedFactory<BE>,
+    Module<CIBackend<BE>>: ModuleNew<CIBackend<BE>>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+        + CKKSModuleAlloc<CIBackend<BE>>
+        + CKKSEncodingOps<CIBackend<BE>, f64>
+        + GLWETensorKeyPreparedFactory<CIBackend<BE>>,
+    Module<BC>: TestContextModule<BC> + CKKSEncodingOps<BC, f64> + CKKSBootstrappingCIOps<BC> + GLWECIKeyEncryptSk<BC>,
+    Module<CIBackend<BC>>: TestContextSharedModule<CIBackend<BC>>,
+    for<'a> <BC as Backend>::BufRef<'a>: HostDataRef,
+    for<'a> <BC as Backend>::BufMut<'a>: HostDataMut,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
+    ScratchOwned<CIBackend<BE>>: ScratchOwnedAlloc<CIBackend<BE>>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos + CKKSCtBounds + poulpy_core::layouts::DiagonalProd<BE>,
+    CKKSCiphertextOwned<BC>: GLWEToBackendMut<BC> + GLWEToBackendRef<BC> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BC>: GLWEToBackendRef<BC> + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+{
+    bootstrapping_group::<BE, BC>(c, "ckks_bootstrapping_replayed", Some(&record));
+}
+
+fn bootstrapping_group<BE, BC>(c: &mut Criterion<WallTime>, name: &str, record: Option<Record<'_>>)
+where
+    BE: Backend<Ring = Standard, ZnxWord = i64> + HostStaged + MaxBase2k + 'static,
+    CIBackend<BE>: MaxBase2k,
+    BC: TestContextBackend<Ring = Standard> + 'static,
     CIBackend<BC>: TestContextBackend,
     Module<BE>: PresetRunModule<BE> + CKKSDFTOps<BE> + CKKSBootstrappingCIOps<BE> + GLWECIKeyPreparedFactory<BE>,
     Module<CIBackend<BE>>: ModuleNew<CIBackend<BE>>
@@ -141,16 +221,21 @@ where
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
     let backend = backend_name::<BE>();
-    let mut group = c.benchmark_group(format!("{backend}/ckks/ckks_bootstrapping"));
+    let mut group = c.benchmark_group(format!("{backend}/ckks/{name}"));
     group.sample_size(10);
     for preset in all().unwrap() {
         let ring = preset.plan().eval_mod_ring();
         let preset = preset_for_backend::<BE, CIBackend<BE>>(&preset).unwrap();
         match ring {
-            EvalModRing::Standard => runner_ckks_bootstrapping(&mut group, preset, BootstrappingPresetRun::<BE, BC>::setup),
-            _ => runner_ckks_bootstrapping(&mut group, preset, |preset| {
-                BootstrappingPresetRun::<BE, BC>::setup_ci(preset)
-            }),
+            EvalModRing::Standard => {
+                runner_ckks_bootstrapping(&mut group, preset, BootstrappingPresetRun::<BE, BC>::setup, record)
+            }
+            _ => runner_ckks_bootstrapping(
+                &mut group,
+                preset,
+                |preset| BootstrappingPresetRun::<BE, BC>::setup_ci(preset),
+                record,
+            ),
         }
     }
     group.finish();

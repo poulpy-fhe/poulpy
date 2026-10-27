@@ -141,6 +141,11 @@ jobs:
       - name: Clippy all non-AVX features
         run: cargo clippy --workspace --all-targets --features "$PORTABLE_FEATURES" -- -D warnings
 
+      # The GPU crate's backend, registrations, tests and benches need a
+      # runtime feature; Vulkan's builds without a vendor toolkit.
+      - name: Clippy GPU backend
+        run: cargo clippy -p poulpy-gpu-portable --all-targets --features enable-vulkan,enable-ckks -- -D warnings
+
       - name: Check scheme documentation
         run: RUSTDOCFLAGS="-D warnings" cargo doc -p poulpy-core -p poulpy-ckks -p poulpy-bin-fhe -p poulpy-mhe -p poulpy-blas -p poulpy-libm --no-deps --features poulpy-core/enable-core,poulpy-ckks/test-utils,poulpy-blas/test-utils,poulpy-libm/test-utils
 
@@ -400,7 +405,7 @@ jobs:
       contains(fromJSON(needs.changes.outputs.crates), 'poulpy-cpu-portable') ||
       contains(fromJSON(needs.changes.outputs.crates), 'poulpy-cpu-avx')
     runs-on: macos-15-intel
-    timeout-minutes: 25
+    timeout-minutes: 15
 
     env:
       RUSTFLAGS: -C target-feature=+avx2,+fma

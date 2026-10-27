@@ -19,7 +19,7 @@ pub(crate) enum Map {
 
 /// Inverse of the odd `p` modulo the power of two `modulus`.
 fn inverse_odd(p: i64, modulus: u64) -> u32 {
-    assert!(p & 1 == 1, "p must be odd, got {p}");
+    assert!(p & 1 == 1, "p must be odd");
     let p = (p as u64) & (modulus - 1);
     // Newton iteration doubles the number of correct low bits each step.
     let mut inv = p;
@@ -101,8 +101,8 @@ fn permute_kernel(
 /// Writes every limb of `res` with the image of `a` under `map`; limbs past
 /// `a`'s are zero. `res` and `a` must not overlap.
 pub(crate) fn permute<RT: GpuRuntime>(res: &Column, a: &Column, map: Map) {
-    assert_eq!(res.n, a.n, "permutation between different degrees");
-    assert_eq!(res.words, a.words, "permutation between different word widths");
+    assert!(res.n == a.n, "permutation between different degrees");
+    assert!(res.words == a.words, "permutation between different word widths");
     if res.size == 0 || res.n == 0 {
         return;
     }
@@ -206,12 +206,12 @@ fn ci_map<RT: GpuRuntime>(res: &Column, a: &Column, trace: u32) {
 
 /// Embeds a conjugate-invariant `a` of degree `n` into the standard ring of degree `2n`.
 pub(crate) fn ci_embed<RT: GpuRuntime>(res: &Column, a: &Column) {
-    assert_eq!(res.n, 2 * a.n, "vec_znx_ci_embed: res degree must be twice the degree of a");
+    assert!(res.n == 2 * a.n, "vec_znx_ci_embed: res degree must be twice the degree of a");
     ci_map::<RT>(res, a, 0);
 }
 
 /// Traces a standard `a` of degree `2n` down to the conjugate-invariant ring of degree `n`.
 pub(crate) fn ci_trace<RT: GpuRuntime>(res: &Column, a: &Column) {
-    assert_eq!(a.n, 2 * res.n, "vec_znx_ci_trace: a degree must be twice the degree of res");
+    assert!(a.n == 2 * res.n, "vec_znx_ci_trace: a degree must be twice the degree of res");
     ci_map::<RT>(res, a, 1);
 }

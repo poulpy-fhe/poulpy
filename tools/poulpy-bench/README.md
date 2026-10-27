@@ -176,6 +176,9 @@ Each case checks its measured precision against the preset's advertised minimum.
 `schemes::suites::bench_ckks_bootstrapping_with_client::<BE, BC>` runs the same cases on `BE` with the
 secret, keys and ciphertexts of a client backend `BC`, for an evaluating backend that generates no keys;
 it times the bootstrap on `BE` to completion.
+`schemes::suites::bench_ckks_bootstrapping_replayed_with_client::<BE, BC>` times instead the replays of a
+bootstrap recorded once through the closure the backend passes, in the group `ckks_bootstrapping_replayed`
+with the same ids. The GPU `bootstrapping` binary registers both.
 
 ```sh
 # List the logN15 cases without allocating bootstrapping keys

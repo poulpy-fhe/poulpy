@@ -16,6 +16,9 @@
 //! has `2^s` blocks and butterfly distance `n / 2^(s+1)`; its block `i` uses
 //! twiddle entry `2^s + i`.
 
+use poulpy_cpu_portable::kernels::ntt4x30::{conjugate_invariant::BasisChange, primes::Primes30};
+use poulpy_hal::layouts::PrimeSet;
+
 use super::primes::{MAX_LOG_N, Q, companion, inv_mod, mul_mod, omega_pow2};
 use crate::runtime::{GpuBuf, GpuRuntime};
 
@@ -54,29 +57,26 @@ fn build(log_n: u32, invariant: bool) -> Vec<u32> {
         }
     }
     if invariant {
-        let alpha: [u32; 4] = std::array::from_fn(|k| omega_pow2(k, MAX_LOG_N - 1 - log_n));
+        // The multipliers of portable's basis change: forward `[alpha^-j, .]`,
+        // inverse `[alpha^j / 2, -alpha^-j / 2]`, entry 0 being `[1, 0]`.
+        let change = |k: usize, inverse: bool| {
+            BasisChange::new(n, Q[k] as u64, <Primes30 as PrimeSet>::OMEGA[k] as u64, MAX_LOG_N, inverse)
+        };
+        let plane = |change: &BasisChange, side: usize| -> Vec<u32> {
+            let mut words: Vec<u32> = change.factors().iter().map(|factor| factor[side] as u32).collect();
+            // Entry 0 of the reflected plane is unused and zero: 1 keeps its companion defined.
+            words[0] = words[0].max(1);
+            words
+        };
+        let (forward, inverse): (Vec<_>, Vec<_>) = (0..4).map(|k| (change(k, false), change(k, true))).unzip();
         for (k, &q) in Q.iter().enumerate() {
-            push(&mut words, &powers(inv_mod(alpha[k], q), n, q), q);
+            push(&mut words, &plane(&forward[k], 0), q);
         }
-        let halves: Vec<Vec<u32>> = (0..4)
-            .map(|k| {
-                let half = Q[k].div_ceil(2);
-                powers(alpha[k], n, Q[k]).iter().map(|&w| mul_mod(w, half, Q[k])).collect()
-            })
-            .collect();
         for (k, &q) in Q.iter().enumerate() {
-            let mut direct = halves[k].clone();
-            direct[0] = 1;
-            push(&mut words, &direct, q);
+            push(&mut words, &plane(&inverse[k], 0), q);
         }
         for (k, &q) in Q.iter().enumerate() {
-            // `-alpha^-j / 2 = i * alpha^(n-j) / 2` with `i = alpha^n`.
-            let i = omega_pow2(k, MAX_LOG_N - 1);
-            let mut reflected = vec![1u32; n];
-            for j in 1..n {
-                reflected[j] = mul_mod(halves[k][n - j], i, q);
-            }
-            push(&mut words, &reflected, q);
+            push(&mut words, &plane(&inverse[k], 1), q);
         }
     }
     words
@@ -95,7 +95,7 @@ impl<RT: GpuRuntime> Tables<RT> {
         let max_log_n = MAX_LOG_N - invariant as u32;
         assert!(
             n.is_power_of_two() && n <= 1 << max_log_n,
-            "ring degree must be a power of two at most 2^{max_log_n}, got {n}"
+            "ring degree must be a power of two within the prime set's transform"
         );
         let by_log_n = (MIN_LOG_N..=n.ilog2())
             .map(|log_n| GpuBuf::from_host(bytemuck::cast_slice(&build(log_n, invariant))))
@@ -105,11 +105,11 @@ impl<RT: GpuRuntime> Tables<RT> {
 
     /// The table of degree `n`.
     pub(crate) fn of(&self, n: usize) -> &GpuBuf<RT> {
-        assert!(n.is_power_of_two(), "ring degree must be a power of two, got {n}");
+        assert!(n.is_power_of_two(), "ring degree must be a power of two");
         n.ilog2()
             .checked_sub(MIN_LOG_N)
             .and_then(|index| self.by_log_n.get(index as usize))
-            .unwrap_or_else(|| panic!("degree {n} is not served by the module"))
+            .expect("degree not served by the module")
     }
 
     /// Whether the module is over the conjugate-invariant ring.

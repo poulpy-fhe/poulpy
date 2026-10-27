@@ -21,7 +21,7 @@ use poulpy_hal::{
 use crate::{
     NTT4x30Gpu,
     hal_impl::{big_column_mut, column_mut, gglwe_product_digits_strided},
-    runtime::{GpuBuf, GpuRuntime},
+    runtime::{GpuBuf, GpuRuntime, wipe_host},
     znx::{Column, Term, lincomb},
 };
 
@@ -58,7 +58,8 @@ unsafe impl<RT: GpuRuntime, R: Ring> GGLWEProductDigitsStridedImpl for NTT4x30Gp
 /// Adds the noise the portable sampler draws on a zeroed host column to
 /// `res`. The sample only depends on the seed, the degree, the law, `k` and
 /// `base2k`, so drawing it apart from the destination changes nothing; its
-/// leading zero limbs are neither transferred nor added.
+/// leading zero limbs are neither transferred nor added. The device copy of
+/// the sample is zeroed before it is released.
 fn add_host_noise<RT: GpuRuntime, T: bytemuck::Pod + PartialEq + Default>(res: &Column, n: usize, limbs: &[T]) {
     let zero = T::default();
     let Some(first) = limbs.chunks_exact(n).position(|limb| limb.iter().any(|x| *x != zero)) else {
@@ -66,7 +67,7 @@ fn add_host_noise<RT: GpuRuntime, T: bytemuck::Pod + PartialEq + Default>(res: &
     };
     let size = limbs.len() / n - first;
     let words = (size_of::<T>() / size_of::<u64>()) as u32;
-    let device = GpuBuf::<RT>::from_host(bytemuck::cast_slice(&limbs[first * n..]));
+    let mut device = GpuBuf::<RT>::from_host(bytemuck::cast_slice(&limbs[first * n..]));
     let noise = Column {
         binding: device.view().binding().expect("noise holds storage"),
         base: 0,
@@ -88,6 +89,7 @@ fn add_host_noise<RT: GpuRuntime, T: bytemuck::Pod + PartialEq + Default>(res: &
         size,
     };
     lincomb::<RT>(&target, size, Term::plus(&target), Term::plus(&noise));
+    device.wipe();
 }
 
 /// The portable host samplers: the samples are drawn on the host with the
@@ -120,6 +122,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> SamplingImpl for NTT4x30Gpu<RT, R> {
         res.data_mut()
             .region_mut(res_col * bytes, bytes)
             .write_prefix(&host.data()[..bytes]);
+        wipe_host(host.data_mut());
     }
 
     fn vec_znx_add_noise(
@@ -142,8 +145,10 @@ unsafe impl<RT: GpuRuntime, R: Ring> SamplingImpl for NTT4x30Gpu<RT, R> {
         assert!(res_col < res.cols(), "noise column exceeds destination allocation");
         let mut host = VecZnx::<AlignedBuf, i64>::from_data(AlignedBuf::from(vec![0u8; n * size * size_of::<i64>()]), n, 1, size);
         add_noise_portable(base2k, k, &mut host, 0, noise, &mut Source::new(seed));
-        let Some(res) = column_mut(res, res_col) else { return };
-        add_host_noise::<RT, i64>(&res, n, host.raw());
+        if let Some(res) = column_mut(res, res_col) {
+            add_host_noise::<RT, i64>(&res, n, host.raw());
+        }
+        wipe_host(host.data_mut());
     }
 
     fn vec_znx_big_add_noise(
@@ -171,8 +176,10 @@ unsafe impl<RT: GpuRuntime, R: Ring> SamplingImpl for NTT4x30Gpu<RT, R> {
             size,
         );
         add_noise_portable(base2k, k, &mut host, 0, noise, &mut Source::new(seed));
-        let Some(res) = big_column_mut(res, res_col) else { return };
-        add_host_noise::<RT, i128>(&res, n, host.raw());
+        if let Some(res) = big_column_mut(res, res_col) {
+            add_host_noise::<RT, i128>(&res, n, host.raw());
+        }
+        wipe_host(host.data_mut());
     }
 }
 
@@ -180,7 +187,6 @@ unsafe impl<RT: GpuRuntime, R: Ring> SamplingImpl for NTT4x30Gpu<RT, R> {
 /// concrete backend type: one invocation per runtime and ring.
 macro_rules! impl_core {
     ($be:ty) => {
-        unsafe impl ::poulpy_hal::oep::HalMatZnxImpl for $be {}
         ::poulpy_core::impl_automorphism_reference_full!($be);
         ::poulpy_core::impl_decompression_reference_full!($be);
         ::poulpy_core::impl_decryption_reference_full!($be);

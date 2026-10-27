@@ -30,7 +30,7 @@ Entry point for reviewing a poulpy diff: the one file a review needs to be given
 | touches `backends/poulpy-gpu-portable/` | `gpu.md` and `hal.md` (also its sections 6, 7, 9 and 11), plus the file of every crate whose OEP trait or test suite the change implements, overrides or registers |
 | adds or changes an OEP trait, OEP method, opt-in or registration macro, or public test suite, in any crate | `backends.md` and `gpu.md` (the backend side must follow) |
 | touches `tools/poulpy-bench/` or any `benches/` directory, or makes a performance claim (PR description, CHANGELOG, README, `docs/guides/performance.md`, gate constant) | `bench.md` |
-| touches `.github/` | these sections alone, picking no file: `hal.md` section 11, `ckks.md` sections 15.1 and 15.4, `backends.md` sections 11 and 13.7, `bench.md` section 4 |
+| touches `.github/` | these sections alone, picking no file: `hal.md` section 11, `ckks.md` sections 15.1 and 15.4, `backends.md` sections 11 and 13.7, `bench.md` section 4, `gpu.md` section 1 |
 | touches `docs/guides/layering-contract.md` | these sections alone, picking no file: `hal.md` sections 1, 4 and 5, `core.md` sections 1 and 2, `ckks.md` sections 1 and 2, `bin-fhe.md` sections 1 and 2, `mhe.md` sections 1 and 2, `blas.md` sections 1 and 2, `backends.md` sections 3 and 4 |
 | touches a crate's manifest, README or `docs/` directory | that crate's file |
 | touches `docs/guides/bootstrapping.md` | `ckks.md` |
