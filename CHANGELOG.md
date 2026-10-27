@@ -683,6 +683,7 @@
 - Every timed closure of the HAL, core and scheme runners ends with `Module::synchronize`, so a backend that queues its work is timed to completion.
 - The HAL, core and CKKS runners and suites no longer bound `OwnedBuf = AlignedBuf` or host buffer views, except `bench_ckks_bootstrapping`, whose client stages the keys on the host; the bin-fhe ones still do.
 - Add `bench_ckks_bootstrapping_with_client`, and `bench_ckks_bootstrapping_replayed_with_client`, which times the replays of a bootstrap recorded through a closure the backend passes.
+- **Behaviour:** the bootstrapping runners also run each preset with the keys of power-of-two rotations only (`BootstrappingPreset::with_power_of_two_keys`), under the preset's name with a `_pow2` suffix, so a filter on a preset name selects both.
 - **Breaking:** `bench_ckks_bootstrapping` requires `PresetRunModule`, `HostStaged` and `CKKSDFTOps`.
 
 ### Dependencies

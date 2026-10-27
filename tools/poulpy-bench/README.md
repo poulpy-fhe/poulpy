@@ -144,7 +144,7 @@ parameter grid), `standard` (a representative cross-section), and `light`
 cargo bench -p poulpy-cpu-portable --bench standard --features enable-ckks
 
 # The full grid — long running; only do this when you mean it
-cargo bench -p poulpy-cpu-portable --bench full --features enable-ckks
+cargo bench -p poulpy-cpu-portable --bench full --features enable-core,enable-ckks,enable-bin-fhe
 ```
 
 ### Running a subset: layer or op filters
@@ -172,6 +172,8 @@ cargo bench -p poulpy-cpu-portable --bench standard --features enable-ckks -- --
 `poulpy_ckks::presets::bootstrapping::all()`, including
 `n15_d35_k180_p18_c2s` (four recovered levels, 18-bit minimum precision)
 and the logN16 presets. The reference, AVX and AVX-512 `full` binaries register this runner.
+Each preset runs twice: as defined, and with the keys of power-of-two rotations only (`BootstrappingPreset::with_power_of_two_keys`), named with a `_pow2` suffix (`n16_d35_k685_p19_s2c_ffr_ci_pow2`).
+A filter on a preset name selects both.
 Each case checks its measured precision against the preset's advertised minimum.
 `schemes::suites::bench_ckks_bootstrapping_with_client::<BE, BC>` runs the same cases on `BE` with the
 secret, keys and ciphertexts of a client backend `BC`, for an evaluating backend that generates no keys;
@@ -182,10 +184,13 @@ with the same ids. The GPU `bootstrapping` binary registers both.
 
 ```sh
 # List the logN15 cases without allocating bootstrapping keys
-cargo bench -p poulpy-cpu-portable --bench full --features enable-ckks -- n15_d35_k180_p18_c2s --list
+cargo bench -p poulpy-cpu-portable --bench full --features enable-core,enable-ckks,enable-bin-fhe -- n15_d35_k180_p18_c2s --list
 
-# Run the logN15 preset on the portable NTT backend
-cargo bench -p poulpy-cpu-portable --bench full --features enable-ckks -- 'NTT4x30Portable/ckks/ckks_bootstrapping/n15_d35_k180_p18_c2s'
+# Run the logN15 preset on the portable NTT backend, with both key sets
+cargo bench -p poulpy-cpu-portable --bench full --features enable-core,enable-ckks,enable-bin-fhe -- 'NTT4x30Portable/ckks/ckks_bootstrapping/n15_d35_k180_p18_c2s'
+
+# Run n16_d35_k685_p19_s2c_ffr_ci with the keys of power-of-two rotations only
+cargo bench -p poulpy-cpu-portable --bench full --features enable-core,enable-ckks,enable-bin-fhe -- 'NTT4x30Portable/ckks/ckks_bootstrapping/n16_d35_k685_p19_s2c_ffr_ci_pow2'
 ```
 
 ### libm benchmarks

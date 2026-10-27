@@ -1,8 +1,10 @@
 //! Full-slot CKKS bootstrapping benchmark.
 //!
-//! One benchmark per preset in [`poulpy_ckks::presets::bootstrapping::all`],
-//! at the radix the backend's failure model selects. Criterion's name filter selects a
-//! preset by its name. The setup, bootstrap call, and precision measurement use
+//! Two benchmarks per preset in [`poulpy_ckks::presets::bootstrapping::all`],
+//! at the radix the backend's failure model selects: the preset, and the preset
+//! with the keys of power-of-two rotations only
+//! ([`BootstrappingPreset::with_power_of_two_keys`]), named with a `_pow2` suffix.
+//! Criterion's name filter selects a preset by its name. The setup, bootstrap call, and precision measurement use
 //! the shared
 //! [`BootstrappingPresetRun`] driver, so the benchmark exercises exactly what
 //! the precision pin test checks, EvalMod on the conjugate-invariant ring included.
@@ -42,6 +44,7 @@ fn runner_ckks_bootstrapping<BE, BC>(
     preset: BootstrappingPreset,
     setup: impl Fn(BootstrappingPreset) -> BootstrappingPresetRun<BE, BC>,
     record: Option<Record<'_>>,
+    power_of_two_keys: bool,
 ) where
     BE: Backend<Ring = Standard, ZnxWord = i64> + HostStaged + 'static,
     BC: TestContextBackend<Ring = Standard> + 'static,
@@ -57,8 +60,9 @@ fn runner_ckks_bootstrapping<BE, BC>(
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
     let id = format!(
-        "{}(base2k={},dsize={},dense_to_sparse_dsize={})",
+        "{}{}(base2k={},dsize={},dense_to_sparse_dsize={})",
         preset.name(),
+        if power_of_two_keys { "_pow2" } else { "" },
         preset.base2k(),
         preset.key_dsize(),
         preset.dense_to_sparse_dsize()
@@ -223,19 +227,31 @@ where
     let backend = backend_name::<BE>();
     let mut group = c.benchmark_group(format!("{backend}/ckks/{name}"));
     group.sample_size(10);
-    for preset in all().unwrap() {
-        let ring = preset.plan().eval_mod_ring();
-        let preset = preset_for_backend::<BE, CIBackend<BE>>(&preset).unwrap();
-        match ring {
-            EvalModRing::Standard => {
-                runner_ckks_bootstrapping(&mut group, preset, BootstrappingPresetRun::<BE, BC>::setup, record)
+    for nominal in all().unwrap() {
+        let ring = nominal.plan().eval_mod_ring();
+        for power_of_two_keys in [false, true] {
+            let preset = if power_of_two_keys {
+                nominal.with_power_of_two_keys().unwrap()
+            } else {
+                nominal.clone()
+            };
+            let preset = preset_for_backend::<BE, CIBackend<BE>>(&preset).unwrap();
+            match ring {
+                EvalModRing::Standard => runner_ckks_bootstrapping(
+                    &mut group,
+                    preset,
+                    BootstrappingPresetRun::<BE, BC>::setup,
+                    record,
+                    power_of_two_keys,
+                ),
+                _ => runner_ckks_bootstrapping(
+                    &mut group,
+                    preset,
+                    |preset| BootstrappingPresetRun::<BE, BC>::setup_ci(preset),
+                    record,
+                    power_of_two_keys,
+                ),
             }
-            _ => runner_ckks_bootstrapping(
-                &mut group,
-                preset,
-                |preset| BootstrappingPresetRun::<BE, BC>::setup_ci(preset),
-                record,
-            ),
         }
     }
     group.finish();
