@@ -339,6 +339,96 @@ fn glwe_mul_columns_rejects_a_right_operand_below_the_minimum_degree() {
     );
 }
 
+/// The reconstruction that clears its temporary gives the values of the plain
+/// one, limbs past the temporary's included, and leaves every residue it read
+/// zero: over the conjugate-invariant ring, a unit clears the residues of a
+/// coefficient and of its reflection only once it has read both.
+fn clearing_reconstruction_case<R: Ring>(module: &Module<BE<R>>) {
+    let (n, size) = (N, 3);
+    let (kept, cleared) = (
+        transformed(module, n, 1, size, &mut 7),
+        transformed(module, n, 1, size, &mut 7),
+    );
+    let dft = |dft: &VecZnxDftOwned<BE<R>>| crate::ntt4x30::DftColumn {
+        binding: dft.data().view().binding().expect("vector holds storage"),
+        base: 0,
+        stride: (4 * n) as u32,
+        n,
+        size,
+    };
+    let before = coefficients(2 * n * (size + 1), &mut 11);
+    let big = || {
+        poulpy_hal::layouts::VecZnxBig::<<BE<R> as Backend>::OwnedBuf, i128, BE<R>>::from_data(
+            BE::<R>::from_host_bytes(&before),
+            n,
+            1,
+            size + 1,
+        )
+    };
+    let (want, have) = (big(), big());
+    let column = |big: &poulpy_hal::layouts::VecZnxBig<<BE<R> as Backend>::OwnedBuf, i128, BE<R>>| crate::znx::Column {
+        binding: big.data().view().binding().expect("vector holds storage"),
+        base: 0,
+        stride: (2 * n) as u32,
+        words: 2,
+        n,
+        size: size + 1,
+    };
+    let tables = crate::module::handle(module).tables();
+    crate::ntt4x30::to_big::<super::Runtime>(tables, &column(&want), &dft(&kept));
+    crate::ntt4x30::to_big_clearing::<super::Runtime>(tables, &column(&have), &dft(&cleared));
+    assert!(
+        BE::<R>::to_host_bytes(want.data()) == BE::<R>::to_host_bytes(have.data()),
+        "the clearing reconstruction differs from the plain one"
+    );
+    assert!(
+        BE::<R>::to_host_bytes(cleared.data()).iter().all(|&byte| byte == 0),
+        "the clearing reconstruction left a residue in its source"
+    );
+}
+
+#[test]
+fn clearing_reconstruction_matches_and_clears() {
+    clearing_reconstruction_case(&MODULE);
+    clearing_reconstruction_case(&MODULE_CI);
+}
+
+/// The copy back of an in-place permutation moves the temporary into the
+/// destination and leaves it zero, for `i64` and `i128` words.
+#[test]
+fn move_from_temp_copies_and_clears() {
+    for words in [1u32, 2] {
+        let (n, size) = (N, 3);
+        let mut seed = 0x0a0b_0c0d_0e0f_1011u64 ^ words as u64;
+        let (source, before) = (
+            coefficients(n * size * words as usize, &mut seed),
+            coefficients(n * size * words as usize, &mut seed),
+        );
+        let (temp, res) = (
+            crate::runtime::GpuBuf::<super::Runtime>::from_host(&source),
+            crate::runtime::GpuBuf::<super::Runtime>::from_host(&before),
+        );
+        let column = crate::znx::Column {
+            binding: res.view().binding().expect("buffer holds storage"),
+            base: 0,
+            stride: n as u32 * words,
+            words,
+            n,
+            size,
+        };
+        crate::znx::move_from_temp::<super::Runtime>(&column, &temp.view().binding().expect("buffer holds storage"));
+        let bytes = source.len();
+        assert!(
+            res.to_host()[..bytes] == source[..],
+            "the copy back differs from the temporary"
+        );
+        assert!(
+            temp.to_host().iter().all(|&byte| byte == 0),
+            "the copy back left a word in the temporary"
+        );
+    }
+}
+
 /// The streamed sum of right operands of one limb, each term read through
 /// its own automorphism, against the same terms one product at a time: the
 /// upstream suite reads through automorphisms on several limbs only.

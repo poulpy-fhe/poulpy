@@ -11,7 +11,7 @@ use crate::{
     module::handle,
     ntt4x30::{DftColumn, Pmat},
     runtime::{Binding, GpuBuf, GpuMut, GpuRef, GpuRuntime},
-    znx::{Column, Map, Term, lincomb, permute},
+    znx::{Column, Map, move_from_temp, permute},
 };
 
 type Word = CrtWord<Primes30, u32>;
@@ -267,7 +267,8 @@ pub(crate) fn automorphism_map<R: Ring>(p: i64) -> Map {
     }
 }
 
-/// `res = map(res)` through the module's device temporary.
+/// `res = map(res)` through the module's device temporary, which the copy
+/// back clears.
 pub(crate) fn permute_assign<RT: GpuRuntime, R: Ring>(module: &Module<NTT4x30Gpu<RT, R>>, res: &Column, map: Map) {
     let words = res.n * res.size * res.words as usize;
     handle(module).with_temp(words * size_of::<u64>(), |temp| {
@@ -280,6 +281,6 @@ pub(crate) fn permute_assign<RT: GpuRuntime, R: Ring>(module: &Module<NTT4x30Gpu
             size: res.size,
         };
         permute::<RT>(&tmp, res, map);
-        lincomb::<RT>(res, res.size, Term::plus(&tmp), Term::zero(&tmp));
+        move_from_temp::<RT>(res, &tmp.binding);
     });
 }

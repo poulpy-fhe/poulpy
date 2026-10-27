@@ -158,6 +158,67 @@ fn to_big_kernel(
     }
 }
 
+/// [`to_big_kernel`] for a temporary `dft` that is zeroed once read. A unit owns
+/// coefficient `i` of a limb and, over the conjugate-invariant ring, its
+/// reflection `n - i`, whose residues the reconstruction of either reads:
+/// no residue is cleared before every unit reading it has read it.
+#[cube(launch_unchecked)]
+#[allow(clippy::too_many_arguments)]
+fn to_big_clearing_kernel(
+    res: &mut [u64],
+    // The temporary, bound twice: cleared through this view, read through `dft`.
+    clear: &mut [u32],
+    tw: &[u32],
+    dft: &[u32],
+    n: u32,
+    // Units per limb: `n`, or `n / 2 + 1` over the conjugate-invariant ring.
+    per_limb: u32,
+    limbs: u32,
+    res_base: u32,
+    res_stride: u32,
+    dft_base: u32,
+    dft_stride: u32,
+    dft_size: u32,
+    #[comptime] c: Consts,
+    #[comptime] invariant: bool,
+) {
+    let pos = ABSOLUTE_POS as u32;
+    if pos < per_limb * limbs {
+        let limb = pos / per_limb;
+        let i = pos - limb * per_limb;
+        let j = (n - i) & (n - 1u32);
+        let block = dft_base + limb * dft_stride;
+        let mut lo = 0u64;
+        let mut hi = 0u64;
+        let mut lo_j = 0u64;
+        let mut hi_j = 0u64;
+        if limb < dft_size {
+            let value = crt_at(dft, tw, block, i, n, c, invariant);
+            lo = value.0;
+            hi = value.1;
+            if invariant {
+                let value_j = crt_at(dft, tw, block, j, n, c, invariant);
+                lo_j = value_j.0;
+                hi_j = value_j.1;
+            }
+            for k in 0..4u32 {
+                clear[(block + k * n + i) as usize] = 0u32;
+                if invariant {
+                    clear[(block + k * n + j) as usize] = 0u32;
+                }
+            }
+        }
+        let index = res_base + limb * res_stride + 2u32 * i;
+        res[index as usize] = lo;
+        res[(index + 1u32) as usize] = hi;
+        if invariant {
+            let index_j = res_base + limb * res_stride + 2u32 * j;
+            res[index_j as usize] = lo_j;
+            res[(index_j + 1u32) as usize] = hi_j;
+        }
+    }
+}
+
 /// Writes every limb of the big column `res` with the centered values of
 /// `dft`, which holds the output of the inverse transform; limbs past `dft`'s
 /// are zero.
@@ -178,6 +239,40 @@ pub(crate) fn to_big<RT: GpuRuntime>(tables: &Tables<RT>, res: &Column, dft: &Df
         ];
         [
             res.n as u32,
+            res.size as u32,
+            res.base,
+            res.stride,
+            dft.base,
+            dft.stride,
+            dft.size as u32,
+        ];
+        [Consts::get(), tables.invariant()]
+    );
+}
+
+/// [`to_big`] from a temporary `dft`, every word of which it reads is zeroed:
+/// the temporary leaves the call holding nothing it computed.
+pub(crate) fn to_big_clearing<RT: GpuRuntime>(tables: &Tables<RT>, res: &Column, dft: &DftColumn) {
+    assert!(res.n == dft.n, "reconstruction between different degrees");
+    assert!(res.words == 2, "reconstruction writes `i128` values");
+    assert!(dft.size <= res.size, "the temporary has no limb past the result's");
+    if res.size == 0 {
+        return;
+    }
+    let table = tables.of(res.n).view().binding().expect("transform tables hold storage");
+    let per_limb = if tables.invariant() { res.n / 2 + 1 } else { res.n };
+    let units = per_limb * res.size;
+    launch!(
+        RT, Label::CrtToBigClearing, res.n * res.size * 16 + res.n * dft.size * 32, to_big_clearing_kernel, (units, RT::GROUP, RT::GROUP);
+        [
+            res.binding => u64,
+            dft.binding => u32,
+            table => u32,
+            dft.binding => u32,
+        ];
+        [
+            res.n as u32,
+            per_limb as u32,
             res.size as u32,
             res.base,
             res.stride,

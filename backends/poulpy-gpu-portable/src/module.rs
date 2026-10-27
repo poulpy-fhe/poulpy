@@ -44,21 +44,23 @@ impl<RT: GpuRuntime> GpuHandle<RT> {
     /// source and of the wide-radix normalization of an inverse transform, whose
     /// queries cover the kernel paths. Each call takes its own from the
     /// allocator, which recycles freed memory, so that threads sharing the
-    /// module never share a temporary. The temporary is zeroed before it is
-    /// released: it may hold secret-derived words, out of reach of the
-    /// caller's `ScratchArena::wipe`, also when `f` panics. The zeroing costs
-    /// `NTT4x30Gpu<Wgpu>/hal/vec_znx_idft_apply` of the standard bench 1.03x to 1.05x at
-    /// `16384x(2x32)` and 1.10x to 1.14x at `32768x(2x64)` against no zeroing,
-    /// on an Apple M5 Pro (Metal, CubeCL 0.11.3), two runs of each back to back.
+    /// module never share a temporary.
+    ///
+    /// The temporary may hold secret-derived words, out of reach of the
+    /// caller's `ScratchArena::wipe`: `f` leaves it zeroed, the kernel reading
+    /// it last clearing each word it reads, at no launch of its own. When `f`
+    /// panics, the temporary is zeroed by a launch before it is released.
     pub(crate) fn with_temp<T>(&self, len: usize, f: impl FnOnce(&mut GpuBuf<RT>) -> T) -> T {
-        /// Zeroes the temporary when dropped, on return or unwind.
-        struct Wiped<RT: GpuRuntime>(GpuBuf<RT>);
-        impl<RT: GpuRuntime> Drop for Wiped<RT> {
+        /// Zeroes the temporary when `f` unwinds.
+        struct Unwinding<RT: GpuRuntime>(GpuBuf<RT>);
+        impl<RT: GpuRuntime> Drop for Unwinding<RT> {
             fn drop(&mut self) {
-                self.0.wipe();
+                if std::thread::panicking() {
+                    self.0.wipe();
+                }
             }
         }
-        let mut temp = Wiped(GpuBuf::uninit(len));
+        let mut temp = Unwinding(GpuBuf::uninit(len));
         f(&mut temp.0)
     }
 }

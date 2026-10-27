@@ -11,7 +11,7 @@ use super::operand::{big_column_mut, column_mut, column_ref, dft_column_mut, dft
 use crate::{
     NTT4x30Gpu,
     module::handle,
-    ntt4x30::{AutomorphismPlan, DftColumn, DftTerm, automorphism, combine, forward, inverse, to_big},
+    ntt4x30::{AutomorphismPlan, DftColumn, DftTerm, automorphism, combine, forward, inverse, to_big, to_big_clearing},
     runtime::GpuRuntime,
     znx::{Column, KERNEL_RADIX, Term, lincomb, normalize, normalize_residues},
 };
@@ -110,7 +110,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxDftImpl for NTT4x30Gpu<RT, R> {
                 size: limbs,
             };
             inverse::<RT>(handle.tables(), &tmp, &a, limbs);
-            to_big::<RT>(handle.tables(), &res, &tmp);
+            to_big_clearing::<RT>(handle.tables(), &res, &tmp);
         });
     }
 
@@ -162,6 +162,8 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxDftImpl for NTT4x30Gpu<RT, R> {
                 lincomb::<RT>(&big, big.size.min(addend.size), Term::plus(&big), Term::plus(addend));
             }
             normalize::<RT>(&res, res_base2k, res_k, res_offset, &big, a_base2k);
+            // A host stage, at radices no kernel serves: a zeroing launch of its own.
+            temp.wipe();
         });
     }
 

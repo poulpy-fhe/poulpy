@@ -4,7 +4,7 @@
 use cubecl::prelude::*;
 
 use super::Column;
-use crate::runtime::{GpuRuntime, Label, launch};
+use crate::runtime::{Binding, GpuRuntime, Label, launch};
 
 /// A signed permutation, as the gather each output coefficient performs.
 #[derive(Clone, Copy)]
@@ -214,4 +214,39 @@ pub(crate) fn ci_embed<RT: GpuRuntime>(res: &Column, a: &Column) {
 pub(crate) fn ci_trace<RT: GpuRuntime>(res: &Column, a: &Column) {
     assert!(a.n == 2 * res.n, "vec_znx_ci_trace: a degree must be twice the degree of res");
     ci_map::<RT>(res, a, 1);
+}
+
+#[cube(launch_unchecked)]
+fn move_kernel(res: &mut [u64], tmp: &mut [u64], limb_words: u32, limbs: u32, res_base: u32, res_stride: u32) {
+    let pos = ABSOLUTE_POS as u32;
+    if pos < limb_words * limbs {
+        let limb = pos / limb_words;
+        let word = pos - limb * limb_words;
+        res[(res_base + limb * res_stride + word) as usize] = tmp[pos as usize];
+        tmp[pos as usize] = 0u64;
+    }
+}
+
+/// `res = tmp`, `tmp` being a dense temporary of `res`'s shape from word 0
+/// of its storage, each of its words zeroed once read.
+pub(crate) fn move_from_temp<RT: GpuRuntime>(res: &Column, tmp: &Binding) {
+    let limb_words = res.n * res.words as usize;
+    if res.size == 0 || limb_words == 0 {
+        return;
+    }
+    let units = limb_words * res.size;
+    launch!(
+        RT, Label::ZnxMove, units * 24, move_kernel, (units, RT::GROUP, RT::GROUP);
+        [
+            res.binding => u64,
+            tmp => u64,
+        ];
+        [
+            limb_words as u32,
+            res.size as u32,
+            res.base,
+            res.stride,
+        ];
+        []
+    );
 }
