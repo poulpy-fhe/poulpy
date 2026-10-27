@@ -176,6 +176,10 @@ labels! {
     BigScalarProduct => "big.scalar_product",
     BigColWeightedSum => "big.col_weighted_sum",
     BigInnerSum => "big.inner_sum",
+    SampleUniform => "sample.uniform",
+    SampleTable => "sample.table",
+    SampleRejection => "sample.rejection",
+    SampleSecret => "sample.secret",
 }
 
 impl Label {

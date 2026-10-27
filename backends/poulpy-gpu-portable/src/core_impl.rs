@@ -1,28 +1,33 @@
 //! Registration of the `poulpy-core` extension points.
 //!
 //! Every family forwards to its reference body, which composes HAL methods,
-//! except the two products that have a fused kernel and sampling, which is
-//! staged through the host.
+//! except the two products that have a fused kernel and sampling, which draws
+//! on the device from the seed (`znx::sample`).
+
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
 use poulpy_core::{
     Distribution, Noise,
     oep::{GGLWEProductDigitsStridedImpl, SamplingImpl},
 };
-use poulpy_cpu_portable::{NTT4x30Portable, ScalarZnxFill, kernels::noise::add_noise_portable};
-use poulpy_hal::{
-    AlignedBuf,
-    layouts::{
-        ConjugateInvariant, DataView, DataViewMut, Module, Ring, ScalarZnx, ScalarZnxBackendMut, ScratchArena, VecZnx,
-        VecZnxBackendMut, VecZnxBig, VecZnxBigBackendMut, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendRef, ZnxView,
-    },
-    source::Source,
+use poulpy_cpu_portable::kernels::noise::{gaussian_cumulative_table_portable, gaussian_rejection_constants_portable};
+use poulpy_hal::layouts::{
+    ConjugateInvariant, Module, Ring, ScalarZnxBackendMut, ScratchArena, VecZnxBackendMut, VecZnxBigBackendMut,
+    VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendRef,
 };
 
 use crate::{
     NTT4x30Gpu,
-    hal_impl::{big_column_mut, column_mut, gglwe_product_digits_strided},
-    runtime::{GpuBuf, GpuRuntime, wipe_host},
-    znx::{Column, Term, lincomb},
+    hal_impl::{big_column_mut, column_mut, gglwe_product_digits_strided, scalar_column},
+    module::handle,
+    runtime::{GpuBuf, GpuRuntime, access},
+    znx::{
+        Column, Term, lincomb,
+        sample::{Placement, add_rejection, add_table, add_uniform, fill_block, fill_fixed_weight, fill_probability},
+    },
 };
 
 unsafe impl<RT: GpuRuntime, R: Ring> GGLWEProductDigitsStridedImpl for NTT4x30Gpu<RT, R> {
@@ -55,45 +60,144 @@ unsafe impl<RT: GpuRuntime, R: Ring> GGLWEProductDigitsStridedImpl for NTT4x30Gp
     ::poulpy_core::impl_gglwe_product_step_hooks_reference!();
 }
 
-/// Adds the noise the portable sampler draws on a zeroed host column to
-/// `res`. The sample only depends on the seed, the degree, the law, `k` and
-/// `base2k`, so drawing it apart from the destination changes nothing; its
-/// leading zero limbs are neither transferred nor added. The device copy of
-/// the sample is zeroed before it is released.
-fn add_host_noise<RT: GpuRuntime, T: bytemuck::Pod + PartialEq + Default>(res: &Column, n: usize, limbs: &[T]) {
-    let zero = T::default();
-    let Some(first) = limbs.chunks_exact(n).position(|limb| limb.iter().any(|x| *x != zero)) else {
-        return;
-    };
-    let size = limbs.len() / n - first;
-    let words = (size_of::<T>() / size_of::<u64>()) as u32;
-    let mut device = GpuBuf::<RT>::from_host(bytemuck::cast_slice(&limbs[first * n..]));
-    let noise = Column {
-        binding: device.view().binding().expect("noise holds storage"),
-        base: 0,
-        stride: n as u32 * words,
-        words,
-        n,
-        size,
-    };
-    let target = Column {
-        binding: res.binding.clone(),
-        base: u32::try_from(first)
-            .ok()
-            .and_then(|first| first.checked_mul(res.stride))
-            .and_then(|skipped| res.base.checked_add(skipped))
-            .expect("limb offset beyond the 32-bit word range"),
-        stride: res.stride,
-        words: res.words,
-        n,
-        size,
-    };
-    lincomb::<RT>(&target, size, Term::plus(&target), Term::plus(&noise));
-    device.wipe();
+/// The device form of a Gaussian, built once per module and sigma.
+enum GaussianPlan<RT: GpuRuntime> {
+    /// The cumulative table of a bound up to 64, four `u32` words per
+    /// threshold, most significant first.
+    Table { table: GpuBuf<RT>, entries: usize },
+    /// The constants of the rejection sampler on `limbs` limbs each.
+    Rejection { consts: GpuBuf<RT>, limbs: usize, v_max: u32 },
 }
 
-/// The portable host samplers: the samples are drawn on the host with the
-/// streams of `NTT4x30Portable` and reach the device in one transfer.
+struct GaussianPlans<RT: GpuRuntime>(Mutex<HashMap<u64, Arc<GaussianPlan<RT>>>>);
+
+fn gaussian_plan<RT: GpuRuntime, R: Ring>(module: &Module<NTT4x30Gpu<RT, R>>, sigma: f64) -> Arc<GaussianPlan<RT>> {
+    let build = || {
+        let (_, _, bound) = Noise::gaussian_parts(sigma);
+        if u64::try_from(&bound).is_ok_and(|bound| bound <= 64) {
+            let thresholds = gaussian_cumulative_table_portable(sigma);
+            let words: Vec<u32> = thresholds
+                .iter()
+                .flat_map(|&t| [(t >> 96) as u32, (t >> 64) as u32, (t >> 32) as u32, t as u32])
+                .collect();
+            return GaussianPlan::Table {
+                table: GpuBuf::from_host(bytemuck::cast_slice(&words)),
+                entries: thresholds.len(),
+            };
+        }
+        let constants = gaussian_rejection_constants_portable(sigma);
+        let (t, bound) = (&constants.t, &constants.bound);
+        // Every product the sampler forms, the series test's `den * j` with
+        // `j < 2^32` included, and the shifted sample, fit `limbs` limbs.
+        let largest = constants.largest(32).max(t << 32).max(bound << 64);
+        let limbs = {
+            // Bits of `largest`, from its little-endian bytes.
+            let bytes = largest.to_le_bytes();
+            let top = bytes
+                .iter()
+                .rposition(|&byte| byte != 0)
+                .map_or(0, |at| 8 * at + 8 - bytes[at].leading_zeros() as usize);
+            top.div_ceil(32) + 1
+        };
+        let v_max = u32::try_from(bound / t).expect("the Gaussian bound is a few times t");
+        let words: Vec<u32> = [
+            t,
+            bound,
+            &constants.variance_num,
+            &constants.variance_den,
+            &constants.acceptance_den,
+        ]
+        .into_iter()
+        .flat_map(|value| {
+            let mut bytes = value.to_le_bytes().to_vec();
+            bytes.resize(4 * limbs, 0);
+            bytes
+                .chunks_exact(4)
+                .map(|word| u32::from_le_bytes(word.try_into().expect("four bytes")))
+                .collect::<Vec<_>>()
+        })
+        .collect();
+        GaussianPlan::Rejection {
+            consts: GpuBuf::from_host(bytemuck::cast_slice(&words)),
+            limbs,
+            v_max,
+        }
+    };
+    // Building a plan uploads. The access is taken before the cache is
+    // locked, as everywhere else: a thread that records holds the device.
+    let _access = access::shared();
+    handle(module)
+        .plan_cache()
+        .with_or_create::<GaussianPlans<RT>, _, _>(
+            || Ok(GaussianPlans(Mutex::new(HashMap::new()))),
+            |plans: &GaussianPlans<RT>| {
+                let mut plans = plans.0.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+                plans.entry(sigma.to_bits()).or_insert_with(|| Arc::new(build())).clone()
+            },
+        )
+        .expect("the Gaussian plan cache is created infallibly")
+}
+
+/// Checks a noise placement as the portable sampler does, before anything is drawn.
+#[allow(clippy::too_many_arguments)]
+fn noise_placement(
+    module_n: usize,
+    n: usize,
+    base2k: usize,
+    k: usize,
+    noise: Noise,
+    res_size: usize,
+    res_col: usize,
+    res_cols: usize,
+) -> Placement {
+    assert!(n.is_power_of_two() && n <= module_n, "noise degree outside module");
+    noise.validate();
+    assert!((1..=63).contains(&base2k), "noise radix must be in 1..=63");
+    assert!(k > 0, "noise precision must be positive");
+    let size = k.div_ceil(base2k);
+    assert!(size <= res_size, "noise precision exceeds destination allocation");
+    assert!(res_col < res_cols, "noise column exceeds destination allocation");
+    Placement {
+        size,
+        base2k,
+        shift: (base2k - k % base2k) % base2k,
+    }
+}
+
+/// Adds a draw of `noise` to `res`, an `i64` or `i128` column.
+fn add_noise<RT: GpuRuntime, R: Ring>(
+    module: &Module<NTT4x30Gpu<RT, R>>,
+    res: &Column,
+    place: &Placement,
+    noise: Noise,
+    seed: &[u8; 32],
+) {
+    match noise {
+        Noise::Uniform { bits } => add_uniform::<RT>(res, place, bits, seed),
+        Noise::Gaussian { sigma } => match &*gaussian_plan(module, sigma) {
+            GaussianPlan::Table { table, entries } => {
+                let binding = table.view().binding().expect("the table holds storage");
+                // A sample within half a digit lands on the last limb alone.
+                let first = if (*entries as u128) << place.shift < 1u128 << (place.base2k - 1) {
+                    place.size - 1
+                } else if place.base2k == 1 {
+                    0
+                } else {
+                    let bound_bits = (u64::BITS - (*entries as u64).leading_zeros()) as usize;
+                    place.size - place.size.min(2 + bound_bits / place.base2k)
+                };
+                add_table::<RT>(res, place, first, &binding, *entries, seed);
+            }
+            GaussianPlan::Rejection { consts, limbs, v_max } => {
+                let binding = consts.view().binding().expect("the constants hold storage");
+                add_rejection::<RT>(res, place, &binding, *limbs, *v_max, seed);
+            }
+        },
+    }
+}
+
+/// The device samplers. A draw depends only on the seed, the degree, the law
+/// and the placement: every coefficient has its own keystream.
 unsafe impl<RT: GpuRuntime, R: Ring> SamplingImpl for NTT4x30Gpu<RT, R> {
     fn scalar_znx_fill_distribution(
         _module: &Module<Self>,
@@ -104,25 +208,41 @@ unsafe impl<RT: GpuRuntime, R: Ring> SamplingImpl for NTT4x30Gpu<RT, R> {
     ) {
         let n = res.n();
         assert!(res_col < res.cols(), "scalar_znx_fill_distribution: column out of range");
-        let mut host = ScalarZnx::<AlignedBuf, i64>::from_data(AlignedBuf::from(vec![0u8; n * size_of::<i64>()]), n, 1);
-        let mut source = Source::new(seed);
+        let check_probability = |prob: f64| {
+            assert!(
+                (0.0..=1.0).contains(&prob),
+                "scalar_znx_fill_distribution: probability outside [0, 1]"
+            );
+            // `floor(prob * 2^64)`, the product being exact: one is the only probability it does not fit.
+            (prob < 1.0).then(|| (prob * 2f64.powi(64)) as u64)
+        };
         match dist {
-            Distribution::TernaryFixed(hw) => host.fill_ternary_hw(0, hw, &mut source),
-            Distribution::TernaryProb(prob) => host.fill_ternary_prob(0, prob, &mut source),
-            Distribution::BinaryFixed(hw) => host.fill_binary_hw(0, hw, &mut source),
-            Distribution::BinaryProb(prob) => host.fill_binary_prob(0, prob, &mut source),
-            Distribution::BinaryBlock(block_size) => host.fill_binary_block(0, block_size, &mut source),
+            Distribution::TernaryFixed(hw) | Distribution::BinaryFixed(hw) => {
+                assert!(hw <= n, "scalar_znx_fill_distribution: Hamming weight above the degree")
+            }
+            Distribution::TernaryProb(prob) | Distribution::BinaryProb(prob) => {
+                check_probability(prob);
+            }
+            Distribution::BinaryBlock(block) => assert!(
+                block > 0 && n.is_multiple_of(block),
+                "scalar_znx_fill_distribution: block size does not divide the degree"
+            ),
             Distribution::ZERO => {}
             Distribution::NONE | Distribution::ENCAPSULATED(_) => {
                 panic!("scalar_znx_fill_distribution: {dist:?} is not a sampleable distribution")
             }
         }
-        // Host storage is padded; the device column has the exact length.
-        let bytes = n * size_of::<i64>();
-        res.data_mut()
-            .region_mut(res_col * bytes, bytes)
-            .write_prefix(&host.data()[..bytes]);
-        wipe_host(host.data_mut());
+        let Some(column) = scalar_column(res, res_col) else { return };
+        match dist {
+            Distribution::TernaryProb(prob) => fill_probability::<RT>(&column, check_probability(prob), true, &seed),
+            Distribution::BinaryProb(prob) => fill_probability::<RT>(&column, check_probability(prob), false, &seed),
+            Distribution::BinaryBlock(block) => fill_block::<RT>(&column, block, &seed),
+            Distribution::TernaryFixed(hw) | Distribution::BinaryFixed(hw) => {
+                lincomb::<RT>(&column, 1, Term::zero(&column), Term::zero(&column));
+                fill_fixed_weight::<RT>(&column, hw, matches!(dist, Distribution::TernaryFixed(_)), &seed);
+            }
+            _ => lincomb::<RT>(&column, 1, Term::zero(&column), Term::zero(&column)),
+        }
     }
 
     fn vec_znx_add_noise(
@@ -134,21 +254,9 @@ unsafe impl<RT: GpuRuntime, R: Ring> SamplingImpl for NTT4x30Gpu<RT, R> {
         noise: Noise,
         seed: [u8; 32],
     ) {
-        let n = res.n();
-        assert!(n.is_power_of_two() && n <= module.n(), "noise degree outside module");
-        // The checks of the portable sampler, before anything is drawn.
-        noise.validate();
-        assert!((1..=63).contains(&base2k), "noise radix must be in 1..=63");
-        assert!(k > 0, "noise precision must be positive");
-        let size = k.div_ceil(base2k);
-        assert!(size <= res.size(), "noise precision exceeds destination allocation");
-        assert!(res_col < res.cols(), "noise column exceeds destination allocation");
-        let mut host = VecZnx::<AlignedBuf, i64>::from_data(AlignedBuf::from(vec![0u8; n * size * size_of::<i64>()]), n, 1, size);
-        add_noise_portable(base2k, k, &mut host, 0, noise, &mut Source::new(seed));
-        if let Some(res) = column_mut(res, res_col) {
-            add_host_noise::<RT, i64>(&res, n, host.raw());
-        }
-        wipe_host(host.data_mut());
+        let place = noise_placement(module.n(), res.n(), base2k, k, noise, res.size(), res_col, res.cols());
+        let Some(res) = column_mut(res, res_col) else { return };
+        add_noise(module, &res, &place, noise, &seed);
     }
 
     fn vec_znx_big_add_noise(
@@ -160,26 +268,9 @@ unsafe impl<RT: GpuRuntime, R: Ring> SamplingImpl for NTT4x30Gpu<RT, R> {
         noise: Noise,
         seed: [u8; 32],
     ) {
-        let n = res.n();
-        assert!(n.is_power_of_two() && n <= module.n(), "noise degree outside module");
-        // The checks of the portable sampler, before anything is drawn.
-        noise.validate();
-        assert!((1..=63).contains(&base2k), "noise radix must be in 1..=63");
-        assert!(k > 0, "noise precision must be positive");
-        let size = k.div_ceil(base2k);
-        assert!(size <= res.size(), "noise precision exceeds destination allocation");
-        assert!(res_col < res.cols(), "noise column exceeds destination allocation");
-        let mut host = VecZnxBig::<AlignedBuf, i128, NTT4x30Portable>::from_data(
-            AlignedBuf::from(vec![0u8; n * size * size_of::<i128>()]),
-            n,
-            1,
-            size,
-        );
-        add_noise_portable(base2k, k, &mut host, 0, noise, &mut Source::new(seed));
-        if let Some(res) = big_column_mut(res, res_col) {
-            add_host_noise::<RT, i128>(&res, n, host.raw());
-        }
-        wipe_host(host.data_mut());
+        let place = noise_placement(module.n(), res.n(), base2k, k, noise, res.size(), res_col, res.cols());
+        let Some(res) = big_column_mut(res, res_col) else { return };
+        add_noise(module, &res, &place, noise, &seed);
     }
 }
 

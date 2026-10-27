@@ -57,6 +57,7 @@ pub(crate) fn glwe_mul_columns<RT: GpuRuntime, R: Ring>(
         &column(cnv_right_column(b, 0)),
         &column(cnv_right_column(b, 1)),
         cnv_offset,
+        handle(module).convolution_capacity_step(),
     );
 }
 
@@ -174,7 +175,15 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalConvolutionImpl for NTT4x30Gpu<RT, R> {
         let a = cnv_left_column(a, a_col).unwrap_or_else(|| empty_dft_like(&res));
         let plan = right_plan(module, b, b_galois);
         let b = cnv_right_column(b, b_col).unwrap_or_else(|| empty_dft_like(&res));
-        convolution::<RT>(&res, &a, &b, &plan, cnv_offset, false);
+        convolution::<RT>(
+            &res,
+            &a,
+            &b,
+            &plan,
+            cnv_offset,
+            false,
+            handle(module).convolution_capacity_step(),
+        );
     }
 
     fn cnv_apply_dft_add_tmp_bytes(
@@ -206,7 +215,15 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalConvolutionImpl for NTT4x30Gpu<RT, R> {
         let (Some(a), Some(b)) = (cnv_left_column(a, a_col), cnv_right_column(b, b_col)) else {
             return;
         };
-        convolution::<RT>(&res, &a, &b, &plan, cnv_offset, true);
+        convolution::<RT>(
+            &res,
+            &a,
+            &b,
+            &plan,
+            cnv_offset,
+            true,
+            handle(module).convolution_capacity_step(),
+        );
     }
 
     fn cnv_apply_dft_sum_tmp_bytes(
@@ -243,7 +260,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalConvolutionImpl for NTT4x30Gpu<RT, R> {
                 right_plan(module, &term.b, term.b_galois),
             ))
         });
-        if !convolution_sum::<RT>(&res, columns, cnv_offset, false) {
+        if !convolution_sum::<RT>(&res, columns, cnv_offset, false, handle(module).convolution_capacity_step()) {
             combine::<RT>(&res, res.size, DftTerm::zero(&res), DftTerm::zero(&res));
         }
     }
@@ -283,9 +300,18 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalConvolutionImpl for NTT4x30Gpu<RT, R> {
                 &AutomorphismPlan::new(b.n(), 1, false),
                 cnv_offset,
                 false,
+                handle(module).convolution_capacity_step(),
             );
         } else {
-            convolution_pairwise::<RT>(&res, &left(i), &left(j), &right(i), &right(j), cnv_offset);
+            convolution_pairwise::<RT>(
+                &res,
+                &left(i),
+                &left(j),
+                &right(i),
+                &right(j),
+                cnv_offset,
+                handle(module).convolution_capacity_step(),
+            );
         }
     }
 

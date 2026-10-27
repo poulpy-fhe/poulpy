@@ -84,10 +84,13 @@ pub(crate) fn record<RT: GpuRuntime>(run: &mut dyn FnMut()) -> (Trace, Option<Gr
     if trace.host.reads + trace.host.writes + trace.host.syncs != 0 || client.start_capture().is_err() {
         return (trace, None);
     }
+    let window = parked::window();
     let tracer = Tracer::start(true);
     run();
     let (recorded, bound) = tracer.finish();
-    let recording = match capture.stop() {
+    let graph = capture.stop();
+    drop(window);
+    let recording = match graph {
         // The graph stands for the warm-up run only if both runs issued the same launches.
         Some(graph) if recorded == trace => Some(GraphRecording { graph, bound }),
         _ => None,

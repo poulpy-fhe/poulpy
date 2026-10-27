@@ -1,6 +1,9 @@
 //! Module handle and construction.
 
-use std::ptr::NonNull;
+use std::{
+    ptr::NonNull,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
 use poulpy_hal::{
     layouts::{Module, ModulePlanCache, Ring},
@@ -21,12 +24,38 @@ pub struct GpuHandle<RT: GpuRuntime> {
     /// Plans the layers above memoize per module, such as the encoding tables.
     #[cfg_attr(not(feature = "enable-ckks"), allow(dead_code))]
     plans: ModulePlanCache,
+    /// See [`Self::convolution_capacity_step`].
+    capacity_step: AtomicUsize,
 }
 
 impl<RT: GpuRuntime> GpuHandle<RT> {
     /// Largest ring degree the module serves.
     pub fn n(&self) -> usize {
         self.n
+    }
+
+    /// Limbs by which the convolution kernels grow the operand copies each
+    /// thread holds. A kernel is compiled per capacity: a larger step compiles
+    /// fewer kernels, and spends registers on limbs a product does not read.
+    /// The best step depends on the device's registers.
+    pub fn convolution_capacity_step(&self) -> usize {
+        self.capacity_step.load(Ordering::Relaxed)
+    }
+
+    /// Sets [`Self::convolution_capacity_step`], which changes the launches of
+    /// the convolutions: a closure recorded with [`crate::Replay`] before the
+    /// change no longer repeats its recording after it.
+    ///
+    /// # Panics
+    ///
+    /// Panics unless `limbs` is in `1..=MAX_CAPACITY_STEP`: a thread holds
+    /// up to a step more words per operand than a product reads.
+    pub fn set_convolution_capacity_step(&self, limbs: usize) {
+        assert!(
+            (1..=MAX_CAPACITY_STEP).contains(&limbs),
+            "the capacity step is between one limb and MAX_CAPACITY_STEP"
+        );
+        self.capacity_step.store(limbs, Ordering::Relaxed);
     }
 
     /// The module-owned plan cache.
@@ -65,8 +94,12 @@ impl<RT: GpuRuntime> GpuHandle<RT> {
     }
 }
 
+/// Largest [`GpuHandle::set_convolution_capacity_step`]: the operand copies
+/// of a convolution thread live in its registers and local memory.
+pub const MAX_CAPACITY_STEP: usize = 64;
+
 /// The device state of `module`.
-pub(crate) fn handle<RT: GpuRuntime, R: Ring>(module: &Module<NTT4x30Gpu<RT, R>>) -> &GpuHandle<RT> {
+pub fn handle<RT: GpuRuntime, R: Ring>(module: &Module<NTT4x30Gpu<RT, R>>) -> &GpuHandle<RT> {
     // SAFETY: the pointer was created by `HalModuleImpl::new` and lives as long as the module.
     unsafe { &*module.ptr() }
 }
@@ -91,6 +124,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalModuleImpl for NTT4x30Gpu<RT, R> {
             n: n as usize,
             tables: Tables::new(n as usize, R::CYCLOTOMIC_ORDER_FACTOR == 4),
             plans: ModulePlanCache::default(),
+            capacity_step: AtomicUsize::new(crate::ntt4x30::CAPACITY_STEP),
         });
         // SAFETY: the pointer comes from a live `Box`, which the module owns from here on.
         unsafe { Module::from_nonnull(NonNull::new_unchecked(Box::into_raw(handle)), n) }

@@ -45,6 +45,9 @@ criterion = {workspace = true}
 # `pod_collect_to_vec`, which the wgpu runtime's dependencies happen to enable.
 bytemuck = {workspace = true, features = ["extern_crate_alloc"]}
 once_cell = {workspace = true}
+# The reference ChaCha8 keystream of the device sampler's test.
+rand_chacha = {workspace = true}
+rand_core = {workspace = true}
 
 [package.metadata.docs.rs]
 # The Vulkan runtime builds without a vendor toolkit, unlike CUDA and HIP.

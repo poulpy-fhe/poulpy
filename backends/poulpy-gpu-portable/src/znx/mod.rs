@@ -8,6 +8,8 @@ mod lincomb;
 mod normalize;
 mod permute;
 mod products;
+#[cfg_attr(not(feature = "enable-core"), allow(dead_code))]
+pub(crate) mod sample;
 
 pub(crate) use gadget::gadget_decompose;
 pub(crate) use lincomb::{Term, lincomb, lincomb_decimating};

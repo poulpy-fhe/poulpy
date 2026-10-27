@@ -12,6 +12,11 @@
 //! - `enable-metal`, `enable-vulkan`, `enable-wgpu`: [`NTT4x30Wgpu`], on CubeCL's wgpu runtime with
 //!   the Metal, Vulkan or WebGPU shader compiler.
 //! - `enable-core`, `enable-ckks`: the `poulpy-core` and `poulpy-ckks` families on every backend type.
+//!
+//! # Tuning
+//!
+//! A module's [`GpuHandle`], reached with [`handle`], carries the tuning of its
+//! kernels the device decides: [`GpuHandle::set_convolution_capacity_step`].
 
 mod backend;
 #[cfg(feature = "enable-ckks")]
@@ -31,7 +36,7 @@ mod znx;
 mod tests;
 
 pub use backend::NTT4x30Gpu;
-pub use module::GpuHandle;
+pub use module::{GpuHandle, MAX_CAPACITY_STEP, handle};
 pub use ntt4x30::AutomorphismPlan;
 pub use replay::Replay;
 #[cfg(feature = "enable-cuda")]

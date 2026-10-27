@@ -24,7 +24,9 @@ use crate::runtime::{GpuRuntime, GraphRecording, HostEvents, Trace, Tracer, reco
 ///   is called and the caller must keep them alive, and unused by anything
 ///   else while a replay runs, for as long as the `Replay` lives. New inputs
 ///   are fed by writing into those buffers between replays; outputs are read
-///   from them after a replay.
+///   from them after a replay. The closure keeps its borrows for `'a`, so
+///   the caller writes a buffer it binds between replays only through
+///   interior mutability both reach, such as a `RefCell` the closure borrows.
 /// - **Same control flow.** The closure must issue the same launches each
 ///   time it is called. Host-side state it reads (limb counts, precisions,
 ///   metadata of its operands) must therefore be the same at every call: a

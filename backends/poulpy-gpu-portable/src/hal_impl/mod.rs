@@ -14,7 +14,7 @@ mod vmp;
 #[cfg_attr(not(feature = "enable-core"), allow(unused_imports))]
 pub(crate) use convolution::glwe_mul_columns;
 #[cfg(feature = "enable-core")]
-pub(crate) use operand::{big_column_mut, column_mut};
+pub(crate) use operand::{big_column_mut, column_mut, scalar_column};
 #[cfg(any(test, feature = "enable-core"))]
 #[cfg_attr(not(feature = "enable-core"), allow(unused_imports))]
 pub(crate) use vmp::gglwe_product_digits_strided;

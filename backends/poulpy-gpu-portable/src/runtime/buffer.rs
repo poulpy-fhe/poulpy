@@ -64,6 +64,26 @@ pub(crate) mod parked {
     thread_local! {
         /// `Some` while this thread records: the parked allocations, by reserved size.
         static PARKED: RefCell<Option<Vec<(usize, Handle)>>> = const { RefCell::new(None) };
+        /// Whether this thread is inside a capture window, where the stream records and answers nothing.
+        static WINDOW: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    }
+
+    /// Marks this thread inside a capture window until the guard is dropped.
+    pub(crate) struct Window(());
+
+    pub(crate) fn window() -> Window {
+        WINDOW.set(true);
+        Window(())
+    }
+
+    impl Drop for Window {
+        fn drop(&mut self) {
+            WINDOW.set(false);
+        }
+    }
+
+    pub(super) fn in_window() -> bool {
+        WINDOW.get()
     }
 
     /// Parks the buffers this thread drops until the guard is dropped, which releases them.
@@ -113,10 +133,17 @@ fn live() -> std::sync::MutexGuard<'static, BTreeMap<u64, (TypeId, Handle)>> {
     LIVE.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
+/// The launch failures CubeCL reported on buffers as they were released, by
+/// runtime: [`synchronize`] raises them.
+static RELEASED: Mutex<Vec<(TypeId, String)>> = Mutex::new(Vec::new());
+
+fn released() -> std::sync::MutexGuard<'static, Vec<(TypeId, String)>> {
+    RELEASED.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 /// Waits for the work queued on the runtime and panics on a failure it
-/// reports: a device fault, or a launch failure an allocation alive at the
-/// call carries. A failure CubeCL recorded only on a buffer released before
-/// the call is not reported.
+/// reports: a device fault, a launch failure an allocation alive at the call
+/// carries, or one a buffer carried when it was released since the last call.
 pub(crate) fn synchronize<RT: GpuRuntime>() {
     let handles: Vec<Handle> = live()
         .values()
@@ -126,6 +153,21 @@ pub(crate) fn synchronize<RT: GpuRuntime>() {
     let _access = access::shared();
     pollster::block_on(RT::client().sync_buffers(handles.iter()))
         .unwrap_or_else(|error| panic!("device synchronization failed: {error:?}"));
+    raise_released::<RT>("device synchronization failed");
+}
+
+/// Panics with the first launch failure a buffer of the runtime carried when
+/// it was released, if any, clearing them.
+fn raise_released<RT: GpuRuntime>(context: &str) {
+    let failure = {
+        let mut released = released();
+        let failure = released.iter().find(|(runtime, _)| *runtime == TypeId::of::<RT>()).cloned();
+        released.retain(|(runtime, _)| *runtime != TypeId::of::<RT>());
+        failure
+    };
+    if let Some((_, error)) = failure {
+        panic!("{context}: a released buffer carried {error}");
+    }
 }
 
 fn allocate<RT: GpuRuntime>(len: usize) -> Option<Allocation> {
@@ -190,6 +232,8 @@ fn read<RT: GpuRuntime>(allocation: &Option<Allocation>, offset: usize, dst: &mu
     let bytes = RT::client()
         .read_one(handle)
         .unwrap_or_else(|error| panic!("device read failed: {error:?}"));
+    // The read waited for the queued work: what released buffers carried is known.
+    raise_released::<RT>("device read failed");
     dst.copy_from_slice(&bytes[..dst.len()]);
 }
 
@@ -541,6 +585,16 @@ impl<RT: GpuRuntime> Drop for GpuBuf<RT> {
             allocation.owned.store(false, Ordering::Release);
             live().remove(&allocation.id);
             parked::park(allocation.reserved, &allocation.handle);
+            // The capture window records launches and answers no query; the
+            // warm-up run before it executes, and its buffers are checked.
+            if parked::in_window() {
+                return;
+            }
+            // The launch failures recorded on the buffer, kept for the next wait or read.
+            let _access = access::shared();
+            if let Err(error) = RT::client().check([&allocation.handle]) {
+                released().push((TypeId::of::<RT>(), format!("{error:?}")));
+            }
         }
     }
 }

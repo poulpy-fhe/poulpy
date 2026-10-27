@@ -52,6 +52,7 @@
 
 ### CPU backends
 
+- `poulpy-cpu-portable` exports `kernels::noise::gaussian_cumulative_table_portable` and `gaussian_rejection_constants_portable`, the cumulative table and the rejection constants its Gaussian samplers draw with, which the GPU backend samples by.
 - **Breaking:** `impl_cpu_core_defaults!` registers the core trace on both rings, where each standard backend registered it apart: an out-of-tree backend calling it drops its own `impl_glwe_trace_derived_full!`, which now conflicts.
 - `conjugate_invariant_core_test_suite!` also runs `test_glwe_trace_parity`.
 - `impl_cpu_ckks_defaults!` selects poulpy-ckks's provided inner sum and replicate, `impl_ckks_inner_sum_derived_full!`.
@@ -669,8 +670,9 @@
 
 - New crate: the `NTT4x30` subfamily on GPUs through CubeCL 0.11, bit-identical to `NTT4x30Portable`, for both rings.
   One implementation behind `NTT4x30Cuda`, `NTT4x30Hip` and `NTT4x30Wgpu` (`enable-cuda`, `enable-hip`, `enable-metal`, `enable-vulkan`, `enable-wgpu`), with `enable-core` and `enable-ckks`.
-  Sampling, CKKS encoding and decoding, the uniform fill of a coefficient column and the normalizations at radices above 62 bits are staged through the host, and everything else runs on the device.
+  CKKS encoding and decoding, the uniform fill of a coefficient column and the normalizations at radices above 62 bits are staged through the host, and everything else runs on the device, sampling included.
   `Replay` records a repeated sequence of calls and replays it as one graph.
+  `handle` reaches a module's `GpuHandle`, which sets the convolution capacity step (`set_convolution_capacity_step`).
   See `docs/guides/backends.md`.
 
 ### `poulpy-bench`
@@ -690,6 +692,8 @@
 ### Dependencies
 
 - Lock `chacha20`, a dependency of `rand`, at 0.10.2, as 0.10.0 is yanked.
+- `poulpy-gpu-portable` depends on `cubecl` and `cubecl-environment`, pinned at 0.11.3, and on `pollster` 0.4.0.
+- The lock bumps `cc` from 1.2.57 to 1.9.0, `bitflags` from 2.11.0 to 2.13.2 and `wasm-bindgen` from 0.2.99 to 0.2.129, with the CubeCL dependencies.
 
 ## [0.9.0] - 2026-10-08
 

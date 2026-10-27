@@ -1030,3 +1030,221 @@ fn idft_normalize_windows() {
         }
     }
 }
+
+/// The device generator is ChaCha8: its keystream of each stream matches
+/// `rand_chacha`'s, block boundaries included.
+#[test]
+fn device_keystream_is_chacha8() {
+    use rand_chacha::{ChaCha8Rng, rand_core::SeedableRng};
+    use rand_core::Rng;
+    let seed: [u8; 32] = std::array::from_fn(|i| (i * 37 + 11) as u8);
+    for stream in [0u32, 1, 4097] {
+        let have = crate::znx::sample::keystream::<super::Runtime>(&seed, stream, 40);
+        let mut reference = ChaCha8Rng::from_seed(seed);
+        reference.set_stream(stream as u64);
+        let want: Vec<u32> = (0..40).map(|_| reference.next_u32()).collect();
+        assert_eq!(have, want, "stream {stream}");
+    }
+}
+
+/// The device samplers draw, coefficient for coefficient, what a host model of
+/// them draws from `rand_chacha`: the keystream of stream `i` for coefficient
+/// `i`, portable's cumulative tables and portable's uniform digit layout. The
+/// radices cover a digit within a word, at a word and across words, the
+/// shifts none, one bit and a full digit less one; both destinations, `i64`
+/// and `i128`, start from other content, and the other column and the limb
+/// past the precision stay unchanged.
+#[cfg(feature = "enable-core")]
+#[test]
+#[expect(
+    clippy::needless_range_loop,
+    reason = "a limb and a coefficient index the model, the before and the after layouts at once"
+)]
+fn device_noise_matches_its_host_model() {
+    use poulpy_core::{Noise, oep::SamplingImpl};
+    use poulpy_cpu_portable::kernels::noise::gaussian_cumulative_table_portable;
+    use rand_chacha::{ChaCha8Rng, rand_core::SeedableRng};
+    use rand_core::Rng;
+
+    let module = &*MODULE;
+    let n = N;
+    let seed: [u8; 32] = std::array::from_fn(|i| (i * 13 + 5) as u8);
+    let stream = |i: usize| {
+        let mut rng = ChaCha8Rng::from_seed(seed);
+        rng.set_stream(i as u64);
+        rng
+    };
+    let next_u64 = |rng: &mut ChaCha8Rng| rng.next_u32() as u64 | (rng.next_u32() as u64) << 32;
+    // The digits the samplers add to limbs `0..size` of coefficient `i`.
+    let model = |noise: Noise, base2k: usize, size: usize, shift: usize, i: usize| -> Vec<i64> {
+        let mut digits = vec![0i64; size];
+        let mut rng = stream(i);
+        let balanced = |value: i128, first: usize, digits: &mut Vec<i64>| {
+            let mut value = value;
+            let half = 1i128 << (base2k - 1);
+            for digit in digits[first..].iter_mut().rev() {
+                let carry = (value + half) >> base2k;
+                *digit = (value - (carry << base2k)) as i64;
+                value = carry;
+            }
+        };
+        match noise {
+            Noise::Uniform { bits } if bits <= base2k - shift => {
+                let mask = (1u64 << bits) - 1;
+                let sign_bit = 1u64 << (bits - 1);
+                let word = next_u64(&mut rng) & mask;
+                digits[size - 1] = ((word ^ sign_bit).wrapping_sub(sign_bit) as i64) << shift;
+            }
+            Noise::Uniform { bits } => {
+                let (mask, half) = ((1u64 << base2k) - 1, 1u64 << (base2k - 1));
+                let (mut remaining, mut padding, mut sign, mut carry) = (bits, shift, 0u64, 0u64);
+                for digit in digits.iter_mut().rev() {
+                    let width = remaining.min(base2k - padding);
+                    let word = next_u64(&mut rng) & ((1u64 << width) - 1);
+                    remaining -= width;
+                    if width != 0 {
+                        sign = word >> (width - 1);
+                    }
+                    let extension = 0u64.wrapping_sub(sign) << (width + padding);
+                    let balanced = (((word << padding) | extension) & mask) + carry + half;
+                    *digit = (balanced & mask) as i64 - half as i64;
+                    carry = balanced >> base2k;
+                    padding = 0;
+                }
+            }
+            Noise::Gaussian { sigma } => {
+                let table = gaussian_cumulative_table_portable(sigma);
+                let negative = rng.next_u32() & 1 == 1;
+                let u = (0..4).fold(0u128, |u, _| u << 32 | rng.next_u32() as u128);
+                let magnitude = table.iter().filter(|&&threshold| u >= threshold).count() as i128;
+                let value = if negative { -magnitude } else { magnitude } << shift;
+                let first = if (table.len() as u128) << shift < 1u128 << (base2k - 1) {
+                    size - 1
+                } else if base2k == 1 {
+                    0
+                } else {
+                    let bound_bits = (u64::BITS - (table.len() as u64).leading_zeros()) as usize;
+                    size - size.min(2 + bound_bits / base2k)
+                };
+                balanced(value, first, &mut digits);
+            }
+        }
+        digits
+    };
+    let mut fill = 0x0f1e_2d3c_4b5a_6978u64;
+    for base2k in [1usize, 2, 17, 31, 32, 33, 50, 62, 63] {
+        for shift in [0, 1, base2k - 1] {
+            let size = 3;
+            let k = size * base2k - shift;
+            // The padding is below the radix: radix 1 has none.
+            if shift >= base2k {
+                continue;
+            }
+            for noise in [
+                Noise::ENCRYPTION,
+                Noise::Gaussian { sigma: 10.0 },
+                Noise::Uniform { bits: 5 },
+                Noise::Uniform { bits: 64 },
+                Noise::Uniform { bits: 100 },
+            ] {
+                let case = format!("base2k={base2k} shift={shift} {noise:?}");
+                let want: Vec<Vec<i64>> = (0..n).map(|i| model(noise, base2k, size, shift, i)).collect();
+                // `i64` limbs: two columns, one limb past the precision.
+                let before = coefficients(n * 2 * (size + 1), &mut fill);
+                let mut small = VecZnx::from_data(Gpu::from_host_bytes(&before), n, 2, size + 1);
+                Gpu::vec_znx_add_noise(module, base2k, k, &mut vec_znx_backend_mut::<Gpu>(&mut small), 1, noise, seed);
+                let (old, new) = (
+                    VecZnx::<&[u8], i64>::from_data(&before[..], n, 2, size + 1),
+                    download_vec_znx::<Gpu>(&small),
+                );
+                for limb in 0..=size {
+                    assert_eq!(old.at(0, limb), new.at(0, limb), "{case}: column 0 changed");
+                    for i in 0..n {
+                        let added = new.at(1, limb)[i].wrapping_sub(old.at(1, limb)[i]);
+                        let expected = if limb < size { want[i][limb] } else { 0 };
+                        assert_eq!(added, expected, "{case}: i64 limb {limb} coefficient {i}");
+                    }
+                }
+                // `i128` limbs, the same draw.
+                let before = coefficients(2 * n * 2 * (size + 1), &mut fill);
+                let mut big = poulpy_hal::layouts::VecZnxBig::<<Gpu as Backend>::OwnedBuf, i128, Gpu>::from_data(
+                    Gpu::from_host_bytes(&before),
+                    n,
+                    2,
+                    size + 1,
+                );
+                Gpu::vec_znx_big_add_noise(module, base2k, k, &mut big.to_backend_mut(), 1, noise, seed);
+                let after: Vec<i128> = bytemuck::pod_collect_to_vec(&Gpu::to_host_bytes(big.data()));
+                let old: Vec<i128> = bytemuck::pod_collect_to_vec(&before);
+                for limb in 0..=size {
+                    for col in 0..2 {
+                        for i in 0..n {
+                            let at = (limb * 2 + col) * n + i;
+                            let added = after[at].wrapping_sub(old[at]);
+                            let expected = if col == 1 && limb < size { want[i][limb] as i128 } else { 0 };
+                            assert_eq!(added, expected, "{case}: i128 column {col} limb {limb} coefficient {i}");
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// The capacity step changes the compiled convolution, never its result.
+#[test]
+fn convolution_capacity_step_keeps_the_product() {
+    let (n, a_size, b_size, res_size, offset) = (N, 11, 9, 12, 3);
+    let product = |step: Option<usize>| -> Vec<u8> {
+        let module = Module::<Gpu>::new(n as u64);
+        if let Some(step) = step {
+            crate::handle(&module).set_convolution_capacity_step(step);
+        }
+        let mut seed = 0x51e9_0000_0000_0001u64;
+        let (a, b) = (
+            vector::<poulpy_hal::layouts::Standard>(n, 1, a_size, &mut seed),
+            vector::<poulpy_hal::layouts::Standard>(n, 1, b_size, &mut seed),
+        );
+        let mut left = module.cnv_pvec_left_alloc(n, 1, a_size, PrepareHint::Reuse);
+        let mut right = module.cnv_pvec_right_alloc(n, 1, b_size, PrepareHint::Reuse);
+        module.cnv_prepare_left(
+            &mut poulpy_hal::layouts::CnvPVecLToBackendMut::to_backend_mut(&mut left),
+            &vec_znx_backend_ref::<Gpu>(&a),
+            &mut ScratchOwned::<Gpu>::alloc(module.cnv_prepare_left_tmp_bytes(a_size, a_size)).arena(),
+        );
+        module.cnv_prepare_right(
+            &mut poulpy_hal::layouts::CnvPVecRToBackendMut::to_backend_mut(&mut right),
+            &vec_znx_backend_ref::<Gpu>(&b),
+            &mut ScratchOwned::<Gpu>::alloc(module.cnv_prepare_right_tmp_bytes(b_size, b_size)).arena(),
+        );
+        let mut res = transformed(&module, n, 1, res_size, &mut seed);
+        module.cnv_apply_dft(
+            offset,
+            &mut res.to_backend_mut(),
+            0,
+            &poulpy_hal::layouts::CnvPVecLToBackendRef::to_backend_ref(&left),
+            0,
+            &poulpy_hal::layouts::CnvPVecRToBackendRef::to_backend_ref(&right),
+            0,
+            1,
+            &mut ScratchOwned::<Gpu>::alloc(module.cnv_apply_dft_tmp_bytes(offset, res_size, a_size, b_size)).arena(),
+        );
+        Gpu::to_host_bytes(res.data())
+    };
+    let default = product(None);
+    for step in [1, 3, 16] {
+        assert!(product(Some(step)) == default, "the product at capacity step {step} differs");
+    }
+}
+
+#[test]
+#[should_panic(expected = "the capacity step is between one limb and MAX_CAPACITY_STEP")]
+fn convolution_capacity_step_rejects_zero() {
+    crate::handle(&*MODULE).set_convolution_capacity_step(0);
+}
+
+#[test]
+#[should_panic(expected = "the capacity step is between one limb and MAX_CAPACITY_STEP")]
+fn convolution_capacity_step_rejects_above_the_maximum() {
+    crate::handle(&*MODULE).set_convolution_capacity_step(crate::MAX_CAPACITY_STEP + 1);
+}

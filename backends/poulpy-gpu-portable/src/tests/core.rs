@@ -42,9 +42,10 @@ poulpy_core::core_parity_test_suite! {
     }
 }
 
+// The device draws from its own streams: the reference takes its samples.
 poulpy_core::core_encryption_parity_test_suite!(
     mod core_encryption,
-    backend_ref = poulpy_cpu_portable::NTT4x30Portable,
+    backend_ref = poulpy_cpu_portable::test_suite::ControlledSamplingFFT64Portable,
     backend_test = super::Gpu
 );
 

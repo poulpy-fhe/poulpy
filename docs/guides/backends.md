@@ -95,7 +95,7 @@ A backend type owns one device for the life of the process: the first device of 
 
 Buffers live on the device, so data moves explicitly: generate keys and encrypt with a host backend, move the layouts with `TransferInto`, prepare and evaluate on the GPU backend, and move results back to decrypt.
 Operations are queued; `Module::synchronize` returns once they have completed, and a transfer to the host waits for what it reads.
-Sampling, CKKS encoding and decoding, the uniform fill of a coefficient column and the normalizations at radices above 62 bits are staged through the host, and everything else runs on the device.
+CKKS encoding and decoding, the uniform fill of a coefficient column and the normalizations at radices above 62 bits are staged through the host, and everything else runs on the device, sampling included.
 CKKS encoding uses the portable transform there, which keeps it byte-identical to every other backend.
 
 A sequence of calls that is repeated on the same buffers (a bootstrap, say) can be recorded once and replayed as one CubeCL graph:
@@ -117,6 +117,8 @@ replay.replay();
 
 The closure must bind the same buffers and issue the same launches at every call, and must not read from the device, write host data to it or synchronize; `Replay` documents the contract, and `Replay::check` tests a closure against its recording.
 A recording keeps the temporaries of the closure reserved on the device until it is dropped, and while a closure is recorded or a graph is queued, other threads wait for the device.
+
+Each module carries the device-dependent tuning of its kernels: `poulpy_gpu_portable::handle(&module).set_convolution_capacity_step(limbs)` sets the limbs by which the convolution kernels grow the operand copies a thread holds (8 by default, at most `MAX_CAPACITY_STEP`).
 
 Limits of the GPU backends:
 

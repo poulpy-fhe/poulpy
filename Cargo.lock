@@ -3542,6 +3542,8 @@ dependencies = [
  "poulpy-core",
  "poulpy-cpu-portable",
  "poulpy-hal",
+ "rand_chacha 0.10.0",
+ "rand_core 0.10.1",
 ]
 
 [[package]]

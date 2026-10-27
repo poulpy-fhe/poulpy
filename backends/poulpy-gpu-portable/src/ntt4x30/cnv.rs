@@ -32,8 +32,13 @@ use super::{
 };
 use crate::runtime::{GpuRuntime, Label, launch};
 
-/// Step of the capacity of a thread's operand copies, in limbs.
-const CAPACITY_STEP: usize = 8;
+/// Default limbs by which the capacities of a thread's operand copies grow,
+/// a module's [`crate::GpuHandle::convolution_capacity_step`]. On an Apple M5
+/// Pro (Metal, CubeCL 0.11.3), steps 4, 8 and 16 run
+/// `NTT4x30Gpu<Wgpu>/ckks/ckks_bootstrapping/n16_d35_k685_p19_s2c_ffr_ci+pow2`
+/// in 267 to 280 ms, within the drift between three alternating rounds; other
+/// devices may differ, hence the per-module setting.
+pub(crate) const CAPACITY_STEP: usize = 8;
 
 /// The slot of a degree-`2^log_b` right operand that `sigma_mul` moves to
 /// slot `slot`, as in `automorphism_kernel`.
@@ -508,13 +513,14 @@ pub(crate) fn convolution_sum<RT: GpuRuntime>(
     terms: impl IntoIterator<Item = SumTerm>,
     offset: usize,
     accumulate: bool,
+    step: usize,
 ) -> bool {
     let mut accumulate = accumulate;
     let mut launched = false;
     let mut group = Group::default();
     for term in terms {
         if group.len == SUM_TERMS || (group.len != 0 && !group.alike(&term)) {
-            group.launch::<RT>(res, offset, accumulate);
+            group.launch::<RT>(res, offset, accumulate, step);
             (accumulate, launched) = (true, true);
             group = Group::default();
         }
@@ -522,7 +528,7 @@ pub(crate) fn convolution_sum<RT: GpuRuntime>(
         group.len += 1;
     }
     if group.len != 0 {
-        group.launch::<RT>(res, offset, accumulate);
+        group.launch::<RT>(res, offset, accumulate, step);
         launched = true;
     }
     launched
@@ -556,19 +562,19 @@ impl Group {
         a_t.size == a.size && b_t.size == b.size && b_t.n == b.n && plan_t.shift == b_plan.shift
     }
 
-    fn launch<RT: GpuRuntime>(&self, res: &DftColumn, offset: usize, accumulate: bool) {
+    fn launch<RT: GpuRuntime>(&self, res: &DftColumn, offset: usize, accumulate: bool, step: usize) {
         let (a, b, b_plan) = self.term(0);
         if b.size == 1 {
             launch_scale::<RT>(res, self, offset, accumulate);
         } else if self.len == 1 {
-            convolution::<RT>(res, a, b, b_plan, offset, accumulate);
+            convolution::<RT>(res, a, b, b_plan, offset, accumulate, step);
         } else {
-            launch_sum::<RT>(res, self, offset, accumulate);
+            launch_sum::<RT>(res, self, offset, accumulate, step);
         }
     }
 }
 
-fn launch_sum<RT: GpuRuntime>(res: &DftColumn, group: &Group, offset: usize, accumulate: bool) {
+fn launch_sum<RT: GpuRuntime>(res: &DftColumn, group: &Group, offset: usize, accumulate: bool, step: usize) {
     let (a, b, _) = group.term(0);
     let (n, limbs) = (res.n, res.size);
     assert!(
@@ -639,7 +645,7 @@ fn launch_sum<RT: GpuRuntime>(res: &DftColumn, group: &Group, offset: usize, acc
             term(0).2.shift,
             offset as u32,
         ];
-        [Consts::get(), group.len as u32, accumulate, ranges.a_cap(), ranges.b_cap()]
+        [Consts::get(), group.len as u32, accumulate, ranges.a_cap(step), ranges.b_cap(step)]
     );
 }
 
@@ -665,14 +671,14 @@ impl Ranges {
         }
     }
 
-    /// Capacity of a thread's copy of `a`: in steps of [`CAPACITY_STEP`]
-    /// limbs, which keeps the number of compiled kernels small.
-    fn a_cap(&self) -> usize {
-        self.a_len.max(1).next_multiple_of(CAPACITY_STEP)
+    /// Capacity of a thread's copy of `a`: in steps of `step` limbs, which
+    /// keeps the number of compiled kernels small.
+    fn a_cap(&self, step: usize) -> usize {
+        self.a_len.max(1).next_multiple_of(step)
     }
 
-    fn b_cap(&self) -> usize {
-        self.b_len.max(1).next_multiple_of(CAPACITY_STEP)
+    fn b_cap(&self, step: usize) -> usize {
+        self.b_len.max(1).next_multiple_of(step)
     }
 }
 
@@ -684,6 +690,8 @@ struct Operands<'a> {
     b: &'a DftColumn,
     b2: &'a DftColumn,
     b_plan: AutomorphismPlan,
+    /// Limbs by which the capacities of a thread's operand copies grow.
+    step: usize,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -697,7 +705,14 @@ fn launch<RT: GpuRuntime>(
     cross: &DftColumn,
     operands: Operands<'_>,
 ) {
-    let Operands { a, a2, b, b2, b_plan } = operands;
+    let Operands {
+        a,
+        a2,
+        b,
+        b2,
+        b_plan,
+        step,
+    } = operands;
     let n = res.n;
     assert!(a.n == n, "the left operand has the degree of the product");
     assert!(
@@ -762,7 +777,7 @@ fn launch<RT: GpuRuntime>(
             b_plan.shift,
             offset as u32,
         ];
-        [Consts::get(), form, accumulate, ranges.a_cap(), ranges.b_cap()]
+        [Consts::get(), form, accumulate, ranges.a_cap(step), ranges.b_cap(step)]
     );
 }
 
@@ -776,6 +791,7 @@ pub(crate) fn convolution<RT: GpuRuntime>(
     b_plan: &AutomorphismPlan,
     offset: usize,
     accumulate: bool,
+    step: usize,
 ) {
     launch::<RT>(
         SINGLE,
@@ -791,6 +807,7 @@ pub(crate) fn convolution<RT: GpuRuntime>(
             b,
             b2: b,
             b_plan: *b_plan,
+            step,
         },
     );
 }
@@ -804,6 +821,7 @@ pub(crate) fn convolution_pairwise<RT: GpuRuntime>(
     b: &DftColumn,
     b2: &DftColumn,
     offset: usize,
+    step: usize,
 ) {
     let b_plan = AutomorphismPlan::new(b.n, 1, false);
     launch::<RT>(
@@ -814,7 +832,14 @@ pub(crate) fn convolution_pairwise<RT: GpuRuntime>(
         res,
         res,
         res,
-        Operands { a, a2, b, b2, b_plan },
+        Operands {
+            a,
+            a2,
+            b,
+            b2,
+            b_plan,
+            step,
+        },
     );
 }
 
@@ -832,6 +857,7 @@ pub(crate) fn convolution_tensor<RT: GpuRuntime>(
     b0: &DftColumn,
     b1: &DftColumn,
     offset: usize,
+    step: usize,
 ) {
     assert!(cross.n == diag0.n, "tensor columns of different degrees");
     assert!(diag0.size == diag1.size, "the diagonal products are columns of one vector");
@@ -850,6 +876,7 @@ pub(crate) fn convolution_tensor<RT: GpuRuntime>(
             b: b0,
             b2: b1,
             b_plan: AutomorphismPlan::new(b0.n, 1, false),
+            step,
         },
     );
 }
