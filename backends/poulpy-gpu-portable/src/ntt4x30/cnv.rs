@@ -35,6 +35,10 @@ use crate::runtime::{GpuRuntime, Label, launch};
 /// Default limbs by which the capacities of a thread's operand copies grow,
 /// a module's [`crate::GpuHandle::convolution_capacity_step`], which a module
 /// sets for its device.
+///
+/// Measured on an Apple M5 Pro (Metal through wgpu, CubeCL 0.11.3) with the
+/// bootstrap of `n16_d35_k685_p19_s2c_ffr_ci+pow2`: steps 4, 8 and 16 take 267
+/// to 280 ms, within the drift between three alternating rounds.
 pub(crate) const CAPACITY_STEP: usize = 8;
 
 /// The slot of a degree-`2^log_b` right operand that `sigma_mul` moves to

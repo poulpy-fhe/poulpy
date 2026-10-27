@@ -748,7 +748,7 @@ pub(crate) fn digit_products<RT: GpuRuntime>(
 /// plane. A thread computes the product at its own point, as
 /// `product_kernel` does; every time a result limb is complete the workgroup
 /// passes it through shared memory, one barrier per stage, and stores the
-/// lanes the inverse launch would have stored.
+/// lanes the inverse launch would have stored. The key has two output columns.
 #[cube(launch_unchecked)]
 #[allow(clippy::too_many_arguments, clippy::collapsible_if)]
 fn product_inverse_kernel(
@@ -896,37 +896,22 @@ fn product_inverse_kernel(
                 sh[((d << mt) + u) as usize] = value;
             }
             sync_cube();
-            // Stage `mt - 1 - e` of the block pairs lanes `2^e` apart. With two
-            // output columns every thread runs one butterfly of a stage: thread
-            // `u` that of index `u mod 2^(mt-1)` in column `u >> (mt - 1)`.
-            // Otherwise the thread of the lower lane of a pair runs it in every
-            // column.
+            // Stage `mt - 1 - e` of the block pairs lanes `2^e` apart. Every
+            // thread runs one butterfly of a stage of the two output columns:
+            // thread `u` that of index `u mod 2^(mt-1)` in column `u >> (mt - 1)`.
             #[unroll]
             for e in 0..mt {
                 let half = comptime!(1u32 << e);
-                if comptime!(cols_out == 2) {
-                    if active {
-                        let pair_index = u & comptime!((1u32 << (mt - 1)) - 1);
-                        let low = ((pair_index >> e) << comptime!(e + 1)) | (pair_index & comptime!(half - 1));
-                        let wq = tw[(toff + tile_tb * comptime!(1u32 << (mt - 1 - e)) + (low >> comptime!(e + 1))) as usize];
-                        let w = wq.mul_hi(q) + 1u32;
-                        let i0 = (((u >> comptime!(mt - 1)) << mt) + low) as usize;
-                        let i1 = i0 + half as usize;
-                        let pair = gs(sh[i0], sh[i1], wq, w, q);
-                        sh[i0] = pair.0;
-                        sh[i1] = pair.1;
-                    }
-                } else if (u & half) == 0u32 && active {
-                    let wq = tw[(toff + tile_tb * comptime!(1u32 << (mt - 1 - e)) + (u >> comptime!(e + 1))) as usize];
+                if active {
+                    let pair_index = u & comptime!((1u32 << (mt - 1)) - 1);
+                    let low = ((pair_index >> e) << comptime!(e + 1)) | (pair_index & comptime!(half - 1));
+                    let wq = tw[(toff + tile_tb * comptime!(1u32 << (mt - 1 - e)) + (low >> comptime!(e + 1))) as usize];
                     let w = wq.mul_hi(q) + 1u32;
-                    #[unroll]
-                    for d in 0..cols_out {
-                        let i0 = ((d << mt) + u) as usize;
-                        let i1 = i0 + half as usize;
-                        let pair = gs(sh[i0], sh[i1], wq, w, q);
-                        sh[i0] = pair.0;
-                        sh[i1] = pair.1;
-                    }
+                    let i0 = (((u >> comptime!(mt - 1)) << mt) + low) as usize;
+                    let i1 = i0 + half as usize;
+                    let pair = gs(sh[i0], sh[i1], wq, w, q);
+                    sh[i0] = pair.0;
+                    sh[i1] = pair.1;
                 }
                 sync_cube();
             }
@@ -979,6 +964,7 @@ pub(crate) fn digit_product_inverse<RT: GpuRuntime>(
     assert!(res.n == n && a.n == n, "vector-matrix product between different degrees");
     assert_eq!(a.stride as usize, pmat.cols_in * block, "a.cols() != pmat.cols_in()");
     assert_eq!(res.stride as usize, pmat.cols_out * block, "res.cols() != pmat.cols_out()");
+    assert_eq!(pmat.cols_out, 2, "fused inverse products take two output columns");
     assert!(
         (1..=10).contains(&mt) && mt < n.ilog2(),
         "fused product: no such inverse launch"
@@ -1181,34 +1167,18 @@ fn product_inverse_many_kernel(
             #[unroll]
             for e in 0..mt {
                 let half = comptime!(1u32 << e);
-                if comptime!(cols_out == 2) {
-                    if active {
-                        let pair_index = u & comptime!((1u32 << (mt - 1)) - 1);
-                        let low = ((pair_index >> e) << comptime!(e + 1)) | (pair_index & comptime!(half - 1));
-                        let wq = tw[(toff + tile_tb * comptime!(1u32 << (mt - 1 - e)) + (low >> comptime!(e + 1))) as usize];
-                        let w = wq.mul_hi(q) + 1u32;
-                        #[unroll]
-                        for s in 0..m {
-                            let i0 = (((s * 2u32 + (u >> comptime!(mt - 1))) << mt) + low) as usize;
-                            let i1 = i0 + half as usize;
-                            let pair = gs(sh[i0], sh[i1], wq, w, q);
-                            sh[i0] = pair.0;
-                            sh[i1] = pair.1;
-                        }
-                    }
-                } else if (u & half) == 0u32 && active {
-                    let wq = tw[(toff + tile_tb * comptime!(1u32 << (mt - 1 - e)) + (u >> comptime!(e + 1))) as usize];
+                if active {
+                    let pair_index = u & comptime!((1u32 << (mt - 1)) - 1);
+                    let low = ((pair_index >> e) << comptime!(e + 1)) | (pair_index & comptime!(half - 1));
+                    let wq = tw[(toff + tile_tb * comptime!(1u32 << (mt - 1 - e)) + (low >> comptime!(e + 1))) as usize];
                     let w = wq.mul_hi(q) + 1u32;
                     #[unroll]
                     for s in 0..m {
-                        #[unroll]
-                        for d in 0..cols_out {
-                            let i0 = (((s * cols_out + d) << mt) + u) as usize;
-                            let i1 = i0 + half as usize;
-                            let pair = gs(sh[i0], sh[i1], wq, w, q);
-                            sh[i0] = pair.0;
-                            sh[i1] = pair.1;
-                        }
+                        let i0 = (((s * 2u32 + (u >> comptime!(mt - 1))) << mt) + low) as usize;
+                        let i1 = i0 + half as usize;
+                        let pair = gs(sh[i0], sh[i1], wq, w, q);
+                        sh[i0] = pair.0;
+                        sh[i1] = pair.1;
                     }
                 }
                 sync_cube();
@@ -1282,6 +1252,7 @@ pub(crate) fn digit_products_inverse<RT: GpuRuntime>(
     alike(a, "sources");
     assert_eq!(a[0].stride as usize, pmat.cols_in * block, "a.cols() != pmat.cols_in()");
     assert_eq!(res[0].stride as usize, pmat.cols_out * block, "res.cols() != pmat.cols_out()");
+    assert_eq!(pmat.cols_out, 2, "fused inverse products take two output columns");
     assert!(
         (1..=10).contains(&mt) && mt < n.ilog2(),
         "fused products: no such inverse launch"

@@ -132,6 +132,7 @@ macro_rules! labels {
 
 labels! {
     BufferZero => "buffer.zero",
+    BufferFill => "buffer.fill",
     NttForwardSingle => "ntt.forward.single",
     NttForwardStrided => "ntt.forward.strided",
     NttForwardContiguous => "ntt.forward.contiguous",
@@ -477,6 +478,10 @@ pub(crate) fn launched(label: Label, bytes: usize) {
 /// digest of its dispatch, the allocations bound, the scalar arguments and
 /// the compile-time arguments.
 pub(crate) fn trace_launch(label: Label, units: usize, dim: u32, bindings: &[&Binding], scalars: &[u64], comptime: &impl Hash) {
+    // The deferred fill of a zeroed buffer belongs to its allocation, not to a body.
+    if label == Label::BufferFill {
+        return;
+    }
     TRACE.with_borrow_mut(|open| {
         let Some(open) = open else { return };
         let mut hasher = DefaultHasher::new();

@@ -57,6 +57,12 @@ impl NttGeometry {
     ///
     /// Twelve stages and `2^12` lanes in shared memory: a tile of `2^12` lanes
     /// fills the 16 KiB of workgroup memory WebGPU guarantees.
+    ///
+    /// Measured on an Apple M5 Pro (Metal through wgpu, CubeCL 0.11.3) with
+    /// `vec_znx_dft_apply` and `vec_znx_idft_apply` of the standard bench at
+    /// degrees `2^13` to `2^15`: no neighbour (64 or 256 threads, 4 or 16 tiles)
+    /// is faster beyond the 3% between two baseline runs; 64 threads are up to
+    /// 20% slower, 4 or 16 tiles up to 8%.
     pub const GPU: Self = Self {
         max_stages: 12,
         log_threads: 7,
@@ -66,6 +72,10 @@ impl NttGeometry {
     };
 
     /// [`Self::GPU`] with 16 tiles at least on strided columns.
+    ///
+    /// Measured on an RTX 5090 (CUDA, CubeCL 0.11.3) with the replayed bootstrap
+    /// of `n16_d35_k685_p19_s2c_ffr_ci+pow2` at degree `2^16`: 28.2 ms, against
+    /// 28.7 ms with 8 tiles; 32 tiles take 1.5 ms more.
     pub const CUDA: Self = Self {
         log_strided_tiles: 4,
         ..Self::GPU

@@ -169,7 +169,8 @@ pub(crate) fn gglwe_products_fused<RT: GpuRuntime, R: Ring>(
 /// [`gglwe_product_digits_strided_inverse`] without addends for the sources `a` against one
 /// key, at most [`MANY_SOURCES`](crate::ntt4x30::MANY_SOURCES), in one launch: source `i` into
 /// `res[i]`. Returns `false`, having done nothing, when the degree has no inverse launch to take
-/// over or the views of each role do not share an allocation, a layout and a size.
+/// over, the key has other than two output columns or the views of each role do not share an
+/// allocation, a layout and a size.
 #[cfg_attr(not(feature = "enable-core"), allow(dead_code))]
 pub(crate) fn gglwe_products_digits_strided_inverse<RT: GpuRuntime, R: Ring>(
     module: &Module<NTT4x30Gpu<RT, R>>,
@@ -179,7 +180,7 @@ pub(crate) fn gglwe_products_digits_strided_inverse<RT: GpuRuntime, R: Ring>(
     product_limbs: usize,
     pmat: &VmpPMatBackendRef<'_, NTT4x30Gpu<RT, R>>,
 ) -> bool {
-    let Some(mt) = inverse_head::<RT>(res[0].n().ilog2(), res.len() * res[0].cols()) else {
+    let Some(mt) = inverse_head::<RT>(res[0].n().ilog2(), res.len() * res[0].cols()).filter(|_| res[0].cols() == 2) else {
         return false;
     };
     let columns = |views: &mut dyn Iterator<Item = Option<DftColumn>>| views.collect::<Option<Vec<DftColumn>>>();
@@ -215,7 +216,7 @@ pub(crate) fn gglwe_products_digits_strided_inverse<RT: GpuRuntime, R: Ring>(
 /// the first launch of the inverse transform of `res` run by the product
 /// itself: `res` is then completed by [`super::idft_tail_normalize`] column by
 /// column. Returns `false`, having done nothing, when the degree has no such
-/// launch to take over.
+/// launch to take over or the key has other than two output columns.
 #[cfg_attr(not(feature = "enable-core"), allow(dead_code))]
 #[allow(clippy::type_complexity)]
 pub(crate) fn gglwe_product_digits_strided_inverse<RT: GpuRuntime, R: Ring>(
@@ -233,7 +234,7 @@ pub(crate) fn gglwe_product_digits_strided_inverse<RT: GpuRuntime, R: Ring>(
     );
     assert_eq!(a.cols(), pmat.cols_in(), "fused product: a.cols() != pmat.cols_in()");
     assert_eq!(res.cols(), pmat.cols_out(), "fused product: res.cols() != pmat.cols_out()");
-    let Some(mt) = inverse_head::<RT>(res.n().ilog2(), res.cols()) else {
+    let Some(mt) = inverse_head::<RT>(res.n().ilog2(), res.cols()).filter(|_| res.cols() == 2) else {
         return false;
     };
     let res = dft_column_mut(res, 0).expect("fused product: res holds no storage");

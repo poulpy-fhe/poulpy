@@ -186,8 +186,14 @@ fn gather_kernel(
 #[cfg_attr(not(feature = "enable-core"), allow(dead_code))]
 pub(crate) fn gather<RT: GpuRuntime>(dst: &DftColumn, sources: &[DftColumn]) {
     let block = 4 * dst.n;
-    assert!(dst.stride as usize == block && sources.len() <= dst.size);
-    assert!(sources.iter().all(|source| source.n == dst.n && source.size >= 1));
+    assert!(
+        dst.stride as usize == block && sources.len() <= dst.size,
+        "gather: the destination holds fewer contiguous limbs than the sources"
+    );
+    assert!(
+        sources.iter().all(|source| source.n == dst.n && source.size >= 1),
+        "gather: a source of another degree or without a limb"
+    );
     for (group, chunk) in sources.chunks(GATHER_BLOCKS).enumerate() {
         // Sources beyond the last repeat it: the kernel does not read them.
         let source = |index: usize| &chunk[index.min(chunk.len() - 1)];

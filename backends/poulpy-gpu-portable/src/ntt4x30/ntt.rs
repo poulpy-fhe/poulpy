@@ -266,7 +266,10 @@ fn tile_pass(
     let mut ti = tile - (p << rest);
     let mut active = p < polys as usize;
     // A launch that loads coefficients: the workgroups of the four planes of
-    // a limb take the same columns in turn.
+    // a limb take the same columns in turn. Measured on an Apple M5 Pro (Metal
+    // through wgpu, CubeCL 0.11.3) with the replayed bootstrap of
+    // `n16_d35_k685_p19_s2c_ffr_ci+pow2`: 1.3 ms less; unchanged on an RTX 5090
+    // (CUDA).
     if comptime!(source != SOURCE_RESIDUES && rest >= lw) {
         let cube = CUBE_POS;
         let groups = rest - lw;

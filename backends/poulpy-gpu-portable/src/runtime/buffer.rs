@@ -65,7 +65,7 @@ fn settle<RT: GpuRuntime>(allocation: &Allocation) {
     let _access = access::shared();
     let mut fresh = allocation.fresh();
     if std::mem::take(&mut *fresh) {
-        zero::<RT>(allocation, 0, allocation.reserved);
+        zero::<RT>(allocation, 0, allocation.reserved, Label::BufferFill);
     }
 }
 
@@ -305,7 +305,7 @@ fn write_prefix_at<RT: GpuRuntime>(allocation: &Option<Allocation>, offset: usiz
     if end.is_multiple_of(4) && (offset + len).is_multiple_of(4) {
         write::<RT>(allocation, offset, src);
         if let Some(allocation) = allocation {
-            zero::<RT>(allocation, end, len - src.len());
+            zero::<RT>(allocation, end, len - src.len(), Label::BufferZero);
         }
     } else {
         let mut padded = vec![0u8; len];
@@ -346,7 +346,7 @@ pub(crate) fn write_at<RT: GpuRuntime>(binding: &Binding, offset: usize, src: &[
     write::<RT>(&allocation_of(binding), offset, src);
 }
 
-fn zero<RT: GpuRuntime>(allocation: &Allocation, offset: usize, len: usize) {
+fn zero<RT: GpuRuntime>(allocation: &Allocation, offset: usize, len: usize, label: Label) {
     if len == 0 {
         return;
     }
@@ -363,7 +363,7 @@ fn zero<RT: GpuRuntime>(allocation: &Allocation, offset: usize, len: usize) {
         len: allocation.reserved,
         owned: allocation.owned.clone(),
     };
-    launch!(RT, Label::BufferZero, len, fill_zero, (words, RT::GROUP, RT::GROUP); [binding => u32]; [
+    launch!(RT, label, len, fill_zero, (words, RT::GROUP, RT::GROUP); [binding => u32]; [
             u32::try_from(offset / 4).expect("device view starts beyond the 32-bit element range"),
             u32::try_from(words).expect("device view longer than the 32-bit element range"),
         ]; []);
@@ -474,7 +474,7 @@ impl<RT: GpuRuntime> GpuBuf<RT> {
     pub(crate) fn wipe(&mut self) {
         if let Some(allocation) = &self.allocation {
             settle::<RT>(allocation);
-            zero::<RT>(allocation, 0, self.len);
+            zero::<RT>(allocation, 0, self.len, Label::BufferZero);
         }
     }
 

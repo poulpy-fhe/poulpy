@@ -11,18 +11,19 @@ use std::{
 
 use poulpy_core::{
     Distribution, Noise,
-    layouts::{GGLWEInfos, prepared::GGLWEPreparedBackendRef},
+    layouts::{GGLWEInfos, LWEInfos, prepared::GGLWEPreparedBackendRef},
     oep::{ConstTerm, GGLWEProductDigitsStridedImpl, SamplingImpl},
     reference::keyswitching::glwe::{
-        gglwe_operand_from_dft_reference, gglwe_operand_from_dft_tmp_bytes_reference, gglwe_product_fused_reference,
-        gglwe_product_fused_tmp_bytes_reference, gglwe_product_idft_normalize_reference,
-        gglwe_product_idft_normalize_tmp_bytes_reference, gglwe_product_limbs,
+        gglwe_operand_from_dft, gglwe_operand_from_dft_size, gglwe_product_from_dft_check, gglwe_product_fused_check,
+        gglwe_product_fused_reference, gglwe_product_fused_tmp_bytes_reference, gglwe_product_idft_normalize_check,
+        gglwe_product_idft_normalize_reference, gglwe_product_idft_normalize_tmp_bytes_reference, gglwe_product_limbs,
+        gglwe_products_from_dft_reference, gglwe_products_from_dft_tmp_bytes_reference,
     },
 };
 use poulpy_cpu_portable::kernels::noise::{gaussian_cumulative_table_portable, gaussian_rejection_constants_portable};
 use poulpy_hal::layouts::{
-    ConjugateInvariant, Module, Ring, ScalarZnxBackendMut, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut,
-    VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendRef,
+    Backend, ConjugateInvariant, Module, Ring, ScalarZnxBackendMut, ScratchArena, VecZnxBackendMut, VecZnxBackendRef,
+    VecZnxBigBackendMut, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendRef, vec_znx_dft_backend_ref_from_mut,
 };
 
 use crate::{
@@ -93,6 +94,11 @@ unsafe impl<RT: GpuRuntime, R: Ring> GGLWEProductDigitsStridedImpl for NTT4x30Gp
         accumulate: bool,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
+        gglwe_product_fused_check(res, product_size, a, key, addends);
+        assert!(
+            scratch.available() >= Self::gglwe_product_fused_tmp_bytes(module, res.size(), product_size, a.size(), key),
+            "gglwe_product_fused: scratch below its query"
+        );
         // The kernel takes a dense key, a source to multiply and an addend on each of the first two columns.
         if key.stride() != 1 || a.size() == 0 || addends.len() > 2 {
             return gglwe_product_fused_reference(module, res, product_size, a, key, term_count, addends, p, accumulate, scratch);
@@ -116,105 +122,127 @@ unsafe impl<RT: GpuRuntime, R: Ring> GGLWEProductDigitsStridedImpl for NTT4x30Gp
         );
     }
 
-    // The sources of one key in launches of up to `MANY_SOURCES`, each reading the key once.
-    fn gglwe_products_fused(
+    fn gglwe_products_from_dft_tmp_bytes<K>(
+        module: &Module<Self>,
+        count: usize,
+        rank: usize,
+        source_size: usize,
+        key_infos: &K,
+    ) -> usize
+    where
+        K: GGLWEInfos,
+    {
+        // The operands of every source side by side, then the work of one source.
+        let operand_size = gglwe_operand_from_dft_size(key_infos, source_size, key_infos.size());
+        let operand = Self::scratch_aligned(Self::bytes_of_vec_znx_dft(module.n(), rank, operand_size));
+        gglwe_products_from_dft_tmp_bytes_reference(module, count, rank, source_size, key_infos)
+            + count.saturating_sub(1) * operand
+    }
+
+    // The operands of the sources laid out side by side, then their products in launches of up
+    // to `MANY_SOURCES`, each reading the key once.
+    fn gglwe_products_from_dft(
         module: &Module<Self>,
         res: &mut [VecZnxDftBackendMut<'_, Self>],
-        product_size: usize,
-        a: &[VecZnxDftBackendRef<'_, Self>],
+        sources: &mut [VecZnxDftBackendMut<'_, Self>],
+        source_sizes: &[usize],
+        source_base2k: usize,
         key: &GGLWEPreparedBackendRef<'_, Self>,
+        output_size: usize,
         term_count: usize,
-        addends: &[&[Option<(&VecZnxDftBackendRef<'_, Self>, usize)>]],
         p: i64,
         accumulate: &[bool],
         scratch: &mut ScratchArena<'_, Self>,
     ) {
+        use poulpy_hal::api::ScratchArenaTakeBasic;
         assert!(
-            a.len() == res.len() && addends.len() == res.len() && accumulate.len() == res.len(),
-            "gglwe_products_fused: items of different lengths"
+            sources.len() == res.len() && source_sizes.len() == res.len() && accumulate.len() == res.len(),
+            "gglwe_products_from_dft: items of different lengths"
         );
-        // The kernel takes a dense key, the same accumulation for all, and on output column 0
-        // either an addend for every source, read from its own column 0, or none.
-        let body = |item: &&[Option<(&VecZnxDftBackendRef<'_, Self>, usize)>]| match item {
-            [] | [None] => Some(false),
-            [Some((_, 0))] => Some(true),
-            _ => None,
-        };
-        let bodies: Option<Vec<bool>> = addends.iter().map(body).collect();
-        let shared = bodies
-            .as_ref()
-            .is_some_and(|bodies| bodies.iter().all(|&b| b == bodies[0]) && accumulate.iter().all(|&acc| acc == accumulate[0]));
+        for i in 0..res.len() {
+            gglwe_product_from_dft_check(&res[i], &sources[i], source_sizes[i], source_base2k, key, output_size);
+        }
+        let Some(first) = res.first() else { return };
+        let (n, rank) = (first.n(), first.cols() - 1);
+        let source_size = source_sizes[0];
+        assert!(
+            scratch.available() >= Self::gglwe_products_from_dft_tmp_bytes(module, res.len(), rank, source_size, key),
+            "gglwe_products_from_dft: scratch below its query"
+        );
+        // The kernel takes a dense key, sources of one size and one accumulation for all.
+        let alike = source_sizes.iter().all(|&size| size == source_size) && accumulate.iter().all(|&acc| acc == accumulate[0]);
+        if key.stride() != 1 || res.len() < 2 || !alike {
+            return gglwe_products_from_dft_reference(
+                module,
+                res,
+                sources,
+                source_sizes,
+                source_base2k,
+                key,
+                output_size,
+                term_count,
+                p,
+                accumulate,
+                scratch,
+            );
+        }
+        let output_size = output_size.min(key.size());
+        let operand_size = gglwe_operand_from_dft_size(key, source_size, output_size);
+        let (mut operands, mut rest) = scratch
+            .borrow()
+            .take_vec_znx_dft_slice_scratch(n, res.len(), rank, operand_size);
+        let mut sources: Vec<VecZnxDftBackendMut<'_, Self>> = sources
+            .iter_mut()
+            .map(|source| source.with_limb_range_mut(0, source_size))
+            .collect();
+        for (operand, source) in operands.iter_mut().zip(sources.iter_mut()) {
+            gglwe_operand_from_dft(module, operand, source, source_base2k, key, output_size, &mut rest);
+        }
+        let operands: Vec<VecZnxDftBackendRef<'_, Self>> = operands
+            .iter()
+            .map(|operand| vec_znx_dft_backend_ref_from_mut(operand))
+            .collect();
+        let bodies: Vec<VecZnxDftBackendRef<'_, Self>> = sources.iter().map(vec_znx_dft_backend_ref_from_mut).collect();
         let dsize = key.dsize().as_usize();
         let product_limbs = if dsize == 1 { 1 } else { gglwe_product_limbs(key, term_count) };
-        if res.is_empty() {
-            // The reference's checks, then nothing to do.
-            assert!(
-                a.is_empty() && addends.is_empty() && accumulate.is_empty(),
-                "gglwe_products_fused: items of different lengths"
-            );
-            return;
-        }
         // The identity stores without a rotation.
-        let plan = (p != 1).then(|| AutomorphismPlan::new(res[0].n(), p, handle(module).tables().invariant()));
+        let plan = (p != 1).then(|| AutomorphismPlan::new(n, p, handle(module).tables().invariant()));
+        let mut body_refs: Vec<&VecZnxDftBackendRef<'_, Self>> = Vec::with_capacity(crate::ntt4x30::MANY_SOURCES);
         let mut start = 0;
         while start < res.len() {
             let end = (start + crate::ntt4x30::MANY_SOURCES).min(res.len());
-            let launched = shared && key.stride() == 1 && end - start >= 2 && {
-                let with_bodies = bodies.as_ref().unwrap()[0];
-                let addend_refs: Vec<&VecZnxDftBackendRef<'_, Self>> = if with_bodies {
-                    addends[start..end].iter().map(|item| item[0].unwrap().0).collect()
-                } else {
-                    Vec::new()
-                };
-                gglwe_products_fused(
+            body_refs.clear();
+            body_refs.extend(&bodies[start..end]);
+            let launched = end - start >= 2
+                && gglwe_products_fused(
                     &mut res[start..end],
-                    product_size,
-                    &a[start..end],
+                    output_size,
+                    &operands[start..end],
                     dsize,
                     product_limbs,
                     key.data(),
-                    with_bodies.then_some(&addend_refs[..]),
+                    Some(&body_refs[..]),
                     plan.as_ref(),
                     accumulate[0],
-                )
-            };
+                );
             if !launched {
                 for i in start..end {
                     Self::gglwe_product_fused(
                         module,
                         &mut res[i],
-                        product_size,
-                        &a[i],
+                        output_size,
+                        &operands[i],
                         key,
                         term_count,
-                        addends[i],
+                        &[Some((&bodies[i], 0))],
                         p,
                         accumulate[i],
-                        scratch,
+                        &mut rest,
                     );
                 }
             }
             start = end;
         }
-    }
-
-    fn gglwe_operand_from_dft_tmp_bytes<K>(module: &Module<Self>, a_size: usize, output_size: usize, key_infos: &K) -> usize
-    where
-        K: GGLWEInfos,
-    {
-        gglwe_operand_from_dft_tmp_bytes_reference(module, a_size, output_size, key_infos)
-    }
-
-    fn gglwe_operand_from_dft(
-        module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
-        a: &mut VecZnxDftBackendMut<'_, Self>,
-        a_base2k: usize,
-        key: &GGLWEPreparedBackendRef<'_, Self>,
-        output_size: usize,
-        scratch: &mut ScratchArena<'_, Self>,
-    ) {
-        gglwe_operand_from_dft_reference(module, res, a, a_base2k, key, output_size, scratch)
     }
 
     fn gglwe_product_idft_normalize_tmp_bytes<K>(
@@ -230,8 +258,8 @@ unsafe impl<RT: GpuRuntime, R: Ring> GGLWEProductDigitsStridedImpl for NTT4x30Gp
         gglwe_product_idft_normalize_tmp_bytes_reference(module, res_size, product_size, a_size, key_infos)
     }
 
-    // The product runs the first inverse launch of its result; each column then takes the
-    // remaining launches and the normalization.
+    // At rank 1 and the kernel's radices, the product runs the first inverse launch of its
+    // result; each column then takes the remaining launches and the normalization.
     fn gglwe_product_idft_normalize(
         module: &Module<Self>,
         res: &mut VecZnxBackendMut<'_, Self>,
@@ -247,11 +275,20 @@ unsafe impl<RT: GpuRuntime, R: Ring> GGLWEProductDigitsStridedImpl for NTT4x30Gp
         a_base2k: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
+        gglwe_product_idft_normalize_check(res, res_dft, a, key, addends, body);
+        assert!(
+            scratch.available()
+                >= Self::gglwe_product_idft_normalize_tmp_bytes(module, res.size(), res_dft.size(), a.size(), key),
+            "gglwe_product_idft_normalize: scratch below its query"
+        );
         let dsize = key.dsize().as_usize();
         let product_limbs = if dsize == 1 { 1 } else { gglwe_product_limbs(key, term_count) };
         let addend = |column: usize| addends.get(column).copied().flatten();
         let fused = key.stride() == 1
             && a.size() != 0
+            && res_dft.cols() == 2
+            && res_base2k <= KERNEL_RADIX
+            && a_base2k <= KERNEL_RADIX
             && addends.len() <= 2
             && crate::hal_impl::gglwe_product_digits_strided_inverse(
                 module,
@@ -302,12 +339,35 @@ unsafe impl<RT: GpuRuntime, R: Ring> GGLWEProductDigitsStridedImpl for NTT4x30Gp
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         assert!(
-            res_dft.len() == res.len() && a.len() == res.len() && addends.len() == res.len() && body.len() == res.len(),
+            res_dft.len() == res.len()
+                && a.len() == res.len()
+                && (addends.is_empty() || addends.len() == res.len())
+                && body.len() == res.len(),
             "gglwe_products_idft_normalize: items of different lengths"
+        );
+        let addend = |i: usize| addends.get(i).copied().unwrap_or(&[]);
+        let mut need = 0;
+        for i in 0..res.len() {
+            gglwe_product_idft_normalize_check(&res[i], &res_dft[i], &a[i], key, addend(i), body[i]);
+            need = need.max(Self::gglwe_product_idft_normalize_tmp_bytes(
+                module,
+                res[i].size(),
+                res_dft[i].size(),
+                a[i].size(),
+                key,
+            ));
+        }
+        assert!(
+            scratch.available() >= need,
+            "gglwe_products_idft_normalize: scratch below its query"
         );
         let dsize = key.dsize().as_usize();
         let product_limbs = if dsize == 1 { 1 } else { gglwe_product_limbs(key, term_count) };
-        let plain = key.stride() == 1 && addends.iter().all(|item| item.iter().all(Option::is_none));
+        let plain = key.stride() == 1
+            && res_base2k <= KERNEL_RADIX
+            && a_base2k <= KERNEL_RADIX
+            && res_dft.iter().all(|res_dft| res_dft.cols() == 2)
+            && addends.iter().all(|item| item.iter().all(Option::is_none));
         let mut start = 0;
         while start < res.len() {
             let end = (start + crate::ntt4x30::MANY_SOURCES).min(res.len());
@@ -350,7 +410,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> GGLWEProductDigitsStridedImpl for NTT4x30Gp
                         &a[i],
                         key,
                         term_count,
-                        addends[i],
+                        addend(i),
                         body[i],
                         a_base2k,
                         scratch,
@@ -479,8 +539,8 @@ pub(crate) fn const_combination<RT: GpuRuntime, R: Ring>(
         return false;
     }
     for term in terms {
-        poulpy_hal::layouts::assert_dense(&term.a, "glwe_const_combination");
-        poulpy_hal::layouts::assert_dense(&term.b, "glwe_const_combination");
+        poulpy_hal::layouts::assert_dense(&term.a, "cnv_by_const_apply");
+        poulpy_hal::layouts::assert_dense(&term.b, "cnv_by_const_apply");
     }
     let products = |col: usize| -> Vec<(Column, Column, usize, usize)> {
         terms
