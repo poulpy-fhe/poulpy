@@ -694,6 +694,10 @@ jobs:
           group='${{ matrix.group }}'
           [[ "$group" == blas ]] || group=
           if [[ "$mode" == emulated ]]; then export POULPY_TEST_EMULATED=1; fi
+          # Native-only tests need an AVX-512 CPU, so a run covers those of the shards that land on one.
+          if [[ "$mode" == emulated && -z "$group" ]]; then
+            echo "::notice title=AVX-512 ${{ matrix.group }} ${{ matrix.shard }}/${{ matrix.shards }}::No AVX-512 on this runner: the shard ran under SDE and skipped its native-only tests."
+          fi
           filters=$(bash .github/scripts/test-backend.sh filters avx512 "$mode" $group)
           mapfile -t filters <<< "$filters"
           tar -C "$RUNNER_TEMP" -xf "$RUNNER_TEMP/tests.tar"
