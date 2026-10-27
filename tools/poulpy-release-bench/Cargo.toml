@@ -1,11 +1,11 @@
 [package]
 name = "poulpy-release-bench"
-version.workspace = true
-edition.workspace = true
-license.workspace = true
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
 description = "Release measurements of the CKKS bootstrapping presets on every backend"
-repository.workspace = true
-homepage.workspace = true
+repository = "https://github.com/poulpy-fhe/poulpy"
+homepage = "https://github.com/poulpy-fhe/poulpy"
 publish = false
 readme = "README.md"
 
@@ -28,17 +28,19 @@ hip = ["dep:poulpy-gpu-portable", "poulpy-gpu-portable/enable-hip", "poulpy-gpu-
 metal = ["dep:poulpy-gpu-portable", "poulpy-gpu-portable/enable-metal", "poulpy-gpu-portable/enable-ckks"]
 vulkan = ["dep:poulpy-gpu-portable", "poulpy-gpu-portable/enable-vulkan", "poulpy-gpu-portable/enable-ckks"]
 
+# Outside the workspace, so that its builds and CI leave it out. Cargo.lock is
+# seeded from the workspace lock and pins the same versions.
 [dependencies]
-anyhow = {workspace = true}
-rayon = {workspace = true}
-serde_json = {workspace = true}
-poulpy-hal = {workspace = true}
-poulpy-core = {workspace = true}
-poulpy-ckks = {workspace = true, features = ["test-utils"]}
+anyhow = "1.0.104"
+rayon = "1.12.0"
+serde_json = "1.0.151"
+poulpy-hal = {path = "../../poulpy-hal"}
+poulpy-core = {path = "../../poulpy-core"}
+poulpy-ckks = {path = "../../schemes/poulpy-ckks", features = ["test-utils"]}
 # The portable backend is always measured, and is the client of the GPU backends.
-poulpy-cpu-portable = {workspace = true, features = ["enable-ckks"]}
-poulpy-cpu-rayon = {workspace = true, optional = true}
-poulpy-cpu-avx = {workspace = true, optional = true}
-poulpy-cpu-avx512 = {workspace = true, optional = true}
-poulpy-cpu-arm = {workspace = true, optional = true}
-poulpy-gpu-portable = {workspace = true, optional = true}
+poulpy-cpu-portable = {path = "../../backends/poulpy-cpu-portable", features = ["enable-ckks"]}
+poulpy-cpu-rayon = {path = "../../backends/poulpy-cpu-rayon", optional = true}
+poulpy-cpu-avx = {path = "../../backends/poulpy-cpu-avx", optional = true}
+poulpy-cpu-avx512 = {path = "../../backends/poulpy-cpu-avx512", optional = true}
+poulpy-cpu-arm = {path = "../../backends/poulpy-cpu-arm", optional = true}
+poulpy-gpu-portable = {path = "../../backends/poulpy-gpu-portable", optional = true}

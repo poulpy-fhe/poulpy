@@ -15,8 +15,9 @@ members = [
     "backends/poulpy-cpu-oracle",
     "backends/poulpy-gpu-portable",
     "tools/poulpy-bench",
-    "tools/poulpy-release-bench",
 ]
+# Release measurements, built by tools/release_bench.py and not part of the library.
+exclude = ["tools/poulpy-release-bench"]
 default-members = [
     "poulpy-hal",
     "poulpy-core",

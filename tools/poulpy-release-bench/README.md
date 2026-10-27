@@ -43,6 +43,15 @@ The GPU backends use `NTT4x30Portable` as the client that generates the keys and
 
 Rayon backends run on 16 threads on x86 and on every thread on ARM, capped at what the host has (`--threads` overrides).
 
+The crate is outside the workspace, so workspace builds and CI leave it out.
+Its `Cargo.lock` pins the versions of the workspace lock.
+After the workspace lock changes, refresh it from the repository root:
+
+```sh
+cp Cargo.lock tools/poulpy-release-bench/Cargo.lock
+cargo metadata --format-version 1 --manifest-path tools/poulpy-release-bench/Cargo.toml > /dev/null
+```
+
 ## The binary
 
 ```sh

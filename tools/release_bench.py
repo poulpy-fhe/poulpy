@@ -36,6 +36,9 @@ import time
 SCHEMA = "poulpy-release-bench/1"
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CRATE = "poulpy-release-bench"
+# The crate is outside the workspace and has its own lock.
+MANIFEST = "tools/poulpy-release-bench/Cargo.toml"
+LOCK = os.path.join(ROOT, "tools", "poulpy-release-bench", "Cargo.lock")
 
 # Builds by architecture: name, crate features, target flags, instruction sets the host needs.
 # A backend is measured from the first build that contains it, so the portable
@@ -245,8 +248,7 @@ def default_gpu_feature():
 
 def git_info():
     status = sh("git", "status", "--porcelain", "--untracked-files=no")
-    lock = os.path.join(ROOT, "Cargo.lock")
-    with open(lock, "rb") as f:
+    with open(LOCK, "rb") as f:
         lock_sha = hashlib.sha256(f.read()).hexdigest()
     manifest = read(os.path.join(ROOT, "Cargo.toml")) or ""
     version = re.search(r'\[workspace\.package\][^\[]*?version\s*=\s*"([^"]+)"', manifest, re.S)
@@ -263,7 +265,7 @@ def git_info():
 def toolchain():
     rustc = sh("rustc", "-vV") or ""
     fields = dict(line.split(": ", 1) for line in rustc.splitlines()[1:] if ": " in line)
-    lock = read(os.path.join(ROOT, "Cargo.lock")) or ""
+    lock = read(LOCK) or ""
     cubecl = re.search(r'name = "cubecl"\nversion = "([^"]+)"', lock)
     return {
         "rustc": rustc.splitlines()[0] if rustc else None,
@@ -299,7 +301,7 @@ def plan_builds(host_isa, gpu_feature):
 
 def build(spec):
     target_dir = os.path.join(ROOT, "target", "release-bench", spec["name"])
-    cmd = ["cargo", "build", "--locked", "--release", "-p", CRATE, "--features", ",".join(spec["features"])]
+    cmd = ["cargo", "build", "--locked", "--release", "--manifest-path", MANIFEST, "--features", ",".join(spec["features"])]
     env = dict(os.environ, CARGO_TARGET_DIR=target_dir, RUSTFLAGS=spec["rustflags"])
     env.pop("CARGO_ENCODED_RUSTFLAGS", None)
     print(f"== build {spec['name']}: {' '.join(cmd)}  RUSTFLAGS={spec['rustflags']!r}", flush=True)
