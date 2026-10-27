@@ -57,16 +57,18 @@ use poulpy_core::layouts::{GLWEToBackendMut, LWEInfos};
 
 use poulpy_hal::{
     AlignedBuf,
-    api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{DataView, DataViewMut, HostBytesBackend, Module, PrepareHint, ScratchArena, ScratchOwned, Standard},
+    api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
+    layouts::{DataView, DataViewMut, HostBytesBackend, Module, PrepareHint, ScratchArena, Standard},
 };
 
 use super::helpers::{
     MUL_CONST, PT_PREC, TestContextBackend, TestContextModule, TestScalar, TestVector, alloc_ct, alloc_scratch,
     assert_ckks_error, assert_decrypt_precision, assert_decrypt_precision_at_log_delta, assert_mul_ct_output_meta,
-    assert_mul_pt_output_meta, ckks_encrypt, ckks_encrypt_with_prec, ckks_pt_cst_full, ckks_snapshot, encode_and_upload_pt,
-    gen_sk_with_raw, gen_tsk, precision_at, quantize, quantized_const, quantized_vector, want_mul, want_square,
+    assert_mul_pt_output_meta, ckks_encrypt, ckks_encrypt_with_prec, ckks_pt_cst_full, ckks_snapshot, dirty_ct,
+    encode_and_upload_pt, gen_sk_with_raw, gen_tsk, precision_at, quantize, quantized_const, quantized_vector, want_mul,
+    want_square,
 };
+use super::parity::helpers::{snapshot, with_scratch};
 
 use crate::{SetCKKSInfos, test_suite::CKKSTestParams, test_suite::reference_encoder::ReferenceEncoder};
 
@@ -115,32 +117,39 @@ where
     );
     let (want_re, want_im) = want_mul(&re1, &im1, &re2, &im2);
     let mut ct_res = alloc_ct(&params, module, params.k);
-    module
-        .ckks_mul_into(&mut ct_res, &ct1, &ct2, &tsk, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_mul_tmp_bytes(&ct_res, &ct1, &ct2, &tsk), |s| {
+        module.ckks_mul_into(&mut ct_res, &ct1, &ct2, &tsk, s)
+    })
+    .unwrap();
     assert_mul_ct_output_meta("mul_ct_aligned", &ct_res, params.k, &ct1, &ct2);
     let metadata = ct1.noise();
     assert!(metadata.is_some());
     assert_eq!(ct_res.noise(), None);
-    let prepared = module
-        .ckks_prepare_right(&ct2, PrepareHint::OneShot, &mut scratch.borrow())
-        .unwrap();
+    let prepared = with_scratch::<BE, _>(module.ckks_prepare_tmp_bytes(&ct2), |s| {
+        module.ckks_prepare_right(&ct2, PrepareHint::OneShot, s)
+    })
+    .unwrap();
     let mut prepared_result = ct1.clone();
-    module
-        .ckks_mul_prepared_assign(&mut prepared_result, &prepared, &tsk, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(
+        module.ckks_mul_tmp_bytes(&prepared_result, &prepared_result, &ct2, &tsk),
+        |s| module.ckks_mul_prepared_assign(&mut prepared_result, &prepared, &tsk, s),
+    )
+    .unwrap();
     assert_eq!(prepared_result.noise(), None);
     assert_eq!(ckks_snapshot(&prepared_result), ckks_snapshot(&ct_res));
 
     let mut unknown = ct2.clone();
     GLWEToBackendMut::<BE>::set_noise(&mut unknown, None);
-    let prepared = module
-        .ckks_prepare_right(&unknown, PrepareHint::Reuse, &mut scratch.borrow())
-        .unwrap();
+    let prepared = with_scratch::<BE, _>(module.ckks_prepare_tmp_bytes(&unknown), |s| {
+        module.ckks_prepare_right(&unknown, PrepareHint::Reuse, s)
+    })
+    .unwrap();
     let mut prepared_result = ct1.clone();
-    module
-        .ckks_mul_prepared_assign(&mut prepared_result, &prepared, &tsk, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(
+        module.ckks_mul_tmp_bytes(&prepared_result, &prepared_result, &unknown, &tsk),
+        |s| module.ckks_mul_prepared_assign(&mut prepared_result, &prepared, &tsk, s),
+    )
+    .unwrap();
     assert_eq!(prepared_result.noise(), None);
     assert_decrypt_precision(
         "mul_ct_aligned",
@@ -196,9 +205,10 @@ where
     );
     let (want_re, want_im) = want_mul(&re1, &im1, &re2, &im2);
     let mut ct_res = alloc_ct(&params, module, params.k);
-    module
-        .ckks_mul_into(&mut ct_res, &ct1, &ct2, &tsk, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_mul_tmp_bytes(&ct_res, &ct1, &ct2, &tsk), |s| {
+        module.ckks_mul_into(&mut ct_res, &ct1, &ct2, &tsk, s)
+    })
+    .unwrap();
     assert_mul_ct_output_meta("mul_ct a_lt_b", &ct_res, params.k, &ct1, &ct2);
     assert_decrypt_precision(
         "mul_ct a_lt_b",
@@ -254,9 +264,10 @@ where
     );
     let (want_re, want_im) = want_mul(&re1, &im1, &re2, &im2);
     let mut ct_res = alloc_ct(&params, module, params.k);
-    module
-        .ckks_mul_into(&mut ct_res, &ct1, &ct2, &tsk, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_mul_tmp_bytes(&ct_res, &ct1, &ct2, &tsk), |s| {
+        module.ckks_mul_into(&mut ct_res, &ct1, &ct2, &tsk, s)
+    })
+    .unwrap();
     assert_mul_ct_output_meta("mul_ct a_gt_b", &ct_res, params.k, &ct1, &ct2);
     assert_decrypt_precision(
         "mul_ct a_gt_b",
@@ -315,9 +326,10 @@ where
     );
     let (want_re, want_im) = want_mul(&a_re, &a_im, &b_re, &b_im);
     let mut ct_res = alloc_ct(&params, module, params.k);
-    module
-        .ckks_mul_into(&mut ct_res, &ct1, &ct2, &tsk, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_mul_tmp_bytes(&ct_res, &ct1, &ct2, &tsk), |s| {
+        module.ckks_mul_into(&mut ct_res, &ct1, &ct2, &tsk, s)
+    })
+    .unwrap();
     assert_mul_ct_output_meta("mul_ct delta_log_delta", &ct_res, params.k, &ct1, &ct2);
     assert_decrypt_precision_at_log_delta(
         "mul_ct delta_log_delta",
@@ -385,19 +397,27 @@ pub fn test_mul_ct_larger_budget_smaller_scale<BE, F, E>(
     for (order, a, b) in [("a*b", &ct1, &ct2), ("b*a", &ct2, &ct1)] {
         let label = format!("mul_ct larger_budget_smaller_scale {order}");
         let mut ct_res = alloc_ct(&params, module, params.k);
-        module.ckks_mul_into(&mut ct_res, a, b, &tsk, &mut scratch.borrow()).unwrap();
+        with_scratch::<BE, _>(module.ckks_mul_tmp_bytes(&ct_res, a, b, &tsk), |s| {
+            module.ckks_mul_into(&mut ct_res, a, b, &tsk, s)
+        })
+        .unwrap();
         assert_mul_ct_output_meta(&label, &ct_res, params.k, a, b);
 
         let mut assigned = a.clone();
-        module.ckks_mul_assign(&mut assigned, b, &tsk, &mut scratch.borrow()).unwrap();
+        with_scratch::<BE, _>(module.ckks_mul_tmp_bytes(&assigned, &assigned, b, &tsk), |s| {
+            module.ckks_mul_assign(&mut assigned, b, &tsk, s)
+        })
+        .unwrap();
 
-        let prepared = module
-            .ckks_prepare_right(b, PrepareHint::OneShot, &mut scratch.borrow())
-            .unwrap();
+        let prepared = with_scratch::<BE, _>(module.ckks_prepare_tmp_bytes(b), |s| {
+            module.ckks_prepare_right(b, PrepareHint::OneShot, s)
+        })
+        .unwrap();
         let mut prepared_result = a.clone();
-        module
-            .ckks_mul_prepared_assign(&mut prepared_result, &prepared, &tsk, &mut scratch.borrow())
-            .unwrap();
+        with_scratch::<BE, _>(module.ckks_mul_tmp_bytes(&prepared_result, &prepared_result, b, &tsk), |s| {
+            module.ckks_mul_prepared_assign(&mut prepared_result, &prepared, &tsk, s)
+        })
+        .unwrap();
 
         for (variant, ct) in [("into", &ct_res), ("assign", &assigned), ("prepared", &prepared_result)] {
             assert_decrypt_precision_at_log_delta(
@@ -417,9 +437,10 @@ pub fn test_mul_ct_larger_budget_smaller_scale<BE, F, E>(
 
     // The dot product sums one `ckks_mul_into` per term: `a*b + b*a`.
     let mut dot = alloc_ct(&params, module, params.k);
-    module
-        .ckks_dot_product_ct(&mut dot, &[&ct1, &ct2], &[&ct2, &ct1], &tsk, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_dot_product_ct_tmp_bytes(2, &dot, &ct1, &ct2, &tsk), |s| {
+        module.ckks_dot_product_ct(&mut dot, &[&ct1, &ct2], &[&ct2, &ct1], &tsk, s)
+    })
+    .unwrap();
     let twice = |v: &[F]| v.iter().map(|&x| x + x).collect::<Vec<F>>();
     assert_decrypt_precision_at_log_delta(
         "mul_ct larger_budget_smaller_scale dot_product",
@@ -477,9 +498,10 @@ where
     let (want_re, want_im) = want_mul(&re1, &im1, &re2, &im2);
     let dst_k = params.k - params.base2k - 1;
     let mut ct_res = alloc_ct(&params, module, dst_k);
-    module
-        .ckks_mul_into(&mut ct_res, &ct1, &ct2, &tsk, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_mul_tmp_bytes(&ct_res, &ct1, &ct2, &tsk), |s| {
+        module.ckks_mul_into(&mut ct_res, &ct1, &ct2, &tsk, s)
+    })
+    .unwrap();
     assert_mul_ct_output_meta("mul_ct smaller_output", &ct_res, dst_k, &ct1, &ct2);
     assert_decrypt_precision(
         "mul_ct smaller_output",
@@ -497,7 +519,7 @@ where
 /// Wide operands into a narrower destination, on a scratch arena of exactly
 /// `ckks_mul_tmp_bytes(res, a, b, tsk)`.
 ///
-/// Regression test: the sizing must account for the operands' widths — the op
+/// Regression test: the sizing must account for the operands' widths: the op
 /// carves its tensor intermediate at `max(a.max_k, b.max_k)`, which exceeds
 /// the destination's width here. Sizing from `res` alone under-allocated and
 /// blew the scratch-arena assert on this documented-legal call.
@@ -547,10 +569,7 @@ pub fn test_mul_ct_smaller_output_exact_scratch<BE, F, E>(
     let dst_k = params.k - params.base2k - 1;
     let mut ct_res = alloc_ct(&params, module, dst_k);
     let exact_bytes = module.ckks_mul_tmp_bytes(&ct_res, &ct1, &ct2, &tsk);
-    let mut mul_scratch = ScratchOwned::<BE>::alloc(exact_bytes);
-    module
-        .ckks_mul_into(&mut ct_res, &ct1, &ct2, &tsk, &mut mul_scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(exact_bytes, |s| module.ckks_mul_into(&mut ct_res, &ct1, &ct2, &tsk, s)).unwrap();
     assert_mul_ct_output_meta("mul_ct smaller_output_exact_scratch", &ct_res, dst_k, &ct1, &ct2);
     assert_decrypt_precision(
         "mul_ct smaller_output_exact_scratch",
@@ -608,9 +627,10 @@ where
     );
     let (want_re, want_im) = want_mul(&re1, &im1, &re2, &im2);
     let ct_res_meta = ckks_snapshot(&ct_res);
-    module
-        .ckks_mul_assign(&mut ct_res, &ct1, &tsk, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_mul_tmp_bytes(&ct_res, &ct_res, &ct1, &tsk), |s| {
+        module.ckks_mul_assign(&mut ct_res, &ct1, &tsk, s)
+    })
+    .unwrap();
     assert_mul_ct_output_meta(
         "mul_ct_assign_aligned",
         &ct_res,
@@ -672,9 +692,10 @@ where
     );
     let (want_re, want_im) = want_mul(&re1, &im1, &re2, &im2);
     let ct_res_meta = ckks_snapshot(&ct_res);
-    module
-        .ckks_mul_assign(&mut ct_res, &ct1, &tsk, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_mul_tmp_bytes(&ct_res, &ct_res, &ct1, &tsk), |s| {
+        module.ckks_mul_assign(&mut ct_res, &ct1, &tsk, s)
+    })
+    .unwrap();
     assert_mul_ct_output_meta(
         "mul_ct_assign_self_lt",
         &ct_res,
@@ -736,9 +757,10 @@ where
     );
     let (want_re, want_im) = want_mul(&re1, &im1, &re2, &im2);
     let ct_res_meta = ckks_snapshot(&ct_res);
-    module
-        .ckks_mul_assign(&mut ct_res, &ct1, &tsk, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_mul_tmp_bytes(&ct_res, &ct_res, &ct1, &tsk), |s| {
+        module.ckks_mul_assign(&mut ct_res, &ct1, &tsk, s)
+    })
+    .unwrap();
     assert_mul_ct_output_meta(
         "mul_ct_assign_self_gt",
         &ct_res,
@@ -790,9 +812,10 @@ where
     );
     let (want_re, want_im) = want_square(&re1, &im1);
     let mut ct_res = alloc_ct(&params, module, params.k);
-    module
-        .ckks_square_into(&mut ct_res, &ct, &tsk, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_square_tmp_bytes(&ct_res, &ct, &tsk), |s| {
+        module.ckks_square_into(&mut ct_res, &ct, &tsk, s)
+    })
+    .unwrap();
     assert_mul_ct_output_meta("square_aligned", &ct_res, params.k, &ct, &ct);
     assert_decrypt_precision(
         "square_aligned",
@@ -836,9 +859,10 @@ where
     );
     let (want_re, want_im) = want_square(&re1, &im1);
     let mut ct_res = alloc_ct(&params, module, params.k);
-    module
-        .ckks_square_into(&mut ct_res, &ct, &tsk, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_square_tmp_bytes(&ct_res, &ct, &tsk), |s| {
+        module.ckks_square_into(&mut ct_res, &ct, &tsk, s)
+    })
+    .unwrap();
     assert_mul_ct_output_meta("square_rescaled_input", &ct_res, params.k, &ct, &ct);
     assert_decrypt_precision(
         "square_rescaled_input",
@@ -883,9 +907,10 @@ where
     let (want_re, want_im) = want_square(&re1, &im1);
     let dst_k = params.k - params.base2k - 1;
     let mut ct_res = alloc_ct(&params, module, dst_k);
-    module
-        .ckks_square_into(&mut ct_res, &ct, &tsk, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_square_tmp_bytes(&ct_res, &ct, &tsk), |s| {
+        module.ckks_square_into(&mut ct_res, &ct, &tsk, s)
+    })
+    .unwrap();
     assert_mul_ct_output_meta("square_smaller_output", &ct_res, dst_k, &ct, &ct);
     assert_decrypt_precision(
         "square_smaller_output",
@@ -931,7 +956,10 @@ where
     );
     let (want_re, want_im) = want_square(&re1, &im1);
     let ct_in_meta = ckks_snapshot(&ct);
-    module.ckks_square_assign(&mut ct, &tsk, &mut scratch.borrow()).unwrap();
+    with_scratch::<BE, _>(module.ckks_square_tmp_bytes(&ct, &ct, &tsk), |s| {
+        module.ckks_square_assign(&mut ct, &tsk, s)
+    })
+    .unwrap();
     assert_mul_ct_output_meta("square_assign", &ct, ct_in_meta.k().as_usize(), &ct_in_meta, &ct_in_meta);
     assert_decrypt_precision(
         "square_assign",
@@ -983,9 +1011,10 @@ where
         &quantize(&im2, params.prec().log_delta()),
     );
     let mut ct_res = alloc_ct(&params, module, params.k);
-    module
-        .ckks_mul_pt_vec_into(&mut ct_res, &ct, &pt, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_mul_pt_vec_tmp_bytes(&ct_res, &ct, &pt), |s| {
+        module.ckks_mul_pt_vec_into(&mut ct_res, &ct, &pt, s)
+    })
+    .unwrap();
     assert_mul_pt_output_meta("mul_pt_vec_into_aligned", &ct_res, params.k, &ct, &pt);
     assert_decrypt_precision(
         "mul_pt_vec_into_aligned",
@@ -1038,9 +1067,10 @@ pub fn test_mul_pt_vec_into_delta_log_delta<BE, F, E>(
         &quantize(&im2, PT_PREC.log_delta()),
     );
     let mut ct_res = alloc_ct(&params, module, params.k);
-    module
-        .ckks_mul_pt_vec_into(&mut ct_res, &ct, &pt, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_mul_pt_vec_tmp_bytes(&ct_res, &ct, &pt), |s| {
+        module.ckks_mul_pt_vec_into(&mut ct_res, &ct, &pt, s)
+    })
+    .unwrap();
     assert_mul_pt_output_meta("mul_pt_vec_into_delta_log_delta", &ct_res, params.k, &ct, &pt);
     assert_decrypt_precision_at_log_delta(
         "mul_pt_vec_into_delta_log_delta",
@@ -1095,9 +1125,10 @@ pub fn test_mul_pt_vec_into_smaller_output<BE, F, E>(
     );
     let dst_k = params.k - params.base2k - 1;
     let mut ct_res = alloc_ct(&params, module, dst_k);
-    module
-        .ckks_mul_pt_vec_into(&mut ct_res, &ct, &pt, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_mul_pt_vec_tmp_bytes(&ct_res, &ct, &pt), |s| {
+        module.ckks_mul_pt_vec_into(&mut ct_res, &ct, &pt, s)
+    })
+    .unwrap();
     assert_mul_pt_output_meta("mul_pt_vec_into_smaller_output", &ct_res, dst_k, &ct, &pt);
     assert_decrypt_precision(
         "mul_pt_vec_into_smaller_output",
@@ -1149,7 +1180,10 @@ where
         &quantize(&im2, params.prec().log_delta()),
     );
     let ct_meta = ckks_snapshot(&ct);
-    module.ckks_mul_pt_vec_assign(&mut ct, &pt, &mut scratch.borrow()).unwrap();
+    with_scratch::<BE, _>(module.ckks_mul_pt_vec_tmp_bytes(&ct, &ct, &pt), |s| {
+        module.ckks_mul_pt_vec_assign(&mut ct, &pt, s)
+    })
+    .unwrap();
     assert_mul_pt_output_meta("mul_pt_vec_assign", &ct, ct_meta.k().as_usize(), &ct_meta, &pt);
     assert_decrypt_precision(
         "mul_pt_vec_assign",
@@ -1208,9 +1242,10 @@ pub fn test_mul_pt_const_into_aligned<BE, F, E>(
         Some(const_re_f64),
         None,
     );
-    module
-        .ckks_mul_pt_const_into(&mut ct_res, &ct, &cst, 0, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_mul_pt_const_tmp_bytes(&ct_res, &ct, &cst), |s| {
+        module.ckks_mul_pt_const_into(&mut ct_res, &ct, &cst, 0, s)
+    })
+    .unwrap();
     assert_mul_pt_output_meta("mul_const_into_aligned", &ct_res, params.k, &ct, &PT_PREC);
     assert_decrypt_precision(
         "mul_const_into_aligned",
@@ -1264,9 +1299,10 @@ where
         Some(const_re_f64),
         None,
     );
-    module
-        .ckks_mul_pt_const_assign(&mut ct, &cst, 0, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_mul_pt_const_tmp_bytes(&ct, &ct, &cst), |s| {
+        module.ckks_mul_pt_const_assign(&mut ct, &cst, 0, s)
+    })
+    .unwrap();
     assert_mul_pt_output_meta("mul_const_assign", &ct, ct_meta.k().as_usize(), &ct_meta, &PT_PREC);
     assert_decrypt_precision(
         "mul_const_assign",
@@ -1323,9 +1359,10 @@ pub fn test_mul_pt_const_into_delta_log_delta<BE, F, E>(
         Some(const_re_f64),
         None,
     );
-    module
-        .ckks_mul_pt_const_into(&mut ct_res, &ct, &cst, 0, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_mul_pt_const_tmp_bytes(&ct_res, &ct, &cst), |s| {
+        module.ckks_mul_pt_const_into(&mut ct_res, &ct, &cst, 0, s)
+    })
+    .unwrap();
     assert_mul_pt_output_meta("mul_const_into_delta_log_delta", &ct_res, params.k, &ct, &PT_PREC);
     assert_decrypt_precision_at_log_delta(
         "mul_const_into_delta_log_delta",
@@ -1384,21 +1421,25 @@ where
     let want_const = super::helpers::want_mul_const(&re1, &im1, const_re, const_im);
 
     let mut vec_into = alloc_ct(&params, module, params.k);
-    module
-        .ckks_mul_pt_vec_into(&mut vec_into, &ct, &pt, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_mul_pt_vec_tmp_bytes(&vec_into, &ct, &pt), |s| {
+        module.ckks_mul_pt_vec_into(&mut vec_into, &ct, &pt, s)
+    })
+    .unwrap();
     let mut vec_assign = ct.clone();
-    module
-        .ckks_mul_pt_vec_assign(&mut vec_assign, &pt, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_mul_pt_vec_tmp_bytes(&vec_assign, &vec_assign, &pt), |s| {
+        module.ckks_mul_pt_vec_assign(&mut vec_assign, &pt, s)
+    })
+    .unwrap();
     let mut const_into = alloc_ct(&params, module, params.k);
-    module
-        .ckks_mul_pt_const_into(&mut const_into, &ct, &cst, 0, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_mul_pt_const_tmp_bytes(&const_into, &ct, &cst), |s| {
+        module.ckks_mul_pt_const_into(&mut const_into, &ct, &cst, 0, s)
+    })
+    .unwrap();
     let mut const_assign = ct.clone();
-    module
-        .ckks_mul_pt_const_assign(&mut const_assign, &cst, 0, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_mul_pt_const_tmp_bytes(&const_assign, &const_assign, &cst), |s| {
+        module.ckks_mul_pt_const_assign(&mut const_assign, &cst, 0, s)
+    })
+    .unwrap();
 
     for (variant, res, b, (want_re, want_im)) in [
         ("vec_into", &vec_into, &pt, &want_vec),
@@ -1428,7 +1469,7 @@ where
 /// `ckks_mul_prepared_assign` must reject a prepared operand built under a
 /// different layout (here: a different `base2k`) with a typed error, before
 /// touching the destination.
-pub fn test_mul_prepared_layout_mismatch_error<BE, F, E>(
+pub fn test_mul_prepared_assign_rejects_layout_mismatch<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
@@ -1462,17 +1503,17 @@ pub fn test_mul_prepared_layout_mismatch_error<BE, F, E>(
     let mismatched_base2k = params.base2k / 2;
     let mut other = module.ckks_ciphertext_alloc(mismatched_base2k.into(), params.k.into());
     other.set_meta(params.prec().meta);
-    let prepared = module
-        .ckks_prepare_right(&other, PrepareHint::Reuse, &mut scratch.borrow())
-        .unwrap();
-    let err = module
-        .ckks_mul_prepared_assign(&mut dst, &prepared, &tsk, &mut scratch.borrow())
-        .unwrap_err();
+    let prepared = with_scratch::<BE, _>(module.ckks_prepare_tmp_bytes(&other), |s| {
+        module.ckks_prepare_right(&other, PrepareHint::Reuse, s)
+    })
+    .unwrap();
+    let before = snapshot::<BE, _>(&dst);
+    let err = with_scratch::<BE, _>(0, |s| module.ckks_mul_prepared_assign(&mut dst, &prepared, &tsk, s)).unwrap_err();
     assert_ckks_error(
         "mul_prepared_layout_mismatch",
         &err,
         CKKSCompositionError::PreparedOperandLayoutMismatch {
-            op: "mul_prepared",
+            op: "ckks_mul_prepared_assign",
             dst_n: params.n,
             dst_base2k: params.base2k,
             dst_rank: 1,
@@ -1480,6 +1521,11 @@ pub fn test_mul_prepared_layout_mismatch_error<BE, F, E>(
             prep_base2k: mismatched_base2k,
             prep_rank: 1,
         },
+    );
+    assert_eq!(
+        snapshot::<BE, _>(&dst),
+        before,
+        "a refused ckks_mul_prepared_assign wrote res"
     );
 }
 
@@ -1531,10 +1577,10 @@ where
             || module.ckks_prepared_left_alloc_from_infos(&ct, hint),
             |p| p.prep.data(),
             |p| p.prep.data_mut(),
+            |a| module.ckks_prepare_tmp_bytes(a),
             |a, s| module.ckks_prepare_left(a, hint, s),
             |p, a, s| module.ckks_prepare_left_into(p, a, s),
             (&ct, &other),
-            &mut scratch.borrow(),
         );
         check_prepare_into(
             &format!("right {hint:?}"),
@@ -1543,10 +1589,10 @@ where
             || module.ckks_prepared_right_alloc_from_infos(&ct, hint),
             |p| p.prep.data(),
             |p| p.prep.data_mut(),
+            |a| module.ckks_prepare_tmp_bytes(a),
             |a, s| module.ckks_prepare_right(a, hint, s),
             |p, a, s| module.ckks_prepare_right_into(p, a, s),
             (&ct, &other),
-            &mut scratch.borrow(),
         );
     }
 }
@@ -1568,30 +1614,32 @@ fn check_prepare_into<
     alloc: impl Fn() -> P,
     view: fn(&P) -> &AlignedBuf,
     view_mut: fn(&mut P) -> &mut AlignedBuf,
+    bytes: impl Fn(&A) -> usize,
     prepare: impl Fn(&A, &mut ScratchArena<'_, BE>) -> crate::CKKSResult<P>,
     into: impl Fn(&mut P, &A, &mut ScratchArena<'_, BE>) -> crate::CKKSResult<()>,
     (a, other): (&A, &A),
-    scratch: &mut ScratchArena<'_, BE>,
 ) {
-    let fresh = prepare(a, scratch).unwrap();
+    let fresh = with_scratch::<BE, _>(bytes(a), |s| prepare(a, s)).unwrap();
     let mut res = alloc();
     assert_eq!(view(&res).len(), bytes_of, "{label}: bytes_of");
-    into(&mut res, a, scratch).unwrap();
-    assert_eq!(view(&res)[..], view(&fresh)[..], "{label}: prepare-into differs from prepare");
+    with_scratch::<BE, _>(bytes(a), |s| into(&mut res, a, s)).unwrap();
+    assert!(
+        view(&res)[..] == view(&fresh)[..],
+        "{label}: prepare-into differs from prepare"
+    );
     let address = view(&res).as_ptr();
     view_mut(&mut res).as_mut().fill(0xA5);
-    into(&mut res, a, scratch).unwrap();
+    with_scratch::<BE, _>(bytes(a), |s| into(&mut res, a, s)).unwrap();
     assert_eq!(view(&res).as_ptr(), address, "{label}: the refill reallocated");
-    assert_eq!(view(&res)[..], view(&fresh)[..], "{label}: the refill differs from prepare");
+    assert!(view(&res)[..] == view(&fresh)[..], "{label}: the refill differs from prepare");
     let infos = (res.glwe_layout(), res.meta());
-    let err = into(&mut res, other, scratch).unwrap_err();
+    let err = with_scratch::<BE, _>(0, |s| into(&mut res, other, s)).unwrap_err();
     assert!(
         matches!(err.composition(), Some(CKKSCompositionError::InvalidOperand { op: got, .. }) if *got == op),
         "{label}: unexpected error: {err}"
     );
-    assert_eq!(
-        view(&res)[..],
-        view(&fresh)[..],
+    assert!(
+        view(&res)[..] == view(&fresh)[..],
         "{label}: a rejected source changed the operand"
     );
     assert_eq!(
@@ -1601,7 +1649,7 @@ fn check_prepare_into<
     );
 }
 
-pub fn test_mul_ct_explicit_metadata_error<BE, F, E>(
+pub fn test_mul_into_rejects_explicit_metadata<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
@@ -1645,19 +1693,147 @@ pub fn test_mul_ct_explicit_metadata_error<BE, F, E>(
     );
     ct1.set_log_budget(8);
     ct2.set_log_budget(9);
-    let mut ct_res = alloc_ct(&params, module, params.k);
-    let err = module
-        .ckks_mul_into(&mut ct_res, &ct1, &ct2, &tsk, &mut scratch.borrow())
-        .unwrap_err();
+    let mut ct_res = dirty_ct(module, &ct1, params.k);
+    let before = snapshot::<BE, _>(&ct_res);
+    let err = with_scratch::<BE, _>(0, |s| module.ckks_mul_into(&mut ct_res, &ct1, &ct2, &tsk, s)).unwrap_err();
     assert_ckks_error(
-        "mul_ct_explicit_metadata_error",
+        "mul_into_rejects_explicit_metadata",
         &err,
         CKKSCompositionError::MultiplicationPrecisionUnderflow {
-            op: "mul",
+            op: "ckks_mul_into",
             lhs_log_budget: 8,
             rhs_log_budget: 9,
             lhs_log_delta: params.prec().log_delta(),
             rhs_log_delta: params.prec().log_delta(),
         },
     );
+    assert_eq!(snapshot::<BE, _>(&ct_res), before, "a refused ckks_mul_into wrote res");
+}
+
+/// A plaintext of another radix than the ciphertext is `PlaintextBase2KMismatch`, and a constant coefficient past the
+/// plaintext's degree `PlaintextCoefficientOutOfRange`, before any write, on an empty arena and on the query.
+pub fn test_mul_pt_const_into_rejects_base2k_mismatch<BE, F, E>(
+    params: crate::test_suite::CKKSTestParams,
+    module: &poulpy_hal::layouts::Module<BE>,
+    _host_module: &poulpy_hal::layouts::Module<poulpy_hal::layouts::HostBytesBackend>,
+) where
+    BE: crate::test_suite::helpers::TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
+    poulpy_hal::layouts::Module<BE>: crate::test_suite::helpers::TestContextModule<BE>,
+    F: crate::test_suite::helpers::TestScalar,
+    E: poulpy_hal::api::NegacyclicFFT<F> + poulpy_hal::api::NegacyclicFFTNew<F>,
+{
+    use crate::test_suite::{
+        helpers::assert_ckks_error,
+        parity::{
+            helpers::{fixture_ciphertext, fixture_plaintext, snapshot, with_scratch},
+            layout,
+        },
+    };
+    use crate::{CKKSCompositionError, CKKSLayout, SlotsKind};
+    use poulpy_core::layouts::LWEInfos;
+    let b = params.base2k;
+    let ct_layout = layout(params, params.rank, 3 * b + 5, b - 1, 0, SlotsKind::Complex);
+    let pt_layout = layout(params, 0, b + 3, b - 1, 0, SlotsKind::Complex);
+    let other_radix = CKKSLayout {
+        glwe_layout: poulpy_core::layouts::GLWELayout {
+            base2k: (b - 1).into(),
+            ..pt_layout.glwe_layout
+        },
+        meta: pt_layout.meta,
+    };
+    use crate::api::CKKSMulOps;
+    let a = fixture_ciphertext(module, &ct_layout, 41);
+    let pt = fixture_plaintext(module, &other_radix, 43);
+    let same_radix = fixture_plaintext(module, &pt_layout, 44);
+    let n = same_radix.n().as_usize();
+    let mut res = fixture_ciphertext(module, &ct_layout, 31);
+    let radix = |op| CKKSCompositionError::PlaintextBase2KMismatch {
+        op,
+        ct_base2k: b,
+        pt_base2k: b - 1,
+    };
+    for bytes in [0, module.ckks_mul_pt_const_tmp_bytes(&res, &a, &pt)] {
+        let before = snapshot::<BE, _>(&res);
+        let err = with_scratch::<BE, _>(bytes, |s| module.ckks_mul_pt_const_into(&mut res, &a, &pt, 0, s)).unwrap_err();
+        assert_ckks_error(
+            "mul_pt_const_into: plaintext of another radix",
+            &err,
+            radix("ckks_mul_pt_const_into"),
+        );
+        let err = with_scratch::<BE, _>(bytes, |s| module.ckks_mul_pt_const_assign(&mut res, &pt, 0, s)).unwrap_err();
+        assert_ckks_error(
+            "mul_pt_const_assign: plaintext of another radix",
+            &err,
+            radix("ckks_mul_pt_const_assign"),
+        );
+        let err = with_scratch::<BE, _>(bytes, |s| module.ckks_mul_pt_const_into(&mut res, &a, &same_radix, n, s)).unwrap_err();
+        assert_ckks_error(
+            "mul_pt_const_into: coefficient past the plaintext",
+            &err,
+            CKKSCompositionError::PlaintextCoefficientOutOfRange {
+                op: "ckks_mul_pt_const_into",
+                role: "plaintext",
+                coeff: n,
+                n,
+            },
+        );
+        assert_eq!(snapshot::<BE, _>(&res), before, "a refused product wrote dst");
+    }
+}
+
+/// A plaintext of another radix than the ciphertext is `PlaintextBase2KMismatch` before any write, on an empty arena
+/// and on the query, out of place and in place.
+pub fn test_mul_pt_vec_into_rejects_base2k_mismatch<BE, F, E>(
+    params: crate::test_suite::CKKSTestParams,
+    module: &poulpy_hal::layouts::Module<BE>,
+    _host_module: &poulpy_hal::layouts::Module<poulpy_hal::layouts::HostBytesBackend>,
+) where
+    BE: crate::test_suite::helpers::TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
+    poulpy_hal::layouts::Module<BE>: crate::test_suite::helpers::TestContextModule<BE>,
+    F: crate::test_suite::helpers::TestScalar,
+    E: poulpy_hal::api::NegacyclicFFT<F> + poulpy_hal::api::NegacyclicFFTNew<F>,
+{
+    use crate::test_suite::{
+        helpers::assert_ckks_error,
+        parity::{
+            helpers::{fixture_ciphertext, fixture_plaintext, snapshot, with_scratch},
+            layout,
+        },
+    };
+    use crate::{CKKSCompositionError, CKKSLayout, SlotsKind};
+    let b = params.base2k;
+    let ct_layout = layout(params, params.rank, 3 * b + 5, b - 1, 0, SlotsKind::Complex);
+    let pt_layout = layout(params, 0, b + 3, b - 1, 0, SlotsKind::Complex);
+    let other_radix = CKKSLayout {
+        glwe_layout: poulpy_core::layouts::GLWELayout {
+            base2k: (b - 1).into(),
+            ..pt_layout.glwe_layout
+        },
+        meta: pt_layout.meta,
+    };
+    use crate::api::CKKSMulOps;
+    let a = fixture_ciphertext(module, &ct_layout, 41);
+    let pt = fixture_plaintext(module, &other_radix, 43);
+    let mut res = fixture_ciphertext(module, &ct_layout, 31);
+    let radix = |op| CKKSCompositionError::PlaintextBase2KMismatch {
+        op,
+        ct_base2k: b,
+        pt_base2k: b - 1,
+    };
+    for bytes in [0, module.ckks_mul_pt_vec_tmp_bytes(&res, &a, &pt)] {
+        let before = snapshot::<BE, _>(&res);
+        let err = with_scratch::<BE, _>(bytes, |s| module.ckks_mul_pt_vec_into(&mut res, &a, &pt, s)).unwrap_err();
+        assert_ckks_error(
+            "mul_pt_vec_into: plaintext of another radix",
+            &err,
+            radix("ckks_mul_pt_vec_into"),
+        );
+        let err = with_scratch::<BE, _>(bytes, |s| module.ckks_mul_pt_vec_assign(&mut res, &pt, s)).unwrap_err();
+        assert_ckks_error(
+            "mul_pt_vec_assign: plaintext of another radix",
+            &err,
+            radix("ckks_mul_pt_vec_assign"),
+        );
+        assert_eq!(snapshot::<BE, _>(&res), before, "a refused product wrote dst");
+    }
 }

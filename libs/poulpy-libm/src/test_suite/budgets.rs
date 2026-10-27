@@ -80,7 +80,7 @@ where
         bounds.set_meta(coeff_meta.meta());
         bounds.encode_host_floats(&[-0.5f64, 0.5]).expect("bounds");
         let (sk_raw, _) = gen_sk_with_raw(&params, module, host_module, [0x5Bu8; 32]);
-        let key_bytes = module.ckks_all_ops_tmp_bytes(&params.prec(), &params.tsk_layout(), &coeff_meta);
+        let key_bytes = module.ckks_all_ops_tmp_bytes(&params.prec(), &coeff_meta, &params.tsk_layout());
         let mut scratch = ScratchOwned::<BE>::alloc(key_bytes);
         let tsk = gen_tsk(
             &params,
@@ -301,7 +301,7 @@ where
             module,
             &layout,
             |r| module.ckks_powi_tmp_bytes(r, &a, &tl),
-            |r, s| module.ckks_powi(r, &a, 5, tsk, s),
+            |r, s| module.ckks_powi(5, r, &a, tsk, s),
         );
         check_exact(
             &l("ckks_hypot"),
@@ -322,7 +322,7 @@ where
             module,
             &layout,
             |r| module.ckks_scalbn_tmp_bytes(r),
-            |r, s| module.ckks_scalbn(r, &a, -3, s),
+            |r, s| module.ckks_scalbn(-3, r, &a, s),
         );
     }
 }

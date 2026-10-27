@@ -1,44 +1,14 @@
-use poulpy_ckks::ckks_backend_test_suite;
+use poulpy_ckks::ckks_determinism_test_suite;
 
-const ATK_ROTATIONS: &[i64] = &[1, 7];
+ckks_determinism_test_suite!(mod ckks_determinism_fft64avx, backend = crate::FFT64Avx, f32);
 
-ckks_backend_test_suite!(
-    mod fft64_f64,
-    backend = crate::FFT64Avx,
-    scalar = f64,
-    encoder = crate::FFT64AvxEncodingTable,
-    params = poulpy_ckks::test_suite::BASE19_PARAMS_F64,
-    rotations = super::ATK_ROTATIONS,
-);
+ckks_determinism_test_suite!(mod ckks_determinism_ntt4x30avx, backend = crate::NTT4x30Avx, f32);
 
 #[cfg(feature = "enable-rayon")]
-ckks_backend_test_suite!(
-    mod fft64_rayon_f64,
-    backend = crate::FFT64AvxRayon,
-    scalar = f64,
-    encoder = crate::FFT64AvxEncodingTable,
-    params = poulpy_ckks::test_suite::BASE19_PARAMS_F64,
-    rotations = super::ATK_ROTATIONS,
-);
+ckks_determinism_test_suite!(mod ckks_determinism_fft64avxrayon, backend = crate::FFT64AvxRayon, f32);
 
 #[cfg(feature = "enable-rayon")]
-ckks_backend_test_suite!(
-    mod ntt4x30_rayon_f64,
-    backend = crate::NTT4x30AvxRayon,
-    scalar = f64,
-    encoder = crate::FFT64AvxEncodingTable,
-    params = poulpy_ckks::test_suite::BASE52_PARAMS_F64,
-    rotations = super::ATK_ROTATIONS,
-);
-
-ckks_backend_test_suite!(
-    mod ntt4x30_f64,
-    backend = crate::NTT4x30Avx,
-    scalar = f64,
-    encoder = crate::FFT64AvxEncodingTable,
-    params = poulpy_ckks::test_suite::BASE52_PARAMS_F64,
-    rotations = super::ATK_ROTATIONS,
-);
+ckks_determinism_test_suite!(mod ckks_determinism_ntt4x30avxrayon, backend = crate::NTT4x30AvxRayon, f32);
 
 /// Full logN16 bootstraps per preset: slow, so opt in with `--ignored`. The
 /// small S2C-first preset runs by default.

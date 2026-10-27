@@ -1,5 +1,6 @@
 //! Plaintexts of `m < N/2` slots: every consumer reads one as its `m` slots repeated over the ciphertext's.
 
+use super::parity::helpers::{snapshot, with_scratch};
 use std::collections::HashMap;
 
 use poulpy_core::layouts::{Diagonals, Evaluate, LWEInfos, LinearTransformationStrategy};
@@ -9,7 +10,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSInfos, SetCKKSInfos,
+    CKKSCompositionError, CKKSInfos, SetCKKSInfos,
     api::{
         CKKSAddOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSLinearTransformationOps, CKKSMulOps, CKKSSubOps,
         LinearTransformation, LinearTransformationPrepared,
@@ -18,8 +19,9 @@ use crate::{
     test_suite::{
         CKKSTestParams,
         helpers::{
-            TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_decrypt_precision, ckks_encrypt,
-            gen_atk, gen_sk, gen_sk_with_raw, quantize, test_vector_1, test_vector_2, upload_pt, want_add, want_mul,
+            TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_ckks_error,
+            assert_decrypt_precision, ckks_encrypt, gen_atk, gen_sk, gen_sk_with_raw, quantize, test_vector_1, test_vector_2,
+            upload_pt, want_add, want_mul,
         },
         reference_encoder::ReferenceEncoder,
     },
@@ -68,13 +70,15 @@ pub fn test_plaintext_slots_add_sub_mul<BE, F, E>(
     };
 
     let mut res = alloc_ct(&params, module, params.k);
-    module
-        .ckks_add_pt_vec_into(&mut res, &ct, &pt, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_add_pt_vec_tmp_bytes(res.max_size()), |s| {
+        module.ckks_add_pt_vec_into(&mut res, &ct, &pt, s)
+    })
+    .unwrap();
     check("add_pt", &res, want_add(&re1, &im1, &q_re2, &q_im2), &mut scratch.borrow());
-    module
-        .ckks_sub_pt_vec_into(&mut res, &ct, &pt, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_sub_pt_vec_tmp_bytes(res.max_size()), |s| {
+        module.ckks_sub_pt_vec_into(&mut res, &ct, &pt, s)
+    })
+    .unwrap();
     check(
         "sub_pt",
         &res,
@@ -82,14 +86,16 @@ pub fn test_plaintext_slots_add_sub_mul<BE, F, E>(
         &mut scratch.borrow(),
     );
     // The plaintext is prepared at its own degree and read through the convolution's embedding slot.
-    module
-        .ckks_mul_pt_vec_into(&mut res, &ct, &pt, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_mul_pt_vec_tmp_bytes(&res, &ct, &pt), |s| {
+        module.ckks_mul_pt_vec_into(&mut res, &ct, &pt, s)
+    })
+    .unwrap();
     check("mul_pt", &res, want_mul(&re1, &im1, &q_re2, &q_im2), &mut scratch.borrow());
     let mut assigned = encrypt(&mut scratch.borrow());
-    module
-        .ckks_mul_pt_vec_assign(&mut assigned, &pt, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_mul_pt_vec_tmp_bytes(&assigned, &assigned, &pt), |s| {
+        module.ckks_mul_pt_vec_assign(&mut assigned, &pt, s)
+    })
+    .unwrap();
     check(
         "mul_pt_assign",
         &assigned,
@@ -101,28 +107,44 @@ pub fn test_plaintext_slots_add_sub_mul<BE, F, E>(
     let mut odd = host_module.ckks_pt_coeffs_alloc(3, params.base2k.into(), prec.k());
     odd.set_meta(prec.meta());
     let odd = upload_pt(module, &odd);
-    assert!(
-        module
-            .ckks_add_pt_vec_into(&mut res, &ct, &odd, &mut scratch.borrow())
-            .is_err(),
-        "ckks_add_pt_vec_into accepted a plaintext of degree 3"
+    let before = snapshot::<BE, _>(&res);
+    let err = with_scratch::<BE, _>(0, |s| module.ckks_add_pt_vec_into(&mut res, &ct, &odd, s)).unwrap_err();
+    assert_ckks_error(
+        "ckks_add_pt_vec_into of a plaintext of degree 3",
+        &err,
+        CKKSCompositionError::PlaintextDegreeMismatch {
+            op: "ckks_add_pt_vec",
+            ct_n: ct.n().as_usize(),
+            pt_n: 3,
+        },
     );
-    assert!(
-        module
-            .ckks_mul_pt_vec_into(&mut res, &ct, &odd, &mut scratch.borrow())
-            .is_err(),
-        "ckks_mul_pt_vec_into accepted a plaintext of degree 3"
+    assert_eq!(snapshot::<BE, _>(&res), before, "a refused ckks_add_pt_vec_into wrote res");
+    let err = with_scratch::<BE, _>(0, |s| module.ckks_mul_pt_vec_into(&mut res, &ct, &odd, s)).unwrap_err();
+    assert_ckks_error(
+        "ckks_mul_pt_vec_into of a plaintext of degree 3",
+        &err,
+        CKKSCompositionError::PlaintextDegreeMismatch {
+            op: "ckks_mul_pt_vec_into",
+            ct_n: ct.n().as_usize(),
+            pt_n: 3,
+        },
     );
+    assert_eq!(snapshot::<BE, _>(&res), before, "a refused ckks_mul_pt_vec_into wrote res");
     // A degree below the backend floor is an error too.
     let mut tiny = host_module.ckks_pt_coeffs_alloc(BE::MIN_DEGREE / 2, params.base2k.into(), prec.k());
     tiny.set_meta(prec.meta());
     let tiny = upload_pt(module, &tiny);
-    assert!(
-        module
-            .ckks_add_pt_vec_into(&mut res, &ct, &tiny, &mut scratch.borrow())
-            .is_err(),
-        "ckks_add_pt_vec_into accepted a plaintext below the backend floor"
+    let err = with_scratch::<BE, _>(0, |s| module.ckks_add_pt_vec_into(&mut res, &ct, &tiny, s)).unwrap_err();
+    assert_ckks_error(
+        "ckks_add_pt_vec_into of a plaintext below the backend floor",
+        &err,
+        CKKSCompositionError::PlaintextDegreeMismatch {
+            op: "ckks_add_pt_vec",
+            ct_n: ct.n().as_usize(),
+            pt_n: BE::MIN_DEGREE / 2,
+        },
     );
+    assert_eq!(snapshot::<BE, _>(&res), before, "a refused ckks_add_pt_vec_into wrote res");
 }
 
 /// A six-diagonal complex matrix on `m` slots (the shape `linear_transformation.rs` uses).
@@ -225,11 +247,18 @@ pub fn test_linear_transformation_diagonal_slots<BE, F, E>(
         2 * m,
         "prepared slot is not at the diagonals' degree"
     );
-    module.ckks_prepare_linear_transformation_rhs(&mut prepared, &lt, &mut scratch.borrow());
+    with_scratch::<BE, _>(module.ckks_prepare_linear_transformation_rhs_tmp_bytes(first), |s| {
+        module.ckks_prepare_linear_transformation_rhs(&mut prepared, &lt, s)
+    })
+    .unwrap();
+    // The documented bound of `self_into`: the larger of the baby-step and evaluation queries.
+    let baby_bytes = module.ckks_prepare_linear_transformation_baby_steps_tmp_bytes(&ct, &lt.index(), &key_params.atk_layout());
     let mut ct_out = alloc_ct(&params, module, params.k);
-    module
-        .ckks_eval_linear_transformation_self_into(&mut ct_out, &ct, &prepared, &atks, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(
+        baby_bytes.max(module.ckks_eval_linear_transformation_tmp_bytes(&ct, &lt.index(), &key_params.atk_layout())),
+        |s| module.ckks_eval_linear_transformation_self_into(&mut ct_out, &ct, &prepared, &atks, s),
+    )
+    .unwrap();
     assert_decrypt_precision(
         "lt_prepared",
         &params,
@@ -245,9 +274,11 @@ pub fn test_linear_transformation_diagonal_slots<BE, F, E>(
     // Streamed path: the same transformation with its plaintext diagonals,
     // prepared on the fly at their degree.
     let mut ct_streamed = alloc_ct(&params, module, params.k);
-    module
-        .ckks_eval_linear_transformation_self_into(&mut ct_streamed, &ct, &lt, &atks, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(
+        baby_bytes.max(module.ckks_eval_linear_transformation_streamed_tmp_bytes(&ct, &lt.index(), &key_params.atk_layout())),
+        |s| module.ckks_eval_linear_transformation_self_into(&mut ct_streamed, &ct, &lt, &atks, s),
+    )
+    .unwrap();
     assert_decrypt_precision(
         "lt_streamed",
         &params,
@@ -273,7 +304,7 @@ where
     let mut scratch = alloc_scratch(&params, module);
     let strategy = LinearTransformationStrategy::Bsgs { giant_step: 2 };
     for (slots, want_n) in [(test_slots(&params), params.n / 4), (params.n / 2, params.n)] {
-        let lt = crate::reference::ckks_encode_linear_transformation_from_diagonals::<BE, F>(
+        let lt = crate::encoding::ckks_encode_linear_transformation_from_diagonals::<BE, F>(
             module,
             params.base2k.into(),
             params.prec().into(),

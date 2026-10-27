@@ -1,83 +1,47 @@
 //! Scratch sizing for the SHIP bootstrap.
 
 use crate::CKKSResult as Result;
+use anyhow::Context;
 use poulpy_core::{
-    GLWEKeyswitch, GLWEZero,
-    layouts::{GLWELayout, LWEInfos, Rank},
-    reference::keyswitching::glwe::GGLWEProductReference,
+    GLWEBytesOf, GLWEKeyswitch,
+    layouts::{GLWELayout, LWEInfos},
 };
 
 use crate::{CKKSLayout, GLWEPlaintextMeta, Scale};
-use poulpy_hal::{
-    api::{
-        CnvPVecBytesOf, Convolution, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign,
-        VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApply,
-        VecZnxIdftApplyTmpBytes, VmpApplyDftToDft, VmpApplyDftToDftTmpBytes,
-    },
-    layouts::{Backend, Module},
-};
+use poulpy_hal::layouts::Module;
 
-use super::{bootstrap::validate_runtime, masking::ship_masking_tmp_bytes, mux::ship_mux_rotate_tmp_bytes};
+use super::bootstrap::{ship_bottom_layout, validate_runtime};
 use crate::SlotsKind;
 use crate::{
     CKKSCtBounds,
     api::{CKKSAddOps, CKKSConjugateOps, CKKSImagOps, CKKSMulOps, CKKSSubOps, ShipScalar},
-    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, ShipKeysPrepared},
-    oep::{CKKSEncodingImpl, CKKSShipCoeffEncodingImpl},
+    layouts::{CKKSCiphertextOwned, ShipKeysPrepared},
+    oep::CKKSEncodingImpl,
 };
 
 /// Caller-arena bound of one SHIP bootstrap call; validates the runtime
 /// ciphertext and key layouts along the way. The bound covers the complex
-/// variant whenever the key bundle carries its masks.
-pub(crate) fn ship_bootstrap_tmp_bytes<BE, F, Src>(
+/// variant whenever the key bundle carries its masks: the bottom ciphertext
+/// carved for the encapsulation, then the temporaries of the roots' final
+/// combination, each with the stages it spans.
+pub(super) fn ckks_ship_bootstrap_tmp_bytes<BE, F, Src>(
     module: &Module<BE>,
     output: &CKKSCiphertextOwned<BE>,
     input: &Src,
     keys: &ShipKeysPrepared<BE::OwnedBuf, BE>,
 ) -> Result<usize>
 where
-    BE: Backend + CKKSShipCoeffEncodingImpl + CKKSEncodingImpl<F>,
+    BE: super::ShipBackend + CKKSEncodingImpl<F>,
     F: ShipScalar,
-    Module<BE>: CKKSMulOps<BE>
-        + GGLWEProductReference<BE>
-        + poulpy_hal::api::VecZnxGadgetDecompose<BE>
-        + poulpy_hal::api::VecZnxGadgetDecomposeTmpBytes
-        + CKKSAddOps<BE>
-        + CKKSSubOps<BE>
-        + CKKSImagOps<BE>
-        + CKKSConjugateOps<BE>
-        + CKKSModuleAlloc<BE>
-        + GLWEKeyswitch<BE>
-        + GLWEZero<BE>
-        + Convolution<BE>
-        + CnvPVecBytesOf
-        + VecZnxDftApply<BE>
-        + VecZnxDftZero<BE>
-        + VecZnxDftCopy<BE>
-        + VecZnxDftAddAssign<BE>
-        + VecZnxDftAutomorphism<BE>
-        + VecZnxIdftApply<BE>
-        + VecZnxIdftApplyTmpBytes
-        + VecZnxBigNormalize<BE>
-        + VmpApplyDftToDft<BE>
-        + VecZnxDftBytesOf
-        + VecZnxBigBytesOf
-        + VmpApplyDftToDftTmpBytes
-        + VecZnxBigNormalizeTmpBytes,
     Src: CKKSCtBounds,
 {
     let params = keys.parameters();
     let plan = params.plan();
     let base2k = params.base2k();
-    validate_runtime(module, output, input, keys, params.complex())?;
+    validate_runtime("ckks_ship_bootstrap_tmp_bytes", module, output, input, keys, params.complex())?;
 
     let kk = plan.raised_k(base2k);
-    let bottom = GLWELayout {
-        n: (plan.n() as u32).into(),
-        base2k: base2k.into(),
-        k: base2k.into(),
-        rank: Rank(1),
-    };
+    let bottom = ship_bottom_layout(plan, base2k);
     let raised = CKKSLayout {
         glwe_layout: GLWELayout { k: kk.into(), ..bottom },
         meta: GLWEPlaintextMeta {
@@ -87,26 +51,42 @@ where
         },
     };
 
-    let mut bytes = module.glwe_keyswitch_tmp_bytes(&bottom, input, keys.dense_to_sparse());
-    bytes = bytes.max(BE::ckks_ship_coeff_encodings_tmp_bytes_impl::<F>(
-        module,
-        plan,
-        base2k.into(),
-        params.complex(),
-    )?);
-    bytes = bytes.max(module.ckks_add_pt_vec_tmp_bytes(raised.size()));
-    bytes = bytes.max(ship_masking_tmp_bytes(module, plan, base2k));
+    let encapsulation = module
+        .glwe_keyswitch_tmp_bytes(&bottom, input, keys.dense_to_sparse())
+        .max(BE::ckks_ship_coeff_encodings_tmp_bytes::<F>(
+            module,
+            base2k.into(),
+            params.complex(),
+            plan,
+        )?)
+        .checked_add(BE::scratch_aligned(module.glwe_bytes_of_from_infos(&bottom)))
+        .context("SHIP encapsulation scratch size overflows usize")?;
+
+    let mut tree = module
+        .ckks_add_pt_vec_tmp_bytes(raised.size())
+        .max(BE::ckks_ship_masking_accumulate_tmp_bytes(module, plan, base2k));
     for ik in keys.index_keys() {
         for group in ik.mux_keys() {
             if let Some(mux) = group.first() {
-                bytes = bytes.max(ship_mux_rotate_tmp_bytes(module, &raised, &mux.key, group.len()));
+                tree = tree.max(BE::ckks_ship_mux_rotate_tmp_bytes(module, &raised, &mux.key, group.len()));
             }
         }
     }
-    bytes = bytes.max(module.ckks_mul_tmp_bytes(&raised, &raised, &raised, keys.tensor_key()));
-    bytes = bytes.max(module.ckks_conjugate_tmp_bytes(&raised, keys.conjugation_key()));
-    bytes = bytes.max(module.ckks_add_tmp_bytes(raised.size()));
-    bytes = bytes.max(module.ckks_sub_tmp_bytes(raised.size()));
-    bytes = bytes.max(module.ckks_mul_i_tmp_bytes(raised.size()));
-    Ok(bytes)
+    tree = tree.max(module.ckks_mul_tmp_bytes(&raised, &raised, &raised, keys.tensor_key()));
+
+    // The complex combination holds `i v2`, `w+`, `w-` and the conjugate, the real one the conjugate alone.
+    let temporaries = if params.complex() { 4 } else { 1 };
+    let combination = BE::scratch_aligned(module.glwe_bytes_of_from_infos(&raised))
+        .checked_mul(temporaries)
+        .and_then(|bytes| {
+            bytes.checked_add(
+                module
+                    .ckks_conjugate_tmp_bytes(&raised, keys.conjugation_key())
+                    .max(module.ckks_add_tmp_bytes(raised.size()))
+                    .max(module.ckks_sub_tmp_bytes(raised.size()))
+                    .max(module.ckks_mul_i_tmp_bytes(raised.size())),
+            )
+        })
+        .context("SHIP combination scratch size overflows usize")?;
+    Ok(encapsulation.max(tree).max(combination))
 }

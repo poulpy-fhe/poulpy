@@ -117,7 +117,7 @@ bootstrap another.
 1. Define a backend struct and implement the `Backend` trait from `poulpy-hal`.
 2. Implement each required HAL OEP method and inherit or override its derived defaults.
 3. Implement the core `*Impl` traits, or use family macros to select reference algorithms and derived defaults.
-4. Optionally, do the same for `poulpy-ckks` using the `impl_ckks_*_reference!` macros or direct OEP trait implementations.
+4. Optionally, do the same for `poulpy-ckks` using its opt-in macros (`impl_<family>_reference_full!`) or direct OEP trait implementations.
 5. Optionally, do the same for `poulpy-blas` using `impl_blas_reference_full!`, its per-family macros or direct OEP trait implementations; see [implementing BLAS operations](libs/poulpy-blas/docs/blas-contracts.md).
 
 A family macro and a handwritten implementation of the same trait are mutually
@@ -160,8 +160,10 @@ Coverage degrades rather than switching off. A backend with a narrower envelope 
 
 The noise suite runs in `poulpy-cpu-portable` alone: the scheme-level model is backend-independent, and accelerated backends validate their outputs through parity with an already validated backend.
 
-Backend crates register the core and CKKS suites for portable FFT/NTT, AVX,
-AVX-512/IFMA, NEON and supported Rayon variants. Native CI runs the full registered
+Backend crates register the core and CKKS parity suites and
+`ckks_determinism_test_suite!` for portable FFT/NTT, AVX, AVX-512/IFMA, NEON and
+supported Rayon variants; the CKKS functional suite runs on the oracle and the
+portable serial types only. Native CI runs the full registered
 sweeps. AVX and AVX-512 jobs fall back to Intel SDE for HAL and core contracts, and
 the AVX-512 job also for BLAS parity (below); CKKS runs natively, with an additional
 optional NEON run under QEMU.
@@ -180,12 +182,17 @@ cargo test -p poulpy-cpu-portable --lib --profile ci --features enable-core -- \
   core_parity core_encryption --test-threads=2
 ```
 
-CKKS keeps its independent mathematical conformance tests and adds caller-selected
-circuit parity through `ckks_parity_test_suite!`. Registrations cover `f64` and
-`Quad` on all 16 CPU backend types, with Rayon variants compared against their
-serial siblings. Portable encoding and DFT matrix/evaluation parity also exercise `f32`. Native CI and optional QEMU
-runs include the `ckks_parity` groups, including controlled-sampling encryption.
-See [implementing a CKKS backend](schemes/poulpy-ckks/docs/ckks-contracts.md).
+CKKS keeps its independent mathematical conformance tests
+(`ckks_backend_test_suite!`, on the oracle and the portable serial types) and
+adds caller-selected circuit parity through `ckks_parity_test_suite!`.
+Registrations cover `f64` and `Quad` on all 16 CPU backend types, with Rayon
+variants compared against their serial siblings. Every standard-ring CKKS type
+also registers `ckks_determinism_test_suite!`, which checks its encodings and
+setup constants in `f64`, `f32` and `Quad` against frozen fixtures. Portable encoding
+and DFT matrix/evaluation parity also exercise `f32`. Native CI and optional
+QEMU runs include the `ckks_parity` groups, including controlled-sampling
+encryption. See
+[implementing a CKKS backend](schemes/poulpy-ckks/docs/ckks-contracts.md).
 
 Run portable CKKS parity, the full conformance suite, or the
 [polynomial example](backends/poulpy-cpu-portable/examples/ckks_poly2.rs) with:

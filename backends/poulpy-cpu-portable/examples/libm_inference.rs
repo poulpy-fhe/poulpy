@@ -58,7 +58,7 @@ fn run() -> Result<()> {
     let mut half_scores = context.output();
     context
         .module
-        .ckks_scalbn(&mut half_scores, &encrypted_scores, -1, &mut context.scratch.borrow())?;
+        .ckks_scalbn(-1, &mut half_scores, &encrypted_scores, &mut context.scratch.borrow())?;
     assert_eq!(input_budget - half_scores.log_budget(), 1);
 
     // Evaluate tanh on every packed score with the same prepared plan.
@@ -81,7 +81,7 @@ fn run() -> Result<()> {
     let mut output = context.output();
     context
         .module
-        .ckks_scalbn(&mut output, &probabilities, -1, &mut context.scratch.borrow())?;
+        .ckks_scalbn(-1, &mut output, &probabilities, &mut context.scratch.borrow())?;
     assert_eq!(probabilities.log_budget() - output.log_budget(), 1);
     assert_eq!(input_budget - output.log_budget(), circuit_consumed);
 

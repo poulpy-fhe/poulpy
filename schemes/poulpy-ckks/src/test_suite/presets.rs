@@ -8,14 +8,14 @@
 
 use crate::Scale;
 use poulpy_core::{
-    GLWECIKeyEncryptSk,
+    DiagonalProd, GLWECIKeyEncryptSk,
     api::{
         GLWEAutomorphismKeyPreparedFactory, GLWECIKeyPreparedFactory, GLWESecretPreparedFactory, GLWESecretSampling,
         GLWESwitchingKeyPreparedFactory, GLWETensorKeyPreparedFactory, TransferInto,
     },
     layouts::{
-        BackendGLWESecret, BackendGLWESecretPrepared, GGLWEInfos, GLWESecretPrepared, GLWETensorKeyPrepared, GLWEToBackendMut,
-        GLWEToBackendRef, LWEInfos, ModuleCoreAlloc, SetK, prepared::GLWETensorKeyPreparedToBackendRef,
+        BackendGLWESecret, BackendGLWESecretPrepared, Base2K, GGLWEInfos, GLWESecretPrepared, GLWETensorKeyPrepared,
+        GLWEToBackendMut, GLWEToBackendRef, LWEInfos, ModuleCoreAlloc, SetK, prepared::GLWETensorKeyPreparedToBackendRef,
     },
 };
 use poulpy_hal::{
@@ -31,7 +31,7 @@ use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSLayout, CKKSResult, GLWEPlaintextMeta, SetCKKSInfos, SlotsKind,
     api::{
         CKKSAllOpsTmpBytes, CKKSBootstrappingCIOps, CKKSBootstrappingOps, CKKSDFTMatrixOps, CKKSDFTOps, CKKSDecryptOps,
-        CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncryptOps,
+        CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, CKKSEncryptOps, CKKSEvalModOps,
     },
     layouts::{
         BootstrappingContext, BootstrappingKeysLayout, BootstrappingPlan, CIConversion, CKKSCiphertextOwned, CKKSModuleAlloc,
@@ -42,6 +42,7 @@ use crate::{
         PrecisionStats, TestContextBackend, TestContextModule, TestContextSharedModule, assert_canonical_at_k, ckks_spec,
         precision_stats, test_vector_1,
     },
+    test_suite::parity::helpers::{poisoned_scratch, with_scratch},
 };
 
 /// Plaintext budget bits (above `log_delta`) used to measure the output precision.
@@ -97,6 +98,8 @@ pub trait PresetRunModule<BE: Backend>:
     + CKKSAllOpsTmpBytes<BE>
     + CKKSEncodingOps<BE, f64>
     + CKKSBootstrappingOps<BE>
+    + CKKSDFTOps<BE>
+    + CKKSEvalModOps<BE>
     + CKKSDFTMatrixOps<BE, f64>
     + GLWEAutomorphismKeyPreparedFactory<BE>
     + GLWETensorKeyPreparedFactory<BE>
@@ -112,6 +115,8 @@ impl<BE: Backend, M> PresetRunModule<BE> for M where
         + CKKSAllOpsTmpBytes<BE>
         + CKKSEncodingOps<BE, f64>
         + CKKSBootstrappingOps<BE>
+        + CKKSDFTOps<BE>
+        + CKKSEvalModOps<BE>
         + CKKSDFTMatrixOps<BE, f64>
         + GLWEAutomorphismKeyPreparedFactory<BE>
         + GLWETensorKeyPreparedFactory<BE>
@@ -196,26 +201,22 @@ where
             Self::roundtrip_keys(&client, &keys);
         }
 
-        let scratch_size = bootstrap_setup_tmp_bytes(&module, &bootstrap_layout, plan, &keys_layout);
-        let mut scratch = ScratchOwned::<BE>::alloc(scratch_size);
-        let unprepared =
-            BootstrappingContext::<BE, f64>::compile_unprepared(&module, base2k.into(), plan, &mut scratch.borrow()).unwrap();
-        let prepare_scratch = unprepared.prepare_tmp_bytes(&module);
-        if prepare_scratch > BE::len_bytes(&scratch.data) {
-            scratch = ScratchOwned::<BE>::alloc(prepare_scratch);
-        }
-        let context = unprepared.prepare(&module, &mut scratch.borrow());
-        let boot_scratch = module
-            .ckks_bootstrap_tmp_bytes(&bootstrap_layout, &input_layout, &context, &keys_layout)
-            .max(keys_layout.prepare_tmp_bytes(&module));
-        if boot_scratch > BE::len_bytes(&scratch.data) {
-            scratch = ScratchOwned::<BE>::alloc(boot_scratch);
-        }
+        let context = compile_context::<BE, f64>(&module, base2k.into(), plan);
+        let boot_scratch = module.ckks_bootstrap_tmp_bytes(&bootstrap_layout, &input_layout, &context, &keys_layout);
+        let mut scratch = ScratchOwned::<BE>::alloc(keys_layout.prepare_tmp_bytes(&module));
         let keys = keys.transfer_and_prepare(&module, &mut scratch.borrow());
 
         let bootstrap: Bootstrap<BE> =
             Box::new(move |module, output, input, scratch| module.ckks_bootstrap(output, input, &context, &keys, scratch));
-        Self::with_bootstrap(preset, module, scratch, client, client_scratch, sk, bootstrap)
+        Self::with_bootstrap(
+            preset,
+            module,
+            poisoned_scratch::<BE>(boot_scratch),
+            client,
+            client_scratch,
+            sk,
+            bootstrap,
+        )
     }
 
     /// Writes every key of `keys` and reads it back into a fresh key of its layout, which must
@@ -317,7 +318,7 @@ where
             .unwrap();
         let (layout, input_layout) = (preset.bootstrap_layout(), preset.input_layout());
         let (bytes, bytes_ci) = module.ckks_bootstrap_ci_tmp_bytes(&ci, &layout, &input_layout, &context, keys_layout);
-        let mut scratch_ci = ScratchOwned::<CIBackend<BE>>::alloc(bytes_ci);
+        let mut scratch_ci = poisoned_scratch::<CIBackend<BE>>(bytes_ci);
         let bootstrap: Bootstrap<BE> = Box::new(move |module, output, input, scratch| {
             module.ckks_bootstrap_ci_into(&ci, output, input, &context, &keys, scratch, &mut scratch_ci.borrow())
         });
@@ -325,7 +326,7 @@ where
         Self::with_bootstrap(
             preset,
             module,
-            ScratchOwned::alloc(bytes),
+            poisoned_scratch::<BE>(bytes),
             client,
             client_scratch,
             sk,
@@ -469,10 +470,13 @@ where
         let mut output = self.module.ckks_ciphertext_alloc_from_glwe_infos(&layout);
         let err = (self.bootstrap)(&self.module, &mut output, &self.input, &mut self.scratch.borrow()).unwrap_err();
         // EvalRound+ leaves its rotation keys to the stages' lookups: the sparse-to-dense
-        // key of the raise, checked untyped at entry, refuses first.
+        // key of the raise, checked at entry, refuses first.
         let refused = if self.preset.plan().coeffs_to_slots_bypass().is_some() {
-            matches!(err, crate::CKKSError::Internal(_))
-                && err.to_string().starts_with("ckks_mod_up: the sparse-to-dense key takes")
+            matches!(
+                err.composition(),
+                Some(CKKSCompositionError::InvalidOperand { op: "ckks_bootstrap" | "ckks_bootstrap_ci_into", reason })
+                    if reason.starts_with("the sparse-to-dense key takes")
+            )
         } else {
             matches!(err.composition(), Some(CKKSCompositionError::MissingAutomorphismKey { .. }))
         };
@@ -899,6 +903,8 @@ where
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, f64>
         + CKKSBootstrappingOps<BE>
+        + CKKSDFTOps<BE>
+        + CKKSEvalModOps<BE>
         + CKKSDFTMatrixOps<BE, f64>
         + CKKSBootstrappingCIOps<BE>
         + GLWECIKeyEncryptSk<BE>
@@ -923,20 +929,18 @@ where
     module.glwe_secret_fill_ternary_hw(&mut sk_raw, preset.dense_secret_hamming_weight(), &mut Source::new([0; 32]));
     let context = compile_ci(&module, &ci, &preset);
     let compiled = {
-        let mut scratch = ScratchOwned::<BE>::alloc(bootstrap_setup_tmp_bytes(
-            &module,
-            &standard.bootstrap_layout(),
-            standard.plan(),
-            standard.keys_layout(),
-        ));
-        BootstrappingContext::<BE, f64>::compile(&module, preset.base2k().into(), standard.plan(), &mut scratch.borrow()).unwrap()
+        let bytes = bootstrap_setup_tmp_bytes(&module, &standard.bootstrap_layout(), standard.plan(), standard.keys_layout());
+        with_scratch::<BE, _>(bytes, |s| {
+            BootstrappingContext::<BE, f64>::compile(&module, preset.base2k().into(), standard.plan(), s)
+        })
+        .unwrap()
     };
     // Key generation leaves nothing of the CI secret, nor of the encryptions, in the CI scratch.
     let (bytes, bytes_ci) = preset.keys_layout().generate_ci_tmp_bytes(&module, &ci);
     poulpy_core::test_suite::assert_wipes_scratch::<CIBackend<BE>>(bytes_ci, |scratch_ci| {
         let (mut source_xs, mut source_xa, mut source_xe) = (Source::new([7; 32]), Source::new([1; 32]), Source::new([2; 32]));
-        context
-            .generate_keys_ci(
+        with_scratch::<BE, _>(bytes, |s| {
+            context.generate_keys_ci(
                 &module,
                 &ci,
                 &sk_raw,
@@ -944,10 +948,11 @@ where
                 &mut source_xs,
                 &mut source_xe,
                 &mut source_xa,
-                &mut ScratchOwned::<BE>::alloc(bytes).borrow(),
+                s,
                 scratch_ci,
             )
-            .unwrap();
+        })
+        .unwrap();
     });
     let keys_for = |layout: &BootstrappingKeysLayout| {
         prepare_keys_ci(
@@ -986,21 +991,13 @@ where
                             context: &BootstrappingContext<BE, f64>,
                             keys: &crate::layouts::BootstrappingKeysPrepared<BE::OwnedBuf, BE, CIBackend<BE>>,
                             (bytes, bytes_ci): (usize, usize)| {
-        let (mut scratch, mut scratch_ci) = (
-            ScratchOwned::<BE>::alloc(bytes),
-            ScratchOwned::<CIBackend<BE>>::alloc(bytes_ci),
-        );
         output.set_k(preset.bootstrap_k().into());
         let before = output.to_host_owned::<BE>();
-        let result = module.ckks_bootstrap_ci_into(
-            &ci,
-            &mut output,
-            &input,
-            context,
-            keys,
-            &mut scratch.borrow(),
-            &mut scratch_ci.borrow(),
-        );
+        let result = with_scratch::<BE, _>(bytes, |s| {
+            with_scratch::<CIBackend<BE>, _>(bytes_ci, |sc| {
+                module.ckks_bootstrap_ci_into(&ci, &mut output, &input, context, keys, s, sc)
+            })
+        });
         // A refusal leaves the output as it was.
         if result.is_err() {
             let after = output.to_host_owned::<BE>();
@@ -1046,6 +1043,23 @@ where
     }
 }
 
+/// [`BootstrappingContext::compile`] of `plan`, each stage on an arena of exactly its query.
+pub(crate) fn compile_context<BE, F>(module: &Module<BE>, base2k: Base2K, plan: &BootstrappingPlan) -> BootstrappingContext<BE, F>
+where
+    BE: Backend,
+    F: CKKSEncodingScalar,
+    Module<BE>: CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F> + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE> + LWEInfos,
+{
+    let bytes = BootstrappingContext::<BE, F>::compile_unprepared_tmp_bytes(module, plan).unwrap();
+    let unprepared = with_scratch::<BE, _>(bytes, |s| {
+        BootstrappingContext::<BE, F>::compile_unprepared(module, base2k, plan, s)
+    })
+    .unwrap();
+    let bytes = unprepared.prepare_tmp_bytes(module);
+    with_scratch::<BE, _>(bytes, |s| unprepared.prepare(module, s)).unwrap()
+}
+
 /// [`BootstrappingContext::compile_ci`] of `preset`, each stage on arenas of exactly its query.
 fn compile_ci<BE>(module: &Module<BE>, ci: &Module<CIBackend<BE>>, preset: &BootstrappingPreset) -> BootstrappingContext<BE, f64>
 where
@@ -1057,18 +1071,15 @@ where
     ScratchOwned<CIBackend<BE>>: ScratchOwnedAlloc<CIBackend<BE>>,
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::DiagonalProd<BE>,
 {
-    let (bytes, bytes_ci) = BootstrappingContext::<BE, f64>::compile_ci_unprepared_tmp_bytes(module, ci);
-    let unprepared = BootstrappingContext::<BE, f64>::compile_ci_unprepared(
-        module,
-        ci,
-        preset.base2k().into(),
-        preset.plan(),
-        &mut ScratchOwned::<BE>::alloc(bytes).borrow(),
-        &mut ScratchOwned::<CIBackend<BE>>::alloc(bytes_ci).borrow(),
-    )
+    let (bytes, bytes_ci) = BootstrappingContext::<BE, f64>::compile_ci_unprepared_tmp_bytes(module, ci, preset.plan()).unwrap();
+    let unprepared = with_scratch::<BE, _>(bytes, |s| {
+        with_scratch::<CIBackend<BE>, _>(bytes_ci, |sc| {
+            BootstrappingContext::<BE, f64>::compile_ci_unprepared(module, ci, preset.base2k().into(), preset.plan(), s, sc)
+        })
+    })
     .unwrap();
     let bytes = unprepared.prepare_tmp_bytes(module);
-    unprepared.prepare(module, &mut ScratchOwned::<BE>::alloc(bytes).borrow())
+    with_scratch::<BE, _>(bytes, |s| unprepared.prepare(module, s)).unwrap()
 }
 
 /// [`BootstrappingContext::generate_keys_ci`] of `layout`, on arenas of exactly its query.
@@ -1087,19 +1098,22 @@ where
 {
     let (bytes, bytes_ci) = layout.generate_ci_tmp_bytes(module, ci);
     let (mut source_xs, mut source_xa, mut source_xe) = (Source::new([7; 32]), Source::new([1; 32]), Source::new([2; 32]));
-    context
-        .generate_keys_ci(
-            module,
-            ci,
-            sk_raw,
-            layout,
-            &mut source_xs,
-            &mut source_xe,
-            &mut source_xa,
-            &mut ScratchOwned::<BE>::alloc(bytes).borrow(),
-            &mut ScratchOwned::<CIBackend<BE>>::alloc(bytes_ci).borrow(),
-        )
-        .unwrap()
+    with_scratch::<BE, _>(bytes, |s| {
+        with_scratch::<CIBackend<BE>, _>(bytes_ci, |sc| {
+            context.generate_keys_ci(
+                module,
+                ci,
+                sk_raw,
+                layout,
+                &mut source_xs,
+                &mut source_xe,
+                &mut source_xa,
+                s,
+                sc,
+            )
+        })
+    })
+    .unwrap()
 }
 
 /// [`BootstrappingKeySet::prepare_ci`](crate::layouts::BootstrappingKeySet::prepare_ci) of `keys`, generated for
@@ -1117,12 +1131,9 @@ where
     Module<CIBackend<BE>>: TestContextSharedModule<CIBackend<BE>>,
 {
     let (bytes, bytes_ci) = layout.prepare_ci_tmp_bytes(module, ci);
-    keys.prepare_ci(
-        module,
-        ci,
-        &mut ScratchOwned::<BE>::alloc(bytes).borrow(),
-        &mut ScratchOwned::<CIBackend<BE>>::alloc(bytes_ci).borrow(),
-    )
+    with_scratch::<BE, _>(bytes, |s| {
+        with_scratch::<CIBackend<BE>, _>(bytes_ci, |sc| keys.prepare_ci(module, ci, s, sc))
+    })
     .unwrap()
 }
 
@@ -1163,7 +1174,7 @@ where
     );
     let mut bytes = 0;
     for atk in &keys.rotation_key_layouts() {
-        bytes = bytes.max(module.ckks_all_ops_with_atk_tmp_bytes(layout, &keys.tensor_key, atk, &coeffs));
+        bytes = bytes.max(module.ckks_all_ops_with_atk_tmp_bytes(layout, &coeffs, &keys.tensor_key, atk));
     }
     bytes
 }

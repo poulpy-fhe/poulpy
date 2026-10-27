@@ -6,50 +6,50 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{CKKSInfos, SetCKKSInfos};
 
-/// # Safety
+/// Backend contract of [`CKKSPlaintextVecOps`](crate::api::CKKSPlaintextVecOps).
 ///
-/// Implementations must satisfy the contracts of all trait methods, including
-/// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
-/// associated method signatures.
-pub unsafe trait CKKSPlaintextZnxImpl: Backend {
-    fn ckks_extract_pt_tmp_bytes_impl(module: &Module<Self>, res_size: usize) -> usize;
+/// # Safety
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
+pub unsafe trait CKKSPlaintextVecImpl: Backend {
+    /// Scratch bound of [`Self::ckks_extract_pt`]; may report less than the reference, never less than the body takes.
+    fn ckks_extract_pt_tmp_bytes(module: &Module<Self>, res_size: usize) -> usize;
 
-    fn ckks_extract_pt_impl<Dst, Src>(
-        module: &Module<Self>,
-        dst: &mut Dst,
-        src: &Src,
-        scratch: &mut ScratchArena<'_, Self>,
-    ) -> Result<()>
+    /// Reproduces
+    /// [`ckks_extract_pt_reference`](crate::reference::plaintext::CKKSPlaintextVecReference::ckks_extract_pt_reference)
+    /// bit for bit, within [`Self::ckks_extract_pt_tmp_bytes`]; free in kernels and scratch use.
+    fn ckks_extract_pt<D, S>(module: &Module<Self>, dst: &mut D, src: &S, scratch: &mut ScratchArena<'_, Self>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<Self> + CKKSInfos + IntPolyInfos + SetCKKSInfos,
-        Src: GLWEToBackendRef<Self> + GLWEInfos + CKKSInfos;
+        D: GLWEToBackendMut<Self> + CKKSInfos + IntPolyInfos + SetCKKSInfos,
+        S: GLWEToBackendRef<Self> + GLWEInfos + CKKSInfos;
 }
 
-/// Implements this contract with the callable reference algorithms.
+/// Selects the reference implementation of `CKKSPlaintextVecImpl` for `$be`.
 #[macro_export]
-macro_rules! impl_ckks_plaintext_reference {
+macro_rules! impl_ckks_plaintext_vec_reference_full {
     ($be:ty) => {
-        unsafe impl $crate::oep::CKKSPlaintextZnxImpl for $be {
-            fn ckks_extract_pt_tmp_bytes_impl(module: &::poulpy_hal::layouts::Module<Self>, res_size: usize) -> usize {
-                $crate::reference::plaintext::CKKSPlaintextReference::ckks_extract_pt_tmp_bytes_reference(module, res_size)
+        unsafe impl $crate::oep::CKKSPlaintextVecImpl for $be {
+            fn ckks_extract_pt_tmp_bytes(module: &::poulpy_hal::layouts::Module<Self>, res_size: usize) -> usize {
+                $crate::reference::plaintext::CKKSPlaintextVecReference::ckks_extract_pt_tmp_bytes_reference(module, res_size)
             }
 
-            fn ckks_extract_pt_impl<Dst, Src>(
+            fn ckks_extract_pt<D, S>(
                 module: &::poulpy_hal::layouts::Module<Self>,
-                dst: &mut Dst,
-                src: &Src,
+                dst: &mut D,
+                src: &S,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
             where
-                Dst: ::poulpy_core::layouts::GLWEToBackendMut<Self>
+                D: ::poulpy_core::layouts::GLWEToBackendMut<Self>
                     + $crate::CKKSInfos
                     + ::poulpy_core::layouts::IntPolyInfos
                     + $crate::SetCKKSInfos,
-                Src: ::poulpy_core::layouts::GLWEToBackendRef<Self> + ::poulpy_core::layouts::GLWEInfos + $crate::CKKSInfos,
+                S: ::poulpy_core::layouts::GLWEToBackendRef<Self> + ::poulpy_core::layouts::GLWEInfos + $crate::CKKSInfos,
             {
-                $crate::reference::plaintext::CKKSPlaintextReference::ckks_extract_pt_reference(module, dst, src, scratch)
+                $crate::reference::plaintext::CKKSPlaintextVecReference::ckks_extract_pt_reference(module, dst, src, scratch)
             }
         }
     };
 }
-pub use crate::impl_ckks_plaintext_reference;
+pub use crate::impl_ckks_plaintext_vec_reference_full;

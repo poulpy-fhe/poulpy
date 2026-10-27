@@ -47,9 +47,9 @@ pub fn key_layout_offset(
 }
 
 /// A GGLWE of `layout` filled digit by digit from `seed`.
-pub fn fixture_gglwe<B: Backend<ZnxWord = i64>>(module: &Module<B>, layout: &GGLWELayout, seed: u8) -> GGLWE<B::OwnedBuf, i64>
+pub fn fixture_gglwe<BE: Backend<ZnxWord = i64>>(module: &Module<BE>, layout: &GGLWELayout, seed: u8) -> GGLWE<BE::OwnedBuf, i64>
 where
-    Module<B>: GLWEMaskFill<B>,
+    Module<BE>: GLWEMaskFill<BE>,
 {
     let mut out = module.gglwe_alloc_from_infos(layout);
     fill_by_digit(module, &mut out, 1, &mut Source::new([seed; 32]));
@@ -57,33 +57,33 @@ where
 }
 
 /// A tensor key prepared from the fixture GGLWE of `seed`.
-pub fn prepared_tensor_key<B>(module: &Module<B>, layout: &GGLWELayout, seed: u8) -> GLWETensorKeyPrepared<B::OwnedBuf, B>
+pub fn prepared_tensor_key<BE>(module: &Module<BE>, layout: &GGLWELayout, seed: u8) -> GLWETensorKeyPrepared<BE::OwnedBuf, BE>
 where
-    B: Backend<ZnxWord = i64>,
-    Module<B>: GLWETensorKeyPreparedFactory<B> + GLWEMaskFill<B>,
+    BE: Backend<ZnxWord = i64>,
+    Module<BE>: GLWETensorKeyPreparedFactory<BE> + GLWEMaskFill<BE>,
 {
     let coefficients = fixture_gglwe(module, layout, seed);
     let mut prepared = module.alloc_tensor_key_prepared_from_infos(layout);
-    with_scratch::<B, _>(module.glwe_tensor_key_prepare_tmp_bytes(layout), |scratch| {
+    with_scratch::<BE, _>(module.glwe_tensor_key_prepare_tmp_bytes(layout), |scratch| {
         module.glwe_tensor_key_prepare(&mut prepared, &coefficients, scratch);
     });
     prepared
 }
 
 /// An automorphism key for Galois element `p`, prepared from the fixture GGLWE of `seed`.
-pub fn prepared_automorphism_key<B>(
-    module: &Module<B>,
+pub fn prepared_automorphism_key<BE>(
+    module: &Module<BE>,
     layout: &GGLWELayout,
     p: i64,
     seed: u8,
-) -> GLWEAutomorphismKeyPrepared<B::OwnedBuf, B>
+) -> GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>
 where
-    B: Backend<ZnxWord = i64>,
-    Module<B>: GLWEAutomorphismKeyPreparedFactory<B> + GLWEMaskFill<B>,
+    BE: Backend<ZnxWord = i64>,
+    Module<BE>: GLWEAutomorphismKeyPreparedFactory<BE> + GLWEMaskFill<BE>,
 {
     let coefficients = fixture_gglwe(module, layout, seed);
     let mut prepared = module.glwe_automorphism_key_prepared_alloc_from_infos(layout);
-    with_scratch::<B, _>(module.gglwe_prepare_tmp_bytes(layout), |scratch| {
+    with_scratch::<BE, _>(module.gglwe_prepare_tmp_bytes(layout), |scratch| {
         module.gglwe_prepare(&mut prepared, &coefficients, scratch);
     });
     prepared.set_p(p);
@@ -91,14 +91,14 @@ where
 }
 
 /// A GGLWE prepared from the fixture GGLWE of `seed`.
-pub fn prepared_gglwe<B>(module: &Module<B>, layout: &GGLWELayout, seed: u8) -> GGLWEPrepared<B::OwnedBuf, B>
+pub fn prepared_gglwe<BE>(module: &Module<BE>, layout: &GGLWELayout, seed: u8) -> GGLWEPrepared<BE::OwnedBuf, BE>
 where
-    B: Backend<ZnxWord = i64>,
-    Module<B>: GGLWEPreparedFactory<B> + GLWEMaskFill<B>,
+    BE: Backend<ZnxWord = i64>,
+    Module<BE>: GGLWEPreparedFactory<BE> + GLWEMaskFill<BE>,
 {
     let coefficients = fixture_gglwe(module, layout, seed);
     let mut prepared = module.gglwe_prepared_alloc_from_infos(layout);
-    with_scratch::<B, _>(module.gglwe_prepare_tmp_bytes(layout), |scratch| {
+    with_scratch::<BE, _>(module.gglwe_prepare_tmp_bytes(layout), |scratch| {
         module.gglwe_prepare(&mut prepared, &coefficients, scratch)
     });
     prepared

@@ -20,8 +20,10 @@
 //!    CoeffToSlot must land, slot for slot, on the cleartext model's Eq. 11
 //!    packing relation: `b'_{λ_v}` coefficients in natural order.
 
+use super::parity::helpers::with_scratch;
 use crate::Scale;
 use crate::api::CKKSEncodingOps;
+use poulpy_core::layouts::LWEInfos;
 use std::collections::HashMap;
 
 use poulpy_core::{
@@ -40,11 +42,10 @@ use crate::{
     CKKSInfos, GLWEPlaintextMeta,
     api::{CKKSAddOps, CKKSLinearTransformationOps, CKKSMulOps},
     encoding::paco::{coeff_enc::glwe_column_residues, cpx::Cpx},
+    layouts::paco::factors::paco_c2s_factors,
+    layouts::slots::fold_rotations,
     layouts::{PaCoPlan, PaCoSecretSpec},
-    reference::paco::{
-        lt::paco_c2s_factors,
-        ops::{PaCoSlotOps, fold_rotations},
-    },
+    oep::CKKSPaCoImpl,
     test_suite::reference_encoder::ReferenceEncoder,
     test_suite::{
         CKKSTestParams,
@@ -66,9 +67,8 @@ const PACO_C: usize = 8;
 /// against the cleartext model.
 pub fn test_paco_partial_pipeline<BE, F, E>(params: CKKSTestParams, _module: &Module<BE>, _host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
-    Module<BE>:
-        TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + PaCoSlotOps<BE> + CnvPVecAlloc<BE>,
+    BE: TestContextBackend<Ring = Standard> + CKKSPaCoImpl,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
@@ -85,9 +85,8 @@ where
 /// lands on its `P`-relabel (`slot j = z_7[P(j)]`).
 fn test_paco_partial_pipeline_with<BE, F, E>(params: &CKKSTestParams, slot_order: crate::layouts::PaCoSlotOrder)
 where
-    BE: TestContextBackend<Ring = Standard>,
-    Module<BE>:
-        TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + PaCoSlotOps<BE> + CnvPVecAlloc<BE>,
+    BE: TestContextBackend<Ring = Standard> + CKKSPaCoImpl,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
@@ -230,7 +229,7 @@ where
     let lts: Vec<_> = factors
         .iter()
         .map(|cd| {
-            crate::reference::ckks_encode_linear_transformation_from_diagonals(
+            crate::encoding::ckks_encode_linear_transformation_from_diagonals(
                 &module,
                 Base2K(params.base2k as u32),
                 crate::CoeffsMeta {
@@ -262,23 +261,37 @@ where
 
     // ── Lines 4–7: blind rotation, trace, partial CoeffToSlot ──────────────
     let mut acc = alloc_ct(&params, &module, params.k);
-    module
-        .ckks_mul_pt_vec_into(&mut acc, &bsk[0], &beta_pt[0], &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_mul_pt_vec_tmp_bytes(&acc, &bsk[0], &beta_pt[0]), |s| {
+        module.ckks_mul_pt_vec_into(&mut acc, &bsk[0], &beta_pt[0], s)
+    })
+    .unwrap();
     let mut tmp = alloc_ct(&params, &module, params.k);
     for t in 1..4 {
-        module
-            .ckks_mul_pt_vec_into(&mut tmp, &bsk[t], &beta_pt[t], &mut scratch.borrow())
-            .unwrap();
-        module.ckks_add_assign(&mut acc, &tmp, &mut scratch.borrow()).unwrap();
-    }
-    module
-        .ckks_slot_trace_assign(&mut acc, m_full, n_paco, &atks, &mut scratch.borrow())
+        with_scratch::<BE, _>(module.ckks_mul_pt_vec_tmp_bytes(&tmp, &bsk[t], &beta_pt[t]), |s| {
+            module.ckks_mul_pt_vec_into(&mut tmp, &bsk[t], &beta_pt[t], s)
+        })
         .unwrap();
+        with_scratch::<BE, _>(module.ckks_add_tmp_bytes(acc.max_size()), |s| {
+            module.ckks_add_assign(&mut acc, &tmp, s)
+        })
+        .unwrap();
+    }
+    with_scratch::<BE, _>(
+        BE::ckks_slot_trace_assign_tmp_bytes(&module, &acc, &params.atk_layout()),
+        |s| BE::ckks_slot_trace_assign(&module, &mut acc, m_full, n_paco, &atks, s),
+    )
+    .unwrap();
     for lt in &lts {
-        module
-            .ckks_eval_linear_transformation_self_assign(&mut acc, lt, &atks, &mut scratch.borrow())
-            .unwrap();
+        // The documented bound of `self_assign`: a working copy of `acc` plus the larger of the baby-step and evaluation
+        // queries.
+        let bytes = BE::scratch_aligned(poulpy_core::GLWEBytesOf::glwe_bytes_of_from_infos(&module, &acc))
+            + module
+                .ckks_prepare_linear_transformation_baby_steps_tmp_bytes(&acc, &lt.index(), &params.atk_layout())
+                .max(module.ckks_eval_linear_transformation_streamed_tmp_bytes(&acc, &lt.index(), &params.atk_layout()));
+        with_scratch::<BE, _>(bytes, |s| {
+            module.ckks_eval_linear_transformation_self_assign(&mut acc, lt, &atks, s)
+        })
+        .unwrap();
     }
 
     // ── Gate: slots must equal the oracle's z_7 (Eq. 11 packing relation) ──
@@ -288,7 +301,7 @@ where
         crate::layouts::PaCoSlotOrder::BitRevLow => {
             let log_p = p.log_c() - 1;
             (0..oracle.partial_c2s.len())
-                .map(|j| oracle.partial_c2s[crate::reference::paco::ops::ext_bitrev_low(j, log_p)])
+                .map(|j| oracle.partial_c2s[crate::layouts::slots::ext_bitrev_low(j, log_p)])
                 .collect()
         }
     };

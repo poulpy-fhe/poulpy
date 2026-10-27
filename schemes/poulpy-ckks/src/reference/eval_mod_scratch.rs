@@ -130,7 +130,7 @@ where
         base.max(params.f_mod_inv_bsgs.as_ref().map_or(0, poly_max))
     };
     let fused_baby =
-        crate::reference::polynomial_evaluation::eval_baby_linear_combination_tmp_bytes(module, work.max_size(), pt_size_max);
+        crate::oep::derived::polynomial_evaluation::eval_baby_linear_combination_tmp_bytes(module, work.max_size(), pt_size_max);
 
     usize::from(needs_work_copy) * compact_work
         + module

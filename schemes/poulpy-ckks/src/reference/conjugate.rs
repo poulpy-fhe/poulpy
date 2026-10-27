@@ -8,7 +8,7 @@ use poulpy_hal::layouts::{Backend, ScratchArena};
 use crate::{CKKSInfos, SetCKKSInfos, checked_log_budget_sub, ckks_offset_unary};
 
 pub trait CKKSConjugateReference<BE: Backend> {
-    fn ckks_conjugate_tmp_bytes_reference<C, K>(&self, ct_infos: &C, key_infos: &K) -> usize
+    fn ckks_conjugate_with_key_tmp_bytes_reference<C, K>(&self, ct_infos: &C, key_infos: &K) -> usize
     where
         C: GLWEInfos,
         K: GGLWEInfos,
@@ -18,7 +18,7 @@ pub trait CKKSConjugateReference<BE: Backend> {
             .max(self.glwe_shift_tmp_bytes(ct_infos.max_size()))
     }
 
-    fn ckks_conjugate_into_reference<Dst, Src>(
+    fn ckks_conjugate_with_key_into_reference<Dst, Src>(
         &self,
         dst: &mut Dst,
         src: &Src,
@@ -32,7 +32,7 @@ pub trait CKKSConjugateReference<BE: Backend> {
     {
         let offset = ckks_offset_unary(dst, src);
         // Validate before mutating: on error `dst` must remain untouched.
-        let log_budget = checked_log_budget_sub("conjugate", src.log_budget(), offset)?;
+        let log_budget = checked_log_budget_sub("ckks_conjugate_into", src.log_budget(), offset)?;
 
         // Stamp before the key switch, as in `ckks_rotate_into`: the key switch
         // normalizes at `dst.k()`, so a stale, wider `k` would leave the result
@@ -51,7 +51,7 @@ pub trait CKKSConjugateReference<BE: Backend> {
         Ok(())
     }
 
-    fn ckks_conjugate_assign_reference<Dst>(
+    fn ckks_conjugate_with_key_assign_reference<Dst>(
         &self,
         dst: &mut Dst,
         key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,

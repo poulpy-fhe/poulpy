@@ -5,7 +5,7 @@
 //! caller's standard backend arena. This lets a device backend compose its
 //! native FFT and plaintext codec without a device-to-host round-trip.
 
-use crate::{CKKSResult as Result, ckks_ensure};
+use crate::{CKKSResult as Result, ckks_ensure, ckks_ensure_operand};
 use bytemuck::Pod;
 use num_traits::FloatConst;
 use poulpy_core::layouts::IntPolyInfos;
@@ -103,8 +103,13 @@ pub trait CKKSEncodingHostOps<BE: Backend, F: CKKSEncodingScalar>: CKKSEncodingO
     where
         P: CKKSPlaintextToBackendMut<BE> + IntPolyInfos + SetCKKSInfos,
     {
-        ckks_ensure!(re.len() == im.len(), "real and imaginary slot counts differ");
-        ckks_ensure!(
+        ckks_ensure_operand!(
+            "ckks_encode_reim_into",
+            re.len() == im.len(),
+            "real and imaginary slot counts differ"
+        );
+        ckks_ensure_operand!(
+            "ckks_encode_reim_into",
             !re.is_empty() && re.len().is_power_of_two(),
             "slot count must be a non-zero power of two, got {}",
             re.len()
@@ -132,8 +137,13 @@ pub trait CKKSEncodingHostOps<BE: Backend, F: CKKSEncodingScalar>: CKKSEncodingO
     where
         P: CKKSPlaintextToBackendRef<BE> + IntPolyInfos,
     {
-        ckks_ensure!(re.len() == im.len(), "real and imaginary slot counts differ");
-        ckks_ensure!(
+        ckks_ensure_operand!(
+            "ckks_decode_reim_into",
+            re.len() == im.len(),
+            "real and imaginary slot counts differ"
+        );
+        ckks_ensure_operand!(
+            "ckks_decode_reim_into",
             !re.is_empty() && re.len().is_power_of_two(),
             "slot count must be a non-zero power of two, got {}",
             re.len()

@@ -41,7 +41,7 @@ where
     let mut ct = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
     ct.set_meta(params.prec().meta);
     let size = module
-        .ckks_all_ops_tmp_bytes(&ct, &params.tsk_layout(), &PT_PREC)
+        .ckks_all_ops_tmp_bytes(&ct, &PT_PREC, &params.tsk_layout())
         .max(module.ckks_goldschmidt_division_tmp_bytes(&ct, &params.tsk_layout()))
         .max(module.ckks_rsqrt_tmp_bytes(&ct, &ct, &params.tsk_layout()));
     ScratchOwned::<BE>::alloc(size)

@@ -231,20 +231,20 @@ macro_rules! impl_ckks_encoding {
             type Plans =
                 $crate::ckks_encoding::OwnedEncodingPlanSet<F, <$be as $crate::ckks_encoding::CKKSEncodingTransform<F>>::Fft>;
 
-            fn ckks_encoding_plan_cache_impl(
+            fn ckks_encoding_plan_cache(
                 module: &::poulpy_hal::layouts::Module<$be>,
             ) -> &::poulpy_hal::layouts::ModulePlanCache {
                 $crate::table_cache::ModuleTableCacheAccess::module_table_cache(module)
             }
 
-            fn ckks_encoding_plans_create_impl(
+            fn ckks_encoding_plans_create(
                 module: &::poulpy_hal::layouts::Module<$be>,
             ) -> ::poulpy_ckks::CKKSResult<Self::Plans> {
                 $crate::ckks_encoding::OwnedEncodingPlanSet::new(2 * ::poulpy_ckks::api::CKKSModuleInfos::ckks_max_slots(module))
                     .map_err(::poulpy_ckks::CKKSError::from)
             }
 
-            fn ckks_encode_coeffs_into_impl<P>(
+            fn ckks_quantize_coeffs_into<P>(
                 _module: &::poulpy_hal::layouts::Module<$be>,
                 pt: &mut P,
                 coeffs: &::poulpy_ckks::layouts::CKKSEncodingBufferBackendRef<'_, $be, F>,
@@ -258,7 +258,7 @@ macro_rules! impl_ckks_encoding {
                     .map_err(::poulpy_ckks::CKKSError::from)
             }
 
-            fn ckks_decode_coeffs_into_impl<P>(
+            fn ckks_dequantize_coeffs_into<P>(
                 _module: &::poulpy_hal::layouts::Module<$be>,
                 pt: &P,
                 coeffs: &mut ::poulpy_ckks::layouts::CKKSEncodingBufferBackendMut<'_, $be, F>,
@@ -270,7 +270,7 @@ macro_rules! impl_ckks_encoding {
                     .map_err(::poulpy_ckks::CKKSError::from)
             }
 
-            fn ckks_slots_to_coeffs_assign_impl(
+            fn ckks_slots_to_coeffs_assign_with_plan(
                 _module: &::poulpy_hal::layouts::Module<$be>,
                 plans: &Self::Plans,
                 values: &mut ::poulpy_ckks::layouts::CKKSEncodingBufferBackendMut<'_, $be, F>,
@@ -285,7 +285,7 @@ macro_rules! impl_ckks_encoding {
                 .map_err(::poulpy_ckks::CKKSError::from)
             }
 
-            fn ckks_coeffs_to_slots_assign_impl(
+            fn ckks_coeffs_to_slots_assign_with_plan(
                 _module: &::poulpy_hal::layouts::Module<$be>,
                 plans: &Self::Plans,
                 values: &mut ::poulpy_ckks::layouts::CKKSEncodingBufferBackendMut<'_, $be, F>,

@@ -137,7 +137,7 @@ where
     };
     let normalize_after = lazy_normalize_after(terms, weight);
     if normalize_after > 0 {
-        return module.ckks_add_many(u, blocks, normalize_after, scratch);
+        return module.ckks_add_many(normalize_after, u, blocks, scratch);
     }
     module.ckks_copy(u, blocks[0], scratch)?;
     for &block in &blocks[1..] {
@@ -236,12 +236,12 @@ where
         let (head, tail) = res.blocks_mut().split_at_mut(first + 1);
         let head = &mut head[first];
         match projection {
-            None => module.ckks_inner_sum(head, &u, log_batch, log_d, false, keys, &mut s)?,
+            None => module.ckks_inner_sum(log_batch, log_d, false, head, &u, keys, &mut s)?,
             Some(projection) => {
-                module.ckks_inner_sum_assign(&mut u, log_batch, log_d, false, keys, &mut s)?;
+                module.ckks_inner_sum_assign(log_batch, log_d, false, &mut u, keys, &mut s)?;
                 let sources = [&u.to_backend_view_ref()];
                 BE::blas_map_blocks_impl(module, std::slice::from_mut(head), &sources, &[projection], keys, &mut s)?;
-                module.ckks_replicate_assign(head, log_batch, log_d, keys, &mut s)?;
+                module.ckks_replicate_assign(log_batch, log_d, head, keys, &mut s)?;
             }
         }
         head.set_noise(None);

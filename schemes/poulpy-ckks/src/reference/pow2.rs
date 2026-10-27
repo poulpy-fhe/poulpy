@@ -24,9 +24,9 @@ pub trait CKKSPow2Reference<BE: Backend> {
 
     fn ckks_mul_pow2_into_reference<Dst, Src>(
         &self,
+        bits: usize,
         dst: &mut Dst,
         src: &Src,
-        bits: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -34,11 +34,11 @@ pub trait CKKSPow2Reference<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
     {
-        crate::ckks_shift_stamp_unary(self, "mul_pow2", dst, src, bits, 0, 0, scratch)?;
+        crate::ckks_shift_stamp_unary(self, "ckks_mul_pow2_into", dst, src, bits, 0, 0, scratch)?;
         Ok(())
     }
 
-    fn ckks_mul_pow2_assign_reference<Dst>(&self, dst: &mut Dst, bits: usize, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_mul_pow2_assign_reference<Dst>(&self, bits: usize, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Self: GLWEShift<BE>,
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
@@ -54,7 +54,7 @@ pub trait CKKSPow2Reference<BE: Backend> {
         Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
     {
         if !ckks_unary_exact(dst, src) {
-            return self.ckks_mul_pow2_into_reference(dst, src, 1, scratch);
+            return crate::ckks_shift_stamp_unary(self, "ckks_double_into", dst, src, 1, 0, 0, scratch);
         }
         self.glwe_add_into(dst, src, src);
         dst.set_meta(src.meta());
@@ -64,9 +64,9 @@ pub trait CKKSPow2Reference<BE: Backend> {
 
     fn ckks_div_pow2_into_reference<Dst, Src>(
         &self,
+        bits: usize,
         dst: &mut Dst,
         src: &Src,
-        bits: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -74,22 +74,22 @@ pub trait CKKSPow2Reference<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
     {
-        ensure_not_integer("div_pow2", src.slots(), bits)?;
+        ensure_not_integer("ckks_div_pow2_into", src.slots(), bits)?;
         // The `bits` charged to the budget move under `log_delta` inside the
         // stamp, so the shift normalizes at the width the result reports.
-        crate::ckks_shift_stamp_unary(self, "div_pow2", dst, src, 0, bits, bits, scratch)?;
+        crate::ckks_shift_stamp_unary(self, "ckks_div_pow2_into", dst, src, 0, bits, bits, scratch)?;
         Ok(())
     }
 
-    fn ckks_div_pow2_assign_reference<Dst>(&self, dst: &mut Dst, bits: usize) -> Result<()>
+    fn ckks_div_pow2_assign_reference<Dst>(&self, bits: usize, dst: &mut Dst) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
     {
         // Lossless relabel, mirroring `_into` with `offset = 0`: the `bits`
         // charged to the budget move under `log_delta`, leaving `k`, and so the
         // canonical flag, unchanged.
-        ensure_not_integer("div_pow2_assign", dst.slots(), bits)?;
-        checked_log_budget_sub("div_pow2_assign", dst.log_budget(), bits)?;
+        ensure_not_integer("ckks_div_pow2_assign", dst.slots(), bits)?;
+        checked_log_budget_sub("ckks_div_pow2_assign", dst.log_budget(), bits)?;
         let mut meta = dst.meta();
         meta.scale = Scale::Log(ckks_log_delta(&meta) + bits);
         dst.set_meta(meta);
@@ -103,9 +103,10 @@ impl<BE: Backend> CKKSPow2Reference<BE> for poulpy_hal::layouts::Module<BE> {}
 /// Halving an integer need not give an integer, so `Integer` slots cannot be
 /// carried through a division; relabel them `Real` first.
 fn ensure_not_integer(op: &'static str, slots: SlotsKind, bits: usize) -> Result<()> {
-    crate::ckks_ensure!(
+    crate::ckks_ensure_operand!(
+        op,
         bits == 0 || slots != SlotsKind::Integer,
-        "{op}: dividing Integer slots by 2^{bits} need not give integers; relabel them Real first"
+        "dividing Integer slots by 2^{bits} need not give integers; relabel them Real first"
     );
     Ok(())
 }

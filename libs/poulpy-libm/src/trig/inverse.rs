@@ -460,7 +460,7 @@ where
                 .max(self.ckks_goldschmidt_division_tmp_bytes(x, tsk))
                 .max(self.ckks_mul_tmp_bytes(x, x, x, tsk))
                 .max(self.ckks_mul_tmp_bytes(x, y, x, tsk))
-                .max(self.ckks_approximation_tmp_bytes(x, x, tsk, &plan.atan.approximation))
+                .max(self.ckks_approximation_tmp_bytes(x, x, &plan.atan.approximation, tsk))
                 .max(self.ckks_add_tmp_bytes(x.size()))
                 .max(self.ckks_add_tmp_bytes(res.size()))
     }

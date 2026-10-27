@@ -1,9 +1,10 @@
+use crate::CKKSResult as Result;
 use crate::api::{CKKSComplexPolynomialEvaluationOps, CKKSPolynomialEvaluationOps};
-use crate::{CKKSResult as Result, ckks_ensure};
 use poulpy_core::GLWENormalize;
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta};
+use poulpy_core::oep::GLWEMulConstImpl;
 
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
@@ -14,6 +15,15 @@ use crate::{
     polynomial::ComplexBSGSPolynomial,
     power_basis::{PowerBasis, PowerBasisGen},
 };
+
+/// Scratch upper bound for [`BSGSOps::eval_baby_linear_combination`]: the constant combination
+/// for the widest term (`ct_size`) and constant (`pt_size`) in limbs.
+pub(crate) fn eval_baby_linear_combination_tmp_bytes<BE>(module: &Module<BE>, ct_size: usize, pt_size: usize) -> usize
+where
+    BE: GLWEMulConstImpl,
+{
+    BE::glwe_const_combination_tmp_bytes(module, ct_size + pt_size, ct_size, pt_size)
+}
 
 /// Builds the folded input (`x`, `x²`, or `T₂(x)`) for one-shot evaluation.
 /// The prepared-basis kernels are selected through the backend contract.
@@ -78,11 +88,12 @@ where
     H: GetTensorKey<BE>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
+    crate::reference::polynomial_evaluation::ensure_baby_steps("ckks_eval_poly_real_const_coeffs", bsgs)?;
     let transform = bsgs.input_transform();
     let x1 = polynomial_input(module, src, transform, tsk, scratch)?;
     let mut power_basis = PowerBasis::new(bsgs.basis(), x1);
     power_basis.populate(bsgs.degree(), bsgs.log_split(), bsgs.parity(), module, tsk, scratch)?;
-    module.ckks_eval_poly_real_const_coeffs_from_power_basis(dst, bsgs, &power_basis, tsk, scratch)?;
+    module.ckks_eval_poly_real_const_coeffs_from_power_basis(dst, &power_basis, bsgs, tsk, scratch)?;
     if matches!(
         transform,
         PolynomialInputTransform::SquareTimesInput | PolynomialInputTransform::ChebyshevT2TimesInput
@@ -114,15 +125,18 @@ where
     H: GetTensorKey<BE>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
+    const OP: &str = "ckks_eval_poly_complex_const_coeffs";
+    crate::reference::polynomial_evaluation::ensure_complex_schedules::<BE, C>(OP, poly)?;
     let transform = poly.re.input_transform();
-    ckks_ensure!(
+    crate::ckks_ensure_operand!(
+        OP,
         transform == poly.im.input_transform(),
-        "ckks_eval_poly_complex_const_coeffs: real and imaginary input transforms differ"
+        "real and imaginary input transforms differ"
     );
     let x1 = polynomial_input(module, src, transform, tsk, scratch)?;
     let mut power_basis = PowerBasis::new(poly.re.basis(), x1);
     power_basis.populate(poly.re.degree(), poly.re.log_split(), poly.re.parity(), module, tsk, scratch)?;
-    module.ckks_eval_poly_complex_const_coeffs_from_power_basis(dst, poly, &power_basis, tsk, scratch)?;
+    module.ckks_eval_poly_complex_const_coeffs_from_power_basis(dst, &power_basis, poly, tsk, scratch)?;
     if matches!(
         transform,
         PolynomialInputTransform::SquareTimesInput | PolynomialInputTransform::ChebyshevT2TimesInput

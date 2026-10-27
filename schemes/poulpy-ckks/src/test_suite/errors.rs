@@ -2,15 +2,18 @@ use crate::CKKSModuleInfos;
 use crate::{
     CKKSCompositionError, CKKSError, CKKSInfos, CoeffsMeta, SetCKKSInfos,
     api::{CKKSAddOps, CKKSEncodingOps, LinearTransformation},
+    encoding::{
+        ckks_encode_linear_transformation_from_diagonals, ckks_encode_linear_transformation_into,
+        ckks_encode_linear_transformation_tmp_bytes,
+    },
     layouts::{CKKSModuleAlloc, CKKSPlaintextOwned, ComplexDiagonals, EvalModPlan, compile_eval_mod},
     polynomial::{Basis, EncodeBSGS, Polynomial, SplitStrategy},
-    reference::{ckks_encode_linear_transformation_from_diagonals, ckks_encode_linear_transformation_into},
 };
 use poulpy_core::layouts::{Diagonals, LWEInfos, LinearTransformationStrategy, TorusPrecision};
 use poulpy_hal::{
     AlignedBuf,
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
-    layouts::{HostBytesBackend, Module, ScratchArena, Standard, VecZnx},
+    layouts::{HostBytesBackend, Module, Standard, VecZnx},
 };
 
 use super::{
@@ -18,12 +21,12 @@ use super::{
         TestContextBackend, TestContextModule, TestScalar, alloc_scratch, assert_ckks_error, ckks_encrypt, download_pt, gen_sk,
         test_vector_1,
     },
-    parity::helpers::with_scratch,
+    parity::helpers::{snapshot, with_scratch},
 };
 
 use crate::{test_suite::CKKSTestParams, test_suite::reference_encoder::ReferenceEncoder};
 
-pub fn test_add_pt_vec_alignment_error<BE, F, E>(
+pub fn test_add_pt_vec_assign_rejects_alignment<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
@@ -55,9 +58,8 @@ pub fn test_add_pt_vec_alignment_error<BE, F, E>(
     ct.set_log_budget(0);
     let mut pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), params.base2k.into(), params.prec().k());
     pt.set_meta(params.prec().meta());
-    let err = module
-        .ckks_add_pt_vec_assign(&mut ct, &pt, &mut scratch.borrow())
-        .unwrap_err();
+    let before = snapshot::<BE, _>(&ct);
+    let err = with_scratch::<BE, _>(0, |s| module.ckks_add_pt_vec_assign(&mut ct, &pt, s)).unwrap_err();
     assert_ckks_error(
         "add_pt_vec_alignment",
         &err,
@@ -70,12 +72,13 @@ pub fn test_add_pt_vec_alignment_error<BE, F, E>(
             pt_k: params.prec().log_delta() + params.prec().log_budget(),
         },
     );
+    assert_eq!(snapshot::<BE, _>(&ct), before, "a refused ckks_add_pt_vec_assign wrote res");
 }
 
 /// `ckks_encode_linear_transformation_from_diagonals` rejects a zero torus width, `coeffs_meta.k = 0`, with
 /// `InvalidOperand` before it allocates or writes anything: here on an empty scratch, on which encoding a diagonal
 /// fails with another error.
-pub fn test_encode_linear_transformation_zero_k_error<BE, F, E>(
+pub fn test_encode_linear_transformation_from_diagonals_rejects_zero_k<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
     _host_module: &Module<HostBytesBackend>,
@@ -144,24 +147,29 @@ pub fn test_encode_linear_transformation_into<BE, F, E>(
     let coeffs_meta: CoeffsMeta = params.prec().into();
     let strategy = LinearTransformationStrategy::Bsgs { giant_step: 2 };
     let (ones, twos) = (map(&[0, 1, 2, 3], 1.0), map(&[0, 1, 2, 3], 2.0));
-    let mut scratch = alloc_scratch(&params, module);
-    let encode = |diagonals: &ComplexDiagonals<F>, coeffs_meta: CoeffsMeta, scratch: &mut ScratchArena<'_, BE>| {
-        ckks_encode_linear_transformation_from_diagonals(
-            module,
-            params.base2k.into(),
-            coeffs_meta,
-            diagonals,
-            strategy,
-            false,
-            scratch,
-        )
+    let bytes =
+        |diagonals: &ComplexDiagonals<F>| ckks_encode_linear_transformation_tmp_bytes::<BE, _, F>(module, diagonals.period());
+    let encode = |diagonals: &ComplexDiagonals<F>, coeffs_meta: CoeffsMeta| {
+        with_scratch::<BE, _>(bytes(diagonals), |scratch| {
+            ckks_encode_linear_transformation_from_diagonals(
+                module,
+                params.base2k.into(),
+                coeffs_meta,
+                diagonals,
+                strategy,
+                false,
+                scratch,
+            )
+        })
     };
 
-    let mut lt = encode(&ones, coeffs_meta, &mut scratch.borrow()).unwrap();
+    let mut lt = encode(&ones, coeffs_meta).unwrap();
     let before = digits(&lt);
     let other = map(&[0, 1, 2], 2.0);
-    let err = ckks_encode_linear_transformation_into(module, &mut lt, coeffs_meta.meta, &other, strategy, &mut scratch.borrow())
-        .unwrap_err();
+    let err = with_scratch::<BE, _>(0, |scratch| {
+        ckks_encode_linear_transformation_into(module, &mut lt, coeffs_meta.meta, &other, strategy, scratch)
+    })
+    .unwrap_err();
     assert_ckks_error(
         "encode_linear_transformation_into",
         &err,
@@ -170,27 +178,34 @@ pub fn test_encode_linear_transformation_into<BE, F, E>(
             reason: "the transform's schedule is not the diagonals'".into(),
         },
     );
+    assert_eq!(digits(&lt), before, "a rejected schedule wrote the transform");
     let zero_giant_step = LinearTransformationStrategy::Bsgs { giant_step: 0 };
-    let res = ckks_encode_linear_transformation_into(
-        module,
-        &mut lt,
-        coeffs_meta.meta,
-        &twos,
-        zero_giant_step,
-        &mut scratch.borrow(),
+    let err = with_scratch::<BE, _>(0, |scratch| {
+        ckks_encode_linear_transformation_into(module, &mut lt, coeffs_meta.meta, &twos, zero_giant_step, scratch)
+    })
+    .unwrap_err();
+    assert_ckks_error(
+        "a zero giant step",
+        &err,
+        CKKSCompositionError::InvalidOperand {
+            op: "ckks_encode_linear_transformation_into",
+            reason: "linear-transformation giant step must be non-zero".into(),
+        },
     );
-    assert!(res.is_err(), "a zero giant step was accepted");
     assert_eq!(digits(&lt), before, "a rejected encoding wrote the transform");
 
-    ckks_encode_linear_transformation_into(module, &mut lt, coeffs_meta.meta, &twos, strategy, &mut scratch.borrow()).unwrap();
-    let want = encode(&twos, coeffs_meta, &mut scratch.borrow()).unwrap();
+    with_scratch::<BE, _>(bytes(&twos), |scratch| {
+        ckks_encode_linear_transformation_into(module, &mut lt, coeffs_meta.meta, &twos, strategy, scratch)
+    })
+    .unwrap();
+    let want = encode(&twos, coeffs_meta).unwrap();
     assert_eq!(digits(&lt), digits(&want), "encoding again does not refill the transform");
 
     let narrow = CoeffsMeta {
         k: TorusPrecision(1),
         ..coeffs_meta
     };
-    let err: CKKSError = encode(&ones, narrow, &mut scratch.borrow()).map(drop).unwrap_err().into();
+    let err: CKKSError = encode(&ones, narrow).map(drop).unwrap_err().into();
     assert!(
         matches!(
             err.composition(),
@@ -203,7 +218,7 @@ pub fn test_encode_linear_transformation_into<BE, F, E>(
 /// `EncodeBSGS::encode_bsgs_with`, `encode_bsgs_folded_with` and `compile_eval_mod` reject a zero torus width,
 /// `coeff_meta.k = 0`, with `InvalidOperand` before they allocate anything: here on an odd polynomial the encoders
 /// would otherwise encode, panicking on the first baby step, and on an empty scratch for `compile_eval_mod`.
-pub fn test_encode_bsgs_zero_k_error<BE, F, E>(
+pub fn test_encode_bsgs_with_rejects_zero_k<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,

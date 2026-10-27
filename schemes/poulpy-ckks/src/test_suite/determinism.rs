@@ -21,8 +21,8 @@ use std::{
 
 use poulpy_core::layouts::{Base2K, LWEInfos, TorusPrecision};
 use poulpy_hal::{
-    api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, HostBytesBackend, Module, Ring, ScratchOwned, Standard, ZnxView},
+    api::ModuleNew,
+    layouts::{Backend, Module, Ring, Standard, ZnxView},
 };
 
 use crate::{
@@ -36,7 +36,7 @@ use crate::{
     },
     polynomial::SplitStrategy,
     reference::gen_dft_matrices,
-    test_suite::{CKKSTestParams, helpers::TestContextBackend, helpers::TestScalar},
+    test_suite::{helpers::TestScalar, parity::helpers::with_scratch},
 };
 
 const FIXTURES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/src/test_suite/determinism.txt");
@@ -153,7 +153,6 @@ where
     };
     let bits = precision::<F>();
     let max_slots = module.ckks_max_slots();
-    let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_reim_tmp_bytes(max_slots));
     let mut log_slots_set = vec![0, 1, 3, 6];
     log_slots_set.push(max_slots.ilog2() as usize);
     for log_slots in log_slots_set {
@@ -180,22 +179,17 @@ where
                 slots: SlotsKind::Complex,
                 log_sparsity: 0,
             });
-            module
-                .ckks_encode_reim_into(&mut pt, &re, &im, &mut scratch.borrow())
-                .unwrap();
+            let reim_bytes = module.ckks_reim_tmp_bytes(slots);
+            with_scratch::<BE, _>(reim_bytes, |s| module.ckks_encode_reim_into(&mut pt, &re, &im, s)).unwrap();
             check_plaintext::<BE>(&format!("{key}-delta{log_delta}-plaintext"), &pt);
 
             let mut got_re = vec![F::zero(); slots];
             let mut got_im = vec![F::zero(); slots];
-            module
-                .ckks_decode_reim_into(&pt, &mut got_re, &mut got_im, &mut scratch.borrow())
-                .unwrap();
+            with_scratch::<BE, _>(reim_bytes, |s| module.ckks_decode_reim_into(&pt, &mut got_re, &mut got_im, s)).unwrap();
             check_scalars(&format!("{key}-delta{log_delta}-decoded"), &[got_re, got_im].concat());
 
             let mut coefficients = vec![F::zero(); coeffs];
-            module
-                .ckks_decode_coeffs_host_into(&pt, &mut coefficients, &mut scratch.borrow())
-                .unwrap();
+            with_scratch::<BE, _>(reim_bytes, |s| module.ckks_decode_coeffs_host_into(&pt, &mut coefficients, s)).unwrap();
             check_scalars(&format!("{key}-delta{log_delta}-dequantized"), &coefficients);
         }
     }
@@ -265,7 +259,7 @@ where
     .unwrap();
     check_scalars(&format!("setup-f{bits}-minimax"), &fit.poly.coeffs);
 
-    let mut scratch = ScratchOwned::<BE>::alloc(1 << 22);
+    let compile_bytes = module.ckks_reim_tmp_bytes(module.ckks_max_slots());
     for kind in [
         EvalModType::SinCheby,
         EvalModType::CosCheby,
@@ -285,7 +279,7 @@ where
             coeffs_meta: CoeffsMeta::from_delta_budget(100, 10),
             f_mod_log_delta: 110,
         };
-        let compiled = compile_eval_mod::<BE, F>(Base2K(20), plan, module, &mut scratch.borrow()).unwrap();
+        let compiled = with_scratch::<BE, _>(compile_bytes, |s| compile_eval_mod::<BE, F>(Base2K(20), plan, module, s)).unwrap();
         let scalars = match &compiled.f_mod_poly {
             EvalModPoly::Real(p) => p.coeffs.clone(),
             EvalModPoly::Complex(p) => p.re.iter().chain(&p.im).copied().collect(),
@@ -305,14 +299,61 @@ where
 }
 
 /// Suite entry point for standard-ring backends: encoding fixtures at degree
-/// 4096 and setup fixtures.
-pub fn test_encoding_determinism<BE, F, E>(_: CKKSTestParams, _: &Module<BE>, _: &Module<HostBytesBackend>)
+/// 4096 and setup fixtures, registered by
+/// [`ckks_determinism_test_suite!`](crate::ckks_determinism_test_suite).
+pub fn test_encoding_determinism<BE, F>()
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: Backend<ZnxWord = i64, Ring = Standard>,
     F: TestScalar,
     Module<BE>: ModuleNew<BE> + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
 {
     let module = Module::<BE>::new(4096);
     encoding_fixtures::<BE, F>(&module);
     setup_fixtures::<BE, F>(&module);
+}
+
+/// Registers the determinism fixtures of one standard-ring backend type, in
+/// `f64` and in [`Quad`](crate::Quad): `encoding_determinism_f64` and
+/// `encoding_determinism_quad` run
+/// [`test_encoding_determinism`](crate::test_suite::determinism::test_encoding_determinism).
+///
+/// A backend type with an `f32` encoding transform adds `, f32` after `backend = <type>`, which also
+/// registers `encoding_determinism_f32`.
+///
+/// Every backend type implementing CKKS on the standard ring registers it; the
+/// conjugate-invariant types run their encoding fixtures in
+/// [`conjugate_invariant_ckks_test_suite!`](crate::conjugate_invariant_ckks_test_suite).
+#[macro_export]
+macro_rules! ckks_determinism_test_suite {
+    (mod $modname:ident, backend = $backend:ty $(,)?) => {
+        mod $modname {
+            #[test]
+            fn encoding_determinism_f64() {
+                $crate::test_suite::determinism::test_encoding_determinism::<$backend, f64>();
+            }
+
+            #[test]
+            fn encoding_determinism_quad() {
+                $crate::test_suite::determinism::test_encoding_determinism::<$backend, $crate::Quad>();
+            }
+        }
+    };
+    (mod $modname:ident, backend = $backend:ty, f32 $(,)?) => {
+        mod $modname {
+            #[test]
+            fn encoding_determinism_f64() {
+                $crate::test_suite::determinism::test_encoding_determinism::<$backend, f64>();
+            }
+
+            #[test]
+            fn encoding_determinism_f32() {
+                $crate::test_suite::determinism::test_encoding_determinism::<$backend, f32>();
+            }
+
+            #[test]
+            fn encoding_determinism_quad() {
+                $crate::test_suite::determinism::test_encoding_determinism::<$backend, $crate::Quad>();
+            }
+        }
+    };
 }

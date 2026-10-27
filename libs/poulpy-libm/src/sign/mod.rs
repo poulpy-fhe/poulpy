@@ -73,7 +73,7 @@ where
 
         if step {
             module.ckks_add_one_assign(&mut cur, &mut scratch_local)?;
-            module.ckks_div_pow2_into(&mut nxt, &cur, 1, &mut scratch_local)?;
+            module.ckks_div_pow2_into(1, &mut nxt, &cur, &mut scratch_local)?;
             std::mem::swap(&mut cur, &mut nxt);
         }
 
@@ -102,7 +102,7 @@ where
 {
     3 * BE::scratch_aligned(module.glwe_bytes_of_from_infos(input))
         + module
-            .ckks_all_ops_with_atk_tmp_bytes(input, tsk, conj_key, coeff_prec)
+            .ckks_all_ops_with_atk_tmp_bytes(input, coeff_prec, tsk, conj_key)
             .max(module.ckks_copy_tmp_bytes(res, input))
 }
 

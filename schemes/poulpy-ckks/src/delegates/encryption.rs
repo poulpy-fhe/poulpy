@@ -9,7 +9,6 @@ use poulpy_hal::{
 use crate::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
     api::{CKKSDecryptOps, CKKSEncryptOps},
-    error::ensure_encryption_degrees,
     oep::CKKSEncryptionImpl,
 };
 
@@ -18,7 +17,7 @@ impl<BE: Backend + CKKSEncryptionImpl> CKKSEncryptOps<BE> for Module<BE> {
     where
         A: CKKSCtBounds,
     {
-        BE::ckks_encrypt_sk_tmp_bytes_impl(self, ct_infos)
+        BE::ckks_encrypt_sk_tmp_bytes(self, ct_infos)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -36,7 +35,7 @@ impl<BE: Backend + CKKSEncryptionImpl> CKKSEncryptOps<BE> for Module<BE> {
         Dct: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Dpt: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
-        BE::ckks_encrypt_sk_impl(self, ct, pt, sk, source_xe, source_xa, scratch)
+        BE::ckks_encrypt_sk(self, ct, pt, sk, source_xe, source_xa, scratch)
     }
 }
 
@@ -46,7 +45,7 @@ impl<BE: Backend + CKKSEncryptionImpl> CKKSDecryptOps<BE> for Module<BE> {
         Pt: CKKSInfos,
         Ct: CKKSCtBounds,
     {
-        BE::ckks_decrypt_tmp_bytes_impl(self, pt_infos, ct_infos)
+        BE::ckks_decrypt_tmp_bytes(self, pt_infos, ct_infos)
     }
 
     fn ckks_decrypt<Dpt, Dct, S>(&self, pt: &mut Dpt, ct: &Dct, sk: &S, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
@@ -55,7 +54,6 @@ impl<BE: Backend + CKKSEncryptionImpl> CKKSDecryptOps<BE> for Module<BE> {
         Dpt: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + IntPolyInfos,
         Dct: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        ensure_encryption_degrees("ckks_decrypt", self.n(), ct.n().as_usize(), sk.n().as_usize())?;
-        BE::ckks_decrypt_impl(self, pt, ct, sk, scratch)
+        BE::ckks_decrypt(self, pt, ct, sk, scratch)
     }
 }

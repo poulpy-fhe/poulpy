@@ -130,7 +130,7 @@ where
     rejects!("ckks_expm1 budget", "ckks_expm1: log_budget", |r, s| module
         .ckks_expm1(r, &low, &expm1, tsk, s));
     rejects!("ckks_powi budget", "ckks_powi: log_budget", |r, s| module
-        .ckks_powi(r, &low, 5, tsk, s));
+        .ckks_powi(5, r, &low, tsk, s));
     rejects!("ckks_sign budget", "ckks_sign: log_budget", |r, s| module
         .ckks_sign(r, &low, comp, tsk, conj, s));
     rejects!("ckks_step budget", "ckks_step: log_budget", |r, s| module
@@ -165,7 +165,7 @@ where
     ));
 
     // An inner poulpy-ckks refusal keeps its type through the libm context.
-    let err = rejects!("ckks_log budget", "ckks_eval_approximation: log_budget", |r, s| module
+    let err = rejects!("ckks_log budget", "ckks_eval_approximation cannot consume", |r, s| module
         .ckks_log(r, &low, &log, tsk, s));
     assert!(
         err.downcast_ref::<CKKSError>().is_some(),

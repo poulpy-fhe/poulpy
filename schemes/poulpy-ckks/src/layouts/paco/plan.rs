@@ -37,11 +37,11 @@ use poulpy_core::layouts::{LinearTransformationLayout, LinearTransformationStrat
 use poulpy_hal::layouts::{galois_element, galois_elements_from_rotations};
 
 use crate::layouts::{ComplexDiagonals, dft::FactorSchedule};
-use crate::numerics::CKKSFloat;
-use crate::reference::paco::{
-    lt::{PaCoPsiTail, paco_psi_c2s_factors, paco_stc_factors},
-    ops::{conj_rotate_galois_element, fold_rotations},
+use crate::layouts::{
+    paco::factors::{PaCoPsiTail, paco_psi_c2s_factors, paco_stc_factors},
+    slots::{conj_rotate_galois_element, fold_rotations},
 };
+use crate::numerics::CKKSFloat;
 
 /// One factor chain's full parameterization (mirrors
 /// [`DFTPlan`](crate::layouts::DFTPlan)).

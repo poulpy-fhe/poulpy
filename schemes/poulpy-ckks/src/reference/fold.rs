@@ -26,11 +26,12 @@ use poulpy_hal::{
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSLayout, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotsKind,
     api::{CKKSAddOps, CKKSConjugateOps, CKKSImagOps, CKKSSubOps},
+    invalid_operand,
     layouts::{
         CKKSCiphertextOwned, CKKSFoldKeysLayout, CKKSModuleAlloc, CKKSRingCiphertext,
         validation::{validate_gadget_backend_view, validate_storage_capacity},
     },
-    reference::ring_map::{ckks_ci_embed_keyless, ckks_ci_trace_keyless, ckks_ci_trace_keyless_tmp_bytes},
+    reference::ring_map::{ckks_ci_embed_keyless, ckks_ci_trace_keyless},
 };
 
 /// Batch positions: an input alone, or a real pair `(re, im)`.
@@ -210,7 +211,7 @@ where
         // its degree first: non-canonical digits and limbs past its width carry in.
         let mut canonical = CKKSRingCiphertext::<BE, Self>::from_inner(module.glwe_alloc_from_infos(src), src.meta());
         module.glwe_normalize(&mut canonical.inner, &src.inner, scratch);
-        ckks_ci_embed_keyless(module, dst, &canonical)?;
+        ckks_ci_embed_keyless("ckks_fold", module, dst, &canonical)?;
         dst.set_meta(<Self as FoldRing<BE>>::packed_meta(src.meta()));
         Ok(())
     }
@@ -231,7 +232,7 @@ where
         module.glwe_rotate(-((part.n().as_usize() / 2) as i64), &mut rotated, part);
         rotated.set_meta(part.meta());
         for (out, src) in outs.iter_mut().zip([part, &rotated]) {
-            ckks_ci_trace_keyless(module, out, src, scratch)?;
+            ckks_ci_trace_keyless("ckks_unfold", module, out, src, scratch)?;
             // Labeled at the input scale like standard outputs, keeping the trace's width.
             out.set_meta(GLWEPlaintextMeta {
                 scale: Scale::Log(log_delta),
@@ -244,9 +245,9 @@ where
 
 /// Reference planning queries of [`CKKSFoldLayoutOps`](crate::api::CKKSFoldLayoutOps).
 pub trait CKKSFoldLayoutReference<BE: Backend> {
-    fn ckks_fold_layout_reference<C: CKKSCtBounds>(&self, ct_in: &C, degree: Degree, keys: &CKKSFoldKeysLayout) -> GLWELayout;
+    fn ckks_fold_layout_reference<C: CKKSCtBounds>(&self, degree: Degree, ct_in: &C, keys: &CKKSFoldKeysLayout) -> GLWELayout;
 
-    fn ckks_fold_tmp_bytes_reference<C1, C2>(&self, ct_out: &C1, ct_in: &C2, degree: Degree, keys: &CKKSFoldKeysLayout) -> usize
+    fn ckks_fold_tmp_bytes_reference<C1, C2>(&self, degree: Degree, ct_out: &C1, ct_in: &C2, keys: &CKKSFoldKeysLayout) -> usize
     where
         C1: CKKSCtBounds,
         C2: CKKSCtBounds;
@@ -265,18 +266,18 @@ where
         + CKKSImagOps<BE>
         + CKKSConjugateOps<BE>,
 {
-    fn ckks_fold_layout_reference<C: CKKSCtBounds>(&self, ct_in: &C, degree: Degree, keys: &CKKSFoldKeysLayout) -> GLWELayout {
+    fn ckks_fold_layout_reference<C: CKKSCtBounds>(&self, degree: Degree, ct_in: &C, keys: &CKKSFoldKeysLayout) -> GLWELayout {
         let base2k = keys.ring_switch.map_or(ct_in.base2k(), |keys| keys.inbound.base2k());
         layout(degree.as_usize(), base2k, ct_in.k())
     }
 
     /// Covers every input ring: the packed parts are sized at the fold degree.
-    fn ckks_fold_tmp_bytes_reference<C1, C2>(&self, ct_out: &C1, ct_in: &C2, degree: Degree, keys: &CKKSFoldKeysLayout) -> usize
+    fn ckks_fold_tmp_bytes_reference<C1, C2>(&self, degree: Degree, ct_out: &C1, ct_in: &C2, keys: &CKKSFoldKeysLayout) -> usize
     where
         C1: CKKSCtBounds,
         C2: CKKSCtBounds,
     {
-        let folded = self.ckks_fold_layout_reference(ct_in, degree, keys);
+        let folded = self.ckks_fold_layout_reference(degree, ct_in, keys);
         let refreshed = GLWELayout { k: ct_out.k(), ..folded };
         let packed = layout(degree.as_usize(), ct_in.base2k(), ct_in.k());
         let size = packed.size().max(folded.size()).max(refreshed.size());
@@ -314,13 +315,13 @@ where
             .max(self.ckks_add_tmp_bytes(part.size()))
             .max(self.ckks_sub_tmp_bytes(part.size()))
             .max(self.ckks_div_i_tmp_bytes(part.size()))
-            .max(ckks_ci_trace_keyless_tmp_bytes(self, ct_out, &part))
+            .max(self.glwe_ci_trace_tmp_bytes(ct_out, &part))
     }
 }
 
 /// Reference fold of inputs of ring `R`, [`CKKSFoldOps`](crate::api::CKKSFoldOps).
 pub trait CKKSFoldReference<BE: Backend, R: Ring> {
-    fn ckks_fold_count_reference(&self, ins: &[CKKSRingCiphertext<BE, R>], degree: Degree) -> usize;
+    fn ckks_fold_count_reference(&self, degree: Degree, ins: &[CKKSRingCiphertext<BE, R>]) -> usize;
 
     fn ckks_unfold_galois_elements_reference<C: CKKSCtBounds>(&self, ct_in: &C) -> Vec<i64>;
 
@@ -341,8 +342,8 @@ pub trait CKKSFoldReference<BE: Backend, R: Ring> {
         &self,
         outs: &mut [CKKSRingCiphertext<BE, R>],
         folded: &mut [CKKSCiphertextOwned<BE>],
-        outbound: Option<&S>,
         automorphisms: Option<&H>,
+        outbound: Option<&S>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -371,7 +372,7 @@ where
     GLWE<BE::OwnedBuf, BE::ZnxWord>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
-    fn ckks_fold_count_reference(&self, ins: &[CKKSRingCiphertext<BE, R>], degree: Degree) -> usize {
+    fn ckks_fold_count_reference(&self, degree: Degree, ins: &[CKKSRingCiphertext<BE, R>]) -> usize {
         let Some(input) = ins.first() else {
             return 0;
         };
@@ -401,18 +402,20 @@ where
     where
         S: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     {
+        const OP: &str = "ckks_fold";
         let module = self;
-        let degree = folded_degree(folded)?;
-        let g = validate_fold(module, ins, degree, inbound.is_some())?;
+        let degree = folded_degree(OP, folded)?;
+        let g = validate_fold(OP, module, ins, degree, inbound.is_some())?;
         let input = &ins[0];
         if let Some(inbound) = inbound {
-            validate_ring_switch_key("inbound ring-switch key", inbound, degree, input.k().as_usize())?;
+            validate_ring_switch_key(OP, "inbound ring-switch key", inbound, degree, input.k())?;
         }
         let units = R::units(ins);
         // A group fills every coefficient: `g` positions of the bootstrap degree, each
         // holding `2^log_g` sparse parts.
         let span = g << input.log_sparsity();
-        crate::ckks_ensure!(
+        crate::ckks_ensure_operand!(
+            OP,
             folded.len() == units.len().div_ceil(span),
             "the batch folds into {} ciphertexts, got {}",
             units.len().div_ceil(span),
@@ -471,17 +474,18 @@ where
         &self,
         outs: &mut [CKKSRingCiphertext<BE, R>],
         folded: &mut [CKKSCiphertextOwned<BE>],
-        outbound: Option<&S>,
         automorphisms: Option<&H>,
+        outbound: Option<&S>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         S: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
         H: GetAutomorphismKey<BE>,
     {
+        const OP: &str = "ckks_unfold";
         let module = self;
-        let degree = folded_degree(folded)?;
-        let g = validate_fold(module, outs, degree, outbound.is_some())?;
+        let degree = folded_degree(OP, folded)?;
+        let g = validate_fold(OP, module, outs, degree, outbound.is_some())?;
         let units = R::units(outs);
         let (n, log_delta, log_g) = (
             R::packed_degree(outs[0].n().as_usize()),
@@ -489,7 +493,8 @@ where
             outs[0].log_sparsity(),
         );
         let span = g << log_g;
-        crate::ckks_ensure!(
+        crate::ckks_ensure_operand!(
+            OP,
             folded.len() == units.len().div_ceil(span),
             "the batch unfolds from {} ciphertexts, got {}",
             units.len().div_ceil(span),
@@ -499,23 +504,30 @@ where
         // after any folded ciphertext or output has been changed.
         let mut group_keys = Vec::with_capacity(folded.len());
         for (src, group) in folded.iter().zip(units.chunks(span)) {
-            crate::ckks_ensure!(
+            crate::ckks_ensure_operand!(
+                OP,
                 src.base2k().as_usize() <= <BE::ZnxWord as ZnxWord>::BITS - 2,
                 "folded ciphertext radix exceeds the backend limit"
             );
-            crate::ckks_ensure!(src.log_delta() <= src.k().as_usize(), "the folded scale exceeds the width");
-            crate::ckks_ensure!(
+            crate::ckks_ensure_operand!(
+                OP,
+                src.log_delta() <= src.k().as_usize(),
+                "the folded scale exceeds the width"
+            );
+            crate::ckks_ensure_operand!(
+                OP,
                 src.k().as_usize() > log_delta + 1,
                 "a folded ciphertext has no message budget"
             );
-            crate::ckks_ensure!(
+            crate::ckks_ensure_operand!(
+                OP,
                 src.k() <= outs[0].k(),
                 "unfold output width {} does not cover refreshed width {}",
                 outs[0].k(),
                 src.k()
             );
             if let Some(outbound) = outbound {
-                validate_ring_switch_key("outbound ring-switch key", outbound, degree, src.k().as_usize())?;
+                validate_ring_switch_key(OP, "outbound ring-switch key", outbound, degree, src.k())?;
             }
             let pairs = R::CONJUGATE_PAIRS && group.iter().any(|(_, im)| im.is_some());
             let required = pairs
@@ -525,7 +537,7 @@ where
             let mut keys = Vec::new();
             for (p, k) in required {
                 let missing = |source| CKKSCompositionError::MissingAutomorphismKey {
-                    op: "ckks_unfold",
+                    op: OP,
                     rotation: p,
                     k: k.into(),
                     source,
@@ -533,13 +545,13 @@ where
                 let key = automorphisms
                     .ok_or_else(|| {
                         missing(poulpy_core::CoreError::GGLWEKeyUse {
-                            op: "ckks_unfold",
+                            op: OP,
                             detail: "no automorphism keys were given".to_string(),
                         })
                     })?
                     .get_automorphism_key(p, k)
                     .map_err(missing)?;
-                validate_ring_switch_key("unfold automorphism key", &&key, n, k.as_usize())?;
+                validate_ring_switch_key(OP, "unfold automorphism key", &&key, n, k)?;
                 keys.push(key);
             }
             group_keys.push(keys);
@@ -665,45 +677,57 @@ where
 /// like them, are a nonempty rank-1 batch sharing one layout, scale and sparsity,
 /// and returns the number `g` of packed ciphertexts merged into a ciphertext of
 /// `degree`, which needs a ring switch when it exceeds one.
-fn validate_fold<BE, R>(module: &Module<BE>, cts: &[CKKSRingCiphertext<BE, R>], degree: usize, ring_switch: bool) -> Result<usize>
+fn validate_fold<BE, R>(
+    op: &'static str,
+    module: &Module<BE>,
+    cts: &[CKKSRingCiphertext<BE, R>],
+    degree: usize,
+    ring_switch: bool,
+) -> Result<usize>
 where
     BE: Backend,
     R: FoldRing<BE>,
     Module<BE>: ModuleN,
 {
-    crate::ckks_ensure!(!cts.is_empty(), "a fold needs at least one ciphertext");
+    crate::ckks_ensure_operand!(op, !cts.is_empty(), "a fold needs at least one ciphertext");
     let head = &cts[0];
     for ct in cts {
-        validate_storage_capacity("fold ciphertext", ct)?;
-        crate::ckks_ensure!(
+        validate_storage_capacity("fold ciphertext", ct).map_err(|e| invalid_operand(op, e))?;
+        crate::ckks_ensure_operand!(
+            op,
             ct.base2k().as_usize() <= <BE::ZnxWord as ZnxWord>::BITS - 2,
             "ciphertext radix exceeds the backend limit"
         );
     }
-    crate::ckks_ensure!(head.rank().as_usize() == 1, "folding supports rank-1 ciphertexts only");
-    crate::ckks_ensure!(head.log_delta() <= head.k().as_usize(), "the scale exceeds the width");
-    crate::ckks_ensure!(
+    crate::ckks_ensure_operand!(op, head.rank().as_usize() == 1, "folding supports rank-1 ciphertexts only");
+    crate::ckks_ensure_operand!(op, head.log_delta() <= head.k().as_usize(), "the scale exceeds the width");
+    crate::ckks_ensure_operand!(
+        op,
         cts.iter().all(|ct| ct.glwe_layout() == head.glwe_layout()
             && ct.log_delta() == head.log_delta()
             && ct.log_sparsity() == head.log_sparsity()),
         "a batch must share its layout, scale and sparsity"
     );
-    crate::ckks_ensure!(
+    crate::ckks_ensure_operand!(
+        op,
         degree <= module.n(),
         "the fold degree {degree} exceeds the module degree {}",
         module.n()
     );
     let n = R::packed_degree(head.n().as_usize());
-    crate::ckks_ensure!(
+    crate::ckks_ensure_operand!(
+        op,
         head.log_sparsity() < n.ilog2() as usize,
         "fold ciphertext sparsity exceeds its packed degree"
     );
-    crate::ckks_ensure!(
+    crate::ckks_ensure_operand!(
+        op,
         degree.is_multiple_of(n),
         "the packed degree {n} must divide the fold degree {degree}"
     );
     let g = degree / n;
-    crate::ckks_ensure!(
+    crate::ckks_ensure_operand!(
+        op,
         g == 1 || ring_switch,
         "merging inputs of a smaller degree needs ring-switch keys"
     );
@@ -711,26 +735,30 @@ where
 }
 
 /// The degree of `folded`, which its ciphertexts share.
-fn folded_degree<C: GLWEInfos>(folded: &[C]) -> Result<usize> {
+fn folded_degree<C: GLWEInfos>(op: &'static str, folded: &[C]) -> Result<usize> {
     for ct in folded {
-        validate_storage_capacity("folded ciphertext", ct)?;
-        crate::ckks_ensure!(ct.rank().as_usize() == 1, "folded ciphertexts must have rank 1");
+        validate_storage_capacity("folded ciphertext", ct).map_err(|e| invalid_operand(op, e))?;
+        crate::ckks_ensure_operand!(op, ct.rank().as_usize() == 1, "folded ciphertexts must have rank 1");
     }
     let degree = folded.first().map_or(0, |ct| ct.n().as_usize());
-    crate::ckks_ensure!(
+    crate::ckks_ensure_operand!(
+        op,
         degree > 0 && folded.iter().all(|ct| ct.n().as_usize() == degree),
         "a fold needs folded ciphertexts of one degree"
     );
     Ok(degree)
 }
 
-fn validate_ring_switch_key<BE, S>(name: &str, key: &S, degree: usize, k: usize) -> Result<()>
+/// `key` switches inputs of `degree` up to `k` bits wide: a radix the backend holds, a gadget layout whose backend
+/// view matches it, and a `max_input_k` of at least `k`.
+fn validate_ring_switch_key<BE, S>(op: &'static str, name: &str, key: &S, degree: usize, k: TorusPrecision) -> Result<()>
 where
     BE: Backend,
     S: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
 {
     let base2k = key.base2k();
-    crate::ckks_ensure!(
+    crate::ckks_ensure_operand!(
+        op,
         (1..=<BE::ZnxWord as ZnxWord>::BITS - 2).contains(&base2k.as_usize()),
         "invalid {name} radix"
     );
@@ -740,11 +768,13 @@ where
         &key.to_backend_ref(),
         degree,
         base2k,
-        k.div_ceil(base2k.as_usize()),
-    )?;
-    crate::ckks_ensure!(
-        key.gglwe_layout().gadget_k().as_usize() >= k,
-        "{name} does not cover width {k}"
+        k.as_usize().div_ceil(base2k.as_usize()),
+    )
+    .map_err(|e| invalid_operand(op, e))?;
+    crate::ckks_ensure_operand!(
+        op,
+        k <= key.gglwe_layout().max_input_k(),
+        "the input is wider than the {name}'s max_input_k"
     );
     Ok(())
 }

@@ -160,7 +160,7 @@ fn main() -> Result<()> {
     module.glwe_secret_prepare(&mut sk, &sk_raw);
 
     // One arena for key generation, encryption and decryption.
-    let mut scratch = Arena::alloc(module.ckks_all_ops_with_atk_tmp_bytes(&CT, &tsk_layout(), &atk_layout(), &CT));
+    let mut scratch = Arena::alloc(module.ckks_all_ops_with_atk_tmp_bytes(&CT, &CT, &tsk_layout(), &atk_layout()));
 
     let gen_atk = |p: i64, width: usize, xe: &mut Source, xa: &mut Source, scratch: &mut ScratchArena<'_, BackendImpl>| -> Atk {
         let layout = atk_at(width);
