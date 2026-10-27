@@ -48,8 +48,10 @@ pub trait CKKSAddManyOps<BE: Backend> {
     ///
     /// # Errors
     ///
-    /// Before any write: `InvalidOperand` if `normalize_after` is 0 or `a` is empty, then `CKKSError::Internal` with
-    /// less scratch than [`Self::ckks_add_many_tmp_bytes`] reports for `res` and `a[0]`.
+    /// Before any write: `InvalidOperand` if `normalize_after` is 0, `a` is empty or a term differs from `res` in
+    /// degree, radix or rank, then `CKKSError::Internal` with less scratch than [`Self::ckks_add_many_tmp_bytes`]
+    /// reports for `res` and `a[0]`, then the errors of [`CKKSAddOps::ckks_add_into`] on the first two terms or of
+    /// [`CKKSCopyOps::ckks_copy`] on a single one.
     fn ckks_add_many<R, A>(
         &self,
         normalize_after: usize,

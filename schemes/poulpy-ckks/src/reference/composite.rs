@@ -28,8 +28,8 @@ pub trait CKKSAddManyReference<BE: Backend> {
             .max(self.ckks_copy_tmp_bytes(res, a))
     }
 
-    /// A zero `normalize_after`, then an empty `a`, is a refusal, then an arena below
-    /// [`Self::ckks_add_many_tmp_bytes_reference`]. One term is the selected `ckks_copy`. Two or more are `ckks_add_into`
+    /// A zero `normalize_after`, then an empty `a`, then a term of another degree, radix or rank than `res`, is a
+    /// refusal, then an arena below [`Self::ckks_add_many_tmp_bytes_reference`]. One term is the selected `ckks_copy`. Two or more are `ckks_add_into`
     /// of the first two terms, then `ckks_add_assign` of each later one, poulpy-core's `glwe_normalize_assign` of `res`
     /// running before every addition that follows a multiple of `normalize_after` additions. The noise record is
     /// cleared in every case.
@@ -59,6 +59,22 @@ pub trait CKKSAddManyReference<BE: Backend> {
         let [first, rest @ ..] = a else {
             return invalid("a must contain at least one ciphertext");
         };
+        // Every addition panics in core on a mismatched term, so all are checked before the first write.
+        for (i, term) in a.iter().enumerate() {
+            if term.n() != res.n() {
+                return invalid(&format!("term {i} has degree {} where res has {}", term.n(), res.n()));
+            }
+            if term.base2k() != res.base2k() {
+                return invalid(&format!(
+                    "term {i} has radix {} where res has {}",
+                    term.base2k(),
+                    res.base2k()
+                ));
+            }
+            if term.rank() != res.rank() {
+                return invalid(&format!("term {i} has rank {} where res has {}", term.rank(), res.rank()));
+            }
+        }
         ckks_ensure!(
             scratch.available() >= self.ckks_add_many_tmp_bytes_reference(&*res, *first),
             "{OP}: scratch below its query"
