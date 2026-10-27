@@ -464,24 +464,16 @@ jobs:
           --features "poulpy-cpu-portable/enable-ckks,poulpy-cpu-arm/enable-neon,poulpy-cpu-arm/enable-ckks"
           determinism
 
-  # Run natively when every required CPU feature is usable; otherwise use SDE.
-  avx512:
-    name: AVX-512 backend (native or SDE)
+  avx512_lint:
+    name: AVX-512 lint
     runs-on: ubuntu-24.04
-    # Cold compilation is separate from the twelve-minute SDE execution budget; SDE runs BLAS under a second one.
-    timeout-minutes: 36
+    timeout-minutes: 15
 
-    # Hosted runners need not expose AVX-512, so we keep AVX-512 flags
-    # off the host toolchain (build scripts, proc-macros). We pin --target and
-    # use the target-scoped CARGO_TARGET_<TRIPLE>_RUSTFLAGS variable so host
-    # artifacts stay portable while the workspace itself builds for AVX-512.
+    # Same target-scoped flags as avx512_build.
     env:
       CARGO_BUILD_TARGET: x86_64-unknown-linux-gnu
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C target-feature=+avx2,+fma,+avx512f,+avx512ifma,+avx512vl,+bmi2,+adx
       RUSTDOCFLAGS: -C target-feature=+avx2,+fma,+avx512f,+avx512ifma,+avx512vl,+bmi2,+adx
-      CARGO_PROFILE_CI_DEBUG: 0
-      # Exercise the Rayon overrides with a bounded pool under emulation.
-      RAYON_NUM_THREADS: 2
 
     steps:
       - name: Checkout
@@ -503,13 +495,106 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-avx512-lint-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-cargo-avx512-lint-${{ env.RUST_TOOLCHAIN }}-
+
+      - name: Clippy AVX-512 backend
+        run: cargo clippy --workspace --all-targets --features "$AVX512_FEATURES" -- -D warnings
+
+  avx512_build:
+    name: AVX-512 build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+
+    # Hosted runners need not expose AVX-512, so we keep AVX-512 flags
+    # off the host toolchain (build scripts, proc-macros). We pin --target and
+    # use the target-scoped CARGO_TARGET_<TRIPLE>_RUSTFLAGS variable so host
+    # artifacts stay portable while the workspace itself builds for AVX-512.
+    env:
+      CARGO_BUILD_TARGET: x86_64-unknown-linux-gnu
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C target-feature=+avx2,+fma,+avx512f,+avx512ifma,+avx512vl,+bmi2,+adx
+      RUSTDOCFLAGS: -C target-feature=+avx2,+fma,+avx512f,+avx512ifma,+avx512vl,+bmi2,+adx
+      CARGO_PROFILE_CI_DEBUG: 0
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: x86_64-unknown-linux-gnu
+
+      - name: Cache cargo deps
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
           key: ${{ runner.os }}-${{ runner.arch }}-cargo-avx512-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-cargo-avx512-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}-
             ${{ runner.os }}-${{ runner.arch }}-cargo-avx512-${{ env.RUST_TOOLCHAIN }}-
 
-      - name: Clippy AVX-512 backend
-        run: cargo clippy --workspace --all-targets --features "$AVX512_FEATURES" -- -D warnings
+      - name: Compile AVX-512 test binary
+        shell: bash
+        run: |
+          # The native feature set includes the emulated one, so one binary serves both modes.
+          cargo test -p poulpy-cpu-avx512 --lib --profile ci --features enable-ifma,enable-rayon,enable-ckks,enable-bin-fhe,enable-blas \
+            --no-run --message-format=json-render-diagnostics |
+            bash .github/scripts/test-shard.sh pack "$RUNNER_TEMP/tests"
+          tar -C "$RUNNER_TEMP" -cf "$RUNNER_TEMP/tests.tar" tests
+
+      - name: Upload test binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: avx512-tests
+          path: ${{ runner.temp }}/tests.tar
+          retention-days: 1
+
+  # Each shard runs natively when its runner exposes every required CPU feature, otherwise under SDE.
+  avx512_test:
+    name: AVX-512 tests (${{ matrix.group }} ${{ matrix.shard }}/${{ matrix.shards }})
+    needs: avx512_build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # `blas` keeps the BLAS tests emulation can afford; native runners also cover them under `contracts`.
+        # Four of its matmul tests take two to three minutes each under SDE; more shards barely help.
+        include:
+          - {group: contracts, shard: 1, shards: 4}
+          - {group: contracts, shard: 2, shards: 4}
+          - {group: contracts, shard: 3, shards: 4}
+          - {group: contracts, shard: 4, shards: 4}
+          - {group: blas, shard: 1, shards: 3}
+          - {group: blas, shard: 2, shards: 3}
+          - {group: blas, shard: 3, shards: 3}
+
+    env:
+      # Exercise the Rayon overrides with a bounded pool under emulation.
+      RAYON_NUM_THREADS: 2
+      RUST_TEST_THREADS: 2
+
+    steps:
+      # Some tests read sources and fixtures from the checkout.
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # Only for the CPU feature probe.
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
 
       - name: Detect native AVX-512 support
         id: avx512
@@ -546,22 +631,27 @@ jobs:
           tar --extract --xz --file "$RUNNER_TEMP/$SDE_ARCHIVE" --directory "$RUNNER_TEMP/intel-sde" --strip-components=1
           # Pin/SDE may need to attach to its parent on Ubuntu; this hosted VM is ephemeral.
           sudo sysctl -w kernel.yama.ptrace_scope=0
-          # Only target executables run under SDE; Cargo and build scripts remain native.
           # Ice Lake includes AVX-512F, AVX-512VL and IFMA.
-          echo "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER=$RUNNER_TEMP/intel-sde/sde64 -icl --" >> "$GITHUB_ENV"
+          echo "TEST_RUNNER=$RUNNER_TEMP/intel-sde/sde64 -icl --" >> "$GITHUB_ENV"
 
-      - name: Compile AVX-512 test binary
-        run: bash .github/scripts/test-backend.sh build avx512 '${{ steps.avx512.outputs.mode }}'
+      - name: Download test binary
+        uses: actions/download-artifact@v4
+        with:
+          name: avx512-tests
+          path: ${{ runner.temp }}
 
-      - name: Test AVX-512 backend
-        timeout-minutes: 14
-        run: bash .github/scripts/test-backend.sh test avx512 '${{ steps.avx512.outputs.mode }}'
-
-      # Native runs every BLAS test above; SDE runs each serial AVX-512/IFMA type once, under its own budget.
-      - name: Test AVX-512 BLAS under SDE
-        if: steps.avx512.outputs.mode == 'emulated'
+      - name: Test shard
         timeout-minutes: 10
-        run: bash .github/scripts/test-backend.sh test avx512 emulated blas
+        shell: bash
+        run: |
+          mode='${{ steps.avx512.outputs.mode }}'
+          group='${{ matrix.group }}'
+          [[ "$group" == blas ]] || group=
+          if [[ "$mode" == emulated ]]; then export POULPY_TEST_EMULATED=1; fi
+          filters=$(bash .github/scripts/test-backend.sh filters avx512 "$mode" $group)
+          mapfile -t filters <<< "$filters"
+          tar -C "$RUNNER_TEMP" -xf "$RUNNER_TEMP/tests.tar"
+          bash .github/scripts/test-shard.sh run "$RUNNER_TEMP/tests" ${{ matrix.shard }} ${{ matrix.shards }} "${filters[@]}"
 
   neon:
     name: NEON backend (aarch64 native)
@@ -699,7 +789,9 @@ jobs:
       - avx
       - intel_macos_avx
       - macos_arm_quad
-      - avx512
+      - avx512_lint
+      - avx512_build
+      - avx512_test
       - neon
       - neon_hal
       - miri
@@ -748,8 +840,18 @@ jobs:
             exit 1
           fi
 
-          if [ "${{ needs.avx512.result }}" != "success" ]; then
-            echo "AVX-512 backend job finished with: ${{ needs.avx512.result }}"
+          if [ "${{ needs.avx512_lint.result }}" != "success" ]; then
+            echo "AVX-512 lint job finished with: ${{ needs.avx512_lint.result }}"
+            exit 1
+          fi
+
+          if [ "${{ needs.avx512_build.result }}" != "success" ]; then
+            echo "AVX-512 build job finished with: ${{ needs.avx512_build.result }}"
+            exit 1
+          fi
+
+          if [ "${{ needs.avx512_test.result }}" != "success" ]; then
+            echo "AVX-512 test shards finished with: ${{ needs.avx512_test.result }}"
             exit 1
           fi
 

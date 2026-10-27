@@ -2,12 +2,12 @@
 # Compile separately, then run a backend's native or bounded emulation suite.
 set -euo pipefail
 
-stage=${1:?expected build or test}
+stage=${1:?expected build, filters or test}
 backend=${2:?expected avx or avx512}
 mode=${3:?expected native or emulated}
 # Optional `blas`: run only the BLAS tests AVX-512 emulation keeps, with a budget of their own.
 group=${4:-}
-case "$stage" in build|test) ;; *) echo "Invalid stage: $stage" >&2; exit 2 ;; esac
+case "$stage" in build|filters|test) ;; *) echo "Invalid stage: $stage" >&2; exit 2 ;; esac
 case "$group" in ''|blas) ;; *) echo "Invalid test group: $group" >&2; exit 2 ;; esac
 case "$backend" in
   avx) features=enable-avx,enable-rayon ;;
@@ -53,6 +53,12 @@ elif [[ "$backend" == avx512 || "$mode" == emulated ]]; then
         --skip ::vec_znx_dft_large --skip _streaming)
     fi
   fi
+fi
+
+# One libtest argument per line, for runners of prebuilt test binaries.
+if [[ "$stage" == filters ]]; then
+  if [[ ${#filters[@]} -gt 0 ]]; then printf '%s\n' "${filters[@]}"; fi
+  exit 0
 fi
 
 execution_seconds=480

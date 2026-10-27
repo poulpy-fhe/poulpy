@@ -19,16 +19,23 @@ case "$stage" in
   run)
     shard=${3:?expected a 1-based shard index}
     shards=${4:?expected a shard count}
+    # Further arguments are libtest filters; TEST_RUNNER prefixes every execution, e.g. an emulator.
+    filters=("${@:5}")
+    read -ra runner <<< "${TEST_RUNNER:-}"
     pack=$(realpath "$pack")
-    # Every shard sees the same sorted list, so round-robin selection covers each test once.
     while read -r executable package; do
       # Listed outside the process substitution so a binary that cannot start fails the shard.
-      listed=$("$pack/$executable" --list --format terse < /dev/null)
-      mapfile -t tests < <(sed -n 's/: test$//p' <<< "$listed" | awk -v k="$shard" -v n="$shards" '(NR - 1) % n == k - 1')
+      all=$("${runner[@]}" "$pack/$executable" --list --format terse < /dev/null)
+      selected=$("${runner[@]}" "$pack/$executable" --list --format terse "${filters[@]}" < /dev/null)
+      # Round-robin over the unfiltered sorted list covers each test once, even when shards of one
+      # run pick different filters (native or emulated runners).
+      mapfile -t tests < <(awk -v k="$shard" -v n="$shards" \
+        'NR == FNR { if ((FNR - 1) % n == k - 1) mine[$0]; next } $0 in mine' \
+        <(sed -n 's/: test$//p' <<< "$all") <(sed -n 's/: test$//p' <<< "$selected"))
       # An empty filter list would run the whole binary.
       [[ ${#tests[@]} -gt 0 ]] || continue
       echo "::group::$executable (${#tests[@]} tests)"
-      (cd "$package" && "$pack/$executable" --exact "${tests[@]}" -Z unstable-options --report-time < /dev/null)
+      (cd "$package" && "${runner[@]}" "$pack/$executable" --exact "${tests[@]}" -Z unstable-options --report-time < /dev/null)
       echo "::endgroup::"
     done < "$pack/manifest"
     ;;
