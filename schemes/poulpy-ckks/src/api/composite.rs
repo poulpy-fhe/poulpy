@@ -1,5 +1,4 @@
 use crate::CKKSResult as Result;
-use poulpy_core::GLWEMulPreparedPlainSum;
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos};
@@ -49,13 +48,16 @@ pub trait CKKSAddManyOps<BE: Backend> {
     ///
     /// # Errors
     ///
-    /// Before any write: `InvalidOperand` if `normalize_after` is 0 or `a` is empty, then `CKKSError::Internal` with
-    /// less scratch than [`Self::ckks_add_many_tmp_bytes`] reports for `res` and `a[0]`.
+    /// Before any write: `InvalidOperand` if `normalize_after` is 0, `a` is empty or a term differs from `res` in
+    /// degree, radix or rank, then `CKKSError::Internal` with less scratch than [`Self::ckks_add_many_tmp_bytes`]
+    /// reports for `res` and `a[0]`, then the errors of
+    /// [`CKKSAddOps::ckks_add_into`](crate::api::CKKSAddOps::ckks_add_into) on the first two terms or of
+    /// [`CKKSCopyOps::ckks_copy`](crate::api::CKKSCopyOps::ckks_copy) on a single one.
     fn ckks_add_many<R, A>(
         &self,
+        normalize_after: usize,
         res: &mut R,
         a: &[&A],
-        normalize_after: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -456,7 +458,6 @@ pub trait CKKSDotProductOps<BE: Backend> {
     /// `b`, whatever their number: pass the prepared operands, whose infos report their sources, or those sources.
     fn ckks_dot_product_prepared_pt_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
     where
-        Self: GLWEMulPreparedPlainSum<BE>,
         R: CKKSCtBounds,
         A: GLWEInfos,
         P: GLWEInfos;
@@ -487,7 +488,7 @@ pub trait CKKSDotProductOps<BE: Backend> {
     ///
     /// # Errors
     ///
-    /// Before writing `dst`: an error for `a` and `b` empty or of two lengths; `InvalidOperand` for `galois` of another
+    /// Before writing `dst`: `InvalidOperand` for `a` and `b` empty or of two lengths, or for `galois` of another
     /// length; as [`Self::ckks_dot_product_prepared`], `PreparedOperandLayoutMismatch` for a term of another degree,
     /// `base2k` or rank than `dst`; `InvalidOperand` for an even Galois element, a plaintext not of rank 0 at `dst`'s `base2k`, or a side whose operands do not share one
     /// layout and scale; `PlaintextDegreeMismatch` for a plaintext whose degree does not embed into `dst`'s; and the
@@ -501,7 +502,6 @@ pub trait CKKSDotProductOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: GLWEMulPreparedPlainSum<BE>,
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;
 
     /// Computes `dst = Σ a[i] * b[i]` over ciphertext–plaintext-polynomial pairs.

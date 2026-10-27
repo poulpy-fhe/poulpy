@@ -96,8 +96,8 @@ pub trait CKKSSubOps<BE: Backend> {
     fn ckks_sub_pt_const_into<Dst, A, P>(
         &self,
         dst: &mut Dst,
-        a: &A,
         dst_coeff: usize,
+        a: &A,
         pt: &P,
         pt_coeff: usize,
         scratch: &mut ScratchArena<'_, BE>,

@@ -13,11 +13,11 @@
 macro_rules! impl_add_cached_one {
     ($be:ty) => {
         unsafe impl ::poulpy_ckks::oep::CKKSAddImpl for $be {
-            fn ckks_add_tmp_bytes_impl(module: &::poulpy_hal::layouts::Module<Self>, res_size: usize) -> usize {
+            fn ckks_add_tmp_bytes(module: &::poulpy_hal::layouts::Module<Self>, res_size: usize) -> usize {
                 ::poulpy_ckks::reference::add::CKKSAddReference::ckks_add_tmp_bytes_reference(module, res_size)
             }
 
-            fn ckks_add_into_impl<Dst, A, B>(
+            fn ckks_add_into<Dst, A, B>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
                 a: &A,
@@ -32,7 +32,7 @@ macro_rules! impl_add_cached_one {
                 ::poulpy_ckks::reference::add::CKKSAddReference::ckks_add_into_reference(module, dst, a, b, scratch)
             }
 
-            fn ckks_add_assign_impl<Dst, A>(
+            fn ckks_add_assign<Dst, A>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
                 a: &A,
@@ -45,11 +45,11 @@ macro_rules! impl_add_cached_one {
                 ::poulpy_ckks::reference::add::CKKSAddReference::ckks_add_assign_reference(module, dst, a, scratch)
             }
 
-            fn ckks_add_pt_vec_tmp_bytes_impl(module: &::poulpy_hal::layouts::Module<Self>, res_size: usize) -> usize {
+            fn ckks_add_pt_vec_tmp_bytes(module: &::poulpy_hal::layouts::Module<Self>, res_size: usize) -> usize {
                 ::poulpy_ckks::reference::add::CKKSAddReference::ckks_add_pt_vec_tmp_bytes_reference(module, res_size)
             }
 
-            fn ckks_add_pt_vec_into_impl<Dst, A, P>(
+            fn ckks_add_pt_vec_into<Dst, A, P>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
                 a: &A,
@@ -66,7 +66,7 @@ macro_rules! impl_add_cached_one {
                 ::poulpy_ckks::reference::add::CKKSAddReference::ckks_add_pt_vec_into_reference(module, dst, a, pt, scratch)
             }
 
-            fn ckks_add_pt_vec_assign_impl<Dst, P>(
+            fn ckks_add_pt_vec_assign<Dst, P>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
                 pt: &P,
@@ -81,15 +81,15 @@ macro_rules! impl_add_cached_one {
                 ::poulpy_ckks::reference::add::CKKSAddReference::ckks_add_pt_vec_assign_reference(module, dst, pt, scratch)
             }
 
-            fn ckks_add_pt_const_tmp_bytes_impl(module: &::poulpy_hal::layouts::Module<Self>, res_size: usize) -> usize {
+            fn ckks_add_pt_const_tmp_bytes(module: &::poulpy_hal::layouts::Module<Self>, res_size: usize) -> usize {
                 ::poulpy_ckks::reference::add::CKKSAddReference::ckks_add_pt_const_tmp_bytes_reference(module, res_size)
             }
 
-            fn ckks_add_pt_const_into_impl<Dst, A, P>(
+            fn ckks_add_pt_const_into<Dst, A, P>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
-                a: &A,
                 dst_coeff: usize,
+                a: &A,
                 pt: &P,
                 pt_coeff: usize,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
@@ -102,11 +102,11 @@ macro_rules! impl_add_cached_one {
                     + ::poulpy_core::layouts::IntPolyInfos,
             {
                 ::poulpy_ckks::reference::add::CKKSAddReference::ckks_add_pt_const_into_reference(
-                    module, dst, a, dst_coeff, pt, pt_coeff, scratch,
+                    module, dst, dst_coeff, a, pt, pt_coeff, scratch,
                 )
             }
 
-            fn ckks_add_pt_const_assign_impl<Dst, P>(
+            fn ckks_add_pt_const_assign<Dst, P>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
                 dst_coeff: usize,
@@ -126,7 +126,7 @@ macro_rules! impl_add_cached_one {
             }
 
             // The constant `1` comes from the module's cache instead of a host upload per call.
-            fn ckks_add_one_assign_impl<Dst>(
+            fn ckks_add_one_assign<Dst>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
@@ -149,11 +149,11 @@ pub(crate) use impl_add_cached_one;
 macro_rules! impl_sub_cached_one {
     ($be:ty) => {
         unsafe impl ::poulpy_ckks::oep::CKKSSubImpl for $be {
-            fn ckks_sub_tmp_bytes_impl(module: &::poulpy_hal::layouts::Module<Self>, res_size: usize) -> usize {
+            fn ckks_sub_tmp_bytes(module: &::poulpy_hal::layouts::Module<Self>, res_size: usize) -> usize {
                 ::poulpy_ckks::reference::sub::CKKSSubReference::ckks_sub_tmp_bytes_reference(module, res_size)
             }
 
-            fn ckks_sub_into_impl<Dst, A, B>(
+            fn ckks_sub_into<Dst, A, B>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
                 a: &A,
@@ -168,7 +168,7 @@ macro_rules! impl_sub_cached_one {
                 ::poulpy_ckks::reference::sub::CKKSSubReference::ckks_sub_into_reference(module, dst, a, b, scratch)
             }
 
-            fn ckks_sub_assign_impl<Dst, A>(
+            fn ckks_sub_assign<Dst, A>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
                 a: &A,
@@ -181,11 +181,11 @@ macro_rules! impl_sub_cached_one {
                 ::poulpy_ckks::reference::sub::CKKSSubReference::ckks_sub_assign_reference(module, dst, a, scratch)
             }
 
-            fn ckks_sub_pt_vec_tmp_bytes_impl(module: &::poulpy_hal::layouts::Module<Self>, res_size: usize) -> usize {
+            fn ckks_sub_pt_vec_tmp_bytes(module: &::poulpy_hal::layouts::Module<Self>, res_size: usize) -> usize {
                 ::poulpy_ckks::reference::sub::CKKSSubReference::ckks_sub_pt_vec_tmp_bytes_reference(module, res_size)
             }
 
-            fn ckks_sub_pt_vec_into_impl<Dst, A, P>(
+            fn ckks_sub_pt_vec_into<Dst, A, P>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
                 a: &A,
@@ -202,7 +202,7 @@ macro_rules! impl_sub_cached_one {
                 ::poulpy_ckks::reference::sub::CKKSSubReference::ckks_sub_pt_vec_into_reference(module, dst, a, pt, scratch)
             }
 
-            fn ckks_sub_pt_vec_assign_impl<Dst, P>(
+            fn ckks_sub_pt_vec_assign<Dst, P>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
                 pt: &P,
@@ -217,15 +217,15 @@ macro_rules! impl_sub_cached_one {
                 ::poulpy_ckks::reference::sub::CKKSSubReference::ckks_sub_pt_vec_assign_reference(module, dst, pt, scratch)
             }
 
-            fn ckks_sub_pt_const_tmp_bytes_impl(module: &::poulpy_hal::layouts::Module<Self>, res_size: usize) -> usize {
+            fn ckks_sub_pt_const_tmp_bytes(module: &::poulpy_hal::layouts::Module<Self>, res_size: usize) -> usize {
                 ::poulpy_ckks::reference::sub::CKKSSubReference::ckks_sub_pt_const_tmp_bytes_reference(module, res_size)
             }
 
-            fn ckks_sub_pt_const_into_impl<Dst, A, P>(
+            fn ckks_sub_pt_const_into<Dst, A, P>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
-                a: &A,
                 dst_coeff: usize,
+                a: &A,
                 pt: &P,
                 pt_coeff: usize,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
@@ -238,11 +238,11 @@ macro_rules! impl_sub_cached_one {
                     + ::poulpy_core::layouts::IntPolyInfos,
             {
                 ::poulpy_ckks::reference::sub::CKKSSubReference::ckks_sub_pt_const_into_reference(
-                    module, dst, a, dst_coeff, pt, pt_coeff, scratch,
+                    module, dst, dst_coeff, a, pt, pt_coeff, scratch,
                 )
             }
 
-            fn ckks_sub_pt_const_assign_impl<Dst, P>(
+            fn ckks_sub_pt_const_assign<Dst, P>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
                 dst_coeff: usize,
@@ -262,7 +262,7 @@ macro_rules! impl_sub_cached_one {
             }
 
             // The constant `1` comes from the module's cache instead of a host upload per call.
-            fn ckks_sub_one_assign_impl<Dst>(
+            fn ckks_sub_one_assign<Dst>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,

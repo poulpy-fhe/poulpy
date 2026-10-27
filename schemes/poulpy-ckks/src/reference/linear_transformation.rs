@@ -6,7 +6,7 @@
 //! `docs/guides/linear_transformation.md`.
 
 use crate::SlotsKind;
-use crate::{CKKSError, CKKSResult as Result, ckks_ensure, operand_cyclotomic_order};
+use crate::{CKKSError, CKKSResult as Result, ckks_ensure, ckks_ensure_operand, operand_cyclotomic_order};
 use poulpy_core::layouts::GLWEPlaintextInfos;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::LinearTransformationPlan;
@@ -26,9 +26,12 @@ use poulpy_hal::{
 
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, SetCKKSInfos,
-    api::{LinearTransformation, LtDiagonalMeta},
-    layouts::CKKSPlaintext,
-    reference::mul::mul_pt_params_raw,
+    api::{CKKSCopyOps, LinearTransformation, LtDiagonalMeta},
+    layouts::{
+        CKKSPlaintext,
+        validation::{ensure_prepared_transformation_layout, ensure_uniform_diagonals},
+    },
+    mul_pt_params_raw,
 };
 use poulpy_core::GLWEBytesOf;
 
@@ -94,7 +97,7 @@ impl<D: Data, BE: Backend> LtDiagonalMeta for PreparedDiagonal<D, BE> {
 }
 
 /// The reference algorithms of [`CKKSLinearTransformationImpl`](crate::oep::CKKSLinearTransformationImpl), which
-/// `impl_ckks_linear_transformation_reference!` forwards to and an override can call for the methods it keeps.
+/// `impl_ckks_linear_transformation_reference_full!` forwards to and an override can call for the methods it keeps.
 pub trait CKKSLinearTransformationReference<BE: Backend> {
     fn ckks_prepare_linear_transformation_rhs_tmp_bytes_reference<P>(&self, pt_infos: &P) -> usize
     where
@@ -121,15 +124,17 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
     /// The ciphertext stands in for the diagonal, so the budget is an upper bound for a diagonal below the ring degree.
     fn ckks_eval_linear_transformation_tmp_bytes_reference<C, K>(&self, ct: &C, plan: &LinearTransformationPlan, key: &K) -> usize
     where
-        Self: GLWELinearTransformations<BE> + GLWEBytesOf<BE>,
+        Self: GLWELinearTransformations<BE> + GLWEBytesOf<BE> + CKKSCopyOps<BE>,
         C: CKKSCtBounds,
         K: GGLWEInfos,
     {
         // `ct` doubles as the plaintext-operand proxy: it bounds the convolution
         // sizes from above, so the result is a safe upper bound. The extra
         // ct-sized buffer is the dst-shaped working copy the `_assign` wrappers
-        // carve from scratch (an upper bound for the `_into` paths, which skip it).
+        // carve from scratch and copy back with the selected `ckks_copy` (an upper
+        // bound for the `_into` paths, which skip both).
         self.glwe_eval_linear_transformation_tmp_bytes(ct, ct, ct, plan, key)
+            .max(self.ckks_copy_tmp_bytes(ct, ct))
             + BE::scratch_aligned(self.glwe_bytes_of_from_infos(ct))
     }
 
@@ -141,14 +146,15 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         key: &K,
     ) -> usize
     where
-        Self: GLWELinearTransformations<BE> + GLWEBytesOf<BE>,
+        Self: GLWELinearTransformations<BE> + GLWEBytesOf<BE> + CKKSCopyOps<BE>,
         C: CKKSCtBounds,
         K: GGLWEInfos,
     {
         // `ct` doubles as the plaintext-operand proxy (upper bound on diagonal
-        // shape). The extra ct-sized buffer covers the `_assign` wrappers'
-        // scratch-carved working copy, as above.
+        // shape). The extra ct-sized buffer and the copy cover the `_assign`
+        // wrappers' scratch-carved working copy, as above.
         self.glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(ct, ct, ct, plan, key)
+            .max(self.ckks_copy_tmp_bytes(ct, ct))
             + BE::scratch_aligned(self.glwe_bytes_of_from_infos(ct))
     }
 
@@ -168,36 +174,36 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         self.glwe_eval_linear_transformation_sum_tmp_bytes(ct, ct, ct, plan, key)
     }
 
+    /// `InvalidOperand`, before any write, for a `prepared` allocated for another layout than `lt`'s or diagonals of
+    /// `lt` not sharing one scale, width and slot kind.
     fn ckks_prepare_linear_transformation_rhs_reference<P>(
         &self,
         prepared: &mut LinearTransformationPrepared<BE>,
         lt: &LinearTransformation<P>,
         scratch: &mut ScratchArena<'_, BE>,
-    ) where
+    ) -> Result<()>
+    where
         Self: GLWELinearTransformations<BE>,
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + DiagonalProd<BE>,
     {
-        // Stash the plaintext scale exponent and real-slot claim while filling the
-        // diagonals so eval no longer needs `lt` for `cnv_offset` math and the
-        // result's slot kind. Contract: the diagonals must share one scale, width
-        // and slot kind (the crate's compilers always produce uniform diagonals;
-        // the unprepared eval path rejects heterogeneous hand-built inputs via
-        // `ensure_uniform_diagonals`, so this infallible prepare stashes the first
-        // diagonal's for all; debug builds assert the contract).
-        if let Some(first_pt) = lt.first_diagonal_plaintext() {
-            debug_assert!(
-                lt.giant_steps.iter().flat_map(|gs| &gs.diagonals).all(|diag| {
-                    let pt = &diag.plaintext;
-                    pt.log_delta() == first_pt.log_delta()
-                        && pt.encoded_k() == first_pt.encoded_k()
-                        && pt.slots() == first_pt.slots()
-                }),
-                "linear transformation diagonals must share one scale, width and slot kind"
+        const OP: &str = "ckks_prepare_linear_transformation_rhs";
+        ensure_prepared_transformation_layout(OP, prepared, lt)?;
+        ensure_uniform_diagonals(OP, lt, |pt| (pt.log_delta(), pt.encoded_k().as_usize(), pt.slots()))?;
+        let first_pt = lt.first_diagonal_plaintext();
+        if let Some(first_pt) = first_pt {
+            ckks_ensure!(
+                scratch.available() >= self.ckks_prepare_linear_transformation_rhs_tmp_bytes_reference(first_pt),
+                "{OP}: scratch below its query"
             );
+        }
+        self.glwe_prepare_linear_transformation_rhs(prepared, lt, scratch);
+        // The first diagonal's scale and real-slot claim are stashed for all, so eval needs no `lt` for its
+        // `cnv_offset` and slot kind.
+        if let Some(first_pt) = first_pt {
             prepared.set_log_scale(first_pt.log_delta());
             prepared.set_real_slots(first_pt.slots().is_real());
         }
-        self.glwe_prepare_linear_transformation_rhs(prepared, lt, scratch);
+        Ok(())
     }
 
     fn ckks_prepare_linear_transformation_baby_steps_reference<Src, H>(
@@ -212,12 +218,13 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetAutomorphismKey<BE>,
     {
-        let cyclotomic_order = operand_cyclotomic_order("linear_transformation", self, src.n().as_usize())?;
+        let cyclotomic_order =
+            operand_cyclotomic_order("ckks_prepare_linear_transformation_baby_steps", self, src.n().as_usize())?;
         let src_k = src.k();
         for rotation in babies.rotations().baby_key_rotations(babies.baby_steps()) {
             if let Err(source) = keys.get_automorphism_key(galois_element(rotation, cyclotomic_order), src_k) {
                 return Err(CKKSCompositionError::MissingAutomorphismKey {
-                    op: "linear_transformation",
+                    op: "ckks_prepare_linear_transformation_baby_steps",
                     rotation,
                     k: src_k.into(),
                     source,
@@ -245,20 +252,26 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
         H: GetAutomorphismKey<BE>,
     {
-        let first = lt
-            .first_diagonal_plaintext()
-            .ok_or_else(|| anyhow::anyhow!("linear transformation has no diagonals"))?;
+        const OP: &str = "ckks_eval_linear_transformation_into";
+        let first = lt.first_diagonal_plaintext().ok_or_else(|| -> CKKSError {
+            CKKSCompositionError::InvalidOperand {
+                op: OP,
+                reason: "linear transformation has no diagonals".into(),
+            }
+            .into()
+        })?;
         // The diagonal scale (`lt_log_scale`), its effective torus width `k` and the
         // slot kind are read off the first diagonal. The convolution offset must
         // match the width the diagonal data was positioned at in `cnv_prepare_right`
         // (its effective `k`), which can be below the rounded physical `max_k`.
         let (pt_log_scale, pt_max_k, pt_slots) = (first.lt_log_scale(), first.encoded_k().as_usize(), first.lt_slots());
-        ensure_uniform_diagonals(lt, pt_log_scale, pt_max_k, pt_slots)?;
+        ensure_uniform_diagonals(OP, lt, lt_diagonal_meta)?;
         // ct × (plaintext diagonal): the ct × pt convolution rule, with the diagonal
         // described by just its scale (`pt_log_scale` → rhs `log_delta`) and storage
         // width (`pt_max_k` → rhs `max_k`). Its `log_budget` is dead in this math
         // (`checked_mul_pt_log_budget` reads the rhs budget only for diagnostics), so 0.
         let (res_log_budget, res_log_delta, cnv_offset) = mul_pt_params_raw(
+            OP,
             dst.k().as_usize(),
             src.log_delta(),
             src.log_budget(),
@@ -268,8 +281,8 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         )?;
         let res_k: TorusPrecision = (res_log_budget + res_log_delta).into();
         debug_assert_eq!(res_k, crate::api::ckks_linear_transformation_output_k(lt, src.k(), dst.k()));
-        let cyclotomic_order = operand_cyclotomic_order("linear_transformation", self, src.n().as_usize())?;
-        check_required_keys(lt, babies, keys, cyclotomic_order, res_k)?;
+        let cyclotomic_order = operand_cyclotomic_order(OP, self, src.n().as_usize())?;
+        check_required_keys(OP, lt, babies, keys, cyclotomic_order, res_k)?;
         // `Σ diag ⊙ rot(src)` has real slots when `src` and the diagonals do, and is sparse where both are: a diagonal is
         // dense at its own degree.
         let slots = src.slots().join(pt_slots);
@@ -297,6 +310,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetAutomorphismKey<BE>,
     {
+        const OP: &str = "ckks_eval_linear_transformation_sum_into";
         if babies.len() != srcs.len() || lts.len() != srcs.len() {
             return Err(invalid_sum("srcs, babies and lts differ in length".into()));
         }
@@ -318,7 +332,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         // Core reads each source through its baby cache. A cache without the rotations its transform reads may hold
         // none, so its layout is read only once those are checked.
         let cache = |babies: &LinearTransformationBabySteps<BE>| (babies.size(), babies.cols());
-        check_babies(lt, cache_0)?;
+        check_babies(OP, lt, cache_0)?;
         for (t, ((&src_t, &babies_t), &lt_t)) in srcs.iter().zip(babies).zip(lts).enumerate().skip(1) {
             let mismatch = |what: &str| {
                 Err(invalid_sum(format!(
@@ -339,17 +353,18 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
             if source(src_t) != source(src) {
                 return mismatch("source layout and scale");
             }
-            check_babies(lt_t, babies_t)?;
+            check_babies(OP, lt_t, babies_t)?;
             if cache(babies_t) != cache(cache_0) {
                 return mismatch("baby-step cache layout");
             }
         }
         for &lt_t in lts {
-            ensure_uniform_diagonals(lt_t, pt_log_scale, pt_max_k, pt_slots)?;
+            ensure_uniform_diagonals(OP, lt_t, lt_diagonal_meta)?;
         }
         // The terms share the source and diagonal metadata, so the first term's
         // ct × pt rule holds for all of them (see `ckks_eval_linear_transformation_into`).
         let (res_log_budget, res_log_delta, cnv_offset) = mul_pt_params_raw(
+            OP,
             dst.k().as_usize(),
             src.log_delta(),
             src.log_budget(),
@@ -358,9 +373,9 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
             pt_max_k,
         )?;
         let res_k: TorusPrecision = (res_log_budget + res_log_delta).into();
-        let cyclotomic_order = operand_cyclotomic_order("linear_transformation", self, dst.n().as_usize())?;
+        let cyclotomic_order = operand_cyclotomic_order(OP, self, dst.n().as_usize())?;
         for (&babies_t, &lt_t) in babies.iter().zip(lts) {
-            check_required_keys(lt_t, babies_t, keys, cyclotomic_order, res_k)?;
+            check_required_keys(OP, lt_t, babies_t, keys, cyclotomic_order, res_k)?;
         }
         // The sum has real slots when every source and the diagonals do, and is sparse where all of them are.
         let slots = srcs.iter().fold(pt_slots, |slots, src_t| slots.join(src_t.slots()));
@@ -378,6 +393,11 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
 
 impl<BE: Backend> CKKSLinearTransformationReference<BE> for Module<BE> {}
 
+/// The scale, storage width and slot kind a diagonal's evaluation reads.
+fn lt_diagonal_meta<P: LtDiagonalMeta + IntPolyInfos>(pt: &P) -> (usize, usize, SlotsKind) {
+    (pt.lt_log_scale(), pt.encoded_k().as_usize(), pt.lt_slots())
+}
+
 fn invalid_sum(reason: String) -> CKKSError {
     CKKSCompositionError::InvalidOperand {
         op: "ckks_eval_linear_transformation_sum_into",
@@ -386,10 +406,15 @@ fn invalid_sum(reason: String) -> CKKSError {
     .into()
 }
 
-/// Verifies that `babies` covers every baby rotation `lt` needs.
-fn check_babies<BE: Backend, P>(lt: &LinearTransformation<P>, babies: &LinearTransformationBabySteps<BE>) -> Result<()> {
+/// `InvalidOperand` for `op` unless `babies` covers every baby rotation `lt` needs.
+fn check_babies<BE: Backend, P>(
+    op: &'static str,
+    lt: &LinearTransformation<P>,
+    babies: &LinearTransformationBabySteps<BE>,
+) -> Result<()> {
     for rotation in lt.baby_steps().iter().copied() {
-        ckks_ensure!(
+        ckks_ensure_operand!(
+            op,
             babies.contains_baby_step(rotation),
             "missing prepared baby-step rotation {rotation}"
         );
@@ -400,6 +425,7 @@ fn check_babies<BE: Backend, P>(lt: &LinearTransformation<P>, babies: &LinearTra
 /// Verifies that `babies` covers every baby rotation `lt` needs and that all
 /// automorphism keys required by `lt` are present (keyed by Galois element).
 fn check_required_keys<BE: Backend, P, H>(
+    op: &'static str,
     lt: &LinearTransformation<P>,
     babies: &LinearTransformationBabySteps<BE>,
     keys: &H,
@@ -409,7 +435,7 @@ fn check_required_keys<BE: Backend, P, H>(
 where
     H: GetAutomorphismKey<BE>,
 {
-    check_babies(lt, babies)?;
+    check_babies(op, lt, babies)?;
     let giants = lt.giant_steps.iter().filter(|gs| !gs.diagonals.is_empty()).map(|gs| gs.rot);
     let rotations: Vec<i64> = match lt.rotations {
         BsgsRotations::PerRotation => giants.filter(|&r| r != 0).collect(),
@@ -419,41 +445,11 @@ where
         let gal_el = galois_element(rotation, cyclotomic_order);
         keys.get_automorphism_key(gal_el, giant_k)
             .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
-                op: "linear_transformation",
+                op,
                 rotation,
                 k: giant_k.into(),
                 source,
             })?;
-    }
-    Ok(())
-}
-
-/// Verifies every diagonal shares the first diagonal's scale, storage width and slot kind.
-///
-/// The evaluation derives one `cnv_offset` (and the result metadata) from the
-/// first diagonal alone; a hand-built transform with heterogeneous diagonal
-/// scales would silently mis-scale every other diagonal's contribution, and
-/// heterogeneous slot kinds would mislabel the result. The crate's own compilers
-/// (`ckks_encode_linear_transformation_from_diagonals`, the DFT/PaCo factor
-/// encoders) always produce uniform diagonals, so this only rejects malformed
-/// hand-assembled inputs.
-fn ensure_uniform_diagonals<P>(lt: &LinearTransformation<P>, log_scale: usize, max_k: usize, slots: SlotsKind) -> Result<()>
-where
-    P: LtDiagonalMeta + IntPolyInfos + LWEInfos,
-{
-    for gs in &lt.giant_steps {
-        for diag in &gs.diagonals {
-            let pt = &diag.plaintext;
-            ckks_ensure!(
-                pt.lt_log_scale() == log_scale && pt.encoded_k().as_usize() == max_k && pt.lt_slots() == slots,
-                "linear transformation diagonals are not uniform: diagonal (giant rot {}, baby {}) has (log_scale {}, max_k {}, {:?}) but the first diagonal, which cnv_offset and the result metadata are derived from, has ({log_scale}, {max_k}, {slots:?})",
-                gs.rot,
-                diag.baby,
-                pt.lt_log_scale(),
-                pt.encoded_k().as_usize(),
-                pt.lt_slots(),
-            );
-        }
     }
     Ok(())
 }

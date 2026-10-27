@@ -71,7 +71,7 @@ where
         let want: Vec<F> = x.iter().map(|&v| v.powi(exponent as i32)).collect();
         let mut res = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
         module
-            .ckks_powi(&mut res, &input, exponent, &tsk, &mut scratch.borrow())
+            .ckks_powi(exponent, &mut res, &input, &tsk, &mut scratch.borrow())
             .expect("ckks_powi");
         let multiplications = if exponent <= 1 {
             0

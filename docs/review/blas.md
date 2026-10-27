@@ -103,7 +103,7 @@ Generic rules: `docs/review/workspace.md` section 8.1 (lazy by default; headroom
 
 ## 8. Scratch, heap and concurrency
 
-Generic rules: `docs/review/workspace.md` sections 4 (scratch shortfall panics) and 5.
+Generic rules: `docs/review/workspace.md` sections 4 (scratch shortfall fails at entry) and 5.
 
 - **Queries beside their operation.** Each `_tmp_bytes` query sits right before its operation in the same API and OEP trait and takes, in section 2 order, grid and operand infos (`BlasGridInfos`, `BlasMatMulOperandInfos`; for the prepared product also the `blas_matmul_{left,right}_operand_layout` layouts before preparing), the context and public operand objects (reading their map layouts), key layouts (`GGLWEInfos`) and no rotation or shift amount, covering every amount (the `docs/review/workspace.md` section 5 exceptions), and panics only on layouts its validator rejects.
 - **Largest step, long-lived temporaries.** A query is the `max` over its steps of each step's carve plus its largest nested query, at the blocks' live layouts, and, as the heap exception to `docs/review/workspace.md` section 5, temporaries outliving a hook call or spanning product units (preparation copies, unconverted terms, staged blocks, a shift's grid, baby-step caches, units) come from the module's factories.

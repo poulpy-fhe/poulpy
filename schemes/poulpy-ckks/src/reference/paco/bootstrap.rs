@@ -6,33 +6,33 @@
 //! keys, and the seqPaCo branch evaluation the sequential and parallel
 //! drivers share.
 
-use crate::{CKKSResult as Result, ckks_ensure};
+use crate::{CKKSResult as Result, ckks_ensure, ckks_ensure_operand, invalid_operand};
 use anyhow::Context;
 use poulpy_core::layouts::{
-    GGLWEInfos, GLWEInfos, GLWEPlaintextInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos,
-    TorusPrecision,
+    Base2K, Degree, GGLWEInfos, GLWEInfos, GLWELayout, GLWEPlaintextInfos, GLWEToBackendMut, GLWEToBackendRef,
+    GetAutomorphismKey, GetTensorKey, LWEInfos, Rank, TorusPrecision,
 };
-use poulpy_hal::layouts::{Backend, CyclotomicOrder, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
-use super::ops::PaCoSlotOps;
 use crate::{
-    CKKSCompositionError, CKKSCtBounds, CKKSInfos, GLWEPlaintextMeta, Scale,
+    CKKSCompositionError, CKKSCtBounds, CKKSInfos, GLWEPlaintextMeta, Scale, SetCKKSInfos,
     api::{CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSLinearTransformationOps, CKKSMulOps, CKKSSubOps, PaCoScalar},
     layouts::{
-        CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned,
+        CKKSCiphertextOwned, ScratchArenaTakeCKKS,
         paco::{
             context::{PaCoContext, PaCoPsiTailMaterial},
             keyset::{PaCoKeyParameters, PaCoKeys, validate_backend_storage_capacity},
             plan::PaCoPlan,
         },
     },
-    oep::{CKKSEncodingImpl, CKKSPaCoCoeffEncodingImpl},
+    oep::CKKSEncodingImpl,
 };
 
 /// Metadata predicted for a direct PaCo branch after the final, budget-neutral
 /// scale relabel. Computing it before evaluation prevents an expensive circuit
 /// from ending in scale or budget underflow.
 fn checked_output_meta<B: CKKSCtBounds>(
+    op: &'static str,
     plan: &PaCoPlan,
     input: &impl CKKSCtBounds,
     output_k: usize,
@@ -48,7 +48,7 @@ fn checked_output_meta<B: CKKSCtBounds>(
     let output_scale = bootstrap_scale
         .checked_sub(shift)
         .context("PaCo output scale overflows signed arithmetic")?;
-    ckks_ensure!(output_scale >= 0, "PaCo output scale would be negative ({output_scale})");
+    ckks_ensure_operand!(op, output_scale >= 0, "PaCo output scale would be negative ({output_scale})");
     let output_scale = usize::try_from(output_scale).context("PaCo output scale does not fit usize")?;
 
     // `k_out` is the maximum final output level: the bootstrapping-key (seed) width
@@ -56,16 +56,19 @@ fn checked_output_meta<B: CKKSCtBounds>(
     // up to `k_out`; the branch then evaluates at working level `output_k + circuit_depth`
     // (< the seed width when `output_k < k_out`), so a lower level runs the whole circuit
     // narrower — genuinely cheaper.
-    let k_out = bsk
-        .k()
-        .as_usize()
-        .checked_sub(plan.consumed_bits())
-        .context("PaCo key width is smaller than the plan's budget consumption")?;
-    ckks_ensure!(
+    let Some(k_out) = bsk.k().as_usize().checked_sub(plan.consumed_bits()) else {
+        return Err(invalid_operand(
+            op,
+            "PaCo key width is smaller than the plan's budget consumption",
+        ));
+    };
+    ckks_ensure_operand!(
+        op,
         output_k <= k_out,
         "PaCo output level {output_k} exceeds the maximum bootstrap output level {k_out}",
     );
-    ckks_ensure!(
+    ckks_ensure_operand!(
+        op,
         output_scale <= output_k,
         "PaCo output scale {output_scale} exceeds the requested output width {output_k}",
     );
@@ -81,7 +84,7 @@ fn checked_output_meta<B: CKKSCtBounds>(
 /// low bits, since ct×pt targets `dst.k()`), so the fixed-depth circuit lands exactly on
 /// `output_k`. At `output_k == k_out` this equals the phase's natural width (no rounding);
 /// below it the whole circuit runs narrower — genuinely cheaper.
-pub(crate) fn branch_working_k(plan: &PaCoPlan, output_k: usize) -> Result<usize> {
+pub(super) fn branch_working_k(plan: &PaCoPlan, output_k: usize) -> Result<usize> {
     let circuit_depth = plan
         .consumed_bits()
         .checked_sub(plan.log_delta_bsk())
@@ -92,22 +95,25 @@ pub(crate) fn branch_working_k(plan: &PaCoPlan, output_k: usize) -> Result<usize
         .map_err(Into::into)
 }
 
-fn validate_key_shape<K>(name: &str, key: &K, n: usize, base2k: poulpy_core::layouts::Base2K) -> Result<()>
+fn validate_key_shape<K>(op: &'static str, name: &str, key: &K, n: usize, base2k: poulpy_core::layouts::Base2K) -> Result<()>
 where
     K: GGLWEInfos,
 {
-    ckks_ensure!(
+    ckks_ensure_operand!(
+        op,
         key.n().as_usize() == n,
         "{name} degree {} does not match the PaCo degree {n}",
         key.n(),
     );
-    ckks_ensure!(
+    ckks_ensure_operand!(
+        op,
         key.rank_in().as_usize() == 1 && key.rank_out().as_usize() == 1,
         "{name} must have rank_in=rank_out=1, got rank_in={} and rank_out={}",
         key.rank_in(),
         key.rank_out(),
     );
-    ckks_ensure!(
+    ckks_ensure_operand!(
+        op,
         key.base2k() == base2k,
         "{name} base2k {} does not match the PaCo base2k {base2k}",
         key.base2k(),
@@ -116,6 +122,7 @@ where
 }
 
 fn validate_automorphism_use<BE, K>(
+    op: &'static str,
     keys: &K,
     element: i64,
     input_k: TorusPrecision,
@@ -130,12 +137,13 @@ where
         .rotation_keys()
         .get_automorphism_key(element, input_k)
         .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
-            op: "ckks_paco_bootstrap",
+            op,
             rotation: element,
             k: input_k.into(),
             source,
         })?;
     validate_key_shape(
+        op,
         &format!("PaCo automorphism key {element} at precision {input_k}"),
         &key,
         n,
@@ -144,6 +152,7 @@ where
 }
 
 fn validate_relinearization_use<BE, K>(
+    op: &'static str,
     keys: &K,
     input_k: TorusPrecision,
     n: usize,
@@ -157,18 +166,25 @@ where
         .tensor_key()
         .get_tensor_key(input_k)
         .map_err(|source| CKKSCompositionError::MissingRelinearizationKey {
-            op: "ckks_paco_bootstrap",
+            op,
             k: input_k.into(),
             source,
         })?;
-    validate_key_shape(&format!("PaCo relinearization key at precision {input_k}"), &key, n, base2k)
+    validate_key_shape(
+        op,
+        &format!("PaCo relinearization key at precision {input_k}"),
+        &key,
+        n,
+        base2k,
+    )
 }
 
 /// Validates the runtime ciphertexts and every key reachable through a custom
 /// [`PaCoKeys`] implementation. Validated built-in key bundles satisfy the same
 /// checks at construction; repeating the inexpensive shape checks here keeps
 /// the public trait safe for lazy or external key managers.
-pub(crate) fn validate_runtime<BE, F, K, Src>(
+pub(super) fn validate_runtime<BE, F, K, Src>(
+    op: &'static str,
     module: &Module<BE>,
     context: &PaCoContext<BE, F>,
     output: &CKKSCiphertextOwned<BE>,
@@ -176,73 +192,82 @@ pub(crate) fn validate_runtime<BE, F, K, Src>(
     keys: &K,
 ) -> Result<(usize, usize)>
 where
-    BE: Backend + CKKSPaCoCoeffEncodingImpl,
+    BE: Backend,
     F: PaCoScalar,
-    Module<BE>: CyclotomicOrder,
     K: PaCoKeys<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     let plan = context.plan();
 
-    ckks_ensure!(
+    ckks_ensure_operand!(
+        op,
         keys.parameters() == PaCoKeyParameters::from_plan(plan),
         "PaCo key parameters {:?} do not match context plan {:?}",
         keys.parameters(),
         PaCoKeyParameters::from_plan(plan),
     );
-    ckks_ensure!(
+    ckks_ensure_operand!(
+        op,
         module.n() == plan.n(),
         "PaCo module degree {} does not match plan degree {}",
         module.n(),
         plan.n()
     );
-    ckks_ensure!(
+    ckks_ensure_operand!(
+        op,
         input.n().as_usize() == plan.n(),
         "PaCo input degree {} does not match plan degree {}",
         input.n(),
         plan.n()
     );
-    ckks_ensure!(
+    ckks_ensure_operand!(
+        op,
         input.rank().as_usize() == 1,
         "PaCo input must have rank 1, got {}",
         input.rank()
     );
-    ckks_ensure!(
+    ckks_ensure_operand!(
+        op,
         input.k().as_usize() == plan.log_q() as usize,
         "PaCo input torus width {} does not match plan log_q {}",
         input.k(),
         plan.log_q(),
     );
-    ckks_ensure!(
+    ckks_ensure_operand!(
+        op,
         input.log_delta() <= input.k().as_usize(),
         "PaCo input scale {} exceeds its torus width {}",
         input.log_delta(),
         input.k()
     );
-    validate_backend_storage_capacity::<BE, _>("PaCo input", input)?;
+    validate_backend_storage_capacity::<BE, _>("PaCo input", input).map_err(|e| invalid_operand(op, e))?;
 
-    ckks_ensure!(
+    ckks_ensure_operand!(
+        op,
         output.n().as_usize() == plan.n(),
         "PaCo output degree {} does not match plan degree {}",
         output.n(),
         plan.n()
     );
-    ckks_ensure!(
+    ckks_ensure_operand!(
+        op,
         output.rank().as_usize() == 1,
         "PaCo output must have rank 1, got {}",
         output.rank()
     );
-    ckks_ensure!(
+    ckks_ensure_operand!(
+        op,
         output.base2k() == context.base2k(),
         "PaCo output base2k {} does not match context base2k {}",
         output.base2k(),
         context.base2k()
     );
 
-    validate_backend_storage_capacity::<BE, _>("PaCo output", output)?;
+    validate_backend_storage_capacity::<BE, _>("PaCo output", output).map_err(|e| invalid_operand(op, e))?;
     let bsk = keys.bootstrapping_keys();
     let canonical = &bsk[0];
-    ckks_ensure!(
+    ckks_ensure_operand!(
+        op,
         canonical.k().as_usize() >= plan.max_plaintext_width(),
         "PaCo bootstrapping-key width {} is smaller than the widest plaintext width {}",
         canonical.k(),
@@ -252,44 +277,52 @@ where
     // circuit runs at working level `output.k() + consumed_bits` in scratch (see the
     // branch executor). This both validates `output.k() <= k_out` and yields the
     // output metadata reused below.
-    let output_meta = checked_output_meta(plan, input, output.k().as_usize(), canonical)?;
+    let output_meta = checked_output_meta(op, plan, input, output.k().as_usize(), canonical)?;
     for (index, key) in bsk.iter().enumerate() {
-        ckks_ensure!(
+        ckks_ensure_operand!(
+            op,
             key.n().as_usize() == plan.n(),
             "PaCo bootstrapping key {index} has incompatible degree {}",
             key.n()
         );
-        ckks_ensure!(
+        ckks_ensure_operand!(
+            op,
             key.rank().as_usize() == 1,
             "PaCo bootstrapping key {index} must have rank 1, got {}",
             key.rank()
         );
-        ckks_ensure!(
+        ckks_ensure_operand!(
+            op,
             key.base2k() == context.base2k(),
             "PaCo bootstrapping key {index} has incompatible base2k {}",
             key.base2k()
         );
-        ckks_ensure!(
+        ckks_ensure_operand!(
+            op,
             key.k() == canonical.k(),
             "PaCo bootstrapping key {index} has torus width {}, expected {}",
             key.k(),
             canonical.k()
         );
-        ckks_ensure!(
+        ckks_ensure_operand!(
+            op,
             key.log_delta() == plan.log_delta_bsk(),
             "PaCo bootstrapping key {index} has scale {}, expected {}",
             key.log_delta(),
             plan.log_delta_bsk()
         );
-        ckks_ensure!(
+        ckks_ensure_operand!(
+            op,
             key.log_delta() <= key.k().as_usize(),
             "PaCo bootstrapping key {index} scale {} exceeds torus width {}",
             key.log_delta(),
             key.k(),
         );
-        validate_backend_storage_capacity::<BE, _>(&format!("PaCo bootstrapping key {index}"), key)?;
-        ckks_ensure!(key.log_sparsity() == 0, "PaCo bootstrapping key {index} must be dense");
-        ckks_ensure!(
+        validate_backend_storage_capacity::<BE, _>(&format!("PaCo bootstrapping key {index}"), key)
+            .map_err(|e| invalid_operand(op, e))?;
+        ckks_ensure_operand!(op, key.log_sparsity() == 0, "PaCo bootstrapping key {index} must be dense");
+        ckks_ensure_operand!(
+            op,
             key.log_budget() >= plan.consumed_bits(),
             "PaCo bootstrapping key {index} has {} budget bits; the plan consumes {}",
             key.log_budget(),
@@ -307,12 +340,22 @@ where
     );
     let (n, base2k) = (plan.n(), context.base2k());
     for &element in context.galois_elements() {
-        validate_automorphism_use::<BE, _>(keys, element, working_k, n, base2k)?;
+        validate_automorphism_use::<BE, _>(op, keys, element, working_k, n, base2k)?;
     }
-    validate_automorphism_use::<BE, _>(keys, -1, working_k, n, base2k)?;
-    validate_relinearization_use::<BE, _>(keys, working_k, n, base2k)?;
+    validate_automorphism_use::<BE, _>(op, keys, -1, working_k, n, base2k)?;
+    validate_relinearization_use::<BE, _>(op, keys, working_k, n, base2k)?;
 
     Ok(output_meta)
+}
+
+/// The layout of the accumulator and the temporary a branch evaluates in, at the branch's working width.
+pub(super) fn branch_work_layout<BE: Backend>(module: &Module<BE>, base2k: Base2K, working_k: usize) -> Result<GLWELayout> {
+    Ok(GLWELayout {
+        n: Degree(u32::try_from(module.n()).context("PaCo degree does not fit u32")?),
+        base2k,
+        k: TorusPrecision(u32::try_from(working_k).context("PaCo branch working width does not fit u32")?),
+        rank: Rank(1),
+    })
 }
 
 /// Evaluates one direct PaCo branch into caller-provided `output`.
@@ -320,10 +363,11 @@ where
 /// The input is already encrypted under the structured PaCo secret. The four
 /// bootstrapping ciphertexts homomorphically decrypt it into the application
 /// key, so `output` is under the key that encrypts those ciphertexts. Runtime
-/// validation is completed before the output is mutated.
-pub(crate) fn paco_bootstrap_branch_validated_into<BE, F, K, Src>(
+/// validation is completed before the output is mutated. The accumulator and the
+/// temporary of the branch are carved from `scratch`.
+pub(super) fn paco_bootstrap_branch_validated_into<BE, F, K, Dst, Src>(
     module: &Module<BE>,
-    output: &mut CKKSCiphertextOwned<BE>,
+    output: &mut Dst,
     input: &Src,
     context: &PaCoContext<BE, F>,
     keys: &K,
@@ -331,20 +375,10 @@ pub(crate) fn paco_bootstrap_branch_validated_into<BE, F, K, Src>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: Backend + CKKSPaCoCoeffEncodingImpl + CKKSEncodingImpl<F>,
+    BE: super::PaCoBackend + CKKSEncodingImpl<F>,
     K: PaCoKeys<BE>,
-    Module<BE>: CKKSMulOps<BE>
-        + CKKSAddOps<BE>
-        + CKKSSubOps<BE>
-        + CKKSConjugateOps<BE>
-        + CKKSCopyOps<BE>
-        + PaCoSlotOps<BE>
-        + CKKSLinearTransformationOps<BE>
-        + CKKSModuleAlloc<BE>
-        + CyclotomicOrder,
     F: PaCoScalar,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
+    Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     let (output_scale, expected_final_k) = output_meta;
@@ -358,7 +392,12 @@ where
     // result is copied into `output` at the end. `output` is shadowed below so the
     // circuit body operates on the working accumulator unchanged.
     let working_k = branch_working_k(plan, expected_final_k)?;
-    let mut work = module.ckks_ciphertext_alloc(context.base2k(), TorusPrecision(working_k as u32));
+    let work_layout = branch_work_layout(module, context.base2k(), working_k)?;
+    let (mut work, scratch_rest) = scratch
+        .borrow()
+        .take_ckks_ciphertext_scratch(&work_layout, GLWEPlaintextMeta::default());
+    let (mut temporary, mut scratch_rest) = scratch_rest.take_ckks_ciphertext_scratch(&work_layout, GLWEPlaintextMeta::default());
+    let scratch = &mut scratch_rest;
     let destination = output;
     let output = &mut work;
 
@@ -369,14 +408,13 @@ where
     // before the circuit proper.
     let beta = scratch.scope(|arena| {
         let mut arena = arena;
-        BE::ckks_paco_coeff_encodings_impl::<F, _>(module, input, context.plan(), context.base2k(), &mut arena)
+        BE::ckks_paco_coeff_encodings::<F, _>(module, input, context, &mut arena)
     })?;
 
     // Step 2 — Blind rotation. Assemble the encrypted phase as the inner
     // product `Σ_t Enc(σ_t)·β_t` over the four structured-secret ciphertexts:
     // `bsk[0]·β[0]` seeds `output`, and each remaining `bsk[t]·β[t]`
     // accumulates through `temporary`.
-    let mut temporary = module.ckks_ciphertext_alloc(context.base2k(), TorusPrecision(working_k as u32));
     module.ckks_mul_pt_vec_into(output, &bsk[0], &beta[0], scratch)?;
     for index in 1..4 {
         module.ckks_mul_pt_vec_into(&mut temporary, &bsk[index], &beta[index], scratch)?;
@@ -388,7 +426,7 @@ where
     // Step 3 — Homomorphic trace `Tr_{N/2 → slots}`. Collapse the redundant
     // coefficient-class copies of the phase into the working slot layout. One
     // fused automorphism-add per level; consumes no budget.
-    module.ckks_slot_trace_assign(output, plan.half_n(), plan.slots(), keys.rotation_keys(), scratch)?;
+    BE::ckks_slot_trace_assign(module, output, plan.half_n(), plan.slots(), keys.rotation_keys(), scratch)?;
 
     // Step 4 — CoeffsToSlots (body). Apply the compiled C2S factor chain (one
     // linear transformation per factor matrix), moving the packed coefficients
@@ -396,21 +434,6 @@ where
     for factor in context.coeffs_to_slots() {
         module.ckks_eval_linear_transformation_self_assign(output, factor, keys.rotation_keys(), scratch)?;
     }
-
-    // `conj(·)` via the order `-1` automorphism key. Resolved at each point of
-    // use, not once: the product fold between the two uses spends budget, so the
-    // second conjugation runs at a narrower precision and can legitimately
-    // resolve to a different key or a different effective decomposition.
-    let _conjugation_key_for = |k: TorusPrecision| {
-        keys.rotation_keys()
-            .get_automorphism_key(-1, k)
-            .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
-                op: "ckks_paco_bootstrap",
-                rotation: -1,
-                k: k.into(),
-                source,
-            })
-    };
 
     // Step 5 — CoeffsToSlots (ψ tail). The conjugation-augmented final C2S
     // factor, scheduled apart from the body. Either the fused `Pair` form
@@ -425,7 +448,7 @@ where
             module.ckks_add_assign(output, &temporary, scratch)?;
         }
         PaCoPsiTailMaterial::Mask { mu, rotation } => {
-            module.ckks_conjugate_rotate_into(&mut temporary, output, *rotation, keys.rotation_keys(), scratch)?;
+            module.ckks_conjugate_rotate_into(*rotation, &mut temporary, output, keys.rotation_keys(), scratch)?;
             module.ckks_add_assign(output, &temporary, scratch)?;
             module.ckks_mul_pt_vec_assign(output, mu, scratch)?;
         }
@@ -435,7 +458,8 @@ where
     // reduction (`log(slots/2C)` ct×ct products, relinearized via the tensor
     // key) that multiplies the per-class phases together — the core nonlinear
     // stage of the branch. Consumes `log(slots/2C)·log_delta` budget bits.
-    module.ckks_slot_product_assign(
+    BE::ckks_slot_product_assign(
+        module,
         output,
         plan.slots(),
         plan.c().checked_mul(2).context("PaCo product target overflows usize")?,

@@ -37,11 +37,10 @@ use crate::{
     CKKSCtBounds, CKKSInfos, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotsKind,
     api::{CKKSDFTMatrixOps, CKKSDFTOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar},
     layouts::{
-        CKKSModuleAlloc, ComplexDiagonals, DFTMatrix, DFTMatrixPrepared, DFTPlan, DFTType, Decode, Encode, EncodedLut, EvalMod,
-        EvalModPlan, Split,
+        CKKSModuleAlloc, ComplexDiagonals, DFTMatrix, DFTMatrixPrepared, DFTPlan, DFTType, Decode, DftScalar, Encode, EncodedLut,
+        EvalMod, EvalModPlan, Split,
         eval_mod::{EvalModType, compile_eval_mod},
     },
-    reference::dft::DftScalar,
 };
 
 /// Stage ordering for the ModUp/EvalMod bootstrapping family.
@@ -842,7 +841,11 @@ impl<BE: Backend, F> BootstrappingContextUnprepared<BE, F> {
 
     /// Prepares the matrices into the resident form the pipeline evaluates.
     /// Each unprepared matrix is released as soon as it has been prepared.
-    pub fn prepare(self, module: &Module<BE>, scratch: &mut ScratchArena<'_, BE>) -> BootstrappingContext<BE, F>
+    ///
+    /// # Errors
+    ///
+    /// As [`CKKSDFTOps::ckks_prepare_dft_matrix`].
+    pub fn prepare(self, module: &Module<BE>, scratch: &mut ScratchArena<'_, BE>) -> Result<BootstrappingContext<BE, F>>
     where
         Module<BE>: CKKSDFTOps<BE>,
         CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE>,
@@ -864,31 +867,35 @@ impl<BE: Backend, F> BootstrappingContextUnprepared<BE, F> {
         } = self;
         let coeffs_to_slots = {
             let unprepared = coeffs_to_slots;
-            module.ckks_prepare_dft_matrix(&unprepared, scratch)
+            module.ckks_prepare_dft_matrix_alloc(&unprepared, scratch)?
         };
         let slots_to_coeffs = {
             let unprepared = slots_to_coeffs;
-            module.ckks_prepare_dft_matrix(&unprepared, scratch)
+            module.ckks_prepare_dft_matrix_alloc(&unprepared, scratch)?
         };
-        let coeffs_to_slots_bypass =
-            coeffs_to_slots_bypass.map(|unprepared| module.ckks_prepare_dft_matrix(&unprepared, scratch));
-        let eval_mod_ci = eval_mod_ci.map(|ci| EvalModCI {
-            eval_mod: ci.eval_mod,
-            pre: match ci.pre {
-                CIPreUnprepared::Product(pre) => CIPre(CIPreForm::Product(pre)),
-                CIPreUnprepared::Folded(folded) => {
-                    let [even, odd]: [_; 2] = module
-                        .ckks_prepare_dft_matrix(&folded, scratch)
-                        .inner
-                        .factors
-                        .try_into()
-                        .unwrap_or_else(|_| unreachable!("an even and an odd factor"));
-                    CIPre(CIPreForm::Folded { even, odd })
-                }
-            },
-            post: ci.post,
-        });
-        BootstrappingContext {
+        let coeffs_to_slots_bypass = coeffs_to_slots_bypass
+            .map(|unprepared| module.ckks_prepare_dft_matrix_alloc(&unprepared, scratch))
+            .transpose()?;
+        let eval_mod_ci = match eval_mod_ci {
+            Some(ci) => Some(EvalModCI {
+                eval_mod: ci.eval_mod,
+                pre: match ci.pre {
+                    CIPreUnprepared::Product(pre) => CIPre(CIPreForm::Product(pre)),
+                    CIPreUnprepared::Folded(folded) => {
+                        let [even, odd]: [_; 2] = module
+                            .ckks_prepare_dft_matrix_alloc(&folded, scratch)?
+                            .inner
+                            .factors
+                            .try_into()
+                            .unwrap_or_else(|_| unreachable!("an even and an odd factor"));
+                        CIPre(CIPreForm::Folded { even, odd })
+                    }
+                },
+                post: ci.post,
+            }),
+            None => None,
+        };
+        Ok(BootstrappingContext {
             plan,
             c2s_guard_bits,
             functional_message_modulus,
@@ -902,7 +909,7 @@ impl<BE: Backend, F> BootstrappingContextUnprepared<BE, F> {
             eval_mod_ci,
             pipeline,
             sparse_secret_hamming_weight,
-        }
+        })
     }
 }
 
@@ -916,8 +923,9 @@ where
     /// `EvalModPlan::meta`), including the CoeffsToSlots scaling resolved by
     /// [`BootstrappingPlan::new`].
     ///
-    /// `scratch` serves both generation and preparation, so it must also cover
-    /// [`BootstrappingContextUnprepared::prepare_tmp_bytes`]. That value is only
+    /// `scratch` serves both generation and preparation, so it must cover
+    /// [`Self::compile_unprepared_tmp_bytes`] and
+    /// [`BootstrappingContextUnprepared::prepare_tmp_bytes`]. The latter is only
     /// known once the matrices exist: use [`Self::compile_unprepared`] followed by
     /// [`BootstrappingContextUnprepared::prepare`] to size preparation exactly.
     pub fn compile(
@@ -930,7 +938,7 @@ where
         Module<BE>: CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F> + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
         CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE>,
     {
-        Ok(Self::compile_unprepared(module, base2k, plan, scratch)?.prepare(module, scratch))
+        Self::compile_unprepared(module, base2k, plan, scratch)?.prepare(module, scratch)
     }
 
     /// [`Self::compile`] for EvalMod on the conjugate-invariant ring: also encodes
@@ -957,24 +965,34 @@ where
         Module<BCI>: CKKSModuleAlloc<BCI> + CKKSEncodingOps<BCI, F>,
         CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE>,
     {
-        Ok(Self::compile_ci_unprepared(module, ci, base2k, plan, scratch, scratch_ci)?.prepare(module, scratch))
+        Self::compile_ci_unprepared(module, ci, base2k, plan, scratch, scratch_ci)?.prepare(module, scratch)
     }
 
-    /// Scratch of [`Self::compile_ci_unprepared`] for a bootstrap of degree `N = ci.n()`:
-    /// `(scratch, scratch_ci)`. Each encoding stages the values of one plaintext:
-    /// at most those of `u` and `v`, of degree `2N`, on `module`, and the
-    /// coefficients of a plaintext of degree `N` on `ci`.
-    pub fn compile_ci_unprepared_tmp_bytes<BCI>(module: &Module<BE>, ci: &Module<BCI>) -> (usize, usize)
+    /// Scratch of [`Self::compile_ci_unprepared`] for `plan` and a bootstrap of degree `N = ci.n()`:
+    /// `(scratch, scratch_ci)`. On `module`, the larger of [`Self::compile_unprepared_tmp_bytes`] of `plan` with its
+    /// DFT formats resolved at degree `N` and the encoding of `u` and `v`, of degree `2N`; on `ci`, the encoding of the
+    /// coefficients of a plaintext of degree `N`.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::compile_unprepared_tmp_bytes`].
+    pub fn compile_ci_unprepared_tmp_bytes<BCI>(
+        module: &Module<BE>,
+        ci: &Module<BCI>,
+        plan: &BootstrappingPlan,
+    ) -> Result<(usize, usize)>
     where
         BCI: Backend,
-        Module<BE>: CKKSEncodingOps<BE, F>,
+        Module<BE>: CKKSDFTMatrixOps<BE, F> + CKKSEncodingOps<BE, F>,
         Module<BCI>: CKKSEncodingOps<BCI, F>,
     {
         let n = ci.n();
-        (
-            <Module<BE> as CKKSEncodingHostOps<BE, F>>::ckks_reim_tmp_bytes(module, n),
+        let plan = plan.with_dft_formats_resolved_at(ci.log_n());
+        Ok((
+            Self::compile_unprepared_tmp_bytes(module, &plan)?
+                .max(<Module<BE> as CKKSEncodingHostOps<BE, F>>::ckks_reim_tmp_bytes(module, n)),
             <Module<BCI> as CKKSEncodingHostOps<BCI, F>>::ckks_reim_tmp_bytes(ci, n / 2),
-        )
+        ))
     }
 
     /// First stage of [`Self::compile_ci`]: generates the DFT matrices and encodes
@@ -1066,6 +1084,32 @@ where
             post,
         });
         Ok(context)
+    }
+
+    /// Scratch of [`Self::compile_unprepared`] for `plan`: the DFT matrices and EvalMod are built one after the other on
+    /// the same scratch, so the largest of their queries, [`CKKSDFTMatrixOps::ckks_new_dft_matrix_tmp_bytes`] of each
+    /// matrix and the slot encoding EvalMod stages its coefficients through.
+    ///
+    /// # Errors
+    ///
+    /// The plan-versus-ring error of [`CKKSDFTMatrixOps::ckks_new_dft_matrix`].
+    pub fn compile_unprepared_tmp_bytes(module: &Module<BE>, plan: &BootstrappingPlan) -> Result<usize>
+    where
+        Module<BE>: CKKSDFTMatrixOps<BE, F> + CKKSEncodingOps<BE, F>,
+    {
+        let mut bytes = module
+            .ckks_new_dft_matrix_tmp_bytes::<Encode, Split>(&plan.coeffs_to_slots)?
+            .max(module.ckks_new_dft_matrix_tmp_bytes::<Decode, Split>(&plan.slots_to_coeffs)?);
+        if let Some(bypass) = plan.coeffs_to_slots_bypass() {
+            bytes = bytes.max(module.ckks_new_dft_matrix_tmp_bytes::<Encode, Split>(bypass)?);
+        }
+        if plan.eval_mod_ring == EvalModRing::Standard {
+            bytes = bytes.max(<Module<BE> as CKKSEncodingHostOps<BE, F>>::ckks_reim_tmp_bytes(
+                module,
+                module.n() / 2,
+            ));
+        }
+        Ok(bytes)
     }
 
     /// First stage of [`Self::compile`]: generates the DFT matrices and encodes

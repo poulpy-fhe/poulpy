@@ -13,6 +13,7 @@ use super::helpers::{
     TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_decrypt_precision,
     assert_unary_output_meta, ckks_encrypt, gen_sk, test_vector_1,
 };
+use super::parity::helpers::with_scratch;
 use anyhow::Result;
 use poulpy_core::layouts::LWEInfos;
 use poulpy_hal::{
@@ -53,7 +54,9 @@ where
         &mut scratch.borrow(),
     );
     let mut ct_res = alloc_ct(&params, module, params.k);
-    module.ckks_copy(&mut ct_res, &ct, &mut scratch.borrow())?;
+    with_scratch::<BE, _>(module.ckks_copy_tmp_bytes(&ct_res, &ct), |s| {
+        module.ckks_copy(&mut ct_res, &ct, s)
+    })?;
     assert!(ct.noise().is_some());
     assert_eq!(ct_res.noise(), ct.noise());
     assert_unary_output_meta("copy", &ct_res, params.k, &ct);
@@ -103,11 +106,15 @@ where
     );
     let dst_k = ct.k().as_usize() - 1;
     let mut ct_res = alloc_ct(&params, module, dst_k);
-    module.ckks_copy(&mut ct_res, &ct, &mut scratch.borrow())?;
+    with_scratch::<BE, _>(module.ckks_copy_tmp_bytes(&ct_res, &ct), |s| {
+        module.ckks_copy(&mut ct_res, &ct, s)
+    })?;
     assert!(ct.noise().is_some());
     assert!(ct_res.noise().is_none());
     let mut dropped = alloc_ct(&params, module, ct.k().as_usize() - ct.base2k().as_usize());
-    module.ckks_copy(&mut dropped, &ct, &mut scratch.borrow())?;
+    with_scratch::<BE, _>(module.ckks_copy_tmp_bytes(&dropped, &ct), |s| {
+        module.ckks_copy(&mut dropped, &ct, s)
+    })?;
     assert!(dropped.noise().is_none());
     assert_unary_output_meta("copy smaller_output", &ct_res, dst_k, &ct);
     assert_decrypt_precision(

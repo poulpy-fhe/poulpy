@@ -21,7 +21,7 @@
 ///
 /// All type and trait names in the expansion resolve at the call site: the
 /// invoking module must import the shared bounds (`GLWECopy`, `GLWEShift`, `GLWENormalize`,
-/// `VecZnx{Lsh,Rsh}TmpBytes`, `CKKSPlaintextReference`, `CKKSModuleAlloc`, the
+/// `VecZnx{Lsh,Rsh}TmpBytes`, `CKKSPlaintextVecReference`, `CKKSModuleAlloc`, the
 /// info traits) alongside its verb-specific ones.
 macro_rules! ckks_carry_verb_reference {
     (
@@ -88,7 +88,7 @@ macro_rules! ckks_carry_verb_reference {
                     let offset = ckks_offset_binary(dst, a, b);
                     // Validate before mutating: on error `dst` must remain untouched.
                     let log_budget =
-                        checked_log_budget_sub(stringify!($verb), a.log_budget().min(b.log_budget()), offset)?;
+                        checked_log_budget_sub(concat!("ckks_", stringify!($verb), "_into"), a.log_budget().min(b.log_budget()), offset)?;
 
                     // Align both operands to the common torus level: operand `x` is
                     // shifted by `x.log_budget − min_budget + offset`. When both
@@ -152,12 +152,16 @@ macro_rules! ckks_carry_verb_reference {
                     scratch: &mut ScratchArena<'_, BE>,
                 ) -> Result<()>
                 where
-                    Self: GLWECopy<BE> + GLWEShift<BE> $(+ $PtVecBound<BE>)+ + CKKSPlaintextReference<BE>,
+                    Self: GLWECopy<BE> + GLWEShift<BE> $(+ $PtVecBound<BE>)+ + CKKSPlaintextVecReference<BE>,
                     Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
                     A: GLWEToBackendRef<BE> + CKKSInfos,
                     P: GLWEToBackendRef<BE> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
                 {
-                    $crate::ckks_copy_stamp_unary(self, concat!(stringify!($verb), "_pt_vec"), dst, a, scratch)?;
+                    const OP: &str = concat!("ckks_", stringify!($verb), "_pt_vec");
+                    // The copy's budget check, then the plaintext's at the budget the copy leaves, before it writes.
+                    let log_budget = checked_log_budget_sub(OP, a.log_budget(), $crate::ckks_offset_unary(dst, a))?;
+                    $crate::ensure_plaintext_vec_operand(OP, dst.base2k().as_usize(), dst.n().as_usize(), log_budget, pt, BE::MIN_DEGREE)?;
+                    $crate::ckks_copy_stamp_unary(self, OP, dst, a, scratch)?;
                     self.[<ckks_ $verb _pt_vec_assign_reference>](dst, pt, scratch)
                 }
 
@@ -168,11 +172,11 @@ macro_rules! ckks_carry_verb_reference {
                     scratch: &mut ScratchArena<'_, BE>,
                 ) -> Result<()>
                 where
-                    Self: CKKSPlaintextReference<BE> $(+ $PtVecBound<BE>)+,
+                    Self: CKKSPlaintextVecReference<BE> $(+ $PtVecBound<BE>)+,
                     Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
                     P: GLWEToBackendRef<BE> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
                 {
-                    CKKSPlaintextReference::[<ckks_ $verb _pt_vec_into_reference>](self, dst, pt, scratch)?;
+                    CKKSPlaintextVecReference::[<ckks_ $verb _pt_vec_into_reference>](self, dst, pt, scratch)?;
                     dst.set_log_sparsity(dst.log_sparsity().min(dst.log_n() - pt.log_n()));
                     dst.set_slots(dst.slots().join(pt.slots()));
                     Ok(())
@@ -181,19 +185,31 @@ macro_rules! ckks_carry_verb_reference {
                 fn [<ckks_ $verb _pt_const_into_reference>]<Dst, A, P>(
                     &self,
                     dst: &mut Dst,
-                    a: &A,
                     dst_coeff: usize,
+                    a: &A,
                     cst: &P,
                     const_coeff: usize,
                     scratch: &mut ScratchArena<'_, BE>,
                 ) -> Result<()>
                 where
-                    Self: GLWECopy<BE> + GLWEShift<BE> $(+ $PtVecBound<BE>)+ + CKKSPlaintextReference<BE>,
+                    Self: GLWECopy<BE> + GLWEShift<BE> $(+ $PtVecBound<BE>)+ + CKKSPlaintextVecReference<BE>,
                     Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
                     A: GLWEToBackendRef<BE> + CKKSInfos,
                     P: GLWEToBackendRef<BE> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
                 {
-                    $crate::ckks_copy_stamp_unary(self, concat!(stringify!($verb), "_pt_const"), dst, a, scratch)?;
+                    const OP: &str = concat!("ckks_", stringify!($verb), "_pt_const");
+                    // The copy's budget check, then the plaintext's at the budget the copy leaves, before it writes.
+                    let log_budget = checked_log_budget_sub(OP, a.log_budget(), $crate::ckks_offset_unary(dst, a))?;
+                    $crate::ensure_plaintext_const_operand(
+                        OP,
+                        dst.base2k().as_usize(),
+                        dst.n().as_usize(),
+                        dst_coeff,
+                        log_budget,
+                        cst,
+                        const_coeff,
+                    )?;
+                    $crate::ckks_copy_stamp_unary(self, OP, dst, a, scratch)?;
                     self.[<ckks_ $verb _pt_const_assign_reference>](dst, dst_coeff, cst, const_coeff, scratch)
                 }
 
@@ -206,11 +222,11 @@ macro_rules! ckks_carry_verb_reference {
                     scratch: &mut ScratchArena<'_, BE>,
                 ) -> Result<()>
                 where
-                    Self: CKKSPlaintextReference<BE> $(+ $PtVecBound<BE>)+,
+                    Self: CKKSPlaintextVecReference<BE> $(+ $PtVecBound<BE>)+,
                     Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
                     P: GLWEToBackendRef<BE> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
                 {
-                    CKKSPlaintextReference::[<ckks_ $verb _pt_const_into_reference>](self, dst, dst_coeff, cst, const_coeff, scratch)?;
+                    CKKSPlaintextVecReference::[<ckks_ $verb _pt_const_into_reference>](self, dst, dst_coeff, cst, const_coeff, scratch)?;
                     // cst is always tagged as real, it's where dst_coeff lands
                     // that selects if the added constant is real (X^{0}) or imaginary (X^{N/2}).
                     let added = if dst_coeff == 0 { $crate::SlotsKind::Real } else { $crate::SlotsKind::Complex };

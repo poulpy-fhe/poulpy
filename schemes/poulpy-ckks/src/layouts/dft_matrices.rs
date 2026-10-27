@@ -27,19 +27,14 @@
 //! encoder stores each of them on that many slots
 //! ([`ComplexDiagonals::build_transform`]).
 
-use num_traits::{Float, FloatConst};
+use crate::numerics::CKKSFloat;
+use num_traits::Float;
 use poulpy_core::layouts::{Diagonals, period_lcm};
 
 use crate::layouts::{
     ComplexDiagonals,
-    dft::{DFTOutputFormat, DFTPlan, DFTType},
+    dft::{DFTOutputFormat, DFTPlan, DFTType, DftScalar},
 };
-use crate::numerics::CKKSFloat;
-
-/// Real scalar used for plaintext DFT-matrix generation, with platform-independent
-/// setup math and correctly rounded roots of unity.
-pub trait DftScalar: CKKSFloat + FloatConst {}
-impl<F: CKKSFloat + FloatConst> DftScalar for F {}
 
 /// A minimal complex *scalar* for the butterfly math (roots, the per-layer
 /// coefficient vectors `a`/`b`/`c`, and `rotate_and_mul`). The diagonal *maps*

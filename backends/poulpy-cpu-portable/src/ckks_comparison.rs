@@ -1,36 +1,12 @@
 #[cfg(any(test, feature = "enable-test-suite"))]
 mod comparison {
-    use crate::test_suite::ControlledSamplingFFT64Portable;
-    poulpy_ckks::impl_ckks_plaintext_reference!(ControlledSamplingFFT64Portable);
-    poulpy_ckks::impl_ckks_copy_reference!(ControlledSamplingFFT64Portable);
-    poulpy_ckks::impl_ckks_add_reference!(ControlledSamplingFFT64Portable);
-    poulpy_ckks::impl_ckks_sub_reference!(ControlledSamplingFFT64Portable);
-    poulpy_ckks::impl_ckks_neg_reference!(ControlledSamplingFFT64Portable);
-    poulpy_ckks::impl_ckks_pow2_reference!(ControlledSamplingFFT64Portable);
-    poulpy_ckks::impl_ckks_imag_reference!(ControlledSamplingFFT64Portable);
-    poulpy_ckks::impl_ckks_rotate_reference!(ControlledSamplingFFT64Portable);
-    poulpy_ckks::impl_ckks_inner_sum_derived_full!(ControlledSamplingFFT64Portable);
-    poulpy_ckks::impl_ckks_conjugate_reference!(ControlledSamplingFFT64Portable);
-    poulpy_ckks::impl_ckks_encryption_reference!(ControlledSamplingFFT64Portable);
-    poulpy_ckks::impl_ckks_mul_reference!(ControlledSamplingFFT64Portable);
-    poulpy_ckks::impl_ckks_dot_product_reference!(ControlledSamplingFFT64Portable);
-    poulpy_ckks::impl_ckks_linear_transformation_reference!(ControlledSamplingFFT64Portable);
-    poulpy_ckks::impl_ckks_polynomial_evaluation_reference!(ControlledSamplingFFT64Portable);
-    poulpy_ckks::impl_ckks_complex_polynomial_evaluation_reference!(ControlledSamplingFFT64Portable);
-    poulpy_ckks::impl_ckks_eval_mod_reference!(ControlledSamplingFFT64Portable);
+    use crate::test_suite::{ControlledSamplingFFT64CIPortable, ControlledSamplingFFT64Portable};
 
-    use crate::test_suite::ControlledSamplingFFT64CIPortable;
-    poulpy_ckks::impl_ckks_plaintext_reference!(ControlledSamplingFFT64CIPortable);
-    poulpy_ckks::impl_ckks_copy_reference!(ControlledSamplingFFT64CIPortable);
-    poulpy_ckks::impl_ckks_add_reference!(ControlledSamplingFFT64CIPortable);
-    poulpy_ckks::impl_ckks_sub_reference!(ControlledSamplingFFT64CIPortable);
-    poulpy_ckks::impl_ckks_neg_reference!(ControlledSamplingFFT64CIPortable);
-    poulpy_ckks::impl_ckks_pow2_reference!(ControlledSamplingFFT64CIPortable);
-    poulpy_ckks::impl_ckks_rotate_reference!(ControlledSamplingFFT64CIPortable);
-    poulpy_ckks::impl_ckks_inner_sum_derived_full!(ControlledSamplingFFT64CIPortable);
-    poulpy_ckks::impl_ckks_encryption_reference!(ControlledSamplingFFT64CIPortable);
-    poulpy_ckks::impl_ckks_mul_reference!(ControlledSamplingFFT64CIPortable);
-    poulpy_ckks::impl_ckks_dot_product_reference!(ControlledSamplingFFT64CIPortable);
-    poulpy_ckks::impl_ckks_linear_transformation_reference!(ControlledSamplingFFT64CIPortable);
-    poulpy_ckks::impl_ckks_polynomial_evaluation_reference!(ControlledSamplingFFT64CIPortable);
+    poulpy_ckks::impl_ckks_reference_full!(ControlledSamplingFFT64Portable);
+    // EvalMod's standard reference evaluates through multiplication by i and complex polynomial evaluation.
+    poulpy_ckks::impl_ckks_imag_reference_full!(ControlledSamplingFFT64Portable);
+    poulpy_ckks::impl_ckks_conjugate_reference_full!(ControlledSamplingFFT64Portable);
+    poulpy_ckks::impl_ckks_complex_polynomial_evaluation_reference_full!(ControlledSamplingFFT64Portable);
+
+    poulpy_ckks::impl_ckks_reference_full!(ControlledSamplingFFT64CIPortable);
 }

@@ -33,10 +33,10 @@ use poulpy_core::{
 };
 use poulpy_hal::layouts::{Backend, CyclotomicOrder, HostBytesBackend, HostStaged, Module};
 
-fn run<B>(params: CKKSTestParams, module: &Module<B>) -> Vec<(Result<(), String>, Snapshot, Snapshot)>
+fn run<BE>(params: CKKSTestParams, module: &Module<BE>) -> Vec<(Result<(), String>, Snapshot, Snapshot)>
 where
-    B: Backend<ZnxWord = i64> + CKKSEncapsulatedModUpImpl,
-    Module<B>: GGLWEPreparedFactory<B> + GLWEMaskFill<B> + GLWEAdd<B>,
+    BE: Backend<ZnxWord = i64> + CKKSEncapsulatedModUpImpl,
+    Module<BE>: GGLWEPreparedFactory<BE> + GLWEMaskFill<BE> + GLWEAdd<BE>,
 {
     let b = params.base2k;
     let small = 3 * b + 1;
@@ -98,17 +98,17 @@ where
         let mut s2d = module.gglwe_prepared_alloc_from_infos(&s2d_layout);
         for (prepared, layout, seed) in [(&mut d2s, &d2s_layout, 31), (&mut s2d, &s2d_layout, 37)] {
             let coefficients = fixture_gglwe(module, layout, seed);
-            with_scratch::<B, _>(module.gglwe_prepare_tmp_bytes(layout), |scratch| {
+            with_scratch::<BE, _>(module.gglwe_prepare_tmp_bytes(layout), |scratch| {
                 module.gglwe_prepare(prepared, &coefficients, scratch)
             });
         }
         let s2d = s2d.with_k_digit(TorusPrecision(view_k_digit as u32)).unwrap();
-        let bytes = B::ckks_encapsulated_mod_up_tmp_bytes(module, &dst_layout, &src_layout, &d2s_layout, &s2d);
+        let bytes = BE::ckks_encapsulated_mod_up_tmp_bytes(module, &dst_layout, &src_layout, &d2s_layout, &s2d);
         for (seed, lazy) in [(41, false), (43, true)] {
             let mut src = fixture_operand(module, &src_layout, seed, lazy);
             let mut dst = fixture_ciphertext(module, &dst_layout, 47);
-            let result = with_scratch::<B, _>(bytes, |scratch| {
-                B::ckks_encapsulated_mod_up(module, &mut dst, &mut src, scale, &d2s.to_backend_ref(), &s2d, scratch)
+            let result = with_scratch::<BE, _>(bytes, |scratch| {
+                BE::ckks_encapsulated_mod_up(module, &mut dst, &mut src, scale, &d2s.to_backend_ref(), &s2d, scratch)
             });
             assert_eq!(result.is_ok(), extra >= scale, "modulus raise acceptance changed");
             if result.is_ok() {
@@ -123,8 +123,8 @@ where
             }
             results.push((
                 result.map_err(|error| error.to_string()),
-                snapshot::<B, _>(&src),
-                snapshot::<B, _>(&dst),
+                snapshot::<BE, _>(&src),
+                snapshot::<BE, _>(&dst),
             ));
         }
     }
@@ -171,16 +171,16 @@ where
         let mut s2d = module.gglwe_prepared_alloc_from_infos(&s2d_layout);
         for (prepared, layout, seed) in [(&mut d2s, &d2s_layout, 53), (&mut s2d, &s2d_layout, 59)] {
             let coefficients = fixture_gglwe(module, layout, seed);
-            with_scratch::<B, _>(module.gglwe_prepare_tmp_bytes(layout), |scratch| {
+            with_scratch::<BE, _>(module.gglwe_prepare_tmp_bytes(layout), |scratch| {
                 module.gglwe_prepare(prepared, &coefficients, scratch)
             });
         }
-        let bytes = B::ckks_encapsulated_mod_up_tmp_bytes(module, &dst_layout, &src_layout, &d2s_layout, &s2d_layout);
+        let bytes = BE::ckks_encapsulated_mod_up_tmp_bytes(module, &dst_layout, &src_layout, &d2s_layout, &s2d_layout);
         for (seed, lazy) in [(61, false), (67, true)] {
             let mut src = fixture_operand(module, &src_layout, seed, lazy);
             let mut dst = fixture_ciphertext(module, &dst_layout, 71);
-            let result = with_scratch::<B, _>(bytes, |scratch| {
-                B::ckks_encapsulated_mod_up(
+            let result = with_scratch::<BE, _>(bytes, |scratch| {
+                BE::ckks_encapsulated_mod_up(
                     module,
                     &mut dst,
                     &mut src,
@@ -207,8 +207,8 @@ where
             }
             results.push((
                 result.map_err(|error| error.to_string()),
-                snapshot::<B, _>(&src),
-                snapshot::<B, _>(&dst),
+                snapshot::<BE, _>(&src),
+                snapshot::<BE, _>(&dst),
             ));
         }
     }
@@ -218,39 +218,39 @@ where
 /// Compare selected implementations using the same canonical inputs and key
 /// coefficients. Source mutations, destination metadata, errors, and each
 /// implementation's own exact guarded scratch budget are part of the contract.
-pub fn test_encapsulated_mod_up_parity<BR, BT, F>(params: CKKSTestParams, reference: &Module<BR>, tested: &Module<BT>)
+pub fn test_encapsulated_mod_up_parity<BR, BT, F>(params: CKKSTestParams, module_ref: &Module<BR>, module_test: &Module<BT>)
 where
     BR: Backend<ZnxWord = i64> + CKKSEncapsulatedModUpImpl,
     BT: Backend<ZnxWord = i64> + CKKSEncapsulatedModUpImpl,
     Module<BR>: GGLWEPreparedFactory<BR> + GLWEMaskFill<BR> + GLWEAdd<BR>,
     Module<BT>: GGLWEPreparedFactory<BT> + GLWEMaskFill<BT> + GLWEAdd<BT>,
 {
-    assert_eq!(reference.n(), tested.n());
-    let want = run(params, reference);
+    assert_eq!(module_ref.n(), module_test.n());
+    let want = run(params, module_ref);
     assert_untagged(
         "encapsulated ModUp",
         want.iter().filter(|(result, _, _)| result.is_ok()).map(|(_, _, dst)| dst),
     );
-    assert_eq!(want, run(params, tested), "encapsulated ModUp differs");
+    assert_eq!(want, run(params, module_test), "encapsulated ModUp differs");
 }
 
 /// Fixture key store of the bootstrapping parity tests: identical coefficients
 /// on every backend, each preparing its own representation.
-pub struct FixtureKeys<B: Backend> {
-    rotation_keys: HashMap<i64, GLWEAutomorphismKeyPrepared<B::OwnedBuf, B>>,
-    tensor_key: GLWETensorKeyPrepared<B::OwnedBuf, B>,
-    encapsulation_keys: Option<(FixtureSwitchingKey<B>, FixtureSwitchingKey<B>)>,
+pub struct FixtureKeys<BE: Backend> {
+    rotation_keys: HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>>,
+    tensor_key: GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
+    encapsulation_keys: Option<(FixtureSwitchingKey<BE>, FixtureSwitchingKey<BE>)>,
 }
 
-type FixtureSwitchingKey<B> = GGLWEPrepared<<B as Backend>::OwnedBuf, B>;
+type FixtureSwitchingKey<BE> = GGLWEPrepared<<BE as Backend>::OwnedBuf, BE>;
 
-impl<B: Backend> BootstrappingLinearKeys<B> for FixtureKeys<B>
+impl<BE: Backend> BootstrappingLinearKeys<BE> for FixtureKeys<BE>
 where
-    GLWEAutomorphismKeyPrepared<B::OwnedBuf, B>: GLWEAutomorphismKeyPreparedToBackendRef<B>,
-    GGLWEPrepared<B::OwnedBuf, B>: GGLWEPreparedToBackendRef<B> + GGLWEInfos,
+    GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>: GLWEAutomorphismKeyPreparedToBackendRef<BE>,
+    GGLWEPrepared<BE::OwnedBuf, BE>: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
 {
-    type RotationKeys = HashMap<i64, GLWEAutomorphismKeyPrepared<B::OwnedBuf, B>>;
-    type SwitchingKey = GGLWEPrepared<B::OwnedBuf, B>;
+    type RotationKeys = HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>>;
+    type SwitchingKey = GGLWEPrepared<BE::OwnedBuf, BE>;
 
     fn rotation_keys(&self) -> &Self::RotationKeys {
         &self.rotation_keys
@@ -261,13 +261,13 @@ where
     }
 }
 
-impl<B: Backend> BootstrappingKeys<B> for FixtureKeys<B>
+impl<BE: Backend> BootstrappingKeys<BE> for FixtureKeys<BE>
 where
-    GLWEAutomorphismKeyPrepared<B::OwnedBuf, B>: GLWEAutomorphismKeyPreparedToBackendRef<B>,
-    GLWETensorKeyPrepared<B::OwnedBuf, B>: GLWETensorKeyPreparedToBackendRef<B>,
-    GGLWEPrepared<B::OwnedBuf, B>: GGLWEPreparedToBackendRef<B> + GGLWEInfos,
+    GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>: GLWEAutomorphismKeyPreparedToBackendRef<BE>,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE>,
+    GGLWEPrepared<BE::OwnedBuf, BE>: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
 {
-    type TensorKey = GLWETensorKeyPrepared<B::OwnedBuf, B>;
+    type TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>;
 
     fn tensor_key(&self) -> &Self::TensorKey {
         &self.tensor_key
@@ -352,19 +352,19 @@ fn keys_layout(atk: &GGLWELayout, d2s: &GGLWELayout, s2d: &GGLWELayout, encapsul
     }
 }
 
-fn fixture_keys<B>(
-    module: &Module<B>,
+fn fixture_keys<BE>(
+    module: &Module<BE>,
     plan: &BootstrappingPlan,
     atk: &GGLWELayout,
     d2s: &GGLWELayout,
     s2d: &GGLWELayout,
-) -> FixtureKeys<B>
+) -> FixtureKeys<BE>
 where
-    B: Backend<ZnxWord = i64>,
-    Module<B>: GLWEAutomorphismKeyPreparedFactory<B>
-        + GLWETensorKeyPreparedFactory<B>
-        + GGLWEPreparedFactory<B>
-        + GLWEMaskFill<B>
+    BE: Backend<ZnxWord = i64>,
+    Module<BE>: GLWEAutomorphismKeyPreparedFactory<BE>
+        + GLWETensorKeyPreparedFactory<BE>
+        + GGLWEPreparedFactory<BE>
+        + GLWEMaskFill<BE>
         + CyclotomicOrder,
 {
     let rotation_keys = plan
@@ -384,24 +384,24 @@ where
 
 type Outcome = (Result<(), String>, Vec<Snapshot>);
 
-fn run_bootstrap<B, F>(params: CKKSTestParams, module: &Module<B>) -> Vec<Outcome>
+fn run_bootstrap<BE, F>(params: CKKSTestParams, module: &Module<BE>) -> Vec<Outcome>
 where
-    B: Backend<ZnxWord = i64> + CKKSBootstrappingImpl + HostStaged,
+    BE: Backend<ZnxWord = i64> + CKKSBootstrappingImpl + HostStaged,
     F: CKKSEncodingScalar,
-    Module<B>: CKKSDFTOps<B>
-        + CKKSDFTMatrixOps<B, F>
-        + CKKSEncodingOps<B, F>
-        + CKKSEncodingHostOps<B, F>
-        + CKKSModuleAlloc<B>
-        + CKKSAllOpsTmpBytes<B>
-        + GLWEAutomorphismKeyPreparedFactory<B>
-        + GLWETensorKeyPreparedFactory<B>
-        + GGLWEPreparedFactory<B>
-        + GLWEMaskFill<B>
+    Module<BE>: CKKSDFTOps<BE>
+        + CKKSDFTMatrixOps<BE, F>
+        + CKKSEncodingOps<BE, F>
+        + CKKSEncodingHostOps<BE, F>
+        + CKKSModuleAlloc<BE>
+        + CKKSAllOpsTmpBytes<BE>
+        + GLWEAutomorphismKeyPreparedFactory<BE>
+        + GLWETensorKeyPreparedFactory<BE>
+        + GGLWEPreparedFactory<BE>
+        + GLWEMaskFill<BE>
         + CyclotomicOrder,
-    CKKSPlaintextOwned<B>: GLWEToBackendRef<B> + CKKSCtBounds + DiagonalProd<B>,
-    FixtureKeys<B>: BootstrappingKeys<B> + Sync,
-    <FixtureKeys<B> as BootstrappingKeys<B>>::TensorKey: Sync,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE>,
+    FixtureKeys<BE>: BootstrappingKeys<BE> + Sync,
+    <FixtureKeys<BE> as BootstrappingKeys<BE>>::TensorKey: Sync,
 {
     let (n, b) = (module.n(), params.base2k);
     let log_slots = n.ilog2() as usize - 1;
@@ -450,49 +450,50 @@ where
         let layout = keys_layout(&atk, &d2s, &s2d, encapsulate);
         let pt = ct_layout(n, b, 16 + 2 * b, 16, SlotsKind::Complex);
         let compile = module
-            .ckks_all_ops_with_atk_tmp_bytes(&out_layout, &atk, &atk, &pt)
-            .max(<Module<B> as CKKSEncodingHostOps<B, F>>::ckks_reim_tmp_bytes(module, n / 2));
+            .ckks_all_ops_with_atk_tmp_bytes(&out_layout, &pt, &atk, &atk)
+            .max(<Module<BE> as CKKSEncodingHostOps<BE, F>>::ckks_reim_tmp_bytes(module, n / 2));
         // Staged compilation: preparation runs with exactly its advertised scratch.
-        let unprepared = with_scratch::<B, _>(compile, |scratch| {
-            BootstrappingContext::<B, F>::compile_unprepared(module, b.into(), &plan, scratch)
+        let unprepared = with_scratch::<BE, _>(compile, |scratch| {
+            BootstrappingContext::<BE, F>::compile_unprepared(module, b.into(), &plan, scratch)
         })
         .unwrap();
-        let ctx = with_scratch::<B, _>(unprepared.prepare_tmp_bytes(module), |scratch| {
+        let ctx = with_scratch::<BE, _>(unprepared.prepare_tmp_bytes(module), |scratch| {
             unprepared.prepare(module, scratch)
-        });
+        })
+        .unwrap();
         let keys = fixture_keys(module, &plan, &atk, &d2s, &s2d);
         let ct_in = fixture_ciphertext(module, &in_layout, 89);
         if functional {
             let luts = [lut.transfer_to(module)];
             let mut outs = vec![fixture_ciphertext(module, &out_layout, 97)];
-            let bytes = B::ckks_functional_bootstrap_tmp_bytes_impl(module, &outs[0], &ct_in, &ctx, &luts, &layout);
-            let result = with_scratch::<B, _>(bytes, |scratch| {
-                B::ckks_functional_bootstrap_impl(module, &mut outs, &ct_in, &ctx, &luts, &keys, scratch)
+            let bytes = BE::ckks_functional_bootstrap_tmp_bytes(module, &outs[0], &ct_in, &ctx, &luts, &layout);
+            let result = with_scratch::<BE, _>(bytes, |scratch| {
+                BE::ckks_functional_bootstrap(module, &mut outs, &ct_in, &ctx, &luts, &keys, scratch)
             });
             assert!(result.is_ok(), "{pipeline:?}: {result:?}");
-            results.push((result.map_err(|e| e.to_string()), vec![snapshot::<B, _>(&outs[0])]));
+            results.push((result.map_err(|e| e.to_string()), vec![snapshot::<BE, _>(&outs[0])]));
             continue;
         }
-        let bytes = B::ckks_bootstrap_tmp_bytes_impl(module, &out_layout, &in_layout, &ctx, &layout);
+        let bytes = BE::ckks_bootstrap_tmp_bytes(module, &out_layout, &in_layout, &ctx, &layout);
         let mut out = fixture_ciphertext(module, &out_layout, 97);
-        let result = with_scratch::<B, _>(bytes, |scratch| {
-            B::ckks_bootstrap_impl(module, &mut out, &ct_in, &ctx, &keys, scratch)
+        let result = with_scratch::<BE, _>(bytes, |scratch| {
+            BE::ckks_bootstrap(module, &mut out, &ct_in, &ctx, &keys, scratch)
         });
         assert!(result.is_ok(), "{pipeline:?}: {result:?}");
-        results.push((result.map_err(|e| e.to_string()), vec![snapshot::<B, _>(&out)]));
+        results.push((result.map_err(|e| e.to_string()), vec![snapshot::<BE, _>(&out)]));
         if pipeline == BootstrappingPipeline::C2SFirst {
             let mut raised = fixture_ciphertext(module, &out_layout, 101);
-            let result = with_scratch::<B, _>(B::ckks_mod_up_tmp_bytes_impl(module, raised.size()), |scratch| {
-                B::ckks_mod_up_into_impl(module, &mut raised, &ct_in, plan.eval_mod(), scratch)
+            let result = with_scratch::<BE, _>(BE::ckks_mod_up_tmp_bytes(module, raised.size()), |scratch| {
+                BE::ckks_mod_up_into(module, &mut raised, &ct_in, plan.eval_mod(), scratch)
             });
             assert!(result.is_ok(), "{pipeline:?}: {result:?}");
-            results.push((result.map_err(|e| e.to_string()), vec![snapshot::<B, _>(&raised)]));
+            results.push((result.map_err(|e| e.to_string()), vec![snapshot::<BE, _>(&raised)]));
             let mut raised = fixture_ciphertext(module, &out_layout, 103);
-            let result = with_scratch::<B, _>(bytes, |scratch| {
-                B::ckks_bootstrap_mod_up_impl(module, &mut raised, &ct_in, plan.eval_mod(), &keys, scratch)
+            let result = with_scratch::<BE, _>(bytes, |scratch| {
+                BE::ckks_bootstrap_mod_up(module, &mut raised, &ct_in, plan.eval_mod(), &keys, scratch)
             });
             assert!(result.is_ok(), "{pipeline:?}: {result:?}");
-            results.push((result.map_err(|e| e.to_string()), vec![snapshot::<B, _>(&raised)]));
+            results.push((result.map_err(|e| e.to_string()), vec![snapshot::<BE, _>(&raised)]));
         }
     }
     results
@@ -502,7 +503,7 @@ where
 /// and key coefficients: C2S-first, S2C-first, real slots, EvalRound+,
 /// encapsulation, functional bootstrapping and the ModUp stages, each within its
 /// own exact guarded scratch budget.
-pub fn test_bootstrapping_parity<BR, BT, F>(params: CKKSTestParams, reference: &Module<BR>, tested: &Module<BT>)
+pub fn test_bootstrapping_parity<BR, BT, F>(params: CKKSTestParams, module_ref: &Module<BR>, module_test: &Module<BT>)
 where
     BR: Backend<ZnxWord = i64> + CKKSBootstrappingImpl + HostStaged,
     BT: Backend<ZnxWord = i64> + CKKSBootstrappingImpl + HostStaged,
@@ -536,13 +537,13 @@ where
     FixtureKeys<BT>: BootstrappingKeys<BT> + Sync,
     <FixtureKeys<BT> as BootstrappingKeys<BT>>::TensorKey: Sync,
 {
-    assert_eq!(reference.n(), tested.n());
-    let want = run_bootstrap::<BR, F>(params, reference);
+    assert_eq!(module_ref.n(), module_test.n());
+    let want = run_bootstrap::<BR, F>(params, module_ref);
     assert_untagged(
         "bootstrapping",
         want.iter()
             .filter(|(result, _)| result.is_ok())
             .flat_map(|(_, outputs)| outputs),
     );
-    assert_eq!(want, run_bootstrap::<BT, F>(params, tested), "bootstrapping differs");
+    assert_eq!(want, run_bootstrap::<BT, F>(params, module_test), "bootstrapping differs");
 }

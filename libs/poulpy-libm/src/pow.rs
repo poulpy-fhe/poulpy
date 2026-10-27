@@ -205,9 +205,9 @@ pub trait CKKSPowOps<BE: Backend> {
     /// and of the final `ckks_copy`. The products run in scratch, so `res` is untouched on `Err`.
     fn ckks_powi<R, I, H>(
         &self,
+        exponent: u32,
         res: &mut R,
         input: &I,
-        exponent: u32,
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -279,7 +279,7 @@ where
                 .max(self.ckks_copy_tmp_bytes(res, input))
     }
 
-    fn ckks_powi<R, I, H>(&self, res: &mut R, input: &I, exponent: u32, tsk: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_powi<R, I, H>(&self, exponent: u32, res: &mut R, input: &I, tsk: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         I: GLWEToBackendRef<BE> + CKKSCtBounds,

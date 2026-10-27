@@ -28,7 +28,17 @@ use crate::{CKKSCtBounds, SetCKKSInfos, layouts::CKKSCiphertext};
 /// spends one bit of budget; normalization rounds ties to even, so they carry no
 /// bias. Both keep the sparsity, set the slot kind to `SlotsKind::Real` and leave
 /// canonical outputs.
+///
+/// # Errors
+///
+/// In this order, before any write, `dst` staying untouched: `InvalidOperand` when the conjugate-invariant degree is
+/// not half the standard one, the standard degree exceeds the module degree, the ranks differ, `dst` cannot hold the
+/// output width or, for the embedding, has another radix than `src`, then when the key does not have the standard
+/// degree and the ciphertext rank or is narrower than the switched input (`src.k()`); for the trace,
+/// `InsufficientHomomorphicCapacity` when `src` has no bit of budget left; `CKKSError::Internal` with less scratch
+/// than the method's query reports.
 pub trait CKKSCIRingMapOps<BE: Backend> {
+    /// Covers every input width `dst` holds: the key switch is sized at its allocated width.
     fn ckks_ci_embed_tmp_bytes<R, K>(&self, res_infos: &R, key_infos: &K) -> usize
     where
         R: GLWEInfos,

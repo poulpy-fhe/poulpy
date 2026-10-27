@@ -22,8 +22,8 @@ use std::collections::HashMap;
 
 use poulpy_core::{GLWECopy, TransferInto, api::GLWESecretPreparedFactory, layouts::ModuleCoreAlloc};
 use poulpy_hal::{
-    api::{CnvPVecAlloc, NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{HostBytesBackend, Module, ScratchOwned, Standard},
+    api::{CnvPVecAlloc, NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
+    layouts::{HostBytesBackend, Module, Standard},
     source::Source,
 };
 
@@ -32,7 +32,6 @@ use crate::{
     api::{CKKSLinearTransformationOps, CKKSPaCoOps, PaCoScalar},
     encoding::paco::coeff_enc::glwe_column_residues,
     layouts::{CKKSModuleAlloc, PaCoContext, PaCoDFTPlan, PaCoKeysPrepared, PaCoPlan, PaCoSecretSpec, ScratchArenaTakeCKKS},
-    reference::paco::ops::PaCoSlotOps,
     test_suite::reference_encoder::ReferenceEncoder,
     test_suite::{
         CKKSTestParams,
@@ -42,6 +41,7 @@ use crate::{
         },
         paco_ops::assert_slots,
         paco_reference_model::seq_paco_reference,
+        parity::helpers::with_scratch,
     },
 };
 
@@ -56,7 +56,6 @@ where
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSLinearTransformationOps<BE>
-        + PaCoSlotOps<BE>
         + CKKSPaCoOps<BE, F>
         + CnvPVecAlloc<BE>
         + GLWECopy<BE>,
@@ -85,7 +84,6 @@ where
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSLinearTransformationOps<BE>
-        + PaCoSlotOps<BE>
         + CKKSPaCoOps<BE, F>
         + CnvPVecAlloc<BE>
         + GLWECopy<BE>,
@@ -125,7 +123,6 @@ fn seq_bootstrap_case<BE, F, E>(
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSLinearTransformationOps<BE>
-        + PaCoSlotOps<BE>
         + CKKSPaCoOps<BE, F>
         + CnvPVecAlloc<BE>
         + GLWECopy<BE>,
@@ -253,17 +250,13 @@ fn seq_bootstrap_case<BE, F, E>(
     // compare only the final ciphertext with the independent cleartext model.
     let bsk_budget = k_boot - log_delta;
     let mut out = module.ckks_ciphertext_alloc(params.base2k.into(), k_out);
-    // Sized by the operation, not the generic all-ops budget: PaCo's branch
-    // working precision is wider than any single op the budget covers.
-    let mut scratch = ScratchOwned::<BE>::alloc(
-        module
-            .ckks_paco_bootstrap_direct_tmp_bytes(&out, &ct_in, &ctx, &keys)
-            .unwrap()
-            .max(scratch.borrow().available()),
-    );
-    module
-        .ckks_paco_bootstrap_direct_into::<_, _>(&mut out, &ct_in, &ctx, &keys, &mut scratch.borrow())
+    let paco_bytes = module
+        .ckks_paco_bootstrap_direct_tmp_bytes(&out, &ct_in, &ctx, &keys)
         .unwrap();
+    with_scratch::<BE, _>(paco_bytes, |s| {
+        module.ckks_paco_bootstrap_direct_into::<_, _>(&mut out, &ct_in, &ctx, &keys, s)
+    })
+    .unwrap();
     assert_slots::<BE, F, E>(
         &format!("paco_seq_bootstrap[final]({paco_h},{paco_c},{slot_order:?})"),
         &module,
@@ -282,9 +275,13 @@ fn seq_bootstrap_case<BE, F, E>(
     if k_out.as_usize() > 2 * params.base2k {
         let k_low = k_out.as_usize() - 5;
         let mut out_low = module.ckks_ciphertext_alloc(params.base2k.into(), k_low.into());
-        module
-            .ckks_paco_bootstrap_direct_into::<_, _>(&mut out_low, &ct_in, &ctx, &keys, &mut scratch.borrow())
+        let low_bytes = module
+            .ckks_paco_bootstrap_direct_tmp_bytes(&out_low, &ct_in, &ctx, &keys)
             .unwrap();
+        with_scratch::<BE, _>(low_bytes, |s| {
+            module.ckks_paco_bootstrap_direct_into::<_, _>(&mut out_low, &ct_in, &ctx, &keys, s)
+        })
+        .unwrap();
         assert_eq!(
             poulpy_core::layouts::LWEInfos::k(&out_low).as_usize(),
             k_low,
@@ -352,9 +349,13 @@ fn seq_bootstrap_case<BE, F, E>(
     let (mut ct_view, mut rest) = view_scratch.take_ckks_ciphertext_like_scratch(&ct_in);
     module.glwe_copy(&mut ct_view, &ct_in, &mut rest);
     let mut out_view = module.ckks_ciphertext_alloc(params.base2k.into(), k_out);
-    module
-        .ckks_paco_bootstrap_direct_into::<_, _>(&mut out_view, &ct_view, &ctx, &keys, &mut scratch.borrow())
+    let view_bytes = module
+        .ckks_paco_bootstrap_direct_tmp_bytes(&out_view, &ct_view, &ctx, &keys)
         .unwrap();
+    with_scratch::<BE, _>(view_bytes, |s| {
+        module.ckks_paco_bootstrap_direct_into::<_, _>(&mut out_view, &ct_view, &ctx, &keys, s)
+    })
+    .unwrap();
     assert_eq!(
         out_view.meta(),
         out.meta(),

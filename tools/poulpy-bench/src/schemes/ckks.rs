@@ -149,7 +149,7 @@ where
 
     bencher.iter(|| {
         module
-            .ckks_rotate_into(&mut ct_dst, &ct_a, ROTATION, &atks, &mut scratch.borrow())
+            .ckks_rotate_into(ROTATION, &mut ct_dst, &ct_a, &atks, &mut scratch.borrow())
             .unwrap();
         module.synchronize();
         black_box(());
@@ -236,7 +236,7 @@ pub fn runner_ckks_add_pt_const_into<BE: Backend<ZnxWord = i64>, M: Measurement>
 
     bencher.iter(|| {
         module
-            .ckks_add_pt_const_into(&mut ct_dst, &ct_a, 0, &cst, 0, &mut scratch.borrow())
+            .ckks_add_pt_const_into(&mut ct_dst, 0, &ct_a, &cst, 0, &mut scratch.borrow())
             .unwrap();
         module.synchronize();
         black_box(());
@@ -321,7 +321,7 @@ pub fn runner_ckks_sub_pt_const_into<BE: Backend<ZnxWord = i64>, M: Measurement>
 
     bencher.iter(|| {
         module
-            .ckks_sub_pt_const_into(&mut ct_dst, &ct_a, 0, &cst, 0, &mut scratch.borrow())
+            .ckks_sub_pt_const_into(&mut ct_dst, 0, &ct_a, &cst, 0, &mut scratch.borrow())
             .unwrap();
         module.synchronize();
         black_box(());
@@ -369,7 +369,7 @@ where
 
     bencher.iter(|| {
         module
-            .ckks_mul_pow2_into(&mut ct_dst, &ct_a, POW2_BITS, &mut scratch.borrow())
+            .ckks_mul_pow2_into(POW2_BITS, &mut ct_dst, &ct_a, &mut scratch.borrow())
             .unwrap();
         module.synchronize();
         black_box(());
@@ -394,7 +394,7 @@ where
 
     bencher.iter(|| {
         module
-            .ckks_div_pow2_into(&mut ct_dst, &ct_a, POW2_BITS, &mut scratch.borrow())
+            .ckks_div_pow2_into(POW2_BITS, &mut ct_dst, &ct_a, &mut scratch.borrow())
             .unwrap();
         module.synchronize();
         black_box(());

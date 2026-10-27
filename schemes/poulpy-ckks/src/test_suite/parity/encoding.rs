@@ -15,15 +15,13 @@ use poulpy_hal::layouts::{Backend, Module, ZnxView};
 use crate::{
     CKKSInfos, CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, SlotsKind,
     api::{CKKSEncodingOps, CKKSEncodingScalar, CKKSModuleInfos, PaCoScalar, ShipScalar},
+    encoding::{ckks_encode_linear_transformation_from_diagonals, ckks_encode_linear_transformation_tmp_bytes},
     layouts::{
-        CKKSEncodingBuffer, CKKSEncodingBufferToBackendMut, CKKSPlaintextOwned, ComplexDiagonals, PaCoDFTPlan, PaCoPlan,
-        PaCoSlotOrder, ShipPlan, slot_coeff_count,
+        CKKSEncodingBuffer, CKKSEncodingBufferToBackendMut, CKKSPlaintextOwned, ComplexDiagonals, PaCoContext, PaCoDFTPlan,
+        PaCoPlan, PaCoSlotOrder, ShipPlan, slot_coeff_count,
     },
     oep::{CKKSEncodingImpl, CKKSPaCoCoeffEncodingImpl, CKKSShipCoeffEncodingImpl},
-    reference::{
-        ckks_encode_linear_transformation_from_diagonals, ckks_encode_linear_transformation_tmp_bytes,
-        encoding::CKKSSlotEmbedding,
-    },
+    reference::encoding::CKKSSlotEmbedding,
     test_suite::CKKSTestParams,
 };
 
@@ -43,12 +41,12 @@ fn transform_tolerance<F: CKKSEncodingScalar>(n: usize) -> F {
     F::epsilon() * F::from_usize(64 * n).unwrap()
 }
 
-fn coefficients<B, F>(pt: &CKKSPlaintextOwned<B>) -> Vec<F>
+fn coefficients<BE, F>(pt: &CKKSPlaintextOwned<BE>) -> Vec<F>
 where
-    B: Backend<ZnxWord = i64>,
+    BE: Backend<ZnxWord = i64>,
     F: CKKSEncodingScalar,
 {
-    let host = pt.to_host_owned::<B>();
+    let host = pt.to_host_owned::<BE>();
     let mut raw = vec![F::zero(); host.n().as_usize()];
     let base2k = host.base2k().as_usize();
     let radix = F::from_usize(base2k).unwrap().exp2();
@@ -83,12 +81,12 @@ where
     );
 }
 
-fn encoding_transforms<B, F>(module: &Module<B>) -> Vec<Vec<F>>
+fn encoding_transforms<BE, F>(module: &Module<BE>) -> Vec<Vec<F>>
 where
-    B: Backend<ZnxWord = i64> + CKKSEncodingImpl<F>,
+    BE: Backend<ZnxWord = i64> + CKKSEncodingImpl<F>,
     F: CKKSEncodingScalar,
 {
-    let plans = B::ckks_encoding_plans_create_impl(module).unwrap();
+    let plans = BE::ckks_encoding_plans_create(module).unwrap();
     // Repeat the geometric family in reverse order to reuse the same cached
     // plans after their first production-dispatch construction.
     let cap = 2 * module.ckks_max_slots();
@@ -105,50 +103,50 @@ where
                     }
                 })
                 .collect();
-            let mut cached = CKKSEncodingBuffer::<B::OwnedBuf, F>::from_host::<B>(&input);
-            let mut fresh = CKKSEncodingBuffer::<B::OwnedBuf, F>::from_host::<B>(&input);
+            let mut cached = CKKSEncodingBuffer::<BE::OwnedBuf, F>::from_host::<BE>(&input);
+            let mut fresh = CKKSEncodingBuffer::<BE::OwnedBuf, F>::from_host::<BE>(&input);
             module.ckks_slots_to_coeffs_assign(&mut cached).unwrap();
-            B::ckks_slots_to_coeffs_assign_impl(
+            BE::ckks_slots_to_coeffs_assign_with_plan(
                 module,
                 &plans,
-                &mut CKKSEncodingBufferToBackendMut::<B, F>::to_backend_mut(&mut fresh),
+                &mut CKKSEncodingBufferToBackendMut::<BE, F>::to_backend_mut(&mut fresh),
             )
             .unwrap();
-            let got = cached.to_host::<B>();
-            scalar_close(&got, &fresh.to_host::<B>(), transform_tolerance::<F>(len));
+            let got = cached.to_host::<BE>();
+            scalar_close(&got, &fresh.to_host::<BE>(), transform_tolerance::<F>(len));
             observed.push(got);
             module.ckks_coeffs_to_slots_assign(&mut cached).unwrap();
-            B::ckks_coeffs_to_slots_assign_impl(
+            BE::ckks_coeffs_to_slots_assign_with_plan(
                 module,
                 &plans,
-                &mut CKKSEncodingBufferToBackendMut::<B, F>::to_backend_mut(&mut fresh),
+                &mut CKKSEncodingBufferToBackendMut::<BE, F>::to_backend_mut(&mut fresh),
             )
             .unwrap();
-            scalar_close(&cached.to_host::<B>(), &fresh.to_host::<B>(), transform_tolerance::<F>(len));
+            scalar_close(&cached.to_host::<BE>(), &fresh.to_host::<BE>(), transform_tolerance::<F>(len));
             // Real slots round-trip on every ring; the invariant ring drops imaginary parts.
             if real {
-                scalar_close(&input, &cached.to_host::<B>(), transform_tolerance::<F>(len));
+                scalar_close(&input, &cached.to_host::<BE>(), transform_tolerance::<F>(len));
             }
-            observed.push(cached.to_host::<B>());
+            observed.push(cached.to_host::<BE>());
         }
     }
     for len in [0, 1, 3, 2 * cap] {
         let input = vec![F::from_f64(0.375).unwrap(); len];
-        let mut values = CKKSEncodingBuffer::<B::OwnedBuf, F>::from_host::<B>(&input);
+        let mut values = CKKSEncodingBuffer::<BE::OwnedBuf, F>::from_host::<BE>(&input);
         assert!(module.ckks_slots_to_coeffs_assign(&mut values).is_err());
-        assert!(values.to_host::<B>() == input, "invalid transform changed its input");
+        assert!(values.to_host::<BE>() == input, "invalid transform changed its input");
         assert!(module.ckks_coeffs_to_slots_assign(&mut values).is_err());
-        assert!(values.to_host::<B>() == input, "invalid transform changed its input");
+        assert!(values.to_host::<BE>() == input, "invalid transform changed its input");
     }
     observed
 }
 
-fn coefficient_codec<B, F>(module: &Module<B>, params: CKKSTestParams) -> Vec<Snapshot>
+fn coefficient_codec<BE, F>(module: &Module<BE>, params: CKKSTestParams) -> Vec<Snapshot>
 where
-    B: Backend<ZnxWord = i64> + CKKSEncodingImpl<F>,
-    B::Ring: CKKSSlotEmbedding,
+    BE: Backend<ZnxWord = i64> + CKKSEncodingImpl<F>,
+    BE::Ring: CKKSSlotEmbedding,
     F: CKKSEncodingScalar,
-    Module<B>: GLWEMaskFill<B>,
+    Module<BE>: GLWEMaskFill<BE>,
 {
     let mut observations = Vec::new();
     for (k, log_delta) in [(31usize, 20usize), (65, 40), (91, 70)] {
@@ -176,37 +174,37 @@ where
                         + F::from_f64(if i % 2 == 0 { 0.5 } else { -0.5 }).unwrap() / scale
                 })
                 .collect();
-            let buffer = CKKSEncodingBuffer::<B::OwnedBuf, F>::from_host::<B>(&input);
+            let buffer = CKKSEncodingBuffer::<BE::OwnedBuf, F>::from_host::<BE>(&input);
             let mut pt = fixture_plaintext(module, &layout, 47);
-            let mut expected_layout = snapshot::<B, _>(&pt).layout;
-            expected_layout.meta.slots = slots.meet(B::Ring::SLOTS);
+            let mut expected_layout = snapshot::<BE, _>(&pt).layout;
+            expected_layout.meta.slots = slots.meet(BE::Ring::SLOTS);
             module.ckks_encode_coeffs_into(&mut pt, &buffer).unwrap();
-            assert!(buffer.to_host::<B>() == input, "coefficient encoding changed its input");
-            let encoded = snapshot::<B, _>(&pt);
+            assert!(buffer.to_host::<BE>() == input, "coefficient encoding changed its input");
+            let encoded = snapshot::<BE, _>(&pt);
             assert!(
                 encoded.layout == expected_layout,
                 "coefficient encoding changed metadata other than the ring's slot kind"
             );
             let want: Vec<F> = input.iter().map(|&x| (x * scale).round() / scale).collect();
-            let canonical = coefficients::<B, F>(&pt);
+            let canonical = coefficients::<BE, F>(&pt);
             assert!(canonical == want, "coefficient quantization differs");
-            let mut decoded = CKKSEncodingBuffer::<B::OwnedBuf, F>::from_host::<B>(&vec![F::nan(); count]);
+            let mut decoded = CKKSEncodingBuffer::<BE::OwnedBuf, F>::from_host::<BE>(&vec![F::nan(); count]);
             module.ckks_decode_coeffs_into(&pt, &mut decoded).unwrap();
-            assert!(decoded.to_host::<B>() == want, "coefficient decoding differs");
-            assert!(snapshot::<B, _>(&pt) == encoded, "coefficient decoding changed plaintext");
+            assert!(decoded.to_host::<BE>() == want, "coefficient decoding differs");
+            assert!(snapshot::<BE, _>(&pt) == encoded, "coefficient decoding changed plaintext");
             observations.push(encoded);
             for invalid_count in [0, 3, params.n / 2, params.n + 1] {
                 let bad_input = vec![F::one(); invalid_count];
-                let mut bad = CKKSEncodingBuffer::<B::OwnedBuf, F>::from_host::<B>(&bad_input);
-                let before = snapshot::<B, _>(&pt);
+                let mut bad = CKKSEncodingBuffer::<BE::OwnedBuf, F>::from_host::<BE>(&bad_input);
+                let before = snapshot::<BE, _>(&pt);
                 assert!(module.ckks_encode_coeffs_into(&mut pt, &bad).is_err());
                 assert!(
-                    snapshot::<B, _>(&pt) == before,
+                    snapshot::<BE, _>(&pt) == before,
                     "invalid coefficient encoding changed plaintext"
                 );
                 assert!(module.ckks_decode_coeffs_into(&pt, &mut bad).is_err());
                 assert!(
-                    bad.to_host::<B>() == bad_input,
+                    bad.to_host::<BE>() == bad_input,
                     "invalid coefficient decoding changed destination"
                 );
             }
@@ -221,10 +219,10 @@ where
             ] {
                 let mut invalid = input.clone();
                 invalid[count - 1] = invalid_value;
-                let bad = CKKSEncodingBuffer::<B::OwnedBuf, F>::from_host::<B>(&invalid);
-                let before = snapshot::<B, _>(&pt);
+                let bad = CKKSEncodingBuffer::<BE::OwnedBuf, F>::from_host::<BE>(&invalid);
+                let before = snapshot::<BE, _>(&pt);
                 assert!(module.ckks_encode_coeffs_into(&mut pt, &bad).is_err());
-                assert!(snapshot::<B, _>(&pt) == before, "failed quantization changed plaintext");
+                assert!(snapshot::<BE, _>(&pt) == before, "failed quantization changed plaintext");
             }
         }
     }
@@ -234,11 +232,11 @@ where
 /// Encodes and decodes planar slots through the two slot-composition OEP
 /// methods, for every slot count up to the module's capacity whose degree
 /// reaches `floor`.
-fn slot_codec<B, F>(module: &Module<B>, params: CKKSTestParams, floor: usize) -> Vec<(CKKSPlaintextOwned<B>, Vec<F>)>
+fn slot_codec<BE, F>(module: &Module<BE>, params: CKKSTestParams, floor: usize) -> Vec<(CKKSPlaintextOwned<BE>, Vec<F>)>
 where
-    B: Backend<ZnxWord = i64> + CKKSEncodingImpl<F>,
+    BE: Backend<ZnxWord = i64> + CKKSEncodingImpl<F>,
     F: CKKSEncodingScalar,
-    Module<B>: GLWEMaskFill<B>,
+    Module<BE>: GLWEMaskFill<BE>,
 {
     let layout = CKKSLayout {
         glwe_layout: GLWELayout {
@@ -268,14 +266,14 @@ where
             let input: Vec<F> = (0..len)
                 .map(|i| F::from_i64((i % 13) as i64 - 6).unwrap() / F::from_f64(32.0).unwrap())
                 .collect();
-            let mut slots = CKKSEncodingBuffer::<B::OwnedBuf, F>::from_host::<B>(&input);
+            let mut slots = CKKSEncodingBuffer::<BE::OwnedBuf, F>::from_host::<BE>(&input);
             let mut pt = fixture_plaintext(module, &layout, 53);
-            B::ckks_encode_slots_assign_into_impl(module, &mut pt, &mut slots).unwrap();
-            let mut decoded = CKKSEncodingBuffer::<B::OwnedBuf, F>::from_host::<B>(&vec![F::nan(); len]);
-            let before = snapshot::<B, _>(&pt);
-            B::ckks_decode_slots_into_impl(module, &pt, &mut decoded).unwrap();
-            assert!(snapshot::<B, _>(&pt) == before, "slot decoding changed plaintext");
-            (pt, decoded.to_host::<B>())
+            BE::ckks_encode_slots_assign_into(module, &mut pt, &mut slots).unwrap();
+            let mut decoded = CKKSEncodingBuffer::<BE::OwnedBuf, F>::from_host::<BE>(&vec![F::nan(); len]);
+            let before = snapshot::<BE, _>(&pt);
+            BE::ckks_decode_slots_into(module, &pt, &mut decoded).unwrap();
+            assert!(snapshot::<BE, _>(&pt) == before, "slot decoding changed plaintext");
+            (pt, decoded.to_host::<BE>())
         })
         .collect()
 }
@@ -284,7 +282,7 @@ where
 /// coefficient codecs. The independently decoded integer representation,
 /// quantization ties, metadata, and failure preservation are
 /// checked before comparing the two supplied implementations.
-pub fn test_encoding_parity<BR, BT, F>(params: CKKSTestParams, r: &Module<BR>, t: &Module<BT>)
+pub fn test_encoding_parity<BR, BT, F>(params: CKKSTestParams, module_ref: &Module<BR>, module_test: &Module<BT>)
 where
     BR: Backend<ZnxWord = i64> + CKKSEncodingImpl<F>,
     BT: Backend<ZnxWord = i64> + CKKSEncodingImpl<F>,
@@ -295,35 +293,35 @@ where
     Module<BT>: GLWEMaskFill<BT>,
 {
     assert!(params.n >= 8 && params.n.is_power_of_two());
-    let reference = encoding_transforms::<BR, F>(r);
-    let tested = encoding_transforms::<BT, F>(t);
+    let reference = encoding_transforms::<BR, F>(module_ref);
+    let tested = encoding_transforms::<BT, F>(module_test);
     assert_eq!(reference.len(), tested.len());
-    let tolerance = transform_tolerance::<F>(2 * r.ckks_max_slots());
+    let tolerance = transform_tolerance::<F>(2 * module_ref.ckks_max_slots());
     for (reference, tested) in reference.iter().zip(&tested) {
         scalar_close(reference, tested, tolerance);
     }
     assert!(
-        coefficient_codec::<BR, F>(r, params) == coefficient_codec::<BT, F>(t, params),
+        coefficient_codec::<BR, F>(module_ref, params) == coefficient_codec::<BT, F>(module_test, params),
         "coefficient codec parity failed"
     );
-    diagonal_within_query::<BR, F>(r, params);
-    diagonal_within_query::<BT, F>(t, params);
+    diagonal_within_query::<BR, F>(module_ref, params);
+    diagonal_within_query::<BT, F>(module_test, params);
 }
 
 /// A map of period 1 encodes within [`ckks_encode_linear_transformation_tmp_bytes`] exactly, on a plaintext at the
 /// backend's minimum degree whose slots repeat the one value.
-fn diagonal_within_query<B, F>(module: &Module<B>, params: CKKSTestParams)
+fn diagonal_within_query<BE, F>(module: &Module<BE>, params: CKKSTestParams)
 where
-    B: Backend<ZnxWord = i64> + CKKSEncodingImpl<F>,
+    BE: Backend<ZnxWord = i64> + CKKSEncodingImpl<F>,
     F: CKKSEncodingScalar,
 {
     let slots = module.ckks_max_slots();
     let mut re = Diagonals::new(slots);
     re.set(0, vec![F::from_f64(0.5).unwrap()]);
     let map = ComplexDiagonals::new(re, Diagonals::new(slots));
-    let bytes = ckks_encode_linear_transformation_tmp_bytes::<B, _, F>(module, map.period());
-    let lt = with_scratch::<B, _>(bytes, |scratch| {
-        ckks_encode_linear_transformation_from_diagonals::<B, F>(
+    let bytes = ckks_encode_linear_transformation_tmp_bytes::<BE, _, F>(module, map.period());
+    let lt = with_scratch::<BE, _>(bytes, |scratch| {
+        ckks_encode_linear_transformation_from_diagonals::<BE, F>(
             module,
             params.base2k.into(),
             CoeffsMeta::from_delta_budget(8, 12),
@@ -334,13 +332,13 @@ where
         )
     })
     .unwrap();
-    assert_eq!(lt.first_diagonal_plaintext().unwrap().n().as_usize(), B::MIN_DEGREE);
+    assert_eq!(lt.first_diagonal_plaintext().unwrap().n().as_usize(), BE::MIN_DEGREE);
 }
 
 /// Pairs the two slot-composition OEP methods exactly, for every slot count up
 /// to the module's capacity: the encoded plaintexts and the decoded slots must
 /// be bit-identical.
-pub fn test_slot_encoding_parity<BR, BT, F>(params: CKKSTestParams, r: &Module<BR>, t: &Module<BT>)
+pub fn test_slot_encoding_parity<BR, BT, F>(params: CKKSTestParams, module_ref: &Module<BR>, module_test: &Module<BT>)
 where
     BR: Backend<ZnxWord = i64> + CKKSEncodingImpl<F>,
     BT: Backend<ZnxWord = i64> + CKKSEncodingImpl<F>,
@@ -350,8 +348,8 @@ where
 {
     // Both sides encode the slot counts whose degree both backends allocate.
     let floor = BR::MIN_DEGREE.max(BT::MIN_DEGREE);
-    let reference = slot_codec::<BR, F>(r, params, floor);
-    let tested = slot_codec::<BT, F>(t, params, floor);
+    let reference = slot_codec::<BR, F>(module_ref, params, floor);
+    let tested = slot_codec::<BT, F>(module_test, params, floor);
     assert_eq!(reference.len(), tested.len());
     for ((pt_r, slots_r), (pt_t, slots_t)) in reference.iter().zip(&tested) {
         assert!(snapshot::<BR, _>(pt_r) == snapshot::<BT, _>(pt_t), "slot encoding differs");
@@ -362,10 +360,19 @@ where
     }
 }
 
+fn paco_context<BE, F>(module: &Module<BE>, params: CKKSTestParams, plan: &PaCoPlan) -> PaCoContext<BE, F>
+where
+    BE: Backend<ZnxWord = i64> + CKKSEncodingImpl<F> + CKKSPaCoCoeffEncodingImpl,
+    F: PaCoScalar,
+{
+    let bytes = ckks_encode_linear_transformation_tmp_bytes::<BE, _, F>(module, module.ckks_max_slots());
+    with_scratch::<BE, _>(bytes, |s| PaCoContext::compile(module, params.base2k.into(), plan.clone(), s)).unwrap()
+}
+
 /// Pairs PaCo coefficient embedding for both slot-order conventions. Each
 /// backend receives equivalent exhausted ciphertexts and its own scratch bound;
 /// prepared plaintexts are compared by decoded canonical coefficients.
-pub fn test_paco_encoding_parity<BR, BT, F>(params: CKKSTestParams, r: &Module<BR>, t: &Module<BT>)
+pub fn test_paco_encoding_parity<BR, BT, F>(params: CKKSTestParams, module_ref: &Module<BR>, module_test: &Module<BT>)
 where
     BR: Backend<ZnxWord = i64> + CKKSEncodingImpl<F> + CKKSPaCoCoeffEncodingImpl,
     BT: Backend<ZnxWord = i64> + CKKSEncodingImpl<F> + CKKSPaCoCoeffEncodingImpl,
@@ -379,8 +386,8 @@ where
             .with_evaluation(
                 40,
                 5,
-                PaCoDFTPlan::uniform(3, 1, 1, 0, 0).unwrap(),
-                PaCoDFTPlan::uniform(1, 1, 1, 0, 0).unwrap(),
+                PaCoDFTPlan::uniform(3, 1, 1, 30, 8).unwrap(),
+                PaCoDFTPlan::uniform(1, 1, 1, 30, 8).unwrap(),
             )
             .unwrap()
             .with_slot_order(order);
@@ -397,18 +404,17 @@ where
                 log_sparsity: 0,
             },
         };
-        let cr = fixture_ciphertext(r, &layout, 72);
-        let ct = fixture_ciphertext(t, &layout, 72);
+        let cr = fixture_ciphertext(module_ref, &layout, 72);
+        let ct = fixture_ciphertext(module_test, &layout, 72);
         let sr = snapshot::<BR, _>(&cr);
         let st = snapshot::<BT, _>(&ct);
-        let bytes_r = BR::ckks_paco_coeff_encodings_tmp_bytes_impl::<F>(r, &plan).unwrap();
-        let bytes_t = BT::ckks_paco_coeff_encodings_tmp_bytes_impl::<F>(t, &plan).unwrap();
-        let pr = with_scratch::<BR, _>(bytes_r, |s| {
-            BR::ckks_paco_coeff_encodings_impl::<F, _>(r, &cr, &plan, params.base2k.into(), s)
-        })
-        .unwrap();
+        let ctx_r = paco_context::<BR, F>(module_ref, params, &plan);
+        let ctx_t = paco_context::<BT, F>(module_test, params, &plan);
+        let bytes_r = BR::ckks_paco_coeff_encodings_tmp_bytes::<F>(module_ref, &ctx_r).unwrap();
+        let bytes_t = BT::ckks_paco_coeff_encodings_tmp_bytes::<F>(module_test, &ctx_t).unwrap();
+        let pr = with_scratch::<BR, _>(bytes_r, |s| BR::ckks_paco_coeff_encodings::<F, _>(module_ref, &cr, &ctx_r, s)).unwrap();
         let pt = with_scratch::<BT, _>(bytes_t, |s| {
-            BT::ckks_paco_coeff_encodings_impl::<F, _>(t, &ct, &plan, params.base2k.into(), s)
+            BT::ckks_paco_coeff_encodings::<F, _>(module_test, &ct, &ctx_t, s)
         })
         .unwrap();
         for (a, b) in pr.iter().zip(&pt) {
@@ -424,26 +430,16 @@ where
         );
         let mut invalid = layout;
         invalid.glwe_layout.rank = 2usize.into();
-        let ir = fixture_ciphertext(r, &invalid, 73);
-        let it = fixture_ciphertext(t, &invalid, 73);
+        let ir = fixture_ciphertext(module_ref, &invalid, 73);
+        let it = fixture_ciphertext(module_test, &invalid, 73);
         let before_r = snapshot::<BR, _>(&ir);
         let before_t = snapshot::<BT, _>(&it);
+        assert!(with_scratch::<BR, _>(bytes_r, |s| BR::ckks_paco_coeff_encodings::<F, _>(module_ref, &ir, &ctx_r, s)).is_err());
         assert!(
-            with_scratch::<BR, _>(bytes_r, |s| BR::ckks_paco_coeff_encodings_impl::<F, _>(
-                r,
-                &ir,
-                &plan,
-                params.base2k.into(),
-                s
-            ))
-            .is_err()
-        );
-        assert!(
-            with_scratch::<BT, _>(bytes_t, |s| BT::ckks_paco_coeff_encodings_impl::<F, _>(
-                t,
+            with_scratch::<BT, _>(bytes_t, |s| BT::ckks_paco_coeff_encodings::<F, _>(
+                module_test,
                 &it,
-                &plan,
-                params.base2k.into(),
+                &ctx_t,
                 s
             ))
             .is_err()
@@ -458,7 +454,7 @@ where
 /// Pairs SHIP's real and complex coefficient embeddings, including both pt0
 /// halves and every rotated pi vector. Shape failures preserve the bottom
 /// ciphertext, and each backend executes with its own advertised scratch.
-pub fn test_ship_encoding_parity<BR, BT, F>(params: CKKSTestParams, r: &Module<BR>, t: &Module<BT>)
+pub fn test_ship_encoding_parity<BR, BT, F>(params: CKKSTestParams, module_ref: &Module<BR>, module_test: &Module<BT>)
 where
     BR: Backend<ZnxWord = i64> + CKKSEncodingImpl<F> + CKKSShipCoeffEncodingImpl,
     BT: Backend<ZnxWord = i64> + CKKSEncodingImpl<F> + CKKSShipCoeffEncodingImpl,
@@ -481,19 +477,19 @@ where
             log_sparsity: 0,
         },
     };
-    let cr = fixture_ciphertext(r, &layout, 83);
-    let ct = fixture_ciphertext(t, &layout, 83);
+    let cr = fixture_ciphertext(module_ref, &layout, 83);
+    let ct = fixture_ciphertext(module_test, &layout, 83);
     let sr = snapshot::<BR, _>(&cr);
     let st = snapshot::<BT, _>(&ct);
     for complex in [false, true] {
-        let bytes_r = BR::ckks_ship_coeff_encodings_tmp_bytes_impl::<F>(r, &plan, base2k.into(), complex).unwrap();
-        let bytes_t = BT::ckks_ship_coeff_encodings_tmp_bytes_impl::<F>(t, &plan, base2k.into(), complex).unwrap();
+        let bytes_r = BR::ckks_ship_coeff_encodings_tmp_bytes::<F>(module_ref, base2k.into(), complex, &plan).unwrap();
+        let bytes_t = BT::ckks_ship_coeff_encodings_tmp_bytes::<F>(module_test, base2k.into(), complex, &plan).unwrap();
         let pr = with_scratch::<BR, _>(bytes_r, |s| {
-            BR::ckks_ship_coeff_encodings_impl::<F, _>(r, &cr, &plan, base2k.into(), complex, s)
+            BR::ckks_ship_coeff_encodings::<F, _>(module_ref, base2k.into(), complex, &cr, &plan, s)
         })
         .unwrap();
         let pt = with_scratch::<BT, _>(bytes_t, |s| {
-            BT::ckks_ship_coeff_encodings_impl::<F, _>(t, &ct, &plan, base2k.into(), complex, s)
+            BT::ckks_ship_coeff_encodings::<F, _>(module_test, base2k.into(), complex, &ct, &plan, s)
         })
         .unwrap();
         compare_plaintexts::<BR, BT, F>(&pr.pt0, &pt.pt0);
@@ -520,28 +516,28 @@ where
         );
         let mut invalid = layout;
         invalid.glwe_layout.k = (base2k + 1).into();
-        let ir = fixture_ciphertext(r, &invalid, 84);
-        let it = fixture_ciphertext(t, &invalid, 84);
+        let ir = fixture_ciphertext(module_ref, &invalid, 84);
+        let it = fixture_ciphertext(module_test, &invalid, 84);
         let before_r = snapshot::<BR, _>(&ir);
         let before_t = snapshot::<BT, _>(&it);
         assert!(
-            with_scratch::<BR, _>(bytes_r, |s| BR::ckks_ship_coeff_encodings_impl::<F, _>(
-                r,
-                &ir,
-                &plan,
+            with_scratch::<BR, _>(bytes_r, |s| BR::ckks_ship_coeff_encodings::<F, _>(
+                module_ref,
                 base2k.into(),
                 complex,
+                &ir,
+                &plan,
                 s
             ))
             .is_err()
         );
         assert!(
-            with_scratch::<BT, _>(bytes_t, |s| BT::ckks_ship_coeff_encodings_impl::<F, _>(
-                t,
-                &it,
-                &plan,
+            with_scratch::<BT, _>(bytes_t, |s| BT::ckks_ship_coeff_encodings::<F, _>(
+                module_test,
                 base2k.into(),
                 complex,
+                &it,
+                &plan,
                 s
             ))
             .is_err()

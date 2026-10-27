@@ -19,8 +19,8 @@ pub trait ArithmeticParityBackend:
     Backend<ZnxWord = i64> + CKKSAddImpl + CKKSSubImpl + CKKSCopyImpl + CKKSNegImpl + CKKSPow2Impl + GLWENormalizeImpl
 {
 }
-impl<B> ArithmeticParityBackend for B where
-    B: Backend<ZnxWord = i64> + CKKSAddImpl + CKKSSubImpl + CKKSCopyImpl + CKKSNegImpl + CKKSPow2Impl + GLWENormalizeImpl
+impl<BE> ArithmeticParityBackend for BE where
+    BE: Backend<ZnxWord = i64> + CKKSAddImpl + CKKSSubImpl + CKKSCopyImpl + CKKSNegImpl + CKKSPow2Impl + GLWENormalizeImpl
 {
 }
 
@@ -41,9 +41,9 @@ pub fn layout(params: CKKSTestParams, rank: usize, k: usize, delta: usize, spars
     }
 }
 
-fn arithmetic<B: ArithmeticParityBackend>(params: CKKSTestParams, module: &Module<B>) -> Vec<(&'static str, Snapshot)>
+fn arithmetic<BE: ArithmeticParityBackend>(params: CKKSTestParams, module: &Module<BE>) -> Vec<(&'static str, Snapshot)>
 where
-    Module<B>: GLWEMaskFill<B>,
+    Module<BE>: GLWEMaskFill<BE>,
 {
     let b = params.base2k;
     let mut results = Vec::new();
@@ -62,28 +62,26 @@ where
                 );
                 let a = fixture_ciphertext(module, &la, 31);
                 let rhs = fixture_ciphertext(module, &lb, 32);
-                let before_a = snapshot::<B, _>(&a);
-                let before_b = snapshot::<B, _>(&rhs);
+                let before_a = snapshot::<BE, _>(&a);
+                let before_b = snapshot::<BE, _>(&rhs);
                 // `ckks_double_into` is the lazy `a + a` at the source's width and
                 // `ckks_mul_pow2_into` by one bit below it, equal once normalized.
                 for (width, lazy) in [(3 * b + 5, true), (2 * b + 3, false)] {
                     let dst = layout(params, rank, width, b - 1, 0, SlotsKind::Complex);
                     let mut doubled = fixture_ciphertext(module, &dst, 31);
                     let mut shifted = fixture_ciphertext(module, &dst, 31);
-                    let bytes =
-                        B::ckks_mul_pow2_tmp_bytes_impl(module, doubled.max_size()).max(B::glwe_normalize_tmp_bytes(module));
-                    with_scratch::<B, _>(bytes, |scratch| {
-                        B::ckks_double_into_impl(module, &mut doubled, &a, scratch)?;
-                        let raw = snapshot::<B, _>(&doubled);
-                        assert_eq!(raw.canonical, !lazy, "double_into k={width}");
-                        results.push(("ckks_double_into_impl", raw));
-                        B::glwe_normalize_assign(module, &mut doubled, scratch);
-                        B::ckks_mul_pow2_into_impl(module, &mut shifted, &a, 1, scratch)
-                    })
-                    .unwrap();
+                    let bytes = BE::ckks_mul_pow2_tmp_bytes(module, doubled.max_size());
+                    with_scratch::<BE, _>(bytes, |scratch| BE::ckks_double_into(module, &mut doubled, &a, scratch)).unwrap();
+                    let raw = snapshot::<BE, _>(&doubled);
+                    assert_eq!(raw.canonical, !lazy, "double_into k={width}");
+                    results.push(("ckks_double_into", raw));
+                    with_scratch::<BE, _>(BE::glwe_normalize_tmp_bytes(module), |scratch| {
+                        BE::glwe_normalize_assign(module, &mut doubled, scratch)
+                    });
+                    with_scratch::<BE, _>(bytes, |scratch| BE::ckks_mul_pow2_into(module, 1, &mut shifted, &a, scratch)).unwrap();
                     assert_eq!(
-                        snapshot::<B, _>(&doubled).digits,
-                        snapshot::<B, _>(&shifted).digits,
+                        snapshot::<BE, _>(&doubled).digits,
+                        snapshot::<BE, _>(&shifted).digits,
                         "double_into k={width} differs from mul_pow2 by one bit"
                     );
                 }
@@ -94,88 +92,71 @@ where
                         pt_layout.glwe_layout.n = (params.n / 4).into();
                     }
                     let pt = fixture_plaintext(module, &pt_layout, 33);
-                    let before_pt = snapshot::<B, _>(&pt);
+                    let before_pt = snapshot::<BE, _>(&pt);
                     macro_rules! run {
-                ($method:ident, $query:ident, $initial:expr, [$($arg:expr),*]) => {{
+                ($method:ident, $query:ident, $initial:expr, [$($arg:expr),*]) => {
+                    run!($method, $query, $initial, []; [$($arg),*])
+                };
+                ($method:ident, $query:ident, $initial:expr, [$($lead:expr),*]; [$($arg:expr),*]) => {{
                     let mut out = fixture_ciphertext(module, &$initial, 31);
-                    let bytes = B::$query(module, out.max_size());
-                    with_scratch::<B,_>(bytes, |scratch| B::$method(module, &mut out, $($arg,)* scratch)).unwrap();
-                    results.push((stringify!($method), snapshot::<B,_>(&out)));
+                    let bytes = BE::$query(module, out.max_size());
+                    with_scratch::<BE,_>(bytes, |scratch| BE::$method(module, $($lead,)* &mut out, $($arg,)* scratch)).unwrap();
+                    results.push((stringify!($method), snapshot::<BE,_>(&out)));
                 }};
             }
-                    run!(ckks_add_into_impl, ckks_add_tmp_bytes_impl, out_layout, [&a, &rhs]);
-                    run!(ckks_add_assign_impl, ckks_add_tmp_bytes_impl, la, [&rhs]);
-                    run!(ckks_add_one_assign_impl, ckks_add_one_tmp_bytes_impl, la, []);
+                    run!(ckks_add_into, ckks_add_tmp_bytes, out_layout, [&a, &rhs]);
+                    run!(ckks_add_assign, ckks_add_tmp_bytes, la, [&rhs]);
+                    run!(ckks_add_one_assign, ckks_add_one_tmp_bytes, la, []);
+                    run!(ckks_add_pt_vec_into, ckks_add_pt_vec_tmp_bytes, out_layout, [&a, &pt]);
+                    run!(ckks_add_pt_vec_assign, ckks_add_pt_vec_tmp_bytes, la, [&pt]);
                     run!(
-                        ckks_add_pt_vec_into_impl,
-                        ckks_add_pt_vec_tmp_bytes_impl,
+                        ckks_add_pt_const_into,
+                        ckks_add_pt_const_tmp_bytes,
                         out_layout,
-                        [&a, &pt]
+                        [7, &a, &pt, 3]
                     );
-                    run!(ckks_add_pt_vec_assign_impl, ckks_add_pt_vec_tmp_bytes_impl, la, [&pt]);
+                    run!(ckks_add_pt_const_assign, ckks_add_pt_const_tmp_bytes, la, [7, &pt, 3]);
+                    run!(ckks_sub_into, ckks_sub_tmp_bytes, out_layout, [&a, &rhs]);
+                    run!(ckks_sub_assign, ckks_sub_tmp_bytes, la, [&rhs]);
+                    run!(ckks_sub_one_assign, ckks_sub_one_tmp_bytes, la, []);
+                    run!(ckks_sub_pt_vec_into, ckks_sub_pt_vec_tmp_bytes, out_layout, [&a, &pt]);
+                    run!(ckks_sub_pt_vec_assign, ckks_sub_pt_vec_tmp_bytes, la, [&pt]);
                     run!(
-                        ckks_add_pt_const_into_impl,
-                        ckks_add_pt_const_tmp_bytes_impl,
+                        ckks_sub_pt_const_into,
+                        ckks_sub_pt_const_tmp_bytes,
                         out_layout,
-                        [&a, 7, &pt, 3]
+                        [7, &a, &pt, 3]
                     );
-                    run!(
-                        ckks_add_pt_const_assign_impl,
-                        ckks_add_pt_const_tmp_bytes_impl,
-                        la,
-                        [7, &pt, 3]
-                    );
-                    run!(ckks_sub_into_impl, ckks_sub_tmp_bytes_impl, out_layout, [&a, &rhs]);
-                    run!(ckks_sub_assign_impl, ckks_sub_tmp_bytes_impl, la, [&rhs]);
-                    run!(ckks_sub_one_assign_impl, ckks_sub_one_tmp_bytes_impl, la, []);
-                    run!(
-                        ckks_sub_pt_vec_into_impl,
-                        ckks_sub_pt_vec_tmp_bytes_impl,
-                        out_layout,
-                        [&a, &pt]
-                    );
-                    run!(ckks_sub_pt_vec_assign_impl, ckks_sub_pt_vec_tmp_bytes_impl, la, [&pt]);
-                    run!(
-                        ckks_sub_pt_const_into_impl,
-                        ckks_sub_pt_const_tmp_bytes_impl,
-                        out_layout,
-                        [&a, 7, &pt, 3]
-                    );
-                    run!(
-                        ckks_sub_pt_const_assign_impl,
-                        ckks_sub_pt_const_tmp_bytes_impl,
-                        la,
-                        [7, &pt, 3]
-                    );
+                    run!(ckks_sub_pt_const_assign, ckks_sub_pt_const_tmp_bytes, la, [7, &pt, 3]);
                     {
                         let mut out = fixture_ciphertext(module, &out_layout, 31);
-                        let bytes = B::ckks_copy_tmp_bytes_impl(module, &out, &a);
-                        with_scratch::<B, _>(bytes, |scratch| B::ckks_copy_impl(module, &mut out, &a, scratch)).unwrap();
-                        results.push(("ckks_copy_impl", snapshot::<B, _>(&out)));
+                        let bytes = BE::ckks_copy_tmp_bytes(module, &out, &a);
+                        with_scratch::<BE, _>(bytes, |scratch| BE::ckks_copy(module, &mut out, &a, scratch)).unwrap();
+                        results.push(("ckks_copy", snapshot::<BE, _>(&out)));
                     }
-                    run!(ckks_neg_into_impl, ckks_neg_tmp_bytes_impl, out_layout, [&a]);
-                    run!(ckks_double_into_impl, ckks_mul_pow2_tmp_bytes_impl, out_layout, [&a]);
+                    run!(ckks_neg_into, ckks_neg_tmp_bytes, out_layout, [&a]);
+                    run!(ckks_double_into, ckks_mul_pow2_tmp_bytes, out_layout, [&a]);
                     let mut neg = fixture_ciphertext(module, &la, 31);
-                    B::ckks_neg_assign_impl(module, &mut neg).unwrap();
-                    results.push(("neg_assign", snapshot::<B, _>(&neg)));
+                    BE::ckks_neg_assign(module, &mut neg).unwrap();
+                    results.push(("neg_assign", snapshot::<BE, _>(&neg)));
                     for bits in [0, 1, b + 1] {
-                        run!(ckks_mul_pow2_into_impl, ckks_mul_pow2_tmp_bytes_impl, out_layout, [&a, bits]);
-                        run!(ckks_mul_pow2_assign_impl, ckks_mul_pow2_tmp_bytes_impl, la, [bits]);
-                        run!(ckks_div_pow2_into_impl, ckks_div_pow2_tmp_bytes_impl, out_layout, [&a, bits]);
+                        run!(ckks_mul_pow2_into, ckks_mul_pow2_tmp_bytes, out_layout, [bits]; [&a]);
+                        run!(ckks_mul_pow2_assign, ckks_mul_pow2_tmp_bytes, la, [bits]; []);
+                        run!(ckks_div_pow2_into, ckks_div_pow2_tmp_bytes, out_layout, [bits]; [&a]);
                         let mut div = fixture_ciphertext(module, &la, 31);
-                        B::ckks_div_pow2_assign_impl(module, &mut div, bits).unwrap();
-                        results.push(("div_pow2_assign", snapshot::<B, _>(&div)));
+                        BE::ckks_div_pow2_assign(module, bits, &mut div).unwrap();
+                        results.push(("div_pow2_assign", snapshot::<BE, _>(&div)));
                     }
-                    assert_eq!(before_a, snapshot::<B, _>(&a), "arithmetic changed source a");
-                    assert_eq!(before_b, snapshot::<B, _>(&rhs), "arithmetic changed source b");
-                    assert_eq!(before_pt, snapshot::<B, _>(&pt), "arithmetic changed plaintext");
+                    assert_eq!(before_a, snapshot::<BE, _>(&a), "arithmetic changed source a");
+                    assert_eq!(before_b, snapshot::<BE, _>(&rhs), "arithmetic changed source b");
+                    assert_eq!(before_pt, snapshot::<BE, _>(&pt), "arithmetic changed plaintext");
                 }
                 // A metadata-only budget failure must not change the destination.
                 let mut out = fixture_ciphertext(module, &la, 31);
-                let before = snapshot::<B, _>(&out);
+                let before = snapshot::<BE, _>(&out);
                 let bits = out.log_budget() + 1;
-                assert!(B::ckks_div_pow2_assign_impl(module, &mut out, bits).is_err());
-                assert_eq!(before, snapshot::<B, _>(&out));
+                assert!(BE::ckks_div_pow2_assign(module, bits, &mut out).is_err());
+                assert_eq!(before, snapshot::<BE, _>(&out));
             }
         }
     }
@@ -185,26 +166,27 @@ where
     let source = fixture_ciphertext(module, &source_layout, 71);
     let narrow = layout(params, 1, 1, 0, 0, SlotsKind::Real);
     macro_rules! rejects {
-        ($method:ident, $query:ident, [$($arg:expr),*]) => {{
+        ($method:ident, [$($arg:expr),*]) => {
+            rejects!($method, []; [$($arg),*])
+        };
+        ($method:ident, [$($lead:expr),*]; [$($arg:expr),*]) => {{
             let mut out = fixture_ciphertext(module, &narrow, 72);
-            let unchanged = snapshot::<B,_>(&out);
-            let bytes = B::$query(module,out.max_size());
-            assert!(with_scratch::<B,_>(bytes,|scratch|B::$method(module,&mut out,$($arg,)*scratch)).is_err(), stringify!($method));
-            assert_eq!(unchanged,snapshot::<B,_>(&out), "failed {} mutated its destination", stringify!($method));
+            let unchanged = snapshot::<BE,_>(&out);
+            assert!(with_scratch::<BE,_>(0,|scratch|BE::$method(module,$($lead,)*&mut out,$($arg,)*scratch)).is_err(), stringify!($method));
+            assert_eq!(unchanged,snapshot::<BE,_>(&out), "failed {} mutated its destination", stringify!($method));
         }};
     }
-    rejects!(ckks_add_into_impl, ckks_add_tmp_bytes_impl, [&source, &source]);
-    rejects!(ckks_sub_into_impl, ckks_sub_tmp_bytes_impl, [&source, &source]);
+    rejects!(ckks_add_into, [&source, &source]);
+    rejects!(ckks_sub_into, [&source, &source]);
     {
         let mut out = fixture_ciphertext(module, &narrow, 72);
-        let unchanged = snapshot::<B, _>(&out);
-        let bytes = B::ckks_copy_tmp_bytes_impl(module, &out, &source);
-        assert!(with_scratch::<B, _>(bytes, |scratch| B::ckks_copy_impl(module, &mut out, &source, scratch)).is_err());
-        assert_eq!(unchanged, snapshot::<B, _>(&out), "failed copy mutated its destination");
+        let unchanged = snapshot::<BE, _>(&out);
+        assert!(with_scratch::<BE, _>(0, |scratch| BE::ckks_copy(module, &mut out, &source, scratch)).is_err());
+        assert_eq!(unchanged, snapshot::<BE, _>(&out), "failed copy mutated its destination");
     }
-    rejects!(ckks_neg_into_impl, ckks_neg_tmp_bytes_impl, [&source]);
-    rejects!(ckks_mul_pow2_into_impl, ckks_mul_pow2_tmp_bytes_impl, [&source, 0]);
-    rejects!(ckks_div_pow2_into_impl, ckks_div_pow2_tmp_bytes_impl, [&source, 0]);
+    rejects!(ckks_neg_into, [&source]);
+    rejects!(ckks_mul_pow2_into, [0]; [&source]);
+    rejects!(ckks_div_pow2_into, [0]; [&source]);
     results
 }
 
@@ -212,29 +194,29 @@ where
 /// widths, rank, sparsity and slot metadata.
 pub fn test_arithmetic_parity<BR: ArithmeticParityBackend, BT: ArithmeticParityBackend, F>(
     params: CKKSTestParams,
-    r: &Module<BR>,
-    t: &Module<BT>,
+    module_ref: &Module<BR>,
+    module_test: &Module<BT>,
 ) where
     Module<BR>: GLWEMaskFill<BR>,
     Module<BT>: GLWEMaskFill<BT>,
 {
     let _scalar = std::marker::PhantomData::<F>;
-    let want = arithmetic(params, r);
+    let want = arithmetic(params, module_ref);
     assert_untagged(
         "arithmetic",
         want.iter()
             .filter(|(label, _)| !label.contains("copy"))
             .map(|(_, output)| output),
     );
-    assert_eq!(want, arithmetic(params, t));
+    assert_eq!(want, arithmetic(params, module_test));
 }
 
-fn imaginary<B: Backend<ZnxWord = i64> + CKKSImagImpl>(
+fn imaginary<BE: Backend<ZnxWord = i64> + CKKSImagImpl>(
     params: CKKSTestParams,
-    module: &Module<B>,
+    module: &Module<BE>,
 ) -> Vec<(&'static str, Snapshot)>
 where
-    Module<B>: GLWEMaskFill<B>,
+    Module<BE>: GLWEMaskFill<BE>,
 {
     let b = params.base2k;
     let rank = params.rank;
@@ -242,25 +224,25 @@ where
     for (sparse, slots) in [(0, SlotsKind::Complex), (2, SlotsKind::Real)] {
         let la = layout(params, rank, 3 * b + 5, b - 1, sparse, slots);
         let a = fixture_ciphertext(module, &la, 31);
-        let before = snapshot::<B, _>(&a);
+        let before = snapshot::<BE, _>(&a);
         for width in [2 * b + 3, 4 * b + 1] {
             let out_layout = layout(params, rank, width, b - 1, 0, SlotsKind::Complex);
             macro_rules! run {
                 ($method:ident, $query:ident, $initial:expr, [$($arg:expr),*]) => {{
                     let mut out = fixture_ciphertext(module, &$initial, 31);
-                    let bytes = B::$query(module, out.max_size());
-                    with_scratch::<B, _>(bytes, |scratch| B::$method(module, &mut out, $($arg,)* scratch)).unwrap();
-                    results.push((stringify!($method), snapshot::<B, _>(&out)));
+                    let bytes = BE::$query(module, out.max_size());
+                    with_scratch::<BE, _>(bytes, |scratch| BE::$method(module, &mut out, $($arg,)* scratch)).unwrap();
+                    results.push((stringify!($method), snapshot::<BE, _>(&out)));
                 }};
             }
-            run!(ckks_mul_i_into_impl, ckks_mul_i_tmp_bytes_impl, out_layout, [&a]);
-            run!(ckks_mul_i_assign_impl, ckks_mul_i_tmp_bytes_impl, la, []);
-            run!(ckks_div_i_into_impl, ckks_div_i_tmp_bytes_impl, out_layout, [&a]);
-            run!(ckks_div_i_assign_impl, ckks_div_i_tmp_bytes_impl, la, []);
+            run!(ckks_mul_i_into, ckks_mul_i_tmp_bytes, out_layout, [&a]);
+            run!(ckks_mul_i_assign, ckks_mul_i_tmp_bytes, la, []);
+            run!(ckks_div_i_into, ckks_div_i_tmp_bytes, out_layout, [&a]);
+            run!(ckks_div_i_assign, ckks_div_i_tmp_bytes, la, []);
         }
         assert_eq!(
             before,
-            snapshot::<B, _>(&a),
+            snapshot::<BE, _>(&a),
             "imaginary-unit multiplication changed its source"
         );
     }
@@ -268,29 +250,28 @@ where
     let source = fixture_ciphertext(module, &layout(params, 1, 3 * b + 5, 2 * b + 1, 0, SlotsKind::Complex), 71);
     let narrow = layout(params, 1, 1, 0, 0, SlotsKind::Real);
     macro_rules! rejects {
-        ($method:ident, $query:ident) => {{
+        ($method:ident) => {{
             let mut out = fixture_ciphertext(module, &narrow, 72);
-            let unchanged = snapshot::<B, _>(&out);
-            let bytes = B::$query(module, out.max_size());
+            let unchanged = snapshot::<BE, _>(&out);
             assert!(
-                with_scratch::<B, _>(bytes, |scratch| B::$method(module, &mut out, &source, scratch)).is_err(),
+                with_scratch::<BE, _>(0, |scratch| BE::$method(module, &mut out, &source, scratch)).is_err(),
                 stringify!($method)
             );
             assert_eq!(
                 unchanged,
-                snapshot::<B, _>(&out),
+                snapshot::<BE, _>(&out),
                 "failed {} mutated its destination",
                 stringify!($method)
             );
         }};
     }
-    rejects!(ckks_mul_i_into_impl, ckks_mul_i_tmp_bytes_impl);
-    rejects!(ckks_div_i_into_impl, ckks_div_i_tmp_bytes_impl);
+    rejects!(ckks_mul_i_into);
+    rejects!(ckks_div_i_into);
     results
 }
 
 /// Multiplication and division by the imaginary unit, standard ring only.
-pub fn test_imag_parity<BR, BT, F>(params: CKKSTestParams, r: &Module<BR>, t: &Module<BT>)
+pub fn test_imag_parity<BR, BT, F>(params: CKKSTestParams, module_ref: &Module<BR>, module_test: &Module<BT>)
 where
     BR: Backend<ZnxWord = i64> + CKKSImagImpl,
     BT: Backend<ZnxWord = i64> + CKKSImagImpl,
@@ -298,20 +279,20 @@ where
     Module<BT>: GLWEMaskFill<BT>,
 {
     let _scalar = std::marker::PhantomData::<F>;
-    let want = imaginary(params, r);
+    let want = imaginary(params, module_ref);
     assert_untagged(
         "imaginary",
         want.iter()
             .filter(|(label, _)| !label.contains("copy"))
             .map(|(_, output)| output),
     );
-    assert_eq!(want, imaginary(params, t));
+    assert_eq!(want, imaginary(params, module_test));
 }
 
-fn products<B>(params: CKKSTestParams, module: &Module<B>) -> Vec<(&'static str, Snapshot)>
+fn products<BE>(params: CKKSTestParams, module: &Module<BE>) -> Vec<(&'static str, Snapshot)>
 where
-    B: Backend<ZnxWord = i64> + CKKSMulImpl,
-    Module<B>: GLWETensorKeyPreparedFactory<B> + GLWEMaskFill<B> + GLWEAdd<B> + CKKSDotProductOps<B>,
+    BE: Backend<ZnxWord = i64> + CKKSMulImpl,
+    Module<BE>: GLWETensorKeyPreparedFactory<BE> + GLWEMaskFill<BE> + GLWEAdd<BE> + CKKSDotProductOps<BE>,
 {
     use super::keys::{key_layout, prepared_tensor_key};
     let b = params.base2k;
@@ -323,134 +304,121 @@ where
             let lb = layout(params, rank, 4 * b + 1, b + 1, 0, SlotsKind::Complex);
             let a = fixture_operand(module, &la, 51, lazy);
             let rhs = fixture_operand(module, &lb, 52, lazy);
-            let before_a = snapshot::<B, _>(&a);
-            let before_b = snapshot::<B, _>(&rhs);
+            let before_a = snapshot::<BE, _>(&a);
+            let before_b = snapshot::<BE, _>(&rhs);
             let key_infos = key_layout(params.n, b, 4 * b + 5, dsize, rank * (rank + 1) / 2, rank);
             let key = prepared_tensor_key(module, &key_infos, 53);
-            let prepare_bytes = B::ckks_prepare_tmp_bytes_impl(module, &a).max(B::ckks_prepare_tmp_bytes_impl(module, &rhs));
-            let left = with_scratch::<B, _>(prepare_bytes, |scratch| {
-                B::ckks_prepare_left_impl(module, &a, PrepareHint::Reuse, scratch)
+            let left = with_scratch::<BE, _>(BE::ckks_prepare_tmp_bytes(module, &a), |scratch| {
+                BE::ckks_prepare_left(module, &a, PrepareHint::Reuse, scratch)
             })
             .unwrap();
-            let right = with_scratch::<B, _>(prepare_bytes, |scratch| {
-                B::ckks_prepare_right_impl(module, &rhs, PrepareHint::OneShot, scratch)
+            let right = with_scratch::<BE, _>(BE::ckks_prepare_tmp_bytes(module, &rhs), |scratch| {
+                BE::ckks_prepare_right(module, &rhs, PrepareHint::OneShot, scratch)
             })
             .unwrap();
             for width in [2 * b + 3, 5 * b + 1] {
                 let lr = layout(params, rank, width, b - 1, 0, SlotsKind::Complex);
                 let mut out = fixture_ciphertext(module, &lr, 99);
-                let bytes = B::ckks_mul_tmp_bytes_impl(module, &out, &a, &rhs, &key);
-                with_scratch::<B, _>(bytes, |scratch| {
-                    B::ckks_mul_into_impl(module, &mut out, &a, &rhs, &key, scratch)
-                })
-                .unwrap();
-                results.push(("mul_into", snapshot::<B, _>(&out)));
+                let bytes = BE::ckks_mul_tmp_bytes(module, &out, &a, &rhs, &key);
+                with_scratch::<BE, _>(bytes, |scratch| BE::ckks_mul_into(module, &mut out, &a, &rhs, &key, scratch)).unwrap();
+                results.push(("mul_into", snapshot::<BE, _>(&out)));
                 let mut out = fixture_ciphertext(module, &lr, 99);
-                let bytes = B::ckks_square_tmp_bytes_impl(module, &out, &a, &key);
-                with_scratch::<B, _>(bytes, |scratch| B::ckks_square_into_impl(module, &mut out, &a, &key, scratch)).unwrap();
-                results.push(("square_into", snapshot::<B, _>(&out)));
+                let bytes = BE::ckks_square_tmp_bytes(module, &out, &a, &key);
+                with_scratch::<BE, _>(bytes, |scratch| BE::ckks_square_into(module, &mut out, &a, &key, scratch)).unwrap();
+                results.push(("square_into", snapshot::<BE, _>(&out)));
                 // Sides of other widths and scales than each other, prepared from the operands, lazy or not.
                 for pairs in [1, 2] {
                     let mut want = fixture_ciphertext(module, &lr, 99);
                     let bytes = module.ckks_dot_product_ct_tmp_bytes(pairs, &want, &a, &rhs, &key);
-                    with_scratch::<B, _>(bytes, |scratch| {
+                    with_scratch::<BE, _>(bytes, |scratch| {
                         module.ckks_dot_product_ct(&mut want, &vec![&a; pairs], &vec![&rhs; pairs], &key, scratch)
                     })
                     .unwrap();
                     let mut have = fixture_ciphertext(module, &lr, 99);
-                    with_scratch::<B, _>(bytes, |scratch| {
+                    with_scratch::<BE, _>(bytes, |scratch| {
                         module.ckks_dot_product_prepared(&mut have, &vec![&left; pairs], &vec![&right; pairs], &key, scratch)
                     })
                     .unwrap();
-                    let want = snapshot::<B, _>(&want);
-                    assert_eq!(snapshot::<B, _>(&have), want, "prepared dot product of {pairs} pairs");
+                    let want = snapshot::<BE, _>(&want);
+                    assert_eq!(snapshot::<BE, _>(&have), want, "prepared dot product of {pairs} pairs");
                     results.push(("dot_product_prepared", want));
                 }
             }
             let mut assigned = fixture_operand(module, &la, 51, lazy);
-            let bytes = B::ckks_mul_tmp_bytes_impl(module, &assigned, &assigned, &rhs, &key);
-            with_scratch::<B, _>(bytes, |scratch| {
-                B::ckks_mul_assign_impl(module, &mut assigned, &rhs, &key, scratch)
+            let bytes = BE::ckks_mul_tmp_bytes(module, &assigned, &assigned, &rhs, &key);
+            with_scratch::<BE, _>(bytes, |scratch| {
+                BE::ckks_mul_assign(module, &mut assigned, &rhs, &key, scratch)
             })
             .unwrap();
-            let ordinary = snapshot::<B, _>(&assigned);
-            let prepared = with_scratch::<B, _>(bytes, |scratch| {
-                B::ckks_prepare_right_impl(module, &rhs, PrepareHint::OneShot, scratch)
+            let ordinary = snapshot::<BE, _>(&assigned);
+            let prepared = with_scratch::<BE, _>(BE::ckks_prepare_tmp_bytes(module, &rhs), |scratch| {
+                BE::ckks_prepare_right(module, &rhs, PrepareHint::OneShot, scratch)
             })
             .unwrap();
             let mut assigned = fixture_operand(module, &la, 51, lazy);
-            with_scratch::<B, _>(bytes, |scratch| {
-                B::ckks_mul_prepared_assign_impl(module, &mut assigned, &prepared, &key, scratch)
+            with_scratch::<BE, _>(bytes, |scratch| {
+                BE::ckks_mul_prepared_assign(module, &mut assigned, &prepared, &key, scratch)
             })
             .unwrap();
             assert_eq!(
                 ordinary,
-                snapshot::<B, _>(&assigned),
+                snapshot::<BE, _>(&assigned),
                 "prepared multiplication differs from ordinary multiplication"
             );
             results.push(("mul_assign", ordinary));
-            results.push(("mul_prepared_assign", snapshot::<B, _>(&assigned)));
+            results.push(("mul_prepared_assign", snapshot::<BE, _>(&assigned)));
             let mut assigned = fixture_operand(module, &la, 51, lazy);
-            let bytes = B::ckks_square_tmp_bytes_impl(module, &assigned, &assigned, &key);
-            with_scratch::<B, _>(bytes, |scratch| {
-                B::ckks_square_assign_impl(module, &mut assigned, &key, scratch)
-            })
-            .unwrap();
-            results.push(("square_assign", snapshot::<B, _>(&assigned)));
+            let bytes = BE::ckks_square_tmp_bytes(module, &assigned, &assigned, &key);
+            with_scratch::<BE, _>(bytes, |scratch| BE::ckks_square_assign(module, &mut assigned, &key, scratch)).unwrap();
+            results.push(("square_assign", snapshot::<BE, _>(&assigned)));
             for below_ring in [false, true] {
                 let mut lp = layout(params, 0, b + 3, b - 1, 2, SlotsKind::Real);
                 if below_ring {
                     lp.glwe_layout.n = (params.n / 4).into();
                 }
                 let pt = fixture_plaintext(module, &lp, 54);
-                let before_pt = snapshot::<B, _>(&pt);
+                let before_pt = snapshot::<BE, _>(&pt);
                 let lr = layout(params, rank, 2 * b + 3, b - 1, 0, SlotsKind::Complex);
                 let mut out = fixture_ciphertext(module, &lr, 99);
-                let bytes = B::ckks_mul_pt_vec_tmp_bytes_impl(module, &out, &a, pt.k());
-                with_scratch::<B, _>(bytes, |scratch| {
-                    B::ckks_mul_pt_vec_into_impl(module, &mut out, &a, &pt, scratch)
-                })
-                .unwrap();
-                results.push(("mul_pt_vec_into", snapshot::<B, _>(&out)));
+                let bytes = BE::ckks_mul_pt_vec_tmp_bytes(module, &out, &a, &pt);
+                with_scratch::<BE, _>(bytes, |scratch| BE::ckks_mul_pt_vec_into(module, &mut out, &a, &pt, scratch)).unwrap();
+                results.push(("mul_pt_vec_into", snapshot::<BE, _>(&out)));
                 let mut out = fixture_operand(module, &la, 51, lazy);
-                let bytes = B::ckks_mul_pt_vec_tmp_bytes_impl(module, &out, &out, pt.k());
-                with_scratch::<B, _>(bytes, |scratch| {
-                    B::ckks_mul_pt_vec_assign_impl(module, &mut out, &pt, scratch)
-                })
-                .unwrap();
-                results.push(("mul_pt_vec_assign", snapshot::<B, _>(&out)));
+                let bytes = BE::ckks_mul_pt_vec_tmp_bytes(module, &out, &out, &pt);
+                with_scratch::<BE, _>(bytes, |scratch| BE::ckks_mul_pt_vec_assign(module, &mut out, &pt, scratch)).unwrap();
+                results.push(("mul_pt_vec_assign", snapshot::<BE, _>(&out)));
                 for coeff in [0, 3] {
                     let mut out = fixture_ciphertext(module, &lr, 99);
-                    let bytes = B::ckks_mul_pt_const_tmp_bytes_impl(module, &out, &a, pt.k());
-                    with_scratch::<B, _>(bytes, |scratch| {
-                        B::ckks_mul_pt_const_into_impl(module, &mut out, &a, &pt, coeff, scratch)
+                    let bytes = BE::ckks_mul_pt_const_tmp_bytes(module, &out, &a, &pt);
+                    with_scratch::<BE, _>(bytes, |scratch| {
+                        BE::ckks_mul_pt_const_into(module, &mut out, &a, &pt, coeff, scratch)
                     })
                     .unwrap();
-                    results.push(("mul_pt_const_into", snapshot::<B, _>(&out)));
+                    results.push(("mul_pt_const_into", snapshot::<BE, _>(&out)));
                     let mut out = fixture_operand(module, &la, 51, lazy);
-                    let bytes = B::ckks_mul_pt_const_tmp_bytes_impl(module, &out, &out, pt.k());
-                    with_scratch::<B, _>(bytes, |scratch| {
-                        B::ckks_mul_pt_const_assign_impl(module, &mut out, &pt, coeff, scratch)
+                    let bytes = BE::ckks_mul_pt_const_tmp_bytes(module, &out, &out, &pt);
+                    with_scratch::<BE, _>(bytes, |scratch| {
+                        BE::ckks_mul_pt_const_assign(module, &mut out, &pt, coeff, scratch)
                     })
                     .unwrap();
-                    results.push(("mul_pt_const_assign", snapshot::<B, _>(&out)));
+                    results.push(("mul_pt_const_assign", snapshot::<BE, _>(&out)));
                 }
-                assert_eq!(before_pt, snapshot::<B, _>(&pt));
+                assert_eq!(before_pt, snapshot::<BE, _>(&pt));
             }
-            assert_eq!(before_a, snapshot::<B, _>(&a));
-            assert_eq!(before_b, snapshot::<B, _>(&rhs));
+            assert_eq!(before_a, snapshot::<BE, _>(&a));
+            assert_eq!(before_b, snapshot::<BE, _>(&rhs));
             let mut bad_layout = la;
             bad_layout.glwe_layout.base2k = (b - 1).into();
             let mut out = fixture_ciphertext(module, &bad_layout, 99);
-            let before = snapshot::<B, _>(&out);
+            let before = snapshot::<BE, _>(&out);
             // Prepared-object shape validation happens before any scratch use.
             assert!(
-                with_scratch::<B, _>(0, |scratch| B::ckks_mul_prepared_assign_impl(
+                with_scratch::<BE, _>(0, |scratch| BE::ckks_mul_prepared_assign(
                     module, &mut out, &prepared, &key, scratch
                 ))
                 .is_err()
             );
-            assert_eq!(before, snapshot::<B, _>(&out));
+            assert_eq!(before, snapshot::<BE, _>(&out));
         }
     }
     results
@@ -458,7 +426,7 @@ where
 
 /// Ciphertext, square, prepared, vector and scalar multiplication, and the prepared dot product, which equals
 /// `ckks_dot_product_ct` of its operands' sources.
-pub fn test_multiplication_parity<BR, BT, F>(params: CKKSTestParams, r: &Module<BR>, t: &Module<BT>)
+pub fn test_multiplication_parity<BR, BT, F>(params: CKKSTestParams, module_ref: &Module<BR>, module_test: &Module<BT>)
 where
     BR: Backend<ZnxWord = i64> + CKKSMulImpl,
     BT: Backend<ZnxWord = i64> + CKKSMulImpl,
@@ -466,28 +434,28 @@ where
     Module<BT>: GLWETensorKeyPreparedFactory<BT> + GLWEMaskFill<BT> + GLWEAdd<BT> + CKKSDotProductOps<BT>,
 {
     let _scalar = std::marker::PhantomData::<F>;
-    let want = products(params, r);
+    let want = products(params, module_ref);
     assert_untagged(
         "products",
         want.iter()
             .filter(|(label, _)| !label.contains("copy"))
             .map(|(_, output)| output),
     );
-    assert_eq!(want, products(params, t));
+    assert_eq!(want, products(params, module_test));
 }
 
 /// Prepared, ordinary and square products at caller-selected large-ring layouts.
-pub fn test_prepared_multiplication_parity<BR, BT, F>(params: CKKSTestParams, r: &Module<BR>, t: &Module<BT>)
+pub fn test_prepared_multiplication_parity<BR, BT, F>(params: CKKSTestParams, module_ref: &Module<BR>, module_test: &Module<BT>)
 where
     BR: Backend<ZnxWord = i64> + CKKSMulImpl,
     BT: Backend<ZnxWord = i64> + CKKSMulImpl,
     Module<BR>: GLWETensorKeyPreparedFactory<BR> + GLWEMaskFill<BR> + GLWEAdd<BR>,
     Module<BT>: GLWETensorKeyPreparedFactory<BT> + GLWEMaskFill<BT> + GLWEAdd<BT>,
 {
-    fn products<B>(params: CKKSTestParams, module: &Module<B>) -> Vec<Snapshot>
+    fn products<BE>(params: CKKSTestParams, module: &Module<BE>) -> Vec<Snapshot>
     where
-        B: Backend<ZnxWord = i64> + CKKSMulImpl,
-        Module<B>: GLWETensorKeyPreparedFactory<B> + GLWEMaskFill<B> + GLWEAdd<B>,
+        BE: Backend<ZnxWord = i64> + CKKSMulImpl,
+        Module<BE>: GLWETensorKeyPreparedFactory<BE> + GLWEMaskFill<BE> + GLWEAdd<BE>,
     {
         use super::keys::{key_layout, prepared_tensor_key};
         let base = params.base2k;
@@ -497,48 +465,47 @@ where
         let mut results = Vec::new();
         for lazy in [false, true] {
             let a = fixture_operand(module, &infos, 81, lazy);
-            let before = snapshot::<B, _>(&a);
-            let bytes =
-                B::ckks_mul_tmp_bytes_impl(module, &a, &a, &a, &key).max(B::ckks_square_tmp_bytes_impl(module, &a, &a, &key));
-            let prepared = with_scratch::<B, _>(bytes, |scratch| {
-                B::ckks_prepare_right_impl(module, &a, PrepareHint::Reuse, scratch)
+            let before = snapshot::<BE, _>(&a);
+            let prepared = with_scratch::<BE, _>(BE::ckks_prepare_tmp_bytes(module, &a), |scratch| {
+                BE::ckks_prepare_right(module, &a, PrepareHint::Reuse, scratch)
             })
             .unwrap();
+            let mul_bytes = BE::ckks_mul_tmp_bytes(module, &a, &a, &a, &key);
             let mut ordinary = fixture_operand(module, &infos, 81, lazy);
-            with_scratch::<B, _>(bytes, |scratch| {
-                B::ckks_mul_assign_impl(module, &mut ordinary, &a, &key, scratch)
+            with_scratch::<BE, _>(mul_bytes, |scratch| {
+                BE::ckks_mul_assign(module, &mut ordinary, &a, &key, scratch)
             })
             .unwrap();
-            let expected = snapshot::<B, _>(&ordinary);
+            let expected = snapshot::<BE, _>(&ordinary);
             for _ in 0..2 {
                 let mut dst = fixture_operand(module, &infos, 81, lazy);
-                with_scratch::<B, _>(bytes, |scratch| {
-                    B::ckks_mul_prepared_assign_impl(module, &mut dst, &prepared, &key, scratch)
+                with_scratch::<BE, _>(mul_bytes, |scratch| {
+                    BE::ckks_mul_prepared_assign(module, &mut dst, &prepared, &key, scratch)
                 })
                 .unwrap();
-                assert_eq!(expected, snapshot::<B, _>(&dst), "prepared versus ordinary multiplication");
+                assert_eq!(expected, snapshot::<BE, _>(&dst), "prepared versus ordinary multiplication");
             }
             let mut square = fixture_operand(module, &infos, 81, lazy);
-            with_scratch::<B, _>(bytes, |scratch| {
-                B::ckks_square_assign_impl(module, &mut square, &key, scratch)
+            with_scratch::<BE, _>(BE::ckks_square_tmp_bytes(module, &a, &a, &key), |scratch| {
+                BE::ckks_square_assign(module, &mut square, &key, scratch)
             })
             .unwrap();
-            assert_eq!(expected, snapshot::<B, _>(&square), "square versus ordinary multiplication");
-            assert_eq!(before, snapshot::<B, _>(&a), "operand modified");
+            assert_eq!(expected, snapshot::<BE, _>(&square), "square versus ordinary multiplication");
+            assert_eq!(before, snapshot::<BE, _>(&a), "operand modified");
             results.push(expected);
         }
         results
     }
     let _scalar = std::marker::PhantomData::<F>;
-    let want = products(params, r);
+    let want = products(params, module_ref);
     assert_untagged("prepared products", &want);
-    assert_eq!(want, products(params, t));
+    assert_eq!(want, products(params, module_test));
 }
 
-fn rotations<B>(params: CKKSTestParams, module: &Module<B>) -> Vec<(&'static str, Snapshot)>
+fn rotations<BE>(params: CKKSTestParams, module: &Module<BE>) -> Vec<(&'static str, Snapshot)>
 where
-    B: Backend<ZnxWord = i64> + CKKSRotateImpl,
-    Module<B>: GLWEAutomorphismKeyPreparedFactory<B> + GLWEMaskFill<B> + GLWEAdd<B>,
+    BE: Backend<ZnxWord = i64> + CKKSRotateImpl,
+    Module<BE>: GLWEAutomorphismKeyPreparedFactory<BE> + GLWEMaskFill<BE> + GLWEAdd<BE>,
 {
     use super::keys::{key_layout, prepared_automorphism_key};
     let b = params.base2k;
@@ -549,62 +516,59 @@ where
     for (dsize, lazy) in [(1, false), (2, true)] {
         let la = layout(params, rank, 3 * b + 5, b - 1, 2, SlotsKind::Complex);
         let input = fixture_operand(module, &la, 61, lazy);
-        let before = snapshot::<B, _>(&input);
+        let before = snapshot::<BE, _>(&input);
         let key_infos = key_layout(params.n, b, 3 * b + 5, dsize, rank, rank);
         let key = prepared_automorphism_key(module, &key_infos, 5, 62);
         for width in [2 * b + 3, 4 * b + 1] {
             let lr = layout(params, rank, width, b - 1, 0, SlotsKind::Real);
             let mut out = fixture_ciphertext(module, &lr, 99);
-            let bytes = B::ckks_rotate_tmp_bytes_impl(module, &input, &key);
-            with_scratch::<B, _>(bytes, |scratch| {
-                B::ckks_rotate_into_impl(
+            let bytes = BE::ckks_rotate_with_key_tmp_bytes(module, &input, &key);
+            with_scratch::<BE, _>(bytes, |scratch| {
+                BE::ckks_rotate_with_key_into(
                     module,
                     &mut out,
                     &input,
-                    &GLWEAutomorphismKeyPreparedToBackendRef::<B>::to_backend_ref(&key),
+                    &GLWEAutomorphismKeyPreparedToBackendRef::<BE>::to_backend_ref(&key),
                     scratch,
                 )
             })
             .unwrap();
-            results.push(("rotate_into", snapshot::<B, _>(&out)));
+            results.push(("rotate_with_key_into", snapshot::<BE, _>(&out)));
             for k in shifts {
                 let mut out = fixture_ciphertext(module, &lr, 99);
-                let bytes = B::ckks_rotate_by_tmp_bytes_impl(module, &input, &key);
-                with_scratch::<B, _>(bytes, |scratch| {
-                    B::ckks_rotate_by_into_impl(module, &mut out, &input, k, &key, scratch)
+                let bytes = BE::ckks_rotate_tmp_bytes(module, &input, &key);
+                with_scratch::<BE, _>(bytes, |scratch| {
+                    BE::ckks_rotate_into(module, k, &mut out, &input, &key, scratch)
                 })
                 .unwrap();
-                results.push(("rotate_by_into", snapshot::<B, _>(&out)));
+                results.push(("rotate_into", snapshot::<BE, _>(&out)));
             }
         }
         let mut out = fixture_operand(module, &la, 61, lazy);
-        let bytes = B::ckks_rotate_tmp_bytes_impl(module, &out, &key);
-        with_scratch::<B, _>(bytes, |scratch| {
-            B::ckks_rotate_assign_impl(
+        let bytes = BE::ckks_rotate_with_key_tmp_bytes(module, &out, &key);
+        with_scratch::<BE, _>(bytes, |scratch| {
+            BE::ckks_rotate_with_key_assign(
                 module,
                 &mut out,
-                &GLWEAutomorphismKeyPreparedToBackendRef::<B>::to_backend_ref(&key),
+                &GLWEAutomorphismKeyPreparedToBackendRef::<BE>::to_backend_ref(&key),
                 scratch,
             )
         })
         .unwrap();
-        results.push(("rotate_assign", snapshot::<B, _>(&out)));
+        results.push(("rotate_with_key_assign", snapshot::<BE, _>(&out)));
         for k in shifts {
             let mut out = fixture_operand(module, &la, 61, lazy);
-            let bytes = B::ckks_rotate_by_tmp_bytes_impl(module, &out, &key);
-            with_scratch::<B, _>(bytes, |scratch| {
-                B::ckks_rotate_by_assign_impl(module, &mut out, k, &key, scratch)
-            })
-            .unwrap();
-            results.push(("rotate_by_assign", snapshot::<B, _>(&out)));
+            let bytes = BE::ckks_rotate_tmp_bytes(module, &out, &key);
+            with_scratch::<BE, _>(bytes, |scratch| BE::ckks_rotate_assign(module, k, &mut out, &key, scratch)).unwrap();
+            results.push(("rotate_assign", snapshot::<BE, _>(&out)));
         }
-        assert_eq!(before, snapshot::<B, _>(&input));
+        assert_eq!(before, snapshot::<BE, _>(&input));
     }
     results
 }
 
 /// Keyed rotation and rotation by a slot shift, including the identity copy.
-pub fn test_rotate_parity<BR, BT, F>(params: CKKSTestParams, r: &Module<BR>, t: &Module<BT>)
+pub fn test_rotate_parity<BR, BT, F>(params: CKKSTestParams, module_ref: &Module<BR>, module_test: &Module<BT>)
 where
     BR: Backend<ZnxWord = i64> + CKKSRotateImpl,
     BT: Backend<ZnxWord = i64> + CKKSRotateImpl,
@@ -612,20 +576,20 @@ where
     Module<BT>: GLWEAutomorphismKeyPreparedFactory<BT> + GLWEMaskFill<BT> + GLWEAdd<BT>,
 {
     let _scalar = std::marker::PhantomData::<F>;
-    let want = rotations(params, r);
+    let want = rotations(params, module_ref);
     assert_untagged(
         "rotations",
         want.iter()
             .filter(|(label, _)| !label.contains("copy"))
             .map(|(_, output)| output),
     );
-    assert_eq!(want, rotations(params, t));
+    assert_eq!(want, rotations(params, module_test));
 }
 
-fn conjugations<B>(params: CKKSTestParams, module: &Module<B>) -> Vec<(&'static str, Snapshot)>
+fn conjugations<BE>(params: CKKSTestParams, module: &Module<BE>) -> Vec<(&'static str, Snapshot)>
 where
-    B: Backend<ZnxWord = i64> + CKKSConjugateImpl,
-    Module<B>: GLWEAutomorphismKeyPreparedFactory<B> + GLWEMaskFill<B> + GLWEAdd<B>,
+    BE: Backend<ZnxWord = i64> + CKKSConjugateImpl,
+    Module<BE>: GLWEAutomorphismKeyPreparedFactory<BE> + GLWEMaskFill<BE> + GLWEAdd<BE>,
 {
     use super::keys::{key_layout, prepared_automorphism_key};
     let b = params.base2k;
@@ -634,44 +598,44 @@ where
     for (dsize, lazy) in [(1, false), (2, true)] {
         let la = layout(params, rank, 3 * b + 5, b - 1, 2, SlotsKind::Complex);
         let input = fixture_operand(module, &la, 61, lazy);
-        let before = snapshot::<B, _>(&input);
+        let before = snapshot::<BE, _>(&input);
         let key_infos = key_layout(params.n, b, 3 * b + 5, dsize, rank, rank);
         let key = prepared_automorphism_key(module, &key_infos, -1, 62);
         for width in [2 * b + 3, 4 * b + 1] {
             let lr = layout(params, rank, width, b - 1, 0, SlotsKind::Real);
             let mut out = fixture_ciphertext(module, &lr, 99);
-            let bytes = B::ckks_conjugate_tmp_bytes_impl(module, &input, &key);
-            with_scratch::<B, _>(bytes, |scratch| {
-                B::ckks_conjugate_into_impl(
+            let bytes = BE::ckks_conjugate_tmp_bytes(module, &input, &key);
+            with_scratch::<BE, _>(bytes, |scratch| {
+                BE::ckks_conjugate_with_key_into(
                     module,
                     &mut out,
                     &input,
-                    &GLWEAutomorphismKeyPreparedToBackendRef::<B>::to_backend_ref(&key),
+                    &GLWEAutomorphismKeyPreparedToBackendRef::<BE>::to_backend_ref(&key),
                     scratch,
                 )
             })
             .unwrap();
-            results.push(("conjugate_into", snapshot::<B, _>(&out)));
+            results.push(("conjugate_with_key_into", snapshot::<BE, _>(&out)));
         }
         let mut out = fixture_operand(module, &la, 61, lazy);
-        let bytes = B::ckks_conjugate_tmp_bytes_impl(module, &out, &key);
-        with_scratch::<B, _>(bytes, |scratch| {
-            B::ckks_conjugate_assign_impl(
+        let bytes = BE::ckks_conjugate_tmp_bytes(module, &out, &key);
+        with_scratch::<BE, _>(bytes, |scratch| {
+            BE::ckks_conjugate_with_key_assign(
                 module,
                 &mut out,
-                &GLWEAutomorphismKeyPreparedToBackendRef::<B>::to_backend_ref(&key),
+                &GLWEAutomorphismKeyPreparedToBackendRef::<BE>::to_backend_ref(&key),
                 scratch,
             )
         })
         .unwrap();
-        results.push(("conjugate_assign", snapshot::<B, _>(&out)));
-        assert_eq!(before, snapshot::<B, _>(&input));
+        results.push(("conjugate_with_key_assign", snapshot::<BE, _>(&out)));
+        assert_eq!(before, snapshot::<BE, _>(&input));
     }
     results
 }
 
 /// Conjugation, standard ring only.
-pub fn test_conjugate_parity<BR, BT, F>(params: CKKSTestParams, r: &Module<BR>, t: &Module<BT>)
+pub fn test_conjugate_parity<BR, BT, F>(params: CKKSTestParams, module_ref: &Module<BR>, module_test: &Module<BT>)
 where
     BR: Backend<ZnxWord = i64> + CKKSConjugateImpl,
     BT: Backend<ZnxWord = i64> + CKKSConjugateImpl,
@@ -679,12 +643,12 @@ where
     Module<BT>: GLWEAutomorphismKeyPreparedFactory<BT> + GLWEMaskFill<BT> + GLWEAdd<BT>,
 {
     let _scalar = std::marker::PhantomData::<F>;
-    let want = conjugations(params, r);
+    let want = conjugations(params, module_ref);
     assert_untagged(
         "conjugations",
         want.iter()
             .filter(|(label, _)| !label.contains("copy"))
             .map(|(_, output)| output),
     );
-    assert_eq!(want, conjugations(params, t));
+    assert_eq!(want, conjugations(params, module_test));
 }

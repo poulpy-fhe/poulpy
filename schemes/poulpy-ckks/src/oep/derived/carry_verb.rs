@@ -12,7 +12,7 @@ where
     Module<BE>: CKKSAddOps<BE>,
     Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
 {
-    let one = crate::layouts::ckks_one_pt(module, dst.base2k())?;
+    let one = crate::layouts::slots::ckks_one_pt(module, dst.base2k())?;
     module.ckks_add_pt_const_assign(dst, 0, &one, 0, scratch)
 }
 pub(crate) fn ckks_sub_one_assign_derived<BE: Backend, Dst>(
@@ -24,6 +24,6 @@ where
     Module<BE>: CKKSSubOps<BE>,
     Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
 {
-    let one = crate::layouts::ckks_one_pt(module, dst.base2k())?;
+    let one = crate::layouts::slots::ckks_one_pt(module, dst.base2k())?;
     module.ckks_sub_pt_const_assign(dst, 0, &one, 0, scratch)
 }

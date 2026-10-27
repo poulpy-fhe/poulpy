@@ -177,7 +177,7 @@ where
             let (mut rotated, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(input);
             self.ckks_copy(&mut acc, input, &mut scratch_local)?;
             for shift in slot_shifts(self, input) {
-                self.ckks_rotate_into(&mut rotated, &acc, shift, rotation_keys, &mut scratch_local)?;
+                self.ckks_rotate_into(shift, &mut rotated, &acc, rotation_keys, &mut scratch_local)?;
                 self.ckks_add_assign(&mut acc, &rotated, &mut scratch_local)?;
             }
             self.ckks_copy(res, &acc, &mut scratch_local)?;
@@ -294,7 +294,7 @@ where
         let (mut next, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(input);
         module.ckks_copy(&mut acc, input, &mut scratch_local)?;
         for shift in slot_shifts(module, input) {
-            module.ckks_rotate_into(&mut rotated, &acc, shift, rotation_keys, &mut scratch_local)?;
+            module.ckks_rotate_into(shift, &mut rotated, &acc, rotation_keys, &mut scratch_local)?;
             if max {
                 module.ckks_fmax(&mut next, &acc, &rotated, composite, tsk, conj_key, &mut scratch_local)?;
             } else {

@@ -5,11 +5,11 @@ use crate::{CKKSResult as Result, ckks_ensure};
 use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef, LWEInfos};
 use poulpy_hal::{
     api::{
-        CnvPVecBytesOf, Convolution, ScratchArenaTakeBasic, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
-        VecZnxDftBytesOf, VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
+        CnvPVecBytesOf, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxBigBytesOf, VecZnxBigNormalize,
+        VecZnxBigNormalizeTmpBytes, VecZnxDftBytesOf, VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
     },
     layouts::{
-        Backend, CnvDftAccTerm, CnvPVecL, CnvPVecLToBackendRef, CnvPVecRToBackendRef, Module, PrepareHint, ScratchArena,
+        Backend, CnvDftAccTerm, CnvPVecL, CnvPVecLToBackendRef, CnvPVecRToBackendRef, PrepareHint, ScratchArena,
         VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef,
     },
 };
@@ -17,14 +17,15 @@ use poulpy_hal::{
 use crate::{
     CKKSInfos, SetCKKSInfos,
     layouts::{CKKSCiphertextOwned, CKKSPlaintextOwned, ShipPlan},
-    reference::mul::mul_pt_params_raw,
+    mul_pt_params_raw,
 };
 
 /// Scratch bytes for [`ship_masking_accumulate`].
-pub(crate) fn ship_masking_tmp_bytes<BE>(module: &Module<BE>, plan: &ShipPlan, base2k: usize) -> usize
+pub(crate) fn ship_masking_tmp_bytes<BE, M>(module: &M, plan: &ShipPlan, base2k: usize) -> usize
 where
     BE: Backend,
-    Module<BE>: Convolution<BE>
+    M: ModuleN
+        + Convolution<BE>
         + CnvPVecBytesOf
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
@@ -51,8 +52,8 @@ where
 /// Lazy masking accumulation: `acc = sum_i masks[i] * pis[i]` over the
 /// keygen-prepared mask operands, the per-pair convolutions accumulated in
 /// the DFT domain with a single IDFT + normalize per column.
-pub(crate) fn ship_masking_accumulate<BE>(
-    module: &Module<BE>,
+pub(crate) fn ship_masking_accumulate<BE, M>(
+    module: &M,
     acc: &mut CKKSCiphertextOwned<BE>,
     plan: &ShipPlan,
     masks: &[CnvPVecL<BE::OwnedBuf, BE::DftWord, BE>],
@@ -61,16 +62,15 @@ pub(crate) fn ship_masking_accumulate<BE>(
 ) -> Result<()>
 where
     BE: Backend,
-    Module<BE>: Convolution<BE>
+    M: ModuleN
+        + Convolution<BE>
         + CnvPVecBytesOf
         + VecZnxDftBytesOf
         + VecZnxIdftApply<BE>
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BE>,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
 {
-    const OP: &str = "ship_masking_accumulate";
+    const OP: &str = "ckks_ship_bootstrap_into";
     ckks_ensure!(
         !masks.is_empty() && masks.len() == pis.len(),
         "{OP}: empty or mismatched operands"
@@ -79,6 +79,7 @@ where
     let kk = plan.raised_k(base2k);
     let ld = plan.log_delta_work();
     let (res_log_budget, res_log_delta, cnv_offset) = mul_pt_params_raw(
+        OP,
         acc.max_k().as_usize(),
         ld,
         kk - ld,
@@ -139,9 +140,9 @@ where
     acc.set_log_budget(res_log_budget);
     acc.set_log_delta(res_log_delta);
     let res_big_ref = res_big.to_backend_ref();
-    acc.set_canonical(true);
+    GLWEToBackendMut::<BE>::set_canonical(acc, true);
     {
-        let mut acc_mut = acc.to_backend_mut();
+        let mut acc_mut = GLWEToBackendMut::<BE>::to_backend_mut(acc);
         for col in 0..2 {
             module.vec_znx_big_normalize(
                 acc_mut.data_mut(),

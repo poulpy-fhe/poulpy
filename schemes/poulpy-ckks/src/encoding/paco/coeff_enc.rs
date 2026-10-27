@@ -33,11 +33,11 @@ use std::fmt::Debug;
 
 use super::cpx::Cpx;
 use crate::SlotsKind;
+use crate::layouts::DftScalar;
 use crate::layouts::paco::{
     plan::PaCoPlan,
     secret::{PaCoPackingWorkspace, pack_chunk_into_with},
 };
-use crate::reference::dft::DftScalar;
 
 /// The circle-group embedding `ψ(a) = exp(2πi·a / 2^log_q)`, computed at the
 /// working precision `F`.
@@ -178,7 +178,7 @@ where
 /// Backend-agnostic PaCo coefficient encoding (Algorithm 3, getCoeffEnc):
 /// reads the exhausted rank-one ciphertext's residues at `plan.log_q()`,
 /// builds the four β_t slot vectors, and CKKS-encodes them at the
-/// bootstrapping-key scale into four backend-owned plaintexts — the
+/// bootstrapping-key scale into four backend-owned plaintexts, the
 /// input-dependent counterpart of
 /// [`PaCoSecretSpec::sigma_slots_reim`](crate::layouts::PaCoSecretSpec::sigma_slots_reim) at key
 /// generation, and the complete scheme definition of
@@ -195,9 +195,9 @@ where
 /// non-representable coefficients, or a failed encoding.
 pub fn paco_coeff_encodings_host<BE, D, F>(
     module: &Module<BE>,
+    base2k: Base2K,
     ct: &CKKSCiphertext<D, BE::ZnxWord, Standard>,
     plan: &PaCoPlan,
-    base2k: Base2K,
 ) -> Result<[CKKSPlaintextOwned<BE>; 4]>
 where
     // Host reference encoder: recomposes the ciphertext limbs through the i64
@@ -280,7 +280,7 @@ where
 /// Reads column `col` of a host-accessible GLWE data buffer as balanced
 /// (signed) representatives modulo `2^k` (`k` the ciphertext's torus
 /// precision), recomposed from the limbs by [`VecZnx::decode_vec_i64`]. No
-/// reduction is applied — every consumer, including [`psi`] and centered
+/// reduction is applied: every consumer, including [`psi`] and centered
 /// representative conversion in the test model, depends only on the residue
 /// class.
 pub(crate) fn glwe_column_residues<D: HostDataRef>(
@@ -316,7 +316,7 @@ pub(crate) fn glwe_column_residues<D: HostDataRef>(
 /// Algorithm 3 (getCoeffEnc) on a **real** exhausted ciphertext: reads the
 /// body (`ct0`) and mask (`ct1`) residues modulo `q = 2^{log_q}` off the
 /// base2k limbs and builds the four packed β_t slot vectors. Poulpy decrypts
-/// as `body + mask·s`, matching the paper's `m = ct0 + s·ct1` — no sign
+/// as `body + mask·s`, matching the paper's `m = ct0 + s·ct1`; no sign
 /// adjustment is needed.
 pub(crate) fn exhausted_ciphertext_residues<D: HostDataRef>(
     ct: &CKKSCiphertext<D, i64, Standard>,

@@ -25,7 +25,7 @@ pub trait CKKSCopyReference<BE: Backend> {
         Src: GLWEToBackendRef<BE> + CKKSInfos,
     {
         let offset = crate::ckks_offset_unary(dst, src);
-        crate::ckks_copy_stamp_unary(self, "copy", dst, src, scratch)?;
+        crate::ckks_copy_stamp_unary(self, "ckks_copy", dst, src, scratch)?;
         let rank = dst.to_backend_ref().rank().as_usize();
         dst.set_noise(if offset == 0 {
             src.noise().map(|noise| noise.with_rank(rank))

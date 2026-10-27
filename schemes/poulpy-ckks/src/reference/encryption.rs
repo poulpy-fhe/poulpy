@@ -10,9 +10,12 @@ use poulpy_hal::{
 };
 
 use crate::GLWEToBackendRef;
-use crate::{CKKSCompositionError, CKKSInfos, SetCKKSInfos, checked_log_budget_sub, error::ensure_encryption_degrees};
+use crate::{
+    CKKSCompositionError, CKKSInfos, SetCKKSInfos, checked_log_budget_sub, ckks_ensure, ensure_base2k_match,
+    ensure_plaintext_alignment, ensure_plaintext_vec_operand, error::ensure_encryption_degrees,
+};
 
-use super::CKKSPlaintextReference;
+use super::CKKSPlaintextVecReference;
 use poulpy_core::GLWEBytesOf;
 
 pub trait CKKSEncryptionReference<BE: Backend> {
@@ -41,7 +44,8 @@ pub trait CKKSEncryptionReference<BE: Backend> {
         S: GLWESecretPreparedToBackendRef<BE>,
         Dct: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
         Dpt: GLWEToBackendRef<BE> + CKKSInfos + IntPolyInfos,
-        Self: ModuleN + GLWEEncryptSk<BE> + GLWENormalize<BE> + VecZnxLshAdd<BE> + VecZnxRshAdd<BE> + CKKSPlaintextReference<BE>,
+        Self:
+            ModuleN + GLWEEncryptSk<BE> + GLWENormalize<BE> + VecZnxLshAdd<BE> + VecZnxRshAdd<BE> + CKKSPlaintextVecReference<BE>,
     {
         ensure_encryption_degrees(
             "ckks_encrypt_sk",
@@ -50,6 +54,15 @@ pub trait CKKSEncryptionReference<BE: Backend> {
             sk.to_backend_ref().n().as_usize(),
         )?;
         let log_budget = checked_log_budget_sub("ckks_encrypt_sk", ct.k().as_usize(), pt.log_delta())?;
+        // The plaintext addition's checks at the budget the encryption stamps, before the first draw.
+        ensure_plaintext_vec_operand(
+            "ckks_encrypt_sk",
+            ct.base2k().as_usize(),
+            ct.n().as_usize(),
+            log_budget,
+            pt,
+            BE::MIN_DEGREE,
+        )?;
         self.glwe_encrypt_zero_sk(ct, sk, source_xe, source_xa, scratch);
         ct.set_log_budget(log_budget);
         ct.set_log_delta(pt.log_delta());
@@ -72,8 +85,12 @@ pub trait CKKSEncryptionReference<BE: Backend> {
         Self: GLWEBytesOf<BE>,
         Pt: CKKSInfos,
         Ct: GLWEInfos + CKKSInfos,
-        Self:
-            GLWEDecrypt<BE> + VecZnxLsh<BE> + VecZnxLshTmpBytes + VecZnxRsh<BE> + VecZnxRshTmpBytes + CKKSPlaintextReference<BE>,
+        Self: GLWEDecrypt<BE>
+            + VecZnxLsh<BE>
+            + VecZnxLshTmpBytes
+            + VecZnxRsh<BE>
+            + VecZnxRshTmpBytes
+            + CKKSPlaintextVecReference<BE>,
     {
         let below = if pt_infos.n() < ct_infos.n() {
             BE::scratch_aligned(self.glwe_plaintext_bytes_of_from_infos(&below_layout(pt_infos, ct_infos)))
@@ -100,8 +117,17 @@ pub trait CKKSEncryptionReference<BE: Backend> {
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         Dpt: GLWEToBackendMut<BE> + CKKSInfos + IntPolyInfos + SetCKKSInfos,
         Dct: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
-        Self: GLWEDecrypt<BE> + CKKSPlaintextReference<BE> + VecZnxLsh<BE> + VecZnxRsh<BE> + VecZnxSwitchRing<BE>,
+        Self: ModuleN
+            + GLWEDecrypt<BE>
+            + GLWEBytesOf<BE>
+            + CKKSPlaintextVecReference<BE>
+            + VecZnxLsh<BE>
+            + VecZnxLshTmpBytes
+            + VecZnxRsh<BE>
+            + VecZnxRshTmpBytes
+            + VecZnxSwitchRing<BE>,
     {
+        ensure_encryption_degrees("ckks_decrypt", self.n(), ct.n().as_usize(), sk.n().as_usize())?;
         let (ct_n, pt_n) = (ct.n().as_usize(), pt.n().as_usize());
         // Every `ct_n / pt_n`-th coefficient holds the message only when the slots repeat that often.
         if pt_n != ct_n && !(pt_n < ct_n && ct_n.is_multiple_of(pt_n) && (ct_n / pt_n).ilog2() as usize <= ct.log_sparsity()) {
@@ -112,14 +138,29 @@ pub trait CKKSEncryptionReference<BE: Backend> {
             }
             .into());
         }
-        let (mut full_pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(ct);
-        self.glwe_decrypt(ct, &mut full_pt, sk, &mut scratch_1);
-        if pt_n == ct_n {
-            return CKKSPlaintextReference::ckks_extract_pt_with_meta_reference(self, pt, &full_pt, ct.meta(), &mut scratch_1);
+        // The extraction's checks, before the first secret-derived write.
+        ensure_base2k_match("ckks_decrypt", ct.base2k().as_usize(), pt.base2k().as_usize())?;
+        ensure_plaintext_alignment(
+            "ckks_decrypt",
+            ct.log_budget(),
+            pt.log_delta(),
+            pt.log_delta() + pt.log_budget(),
+        )?;
+        let tmp_bytes = self.ckks_decrypt_tmp_bytes_reference(&*pt, ct);
+        ckks_ensure!(scratch.available() >= tmp_bytes, "ckks_decrypt: scratch below its query");
+        {
+            let (mut full_pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(ct);
+            self.glwe_decrypt(ct, &mut full_pt, sk, &mut scratch_1);
+            if pt_n == ct_n {
+                CKKSPlaintextVecReference::ckks_extract_pt_with_meta_reference(self, pt, &full_pt, ct.meta(), &mut scratch_1)?;
+            } else {
+                let (mut below, mut scratch_2) = scratch_1.take_glwe_plaintext_scratch(&below_layout(pt, ct));
+                self.vec_znx_switch_ring(below.to_backend_mut().data_mut(), 0, full_pt.to_backend_ref().data(), 0);
+                CKKSPlaintextVecReference::ckks_extract_pt_with_meta_reference(self, pt, &below, ct.meta(), &mut scratch_2)?;
+            }
         }
-        let (mut below, mut scratch_2) = scratch_1.take_glwe_plaintext_scratch(&below_layout(pt, ct));
-        self.vec_znx_switch_ring(below.to_backend_mut().data_mut(), 0, full_pt.to_backend_ref().data(), 0);
-        CKKSPlaintextReference::ckks_extract_pt_with_meta_reference(self, pt, &below, ct.meta(), &mut scratch_2)
+        scratch.wipe(tmp_bytes);
+        Ok(())
     }
 }
 

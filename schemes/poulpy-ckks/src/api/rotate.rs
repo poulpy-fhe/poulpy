@@ -40,11 +40,18 @@ pub trait CKKSRotateOps<BE: Backend> {
     ///
     /// `k` may be negative (shifts in the opposite direction).  The `keys`
     /// collection must contain the automorphism key for shift amount `k`.
+    ///
+    /// # Errors
+    ///
+    /// A shift of zero slots returns the errors of [`CKKSCopyOps::ckks_copy`](crate::api::CKKSCopyOps::ckks_copy).
+    /// Otherwise `MissingAutomorphismKey` when `keys` has no key for the shift covering
+    /// `min(src.k(), dst.k())`, and `InsufficientHomomorphicCapacity` when `dst` is narrower
+    /// than `src` by more than its budget. `dst` is untouched on `Err`.
     fn ckks_rotate_into<Dst, Src, H>(
         &self,
+        k: i64,
         dst: &mut Dst,
         src: &Src,
-        k: i64,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -55,7 +62,11 @@ pub trait CKKSRotateOps<BE: Backend> {
 
     /// Computes `dst = rotate(dst, k)` in-place, preserving CKKS layout and scale metadata.
     /// Component noise metadata is cleared.
-    fn ckks_rotate_assign<Dst, H>(&self, dst: &mut Dst, k: i64, keys: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    ///
+    /// # Errors
+    ///
+    /// `MissingAutomorphismKey` when `keys` has no key for the shift covering `dst.k()`. `dst` is untouched on `Err`.
+    fn ckks_rotate_assign<Dst, H>(&self, k: i64, dst: &mut Dst, keys: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         H: GetAutomorphismKey<BE>,
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;

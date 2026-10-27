@@ -569,7 +569,7 @@ impl<BE: Backend, K: GetTensorKey<BE>> GetTensorKey<BE> for TensorKeyAt<'_, K> {
     }
 }
 
-/// Runs a dot product expected to fail on `bytes` of poisoned scratch, checks that `dst` is
+/// Runs a dot product expected to fail before its scratch check on an empty arena, checks that `dst` is
 /// untouched, and returns the error.
 fn assert_rejected<BE: TestContextBackend, H: GetTensorKey<BE>>(
     module: &Module<BE>,
@@ -577,13 +577,12 @@ fn assert_rejected<BE: TestContextBackend, H: GetTensorKey<BE>>(
     a: &[&CKKSCiphertextOwned<BE>],
     b: &[&CKKSCiphertextOwned<BE>],
     tsk: &H,
-    bytes: usize,
 ) -> CKKSError
 where
     Module<BE>: TestContextModule<BE>,
 {
     let before = snapshot::<BE, _>(&*dst);
-    let err = with_scratch::<BE, _>(bytes, |scratch| module.ckks_dot_product_ct(dst, a, b, tsk, scratch)).unwrap_err();
+    let err = with_scratch::<BE, _>(0, |scratch| module.ckks_dot_product_ct(dst, a, b, tsk, scratch)).unwrap_err();
     assert_eq!(snapshot::<BE, _>(&*dst), before, "a rejected dot product wrote dst: {err}");
     err
 }
@@ -683,9 +682,10 @@ where
         })
         .unwrap();
         let mut product = alloc_ct(&params, module, dst_k);
-        module
-            .ckks_mul_into(&mut product, a_refs[0], b_refs[0], &tsk, &mut scratch.borrow())
-            .unwrap();
+        with_scratch::<BE, _>(module.ckks_mul_tmp_bytes(&product, a_refs[0], b_refs[0], &tsk), |s| {
+            module.ckks_mul_into(&mut product, a_refs[0], b_refs[0], &tsk, s)
+        })
+        .unwrap();
         assert_eq!(
             snapshot::<BE, _>(&padded),
             snapshot::<BE, _>(&product),
@@ -727,7 +727,7 @@ where
         assert_eq!(snapshot::<BE, _>(&keyed), have, "{label}: a key held at {key_k:?} only");
         if dst_k > a_k.max(b_k) {
             let at_dst = TensorKeyAt(&tsk, TorusPrecision(dst_k as u32));
-            let err = assert_rejected(module, &mut lazy, &a_refs, &b_refs, &at_dst, bytes);
+            let err = assert_rejected(module, &mut lazy, &a_refs, &b_refs, &at_dst);
             assert!(
                 matches!(
                     err.composition(),
@@ -741,9 +741,9 @@ where
         if case > 0 {
             continue;
         }
-        let err = assert_rejected(module, &mut lazy, &[], &[], &tsk, bytes);
+        let err = assert_rejected(module, &mut lazy, &[], &[], &tsk);
         assert!(err.to_string().contains("at least one pair"), "{label}: {err}");
-        let err = assert_rejected(module, &mut lazy, &a_refs, &b_refs[..N - 1], &tsk, bytes);
+        let err = assert_rejected(module, &mut lazy, &a_refs, &b_refs[..N - 1], &tsk);
         assert!(err.to_string().contains("length mismatch"), "{label}: {err}");
         // Inputs whose budget is below their scale.
         let thin: Vec<_> = a_cts
@@ -755,7 +755,7 @@ where
             })
             .collect();
         let thin_refs: Vec<&_> = thin.iter().collect();
-        let err = assert_rejected(module, &mut lazy, &thin_refs, &b_refs, &tsk, bytes);
+        let err = assert_rejected(module, &mut lazy, &thin_refs, &b_refs, &tsk);
         assert!(
             matches!(
                 err.composition(),
@@ -767,7 +767,7 @@ where
         let mut narrow = lazy.clone();
         narrow.set_log_budget(0);
         narrow.set_log_delta(lazy.log_delta() - 1);
-        let err = assert_rejected(module, &mut narrow, &a_refs, &b_refs, &tsk, bytes);
+        let err = assert_rejected(module, &mut narrow, &a_refs, &b_refs, &tsk);
         assert!(
             matches!(
                 err.composition(),
@@ -909,7 +909,7 @@ pub fn test_dot_product_ct_non_uniform<BE, F, E>(
     }
 }
 
-/// Runs a prepared dot product expected to fail on `bytes` of poisoned scratch, checks that `dst` is
+/// Runs a prepared dot product expected to fail before its scratch check on an empty arena, checks that `dst` is
 /// untouched, and returns the error.
 fn assert_prepared_rejected<BE: TestContextBackend, H: GetTensorKey<BE>>(
     module: &Module<BE>,
@@ -917,13 +917,12 @@ fn assert_prepared_rejected<BE: TestContextBackend, H: GetTensorKey<BE>>(
     a: &[&CKKSPreparedLeft<BE>],
     b: &[&CKKSPreparedRight<BE>],
     tsk: &H,
-    bytes: usize,
 ) -> CKKSError
 where
     Module<BE>: TestContextModule<BE>,
 {
     let before = snapshot::<BE, _>(&*dst);
-    let err = with_scratch::<BE, _>(bytes, |scratch| module.ckks_dot_product_prepared(dst, a, b, tsk, scratch)).unwrap_err();
+    let err = with_scratch::<BE, _>(0, |scratch| module.ckks_dot_product_prepared(dst, a, b, tsk, scratch)).unwrap_err();
     assert_eq!(
         snapshot::<BE, _>(&*dst),
         before,
@@ -1035,7 +1034,6 @@ where
     let lhs: Vec<&_> = left[1].iter().collect();
     let rhs: Vec<&_> = right[1].iter().collect();
     let mut dst = alloc_ct(p, module, p.k);
-    let bytes = module.ckks_dot_product_ct_tmp_bytes(PAIRS, &dst, lhs[0], rhs[0], tsk);
     let no_key = TensorKeyAt(tsk, TorusPrecision(1));
     /// `side` with `odd` at `at`.
     fn with<'a, T>(side: &[&'a T], at: usize, odd: &'a T) -> Vec<&'a T> {
@@ -1044,9 +1042,9 @@ where
         side
     }
 
-    let err = assert_prepared_rejected(module, &mut dst, &[], &[], tsk, bytes);
+    let err = assert_prepared_rejected(module, &mut dst, &[], &[], tsk);
     assert!(err.to_string().contains("at least one pair"), "{err}");
-    let err = assert_prepared_rejected(module, &mut dst, &lhs, &rhs[..PAIRS - 1], tsk, bytes);
+    let err = assert_prepared_rejected(module, &mut dst, &lhs, &rhs[..PAIRS - 1], tsk);
     assert!(err.to_string().contains("length mismatch"), "{err}");
 
     // Operands of another degree, radix or rank, on either side, before the layouts each side shares.
@@ -1084,11 +1082,11 @@ where
     };
     for (odd_left, odd_right) in foreign_left.iter().zip(&foreign_right) {
         // The lengths come first.
-        let err = assert_prepared_rejected(module, &mut dst, &with(&lhs, 0, odd_left), &rhs[1..], tsk, bytes);
+        let err = assert_prepared_rejected(module, &mut dst, &with(&lhs, 0, odd_left), &rhs[1..], tsk);
         assert!(err.to_string().contains("length mismatch"), "{err}");
-        let err = assert_prepared_rejected(module, &mut dst, &with(&lhs, PAIRS - 1, odd_left), &rhs, tsk, bytes);
+        let err = assert_prepared_rejected(module, &mut dst, &with(&lhs, PAIRS - 1, odd_left), &rhs, tsk);
         assert_ckks_error("foreign left operand", &err, mismatch(odd_left.glwe_layout()));
-        let err = assert_prepared_rejected(module, &mut dst, &lhs, &with(&rhs, 0, odd_right), tsk, bytes);
+        let err = assert_prepared_rejected(module, &mut dst, &lhs, &with(&rhs, 0, odd_right), tsk);
         assert_ckks_error("foreign right operand", &err, mismatch(odd_right.glwe_layout()));
     }
 
@@ -1104,7 +1102,7 @@ where
         (with(&lhs, 1, &narrow), rhs.clone()),
         (lhs.clone(), with(&rhs, 1, &low_scale)),
     ] {
-        let err = assert_prepared_rejected(module, &mut dst, &lhs, &rhs, &no_key, bytes);
+        let err = assert_prepared_rejected(module, &mut dst, &lhs, &rhs, &no_key);
         assert!(invalid(&err), "mixed layouts, before the tensor key: {err}");
     }
     // The operands' layouts come first.
@@ -1114,7 +1112,6 @@ where
         &with(&lhs, 1, &narrow),
         &with(&rhs, 0, &foreign_right[0]),
         tsk,
-        bytes,
     );
     assert_ckks_error("mixed and foreign", &err, mismatch(foreign_right[0].glwe_layout()));
 
@@ -1130,11 +1127,11 @@ where
         prepare_right(&wide, PrepareHint::Reuse),
     );
     let mut wide_dst = module.ckks_ciphertext_alloc_from_glwe_infos(&radix_63);
-    let err = assert_prepared_rejected(module, &mut wide_dst, &[&wide_left], &[&wide_right], &no_key, bytes);
+    let err = assert_prepared_rejected(module, &mut wide_dst, &[&wide_left], &[&wide_right], &no_key);
     assert!(invalid(&err) && err.to_string().contains("base2k 63 > 62"), "{err}");
 
     // No tensor key at `max(a.k, b.k)`.
-    let err = assert_prepared_rejected(module, &mut dst, &lhs, &rhs, &no_key, bytes);
+    let err = assert_prepared_rejected(module, &mut dst, &lhs, &rhs, &no_key);
     assert!(
         matches!(
             err.composition(),
@@ -1153,7 +1150,7 @@ where
         })
         .collect();
     let thin: Vec<&_> = thin.iter().collect();
-    let err = assert_prepared_rejected(module, &mut dst, &thin, &rhs, &no_key, bytes);
+    let err = assert_prepared_rejected(module, &mut dst, &thin, &rhs, &no_key);
     assert!(
         matches!(
             err.composition(),
@@ -1161,7 +1158,7 @@ where
         ),
         "{err}"
     );
-    let err = assert_prepared_rejected(module, &mut dst, &thin, &rhs, tsk, bytes);
+    let err = assert_prepared_rejected(module, &mut dst, &thin, &rhs, tsk);
     assert!(
         matches!(
             err.composition(),
@@ -1239,9 +1236,11 @@ pub fn test_dot_product_pt_vec_aligned<BE, F, E>(
     let pt_refs: Vec<&_> = pts.iter().collect();
 
     let mut ct_res = alloc_ct(&params, module, params.k);
-    module
-        .ckks_dot_product_pt_vec(&mut ct_res, &a_refs, &pt_refs, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(
+        module.ckks_dot_product_pt_vec_tmp_bytes(&ct_res, a_refs[0], pt_refs[0]),
+        |s| module.ckks_dot_product_pt_vec(&mut ct_res, &a_refs, &pt_refs, s),
+    )
+    .unwrap();
     assert_decrypt_precision(
         "dot_product_pt_vec_aligned",
         &params,
@@ -1347,9 +1346,10 @@ where
     );
 
     let mut want = alloc_ct(&params, module, params.k);
-    module
-        .ckks_mul_pt_vec_into(&mut want, &a_cts[0], &pts[0], &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_mul_pt_vec_tmp_bytes(&want, &a_cts[0], &pts[0]), |s| {
+        module.ckks_mul_pt_vec_into(&mut want, &a_cts[0], &pts[0], s)
+    })
+    .unwrap();
     let mut have = alloc_ct(&params, module, params.k);
     with_scratch::<BE, _>(bytes, |s| {
         module.ckks_dot_product_prepared_pt(&mut have, &a[..1], &b[..1], &[1], s)
@@ -1362,9 +1362,7 @@ where
 
     let before = snapshot::<BE, _>(&have);
     let even = [galois[0], 2, galois[2]];
-    let err = module
-        .ckks_dot_product_prepared_pt(&mut have, &a, &b, &even, &mut scratch.borrow())
-        .unwrap_err();
+    let err = with_scratch::<BE, _>(0, |s| module.ckks_dot_product_prepared_pt(&mut have, &a, &b, &even, s)).unwrap_err();
     assert_ckks_error(
         "even element",
         &err,
@@ -1373,15 +1371,16 @@ where
             reason: "a Galois element is even".into(),
         },
     );
-    assert!(
-        module
-            .ckks_dot_product_prepared_pt(&mut have, &a, &b[..2], &galois, &mut scratch.borrow())
-            .is_err(),
-        "{OP}: slices of two lengths"
+    let err = with_scratch::<BE, _>(0, |s| module.ckks_dot_product_prepared_pt(&mut have, &a, &b[..2], &galois, s)).unwrap_err();
+    assert_ckks_error(
+        "slices of two lengths",
+        &err,
+        CKKSCompositionError::InvalidOperand {
+            op: OP,
+            reason: format!("length mismatch between ct vector ({}) and weight vector (2)", a.len()),
+        },
     );
-    let err = module
-        .ckks_dot_product_prepared_pt(&mut have, &a, &b, &galois[..2], &mut scratch.borrow())
-        .unwrap_err();
+    let err = with_scratch::<BE, _>(0, |s| module.ckks_dot_product_prepared_pt(&mut have, &a, &b, &galois[..2], s)).unwrap_err();
     assert_ckks_error(
         "two Galois lengths",
         &err,
@@ -1394,9 +1393,7 @@ where
     rescaled.set_log_delta(a_cts[1].log_delta() - 1);
     let rescaled = prepare_left(&rescaled);
     let mixed = [a[0], &rescaled, a[2]];
-    let err = module
-        .ckks_dot_product_prepared_pt(&mut have, &mixed, &b, &galois, &mut scratch.borrow())
-        .unwrap_err();
+    let err = with_scratch::<BE, _>(0, |s| module.ckks_dot_product_prepared_pt(&mut have, &mixed, &b, &galois, s)).unwrap_err();
     assert_ckks_error(
         "two scales",
         &err,
@@ -1473,9 +1470,11 @@ pub fn test_dot_product_const_aligned<BE, F, E>(
     let const_refs: Vec<&_> = consts.iter().collect();
 
     let mut ct_res = alloc_ct(&params, module, params.k);
-    module
-        .ckks_dot_product_pt_const(&mut ct_res, &a_refs, &const_refs, &pt_coeffs, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(
+        module.ckks_dot_product_pt_const_tmp_bytes(&ct_res, a_refs[0], const_refs[0]),
+        |s| module.ckks_dot_product_pt_const(&mut ct_res, &a_refs, &const_refs, &pt_coeffs, s),
+    )
+    .unwrap();
     assert_decrypt_precision(
         "dot_product_const_aligned",
         &params,

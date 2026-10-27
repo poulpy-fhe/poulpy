@@ -3,6 +3,9 @@
 type Gpu = crate::NTT4x30Gpu<super::Runtime, poulpy_hal::layouts::Standard>;
 type GpuCI = crate::NTT4x30Gpu<super::Runtime, poulpy_hal::layouts::ConjugateInvariant>;
 
+// The encoding fixtures every CKKS type reproduces byte for byte.
+poulpy_ckks::ckks_determinism_test_suite!(mod ckks_determinism, backend = super::Gpu, f32);
+
 poulpy_ckks::ckks_parity_test_suite! {
     mod ckks_parity_f64,
     backend_ref = poulpy_cpu_portable::NTT4x30Portable,

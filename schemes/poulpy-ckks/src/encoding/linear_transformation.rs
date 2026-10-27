@@ -7,10 +7,10 @@
 //! diagonals — `diag_i[j] = M[j][(j+i) mod cols]` — with no manual
 //! `rot(diag, -n1·j)` pre-rotation needed.
 
-use anyhow::{Context, Result, ensure};
+use anyhow::{Context, Result};
 use poulpy_core::layouts::{
-    Base2K, Degree, DiagonalArithmetic, GLWELayout, GLWEPlaintextInfos, GLWEPlaintextMeta, GetDegree, LWEInfos,
-    LinearTransformationLayout, LinearTransformationStrategy, Rank,
+    Base2K, Degree, DiagonalArithmetic, GLWELayout, GLWEPlaintextMeta, GetDegree, LWEInfos, LinearTransformationLayout,
+    LinearTransformationStrategy, Rank,
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
@@ -18,34 +18,62 @@ use crate::api::CKKSModuleInfos;
 use crate::{
     CKKSCompositionError, CKKSLayout, CKKSResult, CoeffsMeta,
     api::{CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, LinearTransformation},
-    ckks_ensure,
+    ckks_ensure_operand,
     layouts::{CKKSModuleAlloc, CKKSPlaintextOwned, ComplexDiagonals},
 };
 
 fn validate_compile_inputs<F>(
+    op: &'static str,
     full_slots: usize,
     diagonals: &ComplexDiagonals<F>,
     strategy: LinearTransformationStrategy,
-) -> Result<()> {
+) -> CKKSResult<()> {
     let slots = diagonals.re.slots();
-    ensure!(
+    ckks_ensure_operand!(
+        op,
         slots == diagonals.im.slots(),
         "complex diagonal maps have different slot counts: real {slots}, imaginary {}",
         diagonals.im.slots(),
     );
-    ensure!(
+    ckks_ensure_operand!(
+        op,
         !diagonals.indexes().is_empty(),
         "linear transformation must contain at least one diagonal"
     );
-    ensure!(
+    ckks_ensure_operand!(
+        op,
         slots <= full_slots && full_slots.is_multiple_of(slots),
         "linear-transformation slot count {slots} must divide the ring's {full_slots} CKKS slots",
     );
     if let LinearTransformationStrategy::Bsgs { giant_step } | LinearTransformationStrategy::BsgsPowersOfTwo { giant_step } =
         strategy
     {
-        ensure!(giant_step > 0, "linear-transformation giant step must be non-zero");
+        ckks_ensure_operand!(op, giant_step > 0, "linear-transformation giant step must be non-zero");
     }
+    Ok(())
+}
+
+/// `InvalidOperand` for `op` when `diagonals` has a nonzero imaginary part but encodes into real slots: at a `meta` of
+/// real slots, or into plaintexts of degree `n` on a ring whose degree-`n` plaintexts hold `n` real slots.
+fn ensure_complex_fits<M: CKKSModuleInfos, F: CKKSEncodingScalar>(
+    op: &'static str,
+    module: &M,
+    meta: GLWEPlaintextMeta,
+    n: usize,
+    diagonals: &ComplexDiagonals<F>,
+) -> CKKSResult<()> {
+    let complex = diagonals.im.indexes().iter().any(|&index| {
+        diagonals
+            .im
+            .get(index)
+            .is_some_and(|values| values.iter().any(|value| !value.is_zero()))
+    });
+    let real_slots = meta.slots.is_real() || module.ckks_slots_of_degree(n) == n;
+    ckks_ensure_operand!(
+        op,
+        !(complex && real_slots),
+        "complex linear-transformation diagonals cannot be encoded into real slots"
+    );
     Ok(())
 }
 
@@ -72,12 +100,13 @@ fn validate_compile_inputs<F>(
 ///
 /// # Errors
 ///
-/// Returns an error when the CKKS layout is inconsistent, a diagonal cannot
-/// be represented at the requested scale, the diagonal map or BSGS schedule
-/// is malformed, the backend cannot encode a generated diagonal, or the
-/// caller-provided arena is too small. A zero torus width, `coeffs_meta.k = 0`,
-/// is [`CKKSCompositionError::InvalidOperand`], returned before anything is
-/// allocated or written.
+/// [`CKKSCompositionError::InvalidOperand`], before anything is allocated or
+/// written, for a zero torus width (`coeffs_meta.k = 0`), a radix outside
+/// `1..=63`, a malformed diagonal map or BSGS schedule, or a nonzero imaginary
+/// part encoded into real slots (`coeffs_meta` of real slots, or the
+/// conjugate-invariant ring). Then an error when a diagonal cannot be
+/// represented at the requested scale, the backend cannot encode a generated
+/// diagonal, or the caller-provided arena is too small.
 ///
 /// # Migration
 ///
@@ -102,12 +131,18 @@ where
     Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
     F: DiagonalArithmetic + CKKSEncodingScalar,
 {
-    coeffs_meta.ensure_width("ckks_encode_linear_transformation_from_diagonals")?;
-    ensure!(
-        (1..=63).contains(&base2k.as_usize()),
-        "linear-transformation base2k must be in [1, 63], got {base2k}",
-    );
-    validate_compile_inputs(module.ckks_max_slots(), diagonals, strategy)?;
+    const OP: &str = "ckks_encode_linear_transformation_from_diagonals";
+    coeffs_meta.ensure_width(OP)?;
+    if !(1..=63).contains(&base2k.as_usize()) {
+        return Err(CKKSCompositionError::InvalidOperand {
+            op: OP,
+            reason: format!("linear-transformation base2k must be in [1, 63], got {base2k}"),
+        }
+        .into());
+    }
+    validate_compile_inputs(OP, module.ckks_max_slots(), diagonals, strategy)?;
+    let n = period_degree::<BE, _>(module, diagonals.period());
+    ensure_complex_fits(OP, module, coeffs_meta.meta, n.as_usize(), diagonals)?;
 
     let owned_transposed;
     let cd: &ComplexDiagonals<F> = if transpose {
@@ -125,7 +160,7 @@ where
     };
     let infos = CKKSLayout {
         glwe_layout: GLWELayout {
-            n: period_degree::<BE, _>(module, cd.period()),
+            n,
             base2k,
             k: coeffs_meta.k,
             rank: Rank(0),
@@ -158,9 +193,9 @@ where
 ///
 /// # Errors
 ///
-/// The errors of [`ckks_encode_linear_transformation_from_diagonals`] for malformed `diagonals` or `strategy`, and
-/// [`CKKSCompositionError::InvalidOperand`] when the schedule of `res` is not the one they give, before anything is
-/// written; then the encoding's errors, after which the content of `res` is unspecified.
+/// [`CKKSCompositionError::InvalidOperand`], before anything is written, for malformed `diagonals` or `strategy`, a
+/// schedule of `res` other than the one they give, or a nonzero imaginary part encoded into real slots; then the
+/// encoding's errors, after which the content of `res` is unspecified.
 pub fn ckks_encode_linear_transformation_into<BE, M, F>(
     module: &M,
     res: &mut LinearTransformation<CKKSPlaintextOwned<BE>>,
@@ -174,7 +209,8 @@ where
     M: CKKSModuleInfos + CKKSEncodingOps<BE, F>,
     F: DiagonalArithmetic + CKKSEncodingScalar,
 {
-    validate_compile_inputs(module.ckks_max_slots(), diagonals, strategy)?;
+    const OP: &str = "ckks_encode_linear_transformation_into";
+    validate_compile_inputs(OP, module.ckks_max_slots(), diagonals, strategy)?;
     let plan = LinearTransformationLayout {
         indexes: diagonals.indexes(),
         slots: diagonals.slots(),
@@ -190,23 +226,20 @@ where
             .all(|(gs, (&rot, babies))| gs.rot == rot && gs.diagonals.iter().map(|d| d.baby).eq(babies.iter().copied()));
     if !same_schedule {
         return Err(CKKSCompositionError::InvalidOperand {
-            op: "ckks_encode_linear_transformation_into",
+            op: OP,
             reason: "the transform's schedule is not the diagonals'".into(),
         }
         .into());
     }
-    let complex = diagonals.im.indexes().iter().any(|&index| {
-        diagonals
-            .im
-            .get(index)
-            .is_some_and(|values| values.iter().any(|value| !value.is_zero()))
-    });
+    if let Some(pt) = res.first_diagonal_plaintext() {
+        ensure_complex_fits(OP, module, meta, pt.n().as_usize(), diagonals)?;
+    }
     let mut targets = res.giant_steps.iter_mut().flat_map(|gs| &mut gs.diagonals);
     let mut result = Ok(());
     // The builder visits the diagonals in the schedule's order, the one checked above.
     diagonals.build_transform(strategy, |re, im| {
         if let (Ok(()), Some(dst)) = (&result, targets.next()) {
-            result = encode_diagonal(module, &mut dst.plaintext, meta, complex, re, im, scratch);
+            result = encode_diagonal(module, &mut dst.plaintext, meta, re, im, scratch);
         }
     });
     result
@@ -217,7 +250,6 @@ fn encode_diagonal<BE, M, F>(
     module: &M,
     pt: &mut CKKSPlaintextOwned<BE>,
     meta: GLWEPlaintextMeta,
-    complex: bool,
     re: &[F],
     im: &[F],
     scratch: &mut ScratchArena<'_, BE>,
@@ -235,11 +267,6 @@ where
     } else {
         module.ckks_encode_reim_into(pt, re, im, scratch)?;
     }
-    // Real slots after encoding complex diagonals mean the imaginary parts were dropped.
-    ckks_ensure!(
-        !complex || !pt.slots().is_real(),
-        "complex linear-transformation diagonals cannot be encoded into real slots"
-    );
     Ok(())
 }
 
@@ -264,18 +291,47 @@ mod tests {
 
     #[test]
     fn malformed_diagonal_layout_is_rejected_before_schedule_construction() {
+        let refused = |result: CKKSResult<()>, reason: &str| {
+            assert_eq!(
+                result.unwrap_err().composition(),
+                Some(&CKKSCompositionError::InvalidOperand {
+                    op: "test",
+                    reason: reason.into(),
+                })
+            );
+        };
         let mut re = Diagonals::new(4);
         re.set(0, vec![1.0; 4]);
         let mismatched = ComplexDiagonals {
             re,
             im: Diagonals::new(8),
         };
-        assert!(validate_compile_inputs(8, &mismatched, LinearTransformationStrategy::Direct).is_err());
+        refused(
+            validate_compile_inputs("test", 8, &mismatched, LinearTransformationStrategy::Direct),
+            "complex diagonal maps have different slot counts: real 4, imaginary 8",
+        );
+
+        let empty = ComplexDiagonals::new(Diagonals::<f64>::new(4), Diagonals::new(4));
+        refused(
+            validate_compile_inputs("test", 8, &empty, LinearTransformationStrategy::Direct),
+            "linear transformation must contain at least one diagonal",
+        );
 
         let mut re = Diagonals::new(4);
         re.set(0, vec![1.0; 4]);
         let valid = ComplexDiagonals::new(re, Diagonals::new(4));
-        assert!(validate_compile_inputs(8, &valid, LinearTransformationStrategy::Bsgs { giant_step: 0 },).is_err());
-        assert!(validate_compile_inputs(8, &valid, LinearTransformationStrategy::BsgsPowersOfTwo { giant_step: 0 }).is_err());
+        refused(
+            validate_compile_inputs("test", 2, &valid, LinearTransformationStrategy::Direct),
+            "linear-transformation slot count 4 must divide the ring's 2 CKKS slots",
+        );
+        for strategy in [
+            LinearTransformationStrategy::Bsgs { giant_step: 0 },
+            LinearTransformationStrategy::BsgsPowersOfTwo { giant_step: 0 },
+        ] {
+            refused(
+                validate_compile_inputs("test", 8, &valid, strategy),
+                "linear-transformation giant step must be non-zero",
+            );
+        }
     }
 }

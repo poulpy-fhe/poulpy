@@ -12,7 +12,7 @@ use poulpy_ckks::{
     encoding::{paco_coeff_encodings_host, ship_coeff_encodings_host},
     layouts::{
         CKKSEncodingBuffer, CKKSEncodingBufferBackendMut, CKKSEncodingBufferBackendRef, CKKSEncodingBufferInfos, CKKSModuleAlloc,
-        CKKSPlaintextOwned, PaCoPlan, ShipCoeffEncodings, ShipPlan, ckks_one_pt,
+        CKKSPlaintextOwned, PaCoContext, PaCoPlan, ShipCoeffEncodings, ShipPlan, ckks_one_pt,
     },
     oep::CKKSEncodingImpl,
     reference::encoding::{CKKSSlotEmbedding, decode_coeffs_into_host, encode_coeffs_into_host},
@@ -209,15 +209,15 @@ where
 {
     type Plans = OwnedEncodingPlanSet<F, EncodingFFTTable<F>>;
 
-    fn ckks_encoding_plan_cache_impl(module: &Module<Self>) -> &ModulePlanCache {
+    fn ckks_encoding_plan_cache(module: &Module<Self>) -> &ModulePlanCache {
         handle(module).plan_cache()
     }
 
-    fn ckks_encoding_plans_create_impl(module: &Module<Self>) -> CKKSResult<Self::Plans> {
+    fn ckks_encoding_plans_create(module: &Module<Self>) -> CKKSResult<Self::Plans> {
         OwnedEncodingPlanSet::new(2 * poulpy_ckks::CKKSModuleInfos::ckks_max_slots(module)).map_err(CKKSError::from)
     }
 
-    fn ckks_encode_coeffs_into_impl<P>(
+    fn ckks_quantize_coeffs_into<P>(
         module: &Module<Self>,
         pt: &mut P,
         coeffs: &CKKSEncodingBufferBackendRef<'_, Self, F>,
@@ -241,7 +241,7 @@ where
         Ok(())
     }
 
-    fn ckks_decode_coeffs_into_impl<P>(
+    fn ckks_dequantize_coeffs_into<P>(
         module: &Module<Self>,
         pt: &P,
         coeffs: &mut CKKSEncodingBufferBackendMut<'_, Self, F>,
@@ -268,7 +268,7 @@ where
         Ok(())
     }
 
-    fn ckks_slots_to_coeffs_assign_impl(
+    fn ckks_slots_to_coeffs_assign_with_plan(
         _module: &Module<Self>,
         plans: &Self::Plans,
         values: &mut CKKSEncodingBufferBackendMut<'_, Self, F>,
@@ -278,7 +278,7 @@ where
         transform_assign(&mut values.data, len, |values| R::slots_to_coeffs_assign(map, fft, values))
     }
 
-    fn ckks_coeffs_to_slots_assign_impl(
+    fn ckks_coeffs_to_slots_assign_with_plan(
         _module: &Module<Self>,
         plans: &Self::Plans,
         values: &mut CKKSEncodingBufferBackendMut<'_, Self, F>,
@@ -325,7 +325,7 @@ where
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     let host = staged_ciphertext!(module, ct, plan, scratch, "PaCo");
-    paco_coeff_encodings_host::<BE, _, F>(module, &host, plan, base2k).map_err(CKKSError::from)
+    paco_coeff_encodings_host::<BE, _, F>(module, base2k, &host, plan).map_err(CKKSError::from)
 }
 
 /// The SHIP coefficient encoding, staged like [`paco_coeff_encodings`].
@@ -344,45 +344,56 @@ where
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     let host = staged_ciphertext!(module, ct, plan, scratch, "SHIP");
-    ship_coeff_encodings_host::<BE, _, F>(module, &host, plan, base2k, complex).map_err(CKKSError::from)
+    ship_coeff_encodings_host::<BE, _, F>(module, base2k, complex, &host, plan).map_err(CKKSError::from)
 }
 
 /// The families of both rings, registered through the upstream macros, which
 /// take a concrete backend type.
 macro_rules! impl_ckks {
     ($be:ty) => {
-        ::poulpy_ckks::impl_ckks_copy_reference!($be);
-        ::poulpy_ckks::impl_ckks_encryption_reference!($be);
-        ::poulpy_ckks::impl_ckks_mul_reference!($be);
-        ::poulpy_ckks::impl_ckks_dot_product_reference!($be);
-        ::poulpy_ckks::impl_ckks_linear_transformation_reference!($be);
-        ::poulpy_ckks::impl_ckks_neg_reference!($be);
-        ::poulpy_ckks::impl_ckks_pow2_reference!($be);
-        ::poulpy_ckks::impl_ckks_rotate_reference!($be);
+        // `impl_ckks_reference_full!`, with the cached add-one and sub-one.
+        ::poulpy_ckks::impl_ckks_plaintext_vec_reference_full!($be);
+        ::poulpy_ckks::impl_ckks_copy_reference_full!($be);
         impl_add_cached_one!($be);
         impl_sub_cached_one!($be);
-        ::poulpy_ckks::impl_ckks_plaintext_reference!($be);
-        ::poulpy_ckks::impl_ckks_polynomial_evaluation_reference!($be);
-        ::poulpy_ckks::impl_ckks_eval_mod_reference!($be);
-        ::poulpy_ckks::impl_ckks_inner_sum_derived_full!($be);
+        ::poulpy_ckks::impl_ckks_encryption_reference_full!($be);
+        ::poulpy_ckks::impl_ckks_neg_reference_full!($be);
+        ::poulpy_ckks::impl_ckks_pow2_reference_full!($be);
+        ::poulpy_ckks::impl_ckks_rotate_reference_full!($be);
+        ::poulpy_ckks::impl_ckks_inner_sum_reference_full!($be);
+        ::poulpy_ckks::impl_ckks_mul_reference_full!($be);
+        ::poulpy_ckks::impl_ckks_dot_product_reference_full!($be);
+        ::poulpy_ckks::impl_ckks_linear_transformation_reference_full!($be);
+        ::poulpy_ckks::impl_ckks_polynomial_evaluation_reference_full!($be);
+        ::poulpy_ckks::impl_ckks_eval_mod_reference_full!($be);
+        ::poulpy_ckks::impl_ckks_add_many_reference_full!($be);
+        ::poulpy_ckks::impl_ckks_mul_add_derived_full!($be);
+        ::poulpy_ckks::impl_ckks_affine_derived_full!($be);
+        ::poulpy_ckks::impl_ckks_mul_sub_derived_full!($be);
+        ::poulpy_ckks::impl_ckks_approximation_derived_full!($be);
     };
 }
 
 /// The families of the standard ring only, `$ci` the conjugate-invariant twin of `$be`.
 macro_rules! impl_ckks_standard {
     ($be:ty, $ci:ty) => {
-        ::poulpy_ckks::impl_ckks_encapsulated_mod_up_reference!($be);
-        ::poulpy_ckks::impl_ckks_mod_up_first_factor_reference!($be);
-        ::poulpy_ckks::impl_ckks_conjugate_reference!($be);
-        ::poulpy_ckks::impl_ckks_imag_reference!($be);
-        ::poulpy_ckks::impl_ckks_bootstrapping_reference!($be);
-        ::poulpy_ckks::impl_ckks_bootstrapping_ci_reference!($be, $ci);
-        ::poulpy_ckks::impl_ckks_fold_reference!($be);
-        ::poulpy_ckks::impl_ckks_complex_polynomial_evaluation_reference!($be);
-        ::poulpy_ckks::impl_ckks_dft_reference!($be);
+        ::poulpy_ckks::impl_ckks_encapsulated_mod_up_reference_full!($be);
+        ::poulpy_ckks::impl_ckks_mod_up_first_factor_reference_full!($be);
+        ::poulpy_ckks::impl_ckks_conjugate_reference_full!($be);
+        ::poulpy_ckks::impl_ckks_imag_reference_full!($be);
+        ::poulpy_ckks::impl_ckks_bootstrapping_reference_full!($be);
+        ::poulpy_ckks::impl_ckks_bootstrapping_ci_reference_full!($be, $ci);
+        ::poulpy_ckks::impl_ckks_fold_layout_reference_full!($be);
+        ::poulpy_ckks::impl_ckks_fold_reference_full!($be);
+        ::poulpy_ckks::impl_ckks_complex_polynomial_evaluation_reference_full!($be);
+        ::poulpy_ckks::impl_ckks_dft_reference_full!($be);
+        ::poulpy_ckks::impl_ckks_dft_matrix_reference_full!($be);
+        ::poulpy_ckks::impl_ckks_ci_ring_map_reference_full!($be);
+        ::poulpy_ckks::impl_ckks_paco_reference_full!($be);
+        ::poulpy_ckks::impl_ckks_ship_reference_full!($be);
 
         unsafe impl ::poulpy_ckks::oep::CKKSPaCoCoeffEncodingImpl for $be {
-            fn ckks_paco_coeff_encodings_tmp_bytes_impl<F>(_module: &Module<$be>, _plan: &PaCoPlan) -> CKKSResult<usize>
+            fn ckks_paco_coeff_encodings_tmp_bytes<F>(_module: &Module<$be>, _context: &PaCoContext<$be, F>) -> CKKSResult<usize>
             where
                 F: PaCoScalar,
                 $be: CKKSEncodingImpl<F>,
@@ -390,11 +401,10 @@ macro_rules! impl_ckks_standard {
                 Ok(0)
             }
 
-            fn ckks_paco_coeff_encodings_impl<F, Src>(
+            fn ckks_paco_coeff_encodings<F, Src>(
                 module: &Module<$be>,
                 ct: &Src,
-                plan: &PaCoPlan,
-                base2k: Base2K,
+                context: &PaCoContext<$be, F>,
                 scratch: &mut ScratchArena<'_, $be>,
             ) -> CKKSResult<[CKKSPlaintextOwned<$be>; 4]>
             where
@@ -402,16 +412,16 @@ macro_rules! impl_ckks_standard {
                 $be: CKKSEncodingImpl<F>,
                 Src: GLWEToBackendRef<$be> + CKKSCtBounds,
             {
-                paco_coeff_encodings::<$be, F, Src>(module, ct, plan, base2k, scratch)
+                paco_coeff_encodings::<$be, F, Src>(module, ct, context.plan(), context.base2k(), scratch)
             }
         }
 
         unsafe impl ::poulpy_ckks::oep::CKKSShipCoeffEncodingImpl for $be {
-            fn ckks_ship_coeff_encodings_tmp_bytes_impl<F>(
+            fn ckks_ship_coeff_encodings_tmp_bytes<F>(
                 _module: &Module<$be>,
-                _plan: &ShipPlan,
                 _base2k: Base2K,
                 _complex: bool,
+                _plan: &ShipPlan,
             ) -> CKKSResult<usize>
             where
                 F: ShipScalar,
@@ -420,12 +430,12 @@ macro_rules! impl_ckks_standard {
                 Ok(0)
             }
 
-            fn ckks_ship_coeff_encodings_impl<F, Src>(
+            fn ckks_ship_coeff_encodings<F, Src>(
                 module: &Module<$be>,
-                ct: &Src,
-                plan: &ShipPlan,
                 base2k: Base2K,
                 complex: bool,
+                ct: &Src,
+                plan: &ShipPlan,
                 scratch: &mut ScratchArena<'_, $be>,
             ) -> CKKSResult<ShipCoeffEncodings<<$be as poulpy_hal::layouts::Backend>::OwnedBuf, i64>>
             where

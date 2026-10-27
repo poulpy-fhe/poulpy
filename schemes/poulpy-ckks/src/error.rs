@@ -94,7 +94,19 @@ macro_rules! ckks_ensure {
     };
 }
 
-pub(crate) use {ckks_bail, ckks_ensure};
+/// `ensure!` for caller-fixable operand conditions: `InvalidOperand` for `$op`, the reason formatted like `format!`.
+macro_rules! ckks_ensure_operand {
+    ($op:expr, $cond:expr, $($arg:tt)*) => {
+        if !($cond) {
+            return Err($crate::CKKSError::Composition($crate::CKKSCompositionError::InvalidOperand {
+                op: $op,
+                reason: format!($($arg)*),
+            }));
+        }
+    };
+}
+
+pub(crate) use {ckks_bail, ckks_ensure, ckks_ensure_operand};
 
 type Result<T> = CKKSResult<T>;
 
@@ -310,6 +322,15 @@ impl Error for CKKSCompositionError {
     }
 }
 
+/// `InvalidOperand` for `op` carrying a validator's error as its reason.
+pub(crate) fn invalid_operand(op: &'static str, error: impl fmt::Display) -> CKKSError {
+    CKKSCompositionError::InvalidOperand {
+        op,
+        reason: error.to_string(),
+    }
+    .into()
+}
+
 pub(crate) fn checked_log_budget_sub(op: &'static str, available_log_budget: usize, required_bits: usize) -> Result<usize> {
     available_log_budget.checked_sub(required_bits).ok_or_else(|| {
         CKKSCompositionError::InsufficientHomomorphicCapacity {
@@ -375,6 +396,40 @@ pub(crate) fn ensure_plaintext_alignment(op: &'static str, ct_log_budget: usize,
         .into());
     }
     Ok(())
+}
+
+/// The operand checks of a plaintext-polynomial addition or subtraction into a ciphertext of radix `ct_base2k`,
+/// degree `ct_n` and budget `ct_log_budget`, in their order.
+pub(crate) fn ensure_plaintext_vec_operand<P: crate::CKKSInfos>(
+    op: &'static str,
+    ct_base2k: usize,
+    ct_n: usize,
+    ct_log_budget: usize,
+    pt: &P,
+    floor: usize,
+) -> Result<()> {
+    ensure_base2k_match(op, ct_base2k, pt.base2k().as_usize())?;
+    ensure_plaintext_degree_embeds(op, ct_n, pt.n().as_usize(), floor)?;
+    ensure_plaintext_alignment(op, ct_log_budget, pt.log_delta(), pt.log_delta() + pt.log_budget())
+}
+
+/// The operand checks of a plaintext-coefficient addition or subtraction of coefficient `pt_coeff` of `pt` at
+/// coefficient `ct_coeff` of a ciphertext of radix `ct_base2k`, degree `ct_n` and budget `ct_log_budget`, in their
+/// order.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn ensure_plaintext_const_operand<P: crate::CKKSInfos>(
+    op: &'static str,
+    ct_base2k: usize,
+    ct_n: usize,
+    ct_coeff: usize,
+    ct_log_budget: usize,
+    pt: &P,
+    pt_coeff: usize,
+) -> Result<()> {
+    ensure_base2k_match(op, ct_base2k, pt.base2k().as_usize())?;
+    ensure_plaintext_coeff_in_range(op, "ciphertext", ct_coeff, ct_n)?;
+    ensure_plaintext_coeff_in_range(op, "plaintext", pt_coeff, pt.n().as_usize())?;
+    ensure_plaintext_alignment(op, ct_log_budget, pt.log_delta(), pt.log_delta() + pt.log_budget())
 }
 
 pub(crate) fn checked_mul_ct_log_budget(

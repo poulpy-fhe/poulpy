@@ -10,7 +10,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSCtBounds, CKKSInfos, CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos,
+    CKKSCompositionError, CKKSCtBounds, CKKSInfos, CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos,
     api::{CKKSAllOpsTmpBytes, CKKSEncodingHostOps, CKKSEvalModOps},
     layouts::{
         CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned,
@@ -22,17 +22,13 @@ use crate::{
 };
 
 use super::helpers::{
-    TestContextBackend, TestContextModule, TestScalar, ckks_decrypt_decode, ckks_encrypt_with_prec, ckks_spec, gen_sk_with_raw,
-    gen_tsk, precision_stats,
+    TestContextBackend, TestContextModule, TestScalar, assert_ckks_error, ckks_decrypt_decode, ckks_encrypt_with_prec, ckks_spec,
+    gen_sk_with_raw, gen_tsk, precision_stats,
 };
+use super::parity::helpers::{fixture_ciphertext, snapshot, with_scratch};
 use crate::SlotsKind;
 
-fn alloc_scratch_eval_mod<BE, F>(
-    params: &super::CKKSTestParams,
-    module: &Module<BE>,
-    eval_mod: &EvalMod<F, CKKSPlaintextOwned<BE>>,
-    res_k: usize,
-) -> ScratchOwned<BE>
+fn alloc_scratch_eval_mod<BE>(params: &super::CKKSTestParams, module: &Module<BE>, res_k: usize) -> ScratchOwned<BE>
 where
     BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE>,
@@ -44,10 +40,7 @@ where
     res.set_meta(params.prec().meta);
     let pt_prec = ckks_spec(params.n, params.base2k, 8, 10);
     let tsk_layout = super::CKKSTestParams { k: res_k, ..*params }.tsk_layout();
-    let scratch_size = module
-        .ckks_all_ops_tmp_bytes(&res, &tsk_layout, &pt_prec)
-        .max(module.ckks_eval_mod_tmp_bytes(&res, &ct, eval_mod, &tsk_layout));
-    ScratchOwned::<BE>::alloc(scratch_size)
+    ScratchOwned::<BE>::alloc(module.ckks_all_ops_tmp_bytes(&res, &pt_prec, &tsk_layout))
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -148,10 +141,11 @@ fn run_eval_mod_case<BE, F, E>(
     // Coefficients are encoded at the scale EvalMod runs at (`f_mod_log_delta`).
     let mut lit = lit;
     lit.coeffs_meta = CoeffsMeta::from_delta_budget(lit.f_mod_log_delta, params.base2k);
-    let mut compile_scratch =
-        ScratchOwned::<BE>::alloc(CKKSEncodingHostOps::<BE, F>::ckks_reim_tmp_bytes(module, module.n() / 2));
-    let params_be =
-        compile_eval_mod::<BE, F>(params.base2k.into(), lit, module, &mut compile_scratch.borrow()).expect("compile_eval_mod");
+    let compile_bytes = CKKSEncodingHostOps::<BE, F>::ckks_reim_tmp_bytes(module, module.n() / 2);
+    let params_be = with_scratch::<BE, _>(compile_bytes, |s| {
+        compile_eval_mod::<BE, F>(params.base2k.into(), lit, module, s)
+    })
+    .expect("compile_eval_mod");
     assert_eq!(lit.consumed_bits(), params_be.consumed_bits(), "{label}: consumed bits");
     assert_eq!(lit.eval_depth(), params_be.eval_depth(), "{label}: eval depth");
 
@@ -199,7 +193,7 @@ fn run_eval_mod_case<BE, F, E>(
     // `res` must span the raised scale EvalMod evaluates at (`f_mod_log_delta`),
     // which is wider than the input scale by `f_mod_log_delta - input_log_delta`.
     let res_k = test_params.k + lit.f_mod_log_delta.saturating_sub(input_log_delta);
-    let mut scratch = alloc_scratch_eval_mod(&test_params, module, &params_be, res_k);
+    let mut scratch = alloc_scratch_eval_mod(&test_params, module, res_k);
     // The tensor key covers the width EvalMod multiplies at.
     let tsk = gen_tsk(
         &CKKSTestParams { k: res_k, ..test_params },
@@ -223,9 +217,42 @@ fn run_eval_mod_case<BE, F, E>(
 
     let (in_ld, in_lb) = (ct_input.log_delta(), ct_input.log_budget());
     let mut res = module.ckks_ciphertext_alloc(test_params.base2k.into(), res_k.into());
-    module
-        .ckks_eval_mod(&mut res, &ct_input, &params_be, &tsk, &mut scratch.borrow())
-        .expect("ckks_eval_mod");
+    let eval_bytes = module.ckks_eval_mod_tmp_bytes(&res, &ct_input, &params_be, &tsk);
+
+    // An input of rank 2, or of less budget than the evaluation consumes, is refused on an empty arena.
+    let consumed = params_be.consumed_bits();
+    let mut rank2 = test_params.prec();
+    rank2.glwe_layout.rank = 2usize.into();
+    let short = ckks_spec(test_params.n, test_params.base2k, input_log_delta, consumed - 1);
+    for (case, input, want) in [
+        (
+            "rank 2",
+            fixture_ciphertext(module, &rank2, 71),
+            CKKSCompositionError::InvalidOperand {
+                op: "ckks_eval_mod",
+                reason: "supports rank-1 ciphertexts only, got rank 2".into(),
+            },
+        ),
+        (
+            "short budget",
+            fixture_ciphertext(module, &short, 72),
+            CKKSCompositionError::InsufficientHomomorphicCapacity {
+                op: "ckks_eval_mod",
+                available_log_budget: consumed - 1,
+                required_bits: consumed,
+            },
+        ),
+    ] {
+        let before = snapshot::<BE, _>(&res);
+        let err = with_scratch::<BE, _>(0, |s| module.ckks_eval_mod(&mut res, &input, &params_be, &tsk, s)).unwrap_err();
+        assert_ckks_error(&format!("{label}: {case}"), &err, want);
+        assert_eq!(
+            snapshot::<BE, _>(&res),
+            before,
+            "{label}: {case}: a refused EvalMod wrote res"
+        );
+    }
+    with_scratch::<BE, _>(eval_bytes, |s| module.ckks_eval_mod(&mut res, &ct_input, &params_be, &tsk, s)).expect("ckks_eval_mod");
 
     // Exact externally visible bit-consumption: EvalMod arithmetic is charged at
     // the plan scale. Returning from that raised scale to the input scale

@@ -4,31 +4,30 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{CKKSCtBounds, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos};
 
-/// # Safety
+/// Backend contract of [`CKKSCopyOps`](crate::api::CKKSCopyOps).
 ///
-/// Implementations must satisfy the contracts of all trait methods, including
-/// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
-/// associated method signatures.
+/// # Safety
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait CKKSCopyImpl: Backend {
-    fn ckks_copy_tmp_bytes_impl<Dst: CKKSCtBounds, Src: CKKSCtBounds>(module: &Module<Self>, dst: &Dst, src: &Src) -> usize;
+    /// Scratch bound of [`Self::ckks_copy`]; may report less than the reference, never less than the body takes.
+    fn ckks_copy_tmp_bytes<Dst: CKKSCtBounds, Src: CKKSCtBounds>(module: &Module<Self>, dst: &Dst, src: &Src) -> usize;
 
-    fn ckks_copy_impl<Dst, Src>(
-        module: &Module<Self>,
-        dst: &mut Dst,
-        src: &Src,
-        scratch: &mut ScratchArena<'_, Self>,
-    ) -> Result<()>
+    /// Reproduces [`ckks_copy_reference`](crate::reference::copy::CKKSCopyReference::ckks_copy_reference) bit for bit,
+    /// within [`Self::ckks_copy_tmp_bytes`]; free in kernels and scratch use.
+    fn ckks_copy<Dst, Src>(module: &Module<Self>, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, Self>) -> Result<()>
     where
         Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<Self> + CKKSCtBounds;
 }
 
-/// Implements this contract with the callable reference algorithms.
+/// Selects the reference implementation of `CKKSCopyImpl` for `$be`.
 #[macro_export]
-macro_rules! impl_ckks_copy_reference {
+macro_rules! impl_ckks_copy_reference_full {
     ($be:ty) => {
         unsafe impl $crate::oep::CKKSCopyImpl for $be {
-            fn ckks_copy_tmp_bytes_impl<Dst: $crate::CKKSCtBounds, Src: $crate::CKKSCtBounds>(
+            fn ckks_copy_tmp_bytes<Dst: $crate::CKKSCtBounds, Src: $crate::CKKSCtBounds>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &Dst,
                 src: &Src,
@@ -36,7 +35,7 @@ macro_rules! impl_ckks_copy_reference {
                 $crate::reference::copy::CKKSCopyReference::ckks_copy_tmp_bytes_reference(module, dst, src)
             }
 
-            fn ckks_copy_impl<Dst, Src>(
+            fn ckks_copy<Dst, Src>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
                 src: &Src,
@@ -51,4 +50,4 @@ macro_rules! impl_ckks_copy_reference {
         }
     };
 }
-pub use crate::impl_ckks_copy_reference;
+pub use crate::impl_ckks_copy_reference_full;

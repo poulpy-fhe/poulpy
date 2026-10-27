@@ -8,18 +8,23 @@ use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
 use crate::{
     CKKSCtBounds, CKKSInfos, CKKSResult as Result, SetCKKSInfos,
     api::{CKKSAddOps, CKKSMulOps},
-    ckks_bail,
+    ckks_ensure_operand,
     layouts::{CKKSCiphertext, CKKSCiphertextViewMut, ScratchArenaTakeCKKS},
     oep::CKKSDotProductImpl,
 };
 
 pub(crate) fn check_lengths(op: &'static str, a_len: usize, b_len: usize) -> Result<()> {
-    if a_len == 0 {
-        ckks_bail!("{op}: inputs must contain at least one pair");
-    }
-    if a_len != b_len {
-        ckks_bail!("{op}: length mismatch between ct vector ({a_len}) and weight vector ({b_len})");
-    }
+    check_slice_lengths(op, "weight vector", a_len, b_len)
+}
+
+/// `InvalidOperand` for an empty `a` or a second slice, named `other`, of another length.
+pub(crate) fn check_slice_lengths(op: &'static str, other: &str, a_len: usize, b_len: usize) -> Result<()> {
+    ckks_ensure_operand!(op, a_len != 0, "inputs must contain at least one pair");
+    ckks_ensure_operand!(
+        op,
+        a_len == b_len,
+        "length mismatch between ct vector ({a_len}) and {other} ({b_len})"
+    );
     Ok(())
 }
 
@@ -50,7 +55,7 @@ where
     })
 }
 
-pub(crate) fn ckks_dot_product_pt_vec_tmp_bytes<BE, R, A, P>(module: &Module<BE>, res: &R, a: &A, b: &P) -> usize
+pub(crate) fn ckks_dot_product_pt_vec_tmp_bytes_derived<BE, R, A, P>(module: &Module<BE>, res: &R, a: &A, b: &P) -> usize
 where
     BE: CKKSDotProductImpl,
     R: CKKSCtBounds,
@@ -63,7 +68,7 @@ where
             .max(module.ckks_add_tmp_bytes(res.size()))
 }
 
-pub(crate) fn ckks_dot_product_pt_const_tmp_bytes<BE, R, A, P>(module: &Module<BE>, res: &R, a: &A, b: &P) -> usize
+pub(crate) fn ckks_dot_product_pt_const_tmp_bytes_derived<BE, R, A, P>(module: &Module<BE>, res: &R, a: &A, b: &P) -> usize
 where
     BE: CKKSDotProductImpl,
     R: CKKSCtBounds,
@@ -76,7 +81,7 @@ where
             .max(module.ckks_add_tmp_bytes(res.size()))
 }
 
-pub(crate) fn ckks_dot_product_pt_vec<BE, Dst: Data, D: Data, E>(
+pub(crate) fn ckks_dot_product_pt_vec_derived<BE, Dst: Data, D: Data, E>(
     module: &Module<BE>,
     dst: &mut CKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>,
     a: &[&CKKSCiphertext<D, BE::ZnxWord, BE::Ring>],
@@ -96,7 +101,7 @@ where
     })
 }
 
-pub(crate) fn ckks_dot_product_pt_const<BE, Dst: Data, D: Data, E>(
+pub(crate) fn ckks_dot_product_pt_const_derived<BE, Dst: Data, D: Data, E>(
     module: &Module<BE>,
     dst: &mut CKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>,
     a: &[&CKKSCiphertext<D, BE::ZnxWord, BE::Ring>],
@@ -111,7 +116,7 @@ where
     E: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
 {
     check_lengths("ckks_dot_product_pt_const", a.len(), b.len())?;
-    check_lengths("ckks_dot_product_pt_const coeffs", a.len(), pt_coeffs.len())?;
+    check_slice_lengths("ckks_dot_product_pt_const", "coefficient vector", a.len(), pt_coeffs.len())?;
     module.ckks_mul_pt_const_into(dst, a[0], b[0], pt_coeffs[0], scratch)?;
     accumulate(module, dst, a.len(), scratch, |tmp, i, s| {
         module.ckks_mul_pt_const_into(tmp, a[i], b[i], pt_coeffs[i], s)

@@ -227,7 +227,7 @@ where
         sum + self
             .ckks_square_tmp_bytes(x, x, tsk)
             .max(y2 + self.ckks_square_tmp_bytes(y, y, tsk).max(self.ckks_add_tmp_bytes(x.size())))
-            .max(self.ckks_approximation_tmp_bytes(res, x, tsk, &plan.sqrt))
+            .max(self.ckks_approximation_tmp_bytes(res, x, &plan.sqrt, tsk))
     }
 
     fn ckks_hypot<R, X, Y, P, H>(

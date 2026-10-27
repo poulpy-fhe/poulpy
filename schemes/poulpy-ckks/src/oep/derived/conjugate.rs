@@ -1,15 +1,39 @@
 use crate::{
-    CKKSCompositionError, CKKSCtBounds, CKKSResult, SetCKKSInfos, oep::CKKSConjugateImpl,
-    reference::paco::ops::conj_rotate_galois_element,
+    CKKSCompositionError, CKKSCtBounds, CKKSResult, SetCKKSInfos, api::CKKSConjugateOps,
+    layouts::slots::conj_rotate_galois_element, oep::CKKSConjugateImpl,
 };
-use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey};
+use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey};
 use poulpy_hal::layouts::{CyclotomicOrder, Module, ScratchArena};
 
-pub(crate) fn conjugate_rotate<BE, Dst, Src, H>(
+pub(crate) fn ckks_conjugate_tmp_bytes_derived<BE: CKKSConjugateImpl, C: CKKSCtBounds, K: GGLWEInfos>(
+    module: &Module<BE>,
+    ct_infos: &C,
+    key_infos: &K,
+) -> usize {
+    BE::ckks_conjugate_with_key_tmp_bytes(module, ct_infos, key_infos)
+}
+
+pub(crate) fn ckks_conjugate_into_derived<BE, Dst, Src, H>(
     module: &Module<BE>,
     dst: &mut Dst,
     src: &Src,
+    keys: &H,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> CKKSResult<()>
+where
+    BE: CKKSConjugateImpl,
+    Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+    Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+    H: GetAutomorphismKey<BE>,
+{
+    module.ckks_conjugate_rotate_into(0, dst, src, keys, scratch)
+}
+
+pub(crate) fn ckks_conjugate_rotate_into_derived<BE, Dst, Src, H>(
+    module: &Module<BE>,
     k: i64,
+    dst: &mut Dst,
+    src: &Src,
     keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> CKKSResult<()>
@@ -25,15 +49,15 @@ where
     let key = keys
         .get_automorphism_key(p, switch_k)
         .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
-            op: "conjugate",
+            op: "ckks_conjugate_into",
             rotation: k,
             k: switch_k.into(),
             source,
         })?;
-    BE::ckks_conjugate_into_impl(module, dst, src, &key, scratch)
+    BE::ckks_conjugate_with_key_into(module, dst, src, &key, scratch)
 }
 
-pub(crate) fn conjugate_assign<BE, Dst, H>(
+pub(crate) fn ckks_conjugate_assign_derived<BE, Dst, H>(
     module: &Module<BE>,
     dst: &mut Dst,
     keys: &H,
@@ -47,10 +71,10 @@ where
     let key = keys
         .get_automorphism_key(-1, dst.k())
         .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
-            op: "conjugate_assign",
+            op: "ckks_conjugate_assign",
             rotation: 0,
             k: dst.k().into(),
             source,
         })?;
-    BE::ckks_conjugate_assign_impl(module, dst, &key, scratch)
+    BE::ckks_conjugate_with_key_assign(module, dst, &key, scratch)
 }

@@ -1,33 +1,25 @@
 use poulpy_hal::layouts::Backend;
 
 use super::{
-    CKKSAddImpl, CKKSComplexPolynomialEvaluationImpl, CKKSConjugateImpl, CKKSCopyImpl, CKKSDotProductImpl, CKKSEncryptionImpl,
-    CKKSEvalModImpl, CKKSImagImpl, CKKSInnerSumImpl, CKKSLinearTransformationImpl, CKKSMulImpl, CKKSNegImpl,
-    CKKSPlaintextZnxImpl, CKKSPolynomialEvaluationImpl, CKKSPow2Impl, CKKSRotateImpl, CKKSSubImpl, DFTImpl,
+    CKKSAddImpl, CKKSAddManyImpl, CKKSAffineImpl, CKKSApproximationImpl, CKKSCIRingMapImpl, CKKSComplexPolynomialEvaluationImpl,
+    CKKSConjugateImpl, CKKSCopyImpl, CKKSDFTImpl, CKKSDotProductImpl, CKKSEncryptionImpl, CKKSEvalModImpl, CKKSImagImpl,
+    CKKSInnerSumImpl, CKKSLinearTransformationImpl, CKKSMulAddImpl, CKKSMulImpl, CKKSMulSubImpl, CKKSNegImpl,
+    CKKSPlaintextVecImpl, CKKSPolynomialEvaluationImpl, CKKSPow2Impl, CKKSRotateImpl, CKKSSubImpl,
 };
 
-/// Aggregate CKKS dispatch surface.
+/// Aggregate CKKS dispatch surface: the scalar-independent evaluation families.
 ///
-/// Concrete APIs can depend on narrower `CKKS*Impl` family traits. This
-/// aggregate trait remains useful for composite operations that span multiple
-/// CKKS families and for broad test/backend capability bundles.
-///
-/// Bundles every scalar-independent family. The scalar-generic seams —
-/// [`CKKSEncodingImpl<F>`](super::CKKSEncodingImpl),
-/// [`DFTMatrixImpl<F>`](super::DFTMatrixImpl), and
-/// [`CKKSPaCoCoeffEncodingImpl`](super::CKKSPaCoCoeffEncodingImpl) — carry
-/// an encoding-scalar type parameter and therefore cannot be part of a
-/// non-generic bundle; bound them separately where needed. It includes the
-/// standard-only families, so conjugate-invariant backends do not implement it.
+/// Concrete APIs depend on narrower `CKKS*Impl` families; this bundle serves code spanning several of them, such as
+/// test and backend capability bounds. It includes standard-only families, so conjugate-invariant backends do not
+/// implement it. The scalar-generic families ([`CKKSEncodingImpl<F>`](super::CKKSEncodingImpl),
+/// [`CKKSDFTMatrixImpl<F>`](super::CKKSDFTMatrixImpl)) and the fold, bootstrapping, ModUp, PaCo and SHIP families
+/// stay outside it and are bounded separately where needed.
 ///
 /// # Safety
-///
-/// Implementations must satisfy the contracts of all bundled `CKKS*Impl`
-/// traits, including the HAL-level invariants implied by their method
-/// signatures.
+/// The trait has no method: it adds no obligation to those of the bundled `CKKS*Impl` traits.
 pub unsafe trait CKKSImpl:
     Backend
-    + CKKSPlaintextZnxImpl
+    + CKKSPlaintextVecImpl
     + CKKSCopyImpl
     + CKKSAddImpl
     + CKKSEncryptionImpl
@@ -43,13 +35,19 @@ pub unsafe trait CKKSImpl:
     + CKKSLinearTransformationImpl
     + CKKSPolynomialEvaluationImpl
     + CKKSComplexPolynomialEvaluationImpl
-    + DFTImpl
+    + CKKSDFTImpl
     + CKKSEvalModImpl
+    + CKKSAddManyImpl
+    + CKKSMulAddImpl
+    + CKKSAffineImpl
+    + CKKSMulSubImpl
+    + CKKSApproximationImpl
+    + CKKSCIRingMapImpl
 {
 }
 
 unsafe impl<BE: Backend> CKKSImpl for BE where
-    BE: CKKSPlaintextZnxImpl
+    BE: CKKSPlaintextVecImpl
         + CKKSCopyImpl
         + CKKSAddImpl
         + CKKSEncryptionImpl
@@ -65,7 +63,13 @@ unsafe impl<BE: Backend> CKKSImpl for BE where
         + CKKSLinearTransformationImpl
         + CKKSPolynomialEvaluationImpl
         + CKKSComplexPolynomialEvaluationImpl
-        + DFTImpl
+        + CKKSDFTImpl
         + CKKSEvalModImpl
+        + CKKSAddManyImpl
+        + CKKSMulAddImpl
+        + CKKSAffineImpl
+        + CKKSMulSubImpl
+        + CKKSApproximationImpl
+        + CKKSCIRingMapImpl
 {
 }

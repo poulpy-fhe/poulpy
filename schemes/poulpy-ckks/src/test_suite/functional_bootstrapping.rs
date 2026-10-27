@@ -15,22 +15,25 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSCtBounds, CKKSInfos, CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos, SlotsKind,
+    CKKSCompositionError, CKKSCtBounds, CKKSInfos, CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos, SlotsKind,
     api::{
-        CKKSAllOpsTmpBytes, CKKSBootstrappingOps, CKKSDFTMatrixOps, CKKSEncodingOps, CKKSEvalModOps, CKKSPolynomialEvaluationOps,
+        CKKSAllOpsTmpBytes, CKKSBootstrappingOps, CKKSDFTMatrixOps, CKKSDFTOps, CKKSEncodingOps, CKKSEvalModOps,
+        CKKSPolynomialEvaluationOps,
     },
     layouts::{
-        BootstrappingContext, BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques,
-        CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, DFTOutputFormat, DFTPlan, DFTType, EncapsulationKeysLayout,
-        EncodedLut, SparseSecretEncapsulation, eval_mod::EvalModPlan,
+        BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques, CKKSCiphertextOwned,
+        CKKSModuleAlloc, CKKSPlaintextOwned, DFTOutputFormat, DFTPlan, DFTType, EncapsulationKeysLayout, EncodedLut,
+        SparseSecretEncapsulation, eval_mod::EvalModPlan,
     },
     polynomial::SplitStrategy,
     test_suite::{
         CKKSTestParams,
         helpers::{
-            TestContextBackend, TestContextModule, TestScalar, ckks_decrypt_decode, ckks_encrypt_with_prec, ckks_spec,
-            gen_sk_with_raw, precision_stats,
+            TestContextBackend, TestContextModule, TestScalar, assert_ckks_error, assert_invalid_operand, ckks_decrypt_decode,
+            ckks_encrypt_with_prec, ckks_spec, gen_sk_with_raw, precision_stats,
         },
+        parity::helpers::with_scratch,
+        presets::compile_context,
         reference_encoder::ReferenceEncoder,
     },
 };
@@ -60,6 +63,8 @@ pub fn test_functional_bootstrapping_e2e<BE, F, E>(
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSBootstrappingOps<BE>
+        + CKKSDFTOps<BE>
+        + CKKSEvalModOps<BE>
         + CKKSDFTMatrixOps<BE, F>
         + CKKSPolynomialEvaluationOps<BE>,
     F: TestScalar,
@@ -87,6 +92,8 @@ pub fn test_functional_bootstrapping_non_power_of_two_e2e<BE, F, E>(
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSBootstrappingOps<BE>
+        + CKKSDFTOps<BE>
+        + CKKSEvalModOps<BE>
         + CKKSDFTMatrixOps<BE, F>
         + CKKSPolynomialEvaluationOps<BE>,
     F: TestScalar,
@@ -117,6 +124,8 @@ pub fn test_functional_bootstrapping_multi_e2e<BE, F, E>(
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSBootstrappingOps<BE>
+        + CKKSDFTOps<BE>
+        + CKKSEvalModOps<BE>
         + CKKSDFTMatrixOps<BE, F>
         + CKKSPolynomialEvaluationOps<BE>,
     F: TestScalar,
@@ -142,6 +151,8 @@ pub fn test_functional_bootstrapping_binary_e2e<BE, F, E>(
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSBootstrappingOps<BE>
+        + CKKSDFTOps<BE>
+        + CKKSEvalModOps<BE>
         + CKKSDFTMatrixOps<BE, F>
         + CKKSPolynomialEvaluationOps<BE>,
     F: TestScalar,
@@ -174,6 +185,8 @@ fn run_case<BE, F, E>(
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSBootstrappingOps<BE>
+        + CKKSDFTOps<BE>
+        + CKKSEvalModOps<BE>
         + CKKSDFTMatrixOps<BE, F>
         + CKKSPolynomialEvaluationOps<BE>,
     F: TestScalar,
@@ -314,18 +327,18 @@ fn run_case<BE, F, E>(
         ct.set_meta(tp.prec().meta);
         initial_tmp = module.ckks_all_ops_with_atk_tmp_bytes(
             &ct,
+            &ckks_spec(params.n, params.base2k, EVAL_LOG_DELTA, params.base2k),
             &tp.tsk_layout(),
             &tp.atk_layout(),
-            &ckks_spec(params.n, params.base2k, EVAL_LOG_DELTA, params.base2k),
         );
         ScratchOwned::<BE>::alloc(initial_tmp)
     };
-    let ctx = BootstrappingContext::<BE, F>::compile(module, params.base2k.into(), &plan, &mut scratch.borrow()).unwrap();
+    let ctx = compile_context::<BE, F>(module, params.base2k.into(), &plan);
     let padded_ctx = if padded_luts.is_empty() {
         None
     } else {
         let plan = fbt_plan(params.base2k, guard_bits, first_factor_on_raise);
-        Some(BootstrappingContext::<BE, F>::compile(module, params.base2k.into(), &plan, &mut scratch.borrow()).unwrap())
+        Some(compile_context::<BE, F>(module, params.base2k.into(), &plan))
     };
     let keys_layout = BootstrappingKeysLayout {
         rotation_keys: Default::default(),
@@ -352,9 +365,6 @@ fn run_case<BE, F, E>(
             module.ckks_eval_mod_tmp_bytes(&boot_layout, &boot_layout, ctx.eval_mod().unwrap(), &keys_layout.tensor_key);
         assert!(boot_tmp >= 4 * boot_ct_bytes + eval_mod_tmp);
     }
-    if boot_tmp > initial_tmp {
-        scratch = ScratchOwned::<BE>::alloc(boot_tmp);
-    }
 
     let (sk_raw, sk) = gen_sk_with_raw(&tp, module, host_module, [0u8; 32]);
     let (mut xs, mut xe, mut xa) = (Source::new([7u8; 32]), Source::new([2u8; 32]), Source::new([1u8; 32]));
@@ -370,8 +380,6 @@ fn run_case<BE, F, E>(
         )
         .unwrap()
         .prepare(module, &mut scratch.borrow());
-
-    let mut op_scratch = ScratchOwned::<BE>::alloc(boot_tmp);
 
     let mut source = Source::new([9u8; 32]);
     let sample = |source: &mut Source| ((source.next_f64(0.0, 1.0) * (3 * p) as f64) as isize) - p as isize;
@@ -416,9 +424,10 @@ fn run_case<BE, F, E>(
             .iter()
             .map(|_| module.ckks_ciphertext_alloc(params.base2k.into(), k_boot.into()))
             .collect();
-        module
-            .ckks_functional_bootstrap(&mut outputs, &ct, &ctx, &backend_luts, &keys, &mut op_scratch.borrow())
-            .unwrap();
+        with_scratch::<BE, _>(boot_tmp, |s| {
+            module.ckks_functional_bootstrap(&mut outputs, &ct, &ctx, &backend_luts, &keys, s)
+        })
+        .unwrap();
 
         for (index, (output, table)) in outputs.iter().zip(&tables).enumerate() {
             let lut = &backend_luts[index];
@@ -462,25 +471,35 @@ fn run_case<BE, F, E>(
 
         if let Some(padded_ctx) = &padded_ctx {
             let mut rejected = vec![module.ckks_ciphertext_alloc(params.base2k.into(), k_boot.into())];
-            let error = module
-                .ckks_functional_bootstrap(
-                    &mut rejected,
-                    &ct,
-                    padded_ctx,
-                    &backend_luts[..1],
-                    &keys,
-                    &mut op_scratch.borrow(),
-                )
-                .unwrap_err();
-            assert!(error.to_string().contains("context must be configured"));
-            let error = module
-                .ckks_functional_bootstrap(&mut rejected, &ct, &ctx, &padded_luts[..1], &keys, &mut op_scratch.borrow())
-                .unwrap_err();
-            assert!(error.to_string().contains("context must be configured"));
-            let error = module
-                .ckks_bootstrap(&mut rejected[0], &ct, &ctx, &keys, &mut op_scratch.borrow())
-                .unwrap_err();
-            assert!(error.to_string().contains("identity bootstrapping context"));
+            let error = with_scratch::<BE, _>(0, |s| {
+                module.ckks_functional_bootstrap(&mut rejected, &ct, padded_ctx, &backend_luts[..1], &keys, s)
+            })
+            .unwrap_err();
+            assert_invalid_operand(
+                "functional bootstrap refusal",
+                &error,
+                "ckks_functional_bootstrap",
+                "context must be configured",
+            );
+            let error = with_scratch::<BE, _>(0, |s| {
+                module.ckks_functional_bootstrap(&mut rejected, &ct, &ctx, &padded_luts[..1], &keys, s)
+            })
+            .unwrap_err();
+            assert_invalid_operand(
+                "functional bootstrap refusal",
+                &error,
+                "ckks_functional_bootstrap",
+                "context must be configured",
+            );
+            let error = with_scratch::<BE, _>(0, |s| module.ckks_bootstrap(&mut rejected[0], &ct, &ctx, &keys, s)).unwrap_err();
+            assert_ckks_error(
+                "functional bootstrap refusal",
+                &error,
+                CKKSCompositionError::InvalidOperand {
+                    op: "ckks_bootstrap",
+                    reason: "requires an identity bootstrapping context with EvalMod on the standard ring".into(),
+                },
+            );
             let encode_padded = |messages: &[isize]| {
                 messages
                     .iter()
@@ -506,17 +525,10 @@ fn run_case<BE, F, E>(
                 .collect();
             let padded_tmp =
                 module.ckks_functional_bootstrap_tmp_bytes(&output_spec, &input_spec, padded_ctx, &padded_luts, &keys_layout);
-            let mut padded_scratch = ScratchOwned::<BE>::alloc(padded_tmp);
-            module
-                .ckks_functional_bootstrap(
-                    &mut padded_outputs,
-                    &padded_ct,
-                    padded_ctx,
-                    &padded_luts,
-                    &keys,
-                    &mut padded_scratch.borrow(),
-                )
-                .unwrap();
+            with_scratch::<BE, _>(padded_tmp, |s| {
+                module.ckks_functional_bootstrap(&mut padded_outputs, &padded_ct, padded_ctx, &padded_luts, &keys, s)
+            })
+            .unwrap();
             for (native, padded) in outputs.iter().zip(&padded_outputs) {
                 let (native_re, native_im) =
                     ckks_decrypt_decode::<BE, F, E>(&tp, module, &encoder, native, &sk, &mut scratch.borrow());
@@ -547,32 +559,32 @@ fn run_case<BE, F, E>(
             )
             .unwrap();
             let mut output = module.ckks_ciphertext_alloc(params.base2k.into(), k_boot.into());
-            let error = module
-                .ckks_functional_bootstrap(
+            let error = with_scratch::<BE, _>(0, |s| {
+                module.ckks_functional_bootstrap(
                     std::slice::from_mut(&mut output),
                     &ct,
                     &ctx,
                     std::slice::from_ref(&wrong_ratio_lut),
                     &keys,
-                    &mut op_scratch.borrow(),
+                    s,
                 )
-                .unwrap_err();
-            assert!(error.to_string().contains("log_msg_ratio"));
+            })
+            .unwrap_err();
+            assert_invalid_operand(
+                "functional bootstrap refusal",
+                &error,
+                "ckks_functional_bootstrap",
+                "log_msg_ratio",
+            );
 
             // Reusing a wider allocation at a narrower effective width must
             // remain within the scratch size queried for that effective width.
             let mut wide_output = module.ckks_ciphertext_alloc(params.base2k.into(), (k_boot + 4 * params.base2k).into());
             wide_output.set_k(k_boot.into());
-            module
-                .ckks_functional_bootstrap(
-                    std::slice::from_mut(&mut wide_output),
-                    &ct,
-                    &ctx,
-                    &backend_luts,
-                    &keys,
-                    &mut op_scratch.borrow(),
-                )
-                .unwrap();
+            with_scratch::<BE, _>(boot_tmp, |s| {
+                module.ckks_functional_bootstrap(std::slice::from_mut(&mut wide_output), &ct, &ctx, &backend_luts, &keys, s)
+            })
+            .unwrap();
         }
 
         if slots_kind == SlotsKind::Complex && matches!(case, Case::Multi | Case::MultiModulus(_)) {
@@ -582,10 +594,40 @@ fn run_case<BE, F, E>(
                 .map(|_| module.ckks_ciphertext_alloc(params.base2k.into(), k_boot.into()))
                 .collect();
             outputs[1].set_k((k_boot - params.base2k).into());
-            let error = module
-                .ckks_functional_bootstrap(&mut outputs, &ct, &ctx, luts, &keys, &mut op_scratch.borrow())
-                .unwrap_err();
-            assert!(error.to_string().contains("share one rank-1 layout"));
+            let error = with_scratch::<BE, _>(0, |s| {
+                module.ckks_functional_bootstrap(&mut outputs, &ct, &ctx, luts, &keys, s)
+            })
+            .unwrap_err();
+            assert_ckks_error(
+                "functional bootstrap refusal",
+                &error,
+                CKKSCompositionError::InvalidOperand {
+                    op: "ckks_functional_bootstrap",
+                    reason: "functional bootstrapping outputs must share one rank-1 layout".into(),
+                },
+            );
+            let error =
+                with_scratch::<BE, _>(0, |s| module.ckks_functional_bootstrap(&mut [], &ct, &ctx, &[], &keys, s)).unwrap_err();
+            assert_ckks_error(
+                "functional bootstrap without LUTs",
+                &error,
+                CKKSCompositionError::InvalidOperand {
+                    op: "ckks_functional_bootstrap",
+                    reason: "functional bootstrap requires at least one LUT".into(),
+                },
+            );
+            let error = with_scratch::<BE, _>(0, |s| {
+                module.ckks_functional_bootstrap(&mut outputs[..1], &ct, &ctx, luts, &keys, s)
+            })
+            .unwrap_err();
+            assert_ckks_error(
+                "functional bootstrap of fewer outputs than LUTs",
+                &error,
+                CKKSCompositionError::InvalidOperand {
+                    op: "ckks_functional_bootstrap",
+                    reason: format!("functional bootstrap ct_outs/luts length mismatch (1 vs {})", luts.len()),
+                },
+            );
 
             outputs[1].set_k(k_boot.into());
             let mixed_ratio_luts = vec![
@@ -606,17 +648,18 @@ fn run_case<BE, F, E>(
                 )
                 .unwrap(),
             ];
-            let error = module
-                .ckks_functional_bootstrap(
-                    &mut outputs[..2],
-                    &ct,
-                    &ctx,
-                    &mixed_ratio_luts,
-                    &keys,
-                    &mut op_scratch.borrow(),
-                )
-                .unwrap_err();
-            assert!(error.to_string().contains("same message modulus"));
+            let error = with_scratch::<BE, _>(0, |s| {
+                module.ckks_functional_bootstrap(&mut outputs[..2], &ct, &ctx, &mixed_ratio_luts, &keys, s)
+            })
+            .unwrap_err();
+            assert_ckks_error(
+                "functional bootstrap refusal",
+                &error,
+                CKKSCompositionError::InvalidOperand {
+                    op: "ckks_functional_bootstrap",
+                    reason: "functional bootstrap LUTs must have the same message modulus".into(),
+                },
+            );
 
             let binary_luts = vec![
                 EncodedLut::general(
@@ -640,10 +683,16 @@ fn run_case<BE, F, E>(
                 )
                 .unwrap(),
             ];
-            let error = module
-                .ckks_functional_bootstrap(&mut outputs[..2], &ct, &ctx, &binary_luts, &keys, &mut op_scratch.borrow())
-                .unwrap_err();
-            assert!(error.to_string().contains("log_msg_ratio"));
+            let error = with_scratch::<BE, _>(0, |s| {
+                module.ckks_functional_bootstrap(&mut outputs[..2], &ct, &ctx, &binary_luts, &keys, s)
+            })
+            .unwrap_err();
+            assert_invalid_operand(
+                "functional bootstrap refusal",
+                &error,
+                "ckks_functional_bootstrap",
+                "log_msg_ratio",
+            );
         }
     }
 
@@ -663,17 +712,19 @@ fn run_case<BE, F, E>(
             &mut scratch.borrow(),
         );
         let mut output = module.ckks_ciphertext_alloc(params.base2k.into(), k_boot.into());
-        let error = module
-            .ckks_functional_bootstrap(
-                std::slice::from_mut(&mut output),
-                &ct,
-                &ctx,
-                &backend_luts,
-                &keys,
-                &mut op_scratch.borrow(),
-            )
-            .unwrap_err();
-        assert!(error.to_string().contains("functional bootstrap needs log_budget"));
+        let error = with_scratch::<BE, _>(0, |s| {
+            module.ckks_functional_bootstrap(std::slice::from_mut(&mut output), &ct, &ctx, &backend_luts, &keys, s)
+        })
+        .unwrap_err();
+        assert_ckks_error(
+            "functional bootstrap refusal",
+            &error,
+            CKKSCompositionError::InsufficientHomomorphicCapacity {
+                op: "ckks_functional_bootstrap",
+                available_log_budget: ct.log_budget(),
+                required_bits: plan.slots_to_coeffs().consumed_bits(),
+            },
+        );
     }
 }
 

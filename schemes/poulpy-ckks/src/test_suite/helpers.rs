@@ -515,8 +515,8 @@ pub fn precision_at(params: &CKKSTestParams, log_delta: usize) -> CKKSLayout {
 
 // ─── scratch allocation ───────────────────────────────────────────────────────
 
-/// Allocates scratch for common CKKS test operations, including ATK ops.
-/// DFT and EvalMod callers must also cover their selected operation-specific queries.
+/// Allocates the setup arena of a test: encryption, key generation and preparation, decryption and oracles run on it.
+/// A call under test runs on [`with_scratch`](super::parity::helpers::with_scratch) of its own query instead.
 pub fn alloc_scratch<BE>(params: &CKKSTestParams, module: &Module<BE>) -> ScratchOwned<BE>
 where
     BE: TestContextBackend,
@@ -527,7 +527,7 @@ where
     ct.set_meta(params.prec().meta);
     let tsk_infos = params.tsk_layout();
     let atk_infos = params.atk_layout();
-    let scratch_size = module.ckks_all_ops_with_atk_tmp_bytes(&ct, &tsk_infos, &atk_infos, &PT_PREC);
+    let scratch_size = module.ckks_all_ops_with_atk_tmp_bytes(&ct, &PT_PREC, &tsk_infos, &atk_infos);
     ScratchOwned::<BE>::alloc(scratch_size)
 }
 
@@ -1430,6 +1430,23 @@ pub fn assert_ckks_error(label: &str, err: &crate::CKKSError, want: CKKSComposit
     // No downcast needed: typed operations surface semantic failures as
     // `CKKSError::Composition` directly.
     assert_eq!(err.composition(), Some(&want), "{label}: unexpected error: {err}");
+}
+
+/// Asserts that `err` is [`CKKSCompositionError::InvalidOperand`] of `op` whose reason contains `reason`, for reasons
+/// carrying values the test does not recompute.
+pub fn assert_invalid_operand(label: &str, err: &crate::CKKSError, op: &str, reason: &str) {
+    assert!(
+        matches!(err.composition(), Some(CKKSCompositionError::InvalidOperand { op: got, reason: why }) if *got == op && why.contains(reason)),
+        "{label}: unexpected error: {err}"
+    );
+}
+
+/// Asserts that `err` is the untyped [`CKKSError::Internal`](crate::CKKSError::Internal) whose message contains `message`.
+pub fn assert_ckks_internal(label: &str, err: &crate::CKKSError, message: &str) {
+    assert!(
+        matches!(err, crate::CKKSError::Internal(_)) && err.to_string().contains(message),
+        "{label}: unexpected error: {err}"
+    );
 }
 
 /// Asserts the metadata a unary op stamps on `ct`: `input`'s, less the bits by which

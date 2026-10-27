@@ -1,6 +1,4 @@
-use poulpy_ckks::ckks_backend_test_suite;
-
-const ATK_ROTATIONS: &[i64] = &[1, 7];
+use poulpy_ckks::ckks_determinism_test_suite;
 
 #[cfg(feature = "enable-ifma")]
 mod bootstrapping_presets {
@@ -41,92 +39,21 @@ mod bootstrapping_presets {
     }
 }
 
-ckks_backend_test_suite!(
-    mod fft64_avx512_f64,
-    backend = crate::FFT64Avx512,
-    scalar = f64,
-    encoder = crate::FFT64Avx512EncodingTable,
-    params = poulpy_ckks::test_suite::BASE19_PARAMS_F64,
-    rotations = super::ATK_ROTATIONS,
-);
+ckks_determinism_test_suite!(mod ckks_determinism_fft64avx512, backend = crate::FFT64Avx512, f32);
 
-#[cfg(feature = "enable-rayon")]
-ckks_backend_test_suite!(
-    mod fft64_avx512_rayon_f64,
-    backend = crate::FFT64Avx512Rayon,
-    scalar = f64,
-    encoder = crate::FFT64Avx512EncodingTable,
-    params = poulpy_ckks::test_suite::BASE19_PARAMS_F64,
-    rotations = super::ATK_ROTATIONS,
-);
-
-ckks_backend_test_suite!(
-    mod ntt4x30_avx512_f64,
-    backend = crate::NTT4x30Avx512,
-    scalar = f64,
-    encoder = crate::FFT64Avx512EncodingTable,
-    params = poulpy_ckks::test_suite::BASE52_PARAMS_F64,
-    rotations = super::ATK_ROTATIONS,
-);
-
-ckks_backend_test_suite!(
-    mod ntt4x30_avx512_f128,
-    backend = crate::NTT4x30Avx512,
-    scalar = poulpy_ckks::Quad,
-    encoder = poulpy_cpu_portable::ckks_encoding::EncodingFFTTable<poulpy_ckks::Quad>,
-    params = poulpy_ckks::test_suite::BASE52_PARAMS_QUAD,
-    rotations = super::ATK_ROTATIONS,
-);
-
-#[cfg(feature = "enable-rayon")]
-ckks_backend_test_suite!(
-    mod ntt4x30_avx512_rayon_f64,
-    backend = crate::NTT4x30Avx512Rayon,
-    scalar = f64,
-    encoder = crate::FFT64Avx512EncodingTable,
-    params = poulpy_ckks::test_suite::BASE52_PARAMS_F64,
-    rotations = super::ATK_ROTATIONS,
-);
-
-#[cfg(feature = "enable-rayon")]
-ckks_backend_test_suite!(
-    mod ntt4x30_avx512_rayon_f128,
-    backend = crate::NTT4x30Avx512Rayon,
-    scalar = poulpy_ckks::Quad,
-    encoder = poulpy_cpu_portable::ckks_encoding::EncodingFFTTable<poulpy_ckks::Quad>,
-    params = poulpy_ckks::test_suite::BASE52_PARAMS_QUAD,
-    rotations = super::ATK_ROTATIONS,
-);
+ckks_determinism_test_suite!(mod ckks_determinism_ntt4x30avx512, backend = crate::NTT4x30Avx512, f32);
 
 #[cfg(feature = "enable-ifma")]
-ckks_backend_test_suite!(
-    mod ntt3x42_ifma_f64,
-    backend = crate::NTT3x42Ifma,
-    scalar = f64,
-    encoder = crate::FFT64Avx512EncodingTable,
-    params = poulpy_ckks::test_suite::BASE52_PARAMS_F64,
-    rotations = super::ATK_ROTATIONS,
-);
+ckks_determinism_test_suite!(mod ckks_determinism_ntt3x42ifma, backend = crate::NTT3x42Ifma, f32);
 
-#[cfg(feature = "enable-ifma")]
-ckks_backend_test_suite!(
-    mod ntt3x42_ifma_f128,
-    backend = crate::NTT3x42Ifma,
-    scalar = poulpy_ckks::Quad,
-    encoder = poulpy_cpu_portable::ckks_encoding::EncodingFFTTable<poulpy_ckks::Quad>,
-    params = poulpy_ckks::test_suite::BASE52_PARAMS_QUAD,
-    rotations = super::ATK_ROTATIONS,
-);
+#[cfg(feature = "enable-rayon")]
+ckks_determinism_test_suite!(mod ckks_determinism_fft64avx512rayon, backend = crate::FFT64Avx512Rayon, f32);
+
+#[cfg(feature = "enable-rayon")]
+ckks_determinism_test_suite!(mod ckks_determinism_ntt4x30avx512rayon, backend = crate::NTT4x30Avx512Rayon, f32);
 
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
-ckks_backend_test_suite!(
-    mod ntt3x42_ifma_rayon_f64,
-    backend = crate::NTT3x42IfmaRayon,
-    scalar = f64,
-    encoder = crate::FFT64Avx512EncodingTable,
-    params = poulpy_ckks::test_suite::BASE52_PARAMS_F64,
-    rotations = super::ATK_ROTATIONS,
-);
+ckks_determinism_test_suite!(mod ckks_determinism_ntt3x42ifmarayon, backend = crate::NTT3x42IfmaRayon, f32);
 
 // Paired OEP validation. Serial backends follow AVX -> AVX-512 -> IFMA.
 // Rayon backends validate against their serial counterparts.

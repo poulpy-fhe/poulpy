@@ -24,11 +24,11 @@ impl<BE: Backend + CKKSInnerSumImpl> CKKSInnerSumOps<BE> for Module<BE> {
 
     fn ckks_inner_sum<R, A, H>(
         &self,
-        res: &mut R,
-        a: &A,
         log_batch: usize,
         log_count: usize,
         normalize: bool,
+        res: &mut R,
+        a: &A,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -37,15 +37,15 @@ impl<BE: Backend + CKKSInnerSumImpl> CKKSInnerSumOps<BE> for Module<BE> {
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetAutomorphismKey<BE>,
     {
-        BE::ckks_inner_sum(self, res, a, log_batch, log_count, normalize, keys, scratch)
+        BE::ckks_inner_sum(self, log_batch, log_count, normalize, res, a, keys, scratch)
     }
 
     fn ckks_inner_sum_assign<R, H>(
         &self,
-        res: &mut R,
         log_batch: usize,
         log_count: usize,
         normalize: bool,
+        res: &mut R,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -53,15 +53,15 @@ impl<BE: Backend + CKKSInnerSumImpl> CKKSInnerSumOps<BE> for Module<BE> {
         R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<BE>,
     {
-        BE::ckks_inner_sum_assign(self, res, log_batch, log_count, normalize, keys, scratch)
+        BE::ckks_inner_sum_assign(self, log_batch, log_count, normalize, res, keys, scratch)
     }
 
     fn ckks_replicate<R, A, H>(
         &self,
-        res: &mut R,
-        a: &A,
         log_batch: usize,
         log_count: usize,
+        res: &mut R,
+        a: &A,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -70,14 +70,14 @@ impl<BE: Backend + CKKSInnerSumImpl> CKKSInnerSumOps<BE> for Module<BE> {
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetAutomorphismKey<BE>,
     {
-        BE::ckks_replicate(self, res, a, log_batch, log_count, keys, scratch)
+        BE::ckks_replicate(self, log_batch, log_count, res, a, keys, scratch)
     }
 
     fn ckks_replicate_assign<R, H>(
         &self,
-        res: &mut R,
         log_batch: usize,
         log_count: usize,
+        res: &mut R,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -85,6 +85,6 @@ impl<BE: Backend + CKKSInnerSumImpl> CKKSInnerSumOps<BE> for Module<BE> {
         R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<BE>,
     {
-        BE::ckks_replicate_assign(self, res, log_batch, log_count, keys, scratch)
+        BE::ckks_replicate_assign(self, log_batch, log_count, res, keys, scratch)
     }
 }

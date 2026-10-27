@@ -101,7 +101,7 @@ where
 
     let mut res = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
     module
-        .ckks_scalbn(&mut res, &ca, 3, &mut scratch.borrow())
+        .ckks_scalbn(3, &mut res, &ca, &mut scratch.borrow())
         .expect("ckks_scalbn");
     assert_eq!(ca.log_budget(), res.log_budget());
     let (re_out, _) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &res, &sk, &mut scratch.borrow());
@@ -111,7 +111,7 @@ where
 
     let mut res = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
     module
-        .ckks_ldexp(&mut res, &ca, -2, &mut scratch.borrow())
+        .ckks_ldexp(-2, &mut res, &ca, &mut scratch.borrow())
         .expect("ckks_ldexp");
     assert_eq!(ca.log_budget() - res.log_budget(), 2);
     let (re_out, _) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &res, &sk, &mut scratch.borrow());

@@ -24,7 +24,7 @@
 //! ```ignore
 //! // setup, once per transform / per input shape
 //! let mut prepared = LinearTransformation::alloc_prepared(module, &layout, lt.first_diagonal_plaintext().unwrap());
-//! module.ckks_prepare_linear_transformation_rhs(&mut prepared, &lt, &mut scratch);
+//! module.ckks_prepare_linear_transformation_rhs(&mut prepared, &lt, &mut scratch)?;
 //! let mut babies = LinearTransformationBabySteps::alloc(module, prepared.baby_steps(), &ct);
 //!
 //! // per evaluation
@@ -171,12 +171,19 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     /// `lt`. Performs zero `CnvPVecR` allocations. The proxy must also carry the
     /// diagonals' degree, which may be below the ring degree;
     /// `lt.first_diagonal_plaintext()` is the proxy every caller should pass.
+    ///
+    /// # Errors
+    ///
+    /// `InvalidOperand`, before any write to `prepared`, when `prepared` was allocated for another schedule or
+    /// diagonal degree, radix or width than `lt`'s, or when the diagonals of `lt` do not share one scale, width and
+    /// slot kind.
     fn ckks_prepare_linear_transformation_rhs<P>(
         &self,
         prepared: &mut LinearTransformationPrepared<BE>,
         lt: &LinearTransformation<P>,
         scratch: &mut ScratchArena<'_, BE>,
-    ) where
+    ) -> Result<()>
+    where
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + DiagonalProd<BE>;
 
     /// Fills `babies` with the prepared baby-step rotations of `src`.
@@ -208,6 +215,16 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     /// `keys` must contain an automorphism key for every non-zero giant rotation
     /// of `lt`. `babies` must cover at least `lt`'s baby rotations; supersets are
     /// allowed (e.g. when sharing a cache across several transforms).
+    ///
+    /// # Errors
+    ///
+    /// Each before any write to `dst`:
+    /// - `InvalidOperand` when the diagonals of `lt` do not share one scale, width and slot kind, or when `src` is of
+    ///   a degree above the module's;
+    /// - `MultiplicationPrecisionUnderflow` or `InsufficientHomomorphicCapacity` when the ciphertext-by-plaintext
+    ///   budget rule leaves no result at `dst`'s width;
+    /// - `MissingAutomorphismKey` for a non-zero giant rotation of `lt` with no key at the output width;
+    /// - `CKKSError::Internal` when `lt` has no diagonals or `babies` lacks one of `lt`'s baby rotations.
     fn ckks_eval_linear_transformation_into<Dst, Src, P, H>(
         &self,
         dst: &mut Dst,

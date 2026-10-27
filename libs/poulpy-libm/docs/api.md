@@ -83,8 +83,8 @@ The formulas below assume compatible operands at scale `D`.
 | Function | Operation | Domain | Modulus | Depth |
 |---|---|---|---:|---:|
 | `fma` | `ckks_fma(a, b, c)` | Values fitting the CKKS capacity | `D` | `1` |
-| `scalbn` | `ckks_scalbn(input, n)` | Public `i32` exponent | `max(-n, 0)` bits | `0` |
-| `ldexp` | `ckks_ldexp(input, n)` | Alias of `scalbn` | `max(-n, 0)` bits | `0` |
+| `scalbn` | `ckks_scalbn(n, input)` | Public `i32` exponent | `max(-n, 0)` bits | `0` |
+| `ldexp` | `ckks_ldexp(n, input)` | Alias of `scalbn` | `max(-n, 0)` bits | `0` |
 
 Positive power-of-two scaling consumes headroom but no modulus.
 Negative scaling consumes one modulus bit per divided power of two.
@@ -111,7 +111,7 @@ Logarithms use one fixed-domain polynomial and do not perform automatic range re
 | Function | Operation and plan | Domain | Modulus | Depth |
 |---|---|---|---:|---:|
 | `pow` | `ckks_pow`, `PowPlan` | Positive prepared base interval; prepared exponent interval | `plan.consumed_bits(Db, De)` | `plan.depth()` |
-| `powi` | `ckks_powi(input, e)` | Public `u32` exponent | `M(e) * D` | `M(e)` |
+| `powi` | `ckks_powi(e, input)` | Public `u32` exponent | `M(e) * D` | `M(e)` |
 | `sqrt` | `ckks_sqrt(x, in_half, r)` | Positive and conditioned near `1` | `(2r + 1)D` | `2r + 1` |
 | `cbrt` | `ckks_cbrt`, `CbrtPlan` | Any finite prepared `[a, b]` | `P(D)` | `p` |
 | `hypot` | `ckks_hypot`, `HypotPlan` | `x_interval` and `y_interval` | `plan.consumed_bits(D)` | `plan.depth()` |

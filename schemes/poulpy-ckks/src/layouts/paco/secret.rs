@@ -28,7 +28,7 @@ use poulpy_hal::{
 
 use super::{context::PaCoContext, plan::PaCoPlan};
 use crate::encoding::paco::cpx::Cpx;
-use crate::reference::dft::DftScalar;
+use crate::layouts::DftScalar;
 use crate::{
     api::{CKKSEncodingOps, PaCoScalar},
     layouts::{CKKSEncodingBuffer, ScratchArenaTakeCKKS, copy_encoding_buffer_into_reim_host, copy_host_into_encoding_buffer},
@@ -117,7 +117,7 @@ where
         crate::layouts::PaCoSlotOrder::Natural => Box::new(br),
         crate::layouts::PaCoSlotOrder::BitRevLow => {
             let log_p = p.log_c() - 1;
-            Box::new(move |k: usize| br(crate::reference::paco::ops::ext_bitrev_low(k, log_p)))
+            Box::new(move |k: usize| br(crate::layouts::slots::ext_bitrev_low(k, log_p)))
         }
     };
 
@@ -232,31 +232,19 @@ impl PaCoSecretSpec {
     fn check(&self, p: &PaCoPlan) -> Result<()> {
         p.check().context("invalid PaCo plan for structured secret")?;
         let h4 = 4usize.checked_mul(p.h()).context("4*h overflows usize")?;
-        ensure!(
-            self.u.len() == h4,
-            "PaCo secret shift vector has length {}, expected 4*h = {h4}",
-            self.u.len(),
-        );
-        ensure!(
-            self.d.len() == h4,
-            "PaCo secret selector vector has length {}, expected 4*h = {h4}",
-            self.d.len(),
-        );
-        ensure!(self.u[0] == 0, "PaCo secret requires u[0] = 0, got {}", self.u[0]);
+        ensure!(self.u.len() == h4, "PaCo secret shift vector length differs from 4*h");
+        ensure!(self.d.len() == h4, "PaCo secret selector vector length differs from 4*h");
+        ensure!(self.u[0] == 0, "PaCo secret requires u[0] = 0");
         ensure!(self.d[0], "PaCo secret requires d[0] = true");
 
         let b = p.b();
         for (lambda, &shift) in self.u.iter().enumerate() {
-            ensure!(shift < b, "PaCo secret shift u[{lambda}] = {shift} is outside [0, B = {b})",);
+            ensure!(shift < b, "PaCo secret shift is outside [0, B)");
             let position = shift
                 .checked_mul(h4)
                 .and_then(|offset| offset.checked_add(lambda))
-                .with_context(|| format!("PaCo secret coefficient position for index {lambda} overflows usize"))?;
-            ensure!(
-                position < p.n(),
-                "PaCo secret coefficient position {position} for index {lambda} exceeds degree N = {}",
-                p.n(),
-            );
+                .context("PaCo secret coefficient position overflows usize")?;
+            ensure!(position < p.n(), "PaCo secret coefficient position exceeds the degree N");
         }
         for v in 0..p.h() {
             let mut picks = 0usize;
@@ -269,10 +257,7 @@ impl PaCoSecretSpec {
                     .checked_add(usize::from(self.d[lambda]))
                     .context("PaCo selector count overflows usize")?;
             }
-            ensure!(
-                picks == 1,
-                "PaCo secret residue class {v} has {picks} selectors set, expected exactly one"
-            );
+            ensure!(picks == 1, "PaCo secret residue class does not have exactly one selector set");
         }
         Ok(())
     }
@@ -310,7 +295,7 @@ impl PaCoSecretSpec {
                 let position = self.u[lambda]
                     .checked_mul(h4)
                     .and_then(|offset| offset.checked_add(lambda))
-                    .with_context(|| format!("PaCo secret coefficient position for index {lambda} overflows usize"))?;
+                    .context("PaCo secret coefficient position overflows usize")?;
                 s[position] = 1;
             }
         }
@@ -394,11 +379,7 @@ impl PaCoSecretSpec {
                     .checked_mul(two_c)
                     .and_then(|offset| offset.checked_add(i / k))
                     .context("PaCo sigma slot index overflows usize")?;
-                ensure!(
-                    position < z.len(),
-                    "PaCo sigma slot index {position} exceeds chunk length {}",
-                    z.len()
-                );
+                ensure!(position < z.len(), "PaCo sigma slot index exceeds the chunk length");
                 z[position] = Cpx::one();
             }
         }
@@ -412,17 +393,8 @@ impl PaCoSecretSpec {
     /// cannot be serialized.
     pub fn fill_glwe_secret<D: HostDataMut>(&self, p: &PaCoPlan, sk: &mut GLWESecret<D, i64>) -> Result<()> {
         self.check(p)?;
-        ensure!(
-            sk.n().as_usize() == p.n(),
-            "GLWE secret degree is {}, expected PaCo degree {}",
-            sk.n().as_usize(),
-            p.n(),
-        );
-        ensure!(
-            sk.rank().as_usize() == 1,
-            "PaCo expects a rank-1 GLWE secret, got rank {}",
-            sk.rank().as_usize(),
-        );
+        ensure!(sk.n().as_usize() == p.n(), "GLWE secret degree differs from the PaCo degree");
+        ensure!(sk.rank().as_usize() == 1, "PaCo expects a rank-1 GLWE secret");
         let coeffs = self.sk_coeffs(p)?;
         sk.fill_binary_coeffs(0, &coeffs);
         *sk.dist_mut() = Distribution::ENCAPSULATED("paco");

@@ -124,7 +124,7 @@ impl<BE: Backend> PowerBasisGen<BE> for PowerBasis<CKKSCiphertextOwned<BE>> {
         let result = {
             let a_val = self.get_stored(a).expect("gen_power(a) just succeeded");
             let b_val = self.get_stored(b).expect("gen_power(b) just succeeded");
-            let k = mul_ct_k(a_val, b_val)?;
+            let k = mul_ct_k("ckks_mul_into", a_val, b_val)?;
             let mut r = module.ckks_ciphertext_alloc(a_val.base2k(), k.into());
             module.ckks_mul_into(&mut r, a_val, b_val, tsk, scratch)?;
             r
@@ -162,7 +162,7 @@ impl<BE: Backend> PowerBasisGen<BE> for PowerBasis<CKKSCiphertextOwned<BE>> {
         let result = scratch.scope(|mut scratch| -> Result<CKKSCiphertextOwned<BE>> {
             let a_val = self.get_stored(a).expect("gen_power_chebyshev(a) just succeeded");
             let b_val = self.get_stored(b).expect("gen_power_chebyshev(b) just succeeded");
-            let k = mul_ct_k(a_val, b_val)?;
+            let k = mul_ct_k(if a == b { "ckks_square_into" } else { "ckks_mul_into" }, a_val, b_val)?;
 
             // `2·T_a·T_b − T_c`, normalized once at the end.
             let mut product = module.ckks_ciphertext_alloc(a_val.base2k(), k.into());
@@ -255,14 +255,14 @@ impl<BE: Backend> PowerBasisGen<BE> for PowerBasis<CKKSCiphertextOwned<BE>> {
 
 /// `k` of a ciphertext square, shared with the input-transform path.
 pub(crate) fn square_ct_k<A: GLWEInfos + CKKSInfos>(a: &A) -> Result<usize> {
-    mul_ct_k(a, a)
+    mul_ct_k("ckks_square_into", a, a)
 }
 
-fn mul_ct_k<A, B>(a: &A, b: &B) -> Result<usize>
+fn mul_ct_k<A, B>(op: &'static str, a: &A, b: &B) -> Result<usize>
 where
     A: GLWEInfos + CKKSInfos,
     B: GLWEInfos + CKKSInfos,
 {
-    let log_budget = checked_mul_ct_log_budget("power_basis", a.log_budget(), b.log_budget(), a.log_delta(), b.log_delta())?;
+    let log_budget = checked_mul_ct_log_budget(op, a.log_budget(), b.log_budget(), a.log_delta(), b.log_delta())?;
     Ok(log_budget + a.log_delta().min(b.log_delta()))
 }

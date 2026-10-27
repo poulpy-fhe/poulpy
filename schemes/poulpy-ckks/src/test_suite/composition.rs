@@ -2,9 +2,10 @@
 
 use super::helpers::{
     PT_PREC, TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_ckks_error,
-    assert_decrypt_precision, ckks_decrypt_decode, ckks_encrypt, encode_and_upload_pt, gen_sk, gen_sk_with_raw, gen_tsk,
-    quantized_const, test_vector_1, test_vector_2,
+    assert_decrypt_precision, ckks_decrypt_decode, ckks_encrypt, dirty_ct, encode_and_upload_pt, gen_sk, gen_sk_with_raw,
+    gen_tsk, quantized_const, test_vector_1, test_vector_2,
 };
+use super::parity::helpers::{snapshot, with_scratch};
 use crate::{
     CKKSCompositionError, CKKSInfos,
     api::{CKKSAddOps, CKKSMulOps},
@@ -127,19 +128,24 @@ where
     );
     let mut term1 = alloc_ct(&params, module, x.log_budget());
     let mut term2 = alloc_ct(&params, module, x.log_budget());
-    module
-        .ckks_mul_pt_vec_into(&mut term1, &x, &pt1, &mut scratch.borrow())
-        .unwrap();
-    module
-        .ckks_mul_pt_vec_into(&mut term2, &x, &pt2, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_mul_pt_vec_tmp_bytes(&term1, &x, &pt1), |s| {
+        module.ckks_mul_pt_vec_into(&mut term1, &x, &pt1, s)
+    })
+    .unwrap();
+    with_scratch::<BE, _>(module.ckks_mul_pt_vec_tmp_bytes(&term2, &x, &pt2), |s| {
+        module.ckks_mul_pt_vec_into(&mut term2, &x, &pt2, s)
+    })
+    .unwrap();
 
     assert_eq!(
         term1.log_budget(),
         term2.log_budget(),
         "linear branches should remain aligned"
     );
-    module.ckks_add_assign(&mut term1, &term2, &mut scratch.borrow()).unwrap();
+    with_scratch::<BE, _>(module.ckks_add_tmp_bytes(term1.max_size()), |s| {
+        module.ckks_add_assign(&mut term1, &term2, s)
+    })
+    .unwrap();
 
     assert_decrypt_precision(
         "linear_sum",
@@ -191,23 +197,31 @@ where
         &mut scratch.borrow(),
     );
     let mut x2 = alloc_ct(&params, module, x.log_budget());
-    module.ckks_square_into(&mut x2, &x, &tsk, &mut scratch.borrow()).unwrap();
+    with_scratch::<BE, _>(module.ckks_square_tmp_bytes(&x2, &x, &tsk), |s| {
+        module.ckks_square_into(&mut x2, &x, &tsk, s)
+    })
+    .unwrap();
 
     let mut term1 = alloc_ct(&params, module, x.log_budget());
     let mut term2 = alloc_ct(&params, module, x2.log_budget());
-    module
-        .ckks_mul_pt_vec_into(&mut term1, &x, &pt1, &mut scratch.borrow())
-        .unwrap();
-    module
-        .ckks_mul_pt_vec_into(&mut term2, &x2, &pt2, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_mul_pt_vec_tmp_bytes(&term1, &x, &pt1), |s| {
+        module.ckks_mul_pt_vec_into(&mut term1, &x, &pt1, s)
+    })
+    .unwrap();
+    with_scratch::<BE, _>(module.ckks_mul_pt_vec_tmp_bytes(&term2, &x2, &pt2), |s| {
+        module.ckks_mul_pt_vec_into(&mut term2, &x2, &pt2, s)
+    })
+    .unwrap();
 
     assert!(
         term1.log_budget() > term2.log_budget(),
         "x^2 branch should consume more precision"
     );
     let mut sum = alloc_ct(&params, module, term2.k().as_usize());
-    module.ckks_add_into(&mut sum, &term1, &term2, &mut scratch.borrow()).unwrap();
+    with_scratch::<BE, _>(module.ckks_add_tmp_bytes(sum.max_size()), |s| {
+        module.ckks_add_into(&mut sum, &term1, &term2, s)
+    })
+    .unwrap();
 
     assert_decrypt_precision(
         "poly2_sum",
@@ -262,21 +276,30 @@ where
         &mut scratch.borrow(),
     );
     let mut x2 = alloc_ct(&params, module, x.log_budget());
-    module.ckks_square_into(&mut x2, &x, &tsk, &mut scratch.borrow()).unwrap();
+    with_scratch::<BE, _>(module.ckks_square_tmp_bytes(&x2, &x, &tsk), |s| {
+        module.ckks_square_into(&mut x2, &x, &tsk, s)
+    })
+    .unwrap();
 
     let mut term1 = alloc_ct(&params, module, x.log_budget());
     let mut term2 = alloc_ct(&params, module, x2.log_budget());
-    module
-        .ckks_mul_pt_vec_into(&mut term1, &x, &pt1, &mut scratch.borrow())
-        .unwrap();
-    module
-        .ckks_mul_pt_vec_into(&mut term2, &x2, &pt2, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_mul_pt_vec_tmp_bytes(&term1, &x, &pt1), |s| {
+        module.ckks_mul_pt_vec_into(&mut term1, &x, &pt1, s)
+    })
+    .unwrap();
+    with_scratch::<BE, _>(module.ckks_mul_pt_vec_tmp_bytes(&term2, &x2, &pt2), |s| {
+        module.ckks_mul_pt_vec_into(&mut term2, &x2, &pt2, s)
+    })
+    .unwrap();
     let mut poly = alloc_ct(&params, module, term2.k().as_usize());
-    module
-        .ckks_add_into(&mut poly, &term1, &term2, &mut scratch.borrow())
-        .unwrap();
-    module.ckks_add_pt_vec_assign(&mut poly, &pt0, &mut scratch.borrow()).unwrap();
+    with_scratch::<BE, _>(module.ckks_add_tmp_bytes(poly.max_size()), |s| {
+        module.ckks_add_into(&mut poly, &term1, &term2, s)
+    })
+    .unwrap();
+    with_scratch::<BE, _>(module.ckks_add_pt_vec_tmp_bytes(poly.max_size()), |s| {
+        module.ckks_add_pt_vec_assign(&mut poly, &pt0, s)
+    })
+    .unwrap();
 
     assert_decrypt_precision(
         "poly2_sum_with_const",
@@ -343,26 +366,36 @@ where
         &mut scratch.borrow(),
     );
     let mut x2 = alloc_ct(&params, module, x.log_budget());
-    module.ckks_square_into(&mut x2, &x, &tsk, &mut scratch.borrow()).unwrap();
+    with_scratch::<BE, _>(module.ckks_square_tmp_bytes(&x2, &x, &tsk), |s| {
+        module.ckks_square_into(&mut x2, &x, &tsk, s)
+    })
+    .unwrap();
 
     let mut term1 = alloc_ct(&params, module, x.log_budget());
     let mut term2 = alloc_ct(&params, module, x2.log_budget());
-    module
-        .ckks_mul_pt_vec_into(&mut term1, &x, &pt1, &mut scratch.borrow())
-        .unwrap();
-    module
-        .ckks_mul_pt_vec_into(&mut term2, &x2, &pt2, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_mul_pt_vec_tmp_bytes(&term1, &x, &pt1), |s| {
+        module.ckks_mul_pt_vec_into(&mut term1, &x, &pt1, s)
+    })
+    .unwrap();
+    with_scratch::<BE, _>(module.ckks_mul_pt_vec_tmp_bytes(&term2, &x2, &pt2), |s| {
+        module.ckks_mul_pt_vec_into(&mut term2, &x2, &pt2, s)
+    })
+    .unwrap();
     let mut poly = alloc_ct(&params, module, term2.k().as_usize());
-    module
-        .ckks_add_into(&mut poly, &term1, &term2, &mut scratch.borrow())
-        .unwrap();
-    module.ckks_add_pt_vec_assign(&mut poly, &pt0, &mut scratch.borrow()).unwrap();
+    with_scratch::<BE, _>(module.ckks_add_tmp_bytes(poly.max_size()), |s| {
+        module.ckks_add_into(&mut poly, &term1, &term2, s)
+    })
+    .unwrap();
+    with_scratch::<BE, _>(module.ckks_add_pt_vec_tmp_bytes(poly.max_size()), |s| {
+        module.ckks_add_pt_vec_assign(&mut poly, &pt0, s)
+    })
+    .unwrap();
 
     let mut res = alloc_ct(&params, module, params.k);
-    module
-        .ckks_mul_into(&mut res, &y, &poly, &tsk, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_mul_tmp_bytes(&res, &y, &poly, &tsk), |s| {
+        module.ckks_mul_into(&mut res, &y, &poly, &tsk, s)
+    })
+    .unwrap();
 
     assert_decrypt_precision(
         "poly2_mul",
@@ -378,7 +411,7 @@ where
 }
 
 /// Repeated squaring on unit-circle slots should exhaust HE capacity before it blows up numerically.
-pub fn test_repeated_square_exhausts_capacity<BE, F, E>(
+pub fn test_square_into_rejects_exhausted_capacity<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
@@ -415,7 +448,10 @@ pub fn test_repeated_square_exhausts_capacity<BE, F, E>(
         let prev_log_delta = ct.log_delta();
         let next_k = ct.k().as_usize() - ct.log_delta();
         let mut next = alloc_ct(&params, module, next_k);
-        module.ckks_square_into(&mut next, &ct, &tsk, &mut scratch.borrow()).unwrap();
+        with_scratch::<BE, _>(module.ckks_square_tmp_bytes(&next, &ct, &tsk), |s| {
+            module.ckks_square_into(&mut next, &ct, &tsk, s)
+        })
+        .unwrap();
         assert_eq!(
             next.log_delta(),
             prev_log_delta,
@@ -439,28 +475,32 @@ pub fn test_repeated_square_exhausts_capacity<BE, F, E>(
     for (idx, (re, im)) in got_re.iter().zip(got_im.iter()).enumerate() {
         assert!(
             re.is_finite() && im.is_finite(),
-            "repeated_square_exhausts_capacity: non-finite slot at index {idx}: ({re:?}, {im:?})"
+            "square_into_rejects_exhausted_capacity: non-finite slot at index {idx}: ({re:?}, {im:?})"
         );
         let norm = *re * *re + *im * *im;
         assert!(
             norm <= F::from_f64(1.25).unwrap(),
-            "repeated_square_exhausts_capacity: slot {idx} escaped unit-circle bound: norm={norm:?}"
+            "square_into_rejects_exhausted_capacity: slot {idx} escaped unit-circle bound: norm={norm:?}"
         );
     }
 
-    let mut no_capacity = alloc_ct(&params, module, params.k);
-    let err = module
-        .ckks_square_into(&mut no_capacity, &ct, &tsk, &mut scratch.borrow())
-        .unwrap_err();
+    let mut no_capacity = dirty_ct(module, &ct, params.k);
+    let before = snapshot::<BE, _>(&no_capacity);
+    let err = with_scratch::<BE, _>(0, |s| module.ckks_square_into(&mut no_capacity, &ct, &tsk, s)).unwrap_err();
     assert_ckks_error(
-        "repeated_square_exhausts_capacity",
+        "square_into_rejects_exhausted_capacity",
         &err,
         CKKSCompositionError::MultiplicationPrecisionUnderflow {
-            op: "mul",
+            op: "ckks_square_into",
             lhs_log_budget: ct.log_budget(),
             rhs_log_budget: ct.log_budget(),
             lhs_log_delta: ct.log_delta(),
             rhs_log_delta: ct.log_delta(),
         },
+    );
+    assert_eq!(
+        snapshot::<BE, _>(&no_capacity),
+        before,
+        "a refused ckks_square_into wrote res"
     );
 }
