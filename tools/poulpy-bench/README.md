@@ -172,14 +172,14 @@ cargo bench -p poulpy-cpu-portable --bench standard --features enable-ckks -- --
 `poulpy_ckks::presets::bootstrapping::all()`, including
 `n15_d35_k180_p18_c2s` (four recovered levels, 18-bit minimum precision)
 and the logN16 presets. The reference, AVX and AVX-512 `full` binaries register this runner.
-Each preset runs twice: as defined, and with the keys of power-of-two rotations only (`BootstrappingPreset::with_power_of_two_keys`), named with a `_pow2` suffix (`n16_d35_k685_p19_s2c_ffr_ci_pow2`).
+Each preset runs twice: as defined, and with the keys of power-of-two rotations only (`BootstrappingPreset::with_power_of_two_keys`), labelled with a `+pow2` suffix (`n16_d35_k685_p19_s2c_ffr_ci+pow2`).
 A filter on a preset name selects both.
-Each case checks its measured precision against the preset's advertised minimum.
+Each case checks the precision of its first call against the preset's advertised minimum before timing it.
 `schemes::suites::bench_ckks_bootstrapping_with_client::<BE, BC>` runs the same cases on `BE` with the
 secret, keys and ciphertexts of a client backend `BC`, for an evaluating backend that generates no keys;
 it times the bootstrap on `BE` to completion.
 `schemes::suites::bench_ckks_bootstrapping_replayed_with_client::<BE, BC>` times instead the replays of a
-bootstrap recorded once through the closure the backend passes, in the group `ckks_bootstrapping_replayed`
+bootstrap recorded once through the closure the backend passes, after checking a first rerun, in the group `ckks_bootstrapping_replayed`
 with the same ids. The GPU `bootstrapping` binary registers both.
 
 ```sh
@@ -190,7 +190,7 @@ cargo bench -p poulpy-cpu-portable --bench full --features enable-core,enable-ck
 cargo bench -p poulpy-cpu-portable --bench full --features enable-core,enable-ckks,enable-bin-fhe -- 'NTT4x30Portable/ckks/ckks_bootstrapping/n15_d35_k180_p18_c2s'
 
 # Run n16_d35_k685_p19_s2c_ffr_ci with the keys of power-of-two rotations only
-cargo bench -p poulpy-cpu-portable --bench full --features enable-core,enable-ckks,enable-bin-fhe -- 'NTT4x30Portable/ckks/ckks_bootstrapping/n16_d35_k685_p19_s2c_ffr_ci_pow2'
+cargo bench -p poulpy-cpu-portable --bench full --features enable-core,enable-ckks,enable-bin-fhe -- 'NTT4x30Portable/ckks/ckks_bootstrapping/n16_d35_k685_p19_s2c_ffr_ci\+pow2'
 ```
 
 ### libm benchmarks

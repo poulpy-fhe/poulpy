@@ -21,7 +21,7 @@ use poulpy_core::{
     ComponentNoise, GLWECopy,
     layouts::{
         Base2K, Degree, GLWE, GLWEBackendMut, GLWEBackendRef, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef,
-        IntPolyInfos, LWEInfos, Rank, SetK, TorusPrecision,
+        IntPolyInfos, LWEInfos, ModuleCoreAlloc, Rank, SetK, TorusPrecision,
     },
 };
 use poulpy_cpu_portable::ckks_encoding::{EncodingFFTTable, OwnedEncodingPlanSet};
@@ -90,11 +90,14 @@ struct Staged<P> {
 }
 
 /// A zeroed host container with the shape of the device storage `data`.
-fn host_like<D: poulpy_hal::layouts::Data>(data: &GLWE<D, i64>) -> GLWE<AlignedBuf, i64> {
+fn host_like<RT: GpuRuntime, R: Ring, D: poulpy_hal::layouts::Data>(
+    module: &Module<NTT4x30Gpu<RT, R>>,
+    data: &GLWE<D, i64>,
+) -> GLWE<AlignedBuf, i64> {
     let shape = data.data().shape();
     assert!(shape.is_dense(), "CKKS encoding is staged from dense plaintext storage");
     let base2k = LWEInfos::base2k(data);
-    GLWE::alloc_from_infos(&GLWELayout {
+    module.glwe_host_alloc_from_infos(&GLWELayout {
         n: Degree(shape.n() as u32),
         base2k,
         k: TorusPrecision(shape.size() as u32 * base2k.as_u32()),
@@ -215,7 +218,7 @@ where
     }
 
     fn ckks_encode_coeffs_into_impl<P>(
-        _module: &Module<Self>,
+        module: &Module<Self>,
         pt: &mut P,
         coeffs: &CKKSEncodingBufferBackendRef<'_, Self, F>,
     ) -> CKKSResult<()>
@@ -225,7 +228,7 @@ where
         let len = CKKSEncodingBufferInfos::len(coeffs);
         let host_coeffs = download::<RT, F>(&coeffs.data, len);
         // The encoder writes every limb of the plaintext: nothing is read back first.
-        let host = host_like(&GLWEToBackendRef::<Self>::to_backend_ref(pt));
+        let host = host_like(module, &GLWEToBackendRef::<Self>::to_backend_ref(pt));
         let mut staged = Staged { pt, host };
         encode_coeffs_into_host::<Host<R>, F, _>(&mut staged, &CKKSEncodingBuffer::from_data(&host_coeffs[..], len))
             .map_err(CKKSError::from)?;
@@ -239,7 +242,7 @@ where
     }
 
     fn ckks_decode_coeffs_into_impl<P>(
-        _module: &Module<Self>,
+        module: &Module<Self>,
         pt: &P,
         coeffs: &mut CKKSEncodingBufferBackendMut<'_, Self, F>,
     ) -> CKKSResult<()>
@@ -250,7 +253,7 @@ where
         let bytes = len * size_of::<F>();
         let host = {
             let device = GLWEToBackendRef::<Self>::to_backend_ref(pt);
-            let mut host = host_like(&device);
+            let mut host = host_like(module, &device);
             let storage = device.data().data();
             storage.read_prefix(&mut host.data_mut().data_mut()[..storage.len()]);
             host

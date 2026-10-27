@@ -46,7 +46,9 @@ impl<RT: GpuRuntime> GpuHandle<RT> {
     /// allocator, which recycles freed memory, so that threads sharing the
     /// module never share a temporary. The temporary is zeroed before it is
     /// released: it may hold secret-derived words, out of reach of the
-    /// caller's `ScratchArena::wipe`.
+    /// caller's `ScratchArena::wipe`. On an Apple M5 Pro (Metal), the zeroing
+    /// costs `vec_znx_idft_apply` of the standard bench 4% at degree `2^14`
+    /// and 10 to 14% at `2^15`.
     pub(crate) fn with_temp<T>(&self, len: usize, f: impl FnOnce(&mut GpuBuf<RT>) -> T) -> T {
         let mut temp = GpuBuf::uninit(len);
         let result = f(&mut temp);

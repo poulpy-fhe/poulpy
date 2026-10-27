@@ -225,6 +225,10 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalConvolutionImpl for NTT4x30Gpu<RT, R> {
         check_degree::<Self>(module.n(), res.n());
         check_cnv_dft_terms::<Self>(res.n(), terms);
         let Some(res) = dft_column_mut(res, res_col) else { return };
+        // The storage checks of the operand views, before the launches that resolve them again.
+        for term in terms {
+            let _ = (cnv_left_column(&term.a, term.a_col), cnv_right_column(&term.b, term.b_col));
+        }
         // A term with an operand without storage is zero.
         let columns = terms.iter().filter_map(|term| {
             Some((

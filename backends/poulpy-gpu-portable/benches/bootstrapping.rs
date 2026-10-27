@@ -18,10 +18,10 @@ macro_rules! bootstrapping {
         use poulpy_cpu_portable::NTT4x30Portable;
 
         bench_ckks_bootstrapping_with_client::<$backend, NTT4x30Portable>($c);
-        bench_ckks_bootstrapping_replayed_with_client::<$backend, NTT4x30Portable>($c, |body| {
+        bench_ckks_bootstrapping_replayed_with_client::<$backend, NTT4x30Portable>($c, |backend, preset, body| {
             let mut replay = poulpy_gpu_portable::Replay::<$runtime>::record(body);
             println!(
-                "REPLAY graph={} launches={} retained_bytes={}",
+                "REPLAY backend={backend} preset={preset} graph={} launches={} retained_bytes={}",
                 replay.is_graph(),
                 replay.launches(),
                 replay.retained_bytes()

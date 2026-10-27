@@ -114,7 +114,9 @@ fn live() -> std::sync::MutexGuard<'static, BTreeMap<u64, (TypeId, Handle)>> {
 }
 
 /// Waits for the work queued on the runtime and panics on a failure it
-/// reports: a device fault, or a launch failure a live allocation carries.
+/// reports: a device fault, or a launch failure an allocation alive at the
+/// call carries. A failure CubeCL recorded only on a buffer released before
+/// the call is not reported.
 pub(crate) fn synchronize<RT: GpuRuntime>() {
     let handles: Vec<Handle> = live()
         .values()
@@ -242,7 +244,8 @@ fn allocation_of(binding: &Binding) -> Option<Allocation> {
 }
 
 /// Zeroes a host copy of secret-derived words before it is freed, with
-/// volatile stores the compiler cannot drop as dead.
+/// volatile stores the compiler cannot drop as dead. The staging copy CubeCL
+/// owns for a transfer, uploaded or read back, is out of its reach.
 pub(crate) fn wipe_host(bytes: &mut [u8]) {
     for byte in bytes.iter_mut() {
         // SAFETY: `byte` is a valid, exclusive reference.

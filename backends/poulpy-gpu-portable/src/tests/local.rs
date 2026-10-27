@@ -2,7 +2,6 @@
 //! against their reference compositions, and views the suites do not build.
 
 use once_cell::sync::Lazy;
-#[cfg(feature = "enable-core")]
 use poulpy_core::reference::operations::GLWETensoringReference;
 use poulpy_hal::{
     api::{
@@ -637,7 +636,7 @@ fn bootstrap_shapes_match_portable_at_full_degree() {
 /// `vec_znx_big_normalize` on the backend `$be` at the radices `$a_base2k`
 /// to `$res_base2k`, from the same `i128` limbs: the normalized limbs.
 macro_rules! big_normalized {
-    ($be:ty, $bytes:expr, $n:expr, $size:expr, $res_size:expr, $a_base2k:expr, $res_base2k:expr, $offset:expr) => {{
+    ($be:ty, $bytes:expr, $res_bytes:expr, $n:expr, $size:expr, $res_size:expr, $a_base2k:expr, $res_base2k:expr, $offset:expr) => {{
         type B = $be;
         let module = Module::<B>::new(64);
         let mut scratch = ScratchOwned::<B>::alloc(module.vec_znx_big_normalize_tmp_bytes());
@@ -648,7 +647,7 @@ macro_rules! big_normalized {
             $size,
         );
         let mut res: VecZnx<<B as Backend>::OwnedBuf, i64> =
-            VecZnx::from_data(B::from_host_bytes(&vec![0u8; $n * $res_size * 8]), $n, 1, $res_size);
+            VecZnx::from_data(B::from_host_bytes($res_bytes), $n, 1, $res_size);
         module.vec_znx_big_normalize(
             &mut vec_znx_backend_mut::<B>(&mut res),
             $res_base2k,
@@ -688,10 +687,13 @@ fn big_normalize_at_wide_radices_matches_portable() {
         (60, 64, 4, -7),
         (100, 1, 40, 0),
     ] {
-        let have = big_normalized!(Gpu, &bytes, n, size, res_size, a_base2k, res_base2k, offset);
+        // Both destinations start from the same unrelated content.
+        let before = coefficients(n * res_size, &mut seed);
+        let have = big_normalized!(Gpu, &bytes, &before, n, size, res_size, a_base2k, res_base2k, offset);
         let want = big_normalized!(
             poulpy_cpu_portable::NTT4x30Portable,
             &bytes,
+            &before,
             n,
             size,
             res_size,
@@ -706,7 +708,7 @@ fn big_normalize_at_wide_radices_matches_portable() {
 /// `vec_znx_idft_normalize` on the backend `$be` at the radices `$a_base2k`
 /// to `$res_base2k`, from the transform of the same limbs plus an addend.
 macro_rules! idft_normalized {
-    ($be:ty, $bytes:expr, $addend:expr, $n:expr, $size:expr, $res_size:expr, $a_base2k:expr, $res_base2k:expr) => {{
+    ($be:ty, $bytes:expr, $addend:expr, $res_bytes:expr, $n:expr, $size:expr, $res_size:expr, $a_base2k:expr, $res_base2k:expr) => {{
         type B = $be;
         let module = Module::<B>::new($n as u64);
         let mut scratch = ScratchOwned::<B>::alloc(module.vec_znx_idft_normalize_tmp_bytes($res_size, $size));
@@ -714,8 +716,7 @@ macro_rules! idft_normalized {
         let addend = VecZnx::from_data(B::from_host_bytes($addend), $n, 1, $size);
         let mut dft = module.vec_znx_dft_alloc($n, 1, $size);
         module.vec_znx_dft_apply(1, 0, &mut dft.to_backend_mut(), 0, &vec_znx_backend_ref::<B>(&source), 0);
-        let mut res: VecZnx<<B as Backend>::OwnedBuf, i64> =
-            VecZnx::from_data(B::from_host_bytes(&vec![0u8; $n * $res_size * 8]), $n, 1, $res_size);
+        let mut res: VecZnx<<B as Backend>::OwnedBuf, i64> = VecZnx::from_data(B::from_host_bytes($res_bytes), $n, 1, $res_size);
         module.vec_znx_idft_normalize(
             &mut vec_znx_backend_mut::<B>(&mut res),
             $res_base2k,
@@ -740,11 +741,14 @@ fn idft_normalize_at_wide_radices_matches_portable() {
     let mut seed = 0x7654_3210_fedc_ba98u64;
     let (bytes, addend) = (coefficients(n * size, &mut seed), coefficients(n * size, &mut seed));
     for (a_base2k, res_base2k, res_size) in [(100, 62, 5), (127, 64, 6), (50, 64, 3)] {
-        let have = idft_normalized!(Gpu, &bytes, &addend, n, size, res_size, a_base2k, res_base2k);
+        // Both destinations start from the same unrelated content.
+        let before = coefficients(n * res_size, &mut seed);
+        let have = idft_normalized!(Gpu, &bytes, &addend, &before, n, size, res_size, a_base2k, res_base2k);
         let want = idft_normalized!(
             poulpy_cpu_portable::NTT4x30Portable,
             &bytes,
             &addend,
+            &before,
             n,
             size,
             res_size,

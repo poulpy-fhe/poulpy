@@ -3,7 +3,8 @@
 //! Two benchmarks per preset in [`poulpy_ckks::presets::bootstrapping::all`],
 //! at the radix the backend's failure model selects: the preset, and the preset
 //! with the keys of power-of-two rotations only
-//! ([`BootstrappingPreset::with_power_of_two_keys`]), named with a `_pow2` suffix.
+//! ([`BootstrappingPreset::with_power_of_two_keys`]), labelled by
+//! [`preset_label`](poulpy_ckks::test_suite::presets::preset_label) with a `+pow2` suffix.
 //! Criterion's name filter selects a preset by its name. The setup, bootstrap call, and precision measurement use
 //! the shared
 //! [`BootstrappingPresetRun`] driver, so the benchmark exercises exactly what
@@ -19,8 +20,8 @@ use poulpy_ckks::{
     layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, EvalModRing},
     presets::bootstrapping::{BootstrappingPreset, all},
     test_suite::{
-        helpers::{TestContextBackend, TestContextModule, TestContextSharedModule},
-        presets::{BootstrappingPresetRun, CIBackend, PresetRunModule, preset_for_backend},
+        helpers::{PrecisionStats, TestContextBackend, TestContextModule, TestContextSharedModule},
+        presets::{BootstrappingPresetRun, CIBackend, PresetRunModule, preset_for_backend, preset_label},
     },
 };
 use poulpy_core::{
@@ -36,15 +37,15 @@ use poulpy_hal::{
     layouts::{Backend, HostDataMut, HostDataRef, HostStaged, MaxBase2k, Module, ScratchOwned, Standard},
 };
 
-/// Records the queued bootstrap it receives and returns what reruns it.
-type Record<'a> = &'a dyn Fn(Box<dyn FnMut()>) -> Box<dyn FnMut()>;
+/// Records the queued bootstrap it receives, for the benchmark named by the
+/// backend and the preset id, and returns what reruns it.
+type Record<'a> = &'a dyn Fn(&str, &str, Box<dyn FnMut()>) -> Box<dyn FnMut()>;
 
 fn runner_ckks_bootstrapping<BE, BC>(
     group: &mut BenchmarkGroup<'_, WallTime>,
     preset: BootstrappingPreset,
     setup: impl Fn(BootstrappingPreset) -> BootstrappingPresetRun<BE, BC>,
     record: Option<Record<'_>>,
-    power_of_two_keys: bool,
 ) where
     BE: Backend<Ring = Standard, ZnxWord = i64> + HostStaged + 'static,
     BC: TestContextBackend<Ring = Standard> + 'static,
@@ -60,22 +61,30 @@ fn runner_ckks_bootstrapping<BE, BC>(
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
     let id = format!(
-        "{}{}(base2k={},dsize={},dense_to_sparse_dsize={})",
-        preset.name(),
-        if power_of_two_keys { "_pow2" } else { "" },
+        "{}(base2k={},dsize={},dense_to_sparse_dsize={})",
+        preset_label(&preset),
         preset.base2k(),
         preset.key_dsize(),
         preset.dense_to_sparse_dsize()
     );
+    let backend = backend_name::<BE>();
     let mut state = None;
-    let mut precision = None;
     group.bench_function(BenchmarkId::from_parameter(&id), |bencher| {
         let (run, replay) = state.get_or_insert_with(|| {
             let run = Rc::new(RefCell::new(setup(preset.clone())));
-            let replay = record.map(|record| {
+            let mut replay = record.map(|record| {
                 let body = run.clone();
-                record(Box::new(move || body.borrow_mut().bootstrap_queued()))
+                record(&backend, &id, Box::new(move || body.borrow_mut().bootstrap_queued()))
             });
+            // The first call is verified before any is timed.
+            match &mut replay {
+                Some(replay) => {
+                    replay();
+                    run.borrow().synchronize();
+                }
+                None => run.borrow_mut().bootstrap(),
+            }
+            check_precision(&backend, &id, &preset, run.borrow_mut().precision());
             (run, replay)
         });
         match replay {
@@ -85,28 +94,28 @@ fn runner_ckks_bootstrapping<BE, BC>(
             }),
             None => bencher.iter(|| run.borrow_mut().bootstrap()),
         }
-        precision = Some(run.borrow_mut().precision());
     });
-    if let Some((re, im)) = precision {
-        let backend = backend_name::<BE>();
-        println!(
-            "PRECISION backend={backend} preset={id} re_avg={:.2}b re_min={:.2}b re_worst_idx={} re_worst_err={:.3e} im_avg={:.2}b im_min={:.2}b im_worst_idx={} im_worst_err={:.3e} advertised={}b",
-            re.avg_log2_prec,
-            re.min_log2_prec,
-            re.worst_idx,
-            re.worst_err,
-            im.avg_log2_prec,
-            im.min_log2_prec,
-            im.worst_idx,
-            im.worst_err,
-            preset.log2_precision(),
-        );
-        let advertised = preset.log2_precision() as f64;
-        assert!(
-            re.min_log2_prec >= advertised && im.min_log2_prec >= advertised,
-            "preset {id} advertises {advertised} bits of precision"
-        );
-    }
+}
+
+/// Prints the measured precision of a preset and panics below the precision it advertises.
+fn check_precision(backend: &str, id: &str, preset: &BootstrappingPreset, (re, im): (PrecisionStats, PrecisionStats)) {
+    println!(
+        "PRECISION backend={backend} preset={id} re_avg={:.2}b re_min={:.2}b re_worst_idx={} re_worst_err={:.3e} im_avg={:.2}b im_min={:.2}b im_worst_idx={} im_worst_err={:.3e} advertised={}b",
+        re.avg_log2_prec,
+        re.min_log2_prec,
+        re.worst_idx,
+        re.worst_err,
+        im.avg_log2_prec,
+        im.min_log2_prec,
+        im.worst_idx,
+        im.worst_err,
+        preset.log2_precision(),
+    );
+    let advertised = preset.log2_precision() as f64;
+    assert!(
+        re.min_log2_prec >= advertised && im.min_log2_prec >= advertised,
+        "preset {id} advertises {advertised} bits of precision"
+    );
 }
 
 /// Exercises every preset at the radix
@@ -168,12 +177,13 @@ where
 
 /// [`bench_ckks_bootstrapping_with_client`] timing replays of a recorded
 /// bootstrap, as an application that repeats a bootstrap on the same buffers
-/// runs it: `record` receives the queued bootstrap of a preset once and
-/// returns what reruns it, and every iteration is a rerun, synchronized. The
+/// runs it: `record` receives the backend name, the preset's benchmark id and
+/// its queued bootstrap once, and returns what reruns it. A first rerun is
+/// checked for precision, then every iteration is a rerun, synchronized. The
 /// group is `ckks_bootstrapping_replayed`, with the ids of the unrecorded one.
 pub fn bench_ckks_bootstrapping_replayed_with_client<BE, BC>(
     c: &mut Criterion<WallTime>,
-    record: impl Fn(Box<dyn FnMut()>) -> Box<dyn FnMut()>,
+    record: impl Fn(&str, &str, Box<dyn FnMut()>) -> Box<dyn FnMut()>,
 ) where
     BE: Backend<Ring = Standard, ZnxWord = i64> + HostStaged + MaxBase2k + 'static,
     CIBackend<BE>: MaxBase2k,
@@ -229,27 +239,18 @@ where
     group.sample_size(10);
     for nominal in all().unwrap() {
         let ring = nominal.plan().eval_mod_ring();
-        for power_of_two_keys in [false, true] {
-            let preset = if power_of_two_keys {
-                nominal.with_power_of_two_keys().unwrap()
-            } else {
-                nominal.clone()
-            };
+        // Each preset, then its variant with the keys of power-of-two rotations only.
+        for preset in [nominal.clone(), nominal.with_power_of_two_keys().unwrap()] {
             let preset = preset_for_backend::<BE, CIBackend<BE>>(&preset).unwrap();
             match ring {
-                EvalModRing::Standard => runner_ckks_bootstrapping(
-                    &mut group,
-                    preset,
-                    BootstrappingPresetRun::<BE, BC>::setup,
-                    record,
-                    power_of_two_keys,
-                ),
+                EvalModRing::Standard => {
+                    runner_ckks_bootstrapping(&mut group, preset, BootstrappingPresetRun::<BE, BC>::setup, record)
+                }
                 _ => runner_ckks_bootstrapping(
                     &mut group,
                     preset,
                     |preset| BootstrappingPresetRun::<BE, BC>::setup_ci(preset),
                     record,
-                    power_of_two_keys,
                 ),
             }
         }

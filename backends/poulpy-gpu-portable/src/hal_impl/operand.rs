@@ -20,9 +20,12 @@ type Word = CrtWord<Primes30, u32>;
 /// each at an index in the kernels' 32-bit range: the kernels launch
 /// unchecked, so a layout wider than its storage must stop here.
 fn assert_holds<T>(binding: &Binding, elems: usize) {
-    let end = binding.base::<T>() as usize + elems;
+    let end = (binding.base::<T>() as usize)
+        .checked_add(elems)
+        .expect("operand size overflows usize");
     assert!(
-        end * size_of::<T>() <= binding.offset + binding.len,
+        end.checked_mul(size_of::<T>())
+            .is_some_and(|bytes| bytes <= binding.offset + binding.len),
         "device storage shorter than its layout"
     );
     assert!(u32::try_from(end).is_ok(), "device column ends beyond the 32-bit word range");
@@ -207,7 +210,9 @@ pub(crate) fn all_blocks(column0: &Column, cols: usize, limbs: usize) -> Column 
     let start = (column0.base - column0.binding.base::<u64>()) as usize;
     assert_holds::<u64>(
         &column0.binding,
-        start + elems(&[limbs, cols, column0.n, column0.words as usize]),
+        start
+            .checked_add(elems(&[limbs, cols, column0.n, column0.words as usize]))
+            .expect("operand size overflows usize"),
     );
     Column {
         binding: column0.binding.clone(),
