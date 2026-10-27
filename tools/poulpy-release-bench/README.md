@@ -19,7 +19,9 @@ Each one is measured with the rotation keys the preset derives and with power-of
 A measurement sets the preset up with the shared `BootstrappingPresetRun` driver, runs 3 warm-up bootstraps and 20 timed ones, then decrypts the last output and measures its precision.
 The timed region is one bootstrap call followed by a device synchronization.
 Setup (context, keys, encryption and the one bootstrap the driver runs to check the output width) is timed apart, and decryption is excluded.
-The GPU backends are also measured with the bootstrap recorded once and replayed (`mode: "replay"`).
+The GPU backends are also measured with the bootstrap recorded once as a graph and replayed (`mode: "replay"`), each iteration being one replay followed by a device synchronization.
+On a runtime that records no graph, that row has `status: "unavailable"` and the direct measurement stands.
+A graph dropped during the iterations fails the row rather than mixing replayed and direct timings.
 A precision below the one the preset advertises is reported, not fatal.
 
 ## Builds

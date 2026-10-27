@@ -48,7 +48,8 @@ pub struct Timings {
 
 /// Times the bootstraps of a run. `queue` issues one bootstrap and `sync`
 /// returns once the backend has completed it: a timed iteration covers both.
-pub type Measure = fn(queue: &mut dyn FnMut(), sync: &dyn Fn(), warmup: usize, iters: usize) -> Timings;
+/// `None` when the mode is not available on the backend.
+pub type Measure = fn(queue: &mut dyn FnMut(), sync: &dyn Fn(), warmup: usize, iters: usize) -> Result<Option<Timings>>;
 
 fn timed(queue: &mut dyn FnMut(), sync: &dyn Fn()) -> u64 {
     let start = Instant::now();
@@ -58,39 +59,49 @@ fn timed(queue: &mut dyn FnMut(), sync: &dyn Fn()) -> u64 {
 }
 
 /// Every iteration calls the bootstrap.
-pub fn direct(queue: &mut dyn FnMut(), sync: &dyn Fn(), warmup: usize, iters: usize) -> Timings {
+pub fn direct(queue: &mut dyn FnMut(), sync: &dyn Fn(), warmup: usize, iters: usize) -> Result<Option<Timings>> {
     sync();
-    Timings {
+    Ok(Some(Timings {
         warmup_ns: (0..warmup).map(|_| timed(queue, sync)).collect(),
         samples_ns: (0..iters).map(|_| timed(queue, sync)).collect(),
         extra: None,
-    }
+    }))
 }
 
-/// The bootstrap is recorded once and every iteration replays the recording,
-/// as an application that repeats a bootstrap on the same buffers runs it.
+/// The bootstrap is recorded once as a graph and every iteration replays the
+/// graph, as an application that repeats a bootstrap on the same buffers runs
+/// it. `None` when the runtime records no graph: the direct measurement of the
+/// backend then stands. Fails if the graph is dropped during the iterations,
+/// since `Replay` then calls the bootstrap directly.
 #[cfg(any(feature = "cuda", feature = "hip", feature = "metal", feature = "vulkan"))]
 pub fn replay<RT: poulpy_gpu_portable::GpuRuntime>(
     queue: &mut dyn FnMut(),
     sync: &dyn Fn(),
     warmup: usize,
     iters: usize,
-) -> Timings {
+) -> Result<Option<Timings>> {
     sync();
     let mut replay = poulpy_gpu_portable::Replay::<RT>::record(queue);
     sync();
-    let mut replayed = || replay.replay();
-    let warmup_ns = (0..warmup).map(|_| timed(&mut replayed, sync)).collect();
-    let samples_ns = (0..iters).map(|_| timed(&mut replayed, sync)).collect();
-    Timings {
-        warmup_ns,
+    if !replay.is_graph() {
+        return Ok(None);
+    }
+    let mut times = (0..warmup + iters)
+        .map(|i| {
+            let ns = timed(&mut || replay.replay(), sync);
+            anyhow::ensure!(replay.is_graph(), "the graph was dropped at replay {i}");
+            Ok(ns)
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let samples_ns = times.split_off(warmup);
+    Ok(Some(Timings {
+        warmup_ns: times,
         samples_ns,
         extra: Some(json!({
-            "graph": replay.is_graph(),
             "launches": replay.launches(),
             "retained_bytes": replay.retained_bytes(),
         })),
-    }
+    }))
 }
 
 /// The preset of the release set named `name`, with power-of-two rotation keys
@@ -195,7 +206,14 @@ where
         let run = RefCell::new(&mut run);
         let mut queue = || run.borrow_mut().bootstrap_queued();
         let sync = || run.borrow().synchronize();
-        measure(&mut queue, &sync, args.warmup, args.iters)
+        measure(&mut queue, &sync, args.warmup, args.iters)?
+    };
+    let Some(timings) = timings else {
+        return Ok(json!({
+            "preset": preset_info,
+            "setup_ns": setup_ns,
+            "unavailable": "the runtime records no graph of the bootstrap",
+        }));
     };
 
     let (re, im) = run.precision();

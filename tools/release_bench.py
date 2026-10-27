@@ -489,7 +489,11 @@ def cmd_run(opts):
         print(f"[{index}/{len(jobs)}] {rid} ...", end=" ", flush=True)
         measured, error, rss, wall = run_one(os.path.join(ROOT, b["binary"]), args, env, opts.timeout)
         entry = {"id": rid, "build": b["name"], "status": "ok" if measured else "error", "peak_rss_bytes": rss, "wall_seconds": wall}
-        if measured:
+        if measured and "unavailable" in measured:
+            entry.update(measured)
+            entry["status"] = "unavailable"
+            print(f"no graph replay: {measured['unavailable']}, the direct measurement stands")
+        elif measured:
             entry.update(measured)
             entry["timing"] = timing_stats(measured["samples_ns"])
             median = entry["timing"]["median_ns"] / 1e6
@@ -505,11 +509,15 @@ def cmd_run(opts):
     record["finished_at"] = now()
     record["method"]["load_average_end"] = os.getloadavg()
     write(out, record)
-    failed = [r["id"] for r in record["results"] if r["status"] != "ok"]
+    failed = [r["id"] for r in record["results"] if r["status"] == "error"]
+    unavailable = [r["id"] for r in record["results"] if r["status"] == "unavailable"]
     low = [r["id"] for r in record["results"] if r["status"] == "ok" and not r["precision"]["meets_advertised"]]
-    print(f"wrote {out}: {len(record['results']) - len(failed)} measured, {len(failed)} failed")
+    measured = len(record["results"]) - len(failed) - len(unavailable)
+    print(f"wrote {out}: {measured} measured, {len(failed)} failed, {len(unavailable)} without graph replay")
     for rid in failed:
         print(f"  failed: {rid}")
+    for rid in unavailable:
+        print(f"  no graph replay: {rid}")
     for rid in low:
         print(f"  below advertised precision: {rid}")
 
