@@ -78,6 +78,53 @@ In `poulpy-cpu-rayon`, the `enable-core`, `enable-ckks`, `enable-bin-fhe` and `e
 In `poulpy-cpu-avx`, `enable-rayon` implies `enable-avx`.
 In `poulpy-cpu-avx512`, `enable-rayon` implies `enable-avx512f`, but it must be combined with `enable-ifma` to expose `NTT3x42IfmaRayon`.
 
+## GPU backends
+
+`poulpy-gpu-portable` implements the `NTT4x30` subfamily on GPUs through [CubeCL](https://github.com/tracel-ai/cubecl).
+It uses the same four primes as the CPU `NTT4x30` backends, so its results are bit-identical to `NTT4x30Portable`; only the storage differs (four `u32` residues per DFT-domain coefficient, buffers resident on the device).
+The implementation is written once, and each CubeCL runtime has its own backend type, so that several runtimes can run side by side in one process.
+
+| Backend | CubeCL runtime | Hardware | Feature |
+|---------|----------------|----------|---------|
+| `NTT4x30Cuda` | CUDA | NVIDIA | `enable-cuda` |
+| `NTT4x30Hip` | HIP | AMD | `enable-hip` |
+| `NTT4x30Wgpu` | wgpu | Metal on Apple, Vulkan, other wgpu targets | `enable-metal`, `enable-vulkan`, `enable-wgpu` |
+
+Each type is generic over the ring like the CPU types (`NTT4x30Wgpu<ConjugateInvariant>`), and `enable-core` and `enable-ckks` add the scheme layers.
+A backend type owns one device for the life of the process: the first device of its runtime, or the one chosen with `GpuRuntime::select_device` before the first module or buffer of that runtime is created.
+
+Buffers live on the device, so data moves explicitly: generate keys and encrypt with a host backend, move the layouts with `TransferInto`, prepare and evaluate on the GPU backend, and move results back to decrypt.
+Operations are queued; `Module::synchronize` returns once they have completed, and a transfer to the host waits for what it reads.
+CKKS encoding and decoding, the uniform fill of a coefficient column and the normalizations at radices above 62 bits are staged through the host, and everything else runs on the device, sampling included.
+CKKS encoding uses the portable transform there, which keeps it byte-identical to every other backend.
+
+A sequence of calls that is repeated on the same buffers (a bootstrap, say) can be recorded once and replayed as one CubeCL graph:
+
+```rust
+use std::cell::RefCell;
+
+use poulpy_gpu_portable::{Replay, Wgpu};
+
+// The closure borrows the buffers at each call, so the caller can reach them between replays.
+let (ct_in, ct_out) = (RefCell::new(ct_in), RefCell::new(ct_out));
+let mut replay = Replay::<Wgpu>::record(|| {
+    bootstrap(&module, &mut ct_out.borrow_mut(), &ct_in.borrow(), &ctx, &keys, &mut scratch.borrow())
+});
+// Write new inputs into `ct_in.borrow_mut()`, then:
+replay.replay();
+// and read the result from `ct_out.borrow()`.
+```
+
+The closure must bind the same buffers and issue the same launches at every call, and must not read from the device, write host data to it or synchronize; `Replay` documents the contract, and `Replay::check` tests a closure against its recording.
+A recording keeps the temporaries of the closure reserved on the device until it is dropped, and while a closure is recorded or a graph is queued, other threads wait for the device.
+
+Each module carries the device-dependent tuning of its kernels: `poulpy_gpu_portable::handle(&module).set_convolution_capacity_step(limbs)` sets the limbs by which the convolution kernels grow the operand copies a thread holds (8 by default, at most `MAX_CAPACITY_STEP`).
+
+Limits of the GPU backends:
+
+- Normalization runs on the device for radix widths from 1 to 62 bits. The wider radices the HAL admits for a 128-bit source or an inverse transform go through the host.
+- A window whose degree is not a power-of-two fraction of its operand's is rejected with a panic.
+
 ## How to use a backend
 
 A backend is selected by naming its type when you build the `Module`.

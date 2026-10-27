@@ -187,6 +187,12 @@ pub trait ModuleCoreAlloc {
     fn glwe_alloc_from_infos<A: GLWEInfos>(&self, infos: &A) -> GLWE<Self::OwnedBuf, Self::ZnxWord>;
     fn glwe_alloc(&self, base2k: Base2K, k: TorusPrecision, rank: Rank) -> GLWE<Self::OwnedBuf, Self::ZnxWord>;
 
+    /// Allocates a zeroed host GLWE with the layout of `infos`, whatever the
+    /// module's backend: the host copy of a host-staged operation.
+    fn glwe_host_alloc_from_infos<A: GLWEInfos>(&self, infos: &A) -> GLWE<poulpy_hal::AlignedBuf, Self::ZnxWord> {
+        GLWE::alloc_from_infos(infos)
+    }
+
     /// Allocates a GLWE with exactly `size` limbs (so `max_size() == size`),
     /// labelling `k` as the full physical width `size · base2k`. Unlike
     /// [`Self::glwe_alloc`] (which derives `size = ceil(k / base2k)` from a target
