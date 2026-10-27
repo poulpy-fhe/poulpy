@@ -1006,9 +1006,10 @@ pub fn gadget_known_zero_prefix(base2k: Base2K, k_digit: TorusPrecision, dnum: D
     }
 }
 
-/// The reference of `GGLWEProductDigitsStridedImpl::gglwe_operand_from_dft`: every mask column of `a`
-/// normalized with `vec_znx_idft_normalize` over `a.size().min(output_size)` limbs, then laid out
-/// with [`gadget_dft_apply`].
+/// Reference of [`GGLWEProductDigitsStridedImpl::gglwe_operand_from_dft`](crate::oep::GGLWEProductDigitsStridedImpl::gglwe_operand_from_dft),
+/// which [`impl_gglwe_product_step_hooks_reference!`](crate::impl_gglwe_product_step_hooks_reference) forwards to:
+/// every mask column of `a` normalized with `vec_znx_idft_normalize` over
+/// `a.size().min(output_size)` limbs, then laid out with [`gadget_dft_apply`].
 #[doc(hidden)]
 pub fn gglwe_operand_from_dft_reference<BE, M>(
     module: &M,
@@ -1020,13 +1021,17 @@ pub fn gglwe_operand_from_dft_reference<BE, M>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: ModuleN + poulpy_hal::api::VecZnxIdftNormalize<BE> + poulpy_hal::api::VecZnxDftApply<BE> + VecZnxGadgetDecompose<BE>,
+    M: GGLWEProductFusedReference<BE>,
 {
     let rank = a.cols() - 1;
     let key_base2k = key.base2k().as_usize();
     assert!(
         a_base2k == key_base2k,
         "gglwe_operand_from_dft: the source's base2k differs from the key's"
+    );
+    assert!(
+        scratch.available() >= gglwe_operand_from_dft_tmp_bytes_reference(module, a.size(), output_size, key),
+        "gglwe_operand_from_dft: scratch below its query"
     );
     let mask_small_size = a.size().min(output_size);
     let (k_digit, dnum) = (key.k_digit(), key.dnum());
@@ -1060,8 +1065,9 @@ pub fn gglwe_operand_from_dft_reference<BE, M>(
     }
 }
 
-/// The reference of `GGLWEProductDigitsStridedImpl::gglwe_products_fused`: the backend's
-/// `gglwe_product_fused` on the items in order.
+/// Reference of [`GGLWEProductDigitsStridedImpl::gglwe_products_fused`](crate::oep::GGLWEProductDigitsStridedImpl::gglwe_products_fused),
+/// which [`impl_gglwe_product_step_hooks_reference!`](crate::impl_gglwe_product_step_hooks_reference) forwards to:
+/// the backend's `gglwe_product_fused` on the items in order.
 #[doc(hidden)]
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn gglwe_products_fused_reference<BE>(
@@ -1098,8 +1104,9 @@ pub fn gglwe_products_fused_reference<BE>(
     }
 }
 
-/// The reference of `GGLWEProductDigitsStridedImpl::gglwe_products_idft_normalize`: the
-/// backend's `gglwe_product_idft_normalize` on the items in order.
+/// Reference of [`GGLWEProductDigitsStridedImpl::gglwe_products_idft_normalize`](crate::oep::GGLWEProductDigitsStridedImpl::gglwe_products_idft_normalize),
+/// which [`impl_gglwe_product_step_hooks_reference!`](crate::impl_gglwe_product_step_hooks_reference) forwards to:
+/// the backend's `gglwe_product_idft_normalize` on the items in order.
 #[doc(hidden)]
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn gglwe_products_idft_normalize_reference<BE>(
@@ -1130,8 +1137,9 @@ pub fn gglwe_products_idft_normalize_reference<BE>(
     }
 }
 
-/// Scratch of [`gglwe_operand_from_dft_reference`]: one normalized mask column beside its
-/// inverse transform and its gadget layout.
+/// Scratch of [`gglwe_operand_from_dft_reference`], the reference of
+/// [`GGLWEProductDigitsStridedImpl::gglwe_operand_from_dft_tmp_bytes`](crate::oep::GGLWEProductDigitsStridedImpl::gglwe_operand_from_dft_tmp_bytes):
+/// one normalized mask column beside its inverse transform and its gadget layout.
 #[doc(hidden)]
 pub fn gglwe_operand_from_dft_tmp_bytes_reference<BE, M, K>(module: &M, a_size: usize, output_size: usize, key_infos: &K) -> usize
 where
@@ -1142,7 +1150,7 @@ where
     let mask_small_size = a_size.min(output_size);
     let (base2k, k_digit, dnum) = (key_infos.base2k(), key_infos.k_digit(), key_infos.dnum());
     let mask_k = TorusPrecision((mask_small_size * base2k.as_usize()) as u32);
-    BE::scratch_aligned(mask_small_size * core::mem::size_of::<i64>() * module.n())
+    BE::scratch_aligned(BE::bytes_of_vec_znx(module.n(), 1, mask_small_size))
         + module
             .vec_znx_idft_normalize_tmp_bytes(mask_small_size, a_size)
             .max(gadget_dft_apply_tmp_bytes::<BE, _>(

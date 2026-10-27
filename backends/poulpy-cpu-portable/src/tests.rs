@@ -22,6 +22,8 @@ mod derived_scratch;
 mod libm_tests;
 #[cfg(feature = "enable-core")]
 mod linear_transformation_batch;
+#[cfg(feature = "enable-core")]
+mod product_step_hooks;
 
 /// A square's constant coefficient has mean `(2n - 1) * 2^(2K) / 12` on the conjugate-invariant ring: one radix past
 /// the model's, it exceeds `Q/2` by itself.

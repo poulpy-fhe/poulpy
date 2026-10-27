@@ -636,8 +636,7 @@ fn glwe_eval_giant_tree<BE, R, P, H>(
     let mut held = vec![tree.prod_size; steps];
     held.resize(sizes.len(), node_size);
 
-    // Every node and the operands of the widest level in one allocation, so that a backend
-    // can take the switches of a level in one pass over their key.
+    // Every node and the operands of the widest level in one allocation.
     let operand_size = |key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>, limbs: usize| {
         glwe_lazy_giant_operand_size(key, limbs, key_output_size.min(key.size()))
     };
@@ -722,6 +721,7 @@ fn glwe_eval_giant_tree<BE, R, P, H>(
         }
     }
 
+    let mut accumulate: Vec<bool> = Vec::with_capacity(plan.iter().map(Vec::len).max().unwrap_or(0));
     for ((level, switches_of_level), key) in tree.levels.iter().zip(&plan).zip(&level_keys) {
         let Some(key) = key else { continue };
         let output_size = key_output_size.min(key.size());
@@ -772,7 +772,8 @@ fn glwe_eval_giant_tree<BE, R, P, H>(
         let addends: Vec<[Option<(&VecZnxDftBackendRef<'_, BE>, usize)>; 1]> = srcs.iter().map(|src| [Some((src, 0))]).collect();
         let addends: Vec<&[Option<(&VecZnxDftBackendRef<'_, BE>, usize)>]> = addends.iter().map(|addend| &addend[..]).collect();
         let operands: Vec<VecZnxDftBackendRef<'_, BE>> = operands.iter().map(|operand| operand.to_backend_ref()).collect();
-        let accumulate: Vec<bool> = switches_of_level.iter().map(|&(_, _, accumulate, _)| accumulate).collect();
+        accumulate.clear();
+        accumulate.extend(switches_of_level.iter().map(|&(_, _, accumulate, _)| accumulate));
         BE::gglwe_products_fused(
             module,
             &mut dsts,
@@ -971,8 +972,7 @@ where
     };
     let node_size = key.size().max(shape.prod_size).max(shape.res_size);
     // A buffer per giant step and at most one per switch, as wide as a node, and the operands
-    // of a level.
-    // The operands of the level of most switches, each as wide as a node's.
+    // of the level of most switches, each as wide as a node's.
     let level_operands = levels.iter().map(|level| level.pairs.len()).max().unwrap_or(0)
         * giant_tree_operand_bytes::<BE, _, _>(module, n, cols, key, node_size, key.size());
     let lazy = (steps + switches) * BE::scratch_aligned(module.bytes_of_vec_znx_dft(n, cols, node_size))

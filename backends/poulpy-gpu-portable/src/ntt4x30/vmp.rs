@@ -424,7 +424,9 @@ pub(crate) fn digit_product<RT: GpuRuntime>(
     );
 }
 
-/// Most sources [`digit_products`] takes per launch.
+/// Most sources [`digit_products`] and [`digit_products_inverse`] take per launch: the
+/// kernels address their sources through the four base words of `pick4`. A giant-tree
+/// level or a doubling pass with more sources takes several launches.
 pub(crate) const MANY_SOURCES: usize = 4;
 
 /// Base word `s` of four, chosen at compile time.
@@ -746,8 +748,7 @@ pub(crate) fn digit_products<RT: GpuRuntime>(
 /// plane. A thread computes the product at its own point, as
 /// `product_kernel` does; every time a result limb is complete the workgroup
 /// passes it through shared memory, one barrier per stage, and stores the
-/// lanes the inverse launch would have stored. The stages run while the
-/// matrix streams.
+/// lanes the inverse launch would have stored.
 #[cube(launch_unchecked)]
 #[allow(clippy::too_many_arguments, clippy::collapsible_if)]
 fn product_inverse_kernel(

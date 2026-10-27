@@ -122,7 +122,7 @@ pub(crate) fn combine<RT: GpuRuntime>(res: &DftColumn, limbs: usize, a: DftTerm<
     );
 }
 
-/// Blocks [`gather`] copies per launch.
+/// Blocks [`gather`] copies per launch: the kernel binds eight source buffers.
 #[cfg_attr(not(feature = "enable-core"), allow(dead_code))]
 pub(crate) const GATHER_BLOCKS: usize = 8;
 
@@ -193,7 +193,7 @@ pub(crate) fn gather<RT: GpuRuntime>(dst: &DftColumn, sources: &[DftColumn]) {
         let source = |index: usize| &chunk[index.min(chunk.len() - 1)];
         let units = chunk.len() * block;
         launch!(
-            RT, Label::DftCopy, units * 8, gather_kernel, (units, RT::GROUP, RT::GROUP);
+            RT, Label::DftGather, units * 8, gather_kernel, (units, RT::GROUP, RT::GROUP);
             [
                 dst.binding => u32,
                 source(0).binding => u32,

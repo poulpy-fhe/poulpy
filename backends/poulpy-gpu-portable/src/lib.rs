@@ -13,6 +13,17 @@
 //!   the Metal, Vulkan or WebGPU shader compiler.
 //! - `enable-core`, `enable-ckks`: the `poulpy-core` and `poulpy-ckks` families on every backend type.
 //!
+//! # Fused steps
+//!
+//! Scheme operations are the reference bodies of `poulpy-core` and
+//! `poulpy-ckks`; with `enable-core`, the backend implements their step
+//! hooks with fused launches: the gadget product adds, rotates and
+//! accumulates as it stores, or runs the first launch of its inverse
+//! transform, the products of several sources against one key share a launch
+//! that reads the key once, a square reads one prepared operand, the
+//! giant-step products of a linear transformation are written a batch per
+//! launch, and the terms of a constant combination are summed in one launch.
+//!
 //! # Tuning
 //!
 //! A module's [`GpuHandle`], reached with [`handle`], carries the tuning of its

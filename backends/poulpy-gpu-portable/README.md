@@ -11,6 +11,7 @@ It implements the extension traits of [`poulpy-hal`](https://github.com/poulpy-f
 | `enable-metal`, `enable-vulkan`, `enable-wgpu` | `NTT4x30Wgpu` | a Metal, Vulkan or WebGPU device |
 
 CKKS encoding and decoding, the uniform fill of a coefficient column and the normalizations at radices above 62 bits are staged through the host, and everything else runs on the device, sampling included.
+Scheme operations are the reference bodies of `poulpy-core` and `poulpy-ckks`; the backend implements their step hooks with fused launches: the gadget product adds, rotates and accumulates as it stores, or runs the first launch of its inverse transform, the products of several sources against one key share a launch that reads the key once, a square reads one prepared operand, the giant-step products of a linear transformation are written a batch per launch, and the terms of a constant combination are summed in one launch.
 A CPU backend such as `NTT4x30Portable` can generate the keys and encrypt, and the GPU backend compiles the bootstrapping context, prepares the keys and bootstraps.
 
 ```bash

@@ -48,13 +48,34 @@ struct Allocation {
     owned: Arc<AtomicBool>,
     /// Whether the allocation still owes its zero fill: a zeroed buffer is
     /// filled at its first use, unless that use overwrites all of it.
-    fresh: Arc<AtomicBool>,
+    fresh: Arc<Mutex<bool>>,
 }
 
-/// Zero-fills `allocation` if it still owes it.
+impl Allocation {
+    fn fresh(&self) -> std::sync::MutexGuard<'_, bool> {
+        self.fresh.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+}
+
+/// Zero-fills `allocation` if it still owes it. The flag stays locked until
+/// the fill is queued, so a thread that finds it cleared queues its own work
+/// after the fill; the access is taken first, as every launch takes it, so a
+/// thread holding the flag never waits for a recording that waits for it.
 fn settle<RT: GpuRuntime>(allocation: &Allocation) {
-    if allocation.fresh.swap(false, Ordering::AcqRel) {
+    let _access = access::shared();
+    let mut fresh = allocation.fresh();
+    if std::mem::take(&mut *fresh) {
         zero::<RT>(allocation, 0, allocation.reserved);
+    }
+}
+
+/// Settles `allocation` for a use that writes `written` bytes from `offset`:
+/// when that is all of it, the zero fill it owes is dropped instead.
+fn settle_for_write<RT: GpuRuntime>(allocation: &Allocation, offset: usize, written: usize) {
+    if offset == 0 && written == allocation.reserved {
+        *allocation.fresh() = false;
+    } else {
+        settle::<RT>(allocation);
     }
 }
 
@@ -219,7 +240,7 @@ fn allocate<RT: GpuRuntime>(len: usize) -> Option<Allocation> {
         handle,
         reserved,
         owned: Arc::new(AtomicBool::new(true)),
-        fresh: Arc::new(AtomicBool::new(false)),
+        fresh: Arc::new(Mutex::new(false)),
     })
 }
 
@@ -264,11 +285,7 @@ fn write_vec<RT: GpuRuntime>(allocation: &Option<Allocation>, offset: usize, src
     }
     let end = offset + src.len();
     assert!(end <= allocation.reserved, "device write out of bounds");
-    if src.len() == allocation.reserved {
-        allocation.fresh.store(false, Ordering::Release);
-    } else {
-        settle::<RT>(allocation);
-    }
+    settle_for_write::<RT>(allocation, offset, src.len());
     let handle = allocation
         .handle
         .clone()
@@ -304,7 +321,7 @@ fn allocation_of(binding: &Binding) -> Option<Allocation> {
         reserved: binding.reserved,
         owned: binding.owned.clone(),
         // A binding is only made of a settled allocation.
-        fresh: Arc::new(AtomicBool::new(false)),
+        fresh: Arc::new(Mutex::new(false)),
     })
 }
 
@@ -421,7 +438,7 @@ impl<RT: GpuRuntime> GpuBuf<RT> {
     pub(crate) fn zeroed(len: usize) -> Self {
         let allocation = allocate::<RT>(len);
         if let Some(allocation) = &allocation {
-            allocation.fresh.store(true, Ordering::Release);
+            *allocation.fresh() = true;
         }
         Self {
             len: allocation.as_ref().map_or(0, |allocation| allocation.reserved),
@@ -444,6 +461,13 @@ impl<RT: GpuRuntime> GpuBuf<RT> {
 
     pub(crate) fn len(&self) -> usize {
         self.len
+    }
+
+    /// Whether the buffer still owes its deferred zero fill.
+    #[cfg(test)]
+    #[allow(dead_code, reason = "read by the tests of an enabled runtime")]
+    pub(crate) fn owes_fill(&self) -> bool {
+        self.allocation.as_ref().is_some_and(|allocation| *allocation.fresh())
     }
 
     /// Zeroes the whole allocation on the device.
@@ -587,11 +611,7 @@ impl<RT: GpuRuntime> GpuMut<'_, RT> {
     /// fill, the fill is skipped.
     pub(crate) fn binding_overwritten(&self, written: usize) -> Option<Binding> {
         self.allocation.as_ref().map(|allocation| {
-            if self.offset == 0 && written == allocation.reserved {
-                allocation.fresh.store(false, Ordering::Release);
-            } else {
-                settle::<RT>(allocation);
-            }
+            settle_for_write::<RT>(allocation, self.offset, written);
             self.bound(allocation)
         })
     }

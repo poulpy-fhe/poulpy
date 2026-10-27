@@ -179,7 +179,7 @@ pub(crate) fn gglwe_products_digits_strided_inverse<RT: GpuRuntime, R: Ring>(
     product_limbs: usize,
     pmat: &VmpPMatBackendRef<'_, NTT4x30Gpu<RT, R>>,
 ) -> bool {
-    let Some(mt) = inverse_head::<RT>(res[0].n().ilog2()) else {
+    let Some(mt) = inverse_head::<RT>(res[0].n().ilog2(), res.len() * res[0].cols()) else {
         return false;
     };
     let columns = |views: &mut dyn Iterator<Item = Option<DftColumn>>| views.collect::<Option<Vec<DftColumn>>>();
@@ -233,7 +233,7 @@ pub(crate) fn gglwe_product_digits_strided_inverse<RT: GpuRuntime, R: Ring>(
     );
     assert_eq!(a.cols(), pmat.cols_in(), "fused product: a.cols() != pmat.cols_in()");
     assert_eq!(res.cols(), pmat.cols_out(), "fused product: res.cols() != pmat.cols_out()");
-    let Some(mt) = inverse_head::<RT>(res.n().ilog2()) else {
+    let Some(mt) = inverse_head::<RT>(res.n().ilog2(), res.cols()) else {
         return false;
     };
     let res = dft_column_mut(res, 0).expect("fused product: res holds no storage");

@@ -318,7 +318,9 @@ pub(crate) fn const_product(
     (lo, hi)
 }
 
-/// Most terms [`convolution_by_const_sum`] takes.
+/// Most terms [`convolution_by_const_sum`] and [`normalize_products`](super::normalize_products)
+/// take: the kernels bind four pairs of operand buffers. A combination of more terms takes
+/// the reference.
 #[cfg_attr(not(feature = "enable-core"), allow(dead_code))]
 pub(crate) const CONST_TERMS: usize = 4;
 
@@ -483,7 +485,7 @@ pub(crate) fn convolution_by_const_sum<RT: GpuRuntime>(res: &Column, terms: &[(C
     let units = res.n * res.size;
     let read: usize = terms.iter().map(|(a, b, _, _)| 16 * a.size.min(b.size)).sum();
     launch!(
-        RT, Label::CnvByConst, units * (16 + read), by_const_sum_kernel, (units, RT::GROUP, RT::GROUP);
+        RT, Label::CnvByConstSum, units * (16 + read), by_const_sum_kernel, (units, RT::GROUP, RT::GROUP);
         [
             res.binding => u64,
             term(0).0.binding => u64,

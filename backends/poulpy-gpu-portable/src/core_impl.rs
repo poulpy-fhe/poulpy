@@ -1,8 +1,8 @@
 //! Registration of the `poulpy-core` extension points.
 //!
 //! Every family forwards to its reference body, which composes HAL methods,
-//! except the two products that have a fused kernel and sampling, which draws
-//! on the device from the seed (`znx::sample`).
+//! except the step hooks and the products that have a fused kernel, and
+//! sampling, which draws on the device from the seed (`znx::sample`).
 
 use std::{
     collections::HashMap,
@@ -29,7 +29,7 @@ use crate::{
     NTT4x30Gpu,
     hal_impl::{
         big_column_mut, column_mut, column_ref, gglwe_product_digits_strided, gglwe_product_fused, gglwe_products_fused,
-        glwe_square_columns, scalar_column,
+        scalar_column,
     },
     module::handle,
     ntt4x30::AutomorphismPlan,
@@ -362,25 +362,25 @@ unsafe impl<RT: GpuRuntime, R: Ring> GGLWEProductDigitsStridedImpl for NTT4x30Gp
     }
 }
 
-/// `glwe_mul_columns` of a square, from its left prepared form alone.
-pub(crate) fn square_columns<RT: GpuRuntime, R: Ring>(
-    module: &Module<NTT4x30Gpu<RT, R>>,
-    cnv_offset: usize,
-    diag: &mut VecZnxDftBackendMut<'_, NTT4x30Gpu<RT, R>>,
-    cross: &mut VecZnxDftBackendMut<'_, NTT4x30Gpu<RT, R>>,
-    a: &poulpy_hal::layouts::CnvPVecLBackendRef<'_, NTT4x30Gpu<RT, R>>,
-) {
-    glwe_square_columns(module, cnv_offset, diag, cross, a);
+/// Scratch of the accumulator of [`const_combination`], when the sum is not
+/// normalized as it forms.
+fn const_combination_acc_bytes<RT: GpuRuntime, R: Ring>(module: &Module<NTT4x30Gpu<RT, R>>, acc_size: usize) -> usize {
+    use poulpy_hal::layouts::Backend;
+    NTT4x30Gpu::<RT, R>::scratch_aligned(NTT4x30Gpu::<RT, R>::bytes_of_vec_znx_big(module.n(), 1, acc_size))
 }
 
-/// Scratch of [`shifted_const_combination`]: every constant of a combination shifted at once.
+/// Scratch of [`shifted_const_combination`]: every constant of a combination
+/// shifted at once, then the accumulator of [`const_combination`].
 pub(crate) fn const_combination_shift_tmp_bytes<RT: GpuRuntime, R: Ring>(
     module: &Module<NTT4x30Gpu<RT, R>>,
+    acc_size: usize,
     b_size: usize,
 ) -> usize {
     use poulpy_hal::{api::VecZnxRshTmpBytes, layouts::Backend};
     NTT4x30Gpu::<RT, R>::scratch_aligned(NTT4x30Gpu::<RT, R>::bytes_of_vec_znx(1, CONST_TERMS, b_size + 1))
-        + module.vec_znx_rsh_tmp_bytes(b_size + 1)
+        + module
+            .vec_znx_rsh_tmp_bytes(b_size + 1)
+            .max(const_combination_acc_bytes(module, acc_size))
 }
 
 /// [`const_combination`] of terms whose constants may need a sub-limb shift: the
@@ -401,13 +401,13 @@ pub(crate) fn shifted_const_combination<RT: GpuRuntime, R: Ring>(
         layouts::{VecZnxToBackendMut, VecZnxToBackendRef, vec_znx_backend_ref_from_ref},
     };
     if terms.iter().all(|term| term.shift == 0) {
-        return const_combination(module, res, base2k, res_k, acc_size, terms);
+        return const_combination(module, res, base2k, res_k, acc_size, terms, scratch);
     }
     if terms.len() > CONST_TERMS || terms.iter().any(|term| term.shift >= base2k) {
         return false;
     }
     let b_size = terms.iter().map(|term| term.b.size()).max().unwrap_or(0);
-    if scratch.available() < const_combination_shift_tmp_bytes(module, b_size) {
+    if scratch.available() < const_combination_shift_tmp_bytes(module, acc_size, b_size) {
         return false;
     }
     let (mut shifted, mut scratch) = scratch.borrow().take_vec_znx_scratch(1, terms.len(), b_size + 1);
@@ -448,13 +448,14 @@ pub(crate) fn shifted_const_combination<RT: GpuRuntime, R: Ring>(
             }
         })
         .collect();
-    const_combination(module, res, base2k, res_k, acc_size, &terms)
+    const_combination(module, res, base2k, res_k, acc_size, &terms, &mut scratch)
 }
 
 /// `GLWEMulConstImpl::glwe_const_combination` with the terms of a column
-/// summed inside the launch that normalizes them.
-/// Returns `false`, having done nothing, for more terms than one launch takes
-/// or operands without storage.
+/// summed inside the launch that normalizes them, or into an accumulator
+/// carved from `scratch` when the sum cannot be normalized as it forms.
+/// Returns `false`, having done nothing, for more terms than one launch takes,
+/// operands without storage or a `scratch` that cannot hold the accumulator.
 pub(crate) fn const_combination<RT: GpuRuntime, R: Ring>(
     module: &Module<NTT4x30Gpu<RT, R>>,
     res: &mut VecZnxBackendMut<'_, NTT4x30Gpu<RT, R>>,
@@ -462,6 +463,7 @@ pub(crate) fn const_combination<RT: GpuRuntime, R: Ring>(
     res_k: usize,
     acc_size: usize,
     terms: &[ConstTerm<'_, NTT4x30Gpu<RT, R>>],
+    scratch: &mut ScratchArena<'_, NTT4x30Gpu<RT, R>>,
 ) -> bool {
     if terms.is_empty() || terms.len() > CONST_TERMS || acc_size == 0 {
         return false;
@@ -506,21 +508,16 @@ pub(crate) fn const_combination<RT: GpuRuntime, R: Ring>(
         }
         return true;
     }
-    handle(module).with_temp(acc_size * n * size_of::<i128>(), |temp| {
-        let acc = Column {
-            binding: temp.view().binding().expect("temporary holds storage"),
-            base: 0,
-            stride: 2 * n as u32,
-            words: 2,
-            n,
-            size: acc_size,
-        };
-        for col in 0..res.cols() {
-            convolution_by_const_sum::<RT>(&acc, &products(col));
-            let res = column_mut(res, col).expect("checked above");
-            normalize::<RT>(&res, base2k, res_k, 0, &acc, base2k);
-        }
-    });
+    if scratch.available() < const_combination_acc_bytes(module, acc_size) {
+        return false;
+    }
+    let (acc, _) = poulpy_hal::api::ScratchArenaTakeBasic::take_vec_znx_big_scratch(scratch.borrow(), n, 1, acc_size);
+    let acc = big_column_mut(&acc, 0).expect("the accumulator holds storage");
+    for col in 0..res.cols() {
+        convolution_by_const_sum::<RT>(&acc, &products(col));
+        let res = column_mut(res, col).expect("checked above");
+        normalize::<RT>(&res, base2k, res_k, 0, &acc, base2k);
+    }
     true
 }
 
@@ -578,7 +575,7 @@ macro_rules! impl_mul_const {
                 ::poulpy_hal::layouts::Module<$be>: ::poulpy_core::reference::operations::GLWEConstCombinationReference<$be>,
             {
                 ::poulpy_core::reference::operations::glwe_const_combination_tmp_bytes_reference(module, acc_size, a_size, b_size)
-                    .max($crate::core_impl::const_combination_shift_tmp_bytes(module, b_size))
+                    .max($crate::core_impl::const_combination_shift_tmp_bytes(module, acc_size, b_size))
             }
 
             fn glwe_const_combination(
@@ -1128,11 +1125,11 @@ macro_rules! impl_tensoring {
             fn glwe_square_prepare(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 left: &mut ::poulpy_hal::layouts::CnvPVecLBackendMut<'_, $be>,
-                _right: &mut ::poulpy_hal::layouts::CnvPVecRBackendMut<'_, $be>,
+                right: &mut ::poulpy_hal::layouts::CnvPVecRBackendMut<'_, $be>,
                 a: &::poulpy_hal::layouts::VecZnxBackendRef<'_, $be>,
-                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
+                _scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) {
-                ::poulpy_hal::api::Convolution::cnv_prepare_left(module, left, a, scratch)
+                crate::hal_impl::cnv_prepare_self_left(module, left, right, a);
             }
 
             fn glwe_square_columns(
@@ -1141,10 +1138,10 @@ macro_rules! impl_tensoring {
                 diag: &mut ::poulpy_hal::layouts::VecZnxDftBackendMut<'_, $be>,
                 cross: &mut ::poulpy_hal::layouts::VecZnxDftBackendMut<'_, $be>,
                 left: &::poulpy_hal::layouts::CnvPVecLBackendRef<'_, $be>,
-                _right: &::poulpy_hal::layouts::CnvPVecRBackendRef<'_, $be>,
+                right: &::poulpy_hal::layouts::CnvPVecRBackendRef<'_, $be>,
                 _scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) {
-                $crate::core_impl::square_columns(module, cnv_offset_hi, diag, cross, left)
+                crate::hal_impl::glwe_mul_columns(module, cnv_offset_hi, diag, cross, left, right, true)
             }
 
             // The three products come from one fused launch instead of the reference's five.
@@ -1158,7 +1155,7 @@ macro_rules! impl_tensoring {
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) {
                 let _ = scratch;
-                crate::hal_impl::glwe_mul_columns(module, cnv_offset_hi, diag, cross, a, b)
+                crate::hal_impl::glwe_mul_columns(module, cnv_offset_hi, diag, cross, a, b, false)
             }
 
             fn glwe_mul_relinearize_sum_tmp_bytes<R, B>(

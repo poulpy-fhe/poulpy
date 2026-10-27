@@ -33,11 +33,8 @@ use super::{
 use crate::runtime::{GpuRuntime, Label, launch};
 
 /// Default limbs by which the capacities of a thread's operand copies grow,
-/// a module's [`crate::GpuHandle::convolution_capacity_step`]. On an Apple M5
-/// Pro (Metal, CubeCL 0.11.3), steps 4, 8 and 16 run
-/// `NTT4x30Gpu<Wgpu>/ckks/ckks_bootstrapping/n16_d35_k685_p19_s2c_ffr_ci+pow2`
-/// in 267 to 280 ms, within the drift between three alternating rounds; other
-/// devices may differ, hence the per-module setting.
+/// a module's [`crate::GpuHandle::convolution_capacity_step`], which a module
+/// sets for its device.
 pub(crate) const CAPACITY_STEP: usize = 8;
 
 /// The slot of a degree-`2^log_b` right operand that `sigma_mul` moves to
@@ -54,30 +51,17 @@ fn galois_slot(slot: u32, log_b: u32, mul: u32, shift: u32) -> u32 {
 const SINGLE: u32 = 0;
 /// `res = (a + a2) * (b + b2)`.
 const PAIRWISE: u32 = 1;
-/// `res = a * b`, `res2 = a2 * b2`, `cross = (a + a2) * (b + b2) - res - res2`.
-const TENSOR: u32 = 2;
-/// The tensor form for `b = a` and `b2 = a2`: the operand is read once, the
-/// two squares take each pair of limbs once, doubled, and the cross column
-/// is `2 a a2`.
-const SQUARE: u32 = 3;
 
 #[cube(launch_unchecked)]
-#[allow(clippy::too_many_arguments, unused_assignments)]
+#[allow(clippy::too_many_arguments)]
 fn convolution_kernel(
     res: &mut [u32],
-    cross: &mut [u32],
     a: &[u32],
     b: &[u32],
     log_n: u32,
     limbs: u32,
     res_base: u32,
-    res2_base: u32,
     res_stride: u32,
-    // Limbs of `res` and of `cross` in the tensor form.
-    res_size: u32,
-    cross_base: u32,
-    cross_stride: u32,
-    cross_size: u32,
     a_base: u32,
     a2_base: u32,
     a_stride: u32,
@@ -118,38 +102,23 @@ fn convolution_kernel(
         // The pairwise form keeps the sums of its two columns.
         let mut x = Array::<u32>::new(a_cap);
         let mut y = Array::<u32>::new(b_cap);
-        // Only the tensor forms keep their second columns apart.
-        let mut x2 = Array::<u32>::new(comptime!(if form >= TENSOR { a_cap } else { 1 }));
-        let mut y2 = Array::<u32>::new(comptime!(if form == TENSOR { b_cap } else { 1 }));
         for t in 0..a_len {
             let index = (a_first + t) * a_stride + word;
             let mut value = a[(a_base + index) as usize];
-            if form != SINGLE {
-                let second = a[(a2_base + index) as usize];
-                if comptime!(form >= TENSOR) {
-                    x2[t as usize] = second;
-                } else {
-                    let sum = value + second;
-                    value = min(sum, sum - q);
-                }
+            if comptime!(form == PAIRWISE) {
+                let sum = value + a[(a2_base + index) as usize];
+                value = min(sum, sum - q);
             }
             x[t as usize] = value;
         }
-        if comptime!(form != SQUARE) {
-            for t in 0..b_len {
-                let index = (b_first + t) * b_stride + b_word;
-                let mut value = b[(b_base + index) as usize];
-                if form != SINGLE {
-                    let second = b[(b2_base + index) as usize];
-                    if form == TENSOR {
-                        y2[t as usize] = second;
-                    } else {
-                        let sum = value + second;
-                        value = min(sum, sum - q);
-                    }
-                }
-                y[t as usize] = value;
+        for t in 0..b_len {
+            let index = (b_first + t) * b_stride + b_word;
+            let mut value = b[(b_base + index) as usize];
+            if comptime!(form == PAIRWISE) {
+                let sum = value + b[(b2_base + index) as usize];
+                value = min(sum, sum - q);
             }
+            y[t as usize] = value;
         }
 
         for j in 0..limbs {
@@ -158,97 +127,23 @@ fn convolution_kernel(
             let mut v = top + 1u32 - min(top + 1u32, a_size);
             let end = min(top + 1u32, b_size);
             let mut acc = 0u64;
-            let mut acc2 = 0u64;
-            let mut acc_sum = 0u64;
             while v < end {
                 let block_end = min(v + FOLD_TERMS, end);
                 acc = fold64(acc, r);
-                if comptime!(form >= TENSOR) {
-                    acc2 = fold64(acc2, r);
-                    acc_sum = fold64(acc_sum, r);
-                }
                 while v < block_end {
                     let u = (top - v - a_first) as usize;
                     let w = (v - b_first) as usize;
-                    if comptime!(form == SQUARE) {
-                        // Both operands are `x` and `x2`: the pair `(u, v)` and
-                        // its mirror are one product, taken below the middle.
-                        acc_sum += u64::cast_from(x[u]) * u64::cast_from(x2[w]);
-                        if 2u32 * v < top {
-                            acc += u64::cast_from(x[u]) * u64::cast_from(x[w]);
-                            acc2 += u64::cast_from(x2[u]) * u64::cast_from(x2[w]);
-                        }
-                    } else {
-                        let xv = x[u];
-                        let yv = y[w];
-                        if form == TENSOR {
-                            let xv2 = x2[u];
-                            let yv2 = y2[w];
-                            let x_sum = xv + xv2;
-                            let y_sum = yv + yv2;
-                            let xs = min(x_sum, x_sum - q);
-                            let ys = min(y_sum, y_sum - q);
-                            acc2 += u64::cast_from(xv2) * u64::cast_from(yv2);
-                            acc_sum += u64::cast_from(xs) * u64::cast_from(ys);
-                        }
-                        acc += u64::cast_from(xv) * u64::cast_from(yv);
-                    }
+                    acc += u64::cast_from(x[u]) * u64::cast_from(y[w]);
                     v += 1u32;
                 }
             }
-            if comptime!(form == SQUARE) {
-                // Twice the pairs below the middle, plus the middle one.
-                let mut middle_square = 0u64;
-                let mut middle_square2 = 0u64;
-                let start = top + 1u32 - min(top + 1u32, a_size);
-                let half = top >> 1u32;
-                if (top & 1u32) == 0u32 && half >= start && half < end {
-                    let m = (half - a_first) as usize;
-                    middle_square = u64::cast_from(x[m]) * u64::cast_from(x[m]);
-                    middle_square2 = u64::cast_from(x2[m]) * u64::cast_from(x2[m]);
-                }
-                let value = barrett60(fold64(2u64 * fold64(fold64(acc, r), r) + middle_square, r), q, mu);
-                let value2 = barrett60(fold64(2u64 * fold64(fold64(acc2, r), r) + middle_square2, r), q, mu);
-                let mut middle = barrett60(fold64(2u64 * fold64(fold64(acc_sum, r), r), r), q, mu);
-                if j < res_size {
-                    res[(res_base + j * res_stride + word) as usize] = value;
-                    res[(res2_base + j * res_stride + word) as usize] = value2;
-                } else {
-                    // Past the squares the cross column keeps the whole product.
-                    let sum = value + value2;
-                    let both = min(sum, sum - q);
-                    let whole = middle + both;
-                    middle = min(whole, whole - q);
-                }
-                if j < cross_size {
-                    cross[(cross_base + j * cross_stride + word) as usize] = middle;
-                }
-            } else {
-                let mut value = barrett60(fold64(acc, r), q, mu);
-                if form == TENSOR {
-                    let value2 = barrett60(fold64(acc2, r), q, mu);
-                    let mut middle = barrett60(fold64(acc_sum, r), q, mu);
-                    if j < res_size {
-                        res[(res_base + j * res_stride + word) as usize] = value;
-                        res[(res2_base + j * res_stride + word) as usize] = value2;
-                        // `middle - value - value2` on canonical residues.
-                        let sum = value + value2;
-                        let both = min(sum, sum - q);
-                        let difference = middle - both;
-                        middle = min(difference, difference + q);
-                    }
-                    if j < cross_size {
-                        cross[(cross_base + j * cross_stride + word) as usize] = middle;
-                    }
-                } else {
-                    let index = res_base + j * res_stride + word;
-                    if accumulate {
-                        let sum = value + res[index as usize];
-                        value = min(sum, sum - q);
-                    }
-                    res[index as usize] = value;
-                }
+            let mut value = barrett60(fold64(acc, r), q, mu);
+            let index = res_base + j * res_stride + word;
+            if accumulate {
+                let sum = value + res[index as usize];
+                value = min(sum, sum - q);
             }
+            res[index as usize] = value;
         }
     }
 }
@@ -278,10 +173,12 @@ impl TensorShape {
     }
 }
 
-/// The tensor and square forms of [`convolution_kernel`] with every loop
+/// The products of a rank-1 tensor: `res = a * b`, `res2 = a2 * b2` and
+/// `cross = (a + a2) * (b + b2) - res - res2`. The square form, for `b = a`
+/// and `b2 = a2`, reads the operand once, takes each pair of limbs of the
+/// squares once, doubled, and the cross column is `2 a a2`. Every loop is
 /// unrolled: the operand residues of the slot are held in registers, and each
-/// result limb is a straight line of products. A thread-local array is device
-/// memory on some runtimes, read at every term.
+/// result limb is a straight line of products.
 #[cube(launch_unchecked)]
 #[allow(clippy::too_many_arguments, unused_assignments)]
 fn tensor_kernel(
@@ -718,11 +615,17 @@ fn launch_scale<RT: GpuRuntime>(res: &DftColumn, group: &Group, offset: usize, a
     );
 }
 
-/// Most products [`scale_many`] writes per launch, left operands it reads and terms per product.
+/// Most products [`scale_many`] writes per launch: the length of the compile-time
+/// [`Schedule`] the kernel is unrolled from. A larger batch of giant steps takes the
+/// reference, one sum per step.
 #[cfg_attr(not(feature = "enable-core"), allow(dead_code))]
 pub(crate) const MANY_PRODUCTS: usize = 8;
+/// Most left operands [`scale_many`] reads per launch: the kernel binds six left buffers.
 #[cfg_attr(not(feature = "enable-core"), allow(dead_code))]
 pub(crate) const MANY_LEFTS: usize = 6;
+/// Most terms of a product of [`scale_many`], summed without a fold: products of
+/// canonical residues are below `2^60` ([`Primes30`](poulpy_cpu_portable::kernels::ntt4x30::primes::Primes30)
+/// are below `2^30`), and eight of them below `2^63`, inside the `u64` `fold64` reduces.
 #[cfg_attr(not(feature = "enable-core"), allow(dead_code))]
 pub(crate) const MANY_TERMS: usize = 8;
 
@@ -869,7 +772,7 @@ pub(crate) fn scale_many<RT: GpuRuntime>(
     let terms: u32 = schedule.counts.iter().sum();
     let bytes = 4 * (4 * n * read * lefts.len() + 4 * rights.n * terms as usize + units * schedule.products as usize);
     launch!(
-        RT, Label::CnvSum, bytes, scale_many_kernel, (units, RT::GROUP, RT::GROUP);
+        RT, Label::CnvScaleMany, bytes, scale_many_kernel, (units, RT::GROUP, RT::GROUP);
         [
             res.binding => u32,
             left(0).binding => u32,
@@ -1091,10 +994,25 @@ struct Operands<'a> {
     b: &'a DftColumn,
     b2: &'a DftColumn,
     b_plan: AutomorphismPlan,
-    /// Limbs by which the capacities of a thread's operand copies grow.
-    step: usize,
 }
 
+impl Operands<'_> {
+    /// Checks the operands of a product of degree `n`.
+    fn check(&self, n: usize) {
+        assert!(self.a.n == n, "the left operand has the degree of the product");
+        assert!(
+            self.b.n.is_power_of_two() && self.b.n <= n,
+            "the right operand degree does not divide the product degree"
+        );
+        assert!(
+            self.b_plan.n == self.b.n,
+            "the right operand is read through an automorphism of its degree"
+        );
+    }
+}
+
+/// The single and pairwise forms, over the `limbs` limbs of `res` from the
+/// first, the capacities of a thread's operand copies growing by `step` limbs.
 #[allow(clippy::too_many_arguments)]
 fn launch<RT: GpuRuntime>(
     form: u32,
@@ -1102,104 +1020,30 @@ fn launch<RT: GpuRuntime>(
     offset: usize,
     limbs: usize,
     res: &DftColumn,
-    res2: &DftColumn,
-    cross: &DftColumn,
     operands: Operands<'_>,
+    step: usize,
 ) {
-    let Operands {
-        a,
-        a2,
-        b,
-        b2,
-        b_plan,
-        step,
-    } = operands;
-    // A tensor whose right columns are its left ones, read as they are, is a square.
-    let same = |x: &DftColumn, y: &DftColumn| {
-        x.binding.id == y.binding.id && x.base == y.base && x.stride == y.stride && x.size == y.size && x.n == y.n
-    };
-    let form = if form == TENSOR && b_plan.mul == 1 && same(a, b) && same(a2, b2) {
-        SQUARE
-    } else {
-        form
-    };
-    let n = res.n;
-    assert!(a.n == n, "the left operand has the degree of the product");
-    assert!(
-        b.n.is_power_of_two() && b.n <= n,
-        "the right operand degree does not divide the product degree"
-    );
-    assert!(
-        b_plan.n == b.n,
-        "the right operand is read through an automorphism of its degree"
-    );
+    operands.check(res.n);
+    let Operands { a, a2, b, b2, b_plan } = operands;
     if limbs == 0 {
         return;
     }
+    let n = res.n;
     let offset = offset.min(a.size + b.size);
     let ranges = Ranges::new(limbs, offset, a.size, b.size);
     let (a_len, b_len) = (ranges.a_len, ranges.b_len);
     let columns = if form == SINGLE { 1 } else { 2 };
-    let written = if form >= TENSOR {
-        2 * res.size + cross.size
-    } else {
-        limbs * (1 + accumulate as usize)
-    };
+    let written = limbs * (1 + accumulate as usize);
     let units = 4 * n;
-    if form >= TENSOR {
-        let narrow = |value: usize| value as u32;
-        let shape = TensorShape {
-            limbs: narrow(limbs),
-            offset: narrow(offset),
-            a_size: narrow(a.size),
-            a_first: narrow(ranges.a_first),
-            a_len: narrow(a_len),
-            b_size: narrow(b.size),
-            b_first: narrow(ranges.b_first),
-            b_len: narrow(b_len),
-            res_size: narrow(res.size),
-            cross_size: narrow(cross.size),
-            square: form == SQUARE,
-        };
-        let group = RT::GROUP;
-        launch!(
-            RT, Label::CnvTensor, 4 * (units * (a_len * columns + written) + if form == SQUARE { 0 } else { 4 * b.n * b_len * columns }), tensor_kernel, (units, group, group);
-            [
-                res.binding => u32,
-                cross.binding => u32,
-                a.binding => u32,
-                b.binding => u32,
-            ];
-            [
-                n.ilog2(),
-                res.base,
-                res2.base,
-                res.stride,
-                cross.base,
-                cross.stride,
-                a.base,
-                a2.base,
-                a.stride,
-                b.base,
-                b2.base,
-                b.stride,
-                (n / b.n).ilog2(),
-            ];
-            [Consts::get(), shape]
-        );
-        return;
-    }
     let label = match (form, accumulate) {
-        (TENSOR | SQUARE, _) => Label::CnvTensor,
         (PAIRWISE, _) => Label::CnvPairwise,
         (_, true) => Label::CnvSingleAdd,
         _ => Label::CnvSingle,
     };
     launch!(
-        RT, label, 4 * (units * (a_len * columns + written) + if form == SQUARE { 0 } else { 4 * b.n * b_len * columns }), convolution_kernel, (units, RT::GROUP, RT::GROUP);
+        RT, label, 4 * (units * (a_len * columns + written) + 4 * b.n * b_len * columns), convolution_kernel, (units, RT::GROUP, RT::GROUP);
         [
             res.binding => u32,
-            *if form >= TENSOR { &cross.binding } else { &a.binding } => u32,
             a.binding => u32,
             b.binding => u32,
         ];
@@ -1207,12 +1051,7 @@ fn launch<RT: GpuRuntime>(
             n.ilog2(),
             limbs as u32,
             res.base,
-            res2.base,
             res.stride,
-            res.size as u32,
-            cross.base,
-            cross.stride,
-            cross.size as u32,
             a.base,
             a2.base,
             a.stride,
@@ -1230,7 +1069,7 @@ fn launch<RT: GpuRuntime>(
             b_plan.shift,
             offset as u32,
         ];
-        [Consts::get(), form, accumulate, ranges.a_cap(step), if form == SQUARE { 1 } else { ranges.b_cap(step) }]
+        [Consts::get(), form, accumulate, ranges.a_cap(step), ranges.b_cap(step)]
     );
 }
 
@@ -1252,16 +1091,14 @@ pub(crate) fn convolution<RT: GpuRuntime>(
         offset,
         res.size,
         res,
-        res,
-        res,
         Operands {
             a,
             a2: a,
             b,
             b2: b,
             b_plan: *b_plan,
-            step,
         },
+        step,
     );
 }
 
@@ -1283,24 +1120,17 @@ pub(crate) fn convolution_pairwise<RT: GpuRuntime>(
         offset,
         res.size,
         res,
-        res,
-        res,
-        Operands {
-            a,
-            a2,
-            b,
-            b2,
-            b_plan,
-            step,
-        },
+        Operands { a, a2, b, b2, b_plan },
+        step,
     );
 }
 
 /// The three products of a rank-1 tensor: `diag0 = a0 * b0`, `diag1 = a1 * b1`
 /// and `cross = (a0 + a1) * (b0 + b1) - diag0 - diag1`, every limb of each
 /// being written and the subtraction covering the limbs `diag` has. `diag0` and `diag1` are columns of one
-/// vector, as are `a0` and `a1`, and `b0` and `b1`.
-#[allow(clippy::too_many_arguments, dead_code)]
+/// vector, as are `a0` and `a1`, and `b0` and `b1`. Right columns that are the
+/// left ones make a square, which reads them once.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn convolution_tensor<RT: GpuRuntime>(
     diag0: &DftColumn,
     diag1: &DftColumn,
@@ -1310,26 +1140,69 @@ pub(crate) fn convolution_tensor<RT: GpuRuntime>(
     b0: &DftColumn,
     b1: &DftColumn,
     offset: usize,
-    step: usize,
 ) {
     assert!(cross.n == diag0.n, "tensor columns of different degrees");
     assert!(diag0.size == diag1.size, "the diagonal products are columns of one vector");
+    let operands = Operands {
+        a: a0,
+        a2: a1,
+        b: b0,
+        b2: b1,
+        b_plan: AutomorphismPlan::new(b0.n, 1, false),
+    };
+    operands.check(diag0.n);
     let limbs = cross.size.max(diag0.size);
-    launch::<RT>(
-        TENSOR,
-        false,
-        offset,
-        limbs,
-        diag0,
-        diag1,
-        cross,
-        Operands {
-            a: a0,
-            a2: a1,
-            b: b0,
-            b2: b1,
-            b_plan: AutomorphismPlan::new(b0.n, 1, false),
-            step,
-        },
+    if limbs == 0 {
+        return;
+    }
+    let same = |x: &DftColumn, y: &DftColumn| {
+        x.binding.id == y.binding.id && x.base == y.base && x.stride == y.stride && x.size == y.size && x.n == y.n
+    };
+    let square = same(a0, b0) && same(a1, b1);
+    let n = diag0.n;
+    let offset = offset.min(a0.size + b0.size);
+    let ranges = Ranges::new(limbs, offset, a0.size, b0.size);
+    let narrow = |value: usize| value as u32;
+    let shape = TensorShape {
+        limbs: narrow(limbs),
+        offset: narrow(offset),
+        a_size: narrow(a0.size),
+        a_first: narrow(ranges.a_first),
+        a_len: narrow(ranges.a_len),
+        b_size: narrow(b0.size),
+        b_first: narrow(ranges.b_first),
+        b_len: narrow(ranges.b_len),
+        res_size: narrow(diag0.size),
+        cross_size: narrow(cross.size),
+        square,
+    };
+    let units = 4 * n;
+    let written = 2 * diag0.size + cross.size;
+    let b_read = if square { 0 } else { 4 * b0.n * ranges.b_len * 2 };
+    let group = RT::GROUP;
+    launch!(
+        RT, Label::CnvTensor, 4 * (units * (ranges.a_len * 2 + written) + b_read), tensor_kernel, (units, group, group);
+        [
+            diag0.binding => u32,
+            cross.binding => u32,
+            a0.binding => u32,
+            b0.binding => u32,
+        ];
+        [
+            n.ilog2(),
+            diag0.base,
+            diag1.base,
+            diag0.stride,
+            cross.base,
+            cross.stride,
+            a0.base,
+            a1.base,
+            a0.stride,
+            b0.base,
+            b1.base,
+            b0.stride,
+            (n / b0.n).ilog2(),
+        ];
+        [Consts::get(), shape]
     );
 }

@@ -587,8 +587,7 @@ fn glwe_prepare_baby_steps_doubling<BE, H>(
                     },
                 );
             } else {
-                // Serially, every source laid out first and all of them switched by one call,
-                // which a backend may take in one pass over the key.
+                // Serially, every source laid out first and all of them switched by one call.
                 drop(tasks);
                 for (operand, source) in operands.iter_mut().zip(&sources) {
                     layout(&mut operand.to_backend_mut(), source, &mut pass);

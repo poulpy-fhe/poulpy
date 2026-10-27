@@ -97,7 +97,7 @@ Buffers live on the device, so data moves explicitly: generate keys and encrypt 
 Operations are queued; `Module::synchronize` returns once they have completed, and a transfer to the host waits for what it reads.
 CKKS encoding and decoding, the uniform fill of a coefficient column and the normalizations at radices above 62 bits are staged through the host, and everything else runs on the device, sampling included.
 CKKS encoding uses the portable transform there, which keeps it byte-identical to every other backend.
-Scheme operations are the reference bodies of `poulpy-core` and `poulpy-ckks`; the backend implements their step hooks with fused launches: the gadget product adds, rotates and accumulates as it stores, a square reads one prepared operand, the giant-step products of a linear transformation are written a batch per launch, and the terms of a constant combination are summed in one launch.
+Scheme operations are the reference bodies of `poulpy-core` and `poulpy-ckks`; the backend implements their step hooks with fused launches: the gadget product adds, rotates and accumulates as it stores, or runs the first launch of its inverse transform, the products of several sources against one key share a launch that reads the key once, a square reads one prepared operand, the giant-step products of a linear transformation are written a batch per launch, and the terms of a constant combination are summed in one launch.
 
 A sequence of calls that is repeated on the same buffers (a bootstrap, say) can be recorded once and replayed as one CubeCL graph:
 

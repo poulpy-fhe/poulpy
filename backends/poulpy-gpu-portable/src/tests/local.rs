@@ -7,13 +7,12 @@ use poulpy_hal::{
     api::{
         CnvPVecAlloc, Convolution, ScratchOwnedAlloc, VecZnxBigAlloc, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
         VecZnxDftAddAssign, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftAutomorphismPlan, VecZnxDftCopy,
-        VecZnxDftSubAssign, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes,
-        VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
+        VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes, VmpPMatAlloc, VmpPrepare,
+        VmpPrepareTmpBytes,
     },
     layouts::{
         Backend, DataView, MatZnx, Module, PrepareHint, Ring, ScratchOwned, VecZnx, VecZnxBigToBackendMut, VecZnxDftOwned,
         VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxShape, VmpPMatToBackendMut, VmpPMatToBackendRef, ZnxView,
-        vec_znx_dft_backend_ref_from_mut,
     },
     test_suite::{download_vec_znx, vec_znx_backend_mut, vec_znx_backend_ref},
 };
@@ -250,7 +249,8 @@ fn gglwe_product_digits_strided_matches_reference() {
 
 /// The product that runs the first inverse launch of its result itself,
 /// completed column by column, against the product followed by the whole
-/// inverse transform and the normalization: the same coefficients.
+/// inverse transform and the normalization: the same coefficients, without
+/// and with addends and a body.
 #[test]
 fn product_with_fused_inverse_matches_product_then_inverse() {
     // (a_size, dsize, rows, key_size, res_size, product_limbs)
@@ -288,57 +288,75 @@ fn product_with_fused_inverse_matches_product_then_inverse() {
                 &poulpy_hal::layouts::MatZnxToBackendRef::<Gpu>::to_backend_ref(&matrix),
                 &mut scratch.arena(),
             );
-            let mut want_dft = transformed(&module, n, 2, res_size, &mut seed);
-            let mut have_dft = transformed(&module, n, 2, res_size, &mut seed);
-            let mut want = vector::<poulpy_hal::layouts::Standard>(n, 2, res_size, &mut seed);
-            let mut have = vector::<poulpy_hal::layouts::Standard>(n, 2, res_size, &mut seed);
-            crate::hal_impl::gglwe_product_digits_strided(
-                &mut want_dft.to_backend_mut(),
-                &a.to_backend_ref(),
-                dsize,
-                product_limbs,
-                &pmat.to_backend_ref(),
-            );
-            assert!(crate::hal_impl::gglwe_product_digits_strided_inverse(
-                &module,
-                &mut have_dft.to_backend_mut(),
-                &a.to_backend_ref(),
-                dsize,
-                product_limbs,
-                &pmat.to_backend_ref(),
-                [None, None],
-            ));
-            for col in 0..2 {
-                module.vec_znx_idft_normalize(
-                    &mut vec_znx_backend_mut::<Gpu>(&mut want),
-                    52,
-                    res_size * 52,
-                    0,
-                    col,
+            for extras in [false, true] {
+                let addend_size = res_size.max(2) - 1;
+                let addend = transformed(&module, n, 2, addend_size, &mut seed);
+                let body = vector::<poulpy_hal::layouts::Standard>(n, 1, res_size, &mut seed);
+                let addend_ref = addend.to_backend_ref();
+                let body_ref = vec_znx_backend_ref::<Gpu>(&body);
+                let addends = if extras {
+                    [Some((&addend_ref, 1)), Some((&addend_ref, 0))]
+                } else {
+                    [None, None]
+                };
+                let mut want_dft = transformed(&module, n, 2, res_size, &mut seed);
+                let mut have_dft = transformed(&module, n, 2, res_size, &mut seed);
+                let mut want = vector::<poulpy_hal::layouts::Standard>(n, 2, res_size, &mut seed);
+                let mut have = vector::<poulpy_hal::layouts::Standard>(n, 2, res_size, &mut seed);
+                crate::hal_impl::gglwe_product_digits_strided(
                     &mut want_dft.to_backend_mut(),
-                    col,
-                    52,
-                    None,
-                    &mut scratch.arena(),
+                    &a.to_backend_ref(),
+                    dsize,
+                    product_limbs,
+                    &pmat.to_backend_ref(),
                 );
-                crate::hal_impl::idft_tail_normalize(
+                for (col, addend) in addends.iter().enumerate() {
+                    if let Some((addend, addend_col)) = addend {
+                        module.vec_znx_dft_add_assign(&mut want_dft.to_backend_mut(), col, *addend, *addend_col);
+                    }
+                }
+                assert!(crate::hal_impl::gglwe_product_digits_strided_inverse(
                     &module,
-                    &mut vec_znx_backend_mut::<Gpu>(&mut have),
-                    52,
-                    res_size * 52,
-                    0,
-                    col,
                     &mut have_dft.to_backend_mut(),
-                    col,
-                    52,
-                    None,
+                    &a.to_backend_ref(),
+                    dsize,
+                    product_limbs,
+                    &pmat.to_backend_ref(),
+                    addends,
+                ));
+                for col in 0..2 {
+                    let body = if extras && col == 0 { Some((&body_ref, 0)) } else { None };
+                    module.vec_znx_idft_normalize(
+                        &mut vec_znx_backend_mut::<Gpu>(&mut want),
+                        52,
+                        res_size * 52,
+                        0,
+                        col,
+                        &mut want_dft.to_backend_mut(),
+                        col,
+                        52,
+                        body,
+                        &mut scratch.arena(),
+                    );
+                    crate::hal_impl::idft_tail_normalize(
+                        &module,
+                        &mut vec_znx_backend_mut::<Gpu>(&mut have),
+                        52,
+                        res_size * 52,
+                        0,
+                        col,
+                        &mut have_dft.to_backend_mut(),
+                        col,
+                        52,
+                        body,
+                    );
+                }
+                assert!(
+                    download_vec_znx::<Gpu>(&want) == download_vec_znx::<Gpu>(&have),
+                    "fused inverse differs: log_n={log_n} a_size={a_size} dsize={dsize} rows={rows} key_size={key_size} \
+                     res_size={res_size} product_limbs={product_limbs} extras={extras}"
                 );
             }
-            assert!(
-                download_vec_znx::<Gpu>(&want) == download_vec_znx::<Gpu>(&have),
-                "fused inverse differs: log_n={log_n} a_size={a_size} dsize={dsize} rows={rows} key_size={key_size} \
-                 res_size={res_size} product_limbs={product_limbs}"
-            );
         }
     }
 }
@@ -419,6 +437,7 @@ fn mul_columns_case<R: Ring>(
         &mut cross_have.to_backend_mut(),
         &left,
         &right,
+        false,
     );
     let shape = format!("n={n} b_n={b_n} a_size={a_size} b_size={b_size} diag={diag_size} cross={cross_size} offset={offset}");
     assert!(
@@ -443,6 +462,7 @@ fn mul_columns_case<R: Ring>(
     let mut cross_want = transformed(module, n, 1, cross_size, &mut cross_seed);
     let mut cross_have = transformed(module, n, 1, cross_size, &mut seed);
     {
+        use poulpy_hal::{api::VecZnxDftSubAssign, layouts::vec_znx_dft_backend_ref_from_mut};
         let mut diag = diag_want.to_backend_mut();
         let mut cross = cross_want.to_backend_mut();
         for i in 0..2 {
@@ -453,12 +473,14 @@ fn mul_columns_case<R: Ring>(
         module.vec_znx_dft_sub_assign(&mut cross, 0, &diag_ref, 0);
         module.vec_znx_dft_sub_assign(&mut cross, 0, &diag_ref, 1);
     }
-    crate::hal_impl::glwe_square_columns(
+    crate::hal_impl::glwe_mul_columns(
         module,
         offset,
         &mut diag_have.to_backend_mut(),
         &mut cross_have.to_backend_mut(),
         &left,
+        &right,
+        true,
     );
     assert!(diag_want == diag_have, "squares differ from their reference: {shape}");
     assert!(
@@ -517,6 +539,7 @@ fn glwe_mul_columns_rejects_a_right_operand_below_the_minimum_degree() {
             &mut cross.to_backend_mut(),
             &poulpy_hal::layouts::CnvPVecLToBackendRef::to_backend_ref(&left),
             &poulpy_hal::layouts::CnvPVecRToBackendRef::to_backend_ref(&narrow),
+            false,
         )
     }))
     .expect_err("glwe_mul_columns accepted a right operand below MIN_DEGREE");
@@ -757,7 +780,7 @@ macro_rules! bootstrap_shapes {
     };
     (@tensor kernel, $module:expr, $offset:expr, $diag:expr, $cross:expr, $left:expr, $right:expr, $bytes:expr) => {{
         let _ = $bytes;
-        crate::hal_impl::glwe_mul_columns(&$module, $offset, &mut $diag.to_backend_mut(), &mut $cross.to_backend_mut(), $left, $right)
+        crate::hal_impl::glwe_mul_columns(&$module, $offset, &mut $diag.to_backend_mut(), &mut $cross.to_backend_mut(), $left, $right, false)
     }};
     (@tensor reference, $module:expr, $offset:expr, $diag:expr, $cross:expr, $left:expr, $right:expr, $bytes:expr) => {
         $module.glwe_mul_columns_reference(
@@ -1469,6 +1492,56 @@ fn fresh_buffers_are_zero_and_prepare_overwrites_them() {
         assert!(
             fresh.data() == settled.data(),
             "prepared operands differ for a source of {a_size} limbs"
+        );
+    }
+}
+
+/// A refused preparation into a fresh buffer leaves it owing its zero fill:
+/// the refusal comes before the view that would drop the fill.
+#[test]
+fn refused_prepare_keeps_the_zero_fill() {
+    let module = &*MODULE;
+    let mut scratch = ScratchOwned::<Gpu>::alloc(1 << 16);
+    let mut res = module.cnv_pvec_left_alloc(N, 2, 5, PrepareHint::Reuse);
+    let a = module.vec_znx_alloc(N / 2, 2, 5);
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        module.cnv_prepare_left(
+            &mut poulpy_hal::layouts::CnvPVecLToBackendMut::to_backend_mut(&mut res),
+            &vec_znx_backend_ref::<Gpu>(&a),
+            &mut scratch.arena(),
+        );
+    }))
+    .expect_err("cnv_prepare_left accepted a source of another degree");
+    assert!(res.data().owes_fill(), "a refused preparation dropped the zero fill");
+    assert!(res.data().to_host().iter().all(|&byte| byte == 0));
+}
+
+/// The batched giant steps of a linear transformation (`cnv.scale_many` on
+/// the diagonals `dft.gather` lays side by side), which the parity suite's
+/// powers-of-two transformations reach: the suite compares every result with
+/// portable's, and the trace shows the batched launches ran.
+#[cfg(feature = "enable-core")]
+#[test]
+fn linear_transformation_parity_takes_the_batched_giant_steps() {
+    use poulpy_core::test_suite::parity::{ParityShapes, test_linear_transformation_powers_of_two_parity};
+    use poulpy_hal::test_suite::TestParams;
+
+    use crate::runtime::{Label, Tracer};
+    let params = TestParams {
+        size: 1 << 8,
+        base2k: 52,
+        n: 1 << 8,
+    };
+    let comparison = Module::<poulpy_cpu_portable::NTT4x30Portable>::new(params.n as u64);
+    let tested = Module::<Gpu>::new(params.n as u64);
+    let tracer = Tracer::start(false);
+    test_linear_transformation_powers_of_two_parity(&params, &ParityShapes::default(), &comparison, &tested);
+    let (trace, _) = tracer.finish();
+    for label in [Label::DftGather, Label::CnvScaleMany] {
+        assert!(
+            trace.launches.iter().any(|&(launched, _)| launched == label),
+            "the parity suite did not launch {}",
+            label.name()
         );
     }
 }

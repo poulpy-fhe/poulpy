@@ -265,9 +265,8 @@ fn tile_pass(
     let mut p = tile >> rest;
     let mut ti = tile - (p << rest);
     let mut active = p < polys as usize;
-    // A launch that loads coefficients reads each of them once per prime: the
-    // workgroups of the four planes of a limb take the same columns in turn,
-    // so that the planes after the first read the coefficients from the cache.
+    // A launch that loads coefficients: the workgroups of the four planes of
+    // a limb take the same columns in turn.
     if comptime!(source != SOURCE_RESIDUES && rest >= lw) {
         let cube = CUBE_POS;
         let groups = rest - lw;
@@ -519,10 +518,13 @@ pub(crate) fn forward<RT: GpuRuntime>(tables: &Tables<RT>, res: &DftColumn, a: &
 /// Stages of the first launch of an inverse transform of degree `2^log_n`
 /// when it has two launches: the last `mt` stages of the transform, on
 /// contiguous blocks of `2^mt` lanes. `None` when the transform is one launch
-/// or has more than two.
-pub(crate) fn inverse_head<RT: GpuRuntime>(log_n: u32) -> Option<u32> {
+/// or has more than two, or when a kernel running those stages on `blocks`
+/// blocks at once would hold more lanes in shared memory than
+/// `NttGeometry::log_shared_lanes` allows.
+pub(crate) fn inverse_head<RT: GpuRuntime>(log_n: u32, blocks: usize) -> Option<u32> {
     let passes = passes(RT::NTT, log_n, true);
-    (passes.len() == 2 && passes[0].first + passes[0].mt == log_n).then_some(passes[0].mt)
+    let mt = passes[0].mt;
+    (passes.len() == 2 && passes[0].first + mt == log_n && blocks << mt <= 1 << RT::NTT.log_shared_lanes).then_some(mt)
 }
 
 /// The launches of [`inverse`] after the first, in place: `dst` holds the

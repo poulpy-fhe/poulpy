@@ -48,20 +48,15 @@ pub struct NttGeometry {
     /// strided columns: its loads and stores are runs of that many adjacent
     /// words.
     pub log_strided_tiles: u32,
-    /// log2 of the most lanes a workgroup holds in shared memory.
+    /// log2 of the most lanes, 32-bit words, a workgroup holds in shared memory.
     pub log_shared_lanes: u32,
 }
 
 impl NttGeometry {
     /// A GPU: up to twelve stages per launch, workgroups of 128 threads and 8 tiles at least.
     ///
-    /// Twelve stages: a tile of `2^12` lanes fills the 16 KiB of workgroup
-    /// memory WebGPU guarantees. 128 threads and 8 tiles: on an Apple M5 Pro
-    /// (Metal through wgpu, CubeCL 0.11.3), no neighbour (64 or 256 threads,
-    /// 4 or 16 tiles) runs `vec_znx_dft_apply` or `vec_znx_idft_apply` of the
-    /// standard bench at degrees `2^13` to `2^15` faster beyond the 3% between
-    /// two baseline runs, while 64 threads is up to 20% slower and 4 or 16
-    /// tiles up to 8% slower.
+    /// Twelve stages and `2^12` lanes in shared memory: a tile of `2^12` lanes
+    /// fills the 16 KiB of workgroup memory WebGPU guarantees.
     pub const GPU: Self = Self {
         max_stages: 12,
         log_threads: 7,
@@ -70,9 +65,7 @@ impl NttGeometry {
         log_shared_lanes: 12,
     };
 
-    /// [`Self::GPU`] with 16 tiles at least on strided columns: runs of 64
-    /// bytes, two of the 32-byte sectors the memory serves. On an RTX 5090 the
-    /// strided launches of a bootstrap take 0.5 ms less.
+    /// [`Self::GPU`] with 16 tiles at least on strided columns.
     pub const CUDA: Self = Self {
         log_strided_tiles: 4,
         ..Self::GPU

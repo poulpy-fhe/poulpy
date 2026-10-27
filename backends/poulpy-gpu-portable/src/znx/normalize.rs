@@ -414,8 +414,8 @@ fn normalize_big_on_host<RT: GpuRuntime>(
 
 /// Normalizes every limb of `res` from the `size` limbs
 /// `sum_t sum_{u + v = j + offset_t} a_t[u] * b_t[v][coeff_t]`, the sum of
-/// [`convolution_by_const`](super::convolution_by_const) over one to four
-/// terms `(a_t, b_t, coeff_t, offset_t)`, without storing it. `res` overlaps no operand.
+/// [`convolution_by_const`](super::convolution_by_const) over one to
+/// [`CONST_TERMS`](super::CONST_TERMS) terms `(a_t, b_t, coeff_t, offset_t)`, without storing it. `res` overlaps no operand.
 #[cfg_attr(not(feature = "enable-core"), allow(dead_code))]
 pub(crate) fn normalize_products<RT: GpuRuntime>(
     res: &Column,
@@ -425,7 +425,7 @@ pub(crate) fn normalize_products<RT: GpuRuntime>(
     size: usize,
     a_base2k: usize,
 ) {
-    assert!((1..=4).contains(&terms.len()), "one to four products");
+    assert!((1..=super::CONST_TERMS).contains(&terms.len()), "one to four products");
     for (a, b, b_coeff, _) in terms {
         assert!(
             a.words == 1 && b.words == 1 && a.n == res.n,
