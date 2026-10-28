@@ -132,6 +132,7 @@ macro_rules! labels {
 
 labels! {
     BufferZero => "buffer.zero",
+    BufferFill => "buffer.fill",
     NttForwardSingle => "ntt.forward.single",
     NttForwardStrided => "ntt.forward.strided",
     NttForwardContiguous => "ntt.forward.contiguous",
@@ -144,14 +145,20 @@ labels! {
     NormalizeBig => "normalize.big",
     NormalizeResidues => "normalize.residues",
     GadgetDecompose => "znx.gadget_decompose",
+    NormalizeProducts => "normalize.products",
     VmpDigitProduct => "vmp.digit_product",
     VmpDigitProductAdd => "vmp.digit_product_add",
+    VmpDigitProducts => "vmp.digit_products",
+    VmpDigitProductsAdd => "vmp.digit_products_add",
+    VmpDigitProductInverse => "vmp.digit_product_inverse",
+    VmpDigitProductsInverse => "vmp.digit_products_inverse",
     VmpExtractRows => "vmp.extract_rows",
     SvpScale => "svp.scale",
     CnvSingle => "cnv.single",
     CnvSingleAdd => "cnv.single_add",
     CnvSum => "cnv.sum",
     CnvSumAdd => "cnv.sum_add",
+    CnvScaleMany => "cnv.scale_many",
     CnvScale => "cnv.scale",
     CnvScaleAdd => "cnv.scale_add",
     CnvPairwise => "cnv.pairwise",
@@ -160,6 +167,7 @@ labels! {
     CnvByConstAdd => "cnv.by_const_add",
     DftZero => "dft.zero",
     DftCopy => "dft.copy",
+    DftGather => "dft.gather",
     DftCombine => "dft.combine",
     DftAutomorphism => "dft.automorphism",
     DftAutomorphismAdd => "dft.automorphism_add",
@@ -469,6 +477,10 @@ pub(crate) fn launched(label: Label, bytes: usize) {
 /// digest of its dispatch, the allocations bound, the scalar arguments and
 /// the compile-time arguments.
 pub(crate) fn trace_launch(label: Label, units: usize, dim: u32, bindings: &[&Binding], scalars: &[u64], comptime: &impl Hash) {
+    // The deferred fill of a zeroed buffer belongs to its allocation, not to a body.
+    if label == Label::BufferFill {
+        return;
+    }
     TRACE.with_borrow_mut(|open| {
         let Some(open) = open else { return };
         let mut hasher = DefaultHasher::new();

@@ -1,13 +1,13 @@
 //! Refusal checks shared by the reference bodies, the derived defaults and
 //! backend overrides, so that every implementation refuses the same inputs.
 
-use poulpy_hal::layouts::Backend;
+use poulpy_hal::layouts::{Backend, VecZnxBackendMut, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef};
 
 use crate::{
     Distribution,
     layouts::{
         DiagonalProd, GGLWEInfos, GLWEInfos, LWEInfos, LinearTransformation, LinearTransformationBabySteps,
-        LinearTransformationPrepared, TorusPrecision,
+        LinearTransformationPrepared, TorusPrecision, prepared::GGLWEPreparedBackendRef,
     },
 };
 
@@ -135,4 +135,112 @@ fn assert_linear_transformation_giant_steps<BE, P>(
             }
         }
     }
+}
+
+/// Checks a gadget product `op` takes into the first `product_size` limbs of `res`, from `a` by
+/// `key`, with `addends` on its first columns, as
+/// [`GGLWEProductDigitsStridedImpl::gglwe_product_fused`](crate::oep::GGLWEProductDigitsStridedImpl::gglwe_product_fused)
+/// takes it.
+///
+/// # Panics
+///
+/// On more addends than output columns, a product wider than `res`, operands or addends of
+/// another degree, operand columns other than the key's or an addend column out of range.
+pub fn assert_gglwe_product<BE: Backend>(
+    op: &str,
+    res: &VecZnxDftBackendMut<'_, BE>,
+    product_size: usize,
+    a: &VecZnxDftBackendRef<'_, BE>,
+    key: &GGLWEPreparedBackendRef<'_, BE>,
+    addends: &[Option<(&VecZnxDftBackendRef<'_, BE>, usize)>],
+) {
+    assert!(addends.len() <= res.cols(), "{op}: more addends than output columns");
+    assert!(product_size <= res.size(), "{op}: product wider than its destination");
+    assert!(
+        a.n() == res.n() && key.n().as_usize() == res.n(),
+        "{op}: operands of different degrees"
+    );
+    assert!(
+        a.cols() == key.rank_in().as_usize() && res.cols() == key.rank_out().as_usize() + 1,
+        "{op}: operand columns differ from the key's"
+    );
+    for (addend, col) in addends.iter().flatten() {
+        assert!(
+            addend.n() == res.n() && *col < addend.cols(),
+            "{op}: an addend of another degree or column"
+        );
+    }
+}
+
+/// Checks a gadget product `op` takes into `res_dft`, then inverse transforms and normalizes
+/// into `res` with `body` on column 0, as
+/// [`GGLWEProductDigitsStridedImpl::gglwe_product_idft_normalize`](crate::oep::GGLWEProductDigitsStridedImpl::gglwe_product_idft_normalize)
+/// takes it: the checks of [`assert_gglwe_product`] on the product, then the destination and
+/// the body.
+///
+/// # Panics
+///
+/// As [`assert_gglwe_product`], and on a destination of another degree or with fewer columns
+/// than the product, or a body of another degree or column.
+pub fn assert_gglwe_product_idft_normalize<BE: Backend>(
+    op: &str,
+    res: &VecZnxBackendMut<'_, BE>,
+    res_dft: &VecZnxDftBackendMut<'_, BE>,
+    a: &VecZnxDftBackendRef<'_, BE>,
+    key: &GGLWEPreparedBackendRef<'_, BE>,
+    addends: &[Option<(&VecZnxDftBackendRef<'_, BE>, usize)>],
+    body: Option<(&VecZnxBackendRef<'_, BE>, usize)>,
+) {
+    assert_gglwe_product(op, res_dft, res_dft.size(), a, key, addends);
+    assert!(
+        res.n() == res_dft.n() && res.cols() >= res_dft.cols(),
+        "{op}: the destination differs from the product in degree or columns"
+    );
+    if let Some((body, col)) = body {
+        assert!(
+            body.n() == res.n() && col < body.cols(),
+            "{op}: a body of another degree or column"
+        );
+    }
+}
+
+/// Checks a key switch `op` takes of the first `source_size` limbs of the transform-domain
+/// `source` into `res` over `output_size` limbs, as
+/// [`GGLWEProductDigitsStridedImpl::gglwe_products_from_dft`](crate::oep::GGLWEProductDigitsStridedImpl::gglwe_products_from_dft)
+/// takes each source.
+///
+/// # Panics
+///
+/// On a source of another degree or column count than `res`, more limbs than it holds, a
+/// base2k other than the key's, a product wider than `res`, columns other than the key's or a
+/// key with a row offset.
+pub fn assert_gglwe_product_from_dft<BE: Backend>(
+    op: &str,
+    res: &VecZnxDftBackendMut<'_, BE>,
+    source: &VecZnxDftBackendMut<'_, BE>,
+    source_size: usize,
+    source_base2k: usize,
+    key: &GGLWEPreparedBackendRef<'_, BE>,
+    output_size: usize,
+) {
+    assert!(
+        source.cols() == res.cols() && source.n() == res.n(),
+        "{op}: a source differs from its destination in degree or columns"
+    );
+    assert!(source_size <= source.size(), "{op}: more source limbs than it holds");
+    assert!(
+        source_base2k == key.base2k().as_usize(),
+        "{op}: the source's base2k differs from the key's"
+    );
+    assert!(
+        output_size.min(key.size()) <= res.size(),
+        "{op}: product wider than its destination"
+    );
+    assert!(
+        key.n().as_usize() == res.n()
+            && key.rank_in().as_usize() + 1 == res.cols()
+            && key.rank_out().as_usize() + 1 == res.cols(),
+        "{op}: operand columns differ from the key's"
+    );
+    assert_no_row_offset(op, key);
 }

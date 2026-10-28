@@ -19,7 +19,7 @@ use poulpy_hal::{
     },
     layouts::{
         Backend, GaloisElement, PrepareHint, ScratchArena, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftBackendMut,
-        VecZnxDftToBackendMut, VecZnxDftToBackendRef,
+        VecZnxDftToBackendMut, VecZnxDftToBackendRef, vec_znx_dft_backend_ref_from_mut,
     },
 };
 
@@ -35,16 +35,13 @@ use crate::{
         prepared::{GLWEAutomorphismKeyPreparedBackendRef, PreparedDiagonal},
     },
     reference::{
-        keyswitching::{GGLWEProductReference, GLWEKeyswitchInternal},
+        keyswitching::{GGLWEProductReference, GLWEKeyswitchInternal, glwe::gglwe_product_from_dft},
         linear_transformation::{
             inner_product::{
                 glwe_accumulate_prepared_baby_steps_dft, glwe_accumulate_prepared_baby_steps_dft_tmp_bytes,
                 glwe_accumulate_unprepared_baby_steps_dft,
             },
-            lazy::{
-                glwe_dft_add_dft_assign, glwe_dft_copy_dft, glwe_idft_dft_into_big, glwe_lazy_giant_automorphism_from_dft,
-                glwe_lazy_giant_automorphism_from_dft_tmp_bytes, glwe_normalize_big_into,
-            },
+            lazy::{glwe_dft_add_dft_assign, glwe_dft_copy_dft, glwe_idft_dft_into_big, glwe_normalize_big_into},
         },
     },
 };
@@ -305,15 +302,16 @@ pub(super) fn glwe_eval_giant_steps<BE, R, P, H>(
                 let key = giant_key.as_ref().unwrap();
                 {
                     let mut lazy_acc_dft_backend = lazy_acc_dft.to_backend_mut();
-                    glwe_lazy_giant_automorphism_from_dft(
+                    crate::layouts::assert_no_row_offset("glwe_eval_linear_transformation", &key.key);
+                    gglwe_product_from_dft(
                         module,
                         &mut lazy_acc_dft_backend,
                         prod_dft,
                         prod_base2k.as_usize(),
-                        operand_galois_element(module, res.n().as_usize(), rot),
                         &key.key,
                         key_output_size,
                         nonzero_giant_rotations,
+                        operand_galois_element(module, res.n().as_usize(), rot),
                         res_initialized,
                         &mut scratch_phase,
                     );
@@ -506,7 +504,7 @@ fn glwe_eval_giant_tree<BE, R, P, H>(
             + level_keys
                 .iter()
                 .flatten()
-                .map(|key| giant_tree_switch_bytes::<BE, _, _>(module, res, key, false, 0))
+                .map(|key| giant_tree_switch_bytes::<BE, _, _>(module, res, key, false, 0, 0))
                 .fold(giant_tree_work_bytes::<BE, _, _>(module, res, false, &shape, 0), usize::max);
         assert!(
             scratch.available() >= need,
@@ -641,10 +639,13 @@ fn glwe_eval_giant_tree<BE, R, P, H>(
         .sum();
     // Carved from the scratch beside the work of the tree ([`glwe_eval_giant_tree_tmp_bytes`]).
     let need = node_bytes
-        + level_keys
+        + plan
             .iter()
-            .flatten()
-            .map(|key| giant_tree_switch_bytes::<BE, _, _>(module, res, key, true, node_size))
+            .zip(&level_keys)
+            .filter_map(|(switches, key)| {
+                key.as_ref()
+                    .map(|key| giant_tree_switch_bytes::<BE, _, _>(module, res, key, true, switches.len(), node_size))
+            })
             .fold(
                 giant_tree_work_bytes::<BE, _, _>(module, res, true, &shape, node_size),
                 usize::max,
@@ -695,43 +696,57 @@ fn glwe_eval_giant_tree<BE, R, P, H>(
         }
     }
 
+    // Every buffer a view of its own, taken out for the switches of a level and put back.
+    let mut slots: Vec<Option<VecZnxDftBackendMut<'_, BE>>> =
+        buffers.into_iter().map(|buffer| Some(buffer.into_inner())).collect();
+    let widest = plan.iter().map(Vec::len).max().unwrap_or(0);
+    let (mut dsts, mut srcs) = (Vec::with_capacity(widest), Vec::with_capacity(widest));
+    let (mut source_sizes, mut accumulate) = (Vec::with_capacity(widest), Vec::with_capacity(widest));
     for ((level, switches_of_level), key) in tree.levels.iter().zip(&plan).zip(&level_keys) {
         let Some(key) = key else { continue };
-        let output_size = key_output_size.min(key.size());
         for &(dst, _, _, copy) in switches_of_level {
             if let Some(even) = copy {
-                let (dst, even) = two_buffers(&mut buffers, dst, even);
-                glwe_dft_copy_dft(module, &mut dst.to_backend_mut(), &even.to_backend_ref());
+                let mut node = slots[dst].take().expect("a node is held once");
+                let even = slots[even].as_ref().expect("a node is held once");
+                glwe_dft_copy_dft(module, &mut node, &vec_znx_dft_backend_ref_from_mut(even));
+                slots[dst] = Some(node);
             }
         }
-        // Each source over the limbs it holds; laying out its operand consumes its mask
-        // columns, read no more.
-        for &(dst, src, accumulate, _) in switches_of_level {
-            let (dst, src_buffer) = two_buffers_mut(&mut buffers, dst, src);
-            let mut src_view = src_buffer.to_backend_mut();
-            glwe_lazy_giant_automorphism_from_dft(
-                module,
-                &mut dst.to_backend_mut(),
-                &mut src_view.with_limb_range_mut(0, held[src]),
-                prod_base2k.as_usize(),
-                operand_galois_element(module, n, level.rot),
-                &key.key,
-                output_size,
-                switches,
-                accumulate,
-                &mut arena,
-            );
+        // The destinations and sources of the level, in switch order, each source over the
+        // limbs it holds.
+        for &(dst, src, accumulates, _) in switches_of_level {
+            dsts.push(slots[dst].take().expect("a node is switched into once per level"));
+            srcs.push(slots[src].take().expect("a node is switched from once per level"));
+            source_sizes.push(held[src]);
+            accumulate.push(accumulates);
         }
-        for &(dst, ..) in switches_of_level {
+        BE::gglwe_products_from_dft(
+            module,
+            operand_galois_element(module, n, level.rot),
+            switches,
+            &mut dsts,
+            key_output_size.min(key.size()),
+            &accumulate,
+            &mut srcs,
+            &source_sizes,
+            prod_base2k.as_usize(),
+            &key.key,
+            &mut arena.borrow(),
+        );
+        for ((&(dst, src, _, _), node), source) in switches_of_level.iter().zip(dsts.drain(..)).zip(srcs.drain(..)) {
+            slots[dst] = Some(node);
+            slots[src] = Some(source);
             held[dst] = node_size;
         }
+        source_sizes.clear();
+        accumulate.clear();
     }
     // The root is read no more: one inverse transform and normalization per column, over the
     // limbs it holds.
     let res_k = res.k().as_usize();
     let mut res_backend = res.to_backend_mut();
-    let mut root_backend = buffers[root].to_backend_mut();
-    let mut root_view = root_backend.with_limb_range_mut(0, held[root]);
+    let mut root_node = slots[root].take().expect("the root is held");
+    let mut root_view = root_node.with_limb_range_mut(0, held[root]);
     for col in 0..cols {
         module.vec_znx_idft_normalize(
             &mut res_backend.data,
@@ -745,18 +760,6 @@ fn glwe_eval_giant_tree<BE, R, P, H>(
             None,
             &mut arena.borrow(),
         );
-    }
-}
-
-/// `buffers[dst]` beside `buffers[src]`, both mutable, `dst != src`.
-fn two_buffers_mut<T>(buffers: &mut [T], dst: usize, src: usize) -> (&mut T, &mut T) {
-    assert_ne!(dst, src);
-    if dst < src {
-        let (lo, hi) = buffers.split_at_mut(src);
-        (&mut lo[dst], &mut hi[0])
-    } else {
-        let (lo, hi) = buffers.split_at_mut(dst);
-        (&mut hi[0], &mut lo[src])
     }
 }
 
@@ -838,9 +841,17 @@ where
     prod.max(normalize)
 }
 
-/// Bytes of a switch of the giant-step tree with `key`: of a node of `node_size` limbs on the
-/// lazy route, of a ciphertext of the layout of `res` on the other.
-fn giant_tree_switch_bytes<BE, R, K>(module: &Module<BE>, res: &R, key: &K, lazy: bool, node_size: usize) -> usize
+/// Bytes of the switches of a level of the giant-step tree with `key`: of its `switches` nodes
+/// of `node_size` limbs together on the lazy route, of a ciphertext of the layout of `res` on
+/// the other.
+fn giant_tree_switch_bytes<BE, R, K>(
+    module: &Module<BE>,
+    res: &R,
+    key: &K,
+    lazy: bool,
+    switches: usize,
+    node_size: usize,
+) -> usize
 where
     BE: Backend + crate::oep::GGLWEProductDigitsStridedImpl,
     Module<BE>: ModuleN
@@ -854,7 +865,7 @@ where
     K: GGLWEInfos,
 {
     if lazy {
-        glwe_lazy_giant_automorphism_from_dft_tmp_bytes::<BE, _>(module, res.rank().as_usize(), node_size, key)
+        BE::gglwe_products_from_dft_tmp_bytes(module, switches, res.rank().as_usize(), node_size, key)
     } else {
         module.glwe_automorphism_tmp_bytes(res, res, key)
     }
@@ -907,13 +918,15 @@ where
         batch: BE::glwe_giant_step_batch(module).min(steps),
     };
     let node_size = key.size().max(shape.prod_size).max(shape.res_size);
-    // A buffer per giant step and at most one per switch, as wide as a node.
+    // A buffer per giant step and at most one per switch, as wide as a node, beside the switches
+    // of the level of most switches.
+    let widest = levels.iter().map(|level| level.pairs.len()).max().unwrap_or(0);
     let lazy = (steps + switches) * BE::scratch_aligned(module.bytes_of_vec_znx_dft(n, cols, node_size))
         + giant_tree_work_bytes::<BE, _, _>(module, res, true, &shape, node_size)
-            .max(giant_tree_switch_bytes::<BE, _, _>(module, res, key, true, node_size));
+            .max(giant_tree_switch_bytes::<BE, _, _>(module, res, key, true, widest, node_size));
     let fallback = steps * giant_tree_fallback_buffer_bytes::<BE, _>(module, n, cols, &shape)
         + giant_tree_work_bytes::<BE, _, _>(module, res, false, &shape, node_size)
-            .max(giant_tree_switch_bytes::<BE, _, _>(module, res, key, false, node_size));
+            .max(giant_tree_switch_bytes::<BE, _, _>(module, res, key, false, 0, node_size));
     lazy.max(fallback)
 }
 

@@ -2,12 +2,16 @@
 //! bodies, the derived defaults and backend overrides.
 
 use poulpy_hal::{
-    api::{ModuleN, ScratchArenaTakeBasic, VecZnxDftApply, VecZnxGadgetDecompose, VecZnxGadgetDecomposeTmpBytes},
+    api::{
+        ModuleN, ScratchArenaTakeBasic, VecZnxDftApply, VecZnxGadgetDecompose, VecZnxGadgetDecomposeTmpBytes,
+        VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes,
+    },
     layouts::{Backend, ScratchArena, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxToBackendRef, vec_znx_backend_ref_from_ref},
 };
 
 use crate::layouts::{
-    Base2K, Dnum, GGLWEInfos, GadgetProductOutputSizeParams, LWEInfos, TorusPrecision, digits_aligned, gadget_product_output_size,
+    Base2K, Dnum, GGLWEInfos, GadgetProductOutputSizeParams, LWEInfos, TorusPrecision, digits_aligned,
+    gadget_product_output_size, prepared::GGLWEPreparedBackendRef,
 };
 
 /// Limbs of the DFT operand a gadget product with digits of `k_digit` bits
@@ -251,4 +255,100 @@ pub fn gadget_row_plaintext<BE>(
     assert!(position <= k, "gadget row {row} at bit {position} is below the precision {k}");
     let src = poulpy_hal::layouts::scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(pt);
     BE::vec_znx_normalize(module, res, base2k, k, 1 - position as i64, res_col, &src, 1, pt_col, scratch);
+}
+
+/// Limbs of the gadget operand [`gadget_dft_apply_from_dft`] lays out for `key` from a source of
+/// `a_size` limbs taken over `output_size`, at most `key.size()`.
+pub fn gadget_dft_operand_size<K: GGLWEInfos>(key: &K, a_size: usize, output_size: usize) -> usize {
+    let mask_small_size = a_size.min(output_size);
+    let mask_k = TorusPrecision((mask_small_size * key.base2k().as_usize()) as u32);
+    gadget_input_size(key.base2k(), key.k_digit(), key.dnum(), mask_k, mask_small_size)
+}
+
+/// The gadget operand of `key` for the mask columns of the DFT source `a`, into the
+/// `a.cols() - 1` columns of `res`: each mask column normalized from its inverse transform over
+/// `a.size().min(output_size)` limbs at radix `a_base2k`, then laid out in digits. The mask
+/// columns of `a` are unspecified afterwards. The operand of each source of
+/// [`GGLWEProductDigitsStridedImpl::gglwe_products_from_dft`](crate::oep::GGLWEProductDigitsStridedImpl::gglwe_products_from_dft).
+pub fn gadget_dft_apply_from_dft<BE, M>(
+    module: &M,
+    res: &mut VecZnxDftBackendMut<'_, BE>,
+    a: &mut VecZnxDftBackendMut<'_, BE>,
+    a_base2k: usize,
+    key: &GGLWEPreparedBackendRef<'_, BE>,
+    output_size: usize,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: Backend,
+    M: ModuleN
+        + VecZnxDftApply<BE>
+        + VecZnxIdftNormalize<BE>
+        + VecZnxIdftNormalizeTmpBytes
+        + VecZnxGadgetDecompose<BE>
+        + VecZnxGadgetDecomposeTmpBytes,
+{
+    let rank = a.cols() - 1;
+    let key_base2k = key.base2k().as_usize();
+    assert!(
+        a_base2k == key_base2k,
+        "gadget_dft_apply_from_dft: the source's base2k differs from the key's"
+    );
+    assert!(
+        scratch.available() >= gadget_dft_apply_from_dft_tmp_bytes::<BE, _, _>(module, a.size(), output_size, key),
+        "gadget_dft_apply_from_dft: scratch below its query"
+    );
+    let mask_small_size = a.size().min(output_size);
+    let (k_digit, dnum) = (key.k_digit(), key.dnum());
+    let mask_k = TorusPrecision((mask_small_size * key_base2k) as u32);
+    let (mut col_small, mut scratch_1) = scratch.borrow().take_vec_znx_scratch(a.n(), 1, mask_small_size);
+    for c in 0..rank {
+        module.vec_znx_idft_normalize(
+            &mut col_small,
+            key_base2k,
+            mask_small_size * key_base2k,
+            0,
+            0,
+            a,
+            c + 1,
+            a_base2k,
+            None,
+            &mut scratch_1.borrow(),
+        );
+        gadget_dft_apply(
+            module,
+            res,
+            c,
+            &col_small.to_backend_ref(),
+            0,
+            key.base2k(),
+            k_digit,
+            dnum,
+            mask_k,
+            &mut scratch_1.borrow(),
+        );
+    }
+}
+
+/// Scratch of [`gadget_dft_apply_from_dft`]: one normalized mask column beside its inverse
+/// transform and its gadget layout.
+pub fn gadget_dft_apply_from_dft_tmp_bytes<BE, M, K>(module: &M, a_size: usize, output_size: usize, key_infos: &K) -> usize
+where
+    BE: Backend,
+    M: ModuleN + VecZnxIdftNormalizeTmpBytes + VecZnxGadgetDecomposeTmpBytes,
+    K: GGLWEInfos,
+{
+    let mask_small_size = a_size.min(output_size);
+    let (base2k, k_digit, dnum) = (key_infos.base2k(), key_infos.k_digit(), key_infos.dnum());
+    let mask_k = TorusPrecision((mask_small_size * base2k.as_usize()) as u32);
+    BE::scratch_aligned(BE::bytes_of_vec_znx(module.n(), 1, mask_small_size))
+        + module
+            .vec_znx_idft_normalize_tmp_bytes(mask_small_size, a_size)
+            .max(gadget_dft_apply_tmp_bytes::<BE, _>(
+                module,
+                base2k,
+                k_digit,
+                dnum,
+                mask_k,
+                mask_small_size,
+            ))
 }

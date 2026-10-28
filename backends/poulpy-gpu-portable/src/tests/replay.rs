@@ -46,8 +46,8 @@ fn a_replay_redoes_the_closure() {
         let mut replay = Replay::<Runtime>::record(|| body(&module, &mut res, &a));
         // The closure ran twice, once for its effect and once recorded; the replays run the graph.
         assert!(replay.is_graph());
-        // The addition, the zeroing of the temporary and its transform.
-        assert_eq!(replay.launches(), 3);
+        // The addition and the transform; the fill of the temporary is its allocation's.
+        assert_eq!(replay.launches(), 2);
         let host = replay.host_events();
         assert_eq!((host.reads, host.writes, host.syncs, host.allocations), (0, 0, 0, 1));
         // The recording holds the temporary of the body.
@@ -59,6 +59,24 @@ fn a_replay_redoes_the_closure() {
         assert!(crate::launch_counters().replays >= before + 2);
     }
     let want: Vec<i64> = (0..2 * N).map(|i| 1 + 3 * i as i64).collect();
+    assert_eq!(read(&res), want);
+}
+
+/// A zeroed buffer allocated before the recording and first used by the body:
+/// both runs of the recording issue the same launches, so it records a graph
+/// the check accepts, and the replays add to the zeros once each.
+#[test]
+fn a_fresh_operand_records_a_graph() {
+    let module = Module::<Gpu>::new(N as u64);
+    let a = vector(|i| i as i64, 2);
+    let mut res: Vector = VecZnx::from_data(Gpu::alloc_zeroed_bytes(N * 2 * size_of::<i64>()), N, 1, 2);
+    {
+        let mut replay = Replay::<Runtime>::record(|| add_assign(&module, &mut res, &a));
+        assert!(replay.is_graph());
+        replay.check();
+        replay.replay();
+    }
+    let want: Vec<i64> = (0..2 * N).map(|i| 3 * i as i64).collect();
     assert_eq!(read(&res), want);
 }
 

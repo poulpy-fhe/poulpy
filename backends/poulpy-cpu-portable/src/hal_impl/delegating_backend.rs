@@ -262,6 +262,13 @@ impl crate::kernels::fft64::ring_arith::Fft64RingArith for BatchedGiantStepsFFT6
 }
 
 #[cfg(test)]
+impl_fft64_delegating_backend!(ProductStepsFFT64Portable, FFT64Portable);
+#[cfg(test)]
+impl crate::kernels::fft64::ring_arith::Fft64RingArith for ProductStepsFFT64Portable {
+    crate::fft64_ring_arith_standard!();
+}
+
+#[cfg(test)]
 impl_fft64_delegating_backend!(DifferentSamplingFFT64Portable, FFT64Portable);
 #[cfg(test)]
 impl_fft64_delegating_rotate!(DifferentSamplingFFT64Portable);

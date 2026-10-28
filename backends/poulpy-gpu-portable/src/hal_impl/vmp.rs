@@ -11,7 +11,10 @@ use super::operand::{all_blocks, all_dft_blocks, column_ref, dft_column_mut, dft
 use crate::{
     NTT4x30Gpu,
     module::handle,
-    ntt4x30::{DftTerm, combine, digit_product, extract_rows, forward},
+    ntt4x30::{
+        AutomorphismPlan, DftColumn, DftTerm, Tail, combine, digit_product, digit_product_inverse, digit_products,
+        digit_products_inverse, extract_rows, forward, inverse_head,
+    },
     runtime::GpuRuntime,
 };
 
@@ -31,6 +34,233 @@ pub(crate) fn gglwe_product_digits_strided<RT: GpuRuntime, R: Ring>(
     pmat: &VmpPMatBackendRef<'_, NTT4x30Gpu<RT, R>>,
 ) {
     product::<RT, R>(res, a, pmat, dsize, product_limbs, 0, false);
+}
+
+/// `res (+)= sigma(a * pmat + addends)` over interleaved digits: the product
+/// of the core hook, with column `c` of `addends[d].0` added to its column
+/// `d` over the limbs both have, stored or accumulated through the
+/// automorphism of `plan` when there is one. Without `accumulate` every limb
+/// of `res` is written.
+#[cfg_attr(not(feature = "enable-core"), allow(dead_code))]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+pub(crate) fn gglwe_product_fused<RT: GpuRuntime, R: Ring>(
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Gpu<RT, R>>,
+    product_size: usize,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Gpu<RT, R>>,
+    dsize: usize,
+    product_limbs: usize,
+    pmat: &VmpPMatBackendRef<'_, NTT4x30Gpu<RT, R>>,
+    addends: [Option<(&VecZnxDftBackendRef<'_, NTT4x30Gpu<RT, R>>, usize)>; 2],
+    plan: Option<&AutomorphismPlan>,
+    accumulate: bool,
+) {
+    assert!(
+        a.n() == res.n() && pmat.n() == res.n(),
+        "fused product: operand degrees differ"
+    );
+    assert_eq!(a.cols(), pmat.cols_in(), "fused product: a.cols() != pmat.cols_in()");
+    assert_eq!(res.cols(), pmat.cols_out(), "fused product: res.cols() != pmat.cols_out()");
+    assert!(
+        product_size <= res.size(),
+        "gglwe_product_fused: product wider than its destination"
+    );
+    let res = dft_column_mut(res, 0).expect("fused product: res holds no storage");
+    if !accumulate && product_size < res.size {
+        // Stored over `product_size` limbs: the limbs past them are zero.
+        let cols = pmat.cols_out();
+        let all = all_dft_blocks(&res, res.size);
+        let tail = all.limbs(product_size * cols, 1, (res.size - product_size) * cols);
+        combine::<RT>(&tail, tail.size, DftTerm::zero(&tail), DftTerm::zero(&tail));
+    }
+    let res = res.limbs(0, 1, product_size);
+    let a = dft_column_ref(a, 0).expect("fused product: a holds no storage");
+    let pmat = self::pmat(pmat).expect("fused product: pmat holds no storage");
+    let addends = addends.map(|addend| {
+        addend.map(|(addend, col)| {
+            assert_eq!(addend.n(), res.n, "fused product: addend of another degree");
+            dft_column_ref(addend, col).expect("fused product: an addend holds no storage")
+        })
+    });
+    digit_product::<RT>(
+        &res,
+        &a,
+        &pmat,
+        dsize,
+        product_limbs,
+        0,
+        accumulate,
+        Tail {
+            addends: [addends[0].as_ref(), addends[1].as_ref()],
+            automorphism: plan,
+        },
+    );
+}
+
+/// [`gglwe_product_fused`] of the sources `a` against one key, at most
+/// [`MANY_SOURCES`](crate::ntt4x30::MANY_SOURCES), in one launch: source `i` into `res[i]`, with
+/// column 0 of `addends[i]` added to output column 0 when there are addends. Returns `false`,
+/// having done nothing, unless the views of each role share an allocation, a layout and a size.
+#[cfg_attr(not(feature = "enable-core"), allow(dead_code))]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn gglwe_products_fused<RT: GpuRuntime, R: Ring>(
+    res: &mut [VecZnxDftBackendMut<'_, NTT4x30Gpu<RT, R>>],
+    product_size: usize,
+    a: &[VecZnxDftBackendRef<'_, NTT4x30Gpu<RT, R>>],
+    dsize: usize,
+    product_limbs: usize,
+    pmat: &VmpPMatBackendRef<'_, NTT4x30Gpu<RT, R>>,
+    addends: Option<&[&VecZnxDftBackendRef<'_, NTT4x30Gpu<RT, R>>]>,
+    plan: Option<&AutomorphismPlan>,
+    accumulate: bool,
+) -> bool {
+    let columns = |views: &mut dyn Iterator<Item = Option<DftColumn>>| views.collect::<Option<Vec<DftColumn>>>();
+    let (Some(res_columns), Some(a_columns), Some(pmat)) = (
+        columns(&mut res.iter().map(|res| dft_column_mut(res, 0))),
+        columns(&mut a.iter().map(|a| dft_column_ref(a, 0))),
+        self::pmat(pmat),
+    ) else {
+        return false;
+    };
+    let addend_columns = match addends {
+        Some(addends) => match columns(&mut addends.iter().map(|addend| dft_column_ref(addend, 0))) {
+            Some(columns) => Some(columns),
+            None => return false,
+        },
+        None => None,
+    };
+    let alike = |views: &[DftColumn]| {
+        views
+            .iter()
+            .all(|v| v.binding.id == views[0].binding.id && v.stride == views[0].stride && v.size == views[0].size)
+    };
+    if res_columns.len() > crate::ntt4x30::MANY_SOURCES
+        || !alike(&res_columns)
+        || !alike(&a_columns)
+        || addend_columns.as_deref().is_some_and(|columns| !alike(columns))
+        || res_columns[0].n != pmat.n
+        || a_columns[0].n != pmat.n
+        || a[0].cols() != pmat.cols_in
+        || res[0].cols() != pmat.cols_out
+        || product_size > res[0].size()
+        || a[0].size() == 0
+    {
+        return false;
+    }
+    let cols = pmat.cols_out;
+    for res in &res_columns {
+        if !accumulate && product_size < res.size {
+            // Stored over `product_size` limbs: the limbs past them are zero.
+            let all = all_dft_blocks(res, res.size);
+            let tail = all.limbs(product_size * cols, 1, (res.size - product_size) * cols);
+            combine::<RT>(&tail, tail.size, DftTerm::zero(&tail), DftTerm::zero(&tail));
+        }
+    }
+    let res_columns: Vec<DftColumn> = res_columns.iter().map(|res| res.limbs(0, 1, product_size)).collect();
+    digit_products::<RT>(
+        &res_columns,
+        &a_columns,
+        &pmat,
+        dsize,
+        product_limbs,
+        accumulate,
+        addend_columns.as_deref(),
+        plan,
+    );
+    true
+}
+
+/// [`gglwe_product_digits_strided_inverse`] without addends for the sources `a` against one
+/// key, at most [`MANY_SOURCES`](crate::ntt4x30::MANY_SOURCES), in one launch: source `i` into
+/// `res[i]`. Returns `false`, having done nothing, when the degree has no inverse launch to take
+/// over, the key has other than two output columns or the views of each role do not share an
+/// allocation, a layout and a size.
+#[cfg_attr(not(feature = "enable-core"), allow(dead_code))]
+pub(crate) fn gglwe_products_digits_strided_inverse<RT: GpuRuntime, R: Ring>(
+    module: &Module<NTT4x30Gpu<RT, R>>,
+    res: &mut [VecZnxDftBackendMut<'_, NTT4x30Gpu<RT, R>>],
+    a: &[VecZnxDftBackendRef<'_, NTT4x30Gpu<RT, R>>],
+    dsize: usize,
+    product_limbs: usize,
+    pmat: &VmpPMatBackendRef<'_, NTT4x30Gpu<RT, R>>,
+) -> bool {
+    let Some(mt) = inverse_head::<RT>(res[0].n().ilog2(), res.len() * res[0].cols()).filter(|_| res[0].cols() == 2) else {
+        return false;
+    };
+    let columns = |views: &mut dyn Iterator<Item = Option<DftColumn>>| views.collect::<Option<Vec<DftColumn>>>();
+    let (Some(res_columns), Some(a_columns), Some(pmat)) = (
+        columns(&mut res.iter().map(|res| dft_column_mut(res, 0))),
+        columns(&mut a.iter().map(|a| dft_column_ref(a, 0))),
+        self::pmat(pmat),
+    ) else {
+        return false;
+    };
+    let alike = |views: &[DftColumn]| {
+        views
+            .iter()
+            .all(|v| v.binding.id == views[0].binding.id && v.stride == views[0].stride && v.size == views[0].size)
+    };
+    if res_columns.len() > crate::ntt4x30::MANY_SOURCES
+        || !alike(&res_columns)
+        || !alike(&a_columns)
+        || res_columns[0].n != pmat.n
+        || a_columns[0].n != pmat.n
+        || a[0].cols() != pmat.cols_in
+        || res[0].cols() != pmat.cols_out
+        || a[0].size() == 0
+    {
+        return false;
+    }
+    let table = handle(module).tables().of(res_columns[0].n);
+    digit_products_inverse::<RT>(table, &res_columns, &a_columns, &pmat, dsize, product_limbs, mt);
+    true
+}
+
+/// [`gglwe_product_fused`] without an automorphism into a fresh `res`, with
+/// the first launch of the inverse transform of `res` run by the product
+/// itself: `res` is then completed by [`super::idft_tail_normalize`] column by
+/// column. Returns `false`, having done nothing, when the degree has no such
+/// launch to take over or the key has other than two output columns.
+#[cfg_attr(not(feature = "enable-core"), allow(dead_code))]
+#[allow(clippy::type_complexity)]
+pub(crate) fn gglwe_product_digits_strided_inverse<RT: GpuRuntime, R: Ring>(
+    module: &Module<NTT4x30Gpu<RT, R>>,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Gpu<RT, R>>,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Gpu<RT, R>>,
+    dsize: usize,
+    product_limbs: usize,
+    pmat: &VmpPMatBackendRef<'_, NTT4x30Gpu<RT, R>>,
+    addends: [Option<(&VecZnxDftBackendRef<'_, NTT4x30Gpu<RT, R>>, usize)>; 2],
+) -> bool {
+    assert!(
+        a.n() == res.n() && pmat.n() == res.n(),
+        "fused product: operand degrees differ"
+    );
+    assert_eq!(a.cols(), pmat.cols_in(), "fused product: a.cols() != pmat.cols_in()");
+    assert_eq!(res.cols(), pmat.cols_out(), "fused product: res.cols() != pmat.cols_out()");
+    let Some(mt) = inverse_head::<RT>(res.n().ilog2(), res.cols()).filter(|_| res.cols() == 2) else {
+        return false;
+    };
+    let res = dft_column_mut(res, 0).expect("fused product: res holds no storage");
+    let a = dft_column_ref(a, 0).expect("fused product: a holds no storage");
+    let pmat = self::pmat(pmat).expect("fused product: pmat holds no storage");
+    let addends = addends.map(|addend| {
+        addend.map(|(addend, col)| {
+            assert_eq!(addend.n(), res.n, "fused product: addend of another degree");
+            dft_column_ref(addend, col).expect("fused product: an addend holds no storage")
+        })
+    });
+    let table = handle(module).tables().of(res.n);
+    digit_product_inverse::<RT>(
+        table,
+        &res,
+        &a,
+        &pmat,
+        dsize,
+        product_limbs,
+        [addends[0].as_ref(), addends[1].as_ref()],
+        mt,
+    );
+    true
 }
 
 fn product<RT: GpuRuntime, R: Ring>(
@@ -60,7 +290,7 @@ fn product<RT: GpuRuntime, R: Ring>(
         }
         return;
     };
-    digit_product::<RT>(&res, &a, &b, dsize, product_limbs, limb_offset, accumulate);
+    digit_product::<RT>(&res, &a, &b, dsize, product_limbs, limb_offset, accumulate, Tail::default());
 }
 
 unsafe impl<RT: GpuRuntime, R: Ring> HalVmpImpl for NTT4x30Gpu<RT, R> {
