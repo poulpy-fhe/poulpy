@@ -545,6 +545,40 @@ fn extraction_input_k<K: GGLWEInfos>(a: &impl GLWEInfos, ks_glwe: Option<&K>, ks
     a.k().min(ks_glwe.map_or(max_input_k(ks_lwe), max_input_k))
 }
 
+/// The infos of a `set_k` view of `infos` at `k`: the precision drops, the allocated capacity stays.
+struct NarrowedInfos<'a, A> {
+    infos: &'a A,
+    k: TorusPrecision,
+}
+
+impl<A: GLWEInfos> LWEInfos for NarrowedInfos<'_, A> {
+    fn noise(&self) -> Option<poulpy_core::ComponentNoise> {
+        if self.k < self.infos.k() { None } else { self.infos.noise() }
+    }
+
+    fn n(&self) -> poulpy_core::layouts::Degree {
+        self.infos.n()
+    }
+
+    fn base2k(&self) -> Base2K {
+        self.infos.base2k()
+    }
+
+    fn k(&self) -> TorusPrecision {
+        self.k
+    }
+
+    fn max_size(&self) -> usize {
+        self.infos.max_size()
+    }
+}
+
+impl<A: GLWEInfos> GLWEInfos for NarrowedInfos<'_, A> {
+    fn rank(&self) -> Rank {
+        self.infos.rank()
+    }
+}
+
 /// Scratch bytes of [`FheUint::get_bit_lwe`], whatever the integer type.
 pub(crate) fn get_bit_lwe_tmp_bytes<R, A, K, L, M, BE>(
     module: &M,
@@ -561,12 +595,14 @@ where
     L: GGLWEInfos,
     M: GLWEKeyswitch<BE> + LWEFromGLWE<BE>,
 {
-    let mut a = a_infos.glwe_layout();
-    a.k = extraction_input_k(a_infos, ks_glwe, ks_lwe);
+    let a = NarrowedInfos {
+        infos: a_infos,
+        k: extraction_input_k(a_infos, ks_glwe, ks_lwe),
+    };
     match ks_glwe {
         Some(ks_glwe) => {
             let switched = GLWELayout {
-                n: a.n,
+                n: a.n(),
                 base2k: ks_glwe.base2k(),
                 k: ks_glwe.k().min(max_input_k(ks_lwe)),
                 rank: ks_glwe.rank_out(),

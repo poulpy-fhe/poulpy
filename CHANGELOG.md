@@ -645,7 +645,7 @@
 
 ### `poulpy-bin-fhe`
 
-- Add the scratch queries of the `FheUint` operations that took scratch without one, associated functions over layouts and key sources: `FheUint::sext_tmp_bytes(module, res_infos, keys)`, `splice_u8_tmp_bytes(module, res_infos, a_infos, b_infos, keys)`, `splice_u16_tmp_bytes` with the same arguments, `get_bit_glwe_tmp_bytes(module, res_infos, keys)`, `get_bit_lwe_tmp_bytes(module, res_infos, a_infos, ks_glwe, ks_lwe)` over the key layouts, `get_byte_tmp_bytes(module, res_infos, keys)`, `from_fhe_uint_prepared_tmp_bytes(module, res_infos, bit_infos, keys)` and `zero_byte_tmp_bytes(module, res_infos, keys)`.
+- Add the scratch queries of the `FheUint` operations that took scratch without one, associated functions over layouts and key sources: `FheUint::sext_tmp_bytes(module, res_infos, keys)`, `splice_u8_tmp_bytes(module, res_infos, a_infos, b_infos, keys)`, `splice_u16_tmp_bytes` with the same arguments, `get_bit_glwe_tmp_bytes(module, res_infos, keys)`, `get_bit_lwe_tmp_bytes(module, res_infos, a_infos, ks_glwe, ks_lwe)` over the key layouts, which sizes the narrowed source at its allocated capacity, as the extraction reads it, `get_byte_tmp_bytes(module, res_infos, keys)`, `from_fhe_uint_prepared_tmp_bytes(module, res_infos, bit_infos, keys)` and `zero_byte_tmp_bytes(module, res_infos, keys)`.
   Each operation panics with a static `"<method>: insufficient scratch"` before any write on an arena below its query, and the `fheuint` tests run each call on exactly its query and once one byte short.
 - **Behaviour:** the key encryptions of blind rotation (plain and compressed), circuit bootstrapping and BDD keys and `FheUintPreparedEncryptSk` end by wiping the scratch their query reports.
 - `BDDKey` implements `BDDKeyInfos`.

@@ -31,7 +31,6 @@ poulpy_core::impl_ggsw_external_product_derived_full!(OverrideBackend);
 poulpy_core::impl_ggsw_keyswitch_derived_full!(OverrideBackend);
 poulpy_core::impl_automorphism_reference_full!(OverrideBackend);
 poulpy_core::impl_glwe_external_product_reference_full!(OverrideBackend);
-poulpy_core::impl_glwe_keyswitch_reference_full!(OverrideBackend);
 poulpy_core::impl_glwe_pack_derived_full!(OverrideBackend);
 poulpy_core::impl_glwe_trace_derived_full!(OverrideBackend);
 poulpy_core::impl_linear_transformation_reference_full!(OverrideBackend);
@@ -65,6 +64,108 @@ unsafe impl poulpy_core::oep::GLWECopyImpl for OverrideBackend {
         assert!(marker.iter().all(|&x| x == 0x39));
     }
 }
+const KEYSWITCH_PER_LIMB: usize = 4096;
+/// A key switch whose workspace grows with the source's allocated capacity, as the contract allows.
+unsafe impl poulpy_core::oep::GLWEKeyswitchImpl for OverrideBackend {
+    fn glwe_keyswitch_tmp_bytes<R: GLWEInfos, A: GLWEInfos, B: GGLWEInfos>(
+        module: &Module<Self>,
+        res_infos: &R,
+        a_infos: &A,
+        key_infos: &B,
+    ) -> usize {
+        KEYSWITCH_PER_LIMB * a_infos.max_size()
+            + poulpy_core::reference::keyswitching::glwe::glwe_keyswitch_tmp_bytes_reference(
+                module, res_infos, a_infos, key_infos,
+            )
+    }
+
+    fn glwe_keyswitch<R, A>(
+        module: &Module<Self>,
+        res: &mut R,
+        a: &A,
+        key: &prepared::GGLWEPreparedBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        R: GLWEToBackendMut<Self> + GLWEInfos,
+        A: GLWEToBackendRef<Self> + GLWEInfos,
+    {
+        let bytes = KEYSWITCH_PER_LIMB * a.max_size();
+        let (mut marker, mut rest) = scratch.borrow().take_region(bytes);
+        Self::copy_host_to_view(&mut marker, &vec![0x3a; bytes]);
+        poulpy_core::reference::keyswitching::glwe::glwe_keyswitch_reference(module, res, a, key, &mut rest);
+        assert!(marker.iter().all(|&x| x == 0x3a));
+    }
+
+    fn glwe_keyswitch_assign<R>(
+        module: &Module<Self>,
+        res: &mut R,
+        key: &prepared::GGLWEPreparedBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        R: GLWEToBackendMut<Self> + GLWEInfos,
+    {
+        poulpy_core::reference::keyswitching::glwe::glwe_keyswitch_assign_reference::<Self, _, _>(module, res, key, scratch)
+    }
+
+    fn glwe_keyswitch_dft_tmp_bytes<A: GLWEInfos, K: GGLWEInfos>(
+        module: &Module<Self>,
+        res_size: usize,
+        a_infos: &A,
+        key_infos: &K,
+    ) -> usize {
+        poulpy_core::reference::keyswitching::glwe::glwe_keyswitch_dft_tmp_bytes_reference::<Self, _, _, _>(
+            module, res_size, a_infos, key_infos,
+        )
+    }
+
+    fn glwe_keyswitch_dft<A>(
+        module: &Module<Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self>,
+        a: &A,
+        key: &prepared::GGLWEPreparedBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        A: GLWEToBackendRef<Self> + GLWEInfos,
+    {
+        poulpy_core::reference::keyswitching::glwe::glwe_keyswitch_dft_reference::<Self, _, _>(module, res, a, key, scratch)
+    }
+}
+
+#[test]
+fn capacity_sensitive_keyswitch_is_covered_by_the_extraction_budget() {
+    use poulpy_bin_fhe::bdd_arithmetic::FheUint;
+    use poulpy_core::{GLWESwitchingKeyPreparedFactory, GLWEToLWEKeyPreparedFactory};
+
+    let module = Module::<OverrideBackend>::new(32);
+    let ks_layout = GLWESwitchingKeyLayout {
+        n: 32usize.into(),
+        base2k: 12usize.into(),
+        rank_in: 1usize.into(),
+        rank_out: 1usize.into(),
+        dnum: 1usize.into(),
+        k_aux: 12usize.into(),
+        k_digit: 12usize.into(),
+        k_offset: 0usize.into(),
+    };
+    let ks_glwe = module.glwe_switching_key_prepared_alloc_from_infos(&ks_layout);
+    let ks_lwe = module.glwe_to_lwe_key_prepared_alloc_from_infos(&ks_layout);
+    let ks_glwe = prepared::GGLWEPreparedToBackendRef::to_backend_ref(&ks_glwe);
+    let ks_lwe = prepared::GGLWEPreparedToBackendRef::to_backend_ref(&ks_lwe);
+    // Three limbs, narrowed to the one limb the keys decompose: the view keeps all three.
+    let a = FheUint::<_, u8, i64>::alloc(&module, 12usize.into(), 36usize.into(), 1usize.into());
+    let mut lwe = module.lwe_alloc_from_infos(&LWELayout {
+        n: 32usize.into(),
+        base2k: 12usize.into(),
+        k: 12usize.into(),
+    });
+    for ks_glwe in [Some(&ks_glwe), None] {
+        let bytes = FheUint::<poulpy_hal::AlignedBuf, u8, i64>::get_bit_lwe_tmp_bytes(&module, &lwe, &a, ks_glwe, &ks_lwe);
+        poulpy_core::test_suite::with_scratch::<OverrideBackend, _>(bytes, |s| {
+            a.get_bit_lwe(&module, 0, &mut lwe, ks_glwe, &ks_lwe, s)
+        });
+    }
+}
+
 poulpy_bin_fhe::impl_blind_rotation_key_encrypt_sk_reference_full!(OverrideBackend);
 poulpy_bin_fhe::impl_blind_rotation_key_compressed_encrypt_sk_reference_full!(OverrideBackend);
 poulpy_bin_fhe::impl_blind_rotation_key_decompress_reference_full!(OverrideBackend);
