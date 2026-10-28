@@ -50,6 +50,7 @@ the same underlying `*_ops` tables.
 | [`schemes`](src/schemes) | `poulpy-ckks` (CKKS) and `poulpy-bin-fhe` (blind rotation, circuit bootstrapping) |
 | [`blas`](src/blas) | `poulpy-blas` encrypted matrix operations on one `d x d` block: `blas_matmul` by a dense and by a replicated right factor, `blas_matmul_pt_right` and `blas_matmul_pt_left` under `Diagonal` and `Jkls`, `blas_transpose`, `blas_sum_rows`, `blas_sum_cols` and `blas_rotate_rows` of a replicated grid |
 | [`libm`](src/libm) | `poulpy-libm` function plans on one ciphertext: `ckks_exp`, `ckks_log`, `ckks_pow` |
+| [`heap`](src/heap.rs) | a counting global allocator: the bytes held and their high-water mark |
 
 Each of `hal`, `core`, `schemes`, `blas` and `libm` has its own `params` submodule (e.g.
 [`hal::params`](src/hal/params.rs)) holding that layer's sweep-parameter
@@ -259,6 +260,48 @@ Memory: a point holds its context, keys and operands at once, and its rotation k
 and `2^16`, dominate. The key set of `blas_matmul` is 125 keys at `(2^13, 32)`, about 250 at `d = 64`, 381 at
 `(2^15, 128)` and 509 at `(2^16, 128)`; the process peaks at about 11 GB at `(2^15, 128)` and 28 GB at `(2^16, 128)`, so
 the full tier needs a host sized for that. The keys of one point are freed before the next is built.
+
+### BLAS at large blocks
+
+`blas::scale` checks `poulpy-blas` at large blocks, `d = 128` on `N = 2^15` and `2^16`, on grids of many blocks. One
+product at an inner dimension of 112 blocks takes minutes, so nothing runs under Criterion: the harness-free bench
+`blas_scale` of `poulpy-cpu-avx512` calls each function once.
+
+- `max_base2k_table::<BE>` prints a `MAX_BASE2K` line per product of `PT_PRODUCTS` (`32x48`, `32x32`, `32x224` and
+  `112x32` blocks) on each public side, with the radix every `BlasPtAlgorithm` allows at 128 failure bits, and one for
+  the product of two ciphertext blocks. It reads layouts only, on any backend with a `MaxBase2k` model; the binary
+  prints it for FFT64, NTT4x30 and NTT3x42 IFMA, standard and conjugate-invariant.
+- `validate::<BE>` runs, on NTT backends, the products by public matrices at inner dimension 112 under every algorithm
+  and 32 under `Diagonal`, the product of two ciphertext blocks through operands prepared under every mix of hints,
+  and the row, column and batch sums over 32 blocks. Each prints `PRECISION`, `SCRATCH` (before the scratch is allocated),
+  `TIME` (with the heap the call allocates) and `HEAP` lines (the heap a prepared operand holds and the most its
+  preparation held), the heap read from `heap::Counting`, which the binary installs as its global allocator. It returns the checks whose result left `blas::matmul::error_bound` (times `sqrt(32)` for the row and
+  column sums, which add the noises of 32 blocks) or whose radix fell below `base2k`, and the binary panics after the
+  last backend if there is any.
+
+Arguments not starting with `--` select the tables and checks whose label holds one of them, and a `!word` leaves out
+those holding `word`:
+
+```sh
+export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C target-feature=+avx2,+fma,+avx512f,+avx512ifma,+avx512vl,+bmi2,+adx"
+FEATURES=enable-avx512f,enable-blas,enable-ifma
+# Every table and check
+cargo bench --target x86_64-unknown-linux-gnu -p poulpy-cpu-avx512 --features $FEATURES --bench blas_scale
+# The radix tables only
+cargo bench --target x86_64-unknown-linux-gnu -p poulpy-cpu-avx512 --features $FEATURES --bench blas_scale -- max_base2k
+# The right product at inner dimension 112 on the IFMA backend
+cargo bench --target x86_64-unknown-linux-gnu -p poulpy-cpu-avx512 --features $FEATURES --bench blas_scale -- 'NTT3x42Ifma/pt_right_diagonal/1x112'
+# Everything but the masked products at N = 2^16, on a host of 128 GB
+cargo bench --target x86_64-unknown-linux-gnu -p poulpy-cpu-avx512 --features $FEATURES --bench blas_scale -- \
+    '!jklsstored/1x112*112x1/(n=65536' '!jklsgalois/1x112*112x1/(n=65536'
+```
+
+Memory at `K = 112`: prepared public matrices hold from 116 MiB (`Diagonal`, right) to 14 GiB (`Jkls` right,
+`JklsStored` left) at `N = 2^15`, and a left `Diagonal` operand, of full-length diagonals, 7 GiB at `2^15` and 21 GiB
+at `2^16`.
+The masked products (`JklsStored`, `JklsGalois`) convert every one of their `K d` terms (`K (2d - 1)` on the left) to
+the transform domain before their single summed product: the call allocates 84 GiB beyond its scratch on the left at
+`N = 2^15` and on the right at `2^16`, and about 170 GiB on the left at `2^16`.
 
 ## Normalization sweep
 
