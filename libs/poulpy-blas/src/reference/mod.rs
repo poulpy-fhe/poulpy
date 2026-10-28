@@ -9,6 +9,7 @@ mod matmul;
 pub use encoding::BlasEncodingReference;
 pub use inter::BlasMatInterReference;
 pub use intra::BlasMatIntraReference;
+#[cfg(feature = "test-utils")]
 pub(crate) use intra::{sum_line, sum_line_tmp_bytes};
 pub use jkls::BlasJklsReference;
 pub use matmul::BlasMatMulReference;
