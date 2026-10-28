@@ -118,6 +118,8 @@ replay.replay();
 The closure must bind the same buffers and issue the same launches at every call, and must not read from the device, write host data to it or synchronize; `Replay` documents the contract, and `Replay::check` tests a closure against its recording.
 A recording keeps the temporaries of the closure reserved on the device until it is dropped, and while a closure is recorded or a graph is queued, other threads wait for the device.
 
+CKKS bootstrapping on a GPU is usually faster with the keys of power-of-two rotations only (`BootstrappingPreset::with_power_of_two_keys`, see [Default presets](bootstrapping.md#default-presets)).
+
 Each module carries the device-dependent tuning of its kernels: `poulpy_gpu_portable::handle(&module).set_convolution_capacity_step(limbs)` sets the limbs by which the convolution kernels grow the operand copies a thread holds (8 by default, at most `MAX_CAPACITY_STEP`).
 
 Limits of the GPU backends:

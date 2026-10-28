@@ -42,6 +42,12 @@ Gate-level parameters fix a handful of limbs rather than a precision, and the ra
 It was also the fastest, ahead of `NTT3x42` and far ahead of `NTT4x30`.
 Compare the size of the prepared key at your own parameters rather than the per-bit figure alone.
 
+The number of keys counts as well as their size.
+A linear transformation evaluated with `BsgsPowersOfTwo` keeps only the keys of the power-of-two multiples of its baby and giant steps, about `log2(n1) + log2(n2)` keys instead of `n1 + n2`, and the switches of one pass share a key.
+The price is more key switches per product.
+It is usually slower on the CPU backends and faster on the GPU backends, so measure it on the device that runs the circuit.
+[Linear transformations](linear_transformation.md#split-strategies) describes the schedule.
+
 Key size governs only half of the cost.
 Everything that works in the coefficient domain instead — addition, encoding and decoding, plaintext operations, normalization — costs one pass per limb, so there the limb count is what matters and a small `base2k` is a straight penalty.
 Packed `NTT4x30` has the advantage in both limb count and prepared-key traffic, while `FFT64` has the cheaper transform.
@@ -58,7 +64,7 @@ Blind rotation runs at a few limbs on a small ring, where the NTT's wider limbs 
 `FFT64` was several times faster than any NTT backend on this workload, by a margin wide enough that the portable `FFT64Portable` also beat every accelerated NTT backend.
 
 **CKKS and leveled work: use `NTT3x42` where IFMA is available.**
-It was roughly twice as fast as either alternative on a full bootstrap at equal output precision, and fastest on every individual operation from moderate ring degrees upward, with its lead growing as the ring grows.
+It was the fastest on every individual operation from moderate ring degrees upward, with its lead growing as the ring grows.
 At small ring degrees `FFT64` can win an isolated key-switch, though not the surrounding pipeline.
 
 **Without IFMA, packed `NTT4x30` is a strong x86 choice.**
@@ -150,7 +156,7 @@ It moves key size, the key's auxiliary precision, and to a smaller extent evalua
 **Key size.**
 Widening `k_digit` cuts the digit count `dnum` roughly as `1/k_digit` and amortizes the key's fixed precision overhead over a wider digit, so evaluation keys shrink substantially.
 Key generation time follows them down, by a factor of several across the useful range.
-When RAM is the binding constraint, this is the main lever: a bootstrapping key set runs to hundreds of megabytes, and resident keys often decide whether a workload fits at all.
+When RAM is the binding constraint, this is the main lever, since resident keys often decide whether a workload fits at all.
 
 **Auxiliary precision.**
 A wider digit needs a more precise key: `k_aux`, the key's own torus precision, is at least one digit wide and grows with `k_digit`.
