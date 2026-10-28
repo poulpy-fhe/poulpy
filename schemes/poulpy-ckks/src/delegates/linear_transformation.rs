@@ -2,7 +2,8 @@ use crate::CKKSResult as Result;
 use poulpy_core::{
     DiagonalProd, LinearTransformation, LinearTransformationBabySteps, LinearTransformationPrepared,
     layouts::{
-        GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, IntPolyInfos, LWEInfos, LinearTransformationPlan,
+        GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, IntPolyInfos, LWEInfos,
+        LinearTransformationPlan,
     },
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
@@ -10,6 +11,7 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
     api::{CKKSLinearTransformationOps, LtDiagonalMeta},
+    layouts::CKKSPreparedRight,
     oep::CKKSLinearTransformationImpl,
 };
 
@@ -133,6 +135,42 @@ impl<BE: Backend + CKKSLinearTransformationImpl> CKKSLinearTransformationOps<BE>
         H: GetAutomorphismKey<BE>,
     {
         BE::ckks_eval_linear_transformation_sum_into(self, dst, srcs, babies, lts, keys, scratch)
+    }
+
+    fn ckks_eval_ct_linear_transformation_tmp_bytes<C, D, K, T>(
+        &self,
+        ct: &C,
+        diagonal: &D,
+        plan: &LinearTransformationPlan,
+        key: &K,
+        tsk: &T,
+    ) -> usize
+    where
+        C: CKKSCtBounds,
+        D: GLWEInfos,
+        K: GGLWEInfos,
+        T: GGLWEInfos,
+    {
+        BE::ckks_eval_ct_linear_transformation_tmp_bytes(self, ct, diagonal, plan, key, tsk)
+    }
+
+    fn ckks_eval_ct_linear_transformation_into<Dst, Src, T, H>(
+        &self,
+        dst: &mut Dst,
+        src: &Src,
+        babies: &LinearTransformationBabySteps<BE>,
+        lt: &LinearTransformation<CKKSPreparedRight<BE>>,
+        tsk: &T,
+        keys: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+        T: GetTensorKey<BE>,
+        H: GetAutomorphismKey<BE>,
+    {
+        BE::ckks_eval_ct_linear_transformation_into(self, dst, src, babies, lt, tsk, keys, scratch)
     }
 
     fn ckks_eval_linear_transformation_self_into<Dst, Src, P, H>(

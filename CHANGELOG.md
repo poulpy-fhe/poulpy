@@ -387,6 +387,8 @@
 - Add `GLWEAutomorphism::glwe_automorphism_many` and `glwe_automorphism_many_tmp_bytes`, the automorphisms of one input by several keys, each output bit for bit that of `glwe_automorphism` by its key: the keys at the input's radix share one gadget decomposition per digit layout, the others switch on their own.
   `test_glwe_automorphism_many`, in `core_backend_test_suite!`, pins the bits against `glwe_automorphism` for shared and unshared keys and a flag-clear input.
 - **Breaking:** `AutomorphismImpl` requires `glwe_automorphism_many` and `glwe_automorphism_many_tmp_bytes`, which `impl_automorphism_reference_full!` forwards to `glwe_automorphism_many_reference` and `glwe_automorphism_many_tmp_bytes_reference`; a backend implementing the trait by hand, or a type implementing `GLWEAutomorphism` itself, adds them.
+- Add `GLWELinearTransformations::glwe_eval_ct_linear_transformation_into` and its query: a linear transformation whose diagonals are rank-1 ciphertexts prepared as right operands. Each giant step's product is `glwe_mul_prepared_relinearize_sum` of its baby rotations by its diagonals, left in the transform domain before that sum's normalization, and the giant steps are rotated and summed as by `glwe_eval_linear_transformation_into`, with one final normalization; one giant step at rotation 0 is the prepared sum bit for bit. `assert_ct_linear_transformation_into` holds its operand checks and `test_glwe_ct_linear_transformation` registers in `core_backend_test_suite!`.
+  **Breaking:** `LinearTransformationImpl` requires the method and its query; `impl_linear_transformation_reference_full!` forwards them, and an `impl` written by hand forwards them to `glwe_eval_ct_linear_transformation_into_reference` and its query.
 
 ### `poulpy-ckks`
 
@@ -651,6 +653,8 @@
 - Add `test_suite::presets::bootstrapping_presets_meet_precision_with_client`; `small_s2c_preset_meets_precision_with_client`, the insecure `N = 2^11` preset on both rings with keys and ciphertexts from a client backend, fast enough for a default run; and `bootstrapping_plan_keys_match_context`, the keys of the plan against those of the compiled context and the rotations of its matrices.
 - **Breaking:** `test_suite::presets::bootstrapping_presets_meet_precision` and `small_s2c_preset_meets_precision` require `PresetRunModule`, `HostStaged` and `CKKSDFTOps`.
 - **Breaking:** the polynomial-evaluation reference requires `GLWEMulConstImpl`: its baby step is one `glwe_const_combination` of all its terms. Results are unchanged.
+- Add `CKKSLinearTransformationOps::ckks_eval_ct_linear_transformation_into` and its query: `dst = M · src` for a transform whose diagonals are ciphertexts prepared by `ckks_prepare_right_into`, at the rule of `ckks_mul_into`, refused before any write as `ckks_dot_product_prepared` refuses its pairs; and `CKKSModuleAlloc::ckks_ct_linear_transformation_alloc_from_infos`, its transform of a schedule. `test_ct_linear_transformation` registers in the CKKS suite.
+  **Breaking:** `CKKSLinearTransformationImpl` requires the method and its query; `impl_ckks_linear_transformation_reference_full!` forwards them.
 
 ### `poulpy-bin-fhe`
 
@@ -869,6 +873,7 @@
 - Add `bench_ckks_bootstrapping_with_client`, and `bench_ckks_bootstrapping_replayed_with_client`, which times the replays of a bootstrap recorded through a closure the backend passes.
 - **Behaviour:** the bootstrapping runners also run each preset with the keys of power-of-two rotations only (`BootstrappingPreset::with_power_of_two_keys`), under the preset's name with a `+pow2` suffix (`test_suite::presets::preset_label`), so a filter on a preset name selects both.
 - **Breaking:** `bench_ckks_bootstrapping` requires `PresetRunModule` (which carries `CKKSEvalModOps`), `HostStaged` and `CKKSDFTOps`.
+- Add `runner_ckks_eval_ct_linear_transformation_into` and `runner_ckks_eval_ct_linear_transformation_composed` in the `ckks_linear_transformation_ops` table: 128 encrypted diagonals at giant step 16, fused against one `ckks_dot_product_prepared` per giant step rotated and added. **Breaking:** `schemes::suites::all_ops` and `bench_ckks` require `CKKSLinearTransformationOps`, `CKKSDotProductOps` and `CnvPVecAlloc`.
 - **Breaking:** the bin-fhe runners and tables require the factories of the prepared keys they allocate: `bin_fhe::runner_blind_rotate` and `blind_rotate_ops` `GGSWPreparedFactory`, `bin_fhe::runner_circuit_bootstrapping` and `circuit_bootstrapping_ops` `BlindRotationKeyPreparedFactory`, `GGLWEToGGSWKeyPreparedFactory` and `GLWEAutomorphismKeyPreparedFactory`, and `bin_fhe_standard_ops` and `bench_binfhe` `GGLWEToGGSWKeyPreparedFactory` and `GLWEAutomorphismKeyPreparedFactory`.
 
 ### Dependencies

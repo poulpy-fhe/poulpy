@@ -98,30 +98,7 @@ where
     let min_cnv_offset = 0;
     let prod_size = a_size + pt_size;
     let inner_dft = glwe_accumulate_prepared_baby_steps_dft_tmp_bytes::<BE, _>(module, min_cnv_offset, a_size, pt_size);
-    let prod_col_big = module.bytes_of_vec_znx_big(module.n(), 1, prod_size);
-    let prod_dft = module.bytes_of_vec_znx_dft(module.n(), cols, prod_size);
-    let lazy_size = key.size().max(prod_size);
-    let lazy_acc_dft = module.bytes_of_vec_znx_dft(module.n(), cols, lazy_size);
-    let lazy_acc_big = module.bytes_of_vec_znx_big(module.n(), cols, lazy_size);
     let prepare_right = module.cnv_prepare_right_tmp_bytes(pt_size, pt_size);
-    let lazy_dft =
-        crate::reference::keyswitching::glwe::gglwe_product_from_dft_tmp_bytes(module, a.rank().as_usize(), prod_size, key);
-    // The fallback first normalizes each product into the destination layout,
-    // then rotates that accumulator in place (both operands therefore use res).
-    let fallback_work = inner_dft
-        .max(module.glwe_automorphism_tmp_bytes(res, res, key))
-        .max(module.vec_znx_normalize_tmp_bytes())
-        .max(module.vec_znx_big_normalize_tmp_bytes())
-        .max(module.vec_znx_idft_apply_tmp_bytes());
-    let fallback_path = BE::scratch_aligned(prod_dft) + BE::scratch_aligned(prod_col_big) + fallback_work;
-    let lazy_final = BE::scratch_aligned(lazy_acc_big)
-        + module
-            .vec_znx_idft_apply_tmp_bytes()
-            .max(module.vec_znx_big_normalize_tmp_bytes());
-    // The lazy route holds the products of one batch of giant steps.
-    let lazy_dft_path = BE::glwe_giant_step_batch(module) * BE::scratch_aligned(prod_dft)
-        + BE::scratch_aligned(lazy_acc_dft)
-        + inner_dft.max(lazy_dft).max(lazy_final);
 
     module
         .glwe_automorphism_tmp_bytes(res, a, key)
@@ -132,11 +109,68 @@ where
                 + glwe_prepare_baby_doubling_tmp_bytes::<BE, _, _, _>(module, a, plan, key),
         )
         .max(glwe_lazy_giant_automorphism_tmp_bytes::<BE, _, _, _>(module, res, key))
-        .max(fallback_path)
-        .max(lazy_dft_path)
+        .max(giant_routes_tmp_bytes(
+            module,
+            cols,
+            prod_size,
+            inner_dft,
+            BE::glwe_giant_step_batch(module),
+            res,
+            key,
+        ))
         .max(glwe_eval_giant_tree_tmp_bytes::<BE, _, _, _, _>(
             module, res, a, pt, plan, key,
         ))
+}
+
+/// Bytes the per-rotation routes of the giant-step loop take for products of `prod_size` limbs and `cols` columns,
+/// `batch` held at once, taking `products_bytes` beside them, into `res` with giant keys no wider than `key`: the lazy
+/// route holds the products of a batch and the accumulator, the fallback first normalizes each product into the
+/// destination layout, then rotates that accumulator in place (both operands therefore use `res`).
+pub(super) fn giant_routes_tmp_bytes<BE, R, K>(
+    module: &Module<BE>,
+    cols: usize,
+    prod_size: usize,
+    products_bytes: usize,
+    batch: usize,
+    res: &R,
+    key: &K,
+) -> usize
+where
+    BE: Backend + crate::oep::GGLWEProductDigitsStridedImpl,
+    Module<BE>: poulpy_hal::api::ModuleN
+        + GLWEAutomorphism<BE>
+        + GGLWEProductReference<BE>
+        + VecZnxBigBytesOf
+        + VecZnxBigNormalizeTmpBytes
+        + VecZnxDftBytesOf
+        + VecZnxIdftApplyTmpBytes
+        + VecZnxNormalizeTmpBytes
+        + poulpy_hal::api::VecZnxDftAutomorphismAddWithPlanTmpBytes
+        + poulpy_hal::api::VecZnxGadgetDecomposeTmpBytes
+        + VecZnxIdftNormalizeTmpBytes,
+    R: GLWEInfos,
+    K: GGLWEInfos,
+{
+    let prod_col_big = module.bytes_of_vec_znx_big(module.n(), 1, prod_size);
+    let prod_dft = module.bytes_of_vec_znx_dft(module.n(), cols, prod_size);
+    let lazy_size = key.size().max(prod_size);
+    let lazy_acc_dft = module.bytes_of_vec_znx_dft(module.n(), cols, lazy_size);
+    let lazy_acc_big = module.bytes_of_vec_znx_big(module.n(), cols, lazy_size);
+    let lazy_dft = crate::reference::keyswitching::glwe::gglwe_product_from_dft_tmp_bytes(module, cols - 1, prod_size, key);
+    let fallback_work = products_bytes
+        .max(module.glwe_automorphism_tmp_bytes(res, res, key))
+        .max(module.vec_znx_normalize_tmp_bytes())
+        .max(module.vec_znx_big_normalize_tmp_bytes())
+        .max(module.vec_znx_idft_apply_tmp_bytes());
+    let fallback_path = BE::scratch_aligned(prod_dft) + BE::scratch_aligned(prod_col_big) + fallback_work;
+    let lazy_final = BE::scratch_aligned(lazy_acc_big)
+        + module
+            .vec_znx_idft_apply_tmp_bytes()
+            .max(module.vec_znx_big_normalize_tmp_bytes());
+    let lazy_dft_path =
+        batch * BE::scratch_aligned(prod_dft) + BE::scratch_aligned(lazy_acc_dft) + products_bytes.max(lazy_dft).max(lazy_final);
+    fallback_path.max(lazy_dft_path)
 }
 
 /// Reference impl: scratch bytes for [`glwe_prepare_linear_transformation_baby_steps_reference`].

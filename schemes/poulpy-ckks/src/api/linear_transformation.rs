@@ -36,11 +36,13 @@ use crate::CKKSResult as Result;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
     DiagonalProd,
-    layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, TorusPrecision},
+    layouts::{
+        GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos, TorusPrecision,
+    },
 };
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
-use crate::{CKKSCtBounds, CKKSLayout, SetCKKSInfos, SlotsKind};
+use crate::{CKKSCtBounds, CKKSLayout, SetCKKSInfos, SlotsKind, layouts::CKKSPreparedRight};
 
 pub use poulpy_core::{
     LinearTransformation, LinearTransformationBabySteps, LinearTransformationDiagonal as Diagonal,
@@ -153,6 +155,23 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     where
         C: CKKSCtBounds,
         K: GGLWEInfos;
+
+    /// Scratch bytes required by [`Self::ckks_eval_ct_linear_transformation_into`] for a transform with the schedule
+    /// `plan` from a source of layout `ct` into a destination of that layout, diagonals of layout `diagonal`, giant
+    /// keys no wider than `key` and the tensor key `tsk` at the larger of the source's and the diagonals' widths.
+    fn ckks_eval_ct_linear_transformation_tmp_bytes<C, D, K, T>(
+        &self,
+        ct: &C,
+        diagonal: &D,
+        plan: &LinearTransformationPlan,
+        key: &K,
+        tsk: &T,
+    ) -> usize
+    where
+        C: CKKSCtBounds,
+        D: GLWEInfos,
+        K: GGLWEInfos,
+        T: GGLWEInfos;
 
     /// Scratch bytes required by [`Self::ckks_eval_linear_transformation_sum_into`], `plan` the
     /// schedule of the first term.
@@ -281,6 +300,52 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+        H: GetAutomorphismKey<BE>;
+
+    /// Computes `dst = M · src` where the diagonals of `M` are ciphertexts prepared by
+    /// [`CKKSMulOps::ckks_prepare_right_into`](crate::api::CKKSMulOps::ckks_prepare_right_into), from a baby cache
+    /// of `src` filled by [`Self::ckks_prepare_linear_transformation_baby_steps`].
+    ///
+    /// The diagonal of giant step `rot` and baby rotation `baby` is diagonal `rot + baby` of `M` rotated by `-rot`
+    /// slots, as [`ComplexDiagonals::build_transform`](crate::layouts::ComplexDiagonals::build_transform) places a
+    /// plaintext one; [`CKKSModuleAlloc::ckks_ct_linear_transformation_alloc_from_infos`](crate::layouts::CKKSModuleAlloc::ckks_ct_linear_transformation_alloc_from_infos)
+    /// allocates the slots of a schedule. Each giant step's products are summed and relinearized once, as by
+    /// [`CKKSDotProductOps::ckks_dot_product_prepared`](crate::api::CKKSDotProductOps::ckks_dot_product_prepared),
+    /// rotated, and the giant steps summed before one normalization, which leaves `dst` canonical: `base2k` must hold
+    /// the products of a giant step, as for that sum. Baby-step keys are read from the cache, giant-step keys are
+    /// looked up at the output width and the tensor key at the larger of the widths of `src` and of the diagonals.
+    ///
+    /// # Metadata
+    ///
+    /// The rule of [`CKKSMulOps::ckks_mul_into`](crate::api::CKKSMulOps::ckks_mul_into) between `src` and the
+    /// diagonals, with the joined slot kind and the smallest `log_sparsity` of the two.
+    ///
+    /// # Errors
+    ///
+    /// Each before any write to `dst`:
+    /// - `InvalidOperand` when `lt` has no diagonals, when its diagonals do not share one layout and scale, past
+    ///   `base2k` 62, or unless `dst`, `src`, the diagonals and the tensor key are of rank 1 and one `base2k` and the
+    ///   product's conversion offset is at least `base2k`;
+    /// - `PreparedOperandLayoutMismatch` for a diagonal of another degree, `base2k` or rank than `dst`;
+    /// - the errors of the rule of `ckks_mul_into`;
+    /// - `MissingRelinearizationKey` without a tensor key at that width, `MissingAutomorphismKey` for a non-zero giant
+    ///   rotation with no key at the output width;
+    /// - `InvalidOperand` when `babies` lacks one of `lt`'s baby rotations.
+    #[allow(clippy::too_many_arguments)]
+    fn ckks_eval_ct_linear_transformation_into<Dst, Src, T, H>(
+        &self,
+        dst: &mut Dst,
+        src: &Src,
+        babies: &LinearTransformationBabySteps<BE>,
+        lt: &LinearTransformation<CKKSPreparedRight<BE>>,
+        tsk: &T,
+        keys: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+        T: GetTensorKey<BE>,
         H: GetAutomorphismKey<BE>;
 
     // ----- eval (self-allocated baby cache) -----

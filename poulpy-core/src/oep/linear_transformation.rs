@@ -1,10 +1,10 @@
 #![allow(clippy::too_many_arguments)]
 
-use poulpy_hal::layouts::{Backend, Module, ScratchArena, VecZnxDftBackendMut};
+use poulpy_hal::layouts::{Backend, CnvPVecRToBackendRef, Module, ScratchArena, VecZnxDftBackendMut};
 
 use crate::layouts::{
-    GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, LinearTransformation,
-    LinearTransformationGiantStep, LinearTransformationPlan,
+    GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos, LinearTransformation,
+    LinearTransformationGiantStep, LinearTransformationPlan, TorusPrecision,
     prepared::{LinearTransformationBabySteps, LinearTransformationPrepared, PreparedDiagonal},
 };
 
@@ -140,6 +140,45 @@ pub unsafe trait LinearTransformationImpl: Backend {
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         R: GLWEToBackendMut<Self> + GLWEInfos,
+        H: GetAutomorphismKey<Self>;
+
+    /// Scratch bound of [`Self::glwe_eval_ct_linear_transformation_into`]; may report less than the reference, never
+    /// less than the body takes.
+    fn glwe_eval_ct_linear_transformation_tmp_bytes<R, A, B, K, T>(
+        module: &Module<Self>,
+        res: &R,
+        a: &A,
+        b: &B,
+        plan: &LinearTransformationPlan,
+        key: &K,
+        tsk: &T,
+    ) -> usize
+    where
+        R: GLWEInfos,
+        A: GLWEInfos,
+        B: GLWEInfos,
+        K: GGLWEInfos,
+        T: GGLWEInfos;
+
+    /// Reproduces
+    /// [`glwe_eval_ct_linear_transformation_into_reference`](crate::reference::linear_transformation::glwe_eval_ct_linear_transformation_into_reference)
+    /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
+    /// [`Self::glwe_eval_ct_linear_transformation_tmp_bytes`]; free in kernels and scratch use. A required method:
+    /// its reference composes the tensoring family beside this one.
+    fn glwe_eval_ct_linear_transformation_into<R, D, T, H>(
+        module: &Module<Self>,
+        cnv_offset: usize,
+        res: &mut R,
+        lhs: &LinearTransformationBabySteps<Self>,
+        lhs_k: TorusPrecision,
+        rhs: &LinearTransformation<D>,
+        tsk: &T,
+        keys: &H,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        R: GLWEToBackendMut<Self> + GLWEInfos,
+        D: CnvPVecRToBackendRef<Self> + GLWEInfos,
+        T: GetTensorKey<Self>,
         H: GetAutomorphismKey<Self>;
 
     /// Most giant steps [`Self::glwe_accumulate_giant_steps`] takes per call, at least 1: the
@@ -321,6 +360,48 @@ macro_rules! impl_linear_transformation_reference_full {
             {
                 $crate::reference::linear_transformation::glwe_eval_linear_transformation_sum_into_reference(
                     module, cnv_offset, res, babies, lts, keys, scratch,
+                )
+            }
+
+            fn glwe_eval_ct_linear_transformation_tmp_bytes<R, A, B, K, T>(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                res: &R,
+                a: &A,
+                b: &B,
+                plan: &$crate::layouts::LinearTransformationPlan,
+                key: &K,
+                tsk: &T,
+            ) -> usize
+            where
+                R: $crate::layouts::GLWEInfos,
+                A: $crate::layouts::GLWEInfos,
+                B: $crate::layouts::GLWEInfos,
+                K: $crate::layouts::GGLWEInfos,
+                T: $crate::layouts::GGLWEInfos,
+            {
+                $crate::reference::linear_transformation::glwe_eval_ct_linear_transformation_tmp_bytes_reference(
+                    module, res, a, b, plan, key, tsk,
+                )
+            }
+
+            fn glwe_eval_ct_linear_transformation_into<R, D, T, H>(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                cnv_offset: usize,
+                res: &mut R,
+                lhs: &$crate::layouts::prepared::LinearTransformationBabySteps<$be>,
+                lhs_k: $crate::layouts::TorusPrecision,
+                rhs: &$crate::layouts::LinearTransformation<D>,
+                tsk: &T,
+                keys: &H,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
+            ) where
+                R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
+                D: ::poulpy_hal::layouts::CnvPVecRToBackendRef<$be> + $crate::layouts::GLWEInfos,
+                T: $crate::layouts::GetTensorKey<$be>,
+                H: $crate::layouts::GetAutomorphismKey<$be>,
+            {
+                $crate::reference::linear_transformation::glwe_eval_ct_linear_transformation_into_reference(
+                    module, cnv_offset, res, lhs, lhs_k, rhs, tsk, keys, scratch,
                 )
             }
 

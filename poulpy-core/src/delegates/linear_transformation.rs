@@ -1,12 +1,12 @@
 #![allow(clippy::too_many_arguments)]
 
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, CnvPVecRToBackendRef, Module, ScratchArena};
 
 use crate::{
     api::GLWELinearTransformations,
     layouts::{
-        GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, LinearTransformation,
-        LinearTransformationPlan,
+        GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos,
+        LinearTransformation, LinearTransformationPlan, TorusPrecision,
         prepared::{LinearTransformationBabySteps, LinearTransformationPrepared, PreparedDiagonal},
     },
     oep::LinearTransformationImpl,
@@ -140,5 +140,43 @@ where
         H: GetAutomorphismKey<BE>,
     {
         BE::glwe_eval_linear_transformation_sum_into(self, cnv_offset, res, babies, lts, keys, scratch)
+    }
+
+    fn glwe_eval_ct_linear_transformation_tmp_bytes<R, A, B, K, T>(
+        &self,
+        res: &R,
+        a: &A,
+        b: &B,
+        plan: &LinearTransformationPlan,
+        key: &K,
+        tsk: &T,
+    ) -> usize
+    where
+        R: GLWEInfos,
+        A: GLWEInfos,
+        B: GLWEInfos,
+        K: GGLWEInfos,
+        T: GGLWEInfos,
+    {
+        BE::glwe_eval_ct_linear_transformation_tmp_bytes(self, res, a, b, plan, key, tsk)
+    }
+
+    fn glwe_eval_ct_linear_transformation_into<R, D, T, H>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        lhs: &LinearTransformationBabySteps<BE>,
+        lhs_k: TorusPrecision,
+        rhs: &LinearTransformation<D>,
+        tsk: &T,
+        keys: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        D: CnvPVecRToBackendRef<BE> + GLWEInfos,
+        T: GetTensorKey<BE>,
+        H: GetAutomorphismKey<BE>,
+    {
+        BE::glwe_eval_ct_linear_transformation_into(self, cnv_offset, res, lhs, lhs_k, rhs, tsk, keys, scratch)
     }
 }

@@ -1261,7 +1261,7 @@ where
         R: GLWEInfos,
         B: GGLWEInfos,
     {
-        one_pass_tmp_bytes(self, res, a_size, b_size, tensor_k, tsk, false, false)
+        one_pass_tmp_bytes(self, res, a_size, b_size, tensor_k, tsk, false, false, false)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1290,6 +1290,7 @@ where
             MulRest::Operands(&[], &[]),
             tsk,
             scratch,
+            None,
         )
     }
 
@@ -1316,6 +1317,7 @@ where
             MulRest::Operands(&[], &[]),
             tsk,
             scratch,
+            None,
         )
     }
 
@@ -1342,6 +1344,7 @@ where
             MulRest::Operands(&[], &[]),
             tsk,
             scratch,
+            None,
         )
     }
 
@@ -1366,6 +1369,7 @@ where
             MulRest::Operands(&[], &[]),
             tsk,
             scratch,
+            None,
         )
     }
 
@@ -1401,6 +1405,7 @@ where
             MulRest::Operands(&[], &[]),
             tsk,
             scratch,
+            None,
         )
     }
 
@@ -1434,6 +1439,7 @@ where
             MulRest::Operands(&[], &[]),
             tsk,
             scratch,
+            None,
         )
     }
 
@@ -1477,7 +1483,7 @@ where
         R: GLWEInfos,
         B: GGLWEInfos,
     {
-        one_pass_tmp_bytes(self, res, a_size, b_size, tensor_k, tsk, false, true)
+        one_pass_tmp_bytes(self, res, a_size, b_size, tensor_k, tsk, false, true, false)
     }
 
     fn glwe_mul_prepared_relinearize_sum_tmp_bytes_reference<R, B>(
@@ -1492,7 +1498,7 @@ where
         R: GLWEInfos,
         B: GGLWEInfos,
     {
-        one_pass_tmp_bytes(self, res, a_size, b_size, tensor_k, tsk, true, true)
+        one_pass_tmp_bytes(self, res, a_size, b_size, tensor_k, tsk, true, true, false)
     }
 
     fn glwe_mul_relinearize_sum_reference<R, A, B, H>(
@@ -1525,6 +1531,7 @@ where
             MulRest::Operands(a_rest, b_rest),
             tsk,
             scratch,
+            None,
         )
     }
 
@@ -1583,6 +1590,7 @@ where
             MulRest::Prepared(a_rest, b_rest),
             tsk,
             scratch,
+            None,
         )
     }
 
@@ -1690,10 +1698,69 @@ fn one_pass_keeps_two_step_noise(
     one_pass <= two_step * (1.0 + ONE_PASS_VARIANCE_SLACK)
 }
 
-/// Scratch of [`glwe_mul_relinearize_one_pass`]: one product of ciphertexts, or a sum of them, or either over
-/// prepared pairs.
+/// The limbs a one-pass product into a result of the layout `res_infos`, through a tensor of the layout
+/// `tensor_infos`, takes for operands of `a_size` and `b_size` limbs and widths `left_k` and `right_k`.
+pub(crate) struct OnePassShape {
+    /// Limbs of the product columns.
+    pub(crate) dft_size: usize,
+    /// Limbs of the key switch of `d2` with the other columns added.
+    pub(crate) ks_size: usize,
+    /// Whether `d2` is relinearized as the convolution leaves it ([`one_pass_keeps_two_step_noise`]), else as a
+    /// tensor.
+    pub(crate) one_pass: bool,
+}
+
+impl OnePassShape {
+    /// Limbs of the `dft_out` of [`glwe_mul_relinearize_one_pass`] into a result of `res_size` limbs.
+    pub(crate) fn dft_out_size(&self, res_size: usize) -> usize {
+        if self.one_pass { self.ks_size } else { res_size }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
-fn one_pass_tmp_bytes<BE, R, B>(
+pub(crate) fn one_pass_shape<BE: Backend>(
+    res_infos: &GLWELayout,
+    tensor_infos: &GLWELayout,
+    tsk: &crate::layouts::GLWETensorKeyPreparedBackendRef<'_, BE>,
+    a_size: usize,
+    b_size: usize,
+    left_k: TorusPrecision,
+    right_k: TorusPrecision,
+    cnv_offset: usize,
+) -> OnePassShape {
+    let (n, base2k) = (res_infos.n.as_usize(), res_infos.base2k.as_usize());
+    let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, base2k);
+    let tensor_size = tensor_infos.k.as_usize().div_ceil(base2k);
+    let dft_size = normalize_input_limb_bound_with_offset(
+        prod_dft_size(a_size, b_size, cnv_offset_hi),
+        tensor_size,
+        base2k,
+        base2k,
+        cnv_offset_lo,
+    );
+    let output_size = gglwe_product_output_size::<BE, _, _, _>(res_infos, tensor_infos, tsk);
+    OnePassShape {
+        dft_size,
+        // One more output limb than the two-step path when the alignment adds a limb to d2.
+        ks_size: (output_size + dft_size.saturating_sub(tensor_size)).min(tsk.size()),
+        one_pass: one_pass_keeps_two_step_noise(
+            tsk,
+            n,
+            base2k,
+            dft_size,
+            cnv_offset,
+            left_k,
+            right_k,
+            tensor_infos.k,
+            res_infos.k,
+        ),
+    }
+}
+
+/// Scratch of [`glwe_mul_relinearize_one_pass`]: one product of ciphertexts, or a sum of them, or either over
+/// prepared pairs, normalized or left in DFT.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn one_pass_tmp_bytes<BE, R, B>(
     module: &Module<BE>,
     res: &R,
     a_size: usize,
@@ -1702,6 +1769,7 @@ fn one_pass_tmp_bytes<BE, R, B>(
     tsk: &B,
     prepared_operands: bool,
     summed: bool,
+    dft_output: bool,
 ) -> usize
 where
     BE: GLWETensoringImpl + crate::oep::GGLWEProductDigitsStridedImpl,
@@ -1750,10 +1818,12 @@ where
     let gadget_size: usize = gadget_input_size(gadget_base2k, k_digit, dnum, d2_k, dft_size);
     let gadget_bytes: usize = gadget_dft_apply_tmp_bytes::<BE, _>(module, gadget_base2k, k_digit, dnum, d2_k, dft_size);
     let product = module.bytes_of_vec_znx_dft(n, 1, gadget_size)
-        + gadget_bytes.max(
+        + gadget_bytes.max(if dft_output {
+            BE::gglwe_product_fused_tmp_bytes(module, ks_size, ks_size, gadget_size, tsk)
+        } else {
             module.bytes_of_vec_znx_dft(n, 2, ks_size)
-                + BE::gglwe_product_idft_normalize_tmp_bytes(module, res.size(), ks_size, gadget_size, tsk),
-        );
+                + BE::gglwe_product_idft_normalize_tmp_bytes(module, res.size(), ks_size, gadget_size, tsk)
+        });
     // Relinearized as a tensor when the gadget does not cover the digits of `d2`.
     let uncovered = if dft_size * base2k > tsk.dnum().as_usize() * tsk.k_digit().as_usize() {
         module.glwe_tensor_bytes_of_from_infos(&tensor_infos)
@@ -1778,7 +1848,7 @@ where
 }
 
 /// Left operand of [`glwe_mul_relinearize_one_pass`].
-enum MulLeft<'a, A, AP> {
+pub(crate) enum MulLeft<'a, A, AP> {
     /// `res` itself, read at its current width.
     Res,
     /// A ciphertext.
@@ -1788,7 +1858,7 @@ enum MulLeft<'a, A, AP> {
 }
 
 /// Right operand of [`glwe_mul_relinearize_one_pass`].
-enum MulRight<'a, B, BP> {
+pub(crate) enum MulRight<'a, B, BP> {
     /// The left operand itself: a squaring.
     Left,
     /// Another ciphertext.
@@ -1798,7 +1868,7 @@ enum MulRight<'a, B, BP> {
 }
 
 /// The pairs `(a[i], b[i])` of a sum after the first, which share its layouts.
-enum MulRest<'a, A, B, AP, BP> {
+pub(crate) enum MulRest<'a, A, B, AP, BP> {
     /// Ciphertexts, each pair prepared into the first pair's operands, which are ciphertexts too.
     Operands(&'a [&'a A], &'a [&'a B]),
     /// Prepared pairs, read where they are, after a prepared first pair.
@@ -1806,7 +1876,7 @@ enum MulRest<'a, A, B, AP, BP> {
 }
 
 /// Names the unused operand type of the forms without a ciphertext operand.
-type NoOperand<BE> = GLWE<<BE as Backend>::OwnedBuf, <BE as Backend>::ZnxWord>;
+pub(crate) type NoOperand<BE> = GLWE<<BE as Backend>::OwnedBuf, <BE as Backend>::ZnxWord>;
 
 /// Shared body of the one-pass products.
 ///
@@ -1815,8 +1885,12 @@ type NoOperand<BE> = GLWE<<BE as Backend>::OwnedBuf, <BE as Backend>::ZnxWord>;
 /// pair's before `d2` is brought back to digits. Only the sums pass any; with none, the instructions and the scratch
 /// layout are those of a single product. A prepared operand's own slot shrinks to one limb, and a prepared first pair
 /// prepares nothing.
+///
+/// With `dft_out`, the result is left there in DFT on [`OnePassShape::dft_out_size`] limbs, unnormalized, its low
+/// `cnv_offset mod base2k` bits still to shift by the normalization that reads it, or on the tensor path normalized
+/// into `res` and transformed there.
 #[allow(clippy::too_many_arguments)]
-fn glwe_mul_relinearize_one_pass<BE, R, A, B, AP, BP, H>(
+pub(crate) fn glwe_mul_relinearize_one_pass<BE, R, A, B, AP, BP, H>(
     module: &Module<BE>,
     cnv_offset: usize,
     res: &mut R,
@@ -1826,6 +1900,7 @@ fn glwe_mul_relinearize_one_pass<BE, R, A, B, AP, BP, H>(
     rest: MulRest<'_, A, B, AP, BP>,
     tsk: &H,
     scratch: &mut ScratchArena<'_, BE>,
+    dft_out: Option<&mut VecZnxDftBackendMut<'_, BE>>,
 ) where
     BE: GLWETensoringImpl + crate::oep::GGLWEProductDigitsStridedImpl,
     Module<BE>: GLWETensoringReference<BE>
@@ -1927,7 +2002,17 @@ fn glwe_mul_relinearize_one_pass<BE, R, A, B, AP, BP, H>(
             true,
         ),
     };
-    let bytes = one_pass_tmp_bytes(module, &res_infos, a_size, b_size, tensor_k, tsk, prepared_operands, summed);
+    let bytes = one_pass_tmp_bytes(
+        module,
+        &res_infos,
+        a_size,
+        b_size,
+        tensor_k,
+        tsk,
+        prepared_operands,
+        summed,
+        dft_out.is_some(),
+    );
     assert!(
         scratch.available() >= bytes,
         "scratch.available(): {} < {query}: {bytes}",
@@ -1994,14 +2079,11 @@ fn glwe_mul_relinearize_one_pass<BE, R, A, B, AP, BP, H>(
 
     let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, base2k);
     let tensor_size = tensor_k.as_usize().div_ceil(base2k);
-    let dft_size = normalize_input_limb_bound_with_offset(
-        prod_dft_size(a_size, b_size, cnv_offset_hi),
-        tensor_size,
-        base2k,
-        base2k,
-        cnv_offset_lo,
-    );
-    let output_size = gglwe_product_output_size::<BE, _, _, _>(&res_infos, &tensor_infos, tsk);
+    let OnePassShape {
+        dft_size,
+        ks_size,
+        one_pass,
+    } = one_pass_shape(&res_infos, &tensor_infos, tsk, a_size, b_size, left_k, right_k, cnv_offset);
 
     // `diag` holds d0 = a0 * b0 and d2 = a1 * b1, `cross` holds d1.
     let (mut diag, scratch) = scratch.take_vec_znx_dft_scratch(n, 2, dft_size);
@@ -2076,7 +2158,7 @@ fn glwe_mul_relinearize_one_pass<BE, R, A, B, AP, BP, H>(
 
     // Unless the one-pass relinearization keeps the two-step noise, the columns are aligned to the result first and
     // relinearized as a tensor, as in the two-step product.
-    if !one_pass_keeps_two_step_noise(tsk, n, base2k, dft_size, cnv_offset, left_k, right_k, tensor_k, res_k) {
+    if !one_pass {
         let (mut tensor, mut scratch) = scratch.take_glwe_tensor_scratch(&tensor_infos);
         {
             let mut tensor_backend = tensor.to_backend_mut();
@@ -2113,6 +2195,12 @@ fn glwe_mul_relinearize_one_pass<BE, R, A, B, AP, BP, H>(
             BE::glwe_tensor_relinearize(module, &mut &mut res, &tensor, tsk_source, &mut scratch);
         }
         res.set_canonical(true);
+        if let Some(out) = dft_out {
+            let res = res.to_backend_ref();
+            for col in 0..2 {
+                module.vec_znx_dft_apply(1, 0, out, col, &res.data, col);
+            }
+        }
         return;
     }
 
@@ -2147,10 +2235,24 @@ fn glwe_mul_relinearize_one_pass<BE, R, A, B, AP, BP, H>(
         &mut scratch.borrow(),
     );
 
-    // One more output limb than the two-step path when the alignment adds a limb to d2.
-    let ks_size = (output_size + dft_size.saturating_sub(tensor_size)).min(tsk.size());
-    let (mut res_dft, mut scratch) = scratch.take_vec_znx_dft_scratch(n, 2, ks_size);
     crate::layouts::assert_no_row_offset("glwe_mul_relinearize", &tsk.0);
+    let addends = [Some((&diag.to_backend_ref(), 0)), Some((&cross.to_backend_ref(), 0))];
+    if let Some(out) = dft_out {
+        BE::gglwe_product_fused(
+            module,
+            out,
+            ks_size,
+            &d2_dft.to_backend_ref(),
+            &tsk.0,
+            1,
+            &addends,
+            1,
+            false,
+            &mut scratch.borrow(),
+        );
+        return;
+    }
+    let (mut res_dft, mut scratch) = scratch.take_vec_znx_dft_scratch(n, 2, ks_size);
     // The key switch of d2 with d0 and d1 added to its columns, inverted and normalized.
     res.set_canonical(true);
     let mut res_backend = res.to_backend_mut();
@@ -2164,7 +2266,7 @@ fn glwe_mul_relinearize_one_pass<BE, R, A, B, AP, BP, H>(
         &d2_dft.to_backend_ref(),
         &tsk.0,
         1,
-        &[Some((&diag.to_backend_ref(), 0)), Some((&cross.to_backend_ref(), 0))],
+        &addends,
         None,
         base2k,
         &mut scratch.borrow(),

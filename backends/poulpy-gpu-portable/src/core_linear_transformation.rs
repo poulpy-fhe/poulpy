@@ -338,6 +338,49 @@ macro_rules! impl_linear_transformation {
                 )
             }
 
+            fn glwe_eval_ct_linear_transformation_tmp_bytes<R, A, B, K, T>(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                res: &R,
+                a: &A,
+                b: &B,
+                plan: &::poulpy_core::layouts::LinearTransformationPlan,
+                key: &K,
+                tsk: &T,
+            ) -> usize
+            where
+                R: ::poulpy_core::layouts::GLWEInfos,
+                A: ::poulpy_core::layouts::GLWEInfos,
+                B: ::poulpy_core::layouts::GLWEInfos,
+                K: ::poulpy_core::layouts::GGLWEInfos,
+                T: ::poulpy_core::layouts::GGLWEInfos,
+            {
+                ::poulpy_core::reference::linear_transformation::glwe_eval_ct_linear_transformation_tmp_bytes_reference(
+                    module, res, a, b, plan, key, tsk,
+                )
+            }
+
+            #[allow(clippy::too_many_arguments)]
+            fn glwe_eval_ct_linear_transformation_into<R, D, T, H>(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                cnv_offset: usize,
+                res: &mut R,
+                lhs: &::poulpy_core::layouts::prepared::LinearTransformationBabySteps<$be>,
+                lhs_k: ::poulpy_core::layouts::TorusPrecision,
+                rhs: &::poulpy_core::layouts::LinearTransformation<D>,
+                tsk: &T,
+                keys: &H,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
+            ) where
+                R: ::poulpy_core::layouts::GLWEToBackendMut<$be> + ::poulpy_core::layouts::GLWEInfos,
+                D: ::poulpy_hal::layouts::CnvPVecRToBackendRef<$be> + ::poulpy_core::layouts::GLWEInfos,
+                T: ::poulpy_core::layouts::GetTensorKey<$be>,
+                H: ::poulpy_core::layouts::GetAutomorphismKey<$be>,
+            {
+                ::poulpy_core::reference::linear_transformation::glwe_eval_ct_linear_transformation_into_reference(
+                    module, cnv_offset, res, lhs, lhs_k, rhs, tsk, keys, scratch,
+                )
+            }
+
             fn glwe_giant_step_batch(_module: &::poulpy_hal::layouts::Module<$be>) -> usize {
                 $crate::core_linear_transformation::GIANT_BATCH
             }

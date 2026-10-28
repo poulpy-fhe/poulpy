@@ -619,6 +619,10 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::linear_transformation::test_linear_transformation_sum
             );
             run_test!(
+                ct_linear_transformation,
+                $crate::test_suite::linear_transformation::test_ct_linear_transformation
+            );
+            run_test!(
                 prepare_linear_transformation_rhs_rejects_mixed_diagonals,
                 $crate::test_suite::linear_transformation::test_prepare_linear_transformation_rhs_rejects_mixed_diagonals
             );

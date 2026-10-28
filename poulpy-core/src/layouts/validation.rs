@@ -1,7 +1,9 @@
 //! Refusal checks shared by the reference bodies, the derived defaults and
 //! backend overrides, so that every implementation refuses the same inputs.
 
-use poulpy_hal::layouts::{Backend, VecZnxBackendMut, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef};
+use poulpy_hal::layouts::{
+    Backend, CnvPVecRToBackendRef, VecZnxBackendMut, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef,
+};
 
 use crate::{
     Distribution,
@@ -60,6 +62,45 @@ where
     assert_linear_transformation_giant_steps(&[lhs], &[rhs]);
 }
 
+/// The checks of [`glwe_eval_ct_linear_transformation_into_reference`](crate::reference::linear_transformation::glwe_eval_ct_linear_transformation_into_reference)
+/// on its operands, run before it reads a key or writes `res`; the product checks the ranks, `cnv_offset` and the
+/// tensor key.
+///
+/// # Panics
+///
+/// Under the conditions of [`assert_linear_transformation_into`], unless the cache holds two columns of the degree of
+/// `res` on `ceil(lhs_k / base2k)` limbs and every diagonal two columns of that degree on `ceil(k / base2k)` limbs, at
+/// the `base2k` of `res` and the first diagonal's width `k`.
+pub fn assert_ct_linear_transformation_into<BE, R, D>(
+    res: &R,
+    lhs: &LinearTransformationBabySteps<BE>,
+    lhs_k: TorusPrecision,
+    rhs: &LinearTransformation<D>,
+) where
+    BE: Backend,
+    R: GLWEInfos,
+    D: CnvPVecRToBackendRef<BE> + GLWEInfos,
+{
+    assert_linear_transformation_giant_steps(&[lhs], &[rhs]);
+    let (n, base2k) = (res.n().as_usize(), res.base2k());
+    let baby = lhs.values.values().next().expect("linear transformation baby cache is empty");
+    assert!(
+        (baby.n(), baby.cols(), baby.size()) == (n, 2, lhs_k.as_usize().div_ceil(base2k.as_usize())),
+        "ciphertext-diagonal linear transformation: the baby cache is not two columns of ceil(lhs_k / base2k) limbs \
+         at the degree of res"
+    );
+    let k = rhs.first_diagonal_plaintext().expect("checked non-empty").k();
+    for d in rhs.giant_steps.iter().flat_map(|gs| &gs.diagonals) {
+        let cnv = d.plaintext.to_backend_ref();
+        assert!(
+            (cnv.n(), cnv.cols(), cnv.size(), d.plaintext.base2k(), d.plaintext.k())
+                == (n, 2, k.as_usize().div_ceil(base2k.as_usize()), base2k, k),
+            "ciphertext-diagonal linear transformation: a diagonal is not two columns of ceil(k / base2k) limbs at \
+             the degree and base2k of res and the first diagonal's k"
+        );
+    }
+}
+
 /// The checks of [`glwe_eval_linear_transformation_sum_into_reference`](crate::reference::linear_transformation::glwe_eval_linear_transformation_sum_into_reference), run before it reads a key or writes `res`.
 pub fn assert_linear_transformation_sum<BE: Backend>(
     babies: &[&LinearTransformationBabySteps<BE>],
@@ -109,7 +150,7 @@ fn assert_linear_transformation_giant_steps<BE, P>(
     lts: &[&LinearTransformation<P>],
 ) where
     BE: Backend,
-    P: DiagonalProd<BE>,
+    P: LWEInfos,
 {
     assert!(
         !lts[0].giant_steps.is_empty(),

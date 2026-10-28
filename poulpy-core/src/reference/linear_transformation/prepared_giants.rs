@@ -30,7 +30,7 @@ use crate::{
     api::GLWENormalize,
     gadget::{cnv_offset_to_limb_offset, prod_dft_size},
     layouts::{
-        DiagonalProd, GGLWEInfos, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos,
+        Base2K, DiagonalProd, GGLWEInfos, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos,
         LinearTransformationPlan, ModuleCoreAlloc,
         prepared::{GLWEAutomorphismKeyPreparedBackendRef, PreparedDiagonal},
     },
@@ -104,35 +104,127 @@ pub fn glwe_accumulate_streamed_baby_steps_dft<BE, M, P>(
     glwe_accumulate_unprepared_baby_steps_dft(module, cnv_offset_hi, prod_dft, lhs, gs, scratch);
 }
 
-/// The shared Phase B/C driver: runs the BSGS giant-step loop and finalizes.
+/// The products of the giant steps of one evaluation, which [`glwe_eval_giant_products`] rotates and sums: each
+/// `rank + 1` columns in DFT at [`Self::base2k`] on [`Self::size`] limbs, the low [`Self::cnv_offset_lo`] bits of
+/// the conversion offset left to the final normalization.
+pub(super) trait GiantProducts<BE: Backend> {
+    fn base2k(&self) -> Base2K;
+
+    fn size(&self) -> usize;
+
+    fn cnv_offset_lo(&self) -> i64;
+
+    /// Most giant steps [`Self::products`] takes per call, at least 1.
+    fn batch(&self, module: &Module<BE>) -> usize;
+
+    /// Bytes [`Self::products`] and [`Self::product`] take beside the products, for [`Self::batch`] steps of degree
+    /// `n`.
+    fn tmp_bytes(&self, module: &Module<BE>, n: usize) -> usize;
+
+    /// The products of the giant steps `steps`, `prods[i]` receiving step `steps.start + i`.
+    fn products(
+        &self,
+        module: &Module<BE>,
+        prods: &mut [VecZnxDftBackendMut<'_, BE>],
+        steps: core::ops::Range<usize>,
+        scratch: &mut ScratchArena<'_, BE>,
+    );
+
+    /// The product of giant step `g` alone, for the route that rotates normalized ciphertexts.
+    fn product(&self, module: &Module<BE>, prod: &mut VecZnxDftBackendMut<'_, BE>, g: usize, scratch: &mut ScratchArena<'_, BE>);
+}
+
+/// The products of the transforms `lts` from the baby caches `babies`, summed over the terms `(babies[t], lts[t])`,
+/// in the diagonals' base2k.
+struct PlainProducts<'a, BE: Backend, P> {
+    babies: &'a [&'a LinearTransformationBabySteps<BE>],
+    lts: &'a [&'a LinearTransformation<P>],
+    cnv_offset_hi: usize,
+    cnv_offset_lo: i64,
+}
+
+impl<BE, P> PlainProducts<'_, BE, P>
+where
+    BE: Backend,
+    P: DiagonalProd<BE>,
+{
+    fn diagonal(&self) -> &P {
+        &self.lts[0].giant_steps[0].diagonals[0].plaintext
+    }
+}
+
+impl<BE, P> GiantProducts<BE> for PlainProducts<'_, BE, P>
+where
+    BE: Backend + crate::oep::GGLWEProductDigitsStridedImpl + crate::oep::LinearTransformationImpl,
+    Module<BE>: CnvPVecBytesOf + Convolution<BE> + ModuleN + VecZnxDftAddAssign<BE> + VecZnxDftBytesOf,
+    P: DiagonalProd<BE>,
+{
+    fn base2k(&self) -> Base2K {
+        self.diagonal().base2k()
+    }
+
+    fn size(&self) -> usize {
+        prod_dft_size(self.babies[0].size(), self.diagonal().size(), self.cnv_offset_hi)
+    }
+
+    fn cnv_offset_lo(&self) -> i64 {
+        self.cnv_offset_lo
+    }
+
+    fn batch(&self, module: &Module<BE>) -> usize {
+        P::giant_step_batch(module)
+    }
+
+    fn tmp_bytes(&self, module: &Module<BE>, n: usize) -> usize {
+        plain_products_tmp_bytes::<BE, _>(
+            module,
+            n,
+            self.babies[0].cols(),
+            &PlainProductsShape {
+                cnv_offset_hi: self.cnv_offset_hi,
+                baby_size: self.babies[0].size(),
+                diagonal_size: self.diagonal().size(),
+                prod_size: self.size(),
+                terms: self.babies.len(),
+                batch: self.batch(module),
+            },
+        )
+    }
+
+    fn products(
+        &self,
+        module: &Module<BE>,
+        prods: &mut [VecZnxDftBackendMut<'_, BE>],
+        steps: core::ops::Range<usize>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) {
+        let (n, cols, size) = (prods[0].n(), prods[0].cols(), prods[0].size());
+        let (mut buckets, mut scratch) = take_sum_buckets(scratch.borrow(), self.babies.len(), prods.len(), n, cols, size);
+        let mut buckets: Vec<VecZnxDftBackendMut<'_, BE>> = buckets.iter_mut().map(|bucket| bucket.to_backend_mut()).collect();
+        sum_giant_prods(
+            module,
+            self.cnv_offset_hi,
+            prods,
+            &mut buckets,
+            self.babies,
+            self.lts,
+            steps,
+            &mut scratch,
+        );
+    }
+
+    fn product(&self, module: &Module<BE>, prod: &mut VecZnxDftBackendMut<'_, BE>, g: usize, scratch: &mut ScratchArena<'_, BE>) {
+        sum_giant_prod(module, self.cnv_offset_hi, prod, self.babies, self.lts, g, scratch);
+    }
+}
+
+/// The shared Phase B/C driver over plaintext diagonals: the products of [`PlainProducts`] through
+/// [`glwe_eval_giant_products`].
 ///
-/// Generic over the diagonal type `P: DiagonalProd`, so the *same* loop drives
-/// both the resident transform (`P = PreparedDiagonal`) and the streamed
-/// unprepared transform (`P` a plaintext); only the per-giant PROD block
-/// ([`DiagonalProd::accumulate_giant_prod`]) differs. Implements the giant-step
-/// products, rotations, and final normalization of docs/guides/linear_transformation.md.
-///
-/// For each giant step `j` it computes `PROD = Σ_k ũ_{j,k} ⊙ rot(v,k)` in DFT,
-/// then rotates by `n1·j` and folds the result into a single accumulator. One of
-/// two strategies is chosen up front from the
-/// `base2k` agreement of `res`, the PROD output, and the keys:
-///
-/// - **Lazy DFT path** (hot path; bases agree, or no giant rotation): body add,
-///   giant automorphism, and cross-giant accumulation all stay in `VecZnxDft`.
-///   The only IDFT and the only normalize happen once, at the end. `j == 0`
-///   skips ROT entirely.
-/// - **Fallback path** (base mismatch): PROD is still in DFT, but each giant
-///   contribution is normalized to SMALL and rotated with the public normalized
-///   `glwe_automorphism`. Correct, but gives up the lazy savings.
-///
-/// The terms `(babies[t], lts[t])` share the first one's giant schedule and
-/// diagonal layout, checked by the callers with
-/// [`assert_linear_transformation_into`](crate::layouts::assert_linear_transformation_into) and
+/// The terms `(babies[t], lts[t])` share the first one's giant schedule and diagonal layout, checked by the callers
+/// with [`assert_linear_transformation_into`](crate::layouts::assert_linear_transformation_into) and
 /// [`assert_linear_transformation_sum`](crate::layouts::assert_linear_transformation_sum): each giant step's PROD is
-/// summed over them by `sum_giant_prod` before its single rotation, so one
-/// pair is the single transform.
-///
-/// Writes the encryption of `Σ_t M_t·v_t` into `res`.
+/// summed over them by `sum_giant_prod` before its single rotation, so one pair is the single transform.
 pub(super) fn glwe_eval_giant_steps<BE, R, P, H>(
     module: &Module<BE>,
     cnv_offset: usize,
@@ -182,28 +274,97 @@ pub(super) fn glwe_eval_giant_steps<BE, R, P, H>(
     P: DiagonalProd<BE>,
     H: GetAutomorphismKey<BE>,
 {
+    let base2k = lts[0].giant_steps[0].diagonals[0].plaintext.base2k().as_usize();
+    let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, base2k);
+    let products = PlainProducts {
+        babies,
+        lts,
+        cnv_offset_hi,
+        cnv_offset_lo,
+    };
+    glwe_eval_giant_products(module, res, lts[0], &products, keys, scratch);
+}
+
+/// Runs the BSGS giant-step loop of the schedule of `schedule` over `products`, then finalizes. Implements the
+/// giant-step rotations and final normalization of docs/guides/linear_transformation.md, whatever the product.
+///
+/// For each giant step `j` it takes its product `PROD` in DFT,
+/// then rotates by `n1·j` and folds the result into a single accumulator. One of
+/// two strategies is chosen up front from the
+/// `base2k` agreement of `res`, the PROD output, and the keys:
+///
+/// - **Lazy DFT path** (hot path; bases agree, or no giant rotation): body add,
+///   giant automorphism, and cross-giant accumulation all stay in `VecZnxDft`.
+///   The only IDFT and the only normalize happen once, at the end. `j == 0`
+///   skips ROT entirely.
+/// - **Fallback path** (base mismatch): PROD is still in DFT, but each giant
+///   contribution is normalized to SMALL and rotated with the public normalized
+///   `glwe_automorphism`. Correct, but gives up the lazy savings.
+///
+/// Writes the encryption of `Σ_j rot(PROD_j, n1·j)` into `res`.
+pub(super) fn glwe_eval_giant_products<BE, R, P, Q, H>(
+    module: &Module<BE>,
+    res: &mut R,
+    schedule: &LinearTransformation<P>,
+    products: &Q,
+    keys: &H,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: Backend + crate::oep::GGLWEProductDigitsStridedImpl + crate::oep::LinearTransformationImpl,
+    Module<BE>: GLWEAutomorphism<BE>
+        + GaloisElement
+        + GLWEAdd<BE>
+        + GLWECopy<BE>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+        + CnvPVecBytesOf
+        + Convolution<BE>
+        + ModuleN
+        + GGLWEProductReference<BE>
+        + GLWEKeyswitchInternal<BE>
+        + VecZnxBigAddAssign<BE>
+        + VecZnxBigAlloc<BE>
+        + VecZnxBigAutomorphismAssign<BE>
+        + VecZnxBigAutomorphismAssignTmpBytes
+        + VecZnxBigBytesOf
+        + VecZnxBigFromSmall<BE>
+        + VecZnxBigNormalize<BE>
+        + VecZnxCopy<BE>
+        + VecZnxDftAddAssign<BE>
+        + VecZnxDftApply<BE>
+        + VecZnxDftAutomorphism<BE>
+        + VecZnxDftAlloc<BE>
+        + VecZnxDftBytesOf
+        + VecZnxDftCopy<BE>
+        + VecZnxDftZero<BE>
+        + VecZnxIdftApply<BE>
+        + poulpy_hal::api::VecZnxIdftNormalize<BE>
+        + VecZnxIdftApplyTmpBytes
+        + VecZnxNormalizeAssign<BE>
+        + VecZnxNormalizeTmpBytes
+        + poulpy_hal::api::VecZnxBigNormalizeTmpBytes
+        + poulpy_hal::api::VecZnxGadgetDecomposeTmpBytes
+        + GLWEMulPlain<BE>
+        + poulpy_hal::api::VecZnxIdftNormalizeTmpBytes
+        + poulpy_hal::api::VecZnxDftAutomorphismAddWithPlanTmpBytes,
+    R: GLWEToBackendMut<BE> + GLWEInfos,
+    Q: GiantProducts<BE>,
+    H: GetAutomorphismKey<BE>,
+{
     let cols = res.rank().as_usize() + 1;
     let res_base2k = res.base2k();
     let res_k = res.k().as_usize();
-    let (lhs, rhs) = (babies[0], lts[0]);
+    let rhs = schedule;
 
-    // PROD writes its result in the diagonals' base2k.
-    let first_diagonal = &rhs.giant_steps[0].diagonals[0].plaintext;
-    let prod_base2k = first_diagonal.base2k();
-    let baby_size = lhs.size();
-    let diagonal_size = first_diagonal.size();
-    let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, prod_base2k.as_usize());
-    let prod_size = crate::gadget::prod_dft_size(baby_size, diagonal_size, cnv_offset_hi);
+    let prod_base2k = products.base2k();
+    let prod_size = products.size();
+    let cnv_offset_lo = products.cnv_offset_lo();
 
     if let Some((leaves, levels)) = rhs.rotations.giant_tree(rhs.giant_steps.iter().map(|gs| gs.rot)) {
         let tree = GiantTree {
             leaves: &leaves,
             levels: &levels,
-            prod_size,
-            cnv_offset_hi,
-            cnv_offset_lo,
         };
-        return glwe_eval_giant_tree(module, &tree, res, babies, lts, keys, scratch);
+        return glwe_eval_giant_tree(module, &tree, res, schedule, products, keys, scratch);
     }
 
     let nonzero_giant_rotations = rhs.giant_steps.iter().filter(|gs| gs.rot != 0).count();
@@ -262,31 +423,19 @@ pub(super) fn glwe_eval_giant_steps<BE, R, P, H>(
         // the single BIG -> SMALL normalization.
         // The products of `batch` giant steps are held at once, for a backend
         // that accumulates several per pass over the baby steps.
-        let batch = P::giant_step_batch(module).min(giant_keys.len());
+        let batch = products.batch(module).min(giant_keys.len());
         let (mut prods, scratch_phase) = scratch.take_vec_znx_dft_slice_scratch(res.n().as_usize(), batch, cols, prod_size);
-        let (mut lazy_acc_dft, scratch_phase) = scratch_phase.take_vec_znx_dft_scratch(res.n().as_usize(), cols, lazy_size);
-        let (mut buckets, mut scratch_phase) =
-            take_sum_buckets(scratch_phase, babies.len(), batch, res.n().as_usize(), cols, prod_size);
+        let (mut lazy_acc_dft, mut scratch_phase) = scratch_phase.take_vec_znx_dft_scratch(res.n().as_usize(), cols, lazy_size);
         for col in 0..cols {
             module.vec_znx_dft_zero(&mut lazy_acc_dft, col);
         }
 
         let mut res_initialized = false;
         let mut prods: Vec<VecZnxDftBackendMut<'_, BE>> = prods.iter_mut().map(|prod| prod.to_backend_mut()).collect();
-        let mut buckets: Vec<VecZnxDftBackendMut<'_, BE>> = buckets.iter_mut().map(|bucket| bucket.to_backend_mut()).collect();
         for (g, giant_key) in giant_keys.iter().enumerate() {
             if g % batch == 0 {
                 let steps = g..(g + batch).min(giant_keys.len());
-                sum_giant_prods(
-                    module,
-                    cnv_offset_hi,
-                    &mut prods[..steps.len()],
-                    &mut buckets,
-                    babies,
-                    lts,
-                    steps,
-                    &mut scratch_phase,
-                );
+                products.products(module, &mut prods[..steps.len()], steps, &mut scratch_phase);
             }
             let prod_dft = &mut prods[g % batch];
             let rot = rhs.giant_steps[g].rot;
@@ -355,15 +504,7 @@ pub(super) fn glwe_eval_giant_steps<BE, R, P, H>(
     for (g, giant_key) in giant_keys.iter().enumerate() {
         {
             let mut prod_dft_backend = prod_dft.to_backend_mut();
-            sum_giant_prod(
-                module,
-                cnv_offset_hi,
-                &mut prod_dft_backend,
-                babies,
-                lts,
-                g,
-                &mut scratch_phase,
-            );
+            products.product(module, &mut prod_dft_backend, g, &mut scratch_phase);
             let mut acc_backend = <GLWE<BE::OwnedBuf, BE::ZnxWord> as GLWEToBackendMut<BE>>::to_backend_mut(&mut fallback_acc);
             let prod_dft_ref = poulpy_hal::layouts::vec_znx_dft_backend_ref_from_mut(&prod_dft_backend);
             for col in 0..cols {
@@ -408,29 +549,26 @@ pub(super) fn glwe_eval_giant_steps<BE, R, P, H>(
     }
 }
 
-/// The giant-step tree of [`crate::layouts::BsgsRotations::PowersOfTwo`] and the product layout.
+/// The giant-step tree of [`crate::layouts::BsgsRotations::PowersOfTwo`].
 struct GiantTree<'t> {
     /// The tree node of each giant step's product.
     leaves: &'t [usize],
     levels: &'t [GiantTreeLevel],
-    prod_size: usize,
-    cnv_offset_hi: usize,
-    cnv_offset_lo: i64,
 }
 
-/// [`glwe_eval_giant_steps`] for [`crate::layouts::BsgsRotations::PowersOfTwo`]: every product
+/// [`glwe_eval_giant_products`] for [`crate::layouts::BsgsRotations::PowersOfTwo`]: every product
 /// first, then the tree a level at a time, each level switching with one key.
 ///
 /// The lazy route keeps the nodes in DFT, as the per-rotation one does its accumulator; the
 /// fallback normalizes the products and runs the tree on ciphertexts. Both hold every
 /// product at once, in buffers of their own: the scratch queries take no rotation count.
 #[allow(clippy::type_complexity)]
-fn glwe_eval_giant_tree<BE, R, P, H>(
+fn glwe_eval_giant_tree<BE, R, P, Q, H>(
     module: &Module<BE>,
     tree: &GiantTree<'_>,
     res: &mut R,
-    babies: &[&LinearTransformationBabySteps<BE>],
-    lts: &[&LinearTransformation<P>],
+    schedule: &LinearTransformation<P>,
+    products: &Q,
     keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
@@ -461,14 +599,16 @@ fn glwe_eval_giant_tree<BE, R, P, H>(
         + poulpy_hal::api::VecZnxGadgetDecomposeTmpBytes
         + crate::api::GLWENormalize<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
-    P: DiagonalProd<BE>,
+    Q: GiantProducts<BE>,
     H: GetAutomorphismKey<BE>,
 {
     let n = res.n().as_usize();
     let cols = res.rank().as_usize() + 1;
     let res_base2k = res.base2k();
-    let prod_base2k = lts[0].giant_steps[0].diagonals[0].plaintext.base2k();
-    let steps = lts[0].giant_steps.len();
+    let prod_base2k = products.base2k();
+    let prod_size = products.size();
+    let cnv_offset_lo = products.cnv_offset_lo();
+    let steps = schedule.giant_steps.len();
     let level_keys: Vec<Option<GLWEAutomorphismKeyPreparedBackendRef<'_, BE>>> = tree
         .levels
         .iter()
@@ -485,16 +625,11 @@ fn glwe_eval_giant_tree<BE, R, P, H>(
         .flatten()
         .all(|key| res_base2k == key.base2k() && prod_base2k == key.base2k());
 
-    let diagonal_size = lts[0].giant_steps[0].diagonals[0].plaintext.size();
-    let batch = P::giant_step_batch(module).min(steps);
+    let batch = products.batch(module).min(steps);
     let shape = GiantTreeShape {
-        cnv_offset_hi: tree.cnv_offset_hi,
-        baby_size: babies[0].size(),
-        diagonal_size,
-        prod_size: tree.prod_size,
+        prod_size,
         res_size: res.size(),
-        terms: babies.len(),
-        batch,
+        products_bytes: products.tmp_bytes(module, n),
     };
 
     if !lazy {
@@ -505,32 +640,18 @@ fn glwe_eval_giant_tree<BE, R, P, H>(
                 .iter()
                 .flatten()
                 .map(|key| giant_tree_switch_bytes::<BE, _, _>(module, res, key, false, 0, 0))
-                .fold(giant_tree_work_bytes::<BE, _, _>(module, res, false, &shape, 0), usize::max);
+                .fold(giant_tree_work_bytes::<BE, _>(module, false, &shape, 0), usize::max);
         assert!(
             scratch.available() >= need,
             "glwe_eval_linear_transformation: scratch below its query"
         );
-        let (mut prods, scratch_1) = scratch
-            .borrow()
-            .take_vec_znx_dft_slice_scratch(n, steps, cols, tree.prod_size);
+        let (mut prods, scratch_1) = scratch.borrow().take_vec_znx_dft_slice_scratch(n, steps, cols, prod_size);
         let (mut leaves, mut scratch_1) = scratch_1.take_glwe_slice_scratch(steps, res);
         {
-            let (mut buckets, mut scratch_2) = take_sum_buckets(scratch_1.borrow(), babies.len(), batch, n, cols, tree.prod_size);
-            let mut buckets: Vec<VecZnxDftBackendMut<'_, BE>> =
-                buckets.iter_mut().map(|bucket| bucket.to_backend_mut()).collect();
             let mut views: Vec<VecZnxDftBackendMut<'_, BE>> = prods.iter_mut().map(|p| p.to_backend_mut()).collect();
             for start in (0..steps).step_by(batch) {
                 let range = start..(start + batch).min(steps);
-                sum_giant_prods(
-                    module,
-                    tree.cnv_offset_hi,
-                    &mut views[range.clone()],
-                    &mut buckets,
-                    babies,
-                    lts,
-                    range,
-                    &mut scratch_2,
-                );
+                products.products(module, &mut views[range.clone()], range, &mut scratch_1);
             }
         }
         // Each product is read no more: one inverse transform and normalization per column.
@@ -542,7 +663,7 @@ fn glwe_eval_giant_tree<BE, R, P, H>(
                     &mut leaf_backend.data,
                     res_base2k.as_usize(),
                     res.k().as_usize(),
-                    tree.cnv_offset_lo,
+                    cnv_offset_lo,
                     col,
                     &mut prod_backend,
                     col,
@@ -584,20 +705,20 @@ fn glwe_eval_giant_tree<BE, R, P, H>(
                 res,
                 key,
                 switches,
-                tree.prod_size.saturating_sub(res.size()),
+                prod_size.saturating_sub(res.size()),
             )
         })
         .max()
         .unwrap_or(res.size());
-    let node_size = key_output_size.max(tree.prod_size);
+    let node_size = key_output_size.max(prod_size);
     // A product is stored in a buffer as wide as an accumulator when the layout can view its
     // limbs apart; it is read over its own limbs either way.
-    let wide = BE::DFT_LIMBS_CONTIGUOUS && node_size > tree.prod_size;
+    let wide = BE::DFT_LIMBS_CONTIGUOUS && node_size > prod_size;
 
     // The switches of every level, `(dst, src, accumulate, copy)` over buffers numbered
     // products first: a pair adds into its even node when that is as wide as an accumulator,
     // else into an accumulator of its own, the even node copied there first.
-    let mut sizes = vec![if wide { node_size } else { tree.prod_size }; steps];
+    let mut sizes = vec![if wide { node_size } else { prod_size }; steps];
     let mut zero_tail = vec![false; steps];
     let mut nodes: BTreeMap<usize, usize> = tree.leaves.iter().enumerate().map(|(g, &leaf)| (leaf, g)).collect();
     let mut plan: Vec<Vec<(usize, usize, bool, Option<usize>)>> = Vec::with_capacity(tree.levels.len());
@@ -630,7 +751,7 @@ fn glwe_eval_giant_tree<BE, R, P, H>(
     }
     let root = nodes[&0];
     // Read as a source over the limbs it held before the level that reads it.
-    let mut held = vec![tree.prod_size; steps];
+    let mut held = vec![prod_size; steps];
     held.resize(sizes.len(), node_size);
 
     let node_bytes: usize = sizes
@@ -646,10 +767,7 @@ fn glwe_eval_giant_tree<BE, R, P, H>(
                 key.as_ref()
                     .map(|key| giant_tree_switch_bytes::<BE, _, _>(module, res, key, true, switches.len(), node_size))
             })
-            .fold(
-                giant_tree_work_bytes::<BE, _, _>(module, res, true, &shape, node_size),
-                usize::max,
-            );
+            .fold(giant_tree_work_bytes::<BE, _>(module, true, &shape, node_size), usize::max);
     assert!(
         scratch.available() >= need,
         "glwe_eval_linear_transformation: scratch below its query"
@@ -665,30 +783,17 @@ fn glwe_eval_giant_tree<BE, R, P, H>(
     {
         let mut full: Vec<VecZnxDftBackendMut<'_, BE>> = buffers[..steps].iter_mut().map(|p| p.to_backend_mut()).collect();
         {
-            let (mut buckets, mut products_arena) =
-                take_sum_buckets(arena.borrow(), babies.len(), batch, n, cols, tree.prod_size);
-            let mut buckets: Vec<VecZnxDftBackendMut<'_, BE>> =
-                buckets.iter_mut().map(|bucket| bucket.to_backend_mut()).collect();
             let mut views: Vec<VecZnxDftBackendMut<'_, BE>> =
-                full.iter_mut().map(|p| p.with_limb_range_mut(0, tree.prod_size)).collect();
+                full.iter_mut().map(|p| p.with_limb_range_mut(0, prod_size)).collect();
             for start in (0..steps).step_by(batch) {
                 let range = start..(start + batch).min(steps);
-                sum_giant_prods(
-                    module,
-                    tree.cnv_offset_hi,
-                    &mut views[range.clone()],
-                    &mut buckets,
-                    babies,
-                    lts,
-                    range,
-                    &mut products_arena,
-                );
+                products.products(module, &mut views[range.clone()], range, &mut arena.borrow());
             }
         }
         // The limbs past the product of a buffer accumulated in place.
         for (leaf, view) in full.iter_mut().enumerate() {
             if zero_tail[leaf] {
-                let mut tail = view.with_limb_range_mut(tree.prod_size, node_size);
+                let mut tail = view.with_limb_range_mut(prod_size, node_size);
                 for col in 0..cols {
                     module.vec_znx_dft_zero(&mut tail, col);
                 }
@@ -752,7 +857,7 @@ fn glwe_eval_giant_tree<BE, R, P, H>(
             &mut res_backend.data,
             res_base2k.as_usize(),
             res_k,
-            tree.cnv_offset_lo,
+            cnv_offset_lo,
             col,
             &mut root_view,
             col,
@@ -778,6 +883,16 @@ fn two_buffers<T>(buffers: &mut [T], dst: usize, src: usize) -> (&mut T, &T) {
 /// The sizes the giant-step tree lays its scratch out from: a transform's in its evaluation,
 /// upper bounds of them in [`glwe_eval_giant_tree_tmp_bytes`].
 struct GiantTreeShape {
+    /// Limbs of a giant step's product.
+    prod_size: usize,
+    /// Limbs of the destination.
+    res_size: usize,
+    /// Bytes the products of a batch take beside their buffers ([`GiantProducts::tmp_bytes`]).
+    products_bytes: usize,
+}
+
+/// The sizes the products of [`PlainProducts`] lay their scratch out from.
+struct PlainProductsShape {
     cnv_offset_hi: usize,
     /// Limbs of a baby rotation.
     baby_size: usize,
@@ -785,12 +900,35 @@ struct GiantTreeShape {
     diagonal_size: usize,
     /// Limbs of a giant step's product.
     prod_size: usize,
-    /// Limbs of the destination.
-    res_size: usize,
     /// Terms of a sum, one for a single transform.
     terms: usize,
     /// Giant steps whose products are computed together.
     batch: usize,
+}
+
+/// Bytes the products of a batch of [`PlainProducts`] take beside their buffers, of degree `n` and `cols` columns.
+fn plain_products_tmp_bytes<BE, M>(module: &M, n: usize, cols: usize, shape: &PlainProductsShape) -> usize
+where
+    BE: Backend,
+    M: Convolution<BE> + CnvPVecBytesOf + VecZnxDftBytesOf,
+{
+    // A later term of a sum is computed into a bucket per step of a batch, a streamed diagonal prepared into a slot
+    // and multiplied a diagonal at a time.
+    let bucket = if shape.terms > 1 {
+        shape.batch * BE::scratch_aligned(module.bytes_of_vec_znx_dft(n, cols, shape.prod_size))
+    } else {
+        0
+    };
+    bucket
+        + BE::scratch_aligned(module.bytes_of_cnv_pvec_right(n, 1, shape.diagonal_size, PrepareHint::OneShot))
+        + glwe_accumulate_prepared_baby_steps_dft_tmp_bytes::<BE, _>(
+            module,
+            shape.cnv_offset_hi,
+            shape.baby_size,
+            shape.diagonal_size,
+        )
+        .max(module.cnv_apply_dft_tmp_bytes(shape.cnv_offset_hi, shape.prod_size, shape.baby_size, shape.diagonal_size))
+        .max(module.cnv_prepare_right_tmp_bytes(shape.diagonal_size, shape.diagonal_size))
 }
 
 /// Bytes of the buffers of a giant step on the route on ciphertexts: its product and that
@@ -807,30 +945,12 @@ where
 /// Bytes of the work of the giant-step tree beside its buffers that no key sizes: a product,
 /// then the normalizations, of the root of `node_size` limbs on the lazy route, of each
 /// product and of the root on the route on ciphertexts.
-fn giant_tree_work_bytes<BE, M, R>(module: &M, res: &R, lazy: bool, shape: &GiantTreeShape, node_size: usize) -> usize
+fn giant_tree_work_bytes<BE, M>(module: &M, lazy: bool, shape: &GiantTreeShape, node_size: usize) -> usize
 where
     BE: Backend,
-    M: Convolution<BE> + CnvPVecBytesOf + VecZnxDftBytesOf + VecZnxIdftNormalizeTmpBytes + GLWENormalize<BE>,
-    R: GLWEInfos,
+    M: VecZnxIdftNormalizeTmpBytes + GLWENormalize<BE>,
 {
-    let (n, cols) = (res.n().as_usize(), res.rank().as_usize() + 1);
-    // A later term of a sum is computed into a bucket per step of a batch, a streamed diagonal prepared into a slot
-    // and multiplied a diagonal at a time.
-    let bucket = if shape.terms > 1 {
-        shape.batch * BE::scratch_aligned(module.bytes_of_vec_znx_dft(n, cols, shape.prod_size))
-    } else {
-        0
-    };
-    let prod = bucket
-        + BE::scratch_aligned(module.bytes_of_cnv_pvec_right(n, 1, shape.diagonal_size, PrepareHint::OneShot))
-        + glwe_accumulate_prepared_baby_steps_dft_tmp_bytes::<BE, _>(
-            module,
-            shape.cnv_offset_hi,
-            shape.baby_size,
-            shape.diagonal_size,
-        )
-        .max(module.cnv_apply_dft_tmp_bytes(shape.cnv_offset_hi, shape.prod_size, shape.baby_size, shape.diagonal_size))
-        .max(module.cnv_prepare_right_tmp_bytes(shape.diagonal_size, shape.diagonal_size));
+    let prod = shape.products_bytes;
     let normalize = if lazy {
         module.vec_znx_idft_normalize_tmp_bytes(shape.res_size, node_size)
     } else {
@@ -900,39 +1020,72 @@ where
     B: LWEInfos,
     K: GGLWEInfos,
 {
+    // No conversion offset retains the widest product.
+    let products = PlainProductsShape {
+        cnv_offset_hi: 0,
+        baby_size: a.max_size(),
+        diagonal_size: pt.max_size(),
+        prod_size: prod_dft_size(a.max_size(), pt.max_size(), 0),
+        terms: 1,
+        batch: BE::glwe_giant_step_batch(module).min(plan.giant_steps.len()),
+    };
+    let (n, cols) = (res.n().as_usize(), res.rank().as_usize() + 1);
+    let products_bytes = plain_products_tmp_bytes::<BE, _>(module, n, cols, &products);
+    giant_tree_tmp_bytes(module, res, products.prod_size, products_bytes, plan, key)
+}
+
+/// Bytes the giant-step tree of a transform on [`crate::layouts::BsgsRotations::PowersOfTwo`]
+/// with the schedule `plan` takes from the scratch, the larger of its two routes, for products of `prod_size` limbs
+/// taking `products_bytes` beside their buffers: `res` is the destination and `key` the widest giant key. Zero for
+/// [`crate::layouts::BsgsRotations::PerRotation`].
+pub(super) fn giant_tree_tmp_bytes<BE, R, K>(
+    module: &Module<BE>,
+    res: &R,
+    prod_size: usize,
+    products_bytes: usize,
+    plan: &LinearTransformationPlan,
+    key: &K,
+) -> usize
+where
+    BE: Backend + crate::oep::GGLWEProductDigitsStridedImpl,
+    Module<BE>: ModuleN
+        + GLWEAutomorphism<BE>
+        + GLWENormalize<BE>
+        + VecZnxBigBytesOf
+        + VecZnxDftAutomorphismAddWithPlanTmpBytes
+        + VecZnxDftBytesOf
+        + VecZnxIdftNormalizeTmpBytes
+        + VecZnxGadgetDecomposeTmpBytes,
+    R: GLWEInfos,
+    K: GGLWEInfos,
+{
     let Some((_, levels)) = plan.rotations.giant_tree(plan.giant_steps.iter().copied()) else {
         return 0;
     };
     let (n, cols) = (res.n().as_usize(), res.rank().as_usize() + 1);
     let steps = plan.giant_steps.len();
     let switches: usize = levels.iter().map(|level| level.pairs.len()).sum();
-    // No conversion offset retains the widest product; a key-switch output is no wider than
-    // its key, and a tree without one keeps nodes as wide as the destination.
     let shape = GiantTreeShape {
-        cnv_offset_hi: 0,
-        baby_size: a.max_size(),
-        diagonal_size: pt.max_size(),
-        prod_size: prod_dft_size(a.max_size(), pt.max_size(), 0),
+        prod_size,
         res_size: res.max_size(),
-        terms: 1,
-        batch: BE::glwe_giant_step_batch(module).min(steps),
+        products_bytes,
     };
+    // A key-switch output is no wider than its key, and a tree without one keeps nodes as wide as the destination.
     let node_size = key.size().max(shape.prod_size).max(shape.res_size);
     // A buffer per giant step and at most one per switch, as wide as a node, beside the switches
     // of the level of most switches.
     let widest = levels.iter().map(|level| level.pairs.len()).max().unwrap_or(0);
     let lazy = (steps + switches) * BE::scratch_aligned(module.bytes_of_vec_znx_dft(n, cols, node_size))
-        + giant_tree_work_bytes::<BE, _, _>(module, res, true, &shape, node_size)
+        + giant_tree_work_bytes::<BE, _>(module, true, &shape, node_size)
             .max(giant_tree_switch_bytes::<BE, _, _>(module, res, key, true, widest, node_size));
     let fallback = steps * giant_tree_fallback_buffer_bytes::<BE, _>(module, n, cols, &shape)
-        + giant_tree_work_bytes::<BE, _, _>(module, res, false, &shape, node_size)
+        + giant_tree_work_bytes::<BE, _>(module, false, &shape, node_size)
             .max(giant_tree_switch_bytes::<BE, _, _>(module, res, key, false, 0, node_size));
     lazy.max(fallback)
 }
 
 /// The buckets [`sum_giant_prods`] computes the later terms of a sum into: one per product of a
-/// batch of `batch` products of `size` limbs, carved once per evaluation, and none for a single
-/// transform.
+/// batch of `batch` products of `size` limbs, and none for a single transform.
 fn take_sum_buckets<BE: Backend>(
     scratch: ScratchArena<'_, BE>,
     terms: usize,

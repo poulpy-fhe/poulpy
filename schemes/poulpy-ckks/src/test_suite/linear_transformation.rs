@@ -7,13 +7,15 @@
 //! scheme-agnostic plaintext evaluator [`ComplexDiagonals`] / [`Evaluate`],
 //! which the homomorphic engine must match up to CKKS precision.
 
-use crate::api::CKKSEncodingOps;
+use crate::api::{CKKSEncodingOps, CKKSMulOps};
+use crate::layouts::CKKSModuleAlloc;
 use std::collections::{HashMap, HashSet};
 
 use poulpy_core::layouts::{
-    Diagonals, Evaluate, GGLWEInfos, GLWEInfos, GetAutomorphismKey, LWEInfos, LinearTransformationPlan,
-    LinearTransformationStrategy, SetGLWEPlaintextInfos, TorusPrecision, k_digit_of,
+    Diagonals, Evaluate, GGLWEInfos, GLWEInfos, GetAutomorphismKey, LWEInfos, LinearTransformationLayout,
+    LinearTransformationPlan, LinearTransformationStrategy, SetGLWEPlaintextInfos, TorusPrecision, k_digit_of,
     prepared::{GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedBackendRef, GLWEAutomorphismKeyPreparedToBackendRef},
+    rotate_slots_into,
 };
 use poulpy_hal::{
     api::{CnvPVecAlloc, CnvPVecBytesOf, NegacyclicFFT, NegacyclicFFTNew, ScratchAvailable, ScratchOwnedBorrow},
@@ -33,7 +35,7 @@ use crate::{
         helpers::{
             QueryLog, TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_ckks_error,
             assert_ckks_internal, assert_decrypt_precision, assert_invalid_operand, ckks_encrypt, dirty_ct, gen_atk,
-            gen_sk_with_raw, test_vector_1, test_vector_2, want_add,
+            gen_sk_with_raw, gen_tsk, test_vector_1, test_vector_2, want_add,
         },
         parity::helpers::{snapshot, with_scratch},
     },
@@ -1149,4 +1151,143 @@ pub fn test_linear_transformation_mixed_key_layouts<BE, F, E>(
         module.ckks_eval_linear_transformation_self_into(&mut res, &ct, &prepared, &keys, s)
     })
     .unwrap();
+}
+
+/// `dec(lt(enc(a), M)) ≈ B·a` for a transform `M` whose diagonals are the encrypted, pre-rotated diagonals of `B`, on
+/// the per-rotation and the power-of-two schedules, in a transform allocated by
+/// `ckks_ct_linear_transformation_alloc_from_infos` and run on its exact poisoned budget. A diagonal of another width is
+/// refused before `dst` is written.
+pub fn test_ct_linear_transformation<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend<Ring = Standard>,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE> + CKKSLinearTransformationOps<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    const OP: &str = "ckks_eval_ct_linear_transformation_into";
+    let m = params.n / 2;
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
+    let (a_re, a_im) = test_vector_1::<F>(m);
+    let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+    let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
+    let indexes = [0, 1, 2, 3, 4, 5];
+    let b = complex_diagonals::<F>(&indexes, m, 0);
+    let order = module.cyclotomic_order();
+    let src = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &a_re,
+        &a_im,
+        &mut scratch.borrow(),
+    );
+    let (mut pre_re, mut pre_im) = (vec![F::zero(); m], vec![F::zero(); m]);
+
+    for strategy in [
+        LinearTransformationStrategy::Bsgs { giant_step: 2 },
+        LinearTransformationStrategy::BsgsPowersOfTwo { giant_step: 2 },
+    ] {
+        let layout = LinearTransformationLayout {
+            indexes: indexes.iter().map(|&i| i as i64).collect(),
+            slots: m,
+            strategy,
+        };
+        let plan = layout.index();
+        let atks: HashMap<_, _> = plan
+            .galois_elements(order)
+            .into_iter()
+            .map(|p| (p, gen_atk(&params, module, p, &sk_raw, &mut scratch.borrow())))
+            .collect();
+        let mut lt = module.ckks_ct_linear_transformation_alloc_from_infos(&layout, &src, PrepareHint::Reuse);
+        for gs in &mut lt.giant_steps {
+            for d in &mut gs.diagonals {
+                let (re, im) = diagonal::<F>((gs.rot + d.baby) as usize, m);
+                rotate_slots_into(&re, -gs.rot, &mut pre_re);
+                rotate_slots_into(&im, -gs.rot, &mut pre_im);
+                let ct = ckks_encrypt(
+                    &params,
+                    module,
+                    host_module,
+                    &encoder,
+                    &sk,
+                    params.k,
+                    &pre_re,
+                    &pre_im,
+                    &mut scratch.borrow(),
+                );
+                with_scratch::<BE, _>(module.ckks_prepare_tmp_bytes(&ct), |s| {
+                    module.ckks_prepare_right_into(&mut d.plaintext, &ct, s)
+                })
+                .unwrap();
+            }
+        }
+        let mut babies = LinearTransformationBabySteps::alloc(module, &plan.baby_steps, &src);
+        with_scratch::<BE, _>(
+            module.ckks_prepare_linear_transformation_baby_steps_tmp_bytes(&src, &plan, &params.atk_layout()),
+            |s| module.ckks_prepare_linear_transformation_baby_steps(&mut babies, &src, &atks, s),
+        )
+        .unwrap();
+        let bytes =
+            module.ckks_eval_ct_linear_transformation_tmp_bytes(&src, &src, &plan, &params.atk_layout(), &params.tsk_layout());
+        let mut dst = alloc_ct(&params, module, params.k);
+        with_scratch::<BE, _>(bytes, |s| {
+            module.ckks_eval_ct_linear_transformation_into(&mut dst, &src, &babies, &lt, &tsk, &atks, s)
+        })
+        .unwrap();
+        let (want_re, want_im) = b.evaluate((a_re.as_slice(), a_im.as_slice()), strategy);
+        assert_decrypt_precision(
+            &format!("ct_linear_transformation {strategy:?}"),
+            &params,
+            module,
+            &encoder,
+            &dst,
+            &sk,
+            &want_re,
+            &want_im,
+            &mut scratch.borrow(),
+        );
+
+        // A diagonal of another width than the first.
+        let narrow = ckks_encrypt(
+            &params,
+            module,
+            host_module,
+            &encoder,
+            &sk,
+            params.k - params.base2k,
+            &pre_re,
+            &pre_im,
+            &mut scratch.borrow(),
+        );
+        let last = lt.giant_steps.last_mut().unwrap().diagonals.last_mut().unwrap();
+        last.plaintext = with_scratch::<BE, _>(module.ckks_prepare_tmp_bytes(&narrow), |s| {
+            module.ckks_prepare_right(&narrow, PrepareHint::Reuse, s)
+        })
+        .unwrap();
+        let mut refused = alloc_ct(&params, module, params.k);
+        let before = snapshot::<BE, _>(&refused);
+        let err = with_scratch::<BE, _>(bytes, |s| {
+            module.ckks_eval_ct_linear_transformation_into(&mut refused, &src, &babies, &lt, &tsk, &atks, s)
+        })
+        .unwrap_err();
+        assert_invalid_operand(
+            &format!("{strategy:?}"),
+            &err,
+            OP,
+            "every diagonal must share one layout and scale",
+        );
+        assert!(
+            snapshot::<BE, _>(&refused) == before,
+            "{strategy:?}: a refused call wrote into dst"
+        );
+    }
 }

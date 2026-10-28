@@ -7,7 +7,8 @@ use poulpy_bin_fhe::{
     },
 };
 use poulpy_ckks::api::{
-    CKKSAddOps, CKKSConjugateOps, CKKSEncodingOps, CKKSMulOps, CKKSNegOps, CKKSPow2Ops, CKKSRotateOps, CKKSSubOps,
+    CKKSAddOps, CKKSConjugateOps, CKKSDotProductOps, CKKSEncodingOps, CKKSLinearTransformationOps, CKKSMulOps, CKKSNegOps,
+    CKKSPow2Ops, CKKSRotateOps, CKKSSubOps,
 };
 use poulpy_core::{
     GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, GLWEMaskFill, LWEEncryptSk, LWEFillMask,
@@ -19,7 +20,7 @@ use poulpy_core::{
 use poulpy_hal::AlignedBuf;
 use poulpy_hal::api::ModuleSynchronize;
 use poulpy_hal::{
-    api::{ModuleN, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxRotateAssign},
+    api::{CnvPVecAlloc, ModuleN, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxRotateAssign},
     layouts::{Backend, HostBackend, Module, ScratchOwned},
 };
 
@@ -187,6 +188,36 @@ where
     }]
 }
 
+// ── linear transformation ────────────────────────────────────────────────────
+
+pub fn ckks_linear_transformation_ops<BE: Backend<ZnxWord = i64>, M: criterion::measurement::Measurement>()
+-> [BenchOp<M, CkksBenchParams>; 2]
+where
+    Module<BE>: ModuleNew<BE>
+        + ModuleSynchronize<BE>
+        + CKKSLinearTransformationOps<BE>
+        + CKKSMulOps<BE>
+        + CKKSDotProductOps<BE>
+        + CKKSRotateOps<BE>
+        + CKKSAddOps<BE>
+        + CnvPVecAlloc<BE>
+        + GLWEAutomorphismKeyPreparedFactory<BE>
+        + GLWETensorKeyPreparedFactory<BE>,
+{
+    [
+        BenchOp {
+            layer: "ckks",
+            name: "ckks_eval_ct_linear_transformation_into",
+            runner: ckks::runner_ckks_eval_ct_linear_transformation_into::<BE, _>,
+        },
+        BenchOp {
+            layer: "ckks",
+            name: "ckks_eval_ct_linear_transformation_composed",
+            runner: ckks::runner_ckks_eval_ct_linear_transformation_composed::<BE, _>,
+        },
+    ]
+}
+
 // ── encoding ─────────────────────────────────────────────────────────────────
 
 pub fn ckks_encoding_ops<BE: Backend<ZnxWord = i64>, M: criterion::measurement::Measurement>() -> [BenchOp<M, CkksBenchParams>; 4]
@@ -235,7 +266,10 @@ where
         + CKKSRotateOps<BE>
         + GLWEAutomorphismKeyPreparedFactory<BE>
         + CKKSConjugateOps<BE>
-        + CKKSEncodingOps<BE, f64>,
+        + CKKSEncodingOps<BE, f64>
+        + CKKSLinearTransformationOps<BE>
+        + CKKSDotProductOps<BE>
+        + CnvPVecAlloc<BE>,
 {
     let mut ops: Vec<BenchOp<M, CkksBenchParams>> = Vec::new();
     ops.extend(ckks_add_ops::<BE, _>());
@@ -246,6 +280,7 @@ where
     ops.extend(ckks_rotate_ops::<BE, _>());
     ops.extend(ckks_conjugate_ops::<BE, _>());
     ops.extend(ckks_encoding_ops::<BE, _>());
+    ops.extend(ckks_linear_transformation_ops::<BE, _>());
     ops
 }
 
@@ -439,7 +474,10 @@ where
         + CKKSRotateOps<BE>
         + GLWEAutomorphismKeyPreparedFactory<BE>
         + CKKSConjugateOps<BE>
-        + CKKSEncodingOps<BE, f64>,
+        + CKKSEncodingOps<BE, f64>
+        + CKKSLinearTransformationOps<BE>
+        + CKKSDotProductOps<BE>
+        + CnvPVecAlloc<BE>,
 {
     bench_ops(PhantomData::<BE>, &all_ops::<BE, WallTime>(), default_bench_params_ckks(), c);
 }

@@ -14,8 +14,8 @@ use poulpy_core::{
     DiagonalProd, GLWELinearTransformations, LinearTransformationBabySteps, LinearTransformationGiantStep,
     LinearTransformationPrepared,
     layouts::{
-        BsgsRotations, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, TorusPrecision,
-        prepared::PreparedDiagonal,
+        BsgsRotations, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos,
+        TorusPrecision, prepared::PreparedDiagonal,
     },
     reference::linear_transformation::glwe_accumulate_streamed_baby_steps_dft,
 };
@@ -28,10 +28,11 @@ use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, SetCKKSInfos,
     api::{CKKSCopyOps, LinearTransformation, LtDiagonalMeta},
     layouts::{
-        CKKSPlaintext,
+        CKKSPlaintext, CKKSPreparedRight,
         validation::{ensure_prepared_transformation_layout, ensure_uniform_diagonals},
     },
-    mul_pt_params_raw,
+    mul_ct_params_raw, mul_pt_params_raw,
+    reference::mul::{check_prepared_layout, mul_one_pass},
 };
 use poulpy_core::GLWEBytesOf;
 
@@ -386,6 +387,103 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         dst.set_log_delta(res_log_delta);
         dst.set_log_sparsity(log_sparsity);
         self.glwe_eval_linear_transformation_sum_into(cnv_offset, dst, babies, lts, keys, scratch);
+        dst.set_slots(slots);
+        Ok(())
+    }
+
+    /// Core's query with `ct` standing in for the destination and the source.
+    fn ckks_eval_ct_linear_transformation_tmp_bytes_reference<C, D, K, T>(
+        &self,
+        ct: &C,
+        diagonal: &D,
+        plan: &LinearTransformationPlan,
+        key: &K,
+        tsk: &T,
+    ) -> usize
+    where
+        Self: GLWELinearTransformations<BE>,
+        C: CKKSCtBounds,
+        D: GLWEInfos,
+        K: GGLWEInfos,
+        T: GGLWEInfos,
+    {
+        self.glwe_eval_ct_linear_transformation_tmp_bytes(ct, ct, diagonal, plan, key, tsk)
+    }
+
+    /// The rule of `ckks_mul_into` between `src` and the first diagonal, after the checks of
+    /// `ckks_dot_product_prepared` on the diagonals and of the one-pass product, then core's
+    /// `glwe_eval_ct_linear_transformation_into`.
+    #[allow(clippy::too_many_arguments)]
+    fn ckks_eval_ct_linear_transformation_into_reference<Dst, Src, T, H>(
+        &self,
+        dst: &mut Dst,
+        src: &Src,
+        babies: &LinearTransformationBabySteps<BE>,
+        lt: &LinearTransformation<CKKSPreparedRight<BE>>,
+        tsk: &T,
+        keys: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Self: GLWELinearTransformations<BE> + CyclotomicOrder,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+        T: GetTensorKey<BE>,
+        H: GetAutomorphismKey<BE>,
+    {
+        const OP: &str = "ckks_eval_ct_linear_transformation_into";
+        let first = lt.first_diagonal_plaintext().ok_or_else(|| -> CKKSError {
+            CKKSCompositionError::InvalidOperand {
+                op: OP,
+                reason: "linear transformation has no diagonals".into(),
+            }
+            .into()
+        })?;
+        for diagonal in lt.giant_steps.iter().flat_map(|gs| &gs.diagonals) {
+            check_prepared_layout(OP, &*dst, &diagonal.plaintext)?;
+            ckks_ensure_operand!(
+                OP,
+                (diagonal.plaintext.glwe_layout(), diagonal.plaintext.log_delta()) == (first.glwe_layout(), first.log_delta()),
+                "every diagonal must share one layout and scale"
+            );
+        }
+        ckks_ensure_operand!(
+            OP,
+            dst.base2k().as_usize() <= 62,
+            "base2k {} > 62: two canonical tensor digits can overflow an i64",
+            dst.base2k().as_usize()
+        );
+        let (res_log_budget, res_log_delta, cnv_offset) = mul_ct_params_raw(
+            OP,
+            dst.k().as_usize(),
+            src.log_delta(),
+            src.k().into(),
+            first.log_delta(),
+            first.k().into(),
+        )?;
+        let tensor_k = src.k().max(first.k());
+        tsk.get_tensor_key(tensor_k)
+            .map_err(|source| CKKSCompositionError::MissingRelinearizationKey {
+                op: OP,
+                k: tensor_k.into(),
+                source,
+            })?;
+        ckks_ensure_operand!(
+            OP,
+            mul_one_pass(&*dst, &[src.base2k(), first.base2k()], tensor_k, cnv_offset, tsk),
+            "the one-pass product needs rank 1, one base2k across dst, src, the diagonals and the tensor key, and a \
+             conversion offset of at least base2k"
+        );
+        let res_k: TorusPrecision = (res_log_budget + res_log_delta).into();
+        let cyclotomic_order = operand_cyclotomic_order(OP, self, src.n().as_usize())?;
+        check_required_keys(OP, lt, babies, keys, cyclotomic_order, res_k)?;
+        // The products of values sparse at `s` and `t` are sparse at `min(s, t)`.
+        let slots = src.slots().join(first.slots());
+        let log_sparsity = src.log_sparsity().min(first.log_sparsity());
+        dst.set_log_budget(res_log_budget);
+        dst.set_log_delta(res_log_delta);
+        dst.set_log_sparsity(log_sparsity);
+        self.glwe_eval_ct_linear_transformation_into(cnv_offset, dst, babies, src.k(), lt, tsk, keys, scratch);
         dst.set_slots(slots);
         Ok(())
     }

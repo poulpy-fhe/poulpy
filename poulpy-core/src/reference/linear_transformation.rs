@@ -8,6 +8,7 @@
 //! and rotations, and final normalization.
 
 mod baby_steps;
+mod ciphertext_diagonals;
 mod eval;
 mod inner_product;
 mod lazy;
@@ -29,6 +30,9 @@ pub use crate::layouts::{
 };
 
 // Reference implementations forwarded to from `crate::oep::LinearTransformationImpl`.
+pub use ciphertext_diagonals::{
+    glwe_eval_ct_linear_transformation_into_reference, glwe_eval_ct_linear_transformation_tmp_bytes_reference,
+};
 pub use eval::{
     glwe_eval_linear_transformation_into_reference, glwe_eval_linear_transformation_sum_into_reference,
     glwe_eval_linear_transformation_sum_tmp_bytes_reference, glwe_eval_linear_transformation_tmp_bytes_reference,

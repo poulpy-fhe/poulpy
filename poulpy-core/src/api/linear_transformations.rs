@@ -8,11 +8,11 @@
 
 #![allow(clippy::too_many_arguments)]
 
-use poulpy_hal::layouts::{Backend, ScratchArena};
+use poulpy_hal::layouts::{Backend, CnvPVecRToBackendRef, ScratchArena};
 
 use crate::layouts::{
-    GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, LinearTransformation,
-    LinearTransformationPlan,
+    GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos, LinearTransformation,
+    LinearTransformationPlan, TorusPrecision,
     prepared::{LinearTransformationBabySteps, LinearTransformationPrepared, PreparedDiagonal},
 };
 
@@ -194,5 +194,60 @@ pub trait GLWELinearTransformations<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
+        H: GetAutomorphismKey<BE>;
+
+    /// Scratch bytes required by [`Self::glwe_eval_ct_linear_transformation_into`] for a transform with the schedule
+    /// `plan` from a source of layout `a` into `res`, with diagonals of layout `b`, giant keys no wider than `key` and
+    /// the tensor key `tsk` at the larger of the source's and the diagonals' widths.
+    fn glwe_eval_ct_linear_transformation_tmp_bytes<R, A, B, K, T>(
+        &self,
+        res: &R,
+        a: &A,
+        b: &B,
+        plan: &LinearTransformationPlan,
+        key: &K,
+        tsk: &T,
+    ) -> usize
+    where
+        R: GLWEInfos,
+        A: GLWEInfos,
+        B: GLWEInfos,
+        K: GGLWEInfos,
+        T: GGLWEInfos;
+
+    /// Computes `res = M(a)` where the diagonals of `M` are rank-1 ciphertexts prepared as right operands by
+    /// [`crate::glwe_prepare_right`], from the baby cache `lhs` of `a`, of width `lhs_k`.
+    ///
+    /// Giant step `g`'s product is
+    /// [`GLWEPreparedTensoring::glwe_mul_prepared_relinearize_sum`](crate::GLWEPreparedTensoring::glwe_mul_prepared_relinearize_sum)
+    /// of its baby rotations by its diagonals, at `cnv_offset` and the width of `res`, left in the transform domain
+    /// before that sum's final normalization, so a transform of one giant step at rotation 0 is that sum, bit for bit.
+    /// The products are rotated and summed as by [`Self::glwe_eval_linear_transformation_into`] and normalized once
+    /// into `res`, canonical at `res.k()`. Diagonal `(baby, giant)` multiplies the baby rotation `baby` of `a` and its
+    /// product is rotated by `giant`, so it holds the diagonal pre-rotated by `-giant`, as the encoder of a plaintext
+    /// transform stores it. A giant step's products accumulate unnormalized, as in the sum: pick `base2k` for that
+    /// many products (`Module::max_base2k`).
+    ///
+    /// # Panics
+    ///
+    /// Before writing `res`: under the conditions of [`Self::glwe_eval_linear_transformation_into`]; unless the cache
+    /// and every diagonal are two columns of the degree and `base2k` of `res` on `ceil(k / base2k)` limbs, `k` being
+    /// `lhs_k` for the cache and the first diagonal's width for every diagonal; under the conditions of the prepared
+    /// sum (rank 1, `cnv_offset >= base2k`, a tensor key at the larger width, of the `base2k` of `res`).
+    #[allow(clippy::too_many_arguments)]
+    fn glwe_eval_ct_linear_transformation_into<R, D, T, H>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        lhs: &LinearTransformationBabySteps<BE>,
+        lhs_k: TorusPrecision,
+        rhs: &LinearTransformation<D>,
+        tsk: &T,
+        keys: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        D: CnvPVecRToBackendRef<BE> + GLWEInfos,
+        T: GetTensorKey<BE>,
         H: GetAutomorphismKey<BE>;
 }
