@@ -44,22 +44,41 @@ pub struct NttGeometry {
     pub log_threads: u32,
     /// log2 of the least number of tiles in a workgroup.
     pub log_tiles: u32,
+    /// log2 of the least number of tiles in a workgroup of a launch on
+    /// strided columns: its loads and stores are runs of that many adjacent
+    /// words.
+    pub log_strided_tiles: u32,
+    /// log2 of the most lanes, 32-bit words, a workgroup holds in shared memory.
+    pub log_shared_lanes: u32,
 }
 
 impl NttGeometry {
     /// A GPU: up to twelve stages per launch, workgroups of 128 threads and 8 tiles at least.
     ///
-    /// Twelve stages: a tile of `2^12` lanes fills the 16 KiB of workgroup
-    /// memory WebGPU guarantees. 128 threads and 8 tiles: on an Apple M5 Pro
-    /// (Metal through wgpu, CubeCL 0.11.3), no neighbour (64 or 256 threads,
-    /// 4 or 16 tiles) runs `vec_znx_dft_apply` or `vec_znx_idft_apply` of the
-    /// standard bench at degrees `2^13` to `2^15` faster beyond the 3% between
-    /// two baseline runs, while 64 threads is up to 20% slower and 4 or 16
-    /// tiles up to 8% slower.
+    /// Twelve stages and `2^12` lanes in shared memory: a tile of `2^12` lanes
+    /// fills the 16 KiB of workgroup memory WebGPU guarantees.
+    ///
+    /// Measured on an Apple M5 Pro (Metal through wgpu, CubeCL 0.11.3) with
+    /// `vec_znx_dft_apply` and `vec_znx_idft_apply` of the standard bench at
+    /// degrees `2^13` to `2^15`: no neighbour (64 or 256 threads, 4 or 16 tiles)
+    /// is faster beyond the 3% between two baseline runs; 64 threads are up to
+    /// 20% slower, 4 or 16 tiles up to 8%.
     pub const GPU: Self = Self {
         max_stages: 12,
         log_threads: 7,
         log_tiles: 3,
+        log_strided_tiles: 3,
+        log_shared_lanes: 12,
+    };
+
+    /// [`Self::GPU`] with 16 tiles at least on strided columns.
+    ///
+    /// Measured on an RTX 5090 (CUDA, CubeCL 0.11.3) with the replayed bootstrap
+    /// of `n16_d35_k685_p19_s2c_ffr_ci+pow2` at degree `2^16`: 28.2 ms, against
+    /// 28.7 ms with 8 tiles; 32 tiles take 1.5 ms more.
+    pub const CUDA: Self = Self {
+        log_strided_tiles: 4,
+        ..Self::GPU
     };
 }
 
@@ -203,7 +222,7 @@ gpu_runtime!(
     Cuda,
     "cuda",
     GPU_GROUP,
-    NttGeometry::GPU,
+    NttGeometry::CUDA,
     |id| matches!(id, RuntimeId::Cuda)
 );
 

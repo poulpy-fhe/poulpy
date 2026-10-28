@@ -77,17 +77,24 @@ struct Tile {
 impl Tile {
     /// `mt` stages as `ceil(mt / 4)` sub-passes of near-equal radix, with as
     /// many tiles per workgroup as reach the runtime's thread count (and its
-    /// least tile count) within 16 KiB of shared memory and 1024 threads.
+    /// least tile count, strided or not) within its shared memory and 1024
+    /// threads.
     fn new(geometry: NttGeometry, log_n: u32, first: u32, mt: u32, inverse: bool) -> Self {
         assert!((1..=MAX_TILE_STAGES).contains(&mt) && first + mt <= log_n);
         let nsubs = mt.div_ceil(4);
         let radix = |i: u32| mt / nsubs + (i < mt % nsubs) as u32;
         let log_tpt = mt - radix(nsubs - 1);
-        let mut log_w = geometry.log_threads.saturating_sub(log_tpt).max(geometry.log_tiles);
-        while log_w > 0 && (mt + log_w > 12 || log_tpt + log_w > 10) {
+        let least = if first + mt < log_n {
+            geometry.log_strided_tiles
+        } else {
+            geometry.log_tiles
+        };
+        let lanes = geometry.log_shared_lanes;
+        let mut log_w = geometry.log_threads.saturating_sub(log_tpt).max(least);
+        while log_w > 0 && (mt + log_w > lanes || log_tpt + log_w > 10) {
             log_w -= 1;
         }
-        assert!(mt + log_w <= 12 && log_tpt + log_w <= 10);
+        assert!(mt + log_w <= lanes && log_tpt + log_w <= 10);
         let (mut sub_k, mut sub_a) = ([0; MAX_SUBS], [0; MAX_SUBS]);
         for step in 0..nsubs {
             // Sub-passes in stage order are 0, 1, ..; the inverse runs them backwards.
@@ -133,7 +140,7 @@ fn ct(x: u32, y: u32, wq: u32, w: u32, q: u32) -> (u32, u32) {
 
 /// Inverse butterfly on lanes in `[0, 2q)`.
 #[cube]
-fn gs(u: u32, v: u32, wq: u32, w: u32, q: u32) -> (u32, u32) {
+pub(super) fn gs(u: u32, v: u32, wq: u32, w: u32, q: u32) -> (u32, u32) {
     let q2 = q + q;
     let s = u + v;
     let d = u - v + q2;
@@ -254,10 +261,26 @@ fn tile_pass(
         r = u >> lw;
         w = u - (r << lw);
     }
-    let tile = (CUBE_POS << lw) + w;
-    let p = tile >> rest;
-    let ti = tile - (p << rest);
-    let active = p < polys as usize;
+    let mut tile = (CUBE_POS << lw) + w;
+    let mut p = tile >> rest;
+    let mut ti = tile - (p << rest);
+    let mut active = p < polys as usize;
+    // A launch that loads coefficients: the workgroups of the four planes of
+    // a limb take the same columns in turn. Measured on an Apple M5 Pro (Metal
+    // through wgpu, CubeCL 0.11.3) with the replayed bootstrap of
+    // `n16_d35_k685_p19_s2c_ffr_ci+pow2`: 1.3 ms less; unchanged on an RTX 5090
+    // (CUDA).
+    if comptime!(source != SOURCE_RESIDUES && rest >= lw) {
+        let cube = CUBE_POS;
+        let groups = rest - lw;
+        let prime = cube & 3usize;
+        let group = (cube >> 2usize) & ((1usize << groups) - 1usize);
+        let limb = cube >> (groups + 2usize);
+        p = (limb << 2usize) + prime;
+        tile = (group << lw) + w;
+        ti = tile;
+        active = p < polys as usize;
+    }
     let limb = p >> 2usize;
     let pi = u32::cast_from(p) & 3u32;
     let q = sel4(pi, c.q);
@@ -290,6 +313,11 @@ fn tile_pass(
         unit_q = sel4(pi, c.i_shoup);
     }
     let shared = w << mt;
+    // A forward launch on contiguous tiles ends on adjacent lanes: a thread
+    // would store a run of them, and the threads of a warp runs apart. The
+    // lanes go through shared memory once more and are stored lane-major,
+    // neighbouring threads writing neighbouring words.
+    let regroup = comptime!(!inverse && lgs == 0 && g.nsubs > 1);
     #[unroll]
     for step in 0..g.nsubs {
         let kj = g.sub_k[step as usize];
@@ -346,6 +374,14 @@ fn tile_pass(
                 let lane = *x.index(l);
                 if step < g.nsubs - 1u32 {
                     sh[shared + e] = lane;
+                } else if regroup {
+                    let mut value = lane;
+                    if mode == STORE_FORWARD {
+                        let q2 = q + q;
+                        let reduced = min(lane, lane - q2);
+                        value = min(reduced, reduced - q);
+                    }
+                    sh[shared + e] = value;
                 } else if mode == STORE_FORWARD {
                     let q2 = q + q;
                     let reduced = min(lane, lane - q2);
@@ -355,6 +391,16 @@ fn tile_pass(
                 } else {
                     dst[dbase + (e << lgs)] = lane;
                 }
+            }
+        }
+    }
+    if regroup {
+        sync_cube();
+        if active {
+            #[unroll]
+            for l in 0..comptime!(1usize << (mt - ltp)) {
+                let e = r + (l << ltp);
+                dst[dbase + e] = sh[shared + e];
             }
         }
     }
@@ -472,9 +518,32 @@ pub(crate) fn forward<RT: GpuRuntime>(tables: &Tables<RT>, res: &DftColumn, a: &
     }
 }
 
+/// Stages of the first launch of an inverse transform of degree `2^log_n`
+/// when it has two launches: the last `mt` stages of the transform, on
+/// contiguous blocks of `2^mt` lanes. `None` when the transform is one launch
+/// or has more than two, or when a kernel running those stages on `blocks`
+/// blocks at once would hold more lanes in shared memory than
+/// `NttGeometry::log_shared_lanes` allows.
+pub(crate) fn inverse_head<RT: GpuRuntime>(log_n: u32, blocks: usize) -> Option<u32> {
+    let passes = passes(RT::NTT, log_n, true);
+    let mt = passes[0].mt;
+    (passes.len() == 2 && passes[0].first + mt == log_n && blocks << mt <= 1 << RT::NTT.log_shared_lanes).then_some(mt)
+}
+
+/// The launches of [`inverse`] after the first, in place: `dst` holds the
+/// lanes the first launch leaves, written by it or by a kernel that ran its
+/// stages itself.
+pub(crate) fn inverse_tail<RT: GpuRuntime>(tables: &Tables<RT>, dst: &DftColumn, limbs: usize) {
+    inverse_from::<RT>(tables, dst, dst, limbs, 1);
+}
+
 /// `dst[j] = idft(src[j])` in the negacyclic basis for the first `limbs`
 /// limbs. `dst` may be `src` itself; otherwise `src` is left unchanged.
 pub(crate) fn inverse<RT: GpuRuntime>(tables: &Tables<RT>, dst: &DftColumn, src: &DftColumn, limbs: usize) {
+    inverse_from::<RT>(tables, dst, src, limbs, 0);
+}
+
+fn inverse_from<RT: GpuRuntime>(tables: &Tables<RT>, dst: &DftColumn, src: &DftColumn, limbs: usize, skip: usize) {
     assert!(dst.n == src.n, "transform between different degrees");
     assert!(limbs <= dst.size.min(src.size));
     if limbs == 0 {
@@ -482,7 +551,7 @@ pub(crate) fn inverse<RT: GpuRuntime>(tables: &Tables<RT>, dst: &DftColumn, src:
     }
     let table = tables.of(dst.n);
     let passes = passes(RT::NTT, dst.n.ilog2(), true);
-    for (index, &tile) in passes.iter().enumerate() {
+    for (index, &tile) in passes.iter().enumerate().skip(skip) {
         let last = index + 1 == passes.len();
         let from = if index == 0 { src } else { dst };
         launch::<RT>(

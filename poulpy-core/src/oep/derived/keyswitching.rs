@@ -299,3 +299,83 @@ mod glwe_dft {
     }
 }
 pub(crate) use glwe_dft::*;
+
+mod gglwe_product {
+    use poulpy_hal::layouts::{
+        Module, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef,
+    };
+
+    use crate::{
+        layouts::{assert_gglwe_product_idft_normalize, prepared::GGLWEPreparedBackendRef},
+        oep::GGLWEProductDigitsStridedImpl,
+    };
+
+    /// [`GGLWEProductDigitsStridedImpl::gglwe_product_idft_normalize`] on the items in order,
+    /// every item and the scratch checked before the first write.
+    #[allow(clippy::too_many_arguments, clippy::type_complexity)]
+    pub(crate) fn gglwe_products_idft_normalize_derived<BE: GGLWEProductDigitsStridedImpl>(
+        module: &Module<BE>,
+        res: &mut [VecZnxBackendMut<'_, BE>],
+        res_base2k: usize,
+        res_k: usize,
+        res_offset: i64,
+        res_dft: &mut [VecZnxDftBackendMut<'_, BE>],
+        a: &[VecZnxDftBackendRef<'_, BE>],
+        key: &GGLWEPreparedBackendRef<'_, BE>,
+        term_count: usize,
+        addends: &[&[Option<(&VecZnxDftBackendRef<'_, BE>, usize)>]],
+        body: &[Option<(&VecZnxBackendRef<'_, BE>, usize)>],
+        a_base2k: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) {
+        assert!(
+            res_dft.len() == res.len()
+                && a.len() == res.len()
+                && (addends.is_empty() || addends.len() == res.len())
+                && body.len() == res.len(),
+            "gglwe_products_idft_normalize: items of different lengths"
+        );
+        let addend = |i: usize| addends.get(i).copied().unwrap_or(&[]);
+        let mut need = 0;
+        for i in 0..res.len() {
+            assert_gglwe_product_idft_normalize(
+                "gglwe_products_idft_normalize",
+                &res[i],
+                &res_dft[i],
+                &a[i],
+                key,
+                addend(i),
+                body[i],
+            );
+            need = need.max(BE::gglwe_product_idft_normalize_tmp_bytes(
+                module,
+                res[i].size(),
+                res_dft[i].size(),
+                a[i].size(),
+                key,
+            ));
+        }
+        assert!(
+            scratch.available() >= need,
+            "gglwe_products_idft_normalize: scratch below its query"
+        );
+        for (i, (res, res_dft)) in res.iter_mut().zip(res_dft.iter_mut()).enumerate() {
+            BE::gglwe_product_idft_normalize(
+                module,
+                res,
+                res_base2k,
+                res_k,
+                res_offset,
+                res_dft,
+                &a[i],
+                key,
+                term_count,
+                addend(i),
+                body[i],
+                a_base2k,
+                scratch,
+            );
+        }
+    }
+}
+pub(crate) use gglwe_product::*;

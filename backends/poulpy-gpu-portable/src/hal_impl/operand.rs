@@ -147,6 +147,30 @@ impl<RT: GpuRuntime> Bind for GpuBuf<RT> {
     }
 }
 
+/// Column 0 of an exclusive prepared convolution operand about to be written
+/// in every block: a fresh buffer skips its zero fill.
+fn prepared_column<RT: GpuRuntime>(data: &GpuMut<'_, RT>, n: usize, cols: usize, size: usize) -> Option<DftColumn> {
+    dft_column(
+        data.binding_overwritten(4 * n * cols * size * size_of::<u32>()),
+        n,
+        cols,
+        size,
+        0,
+    )
+}
+
+pub(crate) fn cnv_left_overwritten<RT: GpuRuntime, B: Backend<DftWord = Word>>(
+    a: &CnvPVecL<GpuMut<'_, RT>, Word, B>,
+) -> Option<DftColumn> {
+    prepared_column(a.data(), a.n(), a.cols(), a.size())
+}
+
+pub(crate) fn cnv_right_overwritten<RT: GpuRuntime, B: Backend<DftWord = Word>>(
+    a: &CnvPVecR<GpuMut<'_, RT>, Word, B>,
+) -> Option<DftColumn> {
+    prepared_column(a.data(), a.n(), a.cols(), a.size())
+}
+
 /// Column `col` of a prepared left convolution operand, which has the layout of a DFT-domain vector.
 pub(crate) fn cnv_left_column<D: Bind, B: Backend<DftWord = Word>>(a: &CnvPVecL<D, Word, B>, col: usize) -> Option<DftColumn> {
     dft_column(a.data().bind(), a.n(), a.cols(), a.size(), col)

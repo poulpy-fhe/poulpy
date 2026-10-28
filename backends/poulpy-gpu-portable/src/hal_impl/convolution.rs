@@ -8,7 +8,8 @@ use poulpy_hal::{
 };
 
 use super::operand::{
-    all_blocks, all_dft_blocks, big_column_mut, cnv_left_column, cnv_right_column, column_ref, dft_column_mut, empty_dft_like,
+    all_blocks, all_dft_blocks, big_column_mut, cnv_left_column, cnv_left_overwritten, cnv_right_column, cnv_right_overwritten,
+    column_ref, dft_column_mut, empty_dft_like,
 };
 use crate::{
     NTT4x30Gpu,
@@ -21,21 +22,16 @@ use crate::{
     znx::{Term, convolution_by_const, lincomb},
 };
 
-/// The three product columns of a rank-1 tensor in one launch: columns 0 and 1
-/// of `diag` receive `a0 * b0` and `a1 * b1`, column 0 of `cross` receives
-/// `(a0 + a1) * (b0 + b1) - diag0 - diag1`.
-// The body of the core hook `GLWETensoringImpl::glwe_mul_columns`.
-#[cfg_attr(not(feature = "enable-core"), allow(dead_code))]
-pub(crate) fn glwe_mul_columns<RT: GpuRuntime, R: Ring>(
+/// The checks of the reference composition of [`glwe_mul_columns`], two
+/// `cnv_apply_dft` into `diag` and one `cnv_pairwise_apply_dft` into `cross`,
+/// in its order.
+fn check_mul_columns<RT: GpuRuntime, R: Ring>(
     module: &Module<NTT4x30Gpu<RT, R>>,
-    cnv_offset: usize,
-    diag: &mut VecZnxDftBackendMut<'_, NTT4x30Gpu<RT, R>>,
-    cross: &mut VecZnxDftBackendMut<'_, NTT4x30Gpu<RT, R>>,
+    diag: &VecZnxDftBackendMut<'_, NTT4x30Gpu<RT, R>>,
+    cross: &VecZnxDftBackendMut<'_, NTT4x30Gpu<RT, R>>,
     a: &CnvPVecLBackendRef<'_, NTT4x30Gpu<RT, R>>,
     b: &CnvPVecRBackendRef<'_, NTT4x30Gpu<RT, R>>,
 ) {
-    // The checks of the reference composition, two `cnv_apply_dft` into
-    // `diag` and one `cnv_pairwise_apply_dft` into `cross`, in its order.
     type BE<RT, R> = NTT4x30Gpu<RT, R>;
     for col in [0, 1] {
         check_degree::<BE<RT, R>>(module.n(), diag.n());
@@ -47,32 +43,86 @@ pub(crate) fn glwe_mul_columns<RT: GpuRuntime, R: Ring>(
         check_cnv_dft_term::<BE<RT, R>>(cross.n(), a, col, b, col, 1);
     }
     assert!(cross.cols() > 0, "operand column out of range");
+}
+
+/// The three product columns of a rank-1 tensor in one launch: columns 0 and 1
+/// of `diag` receive `a0 * b0` and `a1 * b1`, column 0 of `cross` receives
+/// `(a0 + a1) * (b0 + b1) - diag0 - diag1`. A square reads the left prepared
+/// form on both sides: `a` and `b` then prepare one operand
+/// (`GLWETensoringImpl::glwe_square_prepare`), and `b` is only checked.
+// The body of the core hooks `GLWETensoringImpl::glwe_mul_columns` and `glwe_square_columns`.
+#[cfg_attr(not(feature = "enable-core"), allow(dead_code))]
+pub(crate) fn glwe_mul_columns<RT: GpuRuntime, R: Ring>(
+    module: &Module<NTT4x30Gpu<RT, R>>,
+    cnv_offset: usize,
+    diag: &mut VecZnxDftBackendMut<'_, NTT4x30Gpu<RT, R>>,
+    cross: &mut VecZnxDftBackendMut<'_, NTT4x30Gpu<RT, R>>,
+    a: &CnvPVecLBackendRef<'_, NTT4x30Gpu<RT, R>>,
+    b: &CnvPVecRBackendRef<'_, NTT4x30Gpu<RT, R>>,
+    square: bool,
+) {
+    check_mul_columns(module, diag, cross, a, b);
     let column = |column: Option<DftColumn>| column.expect("glwe_mul_columns: an operand holds no storage");
+    let (b0, b1) = if square {
+        (column(cnv_left_column(a, 0)), column(cnv_left_column(a, 1)))
+    } else {
+        (column(cnv_right_column(b, 0)), column(cnv_right_column(b, 1)))
+    };
     convolution_tensor::<RT>(
         &column(dft_column_mut(diag, 0)),
         &column(dft_column_mut(diag, 1)),
         &column(dft_column_mut(cross, 0)),
         &column(cnv_left_column(a, 0)),
         &column(cnv_left_column(a, 1)),
-        &column(cnv_right_column(b, 0)),
-        &column(cnv_right_column(b, 1)),
+        &b0,
+        &b1,
         cnv_offset,
-        handle(module).convolution_capacity_step(),
     );
 }
 
-/// Transforms every column of `a` into the prepared vector whose column 0 is
-/// `res0`, truncating or zero-extending to its limbs.
+/// The checks of `cnv_prepare_self`, then its left form alone, `None` when
+/// `left` holds no storage: the first half of `cnv_prepare_self`, and the
+/// preparation of a square (`GLWETensoringImpl::glwe_square_prepare`), which
+/// reads the left form on both sides and leaves `right` unwritten.
+#[cfg_attr(not(feature = "enable-core"), allow(dead_code))]
+pub(crate) fn cnv_prepare_self_left<RT: GpuRuntime, R: Ring>(
+    module: &Module<NTT4x30Gpu<RT, R>>,
+    left: &mut CnvPVecLBackendMut<'_, NTT4x30Gpu<RT, R>>,
+    right: &CnvPVecRBackendMut<'_, NTT4x30Gpu<RT, R>>,
+    a: &VecZnxBackendRef<'_, NTT4x30Gpu<RT, R>>,
+) -> Option<DftColumn> {
+    assert!(right.size() == left.size(), "cnv_prepare_self: right.size() != left.size()");
+    assert!(right.cols() == left.cols(), "cnv_prepare_self: right.cols() != left.cols()");
+    assert!(right.n() == left.n(), "cnv_prepare_self: right.n() != left.n()");
+    assert!(a.cols() == left.cols(), "cnv_prepare_self: left.cols() != a.cols()");
+    check_prepare(module, left.n(), a);
+    let left0 = cnv_left_overwritten(left)?;
+    prepare(module, &left0, left.cols(), a);
+    Some(left0)
+}
+
+/// The checks of `cnv_prepare_*` into a prepared vector of degree `res_n`,
+/// made before its view is taken: a view that overwrites a zeroed buffer
+/// drops the fill it owes.
+fn check_prepare<RT: GpuRuntime, R: Ring>(
+    module: &Module<NTT4x30Gpu<RT, R>>,
+    res_n: usize,
+    a: &VecZnxBackendRef<'_, NTT4x30Gpu<RT, R>>,
+) {
+    assert_dense(a, "cnv_prepare");
+    check_degree::<NTT4x30Gpu<RT, R>>(module.n(), res_n);
+    assert!(a.n() == res_n, "cnv_prepare: a.n() != res.n()");
+}
+
+/// Transforms every column of `a`, checked by [`check_prepare`], into the
+/// prepared vector whose column 0 is `res0`, truncating or zero-extending to
+/// its limbs.
 fn prepare<RT: GpuRuntime, R: Ring>(
     module: &Module<NTT4x30Gpu<RT, R>>,
     res0: &DftColumn,
     cols: usize,
     a: &VecZnxBackendRef<'_, NTT4x30Gpu<RT, R>>,
 ) {
-    assert_dense(a, "cnv_prepare");
-    check_degree::<NTT4x30Gpu<RT, R>>(module.n(), res0.n);
-    assert!(a.n() == res0.n, "cnv_prepare: a.n() != res.n()");
-    assert!(a.cols() == cols, "cnv_prepare: res.cols() != a.cols()");
     let limbs = res0.size.min(a.size());
     let all = all_dft_blocks(res0, res0.size);
     if let Some(a0) = column_ref(a, 0).filter(|_| limbs != 0) {
@@ -105,7 +155,8 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalConvolutionImpl for NTT4x30Gpu<RT, R> {
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
         assert!(a.cols() == res.cols(), "cnv_prepare_left: res.cols() != a.cols()");
-        let Some(res0) = cnv_left_column(res, 0) else { return };
+        check_prepare(module, res.n(), a);
+        let Some(res0) = cnv_left_overwritten(res) else { return };
         prepare(module, &res0, res.cols(), a);
     }
 
@@ -120,7 +171,8 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalConvolutionImpl for NTT4x30Gpu<RT, R> {
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
         assert!(a.cols() == res.cols(), "cnv_prepare_right: res.cols() != a.cols()");
-        let Some(res0) = cnv_right_column(res, 0) else { return };
+        check_prepare(module, res.n(), a);
+        let Some(res0) = cnv_right_overwritten(res) else { return };
         prepare(module, &res0, res.cols(), a);
     }
 
@@ -135,14 +187,11 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalConvolutionImpl for NTT4x30Gpu<RT, R> {
         a: &VecZnxBackendRef<'_, Self>,
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
-        assert!(right.size() == left.size(), "cnv_prepare_self: right.size() != left.size()");
-        assert!(right.cols() == left.cols(), "cnv_prepare_self: right.cols() != left.cols()");
-        assert!(right.n() == left.n(), "cnv_prepare_self: right.n() != left.n()");
-        assert!(a.cols() == left.cols(), "cnv_prepare_self: left.cols() != a.cols()");
-        let Some(left0) = cnv_left_column(left, 0) else { return };
-        prepare(module, &left0, left.cols(), a);
+        let Some(left0) = cnv_prepare_self_left(module, left, right, a) else {
+            return;
+        };
         // Both prepared forms are the transform: the right one is a copy.
-        let Some(right0) = cnv_right_column(right, 0) else { return };
+        let Some(right0) = cnv_right_overwritten(right) else { return };
         let (from, to) = (all_dft_blocks(&left0, left0.size), all_dft_blocks(&right0, right0.size));
         combine::<RT>(&to, to.size, DftTerm::plus(&from), DftTerm::zero(&from));
     }

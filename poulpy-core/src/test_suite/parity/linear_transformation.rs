@@ -606,18 +606,20 @@ pub fn test_linear_transformation_powers_of_two_parity<BR, BT>(
         };
         let plan = schedule.index();
         // Every rank and digit width of the shapes with keys at the input's radix, whose passes are
-        // hoisted, then keys one bit narrower, which every pass switches rotation by rotation.
-        let mut cases: Vec<(usize, usize, usize)> = Vec::new();
+        // hoisted, then keys one bit narrower, which every pass switches rotation by rotation, on
+        // diagonals of two limbs, and diagonals of one limb.
+        let mut cases: Vec<(usize, usize, usize, usize)> = Vec::new();
         for &rank in &shapes.ranks {
             cases.extend(
                 shapes
                     .k_digits(k, base, rank)
                     .into_iter()
-                    .map(|k_digit| (rank, base, k_digit)),
+                    .map(|k_digit| (rank, base, k_digit, base + 1)),
             );
         }
-        cases.push((1, base - 1, base - 1));
-        for (rank, key_base, k_digit) in cases {
+        cases.push((1, base - 1, base - 1, base + 1));
+        cases.push((1, base, base, base));
+        for (rank, key_base, k_digit, pt_k) in cases {
             let ct = GLWELayout {
                 n: params.n.into(),
                 base2k: base.into(),
@@ -626,7 +628,7 @@ pub fn test_linear_transformation_powers_of_two_parity<BR, BT>(
             };
             let pt = GLWELayout {
                 rank: Rank(0),
-                k: (base + 1).into(),
+                k: pt_k.into(),
                 ..ct
             };
             let key = GLWEAutomorphismKeyLayout {
