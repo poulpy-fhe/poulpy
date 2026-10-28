@@ -52,17 +52,17 @@ use crate::{backend_name, blas::params::BlasBenchParams, timed};
 /// Secret-key Hamming weight.
 const HW: usize = 192;
 /// Bits above the scale that an encoded entry, map or public matrix keeps for a magnitude of at most one.
-pub(crate) const HEADROOM: usize = 4;
+pub(super) const HEADROOM: usize = 4;
 /// Integer bits kept when decrypting, for the sums of `d` products of magnitude at most one.
 const DECODE_HEADROOM: usize = 24;
 /// The failure target of the radix check, in bits.
-pub(crate) const FAILURE_BITS: usize = 128;
+pub(super) const FAILURE_BITS: usize = 128;
 
-pub(crate) fn base2k(bp: &BlasBenchParams) -> Base2K {
+pub(super) fn base2k(bp: &BlasBenchParams) -> Base2K {
     Base2K(bp.base2k as u32)
 }
 
-pub(crate) fn block_layout(bp: &BlasBenchParams) -> CKKSLayout {
+pub(super) fn block_layout(bp: &BlasBenchParams) -> CKKSLayout {
     CKKSLayout {
         glwe_layout: GLWELayout {
             n: Degree(bp.n as u32),
@@ -97,7 +97,7 @@ pub(super) fn atk_layout(bp: &BlasBenchParams) -> GLWEAutomorphismKeyLayout {
     }
 }
 
-pub(crate) fn tsk_layout(bp: &BlasBenchParams) -> GLWETensorKeyLayout {
+pub(super) fn tsk_layout(bp: &BlasBenchParams) -> GLWETensorKeyLayout {
     let (k_digit, dnum, k_aux) = key_shape(bp);
     GLWETensorKeyLayout {
         n: Degree(bp.n as u32),
@@ -110,7 +110,7 @@ pub(crate) fn tsk_layout(bp: &BlasBenchParams) -> GLWETensorKeyLayout {
 }
 
 /// Deterministic pseudo-random value in `[-1, 1)` of entry `(r, c)` of matrix `s` in stream `tag`, a splitmix64 hash.
-pub(crate) fn entry(tag: u64, s: usize, r: usize, c: usize) -> f64 {
+pub(super) fn entry(tag: u64, s: usize, r: usize, c: usize) -> f64 {
     let mut x = tag ^ ((s as u64) << 40) ^ ((r as u64) << 20) ^ c as u64;
     x = (x ^ (x >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
     x = (x ^ (x >> 27)).wrapping_mul(0x94d049bb133111eb);
@@ -255,7 +255,7 @@ where
 
     /// The prepared public operand of `rows x cols` blocks of `entry` on side `S` of the encrypted grid, one matrix
     /// shared by every matrix slot.
-    pub(crate) fn public<S: BlasPtSide>(
+    pub(super) fn public<S: BlasPtSide>(
         &self,
         bp: &BlasBenchParams,
         algorithm: BlasPtAlgorithm,
@@ -307,7 +307,7 @@ where
             .collect()
     }
 
-    pub(crate) fn tensor_key(&mut self, bp: &BlasBenchParams) -> GLWETensorKeyPrepared<BE::OwnedBuf, BE> {
+    pub(super) fn tensor_key(&mut self, bp: &BlasBenchParams) -> GLWETensorKeyPrepared<BE::OwnedBuf, BE> {
         let layout = tsk_layout(bp);
         let mut tsk = self.module.glwe_tensor_key_alloc_from_infos(&layout);
         self.module

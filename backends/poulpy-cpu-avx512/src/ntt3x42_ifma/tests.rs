@@ -346,7 +346,7 @@ mod ntt3x42_ifma_tests {
     fn test_b_to_znx128_ifma_asm_edges_vs_ref() {
         const Q: [u64; 3] = <Primes42 as poulpy_hal::layouts::PrimeSet>::Q;
         let big_q = Q[0] as u128 * Q[1] as u128 * Q[2] as u128;
-        // Its lazy `v1 * Q0 mod Q2` lands above `Q2`, which drove `r2 + Q2 - partial` below zero.
+        // Its lazy `v1 * Q0 mod Q2` lands above `Q2`, so the Garner partial exceeds `r2 + Q2`.
         let lazy_partial = big_q - 291_356_597_044_811_121_092_742_484;
         let values = [
             0u128,

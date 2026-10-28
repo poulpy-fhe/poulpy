@@ -2,13 +2,13 @@
 //! dimension of up to 112 blocks.
 //!
 //! - [`max_base2k_table`]: the radix [`blas_matmul_max_base2k`], [`blas_matmul_pt_right_max_base2k`] and
-//!   [`blas_matmul_pt_left_max_base2k`] allow for every product of [`PT_PRODUCTS`], on both public sides and under
-//!   every [`BlasPtAlgorithm`], read from layouts without encoding or encrypting anything.
+//!   [`blas_matmul_pt_left_max_base2k`] allow for products by public matrices of `32 x 48`, `32 x 32`, `32 x 224` and
+//!   `112 x 32` blocks, on both public sides and under every [`BlasPtAlgorithm`], read from layouts without encoding or
+//!   encrypting anything.
 //! - [`validate`]: one product per shape class on grids of many blocks, the longest inner dimension in full, the
 //!   product of two ciphertext blocks through prepared operands, and the reductions over 32 blocks, each checked against
-//!   [`error_bound`] and the radix the model allows, returning the checks that
-//!   failed. It prints the heap each prepared operand holds, and the most its preparation held at once, when
-//!   [`crate::heap::Counting`] is the global allocator.
+//!   [`error_bound`] and the radix the model allows, returning the checks that failed. It prints the heap each prepared
+//!   operand holds, and the most its preparation held at once, when [`crate::heap::Counting`] is the global allocator.
 //!
 //! Neither runs under Criterion: a product at the longest inner dimension takes minutes, so a bench binary of its own
 //! calls them once from its `main`.
@@ -29,12 +29,13 @@ use poulpy_blas::{
         blas_matmul_right_operand_layout, blas_sum_cols_key_uses, blas_sum_key_uses, blas_sum_rows_key_uses, replicated,
     },
     oep::BlasImpl,
+    test_suite::helpers::{HINTS, MASKED_PT_ALGORITHMS, MIXES, PT_ALGORITHMS},
 };
 use poulpy_ckks::{CKKSLayout, CoeffsMeta, SlotsKind};
 use poulpy_core::layouts::Degree;
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, ConjugateInvariant, MaxBase2k, Module, PrepareHint, Ring, ScratchOwned, Standard},
+    layouts::{Backend, ConjugateInvariant, MaxBase2k, Module, Ring, ScratchOwned, Standard},
 };
 
 use crate::{
@@ -53,41 +54,38 @@ use crate::{
 /// A product of an encrypted grid by a public matrix, in blocks: `inner` block columns of the encrypted grid, one block
 /// high, by `inner x outer` blocks of the public matrix.
 #[derive(Clone, Copy)]
-pub struct PtProduct {
-    pub inner: usize,
-    pub outer: usize,
+struct PtProduct {
+    inner: usize,
+    outer: usize,
 }
 
 /// The products by public matrices the table covers: square, wide and long inner dimensions.
-pub const PT_PRODUCTS: [PtProduct; 4] = [
+const PT_PRODUCTS: [PtProduct; 4] = [
     PtProduct { inner: 32, outer: 48 },
     PtProduct { inner: 32, outer: 32 },
     PtProduct { inner: 32, outer: 224 },
     PtProduct { inner: 112, outer: 32 },
 ];
 
-/// Every algorithm of the products by public matrices.
-pub const PT_ALGORITHMS: [BlasPtAlgorithm; 4] = [
-    BlasPtAlgorithm::Diagonal,
-    BlasPtAlgorithm::Jkls,
-    BlasPtAlgorithm::JklsStored,
-    BlasPtAlgorithm::JklsGalois,
-];
-
 /// Blocks a reduction adds.
-pub const REDUCED_BLOCKS: usize = 32;
+const REDUCED_BLOCKS: usize = 32;
+
+/// Every algorithm of the products by public matrices.
+fn pt_algorithms() -> impl Iterator<Item = BlasPtAlgorithm> {
+    PT_ALGORITHMS.into_iter().chain(MASKED_PT_ALGORITHMS)
+}
 
 /// The points of the sweep at the block dimension `d = 128`.
-pub fn scale_params() -> Vec<BlasBenchParams> {
+fn scale_params() -> Vec<BlasBenchParams> {
     default_bench_params_blas().into_iter().filter(|bp| bp.log_d == 7).collect()
 }
 
-/// Prints, for each point of [`scale_params`] on `BE`'s ring whose label one of `filter`'s words selects (every one for
-/// an empty filter), the radix the model of `BE` allows at 128 failure bits for every product of [`PT_PRODUCTS`], on
-/// the right (`X W`, an encrypted grid of `1 x inner` blocks) and on the left (`W^T X^T`, `inner x 1`), under each of
-/// [`PT_ALGORITHMS`], and for the ciphertext by ciphertext product of one block. The encrypted grids are replicated,
-/// one matrix whose label proves it; where a block holds several matrices, the table repeats for a dense grid of
-/// distinct ones.
+/// Prints, for each point of the BLAS sweep at `d = 128` on `BE`'s ring whose label one of `filter`'s words selects
+/// (every one for an empty filter), the radix the model of `BE` allows at 128 failure bits for products by public
+/// matrices of `32 x 48`, `32 x 32`, `32 x 224` and `112 x 32` blocks, on the right (`X W`, an encrypted grid of
+/// `1 x inner` blocks) and on the left (`W^T X^T`, `inner x 1`), under every [`BlasPtAlgorithm`], and for the ciphertext
+/// by ciphertext product of one block. The encrypted grids are replicated, one matrix whose label proves it; where a
+/// block holds several matrices, the table repeats for a dense grid of distinct ones.
 ///
 /// Every block of a product's output sums the same `inner` terms through maps of one shape, so the radix of the whole
 /// product is that of one block of its output, and the products of one inner dimension share it: the queries run once
@@ -96,7 +94,7 @@ pub fn max_base2k_table<BE: Backend + MaxBase2k>(filter: &[String]) {
     let real = BE::Ring::CYCLOTOMIC_ORDER_FACTOR == ConjugateInvariant::CYCLOTOMIC_ORDER_FACTOR;
     let backend = backend_name::<BE>();
     for bp in scale_params() {
-        if !selected(filter, &format!("{backend}/max_base2k/{bp}")) {
+        if !selected(filter, &format!("{backend}/blas/max_base2k/{bp}")) {
             continue;
         }
         let slots = bp.n * BE::Ring::CYCLOTOMIC_ORDER_FACTOR as usize / 4;
@@ -123,9 +121,8 @@ pub fn max_base2k_table<BE: Backend + MaxBase2k>(filter: &[String]) {
             }
             let encrypted = |rows, cols| BlasLayout::new(block, bp.log_d, rows, cols);
             let per_algorithm = |radix: &dyn Fn(BlasPlan) -> usize| {
-                PT_ALGORITHMS
-                    .iter()
-                    .map(|&algorithm| format!("{algorithm:?}={}", radix(plan(algorithm))))
+                pt_algorithms()
+                    .map(|algorithm| format!("{algorithm:?}={}", radix(plan(algorithm))))
                     .collect::<Vec<_>>()
                     .join(" ")
             };
@@ -187,23 +184,22 @@ fn heap_since(base: usize) -> String {
     )
 }
 
-/// Runs the checks of every point of [`scale_params`] whose label one of `filter`'s words selects, all of them for an
-/// empty filter, and returns the labels of those that failed: a result beyond
-/// [`error_bound`], or a product whose radix the model rejects at `base2k`, which still
-/// runs so that its error shows. A bench binary fails on any. The checks:
+/// Runs the checks of every point of the BLAS sweep at `d = 128` whose label one of `filter`'s words selects, all of
+/// them for an empty filter, and returns the labels of those that failed: a result beyond [`error_bound`], or a product
+/// whose radix the model rejects at `base2k`, which still runs so that its error shows. A bench binary fails on any.
+/// The checks:
 ///
 /// - the products by public matrices on either side, one block of output, which is what each block of a wider output
-///   computes: at the longest inner dimension of [`PT_PRODUCTS`] (112 blocks), which binds the radix, under each of
-///   [`PT_ALGORITHMS`], and at the others (32 blocks) under `Diagonal`;
+///   computes: at an inner dimension of 112 blocks, which binds the radix, under every [`BlasPtAlgorithm`], and at 32
+///   blocks under `Diagonal`;
 /// - the product of two ciphertext blocks through operands prepared under every mix of hints;
-/// - `blas_sum_rows` of a `32 x 1` grid, `blas_sum_cols` of a `1 x 32` one, and where a block
-///   holds several matrices, `blas_sum` of a `1 x 32` grid of distinct ones; the row and column sums against the bound
-///   times `sqrt(32)`, since they add the independent noises of 32 blocks.
+/// - `blas_sum_rows` of a `32 x 1` grid, `blas_sum_cols` of a `1 x 32` one, and where a block holds several matrices,
+///   `blas_sum` of a `1 x 32` grid of distinct ones; the row and column sums against the bound times `sqrt(32)`, since
+///   they add the independent noises of 32 blocks.
 ///
-/// The encrypted grids are replicated. Entries are scaled so that every result stays in
-/// `[-1, 1)`. It prints a `PRECISION` line per check, a `SCRATCH` line before each operation allocates its scratch, a
-/// `TIME` line per operation with the heap the call allocates beyond its scratch, and a `HEAP` line per prepared
-/// operand.
+/// The encrypted grids are replicated. Entries are scaled so that every result stays in `[-1, 1)`. It prints a
+/// `PRECISION` line per check, a `SCRATCH` line before each operation allocates its scratch, a `TIME` line per
+/// operation with the heap the call allocates beyond its scratch, and a `HEAP` line per prepared operand.
 pub fn validate<BE>(filter: &[String]) -> Vec<String>
 where
     BE: Backend<Ring = Standard> + 'static + BlasImpl + MaxBase2k,
@@ -215,19 +211,15 @@ where
     let mut failed = Vec::new();
     let backend = backend_name::<BE>();
     let mut run = |op: String, bp: &BlasBenchParams, check: &dyn Fn(&str)| {
-        let label = format!("{backend}/{op}/{bp}");
+        let label = format!("{backend}/blas/{op}/{bp}");
         if selected(filter, &label) && catch_unwind(AssertUnwindSafe(|| check(&op))).is_err() {
             failed.push(label);
         }
     };
     for bp in scale_params() {
         for &inner in &inners {
-            let algorithms = if Some(inner) == widest {
-                &PT_ALGORITHMS[..]
-            } else {
-                &PT_ALGORITHMS[..1]
-            };
-            for &algorithm in algorithms {
+            let every = Some(inner) == widest;
+            for algorithm in pt_algorithms().filter(|&algorithm| every || algorithm == BlasPtAlgorithm::Diagonal) {
                 let name = format!("{algorithm:?}").to_lowercase();
                 run(format!("pt_right_{name}/1x{inner}*{inner}x1"), &bp, &|op| {
                     pt_right::<BE>(&bp, algorithm, inner, op)
@@ -383,7 +375,6 @@ where
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
-    const HINTS: [PrepareHint; 2] = [PrepareHint::OneShot, PrepareHint::Reuse];
     let mut client = Client::<BE>::new(bp);
     let ctx = client.context(bp, BlasPlan::new(bp.log_d));
     let d = bp.d();
@@ -393,7 +384,7 @@ where
     let module = &client.module;
     let mut elements = elements_of(&blas_matmul_prepare_left_key_uses(module, &a, &ctx));
     elements.extend(elements_of(&blas_matmul_prepare_right_key_uses(module, &b, &ctx)));
-    for (hl, hr) in HINTS.into_iter().flat_map(|hl| HINTS.map(|hr| (hl, hr))) {
+    for (hl, hr) in MIXES {
         let (left, right) = (
             blas_matmul_left_operand_layout(&a, &ctx, hl),
             blas_matmul_right_operand_layout(&b, &ctx, hr),

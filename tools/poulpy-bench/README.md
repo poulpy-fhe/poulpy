@@ -267,17 +267,20 @@ the full tier needs a host sized for that. The keys of one point are freed befor
 product at an inner dimension of 112 blocks takes minutes, so nothing runs under Criterion: the harness-free bench
 `blas_scale` of `poulpy-cpu-avx512` calls each function once.
 
-- `max_base2k_table::<BE>` prints a `MAX_BASE2K` line per product of `PT_PRODUCTS` (`32x48`, `32x32`, `32x224` and
+- `max_base2k_table::<BE>` prints a `MAX_BASE2K` line per product by a public matrix (`32x48`, `32x32`, `32x224` and
   `112x32` blocks) on each public side, with the radix every `BlasPtAlgorithm` allows at 128 failure bits, and one for
   the product of two ciphertext blocks. It reads layouts only, on any backend with a `MaxBase2k` model; the binary
   prints it for FFT64, NTT4x30 and NTT3x42 IFMA, standard and conjugate-invariant.
 - `validate::<BE>` runs, on NTT backends, the products by public matrices at inner dimension 112 under every algorithm
   and 32 under `Diagonal`, the product of two ciphertext blocks through operands prepared under every mix of hints,
-  and the row, column and batch sums over 32 blocks. Each prints `PRECISION`, `SCRATCH` (before the scratch is allocated),
-  `TIME` (with the heap the call allocates) and `HEAP` lines (the heap a prepared operand holds and the most its
-  preparation held), the heap read from `heap::Counting`, which the binary installs as its global allocator. It returns the checks whose result left `blas::matmul::error_bound` (times `sqrt(32)` for the row and
-  column sums, which add the noises of 32 blocks) or whose radix fell below `base2k`, and the binary panics after the
-  last backend if there is any.
+  and the row, column and batch sums over 32 blocks. Each prints `PRECISION`, `SCRATCH` (before the scratch is
+  allocated), `TIME` (with the heap the call allocates) and `HEAP` lines (the heap a prepared operand holds and the most
+  its preparation held), the heap read from `heap::Counting`, which the binary installs as its global allocator. It
+  returns the checks whose result left `blas::matmul::error_bound` (times `sqrt(32)` for the row and column sums,
+  which add the noises of 32 blocks) or whose radix fell below `base2k`, and the binary panics after the last backend
+  if there is any.
+
+Labels read `<backend>/blas/<check>/<params>`, `<backend>/blas/max_base2k/<params>` for the tables.
 
 Arguments not starting with `--` select the tables and checks whose label holds one of them, and a `!word` leaves out
 those holding `word`:
@@ -290,7 +293,7 @@ cargo bench --target x86_64-unknown-linux-gnu -p poulpy-cpu-avx512 --features $F
 # The radix tables only
 cargo bench --target x86_64-unknown-linux-gnu -p poulpy-cpu-avx512 --features $FEATURES --bench blas_scale -- max_base2k
 # The right product at inner dimension 112 on the IFMA backend
-cargo bench --target x86_64-unknown-linux-gnu -p poulpy-cpu-avx512 --features $FEATURES --bench blas_scale -- 'NTT3x42Ifma/pt_right_diagonal/1x112'
+cargo bench --target x86_64-unknown-linux-gnu -p poulpy-cpu-avx512 --features $FEATURES --bench blas_scale -- 'NTT3x42Ifma/blas/pt_right_diagonal/1x112'
 # Everything but the masked products at N = 2^16, on a host of 128 GB
 cargo bench --target x86_64-unknown-linux-gnu -p poulpy-cpu-avx512 --features $FEATURES --bench blas_scale -- \
     '!jklsstored/1x112*112x1/(n=65536' '!jklsgalois/1x112*112x1/(n=65536'

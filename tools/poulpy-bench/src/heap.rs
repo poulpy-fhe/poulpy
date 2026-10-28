@@ -9,7 +9,7 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering::Relaxed},
 };
 
-/// The system allocator, counting into [`live`] and [`peak`].
+/// The system allocator, counting the bytes it holds and their high-water mark, [`peak`].
 pub struct Counting;
 
 static LIVE: AtomicUsize = AtomicUsize::new(0);
@@ -53,7 +53,7 @@ unsafe impl GlobalAlloc for Counting {
 }
 
 /// Bytes the allocator holds.
-pub fn live() -> usize {
+pub(crate) fn live() -> usize {
     LIVE.load(Relaxed)
 }
 
@@ -69,7 +69,7 @@ pub fn reset_peak() -> usize {
     live
 }
 
-/// Whether [`Counting`] is the global allocator, from whether an allocation moves [`live`].
+/// Whether [`Counting`] is the global allocator, from whether an allocation moves the bytes it holds.
 pub fn counting() -> bool {
     let before = live();
     let probe = black_box(Box::new([0u8; 64]));
