@@ -529,33 +529,20 @@ pub fn test_circuit_bootstrapping_key_encrypt_sk_rejects_secret_shape<
     };
     let sk_full: GLWESecret<AlignedBuf, i64> = module.glwe_secret_alloc(1_usize.into());
     let sk_half: GLWESecret<AlignedBuf, i64> = half.glwe_secret_alloc(1_usize.into());
-    let cases = [
-        (
-            layout(n, n, n),
-            sk_lwe(9),
-            &sk_full,
-            "the LWE secret dimension differs from the blind rotation key's",
-        ),
-        (
-            layout(n, n, n),
-            sk_lwe(8),
-            &sk_half,
-            "the GLWE secret degree differs from the blind rotation key's",
-        ),
-        (
-            layout(n, n / 2, n),
-            sk_lwe(8),
-            &sk_full,
-            "the GLWE secret degree differs from the automorphism key's",
-        ),
-        (
-            layout(n, n, n / 2),
-            sk_lwe(8),
-            &sk_full,
-            "the GLWE secret degree differs from the tensor key's",
-        ),
+    let refusals = [
+        "the LWE secret dimension differs from the blind rotation key's",
+        "the GLWE secret degree differs from the blind rotation key's",
+        "the GLWE secret degree differs from the automorphism key's",
+        "the GLWE secret degree differs from the tensor key's",
     ];
-    for (infos, sk_lwe, sk_glwe, message) in cases {
+    for (case, message) in refusals.into_iter().enumerate() {
+        let infos = match case {
+            2 => layout(n, n / 2, n),
+            3 => layout(n, n, n / 2),
+            _ => layout(n, n, n),
+        };
+        let sk_lwe = sk_lwe(if case == 0 { 9 } else { 8 });
+        let sk_glwe = if case == 1 { &sk_half } else { &sk_full };
         let mut res: CircuitBootstrappingKey<AlignedBuf, BRA, i64> = CircuitBootstrappingKey::alloc_from_infos(module, &infos);
         let bytes = |key: &CircuitBootstrappingKey<AlignedBuf, BRA, i64>| {
             let mut out = Vec::new();

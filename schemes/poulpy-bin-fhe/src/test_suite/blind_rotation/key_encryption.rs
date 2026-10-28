@@ -27,38 +27,27 @@ fn layout<BE: Backend>(module: &Module<BE>) -> BlindRotationKeyLayout {
     }
 }
 
-/// A refused case: the LWE secret, the GLWE secret and the expected message.
-type RefusedSecrets<BE> = (
-    LWESecret<<BE as Backend>::OwnedBuf, i64>,
-    GLWESecretPrepared<<BE as Backend>::OwnedBuf, BE>,
-    &'static str,
-);
+/// The refusal of each case, kept apart from the secrets that trigger it.
+const REFUSALS: [&str; 2] = [
+    "the key count differs from the LWE secret dimension",
+    "the GLWE secret rank differs from the key rank",
+];
 
-/// The secrets of each refused case: an LWE secret of another dimension than the key count, then a GLWE secret of
+/// The secrets of refused case `case`: an LWE secret of another dimension than the key count, then a GLWE secret of
 /// another rank than the keys.
-fn refused_secrets<BE: Backend<ZnxWord = i64>>(module: &Module<BE>, layout: &BlindRotationKeyLayout) -> [RefusedSecrets<BE>; 2]
+fn refused_secrets<BE: Backend<ZnxWord = i64>>(
+    module: &Module<BE>,
+    layout: &BlindRotationKeyLayout,
+    case: usize,
+) -> (LWESecret<BE::OwnedBuf, i64>, GLWESecretPrepared<BE::OwnedBuf, BE>)
 where
     Module<BE>: GLWESecretPreparedFactory<BE> + LWESecretSampling<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
 {
-    let n_lwe = layout.n_lwe.as_usize();
-    let mut source_xs = Source::new([1u8; 32]);
-    let mut secret = |n: usize| {
-        let mut sk = module.lwe_secret_alloc(n.into());
-        module.lwe_secret_fill_binary_block(&mut sk, 1, &mut source_xs);
-        sk
-    };
-    [
-        (
-            secret(n_lwe + 1),
-            module.glwe_secret_prepared_alloc(layout.rank),
-            "the key count differs from the LWE secret dimension",
-        ),
-        (
-            secret(n_lwe),
-            module.glwe_secret_prepared_alloc(Rank(layout.rank.as_u32() + 1)),
-            "the GLWE secret rank differs from the key rank",
-        ),
-    ]
+    let n_lwe = layout.n_lwe.as_usize() + usize::from(case == 0);
+    let rank = Rank(layout.rank.as_u32() + u32::from(case == 1));
+    let mut sk_lwe = module.lwe_secret_alloc(n_lwe.into());
+    module.lwe_secret_fill_binary_block(&mut sk_lwe, 1, &mut Source::new([1u8; 32]));
+    (sk_lwe, module.glwe_secret_prepared_alloc(rank))
 }
 
 fn assert_sources_untouched(source_xe: &mut Source, source_xa: &mut Source) {
@@ -77,7 +66,8 @@ pub fn test_blind_rotation_key_encrypt_sk_rejects_secret_shape<BE: Backend<Owned
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
 {
     let layout = layout(module);
-    for (sk_lwe, sk_glwe, message) in refused_secrets(module, &layout) {
+    for (case, message) in REFUSALS.into_iter().enumerate() {
+        let (sk_lwe, sk_glwe) = refused_secrets(module, &layout, case);
         let mut res: BlindRotationKey<BE::OwnedBuf, CGGI, i64> = BlindRotationKey::alloc(module, &layout);
         let before = res.clone();
         let mut source_xe = Source::new([3u8; 32]);
@@ -102,7 +92,8 @@ pub fn test_blind_rotation_key_compressed_encrypt_sk_rejects_secret_shape<BE: Ba
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
 {
     let layout = layout(module);
-    for (sk_lwe, sk_glwe, message) in refused_secrets(module, &layout) {
+    for (case, message) in REFUSALS.into_iter().enumerate() {
+        let (sk_lwe, sk_glwe) = refused_secrets(module, &layout, case);
         let mut res = module.blind_rotation_key_compressed_alloc_from_infos(&layout);
         let before = res.clone();
         let mut source_xe = Source::new([3u8; 32]);
