@@ -13,8 +13,10 @@ use poulpy_core::{
 
 use crate::blind_rotation::{BlindRotationKey, CGGI};
 
-/// Canonical lower-layer composition for `blind_rotation_key_encrypt_sk_tmp_bytes`.
-pub fn blind_rotation_key_encrypt_sk_tmp_bytes_ref<BE, A: GGSWInfos>(module: &Module<BE>, infos: &A) -> usize
+/// Independently callable canonical implementation of
+/// [`BlindRotationKeyEncryptSk::blind_rotation_key_encrypt_sk_tmp_bytes`](crate::api::BlindRotationKeyEncryptSk::blind_rotation_key_encrypt_sk_tmp_bytes), selected by
+/// `impl_blind_rotation_key_encrypt_sk_reference_full!`.
+pub fn blind_rotation_key_encrypt_sk_tmp_bytes_reference<BE, A: GGSWInfos>(module: &Module<BE>, infos: &A) -> usize
 where
     BE: Backend<ZnxWord = i64>,
     Module<BE>: GGSWEncryptSk<BE>,
@@ -22,24 +24,32 @@ where
     module.ggsw_encrypt_sk_tmp_bytes(infos)
 }
 
-/// Canonical lower-layer composition for `blind_rotation_key_encrypt_sk`.
-pub fn blind_rotation_key_encrypt_sk_ref<BE, S0, S1>(
+/// Independently callable canonical implementation of
+/// [`BlindRotationKeyEncryptSk::blind_rotation_key_encrypt_sk`](crate::api::BlindRotationKeyEncryptSk::blind_rotation_key_encrypt_sk), selected by
+/// `impl_blind_rotation_key_encrypt_sk_reference_full!`.
+pub fn blind_rotation_key_encrypt_sk_reference<BE, S0, S1>(
     module: &Module<BE>,
     res: &mut BlindRotationKey<BE::OwnedBuf, CGGI, BE::ZnxWord>,
-    sk_glwe: &S0,
-    sk_lwe: &S1,
+    sk_lwe: &S0,
+    sk_glwe: &S1,
     source_xe: &mut Source,
     source_xa: &mut Source,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    S0: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
-    S1: LWESecretToBackendRef<BE> + LWEInfos + GetDistribution,
+    S0: LWESecretToBackendRef<BE> + LWEInfos + GetDistribution,
+    S1: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
     BE: Backend<ZnxWord = i64>,
     Module<BE>: GGSWEncryptSk<BE>,
 {
-    assert_eq!(res.keys.len() as u32, sk_lwe.n());
+    assert!(
+        res.keys.len() as u32 == sk_lwe.n(),
+        "the key count differs from the LWE secret dimension"
+    );
     assert!(sk_glwe.n() <= module.n() as u32);
-    assert_eq!(sk_glwe.rank(), res.keys[0].rank());
+    assert!(
+        sk_glwe.rank() == res.keys[0].rank(),
+        "the GLWE secret rank differs from the key rank"
+    );
 
     match sk_lwe.dist() {
         Distribution::BinaryBlock(_) | Distribution::BinaryFixed(_) | Distribution::BinaryProb(_) | Distribution::ZERO => {}
@@ -66,4 +76,6 @@ pub fn blind_rotation_key_encrypt_sk_ref<BE, S0, S1>(
             module.ggsw_encrypt_sk(ggsw, &pt, sk_glwe, source_xe, source_xa, &mut scratch_iter);
         }
     }
+
+    scratch.wipe(blind_rotation_key_encrypt_sk_tmp_bytes_reference(module, &res.keys[0]));
 }

@@ -16,13 +16,13 @@ use poulpy_hal::{
 };
 use rand::Rng;
 
+use crate::test_suite::bdd_arithmetic::{TEST_FHEUINT_BASE2K, TEST_RANK, TestContext};
+use crate::test_suite::parity::{assert_short_scratch_panics, snapshot_glwe};
 use crate::{
-    bdd_arithmetic::{
-        FheUintPrepared, GLWEBlindSelection,
-        test_suite::{TEST_FHEUINT_BASE2K, TEST_RANK, TestContext},
-    },
+    bdd_arithmetic::{FheUintPrepared, GLWEBlindSelection},
     blind_rotation::BlindRotationAlgo,
 };
+use poulpy_core::test_suite::with_scratch;
 
 pub fn test_glwe_blind_selection<BRA, BE>(test_context: &TestContext<BRA, BE>)
 where
@@ -66,11 +66,15 @@ where
     let mut source_xa: Source = Source::new([2u8; 32]);
     let mut source_xe: Source = Source::new([3u8; 32]);
 
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(1 << 22);
-
     let mut res: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_infos);
 
     let k: u32 = source.next_u32();
+
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+        crate::api::FheUintPreparedEncryptSk::<u32, BE>::fhe_uint_prepared_encrypt_sk_tmp_bytes(module, &ggsw_infos)
+            .max(module.glwe_encrypt_sk_tmp_bytes(&glwe_infos))
+            .max(module.glwe_decrypt_tmp_bytes(&glwe_infos)),
+    );
 
     let mut k_enc_prep: FheUintPrepared<BE::OwnedBuf, u32, BE> =
         FheUintPrepared::<BE::OwnedBuf, u32, BE>::alloc_from_infos(module, &ggsw_infos);
@@ -88,7 +92,6 @@ where
     for _ in 0..32_usize.div_ceil(digit) {
         let mut pt: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
 
-        let mut cts_map: HashMap<usize, &mut GLWE<BE::OwnedBuf, BE::ZnxWord>> = HashMap::new();
         let mut cts: Vec<GLWE<BE::OwnedBuf, BE::ZnxWord>> = Vec::new();
 
         for value in data.iter().take(1 << digit) {
@@ -105,25 +108,33 @@ where
             cts.push(ct);
         }
 
-        for (i, ct) in cts.iter_mut().enumerate() {
-            if i.is_multiple_of(3) {
-                cts_map.insert(i, ct);
-            }
-        }
-
         // How many bits to take
         let bit_size: usize = (32 - bit_start).min(digit);
-        let input_infos: Vec<_> = cts_map.values().map(|ct| &**ct).collect();
-        let mut selection_scratch = ScratchOwned::alloc(module.glwe_blind_selection_tmp_bytes(&res, &input_infos, &ggsw_infos));
+        let input_infos: Vec<_> = cts.iter().step_by(3).collect();
+        let selection_bytes = module.glwe_blind_selection_tmp_bytes(&res, &input_infos, &ggsw_infos);
 
-        module.glwe_blind_selection(
-            &mut res,
-            cts_map,
-            &k_enc_prep,
-            bit_start,
-            bit_size,
-            &mut selection_scratch.borrow(),
+        let before = (
+            snapshot_glwe::<BE, _>(&res),
+            cts.iter().map(snapshot_glwe::<BE, _>).collect::<Vec<_>>(),
         );
+        let cts_map: HashMap<usize, &mut GLWE<BE::OwnedBuf, BE::ZnxWord>> =
+            cts.iter_mut().enumerate().filter(|(i, _)| i.is_multiple_of(3)).collect();
+        assert_short_scratch_panics::<BE, _>(selection_bytes, "glwe_blind_selection: insufficient scratch", |s| {
+            module.glwe_blind_selection(bit_start, bit_size, &mut res, cts_map, &k_enc_prep, s)
+        });
+        assert_eq!(
+            before,
+            (
+                snapshot_glwe::<BE, _>(&res),
+                cts.iter().map(snapshot_glwe::<BE, _>).collect::<Vec<_>>()
+            )
+        );
+
+        let cts_map: HashMap<usize, &mut GLWE<BE::OwnedBuf, BE::ZnxWord>> =
+            cts.iter_mut().enumerate().filter(|(i, _)| i.is_multiple_of(3)).collect();
+        with_scratch::<BE, _>(selection_bytes, |s| {
+            module.glwe_blind_selection(bit_start, bit_size, &mut res, cts_map, &k_enc_prep, s)
+        });
 
         glwe_decrypt_checked(module, &res, &mut pt, sk_glwe_prep, &mut scratch.borrow());
 

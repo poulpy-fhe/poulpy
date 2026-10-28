@@ -1,3 +1,4 @@
+use poulpy_core::api::{GGLWEToGGSWKeyPreparedFactory, GGSWPreparedFactory, GLWEAutomorphismKeyPreparedFactory};
 use poulpy_core::layouts::{
     GGLWEInfos, GGLWEToGGSWKeyLayout, GGLWEToGGSWKeyPrepared, GGSWInfos, GLWEAutomorphismKeyLayout, GLWEInfos,
     GetAutomorphismKey, LWEInfos, prepared::GLWEAutomorphismKeyPrepared,
@@ -7,7 +8,10 @@ use std::collections::HashMap;
 use poulpy_hal::layouts::{Backend, Data, ScratchArena};
 
 use crate::{
-    blind_rotation::{BlindRotationAlgo, BlindRotationKeyInfos, BlindRotationKeyLayout, BlindRotationKeyPrepared},
+    blind_rotation::{
+        BlindRotationAlgo, BlindRotationKeyInfos, BlindRotationKeyLayout, BlindRotationKeyPrepared,
+        BlindRotationKeyPreparedFactory,
+    },
     circuit_bootstrapping::{CircuitBootstrappingKey, CircuitBootstrappingKeyInfos},
 };
 
@@ -15,7 +19,11 @@ impl<BRA: BlindRotationAlgo, BE: Backend> CircuitBootstrappingKeyPrepared<BE::Ow
     pub fn alloc_from_infos<A, M>(module: &M, infos: &A) -> CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE>
     where
         A: CircuitBootstrappingKeyInfos,
-        M: CircuitBootstrappingKeyPreparedFactory<BRA, BE>,
+        M: CircuitBootstrappingKeyPreparedFactory<BRA, BE>
+            + BlindRotationKeyPreparedFactory<BRA, BE>
+            + GGSWPreparedFactory<BE>
+            + GGLWEToGGSWKeyPreparedFactory<BE>
+            + GLWEAutomorphismKeyPreparedFactory<BE>,
     {
         module.circuit_bootstrapping_key_prepared_alloc_from_infos(infos)
     }
@@ -34,11 +42,6 @@ impl<BRA: BlindRotationAlgo, BE: Backend> CircuitBootstrappingKeyPrepared<BE::Ow
     }
 }
 
-/// Backend-level factory for allocating and preparing
-/// [`CircuitBootstrappingKeyPrepared`] values.
-///
-/// Re-export of the public API. The backend selects allocation and preparation
-/// through [`CircuitBootstrappingKeyPreparedImpl`](crate::oep::CircuitBootstrappingKeyPreparedImpl).
 pub use crate::api::CircuitBootstrappingKeyPreparedFactory;
 
 /// DFT-prepared circuit bootstrapping key bundle, ready for on-line evaluation.

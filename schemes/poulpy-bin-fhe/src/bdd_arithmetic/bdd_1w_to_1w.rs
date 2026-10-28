@@ -27,8 +27,8 @@ macro_rules! define_bdd_1w_to_1w_trait {
                 /// Multithreaded version – same vis, method_name + "_multi_thread"
                 fn [<$method_name _multi_thread>]<M, H>(
                     &mut self,
-                    threads: usize,
                     module: &M,
+                    threads: usize,
                     a: &FheUintPrepared<BE::OwnedBuf, T, BE>,
                     key: &H,
                     scratch: &mut ScratchArena<'_, BE>,
@@ -59,13 +59,13 @@ macro_rules! impl_bdd_1w_to_1w_trait {
                     H: GetAutomorphismKey<BE>,
                     BE: Backend<ZnxWord = i64>,
                 {
-                    module.execute_bdd_circuit_1w_to_1w(self, &$output_circuits, a, key, scratch)
+                    module.execute_bdd_circuit_1w_to_1w(self, a, &$output_circuits, key, scratch)
                 }
 
                 fn [<$method_name _multi_thread>]<M, H>(
                     &mut self,
-                    threads: usize,
                     module: &M,
+                    threads: usize,
                     a: &FheUintPrepared<BE::OwnedBuf, $ty, BE>,
                     key: &H,
                     scratch: &mut ScratchArena<'_, BE>,
@@ -74,7 +74,7 @@ macro_rules! impl_bdd_1w_to_1w_trait {
                     H: GetAutomorphismKey<BE>,
                     BE: Backend<ZnxWord = i64>,
                 {
-                    module.execute_bdd_circuit_1w_to_1w_multi_thread(threads, self, &$output_circuits, a, key, scratch)
+                    module.execute_bdd_circuit_1w_to_1w_multi_thread(threads, self, a, &$output_circuits, key, scratch)
                 }
             }
         }

@@ -118,9 +118,7 @@ pub fn cswap_reference<BE, A, B>(
     let scratch = scratch.borrow();
     assert!(
         scratch.available() >= cswap_tmp_bytes_reference(module, res_a, res_b, s),
-        "scratch.available(): {} < Cswap::cswap_tmp_bytes: {}",
-        scratch.available(),
-        cswap_tmp_bytes_reference(module, res_a, res_b, s)
+        "cswap: insufficient scratch"
     );
 
     let res_base2k: usize = res_a.base2k().as_usize();

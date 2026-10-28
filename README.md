@@ -374,7 +374,8 @@ RUSTFLAGS="-C target-feature=+avx2,+fma" cargo test -p poulpy-cpu-avx --features
 Native CI runs binary-FHE parity for the supported FFT/NTT and Rayon backends.
 Intel SDE runs no binary-FHE, keeping instruction emulation within the
 five-minute test execution budget. Scheme parity runs with its own compact
-fixtures; full correctness workflows remain in the backend test suites.
+fixtures; full correctness workflows (`bin_fhe_backend_test_suite!`) run on the
+oracle and the portable serial types.
 
 Benchmark targets are split by family:
 

@@ -17,12 +17,20 @@ use poulpy_hal::{
     layouts::{Backend, Module, ScratchArena, Standard},
     source::Source,
 };
-/// Backend contract for circuit bootstrapping, on the standard ring only.
+/// Backend implementation contract for [`CircuitBootstrappingExecute`](crate::api::CircuitBootstrappingExecute), on the
+/// standard ring only.
 ///
 /// # Safety
-/// Preserve the canonical circuit, metadata, and input invariants. Execution must
-/// stay within the selected scratch query; validate overrides with caller-selected parity.
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait CircuitBootstrappingExecuteImpl<BRA: BlindRotationAlgo>: Backend<ZnxWord = i64, Ring = Standard> {
+    /// Default body: `circuit_bootstrapping_execute_tmp_bytes_derived`, the selected
+    /// [`Self::circuit_bootstrapping_execute_prepared_tmp_bytes`] at a plan layout over `res_infos` with no `log_domain`
+    /// or gaps, which bounds every domain at that output layout.
+    ///
+    /// Scratch bound of [`Self::circuit_bootstrapping_execute_to_constant`] at every `log_domain`; may report less than
+    /// the reference, never less than the body takes.
     fn circuit_bootstrapping_execute_tmp_bytes<R, A>(
         module: &Module<Self>,
         block_size: usize,
@@ -42,6 +50,11 @@ pub unsafe trait CircuitBootstrappingExecuteImpl<BRA: BlindRotationAlgo>: Backen
             cbt_infos,
         )
     }
+    /// Default body: `circuit_bootstrapping_execute_to_constant_tmp_bytes_derived`, the selected
+    /// [`Self::circuit_bootstrapping_execute_tmp_bytes`].
+    ///
+    /// Scratch bound of [`Self::circuit_bootstrapping_execute_to_constant`]; may report less than the reference, never
+    /// less than the body takes.
     fn circuit_bootstrapping_execute_to_constant_tmp_bytes<R, A>(
         module: &Module<Self>,
         block_size: usize,
@@ -61,6 +74,13 @@ pub unsafe trait CircuitBootstrappingExecuteImpl<BRA: BlindRotationAlgo>: Backen
             cbt_infos,
         )
     }
+    /// Default body: `circuit_bootstrapping_execute_to_exponent_tmp_bytes_derived`, the selected
+    /// [`Self::circuit_bootstrapping_execute_prepared_tmp_bytes`] at a plan layout over `res_infos` with `log_domain`,
+    /// `log_gap_out`, and the input gap `circuit_bootstrapping_log_gap_in` gives for `res_infos`, `log_domain` and
+    /// `extension_factor`.
+    ///
+    /// Scratch bound of [`Self::circuit_bootstrapping_execute_to_exponent`]; may report less than the reference, never
+    /// less than the body takes.
     fn circuit_bootstrapping_execute_to_exponent_tmp_bytes<R, A>(
         module: &Module<Self>,
         log_gap_out: usize,
@@ -84,13 +104,16 @@ pub unsafe trait CircuitBootstrappingExecuteImpl<BRA: BlindRotationAlgo>: Backen
             cbt_infos,
         )
     }
+    /// Default body: `circuit_bootstrapping_execute_to_constant_derived`, the selected
+    /// [`Self::circuit_bootstrapping_prepare_to_constant`] followed by [`Self::circuit_bootstrapping_execute_prepared`]
+    /// on the plan, within [`Self::circuit_bootstrapping_execute_to_constant_tmp_bytes`].
     fn circuit_bootstrapping_execute_to_constant<R, L>(
         module: &Module<Self>,
+        log_domain: usize,
+        extension_factor: usize,
         res: &mut R,
         lwe: &L,
         key: &CircuitBootstrappingKeyPrepared<Self::OwnedBuf, BRA, Self>,
-        log_domain: usize,
-        extension_factor: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         R: GGSWToBackendMut<Self> + GGSWAtViewRef<Self> + GGSWAtViewMut<Self> + GGSWInfos,
@@ -98,22 +121,25 @@ pub unsafe trait CircuitBootstrappingExecuteImpl<BRA: BlindRotationAlgo>: Backen
     {
         crate::oep::derived::circuit_bootstrapping::circuit_bootstrapping_execute_to_constant_derived(
             module,
+            log_domain,
+            extension_factor,
             res,
             lwe,
             key,
-            log_domain,
-            extension_factor,
             scratch,
         )
     }
+    /// Default body: `circuit_bootstrapping_execute_to_exponent_derived`, the selected
+    /// [`Self::circuit_bootstrapping_prepare_to_exponent`] followed by [`Self::circuit_bootstrapping_execute_prepared`]
+    /// on the plan, within [`Self::circuit_bootstrapping_execute_to_exponent_tmp_bytes`].
     fn circuit_bootstrapping_execute_to_exponent<R, L>(
         module: &Module<Self>,
         log_gap_out: usize,
+        log_domain: usize,
+        extension_factor: usize,
         res: &mut R,
         lwe: &L,
         key: &CircuitBootstrappingKeyPrepared<Self::OwnedBuf, BRA, Self>,
-        log_domain: usize,
-        extension_factor: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         R: GGSWToBackendMut<Self> + GGSWAtViewRef<Self> + GGSWAtViewMut<Self> + GGSWInfos,
@@ -122,54 +148,77 @@ pub unsafe trait CircuitBootstrappingExecuteImpl<BRA: BlindRotationAlgo>: Backen
         crate::oep::derived::circuit_bootstrapping::circuit_bootstrapping_execute_to_exponent_derived(
             module,
             log_gap_out,
+            log_domain,
+            extension_factor,
             res,
             lwe,
             key,
-            log_domain,
-            extension_factor,
             scratch,
         )
     }
+    /// Reproduces
+    /// [`circuit_bootstrapping_prepare_to_constant_reference`](crate::reference::circuit_bootstrapping::circuit_bootstrapping_prepare_to_constant_reference)
+    /// bit for bit; free in kernels. The plan records the output layout, key layouts and block size the executions assert
+    /// against.
     fn circuit_bootstrapping_prepare_to_constant<R: GGSWInfos>(
         module: &Module<Self>,
-        res_infos: &R,
-        key: &CircuitBootstrappingKeyPrepared<Self::OwnedBuf, BRA, Self>,
         log_domain: usize,
         extension_factor: usize,
+        res_infos: &R,
+        key: &CircuitBootstrappingKeyPrepared<Self::OwnedBuf, BRA, Self>,
     ) -> CircuitBootstrappingPlan<Self::OwnedBuf>;
+    /// Reproduces
+    /// [`circuit_bootstrapping_prepare_to_exponent_reference`](crate::reference::circuit_bootstrapping::circuit_bootstrapping_prepare_to_exponent_reference)
+    /// bit for bit; free in kernels. The plan records the output layout, key layouts and block size the executions assert
+    /// against.
     fn circuit_bootstrapping_prepare_to_exponent<R: GGSWInfos>(
         module: &Module<Self>,
         log_gap_out: usize,
-        res_infos: &R,
-        key: &CircuitBootstrappingKeyPrepared<Self::OwnedBuf, BRA, Self>,
         log_domain: usize,
         extension_factor: usize,
+        res_infos: &R,
+        key: &CircuitBootstrappingKeyPrepared<Self::OwnedBuf, BRA, Self>,
     ) -> CircuitBootstrappingPlan<Self::OwnedBuf>;
+    /// Scratch bound of [`Self::circuit_bootstrapping_execute_prepared`] over every plan of the layout `plan`; may report
+    /// less than the reference, never less than the body takes. `key` is read for its layouts only, and a `log_domain` of
+    /// `None` bounds every domain at that output layout.
     fn circuit_bootstrapping_execute_prepared_tmp_bytes<A: CircuitBootstrappingKeyInfos>(
         module: &Module<Self>,
         plan: &CircuitBootstrappingPlanLayout,
         key: &A,
     ) -> usize;
+    /// Reproduces
+    /// [`circuit_bootstrapping_execute_prepared_reference`](crate::reference::circuit_bootstrapping::circuit_bootstrapping_execute_prepared_reference)
+    /// bit for bit, within [`Self::circuit_bootstrapping_execute_prepared_tmp_bytes`]; free in kernels and scratch use.
     fn circuit_bootstrapping_execute_prepared<R, L>(
         module: &Module<Self>,
         res: &mut R,
         lwe: &L,
-        key: &CircuitBootstrappingKeyPrepared<Self::OwnedBuf, BRA, Self>,
         plan: &CircuitBootstrappingPlan<Self::OwnedBuf>,
+        key: &CircuitBootstrappingKeyPrepared<Self::OwnedBuf, BRA, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         R: GGSWToBackendMut<Self> + GGSWAtViewRef<Self> + GGSWAtViewMut<Self> + GGSWInfos,
         L: LWEToBackendRef<Self> + LWEInfos;
 }
-/// Backend contract for circuit bootstrapping.
+/// Backend implementation contract for
+/// [`CircuitBootstrappingKeyEncryptSk`](crate::api::CircuitBootstrappingKeyEncryptSk).
 ///
 /// # Safety
-/// Preserve the canonical circuit, metadata, and input invariants. Execution must
-/// stay within the selected scratch query; validate overrides with caller-selected parity.
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does.
+/// Every method taking scratch wipes the scratch its query reports before returning.
+/// The memory, layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait CircuitBootstrappingKeyEncryptSkImpl<BRA: BlindRotationAlgo>: Backend {
+    /// Scratch bound of [`Self::circuit_bootstrapping_key_encrypt_sk`]; may report less than the reference, never less
+    /// than the body takes.
     fn circuit_bootstrapping_key_encrypt_sk_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: CircuitBootstrappingKeyInfos;
+    /// Reproduces
+    /// [`circuit_bootstrapping_key_encrypt_sk_reference`](crate::reference::circuit_bootstrapping::circuit_bootstrapping_key_encrypt_sk_reference)
+    /// bit for bit, within [`Self::circuit_bootstrapping_key_encrypt_sk_tmp_bytes`]; free in kernels and scratch use
+    /// before the wipe.
     fn circuit_bootstrapping_key_encrypt_sk<S0, S1>(
         module: &Module<Self>,
         res: &mut CircuitBootstrappingKey<Self::OwnedBuf, BRA, Self::ZnxWord>,
@@ -182,21 +231,22 @@ pub unsafe trait CircuitBootstrappingKeyEncryptSkImpl<BRA: BlindRotationAlgo>: B
         S0: LWESecretToBackendRef<Self> + GetDistribution + LWEInfos,
         S1: GLWESecretToBackendRef<Self> + GLWEInfos + GetDistribution;
 }
-/// Backend contract for circuit bootstrapping.
+/// Backend implementation contract for
+/// [`CircuitBootstrappingKeyPreparedFactory`](crate::api::CircuitBootstrappingKeyPreparedFactory).
 ///
 /// # Safety
-/// Preserve the canonical circuit, metadata, and input invariants. Execution must
-/// stay within the selected scratch query; validate overrides with caller-selected parity.
+/// Implementations reproduce the bodies their methods document bit for bit, report for each
+/// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
+/// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait CircuitBootstrappingKeyPreparedImpl<BRA: BlindRotationAlgo>: Backend {
-    fn circuit_bootstrapping_key_prepared_alloc_from_infos<A>(
-        module: &Module<Self>,
-        infos: &A,
-    ) -> CircuitBootstrappingKeyPrepared<Self::OwnedBuf, BRA, Self>
-    where
-        A: CircuitBootstrappingKeyInfos;
+    /// Scratch bound of [`Self::circuit_bootstrapping_key_prepare`]; may report less than the reference, never less than
+    /// the body takes.
     fn circuit_bootstrapping_key_prepare_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: CircuitBootstrappingKeyInfos;
+    /// Reproduces
+    /// [`circuit_bootstrapping_key_prepare_reference`](crate::reference::circuit_bootstrapping::circuit_bootstrapping_key_prepare_reference)
+    /// bit for bit, within [`Self::circuit_bootstrapping_key_prepare_tmp_bytes`]; free in kernels and scratch use.
     fn circuit_bootstrapping_key_prepare(
         module: &Module<Self>,
         res: &mut CircuitBootstrappingKeyPrepared<Self::OwnedBuf, BRA, Self>,
@@ -204,41 +254,41 @@ pub unsafe trait CircuitBootstrappingKeyPreparedImpl<BRA: BlindRotationAlgo>: Ba
         scratch: &mut ScratchArena<'_, Self>,
     );
 }
-/// Explicitly selects the canonical circuit-bootstrap execute implementation.
+/// Selects the reference implementation of `CircuitBootstrappingExecuteImpl<$algo>` for `$be`.
 #[macro_export]
-macro_rules! impl_bin_fhe_circuit_bootstrapping_execute_reference {
+macro_rules! impl_circuit_bootstrapping_execute_reference_full {
     ($be:ty, $algo:ty) => {
         unsafe impl $crate::oep::CircuitBootstrappingExecuteImpl<$algo> for $be {
             fn circuit_bootstrapping_prepare_to_constant<R: ::poulpy_core::layouts::GGSWInfos>(
                 module: &::poulpy_hal::layouts::Module<Self>,
-                res_infos: &R,
-                key: &$crate::circuit_bootstrapping::CircuitBootstrappingKeyPrepared<Self::OwnedBuf, $algo, Self>,
                 log_domain: usize,
                 extension_factor: usize,
+                res_infos: &R,
+                key: &$crate::circuit_bootstrapping::CircuitBootstrappingKeyPrepared<Self::OwnedBuf, $algo, Self>,
             ) -> $crate::circuit_bootstrapping::CircuitBootstrappingPlan<Self::OwnedBuf> {
                 $crate::reference::circuit_bootstrapping::circuit_bootstrapping_prepare_to_constant_reference::<R, _, $algo, Self>(
                     module,
-                    res_infos,
-                    key,
                     log_domain,
                     extension_factor,
+                    res_infos,
+                    key,
                 )
             }
             fn circuit_bootstrapping_prepare_to_exponent<R: ::poulpy_core::layouts::GGSWInfos>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 log_gap_out: usize,
-                res_infos: &R,
-                key: &$crate::circuit_bootstrapping::CircuitBootstrappingKeyPrepared<Self::OwnedBuf, $algo, Self>,
                 log_domain: usize,
                 extension_factor: usize,
+                res_infos: &R,
+                key: &$crate::circuit_bootstrapping::CircuitBootstrappingKeyPrepared<Self::OwnedBuf, $algo, Self>,
             ) -> $crate::circuit_bootstrapping::CircuitBootstrappingPlan<Self::OwnedBuf> {
                 $crate::reference::circuit_bootstrapping::circuit_bootstrapping_prepare_to_exponent_reference::<R, _, $algo, Self>(
                     module,
                     log_gap_out,
-                    res_infos,
-                    key,
                     log_domain,
                     extension_factor,
+                    res_infos,
+                    key,
                 )
             }
             fn circuit_bootstrapping_execute_prepared_tmp_bytes<A: $crate::circuit_bootstrapping::CircuitBootstrappingKeyInfos>(
@@ -254,8 +304,8 @@ macro_rules! impl_bin_fhe_circuit_bootstrapping_execute_reference {
                 module: &::poulpy_hal::layouts::Module<Self>,
                 res: &mut R,
                 lwe: &L,
-                key: &$crate::circuit_bootstrapping::CircuitBootstrappingKeyPrepared<Self::OwnedBuf, $algo, Self>,
                 plan: &$crate::circuit_bootstrapping::CircuitBootstrappingPlan<Self::OwnedBuf>,
+                key: &$crate::circuit_bootstrapping::CircuitBootstrappingKeyPrepared<Self::OwnedBuf, $algo, Self>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) where
                 R: ::poulpy_core::layouts::GGSWToBackendMut<Self>
@@ -265,15 +315,15 @@ macro_rules! impl_bin_fhe_circuit_bootstrapping_execute_reference {
                 L: ::poulpy_core::layouts::LWEToBackendRef<Self> + ::poulpy_core::layouts::LWEInfos,
             {
                 $crate::reference::circuit_bootstrapping::circuit_bootstrapping_execute_prepared_reference::<R, L, _, $algo, Self>(
-                    module, res, lwe, key, plan, scratch,
+                    module, res, lwe, plan, key, scratch,
                 )
             }
         }
     };
 }
-/// Explicitly selects the canonical circuit-bootstrap key encrypt sk implementation.
+/// Selects the reference implementation of `CircuitBootstrappingKeyEncryptSkImpl<$algo>` for `$be`.
 #[macro_export]
-macro_rules! impl_bin_fhe_circuit_bootstrapping_key_encrypt_sk_reference {
+macro_rules! impl_circuit_bootstrapping_key_encrypt_sk_reference_full {
     ($be:ty, $algo:ty) => {
         unsafe impl $crate::oep::CircuitBootstrappingKeyEncryptSkImpl<$algo> for $be {
             fn circuit_bootstrapping_key_encrypt_sk_tmp_bytes<A>(module: &::poulpy_hal::layouts::Module<Self>, infos: &A) -> usize
@@ -305,22 +355,11 @@ macro_rules! impl_bin_fhe_circuit_bootstrapping_key_encrypt_sk_reference {
         }
     };
 }
-/// Explicitly selects the canonical circuit-bootstrap key prepared implementation.
+/// Selects the reference implementation of `CircuitBootstrappingKeyPreparedImpl<$algo>` for `$be`.
 #[macro_export]
-macro_rules! impl_bin_fhe_circuit_bootstrapping_key_prepared_reference {
+macro_rules! impl_circuit_bootstrapping_key_prepared_reference_full {
     ($be:ty, $algo:ty) => {
         unsafe impl $crate::oep::CircuitBootstrappingKeyPreparedImpl<$algo> for $be {
-            fn circuit_bootstrapping_key_prepared_alloc_from_infos<A>(
-                module: &::poulpy_hal::layouts::Module<Self>,
-                infos: &A,
-            ) -> $crate::circuit_bootstrapping::CircuitBootstrappingKeyPrepared<Self::OwnedBuf, $algo, Self>
-            where
-                A: $crate::circuit_bootstrapping::CircuitBootstrappingKeyInfos,
-            {
-                $crate::reference::circuit_bootstrapping::circuit_bootstrapping_key_prepared_alloc_from_infos_reference::<A, _, $algo, Self>(
-                    module, infos,
-                )
-            }
             fn circuit_bootstrapping_key_prepare_tmp_bytes<A>(module: &::poulpy_hal::layouts::Module<Self>, infos: &A) -> usize
             where
                 A: $crate::circuit_bootstrapping::CircuitBootstrappingKeyInfos,
@@ -340,10 +379,10 @@ macro_rules! impl_bin_fhe_circuit_bootstrapping_key_prepared_reference {
 }
 /// Explicitly registers all canonical circuit-bootstrap operations.
 #[macro_export]
-macro_rules! impl_bin_fhe_circuit_bootstrapping_reference {
+macro_rules! impl_circuit_bootstrapping_reference_full {
     ($be:ty, $algo:ty) => {
-        $crate::impl_bin_fhe_circuit_bootstrapping_execute_reference!($be, $algo);
-        $crate::impl_bin_fhe_circuit_bootstrapping_key_encrypt_sk_reference!($be, $algo);
-        $crate::impl_bin_fhe_circuit_bootstrapping_key_prepared_reference!($be, $algo);
+        $crate::impl_circuit_bootstrapping_execute_reference_full!($be, $algo);
+        $crate::impl_circuit_bootstrapping_key_encrypt_sk_reference_full!($be, $algo);
+        $crate::impl_circuit_bootstrapping_key_prepared_reference_full!($be, $algo);
     };
 }

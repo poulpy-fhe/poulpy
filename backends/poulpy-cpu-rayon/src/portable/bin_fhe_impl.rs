@@ -2,7 +2,7 @@
 
 macro_rules! register_backend {
     ($backend:ty, $comparison:ty, $suite:ident) => {
-        poulpy_bin_fhe::impl_bin_fhe_reference_full!($backend, scheduling = parallel);
+        poulpy_bin_fhe::impl_bin_fhe_reference_full!($backend);
         #[cfg(test)]
         mod $suite {
             poulpy_bin_fhe::bin_fhe_parity_test_suite!(mod paired, backend_ref = $comparison, backend_test = $backend);

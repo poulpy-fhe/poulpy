@@ -11,8 +11,10 @@ use poulpy_hal::{
 
 use crate::blind_rotation::{BlindRotationKeyCompressed, CGGI};
 
-/// Canonical lower-layer composition for `blind_rotation_key_compressed_encrypt_sk_tmp_bytes`.
-pub fn blind_rotation_key_compressed_encrypt_sk_tmp_bytes_ref<BE, A>(module: &Module<BE>, infos: &A) -> usize
+/// Independently callable canonical implementation of
+/// [`BlindRotationKeyCompressedEncryptSk::blind_rotation_key_compressed_encrypt_sk_tmp_bytes`](crate::api::BlindRotationKeyCompressedEncryptSk::blind_rotation_key_compressed_encrypt_sk_tmp_bytes), selected by
+/// `impl_blind_rotation_key_compressed_encrypt_sk_reference_full!`.
+pub fn blind_rotation_key_compressed_encrypt_sk_tmp_bytes_reference<BE, A>(module: &Module<BE>, infos: &A) -> usize
 where
     A: GGSWInfos,
     BE: Backend<ZnxWord = i64>,
@@ -21,24 +23,32 @@ where
     module.ggsw_compressed_encrypt_sk_tmp_bytes(infos)
 }
 
-/// Canonical lower-layer composition for `blind_rotation_key_compressed_encrypt_sk`.
-pub fn blind_rotation_key_compressed_encrypt_sk_ref<BE, S0, S1>(
+/// Independently callable canonical implementation of
+/// [`BlindRotationKeyCompressedEncryptSk::blind_rotation_key_compressed_encrypt_sk`](crate::api::BlindRotationKeyCompressedEncryptSk::blind_rotation_key_compressed_encrypt_sk), selected by
+/// `impl_blind_rotation_key_compressed_encrypt_sk_reference_full!`.
+pub fn blind_rotation_key_compressed_encrypt_sk_reference<BE, S0, S1>(
     module: &Module<BE>,
     res: &mut BlindRotationKeyCompressed<BE::OwnedBuf, CGGI, BE::ZnxWord>,
-    sk_glwe: &S0,
-    sk_lwe: &S1,
+    sk_lwe: &S0,
+    sk_glwe: &S1,
     seed_xa: [u8; 32],
     source_xe: &mut Source,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    S0: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
-    S1: LWESecretToBackendRef<BE> + LWEInfos + GetDistribution,
+    S0: LWESecretToBackendRef<BE> + LWEInfos + GetDistribution,
+    S1: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
     BE: Backend<ZnxWord = i64>,
     Module<BE>: GGSWCompressedEncryptSk<BE>,
 {
-    assert_eq!(res.keys.len() as u32, sk_lwe.n());
+    assert!(
+        res.keys.len() as u32 == sk_lwe.n(),
+        "the key count differs from the LWE secret dimension"
+    );
     assert!(sk_glwe.n() <= module.n() as u32);
-    assert_eq!(sk_glwe.rank(), res.keys[0].rank());
+    assert!(
+        sk_glwe.rank() == res.keys[0].rank(),
+        "the GLWE secret rank differs from the key rank"
+    );
 
     match sk_lwe.dist() {
         Distribution::BinaryBlock(_) | Distribution::BinaryFixed(_) | Distribution::BinaryProb(_) | Distribution::ZERO => {}
@@ -68,4 +78,9 @@ pub fn blind_rotation_key_compressed_encrypt_sk_ref<BE, S0, S1>(
             module.ggsw_compressed_encrypt_sk(ggsw, &pt, sk_glwe, source_xa.new_seed(), source_xe, &mut scratch_iter);
         }
     }
+
+    scratch.wipe(blind_rotation_key_compressed_encrypt_sk_tmp_bytes_reference(
+        module,
+        &res.keys[0],
+    ));
 }

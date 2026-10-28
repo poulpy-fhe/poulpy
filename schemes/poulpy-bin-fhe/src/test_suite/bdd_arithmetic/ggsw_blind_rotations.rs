@@ -6,7 +6,7 @@ use poulpy_core::{
     },
 };
 use poulpy_hal::{
-    api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxRotateAssign},
+    api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxRotateAssign, VecZnxRotateAssignTmpBytes},
     layouts::{
         Backend, HostBackend, HostDataMut, HostDataRef, Module, ScalarZnx, ScratchOwned, VecZnx, VecZnxToBackendMut, ZnxView,
         ZnxViewMut,
@@ -15,13 +15,13 @@ use poulpy_hal::{
 };
 use rand::Rng;
 
+use crate::test_suite::bdd_arithmetic::{TEST_FHEUINT_BASE2K, TEST_RANK, TestContext};
+use crate::test_suite::parity::{assert_short_scratch_panics, snapshot_ggsw};
 use crate::{
-    bdd_arithmetic::{
-        FheUintPrepared, GGSWBlindRotation,
-        test_suite::{TEST_FHEUINT_BASE2K, TEST_RANK, TestContext},
-    },
+    bdd_arithmetic::{FheUintPrepared, GGSWBlindRotation},
     blind_rotation::BlindRotationAlgo,
 };
+use poulpy_core::test_suite::with_scratch;
 
 pub fn test_scalar_to_ggsw_blind_rotation<BRA, BE>(test_context: &TestContext<BRA, BE>)
 where
@@ -35,7 +35,8 @@ where
         + GGSWNoise<BE>
         + GLWEDecrypt<BE>
         + GLWEEncryptSk<BE>
-        + VecZnxRotateAssign<BE>,
+        + VecZnxRotateAssign<BE>
+        + VecZnxRotateAssignTmpBytes,
     BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64> + HostBackend,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     for<'a> BE::BufMut<'a>: HostDataMut,
@@ -71,13 +72,18 @@ where
     let mut source_xa: Source = Source::new([2u8; 32]);
     let mut source_xe: Source = Source::new([3u8; 32]);
 
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(1 << 22);
     let mut res: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_res_infos);
 
     let mut scalar: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(module.n(), 1);
     scalar.raw_mut().iter_mut().enumerate().for_each(|(i, x)| *x = i as i64);
 
     let k: u32 = source.next_u32();
+
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+        crate::api::FheUintPreparedEncryptSk::<u32, BE>::fhe_uint_prepared_encrypt_sk_tmp_bytes(module, &ggsw_k_infos)
+            .max(module.vec_znx_rotate_assign_tmp_bytes())
+            .max(module.ggsw_noise_tmp_bytes(&ggsw_res_infos)),
+    );
 
     let mut k_enc_prep: FheUintPrepared<BE::OwnedBuf, u32, BE> =
         FheUintPrepared::<BE::OwnedBuf, u32, BE>::alloc_from_infos(module, &ggsw_k_infos);
@@ -92,7 +98,7 @@ where
 
     let max_noise = |col_i: usize| {
         // Noise floor sits at the semantic precision `k()` (gadget + guard), not at the
-        // physical limb capacity `size * base2k` — the two only coincide when `k()`
+        // physical limb capacity `size * base2k`, the two only coincide when `k()`
         // happens to be limb-aligned.
         let mut noise: f64 = -(ggsw_res_infos.k().as_usize() as f64) + DEFAULT_SIGMA_XE.log2() + 3.0;
         noise += 0.5 * ggsw_res_infos.log_n() as f64;
@@ -112,16 +118,15 @@ where
             // How many bits to take
             let bit_size: usize = (32 - bit_start).min(digit);
 
-            module.scalar_to_ggsw_blind_rotation(
-                &mut res,
-                &scalar,
-                &k_enc_prep,
-                false,
-                bit_start,
-                bit_size,
-                bit_step,
-                &mut scratch.borrow(),
-            );
+            let rotation_bytes = module.scalar_to_ggsw_blind_rotation_tmp_bytes(&ggsw_res_infos, &ggsw_k_infos);
+            let before = snapshot_ggsw::<BE, _>(&res);
+            assert_short_scratch_panics::<BE, _>(rotation_bytes, "scalar_to_ggsw_blind_rotation: insufficient scratch", |s| {
+                module.scalar_to_ggsw_blind_rotation(false, bit_start, bit_size, bit_step, &mut res, &scalar, &k_enc_prep, s)
+            });
+            assert_eq!(before, snapshot_ggsw::<BE, _>(&res));
+            with_scratch::<BE, _>(rotation_bytes, |s| {
+                module.scalar_to_ggsw_blind_rotation(false, bit_start, bit_size, bit_step, &mut res, &scalar, &k_enc_prep, s)
+            });
 
             let rot: i64 = (((k >> bit_start) & mask) << bit_step) as i64;
 

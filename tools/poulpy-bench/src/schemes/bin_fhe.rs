@@ -5,7 +5,10 @@ use std::hint::black_box;
 use criterion::{Bencher, measurement::Measurement};
 use poulpy_core::{
     GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, GLWEMaskFill, LWEEncryptSk, LWEFillMask,
-    api::{GGSWPreparedFactory, GLWESecretPreparedFactory, GLWESecretSampling, LWESecretSampling},
+    api::{
+        GGLWEToGGSWKeyPreparedFactory, GGSWPreparedFactory, GLWEAutomorphismKeyPreparedFactory, GLWESecretPreparedFactory,
+        GLWESecretSampling, LWESecretSampling,
+    },
     layouts::{
         Base2K, Dnum, GGLWEToGGSWKeyLayout, GGSW, GGSWLayout, GLWE, GLWEAutomorphismKeyLayout, GLWELayout, GLWESecret,
         GLWESecretPrepared, LWE, LWEInfos, LWELayout, LWESecret, ModuleCoreAlloc, TorusPrecision, k_digit_of,
@@ -40,6 +43,7 @@ pub fn runner_blind_rotate<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>, BR
         + ModuleSynchronize<BE>
         + BlindRotationKeyEncryptSk<BRA, BE>
         + BlindRotationKeyPreparedFactory<BRA, BE>
+        + GGSWPreparedFactory<BE>
         + BlindRotationExecute<BRA, BE>
         + LookupTableFactory<BE::OwnedBuf, BE::ZnxWord>
         + GLWESecretPreparedFactory<BE>
@@ -92,8 +96,8 @@ pub fn runner_blind_rotate<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>, BR
         BlindRotationKey::<BE::OwnedBuf, BRA, BE::ZnxWord>::alloc(&module, &brk_infos);
     module.blind_rotation_key_encrypt_sk(
         &mut brk,
-        &sk_glwe_dft,
         &sk_lwe,
+        &sk_glwe_dft,
         &mut source_xe,
         &mut source_xa,
         &mut scratch.borrow(),
@@ -117,7 +121,7 @@ pub fn runner_blind_rotate<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>, BR
         base2k: Base2K(params.bin_fhe_params.base2k),
     };
     let mut lut: LookupTable<BE::OwnedBuf, BE::ZnxWord> = LookupTable::alloc(&module, &lut_infos);
-    lut.set(&module, &f_vec, params.log_message_modulus + 1);
+    lut.set(&module, params.log_message_modulus + 1, &f_vec);
 
     bencher.iter(|| {
         brk_prepared.execute(&module, &mut res, &lwe, &lut, &mut scratch.borrow());
@@ -143,8 +147,11 @@ pub fn runner_circuit_bootstrapping<
         + LWEEncryptSk<BE>
         + CircuitBootstrappingKeyEncryptSk<BRA, BE>
         + CircuitBootstrappingKeyPreparedFactory<BRA, BE>
+        + BlindRotationKeyPreparedFactory<BRA, BE>
         + CircuitBootstrappingExecute<BRA, BE>
         + GGSWPreparedFactory<BE>
+        + GGLWEToGGSWKeyPreparedFactory<BE>
+        + GLWEAutomorphismKeyPreparedFactory<BE>
         + GGSWNoise<BE>
         + GLWEEncryptSk<BE>
         + VecZnxRotateAssign<BE>
@@ -231,10 +238,10 @@ pub fn runner_circuit_bootstrapping<
     bencher.iter(|| {
         cbt_prepared.execute_to_constant(
             &module,
-            &mut res,
-            &ct_lwe,
             params.log_domain,
             params.extension_factor,
+            &mut res,
+            &ct_lwe,
             &mut scratch.borrow(),
         );
         module.synchronize();

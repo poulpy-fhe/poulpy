@@ -3,9 +3,9 @@ use poulpy_core::{
     GLWEAdd, GLWECopy, GLWEDecrypt, GLWEEncryptSk, GLWEKeyswitch, GLWENoise, GLWEPacking, GLWERotate, GLWESub, GLWETrace,
     LWEFromGLWE, ScratchArenaTakeCore, TransferInto,
     layouts::{
-        Base2K, GGLWEInfos, GLWE, GLWEInfos, GLWEPlaintext, GLWEPlaintextLayout, GLWESecretPreparedToBackendRef,
-        GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, LWEToBackendMut, ModuleCoreAlloc, Rank, SetK,
-        TorusPrecision,
+        Base2K, GGLWEInfos, GGSWInfos, GLWE, GLWEInfos, GLWELayout, GLWEPlaintext, GLWEPlaintextLayout,
+        GLWESecretPreparedToBackendRef, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, LWEToBackendMut,
+        ModuleCoreAlloc, Rank, SetK, TorusPrecision,
     },
 };
 use poulpy_hal::AlignedBuf;
@@ -15,7 +15,7 @@ use poulpy_hal::{
     layouts::{Backend, CopyFromHost, CopyToHost, Data, HostBackend, HostDataMut, HostDataRef, ScratchArena, Stats},
     source::Source,
 };
-use std::{collections::HashMap, marker::PhantomData};
+use std::{collections::HashMap, marker::PhantomData, ops::Range};
 
 use crate::bdd_arithmetic::{Cmux, FheUintPrepared, FromBits, GetGGSWBit, ToBits, UnsignedInteger};
 use poulpy_core::GLWEBytesOf;
@@ -127,12 +127,18 @@ impl<D: HostDataMut, T: UnsignedInteger + ToBits> FheUint<D, T, i64> {
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         M: GLWEBytesOf<BE> + ModuleLogN + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord> + GLWEEncryptSk<BE>,
     {
-        #[cfg(debug_assertions)]
-        {
-            assert!(module.n().is_multiple_of(T::BITS as usize));
-            assert_eq!(self.n(), module.n() as u32);
-            assert_eq!(sk_glwe.n(), module.n() as u32);
-        }
+        assert!(
+            module.n().is_multiple_of(T::BITS as usize),
+            "the module degree is not a multiple of the integer width"
+        );
+        assert!(
+            self.n() == module.n() as u32,
+            "the ciphertext degree differs from the module degree"
+        );
+        assert!(
+            sk_glwe.n() == module.n() as u32,
+            "the secret degree differs from the module degree"
+        );
 
         let mut data_bits: Vec<i64> = vec![0i64; module.n()];
 
@@ -182,12 +188,18 @@ impl<D: HostDataRef, T: UnsignedInteger + FromBits> FheUint<D, T, i64> {
         for<'a> BE::BufRef<'a>: HostDataRef,
         for<'a> BE::BufMut<'a>: HostDataMut,
     {
-        #[cfg(debug_assertions)]
-        {
-            assert!(module.n().is_multiple_of(T::BITS as usize));
-            assert_eq!(self.n(), module.n() as u32);
-            assert_eq!(sk.n(), module.n() as u32);
-        }
+        assert!(
+            module.n().is_multiple_of(T::BITS as usize),
+            "the module degree is not a multiple of the integer width"
+        );
+        assert!(
+            self.n() == module.n() as u32,
+            "the ciphertext degree differs from the module degree"
+        );
+        assert!(
+            sk.n() == module.n() as u32,
+            "the secret degree differs from the module degree"
+        );
 
         let pt_infos = GLWEPlaintextLayout {
             n: self.n(),
@@ -212,12 +224,18 @@ impl<D: HostDataRef, T: UnsignedInteger + FromBits> FheUint<D, T, i64> {
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         M: GLWEBytesOf<BE> + ModuleLogN + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord> + GLWEDecrypt<BE>,
     {
-        #[cfg(debug_assertions)]
-        {
-            assert!(module.n().is_multiple_of(T::BITS as usize));
-            assert_eq!(self.n(), module.n() as u32);
-            assert_eq!(sk_glwe.n(), module.n() as u32);
-        }
+        assert!(
+            module.n().is_multiple_of(T::BITS as usize),
+            "the module degree is not a multiple of the integer width"
+        );
+        assert!(
+            self.n() == module.n() as u32,
+            "the ciphertext degree differs from the module degree"
+        );
+        assert!(
+            sk_glwe.n() == module.n() as u32,
+            "the secret degree differs from the module degree"
+        );
 
         let pt_infos = GLWEPlaintextLayout {
             n: self.n(),
@@ -280,6 +298,46 @@ impl<D: Data, T: UnsignedInteger> FheUint<D, T, i64> {
         module.glwe_pack(&mut self.bits, cts, log_gap, keys, scratch);
     }
 
+    /// Scratch bytes of [`FheUint::splice_u16`] for operands `a` and `b` into `res`: its two byte splices run one after the other.
+    ///
+    /// # Panics
+    ///
+    /// If `keys` lacks a key the trace reads.
+    pub fn splice_u16_tmp_bytes<R, A, B, H, M, BE>(module: &M, res_infos: &R, a_infos: &A, b_infos: &B, keys: &H) -> usize
+    where
+        BE: Backend,
+        R: GLWEInfos,
+        A: GLWEInfos,
+        B: GLWEInfos,
+        H: GetAutomorphismKey<BE>,
+        M: GLWECopy<BE> + GLWERotate<BE> + GLWETrace<BE>,
+    {
+        // The second splice reads the first's result, which has the layout of res.
+        Self::splice_u8_tmp_bytes(module, res_infos, a_infos, b_infos, keys)
+            .max(Self::splice_u8_tmp_bytes(module, res_infos, res_infos, b_infos, keys))
+    }
+
+    /// Scratch bytes of [`FheUint::splice_u8`] for operands `a` and `b` into `res`: the copy of `a`, the byte zeroing and the isolation of `b`'s byte run one after the other.
+    ///
+    /// # Panics
+    ///
+    /// If `keys` lacks a key the trace reads.
+    pub fn splice_u8_tmp_bytes<R, A, B, H, M, BE>(module: &M, res_infos: &R, a_infos: &A, b_infos: &B, keys: &H) -> usize
+    where
+        BE: Backend,
+        R: GLWEInfos,
+        A: GLWEInfos,
+        B: GLWEInfos,
+        H: GetAutomorphismKey<BE>,
+        M: GLWECopy<BE> + GLWERotate<BE> + GLWETrace<BE>,
+    {
+        module
+            .glwe_copy_tmp_bytes(res_infos, a_infos)
+            .max(Self::zero_byte_tmp_bytes(module, res_infos, keys))
+            .max(trace_assign_tmp_bytes(module, byte_levels::<T>(b_infos), b_infos, keys))
+            .max(module.glwe_rotate_tmp_bytes())
+    }
+
     #[allow(clippy::too_many_arguments)]
     // Self <- ((a.rotate_right(dst<<4) & 0xFFFF_0000) | (b.rotate_right(src<<4) & 0x0000_FFFF)).rotate_left(dst<<4);
     pub fn splice_u16<A, B, H, M, BE>(
@@ -309,6 +367,10 @@ impl<D: Data, T: UnsignedInteger> FheUint<D, T, i64> {
     {
         assert!(dst < (T::BITS >> 4) as usize);
         assert!(src < (T::BITS >> 4) as usize);
+        assert!(
+            scratch.available() >= Self::splice_u16_tmp_bytes(module, self, a, b, keys),
+            "splice_u16: insufficient scratch"
+        );
 
         let mut tmp: FheUint<BE::OwnedBuf, T, BE::ZnxWord> = FheUint::alloc_from_infos(module, self);
         let mut scratch_1 = scratch.borrow();
@@ -345,6 +407,10 @@ impl<D: Data, T: UnsignedInteger> FheUint<D, T, i64> {
     {
         assert!(dst < (T::BITS >> 3) as usize);
         assert!(src < (T::BITS >> 3) as usize);
+        assert!(
+            scratch.available() >= Self::splice_u8_tmp_bytes(module, self, a, b, keys),
+            "splice_u8: insufficient scratch"
+        );
 
         // 1) Zero the byte receiver
         let log_gap: usize = module.log_n() - T::LOG_BITS as usize;
@@ -372,6 +438,46 @@ impl<D: Data, T: UnsignedInteger> FheUint<D, T, i64> {
         // Add self[0] += a[0]
         module.glwe_add_assign(self, &tmp_fhe_uint_byte);
     }
+}
+
+/// The levels a byte isolation traces.
+fn byte_levels<T: UnsignedInteger>(infos: &impl GLWEInfos) -> Range<usize> {
+    (T::LOG_BITS - T::LOG_BYTES) as usize..infos.log_n()
+}
+
+/// Scratch bytes of tracing `a_infos` over `levels` into `res_infos`, sized from the key of the first rotation as the trace reads it.
+fn trace_tmp_bytes<M, R, A, H, BE>(module: &M, levels: Range<usize>, res_infos: &R, a_infos: &A, keys: &H) -> usize
+where
+    BE: Backend,
+    R: GLWEInfos,
+    A: GLWEInfos,
+    H: GetAutomorphismKey<BE>,
+    M: GLWECopy<BE> + GLWETrace<BE>,
+{
+    let Some(&first) = module.glwe_trace_galois_elements(res_infos.n(), levels, false).first() else {
+        return module.glwe_copy_tmp_bytes(res_infos, a_infos);
+    };
+    let atk = keys
+        .get_automorphism_key(first, res_infos.k().max(a_infos.k()))
+        .unwrap_or_else(|e| panic!("trace rotation {first}: {e}"));
+    module.glwe_trace_tmp_bytes(res_infos, a_infos, &atk)
+}
+
+/// Scratch bytes of tracing `res_infos` in place over `levels`, sized from the key of the first rotation as the trace reads it.
+fn trace_assign_tmp_bytes<M, R, H, BE>(module: &M, levels: Range<usize>, res_infos: &R, keys: &H) -> usize
+where
+    BE: Backend,
+    R: GLWEInfos,
+    H: GetAutomorphismKey<BE>,
+    M: GLWETrace<BE>,
+{
+    let Some(&first) = module.glwe_trace_galois_elements(res_infos.n(), levels, false).first() else {
+        return 0;
+    };
+    let atk = keys
+        .get_automorphism_key(first, res_infos.k())
+        .unwrap_or_else(|e| panic!("trace rotation {first}: {e}"));
+    module.glwe_trace_assign_tmp_bytes(res_infos, &atk)
 }
 
 impl<BE: Backend, D: Data, T: UnsignedInteger> GLWEToBackendRef<BE> for FheUint<D, T, BE::ZnxWord>
@@ -429,7 +535,106 @@ impl<'a, T: UnsignedInteger, BE: Backend> ScratchArenaTakeBDD<'a, T, BE> for Scr
 {
 }
 
+/// The `k` a switch reads: each switch takes its input at the precision its key decomposes exactly, the bits below being dropped by narrowing, not by the key.
+fn max_input_k(key: &impl GGLWEInfos) -> TorusPrecision {
+    key.gglwe_layout().max_input_k()
+}
+
+/// The precision `a` is narrowed to before [`FheUint::get_bit_lwe`] switches it, by the first key it meets.
+fn extraction_input_k<K: GGLWEInfos>(a: &impl GLWEInfos, ks_glwe: Option<&K>, ks_lwe: &impl GGLWEInfos) -> TorusPrecision {
+    a.k().min(ks_glwe.map_or(max_input_k(ks_lwe), max_input_k))
+}
+
+/// The infos of a `set_k` view of `infos` at `k`: the precision drops, the allocated capacity stays.
+struct NarrowedInfos<'a, A> {
+    infos: &'a A,
+    k: TorusPrecision,
+}
+
+impl<A: GLWEInfos> LWEInfos for NarrowedInfos<'_, A> {
+    fn noise(&self) -> Option<poulpy_core::ComponentNoise> {
+        if self.k < self.infos.k() { None } else { self.infos.noise() }
+    }
+
+    fn n(&self) -> poulpy_core::layouts::Degree {
+        self.infos.n()
+    }
+
+    fn base2k(&self) -> Base2K {
+        self.infos.base2k()
+    }
+
+    fn k(&self) -> TorusPrecision {
+        self.k
+    }
+
+    fn max_size(&self) -> usize {
+        self.infos.max_size()
+    }
+}
+
+impl<A: GLWEInfos> GLWEInfos for NarrowedInfos<'_, A> {
+    fn rank(&self) -> Rank {
+        self.infos.rank()
+    }
+}
+
+/// Scratch bytes of [`FheUint::get_bit_lwe`], whatever the integer type.
+pub(crate) fn get_bit_lwe_tmp_bytes<R, A, K, L, M, BE>(
+    module: &M,
+    res_infos: &R,
+    a_infos: &A,
+    ks_glwe: Option<&K>,
+    ks_lwe: &L,
+) -> usize
+where
+    BE: Backend,
+    R: LWEInfos,
+    A: GLWEInfos,
+    K: GGLWEInfos,
+    L: GGLWEInfos,
+    M: GLWEKeyswitch<BE> + LWEFromGLWE<BE>,
+{
+    let a = NarrowedInfos {
+        infos: a_infos,
+        k: extraction_input_k(a_infos, ks_glwe, ks_lwe),
+    };
+    match ks_glwe {
+        Some(ks_glwe) => {
+            let switched = GLWELayout {
+                n: a.n(),
+                base2k: ks_glwe.base2k(),
+                k: ks_glwe.k().min(max_input_k(ks_lwe)),
+                rank: ks_glwe.rank_out(),
+            };
+            module
+                .glwe_keyswitch_tmp_bytes(&switched, &a, ks_glwe)
+                .max(module.lwe_from_glwe_tmp_bytes(res_infos, &switched, ks_lwe))
+        }
+        None => module.lwe_from_glwe_tmp_bytes(res_infos, &a, ks_lwe),
+    }
+}
+
 impl<D: Data, T: UnsignedInteger, W: ZnxWord> FheUint<D, T, W> {
+    /// Scratch bytes of [`FheUint::get_bit_lwe`] from `a` into `res`: the key switch of the narrowed input to the layout of `ks_glwe`, when given, then the extraction at the precision of `ks_lwe`, one after the other.
+    pub fn get_bit_lwe_tmp_bytes<R, A, K, L, M, BE>(
+        module: &M,
+        res_infos: &R,
+        a_infos: &A,
+        ks_glwe: Option<&K>,
+        ks_lwe: &L,
+    ) -> usize
+    where
+        BE: Backend,
+        R: LWEInfos,
+        A: GLWEInfos,
+        K: GGLWEInfos,
+        L: GGLWEInfos,
+        M: GLWEKeyswitch<BE> + LWEFromGLWE<BE>,
+    {
+        get_bit_lwe_tmp_bytes(module, res_infos, a_infos, ks_glwe, ks_lwe)
+    }
+
     pub fn get_bit_lwe<R, M, BE>(
         &self,
         module: &M,
@@ -448,12 +653,13 @@ impl<D: Data, T: UnsignedInteger, W: ZnxWord> FheUint<D, T, W> {
             + LWEFromGLWE<BE>
             + GLWEKeyswitch<BE>,
     {
+        assert!(
+            scratch.available() >= Self::get_bit_lwe_tmp_bytes(module, res, self, ks_glwe, ks_lwe),
+            "get_bit_lwe: insufficient scratch"
+        );
         let log_gap: usize = module.log_n() - T::LOG_BITS as usize;
-        // Each switch reads its input at the precision its key decomposes exactly:
-        // the bits below are dropped here, by narrowing, not by the key.
-        let max_input_k = |key: &GGLWEPreparedBackendRef<'_, BE>| key.gglwe_layout().max_input_k();
         let mut a = GLWEToBackendRef::<BE>::to_backend_ref(self);
-        a.set_k(a.k().min(ks_glwe.map_or(max_input_k(ks_lwe), max_input_k)));
+        a.set_k(extraction_input_k(self, ks_glwe, ks_lwe));
         // The keyswitch reads a lazy sum as is, which its margin tolerates.
         a.set_canonical(true);
         if let Some(ks_glwe) = ks_glwe {
@@ -471,6 +677,21 @@ impl<D: Data, T: UnsignedInteger, W: ZnxWord> FheUint<D, T, W> {
         }
     }
 
+    /// Scratch bytes of [`FheUint::get_bit_glwe`] into `res`: the trace of `res`.
+    ///
+    /// # Panics
+    ///
+    /// If `keys` lacks a key the trace reads.
+    pub fn get_bit_glwe_tmp_bytes<R, M, H, BE>(module: &M, res_infos: &R, keys: &H) -> usize
+    where
+        BE: Backend,
+        R: GLWEInfos,
+        H: GetAutomorphismKey<BE>,
+        M: GLWETrace<BE>,
+    {
+        trace_assign_tmp_bytes(module, 0..res_infos.log_n(), res_infos, keys)
+    }
+
     pub fn get_bit_glwe<R, M, H, BE>(&self, module: &M, bit: usize, res: &mut R, keys: &H, scratch: &mut ScratchArena<'_, BE>)
     where
         BE: Backend,
@@ -479,11 +700,30 @@ impl<D: Data, T: UnsignedInteger, W: ZnxWord> FheUint<D, T, W> {
         M: GLWEBytesOf<BE> + ModuleLogN + GLWERotate<BE> + GLWETrace<BE>,
         H: GetAutomorphismKey<BE>,
     {
+        assert!(
+            scratch.available() >= Self::get_bit_glwe_tmp_bytes(module, res, keys),
+            "get_bit_glwe: insufficient scratch"
+        );
         let log_gap: usize = module.log_n() - T::LOG_BITS as usize;
         let rot = (T::bit_index(bit) << log_gap) as i64;
         module.glwe_rotate(-rot, res, self);
         let log_n = res.log_n();
         module.glwe_trace_assign(res, 0..log_n, false, true, keys, scratch);
+    }
+
+    /// Scratch bytes of [`FheUint::get_byte`] into `res`: the trace of `res` over the byte levels.
+    ///
+    /// # Panics
+    ///
+    /// If `keys` lacks a key the trace reads.
+    pub fn get_byte_tmp_bytes<R, M, H, BE>(module: &M, res_infos: &R, keys: &H) -> usize
+    where
+        BE: Backend,
+        R: GLWEInfos,
+        H: GetAutomorphismKey<BE>,
+        M: GLWETrace<BE>,
+    {
+        trace_assign_tmp_bytes(module, byte_levels::<T>(res_infos), res_infos, keys)
     }
 
     pub fn get_byte<R, M, H, BE>(&self, module: &M, byte: usize, res: &mut R, keys: &H, scratch: &mut ScratchArena<'_, BE>)
@@ -494,6 +734,10 @@ impl<D: Data, T: UnsignedInteger, W: ZnxWord> FheUint<D, T, W> {
         M: GLWEBytesOf<BE> + ModuleLogN + GLWERotate<BE> + GLWETrace<BE>,
         H: GetAutomorphismKey<BE>,
     {
+        assert!(
+            scratch.available() >= Self::get_byte_tmp_bytes(module, res, keys),
+            "get_byte: insufficient scratch"
+        );
         let log_gap: usize = module.log_n() - T::LOG_BITS as usize;
         let trace_start = (T::LOG_BITS - T::LOG_BYTES) as usize;
         let rot = (T::bit_index(byte << 3) << log_gap) as i64;
@@ -504,6 +748,27 @@ impl<D: Data, T: UnsignedInteger, W: ZnxWord> FheUint<D, T, W> {
 }
 
 impl<T: UnsignedInteger> FheUint<AlignedBuf, T, i64> {
+    /// Scratch bytes of [`FheUint::from_fhe_uint_prepared`] into `res` from bits laid out as `bit_infos`: the bit selections, then the packing, one after the other.
+    ///
+    /// # Panics
+    ///
+    /// If `keys` lacks the key of the packing trace.
+    pub fn from_fhe_uint_prepared_tmp_bytes<R, A, H, M, BE>(module: &M, res_infos: &R, bit_infos: &A, keys: &H) -> usize
+    where
+        BE: Backend,
+        R: GLWEInfos,
+        A: GGSWInfos,
+        H: GetAutomorphismKey<BE>,
+        M: Cmux<BE> + GLWEPacking<BE>,
+    {
+        let atk = keys
+            .get_automorphism_key(-1, res_infos.k())
+            .unwrap_or_else(|e| panic!("packing rotation -1: {e}"));
+        module
+            .cmux_tmp_bytes(res_infos, res_infos, bit_infos)
+            .max(module.glwe_pack_tmp_bytes(res_infos, res_infos, &atk))
+    }
+
     pub fn from_fhe_uint_prepared<M, H, BE>(
         &mut self,
         module: &M,
@@ -522,6 +787,10 @@ impl<T: UnsignedInteger> FheUint<AlignedBuf, T, i64> {
         Self: GLWEToBackendMut<BE>,
         H: GetAutomorphismKey<BE>,
     {
+        assert!(
+            scratch.available() >= Self::from_fhe_uint_prepared_tmp_bytes(module, self, other, keys),
+            "from_fhe_uint_prepared: insufficient scratch"
+        );
         let zero: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(self);
         let mut one: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(self);
         one.data_mut().encode_coeff_i64(self.base2k().into(), 0, 2, 0, 1);
@@ -541,6 +810,27 @@ impl<T: UnsignedInteger> FheUint<AlignedBuf, T, i64> {
 }
 
 impl<D: Data, T: UnsignedInteger> FheUint<D, T, i64> {
+    /// Scratch bytes of [`FheUint::zero_byte`] on `res`: the rotations and the trace of `res`.
+    ///
+    /// # Panics
+    ///
+    /// If `keys` lacks a key the trace reads.
+    pub fn zero_byte_tmp_bytes<R, M, H, BE>(module: &M, res_infos: &R, keys: &H) -> usize
+    where
+        BE: Backend,
+        R: GLWEInfos,
+        H: GetAutomorphismKey<BE>,
+        M: GLWECopy<BE> + GLWERotate<BE> + GLWETrace<BE>,
+    {
+        module.glwe_rotate_tmp_bytes().max(trace_tmp_bytes(
+            module,
+            byte_levels::<T>(res_infos),
+            res_infos,
+            res_infos,
+            keys,
+        ))
+    }
+
     pub fn zero_byte<M, H, BE>(&mut self, module: &M, byte: usize, keys: &H, scratch: &mut ScratchArena<'_, BE>)
     where
         BE: Backend<OwnedBuf = D, ZnxWord = i64>,
@@ -556,6 +846,10 @@ impl<D: Data, T: UnsignedInteger> FheUint<D, T, i64> {
             + GLWECopy<BE>,
         for<'a> ScratchArena<'a, BE>: ScratchArenaTakeBDD<'a, T, BE>,
     {
+        assert!(
+            scratch.available() >= Self::zero_byte_tmp_bytes(module, self, keys),
+            "zero_byte: insufficient scratch"
+        );
         let log_gap: usize = module.log_n() - T::LOG_BITS as usize;
         let trace_start = (T::LOG_BITS - T::LOG_BYTES) as usize;
         let rot: i64 = (T::bit_index(byte << 3) << log_gap) as i64;
@@ -575,6 +869,23 @@ impl<D: Data, T: UnsignedInteger> FheUint<D, T, i64> {
         module.glwe_rotate_assign(rot, self, scratch);
     }
 
+    /// Scratch bytes of [`FheUint::sext`] on `res`: the trace of the sign bit, then the byte splices and the copies, one after the other.
+    ///
+    /// # Panics
+    ///
+    /// If `keys` lacks a key the trace reads.
+    pub fn sext_tmp_bytes<R, H, M, BE>(module: &M, res_infos: &R, keys: &H) -> usize
+    where
+        BE: Backend,
+        R: GLWEInfos,
+        H: GetAutomorphismKey<BE>,
+        M: GLWECopy<BE> + GLWERotate<BE> + GLWETrace<BE>,
+    {
+        trace_assign_tmp_bytes(module, 0..res_infos.log_n(), res_infos, keys)
+            .max(module.glwe_copy_tmp_bytes(res_infos, res_infos))
+            .max(Self::splice_u8_tmp_bytes(module, res_infos, res_infos, res_infos, keys))
+    }
+
     pub fn sext<M, H, BE>(&mut self, module: &M, byte: usize, keys: &H, scratch: &mut ScratchArena<'_, BE>)
     where
         Self: GLWEToBackendRef<BE>,
@@ -592,6 +903,10 @@ impl<D: Data, T: UnsignedInteger> FheUint<D, T, i64> {
         for<'a> ScratchArena<'a, BE>: ScratchArenaTakeBDD<'a, T, BE>,
     {
         assert!(byte < (1 << T::LOG_BYTES));
+        assert!(
+            scratch.available() >= Self::sext_tmp_bytes(module, self, keys),
+            "sext: insufficient scratch"
+        );
 
         let log_gap: usize = module.log_n() - T::LOG_BITS as usize;
         let rot: i64 = (T::bit_index((byte << 3) + 7) << log_gap) as i64;

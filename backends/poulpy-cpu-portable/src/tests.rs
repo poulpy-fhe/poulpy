@@ -877,6 +877,10 @@ fn assert_f64_word_containers_are_eq() {
 #[cfg(feature = "enable-bin-fhe")]
 poulpy_bin_fhe::bin_fhe_backend_test_suite!(mod bin_fhe_fft64, backend = crate::FFT64Portable);
 
+#[cfg(feature = "enable-core")]
+#[cfg(feature = "enable-bin-fhe")]
+poulpy_bin_fhe::bin_fhe_backend_test_suite!(mod bin_fhe_ntt4x30, backend = crate::NTT4x30Portable);
+
 #[test]
 fn test_hal_serialization_fft64_portable() {
     poulpy_hal::test_suite::serialization::test_serialization(&Module::<FFT64Portable>::new(1024));
@@ -917,7 +921,7 @@ fn test_core_serialization_fft64_portable() {
 #[cfg(feature = "enable-bin-fhe")]
 #[test]
 fn test_blind_rotation_key_serialization_fft64_portable() {
-    poulpy_bin_fhe::blind_rotation::test_suite::serialization::test_blind_rotation_key_serialization(
+    poulpy_bin_fhe::test_suite::blind_rotation::serialization::test_blind_rotation_key_serialization(
         &Module::<FFT64Portable>::new(256),
     );
 }

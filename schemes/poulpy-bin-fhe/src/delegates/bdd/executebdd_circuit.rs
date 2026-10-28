@@ -6,21 +6,21 @@ where
     BE: crate::oep::ExecuteBDDCircuitImpl,
 {
     #[allow(clippy::too_many_arguments)]
-    fn execute_bdd_circuit_tmp_bytes<R, G>(&self, res_infos: &R, state_size: usize, ggsw_infos: &G) -> usize
+    fn execute_bdd_circuit_tmp_bytes<R, G>(&self, state_size: usize, res_infos: &R, ggsw_infos: &G) -> usize
     where
         R: GLWEInfos,
         G: GGSWInfos,
     {
-        BE::execute_bdd_circuit_tmp_bytes::<R, G>(self, res_infos, state_size, ggsw_infos)
+        BE::execute_bdd_circuit_tmp_bytes::<R, G>(self, state_size, res_infos, ggsw_infos)
     }
     #[allow(clippy::too_many_arguments)]
-    fn execute_bdd_circuit_tmp_bytes_for<R, G, C>(&self, res_infos: &R, circuit: &C, ggsw_infos: &G) -> usize
+    fn execute_bdd_circuit_tmp_bytes_for<R, G, C>(&self, res_infos: &R, ggsw_infos: &G, circuit: &C) -> usize
     where
         R: GLWEInfos,
         G: GGSWInfos,
         C: GetBitCircuitInfo,
     {
-        BE::execute_bdd_circuit_tmp_bytes_for::<R, G, C>(self, res_infos, circuit, ggsw_infos)
+        BE::execute_bdd_circuit_tmp_bytes_for::<R, G, C>(self, res_infos, ggsw_infos, circuit)
     }
     #[allow(clippy::too_many_arguments)]
     fn execute_bdd_circuit<C, G, O>(&self, out: &mut [O], inputs: &G, circuit: &C, scratch: &mut ScratchArena<'_, BE>)

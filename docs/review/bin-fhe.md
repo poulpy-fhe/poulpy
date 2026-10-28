@@ -100,7 +100,7 @@
 ## 8. Host data versus execution
 
 - **No host bounds on execution.** No item under `api/`, `delegates/`, `oep/` or `reference/`, nor an execution path they reach, takes an `AsRef<[u8]>`/`AsMut<[u8]>` bound, assumes `DFT_LIMBS_CONTIGUOUS` or stages through `HostBytesBackend`, host bounds staying on layout host helpers (plaintext packing, `noise_stats`, `FheUintPreparedDebug`, `FheUintPrepareDebug`, `Debug`, `Display`, serialization) and LUT samples and circuit descriptions being host data.
-- **Host steps behind a hook.** A host step on an execution path (reading ciphertext coefficients) is its own OEP operation called through the module (`module.blind_rotation_mod_switch(..)`), never a direct `mod_switch_2n` or `mod_switch_2n_ref` call.
+- **Host steps behind a hook.** A host step on an execution path (reading ciphertext coefficients) is its own OEP operation called through the module (`module.blind_rotation_mod_switch(..)`), never a direct `blind_rotation_mod_switch_reference` call.
 - **The opaque-backend contract compiles.** Execution and factory traits, delegates, reference bodies and the core queries they reach stay callable on the borrowed, opaque, non-contiguous `OpaqueBackend<'env>` of `backends/poulpy-cpu-portable/src/tests/bin_fhe_overrides.rs`.
 
 ## 9. Degree, gadget products and validation

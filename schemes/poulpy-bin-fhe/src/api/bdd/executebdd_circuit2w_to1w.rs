@@ -13,9 +13,9 @@ pub trait ExecuteBDDCircuit2WTo1W<BE: Backend> {
     fn execute_bdd_circuit_2w_to_1w<C, H, T>(
         &self,
         out: &mut FheUint<BE::OwnedBuf, T, BE::ZnxWord>,
-        circuit: &C,
         a: &FheUintPrepared<BE::OwnedBuf, T, BE>,
         b: &FheUintPrepared<BE::OwnedBuf, T, BE>,
+        circuit: &C,
         key: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
@@ -26,7 +26,7 @@ pub trait ExecuteBDDCircuit2WTo1W<BE: Backend> {
     #[allow(clippy::too_many_arguments)]
     /// Minimum scratch size in bytes for [`execute_bdd_circuit_2w_to_1w`][Self::execute_bdd_circuit_2w_to_1w]
     /// (one BDD worker).
-    fn execute_bdd_circuit_2w_to_1w_tmp_bytes<C, T, R, G, H>(&self, circuit: &C, res_infos: &R, ggsw_infos: &G, key: &H) -> usize
+    fn execute_bdd_circuit_2w_to_1w_tmp_bytes<C, T, R, G, H>(&self, res_infos: &R, ggsw_infos: &G, circuit: &C, key: &H) -> usize
     where
         C: GetBitCircuitInfo,
         T: UnsignedInteger,
@@ -39,9 +39,9 @@ pub trait ExecuteBDDCircuit2WTo1W<BE: Backend> {
     fn execute_bdd_circuit_2w_to_1w_multi_thread_tmp_bytes<C, T, R, G, H>(
         &self,
         threads: usize,
-        circuit: &C,
         res_infos: &R,
         ggsw_infos: &G,
+        circuit: &C,
         key: &H,
     ) -> usize
     where
@@ -55,9 +55,9 @@ pub trait ExecuteBDDCircuit2WTo1W<BE: Backend> {
         &self,
         threads: usize,
         out: &mut FheUint<BE::OwnedBuf, T, BE::ZnxWord>,
-        circuit: &C,
         a: &FheUintPrepared<BE::OwnedBuf, T, BE>,
         b: &FheUintPrepared<BE::OwnedBuf, T, BE>,
+        circuit: &C,
         key: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where

@@ -11,14 +11,15 @@ use poulpy_hal::{
 };
 use rand::Rng;
 
+use crate::test_suite::bdd_arithmetic::{TEST_GGSW_INFOS, TEST_GLWE_INFOS, TestContext};
 use crate::{
     bdd_arithmetic::{
         BDDKeyEncryptSk, BDDKeyPrepared, BDDKeyPreparedFactory, ExecuteBDDCircuit2WTo1W, FheUint, FheUintPrepare,
         FheUintPrepareDebug, FheUintPreparedDebug, FheUintPreparedEncryptSk, FheUintPreparedFactory,
-        test_suite::{TEST_GGSW_INFOS, TEST_GLWE_INFOS, TestContext},
     },
     blind_rotation::BlindRotationAlgo,
 };
+use poulpy_core::test_suite::with_scratch;
 
 pub fn test_bdd_prepare<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64> + HostBackend>(
     test_context: &TestContext<BRA, BE>,
@@ -52,10 +53,14 @@ pub fn test_bdd_prepare<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = AlignedBu
     let mut source_xa: Source = Source::new([2u8; 32]);
     let mut source_xe: Source = Source::new([3u8; 32]);
 
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(1 << 22);
-
     // GLWE(value)
     let mut c_enc: FheUint<BE::OwnedBuf, u32, BE::ZnxWord> = FheUint::alloc_from_infos(module, &glwe_infos);
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+        c_enc
+            .encrypt_sk_tmp_bytes::<_, BE>(module)
+            .max(module.glwe_noise_tmp_bytes(&c_enc))
+            .max(module.ggsw_noise_tmp_bytes(&ggsw_infos)),
+    );
     let value: u32 = source.next_u32();
     c_enc.encrypt_sk(
         module,
@@ -96,10 +101,12 @@ pub fn test_bdd_prepare<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = AlignedBu
     let mut c_enc_prep_debug: FheUintPreparedDebug<BE::OwnedBuf, u32, BE::ZnxWord> =
         FheUintPreparedDebug::<AlignedBuf, u32, i64>::alloc_from_infos(module, &ggsw_infos);
 
-    let mut scratch_2 = ScratchOwned::alloc(module.fhe_uint_prepare_tmp_bytes(7, 1, &c_enc_prep_debug, &c_enc, bdd_key_prepared));
+    let prepare_bytes = module.fhe_uint_prepare_tmp_bytes(7, 1, &c_enc_prep_debug, &c_enc, bdd_key_prepared);
 
     // GGSW(value)
-    c_enc_prep_debug.prepare(module, &c_enc, bdd_key_prepared, &mut scratch_2.borrow());
+    with_scratch::<BE, _>(prepare_bytes, |s| {
+        c_enc_prep_debug.prepare(module, &c_enc, bdd_key_prepared, s)
+    });
 
     let max_noise = |col_i: usize| {
         // Noise floor sits at the semantic precision `k()` (gadget + guard), not at the

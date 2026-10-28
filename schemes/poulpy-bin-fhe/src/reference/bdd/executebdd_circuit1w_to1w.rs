@@ -6,9 +6,9 @@ use poulpy_hal::{api::*, layouts::*};
 pub fn execute_bdd_circuit_1w_to_1w_multi_thread_tmp_bytes_reference<BE, C, T, R, G, H>(
     module: &Module<BE>,
     threads: usize,
-    circuit: &C,
     res_infos: &R,
     ggsw_infos: &G,
+    circuit: &C,
     key: &H,
 ) -> usize
 where
@@ -22,8 +22,8 @@ where
 {
     let outputs = T::BITS as usize * module.glwe_bytes_of_from_infos(res_infos);
     let per_worker = poulpy_hal::execution::worker_scratch_bytes::<BE>(module.execute_bdd_circuit_tmp_bytes(
-        res_infos,
         circuit.max_state_size(),
+        res_infos,
         ggsw_infos,
     ));
     let workers = poulpy_hal::execution::worker_count::<BE::TaskExecutor>(threads, circuit.output_size());
@@ -40,8 +40,8 @@ pub fn execute_bdd_circuit_1w_to_1w_multi_thread_reference<BE, C, H, T>(
     module: &Module<BE>,
     threads: usize,
     out: &mut FheUint<BE::OwnedBuf, T, BE::ZnxWord>,
-    circuit: &C,
     a: &FheUintPrepared<BE::OwnedBuf, T, BE>,
+    circuit: &C,
     key: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
@@ -52,6 +52,18 @@ pub fn execute_bdd_circuit_1w_to_1w_multi_thread_reference<BE, C, H, T>(
     Module<BE>: GLWEBytesOf<BE>,
     Module<BE>: Sized + ModuleLogN + ExecuteBDDCircuit<BE> + GLWEPacking<BE> + GLWECopy<BE>,
 {
+    assert!(
+        scratch.available()
+            >= execute_bdd_circuit_1w_to_1w_multi_thread_tmp_bytes_reference::<BE, C, T, _, _, _>(
+                module,
+                threads,
+                out,
+                a.get_bit(0),
+                circuit,
+                key
+            ),
+        "execute_bdd_circuit_1w_to_1w: insufficient scratch"
+    );
     let (mut out_bits, mut scratch_1) = scratch.borrow().take_glwe_slice_scratch(T::BITS as usize, out);
 
     // Evaluates out[i] = circuit[i](a, b)

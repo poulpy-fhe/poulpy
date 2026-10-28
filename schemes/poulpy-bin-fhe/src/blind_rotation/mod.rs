@@ -8,7 +8,7 @@
 //!
 //! ## User-facing API
 //!
-//! Import operation traits from [`crate::api::blind_rotation`] for module calls
+//! Import operation traits from [`crate::api`] for module calls
 //! and their scratch queries. The API documentation includes a generic usage
 //! example. Key and plan convenience methods dispatch through the same traits.
 //!
@@ -17,7 +17,7 @@
 //! | Type | Role |
 //! |------|------|
 //! | [`LookupTable<AlignedBuf, i64>`] | Encoded evaluation function, allocated from a [`LookUpTableLayout`] |
-//! | [`BlindRotationKey`] | Raw (standard) bootstrapping key — one GGSW per LWE dimension |
+//! | [`BlindRotationKey`] | Raw (standard) bootstrapping key, one GGSW per LWE dimension |
 //! | [`BlindRotationKeyCompressed`] | Seed-compressed form of the bootstrapping key |
 //! | [`BlindRotationKeyPrepared`] | DFT-pre-processed form for fast on-line evaluation |
 //! | [`BlindRotationKeyLayout`] | Plain-old-data descriptor for key dimensions |
@@ -51,8 +51,9 @@
 //! Backend implementations explicitly select operations through [`crate::oep`].
 //! The callable compositions live in [`crate::reference::blind_rotation`]. CGGI
 //! is an algorithm marker, independent of the backend and execution schedule.
-//! Parallel block scheduling is an explicit backend selection; the canonical
-//! composition always accumulates contributions in coefficient order.
+//! The backend's executor picks the block schedule: the products of a block run
+//! in parallel exactly when `TaskExecutor::IS_PARALLEL` holds, and every schedule
+//! adds their contributions in index order, so outputs do not depend on it.
 mod algorithms;
 mod encryption;
 pub(crate) mod host_znx;
@@ -64,6 +65,3 @@ pub use algorithms::*;
 pub use encryption::*;
 pub use layouts::*;
 pub use lut::*;
-/// Backend-generic test bodies, instantiated by the backend crates through
-/// [`bin_fhe_backend_test_suite!`](crate::bin_fhe_backend_test_suite).
-pub mod test_suite;

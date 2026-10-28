@@ -1,8 +1,8 @@
 //! Explicit binary-FHE implementations, each paired with the complete conformance suite.
 
 macro_rules! register_backend {
-    ($backend:ty, $comparison:ty, $suite:ident $(, scheduling = $scheduling:ident)?) => {
-        poulpy_bin_fhe::impl_bin_fhe_reference_full!($backend $(, scheduling = $scheduling)?);
+    ($backend:ty, $comparison:ty, $suite:ident) => {
+        poulpy_bin_fhe::impl_bin_fhe_reference_full!($backend);
         #[cfg(test)]
         mod $suite {
             poulpy_bin_fhe::bin_fhe_parity_test_suite!(mod paired, backend_ref = $comparison, backend_test = $backend);
@@ -18,16 +18,6 @@ register_backend!(
     bin_fhe_parity_ntt4x30neon
 );
 #[cfg(feature = "enable-rayon")]
-register_backend!(
-    crate::FFT64NeonRayon,
-    crate::FFT64Neon,
-    bin_fhe_parity_fft64neonrayon,
-    scheduling = parallel
-);
+register_backend!(crate::FFT64NeonRayon, crate::FFT64Neon, bin_fhe_parity_fft64neonrayon);
 #[cfg(feature = "enable-rayon")]
-register_backend!(
-    crate::NTT4x30NeonRayon,
-    crate::NTT4x30Neon,
-    bin_fhe_parity_ntt4x30neonrayon,
-    scheduling = parallel
-);
+register_backend!(crate::NTT4x30NeonRayon, crate::NTT4x30Neon, bin_fhe_parity_ntt4x30neonrayon);
