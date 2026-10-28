@@ -53,8 +53,10 @@ pub unsafe trait BlasMatIntraImpl: Backend {
     /// The references of [`crate::oep::BlasMatMulImpl`] call the hook too: a cold preparation block row after block
     /// row, and the products for a hot side, a block row of `a` or a block column of `b` at a time; each time sigma
     /// (tau) over every block of the row (column), then every shift of every result, into blocks of the terms' width.
-    /// So do the JKLS products by public matrices, once per unit for their first map: sigma (tau) over a block row
-    /// (column) of `a`, into blocks of the layout it leaves.
+    /// So do the JKLS products by public matrices under `Jkls`, once per unit for their first map: sigma (tau) over a
+    /// block row (column) of `a`, into blocks of the layout it leaves; and under `JklsStored` and `JklsGalois` the
+    /// reference of [`crate::oep::BlasJklsImpl::blas_jkls_pt_unit`], twice per source block: the first map of the block,
+    /// then the context's masks of that result.
     ///
     /// **Fixed:** the circuit above; anything not listed as free changes bits.
     ///

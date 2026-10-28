@@ -221,18 +221,14 @@ pub unsafe trait BlasMatMulImpl: Backend + CKKSMulImpl {
     ///   the order is part of the bits. Each block of `res` is then stamped with the label `min(a.log_sparsity, log2(S
     ///   / (count d^2)))`, for `S` the slots of a block and `count` the operand's
     ///   ([`crate::layouts::BlasPtOperandInfos::count`]);
-    /// - the products by public matrices under `JklsStored` and `JklsGalois`, a unit at a time, a block row of `a` on
-    ///   the right, a block column on the left: one map-hook call evaluates the operand's first map of the unit's `K`
-    ///   blocks into heap blocks of the layout it leaves; one evaluates the context's masks of those, phi^k for `1 <= k
-    ///   < d` on the right, `rows_left(k)` then `rows_right(k)` on the left, into heap blocks of the layout the first
-    ///   mask leaves; `ckks_copy` narrows each first-map result to that layout, term `0`; each term is converted once
-    ///   by `ckks_prepare_left` under `OneShot`, as a hot side's; then every block of `res` of the unit is
-    ///   poulpy-ckks's `ckks_dot_product_prepared_pt` of the unit's `K d` (right) or `K (2d - 1)` (left) prepared
-    ///   terms, `l`-major, by the operand's prepared plaintexts: under `JklsStored` the term's own through `1`, under
-    ///   `JklsGalois` the block's one through the Galois element of the term's rotation, `k d` on the right, `0` then
-    ///   `k` and `k - d` on the left; stamped with the label of the other paths. The Scratch section of
-    ///   `libs/poulpy-blas/docs/blas-contracts.md` bounds its heap. An override reproduces the path its operand was encoded
-    ///   for;
+    /// - the products by public matrices under `JklsStored` and `JklsGalois`, one masked-unit hook call
+    ///   ([`crate::oep::BlasJklsImpl::blas_jkls_pt_unit`]) per unit, a block row of `a` on the right, a block column on
+    ///   the left, through the operand's first map and the context's masks, phi^k for `1 <= k < d` on the right,
+    ///   `rows_left(k)` then `rows_right(k)` on the left, by the operand's prepared plaintexts: under `JklsStored` the
+    ///   term's own through `1`, under `JklsGalois` the block's one through the Galois element of the term's rotation,
+    ///   `k d` on the right, `0` then `k` and `k - d` on the left; every block of `res` the unit writes is then stamped
+    ///   with the label of the other paths. The Scratch section of `libs/poulpy-blas/docs/blas-contracts.md` bounds its
+    ///   heap. An override reproduces the path its operand was encoded for;
     /// - the key widths of the Keys table of `libs/poulpy-blas/docs/blas-contracts.md`;
     /// - the errors and their order: the validator's, then poulpy-ckks's budget errors, before any write to `res`.
     ///

@@ -294,7 +294,7 @@ cargo bench --target x86_64-unknown-linux-gnu -p poulpy-cpu-avx512 --features $F
 cargo bench --target x86_64-unknown-linux-gnu -p poulpy-cpu-avx512 --features $FEATURES --bench blas_scale -- max_base2k
 # The right product at inner dimension 112 on the IFMA backend
 cargo bench --target x86_64-unknown-linux-gnu -p poulpy-cpu-avx512 --features $FEATURES --bench blas_scale -- 'NTT3x42Ifma/blas/pt_right_diagonal/1x112'
-# Everything but the masked products at N = 2^16, on a host of 128 GB
+# Everything but the masked products at N = 2^16
 cargo bench --target x86_64-unknown-linux-gnu -p poulpy-cpu-avx512 --features $FEATURES --bench blas_scale -- \
     '!jklsstored/1x112*112x1/(n=65536' '!jklsgalois/1x112*112x1/(n=65536'
 ```
@@ -302,9 +302,9 @@ cargo bench --target x86_64-unknown-linux-gnu -p poulpy-cpu-avx512 --features $F
 Memory at `K = 112`: prepared public matrices hold from 116 MiB (`Diagonal`, right) to 14 GiB (`Jkls` right,
 `JklsStored` left) at `N = 2^15`, and a left `Diagonal` operand, of full-length diagonals, 7 GiB at `2^15` and 21 GiB
 at `2^16`.
-The masked products (`JklsStored`, `JklsGalois`) convert every one of their `K d` terms (`K (2d - 1)` on the left) to
-the transform domain before their single summed product: the call allocates 84 GiB beyond its scratch on the left at
-`N = 2^15` and on the right at `2^16`, and about 170 GiB on the left at `2^16`.
+The masked products (`JklsStored`, `JklsGalois`) stream each unit a source block at a time: the call holds one source
+block's `d` terms (`2d - 1` on the left), in coefficient and transform-domain form, at most 646 MiB beyond its scratch
+on the right and 1.2 GiB on the left at `N = 2^15` (`NTT4x30Avx512/blas/pt_{right,left}_jklsgalois/1x112*112x1`).
 
 ## Normalization sweep
 

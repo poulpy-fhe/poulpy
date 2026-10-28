@@ -22,7 +22,7 @@ changes bits.
 | `BlasMatInterImpl` | `blas_rotate`, `blas_sum` | |
 | `BlasMatIntraImpl` | the map hook `blas_map_blocks`, `blas_rotate_rows`, `blas_rotate_cols`, `blas_sum_rows`, `blas_sum_cols` | `blas_transpose`, over the hook |
 | `BlasMatMulImpl` | `blas_matmul`, `blas_matmul_prepare_left`, `blas_matmul_prepare_right`, `blas_matmul_prepared`, `blas_matmul_pt_right`, `blas_matmul_pt_left` | |
-| `BlasJklsImpl` | the JKLS kernel `blas_jkls_block`, one output block of the prepared product | |
+| `BlasJklsImpl` | the JKLS kernel `blas_jkls_block`, one output block of the prepared product, and the masked-unit hook `blas_jkls_pt_unit`, one unit of a product by public matrices under `JklsStored` and `JklsGalois` | |
 | `BlasEncodingImpl` | `blas_pt_operand_encode`, `blas_context_encode`, `blas_pt_operand_prepare`, `blas_context_prepare` | |
 
 Each operation's `_tmp_bytes` query belongs to the same family. The encodings
@@ -33,9 +33,11 @@ aggregates the five families as a test bound; it has a blanket implementation
 and is never implemented directly.
 
 The provided transpose, and the references of the shifts, of the reductions
-and of the products, call the backend's selected map hook, and the references
-of the products also its JKLS kernel. So an override of the hook or of the
-kernel reaches every operation built on it. The provided body is crate-private,
+and of the products, call the backend's selected map hook, the references of
+the products also its JKLS kernel, and those of the products by public
+matrices under `JklsStored` and `JklsGalois` its masked-unit hook, whose
+reference calls the map hook. So an override of a hook or of the kernel
+reaches every operation built on it. The provided body is crate-private,
 `blas_transpose_derived` with its query `blas_transpose_tmp_bytes_derived`, in
 the family's file under `oep::derived`.
 
@@ -57,7 +59,7 @@ APIs, so a backend's CKKS and core overrides remain effective inside them.
 | `BlasMatInterImpl` | `BlasMatInterReference`, [`reference/inter.rs`](../src/reference/inter.rs) | `impl_blas_mat_inter_reference_full!` |
 | `BlasMatIntraImpl` | `BlasMatIntraReference` (the hook, the shifts and the reductions), [`reference/intra.rs`](../src/reference/intra.rs) | `impl_blas_mat_intra_reference_full!` |
 | `BlasMatMulImpl` | `BlasMatMulReference`, [`reference/matmul.rs`](../src/reference/matmul.rs) | `impl_blas_mat_mul_reference_full!` |
-| `BlasJklsImpl` | `BlasJklsReference` (the kernel), [`reference/jkls.rs`](../src/reference/jkls.rs) | `impl_blas_jkls_reference_full!` |
+| `BlasJklsImpl` | `BlasJklsReference` (the kernel and the masked-unit hook), [`reference/jkls.rs`](../src/reference/jkls.rs) | `impl_blas_jkls_reference_full!` |
 | `BlasEncodingImpl` | `BlasEncodingReference`, [`reference/encoding.rs`](../src/reference/encoding.rs) | `impl_blas_encoding_reference_full!` |
 
 `impl_blas_reference_full!` expands to the five family macros. The reference's
@@ -110,15 +112,17 @@ and hooks state what an implementation must reproduce. Three replacements cover 
   }
   ```
 
-- **The JKLS kernel**, a fused kernel behind the backend's own `enable-blas`.
-  Both `blas_matmul` and `blas_matmul_prepared` reach it:
+- **The JKLS kernels**, fused kernels behind the backend's own `enable-blas`.
+  Both `blas_matmul` and `blas_matmul_prepared` reach the JKLS kernel, and the
+  products by public matrices under `JklsStored` and `JklsGalois` the
+  masked-unit hook, which may stream every term of its unit:
 
   ```rust
   ::poulpy_blas::impl_blas_mat_inter_reference_full!(MyBackend);
   ::poulpy_blas::impl_blas_mat_intra_reference_full!(MyBackend);
   ::poulpy_blas::impl_blas_mat_mul_reference_full!(MyBackend);
   ::poulpy_blas::impl_blas_encoding_reference_full!(MyBackend);
-  unsafe impl poulpy_blas::oep::BlasJklsImpl for MyBackend { /* the kernel and its query */ }
+  unsafe impl poulpy_blas::oep::BlasJklsImpl for MyBackend { /* the kernel, the masked-unit hook and their queries */ }
   ```
 
 - **The products**, in the backend's own evaluation. The inter, intra, JKLS
@@ -415,15 +419,16 @@ are in the backend's transform-domain form, one to four times their coefficient
 size depending on its transform. A cold operand holds `d` such terms per block
 of its grid.
 
-Under `JklsStored` and `JklsGalois`, a product by public matrices makes its
-terms as a hot side's: a unit at a time, a block row of `a` on the right and
-a block column on the left, each of its `K d` (left `K (2d - 1)`) terms
-converted once under `OneShot` for every block of `res` the unit writes.
-Each unit is allocated when made, its working blocks dropped as its terms are
-converted, and the unit dropped after its blocks; nothing is reused across
-units. Beside `res` and the operands the heap holds one unit of prepared
-terms, in the backend's transform-domain form, and while the unit is made its
-`K` first-map results and its unconverted terms, whatever the number of units.
+Under `JklsStored` and `JklsGalois`, a product by public matrices runs one
+masked-unit hook per unit, a block row of `a` on the right and a block column
+on the left. Its reference streams the unit a source block at a time: the
+block's `d` (left `2d - 1`) terms, made through the map hook into blocks
+allocated once per unit, each converted under `OneShot` into a prepared
+operand allocated once per unit, are added in the transform domain to one
+accumulator per block of `res` the unit writes, carved from scratch, and each
+block of `res` is normalized once at the end. Beside `res` and the operands
+the heap holds one source block's terms, in coefficient and transform-domain
+form, whatever the inner dimension, and the scratch the unit's accumulators.
 
 ## Parallelism
 
