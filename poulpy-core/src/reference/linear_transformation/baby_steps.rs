@@ -80,7 +80,11 @@ impl<BE: Backend> LinearTransformationBabySteps<BE> {
                 .entry(rot)
                 .or_insert_with(|| module.cnv_pvec_left_alloc(a.n().as_usize(), cols, size, PrepareHint::Reuse));
         }
-        Self { values, rotations }
+        Self {
+            values,
+            rotations,
+            k: a.k(),
+        }
     }
 
     /// Pre-allocates the baby-step cache the transformation `lt` reads, prepared as it says.
@@ -258,7 +262,9 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, A, H>(
     };
     let (a, scratch) = (&&a_ref, &mut scratch);
     if cache.rotations != BsgsRotations::PerRotation {
-        return glwe_prepare_baby_steps_doubling(module, cache, a, keys, scratch);
+        glwe_prepare_baby_steps_doubling(module, cache, a, keys, scratch);
+        cache.k = a.k();
+        return;
     }
     let cols = a.rank().as_usize() + 1;
     let a_size = a.size();
@@ -408,6 +414,7 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, A, H>(
             }
         }
     }
+    cache.k = a.k();
 }
 
 /// [`glwe_prepare_linear_transformation_baby_steps`] for [`BsgsRotations::PowersOfTwo`]: the

@@ -2,8 +2,7 @@ use crate::CKKSResult as Result;
 use poulpy_core::{
     DiagonalProd, LinearTransformation, LinearTransformationBabySteps, LinearTransformationPrepared,
     layouts::{
-        GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, IntPolyInfos, LWEInfos,
-        LinearTransformationPlan,
+        GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, IntPolyInfos, LinearTransformationPlan,
     },
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
@@ -11,14 +10,13 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
     api::{CKKSLinearTransformationOps, LtDiagonalMeta},
-    layouts::CKKSPreparedRight,
     oep::CKKSLinearTransformationImpl,
 };
 
 impl<BE: Backend + CKKSLinearTransformationImpl> CKKSLinearTransformationOps<BE> for Module<BE> {
     fn ckks_prepare_linear_transformation_rhs_tmp_bytes<P>(&self, pt_infos: &P) -> usize
     where
-        P: LWEInfos,
+        P: GLWEInfos,
     {
         BE::ckks_prepare_linear_transformation_rhs_tmp_bytes(self, pt_infos)
     }
@@ -36,28 +34,55 @@ impl<BE: Backend + CKKSLinearTransformationImpl> CKKSLinearTransformationOps<BE>
         BE::ckks_prepare_linear_transformation_baby_steps_tmp_bytes(self, ct, plan, key)
     }
 
-    fn ckks_eval_linear_transformation_tmp_bytes<C, K>(&self, ct: &C, plan: &LinearTransformationPlan, key: &K) -> usize
+    fn ckks_eval_linear_transformation_tmp_bytes<C, D, K, T>(
+        &self,
+        ct: &C,
+        diagonal: &D,
+        plan: &LinearTransformationPlan,
+        key: &K,
+        tsk: &T,
+    ) -> usize
     where
         C: CKKSCtBounds,
+        D: GLWEInfos,
         K: GGLWEInfos,
+        T: GGLWEInfos,
     {
-        BE::ckks_eval_linear_transformation_tmp_bytes(self, ct, plan, key)
+        BE::ckks_eval_linear_transformation_tmp_bytes(self, ct, diagonal, plan, key, tsk)
     }
 
-    fn ckks_eval_linear_transformation_streamed_tmp_bytes<C, K>(&self, ct: &C, plan: &LinearTransformationPlan, key: &K) -> usize
+    fn ckks_eval_linear_transformation_streamed_tmp_bytes<C, D, K, T>(
+        &self,
+        ct: &C,
+        diagonal: &D,
+        plan: &LinearTransformationPlan,
+        key: &K,
+        tsk: &T,
+    ) -> usize
     where
         C: CKKSCtBounds,
+        D: GLWEInfos,
         K: GGLWEInfos,
+        T: GGLWEInfos,
     {
-        BE::ckks_eval_linear_transformation_streamed_tmp_bytes(self, ct, plan, key)
+        BE::ckks_eval_linear_transformation_streamed_tmp_bytes(self, ct, diagonal, plan, key, tsk)
     }
 
-    fn ckks_eval_linear_transformation_sum_tmp_bytes<C, K>(&self, ct: &C, plan: &LinearTransformationPlan, key: &K) -> usize
+    fn ckks_eval_linear_transformation_sum_tmp_bytes<C, D, K, T>(
+        &self,
+        ct: &C,
+        diagonal: &D,
+        plan: &LinearTransformationPlan,
+        key: &K,
+        tsk: &T,
+    ) -> usize
     where
         C: CKKSCtBounds,
+        D: GLWEInfos,
         K: GGLWEInfos,
+        T: GGLWEInfos,
     {
-        BE::ckks_eval_linear_transformation_sum_tmp_bytes(self, ct, plan, key)
+        BE::ckks_eval_linear_transformation_sum_tmp_bytes(self, ct, diagonal, plan, key, tsk)
     }
 
     fn ckks_prepare_linear_transformation_rhs<P>(
@@ -67,7 +92,7 @@ impl<BE: Backend + CKKSLinearTransformationImpl> CKKSLinearTransformationOps<BE>
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + DiagonalProd<BE>,
+        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds,
     {
         BE::ckks_prepare_linear_transformation_rhs(self, prepared, lt, scratch)
     }
@@ -99,7 +124,7 @@ impl<BE: Backend + CKKSLinearTransformationImpl> CKKSLinearTransformationOps<BE>
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
-        H: GetAutomorphismKey<BE>,
+        H: GetAutomorphismKey<BE> + poulpy_core::layouts::GetTensorKey<BE>,
     {
         BE::ckks_eval_linear_transformation_into(self, dst, src, babies, lt, keys, scratch)
     }
@@ -115,7 +140,7 @@ impl<BE: Backend + CKKSLinearTransformationImpl> CKKSLinearTransformationOps<BE>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
-        H: GetAutomorphismKey<BE>,
+        H: GetAutomorphismKey<BE> + poulpy_core::layouts::GetTensorKey<BE>,
     {
         BE::ckks_eval_linear_transformation_assign(self, dst, babies, lt, keys, scratch)
     }
@@ -132,45 +157,9 @@ impl<BE: Backend + CKKSLinearTransformationImpl> CKKSLinearTransformationOps<BE>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: GetAutomorphismKey<BE>,
+        H: GetAutomorphismKey<BE> + poulpy_core::layouts::GetTensorKey<BE>,
     {
         BE::ckks_eval_linear_transformation_sum_into(self, dst, srcs, babies, lts, keys, scratch)
-    }
-
-    fn ckks_eval_ct_linear_transformation_tmp_bytes<C, D, K, T>(
-        &self,
-        ct: &C,
-        diagonal: &D,
-        plan: &LinearTransformationPlan,
-        key: &K,
-        tsk: &T,
-    ) -> usize
-    where
-        C: CKKSCtBounds,
-        D: GLWEInfos,
-        K: GGLWEInfos,
-        T: GGLWEInfos,
-    {
-        BE::ckks_eval_ct_linear_transformation_tmp_bytes(self, ct, diagonal, plan, key, tsk)
-    }
-
-    fn ckks_eval_ct_linear_transformation_into<Dst, Src, T, H>(
-        &self,
-        dst: &mut Dst,
-        src: &Src,
-        babies: &LinearTransformationBabySteps<BE>,
-        lt: &LinearTransformation<CKKSPreparedRight<BE>>,
-        tsk: &T,
-        keys: &H,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        T: GetTensorKey<BE>,
-        H: GetAutomorphismKey<BE>,
-    {
-        BE::ckks_eval_ct_linear_transformation_into(self, dst, src, babies, lt, tsk, keys, scratch)
     }
 
     fn ckks_eval_linear_transformation_self_into<Dst, Src, P, H>(
@@ -185,7 +174,7 @@ impl<BE: Backend + CKKSLinearTransformationImpl> CKKSLinearTransformationOps<BE>
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
-        H: GetAutomorphismKey<BE>,
+        H: GetAutomorphismKey<BE> + poulpy_core::layouts::GetTensorKey<BE>,
     {
         BE::ckks_eval_linear_transformation_self_into(self, dst, src, lt, keys, scratch)
     }
@@ -200,7 +189,7 @@ impl<BE: Backend + CKKSLinearTransformationImpl> CKKSLinearTransformationOps<BE>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
-        H: GetAutomorphismKey<BE>,
+        H: GetAutomorphismKey<BE> + poulpy_core::layouts::GetTensorKey<BE>,
     {
         BE::ckks_eval_linear_transformation_self_assign(self, dst, lt, keys, scratch)
     }

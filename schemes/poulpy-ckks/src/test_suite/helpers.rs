@@ -1513,3 +1513,11 @@ pub fn assert_mul_pt_output_meta<D: Data, W: ZnxWord, R: Ring>(
     let offset = (log_budget + log_delta).saturating_sub(dst_k);
     assert_ct_meta(label, ct, log_delta, log_budget - offset);
 }
+
+/// A plaintext diagonal of the layout of `ct`: the diagonal a scratch query of a plaintext transform on `ct` reads.
+pub fn plaintext_diagonal_of<C: GLWEInfos>(ct: &C) -> poulpy_core::layouts::GLWELayout {
+    poulpy_core::layouts::GLWELayout {
+        rank: 0u32.into(),
+        ..ct.glwe_layout()
+    }
+}

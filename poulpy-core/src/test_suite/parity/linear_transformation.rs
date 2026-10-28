@@ -62,6 +62,17 @@ where
         self.0.to_backend_ref()
     }
 }
+impl<BE: Backend, D: Data> crate::layouts::GLWEMulRight<BE> for StreamedDiagonal<D>
+where
+    GLWE<D, i64>: GLWEToBackendRef<BE>,
+{
+    type Prepared = poulpy_hal::layouts::CnvPVecROwned<BE>;
+    type Ciphertext = GLWE<D, i64>;
+
+    fn mul_right(&self) -> crate::layouts::MulRightOperand<'_, Self::Prepared, Self::Ciphertext> {
+        crate::layouts::MulRightOperand::Ciphertext(&self.0)
+    }
+}
 impl<BE: Backend, D: Data> DiagonalProd<BE> for StreamedDiagonal<D>
 where
     GLWE<D, i64>: GLWEToBackendRef<BE>,
@@ -290,6 +301,7 @@ where
                             &one_layout,
                             &identity_schedule.index(),
                             &key,
+                            &key,
                         ))
                         .borrow(),
                     );
@@ -304,6 +316,7 @@ where
                             &ct,
                             &one_layout,
                             &identity_schedule.index(),
+                            &key,
                             &key,
                         ))
                         .borrow(),
@@ -328,6 +341,7 @@ where
                             &one_layout,
                             &identity_schedule.index(),
                             &key,
+                            &key,
                         ))
                         .borrow(),
                     );
@@ -342,6 +356,7 @@ where
                             &ct,
                             &one_layout,
                             &identity_schedule.index(),
+                            &key,
                             &key,
                         ))
                         .borrow(),
@@ -446,8 +461,10 @@ where
                             &lhs_r,
                             &resident_r,
                             &keys_r,
-                            &mut poisoned_scratch::<BR>(r.glwe_eval_linear_transformation_tmp_bytes(&out, &ct, &pt, &plan, &key))
-                                .borrow(),
+                            &mut poisoned_scratch::<BR>(
+                                r.glwe_eval_linear_transformation_tmp_bytes(&out, &ct, &pt, &plan, &key, &key),
+                            )
+                            .borrow(),
                         );
                         t.glwe_eval_linear_transformation_into(
                             offset,
@@ -455,8 +472,10 @@ where
                             &lhs_t,
                             &resident_t,
                             &keys_t,
-                            &mut poisoned_scratch::<BT>(t.glwe_eval_linear_transformation_tmp_bytes(&out, &ct, &pt, &plan, &key))
-                                .borrow(),
+                            &mut poisoned_scratch::<BT>(
+                                t.glwe_eval_linear_transformation_tmp_bytes(&out, &ct, &pt, &plan, &key, &key),
+                            )
+                            .borrow(),
                         );
                         let mut have = r.glwe_alloc_from_infos(&out);
                         out_t.transfer_into(&mut have);
@@ -475,7 +494,7 @@ where
                             &rhs_r,
                             &keys_r,
                             &mut poisoned_scratch::<BR>(
-                                r.glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(&out, &ct, &pt, &plan, &key),
+                                r.glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(&out, &ct, &pt, &plan, &key, &key),
                             )
                             .borrow(),
                         );
@@ -486,7 +505,7 @@ where
                             &rhs_t,
                             &keys_t,
                             &mut poisoned_scratch::<BT>(
-                                t.glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(&out, &ct, &pt, &plan, &key),
+                                t.glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(&out, &ct, &pt, &plan, &key, &key),
                             )
                             .borrow(),
                         );
@@ -512,7 +531,7 @@ where
                             &[&resident_r, &resident2_r],
                             &keys_r,
                             &mut poisoned_scratch::<BR>(
-                                r.glwe_eval_linear_transformation_sum_tmp_bytes(&out, &ct, &pt, &plan, &key),
+                                r.glwe_eval_linear_transformation_sum_tmp_bytes(&out, &ct, &pt, &plan, &key, &key),
                             )
                             .borrow(),
                         );
@@ -523,7 +542,7 @@ where
                             &[&resident_t, &resident2_t],
                             &keys_t,
                             &mut poisoned_scratch::<BT>(
-                                t.glwe_eval_linear_transformation_sum_tmp_bytes(&out, &ct, &pt, &plan, &key),
+                                t.glwe_eval_linear_transformation_sum_tmp_bytes(&out, &ct, &pt, &plan, &key, &key),
                             )
                             .borrow(),
                         );
@@ -542,7 +561,7 @@ where
                             &[&resident_t],
                             &keys_t,
                             &mut poisoned_scratch::<BT>(
-                                t.glwe_eval_linear_transformation_sum_tmp_bytes(&out, &ct, &pt, &plan, &key),
+                                t.glwe_eval_linear_transformation_sum_tmp_bytes(&out, &ct, &pt, &plan, &key, &key),
                             )
                             .borrow(),
                         );
@@ -566,8 +585,10 @@ where
                         &lhs_t,
                         &resident_t,
                         &keys_t,
-                        &mut poisoned_scratch::<BT>(t.glwe_eval_linear_transformation_tmp_bytes(&wide, &ct, &pt, &plan, &key))
-                            .borrow(),
+                        &mut poisoned_scratch::<BT>(
+                            t.glwe_eval_linear_transformation_tmp_bytes(&wide, &ct, &pt, &plan, &key, &key),
+                        )
+                        .borrow(),
                     )
                 });
             }
@@ -748,7 +769,7 @@ pub fn test_linear_transformation_powers_of_two_parity<BR, BT>(
                     &lhs_r,
                     &resident_r,
                     &keys_r,
-                    &mut poisoned_scratch::<BR>(r.glwe_eval_linear_transformation_tmp_bytes(&out, &ct, &pt, &plan, &key))
+                    &mut poisoned_scratch::<BR>(r.glwe_eval_linear_transformation_tmp_bytes(&out, &ct, &pt, &plan, &key, &key))
                         .borrow(),
                 );
                 t.glwe_eval_linear_transformation_into(
@@ -757,7 +778,7 @@ pub fn test_linear_transformation_powers_of_two_parity<BR, BT>(
                     &lhs_t,
                     &resident_t,
                     &keys_t,
-                    &mut poisoned_scratch::<BT>(t.glwe_eval_linear_transformation_tmp_bytes(&out, &ct, &pt, &plan, &key))
+                    &mut poisoned_scratch::<BT>(t.glwe_eval_linear_transformation_tmp_bytes(&out, &ct, &pt, &plan, &key, &key))
                         .borrow(),
                 );
                 let mut have = r.glwe_alloc_from_infos(&out);

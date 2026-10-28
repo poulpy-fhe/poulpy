@@ -422,7 +422,14 @@ where
             .collect();
         let babies: Vec<_> = caches.iter().collect();
         module
-            .ckks_eval_linear_transformation_sum_into(dst, &srcs, &babies, &lts, keys, scratch)
+            .ckks_eval_linear_transformation_sum_into(
+                dst,
+                &srcs,
+                &babies,
+                &lts,
+                &poulpy_core::layouts::AutomorphismKeysOnly(keys),
+                scratch,
+            )
             .unwrap();
         dst.set_log_sparsity(label);
     }
@@ -451,7 +458,13 @@ where
     let mut s = alloc_grid(params, module, a.log_d(), a.rows(), a.cols(), k);
     for (dst, src) in s.blocks_mut().iter_mut().zip(a.blocks()) {
         module
-            .ckks_eval_linear_transformation_self_into(dst, src, first, keys, scratch)
+            .ckks_eval_linear_transformation_self_into(
+                dst,
+                src,
+                first,
+                &poulpy_core::layouts::AutomorphismKeysOnly(keys),
+                scratch,
+            )
             .unwrap();
         dst.set_log_sparsity(src.log_sparsity());
     }

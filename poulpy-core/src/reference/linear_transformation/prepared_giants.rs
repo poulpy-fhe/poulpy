@@ -218,8 +218,8 @@ where
     }
 }
 
-/// The shared Phase B/C driver over plaintext diagonals: the products of [`PlainProducts`] through
-/// [`glwe_eval_giant_products`].
+/// The shared Phase B/C driver: the products of [`PlainProducts`] for plaintext diagonals, of
+/// [`CiphertextProducts`] for diagonals of the rank of the source, through [`glwe_eval_giant_products`].
 ///
 /// The terms `(babies[t], lts[t])` share the first one's giant schedule and diagonal layout, checked by the callers
 /// with [`assert_linear_transformation_into`](crate::layouts::assert_linear_transformation_into) and
@@ -234,8 +234,14 @@ pub(super) fn glwe_eval_giant_steps<BE, R, P, H>(
     keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: Backend + crate::oep::GGLWEProductDigitsStridedImpl + crate::oep::LinearTransformationImpl,
-    Module<BE>: GLWEAutomorphism<BE>
+    BE: Backend
+        + crate::oep::GGLWEProductDigitsStridedImpl
+        + crate::oep::LinearTransformationImpl
+        + crate::oep::GLWETensoringImpl,
+    Module<BE>: crate::GLWEPreparedTensoring<BE>
+        + crate::reference::operations::GLWETensoringReference<BE>
+        + crate::api::GLWEBytesOf<BE>
+        + GLWEAutomorphism<BE>
         + GaloisElement
         + GLWEAdd<BE>
         + GLWECopy<BE>
@@ -272,10 +278,20 @@ pub(super) fn glwe_eval_giant_steps<BE, R, P, H>(
         + poulpy_hal::api::VecZnxDftAutomorphismAddWithPlanTmpBytes,
     R: GLWEToBackendMut<BE> + GLWEInfos,
     P: DiagonalProd<BE>,
-    H: GetAutomorphismKey<BE>,
+    H: GetAutomorphismKey<BE> + crate::layouts::GetTensorKey<BE>,
 {
-    let base2k = lts[0].giant_steps[0].diagonals[0].plaintext.base2k().as_usize();
-    let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, base2k);
+    let diagonal = &lts[0].giant_steps[0].diagonals[0].plaintext;
+    if diagonal.rank().as_usize() > 0 {
+        let res_infos = crate::layouts::GLWELayout {
+            n: res.n(),
+            base2k: res.base2k(),
+            k: res.k(),
+            rank: res.rank(),
+        };
+        let products = super::ciphertext_diagonals::CiphertextProducts::new(babies, lts, keys, res_infos, cnv_offset);
+        return glwe_eval_giant_products(module, res, lts[0], &products, keys, scratch);
+    }
+    let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, diagonal.base2k().as_usize());
     let products = PlainProducts {
         babies,
         lts,

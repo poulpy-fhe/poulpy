@@ -2,6 +2,7 @@ use crate::{
     CKKSCompositionError, CKKSResult as Result, checked_log_budget_sub, ckks_ensure, ckks_ensure_operand, ckks_log_delta,
     layouts::eval_mod::EvalModPlan,
 };
+use poulpy_core::layouts::AutomorphismKeysOnly;
 use poulpy_core::layouts::{GLWEPlaintextInfos, SetGLWEPlaintextInfos};
 use poulpy_core::{
     GLWECIEmbed, GLWECITrace, GLWECopy, GLWEKeyswitch, GLWERotate, GLWEShift, GLWESwitchDegree, LinearTransformationPrepared,
@@ -1478,12 +1479,16 @@ where
             // The baby steps of `even`, which `odd` shares, and each factor on its own schedule,
             // which counts the doubling and the giant-step tree of power-of-two keys.
             let (even_plan, odd_plan) = (even.index(), odd.index());
+            let (even_diagonal, odd_diagonal) = (
+                even.first_diagonal_plaintext().expect("a folded factor has diagonals"),
+                odd.first_diagonal_plaintext().expect("a folded factor has diagonals"),
+            );
             let mut factors = 0;
             for atk in &keys_layout.rotation_key_layouts() {
                 factors = factors
                     .max(module.ckks_prepare_linear_transformation_baby_steps_tmp_bytes(&boot_layout, &even_plan, atk))
-                    .max(module.ckks_eval_linear_transformation_tmp_bytes(&boot_layout, &even_plan, atk))
-                    .max(module.ckks_eval_linear_transformation_tmp_bytes(&boot_layout, &odd_plan, atk));
+                    .max(module.ckks_eval_linear_transformation_tmp_bytes(&boot_layout, even_diagonal, &even_plan, atk, atk))
+                    .max(module.ckks_eval_linear_transformation_tmp_bytes(&boot_layout, odd_diagonal, &odd_plan, atk, atk));
             }
             2 * BE::scratch_aligned(module.glwe_bytes_of_from_infos(&boot_layout))
                 + factors.max(embedded_bytes + module.glwe_rotate_tmp_bytes().max(module.ckks_add_tmp_bytes(embedded.size())))
@@ -1533,6 +1538,7 @@ where
     module.ckks_prepare_linear_transformation_baby_steps(&mut babies, w, keys, scratch)?;
     let (mut a, scratch_1) = scratch.borrow().take_ckks_ciphertext_scratch(w, w.meta());
     let (mut b, mut scratch_1) = scratch_1.take_ckks_ciphertext_scratch(w, w.meta());
+    let keys = &AutomorphismKeysOnly(keys);
     module.ckks_eval_linear_transformation_into(&mut a, w, &babies, even, keys, &mut scratch_1)?;
     module.ckks_eval_linear_transformation_into(&mut b, w, &babies, odd, keys, &mut scratch_1)?;
     let (mut odd_wide, mut scratch_2) = scratch_1.take_ckks_ciphertext_scratch(embedded, b.meta());

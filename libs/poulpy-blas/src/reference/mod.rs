@@ -28,17 +28,22 @@ where
 {
     // A `res` of no width is never read: its map fails the budget check before any scratch.
     let live = res.k().as_usize() > 0;
-    // The maps take a key per rotation, which every plan of that kind sizes alike.
+    // The maps take a key per rotation, which every plan of that kind sizes alike, and plaintext diagonals, which a
+    // block bounds.
     let plan = LinearTransformationPlan::default();
+    let diagonal = |block: &dyn CKKSCtBounds| poulpy_core::layouts::GLWELayout {
+        rank: 0u32.into(),
+        ..block.glwe_layout()
+    };
     let eval = if summed {
-        let res_bytes = live.then(|| module.ckks_eval_linear_transformation_sum_tmp_bytes(res, &plan, key));
+        let res_bytes = live.then(|| module.ckks_eval_linear_transformation_sum_tmp_bytes(res, &diagonal(res), &plan, key, key));
         module
-            .ckks_eval_linear_transformation_sum_tmp_bytes(a, &plan, key)
+            .ckks_eval_linear_transformation_sum_tmp_bytes(a, &diagonal(a), &plan, key, key)
             .max(res_bytes.unwrap_or(0))
     } else {
-        let res_bytes = live.then(|| module.ckks_eval_linear_transformation_tmp_bytes(res, &plan, key));
+        let res_bytes = live.then(|| module.ckks_eval_linear_transformation_tmp_bytes(res, &diagonal(res), &plan, key, key));
         module
-            .ckks_eval_linear_transformation_tmp_bytes(a, &plan, key)
+            .ckks_eval_linear_transformation_tmp_bytes(a, &diagonal(a), &plan, key, key)
             .max(res_bytes.unwrap_or(0))
     };
     module

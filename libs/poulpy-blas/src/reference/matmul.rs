@@ -1264,7 +1264,14 @@ where
         for (o, dst) in blocks.into_iter().enumerate() {
             lts.clear();
             lts.extend((0..inner).map(|l| map(g, o, l)));
-            module.ckks_eval_linear_transformation_sum_into(&mut *dst, &srcs, &babies, &lts, keys, scratch)?;
+            module.ckks_eval_linear_transformation_sum_into(
+                &mut *dst,
+                &srcs,
+                &babies,
+                &lts,
+                &poulpy_core::layouts::AutomorphismKeysOnly(keys),
+                scratch,
+            )?;
             dst.set_log_sparsity(label);
         }
     }

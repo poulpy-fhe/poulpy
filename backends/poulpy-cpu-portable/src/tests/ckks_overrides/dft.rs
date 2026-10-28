@@ -343,7 +343,7 @@ unsafe impl poulpy_ckks::oep::CKKSDFTImpl for OverrideBackend {
         dft: &DFTMatrix<Self, Dir, Fmt, LinearTransformation<P>>,
     ) -> usize
     where
-        P: poulpy_core::layouts::LWEInfos,
+        P: poulpy_core::layouts::GLWEInfos,
     {
         DFT_PREPARE_EXTRA.get() + poulpy_ckks::reference::dft::ckks_prepare_dft_matrix_tmp_bytes(module, dft)
     }

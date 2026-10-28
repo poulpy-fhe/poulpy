@@ -21,6 +21,7 @@
 //! `slots_to_coeffs_repack`.
 
 use crate::{CKKSResult as Result, ckks_ensure};
+use poulpy_core::layouts::AutomorphismKeysOnly;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
     DiagonalProd,
@@ -320,7 +321,7 @@ where
 {
     let mut babies = LinearTransformationBabySteps::alloc_for(module, factor, running);
     module.ckks_prepare_linear_transformation_baby_steps(&mut babies, running, keys, scratch)?;
-    module.ckks_eval_linear_transformation_assign(running, &babies, factor, keys, scratch)?;
+    module.ckks_eval_linear_transformation_assign(running, &babies, factor, &AutomorphismKeysOnly(keys), scratch)?;
     Ok(())
 }
 
@@ -331,7 +332,7 @@ pub fn ckks_prepare_dft_matrix_tmp_bytes<BE, Dir, Fmt, P>(
 ) -> usize
 where
     BE: Backend,
-    P: poulpy_core::layouts::LWEInfos,
+    P: poulpy_core::layouts::GLWEInfos,
     Module<BE>: CKKSLinearTransformationOps<BE>,
 {
     dft.factor_operands()
@@ -417,8 +418,8 @@ where
                 // Prepared and streamed evaluation are selected independently, so
                 // neither query is assumed to cover the other.
                 let factor_work = module
-                    .glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(ct, ct, pt, &plan, key)
-                    .max(module.glwe_eval_linear_transformation_tmp_bytes(ct, ct, pt, &plan, key))
+                    .glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(ct, ct, pt, &plan, key, key)
+                    .max(module.glwe_eval_linear_transformation_tmp_bytes(ct, ct, pt, &plan, key, key))
                     .max(module.ckks_copy_tmp_bytes(ct, ct));
                 bytes = bytes.max(BE::scratch_aligned(module.glwe_bytes_of_from_infos(ct)) + factor_work);
             }

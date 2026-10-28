@@ -321,3 +321,42 @@ pub(crate) fn prepare_hints(i: usize) -> (poulpy_hal::layouts::PrepareHint, poul
         (Reuse, OneShot)
     }
 }
+
+/// A rank-1 ciphertext prepared as a right operand, with the layout it was prepared from.
+pub(crate) struct PreparedRight<BE: poulpy_hal::layouts::Backend> {
+    pub(crate) cnv: poulpy_hal::layouts::CnvPVecROwned<BE>,
+    pub(crate) layout: crate::layouts::GLWELayout,
+}
+
+impl<BE: poulpy_hal::layouts::Backend> crate::layouts::LWEInfos for PreparedRight<BE> {
+    fn n(&self) -> crate::layouts::Degree {
+        self.layout.n
+    }
+
+    fn base2k(&self) -> crate::layouts::Base2K {
+        self.layout.base2k
+    }
+
+    fn max_size(&self) -> usize {
+        crate::layouts::LWEInfos::size(&self.layout)
+    }
+
+    fn k(&self) -> crate::layouts::TorusPrecision {
+        self.layout.k
+    }
+}
+
+impl<BE: poulpy_hal::layouts::Backend> crate::layouts::GLWEInfos for PreparedRight<BE> {
+    fn rank(&self) -> crate::layouts::Rank {
+        self.layout.rank
+    }
+}
+
+impl<BE: poulpy_hal::layouts::Backend> crate::layouts::GLWEMulRight<BE> for PreparedRight<BE> {
+    type Prepared = poulpy_hal::layouts::CnvPVecROwned<BE>;
+    type Ciphertext = crate::layouts::GLWE<BE::OwnedBuf, BE::ZnxWord>;
+
+    fn mul_right(&self) -> crate::layouts::MulRightOperand<'_, Self::Prepared, Self::Ciphertext> {
+        crate::layouts::MulRightOperand::Prepared(&self.cnv)
+    }
+}

@@ -215,6 +215,11 @@ where
 
     // PaCo's transforms take a key per rotation, which every plan of that kind sizes alike.
     let lt_plan = poulpy_core::layouts::LinearTransformationPlan::default();
+    // Its diagonals are plaintexts of the transform's layout.
+    let lt_diagonal = poulpy_core::layouts::GLWELayout {
+        rank: 0u32.into(),
+        ..lt_layout.glwe_layout()
+    };
     for &element in context.galois_elements() {
         let key = automorphism_layout_for::<BE, _>(keys.rotation_keys(), element, working_precision)?;
         required = required
@@ -226,7 +231,7 @@ where
                 &relinearization,
             ))
             .max(module.ckks_conjugate_tmp_bytes(&branch_layout, &key))
-            .max(module.ckks_eval_linear_transformation_streamed_tmp_bytes(&lt_layout, &lt_plan, &key));
+            .max(module.ckks_eval_linear_transformation_streamed_tmp_bytes(&lt_layout, &lt_diagonal, &lt_plan, &key, &key));
     }
     required = required.max(BE::ckks_paco_coeff_encodings_tmp_bytes::<F>(module, context)?);
 

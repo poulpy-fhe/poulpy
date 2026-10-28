@@ -1192,27 +1192,25 @@ macro_rules! impl_rank_one_tensoring {
             }
 
             #[allow(clippy::too_many_arguments)]
-            fn glwe_mul_prepared_relinearize_sum<R, AP, BP, H>(
+            fn glwe_mul_prepared_relinearize_sum<'a, R, AP, B, H>(
                 module: &Module<$be>,
                 cnv_offset: usize,
                 res: &mut R,
                 res_k: poulpy_core::layouts::TorusPrecision,
-                a: &[&AP],
-                b: &[&BP],
+                a: impl IntoIterator<Item = &'a AP, IntoIter: ExactSizeIterator + Clone>,
                 a_size: usize,
                 a_k: poulpy_core::layouts::TorusPrecision,
-                b_size: usize,
-                b_k: poulpy_core::layouts::TorusPrecision,
+                b: impl IntoIterator<Item = &'a B, IntoIter: ExactSizeIterator + Clone>,
                 tsk: &H,
                 scratch: &mut ScratchArena<'_, $be>,
             ) where
                 R: GLWEToBackendMut<$be> + GLWEInfos,
-                AP: CnvPVecLToBackendRef<$be>,
-                BP: CnvPVecRToBackendRef<$be>,
+                AP: CnvPVecLToBackendRef<$be> + 'a,
+                B: poulpy_core::layouts::GLWEMulRight<$be> + 'a,
                 H: poulpy_core::layouts::GetTensorKey<$be>,
             {
                 module.glwe_mul_prepared_relinearize_sum_reference(
-                    cnv_offset, res, res_k, a, b, a_size, a_k, b_size, b_k, tsk, scratch,
+                    cnv_offset, res, res_k, a, a_size, a_k, b, tsk, scratch,
                 )
             }
 

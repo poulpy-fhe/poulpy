@@ -85,6 +85,35 @@ impl<BE: Backend, K: GLWEAutomorphismKeyPreparedToBackendRef<BE>> GetAutomorphis
     }
 }
 
+/// The automorphism keys of a key source and no tensor key: the keys of a transform of plaintext diagonals, which never
+/// asks for one, from a source that need not hold one.
+pub struct AutomorphismKeysOnly<'a, H>(pub &'a H);
+
+impl<BE: Backend, H: GetAutomorphismKey<BE>> GetAutomorphismKey<BE> for AutomorphismKeysOnly<'_, H> {
+    fn lookup_automorphism_key(&self, p: i64, k: TorusPrecision) -> Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
+        self.0.lookup_automorphism_key(p, k)
+    }
+}
+
+impl<BE: Backend, H> GetTensorKey<BE> for AutomorphismKeysOnly<'_, H> {
+    fn lookup_tensor_key(&self, _k: TorusPrecision) -> Result<GLWETensorKeyPreparedBackendRef<'_, BE>> {
+        Err(CoreError::GGLWEKeyUse {
+            op: "get_tensor_key",
+            detail: "the keys of a transform of plaintext diagonals hold no tensor key".into(),
+        })
+    }
+}
+
+/// A map of automorphism keys holds no tensor key: a transform of plaintext diagonals never asks for one.
+impl<BE: Backend, K: GLWEAutomorphismKeyPreparedToBackendRef<BE>> GetTensorKey<BE> for HashMap<i64, K> {
+    fn lookup_tensor_key(&self, _k: TorusPrecision) -> Result<GLWETensorKeyPreparedBackendRef<'_, BE>> {
+        Err(CoreError::GGLWEKeyUse {
+            op: "get_tensor_key",
+            detail: "a map of automorphism keys holds no tensor key".into(),
+        })
+    }
+}
+
 /// A bare key answers "this key, as stored, for every rotation".
 impl<D: Data, BE: Backend> GetAutomorphismKey<BE> for GLWEAutomorphismKeyPrepared<D, BE>
 where

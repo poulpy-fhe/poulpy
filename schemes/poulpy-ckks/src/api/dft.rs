@@ -35,7 +35,7 @@ pub trait CKKSDFTOps<BE: Backend> {
     /// Selected workspace for preparing every factor of this matrix.
     fn ckks_prepare_dft_matrix_tmp_bytes<Dir, Fmt, P>(&self, dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>) -> usize
     where
-        P: poulpy_core::layouts::LWEInfos;
+        P: poulpy_core::layouts::GLWEInfos;
 
     /// Selected workspace for raw DFT evaluation and its format wrappers.
     /// `dst` and `src` must bound all destination and source allocations; `key`

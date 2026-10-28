@@ -354,7 +354,9 @@ pub fn test_conjugate_invariant_leveled<BE>(
                 module.ckks_prepare_linear_transformation_baby_steps_tmp_bytes(input, &lt.index(), &params.atk_layout());
             let streamed_bytes = baby_bytes.max(module.ckks_eval_linear_transformation_streamed_tmp_bytes(
                 input,
+                &crate::test_suite::helpers::plaintext_diagonal_of(input),
                 &lt.index(),
+                &params.atk_layout(),
                 &params.atk_layout(),
             ));
             with_scratch::<BE, _>(streamed_bytes, |s| {
@@ -369,8 +371,13 @@ pub fn test_conjugate_invariant_leveled<BE>(
                 module.ckks_prepare_linear_transformation_rhs(&mut prepared, &lt, s)
             })
             .unwrap();
-            let resident_bytes =
-                baby_bytes.max(module.ckks_eval_linear_transformation_tmp_bytes(input, &lt.index(), &params.atk_layout()));
+            let resident_bytes = baby_bytes.max(module.ckks_eval_linear_transformation_tmp_bytes(
+                input,
+                &crate::test_suite::helpers::plaintext_diagonal_of(input),
+                &lt.index(),
+                &params.atk_layout(),
+                &params.atk_layout(),
+            ));
             with_scratch::<BE, _>(resident_bytes, |s| {
                 module.ckks_eval_linear_transformation_self_into(&mut result, input, &prepared, &keys, s)
             })

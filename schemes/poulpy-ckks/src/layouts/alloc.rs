@@ -117,24 +117,26 @@ pub trait CKKSModuleAlloc<BE: Backend>:
     where
         A: CKKSInfos,
     {
-        transform_of(layout, || self.ckks_plaintext_alloc_from_infos(infos))
-    }
-
-    /// A transform of `layout`'s schedule whose diagonals are ciphertexts of `infos` prepared under `hint`, the
-    /// receiver of [`CKKSMulOps::ckks_prepare_right_into`](crate::api::CKKSMulOps::ckks_prepare_right_into) at every
-    /// diagonal for
-    /// [`CKKSLinearTransformationOps::ckks_eval_ct_linear_transformation_into`](crate::api::CKKSLinearTransformationOps::ckks_eval_ct_linear_transformation_into):
-    /// the slot of giant step `rot` and baby rotation `baby` takes diagonal `rot + baby` rotated by `-rot` slots.
-    fn ckks_ct_linear_transformation_alloc_from_infos<A>(
-        &self,
-        layout: &LinearTransformationLayout,
-        infos: &A,
-        hint: PrepareHint,
-    ) -> LinearTransformation<CKKSPreparedRight<BE>>
-    where
-        A: GLWEInfos,
-    {
-        transform_of(layout, || self.ckks_prepared_right_alloc_from_infos(infos, hint))
+        let plan = layout.index();
+        LinearTransformation {
+            giant_steps: plan
+                .giant_steps
+                .iter()
+                .zip(&plan.index)
+                .map(|(&rot, babies)| LinearTransformationGiantStep {
+                    rot,
+                    diagonals: babies
+                        .iter()
+                        .map(|&baby| LinearTransformationDiagonal {
+                            baby,
+                            plaintext: self.ckks_plaintext_alloc_from_infos(infos),
+                        })
+                        .collect(),
+                })
+                .collect(),
+            baby_steps: plan.baby_steps,
+            rotations: plan.rotations,
+        }
     }
 
     /// Bytes of a left operand [`Self::ckks_prepared_left_alloc_from_infos`] allocates for `infos` under `hint`.
@@ -222,7 +224,7 @@ pub trait CKKSModuleAlloc<BE: Backend>:
     ) -> DFTMatrixPrepared<BE, Dir, Fmt>
     where
         Self: Sized,
-        P: LWEInfos,
+        P: GLWEInfos,
     {
         let factors = dft
             .factor_operands()
@@ -241,30 +243,6 @@ pub trait CKKSModuleAlloc<BE: Backend>:
 impl<BE: Backend> CKKSModuleAlloc<BE> for Module<BE> where
     Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
 {
-}
-
-/// A transform of `layout`'s schedule with a diagonal of `diagonal()` at every slot.
-fn transform_of<P>(layout: &LinearTransformationLayout, mut diagonal: impl FnMut() -> P) -> LinearTransformation<P> {
-    let plan = layout.index();
-    LinearTransformation {
-        giant_steps: plan
-            .giant_steps
-            .iter()
-            .zip(&plan.index)
-            .map(|(&rot, babies)| LinearTransformationGiantStep {
-                rot,
-                diagonals: babies
-                    .iter()
-                    .map(|&baby| LinearTransformationDiagonal {
-                        baby,
-                        plaintext: diagonal(),
-                    })
-                    .collect(),
-            })
-            .collect(),
-        baby_steps: plan.baby_steps,
-        rotations: plan.rotations,
-    }
 }
 
 #[cfg(test)]

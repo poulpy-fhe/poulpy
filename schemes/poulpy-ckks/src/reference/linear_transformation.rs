@@ -14,8 +14,8 @@ use poulpy_core::{
     DiagonalProd, GLWELinearTransformations, LinearTransformationBabySteps, LinearTransformationGiantStep,
     LinearTransformationPrepared,
     layouts::{
-        BsgsRotations, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos,
-        TorusPrecision, prepared::PreparedDiagonal,
+        BsgsRotations, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, TorusPrecision,
+        prepared::PreparedDiagonal,
     },
     reference::linear_transformation::glwe_accumulate_streamed_baby_steps_dft,
 };
@@ -28,7 +28,7 @@ use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, SetCKKSInfos,
     api::{CKKSCopyOps, LinearTransformation, LtDiagonalMeta},
     layouts::{
-        CKKSPlaintext, CKKSPreparedRight,
+        CKKSPlaintext,
         validation::{ensure_prepared_transformation_layout, ensure_uniform_diagonals},
     },
     mul_ct_params_raw, mul_pt_params_raw,
@@ -59,6 +59,19 @@ where
         M: CnvPVecBytesOf + Convolution<BE> + ModuleN,
     {
         glwe_accumulate_streamed_baby_steps_dft(module, cnv_offset_hi, prod_dft, lhs, gs, scratch);
+    }
+}
+
+/// A plaintext diagonal is of rank 0: the transform never multiplies it as a ciphertext.
+impl<BE: Backend, D: Data> poulpy_core::layouts::GLWEMulRight<BE> for CKKSPlaintext<D, BE::ZnxWord, BE::Ring>
+where
+    CKKSPlaintext<D, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE>,
+{
+    type Prepared = poulpy_hal::layouts::CnvPVecROwned<BE>;
+    type Ciphertext = Self;
+
+    fn mul_right(&self) -> poulpy_core::layouts::MulRightOperand<'_, Self::Prepared, Self> {
+        poulpy_core::layouts::MulRightOperand::Ciphertext(self)
     }
 }
 
@@ -95,6 +108,10 @@ impl<D: Data, BE: Backend> LtDiagonalMeta for PreparedDiagonal<D, BE> {
     fn lt_log_sparsity(&self, log_n: usize) -> usize {
         log_n.saturating_sub(self.log_n())
     }
+
+    fn lt_ciphertext_k(&self) -> Option<TorusPrecision> {
+        (self.rank().as_usize() > 0).then(|| self.k())
+    }
 }
 
 /// The reference algorithms of [`CKKSLinearTransformationImpl`](crate::oep::CKKSLinearTransformationImpl), which
@@ -103,7 +120,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
     fn ckks_prepare_linear_transformation_rhs_tmp_bytes_reference<P>(&self, pt_infos: &P) -> usize
     where
         Self: GLWELinearTransformations<BE>,
-        P: LWEInfos,
+        P: GLWEInfos,
     {
         self.glwe_prepare_linear_transformation_rhs_tmp_bytes(pt_infos)
     }
@@ -123,56 +140,69 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
     }
 
     /// The ciphertext stands in for the diagonal, so the budget is an upper bound for a diagonal below the ring degree.
-    fn ckks_eval_linear_transformation_tmp_bytes_reference<C, K>(&self, ct: &C, plan: &LinearTransformationPlan, key: &K) -> usize
-    where
-        Self: GLWELinearTransformations<BE> + GLWEBytesOf<BE> + CKKSCopyOps<BE>,
-        C: CKKSCtBounds,
-        K: GGLWEInfos,
-    {
-        // `ct` doubles as the plaintext-operand proxy: it bounds the convolution
-        // sizes from above, so the result is a safe upper bound. The extra
-        // ct-sized buffer is the dst-shaped working copy the `_assign` wrappers
-        // carve from scratch and copy back with the selected `ckks_copy` (an upper
-        // bound for the `_into` paths, which skip both).
-        self.glwe_eval_linear_transformation_tmp_bytes(ct, ct, ct, plan, key)
-            .max(self.ckks_copy_tmp_bytes(ct, ct))
-            + BE::scratch_aligned(self.glwe_bytes_of_from_infos(ct))
-    }
-
-    /// The ciphertext stands in for the diagonal, so the budget is an upper bound for a diagonal below the ring degree.
-    fn ckks_eval_linear_transformation_streamed_tmp_bytes_reference<C, K>(
+    fn ckks_eval_linear_transformation_tmp_bytes_reference<C, D, K, T>(
         &self,
         ct: &C,
+        diagonal: &D,
         plan: &LinearTransformationPlan,
         key: &K,
+        tsk: &T,
     ) -> usize
     where
         Self: GLWELinearTransformations<BE> + GLWEBytesOf<BE> + CKKSCopyOps<BE>,
         C: CKKSCtBounds,
+        D: GLWEInfos,
         K: GGLWEInfos,
+        T: GGLWEInfos,
     {
-        // `ct` doubles as the plaintext-operand proxy (upper bound on diagonal
-        // shape). The extra ct-sized buffer and the copy cover the `_assign`
-        // wrappers' scratch-carved working copy, as above.
-        self.glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(ct, ct, ct, plan, key)
+        // `ct` stands for the destination and the source. The extra ct-sized buffer is the dst-shaped working copy the
+        // `_assign` wrappers carve from scratch and copy back with the selected `ckks_copy` (an upper bound for the
+        // `_into` paths, which skip both).
+        self.glwe_eval_linear_transformation_tmp_bytes(ct, ct, diagonal, plan, key, tsk)
             .max(self.ckks_copy_tmp_bytes(ct, ct))
             + BE::scratch_aligned(self.glwe_bytes_of_from_infos(ct))
     }
 
-    /// The ciphertext stands in for the diagonal, so the budget is an upper bound for a diagonal below the ring degree.
-    fn ckks_eval_linear_transformation_sum_tmp_bytes_reference<C, K>(
+    /// Sized at the module degree, an upper bound for a diagonal below the ring degree.
+    fn ckks_eval_linear_transformation_streamed_tmp_bytes_reference<C, D, K, T>(
         &self,
         ct: &C,
+        diagonal: &D,
         plan: &LinearTransformationPlan,
         key: &K,
+        tsk: &T,
+    ) -> usize
+    where
+        Self: GLWELinearTransformations<BE> + GLWEBytesOf<BE> + CKKSCopyOps<BE>,
+        C: CKKSCtBounds,
+        D: GLWEInfos,
+        K: GGLWEInfos,
+        T: GGLWEInfos,
+    {
+        // The extra ct-sized buffer and the copy cover the `_assign` wrappers' scratch-carved working copy, as above.
+        self.glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(ct, ct, diagonal, plan, key, tsk)
+            .max(self.ckks_copy_tmp_bytes(ct, ct))
+            + BE::scratch_aligned(self.glwe_bytes_of_from_infos(ct))
+    }
+
+    /// The sum's query, `ct` standing for the destination and every source.
+    fn ckks_eval_linear_transformation_sum_tmp_bytes_reference<C, D, K, T>(
+        &self,
+        ct: &C,
+        diagonal: &D,
+        plan: &LinearTransformationPlan,
+        key: &K,
+        tsk: &T,
     ) -> usize
     where
         Self: GLWELinearTransformations<BE>,
         C: CKKSCtBounds,
+        D: GLWEInfos,
         K: GGLWEInfos,
+        T: GGLWEInfos,
     {
         // No `_assign` wrapper, so no dst-shaped working copy.
-        self.glwe_eval_linear_transformation_sum_tmp_bytes(ct, ct, ct, plan, key)
+        self.glwe_eval_linear_transformation_sum_tmp_bytes(ct, ct, diagonal, plan, key, tsk)
     }
 
     /// `InvalidOperand`, before any write, for a `prepared` allocated for another layout than `lt`'s or diagonals of
@@ -185,7 +215,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
     ) -> Result<()>
     where
         Self: GLWELinearTransformations<BE>,
-        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + DiagonalProd<BE>,
+        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds,
     {
         const OP: &str = "ckks_prepare_linear_transformation_rhs";
         ensure_prepared_transformation_layout(OP, prepared, lt)?;
@@ -251,7 +281,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
-        H: GetAutomorphismKey<BE>,
+        H: GetAutomorphismKey<BE> + poulpy_core::layouts::GetTensorKey<BE>,
     {
         const OP: &str = "ckks_eval_linear_transformation_into";
         let first = lt.first_diagonal_plaintext().ok_or_else(|| -> CKKSError {
@@ -261,27 +291,10 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
             }
             .into()
         })?;
-        // The diagonal scale (`lt_log_scale`), its effective torus width `k` and the
-        // slot kind are read off the first diagonal. The convolution offset must
-        // match the width the diagonal data was positioned at in `cnv_prepare_right`
-        // (its effective `k`), which can be below the rounded physical `max_k`.
-        let (pt_log_scale, pt_max_k, pt_slots) = (first.lt_log_scale(), first.encoded_k().as_usize(), first.lt_slots());
+        let pt_slots = first.lt_slots();
         ensure_uniform_diagonals(OP, lt, lt_diagonal_meta)?;
-        // ct × (plaintext diagonal): the ct × pt convolution rule, with the diagonal
-        // described by just its scale (`pt_log_scale` → rhs `log_delta`) and storage
-        // width (`pt_max_k` → rhs `max_k`). Its `log_budget` is dead in this math
-        // (`checked_mul_pt_log_budget` reads the rhs budget only for diagnostics), so 0.
-        let (res_log_budget, res_log_delta, cnv_offset) = mul_pt_params_raw(
-            OP,
-            dst.k().as_usize(),
-            src.log_delta(),
-            src.log_budget(),
-            pt_log_scale,
-            0,
-            pt_max_k,
-        )?;
+        let (res_log_budget, res_log_delta, cnv_offset) = lt_rule(OP, &*dst, src, first, keys)?;
         let res_k: TorusPrecision = (res_log_budget + res_log_delta).into();
-        debug_assert_eq!(res_k, crate::api::ckks_linear_transformation_output_k(lt, src.k(), dst.k()));
         let cyclotomic_order = operand_cyclotomic_order(OP, self, src.n().as_usize())?;
         check_required_keys(OP, lt, babies, keys, cyclotomic_order, res_k)?;
         // `Σ diag ⊙ rot(src)` has real slots when `src` and the diagonals do, and is sparse where both are: a diagonal is
@@ -309,7 +322,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         Self: GLWELinearTransformations<BE> + CyclotomicOrder,
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: GetAutomorphismKey<BE>,
+        H: GetAutomorphismKey<BE> + poulpy_core::layouts::GetTensorKey<BE>,
     {
         const OP: &str = "ckks_eval_linear_transformation_sum_into";
         if babies.len() != srcs.len() || lts.len() != srcs.len() {
@@ -322,7 +335,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         let first = lt
             .first_diagonal_plaintext()
             .ok_or_else(|| invalid_sum("linear transformation has no diagonals".into()))?;
-        let (pt_log_scale, pt_max_k, pt_slots) = (first.lt_log_scale(), first.encoded_k().as_usize(), first.lt_slots());
+        let (_pt_log_scale, _pt_max_k, pt_slots) = (first.lt_log_scale(), first.encoded_k().as_usize(), first.lt_slots());
         // Core sums each giant step's products over the terms before one rotation,
         // at one `cnv_offset`, so the terms must agree on everything those read.
         let diagonal = |lt: &LinearTransformationPrepared<BE>| {
@@ -363,16 +376,8 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
             ensure_uniform_diagonals(OP, lt_t, lt_diagonal_meta)?;
         }
         // The terms share the source and diagonal metadata, so the first term's
-        // ct × pt rule holds for all of them (see `ckks_eval_linear_transformation_into`).
-        let (res_log_budget, res_log_delta, cnv_offset) = mul_pt_params_raw(
-            OP,
-            dst.k().as_usize(),
-            src.log_delta(),
-            src.log_budget(),
-            pt_log_scale,
-            0,
-            pt_max_k,
-        )?;
+        // rule holds for all of them (see `ckks_eval_linear_transformation_into`).
+        let (res_log_budget, res_log_delta, cnv_offset) = lt_rule(OP, &*dst, src, first, keys)?;
         let res_k: TorusPrecision = (res_log_budget + res_log_delta).into();
         let cyclotomic_order = operand_cyclotomic_order(OP, self, dst.n().as_usize())?;
         for (&babies_t, &lt_t) in babies.iter().zip(lts) {
@@ -390,106 +395,63 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         dst.set_slots(slots);
         Ok(())
     }
-
-    /// Core's query with `ct` standing in for the destination and the source.
-    fn ckks_eval_ct_linear_transformation_tmp_bytes_reference<C, D, K, T>(
-        &self,
-        ct: &C,
-        diagonal: &D,
-        plan: &LinearTransformationPlan,
-        key: &K,
-        tsk: &T,
-    ) -> usize
-    where
-        Self: GLWELinearTransformations<BE>,
-        C: CKKSCtBounds,
-        D: GLWEInfos,
-        K: GGLWEInfos,
-        T: GGLWEInfos,
-    {
-        self.glwe_eval_ct_linear_transformation_tmp_bytes(ct, ct, diagonal, plan, key, tsk)
-    }
-
-    /// The rule of `ckks_mul_into` between `src` and the first diagonal, after the checks of
-    /// `ckks_dot_product_prepared` on the diagonals and of the one-pass product, then core's
-    /// `glwe_eval_ct_linear_transformation_into`.
-    #[allow(clippy::too_many_arguments)]
-    fn ckks_eval_ct_linear_transformation_into_reference<Dst, Src, T, H>(
-        &self,
-        dst: &mut Dst,
-        src: &Src,
-        babies: &LinearTransformationBabySteps<BE>,
-        lt: &LinearTransformation<CKKSPreparedRight<BE>>,
-        tsk: &T,
-        keys: &H,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        Self: GLWELinearTransformations<BE> + CyclotomicOrder,
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        T: GetTensorKey<BE>,
-        H: GetAutomorphismKey<BE>,
-    {
-        const OP: &str = "ckks_eval_ct_linear_transformation_into";
-        let first = lt.first_diagonal_plaintext().ok_or_else(|| -> CKKSError {
-            CKKSCompositionError::InvalidOperand {
-                op: OP,
-                reason: "linear transformation has no diagonals".into(),
-            }
-            .into()
-        })?;
-        for diagonal in lt.giant_steps.iter().flat_map(|gs| &gs.diagonals) {
-            check_prepared_layout(OP, &*dst, &diagonal.plaintext)?;
-            ckks_ensure_operand!(
-                OP,
-                (diagonal.plaintext.glwe_layout(), diagonal.plaintext.log_delta()) == (first.glwe_layout(), first.log_delta()),
-                "every diagonal must share one layout and scale"
-            );
-        }
-        ckks_ensure_operand!(
-            OP,
-            dst.base2k().as_usize() <= 62,
-            "base2k {} > 62: two canonical tensor digits can overflow an i64",
-            dst.base2k().as_usize()
-        );
-        let (res_log_budget, res_log_delta, cnv_offset) = mul_ct_params_raw(
-            OP,
-            dst.k().as_usize(),
-            src.log_delta(),
-            src.k().into(),
-            first.log_delta(),
-            first.k().into(),
-        )?;
-        let tensor_k = src.k().max(first.k());
-        tsk.get_tensor_key(tensor_k)
-            .map_err(|source| CKKSCompositionError::MissingRelinearizationKey {
-                op: OP,
-                k: tensor_k.into(),
-                source,
-            })?;
-        ckks_ensure_operand!(
-            OP,
-            mul_one_pass(&*dst, &[src.base2k(), first.base2k()], tensor_k, cnv_offset, tsk),
-            "the one-pass product needs rank 1, one base2k across dst, src, the diagonals and the tensor key, and a \
-             conversion offset of at least base2k"
-        );
-        let res_k: TorusPrecision = (res_log_budget + res_log_delta).into();
-        let cyclotomic_order = operand_cyclotomic_order(OP, self, src.n().as_usize())?;
-        check_required_keys(OP, lt, babies, keys, cyclotomic_order, res_k)?;
-        // The products of values sparse at `s` and `t` are sparse at `min(s, t)`.
-        let slots = src.slots().join(first.slots());
-        let log_sparsity = src.log_sparsity().min(first.log_sparsity());
-        dst.set_log_budget(res_log_budget);
-        dst.set_log_delta(res_log_delta);
-        dst.set_log_sparsity(log_sparsity);
-        self.glwe_eval_ct_linear_transformation_into(cnv_offset, dst, babies, src.k(), lt, tsk, keys, scratch);
-        dst.set_slots(slots);
-        Ok(())
-    }
 }
 
 impl<BE: Backend> CKKSLinearTransformationReference<BE> for Module<BE> {}
+
+/// `(log_budget, log_delta, cnv_offset)` of a transform of the diagonals `first` shares on `src` into `dst`, before any
+/// write: the rule of `ckks_mul_pt_vec_into` for plaintext diagonals, the diagonal described by its scale and the
+/// width its data was positioned at (its `log_budget` is dead in this math, so 0); the rule of `ckks_mul_into` for
+/// diagonals of the source's rank, after the refusals of `ckks_dot_product_prepared` and the tensor key's lookup.
+fn lt_rule<BE, Dst, Src, P, H>(op: &'static str, dst: &Dst, src: &Src, first: &P, keys: &H) -> Result<(usize, usize, usize)>
+where
+    BE: Backend,
+    Dst: CKKSCtBounds,
+    Src: CKKSCtBounds,
+    P: LtDiagonalMeta + IntPolyInfos + GLWEInfos,
+    H: poulpy_core::layouts::GetTensorKey<BE>,
+{
+    if first.rank().as_usize() == 0 {
+        return mul_pt_params_raw(
+            op,
+            dst.k().as_usize(),
+            src.log_delta(),
+            src.log_budget(),
+            first.lt_log_scale(),
+            0,
+            first.encoded_k().as_usize(),
+        );
+    }
+    check_prepared_layout(op, dst, first)?;
+    ckks_ensure_operand!(
+        op,
+        dst.base2k().as_usize() <= 62,
+        "base2k {} > 62: two canonical tensor digits can overflow an i64",
+        dst.base2k().as_usize()
+    );
+    let (log_budget, log_delta, cnv_offset) = mul_ct_params_raw(
+        op,
+        dst.k().as_usize(),
+        src.log_delta(),
+        src.k().into(),
+        first.lt_log_scale(),
+        first.k().into(),
+    )?;
+    let tensor_k = src.k().max(first.k());
+    keys.get_tensor_key(tensor_k)
+        .map_err(|source| CKKSCompositionError::MissingRelinearizationKey {
+            op,
+            k: tensor_k.into(),
+            source,
+        })?;
+    ckks_ensure_operand!(
+        op,
+        mul_one_pass(dst, &[src.base2k(), first.base2k()], tensor_k, cnv_offset, keys),
+        "the one-pass product needs rank 1, one base2k across dst, src, the diagonals and the tensor key, and a \
+         conversion offset of at least base2k"
+    );
+    Ok((log_budget, log_delta, cnv_offset))
+}
 
 /// The scale, storage width and slot kind a diagonal's evaluation reads.
 fn lt_diagonal_meta<P: LtDiagonalMeta + IntPolyInfos>(pt: &P) -> (usize, usize, SlotsKind) {

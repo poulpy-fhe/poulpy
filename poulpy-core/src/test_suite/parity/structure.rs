@@ -741,7 +741,13 @@ pub fn test_tensor_relinearize_decrypt_parity_roles<BR, BT>(
                                         precision,
                                         &mut poisoned_scratch::<$be>(glwe_prepare_right_tmp_bytes($m, size, &g)).borrow(),
                                     );
-                                    (l_prep, r_prep)
+                                    (
+                                        l_prep,
+                                        crate::test_suite::PreparedRight {
+                                            cnv: r_prep,
+                                            layout: g,
+                                        },
+                                    )
                                 })
                                 .collect::<Vec<_>>()
                         }};
@@ -795,12 +801,10 @@ pub fn test_tensor_relinearize_decrypt_parity_roles<BR, BT>(
                                             cnv_offset,
                                             $out,
                                             g.k,
-                                            &$prep.0[..if role == 5 { 1 } else { 3 }],
-                                            &$prep.1[..if role == 5 { 1 } else { 3 }],
+                                            $prep.0[..if role == 5 { 1 } else { 3 }].iter().copied(),
                                             size,
                                             g.k,
-                                            size,
-                                            g.k,
+                                            $prep.1[..if role == 5 { 1 } else { 3 }].iter().copied(),
                                             $key,
                                             &mut scratch.borrow(),
                                         ),

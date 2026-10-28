@@ -26,7 +26,7 @@ where
     BE: CKKSLinearTransformationImpl,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
-    H: GetAutomorphismKey<BE>,
+    H: GetAutomorphismKey<BE> + poulpy_core::layouts::GetTensorKey<BE>,
 {
     // The evaluation checks its own query on what the working copy leaves.
     ckks_ensure!(
@@ -54,7 +54,7 @@ where
     Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
-    H: GetAutomorphismKey<BE>,
+    H: GetAutomorphismKey<BE> + poulpy_core::layouts::GetTensorKey<BE>,
 {
     // Only the baby cache is allocated: a plaintext `lt` streams its diagonals inside the evaluation.
     let mut babies = LinearTransformationBabySteps::alloc_for(module, lt, src);
@@ -73,7 +73,7 @@ where
     BE: CKKSLinearTransformationImpl,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
-    H: GetAutomorphismKey<BE>,
+    H: GetAutomorphismKey<BE> + poulpy_core::layouts::GetTensorKey<BE>,
 {
     // The evaluation checks its own query on what the working copy leaves.
     ckks_ensure!(

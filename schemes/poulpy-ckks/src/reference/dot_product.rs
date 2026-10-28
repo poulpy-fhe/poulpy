@@ -151,8 +151,18 @@ pub trait CKKSDotProductReference<BE: Backend>: Sized {
             tsk,
             scratch,
             |dst, cnv_offset, res_k, s| {
-                let (a0, b0) = (a[0], b[0]);
-                self.glwe_mul_prepared_relinearize_sum(cnv_offset, dst, res_k, a, b, a0.size(), a0.k(), b0.size(), b0.k(), tsk, s)
+                let a0 = a[0];
+                self.glwe_mul_prepared_relinearize_sum(
+                    cnv_offset,
+                    dst,
+                    res_k,
+                    a.iter().map(|a| a.cnv()),
+                    a0.size(),
+                    a0.k(),
+                    b.iter().copied(),
+                    tsk,
+                    s,
+                )
             },
             |term, i, cnv_offset, s| {
                 let (a, b) = (a[i], b[i]);

@@ -106,7 +106,14 @@ pub trait BlasMatIntraReference<BE: Backend> {
         for (&src, dst) in src.iter().zip(dst.chunks_mut(lts.len())) {
             self.ckks_prepare_linear_transformation_baby_steps(&mut babies, src, keys, scratch)?;
             for (dst, lt) in dst.iter_mut().zip(lts) {
-                self.ckks_eval_linear_transformation_into(dst, src, &babies, lt, keys, scratch)?;
+                self.ckks_eval_linear_transformation_into(
+                    dst,
+                    src,
+                    &babies,
+                    lt,
+                    &poulpy_core::layouts::AutomorphismKeysOnly(keys),
+                    scratch,
+                )?;
                 dst.set_log_sparsity(src.log_sparsity());
             }
         }

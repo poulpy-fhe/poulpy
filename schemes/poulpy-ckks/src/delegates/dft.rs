@@ -22,7 +22,7 @@ use crate::{
 impl<BE: Backend + CKKSDFTImpl> CKKSDFTOps<BE> for Module<BE> {
     fn ckks_prepare_dft_matrix_tmp_bytes<Dir, Fmt, P>(&self, dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>) -> usize
     where
-        P: poulpy_core::layouts::LWEInfos,
+        P: poulpy_core::layouts::GLWEInfos,
     {
         BE::ckks_prepare_dft_matrix_tmp_bytes(self, dft)
     }

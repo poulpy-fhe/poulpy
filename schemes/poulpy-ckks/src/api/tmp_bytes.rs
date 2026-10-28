@@ -137,8 +137,10 @@ where
         let plan = LinearTransformationPlan::default();
         self.ckks_all_ops_tmp_bytes(ct_infos, pt_prec, tsk_infos)
             .max(self.ckks_rotate_tmp_bytes(ct_infos, atk_infos))
-            .max(self.glwe_eval_linear_transformation_tmp_bytes(ct_infos, ct_infos, ct_infos, &plan, atk_infos))
-            .max(self.glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(ct_infos, ct_infos, ct_infos, &plan, atk_infos))
+            .max(self.glwe_eval_linear_transformation_tmp_bytes(ct_infos, ct_infos, ct_infos, &plan, atk_infos, atk_infos))
+            .max(self.glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(
+                ct_infos, ct_infos, ct_infos, &plan, atk_infos, atk_infos,
+            ))
             .max(self.glwe_automorphism_key_encrypt_sk_tmp_bytes(atk_infos))
             .max(self.glwe_automorphism_key_prepare_tmp_bytes(atk_infos))
     }

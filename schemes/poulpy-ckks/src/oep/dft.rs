@@ -42,7 +42,7 @@ pub unsafe trait CKKSDFTImpl:
         dft: &DFTMatrix<Self, Dir, Fmt, LinearTransformation<P>>,
     ) -> usize
     where
-        P: poulpy_core::layouts::LWEInfos;
+        P: poulpy_core::layouts::GLWEInfos;
 
     /// Scratch bound of [`Self::ckks_dft_evaluate_assign`], [`Self::ckks_coeffs_to_slots`],
     /// [`Self::ckks_slots_to_coeffs`], [`Self::ckks_coeffs_to_slots_split`], [`Self::ckks_slots_to_coeffs_split`],
@@ -263,7 +263,7 @@ macro_rules! impl_ckks_dft_reference_full {
                 dft: &$crate::layouts::DFTMatrix<Self, Dir, Fmt, ::poulpy_core::layouts::LinearTransformation<P>>,
             ) -> usize
             where
-                P: ::poulpy_core::layouts::LWEInfos,
+                P: ::poulpy_core::layouts::GLWEInfos,
             {
                 $crate::reference::dft::ckks_prepare_dft_matrix_tmp_bytes(module, dft)
             }

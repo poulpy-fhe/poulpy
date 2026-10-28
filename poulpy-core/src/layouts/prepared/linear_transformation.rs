@@ -97,6 +97,16 @@ impl<D: Data, BE: Backend> PreparedDiagonal<D, BE> {
     }
 }
 
+/// A diagonal of a rank-1 ciphertext is the prepared right operand of the products of its giant step.
+impl<BE: Backend> crate::layouts::GLWEMulRight<BE> for PreparedDiagonal<BE::OwnedBuf, BE> {
+    type Prepared = CnvPVecR<BE::OwnedBuf, BE::DftWord, BE>;
+    type Ciphertext = crate::layouts::GLWE<BE::OwnedBuf, BE::ZnxWord>;
+
+    fn mul_right(&self) -> crate::layouts::MulRightOperand<'_, Self::Prepared, Self::Ciphertext> {
+        crate::layouts::MulRightOperand::Prepared(&self.cnv)
+    }
+}
+
 impl<D: Data, BE: Backend> crate::layouts::IntPolyInfos for PreparedDiagonal<D, BE> {
     /// Prepared diagonals are integer polynomials prepared across their whole
     /// stored width.
@@ -137,6 +147,8 @@ pub struct LinearTransformationBabySteps<BE: Backend> {
     pub(crate) values: BTreeMap<i64, CnvPVecLOwned<BE>>,
     /// How the preparation reaches the rotations.
     pub(crate) rotations: crate::layouts::BsgsRotations,
+    /// Width of the source the rotations were prepared from.
+    pub(crate) k: TorusPrecision,
 }
 
 impl<BE: Backend> LinearTransformationBabySteps<BE> {
@@ -148,6 +160,11 @@ impl<BE: Backend> LinearTransformationBabySteps<BE> {
     pub fn size(&self) -> usize {
         let (_, cnv_pvec) = self.values.first_key_value().unwrap();
         cnv_pvec.size()
+    }
+
+    /// Width of the source the rotations were prepared from, that of the source it was allocated for until prepared.
+    pub fn k(&self) -> TorusPrecision {
+        self.k
     }
 
     pub fn cols(&self) -> usize {
@@ -217,7 +234,10 @@ impl<BE: Backend> LinearTransformationBabySteps<BE> {
 /// impls coherent: the backend type parameter prevents the compiler from
 /// ruling out a downstream `GLWEToBackendRef` impl for [`PreparedDiagonal`], so
 /// a blanket would clash with the resident impl.
-pub trait DiagonalProd<BE: Backend>: LWEInfos + Sized {
+///
+/// A diagonal is also a right operand of a ciphertext product ([`GLWEMulRight`](crate::layouts::GLWEMulRight)): a
+/// transform whose diagonals are of the rank of its source multiplies them as ciphertexts.
+pub trait DiagonalProd<BE: Backend>: crate::layouts::GLWEMulRight<BE> + Sized {
     /// Runs the PROD inner product of one giant step into `prod_dft`.
     fn accumulate_giant_prod<M>(
         module: &M,
