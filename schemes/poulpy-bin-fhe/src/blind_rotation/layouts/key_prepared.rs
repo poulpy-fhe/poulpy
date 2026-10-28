@@ -4,25 +4,21 @@ use std::marker::PhantomData;
 
 use poulpy_core::{
     Distribution,
+    api::GGSWPreparedFactory,
     layouts::{Base2K, Degree, Dnum, GGSWInfos, GLWEInfos, LWEInfos, Rank, prepared::GGSWPrepared},
 };
 
 use crate::blind_rotation::{BlindRotationAlgo, BlindRotationKey, BlindRotationKeyInfos};
 
-/// Backend-level factory for allocating and preparing
-/// [`BlindRotationKeyPrepared`] values.
-///
-/// Dispatched through [`crate::oep::BlindRotationKeyPreparedImpl`].  Callers should use the convenience
-/// methods on [`BlindRotationKeyPrepared`] rather than calling these directly.
 pub use crate::api::BlindRotationKeyPreparedFactory;
 
 impl<BE: Backend, BRA: BlindRotationAlgo> BlindRotationKeyPrepared<BE::OwnedBuf, BRA, BE> {
     pub fn alloc<A, M>(module: &M, infos: &A) -> Self
     where
         A: BlindRotationKeyInfos,
-        M: BlindRotationKeyPreparedFactory<BRA, BE>,
+        M: BlindRotationKeyPreparedFactory<BRA, BE> + GGSWPreparedFactory<BE>,
     {
-        module.blind_rotation_key_prepared_alloc(infos)
+        module.blind_rotation_key_prepared_alloc_from_infos(infos)
     }
 
     pub fn prepare_tmp_bytes<M, A>(module: &M, infos: &A) -> usize
@@ -38,7 +34,7 @@ impl<BRA: BlindRotationAlgo, BE: Backend> BlindRotationKeyPrepared<BE::OwnedBuf,
     /// Populates `self` from the standard key `other`.
     ///
     /// Convenience wrapper around
-    /// [`BlindRotationKeyPreparedFactory::prepare_blind_rotation_key`].
+    /// [`BlindRotationKeyPreparedFactory::blind_rotation_key_prepare`].
     pub fn prepare<M>(
         &mut self,
         module: &M,
@@ -47,7 +43,7 @@ impl<BRA: BlindRotationAlgo, BE: Backend> BlindRotationKeyPrepared<BE::OwnedBuf,
     ) where
         M: BlindRotationKeyPreparedFactory<BRA, BE>,
     {
-        module.prepare_blind_rotation_key(self, other, scratch);
+        module.blind_rotation_key_prepare(self, other, scratch);
     }
 }
 

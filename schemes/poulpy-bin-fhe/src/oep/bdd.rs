@@ -26,9 +26,9 @@ pub use bdd_key_encrypt_sk::*;
 mod bdd_key_prepared_factory;
 pub use bdd_key_prepared_factory::*;
 
-/// Selects the canonical implementation of [`ExecuteBDDCircuitImpl`].
+/// Selects the reference implementation of [`ExecuteBDDCircuitImpl`].
 #[macro_export]
-macro_rules! impl_bin_fhe_execute_bdd_circuit_reference {
+macro_rules! impl_execute_bdd_circuit_reference_full {
     ($be:ty) => {
         const _: () = {
             use poulpy_core::{
@@ -47,8 +47,8 @@ macro_rules! impl_bin_fhe_execute_bdd_circuit_reference {
                 #[allow(clippy::too_many_arguments)]
                 fn execute_bdd_circuit_tmp_bytes<R, G>(
                     module: &Module<$be>,
-                    res_infos: &R,
                     state_size: usize,
+                    res_infos: &R,
                     ggsw_infos: &G,
                 ) -> usize
                 where
@@ -56,7 +56,7 @@ macro_rules! impl_bin_fhe_execute_bdd_circuit_reference {
                     G: GGSWInfos,
                 {
                     $crate::reference::bdd::execute_bdd_circuit_tmp_bytes_reference::<$be, _, _>(
-                        module, res_infos, state_size, ggsw_infos,
+                        module, state_size, res_infos, ggsw_infos,
                     )
                 }
                 #[allow(clippy::too_many_arguments)]
@@ -81,9 +81,9 @@ macro_rules! impl_bin_fhe_execute_bdd_circuit_reference {
     };
 }
 
-/// Selects the canonical implementation of [`CswapImpl`].
+/// Selects the reference implementation of [`CswapImpl`].
 #[macro_export]
-macro_rules! impl_bin_fhe_cswap_reference {
+macro_rules! impl_cswap_reference_full {
     ($be:ty) => {
         const _: () = {
             use poulpy_core::{
@@ -126,9 +126,9 @@ macro_rules! impl_bin_fhe_cswap_reference {
     };
 }
 
-/// Selects the canonical implementation of [`CmuxImpl`].
+/// Selects the reference implementation of [`CmuxImpl`].
 #[macro_export]
-macro_rules! impl_bin_fhe_cmux_reference {
+macro_rules! impl_cmux_reference_full {
     ($be:ty) => {
         const _: () = {
             use poulpy_core::{
@@ -199,9 +199,9 @@ macro_rules! impl_bin_fhe_cmux_reference {
     };
 }
 
-/// Selects the canonical implementation of [`GGSWBlindRotationImpl`].
+/// Selects the reference implementation of [`GGSWBlindRotationImpl`].
 #[macro_export]
-macro_rules! impl_bin_fhe_ggsw_blind_rotation_reference {
+macro_rules! impl_ggsw_blind_rotation_reference_full {
     ($be:ty) => {
         const _: () = {
             use poulpy_core::{
@@ -230,13 +230,13 @@ macro_rules! impl_bin_fhe_ggsw_blind_rotation_reference {
                 #[allow(clippy::too_many_arguments)]
                 fn scalar_to_ggsw_blind_rotation<R, A, K>(
                     module: &Module<$be>,
-                    res: &mut R,
-                    test_vector: &A,
-                    fhe_uint: &K,
                     sign: bool,
                     bit_rsh: usize,
                     bit_mask: usize,
                     bit_lsh: usize,
+                    res: &mut R,
+                    test_vector: &A,
+                    fhe_uint: &K,
                     scratch: &mut ScratchArena<'_, $be>,
                 ) where
                     R: GGSWToBackendMut<$be> + GGSWAtViewMut<$be> + GGSWInfos,
@@ -246,13 +246,13 @@ macro_rules! impl_bin_fhe_ggsw_blind_rotation_reference {
                 {
                     $crate::reference::bdd::scalar_to_ggsw_blind_rotation_reference::<T, $be, _, _, _>(
                         module,
-                        res,
-                        test_vector,
-                        fhe_uint,
                         sign,
                         bit_rsh,
                         bit_mask,
                         bit_lsh,
+                        res,
+                        test_vector,
+                        fhe_uint,
                         scratch,
                     )
                 }
@@ -261,9 +261,9 @@ macro_rules! impl_bin_fhe_ggsw_blind_rotation_reference {
     };
 }
 
-/// Selects the canonical implementation of [`GLWEBlindRotationImpl`].
+/// Selects the reference implementation of [`GLWEBlindRotationImpl`].
 #[macro_export]
-macro_rules! impl_bin_fhe_glwe_blind_rotation_reference {
+macro_rules! impl_glwe_blind_rotation_reference_full {
     ($be:ty) => {
         const _: () = {
             use poulpy_core::{
@@ -290,24 +290,15 @@ macro_rules! impl_bin_fhe_glwe_blind_rotation_reference {
                         module, res_infos, a_infos, k_infos,
                     )
                 }
-                fn glwe_blind_rotation_assign_tmp_bytes<R, K>(module: &Module<$be>, res_infos: &R, k_infos: &K) -> usize
-                where
-                    R: GLWEInfos,
-                    K: GGSWInfos,
-                {
-                    $crate::reference::bdd::glwe_blind_rotation_assign_tmp_bytes_reference::<$be, _, _>(
-                        module, res_infos, k_infos,
-                    )
-                }
                 #[allow(clippy::too_many_arguments)]
                 fn glwe_blind_rotation_assign<R, K>(
                     module: &Module<$be>,
-                    res: &mut R,
-                    value: &K,
                     sign: bool,
                     bit_rsh: usize,
                     bit_mask: usize,
                     bit_lsh: usize,
+                    res: &mut R,
+                    value: &K,
                     scratch: &mut ScratchArena<'_, $be>,
                 ) where
                     R: GLWEToBackendMut<$be> + GLWEInfos,
@@ -315,19 +306,19 @@ macro_rules! impl_bin_fhe_glwe_blind_rotation_reference {
                     $be: Backend<ZnxWord = i64>,
                 {
                     $crate::reference::bdd::glwe_blind_rotation_assign_reference::<$be, _, _>(
-                        module, res, value, sign, bit_rsh, bit_mask, bit_lsh, scratch,
+                        module, sign, bit_rsh, bit_mask, bit_lsh, res, value, scratch,
                     )
                 }
                 #[allow(clippy::too_many_arguments)]
                 fn glwe_blind_rotation<R, A, K>(
                     module: &Module<$be>,
-                    res: &mut R,
-                    a: &A,
-                    fhe_uint: &K,
                     sign: bool,
                     bit_rsh: usize,
                     bit_mask: usize,
                     bit_lsh: usize,
+                    res: &mut R,
+                    a: &A,
+                    fhe_uint: &K,
                     scratch: &mut ScratchArena<'_, $be>,
                 ) where
                     R: GLWEToBackendMut<$be> + GLWEInfos,
@@ -336,7 +327,7 @@ macro_rules! impl_bin_fhe_glwe_blind_rotation_reference {
                     $be: Backend<ZnxWord = i64>,
                 {
                     $crate::reference::bdd::glwe_blind_rotation_reference::<$be, _, _, _>(
-                        module, res, a, fhe_uint, sign, bit_rsh, bit_mask, bit_lsh, scratch,
+                        module, sign, bit_rsh, bit_mask, bit_lsh, res, a, fhe_uint, scratch,
                     )
                 }
             }
@@ -344,9 +335,9 @@ macro_rules! impl_bin_fhe_glwe_blind_rotation_reference {
     };
 }
 
-/// Selects the canonical implementation of [`GLWEBlindSelectionImpl`].
+/// Selects the reference implementation of [`GLWEBlindSelectionImpl`].
 #[macro_export]
-macro_rules! impl_bin_fhe_glwe_blind_selection_reference {
+macro_rules! impl_glwe_blind_selection_reference_full {
     ($be:ty) => {
         const _: () = {
             use poulpy_core::{
@@ -384,11 +375,11 @@ macro_rules! impl_bin_fhe_glwe_blind_selection_reference {
                 #[allow(clippy::too_many_arguments)]
                 fn glwe_blind_selection<R, A, K>(
                     module: &Module<$be>,
+                    bit_rsh: usize,
+                    bit_mask: usize,
                     res: &mut R,
                     a: HashMap<usize, &mut A>,
                     fhe_uint: &K,
-                    bit_rsh: usize,
-                    bit_mask: usize,
                     scratch: &mut ScratchArena<'_, $be>,
                 ) where
                     R: GLWEToBackendMut<$be> + GLWEInfos,
@@ -396,7 +387,7 @@ macro_rules! impl_bin_fhe_glwe_blind_selection_reference {
                     K: GetGGSWBit<$be>,
                 {
                     $crate::reference::bdd::glwe_blind_selection_reference::<T, $be, _, _, _>(
-                        module, res, a, fhe_uint, bit_rsh, bit_mask, scratch,
+                        module, bit_rsh, bit_mask, res, a, fhe_uint, scratch,
                     )
                 }
             }
@@ -406,15 +397,15 @@ macro_rules! impl_bin_fhe_glwe_blind_selection_reference {
 
 /// Selects the same-layer derived defaults for [`GLWEBlindRetrievalImpl`].
 #[macro_export]
-macro_rules! impl_bin_fhe_glwe_blind_retrieval_derived {
+macro_rules! impl_glwe_blind_retrieval_derived_full {
     ($be:ty) => {
         unsafe impl $crate::oep::GLWEBlindRetrievalImpl for $be {}
     };
 }
 
-/// Selects the canonical implementation of [`ExecuteBDDCircuit1WTo1WImpl`].
+/// Selects the reference implementation of [`ExecuteBDDCircuit1WTo1WImpl`].
 #[macro_export]
-macro_rules! impl_bin_fhe_execute_bdd_circuit_1w_to_1w_reference {
+macro_rules! impl_execute_bdd_circuit_1w_to_1w_reference_full {
     ($be:ty) => {
         const _: () = {
             use poulpy_core::{
@@ -433,9 +424,9 @@ macro_rules! impl_bin_fhe_execute_bdd_circuit_1w_to_1w_reference {
                 fn execute_bdd_circuit_1w_to_1w_multi_thread_tmp_bytes<C, T, R, G, H>(
                     module: &Module<$be>,
                     threads: usize,
-                    circuit: &C,
                     res_infos: &R,
                     ggsw_infos: &G,
+                    circuit: &C,
                     key: &H,
                 ) -> usize
                 where
@@ -446,7 +437,7 @@ macro_rules! impl_bin_fhe_execute_bdd_circuit_1w_to_1w_reference {
                     H: GetAutomorphismKey<$be>,
                 {
                     $crate::reference::bdd::execute_bdd_circuit_1w_to_1w_multi_thread_tmp_bytes_reference::<$be, C, T, R, G, H>(
-                        module, threads, circuit, res_infos, ggsw_infos, key,
+                        module, threads, res_infos, ggsw_infos, circuit, key,
                     )
                 }
                 #[allow(clippy::too_many_arguments)]
@@ -454,8 +445,8 @@ macro_rules! impl_bin_fhe_execute_bdd_circuit_1w_to_1w_reference {
                     module: &Module<$be>,
                     threads: usize,
                     out: &mut FheUint<Self::OwnedBuf, T, Self::ZnxWord>,
-                    circuit: &C,
                     a: &FheUintPrepared<Self::OwnedBuf, T, $be>,
+                    circuit: &C,
                     key: &H,
                     scratch: &mut ScratchArena<'_, $be>,
                 ) where
@@ -465,7 +456,7 @@ macro_rules! impl_bin_fhe_execute_bdd_circuit_1w_to_1w_reference {
                     $be: Backend<ZnxWord = i64>,
                 {
                     $crate::reference::bdd::execute_bdd_circuit_1w_to_1w_multi_thread_reference::<$be, _, _, T>(
-                        module, threads, out, circuit, a, key, scratch,
+                        module, threads, out, a, circuit, key, scratch,
                     )
                 }
             }
@@ -473,9 +464,9 @@ macro_rules! impl_bin_fhe_execute_bdd_circuit_1w_to_1w_reference {
     };
 }
 
-/// Selects the canonical implementation of [`ExecuteBDDCircuit2WTo1WImpl`].
+/// Selects the reference implementation of [`ExecuteBDDCircuit2WTo1WImpl`].
 #[macro_export]
-macro_rules! impl_bin_fhe_execute_bdd_circuit_2w_to_1w_reference {
+macro_rules! impl_execute_bdd_circuit_2w_to_1w_reference_full {
     ($be:ty) => {
         const _: () = {
             use poulpy_core::{
@@ -495,9 +486,9 @@ macro_rules! impl_bin_fhe_execute_bdd_circuit_2w_to_1w_reference {
                 fn execute_bdd_circuit_2w_to_1w_multi_thread_tmp_bytes<C, T, R, G, H>(
                     module: &Module<$be>,
                     threads: usize,
-                    circuit: &C,
                     res_infos: &R,
                     ggsw_infos: &G,
+                    circuit: &C,
                     key: &H,
                 ) -> usize
                 where
@@ -508,7 +499,7 @@ macro_rules! impl_bin_fhe_execute_bdd_circuit_2w_to_1w_reference {
                     H: GetAutomorphismKey<$be>,
                 {
                     $crate::reference::bdd::execute_bdd_circuit_2w_to_1w_multi_thread_tmp_bytes_reference::<$be, _, T, _, _, _>(
-                        module, threads, circuit, res_infos, ggsw_infos, key,
+                        module, threads, res_infos, ggsw_infos, circuit, key,
                     )
                 }
                 #[allow(clippy::too_many_arguments)]
@@ -516,9 +507,9 @@ macro_rules! impl_bin_fhe_execute_bdd_circuit_2w_to_1w_reference {
                     module: &Module<$be>,
                     threads: usize,
                     out: &mut FheUint<Self::OwnedBuf, T, Self::ZnxWord>,
-                    circuit: &C,
                     a: &FheUintPrepared<Self::OwnedBuf, T, $be>,
                     b: &FheUintPrepared<Self::OwnedBuf, T, $be>,
+                    circuit: &C,
                     key: &H,
                     scratch: &mut ScratchArena<'_, $be>,
                 ) where
@@ -528,7 +519,7 @@ macro_rules! impl_bin_fhe_execute_bdd_circuit_2w_to_1w_reference {
                     $be: Backend<ZnxWord = i64>,
                 {
                     $crate::reference::bdd::execute_bdd_circuit_2w_to_1w_multi_thread_reference::<$be, _, _, T>(
-                        module, threads, out, circuit, a, b, key, scratch,
+                        module, threads, out, a, b, circuit, key, scratch,
                     )
                 }
             }
@@ -536,9 +527,9 @@ macro_rules! impl_bin_fhe_execute_bdd_circuit_2w_to_1w_reference {
     };
 }
 
-/// Selects the canonical implementation of [`FheUintPreparedEncryptSkImpl`].
+/// Selects the reference implementation of [`FheUintPreparedEncryptSkImpl`].
 #[macro_export]
-macro_rules! impl_bin_fhe_fhe_uint_prepared_encrypt_sk_reference {
+macro_rules! impl_fhe_uint_prepared_encrypt_sk_reference_full {
     ($be:ty) => {
         const _: () = {
             use poulpy_core::{
@@ -578,9 +569,9 @@ macro_rules! impl_bin_fhe_fhe_uint_prepared_encrypt_sk_reference {
     };
 }
 
-/// Selects the canonical implementation of [`FheUintPrepareImpl`].
+/// Selects the reference implementation of [`FheUintPrepareImpl`].
 #[macro_export]
-macro_rules! impl_bin_fhe_fhe_uint_prepare_reference {
+macro_rules! impl_fhe_uint_prepare_reference_full {
     ($be:ty, $algo:ty) => {
         const _: () = {
             use poulpy_core::{
@@ -641,9 +632,9 @@ macro_rules! impl_bin_fhe_fhe_uint_prepare_reference {
     };
 }
 
-/// Selects the canonical implementation of [`BDDKeyEncryptSkImpl`].
+/// Selects the reference implementation of [`BDDKeyEncryptSkImpl`].
 #[macro_export]
-macro_rules! impl_bin_fhe_bdd_key_encrypt_sk_reference {
+macro_rules! impl_bdd_key_encrypt_sk_reference_full {
     ($be:ty, $algo:ty) => {
         const _: () = {
             use poulpy_core::{
@@ -688,9 +679,9 @@ macro_rules! impl_bin_fhe_bdd_key_encrypt_sk_reference {
     };
 }
 
-/// Selects the canonical implementation of [`BDDKeyPreparedFactoryImpl`].
+/// Selects the reference implementation of [`BDDKeyPreparedFactoryImpl`].
 #[macro_export]
-macro_rules! impl_bin_fhe_bdd_key_prepared_reference {
+macro_rules! impl_bdd_key_prepared_factory_reference_full {
     ($be:ty, $algo:ty) => {
         const _: () = {
             use poulpy_core::{
@@ -706,28 +697,19 @@ macro_rules! impl_bin_fhe_bdd_key_prepared_reference {
                 circuit_bootstrapping::*,
             };
             unsafe impl $crate::oep::BDDKeyPreparedFactoryImpl<$algo> for $be {
-                #[allow(clippy::too_many_arguments)]
-                fn alloc_bdd_key_from_infos<A>(module: &Module<$be>, infos: &A) -> BDDKeyPrepared<Self::OwnedBuf, $algo, $be>
+                fn bdd_key_prepare_tmp_bytes<A>(module: &Module<$be>, infos: &A) -> usize
                 where
                     A: BDDKeyInfos,
                 {
-                    $crate::reference::bdd::alloc_bdd_key_from_infos_reference::<$algo, $be, _>(module, infos)
+                    $crate::reference::bdd::bdd_key_prepare_tmp_bytes_reference::<$algo, $be, _>(module, infos)
                 }
-                #[allow(clippy::too_many_arguments)]
-                fn prepare_bdd_key_tmp_bytes<A>(module: &Module<$be>, infos: &A) -> usize
-                where
-                    A: BDDKeyInfos,
-                {
-                    $crate::reference::bdd::prepare_bdd_key_tmp_bytes_reference::<$algo, $be, _>(module, infos)
-                }
-                #[allow(clippy::too_many_arguments)]
-                fn prepare_bdd_key(
+                fn bdd_key_prepare(
                     module: &Module<$be>,
                     res: &mut BDDKeyPrepared<Self::OwnedBuf, $algo, $be>,
                     other: &BDDKey<Self::OwnedBuf, $algo, Self::ZnxWord>,
                     scratch: &mut ScratchArena<'_, $be>,
                 ) {
-                    $crate::reference::bdd::prepare_bdd_key_reference::<$algo, $be>(module, res, other, scratch)
+                    $crate::reference::bdd::bdd_key_prepare_reference::<$algo, $be>(module, res, other, scratch)
                 }
             }
         };
@@ -737,22 +719,22 @@ macro_rules! impl_bin_fhe_bdd_key_prepared_reference {
 /// Selects all canonical BDD implementations and same-layer derived defaults.
 ///
 /// When overriding one operation family, select its peers using their individual
-/// `impl_bin_fhe_*_reference!` or `impl_bin_fhe_*_derived!` macros instead.
+/// `impl_<family>_reference_full!` or `impl_<family>_derived_full!` macros instead.
 #[macro_export]
-macro_rules! impl_bin_fhe_bdd_reference {
+macro_rules! impl_bdd_reference_full {
     ($be:ty, $algo:ty) => {
-        $crate::impl_bin_fhe_execute_bdd_circuit_reference!($be);
-        $crate::impl_bin_fhe_cswap_reference!($be);
-        $crate::impl_bin_fhe_cmux_reference!($be);
-        $crate::impl_bin_fhe_ggsw_blind_rotation_reference!($be);
-        $crate::impl_bin_fhe_glwe_blind_rotation_reference!($be);
-        $crate::impl_bin_fhe_glwe_blind_selection_reference!($be);
-        $crate::impl_bin_fhe_glwe_blind_retrieval_derived!($be);
-        $crate::impl_bin_fhe_execute_bdd_circuit_1w_to_1w_reference!($be);
-        $crate::impl_bin_fhe_execute_bdd_circuit_2w_to_1w_reference!($be);
-        $crate::impl_bin_fhe_fhe_uint_prepared_encrypt_sk_reference!($be);
-        $crate::impl_bin_fhe_fhe_uint_prepare_reference!($be, $algo);
-        $crate::impl_bin_fhe_bdd_key_encrypt_sk_reference!($be, $algo);
-        $crate::impl_bin_fhe_bdd_key_prepared_reference!($be, $algo);
+        $crate::impl_execute_bdd_circuit_reference_full!($be);
+        $crate::impl_cswap_reference_full!($be);
+        $crate::impl_cmux_reference_full!($be);
+        $crate::impl_ggsw_blind_rotation_reference_full!($be);
+        $crate::impl_glwe_blind_rotation_reference_full!($be);
+        $crate::impl_glwe_blind_selection_reference_full!($be);
+        $crate::impl_glwe_blind_retrieval_derived_full!($be);
+        $crate::impl_execute_bdd_circuit_1w_to_1w_reference_full!($be);
+        $crate::impl_execute_bdd_circuit_2w_to_1w_reference_full!($be);
+        $crate::impl_fhe_uint_prepared_encrypt_sk_reference_full!($be);
+        $crate::impl_fhe_uint_prepare_reference_full!($be, $algo);
+        $crate::impl_bdd_key_encrypt_sk_reference_full!($be, $algo);
+        $crate::impl_bdd_key_prepared_factory_reference_full!($be, $algo);
     };
 }

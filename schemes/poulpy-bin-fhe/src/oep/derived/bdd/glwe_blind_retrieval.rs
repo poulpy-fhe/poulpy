@@ -13,10 +13,10 @@ where
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn glwe_blind_retrieval_statefull_derived<BE: Backend, R, K>(
     module: &Module<BE>,
-    res: &mut [R],
-    bits: &K,
     bit_rsh: usize,
     bit_mask: usize,
+    res: &mut [R],
+    bits: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
@@ -41,10 +41,10 @@ pub(crate) fn glwe_blind_retrieval_statefull_derived<BE: Backend, R, K>(
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn glwe_blind_retrieval_statefull_rev_derived<BE: Backend, R, K>(
     module: &Module<BE>,
-    res: &mut [R],
-    bits: &K,
     bit_rsh: usize,
     bit_mask: usize,
+    res: &mut [R],
+    bits: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,

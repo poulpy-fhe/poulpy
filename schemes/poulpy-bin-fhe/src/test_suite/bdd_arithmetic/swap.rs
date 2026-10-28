@@ -14,14 +14,41 @@ use poulpy_hal::{
 };
 use rand::Rng;
 
+use crate::test_suite::bdd_arithmetic::decrypt_checked;
+use crate::test_suite::bdd_arithmetic::{TEST_GGSW_INFOS, TEST_GLWE_INFOS, TestContext};
+use crate::test_suite::parity::{assert_short_scratch_panics, snapshot_glwe};
 use crate::{
-    bdd_arithmetic::{
-        Cmux, Cswap, FheUint, FheUintPrepared, GLWEBlindRetrieval, GLWEBlindRetriever,
-        test_suite::{TEST_GGSW_INFOS, TEST_GLWE_INFOS, TestContext},
-    },
+    bdd_arithmetic::{Cmux, Cswap, FheUint, FheUintPrepared, GLWEBlindRetrieval, GLWEBlindRetriever},
     blind_rotation::BlindRotationAlgo,
 };
 use poulpy_core::layouts::prepared::GGSWPreparedToBackendRef;
+use poulpy_core::test_suite::with_scratch;
+
+/// Setup arena: the largest query of the encryptions, preparations and decryptions the tests below set up with.
+fn setup_scratch<BE>(
+    module: &Module<BE>,
+    glwe_infos: &GLWELayout,
+    ggsw_infos: &poulpy_core::layouts::GGSWLayout,
+) -> ScratchOwned<BE>
+where
+    BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64> + HostBackend,
+    Module<BE>: crate::api::FheUintPreparedEncryptSk<u32, BE>
+        + GLWEEncryptSk<BE>
+        + GLWEDecrypt<BE>
+        + GGSWEncryptSk<BE>
+        + GGSWPreparedFactory<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
+{
+    let ct = FheUint::<BE::OwnedBuf, u32, i64>::alloc_from_infos(module, glwe_infos);
+    ScratchOwned::alloc(
+        ct.encrypt_sk_tmp_bytes::<_, BE>(module)
+            .max(ct.decrypt_tmp_bytes::<_, BE>(module))
+            .max(module.glwe_encrypt_sk_tmp_bytes(glwe_infos))
+            .max(module.ggsw_encrypt_sk_tmp_bytes(ggsw_infos))
+            .max(module.ggsw_prepare_tmp_bytes(ggsw_infos))
+            .max(crate::api::FheUintPreparedEncryptSk::<u32, BE>::fhe_uint_prepared_encrypt_sk_tmp_bytes(module, ggsw_infos)),
+    )
+}
 
 pub fn test_cmux_direct<BRA, BE>(test_context: &TestContext<BRA, BE>)
 where
@@ -44,7 +71,7 @@ where
     let mut source_xa: Source = Source::new([2u8; 32]);
     let mut source_xe: Source = Source::new([3u8; 32]);
 
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(1 << 22);
+    let mut scratch = setup_scratch(module, &glwe_infos, &ggsw_infos);
 
     let t: i64 = 11;
     let f: i64 = 37;
@@ -69,7 +96,15 @@ where
         module.ggsw_prepare(&mut s_prepared, &s, &mut scratch.borrow());
 
         let mut ct_res = module.glwe_alloc_from_infos(&glwe_infos);
-        module.cmux(&mut ct_res, &ct_t, &ct_f, &s_prepared.to_backend_ref(), &mut scratch.borrow());
+        let cmux_bytes = module.cmux_tmp_bytes(&ct_res, &ct_t, &s_prepared.to_backend_ref());
+        let before = snapshot_glwe::<BE, _>(&ct_res);
+        assert_short_scratch_panics::<BE, _>(cmux_bytes, "cmux: insufficient scratch", |s| {
+            module.cmux(&mut ct_res, &ct_t, &ct_f, &s_prepared.to_backend_ref(), s)
+        });
+        assert_eq!(before, snapshot_glwe::<BE, _>(&ct_res));
+        with_scratch::<BE, _>(cmux_bytes, |s| {
+            module.cmux(&mut ct_res, &ct_t, &ct_f, &s_prepared.to_backend_ref(), s)
+        });
 
         let mut pt_have: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
         glwe_decrypt_checked(module, &ct_res, &mut pt_have, sk, &mut scratch.borrow());
@@ -100,7 +135,7 @@ where
     let mut source_xa: Source = Source::new([2u8; 32]);
     let mut source_xe: Source = Source::new([3u8; 32]);
 
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(1 << 22);
+    let mut scratch = setup_scratch(module, &glwe_infos, &ggsw_infos);
 
     let a: i64 = 19;
     let b: i64 = 53;
@@ -124,7 +159,15 @@ where
         module.ggsw_encrypt_sk(&mut s, &pt_sel, sk, &mut source_xe, &mut source_xa, &mut scratch.borrow());
         module.ggsw_prepare(&mut s_prepared, &s, &mut scratch.borrow());
 
-        module.cswap(&mut ct_a, &mut ct_b, &s_prepared.to_backend_ref(), &mut scratch.borrow());
+        let cswap_bytes = module.cswap_tmp_bytes(&ct_a, &ct_b, &s_prepared.to_backend_ref());
+        let before = (snapshot_glwe::<BE, _>(&ct_a), snapshot_glwe::<BE, _>(&ct_b));
+        assert_short_scratch_panics::<BE, _>(cswap_bytes, "cswap: insufficient scratch", |s| {
+            module.cswap(&mut ct_a, &mut ct_b, &s_prepared.to_backend_ref(), s)
+        });
+        assert_eq!(before, (snapshot_glwe::<BE, _>(&ct_a), snapshot_glwe::<BE, _>(&ct_b)));
+        with_scratch::<BE, _>(cswap_bytes, |s| {
+            module.cswap(&mut ct_a, &mut ct_b, &s_prepared.to_backend_ref(), s)
+        });
 
         let mut pt_a_have: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
         let mut pt_b_have: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
@@ -158,7 +201,7 @@ where
     let mut source_xa: Source = Source::new([2u8; 32]);
     let mut source_xe: Source = Source::new([3u8; 32]);
 
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(1 << 22);
+    let mut scratch = setup_scratch(module, &glwe_infos, &ggsw_infos);
 
     let mut s: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_infos);
     let mut s_prepared: GGSWPrepared<BE::OwnedBuf, BE> = module.ggsw_prepared_alloc_from_infos(&ggsw_infos);
@@ -181,12 +224,15 @@ where
         module.ggsw_encrypt_sk(&mut s, &pt, sk, &mut source_xe, &mut source_xa, &mut scratch.borrow());
         module.ggsw_prepare(&mut s_prepared, &s, &mut scratch.borrow());
 
-        module.cswap(&mut a_enc, &mut b_enc, &s_prepared.to_backend_ref(), &mut scratch.borrow());
+        let cswap_bytes = module.cswap_tmp_bytes(&a_enc, &b_enc, &s_prepared.to_backend_ref());
+        with_scratch::<BE, _>(cswap_bytes, |s| {
+            module.cswap(&mut a_enc, &mut b_enc, &s_prepared.to_backend_ref(), s)
+        });
 
         let (a_want, b_want) = if bit == 0 { (a, b) } else { (b, a) };
 
-        assert_eq!(a_want, a_enc.decrypt(module, sk, &mut scratch.borrow()));
-        assert_eq!(b_want, b_enc.decrypt(module, sk, &mut scratch.borrow()));
+        assert_eq!(a_want, decrypt_checked(module, &a_enc, sk));
+        assert_eq!(b_want, decrypt_checked(module, &b_enc, sk));
     }
 }
 
@@ -214,7 +260,7 @@ where
     let mut source_xa: Source = Source::new([2u8; 32]);
     let mut source_xe: Source = Source::new([3u8; 32]);
 
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(1 << 22);
+    let mut scratch = setup_scratch(module, &glwe_infos, &ggsw_infos);
 
     let data: Vec<u32> = (0..32).map(|i| i as u32).collect_vec();
 
@@ -231,14 +277,19 @@ where
         let mut idx_enc = FheUintPrepared::alloc_from_infos(module, &ggsw_infos);
         idx_enc.encrypt_sk(module, idx, sk, &mut source_xe, &mut source_xa, &mut scratch.borrow());
 
-        module.glwe_blind_retrieval_statefull(&mut data_enc, &idx_enc, 0, 5, &mut scratch.borrow());
+        let retrieval_bytes = module.glwe_blind_retrieval_tmp_bytes(&glwe_infos, &ggsw_infos);
+        with_scratch::<BE, _>(retrieval_bytes, |s| {
+            module.glwe_blind_retrieval_statefull(0, 5, &mut data_enc, &idx_enc, s)
+        });
 
-        assert_eq!(data[idx as usize], data_enc[0].decrypt(module, sk, &mut scratch.borrow()));
+        assert_eq!(data[idx as usize], decrypt_checked(module, &data_enc[0], sk));
 
-        module.glwe_blind_retrieval_statefull_rev(&mut data_enc, &idx_enc, 0, 5, &mut scratch.borrow());
+        with_scratch::<BE, _>(retrieval_bytes, |s| {
+            module.glwe_blind_retrieval_statefull_rev(0, 5, &mut data_enc, &idx_enc, s)
+        });
 
         for i in 0..data.len() {
-            assert_eq!(data[i], data_enc[i].decrypt(module, sk, &mut scratch.borrow()))
+            assert_eq!(data[i], decrypt_checked(module, &data_enc[i], sk))
         }
     }
 }
@@ -267,7 +318,7 @@ where
     let mut source_xa: Source = Source::new([2u8; 32]);
     let mut source_xe: Source = Source::new([3u8; 32]);
 
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(1 << 22);
+    let mut scratch = setup_scratch(module, &glwe_infos, &ggsw_infos);
 
     let data: Vec<u32> = (0..25).map(|i| i as u32).collect_vec();
 
@@ -294,8 +345,11 @@ where
         );
 
         let mut res: FheUint<BE::OwnedBuf, u32, BE::ZnxWord> = FheUint::alloc_from_infos(module, &glwe_infos);
-        retriever.retrieve(module, &mut res, &data_enc, &idx_enc, offset, &mut scratch.borrow());
+        let retrieve_bytes = GLWEBlindRetriever::<BE::OwnedBuf, BE::ZnxWord>::retrieve_tmp_bytes(module, &res, &ggsw_infos);
+        with_scratch::<BE, _>(retrieve_bytes, |s| {
+            retriever.retrieve(module, &mut res, &data_enc, &idx_enc, offset, s)
+        });
 
-        assert_eq!(data[idx as usize], res.decrypt(module, sk, &mut scratch.borrow()));
+        assert_eq!(data[idx as usize], decrypt_checked(module, &res, sk));
     }
 }

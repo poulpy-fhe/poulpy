@@ -51,4 +51,6 @@ pub fn bdd_key_encrypt_sk_reference<BRA: BlindRotationAlgo, BE: Backend<ZnxWord 
     }
 
     module.circuit_bootstrapping_key_encrypt_sk(&mut res.cbt, sk_lwe, sk_glwe, source_xe, source_xa, scratch);
+
+    scratch.wipe(bdd_key_encrypt_sk_tmp_bytes_reference::<BRA, BE, _>(module, &*res));
 }

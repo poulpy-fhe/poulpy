@@ -1,13 +1,13 @@
 //! Instantiation of the backend-generic test bodies.
 //!
-//! The bodies live next to the code they exercise, in
-//! [`blind_rotation::test_suite`](crate::blind_rotation::test_suite),
-//! [`circuit_bootstrapping::test_suite`](crate::circuit_bootstrapping::test_suite)
-//! and [`bdd_arithmetic::test_suite`](crate::bdd_arithmetic::test_suite). A
-//! backend crate turns them into `#[test]` functions with
+//! The bodies live in [`blind_rotation`], [`circuit_bootstrapping`] and
+//! [`bdd_arithmetic`]. A backend crate turns them into `#[test]` functions with
 //! [`bin_fhe_backend_test_suite!`](crate::bin_fhe_backend_test_suite), so no
 //! backend is ever named from this crate.
 
+pub mod bdd_arithmetic;
+pub mod blind_rotation;
+pub mod circuit_bootstrapping;
 pub mod parity;
 
 /// Instantiates the whole gate-level suite for one backend.
@@ -25,13 +25,27 @@ macro_rules! bin_fhe_backend_test_suite {
             mod blind_rotation {
                 use poulpy_hal::{api::ModuleNew, layouts::Module};
 
-                use $crate::blind_rotation::{
-                    CGGI,
-                    test_suite::{
+                use $crate::{
+                    blind_rotation::CGGI,
+                    test_suite::blind_rotation::{
                         generic_blind_rotation::test_blind_rotation,
                         generic_lut::{test_lut_extended, test_lut_standard, test_lut_transfer_into_carries_scalars},
+                        key_encryption::{
+                            test_blind_rotation_key_compressed_encrypt_sk_rejects_secret_shape,
+                            test_blind_rotation_key_encrypt_sk_rejects_secret_shape,
+                        },
                     },
                 };
+
+                #[test]
+                fn key_encrypt_sk_rejects_secret_shape() {
+                    test_blind_rotation_key_encrypt_sk_rejects_secret_shape(&Module::<$backend>::new(32));
+                }
+
+                #[test]
+                fn key_compressed_encrypt_sk_rejects_secret_shape() {
+                    test_blind_rotation_key_compressed_encrypt_sk_rejects_secret_shape(&Module::<$backend>::new(32));
+                }
 
                 #[test]
                 fn lut_standard() {
@@ -72,10 +86,17 @@ macro_rules! bin_fhe_backend_test_suite {
 
                 use $crate::{
                     blind_rotation::CGGI,
-                    circuit_bootstrapping::test_suite::{
-                        test_circuit_bootstrapping_to_constant, test_circuit_bootstrapping_to_exponent,
+                    test_suite::circuit_bootstrapping::{
+                        test_circuit_bootstrapping_key_encrypt_sk_rejects_secret_shape, test_circuit_bootstrapping_to_constant,
+                        test_circuit_bootstrapping_to_exponent,
                     },
                 };
+
+                #[test]
+                fn key_encrypt_sk_rejects_secret_shape_cggi() {
+                    let module: Module<$backend> = Module::<$backend>::new(64);
+                    test_circuit_bootstrapping_key_encrypt_sk_rejects_secret_shape::<$backend, CGGI>(&module);
+                }
 
                 #[test]
                 fn to_constant_cggi() {
@@ -93,7 +114,7 @@ macro_rules! bin_fhe_backend_test_suite {
             mod bdd_arithmetic {
                 use std::sync::LazyLock;
 
-                use $crate::{bdd_arithmetic::test_suite, blind_rotation::CGGI};
+                use $crate::{blind_rotation::CGGI, test_suite::bdd_arithmetic as test_suite};
 
                 static CTX: LazyLock<test_suite::TestContext<CGGI, $backend>> =
                     LazyLock::new(test_suite::TestContext::<CGGI, $backend>::new);
@@ -131,6 +152,46 @@ macro_rules! bin_fhe_backend_test_suite {
                 #[test]
                 fn fhe_uint_get_bit_glwe() {
                     test_suite::test_fhe_uint_get_bit_glwe(&CTX);
+                }
+
+                #[test]
+                fn fhe_uint_get_byte() {
+                    test_suite::test_fhe_uint_get_byte(&CTX);
+                }
+
+                #[test]
+                fn fhe_uint_get_bit_lwe() {
+                    test_suite::test_fhe_uint_get_bit_lwe(&CTX);
+                }
+
+                #[test]
+                fn fhe_uint_from_fhe_uint_prepared() {
+                    test_suite::test_fhe_uint_from_fhe_uint_prepared(&CTX);
+                }
+
+                #[test]
+                fn fhe_uint_zero_byte() {
+                    test_suite::test_fhe_uint_zero_byte(&CTX);
+                }
+
+                #[test]
+                fn fhe_uint_encrypt_sk_rejects_degree() {
+                    test_suite::test_fhe_uint_encrypt_sk_rejects_degree(&CTX);
+                }
+
+                #[test]
+                fn fhe_uint_decrypt_rejects_degree() {
+                    test_suite::test_fhe_uint_decrypt_rejects_degree(&CTX);
+                }
+
+                #[test]
+                fn fhe_uint_noise_stats_rejects_degree() {
+                    test_suite::test_fhe_uint_noise_stats_rejects_degree(&CTX);
+                }
+
+                #[test]
+                fn fhe_uint_prepared_encrypt_sk_rejects_degree() {
+                    test_suite::test_fhe_uint_prepared_encrypt_sk_rejects_degree(&CTX);
                 }
 
                 #[test]

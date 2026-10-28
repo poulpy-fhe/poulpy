@@ -31,11 +31,11 @@ pub trait GLWEBlindSelection<T: UnsignedInteger, BE: Backend> {
     #[allow(clippy::too_many_arguments)]
     fn glwe_blind_selection<R, A, K>(
         &self,
+        bit_rsh: usize,
+        bit_mask: usize,
         res: &mut R,
         a: HashMap<usize, &mut A>,
         fhe_uint: &K,
-        bit_rsh: usize,
-        bit_mask: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,

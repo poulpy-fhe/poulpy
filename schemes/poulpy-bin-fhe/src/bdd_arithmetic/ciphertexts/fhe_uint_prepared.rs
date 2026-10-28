@@ -261,7 +261,7 @@ impl<BRA: BlindRotationAlgo, BE: Backend<ZnxWord = i64>> BDDKeyPrepared<BE::Owne
     where
         M: BDDKeyPreparedFactory<BRA, BE>,
     {
-        module.prepare_bdd_key(self, other, scratch);
+        module.bdd_key_prepare(self, other, scratch);
     }
 }
 
@@ -309,8 +309,8 @@ impl<T: UnsignedInteger, BE: Backend<ZnxWord = i64>> FheUintPrepared<BE::OwnedBu
     #[allow(clippy::too_many_arguments)]
     pub fn prepare_custom_multi_thread<BRA, M, K>(
         &mut self,
-        threads: usize,
         module: &M,
+        threads: usize,
         other: &FheUint<BE::OwnedBuf, T, BE::ZnxWord>,
         bit_start: usize,
         bit_end: usize,

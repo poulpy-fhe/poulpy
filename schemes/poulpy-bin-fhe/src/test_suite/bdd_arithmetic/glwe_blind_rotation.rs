@@ -14,13 +14,13 @@ use poulpy_hal::{
 };
 use rand::Rng;
 
+use crate::test_suite::bdd_arithmetic::{TEST_FHEUINT_BASE2K, TEST_RANK, TestContext};
+use crate::test_suite::parity::{assert_short_scratch_panics, snapshot_glwe};
 use crate::{
-    bdd_arithmetic::{
-        FheUintPrepared, GLWEBlindRotation,
-        test_suite::{TEST_FHEUINT_BASE2K, TEST_RANK, TestContext},
-    },
+    bdd_arithmetic::{FheUintPrepared, GLWEBlindRotation},
     blind_rotation::BlindRotationAlgo,
 };
+use poulpy_core::test_suite::with_scratch;
 
 pub fn test_glwe_to_glwe_blind_rotation<BRA, BE>(test_context: &TestContext<BRA, BE>)
 where
@@ -64,8 +64,6 @@ where
     let mut source_xa: Source = Source::new([2u8; 32]);
     let mut source_xe: Source = Source::new([3u8; 32]);
 
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(1 << 22);
-
     let mut res: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_infos);
 
     let mut test_glwe: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
@@ -74,6 +72,11 @@ where
     test_glwe.encode_vec_i64(&data, base2k.as_usize().into());
 
     let k: u32 = source.next_u32();
+
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+        crate::api::FheUintPreparedEncryptSk::<u32, BE>::fhe_uint_prepared_encrypt_sk_tmp_bytes(module, &ggsw_infos)
+            .max(module.glwe_decrypt_tmp_bytes(&glwe_infos)),
+    );
 
     let mut k_enc_prep: FheUintPrepared<BE::OwnedBuf, u32, BE> =
         FheUintPrepared::<BE::OwnedBuf, u32, BE>::alloc_from_infos(module, &ggsw_infos);
@@ -98,16 +101,15 @@ where
             // How many bits to take
             let bit_size: usize = (32 - bit_start).min(digit);
 
-            module.glwe_blind_rotation(
-                &mut res,
-                &test_glwe,
-                &k_enc_prep,
-                false,
-                bit_start,
-                bit_size,
-                bit_step,
-                &mut scratch.borrow(),
-            );
+            let rotation_bytes = module.glwe_blind_rotation_tmp_bytes(&res, &test_glwe, &ggsw_infos);
+            let before = snapshot_glwe::<BE, _>(&res);
+            assert_short_scratch_panics::<BE, _>(rotation_bytes, "glwe_blind_rotation: insufficient scratch", |s| {
+                module.glwe_blind_rotation(false, bit_start, bit_size, bit_step, &mut res, &test_glwe, &k_enc_prep, s)
+            });
+            assert_eq!(before, snapshot_glwe::<BE, _>(&res));
+            with_scratch::<BE, _>(rotation_bytes, |s| {
+                module.glwe_blind_rotation(false, bit_start, bit_size, bit_step, &mut res, &test_glwe, &k_enc_prep, s)
+            });
 
             glwe_decrypt_checked(module, &res, &mut pt, sk_glwe_prep, &mut scratch.borrow());
 

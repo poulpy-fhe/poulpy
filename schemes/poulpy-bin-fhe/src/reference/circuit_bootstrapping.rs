@@ -4,14 +4,13 @@
 use crate::{
     blind_rotation::{
         BlindRotationAlgo, BlindRotationExecute, BlindRotationKeyEncryptSk, BlindRotationKeyInfos, BlindRotationKeyLayout,
-        BlindRotationKeyPrepared, BlindRotationKeyPreparedFactory, LookUpTableLayout, LookUpTableRotationDirection, LookupTable,
-        LookupTableFactory,
+        BlindRotationKeyPreparedFactory, LookUpTableLayout, LookUpTableRotationDirection, LookupTable, LookupTableFactory,
     },
     circuit_bootstrapping::{
         CircuitBootstrappingKey, CircuitBootstrappingKeyInfos, CircuitBootstrappingKeyPrepared, CircuitBootstrappingPlan,
         CircuitBootstrappingPlanLayout,
         circuit::{CircuitBootstrappingExecutionConfig, CircuitBootstrappingOutput},
-        trace_galois_elements,
+        circuit_bootstrapping_log_gap_in,
     },
 };
 use itertools::Itertools;
@@ -22,7 +21,7 @@ use poulpy_core::{
     layouts::{
         GGLWEInfos, GGLWELayout, GGLWEToGGSWKeyLayout, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut,
         GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout, GLWESecretToBackendRef, GLWEToBackendMut, GLWEToBackendRef,
-        GetAutomorphismKey, LWEInfos, LWESecretToBackendRef, LWEToBackendRef, ModuleCoreAlloc, SetGaloisElement,
+        GetAutomorphismKey, LWEInfos, LWESecretToBackendRef, LWEToBackendRef, ModuleCoreAlloc,
         prepared::GGLWEToGGSWKeyPreparedToBackendRef,
     },
 };
@@ -144,10 +143,22 @@ pub fn circuit_bootstrapping_key_encrypt_sk_reference<S0, S1, M, BRA, BE>(
     let atk_infos: &GLWEAutomorphismKeyLayout = &res.atk_infos();
     let tsk_infos: &GGLWEToGGSWKeyLayout = &res.tsk_infos();
 
-    assert_eq!(sk_lwe.n(), brk_infos.n_lwe());
-    assert_eq!(sk_glwe.n(), brk_infos.n_glwe());
-    assert_eq!(sk_glwe.n(), atk_infos.n());
-    assert_eq!(sk_glwe.n(), tsk_infos.n());
+    assert!(
+        sk_lwe.n() == brk_infos.n_lwe(),
+        "the LWE secret dimension differs from the blind rotation key's"
+    );
+    assert!(
+        sk_glwe.n() == brk_infos.n_glwe(),
+        "the GLWE secret degree differs from the blind rotation key's"
+    );
+    assert!(
+        sk_glwe.n() == atk_infos.n(),
+        "the GLWE secret degree differs from the automorphism key's"
+    );
+    assert!(
+        sk_glwe.n() == tsk_infos.n(),
+        "the GLWE secret degree differs from the tensor key's"
+    );
 
     assert!(sk_glwe.dist() != &Distribution::NONE);
 
@@ -163,35 +174,13 @@ pub fn circuit_bootstrapping_key_encrypt_sk_reference<S0, S1, M, BRA, BE>(
             .take_glwe_secret_prepared_scratch(sk_glwe.n(), brk_infos.rank());
         module.glwe_secret_prepare(&mut sk_glwe_prepared, sk_glwe);
 
-        module.blind_rotation_key_encrypt_sk(&mut res.brk, &sk_glwe_prepared, sk_lwe, source_xe, source_xa, &mut op_scratch);
+        module.blind_rotation_key_encrypt_sk(&mut res.brk, sk_lwe, &sk_glwe_prepared, source_xe, source_xa, &mut op_scratch);
     }
     module.gglwe_to_ggsw_key_encrypt_sk(&mut res.tsk, sk_glwe, source_xe, source_xa, scratch);
-}
-pub fn circuit_bootstrapping_key_prepared_alloc_from_infos_reference<A, M, BRA, BE>(
-    module: &M,
-    infos: &A,
-) -> CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE>
-where
-    A: CircuitBootstrappingKeyInfos,
-    BRA: BlindRotationAlgo,
-    BE: Backend,
-    M: BlindRotationKeyPreparedFactory<BRA, BE> + GGLWEToGGSWKeyPreparedFactory<BE> + GLWEAutomorphismKeyPreparedFactory<BE>,
-{
-    let atk_infos: &GLWEAutomorphismKeyLayout = &infos.atk_infos();
-    let gal_els: Vec<i64> = trace_galois_elements(atk_infos.log_n(), 2 * atk_infos.n().as_usize() as i64);
 
-    CircuitBootstrappingKeyPrepared {
-        brk: BlindRotationKeyPrepared::alloc(module, &infos.brk_infos()),
-        tsk: module.gglwe_to_ggsw_key_prepared_alloc_from_infos(&infos.tsk_infos()),
-        atk: gal_els
-            .iter()
-            .map(|&gal_el| {
-                let mut key = module.glwe_automorphism_key_prepared_alloc_from_infos(atk_infos);
-                key.set_p(gal_el);
-                (gal_el, key)
-            })
-            .collect(),
-    }
+    scratch.wipe(circuit_bootstrapping_key_encrypt_sk_tmp_bytes_reference::<_, M, BRA, BE>(
+        module, &*res,
+    ));
 }
 pub fn circuit_bootstrapping_key_prepare_tmp_bytes_reference<A, M, BRA, BE>(module: &M, infos: &A) -> usize
 where
@@ -327,42 +316,6 @@ where
     online.max(module.ggsw_expand_rows_tmp_bytes(res_infos, &tsk_infos))
 }
 
-pub(crate) fn circuit_bootstrapping_log_gap_in<R: GGSWInfos>(res_infos: &R, log_domain: usize, extension_factor: usize) -> usize {
-    assert!(
-        extension_factor.is_power_of_two(),
-        "extension_factor must be a non-zero power of two"
-    );
-    let dnum = res_infos.dnum().as_usize();
-    assert!(dnum > 0, "circuit-bootstrap output must have at least one decomposition row");
-    let alpha = dnum.next_power_of_two();
-    let domain = 1usize
-        .checked_shl(log_domain as u32)
-        .expect("circuit-bootstrap domain overflows usize");
-    let f_len = domain
-        .checked_mul(alpha)
-        .expect("circuit-bootstrap LUT length overflows usize");
-    assert!(
-        f_len <= res_infos.n().as_usize(),
-        "circuit-bootstrap LUT length exceeds the polynomial degree"
-    );
-    let lut_domain = res_infos
-        .n()
-        .as_usize()
-        .checked_mul(extension_factor)
-        .expect("circuit-bootstrap LUT domain overflows usize");
-    let step = lut_domain
-        .checked_add(f_len >> 1)
-        .expect("circuit-bootstrap LUT rounding overflows usize")
-        / f_len;
-    let gap = (step >> 1).checked_mul(2).expect("circuit-bootstrap LUT gap overflows usize") / extension_factor;
-    assert!(
-        gap > 0,
-        "circuit-bootstrap LUT domain exceeds the available polynomial domain"
-    );
-    let spread = gap.checked_mul(alpha).expect("circuit-bootstrap LUT spread overflows usize");
-    (usize::BITS - (spread - 1).leading_zeros()) as usize
-}
-
 fn prepare_circuit_bootstrapping_plan<R, M, BRA, BE>(
     module: &M,
     res_infos: &R,
@@ -435,7 +388,7 @@ where
     };
 
     let mut lut: LookupTable<BE::OwnedBuf, BE::ZnxWord> = LookupTable::alloc(module, &lut_infos);
-    lut.set(module, &f, lut_precision);
+    lut.set(module, lut_precision, &f);
 
     if to_exponent {
         lut.set_rotation_direction(LookUpTableRotationDirection::Right);
@@ -651,10 +604,10 @@ fn post_process<R, A, M, H, BE>(
 
 pub fn circuit_bootstrapping_prepare_to_constant_reference<R: GGSWInfos, M, BRA, BE>(
     module: &M,
-    res_infos: &R,
-    key: &CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE>,
     log_domain: usize,
     extension_factor: usize,
+    res_infos: &R,
+    key: &CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE>,
 ) -> CircuitBootstrappingPlan<BE::OwnedBuf>
 where
     BRA: BlindRotationAlgo,
@@ -673,10 +626,10 @@ where
 pub fn circuit_bootstrapping_prepare_to_exponent_reference<R: GGSWInfos, M, BRA, BE>(
     module: &M,
     log_gap_out: usize,
-    res_infos: &R,
-    key: &CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE>,
     log_domain: usize,
     extension_factor: usize,
+    res_infos: &R,
+    key: &CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE>,
 ) -> CircuitBootstrappingPlan<BE::OwnedBuf>
 where
     BRA: BlindRotationAlgo,
@@ -727,8 +680,8 @@ pub fn circuit_bootstrapping_execute_prepared_reference<R, L, M, BRA, BE>(
     module: &M,
     res: &mut R,
     lwe: &L,
-    key: &CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE>,
     plan: &CircuitBootstrappingPlan<BE::OwnedBuf>,
+    key: &CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     R: GGSWToBackendMut<BE> + GGSWAtViewRef<BE> + GGSWAtViewMut<BE> + GGSWInfos,

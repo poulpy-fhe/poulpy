@@ -29,7 +29,7 @@ where
     };
 
     let mut lut: LookupTable<AlignedBuf, i64> = LookupTable::alloc(module, &lut_infos);
-    lut.set(module, &f, log_scale);
+    lut.set(module, log_scale, &f);
 
     let half_step: i64 = lut.domain_size().div_round(message_modulus << 1) as i64;
     lut.rotate(module, half_step);
@@ -68,7 +68,7 @@ where
     };
 
     let mut lut: LookupTable<AlignedBuf, i64> = LookupTable::alloc(module, &lut_infos);
-    lut.set(module, &f, log_scale);
+    lut.set(module, log_scale, &f);
 
     let half_step: i64 = lut.domain_size().div_round(message_modulus << 1) as i64;
     lut.rotate(module, half_step);
@@ -101,7 +101,7 @@ where
 
     let mut src: LookupTable<AlignedBuf, i64> = LookupTable::alloc(module, &infos);
     let f: Vec<i64> = (0..8).map(|i| i - 4).collect();
-    src.set(module, &f, 21);
+    src.set(module, 21, &f);
     src.set_rotation_direction(LookUpTableRotationDirection::Right);
     assert_ne!(src.drift, 0);
 

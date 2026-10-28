@@ -23,13 +23,13 @@ where
 /// Independently callable canonical implementation of [`GGSWBlindRotation::scalar_to_ggsw_blind_rotation`].
 pub fn scalar_to_ggsw_blind_rotation_reference<T: UnsignedInteger, BE, R, A, K>(
     module: &Module<BE>,
-    res: &mut R,
-    test_vector: &A,
-    fhe_uint: &K,
     sign: bool,
     bit_rsh: usize,
     bit_mask: usize,
     bit_lsh: usize,
+    res: &mut R,
+    test_vector: &A,
+    fhe_uint: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,
@@ -38,6 +38,10 @@ pub fn scalar_to_ggsw_blind_rotation_reference<T: UnsignedInteger, BE, R, A, K>(
     BE: Backend<ZnxWord = i64> + poulpy_hal::oep::HalVecZnxImpl,
     Module<BE>: GLWEBytesOf<BE> + GLWEBlindRotation<BE> + GLWEZero<BE> + VecZnxNormalizeTmpBytes,
 {
+    assert!(
+        scratch.available() >= scalar_to_ggsw_blind_rotation_tmp_bytes_reference::<T, BE, _, _>(module, res, fhe_uint.get_bit(0)),
+        "scalar_to_ggsw_blind_rotation: insufficient scratch"
+    );
     let base2k: usize = res.base2k().into();
     let k_digit: usize = res.k_digit().as_usize();
     let (mut tmp_glwe, mut scratch_1) = scratch.borrow().take_glwe_scratch(res);
@@ -66,13 +70,13 @@ pub fn scalar_to_ggsw_blind_rotation_reference<T: UnsignedInteger, BE, R, A, K>(
             }
 
             module.glwe_blind_rotation(
-                &mut res.at_view_mut(row, col),
-                &tmp_glwe,
-                fhe_uint,
                 sign,
                 bit_rsh,
                 bit_mask,
                 bit_lsh,
+                &mut res.at_view_mut(row, col),
+                &tmp_glwe,
+                fhe_uint,
                 &mut scratch_1.borrow(),
             );
         }

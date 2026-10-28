@@ -210,7 +210,7 @@ fn main() {
 
     // Apply circuit bootstrapping: LWE(data * 2^{- (k_lwe_pt + 2)}) -> GGSW(data)
     let now: Instant = Instant::now();
-    cbt_prepared.execute_to_constant(&module, &mut res, &ct_lwe, k_lwe_pt, extension_factor, &mut scratch.borrow());
+    cbt_prepared.execute_to_constant(&module, k_lwe_pt, extension_factor, &mut res, &ct_lwe, &mut scratch.borrow());
     println!("CBT: {} ms", now.elapsed().as_millis());
 
     // Allocate "ideal" GGSW(data) plaintext
