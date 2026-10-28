@@ -129,6 +129,28 @@ pub unsafe trait AutomorphismImpl: Backend + crate::oep::GGSWConversionImpl {
     ) where
         R: GLWEToBackendMut<Self> + GLWEInfos;
 
+    /// Scratch bound of [`Self::glwe_automorphism_many`] for keys of the layout `key_infos`; may report less than the
+    /// reference, never less than the body takes.
+    fn glwe_automorphism_many_tmp_bytes<R, A, K>(module: &Module<Self>, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
+    where
+        R: GLWEInfos,
+        A: GLWEInfos,
+        K: GGLWEInfos;
+
+    /// Reproduces
+    /// [`glwe_automorphism_many_reference`](crate::reference::automorphism::glwe::glwe_automorphism_many_reference)
+    /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within the largest
+    /// [`Self::glwe_automorphism_many_tmp_bytes`] over its keys; free in kernels and scratch use.
+    fn glwe_automorphism_many<R, A>(
+        module: &Module<Self>,
+        res: &mut [&mut R],
+        a: &A,
+        keys: &[&GLWEAutomorphismKeyPreparedBackendRef<'_, Self>],
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        R: GLWEToBackendMut<Self> + GLWEInfos,
+        A: GLWEToBackendRef<Self> + GLWEInfos;
+
     /// Default body: `ggsw_automorphism_tmp_bytes_derived`, the larger of [`Self::glwe_automorphism_tmp_bytes`] and
     /// [`GGSWConversionImpl::ggsw_expand_rows_tmp_bytes`](crate::oep::GGSWConversionImpl::ggsw_expand_rows_tmp_bytes).
     fn ggsw_automorphism_tmp_bytes<R, A, K, T>(
@@ -350,6 +372,37 @@ macro_rules! impl_automorphism_reference_full {
             {
                 $crate::reference::automorphism::glwe::glwe_automorphism_sub_negate_assign_reference::<$be, _, _>(
                     module, res, key, scratch,
+                )
+            }
+
+            fn glwe_automorphism_many_tmp_bytes<R, A, K>(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                res_infos: &R,
+                a_infos: &A,
+                key_infos: &K,
+            ) -> usize
+            where
+                R: $crate::layouts::GLWEInfos,
+                A: $crate::layouts::GLWEInfos,
+                K: $crate::layouts::GGLWEInfos,
+            {
+                $crate::reference::automorphism::glwe::glwe_automorphism_many_tmp_bytes_reference::<$be, _, _, _>(
+                    module, res_infos, a_infos, key_infos,
+                )
+            }
+
+            fn glwe_automorphism_many<R, A>(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                res: &mut [&mut R],
+                a: &A,
+                keys: &[&$crate::layouts::prepared::GLWEAutomorphismKeyPreparedBackendRef<'_, $be>],
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
+            ) where
+                R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
+                A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
+            {
+                $crate::reference::automorphism::glwe::glwe_automorphism_many_reference::<$be, _, _>(
+                    module, res, a, keys, scratch,
                 )
             }
 

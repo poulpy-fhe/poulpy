@@ -384,6 +384,9 @@
 - Add `test_suite::with_scratch`, which runs a call on exactly the given bytes of scratch poisoned with `0xA5` between guards it checks untouched; the mhe suites run every call through it.
 - Add `Diagonals::from_slot_map`, the diagonals of a map given by its terms `(i, j, w)` on the outputs of one period, the map repeating under a common shift of its input and output by that period: every diagonal a term reaches is stored over the period, whatever its values.
   Add `Diagonals::shrink_period`, which stores every diagonal at the smallest period they all repeat with, the slot count an encoder encodes the map on.
+- Add `GLWEAutomorphism::glwe_automorphism_many` and `glwe_automorphism_many_tmp_bytes`, the automorphisms of one input by several keys, each output bit for bit that of `glwe_automorphism` by its key: the keys at the input's radix share one gadget decomposition per digit layout, the others switch on their own.
+  `test_glwe_automorphism_many`, in `core_backend_test_suite!`, pins the bits against `glwe_automorphism` for shared and unshared keys and a flag-clear input.
+- **Breaking:** `AutomorphismImpl` requires `glwe_automorphism_many` and `glwe_automorphism_many_tmp_bytes`, which `impl_automorphism_reference_full!` forwards to `glwe_automorphism_many_reference` and `glwe_automorphism_many_tmp_bytes_reference`; a backend implementing the trait by hand, or a type implementing `GLWEAutomorphism` itself, adds them.
 
 ### `poulpy-ckks`
 
@@ -848,6 +851,7 @@
 
 ### `poulpy-bench`
 
+- Add `runner_glwe_automorphism_many` and `runner_glwe_automorphism_many_composed` in `core::automorphism`, in the `automorphism_ops` table: 16 keys of the point's layout on one input, through `glwe_automorphism_many` and through 16 calls of `glwe_automorphism`.
 - Add the `libm` layer: `runner_ckks_exp`, `runner_ckks_log` and `runner_ckks_pow` over `default_bench_params_libm`, in the `libm_ops` table, with `bench_libm` in the full, standard and light tiers, which the tier binaries of `poulpy-cpu-portable`, `poulpy-cpu-avx`, `poulpy-cpu-avx512` and `poulpy-cpu-arm` register on their NTT backend.
   The point-caching helper of the BLAS runners moves to the crate root, shared by both layers.
 - Add the `blas` layer: `runner_blas_matmul`, `runner_blas_matmul_replicated`, `runner_blas_matmul_pt_right_diagonal`, `runner_blas_matmul_pt_right_jkls`, `runner_blas_matmul_pt_left_diagonal`, `runner_blas_matmul_pt_left_jkls` and `runner_blas_transpose` in `blas::matmul`, and `runner_blas_sum_rows`, `runner_blas_sum_rows_replicated`, `runner_blas_sum_cols` and `runner_blas_rotate_rows_replicated` in `blas::intra`, over `default_bench_params_blas`, in the `blas_dense_ops` table (`blas_matmul` and `blas_sum_rows`, at the points holding several matrices per ciphertext) and the `blas_ops` table, with `bench_blas` in the full, standard and light tiers, which the tier binaries of `poulpy-cpu-portable`, `poulpy-cpu-avx`, `poulpy-cpu-avx512` and `poulpy-cpu-arm` and the `blas` binary of `poulpy-cpu-rayon` register on their NTT backend.

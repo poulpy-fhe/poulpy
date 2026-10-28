@@ -105,6 +105,7 @@ macro_rules! core_backend_test_suite {
                 glwe_keyswitch_row_offset_refusals => $crate::test_suite::noise::keyswitch::test_glwe_keyswitch_row_offset_refusals,
                 glwe_automorphism => $crate::test_suite::noise::automorphism::test_glwe_automorphism,
                 glwe_automorphism_assign => $crate::test_suite::noise::automorphism::test_glwe_automorphism_assign,
+                glwe_automorphism_many => $crate::test_suite::noise::automorphism::test_glwe_automorphism_many,
                 glwe_automorphism_coarsened => $crate::test_suite::parity::test_glwe_automorphism_coarsened,
                 glwe_tensor_relinearize_cross_radix =>
                     $crate::test_suite::noise::glwe_tensor::test_glwe_tensor_relinearize_cross_radix,

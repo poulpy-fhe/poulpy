@@ -110,7 +110,7 @@ where
 
 // ── automorphism ─────────────────────────────────────────────────────────────
 
-pub fn automorphism_ops<BE: Backend<ZnxWord = i64>, M: criterion::measurement::Measurement>() -> [BenchOp<M, CoreParams>; 1]
+pub fn automorphism_ops<BE: Backend<ZnxWord = i64>, M: criterion::measurement::Measurement>() -> [BenchOp<M, CoreParams>; 3]
 where
     Module<BE>: ModuleNew<BE>
         + ModuleSynchronize<BE>
@@ -120,11 +120,23 @@ where
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
-    [BenchOp {
-        layer: "core",
-        name: "glwe_automorphism",
-        runner: automorphism::runner_glwe_automorphism::<BE, _>,
-    }]
+    [
+        BenchOp {
+            layer: "core",
+            name: "glwe_automorphism",
+            runner: automorphism::runner_glwe_automorphism::<BE, _>,
+        },
+        BenchOp {
+            layer: "core",
+            name: "glwe_automorphism_many",
+            runner: automorphism::runner_glwe_automorphism_many::<BE, _>,
+        },
+        BenchOp {
+            layer: "core",
+            name: "glwe_automorphism_many_composed",
+            runner: automorphism::runner_glwe_automorphism_many_composed::<BE, _>,
+        },
+    ]
 }
 
 // ── external_product ─────────────────────────────────────────────────────────

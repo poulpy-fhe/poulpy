@@ -2,28 +2,36 @@
 //! Inter-family core operations dispatch through the selected backend hooks.
 
 #![allow(private_bounds)]
-use crate::api::{GLWEKeyswitch, GLWENormalize};
+use crate::api::{GLWEAutomorphism, GLWEKeyswitch, GLWENormalize};
 
 use crate::api::GLWEBytesOf;
 use poulpy_hal::{
     api::{
         ModuleN, ScratchArenaTakeBasic, VecZnxAutomorphismAssign, VecZnxAutomorphismAssignTmpBytes, VecZnxBigAddSmallAssign,
         VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf, VecZnxBigNormalize,
-        VecZnxBigNormalizeTmpBytes, VecZnxBigSubSmallAssign, VecZnxBigSubSmallNegateAssign, VecZnxDftBytesOf, VecZnxIdftApply,
-        VecZnxIdftApplyTmpBytes,
+        VecZnxBigNormalizeTmpBytes, VecZnxBigSubSmallAssign, VecZnxBigSubSmallNegateAssign, VecZnxDftBytesOf,
+        VecZnxGadgetDecomposeTmpBytes, VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
     },
-    layouts::{Backend, ScratchArena, VecZnxBigToBackendRef, VecZnxDftToBackendRef},
+    layouts::{Backend, Module, ScratchArena, VecZnxBigToBackendRef, VecZnxDftToBackendRef},
 };
 
 use crate::layouts::operand_degree;
 use crate::{
     ScratchArenaTakeCore,
-    gadget::gglwe_product_output_size,
+    gadget::{gadget_dft_apply_tmp_bytes, gadget_input_size, gglwe_product_output_size},
     layouts::{
-        GGLWEInfos, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, LWEInfos,
+        Dnum, GGLWEInfos, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, LWEInfos, TorusPrecision,
+        digits_aligned,
         prepared::{GGLWEPreparedToBackendRef, GLWEAutomorphismKeyPreparedBackendRef},
     },
-    reference::{automorphism::GLWEAutomorphismReference, keyswitching::GLWEKeyswitchInternal},
+    oep::GGLWEProductDigitsStridedImpl,
+    reference::{
+        automorphism::GLWEAutomorphismReference,
+        keyswitching::{
+            GLWEKeyswitchInternal,
+            glwe::{glwe_keyswitch_from_operand, glwe_keyswitch_operand, glwe_keyswitch_operand_size},
+        },
+    },
 };
 
 pub fn glwe_automorphism_tmp_bytes_reference<BE, M, R, A, K>(module: &M, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
@@ -618,6 +626,164 @@ pub fn glwe_automorphism_sub_negate_assign_reference<BE, M, R>(
                 i,
                 &mut scratch.borrow(),
             );
+        }
+    }
+}
+
+/// Whether [`glwe_automorphism_many_reference`] switches `a` by `key` from a shared gadget operand: the key switch's
+/// operand path, a key at the radix of `a` and without row offset.
+fn hoists<A: GLWEInfos, K: GGLWEInfos>(a: &A, key: &K) -> bool {
+    a.base2k() == key.base2k() && key.k_offset().0 == 0
+}
+
+/// The gadget operand a hoisted key reads: the input limbs for whole-limb digits, its digit grid otherwise.
+fn operand_class<K: GGLWEInfos>(key: &K) -> Option<(TorusPrecision, Dnum)> {
+    (!digits_aligned(key.base2k(), key.k_digit())).then(|| (key.k_digit(), key.dnum()))
+}
+
+pub fn glwe_automorphism_many_tmp_bytes_reference<BE, R, A, K>(
+    module: &Module<BE>,
+    res_infos: &R,
+    a_infos: &A,
+    key_infos: &K,
+) -> usize
+where
+    BE: Backend + GGLWEProductDigitsStridedImpl,
+    Module<BE>: GLWEAutomorphism<BE>
+        + GLWEBytesOf<BE>
+        + GLWENormalize<BE>
+        + ModuleN
+        + VecZnxAutomorphismAssignTmpBytes
+        + VecZnxDftBytesOf
+        + VecZnxGadgetDecomposeTmpBytes,
+    R: GLWEInfos,
+    A: GLWEInfos,
+    K: GGLWEInfos,
+{
+    let n = operand_degree(module.n(), &[res_infos.n(), a_infos.n(), key_infos.n()]);
+    let single = module.glwe_automorphism_tmp_bytes(res_infos, a_infos, key_infos);
+    if !hoists(a_infos, key_infos) {
+        return single;
+    }
+    let (base2k, k_digit, dnum) = (key_infos.base2k(), key_infos.k_digit(), key_infos.dnum());
+    let operand_size = gadget_input_size(base2k, k_digit, dnum, a_infos.k(), a_infos.size());
+    let product_size = gglwe_product_output_size::<BE, _, _, _>(res_infos, a_infos, key_infos);
+    let switch = BE::scratch_aligned(module.bytes_of_vec_znx_dft(n, res_infos.rank().as_usize() + 1, product_size))
+        + BE::gglwe_product_idft_normalize_tmp_bytes(module, res_infos.size(), product_size, operand_size, key_infos)
+            .max(module.vec_znx_automorphism_assign_tmp_bytes());
+    let operand = BE::scratch_aligned(module.bytes_of_vec_znx_dft(n, a_infos.rank().as_usize(), operand_size))
+        + gadget_dft_apply_tmp_bytes::<BE, _>(module, base2k, k_digit, dnum, a_infos.k(), a_infos.size()).max(switch);
+    let hoisted = BE::scratch_aligned(module.glwe_bytes_of_from_infos(a_infos)) + module.glwe_normalize_tmp_bytes().max(operand);
+    single.max(hoisted)
+}
+
+/// `res[t] = sigma(a)` by `keys[t]` for every `t`, each output [`glwe_automorphism_reference`] of `a` by its key bit
+/// for bit. The keys at the radix of `a` without row offset share one gadget operand per digit layout, taken from `a`
+/// normalized once; the others run [`GLWEAutomorphism::glwe_automorphism`].
+pub fn glwe_automorphism_many_reference<BE, R, A>(
+    module: &Module<BE>,
+    res: &mut [&mut R],
+    a: &A,
+    keys: &[&GLWEAutomorphismKeyPreparedBackendRef<'_, BE>],
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: Backend + GGLWEProductDigitsStridedImpl,
+    Module<BE>: GLWEAutomorphism<BE>
+        + GLWEBytesOf<BE>
+        + GLWEKeyswitchInternal<BE>
+        + GLWENormalize<BE>
+        + ModuleN
+        + VecZnxAutomorphismAssign<BE>
+        + VecZnxAutomorphismAssignTmpBytes
+        + VecZnxDftBytesOf
+        + VecZnxGadgetDecomposeTmpBytes,
+    R: GLWEToBackendMut<BE> + GLWEInfos,
+    A: GLWEToBackendRef<BE> + GLWEInfos,
+{
+    assert!(
+        res.len() == keys.len(),
+        "glwe_automorphism_many: res and keys differ in length"
+    );
+    for (res, key) in res.iter().zip(keys) {
+        let key = key.to_backend_ref();
+        operand_degree(module.n(), &[res.n(), a.n(), key.n()]);
+        assert_eq!(
+            a.rank(),
+            key.rank_in(),
+            "a.rank(): {} != key.rank_in(): {}",
+            a.rank(),
+            key.rank_in()
+        );
+        assert_eq!(
+            res.rank(),
+            key.rank_out(),
+            "res.rank(): {} != key.rank_out(): {}",
+            res.rank(),
+            key.rank_out()
+        );
+        crate::layouts::assert_key_covers("glwe_automorphism_many", a.k(), &key);
+    }
+    let bytes = res
+        .iter()
+        .zip(keys)
+        .map(|(res, key)| glwe_automorphism_many_tmp_bytes_reference(module, &**res, a, &key.to_backend_ref()))
+        .max()
+        .unwrap_or(0);
+    assert!(
+        scratch.available() >= bytes,
+        "scratch.available(): {} < GLWEAutomorphism::glwe_automorphism_many_tmp_bytes: {}",
+        scratch.available(),
+        bytes
+    );
+
+    for (res, key) in res.iter_mut().zip(keys) {
+        if !hoists(a, &key.to_backend_ref()) {
+            module.glwe_automorphism(&mut **res, a, key, &mut scratch.borrow());
+        }
+    }
+
+    let (mut a_tmp, mut scratch_1) = scratch.borrow().take_glwe_scratch(a);
+    let a = if a.is_canonical() {
+        a.to_backend_ref()
+    } else {
+        module.glwe_normalize(&mut a_tmp, a, &mut scratch_1.borrow());
+        a_tmp.to_backend_ref()
+    };
+    let class_of = |t: usize| {
+        let key = keys[t].to_backend_ref();
+        hoists(&a, &key).then(|| operand_class(&key))
+    };
+    for first in 0..keys.len() {
+        let class = class_of(first);
+        if class.is_none() || (0..first).any(|t| class_of(t) == class) {
+            continue;
+        }
+        let first_key = keys[first].to_backend_ref();
+        let (mut a_dft, mut scratch_2) = scratch_1.borrow().take_vec_znx_dft_scratch(
+            a.n().as_usize(),
+            a.rank().as_usize(),
+            glwe_keyswitch_operand_size(&a, &first_key),
+        );
+        glwe_keyswitch_operand(module, &mut a_dft, &&a, &first_key, &mut scratch_2);
+        let a_dft = a_dft.to_backend_ref();
+        for t in first..keys.len() {
+            if class_of(t) != class {
+                continue;
+            }
+            let p = keys[t].p();
+            let key = keys[t].to_backend_ref();
+            let res = &mut *res[t];
+            let cols = res.rank().as_usize() + 1;
+            let (mut res_dft, mut scratch_3) = scratch_2.borrow().take_vec_znx_dft_scratch(
+                res.n().as_usize(),
+                cols,
+                gglwe_product_output_size::<BE, _, _, _>(res, &a, &key),
+            );
+            glwe_keyswitch_from_operand(module, res, &mut res_dft, &a, &a_dft, &key, &mut scratch_3);
+            let mut res_ref = res.to_backend_mut();
+            for i in 0..cols {
+                module.vec_znx_automorphism_assign(p, &mut res_ref.data, i, &mut scratch_3.borrow());
+            }
         }
     }
 }
