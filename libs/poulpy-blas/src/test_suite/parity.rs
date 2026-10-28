@@ -19,7 +19,7 @@ use std::{
 
 use poulpy_ckks::{
     CKKSCompositionError, CKKSInfos, CKKSLayout, CKKSResult, CoeffsMeta, SlotsKind,
-    api::{CKKSEncodingOps, CKKSLinearTransformationOps, CKKSModuleInfos},
+    api::{CKKSAddManyOps, CKKSAddOps, CKKSCopyOps, CKKSEncodingOps, CKKSLinearTransformationOps, CKKSModuleInfos},
     layouts::CKKSModuleAlloc,
     test_suite::{
         CKKSTestParams,
@@ -32,7 +32,7 @@ use poulpy_ckks::{
     },
 };
 use poulpy_core::{
-    GLWEAdd, GLWEMaskFill,
+    GLWEAdd, GLWEMaskFill, GLWENormalize,
     api::{GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory},
     layouts::{
         DiagonalArithmetic, GGLWELayout, GetAutomorphismKey, GetDegree, GetTensorKey, LWEInfos, TorusPrecision,
@@ -52,21 +52,21 @@ use super::helpers::{
     matmul_right_operand,
 };
 use crate::{
-    api::{BlasMatInterOps, BlasMatIntraOps, BlasMatMulOps},
+    api::{
+        BlasContextPreparedFactory, BlasEncodingOps, BlasMatInterOps, BlasMatIntraOps, BlasMatMulOps,
+        BlasPtOperandPreparedFactory,
+    },
     layouts::{
-        BlasCiphertext, BlasCiphertextOwned, BlasContext, BlasContextInfos, BlasContextLayout, BlasContextPreparedFactory,
-        BlasEncodingOps, BlasGridInfos, BlasLayout, BlasMatMulOperandInfos, BlasModuleAlloc, BlasPlan, BlasPtAlgorithm,
-        BlasPtOperand, BlasPtOperandInfos, BlasPtOperandLayout, BlasPtOperandPreparedFactory, BlasPtSide, Left, Right,
-        blas_matmul_left_term_layout, blas_matmul_right_term_layout,
+        BlasCiphertext, BlasCiphertextOwned, BlasContext, BlasContextInfos, BlasContextLayout, BlasGridInfos, BlasLayout,
+        BlasMatMulOperandInfos, BlasModuleAlloc, BlasPlan, BlasPtAlgorithm, BlasPtOperand, BlasPtOperandInfos,
+        BlasPtOperandLayout, BlasPtSide, Left, Right, blas_matmul_left_term_layout, blas_matmul_max_base2k,
+        blas_matmul_pt_left_max_base2k, blas_matmul_pt_right_max_base2k, blas_matmul_right_term_layout,
         context::module_layout,
         sum_galois_elements,
         validate::{MASKLESS, MAX_BASE2K},
     },
-    oep::{
-        BlasImpl,
-        derived::intra::{sum_line, sum_line_tmp_bytes},
-    },
-    reference::{blas_matmul_max_base2k, blas_matmul_pt_left_max_base2k, blas_matmul_pt_right_max_base2k},
+    oep::BlasImpl,
+    reference::{sum_line, sum_line_tmp_bytes},
 };
 
 /// Bounds of a backend taking part in blas parity: any storage, any ring.
@@ -75,7 +75,7 @@ pub trait BlasParityBackend: Backend<ZnxWord = i64> + BlasImpl {}
 impl<B: Backend<ZnxWord = i64> + BlasImpl> BlasParityBackend for B {}
 
 /// What blas parity needs from a module: fixtures, lazy ones included, prepared keys and maps encoded at scalar `F`.
-pub trait BlasParityModule<B: Backend, F: TestScalar>:
+pub trait BlasParityModule<B: Backend, F: TestScalar + DiagonalArithmetic>:
     CKKSModuleAlloc<B>
     + CKKSModuleInfos
     + CyclotomicOrder
@@ -84,12 +84,17 @@ pub trait BlasParityModule<B: Backend, F: TestScalar>:
     + GLWEAutomorphismKeyPreparedFactory<B>
     + GLWETensorKeyPreparedFactory<B>
     + CKKSEncodingOps<B, F>
+    + BlasEncodingOps<B, F>
     + CKKSLinearTransformationOps<B>
+    + CKKSCopyOps<B>
+    + CKKSAddOps<B>
+    + CKKSAddManyOps<B>
+    + GLWENormalize<B>
     + CnvPVecAlloc<B>
 {
 }
 
-impl<B: Backend, F: TestScalar, M> BlasParityModule<B, F> for M where
+impl<B: Backend, F: TestScalar + DiagonalArithmetic, M> BlasParityModule<B, F> for M where
     M: CKKSModuleAlloc<B>
         + CKKSModuleInfos
         + CyclotomicOrder
@@ -98,7 +103,12 @@ impl<B: Backend, F: TestScalar, M> BlasParityModule<B, F> for M where
         + GLWEAutomorphismKeyPreparedFactory<B>
         + GLWETensorKeyPreparedFactory<B>
         + CKKSEncodingOps<B, F>
+        + BlasEncodingOps<B, F>
         + CKKSLinearTransformationOps<B>
+        + CKKSCopyOps<B>
+        + CKKSAddOps<B>
+        + CKKSAddManyOps<B>
+        + GLWENormalize<B>
         + CnvPVecAlloc<B>
 {
 }
@@ -352,12 +362,11 @@ where
     };
     let mut ctx = module.blas_context_alloc_from_infos(&layout);
     let mut prepared = module.blas_context_prepared_alloc_from_infos(&layout);
-    let bytes = module
-        .blas_context_encode_tmp_bytes::<F, _>(&layout)
-        .max(module.blas_context_prepare_tmp_bytes(&layout));
-    with_scratch::<B, _>(bytes, |s| {
-        module.blas_context_encode_into::<F>(&mut ctx, s).unwrap();
-        module.blas_context_prepare(&mut prepared, &ctx, s);
+    with_scratch::<B, _>(module.blas_context_encode_tmp_bytes(&layout), |s| {
+        module.blas_context_encode(&mut ctx, s).unwrap()
+    });
+    with_scratch::<B, _>(module.blas_context_prepare_tmp_bytes(&layout), |s| {
+        module.blas_context_prepare(&mut prepared, &ctx, s)
     });
     prepared
 }
@@ -404,7 +413,7 @@ fn inter<B, F>(params: CKKSTestParams, module: &Module<B>, log_d: usize) -> Vec<
 where
     B: BlasParityBackend,
     Module<B>: BlasParityModule<B, F>,
-    F: TestScalar,
+    F: TestScalar + DiagonalArithmetic,
 {
     let (plan, order, key, w) = (
         BlasPlan::new(log_d),
@@ -424,7 +433,7 @@ where
         let keys = fixture_keys(params, module, &plan.rotate_galois_elements(order, r), false);
         let mut res = operand(params, module, log_d, 2, 2, 70);
         with_scratch::<B, _>(module.blas_rotate_tmp_bytes(&res, src, &key), |s| {
-            module.blas_rotate(&mut res, src, r, &keys, s)
+            module.blas_rotate(r, &mut res, src, &keys, s)
         })
         .unwrap();
         out.push(output("blas_rotate", &res, &keys));
@@ -469,7 +478,7 @@ fn inter_budget<B, F>(params: CKKSTestParams, module: &Module<B>, log_d: usize) 
 where
     B: BlasParityBackend,
     Module<B>: BlasParityModule<B, F>,
-    F: TestScalar,
+    F: TestScalar + DiagonalArithmetic,
 {
     let a = operand(params, module, log_d, 2, 2, 61);
     let rotation = BlasPlan::new(log_d).rotate_galois_elements(module.cyclotomic_order(), 3);
@@ -480,7 +489,7 @@ where
     vec![
         failure::<B>("blas_rotate", &mut res, &[&a], &rotate, |res| {
             with_scratch::<B, _>(module.blas_rotate_tmp_bytes(res, &a, &key), |s| {
-                module.blas_rotate(res, &a, 3, &rotate, s)
+                module.blas_rotate(3, res, &a, &rotate, s)
             })
         }),
         failure::<B>("blas_sum", &mut res, &[&a], &sum, |res| {
@@ -554,14 +563,14 @@ where
         if rows {
             let keys = fixture_keys(params, module, &plan.rotate_rows_galois_elements(order, k), false);
             with_scratch::<B, _>(module.blas_rotate_rows_tmp_bytes(&res, src, ctx, &key), |s| {
-                module.blas_rotate_rows(&mut res, src, k, ctx, &keys, s)
+                module.blas_rotate_rows(k, &mut res, src, ctx, &keys, s)
             })
             .unwrap();
             output("blas_rotate_rows", &res, &keys)
         } else {
             let keys = fixture_keys(params, module, &plan.rotate_cols_galois_elements(order, k), false);
             with_scratch::<B, _>(module.blas_rotate_cols_tmp_bytes(&res, src, ctx, &key), |s| {
-                module.blas_rotate_cols(&mut res, src, k, ctx, &keys, s)
+                module.blas_rotate_cols(k, &mut res, src, ctx, &keys, s)
             })
             .unwrap();
             output("blas_rotate_cols", &res, &keys)
@@ -651,12 +660,12 @@ where
         }),
         failure::<B>("blas_rotate_rows", &mut res, &[&a], &rows, |res| {
             with_scratch::<B, _>(module.blas_rotate_rows_tmp_bytes(res, &a, &ctx, &key), |s| {
-                module.blas_rotate_rows(res, &a, 1, &ctx, &rows, s)
+                module.blas_rotate_rows(1, res, &a, &ctx, &rows, s)
             })
         }),
         failure::<B>("blas_rotate_cols", &mut res, &[&a], &cols, |res| {
             with_scratch::<B, _>(module.blas_rotate_cols_tmp_bytes(res, &a, &ctx, &key), |s| {
-                module.blas_rotate_cols(res, &a, d / 2, &ctx, &cols, s)
+                module.blas_rotate_cols(d / 2, res, &a, &ctx, &cols, s)
             })
         }),
         failure::<B>("blas_sum_rows", &mut res, &[&a], &sum_rows, |res| {
@@ -687,12 +696,11 @@ where
 {
     let mut op = module.blas_pt_operand_alloc_from_infos(&layout);
     let mut prepared = module.blas_pt_operand_prepared_alloc_from_infos(&layout);
-    let bytes = module
-        .blas_pt_operand_encode_tmp_bytes::<F, _>(&layout)
-        .max(module.blas_pt_operand_prepare_tmp_bytes(&layout));
-    with_scratch::<B, _>(bytes, |s| {
-        module.blas_pt_operand_encode_into(&mut op, public_entry::<F>, s).unwrap();
-        module.blas_pt_operand_prepare(&mut prepared, &op, s);
+    with_scratch::<B, _>(module.blas_pt_operand_encode_tmp_bytes(&layout), |s| {
+        module.blas_pt_operand_encode(&mut op, public_entry::<F>, s).unwrap()
+    });
+    with_scratch::<B, _>(module.blas_pt_operand_prepare_tmp_bytes(&layout), |s| {
+        module.blas_pt_operand_prepare(&mut prepared, &op, s)
     });
     prepared
 }
@@ -1164,20 +1172,28 @@ fn compare(label: &str, want: Vec<Output>, got: Vec<Output>) {
 /// Matrix-slot rotations and sums agree bit for bit at every swept `log_d`, through the identity, one matrix slot, a
 /// narrower `res`, and lazy real inputs, and fail alike on a budget poulpy-ckks rejects, leaving `res` and `a`
 /// unchanged.
-pub fn test_blas_inter_parity<BR, BT, F>(params: CKKSTestParams, shapes: &BlasParityShapes, r: &Module<BR>, t: &Module<BT>)
-where
+pub fn test_blas_inter_parity<BR, BT, F>(
+    params: CKKSTestParams,
+    shapes: &BlasParityShapes,
+    module_ref: &Module<BR>,
+    module_test: &Module<BT>,
+) where
     BR: BlasParityBackend,
     BT: BlasParityBackend,
     Module<BR>: BlasParityModule<BR, F>,
     Module<BT>: BlasParityModule<BT, F>,
     F: TestScalar + DiagonalArithmetic,
 {
-    for log_d in swept_log_d(shapes, r.ckks_max_slots()) {
+    for log_d in swept_log_d(shapes, module_ref.ckks_max_slots()) {
         let label = format!("inter, log_d {log_d}");
-        compare(&label, inter::<BR, F>(params, r, log_d), inter::<BT, F>(params, t, log_d));
+        compare(
+            &label,
+            inter::<BR, F>(params, module_ref, log_d),
+            inter::<BT, F>(params, module_test, log_d),
+        );
         let (want, got) = (
-            inter_budget::<BR, F>(params, r, log_d),
-            inter_budget::<BT, F>(params, t, log_d),
+            inter_budget::<BR, F>(params, module_ref, log_d),
+            inter_budget::<BT, F>(params, module_test, log_d),
         );
         compare(&format!("{label}, budget"), want, got);
     }
@@ -1186,20 +1202,28 @@ where
 /// Transposes, row and column rotations and row and column sums agree bit for bit at every swept `log_d`, through every
 /// branch of the shifts and of the sums, a narrower `res`, lazy real inputs, and maps at scales other than the inputs',
 /// and fail alike on a budget poulpy-ckks rejects, leaving `res` and `a` unchanged.
-pub fn test_blas_intra_parity<BR, BT, F>(params: CKKSTestParams, shapes: &BlasParityShapes, r: &Module<BR>, t: &Module<BT>)
-where
+pub fn test_blas_intra_parity<BR, BT, F>(
+    params: CKKSTestParams,
+    shapes: &BlasParityShapes,
+    module_ref: &Module<BR>,
+    module_test: &Module<BT>,
+) where
     BR: BlasParityBackend,
     BT: BlasParityBackend,
     Module<BR>: BlasParityModule<BR, F>,
     Module<BT>: BlasParityModule<BT, F>,
     F: TestScalar + DiagonalArithmetic,
 {
-    for log_d in swept_log_d(shapes, r.ckks_max_slots()) {
+    for log_d in swept_log_d(shapes, module_ref.ckks_max_slots()) {
         let label = format!("intra, log_d {log_d}");
-        compare(&label, intra::<BR, F>(params, r, log_d), intra::<BT, F>(params, t, log_d));
+        compare(
+            &label,
+            intra::<BR, F>(params, module_ref, log_d),
+            intra::<BT, F>(params, module_test, log_d),
+        );
         let (want, got) = (
-            intra_budget::<BR, F>(params, r, log_d),
-            intra_budget::<BT, F>(params, t, log_d),
+            intra_budget::<BR, F>(params, module_ref, log_d),
+            intra_budget::<BT, F>(params, module_test, log_d),
         );
         compare(&format!("{label}, budget"), want, got);
     }
@@ -1214,20 +1238,28 @@ where
 /// blocks (`1 x 16` by `16 x 1` above radix 52), agrees too, and so does a right factor holding one matrix, whose terms
 /// spend one scale. The product, the prepared product and the products by public matrices on either side, under
 /// `Diagonal` and `Jkls`, fail alike on a budget poulpy-ckks rejects, leaving `res` and the factors unchanged.
-pub fn test_blas_matmul_parity<BR, BT, F>(params: CKKSTestParams, shapes: &BlasParityShapes, r: &Module<BR>, t: &Module<BT>)
-where
+pub fn test_blas_matmul_parity<BR, BT, F>(
+    params: CKKSTestParams,
+    shapes: &BlasParityShapes,
+    module_ref: &Module<BR>,
+    module_test: &Module<BT>,
+) where
     BR: BlasParityBackend,
     BT: BlasParityBackend,
     Module<BR>: BlasParityModule<BR, F>,
     Module<BT>: BlasParityModule<BT, F>,
     F: TestScalar + DiagonalArithmetic,
 {
-    for log_d in swept_log_d(shapes, r.ckks_max_slots()) {
+    for log_d in swept_log_d(shapes, module_ref.ckks_max_slots()) {
         let label = format!("matmul, log_d {log_d}");
-        compare(&label, matmul::<BR, F>(params, r, log_d), matmul::<BT, F>(params, t, log_d));
+        compare(
+            &label,
+            matmul::<BR, F>(params, module_ref, log_d),
+            matmul::<BT, F>(params, module_test, log_d),
+        );
         let (want, got) = (
-            matmul_budget::<BR, F>(params, r, log_d),
-            matmul_budget::<BT, F>(params, t, log_d),
+            matmul_budget::<BR, F>(params, module_ref, log_d),
+            matmul_budget::<BT, F>(params, module_test, log_d),
         );
         compare(&format!("{label}, budget"), want, got);
     }

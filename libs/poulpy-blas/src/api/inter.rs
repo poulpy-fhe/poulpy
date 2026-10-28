@@ -13,13 +13,13 @@ use crate::layouts::{BlasGrid, BlasGridInfos, BlasGridMut};
 /// `a` when `res.k >= a.k` and `res` has room for every limb of a non-canonical `a`, and otherwise normalizes, which
 /// sets it.
 pub trait BlasMatInterOps<BE: Backend> {
-    /// Scratch bytes [`Self::blas_rotate`] needs into `res` from `a` with rotation keys of layout `atk`.
+    /// Scratch bytes [`Self::blas_rotate`] needs into `res` from `a` with rotation keys of layout `keys`.
     ///
     /// # Panics
     ///
     /// May panic on layouts [`validate_blas_rotate`](crate::layouts::validate_blas_rotate) rejects: blocks of a degree
     /// other than the module's.
-    fn blas_rotate_tmp_bytes<R, A, K>(&self, res: &R, a: &A, atk: &K) -> usize
+    fn blas_rotate_tmp_bytes<R, A, K>(&self, res: &R, a: &A, keys: &K) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
@@ -46,23 +46,23 @@ pub trait BlasMatInterOps<BE: Backend> {
     ///
     /// - The implementation runs [`validate_blas_rotate`](crate::layouts::validate_blas_rotate) before any write, so on
     ///   its errors `res`, its batch record and `a` are untouched: `InvalidOperand` for a grid, shape or layout it
-    ///   rejects, then `MissingAutomorphismKey` for the rotation key `atk` lacks at `min(res.k, a.k)`, or
+    ///   rejects, then `MissingAutomorphismKey` for the rotation key `keys` lacks at `min(res.k, a.k)`, or
     ///   `InvalidOperand` when that key is of another rank than `a`'s blocks.
     /// - poulpy-ckks's budget error, `InsufficientHomomorphicCapacity` when `res.k` is below `a.log_delta`, comes from
     ///   inside the backend before any write, and leaves them untouched too.
     /// - Any other `Err` is a backend fault (a validator gap or a device failure), and `res` is then unspecified.
-    fn blas_rotate<R, A, K>(&self, res: &mut R, a: &A, r: i64, atk: &K, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn blas_rotate<R, A, K>(&self, r: i64, res: &mut R, a: &A, keys: &K, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         R: BlasGridMut<BE>,
         A: BlasGrid<BE>,
         K: GetAutomorphismKey<BE> + Sync;
 
-    /// Scratch bytes [`Self::blas_sum`] needs into `res` from `a` with rotation keys of layout `atk`.
+    /// Scratch bytes [`Self::blas_sum`] needs into `res` from `a` with rotation keys of layout `keys`.
     ///
     /// # Panics
     ///
     /// As [`Self::blas_rotate_tmp_bytes`], on layouts [`validate_blas_sum`](crate::layouts::validate_blas_sum) rejects.
-    fn blas_sum_tmp_bytes<R, A, K>(&self, res: &R, a: &A, atk: &K) -> usize
+    fn blas_sum_tmp_bytes<R, A, K>(&self, res: &R, a: &A, keys: &K) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
@@ -90,12 +90,12 @@ pub trait BlasMatInterOps<BE: Backend> {
     ///
     /// - The implementation runs [`validate_blas_sum`](crate::layouts::validate_blas_sum) before any write, so on its
     ///   errors `res`, its batch record and `a` are untouched: `InvalidOperand` for a grid, shape or layout it rejects,
-    ///   then, key by key, `MissingAutomorphismKey` for a rotation key `atk` lacks at `min(res.k, a.k)`, or
+    ///   then, key by key, `MissingAutomorphismKey` for a rotation key `keys` lacks at `min(res.k, a.k)`, or
     ///   `InvalidOperand` for one of another rank than `a`'s blocks.
     /// - poulpy-ckks's budget error, `InsufficientHomomorphicCapacity` from the copy when `res.k` is below `a.log_delta`,
     ///   comes from inside the backend before any write, and leaves them untouched too.
     /// - Any other `Err` is a backend fault (a validator gap or a device failure), and `res` is then unspecified.
-    fn blas_sum<R, A, K>(&self, res: &mut R, a: &A, atk: &K, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn blas_sum<R, A, K>(&self, res: &mut R, a: &A, keys: &K, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         R: BlasGridMut<BE>,
         A: BlasGrid<BE>,

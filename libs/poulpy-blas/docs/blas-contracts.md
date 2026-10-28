@@ -1,16 +1,18 @@
 # Implementing BLAS operations
 
 Public matrix calls follow the [layering contract](../../../docs/guides/layering-contract.md): `Module<BE>` implements
-`BlasMatInterOps`, `BlasMatIntraOps` and `BlasMatMulOps` for every backend that
-implements the matching `*Impl` trait, and each OEP method runs its validator
-first. The BLAS
+`BlasMatInterOps`, `BlasMatIntraOps` and `BlasMatMulOps`, and `BlasEncodingOps`,
+`BlasPtOperandPreparedFactory` and `BlasContextPreparedFactory`, for every
+backend that implements the matching `*Impl` trait, and each OEP method of an
+operation runs its validator first. The BLAS
 crate imports no backend crate: each backend crate wires its own types.
 
 This file holds the rules every family shares. What an implementation of one
-family must reproduce, and what it may change, is the `# Safety` section of
-that family's trait; the output metadata and the errors of each operation are
-on its API method. Parity is bit-exact, so an override computes the
-reference's circuit: anything a `# Safety` section does not list as free
+family must reproduce, and what it may change, is the doc of each method and
+hook of that family's trait (its **Fixed** and **Free** lists), the trait's
+`# Safety` holding what the methods share; the output metadata and the errors of
+each operation are on its API method. Parity is bit-exact, so an override
+computes the reference's circuit: anything a method's doc does not list as free
 changes bits.
 
 ## Families
@@ -18,23 +20,24 @@ changes bits.
 | OEP family | Required | Provided |
 |---|---|---|
 | `BlasMatInterImpl` | `blas_rotate`, `blas_sum` | |
-| `BlasMatIntraImpl` | the map hook `blas_map_blocks_impl` | `blas_transpose`, `blas_rotate_rows`, `blas_rotate_cols`, `blas_sum_rows`, `blas_sum_cols`, over the hook |
+| `BlasMatIntraImpl` | the map hook `blas_map_blocks`, `blas_rotate_rows`, `blas_rotate_cols`, `blas_sum_rows`, `blas_sum_cols` | `blas_transpose`, over the hook |
 | `BlasMatMulImpl` | `blas_matmul`, `blas_matmul_prepare_left`, `blas_matmul_prepare_right`, `blas_matmul_prepared`, `blas_matmul_pt_right`, `blas_matmul_pt_left` | |
-| `BlasJklsImpl` | the JKLS kernel `blas_jkls_block_impl`, one output block of the prepared product | |
+| `BlasJklsImpl` | the JKLS kernel `blas_jkls_block`, one output block of the prepared product | |
+| `BlasEncodingImpl` | `blas_pt_operand_encode`, `blas_context_encode`, `blas_pt_operand_prepare`, `blas_context_prepare` | |
 
-Each operation's `_tmp_bytes` query belongs to the same family. `BlasImpl`
-aggregates the four families as a test bound; it has a blanket implementation
+Each operation's `_tmp_bytes` query belongs to the same family. The encodings
+take poulpy-ckks's encoding scalar `F` as a method parameter bounded by
+`Self: CKKSEncodingImpl<F>`, and the allocations of contexts and public
+operands, prepared or not, stay direct on the module. `BlasImpl`
+aggregates the five families as a test bound; it has a blanket implementation
 and is never implemented directly.
 
-The provided methods, the transpose, both shifts and both reductions, call the
-backend's selected map hook, and the references of the products call its hook
-and its JKLS kernel. So an override of the hook or of the kernel reaches every
-operation built on it. The provided bodies of the transpose and the shifts
-are public in `poulpy_blas::oep::derived`, as `blas_transpose_derived`,
-`blas_rotate_rows_derived` and `blas_rotate_cols_derived` with their
-`_tmp_bytes_derived` queries, so an override of one of them can fall back to
-the provided body, for both the call and its query; those of the reductions
-are crate-private.
+The provided transpose, and the references of the shifts, of the reductions
+and of the products, call the backend's selected map hook, and the references
+of the products also its JKLS kernel. So an override of the hook or of the
+kernel reaches every operation built on it. The provided body is crate-private,
+`blas_transpose_derived` with its query `blas_transpose_tmp_bytes_derived`, in
+the family's file under `oep::derived`.
 
 The prepared operands of the products, `BlasMatMulLeft<BE>` and
 `BlasMatMulRight<BE>`, are `poulpy_blas::layouts::BlasMatMulOperand`s of the
@@ -51,15 +54,16 @@ APIs, so a backend's CKKS and core overrides remain effective inside them.
 
 | OEP family | Reference | Macro |
 |---|---|---|
-| `BlasMatInterImpl` | `BlasMatInterReference`, [`reference/inter.rs`](../src/reference/inter.rs) | `impl_blas_inter_reference!` |
-| `BlasMatIntraImpl` | `BlasMatIntraReference` (the hook), [`reference/intra.rs`](../src/reference/intra.rs) | `impl_blas_intra_reference!` |
-| `BlasMatMulImpl` | `BlasMatMulReference`, [`reference/matmul.rs`](../src/reference/matmul.rs) | `impl_blas_matmul_reference!` |
-| `BlasJklsImpl` | `BlasMatMulReference::blas_jkls_block_reference`, [`reference/matmul.rs`](../src/reference/matmul.rs) | `impl_blas_jkls_reference!` |
+| `BlasMatInterImpl` | `BlasMatInterReference`, [`reference/inter.rs`](../src/reference/inter.rs) | `impl_blas_mat_inter_reference_full!` |
+| `BlasMatIntraImpl` | `BlasMatIntraReference` (the hook, the shifts and the reductions), [`reference/intra.rs`](../src/reference/intra.rs) | `impl_blas_mat_intra_reference_full!` |
+| `BlasMatMulImpl` | `BlasMatMulReference`, [`reference/matmul.rs`](../src/reference/matmul.rs) | `impl_blas_mat_mul_reference_full!` |
+| `BlasJklsImpl` | `BlasJklsReference` (the kernel), [`reference/jkls.rs`](../src/reference/jkls.rs) | `impl_blas_jkls_reference_full!` |
+| `BlasEncodingImpl` | `BlasEncodingReference`, [`reference/encoding.rs`](../src/reference/encoding.rs) | `impl_blas_encoding_reference_full!` |
 
-`impl_blas_reference_full!` expands to the four family macros. The reference's
+`impl_blas_reference_full!` expands to the five family macros. The reference's
 cold preparations call the backend's map hook, and the reference prepared
 product, like the reference `blas_matmul`, calls it for the terms of a hot
-operand, then its JKLS kernel. So `impl_blas_matmul_reference!` needs the intra
+operand, then its JKLS kernel. So `impl_blas_mat_mul_reference_full!` needs the intra
 and JKLS families. The reference `blas_matmul` is the reference prepared
 product of two hot operands, bit for bit, on the grids read in place, without
 the preparations' copies.
@@ -87,43 +91,47 @@ the same `#[cfg]` gates as `ckks_impl.rs`:
 ```
 
 To replace a family, replace the type's `impl_blas_reference_full!` line with
-the macros of the three families it keeps, as the [layering contract](../../../docs/guides/layering-contract.md)
+the macros of the four families it keeps, as the [layering contract](../../../docs/guides/layering-contract.md)
 states. The expansion of each family macro, in [`oep`](../src/oep/), spells out
-every signature and its forwarding call, and each family's `# Safety` section
-states what an implementation must reproduce. Three replacements cover most needs:
+every signature and its forwarding call, and the docs of each family's methods
+and hooks state what an implementation must reproduce. Three replacements cover most needs:
 
 - **The map hook**, for a backend that evaluates maps its own way. It covers
-  the transpose, both shifts, the cold preparations and the hot sides of the
-  products, `blas_matmul` included:
+  the transpose, both shifts, both reductions, the cold preparations and the hot
+  sides of the products, `blas_matmul` included:
 
   ```rust
-  ::poulpy_blas::impl_blas_inter_reference!(MyBackend);
-  ::poulpy_blas::impl_blas_matmul_reference!(MyBackend);
-  ::poulpy_blas::impl_blas_jkls_reference!(MyBackend);
-  unsafe impl poulpy_blas::oep::BlasMatIntraImpl for MyBackend { /* the hook and its query */ }
+  ::poulpy_blas::impl_blas_mat_inter_reference_full!(MyBackend);
+  ::poulpy_blas::impl_blas_mat_mul_reference_full!(MyBackend);
+  ::poulpy_blas::impl_blas_jkls_reference_full!(MyBackend);
+  ::poulpy_blas::impl_blas_encoding_reference_full!(MyBackend);
+  unsafe impl poulpy_blas::oep::BlasMatIntraImpl for MyBackend {
+      /* the hook and its query; the shifts, the reductions and their queries forwarded to BlasMatIntraReference */
+  }
   ```
 
 - **The JKLS kernel**, a fused kernel behind the backend's own `enable-blas`.
   Both `blas_matmul` and `blas_matmul_prepared` reach it:
 
   ```rust
-  ::poulpy_blas::impl_blas_inter_reference!(MyBackend);
-  ::poulpy_blas::impl_blas_intra_reference!(MyBackend);
-  ::poulpy_blas::impl_blas_matmul_reference!(MyBackend);
+  ::poulpy_blas::impl_blas_mat_inter_reference_full!(MyBackend);
+  ::poulpy_blas::impl_blas_mat_intra_reference_full!(MyBackend);
+  ::poulpy_blas::impl_blas_mat_mul_reference_full!(MyBackend);
+  ::poulpy_blas::impl_blas_encoding_reference_full!(MyBackend);
   unsafe impl poulpy_blas::oep::BlasJklsImpl for MyBackend { /* the kernel and its query */ }
   ```
 
-- **The products**, in the backend's own evaluation. The inter, intra and JKLS
-  families keep their macros, and `BlasMatMulImpl` is written by hand: it
+- **The products**, in the backend's own evaluation. The inter, intra, JKLS
+  and encoding families keep their macros, and `BlasMatMulImpl` is written by hand: it
   implements the methods it replaces, each running its validator and stamping
   the batch as the reference does, and forwards the others to
   `BlasMatMulReference`, `blas_matmul` to `blas_matmul_reference` as the macro
   does. Preparations and a prepared product read and fill the operands through
   `BlasMatMulOperand::{blocks, terms}`, their `_mut` forms and `set_prepared`.
 
-A backend may also override a provided method, for example the shifts, to
-chunk their heap grid; it then reproduces the circuit the provided body fixes,
-and may fall back to that body in `oep::derived`.
+A backend may also override a shift, for example to chunk its heap grid, in a
+hand-written `BlasMatIntraImpl`; it then reproduces the circuit the reference
+fixes.
 
 ## Grids and keys
 
@@ -135,10 +143,9 @@ and every operation rejects a grid that breaks this. `BlasCiphertext` over
 owned storage implements both traits on every backend. Borrowed views are not
 grids: a `BufRef` view is `Sync`, but its blocks are not `GLWEToBackendRef`.
 
-Rotation keys come as `atk` (`keys` in the axis reductions) and the tensor key
-as `tsk`, two separate stores: the rotations, the sums, the maps, the
-preparations and the products by public matrices take the rotation keys alone,
-and the products both. The prepared product looks
+Rotation keys come as `keys` and the tensor key as `tsk`, two separate stores:
+the rotations, the sums, the maps, the preparations and the products by public
+matrices take `keys` alone, and the products both. The prepared product looks
 up rotation keys only for a hot operand, whose terms it evaluates: of two cold
 operands it reads `tsk` alone. The traits' `Send` and `Sync` bounds leave an
 implementation its own choice of concurrency ([Parallelism](#parallelism)).
@@ -230,14 +237,14 @@ a store holding its operation's set alone suffices.
 
 ### Key-use queries
 
-Each operation has a query that lists the keys it looks up, in
-`poulpy_blas::reference`: `blas_matmul_key_uses`,
+Each operation has a query in `poulpy_blas::layouts` that lists the keys it
+looks up: `blas_matmul_key_uses`,
 `blas_matmul_prepare_left_key_uses`, `blas_matmul_prepare_right_key_uses`,
 `blas_matmul_prepared_key_uses`, `blas_matmul_pt_right_key_uses`,
 `blas_matmul_pt_left_key_uses`, `blas_transpose_key_uses`,
 `blas_rotate_rows_key_uses`, `blas_rotate_cols_key_uses`,
-`blas_rotate_key_uses` and `blas_sum_key_uses`, and in `poulpy_blas::layouts`:
-`blas_sum_rows_key_uses` and `blas_sum_cols_key_uses`. A
+`blas_rotate_key_uses`, `blas_sum_key_uses`, `blas_sum_rows_key_uses` and
+`blas_sum_cols_key_uses`. A
 query takes the grids, operands and context of the operation's `_tmp_bytes`
 query, without the key layouts. It leaves out what the keys do not depend on:
 the result grid of a product of two encrypted grids, and the `PrepareHint` of a
@@ -366,15 +373,15 @@ their results are canonical.
 
 ## Scratch
 
-Every method runs within the scratch its own query (`_tmp_bytes_impl`,
-`_tmp_bytes` for the reductions) reports for the layouts and keys it receives,
-which may differ from the reference's; the reference asserts its bound on entry
-and panics before any write when it falls short, for a call that looks up a
-key. An override that needs other scratch reports it in its own query, and
-every operation over it follows: the provided queries call the selected
-implementations' queries, and the reference `blas_matmul` query is the largest
-of both reference hot preparations' queries and the reference prepared
-product's on the layouts they give.
+Every method runs within the scratch its own `_tmp_bytes` reports for the
+layouts and keys it receives, which may differ from the reference's; the
+reference asserts its bound on entry and panics before any write when it falls
+short, for a call that looks up a key. An override that needs other scratch
+reports it in its own query, and every operation over it follows: the provided
+transpose query and the reference queries call the selected implementations'
+queries, and the reference
+`blas_matmul` query is the largest of both reference hot preparations' queries
+and the reference prepared product's on the layouts they give.
 
 The queries read layouts (`BlasGridInfos`, `CKKSCtBounds`, `GGLWEInfos`), never
 ciphertext data: the prepared product's query receives the prepared operands,

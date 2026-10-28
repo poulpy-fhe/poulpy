@@ -12,6 +12,7 @@ use poulpy_ckks::{
     test_suite::{
         CKKSTestParams,
         helpers::{TestContextBackend, TestContextModule, TestScalar, alloc_scratch, gen_atk, gen_sk_with_raw, gen_tsk},
+        parity::helpers::with_scratch,
         reference_encoder::ReferenceEncoder,
     },
 };
@@ -46,19 +47,18 @@ use super::helpers::{
 };
 use super::matmul::public_entry;
 use crate::{
-    api::{BlasMatInterOps, BlasMatIntraOps, BlasMatMulOps},
+    api::{BlasEncodingOps, BlasMatInterOps, BlasMatIntraOps, BlasMatMulOps, BlasPtOperandPreparedFactory},
     layouts::{
-        BlasCiphertext, BlasCiphertextOwned, BlasContextInfos, BlasEncodingOps, BlasGridInfos, BlasKeyUses, BlasMatMulLeft,
-        BlasMatMulRight, BlasModuleAlloc, BlasPlan, BlasPtAlgorithm, BlasPtOperandInfos, BlasPtOperandPreparedFactory,
-        BlasPtSide, Left, Right, blas_sum_cols_key_uses, blas_sum_rows_key_uses, context::context_shapes, replicated,
-        sum_galois_elements,
+        BlasCiphertext, BlasCiphertextOwned, BlasContextInfos, BlasGridInfos, BlasKeyUses, BlasMatMulLeft, BlasMatMulRight,
+        BlasModuleAlloc, BlasPlan, BlasPtAlgorithm, BlasPtOperandInfos, BlasPtSide, Left, Right, blas_matmul_key_uses,
+        blas_matmul_prepare_left_key_uses, blas_matmul_prepare_right_key_uses, blas_matmul_prepared_key_uses,
+        blas_matmul_pt_left_key_uses, blas_matmul_pt_right_key_uses, blas_rotate_cols_key_uses, blas_rotate_key_uses,
+        blas_rotate_rows_key_uses, blas_sum_cols_key_uses, blas_sum_key_uses, blas_sum_rows_key_uses, blas_transpose_key_uses,
+        context::context_shapes,
+        planning::{MapDiagonal, operand_shapes},
+        replicated, sum_galois_elements,
     },
-    oep::BlasImpl,
-    reference::{
-        MapDiagonal, blas_matmul_key_uses, blas_matmul_prepare_left_key_uses, blas_matmul_prepare_right_key_uses,
-        blas_matmul_prepared_key_uses, blas_matmul_pt_left_key_uses, blas_matmul_pt_right_key_uses, blas_rotate_cols_key_uses,
-        blas_rotate_key_uses, blas_rotate_rows_key_uses, blas_sum_key_uses, blas_transpose_key_uses, operand_shapes,
-    },
+    oep::{BlasEncodingImpl, BlasImpl},
 };
 
 fn width<DG: Data, W: ZnxWord, R: Ring>(g: &BlasCiphertext<DG, W, R>) -> usize {
@@ -155,7 +155,11 @@ pub fn test_blas_key_widths<BE, F, E>(
     log_d: usize,
 ) where
     BE: TestContextBackend<Ring = Standard> + BlasImpl,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + BlasEncodingOps<BE, F>
+        + CKKSLinearTransformationOps<BE>
+        + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
@@ -172,29 +176,9 @@ pub fn test_blas_key_widths<BE, F, E>(
     let entry = |m: usize, r: usize, c: usize| F::from_f64(((m + r * 4 + c) * 3 % 5) as f64 / 4.0 - 0.5).unwrap();
     let operands = PT_ALGORITHMS.map(|algorithm| {
         let plan = BlasPlan::new(log_d).with_pt_algorithm(algorithm);
-        let right = pt_operand::<BE, F, Right>(
-            module,
-            plan,
-            2,
-            1,
-            1,
-            entry,
-            params.base2k.into(),
-            below.prec().into(),
-            &mut scratch.borrow(),
-        );
+        let right = pt_operand::<BE, F, Right>(module, plan, 2, 1, 1, entry, params.base2k.into(), below.prec().into());
         // `1 x 2` blocks on the left, whose products take a grid of two block rows.
-        let left = pt_operand::<BE, F, Left>(
-            module,
-            plan,
-            1,
-            2,
-            1,
-            entry,
-            params.base2k.into(),
-            below.prec().into(),
-            &mut scratch.borrow(),
-        );
+        let left = pt_operand::<BE, F, Left>(module, plan, 1, 2, 1, entry, params.base2k.into(), below.prec().into());
         (algorithm, right, left)
     });
     let p_b = below.prec().log_delta();
@@ -246,20 +230,20 @@ pub fn test_blas_key_widths<BE, F, E>(
         let mut full = alloc(1, 2, res_k);
         let bytes = module.blas_rotate_tmp_bytes(&full, &row, &atk_layout);
         module
-            .blas_rotate(&mut full, &row, 1, &keys, &mut own(bytes).borrow())
+            .blas_rotate(1, &mut full, &row, &keys, &mut own(bytes).borrow())
             .unwrap();
         let rotation = [(module.ckks_galois_element((d * d) as i64), a_k.min(width(&full)))];
         assert_key_widths(
             &format!("rotate res_k={res_k}"),
             "blas_rotate",
             &keys,
-            blas_rotate_key_uses(module, &full, &row, 1),
+            blas_rotate_key_uses(module, 1, &full, &row),
             rotation,
             [],
             &full,
             &mut alloc(1, 2, res_k),
             |g| g,
-            |res, keys| module.blas_rotate(res, &row, 1, keys, &mut own(bytes).borrow()),
+            |res, keys| module.blas_rotate(1, res, &row, keys, &mut own(bytes).borrow()),
         );
 
         let mut full = alloc(1, 2, res_k);
@@ -307,7 +291,7 @@ pub fn test_blas_key_widths<BE, F, E>(
             let mut full = alloc(rows, cols, res_k);
             let bytes = module.blas_rotate_rows_tmp_bytes(&full, a, &ctx, &atk_layout);
             module
-                .blas_rotate_rows(&mut full, a, 1, &ctx, &keys, &mut own(bytes).borrow())
+                .blas_rotate_rows(1, &mut full, a, &ctx, &keys, &mut own(bytes).borrow())
                 .unwrap();
             let maps = if rows == 1 {
                 vec![ctx.rotate_rows(1)]
@@ -323,18 +307,18 @@ pub fn test_blas_key_widths<BE, F, E>(
                 &format!("rotate_rows {case}"),
                 "blas_rotate_rows",
                 &keys,
-                blas_rotate_rows_key_uses(module, &full, a, 1, &ctx),
+                blas_rotate_rows_key_uses(module, 1, &full, a, &ctx),
                 used,
                 [],
                 &full,
                 &mut alloc(rows, cols, res_k),
                 |g| g,
-                |res, keys| module.blas_rotate_rows(res, a, 1, &ctx, keys, &mut own(bytes).borrow()),
+                |res, keys| module.blas_rotate_rows(1, res, a, &ctx, keys, &mut own(bytes).borrow()),
             );
             let mut full = alloc(rows, cols, res_k);
             let bytes = module.blas_rotate_cols_tmp_bytes(&full, a, &ctx, &atk_layout);
             module
-                .blas_rotate_cols(&mut full, a, 1, &ctx, &keys, &mut own(bytes).borrow())
+                .blas_rotate_cols(1, &mut full, a, &ctx, &keys, &mut own(bytes).borrow())
                 .unwrap();
             let maps = if cols == 1 {
                 vec![ctx.rotate_cols(1)]
@@ -346,13 +330,13 @@ pub fn test_blas_key_widths<BE, F, E>(
                 &format!("rotate_cols {case}"),
                 "blas_rotate_cols",
                 &keys,
-                blas_rotate_cols_key_uses(module, &full, a, 1, &ctx),
+                blas_rotate_cols_key_uses(module, 1, &full, a, &ctx),
                 used,
                 [],
                 &full,
                 &mut alloc(rows, cols, res_k),
                 |g| g,
-                |res, keys| module.blas_rotate_cols(res, a, 1, &ctx, keys, &mut own(bytes).borrow()),
+                |res, keys| module.blas_rotate_cols(1, res, a, &ctx, keys, &mut own(bytes).borrow()),
             );
         }
 
@@ -697,7 +681,11 @@ pub fn test_blas_key_stores_from_queries<BE, F, E>(
     log_d: usize,
 ) where
     BE: TestContextBackend<Ring = Standard> + BlasImpl,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + BlasEncodingOps<BE, F>
+        + CKKSLinearTransformationOps<BE>
+        + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
@@ -708,7 +696,7 @@ pub fn test_blas_key_stores_from_queries<BE, F, E>(
     let encoder = ReferenceEncoder::<E>::new(slots).unwrap();
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
-    let ctx = blas_context::<BE, F>(&params, module, log_d, &mut scratch.borrow());
+    let ctx = blas_context::<BE, F>(&params, module, log_d);
     let encrypt = |rows: usize, cols: usize, seed: u64, scratch: &mut ScratchArena<'_, BE>| {
         let grid = Grid::model(log_d, rows, cols, lanes, seed);
         let ct = encrypt_grid::<BE, F, E>(&params, module, host_module, &encoder, &sk, params.k, 0, &grid, scratch);
@@ -727,7 +715,6 @@ pub fn test_blas_key_stores_from_queries<BE, F, E>(
         |m, r, c| F::from_f64(public_entry(m, r, c)).unwrap(),
         params.base2k.into(),
         params.prec().into(),
-        &mut scratch.borrow(),
     );
 
     let alloc = |k: usize| alloc_grid(&params, module, log_d, 1, 1, k);
@@ -902,24 +889,24 @@ fn shape_of<P: MapDiagonal>(lt: &LinearTransformation<P>) -> Shape {
 /// The shapes the queries read from the layout of a public operand of `plan` on side `S` are those of its encoded maps,
 /// and their first ones those of its prepared maps: under `JklsStored` and `JklsGalois` the first map alone, its terms
 /// being plaintexts.
-fn assert_operand_shapes<BE, F, S>(
-    module: &Module<BE>,
-    plan: BlasPlan,
-    base2k: Base2K,
-    meta: CoeffsMeta,
-    scratch: &mut ScratchArena<'_, BE>,
-) where
-    BE: Backend,
-    Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CKKSMulOps<BE>,
+fn assert_operand_shapes<BE, F, S>(module: &Module<BE>, plan: BlasPlan, base2k: Base2K, meta: CoeffsMeta)
+where
+    BE: Backend + BlasEncodingImpl,
+    Module<BE>:
+        CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F> + BlasEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CKKSMulOps<BE>,
     F: DiagonalArithmetic + CKKSEncodingScalar,
     S: BlasPtSide,
 {
     let label = format!("left={} {:?} log_d={}", S::LEFT, plan.pt_algorithm(), plan.log_d());
     let entry = |m: usize, r: usize, c: usize| F::from_f64(((m + r * 3 + c) % 5) as f64 - 2.0).unwrap();
     let mut op = module.blas_pt_operand_alloc::<S>(plan, 2, 2, 1, base2k, meta);
-    module.blas_pt_operand_encode_into(&mut op, entry, scratch).unwrap();
+    with_scratch::<BE, _>(module.blas_pt_operand_encode_tmp_bytes(&op), |s| {
+        module.blas_pt_operand_encode(&mut op, entry, s).unwrap()
+    });
     let mut prepared = module.blas_pt_operand_prepared_alloc_from_infos(&op);
-    module.blas_pt_operand_prepare(&mut prepared, &op, scratch);
+    with_scratch::<BE, _>(module.blas_pt_operand_prepare_tmp_bytes(&op), |s| {
+        module.blas_pt_operand_prepare(&mut prepared, &op, s)
+    });
     let shapes: Vec<Shape> = operand_shapes(&op.blas_pt_operand_layout()).iter().map(shape_of).collect();
     assert!(op.maps().map(shape_of).eq(shapes.iter().cloned()), "{label}: encoded");
     let prepared: Vec<Shape> = prepared.maps().map(shape_of).collect();
@@ -935,15 +922,14 @@ pub fn test_blas_queries_from_layouts<BE, F, E>(
     _host_module: &Module<HostBytesBackend>,
     log_d: usize,
 ) where
-    BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE>,
+    BE: TestContextBackend + BlasEncodingImpl,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + BlasEncodingOps<BE, F> + CKKSLinearTransformationOps<BE>,
     F: TestScalar + DiagonalArithmetic,
 {
-    let mut scratch = alloc_scratch(&params, module);
     let (base2k, meta): (Base2K, CoeffsMeta) = (params.base2k.into(), params.prec().into());
     let masked = BlasPlan::new(log_d).with_pt_algorithm(BlasPtAlgorithm::JklsGalois);
     for plan in [BlasPlan::new(log_d), masked] {
-        let ctx = encoded_context::<BE, F>(module, plan, base2k, meta, &mut scratch.borrow());
+        let ctx = encoded_context::<BE, F>(module, plan, base2k, meta);
         let shapes = context_shapes(&ctx.blas_context_layout());
         assert!(
             shapes.iter().map(shape_of).eq(ctx.maps.iter().map(shape_of)),
@@ -952,7 +938,7 @@ pub fn test_blas_queries_from_layouts<BE, F, E>(
     }
     for algorithm in PT_ALGORITHMS.into_iter().chain(MASKED_PT_ALGORITHMS) {
         let plan = BlasPlan::new(log_d).with_pt_algorithm(algorithm);
-        assert_operand_shapes::<BE, F, Right>(module, plan, base2k, meta, &mut scratch.borrow());
-        assert_operand_shapes::<BE, F, Left>(module, plan, base2k, meta, &mut scratch.borrow());
+        assert_operand_shapes::<BE, F, Right>(module, plan, base2k, meta);
+        assert_operand_shapes::<BE, F, Left>(module, plan, base2k, meta);
     }
 }

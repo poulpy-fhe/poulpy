@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use poulpy_ckks::{
-    CKKSInfos, CKKSModuleInfos, CoeffsMeta, Scale, SetCKKSInfos,
+    CKKSInfos, CKKSModuleInfos, CoeffsMeta, GLWEPlaintextInfos, Scale, SetCKKSInfos, SetGLWEPlaintextInfos, SlotsKind,
     api::{
         CKKSEncodingOps, CKKSLinearTransformationOps, CKKSMulOps, LinearTransformation, LinearTransformationPrepared,
         PreparedDiagonal,
@@ -11,7 +11,7 @@ use poulpy_ckks::{
     layouts::{CKKSModuleAlloc, CKKSPlaintextOwned},
     test_suite::{
         CKKSTestParams,
-        helpers::{TestContextBackend, TestContextModule, TestScalar, alloc_scratch},
+        helpers::{TestContextBackend, TestContextModule, TestScalar},
         parity::helpers::with_scratch,
     },
 };
@@ -20,19 +20,21 @@ use poulpy_hal::{
     AlignedBuf,
     api::{CnvPVecAlloc, ScratchOwnedBorrow},
     layouts::{
-        Backend, CyclotomicOrder, DataView, DataViewMut, HostBytesBackend, Module, ScratchArena, Standard,
-        galois_elements_from_rotations,
+        Backend, CyclotomicOrder, DataView, DataViewMut, HostBytesBackend, Module, Standard, galois_elements_from_rotations,
     },
 };
 
 use super::helpers::{
     MASKED_PT_ALGORITHMS, PT_ALGORITHMS, assert_panics, assert_short_scratch_panics, encoded_context, map_galois_elements,
-    pt_operand,
+    poisoned_scratch, pt_operand,
 };
-use crate::layouts::{
-    BlasContext, BlasContextInfos, BlasContextLayout, BlasContextPreparedFactory, BlasContextUnprepared, BlasEncodingOps,
-    BlasModuleAlloc, BlasPlan, BlasPtAlgorithm, BlasPtOperand, BlasPtOperandInfos, BlasPtOperandLayout,
-    BlasPtOperandPreparedFactory, BlasPtOperandUnprepared, BlasPtSide, Left, Right,
+use crate::{
+    api::{BlasContextPreparedFactory, BlasEncodingOps, BlasPtOperandPreparedFactory},
+    layouts::{
+        BlasContext, BlasContextInfos, BlasContextLayout, BlasContextUnprepared, BlasModuleAlloc, BlasPlan, BlasPtAlgorithm,
+        BlasPtOperand, BlasPtOperandInfos, BlasPtOperandLayout, BlasPtOperandUnprepared, BlasPtSide, Left, Right,
+    },
+    oep::BlasEncodingImpl,
 };
 
 /// Every block map of `b`; none under `JklsStored` and `JklsGalois`, whose blocks are plaintexts.
@@ -58,19 +60,23 @@ fn operand_maps<BE: Backend, S: BlasPtSide>(b: &BlasPtOperand<BE, S>) -> Vec<&Li
 /// and a prepared allocation or size of the same; a public operand whose count does not divide the matrix slots, or of
 /// a zero torus width, panics at its allocation, prepared or not, and so does its prepared size. The prepare scratch
 /// query panics on a layout of other slots, and a preparation into an operand of another layout, or one scratch byte
-/// short of its query, panics, as does the preparation of an operand map whose diagonals differ in scale, before any map
-/// is prepared. Each panic carries its own message.
+/// short of its query, masked or not, panics, as does the preparation of a context map with mixed slot kinds or of an
+/// operand map whose diagonals differ in scale, before any map is prepared, and an encoding one scratch byte short of
+/// its query, before any write. Each panic carries its own message.
 pub fn test_blas_context<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
     _host_module: &Module<HostBytesBackend>,
     log_d: usize,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    BE: TestContextBackend<Ring = Standard> + BlasEncodingImpl,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + BlasEncodingOps<BE, F>
+        + CKKSLinearTransformationOps<BE>
+        + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
 {
-    let mut scratch = alloc_scratch(&params, module);
     let (base2k, meta): (Base2K, CoeffsMeta) = (params.base2k.into(), params.prec().into());
     let order = module.cyclotomic_order();
     type Entry = fn(usize, usize, usize) -> f64;
@@ -88,7 +94,7 @@ pub fn test_blas_context<BE, F, E>(
     let d = 1 << log_d;
     let masked_plan = BlasPlan::new(log_d).with_pt_algorithm(BlasPtAlgorithm::JklsGalois);
     for (plan, algorithms) in [(BlasPlan::new(log_d), PT_ALGORITHMS), (masked_plan, MASKED_PT_ALGORITHMS)] {
-        let ctx = encoded_context::<BE, F>(module, plan, base2k, meta, &mut scratch.borrow());
+        let ctx = encoded_context::<BE, F>(module, plan, base2k, meta);
         assert_eq!((ctx.plan(), ctx.log_d()), (plan, log_d));
         let encoded = |maps: Vec<_>| map_galois_elements(maps, order);
         let mut union = plan.transpose_galois_elements(order);
@@ -141,8 +147,8 @@ pub fn test_blas_context<BE, F, E>(
             for algorithm in algorithms {
                 let plan = plan.with_pt_algorithm(algorithm);
                 let f = |m: usize, r: usize, c: usize| F::from_f64(entry(m, r, c)).unwrap();
-                let right = pt_operand::<BE, F, Right>(module, plan, rows, cols, count, f, base2k, meta, &mut scratch.borrow());
-                let left = pt_operand::<BE, F, Left>(module, plan, rows, cols, count, f, base2k, meta, &mut scratch.borrow());
+                let right = pt_operand::<BE, F, Right>(module, plan, rows, cols, count, f, base2k, meta);
+                let left = pt_operand::<BE, F, Left>(module, plan, rows, cols, count, f, base2k, meta);
                 for (side, set, first, blocks, masks) in [
                     (
                         "matmul_pt_right",
@@ -254,19 +260,57 @@ pub fn test_blas_context<BE, F, E>(
         "the context's ring is not the module's",
         || module.blas_context_prepare_tmp_bytes(&ctx_other_slots),
     );
+    let ctx_encode_bytes = module.blas_context_encode_tmp_bytes(&ctx_base);
     let mut ctx = module.blas_context_alloc_from_infos(&ctx_base);
-    module.blas_context_encode_into::<F>(&mut ctx, &mut scratch.borrow()).unwrap();
+    let before = buffers(ctx.maps(), plaintext::<BE>);
+    assert_short_scratch_panics::<BE, _>("blas_context_encode", ctx_encode_bytes, |s| {
+        module.blas_context_encode(&mut ctx, s)
+    });
+    assert!(
+        buffers(ctx.maps(), plaintext::<BE>) == before,
+        "an encoding one byte short changed its context"
+    );
+    with_scratch::<BE, _>(ctx_encode_bytes, |s| module.blas_context_encode(&mut ctx, s)).unwrap();
     let mut ctx_other = module.blas_context_prepared_alloc_from_infos(&ctx_with(|l| l.base2k = Base2K(l.base2k.as_u32() + 1)));
     assert_panics(
         "context prepare into another layout",
         "the prepared context was allocated for another layout",
-        || module.blas_context_prepare(&mut ctx_other, &ctx, &mut scratch.borrow()),
+        || with_scratch::<BE, _>(0, |s| module.blas_context_prepare(&mut ctx_other, &ctx, s)),
     );
     let mut ctx_prepared = module.blas_context_prepared_alloc_from_infos(&ctx_base);
     let ctx_bytes = module.blas_context_prepare_tmp_bytes(&ctx_base);
     assert_short_scratch_panics::<BE, _>("blas_context_prepare", ctx_bytes, |s| {
         module.blas_context_prepare(&mut ctx_prepared, &ctx, s)
     });
+    // A later map with mixed diagonals: the refusal comes before the first map is prepared, on an empty arena and on
+    // the query, every prepared map keeping its bytes.
+    with_scratch::<BE, _>(ctx_bytes, |s| module.blas_context_prepare(&mut ctx_prepared, &ctx, s));
+    let before = buffers(ctx_prepared.maps(), prepared_diagonal::<BE>);
+    let mut ctx_mixed = module.blas_context_alloc_from_infos(&ctx_base);
+    with_scratch::<BE, _>(ctx_encode_bytes, |s| module.blas_context_encode(&mut ctx_mixed, s)).unwrap();
+    let map = ctx_mixed
+        .maps
+        .iter_mut()
+        .skip(1)
+        .find(|lt| lt.giant_steps.iter().map(|gs| gs.diagonals.len()).sum::<usize>() > 1)
+        .expect("a later context map of two diagonals");
+    let last = diagonals_mut([map]).last().unwrap();
+    last.set_slots(if last.slots() == SlotsKind::Complex {
+        SlotsKind::Real
+    } else {
+        SlotsKind::Complex
+    });
+    for arena in [0, ctx_bytes] {
+        assert_panics(
+            &format!("context prepare of a later map with mixed diagonals, arena of {arena} bytes"),
+            "blas_context_prepare: a map's diagonals do not share one scale, width and slot kind",
+            || with_scratch::<BE, _>(arena, |s| module.blas_context_prepare(&mut ctx_prepared, &ctx_mixed, s)),
+        );
+        assert!(
+            buffers(ctx_prepared.maps(), prepared_diagonal::<BE>) == before,
+            "a refused context preparation changed a prepared map"
+        );
+    }
 
     // 0 and 3 do not divide the matrix slots, a power of two.
     let generic = operands[0].4;
@@ -279,17 +323,7 @@ pub fn test_blas_context<BE, F, E>(
     }
     let count = (slots >> (2 * log_d)).min(2);
     let f = |m: usize, r: usize, c: usize| F::from_f64(generic(m, r, c)).unwrap();
-    let b = pt_operand::<BE, F, Right>(
-        module,
-        BlasPlan::new(log_d),
-        3,
-        2,
-        count,
-        f,
-        base2k,
-        meta,
-        &mut scratch.borrow(),
-    );
+    let b = pt_operand::<BE, F, Right>(module, BlasPlan::new(log_d), 3, 2, count, f, base2k, meta);
     assert_eq!((b.log_d(), b.rows(), b.cols(), b.count()), (log_d, 3, 2, count));
 
     let base = BlasPtOperandLayout::<Right>::new(BlasPlan::new(log_d), slots, 1, 1, 1, base2k, meta);
@@ -311,13 +345,22 @@ pub fn test_blas_context<BE, F, E>(
     assert_panics("prepare_tmp_bytes slots", "the operand's slots are not the module's", || {
         module.blas_pt_operand_prepare_tmp_bytes(&other_slots)
     });
+    let encode_bytes = module.blas_pt_operand_encode_tmp_bytes(&base);
     let mut op = module.blas_pt_operand_alloc_from_infos(&base);
-    module.blas_pt_operand_encode_into(&mut op, f, &mut scratch.borrow()).unwrap();
+    let before = buffers(op.maps(), plaintext::<BE>);
+    assert_short_scratch_panics::<BE, _>("blas_pt_operand_encode", encode_bytes, |s| {
+        module.blas_pt_operand_encode(&mut op, f, s)
+    });
+    assert!(
+        buffers(op.maps(), plaintext::<BE>) == before,
+        "an encoding one byte short changed its operand"
+    );
+    with_scratch::<BE, _>(encode_bytes, |s| module.blas_pt_operand_encode(&mut op, f, s)).unwrap();
     let mut other = module.blas_pt_operand_prepared_alloc_from_infos(&with(|l| l.rows = 2));
     assert_panics(
         "prepare into another layout",
         "the prepared operand was allocated for another layout",
-        || module.blas_pt_operand_prepare(&mut other, &op, &mut scratch.borrow()),
+        || with_scratch::<BE, _>(0, |s| module.blas_pt_operand_prepare(&mut other, &op, s)),
     );
     let mut prepared = module.blas_pt_operand_prepared_alloc_from_infos(&base);
     let bytes = module.blas_pt_operand_prepare_tmp_bytes(&base);
@@ -346,15 +389,19 @@ pub fn test_blas_context<BE, F, E>(
         l.cols = 2;
     });
     let mut op = module.blas_pt_operand_alloc_from_infos(&grid);
-    module.blas_pt_operand_encode_into(&mut op, f, &mut scratch.borrow()).unwrap();
+    with_scratch::<BE, _>(module.blas_pt_operand_encode_tmp_bytes(&grid), |s| {
+        module.blas_pt_operand_encode(&mut op, f, s)
+    })
+    .unwrap();
     let mut prepared = module.blas_pt_operand_prepared_alloc_from_infos(&grid);
     let bytes = module.blas_pt_operand_prepare_tmp_bytes(&grid);
     with_scratch::<BE, _>(bytes, |s| module.blas_pt_operand_prepare(&mut prepared, &op, s));
     let before = buffers(prepared.maps(), prepared_diagonal::<BE>);
     let other = |m: usize, r: usize, c: usize| F::from_f64(((m * 7 + r + c * 2) % 9) as f64 / 4.0 - 1.0).unwrap();
-    module
-        .blas_pt_operand_encode_into(&mut op, other, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.blas_pt_operand_encode_tmp_bytes(&grid), |s| {
+        module.blas_pt_operand_encode(&mut op, other, s)
+    })
+    .unwrap();
     let map = op
         .maps
         .iter_mut()
@@ -376,6 +423,26 @@ pub fn test_blas_context<BE, F, E>(
             "a refused preparation changed a prepared map"
         );
     }
+    // A masked operand one byte short of its query, encoded again from other matrices: the refusal comes before its
+    // first map is prepared.
+    let masked = with(|l| l.plan = l.plan.with_pt_algorithm(BlasPtAlgorithm::JklsStored));
+    let (masked_encode, masked_bytes) = (
+        module.blas_pt_operand_encode_tmp_bytes(&masked),
+        module.blas_pt_operand_prepare_tmp_bytes(&masked),
+    );
+    let mut op = module.blas_pt_operand_alloc_from_infos(&masked);
+    with_scratch::<BE, _>(masked_encode, |s| module.blas_pt_operand_encode(&mut op, f, s)).unwrap();
+    let mut prepared = module.blas_pt_operand_prepared_alloc_from_infos(&masked);
+    with_scratch::<BE, _>(masked_bytes, |s| module.blas_pt_operand_prepare(&mut prepared, &op, s));
+    let before = buffers(prepared.maps(), prepared_diagonal::<BE>);
+    with_scratch::<BE, _>(masked_encode, |s| module.blas_pt_operand_encode(&mut op, other, s)).unwrap();
+    assert_short_scratch_panics::<BE, _>("blas_pt_operand_prepare masked", masked_bytes, |s| {
+        module.blas_pt_operand_prepare(&mut prepared, &op, s)
+    });
+    assert!(
+        buffers(prepared.maps(), prepared_diagonal::<BE>) == before,
+        "a masked preparation one byte short changed its first map"
+    );
 
     // `coeffs_meta.k = 0` is rejected at allocation: the context and every public operand, either side.
     let zero = CoeffsMeta::from_delta_budget(0, 0);
@@ -429,6 +496,16 @@ fn prepared_diagonal<BE: Backend<OwnedBuf = AlignedBuf>>(d: &PreparedDiagonal<Al
     d.cnv().data()
 }
 
+/// The prepared maps of `p`, then its terms' prepared plaintexts under `JklsStored` and `JklsGalois`.
+fn prepared_operand<BE: Backend<OwnedBuf = AlignedBuf>, S: BlasPtSide>(p: &BlasPtOperand<BE, S>) -> Buffers {
+    let mut maps = buffers(p.maps(), prepared_diagonal::<BE>);
+    maps.extend(p.plaintexts.iter().map(|pt| {
+        let b: &[u8] = pt.cnv().data();
+        (b.as_ptr(), b.to_vec())
+    }));
+    maps
+}
+
 fn poison_plaintexts<'a, BE: Backend<OwnedBuf = AlignedBuf> + 'a>(
     maps: impl IntoIterator<Item = &'a mut LinearTransformation<CKKSPlaintextOwned<BE>>>,
 ) {
@@ -475,16 +552,13 @@ fn check_refill<U, P>(
     }
 }
 
-/// A public operand of `plan` on side `S` through [`check_refill`], its second fill from other matrices than its first.
-fn refill_operand<BE, F, S>(
-    module: &Module<BE>,
-    plan: BlasPlan,
-    base2k: Base2K,
-    meta: CoeffsMeta,
-    scratch: &mut ScratchArena<'_, BE>,
-) where
-    BE: TestContextBackend,
-    Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CKKSMulOps<BE>,
+/// A public operand of `plan` on side `S` through [`check_refill`], its second fill from other matrices than its first;
+/// the terms' prepared plaintexts of a masked operand, which offer no mutable view, are compared but not poisoned.
+fn refill_operand<BE, F, S>(module: &Module<BE>, plan: BlasPlan, base2k: Base2K, meta: CoeffsMeta)
+where
+    BE: TestContextBackend + BlasEncodingImpl,
+    Module<BE>:
+        CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F> + BlasEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CKKSMulOps<BE>,
     F: TestScalar + DiagonalArithmetic,
     S: BlasPtSide,
 {
@@ -500,65 +574,75 @@ fn refill_operand<BE, F, S>(
             )
         },
         |op: &BlasPtOperandUnprepared<BE, S>| buffers(op.maps(), plaintext::<BE>),
-        |p: &BlasPtOperand<BE, S>| buffers(p.maps(), prepared_diagonal::<BE>),
+        prepared_operand::<BE, S>,
         |op, p| {
             poison_plaintexts::<BE>(op.maps.iter_mut());
             poison_prepared::<BE>(p.maps.iter_mut());
         },
         |op, p, again| {
             let entry = if again { second } else { first };
+            let mut encode_scratch = poisoned_scratch::<BE>(module.blas_pt_operand_encode_tmp_bytes(&layout));
             module
-                .blas_pt_operand_encode_into(op, |m, r, c| F::from_f64(entry(m, r, c)).unwrap(), scratch)
+                .blas_pt_operand_encode(
+                    op,
+                    |m, r, c| F::from_f64(entry(m, r, c)).unwrap(),
+                    &mut encode_scratch.borrow(),
+                )
                 .unwrap();
-            module.blas_pt_operand_prepare(p, op, scratch);
+            let mut prepare_scratch = poisoned_scratch::<BE>(module.blas_pt_operand_prepare_tmp_bytes(&layout));
+            module.blas_pt_operand_prepare(p, op, &mut prepare_scratch.borrow());
         },
     );
 }
 
 /// Encoding and preparing again into the same allocations overwrites every byte and equals a fresh build, for the
-/// context and for public operands of either side and algorithm, the operands from other matrices than their first;
-/// every byte query equals the buffers allocated from its layout.
+/// context of a plan with and without masks and for public operands of either side and algorithm, the operands from
+/// other matrices than their first; every byte query equals the buffers allocated from its layout.
 pub fn test_blas_refill<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
     _host_module: &Module<HostBytesBackend>,
     log_d: usize,
 ) where
-    BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE>,
+    BE: TestContextBackend + BlasEncodingImpl,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + BlasEncodingOps<BE, F> + CKKSLinearTransformationOps<BE>,
     F: TestScalar + DiagonalArithmetic,
 {
-    let mut scratch = alloc_scratch(&params, module);
     let (base2k, meta): (Base2K, CoeffsMeta) = (params.base2k.into(), params.prec().into());
-    let layout = BlasContextLayout {
-        plan: BlasPlan::new(log_d),
-        base2k,
-        coeffs_meta: meta,
-        n: module.ring_degree(),
-        slots: module.ckks_max_slots(),
-    };
-    check_refill(
-        "context",
-        || {
-            (
-                module.blas_context_alloc_from_infos(&layout),
-                module.blas_context_prepared_alloc_from_infos(&layout),
-            )
-        },
-        |c: &BlasContextUnprepared<BE>| buffers(c.maps(), plaintext::<BE>),
-        |p: &BlasContext<BE>| buffers(p.maps(), prepared_diagonal::<BE>),
-        |c, p| {
-            poison_plaintexts::<BE>(c.maps.iter_mut());
-            poison_prepared::<BE>(p.maps.iter_mut());
-        },
-        |c, p, _| {
-            module.blas_context_encode_into::<F>(c, &mut scratch.borrow()).unwrap();
-            module.blas_context_prepare(p, c, &mut scratch.borrow());
-        },
-    );
-    for algorithm in [BlasPtAlgorithm::Diagonal, BlasPtAlgorithm::Jkls] {
+    let masked = BlasPlan::new(log_d).with_pt_algorithm(BlasPtAlgorithm::JklsGalois);
+    for plan in [BlasPlan::new(log_d), masked] {
+        let layout = BlasContextLayout {
+            plan,
+            base2k,
+            coeffs_meta: meta,
+            n: module.ring_degree(),
+            slots: module.ckks_max_slots(),
+        };
+        check_refill(
+            &format!("context {:?}", plan.pt_algorithm()),
+            || {
+                (
+                    module.blas_context_alloc_from_infos(&layout),
+                    module.blas_context_prepared_alloc_from_infos(&layout),
+                )
+            },
+            |c: &BlasContextUnprepared<BE>| buffers(c.maps(), plaintext::<BE>),
+            |p: &BlasContext<BE>| buffers(p.maps(), prepared_diagonal::<BE>),
+            |c, p| {
+                poison_plaintexts::<BE>(c.maps.iter_mut());
+                poison_prepared::<BE>(p.maps.iter_mut());
+            },
+            |c, p, _| {
+                let mut encode_scratch = poisoned_scratch::<BE>(module.blas_context_encode_tmp_bytes(&layout));
+                module.blas_context_encode(c, &mut encode_scratch.borrow()).unwrap();
+                let mut prepare_scratch = poisoned_scratch::<BE>(module.blas_context_prepare_tmp_bytes(&layout));
+                module.blas_context_prepare(p, c, &mut prepare_scratch.borrow());
+            },
+        );
+    }
+    for algorithm in PT_ALGORITHMS.into_iter().chain(MASKED_PT_ALGORITHMS) {
         let plan = BlasPlan::new(log_d).with_pt_algorithm(algorithm);
-        refill_operand::<BE, F, Right>(module, plan, base2k, meta, &mut scratch.borrow());
-        refill_operand::<BE, F, Left>(module, plan, base2k, meta, &mut scratch.borrow());
+        refill_operand::<BE, F, Right>(module, plan, base2k, meta);
+        refill_operand::<BE, F, Left>(module, plan, base2k, meta);
     }
 }

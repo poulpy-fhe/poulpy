@@ -4,9 +4,10 @@
 use criterion::{Bencher, measurement::Measurement};
 use poulpy_blas::{
     api::BlasMatIntraOps,
-    layouts::{BlasCiphertextOwned, BlasKeyUses, blas_sum_cols_key_uses, blas_sum_rows_key_uses, replicated},
+    layouts::{
+        BlasCiphertextOwned, BlasKeyUses, blas_rotate_rows_key_uses, blas_sum_cols_key_uses, blas_sum_rows_key_uses, replicated,
+    },
     oep::BlasMatIntraImpl,
-    reference::blas_rotate_rows_key_uses,
 };
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
@@ -129,13 +130,13 @@ where
         let ct_a = client.encrypt(bp, 1, a_entry);
         assert!(replicated::<Standard>(&ct_a), "{op}: the grid does not hold one matrix");
         let mut res = client.result(bp);
-        let uses = blas_rotate_rows_key_uses(&client.module, &res, &ct_a, 1, &ctx);
+        let uses = blas_rotate_rows_key_uses(&client.module, 1, &res, &ct_a, &ctx);
         let atks = client.rotation_keys(bp, elements_of(&uses));
         let bytes = client.module.blas_rotate_rows_tmp_bytes(&res, &ct_a, &ctx, &atk_layout(bp));
         let mut scratch = ScratchOwned::<BE>::alloc(bytes);
         client
             .module
-            .blas_rotate_rows(&mut res, &ct_a, 1, &ctx, &atks, &mut scratch.borrow())
+            .blas_rotate_rows(1, &mut res, &ct_a, &ctx, &atks, &mut scratch.borrow())
             .unwrap();
         let d = bp.d();
         let max_err = client.max_error(bp, &res, |_, r, c| a_entry(0, (r + 1) % d, c));
@@ -143,7 +144,7 @@ where
         let module = client.module;
         Box::new(move || {
             module
-                .blas_rotate_rows(&mut res, &ct_a, 1, &ctx, &atks, &mut scratch.borrow())
+                .blas_rotate_rows(1, &mut res, &ct_a, &ctx, &atks, &mut scratch.borrow())
                 .unwrap()
         })
     });

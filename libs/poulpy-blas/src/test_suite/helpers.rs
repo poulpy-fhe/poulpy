@@ -33,15 +33,14 @@ use poulpy_hal::{
 };
 
 use crate::{
-    api::BlasMatMulOps,
+    api::{BlasContextPreparedFactory, BlasEncodingOps, BlasMatMulOps, BlasPtOperandPreparedFactory},
     layouts::{
-        BlasCiphertext, BlasCiphertextOwned, BlasContext, BlasContextInfos, BlasContextPreparedFactory, BlasEncodingOps,
-        BlasGrid, BlasGridInfos, BlasGridMut, BlasLayout, BlasMatMulLeft, BlasMatMulOperandInfos,
-        BlasMatMulOperandPreparedFactory, BlasMatMulRight, BlasModuleAlloc, BlasPlan, BlasPtAlgorithm, BlasPtOperand,
-        BlasPtOperandPreparedFactory, BlasPtSide, blas_matmul_left_operand_layout, blas_matmul_right_operand_layout,
+        BlasCiphertext, BlasCiphertextOwned, BlasContext, BlasContextInfos, BlasGrid, BlasGridInfos, BlasGridMut, BlasLayout,
+        BlasMatMulLeft, BlasMatMulOperandInfos, BlasMatMulOperandPreparedFactory, BlasMatMulRight, BlasModuleAlloc, BlasPlan,
+        BlasPtAlgorithm, BlasPtOperand, BlasPtSide, blas_matmul_left_operand_layout, blas_matmul_right_operand_layout,
         ciphertext::layout_of, grid::split_into_blocks,
     },
-    oep::BlasMatMulImpl,
+    oep::{BlasEncodingImpl, BlasMatMulImpl},
 };
 
 /// Both preparation hints: hot, `OneShot`, then cold, `Reuse`.
@@ -53,12 +52,12 @@ pub fn matmul_left_operand<BE: BlasMatMulImpl>(
     module: &Module<BE>,
     a: &impl BlasGrid<BE>,
     ctx: &BlasContext<BE>,
-    atk: &(impl GetAutomorphismKey<BE> + Sync),
+    keys: &(impl GetAutomorphismKey<BE> + Sync),
     hint: PrepareHint,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> CKKSResult<BlasMatMulLeft<BE>> {
     let mut res = module.blas_matmul_left_alloc_from_infos(&blas_matmul_left_operand_layout(a, ctx, hint));
-    module.blas_matmul_prepare_left(&mut res, a, ctx, atk, scratch)?;
+    module.blas_matmul_prepare_left(&mut res, a, ctx, keys, scratch)?;
     Ok(res)
 }
 
@@ -68,12 +67,12 @@ pub fn matmul_right_operand<BE: BlasMatMulImpl>(
     module: &Module<BE>,
     b: &impl BlasGrid<BE>,
     ctx: &BlasContext<BE>,
-    atk: &(impl GetAutomorphismKey<BE> + Sync),
+    keys: &(impl GetAutomorphismKey<BE> + Sync),
     hint: PrepareHint,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> CKKSResult<BlasMatMulRight<BE>> {
     let mut res = module.blas_matmul_right_alloc_from_infos(&blas_matmul_right_operand_layout(b, ctx, hint));
-    module.blas_matmul_prepare_right(&mut res, b, ctx, atk, scratch)?;
+    module.blas_matmul_prepare_right(&mut res, b, ctx, keys, scratch)?;
     Ok(res)
 }
 
@@ -662,7 +661,7 @@ pub fn assert_short_scratch_panics<BE: Backend, T>(op: &str, bytes: usize, call:
 }
 
 /// The public operand of `plan` on side `S`, `rows x cols` blocks of `count` matrices read through `entry`, at
-/// `coeffs_meta`, allocated, encoded and prepared on `module`.
+/// `coeffs_meta`, allocated, encoded and prepared on `module`, each call on exactly its query's bytes.
 pub fn pt_operand<BE, F, S>(
     module: &Module<BE>,
     plan: BlasPlan,
@@ -672,18 +671,22 @@ pub fn pt_operand<BE, F, S>(
     entry: impl Fn(usize, usize, usize) -> F,
     base2k: Base2K,
     coeffs_meta: CoeffsMeta,
-    scratch: &mut ScratchArena<'_, BE>,
 ) -> BlasPtOperand<BE, S>
 where
-    BE: Backend,
-    Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CKKSMulOps<BE>,
+    BE: Backend + BlasEncodingImpl,
+    Module<BE>:
+        CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F> + BlasEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CKKSMulOps<BE>,
     F: DiagonalArithmetic + CKKSEncodingScalar,
     S: BlasPtSide,
 {
     let mut op = module.blas_pt_operand_alloc::<S>(plan, rows, cols, count, base2k, coeffs_meta);
-    module.blas_pt_operand_encode_into(&mut op, entry, scratch).unwrap();
+    with_scratch::<BE, _>(module.blas_pt_operand_encode_tmp_bytes(&op), |s| {
+        module.blas_pt_operand_encode(&mut op, entry, s).unwrap()
+    });
     let mut prepared = module.blas_pt_operand_prepared_alloc_from_infos(&op);
-    module.blas_pt_operand_prepare(&mut prepared, &op, scratch);
+    with_scratch::<BE, _>(module.blas_pt_operand_prepare_tmp_bytes(&op), |s| {
+        module.blas_pt_operand_prepare(&mut prepared, &op, s)
+    });
     prepared
 }
 
@@ -913,48 +916,37 @@ pub fn other_scales(params: &CKKSTestParams) -> [usize; 2] {
     [delta - delta / 4, delta + delta / 4]
 }
 
-/// The context of `plan` at `coeffs_meta` on `module`, allocated, encoded and prepared.
-pub fn encoded_context<BE, F>(
-    module: &Module<BE>,
-    plan: BlasPlan,
-    base2k: Base2K,
-    coeffs_meta: CoeffsMeta,
-    scratch: &mut ScratchArena<'_, BE>,
-) -> BlasContext<BE>
+/// The context of `plan` at `coeffs_meta` on `module`, allocated, encoded and prepared, each call on exactly its
+/// query's bytes.
+pub fn encoded_context<BE, F>(module: &Module<BE>, plan: BlasPlan, base2k: Base2K, coeffs_meta: CoeffsMeta) -> BlasContext<BE>
 where
-    BE: Backend,
-    Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE>,
+    BE: Backend + BlasEncodingImpl,
+    Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F> + BlasEncodingOps<BE, F> + CKKSLinearTransformationOps<BE>,
     F: DiagonalArithmetic + CKKSEncodingScalar,
 {
     let mut ctx = module.blas_context_alloc(plan, base2k, coeffs_meta);
-    module.blas_context_encode_into::<F>(&mut ctx, scratch).unwrap();
+    with_scratch::<BE, _>(module.blas_context_encode_tmp_bytes(&ctx), |s| {
+        module.blas_context_encode(&mut ctx, s).unwrap()
+    });
     let mut prepared = module.blas_context_prepared_alloc_from_infos(&ctx);
-    module.blas_context_prepare(&mut prepared, &ctx, scratch);
+    with_scratch::<BE, _>(module.blas_context_prepare_tmp_bytes(&ctx), |s| {
+        module.blas_context_prepare(&mut prepared, &ctx, s)
+    });
     prepared
 }
 
-/// The context of `2^log_d x 2^log_d` blocks at `params.prec()`.
-pub fn blas_context<BE, F>(
-    params: &CKKSTestParams,
-    module: &Module<BE>,
-    log_d: usize,
-    scratch: &mut ScratchArena<'_, BE>,
-) -> crate::layouts::BlasContext<BE>
+/// The context of `2^log_d x 2^log_d` blocks at `params.prec()`, each call on exactly its query's bytes.
+pub fn blas_context<BE, F>(params: &CKKSTestParams, module: &Module<BE>, log_d: usize) -> crate::layouts::BlasContext<BE>
 where
-    BE: TestContextBackend,
+    BE: TestContextBackend + BlasEncodingImpl,
     Module<BE>: TestContextSharedModule<BE>
         + poulpy_ckks::api::CKKSEncodingOps<BE, F>
+        + BlasEncodingOps<BE, F>
         + poulpy_ckks::api::CKKSLinearTransformationOps<BE>
         + poulpy_hal::api::CnvPVecAlloc<BE>,
     F: TestScalar + poulpy_core::layouts::DiagonalArithmetic,
 {
-    encoded_context::<BE, F>(
-        module,
-        BlasPlan::new(log_d),
-        params.base2k.into(),
-        params.prec().into(),
-        scratch,
-    )
+    encoded_context::<BE, F>(module, BlasPlan::new(log_d), params.base2k.into(), params.prec().into())
 }
 
 /// A rotation key for each of `elements`, and no other.
@@ -993,15 +985,16 @@ pub fn context_and_keys<BE, F>(
     HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>>,
 )
 where
-    BE: TestContextBackend,
+    BE: TestContextBackend + BlasEncodingImpl,
     Module<BE>: TestContextSharedModule<BE>
         + poulpy_ckks::api::CKKSEncodingOps<BE, F>
+        + BlasEncodingOps<BE, F>
         + poulpy_ckks::api::CKKSLinearTransformationOps<BE>
         + poulpy_hal::api::CnvPVecAlloc<BE>,
     F: TestScalar + poulpy_core::layouts::DiagonalArithmetic,
 {
     use poulpy_hal::layouts::CyclotomicOrder;
-    let ctx = blas_context::<BE, F>(params, module, log_d, scratch);
+    let ctx = blas_context::<BE, F>(params, module, log_d);
     let atks = rotation_keys(
         params,
         module,
@@ -1035,17 +1028,17 @@ pub fn foreign_contexts<BE, F>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> [(&'static str, crate::layouts::BlasContext<BE>); 2]
 where
-    BE: TestContextBackend,
+    BE: TestContextBackend + BlasEncodingImpl,
     Module<BE>: TestContextSharedModule<BE>
         + poulpy_ckks::api::CKKSEncodingOps<BE, F>
+        + BlasEncodingOps<BE, F>
         + poulpy_ckks::api::CKKSLinearTransformationOps<BE>
         + poulpy_hal::api::CnvPVecAlloc<BE>,
     F: TestScalar + poulpy_core::layouts::DiagonalArithmetic,
 {
     use poulpy_hal::layouts::CyclotomicOrder;
     let double = Module::<BE>::new(2 * params.n as u64);
-    let mut encode =
-        |module: &Module<BE>, base2k: usize| encoded_context::<BE, F>(module, plan, base2k.into(), params.prec().into(), scratch);
+    let encode = |module: &Module<BE>, base2k: usize| encoded_context::<BE, F>(module, plan, base2k.into(), params.prec().into());
     let contexts = [
         ("degree", encode(&double, params.base2k)),
         ("base2k", encode(module, params.base2k - 1)),

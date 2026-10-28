@@ -1,17 +1,46 @@
-//! BLAS tests for the portable backends: parity of each type against
+//! BLAS tests for the portable backends: the functional suite on the serial
+//! standard types against cleartext expectations, parity of each type against
 //! its same-family oracle, bit for bit, the NTT types' also at radix 54 and
 //! the standard FFT64 type's also at `N = 32`, the conjugate-invariant
 //! suite on the conjugate-invariant types, and the radix helpers of the products
 //! on every type.
 //!
 //! All test logic lives in `poulpy_blas::test_suite` as backend-generic
-//! functions; this file only instantiates the parity suite for each concrete
-//! `(reference, backend, scalar, params)` combination via `blas_parity_test_suite!`,
-//! the conjugate-invariant suite via `blas_conjugate_invariant_test_suite!` and the
-//! radix helpers via `blas_max_base2k_test_suite!`.
+//! functions; this file only instantiates the functional suite for each concrete
+//! `(backend, scalar, encoder, params)` combination via `blas_backend_test_suite!`,
+//! the parity suite for each `(reference, backend, scalar, params)` combination via
+//! `blas_parity_test_suite!`, the conjugate-invariant suite via
+//! `blas_conjugate_invariant_test_suite!` and the radix helpers via
+//! `blas_max_base2k_test_suite!`.
 //! There should be no hand-written test here.
 
-use poulpy_blas::{blas_conjugate_invariant_test_suite, blas_max_base2k_test_suite, blas_parity_test_suite};
+use poulpy_blas::{
+    blas_backend_test_suite, blas_conjugate_invariant_test_suite, blas_max_base2k_test_suite, blas_parity_test_suite,
+};
+
+blas_backend_test_suite!(
+    mod blas_backend_fft64portable_f64,
+    backend = crate::FFT64Portable,
+    scalar = f64,
+    encoder = crate::ckks_encoding::EncodingFFTTable<f64>,
+    params = poulpy_ckks::test_suite::BASE19_PARAMS_F64,
+);
+
+blas_backend_test_suite!(
+    mod blas_backend_ntt4x30portable_f64,
+    backend = crate::NTT4x30Portable,
+    scalar = f64,
+    encoder = crate::ckks_encoding::EncodingFFTTable<f64>,
+    params = poulpy_ckks::test_suite::BASE52_PARAMS_F64,
+);
+
+blas_backend_test_suite!(
+    mod blas_backend_ntt4x30portable_quad,
+    backend = crate::NTT4x30Portable,
+    scalar = poulpy_ckks::Quad,
+    encoder = crate::ckks_encoding::EncodingFFTTable<poulpy_ckks::Quad>,
+    params = poulpy_ckks::test_suite::BASE52_PARAMS_QUAD,
+);
 
 blas_parity_test_suite! {
     mod blas_parity_fft64portable_f64,

@@ -37,7 +37,7 @@ use crate::layouts::{
 /// when `b` must stay private.
 pub trait BlasMatMulOps<BE: Backend> {
     /// Scratch bytes [`Self::blas_matmul`] needs into `res` from `a` and `b` with the maps of `ctx`, a tensor key of
-    /// layout `tsk` and rotation keys of layout `atk`. The right factor's label selects its terms, so a layout given in
+    /// layout `tsk` and rotation keys of layout `keys`. The right factor's label selects its terms, so a layout given in
     /// its place carries its label.
     ///
     /// # Panics
@@ -45,7 +45,7 @@ pub trait BlasMatMulOps<BE: Backend> {
     /// May panic on layouts [`validate_blas_matmul`](crate::layouts::validate_blas_matmul) rejects: blocks of a degree
     /// other than the module's, factors of different radices, a factor at another `log_d` than `ctx`'s, or `rows * cols`
     /// overflowing `usize`.
-    fn blas_matmul_tmp_bytes<R, A, B, T, K>(&self, res: &R, a: &A, b: &B, ctx: &BlasContext<BE>, tsk: &T, atk: &K) -> usize
+    fn blas_matmul_tmp_bytes<R, A, B, T, K>(&self, res: &R, a: &A, b: &B, ctx: &BlasContext<BE>, tsk: &T, keys: &K) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
@@ -54,7 +54,7 @@ pub trait BlasMatMulOps<BE: Backend> {
         K: GGLWEInfos;
 
     /// `res` receives the product of every matrix of `a` with the matching matrix of `b`: `a` and `b` prepared hot, then
-    /// their prepared product under `ctx`, with the rotation keys `atk` and the tensor key `tsk`, bit for bit.
+    /// their prepared product under `ctx`, with the rotation keys `keys` and the tensor key `tsk`, bit for bit.
     ///
     /// Batches of different sizes broadcast: with `m_a` and `m_b` matrices in `a` and `b`, matrix slot `s` of `res` holds
     /// `A_(s mod m_a) B_(s mod m_b)`, so `res` holds the larger batch, at the smaller `log_sparsity` of the two.
@@ -65,7 +65,7 @@ pub trait BlasMatMulOps<BE: Backend> {
     /// before one inverse transform, so choose `base2k` for the `2 L K d` limb products it adds in an output limb, up to
     /// `2 L` per pair, `L` the limbs of the narrower terms, `min(w_a, w_b)` over `base2k` rounded up, as for poulpy-core's
     /// `glwe_mul_relinearize_sum`, and for the maps that make the terms, each the count [`Self::blas_matmul_pt_right`]
-    /// documents for one term: [`blas_matmul_max_base2k`](crate::reference::blas_matmul_max_base2k) returns the largest
+    /// documents for one term: [`blas_matmul_max_base2k`](crate::layouts::blas_matmul_max_base2k) returns the largest
     /// radix `Module::max_base2k` allows for every one of them, counting limbs at each radix. An FFT backend adds the
     /// kernel's products in floating point, in the order of the pairs `(a_il[k], b_lj[k])`, `l`-major: ascending `l`, then
     /// ascending `k` within each `l`. That order is then part of the bits.
@@ -98,7 +98,7 @@ pub trait BlasMatMulOps<BE: Backend> {
     /// - The implementation runs [`validate_blas_matmul`](crate::layouts::validate_blas_matmul) before any write, so on
     ///   its errors `res`, its batch record and the factors are untouched: `InvalidOperand` for a grid, shape, layout,
     ///   context or radix above 62 it rejects, then, key by key, `MissingAutomorphismKey` for a key of the preparations
-    ///   `atk` lacks, at the widths [`Self::blas_matmul_prepare_left`] and [`Self::blas_matmul_prepare_right`] state,
+    ///   `keys` lacks, at the widths [`Self::blas_matmul_prepare_left`] and [`Self::blas_matmul_prepare_right`] state,
     ///   or `MissingRelinearizationKey` for the tensor key `tsk` lacks at `max(w_a, w_b)`, or `InvalidOperand` for a
     ///   key of another rank than the factors' blocks.
     /// - poulpy-ckks's budget errors come from inside the backend before any write to `res`, and leave it untouched too:
@@ -116,7 +116,7 @@ pub trait BlasMatMulOps<BE: Backend> {
         b: &B,
         ctx: &BlasContext<BE>,
         tsk: &T,
-        atk: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -127,14 +127,14 @@ pub trait BlasMatMulOps<BE: Backend> {
         K: GetAutomorphismKey<BE> + Sync;
 
     /// Scratch bytes [`Self::blas_matmul_prepare_left`] needs from `a` under `hint`, with the maps of `ctx` and rotation
-    /// keys of layout `atk`: the copies of a hot preparation; the maps, copies and conversions of a cold one.
+    /// keys of layout `keys`: the copies of a hot preparation; the maps, copies and conversions of a cold one.
     ///
     /// # Panics
     ///
     /// May panic on layouts [`validate_blas_matmul_prepare_left`](crate::layouts::validate_blas_matmul_prepare_left)
     /// rejects: blocks of a degree other than the module's, a grid at another `log_d` than `ctx`'s, or `rows * cols`
     /// overflowing `usize`.
-    fn blas_matmul_prepare_left_tmp_bytes<A, K>(&self, a: &A, ctx: &BlasContext<BE>, atk: &K, hint: PrepareHint) -> usize
+    fn blas_matmul_prepare_left_tmp_bytes<A, K>(&self, a: &A, ctx: &BlasContext<BE>, keys: &K, hint: PrepareHint) -> usize
     where
         A: BlasGridInfos,
         K: GGLWEInfos;
@@ -174,7 +174,7 @@ pub trait BlasMatMulOps<BE: Backend> {
     ///
     /// - The implementation runs [`validate_blas_matmul_prepare_left`](crate::layouts::validate_blas_matmul_prepare_left)
     ///   before any write, whatever the hint: `InvalidOperand` for a grid, layout or context it rejects or for `res` of
-    ///   another shape, then, key by key, `MissingAutomorphismKey` for a key `atk` lacks: sigma's baby steps at `a.k` and
+    ///   another shape, then, key by key, `MissingAutomorphismKey` for a key `keys` lacks: sigma's baby steps at `a.k` and
     ///   giant steps at `a.k - p`, each phi^k's baby steps at `a.k - p` and giant steps at `a.k - 2p`; or `InvalidOperand`
     ///   for one of another rank than `a`'s blocks.
     /// - poulpy-ckks's budget error comes from inside a cold preparation: `MultiplicationPrecisionUnderflow` when `a`'s
@@ -188,7 +188,7 @@ pub trait BlasMatMulOps<BE: Backend> {
         res: &mut BlasMatMulLeft<BE>,
         a: &A,
         ctx: &BlasContext<BE>,
-        atk: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -196,13 +196,13 @@ pub trait BlasMatMulOps<BE: Backend> {
         K: GetAutomorphismKey<BE> + Sync;
 
     /// Scratch bytes [`Self::blas_matmul_prepare_right`] needs from `b` under `hint`, with the maps of `ctx` and
-    /// rotation keys of layout `atk`. The right factor's label selects its terms, so a layout given in its place carries
+    /// rotation keys of layout `keys`. The right factor's label selects its terms, so a layout given in its place carries
     /// its label.
     ///
     /// # Panics
     ///
     /// As [`Self::blas_matmul_prepare_left_tmp_bytes`].
-    fn blas_matmul_prepare_right_tmp_bytes<B, K>(&self, b: &B, ctx: &BlasContext<BE>, atk: &K, hint: PrepareHint) -> usize
+    fn blas_matmul_prepare_right_tmp_bytes<B, K>(&self, b: &B, ctx: &BlasContext<BE>, keys: &K, hint: PrepareHint) -> usize
     where
         B: BlasGridInfos,
         K: GGLWEInfos;
@@ -229,7 +229,7 @@ pub trait BlasMatMulOps<BE: Backend> {
         res: &mut BlasMatMulRight<BE>,
         b: &B,
         ctx: &BlasContext<BE>,
-        atk: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -237,7 +237,7 @@ pub trait BlasMatMulOps<BE: Backend> {
         K: GetAutomorphismKey<BE> + Sync;
 
     /// Scratch bytes [`Self::blas_matmul_prepared`] needs into `res` under `ctx`, with a tensor key of layout `tsk` and
-    /// rotation keys of layout `atk`, from the prepared operands `a` and `b`, or, before preparing them, from the layouts
+    /// rotation keys of layout `keys`, from the prepared operands `a` and `b`, or, before preparing them, from the layouts
     /// [`blas_matmul_left_operand_layout`](crate::layouts::blas_matmul_left_operand_layout) and
     /// [`blas_matmul_right_operand_layout`](crate::layouts::blas_matmul_right_operand_layout) give: the JKLS kernel's on
     /// the terms, and for each hot side the evaluation and conversion of its terms. The right factor's label selects its
@@ -255,7 +255,7 @@ pub trait BlasMatMulOps<BE: Backend> {
         b: &B,
         ctx: &BlasContext<BE>,
         tsk: &T,
-        atk: &K,
+        keys: &K,
     ) -> usize
     where
         R: BlasGridInfos,
@@ -266,11 +266,11 @@ pub trait BlasMatMulOps<BE: Backend> {
 
     /// `res` receives the product of the grids `a` and `b` were prepared from, under any hints, with the tensor key
     /// `tsk`; batches of different sizes broadcast as in [`Self::blas_matmul`]. A cold operand brings its terms. The
-    /// product evaluates those of a hot one under `ctx`, with the rotation keys `atk`, each converted once, whatever the
+    /// product evaluates those of a hot one under `ctx`, with the rotation keys `keys`, each converted once, whatever the
     /// context it was prepared under: the maps spend their scale `p` from the operand's budget, so its terms sit at
     /// `w_a` or `w_b`, and the product stamps by the ct x ct rule, at the smaller scale. With every side hot or prepared
     /// under `ctx`, `res` is [`Self::blas_matmul`] of the sources, bit for bit. A cold side takes no rotation key, so of
-    /// two cold operands `ctx` and `atk` read nothing. `a` and `b` are unchanged: a cold operand serves any number of
+    /// two cold operands `ctx` and `keys` read nothing. `a` and `b` are unchanged: a cold operand serves any number of
     /// products, and a hot one too, its terms evaluated anew each time.
     ///
     /// Each block of `res` is one JKLS kernel over its `K d` pairs of terms, `K = a.cols()`. On rank 1, with one `base2k`
@@ -278,7 +278,7 @@ pub trait BlasMatMulOps<BE: Backend> {
     /// `max(w_a, w_b) >= base2k` guarantees, choose `base2k` as [`Self::blas_matmul`] states, `L` the limbs of the narrower
     /// of the terms' widths `w_a` and `w_b`: the kernel adds the products of every pair in the transform domain before one
     /// inverse transform, in the order [`Self::blas_matmul`] states.
-    /// [`blas_matmul_max_base2k`](crate::reference::blas_matmul_max_base2k) takes the source grids of the operands, not a
+    /// [`blas_matmul_max_base2k`](crate::layouts::blas_matmul_max_base2k) takes the source grids of the operands, not a
     /// cold operand's term layout. The reference makes a hot side's terms a block row of `a` or a block column of `b` at a
     /// time, each once, and keeps a row (column) only while it serves: beside a cold side, one at a time; of two hot sides,
     /// it holds one side's, as [`Self::blas_matmul`] does. Of two cold operands it makes no term.
@@ -305,7 +305,7 @@ pub trait BlasMatMulOps<BE: Backend> {
     ///   any write, so on its errors `res`, its batch record and the operands are untouched: `InvalidOperand` for an
     ///   operand without a batch record, a grid, shape, layout or radix above 62 it rejects, or a hot operand at another
     ///   `log_d` than `ctx`'s or under a context encoded for another slot count or radix; then, key by key,
-    ///   `MissingAutomorphismKey` for a key of a hot side's terms `atk` lacks, at the widths
+    ///   `MissingAutomorphismKey` for a key of a hot side's terms `keys` lacks, at the widths
     ///   [`Self::blas_matmul_prepare_left`] and [`Self::blas_matmul_prepare_right`] state from that side's `k`, or
     ///   `MissingRelinearizationKey` for the tensor key `tsk` lacks at `max(w_a, w_b)`, or `InvalidOperand` for a key of
     ///   another rank than the operands'.
@@ -323,7 +323,7 @@ pub trait BlasMatMulOps<BE: Backend> {
         b: &BlasMatMulRight<BE>,
         ctx: &BlasContext<BE>,
         tsk: &T,
-        atk: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -332,7 +332,7 @@ pub trait BlasMatMulOps<BE: Backend> {
         K: GetAutomorphismKey<BE> + Sync;
 
     /// Scratch bytes [`Self::blas_matmul_pt_right`] needs into `res` from `a` through `b` with rotation keys of layout
-    /// `atk`, under `ctx`, read under `JklsStored` and `JklsGalois` alone.
+    /// `keys`, under `ctx`, read under `JklsStored` and `JklsGalois` alone.
     ///
     /// # Panics
     ///
@@ -345,7 +345,7 @@ pub trait BlasMatMulOps<BE: Backend> {
         a: &A,
         b: &BlasPtOperand<BE>,
         ctx: &BlasContext<BE>,
-        atk: &K,
+        keys: &K,
     ) -> usize
     where
         R: BlasGridInfos,
@@ -360,7 +360,7 @@ pub trait BlasMatMulOps<BE: Backend> {
     /// terms by `b`'s prepared plaintexts: `psi^k(tau(B_lj))` stored under `JklsStored`, `tau(B_lj)` read through the
     /// Galois element of the rotation by `k d` under `JklsGalois`. It spends three scales, `2 p_B + p`, for `p` the
     /// context's scale. It adds the `K d` products in the transform domain, and each mask adds one diagonal per giant
-    /// step; [`blas_matmul_pt_right_max_base2k`](crate::reference::blas_matmul_pt_right_max_base2k) counts them. On the
+    /// step; [`blas_matmul_pt_right_max_base2k`](crate::layouts::blas_matmul_pt_right_max_base2k) counts them. On the
     /// right these two take one public matrix. `ctx` is read under them alone; it holds `d - 1` masks that every
     /// context holds.
     ///
@@ -372,7 +372,7 @@ pub trait BlasMatMulOps<BE: Backend> {
     /// groups, `L` the limbs of their input, `a.k` over `base2k` rounded up (`a.k - p_B` under `Jkls`), and `P` those of a
     /// diagonal, the width `b` was encoded at over `base2k` rounded up. Under `Jkls` the first map adds its own
     /// `g min(L, P)`, with its own `g` and `P`, for one term and `L` the limbs of `a.k`.
-    /// [`blas_matmul_pt_right_max_base2k`](crate::reference::blas_matmul_pt_right_max_base2k) returns the largest radix
+    /// [`blas_matmul_pt_right_max_base2k`](crate::layouts::blas_matmul_pt_right_max_base2k) returns the largest radix
     /// `Module::max_base2k` allows for the larger count, counting `L` and `P` at each radix, as for poulpy-core's own
     /// summed linear transformation.
     ///
@@ -407,7 +407,7 @@ pub trait BlasMatMulOps<BE: Backend> {
     /// - The implementation runs [`validate_blas_matmul_pt_right`](crate::layouts::validate_blas_matmul_pt_right)
     ///   before any write, so on its errors `res`, its batch record and `a` are untouched: `InvalidOperand` for a grid,
     ///   shape, layout, operand or count it rejects, a context it rejects under `JklsStored` and `JklsGalois`, or more
-    ///   than one public matrix there, then, key by key, `MissingAutomorphismKey` for a key `atk` lacks: under
+    ///   than one public matrix there, then, key by key, `MissingAutomorphismKey` for a key `keys` lacks: under
     ///   `Diagonal` the baby steps of `b`'s maps at `a.k` and their giant steps at the result's `k`; under `Jkls` the
     ///   first map's baby steps at `a.k` and giant steps at `a.k - p_B`, then the blocks' baby steps at `a.k - p_B` and
     ///   giant steps at the result's `k`; under `JklsStored` and `JklsGalois` the first map's baby steps at `a.k` and
@@ -425,7 +425,7 @@ pub trait BlasMatMulOps<BE: Backend> {
         a: &A,
         b: &BlasPtOperand<BE>,
         ctx: &BlasContext<BE>,
-        atk: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -434,7 +434,7 @@ pub trait BlasMatMulOps<BE: Backend> {
         K: GetAutomorphismKey<BE> + Sync;
 
     /// Scratch bytes [`Self::blas_matmul_pt_left`] needs into `res` through `b` from `a` with rotation keys of layout
-    /// `atk`, under `ctx`, read under `JklsStored` and `JklsGalois` alone.
+    /// `keys`, under `ctx`, read under `JklsStored` and `JklsGalois` alone.
     ///
     /// # Panics
     ///
@@ -447,7 +447,7 @@ pub trait BlasMatMulOps<BE: Backend> {
         b: &BlasPtOperand<BE, Left>,
         a: &A,
         ctx: &BlasContext<BE>,
-        atk: &K,
+        keys: &K,
     ) -> usize
     where
         R: BlasGridInfos,
@@ -469,7 +469,7 @@ pub trait BlasMatMulOps<BE: Backend> {
     /// which share their giant steps: a block costs the giant-step key switches of one of `b`'s maps, whatever `K`.
     /// Each giant step adds the products of every term with each of its diagonals in the transform domain before its
     /// rotation, so choose `base2k`, under every path, for the count [`Self::blas_matmul_pt_right`] documents:
-    /// [`blas_matmul_pt_left_max_base2k`](crate::reference::blas_matmul_pt_left_max_base2k) returns the largest radix
+    /// [`blas_matmul_pt_left_max_base2k`](crate::layouts::blas_matmul_pt_left_max_base2k) returns the largest radix
     /// `Module::max_base2k` allows for it.
     ///
     /// **Replicated input.** When `a` is replicated ([`crate::layouts::replicated`], read from its label) and `b` holds
@@ -477,7 +477,7 @@ pub trait BlasMatMulOps<BE: Backend> {
     /// maps are those `d`-diagonal maps, scheduled at `left_mul`'s giant step so they rotate within the same key set, in
     /// place of the `2d - 1` of [`BlasPtOperand::block`]: about 22 key switches per block instead of 30 at `d = 128`. The
     /// choice is made once per call from `a`'s label, by the validator, the call and
-    /// [`blas_matmul_pt_left_max_base2k`](crate::reference::blas_matmul_pt_left_max_base2k) alike, and changes the bits
+    /// [`blas_matmul_pt_left_max_base2k`](crate::layouts::blas_matmul_pt_left_max_base2k) alike, and changes the bits
     /// against the `2d - 1` maps. Metadata and keys are unchanged, and the scratch query does not read the maps.
     ///
     /// # Metadata
@@ -498,7 +498,7 @@ pub trait BlasMatMulOps<BE: Backend> {
         b: &BlasPtOperand<BE, Left>,
         a: &A,
         ctx: &BlasContext<BE>,
-        atk: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
