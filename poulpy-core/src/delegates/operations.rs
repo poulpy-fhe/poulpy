@@ -1,7 +1,7 @@
 use crate::layouts::IntPolyInfos;
 use std::{collections::HashMap, ops::Range};
 
-use poulpy_hal::layouts::{Backend, CnvPVecLToBackendRef, CnvPVecRToBackendRef, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, CnvPVecLToBackendRef, CnvPVecRToBackendRef, Module, ScratchArena, VecZnxDftBackendMut};
 
 use crate::{
     api::{
@@ -247,6 +247,46 @@ impl_operations_delegate!(
         BP: CnvPVecRToBackendRef<BE>,
     {
         BE::glwe_mul_prepared_plain_sum(self, cnv_offset, res, a, a_size, b, b_size, galois, base2k, scratch)
+    },
+    fn glwe_mul_prepared_plain_sum_dft_tmp_bytes(&self, res_size: usize, a_size: usize, b_size: usize) -> usize {
+        BE::glwe_mul_prepared_plain_sum_dft_tmp_bytes(self, res_size, a_size, b_size)
+    },
+    fn glwe_mul_prepared_plain_sum_dft<AP, BP>(
+        &self,
+        cnv_offset: usize,
+        res: &mut VecZnxDftBackendMut<'_, BE>,
+        a: &[&AP],
+        a_size: usize,
+        b: &[&BP],
+        b_size: usize,
+        galois: &[i64],
+        base2k: crate::layouts::Base2K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        AP: CnvPVecLToBackendRef<BE>,
+        BP: CnvPVecRToBackendRef<BE>,
+    {
+        BE::glwe_mul_prepared_plain_sum_dft(self, cnv_offset, res, a, a_size, b, b_size, galois, base2k, scratch)
+    },
+    fn glwe_mul_prepared_plain_sum_dft_add_tmp_bytes(&self, res_size: usize, a_size: usize, b_size: usize) -> usize {
+        BE::glwe_mul_prepared_plain_sum_dft_add_tmp_bytes(self, res_size, a_size, b_size)
+    },
+    fn glwe_mul_prepared_plain_sum_dft_add<AP, BP>(
+        &self,
+        cnv_offset: usize,
+        res: &mut VecZnxDftBackendMut<'_, BE>,
+        a: &[&AP],
+        a_size: usize,
+        b: &[&BP],
+        b_size: usize,
+        galois: &[i64],
+        base2k: crate::layouts::Base2K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        AP: CnvPVecLToBackendRef<BE>,
+        BP: CnvPVecRToBackendRef<BE>,
+    {
+        BE::glwe_mul_prepared_plain_sum_dft_add(self, cnv_offset, res, a, a_size, b, b_size, galois, base2k, scratch)
     }
 );
 

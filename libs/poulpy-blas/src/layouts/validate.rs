@@ -357,7 +357,7 @@ pub(crate) fn assert_maps_scratch<BE: Backend, M: CKKSModuleInfos + ?Sized>(
 }
 
 /// Fails as [`ensure_rotation`] unless `keys` holds every key of [`lt_uses`], of that rank.
-fn ensure_lt_keys<BE, M, P, K>(
+pub(crate) fn ensure_lt_keys<BE, M, P, K>(
     op: &'static str,
     module: &M,
     lt: &LinearTransformation<P>,

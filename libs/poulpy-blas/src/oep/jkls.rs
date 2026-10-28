@@ -1,21 +1,25 @@
 use poulpy_ckks::{
     CKKSCtBounds, CKKSResult as Result, SetCKKSInfos,
+    api::LinearTransformationPrepared,
     layouts::{CKKSPreparedLeft, CKKSPreparedRight},
 };
-use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GetTensorKey};
+use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
-/// Extension point of the JKLS kernel, one output block of the prepared product: the references
+/// Extension point of the JKLS kernels. [`Self::blas_jkls_block`] is one output block of the prepared product: the
+/// references
 /// [`BlasMatMulReference::blas_matmul_prepared_reference`](crate::reference::BlasMatMulReference::blas_matmul_prepared_reference)
 /// and [`BlasMatMulReference::blas_matmul_reference`](crate::reference::BlasMatMulReference::blas_matmul_reference) run
-/// one [`Self::blas_jkls_block`] per block of `res`, so both `blas_matmul` and `blas_matmul_prepared` reach it,
-/// whatever the hints of the operands.
+/// one per block of `res`, so both `blas_matmul` and `blas_matmul_prepared` reach it, whatever the hints of the
+/// operands. [`Self::blas_jkls_pt_unit`] is one unit of a product by public matrices under
+/// [`BlasPtAlgorithm::JklsStored`](crate::layouts::BlasPtAlgorithm::JklsStored) and
+/// [`BlasPtAlgorithm::JklsGalois`](crate::layouts::BlasPtAlgorithm::JklsGalois): the references of
+/// `blas_matmul_pt_right` and `blas_matmul_pt_left` run one per block row (column) of `res`.
 ///
 /// # Safety
-/// [`Self::blas_jkls_block`] reproduces
-/// [`BlasJklsReference::blas_jkls_block_reference`](crate::reference::BlasJklsReference::blas_jkls_block_reference) bit
-/// for bit, within the scratch [`Self::blas_jkls_block_tmp_bytes`] reports; with less scratch it panics before any
-/// write, as the reference does. Anything its doc does not list as free changes bits.
+/// Each method reproduces its reference in [`BlasJklsReference`](crate::reference::BlasJklsReference) bit for bit,
+/// within the scratch its `_tmp_bytes` reports; with less scratch it panics before any write, as the reference does.
+/// Anything its doc does not list as free changes bits.
 ///
 /// The memory, layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait BlasJklsImpl: Backend {
@@ -81,11 +85,73 @@ pub unsafe trait BlasJklsImpl: Backend {
     where
         R: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
         T: GetTensorKey<Self> + Sync;
+
+    /// Scratch bound of [`Self::blas_jkls_pt_unit`] into `outputs` blocks of layout `res` from sources of layout `src`
+    /// through `first` and `masks`, by plaintexts prepared like `plaintext`, with rotation keys of layout `keys`; may
+    /// report less than the reference, never less than the body takes. It reports for `res` and `src` at their widths
+    /// whatever their allocations.
+    #[allow(clippy::too_many_arguments)]
+    fn blas_jkls_pt_unit_tmp_bytes<R, S, K>(
+        module: &Module<Self>,
+        outputs: usize,
+        res: &R,
+        src: &S,
+        first: &LinearTransformationPrepared<Self>,
+        masks: &[&LinearTransformationPrepared<Self>],
+        plaintext: &CKKSPreparedRight<Self>,
+        keys: &K,
+    ) -> usize
+    where
+        R: CKKSCtBounds,
+        S: CKKSCtBounds,
+        K: GGLWEInfos;
+
+    /// One unit of a product by public matrices under `JklsStored` or `JklsGalois`. Reproduces
+    /// [`blas_jkls_pt_unit_reference`](crate::reference::BlasJklsReference::blas_jkls_pt_unit_reference) bit for bit,
+    /// digits and CKKS metadata, within [`Self::blas_jkls_pt_unit_tmp_bytes`].
+    ///
+    /// The terms of source `l` are `per = masks.len() + 1` blocks: term `0` is `first` evaluated from `sources[l]` by the
+    /// map hook, then copied by poulpy-ckks's `ckks_copy` into a block of the terms' layout, and term `k >= 1` is
+    /// `masks[k - 1]` evaluated by the map hook from that same evaluation of `first`. Each term is prepared by
+    /// `ckks_prepare_left` and multiplied by `plaintexts[o * sources.len() + l][k % len]` read through `galois[k]`.
+    /// Block `o` of `res` receives poulpy-ckks's `ckks_dot_product_prepared_pt_dft` of the first source's terms,
+    /// `ckks_dot_product_prepared_pt_dft_add` of each next source's, in order, into one transform-domain accumulator,
+    /// then `ckks_dot_product_prepared_pt_from_dft`: `ckks_dot_product_prepared_pt` over every term, sources in order
+    /// and terms in order within a source, normalized once.
+    ///
+    /// **Fixed:** the circuit above; on an FFT backend, which adds in floating point, the order of the terms and their
+    /// grouping by source are part of the bits.
+    ///
+    /// **Free (bit-identical):** streaming the sources, keeping one accumulator per block of `res`; the order of the
+    /// blocks of `res`; the hint of the term preparations; computing within the unit concurrently; on an NTT backend,
+    /// whose transform-domain additions are exact, the order and grouping of the terms, a term at a time included.
+    /// Anything else changes bits.
+    ///
+    /// It is called with at least one source and one block of `res`, at least one mask, `plaintexts` holding
+    /// `res.len() * sources.len()` non-empty slices and `galois` one odd element per term of a source, on inputs the
+    /// product's validator accepted, which checked the rotation keys of `first` and `masks` at the widths the map hook
+    /// looks them up. Within that scratch it returns `Ok`, or poulpy-ckks's budget error before any write to `res`; with
+    /// less scratch it panics before any write, as the reference does. Any other `Err` is a backend fault, and `res` is
+    /// then unspecified. The caller stamps the label of every block of `res` afterwards.
+    #[allow(clippy::too_many_arguments)]
+    fn blas_jkls_pt_unit<D, S, K>(
+        module: &Module<Self>,
+        res: &mut [&mut D],
+        sources: &[&S],
+        first: &LinearTransformationPrepared<Self>,
+        masks: &[&LinearTransformationPrepared<Self>],
+        plaintexts: &[&[CKKSPreparedRight<Self>]],
+        galois: &[i64],
+        keys: &K,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) -> Result<()>
+    where
+        D: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos + Send,
+        S: GLWEToBackendRef<Self> + CKKSCtBounds + Sync,
+        K: GetAutomorphismKey<Self> + Sync;
 }
 
-/// Selects
-/// [`BlasJklsReference::blas_jkls_block_reference`](crate::reference::BlasJklsReference::blas_jkls_block_reference)
-/// as the JKLS kernel of `$be`.
+/// Selects the references of [`BlasJklsReference`](crate::reference::BlasJklsReference) as the JKLS kernels of `$be`.
 #[macro_export]
 macro_rules! impl_blas_jkls_reference_full {
     ($be:ty) => {
@@ -120,6 +186,50 @@ macro_rules! impl_blas_jkls_reference_full {
                 T: ::poulpy_core::layouts::GetTensorKey<Self> + Sync,
             {
                 $crate::reference::BlasJklsReference::blas_jkls_block_reference(module, res, lhs, rhs, tsk, scratch)
+            }
+
+            fn blas_jkls_pt_unit_tmp_bytes<R, S, K>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                outputs: usize,
+                res: &R,
+                src: &S,
+                first: &::poulpy_ckks::api::LinearTransformationPrepared<Self>,
+                masks: &[&::poulpy_ckks::api::LinearTransformationPrepared<Self>],
+                plaintext: &::poulpy_ckks::layouts::CKKSPreparedRight<Self>,
+                keys: &K,
+            ) -> usize
+            where
+                R: ::poulpy_ckks::CKKSCtBounds,
+                S: ::poulpy_ckks::CKKSCtBounds,
+                K: ::poulpy_core::layouts::GGLWEInfos,
+            {
+                $crate::reference::BlasJklsReference::blas_jkls_pt_unit_tmp_bytes_reference(
+                    module, outputs, res, src, first, masks, plaintext, keys,
+                )
+            }
+
+            fn blas_jkls_pt_unit<D, S, K>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                res: &mut [&mut D],
+                sources: &[&S],
+                first: &::poulpy_ckks::api::LinearTransformationPrepared<Self>,
+                masks: &[&::poulpy_ckks::api::LinearTransformationPrepared<Self>],
+                plaintexts: &[&[::poulpy_ckks::layouts::CKKSPreparedRight<Self>]],
+                galois: &[i64],
+                keys: &K,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
+            ) -> ::poulpy_ckks::CKKSResult<()>
+            where
+                D: ::poulpy_core::layouts::GLWEToBackendMut<Self>
+                    + ::poulpy_ckks::CKKSCtBounds
+                    + ::poulpy_ckks::SetCKKSInfos
+                    + Send,
+                S: ::poulpy_core::layouts::GLWEToBackendRef<Self> + ::poulpy_ckks::CKKSCtBounds + Sync,
+                K: ::poulpy_core::layouts::GetAutomorphismKey<Self> + Sync,
+            {
+                $crate::reference::BlasJklsReference::blas_jkls_pt_unit_reference(
+                    module, res, sources, first, masks, plaintexts, galois, keys, scratch,
+                )
             }
         }
     };

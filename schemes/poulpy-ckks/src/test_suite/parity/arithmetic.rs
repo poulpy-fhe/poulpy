@@ -13,7 +13,10 @@ use poulpy_core::{
     layouts::*,
     oep::GLWENormalizeImpl,
 };
-use poulpy_hal::layouts::{Backend, Module, PrepareHint};
+use poulpy_hal::{
+    api::VecZnxDftAlloc,
+    layouts::{Backend, Module, PrepareHint, VecZnxDftToBackendMut},
+};
 
 pub trait ArithmeticParityBackend:
     Backend<ZnxWord = i64> + CKKSAddImpl + CKKSSubImpl + CKKSCopyImpl + CKKSNegImpl + CKKSPow2Impl + GLWENormalizeImpl
@@ -292,7 +295,7 @@ where
 fn products<BE>(params: CKKSTestParams, module: &Module<BE>) -> Vec<(&'static str, Snapshot)>
 where
     BE: Backend<ZnxWord = i64> + CKKSMulImpl,
-    Module<BE>: GLWETensorKeyPreparedFactory<BE> + GLWEMaskFill<BE> + GLWEAdd<BE> + CKKSDotProductOps<BE>,
+    Module<BE>: GLWETensorKeyPreparedFactory<BE> + GLWEMaskFill<BE> + GLWEAdd<BE> + CKKSDotProductOps<BE> + VecZnxDftAlloc<BE>,
 {
     use super::keys::{key_layout, prepared_tensor_key};
     let b = params.base2k;
@@ -403,6 +406,71 @@ where
                     .unwrap();
                     results.push(("mul_pt_const_assign", snapshot::<BE, _>(&out)));
                 }
+                // The DFT forms of the summed product by prepared plaintexts, one term then one added, finished, are
+                // the summed product of both terms.
+                let right_pt = with_scratch::<BE, _>(BE::ckks_prepare_tmp_bytes(module, &pt), |scratch| {
+                    BE::ckks_prepare_right(module, &pt, PrepareHint::OneShot, scratch)
+                })
+                .unwrap();
+                let galois = [1, module.ckks_galois_element(1)];
+                let mut want = fixture_ciphertext(module, &lr, 99);
+                with_scratch::<BE, _>(
+                    module.ckks_dot_product_prepared_pt_tmp_bytes(&want, &left, &right_pt),
+                    |scratch| {
+                        module.ckks_dot_product_prepared_pt(&mut want, &[&left, &left], &[&right_pt, &right_pt], &galois, scratch)
+                    },
+                )
+                .unwrap();
+                let mut have = fixture_ciphertext(module, &lr, 99);
+                let mut acc = module.vec_znx_dft_alloc(params.n, rank + 1, left.size() + right_pt.size());
+                with_scratch::<BE, _>(
+                    module.ckks_dot_product_prepared_pt_dft_tmp_bytes(&have, &left, &right_pt),
+                    |scratch| {
+                        module.ckks_dot_product_prepared_pt_dft(
+                            &mut acc.to_backend_mut(),
+                            &have,
+                            &[&left],
+                            &[&right_pt],
+                            &galois[..1],
+                            scratch,
+                        )
+                    },
+                )
+                .unwrap();
+                with_scratch::<BE, _>(
+                    module.ckks_dot_product_prepared_pt_dft_add_tmp_bytes(&have, &left, &right_pt),
+                    |scratch| {
+                        module.ckks_dot_product_prepared_pt_dft_add(
+                            &mut acc.to_backend_mut(),
+                            &have,
+                            &[&left],
+                            &[&right_pt],
+                            &galois[1..],
+                            scratch,
+                        )
+                    },
+                )
+                .unwrap();
+                with_scratch::<BE, _>(
+                    module.ckks_dot_product_prepared_pt_from_dft_tmp_bytes(&have, &left, &right_pt),
+                    |scratch| {
+                        module.ckks_dot_product_prepared_pt_from_dft(
+                            &mut have,
+                            &mut acc.to_backend_mut(),
+                            &left,
+                            &right_pt,
+                            scratch,
+                        )
+                    },
+                )
+                .unwrap();
+                let want = snapshot::<BE, _>(&want);
+                assert_eq!(
+                    snapshot::<BE, _>(&have),
+                    want,
+                    "DFT forms of the prepared dot product by plaintexts"
+                );
+                results.push(("dot_product_prepared_pt", want));
                 assert_eq!(before_pt, snapshot::<BE, _>(&pt));
             }
             assert_eq!(before_a, snapshot::<BE, _>(&a));
@@ -424,14 +492,15 @@ where
     results
 }
 
-/// Ciphertext, square, prepared, vector and scalar multiplication, and the prepared dot product, which equals
-/// `ckks_dot_product_ct` of its operands' sources.
+/// Ciphertext, square, prepared, vector and scalar multiplication, the prepared dot product, which equals
+/// `ckks_dot_product_ct` of its operands' sources, and the prepared dot product by plaintexts, which equals its DFT
+/// forms.
 pub fn test_multiplication_parity<BR, BT, F>(params: CKKSTestParams, module_ref: &Module<BR>, module_test: &Module<BT>)
 where
     BR: Backend<ZnxWord = i64> + CKKSMulImpl,
     BT: Backend<ZnxWord = i64> + CKKSMulImpl,
-    Module<BR>: GLWETensorKeyPreparedFactory<BR> + GLWEMaskFill<BR> + GLWEAdd<BR> + CKKSDotProductOps<BR>,
-    Module<BT>: GLWETensorKeyPreparedFactory<BT> + GLWEMaskFill<BT> + GLWEAdd<BT> + CKKSDotProductOps<BT>,
+    Module<BR>: GLWETensorKeyPreparedFactory<BR> + GLWEMaskFill<BR> + GLWEAdd<BR> + CKKSDotProductOps<BR> + VecZnxDftAlloc<BR>,
+    Module<BT>: GLWETensorKeyPreparedFactory<BT> + GLWEMaskFill<BT> + GLWEAdd<BT> + CKKSDotProductOps<BT> + VecZnxDftAlloc<BT>,
 {
     let _scalar = std::marker::PhantomData::<F>;
     let want = products(params, module_ref);

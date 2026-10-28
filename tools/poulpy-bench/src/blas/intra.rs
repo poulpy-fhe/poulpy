@@ -5,7 +5,8 @@ use criterion::{Bencher, measurement::Measurement};
 use poulpy_blas::{
     api::BlasMatIntraOps,
     layouts::{
-        BlasCiphertextOwned, BlasKeyUses, blas_rotate_rows_key_uses, blas_sum_cols_key_uses, blas_sum_rows_key_uses, replicated,
+        BlasCiphertextOwned, BlasKeyUses, BlasPlan, blas_rotate_rows_key_uses, blas_sum_cols_key_uses, blas_sum_rows_key_uses,
+        replicated,
     },
     oep::BlasMatIntraImpl,
 };
@@ -29,14 +30,14 @@ where
 {
     timed::<BE, M, _>(bencher, op, bp, || {
         let mut client = Client::<BE>::new(bp);
-        let ctx = client.context(bp);
+        let ctx = client.context(bp, BlasPlan::new(bp.log_d));
         let entry = b_entry(bp.d());
-        let ct_a = client.encrypt(bp, matrices, &entry);
+        let ct_a = client.encrypt(bp, 1, 1, matrices, &entry);
         assert!(
             replicated::<Standard>(&ct_a) == (matrices == 1),
             "{op}: the grid is not the one the runner names"
         );
-        let mut res = client.result(bp);
+        let mut res = client.result(bp, 1, 1);
         // The keys of the path the grid's label selects, without the broadcast's on a replicated grid.
         let uses = if rows {
             blas_sum_rows_key_uses(&client.module, &res, &ct_a, &ctx)
@@ -78,7 +79,7 @@ where
 }
 
 /// The Galois elements of `uses`.
-fn elements_of(uses: &BlasKeyUses) -> Vec<i64> {
+pub(super) fn elements_of(uses: &BlasKeyUses) -> Vec<i64> {
     uses.rotations.iter().map(|&(p, _)| p).collect()
 }
 
@@ -126,10 +127,10 @@ where
     let op = "blas_rotate_rows_replicated";
     timed::<BE, M, _>(bencher, op, bp, || {
         let mut client = Client::<BE>::new(bp);
-        let ctx = client.context(bp);
-        let ct_a = client.encrypt(bp, 1, a_entry);
+        let ctx = client.context(bp, BlasPlan::new(bp.log_d));
+        let ct_a = client.encrypt(bp, 1, 1, 1, a_entry);
         assert!(replicated::<Standard>(&ct_a), "{op}: the grid does not hold one matrix");
-        let mut res = client.result(bp);
+        let mut res = client.result(bp, 1, 1);
         let uses = blas_rotate_rows_key_uses(&client.module, 1, &res, &ct_a, &ctx);
         let atks = client.rotation_keys(bp, elements_of(&uses));
         let bytes = client.module.blas_rotate_rows_tmp_bytes(&res, &ct_a, &ctx, &atk_layout(bp));

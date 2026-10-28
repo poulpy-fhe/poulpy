@@ -377,7 +377,7 @@ pub trait BlasMatMulOps<BE: Backend> {
     /// summed linear transformation.
     ///
     /// Several public operands applied to one input share their baby steps only within one operand, so concatenate them
-    /// into one operand: the columns of the weights on the right, the rows on the left.
+    /// into one operand: the columns of the public matrices on the right, their rows on the left.
     ///
     /// # Metadata
     ///
