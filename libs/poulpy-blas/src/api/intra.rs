@@ -15,13 +15,13 @@ use crate::layouts::{BlasContext, BlasGrid, BlasGridInfos, BlasGridMut};
 /// `res` has room for every limb of a non-canonical `a`, and otherwise normalizes, which sets it.
 pub trait BlasMatIntraOps<BE: Backend> {
     /// Scratch bytes [`Self::blas_transpose`] needs into `res` from `a` with the maps of `ctx` and rotation keys of layout
-    /// `atk`.
+    /// `keys`.
     ///
     /// # Panics
     ///
     /// May panic on layouts [`validate_blas_transpose`](crate::layouts::validate_blas_transpose) rejects: blocks of a
     /// degree other than the module's, or `rows * cols` overflowing `usize`.
-    fn blas_transpose_tmp_bytes<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContext<BE>, atk: &K) -> usize
+    fn blas_transpose_tmp_bytes<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContext<BE>, keys: &K) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
@@ -47,7 +47,7 @@ pub trait BlasMatIntraOps<BE: Backend> {
     ///
     /// - The implementation runs [`validate_blas_transpose`](crate::layouts::validate_blas_transpose) before any write,
     ///   so on its errors `res`, its batch record and `a` are untouched: `InvalidOperand` for a grid, shape, layout or
-    ///   context it rejects, then, key by key, `MissingAutomorphismKey` for a key of the map `atk` lacks, its baby
+    ///   context it rejects, then, key by key, `MissingAutomorphismKey` for a key of the map `keys` lacks, its baby
     ///   steps at `a.k` and its giant steps at the result's `k`, or `InvalidOperand` for one of another rank than `a`'s
     ///   blocks.
     /// - poulpy-ckks's budget errors come from inside the backend before any write, and leave them untouched too:
@@ -59,7 +59,7 @@ pub trait BlasMatIntraOps<BE: Backend> {
         res: &mut R,
         a: &A,
         ctx: &BlasContext<BE>,
-        atk: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -68,13 +68,13 @@ pub trait BlasMatIntraOps<BE: Backend> {
         K: GetAutomorphismKey<BE> + Sync;
 
     /// Scratch bytes [`Self::blas_rotate_rows`] needs into `res` from `a` with the maps of `ctx` and rotation keys of
-    /// layout `atk`.
+    /// layout `keys`.
     ///
     /// # Panics
     ///
     /// As [`Self::blas_transpose_tmp_bytes`], on layouts
     /// [`validate_blas_rotate_rows`](crate::layouts::validate_blas_rotate_rows) rejects.
-    fn blas_rotate_rows_tmp_bytes<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContext<BE>, atk: &K) -> usize
+    fn blas_rotate_rows_tmp_bytes<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContext<BE>, keys: &K) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
@@ -108,7 +108,7 @@ pub trait BlasMatIntraOps<BE: Backend> {
     /// - The implementation runs [`validate_blas_rotate_rows`](crate::layouts::validate_blas_rotate_rows) before any
     ///   write, so on its errors `res`, its batch record and `a` are untouched: `InvalidOperand` for a grid, shape,
     ///   layout or context it rejects, then, key by key, `MissingAutomorphismKey` for a key of the maps the shift
-    ///   evaluates `atk` lacks, at the widths [`Self::blas_transpose`] looks its keys up at, or for the key of the
+    ///   evaluates `keys` lacks, at the widths [`Self::blas_transpose`] looks its keys up at, or for the key of the
     ///   rotation at `min(res.k, a.k)`, or `InvalidOperand` for one of another rank than `a`'s blocks. A copy takes no key.
     /// - poulpy-ckks's budget errors come from inside the backend before any write, and leave them untouched too: those
     ///   of [`Self::blas_transpose`], or for `k' = 0` the copy's and for the rotation its
@@ -116,11 +116,11 @@ pub trait BlasMatIntraOps<BE: Backend> {
     /// - Any other `Err` is a backend fault (a validator gap or a device failure), and `res` is then unspecified.
     fn blas_rotate_rows<R, A, K>(
         &self,
+        k: usize,
         res: &mut R,
         a: &A,
-        k: usize,
         ctx: &BlasContext<BE>,
-        atk: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -129,13 +129,13 @@ pub trait BlasMatIntraOps<BE: Backend> {
         K: GetAutomorphismKey<BE> + Sync;
 
     /// Scratch bytes [`Self::blas_rotate_cols`] needs into `res` from `a` with the maps of `ctx` and rotation keys of
-    /// layout `atk`.
+    /// layout `keys`.
     ///
     /// # Panics
     ///
     /// As [`Self::blas_transpose_tmp_bytes`], on layouts
     /// [`validate_blas_rotate_cols`](crate::layouts::validate_blas_rotate_cols) rejects.
-    fn blas_rotate_cols_tmp_bytes<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContext<BE>, atk: &K) -> usize
+    fn blas_rotate_cols_tmp_bytes<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContext<BE>, keys: &K) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
@@ -157,11 +157,11 @@ pub trait BlasMatIntraOps<BE: Backend> {
     /// As [`Self::blas_rotate_rows`], from [`validate_blas_rotate_cols`](crate::layouts::validate_blas_rotate_cols).
     fn blas_rotate_cols<R, A, K>(
         &self,
+        k: usize,
         res: &mut R,
         a: &A,
-        k: usize,
         ctx: &BlasContext<BE>,
-        atk: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where

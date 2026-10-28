@@ -87,3 +87,8 @@ required-features = ["enable-avx512f"]
 name = "encrypt_pk"
 harness = false
 required-features = ["enable-avx512f"]
+
+[[bench]]
+name = "blas_scale"
+harness = false
+required-features = ["enable-avx512f", "enable-blas"]

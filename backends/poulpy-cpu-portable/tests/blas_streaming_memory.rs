@@ -1,10 +1,6 @@
 //! The reference `blas_matmul` streams its larger side: a counting global allocator, in this binary of one test, shows
 //! that the heap it holds grows neither with the block columns of its right factor nor with the block rows of its left.
-use std::{
-    alloc::{GlobalAlloc, Layout, System},
-    sync::atomic::{AtomicUsize, Ordering::Relaxed},
-};
-
+use poulpy_bench::heap::{self, Counting};
 use poulpy_blas::{
     api::BlasMatMulOps,
     layouts::{BlasPlan, blas_matmul_left_term_layout},
@@ -22,49 +18,6 @@ use poulpy_hal::{
     layouts::{CyclotomicOrder, HostBytesBackend, Module, ScratchOwned},
 };
 
-/// The system allocator, counting the bytes it holds and their high-water mark.
-struct Counting;
-
-static LIVE: AtomicUsize = AtomicUsize::new(0);
-static PEAK: AtomicUsize = AtomicUsize::new(0);
-
-fn grow(bytes: usize) {
-    let live = LIVE.fetch_add(bytes, Relaxed) + bytes;
-    PEAK.fetch_max(live, Relaxed);
-}
-
-unsafe impl GlobalAlloc for Counting {
-    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        let p = unsafe { System.alloc(layout) };
-        if !p.is_null() {
-            grow(layout.size());
-        }
-        p
-    }
-
-    unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
-        let p = unsafe { System.alloc_zeroed(layout) };
-        if !p.is_null() {
-            grow(layout.size());
-        }
-        p
-    }
-
-    unsafe fn dealloc(&self, p: *mut u8, layout: Layout) {
-        unsafe { System.dealloc(p, layout) };
-        LIVE.fetch_sub(layout.size(), Relaxed);
-    }
-
-    unsafe fn realloc(&self, p: *mut u8, layout: Layout, size: usize) -> *mut u8 {
-        let q = unsafe { System.realloc(p, layout, size) };
-        if !q.is_null() {
-            LIVE.fetch_sub(layout.size(), Relaxed);
-            grow(size);
-        }
-        q
-    }
-}
-
 #[global_allocator]
 static HEAP: Counting = Counting;
 
@@ -75,6 +28,7 @@ static HEAP: Counting = Counting;
 /// copying the grids, grows it by three of its units.
 #[test]
 fn blas_matmul_heap_does_not_grow_with_the_streamed_side() {
+    assert!(heap::counting(), "the counting allocator is not the global allocator");
     let (params, log_d) = (BASE19_PARAMS_F64, 2);
     let module = Module::<FFT64Portable>::new(params.n as u64);
     let host_module = Module::<HostBytesBackend>::new(params.n as u64);
@@ -87,7 +41,7 @@ fn blas_matmul_heap_does_not_grow_with_the_streamed_side() {
         atks: rotation_keys(&params, &module, &sk_raw, elements, &mut scratch.borrow()),
         tsk: Some(gen_tsk(&params, &module, &sk_raw, &mut scratch.borrow())),
     };
-    let ctx = blas_context::<FFT64Portable, f64>(&params, &module, log_d, &mut scratch.borrow());
+    let ctx = blas_context::<FFT64Portable, f64>(&params, &module, log_d);
     let mut encrypt = |rows: usize, cols: usize, seed: u64| {
         let grid = Grid::model(log_d, rows, cols, slots >> (2 * log_d), seed);
         encrypt_grid::<FFT64Portable, f64, EncodingFFTTable<f64>>(
@@ -110,12 +64,11 @@ fn blas_matmul_heap_does_not_grow_with_the_streamed_side() {
         let mut res = alloc_grid(&params, &module, log_d, m, n, params.k);
         let bytes = module.blas_matmul_tmp_bytes(&res, &a, &b, &ctx, &params.tsk_layout(), &params.atk_layout());
         let mut op_scratch = ScratchOwned::<FFT64Portable>::alloc(bytes);
-        let entry = LIVE.load(Relaxed);
-        PEAK.store(entry, Relaxed);
+        let entry = heap::reset_peak();
         module
             .blas_matmul(&mut res, &a, &b, &ctx, &keys, &keys, &mut op_scratch.borrow())
             .unwrap();
-        PEAK.load(Relaxed) - entry
+        heap::peak() - entry
     };
     let one = peak(1, 1);
     for (m, n) in [(1, 4), (4, 1)] {

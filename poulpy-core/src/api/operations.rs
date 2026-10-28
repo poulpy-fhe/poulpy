@@ -1,7 +1,7 @@
 use crate::layouts::IntPolyInfos;
 use std::{collections::HashMap, ops::Range};
 
-use poulpy_hal::layouts::{Backend, CnvPVecLToBackendRef, CnvPVecRToBackendRef, ScratchArena};
+use poulpy_hal::layouts::{Backend, CnvPVecLToBackendRef, CnvPVecRToBackendRef, ScratchArena, VecZnxDftBackendMut};
 
 use crate::layouts::{
     Degree, GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut,
@@ -223,6 +223,63 @@ pub trait GLWEMulPreparedPlainSum<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
+        AP: CnvPVecLToBackendRef<BE>,
+        BP: CnvPVecRToBackendRef<BE>;
+
+    /// Scratch bytes of [`Self::glwe_mul_prepared_plain_sum_dft`] for an accumulator of `res_size` limbs and operands of
+    /// `a_size` and `b_size` limbs, whatever the number of terms.
+    fn glwe_mul_prepared_plain_sum_dft_tmp_bytes(&self, res_size: usize, a_size: usize, b_size: usize) -> usize;
+
+    /// The sum of [`Self::glwe_mul_prepared_plain_sum`] in the DFT domain: column `c` of `res`, an accumulator of the
+    /// degree of the operands with one column per ciphertext column, receives `Σ_t a[t]_c ⊛ σ_{galois[t]}(b[t])` from
+    /// limb `cnv_offset_hi` of the product on, the products added in the transform domain in slice order, and limbs of
+    /// `res` past the product zero, `(cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, base2k)`
+    /// ([`crate::gadget::cnv_offset_to_limb_offset`]). Sums added by [`Self::glwe_mul_prepared_plain_sum_dft_add`] are
+    /// finished by one `vec_znx_idft_normalize` per column, at offset `cnv_offset_lo` from radix `base2k`, into a
+    /// ciphertext then canonical at its `k`: with `res` on at least `a_size + b_size - cnv_offset_hi` limbs, that is
+    /// [`Self::glwe_mul_prepared_plain_sum`] of the terms of every call, bit for bit.
+    ///
+    /// # Panics
+    ///
+    /// As [`Self::glwe_mul_prepared_plain_sum`], `res` standing for the ciphertext.
+    #[allow(clippy::too_many_arguments)]
+    fn glwe_mul_prepared_plain_sum_dft<AP, BP>(
+        &self,
+        cnv_offset: usize,
+        res: &mut VecZnxDftBackendMut<'_, BE>,
+        a: &[&AP],
+        a_size: usize,
+        b: &[&BP],
+        b_size: usize,
+        galois: &[i64],
+        base2k: crate::layouts::Base2K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        AP: CnvPVecLToBackendRef<BE>,
+        BP: CnvPVecRToBackendRef<BE>;
+
+    /// Scratch bytes of [`Self::glwe_mul_prepared_plain_sum_dft_add`]: a one-column sum of `res_size` limbs and the
+    /// scratch of [`Self::glwe_mul_prepared_plain_sum_dft`].
+    fn glwe_mul_prepared_plain_sum_dft_add_tmp_bytes(&self, res_size: usize, a_size: usize, b_size: usize) -> usize;
+
+    /// `res += Σ_t a[t] ⊛ σ_{galois[t]}(b[t])`, the sum of [`Self::glwe_mul_prepared_plain_sum_dft`] added to `res`.
+    ///
+    /// # Panics
+    ///
+    /// As [`Self::glwe_mul_prepared_plain_sum_dft`].
+    #[allow(clippy::too_many_arguments)]
+    fn glwe_mul_prepared_plain_sum_dft_add<AP, BP>(
+        &self,
+        cnv_offset: usize,
+        res: &mut VecZnxDftBackendMut<'_, BE>,
+        a: &[&AP],
+        a_size: usize,
+        b: &[&BP],
+        b_size: usize,
+        galois: &[i64],
+        base2k: crate::layouts::Base2K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
         AP: CnvPVecLToBackendRef<BE>,
         BP: CnvPVecRToBackendRef<BE>;
 }

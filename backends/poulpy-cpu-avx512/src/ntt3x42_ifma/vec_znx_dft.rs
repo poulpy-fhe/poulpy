@@ -176,6 +176,7 @@ unsafe fn crt_compact_planes_unchecked<const ADD: bool>(nn: usize, res: &mut [i1
         let q0 = _mm512_set1_epi64(Q0 as i64);
         let q1 = _mm512_set1_epi64(Q1 as i64);
         let q2 = _mm512_set1_epi64(Q2 as i64);
+        let q2x2 = _mm512_set1_epi64(2 * Q2 as i64);
         let inv01 = _mm512_set1_epi64(INV01 as i64);
         let inv01_quot = _mm512_set1_epi64(INV01_QUOT as i64);
         let inv012 = _mm512_set1_epi64(INV012 as i64);
@@ -200,7 +201,8 @@ unsafe fn crt_compact_planes_unchecked<const ADD: bool>(nn: usize, res: &mut [i1
             let v0_mod_q2 = cond_sub_2q_si512(r0, q2);
             let v1q0_mod_q2 = harvey_modmul_si512(v1, q0_mod_q2, q0_mod_q2_quot, q2);
             let partial = cond_sub_2q_si512(_mm512_add_epi64(v0_mod_q2, v1q0_mod_q2), q2);
-            let diff2 = cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(r2, q2), partial), q2);
+            // `partial` is lazy, below `2 q2`: adding `2 q2` keeps the difference positive and below Harvey's `2^52`.
+            let diff2 = _mm512_sub_epi64(_mm512_add_epi64(r2, q2x2), partial);
             let v2 = harvey_modmul_si512(diff2, inv012, inv012_quot, q2);
 
             // result = v0 + v1*Q0 + v2*Q01, accumulated in base-2^52 limbs.

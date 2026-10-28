@@ -27,8 +27,8 @@ use poulpy_core::{
     },
 };
 use poulpy_hal::{
-    api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
-    layouts::{Backend, HostBytesBackend, Module, PrepareHint, ScratchArena, Standard},
+    api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow, VecZnxDftAlloc},
+    layouts::{Backend, HostBytesBackend, Module, PrepareHint, ScratchArena, Standard, VecZnxDftToBackendMut},
 };
 
 use crate::{
@@ -1257,14 +1257,15 @@ pub fn test_dot_product_pt_vec_aligned<BE, F, E>(
 /// `ckks_dot_product_prepared_pt` of three ciphertexts prepared by `ckks_prepare_left` by plaintexts prepared by
 /// `ckks_prepare_right`, read through the Galois elements of the rotations `0`, `1` and `-3`, decrypts to
 /// `Σ a_t ⊙ Rot_{r_t}(b_t)` at the rule of `ckks_mul_pt_vec_into`; one term through `1` is `ckks_mul_pt_vec_into` of its
-/// sources, bit for bit, on exactly its scratch; an even element, slices of two lengths and terms of two scales are
-/// rejected before `dst` changes.
+/// sources, bit for bit, on exactly its scratch; the DFT forms, the first term then the other two added, finished, are
+/// the sum, bit for bit; an even element, slices of two lengths, terms of two scales and an accumulator of another limb
+/// count are rejected before `dst` changes.
 pub fn test_dot_product_prepared_pt<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend<Ring = Standard>,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE> + GLWEMulPreparedPlainSum<BE>,
+    Module<BE>: TestContextModule<BE> + GLWEMulPreparedPlainSum<BE> + VecZnxDftAlloc<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
@@ -1343,6 +1344,60 @@ where
         &want_re,
         &want_im,
         &mut scratch.borrow(),
+    );
+
+    let (cols, acc_size) = (dst.rank().as_usize() + 1, a[0].size() + b[0].size());
+    let mut acc = module.vec_znx_dft_alloc(params.n, cols, acc_size);
+    let mut from_dft = alloc_ct(&params, module, params.k);
+    with_scratch::<BE, _>(
+        module.ckks_dot_product_prepared_pt_dft_tmp_bytes(&from_dft, a[0], b[0]),
+        |s| module.ckks_dot_product_prepared_pt_dft(&mut acc.to_backend_mut(), &from_dft, &a[..1], &b[..1], &galois[..1], s),
+    )
+    .unwrap();
+    with_scratch::<BE, _>(
+        module.ckks_dot_product_prepared_pt_dft_add_tmp_bytes(&from_dft, a[0], b[0]),
+        |s| module.ckks_dot_product_prepared_pt_dft_add(&mut acc.to_backend_mut(), &from_dft, &a[1..], &b[1..], &galois[1..], s),
+    )
+    .unwrap();
+    with_scratch::<BE, _>(
+        module.ckks_dot_product_prepared_pt_from_dft_tmp_bytes(&from_dft, a[0], b[0]),
+        |s| module.ckks_dot_product_prepared_pt_from_dft(&mut from_dft, &mut acc.to_backend_mut(), a[0], b[0], s),
+    )
+    .unwrap();
+    assert!(
+        snapshot::<BE, _>(&from_dft) == snapshot::<BE, _>(&dst),
+        "{OP}: the DFT forms are not the summed product"
+    );
+    let mut short = module.vec_znx_dft_alloc(params.n, cols, acc_size - 1);
+    let reason = "acc must hold the degree and rank + 1 columns of res on a.size() + b.size() limbs";
+    let err = with_scratch::<BE, _>(0, |s| {
+        module.ckks_dot_product_prepared_pt_dft(&mut short.to_backend_mut(), &from_dft, &a, &b, &galois, s)
+    })
+    .unwrap_err();
+    assert_ckks_error(
+        "short accumulator",
+        &err,
+        CKKSCompositionError::InvalidOperand {
+            op: "ckks_dot_product_prepared_pt_dft",
+            reason: reason.into(),
+        },
+    );
+    let before = snapshot::<BE, _>(&from_dft);
+    let err = with_scratch::<BE, _>(0, |s| {
+        module.ckks_dot_product_prepared_pt_from_dft(&mut from_dft, &mut short.to_backend_mut(), a[0], b[0], s)
+    })
+    .unwrap_err();
+    assert_ckks_error(
+        "short accumulator",
+        &err,
+        CKKSCompositionError::InvalidOperand {
+            op: "ckks_dot_product_prepared_pt_from_dft",
+            reason: reason.into(),
+        },
+    );
+    assert!(
+        snapshot::<BE, _>(&from_dft) == before,
+        "{OP}_from_dft: a rejection changed res"
     );
 
     let mut want = alloc_ct(&params, module, params.k);

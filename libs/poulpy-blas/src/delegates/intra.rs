@@ -9,13 +9,13 @@ use crate::{
 };
 
 impl<BE: Backend + BlasMatIntraImpl> BlasMatIntraOps<BE> for Module<BE> {
-    fn blas_transpose_tmp_bytes<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContext<BE>, atk: &K) -> usize
+    fn blas_transpose_tmp_bytes<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContext<BE>, keys: &K) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
         K: GGLWEInfos,
     {
-        BE::blas_transpose_tmp_bytes_impl(self, res, a, ctx, atk)
+        BE::blas_transpose_tmp_bytes(self, res, a, ctx, keys)
     }
 
     fn blas_transpose<R, A, K>(
@@ -23,7 +23,7 @@ impl<BE: Backend + BlasMatIntraImpl> BlasMatIntraOps<BE> for Module<BE> {
         res: &mut R,
         a: &A,
         ctx: &BlasContext<BE>,
-        atk: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -31,25 +31,25 @@ impl<BE: Backend + BlasMatIntraImpl> BlasMatIntraOps<BE> for Module<BE> {
         A: BlasGrid<BE>,
         K: GetAutomorphismKey<BE> + Sync,
     {
-        BE::blas_transpose_impl(self, res, a, ctx, atk, scratch)
+        BE::blas_transpose(self, res, a, ctx, keys, scratch)
     }
 
-    fn blas_rotate_rows_tmp_bytes<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContext<BE>, atk: &K) -> usize
+    fn blas_rotate_rows_tmp_bytes<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContext<BE>, keys: &K) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
         K: GGLWEInfos,
     {
-        BE::blas_rotate_rows_tmp_bytes_impl(self, res, a, ctx, atk)
+        BE::blas_rotate_rows_tmp_bytes(self, res, a, ctx, keys)
     }
 
     fn blas_rotate_rows<R, A, K>(
         &self,
+        k: usize,
         res: &mut R,
         a: &A,
-        k: usize,
         ctx: &BlasContext<BE>,
-        atk: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -57,25 +57,25 @@ impl<BE: Backend + BlasMatIntraImpl> BlasMatIntraOps<BE> for Module<BE> {
         A: BlasGrid<BE>,
         K: GetAutomorphismKey<BE> + Sync,
     {
-        BE::blas_rotate_rows_impl(self, res, a, k, ctx, atk, scratch)
+        BE::blas_rotate_rows(self, k, res, a, ctx, keys, scratch)
     }
 
-    fn blas_rotate_cols_tmp_bytes<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContext<BE>, atk: &K) -> usize
+    fn blas_rotate_cols_tmp_bytes<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContext<BE>, keys: &K) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
         K: GGLWEInfos,
     {
-        BE::blas_rotate_cols_tmp_bytes_impl(self, res, a, ctx, atk)
+        BE::blas_rotate_cols_tmp_bytes(self, res, a, ctx, keys)
     }
 
     fn blas_rotate_cols<R, A, K>(
         &self,
+        k: usize,
         res: &mut R,
         a: &A,
-        k: usize,
         ctx: &BlasContext<BE>,
-        atk: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -83,7 +83,7 @@ impl<BE: Backend + BlasMatIntraImpl> BlasMatIntraOps<BE> for Module<BE> {
         A: BlasGrid<BE>,
         K: GetAutomorphismKey<BE> + Sync,
     {
-        BE::blas_rotate_cols_impl(self, res, a, k, ctx, atk, scratch)
+        BE::blas_rotate_cols(self, k, res, a, ctx, keys, scratch)
     }
 
     fn blas_sum_rows_tmp_bytes<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContext<BE>, keys: &K) -> usize
