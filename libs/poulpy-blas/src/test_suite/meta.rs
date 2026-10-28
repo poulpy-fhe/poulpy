@@ -88,7 +88,6 @@ pub fn test_blas_result_meta<BE, F, E>(
         |m, r, c| F::from_f64(entry(m, r, c)).unwrap(),
         params.base2k.into(),
         params.prec().into(),
-        &mut scratch.borrow(),
     );
     // `1 x 2` blocks on the left, whose product takes the two block rows of a column.
     let pt_left = pt_operand::<BE, F, Left>(
@@ -100,7 +99,6 @@ pub fn test_blas_result_meta<BE, F, E>(
         |m, r, c| F::from_f64(entry(m, r, c)).unwrap(),
         params.base2k.into(),
         params.prec().into(),
-        &mut scratch.borrow(),
     );
     // Grids encrypted from `grid` and labelled `log_sparsity`: `grid` holds `lanes >> log_sparsity` matrices, each
     // repeated over the slots, and the grid records them.

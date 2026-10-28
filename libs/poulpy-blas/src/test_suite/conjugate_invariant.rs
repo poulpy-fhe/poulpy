@@ -74,13 +74,7 @@ pub fn test_blas_conjugate_invariant<BE>(
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
     let masked = BlasPlan::new(log_d).with_pt_algorithm(BlasPtAlgorithm::JklsGalois);
-    let ctx = encoded_context::<BE, f64>(
-        module,
-        masked,
-        params.base2k.into(),
-        params.prec().into(),
-        &mut scratch.borrow(),
-    );
+    let ctx = encoded_context::<BE, f64>(module, masked, params.base2k.into(), params.prec().into());
     // `A` of 2 x 3 blocks and `B` of 3 x 2.
     let real = |rows: usize, cols: usize, seed: u64| {
         let mut grid = Grid::model(log_d, rows, cols, lanes, seed);
@@ -275,7 +269,6 @@ pub fn test_blas_conjugate_invariant<BE>(
             public_entry,
             params.base2k.into(),
             params.prec().into(),
-            &mut scratch.borrow(),
         );
         let mut res = alloc(2, 2);
         with_scratch::<BE, _>(module.blas_matmul_pt_right_tmp_bytes(&res, &ct_a, &pt, &ctx, &atk), |s| {
@@ -303,7 +296,6 @@ pub fn test_blas_conjugate_invariant<BE>(
             public_entry,
             params.base2k.into(),
             params.prec().into(),
-            &mut scratch.borrow(),
         );
         let mut res = alloc(2, 2);
         with_scratch::<BE, _>(module.blas_matmul_pt_left_tmp_bytes(&res, &pt_left, &ct_b, &ctx, &atk), |s| {

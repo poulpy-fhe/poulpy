@@ -36,8 +36,8 @@ pub unsafe trait BlasEncodingImpl: Backend {
     /// [`BlasPtOperandUnprepared::maps`](crate::layouts::BlasPtOperandUnprepared::maps), the first error stopping it.
     /// **Free:** its kernels and its scratch use.
     ///
-    /// It returns poulpy-ckks's errors, after which `res` is unspecified, and panics on a `res` allocated for
-    /// another module's slots or ring.
+    /// It panics on a `res` allocated for another module's slots or ring, then on a scratch short of its query, before
+    /// any write, and returns poulpy-ckks's errors, after which `res` is unspecified.
     fn blas_pt_operand_encode<F, S>(
         module: &Module<Self>,
         res: &mut BlasPtOperandUnprepared<Self, S>,
@@ -67,8 +67,8 @@ pub unsafe trait BlasEncodingImpl: Backend {
     /// in the order of [`BlasContextUnprepared::maps`], the first error stopping it. **Free:** its kernels and its scratch
     /// use.
     ///
-    /// It returns poulpy-ckks's errors, after which `res` is unspecified, and panics on a `res` allocated for
-    /// another module's slots or ring.
+    /// It panics on a `res` allocated for another module's slots or ring, then on a scratch short of its query, before
+    /// any write, and returns poulpy-ckks's errors, after which `res` is unspecified.
     fn blas_context_encode<F>(
         module: &Module<Self>,
         res: &mut BlasContextUnprepared<Self>,
@@ -91,8 +91,10 @@ pub unsafe trait BlasEncodingImpl: Backend {
     /// `JklsGalois` its `ckks_prepare_right_into` of each term's one plaintext. **Free:** the prepared form, kernels,
     /// scratch use and the order of the maps.
     ///
-    /// It panics on `res` and `other` of different layouts before any write, on a scratch short of its query, and
-    /// with poulpy-ckks's refusal on a map whose diagonals do not share one scale, width and slot kind.
+    /// It panics before any write on `res` and `other` of different layouts, on a map whose diagonals do not share one
+    /// scale, width and slot kind (`"<op>: a map's diagonals do not share one scale, width and slot kind"`) and on a
+    /// scratch short of its query, in that order, and with poulpy-ckks's refusal on any other refusal of a map's
+    /// preparation.
     fn blas_pt_operand_prepare<S: BlasPtSide>(
         module: &Module<Self>,
         res: &mut BlasPtOperand<Self, S>,
@@ -112,8 +114,10 @@ pub unsafe trait BlasEncodingImpl: Backend {
     /// **Fixed:** poulpy-ckks's `ckks_prepare_linear_transformation_rhs` of every map. **Free:** the prepared form,
     /// kernels, scratch use and the order of the maps.
     ///
-    /// It panics on `res` and `other` of different layouts before any write, on a scratch short of its query, and
-    /// with poulpy-ckks's refusal on a map whose diagonals do not share one scale, width and slot kind.
+    /// It panics before any write on `res` and `other` of different layouts, on a map whose diagonals do not share one
+    /// scale, width and slot kind (`"<op>: a map's diagonals do not share one scale, width and slot kind"`) and on a
+    /// scratch short of its query, in that order, and with poulpy-ckks's refusal on any other refusal of a map's
+    /// preparation.
     fn blas_context_prepare(
         module: &Module<Self>,
         res: &mut BlasContext<Self>,

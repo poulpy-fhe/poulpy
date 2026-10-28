@@ -37,13 +37,13 @@ pub trait BlasEncodingOps<BE: Backend, F: CKKSEncodingScalar + DiagonalArithmeti
     ///
     /// # Errors
     ///
-    /// poulpy-ckks's encoding errors, as a value it cannot represent at `coeffs_meta` or a scratch short of the query.
-    /// After an error the content of `res` is unspecified: encode it again before use, preparing it before then is
-    /// meaningless.
+    /// poulpy-ckks's encoding errors, as a value it cannot represent at `coeffs_meta`. After an error the content of
+    /// `res` is unspecified: encode it again before use, preparing it before then is meaningless.
     ///
     /// # Panics
     ///
-    /// Panics if `res` was allocated on a module of other slots.
+    /// Panics if `res` was allocated on a module of other slots, or, before any write, if `scratch` holds less than
+    /// [`Self::blas_pt_operand_encode_tmp_bytes`].
     ///
     /// [`BlasPtAlgorithm::Diagonal`]: crate::layouts::BlasPtAlgorithm::Diagonal
     /// [`BlasPtAlgorithm::Jkls`]: crate::layouts::BlasPtAlgorithm::Jkls
@@ -78,13 +78,13 @@ pub trait BlasEncodingOps<BE: Backend, F: CKKSEncodingScalar + DiagonalArithmeti
     ///
     /// # Errors
     ///
-    /// poulpy-ckks's encoding errors, as a value it cannot represent at `coeffs_meta` or a scratch short of the query.
-    /// After an error the content of `res` is unspecified: encode it again before use, preparing it before then is
-    /// meaningless.
+    /// poulpy-ckks's encoding errors, as a value it cannot represent at `coeffs_meta`. After an error the content of
+    /// `res` is unspecified: encode it again before use, preparing it before then is meaningless.
     ///
     /// # Panics
     ///
-    /// Panics if `res` was allocated on a module of another ring.
+    /// Panics if `res` was allocated on a module of another ring, or, before any write, if `scratch` holds less than
+    /// [`Self::blas_context_encode_tmp_bytes`].
     fn blas_context_encode(&self, res: &mut BlasContextUnprepared<BE>, scratch: &mut ScratchArena<'_, BE>) -> CKKSResult<()>;
 }
 

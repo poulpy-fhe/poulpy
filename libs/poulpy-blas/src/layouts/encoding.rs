@@ -220,14 +220,15 @@ fn uniform<BE: Backend>(map: &Encoded<BE>) -> bool {
 }
 
 /// Prepares every map of `maps` into the allocation `res` yields at the same position, once every map has diagonals of
-/// one scale, width and slot kind and `scratch` holds the largest preparation's bytes; `op` names the caller in the
-/// panics of both checks, which run before the first map is prepared, and prefixes the panic carrying any refusal of
-/// poulpy-ckks.
+/// one scale, width and slot kind and `scratch` holds the largest preparation's bytes and the `rest` its caller takes
+/// after them; `op` names the caller in the panics of both checks, which run before the first map is prepared, and
+/// prefixes the panic carrying any refusal of poulpy-ckks.
 pub(crate) fn prepare_maps_into<'a, BE, M>(
     module: &M,
     op: &'static str,
     res: impl Iterator<Item = &'a mut LinearTransformationPrepared<BE>>,
     maps: impl Iterator<Item = &'a Encoded<BE>> + Clone,
+    rest: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend + 'a,
@@ -243,7 +244,7 @@ pub(crate) fn prepare_maps_into<'a, BE, M>(
         .map(|pt| module.ckks_prepare_linear_transformation_rhs_tmp_bytes(pt))
         .max()
         .unwrap_or(0);
-    assert_scratch(op, bytes, scratch);
+    assert_scratch(op, bytes.max(rest), scratch);
     for (dst, src) in res.zip(maps) {
         if let Err(err) = module.ckks_prepare_linear_transformation_rhs(dst, src, scratch) {
             panic!("{op}: {err}");

@@ -15,8 +15,10 @@ use crate::layouts::{
     validate::assert_scratch,
 };
 
-/// Reference encodings and preparations of [`crate::api::BlasEncodingOps`], [`crate::api::BlasPtOperandPreparedFactory`]
-/// and [`crate::api::BlasContextPreparedFactory`]. An encoding builds each map's host diagonals and encodes them by
+/// References of [`crate::oep::BlasEncodingImpl`], which
+/// [`impl_blas_encoding_reference_full!`](crate::impl_blas_encoding_reference_full) forwards to: the encodings and
+/// preparations of [`crate::api::BlasEncodingOps`], [`crate::api::BlasPtOperandPreparedFactory`] and
+/// [`crate::api::BlasContextPreparedFactory`]. An encoding builds each map's host diagonals and encodes them by
 /// poulpy-ckks's `ckks_encode_linear_transformation_into`, map after map in walking order, and the first error stops it;
 /// a preparation prepares each map by poulpy-ckks's `ckks_prepare_linear_transformation_rhs`, and a masked operand's
 /// terms by `ckks_prepare_right_into`, into the allocations of `res`.
@@ -28,7 +30,7 @@ pub trait BlasEncodingReference<BE: Backend> {
         F: CKKSEncodingScalar,
         A: BlasPtOperandInfos;
 
-    /// Every map of `res`, in walking order: the first map under JKLS and the masked paths, the blocks row-major, each
+    /// After asserting its scratch query, every map of `res`, in walking order: the first map under JKLS and the masked paths, the blocks row-major, each
     /// block's terms in order, then the replicated-input maps, every block sharing the first block's schedule.
     fn blas_pt_operand_encode_reference<F, S>(
         &self,
@@ -48,7 +50,7 @@ pub trait BlasEncodingReference<BE: Backend> {
         F: CKKSEncodingScalar,
         A: BlasContextInfos;
 
-    /// Every map of the plan of `res`, in walking order.
+    /// After asserting its scratch query, every map of the plan of `res`, in walking order.
     fn blas_context_encode_reference<F>(
         &self,
         res: &mut BlasContextUnprepared<BE>,
@@ -119,6 +121,8 @@ impl<BE: Backend> BlasEncodingReference<BE> for Module<BE> {
     {
         let layout = res.blas_pt_operand_layout();
         assert_module_slots(self, &layout);
+        let bytes = self.blas_pt_operand_encode_tmp_bytes_reference::<F, _>(&layout);
+        assert_scratch("blas_pt_operand_encode", bytes, scratch);
         if let (Some(lt), Some(map)) = (&mut res.maps.first, first_map::<F, S>(&layout)) {
             encode_map_into(self, lt, map, scratch)?;
         }
@@ -171,6 +175,11 @@ impl<BE: Backend> BlasEncodingReference<BE> for Module<BE> {
     {
         let layout = res.blas_context_layout();
         assert_fits_module(self, &layout);
+        assert_scratch(
+            "blas_context_encode",
+            self.blas_context_encode_tmp_bytes_reference::<F, _>(&layout),
+            scratch,
+        );
         for (id, lt) in MapId::all(layout.plan).zip(res.maps.iter_mut()) {
             encode_map_into(self, lt, context_map::<F>(&layout, id), scratch)?;
         }
@@ -211,16 +220,15 @@ impl<BE: Backend> BlasEncodingReference<BE> for Module<BE> {
             "the prepared operand was allocated for another layout"
         );
         if !layout.plan.pt_algorithm().masked() {
-            prepare_maps_into(self, OP, res.maps.iter_mut(), other.maps.iter(), scratch);
+            prepare_maps_into(self, OP, res.maps.iter_mut(), other.maps.iter(), 0, scratch);
             return;
         }
-        prepare_maps_into(self, OP, res.maps.first.iter_mut(), other.maps.first.iter(), scratch);
         let terms = other.maps.blocks.iter().map(|lt| {
             lt.first_diagonal_plaintext()
                 .expect("every term of a masked operand holds one diagonal")
         });
         let bytes = terms.clone().map(|pt| self.ckks_prepare_tmp_bytes(pt)).max().unwrap_or(0);
-        assert_scratch(OP, bytes, scratch);
+        prepare_maps_into(self, OP, res.maps.first.iter_mut(), other.maps.first.iter(), bytes, scratch);
         let prepared: Result<()> = res
             .plaintexts
             .iter_mut()
@@ -258,6 +266,13 @@ impl<BE: Backend> BlasEncodingReference<BE> for Module<BE> {
             res.blas_context_layout() == other.blas_context_layout(),
             "the prepared context was allocated for another layout"
         );
-        prepare_maps_into(self, "blas_context_prepare", res.maps.iter_mut(), other.maps.iter(), scratch);
+        prepare_maps_into(
+            self,
+            "blas_context_prepare",
+            res.maps.iter_mut(),
+            other.maps.iter(),
+            0,
+            scratch,
+        );
     }
 }

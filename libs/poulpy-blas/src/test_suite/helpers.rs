@@ -661,7 +661,7 @@ pub fn assert_short_scratch_panics<BE: Backend, T>(op: &str, bytes: usize, call:
 }
 
 /// The public operand of `plan` on side `S`, `rows x cols` blocks of `count` matrices read through `entry`, at
-/// `coeffs_meta`, allocated, encoded and prepared on `module`.
+/// `coeffs_meta`, allocated, encoded and prepared on `module`, each call on exactly its query's bytes.
 pub fn pt_operand<BE, F, S>(
     module: &Module<BE>,
     plan: BlasPlan,
@@ -671,7 +671,6 @@ pub fn pt_operand<BE, F, S>(
     entry: impl Fn(usize, usize, usize) -> F,
     base2k: Base2K,
     coeffs_meta: CoeffsMeta,
-    scratch: &mut ScratchArena<'_, BE>,
 ) -> BlasPtOperand<BE, S>
 where
     BE: Backend + BlasEncodingImpl,
@@ -681,9 +680,13 @@ where
     S: BlasPtSide,
 {
     let mut op = module.blas_pt_operand_alloc::<S>(plan, rows, cols, count, base2k, coeffs_meta);
-    module.blas_pt_operand_encode(&mut op, entry, scratch).unwrap();
+    with_scratch::<BE, _>(module.blas_pt_operand_encode_tmp_bytes(&op), |s| {
+        module.blas_pt_operand_encode(&mut op, entry, s).unwrap()
+    });
     let mut prepared = module.blas_pt_operand_prepared_alloc_from_infos(&op);
-    module.blas_pt_operand_prepare(&mut prepared, &op, scratch);
+    with_scratch::<BE, _>(module.blas_pt_operand_prepare_tmp_bytes(&op), |s| {
+        module.blas_pt_operand_prepare(&mut prepared, &op, s)
+    });
     prepared
 }
 
@@ -913,33 +916,27 @@ pub fn other_scales(params: &CKKSTestParams) -> [usize; 2] {
     [delta - delta / 4, delta + delta / 4]
 }
 
-/// The context of `plan` at `coeffs_meta` on `module`, allocated, encoded and prepared.
-pub fn encoded_context<BE, F>(
-    module: &Module<BE>,
-    plan: BlasPlan,
-    base2k: Base2K,
-    coeffs_meta: CoeffsMeta,
-    scratch: &mut ScratchArena<'_, BE>,
-) -> BlasContext<BE>
+/// The context of `plan` at `coeffs_meta` on `module`, allocated, encoded and prepared, each call on exactly its
+/// query's bytes.
+pub fn encoded_context<BE, F>(module: &Module<BE>, plan: BlasPlan, base2k: Base2K, coeffs_meta: CoeffsMeta) -> BlasContext<BE>
 where
     BE: Backend + BlasEncodingImpl,
     Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F> + BlasEncodingOps<BE, F> + CKKSLinearTransformationOps<BE>,
     F: DiagonalArithmetic + CKKSEncodingScalar,
 {
     let mut ctx = module.blas_context_alloc(plan, base2k, coeffs_meta);
-    module.blas_context_encode(&mut ctx, scratch).unwrap();
+    with_scratch::<BE, _>(module.blas_context_encode_tmp_bytes(&ctx), |s| {
+        module.blas_context_encode(&mut ctx, s).unwrap()
+    });
     let mut prepared = module.blas_context_prepared_alloc_from_infos(&ctx);
-    module.blas_context_prepare(&mut prepared, &ctx, scratch);
+    with_scratch::<BE, _>(module.blas_context_prepare_tmp_bytes(&ctx), |s| {
+        module.blas_context_prepare(&mut prepared, &ctx, s)
+    });
     prepared
 }
 
-/// The context of `2^log_d x 2^log_d` blocks at `params.prec()`.
-pub fn blas_context<BE, F>(
-    params: &CKKSTestParams,
-    module: &Module<BE>,
-    log_d: usize,
-    scratch: &mut ScratchArena<'_, BE>,
-) -> crate::layouts::BlasContext<BE>
+/// The context of `2^log_d x 2^log_d` blocks at `params.prec()`, each call on exactly its query's bytes.
+pub fn blas_context<BE, F>(params: &CKKSTestParams, module: &Module<BE>, log_d: usize) -> crate::layouts::BlasContext<BE>
 where
     BE: TestContextBackend + BlasEncodingImpl,
     Module<BE>: TestContextSharedModule<BE>
@@ -949,13 +946,7 @@ where
         + poulpy_hal::api::CnvPVecAlloc<BE>,
     F: TestScalar + poulpy_core::layouts::DiagonalArithmetic,
 {
-    encoded_context::<BE, F>(
-        module,
-        BlasPlan::new(log_d),
-        params.base2k.into(),
-        params.prec().into(),
-        scratch,
-    )
+    encoded_context::<BE, F>(module, BlasPlan::new(log_d), params.base2k.into(), params.prec().into())
 }
 
 /// A rotation key for each of `elements`, and no other.
@@ -1003,7 +994,7 @@ where
     F: TestScalar + poulpy_core::layouts::DiagonalArithmetic,
 {
     use poulpy_hal::layouts::CyclotomicOrder;
-    let ctx = blas_context::<BE, F>(params, module, log_d, scratch);
+    let ctx = blas_context::<BE, F>(params, module, log_d);
     let atks = rotation_keys(
         params,
         module,
@@ -1047,8 +1038,7 @@ where
 {
     use poulpy_hal::layouts::CyclotomicOrder;
     let double = Module::<BE>::new(2 * params.n as u64);
-    let mut encode =
-        |module: &Module<BE>, base2k: usize| encoded_context::<BE, F>(module, plan, base2k.into(), params.prec().into(), scratch);
+    let encode = |module: &Module<BE>, base2k: usize| encoded_context::<BE, F>(module, plan, base2k.into(), params.prec().into());
     let contexts = [
         ("degree", encode(&double, params.base2k)),
         ("base2k", encode(module, params.base2k - 1)),

@@ -65,8 +65,7 @@ or public matrix: it generates the union of its pipeline's sets, and a tensor ke
 `blas_matmul_prepared`. The server checks each grid's batch, `mat_slots()`, against the one the summed keys were
 planned for.
 
-Each operation also has a key-use query in `poulpy_blas::layouts`, re-exported at the crate root
-(`blas_matmul_key_uses`, ...), that lists each key it looks up and the width it looks it up at: `(Galois element,
+Each operation also has a key-use query in `poulpy_blas::layouts` (`blas_matmul_key_uses`, ...), that lists each key it looks up and the width it looks it up at: `(Galois element,
 width)` pairs and the tensor key's width. The output-layout queries (`blas_matmul_output_layout`, ...) give the layout
 each operation stamps on `res` from its inputs' layouts, so a client plans every intermediate grid, and with it every
 key, before it encrypts or runs anything. Every query takes a context or a public operand, or their layouts

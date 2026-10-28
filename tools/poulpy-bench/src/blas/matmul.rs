@@ -14,10 +14,9 @@ use std::collections::{BTreeSet, HashMap};
 use criterion::{Bencher, measurement::Measurement};
 use poulpy_blas::{
     api::{BlasContextPreparedFactory, BlasEncodingOps, BlasMatIntraOps, BlasMatMulOps, BlasPtOperandPreparedFactory},
-    blas_matmul_max_base2k, blas_matmul_pt_left_max_base2k, blas_matmul_pt_right_max_base2k,
     layouts::{
         BlasCiphertext, BlasCiphertextOwned, BlasContext, BlasModuleAlloc, BlasPlan, BlasPtAlgorithm, BlasPtOperand, BlasPtSide,
-        Left, Right,
+        Left, Right, blas_matmul_max_base2k, blas_matmul_pt_left_max_base2k, blas_matmul_pt_right_max_base2k,
         grid::{join_blocks, split_into_blocks},
         replicated,
     },

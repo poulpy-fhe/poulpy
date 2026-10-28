@@ -1,10 +1,10 @@
-//! Downstream BLAS hooks: counting map and JKLS hooks that forward to the reference, under the provided
-//! compositions. The overriding backend matches the oracle bit for bit, every operation over a hook enters it, and no
-//! call the API rejects enters either hook.
+//! Downstream BLAS hooks: counting map and JKLS hooks that forward to the reference, under the reference compositions
+//! and the provided transpose. The overriding backend matches the oracle bit for bit, every operation over a hook
+//! enters it, and no call the API rejects enters either hook.
 use crate::{ckks_encoding::EncodingFFTTable, hal_impl::delegating_backend::DifferentSamplingFFT64Portable as OverrideBackend};
 use poulpy_blas::{
     api::{BlasMatIntraOps, BlasMatMulOps},
-    layouts::{BlasPlan, BlasPtAlgorithm, Left, Right},
+    layouts::{BlasContext, BlasGrid, BlasGridInfos, BlasGridMut, BlasPlan, BlasPtAlgorithm, Left, Right},
     oep::{BlasJklsImpl, BlasMatIntraImpl},
     reference::{BlasJklsReference, BlasMatIntraReference},
     test_suite::{
@@ -69,7 +69,6 @@ unsafe impl BlasMatIntraImpl for OverrideBackend {
     fn blas_map_blocks_tmp_bytes<D, S, K>(
         module: &Module<Self>,
         sources: usize,
-
         dst: &D,
         src: &S,
         lts: &[&LinearTransformationPrepared<Self>],
@@ -98,6 +97,108 @@ unsafe impl BlasMatIntraImpl for OverrideBackend {
     {
         MAP_CALLS.fetch_add(1, Relaxed);
         module.blas_map_blocks_reference(dst, src, lts, keys, scratch)
+    }
+
+    fn blas_rotate_rows_tmp_bytes<R, A, K>(module: &Module<Self>, res: &R, a: &A, ctx: &BlasContext<Self>, keys: &K) -> usize
+    where
+        R: BlasGridInfos,
+        A: BlasGridInfos,
+        K: GGLWEInfos,
+    {
+        module.blas_rotate_rows_tmp_bytes_reference(res, a, ctx, keys)
+    }
+
+    fn blas_rotate_rows<R, A, K>(
+        module: &Module<Self>,
+        k: usize,
+        res: &mut R,
+        a: &A,
+        ctx: &BlasContext<Self>,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) -> CKKSResult<()>
+    where
+        R: BlasGridMut<Self>,
+        A: BlasGrid<Self>,
+        K: GetAutomorphismKey<Self> + Sync,
+    {
+        module.blas_rotate_rows_reference(k, res, a, ctx, keys, scratch)
+    }
+
+    fn blas_rotate_cols_tmp_bytes<R, A, K>(module: &Module<Self>, res: &R, a: &A, ctx: &BlasContext<Self>, keys: &K) -> usize
+    where
+        R: BlasGridInfos,
+        A: BlasGridInfos,
+        K: GGLWEInfos,
+    {
+        module.blas_rotate_cols_tmp_bytes_reference(res, a, ctx, keys)
+    }
+
+    fn blas_rotate_cols<R, A, K>(
+        module: &Module<Self>,
+        k: usize,
+        res: &mut R,
+        a: &A,
+        ctx: &BlasContext<Self>,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) -> CKKSResult<()>
+    where
+        R: BlasGridMut<Self>,
+        A: BlasGrid<Self>,
+        K: GetAutomorphismKey<Self> + Sync,
+    {
+        module.blas_rotate_cols_reference(k, res, a, ctx, keys, scratch)
+    }
+
+    fn blas_sum_rows_tmp_bytes<R, A, K>(module: &Module<Self>, res: &R, a: &A, ctx: &BlasContext<Self>, keys: &K) -> usize
+    where
+        R: BlasGridInfos,
+        A: BlasGridInfos,
+        K: GGLWEInfos,
+    {
+        module.blas_sum_rows_tmp_bytes_reference(res, a, ctx, keys)
+    }
+
+    fn blas_sum_rows<R, A, K>(
+        module: &Module<Self>,
+        res: &mut R,
+        a: &A,
+        ctx: &BlasContext<Self>,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) -> CKKSResult<()>
+    where
+        R: BlasGridMut<Self>,
+        A: BlasGrid<Self>,
+        K: GetAutomorphismKey<Self> + Sync,
+    {
+        module.blas_sum_rows_reference(res, a, ctx, keys, scratch)
+    }
+
+    fn blas_sum_cols_tmp_bytes<R, A, K>(module: &Module<Self>, res: &R, a: &A, ctx: &BlasContext<Self>, keys: &K) -> usize
+    where
+        R: BlasGridInfos,
+        A: BlasGridInfos,
+        K: GGLWEInfos,
+    {
+        module.blas_sum_cols_tmp_bytes_reference(res, a, ctx, keys)
+    }
+
+    fn blas_sum_cols<R, A, K>(
+        module: &Module<Self>,
+        res: &mut R,
+        a: &A,
+        ctx: &BlasContext<Self>,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) -> CKKSResult<()>
+    where
+        R: BlasGridMut<Self>,
+        A: BlasGrid<Self>,
+        K: GetAutomorphismKey<Self> + Sync,
+    {
+        module.blas_sum_cols_reference(res, a, ctx, keys, scratch)
     }
 }
 
@@ -313,9 +414,8 @@ fn blas_hooks_run_on_accepted_calls_alone() {
         let plan = BlasPlan::new(log_d).with_pt_algorithm(algorithm);
         let entry = |_: usize, r: usize, c: usize| ((r + c) % 3) as f64 - 1.0;
         let (base2k, meta) = (params.base2k.into(), params.prec().into());
-        let pt = pt_operand::<OverrideBackend, f64, Right>(&module, plan, 1, 1, 1, entry, base2k, meta, &mut scratch.borrow());
-        let pt_left =
-            pt_operand::<OverrideBackend, f64, Left>(&module, plan, 2, 2, 1, entry, base2k, meta, &mut scratch.borrow());
+        let pt = pt_operand::<OverrideBackend, f64, Right>(&module, plan, 1, 1, 1, entry, base2k, meta);
+        let pt_left = pt_operand::<OverrideBackend, f64, Left>(&module, plan, 2, 2, 1, entry, base2k, meta);
         let (right_calls, left_calls) = if algorithm == BlasPtAlgorithm::Jkls { (2, 1) } else { (0, 0) };
         let bytes = module
             .blas_matmul_pt_right_tmp_bytes(&res_col, &col, &pt, &ctx, &atk_layout)

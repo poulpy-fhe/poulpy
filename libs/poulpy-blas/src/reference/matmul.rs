@@ -78,7 +78,7 @@ pub trait BlasMatMulReference<BE: Backend> {
     ) -> usize
     where
         BE: BlasMatIntraImpl,
-        Self: CKKSMulOps<BE>,
+        Self: CKKSMulOps<BE> + CKKSCopyOps<BE>,
         A: BlasGridInfos,
         K: GGLWEInfos;
 
@@ -103,7 +103,7 @@ pub trait BlasMatMulReference<BE: Backend> {
     ) -> Result<()>
     where
         BE: BlasMatIntraImpl,
-        Self: CKKSMulOps<BE>,
+        Self: CKKSMulOps<BE> + CKKSCopyOps<BE>,
         A: BlasGrid<BE>,
         K: GetAutomorphismKey<BE> + Sync;
 
@@ -118,7 +118,7 @@ pub trait BlasMatMulReference<BE: Backend> {
     ) -> usize
     where
         BE: BlasMatIntraImpl,
-        Self: CKKSMulOps<BE>,
+        Self: CKKSMulOps<BE> + CKKSCopyOps<BE>,
         B: BlasGridInfos,
         K: GGLWEInfos;
 
@@ -135,7 +135,7 @@ pub trait BlasMatMulReference<BE: Backend> {
     ) -> Result<()>
     where
         BE: BlasMatIntraImpl,
-        Self: CKKSMulOps<BE>,
+        Self: CKKSMulOps<BE> + CKKSCopyOps<BE>,
         B: BlasGrid<BE>,
         K: GetAutomorphismKey<BE> + Sync;
 
@@ -158,7 +158,7 @@ pub trait BlasMatMulReference<BE: Backend> {
     ) -> usize
     where
         BE: BlasJklsImpl + BlasMatIntraImpl,
-        Self: CKKSMulOps<BE>,
+        Self: CKKSMulOps<BE> + CKKSCopyOps<BE>,
         R: BlasGridInfos,
         A: BlasMatMulOperandInfos,
         B: BlasMatMulOperandInfos,
@@ -194,7 +194,7 @@ pub trait BlasMatMulReference<BE: Backend> {
     ) -> Result<()>
     where
         BE: BlasJklsImpl + BlasMatIntraImpl,
-        Self: CKKSMulOps<BE>,
+        Self: CKKSMulOps<BE> + CKKSCopyOps<BE>,
         R: BlasGridMut<BE>,
         T: GetTensorKey<BE> + Sync,
         K: GetAutomorphismKey<BE> + Sync;
@@ -212,7 +212,7 @@ pub trait BlasMatMulReference<BE: Backend> {
     ) -> usize
     where
         BE: BlasJklsImpl + BlasMatIntraImpl,
-        Self: CKKSMulOps<BE>,
+        Self: CKKSMulOps<BE> + CKKSCopyOps<BE>,
         R: BlasGridInfos,
         A: BlasGridInfos,
         B: BlasGridInfos,
@@ -235,7 +235,7 @@ pub trait BlasMatMulReference<BE: Backend> {
     ) -> Result<()>
     where
         BE: BlasJklsImpl + BlasMatIntraImpl,
-        Self: CKKSMulOps<BE>,
+        Self: CKKSMulOps<BE> + CKKSCopyOps<BE>,
         R: BlasGridMut<BE>,
         A: BlasGrid<BE>,
         B: BlasGrid<BE>,
@@ -259,7 +259,11 @@ pub trait BlasMatMulReference<BE: Backend> {
     ) -> usize
     where
         BE: BlasMatIntraImpl,
-        Self: CKKSLinearTransformationOps<BE> + CKKSMulOps<BE> + CKKSDotProductOps<BE> + GLWEMulPreparedPlainSum<BE>,
+        Self: CKKSLinearTransformationOps<BE>
+            + CKKSMulOps<BE>
+            + CKKSCopyOps<BE>
+            + CKKSDotProductOps<BE>
+            + GLWEMulPreparedPlainSum<BE>,
         R: BlasGridInfos,
         A: BlasGridInfos,
         K: GGLWEInfos;
@@ -291,6 +295,7 @@ pub trait BlasMatMulReference<BE: Backend> {
         BE: BlasMatIntraImpl,
         Self: CKKSLinearTransformationOps<BE>
             + CKKSMulOps<BE>
+            + CKKSCopyOps<BE>
             + CKKSDotProductOps<BE>
             + GLWEMulPreparedPlainSum<BE>
             + ModuleN
@@ -316,7 +321,11 @@ pub trait BlasMatMulReference<BE: Backend> {
     ) -> usize
     where
         BE: BlasMatIntraImpl,
-        Self: CKKSLinearTransformationOps<BE> + CKKSMulOps<BE> + CKKSDotProductOps<BE> + GLWEMulPreparedPlainSum<BE>,
+        Self: CKKSLinearTransformationOps<BE>
+            + CKKSMulOps<BE>
+            + CKKSCopyOps<BE>
+            + CKKSDotProductOps<BE>
+            + GLWEMulPreparedPlainSum<BE>,
         R: BlasGridInfos,
         A: BlasGridInfos,
         K: GGLWEInfos;
@@ -345,6 +354,7 @@ pub trait BlasMatMulReference<BE: Backend> {
         BE: BlasMatIntraImpl,
         Self: CKKSLinearTransformationOps<BE>
             + CKKSMulOps<BE>
+            + CKKSCopyOps<BE>
             + CKKSDotProductOps<BE>
             + GLWEMulPreparedPlainSum<BE>
             + ModuleN
@@ -365,7 +375,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
     ) -> usize
     where
         BE: BlasMatIntraImpl,
-        Self: CKKSMulOps<BE>,
+        Self: CKKSMulOps<BE> + CKKSCopyOps<BE>,
         A: BlasGridInfos,
         K: GGLWEInfos,
     {
@@ -382,7 +392,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
     ) -> Result<()>
     where
         BE: BlasMatIntraImpl,
-        Self: CKKSMulOps<BE>,
+        Self: CKKSMulOps<BE> + CKKSCopyOps<BE>,
         A: BlasGrid<BE>,
         K: GetAutomorphismKey<BE> + Sync,
     {
@@ -415,7 +425,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
     ) -> usize
     where
         BE: BlasMatIntraImpl,
-        Self: CKKSMulOps<BE>,
+        Self: CKKSMulOps<BE> + CKKSCopyOps<BE>,
         B: BlasGridInfos,
         K: GGLWEInfos,
     {
@@ -433,7 +443,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
     ) -> Result<()>
     where
         BE: BlasMatIntraImpl,
-        Self: CKKSMulOps<BE>,
+        Self: CKKSMulOps<BE> + CKKSCopyOps<BE>,
         B: BlasGrid<BE>,
         K: GetAutomorphismKey<BE> + Sync,
     {
@@ -468,7 +478,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
     ) -> usize
     where
         BE: BlasJklsImpl + BlasMatIntraImpl,
-        Self: CKKSMulOps<BE>,
+        Self: CKKSMulOps<BE> + CKKSCopyOps<BE>,
         R: BlasGridInfos,
         A: BlasMatMulOperandInfos,
         B: BlasMatMulOperandInfos,
@@ -490,7 +500,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
     ) -> Result<()>
     where
         BE: BlasJklsImpl + BlasMatIntraImpl,
-        Self: CKKSMulOps<BE>,
+        Self: CKKSMulOps<BE> + CKKSCopyOps<BE>,
         R: BlasGridMut<BE>,
         T: GetTensorKey<BE> + Sync,
         K: GetAutomorphismKey<BE> + Sync,
@@ -527,7 +537,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
     ) -> usize
     where
         BE: BlasJklsImpl + BlasMatIntraImpl,
-        Self: CKKSMulOps<BE>,
+        Self: CKKSMulOps<BE> + CKKSCopyOps<BE>,
         R: BlasGridInfos,
         A: BlasGridInfos,
         B: BlasGridInfos,
@@ -556,7 +566,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
     ) -> Result<()>
     where
         BE: BlasJklsImpl + BlasMatIntraImpl,
-        Self: CKKSMulOps<BE>,
+        Self: CKKSMulOps<BE> + CKKSCopyOps<BE>,
         R: BlasGridMut<BE>,
         A: BlasGrid<BE>,
         B: BlasGrid<BE>,
@@ -591,7 +601,11 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
     ) -> usize
     where
         BE: BlasMatIntraImpl,
-        Self: CKKSLinearTransformationOps<BE> + CKKSMulOps<BE> + CKKSDotProductOps<BE> + GLWEMulPreparedPlainSum<BE>,
+        Self: CKKSLinearTransformationOps<BE>
+            + CKKSMulOps<BE>
+            + CKKSCopyOps<BE>
+            + CKKSDotProductOps<BE>
+            + GLWEMulPreparedPlainSum<BE>,
         R: BlasGridInfos,
         A: BlasGridInfos,
         K: GGLWEInfos,
@@ -614,6 +628,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
         BE: BlasMatIntraImpl,
         Self: CKKSLinearTransformationOps<BE>
             + CKKSMulOps<BE>
+            + CKKSCopyOps<BE>
             + CKKSDotProductOps<BE>
             + GLWEMulPreparedPlainSum<BE>
             + ModuleN
@@ -672,7 +687,11 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
     ) -> usize
     where
         BE: BlasMatIntraImpl,
-        Self: CKKSLinearTransformationOps<BE> + CKKSMulOps<BE> + CKKSDotProductOps<BE> + GLWEMulPreparedPlainSum<BE>,
+        Self: CKKSLinearTransformationOps<BE>
+            + CKKSMulOps<BE>
+            + CKKSCopyOps<BE>
+            + CKKSDotProductOps<BE>
+            + GLWEMulPreparedPlainSum<BE>,
         R: BlasGridInfos,
         A: BlasGridInfos,
         K: GGLWEInfos,
@@ -695,6 +714,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
         BE: BlasMatIntraImpl,
         Self: CKKSLinearTransformationOps<BE>
             + CKKSMulOps<BE>
+            + CKKSCopyOps<BE>
             + CKKSDotProductOps<BE>
             + GLWEMulPreparedPlainSum<BE>
             + ModuleN
@@ -785,7 +805,7 @@ fn product_scratch<BE, T, K>(
 ) -> usize
 where
     BE: BlasJklsImpl + BlasMatIntraImpl,
-    Module<BE>: CKKSMulOps<BE>,
+    Module<BE>: CKKSMulOps<BE> + CKKSCopyOps<BE>,
     T: GetTensorKey<BE>,
     K: GetAutomorphismKey<BE>,
 {
@@ -820,7 +840,7 @@ fn product<BE, R, SA, SB, T, K>(
 ) -> Result<()>
 where
     BE: BlasJklsImpl + BlasMatIntraImpl,
-    Module<BE>: CKKSMulOps<BE>,
+    Module<BE>: CKKSMulOps<BE> + CKKSCopyOps<BE>,
     R: BlasGridMut<BE>,
     SA: GLWEToBackendRef<BE> + CKKSCtBounds + Sync,
     SB: GLWEToBackendRef<BE> + CKKSCtBounds + Sync,
@@ -964,7 +984,7 @@ fn hot_tmp_bytes<BE>(
 ) -> usize
 where
     BE: BlasMatIntraImpl,
-    Module<BE>: CKKSMulOps<BE>,
+    Module<BE>: CKKSMulOps<BE> + CKKSCopyOps<BE>,
 {
     let left = match a.hint() {
         PrepareHint::OneShot => {
@@ -985,7 +1005,10 @@ where
 }
 
 /// Scratch of a hot preparation of `a`: the copy of a block of `a` into a block of its layout.
-fn copy_tmp_bytes<BE: BlasMatIntraImpl>(module: &Module<BE>, a: &impl BlasGridInfos) -> usize {
+fn copy_tmp_bytes<BE: Backend>(module: &Module<BE>, a: &impl BlasGridInfos) -> usize
+where
+    Module<BE>: CKKSCopyOps<BE>,
+{
     let block = a.block_layout();
     module.ckks_copy_tmp_bytes(&block, &block)
 }
@@ -1002,7 +1025,7 @@ fn prepare_tmp_bytes<'c, BE, K>(
 ) -> usize
 where
     BE: BlasMatIntraImpl + 'c,
-    Module<BE>: CKKSMulOps<BE>,
+    Module<BE>: CKKSMulOps<BE> + CKKSCopyOps<BE>,
     K: GGLWEInfos,
 {
     match hint {
@@ -1028,7 +1051,7 @@ fn unit_tmp_bytes<BE, K>(
 ) -> usize
 where
     BE: BlasMatIntraImpl,
-    Module<BE>: CKKSMulOps<BE>,
+    Module<BE>: CKKSMulOps<BE> + CKKSCopyOps<BE>,
     K: GGLWEInfos,
 {
     let block = a.block_layout();
@@ -1058,7 +1081,7 @@ fn prepare<'c, BE, A, K, P>(
 ) -> Result<()>
 where
     BE: BlasMatIntraImpl + 'c,
-    Module<BE>: CKKSMulOps<BE>,
+    Module<BE>: CKKSMulOps<BE> + CKKSCopyOps<BE>,
     A: BlasGrid<BE>,
     K: GetAutomorphismKey<BE> + Sync,
 {
@@ -1110,6 +1133,7 @@ fn unit_terms<BE, S, K>(
 ) -> Result<()>
 where
     BE: BlasMatIntraImpl,
+    Module<BE>: CKKSCopyOps<BE>,
     S: GLWEToBackendRef<BE> + CKKSCtBounds + Sync,
     K: GetAutomorphismKey<BE> + Sync,
 {
@@ -1146,6 +1170,7 @@ fn new_unit_terms<BE, S, K, P>(
 ) -> Result<Vec<P>>
 where
     BE: BlasMatIntraImpl,
+    Module<BE>: CKKSCopyOps<BE>,
     S: GLWEToBackendRef<BE> + CKKSCtBounds + Sync,
     K: GetAutomorphismKey<BE> + Sync,
 {
@@ -1174,7 +1199,8 @@ fn pt_tmp_bytes<BE: BlasMatIntraImpl>(
     keys: &impl GGLWEInfos,
 ) -> usize
 where
-    Module<BE>: CKKSLinearTransformationOps<BE> + CKKSMulOps<BE> + CKKSDotProductOps<BE> + GLWEMulPreparedPlainSum<BE>,
+    Module<BE>:
+        CKKSLinearTransformationOps<BE> + CKKSMulOps<BE> + CKKSCopyOps<BE> + CKKSDotProductOps<BE> + GLWEMulPreparedPlainSum<BE>,
 {
     let (res, block) = (res.block_layout(), a.block_layout());
     let Some(first) = first else {
@@ -1272,7 +1298,7 @@ fn masked_products<'s, 'p, BE, D, S, K>(
 ) -> Result<()>
 where
     BE: BlasMatIntraImpl + 's + 'p,
-    Module<BE>: CKKSMulOps<BE> + CKKSDotProductOps<BE> + GLWEMulPreparedPlainSum<BE>,
+    Module<BE>: CKKSMulOps<BE> + CKKSCopyOps<BE> + CKKSDotProductOps<BE> + GLWEMulPreparedPlainSum<BE>,
     D: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     S: GLWEToBackendRef<BE> + CKKSCtBounds + Sync + 's,
     K: GetAutomorphismKey<BE> + Sync,

@@ -19,7 +19,7 @@ use std::{
 
 use poulpy_ckks::{
     CKKSCompositionError, CKKSInfos, CKKSLayout, CKKSResult, CoeffsMeta, SlotsKind,
-    api::{CKKSEncodingOps, CKKSLinearTransformationOps, CKKSModuleInfos},
+    api::{CKKSAddManyOps, CKKSAddOps, CKKSCopyOps, CKKSEncodingOps, CKKSLinearTransformationOps, CKKSModuleInfos},
     layouts::CKKSModuleAlloc,
     test_suite::{
         CKKSTestParams,
@@ -32,7 +32,7 @@ use poulpy_ckks::{
     },
 };
 use poulpy_core::{
-    GLWEAdd, GLWEMaskFill,
+    GLWEAdd, GLWEMaskFill, GLWENormalize,
     api::{GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory},
     layouts::{
         DiagonalArithmetic, GGLWELayout, GetAutomorphismKey, GetDegree, GetTensorKey, LWEInfos, TorusPrecision,
@@ -65,10 +65,8 @@ use crate::{
         sum_galois_elements,
         validate::{MASKLESS, MAX_BASE2K},
     },
-    oep::{
-        BlasImpl,
-        derived::intra::{sum_line, sum_line_tmp_bytes},
-    },
+    oep::BlasImpl,
+    reference::{sum_line, sum_line_tmp_bytes},
 };
 
 /// Bounds of a backend taking part in blas parity: any storage, any ring.
@@ -88,6 +86,10 @@ pub trait BlasParityModule<B: Backend, F: TestScalar + DiagonalArithmetic>:
     + CKKSEncodingOps<B, F>
     + BlasEncodingOps<B, F>
     + CKKSLinearTransformationOps<B>
+    + CKKSCopyOps<B>
+    + CKKSAddOps<B>
+    + CKKSAddManyOps<B>
+    + GLWENormalize<B>
     + CnvPVecAlloc<B>
 {
 }
@@ -103,6 +105,10 @@ impl<B: Backend, F: TestScalar + DiagonalArithmetic, M> BlasParityModule<B, F> f
         + CKKSEncodingOps<B, F>
         + BlasEncodingOps<B, F>
         + CKKSLinearTransformationOps<B>
+        + CKKSCopyOps<B>
+        + CKKSAddOps<B>
+        + CKKSAddManyOps<B>
+        + GLWENormalize<B>
         + CnvPVecAlloc<B>
 {
 }
@@ -356,12 +362,11 @@ where
     };
     let mut ctx = module.blas_context_alloc_from_infos(&layout);
     let mut prepared = module.blas_context_prepared_alloc_from_infos(&layout);
-    let bytes = module
-        .blas_context_encode_tmp_bytes(&layout)
-        .max(module.blas_context_prepare_tmp_bytes(&layout));
-    with_scratch::<B, _>(bytes, |s| {
-        module.blas_context_encode(&mut ctx, s).unwrap();
-        module.blas_context_prepare(&mut prepared, &ctx, s);
+    with_scratch::<B, _>(module.blas_context_encode_tmp_bytes(&layout), |s| {
+        module.blas_context_encode(&mut ctx, s).unwrap()
+    });
+    with_scratch::<B, _>(module.blas_context_prepare_tmp_bytes(&layout), |s| {
+        module.blas_context_prepare(&mut prepared, &ctx, s)
     });
     prepared
 }
@@ -691,12 +696,11 @@ where
 {
     let mut op = module.blas_pt_operand_alloc_from_infos(&layout);
     let mut prepared = module.blas_pt_operand_prepared_alloc_from_infos(&layout);
-    let bytes = module
-        .blas_pt_operand_encode_tmp_bytes(&layout)
-        .max(module.blas_pt_operand_prepare_tmp_bytes(&layout));
-    with_scratch::<B, _>(bytes, |s| {
-        module.blas_pt_operand_encode(&mut op, public_entry::<F>, s).unwrap();
-        module.blas_pt_operand_prepare(&mut prepared, &op, s);
+    with_scratch::<B, _>(module.blas_pt_operand_encode_tmp_bytes(&layout), |s| {
+        module.blas_pt_operand_encode(&mut op, public_entry::<F>, s).unwrap()
+    });
+    with_scratch::<B, _>(module.blas_pt_operand_prepare_tmp_bytes(&layout), |s| {
+        module.blas_pt_operand_prepare(&mut prepared, &op, s)
     });
     prepared
 }

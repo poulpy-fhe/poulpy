@@ -31,10 +31,8 @@ use super::helpers::{
 use crate::{
     api::{BlasEncodingOps, BlasMatIntraOps},
     layouts::{BlasCiphertextOwned, BlasContext, BlasContextInfos, BlasGridInfos, BlasPlan, replicated},
-    oep::{
-        BlasEncodingImpl, BlasMatIntraImpl,
-        derived::intra::{sum_line, sum_line_tmp_bytes},
-    },
+    oep::{BlasEncodingImpl, BlasMatIntraImpl},
+    reference::{sum_line, sum_line_tmp_bytes},
 };
 
 /// `dec(transpose(enc(A)))` is `A^T` for every matrix of the batch, on a `2 x 3` grid, with the keys of the plan's
@@ -83,7 +81,7 @@ pub fn test_blas_transpose<BE, F, E>(
     // Maps at `a`'s scale, then at scales below and above it, each into `res` as wide as `a` and one limb wider.
     for p in [params.prec().log_delta()].into_iter().chain(other_scales(&params)) {
         let maps = at_scale(&params, p);
-        let ctx = blas_context::<BE, F>(&maps, module, log_d, &mut scratch.borrow());
+        let ctx = blas_context::<BE, F>(&maps, module, log_d);
         for res_k in [params.k, params.k + params.base2k] {
             let mut res = alloc_grid(&params, module, log_d, cols, rows, res_k);
             let bytes = module.blas_transpose_tmp_bytes(&res, &ct, &ctx, &params.atk_layout());
@@ -132,7 +130,7 @@ pub fn test_blas_rotate_rows_cols<BE, F, E>(
     let encoder = ReferenceEncoder::<E>::new(slots).unwrap();
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
-    let ctx = blas_context::<BE, F>(&params, module, log_d, &mut scratch.borrow());
+    let ctx = blas_context::<BE, F>(&params, module, log_d);
     // Each shift runs on the keys of its own set alone: one store per row and per column shift below `d`.
     let (d, order) = (1 << log_d, module.cyclotomic_order());
     let mut stores = |elements: fn(&BlasPlan, i64, usize) -> Vec<i64>| -> Vec<TestKeys<BE>> {
@@ -249,7 +247,7 @@ pub fn test_blas_rotate_rows_cols<BE, F, E>(
         // consumes in place of `a`'s.
         for p in other_scales(&params) {
             let maps = at_scale(&params, p);
-            let ctx = blas_context::<BE, F>(&maps, module, log_d, &mut scratch.borrow());
+            let ctx = blas_context::<BE, F>(&maps, module, log_d);
             let mut res = alloc_grid(&params, module, log_d, rows, cols, params.k);
             let bytes = module
                 .blas_rotate_rows_tmp_bytes(&res, &ct, &ctx, &params.atk_layout())
@@ -318,7 +316,7 @@ pub fn test_blas_sum_rows_cols<BE, F, E>(
     let encoder = ReferenceEncoder::<E>::new(slots).unwrap();
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
-    let ctx = blas_context::<BE, F>(&params, module, log_d, &mut scratch.borrow());
+    let ctx = blas_context::<BE, F>(&params, module, log_d);
     let (plan, order) = (ctx.plan(), module.cyclotomic_order());
     let mut store = |elements: Vec<i64>| TestKeys::<BE> {
         atks: rotation_keys(&params, module, &sk_raw, elements, &mut scratch.borrow()),
@@ -396,7 +394,7 @@ pub fn test_blas_sum_rows_cols<BE, F, E>(
             // Projections at scales below and above `a`'s, whose scale the reductions consume in place of `a`'s.
             for p in other_scales(&params) {
                 let maps = at_scale(&params, p);
-                let ctx = blas_context::<BE, F>(&maps, module, log_d, &mut scratch.borrow());
+                let ctx = blas_context::<BE, F>(&maps, module, log_d);
                 let mut res = alloc_grid(&params, module, log_d, rows, cols, params.k);
                 let layout = mapped_layout(&ct, rows, cols, params.k, p);
                 let rows_layout = if rep {
@@ -716,13 +714,7 @@ pub fn test_blas_intra_guards<BE, F, E>(
         k: (params.k + 1).into(),
         ..params.prec().into()
     };
-    let wide = encoded_context::<BE, F>(
-        module,
-        BlasPlan::new(log_d),
-        params.base2k.into(),
-        wide,
-        &mut scratch.borrow(),
-    );
+    let wide = encoded_context::<BE, F>(module, BlasPlan::new(log_d), params.base2k.into(), wide);
     let mut res_one = alloc(1, 2);
     let mut unmapped_scratch = poisoned_scratch::<BE>(
         module

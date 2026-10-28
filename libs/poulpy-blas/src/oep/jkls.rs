@@ -93,7 +93,6 @@ macro_rules! impl_blas_jkls_reference_full {
             fn blas_jkls_block_tmp_bytes<R, L, Rh, T>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 terms: usize,
-
                 res: &R,
                 lhs: &L,
                 rhs: &Rh,

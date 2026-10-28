@@ -87,7 +87,7 @@ fn blas_matmul_heap_does_not_grow_with_the_streamed_side() {
         atks: rotation_keys(&params, &module, &sk_raw, elements, &mut scratch.borrow()),
         tsk: Some(gen_tsk(&params, &module, &sk_raw, &mut scratch.borrow())),
     };
-    let ctx = blas_context::<FFT64Portable, f64>(&params, &module, log_d, &mut scratch.borrow());
+    let ctx = blas_context::<FFT64Portable, f64>(&params, &module, log_d);
     let mut encrypt = |rows: usize, cols: usize, seed: u64| {
         let grid = Grid::model(log_d, rows, cols, slots >> (2 * log_d), seed);
         encrypt_grid::<FFT64Portable, f64, EncodingFFTTable<f64>>(

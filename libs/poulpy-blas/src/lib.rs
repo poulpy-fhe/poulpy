@@ -18,13 +18,3 @@ pub mod reference;
     reason = "test fixtures pass their operands, keys and parameters one by one"
 )]
 pub mod test_suite;
-
-pub use layouts::{
-    BlasKeyUses, blas_matmul_key_uses, blas_matmul_max_base2k, blas_matmul_output_layout, blas_matmul_prepare_left_key_uses,
-    blas_matmul_prepare_right_key_uses, blas_matmul_prepared_key_uses, blas_matmul_prepared_output_layout,
-    blas_matmul_pt_left_key_uses, blas_matmul_pt_left_max_base2k, blas_matmul_pt_left_output_layout,
-    blas_matmul_pt_right_key_uses, blas_matmul_pt_right_max_base2k, blas_matmul_pt_right_output_layout,
-    blas_rotate_cols_key_uses, blas_rotate_cols_output_layout, blas_rotate_key_uses, blas_rotate_output_layout,
-    blas_rotate_rows_key_uses, blas_rotate_rows_output_layout, blas_sum_key_uses, blas_sum_output_layout,
-    blas_transpose_key_uses, blas_transpose_output_layout,
-};

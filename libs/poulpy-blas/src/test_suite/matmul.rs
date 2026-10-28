@@ -155,7 +155,7 @@ pub fn test_blas_matmul<BE, F, E>(
     let scales: Vec<usize> = [delta].into_iter().chain(other_scales(&params)).collect();
     let contexts: Vec<_> = scales
         .iter()
-        .map(|&p| blas_context::<BE, F>(&at_scale(&params, p), module, log_d, &mut scratch.borrow()))
+        .map(|&p| blas_context::<BE, F>(&at_scale(&params, p), module, log_d))
         .collect();
     // Each preparation and product on exactly the scratch its query reports.
     let prepare_left = |x: &BlasCiphertextOwned<BE>, ctx: &BlasContext<BE>, hint| {
@@ -485,10 +485,10 @@ pub fn test_blas_matmul_pt_right<BE, F, E>(
 {
     let slots = params.n / 2;
     let lanes = slots >> (2 * log_d);
-    let ctx = blas_context::<BE, F>(&params, module, log_d, &mut alloc_scratch(&params, module).borrow());
+    let ctx = blas_context::<BE, F>(&params, module, log_d);
     let encoder = ReferenceEncoder::<E>::new(slots).unwrap();
     let (m, inner, n) = (2, 3, 2);
-    let encode = |params: &CKKSTestParams, algorithm: BlasPtAlgorithm, count: usize, scratch: &mut ScratchArena<'_, BE>| {
+    let encode = |params: &CKKSTestParams, algorithm: BlasPtAlgorithm, count: usize| {
         pt_operand::<BE, F, Right>(
             module,
             BlasPlan::new(log_d).with_pt_algorithm(algorithm),
@@ -498,7 +498,6 @@ pub fn test_blas_matmul_pt_right<BE, F, E>(
             |m, r, c| F::from_f64(public_entry(m, r, c)).unwrap(),
             params.base2k.into(),
             params.prec().into(),
-            scratch,
         )
     };
     // The keys of the plan's set alone, whatever the operand's count.
@@ -536,7 +535,7 @@ pub fn test_blas_matmul_pt_right<BE, F, E>(
             for &(count, p_b) in &cases {
                 let stages = if algorithm == BlasPtAlgorithm::Jkls { 2 } else { 1 };
                 let public = at_scale(&params, p_b);
-                let b = encode(&public, algorithm, count, &mut scratch.borrow());
+                let b = encode(&public, algorithm, count);
                 // `res` one limb wider than `a` for one public matrix.
                 let res_k = if count == 1 { params.k + params.base2k } else { params.k };
                 let label = format!("matmul_pt_right {algorithm:?} count={count} p_B={p_b} res_k={res_k}");
@@ -615,7 +614,7 @@ pub fn test_blas_matmul_pt_right<BE, F, E>(
         &mut scratch.borrow(),
     );
     for algorithm in PT_ALGORITHMS {
-        let b = encode(&params, algorithm, 1, &mut scratch.borrow());
+        let b = encode(&params, algorithm, 1);
         let mut res = alloc_grid(&params, module, log_d, m, n, params.k);
         let mut op_scratch =
             poisoned_scratch::<BE>(module.blas_matmul_pt_right_tmp_bytes(&res, &ct, &b, &ctx, &params.atk_layout()));
@@ -705,11 +704,11 @@ pub fn test_blas_matmul_pt_right_guards<BE, F, E>(
 {
     let slots = params.n / 2;
     let lanes = slots >> (2 * log_d);
-    let ctx = blas_context::<BE, F>(&params, module, log_d, &mut alloc_scratch(&params, module).borrow());
+    let ctx = blas_context::<BE, F>(&params, module, log_d);
     let encoder = ReferenceEncoder::<E>::new(slots).unwrap();
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
-    let encode = |module: &Module<BE>, log_d: usize, count: usize, base2k: usize, scratch: &mut ScratchArena<'_, BE>| {
+    let encode = |module: &Module<BE>, log_d: usize, count: usize, base2k: usize| {
         pt_operand::<BE, F, Right>(
             module,
             BlasPlan::new(log_d),
@@ -719,18 +718,17 @@ pub fn test_blas_matmul_pt_right_guards<BE, F, E>(
             |m, r, c| F::from_f64(public_entry(m, r, c)).unwrap(),
             base2k.into(),
             params.prec().into(),
-            scratch,
         )
     };
-    let b = encode(module, log_d, lanes, params.base2k, &mut scratch.borrow());
+    let b = encode(module, log_d, lanes, params.base2k);
     // One public matrix, which divides the matrix slots of any module and of a grid read at any dimension.
-    let one = encode(module, log_d, 1, params.base2k, &mut scratch.borrow());
-    let other = other_log_d("test_blas_matmul_pt_right_guards", log_d, slots)
-        .map(|other| encode(module, other, 1, params.base2k, &mut scratch.borrow()));
+    let one = encode(module, log_d, 1, params.base2k);
+    let other =
+        other_log_d("test_blas_matmul_pt_right_guards", log_d, slots).map(|other| encode(module, other, 1, params.base2k));
     let double = Module::<BE>::new(2 * params.n as u64);
     let foreign = [
-        ("degree", encode(&double, log_d, 1, params.base2k, &mut scratch.borrow())),
-        ("base2k", encode(module, log_d, 1, params.base2k - 1, &mut scratch.borrow())),
+        ("degree", encode(&double, log_d, 1, params.base2k)),
+        ("base2k", encode(module, log_d, 1, params.base2k - 1)),
     ];
     // Keys for the other operands too, so no missing key stops `blas_matmul_pt_right` from evaluating them.
     let blocks = [&b, &one]
@@ -861,7 +859,6 @@ pub fn test_blas_matmul_pt_right_guards<BE, F, E>(
         |m, r, c| F::from_f64(public_entry(m, r, c)).unwrap(),
         params.base2k.into(),
         params.prec().into(),
-        &mut scratch.borrow(),
     );
     let p_b = params.prec().log_delta();
     for (label, budget) in [("jkls first map", p_b - 1), ("jkls second map", 2 * p_b - 1)] {
@@ -949,7 +946,6 @@ pub fn test_blas_matmul_pt_right_guards<BE, F, E>(
             |m, r, c| F::from_f64(public_entry(m, r, c)).unwrap(),
             params.base2k.into(),
             params.prec().into(),
-            &mut scratch.borrow(),
         );
         let mut res = alloc_grid(&params, module, log_d, 1, 1, params.k);
         let bytes = module.blas_matmul_pt_right_tmp_bytes(&res, &relabelled, &pair, &ctx, &params.atk_layout());
@@ -1002,14 +998,10 @@ pub fn test_blas_matmul_pt_left<BE, F, E>(
 {
     let slots = params.n / 2;
     let lanes = slots >> (2 * log_d);
-    let ctx = blas_context::<BE, F>(&params, module, log_d, &mut alloc_scratch(&params, module).borrow());
+    let ctx = blas_context::<BE, F>(&params, module, log_d);
     let encoder = ReferenceEncoder::<E>::new(slots).unwrap();
     let (m, inner, n) = (2, 3, 2);
-    let encode = |params: &CKKSTestParams,
-                  algorithm: BlasPtAlgorithm,
-                  count: usize,
-                  scratch: &mut ScratchArena<'_, BE>|
-     -> BlasPtOperand<BE, Left> {
+    let encode = |params: &CKKSTestParams, algorithm: BlasPtAlgorithm, count: usize| -> BlasPtOperand<BE, Left> {
         pt_operand::<BE, F, Left>(
             module,
             BlasPlan::new(log_d).with_pt_algorithm(algorithm),
@@ -1019,7 +1011,6 @@ pub fn test_blas_matmul_pt_left<BE, F, E>(
             |m, r, c| F::from_f64(public_entry(m, r, c)).unwrap(),
             params.base2k.into(),
             params.prec().into(),
-            scratch,
         )
     };
     let (order, plan) = (module.cyclotomic_order(), BlasPlan::new(log_d));
@@ -1057,7 +1048,7 @@ pub fn test_blas_matmul_pt_left<BE, F, E>(
             for &(count, p_b) in &cases {
                 let stages = if algorithm == BlasPtAlgorithm::Jkls { 2 } else { 1 };
                 let public = at_scale(&params, p_b);
-                let b = encode(&public, algorithm, count, &mut scratch.borrow());
+                let b = encode(&public, algorithm, count);
                 let label = format!("matmul_pt_left {algorithm:?} count={count} p_B={p_b}");
                 let mut res = alloc_grid(&params, module, log_d, m, n, params.k);
                 let bytes = module.blas_matmul_pt_left_tmp_bytes(&res, &b, &ct, &ctx, &params.atk_layout());
@@ -1098,7 +1089,7 @@ pub fn test_blas_matmul_pt_left<BE, F, E>(
         // maps at one scale other than `a`'s and `B^T` at the other: the left product spends `B`'s scale, `p_b`, the
         // transposes the context's, `p`, twice more.
         let [p, p_b] = other_scales(&params);
-        let ctx = blas_context::<BE, F>(&at_scale(&params, p), module, log_d, &mut scratch.borrow());
+        let ctx = blas_context::<BE, F>(&at_scale(&params, p), module, log_d);
         let route = plan
             .transpose_galois_elements(order)
             .into_iter()
@@ -1116,7 +1107,6 @@ pub fn test_blas_matmul_pt_left<BE, F, E>(
             |s, r, c| F::from_f64(public_entry(s, c, r)).unwrap(),
             params.base2k.into(),
             at_scale(&params, p_b).prec().into(),
-            &mut scratch.borrow(),
         );
         let atk = params.atk_layout();
         let (mut at, mut atb, mut res) = (
@@ -1192,7 +1182,7 @@ pub fn test_blas_matmul_pt_left<BE, F, E>(
         &mut scratch.borrow(),
     );
     for algorithm in PT_ALGORITHMS {
-        let b = encode(&params, algorithm, 1, &mut scratch.borrow());
+        let b = encode(&params, algorithm, 1);
         let mut res = alloc_grid(&params, module, log_d, m, n, params.k);
         let bytes = module.blas_matmul_pt_left_tmp_bytes(&res, &b, &ct, &ctx, &params.atk_layout());
         let mut op_scratch = poisoned_scratch::<BE>(bytes);
@@ -1255,10 +1245,10 @@ pub fn test_blas_matmul_pt_left_replicated<BE, F, E>(
         eprintln!("test_blas_matmul_pt_left_replicated skips log_d {log_d}: it needs 2 d^2 <= {slots} slots");
         return;
     }
-    let ctx = blas_context::<BE, F>(&params, module, log_d, &mut alloc_scratch(&params, module).borrow());
+    let ctx = blas_context::<BE, F>(&params, module, log_d);
     let encoder = ReferenceEncoder::<E>::new(slots).unwrap();
     let (m, inner, n) = (2, 3, 2);
-    let encode = |algorithm: BlasPtAlgorithm, count: usize, scratch: &mut ScratchArena<'_, BE>| -> BlasPtOperand<BE, Left> {
+    let encode = |algorithm: BlasPtAlgorithm, count: usize| -> BlasPtOperand<BE, Left> {
         pt_operand::<BE, F, Left>(
             module,
             BlasPlan::new(log_d).with_pt_algorithm(algorithm),
@@ -1268,7 +1258,6 @@ pub fn test_blas_matmul_pt_left_replicated<BE, F, E>(
             |m, r, c| F::from_f64(public_entry(m, r, c)).unwrap(),
             params.base2k.into(),
             params.prec().into(),
-            scratch,
         )
     };
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
@@ -1304,18 +1293,15 @@ pub fn test_blas_matmul_pt_left_replicated<BE, F, E>(
     assert!(replicated::<BE::Ring>(&ct_one), "the fixture holds one matrix");
     assert!(!replicated::<BE::Ring>(&ct_distinct), "the fixture holds several matrices");
 
-    let b = encode(BlasPtAlgorithm::Diagonal, 1, &mut scratch.borrow());
+    let b = encode(BlasPtAlgorithm::Diagonal, 1);
     assert!(
         (0..m).all(|i| (0..inner).all(|l| b.block_replicated(i, l).is_some())),
         "a Diagonal operand of one matrix on {lanes} matrix slots holds the replicated maps"
     );
     for (label, held) in [
-        ("two matrices", encode(BlasPtAlgorithm::Diagonal, 2, &mut scratch.borrow())),
-        (
-            "one matrix per matrix slot",
-            encode(BlasPtAlgorithm::Diagonal, lanes, &mut scratch.borrow()),
-        ),
-        ("Jkls", encode(BlasPtAlgorithm::Jkls, 1, &mut scratch.borrow())),
+        ("two matrices", encode(BlasPtAlgorithm::Diagonal, 2)),
+        ("one matrix per matrix slot", encode(BlasPtAlgorithm::Diagonal, lanes)),
+        ("Jkls", encode(BlasPtAlgorithm::Jkls, 1)),
     ] {
         assert!(held.block_replicated(0, 0).is_none(), "{label}: no replicated maps");
     }
@@ -1406,12 +1392,12 @@ pub fn test_blas_matmul_pt_left_guards<BE, F, E>(
     let op = "blas_matmul_pt_left";
     let slots = params.n / 2;
     let lanes = slots >> (2 * log_d);
-    let ctx = blas_context::<BE, F>(&params, module, log_d, &mut alloc_scratch(&params, module).borrow());
+    let ctx = blas_context::<BE, F>(&params, module, log_d);
     let encoder = ReferenceEncoder::<E>::new(slots).unwrap();
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
     // `1 x 2` blocks of public matrices: their products take `a` of two block rows.
-    let encode = |module: &Module<BE>, log_d: usize, count: usize, base2k: usize, scratch: &mut ScratchArena<'_, BE>| {
+    let encode = |module: &Module<BE>, log_d: usize, count: usize, base2k: usize| {
         pt_operand::<BE, F, Left>(
             module,
             BlasPlan::new(log_d),
@@ -1421,18 +1407,16 @@ pub fn test_blas_matmul_pt_left_guards<BE, F, E>(
             |m, r, c| F::from_f64(public_entry(m, r, c)).unwrap(),
             base2k.into(),
             params.prec().into(),
-            scratch,
         )
     };
-    let b = encode(module, log_d, lanes, params.base2k, &mut scratch.borrow());
+    let b = encode(module, log_d, lanes, params.base2k);
     // One public matrix, which divides the matrix slots of any module and of a grid read at any dimension.
-    let one = encode(module, log_d, 1, params.base2k, &mut scratch.borrow());
-    let other = other_log_d("test_blas_matmul_pt_left_guards", log_d, slots)
-        .map(|other| encode(module, other, 1, params.base2k, &mut scratch.borrow()));
+    let one = encode(module, log_d, 1, params.base2k);
+    let other = other_log_d("test_blas_matmul_pt_left_guards", log_d, slots).map(|other| encode(module, other, 1, params.base2k));
     let double = Module::<BE>::new(2 * params.n as u64);
     let foreign = [
-        ("degree", encode(&double, log_d, 1, params.base2k, &mut scratch.borrow())),
-        ("base2k", encode(module, log_d, 1, params.base2k - 1, &mut scratch.borrow())),
+        ("degree", encode(&double, log_d, 1, params.base2k)),
+        ("base2k", encode(module, log_d, 1, params.base2k - 1)),
     ];
     // Keys for the other operands too, so no missing key stops `blas_matmul_pt_left` from evaluating them.
     let blocks = [&b, &one]
@@ -1552,7 +1536,6 @@ pub fn test_blas_matmul_pt_left_guards<BE, F, E>(
         |m, r, c| F::from_f64(public_entry(m, r, c)).unwrap(),
         params.base2k.into(),
         params.prec().into(),
-        &mut scratch.borrow(),
     );
     let p_b = params.prec().log_delta();
     for (label, budget) in [("jkls first map", p_b - 1), ("jkls second map", 2 * p_b - 1)] {
@@ -1640,7 +1623,6 @@ pub fn test_blas_matmul_pt_left_guards<BE, F, E>(
             |m, r, c| F::from_f64(public_entry(m, r, c)).unwrap(),
             params.base2k.into(),
             params.prec().into(),
-            &mut scratch.borrow(),
         );
         let mut res = alloc_grid(&params, module, log_d, 1, 1, params.k);
         let bytes = module.blas_matmul_pt_left_tmp_bytes(&res, &pair, &relabelled, &ctx, &params.atk_layout());
@@ -1694,7 +1676,7 @@ where
     let mut scratch = alloc_scratch(params, module);
     let (base2k, meta, order) = (params.base2k.into(), params.prec().into(), module.cyclotomic_order());
     let masked = BlasPlan::new(log_d).with_pt_algorithm(BlasPtAlgorithm::JklsGalois);
-    let ctx = encoded_context::<BE, F>(module, masked, base2k, meta, &mut scratch.borrow());
+    let ctx = encoded_context::<BE, F>(module, masked, base2k, meta);
     let plans = MASKED_PT_ALGORITHMS.map(|algorithm| BlasPlan::new(log_d).with_pt_algorithm(algorithm));
     let elements: BTreeSet<i64> = plans
         .iter()
@@ -1813,7 +1795,7 @@ pub fn test_blas_matmul_pt_masked<BE, F, E>(
             _ => (1, 1),
         };
 
-        let b = pt_operand::<BE, F, Right>(module, *plan, inner, n, 1, entry, base2k, meta, &mut scratch.borrow());
+        let b = pt_operand::<BE, F, Right>(module, *plan, inner, n, 1, entry, base2k, meta);
         let label = format!("matmul_pt_right {algorithm:?}");
         assert_eq!(
             (b.maps().count(), b.block_plaintexts(inner - 1, n - 1).len()),
@@ -1845,7 +1827,7 @@ pub fn test_blas_matmul_pt_masked<BE, F, E>(
         );
 
         for &count in &counts {
-            let b = pt_operand::<BE, F, Left>(module, *plan, m, inner, count, entry, base2k, meta, &mut scratch.borrow());
+            let b = pt_operand::<BE, F, Left>(module, *plan, m, inner, count, entry, base2k, meta);
             let label = format!("matmul_pt_left {algorithm:?} count={count}");
             assert_eq!(
                 (b.maps().count(), b.block_plaintexts(m - 1, inner - 1).len()),
@@ -1923,26 +1905,20 @@ pub fn test_blas_matmul_pt_masked_guards<BE, F, E>(
         mut keys,
     } = masked_fixture::<BE, F, E>(&params, module, host_module, log_d);
     let (base2k, meta, atk) = (params.base2k.into(), params.prec().into(), params.atk_layout());
-    let plain = blas_context::<BE, F>(&params, module, log_d, &mut scratch.borrow());
+    let plain = blas_context::<BE, F>(&params, module, log_d);
     // Every foreign context holds the masks, so its mismatch alone rejects it on either side.
     let masked = ctx.plan();
     let mut foreign: Vec<_> =
         foreign_contexts::<BE, F>(&params, module, masked, &sk_raw, &mut keys.atks, &mut scratch.borrow()).into();
     if let Some(other) = other_log_d("test_blas_matmul_pt_masked_guards", log_d, slots) {
         let plan = BlasPlan::new(other).with_pt_algorithm(masked.pt_algorithm());
-        foreign.push((
-            "dimension",
-            encoded_context::<BE, F>(module, plan, base2k, meta, &mut scratch.borrow()),
-        ));
+        foreign.push(("dimension", encoded_context::<BE, F>(module, plan, base2k, meta)));
     }
     let wide = CoeffsMeta {
         k: (params.k + 1).into(),
         ..params.prec().into()
     };
-    foreign.push((
-        "width",
-        encoded_context::<BE, F>(module, masked, base2k, wide, &mut scratch.borrow()),
-    ));
+    foreign.push(("width", encoded_context::<BE, F>(module, masked, base2k, wide)));
     let a = Grid::model(log_d, 1, 1, lanes, 3);
     let ct = encrypt_grid::<BE, F, E>(
         &params,
@@ -1963,7 +1939,7 @@ pub fn test_blas_matmul_pt_masked_guards<BE, F, E>(
         let algorithm = plan.pt_algorithm();
         let mut res = alloc_grid(&params, module, log_d, 1, 1, params.k);
         if lanes > 1 {
-            let two = pt_operand::<BE, F, Right>(module, *plan, 1, 1, 2, entry, base2k, meta, &mut scratch.borrow());
+            let two = pt_operand::<BE, F, Right>(module, *plan, 1, 1, 2, entry, base2k, meta);
             let bytes = module.blas_matmul_pt_right_tmp_bytes(&res, &ct, &two, &ctx, &atk);
             assert_guard::<BE, _>(
                 &format!("{algorithm:?} on the right of two public matrices"),
@@ -1973,7 +1949,7 @@ pub fn test_blas_matmul_pt_masked_guards<BE, F, E>(
                 |res| module.blas_matmul_pt_right(res, &ct, &two, &ctx, &keys, &mut poisoned_scratch::<BE>(bytes).borrow()),
             );
         }
-        let left = pt_operand::<BE, F, Left>(module, *plan, 1, 1, 1, entry, base2k, meta, &mut scratch.borrow());
+        let left = pt_operand::<BE, F, Left>(module, *plan, 1, 1, 1, entry, base2k, meta);
         let bytes = module.blas_matmul_pt_left_tmp_bytes(&res, &left, &ct, &ctx, &atk);
         assert_guard::<BE, _>(
             &format!("{algorithm:?} on the left under a context without masks"),
@@ -1990,7 +1966,7 @@ pub fn test_blas_matmul_pt_masked_guards<BE, F, E>(
         assert_short_scratch::<BE, _>("blas_matmul_pt_left", &mut res, bytes, |res, s| {
             module.blas_matmul_pt_left(res, &left, &ct, &ctx, &keys, s)
         });
-        let right = pt_operand::<BE, F, Right>(module, *plan, 1, 1, 1, entry, base2k, meta, &mut scratch.borrow());
+        let right = pt_operand::<BE, F, Right>(module, *plan, 1, 1, 1, entry, base2k, meta);
         let right_bytes = module.blas_matmul_pt_right_tmp_bytes(&res, &ct, &right, &ctx, &atk);
         for (label, foreign) in &foreign {
             assert_guard::<BE, _>(
@@ -2075,10 +2051,7 @@ pub fn test_blas_matmul_guards<BE, F, E>(
     )
     .into();
     if let Some(other) = other_log_d("test_blas_matmul_guards", log_d, slots) {
-        foreign.push((
-            "dimension",
-            blas_context::<BE, F>(&params, module, other, &mut scratch.borrow()),
-        ));
+        foreign.push(("dimension", blas_context::<BE, F>(&params, module, other)));
     }
     let keys = TestKeys::<BE> {
         atks,

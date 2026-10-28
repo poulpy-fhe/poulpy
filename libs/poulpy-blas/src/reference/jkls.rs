@@ -8,7 +8,8 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::layouts::validate::{KeyLayouts, assert_scratch, ensure_tensor_key};
 
-/// Reference of the JKLS kernel of [`crate::oep::BlasJklsImpl`], which the reference products of
+/// Reference of the JKLS kernel of [`crate::oep::BlasJklsImpl`], which
+/// [`impl_blas_jkls_reference_full!`](crate::impl_blas_jkls_reference_full) forwards to and the reference products of
 /// [`crate::oep::BlasMatMulImpl`] call once per block of `res`. It runs on inputs the prepared product's validator,
 /// [`crate::layouts::validate_blas_matmul_prepared`], accepted, and checks nothing but its scratch.
 pub trait BlasJklsReference<BE: Backend> {

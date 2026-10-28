@@ -1,24 +1,12 @@
-use poulpy_ckks::{
-    CKKSCtBounds, CKKSResult as Result, SetCKKSInfos,
-    api::LinearTransformationPrepared,
-    oep::{CKKSAddImpl, CKKSAddManyImpl, CKKSCopyImpl, CKKSInnerSumImpl, CKKSRotateImpl},
-};
-use poulpy_core::{
-    layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey},
-    oep::GLWENormalizeImpl,
-};
+use poulpy_ckks::{CKKSCtBounds, CKKSResult as Result, SetCKKSInfos, api::LinearTransformationPrepared};
+use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
-use super::derived::intra::{
-    blas_rotate_cols_derived, blas_rotate_cols_tmp_bytes_derived, blas_rotate_rows_derived, blas_rotate_rows_tmp_bytes_derived,
-    blas_sum_cols_derived, blas_sum_cols_tmp_bytes_derived, blas_sum_rows_derived, blas_sum_rows_tmp_bytes_derived,
-    blas_transpose_derived, blas_transpose_tmp_bytes_derived,
-};
+use super::derived::intra::{blas_transpose_derived, blas_transpose_tmp_bytes_derived};
 use crate::layouts::{BlasContext, BlasGrid, BlasGridInfos, BlasGridMut};
 
-/// Extension point of [`crate::api::BlasMatIntraOps`]: the map hook [`Self::blas_map_blocks`] and its query are
-/// required, and the transpose, both shifts and both axis reductions are provided over the hook, poulpy-ckks's copy,
-/// addition, rotation, inner sum and replicate, and poulpy-core's normalization.
+/// Extension point of [`crate::api::BlasMatIntraOps`]: the map hook [`Self::blas_map_blocks`], both shifts and both
+/// axis reductions are required, and the transpose is provided over the hook.
 ///
 /// # Safety
 /// Each method reproduces the circuit its doc states bit for bit, digits and CKKS metadata, within the scratch its
@@ -31,9 +19,7 @@ use crate::layouts::{BlasContext, BlasGrid, BlasGridInfos, BlasGridMut};
 /// unspecified.
 ///
 /// The memory, layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait BlasMatIntraImpl:
-    Backend + CKKSCopyImpl + CKKSAddImpl + CKKSAddManyImpl + CKKSRotateImpl + CKKSInnerSumImpl + GLWENormalizeImpl
-{
+pub unsafe trait BlasMatIntraImpl: Backend {
     /// Scratch bound of [`Self::blas_map_blocks`] from `sources` blocks of layout `src` into blocks of layout `dst`
     /// through `lts`, with rotation keys of layout `keys`; may report less than the reference, never less than the body
     /// takes. It reports for the layouts of `dst` and `src` at their widths whatever their allocations, for `sources`,
@@ -88,8 +74,8 @@ pub unsafe trait BlasMatIntraImpl:
         K: GetAutomorphismKey<Self> + Sync;
 
     /// Default body: `blas_transpose_tmp_bytes_derived`, [`Self::blas_map_blocks_tmp_bytes`] for the transpose of every
-    /// block of `a` into a block of `res`. Scratch bound of [`Self::blas_transpose`]; may report less than the
-    /// reference, never less than the body takes.
+    /// block of `a` into a block of `res`. Scratch bound of [`Self::blas_transpose`]; may report less than the default
+    /// body, never less than the body takes.
     fn blas_transpose_tmp_bytes<R, A, K>(module: &Module<Self>, res: &R, a: &A, ctx: &BlasContext<Self>, keys: &K) -> usize
     where
         R: BlasGridInfos,
@@ -104,6 +90,8 @@ pub unsafe trait BlasMatIntraImpl:
     /// batch stamp: `res_ji = transpose(a_ij)`. The map is `Direct`, as the plan records. Every block of `res` then has
     /// width `min(res.k, a.k - p)` for the map's scale `p`, `a`'s scale and label, `a`'s slot kind joined with `Real`,
     /// and no noise tag; it is canonical.
+    ///
+    /// **Fixed:** the circuit above; anything not listed as free changes bits.
     ///
     /// **Free:** the order of the blocks the hook evaluates.
     fn blas_transpose<R, A, K>(
@@ -122,22 +110,19 @@ pub unsafe trait BlasMatIntraImpl:
         blas_transpose_derived(module, res, a, ctx, keys, scratch)
     }
 
-    /// Default body: `blas_rotate_rows_tmp_bytes_derived`, the scratch of a row shift by any `k`: the selected
-    /// `ckks_copy_tmp_bytes` for `k' = 0`, otherwise the selected `ckks_rotate_tmp_bytes` where the shift rotates, or
-    /// else for every `k'` the larger of [`Self::blas_map_blocks_tmp_bytes`] with psi^k' along one block, or with both half maps and the selected `ckks_add_tmp_bytes` along several. Scratch
-    /// bound of [`Self::blas_rotate_rows`]; may report less than the reference, never less than the body takes.
+    /// Scratch bound of [`Self::blas_rotate_rows`] by any `k`; may report less than
+    /// [`blas_rotate_rows_tmp_bytes_reference`](crate::reference::BlasMatIntraReference::blas_rotate_rows_tmp_bytes_reference),
+    /// never less than the body takes.
     fn blas_rotate_rows_tmp_bytes<R, A, K>(module: &Module<Self>, res: &R, a: &A, ctx: &BlasContext<Self>, keys: &K) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
-        K: GGLWEInfos,
-    {
-        blas_rotate_rows_tmp_bytes_derived(module, res, a, ctx, keys)
-    }
+        K: GGLWEInfos;
 
-    /// Default body: `blas_rotate_rows_derived`, the validator [`crate::layouts::validate_blas_rotate_rows`], then a
-    /// shift of every matrix by `k` rows, `k mod m d = q d + k'`, along the block axis of extent `m`, and the batch
-    /// stamp. The shift maps are `Direct`, as the plan records.
+    /// Reproduces [`blas_rotate_rows_reference`](crate::reference::BlasMatIntraReference::blas_rotate_rows_reference)
+    /// bit for bit, within [`Self::blas_rotate_rows_tmp_bytes`]: the validator
+    /// [`crate::layouts::validate_blas_rotate_rows`], then a shift of every matrix by `k` rows, `k mod m d = q d + k'`,
+    /// along the block axis of extent `m`, and the batch stamp. The shift maps are `Direct`, as the plan records.
     ///
     /// **Fixed:**
     ///
@@ -153,7 +138,7 @@ pub unsafe trait BlasMatIntraImpl:
     /// leaves it unnormalized. A copy (`k' = 0`) and a rotation have width `min(res.k, a.k)` and `a`'s metadata, as
     /// `ckks_copy` and `ckks_rotate_into` give.
     ///
-    /// **Free:** chunking the heap blocks, which the provided shift holds two of per block of `a`, across both half
+    /// **Free:** chunking the heap blocks, which the reference holds two of per block of `a`, across both half
     /// maps.
     fn blas_rotate_rows<R, A, K>(
         module: &Module<Self>,
@@ -167,27 +152,21 @@ pub unsafe trait BlasMatIntraImpl:
     where
         R: BlasGridMut<Self>,
         A: BlasGrid<Self>,
-        K: GetAutomorphismKey<Self> + Sync,
-    {
-        blas_rotate_rows_derived(module, k, res, a, ctx, keys, scratch)
-    }
+        K: GetAutomorphismKey<Self> + Sync;
 
-    /// Default body: `blas_rotate_cols_tmp_bytes_derived`, the scratch of a column shift by any `k`: the selected
-    /// `ckks_copy_tmp_bytes` for `k' = 0`, otherwise for every `k'` the larger of [`Self::blas_map_blocks_tmp_bytes`]
-    /// with phi^k' along one block, or with both half maps and the selected `ckks_add_tmp_bytes` along several. Scratch
-    /// bound of [`Self::blas_rotate_cols`]; may report less than the reference, never less than the body takes.
+    /// Scratch bound of [`Self::blas_rotate_cols`] by any `k`; may report less than
+    /// [`blas_rotate_cols_tmp_bytes_reference`](crate::reference::BlasMatIntraReference::blas_rotate_cols_tmp_bytes_reference),
+    /// never less than the body takes.
     fn blas_rotate_cols_tmp_bytes<R, A, K>(module: &Module<Self>, res: &R, a: &A, ctx: &BlasContext<Self>, keys: &K) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
-        K: GGLWEInfos,
-    {
-        blas_rotate_cols_tmp_bytes_derived(module, res, a, ctx, keys)
-    }
+        K: GGLWEInfos;
 
-    /// Default body: `blas_rotate_cols_derived`, the validator [`crate::layouts::validate_blas_rotate_cols`], then a
-    /// shift of every matrix by `k` columns, `k mod m d = q d + k'`, along the block axis of extent `m`, and the batch
-    /// stamp. The shift maps are `Direct`, as the plan records.
+    /// Reproduces [`blas_rotate_cols_reference`](crate::reference::BlasMatIntraReference::blas_rotate_cols_reference)
+    /// bit for bit, within [`Self::blas_rotate_cols_tmp_bytes`]: the validator
+    /// [`crate::layouts::validate_blas_rotate_cols`], then a shift of every matrix by `k` columns, `k mod m d = q d +
+    /// k'`, along the block axis of extent `m`, and the batch stamp. The shift maps are `Direct`, as the plan records.
     ///
     /// **Fixed:**
     ///
@@ -201,7 +180,7 @@ pub unsafe trait BlasMatIntraImpl:
     /// slot kind joined with `Real`, and no noise tag; it is canonical, except after the two half maps, whose addition
     /// leaves it unnormalized. A copy (`k' = 0`) has width `min(res.k, a.k)` and `a`'s metadata, as `ckks_copy` gives.
     ///
-    /// **Free:** chunking the heap blocks, which the provided shift holds two of per block of `a`, across both half
+    /// **Free:** chunking the heap blocks, which the reference holds two of per block of `a`, across both half
     /// maps.
     fn blas_rotate_cols<R, A, K>(
         module: &Module<Self>,
@@ -215,29 +194,20 @@ pub unsafe trait BlasMatIntraImpl:
     where
         R: BlasGridMut<Self>,
         A: BlasGrid<Self>,
-        K: GetAutomorphismKey<Self> + Sync,
-    {
-        blas_rotate_cols_derived(module, k, res, a, ctx, keys, scratch)
-    }
+        K: GetAutomorphismKey<Self> + Sync;
 
-    /// Default body: `blas_sum_rows_tmp_bytes_derived`, the scratch block `u` plus the largest of the line sum's
-    /// selected `ckks_add_many_tmp_bytes` (and a scratch block more where it adds block by block), the selected
-    /// `ckks_inner_sum_tmp_bytes` of `u`, [`Self::blas_map_blocks_tmp_bytes`] with the projection and the selected
-    /// `ckks_inner_sum_tmp_bytes` of the projected block (on a grid whose label proves one matrix, the selected
-    /// `ckks_inner_sum_tmp_bytes` of `u` into a block of `res`), and the selected `ckks_copy_tmp_bytes` into the
-    /// line's other blocks. Scratch bound of [`Self::blas_sum_rows`]; may report less than the reference, never less
-    /// than the body takes.
+    /// Scratch bound of [`Self::blas_sum_rows`]; may report less than
+    /// [`blas_sum_rows_tmp_bytes_reference`](crate::reference::BlasMatIntraReference::blas_sum_rows_tmp_bytes_reference),
+    /// never less than the body takes.
     fn blas_sum_rows_tmp_bytes<R, A, K>(module: &Module<Self>, res: &R, a: &A, ctx: &BlasContext<Self>, keys: &K) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
-        K: GGLWEInfos,
-    {
-        blas_sum_rows_tmp_bytes_derived(module, res, a, ctx, keys)
-    }
+        K: GGLWEInfos;
 
-    /// Default body: `blas_sum_rows_derived`, the validator [`crate::layouts::validate_blas_sum_rows`], then line by
-    /// line, a block column of `m` blocks at a time with batches of `b = d` slots, and the batch stamp.
+    /// Reproduces [`blas_sum_rows_reference`](crate::reference::BlasMatIntraReference::blas_sum_rows_reference) bit for
+    /// bit, within [`Self::blas_sum_rows_tmp_bytes`]: the validator [`crate::layouts::validate_blas_sum_rows`], then
+    /// line by line, a block column of `m` blocks at a time with batches of `b = d` slots, and the batch stamp.
     ///
     /// **Fixed:** a scratch block `u` of `a`'s layout receives the line's blocks summed in order by `ckks_add_many`,
     /// normalized after every `t / w - 1` additions, for `t` poulpy-core's `max_lazy_terms` over the coefficients of `u`
@@ -252,6 +222,8 @@ pub unsafe trait BlasMatIntraImpl:
     /// it. Then `ckks_copy` of that block into the other blocks of the line. Every block of `res` then gets a cleared
     /// noise tag, has width `min(res.k, a.k - p)` for the projection's scale `p` (`min(res.k, a.k)` without one) and is
     /// canonical. The projection is `Direct`, as the plan records.
+    ///
+    /// **Free:** the order of the lines.
     fn blas_sum_rows<R, A, K>(
         module: &Module<Self>,
         res: &mut R,
@@ -263,25 +235,23 @@ pub unsafe trait BlasMatIntraImpl:
     where
         R: BlasGridMut<Self>,
         A: BlasGrid<Self>,
-        K: GetAutomorphismKey<Self> + Sync,
-    {
-        blas_sum_rows_derived(module, res, a, ctx, keys, scratch)
-    }
+        K: GetAutomorphismKey<Self> + Sync;
 
-    /// Default body: `blas_sum_cols_tmp_bytes_derived`, as [`Self::blas_sum_rows_tmp_bytes`] along the rows of blocks.
-    /// Scratch bound of [`Self::blas_sum_cols`]; may report less than the reference, never less than the body takes.
+    /// Scratch bound of [`Self::blas_sum_cols`]; may report less than
+    /// [`blas_sum_cols_tmp_bytes_reference`](crate::reference::BlasMatIntraReference::blas_sum_cols_tmp_bytes_reference),
+    /// never less than the body takes.
     fn blas_sum_cols_tmp_bytes<R, A, K>(module: &Module<Self>, res: &R, a: &A, ctx: &BlasContext<Self>, keys: &K) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
-        K: GGLWEInfos,
-    {
-        blas_sum_cols_tmp_bytes_derived(module, res, a, ctx, keys)
-    }
+        K: GGLWEInfos;
 
-    /// Default body: `blas_sum_cols_derived`, the validator [`crate::layouts::validate_blas_sum_cols`], then as
+    /// Reproduces [`blas_sum_cols_reference`](crate::reference::BlasMatIntraReference::blas_sum_cols_reference) bit for
+    /// bit, within [`Self::blas_sum_cols_tmp_bytes`]: the validator [`crate::layouts::validate_blas_sum_cols`], then as
     /// [`Self::blas_sum_rows`] along a block row at a time, with batches of `b = 1` slot, the projection `first_col`
     /// and no case without a projection.
+    ///
+    /// **Fixed** and **Free:** as [`Self::blas_sum_rows`], along the block rows.
     fn blas_sum_cols<R, A, K>(
         module: &Module<Self>,
         res: &mut R,
@@ -293,14 +263,11 @@ pub unsafe trait BlasMatIntraImpl:
     where
         R: BlasGridMut<Self>,
         A: BlasGrid<Self>,
-        K: GetAutomorphismKey<Self> + Sync,
-    {
-        blas_sum_cols_derived(module, res, a, ctx, keys, scratch)
-    }
+        K: GetAutomorphismKey<Self> + Sync;
 }
 
-/// Selects [`BlasMatIntraReference`](crate::reference::BlasMatIntraReference) for `$be`: the map hook and its query,
-/// under the provided transpose, shifts and reductions.
+/// Selects [`BlasMatIntraReference`](crate::reference::BlasMatIntraReference) for `$be`: the map hook, the shifts, the
+/// axis reductions and their queries, under the provided transpose.
 #[macro_export]
 macro_rules! impl_blas_mat_intra_reference_full {
     ($be:ty) => {
@@ -340,6 +307,132 @@ macro_rules! impl_blas_mat_intra_reference_full {
                 K: ::poulpy_core::layouts::GetAutomorphismKey<Self> + Sync,
             {
                 $crate::reference::BlasMatIntraReference::blas_map_blocks_reference(module, dst, src, lts, keys, scratch)
+            }
+
+            fn blas_rotate_rows_tmp_bytes<R, A, K>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                res: &R,
+                a: &A,
+                ctx: &$crate::layouts::BlasContext<Self>,
+                keys: &K,
+            ) -> usize
+            where
+                R: $crate::layouts::BlasGridInfos,
+                A: $crate::layouts::BlasGridInfos,
+                K: ::poulpy_core::layouts::GGLWEInfos,
+            {
+                $crate::reference::BlasMatIntraReference::blas_rotate_rows_tmp_bytes_reference(module, res, a, ctx, keys)
+            }
+
+            fn blas_rotate_rows<R, A, K>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                k: usize,
+                res: &mut R,
+                a: &A,
+                ctx: &$crate::layouts::BlasContext<Self>,
+                keys: &K,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
+            ) -> ::poulpy_ckks::CKKSResult<()>
+            where
+                R: $crate::layouts::BlasGridMut<Self>,
+                A: $crate::layouts::BlasGrid<Self>,
+                K: ::poulpy_core::layouts::GetAutomorphismKey<Self> + Sync,
+            {
+                $crate::reference::BlasMatIntraReference::blas_rotate_rows_reference(module, k, res, a, ctx, keys, scratch)
+            }
+
+            fn blas_rotate_cols_tmp_bytes<R, A, K>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                res: &R,
+                a: &A,
+                ctx: &$crate::layouts::BlasContext<Self>,
+                keys: &K,
+            ) -> usize
+            where
+                R: $crate::layouts::BlasGridInfos,
+                A: $crate::layouts::BlasGridInfos,
+                K: ::poulpy_core::layouts::GGLWEInfos,
+            {
+                $crate::reference::BlasMatIntraReference::blas_rotate_cols_tmp_bytes_reference(module, res, a, ctx, keys)
+            }
+
+            fn blas_rotate_cols<R, A, K>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                k: usize,
+                res: &mut R,
+                a: &A,
+                ctx: &$crate::layouts::BlasContext<Self>,
+                keys: &K,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
+            ) -> ::poulpy_ckks::CKKSResult<()>
+            where
+                R: $crate::layouts::BlasGridMut<Self>,
+                A: $crate::layouts::BlasGrid<Self>,
+                K: ::poulpy_core::layouts::GetAutomorphismKey<Self> + Sync,
+            {
+                $crate::reference::BlasMatIntraReference::blas_rotate_cols_reference(module, k, res, a, ctx, keys, scratch)
+            }
+
+            fn blas_sum_rows_tmp_bytes<R, A, K>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                res: &R,
+                a: &A,
+                ctx: &$crate::layouts::BlasContext<Self>,
+                keys: &K,
+            ) -> usize
+            where
+                R: $crate::layouts::BlasGridInfos,
+                A: $crate::layouts::BlasGridInfos,
+                K: ::poulpy_core::layouts::GGLWEInfos,
+            {
+                $crate::reference::BlasMatIntraReference::blas_sum_rows_tmp_bytes_reference(module, res, a, ctx, keys)
+            }
+
+            fn blas_sum_rows<R, A, K>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                res: &mut R,
+                a: &A,
+                ctx: &$crate::layouts::BlasContext<Self>,
+                keys: &K,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
+            ) -> ::poulpy_ckks::CKKSResult<()>
+            where
+                R: $crate::layouts::BlasGridMut<Self>,
+                A: $crate::layouts::BlasGrid<Self>,
+                K: ::poulpy_core::layouts::GetAutomorphismKey<Self> + Sync,
+            {
+                $crate::reference::BlasMatIntraReference::blas_sum_rows_reference(module, res, a, ctx, keys, scratch)
+            }
+
+            fn blas_sum_cols_tmp_bytes<R, A, K>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                res: &R,
+                a: &A,
+                ctx: &$crate::layouts::BlasContext<Self>,
+                keys: &K,
+            ) -> usize
+            where
+                R: $crate::layouts::BlasGridInfos,
+                A: $crate::layouts::BlasGridInfos,
+                K: ::poulpy_core::layouts::GGLWEInfos,
+            {
+                $crate::reference::BlasMatIntraReference::blas_sum_cols_tmp_bytes_reference(module, res, a, ctx, keys)
+            }
+
+            fn blas_sum_cols<R, A, K>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                res: &mut R,
+                a: &A,
+                ctx: &$crate::layouts::BlasContext<Self>,
+                keys: &K,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
+            ) -> ::poulpy_ckks::CKKSResult<()>
+            where
+                R: $crate::layouts::BlasGridMut<Self>,
+                A: $crate::layouts::BlasGrid<Self>,
+                K: ::poulpy_core::layouts::GetAutomorphismKey<Self> + Sync,
+            {
+                $crate::reference::BlasMatIntraReference::blas_sum_cols_reference(module, res, a, ctx, keys, scratch)
             }
         }
     };

@@ -148,6 +148,12 @@ pub fn blas_sum_key_uses<BE: Backend>(module: &Module<BE>, res: &impl BlasGridIn
 /// The layout [`crate::api::BlasMatIntraOps::blas_transpose`] stamps on `res` for `a`: `a`'s block through the transpose
 /// map into `res`'s width, `a.cols x a.rows` blocks. The record is `a`'s. `ctx` is a context or its layout: the
 /// query reads the shape of its maps.
+///
+/// # Panics
+///
+/// On a `ctx` layout no context is allocated at, which
+/// [`validate_blas_transpose`](crate::layouts::validate_blas_transpose) therefore never receives: blocks that do not
+/// fit its slots, maps without a torus width, or a radix outside `1..=63`.
 pub fn blas_transpose_output_layout(res: &impl BlasGridInfos, a: &impl BlasGridInfos, ctx: &impl BlasContextInfos) -> BlasLayout {
     let block = mapped_block_into(a.block_layout(), context_shapes(ctx).transpose(), res.block_layout().k());
     BlasLayout::new(block, a.log_d(), a.cols(), a.rows())
@@ -179,6 +185,10 @@ fn shift_output<P: LtDiagonalMeta>(
 
 /// The layout [`crate::api::BlasMatIntraOps::blas_rotate_rows`] by `k` stamps on `res` for `a`; see
 /// [`blas_transpose_output_layout`].
+///
+/// # Panics
+///
+/// As [`blas_transpose_output_layout`], for [`validate_blas_rotate_rows`](crate::layouts::validate_blas_rotate_rows).
 pub fn blas_rotate_rows_output_layout(
     k: usize,
     res: &impl BlasGridInfos,
@@ -189,6 +199,10 @@ pub fn blas_rotate_rows_output_layout(
 }
 
 /// [`blas_rotate_rows_output_layout`] for [`crate::api::BlasMatIntraOps::blas_rotate_cols`].
+///
+/// # Panics
+///
+/// As [`blas_transpose_output_layout`], for [`validate_blas_rotate_cols`](crate::layouts::validate_blas_rotate_cols).
 pub fn blas_rotate_cols_output_layout(
     k: usize,
     res: &impl BlasGridInfos,
@@ -200,6 +214,10 @@ pub fn blas_rotate_cols_output_layout(
 
 /// The keys [`crate::api::BlasMatIntraOps::blas_transpose`] looks up for `a` into `res`; see [`BlasKeyUses`]. `ctx`
 /// is a context or its layout: the query reads the shape of its maps.
+///
+/// # Panics
+///
+/// As [`blas_transpose_output_layout`], for [`validate_blas_transpose`](crate::layouts::validate_blas_transpose).
 pub fn blas_transpose_key_uses<BE: Backend>(
     module: &Module<BE>,
     res: &impl BlasGridInfos,
@@ -213,6 +231,10 @@ pub fn blas_transpose_key_uses<BE: Backend>(
 /// The keys [`crate::api::BlasMatIntraOps::blas_rotate_rows`] by `k` looks up for `a` into `res`; see [`BlasKeyUses`].
 /// The shifts of two values of `k` look up different keys: a client rotating by several takes the union. `ctx` is a
 /// context or its layout: the query reads the shape of its maps.
+///
+/// # Panics
+///
+/// As [`blas_transpose_output_layout`], for [`validate_blas_rotate_rows`](crate::layouts::validate_blas_rotate_rows).
 pub fn blas_rotate_rows_key_uses<BE: Backend>(
     module: &Module<BE>,
     k: usize,
@@ -225,6 +247,10 @@ pub fn blas_rotate_rows_key_uses<BE: Backend>(
 }
 
 /// [`blas_rotate_rows_key_uses`] for [`crate::api::BlasMatIntraOps::blas_rotate_cols`].
+///
+/// # Panics
+///
+/// As [`blas_transpose_output_layout`], for [`validate_blas_rotate_cols`](crate::layouts::validate_blas_rotate_cols).
 pub fn blas_rotate_cols_key_uses<BE: Backend>(
     module: &Module<BE>,
     k: usize,
@@ -254,17 +280,29 @@ fn reduction_output<P: LtDiagonalMeta>(
 
 /// The layout [`crate::api::BlasMatIntraOps::blas_sum_rows`] stamps on `res` for `a`. `ctx` is a context or its layout:
 /// the query reads the shape of its maps.
+///
+/// # Panics
+///
+/// As [`blas_transpose_output_layout`], for [`validate_blas_sum_rows`](crate::layouts::validate_blas_sum_rows).
 pub fn blas_sum_rows_output_layout(res: &impl BlasGridInfos, a: &impl BlasGridInfos, ctx: &impl BlasContextInfos) -> BlasLayout {
     reduction_output(res, a, true, &context_shapes(ctx))
 }
 
 /// [`blas_sum_rows_output_layout`] for [`crate::api::BlasMatIntraOps::blas_sum_cols`].
+///
+/// # Panics
+///
+/// As [`blas_transpose_output_layout`], for [`validate_blas_sum_cols`](crate::layouts::validate_blas_sum_cols).
 pub fn blas_sum_cols_output_layout(res: &impl BlasGridInfos, a: &impl BlasGridInfos, ctx: &impl BlasContextInfos) -> BlasLayout {
     reduction_output(res, a, false, &context_shapes(ctx))
 }
 
 /// The keys [`crate::api::BlasMatIntraOps::blas_sum_rows`] looks up for `a` into `res`; see [`BlasKeyUses`]. `ctx` is a
 /// context or its layout: the query reads the shape of its maps.
+///
+/// # Panics
+///
+/// As [`blas_transpose_output_layout`], for [`validate_blas_sum_rows`](crate::layouts::validate_blas_sum_rows).
 pub fn blas_sum_rows_key_uses<BE: Backend>(
     module: &Module<BE>,
     res: &impl BlasGridInfos,
@@ -276,6 +314,10 @@ pub fn blas_sum_rows_key_uses<BE: Backend>(
 }
 
 /// [`blas_sum_rows_key_uses`] for [`crate::api::BlasMatIntraOps::blas_sum_cols`].
+///
+/// # Panics
+///
+/// As [`blas_transpose_output_layout`], for [`validate_blas_sum_cols`](crate::layouts::validate_blas_sum_cols).
 pub fn blas_sum_cols_key_uses<BE: Backend>(
     module: &Module<BE>,
     res: &impl BlasGridInfos,
@@ -314,7 +356,7 @@ fn max_radix<BE: MaxBase2k>(n: usize, failure_bits: usize, products: impl Fn(usi
 /// # Panics
 ///
 /// As [`Module::max_base2k`]: unless the blocks' degree is a power of two at least the backend's minimum degree and
-/// `failure_bits` is positive.
+/// `failure_bits` is positive; and as [`blas_matmul_output_layout`] on `ctx`.
 pub fn blas_matmul_max_base2k<BE: MaxBase2k>(
     a: &impl BlasGridInfos,
     b: &impl BlasGridInfos,
@@ -418,7 +460,8 @@ fn pt_max_base2k<BE: MaxBase2k, P: MapDiagonal>(
 ///
 /// # Panics
 ///
-/// As [`blas_matmul_max_base2k`], and under `JklsStored` and `JklsGalois` for a `ctx` that does not fit.
+/// As [`blas_matmul_max_base2k`] on the degree and `failure_bits`, and as [`blas_matmul_pt_right_output_layout`] on `b`
+/// and `ctx`.
 pub fn blas_matmul_pt_right_max_base2k<BE: MaxBase2k>(
     a: &impl BlasGridInfos,
     b: &impl BlasPtOperandInfos<Side = Right>,
@@ -439,8 +482,8 @@ pub fn blas_matmul_pt_right_max_base2k<BE: MaxBase2k>(
 ///
 /// # Panics
 ///
-/// As [`blas_matmul_pt_right_max_base2k`], and under `JklsStored` and `JklsGalois` for a `ctx` without the column
-/// halves of psi^k, whose plan selects neither.
+/// As [`blas_matmul_max_base2k`] on the degree and `failure_bits`, and as [`blas_matmul_pt_left_output_layout`] on `b`
+/// and `ctx`.
 pub fn blas_matmul_pt_left_max_base2k<BE: MaxBase2k>(
     b: &impl BlasPtOperandInfos<Side = Left>,
     a: &impl BlasGridInfos,
@@ -476,6 +519,10 @@ fn product_block(left: CKKSLayout, right: CKKSLayout, res_k: TorusPrecision) -> 
 /// [`blas_matmul_right_term_layout`](crate::layouts::blas_matmul_right_term_layout)) in blocks of `res`'s width,
 /// `a.rows x b.cols` blocks. The record is that of the validator, the larger of the factors' batches. `ctx` is a
 /// context or its layout: the query reads the shape of its maps.
+///
+/// # Panics
+///
+/// As [`blas_transpose_output_layout`], for [`validate_blas_matmul`](crate::layouts::validate_blas_matmul).
 pub fn blas_matmul_output_layout(
     res: &impl BlasGridInfos,
     a: &impl BlasGridInfos,
@@ -495,6 +542,11 @@ pub fn blas_matmul_output_layout(
 /// [`blas_matmul_output_layout`] for [`crate::api::BlasMatMulOps::blas_matmul_prepared`], with each side's terms as the
 /// product reads them: a cold operand's own, a hot one's under `ctx`. `ctx` is a context or its layout: the query
 /// reads the shape of its maps.
+///
+/// # Panics
+///
+/// As [`blas_transpose_output_layout`], for
+/// [`validate_blas_matmul_prepared`](crate::layouts::validate_blas_matmul_prepared).
 pub fn blas_matmul_prepared_output_layout(
     res: &impl BlasGridInfos,
     a: &impl BlasMatMulOperandInfos,
@@ -541,7 +593,10 @@ fn pt_block<P: LtDiagonalMeta, S: BlasPtSide>(
 ///
 /// # Panics
 ///
-/// Under `JklsStored` and `JklsGalois`, for a `ctx` that does not fit.
+/// On a layout of `b` no operand is allocated at, as [`crate::layouts::BlasModuleAlloc::blas_pt_operand_alloc`], a
+/// count that does not divide its matrix slots included, and under `JklsStored` and `JklsGalois` on a `ctx` layout no
+/// context is allocated at or at another block dimension than the operand's ("a context at another block dimension than
+/// the operand's"), which [`validate_blas_matmul_pt_right`](crate::layouts::validate_blas_matmul_pt_right) rejects.
 pub fn blas_matmul_pt_right_output_layout(
     res: &impl BlasGridInfos,
     a: &impl BlasGridInfos,
@@ -560,8 +615,9 @@ pub fn blas_matmul_pt_right_output_layout(
 ///
 /// # Panics
 ///
-/// As [`blas_matmul_pt_right_output_layout`], and under `JklsStored` and `JklsGalois` for a `ctx` without the column
-/// halves of psi^k, whose plan selects neither.
+/// As [`blas_matmul_pt_right_output_layout`], for
+/// [`validate_blas_matmul_pt_left`](crate::layouts::validate_blas_matmul_pt_left), and under `JklsStored` and
+/// `JklsGalois` on a `ctx` without the column halves of psi^k, whose plan selects neither.
 pub fn blas_matmul_pt_left_output_layout(
     res: &impl BlasGridInfos,
     b: &impl BlasPtOperandInfos<Side = Left>,
@@ -579,6 +635,10 @@ pub fn blas_matmul_pt_left_output_layout(
 /// The keys [`crate::api::BlasMatMulOps::blas_matmul`] looks up for factors `a` and `b` under `ctx`: the terms'
 /// rotation keys and the tensor key. The result grid takes no part in them. See [`BlasKeyUses`]. `ctx` is a context
 /// or its layout: the query reads the shape of its maps.
+///
+/// # Panics
+///
+/// As [`blas_transpose_output_layout`], for [`validate_blas_matmul`](crate::layouts::validate_blas_matmul).
 pub fn blas_matmul_key_uses<BE: Backend>(
     module: &Module<BE>,
     a: &impl BlasGridInfos,
@@ -591,6 +651,11 @@ pub fn blas_matmul_key_uses<BE: Backend>(
 
 /// The keys [`crate::api::BlasMatMulOps::blas_matmul_prepare_left`] looks up for `a` under `ctx`, under either hint.
 /// See [`BlasKeyUses`]. `ctx` is a context or its layout: the query reads the shape of its maps.
+///
+/// # Panics
+///
+/// As [`blas_transpose_output_layout`], for
+/// [`validate_blas_matmul_prepare_left`](crate::layouts::validate_blas_matmul_prepare_left).
 pub fn blas_matmul_prepare_left_key_uses<BE: Backend>(
     module: &Module<BE>,
     a: &impl BlasGridInfos,
@@ -601,6 +666,11 @@ pub fn blas_matmul_prepare_left_key_uses<BE: Backend>(
 }
 
 /// [`blas_matmul_prepare_left_key_uses`] for [`crate::api::BlasMatMulOps::blas_matmul_prepare_right`].
+///
+/// # Panics
+///
+/// As [`blas_transpose_output_layout`], for
+/// [`validate_blas_matmul_prepare_right`](crate::layouts::validate_blas_matmul_prepare_right).
 pub fn blas_matmul_prepare_right_key_uses<BE: Backend>(
     module: &Module<BE>,
     b: &impl BlasGridInfos,
@@ -613,6 +683,11 @@ pub fn blas_matmul_prepare_right_key_uses<BE: Backend>(
 /// The keys [`crate::api::BlasMatMulOps::blas_matmul_prepared`] looks up for the operands `a` and `b` under `ctx`: the
 /// terms' rotation keys of each hot side, and the tensor key. See [`BlasKeyUses`]. `ctx` is a context or its
 /// layout: the query reads the shape of its maps.
+///
+/// # Panics
+///
+/// As [`blas_transpose_output_layout`], for
+/// [`validate_blas_matmul_prepared`](crate::layouts::validate_blas_matmul_prepared).
 pub fn blas_matmul_prepared_key_uses<BE: Backend>(
     module: &Module<BE>,
     a: &impl BlasMatMulOperandInfos,
