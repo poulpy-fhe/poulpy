@@ -29,10 +29,10 @@ use super::helpers::{
     mapped_layout, other_scales, poisoned_scratch, rejected_grids, relabel, rotation_keys,
 };
 use crate::{
-    api::BlasMatIntraOps,
+    api::{BlasEncodingOps, BlasMatIntraOps},
     layouts::{BlasCiphertextOwned, BlasContext, BlasContextInfos, BlasGridInfos, BlasPlan, replicated},
     oep::{
-        BlasMatIntraImpl,
+        BlasEncodingImpl, BlasMatIntraImpl,
         derived::intra::{sum_line, sum_line_tmp_bytes},
     },
 };
@@ -46,8 +46,12 @@ pub fn test_blas_transpose<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
     log_d: usize,
 ) where
-    BE: TestContextBackend<Ring = Standard> + BlasMatIntraImpl,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    BE: TestContextBackend<Ring = Standard> + BlasMatIntraImpl + BlasEncodingImpl,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + BlasEncodingOps<BE, F>
+        + CKKSLinearTransformationOps<BE>
+        + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
@@ -113,8 +117,12 @@ pub fn test_blas_rotate_rows_cols<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
     log_d: usize,
 ) where
-    BE: TestContextBackend<Ring = Standard> + BlasMatIntraImpl,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    BE: TestContextBackend<Ring = Standard> + BlasMatIntraImpl + BlasEncodingImpl,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + BlasEncodingOps<BE, F>
+        + CKKSLinearTransformationOps<BE>
+        + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
@@ -202,7 +210,7 @@ pub fn test_blas_rotate_rows_cols<BE, F, E>(
             for &k in row_shifts {
                 let layout = want_layout(k, &res, rotates);
                 module
-                    .blas_rotate_rows(&mut res, &ct, k, &ctx, &row_keys[k % d], &mut op_scratch.borrow())
+                    .blas_rotate_rows(k, &mut res, &ct, &ctx, &row_keys[k % d], &mut op_scratch.borrow())
                     .unwrap();
                 assert_grid_decrypt::<BE, F, E>(
                     &format!("rotate_rows {rows}x{cols} k={k} res_k={res_k}"),
@@ -219,7 +227,7 @@ pub fn test_blas_rotate_rows_cols<BE, F, E>(
             for &k in col_shifts {
                 let layout = want_layout(k, &res, false);
                 module
-                    .blas_rotate_cols(&mut res, &ct, k, &ctx, &col_keys[k % d], &mut op_scratch.borrow())
+                    .blas_rotate_cols(k, &mut res, &ct, &ctx, &col_keys[k % d], &mut op_scratch.borrow())
                     .unwrap();
                 assert_grid_decrypt::<BE, F, E>(
                     &format!("rotate_cols {rows}x{cols} k={k} res_k={res_k}"),
@@ -249,7 +257,7 @@ pub fn test_blas_rotate_rows_cols<BE, F, E>(
             let mut op_scratch = poisoned_scratch::<BE>(bytes);
             let layout = mapped_layout(&ct, rows, cols, params.k, p);
             module
-                .blas_rotate_rows(&mut res, &ct, 1, &ctx, &row_keys[1], &mut op_scratch.borrow())
+                .blas_rotate_rows(1, &mut res, &ct, &ctx, &row_keys[1], &mut op_scratch.borrow())
                 .unwrap();
             let label = format!("rotate_rows {rows}x{cols} k=1 p={p}");
             assert_grid_decrypt::<BE, F, E>(
@@ -264,7 +272,7 @@ pub fn test_blas_rotate_rows_cols<BE, F, E>(
                 &mut scratch.borrow(),
             );
             module
-                .blas_rotate_cols(&mut res, &ct, 1, &ctx, &col_keys[1], &mut op_scratch.borrow())
+                .blas_rotate_cols(1, &mut res, &ct, &ctx, &col_keys[1], &mut op_scratch.borrow())
                 .unwrap();
             let label = format!("rotate_cols {rows}x{cols} k=1 p={p}");
             assert_grid_decrypt::<BE, F, E>(
@@ -294,8 +302,12 @@ pub fn test_blas_sum_rows_cols<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
     log_d: usize,
 ) where
-    BE: TestContextBackend<Ring = Standard> + BlasMatIntraImpl,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    BE: TestContextBackend<Ring = Standard> + BlasMatIntraImpl + BlasEncodingImpl,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + BlasEncodingOps<BE, F>
+        + CKKSLinearTransformationOps<BE>
+        + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
@@ -441,8 +453,12 @@ pub fn test_blas_sum_rows_cols_lazy<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
     log_d: usize,
 ) where
-    BE: TestContextBackend<Ring = Standard> + BlasMatIntraImpl,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    BE: TestContextBackend<Ring = Standard> + BlasMatIntraImpl + BlasEncodingImpl,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + BlasEncodingOps<BE, F>
+        + CKKSLinearTransformationOps<BE>
+        + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
@@ -519,8 +535,12 @@ pub fn test_blas_intra_guards<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
     log_d: usize,
 ) where
-    BE: TestContextBackend<Ring = Standard> + BlasMatIntraImpl,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    BE: TestContextBackend<Ring = Standard> + BlasMatIntraImpl + BlasEncodingImpl,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + BlasEncodingOps<BE, F>
+        + CKKSLinearTransformationOps<BE>
+        + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
@@ -570,10 +590,10 @@ pub fn test_blas_intra_guards<BE, F, E>(
         module.blas_transpose(res, &ct, &ctx, &keys, &mut op_scratch.borrow())
     });
     assert_guard::<BE, _>("shape", "blas_rotate_rows", InvalidOperand, &mut wrong, |res| {
-        module.blas_rotate_rows(res, &ct, 1, &ctx, &keys, &mut op_scratch.borrow())
+        module.blas_rotate_rows(1, res, &ct, &ctx, &keys, &mut op_scratch.borrow())
     });
     assert_guard::<BE, _>("shape", "blas_rotate_cols", InvalidOperand, &mut wrong, |res| {
-        module.blas_rotate_cols(res, &ct, 1, &ctx, &keys, &mut op_scratch.borrow())
+        module.blas_rotate_cols(1, res, &ct, &ctx, &keys, &mut op_scratch.borrow())
     });
     assert_guard::<BE, _>("shape", "blas_sum_rows", InvalidOperand, &mut wrong, |res| {
         module.blas_sum_rows(res, &ct, &ctx, &keys, &mut op_scratch.borrow())
@@ -597,10 +617,10 @@ pub fn test_blas_intra_guards<BE, F, E>(
             module.blas_transpose(res, &a, &ctx, &keys, &mut op_scratch.borrow())
         });
         assert_guard::<BE, _>(&label, "blas_rotate_rows", InvalidOperand, &mut res, |res| {
-            module.blas_rotate_rows(res, &a, 1, &ctx, &keys, &mut op_scratch.borrow())
+            module.blas_rotate_rows(1, res, &a, &ctx, &keys, &mut op_scratch.borrow())
         });
         assert_guard::<BE, _>(&label, "blas_rotate_cols", InvalidOperand, &mut res, |res| {
-            module.blas_rotate_cols(res, &a, 1, &ctx, &keys, &mut op_scratch.borrow())
+            module.blas_rotate_cols(1, res, &a, &ctx, &keys, &mut op_scratch.borrow())
         });
         assert_guard::<BE, _>(&label, "blas_sum_rows", InvalidOperand, &mut res, |res| {
             module.blas_sum_rows(res, &a, &ctx, &keys, &mut op_scratch.borrow())
@@ -619,10 +639,10 @@ pub fn test_blas_intra_guards<BE, F, E>(
             module.blas_transpose(res, &ct, &ctx, &keys, &mut op_scratch.borrow())
         });
         assert_guard::<BE, _>(label, "blas_rotate_rows", InvalidOperand, &mut bad, |res| {
-            module.blas_rotate_rows(res, &ct, 1, &ctx, &keys, &mut op_scratch.borrow())
+            module.blas_rotate_rows(1, res, &ct, &ctx, &keys, &mut op_scratch.borrow())
         });
         assert_guard::<BE, _>(label, "blas_rotate_cols", InvalidOperand, &mut bad, |res| {
-            module.blas_rotate_cols(res, &ct, 1, &ctx, &keys, &mut op_scratch.borrow())
+            module.blas_rotate_cols(1, res, &ct, &ctx, &keys, &mut op_scratch.borrow())
         });
         assert_guard::<BE, _>(label, "blas_sum_rows", InvalidOperand, &mut bad, |res| {
             module.blas_sum_rows(res, &ct, &ctx, &keys, &mut op_scratch.borrow())
@@ -640,10 +660,10 @@ pub fn test_blas_intra_guards<BE, F, E>(
             module.blas_transpose(res, &other_a, &ctx, &keys, &mut op_scratch.borrow())
         });
         assert_guard::<BE, _>(label, "blas_rotate_rows", InvalidOperand, &mut other_res, |res| {
-            module.blas_rotate_rows(res, &other_a, 1, &ctx, &keys, &mut op_scratch.borrow())
+            module.blas_rotate_rows(1, res, &other_a, &ctx, &keys, &mut op_scratch.borrow())
         });
         assert_guard::<BE, _>(label, "blas_rotate_cols", InvalidOperand, &mut other_res, |res| {
-            module.blas_rotate_cols(res, &other_a, 1, &ctx, &keys, &mut op_scratch.borrow())
+            module.blas_rotate_cols(1, res, &other_a, &ctx, &keys, &mut op_scratch.borrow())
         });
         assert_guard::<BE, _>(label, "blas_sum_rows", InvalidOperand, &mut other_res, |res| {
             module.blas_sum_rows(res, &other_a, &ctx, &keys, &mut op_scratch.borrow())
@@ -657,10 +677,10 @@ pub fn test_blas_intra_guards<BE, F, E>(
             module.blas_transpose(res, &ct, ctx, &keys, &mut op_scratch.borrow())
         });
         assert_guard::<BE, _>(label, "blas_rotate_rows", InvalidOperand, &mut res, |res| {
-            module.blas_rotate_rows(res, &ct, 1, ctx, &keys, &mut op_scratch.borrow())
+            module.blas_rotate_rows(1, res, &ct, ctx, &keys, &mut op_scratch.borrow())
         });
         assert_guard::<BE, _>(label, "blas_rotate_cols", InvalidOperand, &mut res, |res| {
-            module.blas_rotate_cols(res, &ct, 1, ctx, &keys, &mut op_scratch.borrow())
+            module.blas_rotate_cols(1, res, &ct, ctx, &keys, &mut op_scratch.borrow())
         });
         // The row sum of a grid holding one matrix reads no map: only another slot count rejects it.
         if *label == "degree" || !replicated::<Standard>(&ct) {
@@ -713,8 +733,8 @@ pub fn test_blas_intra_guards<BE, F, E>(
     let mut unmapped = |ctx: &BlasContext<BE>| {
         let (mut shifted, mut rotated, mut summed) = (alloc(rows, cols), alloc(1, 2), alloc(1, 2));
         let mut s = unmapped_scratch.borrow();
-        module.blas_rotate_rows(&mut shifted, &ct, d, ctx, &keys, &mut s).unwrap();
-        module.blas_rotate_rows(&mut rotated, &ct_one, 1, ctx, &keys, &mut s).unwrap();
+        module.blas_rotate_rows(d, &mut shifted, &ct, ctx, &keys, &mut s).unwrap();
+        module.blas_rotate_rows(1, &mut rotated, &ct_one, ctx, &keys, &mut s).unwrap();
         module.blas_sum_rows(&mut summed, &ct_one, ctx, &keys, &mut s).unwrap();
         [shifted, rotated, summed].map(|g| grid_snapshot::<BE, _>(&g))
     };
@@ -722,10 +742,10 @@ pub fn test_blas_intra_guards<BE, F, E>(
     for (label, other) in foreign.iter().map(|(label, ctx)| (*label, ctx)).chain([("width", &wide)]) {
         if label == "degree" {
             assert_guard::<BE, _>(label, "blas_rotate_rows", InvalidOperand, &mut res, |res| {
-                module.blas_rotate_rows(res, &ct, d, other, &keys, &mut op_scratch.borrow())
+                module.blas_rotate_rows(d, res, &ct, other, &keys, &mut op_scratch.borrow())
             });
             assert_guard::<BE, _>(label, "blas_rotate_rows", InvalidOperand, &mut res_one, |res| {
-                module.blas_rotate_rows(res, &ct_one, 1, other, &keys, &mut op_scratch.borrow())
+                module.blas_rotate_rows(1, res, &ct_one, other, &keys, &mut op_scratch.borrow())
             });
             assert_guard::<BE, _>(label, "blas_sum_rows", InvalidOperand, &mut res_one, |res| {
                 module.blas_sum_rows(res, &ct_one, other, &keys, &mut op_scratch.borrow())
@@ -748,10 +768,10 @@ pub fn test_blas_intra_guards<BE, F, E>(
         module.blas_transpose(res, &short_a, &ctx, &keys, &mut op_scratch.borrow())
     });
     assert_guard::<BE, _>("misshapen a", "blas_rotate_rows", InvalidOperand, &mut res, |res| {
-        module.blas_rotate_rows(res, &short_a, 1, &ctx, &keys, &mut op_scratch.borrow())
+        module.blas_rotate_rows(1, res, &short_a, &ctx, &keys, &mut op_scratch.borrow())
     });
     assert_guard::<BE, _>("misshapen a", "blas_rotate_cols", InvalidOperand, &mut res, |res| {
-        module.blas_rotate_cols(res, &short_a, 1, &ctx, &keys, &mut op_scratch.borrow())
+        module.blas_rotate_cols(1, res, &short_a, &ctx, &keys, &mut op_scratch.borrow())
     });
     assert_guard::<BE, _>("misshapen a", "blas_sum_rows", InvalidOperand, &mut res, |res| {
         module.blas_sum_rows(res, &short_a, &ctx, &keys, &mut op_scratch.borrow())
@@ -774,7 +794,7 @@ pub fn test_blas_intra_guards<BE, F, E>(
         InvalidOperand,
         &mut short_res,
         |res| &res.grid,
-        |res| module.blas_rotate_rows(res, &ct, 1, &ctx, &keys, &mut op_scratch.borrow()),
+        |res| module.blas_rotate_rows(1, res, &ct, &ctx, &keys, &mut op_scratch.borrow()),
     );
     assert_guard_on::<BE, _, _>(
         "misshapen res",
@@ -782,7 +802,7 @@ pub fn test_blas_intra_guards<BE, F, E>(
         InvalidOperand,
         &mut short_res,
         |res| &res.grid,
-        |res| module.blas_rotate_cols(res, &ct, 1, &ctx, &keys, &mut op_scratch.borrow()),
+        |res| module.blas_rotate_cols(1, res, &ct, &ctx, &keys, &mut op_scratch.borrow()),
     );
     assert_guard_on::<BE, _, _>(
         "misshapen res",
@@ -806,10 +826,10 @@ pub fn test_blas_intra_guards<BE, F, E>(
         tsk: None,
     };
     assert_guard::<BE, _>("no keys", "blas_rotate_rows", MissingKey, &mut res, |res| {
-        module.blas_rotate_rows(res, &ct, 1, &ctx, &no_keys, &mut op_scratch.borrow())
+        module.blas_rotate_rows(1, res, &ct, &ctx, &no_keys, &mut op_scratch.borrow())
     });
     assert_guard::<BE, _>("no keys", "blas_rotate_cols", MissingKey, &mut res, |res| {
-        module.blas_rotate_cols(res, &ct, 1, &ctx, &no_keys, &mut op_scratch.borrow())
+        module.blas_rotate_cols(1, res, &ct, &ctx, &no_keys, &mut op_scratch.borrow())
     });
     assert_guard::<BE, _>("no keys", "blas_transpose", MissingKey, &mut res_t, |res| {
         module.blas_transpose(res, &ct, &ctx, &no_keys, &mut op_scratch.borrow())
@@ -840,14 +860,14 @@ pub fn test_blas_intra_guards<BE, F, E>(
         "ckks_eval_linear_transformation_into",
         Budget,
         &mut narrow_res,
-        |res| module.blas_rotate_rows(res, &ct, 1, &ctx, &keys, &mut op_scratch.borrow()),
+        |res| module.blas_rotate_rows(1, res, &ct, &ctx, &keys, &mut op_scratch.borrow()),
     );
     assert_guard::<BE, _>(
         "budget",
         "ckks_eval_linear_transformation_into",
         Budget,
         &mut narrow_res,
-        |res| module.blas_rotate_cols(res, &ct, 1, &ctx, &keys, &mut op_scratch.borrow()),
+        |res| module.blas_rotate_cols(1, res, &ct, &ctx, &keys, &mut op_scratch.borrow()),
     );
     // A replicated grid sums its rows without the projection: the inner sum into `res` rejects the budget.
     let sum_rows_op = if replicated::<Standard>(&ct) {
@@ -872,11 +892,11 @@ pub fn test_blas_intra_guards<BE, F, E>(
         let mut res = alloc(a.rows(), a.cols());
         let bytes = module.blas_rotate_rows_tmp_bytes(&res, a, &ctx, &atk);
         assert_short_scratch::<BE, _>("blas_rotate_rows", &mut res, bytes, |res, s| {
-            module.blas_rotate_rows(res, a, 1, &ctx, &keys, s)
+            module.blas_rotate_rows(1, res, a, &ctx, &keys, s)
         });
         let bytes = module.blas_rotate_cols_tmp_bytes(&res, a, &ctx, &atk);
         assert_short_scratch::<BE, _>("blas_rotate_cols", &mut res, bytes, |res, s| {
-            module.blas_rotate_cols(res, a, 1, &ctx, &keys, s)
+            module.blas_rotate_cols(1, res, a, &ctx, &keys, s)
         });
         let bytes = module.blas_sum_rows_tmp_bytes(&res, a, &ctx, &atk);
         assert_short_scratch::<BE, _>("blas_sum_rows", &mut res, bytes, |res, s| {

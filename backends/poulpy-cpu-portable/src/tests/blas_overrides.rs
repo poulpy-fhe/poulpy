@@ -6,7 +6,7 @@ use poulpy_blas::{
     api::{BlasMatIntraOps, BlasMatMulOps},
     layouts::{BlasPlan, BlasPtAlgorithm, Left, Right},
     oep::{BlasJklsImpl, BlasMatIntraImpl},
-    reference::{BlasMatIntraReference, BlasMatMulReference},
+    reference::{BlasJklsReference, BlasMatIntraReference},
     test_suite::{
         helpers::{
             Grid, HINTS, MIXES, PT_ALGORITHMS, TestKeys, alloc_grid, context_and_keys, encrypt_grid, foreign_contexts,
@@ -61,32 +61,34 @@ fn calls() -> (usize, usize) {
     (MAP_CALLS.load(Relaxed), JKLS_CALLS.load(Relaxed))
 }
 
-poulpy_blas::impl_blas_inter_reference!(OverrideBackend);
-poulpy_blas::impl_blas_matmul_reference!(OverrideBackend);
+poulpy_blas::impl_blas_mat_inter_reference_full!(OverrideBackend);
+poulpy_blas::impl_blas_mat_mul_reference_full!(OverrideBackend);
+poulpy_blas::impl_blas_encoding_reference_full!(OverrideBackend);
 
 unsafe impl BlasMatIntraImpl for OverrideBackend {
-    fn blas_map_blocks_tmp_bytes_impl<D, S, K>(
+    fn blas_map_blocks_tmp_bytes<D, S, K>(
         module: &Module<Self>,
+        sources: usize,
+
         dst: &D,
         src: &S,
-        sources: usize,
         lts: &[&LinearTransformationPrepared<Self>],
-        atk: &K,
+        keys: &K,
     ) -> usize
     where
         D: CKKSCtBounds,
         S: CKKSCtBounds,
         K: GGLWEInfos,
     {
-        module.blas_map_blocks_tmp_bytes_reference(dst, src, sources, lts, atk)
+        module.blas_map_blocks_tmp_bytes_reference(sources, dst, src, lts, keys)
     }
 
-    fn blas_map_blocks_impl<D, S, K>(
+    fn blas_map_blocks<D, S, K>(
         module: &Module<Self>,
         dst: &mut [D],
         src: &[&S],
         lts: &[&LinearTransformationPrepared<Self>],
-        atk: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> CKKSResult<()>
     where
@@ -95,29 +97,22 @@ unsafe impl BlasMatIntraImpl for OverrideBackend {
         K: GetAutomorphismKey<Self> + Sync,
     {
         MAP_CALLS.fetch_add(1, Relaxed);
-        module.blas_map_blocks_reference(dst, src, lts, atk, scratch)
+        module.blas_map_blocks_reference(dst, src, lts, keys, scratch)
     }
 }
 
 unsafe impl BlasJklsImpl for OverrideBackend {
-    fn blas_jkls_block_tmp_bytes_impl<R, L, Rh, T>(
-        module: &Module<Self>,
-        res: &R,
-        lhs: &L,
-        rhs: &Rh,
-        terms: usize,
-        tsk: &T,
-    ) -> usize
+    fn blas_jkls_block_tmp_bytes<R, L, Rh, T>(module: &Module<Self>, terms: usize, res: &R, lhs: &L, rhs: &Rh, tsk: &T) -> usize
     where
         R: CKKSCtBounds,
         L: CKKSCtBounds,
         Rh: CKKSCtBounds,
         T: GGLWEInfos,
     {
-        module.blas_jkls_block_tmp_bytes_reference(res, lhs, rhs, terms, tsk)
+        module.blas_jkls_block_tmp_bytes_reference(terms, res, lhs, rhs, tsk)
     }
 
-    fn blas_jkls_block_impl<R, T>(
+    fn blas_jkls_block<R, T>(
         module: &Module<Self>,
         res: &mut R,
         lhs: &[&CKKSPreparedLeft<Self>],
@@ -268,10 +263,10 @@ fn blas_hooks_run_on_accepted_calls_alone() {
         module.blas_transpose(&mut res, &a, &ctx, &keys, &mut op_scratch.borrow())
     });
     assert_enters("blas_rotate_rows", (1, 0), || {
-        module.blas_rotate_rows(&mut res, &a, 1, &ctx, &keys, &mut op_scratch.borrow())
+        module.blas_rotate_rows(1, &mut res, &a, &ctx, &keys, &mut op_scratch.borrow())
     });
     assert_enters("blas_rotate_cols", (1, 0), || {
-        module.blas_rotate_cols(&mut res, &a, 1, &ctx, &keys, &mut op_scratch.borrow())
+        module.blas_rotate_cols(1, &mut res, &a, &ctx, &keys, &mut op_scratch.borrow())
     });
     assert_enters("blas_sum_rows", (2, 0), || {
         module.blas_sum_rows(&mut res, &a, &ctx, &keys, &mut op_scratch.borrow())
@@ -280,7 +275,7 @@ fn blas_hooks_run_on_accepted_calls_alone() {
         module.blas_sum_cols(&mut res, &a, &ctx, &keys, &mut op_scratch.borrow())
     });
     assert_enters("blas_rotate_rows of one matrix", (0, 0), || {
-        module.blas_rotate_rows(&mut res_one, &one, 1, &ctx, &keys, &mut op_scratch.borrow())
+        module.blas_rotate_rows(1, &mut res_one, &one, &ctx, &keys, &mut op_scratch.borrow())
     });
     assert_enters("blas_sum_rows of one matrix", (0, 0), || {
         module.blas_sum_rows(&mut res_one, &one, &ctx, &keys, &mut op_scratch.borrow())
@@ -356,10 +351,10 @@ fn blas_hooks_run_on_accepted_calls_alone() {
         let rejected = |call: &str, result: CKKSResult<()>| assert_rejected(&format!("{label}: {call}"), result);
         rejected("transpose a", module.blas_transpose(res, &bad, &ctx, &keys, s));
         rejected("transpose res", module.blas_transpose(&mut bad, &a, &ctx, &keys, s));
-        rejected("rotate_rows a", module.blas_rotate_rows(res, &bad, 1, &ctx, &keys, s));
-        rejected("rotate_rows res", module.blas_rotate_rows(&mut bad, &a, 1, &ctx, &keys, s));
-        rejected("rotate_cols a", module.blas_rotate_cols(res, &bad, 1, &ctx, &keys, s));
-        rejected("rotate_cols res", module.blas_rotate_cols(&mut bad, &a, 1, &ctx, &keys, s));
+        rejected("rotate_rows a", module.blas_rotate_rows(1, res, &bad, &ctx, &keys, s));
+        rejected("rotate_rows res", module.blas_rotate_rows(1, &mut bad, &a, &ctx, &keys, s));
+        rejected("rotate_cols a", module.blas_rotate_cols(1, res, &bad, &ctx, &keys, s));
+        rejected("rotate_cols res", module.blas_rotate_cols(1, &mut bad, &a, &ctx, &keys, s));
         rejected("sum_rows a", module.blas_sum_rows(res, &bad, &ctx, &keys, s));
         rejected("sum_rows res", module.blas_sum_rows(&mut bad, &a, &ctx, &keys, s));
         rejected("sum_cols a", module.blas_sum_cols(res, &bad, &ctx, &keys, s));
@@ -391,8 +386,8 @@ fn blas_hooks_run_on_accepted_calls_alone() {
     for (label, ctx) in &foreign {
         let rejected = |call: &str, result: CKKSResult<()>| assert_rejected(&format!("{label} context: {call}"), result);
         rejected("transpose", module.blas_transpose(&mut res, &a, ctx, &keys, s));
-        rejected("rotate_rows", module.blas_rotate_rows(&mut res, &a, 1, ctx, &keys, s));
-        rejected("rotate_cols", module.blas_rotate_cols(&mut res, &a, 1, ctx, &keys, s));
+        rejected("rotate_rows", module.blas_rotate_rows(1, &mut res, &a, ctx, &keys, s));
+        rejected("rotate_cols", module.blas_rotate_cols(1, &mut res, &a, ctx, &keys, s));
         rejected("sum_rows", module.blas_sum_rows(&mut res, &a, ctx, &keys, s));
         rejected("sum_cols", module.blas_sum_cols(&mut res, &a, ctx, &keys, s));
         rejected("matmul", module.blas_matmul(&mut res, &a, &a, ctx, &keys, &keys, s));
@@ -423,13 +418,13 @@ fn blas_hooks_run_on_accepted_calls_alone() {
     );
     let rejected = |call: &str, result: CKKSResult<()>| assert_rejected(&format!("no rotation keys: {call}"), result);
     rejected("transpose", module.blas_transpose(&mut res, &a, &ctx, &no_atks, s));
-    rejected("rotate_rows", module.blas_rotate_rows(&mut res, &a, 1, &ctx, &no_atks, s));
-    rejected("rotate_cols", module.blas_rotate_cols(&mut res, &a, 1, &ctx, &no_atks, s));
+    rejected("rotate_rows", module.blas_rotate_rows(1, &mut res, &a, &ctx, &no_atks, s));
+    rejected("rotate_cols", module.blas_rotate_cols(1, &mut res, &a, &ctx, &no_atks, s));
     rejected("sum_rows", module.blas_sum_rows(&mut res, &a, &ctx, &no_atks, s));
     rejected("sum_cols", module.blas_sum_cols(&mut res, &a, &ctx, &no_atks, s));
     rejected(
         "rotate_rows of one matrix",
-        module.blas_rotate_rows(&mut res_one, &one, 1, &ctx, &no_atks, s),
+        module.blas_rotate_rows(1, &mut res_one, &one, &ctx, &no_atks, s),
     );
     rejected("matmul", module.blas_matmul(&mut res, &a, &a, &ctx, &no_atks, &no_atks, s));
     for hint in HINTS {

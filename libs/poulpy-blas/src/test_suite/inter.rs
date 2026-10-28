@@ -70,7 +70,7 @@ pub fn test_blas_rotate<BE, F, E>(
         let res_k = if r == 3 { params.k + params.base2k } else { params.k };
         let mut res = alloc_grid(&params, module, log_d, 2, 2, res_k);
         let mut op_scratch = poisoned_scratch::<BE>(module.blas_rotate_tmp_bytes(&res, &ct, &params.atk_layout()));
-        module.blas_rotate(&mut res, &ct, r, &keys, &mut op_scratch.borrow()).unwrap();
+        module.blas_rotate(r, &mut res, &ct, &keys, &mut op_scratch.borrow()).unwrap();
         assert_grid_decrypt::<BE, F, E>(
             &format!("rotate r={r} res_k={res_k}"),
             &params,
@@ -204,7 +204,7 @@ pub fn test_blas_inter_guards<BE, F, E>(
     .map(|(label, res, a)| (label.to_string(), res, a));
     for (label, mut res, a) in as_a.chain(as_res).chain(others) {
         assert_guard::<BE, _>(&label, "blas_rotate", InvalidOperand, &mut res, |res| {
-            module.blas_rotate(res, a, 1, &keys, &mut op_scratch.borrow())
+            module.blas_rotate(1, res, a, &keys, &mut op_scratch.borrow())
         });
         assert_guard::<BE, _>(&label, "blas_sum", InvalidOperand, &mut res, |res| {
             module.blas_sum(res, a, &keys, &mut op_scratch.borrow())
@@ -219,7 +219,7 @@ pub fn test_blas_inter_guards<BE, F, E>(
     };
     let (one_row, mut res) = (short(corner::<BE>(&ct, 1, ct.cols())), alloc(log_d, 2, 2));
     assert_guard::<BE, _>("misshapen a", "blas_rotate", InvalidOperand, &mut res, |res| {
-        module.blas_rotate(res, &one_row, 1, &keys, &mut op_scratch.borrow())
+        module.blas_rotate(1, res, &one_row, &keys, &mut op_scratch.borrow())
     });
     assert_guard::<BE, _>("misshapen a", "blas_sum", InvalidOperand, &mut res, |res| {
         module.blas_sum(res, &one_row, &keys, &mut op_scratch.borrow())
@@ -231,7 +231,7 @@ pub fn test_blas_inter_guards<BE, F, E>(
         InvalidOperand,
         &mut short_res,
         |res| &res.grid,
-        |res| module.blas_rotate(res, &ct, 1, &keys, &mut op_scratch.borrow()),
+        |res| module.blas_rotate(1, res, &ct, &keys, &mut op_scratch.borrow()),
     );
     assert_guard_on::<BE, _, _>(
         "misshapen res",
@@ -246,7 +246,7 @@ pub fn test_blas_inter_guards<BE, F, E>(
     let mut res = alloc(log_d, 2, 2);
     if lanes > 1 {
         assert_guard::<BE, _>("no keys", "blas_rotate", MissingKey, &mut res, |res| {
-            module.blas_rotate(res, &ct, 1, &keys, &mut op_scratch.borrow())
+            module.blas_rotate(1, res, &ct, &keys, &mut op_scratch.borrow())
         });
         assert_guard::<BE, _>("no keys", "blas_sum", MissingKey, &mut res, |res| {
             module.blas_sum(res, &ct, &keys, &mut op_scratch.borrow())
@@ -258,7 +258,7 @@ pub fn test_blas_inter_guards<BE, F, E>(
     let wide = BlasCiphertext::from_blocks(ct.clone().into_blocks(), log_d_wide, 2, 2).unwrap();
     let mut res_wide = alloc(log_d_wide, 2, 2);
     assert_guard::<BE, _>("wide", "blas_rotate", InvalidOperand, &mut res_wide, |res| {
-        module.blas_rotate(res, &wide, 1, &keys, &mut op_scratch.borrow())
+        module.blas_rotate(1, res, &wide, &keys, &mut op_scratch.borrow())
     });
     assert_guard::<BE, _>("wide", "blas_sum", InvalidOperand, &mut res_wide, |res| {
         module.blas_sum(res, &wide, &keys, &mut op_scratch.borrow())
@@ -277,7 +277,7 @@ pub fn test_blas_inter_guards<BE, F, E>(
     let mut narrow = alloc_grid(&params, module, log_d, 2, 2, ct.block_layout().log_delta() - 1);
     let rotate = if lanes > 1 { "ckks_rotate_into" } else { "ckks_copy" };
     assert_guard::<BE, _>("budget", rotate, Budget, &mut narrow, |res| {
-        module.blas_rotate(res, &ct, 1, &sum_keys, &mut op_scratch.borrow())
+        module.blas_rotate(1, res, &ct, &sum_keys, &mut op_scratch.borrow())
     });
     assert_guard::<BE, _>("budget", "ckks_inner_sum", Budget, &mut narrow, |res| {
         module.blas_sum(res, &ct, &sum_keys, &mut op_scratch.borrow())
@@ -288,7 +288,7 @@ pub fn test_blas_inter_guards<BE, F, E>(
         let [.., (_, rank_a)] = foreign_layouts(module, &ct);
         let mut rank_res = rank_a.clone();
         assert_guard::<BE, _>("key rank", "blas_rotate", InvalidOperand, &mut rank_res, |res| {
-            module.blas_rotate(res, &rank_a, 1, &sum_keys, &mut op_scratch.borrow())
+            module.blas_rotate(1, res, &rank_a, &sum_keys, &mut op_scratch.borrow())
         });
         assert_guard::<BE, _>("key rank", "blas_sum", InvalidOperand, &mut rank_res, |res| {
             module.blas_sum(res, &rank_a, &sum_keys, &mut op_scratch.borrow())
@@ -299,7 +299,7 @@ pub fn test_blas_inter_guards<BE, F, E>(
     if lanes > 1 {
         let bytes = module.blas_rotate_tmp_bytes(&res, &ct, &params.atk_layout());
         assert_short_scratch::<BE, _>("blas_rotate", &mut res, bytes, |res, s| {
-            module.blas_rotate(res, &ct, 1, &sum_keys, s)
+            module.blas_rotate(1, res, &ct, &sum_keys, s)
         });
         let bytes = module.blas_sum_tmp_bytes(&res, &ct, &params.atk_layout());
         assert_short_scratch::<BE, _>("blas_sum", &mut res, bytes, |res, s| module.blas_sum(res, &ct, &sum_keys, s));

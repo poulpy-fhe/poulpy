@@ -8,7 +8,7 @@ use poulpy_ckks::{
         LinearTransformation, LinearTransformationLayout, LinearTransformationPlan, LinearTransformationPrepared, LtDiagonalMeta,
         ckks_linear_transformation_output_layout,
     },
-    encoding::{ckks_encode_linear_transformation_into, ckks_encode_linear_transformation_tmp_bytes},
+    encoding::ckks_encode_linear_transformation_into,
     layouts::{CKKSModuleAlloc, CKKSPlaintextOwned, ComplexDiagonals},
 };
 use poulpy_core::layouts::{
@@ -17,13 +17,10 @@ use poulpy_core::layouts::{
 };
 use poulpy_hal::{
     api::CnvPVecAlloc,
-    layouts::{Backend, Module, ScratchArena},
+    layouts::{Backend, ScratchArena},
 };
 
 use super::validate::assert_scratch;
-use super::{
-    BlasContextInfos, BlasContextUnprepared, BlasPtOperandInfos, BlasPtOperandUnprepared, BlasPtSide, context, pt_operand,
-};
 
 /// A map encoded on a module's plaintexts.
 pub(crate) type Encoded<BE> = LinearTransformation<CKKSPlaintextOwned<BE>>;
@@ -224,7 +221,8 @@ fn uniform<BE: Backend>(map: &Encoded<BE>) -> bool {
 
 /// Prepares every map of `maps` into the allocation `res` yields at the same position, once every map has diagonals of
 /// one scale, width and slot kind and `scratch` holds the largest preparation's bytes; `op` names the caller in the
-/// panics of both checks, which run before the first map is prepared.
+/// panics of both checks, which run before the first map is prepared, and prefixes the panic carrying any refusal of
+/// poulpy-ckks.
 pub(crate) fn prepare_maps_into<'a, BE, M>(
     module: &M,
     op: &'static str,
@@ -247,118 +245,11 @@ pub(crate) fn prepare_maps_into<'a, BE, M>(
         .unwrap_or(0);
     assert_scratch(op, bytes, scratch);
     for (dst, src) in res.zip(maps) {
-        if module.ckks_prepare_linear_transformation_rhs(dst, src, scratch).is_err() {
-            panic!("{op}: a map's diagonals do not share one scale, width and slot kind");
+        if let Err(err) = module.ckks_prepare_linear_transformation_rhs(dst, src, scratch) {
+            panic!("{op}: {err}");
         }
     }
 }
-
-/// Encoding of public operands, and of contexts, into their allocations.
-pub trait BlasEncodingOps<BE: Backend>: CKKSModuleAlloc<BE> + GetDegree + Sized {
-    /// Scratch bytes [`Self::blas_pt_operand_encode_into`] needs for an operand of `infos`: the encoding of one diagonal
-    /// of a map of period `count d^2`.
-    fn blas_pt_operand_encode_tmp_bytes<F, A>(&self, infos: &A) -> usize
-    where
-        Self: CKKSEncodingOps<BE, F>,
-        F: CKKSEncodingScalar,
-        A: BlasPtOperandInfos,
-    {
-        let slots = 1usize
-            .checked_shl(2 * infos.log_d() as u32)
-            .and_then(|d2| d2.checked_mul(infos.count()))
-            .expect("count d^2 overflows usize");
-        ckks_encode_linear_transformation_tmp_bytes::<BE, Self, F>(self, slots)
-    }
-
-    /// Encodes into `res` the public matrices `entry(m, row, col)`, matrix slot `s` reading matrix `m = s mod count`,
-    /// `row < rows d`, `col < cols d`, at the operand's `coeffs_meta`: under [`BlasPtAlgorithm::Diagonal`] block
-    /// `(l, j)` as `A -> A B_lj` on the right, `A -> B_lj A` on the left; under [`BlasPtAlgorithm::Jkls`] sigma (tau on
-    /// the left), then every block as the map of its results ([`maps::right_jkls`], [`maps::left_jkls`]). Under
-    /// [`BlasPtAlgorithm::JklsStored`] and [`BlasPtAlgorithm::JklsGalois`], the same first map, then per block
-    /// one-diagonal maps by tau (sigma) of the block rotated by each rotation of its terms ([`maps::slot_product`]), `d`
-    /// on the right and `2d - 1` on the left under `JklsStored`, the unrotated one under `JklsGalois`. A left
-    /// operand of one public matrix on more than one matrix slot under the diagonal products also holds, per block, the
-    /// map of a replicated input ([`maps::left_mul_rep`]). Every diagonal of `res` is overwritten, so encoding again
-    /// into the same operand refills it, with no allocation of plaintexts. Operations reject the operand on inputs whose
-    /// blocks are not at its radix or are narrower than `coeffs_meta.k`.
-    ///
-    /// `scratch` must hold [`Self::blas_pt_operand_encode_tmp_bytes`].
-    ///
-    /// # Errors
-    ///
-    /// poulpy-ckks's encoding errors, as a value it cannot represent at `coeffs_meta` or a scratch short of the query.
-    /// After an error the content of `res` is unspecified: encode it again before use, preparing it before then is
-    /// meaningless.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `res` was allocated on a module of other slots.
-    ///
-    /// [`BlasPtAlgorithm::Diagonal`]: crate::layouts::BlasPtAlgorithm::Diagonal
-    /// [`BlasPtAlgorithm::Jkls`]: crate::layouts::BlasPtAlgorithm::Jkls
-    /// [`BlasPtAlgorithm::JklsStored`]: crate::layouts::BlasPtAlgorithm::JklsStored
-    /// [`BlasPtAlgorithm::JklsGalois`]: crate::layouts::BlasPtAlgorithm::JklsGalois
-    /// [`maps::slot_product`]: crate::layouts::maps::slot_product
-    /// [`maps::right_jkls`]: crate::layouts::maps::right_jkls
-    /// [`maps::left_jkls`]: crate::layouts::maps::left_jkls
-    /// [`maps::left_mul_rep`]: crate::layouts::maps::left_mul_rep
-    fn blas_pt_operand_encode_into<F, S>(
-        &self,
-        res: &mut BlasPtOperandUnprepared<BE, S>,
-        entry: impl Fn(usize, usize, usize) -> F,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> CKKSResult<()>
-    where
-        Self: CKKSEncodingOps<BE, F>,
-        F: DiagonalArithmetic + CKKSEncodingScalar,
-        S: BlasPtSide,
-    {
-        pt_operand::encode_into(self, res, entry, scratch)
-    }
-    /// Scratch bytes [`Self::blas_context_encode_into`] needs for a context of `infos`: the encoding of one diagonal of a
-    /// map of period `d^2`.
-    fn blas_context_encode_tmp_bytes<F, A>(&self, infos: &A) -> usize
-    where
-        Self: CKKSEncodingOps<BE, F>,
-        F: CKKSEncodingScalar,
-        A: BlasContextInfos,
-    {
-        let slots = 1usize.checked_shl(2 * infos.log_d() as u32).expect("d^2 overflows usize");
-        ckks_encode_linear_transformation_tmp_bytes::<BE, Self, F>(self, slots)
-    }
-
-    /// Encodes every map of `res`'s plan into it at its `coeffs_meta`, each scheduled as the plan schedules it, but tau on
-    /// a replicated input ([`BlasContext::tau_rep`](crate::layouts::BlasContext::tau_rep)), scheduled at tau's giant
-    /// step, and psi^k on a replicated input
-    /// ([`BlasContext::rotate_rows_rep`](crate::layouts::BlasContext::rotate_rows_rep)), at no scale. Every diagonal is
-    /// overwritten, so encoding again refills `res` with no allocation of plaintexts. Operations reject the context on a
-    /// module of other slots and on inputs whose blocks are not at its radix or are narrower than `coeffs_meta.k`.
-    ///
-    /// `scratch` must hold [`Self::blas_context_encode_tmp_bytes`].
-    ///
-    /// # Errors
-    ///
-    /// poulpy-ckks's encoding errors, as a value it cannot represent at `coeffs_meta` or a scratch short of the query.
-    /// After an error the content of `res` is unspecified: encode it again before use, preparing it before then is
-    /// meaningless.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `res` was allocated on a module of another ring.
-    fn blas_context_encode_into<F>(
-        &self,
-        res: &mut BlasContextUnprepared<BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> CKKSResult<()>
-    where
-        Self: CKKSEncodingOps<BE, F>,
-        F: DiagonalArithmetic + CKKSEncodingScalar,
-    {
-        context::encode_into(self, res, scratch)
-    }
-}
-
-impl<BE: Backend> BlasEncodingOps<BE> for Module<BE> where Module<BE>: CKKSModuleAlloc<BE> {}
 
 /// `block` after `lt` evaluated into a ciphertext of width `dst_k`, at `block`'s label: a map never repeats with a longer
 /// period than the blocks it reads, so blas keeps their label, where poulpy-ckks reads one off the diagonals' degree,

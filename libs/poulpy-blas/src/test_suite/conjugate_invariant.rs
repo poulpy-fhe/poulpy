@@ -31,7 +31,7 @@ use super::{
     matmul::public_entry,
 };
 use crate::{
-    api::{BlasMatInterOps, BlasMatIntraOps, BlasMatMulOps},
+    api::{BlasEncodingOps, BlasMatInterOps, BlasMatIntraOps, BlasMatMulOps},
     layouts::{
         BlasCiphertext, BlasCiphertextOwned, BlasContextInfos, BlasGridInfos, BlasLayout, BlasPlan, BlasPtAlgorithm,
         BlasPtOperand, Left, Right, ciphertext::layout_of, replicated, sum_galois_elements,
@@ -55,7 +55,11 @@ pub fn test_blas_conjugate_invariant<BE>(
     host_module: &Module<HostBytesBackend<ConjugateInvariant>>,
 ) where
     BE: TestContextBackend<Ring = ConjugateInvariant> + BlasImpl,
-    Module<BE>: TestContextSharedModule<BE> + CKKSEncodingOps<BE, f64> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: TestContextSharedModule<BE>
+        + CKKSEncodingOps<BE, f64>
+        + BlasEncodingOps<BE, f64>
+        + CKKSLinearTransformationOps<BE>
+        + CnvPVecAlloc<BE>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
@@ -113,7 +117,7 @@ pub fn test_blas_conjugate_invariant<BE>(
 
     let mut res = alloc(2, 3);
     with_scratch::<BE, _>(module.blas_rotate_tmp_bytes(&res, &ct_a, &atk), |s| {
-        module.blas_rotate(&mut res, &ct_a, 1, &keys, s)
+        module.blas_rotate(1, &mut res, &ct_a, &keys, s)
     })
     .unwrap();
     let layout = copied_layout(&ct_a, 2, 3, k);
@@ -138,14 +142,14 @@ pub fn test_blas_conjugate_invariant<BE>(
     let layout = mapped_layout(&ct_a, 2, 3, k, p);
     let mut res = alloc(2, 3);
     with_scratch::<BE, _>(module.blas_rotate_rows_tmp_bytes(&res, &ct_a, &ctx, &atk), |s| {
-        module.blas_rotate_rows(&mut res, &ct_a, 1, &ctx, &keys, s)
+        module.blas_rotate_rows(1, &mut res, &ct_a, &ctx, &keys, s)
     })
     .unwrap();
     check("rotate_rows", &res, &a.rotate_rows(1), layout, &mut scratch.borrow());
 
     let mut res = alloc(2, 3);
     with_scratch::<BE, _>(module.blas_rotate_cols_tmp_bytes(&res, &ct_a, &ctx, &atk), |s| {
-        module.blas_rotate_cols(&mut res, &ct_a, 1, &ctx, &keys, s)
+        module.blas_rotate_cols(1, &mut res, &ct_a, &ctx, &keys, s)
     })
     .unwrap();
     check("rotate_cols", &res, &a.rotate_cols(1), layout, &mut scratch.borrow());
@@ -185,7 +189,7 @@ pub fn test_blas_conjugate_invariant<BE>(
         if rows == 1 {
             let mut res = alloc(rows, cols);
             with_scratch::<BE, _>(module.blas_rotate_rows_tmp_bytes(&res, ct_x, &ctx, &atk), |s| {
-                module.blas_rotate_rows(&mut res, ct_x, 1, &ctx, &keys, s)
+                module.blas_rotate_rows(1, &mut res, ct_x, &ctx, &keys, s)
             })
             .unwrap();
             check(

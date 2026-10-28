@@ -50,19 +50,17 @@ use super::helpers::{
     rotation_keys, to_f, want_operand_infos,
 };
 use crate::{
-    api::{BlasMatIntraOps, BlasMatMulOps},
+    api::{BlasEncodingOps, BlasMatIntraOps, BlasMatMulOps},
     layouts::{
         BlasCiphertext, BlasCiphertextOwned, BlasContext, BlasContextInfos, BlasGridInfos, BlasKeyUses, BlasLayout,
         BlasMatMulLeft, BlasMatMulOperand, BlasMatMulOperandLayout, BlasMatMulOperandPreparedFactory, BlasMatMulRight,
         BlasModuleAlloc, BlasPlan, BlasPtAlgorithm, BlasPtOperand, BlasPtOperandInfos, Left, Right,
-        blas_matmul_left_operand_layout, blas_matmul_right_operand_layout, ciphertext::layout_of, replicated, validate::MASKLESS,
-        validate_blas_matmul_prepared,
+        blas_matmul_left_operand_layout, blas_matmul_pt_left_key_uses, blas_matmul_pt_left_output_layout,
+        blas_matmul_pt_right_key_uses, blas_matmul_pt_right_output_layout, blas_matmul_right_operand_layout,
+        ciphertext::layout_of, planning::pt_label, replicated, validate::MASKLESS, validate_blas_matmul_prepared,
     },
-    oep::{BlasImpl, BlasMatMulImpl},
-    reference::{
-        BlasMatMulReference, blas_matmul_pt_left_key_uses, blas_matmul_pt_left_output_layout, blas_matmul_pt_right_key_uses,
-        blas_matmul_pt_right_output_layout, pt_label,
-    },
+    oep::{BlasEncodingImpl, BlasImpl, BlasMatMulImpl},
+    reference::BlasMatMulReference,
 };
 
 /// `dec(matmul(enc(A), enc(B)))` is `A B` for every matrix of the batch, for a `2 x 3` grid times a `3 x 2` grid, with
@@ -85,8 +83,12 @@ pub fn test_blas_matmul<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
     log_d: usize,
 ) where
-    BE: TestContextBackend<Ring = Standard> + BlasMatMulImpl,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    BE: TestContextBackend<Ring = Standard> + BlasMatMulImpl + BlasEncodingImpl,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + BlasEncodingOps<BE, F>
+        + CKKSLinearTransformationOps<BE>
+        + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
@@ -470,8 +472,12 @@ pub fn test_blas_matmul_pt_right<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
     log_d: usize,
 ) where
-    BE: TestContextBackend<Ring = Standard> + BlasMatMulImpl,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    BE: TestContextBackend<Ring = Standard> + BlasMatMulImpl + BlasEncodingImpl,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + BlasEncodingOps<BE, F>
+        + CKKSLinearTransformationOps<BE>
+        + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
@@ -686,8 +692,12 @@ pub fn test_blas_matmul_pt_right_guards<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
     log_d: usize,
 ) where
-    BE: TestContextBackend<Ring = Standard> + BlasMatMulImpl,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    BE: TestContextBackend<Ring = Standard> + BlasMatMulImpl + BlasEncodingImpl,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + BlasEncodingOps<BE, F>
+        + CKKSLinearTransformationOps<BE>
+        + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
@@ -980,7 +990,11 @@ pub fn test_blas_matmul_pt_left<BE, F, E>(
     log_d: usize,
 ) where
     BE: TestContextBackend<Ring = Standard> + BlasImpl,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + BlasEncodingOps<BE, F>
+        + CKKSLinearTransformationOps<BE>
+        + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
@@ -1225,7 +1239,11 @@ pub fn test_blas_matmul_pt_left_replicated<BE, F, E>(
     log_d: usize,
 ) where
     BE: TestContextBackend<Ring = Standard> + BlasImpl,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + BlasEncodingOps<BE, F>
+        + CKKSLinearTransformationOps<BE>
+        + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
@@ -1374,8 +1392,12 @@ pub fn test_blas_matmul_pt_left_guards<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
     log_d: usize,
 ) where
-    BE: TestContextBackend<Ring = Standard> + BlasMatMulImpl,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    BE: TestContextBackend<Ring = Standard> + BlasMatMulImpl + BlasEncodingImpl,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + BlasEncodingOps<BE, F>
+        + CKKSLinearTransformationOps<BE>
+        + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
@@ -1663,8 +1685,8 @@ fn masked_fixture<BE, F, E>(
     log_d: usize,
 ) -> MaskedFixture<BE, E>
 where
-    BE: TestContextBackend<Ring = Standard>,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE>,
+    BE: TestContextBackend<Ring = Standard> + BlasEncodingImpl,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + BlasEncodingOps<BE, F> + CKKSLinearTransformationOps<BE>,
     F: TestScalar + DiagonalArithmetic,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
@@ -1748,8 +1770,12 @@ pub fn test_blas_matmul_pt_masked<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
     log_d: usize,
 ) where
-    BE: TestContextBackend<Ring = Standard> + BlasMatMulImpl,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    BE: TestContextBackend<Ring = Standard> + BlasMatMulImpl + BlasEncodingImpl,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + BlasEncodingOps<BE, F>
+        + CKKSLinearTransformationOps<BE>
+        + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
@@ -1874,8 +1900,12 @@ pub fn test_blas_matmul_pt_masked_guards<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
     log_d: usize,
 ) where
-    BE: TestContextBackend<Ring = Standard> + BlasMatMulImpl,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    BE: TestContextBackend<Ring = Standard> + BlasMatMulImpl + BlasEncodingImpl,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + BlasEncodingOps<BE, F>
+        + CKKSLinearTransformationOps<BE>
+        + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
@@ -2018,8 +2048,12 @@ pub fn test_blas_matmul_guards<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
     log_d: usize,
 ) where
-    BE: TestContextBackend<Ring = Standard> + BlasMatMulImpl,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    BE: TestContextBackend<Ring = Standard> + BlasMatMulImpl + BlasEncodingImpl,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + BlasEncodingOps<BE, F>
+        + CKKSLinearTransformationOps<BE>
+        + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
@@ -2552,8 +2586,12 @@ pub fn test_blas_matmul_guards<BE, F, E>(
 /// `blas_matmul_pt_right` documents.
 pub fn test_blas_matmul_long_sums<BE, F, E>(params: CKKSTestParams, _module: &Module<BE>, _host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard> + BlasMatMulImpl,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    BE: TestContextBackend<Ring = Standard> + BlasMatMulImpl + BlasEncodingImpl,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + BlasEncodingOps<BE, F>
+        + CKKSLinearTransformationOps<BE>
+        + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
@@ -2653,9 +2691,13 @@ pub fn test_blas_replicated_shifts<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
     log_d: usize,
 ) where
-    BE: TestContextBackend<Ring = Standard> + BlasMatMulImpl,
-    Module<BE>:
-        TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CKKSRotateOps<BE> + CnvPVecAlloc<BE>,
+    BE: TestContextBackend<Ring = Standard> + BlasMatMulImpl + BlasEncodingImpl,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + BlasEncodingOps<BE, F>
+        + CKKSLinearTransformationOps<BE>
+        + CKKSRotateOps<BE>
+        + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
@@ -2745,7 +2787,11 @@ pub fn test_blas_matmul_operands<BE, F, E>(
     log_d: usize,
 ) where
     BE: TestContextBackend<Ring = Standard> + BlasImpl,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + BlasEncodingOps<BE, F>
+        + CKKSLinearTransformationOps<BE>
+        + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
@@ -2953,7 +2999,11 @@ pub fn test_blas_matmul_flag_clear<BE, F, E>(
     log_d: usize,
 ) where
     BE: TestContextBackend<Ring = Standard> + BlasImpl,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + BlasEncodingOps<BE, F>
+        + CKKSLinearTransformationOps<BE>
+        + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
