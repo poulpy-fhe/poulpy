@@ -4,8 +4,14 @@
 //! compare.
 
 use poulpy_hal::{
-    api::{CnvPVecAlloc, Convolution, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAutomorphism},
-    layouts::{HostDataMut, Module, ScratchOwned, ZnxView, ZnxViewMut},
+    api::{
+        CnvPVecAlloc, Convolution, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAutomorphism, VecZnxDftAlloc,
+        VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes,
+    },
+    layouts::{
+        Backend, CnvPVecLToBackendRef, CnvPVecRToBackendRef, HostDataMut, Module, ScratchOwned, VecZnxDftToBackendMut, ZnxView,
+        ZnxViewMut,
+    },
     source::Source,
     test_suite::{TestParams, vec_znx_backend_mut, vec_znx_backend_ref},
 };
@@ -14,8 +20,11 @@ use crate::{
     GGSWRotate, GLWEAdd, GLWEBytesOf, GLWECopy, GLWEMaskFill, GLWEMulConst, GLWEMulPlain, GLWEMulPreparedPlainSum,
     GLWEMulXpMinusOne, GLWENegate, GLWENormalize, GLWEPreparedTensoring, GLWERotate, GLWEShift, GLWESub, GLWETensoring, GLWEZero,
     api::TransferInto,
+    gadget::cnv_offset_to_limb_offset,
     glwe_prepare_left, glwe_prepare_left_tmp_bytes, glwe_prepare_right, glwe_prepare_right_tmp_bytes,
-    layouts::{Base2K, Degree, GGSWAtViewMut, GLWELayout, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision},
+    layouts::{
+        Base2K, Degree, GGSWAtViewMut, GLWEInfos, GLWELayout, GLWEToBackendMut, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
+    },
     test_suite::parity::{ParityBackend, ParityShapes, poisoned_scratch, ref_glwe, unnormalized_twin},
 };
 
@@ -950,14 +959,20 @@ pub fn test_glwe_multiplication_parity<BR, BT>(
         + Convolution<BR>
         + GLWENormalize<BR>
         + GLWEBytesOf<BR>
-        + VecZnxAutomorphism<BR>,
+        + VecZnxAutomorphism<BR>
+        + VecZnxDftAlloc<BR>
+        + VecZnxIdftNormalize<BR>
+        + VecZnxIdftNormalizeTmpBytes,
     Module<BT>: GLWEMulConst<BT>
         + GLWEMulPlain<BT>
         + GLWEMulPreparedPlainSum<BT>
         + CnvPVecAlloc<BT>
         + Convolution<BT>
         + GLWENormalize<BT>
-        + GLWEBytesOf<BT>,
+        + GLWEBytesOf<BT>
+        + VecZnxDftAlloc<BT>
+        + VecZnxIdftNormalize<BT>
+        + VecZnxIdftNormalizeTmpBytes,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
 {
@@ -1062,8 +1077,9 @@ pub fn test_glwe_multiplication_parity<BR, BT>(
 /// The summed product of prepared ciphertexts by prepared plaintexts read through Galois elements, each call on exactly
 /// its scratch: one term through `1` is `glwe_mul_plain` of the two sources and one through `5` is `glwe_mul_plain` of
 /// the ciphertext by the plaintext's automorphism, bit for bit; three terms through `1`, `5` and `-1` agree across
-/// backends, the two sides preparing under swapped hints, the test side from unnormalized twins; an even element panics
-/// before `res` changes.
+/// backends, the two sides preparing under swapped hints, the test side from unnormalized twins, and equal on each
+/// backend the DFT forms, the first term then the other two added, finished per column, the reference side on the
+/// accumulator the sum spans and the test side on one limb more; an even element panics before `res` changes.
 fn test_glwe_mul_prepared_plain_sum_case<BR, BT>(
     params: &TestParams,
     infos: &GLWELayout,
@@ -1080,8 +1096,18 @@ fn test_glwe_mul_prepared_plain_sum_case<BR, BT>(
         + Convolution<BR>
         + GLWENormalize<BR>
         + GLWEBytesOf<BR>
-        + VecZnxAutomorphism<BR>,
-    Module<BT>: GLWEMulPreparedPlainSum<BT> + CnvPVecAlloc<BT> + Convolution<BT> + GLWENormalize<BT> + GLWEBytesOf<BT>,
+        + VecZnxAutomorphism<BR>
+        + VecZnxDftAlloc<BR>
+        + VecZnxIdftNormalize<BR>
+        + VecZnxIdftNormalizeTmpBytes,
+    Module<BT>: GLWEMulPreparedPlainSum<BT>
+        + CnvPVecAlloc<BT>
+        + Convolution<BT>
+        + GLWENormalize<BT>
+        + GLWEBytesOf<BT>
+        + VecZnxDftAlloc<BT>
+        + VecZnxIdftNormalize<BT>
+        + VecZnxIdftNormalizeTmpBytes,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
 {
@@ -1208,6 +1234,42 @@ fn test_glwe_mul_prepared_plain_sum_case<BR, BT>(
             have,
             "glwe_mul_prepared_plain_sum, three terms: k={k} rank={rank:?} offset={offset}"
         );
+
+        let (cnv_offset_hi, _) = cnv_offset_to_limb_offset(offset, base2k.as_usize());
+        let mut dft_ref = ref_glwe(module_ref, infos, source);
+        let mut dft_test = module_test.glwe_alloc_from_infos(infos);
+        dft_ref.transfer_into(&mut dft_test);
+        plain_sum_dft(
+            module_ref,
+            offset,
+            &mut dft_ref,
+            &a_refs,
+            &b_refs,
+            size,
+            2 * size - cnv_offset_hi,
+            base2k,
+        );
+        plain_sum_dft(
+            module_test,
+            offset,
+            &mut dft_test,
+            &a_tests,
+            &b_tests,
+            size,
+            2 * size - cnv_offset_hi + 1,
+            base2k,
+        );
+        assert_glwe_eq!(
+            res_ref,
+            dft_ref,
+            "glwe_mul_prepared_plain_sum_dft versus glwe_mul_prepared_plain_sum: k={k} rank={rank:?} offset={offset}"
+        );
+        dft_test.transfer_into(&mut have);
+        assert_glwe_eq!(
+            res_ref,
+            have,
+            "glwe_mul_prepared_plain_sum_dft, three terms: k={k} rank={rank:?} offset={offset}"
+        );
     }
 
     let mut res = ref_glwe(module_ref, infos, source);
@@ -1233,6 +1295,74 @@ fn test_glwe_mul_prepared_plain_sum_case<BR, BT>(
         res, before,
         "glwe_mul_prepared_plain_sum changed res before rejecting an even Galois element"
     );
+}
+
+/// `res` = the three-term sum by [`GLWEMulPreparedPlainSum::glwe_mul_prepared_plain_sum_dft`] of the first term,
+/// [`GLWEMulPreparedPlainSum::glwe_mul_prepared_plain_sum_dft_add`] of the other two, into an accumulator of `acc_size`
+/// limbs, then one `vec_znx_idft_normalize` per column, each call on exactly its scratch.
+#[allow(clippy::too_many_arguments)]
+fn plain_sum_dft<BE, R, AP, BP>(
+    module: &Module<BE>,
+    cnv_offset: usize,
+    res: &mut R,
+    a: &[&AP],
+    b: &[&BP],
+    size: usize,
+    acc_size: usize,
+    base2k: Base2K,
+) where
+    BE: Backend,
+    Module<BE>: GLWEMulPreparedPlainSum<BE> + VecZnxDftAlloc<BE> + VecZnxIdftNormalize<BE> + VecZnxIdftNormalizeTmpBytes,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+    R: GLWEToBackendMut<BE> + GLWEInfos,
+    AP: CnvPVecLToBackendRef<BE>,
+    BP: CnvPVecRToBackendRef<BE>,
+{
+    const GALOIS: [i64; 3] = [1, 5, -1];
+    let (_, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, base2k.as_usize());
+    let cols = res.rank().as_usize() + 1;
+    let mut acc = module.vec_znx_dft_alloc(res.n().as_usize(), cols, acc_size);
+    let bytes = module.glwe_mul_prepared_plain_sum_dft_tmp_bytes(acc_size, size, size);
+    module.glwe_mul_prepared_plain_sum_dft(
+        cnv_offset,
+        &mut acc.to_backend_mut(),
+        &a[..1],
+        size,
+        &b[..1],
+        size,
+        &GALOIS[..1],
+        base2k,
+        &mut poisoned_scratch::<BE>(bytes).borrow(),
+    );
+    let bytes = module.glwe_mul_prepared_plain_sum_dft_add_tmp_bytes(acc_size, size, size);
+    module.glwe_mul_prepared_plain_sum_dft_add(
+        cnv_offset,
+        &mut acc.to_backend_mut(),
+        &a[1..],
+        size,
+        &b[1..],
+        size,
+        &GALOIS[1..],
+        base2k,
+        &mut poisoned_scratch::<BE>(bytes).borrow(),
+    );
+    let (res_base2k, res_k) = (res.base2k().as_usize(), res.k().as_usize());
+    let mut scratch = poisoned_scratch::<BE>(module.vec_znx_idft_normalize_tmp_bytes(res.size(), acc.size()));
+    for col in 0..cols {
+        module.vec_znx_idft_normalize(
+            &mut res.to_backend_mut().data,
+            res_base2k,
+            res_k,
+            cnv_offset_lo,
+            col,
+            &mut acc.to_backend_mut(),
+            col,
+            base2k.as_usize(),
+            None,
+            &mut scratch.borrow(),
+        );
+    }
+    res.set_canonical(true);
 }
 
 /// GGSW rotation visits every row, including the in-place mutation variant.
