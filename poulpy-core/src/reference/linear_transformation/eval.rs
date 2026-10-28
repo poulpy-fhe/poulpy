@@ -53,8 +53,8 @@ pub fn glwe_eval_linear_transformation_tmp_bytes_reference<BE, R, A, B, K, T>(
     a: &A,
     pt: &B,
     plan: &LinearTransformationPlan,
-    key: &K,
     tsk: &T,
+    key: &K,
 ) -> usize
 where
     BE: Backend
@@ -364,8 +364,8 @@ pub fn glwe_eval_linear_transformation_sum_tmp_bytes_reference<BE, R, A, B, K, T
     a: &A,
     pt: &B,
     plan: &LinearTransformationPlan,
-    key: &K,
     tsk: &T,
+    key: &K,
 ) -> usize
 where
     BE: Backend
@@ -402,7 +402,7 @@ where
     // A batch of buckets, each sized like the single budget's PROD buffer.
     let bucket = BE::glwe_giant_step_batch(module)
         * BE::scratch_aligned(module.bytes_of_vec_znx_dft(module.n(), a.rank().as_usize() + 1, a.max_size() + pt.max_size()));
-    glwe_eval_linear_transformation_tmp_bytes_reference::<BE, _, _, _, _, _>(module, res, a, pt, plan, key, tsk) + bucket
+    glwe_eval_linear_transformation_tmp_bytes_reference::<BE, _, _, _, _, _>(module, res, a, pt, plan, tsk, key) + bucket
 }
 
 /// Reference impl: `res = Σ_t M_t(a_t)` for resident transforms sharing one giant schedule.
@@ -488,8 +488,8 @@ pub fn glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes_reference<BE, R,
     a: &A,
     pt: &B,
     plan: &LinearTransformationPlan,
-    key: &K,
     tsk: &T,
+    key: &K,
 ) -> usize
 where
     BE: Backend
@@ -524,7 +524,7 @@ where
     K: GGLWEInfos,
     T: GGLWEInfos,
 {
-    glwe_eval_linear_transformation_tmp_bytes_reference::<BE, _, _, _, _, _>(module, res, a, pt, plan, key, tsk)
+    glwe_eval_linear_transformation_tmp_bytes_reference::<BE, _, _, _, _, _>(module, res, a, pt, plan, tsk, key)
         + module.bytes_of_cnv_pvec_right(module.n(), 1, pt.size(), PrepareHint::OneShot)
         + module.cnv_prepare_right_tmp_bytes(pt.size(), pt.size())
 }

@@ -10,7 +10,7 @@ use poulpy_core::layouts::IntPolyInfos;
 use crate::CKKSResult as Result;
 use poulpy_core::{
     DiagonalProd,
-    layouts::{Base2K, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LinearTransformation},
+    layouts::{Base2K, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LinearTransformation},
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
@@ -101,7 +101,7 @@ pub unsafe trait CKKSDFTImpl:
     where
         P: DiagonalProd<Self> + LtDiagonalMeta + IntPolyInfos,
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
-        H: GetAutomorphismKey<Self>;
+        H: GetAutomorphismKey<Self> + GetTensorKey<Self>;
 
     /// Default body: `ckks_coeffs_to_slots_assign_derived`, the selected `ckks_dft_evaluate_assign` of the encode
     /// matrix.
@@ -115,7 +115,7 @@ pub unsafe trait CKKSDFTImpl:
     where
         P: DiagonalProd<Self> + LtDiagonalMeta + IntPolyInfos,
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
-        H: GetAutomorphismKey<Self>,
+        H: GetAutomorphismKey<Self> + GetTensorKey<Self>,
     {
         crate::oep::derived::dft::ckks_coeffs_to_slots_assign_derived(module, ct, dft, keys, scratch)
     }
@@ -132,7 +132,7 @@ pub unsafe trait CKKSDFTImpl:
     where
         P: DiagonalProd<Self> + LtDiagonalMeta + IntPolyInfos,
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
-        H: GetAutomorphismKey<Self>,
+        H: GetAutomorphismKey<Self> + GetTensorKey<Self>,
     {
         crate::oep::derived::dft::ckks_slots_to_coeffs_assign_derived(module, ct, dft, keys, scratch)
     }
@@ -154,7 +154,7 @@ pub unsafe trait CKKSDFTImpl:
         P: DiagonalProd<Self> + LtDiagonalMeta + IntPolyInfos,
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<Self> + CKKSCtBounds,
-        H: GetAutomorphismKey<Self>,
+        H: GetAutomorphismKey<Self> + GetTensorKey<Self>,
     {
         crate::oep::derived::dft::ckks_coeffs_to_slots_split_derived(module, ct_real, ct_imag, ct_in, dft, keys, scratch)
     }
@@ -174,7 +174,7 @@ pub unsafe trait CKKSDFTImpl:
         P: DiagonalProd<Self> + LtDiagonalMeta + IntPolyInfos,
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<Self> + CKKSCtBounds,
-        H: GetAutomorphismKey<Self>,
+        H: GetAutomorphismKey<Self> + GetTensorKey<Self>,
     {
         crate::oep::derived::dft::ckks_slots_to_coeffs_split_derived(module, op_out, ct_real, ct_imag, dft, keys, scratch)
     }
@@ -197,7 +197,7 @@ pub unsafe trait CKKSDFTImpl:
         P: DiagonalProd<Self> + LtDiagonalMeta + IntPolyInfos,
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<Self> + CKKSCtBounds,
-        H: GetAutomorphismKey<Self>,
+        H: GetAutomorphismKey<Self> + GetTensorKey<Self>,
     {
         crate::oep::derived::dft::ckks_coeffs_to_slots_repack_derived(module, ct_out, ct_in, dft, keys, scratch)
     }
@@ -216,7 +216,7 @@ pub unsafe trait CKKSDFTImpl:
         P: DiagonalProd<Self> + LtDiagonalMeta + IntPolyInfos,
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<Self> + CKKSCtBounds,
-        H: GetAutomorphismKey<Self>,
+        H: GetAutomorphismKey<Self> + GetTensorKey<Self>,
     {
         crate::oep::derived::dft::ckks_slots_to_coeffs_repack_derived(module, op_out, ct_in, dft, keys, scratch)
     }
@@ -310,7 +310,7 @@ macro_rules! impl_ckks_dft_reference_full {
                     + ::poulpy_core::layouts::GLWEToBackendRef<Self>
                     + $crate::CKKSCtBounds
                     + $crate::SetCKKSInfos,
-                H: ::poulpy_core::layouts::GetAutomorphismKey<Self>,
+                H: ::poulpy_core::layouts::GetAutomorphismKey<Self> + ::poulpy_core::layouts::GetTensorKey<Self>,
             {
                 $crate::reference::dft::ckks_dft_evaluate_assign(module, ct, dft, keys, scratch)
             }

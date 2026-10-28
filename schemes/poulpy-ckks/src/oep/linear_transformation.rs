@@ -2,7 +2,8 @@ use crate::CKKSResult as Result;
 use poulpy_core::{
     DiagonalProd, LinearTransformation, LinearTransformationBabySteps, LinearTransformationPrepared,
     layouts::{
-        GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, IntPolyInfos, LinearTransformationPlan,
+        GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, IntPolyInfos,
+        LinearTransformationPlan,
     },
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
@@ -44,20 +45,18 @@ pub unsafe trait CKKSLinearTransformationImpl: Backend + super::CKKSCopyImpl {
         ct: &C,
         diagonal: &D,
         plan: &LinearTransformationPlan,
-        key: &K,
         tsk: &T,
+        key: &K,
     ) -> usize;
 
     /// Scratch bound of [`Self::ckks_eval_linear_transformation_into`] with a plaintext (streamed) right side, which
     /// additionally holds one resident diagonal slot, and of [`Self::ckks_eval_linear_transformation_assign`] on it,
     /// whose working copy it counts; may report less than the reference, never less than the body takes.
-    fn ckks_eval_linear_transformation_streamed_tmp_bytes<C: CKKSCtBounds, D: GLWEInfos, K: GGLWEInfos, T: GGLWEInfos>(
+    fn ckks_eval_linear_transformation_streamed_tmp_bytes<C: CKKSCtBounds, K: GGLWEInfos>(
         module: &Module<Self>,
         ct: &C,
-        diagonal: &D,
         plan: &LinearTransformationPlan,
         key: &K,
-        tsk: &T,
     ) -> usize;
 
     /// Scratch bound of [`Self::ckks_eval_linear_transformation_sum_into`]; may report less than the reference, never
@@ -67,8 +66,8 @@ pub unsafe trait CKKSLinearTransformationImpl: Backend + super::CKKSCopyImpl {
         ct: &C,
         diagonal: &D,
         plan: &LinearTransformationPlan,
-        key: &K,
         tsk: &T,
+        key: &K,
     ) -> usize;
 
     /// Reproduces
@@ -83,7 +82,7 @@ pub unsafe trait CKKSLinearTransformationImpl: Backend + super::CKKSCopyImpl {
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        P: GLWEToBackendRef<Self> + IntPolyInfos + CKKSCtBounds;
+        P: GLWEToBackendRef<Self> + CKKSCtBounds;
 
     /// Reproduces
     /// [`ckks_prepare_linear_transformation_baby_steps_reference`](crate::reference::CKKSLinearTransformationReference::ckks_prepare_linear_transformation_baby_steps_reference)
@@ -118,7 +117,7 @@ pub unsafe trait CKKSLinearTransformationImpl: Backend + super::CKKSCopyImpl {
         Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<Self> + CKKSCtBounds,
         P: DiagonalProd<Self> + LtDiagonalMeta + IntPolyInfos,
-        H: GetAutomorphismKey<Self> + poulpy_core::layouts::GetTensorKey<Self>;
+        H: GetAutomorphismKey<Self> + GetTensorKey<Self>;
 
     /// Default body: `ckks_eval_linear_transformation_assign_derived`, [`Self::ckks_eval_linear_transformation_into`]
     /// from `dst` into a `dst`-shaped working copy carved from scratch, then the selected `ckks_copy` of the copy back
@@ -134,7 +133,7 @@ pub unsafe trait CKKSLinearTransformationImpl: Backend + super::CKKSCopyImpl {
     where
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
         P: DiagonalProd<Self> + LtDiagonalMeta + IntPolyInfos,
-        H: GetAutomorphismKey<Self> + poulpy_core::layouts::GetTensorKey<Self>,
+        H: GetAutomorphismKey<Self> + GetTensorKey<Self>,
     {
         ckks_eval_linear_transformation_assign_derived(module, dst, babies, lt, keys, scratch)
     }
@@ -154,7 +153,7 @@ pub unsafe trait CKKSLinearTransformationImpl: Backend + super::CKKSCopyImpl {
     where
         Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<Self> + CKKSCtBounds,
-        H: GetAutomorphismKey<Self> + poulpy_core::layouts::GetTensorKey<Self>;
+        H: GetAutomorphismKey<Self> + GetTensorKey<Self>;
 
     /// Default body: `ckks_eval_linear_transformation_self_into_derived`, a baby cache allocated for `src`,
     /// [`Self::ckks_prepare_linear_transformation_baby_steps`] into it, then
@@ -174,7 +173,7 @@ pub unsafe trait CKKSLinearTransformationImpl: Backend + super::CKKSCopyImpl {
         Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<Self> + CKKSCtBounds,
         P: DiagonalProd<Self> + LtDiagonalMeta + IntPolyInfos,
-        H: GetAutomorphismKey<Self> + poulpy_core::layouts::GetTensorKey<Self>,
+        H: GetAutomorphismKey<Self> + GetTensorKey<Self>,
     {
         ckks_eval_linear_transformation_self_into_derived(module, dst, src, lt, keys, scratch)
     }
@@ -194,7 +193,7 @@ pub unsafe trait CKKSLinearTransformationImpl: Backend + super::CKKSCopyImpl {
     where
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
         P: DiagonalProd<Self> + LtDiagonalMeta + IntPolyInfos,
-        H: GetAutomorphismKey<Self> + poulpy_core::layouts::GetTensorKey<Self>,
+        H: GetAutomorphismKey<Self> + GetTensorKey<Self>,
     {
         ckks_eval_linear_transformation_self_assign_derived(module, dst, lt, keys, scratch)
     }
@@ -233,29 +232,25 @@ macro_rules! impl_ckks_linear_transformation_reference_full {
                 ct: &C,
                 diagonal: &D,
                 plan: &::poulpy_core::layouts::LinearTransformationPlan,
-                key: &K,
                 tsk: &T,
+                key: &K,
             ) -> usize {
                 $crate::reference::CKKSLinearTransformationReference::ckks_eval_linear_transformation_tmp_bytes_reference(
-                    module, ct, diagonal, plan, key, tsk,
+                    module, ct, diagonal, plan, tsk, key,
                 )
             }
 
             fn ckks_eval_linear_transformation_streamed_tmp_bytes<
                 C: $crate::CKKSCtBounds,
-                D: ::poulpy_core::layouts::GLWEInfos,
                 K: ::poulpy_core::layouts::GGLWEInfos,
-                T: ::poulpy_core::layouts::GGLWEInfos,
             >(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 ct: &C,
-                diagonal: &D,
                 plan: &::poulpy_core::layouts::LinearTransformationPlan,
                 key: &K,
-                tsk: &T,
             ) -> usize {
                 $crate::reference::CKKSLinearTransformationReference::ckks_eval_linear_transformation_streamed_tmp_bytes_reference(
-                    module, ct, diagonal, plan, key, tsk,
+                    module, ct, plan, key,
                 )
             }
 
@@ -269,11 +264,11 @@ macro_rules! impl_ckks_linear_transformation_reference_full {
                 ct: &C,
                 diagonal: &D,
                 plan: &::poulpy_core::layouts::LinearTransformationPlan,
-                key: &K,
                 tsk: &T,
+                key: &K,
             ) -> usize {
                 $crate::reference::CKKSLinearTransformationReference::ckks_eval_linear_transformation_sum_tmp_bytes_reference(
-                    module, ct, diagonal, plan, key, tsk,
+                    module, ct, diagonal, plan, tsk, key,
                 )
             }
 
@@ -284,10 +279,7 @@ macro_rules! impl_ckks_linear_transformation_reference_full {
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
             where
-                P: ::poulpy_core::layouts::GLWEToBackendRef<Self>
-                    + ::poulpy_core::layouts::IntPolyInfos
-                    + $crate::CKKSCtBounds
-                   ,
+                P: ::poulpy_core::layouts::GLWEToBackendRef<Self> + $crate::CKKSCtBounds,
             {
                 $crate::reference::CKKSLinearTransformationReference::ckks_prepare_linear_transformation_rhs_reference(
                     module, prepared, lt, scratch,

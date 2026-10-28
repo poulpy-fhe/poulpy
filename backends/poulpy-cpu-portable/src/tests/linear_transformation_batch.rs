@@ -50,8 +50,8 @@ unsafe impl poulpy_core::oep::LinearTransformationImpl for Batched {
         a: &A,
         pt: &B,
         plan: &poulpy_core::layouts::LinearTransformationPlan,
-        key: &K,
         tsk: &T,
+        key: &K,
     ) -> usize
     where
         R: poulpy_core::layouts::GLWEInfos,
@@ -61,7 +61,7 @@ unsafe impl poulpy_core::oep::LinearTransformationImpl for Batched {
         T: poulpy_core::layouts::GGLWEInfos,
     {
         poulpy_core::reference::linear_transformation::glwe_eval_linear_transformation_tmp_bytes_reference(
-            module, res, a, pt, plan, key, tsk,
+            module, res, a, pt, plan, tsk, key,
         )
     }
 
@@ -71,8 +71,8 @@ unsafe impl poulpy_core::oep::LinearTransformationImpl for Batched {
         a: &A,
         pt: &B,
         plan: &poulpy_core::layouts::LinearTransformationPlan,
-        key: &K,
         tsk: &T,
+        key: &K,
     ) -> usize
     where
         R: poulpy_core::layouts::GLWEInfos,
@@ -82,7 +82,7 @@ unsafe impl poulpy_core::oep::LinearTransformationImpl for Batched {
         T: poulpy_core::layouts::GGLWEInfos,
     {
         poulpy_core::reference::linear_transformation::glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes_reference(
-            module, res, a, pt, plan, key, tsk,
+            module, res, a, pt, plan, tsk, key,
         )
     }
 
@@ -92,8 +92,8 @@ unsafe impl poulpy_core::oep::LinearTransformationImpl for Batched {
         a: &A,
         pt: &B,
         plan: &poulpy_core::layouts::LinearTransformationPlan,
-        key: &K,
         tsk: &T,
+        key: &K,
     ) -> usize
     where
         R: poulpy_core::layouts::GLWEInfos,
@@ -103,7 +103,7 @@ unsafe impl poulpy_core::oep::LinearTransformationImpl for Batched {
         T: poulpy_core::layouts::GGLWEInfos,
     {
         poulpy_core::reference::linear_transformation::glwe_eval_linear_transformation_sum_tmp_bytes_reference(
-            module, res, a, pt, plan, key, tsk,
+            module, res, a, pt, plan, tsk, key,
         )
     }
 

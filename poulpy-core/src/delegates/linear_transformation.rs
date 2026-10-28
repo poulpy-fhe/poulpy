@@ -22,8 +22,8 @@ where
         a: &A,
         pt: &B,
         plan: &LinearTransformationPlan,
-        key: &K,
         tsk: &T,
+        key: &K,
     ) -> usize
     where
         R: GLWEInfos,
@@ -32,7 +32,7 @@ where
         K: GGLWEInfos,
         T: GGLWEInfos,
     {
-        BE::glwe_eval_linear_transformation_tmp_bytes(self, res, a, pt, plan, key, tsk)
+        BE::glwe_eval_linear_transformation_tmp_bytes(self, res, a, pt, plan, tsk, key)
     }
 
     fn glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes<R, A, B, K, T>(
@@ -41,8 +41,8 @@ where
         a: &A,
         pt: &B,
         plan: &LinearTransformationPlan,
-        key: &K,
         tsk: &T,
+        key: &K,
     ) -> usize
     where
         R: GLWEInfos,
@@ -51,7 +51,7 @@ where
         K: GGLWEInfos,
         T: GGLWEInfos,
     {
-        BE::glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(self, res, a, pt, plan, key, tsk)
+        BE::glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(self, res, a, pt, plan, tsk, key)
     }
 
     fn glwe_eval_linear_transformation_sum_tmp_bytes<R, A, B, K, T>(
@@ -60,8 +60,8 @@ where
         a: &A,
         pt: &B,
         plan: &LinearTransformationPlan,
-        key: &K,
         tsk: &T,
+        key: &K,
     ) -> usize
     where
         R: GLWEInfos,
@@ -70,7 +70,7 @@ where
         K: GGLWEInfos,
         T: GGLWEInfos,
     {
-        BE::glwe_eval_linear_transformation_sum_tmp_bytes(self, res, a, pt, plan, key, tsk)
+        BE::glwe_eval_linear_transformation_sum_tmp_bytes(self, res, a, pt, plan, tsk, key)
     }
 
     fn glwe_prepare_linear_transformation_baby_steps_tmp_bytes<A, K>(

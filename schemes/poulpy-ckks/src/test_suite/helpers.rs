@@ -43,7 +43,7 @@ use poulpy_core::{
     layouts::{
         BackendGLWESecret, Base2K, Degree, GLWEAutomorphismKeyPrepared, GLWECIEmbedKeyPrepared, GLWECITraceKeyPrepared,
         GLWEInfos, GLWELayout, GLWESecretToBackendRef, GLWESwitchingKeyPrepared, GLWETensorKeyPrepared, GetAutomorphismKey,
-        LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
+        GetTensorKey, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
         prepared::{GLWEAutomorphismKeyPreparedBackendRef, GLWEAutomorphismKeyPreparedToBackendRef, GLWESecretPrepared},
     },
 };
@@ -812,6 +812,16 @@ impl<BE: Backend, K: GLWEAutomorphismKeyPreparedToBackendRef<BE>> GetAutomorphis
     }
 }
 
+/// A map of automorphism keys, logged or not, holds no tensor key.
+impl<BE: Backend, K: GLWEAutomorphismKeyPreparedToBackendRef<BE>> GetTensorKey<BE> for QueryLog<K> {
+    fn lookup_tensor_key(
+        &self,
+        k: TorusPrecision,
+    ) -> poulpy_core::Result<poulpy_core::layouts::prepared::GLWETensorKeyPreparedBackendRef<'_, BE>> {
+        self.keys.lookup_tensor_key(k)
+    }
+}
+
 /// Generates a prepared rank-1 GLWE key-switching key from `sk_in` to `sk_out`,
 /// sized for an input ciphertext of modulus `k_in` bits.
 pub fn gen_switching_key<BE>(
@@ -1512,12 +1522,4 @@ pub fn assert_mul_pt_output_meta<D: Data, W: ZnxWord, R: Ring>(
     let log_budget = a.log_budget() - b.log_delta();
     let offset = (log_budget + log_delta).saturating_sub(dst_k);
     assert_ct_meta(label, ct, log_delta, log_budget - offset);
-}
-
-/// A plaintext diagonal of the layout of `ct`: the diagonal a scratch query of a plaintext transform on `ct` reads.
-pub fn plaintext_diagonal_of<C: GLWEInfos>(ct: &C) -> poulpy_core::layouts::GLWELayout {
-    poulpy_core::layouts::GLWELayout {
-        rank: 0u32.into(),
-        ..ct.glwe_layout()
-    }
 }

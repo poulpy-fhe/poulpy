@@ -11,11 +11,12 @@ use poulpy_ckks::api::{
     CKKSPow2Ops, CKKSRotateOps, CKKSSubOps,
 };
 use poulpy_core::{
-    GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, GLWEMaskFill, LWEEncryptSk, LWEFillMask,
+    GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, GLWEMaskFill, GLWENormalize, LWEEncryptSk, LWEFillMask,
     api::{
         GGLWEToGGSWKeyPreparedFactory, GGSWPreparedFactory, GLWEAutomorphismKeyPreparedFactory, GLWESecretPreparedFactory,
         GLWESecretSampling, GLWETensorKeyPreparedFactory, LWESecretSampling,
     },
+    layouts::ModuleCoreAlloc,
 };
 use poulpy_hal::AlignedBuf;
 use poulpy_hal::api::ModuleSynchronize;
@@ -200,20 +201,24 @@ where
         + CKKSDotProductOps<BE>
         + CKKSRotateOps<BE>
         + CKKSAddOps<BE>
+        + GLWENormalize<BE>
         + CnvPVecAlloc<BE>
+        + GLWEMaskFill<BE>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>
         + GLWEAutomorphismKeyPreparedFactory<BE>
         + GLWETensorKeyPreparedFactory<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     [
         BenchOp {
             layer: "ckks",
-            name: "ckks_eval_ct_linear_transformation_into",
-            runner: ckks::runner_ckks_eval_ct_linear_transformation_into::<BE, _>,
+            name: "ckks_eval_linear_transformation_into_ct",
+            runner: ckks::runner_ckks_eval_linear_transformation_into_ct::<BE, _>,
         },
         BenchOp {
             layer: "ckks",
-            name: "ckks_eval_ct_linear_transformation_composed",
-            runner: ckks::runner_ckks_eval_ct_linear_transformation_composed::<BE, _>,
+            name: "ckks_eval_linear_transformation_into_ct_composed",
+            runner: ckks::runner_ckks_eval_linear_transformation_into_ct_composed::<BE, _>,
         },
     ]
 }
@@ -269,7 +274,11 @@ where
         + CKKSEncodingOps<BE, f64>
         + CKKSLinearTransformationOps<BE>
         + CKKSDotProductOps<BE>
-        + CnvPVecAlloc<BE>,
+        + GLWENormalize<BE>
+        + CnvPVecAlloc<BE>
+        + GLWEMaskFill<BE>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let mut ops: Vec<BenchOp<M, CkksBenchParams>> = Vec::new();
     ops.extend(ckks_add_ops::<BE, _>());
@@ -477,7 +486,11 @@ where
         + CKKSEncodingOps<BE, f64>
         + CKKSLinearTransformationOps<BE>
         + CKKSDotProductOps<BE>
-        + CnvPVecAlloc<BE>,
+        + GLWENormalize<BE>
+        + CnvPVecAlloc<BE>
+        + GLWEMaskFill<BE>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     bench_ops(PhantomData::<BE>, &all_ops::<BE, WallTime>(), default_bench_params_ckks(), c);
 }

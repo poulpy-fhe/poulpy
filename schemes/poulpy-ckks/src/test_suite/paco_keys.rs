@@ -287,13 +287,7 @@ where
         let bytes = BE::scratch_aligned(poulpy_core::GLWEBytesOf::glwe_bytes_of_from_infos(&module, &acc))
             + module
                 .ckks_prepare_linear_transformation_baby_steps_tmp_bytes(&acc, &lt.index(), &params.atk_layout())
-                .max(module.ckks_eval_linear_transformation_streamed_tmp_bytes(
-                    &acc,
-                    &crate::test_suite::helpers::plaintext_diagonal_of(&acc),
-                    &lt.index(),
-                    &params.atk_layout(),
-                    &params.atk_layout(),
-                ));
+                .max(module.ckks_eval_linear_transformation_streamed_tmp_bytes(&acc, &lt.index(), &params.atk_layout()));
         with_scratch::<BE, _>(bytes, |s| {
             module.ckks_eval_linear_transformation_self_assign(&mut acc, lt, &atks, s)
         })

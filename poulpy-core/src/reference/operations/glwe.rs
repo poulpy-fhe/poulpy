@@ -1554,28 +1554,30 @@ where
         let (n, base2k) = (res.n().as_usize(), res.base2k().as_usize());
         let (mut a, mut b) = (a.into_iter(), b.into_iter());
         assert_eq!(a.len(), b.len(), "one-pass product sum: a and b differ in length");
-        let (b_size, b_k) = b.clone().next().map_or((0, a_k), |b0| (b0.size(), b0.k()));
+        let (b_size, b_k) = b
+            .clone()
+            .next()
+            .map(|b0| (b0.size(), b0.k()))
+            .expect("one-pass product sum has no pairs");
         assert!(
-            a_size == a_k.as_usize().div_ceil(base2k),
+            a_size == a_k.as_usize().div_ceil(base2k) && b_size == b_k.as_usize().div_ceil(base2k),
             "prepared sizes are not ceil(a_k / base2k) and ceil(b_k / base2k)"
         );
         // Every pair is checked before the product reads the first.
         let mut streamed = None;
         for (i, (ai, bi)) in a.clone().zip(b.clone()).enumerate() {
             let ai = ai.to_backend_ref();
+            let infos = (bi.n().as_usize(), bi.base2k().as_usize(), bi.rank().as_usize(), bi.k()) == (n, base2k, 1, b_k);
             let right = match bi.mul_right() {
                 MulRightOperand::Prepared(prep) => {
                     let cnv = prep.to_backend_ref();
-                    (false, (cnv.n(), cnv.cols(), cnv.size()) == (n, 2, b_size))
+                    (false, infos && (cnv.n(), cnv.cols(), cnv.size()) == (n, 2, b_size))
                 }
-                MulRightOperand::Ciphertext(ct) => (
-                    true,
-                    (ct.n().as_usize(), ct.base2k().as_usize(), ct.rank().as_usize(), ct.k()) == (n, base2k, 1, b_k),
-                ),
+                MulRightOperand::Ciphertext(_) => (true, infos),
             };
             assert!(
                 (ai.n(), ai.cols(), ai.size()) == (n, 2, a_size) && right.1 && *streamed.get_or_insert(right.0) == right.0,
-                "prepared pair {i} does not match res's degree, rank 1 and the given sizes"
+                "prepared pair {i} does not match res's degree, base2k, rank 1 and the first pair's widths and form"
             );
         }
         let (a0, b0) = (
@@ -1779,7 +1781,7 @@ pub(crate) fn one_pass_shape<BE: Backend>(
 /// Scratch of [`glwe_mul_relinearize_one_pass`]: one product of ciphertexts, or a sum of them, or either over
 /// prepared pairs, normalized or left in DFT.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn one_pass_tmp_bytes<BE, R, B>(
+fn one_pass_tmp_bytes<BE, R, B>(
     module: &Module<BE>,
     res: &R,
     a_size: usize,
@@ -1982,7 +1984,7 @@ pub(crate) fn glwe_mul_relinearize_one_pass<BE, R, A, B, AP, BP, H>(
         }
         MulRight::Prepared { size, k, .. } => (*k, *size),
     };
-    // Prepared pairs are checked by `glwe_mul_prepared_relinearize_sum_reference`.
+    // Prepared pairs are checked by their callers.
     if let MulRest::Operands(rest_a, rest_b) = &rest {
         for (i, (a, b)) in rest_a.iter().zip(rest_b.iter()).enumerate() {
             assert!(
@@ -2180,7 +2182,7 @@ pub(crate) fn glwe_mul_relinearize_one_pass<BE, R, A, B, AP, BP, H>(
                 add_columns!(&a_prep.to_backend_ref(), &b_prep.to_backend_ref());
             }
         }
-        // The pairs are checked by `glwe_mul_prepared_relinearize_sum_reference`.
+        // The pairs are checked by their callers.
         MulRest::Pairs { pairs, .. } => {
             for (a, b) in pairs {
                 let a = a.to_backend_ref();

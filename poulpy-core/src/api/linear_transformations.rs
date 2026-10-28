@@ -26,16 +26,18 @@ pub trait GLWELinearTransformations<BE: Backend> {
     /// Scratch bytes required by [`Self::glwe_eval_linear_transformation_into`] for a transform
     /// with the schedule `plan` ([`LinearTransformation::index`]), which gives the giant-step
     /// tree of [`BsgsRotations::PowersOfTwo`](crate::layouts::BsgsRotations::PowersOfTwo); every
-    /// plan with a key per rotation gives the same bytes. `key` is the widest key the transform
-    /// switches with.
+    /// plan with a key per rotation gives the same bytes. `pt` is the layout of the diagonals, whose
+    /// rank selects the product: plaintexts at rank 0, ciphertexts at the rank of `a`, then relinearized
+    /// with a tensor key no wider than `tsk`, which plaintext diagonals never read. `key` is the widest
+    /// key the transform switches with.
     fn glwe_eval_linear_transformation_tmp_bytes<R, A, B, K, T>(
         &self,
         res: &R,
         a: &A,
         pt: &B,
         plan: &LinearTransformationPlan,
-        key: &K,
         tsk: &T,
+        key: &K,
     ) -> usize
     where
         R: GLWEInfos,
@@ -54,8 +56,8 @@ pub trait GLWELinearTransformations<BE: Backend> {
         a: &A,
         pt: &B,
         plan: &LinearTransformationPlan,
-        key: &K,
         tsk: &T,
+        key: &K,
     ) -> usize
     where
         R: GLWEInfos,
@@ -73,8 +75,8 @@ pub trait GLWELinearTransformations<BE: Backend> {
         a: &A,
         pt: &B,
         plan: &LinearTransformationPlan,
-        key: &K,
         tsk: &T,
+        key: &K,
     ) -> usize
     where
         R: GLWEInfos,
@@ -135,7 +137,15 @@ pub trait GLWELinearTransformations<BE: Backend> {
 
     /// Computes `res = M(a)` from the prepared left cache `lhs` (the input baby
     /// rotations) and the matrix `rhs`, generic over the diagonal representation
-    /// `P` (see [`DiagonalProd`](crate::layouts::DiagonalProd)):
+    /// `P` (see [`DiagonalProd`](crate::layouts::DiagonalProd)), the rank of the diagonals selecting the product:
+    /// plaintexts at rank 0, multiplied into each giant step's product, or ciphertexts of the rank of `a`,
+    /// prepared by [`Self::glwe_prepare_linear_transformation_rhs`] or streamed, whose products of each giant step are
+    /// summed and relinearized once with the tensor key of `keys` at the larger of the widths of `lhs`
+    /// ([`LinearTransformationBabySteps::k`]) and of the diagonals, through the one-pass product where it applies
+    /// (rank 1, `cnv_offset` at least `base2k`, the tensor key at `res`'s `base2k`), else a tensor per pair.
+    /// Where the one-pass product applies, one giant step at rotation 0 is
+    /// [`GLWEPreparedTensoring::glwe_mul_prepared_relinearize_sum`](crate::GLWEPreparedTensoring::glwe_mul_prepared_relinearize_sum)
+    /// of its pairs, bit for bit.
     ///
     /// - `P = PreparedDiagonal` (resident): the diagonals are already in the
     ///   convolution domain, so each giant step is one fused accumulation.
@@ -153,9 +163,11 @@ pub trait GLWELinearTransformations<BE: Backend> {
     /// Before writing `res`, if `rhs` has no diagonal or a giant step
     /// without one, if a giant step's first diagonal is not as wide as the
     /// transform's first diagonal, or if `lhs` lacks a baby rotation that `rhs`
-    /// reads. The other diagonals are not checked: every diagonal of a
+    /// reads. The other plaintext diagonals are not checked: every diagonal of a
     /// transform shares one width, scale and degree, as the encoder produces
-    /// them, and preparing asserts the degree.
+    /// them, and preparing asserts the degree. Ciphertext diagonals are each checked against the degree, `base2k` and
+    /// rank of `res` and the first one's width, and `lhs` against the rank of `res`, and `keys` must hold the tensor
+    /// key, also before writing `res`.
     fn glwe_eval_linear_transformation_into<R, P, H>(
         &self,
         cnv_offset: usize,
@@ -187,9 +199,10 @@ pub trait GLWELinearTransformations<BE: Backend> {
     /// a cache lacks a baby rotation that its transform reads. Also before
     /// writing `res`, unless every term shares the first one's giant schedule,
     /// source layout, and first diagonal's layout, width and scale, and every
-    /// giant step's first diagonal has that width. The other diagonals are not checked:
+    /// giant step's first diagonal has that width. The other plaintext diagonals are not checked:
     /// every diagonal of a transform shares one width, scale and degree, as the
-    /// encoder produces them, and preparing asserts the degree.
+    /// encoder produces them, and preparing asserts the degree. Ciphertext diagonals and caches are checked as by
+    /// [`Self::glwe_eval_linear_transformation_into`], every cache at the first one's width.
     fn glwe_eval_linear_transformation_sum_into<R, H>(
         &self,
         cnv_offset: usize,

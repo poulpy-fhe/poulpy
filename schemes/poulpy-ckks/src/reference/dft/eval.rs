@@ -21,11 +21,10 @@
 //! `slots_to_coeffs_repack`.
 
 use crate::{CKKSResult as Result, ckks_ensure};
-use poulpy_core::layouts::AutomorphismKeysOnly;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
     DiagonalProd,
-    layouts::{Base2K, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LinearTransformation},
+    layouts::{Base2K, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LinearTransformation},
 };
 use poulpy_hal::{
     api::CnvPVecAlloc,
@@ -290,7 +289,7 @@ where
     P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
     Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    H: GetAutomorphismKey<BE>,
+    H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
 {
     // One factor at a time, in place on `ct`; compact `ct` after each so the next
     // factor's baby-step keyswitches operate on fewer limbs as the budget shrinks.
@@ -317,11 +316,11 @@ where
     P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
     Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    H: GetAutomorphismKey<BE>,
+    H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
 {
     let mut babies = LinearTransformationBabySteps::alloc_for(module, factor, running);
     module.ckks_prepare_linear_transformation_baby_steps(&mut babies, running, keys, scratch)?;
-    module.ckks_eval_linear_transformation_assign(running, &babies, factor, &AutomorphismKeysOnly(keys), scratch)?;
+    module.ckks_eval_linear_transformation_assign(running, &babies, factor, keys, scratch)?;
     Ok(())
 }
 

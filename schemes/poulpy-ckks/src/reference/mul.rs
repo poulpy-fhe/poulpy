@@ -598,6 +598,17 @@ where
     Ok(())
 }
 
+/// The tensor key of a product of width `k`, `MissingRelinearizationKey` for `op` where `tsk` holds none.
+pub(crate) fn tensor_key_at<BE, T>(op: &'static str, tsk: &T, k: TorusPrecision) -> Result<()>
+where
+    BE: Backend,
+    T: GetTensorKey<BE>,
+{
+    tsk.get_tensor_key(k)
+        .map(|_| ())
+        .map_err(|source| CKKSCompositionError::MissingRelinearizationKey { op, k: k.into(), source }.into())
+}
+
 /// Whether a product of width `tensor_k` takes the one-pass product and relinearization.
 ///
 /// The one-pass path needs rank 1, one `base2k` across `dst`, the operands other than `dst` and the

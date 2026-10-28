@@ -154,13 +154,6 @@ impl<D: Data, W: ZnxWord, R: Ring> LWEInfos for CKKSCiphertext<D, W, R> {
     }
 }
 
-/// A ciphertext is read at its width: a diagonal of a transform prepared from it reads every limb up to `k`.
-impl<D: Data, W: ZnxWord, R: Ring> poulpy_core::layouts::IntPolyInfos for CKKSCiphertext<D, W, R> {
-    fn encoded_k(&self) -> TorusPrecision {
-        self.k()
-    }
-}
-
 impl<D: Data, W: ZnxWord, R: Ring> GLWEInfos for CKKSCiphertext<D, W, R> {
     fn rank(&self) -> Rank {
         self.inner.rank()

@@ -12,22 +12,23 @@ use poulpy_ckks::{
         CKKSPow2Ops, CKKSRotateOps, CKKSSubOps, LinearTransformationBabySteps, LinearTransformationLayout,
         LinearTransformationPrepared, LinearTransformationStrategy,
     },
-    layouts::{CKKSEncodingBuffer, CKKSModuleAlloc},
+    layouts::{CKKSCiphertextOwned, CKKSEncodingBuffer, CKKSModuleAlloc},
 };
 use poulpy_core::{
+    GLWEMaskFill, GLWENormalize,
     api::{GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory},
     layouts::{
-        Base2K, Degree, Dnum, GLWEAutomorphismKeyLayout, GLWELayout, GLWETensorKeyLayout, GetAutomorphismKey, GetTensorKey,
-        LWEInfos, Rank, SetGaloisElement, TorusPrecision, k_digit_of,
-        prepared::{
-            GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedBackendRef, GLWETensorKeyPrepared,
-            GLWETensorKeyPreparedBackendRef,
-        },
+        Base2K, Degree, Dnum, GLWEAutomorphismKeyLayout, GLWELayout, GLWETensorKeyLayout, LWEInfos, LinearTransformation,
+        LinearTransformationDiagonal, LinearTransformationGiantStep, LinearTransformationPlan, ModuleCoreAlloc, Rank,
+        SetGaloisElement, TorusPrecision, TransformKeys, k_digit_of,
+        prepared::{GLWEAutomorphismKeyPrepared, GLWETensorKeyPrepared},
     },
+    test_suite::keys::fill_by_digit,
 };
 use poulpy_hal::{
     api::{CnvPVecAlloc, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{Backend, CyclotomicOrder, GaloisElement, Module, PrepareHint, ScratchOwned},
+    source::Source,
 };
 
 const ROTATION: i64 = 1;
@@ -589,194 +590,234 @@ pub fn runner_ckks_decode_coeffs_into<BE: Backend<ZnxWord = i64>, M: Measurement
     });
 }
 
-/// The automorphism keys and the tensor key of a transform of ciphertext diagonals.
-struct TransformKeys<'a, BE: Backend> {
-    atks: &'a HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>>,
-    tsk: &'a GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
-}
-
-impl<BE: Backend> GetAutomorphismKey<BE> for TransformKeys<'_, BE> {
-    fn lookup_automorphism_key(
-        &self,
-        p: i64,
-        k: TorusPrecision,
-    ) -> poulpy_core::Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
-        self.atks.lookup_automorphism_key(p, k)
-    }
-}
-
-impl<BE: Backend> GetTensorKey<BE> for TransformKeys<'_, BE> {
-    fn lookup_tensor_key(&self, k: TorusPrecision) -> poulpy_core::Result<GLWETensorKeyPreparedBackendRef<'_, BE>> {
-        self.tsk.lookup_tensor_key(k)
-    }
-}
-
 /// Diagonals of the ciphertext-diagonal transform, every one of `0..CT_LT_DIAGONALS`.
 const CT_LT_DIAGONALS: i64 = 128;
 /// Its BSGS giant step: 16 baby rotations and 8 giant steps.
 const CT_LT_GIANT_STEP: usize = 16;
 
-/// `ckks_prepare_linear_transformation_baby_steps` then `ckks_eval_linear_transformation_into`: a matrix of
-/// `CT_LT_DIAGONALS` encrypted diagonals, resident, times an encrypted vector.
-pub fn runner_ckks_eval_ct_linear_transformation_into<BE: Backend<ZnxWord = i64>, M: Measurement>(
-    bencher: &mut Bencher<'_, M>,
+/// The operands of a transform of `CT_LT_DIAGONALS` encrypted diagonals on an encrypted vector, uniform data at their
+/// layouts: the source, the transform's diagonals, its plan, and the prepared automorphism keys of the plan and
+/// tensor key.
+#[allow(clippy::type_complexity)]
+fn ct_lt_operands<BE: Backend<ZnxWord = i64>>(
+    module: &Module<BE>,
     cp: &CkksBenchParams,
-) where
-    Module<BE>: ModuleNew<BE>
-        + ModuleSynchronize<BE>
-        + CKKSLinearTransformationOps<BE>
-        + CKKSMulOps<BE>
-        + CKKSDotProductOps<BE>
-        + CKKSRotateOps<BE>
-        + CKKSAddOps<BE>
-        + CnvPVecAlloc<BE>
+) -> (
+    CKKSCiphertextOwned<BE>,
+    LinearTransformation<CKKSCiphertextOwned<BE>>,
+    LinearTransformationPlan,
+    HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>>,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
+)
+where
+    Module<BE>: GLWEMaskFill<BE>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>
         + GLWEAutomorphismKeyPreparedFactory<BE>
         + GLWETensorKeyPreparedFactory<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
-    ckks_ct_linear_transformation::<BE, M, false>(bencher, cp);
-}
-
-/// The same product as [`runner_ckks_eval_ct_linear_transformation_into`] composed: each baby rotation rotated and
-/// prepared on its own, one `ckks_dot_product_prepared` per giant step, then rotated and added.
-pub fn runner_ckks_eval_ct_linear_transformation_composed<BE: Backend<ZnxWord = i64>, M: Measurement>(
-    bencher: &mut Bencher<'_, M>,
-    cp: &CkksBenchParams,
-) where
-    Module<BE>: ModuleNew<BE>
-        + ModuleSynchronize<BE>
-        + CKKSLinearTransformationOps<BE>
-        + CKKSMulOps<BE>
-        + CKKSDotProductOps<BE>
-        + CKKSRotateOps<BE>
-        + CKKSAddOps<BE>
-        + CnvPVecAlloc<BE>
-        + GLWEAutomorphismKeyPreparedFactory<BE>
-        + GLWETensorKeyPreparedFactory<BE>,
-{
-    ckks_ct_linear_transformation::<BE, M, true>(bencher, cp);
-}
-
-fn ckks_ct_linear_transformation<BE: Backend<ZnxWord = i64>, M: Measurement, const COMPOSED: bool>(
-    bencher: &mut Bencher<'_, M>,
-    cp: &CkksBenchParams,
-) where
-    Module<BE>: ModuleNew<BE>
-        + ModuleSynchronize<BE>
-        + CKKSLinearTransformationOps<BE>
-        + CKKSMulOps<BE>
-        + CKKSDotProductOps<BE>
-        + CKKSRotateOps<BE>
-        + CKKSAddOps<BE>
-        + CnvPVecAlloc<BE>
-        + GLWEAutomorphismKeyPreparedFactory<BE>
-        + GLWETensorKeyPreparedFactory<BE>,
-{
-    let module = Module::<BE>::new(cp.n as u64);
     let ct_layout = ckks_layout(cp);
-    let atk_layout = atk_layout(cp);
-    let meta = ckks_ct_meta(cp);
-    let mut src = module.ckks_ciphertext_alloc_from_glwe_infos(&ct_layout);
-    let mut dst = module.ckks_ciphertext_alloc_from_glwe_infos(&ct_layout);
-    src.set_meta_checked(meta).unwrap();
-    dst.set_meta_checked(meta).unwrap();
-    let tsk = module.alloc_tensor_key_prepared_from_infos(&mul_tsk_layout(cp));
-
-    let layout = LinearTransformationLayout {
+    let (atk_layout, tsk_layout) = (atk_layout(cp), mul_tsk_layout(cp));
+    let mut source = Source::new([0u8; 32]);
+    let ciphertext = |source: &mut Source| {
+        let mut ct = module.ckks_ciphertext_alloc_from_glwe_infos(&ct_layout);
+        module.fill_glwe_from_source(&mut ct, source);
+        ct.set_meta_checked(ckks_ct_meta(cp)).unwrap();
+        ct
+    };
+    let src = ciphertext(&mut source);
+    let plan = LinearTransformationLayout {
         indexes: (0..CT_LT_DIAGONALS).collect(),
-        slots: cp.n / 2,
+        slots: module.ckks_max_slots(),
         strategy: LinearTransformationStrategy::Bsgs {
             giant_step: CT_LT_GIANT_STEP,
         },
+    }
+    .index();
+    let lt = LinearTransformation {
+        baby_steps: plan.baby_steps.clone(),
+        giant_steps: plan
+            .giant_steps
+            .iter()
+            .zip(&plan.index)
+            .map(|(&rot, babies)| LinearTransformationGiantStep {
+                rot,
+                diagonals: babies
+                    .iter()
+                    .map(|&baby| LinearTransformationDiagonal {
+                        baby,
+                        plaintext: ciphertext(&mut source),
+                    })
+                    .collect(),
+            })
+            .collect(),
+        rotations: plan.rotations,
     };
-    let plan = layout.index();
-    let mut atks = HashMap::new();
-    for p in plan.galois_elements(module.cyclotomic_order()) {
-        let mut key = module.glwe_automorphism_key_prepared_alloc_from_infos(&atk_layout);
-        key.set_p(p);
-        atks.insert(p, key);
-    }
-    let keys = TransformKeys { atks: &atks, tsk: &tsk };
 
-    if !COMPOSED {
-        // The diagonals as ciphertexts of `src`'s layout and scale, resident.
-        let mut lt = LinearTransformationPrepared::<BE>::alloc_prepared_from_index(&module, &plan, &src);
-        lt.set_log_scale(cp.log_delta);
-        let mut babies = LinearTransformationBabySteps::alloc(&module, &plan.baby_steps, &src);
-        let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
-            module
-                .ckks_prepare_linear_transformation_baby_steps_tmp_bytes(&src, &plan, &atk_layout)
-                .max(module.ckks_eval_linear_transformation_tmp_bytes(&src, &src, &plan, &atk_layout, &tsk)),
-        );
-        bencher.iter(|| {
-            module
-                .ckks_prepare_linear_transformation_baby_steps(&mut babies, &src, &atks, &mut scratch.borrow())
-                .unwrap();
-            module
-                .ckks_eval_linear_transformation_into(&mut dst, &src, &babies, &lt, &keys, &mut scratch.borrow())
-                .unwrap();
-            module.synchronize();
-            black_box(());
-        });
-        return;
-    }
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+        module
+            .glwe_automorphism_key_prepare_tmp_bytes(&atk_layout)
+            .max(module.glwe_tensor_key_prepare_tmp_bytes(&tsk_layout)),
+    );
+    let atks = plan
+        .galois_elements(module.cyclotomic_order())
+        .into_iter()
+        .map(|p| {
+            let mut key = module.glwe_automorphism_key_alloc_from_infos(&atk_layout);
+            fill_by_digit(module, &mut key, 1, &mut source);
+            key.set_p(p);
+            let mut prepared = module.glwe_automorphism_key_prepared_alloc_from_infos(&atk_layout);
+            module.glwe_automorphism_key_prepare(&mut prepared, &key, &mut scratch.borrow());
+            (p, prepared)
+        })
+        .collect();
+    let mut tsk = module.glwe_tensor_key_alloc_from_infos(&tsk_layout);
+    fill_by_digit(module, &mut tsk, 1, &mut source);
+    let mut tsk_prepared = module.alloc_tensor_key_prepared_from_infos(&tsk_layout);
+    module.glwe_tensor_key_prepare(&mut tsk_prepared, &tsk, &mut scratch.borrow());
+    (src, lt, plan, atks, tsk_prepared)
+}
 
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_prepare_tmp_bytes(&src));
-    let rights: Vec<Vec<_>> = plan
-        .index
+/// `ckks_eval_linear_transformation_into` of `CT_LT_DIAGONALS` resident encrypted diagonals on an encrypted vector,
+/// its baby rotations prepared.
+pub fn runner_ckks_eval_linear_transformation_into_ct<BE: Backend<ZnxWord = i64>, M: Measurement>(
+    bencher: &mut Bencher<'_, M>,
+    cp: &CkksBenchParams,
+) where
+    Module<BE>: ModuleNew<BE>
+        + ModuleSynchronize<BE>
+        + CKKSLinearTransformationOps<BE>
+        + CnvPVecAlloc<BE>
+        + GLWEMaskFill<BE>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>
+        + GLWEAutomorphismKeyPreparedFactory<BE>
+        + GLWETensorKeyPreparedFactory<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let module = Module::<BE>::new(cp.n as u64);
+    let (src, lt, plan, atks, tsk) = ct_lt_operands(&module, cp);
+    let keys = TransformKeys {
+        automorphism: &atks,
+        tensor: &tsk,
+    };
+    let first = lt.first_diagonal_plaintext().unwrap();
+    let mut prepared = LinearTransformationPrepared::<BE>::alloc_prepared_from_index(&module, &plan, first);
+    let mut babies = LinearTransformationBabySteps::alloc(&module, &plan.baby_steps, &src);
+    let mut dst = module.ckks_ciphertext_alloc_from_glwe_infos(&ckks_layout(cp));
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+        module
+            .ckks_prepare_linear_transformation_rhs_tmp_bytes(first)
+            .max(module.ckks_prepare_linear_transformation_baby_steps_tmp_bytes(&src, &plan, &atk_layout(cp)))
+            .max(module.ckks_eval_linear_transformation_tmp_bytes(&src, first, &plan, &tsk, &atk_layout(cp))),
+    );
+    module
+        .ckks_prepare_linear_transformation_rhs(&mut prepared, &lt, &mut scratch.borrow())
+        .unwrap();
+    module
+        .ckks_prepare_linear_transformation_baby_steps(&mut babies, &src, &atks, &mut scratch.borrow())
+        .unwrap();
+    bencher.iter(|| {
+        module
+            .ckks_eval_linear_transformation_into(&mut dst, &src, &babies, &prepared, &keys, &mut scratch.borrow())
+            .unwrap();
+        module.synchronize();
+        black_box(());
+    });
+}
+
+/// The product of [`runner_ckks_eval_linear_transformation_into_ct`] composed from the same prepared rotations and
+/// diagonals: one `ckks_dot_product_prepared` per giant step, rotated and added, then normalized.
+pub fn runner_ckks_eval_linear_transformation_into_ct_composed<BE: Backend<ZnxWord = i64>, M: Measurement>(
+    bencher: &mut Bencher<'_, M>,
+    cp: &CkksBenchParams,
+) where
+    Module<BE>: ModuleNew<BE>
+        + ModuleSynchronize<BE>
+        + CKKSMulOps<BE>
+        + CKKSDotProductOps<BE>
+        + CKKSRotateOps<BE>
+        + CKKSAddOps<BE>
+        + GLWENormalize<BE>
+        + GLWEMaskFill<BE>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>
+        + GLWEAutomorphismKeyPreparedFactory<BE>
+        + GLWETensorKeyPreparedFactory<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let module = Module::<BE>::new(cp.n as u64);
+    let (src, lt, plan, atks, tsk) = ct_lt_operands(&module, cp);
+    let ct_layout = ckks_layout(cp);
+    let mut rotated = module.ckks_ciphertext_alloc_from_glwe_infos(&ct_layout);
+    let mut term = module.ckks_ciphertext_alloc_from_glwe_infos(&ct_layout);
+    let mut dst = module.ckks_ciphertext_alloc_from_glwe_infos(&ct_layout);
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+        module
+            .ckks_prepare_tmp_bytes(&src)
+            .max(module.ckks_rotate_tmp_bytes(&src, &atk_layout(cp)))
+            .max(module.ckks_dot_product_ct_tmp_bytes(CT_LT_GIANT_STEP, &src, &src, &src, &tsk))
+            .max(module.ckks_add_tmp_bytes(ct_layout.size()))
+            .max(module.glwe_normalize_tmp_bytes()),
+    );
+    let lefts: HashMap<i64, _> = plan
+        .baby_steps
         .iter()
-        .map(|babies| {
-            babies
+        .map(|&baby| {
+            let mut left = module.ckks_prepared_left_alloc_from_infos(&src, PrepareHint::Reuse);
+            if baby == 0 {
+                module.ckks_prepare_left_into(&mut left, &src, &mut scratch.borrow()).unwrap();
+            } else {
+                module
+                    .ckks_rotate_into(baby, &mut rotated, &src, &atks, &mut scratch.borrow())
+                    .unwrap();
+                module
+                    .ckks_prepare_left_into(&mut left, &rotated, &mut scratch.borrow())
+                    .unwrap();
+            }
+            (baby, left)
+        })
+        .collect();
+    let rights: Vec<Vec<_>> = lt
+        .giant_steps
+        .iter()
+        .map(|gs| {
+            gs.diagonals
                 .iter()
-                .map(|_| {
-                    let mut right = module.ckks_prepared_right_alloc_from_infos(&src, PrepareHint::Reuse);
+                .map(|d| {
+                    let mut right = module.ckks_prepared_right_alloc_from_infos(&d.plaintext, PrepareHint::Reuse);
                     module
-                        .ckks_prepare_right_into(&mut right, &src, &mut scratch.borrow())
+                        .ckks_prepare_right_into(&mut right, &d.plaintext, &mut scratch.borrow())
                         .unwrap();
                     right
                 })
                 .collect()
         })
         .collect();
-    let mut lefts: Vec<_> = plan
-        .baby_steps
+    let steps: Vec<(i64, Vec<_>, Vec<_>)> = lt
+        .giant_steps
         .iter()
-        .map(|_| module.ckks_prepared_left_alloc_from_infos(&src, PrepareHint::Reuse))
+        .zip(&rights)
+        .map(|(gs, rights)| {
+            (
+                gs.rot,
+                gs.diagonals.iter().map(|d| &lefts[&d.baby]).collect(),
+                rights.iter().collect(),
+            )
+        })
         .collect();
-    let mut rotated = module.ckks_ciphertext_alloc_from_glwe_infos(&ct_layout);
-    let mut term = module.ckks_ciphertext_alloc_from_glwe_infos(&ct_layout);
-    let baby_index = |baby: i64| plan.baby_steps.iter().position(|&b| b == baby).unwrap();
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
-        module
-            .ckks_prepare_tmp_bytes(&src)
-            .max(module.ckks_rotate_tmp_bytes(&src, &atk_layout))
-            .max(module.ckks_dot_product_ct_tmp_bytes(CT_LT_GIANT_STEP, &src, &src, &src, &tsk))
-            .max(module.ckks_add_tmp_bytes(ct_layout.size())),
-    );
     bencher.iter(|| {
-        for (left, &baby) in lefts.iter_mut().zip(&plan.baby_steps) {
-            if baby == 0 {
-                module.ckks_prepare_left_into(left, &src, &mut scratch.borrow()).unwrap();
-            } else {
-                module
-                    .ckks_rotate_into(baby, &mut rotated, &src, &atks, &mut scratch.borrow())
-                    .unwrap();
-                module.ckks_prepare_left_into(left, &rotated, &mut scratch.borrow()).unwrap();
-            }
-        }
-        for (g, (&rot, babies)) in plan.giant_steps.iter().zip(&plan.index).enumerate() {
-            let a: Vec<_> = babies.iter().map(|&baby| &lefts[baby_index(baby)]).collect();
-            let b: Vec<_> = rights[g].iter().collect();
+        for (g, (rot, a, b)) in steps.iter().enumerate() {
             let out = if g == 0 { &mut dst } else { &mut term };
             module
-                .ckks_dot_product_prepared(out, &a, &b, &tsk, &mut scratch.borrow())
+                .ckks_dot_product_prepared(out, a, b, &tsk, &mut scratch.borrow())
                 .unwrap();
-            if rot != 0 {
-                module.ckks_rotate_assign(rot, out, &atks, &mut scratch.borrow()).unwrap();
+            if *rot != 0 {
+                module.ckks_rotate_assign(*rot, out, &atks, &mut scratch.borrow()).unwrap();
             }
             if g != 0 {
                 module.ckks_add_assign(&mut dst, &term, &mut scratch.borrow()).unwrap();
             }
         }
+        module.glwe_normalize_assign(&mut dst, &mut scratch.borrow());
         module.synchronize();
         black_box(());
     });

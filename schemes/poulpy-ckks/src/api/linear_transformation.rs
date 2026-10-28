@@ -19,6 +19,12 @@
 //! separate "prepared" vs "unprepared" method; you pick the path by which `P` you
 //! pass.
 //!
+//! # Plaintext or ciphertext diagonals
+//!
+//! A resident transform prepared from CKKS ciphertexts of the source's rank multiplies them as ciphertexts, at the
+//! rule of [`CKKSMulOps::ckks_mul_into`](crate::api::CKKSMulOps::ckks_mul_into), and relinearizes each giant step's
+//! products once with the tensor key of `keys`; streamed diagonals are plaintexts.
+//!
 //! # Typical flow
 //!
 //! ```ignore
@@ -36,7 +42,10 @@ use crate::CKKSResult as Result;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
     DiagonalProd,
-    layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, TorusPrecision},
+    layouts::{
+        GGLWEInfos, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos, Rank,
+        TorusPrecision,
+    },
 };
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
@@ -92,6 +101,17 @@ pub fn ckks_linear_transformation_output_k<P: LtDiagonalMeta>(
 ) -> TorusPrecision {
     let scale = lt.first_diagonal_plaintext().map_or(0, LtDiagonalMeta::lt_log_scale);
     src_k.as_usize().saturating_sub(scale).min(dst_k.as_usize()).into()
+}
+
+/// Layout of a plaintext diagonal of a transform on a ciphertext of layout `ct`, at its degree, `base2k` and storage
+/// width: the diagonal the scratch queries take for a transform of plaintext diagonals.
+pub fn ckks_plaintext_diagonal_layout<C: GLWEInfos>(ct: &C) -> GLWELayout {
+    GLWELayout {
+        n: ct.n(),
+        base2k: ct.base2k(),
+        k: ct.max_k(),
+        rank: Rank(0),
+    }
 }
 
 /// Layout of that result from a ciphertext of layout `src`, its slots joined with the diagonals', sparse where both
@@ -162,15 +182,17 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
         K: GGLWEInfos;
 
     /// Scratch bytes required to evaluate with a **resident** RHS (`P =
-    /// PreparedDiagonal`) a transform with the schedule `plan` (see
+    /// PreparedDiagonal`) a transform with the schedule `plan` and diagonals of the layout `diagonal`, plaintexts or
+    /// ciphertexts by its rank ([`ckks_plaintext_diagonal_layout`] for plaintexts), with the tensor key `tsk` for
+    /// ciphertexts (see
     /// [`GLWELinearTransformations::glwe_eval_linear_transformation_tmp_bytes`](poulpy_core::GLWELinearTransformations::glwe_eval_linear_transformation_tmp_bytes)).
     fn ckks_eval_linear_transformation_tmp_bytes<C, D, K, T>(
         &self,
         ct: &C,
         diagonal: &D,
         plan: &LinearTransformationPlan,
-        key: &K,
         tsk: &T,
+        key: &K,
     ) -> usize
     where
         C: CKKSCtBounds,
@@ -182,19 +204,10 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     /// diagonal `P`): the streamed inner product additionally holds one resident
     /// `CnvPVecR` diagonal slot, so this is larger than the resident budget. `plan` as in
     /// [`Self::ckks_eval_linear_transformation_tmp_bytes`].
-    fn ckks_eval_linear_transformation_streamed_tmp_bytes<C, D, K, T>(
-        &self,
-        ct: &C,
-        diagonal: &D,
-        plan: &LinearTransformationPlan,
-        key: &K,
-        tsk: &T,
-    ) -> usize
+    fn ckks_eval_linear_transformation_streamed_tmp_bytes<C, K>(&self, ct: &C, plan: &LinearTransformationPlan, key: &K) -> usize
     where
         C: CKKSCtBounds,
-        D: GLWEInfos,
-        K: GGLWEInfos,
-        T: GGLWEInfos;
+        K: GGLWEInfos;
 
     /// Scratch bytes required by [`Self::ckks_eval_linear_transformation_sum_into`], `plan` the
     /// schedule of the first term.
@@ -203,8 +216,8 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
         ct: &C,
         diagonal: &D,
         plan: &LinearTransformationPlan,
-        key: &K,
         tsk: &T,
+        key: &K,
     ) -> usize
     where
         C: CKKSCtBounds,
@@ -220,14 +233,16 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     /// `prepared` must have been sized via
     /// [`LinearTransformation::alloc_prepared`] for the same BSGS schedule as
     /// `lt`. Performs zero `CnvPVecR` allocations. The proxy must also carry the
-    /// diagonals' degree, which may be below the ring degree;
-    /// `lt.first_diagonal_plaintext()` is the proxy every caller should pass.
+    /// diagonals' degree, which may be below the ring degree, and rank;
+    /// `lt.first_diagonal_plaintext()` is the proxy every caller should pass. The diagonals are CKKS plaintexts, or
+    /// ciphertexts of the source's rank, which the transform then multiplies as ciphertexts and whose smallest
+    /// sparsity it records.
     ///
     /// # Errors
     ///
     /// `InvalidOperand`, before any write to `prepared`, when `prepared` was allocated for another schedule or
-    /// diagonal degree, radix or width than `lt`'s, or when the diagonals of `lt` do not share one scale, width and
-    /// slot kind.
+    /// diagonal degree, radix, rank or width than `lt`'s, or when the diagonals of `lt` do not share one scale, width
+    /// and slot kind.
     fn ckks_prepare_linear_transformation_rhs<P>(
         &self,
         prepared: &mut LinearTransformationPrepared<BE>,
@@ -235,7 +250,7 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds;
+        P: GLWEToBackendRef<BE> + CKKSCtBounds;
 
     /// Fills `babies` with the prepared baby-step rotations of `src`.
     ///
@@ -270,21 +285,30 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     /// Diagonals of the rank of `src`, ciphertexts prepared by [`Self::ckks_prepare_linear_transformation_rhs`], are
     /// multiplied as ciphertexts: each giant step's products are summed and relinearized once, as by
     /// [`CKKSDotProductOps::ckks_dot_product_prepared`](crate::api::CKKSDotProductOps::ckks_dot_product_prepared), with
-    /// the tensor key of `keys` at the larger of the widths of `src` and of the diagonals, and the result takes the
-    /// rule of [`CKKSMulOps::ckks_mul_into`](crate::api::CKKSMulOps::ckks_mul_into) between `src` and a diagonal. The
-    /// diagonal of giant step `rot` and baby rotation `baby` is diagonal `rot + baby` of the matrix rotated by `-rot`
-    /// slots, as [`ComplexDiagonals::build_transform`](crate::layouts::ComplexDiagonals::build_transform) places it.
+    /// the tensor key of `keys` at the larger of the widths of `src` and of the diagonals, through the one-pass product
+    /// where it applies, else a tensor per pair. The diagonal of giant step `rot` and baby rotation `baby` is diagonal
+    /// `rot + baby` of the matrix rotated by `-rot` slots, as
+    /// [`ComplexDiagonals::build_transform`](crate::layouts::ComplexDiagonals::build_transform) places it.
+    ///
+    /// # Metadata
+    ///
+    /// For plaintext diagonals, the rule of
+    /// [`CKKSMulOps::ckks_mul_pt_vec_into`](crate::api::CKKSMulOps::ckks_mul_pt_vec_into) by the diagonals' scale and
+    /// storage width; for ciphertext diagonals, the rule of
+    /// [`CKKSMulOps::ckks_mul_into`](crate::api::CKKSMulOps::ckks_mul_into) between `src` and a diagonal. The slots are
+    /// `src`'s joined with the diagonals', the sparsity the smaller of `src`'s and the diagonals' (a plaintext's by its
+    /// degree, ciphertexts' by their labels): [`ckks_linear_transformation_output_layout`].
     ///
     /// # Errors
     ///
     /// Each before any write to `dst`:
     /// - `InvalidOperand` when the diagonals of `lt` do not share one scale, width and slot kind, or when `src` is of
     ///   a degree above the module's;
+    /// - for ciphertext diagonals, in this order, `PreparedOperandLayoutMismatch` for a diagonal of another degree,
+    ///   `base2k` or rank than `dst`, `InvalidOperand` past `base2k` 62 and `MissingRelinearizationKey` without the
+    ///   tensor key;
     /// - `MultiplicationPrecisionUnderflow` or `InsufficientHomomorphicCapacity` when the budget rule leaves no result
     ///   at `dst`'s width;
-    /// - for ciphertext diagonals, `PreparedOperandLayoutMismatch` for a diagonal of another degree, `base2k` or rank
-    ///   than `dst`, `MissingRelinearizationKey` without the tensor key, and `InvalidOperand` past `base2k` 62 or
-    ///   unless the one-pass product holds (rank 1, one `base2k`, a conversion offset of at least `base2k`);
     /// - `MissingAutomorphismKey` for a non-zero giant rotation of `lt` with no key at the output width;
     /// - `CKKSError::Internal` when `lt` has no diagonals or `babies` lacks one of `lt`'s baby rotations.
     fn ckks_eval_linear_transformation_into<Dst, Src, P, H>(
@@ -300,7 +324,7 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
-        H: GetAutomorphismKey<BE> + poulpy_core::layouts::GetTensorKey<BE>;
+        H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
 
     /// In-place `dst = M · dst` with a caller-supplied baby cache (see
     /// [`Self::ckks_eval_linear_transformation_into`]).
@@ -315,7 +339,7 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
-        H: GetAutomorphismKey<BE> + poulpy_core::layouts::GetTensorKey<BE>;
+        H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
 
     /// Computes `dst = Σ_t M_t · src_t` over resident transforms that share one
     /// giant schedule, at the giant key switches of one transform. Term `t` is
@@ -343,7 +367,7 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: GetAutomorphismKey<BE> + poulpy_core::layouts::GetTensorKey<BE>;
+        H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
 
     // ----- eval (self-allocated baby cache) -----
 
@@ -366,7 +390,7 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
-        H: GetAutomorphismKey<BE> + poulpy_core::layouts::GetTensorKey<BE>;
+        H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
 
     /// In-place `dst = M · dst`, self-allocating the baby cache (see
     /// [`Self::ckks_eval_linear_transformation_self_into`]).
@@ -380,5 +404,5 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
-        H: GetAutomorphismKey<BE> + poulpy_core::layouts::GetTensorKey<BE>;
+        H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
 }

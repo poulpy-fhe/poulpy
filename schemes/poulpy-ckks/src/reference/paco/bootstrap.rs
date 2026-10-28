@@ -8,7 +8,6 @@
 
 use crate::{CKKSResult as Result, ckks_ensure, ckks_ensure_operand, invalid_operand};
 use anyhow::Context;
-use poulpy_core::layouts::AutomorphismKeysOnly;
 use poulpy_core::layouts::{
     Base2K, Degree, GGLWEInfos, GLWEInfos, GLWELayout, GLWEPlaintextInfos, GLWEToBackendMut, GLWEToBackendRef,
     GetAutomorphismKey, GetTensorKey, LWEInfos, Rank, TorusPrecision,
@@ -427,25 +426,13 @@ where
     // Step 3 — Homomorphic trace `Tr_{N/2 → slots}`. Collapse the redundant
     // coefficient-class copies of the phase into the working slot layout. One
     // fused automorphism-add per level; consumes no budget.
-    BE::ckks_slot_trace_assign(
-        module,
-        output,
-        plan.half_n(),
-        plan.slots(),
-        &AutomorphismKeysOnly(keys.rotation_keys()),
-        scratch,
-    )?;
+    BE::ckks_slot_trace_assign(module, output, plan.half_n(), plan.slots(), keys.rotation_keys(), scratch)?;
 
     // Step 4 — CoeffsToSlots (body). Apply the compiled C2S factor chain (one
     // linear transformation per factor matrix), moving the packed coefficients
     // onto slots.
     for factor in context.coeffs_to_slots() {
-        module.ckks_eval_linear_transformation_self_assign(
-            output,
-            factor,
-            &AutomorphismKeysOnly(keys.rotation_keys()),
-            scratch,
-        )?;
+        module.ckks_eval_linear_transformation_self_assign(output, factor, keys.rotation_keys(), scratch)?;
     }
 
     // Step 5 — CoeffsToSlots (ψ tail). The conjugation-augmented final C2S
@@ -455,29 +442,13 @@ where
     // one multiply by the share-scaled μ mask).
     match context.psi_tail() {
         PaCoPsiTailMaterial::Pair(pair) => {
-            module.ckks_conjugate_into(&mut temporary, output, &AutomorphismKeysOnly(keys.rotation_keys()), scratch)?;
-            module.ckks_eval_linear_transformation_self_assign(
-                output,
-                &pair[0],
-                &AutomorphismKeysOnly(keys.rotation_keys()),
-                scratch,
-            )?;
-            module.ckks_eval_linear_transformation_self_assign(
-                &mut temporary,
-                &pair[1],
-                &AutomorphismKeysOnly(keys.rotation_keys()),
-                scratch,
-            )?;
+            module.ckks_conjugate_into(&mut temporary, output, keys.rotation_keys(), scratch)?;
+            module.ckks_eval_linear_transformation_self_assign(output, &pair[0], keys.rotation_keys(), scratch)?;
+            module.ckks_eval_linear_transformation_self_assign(&mut temporary, &pair[1], keys.rotation_keys(), scratch)?;
             module.ckks_add_assign(output, &temporary, scratch)?;
         }
         PaCoPsiTailMaterial::Mask { mu, rotation } => {
-            module.ckks_conjugate_rotate_into(
-                *rotation,
-                &mut temporary,
-                output,
-                &AutomorphismKeysOnly(keys.rotation_keys()),
-                scratch,
-            )?;
+            module.ckks_conjugate_rotate_into(*rotation, &mut temporary, output, keys.rotation_keys(), scratch)?;
             module.ckks_add_assign(output, &temporary, scratch)?;
             module.ckks_mul_pt_vec_assign(output, mu, scratch)?;
         }
@@ -500,18 +471,13 @@ where
     // Step 7 — Imaginary-part extraction. `output ← output − conj(output) =
     // 2i·Im(output)`, isolating the imaginary component that carries the
     // recovered coefficients.
-    module.ckks_conjugate_into(&mut temporary, output, &AutomorphismKeysOnly(keys.rotation_keys()), scratch)?;
+    module.ckks_conjugate_into(&mut temporary, output, keys.rotation_keys(), scratch)?;
     module.ckks_sub_assign(output, &temporary, scratch)?;
 
     // Step 8 — SlotsToCoeffs′. Apply the compiled S2C factor chain, moving the
     // recovered slot values back to coefficient positions.
     for factor in context.slots_to_coeffs() {
-        module.ckks_eval_linear_transformation_self_assign(
-            output,
-            factor,
-            &AutomorphismKeysOnly(keys.rotation_keys()),
-            scratch,
-        )?;
+        module.ckks_eval_linear_transformation_self_assign(output, factor, keys.rotation_keys(), scratch)?;
     }
 
     // Step 9 — Scale relabel (budget-neutral). Verify the evaluated torus width

@@ -23,8 +23,8 @@ pub unsafe trait LinearTransformationImpl: Backend {
         a: &A,
         pt: &B,
         plan: &LinearTransformationPlan,
-        key: &K,
         tsk: &T,
+        key: &K,
     ) -> usize
     where
         R: GLWEInfos,
@@ -41,8 +41,8 @@ pub unsafe trait LinearTransformationImpl: Backend {
         a: &A,
         pt: &B,
         plan: &LinearTransformationPlan,
-        key: &K,
         tsk: &T,
+        key: &K,
     ) -> usize
     where
         R: GLWEInfos,
@@ -59,8 +59,8 @@ pub unsafe trait LinearTransformationImpl: Backend {
         a: &A,
         pt: &B,
         plan: &LinearTransformationPlan,
-        key: &K,
         tsk: &T,
+        key: &K,
     ) -> usize
     where
         R: GLWEInfos,
@@ -102,7 +102,8 @@ pub unsafe trait LinearTransformationImpl: Backend {
     /// Reproduces
     /// [`glwe_prepare_linear_transformation_baby_steps_reference`](crate::reference::linear_transformation::glwe_prepare_linear_transformation_baby_steps_reference)
     /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
-    /// [`Self::glwe_prepare_linear_transformation_baby_steps_tmp_bytes`]; free in kernels and scratch use.
+    /// [`Self::glwe_prepare_linear_transformation_baby_steps_tmp_bytes`]; free in kernels and scratch use. The cache
+    /// records `a`'s width ([`LinearTransformationBabySteps::set_k`]).
     fn glwe_prepare_linear_transformation_baby_steps<A, H>(
         module: &Module<Self>,
         cache: &mut LinearTransformationBabySteps<Self>,
@@ -187,8 +188,8 @@ macro_rules! impl_linear_transformation_reference_full {
                 a: &A,
                 pt: &B,
                 plan: &$crate::layouts::LinearTransformationPlan,
-                key: &K,
                 tsk: &T,
+                key: &K,
             ) -> usize
             where
                 R: $crate::layouts::GLWEInfos,
@@ -198,7 +199,7 @@ macro_rules! impl_linear_transformation_reference_full {
                 T: $crate::layouts::GGLWEInfos,
             {
                 $crate::reference::linear_transformation::glwe_eval_linear_transformation_tmp_bytes_reference(
-                    module, res, a, pt, plan, key, tsk,
+                    module, res, a, pt, plan, tsk, key,
                 )
             }
 
@@ -208,8 +209,8 @@ macro_rules! impl_linear_transformation_reference_full {
                 a: &A,
                 pt: &B,
                 plan: &$crate::layouts::LinearTransformationPlan,
-                key: &K,
                 tsk: &T,
+                key: &K,
             ) -> usize
             where
                 R: $crate::layouts::GLWEInfos,
@@ -219,7 +220,7 @@ macro_rules! impl_linear_transformation_reference_full {
                 T: $crate::layouts::GGLWEInfos,
             {
                 $crate::reference::linear_transformation::glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes_reference(
-                    module, res, a, pt, plan, key, tsk,
+                    module, res, a, pt, plan, tsk, key,
                 )
             }
 
@@ -229,8 +230,8 @@ macro_rules! impl_linear_transformation_reference_full {
                 a: &A,
                 pt: &B,
                 plan: &$crate::layouts::LinearTransformationPlan,
-                key: &K,
                 tsk: &T,
+                key: &K,
             ) -> usize
             where
                 R: $crate::layouts::GLWEInfos,
@@ -240,7 +241,7 @@ macro_rules! impl_linear_transformation_reference_full {
                 T: $crate::layouts::GGLWEInfos,
             {
                 $crate::reference::linear_transformation::glwe_eval_linear_transformation_sum_tmp_bytes_reference(
-                    module, res, a, pt, plan, key, tsk,
+                    module, res, a, pt, plan, tsk, key,
                 )
             }
 

@@ -473,11 +473,11 @@ where
 
 /// One-pass product roles of [`test_tensor_relinearize_decrypt_parity_roles`] that hold one product: a product, a
 /// product reading its left operand from the destination and a squaring, the test side reading unnormalized twins (0
-/// to 2) or canonical operands (6 to 8), and one prepared pair (5).
+/// to 2) or canonical operands (6 to 8), and one prepared pair (5), whose right operand is also passed as a ciphertext.
 pub const ONE_PASS_PRODUCT_ROLES: [usize; 7] = [0, 1, 2, 5, 6, 7, 8];
 
 /// One-pass product roles of [`test_tensor_relinearize_decrypt_parity_roles`] that sum three products: over
-/// ciphertexts (3) and over pairs prepared once (4).
+/// ciphertexts (3) and over pairs prepared once (4), whose right operands are also passed as ciphertexts.
 pub const ONE_PASS_SUM_ROLES: [usize; 2] = [3, 4];
 
 /// Relinearization and tensor decryption use explicitly staged coefficient
@@ -821,6 +821,45 @@ pub fn test_tensor_relinearize_decrypt_parity_roles<BR, BT>(
                                 have,
                                 "one-pass product role={role} k={precision} k_digit={k_digit} offset={cnv_offset}"
                             );
+                            // Ciphertext right operands, the test side's second unnormalized, give the prepared pairs' bits.
+                            if matches!(role, 4 | 5) {
+                                let pairs = if role == 5 { 1 } else { 3 };
+                                macro_rules! ciphertext_rights {
+                                    ($be:ty, $m:expr, $out:expr, $prep:expr, $rights:expr, $key:expr) => {{
+                                        $m.glwe_mul_prepared_relinearize_sum(
+                                            cnv_offset,
+                                            $out,
+                                            g.k,
+                                            $prep.0[..pairs].iter().copied(),
+                                            size,
+                                            g.k,
+                                            $rights[..pairs].iter().copied(),
+                                            $key,
+                                            &mut poisoned_scratch::<$be>(
+                                                $m.glwe_mul_prepared_relinearize_sum_tmp_bytes(&g, size, size, g.k, &key),
+                                            )
+                                            .borrow(),
+                                        )
+                                    }};
+                                }
+                                let mut out_ct_r = r.glwe_alloc_from_infos(&g);
+                                x_r.transfer_into(&mut out_ct_r);
+                                let mut out_ct_t = t.glwe_alloc_from_infos(&g);
+                                out_ct_r.transfer_into(&mut out_ct_t);
+                                ciphertext_rights!(BR, r, &mut out_ct_r, &prep_r, [&y_r, &x_r, &x_r], &kp_r);
+                                ciphertext_rights!(BT, t, &mut out_ct_t, &prep_t, [&y_t, &x_twin_t, &x_t], &kp_t);
+                                assert_glwe_eq!(
+                                    out_r,
+                                    out_ct_r,
+                                    "ciphertext right operands role={role} k={precision} k_digit={k_digit} offset={cnv_offset}"
+                                );
+                                out_ct_t.transfer_into(&mut have);
+                                assert_glwe_eq!(
+                                    out_r,
+                                    have,
+                                    "backend ciphertext right operands role={role} k={precision} k_digit={k_digit} offset={cnv_offset}"
+                                );
+                            }
                             outs.insert(role, out_r);
                         }
                         // Prepared pairs give the sum, and the first alone the product, bit for bit.

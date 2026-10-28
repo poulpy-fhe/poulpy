@@ -61,6 +61,9 @@ pub struct PreparedDiagonal<D: Data, BE: Backend> {
     /// Whether the scheme claims the diagonal's slots are real. Opaque to the
     /// core engine; `false` (no claim) until the scheme sets it.
     pub(crate) real_slots: bool,
+    /// The sparsity the scheme claims for the diagonal beyond its degree. Opaque to the core engine; `0` (no claim)
+    /// until the scheme sets it.
+    pub(crate) log_sparsity: usize,
 }
 
 impl<D: Data, BE: Backend> PreparedDiagonal<D, BE> {
@@ -94,6 +97,16 @@ impl<D: Data, BE: Backend> PreparedDiagonal<D, BE> {
     /// Sets the real-slot claim; called by the scheme layer during the populate step.
     pub fn set_real_slots(&mut self, real_slots: bool) {
         self.real_slots = real_slots;
+    }
+
+    /// The sparsity the scheme claims for the diagonal beyond its degree (opaque to the core engine).
+    pub fn log_sparsity(&self) -> usize {
+        self.log_sparsity
+    }
+
+    /// Sets the sparsity claim; called by the scheme layer during the populate step.
+    pub fn set_log_sparsity(&mut self, log_sparsity: usize) {
+        self.log_sparsity = log_sparsity;
     }
 }
 
@@ -165,6 +178,11 @@ impl<BE: Backend> LinearTransformationBabySteps<BE> {
     /// Width of the source the rotations were prepared from, that of the source it was allocated for until prepared.
     pub fn k(&self) -> TorusPrecision {
         self.k
+    }
+
+    /// Records the width of the source the rotations were prepared from, as every preparation of the cache does.
+    pub fn set_k(&mut self, k: TorusPrecision) {
+        self.k = k;
     }
 
     pub fn cols(&self) -> usize {

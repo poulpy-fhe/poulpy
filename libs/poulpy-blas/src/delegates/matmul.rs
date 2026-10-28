@@ -38,7 +38,7 @@ impl<BE: BlasMatMulImpl> BlasMatMulOps<BE> for Module<BE> {
         A: BlasGrid<BE>,
         B: BlasGrid<BE>,
         T: GetTensorKey<BE> + Sync,
-        K: GetAutomorphismKey<BE> + Sync,
+        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync,
     {
         BE::blas_matmul(self, res, a, b, ctx, tsk, keys, scratch)
     }
@@ -61,7 +61,7 @@ impl<BE: BlasMatMulImpl> BlasMatMulOps<BE> for Module<BE> {
     ) -> Result<()>
     where
         A: BlasGrid<BE>,
-        K: GetAutomorphismKey<BE> + Sync,
+        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync,
     {
         BE::blas_matmul_prepare_left(self, res, a, ctx, keys, scratch)
     }
@@ -84,7 +84,7 @@ impl<BE: BlasMatMulImpl> BlasMatMulOps<BE> for Module<BE> {
     ) -> Result<()>
     where
         B: BlasGrid<BE>,
-        K: GetAutomorphismKey<BE> + Sync,
+        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync,
     {
         BE::blas_matmul_prepare_right(self, res, b, ctx, keys, scratch)
     }
@@ -121,7 +121,7 @@ impl<BE: BlasMatMulImpl> BlasMatMulOps<BE> for Module<BE> {
     where
         R: BlasGridMut<BE>,
         T: GetTensorKey<BE> + Sync,
-        K: GetAutomorphismKey<BE> + Sync,
+        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync,
     {
         BE::blas_matmul_prepared(self, res, a, b, ctx, tsk, keys, scratch)
     }
@@ -154,7 +154,7 @@ impl<BE: BlasMatMulImpl> BlasMatMulOps<BE> for Module<BE> {
     where
         R: BlasGridMut<BE>,
         A: BlasGrid<BE>,
-        K: GetAutomorphismKey<BE> + Sync,
+        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync,
     {
         BE::blas_matmul_pt_right(self, res, a, b, ctx, keys, scratch)
     }
@@ -187,7 +187,7 @@ impl<BE: BlasMatMulImpl> BlasMatMulOps<BE> for Module<BE> {
     where
         R: BlasGridMut<BE>,
         A: BlasGrid<BE>,
-        K: GetAutomorphismKey<BE> + Sync,
+        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync,
     {
         BE::blas_matmul_pt_left(self, res, b, a, ctx, keys, scratch)
     }

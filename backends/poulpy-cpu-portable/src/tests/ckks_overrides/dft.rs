@@ -323,7 +323,8 @@ use poulpy_ckks::layouts::{CKKSModuleAlloc, DFTMatrixPrepared};
 use poulpy_ckks::{CKKSCtBounds, CKKSResult as Result, SetCKKSInfos};
 use poulpy_core::DiagonalProd;
 use poulpy_core::layouts::{
-    GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, IntPolyInfos, LinearTransformation, SetGLWEPlaintextInfos,
+    GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, IntPolyInfos, LinearTransformation,
+    SetGLWEPlaintextInfos,
 };
 use poulpy_hal::layouts::ScratchArena;
 use std::cell::{Cell, RefCell};
@@ -409,6 +410,14 @@ impl<BE: poulpy_hal::layouts::Backend> GetAutomorphismKey<BE> for NoAutomorphism
         _: i64,
         _: poulpy_core::layouts::TorusPrecision,
     ) -> poulpy_core::Result<poulpy_core::layouts::GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
+        panic!("DFT dispatch probe must not request keys")
+    }
+}
+impl<BE: poulpy_hal::layouts::Backend> GetTensorKey<BE> for NoAutomorphismKey {
+    fn lookup_tensor_key(
+        &self,
+        _: poulpy_core::layouts::TorusPrecision,
+    ) -> poulpy_core::Result<poulpy_core::layouts::prepared::GLWETensorKeyPreparedBackendRef<'_, BE>> {
         panic!("DFT dispatch probe must not request keys")
     }
 }

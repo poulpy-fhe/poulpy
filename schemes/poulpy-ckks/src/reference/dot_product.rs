@@ -447,12 +447,7 @@ where
         k: a[0].k().max(b[0].k()),
         rank: dst.rank(),
     };
-    tsk.get_tensor_key(tensor_layout.k)
-        .map_err(|source| CKKSCompositionError::MissingRelinearizationKey {
-            op,
-            k: tensor_layout.k.into(),
-            source,
-        })?;
+    crate::reference::mul::tensor_key_at(op, tsk, tensor_layout.k)?;
     let (log_budget, log_delta, cnv_offset) = get_mul_ct_params(op, dst, a[0], b[0])?;
     // The eager sum's label and slot kind: the smallest label and the join over every operand.
     let metas = || a.iter().map(|ct| ct.meta()).chain(b.iter().map(|ct| ct.meta()));

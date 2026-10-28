@@ -1,5 +1,5 @@
 use poulpy_ckks::{CKKSCtBounds, CKKSResult as Result, SetCKKSInfos, api::LinearTransformationPrepared};
-use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey};
+use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use super::derived::intra::{blas_transpose_derived, blas_transpose_tmp_bytes_derived};
@@ -73,7 +73,7 @@ pub unsafe trait BlasMatIntraImpl: Backend {
     where
         D: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos + Send,
         S: GLWEToBackendRef<Self> + CKKSCtBounds + Sync,
-        K: GetAutomorphismKey<Self> + Sync;
+        K: GetAutomorphismKey<Self> + GetTensorKey<Self> + Sync;
 
     /// Default body: `blas_transpose_tmp_bytes_derived`, [`Self::blas_map_blocks_tmp_bytes`] for the transpose of every
     /// block of `a` into a block of `res`. Scratch bound of [`Self::blas_transpose`]; may report less than the default
@@ -107,7 +107,7 @@ pub unsafe trait BlasMatIntraImpl: Backend {
     where
         R: BlasGridMut<Self>,
         A: BlasGrid<Self>,
-        K: GetAutomorphismKey<Self> + Sync,
+        K: GetAutomorphismKey<Self> + GetTensorKey<Self> + Sync,
     {
         blas_transpose_derived(module, res, a, ctx, keys, scratch)
     }
@@ -154,7 +154,7 @@ pub unsafe trait BlasMatIntraImpl: Backend {
     where
         R: BlasGridMut<Self>,
         A: BlasGrid<Self>,
-        K: GetAutomorphismKey<Self> + Sync;
+        K: GetAutomorphismKey<Self> + GetTensorKey<Self> + Sync;
 
     /// Scratch bound of [`Self::blas_rotate_cols`] by any `k`; may report less than
     /// [`blas_rotate_cols_tmp_bytes_reference`](crate::reference::BlasMatIntraReference::blas_rotate_cols_tmp_bytes_reference),
@@ -196,7 +196,7 @@ pub unsafe trait BlasMatIntraImpl: Backend {
     where
         R: BlasGridMut<Self>,
         A: BlasGrid<Self>,
-        K: GetAutomorphismKey<Self> + Sync;
+        K: GetAutomorphismKey<Self> + GetTensorKey<Self> + Sync;
 
     /// Scratch bound of [`Self::blas_sum_rows`]; may report less than
     /// [`blas_sum_rows_tmp_bytes_reference`](crate::reference::BlasMatIntraReference::blas_sum_rows_tmp_bytes_reference),
@@ -237,7 +237,7 @@ pub unsafe trait BlasMatIntraImpl: Backend {
     where
         R: BlasGridMut<Self>,
         A: BlasGrid<Self>,
-        K: GetAutomorphismKey<Self> + Sync;
+        K: GetAutomorphismKey<Self> + GetTensorKey<Self> + Sync;
 
     /// Scratch bound of [`Self::blas_sum_cols`]; may report less than
     /// [`blas_sum_cols_tmp_bytes_reference`](crate::reference::BlasMatIntraReference::blas_sum_cols_tmp_bytes_reference),
@@ -265,7 +265,7 @@ pub unsafe trait BlasMatIntraImpl: Backend {
     where
         R: BlasGridMut<Self>,
         A: BlasGrid<Self>,
-        K: GetAutomorphismKey<Self> + Sync;
+        K: GetAutomorphismKey<Self> + GetTensorKey<Self> + Sync;
 }
 
 /// Selects [`BlasMatIntraReference`](crate::reference::BlasMatIntraReference) for `$be`: the map hook, the shifts, the
@@ -306,7 +306,7 @@ macro_rules! impl_blas_mat_intra_reference_full {
                     + ::poulpy_ckks::SetCKKSInfos
                     + Send,
                 S: ::poulpy_core::layouts::GLWEToBackendRef<Self> + ::poulpy_ckks::CKKSCtBounds + Sync,
-                K: ::poulpy_core::layouts::GetAutomorphismKey<Self> + Sync,
+                K: ::poulpy_core::layouts::GetAutomorphismKey<Self> + ::poulpy_core::layouts::GetTensorKey<Self> + Sync,
             {
                 $crate::reference::BlasMatIntraReference::blas_map_blocks_reference(module, dst, src, lts, keys, scratch)
             }
@@ -338,7 +338,7 @@ macro_rules! impl_blas_mat_intra_reference_full {
             where
                 R: $crate::layouts::BlasGridMut<Self>,
                 A: $crate::layouts::BlasGrid<Self>,
-                K: ::poulpy_core::layouts::GetAutomorphismKey<Self> + Sync,
+                K: ::poulpy_core::layouts::GetAutomorphismKey<Self> + ::poulpy_core::layouts::GetTensorKey<Self> + Sync,
             {
                 $crate::reference::BlasMatIntraReference::blas_rotate_rows_reference(module, k, res, a, ctx, keys, scratch)
             }
@@ -370,7 +370,7 @@ macro_rules! impl_blas_mat_intra_reference_full {
             where
                 R: $crate::layouts::BlasGridMut<Self>,
                 A: $crate::layouts::BlasGrid<Self>,
-                K: ::poulpy_core::layouts::GetAutomorphismKey<Self> + Sync,
+                K: ::poulpy_core::layouts::GetAutomorphismKey<Self> + ::poulpy_core::layouts::GetTensorKey<Self> + Sync,
             {
                 $crate::reference::BlasMatIntraReference::blas_rotate_cols_reference(module, k, res, a, ctx, keys, scratch)
             }
@@ -401,7 +401,7 @@ macro_rules! impl_blas_mat_intra_reference_full {
             where
                 R: $crate::layouts::BlasGridMut<Self>,
                 A: $crate::layouts::BlasGrid<Self>,
-                K: ::poulpy_core::layouts::GetAutomorphismKey<Self> + Sync,
+                K: ::poulpy_core::layouts::GetAutomorphismKey<Self> + ::poulpy_core::layouts::GetTensorKey<Self> + Sync,
             {
                 $crate::reference::BlasMatIntraReference::blas_sum_rows_reference(module, res, a, ctx, keys, scratch)
             }
@@ -432,7 +432,7 @@ macro_rules! impl_blas_mat_intra_reference_full {
             where
                 R: $crate::layouts::BlasGridMut<Self>,
                 A: $crate::layouts::BlasGrid<Self>,
-                K: ::poulpy_core::layouts::GetAutomorphismKey<Self> + Sync,
+                K: ::poulpy_core::layouts::GetAutomorphismKey<Self> + ::poulpy_core::layouts::GetTensorKey<Self> + Sync,
             {
                 $crate::reference::BlasMatIntraReference::blas_sum_cols_reference(module, res, a, ctx, keys, scratch)
             }

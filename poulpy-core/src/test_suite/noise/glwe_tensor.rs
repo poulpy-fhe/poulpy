@@ -1073,7 +1073,7 @@ where
         params,
         module,
         PreparedSumCase::NarrowPair,
-        "prepared pair 1 does not match res's degree, rank 1 and the given sizes",
+        "prepared pair 1 does not match res's degree, base2k, rank 1 and the first pair's widths and form",
     );
 }
 

@@ -257,7 +257,7 @@ pub fn test_linear_transformation_diagonal_slots<BE, F, E>(
     with_scratch::<BE, _>(
         baby_bytes.max(module.ckks_eval_linear_transformation_tmp_bytes(
             &ct,
-            &crate::test_suite::helpers::plaintext_diagonal_of(&ct),
+            &crate::api::ckks_plaintext_diagonal_layout(&ct),
             &lt.index(),
             &key_params.atk_layout(),
             &key_params.atk_layout(),
@@ -281,13 +281,7 @@ pub fn test_linear_transformation_diagonal_slots<BE, F, E>(
     // prepared on the fly at their degree.
     let mut ct_streamed = alloc_ct(&params, module, params.k);
     with_scratch::<BE, _>(
-        baby_bytes.max(module.ckks_eval_linear_transformation_streamed_tmp_bytes(
-            &ct,
-            &crate::test_suite::helpers::plaintext_diagonal_of(&ct),
-            &lt.index(),
-            &key_params.atk_layout(),
-            &key_params.atk_layout(),
-        )),
+        baby_bytes.max(module.ckks_eval_linear_transformation_streamed_tmp_bytes(&ct, &lt.index(), &key_params.atk_layout())),
         |s| module.ckks_eval_linear_transformation_self_into(&mut ct_streamed, &ct, &lt, &atks, s),
     )
     .unwrap();

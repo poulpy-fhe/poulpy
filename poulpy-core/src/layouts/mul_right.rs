@@ -10,6 +10,7 @@ pub trait GLWEMulRight<BE: Backend>: GLWEInfos {
     type Prepared: CnvPVecRToBackendRef<BE>;
     type Ciphertext: GLWEToBackendRef<BE> + GLWEInfos;
 
+    /// The operand in its form: prepared, on `ceil(k / base2k)` limbs of its infos, or the ciphertext itself.
     fn mul_right(&self) -> MulRightOperand<'_, Self::Prepared, Self::Ciphertext>;
 }
 

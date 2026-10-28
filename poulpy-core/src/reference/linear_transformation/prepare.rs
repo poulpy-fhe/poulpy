@@ -66,6 +66,7 @@ impl<BE: Backend> LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE>> {
                         k,
                         log_scale: 0,
                         real_slots: false,
+                        log_sparsity: 0,
                     },
                 });
             }
@@ -96,6 +97,15 @@ impl<BE: Backend> LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE>> {
         for gs in &mut self.giant_steps {
             for d in &mut gs.diagonals {
                 d.plaintext.set_real_slots(real_slots);
+            }
+        }
+    }
+
+    /// Sets the sparsity claim of every diagonal; called by the scheme layer during the populate step.
+    pub fn set_log_sparsity(&mut self, log_sparsity: usize) {
+        for gs in &mut self.giant_steps {
+            for d in &mut gs.diagonals {
+                d.plaintext.set_log_sparsity(log_sparsity);
             }
         }
     }
@@ -157,20 +167,13 @@ pub fn glwe_prepare_linear_transformation_rhs_reference<BE, M, P>(
     let pt_base2k_usize = pt_base2k.as_usize();
     let pt_k_usize = pt_k.as_usize();
     let pt_n = first.n().as_usize();
+    let pt_cols = first.cnv().cols();
     // The diagonal is an integer poly encoded across its full physical width
     // (`max_k`), so it is consumed at `max_k`, not the (possibly smaller)
     // effective `k`, otherwise the low limb's data is truncated.
 
+    // Every diagonal and its slot are checked before the first is prepared.
     for gs in &lt.giant_steps {
-        if gs.diagonals.is_empty() {
-            continue;
-        }
-        let prepared_gs = prepared
-            .giant_steps
-            .iter_mut()
-            .find(|p| p.rot == gs.rot)
-            .unwrap_or_else(|| panic!("prepared cache has no giant step for rotation {}", gs.rot));
-
         for d in &gs.diagonals {
             let plaintext = &d.plaintext;
             assert_eq!(
@@ -193,17 +196,39 @@ pub fn glwe_prepare_linear_transformation_rhs_reference<BE, M, P>(
                 pt_n,
                 "linear transformation diagonal degree does not match prepared cache"
             );
+            assert_eq!(
+                plaintext.rank().as_usize() + 1,
+                pt_cols,
+                "linear transformation diagonal rank does not match prepared cache"
+            );
+            assert!(
+                prepared
+                    .giant_steps
+                    .iter()
+                    .find(|p| p.rot == gs.rot)
+                    .is_some_and(|p| p.diagonals.iter().any(|p| p.baby == d.baby)),
+                "prepared cache has no diagonal slot for a diagonal of the transformation"
+            );
+        }
+    }
 
+    for gs in &lt.giant_steps {
+        if gs.diagonals.is_empty() {
+            continue;
+        }
+        let prepared_gs = prepared
+            .giant_steps
+            .iter_mut()
+            .find(|p| p.rot == gs.rot)
+            .expect("checked above");
+
+        for d in &gs.diagonals {
+            let plaintext = &d.plaintext;
             let prepared_slot = prepared_gs
                 .diagonals
                 .iter_mut()
                 .find(|p| p.baby == d.baby)
-                .unwrap_or_else(|| panic!("prepared cache has no diagonal slot for baby {} at giant {}", d.baby, gs.rot));
-            assert_eq!(
-                plaintext.rank().as_usize() + 1,
-                prepared_slot.plaintext.cnv().cols(),
-                "linear transformation diagonal rank does not match prepared cache"
-            );
+                .expect("checked above");
             // A ciphertext diagonal is read canonical, as the products read it.
             if plaintext.rank().as_usize() > 0 {
                 crate::glwe_prepare_right(module, prepared_slot.plaintext.cnv_mut(), plaintext, pt_k_usize, scratch);

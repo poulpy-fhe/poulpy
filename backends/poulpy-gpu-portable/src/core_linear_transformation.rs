@@ -1,14 +1,14 @@
 //! The giant-step products of a linear transformation, a batch per launch.
 //!
-//! The diagonals of a prepared transformation have one limb, so a giant-step
-//! product is a sum of baby steps scaled slot by slot. The products of
+//! Where the plaintext diagonals of a prepared transformation have one limb, a
+//! giant-step product is a sum of baby steps scaled slot by slot. The products of
 //! several giant steps read the same baby steps: one launch per column reads
 //! each baby step once and writes every product of the batch. The diagonals
 //! it reads are first gathered side by side in the scratch.
 
 use poulpy_core::{
     layouts::{
-        LinearTransformationGiantStep, LinearTransformationPlan,
+        GLWEInfos, LinearTransformationGiantStep, LinearTransformationPlan,
         prepared::{LinearTransformationBabySteps, PreparedDiagonal},
     },
     prod_dft_size,
@@ -43,10 +43,15 @@ fn gathered_bytes<RT: GpuRuntime, R: Ring>(n: usize, diagonals: usize) -> usize 
 /// Scratch [`accumulate_giant_steps`] takes beside the reference's in an
 /// evaluation by `plan`: a batch of its widest giant steps gathered. A wider
 /// batch of another transformation finds too little and takes the reference.
-pub(crate) fn giant_steps_tmp_bytes<RT: GpuRuntime, R: Ring>(
+pub(crate) fn giant_steps_tmp_bytes<RT: GpuRuntime, R: Ring, P: GLWEInfos>(
     module: &Module<NTT4x30Gpu<RT, R>>,
+    pt: &P,
     plan: &LinearTransformationPlan,
 ) -> usize {
+    // Ciphertext diagonals take their products a giant step at a time.
+    if pt.rank().as_usize() != 0 {
+        return 0;
+    }
     let batch = GIANT_BATCH.min(plan.index.len());
     let widest = plan
         .index
@@ -195,8 +200,8 @@ macro_rules! impl_linear_transformation {
                 a: &A,
                 pt: &B,
                 plan: &::poulpy_core::layouts::LinearTransformationPlan,
-                key: &K,
                 tsk: &T,
+                key: &K,
             ) -> usize
             where
                 R: ::poulpy_core::layouts::GLWEInfos,
@@ -206,8 +211,8 @@ macro_rules! impl_linear_transformation {
                 T: ::poulpy_core::layouts::GGLWEInfos,
             {
                 ::poulpy_core::reference::linear_transformation::glwe_eval_linear_transformation_tmp_bytes_reference(
-                    module, res, a, pt, plan, key, tsk,
-                ) + $crate::core_linear_transformation::giant_steps_tmp_bytes(module, plan)
+                    module, res, a, pt, plan, tsk, key,
+                ) + $crate::core_linear_transformation::giant_steps_tmp_bytes(module, pt, plan)
             }
 
             fn glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes<R, A, B, K, T>(
@@ -216,8 +221,8 @@ macro_rules! impl_linear_transformation {
                 a: &A,
                 pt: &B,
                 plan: &::poulpy_core::layouts::LinearTransformationPlan,
-                key: &K,
                 tsk: &T,
+                key: &K,
             ) -> usize
             where
                 R: ::poulpy_core::layouts::GLWEInfos,
@@ -227,7 +232,7 @@ macro_rules! impl_linear_transformation {
                 T: ::poulpy_core::layouts::GGLWEInfos,
             {
                 ::poulpy_core::reference::linear_transformation::glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes_reference(
-                    module, res, a, pt, plan, key, tsk,
+                    module, res, a, pt, plan, tsk, key,
                 )
             }
 
@@ -237,8 +242,8 @@ macro_rules! impl_linear_transformation {
                 a: &A,
                 pt: &B,
                 plan: &::poulpy_core::layouts::LinearTransformationPlan,
-                key: &K,
                 tsk: &T,
+                key: &K,
             ) -> usize
             where
                 R: ::poulpy_core::layouts::GLWEInfos,
@@ -248,8 +253,8 @@ macro_rules! impl_linear_transformation {
                 T: ::poulpy_core::layouts::GGLWEInfos,
             {
                 ::poulpy_core::reference::linear_transformation::glwe_eval_linear_transformation_sum_tmp_bytes_reference(
-                    module, res, a, pt, plan, key, tsk,
-                ) + $crate::core_linear_transformation::giant_steps_tmp_bytes(module, plan)
+                    module, res, a, pt, plan, tsk, key,
+                ) + $crate::core_linear_transformation::giant_steps_tmp_bytes(module, pt, plan)
             }
 
             fn glwe_prepare_linear_transformation_baby_steps_tmp_bytes<A, K>(

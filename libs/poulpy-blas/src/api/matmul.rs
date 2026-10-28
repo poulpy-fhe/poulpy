@@ -124,7 +124,7 @@ pub trait BlasMatMulOps<BE: Backend> {
         A: BlasGrid<BE>,
         B: BlasGrid<BE>,
         T: GetTensorKey<BE> + Sync,
-        K: GetAutomorphismKey<BE> + Sync;
+        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
 
     /// Scratch bytes [`Self::blas_matmul_prepare_left`] needs from `a` under `hint`, with the maps of `ctx` and rotation
     /// keys of layout `keys`: the copies of a hot preparation; the maps, copies and conversions of a cold one.
@@ -193,7 +193,7 @@ pub trait BlasMatMulOps<BE: Backend> {
     ) -> Result<()>
     where
         A: BlasGrid<BE>,
-        K: GetAutomorphismKey<BE> + Sync;
+        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
 
     /// Scratch bytes [`Self::blas_matmul_prepare_right`] needs from `b` under `hint`, with the maps of `ctx` and
     /// rotation keys of layout `keys`. The right factor's label selects its terms, so a layout given in its place carries
@@ -234,7 +234,7 @@ pub trait BlasMatMulOps<BE: Backend> {
     ) -> Result<()>
     where
         B: BlasGrid<BE>,
-        K: GetAutomorphismKey<BE> + Sync;
+        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
 
     /// Scratch bytes [`Self::blas_matmul_prepared`] needs into `res` under `ctx`, with a tensor key of layout `tsk` and
     /// rotation keys of layout `keys`, from the prepared operands `a` and `b`, or, before preparing them, from the layouts
@@ -329,7 +329,7 @@ pub trait BlasMatMulOps<BE: Backend> {
     where
         R: BlasGridMut<BE>,
         T: GetTensorKey<BE> + Sync,
-        K: GetAutomorphismKey<BE> + Sync;
+        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
 
     /// Scratch bytes [`Self::blas_matmul_pt_right`] needs into `res` from `a` through `b` with rotation keys of layout
     /// `keys`, under `ctx`, read under `JklsStored` and `JklsGalois` alone.
@@ -431,7 +431,7 @@ pub trait BlasMatMulOps<BE: Backend> {
     where
         R: BlasGridMut<BE>,
         A: BlasGrid<BE>,
-        K: GetAutomorphismKey<BE> + Sync;
+        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
 
     /// Scratch bytes [`Self::blas_matmul_pt_left`] needs into `res` through `b` from `a` with rotation keys of layout
     /// `keys`, under `ctx`, read under `JklsStored` and `JklsGalois` alone.
@@ -504,5 +504,5 @@ pub trait BlasMatMulOps<BE: Backend> {
     where
         R: BlasGridMut<BE>,
         A: BlasGrid<BE>,
-        K: GetAutomorphismKey<BE> + Sync;
+        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
 }

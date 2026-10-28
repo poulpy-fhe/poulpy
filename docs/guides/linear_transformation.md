@@ -19,7 +19,7 @@ The naive cost is one rotation, hence one key-switch, per non-zero diagonal.
 Poulpy uses the Baby-Step Giant-Step decomposition to reduce that to the square root of the number of diagonals, and evaluates the whole transform for a single rescale.
 
 The evaluation engine lives in `poulpy-core` and is scheme agnostic.
-It operates on GLWE ciphertexts, GGLWE automorphism keys, and prepared plaintext diagonals through the `GLWELinearTransformations` trait.
+It operates on GLWE ciphertexts, GGLWE automorphism keys, and prepared diagonals, plaintexts or ciphertexts, through the `GLWELinearTransformations` trait.
 The CKKS layer in `poulpy-ckks` is a thin wrapper, `CKKSLinearTransformationOps`, that owns the scale and budget accounting, encodes the diagonals, and supplies the galois-element to key map.
 No homomorphic arithmetic lives in the CKKS layer.
 
@@ -92,6 +92,13 @@ They can be materialized once into a prepared cache of convolution operands, whi
 The streamed path trades compute for a smaller resident footprint and suits memory-bound backends.
 Both paths share the same giant-step loop and differ only in how each product obtains its diagonals.
 The baby-step cache is prepared once either way.
+
+## Ciphertext diagonals
+
+The diagonals may also be ciphertexts of the source's rank, an encrypted matrix times an encrypted vector.
+The rank of the diagonals selects the product: each giant step's products, summed over the terms of a sum, are tensor products relinearized once with the tensor key of the key set, through the one-pass product where it applies and a tensor per pair otherwise.
+The giant-step loop then rotates and sums them as it does plaintext products, with one final normalization.
+Where the one-pass product applies, one giant step at rotation `0` is the dot product `glwe_mul_prepared_relinearize_sum` of its pairs.
 
 ## Split strategies
 

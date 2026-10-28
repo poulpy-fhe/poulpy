@@ -37,8 +37,8 @@ pub trait CKKSAllOpsTmpBytes<BE: Backend> {
         P: CKKSInfos;
 
     /// Returns a scratch size large enough for [`Self::ckks_all_ops_tmp_bytes`]
-    /// plus automorphism-key setup, rotation, and core prepared or streamed linear transformations
-    /// with a key per rotation. Rotation also bounds the standard-only conjugation.
+    /// plus automorphism-key setup, rotation, and core prepared or streamed linear transformations of plaintext
+    /// diagonals with a key per rotation. Rotation also bounds the standard-only conjugation.
     /// Query DFT preparation and evaluation separately for the selected backend implementation.
     fn ckks_all_ops_with_atk_tmp_bytes<C, T, A, P>(&self, ct_infos: &C, pt_prec: &P, tsk_infos: &T, atk_infos: &A) -> usize
     where
@@ -133,13 +133,15 @@ where
         A: GGLWEInfos,
         P: CKKSInfos,
     {
-        // The core linear transformations with a key per rotation, which every plan of that kind sizes alike.
+        // The core linear transformations of plaintext diagonals with a key per rotation, which every plan of that kind
+        // sizes alike.
         let plan = LinearTransformationPlan::default();
+        let diagonal = crate::api::ckks_plaintext_diagonal_layout(ct_infos);
         self.ckks_all_ops_tmp_bytes(ct_infos, pt_prec, tsk_infos)
             .max(self.ckks_rotate_tmp_bytes(ct_infos, atk_infos))
-            .max(self.glwe_eval_linear_transformation_tmp_bytes(ct_infos, ct_infos, ct_infos, &plan, atk_infos, atk_infos))
+            .max(self.glwe_eval_linear_transformation_tmp_bytes(ct_infos, ct_infos, &diagonal, &plan, tsk_infos, atk_infos))
             .max(self.glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(
-                ct_infos, ct_infos, ct_infos, &plan, atk_infos, atk_infos,
+                ct_infos, ct_infos, &diagonal, &plan, tsk_infos, atk_infos,
             ))
             .max(self.glwe_automorphism_key_encrypt_sk_tmp_bytes(atk_infos))
             .max(self.glwe_automorphism_key_prepare_tmp_bytes(atk_infos))

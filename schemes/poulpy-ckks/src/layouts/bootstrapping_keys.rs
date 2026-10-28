@@ -73,7 +73,7 @@ use poulpy_core::{Distribution, GetDistribution, GetDistributionMut};
 /// the fly. [`BootstrappingKeysPrepared`] is the eager in-memory implementation.
 pub trait BootstrappingLinearKeys<BE: Backend> {
     /// The rotation-key collection passed to the homomorphic DFT stages.
-    type RotationKeys: GetAutomorphismKey<BE>;
+    type RotationKeys: GetAutomorphismKey<BE> + GetTensorKey<BE>;
 
     /// The prepared key-switching key type for sparse-secret encapsulation.
     type SwitchingKey: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;

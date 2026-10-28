@@ -85,22 +85,21 @@ impl<BE: Backend, K: GLWEAutomorphismKeyPreparedToBackendRef<BE>> GetAutomorphis
     }
 }
 
-/// The automorphism keys of a key source and no tensor key: the keys of a transform of plaintext diagonals, which never
-/// asks for one, from a source that need not hold one.
-pub struct AutomorphismKeysOnly<'a, H>(pub &'a H);
+/// The automorphism keys and the tensor key of one key set, the keys of a transform of ciphertext diagonals.
+pub struct TransformKeys<'a, A, T> {
+    pub automorphism: &'a A,
+    pub tensor: &'a T,
+}
 
-impl<BE: Backend, H: GetAutomorphismKey<BE>> GetAutomorphismKey<BE> for AutomorphismKeysOnly<'_, H> {
+impl<BE: Backend, A: GetAutomorphismKey<BE>, T> GetAutomorphismKey<BE> for TransformKeys<'_, A, T> {
     fn lookup_automorphism_key(&self, p: i64, k: TorusPrecision) -> Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
-        self.0.lookup_automorphism_key(p, k)
+        self.automorphism.lookup_automorphism_key(p, k)
     }
 }
 
-impl<BE: Backend, H> GetTensorKey<BE> for AutomorphismKeysOnly<'_, H> {
-    fn lookup_tensor_key(&self, _k: TorusPrecision) -> Result<GLWETensorKeyPreparedBackendRef<'_, BE>> {
-        Err(CoreError::GGLWEKeyUse {
-            op: "get_tensor_key",
-            detail: "the keys of a transform of plaintext diagonals hold no tensor key".into(),
-        })
+impl<BE: Backend, A, T: GetTensorKey<BE>> GetTensorKey<BE> for TransformKeys<'_, A, T> {
+    fn lookup_tensor_key(&self, k: TorusPrecision) -> Result<GLWETensorKeyPreparedBackendRef<'_, BE>> {
+        self.tensor.lookup_tensor_key(k)
     }
 }
 
