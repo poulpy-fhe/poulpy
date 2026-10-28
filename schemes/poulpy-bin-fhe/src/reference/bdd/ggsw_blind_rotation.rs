@@ -38,6 +38,10 @@ pub fn scalar_to_ggsw_blind_rotation_reference<T: UnsignedInteger, BE, R, A, K>(
     BE: Backend<ZnxWord = i64> + poulpy_hal::oep::HalVecZnxImpl,
     Module<BE>: GLWEBytesOf<BE> + GLWEBlindRotation<BE> + GLWEZero<BE> + VecZnxNormalizeTmpBytes,
 {
+    assert!(
+        scratch.available() >= scalar_to_ggsw_blind_rotation_tmp_bytes_reference::<T, BE, _, _>(module, res, fhe_uint.get_bit(0)),
+        "scalar_to_ggsw_blind_rotation: insufficient scratch"
+    );
     let base2k: usize = res.base2k().into();
     let k_digit: usize = res.k_digit().as_usize();
     let (mut tmp_glwe, mut scratch_1) = scratch.borrow().take_glwe_scratch(res);

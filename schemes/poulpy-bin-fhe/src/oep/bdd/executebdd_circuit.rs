@@ -9,8 +9,8 @@ use poulpy_hal::layouts::*;
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait ExecuteBDDCircuitImpl: Backend {
     /// Scratch bound of one worker of [`Self::execute_bdd_circuit_multi_thread`] for a circuit with at most `state_size`
-    /// live intermediate values, before the rounding for the worker alignment; may report less than the reference, never
-    /// less than the body takes.
+    /// live intermediate values, rounded by `worker_scratch_bytes`; may report less than the reference, never less than
+    /// the body takes.
     #[allow(clippy::too_many_arguments)]
     fn execute_bdd_circuit_tmp_bytes<R, G>(module: &Module<Self>, state_size: usize, res_infos: &R, ggsw_infos: &G) -> usize
     where

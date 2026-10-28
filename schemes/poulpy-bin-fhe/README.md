@@ -18,8 +18,8 @@ their implementations.
 
 Each execution trait includes its scratch queries. Use the selected module's
 query for the actual inputs and output before calling the matching operation.
-The API module documentation includes generic examples; existing key convenience
-methods and import paths remain available.
+The API module documentation includes generic examples; key convenience methods
+remain available, and traits that moved to `api` keep their domain-module paths.
 
 ## Backend integration
 

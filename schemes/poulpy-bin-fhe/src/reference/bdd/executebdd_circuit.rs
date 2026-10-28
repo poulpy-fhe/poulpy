@@ -20,10 +20,12 @@ where
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
         + Sync,
 {
-    2 * state_size * module.glwe_bytes_of_from_infos(res_infos)
-        + module
-            .cmux_tmp_bytes(res_infos, res_infos, ggsw_infos)
-            .max(module.glwe_copy_tmp_bytes(res_infos, res_infos))
+    poulpy_hal::execution::worker_scratch_bytes::<BE>(
+        2 * state_size * BE::scratch_aligned(module.glwe_bytes_of_from_infos(res_infos))
+            + module
+                .cmux_tmp_bytes(res_infos, res_infos, ggsw_infos)
+                .max(module.glwe_copy_tmp_bytes(res_infos, res_infos)),
+    )
 }
 #[allow(clippy::too_many_arguments)]
 /// Independently callable canonical implementation of [`ExecuteBDDCircuit::execute_bdd_circuit_multi_thread`].
@@ -49,23 +51,23 @@ pub fn execute_bdd_circuit_multi_thread_reference<BE: Backend<ZnxWord = i64>, C,
     assert!(inputs.bit_size() >= circuit.input_size());
     assert!(out.len() >= circuit.output_size());
     let output_size = circuit.output_size();
+    let scratch_thread_size = (output_size > 0)
+        .then(|| execute_bdd_circuit_tmp_bytes_reference(module, circuit.max_state_size(), &out[0], inputs.get_bit(0)));
+    if let Some(scratch_thread_size) = scratch_thread_size {
+        assert!(
+            scratch.available() >= bdd_parallel_tmp_bytes::<BE>(threads, output_size, scratch_thread_size),
+            "execute_bdd_circuit: insufficient scratch"
+        );
+    }
     for out_i in out.iter_mut().skip(output_size) {
         module.glwe_zero(out_i);
     }
-    if output_size == 0 {
+    let Some(scratch_thread_size) = scratch_thread_size else {
         return;
-    }
+    };
 
     let one = module.prepare_bdd_trivial_one(&out[0]);
-    let scratch_thread_size = poulpy_hal::execution::worker_scratch_bytes::<BE>(
-        2 * circuit.max_state_size() * module.glwe_bytes_of_from_infos(&out[0])
-            + module
-                .cmux_tmp_bytes(&out[0], &out[0], inputs.get_bit(0))
-                .max(module.glwe_copy_tmp_bytes(&out[0], &out[0])),
-    );
     let workers = poulpy_hal::execution::worker_count::<BE::TaskExecutor>(threads, output_size);
-    let needed = bdd_parallel_tmp_bytes::<BE>(threads, output_size, scratch_thread_size);
-    assert!(scratch.available() >= needed);
     let (worker_scratch, _) = scratch.borrow().split(workers, scratch_thread_size);
     poulpy_hal::execution::for_each_with_scratch::<BE::TaskExecutor, BE, _, _>(
         &mut out[..output_size],

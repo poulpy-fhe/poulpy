@@ -11,23 +11,6 @@ use poulpy_core::{
 
 use crate::blind_rotation::{BlindRotationAlgo, BlindRotationKey};
 
-/// Backend-level key-encryption trait for [`BlindRotationKey`].
-///
-/// Dispatched by `Module<BE>` through [`crate::oep::BlindRotationKeyEncryptSkImpl`].  The [`BlindRotationKey::encrypt_sk`] convenience method
-/// delegates to this trait.
-///
-/// Callers must supply:
-/// - `sk_lwe`: The LWE secret key whose individual bits are encrypted.  Its
-///   distribution must be one of `BinaryBlock`, `BinaryFixed`, `BinaryProb`,
-///   or `ZERO` (debugging only).
-/// - `sk_glwe`: The GLWE secret key (in prepared / DFT form) used to encrypt
-///   each GGSW element.
-/// - `source_xe`: Randomness source for GGSW error components.
-/// - `source_xa`: Randomness source for GGSW mask components.
-///
-/// # Panics
-///
-/// Panics if `sk_lwe.dist()` is not a supported binary distribution.
 pub use crate::api::BlindRotationKeyEncryptSk;
 
 impl<D: Data, BRA: BlindRotationAlgo, W: ZnxWord> BlindRotationKey<D, BRA, W> {

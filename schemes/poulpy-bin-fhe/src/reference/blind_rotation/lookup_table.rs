@@ -10,8 +10,11 @@ use poulpy_hal::{
     layouts::{Backend, Module, ScratchOwned, VecZnx, VecZnxToBackendMut, ZnxViewMut},
 };
 
-/// Encodes host function samples using the canonical LUT layout and HAL operations.
+/// Independently callable canonical implementation of
+/// [`LookupTableFactory::lookup_table_set`](crate::api::LookupTableFactory::lookup_table_set), selected by
+/// `impl_lookup_table_factory_reference_full!`.
 ///
+/// Encodes host function samples using the canonical LUT layout and HAL operations.
 /// The destination must have compatible dimensions and sufficient precision for
 /// the message-bit count `k`. Rotation of the encoded samples uses the canonical
 /// LUT rotation composition.
@@ -123,6 +126,10 @@ where
     res.drift = drift
 }
 
+/// Independently callable canonical implementation of
+/// [`LookupTableFactory::lookup_table_rotate`](crate::api::LookupTableFactory::lookup_table_rotate), selected by
+/// `impl_lookup_table_factory_reference_full!`.
+///
 /// Rotates an encoded LUT using HAL polynomial rotation and its scratch query.
 pub fn lookup_table_rotate_reference<BE>(module: &Module<BE>, k: i64, res: &mut LookupTable<BE::OwnedBuf, BE::ZnxWord>)
 where

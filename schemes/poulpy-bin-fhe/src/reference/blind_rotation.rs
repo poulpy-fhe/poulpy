@@ -13,3 +13,6 @@ pub use decompress::*;
 
 mod lookup_table;
 pub use lookup_table::*;
+
+mod mod_switch;
+pub use mod_switch::*;

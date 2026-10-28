@@ -11,8 +11,8 @@ use poulpy_hal::{
     },
     execution::TaskExecutor,
     layouts::{
-        Backend, Module, ScratchArena, SvpPPolOwned, VecZnxDftToBackendMut, VecZnxToBackendRef, vec_znx_backend_ref_from_mut,
-        vec_znx_big_backend_ref_from_mut, vec_znx_dft_backend_ref_from_mut,
+        Backend, Module, ScratchArena, SvpPPolOwned, VecZnxDftToBackendMut, VecZnxDftViewMut, VecZnxToBackendRef,
+        vec_znx_backend_ref_from_mut, vec_znx_big_backend_ref_from_mut, vec_znx_dft_backend_ref_from_mut,
     },
     oep::HalVecZnxImpl,
 };
@@ -27,7 +27,9 @@ use crate::blind_rotation::{BlindRotationKeyInfos, BlindRotationKeyPrepared, CGG
 use poulpy_core::GLWEBytesOf;
 use poulpy_core::layouts::prepared::GGSWPreparedToBackendRef;
 
-/// Canonical lower-layer composition for `blind_rotation_execute_tmp_bytes`.
+/// Independently callable canonical implementation of
+/// [`BlindRotationExecute::blind_rotation_execute_tmp_bytes`](crate::api::BlindRotationExecute::blind_rotation_execute_tmp_bytes),
+/// selected by `impl_blind_rotation_execute_reference_full!`.
 ///
 /// For a block key, it reserves the products of a whole block, each with its own
 /// worker scratch, exactly when `BE::TaskExecutor::IS_PARALLEL`, as
@@ -58,7 +60,6 @@ where
         + SvpApplyDftToDft<BE>
         + VecZnxDftAddAssign<BE>
         + VecZnxDftSubAssign<BE>
-        + VecZnxDftSubNegateAssign<BE>
         + VecZnxIdftApply<BE>
         + VecZnxBigAddSmallAssign<BE>
         + VecZnxBigNormalize<BE>
@@ -85,25 +86,26 @@ where
         let cols = brk_infos.rank().as_usize() + 1;
         let size = brk_infos.size();
         let dnum = brk_infos.dnum().as_usize();
-        let acc_dft = module.bytes_of_vec_znx_dft(module.n(), cols, dnum) * extension_factor;
-        let vmp_res = module.bytes_of_vec_znx_dft(module.n(), cols, size) * extension_factor;
+        let acc_dft = BE::scratch_aligned(module.bytes_of_vec_znx_dft(module.n(), cols, dnum)) * extension_factor;
+        let vmp_res = BE::scratch_aligned(module.bytes_of_vec_znx_dft(module.n(), cols, size)) * extension_factor;
+        let vmp_xai = BE::scratch_aligned(module.bytes_of_vec_znx_dft(module.n(), 1, size));
         let vmp = module.vmp_apply_dft_to_dft_tmp_bytes(size, dnum, dnum, cols, cols, size);
-        let normalize = module.bytes_of_vec_znx_big(module.n(), 1, size)
+        let normalize = BE::scratch_aligned(module.bytes_of_vec_znx_big(module.n(), 1, size))
             + module
                 .vec_znx_big_normalize_tmp_bytes()
                 .max(module.vec_znx_idft_apply_tmp_bytes());
         if extension_factor == 1 {
             let slots = block_slots::<BE>(block_size);
             let workers = poulpy_hal::execution::scratch_workers::<BE::TaskExecutor>(block_size);
-            let per_worker = vmp.max(module.bytes_of_vec_znx_dft(module.n(), 1, size));
+            let per_worker = vmp.max(vmp_xai);
             acc_dft
                 + (slots + 1) * vmp_res
                 + (workers * poulpy_hal::execution::worker_scratch_bytes::<BE>(per_worker))
                     .max(normalize)
                     .max(copy_out)
         } else {
-            let acc = BE::bytes_of_vec_znx(module.n(), cols, glwe_infos.size()) * extension_factor;
-            acc + acc_dft + 2 * vmp_res + module.bytes_of_vec_znx_dft(module.n(), 1, size) + vmp.max(normalize).max(copy_out)
+            let acc = BE::scratch_aligned(BE::bytes_of_vec_znx(module.n(), cols, glwe_infos.size())) * extension_factor;
+            acc + acc_dft + 2 * vmp_res + vmp_xai + vmp.max(normalize).max(copy_out)
         }
     } else {
         let copy_in = module.glwe_copy_tmp_bytes(&compact, glwe_infos);
@@ -120,7 +122,9 @@ where
     }
 }
 
-/// Canonical lower-layer composition for `blind_rotation_execute`.
+/// Independently callable canonical implementation of
+/// [`BlindRotationExecute::blind_rotation_execute`](crate::api::BlindRotationExecute::blind_rotation_execute), selected by
+/// `impl_blind_rotation_execute_reference_full!`.
 ///
 /// A block key runs the products of a block in parallel exactly when
 /// `BE::TaskExecutor::IS_PARALLEL`, one at a time otherwise, and adds their
@@ -176,24 +180,33 @@ pub fn blind_rotation_execute_reference<BE, R, L>(
     assert!(brk.block_size() > 0);
     assert_eq!(brk.n_lwe().as_usize() % brk.block_size(), 0);
     assert!(lut.data.iter().all(|polynomial| polynomial.n() == res.n()));
+    assert!(
+        matches!(
+            brk.dist,
+            Distribution::BinaryBlock(_) | Distribution::BinaryFixed(_) | Distribution::BinaryProb(_) | Distribution::ZERO
+        ),
+        "invalid CGGI distribution (have you prepared the key?)"
+    );
+    if lut.extension_factor() > 1 {
+        assert!(
+            matches!(brk.dist, Distribution::BinaryBlock(_)),
+            "extended blind rotation (extension_factor={}) requires a BinaryBlock key distribution, got {:?}",
+            lut.extension_factor(),
+            brk.dist,
+        );
+    }
+    assert!(
+        scratch.available()
+            >= blind_rotation_execute_tmp_bytes_reference(module, brk.block_size(), lut.extension_factor(), res, brk),
+        "blind_rotation_execute: insufficient scratch"
+    );
 
-    match brk.dist {
-        Distribution::BinaryBlock(_) | Distribution::BinaryFixed(_) | Distribution::BinaryProb(_) | Distribution::ZERO => {
-            if lut.extension_factor() > 1 {
-                assert!(
-                    matches!(brk.dist, Distribution::BinaryBlock(_)),
-                    "extended blind rotation (extension_factor={}) requires a BinaryBlock key distribution, got {:?}",
-                    lut.extension_factor(),
-                    brk.dist,
-                );
-                execute_block_binary_extended(module, res, lwe, lut, brk, scratch)
-            } else if brk.block_size() > 1 {
-                execute_block_binary(module, res, lwe, lut, brk, scratch);
-            } else {
-                execute_standard(module, res, lwe, lut, brk, scratch);
-            }
-        }
-        _ => panic!("invalid CGGI distribution (have you prepared the key?)"),
+    if lut.extension_factor() > 1 {
+        execute_block_binary_extended(module, res, lwe, lut, brk, scratch)
+    } else if brk.block_size() > 1 {
+        execute_block_binary(module, res, lwe, lut, brk, scratch);
+    } else {
+        execute_standard(module, res, lwe, lut, brk, scratch);
     }
 }
 
@@ -496,30 +509,38 @@ fn execute_block_binary<R, L, M, BE: Backend<ZnxWord = i64>>(
         }
 
         let acc_dft_ref = vec_znx_dft_backend_ref_from_mut::<BE>(&acc_dft);
-        for first in (0..block_size).step_by(slots) {
-            let (worker_scratch, _) = scratch_3.borrow().split(workers, worker_scratch_bytes);
-            poulpy_hal::execution::for_each_with_scratch::<BE::TaskExecutor, BE, _, _>(
-                &mut vmp_res,
-                first,
-                worker_scratch,
-                &|index, vmp_res, scratch| {
-                    let skii_ref = ski[index].data().to_backend_ref();
-                    module.vmp_apply_dft_to_dft(vmp_res, &acc_dft_ref, &skii_ref, 0, scratch);
+        let product = worker_task::<BE, VecZnxDftViewMut<'_, BE>, _>(|index, vmp_res, scratch| {
+            let skii_ref = ski[index].data().to_backend_ref();
+            module.vmp_apply_dft_to_dft(vmp_res, &acc_dft_ref, &skii_ref, 0, scratch);
 
-                    let ai_pos = ((ai[index] + two_n as i64) & (two_n - 1) as i64) as usize;
-                    let x_pow_a_ref = x_pow_a[ai_pos].to_backend_ref();
-                    let (mut vmp_xai, _) = scratch.borrow().take_vec_znx_dft_scratch(module.n(), 1, brk.size());
-                    for col in 0..cols {
-                        {
-                            let vmp_res_ref = vec_znx_dft_backend_ref_from_mut::<BE>(vmp_res);
-                            let mut vmp_xai_backend = vmp_xai.to_backend_mut();
-                            module.svp_apply_dft_to_dft(&mut vmp_xai_backend, 0, &x_pow_a_ref, 0, &vmp_res_ref, col);
-                        }
-                        let vmp_xai_ref = vec_znx_dft_backend_ref_from_mut::<BE>(&vmp_xai);
-                        module.vec_znx_dft_sub_negate_assign(vmp_res, col, &vmp_xai_ref, 0);
-                    }
-                },
-            );
+            let ai_pos = ((ai[index] + two_n as i64) & (two_n - 1) as i64) as usize;
+            let x_pow_a_ref = x_pow_a[ai_pos].to_backend_ref();
+            let (mut vmp_xai, _) = scratch.borrow().take_vec_znx_dft_scratch(module.n(), 1, brk.size());
+            for col in 0..cols {
+                {
+                    let vmp_res_ref = vec_znx_dft_backend_ref_from_mut::<BE>(vmp_res);
+                    let mut vmp_xai_backend = vmp_xai.to_backend_mut();
+                    module.svp_apply_dft_to_dft(&mut vmp_xai_backend, 0, &x_pow_a_ref, 0, &vmp_res_ref, col);
+                }
+                let vmp_xai_ref = vec_znx_dft_backend_ref_from_mut::<BE>(&vmp_xai);
+                module.vec_znx_dft_sub_negate_assign(vmp_res, col, &vmp_xai_ref, 0);
+            }
+        });
+        for first in (0..block_size).step_by(slots) {
+            if workers == 1 {
+                // One worker needs no split arena, which would allocate per product.
+                for (offset, vmp_res) in vmp_res.iter_mut().enumerate() {
+                    product(first + offset, vmp_res, &mut scratch_3.borrow());
+                }
+            } else {
+                let (worker_scratch, _) = scratch_3.borrow().split(workers, worker_scratch_bytes);
+                poulpy_hal::execution::for_each_with_scratch::<BE::TaskExecutor, BE, _, _>(
+                    &mut vmp_res,
+                    first,
+                    worker_scratch,
+                    &product,
+                );
+            }
 
             for contribution in &vmp_res {
                 for col in 0..cols {
@@ -555,6 +576,11 @@ fn execute_block_binary<R, L, M, BE: Backend<ZnxWord = i64>>(
         }
     }
     module.glwe_copy(res, &out_tmp, &mut scratch_3);
+}
+
+/// Fixes a worker task's signature, so one closure serves both the direct call and the executor.
+fn worker_task<BE: Backend, T, F: Fn(usize, &mut T, &mut ScratchArena<'_, BE>)>(task: F) -> F {
+    task
 }
 
 /// Block products held at once: the whole block when the executor runs them in parallel.

@@ -1,7 +1,8 @@
 //! Exact coefficient and metadata parity for selection and BDD operations.
 
-use super::{GlweSnapshot, ParityBackend, fixture_ggsw, fixture_glwe, snapshot_ggsw, snapshot_glwe, with_scratch};
+use super::{GlweSnapshot, ParityBackend, fixture_ggsw, fixture_glwe, snapshot_ggsw, snapshot_glwe};
 use crate::{api::*, bdd_arithmetic::*};
+use poulpy_core::test_suite::with_scratch;
 use poulpy_core::{GLWECopy, api::GGSWPreparedFactory, layouts::*};
 use poulpy_hal::layouts::*;
 use std::collections::HashMap;
@@ -501,9 +502,9 @@ where
         let bytes = if variant == 2 {
             module.scalar_to_ggsw_blind_rotation_tmp_bytes(&key, &key)
         } else if variant == 1 {
-            module.ggsw_to_ggsw_blind_rotation_tmp_bytes(&out, &out, &key)
+            module.ggsw_blind_rotation_tmp_bytes(&out, &out, &key)
         } else {
-            module.ggsw_to_ggsw_blind_rotation_tmp_bytes(&out, &input, &key)
+            module.ggsw_blind_rotation_tmp_bytes(&out, &input, &key)
         };
         with_scratch::<BE, _>(bytes, |s| match variant {
             0 => module.ggsw_blind_rotation(true, 1, 2, 0, &mut out, &input, &inputs, s),
@@ -525,7 +526,7 @@ where
     ] {
         let input = fixture_ggsw(module, &input_layout, 61);
         let mut out = fixture_ggsw(module, &key, 61);
-        let bytes = module.ggsw_to_ggsw_blind_rotation_tmp_bytes(&out, &input, &key);
+        let bytes = module.ggsw_blind_rotation_tmp_bytes(&out, &input, &key);
         with_scratch::<BE, _>(bytes, |s| {
             module.ggsw_blind_rotation(true, 1, 2, 0, &mut out, &input, &inputs, s)
         });

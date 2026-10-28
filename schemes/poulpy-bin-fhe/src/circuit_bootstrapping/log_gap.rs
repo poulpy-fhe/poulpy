@@ -8,8 +8,9 @@ pub(crate) fn circuit_bootstrapping_log_gap_in<R: GGSWInfos>(res_infos: &R, log_
     let dnum = res_infos.dnum().as_usize();
     assert!(dnum > 0, "circuit-bootstrap output must have at least one decomposition row");
     let alpha = dnum.next_power_of_two();
-    let domain = 1usize
-        .checked_shl(log_domain as u32)
+    let domain = u32::try_from(log_domain)
+        .ok()
+        .and_then(|shift| 1usize.checked_shl(shift))
         .expect("circuit-bootstrap domain overflows usize");
     let f_len = domain
         .checked_mul(alpha)

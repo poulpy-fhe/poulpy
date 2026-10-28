@@ -13,7 +13,9 @@ use poulpy_core::{
 
 use crate::blind_rotation::{BlindRotationKey, CGGI};
 
-/// Canonical lower-layer composition for `blind_rotation_key_encrypt_sk_tmp_bytes`.
+/// Independently callable canonical implementation of
+/// [`BlindRotationKeyEncryptSk::blind_rotation_key_encrypt_sk_tmp_bytes`](crate::api::BlindRotationKeyEncryptSk::blind_rotation_key_encrypt_sk_tmp_bytes), selected by
+/// `impl_blind_rotation_key_encrypt_sk_reference_full!`.
 pub fn blind_rotation_key_encrypt_sk_tmp_bytes_reference<BE, A: GGSWInfos>(module: &Module<BE>, infos: &A) -> usize
 where
     BE: Backend<ZnxWord = i64>,
@@ -22,7 +24,9 @@ where
     module.ggsw_encrypt_sk_tmp_bytes(infos)
 }
 
-/// Canonical lower-layer composition for `blind_rotation_key_encrypt_sk`.
+/// Independently callable canonical implementation of
+/// [`BlindRotationKeyEncryptSk::blind_rotation_key_encrypt_sk`](crate::api::BlindRotationKeyEncryptSk::blind_rotation_key_encrypt_sk), selected by
+/// `impl_blind_rotation_key_encrypt_sk_reference_full!`.
 pub fn blind_rotation_key_encrypt_sk_reference<BE, S0, S1>(
     module: &Module<BE>,
     res: &mut BlindRotationKey<BE::OwnedBuf, CGGI, BE::ZnxWord>,

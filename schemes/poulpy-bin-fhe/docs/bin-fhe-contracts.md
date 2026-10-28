@@ -106,14 +106,16 @@ parameters. A replacement may require more workspace than the reference and
 must replace its query accordingly. Compound budgets include selected
 constituent queries, live intermediate storage and alignment between workers.
 Out-of-place GLWE/GGSW blind-rotation queries take both source and destination
-layouts; assignment has a separate query. Selection takes the destination and
+layouts; assignment uses the same query with the destination as the source. Selection takes the destination and
 all candidate input infos, retaining their actual allocation capacities. Its
 reference budget deduplicates equal shapes before checking the ordered
 constituent combinations. Do not substitute a single maximum-width layout:
 a selected implementation's workspace can depend on either operand.
 
-Queries for reusable per-worker storage must be multiplied using the documented
-worker-count convention; do not assume all execution variants share a budget.
+Queries for reusable per-worker storage return bytes rounded by
+`worker_scratch_bytes` and must be multiplied using the documented worker-count
+convention; do not assume all execution variants share a budget. An arena below
+an operation's query panics at entry, before any write.
 
 Blind-selection scratch queries take the output, a slice describing every input
 in the map, and the selector. Pass actual input capacities: the reduction can
@@ -184,12 +186,15 @@ and concrete CI commands are repository/backend concerns.
 ## Migration
 
 Backend authors must explicitly implement the scheme OEP families; importing
-the crate no longer installs blanket reference implementations. Existing
-public trait paths are re-exported from their former modules. Generic callers
+the crate no longer installs blanket reference implementations. Operation
+traits live in `api`, re-exported at the crate root and, for traits that moved
+there, from their domain modules (`blind_rotation`, `circuit_bootstrapping`,
+`bdd_arithmetic`); the `api` family modules are private. Generic callers
 should bound the public operation they need, not its reference dependencies.
 Use the selected operation's scratch query, including the prepared integer
-encryption query, separate blind-rotation assignment queries, and the source
-infos required by rotation and selection queries. Backend crates expose scheme opt-in through their own
+encryption query, the blind-rotation queries, which size the assignment forms
+with the destination as the source, and the source infos required by rotation
+and selection queries. Backend crates expose scheme opt-in through their own
 `enable-bin-fhe` feature; the scheme crate's historical feature does not select
 a backend.
 

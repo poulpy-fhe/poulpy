@@ -11,8 +11,8 @@ use poulpy_hal::{
 };
 use rand::Rng;
 
+use crate::test_suite::bdd_arithmetic::decrypt_checked;
 use crate::test_suite::bdd_arithmetic::{TEST_GGSW_INFOS, TEST_GLWE_INFOS, TestContext};
-use crate::test_suite::parity::with_scratch;
 use crate::{
     bdd_arithmetic::{
         BDDKeyEncryptSk, BDDKeyPrepared, BDDKeyPreparedFactory, ExecuteBDDCircuit2WTo1W, FheUint, FheUintPrepare,
@@ -20,6 +20,7 @@ use crate::{
     },
     blind_rotation::BlindRotationAlgo,
 };
+use poulpy_core::test_suite::with_scratch;
 
 pub fn test_bdd_xor<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64> + HostBackend>(
     test_context: &TestContext<BRA, BE>,
@@ -74,5 +75,5 @@ pub fn test_bdd_xor<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf: HostDataMut + 
     let op_bytes = res.xor_tmp_bytes(module, &glwe_infos, &ggsw_infos, bdd_key_prepared);
     with_scratch::<BE, _>(op_bytes, |s| res.xor(module, &a_enc_prep, &b_enc_prep, bdd_key_prepared, s));
 
-    assert_eq!(res.decrypt(module, sk_glwe_prep, &mut scratch.borrow()), a ^ b);
+    assert_eq!(decrypt_checked(module, &res, sk_glwe_prep), a ^ b);
 }

@@ -303,7 +303,9 @@ macro_rules! impl_blind_rotation_key_prepared_reference_full {
 /// Implementations reproduce the bodies their methods document bit for bit and refuse as the reference does.
 /// The memory, layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait BlindRotationModSwitchImpl: Backend<ZnxWord = i64> {
-    /// Reproduces [`mod_switch_2n`](crate::blind_rotation::mod_switch_2n) bit for bit; free in kernels. A host step, it
+    /// Reproduces
+    /// [`blind_rotation_mod_switch_reference`](crate::reference::blind_rotation::blind_rotation_mod_switch_reference) bit
+    /// for bit; free in kernels. A host step, it
     /// reads the coefficients of `lwe` and writes the body then the mask into `res`.
     fn blind_rotation_mod_switch<L: LWEToBackendRef<Self> + LWEInfos>(
         module: &Module<Self>,
@@ -339,13 +341,15 @@ macro_rules! impl_blind_rotation_mod_switch_reference_full {
     ($backend:ty) => {
         unsafe impl $crate::oep::BlindRotationModSwitchImpl for $backend {
             fn blind_rotation_mod_switch<L: poulpy_core::layouts::LWEToBackendRef<Self> + poulpy_core::layouts::LWEInfos>(
-                _module: &poulpy_hal::layouts::Module<Self>,
+                module: &poulpy_hal::layouts::Module<Self>,
                 modulus: usize,
                 direction: $crate::blind_rotation::LookUpTableRotationDirection,
                 res: &mut [i64],
                 lwe: &L,
             ) {
-                $crate::blind_rotation::mod_switch_2n::<Self, _>(modulus, direction, res, lwe)
+                $crate::reference::blind_rotation::blind_rotation_mod_switch_reference::<Self, _>(
+                    module, modulus, direction, res, lwe,
+                )
             }
         }
     };

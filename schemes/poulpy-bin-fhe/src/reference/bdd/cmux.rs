@@ -85,6 +85,10 @@ pub fn cmux_reference<BE, R, T, F>(
         + VecZnxBigNormalizeTmpBytes,
 {
     let f_backend = f.to_backend_ref();
+    assert!(
+        scratch.available() >= cmux_tmp_bytes_reference(module, res, &t.to_backend_ref(), s),
+        "cmux: insufficient scratch"
+    );
 
     let scratch = scratch.borrow();
     let res_base2k: usize = res.base2k().into();
@@ -160,6 +164,10 @@ pub fn cmux_assign_neg_reference<BE, R, A>(
     let a_backend = a.to_backend_ref();
 
     assert_eq!(res.base2k(), a_backend.base2k());
+    assert!(
+        scratch.available() >= cmux_tmp_bytes_reference(module, res, &a_backend, s),
+        "cmux_assign_neg: insufficient scratch"
+    );
 
     let scratch = scratch.borrow();
     let res_base2k: usize = res.base2k().into();
@@ -238,6 +246,10 @@ pub fn cmux_assign_reference<BE, R, A>(
         + VecZnxBigNormalizeTmpBytes,
 {
     let a_backend = a.to_backend_ref();
+    assert!(
+        scratch.available() >= cmux_tmp_bytes_reference(module, res, &a_backend, s),
+        "cmux_assign: insufficient scratch"
+    );
     let scratch = scratch.borrow();
     let res_base2k: usize = res.base2k().into();
     let res_k = res.k().as_usize();

@@ -1,5 +1,5 @@
 //! Circuit-bootstrap parity over transferred coefficient-domain inputs and keys.
-use super::{ParityBackend, assert_panics_with, fixture_ggsw, gglwe_prepared_bytes, snapshot_ggsw, with_scratch};
+use super::{ParityBackend, assert_panics_with, fixture_ggsw, gglwe_prepared_bytes, snapshot_ggsw};
 use crate::{
     api::{
         BlindRotationKeyPreparedFactory, CircuitBootstrappingExecute, CircuitBootstrappingKeyEncryptSk,
@@ -10,6 +10,7 @@ use crate::{
         CircuitBootstrappingKey, CircuitBootstrappingKeyInfos, CircuitBootstrappingKeyLayout, CircuitBootstrappingKeyPrepared,
     },
 };
+use poulpy_core::test_suite::with_scratch;
 use poulpy_core::{
     LWEEncryptSk, TransferInto,
     api::{

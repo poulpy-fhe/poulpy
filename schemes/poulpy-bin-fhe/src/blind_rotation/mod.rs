@@ -59,11 +59,9 @@ mod encryption;
 pub(crate) mod host_znx;
 mod layouts;
 mod lut;
-mod mod_switch;
 pub(crate) mod utils;
 
 pub use algorithms::*;
 pub use encryption::*;
 pub use layouts::*;
 pub use lut::*;
-pub use mod_switch::mod_switch_2n;

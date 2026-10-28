@@ -21,6 +21,13 @@ pub trait BlindRotationKeyCompressedEncryptSk<BRA: BlindRotationAlgo, BE: Backen
     ///
     /// `seed_xa` is the 32-byte root seed from which per-element mask seeds
     /// are derived.  `source_xe` provides randomness for the error components.
+    ///
+    /// # Panics
+    ///
+    /// If the key count differs from the dimension of `sk_lwe`, the rank of
+    /// `sk_glwe` from the key rank, or `sk_lwe` is not of distribution
+    /// `BinaryBlock`, `BinaryFixed`, `BinaryProb` or `ZERO`; `res` and
+    /// `source_xe` are then untouched.
     #[allow(clippy::too_many_arguments)]
     fn blind_rotation_key_compressed_encrypt_sk<S0, S1>(
         &self,

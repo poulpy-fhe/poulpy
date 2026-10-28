@@ -2,7 +2,7 @@ use crate::bdd_arithmetic::*;
 use poulpy_core::layouts::*;
 use poulpy_hal::layouts::*;
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn ggsw_to_ggsw_blind_rotation_tmp_bytes_derived<BE: Backend, R, A, K>(
+pub(crate) fn ggsw_blind_rotation_tmp_bytes_derived<BE: Backend, R, A, K>(
     module: &Module<BE>,
     res_infos: &R,
     a_infos: &A,

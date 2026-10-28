@@ -18,6 +18,17 @@ pub trait BlindRotationKeyEncryptSk<BRA: BlindRotationAlgo, BE: Backend> {
 
     /// Encrypts each bit of `sk_lwe` as a GGSW ciphertext under `sk_glwe`,
     /// storing the result in `res`.
+    ///
+    /// `sk_lwe` is the LWE secret whose bits are encrypted, of distribution
+    /// `BinaryBlock`, `BinaryFixed`, `BinaryProb` or `ZERO` (debugging only),
+    /// `sk_glwe` the prepared GLWE secret of each GGSW; `source_xe` draws the
+    /// errors and `source_xa` the masks.
+    ///
+    /// # Panics
+    ///
+    /// If the key count differs from the dimension of `sk_lwe`, the rank of
+    /// `sk_glwe` from the key rank, or `sk_lwe` has another distribution;
+    /// `res` and the sources are then untouched.
     #[allow(clippy::too_many_arguments)]
     fn blind_rotation_key_encrypt_sk<S0, S1>(
         &self,

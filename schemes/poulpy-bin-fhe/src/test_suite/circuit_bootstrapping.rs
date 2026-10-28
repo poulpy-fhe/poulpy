@@ -15,8 +15,9 @@ use crate::{
     },
 };
 
-use crate::test_suite::parity::with_scratch;
+use crate::test_suite::parity::{assert_short_scratch_panics, snapshot_ggsw};
 use poulpy_core::test_suite::noise::glwe_decrypt_checked;
+use poulpy_core::test_suite::with_scratch;
 use poulpy_core::{
     GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, LWEEncryptSk,
     api::{GGLWEToGGSWKeyPreparedFactory, GGSWPreparedFactory, GLWEAutomorphismKeyPreparedFactory, GLWESecretPreparedFactory},
@@ -202,6 +203,11 @@ pub fn test_circuit_bootstrapping_to_exponent<
         &ggsw_infos,
         &cbt_infos,
     );
+    let before = snapshot_ggsw::<BE, _>(&res);
+    assert_short_scratch_panics::<BE, _>(execute_bytes, "insufficient circuit-bootstrapping scratch", |s| {
+        cbt_prepared.execute_to_exponent(module, log_gap_out, k_lwe_pt, extension_factor, &mut res, &ct_lwe, s)
+    });
+    assert_eq!(before, snapshot_ggsw::<BE, _>(&res));
     with_scratch::<BE, _>(execute_bytes, |s| {
         cbt_prepared.execute_to_exponent(module, log_gap_out, k_lwe_pt, extension_factor, &mut res, &ct_lwe, s)
     });
@@ -416,6 +422,11 @@ pub fn test_circuit_bootstrapping_to_constant<
     let now: Instant = Instant::now();
     let execute_bytes =
         module.circuit_bootstrapping_execute_to_constant_tmp_bytes(block_size, extension_factor, &ggsw_infos, &cbt_infos);
+    let before = snapshot_ggsw::<BE, _>(&res);
+    assert_short_scratch_panics::<BE, _>(execute_bytes, "insufficient circuit-bootstrapping scratch", |s| {
+        cbt_prepared.execute_to_constant(module, k_lwe_pt, extension_factor, &mut res, &ct_lwe, s)
+    });
+    assert_eq!(before, snapshot_ggsw::<BE, _>(&res));
     with_scratch::<BE, _>(execute_bytes, |s| {
         cbt_prepared.execute_to_constant(module, k_lwe_pt, extension_factor, &mut res, &ct_lwe, s)
     });
@@ -465,4 +476,105 @@ pub fn test_circuit_bootstrapping_to_constant<
     pt_want[0] = pt_glwe.data().at(0, 0)[0].wrapping_mul(data);
     println!("pt_res: {pt_res}");
     assert_eq!(pt_res.data().at(0, 0), pt_want);
+}
+
+/// The LWE secret of another dimension than the blind rotation key, then the GLWE secret of another degree than the
+/// blind rotation, automorphism and tensor keys, each refused before any write or draw.
+pub fn test_circuit_bootstrapping_key_encrypt_sk_rejects_secret_shape<
+    BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64> + poulpy_hal::oep::HalModuleImpl,
+    BRA: BlindRotationAlgo,
+>(
+    module: &poulpy_hal::layouts::Module<BE>,
+) where
+    poulpy_hal::layouts::Module<BE>: poulpy_hal::api::ModuleNew<BE>
+        + CircuitBootstrappingKeyEncryptSk<BRA, BE>
+        + LWESecretSampling<BE>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
+{
+    use poulpy_hal::layouts::WriterTo;
+
+    let n = module.n();
+    let half = poulpy_hal::layouts::Module::<BE>::new((n / 2) as u64);
+    let layout = |n_brk: usize, n_atk: usize, n_tsk: usize| CircuitBootstrappingKeyLayout {
+        brk_layout: BlindRotationKeyLayout {
+            n_glwe: n_brk.into(),
+            n_lwe: 8_usize.into(),
+            base2k: 13_usize.into(),
+            dnum: 2_usize.into(),
+            k_aux: 20_usize.into(),
+            rank: 1_usize.into(),
+        },
+        atk_layout: GLWEAutomorphismKeyLayout {
+            n: n_atk.into(),
+            base2k: 11_usize.into(),
+            dnum: 2_usize.into(),
+            k_aux: 20_usize.into(),
+            rank: 1_usize.into(),
+            k_digit: 11_usize.into(),
+        },
+        tsk_layout: GGLWEToGGSWKeyLayout {
+            n: n_tsk.into(),
+            base2k: 12_usize.into(),
+            dnum: 2_usize.into(),
+            k_aux: 20_usize.into(),
+            k_digit: 12_usize.into(),
+            rank: 1_usize.into(),
+        },
+    };
+    let mut source_xs = Source::new([1u8; 32]);
+    let mut sk_lwe = |n_lwe: usize| {
+        let mut sk: LWESecret<AlignedBuf, i64> = module.lwe_secret_alloc(n_lwe.into());
+        module.lwe_secret_fill_binary_block(&mut sk, 1, &mut source_xs);
+        sk
+    };
+    let sk_full: GLWESecret<AlignedBuf, i64> = module.glwe_secret_alloc(1_usize.into());
+    let sk_half: GLWESecret<AlignedBuf, i64> = half.glwe_secret_alloc(1_usize.into());
+    let cases = [
+        (
+            layout(n, n, n),
+            sk_lwe(9),
+            &sk_full,
+            "the LWE secret dimension differs from the blind rotation key's",
+        ),
+        (
+            layout(n, n, n),
+            sk_lwe(8),
+            &sk_half,
+            "the GLWE secret degree differs from the blind rotation key's",
+        ),
+        (
+            layout(n, n / 2, n),
+            sk_lwe(8),
+            &sk_full,
+            "the GLWE secret degree differs from the automorphism key's",
+        ),
+        (
+            layout(n, n, n / 2),
+            sk_lwe(8),
+            &sk_full,
+            "the GLWE secret degree differs from the tensor key's",
+        ),
+    ];
+    for (infos, sk_lwe, sk_glwe, message) in cases {
+        let mut res: CircuitBootstrappingKey<AlignedBuf, BRA, i64> = CircuitBootstrappingKey::alloc_from_infos(module, &infos);
+        let bytes = |key: &CircuitBootstrappingKey<AlignedBuf, BRA, i64>| {
+            let mut out = Vec::new();
+            key.write_to(&mut out).unwrap();
+            out
+        };
+        let before = bytes(&res);
+        let mut source_xe = Source::new([3u8; 32]);
+        let mut source_xa = Source::new([2u8; 32]);
+        crate::test_suite::parity::assert_panics_with(message, || {
+            with_scratch::<BE, _>(0, |s| {
+                module.circuit_bootstrapping_key_encrypt_sk(&mut res, &sk_lwe, sk_glwe, &mut source_xe, &mut source_xa, s)
+            })
+        });
+        assert!(bytes(&res) == before, "a refused key encryption changed its destination");
+        assert!(
+            source_xe.new_seed() == Source::new([3u8; 32]).new_seed()
+                && source_xa.new_seed() == Source::new([2u8; 32]).new_seed(),
+            "a refused key encryption drew from its sources"
+        );
+    }
 }

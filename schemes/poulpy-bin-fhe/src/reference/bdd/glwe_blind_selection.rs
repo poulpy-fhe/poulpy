@@ -69,6 +69,13 @@ pub fn glwe_blind_selection_reference<T: UnsignedInteger, BE: Backend<ZnxWord = 
     Module<BE>: GLWECopy<BE> + Cmux<BE> + GLWEZero<BE>,
 {
     assert!(bit_rsh + bit_mask <= T::BITS as usize);
+    let inputs: Vec<&&mut A> = a.values().collect();
+    assert!(
+        scratch.available()
+            >= glwe_blind_selection_tmp_bytes_reference::<T, BE, _, _, _>(module, res, &inputs, fhe_uint.get_bit(0)),
+        "glwe_blind_selection: insufficient scratch"
+    );
+    drop(inputs);
     let (mut zero, mut scratch) = scratch.borrow().take_glwe_scratch(res);
 
     for i in 0..bit_mask {

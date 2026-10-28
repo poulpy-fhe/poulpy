@@ -1,23 +1,41 @@
-//! Host staging is explicit and replaceable through `BlindRotationModSwitchImpl`.
 use crate::blind_rotation::LookUpTableRotationDirection;
 use poulpy_core::layouts::{LWEInfos, LWEToBackendRef};
-use poulpy_hal::layouts::Backend;
+use poulpy_hal::layouts::{Backend, Module};
 
-/// Downloads the body and mask and modulus-switches all normalized signed limbs.
+/// Independently callable canonical implementation of
+/// [`BlindRotationModSwitch::blind_rotation_mod_switch`](crate::api::BlindRotationModSwitch::blind_rotation_mod_switch),
+/// selected by `impl_blind_rotation_mod_switch_reference_full!`.
 ///
+/// Downloads the body and mask and modulus-switches all normalized signed limbs.
 /// The result is rounded to the nearest integer modulo `modulus`, with ties
 /// towards positive infinity. Left rotation negates the complete coefficient
-/// before rounding. Device implementations may replace this staging boundary.
-pub fn mod_switch_2n<BE, A>(modulus: usize, direction: LookUpTableRotationDirection, res: &mut [i64], lwe: &A)
-where
+/// before rounding.
+///
+/// # Panics
+///
+/// If `modulus` is not a power of two in `[2, 2^63)`, `res` does not hold `lwe.n() + 1` values or the radix of `lwe` is
+/// outside `[1, 63]`; `res` is then untouched.
+pub fn blind_rotation_mod_switch_reference<BE, A>(
+    _module: &Module<BE>,
+    modulus: usize,
+    direction: LookUpTableRotationDirection,
+    res: &mut [i64],
+    lwe: &A,
+) where
     BE: Backend<ZnxWord = i64>,
     A: LWEToBackendRef<BE> + LWEInfos,
 {
-    assert!(modulus >= 2 && modulus.is_power_of_two() && modulus <= i64::MAX as usize);
-    assert_eq!(res.len(), lwe.n().as_usize() + 1);
+    assert!(
+        modulus >= 2 && modulus.is_power_of_two() && modulus <= i64::MAX as usize,
+        "the modulus is not a power of two in [2, 2^63)"
+    );
+    assert!(
+        res.len() == lwe.n().as_usize() + 1,
+        "the output length differs from the LWE dimension plus one"
+    );
     let lwe = lwe.to_backend_ref();
     let base2k = lwe.base2k().as_usize();
-    assert!((1..=63).contains(&base2k));
+    assert!((1..=63).contains(&base2k), "the LWE radix is outside [1, 63]");
     let body_bytes = BE::bytes_of_vec_znx(lwe.body().n(), lwe.body().cols(), lwe.body().size());
     let mask_bytes = BE::bytes_of_vec_znx(lwe.mask().n(), lwe.mask().cols(), lwe.mask().size());
     let mut body = vec![0u8; body_bytes];

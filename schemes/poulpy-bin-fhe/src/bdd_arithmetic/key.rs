@@ -245,65 +245,47 @@ where
     pub(crate) ks_lwe: GLWEToLWEKeyPrepared<D, BE>,
 }
 
+/// The circuit-bootstrapping layout of a key bundle, raw or prepared.
+fn cbt_layout(cbt: &impl CircuitBootstrappingKeyInfos) -> CircuitBootstrappingKeyLayout {
+    CircuitBootstrappingKeyLayout {
+        brk_layout: cbt.brk_infos(),
+        atk_layout: cbt.atk_infos(),
+        tsk_layout: cbt.tsk_infos(),
+    }
+}
+
+/// The extraction-key layout of a key bundle, raw or prepared.
+fn ks_lwe_layout(ks_lwe: &impl GGLWEInfos) -> GLWEToLWEKeyLayout {
+    GLWEToLWEKeyLayout {
+        n: ks_lwe.n(),
+        base2k: ks_lwe.base2k(),
+        dnum: ks_lwe.dnum(),
+        rank_in: ks_lwe.rank_in(),
+        k_aux: ks_lwe.k_aux(),
+    }
+}
+
 impl<D: Data, BRA: BlindRotationAlgo, BE: Backend> BDDKeyInfos for BDDKeyPrepared<D, BRA, BE> {
     fn cbt_infos(&self) -> CircuitBootstrappingKeyLayout {
-        CircuitBootstrappingKeyLayout {
-            brk_layout: self.cbt.brk_infos(),
-            atk_layout: self.cbt.atk_infos(),
-            tsk_layout: self.cbt.tsk_infos(),
-        }
+        cbt_layout(&self.cbt)
     }
     fn ks_glwe_infos(&self) -> Option<GLWESwitchingKeyLayout> {
-        self.ks_glwe.as_ref().map(|ks_glwe| GLWESwitchingKeyLayout {
-            n: ks_glwe.n(),
-            base2k: ks_glwe.base2k(),
-            dnum: ks_glwe.dnum(),
-            rank_in: ks_glwe.rank_in(),
-            rank_out: ks_glwe.rank_out(),
-            k_aux: ks_glwe.k_aux(),
-            k_digit: ks_glwe.k_digit(),
-            k_offset: ks_glwe.k_offset(),
-        })
+        self.ks_glwe.as_ref().map(|ks_glwe| ks_glwe.gglwe_layout().into())
     }
     fn ks_lwe_infos(&self) -> GLWEToLWEKeyLayout {
-        GLWEToLWEKeyLayout {
-            n: self.ks_lwe.n(),
-            base2k: self.ks_lwe.base2k(),
-            dnum: self.ks_lwe.dnum(),
-            rank_in: self.ks_lwe.rank_in(),
-            k_aux: self.ks_lwe.k_aux(),
-        }
+        ks_lwe_layout(&self.ks_lwe)
     }
 }
 
 impl<D: Data, BRA: BlindRotationAlgo, W: ZnxWord> BDDKeyInfos for BDDKey<D, BRA, W> {
     fn cbt_infos(&self) -> CircuitBootstrappingKeyLayout {
-        CircuitBootstrappingKeyLayout {
-            brk_layout: self.cbt.brk_infos(),
-            atk_layout: self.cbt.atk_infos(),
-            tsk_layout: self.cbt.tsk_infos(),
-        }
+        cbt_layout(&self.cbt)
     }
     fn ks_glwe_infos(&self) -> Option<GLWESwitchingKeyLayout> {
-        self.ks_glwe.as_ref().map(|ks_glwe| GLWESwitchingKeyLayout {
-            n: ks_glwe.n(),
-            base2k: ks_glwe.base2k(),
-            dnum: ks_glwe.dnum(),
-            rank_in: ks_glwe.rank_in(),
-            rank_out: ks_glwe.rank_out(),
-            k_aux: ks_glwe.k_aux(),
-            k_digit: ks_glwe.k_digit(),
-            k_offset: ks_glwe.k_offset(),
-        })
+        self.ks_glwe.as_ref().map(|ks_glwe| ks_glwe.gglwe_layout().into())
     }
     fn ks_lwe_infos(&self) -> GLWEToLWEKeyLayout {
-        GLWEToLWEKeyLayout {
-            n: self.ks_lwe.n(),
-            base2k: self.ks_lwe.base2k(),
-            dnum: self.ks_lwe.dnum(),
-            rank_in: self.ks_lwe.rank_in(),
-            k_aux: self.ks_lwe.k_aux(),
-        }
+        ks_lwe_layout(&self.ks_lwe)
     }
 }
 

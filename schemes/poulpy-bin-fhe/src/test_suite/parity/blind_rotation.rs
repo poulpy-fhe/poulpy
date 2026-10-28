@@ -1,6 +1,7 @@
 //! Blind rotation compares coefficient-domain fixtures prepared separately.
-use super::{ParityBackend, assert_panics_with, fixture_ggsw, fixture_glwe, snapshot_glwe, with_scratch};
+use super::{ParityBackend, assert_panics_with, fixture_ggsw, fixture_glwe, snapshot_glwe};
 use crate::{api::*, blind_rotation::*, reference::blind_rotation::*};
+use poulpy_core::test_suite::with_scratch;
 use poulpy_core::{api::GGSWPreparedFactory, layouts::*, *};
 use poulpy_hal::{layouts::*, source::Source};
 use std::marker::PhantomData;

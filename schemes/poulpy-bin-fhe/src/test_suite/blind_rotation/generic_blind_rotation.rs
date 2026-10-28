@@ -7,12 +7,14 @@ use poulpy_hal::{
 
 use crate::blind_rotation::{
     BlindRotationAlgo, BlindRotationExecute, BlindRotationKey, BlindRotationKeyEncryptSk, BlindRotationKeyLayout,
-    BlindRotationKeyPrepared, BlindRotationKeyPreparedFactory, LookUpTableLayout, LookupTable, LookupTableFactory, mod_switch_2n,
+    BlindRotationKeyPrepared, BlindRotationKeyPreparedFactory, LookUpTableLayout, LookupTable, LookupTableFactory,
 };
 
-use crate::test_suite::parity::with_scratch;
+use crate::api::BlindRotationModSwitch;
+use crate::test_suite::parity::{assert_short_scratch_panics, snapshot_glwe};
 use poulpy_core::api::{GLWESecretSampling, LWESecretSampling};
 use poulpy_core::test_suite::noise::glwe_decrypt_checked;
+use poulpy_core::test_suite::with_scratch;
 use poulpy_core::{
     GLWEDecrypt, LWEEncryptSk,
     api::{GGSWPreparedFactory, GLWESecretPreparedFactory},
@@ -35,6 +37,7 @@ where
         + BlindRotationKeyPreparedFactory<BRA, BE>
         + GGSWPreparedFactory<BE>
         + BlindRotationExecute<BRA, BE>
+        + BlindRotationModSwitch<BE>
         + LookupTableFactory<BE::OwnedBuf, BE::ZnxWord>
         + GLWESecretPreparedFactory<BE>
         + GLWEDecrypt<BE>
@@ -154,6 +157,11 @@ where
 
     let execute_bytes =
         BlindRotationKeyPrepared::execute_tmp_bytes(module, block_size, extension_factor, &glwe_infos, &brk_infos);
+    let before = snapshot_glwe::<BE, _>(&res);
+    assert_short_scratch_panics::<BE, _>(execute_bytes, "blind_rotation_execute: insufficient scratch", |s| {
+        brk_prepared.execute(module, &mut res, &lwe, &lut, s)
+    });
+    assert_eq!(before, snapshot_glwe::<BE, _>(&res));
     with_scratch::<BE, _>(execute_bytes, |s| brk_prepared.execute(module, &mut res, &lwe, &lut, s));
 
     let mut pt_have: GLWEPlaintext<AlignedBuf, i64> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
@@ -162,7 +170,7 @@ where
 
     let mut lwe_2n: Vec<i64> = vec![0i64; (lwe.n() + 1).into()]; // TODO: from scratch space
 
-    mod_switch_2n::<BE, _>(2 * lut.domain_size(), lut.rotation_direction(), &mut lwe_2n, &lwe);
+    module.blind_rotation_mod_switch(2 * lut.domain_size(), lut.rotation_direction(), &mut lwe_2n, &lwe);
 
     let pt_want: i64 =
         (lwe_2n[0] + lwe_2n[1..].iter().zip(sk_lwe.raw()).map(|(x, y)| x * y).sum::<i64>()) & (2 * lut.domain_size() - 1) as i64;

@@ -18,10 +18,7 @@ use poulpy_core::{
     },
 };
 use poulpy_hal::{
-    layouts::{
-        Backend, CopyFromHost, CopyToHost, DataView, HostBytesBackend, HostDataMut, Module, ScratchArena, ScratchOwned,
-        ZnxViewMut,
-    },
+    layouts::{Backend, CopyFromHost, CopyToHost, DataView, HostBytesBackend, HostDataMut, Module, ScratchArena, ZnxViewMut},
     source::Source,
 };
 
@@ -146,28 +143,6 @@ pub(crate) fn fixture_ggsw<BE: ParityBackend>(module: &Module<BE>, infos: &impl 
     output
 }
 
-/// Runs with exactly the advertised scratch, poisoned and surrounded by guards.
-pub(crate) fn with_scratch<BE: Backend, R>(bytes: usize, run: impl FnOnce(&mut ScratchArena<'_, BE>) -> R) -> R {
-    let guard = BE::scratch_aligned(64);
-    let mut owned = ScratchOwned::<BE> {
-        data: BE::from_host_bytes(&vec![0xA5; guard + bytes + guard]),
-        _phantom: std::marker::PhantomData,
-    };
-    let result = {
-        let (_, rest) = owned.arena().split_at(guard);
-        let (mut exact, _) = rest.split_at(bytes);
-        assert_eq!(exact.available(), bytes);
-        run(&mut exact)
-    };
-    let host = BE::to_host_bytes(&owned.data);
-    assert!(host[..guard].iter().all(|v| *v == 0xA5), "scratch prefix overwritten");
-    assert!(
-        host[guard + bytes..guard + bytes + guard].iter().all(|v| *v == 0xA5),
-        "scratch suffix overwritten"
-    );
-    result
-}
-
 /// Runs `call` and asserts that it panics with exactly `message`, formatted or static.
 pub(crate) fn assert_panics_with<R>(message: &str, call: impl FnOnce() -> R) {
     let payload = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(call)) {
@@ -180,6 +155,17 @@ pub(crate) fn assert_panics_with<R>(message: &str, call: impl FnOnce() -> R) {
         .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
         .unwrap_or_default();
     assert_eq!(actual, message);
+}
+
+/// Runs `call` one byte below its query `bytes`, expecting the panic `message`; a zero query has no shorter arena.
+pub(crate) fn assert_short_scratch_panics<BE: Backend, R>(
+    bytes: usize,
+    message: &str,
+    call: impl FnOnce(&mut ScratchArena<'_, BE>) -> R,
+) {
+    if let Some(short) = bytes.checked_sub(1) {
+        assert_panics_with(message, || poulpy_core::test_suite::with_scratch::<BE, _>(short, call));
+    }
 }
 
 /// Bytes of the backend buffer behind a prepared GGLWE.

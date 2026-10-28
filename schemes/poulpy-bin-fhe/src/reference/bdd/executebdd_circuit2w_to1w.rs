@@ -80,6 +80,18 @@ pub fn execute_bdd_circuit_2w_to_1w_multi_thread_reference<BE, C, H, T>(
         _phantom: PhantomData,
     };
 
+    assert!(
+        scratch.available()
+            >= execute_bdd_circuit_2w_to_1w_multi_thread_tmp_bytes_reference::<BE, C, T, _, _, _>(
+                module,
+                threads,
+                out,
+                a.get_bit(0),
+                circuit,
+                key
+            ),
+        "execute_bdd_circuit_2w_to_1w: insufficient scratch"
+    );
     let (mut out_bits, mut scratch_1) = scratch.borrow().take_glwe_slice_scratch(T::BITS as usize, out);
 
     // Evaluates out[i] = circuit[i](a, b)

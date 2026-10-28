@@ -30,8 +30,22 @@ macro_rules! bin_fhe_backend_test_suite {
                     test_suite::blind_rotation::{
                         generic_blind_rotation::test_blind_rotation,
                         generic_lut::{test_lut_extended, test_lut_standard, test_lut_transfer_into_carries_scalars},
+                        key_encryption::{
+                            test_blind_rotation_key_compressed_encrypt_sk_rejects_secret_shape,
+                            test_blind_rotation_key_encrypt_sk_rejects_secret_shape,
+                        },
                     },
                 };
+
+                #[test]
+                fn key_encrypt_sk_rejects_secret_shape() {
+                    test_blind_rotation_key_encrypt_sk_rejects_secret_shape(&Module::<$backend>::new(32));
+                }
+
+                #[test]
+                fn key_compressed_encrypt_sk_rejects_secret_shape() {
+                    test_blind_rotation_key_compressed_encrypt_sk_rejects_secret_shape(&Module::<$backend>::new(32));
+                }
 
                 #[test]
                 fn lut_standard() {
@@ -73,9 +87,16 @@ macro_rules! bin_fhe_backend_test_suite {
                 use $crate::{
                     blind_rotation::CGGI,
                     test_suite::circuit_bootstrapping::{
-                        test_circuit_bootstrapping_to_constant, test_circuit_bootstrapping_to_exponent,
+                        test_circuit_bootstrapping_key_encrypt_sk_rejects_secret_shape, test_circuit_bootstrapping_to_constant,
+                        test_circuit_bootstrapping_to_exponent,
                     },
                 };
+
+                #[test]
+                fn key_encrypt_sk_rejects_secret_shape_cggi() {
+                    let module: Module<$backend> = Module::<$backend>::new(64);
+                    test_circuit_bootstrapping_key_encrypt_sk_rejects_secret_shape::<$backend, CGGI>(&module);
+                }
 
                 #[test]
                 fn to_constant_cggi() {
@@ -146,6 +167,31 @@ macro_rules! bin_fhe_backend_test_suite {
                 #[test]
                 fn fhe_uint_from_fhe_uint_prepared() {
                     test_suite::test_fhe_uint_from_fhe_uint_prepared(&CTX);
+                }
+
+                #[test]
+                fn fhe_uint_zero_byte() {
+                    test_suite::test_fhe_uint_zero_byte(&CTX);
+                }
+
+                #[test]
+                fn fhe_uint_encrypt_sk_rejects_degree() {
+                    test_suite::test_fhe_uint_encrypt_sk_rejects_degree(&CTX);
+                }
+
+                #[test]
+                fn fhe_uint_decrypt_rejects_degree() {
+                    test_suite::test_fhe_uint_decrypt_rejects_degree(&CTX);
+                }
+
+                #[test]
+                fn fhe_uint_noise_stats_rejects_degree() {
+                    test_suite::test_fhe_uint_noise_stats_rejects_degree(&CTX);
+                }
+
+                #[test]
+                fn fhe_uint_prepared_encrypt_sk_rejects_degree() {
+                    test_suite::test_fhe_uint_prepared_encrypt_sk_rejects_degree(&CTX);
                 }
 
                 #[test]

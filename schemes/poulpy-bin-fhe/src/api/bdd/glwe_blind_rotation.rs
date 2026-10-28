@@ -16,8 +16,8 @@ use poulpy_hal::layouts::*;
 pub trait GLWEBlindRotation<BE: Backend> {
     #[allow(clippy::too_many_arguments)]
     /// Returns the minimum scratch-space size in bytes required by
-    /// [`glwe_blind_rotation`][Self::glwe_blind_rotation].
-    /// res <- a * X^{sign * ((k>>bit_rsh) % 2^bit_mask) << bit_lsh}.
+    /// [`glwe_blind_rotation`][Self::glwe_blind_rotation], and with `res` as
+    /// `a` by [`glwe_blind_rotation_assign`][Self::glwe_blind_rotation_assign].
     fn glwe_blind_rotation_tmp_bytes<R, A, K>(&self, res_infos: &R, a_infos: &A, k_infos: &K) -> usize
     where
         R: GLWEInfos,

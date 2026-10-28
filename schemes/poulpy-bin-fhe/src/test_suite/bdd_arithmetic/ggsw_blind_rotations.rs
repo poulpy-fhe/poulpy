@@ -16,11 +16,12 @@ use poulpy_hal::{
 use rand::Rng;
 
 use crate::test_suite::bdd_arithmetic::{TEST_FHEUINT_BASE2K, TEST_RANK, TestContext};
-use crate::test_suite::parity::with_scratch;
+use crate::test_suite::parity::{assert_short_scratch_panics, snapshot_ggsw};
 use crate::{
     bdd_arithmetic::{FheUintPrepared, GGSWBlindRotation},
     blind_rotation::BlindRotationAlgo,
 };
+use poulpy_core::test_suite::with_scratch;
 
 pub fn test_scalar_to_ggsw_blind_rotation<BRA, BE>(test_context: &TestContext<BRA, BE>)
 where
@@ -118,6 +119,11 @@ where
             let bit_size: usize = (32 - bit_start).min(digit);
 
             let rotation_bytes = module.scalar_to_ggsw_blind_rotation_tmp_bytes(&ggsw_res_infos, &ggsw_k_infos);
+            let before = snapshot_ggsw::<BE, _>(&res);
+            assert_short_scratch_panics::<BE, _>(rotation_bytes, "scalar_to_ggsw_blind_rotation: insufficient scratch", |s| {
+                module.scalar_to_ggsw_blind_rotation(false, bit_start, bit_size, bit_step, &mut res, &scalar, &k_enc_prep, s)
+            });
+            assert_eq!(before, snapshot_ggsw::<BE, _>(&res));
             with_scratch::<BE, _>(rotation_bytes, |s| {
                 module.scalar_to_ggsw_blind_rotation(false, bit_start, bit_size, bit_step, &mut res, &scalar, &k_enc_prep, s)
             });

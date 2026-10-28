@@ -8,24 +8,22 @@ use poulpy_hal::layouts::*;
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait GGSWBlindRotationImpl<T: UnsignedInteger>: Backend + crate::oep::GLWEBlindRotationImpl {
-    /// Default body: `ggsw_to_ggsw_blind_rotation_tmp_bytes_derived`, the selected `glwe_blind_rotation_tmp_bytes` at the
+    /// Default body: `ggsw_blind_rotation_tmp_bytes_derived`, the selected `glwe_blind_rotation_tmp_bytes` at the
     /// same infos.
     ///
     /// Scratch bound of [`Self::ggsw_blind_rotation`] and [`Self::ggsw_blind_rotation_assign`]; may report less than the
     /// reference, never less than the body takes.
     #[allow(clippy::too_many_arguments)]
-    fn ggsw_to_ggsw_blind_rotation_tmp_bytes<R, A, K>(module: &Module<Self>, res_infos: &R, a_infos: &A, k_infos: &K) -> usize
+    fn ggsw_blind_rotation_tmp_bytes<R, A, K>(module: &Module<Self>, res_infos: &R, a_infos: &A, k_infos: &K) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
         K: GGSWInfos,
     {
-        crate::oep::derived::bdd::ggsw_to_ggsw_blind_rotation_tmp_bytes_derived::<Self, _, _, _>(
-            module, res_infos, a_infos, k_infos,
-        )
+        crate::oep::derived::bdd::ggsw_blind_rotation_tmp_bytes_derived::<Self, _, _, _>(module, res_infos, a_infos, k_infos)
     }
     /// Default body: `ggsw_blind_rotation_assign_derived`, the selected `glwe_blind_rotation_assign` on every `(row,
-    /// col)` view of `res`, within [`Self::ggsw_to_ggsw_blind_rotation_tmp_bytes`].
+    /// col)` view of `res`, within [`Self::ggsw_blind_rotation_tmp_bytes`].
     #[allow(clippy::too_many_arguments)]
     fn ggsw_blind_rotation_assign<R, K>(
         module: &Module<Self>,
@@ -46,7 +44,7 @@ pub unsafe trait GGSWBlindRotationImpl<T: UnsignedInteger>: Backend + crate::oep
         )
     }
     /// Default body: `ggsw_blind_rotation_derived`, after asserting `res.dnum() <= a.dnum()` and equal `k_digit`, the
-    /// selected `glwe_blind_rotation` on every `(row, col)` view, within [`Self::ggsw_to_ggsw_blind_rotation_tmp_bytes`].
+    /// selected `glwe_blind_rotation` on every `(row, col)` view, within [`Self::ggsw_blind_rotation_tmp_bytes`].
     #[allow(clippy::too_many_arguments)]
     fn ggsw_blind_rotation<R, A, K>(
         module: &Module<Self>,

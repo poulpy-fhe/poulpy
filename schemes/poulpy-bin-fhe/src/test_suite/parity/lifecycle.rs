@@ -1,5 +1,5 @@
 //! Key lifecycle and packed-to-prepared integer parity.
-use super::{ParityBackend, assert_panics_with, fixture_glwe, gglwe_prepared_bytes, snapshot_glwe, with_scratch};
+use super::{ParityBackend, assert_panics_with, fixture_glwe, gglwe_prepared_bytes, snapshot_glwe};
 use crate::{
     api::{
         BDDKeyEncryptSk, BDDKeyPreparedFactory, BlindRotationKeyEncryptSk, BlindRotationKeyPreparedFactory,
@@ -13,6 +13,7 @@ use crate::{
     blind_rotation::{BlindRotationKeyLayout, CGGI},
     circuit_bootstrapping::CircuitBootstrappingKeyLayout,
 };
+use poulpy_core::test_suite::with_scratch;
 use poulpy_core::{
     GGLWEToGGSWKeyEncryptSk, GGSWEncryptSk, GLWEAutomorphismKeyEncryptSk, GLWEExternalProduct, GLWESwitchingKeyEncryptSk,
     GLWEToLWESwitchingKeyEncryptSk, TransferInto,

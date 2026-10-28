@@ -15,11 +15,12 @@ use poulpy_hal::{
 use rand::Rng;
 
 use crate::test_suite::bdd_arithmetic::{TEST_FHEUINT_BASE2K, TEST_RANK, TestContext};
-use crate::test_suite::parity::with_scratch;
+use crate::test_suite::parity::{assert_short_scratch_panics, snapshot_glwe};
 use crate::{
     bdd_arithmetic::{FheUintPrepared, GLWEBlindRotation},
     blind_rotation::BlindRotationAlgo,
 };
+use poulpy_core::test_suite::with_scratch;
 
 pub fn test_glwe_to_glwe_blind_rotation<BRA, BE>(test_context: &TestContext<BRA, BE>)
 where
@@ -101,6 +102,11 @@ where
             let bit_size: usize = (32 - bit_start).min(digit);
 
             let rotation_bytes = module.glwe_blind_rotation_tmp_bytes(&res, &test_glwe, &ggsw_infos);
+            let before = snapshot_glwe::<BE, _>(&res);
+            assert_short_scratch_panics::<BE, _>(rotation_bytes, "glwe_blind_rotation: insufficient scratch", |s| {
+                module.glwe_blind_rotation(false, bit_start, bit_size, bit_step, &mut res, &test_glwe, &k_enc_prep, s)
+            });
+            assert_eq!(before, snapshot_glwe::<BE, _>(&res));
             with_scratch::<BE, _>(rotation_bytes, |s| {
                 module.glwe_blind_rotation(false, bit_start, bit_size, bit_step, &mut res, &test_glwe, &k_enc_prep, s)
             });

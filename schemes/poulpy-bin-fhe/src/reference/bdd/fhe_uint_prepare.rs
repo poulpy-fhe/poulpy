@@ -24,19 +24,13 @@ where
 {
     let mut lwe_infos = bits_infos.lwe_layout();
     lwe_infos.n = bdd_infos.cbt_infos().brk_infos().n_lwe();
-    let extraction = if let Some(key) = bdd_infos.ks_glwe_infos() {
-        let bridge = GLWELayout {
-            n: key.n(),
-            base2k: key.base2k(),
-            k: key.k(),
-            rank: key.rank_out(),
-        };
-        module
-            .glwe_keyswitch_tmp_bytes(&bridge, bits_infos, &key)
-            .max(module.lwe_from_glwe_tmp_bytes(&lwe_infos, &bridge, &bdd_infos.ks_lwe_infos()))
-    } else {
-        module.lwe_from_glwe_tmp_bytes(&lwe_infos, bits_infos, &bdd_infos.ks_lwe_infos())
-    };
+    let extraction = get_bit_lwe_tmp_bytes(
+        module,
+        &lwe_infos,
+        bits_infos,
+        bdd_infos.ks_glwe_infos().as_ref(),
+        &bdd_infos.ks_lwe_infos(),
+    );
     let operation = extraction
         .max(module.circuit_bootstrapping_execute_tmp_bytes(block_size, extension_factor, res_infos, &bdd_infos.cbt_infos()))
         .max(module.ggsw_prepare_tmp_bytes(res_infos));
@@ -74,11 +68,7 @@ pub fn fhe_uint_prepare_custom_multi_thread_reference<BRA: BlindRotationAlgo, BE
         .checked_mul(scratch_thread_size)
         .expect("FheUint parallel scratch size overflows usize");
 
-    assert!(
-        scratch.available() >= needed,
-        "scratch.available():{} < parallel FheUint scratch bytes:{needed}",
-        scratch.available()
-    );
+    assert!(scratch.available() >= needed, "fhe_uint_prepare: insufficient scratch");
 
     let ggsw_infos: &GGSWLayout = &res.ggsw_layout();
 

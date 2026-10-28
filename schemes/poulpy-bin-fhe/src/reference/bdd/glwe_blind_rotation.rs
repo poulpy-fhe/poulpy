@@ -53,6 +53,10 @@ pub fn glwe_blind_rotation_assign_reference<BE, R, K>(
     BE: Backend<ZnxWord = i64>,
     Module<BE>: GLWEBytesOf<BE> + GLWECopy<BE> + GLWERotate<BE> + Cmux<BE>,
 {
+    assert!(
+        scratch.available() >= glwe_blind_rotation_tmp_bytes_reference(module, res, res, value.get_bit(0)),
+        "glwe_blind_rotation_assign: insufficient scratch"
+    );
     let (mut tmp_res, mut scratch_1) = scratch.borrow().take_glwe_scratch(res);
     let mut res_is_cur = true;
 
@@ -103,6 +107,10 @@ pub fn glwe_blind_rotation_reference<BE, R, A, K>(
     BE: Backend<ZnxWord = i64>,
     Module<BE>: GLWECopy<BE> + GLWEBlindRotation<BE>,
 {
+    assert!(
+        scratch.available() >= module.glwe_blind_rotation_tmp_bytes(res, &a.to_backend_ref(), fhe_uint.get_bit(0)),
+        "glwe_blind_rotation: insufficient scratch"
+    );
     module.glwe_copy(res, a, scratch);
     module.glwe_blind_rotation_assign(sign, bit_rsh, bit_mask, bit_lsh, res, fhe_uint, scratch);
 }

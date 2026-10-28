@@ -14,13 +14,15 @@ use poulpy_hal::{
 };
 use rand::Rng;
 
+use crate::test_suite::bdd_arithmetic::decrypt_checked;
 use crate::test_suite::bdd_arithmetic::{TEST_GGSW_INFOS, TEST_GLWE_INFOS, TestContext};
-use crate::test_suite::parity::with_scratch;
+use crate::test_suite::parity::{assert_short_scratch_panics, snapshot_glwe};
 use crate::{
     bdd_arithmetic::{Cmux, Cswap, FheUint, FheUintPrepared, GLWEBlindRetrieval, GLWEBlindRetriever},
     blind_rotation::BlindRotationAlgo,
 };
 use poulpy_core::layouts::prepared::GGSWPreparedToBackendRef;
+use poulpy_core::test_suite::with_scratch;
 
 /// Setup arena: the largest query of the encryptions, preparations and decryptions the tests below set up with.
 fn setup_scratch<BE>(
@@ -95,6 +97,11 @@ where
 
         let mut ct_res = module.glwe_alloc_from_infos(&glwe_infos);
         let cmux_bytes = module.cmux_tmp_bytes(&ct_res, &ct_t, &s_prepared.to_backend_ref());
+        let before = snapshot_glwe::<BE, _>(&ct_res);
+        assert_short_scratch_panics::<BE, _>(cmux_bytes, "cmux: insufficient scratch", |s| {
+            module.cmux(&mut ct_res, &ct_t, &ct_f, &s_prepared.to_backend_ref(), s)
+        });
+        assert_eq!(before, snapshot_glwe::<BE, _>(&ct_res));
         with_scratch::<BE, _>(cmux_bytes, |s| {
             module.cmux(&mut ct_res, &ct_t, &ct_f, &s_prepared.to_backend_ref(), s)
         });
@@ -153,6 +160,11 @@ where
         module.ggsw_prepare(&mut s_prepared, &s, &mut scratch.borrow());
 
         let cswap_bytes = module.cswap_tmp_bytes(&ct_a, &ct_b, &s_prepared.to_backend_ref());
+        let before = (snapshot_glwe::<BE, _>(&ct_a), snapshot_glwe::<BE, _>(&ct_b));
+        assert_short_scratch_panics::<BE, _>(cswap_bytes, "cswap: insufficient scratch", |s| {
+            module.cswap(&mut ct_a, &mut ct_b, &s_prepared.to_backend_ref(), s)
+        });
+        assert_eq!(before, (snapshot_glwe::<BE, _>(&ct_a), snapshot_glwe::<BE, _>(&ct_b)));
         with_scratch::<BE, _>(cswap_bytes, |s| {
             module.cswap(&mut ct_a, &mut ct_b, &s_prepared.to_backend_ref(), s)
         });
@@ -219,8 +231,8 @@ where
 
         let (a_want, b_want) = if bit == 0 { (a, b) } else { (b, a) };
 
-        assert_eq!(a_want, a_enc.decrypt(module, sk, &mut scratch.borrow()));
-        assert_eq!(b_want, b_enc.decrypt(module, sk, &mut scratch.borrow()));
+        assert_eq!(a_want, decrypt_checked(module, &a_enc, sk));
+        assert_eq!(b_want, decrypt_checked(module, &b_enc, sk));
     }
 }
 
@@ -270,14 +282,14 @@ where
             module.glwe_blind_retrieval_statefull(0, 5, &mut data_enc, &idx_enc, s)
         });
 
-        assert_eq!(data[idx as usize], data_enc[0].decrypt(module, sk, &mut scratch.borrow()));
+        assert_eq!(data[idx as usize], decrypt_checked(module, &data_enc[0], sk));
 
         with_scratch::<BE, _>(retrieval_bytes, |s| {
             module.glwe_blind_retrieval_statefull_rev(0, 5, &mut data_enc, &idx_enc, s)
         });
 
         for i in 0..data.len() {
-            assert_eq!(data[i], data_enc[i].decrypt(module, sk, &mut scratch.borrow()))
+            assert_eq!(data[i], decrypt_checked(module, &data_enc[i], sk))
         }
     }
 }
@@ -338,6 +350,6 @@ where
             retriever.retrieve(module, &mut res, &data_enc, &idx_enc, offset, s)
         });
 
-        assert_eq!(data[idx as usize], res.decrypt(module, sk, &mut scratch.borrow()));
+        assert_eq!(data[idx as usize], decrypt_checked(module, &res, sk));
     }
 }

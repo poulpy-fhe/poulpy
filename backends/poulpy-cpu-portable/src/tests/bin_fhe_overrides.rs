@@ -335,14 +335,14 @@ unsafe impl HalModuleImpl for OpaqueBackend<'_> {
 }
 unsafe impl BlindRotationModSwitchImpl for OpaqueBackend<'_> {
     fn blind_rotation_mod_switch<L: LWEToBackendRef<Self> + LWEInfos>(
-        _module: &Module<Self>,
+        module: &Module<Self>,
         modulus: usize,
         direction: LookUpTableRotationDirection,
         res: &mut [i64],
         lwe: &L,
     ) {
         STAGING_CALLS.set(STAGING_CALLS.get() + 1);
-        poulpy_bin_fhe::blind_rotation::mod_switch_2n::<Self, _>(modulus, direction, res, lwe);
+        poulpy_bin_fhe::reference::blind_rotation::blind_rotation_mod_switch_reference(module, modulus, direction, res, lwe);
     }
 }
 
@@ -435,7 +435,13 @@ fn modulus_switch_accepts_opaque_storage_and_dispatches_override() {
     for direction in [LookUpTableRotationDirection::Left, LookUpTableRotationDirection::Right] {
         let mut expected = [0i64; 5];
         let mut actual = [0i64; 5];
-        poulpy_bin_fhe::blind_rotation::mod_switch_2n::<OpaqueBackend, _>(64, direction, &mut expected, &lwe);
+        poulpy_bin_fhe::reference::blind_rotation::blind_rotation_mod_switch_reference(
+            &module,
+            64,
+            direction,
+            &mut expected,
+            &lwe,
+        );
         module.blind_rotation_mod_switch(64, direction, &mut actual, &lwe);
         assert_eq!(actual, expected);
     }
