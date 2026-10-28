@@ -86,6 +86,27 @@ pub trait GLWEAutomorphism<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos;
+
+    /// Scratch of [`Self::glwe_automorphism_many`] for keys of the layout `key_infos`; a call whose keys differ in
+    /// layout takes the largest over them.
+    fn glwe_automorphism_many_tmp_bytes<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
+    where
+        R: GLWEInfos,
+        A: GLWEInfos,
+        K: GGLWEInfos;
+
+    /// Writes into `res[t]` the automorphism of `a` by `keys[t]`, for every `t`, each output that of
+    /// [`Self::glwe_automorphism`] bit for bit: the keys at the radix of `a` without row offset share one gadget
+    /// decomposition of `a` per digit layout.
+    fn glwe_automorphism_many<R, A>(
+        &self,
+        res: &mut [&mut R],
+        a: &A,
+        keys: &[&GLWEAutomorphismKeyPreparedBackendRef<'_, BE>],
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos;
 }
 
 pub trait GGSWAutomorphism<BE: Backend> {

@@ -192,6 +192,76 @@ impl<T> Diagonals<T> {
     }
 }
 
+impl<T: DiagonalArithmetic> Diagonals<T> {
+    /// The diagonals of the map whose output slot `i + q period` sums `w x[(j + q period) mod slots]` over the
+    /// `terms` `(i, j, w)`, for every `q < slots / period`: a map that repeats under a common shift of its input and
+    /// output by `period`, given by the terms of its first `period` outputs. Term `(i, j, w)` adds `w` at position `i`
+    /// of diagonal `(j - i) mod slots`, so terms on one entry add up. Every diagonal a term reaches is stored over
+    /// `period` slots, whatever its values.
+    ///
+    /// # Panics
+    ///
+    /// When `slots` is zero, `period` is zero or does not divide `slots`, or a term has `i >= period` or
+    /// `j >= slots`.
+    pub fn from_slot_map(slots: usize, period: usize, terms: impl IntoIterator<Item = (usize, usize, T)>) -> Self {
+        let mut diagonals = Self::new(slots);
+        assert!(
+            period > 0 && slots.is_multiple_of(period),
+            "slot map period must divide the slots"
+        );
+        for (i, j, w) in terms {
+            assert!(i < period && j < slots, "slot map term out of range");
+            let offset = (j as i64 - i as i64).rem_euclid(slots as i64);
+            diagonals
+                .map
+                .entry(offset)
+                .or_insert_with(|| vec![<T as DiagonalArithmetic>::zero(); period])[i]
+                .add_assign(&w);
+        }
+        diagonals
+    }
+}
+
+impl<T: Clone + PartialEq> Diagonals<T> {
+    /// Stores every diagonal at the smallest period they all repeat with: the least common multiple of their smallest
+    /// periods, the slot count an encoder encodes the map on.
+    pub fn shrink_period(&mut self) {
+        let period = self.map.values().map(|values| min_period(values)).fold(1, period_lcm);
+        for values in self.map.values_mut() {
+            let len = values.len();
+            if len > period {
+                values.truncate(period);
+            } else if len < period {
+                *values = (0..period).map(|t| values[t % len].clone()).collect();
+            }
+        }
+    }
+}
+
+/// The smallest `p` dividing `v.len()` with `v[t] == v[t mod p]` for every `t`.
+fn min_period<T: PartialEq>(v: &[T]) -> usize {
+    let repeats = |p: usize| v.iter().enumerate().all(|(t, x)| *x == v[t % p]);
+    let mut period = v.len();
+    let (mut rest, mut f) = (v.len(), 2);
+    // Periods dividing the length are closed under gcd, so dividing out each prime while the quotient still repeats
+    // reaches the smallest.
+    while rest > 1 {
+        if f * f > rest {
+            f = rest;
+        }
+        if rest.is_multiple_of(f) {
+            while rest.is_multiple_of(f) {
+                rest /= f;
+            }
+            while period.is_multiple_of(f) && repeats(period / f) {
+                period /= f;
+            }
+        }
+        f += 1;
+    }
+    period
+}
+
 impl<T> Diagonals<T> {
     /// Transposes the underlying matrix in place.
     ///
@@ -300,6 +370,102 @@ mod tests {
                 assert!((a - b).abs() < 1e-9, "{strategy:?}: {got:?} != {want:?}");
             }
         }
+    }
+
+    fn matvec_i64(m: &[Vec<i64>], v: &[i64]) -> Vec<i64> {
+        m.iter().map(|row| row.iter().zip(v).map(|(a, b)| a * b).sum()).collect()
+    }
+
+    /// The `slots x slots` matrix of [`Diagonals::from_slot_map`]'s terms, repeated under shifts by `period`.
+    fn dense_of(slots: usize, period: usize, terms: &[(usize, usize, i64)]) -> Vec<Vec<i64>> {
+        let mut m = vec![vec![0; slots]; slots];
+        for q in 0..slots / period {
+            for &(i, j, w) in terms {
+                m[i + q * period][(j + q * period) % slots] += w;
+            }
+        }
+        m
+    }
+
+    fn assert_evaluates(d: &Diagonals<i64>, m: &[Vec<i64>]) {
+        let v: Vec<i64> = (0..m.len() as i64).map(|x| 3 * x - 7).collect();
+        let want = matvec_i64(m, &v);
+        for strategy in [
+            LinearTransformationStrategy::Direct,
+            LinearTransformationStrategy::Bsgs { giant_step: 2 },
+        ] {
+            assert_eq!(d.evaluate(&v, strategy), want, "{strategy:?}");
+        }
+    }
+
+    #[test]
+    fn from_slot_map_matches_matvec() {
+        // Two terms on entry (1, 5) add up, and the zero term stores diagonal 1 all the same.
+        let terms = [(0, 3, 2), (1, 5, 4), (1, 5, -1), (2, 2, 7), (5, 0, 3), (7, 1, -2), (6, 7, 0)];
+        let d = Diagonals::from_slot_map(8, 8, terms);
+        assert_eq!(d.indexes(), vec![0, 1, 2, 3, 4]);
+        assert!(d.indexes().iter().all(|&i| d.period(i) == Some(8)));
+        assert_evaluates(&d, &dense_of(8, 8, &terms));
+    }
+
+    #[test]
+    fn from_slot_map_repeats_over_the_period() {
+        let terms = [(0, 1, 5), (1, 11, -3), (2, 2, 1), (3, 7, 2)];
+        let d = Diagonals::from_slot_map(12, 4, terms);
+        assert!(d.indexes().iter().all(|&i| d.period(i) == Some(4)));
+        assert_evaluates(&d, &dense_of(12, 4, &terms));
+    }
+
+    #[test]
+    fn shrink_period_stores_the_common_smallest_period() {
+        let mut d = Diagonals::new(12);
+        d.set(0, vec![1, 2, 3, 1, 2, 3]);
+        d.set(1, vec![4, 5, 4, 5]);
+        d.set(5, vec![6; 12]);
+        let m: Vec<Vec<i64>> = (0..12)
+            .map(|r| {
+                (0..12)
+                    .map(|c| d.get(c as i64 - r as i64).map_or(0, |v| v[r % v.len()]))
+                    .collect()
+            })
+            .collect();
+        d.shrink_period();
+        assert_eq!(d.get(0), Some(&vec![1, 2, 3, 1, 2, 3]));
+        assert_eq!(d.get(1), Some(&vec![4, 5, 4, 5, 4, 5]));
+        assert_eq!(d.get(5), Some(&vec![6; 6]));
+        assert_evaluates(&d, &m);
+
+        let mut powers = Diagonals::from_slot_map(16, 16, (0..16).map(|i| (i, (i + 3) % 16, (i % 4) as i64)));
+        powers.shrink_period();
+        assert_eq!(powers.get(3), Some(&vec![0, 1, 2, 3]));
+
+        let mut empty = Diagonals::<i64>::new(8);
+        empty.shrink_period();
+        assert!(empty.is_empty());
+    }
+
+    #[test]
+    #[should_panic(expected = "slot map period must divide the slots")]
+    fn from_slot_map_rejects_a_period_not_dividing_the_slots() {
+        Diagonals::from_slot_map(12, 5, [(0, 0, 1i64)]);
+    }
+
+    #[test]
+    #[should_panic(expected = "slot map period must divide the slots")]
+    fn from_slot_map_rejects_a_zero_period() {
+        Diagonals::from_slot_map(12, 0, [(0, 0, 1i64)]);
+    }
+
+    #[test]
+    #[should_panic(expected = "slot map term out of range")]
+    fn from_slot_map_rejects_an_output_past_the_period() {
+        Diagonals::from_slot_map(12, 4, [(4, 0, 1i64)]);
+    }
+
+    #[test]
+    #[should_panic(expected = "slot map term out of range")]
+    fn from_slot_map_rejects_an_input_past_the_slots() {
+        Diagonals::from_slot_map(12, 4, [(0, 12, 1i64)]);
     }
 
     #[test]
