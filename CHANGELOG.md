@@ -382,6 +382,8 @@
 - **Fix:** `gglwe_bytes_of_from_infos` counts the limbs of a key with a row offset (`k_offset`), as its allocation and `GGLWE::bytes_of_from_infos` do; it counted those of a key without one.
 - **Breaking:** `GLWECIKeyPreparedFactory::glwe_ci_key_prepare` and `PreparationImpl::glwe_ci_key_prepare` take any source `O: GGLWEToBackendRef<BE> + GLWESwitchingKeyDegrees`, as `glwe_switching_key_prepare` does, instead of a `GLWECIKey`, the direction coming from the destination, so a key moved into a scratch carve goes through the backend's own body. A `GLWECIKey` meets the bounds, so callers are unchanged; an override takes the new signature.
 - Add `test_suite::with_scratch`, which runs a call on exactly the given bytes of scratch poisoned with `0xA5` between guards it checks untouched; the mhe suites run every call through it.
+- Add `Diagonals::from_slot_map`, the diagonals of a map given by its terms `(i, j, w)` on the outputs of one period, the map repeating under a common shift of its input and output by that period: every diagonal a term reaches is stored over the period, whatever its values.
+  Add `Diagonals::shrink_period`, which stores every diagonal at the smallest period they all repeat with, the slot count an encoder encodes the map on.
 
 ### `poulpy-ckks`
 
@@ -802,6 +804,7 @@
 - The intra operations check the context's radix and width against their input only on the paths that evaluate a map: a shift by a multiple of `d`, the row shift above and the row sum of a grid whose label proves one matrix check its slot count alone.
 - OEP methods have their API method's name and the hooks are `blas_map_blocks`, `blas_map_blocks_tmp_bytes`, `blas_jkls_block`, `blas_jkls_block_tmp_bytes`, `blas_jkls_pt_unit` and `blas_jkls_pt_unit_tmp_bytes`; each opt-in macro is named after its OEP trait (`impl_blas_mat_inter_reference_full!`, `impl_blas_mat_intra_reference_full!`, `impl_blas_mat_mul_reference_full!`, `impl_blas_jkls_reference_full!`, `impl_blas_encoding_reference_full!`).
 - `blas_pt_operand_prepare` and `blas_context_prepare` panic, naming the operation, before the first map is prepared on a map whose diagonals do not share one scale, width and slot kind, which `test_blas_context` pins for both, and with the operation and its refusal on any other refusal of `ckks_prepare_linear_transformation_rhs`; `BlasMatMulOperandPreparedFactory` allocates and sizes its terms through `CKKSModuleAlloc`.
+- `maps::per_matrix_map`, `maps::right_mul`, `maps::left_mul`, `maps::right_jkls` and `maps::left_jkls` build on `Diagonals::from_slot_map`, and `per_matrix_map` on `Diagonals::shrink_period`: their diagonals are unchanged.
 
 ### `poulpy-libm`
 
