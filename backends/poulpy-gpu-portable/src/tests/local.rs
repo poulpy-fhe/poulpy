@@ -1610,7 +1610,7 @@ fn const_combination_matches_reference() {
 /// The products of two and four sources against one key in one launch equal one launch per
 /// source, bit for bit, at the full degree the fused inverse launch needs and at the widest
 /// CoeffsToSlots shape: the product with the first inverse launch of the baby-step doubling,
-/// and the product added, rotated and accumulated of the giant-step tree.
+/// and the product added, rotated and stored or accumulated of the giant-step tree.
 #[test]
 fn many_source_products_match_one_launch_each_at_full_degree() {
     use poulpy_hal::api::ScratchArenaTakeBasic;
@@ -1688,48 +1688,50 @@ fn many_source_products_match_one_launch_each_at_full_degree() {
             );
         }
 
-        // The product added, rotated and accumulated.
-        for i in 0..m {
-            for col in 0..2 {
-                module.vec_znx_dft_copy(1, 0, &mut res[i].to_backend_mut(), col, &starts[i].to_backend_ref(), col);
+        // The product added, rotated and stored or accumulated.
+        for accumulate in [true, false] {
+            for i in 0..m {
+                for col in 0..2 {
+                    module.vec_znx_dft_copy(1, 0, &mut res[i].to_backend_mut(), col, &starts[i].to_backend_ref(), col);
+                }
             }
-        }
-        {
-            let add_refs: Vec<_> = add.iter().map(|add| add.to_backend_ref()).collect();
-            let add_refs: Vec<_> = add_refs.iter().collect();
-            let mut res_mut: Vec<_> = res.iter_mut().map(|res| res.to_backend_mut()).collect();
-            assert!(crate::hal_impl::gglwe_products_fused(
-                &mut res_mut,
-                res_size,
-                &a_refs,
-                dsize,
-                product_limbs,
-                &pmat.to_backend_ref(),
-                Some(&add_refs),
-                Some(&plan),
-                true,
-            ));
-        }
-        for i in 0..m {
-            let mut want = module.vec_znx_dft_alloc(n, 2, res_size);
-            for col in 0..2 {
-                module.vec_znx_dft_copy(1, 0, &mut want.to_backend_mut(), col, &starts[i].to_backend_ref(), col);
+            {
+                let add_refs: Vec<_> = add.iter().map(|add| add.to_backend_ref()).collect();
+                let add_refs: Vec<_> = add_refs.iter().collect();
+                let mut res_mut: Vec<_> = res.iter_mut().map(|res| res.to_backend_mut()).collect();
+                assert!(crate::hal_impl::gglwe_products_fused(
+                    &mut res_mut,
+                    res_size,
+                    &a_refs,
+                    dsize,
+                    product_limbs,
+                    &pmat.to_backend_ref(),
+                    Some(&add_refs),
+                    Some(&plan),
+                    accumulate,
+                ));
             }
-            crate::hal_impl::gglwe_product_fused(
-                &mut want.to_backend_mut(),
-                res_size,
-                &sources[i].to_backend_ref(),
-                dsize,
-                product_limbs,
-                &pmat.to_backend_ref(),
-                [Some((&bodies[i].to_backend_ref(), 0)), None],
-                Some(&plan),
-                true,
-            );
-            assert!(
-                host(&module, &res[i].to_backend_ref(), 2) == host(&module, &want.to_backend_ref(), 2),
-                "product added, rotated and accumulated, source {i} of {m}"
-            );
+            for i in 0..m {
+                let mut want = module.vec_znx_dft_alloc(n, 2, res_size);
+                for col in 0..2 {
+                    module.vec_znx_dft_copy(1, 0, &mut want.to_backend_mut(), col, &starts[i].to_backend_ref(), col);
+                }
+                crate::hal_impl::gglwe_product_fused(
+                    &mut want.to_backend_mut(),
+                    res_size,
+                    &sources[i].to_backend_ref(),
+                    dsize,
+                    product_limbs,
+                    &pmat.to_backend_ref(),
+                    [Some((&bodies[i].to_backend_ref(), 0)), None],
+                    Some(&plan),
+                    accumulate,
+                );
+                assert!(
+                    host(&module, &res[i].to_backend_ref(), 2) == host(&module, &want.to_backend_ref(), 2),
+                    "product added, rotated, accumulate={accumulate}, source {i} of {m}"
+                );
+            }
         }
     }
 }

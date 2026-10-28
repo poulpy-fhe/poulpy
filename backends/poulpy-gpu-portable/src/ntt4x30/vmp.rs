@@ -1223,7 +1223,6 @@ fn product_inverse_many_kernel(
 /// [`digit_product_inverse`] without addends for the sources `a` against one key, at most
 /// [`MANY_SOURCES`], into fresh results `res`: one launch that reads `pmat` once. The views of
 /// each role share an allocation, a layout and a size.
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn digit_products_inverse<RT: GpuRuntime>(
     table: &crate::runtime::GpuBuf<RT>,
     res: &[DftColumn],

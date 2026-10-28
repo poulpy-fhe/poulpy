@@ -306,8 +306,8 @@ mod gglwe_product {
     };
 
     use crate::{
-        layouts::prepared::GGLWEPreparedBackendRef, oep::GGLWEProductDigitsStridedImpl,
-        reference::keyswitching::glwe::gglwe_product_idft_normalize_check,
+        layouts::{assert_gglwe_product_idft_normalize, prepared::GGLWEPreparedBackendRef},
+        oep::GGLWEProductDigitsStridedImpl,
     };
 
     /// [`GGLWEProductDigitsStridedImpl::gglwe_product_idft_normalize`] on the items in order,
@@ -338,7 +338,15 @@ mod gglwe_product {
         let addend = |i: usize| addends.get(i).copied().unwrap_or(&[]);
         let mut need = 0;
         for i in 0..res.len() {
-            gglwe_product_idft_normalize_check(&res[i], &res_dft[i], &a[i], key, addend(i), body[i]);
+            assert_gglwe_product_idft_normalize(
+                "gglwe_products_idft_normalize",
+                &res[i],
+                &res_dft[i],
+                &a[i],
+                key,
+                addend(i),
+                body[i],
+            );
             need = need.max(BE::gglwe_product_idft_normalize_tmp_bytes(
                 module,
                 res[i].size(),

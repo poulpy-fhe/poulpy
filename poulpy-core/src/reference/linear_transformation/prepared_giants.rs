@@ -302,6 +302,7 @@ pub(super) fn glwe_eval_giant_steps<BE, R, P, H>(
                 let key = giant_key.as_ref().unwrap();
                 {
                     let mut lazy_acc_dft_backend = lazy_acc_dft.to_backend_mut();
+                    crate::layouts::assert_no_row_offset("glwe_eval_linear_transformation", &key.key);
                     gglwe_product_from_dft(
                         module,
                         &mut lazy_acc_dft_backend,
@@ -721,15 +722,15 @@ fn glwe_eval_giant_tree<BE, R, P, H>(
         }
         BE::gglwe_products_from_dft(
             module,
+            operand_galois_element(module, n, level.rot),
+            switches,
             &mut dsts,
+            key_output_size.min(key.size()),
+            &accumulate,
             &mut srcs,
             &source_sizes,
             prod_base2k.as_usize(),
             &key.key,
-            key_output_size.min(key.size()),
-            switches,
-            operand_galois_element(module, n, level.rot),
-            &accumulate,
             &mut arena.borrow(),
         );
         for ((&(dst, src, _, _), node), source) in switches_of_level.iter().zip(dsts.drain(..)).zip(srcs.drain(..)) {

@@ -165,7 +165,6 @@ labels! {
     CnvTensor => "cnv.tensor",
     CnvByConst => "cnv.by_const",
     CnvByConstAdd => "cnv.by_const_add",
-    CnvByConstSum => "cnv.by_const_sum",
     DftZero => "dft.zero",
     DftCopy => "dft.copy",
     DftGather => "dft.gather",

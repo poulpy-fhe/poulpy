@@ -18,7 +18,7 @@ pub(crate) use normalize::normalize_products;
 pub(crate) use normalize::{KERNEL_RADIX, normalize, normalize_residues};
 pub(crate) use permute::{Map, ci_embed, ci_trace, move_from_temp, permute};
 #[cfg_attr(not(feature = "enable-core"), allow(unused_imports))]
-pub(crate) use products::{CONST_TERMS, convolution_by_const_sum};
+pub(crate) use products::CONST_TERMS;
 pub(crate) use products::{col_weighted_sum, convolution_by_const, inner_sum, scalar_product};
 
 use crate::runtime::Binding;

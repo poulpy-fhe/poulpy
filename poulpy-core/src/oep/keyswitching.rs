@@ -135,21 +135,21 @@ pub unsafe trait GGLWEProductDigitsStridedImpl: Backend {
     /// unspecified afterwards.
     ///
     /// The reference, [`gglwe_products_from_dft_reference`](crate::reference::keyswitching::glwe::gglwe_products_from_dft_reference),
-    /// lays out one operand at a time ([`gglwe_operand_from_dft`](crate::reference::keyswitching::glwe::gglwe_operand_from_dft))
+    /// lays out one operand at a time ([`gadget_dft_apply_from_dft`](crate::gadget::gadget_dft_apply_from_dft))
     /// and takes its product with [`Self::gglwe_product_fused`]. Overrides must reproduce it bit
     /// for bit within [`Self::gglwe_products_from_dft_tmp_bytes`].
     #[allow(clippy::too_many_arguments)]
     fn gglwe_products_from_dft(
         module: &Module<Self>,
+        p: i64,
+        term_count: usize,
         res: &mut [VecZnxDftBackendMut<'_, Self>],
+        output_size: usize,
+        accumulate: &[bool],
         sources: &mut [VecZnxDftBackendMut<'_, Self>],
         source_sizes: &[usize],
         source_base2k: usize,
         key: &GGLWEPreparedBackendRef<'_, Self>,
-        output_size: usize,
-        term_count: usize,
-        p: i64,
-        accumulate: &[bool],
         scratch: &mut ScratchArena<'_, Self>,
     );
 
@@ -340,28 +340,28 @@ macro_rules! impl_gglwe_product_step_hooks_reference {
 
         fn gglwe_products_from_dft(
             module: &::poulpy_hal::layouts::Module<Self>,
+            p: i64,
+            term_count: usize,
             res: &mut [::poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>],
+            output_size: usize,
+            accumulate: &[bool],
             sources: &mut [::poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>],
             source_sizes: &[usize],
             source_base2k: usize,
             key: &$crate::layouts::prepared::GGLWEPreparedBackendRef<'_, Self>,
-            output_size: usize,
-            term_count: usize,
-            p: i64,
-            accumulate: &[bool],
             scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
             $crate::reference::keyswitching::glwe::gglwe_products_from_dft_reference(
                 module,
+                p,
+                term_count,
                 res,
+                output_size,
+                accumulate,
                 sources,
                 source_sizes,
                 source_base2k,
                 key,
-                output_size,
-                term_count,
-                p,
-                accumulate,
                 scratch,
             )
         }

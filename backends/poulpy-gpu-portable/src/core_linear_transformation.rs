@@ -28,7 +28,11 @@ use crate::{
     runtime::{GpuBuf, GpuRuntime},
 };
 
-/// Giant steps whose products one launch writes.
+/// Giant steps whose products one launch writes: the most [`scale_many`] takes.
+///
+/// Measured on an Apple M5 Pro (Metal through wgpu, CubeCL 0.11.3) with the replayed bootstrap
+/// of `n16_d35_k685_p19_s2c_ffr_ci+pow2`: 202.3 to 202.5 ms, the same as with 4 giant steps,
+/// against 212.0 to 212.3 ms one step at a time.
 pub(crate) const GIANT_BATCH: usize = MANY_PRODUCTS;
 
 /// Scratch of the gathered diagonals of [`accumulate_giant_steps`] for `diagonals` diagonals.

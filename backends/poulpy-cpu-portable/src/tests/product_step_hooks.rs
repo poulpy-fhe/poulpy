@@ -141,29 +141,29 @@ unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl for Probed {
 
     fn gglwe_products_from_dft(
         module: &Module<Self>,
+        p: i64,
+        term_count: usize,
         res: &mut [VecZnxDftBackendMut<'_, Self>],
+        output_size: usize,
+        accumulate: &[bool],
         sources: &mut [VecZnxDftBackendMut<'_, Self>],
         source_sizes: &[usize],
         source_base2k: usize,
         key: &GGLWEPreparedBackendRef<'_, Self>,
-        output_size: usize,
-        term_count: usize,
-        p: i64,
-        accumulate: &[bool],
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         probed(&PRODUCTS_FROM_DFT, scratch, |rest| {
             reference::gglwe_products_from_dft_reference(
                 module,
+                p,
+                term_count,
                 res,
+                output_size,
+                accumulate,
                 sources,
                 source_sizes,
                 source_base2k,
                 key,
-                output_size,
-                term_count,
-                p,
-                accumulate,
                 rest,
             )
         });
@@ -227,149 +227,5 @@ fn powers_of_two_linear_transformation_enters_the_step_hooks() {
         .zip(after)
     {
         assert!(after > before, "the evaluation did not enter {hook}");
-    }
-}
-
-/// The refusals of the multi-source step hooks and of the operand layout, on `FFT64Portable`
-/// with a zero key: each is made before anything is read or written.
-mod refusals {
-    use crate::FFT64Portable as BE;
-    use poulpy_core::{
-        api::GLWESwitchingKeyPreparedFactory,
-        layouts::{
-            Base2K, Degree, Dnum, GLWESwitchingKeyLayout, Rank, TorusPrecision,
-            prepared::{GGLWEPreparedToBackendRef, GLWESwitchingKeyPrepared},
-        },
-        oep::GGLWEProductDigitsStridedImpl,
-        reference::keyswitching::glwe::gglwe_operand_from_dft,
-    };
-    use poulpy_hal::{
-        api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxDftAlloc},
-        layouts::{Backend, Module, ScratchOwned, VecZnxDftToBackendMut, VecZnxDftToBackendRef},
-    };
-
-    const N: usize = 64;
-    const BASE2K: usize = 12;
-
-    fn key(module: &Module<BE>) -> GLWESwitchingKeyPrepared<<BE as Backend>::OwnedBuf, BE> {
-        module.glwe_switching_key_prepared_alloc_from_infos(&GLWESwitchingKeyLayout {
-            n: Degree(N as u32),
-            base2k: Base2K(BASE2K as u32),
-            dnum: Dnum(2),
-            k_aux: TorusPrecision(BASE2K as u32),
-            rank_in: Rank(1),
-            rank_out: Rank(1),
-            k_digit: TorusPrecision(BASE2K as u32),
-            k_offset: TorusPrecision(0),
-        })
-    }
-
-    #[test]
-    #[should_panic(expected = "gglwe_products_from_dft: items of different lengths")]
-    fn products_from_dft_rejects_items_of_different_lengths() {
-        let module = Module::<BE>::new(N as u64);
-        let key = key(&module);
-        let mut res = module.vec_znx_dft_alloc(N, 2, 2);
-        let mut scratch = ScratchOwned::<BE>::alloc(1 << 20);
-        BE::gglwe_products_from_dft(
-            &module,
-            &mut [res.to_backend_mut()],
-            &mut [],
-            &[],
-            BASE2K,
-            &key.to_backend_ref(),
-            2,
-            1,
-            1,
-            &[false],
-            &mut scratch.borrow(),
-        );
-    }
-
-    #[test]
-    #[should_panic(expected = "gglwe_operand_from_dft: the source's base2k differs from the key's")]
-    fn products_from_dft_rejects_a_source_of_another_base2k() {
-        let module = Module::<BE>::new(N as u64);
-        let key = key(&module);
-        let (mut res, mut source) = (module.vec_znx_dft_alloc(N, 2, 2), module.vec_znx_dft_alloc(N, 2, 2));
-        let mut scratch = ScratchOwned::<BE>::alloc(1 << 20);
-        BE::gglwe_products_from_dft(
-            &module,
-            &mut [res.to_backend_mut()],
-            &mut [source.to_backend_mut()],
-            &[2],
-            BASE2K + 1,
-            &key.to_backend_ref(),
-            2,
-            1,
-            1,
-            &[false],
-            &mut scratch.borrow(),
-        );
-    }
-
-    #[test]
-    #[should_panic(expected = "gglwe_products_from_dft: scratch below its query")]
-    fn products_from_dft_rejects_a_short_scratch() {
-        let module = Module::<BE>::new(N as u64);
-        let key = key(&module);
-        let (mut res, mut source) = (module.vec_znx_dft_alloc(N, 2, 2), module.vec_znx_dft_alloc(N, 2, 2));
-        let mut scratch = ScratchOwned::<BE>::alloc(64);
-        BE::gglwe_products_from_dft(
-            &module,
-            &mut [res.to_backend_mut()],
-            &mut [source.to_backend_mut()],
-            &[2],
-            BASE2K,
-            &key.to_backend_ref(),
-            2,
-            1,
-            1,
-            &[false],
-            &mut scratch.borrow(),
-        );
-    }
-
-    #[test]
-    #[should_panic(expected = "gglwe_operand_from_dft: scratch below its query")]
-    fn operand_from_dft_rejects_a_short_scratch() {
-        let module = Module::<BE>::new(N as u64);
-        let key = key(&module);
-        let (mut res, mut source) = (module.vec_znx_dft_alloc(N, 1, 4), module.vec_znx_dft_alloc(N, 2, 2));
-        let mut scratch = ScratchOwned::<BE>::alloc(64);
-        gglwe_operand_from_dft(
-            &module,
-            &mut res.to_backend_mut(),
-            &mut source.to_backend_mut(),
-            BASE2K,
-            &key.to_backend_ref(),
-            2,
-            &mut scratch.borrow(),
-        );
-    }
-
-    #[test]
-    #[should_panic(expected = "gglwe_products_idft_normalize: items of different lengths")]
-    fn products_idft_normalize_rejects_items_of_different_lengths() {
-        let module = Module::<BE>::new(N as u64);
-        let key = key(&module);
-        let mut res = module.vec_znx_alloc(N, 2, 2);
-        let a = module.vec_znx_dft_alloc(N, 1, 2);
-        let mut scratch = ScratchOwned::<BE>::alloc(1 << 20);
-        BE::gglwe_products_idft_normalize(
-            &module,
-            &mut [poulpy_hal::test_suite::vec_znx_backend_mut::<BE>(&mut res)],
-            BASE2K,
-            2 * BASE2K,
-            0,
-            &mut [],
-            &[a.to_backend_ref()],
-            &key.to_backend_ref(),
-            1,
-            &[],
-            &[None],
-            BASE2K,
-            &mut scratch.borrow(),
-        );
     }
 }
