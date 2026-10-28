@@ -12,9 +12,17 @@ mod vmp;
 // Without the core registration only the device tests reach the two core products.
 #[cfg(any(test, feature = "enable-core"))]
 #[cfg_attr(not(feature = "enable-core"), allow(unused_imports))]
-pub(crate) use convolution::glwe_mul_columns;
+pub(crate) use convolution::{cnv_prepare_self_left, glwe_mul_columns};
 #[cfg(feature = "enable-core")]
-pub(crate) use operand::{big_column_mut, column_mut, scalar_column};
+pub(crate) use operand::{
+    big_column_mut, cnv_left_column, cnv_right_column, column_mut, column_ref, dft_column_mut, scalar_column,
+};
 #[cfg(any(test, feature = "enable-core"))]
 #[cfg_attr(not(feature = "enable-core"), allow(unused_imports))]
-pub(crate) use vmp::gglwe_product_digits_strided;
+pub(crate) use vec_znx_dft::idft_tail_normalize;
+#[cfg(any(test, feature = "enable-core"))]
+#[cfg_attr(not(feature = "enable-core"), allow(unused_imports))]
+pub(crate) use vmp::{gglwe_product_digits_strided, gglwe_product_fused, gglwe_products_fused};
+#[cfg(any(test, feature = "enable-core"))]
+#[cfg_attr(not(feature = "enable-core"), allow(unused_imports))]
+pub(crate) use vmp::{gglwe_product_digits_strided_inverse, gglwe_products_digits_strided_inverse};

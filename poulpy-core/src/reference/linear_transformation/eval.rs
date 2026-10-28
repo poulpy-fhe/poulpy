@@ -36,7 +36,7 @@ use crate::{
                 glwe_prepare_linear_transformation_baby_steps_tmp_bytes,
             },
             inner_product::glwe_accumulate_prepared_baby_steps_dft_tmp_bytes,
-            lazy::{glwe_lazy_giant_automorphism_from_dft_tmp_bytes, glwe_lazy_giant_automorphism_tmp_bytes},
+            lazy::glwe_lazy_giant_automorphism_tmp_bytes,
             prepared_giants::{glwe_eval_giant_steps, glwe_eval_giant_tree_tmp_bytes},
         },
     },
@@ -104,7 +104,8 @@ where
     let lazy_acc_dft = module.bytes_of_vec_znx_dft(module.n(), cols, lazy_size);
     let lazy_acc_big = module.bytes_of_vec_znx_big(module.n(), cols, lazy_size);
     let prepare_right = module.cnv_prepare_right_tmp_bytes(pt_size, pt_size);
-    let lazy_dft = glwe_lazy_giant_automorphism_from_dft_tmp_bytes::<BE, _>(module, a.rank().as_usize(), prod_size, key);
+    let lazy_dft =
+        crate::reference::keyswitching::glwe::gglwe_product_from_dft_tmp_bytes(module, a.rank().as_usize(), prod_size, key);
     // The fallback first normalizes each product into the destination layout,
     // then rotates that accumulator in place (both operands therefore use res).
     let fallback_work = inner_dft

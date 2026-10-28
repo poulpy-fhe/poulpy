@@ -285,6 +285,45 @@ fn by_const_kernel(
     }
 }
 
+/// The 128-bit sum of the terms `a[top - v][i] * b[v]` of one result limb,
+/// `top` being that limb plus the offset: one product of [`by_const_kernel`] and of the
+/// sums [`normalize_products`](super::normalize_products) normalizes.
+#[cube]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn const_product(
+    a: &[u64],
+    b: &[u64],
+    i: u32,
+    top: u32,
+    a_base: u32,
+    a_stride: u32,
+    a_size: u32,
+    b_base: u32,
+    b_stride: u32,
+    b_size: u32,
+) -> (u64, u64) {
+    let first = top + 1u32 - min(top + 1u32, a_size);
+    let end = min(top + 1u32, b_size);
+    let mut lo = 0u64;
+    let mut hi = 0u64;
+    for v in first..end {
+        let x = a[(a_base + (top - v) * a_stride + i) as usize];
+        let y = b[(b_base + v * b_stride) as usize];
+        let sum = lo + x * y;
+        hi += mul_hi_signed(x, y);
+        if sum < lo {
+            hi += 1u64;
+        }
+        lo = sum;
+    }
+    (lo, hi)
+}
+
+/// Most terms [`normalize_products`](super::normalize_products) takes: the kernel binds four
+/// pairs of operand buffers. A combination of more terms takes the reference.
+#[cfg_attr(not(feature = "enable-core"), allow(dead_code))]
+pub(crate) const CONST_TERMS: usize = 4;
+
 /// `res[j][i] = sum_{u + v = j + offset} a[u][i] * b[v][b_coeff]` for every
 /// limb of `res`, added to `res` when `accumulate`. Limbs without a term are
 /// zero, or unchanged when accumulating. `b` may have any degree.

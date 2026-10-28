@@ -29,7 +29,7 @@ pub fn gglwe_product_digit_output_size(res_size: usize, key_size: usize, dsize: 
 /// Backend implementation of the interleaved-digit GGLWE product.
 ///
 /// An `impl` written by hand forwards the step hooks it does not override to their references,
-/// all four with [`impl_gglwe_product_step_hooks_reference!`](crate::impl_gglwe_product_step_hooks_reference).
+/// all at once with [`impl_gglwe_product_step_hooks_reference!`](crate::impl_gglwe_product_step_hooks_reference).
 ///
 /// # Safety
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
@@ -110,6 +110,49 @@ pub unsafe trait GGLWEProductDigitsStridedImpl: Backend {
         scratch: &mut ScratchArena<'_, Self>,
     );
 
+    /// Scratch bytes of [`Self::gglwe_products_from_dft`] for `count` sources of rank `rank` and
+    /// at most `source_size` limbs.
+    fn gglwe_products_from_dft_tmp_bytes<K>(
+        module: &Module<Self>,
+        count: usize,
+        rank: usize,
+        source_size: usize,
+        key_infos: &K,
+    ) -> usize
+    where
+        K: GGLWEInfos;
+
+    /// The key switches of several sources in the transform domain against one key, each stored
+    /// through the automorphism `X -> X^p`: item `i` takes `res[i]`, `sources[i]` over its first
+    /// `source_sizes[i]` limbs and `accumulate[i]`, every other argument is shared, and no item
+    /// reads the `res` of another.
+    ///
+    /// For a source `s`, `res = sigma_p(op(s) x key + s_0)`, or `res += ...` with `accumulate`,
+    /// over `output_size` limbs, at most `key.size()`, as [`Self::gglwe_product_fused`] stores:
+    /// `op(s)` is the gadget operand of the mask columns of `s`, each normalized from its inverse
+    /// transform at radix `source_base2k` over `source_sizes[i].min(output_size)` limbs, and `s_0`
+    /// is column 0 of `s`, added over the limbs both have. The mask columns of the sources are
+    /// unspecified afterwards.
+    ///
+    /// The reference, [`gglwe_products_from_dft_reference`](crate::reference::keyswitching::glwe::gglwe_products_from_dft_reference),
+    /// lays out one operand at a time ([`gadget_dft_apply_from_dft`](crate::gadget::gadget_dft_apply_from_dft))
+    /// and takes its product with [`Self::gglwe_product_fused`]. Overrides must reproduce it bit
+    /// for bit within [`Self::gglwe_products_from_dft_tmp_bytes`].
+    #[allow(clippy::too_many_arguments)]
+    fn gglwe_products_from_dft(
+        module: &Module<Self>,
+        p: i64,
+        term_count: usize,
+        res: &mut [VecZnxDftBackendMut<'_, Self>],
+        output_size: usize,
+        accumulate: &[bool],
+        sources: &mut [VecZnxDftBackendMut<'_, Self>],
+        source_sizes: &[usize],
+        source_base2k: usize,
+        key: &GGLWEPreparedBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
+    );
+
     /// Scratch bytes of [`Self::gglwe_product_idft_normalize`] for a coefficient output of
     /// `res_size` limbs, a product of `product_size` limbs and an operand of `a_size` limbs,
     /// `res_dft` aside.
@@ -155,10 +198,39 @@ pub unsafe trait GGLWEProductDigitsStridedImpl: Backend {
         a_base2k: usize,
         scratch: &mut ScratchArena<'_, Self>,
     );
+
+    /// [`Self::gglwe_product_idft_normalize`] of several sources against one key: item `i` takes
+    /// `res[i]`, `res_dft[i]`, `a[i]`, `addends[i]` (none when `addends` is empty) and `body[i]`,
+    /// every other argument is shared.
+    ///
+    /// Defaults to [`Self::gglwe_product_idft_normalize`] on the items in order, every item and
+    /// the scratch checked before the first write. Overrides must reproduce it bit for bit within
+    /// [`Self::gglwe_product_idft_normalize_tmp_bytes`].
+    #[allow(clippy::too_many_arguments, clippy::type_complexity)]
+    fn gglwe_products_idft_normalize(
+        module: &Module<Self>,
+        res: &mut [poulpy_hal::layouts::VecZnxBackendMut<'_, Self>],
+        res_base2k: usize,
+        res_k: usize,
+        res_offset: i64,
+        res_dft: &mut [VecZnxDftBackendMut<'_, Self>],
+        a: &[VecZnxDftBackendRef<'_, Self>],
+        key: &GGLWEPreparedBackendRef<'_, Self>,
+        term_count: usize,
+        addends: &[&[Option<(&VecZnxDftBackendRef<'_, Self>, usize)>]],
+        body: &[Option<(&poulpy_hal::layouts::VecZnxBackendRef<'_, Self>, usize)>],
+        a_base2k: usize,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        crate::oep::derived::keyswitching::gglwe_products_idft_normalize_derived(
+            module, res, res_base2k, res_k, res_offset, res_dft, a, key, term_count, addends, body, a_base2k, scratch,
+        )
+    }
 }
 
 /// The step hooks of [`GGLWEProductDigitsStridedImpl`] (`gglwe_product_fused`,
-/// `gglwe_product_idft_normalize` and their queries) forwarding to their reference bodies,
+/// `gglwe_product_idft_normalize`, `gglwe_products_from_dft` and their queries) forwarding to
+/// their reference bodies,
 /// for an `impl` block that writes the rest of the family by hand.
 #[macro_export]
 macro_rules! impl_gglwe_product_step_hooks_reference {
@@ -244,6 +316,53 @@ macro_rules! impl_gglwe_product_step_hooks_reference {
         ) {
             $crate::reference::keyswitching::glwe::gglwe_product_idft_normalize_reference(
                 module, res, res_base2k, res_k, res_offset, res_dft, a, key, term_count, addends, body, a_base2k, scratch,
+            )
+        }
+
+        fn gglwe_products_from_dft_tmp_bytes<K>(
+            module: &::poulpy_hal::layouts::Module<Self>,
+            count: usize,
+            rank: usize,
+            source_size: usize,
+            key_infos: &K,
+        ) -> usize
+        where
+            K: $crate::layouts::GGLWEInfos,
+        {
+            $crate::reference::keyswitching::glwe::gglwe_products_from_dft_tmp_bytes_reference(
+                module,
+                count,
+                rank,
+                source_size,
+                key_infos,
+            )
+        }
+
+        fn gglwe_products_from_dft(
+            module: &::poulpy_hal::layouts::Module<Self>,
+            p: i64,
+            term_count: usize,
+            res: &mut [::poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>],
+            output_size: usize,
+            accumulate: &[bool],
+            sources: &mut [::poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>],
+            source_sizes: &[usize],
+            source_base2k: usize,
+            key: &$crate::layouts::prepared::GGLWEPreparedBackendRef<'_, Self>,
+            scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
+        ) {
+            $crate::reference::keyswitching::glwe::gglwe_products_from_dft_reference(
+                module,
+                p,
+                term_count,
+                res,
+                output_size,
+                accumulate,
+                sources,
+                source_sizes,
+                source_base2k,
+                key,
+                scratch,
             )
         }
     };

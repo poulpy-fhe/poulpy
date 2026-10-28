@@ -22,6 +22,7 @@ pub mod parity;
 pub(crate) mod refusal;
 pub mod sampling;
 pub mod serialization;
+pub mod step_hooks;
 
 #[macro_export]
 macro_rules! core_backend_test_suite {
@@ -208,6 +209,16 @@ macro_rules! core_backend_test_suite {
                 lwe_read_from_rejects_malformed_shape => $crate::test_suite::noise::test_lwe_read_from_rejects_malformed_shape,
                 lwe_secret_from_glwe_secret_flattens_rank_and_preserves_metadata =>
                     $crate::test_suite::noise::test_lwe_secret_from_glwe_secret_flattens_rank_and_preserves_metadata,
+                gglwe_product_fused_rejects_invalid_operands =>
+                    $crate::test_suite::step_hooks::test_gglwe_product_fused_rejects_invalid_operands,
+                gglwe_product_idft_normalize_rejects_invalid_operands =>
+                    $crate::test_suite::step_hooks::test_gglwe_product_idft_normalize_rejects_invalid_operands,
+                gglwe_products_idft_normalize_rejects_invalid_items =>
+                    $crate::test_suite::step_hooks::test_gglwe_products_idft_normalize_rejects_invalid_items,
+                gglwe_products_from_dft_rejects_invalid_items =>
+                    $crate::test_suite::step_hooks::test_gglwe_products_from_dft_rejects_invalid_items,
+                gadget_dft_apply_from_dft_rejects_invalid_operands =>
+                    $crate::test_suite::step_hooks::test_gadget_dft_apply_from_dft_rejects_invalid_operands,
             }
         );
     };

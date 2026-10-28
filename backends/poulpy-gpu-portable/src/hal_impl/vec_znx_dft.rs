@@ -47,6 +47,76 @@ fn zero_from<RT: GpuRuntime>(res: &DftColumn, first: usize) {
     combine::<RT>(&tail, tail.size, DftTerm::zero(&tail), DftTerm::zero(&tail));
 }
 
+/// `vec_znx_idft_normalize` of a column whose first inverse launch
+/// has already run (`gglwe_product_digits_strided_inverse`): the remaining
+/// launches, then the normalization.
+#[cfg_attr(not(feature = "enable-core"), allow(dead_code))]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn idft_tail_normalize<RT: GpuRuntime, R: Ring>(
+    module: &Module<NTT4x30Gpu<RT, R>>,
+    res: &mut VecZnxBackendMut<'_, NTT4x30Gpu<RT, R>>,
+    res_base2k: usize,
+    res_k: usize,
+    res_offset: i64,
+    res_col: usize,
+    a: &mut VecZnxDftBackendMut<'_, NTT4x30Gpu<RT, R>>,
+    a_col: usize,
+    a_base2k: usize,
+    addend: Option<(&VecZnxBackendRef<'_, NTT4x30Gpu<RT, R>>, usize)>,
+) {
+    check_degree::<NTT4x30Gpu<RT, R>>(module.n(), a.n());
+    assert!(res.n() == a.n(), "vec_znx_idft_normalize: res.n() != a.n()");
+    let Some(res) = column_mut(res, res_col) else { return };
+    let a = dft_column_mut(a, a_col).expect("vec_znx_idft_normalize: a holds no storage");
+    let addend = addend.and_then(|(addend, col)| {
+        assert!(addend.n() == a.n, "vec_znx_idft_normalize: addend.n() != a.n()");
+        column_ref(addend, col)
+    });
+    crate::ntt4x30::inverse_tail::<RT>(handle(module).tables(), &a, a.size);
+    normalize_inverse(module, &res, res_base2k, res_k, res_offset, &a, addend.as_ref(), a_base2k);
+}
+
+/// Normalizes the inverse transform held in `a`, plus `addend`, into `res`:
+/// in one kernel up to [`KERNEL_RADIX`], through the host stage of
+/// `normalize` above it.
+#[allow(clippy::too_many_arguments)]
+fn normalize_inverse<RT: GpuRuntime, R: Ring>(
+    module: &Module<NTT4x30Gpu<RT, R>>,
+    res: &Column,
+    res_base2k: usize,
+    res_k: usize,
+    res_offset: i64,
+    a: &DftColumn,
+    addend: Option<&Column>,
+    a_base2k: usize,
+) {
+    let handle = handle(module);
+    let tables = handle.tables();
+    if res_base2k <= KERNEL_RADIX && a_base2k <= KERNEL_RADIX {
+        normalize_residues::<RT>(tables, res, res_base2k, res_k, res_offset, a, addend, a_base2k);
+        return;
+    }
+    // The radices the kernel does not handle: the reconstructed `i128`
+    // values take the host stage of `normalize`.
+    handle.with_temp(a.size * a.n * size_of::<i128>(), |temp| {
+        let big = Column {
+            binding: temp.view().binding().expect("temporary holds storage"),
+            base: 0,
+            stride: 2 * a.n as u32,
+            words: 2,
+            n: a.n,
+            size: a.size,
+        };
+        to_big::<RT>(tables, &big, a);
+        if let Some(addend) = addend {
+            lincomb::<RT>(&big, big.size.min(addend.size), Term::plus(&big), Term::plus(addend));
+        }
+        normalize::<RT>(res, res_base2k, res_k, res_offset, &big, a_base2k);
+        // A host stage, at radices no kernel serves: a zeroing launch of its own.
+        temp.wipe();
+    });
+}
+
 unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxDftImpl for NTT4x30Gpu<RT, R> {
     fn vec_znx_dft_apply(
         module: &Module<Self>,
@@ -139,32 +209,8 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxDftImpl for NTT4x30Gpu<RT, R> {
             assert!(addend.n() == a.n, "vec_znx_idft_normalize: addend.n() != a.n()");
             column_ref(addend, col)
         });
-        let handle = handle(module);
-        let tables = handle.tables();
-        inverse::<RT>(tables, &a, &a, a.size);
-        if res_base2k <= KERNEL_RADIX && a_base2k <= KERNEL_RADIX {
-            normalize_residues::<RT>(tables, &res, res_base2k, res_k, res_offset, &a, addend.as_ref(), a_base2k);
-            return;
-        }
-        // The radices the kernel does not handle: the reconstructed `i128`
-        // values take the host stage of `normalize`.
-        handle.with_temp(a.size * a.n * size_of::<i128>(), |temp| {
-            let big = Column {
-                binding: temp.view().binding().expect("temporary holds storage"),
-                base: 0,
-                stride: 2 * a.n as u32,
-                words: 2,
-                n: a.n,
-                size: a.size,
-            };
-            to_big::<RT>(tables, &big, &a);
-            if let Some(addend) = &addend {
-                lincomb::<RT>(&big, big.size.min(addend.size), Term::plus(&big), Term::plus(addend));
-            }
-            normalize::<RT>(&res, res_base2k, res_k, res_offset, &big, a_base2k);
-            // A host stage, at radices no kernel serves: a zeroing launch of its own.
-            temp.wipe();
-        });
+        inverse::<RT>(handle(module).tables(), &a, &a, a.size);
+        normalize_inverse(module, &res, res_base2k, res_k, res_offset, &a, addend.as_ref(), a_base2k);
     }
 
     fn vec_znx_dft_add(

@@ -121,3 +121,109 @@ pub(crate) fn combine<RT: GpuRuntime>(res: &DftColumn, limbs: usize, a: DftTerm<
         [Q]
     );
 }
+
+/// Blocks [`gather`] copies per launch: the kernel binds eight source buffers.
+#[cfg_attr(not(feature = "enable-core"), allow(dead_code))]
+pub(crate) const GATHER_BLOCKS: usize = 8;
+
+#[cube(launch_unchecked)]
+#[allow(clippy::too_many_arguments, unused_assignments)]
+fn gather_kernel(
+    dst: &mut [u32],
+    s0: &[u32],
+    s1: &[u32],
+    s2: &[u32],
+    s3: &[u32],
+    s4: &[u32],
+    s5: &[u32],
+    s6: &[u32],
+    s7: &[u32],
+    // Words of one block.
+    block: u32,
+    dst_base: u32,
+    b0: u32,
+    b1: u32,
+    b2: u32,
+    b3: u32,
+    b4: u32,
+    b5: u32,
+    b6: u32,
+    b7: u32,
+    #[comptime] count: u32,
+) {
+    let pos = ABSOLUTE_POS as u32;
+    if pos < count * block {
+        let index = pos / block;
+        let word = pos - index * block;
+        let mut value = s0[(b0 + word) as usize];
+        #[unroll]
+        for source in 1..count {
+            if index == source {
+                if comptime!(source == 1) {
+                    value = s1[(b1 + word) as usize];
+                } else if comptime!(source == 2) {
+                    value = s2[(b2 + word) as usize];
+                } else if comptime!(source == 3) {
+                    value = s3[(b3 + word) as usize];
+                } else if comptime!(source == 4) {
+                    value = s4[(b4 + word) as usize];
+                } else if comptime!(source == 5) {
+                    value = s5[(b5 + word) as usize];
+                } else if comptime!(source == 6) {
+                    value = s6[(b6 + word) as usize];
+                } else {
+                    value = s7[(b7 + word) as usize];
+                }
+            }
+        }
+        dst[(dst_base + pos) as usize] = value;
+    }
+}
+
+/// Copies limb 0 of each of `sources` into consecutive limbs of `dst`, limb
+/// `first + i` receiving `sources[i]`, [`GATHER_BLOCKS`] per launch. The
+/// limbs of `dst` are contiguous.
+#[cfg_attr(not(feature = "enable-core"), allow(dead_code))]
+pub(crate) fn gather<RT: GpuRuntime>(dst: &DftColumn, sources: &[DftColumn]) {
+    let block = 4 * dst.n;
+    assert!(
+        dst.stride as usize == block && sources.len() <= dst.size,
+        "gather: the destination holds fewer contiguous limbs than the sources"
+    );
+    assert!(
+        sources.iter().all(|source| source.n == dst.n && source.size >= 1),
+        "gather: a source of another degree or without a limb"
+    );
+    for (group, chunk) in sources.chunks(GATHER_BLOCKS).enumerate() {
+        // Sources beyond the last repeat it: the kernel does not read them.
+        let source = |index: usize| &chunk[index.min(chunk.len() - 1)];
+        let units = chunk.len() * block;
+        launch!(
+            RT, Label::DftGather, units * 8, gather_kernel, (units, RT::GROUP, RT::GROUP);
+            [
+                dst.binding => u32,
+                source(0).binding => u32,
+                source(1).binding => u32,
+                source(2).binding => u32,
+                source(3).binding => u32,
+                source(4).binding => u32,
+                source(5).binding => u32,
+                source(6).binding => u32,
+                source(7).binding => u32,
+            ];
+            [
+                block as u32,
+                dst.base + (group * GATHER_BLOCKS * block) as u32,
+                source(0).base,
+                source(1).base,
+                source(2).base,
+                source(3).base,
+                source(4).base,
+                source(5).base,
+                source(6).base,
+                source(7).base,
+            ];
+            [chunk.len() as u32]
+        );
+    }
+}

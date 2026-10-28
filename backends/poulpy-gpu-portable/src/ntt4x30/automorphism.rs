@@ -43,6 +43,23 @@ impl AutomorphismPlan {
             shift,
         }
     }
+
+    pub(crate) fn n(&self) -> usize {
+        self.n
+    }
+
+    /// The multiplier and exponent gap a kernel uses to store slot `t` where
+    /// the automorphism reads it from: the inverse of the multiplier.
+    pub(crate) fn scatter(&self) -> (u32, u32) {
+        let order = (self.n as u64) << self.shift;
+        // Newton iteration on an odd number: five steps reach 32 bits.
+        let mul = self.mul as u64;
+        let mut inverse = mul;
+        for _ in 0..5 {
+            inverse = inverse.wrapping_mul(2u64.wrapping_sub(mul.wrapping_mul(inverse)));
+        }
+        ((inverse & (order - 1)) as u32, self.shift)
+    }
 }
 
 #[cube(launch_unchecked)]

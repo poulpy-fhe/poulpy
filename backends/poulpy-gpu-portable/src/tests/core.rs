@@ -42,12 +42,48 @@ poulpy_core::core_parity_test_suite! {
     }
 }
 
+// The products at a degree whose inverse transform takes two launches, where the products
+// with the first inverse launch fused in run.
+poulpy_core::core_parity_test_suite! {
+    mod core_parity_n8192,
+    backend_ref = poulpy_cpu_portable::NTT4x30Portable,
+    backend_test = super::Gpu,
+    params = TestParams { size: 1 << 13, base2k: 52, n: 1 << 13 },
+    tests = {
+        glwe_keyswitch => poulpy_core::test_suite::parity::test_glwe_keyswitch_parity,
+        glwe_keyswitch_assign => poulpy_core::test_suite::parity::test_glwe_keyswitch_assign_parity,
+        glwe_automorphism => poulpy_core::test_suite::parity::test_glwe_automorphism_parity,
+        tensor_relinearize_decrypt => poulpy_core::test_suite::parity::test_tensor_relinearize_decrypt_parity,
+        linear_transformation => poulpy_core::test_suite::parity::test_linear_transformation_parity,
+        linear_transformation_powers_of_two => poulpy_core::test_suite::parity::test_linear_transformation_powers_of_two_parity,
+    }
+}
+
 // The device draws from its own streams: the reference takes its samples.
 poulpy_core::core_encryption_parity_test_suite!(
     mod core_encryption,
     backend_ref = poulpy_cpu_portable::test_suite::ControlledSamplingFFT64Portable,
     backend_test = super::Gpu
 );
+
+// The refusals of the step hooks, on the overrides of this crate.
+poulpy_hal::backend_test_suite! {
+    mod step_hook_refusals,
+    backend = super::Gpu,
+    params = TestParams { size: 1 << 8, base2k: 52, n: 1 << 8 },
+    tests = {
+        gglwe_product_fused_rejects_invalid_operands =>
+            poulpy_core::test_suite::step_hooks::test_gglwe_product_fused_rejects_invalid_operands,
+        gglwe_product_idft_normalize_rejects_invalid_operands =>
+            poulpy_core::test_suite::step_hooks::test_gglwe_product_idft_normalize_rejects_invalid_operands,
+        gglwe_products_idft_normalize_rejects_invalid_items =>
+            poulpy_core::test_suite::step_hooks::test_gglwe_products_idft_normalize_rejects_invalid_items,
+        gglwe_products_from_dft_rejects_invalid_items =>
+            poulpy_core::test_suite::step_hooks::test_gglwe_products_from_dft_rejects_invalid_items,
+        gadget_dft_apply_from_dft_rejects_invalid_operands =>
+            poulpy_core::test_suite::step_hooks::test_gadget_dft_apply_from_dft_rejects_invalid_operands,
+    }
+}
 
 poulpy_hal::backend_test_suite! {
     mod sampling,
@@ -94,4 +130,21 @@ fn conjugate_invariant_core_parity() {
     poulpy_core::test_suite::parity::test_glwe_external_product_parity(&params, &shapes, &reference, &module);
     poulpy_core::test_suite::parity::test_glwe_automorphism_parity(&params, &shapes, &reference, &module);
     poulpy_core::test_suite::parity::test_glwe_trace_parity(&params, &shapes, &reference, &module);
+}
+
+/// The conjugate-invariant key switches at a degree whose inverse transform takes two launches,
+/// where the products with the first inverse launch fused in run.
+#[test]
+fn conjugate_invariant_core_parity_n8192() {
+    let n = 1 << 13;
+    let reference = Module::<poulpy_cpu_portable::NTT4x30CIPortable>::new(n as u64);
+    let module = Module::<GpuCI>::new(n as u64);
+    let params = poulpy_hal::test_suite::TestParams { size: n, n, base2k: 10 };
+    let shapes = poulpy_core::test_suite::parity::ParityShapes {
+        ranks: vec![1],
+        dsizes: Some(vec![1, 2]),
+        unaligned_digits: false,
+    };
+    poulpy_core::test_suite::parity::test_glwe_keyswitch_parity(&params, &shapes, &reference, &module);
+    poulpy_core::test_suite::parity::test_glwe_automorphism_parity(&params, &shapes, &reference, &module);
 }
