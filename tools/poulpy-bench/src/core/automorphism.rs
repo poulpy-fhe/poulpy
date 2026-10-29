@@ -81,3 +81,108 @@ where
         black_box(());
     });
 }
+
+/// Rotations the many-key runners apply to one input.
+const MANY_KEYS: usize = 16;
+
+/// Times `glwe_automorphism_many` by [`MANY_KEYS`] keys of the point's layout, which share one decomposition of the
+/// input.
+pub fn runner_glwe_automorphism_many<BE: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CoreParams)
+where
+    Module<BE>: ModuleNew<BE>
+        + ModuleSynchronize<BE>
+        + GLWEAutomorphism<BE>
+        + GLWEAutomorphismKeyPreparedFactory<BE>
+        + GLWEMaskFill<BE>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    glwe_automorphism_many::<BE, M, true>(bencher, cp)
+}
+
+/// Times [`MANY_KEYS`] calls of `glwe_automorphism` on one input, the composition `glwe_automorphism_many` replaces.
+pub fn runner_glwe_automorphism_many_composed<BE: Backend<ZnxWord = i64>, M: Measurement>(
+    bencher: &mut Bencher<'_, M>,
+    cp: &CoreParams,
+) where
+    Module<BE>: ModuleNew<BE>
+        + ModuleSynchronize<BE>
+        + GLWEAutomorphism<BE>
+        + GLWEAutomorphismKeyPreparedFactory<BE>
+        + GLWEMaskFill<BE>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    glwe_automorphism_many::<BE, M, false>(bencher, cp)
+}
+
+fn glwe_automorphism_many<BE: Backend<ZnxWord = i64>, M: Measurement, const HOISTED: bool>(
+    bencher: &mut Bencher<'_, M>,
+    cp: &CoreParams,
+) where
+    Module<BE>: ModuleNew<BE>
+        + ModuleSynchronize<BE>
+        + GLWEAutomorphism<BE>
+        + GLWEAutomorphismKeyPreparedFactory<BE>
+        + GLWEMaskFill<BE>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let glwe_infos = GLWELayout {
+        n: Degree(cp.n),
+        base2k: Base2K(cp.base2k),
+        k: TorusPrecision(cp.k),
+        rank: Rank(cp.rank),
+    };
+    let (dnum, k_aux) = switching_key_dnum_k_aux(cp.k, cp.base2k, cp.dsize);
+    let atk_infos = GGLWELayout {
+        n: Degree(cp.n),
+        base2k: Base2K(cp.base2k),
+        k_aux: TorusPrecision(k_aux),
+        rank_in: Rank(cp.rank),
+        rank_out: Rank(cp.rank),
+        dnum: Dnum(dnum),
+        k_digit: k_digit_of(cp.base2k, cp.dsize),
+        k_offset: TorusPrecision(0),
+        stride: 1,
+    };
+
+    let module: Module<BE> = Module::<BE>::new(cp.n as u64);
+    let mut source = Source::new([0u8; 32]);
+
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+        module
+            .glwe_automorphism_key_prepare_tmp_bytes(&atk_infos)
+            .max(module.glwe_automorphism_many_tmp_bytes(&glwe_infos, &glwe_infos, &atk_infos)),
+    );
+    let keys: Vec<GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>> = (0..MANY_KEYS as i64)
+        .map(|t| {
+            let mut atk: GLWEAutomorphismKey<BE::OwnedBuf, i64> = module.glwe_automorphism_key_alloc_from_infos(&atk_infos);
+            fill_by_digit(&module, &mut atk, 1, &mut source);
+            atk.set_p(2 * t + 3);
+            let mut prepared: GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE> =
+                module.glwe_automorphism_key_prepared_alloc_from_infos(&atk);
+            module.glwe_automorphism_key_prepare(&mut prepared, &atk, &mut scratch.borrow());
+            prepared
+        })
+        .collect();
+    let key_views: Vec<_> = keys.iter().map(|key| key.to_backend_ref()).collect();
+    let key_refs: Vec<_> = key_views.iter().collect();
+
+    let mut ct_in = module.glwe_alloc_from_infos(&glwe_infos);
+    module.fill_glwe_from_source(&mut ct_in, &mut source);
+    let mut ct_out: Vec<_> = (0..MANY_KEYS).map(|_| module.glwe_alloc_from_infos(&glwe_infos)).collect();
+    let mut out_refs: Vec<_> = ct_out.iter_mut().collect();
+
+    bencher.iter(|| {
+        if HOISTED {
+            module.glwe_automorphism_many(&mut out_refs, &ct_in, &key_refs, &mut scratch.borrow());
+        } else {
+            for (out, key) in out_refs.iter_mut().zip(&key_refs) {
+                module.glwe_automorphism(&mut **out, &ct_in, key, &mut scratch.borrow());
+            }
+        }
+        module.synchronize();
+        black_box(());
+    });
+}

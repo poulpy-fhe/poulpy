@@ -595,7 +595,7 @@ use poulpy_hal::{
 
 use crate::layouts::operand_degree;
 use crate::{
-    layouts::{GLWELayout, GLWEToBackendMut},
+    layouts::{GLWEBackendRef, GLWELayout, GLWEToBackendMut},
     reference::keyswitching::GLWEKeyswitchReference,
 };
 
@@ -629,14 +629,14 @@ fn glwe_keyswitch_dft_fill<'r, BE, M, A>(
 }
 
 /// Limbs of the gadget operand [`glwe_keyswitch_operand`] lays the mask of `a` out on.
-fn glwe_keyswitch_operand_size<A: GLWEInfos, K: GGLWEInfos>(a: &A, key: &K) -> usize {
+pub(crate) fn glwe_keyswitch_operand_size<A: GLWEInfos, K: GGLWEInfos>(a: &A, key: &K) -> usize {
     gadget_input_size(key.base2k(), key.k_digit(), key.dnum(), a.k(), a.size())
 }
 
 /// The mask columns of `a`, laid out on the digit grid of `key` and transformed:
 /// the operand of the gadget product of a key switch, into `a_dft` of
 /// [`glwe_keyswitch_operand_size`] limbs.
-fn glwe_keyswitch_operand<BE, M, A>(
+pub(crate) fn glwe_keyswitch_operand<BE, M, A>(
     module: &M,
     a_dft: &mut VecZnxDftBackendMut<'_, BE>,
     a: &A,
@@ -852,27 +852,46 @@ pub fn glwe_keyswitch_reference<BE, R, A>(
         let (mut a_dft, mut scratch_3) =
             scratch_2.take_vec_znx_dft_scratch(a.n().as_usize(), a.rank().as_usize(), glwe_keyswitch_operand_size(&a, key));
         glwe_keyswitch_operand(module, &mut a_dft, &&a, key, &mut scratch_3);
-
-        res.set_canonical(true);
-        let mut res_ref = res.to_backend_mut();
-        // The body adds back only the limbs the input's precision covers.
-        let a_body = precision_limbs::<BE>(&a.data, a.base2k(), a.k());
-        BE::gglwe_product_idft_normalize(
-            module,
-            &mut res_ref.data,
-            res_base2k,
-            res_k,
-            0,
-            &mut res_dft,
-            &a_dft.to_backend_ref(),
-            key,
-            1,
-            &[],
-            a_body.as_ref().map(|body| (body, 0)),
-            key_base2k,
-            &mut scratch_3.borrow(),
-        );
+        glwe_keyswitch_from_operand(module, res, &mut res_dft, &a, &a_dft.to_backend_ref(), key, &mut scratch_3);
     }
+}
+
+/// The key switch of `a`, canonical and at the radix of `key`, which has no row offset, from its gadget operand
+/// `a_dft` ([`glwe_keyswitch_operand`]): the product, its inverse transform and the normalization into `res`, with the
+/// body of `a` added back. `res_dft` holds the product, on [`gglwe_product_output_size`] limbs.
+pub(crate) fn glwe_keyswitch_from_operand<BE, R>(
+    module: &Module<BE>,
+    res: &mut R,
+    res_dft: &mut VecZnxDftBackendMut<'_, BE>,
+    a: &GLWEBackendRef<'_, BE>,
+    a_dft: &VecZnxDftBackendRef<'_, BE>,
+    key: &GGLWEPreparedBackendRef<'_, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: Backend + crate::oep::GGLWEProductDigitsStridedImpl,
+    R: GLWEToBackendMut<BE> + GLWEInfos,
+{
+    let res_base2k: usize = res.base2k().into();
+    let res_k = res.k().as_usize();
+    res.set_canonical(true);
+    let mut res_ref = res.to_backend_mut();
+    // The body adds back only the limbs the input's precision covers.
+    let a_body = precision_limbs::<BE>(&a.data, a.base2k(), a.k());
+    BE::gglwe_product_idft_normalize(
+        module,
+        &mut res_ref.data,
+        res_base2k,
+        res_k,
+        0,
+        res_dft,
+        a_dft,
+        key,
+        1,
+        &[],
+        a_body.as_ref().map(|body| (body, 0)),
+        key.base2k().into(),
+        &mut scratch.borrow(),
+    );
 }
 
 pub fn glwe_keyswitch_assign_reference<BE, M, R>(
