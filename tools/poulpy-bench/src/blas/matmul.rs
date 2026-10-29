@@ -48,7 +48,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{CnvPVecAlloc, ModuleNew, ModuleSynchronize, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, CyclotomicOrder, HostStaged, MaxBase2k, Module, ScratchOwned, Standard},
+    layouts::{Backend, ConjugateInvariant, CyclotomicOrder, HostStaged, MaxBase2k, Module, Ring, ScratchOwned, Standard},
     source::Source,
 };
 
@@ -67,7 +67,16 @@ pub(super) fn base2k(bp: &BlasBenchParams) -> Base2K {
     Base2K(bp.base2k as u32)
 }
 
-pub(super) fn block_layout(bp: &BlasBenchParams) -> CKKSLayout {
+/// The slots of a block on ring `R`: complex on the standard ring, real on the conjugate-invariant one.
+fn slots_kind<R: Ring>() -> SlotsKind {
+    if R::CYCLOTOMIC_ORDER_FACTOR == ConjugateInvariant::CYCLOTOMIC_ORDER_FACTOR {
+        SlotsKind::Real
+    } else {
+        SlotsKind::Complex
+    }
+}
+
+pub(super) fn block_layout<R: Ring>(bp: &BlasBenchParams) -> CKKSLayout {
     CKKSLayout {
         glwe_layout: GLWELayout {
             n: Degree(bp.n as u32),
@@ -77,7 +86,7 @@ pub(super) fn block_layout(bp: &BlasBenchParams) -> CKKSLayout {
         },
         meta: GLWEPlaintextMeta {
             scale: Scale::Log(bp.log_delta),
-            slots: SlotsKind::Complex,
+            slots: slots_kind::<R>(),
             log_sparsity: 0,
         },
     }
@@ -138,21 +147,22 @@ fn p_entry(d: usize) -> impl Fn(usize, usize, usize) -> f64 {
     move |s, r, c| entry(3, s, r, c) / d as f64
 }
 
-/// The largest error a result may show against the cleartext: `2^7 sqrt(n d) 2^-log_delta`, a precision of
-/// `log_delta - log2(n d) / 2 - 7` bits.
+/// The largest error a result on ring `R` may show against the cleartext: `2^7 sqrt(2 s d) 2^-log_delta` for the `s`
+/// slots of a block, `2^7 sqrt(n d) 2^-log_delta` on the standard ring, a precision of `log_delta - log2(n d) / 2 - 7`
+/// bits.
 ///
 /// A fresh encryption, and each key switch through the rounding of its output by a secret of Hamming weight 192, leave a
-/// few quanta (`2^-log_delta`) of noise per coefficient, `u = sqrt(n / 2) 2^-log_delta` on a slot. A product sums `d`
-/// terms of an entry of magnitude below one by such noise: the maxima measured over the whole sweep are at most
-/// `26 sqrt(d) u`, a seventh of the bound, which is `181 sqrt(d) u`. A radix that spoils whole limbs, or a key of another
-/// secret, lands far above it.
-pub fn error_bound(bp: &BlasBenchParams) -> f64 {
-    (7.0 - bp.log_delta as f64).exp2() * ((bp.n * bp.d()) as f64).sqrt()
+/// few quanta (`2^-log_delta`) of noise per coefficient, `u = sqrt(s) 2^-log_delta` on a slot: `sqrt(n / 2)` on the
+/// standard ring, `sqrt(n)` on the conjugate-invariant one. A product sums `d` terms of an entry of magnitude below one by
+/// such noise: the maxima measured over the whole sweep are at most `26 sqrt(d) u`, a seventh of the bound, which is
+/// `181 sqrt(d) u`. A radix that spoils whole limbs, or a key of another secret, lands far above it.
+pub fn error_bound<R: Ring>(bp: &BlasBenchParams) -> f64 {
+    (7.0 - bp.log_delta as f64).exp2() * ((2 * bp.slots_on::<R>() * bp.d()) as f64).sqrt()
 }
 
 /// Prints the error of a runner's first call and asserts it within [`error_bound`].
-pub(super) fn verify<BE>(op: &str, bp: &BlasBenchParams, max_err: f64, max_base2k: Option<usize>, keys: usize) {
-    verify_within::<BE>(op, bp, max_err, error_bound(bp), max_base2k, keys);
+pub(super) fn verify<BE: Backend>(op: &str, bp: &BlasBenchParams, max_err: f64, max_base2k: Option<usize>, keys: usize) {
+    verify_within::<BE>(op, bp, max_err, error_bound::<BE::Ring>(bp), max_base2k, keys);
 }
 
 /// [`verify`] against `bound`.
@@ -230,7 +240,7 @@ pub(super) fn check<BE: Backend>(
 ) -> BlasCheck {
     BlasCheck {
         max_err,
-        bound: error_bound(bp),
+        bound: error_bound::<BE::Ring>(bp),
         max_base2k,
         keys,
         consumed_bits: input_log_budget - log_budget::<BE>(res),
@@ -305,8 +315,8 @@ pub(super) struct Client<BE: Backend, BC: Backend> {
 
 impl<BE, BC> Client<BE, BC>
 where
-    BE: Backend<Ring = Standard> + HostStaged + 'static,
-    BC: Backend<Ring = Standard> + HostStaged + 'static,
+    BE: Backend + HostStaged + 'static,
+    BC: Backend<Ring = BE::Ring> + HostStaged + 'static,
     Module<BE>: BlasEvalModule<BE>,
     Module<BC>: BlasClientModule<BC>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
@@ -315,7 +325,7 @@ where
     pub(super) fn new(bp: &BlasBenchParams) -> Self {
         let module = Module::<BE>::new(bp.n as u64);
         let client = Module::<BC>::new(bp.n as u64);
-        let layout = block_layout(bp);
+        let layout = block_layout::<BE::Ring>(bp);
         let mut xs = Source::new([0u8; 32]);
         let mut sk_raw = client.glwe_secret_alloc_from_infos(&layout);
         client.glwe_secret_fill_ternary_hw(&mut sk_raw, HW, &mut xs);
@@ -325,7 +335,7 @@ where
             .ckks_all_ops_with_atk_tmp_bytes(&layout, &layout, &tsk_layout(bp), &atk_layout(bp))
             .max(<Module<BC> as CKKSEncodingHostOps<BC, f64>>::ckks_reim_tmp_bytes(
                 &client,
-                bp.slots(),
+                bp.slots_on::<BE::Ring>(),
             ));
         let prepare = module
             .glwe_tensor_key_prepare_tmp_bytes(&tsk_layout(bp))
@@ -444,7 +454,7 @@ where
         let mut pt = self
             .client
             .ckks_pt_vec_alloc(held, base2k(bp), TorusPrecision((bp.log_delta + HEADROOM) as u32));
-        pt.set_meta(block_layout(bp).meta);
+        pt.set_meta(block_layout::<BE::Ring>(bp).meta);
         let im = vec![0.0; held];
         let blocks = split_into_blocks(rows, cols, bp.log_d, slots, matrices, entry)
             .into_iter()
@@ -479,6 +489,7 @@ where
         res: &BlasCiphertextOwned<BE>,
         want: impl Fn(usize, usize, usize) -> f64,
     ) -> f64 {
+        let slots = bp.slots_on::<BE::Ring>();
         let (mut re, mut im) = (Vec::new(), Vec::new());
         for moved in res.blocks() {
             // The allocation keeps the fresh width, the operation narrowed `k`.
@@ -487,18 +498,18 @@ where
             (**moved).transfer_into(&mut *block);
             block.set_meta(moved.meta());
             let log_delta = block.log_delta();
-            let mut pt =
-                self.client
-                    .ckks_pt_vec_alloc(bp.slots(), base2k(bp), TorusPrecision((log_delta + DECODE_HEADROOM) as u32));
+            let mut pt = self
+                .client
+                .ckks_pt_vec_alloc(slots, base2k(bp), TorusPrecision((log_delta + DECODE_HEADROOM) as u32));
             pt.set_meta(GLWEPlaintextMeta {
                 scale: Scale::Log(log_delta),
-                slots: SlotsKind::Complex,
+                slots: slots_kind::<BE::Ring>(),
                 log_sparsity: 0,
             });
             self.client
                 .ckks_decrypt(&mut pt, &block, &self.sk, &mut self.arena.borrow())
                 .unwrap();
-            let (mut block_re, mut block_im) = (vec![0.0; bp.slots()], vec![0.0; bp.slots()]);
+            let (mut block_re, mut block_im) = (vec![0.0; slots], vec![0.0; slots]);
             self.client
                 .ckks_decode_reim_into(&pt, &mut block_re, &mut block_im, &mut self.arena.borrow())
                 .unwrap();
@@ -507,12 +518,11 @@ where
         }
         let (rows, cols) = (res.rows(), res.cols());
         let mut err = 0.0f64;
-        join_blocks(&re, rows, cols, bp.log_d, bp.batch(), |s, r, c, have| {
+        let batch = bp.batch_on::<BE::Ring>();
+        join_blocks(&re, rows, cols, bp.log_d, batch, |s, r, c, have| {
             err = err.max((have - want(s, r, c)).abs())
         });
-        join_blocks(&im, rows, cols, bp.log_d, bp.batch(), |_, _, _, have| {
-            err = err.max(have.abs())
-        });
+        join_blocks(&im, rows, cols, bp.log_d, batch, |_, _, _, have| err = err.max(have.abs()));
         err
     }
 }
@@ -520,8 +530,8 @@ where
 /// The point of `blas_transpose` of a grid of `batch` matrices.
 pub fn point_blas_transpose<BE, BC>(bp: &BlasBenchParams) -> BlasPoint
 where
-    BE: Backend<Ring = Standard> + HostStaged + 'static + BlasMatIntraImpl,
-    BC: Backend<Ring = Standard> + HostStaged + 'static,
+    BE: Backend + HostStaged + 'static + BlasMatIntraImpl,
+    BC: Backend<Ring = BE::Ring> + HostStaged + 'static,
     Module<BE>: BlasEvalModule<BE>,
     Module<BC>: BlasClientModule<BC>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
@@ -529,7 +539,7 @@ where
 {
     let mut client = Client::<BE, BC>::new(bp);
     let ctx = client.context(bp, BlasPlan::new(bp.log_d));
-    let ct_a = client.encrypt(bp, 1, 1, bp.batch(), a_entry);
+    let ct_a = client.encrypt(bp, 1, 1, bp.batch_on::<BE::Ring>(), a_entry);
     let order = client.module.cyclotomic_order();
     let atks = client.rotation_keys(bp, BlasPlan::new(bp.log_d).transpose_galois_elements(order));
     let mut res = client.result(bp, 1, 1);
@@ -569,8 +579,8 @@ where
 /// matrix encrypted from a plaintext of `d^2` slots, which proves it, so that the right factor takes the replicated maps.
 pub fn point_blas_matmul<BE, BC>(bp: &BlasBenchParams, dense: bool) -> BlasPoint
 where
-    BE: Backend<Ring = Standard> + HostStaged + 'static + BlasMatMulImpl + MaxBase2k,
-    BC: Backend<Ring = Standard> + HostStaged + 'static,
+    BE: Backend + HostStaged + 'static + BlasMatMulImpl + MaxBase2k,
+    BC: Backend<Ring = BE::Ring> + HostStaged + 'static,
     Module<BE>: BlasEvalModule<BE>,
     Module<BC>: BlasClientModule<BC>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
@@ -578,11 +588,11 @@ where
 {
     let mut client = Client::<BE, BC>::new(bp);
     let ctx = client.context(bp, BlasPlan::new(bp.log_d));
-    let right = if dense { bp.batch() } else { 1 };
-    let ct_a = client.encrypt(bp, 1, 1, bp.batch(), a_entry);
+    let right = if dense { bp.batch_on::<BE::Ring>() } else { 1 };
+    let ct_a = client.encrypt(bp, 1, 1, bp.batch_on::<BE::Ring>(), a_entry);
     let ct_b = client.encrypt(bp, 1, 1, right, b_entry(bp.d()));
     assert!(
-        replicated::<Standard>(&ct_b) != dense,
+        replicated::<BE::Ring>(&ct_b) != dense,
         "blas_matmul: the right factor is not the one the runner names"
     );
     let max_base2k = blas_matmul_max_base2k::<BE>(&ct_a, &ct_b, &ctx, FAILURE_BITS);
@@ -660,8 +670,8 @@ where
 /// The point of `blas_matmul_pt_right` by the public matrix under `algorithm`.
 pub fn point_blas_matmul_pt_right<BE, BC>(bp: &BlasBenchParams, algorithm: BlasPtAlgorithm) -> BlasPoint
 where
-    BE: Backend<Ring = Standard> + HostStaged + 'static + BlasMatMulImpl + MaxBase2k,
-    BC: Backend<Ring = Standard> + HostStaged + 'static,
+    BE: Backend + HostStaged + 'static + BlasMatMulImpl + MaxBase2k,
+    BC: Backend<Ring = BE::Ring> + HostStaged + 'static,
     Module<BE>: BlasEvalModule<BE>,
     Module<BC>: BlasClientModule<BC>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
@@ -670,7 +680,7 @@ where
     let mut client = Client::<BE, BC>::new(bp);
     let pt = client.public::<Right>(bp, algorithm, 1, 1, p_entry(bp.d()));
     let ctx = client.context(bp, BlasPlan::new(bp.log_d));
-    let ct_a = client.encrypt(bp, 1, 1, bp.batch(), a_entry);
+    let ct_a = client.encrypt(bp, 1, 1, bp.batch_on::<BE::Ring>(), a_entry);
     let max_base2k = blas_matmul_pt_right_max_base2k::<BE>(&ct_a, &pt, &ctx, FAILURE_BITS);
     assert!(
         max_base2k >= bp.base2k,

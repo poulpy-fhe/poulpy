@@ -20,13 +20,13 @@ use super::matmul::{
 };
 use crate::{blas::params::BlasBenchParams, timed};
 
-/// The point of `blas_sum_rows` (`rows`) or `blas_sum_cols` of `matrices` matrices, `bp.batch()` distinct ones or one
+/// The point of `blas_sum_rows` (`rows`) or `blas_sum_cols` of `matrices` matrices, `bp.batch_on` distinct ones or one
 /// encrypted from a plaintext of `d^2` slots, which proves it and sums its rows without the projection. Their entries
 /// lie in `[-1/d, 1/d)`, so that the sums stay in `[-1, 1)`.
 pub fn point_blas_reduction<BE, BC>(bp: &BlasBenchParams, op: &'static str, rows: bool, matrices: usize) -> BlasPoint
 where
-    BE: Backend<Ring = Standard> + HostStaged + 'static + BlasMatIntraImpl,
-    BC: Backend<Ring = Standard> + HostStaged + 'static,
+    BE: Backend + HostStaged + 'static + BlasMatIntraImpl,
+    BC: Backend<Ring = BE::Ring> + HostStaged + 'static,
     Module<BE>: BlasEvalModule<BE>,
     Module<BC>: BlasClientModule<BC>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
@@ -37,7 +37,7 @@ where
     let entry = b_entry(bp.d());
     let ct_a = client.encrypt(bp, 1, 1, matrices, &entry);
     assert!(
-        replicated::<Standard>(&ct_a) == (matrices == 1),
+        replicated::<BE::Ring>(&ct_a) == (matrices == 1),
         "{op}: the grid is not the one the runner names"
     );
     let mut res = client.result(bp, 1, 1);

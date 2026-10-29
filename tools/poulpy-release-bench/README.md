@@ -52,8 +52,9 @@ Keys use digits of 4 limbs, which keeps a softmax point, with its tensor key and
 
 ### blas
 
-One `d x d` block per operand at `N = 2^16`, so a ciphertext holds `2^15 / d^2` matrices, each of distinct entries.
-The points take the parameters of the poulpy-bench sweep (`base2k = 52`, `k = 208`, entries at scale `2^40`, maps and public matrices at `2^40`), at the degree and block sizes above, and are built by its point builders.
+One `d x d` block per operand on the conjugate-invariant ring at `N = 2^15`, so a ciphertext holds `2^15 / d^2` matrices, each of distinct entries, as many as the standard ring at `N = 2^16`.
+The operations consume at most 120 bits of the 208 of a fresh block, a modulus `N = 2^15` holds with room to spare, unlike the deeper libm functions.
+The points take the parameters of the poulpy-bench sweep (`base2k = 52`, `k = 208`, entries at scale `2^40`, maps and public matrices at `2^40`), at the ring and block sizes above, and are built by its point builders.
 
 | Op | d = 32 (32 matrices) | d = 64 (8 matrices) | d = 128 (2 matrices) |
 |---|---|---|---|

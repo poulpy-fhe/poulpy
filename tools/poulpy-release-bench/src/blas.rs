@@ -1,12 +1,13 @@
-//! Release measurements of `poulpy-blas` operations on one `d x d` block per operand at `N = 2^16`, on the point
-//! builders of poulpy-bench, with the evaluated backend as its own client on the CPU and `NTT4x30Portable` as the
-//! client of a GPU backend.
+//! Release measurements of `poulpy-blas` operations on one `d x d` block per operand on the conjugate-invariant ring at
+//! `N = 2^15`, on the point builders of poulpy-bench, with the evaluated backend as its own client on the CPU and
+//! `NTT4x30Portable` as the client of a GPU backend.
 //!
 //! A builder makes its whole point outside the timed region: the module, the secret, the context or the public matrix,
 //! the rotation keys its operation looks up (and the tensor key of a ciphertext by ciphertext product), and the
 //! encrypted inputs. It checks the radix against the lazy sums of the operation, calls it once and asserts every entry
 //! of the result within the error bound of poulpy-bench, then the same call is timed. A ciphertext holds
-//! `2^15 / d^2` matrices, each of distinct entries.
+//! `2^15 / d^2` matrices, each of distinct entries, as many as the standard ring at `N = 2^16`. The operations consume
+//! at most 120 bits, a modulus `N = 2^15` holds with room to spare.
 
 use std::time::Instant;
 
@@ -23,13 +24,13 @@ use poulpy_blas::{
 use poulpy_core::layouts::{GGLWEInfos, LWEInfos};
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, HostStaged, MaxBase2k, Module, ScratchOwned, Standard},
+    layouts::{Backend, ConjugateInvariant, HostStaged, MaxBase2k, Module, ScratchOwned},
 };
 use serde_json::{Value, json};
 
 use crate::runner::{CaseArgs, direct};
 
-const LOG_N: usize = 16;
+const LOG_N: usize = 15;
 const LOG_DS: [usize; 3] = [5, 6, 7];
 const OPS: [Op; 4] = [Op::Matmul, Op::MatmulPtRight, Op::Transpose, Op::SumRows];
 
@@ -75,7 +76,7 @@ fn case(name: &str) -> Result<(Op, BlasBenchParams)> {
     for op in OPS {
         for log_d in LOG_DS {
             if name == format!("{}_d{}", op.name(), 1 << log_d) {
-                // The parameters of the poulpy-bench sweep, at the release degree.
+                // The parameters of the poulpy-bench sweep, at the release ring and degree.
                 return Ok((
                     op,
                     BlasBenchParams {
@@ -98,20 +99,21 @@ fn case(name: &str) -> Result<(Op, BlasBenchParams)> {
 /// and precision.
 pub fn run<BE, BC>(args: &CaseArgs) -> Result<Value>
 where
-    BE: Backend<Ring = Standard> + HostStaged + 'static + BlasMatIntraImpl + BlasMatMulImpl + MaxBase2k,
-    BC: Backend<Ring = Standard> + HostStaged + 'static,
+    BE: Backend<Ring = ConjugateInvariant> + HostStaged + 'static + BlasMatIntraImpl + BlasMatMulImpl + MaxBase2k,
+    BC: Backend<Ring = ConjugateInvariant> + HostStaged + 'static,
     Module<BE>: BlasEvalModule<BE>,
     Module<BC>: BlasClientModule<BC>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     ScratchOwned<BC>: ScratchOwnedAlloc<BC> + ScratchOwnedBorrow<BC>,
 {
     let (op, bp) = case(&args.case)?;
+    let matrices = bp.batch_on::<ConjugateInvariant>();
     let start = Instant::now();
     let BlasPoint { mut call, check } = match op {
         Op::Matmul => point_blas_matmul::<BE, BC>(&bp, true),
         Op::MatmulPtRight => point_blas_matmul_pt_right::<BE, BC>(&bp, BlasPtAlgorithm::Jkls),
         Op::Transpose => point_blas_transpose::<BE, BC>(&bp),
-        Op::SumRows => point_blas_reduction::<BE, BC>(&bp, "blas_sum_rows", true, bp.batch()),
+        Op::SumRows => point_blas_reduction::<BE, BC>(&bp, "blas_sum_rows", true, matrices),
     };
     let setup_ns = start.elapsed().as_nanos() as u64;
     let timings = direct(&mut call, &|| {}, args.warmup, args.iters)?.expect("direct timing is always available");
@@ -122,10 +124,11 @@ where
             "case": args.case,
             "op": op.name(),
             "function": op.function(),
+            "ring": "ConjugateInvariant",
             "log_n": LOG_N,
             "n": bp.n,
             "d": bp.d(),
-            "matrices": bp.batch(),
+            "matrices": matrices,
             "base2k": bp.base2k,
             "log_delta": bp.log_delta,
             "p": bp.p,

@@ -20,6 +20,7 @@ mod libm;
 mod runner;
 
 use anyhow::{Context, Result, bail, ensure};
+use poulpy_hal::layouts::ConjugateInvariant;
 use serde_json::{Value, json};
 
 use runner::{CaseArgs, RunArgs, direct, run};
@@ -71,10 +72,10 @@ fn select_device<RT: poulpy_gpu_portable::GpuRuntime>(device: Option<usize>) -> 
     Ok(())
 }
 
-/// A GPU entry on runtime `$rt`, with `NTT4x30Portable` as the client.
+/// A GPU entry on runtime `$rt`, with `NTT4x30Portable` as the client, the blas cases on the conjugate-invariant ring.
 #[cfg(any(feature = "cuda", feature = "hip", feature = "metal", feature = "vulkan"))]
 macro_rules! gpu_entry {
-    ($name:literal, $backend:ty, $rt:ty, $features:expr) => {
+    ($name:literal, $backend:ident, $rt:ty, $features:expr) => {
         Entry {
             name: $name,
             krate: "poulpy-gpu-portable",
@@ -84,23 +85,27 @@ macro_rules! gpu_entry {
             bootstrapping: |args| {
                 select_device::<$rt>(args.device)?;
                 let measure = if args.replay { runner::replay::<$rt> } else { direct };
-                run::<$backend, poulpy_cpu_portable::NTT4x30Portable>(args, measure)
+                run::<poulpy_gpu_portable::$backend, poulpy_cpu_portable::NTT4x30Portable>(args, measure)
             },
             libm: Some(|args| {
                 select_device::<$rt>(args.device)?;
-                libm::run::<$backend, poulpy_cpu_portable::NTT4x30Portable>(args)
+                libm::run::<poulpy_gpu_portable::$backend, poulpy_cpu_portable::NTT4x30Portable>(args)
             }),
             blas: Some(|args| {
                 select_device::<$rt>(args.device)?;
-                blas::run::<$backend, poulpy_cpu_portable::NTT4x30Portable>(args)
+                blas::run::<
+                    poulpy_gpu_portable::$backend<ConjugateInvariant>,
+                    poulpy_cpu_portable::NTT4x30Portable<ConjugateInvariant>,
+                >(args)
             }),
         }
     };
 }
 
-/// A CPU entry on backend `$be`, which is its own client and runs every suite.
+/// A CPU entry on backend `$be`, which is its own client and runs every suite, the blas cases on the
+/// conjugate-invariant ring.
 macro_rules! cpu_entry {
-    ($name:literal, $krate:literal, $features:expr, $transform:literal, $parallelism:expr, $be:ty) => {
+    ($name:literal, $krate:literal, $features:expr, $transform:literal, $parallelism:expr, $be:ident) => {
         Entry {
             name: $name,
             krate: $krate,
@@ -112,7 +117,7 @@ macro_rules! cpu_entry {
                 run::<$be, $be>(args, direct)
             },
             libm: Some(libm::run::<$be, $be>),
-            blas: Some(blas::run::<$be, $be>),
+            blas: Some(blas::run::<$be<ConjugateInvariant>, $be<ConjugateInvariant>>),
         }
     };
 }
@@ -227,28 +232,28 @@ fn entries() -> Vec<Entry> {
     #[cfg(feature = "cuda")]
     entries.push(gpu_entry!(
         "NTT4x30Cuda",
-        poulpy_gpu_portable::NTT4x30Cuda,
+        NTT4x30Cuda,
         poulpy_gpu_portable::Cuda,
         &["enable-cuda", "enable-ckks", "enable-blas"]
     ));
     #[cfg(feature = "hip")]
     entries.push(gpu_entry!(
         "NTT4x30Hip",
-        poulpy_gpu_portable::NTT4x30Hip,
+        NTT4x30Hip,
         poulpy_gpu_portable::Hip,
         &["enable-hip", "enable-ckks", "enable-blas"]
     ));
     #[cfg(feature = "metal")]
     entries.push(gpu_entry!(
         "NTT4x30Wgpu",
-        poulpy_gpu_portable::NTT4x30Wgpu,
+        NTT4x30Wgpu,
         poulpy_gpu_portable::Wgpu,
         &["enable-metal", "enable-ckks", "enable-blas"]
     ));
     #[cfg(all(feature = "vulkan", not(feature = "metal")))]
     entries.push(gpu_entry!(
         "NTT4x30Wgpu",
-        poulpy_gpu_portable::NTT4x30Wgpu,
+        NTT4x30Wgpu,
         poulpy_gpu_portable::Wgpu,
         &["enable-vulkan", "enable-ckks", "enable-blas"]
     ));

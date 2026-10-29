@@ -31,11 +31,11 @@ use poulpy_blas::{
     oep::BlasImpl,
     test_suite::helpers::{HINTS, MASKED_PT_ALGORITHMS, MIXES, PT_ALGORITHMS},
 };
-use poulpy_ckks::{CKKSLayout, CoeffsMeta, SlotsKind};
+use poulpy_ckks::{CKKSLayout, CoeffsMeta};
 use poulpy_core::layouts::Degree;
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, ConjugateInvariant, HostStaged, MaxBase2k, Module, Ring, ScratchOwned, Standard},
+    layouts::{Backend, HostStaged, MaxBase2k, Module, Ring, ScratchOwned, Standard},
 };
 
 use crate::{
@@ -91,7 +91,6 @@ fn scale_params() -> Vec<BlasBenchParams> {
 /// product is that of one block of its output, and the products of one inner dimension share it: the queries run once
 /// per inner dimension, on one block column of the public matrix (row on the left).
 pub fn max_base2k_table<BE: Backend + MaxBase2k>(filter: &[String]) {
-    let real = BE::Ring::CYCLOTOMIC_ORDER_FACTOR == ConjugateInvariant::CYCLOTOMIC_ORDER_FACTOR;
     let backend = backend_name::<BE>();
     for bp in scale_params() {
         if !selected(filter, &format!("{backend}/blas/max_base2k/{bp}")) {
@@ -114,11 +113,8 @@ pub fn max_base2k_table<BE: Backend + MaxBase2k>(filter: &[String]) {
         };
         let plan = |algorithm| BlasPlan::new(bp.log_d).with_pt_algorithm(algorithm);
         for (grid, log_sparsity) in labels {
-            let mut block: CKKSLayout = block_layout(&bp);
+            let mut block: CKKSLayout = block_layout::<BE::Ring>(&bp);
             block.meta.log_sparsity = log_sparsity;
-            if real {
-                block.meta.slots = SlotsKind::Real;
-            }
             let encrypted = |rows, cols| BlasLayout::new(block, bp.log_d, rows, cols);
             let per_algorithm = |radix: &dyn Fn(BlasPlan) -> usize| {
                 pt_algorithms()
@@ -508,6 +504,6 @@ where
         Reduction::Sum => 1,
         Reduction::SumRows | Reduction::SumCols => rows * cols,
     };
-    let bound = error_bound(bp) * (summed as f64).sqrt();
+    let bound = error_bound::<BE::Ring>(bp) * (summed as f64).sqrt();
     verify_within::<BE>(op, bp, max_err, bound, None, atks.len());
 }
