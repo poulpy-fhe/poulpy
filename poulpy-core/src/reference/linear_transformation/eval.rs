@@ -302,9 +302,9 @@ pub fn glwe_prepare_linear_transformation_baby_steps_reference<BE, A, H>(
 /// and the right operand `rhs` (matrix diagonals), writing the result into `res`.
 /// This is Phases B/C of docs/guides/linear_transformation.md: per-giant PROD, lazy giant rotations,
 /// and one final normalization. `cnv_offset` is the CKKS-supplied limb alignment
-/// between the input and diagonal scales. The per-giant PROD is dispatched by `P`
-/// via [`DiagonalProd`], so `P = PreparedDiagonal` runs the resident fused path
-/// and a plaintext `P` streams each diagonal — the rest of the loop is shared.
+/// between the input and diagonal scales. The per-giant PROD is dispatched by the
+/// [`DiagonalProd::operand`] of `P`, so `P = PreparedDiagonal` runs the resident fused path
+/// and an unprepared `P` streams each diagonal; the rest of the loop is shared.
 ///
 /// Runs [`assert_linear_transformation_into`] (a fully-pruned transform is a
 /// caller bug), then the shared `glwe_eval_giant_steps` loop.

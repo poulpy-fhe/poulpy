@@ -810,13 +810,13 @@ pub trait GLWETensoringReference<BE: Backend> {
     /// [`OnePassShape::one_pass`], unnormalized, its low `cnv_offset mod base2k` bits still to shift by the
     /// normalization that reads it, else normalized at `res_infos` and transformed.
     #[allow(clippy::too_many_arguments)]
-    fn glwe_mul_prepared_relinearize_sum_dft_reference<'a, R, AP, BP, B, H>(
+    fn glwe_mul_prepared_relinearize_sum_dft_reference<'a, R, AP, H>(
         &self,
         cnv_offset: usize,
         res: &mut VecZnxDftBackendMut<'_, BE>,
         res_infos: &R,
         shape: &OnePassShape,
-        pairs: impl IntoIterator<Item = (&'a AP, DiagonalOperand<'a, BP, B>)>,
+        pairs: impl IntoIterator<Item = (&'a AP, DiagonalOperand<'a, BE>)>,
         a_size: usize,
         a_k: TorusPrecision,
         b_size: usize,
@@ -825,10 +825,9 @@ pub trait GLWETensoringReference<BE: Backend> {
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
+        BE: 'a,
         R: GLWEInfos,
         AP: CnvPVecLToBackendRef<BE> + 'a,
-        BP: CnvPVecRToBackendRef<BE> + 'a,
-        B: GLWEToBackendRef<BE> + GLWEInfos + 'a,
         H: GetTensorKey<BE>;
 
     /// Scratch bytes of [`Self::glwe_tensor_apply_prepared_reference`]: the product's own, without the operand copies
@@ -1615,7 +1614,7 @@ where
             b.next().expect("one-pass product sum has no pairs"),
         );
         let summed = a.len() > 0;
-        let mut pairs = a.zip(b).map(|(a, b)| (a, DiagonalOperand::<BP, NoOperand<BE>>::Prepared(b)));
+        let mut pairs = a.zip(b).map(|(a, b)| (a, DiagonalOperand::<BE, BP>::Prepared(b)));
         glwe_mul_relinearize_one_pass(
             self,
             cnv_offset,
@@ -1626,7 +1625,7 @@ where
                 size: a_size,
                 k: a_k,
             },
-            MulRight::Prepared {
+            MulRight::<NoOperand<BE>, BP>::Prepared {
                 prep: b0,
                 size: b_size,
                 k: b_k,
@@ -1660,13 +1659,13 @@ where
         )) + one_pass_tmp_bytes(self, res, a_size, b_size, tensor_k, tsk, true, true, true)
     }
 
-    fn glwe_mul_prepared_relinearize_sum_dft_reference<'a, R, AP, BP, B, H>(
+    fn glwe_mul_prepared_relinearize_sum_dft_reference<'a, R, AP, H>(
         &self,
         cnv_offset: usize,
         res: &mut VecZnxDftBackendMut<'_, BE>,
         res_infos: &R,
         shape: &OnePassShape,
-        pairs: impl IntoIterator<Item = (&'a AP, DiagonalOperand<'a, BP, B>)>,
+        pairs: impl IntoIterator<Item = (&'a AP, DiagonalOperand<'a, BE>)>,
         a_size: usize,
         a_k: TorusPrecision,
         b_size: usize,
@@ -1675,15 +1674,26 @@ where
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
+        BE: 'a,
         R: GLWEInfos,
         AP: CnvPVecLToBackendRef<BE> + 'a,
-        BP: CnvPVecRToBackendRef<BE> + 'a,
-        B: GLWEToBackendRef<BE> + GLWEInfos + 'a,
         H: GetTensorKey<BE>,
     {
         let mut pairs = pairs.into_iter();
         let (a0, b0) = pairs.next().expect("one-pass product sum has no pairs");
-        let right = mul_right(b0, b_size, b_k);
+        let (view, view_ref);
+        let right = match b0 {
+            DiagonalOperand::Prepared(prep) => MulRight::Prepared {
+                prep,
+                size: b_size,
+                k: b_k,
+            },
+            DiagonalOperand::Unprepared(b) => {
+                view = b;
+                view_ref = &view;
+                MulRight::Operand(&view_ref)
+            }
+        };
         let layout = res_infos.glwe_layout();
         let (mut tmp, mut scratch) = scratch.borrow().take_glwe_scratch(&layout);
         glwe_mul_relinearize_one_pass(
@@ -1691,7 +1701,7 @@ where
             cnv_offset,
             &mut tmp,
             layout.k,
-            MulLeft::<B, AP>::Prepared {
+            MulLeft::<NoOperand<BE>, AP>::Prepared {
                 prep: a0,
                 size: a_size,
                 k: a_k,
@@ -1984,23 +1994,15 @@ enum MulRight<'a, B, BP> {
     Prepared { prep: &'a BP, size: usize, k: TorusPrecision },
 }
 
-/// The [`MulRight`] of a right operand in its form, prepared on `size` limbs at width `k`.
-fn mul_right<'a, B, BP>(b: DiagonalOperand<'a, BP, B>, size: usize, k: TorusPrecision) -> MulRight<'a, B, BP> {
-    match b {
-        DiagonalOperand::Prepared(prep) => MulRight::Prepared { prep, size, k },
-        DiagonalOperand::Unprepared(ct) => MulRight::Operand(ct),
-    }
-}
-
 /// The pairs `(a[i], b[i])` of a sum after the first, which share its layouts.
-enum MulRest<'a, 'r, A, B, AP, BP> {
+enum MulRest<'a, 'r, 'p, BE: Backend + 'p, A, B, AP, BP> {
     /// Ciphertexts, each pair prepared into the first pair's operands, which are ciphertexts too.
     Operands(&'a [&'a A], &'a [&'a B]),
     /// Prepared left operands, read where they are, after a prepared first pair, each with a right operand of the first
     /// pair's form: prepared and read where it is, or a ciphertext prepared into the first pair's right operand.
     /// `summed` unless the iterator is empty.
     Pairs {
-        pairs: &'r mut dyn Iterator<Item = (&'a AP, DiagonalOperand<'a, BP, B>)>,
+        pairs: &'r mut dyn Iterator<Item = (&'p AP, DiagonalOperand<'p, BE, BP>)>,
         summed: bool,
     },
 }
@@ -2025,7 +2027,7 @@ fn glwe_mul_relinearize_one_pass<BE, R, A, B, AP, BP, H>(
     res_k: TorusPrecision,
     left: MulLeft<'_, A, AP>,
     right: MulRight<'_, B, BP>,
-    rest: MulRest<'_, '_, A, B, AP, BP>,
+    rest: MulRest<'_, '_, '_, BE, A, B, AP, BP>,
     tsk: &H,
     scratch: &mut ScratchArena<'_, BE>,
     dft_out: Option<(&mut VecZnxDftBackendMut<'_, BE>, &OnePassShape)>,
@@ -2286,7 +2288,7 @@ fn glwe_mul_relinearize_one_pass<BE, R, A, B, AP, BP, H>(
                 match b {
                     DiagonalOperand::Prepared(b) => add_columns!(&a, &b.to_backend_ref()),
                     DiagonalOperand::Unprepared(b) => {
-                        glwe_prepare_right(module, &mut b_prep, b, right_k.as_usize(), &mut scratch);
+                        glwe_prepare_right(module, &mut b_prep, &&b, right_k.as_usize(), &mut scratch);
                         add_columns!(&a, &b_prep.to_backend_ref());
                     }
                 }

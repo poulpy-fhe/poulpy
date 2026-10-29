@@ -30,17 +30,14 @@ use crate::{
     api::GLWENormalize,
     gadget::{cnv_offset_to_limb_offset, prod_dft_size},
     layouts::{
-        Base2K, DiagonalProd, GGLWEInfos, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos,
+        Base2K, DiagonalOperand, DiagonalProd, GGLWEInfos, GLWE, GLWEInfos, GLWEToBackendMut, GetAutomorphismKey, LWEInfos,
         LinearTransformationPlan, ModuleCoreAlloc,
         prepared::{GLWEAutomorphismKeyPreparedBackendRef, PreparedDiagonal},
     },
     reference::{
         keyswitching::{GGLWEProductReference, GLWEKeyswitchInternal, glwe::gglwe_product_from_dft},
         linear_transformation::{
-            inner_product::{
-                glwe_accumulate_prepared_baby_steps_dft, glwe_accumulate_prepared_baby_steps_dft_tmp_bytes,
-                glwe_accumulate_unprepared_baby_steps_dft,
-            },
+            inner_product::glwe_accumulate_prepared_baby_steps_dft_tmp_bytes,
             lazy::{glwe_dft_add_dft_assign, glwe_dft_copy_dft, glwe_idft_dft_into_big, glwe_normalize_big_into},
         },
     },
@@ -50,21 +47,8 @@ use super::LinearTransformationBabySteps;
 use crate::layouts::{GiantTreeLevel, operand_galois_element};
 
 impl<BE: Backend> DiagonalProd<BE> for PreparedDiagonal<BE::OwnedBuf, BE> {
-    fn operand(&self) -> Option<crate::layouts::prepared::CiphertextDiagonal<'_, BE>> {
-        Some(crate::layouts::DiagonalOperand::Prepared(&self.cnv))
-    }
-
-    fn accumulate_giant_prod<M>(
-        module: &M,
-        cnv_offset_hi: usize,
-        prod_dft: &mut VecZnxDftBackendMut<'_, BE>,
-        lhs: &LinearTransformationBabySteps<BE>,
-        gs: &LinearTransformationGiantStep<Self>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        M: CnvPVecBytesOf + Convolution<BE> + ModuleN,
-    {
-        glwe_accumulate_prepared_baby_steps_dft(module, cnv_offset_hi, prod_dft, lhs, gs, scratch);
+    fn operand(&self) -> DiagonalOperand<'_, BE> {
+        DiagonalOperand::Prepared(&self.cnv)
     }
 
     /// The backend's [`LinearTransformationImpl::glwe_giant_step_batch`](crate::oep::LinearTransformationImpl::glwe_giant_step_batch).
@@ -89,23 +73,6 @@ impl<BE: Backend> DiagonalProd<BE> for PreparedDiagonal<BE::OwnedBuf, BE> {
     {
         BE::glwe_accumulate_giant_steps(module, cnv_offset_hi, prods, lhs, steps, scratch);
     }
-}
-
-/// Reference streamed PROD, exposed for the scheme layer to wire into its
-/// [`DiagonalProd`] impl for its own plaintext diagonal type.
-pub fn glwe_accumulate_streamed_baby_steps_dft<BE, M, P>(
-    module: &M,
-    cnv_offset_hi: usize,
-    prod_dft: &mut VecZnxDftBackendMut<'_, BE>,
-    lhs: &LinearTransformationBabySteps<BE>,
-    gs: &LinearTransformationGiantStep<P>,
-    scratch: &mut ScratchArena<'_, BE>,
-) where
-    BE: Backend,
-    M: CnvPVecBytesOf + Convolution<BE> + ModuleN,
-    P: GLWEToBackendRef<BE> + crate::layouts::IntPolyInfos + GLWEInfos,
-{
-    glwe_accumulate_unprepared_baby_steps_dft(module, cnv_offset_hi, prod_dft, lhs, gs, scratch);
 }
 
 /// The products of the giant steps of one evaluation, which [`glwe_eval_giant_steps`] rotates and sums: each

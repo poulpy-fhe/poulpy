@@ -572,13 +572,13 @@ pub unsafe trait GLWETensoringImpl: Backend {
     /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
     /// [`Self::glwe_mul_prepared_relinearize_sum_dft_tmp_bytes`]; free in kernels and scratch use.
     #[allow(clippy::too_many_arguments)]
-    fn glwe_mul_prepared_relinearize_sum_dft<'a, R, AP, BP, B, H>(
+    fn glwe_mul_prepared_relinearize_sum_dft<'a, R, AP, H>(
         module: &Module<Self>,
         cnv_offset: usize,
         res: &mut VecZnxDftBackendMut<'_, Self>,
         res_infos: &R,
         shape: &crate::reference::operations::OnePassShape,
-        pairs: impl IntoIterator<Item = (&'a AP, crate::layouts::DiagonalOperand<'a, BP, B>)>,
+        pairs: impl IntoIterator<Item = (&'a AP, crate::layouts::DiagonalOperand<'a, Self>)>,
         a_size: usize,
         a_k: crate::layouts::TorusPrecision,
         b_size: usize,
@@ -587,10 +587,9 @@ pub unsafe trait GLWETensoringImpl: Backend {
         tsk: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
+        Self: 'a,
         R: GLWEInfos,
         AP: CnvPVecLToBackendRef<Self> + 'a,
-        BP: CnvPVecRToBackendRef<Self> + 'a,
-        B: GLWEToBackendRef<Self> + GLWEInfos + 'a,
         H: GetTensorKey<Self>;
 
     /// Scratch bound of [`Self::glwe_tensor_apply_prepared`]; may report less than the reference, never less than the
@@ -1504,13 +1503,13 @@ macro_rules! impl_glwe_tensoring_reference_full {
             }
 
             #[allow(clippy::too_many_arguments)]
-            fn glwe_mul_prepared_relinearize_sum_dft<'a, R, AP, BP, B, H>(
+            fn glwe_mul_prepared_relinearize_sum_dft<'a, R, AP, H>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 cnv_offset: usize,
                 res: &mut ::poulpy_hal::layouts::VecZnxDftBackendMut<'_, $be>,
                 res_infos: &R,
                 shape: &$crate::reference::operations::OnePassShape,
-                pairs: impl IntoIterator<Item = (&'a AP, $crate::layouts::DiagonalOperand<'a, BP, B>)>,
+                pairs: impl IntoIterator<Item = (&'a AP, $crate::layouts::DiagonalOperand<'a, $be>)>,
                 a_size: usize,
                 a_k: $crate::layouts::TorusPrecision,
                 b_size: usize,
@@ -1519,10 +1518,9 @@ macro_rules! impl_glwe_tensoring_reference_full {
                 tsk: &H,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
+                $be: 'a,
                 R: $crate::layouts::GLWEInfos,
                 AP: ::poulpy_hal::layouts::CnvPVecLToBackendRef<$be> + 'a,
-                BP: ::poulpy_hal::layouts::CnvPVecRToBackendRef<$be> + 'a,
-                B: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos + 'a,
                 H: $crate::layouts::GetTensorKey<$be>,
             {
                 <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_mul_prepared_relinearize_sum_dft_reference(

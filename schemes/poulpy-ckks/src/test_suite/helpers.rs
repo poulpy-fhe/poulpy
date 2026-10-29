@@ -834,6 +834,17 @@ where
     module.ckks_eval_linear_transformation_tmp_bytes(ct, &ckks_plaintext_diagonal_layout(ct), plan, key, key)
 }
 
+/// The streamed twin of [`pt_eval_tmp_bytes`].
+pub(crate) fn pt_streamed_eval_tmp_bytes<BE, C, K>(module: &Module<BE>, ct: &C, plan: &LinearTransformationPlan, key: &K) -> usize
+where
+    BE: Backend,
+    Module<BE>: CKKSLinearTransformationOps<BE>,
+    C: CKKSCtBounds,
+    K: GGLWEInfos,
+{
+    module.ckks_eval_linear_transformation_streamed_tmp_bytes(ct, &ckks_plaintext_diagonal_layout(ct), plan, key, key)
+}
+
 /// Generates a prepared rank-1 GLWE key-switching key from `sk_in` to `sk_out`,
 /// sized for an input ciphertext of modulus `k_in` bits.
 pub fn gen_switching_key<BE>(

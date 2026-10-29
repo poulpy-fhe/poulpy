@@ -390,7 +390,7 @@ unsafe impl poulpy_ckks::oep::CKKSDFTImpl for OverrideBackend {
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        P: DiagonalProd<Self> + LtDiagonalMeta + IntPolyInfos,
+        P: DiagonalProd<Self> + LtDiagonalMeta,
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<Self>,
     {

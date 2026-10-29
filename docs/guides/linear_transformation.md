@@ -91,6 +91,7 @@ The diagonals are the right operand of the evaluation.
 They can be materialized once into a prepared cache of convolution operands, which is the fast path for a transform evaluated many times, or streamed, where each diagonal is prepared on the fly into a single reused scratch buffer.
 The streamed path trades compute for a smaller resident footprint and suits memory-bound backends.
 Both paths share the same giant-step loop and differ only in how each product obtains its diagonals.
+Diagonals of either rank stream, plaintexts and ciphertexts alike, each diagonal type giving its diagonal as a prepared operand or as a GLWE view the product prepares.
 The baby-step cache is prepared once either way.
 
 ## Ciphertext diagonals

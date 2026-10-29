@@ -78,10 +78,6 @@ where
                             == (res.n, res.base2k, res.rank, diagonal.k(), diagonal.size()),
                         "a ciphertext diagonal is not at the degree, base2k and rank of res and the first diagonal's width"
                     );
-                    assert!(
-                        p.operand().is_some(),
-                        "a diagonal of the rank of res gives no ciphertext operand"
-                    );
                 }
             }
         }
@@ -181,10 +177,10 @@ where
         let (a_size, b_size) = (lhs.size(), diagonal.size());
         for (prod, g) in prods.iter_mut().zip(steps) {
             let pairs = self.babies.iter().zip(self.lts).flat_map(|(lhs, lt)| {
-                lt.giant_steps[g].diagonals.iter().map(move |d| {
-                    let right = d.plaintext.operand().expect("checked ciphertext diagonals");
-                    (lhs.baby_step(d.baby), right)
-                })
+                lt.giant_steps[g]
+                    .diagonals
+                    .iter()
+                    .map(move |d| (lhs.baby_step(d.baby), d.plaintext.operand()))
             });
             let Some(shape) = &self.one_pass else {
                 let (n, cols, base2k) = (self.res.n.as_usize(), self.res.rank.as_usize() + 1, self.res.base2k);
@@ -199,7 +195,7 @@ where
                             module.glwe_tensor_apply_prepared(self.cnv_offset, out, a, a_size, b, b_size, base2k, &mut scratch)
                         }
                         DiagonalOperand::Unprepared(b) => {
-                            glwe_prepare_right(module, &mut b_prep, b, diagonal.k().as_usize(), &mut scratch);
+                            glwe_prepare_right(module, &mut b_prep, &&b, diagonal.k().as_usize(), &mut scratch);
                             module.glwe_tensor_apply_prepared(
                                 self.cnv_offset,
                                 out,

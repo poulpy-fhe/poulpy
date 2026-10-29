@@ -286,7 +286,7 @@ pub fn ckks_dft_evaluate_assign<BE, Dir, Fmt, P, Dst, H>(
 ) -> Result<()>
 where
     BE: Backend,
-    P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
+    P: DiagonalProd<BE> + LtDiagonalMeta,
     Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
@@ -313,7 +313,7 @@ fn eval_factor<BE, P, Dst, H>(
 ) -> Result<()>
 where
     BE: Backend,
-    P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
+    P: DiagonalProd<BE> + LtDiagonalMeta,
     Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     H: GetAutomorphismKey<BE> + GetTensorKey<BE>,

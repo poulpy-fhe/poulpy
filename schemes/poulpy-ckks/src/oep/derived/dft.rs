@@ -37,7 +37,7 @@ pub(crate) fn ckks_coeffs_to_slots_assign_derived<BE, P, Dst, H>(
 ) -> Result<()>
 where
     BE: Backend,
-    P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
+    P: DiagonalProd<BE> + LtDiagonalMeta,
     Module<BE>: crate::api::CKKSDFTOps<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
@@ -56,7 +56,7 @@ pub(crate) fn ckks_slots_to_coeffs_assign_derived<BE, P, Dst, H>(
 ) -> Result<()>
 where
     BE: Backend,
-    P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
+    P: DiagonalProd<BE> + LtDiagonalMeta,
     Module<BE>: crate::api::CKKSDFTOps<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
@@ -85,7 +85,7 @@ pub(crate) fn ckks_coeffs_to_slots_split_derived<BE, P, Dst, Src, H>(
 ) -> Result<()>
 where
     BE: Backend,
-    P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
+    P: DiagonalProd<BE> + LtDiagonalMeta,
     Module<BE>: crate::api::CKKSDFTOps<BE>
         + CKKSModuleAlloc<BE>
         + CKKSCopyOps<BE>
@@ -133,7 +133,7 @@ pub(crate) fn ckks_slots_to_coeffs_split_derived<BE, P, Dst, Src, H>(
 ) -> Result<()>
 where
     BE: Backend,
-    P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
+    P: DiagonalProd<BE> + LtDiagonalMeta,
     Module<BE>: crate::api::CKKSDFTOps<BE> + CKKSAddOps<BE> + CKKSImagOps<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
@@ -163,7 +163,7 @@ pub(crate) fn ckks_coeffs_to_slots_repack_derived<BE, P, Dst, Src, H>(
 ) -> Result<()>
 where
     BE: Backend,
-    P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
+    P: DiagonalProd<BE> + LtDiagonalMeta,
     Module<BE>: crate::api::CKKSDFTOps<BE>
         + CKKSModuleAlloc<BE>
         + CKKSCopyOps<BE>
@@ -221,7 +221,7 @@ pub(crate) fn ckks_slots_to_coeffs_repack_derived<BE, P, Dst, Src, H>(
 ) -> Result<()>
 where
     BE: Backend,
-    P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
+    P: DiagonalProd<BE> + LtDiagonalMeta,
     Module<BE>: crate::api::CKKSDFTOps<BE> + CKKSCopyOps<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,

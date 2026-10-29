@@ -1233,13 +1233,13 @@ macro_rules! impl_rank_one_tensoring {
             }
 
             #[allow(clippy::too_many_arguments)]
-            fn glwe_mul_prepared_relinearize_sum_dft<'a, R, AP, BP, B, H>(
+            fn glwe_mul_prepared_relinearize_sum_dft<'a, R, AP, H>(
                 module: &Module<$be>,
                 cnv_offset: usize,
                 res: &mut VecZnxDftBackendMut<'_, $be>,
                 res_infos: &R,
                 shape: &poulpy_core::reference::operations::OnePassShape,
-                pairs: impl IntoIterator<Item = (&'a AP, poulpy_core::layouts::DiagonalOperand<'a, BP, B>)>,
+                pairs: impl IntoIterator<Item = (&'a AP, poulpy_core::layouts::DiagonalOperand<'a, $be>)>,
                 a_size: usize,
                 a_k: poulpy_core::layouts::TorusPrecision,
                 b_size: usize,
@@ -1248,10 +1248,9 @@ macro_rules! impl_rank_one_tensoring {
                 tsk: &H,
                 scratch: &mut ScratchArena<'_, $be>,
             ) where
+                $be: 'a,
                 R: GLWEInfos,
                 AP: CnvPVecLToBackendRef<$be> + 'a,
-                BP: CnvPVecRToBackendRef<$be> + 'a,
-                B: GLWEToBackendRef<$be> + GLWEInfos + 'a,
                 H: poulpy_core::layouts::GetTensorKey<$be>,
             {
                 module.glwe_mul_prepared_relinearize_sum_dft_reference(

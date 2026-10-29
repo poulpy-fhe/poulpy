@@ -4,11 +4,8 @@ use crate::test_suite::keys::TransformKeys;
 use std::collections::HashMap;
 
 use poulpy_hal::{
-    api::{CnvPVecAlloc, CnvPVecBytesOf, Convolution, ModuleN},
-    layouts::{
-        Backend, CyclotomicOrder, Data, DataViewMut, GaloisElement, HostDataMut, Module, ScratchArena, VecZnxDftBackendMut,
-        ZnxViewMut,
-    },
+    api::CnvPVecAlloc,
+    layouts::{Backend, CyclotomicOrder, Data, DataViewMut, GaloisElement, HostDataMut, Module, ZnxViewMut},
     source::Source,
     test_suite::TestParams,
 };
@@ -17,13 +14,12 @@ use crate::{
     DiagonalProd, GLWELinearTransformations,
     api::{GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory, TransferInto},
     layouts::{
-        Base2K, Degree, Dnum, GGLWEInfos, GLWE, GLWEAutomorphismKeyLayout, GLWEBackendRef, GLWEInfos, GLWELayout,
-        GLWETensorKeyLayout, GLWEToBackendRef, IntPolyInfos, LWEInfos, LinearTransformation, LinearTransformationDiagonal,
+        Base2K, Degree, DiagonalOperand, Dnum, GGLWEInfos, GLWE, GLWEAutomorphismKeyLayout, GLWEBackendRef, GLWEInfos,
+        GLWELayout, GLWETensorKeyLayout, GLWEToBackendRef, LWEInfos, LinearTransformation, LinearTransformationDiagonal,
         LinearTransformationGiantStep, LinearTransformationLayout, LinearTransformationStrategy, ModuleCoreAlloc, Rank,
         TorusPrecision,
         prepared::{LinearTransformationBabySteps, PreparedDiagonal},
     },
-    reference::linear_transformation::glwe_accumulate_streamed_baby_steps_dft,
     test_suite::{
         keys::fill_by_digit,
         noise::assert_refuses_uncovered_input,
@@ -53,11 +49,6 @@ impl<D: Data> GLWEInfos for StreamedDiagonal<D> {
         self.0.rank()
     }
 }
-impl<D: Data> IntPolyInfos for StreamedDiagonal<D> {
-    fn encoded_k(&self) -> TorusPrecision {
-        self.max_k()
-    }
-}
 impl<D: Data, BE: Backend> GLWEToBackendRef<BE> for StreamedDiagonal<D>
 where
     GLWE<D, i64>: GLWEToBackendRef<BE>,
@@ -70,21 +61,8 @@ impl<BE: Backend<ZnxWord = i64>> DiagonalProd<BE> for StreamedDiagonal<BE::Owned
 where
     GLWE<BE::OwnedBuf, i64>: GLWEToBackendRef<BE>,
 {
-    fn operand(&self) -> Option<crate::layouts::prepared::CiphertextDiagonal<'_, BE>> {
-        Some(crate::layouts::DiagonalOperand::Unprepared(&self.0))
-    }
-
-    fn accumulate_giant_prod<M>(
-        module: &M,
-        cnv_offset_hi: usize,
-        prod_dft: &mut VecZnxDftBackendMut<'_, BE>,
-        lhs: &LinearTransformationBabySteps<BE>,
-        gs: &LinearTransformationGiantStep<Self>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        M: CnvPVecBytesOf + Convolution<BE> + ModuleN,
-    {
-        glwe_accumulate_streamed_baby_steps_dft(module, cnv_offset_hi, prod_dft, lhs, gs, scratch);
+    fn operand(&self) -> DiagonalOperand<'_, BE> {
+        DiagonalOperand::Unprepared(self.0.to_backend_ref())
     }
 }
 

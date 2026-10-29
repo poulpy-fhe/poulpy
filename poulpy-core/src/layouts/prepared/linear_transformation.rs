@@ -12,12 +12,19 @@ use poulpy_hal::layouts::{CnvPVecLBackendMut, CnvPVecLOwned, CnvPVecLToBackendMu
 use std::collections::BTreeMap;
 
 use poulpy_hal::{
-    api::{CnvPVecBytesOf, Convolution, ModuleN},
-    layouts::{Backend, CnvPVecR, Data, Module, ScratchArena, VecZnxDftBackendMut},
+    api::{CnvPVecBytesOf, Convolution, ModuleN, ScratchArenaTakeBasic},
+    layouts::{
+        Backend, CnvDftAccTerm, CnvPVecLToBackendRef, CnvPVecR, CnvPVecRToBackendRef, Data, Module, PrepareHint, ScratchArena,
+        VecZnxDftBackendMut,
+    },
 };
 
-use crate::layouts::{
-    Base2K, Degree, GLWEInfos, LWEInfos, LinearTransformation, LinearTransformationGiantStep, Rank, TorusPrecision,
+use crate::{
+    gadget::prod_dft_size,
+    layouts::{
+        Base2K, Degree, DiagonalOperand, GLWEBackendRef, GLWEInfos, LWEInfos, LinearTransformation,
+        LinearTransformationGiantStep, Rank, TorusPrecision,
+    },
 };
 
 /// A resident (prepared) linear transformation: the BSGS transform with every
@@ -109,13 +116,6 @@ impl<D: Data, BE: Backend> PreparedDiagonal<D, BE> {
         self.log_sparsity = log_sparsity;
     }
 }
-
-/// The right operand a ciphertext diagonal gives the products of its giant step.
-pub type CiphertextDiagonal<'a, BE> = crate::layouts::DiagonalOperand<
-    'a,
-    poulpy_hal::layouts::CnvPVecROwned<BE>,
-    crate::layouts::GLWE<<BE as Backend>::OwnedBuf, <BE as Backend>::ZnxWord>,
->;
 
 impl<D: Data, BE: Backend> crate::layouts::IntPolyInfos for PreparedDiagonal<D, BE> {
     /// Prepared diagonals are integer polynomials prepared across their whole
@@ -229,37 +229,31 @@ impl<BE: Backend> LinearTransformationBabySteps<BE> {
     }
 }
 
-/// Per-giant PROD, provided by the diagonal representation itself.
+/// Per-giant PROD, read off the diagonal representation through [`Self::operand`].
 ///
-/// The shared evaluator `glwe_eval_giant_steps` is generic over the diagonal
-/// type `P` stored in the [`LinearTransformation`]; the only per-flavor step is
-/// how one giant step's `Σ_k ũ_{j,k} ⊙ rot(v,k)` is computed. Each concrete
-/// diagonal type implements this once:
+/// The shared evaluator `glwe_eval_giant_steps` is generic over the diagonal type `P` stored in the
+/// [`LinearTransformation`]; each concrete diagonal type gives its diagonal once, as a [`DiagonalOperand`]:
 ///
-/// - [`PreparedDiagonal`] (resident): diagonals are already in convolution
-///   domain, so the whole giant step is one fused accumulation
-///   (`glwe_accumulate_prepared_baby_steps_dft`).
-/// - a plaintext diagonal (streamed): each diagonal is prepared on the fly
-///   through one reused scratch slot
-///   (`glwe_accumulate_unprepared_baby_steps_dft`); implemented by the scheme
-///   layer for its plaintext type.
+/// - prepared ([`PreparedDiagonal`], resident): the diagonals are already in convolution domain, so the whole giant
+///   step is one fused accumulation (`glwe_accumulate_prepared_baby_steps_dft`);
+/// - unprepared, a GLWE view (streamed): each diagonal is prepared on the fly through one reused scratch slot
+///   (`glwe_accumulate_unprepared_baby_steps_dft`).
+///
+/// The rank of the diagonals picks the product: a transform whose diagonals are of rank 0 multiplies them as
+/// plaintexts through [`Self::accumulate_giant_prod`], one whose diagonals are of the rank of its source multiplies
+/// them as ciphertexts, tensored and relinearized, preparing an unprepared one in the call.
 ///
 /// Dispatching per concrete type, rather than via a blanket keyed on
 /// [`GLWEToBackendRef`](crate::layouts::GLWEToBackendRef), is what keeps the
 /// impls coherent: the backend type parameter prevents the compiler from
 /// ruling out a downstream `GLWEToBackendRef` impl for [`PreparedDiagonal`], so
 /// a blanket would clash with the resident impl.
-///
-/// A transform whose diagonals are of the rank of its source multiplies them as ciphertexts, through
-/// [`Self::operand`].
 pub trait DiagonalProd<BE: Backend>: GLWEInfos + Sized {
-    /// The diagonal as the right operand of a ciphertext product, prepared or a ciphertext the product prepares;
-    /// `None` for a plaintext diagonal, which a transform never multiplies as a ciphertext.
-    fn operand(&self) -> Option<CiphertextDiagonal<'_, BE>> {
-        None
-    }
+    /// The diagonal as the right operand of its products: prepared, or a GLWE view the product prepares.
+    fn operand(&self) -> DiagonalOperand<'_, BE>;
 
-    /// Runs the PROD inner product of one giant step into `prod_dft`.
+    /// Runs the PROD inner product of one giant step of plaintext diagonals into `prod_dft`, in the form of its first
+    /// diagonal, which every diagonal of a transform shares.
     fn accumulate_giant_prod<M>(
         module: &M,
         cnv_offset_hi: usize,
@@ -268,7 +262,21 @@ pub trait DiagonalProd<BE: Backend>: GLWEInfos + Sized {
         gs: &LinearTransformationGiantStep<Self>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        M: CnvPVecBytesOf + Convolution<BE> + ModuleN;
+        M: CnvPVecBytesOf + Convolution<BE> + ModuleN,
+    {
+        let first = gs
+            .diagonals
+            .first()
+            .expect("linear transformation giant step has no diagonals");
+        match first.plaintext.operand() {
+            DiagonalOperand::Prepared(_) => {
+                glwe_accumulate_prepared_baby_steps_dft(module, cnv_offset_hi, prod_dft, lhs, gs, scratch)
+            }
+            DiagonalOperand::Unprepared(_) => {
+                glwe_accumulate_unprepared_baby_steps_dft(module, cnv_offset_hi, prod_dft, lhs, gs, scratch)
+            }
+        }
+    }
 
     /// Most giant steps [`Self::accumulate_giant_prods`] takes per call, at least 1.
     fn giant_step_batch(_module: &Module<BE>) -> usize
@@ -293,6 +301,160 @@ pub trait DiagonalProd<BE: Backend>: GLWEInfos + Sized {
         assert_eq!(prods.len(), steps.len());
         for (prod, step) in prods.iter_mut().zip(steps) {
             Self::accumulate_giant_prod(module, cnv_offset_hi, prod, lhs, step, scratch);
+        }
+    }
+}
+
+/// The prepared operand of a diagonal of a giant step whose first diagonal is prepared.
+fn prepared<BE: Backend, P>(operand: DiagonalOperand<'_, BE, P>) -> &P {
+    match operand {
+        DiagonalOperand::Prepared(prep) => prep,
+        DiagonalOperand::Unprepared(_) => panic!("a giant step mixes prepared and unprepared diagonals"),
+    }
+}
+
+/// The view of a diagonal of a giant step whose first diagonal is unprepared.
+fn unprepared<BE: Backend>(operand: DiagonalOperand<'_, BE>) -> GLWEBackendRef<'_, BE> {
+    match operand {
+        DiagonalOperand::Unprepared(view) => view,
+        DiagonalOperand::Prepared(_) => panic!("a giant step mixes prepared and unprepared diagonals"),
+    }
+}
+
+/// PROD block for one giant step of a resident (prepared) transform, kept in DFT
+/// domain.
+///
+/// The diagonals are already in convolution domain, so the whole giant step is
+/// handed to the backend as a single fused accumulation per output column: it
+/// sums all `baby ⊛ diagonal` terms with one reduction per output limb and
+/// writes `prod_dft` once. Leaves the `(r+1)` output columns in `prod_dft`.
+pub(crate) fn glwe_accumulate_prepared_baby_steps_dft<BE, M, P>(
+    module: &M,
+    cnv_offset_hi: usize,
+    prod_dft: &mut VecZnxDftBackendMut<'_, BE>,
+    lhs: &LinearTransformationBabySteps<BE>,
+    gs: &LinearTransformationGiantStep<P>,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: Backend,
+    M: Convolution<BE>,
+    P: DiagonalProd<BE>,
+{
+    let cols = lhs.cols();
+    let first = gs
+        .diagonals
+        .first()
+        .expect("prepared linear transformation giant step has no diagonals");
+    let diagonal_size = prepared(first.plaintext.operand()).size();
+    let res_dft_size = prod_dft_size(lhs.size(), diagonal_size, cnv_offset_hi);
+    assert_eq!(prod_dft.cols(), cols);
+    assert_eq!(prod_dft.size(), res_dft_size);
+
+    for col in 0..cols {
+        let terms: Vec<CnvDftAccTerm<'_, BE>> = gs
+            .diagonals
+            .iter()
+            .map(|d| {
+                let diagonal = prepared(d.plaintext.operand());
+                let baby = lhs.baby_step(d.baby);
+                assert_eq!(baby.cols(), cols);
+                assert_eq!(prod_dft_size(baby.size(), diagonal.size(), cnv_offset_hi), res_dft_size);
+                CnvDftAccTerm {
+                    a: baby.to_backend_ref(),
+                    a_col: col,
+                    b: diagonal.to_backend_ref(),
+                    b_col: 0,
+                    b_galois: 1,
+                }
+            })
+            .collect();
+        module.cnv_apply_dft_sum(cnv_offset_hi, prod_dft, col, &terms, scratch);
+    }
+}
+
+/// PROD block for one giant step from an *unprepared* matrix: identical to
+/// [`glwe_accumulate_prepared_baby_steps_dft`] except each diagonal is prepared
+/// (`cnv_prepare_right`) on the fly into a single reused scratch `CnvPVecR` and
+/// discarded immediately, so the full prepared RHS is never materialized. Trades
+/// per-eval recompute for memory when memory bandwidth is the limiting factor. The
+/// baby loop is the outer one so each diagonal is prepared exactly once per eval.
+fn glwe_accumulate_unprepared_baby_steps_dft<BE, M, P>(
+    module: &M,
+    cnv_offset_hi: usize,
+    prod_dft: &mut VecZnxDftBackendMut<'_, BE>,
+    lhs: &LinearTransformationBabySteps<BE>,
+    gs: &LinearTransformationGiantStep<P>,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: Backend,
+    M: CnvPVecBytesOf + Convolution<BE> + ModuleN,
+    P: DiagonalProd<BE>,
+{
+    let cols = lhs.cols();
+    let first = gs
+        .diagonals
+        .first()
+        .expect("streamed linear transformation giant step has no diagonals");
+    let first = unprepared(first.plaintext.operand());
+    // The streamed diagonal is an integer poly encoded across its full physical
+    // width, so its width and size are `max_k`/`max_size`, not the (possibly
+    // smaller) effective `k`/`size`.
+    let diagonal_size = first.max_size();
+    // A diagonal is prepared at its own degree; the apply reads it
+    // through the convolution's embedding slot.
+    let diagonal_n = first.n().as_usize();
+    let res_dft_size = prod_dft_size(lhs.size(), diagonal_size, cnv_offset_hi);
+    assert_eq!(prod_dft.cols(), cols);
+    assert_eq!(prod_dft.size(), res_dft_size);
+
+    // One reused right-operand slot: the whole RHS streams through it.
+    let (mut diagonal, mut scratch_1) =
+        scratch
+            .borrow()
+            .take_cnv_pvec_right_scratch(diagonal_n, 1, diagonal_size, PrepareHint::OneShot);
+
+    // Baby is the outer loop, so the first baby initializes every output column
+    // (overwrite) and the rest accumulate in place; each diagonal is prepared once.
+    for (term_idx, d) in gs.diagonals.iter().enumerate() {
+        let baby = lhs.baby_step(d.baby);
+        assert_eq!(baby.cols(), cols);
+        assert_eq!(prod_dft_size(baby.size(), diagonal_size, cnv_offset_hi), res_dft_size);
+        let plaintext = unprepared(d.plaintext.operand());
+        assert_eq!(
+            plaintext.n().as_usize(),
+            diagonal_n,
+            "streamed linear transformation diagonals do not share one degree"
+        );
+
+        // Stream the RHS: prepare this diagonal on the fly, then reuse the slot.
+        module.cnv_prepare_right(&mut diagonal, &plaintext.data, &mut scratch_1.borrow());
+
+        for col in 0..cols {
+            if term_idx == 0 {
+                module.cnv_apply_dft(
+                    cnv_offset_hi,
+                    prod_dft,
+                    col,
+                    &baby.to_backend_ref(),
+                    col,
+                    &diagonal.to_backend_ref(),
+                    0,
+                    1,
+                    &mut scratch_1.borrow(),
+                );
+            } else {
+                module.cnv_apply_dft_add(
+                    cnv_offset_hi,
+                    prod_dft,
+                    col,
+                    &baby.to_backend_ref(),
+                    col,
+                    &diagonal.to_backend_ref(),
+                    0,
+                    1,
+                    &mut scratch_1.borrow(),
+                );
+            }
         }
     }
 }

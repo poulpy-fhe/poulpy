@@ -42,7 +42,8 @@ use crate::{
         helpers::{
             QueryLog, TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_ckks_error,
             assert_ckks_internal, assert_decrypt_precision, assert_invalid_operand, assert_mul_ct_output_meta, ckks_encrypt,
-            dirty_ct, gen_atk, gen_sk_with_raw, gen_tsk, pt_eval_tmp_bytes, test_vector_1, test_vector_2, want_add,
+            dirty_ct, gen_atk, gen_sk_with_raw, gen_tsk, pt_eval_tmp_bytes, pt_streamed_eval_tmp_bytes, test_vector_1,
+            test_vector_2, want_add,
         },
         parity::helpers::{snapshot, with_scratch},
     },
@@ -180,7 +181,7 @@ where
     // The documented bound of `self_into`: the larger of the baby-step and evaluation queries.
     let self_into_bytes = |plan: &LinearTransformationPlan, streamed: bool| {
         let eval = if streamed {
-            module.ckks_eval_linear_transformation_streamed_tmp_bytes(&ct, plan, &key_params.atk_layout())
+            pt_streamed_eval_tmp_bytes(module, &ct, plan, &key_params.atk_layout())
         } else {
             pt_eval_tmp_bytes(module, &ct, plan, &key_params.atk_layout())
         };
@@ -1386,10 +1387,18 @@ pub fn test_linear_transformation_ct<BE, F, E>(
             |s| module.ckks_eval_linear_transformation_self_assign(&mut self_assigned, &prepared, &keys, s),
         )
         .unwrap();
+        // The unprepared diagonals, prepared in the call.
+        let mut streamed = alloc_ct(&params, module, src_k);
+        with_scratch::<BE, _>(
+            module.ckks_eval_linear_transformation_streamed_tmp_bytes(&src, first, &plan, &tsk_layout, &params.atk_layout()),
+            |s| module.ckks_eval_linear_transformation_into(&mut streamed, &src, &babies, &lt, &keys, s),
+        )
+        .unwrap();
         for (form, out) in [
             ("_assign", &assigned),
             ("_self_into", &self_into),
             ("_self_assign", &self_assigned),
+            ("streamed _into", &streamed),
         ] {
             assert_eq!(snapshot::<BE, _>(out), have, "{label}: {form} differs from _into");
         }

@@ -8,27 +8,21 @@
 use crate::SlotsKind;
 use crate::{CKKSError, CKKSResult as Result, ckks_ensure, ckks_ensure_operand, operand_cyclotomic_order};
 use poulpy_core::layouts::GLWEPlaintextInfos;
-use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::LinearTransformationPlan;
 use poulpy_core::{
-    DiagonalProd, GLWELinearTransformations, LinearTransformationBabySteps, LinearTransformationGiantStep,
-    LinearTransformationPrepared,
+    DiagonalProd, GLWELinearTransformations, LinearTransformationBabySteps, LinearTransformationPrepared,
     layouts::{
-        BsgsRotations, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos,
-        TorusPrecision, prepared::PreparedDiagonal,
+        BsgsRotations, DiagonalOperand, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey,
+        GetTensorKey, LWEInfos, TorusPrecision, prepared::PreparedDiagonal,
     },
-    reference::linear_transformation::glwe_accumulate_streamed_baby_steps_dft,
 };
-use poulpy_hal::{
-    api::{CnvPVecBytesOf, Convolution, ModuleN},
-    layouts::{Backend, CyclotomicOrder, Data, Module, Ring, ScratchArena, VecZnxDftBackendMut, ZnxWord, galois_element},
-};
+use poulpy_hal::layouts::{Backend, CyclotomicOrder, Data, Module, Ring, ScratchArena, ZnxWord, galois_element};
 
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSLayout, SetCKKSInfos,
     api::{CKKSCopyOps, LinearTransformation, LtDiagonalMeta, ckks_linear_transformation_output_layout},
     layouts::{
-        CKKSPlaintext,
+        CKKSCiphertext, CKKSPlaintext,
         validation::{ensure_prepared_transformation_layout, ensure_uniform_diagonals},
     },
     mul_ct_params_raw, mul_pt_params_raw,
@@ -39,29 +33,25 @@ use crate::{
 };
 use poulpy_core::GLWEBytesOf;
 
-/// Per-giant streamed PROD for CKKS plaintext diagonals.
-///
-/// The scheme-side half of [`DiagonalProd`]: where the resident path (core's
-/// [`PreparedDiagonal`]) fuses
-/// already-prepared diagonals, the streamed path prepares each
-/// [`CKKSPlaintext`] diagonal on the fly. Implementing it here (per concrete
-/// plaintext type) is what lets the resident and streamed transforms share the
-/// single `LinearTransformation<P>` container without overlapping impls.
+/// A streamed plaintext diagonal: where the resident path (core's [`PreparedDiagonal`]) fuses already-prepared
+/// diagonals, a [`CKKSPlaintext`] diagonal is a rank-0 GLWE view the product prepares on the fly.
 impl<BE: Backend, D: Data> DiagonalProd<BE> for CKKSPlaintext<D, BE::ZnxWord, BE::Ring>
 where
     CKKSPlaintext<D, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE>,
 {
-    fn accumulate_giant_prod<M>(
-        module: &M,
-        cnv_offset_hi: usize,
-        prod_dft: &mut VecZnxDftBackendMut<'_, BE>,
-        lhs: &LinearTransformationBabySteps<BE>,
-        gs: &LinearTransformationGiantStep<Self>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        M: CnvPVecBytesOf + Convolution<BE> + ModuleN,
-    {
-        glwe_accumulate_streamed_baby_steps_dft(module, cnv_offset_hi, prod_dft, lhs, gs, scratch);
+    fn operand(&self) -> DiagonalOperand<'_, BE> {
+        DiagonalOperand::Unprepared(GLWEToBackendRef::to_backend_ref(self))
+    }
+}
+
+/// A streamed ciphertext diagonal: a GLWE view of the source's rank the product prepares on the fly and multiplies as
+/// a ciphertext.
+impl<BE: Backend, D: Data> DiagonalProd<BE> for CKKSCiphertext<D, BE::ZnxWord, BE::Ring>
+where
+    CKKSCiphertext<D, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE>,
+{
+    fn operand(&self) -> DiagonalOperand<'_, BE> {
+        DiagonalOperand::Unprepared(GLWEToBackendRef::to_backend_ref(self))
     }
 }
 
@@ -77,6 +67,26 @@ impl<D: Data, W: ZnxWord, R: Ring> LtDiagonalMeta for CKKSPlaintext<D, W, R> {
 
     fn lt_log_sparsity(&self, log_n: usize) -> usize {
         log_n.saturating_sub(self.log_n())
+    }
+}
+
+/// Streamed ciphertext-diagonal metadata: a [`CKKSCiphertext`] carries its scale as `log_delta` and its sparsity as a
+/// label.
+impl<D: Data, W: ZnxWord, R: Ring> LtDiagonalMeta for CKKSCiphertext<D, W, R> {
+    fn lt_log_scale(&self) -> usize {
+        self.log_delta()
+    }
+
+    fn lt_slots(&self) -> SlotsKind {
+        self.slots()
+    }
+
+    fn lt_log_sparsity(&self, _log_n: usize) -> usize {
+        self.log_sparsity()
+    }
+
+    fn lt_ciphertext_k(&self) -> Option<TorusPrecision> {
+        Some(self.k())
     }
 }
 
@@ -154,21 +164,23 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
     }
 
     /// Sized at the module degree, an upper bound for a diagonal below the ring degree.
-    fn ckks_eval_linear_transformation_streamed_tmp_bytes_reference<C, K>(
+    fn ckks_eval_linear_transformation_streamed_tmp_bytes_reference<C, D, K, T>(
         &self,
         ct: &C,
+        diagonal: &D,
         plan: &LinearTransformationPlan,
+        tsk: &T,
         key: &K,
     ) -> usize
     where
         Self: GLWELinearTransformations<BE> + GLWEBytesOf<BE> + CKKSCopyOps<BE>,
         C: CKKSCtBounds,
+        D: GLWEInfos,
         K: GGLWEInfos,
+        T: GGLWEInfos,
     {
-        // Streamed diagonals are plaintexts, bounded by `ct`'s width, and read no tensor key. The extra ct-sized buffer
-        // and the copy cover the `_assign` wrappers' scratch-carved working copy, as above.
-        let diagonal = crate::api::ckks_plaintext_diagonal_layout(ct);
-        self.glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(ct, ct, &diagonal, plan, key, key)
+        // The extra ct-sized buffer and the copy cover the `_assign` wrappers' scratch-carved working copy, as above.
+        self.glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(ct, ct, diagonal, plan, tsk, key)
             .max(self.ckks_copy_tmp_bytes(ct, ct))
             + BE::scratch_aligned(self.glwe_bytes_of_from_infos(ct))
     }
@@ -276,7 +288,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         Self: GLWELinearTransformations<BE> + CyclotomicOrder,
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
+        P: DiagonalProd<BE> + LtDiagonalMeta,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
     {
         const OP: &str = "ckks_eval_linear_transformation_into";
@@ -409,7 +421,7 @@ where
     BE: Backend,
     Dst: CKKSCtBounds,
     Src: CKKSCtBounds,
-    P: LtDiagonalMeta + IntPolyInfos + GLWEInfos,
+    P: LtDiagonalMeta + GLWEInfos,
     H: GetTensorKey<BE>,
 {
     if first.rank().as_usize() == 0 {
@@ -420,7 +432,7 @@ where
             src.log_budget(),
             first.lt_log_scale(),
             0,
-            first.encoded_k().as_usize(),
+            first.max_k().as_usize(),
         );
     }
     check_prepared_layout(op, dst, first)?;
@@ -442,9 +454,10 @@ where
     )
 }
 
-/// The scale, storage width and slot kind a diagonal's evaluation reads.
-fn lt_diagonal_meta<P: LtDiagonalMeta + IntPolyInfos>(pt: &P) -> (usize, usize, SlotsKind) {
-    (pt.lt_log_scale(), pt.encoded_k().as_usize(), pt.lt_slots())
+/// The scale, width and slot kind a diagonal's evaluation reads: a ciphertext's width, a plaintext's storage width.
+fn lt_diagonal_meta<P: LtDiagonalMeta + LWEInfos>(pt: &P) -> (usize, usize, SlotsKind) {
+    let k = pt.lt_ciphertext_k().unwrap_or_else(|| pt.max_k());
+    (pt.lt_log_scale(), k.as_usize(), pt.lt_slots())
 }
 
 fn invalid_sum(reason: String) -> CKKSError {

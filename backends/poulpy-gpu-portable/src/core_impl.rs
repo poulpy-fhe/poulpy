@@ -1311,13 +1311,13 @@ macro_rules! impl_tensoring {
             }
 
             #[allow(clippy::too_many_arguments)]
-            fn glwe_mul_prepared_relinearize_sum_dft<'a, R, AP, BP, B, H>(
+            fn glwe_mul_prepared_relinearize_sum_dft<'a, R, AP, H>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 cnv_offset: usize,
                 res: &mut ::poulpy_hal::layouts::VecZnxDftBackendMut<'_, $be>,
                 res_infos: &R,
                 shape: &::poulpy_core::reference::operations::OnePassShape,
-                pairs: impl IntoIterator<Item = (&'a AP, ::poulpy_core::layouts::DiagonalOperand<'a, BP, B>)>,
+                pairs: impl IntoIterator<Item = (&'a AP, ::poulpy_core::layouts::DiagonalOperand<'a, $be>)>,
                 a_size: usize,
                 a_k: ::poulpy_core::layouts::TorusPrecision,
                 b_size: usize,
@@ -1326,10 +1326,9 @@ macro_rules! impl_tensoring {
                 tsk: &H,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
+                $be: 'a,
                 R: ::poulpy_core::layouts::GLWEInfos,
                 AP: ::poulpy_hal::layouts::CnvPVecLToBackendRef<$be> + 'a,
-                BP: ::poulpy_hal::layouts::CnvPVecRToBackendRef<$be> + 'a,
-                B: ::poulpy_core::layouts::GLWEToBackendRef<$be> + ::poulpy_core::layouts::GLWEInfos + 'a,
                 H: ::poulpy_core::layouts::GetTensorKey<$be>,
             {
                 <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWETensoringReference<$be>>::glwe_mul_prepared_relinearize_sum_dft_reference(

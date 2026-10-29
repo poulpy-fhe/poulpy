@@ -99,7 +99,7 @@ pub unsafe trait CKKSDFTImpl:
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        P: DiagonalProd<Self> + LtDiagonalMeta + IntPolyInfos,
+        P: DiagonalProd<Self> + LtDiagonalMeta,
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<Self> + GetTensorKey<Self>;
 
@@ -113,7 +113,7 @@ pub unsafe trait CKKSDFTImpl:
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        P: DiagonalProd<Self> + LtDiagonalMeta + IntPolyInfos,
+        P: DiagonalProd<Self> + LtDiagonalMeta,
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<Self> + GetTensorKey<Self>,
     {
@@ -130,7 +130,7 @@ pub unsafe trait CKKSDFTImpl:
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        P: DiagonalProd<Self> + LtDiagonalMeta + IntPolyInfos,
+        P: DiagonalProd<Self> + LtDiagonalMeta,
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<Self> + GetTensorKey<Self>,
     {
@@ -151,7 +151,7 @@ pub unsafe trait CKKSDFTImpl:
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        P: DiagonalProd<Self> + LtDiagonalMeta + IntPolyInfos,
+        P: DiagonalProd<Self> + LtDiagonalMeta,
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<Self> + CKKSCtBounds,
         H: GetAutomorphismKey<Self> + GetTensorKey<Self>,
@@ -171,7 +171,7 @@ pub unsafe trait CKKSDFTImpl:
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        P: DiagonalProd<Self> + LtDiagonalMeta + IntPolyInfos,
+        P: DiagonalProd<Self> + LtDiagonalMeta,
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<Self> + CKKSCtBounds,
         H: GetAutomorphismKey<Self> + GetTensorKey<Self>,
@@ -194,7 +194,7 @@ pub unsafe trait CKKSDFTImpl:
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        P: DiagonalProd<Self> + LtDiagonalMeta + IntPolyInfos,
+        P: DiagonalProd<Self> + LtDiagonalMeta,
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<Self> + CKKSCtBounds,
         H: GetAutomorphismKey<Self> + GetTensorKey<Self>,
@@ -213,7 +213,7 @@ pub unsafe trait CKKSDFTImpl:
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        P: DiagonalProd<Self> + LtDiagonalMeta + IntPolyInfos,
+        P: DiagonalProd<Self> + LtDiagonalMeta,
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<Self> + CKKSCtBounds,
         H: GetAutomorphismKey<Self> + GetTensorKey<Self>,
@@ -305,7 +305,7 @@ macro_rules! impl_ckks_dft_reference_full {
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
             where
-                P: ::poulpy_core::DiagonalProd<Self> + $crate::api::LtDiagonalMeta + ::poulpy_core::layouts::IntPolyInfos,
+                P: ::poulpy_core::DiagonalProd<Self> + $crate::api::LtDiagonalMeta,
                 Dst: ::poulpy_core::layouts::GLWEToBackendMut<Self>
                     + ::poulpy_core::layouts::GLWEToBackendRef<Self>
                     + $crate::CKKSCtBounds

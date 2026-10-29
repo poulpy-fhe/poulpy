@@ -9,15 +9,16 @@
 //! receives base2k-level alignment integers. See
 //! [`docs/guides/linear_transformation.md`](https://github.com/poulpy-fhe/poulpy/blob/main/docs/guides/linear_transformation.md).
 //!
-//! # Prepared vs streamed — one evaluator
+//! # Prepared vs streamed, one evaluator
 //!
 //! Evaluation is generic over the diagonal representation `P`: a prepared
-//! [`PreparedDiagonal`] (resident, fastest for repeated use) or a plaintext
-//! [`CKKSPlaintext`](crate::layouts::CKKSPlaintext) diagonal (streamed, lower peak memory). Both go through the
-//! same [`Self::ckks_eval_linear_transformation_into`] — the `P = PreparedDiagonal`
-//! case is the resident path and a plaintext `P` is the streamed path. There is no
-//! separate "prepared" vs "unprepared" method; you pick the path by which `P` you
-//! pass.
+//! [`PreparedDiagonal`] (resident, fastest for repeated use) or an unprepared diagonal (streamed, lower peak memory),
+//! a [`CKKSPlaintext`](crate::layouts::CKKSPlaintext) or a [`CKKSCiphertext`](crate::layouts::CKKSCiphertext) of the
+//! source's rank. All go through the same
+//! [`CKKSLinearTransformationOps::ckks_eval_linear_transformation_into`]: the `P = PreparedDiagonal` case is the
+//! resident path, an unprepared `P` the streamed path, which prepares each diagonal in the call. The rank of the
+//! diagonals picks the product: plaintext diagonals are multiplied as plaintexts, ciphertext diagonals tensored and
+//! relinearized. There is no separate "prepared" vs "unprepared" method; you pick the path by which `P` you pass.
 //!
 //! # Typical flow
 //!
@@ -33,7 +34,6 @@
 //! ```
 
 use crate::CKKSResult as Result;
-use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
     DiagonalProd,
     layouts::{
@@ -64,8 +64,9 @@ pub use poulpy_core::{
 /// [`PreparedDiagonal::set_log_scale`] and [`PreparedDiagonal::set_real_slots`]
 /// during preparation).
 ///
-/// Implemented for the two diagonal representations: [`CKKSPlaintext`](crate::layouts::CKKSPlaintext) (streamed)
-/// via its metadata, and the core [`PreparedDiagonal`] (resident) via those stashes.
+/// Implemented for the diagonal representations: [`CKKSPlaintext`](crate::layouts::CKKSPlaintext) and
+/// [`CKKSCiphertext`](crate::layouts::CKKSCiphertext) (streamed) via their metadata, and the core [`PreparedDiagonal`]
+/// (resident) via those stashes.
 pub trait LtDiagonalMeta {
     /// `log2` of the diagonal plaintext's scaling factor.
     fn lt_log_scale(&self) -> usize;
@@ -108,8 +109,8 @@ pub fn ckks_plaintext_diagonal_layout<C: GLWEInfos>(ct: &C) -> GLWELayout {
     }
 }
 
-/// Layout of that result from a ciphertext of layout `src`, its slots joined with the diagonals', sparse where both
-/// are: for plaintext diagonals `src` at [`ckks_linear_transformation_output_k`], for diagonals of the source's rank the
+/// Layout of that result from a ciphertext of layout `src`, its slots joined with the diagonals', sparse where it and
+/// every diagonal are: for plaintext diagonals `src` at [`ckks_linear_transformation_output_k`], for diagonals of the source's rank the
 /// width and scale of the rule of [`CKKSMulOps::ckks_mul_into`](crate::api::CKKSMulOps::ckks_mul_into) between `src`
 /// and a diagonal, a width of 0 when that rule leaves no result.
 pub fn ckks_linear_transformation_output_layout<P: LtDiagonalMeta>(
@@ -134,7 +135,11 @@ pub fn ckks_linear_transformation_output_layout<P: LtDiagonalMeta>(
             src.glwe_layout.k = (log_budget + log_delta).into();
         }
         src.meta.slots = src.meta.slots.join(diagonal.lt_slots());
-        src.meta.log_sparsity = src.meta.log_sparsity.min(diagonal.lt_log_sparsity(src.log_n()));
+        let log_n = src.log_n();
+        // Streamed ciphertext diagonals each carry their own sparsity label.
+        for d in lt.giant_steps.iter().flat_map(|gs| &gs.diagonals) {
+            src.meta.log_sparsity = src.meta.log_sparsity.min(d.plaintext.lt_log_sparsity(log_n));
+        }
     }
     src
 }
@@ -193,14 +198,22 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
         K: GGLWEInfos,
         T: GGLWEInfos;
 
-    /// Scratch bytes required to evaluate with a **streamed** RHS (a plaintext
-    /// diagonal `P`): the streamed inner product additionally holds one resident
-    /// `CnvPVecR` diagonal slot, so this is larger than the resident budget. `plan` as in
-    /// [`Self::ckks_eval_linear_transformation_tmp_bytes`].
-    fn ckks_eval_linear_transformation_streamed_tmp_bytes<C, K>(&self, ct: &C, plan: &LinearTransformationPlan, key: &K) -> usize
+    /// Scratch bytes required to evaluate with a **streamed** RHS (an unprepared diagonal `P`): the streamed inner
+    /// product additionally holds one resident `CnvPVecR` diagonal slot, so this is larger than the resident budget.
+    /// `diagonal`, `plan` and `tsk` as in [`Self::ckks_eval_linear_transformation_tmp_bytes`].
+    fn ckks_eval_linear_transformation_streamed_tmp_bytes<C, D, K, T>(
+        &self,
+        ct: &C,
+        diagonal: &D,
+        plan: &LinearTransformationPlan,
+        tsk: &T,
+        key: &K,
+    ) -> usize
     where
         C: CKKSCtBounds,
-        K: GGLWEInfos;
+        D: GLWEInfos,
+        K: GGLWEInfos,
+        T: GGLWEInfos;
 
     /// Scratch bytes required by [`Self::ckks_eval_linear_transformation_sum_into`], `plan` the
     /// schedule of the first term.
@@ -268,15 +281,15 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     ///
     /// - `P = PreparedDiagonal` (a [`LinearTransformationPrepared`]): resident,
     ///   the diagonals are already convolution-domain.
-    /// - `P = CKKSPlaintext`: streamed, each diagonal is prepared on the fly (the
-    ///   matrix RHS is never fully materialized) — lower peak memory.
+    /// - `P = CKKSPlaintext` or `P = CKKSCiphertext`: streamed, each diagonal is prepared on the fly (the
+    ///   matrix RHS is never fully materialized), lower peak memory.
     ///
     /// `keys` must contain an automorphism key for every non-zero giant rotation
     /// of `lt`. `babies` must cover at least `lt`'s baby rotations; supersets are
     /// allowed (e.g. when sharing a cache across several transforms).
     ///
-    /// Diagonals of the rank of `src`, ciphertexts prepared by [`Self::ckks_prepare_linear_transformation_rhs`], are
-    /// multiplied as ciphertexts: each giant step's products are summed and relinearized once, as by
+    /// Diagonals of the rank of `src`, ciphertexts prepared by [`Self::ckks_prepare_linear_transformation_rhs`] or
+    /// streamed, are multiplied as ciphertexts: each giant step's products are summed and relinearized once, as by
     /// [`CKKSDotProductOps::ckks_dot_product_prepared`](crate::api::CKKSDotProductOps::ckks_dot_product_prepared), with
     /// the tensor key of `keys` at the larger of the widths of `src` and of the diagonals.
     ///
@@ -306,7 +319,7 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
+        P: DiagonalProd<BE> + LtDiagonalMeta,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
 
     /// In-place `dst = M · dst` with a caller-supplied baby cache (see
@@ -321,7 +334,7 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
+        P: DiagonalProd<BE> + LtDiagonalMeta,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
 
     /// Computes `dst = Σ_t M_t · src_t` over resident transforms that share one
@@ -359,7 +372,7 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     ///
     /// Convenience over [`Self::ckks_eval_linear_transformation_into`] for one-off
     /// evaluations; for repeated evaluation that shares a baby cache, use that
-    /// method. A plaintext `lt` takes the streamed path; a prepared `lt` the
+    /// method. An unprepared `lt` takes the streamed path; a prepared `lt` the
     /// resident path.
     fn ckks_eval_linear_transformation_self_into<Dst, Src, P, H>(
         &self,
@@ -372,7 +385,7 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
+        P: DiagonalProd<BE> + LtDiagonalMeta,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
 
     /// In-place `dst = M · dst`, self-allocating the baby cache (see
@@ -386,6 +399,6 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
+        P: DiagonalProd<BE> + LtDiagonalMeta,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
 }
