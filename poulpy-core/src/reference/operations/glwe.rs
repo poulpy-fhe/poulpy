@@ -28,8 +28,8 @@ use crate::{
     api::{GLWEBytesOf, GLWENormalize},
     gadget::gglwe_product_output_size,
     layouts::{
-        Base2K, GGLWEInfos, GLWE, GLWEInfos, GLWELayout, GLWEMulRight, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey,
-        IntPolyInfos, LWEInfos, MulRightOperand, TorusPrecision,
+        Base2K, GGLWEInfos, GLWE, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey, IntPolyInfos,
+        LWEInfos, MulRightOperand, TorusPrecision,
     },
     reference::keyswitching::GGLWEProductReference,
 };
@@ -771,7 +771,7 @@ pub trait GLWETensoringReference<BE: Backend> {
     /// pairs prepared from the operands of [`Self::glwe_mul_relinearize_sum_reference`] give its result bit for bit.
     /// Checks every pair, before anything else, against the degree of `res`, rank 1 and the given sizes.
     #[allow(clippy::too_many_arguments)]
-    fn glwe_mul_prepared_relinearize_sum_reference<'a, R, AP, B, H>(
+    fn glwe_mul_prepared_relinearize_sum_reference<'a, R, AP, BP, H>(
         &self,
         cnv_offset: usize,
         res: &mut R,
@@ -779,13 +779,15 @@ pub trait GLWETensoringReference<BE: Backend> {
         a: impl IntoIterator<Item = &'a AP, IntoIter: ExactSizeIterator + Clone>,
         a_size: usize,
         a_k: TorusPrecision,
-        b: impl IntoIterator<Item = &'a B, IntoIter: ExactSizeIterator + Clone>,
+        b: impl IntoIterator<Item = &'a BP, IntoIter: ExactSizeIterator + Clone>,
+        b_size: usize,
+        b_k: TorusPrecision,
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         AP: CnvPVecLToBackendRef<BE> + 'a,
-        B: GLWEMulRight<BE> + 'a,
+        BP: CnvPVecRToBackendRef<BE> + 'a,
         H: GetTensorKey<BE>;
 
     /// Scratch bytes of [`Self::glwe_mul_prepared_relinearize_sum_dft_reference`] into a result of the layout `res`.
@@ -1575,7 +1577,7 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn glwe_mul_prepared_relinearize_sum_reference<'a, R, AP, B, H>(
+    fn glwe_mul_prepared_relinearize_sum_reference<'a, R, AP, BP, H>(
         &self,
         cnv_offset: usize,
         res: &mut R,
@@ -1583,51 +1585,37 @@ where
         a: impl IntoIterator<Item = &'a AP, IntoIter: ExactSizeIterator + Clone>,
         a_size: usize,
         a_k: TorusPrecision,
-        b: impl IntoIterator<Item = &'a B, IntoIter: ExactSizeIterator + Clone>,
+        b: impl IntoIterator<Item = &'a BP, IntoIter: ExactSizeIterator + Clone>,
+        b_size: usize,
+        b_k: TorusPrecision,
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         AP: CnvPVecLToBackendRef<BE> + 'a,
-        B: GLWEMulRight<BE> + 'a,
+        BP: CnvPVecRToBackendRef<BE> + 'a,
         H: GetTensorKey<BE>,
     {
         let (n, base2k) = (res.n().as_usize(), res.base2k().as_usize());
-        let (mut a, mut b) = (a.into_iter(), b.into_iter());
-        assert_eq!(a.len(), b.len(), "one-pass product sum: a and b differ in length");
-        let (b_size, b_k) = b
-            .clone()
-            .next()
-            .map(|b0| (b0.size(), b0.k()))
-            .expect("one-pass product sum has no pairs");
         assert!(
-            a_size == a_k.as_usize().div_ceil(base2k) && b_size == b_k.as_usize().div_ceil(base2k),
+            (a_size, b_size) == (a_k.as_usize().div_ceil(base2k), b_k.as_usize().div_ceil(base2k)),
             "prepared sizes are not ceil(a_k / base2k) and ceil(b_k / base2k)"
         );
-        // Every pair is checked before the product reads the first.
-        let mut streamed = None;
+        let (mut a, mut b) = (a.into_iter(), b.into_iter());
+        assert_eq!(a.len(), b.len(), "one-pass product sum: a and b differ in length");
         for (i, (ai, bi)) in a.clone().zip(b.clone()).enumerate() {
-            let ai = ai.to_backend_ref();
-            let infos = (bi.n().as_usize(), bi.base2k().as_usize(), bi.rank().as_usize(), bi.k()) == (n, base2k, 1, b_k);
-            let right = match bi.mul_right() {
-                MulRightOperand::Prepared(prep) => {
-                    let cnv = prep.to_backend_ref();
-                    (false, infos && (cnv.n(), cnv.cols(), cnv.size()) == (n, 2, b_size))
-                }
-                MulRightOperand::Ciphertext(_) => (true, infos),
-            };
+            let (ai, bi) = (ai.to_backend_ref(), bi.to_backend_ref());
             assert!(
-                (ai.n(), ai.cols(), ai.size()) == (n, 2, a_size) && right.1 && *streamed.get_or_insert(right.0) == right.0,
-                "prepared pair {i} does not match res's degree, base2k, rank 1 and the first pair's widths and form"
+                (ai.n(), ai.cols(), ai.size(), bi.n(), bi.cols(), bi.size()) == (n, 2, a_size, n, 2, b_size),
+                "prepared pair {i} does not match res's degree, rank 1 and the given sizes"
             );
         }
         let (a0, b0) = (
             a.next().expect("one-pass product sum has no pairs"),
             b.next().expect("one-pass product sum has no pairs"),
         );
-        let right = mul_right(b0.mul_right(), b_size, b_k);
         let summed = a.len() > 0;
-        let mut pairs = a.zip(b).map(|(a, b)| (a, b.mul_right()));
+        let mut pairs = a.zip(b).map(|(a, b)| (a, MulRightOperand::<BP, NoOperand<BE>>::Prepared(b)));
         glwe_mul_relinearize_one_pass(
             self,
             cnv_offset,
@@ -1638,7 +1626,11 @@ where
                 size: a_size,
                 k: a_k,
             },
-            right,
+            MulRight::Prepared {
+                prep: b0,
+                size: b_size,
+                k: b_k,
+            },
             MulRest::Pairs {
                 pairs: &mut pairs,
                 summed,

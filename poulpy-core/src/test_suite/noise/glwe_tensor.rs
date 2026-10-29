@@ -23,7 +23,7 @@ use crate::{
     layouts::{
         Dnum, Dsize, GGLWEInfos, GLWE, GLWELayout, GLWEPlaintext, GLWEPlaintextLayout, GLWESecret, GLWESecretTensor,
         GLWESecretTensorPrepared, GLWETensor, GLWETensorKey, GLWETensorKeyLayout, GLWETensorKeyPrepared, LWEInfos,
-        ModuleCoreAlloc, MulRightOperand, TorusPrecision, prepared::GLWESecretPrepared,
+        ModuleCoreAlloc, TorusPrecision, prepared::GLWESecretPrepared,
     },
     log2_std_noise_glwe_tensor, log2_std_noise_glwe_tensor_relinearized,
 };
@@ -794,10 +794,7 @@ where
             (l_prep, r_prep)
         })
         .collect();
-    let (prepared_a, prepared_b): (Vec<_>, Vec<_>) = prepared
-        .iter()
-        .map(|(l, r)| (l, crate::test_suite::Right(glwe_infos, MulRightOperand::Prepared(r))))
-        .unzip();
+    let (prepared_a, prepared_b): (Vec<_>, Vec<_>) = prepared.iter().map(|(l, r)| (l, r)).unzip();
     let prepared_sum_bytes =
         module.glwe_mul_prepared_relinearize_sum_tmp_bytes(&glwe_infos, size, size, TorusPrecision(k as u32), &tsk_infos);
 
@@ -821,30 +818,15 @@ where
             prepared_a.iter().copied(),
             size,
             glwe_infos.k,
-            &prepared_b,
+            prepared_b.iter().copied(),
+            size,
+            glwe_infos.k,
             &tsk_prep,
             &mut poisoned_scratch::<BE>(prepared_sum_bytes).borrow(),
         );
         assert!(
             have.data() == want.data() && have.is_canonical(),
             "one-pass sum of prepared pairs, offset {res_offset}: not the sum"
-        );
-        // The right operands as ciphertexts, prepared in the call, `s` among them with its canonical flag clear.
-        let mut streamed: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_infos);
-        module.glwe_mul_prepared_relinearize_sum(
-            scale + res_offset,
-            &mut streamed,
-            res_k,
-            prepared_a.iter().copied(),
-            size,
-            glwe_infos.k,
-            mixed_b.iter().copied(),
-            &tsk_prep,
-            &mut poisoned_scratch::<BE>(prepared_sum_bytes).borrow(),
-        );
-        assert!(
-            streamed.data() == want.data() && streamed.is_canonical(),
-            "one-pass sum of prepared left operands and ciphertexts, offset {res_offset}: not the sum"
         );
 
         for role in ["product", "square", "left is the destination", "sum of three products"] {
@@ -1070,7 +1052,7 @@ where
         params,
         module,
         PreparedSumCase::NarrowPair,
-        "prepared pair 1 does not match res's degree, base2k, rank 1 and the first pair's widths and form",
+        "prepared pair 1 does not match res's degree, rank 1 and the given sizes",
     );
 }
 
@@ -1136,8 +1118,7 @@ where
     });
     let a = module.cnv_pvec_left_alloc(n, 2, 2, PrepareHint::Reuse);
     let narrow = module.cnv_pvec_left_alloc(n, 2, 1, PrepareHint::Reuse);
-    let b_cnv = module.cnv_pvec_right_alloc(n, 2, 2, PrepareHint::Reuse);
-    let b = crate::test_suite::Right(infos, MulRightOperand::Prepared(&b_cnv));
+    let b = module.cnv_pvec_right_alloc(n, 2, 2, PrepareHint::Reuse);
     let mut res: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&infos);
     let (left, right, a_k) = match case {
         PreparedSumCase::NoPairs => (vec![], vec![], infos.k),
@@ -1154,6 +1135,8 @@ where
             2,
             a_k,
             right.iter().copied(),
+            2,
+            infos.k,
             &tsk,
             &mut poisoned_scratch::<BE>(0).borrow(),
         );

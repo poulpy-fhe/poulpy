@@ -1269,7 +1269,7 @@ macro_rules! impl_tensoring {
             }
 
             #[allow(clippy::too_many_arguments)]
-            fn glwe_mul_prepared_relinearize_sum<'a, R, AP, B, H>(
+            fn glwe_mul_prepared_relinearize_sum<'a, R, AP, BP, H>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 cnv_offset: usize,
                 res: &mut R,
@@ -1277,17 +1277,19 @@ macro_rules! impl_tensoring {
                 a: impl IntoIterator<Item = &'a AP, IntoIter: ExactSizeIterator + Clone>,
                 a_size: usize,
                 a_k: ::poulpy_core::layouts::TorusPrecision,
-                b: impl IntoIterator<Item = &'a B, IntoIter: ExactSizeIterator + Clone>,
+                b: impl IntoIterator<Item = &'a BP, IntoIter: ExactSizeIterator + Clone>,
+                b_size: usize,
+                b_k: ::poulpy_core::layouts::TorusPrecision,
                 tsk: &H,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
                 R: ::poulpy_core::layouts::GLWEToBackendMut<$be> + ::poulpy_core::layouts::GLWEInfos,
                 AP: ::poulpy_hal::layouts::CnvPVecLToBackendRef<$be> + 'a,
-                B: ::poulpy_core::layouts::GLWEMulRight<$be> + 'a,
+                BP: ::poulpy_hal::layouts::CnvPVecRToBackendRef<$be> + 'a,
                 H: ::poulpy_core::layouts::GetTensorKey<$be>,
             {
                 <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWETensoringReference<$be>>::glwe_mul_prepared_relinearize_sum_reference(
-                    module, cnv_offset, res, res_k, a, a_size, a_k, b, tsk, scratch,
+                    module, cnv_offset, res, res_k, a, a_size, a_k, b, b_size, b_k, tsk, scratch,
                 )
             }
 

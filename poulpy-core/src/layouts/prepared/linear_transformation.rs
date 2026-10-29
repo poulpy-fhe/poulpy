@@ -117,16 +117,6 @@ pub type CiphertextDiagonal<'a, BE> = crate::layouts::MulRightOperand<
     crate::layouts::GLWE<<BE as Backend>::OwnedBuf, <BE as Backend>::ZnxWord>,
 >;
 
-/// A diagonal of a rank-1 ciphertext is the prepared right operand of the products of its giant step.
-impl<BE: Backend> crate::layouts::GLWEMulRight<BE> for PreparedDiagonal<BE::OwnedBuf, BE> {
-    type Prepared = CnvPVecR<BE::OwnedBuf, BE::DftWord, BE>;
-    type Ciphertext = crate::layouts::GLWE<BE::OwnedBuf, BE::ZnxWord>;
-
-    fn mul_right(&self) -> crate::layouts::MulRightOperand<'_, Self::Prepared, Self::Ciphertext> {
-        crate::layouts::MulRightOperand::Prepared(&self.cnv)
-    }
-}
-
 impl<D: Data, BE: Backend> crate::layouts::IntPolyInfos for PreparedDiagonal<D, BE> {
     /// Prepared diagonals are integer polynomials prepared across their whole
     /// stored width.

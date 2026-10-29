@@ -557,21 +557,18 @@ pub trait GLWEPreparedTensoring<BE: Backend> {
         R: GLWEInfos,
         B: GGLWEInfos;
 
-    /// The dot product `Σ_i a_i * b_i` of [`GLWEMulRelinearizeSum::glwe_mul_relinearize_sum`], over left operands
-    /// prepared from rank-1 ciphertexts of width `a_k` on `a_size = ceil(a_k / base2k)` limbs and right operands of one
-    /// form ([`GLWEMulRight`](crate::layouts::GLWEMulRight)): prepared and read where they are, or ciphertexts prepared
-    /// in the call, a pair at a time, into one operand. Both forms give the same bits, those of the unprepared sum
-    /// under its conditions. The right operands share the first one's width `b_k` and degree, the operands that of
-    /// `res`.
+    /// The dot product `Σ_i a_i * b_i` of [`GLWEMulRelinearizeSum::glwe_mul_relinearize_sum`], over operands prepared
+    /// from rank-1 ciphertexts, read where they are: left operands of width `a_k` on `a_size = ceil(a_k / base2k)`
+    /// limbs and right operands of width `b_k` on `b_size = ceil(b_k / base2k)` limbs. They give the bits of the
+    /// unprepared sum under its conditions.
     ///
     /// # Panics
     ///
-    /// Before writing `res`, if `a` is empty or `b` is not as long, if `a_size` is not the limb count of `a_k`, if a
-    /// pair's left operand is not of the degree of `res`, of two columns and of `a_size` limbs, if a right operand is
-    /// not of the first one's form, of that degree and rank 1 at the first one's width, or under the conditions of
-    /// [`GLWEMulRelinearizeSum::glwe_mul_relinearize_sum`].
+    /// Before writing `res`, if `a` is empty or `b` is not as long, if `a_size` or `b_size` is not the limb count of
+    /// its width, if an operand is not of the degree of `res`, of two columns and of its side's limbs, or under the
+    /// conditions of [`GLWEMulRelinearizeSum::glwe_mul_relinearize_sum`].
     #[allow(clippy::too_many_arguments)]
-    fn glwe_mul_prepared_relinearize_sum<'a, R, AP, B, H>(
+    fn glwe_mul_prepared_relinearize_sum<'a, R, AP, BP, H>(
         &self,
         cnv_offset: usize,
         res: &mut R,
@@ -579,13 +576,15 @@ pub trait GLWEPreparedTensoring<BE: Backend> {
         a: impl IntoIterator<Item = &'a AP, IntoIter: ExactSizeIterator + Clone>,
         a_size: usize,
         a_k: crate::layouts::TorusPrecision,
-        b: impl IntoIterator<Item = &'a B, IntoIter: ExactSizeIterator + Clone>,
+        b: impl IntoIterator<Item = &'a BP, IntoIter: ExactSizeIterator + Clone>,
+        b_size: usize,
+        b_k: crate::layouts::TorusPrecision,
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         AP: CnvPVecLToBackendRef<BE> + 'a,
-        B: crate::layouts::GLWEMulRight<BE> + 'a,
+        BP: CnvPVecRToBackendRef<BE> + 'a,
         H: GetTensorKey<BE>;
 
     /// Scratch bytes of [`Self::glwe_tensor_apply_prepared`] for the same sizes and radix.

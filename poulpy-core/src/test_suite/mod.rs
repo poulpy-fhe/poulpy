@@ -13,11 +13,6 @@
 //! accumulator one limb too narrow passes the key-switch noise sweep), and
 //! parity alone cannot tell you the reference is right.
 
-use crate::layouts::{
-    Base2K, Degree, GLWE, GLWEInfos, GLWELayout, GLWEMulRight, LWEInfos, MulRightOperand, Rank, TorusPrecision,
-};
-use poulpy_hal::layouts::{Backend, CnvPVecROwned};
-
 pub mod copy;
 pub mod decryption;
 pub mod encryption;
@@ -325,47 +320,5 @@ pub(crate) fn prepare_hints(i: usize) -> (poulpy_hal::layouts::PrepareHint, poul
         (OneShot, Reuse)
     } else {
         (Reuse, OneShot)
-    }
-}
-
-/// A rank-1 right operand of either form, with the layout of its ciphertext.
-pub(crate) struct Right<'a, BE: Backend>(
-    pub(crate) GLWELayout,
-    pub(crate) MulRightOperand<'a, CnvPVecROwned<BE>, GLWE<BE::OwnedBuf, BE::ZnxWord>>,
-);
-
-impl<BE: Backend> LWEInfos for Right<'_, BE> {
-    fn n(&self) -> Degree {
-        self.0.n
-    }
-
-    fn base2k(&self) -> Base2K {
-        self.0.base2k
-    }
-
-    fn max_size(&self) -> usize {
-        self.0.size()
-    }
-
-    fn k(&self) -> TorusPrecision {
-        self.0.k
-    }
-}
-
-impl<BE: Backend> GLWEInfos for Right<'_, BE> {
-    fn rank(&self) -> Rank {
-        self.0.rank
-    }
-}
-
-impl<BE: Backend> GLWEMulRight<BE> for Right<'_, BE> {
-    type Prepared = CnvPVecROwned<BE>;
-    type Ciphertext = GLWE<BE::OwnedBuf, BE::ZnxWord>;
-
-    fn mul_right(&self) -> MulRightOperand<'_, Self::Prepared, Self::Ciphertext> {
-        match self.1 {
-            MulRightOperand::Prepared(p) => MulRightOperand::Prepared(p),
-            MulRightOperand::Ciphertext(c) => MulRightOperand::Ciphertext(c),
-        }
     }
 }

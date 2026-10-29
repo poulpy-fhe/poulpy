@@ -529,7 +529,7 @@ impl_operations_delegate!(
     {
         BE::glwe_mul_prepared_relinearize_sum_tmp_bytes(self, res, a_size, b_size, tensor_k, tsk)
     },
-    fn glwe_mul_prepared_relinearize_sum<'a, R, AP, B, H>(
+    fn glwe_mul_prepared_relinearize_sum<'a, R, AP, BP, H>(
         &self,
         cnv_offset: usize,
         res: &mut R,
@@ -537,16 +537,18 @@ impl_operations_delegate!(
         a: impl IntoIterator<Item = &'a AP, IntoIter: ExactSizeIterator + Clone>,
         a_size: usize,
         a_k: crate::layouts::TorusPrecision,
-        b: impl IntoIterator<Item = &'a B, IntoIter: ExactSizeIterator + Clone>,
+        b: impl IntoIterator<Item = &'a BP, IntoIter: ExactSizeIterator + Clone>,
+        b_size: usize,
+        b_k: crate::layouts::TorusPrecision,
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         AP: CnvPVecLToBackendRef<BE> + 'a,
-        B: crate::layouts::GLWEMulRight<BE> + 'a,
+        BP: CnvPVecRToBackendRef<BE> + 'a,
         H: GetTensorKey<BE>,
     {
-        BE::glwe_mul_prepared_relinearize_sum(self, cnv_offset, res, res_k, a, a_size, a_k, b, tsk, scratch)
+        BE::glwe_mul_prepared_relinearize_sum(self, cnv_offset, res, res_k, a, a_size, a_k, b, b_size, b_k, tsk, scratch)
     },
     fn glwe_tensor_apply_prepared_tmp_bytes<R>(
         &self,

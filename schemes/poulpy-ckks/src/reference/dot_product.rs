@@ -152,7 +152,9 @@ pub trait CKKSDotProductReference<BE: Backend>: Sized {
                     a.iter().map(|a| a.cnv()),
                     a[0].size(),
                     a[0].k(),
-                    b.iter().copied(),
+                    b.iter().map(|b| b.cnv()),
+                    b[0].size(),
+                    b[0].k(),
                     tsk,
                     s,
                 )

@@ -71,15 +71,6 @@ impl<BE: Backend> CKKSPreparedLeft<BE> {
     }
 }
 
-impl<BE: Backend> poulpy_core::layouts::GLWEMulRight<BE> for CKKSPreparedRight<BE> {
-    type Prepared = CnvPVecROwned<BE>;
-    type Ciphertext = poulpy_core::layouts::GLWE<BE::OwnedBuf, BE::ZnxWord>;
-
-    fn mul_right(&self) -> poulpy_core::layouts::MulRightOperand<'_, Self::Prepared, Self::Ciphertext> {
-        poulpy_core::layouts::MulRightOperand::Prepared(&self.prep)
-    }
-}
-
 impl<BE: Backend> CKKSPreparedRight<BE> {
     /// The prepared convolution operand, on `ceil(k / base2k)` limbs and `rank + 1` columns of the source.
     pub fn cnv(&self) -> &CnvPVecROwned<BE> {

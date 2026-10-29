@@ -10,9 +10,9 @@ use crate::{
     glwe_prepare_left, glwe_prepare_left_tmp_bytes, glwe_prepare_right, glwe_prepare_right_tmp_bytes,
     layouts::{
         Base2K, Degree, Dnum, GGLWEInfos, GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout, GLWESecretLayout,
-        GLWETensorKeyLayout, ModuleCoreAlloc, MulRightOperand, Rank, TorusPrecision,
+        GLWETensorKeyLayout, ModuleCoreAlloc, Rank, TorusPrecision,
     },
-    test_suite::{Right, decryption::panic_message, keys::fill_by_digit, noise::assert_refuses_uncovered_input},
+    test_suite::{decryption::panic_message, keys::fill_by_digit, noise::assert_refuses_uncovered_input},
 };
 use poulpy_hal::{
     api::{CnvPVecAlloc, Convolution, ScratchOwnedAlloc, ScratchOwnedBorrow},
@@ -473,11 +473,11 @@ where
 
 /// One-pass product roles of [`test_tensor_relinearize_decrypt_parity_roles`] that hold one product: a product, a
 /// product reading its left operand from the destination and a squaring, the test side reading unnormalized twins (0
-/// to 2) or canonical operands (6 to 8), and one prepared pair (5), whose right operand is also passed as a ciphertext.
+/// to 2) or canonical operands (6 to 8), and one prepared pair (5).
 pub const ONE_PASS_PRODUCT_ROLES: [usize; 7] = [0, 1, 2, 5, 6, 7, 8];
 
 /// One-pass product roles of [`test_tensor_relinearize_decrypt_parity_roles`] that sum three products: over
-/// ciphertexts (3) and over pairs prepared once (4), whose right operands are also passed as ciphertexts.
+/// ciphertexts (3) and over pairs prepared once (4).
 pub const ONE_PASS_SUM_ROLES: [usize; 2] = [3, 4];
 
 /// Relinearization and tensor decryption use explicitly staged coefficient
@@ -748,14 +748,8 @@ pub fn test_tensor_relinearize_decrypt_parity_roles<BR, BT>(
                     }
                     let prep_r = prepared_pairs!(BR, r, [(&x_r, &y_r), (&y_r, &x_r), (&x_r, &x_r)]);
                     let prep_t = prepared_pairs!(BT, t, [(&x_t, &y_t), (&y_twin_t, &x_twin_t), (&x_t, &x_t)]);
-                    let prep_r: (Vec<_>, Vec<_>) = prep_r
-                        .iter()
-                        .map(|(l, r)| (l, Right(g, MulRightOperand::Prepared(r))))
-                        .unzip();
-                    let prep_t: (Vec<_>, Vec<_>) = prep_t
-                        .iter()
-                        .map(|(l, r)| (l, Right(g, MulRightOperand::Prepared(r))))
-                        .unzip();
+                    let prep_r: (Vec<_>, Vec<_>) = prep_r.iter().map(|(l, r)| (l, r)).unzip();
+                    let prep_t: (Vec<_>, Vec<_>) = prep_t.iter().map(|(l, r)| (l, r)).unzip();
                     for cnv_offset in [b, precision] {
                         let mut outs = std::collections::HashMap::new();
                         for &role in roles {
@@ -763,23 +757,6 @@ pub fn test_tensor_relinearize_decrypt_parity_roles<BR, BT>(
                             x_r.transfer_into(&mut out_r);
                             let mut out_t = t.glwe_alloc_from_infos(&g);
                             out_r.transfer_into(&mut out_t);
-                            let pairs = if role == 5 { 1 } else { 3 };
-                            // The first `pairs` prepared left operands against `$rights`, prepared or not.
-                            macro_rules! prepared_sum {
-                                ($m:expr, $out:expr, $prep:expr, $rights:expr, $key:expr, $scratch:ident) => {
-                                    $m.glwe_mul_prepared_relinearize_sum(
-                                        cnv_offset,
-                                        $out,
-                                        g.k,
-                                        $prep.0.iter().copied().take(pairs),
-                                        size,
-                                        g.k,
-                                        $rights.into_iter().take(pairs),
-                                        $key,
-                                        &mut $scratch.borrow(),
-                                    )
-                                };
-                            }
                             // `$x2` and `$y2` hold the values of `$x` and `$y`: the test side passes unnormalized twins.
                             macro_rules! one_pass {
                                 ($be:ty, $m:expr, $out:expr, $x:expr, $y:expr, $x2:expr, $y2:expr, $prep:expr, $key:expr) => {{
@@ -814,7 +791,19 @@ pub fn test_tensor_relinearize_decrypt_parity_roles<BR, BT>(
                                             $key,
                                             &mut scratch.borrow(),
                                         ),
-                                        4 | 5 => prepared_sum!($m, $out, $prep, &$prep.1, $key, scratch),
+                                        4 | 5 => $m.glwe_mul_prepared_relinearize_sum(
+                                            cnv_offset,
+                                            $out,
+                                            g.k,
+                                            $prep.0[..if role == 5 { 1 } else { 3 }].iter().copied(),
+                                            size,
+                                            g.k,
+                                            $prep.1[..if role == 5 { 1 } else { 3 }].iter().copied(),
+                                            size,
+                                            g.k,
+                                            $key,
+                                            &mut scratch.borrow(),
+                                        ),
                                         _ => $m.glwe_mul_relinearize(cnv_offset, $out, g.k, x2, y2, $key, &mut scratch.borrow()),
                                     }
                                 }};
@@ -828,30 +817,6 @@ pub fn test_tensor_relinearize_decrypt_parity_roles<BR, BT>(
                                 have,
                                 "one-pass product role={role} k={precision} k_digit={k_digit} offset={cnv_offset}"
                             );
-                            // Ciphertext right operands, the test side's second unnormalized, give the prepared pairs' bits.
-                            if matches!(role, 4 | 5) {
-                                let mut out_ct_r = r.glwe_alloc_from_infos(&g);
-                                x_r.transfer_into(&mut out_ct_r);
-                                let mut out_ct_t = t.glwe_alloc_from_infos(&g);
-                                out_ct_r.transfer_into(&mut out_ct_t);
-                                let bytes_r = r.glwe_mul_prepared_relinearize_sum_tmp_bytes(&g, size, size, g.k, &key);
-                                let bytes_t = t.glwe_mul_prepared_relinearize_sum_tmp_bytes(&g, size, size, g.k, &key);
-                                let (mut scratch_r, mut scratch_t) =
-                                    (poisoned_scratch::<BR>(bytes_r), poisoned_scratch::<BT>(bytes_t));
-                                prepared_sum!(r, &mut out_ct_r, &prep_r, [&y_r, &x_r, &x_r], &kp_r, scratch_r);
-                                prepared_sum!(t, &mut out_ct_t, &prep_t, [&y_t, &x_twin_t, &x_t], &kp_t, scratch_t);
-                                assert_glwe_eq!(
-                                    out_r,
-                                    out_ct_r,
-                                    "ciphertext right operands role={role} k={precision} k_digit={k_digit} offset={cnv_offset}"
-                                );
-                                out_ct_t.transfer_into(&mut have);
-                                assert_glwe_eq!(
-                                    out_r,
-                                    have,
-                                    "backend ciphertext right operands role={role} k={precision} k_digit={k_digit} offset={cnv_offset}"
-                                );
-                            }
                             outs.insert(role, out_r);
                         }
                         // Prepared pairs give the sum, and the first alone the product, bit for bit.

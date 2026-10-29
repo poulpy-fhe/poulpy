@@ -29,20 +29,17 @@ use crate::{
     encryption::DEFAULT_SIGMA_XE,
     error::{CoreError, Result},
     layouts::{
-        Dsize, GGLWEInfos, GLWE, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout, GLWEPlaintext,
-        GLWESecret, GLWETensorKey, GLWETensorKeyLayout, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, LinearTransformation,
+        Dsize, GGLWEInfos, GLWE, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWELayout, GLWEPlaintext, GLWESecret,
+        GLWETensorKey, GLWETensorKeyLayout, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, LinearTransformation,
         LinearTransformationDiagonal, LinearTransformationGiantStep, LinearTransformationLayout, LinearTransformationPlan,
-        LinearTransformationStrategy, ModuleCoreAlloc, MulRightOperand, SetK, TorusPrecision, k_digit_of,
+        LinearTransformationStrategy, ModuleCoreAlloc, SetK, TorusPrecision, k_digit_of,
         prepared::{
             GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedBackendRef, GLWEAutomorphismKeyPreparedToBackendRef,
             GLWESecretPrepared, GLWETensorKeyPrepared, PreparedDiagonal,
         },
     },
     noise::GGLWENoiseModel,
-    test_suite::{
-        Right,
-        noise::{assert_refuses_uncovered_input, glwe_noise_checked},
-    },
+    test_suite::noise::{assert_refuses_uncovered_input, glwe_noise_checked},
 };
 use crate::{GLWEPreparedTensoring, GLWETensorKeyEncryptSk, api::GLWETensorKeyPreparedFactory};
 
@@ -1283,9 +1280,8 @@ fn limbs_layout<BE: Backend>(params: &TestParams, module: &Module<BE>, limbs: us
 
 /// A transformation whose diagonals are ciphertexts, prepared by `glwe_prepare_linear_transformation_rhs`, decrypts to
 /// the dot product of each giant step rotated and summed, alone or in a sum, on both schedules and key radixes. Keys
-/// without a tensor key or with one too narrow for the products, a cache allocated for plaintext diagonals, summed
-/// caches of other widths and dot products whose right operands differ in width or form are refused before anything
-/// is written.
+/// without a tensor key or with one too narrow for the products, a cache allocated for plaintext diagonals and summed
+/// caches of other widths are refused before anything is written.
 pub fn test_glwe_linear_transformation_ciphertext_diagonals<BE: crate::test_suite::noise::TestBackend>(
     params: &TestParams,
     module: &Module<BE>,
@@ -1471,6 +1467,7 @@ pub fn test_glwe_linear_transformation_ciphertext_diagonals<BE: crate::test_suit
                         scratch: &mut ScratchOwned<BE>| {
         let mut want: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ct_infos);
         let mut term: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ct_infos);
+        let diagonal = lt.first_diagonal_plaintext().unwrap();
         for (g, gs) in lt.giant_steps.iter().enumerate() {
             let out = if g == 0 { &mut want } else { &mut term };
             module.glwe_mul_prepared_relinearize_sum(
@@ -1480,7 +1477,9 @@ pub fn test_glwe_linear_transformation_ciphertext_diagonals<BE: crate::test_suit
                 gs.diagonals.iter().map(|d| cache.baby_step(d.baby)),
                 size,
                 cache.k(),
-                gs.diagonals.iter().map(|d| &d.plaintext),
+                gs.diagonals.iter().map(|d| d.plaintext.cnv()),
+                diagonal.size(),
+                diagonal.k(),
                 &tsk_prepared,
                 &mut poisoned_scratch::<BE>(dot_bytes).borrow(),
             );
@@ -1709,33 +1708,6 @@ pub fn test_glwe_linear_transformation_ciphertext_diagonals<BE: crate::test_suit
                     )
                 },
             );
-            // Dot products whose second right operand is of another width, or of the other form.
-            let lefts = [cache.baby_step(0), cache.baby_step(1)];
-            let narrow: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&GLWELayout {
-                k: (k - 1).into(),
-                ..ct_infos
-            });
-            let prepared = module.cnv_pvec_right_alloc(n, 2, size, PrepareHint::Reuse);
-            let message = "prepared pair 1 does not match res's degree, base2k, rank 1 and the first pair's widths and form";
-            for second in [
-                Right(narrow.glwe_layout(), MulRightOperand::Ciphertext(&narrow)),
-                Right(ct_infos, MulRightOperand::Prepared(&prepared)),
-            ] {
-                let rights = [Right(a.glwe_layout(), MulRightOperand::Ciphertext(&a)), second];
-                assert_refusal(message, &mut out, glwe_state::<BE>, |res| {
-                    module.glwe_mul_prepared_relinearize_sum(
-                        scale,
-                        res,
-                        res_k,
-                        lefts,
-                        size,
-                        cache.k(),
-                        &rights,
-                        &tsk_prepared,
-                        &mut poisoned_scratch::<BE>(dot_bytes).borrow(),
-                    )
-                });
-            }
         }
     }
 }
