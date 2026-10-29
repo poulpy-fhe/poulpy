@@ -15,6 +15,7 @@ pub mod inter;
 pub mod intra;
 pub mod keys;
 pub mod matmul;
+pub mod matvec;
 pub mod meta;
 pub mod parity;
 
@@ -108,6 +109,18 @@ macro_rules! blas_backend_test_suite {
                     return;
                 }
                 $crate::test_suite::matmul::test_blas_matmul_long_sums::<$backend, $scalar, $encoder>(
+                    $params,
+                    &*MODULE,
+                    &*HOST_MODULE,
+                );
+            }
+            #[test]
+            fn matvec_pt() {
+                $crate::test_suite::matvec::test_blas_matvec_pt::<$backend, $scalar, $encoder>($params, &*MODULE, &*HOST_MODULE);
+            }
+            #[test]
+            fn matvec_pt_guards() {
+                $crate::test_suite::matvec::test_blas_matvec_pt_guards::<$backend, $scalar, $encoder>(
                     $params,
                     &*MODULE,
                     &*HOST_MODULE,

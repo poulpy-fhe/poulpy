@@ -1,10 +1,13 @@
 use poulpy_ckks::{CKKSResult, api::CKKSEncodingScalar, layouts::CKKSModuleAlloc};
 use poulpy_core::layouts::{DiagonalArithmetic, GetDegree};
-use poulpy_hal::layouts::{Backend, ScratchArena};
+use poulpy_hal::{
+    api::CnvPVecAlloc,
+    layouts::{Backend, ScratchArena},
+};
 
 use crate::layouts::{
-    BlasContext, BlasContextInfos, BlasContextUnprepared, BlasPtOperand, BlasPtOperandInfos, BlasPtOperandUnprepared, BlasPtSide,
-    context, pt_operand,
+    BlasContext, BlasContextInfos, BlasContextUnprepared, BlasMatVecOperand, BlasMatVecOperandInfos, BlasMatVecOperandUnprepared,
+    BlasPtOperand, BlasPtOperandInfos, BlasPtOperandUnprepared, BlasPtSide, context, matvec_operand, pt_operand,
 };
 
 /// Encoding of public operands, and of contexts, into their allocations, at poulpy-ckks's encoding scalar `F`.
@@ -57,6 +60,41 @@ pub trait BlasEncodingOps<BE: Backend, F: CKKSEncodingScalar + DiagonalArithmeti
         &self,
         res: &mut BlasPtOperandUnprepared<BE, S>,
         entry: impl Fn(usize, usize, usize) -> F,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> CKKSResult<()>;
+
+    /// Scratch bytes [`Self::blas_matvec_operand_encode`] needs for an operand of `infos`: the encoding of one diagonal
+    /// of a map of the larger of its two periods.
+    ///
+    /// # Panics
+    ///
+    /// As [`BlasModuleAlloc::blas_matvec_operand_alloc`](crate::layouts::BlasModuleAlloc::blas_matvec_operand_alloc).
+    fn blas_matvec_operand_encode_tmp_bytes<A: BlasMatVecOperandInfos>(&self, infos: &A) -> usize;
+
+    /// Encodes into `res` the public matrix of entries `entry(row, col)`, `row < output.len`, `col < input.len`, at the
+    /// operand's `coeffs_meta`: one map per output ciphertext `o` and input ciphertext `i`, of the matrix block of rows
+    /// `o chunk_out ..` and columns `i chunk_in ..`, zero past the matrix. The map writes each output entry at every
+    /// repetition of the output's period, from the input entry at the first slot at or after it that the input's period
+    /// reaches, so it has at most `input_period` diagonals, every one stored over the larger period, and every block the
+    /// same diagonals, whatever their values, scheduled at the cost-optimal BSGS giant step. Every diagonal of `res` is
+    /// overwritten, so encoding again into the same operand refills it, with no allocation of plaintexts. Products
+    /// reject the operand on inputs whose ciphertexts are not at its radix or are narrower than `coeffs_meta.k`.
+    ///
+    /// `scratch` must hold [`Self::blas_matvec_operand_encode_tmp_bytes`].
+    ///
+    /// # Errors
+    ///
+    /// poulpy-ckks's encoding errors, as a value it cannot represent at `coeffs_meta`. After an error the content of
+    /// `res` is unspecified: encode it again before use, preparing it before then is meaningless.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `res` was allocated on a module of other slots, or, before any write, if `scratch` holds less than
+    /// [`Self::blas_matvec_operand_encode_tmp_bytes`].
+    fn blas_matvec_operand_encode(
+        &self,
+        res: &mut BlasMatVecOperandUnprepared<BE>,
+        entry: impl Fn(usize, usize) -> F,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> CKKSResult<()>;
 
@@ -121,6 +159,42 @@ pub trait BlasPtOperandPreparedFactory<BE: Backend>: CKKSModuleAlloc<BE> + GetDe
         &self,
         res: &mut BlasPtOperand<BE, S>,
         other: &BlasPtOperandUnprepared<BE, S>,
+        scratch: &mut ScratchArena<'_, BE>,
+    );
+}
+
+/// Allocation, sizing and preparation of prepared public operands of products of a vector by a matrix. The allocation
+/// is direct on the module; the preparation and its query dispatch through
+/// [`BlasEncodingImpl`](crate::oep::BlasEncodingImpl).
+pub trait BlasMatVecOperandPreparedFactory<BE: Backend>: CKKSModuleAlloc<BE> + CnvPVecAlloc<BE> + GetDegree + Sized {
+    /// A prepared operand of `infos`, which must be of this module's slots.
+    ///
+    /// # Panics
+    ///
+    /// As [`BlasModuleAlloc::blas_matvec_operand_alloc_from_infos`](crate::layouts::BlasModuleAlloc::blas_matvec_operand_alloc_from_infos).
+    fn blas_matvec_operand_prepared_alloc_from_infos<A: BlasMatVecOperandInfos>(&self, infos: &A) -> BlasMatVecOperand<BE> {
+        matvec_operand::alloc_prepared(self, &infos.blas_matvec_operand_layout())
+    }
+
+    /// Scratch bytes [`Self::blas_matvec_operand_prepare`] needs for an operand of `infos`.
+    ///
+    /// # Panics
+    ///
+    /// As [`Self::blas_matvec_operand_prepared_alloc_from_infos`].
+    fn blas_matvec_operand_prepare_tmp_bytes<A: BlasMatVecOperandInfos>(&self, infos: &A) -> usize;
+
+    /// Prepares every map of `other` into `res`, in place: preparing again after a new encoding refills `res` with no
+    /// allocation.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `res` and `other` were allocated from different layouts, if `scratch` holds less than
+    /// [`Self::blas_matvec_operand_prepare_tmp_bytes`], or if a map of `other` has diagonals of more than one scale,
+    /// width or slot kind.
+    fn blas_matvec_operand_prepare(
+        &self,
+        res: &mut BlasMatVecOperand<BE>,
+        other: &BlasMatVecOperandUnprepared<BE>,
         scratch: &mut ScratchArena<'_, BE>,
     );
 }

@@ -13,8 +13,9 @@ use poulpy_core::{
 use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, Module, PrepareHint, ReaderFrom, Ring, WriterTo, ZnxWord};
 
 use super::{
-    BlasContextInfos, BlasContextUnprepared, BlasPlan, BlasPtOperandInfos, BlasPtOperandLayout, BlasPtOperandUnprepared,
-    BlasPtSide, context, pt_operand,
+    BlasContextInfos, BlasContextUnprepared, BlasMatVecOperandInfos, BlasMatVecOperandLayout, BlasMatVecOperandUnprepared,
+    BlasPlan, BlasPtOperandInfos, BlasPtOperandLayout, BlasPtOperandUnprepared, BlasPtSide, BlasVector, BlasVectorInfos,
+    BlasVectorOwned, BlasVectorShape, context, matvec_operand, pt_operand, vector,
 };
 
 /// An `rows x cols` grid of `2^log_d x 2^log_d` blocks: block `(i, j)` is one CKKS ciphertext whose matrix slot `s`
@@ -523,6 +524,25 @@ pub trait BlasModuleAlloc<BE: Backend>: CKKSModuleAlloc<BE> + GetDegree + Sized 
         }
     }
 
+    /// A vector of `shape` on rank-1 ciphertexts at torus width `k`, labelled dense.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `shape` counts no ciphertext: no entry, or no entry per ciphertext.
+    fn blas_vector_alloc(&self, shape: BlasVectorShape, base2k: Base2K, k: TorusPrecision) -> BlasVectorOwned<BE> {
+        let cts = (0..shape.count()).map(|_| self.ckks_ciphertext_alloc(base2k, k)).collect();
+        BlasVector::from_cts(cts, shape).expect("a vector has at least one entry and one entry per ciphertext")
+    }
+
+    /// A vector of the shape and ciphertext layout of `infos`.
+    ///
+    /// # Panics
+    ///
+    /// As [`Self::blas_vector_alloc`].
+    fn blas_vector_alloc_from_infos<V: BlasVectorInfos>(&self, infos: &V) -> BlasVectorOwned<BE> {
+        vector::alloc(self, &infos.ct_layout(), infos.vector_shape())
+    }
+
     /// A public operand of `rows x cols` blocks of `count` public matrices per batch on side `S`, on this module's
     /// slots, every diagonal zero, which
     /// [`BlasEncodingOps::blas_pt_operand_encode`](crate::api::BlasEncodingOps::blas_pt_operand_encode)
@@ -554,6 +574,46 @@ pub trait BlasModuleAlloc<BE: Backend>: CKKSModuleAlloc<BE> + GetDegree + Sized 
     fn blas_pt_operand_alloc_from_infos<A: BlasPtOperandInfos>(&self, infos: &A) -> BlasPtOperandUnprepared<BE, A::Side> {
         pt_operand::alloc(self, &infos.blas_pt_operand_layout())
     }
+    /// A public operand of products of a vector by a matrix from vectors of shape `input` repeating every
+    /// `input_period` slots into vectors of shape `output` repeating every `output_period` slots, on this module's
+    /// slots, every diagonal zero, which
+    /// [`BlasEncodingOps::blas_matvec_operand_encode`](crate::api::BlasEncodingOps::blas_matvec_operand_encode) fills.
+    ///
+    /// # Panics
+    ///
+    /// Panics unless each shape holds an entry, an entry per ciphertext and a positive stride, and its entries fit its
+    /// period, which divides the slots, if the operand has more blocks than a `usize` counts, if `coeffs_meta.k` is `0`,
+    /// or if `base2k` is outside `1..=63`.
+    fn blas_matvec_operand_alloc(
+        &self,
+        input: BlasVectorShape,
+        input_period: usize,
+        output: BlasVectorShape,
+        output_period: usize,
+        base2k: Base2K,
+        coeffs_meta: CoeffsMeta,
+    ) -> BlasMatVecOperandUnprepared<BE> {
+        let layout = BlasMatVecOperandLayout::new(
+            self.ckks_max_slots(),
+            input,
+            input_period,
+            output,
+            output_period,
+            base2k,
+            coeffs_meta,
+        );
+        self.blas_matvec_operand_alloc_from_infos(&layout)
+    }
+
+    /// A public operand of products of a vector by a matrix of `infos`, which must be of this module's slots.
+    ///
+    /// # Panics
+    ///
+    /// As [`Self::blas_matvec_operand_alloc`], and if the slots of `infos` are not the module's.
+    fn blas_matvec_operand_alloc_from_infos<A: BlasMatVecOperandInfos>(&self, infos: &A) -> BlasMatVecOperandUnprepared<BE> {
+        matvec_operand::alloc(self, &infos.blas_matvec_operand_layout())
+    }
+
     /// A context of `plan` on this module's ring, every diagonal zero, which
     /// [`BlasEncodingOps::blas_context_encode`](crate::api::BlasEncodingOps::blas_context_encode) fills.
     ///
@@ -591,6 +651,20 @@ pub trait BlasBytesOf<BE: Backend>: GLWEBytesOf<BE> + CKKSModuleAlloc<BE> + GetD
             .checked_mul(infos.cols())
             .and_then(|blocks| blocks.checked_mul(block))
             .expect("the grid's bytes overflow usize")
+    }
+
+    /// Bytes of [`BlasModuleAlloc::blas_vector_alloc_from_infos`] of `infos`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the bytes overflow `usize`.
+    fn blas_vector_bytes_of_from_infos<V: BlasVectorInfos>(&self, infos: &V) -> usize {
+        let ct = self.glwe_bytes_of_from_infos(&infos.ct_layout());
+        infos
+            .vector_shape()
+            .count()
+            .checked_mul(ct)
+            .expect("the vector's bytes overflow usize")
     }
 }
 

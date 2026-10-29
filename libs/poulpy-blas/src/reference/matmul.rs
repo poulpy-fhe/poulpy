@@ -1,8 +1,7 @@
 use poulpy_ckks::{
     CKKSCtBounds, CKKSLayout, CKKSResult as Result, SetCKKSInfos,
     api::{
-        CKKSCopyOps, CKKSDotProductOps, CKKSLinearTransformationOps, CKKSModuleInfos, CKKSMulOps, LinearTransformationBabySteps,
-        LinearTransformationPrepared,
+        CKKSCopyOps, CKKSDotProductOps, CKKSLinearTransformationOps, CKKSModuleInfos, CKKSMulOps, LinearTransformationPrepared,
     },
     layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPreparedLeft, CKKSPreparedRight},
 };
@@ -15,7 +14,7 @@ use poulpy_hal::{
     layouts::{Backend, Module, PrepareHint, ScratchArena},
 };
 
-use super::lt_tmp_bytes;
+use super::{baby_caches, lt_tmp_bytes, shared_giants};
 use crate::{
     layouts::{
         BlasContext, BlasGrid, BlasGridInfos, BlasGridMut, BlasMatMulOperand, BlasMatMulOperandInfos, BlasMatMulOperandLayout,
@@ -1209,66 +1208,6 @@ where
             .max(lt_tmp_bytes(module, &res, &staged, keys, true));
     };
     BE::blas_jkls_pt_unit_tmp_bytes(module, outputs, &res, &block, first, masks, plaintext, keys)
-}
-
-/// `count` baby-step caches for sources of `src`'s layout, each covering the baby steps of every map of `maps`.
-fn baby_caches<BE, M, S>(
-    module: &M,
-    maps: &[&LinearTransformationPrepared<BE>],
-    src: &S,
-    count: usize,
-) -> Vec<LinearTransformationBabySteps<BE>>
-where
-    BE: Backend,
-    M: CKKSLinearTransformationOps<BE> + ModuleN + CnvPVecAlloc<BE>,
-    S: GLWEToBackendRef<BE> + CKKSCtBounds,
-{
-    let rotations: Vec<i64> = maps.iter().flat_map(|lt| lt.baby_steps().iter().copied()).collect();
-    (0..count)
-        .map(|_| LinearTransformationBabySteps::alloc(module, &rotations, src))
-        .collect()
-}
-
-/// The products by public matrices, which share their giant steps across their terms, one per cache of `caches`
-/// ([`baby_caches`]): group `g` of `groups` holds the blocks `o` of `res` it writes, block `o` receiving poulpy-ckks's
-/// summed linear transformation of the terms `(source(g, l), map(g, o, l))` in ascending `l`, then `label`, the
-/// product's [`pt_label`]. The caches are filled from a group's sources and serve all its blocks. The groups run in
-/// order, refilling the same caches, and the first error stops them.
-#[allow(clippy::too_many_arguments)]
-fn shared_giants<'s, 'm, BE, M, D, S, K>(
-    module: &M,
-    caches: &mut [LinearTransformationBabySteps<BE>],
-    groups: Vec<Vec<&mut D>>,
-    source: impl Fn(usize, usize) -> &'s S,
-    map: impl Fn(usize, usize, usize) -> &'m LinearTransformationPrepared<BE>,
-    label: usize,
-    keys: &K,
-    scratch: &mut ScratchArena<'_, BE>,
-) -> Result<()>
-where
-    BE: Backend + 's + 'm,
-    M: CKKSLinearTransformationOps<BE>,
-    D: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-    S: GLWEToBackendRef<BE> + CKKSCtBounds + 's,
-    K: GetAutomorphismKey<BE> + GetTensorKey<BE>,
-{
-    let inner = caches.len();
-    let (mut srcs, mut lts) = (Vec::with_capacity(inner), Vec::with_capacity(inner));
-    for (g, blocks) in groups.into_iter().enumerate() {
-        for (l, cache) in caches.iter_mut().enumerate() {
-            module.ckks_prepare_linear_transformation_baby_steps(cache, source(g, l), keys, scratch)?;
-        }
-        let babies: Vec<_> = caches.iter().collect();
-        srcs.clear();
-        srcs.extend((0..inner).map(|l| source(g, l)));
-        for (o, dst) in blocks.into_iter().enumerate() {
-            lts.clear();
-            lts.extend((0..inner).map(|l| map(g, o, l)));
-            module.ckks_eval_linear_transformation_sum_into(&mut *dst, &srcs, &babies, &lts, keys, scratch)?;
-            dst.set_log_sparsity(label);
-        }
-    }
-    Ok(())
 }
 
 /// The products by public matrices under `JklsStored` and `JklsGalois`: one [`BlasJklsImpl::blas_jkls_pt_unit`] per

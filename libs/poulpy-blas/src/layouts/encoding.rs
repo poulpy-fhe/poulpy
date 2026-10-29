@@ -60,7 +60,7 @@ impl<F> Scheduled<F> {
 
 /// One map's shape: its schedule, the slot count its diagonals repeat over, which sets their degree, and the
 /// metadata they are encoded at.
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct MapLayout {
     lt: LinearTransformationLayout,
     period: usize,
@@ -68,6 +68,11 @@ pub(crate) struct MapLayout {
 }
 
 impl MapLayout {
+    /// The shape of a map of schedule `lt`, its diagonals repeating over `period` slots, encoded at `meta`.
+    pub(crate) fn new(lt: LinearTransformationLayout, period: usize, meta: CoeffsMeta) -> Self {
+        Self { lt, period, meta }
+    }
+
     /// The layout of every diagonal on `module`: at the degree of the map's period.
     pub(crate) fn plaintext<BE, M>(&self, module: &M, base2k: Base2K) -> CKKSLayout
     where
@@ -85,6 +90,11 @@ impl MapLayout {
             },
             meta: self.meta.meta,
         }
+    }
+
+    /// The map's schedule, from which its Galois elements follow.
+    pub(crate) fn lt(&self) -> &LinearTransformationLayout {
+        &self.lt
     }
 
     /// The sparsity the map's period proves on the module's degree: `log2` of its slots over its period.

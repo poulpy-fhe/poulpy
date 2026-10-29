@@ -66,6 +66,7 @@ fn calls() -> (usize, usize, usize) {
 
 poulpy_blas::impl_blas_mat_inter_reference_full!(OverrideBackend);
 poulpy_blas::impl_blas_mat_mul_reference_full!(OverrideBackend);
+poulpy_blas::impl_blas_mat_vec_reference_full!(OverrideBackend);
 poulpy_blas::impl_blas_encoding_reference_full!(OverrideBackend);
 
 unsafe impl BlasMatIntraImpl for OverrideBackend {
