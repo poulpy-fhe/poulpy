@@ -140,10 +140,9 @@ pub trait GLWELinearTransformations<BE: Backend> {
     /// `P` (see [`DiagonalProd`](crate::layouts::DiagonalProd)), the rank of the diagonals selecting the product:
     /// plaintexts at rank 0, multiplied into each giant step's product, or ciphertexts of the rank of `a`,
     /// prepared by [`Self::glwe_prepare_linear_transformation_rhs`] or streamed, whose products of each giant step are
-    /// summed and relinearized once with the tensor key of `keys` at the larger of the widths of `lhs`
-    /// ([`LinearTransformationBabySteps::k`]) and of the diagonals, through the one-pass product where it applies
-    /// (rank 1, `cnv_offset` at least `base2k`, the tensor key at `res`'s `base2k`), else from the tensor columns of
-    /// every pair summed in DFT and normalized once.
+    /// summed in DFT and relinearized once with the tensor key of `keys` at the larger of the widths of `lhs`
+    /// ([`LinearTransformationBabySteps::k`]) and of the diagonals, through the one-pass relinearization where it
+    /// applies (rank 1, `cnv_offset` at least `base2k`, the tensor key at `res`'s `base2k`), else as a tensor.
     /// Where the one-pass product applies, one giant step at rotation 0 is
     /// [`GLWEPreparedTensoring::glwe_mul_prepared_relinearize_sum`](crate::GLWEPreparedTensoring::glwe_mul_prepared_relinearize_sum)
     /// of its pairs, bit for bit.

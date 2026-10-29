@@ -552,46 +552,6 @@ pub unsafe trait GLWETensoringImpl: Backend {
         BP: CnvPVecRToBackendRef<Self> + 'a,
         H: GetTensorKey<Self>;
 
-    /// Scratch bound of [`Self::glwe_mul_prepared_relinearize_sum_dft`]; may report less than the reference, never less
-    /// than the body takes.
-    fn glwe_mul_prepared_relinearize_sum_dft_tmp_bytes<R, B>(
-        module: &Module<Self>,
-        res: &R,
-        a_size: usize,
-        b_size: usize,
-        tensor_k: crate::layouts::TorusPrecision,
-        tsk: &B,
-    ) -> usize
-    where
-        R: GLWEInfos,
-        B: GGLWEInfos;
-
-    /// Internal hook of the linear transformations of ciphertext diagonals, which check its pairs, pick its route
-    /// (`shape`) and record the result's metadata: reproduces
-    /// [`glwe_mul_prepared_relinearize_sum_dft_reference`](crate::reference::operations::GLWETensoringReference::glwe_mul_prepared_relinearize_sum_dft_reference)
-    /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
-    /// [`Self::glwe_mul_prepared_relinearize_sum_dft_tmp_bytes`]; free in kernels and scratch use.
-    #[allow(clippy::too_many_arguments)]
-    fn glwe_mul_prepared_relinearize_sum_dft<'a, R, AP, H>(
-        module: &Module<Self>,
-        cnv_offset: usize,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
-        res_infos: &R,
-        shape: &crate::reference::operations::OnePassShape,
-        pairs: impl IntoIterator<Item = (&'a AP, crate::layouts::DiagonalOperand<'a, Self>)>,
-        a_size: usize,
-        a_k: crate::layouts::TorusPrecision,
-        b_size: usize,
-        b_k: crate::layouts::TorusPrecision,
-        summed: bool,
-        tsk: &H,
-        scratch: &mut ScratchArena<'_, Self>,
-    ) where
-        Self: 'a,
-        R: GLWEInfos,
-        AP: CnvPVecLToBackendRef<Self> + 'a,
-        H: GetTensorKey<Self>;
-
     /// Scratch bound of [`Self::glwe_tensor_apply_prepared_sum_dft`] for the tensor of the layout `res`; may report less
     /// than the reference, never less than the body takes.
     fn glwe_tensor_apply_prepared_sum_dft_tmp_bytes<R>(module: &Module<Self>, res: &R, a_size: usize, b_size: usize) -> usize
@@ -1508,49 +1468,6 @@ macro_rules! impl_glwe_tensoring_reference_full {
             {
                 <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_mul_prepared_relinearize_sum_reference(
                     module, cnv_offset, res, res_k, a, a_size, a_k, b, b_size, b_k, tsk, scratch,
-                )
-            }
-
-            fn glwe_mul_prepared_relinearize_sum_dft_tmp_bytes<R, B>(
-                module: &::poulpy_hal::layouts::Module<$be>,
-                res: &R,
-                a_size: usize,
-                b_size: usize,
-                tensor_k: $crate::layouts::TorusPrecision,
-                tsk: &B,
-            ) -> usize
-            where
-                R: $crate::layouts::GLWEInfos,
-                B: $crate::layouts::GGLWEInfos,
-            {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_mul_prepared_relinearize_sum_dft_tmp_bytes_reference(
-                    module, res, a_size, b_size, tensor_k, tsk,
-                )
-            }
-
-            #[allow(clippy::too_many_arguments)]
-            fn glwe_mul_prepared_relinearize_sum_dft<'a, R, AP, H>(
-                module: &::poulpy_hal::layouts::Module<$be>,
-                cnv_offset: usize,
-                res: &mut ::poulpy_hal::layouts::VecZnxDftBackendMut<'_, $be>,
-                res_infos: &R,
-                shape: &$crate::reference::operations::OnePassShape,
-                pairs: impl IntoIterator<Item = (&'a AP, $crate::layouts::DiagonalOperand<'a, $be>)>,
-                a_size: usize,
-                a_k: $crate::layouts::TorusPrecision,
-                b_size: usize,
-                b_k: $crate::layouts::TorusPrecision,
-                summed: bool,
-                tsk: &H,
-                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
-            ) where
-                $be: 'a,
-                R: $crate::layouts::GLWEInfos,
-                AP: ::poulpy_hal::layouts::CnvPVecLToBackendRef<$be> + 'a,
-                H: $crate::layouts::GetTensorKey<$be>,
-            {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_mul_prepared_relinearize_sum_dft_reference(
-                    module, cnv_offset, res, res_infos, shape, pairs, a_size, a_k, b_size, b_k, summed, tsk, scratch,
                 )
             }
 

@@ -1216,48 +1216,6 @@ macro_rules! impl_rank_one_tensoring {
                 )
             }
 
-            fn glwe_mul_prepared_relinearize_sum_dft_tmp_bytes<R, B>(
-                module: &Module<$be>,
-                res: &R,
-                a_size: usize,
-                b_size: usize,
-                tensor_k: poulpy_core::layouts::TorusPrecision,
-                tsk: &B,
-            ) -> usize
-            where
-                R: GLWEInfos,
-                B: GGLWEInfos,
-            {
-                module.glwe_mul_prepared_relinearize_sum_dft_tmp_bytes_reference(res, a_size, b_size, tensor_k, tsk)
-                    + rank_one_columns_tmp_bytes::<$be, _>(res, a_size, b_size)
-            }
-
-            #[allow(clippy::too_many_arguments)]
-            fn glwe_mul_prepared_relinearize_sum_dft<'a, R, AP, H>(
-                module: &Module<$be>,
-                cnv_offset: usize,
-                res: &mut VecZnxDftBackendMut<'_, $be>,
-                res_infos: &R,
-                shape: &poulpy_core::reference::operations::OnePassShape,
-                pairs: impl IntoIterator<Item = (&'a AP, poulpy_core::layouts::DiagonalOperand<'a, $be>)>,
-                a_size: usize,
-                a_k: poulpy_core::layouts::TorusPrecision,
-                b_size: usize,
-                b_k: poulpy_core::layouts::TorusPrecision,
-                summed: bool,
-                tsk: &H,
-                scratch: &mut ScratchArena<'_, $be>,
-            ) where
-                $be: 'a,
-                R: GLWEInfos,
-                AP: CnvPVecLToBackendRef<$be> + 'a,
-                H: poulpy_core::layouts::GetTensorKey<$be>,
-            {
-                module.glwe_mul_prepared_relinearize_sum_dft_reference(
-                    cnv_offset, res, res_infos, shape, pairs, a_size, a_k, b_size, b_k, summed, tsk, scratch,
-                )
-            }
-
             fn glwe_tensor_apply_prepared_sum_dft_tmp_bytes<R>(module: &Module<$be>, res: &R, a_size: usize, b_size: usize) -> usize
             where
                 R: GLWEInfos,

@@ -1,30 +1,37 @@
 //! The products of a linear transformation whose diagonals are of the rank of its source.
 //!
 //! A giant step's product is the dot product of its baby rotations by its diagonals, summed over the terms of a sum
-//! and relinearized once, left in DFT before the normalization that `glwe_mul_prepared_relinearize_sum` would end
-//! with, so the giant-step loop rotates and sums it with one final normalization. Where the one-pass product does not
-//! apply, the tensor columns of every pair are summed in DFT, normalized once and relinearized, then transformed.
+//! and relinearized once: the baby-step kernel sums the tensor columns of every pair in DFT, then the one-pass
+//! relinearization brings back to digits the column it key-switches only, leaving the product in DFT before the
+//! normalization that `glwe_mul_prepared_relinearize_sum` would end with, so the giant-step loop rotates and sums it
+//! with one final normalization. Where the one-pass relinearization does not apply, the columns are normalized into a
+//! tensor, relinearized, then transformed.
 
 use poulpy_hal::{
-    api::{ScratchArenaTakeBasic, VecZnxDftApply, VecZnxDftBytesOf, VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes},
+    api::{
+        ModuleN, ScratchArenaTakeBasic, VecZnxDftApply, VecZnxDftBytesOf, VecZnxGadgetDecompose, VecZnxGadgetDecomposeTmpBytes,
+        VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes,
+    },
     layouts::{Backend, Module, ScratchArena, VecZnxDftBackendMut},
 };
 
 use crate::{
-    GLWETensoring, ScratchArenaTakeCore,
+    ScratchArenaTakeCore,
     api::GLWEBytesOf,
     gadget::{cnv_offset_to_limb_offset, normalize_input_limb_bound_with_offset},
     layouts::{
-        DiagonalProd, GGLWEInfos, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey, LWEInfos,
-        LinearTransformation, TorusPrecision,
+        DiagonalProd, GGLWEInfos, GLWEInfos, GLWELayout, GetTensorKey, LWEInfos, LinearTransformation, TorusPrecision,
         prepared::{
             GGLWEPreparedToBackendRef, GLWETensorKeyPrepared, GLWETensorKeyPreparedBackendRef, LinearTransformationBabySteps,
         },
     },
-    oep::GLWETensoringImpl,
+    oep::{GGLWEProductDigitsStridedImpl, GLWETensoringImpl},
     reference::{
+        keyswitching::GGLWEProductReference,
         linear_transformation::prepared_giants::GiantProducts,
-        operations::{OnePassShape, one_pass_shape},
+        operations::{
+            GLWETensoringReference, OnePassShape, glwe_relinearize_columns, glwe_relinearize_columns_tmp_bytes, one_pass_shape,
+        },
     },
 };
 
@@ -38,8 +45,7 @@ pub(super) struct CiphertextProducts<'a, BE: Backend, P> {
     res: GLWELayout,
     tensor: GLWELayout,
     cnv_offset: usize,
-    /// The one-pass product's shape, or `None` for the tensor path.
-    one_pass: Option<OnePassShape>,
+    shape: OnePassShape,
 }
 
 impl<'a, BE, P> CiphertextProducts<'a, BE, P>
@@ -81,19 +87,16 @@ where
             ..res
         };
         let tsk = tsk_source.get_tensor_key(tensor.k).unwrap_or_else(|e| panic!("{e}"));
-        let one_pass =
-            (res.rank.as_usize() == 1 && cnv_offset >= res.base2k.as_usize() && tsk.base2k() == res.base2k).then(|| {
-                one_pass_shape(
-                    &res,
-                    &tensor,
-                    &tsk,
-                    lhs.size(),
-                    diagonal.size(),
-                    lhs.k(),
-                    diagonal.k(),
-                    cnv_offset,
-                )
-            });
+        let shape = one_pass_shape(
+            &res,
+            &tensor,
+            &tsk,
+            lhs.size(),
+            diagonal.size(),
+            lhs.k(),
+            diagonal.k(),
+            cnv_offset,
+        );
         Self {
             babies,
             lts,
@@ -102,37 +105,35 @@ where
             res,
             tensor,
             cnv_offset,
-            one_pass,
+            shape,
         }
-    }
-
-    fn summed(&self, g: usize) -> bool {
-        self.babies.len() > 1 || self.lts[0].giant_steps[g].diagonals.len() > 1
     }
 }
 
 impl<BE, P> GiantProducts<BE> for CiphertextProducts<'_, BE, P>
 where
-    BE: GLWETensoringImpl,
-    Module<BE>: GLWETensoring<BE>
+    BE: GLWETensoringImpl + GGLWEProductDigitsStridedImpl,
+    Module<BE>: GLWETensoringReference<BE>
         + GLWEBytesOf<BE>
         + VecZnxDftBytesOf
         + VecZnxIdftNormalize<BE>
         + VecZnxIdftNormalizeTmpBytes
-        + VecZnxDftApply<BE>,
+        + VecZnxDftApply<BE>
+        + GGLWEProductReference<BE>
+        + VecZnxGadgetDecompose<BE>
+        + VecZnxGadgetDecomposeTmpBytes,
     P: DiagonalProd<BE>,
 {
     fn size(&self) -> usize {
-        self.one_pass
-            .as_ref()
-            .map_or(self.res.size(), |shape| shape.dft_out_size(self.res.size()))
+        self.shape.dft_out_size(self.res.size())
     }
 
-    /// The tensor paths normalize each product, the low bits of the offset included.
+    /// The tensor route normalizes each product, the low bits of the offset included.
     fn cnv_offset_lo(&self) -> i64 {
-        match &self.one_pass {
-            Some(shape) if shape.one_pass => cnv_offset_to_limb_offset(self.cnv_offset, self.res.base2k.as_usize()).1,
-            _ => 0,
+        if self.shape.one_pass {
+            cnv_offset_to_limb_offset(self.cnv_offset, self.res.base2k.as_usize()).1
+        } else {
+            0
         }
     }
 
@@ -158,8 +159,8 @@ where
         steps: core::ops::Range<usize>,
         scratch: &mut ScratchArena<'_, BE>,
     ) {
-        let (lhs, diagonal) = (self.babies[0], self.diagonal);
-        let (a_size, b_size) = (lhs.size(), diagonal.size());
+        let (n, cols) = (self.res.n.as_usize(), self.res.rank.as_usize() + 1);
+        let (cnv_offset_hi, _) = cnv_offset_to_limb_offset(self.cnv_offset, self.res.base2k.as_usize());
         for (prod, g) in prods.iter_mut().zip(steps) {
             let pairs = self.babies.iter().zip(self.lts).flat_map(|(lhs, lt)| {
                 lt.giant_steps[g]
@@ -167,82 +168,31 @@ where
                     .iter()
                     .map(move |d| (lhs.baby_step(d.baby), d.plaintext.operand()))
             });
-            let Some(shape) = &self.one_pass else {
-                let (n, cols, base2k) = (
-                    self.res.n.as_usize(),
-                    self.res.rank.as_usize() + 1,
-                    self.res.base2k.as_usize(),
-                );
-                let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(self.cnv_offset, base2k);
-                let tensor_size = self.tensor.size();
-                let dft_size = normalize_input_limb_bound_with_offset(
-                    a_size + b_size - cnv_offset_hi,
-                    tensor_size,
-                    base2k,
-                    base2k,
-                    cnv_offset_lo,
-                );
-                let (mut tmp, scratch) = scratch.borrow().take_glwe_scratch(&self.res);
-                let (mut tensor, scratch) = scratch.take_glwe_tensor_scratch(&self.tensor);
-                let (mut diag, scratch) = scratch.take_vec_znx_dft_scratch(n, cols, dft_size);
-                let (mut cross, mut scratch) = scratch.take_vec_znx_dft_scratch(n, cols * (cols - 1) / 2, dft_size);
-                BE::glwe_tensor_apply_prepared_sum_dft(
-                    module,
-                    cnv_offset_hi,
-                    &mut diag,
-                    &mut cross,
-                    pairs,
-                    b_size,
-                    diagonal.k(),
-                    &mut scratch,
-                );
-                {
-                    let mut tensor = tensor.to_backend_mut();
-                    let mut normalize = |col: usize, src: &mut VecZnxDftBackendMut<'_, BE>, src_col: usize| {
-                        module.vec_znx_idft_normalize(
-                            &mut tensor.data,
-                            base2k,
-                            tensor_size * base2k,
-                            cnv_offset_lo,
-                            col,
-                            src,
-                            src_col,
-                            base2k,
-                            None,
-                            &mut scratch.borrow(),
-                        )
-                    };
-                    let mut c = 0;
-                    for i in 0..cols {
-                        let row = i * cols - i * (i + 1) / 2;
-                        normalize(row + i, &mut diag, i);
-                        for j in i + 1..cols {
-                            normalize(row + j, &mut cross, c);
-                            c += 1;
-                        }
-                    }
-                }
-                module.glwe_tensor_relinearize(&mut tmp, &tensor, &Resolved(&self.tsk), &mut scratch);
-                let tmp = tmp.to_backend_ref();
-                for col in 0..cols {
-                    module.vec_znx_dft_apply(1, 0, prod, col, &tmp.data, col);
-                }
-                continue;
-            };
-            BE::glwe_mul_prepared_relinearize_sum_dft(
+            let (mut tmp, scratch) = scratch.borrow().take_glwe_scratch(&self.res);
+            let (mut diag, scratch) = scratch.take_vec_znx_dft_scratch(n, cols, self.shape.dft_size);
+            let (mut cross, mut scratch) = scratch.take_vec_znx_dft_scratch(n, cols * (cols - 1) / 2, self.shape.dft_size);
+            BE::glwe_tensor_apply_prepared_sum_dft(
+                module,
+                cnv_offset_hi,
+                &mut diag,
+                &mut cross,
+                pairs,
+                self.diagonal.size(),
+                self.diagonal.k(),
+                &mut scratch,
+            );
+            glwe_relinearize_columns(
                 module,
                 self.cnv_offset,
-                prod,
-                &self.res,
-                shape,
-                pairs,
-                a_size,
-                lhs.k(),
-                b_size,
-                diagonal.k(),
-                self.summed(g),
+                &mut tmp,
+                self.res.k,
+                &self.tensor,
+                &mut diag,
+                &mut cross,
+                &self.shape,
                 &Resolved(&self.tsk),
-                scratch,
+                &mut scratch,
+                Some(prod),
             );
         }
     }
@@ -258,8 +208,8 @@ impl<'a, BE: Backend + 'a> GetTensorKey<BE> for Resolved<'_, 'a, BE> {
 }
 
 /// Bytes the product of a giant step of [`CiphertextProducts`] takes beside it, into a result of the layout `res`
-/// from babies of `a_size` limbs and diagonals of `b_size` limbs through a tensor of width `tensor_k`: the larger of
-/// the backend's one-pass dot product left in DFT and the tensor path's result, tensor and tensor columns in DFT.
+/// from babies of `a_size` limbs and diagonals of `b_size` limbs through a tensor of width `tensor_k`: the result, the
+/// tensor columns in DFT and the larger of the baby-step kernel and the relinearization of either route.
 pub(super) fn ciphertext_products_tmp_bytes<BE, R, K>(
     module: &Module<BE>,
     res: &R,
@@ -269,12 +219,11 @@ pub(super) fn ciphertext_products_tmp_bytes<BE, R, K>(
     tsk: &K,
 ) -> usize
 where
-    BE: GLWETensoringImpl,
-    Module<BE>: GLWETensoring<BE> + GLWEBytesOf<BE> + VecZnxDftBytesOf + VecZnxIdftNormalizeTmpBytes,
+    BE: GLWETensoringImpl + GGLWEProductDigitsStridedImpl,
+    Module<BE>: ModuleN + GLWEBytesOf<BE> + VecZnxDftBytesOf + VecZnxIdftNormalizeTmpBytes + VecZnxGadgetDecomposeTmpBytes,
     R: GLWEInfos,
     K: GGLWEInfos,
 {
-    let one_pass = BE::glwe_mul_prepared_relinearize_sum_dft_tmp_bytes(module, res, a_size, b_size, tensor_k, tsk);
     let (n, cols, base2k) = (res.n().as_usize(), res.rank().as_usize() + 1, res.base2k().as_usize());
     let tensor = GLWELayout {
         k: tensor_k,
@@ -282,12 +231,10 @@ where
     };
     // The widest columns, at any offset.
     let dft_size = normalize_input_limb_bound_with_offset(a_size + b_size, tensor.size(), base2k, base2k, base2k as i64 - 1);
-    let tensor_path = BE::scratch_aligned(module.glwe_bytes_of_from_infos(res))
-        + BE::scratch_aligned(module.glwe_tensor_bytes_of_from_infos(&tensor))
+    BE::scratch_aligned(module.glwe_bytes_of_from_infos(res))
         + BE::scratch_aligned(module.bytes_of_vec_znx_dft(n, cols, dft_size))
         + BE::scratch_aligned(module.bytes_of_vec_znx_dft(n, cols * (cols - 1) / 2, dft_size))
-        + BE::glwe_tensor_apply_prepared_sum_dft_tmp_bytes(module, &tensor, a_size, b_size)
-            .max(module.vec_znx_idft_normalize_tmp_bytes(tensor.size(), dft_size))
-            .max(module.glwe_tensor_relinearize_tmp_bytes(res, &tensor, tsk));
-    one_pass.max(tensor_path)
+        + BE::glwe_tensor_apply_prepared_sum_dft_tmp_bytes(module, &tensor, a_size, b_size).max(
+            glwe_relinearize_columns_tmp_bytes(module, res, &tensor, dft_size, tsk, true, true),
+        )
 }

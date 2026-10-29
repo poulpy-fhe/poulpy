@@ -97,7 +97,7 @@ The baby-step cache is prepared once either way.
 ## Ciphertext diagonals
 
 The diagonals may also be ciphertexts of the source's rank, an encrypted matrix times an encrypted vector.
-The rank of the diagonals selects the product: each giant step's products, summed over the terms of a sum, are tensor products relinearized once with the tensor key of the key set, through the one-pass product where it applies, otherwise from the tensor columns of every pair summed in DFT (`GLWETensoringImpl::glwe_tensor_apply_prepared_sum_dft`, the baby-step kernel of ciphertext diagonals as `LinearTransformationImpl::glwe_accumulate_giant_steps` is that of plaintext diagonals) and normalized once.
+The rank of the diagonals selects the product: each giant step's products, summed over the terms of a sum, are tensor products relinearized once with the tensor key of the key set, from the tensor columns of every pair summed in DFT (`GLWETensoringImpl::glwe_tensor_apply_prepared_sum_dft`, the baby-step kernel of ciphertext diagonals as `LinearTransformationImpl::glwe_accumulate_giant_steps` is that of plaintext diagonals): through the one-pass relinearization where it applies, which brings back to digits the column it key-switches only, else normalized into a tensor.
 The giant-step loop then rotates and sums them as it does plaintext products, with one final normalization.
 
 ## Split strategies
