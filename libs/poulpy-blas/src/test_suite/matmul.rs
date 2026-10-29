@@ -25,8 +25,8 @@ use poulpy_ckks::{
 use poulpy_core::{
     api::GLWETensorKeyPreparedFactory,
     layouts::{
-        BackendGLWESecret, DiagonalArithmetic, GLWETensorKeyLayout, GLWEToBackendMut, GetAutomorphismKey, LWEInfos, Rank,
-        TorusPrecision,
+        BackendGLWESecret, DiagonalArithmetic, GLWETensorKeyLayout, GLWEToBackendMut, GetAutomorphismKey, GetTensorKey, LWEInfos,
+        Rank, TorusPrecision,
         prepared::{GLWEAutomorphismKeyPreparedBackendRef, GLWESecretPrepared},
     },
 };
@@ -381,6 +381,15 @@ impl<BE: Backend, K: GetAutomorphismKey<BE>> GetAutomorphismKey<BE> for Counting
     }
 }
 
+impl<BE: Backend, K: GetTensorKey<BE>> GetTensorKey<BE> for CountingKeys<'_, K> {
+    fn lookup_tensor_key(
+        &self,
+        k: TorusPrecision,
+    ) -> poulpy_core::Result<poulpy_core::layouts::prepared::GLWETensorKeyPreparedBackendRef<'_, BE>> {
+        self.keys.lookup_tensor_key(k)
+    }
+}
+
 /// Rotating giant steps of `lt` that hold diagonals: the key switches of one evaluation.
 fn rotating_giant_steps<BE: Backend>(lt: &LinearTransformationPrepared<BE>) -> usize {
     lt.giant_steps
@@ -399,7 +408,7 @@ fn summed_terms<'t, BE>(
     inner: usize,
     label: usize,
     term: impl Fn(usize, usize, usize) -> (&'t CKKSCiphertextOwned<BE>, &'t LinearTransformationPrepared<BE>),
-    keys: &impl GetAutomorphismKey<BE>,
+    keys: &(impl GetAutomorphismKey<BE> + GetTensorKey<BE>),
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Vec<Snapshot>
 where
@@ -437,7 +446,7 @@ fn staged<BE, S>(
     a: &BlasCiphertextOwned<BE>,
     b: &BlasPtOperand<BE, S>,
     p_b: usize,
-    keys: &impl GetAutomorphismKey<BE>,
+    keys: &(impl GetAutomorphismKey<BE> + GetTensorKey<BE>),
     scratch: &mut ScratchArena<'_, BE>,
 ) -> BlasCiphertextOwned<BE>
 where

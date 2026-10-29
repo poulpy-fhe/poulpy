@@ -127,7 +127,7 @@ pub trait BlasJklsReference<BE: Backend> {
         Self: CKKSCopyOps<BE> + CKKSMulOps<BE> + CKKSDotProductOps<BE> + CKKSModuleAlloc<BE> + CKKSModuleInfos + VecZnxDftBytesOf,
         D: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + Send,
         S: GLWEToBackendRef<BE> + CKKSCtBounds + Sync,
-        K: GetAutomorphismKey<BE> + Sync;
+        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
 }
 
 impl<BE: Backend> BlasJklsReference<BE> for Module<BE> {
@@ -182,7 +182,7 @@ impl<BE: Backend> BlasJklsReference<BE> for Module<BE> {
         Self: CKKSCopyOps<BE> + CKKSMulOps<BE> + CKKSDotProductOps<BE> + CKKSModuleAlloc<BE> + CKKSModuleInfos + VecZnxDftBytesOf,
         D: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + Send,
         S: GLWEToBackendRef<BE> + CKKSCtBounds + Sync,
-        K: GetAutomorphismKey<BE> + Sync,
+        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync,
     {
         let op = "blas_jkls_pt_unit";
         let (Some(&src0), Some(res0)) = (sources.first(), res.first()) else {

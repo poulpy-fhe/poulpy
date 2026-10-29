@@ -30,6 +30,7 @@
 #[macro_use]
 mod macros;
 
+mod diagonal_operand;
 mod diagonals;
 mod gglwe;
 mod gglwe_to_ggsw_key;
@@ -72,6 +73,7 @@ pub use self::compressed::{
     GLWETensorKeyCompressed, GLWEToLWESwitchingKeyCompressed, LWECompressed, LWECompressedToBackendMut,
     LWECompressedToBackendRef, LWESwitchingKeyCompressed, LWEToGLWEKeyCompressed,
 };
+pub use diagonal_operand::*;
 pub use diagonals::*;
 pub use gglwe::*;
 pub use gglwe_to_ggsw_key::*;

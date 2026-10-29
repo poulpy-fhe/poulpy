@@ -75,7 +75,7 @@ pub fn assert_linear_transformation_sum<BE: Backend>(
     assert_linear_transformation_giant_steps(babies, lts);
     let diagonals = |lt: &LinearTransformationPrepared<BE>| {
         lt.first_diagonal_plaintext()
-            .map(|d| (d.glwe_layout(), d.max_size(), d.log_scale()))
+            .map(|d| (d.glwe_layout(), d.max_size(), d.plaintext_meta().scale))
     };
     for (t, (&l, &r)) in babies.iter().zip(lts).enumerate().skip(1) {
         assert!(
@@ -109,7 +109,7 @@ fn assert_linear_transformation_giant_steps<BE, P>(
     lts: &[&LinearTransformation<P>],
 ) where
     BE: Backend,
-    P: DiagonalProd<BE>,
+    P: LWEInfos,
 {
     assert!(
         !lts[0].giant_steps.is_empty(),

@@ -110,7 +110,7 @@
 ### 8.4. Linear transformations
 
 - **One schedule.** Baby and giant steps, baby caches, `galois_elements` and the plaintext mirror `Diagonals::evaluate` derive only from `LinearTransformationLayout::index()`/`plan()` and `LinearTransformation::index()`, keys covering only rotations a non-empty giant step uses.
-- **Engine paths.** `glwe_eval_giant_steps` (`poulpy-core/src/reference/linear_transformation/prepared_giants.rs`) keeps both paths: the lazy one, only when destination, product output and every giant key share one base2k or no giant rotation exists, keeping products, body add, giant automorphisms and the cross-giant sum in DFT until one IDFT and one normalization, and the fallback, taken only where the lazy one cannot run, rotating each normalized giant contribution with the public `glwe_automorphism`.
+- **Engine paths.** `glwe_eval_giant_steps` (`poulpy-core/src/reference/linear_transformation/giant_steps.rs`) keeps both paths: the lazy one, only when destination, product output and every giant key share one base2k or no giant rotation exists, keeping products, body add, giant automorphisms and the cross-giant sum in DFT until one IDFT and one normalization, and the fallback, taken only where the lazy one cannot run, rotating each normalized giant contribution with the public `glwe_automorphism`.
 - **Diagonal periods.** A `Diagonals` entry stores one period (`set` takes any length dividing `slots`), readers index modulo the stored length, slot-wise combinations use `period_lcm`, never `max`, and rotations use `rotate_slots_into`.
 
 ## 9. Noise and plaintext metadata

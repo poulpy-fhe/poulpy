@@ -30,23 +30,24 @@ impl<BE: Backend> LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE>> {
     pub fn alloc_prepared<M, P>(module: &M, layout: &LinearTransformationLayout, pt_infos: &P) -> Self
     where
         M: CnvPVecAlloc<BE>,
-        P: LWEInfos,
+        P: GLWEInfos,
     {
         Self::alloc_prepared_from_index(module, &layout.index(), pt_infos)
     }
 
     /// Pre-allocates a resident transform sized for an explicit BSGS `index`.
     ///
-    /// Each slot takes the plaintext's degree, `base2k` and `k`, so a degree-`n`
-    /// diagonal gets a degree-`n` slot; the convolution buffers are
+    /// Each slot takes the diagonal's degree, `base2k`, `k` and `rank + 1` columns, so a degree-`n`
+    /// diagonal gets a degree-`n` slot and a ciphertext diagonal a slot of its columns; the convolution buffers are
     /// zeroed and populated by `glwe_prepare_linear_transformation_rhs`. The
     /// per-diagonal `log_scale` and real-slot claim are left at `0` and `false`
     /// for the scheme layer to set.
     pub fn alloc_prepared_from_index<M, P>(module: &M, index: &LinearTransformationPlan, pt_infos: &P) -> Self
     where
         M: CnvPVecAlloc<BE>,
-        P: LWEInfos,
+        P: GLWEInfos,
     {
+        let cols = pt_infos.rank().as_usize() + 1;
         let pt_size = pt_infos.size();
         let pt_n = pt_infos.n().as_usize();
         let base2k = pt_infos.base2k();
@@ -60,11 +61,10 @@ impl<BE: Backend> LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE>> {
                 diagonals.push(LinearTransformationDiagonal {
                     baby,
                     plaintext: PreparedDiagonal {
-                        cnv: module.cnv_pvec_right_alloc(pt_n, 1, pt_size, PrepareHint::Reuse),
+                        cnv: module.cnv_pvec_right_alloc(pt_n, cols, pt_size, PrepareHint::Reuse),
                         base2k,
                         k,
-                        log_scale: 0,
-                        real_slots: false,
+                        plaintext_meta: Default::default(),
                     },
                 });
             }
@@ -78,45 +78,36 @@ impl<BE: Backend> LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE>> {
         }
     }
 
-    /// Sets the per-diagonal `log_scale` of every diagonal; called by the scheme
-    /// layer during the populate step (mirrors the streamed plaintext's
-    /// `log_delta`).
-    pub fn set_log_scale(&mut self, log_scale: usize) {
+    /// Sets the scheme's claim on every diagonal; called by the scheme layer during the populate step.
+    pub fn set_plaintext_meta(&mut self, meta: crate::layouts::GLWEPlaintextMeta) {
         for gs in &mut self.giant_steps {
             for d in &mut gs.diagonals {
-                d.plaintext.set_log_scale(log_scale);
+                d.plaintext.set_plaintext_meta(meta);
             }
         }
     }
 
-    /// Sets the real-slot claim of every diagonal; called by the scheme layer
-    /// during the populate step.
-    pub fn set_real_slots(&mut self, real_slots: bool) {
-        for gs in &mut self.giant_steps {
-            for d in &mut gs.diagonals {
-                d.plaintext.set_real_slots(real_slots);
-            }
-        }
-    }
-
-    /// Base-2 log of the plaintext scaling factor shared by every diagonal.
-    pub fn log_scale(&self) -> usize {
+    /// The scheme's claim, shared by every diagonal.
+    pub fn plaintext_meta(&self) -> crate::layouts::GLWEPlaintextMeta {
         self.first_diagonal_plaintext()
             .expect("prepared linear transformation has no diagonals")
-            .log_scale()
+            .plaintext_meta()
     }
 }
 
 /// Reference impl: scratch bytes for `glwe_prepare_linear_transformation_rhs`.
 ///
 /// Sized at the module degree, an upper bound for a diagonal of any degree, which
-/// is prepared at its own degree.
+/// is prepared at its own degree; a ciphertext diagonal may need a normalized copy.
 pub fn glwe_prepare_linear_transformation_rhs_tmp_bytes_reference<BE, M, P>(module: &M, pt_infos: &P) -> usize
 where
     BE: Backend,
-    M: Convolution<BE>,
-    P: LWEInfos,
+    M: Convolution<BE> + crate::api::GLWENormalize<BE> + crate::api::GLWEBytesOf<BE>,
+    P: GLWEInfos,
 {
+    if pt_infos.rank().as_usize() > 0 {
+        return crate::glwe_prepare_right_tmp_bytes(module, pt_infos.size(), pt_infos);
+    }
     module.cnv_prepare_right_tmp_bytes(pt_infos.size(), pt_infos.size())
 }
 
@@ -134,7 +125,7 @@ pub fn glwe_prepare_linear_transformation_rhs_reference<BE, M, P>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: CnvPVecAlloc<BE> + Convolution<BE>,
+    M: CnvPVecAlloc<BE> + Convolution<BE> + crate::api::GLWENormalize<BE>,
     P: GLWEToBackendRef<BE> + GLWEInfos,
 {
     if !lt.baby_steps.is_empty() {
@@ -153,20 +144,13 @@ pub fn glwe_prepare_linear_transformation_rhs_reference<BE, M, P>(
     let pt_base2k_usize = pt_base2k.as_usize();
     let pt_k_usize = pt_k.as_usize();
     let pt_n = first.n().as_usize();
+    let pt_cols = first.cnv().cols();
     // The diagonal is an integer poly encoded across its full physical width
     // (`max_k`), so it is consumed at `max_k`, not the (possibly smaller)
     // effective `k`, otherwise the low limb's data is truncated.
 
+    // Every diagonal and its slot are checked before the first is prepared.
     for gs in &lt.giant_steps {
-        if gs.diagonals.is_empty() {
-            continue;
-        }
-        let prepared_gs = prepared
-            .giant_steps
-            .iter_mut()
-            .find(|p| p.rot == gs.rot)
-            .unwrap_or_else(|| panic!("prepared cache has no giant step for rotation {}", gs.rot));
-
         for d in &gs.diagonals {
             let plaintext = &d.plaintext;
             assert_eq!(
@@ -179,22 +163,57 @@ pub fn glwe_prepare_linear_transformation_rhs_reference<BE, M, P>(
                 pt_k,
                 "linear transformation diagonal k does not match prepared cache"
             );
-            assert_eq!(
-                pt_k_usize.div_ceil(pt_base2k_usize),
-                plaintext.max_size(),
-                "linear transformation plaintext size does not match its effective precision"
-            );
+            // A ciphertext diagonal is read at its width, whatever its allocation.
+            if plaintext.rank().as_usize() == 0 {
+                assert_eq!(
+                    pt_k_usize.div_ceil(pt_base2k_usize),
+                    plaintext.max_size(),
+                    "linear transformation plaintext size does not match its effective precision"
+                );
+            }
             assert_eq!(
                 plaintext.n().as_usize(),
                 pt_n,
                 "linear transformation diagonal degree does not match prepared cache"
             );
+            assert_eq!(
+                plaintext.rank().as_usize() + 1,
+                pt_cols,
+                "linear transformation diagonal rank does not match prepared cache"
+            );
+            assert!(
+                prepared
+                    .giant_steps
+                    .iter()
+                    .find(|p| p.rot == gs.rot)
+                    .is_some_and(|p| p.diagonals.iter().any(|p| p.baby == d.baby)),
+                "prepared cache has no diagonal slot for a diagonal of the transformation"
+            );
+        }
+    }
 
+    for gs in &lt.giant_steps {
+        if gs.diagonals.is_empty() {
+            continue;
+        }
+        let prepared_gs = prepared
+            .giant_steps
+            .iter_mut()
+            .find(|p| p.rot == gs.rot)
+            .expect("checked above");
+
+        for d in &gs.diagonals {
+            let plaintext = &d.plaintext;
             let prepared_slot = prepared_gs
                 .diagonals
                 .iter_mut()
                 .find(|p| p.baby == d.baby)
-                .unwrap_or_else(|| panic!("prepared cache has no diagonal slot for baby {} at giant {}", d.baby, gs.rot));
+                .expect("checked above");
+            // A ciphertext diagonal is read canonical, as the products read it.
+            if plaintext.rank().as_usize() > 0 {
+                crate::glwe_prepare_right(module, prepared_slot.plaintext.cnv_mut(), plaintext, pt_k_usize, scratch);
+                continue;
+            }
             let plaintext_backend = plaintext.to_backend_ref();
             module.cnv_prepare_right(
                 &mut prepared_slot.plaintext.cnv_mut().to_backend_mut(),

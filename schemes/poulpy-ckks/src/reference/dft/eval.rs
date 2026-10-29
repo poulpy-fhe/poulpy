@@ -24,7 +24,7 @@ use crate::{CKKSResult as Result, ckks_ensure};
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
     DiagonalProd,
-    layouts::{Base2K, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LinearTransformation},
+    layouts::{Base2K, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LinearTransformation},
 };
 use poulpy_hal::{
     api::CnvPVecAlloc,
@@ -286,10 +286,10 @@ pub fn ckks_dft_evaluate_assign<BE, Dir, Fmt, P, Dst, H>(
 ) -> Result<()>
 where
     BE: Backend,
-    P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
+    P: DiagonalProd<BE> + LtDiagonalMeta,
     Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    H: GetAutomorphismKey<BE>,
+    H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
 {
     // One factor at a time, in place on `ct`; compact `ct` after each so the next
     // factor's baby-step keyswitches operate on fewer limbs as the budget shrinks.
@@ -313,10 +313,10 @@ fn eval_factor<BE, P, Dst, H>(
 ) -> Result<()>
 where
     BE: Backend,
-    P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
+    P: DiagonalProd<BE> + LtDiagonalMeta,
     Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    H: GetAutomorphismKey<BE>,
+    H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
 {
     let mut babies = LinearTransformationBabySteps::alloc_for(module, factor, running);
     module.ckks_prepare_linear_transformation_baby_steps(&mut babies, running, keys, scratch)?;
@@ -331,7 +331,7 @@ pub fn ckks_prepare_dft_matrix_tmp_bytes<BE, Dir, Fmt, P>(
 ) -> usize
 where
     BE: Backend,
-    P: poulpy_core::layouts::LWEInfos,
+    P: poulpy_core::layouts::GLWEInfos,
     Module<BE>: CKKSLinearTransformationOps<BE>,
 {
     dft.factor_operands()
@@ -417,8 +417,8 @@ where
                 // Prepared and streamed evaluation are selected independently, so
                 // neither query is assumed to cover the other.
                 let factor_work = module
-                    .glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(ct, ct, pt, &plan, key)
-                    .max(module.glwe_eval_linear_transformation_tmp_bytes(ct, ct, pt, &plan, key))
+                    .glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(ct, ct, pt, &plan, key, key)
+                    .max(module.glwe_eval_linear_transformation_tmp_bytes(ct, ct, pt, &plan, key, key))
                     .max(module.ckks_copy_tmp_bytes(ct, ct));
                 bytes = bytes.max(BE::scratch_aligned(module.glwe_bytes_of_from_infos(ct)) + factor_work);
             }

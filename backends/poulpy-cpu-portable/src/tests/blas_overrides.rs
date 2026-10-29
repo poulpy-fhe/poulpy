@@ -96,7 +96,7 @@ unsafe impl BlasMatIntraImpl for OverrideBackend {
     where
         D: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos + Send,
         S: GLWEToBackendRef<Self> + CKKSCtBounds + Sync,
-        K: GetAutomorphismKey<Self> + Sync,
+        K: GetAutomorphismKey<Self> + GetTensorKey<Self> + Sync,
     {
         MAP_CALLS.fetch_add(1, Relaxed);
         module.blas_map_blocks_reference(dst, src, lts, keys, scratch)
@@ -123,7 +123,7 @@ unsafe impl BlasMatIntraImpl for OverrideBackend {
     where
         R: BlasGridMut<Self>,
         A: BlasGrid<Self>,
-        K: GetAutomorphismKey<Self> + Sync,
+        K: GetAutomorphismKey<Self> + GetTensorKey<Self> + Sync,
     {
         module.blas_rotate_rows_reference(k, res, a, ctx, keys, scratch)
     }
@@ -149,7 +149,7 @@ unsafe impl BlasMatIntraImpl for OverrideBackend {
     where
         R: BlasGridMut<Self>,
         A: BlasGrid<Self>,
-        K: GetAutomorphismKey<Self> + Sync,
+        K: GetAutomorphismKey<Self> + GetTensorKey<Self> + Sync,
     {
         module.blas_rotate_cols_reference(k, res, a, ctx, keys, scratch)
     }
@@ -174,7 +174,7 @@ unsafe impl BlasMatIntraImpl for OverrideBackend {
     where
         R: BlasGridMut<Self>,
         A: BlasGrid<Self>,
-        K: GetAutomorphismKey<Self> + Sync,
+        K: GetAutomorphismKey<Self> + GetTensorKey<Self> + Sync,
     {
         module.blas_sum_rows_reference(res, a, ctx, keys, scratch)
     }
@@ -199,7 +199,7 @@ unsafe impl BlasMatIntraImpl for OverrideBackend {
     where
         R: BlasGridMut<Self>,
         A: BlasGrid<Self>,
-        K: GetAutomorphismKey<Self> + Sync,
+        K: GetAutomorphismKey<Self> + GetTensorKey<Self> + Sync,
     {
         module.blas_sum_cols_reference(res, a, ctx, keys, scratch)
     }
@@ -264,7 +264,7 @@ unsafe impl BlasJklsImpl for OverrideBackend {
     where
         D: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos + Send,
         S: GLWEToBackendRef<Self> + CKKSCtBounds + Sync,
-        K: GetAutomorphismKey<Self> + Sync,
+        K: GetAutomorphismKey<Self> + GetTensorKey<Self> + Sync,
     {
         PT_UNIT_CALLS.fetch_add(1, Relaxed);
         module.blas_jkls_pt_unit_reference(res, sources, first, masks, plaintexts, galois, keys, scratch)

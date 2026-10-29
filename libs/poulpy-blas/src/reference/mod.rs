@@ -14,7 +14,10 @@ pub(crate) use intra::{sum_line, sum_line_tmp_bytes};
 pub use jkls::BlasJklsReference;
 pub use matmul::BlasMatMulReference;
 
-use poulpy_ckks::{CKKSCtBounds, api::CKKSLinearTransformationOps};
+use poulpy_ckks::{
+    CKKSCtBounds,
+    api::{CKKSLinearTransformationOps, ckks_plaintext_diagonal_layout},
+};
 use poulpy_core::layouts::{GGLWEInfos, LinearTransformationPlan};
 use poulpy_hal::layouts::Backend;
 
@@ -30,15 +33,17 @@ where
     let live = res.k().as_usize() > 0;
     // The maps take a key per rotation, which every plan of that kind sizes alike.
     let plan = LinearTransformationPlan::default();
+    // Plaintext diagonals read no tensor key, so the rotation key stands for its layout.
+    let (res_diagonal, a_diagonal) = (ckks_plaintext_diagonal_layout(res), ckks_plaintext_diagonal_layout(a));
     let eval = if summed {
-        let res_bytes = live.then(|| module.ckks_eval_linear_transformation_sum_tmp_bytes(res, &plan, key));
+        let res_bytes = live.then(|| module.ckks_eval_linear_transformation_sum_tmp_bytes(res, &res_diagonal, &plan, key, key));
         module
-            .ckks_eval_linear_transformation_sum_tmp_bytes(a, &plan, key)
+            .ckks_eval_linear_transformation_sum_tmp_bytes(a, &a_diagonal, &plan, key, key)
             .max(res_bytes.unwrap_or(0))
     } else {
-        let res_bytes = live.then(|| module.ckks_eval_linear_transformation_tmp_bytes(res, &plan, key));
+        let res_bytes = live.then(|| module.ckks_eval_linear_transformation_tmp_bytes(res, &res_diagonal, &plan, key, key));
         module
-            .ckks_eval_linear_transformation_tmp_bytes(a, &plan, key)
+            .ckks_eval_linear_transformation_tmp_bytes(a, &a_diagonal, &plan, key, key)
             .max(res_bytes.unwrap_or(0))
     };
     module

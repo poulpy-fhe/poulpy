@@ -224,7 +224,7 @@ pub trait CKKSModuleAlloc<BE: Backend>:
     ) -> DFTMatrixPrepared<BE, Dir, Fmt>
     where
         Self: Sized,
-        P: LWEInfos,
+        P: GLWEInfos,
     {
         let factors = dft
             .factor_operands()

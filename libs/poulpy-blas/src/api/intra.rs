@@ -1,5 +1,5 @@
 use poulpy_ckks::CKKSResult as Result;
-use poulpy_core::layouts::{GGLWEInfos, GetAutomorphismKey};
+use poulpy_core::layouts::{GGLWEInfos, GetAutomorphismKey, GetTensorKey};
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::layouts::{BlasContext, BlasGrid, BlasGridInfos, BlasGridMut};
@@ -65,7 +65,7 @@ pub trait BlasMatIntraOps<BE: Backend> {
     where
         R: BlasGridMut<BE>,
         A: BlasGrid<BE>,
-        K: GetAutomorphismKey<BE> + Sync;
+        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
 
     /// Scratch bytes [`Self::blas_rotate_rows`] needs into `res` from `a` with the maps of `ctx` and rotation keys of
     /// layout `keys`.
@@ -126,7 +126,7 @@ pub trait BlasMatIntraOps<BE: Backend> {
     where
         R: BlasGridMut<BE>,
         A: BlasGrid<BE>,
-        K: GetAutomorphismKey<BE> + Sync;
+        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
 
     /// Scratch bytes [`Self::blas_rotate_cols`] needs into `res` from `a` with the maps of `ctx` and rotation keys of
     /// layout `keys`.
@@ -167,7 +167,7 @@ pub trait BlasMatIntraOps<BE: Backend> {
     where
         R: BlasGridMut<BE>,
         A: BlasGrid<BE>,
-        K: GetAutomorphismKey<BE> + Sync;
+        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
 
     /// Scratch bytes [`Self::blas_sum_rows`] needs into `res` from `a` with the maps of `ctx` and rotation keys of
     /// layout `keys`.
@@ -233,7 +233,7 @@ pub trait BlasMatIntraOps<BE: Backend> {
     where
         R: BlasGridMut<BE>,
         A: BlasGrid<BE>,
-        K: GetAutomorphismKey<BE> + Sync;
+        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
 
     /// Scratch bytes [`Self::blas_sum_cols`] needs into `res` from `a` with the maps of `ctx` and rotation keys of
     /// layout `keys`.
@@ -273,5 +273,5 @@ pub trait BlasMatIntraOps<BE: Backend> {
     where
         R: BlasGridMut<BE>,
         A: BlasGrid<BE>,
-        K: GetAutomorphismKey<BE> + Sync;
+        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
 }

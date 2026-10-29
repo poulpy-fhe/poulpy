@@ -127,7 +127,7 @@ Every kernel of a HAL family `unsafe impl` guarantees these, beyond `poulpy-hal/
 - **Window refusals.** A window-rejecting kernel calls `poulpy_hal::layouts::assert_dense(v, "<name>")` at entry; coefficient-wise kernels honour window offsets and strides.
 - **Convolution terms are checked.** Every kernel or derived body applying convolution terms calls `poulpy_hal::layouts::check_cnv_dft_term` on each product it reads (`check_cnv_dft_terms` on a sum) at entry, before its first write, which covers degrees, columns and `check_galois` ("convolution: b_galois must be odd").
 - **Embedded operands cost no more.** A kernel reads an embedded operand through the backend's slot correspondence (no staging gather), bit for bit the dense result, at no more cost than the dense apply.
-- **Static messages on secret paths.** In poulpy-hal and its kernels the paths a secret or plaintext reaches include the `encode_*`/`decode_*` codecs, `svp_prepare`, the DFT of a secret and the `AlignedVec` sizing reached from secret-key size helpers, whose messages format nothing from that operand, length and shape included, `check_degree`'s degree aside.
+- **Static messages on secret paths.** In poulpy-hal and its kernels the paths a secret or plaintext reaches include the `encode_*`/`decode_*` codecs, `svp_prepare`, the DFT of a secret and the `AlignedVec` sizing reached from secret-key size helpers, whose messages format nothing from that operand, length, shape and degree included (`check_degree` too).
 
 ## 10. Documentation and CHANGELOG
 

@@ -52,7 +52,7 @@ pub fn matmul_left_operand<BE: BlasMatMulImpl>(
     module: &Module<BE>,
     a: &impl BlasGrid<BE>,
     ctx: &BlasContext<BE>,
-    keys: &(impl GetAutomorphismKey<BE> + Sync),
+    keys: &(impl GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync),
     hint: PrepareHint,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> CKKSResult<BlasMatMulLeft<BE>> {
@@ -67,7 +67,7 @@ pub fn matmul_right_operand<BE: BlasMatMulImpl>(
     module: &Module<BE>,
     b: &impl BlasGrid<BE>,
     ctx: &BlasContext<BE>,
-    keys: &(impl GetAutomorphismKey<BE> + Sync),
+    keys: &(impl GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync),
     hint: PrepareHint,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> CKKSResult<BlasMatMulRight<BE>> {

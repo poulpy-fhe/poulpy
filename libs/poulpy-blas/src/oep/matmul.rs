@@ -76,7 +76,7 @@ pub unsafe trait BlasMatMulImpl: Backend + CKKSMulImpl {
     ) -> Result<()>
     where
         A: BlasGrid<Self>,
-        K: GetAutomorphismKey<Self> + Sync;
+        K: GetAutomorphismKey<Self> + GetTensorKey<Self> + Sync;
 
     /// Scratch bound of [`Self::blas_matmul_prepare_right`] under the hint `hint`; may report less than the reference,
     /// never less than the body takes.
@@ -119,7 +119,7 @@ pub unsafe trait BlasMatMulImpl: Backend + CKKSMulImpl {
     ) -> Result<()>
     where
         B: BlasGrid<Self>,
-        K: GetAutomorphismKey<Self> + Sync;
+        K: GetAutomorphismKey<Self> + GetTensorKey<Self> + Sync;
 
     /// Scratch bound of [`Self::blas_matmul_prepared`] under `ctx`; `a` and `b` are the operands or the layouts
     /// [`blas_matmul_left_operand_layout`](crate::layouts::blas_matmul_left_operand_layout) and
@@ -187,7 +187,7 @@ pub unsafe trait BlasMatMulImpl: Backend + CKKSMulImpl {
     where
         R: BlasGridMut<Self>,
         T: GetTensorKey<Self> + Sync,
-        K: GetAutomorphismKey<Self> + Sync;
+        K: GetAutomorphismKey<Self> + GetTensorKey<Self> + Sync;
 
     /// Scratch bound of [`Self::blas_matmul_pt_right`]; may report less than the reference, never less than the body
     /// takes.
@@ -245,7 +245,7 @@ pub unsafe trait BlasMatMulImpl: Backend + CKKSMulImpl {
     where
         R: BlasGridMut<Self>,
         A: BlasGrid<Self>,
-        K: GetAutomorphismKey<Self> + Sync;
+        K: GetAutomorphismKey<Self> + GetTensorKey<Self> + Sync;
 
     /// Scratch bound of [`Self::blas_matmul_pt_left`]; may report less than the reference, never less than the body
     /// takes. It does not read the block maps of the operand.
@@ -294,7 +294,7 @@ pub unsafe trait BlasMatMulImpl: Backend + CKKSMulImpl {
     where
         R: BlasGridMut<Self>,
         A: BlasGrid<Self>,
-        K: GetAutomorphismKey<Self> + Sync;
+        K: GetAutomorphismKey<Self> + GetTensorKey<Self> + Sync;
 
     /// Scratch bound of [`Self::blas_matmul`] under `ctx`; may report less than the reference, never less than the body
     /// takes.
@@ -356,7 +356,7 @@ pub unsafe trait BlasMatMulImpl: Backend + CKKSMulImpl {
         A: BlasGrid<Self>,
         B: BlasGrid<Self>,
         T: GetTensorKey<Self> + Sync,
-        K: GetAutomorphismKey<Self> + Sync;
+        K: GetAutomorphismKey<Self> + GetTensorKey<Self> + Sync;
 }
 
 /// Selects [`BlasMatMulReference`](crate::reference::BlasMatMulReference) for `$be`. The reference prepares cold
@@ -391,7 +391,7 @@ macro_rules! impl_blas_mat_mul_reference_full {
             ) -> ::poulpy_ckks::CKKSResult<()>
             where
                 A: $crate::layouts::BlasGrid<Self>,
-                K: ::poulpy_core::layouts::GetAutomorphismKey<Self> + Sync,
+                K: ::poulpy_core::layouts::GetAutomorphismKey<Self> + ::poulpy_core::layouts::GetTensorKey<Self> + Sync,
             {
                 $crate::reference::BlasMatMulReference::blas_matmul_prepare_left_reference(module, res, a, ctx, keys, scratch)
             }
@@ -420,7 +420,7 @@ macro_rules! impl_blas_mat_mul_reference_full {
             ) -> ::poulpy_ckks::CKKSResult<()>
             where
                 B: $crate::layouts::BlasGrid<Self>,
-                K: ::poulpy_core::layouts::GetAutomorphismKey<Self> + Sync,
+                K: ::poulpy_core::layouts::GetAutomorphismKey<Self> + ::poulpy_core::layouts::GetTensorKey<Self> + Sync,
             {
                 $crate::reference::BlasMatMulReference::blas_matmul_prepare_right_reference(module, res, b, ctx, keys, scratch)
             }
@@ -459,7 +459,7 @@ macro_rules! impl_blas_mat_mul_reference_full {
             where
                 R: $crate::layouts::BlasGridMut<Self>,
                 T: ::poulpy_core::layouts::GetTensorKey<Self> + Sync,
-                K: ::poulpy_core::layouts::GetAutomorphismKey<Self> + Sync,
+                K: ::poulpy_core::layouts::GetAutomorphismKey<Self> + ::poulpy_core::layouts::GetTensorKey<Self> + Sync,
             {
                 $crate::reference::BlasMatMulReference::blas_matmul_prepared_reference(module, res, a, b, ctx, tsk, keys, scratch)
             }
@@ -498,7 +498,7 @@ macro_rules! impl_blas_mat_mul_reference_full {
                 A: $crate::layouts::BlasGrid<Self>,
                 B: $crate::layouts::BlasGrid<Self>,
                 T: ::poulpy_core::layouts::GetTensorKey<Self> + Sync,
-                K: ::poulpy_core::layouts::GetAutomorphismKey<Self> + Sync,
+                K: ::poulpy_core::layouts::GetAutomorphismKey<Self> + ::poulpy_core::layouts::GetTensorKey<Self> + Sync,
             {
                 $crate::reference::BlasMatMulReference::blas_matmul_reference(module, res, a, b, ctx, tsk, keys, scratch)
             }
@@ -531,7 +531,7 @@ macro_rules! impl_blas_mat_mul_reference_full {
             where
                 R: $crate::layouts::BlasGridMut<Self>,
                 A: $crate::layouts::BlasGrid<Self>,
-                K: ::poulpy_core::layouts::GetAutomorphismKey<Self> + Sync,
+                K: ::poulpy_core::layouts::GetAutomorphismKey<Self> + ::poulpy_core::layouts::GetTensorKey<Self> + Sync,
             {
                 $crate::reference::BlasMatMulReference::blas_matmul_pt_right_reference(module, res, a, b, ctx, keys, scratch)
             }
@@ -564,7 +564,7 @@ macro_rules! impl_blas_mat_mul_reference_full {
             where
                 R: $crate::layouts::BlasGridMut<Self>,
                 A: $crate::layouts::BlasGrid<Self>,
-                K: ::poulpy_core::layouts::GetAutomorphismKey<Self> + Sync,
+                K: ::poulpy_core::layouts::GetAutomorphismKey<Self> + ::poulpy_core::layouts::GetTensorKey<Self> + Sync,
             {
                 $crate::reference::BlasMatMulReference::blas_matmul_pt_left_reference(module, res, b, a, ctx, keys, scratch)
             }

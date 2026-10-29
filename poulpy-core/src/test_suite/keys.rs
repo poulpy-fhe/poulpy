@@ -5,7 +5,10 @@ use poulpy_hal::{
 
 use crate::{
     GLWEMaskFill,
-    layouts::{GGLWEAtViewMut, GGLWEInfos},
+    layouts::{
+        GGLWEAtViewMut, GGLWEInfos, GetAutomorphismKey, GetTensorKey, TorusPrecision,
+        prepared::{GLWEAutomorphismKeyPreparedBackendRef, GLWETensorKeyPreparedBackendRef},
+    },
 };
 
 /// Fills `key` from `source`, one draw per digit a `stride`-strided read
@@ -32,5 +35,23 @@ where
             };
             module.fill_glwe_from_source(&mut key.at_view_mut(row, col), stream);
         }
+    }
+}
+
+/// The automorphism keys and the tensor key of one key set, the keys of a transform of ciphertext diagonals.
+pub struct TransformKeys<'a, A, T> {
+    pub automorphism: &'a A,
+    pub tensor: &'a T,
+}
+
+impl<BE: Backend, A: GetAutomorphismKey<BE>, T> GetAutomorphismKey<BE> for TransformKeys<'_, A, T> {
+    fn lookup_automorphism_key(&self, p: i64, k: TorusPrecision) -> crate::Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
+        self.automorphism.lookup_automorphism_key(p, k)
+    }
+}
+
+impl<BE: Backend, A, T: GetTensorKey<BE>> GetTensorKey<BE> for TransformKeys<'_, A, T> {
+    fn lookup_tensor_key(&self, k: TorusPrecision) -> crate::Result<GLWETensorKeyPreparedBackendRef<'_, BE>> {
+        self.tensor.lookup_tensor_key(k)
     }
 }
