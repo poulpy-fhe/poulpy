@@ -10,9 +10,9 @@ use crate::{
     glwe_prepare_left, glwe_prepare_left_tmp_bytes, glwe_prepare_right, glwe_prepare_right_tmp_bytes,
     layouts::{
         Base2K, Degree, Dnum, GGLWEInfos, GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout, GLWESecretLayout,
-        GLWETensorKeyLayout, ModuleCoreAlloc, Rank, TorusPrecision,
+        GLWETensorKeyLayout, ModuleCoreAlloc, MulRightOperand, Rank, TorusPrecision,
     },
-    test_suite::{decryption::panic_message, keys::fill_by_digit, noise::assert_refuses_uncovered_input},
+    test_suite::{Right, decryption::panic_message, keys::fill_by_digit, noise::assert_refuses_uncovered_input},
 };
 use poulpy_hal::{
     api::{CnvPVecAlloc, Convolution, ScratchOwnedAlloc, ScratchOwnedBorrow},
@@ -741,21 +741,21 @@ pub fn test_tensor_relinearize_decrypt_parity_roles<BR, BT>(
                                         precision,
                                         &mut poisoned_scratch::<$be>(glwe_prepare_right_tmp_bytes($m, size, &g)).borrow(),
                                     );
-                                    (
-                                        l_prep,
-                                        crate::test_suite::PreparedRight {
-                                            cnv: r_prep,
-                                            layout: g,
-                                        },
-                                    )
+                                    (l_prep, r_prep)
                                 })
                                 .collect::<Vec<_>>()
                         }};
                     }
                     let prep_r = prepared_pairs!(BR, r, [(&x_r, &y_r), (&y_r, &x_r), (&x_r, &x_r)]);
                     let prep_t = prepared_pairs!(BT, t, [(&x_t, &y_t), (&y_twin_t, &x_twin_t), (&x_t, &x_t)]);
-                    let prep_r: (Vec<_>, Vec<_>) = prep_r.iter().map(|(l, r)| (l, r)).unzip();
-                    let prep_t: (Vec<_>, Vec<_>) = prep_t.iter().map(|(l, r)| (l, r)).unzip();
+                    let prep_r: (Vec<_>, Vec<_>) = prep_r
+                        .iter()
+                        .map(|(l, r)| (l, Right(g, MulRightOperand::Prepared(r))))
+                        .unzip();
+                    let prep_t: (Vec<_>, Vec<_>) = prep_t
+                        .iter()
+                        .map(|(l, r)| (l, Right(g, MulRightOperand::Prepared(r))))
+                        .unzip();
                     for cnv_offset in [b, precision] {
                         let mut outs = std::collections::HashMap::new();
                         for &role in roles {
@@ -763,6 +763,23 @@ pub fn test_tensor_relinearize_decrypt_parity_roles<BR, BT>(
                             x_r.transfer_into(&mut out_r);
                             let mut out_t = t.glwe_alloc_from_infos(&g);
                             out_r.transfer_into(&mut out_t);
+                            let pairs = if role == 5 { 1 } else { 3 };
+                            // The first `pairs` prepared left operands against `$rights`, prepared or not.
+                            macro_rules! prepared_sum {
+                                ($m:expr, $out:expr, $prep:expr, $rights:expr, $key:expr, $scratch:ident) => {
+                                    $m.glwe_mul_prepared_relinearize_sum(
+                                        cnv_offset,
+                                        $out,
+                                        g.k,
+                                        $prep.0.iter().copied().take(pairs),
+                                        size,
+                                        g.k,
+                                        $rights.into_iter().take(pairs),
+                                        $key,
+                                        &mut $scratch.borrow(),
+                                    )
+                                };
+                            }
                             // `$x2` and `$y2` hold the values of `$x` and `$y`: the test side passes unnormalized twins.
                             macro_rules! one_pass {
                                 ($be:ty, $m:expr, $out:expr, $x:expr, $y:expr, $x2:expr, $y2:expr, $prep:expr, $key:expr) => {{
@@ -797,17 +814,7 @@ pub fn test_tensor_relinearize_decrypt_parity_roles<BR, BT>(
                                             $key,
                                             &mut scratch.borrow(),
                                         ),
-                                        4 | 5 => $m.glwe_mul_prepared_relinearize_sum(
-                                            cnv_offset,
-                                            $out,
-                                            g.k,
-                                            $prep.0[..if role == 5 { 1 } else { 3 }].iter().copied(),
-                                            size,
-                                            g.k,
-                                            $prep.1[..if role == 5 { 1 } else { 3 }].iter().copied(),
-                                            $key,
-                                            &mut scratch.borrow(),
-                                        ),
+                                        4 | 5 => prepared_sum!($m, $out, $prep, &$prep.1, $key, scratch),
                                         _ => $m.glwe_mul_relinearize(cnv_offset, $out, g.k, x2, y2, $key, &mut scratch.borrow()),
                                     }
                                 }};
@@ -823,31 +830,16 @@ pub fn test_tensor_relinearize_decrypt_parity_roles<BR, BT>(
                             );
                             // Ciphertext right operands, the test side's second unnormalized, give the prepared pairs' bits.
                             if matches!(role, 4 | 5) {
-                                let pairs = if role == 5 { 1 } else { 3 };
-                                macro_rules! ciphertext_rights {
-                                    ($be:ty, $m:expr, $out:expr, $prep:expr, $rights:expr, $key:expr) => {{
-                                        $m.glwe_mul_prepared_relinearize_sum(
-                                            cnv_offset,
-                                            $out,
-                                            g.k,
-                                            $prep.0[..pairs].iter().copied(),
-                                            size,
-                                            g.k,
-                                            $rights[..pairs].iter().copied(),
-                                            $key,
-                                            &mut poisoned_scratch::<$be>(
-                                                $m.glwe_mul_prepared_relinearize_sum_tmp_bytes(&g, size, size, g.k, &key),
-                                            )
-                                            .borrow(),
-                                        )
-                                    }};
-                                }
                                 let mut out_ct_r = r.glwe_alloc_from_infos(&g);
                                 x_r.transfer_into(&mut out_ct_r);
                                 let mut out_ct_t = t.glwe_alloc_from_infos(&g);
                                 out_ct_r.transfer_into(&mut out_ct_t);
-                                ciphertext_rights!(BR, r, &mut out_ct_r, &prep_r, [&y_r, &x_r, &x_r], &kp_r);
-                                ciphertext_rights!(BT, t, &mut out_ct_t, &prep_t, [&y_t, &x_twin_t, &x_t], &kp_t);
+                                let bytes_r = r.glwe_mul_prepared_relinearize_sum_tmp_bytes(&g, size, size, g.k, &key);
+                                let bytes_t = t.glwe_mul_prepared_relinearize_sum_tmp_bytes(&g, size, size, g.k, &key);
+                                let (mut scratch_r, mut scratch_t) =
+                                    (poisoned_scratch::<BR>(bytes_r), poisoned_scratch::<BT>(bytes_t));
+                                prepared_sum!(r, &mut out_ct_r, &prep_r, [&y_r, &x_r, &x_r], &kp_r, scratch_r);
+                                prepared_sum!(t, &mut out_ct_t, &prep_t, [&y_t, &x_twin_t, &x_t], &kp_t, scratch_t);
                                 assert_glwe_eq!(
                                     out_r,
                                     out_ct_r,

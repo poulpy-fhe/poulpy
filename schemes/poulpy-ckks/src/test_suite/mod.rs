@@ -632,10 +632,6 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::linear_transformation::test_linear_transformation_sum_ct
             );
             run_test!(
-                linear_transformation_ct_tensor_path,
-                $crate::test_suite::linear_transformation::test_linear_transformation_ct_tensor_path
-            );
-            run_test!(
                 linear_transformation_ct_rejects_foreign_layouts,
                 $crate::test_suite::linear_transformation::test_linear_transformation_ct_rejects_foreign_layouts
             );

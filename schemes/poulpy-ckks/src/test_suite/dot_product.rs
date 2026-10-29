@@ -555,7 +555,7 @@ fn eager<BE: TestContextBackend, H: GetTensorKey<BE>>(
 }
 
 /// A tensor-key store that holds its key at one width only.
-struct TensorKeyAt<'a, K>(&'a K, TorusPrecision);
+pub(crate) struct TensorKeyAt<'a, K>(pub(crate) &'a K, pub(crate) TorusPrecision);
 
 impl<BE: Backend, K: GetTensorKey<BE>> GetTensorKey<BE> for TensorKeyAt<'_, K> {
     fn lookup_tensor_key(&self, k: TorusPrecision) -> poulpy_core::Result<GLWETensorKeyPreparedBackendRef<'_, BE>> {

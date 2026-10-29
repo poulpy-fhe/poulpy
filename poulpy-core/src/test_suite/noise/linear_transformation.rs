@@ -15,7 +15,7 @@ use poulpy_hal::{
         CnvPVecAlloc, Convolution, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAlloc, VecZnxBigAlloc, VecZnxBigNormalize,
         VecZnxBigNormalizeTmpBytes, VecZnxDftAlloc, VecZnxFillUniformSource, VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
     },
-    layouts::{Backend, CnvPVecROwned, GaloisElement, HostDataMut, HostDataRef, Module, PrepareHint, ScratchOwned, VecZnx},
+    layouts::{Backend, GaloisElement, HostDataMut, HostDataRef, Module, PrepareHint, ScratchOwned, VecZnx},
     source::Source,
     test_suite::{TestParams, vec_znx_backend_mut},
 };
@@ -28,11 +28,10 @@ use crate::{
     encryption::DEFAULT_SIGMA_XE,
     error::{CoreError, Result},
     layouts::{
-        Base2K, Degree, Dsize, GGLWEInfos, GLWE, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout,
-        GLWEMulRight, GLWEPlaintext, GLWESecret, GLWETensorKey, GLWETensorKeyLayout, GLWEToBackendRef, GetAutomorphismKey,
-        LWEInfos, LinearTransformation, LinearTransformationDiagonal, LinearTransformationGiantStep, LinearTransformationLayout,
-        LinearTransformationPlan, LinearTransformationStrategy, ModuleCoreAlloc, MulRightOperand, Rank, SetK, TorusPrecision,
-        TransformKeys, k_digit_of,
+        Dsize, GGLWEInfos, GLWE, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout, GLWEPlaintext,
+        GLWESecret, GLWETensorKey, GLWETensorKeyLayout, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, LinearTransformation,
+        LinearTransformationDiagonal, LinearTransformationGiantStep, LinearTransformationLayout, LinearTransformationPlan,
+        LinearTransformationStrategy, ModuleCoreAlloc, MulRightOperand, SetK, TorusPrecision, TransformKeys, k_digit_of,
         prepared::{
             GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedBackendRef, GLWEAutomorphismKeyPreparedToBackendRef,
             GLWESecretPrepared, GLWETensorKeyPrepared, PreparedDiagonal,
@@ -40,7 +39,7 @@ use crate::{
     },
     noise::GGLWENoiseModel,
     test_suite::{
-        PreparedRight,
+        Right,
         noise::{assert_refuses_uncovered_input, glwe_noise_checked},
     },
 };
@@ -1281,62 +1280,8 @@ fn limbs_layout<BE: Backend>(params: &TestParams, module: &Module<BE>, limbs: us
     }
 }
 
-/// A right operand of either form, so that one dot product can mix them.
-enum EitherRight<'a, BE: Backend> {
-    Prepared(&'a PreparedRight<BE>),
-    Ciphertext(&'a GLWE<BE::OwnedBuf, BE::ZnxWord>),
-}
-
-impl<BE: Backend> EitherRight<'_, BE> {
-    fn layout(&self) -> GLWELayout {
-        match self {
-            Self::Prepared(right) => right.layout,
-            Self::Ciphertext(ct) => ct.glwe_layout(),
-        }
-    }
-}
-
-impl<BE: Backend> LWEInfos for EitherRight<'_, BE> {
-    fn n(&self) -> Degree {
-        self.layout().n
-    }
-
-    fn base2k(&self) -> Base2K {
-        self.layout().base2k
-    }
-
-    fn max_size(&self) -> usize {
-        self.layout().size()
-    }
-
-    fn k(&self) -> TorusPrecision {
-        self.layout().k
-    }
-}
-
-impl<BE: Backend> GLWEInfos for EitherRight<'_, BE> {
-    fn rank(&self) -> Rank {
-        self.layout().rank
-    }
-}
-
-impl<BE: Backend> GLWEMulRight<BE> for EitherRight<'_, BE> {
-    type Prepared = CnvPVecROwned<BE>;
-    type Ciphertext = GLWE<BE::OwnedBuf, BE::ZnxWord>;
-
-    fn mul_right(&self) -> MulRightOperand<'_, CnvPVecROwned<BE>, GLWE<BE::OwnedBuf, BE::ZnxWord>> {
-        match self {
-            Self::Prepared(right) => MulRightOperand::Prepared(&right.cnv),
-            Self::Ciphertext(ct) => MulRightOperand::Ciphertext(ct),
-        }
-    }
-}
-
 /// A transformation whose diagonals are ciphertexts, prepared by `glwe_prepare_linear_transformation_rhs`, decrypts to
-/// the dot product of each giant step rotated and summed, on the per-rotation and the power-of-two schedules, with
-/// keys at the source's radix and, through the tensor products and the normalized giant route, at another one. One
-/// giant step at rotation 0 is that dot product bit for bit, at a conversion offset with or without a low part. A
-/// one-term sum is the single transformation bit for bit and two terms decrypt to the sum of the single ones. Keys
+/// the dot product of each giant step rotated and summed, alone or in a sum, on both schedules and key radixes. Keys
 /// without a tensor key or with one too narrow for the products, a cache allocated for plaintext diagonals, summed
 /// caches of other widths and dot products whose right operands differ in width or form are refused before anything
 /// is written.
@@ -1769,38 +1714,27 @@ pub fn test_glwe_linear_transformation_ciphertext_diagonals<BE: crate::test_suit
                 k: (k - 1).into(),
                 ..ct_infos
             });
-            let prepared = PreparedRight {
-                cnv: module.cnv_pvec_right_alloc(n, 2, size, PrepareHint::Reuse),
-                layout: ct_infos,
-            };
-            let mixed = [EitherRight::Ciphertext(&a), EitherRight::Prepared(&prepared)];
+            let prepared = module.cnv_pvec_right_alloc(n, 2, size, PrepareHint::Reuse);
             let message = "prepared pair 1 does not match res's degree, base2k, rank 1 and the first pair's widths and form";
-            assert_refusal(message, &mut out, glwe_state::<BE>, |res| {
-                module.glwe_mul_prepared_relinearize_sum(
-                    scale,
-                    res,
-                    res_k,
-                    lefts,
-                    size,
-                    cache.k(),
-                    [&a, &narrow],
-                    &tsk_prepared,
-                    &mut poisoned_scratch::<BE>(dot_bytes).borrow(),
-                )
-            });
-            assert_refusal(message, &mut out, glwe_state::<BE>, |res| {
-                module.glwe_mul_prepared_relinearize_sum(
-                    scale,
-                    res,
-                    res_k,
-                    lefts,
-                    size,
-                    cache.k(),
-                    &mixed,
-                    &tsk_prepared,
-                    &mut poisoned_scratch::<BE>(dot_bytes).borrow(),
-                )
-            });
+            for second in [
+                Right(narrow.glwe_layout(), MulRightOperand::Ciphertext(&narrow)),
+                Right(ct_infos, MulRightOperand::Prepared(&prepared)),
+            ] {
+                let rights = [Right(a.glwe_layout(), MulRightOperand::Ciphertext(&a)), second];
+                assert_refusal(message, &mut out, glwe_state::<BE>, |res| {
+                    module.glwe_mul_prepared_relinearize_sum(
+                        scale,
+                        res,
+                        res_k,
+                        lefts,
+                        size,
+                        cache.k(),
+                        &rights,
+                        &tsk_prepared,
+                        &mut poisoned_scratch::<BE>(dot_bytes).borrow(),
+                    )
+                });
+            }
         }
     }
 }

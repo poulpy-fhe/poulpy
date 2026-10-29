@@ -32,25 +32,17 @@ pub(crate) fn ensure_prepared_transformation_layout<BE: Backend, P: GLWEInfos>(
     let Some(first) = prepared.first_diagonal_plaintext() else {
         return Err(invalid("the prepared transformation has no diagonal"));
     };
-    let layout = (first.n(), first.base2k(), first.rank(), first.k(), first.max_size());
-    let prepared_layouts = prepared.giant_steps.iter().flat_map(|gs| &gs.diagonals).map(|d| {
-        (
-            d.plaintext.n(),
-            d.plaintext.base2k(),
-            d.plaintext.rank(),
-            d.plaintext.k(),
-            d.plaintext.max_size(),
-        )
-    });
-    let source_layouts = lt.giant_steps.iter().flat_map(|gs| &gs.diagonals).map(|d| {
-        (
-            d.plaintext.n(),
-            d.plaintext.base2k(),
-            d.plaintext.rank(),
-            d.plaintext.k(),
-            d.plaintext.max_size(),
-        )
-    });
+    let layout = (first.glwe_layout(), first.max_size());
+    let prepared_layouts = prepared
+        .giant_steps
+        .iter()
+        .flat_map(|gs| &gs.diagonals)
+        .map(|d| (d.plaintext.glwe_layout(), d.plaintext.max_size()));
+    let source_layouts = lt
+        .giant_steps
+        .iter()
+        .flat_map(|gs| &gs.diagonals)
+        .map(|d| (d.plaintext.glwe_layout(), d.plaintext.max_size()));
     if prepared_layouts.chain(source_layouts).any(|diagonal| diagonal != layout) {
         return Err(invalid("a diagonal's layout differs from the prepared transformation's"));
     }

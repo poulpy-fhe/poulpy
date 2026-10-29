@@ -24,6 +24,7 @@ use poulpy_hal::{
 
 use crate::{
     GLWEAdd, GLWEAutomorphism, GLWECopy, GLWEMulPlain, LinearTransformation,
+    gadget::prod_dft_size,
     layouts::{
         DiagonalProd, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LinearTransformationPlan,
         ModuleCoreAlloc, assert_linear_transformation_into, assert_linear_transformation_sum,
@@ -37,7 +38,7 @@ use crate::{
             },
             inner_product::glwe_accumulate_prepared_baby_steps_dft_tmp_bytes,
             lazy::glwe_lazy_giant_automorphism_tmp_bytes,
-            prepared_giants::{giant_tree_tmp_bytes, glwe_eval_giant_steps, glwe_eval_giant_tree_tmp_bytes},
+            prepared_giants::{PlainProductsShape, giant_tree_tmp_bytes, glwe_eval_giant_steps, plain_products_tmp_bytes},
         },
     },
 };
@@ -97,10 +98,8 @@ where
     if pt.rank().as_usize() > 0 {
         // A product of each giant step's pairs into DFT, sized at the larger of the tensor key and `res`.
         let res_infos = crate::layouts::GLWELayout {
-            n: res.n(),
-            base2k: res.base2k(),
             k: res.max_k(),
-            rank: res.rank(),
+            ..res.glwe_layout()
         };
         let products_bytes = super::ciphertext_diagonals::ciphertext_products_tmp_bytes(
             module,
@@ -127,6 +126,16 @@ where
     let prod_size = a_size + pt_size;
     let inner_dft = glwe_accumulate_prepared_baby_steps_dft_tmp_bytes::<BE, _>(module, min_cnv_offset, a_size, pt_size);
     let prepare_right = module.cnv_prepare_right_tmp_bytes(pt_size, pt_size);
+    let tree_products = PlainProductsShape {
+        cnv_offset_hi: min_cnv_offset,
+        baby_size: a_size,
+        diagonal_size: pt_size,
+        prod_size: prod_dft_size(a_size, pt_size, min_cnv_offset),
+        terms: 1,
+        batch: BE::glwe_giant_step_batch(module).min(plan.giant_steps.len()),
+    };
+    let tree_products_bytes =
+        plain_products_tmp_bytes::<BE, _>(module, res.n().as_usize(), res.rank().as_usize() + 1, &tree_products);
 
     module
         .glwe_automorphism_tmp_bytes(res, a, key)
@@ -146,8 +155,13 @@ where
             res,
             key,
         ))
-        .max(glwe_eval_giant_tree_tmp_bytes::<BE, _, _, _, _>(
-            module, res, a, pt, plan, key,
+        .max(giant_tree_tmp_bytes(
+            module,
+            res,
+            tree_products.prod_size,
+            tree_products_bytes,
+            plan,
+            key,
         ))
 }
 
@@ -155,7 +169,7 @@ where
 /// `batch` held at once, taking `products_bytes` beside them, into `res` with giant keys no wider than `key`: the lazy
 /// route holds the products of a batch and the accumulator, the fallback first normalizes each product into the
 /// destination layout, then rotates that accumulator in place (both operands therefore use `res`).
-pub(super) fn giant_routes_tmp_bytes<BE, R, K>(
+fn giant_routes_tmp_bytes<BE, R, K>(
     module: &Module<BE>,
     cols: usize,
     prod_size: usize,
@@ -278,6 +292,7 @@ pub fn glwe_prepare_linear_transformation_baby_steps_reference<BE, A, H>(
     H: GetAutomorphismKey<BE>,
 {
     glwe_prepare_linear_transformation_baby_steps(module, cache, a, keys, scratch);
+    cache.set_k(a.k());
 }
 
 /// Reference impl: BSGS evaluation of a linear transformation, generic over the

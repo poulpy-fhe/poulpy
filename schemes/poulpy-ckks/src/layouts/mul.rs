@@ -71,7 +71,6 @@ impl<BE: Backend> CKKSPreparedLeft<BE> {
     }
 }
 
-/// The operand of the prepared products, read where it is.
 impl<BE: Backend> poulpy_core::layouts::GLWEMulRight<BE> for CKKSPreparedRight<BE> {
     type Prepared = CnvPVecROwned<BE>;
     type Ciphertext = poulpy_core::layouts::GLWE<BE::OwnedBuf, BE::ZnxWord>;

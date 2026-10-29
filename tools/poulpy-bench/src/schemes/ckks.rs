@@ -763,16 +763,13 @@ pub fn runner_ckks_eval_linear_transformation_into_ct_composed<BE: Backend<ZnxWo
         .iter()
         .map(|&baby| {
             let mut left = module.ckks_prepared_left_alloc_from_infos(&src, PrepareHint::Reuse);
-            if baby == 0 {
-                module.ckks_prepare_left_into(&mut left, &src, &mut scratch.borrow()).unwrap();
-            } else {
+            if baby != 0 {
                 module
                     .ckks_rotate_into(baby, &mut rotated, &src, &atks, &mut scratch.borrow())
                     .unwrap();
-                module
-                    .ckks_prepare_left_into(&mut left, &rotated, &mut scratch.borrow())
-                    .unwrap();
             }
+            let ct = if baby == 0 { &src } else { &rotated };
+            module.ckks_prepare_left_into(&mut left, ct, &mut scratch.borrow()).unwrap();
             (baby, left)
         })
         .collect();

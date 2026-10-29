@@ -4,7 +4,10 @@ use std::collections::HashMap;
 
 use poulpy_hal::{
     api::{CnvPVecAlloc, CnvPVecBytesOf, Convolution, ModuleN},
-    layouts::{Backend, Data, DataViewMut, GaloisElement, HostDataMut, Module, ScratchArena, VecZnxDftBackendMut, ZnxViewMut},
+    layouts::{
+        Backend, CyclotomicOrder, Data, DataViewMut, GaloisElement, HostDataMut, Module, ScratchArena, VecZnxDftBackendMut,
+        ZnxViewMut,
+    },
     source::Source,
     test_suite::TestParams,
 };
@@ -850,12 +853,6 @@ fn ciphertext_diagonals_parity<BR, BT>(
     };
     let plan = schedule.index();
     let rotations = plan.rotations;
-    // The giant rotations themselves are keyed per rotation, a tree's levels otherwise.
-    let mut keyed: Vec<i64> = rotations.baby_key_rotations(plan.baby_steps.iter().copied());
-    keyed.extend(rotations.giant_key_rotations(plan.giant_steps.iter().copied()));
-    keyed.extend(plan.giant_steps.iter().filter(|&&rot| rot != 0));
-    keyed.sort_unstable();
-    keyed.dedup();
     for &rank in &shapes.ranks {
         let ct = GLWELayout {
             n: params.n.into(),
@@ -892,8 +889,7 @@ fn ciphertext_diagonals_parity<BR, BT>(
             };
             let mut atks_r = HashMap::new();
             let mut atks_t = HashMap::new();
-            for &rotation in &keyed {
-                let p = r.galois_element(rotation);
+            for p in plan.galois_elements(r.cyclotomic_order()) {
                 let mut key_r = r.glwe_automorphism_key_alloc_from_infos(&key);
                 fill_by_digit(r, &mut key_r, 1, source);
                 key_r.p = p;
@@ -1021,97 +1017,51 @@ fn ciphertext_diagonals_parity<BR, BT>(
             let mut have = r.glwe_alloc_from_infos(&ct);
             for &offset in offsets {
                 let label = format!("rank={rank} key_base={key_base} k_digit={k_digit} offset={offset} {strategy:?}");
-                let mut out_r = ref_glwe(r, &ct, source);
-                let mut out_t = t.glwe_alloc_from_infos(&ct);
-                out_r.transfer_into(&mut out_t);
-                r.glwe_eval_linear_transformation_into(
-                    offset,
-                    &mut out_r,
-                    &lhs_r,
-                    &resident_r,
-                    &keys_r,
-                    &mut poisoned_scratch::<BR>(r.glwe_eval_linear_transformation_tmp_bytes(&ct, &ct, &ct, &plan, &tsk, &key))
-                        .borrow(),
+                // `$method` from one random destination on both backends, each on exactly the scratch `$query` returns.
+                macro_rules! check {
+                    ($what:literal, $method:ident, $query:ident, ($lhs_r:expr, $rhs_r:expr), ($lhs_t:expr, $rhs_t:expr)) => {{
+                        let mut out_r = ref_glwe(r, &ct, source);
+                        let mut out_t = t.glwe_alloc_from_infos(&ct);
+                        out_r.transfer_into(&mut out_t);
+                        let mut scratch = poisoned_scratch::<BR>(r.$query(&ct, &ct, &ct, &plan, &tsk, &key));
+                        r.$method(offset, &mut out_r, $lhs_r, $rhs_r, &keys_r, &mut scratch.borrow());
+                        let mut scratch = poisoned_scratch::<BT>(t.$query(&ct, &ct, &ct, &plan, &tsk, &key));
+                        t.$method(offset, &mut out_t, $lhs_t, $rhs_t, &keys_t, &mut scratch.borrow());
+                        out_t.transfer_into(&mut have);
+                        assert_glwe_eq!(out_r, have, "{} ciphertext-diagonal transform {label}", $what);
+                        out_r
+                    }};
+                }
+                let resident = check!(
+                    "resident",
+                    glwe_eval_linear_transformation_into,
+                    glwe_eval_linear_transformation_tmp_bytes,
+                    (&lhs_r, &resident_r),
+                    (&lhs_t, &resident_t)
                 );
-                t.glwe_eval_linear_transformation_into(
-                    offset,
-                    &mut out_t,
-                    &lhs_t,
-                    &resident_t,
-                    &keys_t,
-                    &mut poisoned_scratch::<BT>(t.glwe_eval_linear_transformation_tmp_bytes(&ct, &ct, &ct, &plan, &tsk, &key))
-                        .borrow(),
+                let streamed = check!(
+                    "streamed",
+                    glwe_eval_linear_transformation_into,
+                    glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes,
+                    (&lhs_r, &rhs_r),
+                    (&lhs_t, &rhs_t)
                 );
-                out_t.transfer_into(&mut have);
-                assert_glwe_eq!(out_r, have, "resident ciphertext-diagonal transform {label}");
-                let mut streamed_r = ref_glwe(r, &ct, source);
-                let mut streamed_t = t.glwe_alloc_from_infos(&ct);
-                streamed_r.transfer_into(&mut streamed_t);
-                r.glwe_eval_linear_transformation_into(
-                    offset,
-                    &mut streamed_r,
-                    &lhs_r,
-                    &rhs_r,
-                    &keys_r,
-                    &mut poisoned_scratch::<BR>(
-                        r.glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(&ct, &ct, &ct, &plan, &tsk, &key),
-                    )
-                    .borrow(),
+                assert_glwe_eq!(resident, streamed, "resident/streamed ciphertext-diagonal transform {label}");
+                check!(
+                    "summed",
+                    glwe_eval_linear_transformation_sum_into,
+                    glwe_eval_linear_transformation_sum_tmp_bytes,
+                    (&[&lhs_r, &lhs2_r], &[&resident_r, &resident2_r]),
+                    (&[&lhs_t, &lhs2_t], &[&resident_t, &resident2_t])
                 );
-                t.glwe_eval_linear_transformation_into(
-                    offset,
-                    &mut streamed_t,
-                    &lhs_t,
-                    &rhs_t,
-                    &keys_t,
-                    &mut poisoned_scratch::<BT>(
-                        t.glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(&ct, &ct, &ct, &plan, &tsk, &key),
-                    )
-                    .borrow(),
+                let one_term = check!(
+                    "one-term summed",
+                    glwe_eval_linear_transformation_sum_into,
+                    glwe_eval_linear_transformation_sum_tmp_bytes,
+                    (&[&lhs_r], &[&resident_r]),
+                    (&[&lhs_t], &[&resident_t])
                 );
-                streamed_t.transfer_into(&mut have);
-                assert_glwe_eq!(streamed_r, have, "streamed ciphertext-diagonal transform {label}");
-                assert_glwe_eq!(out_r, streamed_r, "resident/streamed ciphertext-diagonal transform {label}");
-                let mut sum_r = ref_glwe(r, &ct, source);
-                let mut sum_t = t.glwe_alloc_from_infos(&ct);
-                sum_r.transfer_into(&mut sum_t);
-                r.glwe_eval_linear_transformation_sum_into(
-                    offset,
-                    &mut sum_r,
-                    &[&lhs_r, &lhs2_r],
-                    &[&resident_r, &resident2_r],
-                    &keys_r,
-                    &mut poisoned_scratch::<BR>(
-                        r.glwe_eval_linear_transformation_sum_tmp_bytes(&ct, &ct, &ct, &plan, &tsk, &key),
-                    )
-                    .borrow(),
-                );
-                t.glwe_eval_linear_transformation_sum_into(
-                    offset,
-                    &mut sum_t,
-                    &[&lhs_t, &lhs2_t],
-                    &[&resident_t, &resident2_t],
-                    &keys_t,
-                    &mut poisoned_scratch::<BT>(
-                        t.glwe_eval_linear_transformation_sum_tmp_bytes(&ct, &ct, &ct, &plan, &tsk, &key),
-                    )
-                    .borrow(),
-                );
-                sum_t.transfer_into(&mut have);
-                assert_glwe_eq!(sum_r, have, "summed ciphertext-diagonal transform {label}");
-                t.glwe_eval_linear_transformation_sum_into(
-                    offset,
-                    &mut sum_t,
-                    &[&lhs_t],
-                    &[&resident_t],
-                    &keys_t,
-                    &mut poisoned_scratch::<BT>(
-                        t.glwe_eval_linear_transformation_sum_tmp_bytes(&ct, &ct, &ct, &plan, &tsk, &key),
-                    )
-                    .borrow(),
-                );
-                sum_t.transfer_into(&mut have);
-                assert_glwe_eq!(out_r, have, "one-term ciphertext-diagonal transform sum {label}");
+                assert_glwe_eq!(resident, one_term, "one-term ciphertext-diagonal transform sum {label}");
             }
         }
     }

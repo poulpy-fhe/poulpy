@@ -1478,16 +1478,13 @@ where
             // The baby steps of `even`, which `odd` shares, and each factor on its own schedule,
             // which counts the doubling and the giant-step tree of power-of-two keys.
             let (even_plan, odd_plan) = (even.index(), odd.index());
-            let (even_diagonal, odd_diagonal) = (
-                even.first_diagonal_plaintext().expect("a folded factor has diagonals"),
-                odd.first_diagonal_plaintext().expect("a folded factor has diagonals"),
-            );
+            let diagonal = crate::api::ckks_plaintext_diagonal_layout(&boot_layout);
             let mut factors = 0;
             for atk in &keys_layout.rotation_key_layouts() {
                 factors = factors
                     .max(module.ckks_prepare_linear_transformation_baby_steps_tmp_bytes(&boot_layout, &even_plan, atk))
-                    .max(module.ckks_eval_linear_transformation_tmp_bytes(&boot_layout, even_diagonal, &even_plan, atk, atk))
-                    .max(module.ckks_eval_linear_transformation_tmp_bytes(&boot_layout, odd_diagonal, &odd_plan, atk, atk));
+                    .max(module.ckks_eval_linear_transformation_tmp_bytes(&boot_layout, &diagonal, &even_plan, atk, atk))
+                    .max(module.ckks_eval_linear_transformation_tmp_bytes(&boot_layout, &diagonal, &odd_plan, atk, atk));
             }
             2 * BE::scratch_aligned(module.glwe_bytes_of_from_infos(&boot_layout))
                 + factors.max(embedded_bytes + module.glwe_rotate_tmp_bytes().max(module.ckks_add_tmp_bytes(embedded.size())))

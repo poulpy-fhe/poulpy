@@ -133,8 +133,7 @@ where
         A: GGLWEInfos,
         P: CKKSInfos,
     {
-        // The core linear transformations of plaintext diagonals with a key per rotation, which every plan of that kind
-        // sizes alike.
+        // The core linear transformations with a key per rotation, which every plan of that kind sizes alike.
         let plan = LinearTransformationPlan::default();
         let diagonal = crate::api::ckks_plaintext_diagonal_layout(ct_infos);
         self.ckks_all_ops_tmp_bytes(ct_infos, pt_prec, tsk_infos)

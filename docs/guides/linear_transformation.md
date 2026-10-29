@@ -98,7 +98,6 @@ The baby-step cache is prepared once either way.
 The diagonals may also be ciphertexts of the source's rank, an encrypted matrix times an encrypted vector.
 The rank of the diagonals selects the product: each giant step's products, summed over the terms of a sum, are tensor products relinearized once with the tensor key of the key set, through the one-pass product where it applies and a tensor per pair otherwise.
 The giant-step loop then rotates and sums them as it does plaintext products, with one final normalization.
-Where the one-pass product applies, one giant step at rotation `0` is the dot product `glwe_mul_prepared_relinearize_sum` of its pairs.
 
 ## Split strategies
 

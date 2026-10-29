@@ -262,9 +262,7 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, A, H>(
     };
     let (a, scratch) = (&&a_ref, &mut scratch);
     if cache.rotations != BsgsRotations::PerRotation {
-        glwe_prepare_baby_steps_doubling(module, cache, a, keys, scratch);
-        cache.set_k(a.k());
-        return;
+        return glwe_prepare_baby_steps_doubling(module, cache, a, keys, scratch);
     }
     let cols = a.rank().as_usize() + 1;
     let a_size = a.size();
@@ -414,7 +412,6 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, A, H>(
             }
         }
     }
-    cache.set_k(a.k());
 }
 
 /// [`glwe_prepare_linear_transformation_baby_steps`] for [`BsgsRotations::PowersOfTwo`]: the

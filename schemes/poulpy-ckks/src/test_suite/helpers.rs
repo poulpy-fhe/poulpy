@@ -19,11 +19,11 @@ use poulpy_hal::layouts::HostStaged;
 use std::{cell::RefCell, collections::HashMap, f64::consts::TAU, fmt::Debug};
 
 use crate::{
-    CKKSCompositionError, CKKSInfos, CKKSLayout, GLWEPlaintextMeta, SetCKKSInfos,
+    CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSLayout, GLWEPlaintextMeta, SetCKKSInfos,
     api::{
         CKKSAddManyOps, CKKSAddOps, CKKSAffineOps, CKKSAllOpsTmpBytes, CKKSConjugateOps, CKKSCopyOps, CKKSDotProductOps,
-        CKKSEncodingScalar, CKKSEvalModOps, CKKSImagOps, CKKSInnerSumOps, CKKSMulAddOps, CKKSMulOps, CKKSMulSubOps, CKKSNegOps,
-        CKKSPlaintextVecOps, CKKSPow2Ops, CKKSRotateOps, CKKSSubOps,
+        CKKSEncodingScalar, CKKSEvalModOps, CKKSImagOps, CKKSInnerSumOps, CKKSLinearTransformationOps, CKKSMulAddOps, CKKSMulOps,
+        CKKSMulSubOps, CKKSNegOps, CKKSPlaintextVecOps, CKKSPow2Ops, CKKSRotateOps, CKKSSubOps, ckks_plaintext_diagonal_layout,
     },
     api::{CKKSDecryptOps, CKKSEncryptOps},
     layouts::{
@@ -41,10 +41,13 @@ use poulpy_core::{
         GLWETensorKeyPreparedFactory,
     },
     layouts::{
-        BackendGLWESecret, Base2K, Degree, GLWEAutomorphismKeyPrepared, GLWECIEmbedKeyPrepared, GLWECITraceKeyPrepared,
-        GLWEInfos, GLWELayout, GLWESecretToBackendRef, GLWESwitchingKeyPrepared, GLWETensorKeyPrepared, GetAutomorphismKey,
-        GetTensorKey, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
-        prepared::{GLWEAutomorphismKeyPreparedBackendRef, GLWEAutomorphismKeyPreparedToBackendRef, GLWESecretPrepared},
+        BackendGLWESecret, Base2K, Degree, GGLWEInfos, GLWEAutomorphismKeyPrepared, GLWECIEmbedKeyPrepared,
+        GLWECITraceKeyPrepared, GLWEInfos, GLWELayout, GLWESecretToBackendRef, GLWESwitchingKeyPrepared, GLWETensorKeyPrepared,
+        GetAutomorphismKey, GetTensorKey, LWEInfos, LinearTransformationPlan, ModuleCoreAlloc, Rank, TorusPrecision,
+        prepared::{
+            GLWEAutomorphismKeyPreparedBackendRef, GLWEAutomorphismKeyPreparedToBackendRef, GLWESecretPrepared,
+            GLWETensorKeyPreparedBackendRef,
+        },
     },
 };
 
@@ -814,12 +817,21 @@ impl<BE: Backend, K: GLWEAutomorphismKeyPreparedToBackendRef<BE>> GetAutomorphis
 
 /// A map of automorphism keys, logged or not, holds no tensor key.
 impl<BE: Backend, K: GLWEAutomorphismKeyPreparedToBackendRef<BE>> GetTensorKey<BE> for QueryLog<K> {
-    fn lookup_tensor_key(
-        &self,
-        k: TorusPrecision,
-    ) -> poulpy_core::Result<poulpy_core::layouts::prepared::GLWETensorKeyPreparedBackendRef<'_, BE>> {
+    fn lookup_tensor_key(&self, k: TorusPrecision) -> poulpy_core::Result<GLWETensorKeyPreparedBackendRef<'_, BE>> {
         self.keys.lookup_tensor_key(k)
     }
+}
+
+/// The resident evaluation query of a transform of plaintext diagonals, the rotation key `key` standing for the tensor
+/// key they do not read.
+pub(crate) fn pt_eval_tmp_bytes<BE, C, K>(module: &Module<BE>, ct: &C, plan: &LinearTransformationPlan, key: &K) -> usize
+where
+    BE: Backend,
+    Module<BE>: CKKSLinearTransformationOps<BE>,
+    C: CKKSCtBounds,
+    K: GGLWEInfos,
+{
+    module.ckks_eval_linear_transformation_tmp_bytes(ct, &ckks_plaintext_diagonal_layout(ct), plan, key, key)
 }
 
 /// Generates a prepared rank-1 GLWE key-switching key from `sk_in` to `sk_out`,

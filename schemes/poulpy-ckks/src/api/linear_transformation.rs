@@ -19,12 +19,6 @@
 //! separate "prepared" vs "unprepared" method; you pick the path by which `P` you
 //! pass.
 //!
-//! # Plaintext or ciphertext diagonals
-//!
-//! A resident transform prepared from CKKS ciphertexts of the source's rank multiplies them as ciphertexts, at the
-//! rule of [`CKKSMulOps::ckks_mul_into`](crate::api::CKKSMulOps::ckks_mul_into), and relinearizes each giant step's
-//! products once with the tensor key of `keys`; streamed diagonals are plaintexts.
-//!
 //! # Typical flow
 //!
 //! ```ignore
@@ -123,23 +117,22 @@ pub fn ckks_linear_transformation_output_layout<P: LtDiagonalMeta>(
     mut src: CKKSLayout,
     dst_k: TorusPrecision,
 ) -> CKKSLayout {
-    match lt.first_diagonal_plaintext().map(|d| (d, d.lt_ciphertext_k())) {
-        Some((diagonal, Some(diagonal_k))) => {
-            let rule = crate::mul_ct_params_raw(
+    let src_k = src.k();
+    src.glwe_layout.k = ckks_linear_transformation_output_k(lt, src_k, dst_k);
+    if let Some(diagonal) = lt.first_diagonal_plaintext() {
+        if let Some(diagonal_k) = diagonal.lt_ciphertext_k() {
+            let (log_budget, log_delta, _) = crate::mul_ct_params_raw(
                 "ckks_linear_transformation_output_layout",
                 dst_k.as_usize(),
                 crate::CKKSInfos::log_delta(&src),
-                src.k().into(),
+                src_k.into(),
                 diagonal.lt_log_scale(),
                 diagonal_k.into(),
-            );
-            let (log_budget, log_delta) = rule.map_or((0, 0), |(log_budget, log_delta, _)| (log_budget, log_delta));
+            )
+            .unwrap_or_default();
             src.meta.scale = crate::Scale::Log(log_delta);
             src.glwe_layout.k = (log_budget + log_delta).into();
         }
-        _ => src.glwe_layout.k = ckks_linear_transformation_output_k(lt, src.k(), dst_k),
-    }
-    if let Some(diagonal) = lt.first_diagonal_plaintext() {
         src.meta.slots = src.meta.slots.join(diagonal.lt_slots());
         src.meta.log_sparsity = src.meta.log_sparsity.min(diagonal.lt_log_sparsity(src.log_n()));
     }
@@ -285,19 +278,9 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     /// Diagonals of the rank of `src`, ciphertexts prepared by [`Self::ckks_prepare_linear_transformation_rhs`], are
     /// multiplied as ciphertexts: each giant step's products are summed and relinearized once, as by
     /// [`CKKSDotProductOps::ckks_dot_product_prepared`](crate::api::CKKSDotProductOps::ckks_dot_product_prepared), with
-    /// the tensor key of `keys` at the larger of the widths of `src` and of the diagonals, through the one-pass product
-    /// where it applies, else a tensor per pair. The diagonal of giant step `rot` and baby rotation `baby` is diagonal
-    /// `rot + baby` of the matrix rotated by `-rot` slots, as
-    /// [`ComplexDiagonals::build_transform`](crate::layouts::ComplexDiagonals::build_transform) places it.
+    /// the tensor key of `keys` at the larger of the widths of `src` and of the diagonals.
     ///
-    /// # Metadata
-    ///
-    /// For plaintext diagonals, the rule of
-    /// [`CKKSMulOps::ckks_mul_pt_vec_into`](crate::api::CKKSMulOps::ckks_mul_pt_vec_into) by the diagonals' scale and
-    /// storage width; for ciphertext diagonals, the rule of
-    /// [`CKKSMulOps::ckks_mul_into`](crate::api::CKKSMulOps::ckks_mul_into) between `src` and a diagonal. The slots are
-    /// `src`'s joined with the diagonals', the sparsity the smaller of `src`'s and the diagonals' (a plaintext's by its
-    /// degree, ciphertexts' by their labels): [`ckks_linear_transformation_output_layout`].
+    /// The output metadata is [`ckks_linear_transformation_output_layout`].
     ///
     /// # Errors
     ///

@@ -33,7 +33,7 @@ use super::{
     helpers::{
         TestContextBackend, TestContextModule, TestContextSharedModule, alloc_ct, alloc_scratch, assert_ckks_error,
         assert_ckks_internal, assert_precision, ckks_decrypt_with_prec, ckks_encrypt_coeffs, ckks_encrypt_pt, gen_atk,
-        gen_ci_keys, gen_sk_with_raw, gen_tsk, next_test_seed, precision_at, precision_stats,
+        gen_ci_keys, gen_sk_with_raw, gen_tsk, next_test_seed, precision_at, precision_stats, pt_eval_tmp_bytes,
     },
     parity::helpers::{fixture_ciphertext, snapshot, with_scratch},
 };
@@ -369,13 +369,7 @@ pub fn test_conjugate_invariant_leveled<BE>(
                 module.ckks_prepare_linear_transformation_rhs(&mut prepared, &lt, s)
             })
             .unwrap();
-            let resident_bytes = baby_bytes.max(module.ckks_eval_linear_transformation_tmp_bytes(
-                input,
-                &crate::api::ckks_plaintext_diagonal_layout(input),
-                &lt.index(),
-                &params.atk_layout(),
-                &params.atk_layout(),
-            ));
+            let resident_bytes = baby_bytes.max(pt_eval_tmp_bytes(module, input, &lt.index(), &params.atk_layout()));
             with_scratch::<BE, _>(resident_bytes, |s| {
                 module.ckks_eval_linear_transformation_self_into(&mut result, input, &prepared, &keys, s)
             })

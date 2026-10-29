@@ -1625,14 +1625,7 @@ where
             a.next().expect("one-pass product sum has no pairs"),
             b.next().expect("one-pass product sum has no pairs"),
         );
-        let right = match b0.mul_right() {
-            MulRightOperand::Prepared(prep) => MulRight::Prepared {
-                prep,
-                size: b_size,
-                k: b_k,
-            },
-            MulRightOperand::Ciphertext(ct) => MulRight::Operand(ct),
-        };
+        let right = mul_right(b0.mul_right(), b_size, b_k);
         let summed = a.len() > 0;
         let mut pairs = a.zip(b).map(|(a, b)| (a, b.mul_right()));
         glwe_mul_relinearize_one_pass(
@@ -1698,20 +1691,8 @@ where
     {
         let mut pairs = pairs.into_iter();
         let (a0, b0) = pairs.next().expect("one-pass product sum has no pairs");
-        let right = match b0 {
-            MulRightOperand::Prepared(prep) => MulRight::Prepared {
-                prep,
-                size: b_size,
-                k: b_k,
-            },
-            MulRightOperand::Ciphertext(ct) => MulRight::Operand(ct),
-        };
-        let layout = GLWELayout {
-            n: res_infos.n(),
-            base2k: res_infos.base2k(),
-            k: res_infos.k(),
-            rank: res_infos.rank(),
-        };
+        let right = mul_right(b0, b_size, b_k);
+        let layout = res_infos.glwe_layout();
         let (mut tmp, mut scratch) = scratch.borrow().take_glwe_scratch(&layout);
         glwe_mul_relinearize_one_pass(
             self,
@@ -1838,8 +1819,7 @@ fn one_pass_keeps_two_step_noise(
     one_pass <= two_step * (1.0 + ONE_PASS_VARIANCE_SLACK)
 }
 
-/// The limbs a one-pass product into a result of the layout `res_infos`, through a tensor of the layout
-/// `tensor_infos`, takes for operands of `a_size` and `b_size` limbs and widths `left_k` and `right_k`, and its route.
+/// The limbs and route of a one-pass product, from [`one_pass_shape`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct OnePassShape {
     /// Limbs of the product columns.
@@ -1944,10 +1924,7 @@ where
     // A prepared left operand is read where it is; a right one may be a ciphertext prepared in the call.
     let prepared_slots = module.bytes_of_cnv_pvec_left(n, 2, 1, PrepareHint::Reuse)
         + module.bytes_of_cnv_pvec_right(n, 2, b_size, PrepareHint::Reuse);
-    let prepare_right = BE::scratch_aligned(module.glwe_bytes_of_from_infos(&tensor_infos))
-        + module
-            .cnv_prepare_right_tmp_bytes(b_size, b_size)
-            .max(module.glwe_normalize_tmp_bytes());
+    let prepare_right = glwe_prepare_right_tmp_bytes(module, b_size, &tensor_infos);
     // Either operand may need a normalized copy while it is prepared.
     let prepare = 2 * BE::scratch_aligned(module.glwe_bytes_of_from_infos(&tensor_infos))
         + module
@@ -2015,6 +1992,14 @@ enum MulRight<'a, B, BP> {
     Prepared { prep: &'a BP, size: usize, k: TorusPrecision },
 }
 
+/// The [`MulRight`] of a right operand in its form, prepared on `size` limbs at width `k`.
+fn mul_right<'a, B, BP>(b: MulRightOperand<'a, BP, B>, size: usize, k: TorusPrecision) -> MulRight<'a, B, BP> {
+    match b {
+        MulRightOperand::Prepared(prep) => MulRight::Prepared { prep, size, k },
+        MulRightOperand::Ciphertext(ct) => MulRight::Operand(ct),
+    }
+}
+
 /// The pairs `(a[i], b[i])` of a sum after the first, which share its layouts.
 enum MulRest<'a, 'r, A, B, AP, BP> {
     /// Ciphertexts, each pair prepared into the first pair's operands, which are ciphertexts too.
@@ -2039,9 +2024,7 @@ type NoOperand<BE> = GLWE<<BE as Backend>::OwnedBuf, <BE as Backend>::ZnxWord>;
 /// layout are those of a single product. A prepared operand's own slot shrinks to one limb, and a prepared first pair
 /// prepares nothing.
 ///
-/// With `dft_out`, the result is left there in DFT on [`OnePassShape::dft_out_size`] limbs of the given shape, which
-/// the caller decided, unnormalized, its low `cnv_offset mod base2k` bits still to shift by the normalization that
-/// reads it, or on the tensor path normalized into `res` and transformed there.
+/// `dft_out` receives the result as [`GLWETensoringReference::glwe_mul_prepared_relinearize_sum_dft_reference`] leaves it.
 #[allow(clippy::too_many_arguments)]
 fn glwe_mul_relinearize_one_pass<BE, R, A, B, AP, BP, H>(
     module: &Module<BE>,
@@ -2225,9 +2208,7 @@ fn glwe_mul_relinearize_one_pass<BE, R, A, B, AP, BP, H>(
                 "a prepared left operand comes with prepared left operands in the pairs"
             );
             if let MulRight::Operand(b) = &right {
-                let (mut right_tmp, mut prep_scratch) = scratch.borrow().take_glwe_scratch(&right_infos);
-                let b = canonical!(*b, right_tmp, prep_scratch);
-                module.cnv_prepare_right(&mut b_prep, &b.data, &mut prep_scratch.borrow());
+                glwe_prepare_right(module, &mut b_prep, *b, right_k.as_usize(), &mut scratch);
             }
         }
     }
@@ -2307,18 +2288,13 @@ fn glwe_mul_relinearize_one_pass<BE, R, A, B, AP, BP, H>(
                 add_columns!(&a_prep.to_backend_ref(), &b_prep.to_backend_ref());
             }
         }
-        // The pairs are checked by their callers.
         MulRest::Pairs { pairs, .. } => {
             for (a, b) in pairs {
                 let a = a.to_backend_ref();
                 match b {
                     MulRightOperand::Prepared(b) => add_columns!(&a, &b.to_backend_ref()),
                     MulRightOperand::Ciphertext(b) => {
-                        {
-                            let (mut right_tmp, mut prep_scratch) = scratch.borrow().take_glwe_scratch(&right_infos);
-                            let b = canonical!(b, right_tmp, prep_scratch);
-                            module.cnv_prepare_right(&mut b_prep, &b.data, &mut prep_scratch.borrow());
-                        }
+                        glwe_prepare_right(module, &mut b_prep, b, right_k.as_usize(), &mut scratch);
                         add_columns!(&a, &b_prep.to_backend_ref());
                     }
                 }

@@ -25,14 +25,17 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSCompositionError, CKKSCtBounds, CKKSInfos, SetCKKSInfos,
-    api::{CKKSCopyOps, LinearTransformation, LtDiagonalMeta},
+    CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSLayout, SetCKKSInfos,
+    api::{CKKSCopyOps, LinearTransformation, LtDiagonalMeta, ckks_linear_transformation_output_layout},
     layouts::{
         CKKSPlaintext,
         validation::{ensure_prepared_transformation_layout, ensure_uniform_diagonals},
     },
     mul_ct_params_raw, mul_pt_params_raw,
-    reference::mul::{check_prepared_layout, tensor_key_at},
+    reference::{
+        dot_product::check_lazy_base2k,
+        mul::{check_prepared_layout, tensor_key_at},
+    },
 };
 use poulpy_core::GLWEBytesOf;
 
@@ -127,7 +130,6 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         self.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(ct, plan, key)
     }
 
-    /// `diagonal` is the layout of the diagonals, plaintexts or ciphertexts by its rank.
     fn ckks_eval_linear_transformation_tmp_bytes_reference<C, D, K, T>(
         &self,
         ct: &C,
@@ -171,7 +173,6 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
             + BE::scratch_aligned(self.glwe_bytes_of_from_infos(ct))
     }
 
-    /// The sum's query, `ct` standing for the destination and every source.
     fn ckks_eval_linear_transformation_sum_tmp_bytes_reference<C, D, K, T>(
         &self,
         ct: &C,
@@ -205,11 +206,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
     {
         const OP: &str = "ckks_prepare_linear_transformation_rhs";
         ensure_prepared_transformation_layout(OP, prepared, lt)?;
-        // A plaintext diagonal is read across its storage, a ciphertext at its width.
-        ensure_uniform_diagonals(OP, lt, |pt| {
-            let width = if pt.rank().as_usize() > 0 { pt.k() } else { pt.max_k() };
-            (pt.log_delta(), width.as_usize(), pt.slots())
-        })?;
+        ensure_uniform_diagonals(OP, lt, |pt| (pt.log_delta(), pt.max_k().as_usize(), pt.slots()))?;
         let first_pt = lt.first_diagonal_plaintext();
         if let Some(first_pt) = first_pt {
             ckks_ensure!(
@@ -290,33 +287,22 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
             }
             .into()
         })?;
-        let pt_slots = first.lt_slots();
         ensure_uniform_diagonals(OP, lt, lt_diagonal_meta)?;
         let (res_log_budget, res_log_delta, cnv_offset) = lt_rule(OP, &*dst, src, babies, first, keys)?;
         let res_k: TorusPrecision = (res_log_budget + res_log_delta).into();
-        debug_assert_eq!(
-            res_k,
-            crate::api::ckks_linear_transformation_output_layout(
-                lt,
-                crate::CKKSLayout {
-                    glwe_layout: src.glwe_layout(),
-                    meta: src.meta(),
-                },
-                dst.k()
-            )
-            .k()
-        );
+        let src_layout = CKKSLayout {
+            glwe_layout: src.glwe_layout(),
+            meta: src.meta(),
+        };
+        let out = ckks_linear_transformation_output_layout(lt, src_layout, dst.k());
+        debug_assert_eq!(res_k, out.k());
         let cyclotomic_order = operand_cyclotomic_order(OP, self, src.n().as_usize())?;
         check_required_keys(OP, lt, babies, keys, cyclotomic_order, res_k)?;
-        // `Σ diag ⊙ rot(src)` has real slots when `src` and the diagonals do, and is sparse where both are: a diagonal is
-        // dense at its own degree.
-        let slots = src.slots().join(pt_slots);
-        let log_sparsity = src.log_sparsity().min(first.lt_log_sparsity(src.log_n()));
         dst.set_log_budget(res_log_budget);
         dst.set_log_delta(res_log_delta);
-        dst.set_log_sparsity(log_sparsity);
+        dst.set_log_sparsity(out.meta.log_sparsity);
         self.glwe_eval_linear_transformation_into(cnv_offset, dst, babies, lt, keys, scratch);
-        dst.set_slots(slots);
+        dst.set_slots(out.meta.slots);
         Ok(())
     }
 
@@ -346,7 +332,6 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         let first = lt
             .first_diagonal_plaintext()
             .ok_or_else(|| invalid_sum("linear transformation has no diagonals".into()))?;
-        let pt_slots = first.lt_slots();
         // Core sums each giant step's products over the terms before one rotation,
         // at one `cnv_offset`, so the terms must agree on everything those read.
         let diagonal = |lt: &LinearTransformationPrepared<BE>| {
@@ -395,7 +380,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
             check_required_keys(OP, lt_t, babies_t, keys, cyclotomic_order, res_k)?;
         }
         // The sum has real slots when every source and the diagonals do, and is sparse where all of them are.
-        let slots = srcs.iter().fold(pt_slots, |slots, src_t| slots.join(src_t.slots()));
+        let slots = srcs.iter().fold(first.lt_slots(), |slots, src_t| slots.join(src_t.slots()));
         let log_sparsity = srcs.iter().zip(lts).fold(usize::MAX, |s, (src_t, lt_t)| {
             let diagonal_t = lt_t.first_diagonal_plaintext().expect("checked non-empty");
             s.min(src_t.log_sparsity()).min(diagonal_t.lt_log_sparsity(src.log_n()))
@@ -411,11 +396,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
 
 impl<BE: Backend> CKKSLinearTransformationReference<BE> for Module<BE> {}
 
-/// `(log_budget, log_delta, cnv_offset)` of a transform of the diagonals `first` shares on `src` into `dst`, before any
-/// write: the rule of `ckks_mul_pt_vec_into` for plaintext diagonals, the diagonal described by its scale and the
-/// width its data was positioned at (its `log_budget` is dead in this math, so 0); for diagonals of the source's rank,
-/// the refusals of `ckks_dot_product_prepared` on the layouts and a baby cache of `src`'s width, then the tensor key's
-/// lookup, then the rule of `ckks_mul_into`.
+/// `(log_budget, log_delta, cnv_offset)` of a transform of the diagonals `first` shares on `src` into `dst`, before any write.
 fn lt_rule<BE, Dst, Src, P, H>(
     op: &'static str,
     dst: &Dst,
@@ -443,12 +424,7 @@ where
         );
     }
     check_prepared_layout(op, dst, first)?;
-    ckks_ensure_operand!(
-        op,
-        dst.base2k().as_usize() <= 62,
-        "base2k {} > 62: two canonical tensor digits can overflow an i64",
-        dst.base2k().as_usize()
-    );
+    check_lazy_base2k(op, dst)?;
     // The product looks the tensor key up at the cache's width.
     ckks_ensure_operand!(
         op,

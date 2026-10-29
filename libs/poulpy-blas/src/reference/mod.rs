@@ -31,22 +31,19 @@ where
 {
     // A `res` of no width is never read: its map fails the budget check before any scratch.
     let live = res.k().as_usize() > 0;
-    // The maps take a key per rotation, which every plan of that kind sizes alike, and plaintext diagonals.
+    // The maps take a key per rotation, which every plan of that kind sizes alike.
     let plan = LinearTransformationPlan::default();
     // Plaintext diagonals read no tensor key, so the rotation key stands for its layout.
+    let (res_diagonal, a_diagonal) = (ckks_plaintext_diagonal_layout(res), ckks_plaintext_diagonal_layout(a));
     let eval = if summed {
-        let res_bytes = live.then(|| {
-            module.ckks_eval_linear_transformation_sum_tmp_bytes(res, &ckks_plaintext_diagonal_layout(res), &plan, key, key)
-        });
+        let res_bytes = live.then(|| module.ckks_eval_linear_transformation_sum_tmp_bytes(res, &res_diagonal, &plan, key, key));
         module
-            .ckks_eval_linear_transformation_sum_tmp_bytes(a, &ckks_plaintext_diagonal_layout(a), &plan, key, key)
+            .ckks_eval_linear_transformation_sum_tmp_bytes(a, &a_diagonal, &plan, key, key)
             .max(res_bytes.unwrap_or(0))
     } else {
-        let res_bytes = live.then(|| {
-            module.ckks_eval_linear_transformation_tmp_bytes(res, &ckks_plaintext_diagonal_layout(res), &plan, key, key)
-        });
+        let res_bytes = live.then(|| module.ckks_eval_linear_transformation_tmp_bytes(res, &res_diagonal, &plan, key, key));
         module
-            .ckks_eval_linear_transformation_tmp_bytes(a, &ckks_plaintext_diagonal_layout(a), &plan, key, key)
+            .ckks_eval_linear_transformation_tmp_bytes(a, &a_diagonal, &plan, key, key)
             .max(res_bytes.unwrap_or(0))
     };
     module
