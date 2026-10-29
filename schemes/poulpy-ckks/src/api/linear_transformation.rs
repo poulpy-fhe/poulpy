@@ -214,8 +214,8 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
         K: GGLWEInfos,
         T: GGLWEInfos;
 
-    /// Scratch bytes required by [`Self::ckks_eval_linear_transformation_sum_into`], `plan` the
-    /// schedule of the first term.
+    /// Scratch bytes required by [`Self::ckks_eval_linear_transformation_sum_into`] over resident transforms, `plan`
+    /// the schedule of the first term.
     fn ckks_eval_linear_transformation_sum_tmp_bytes<C, D, K, T>(
         &self,
         ct: &C,
@@ -229,6 +229,19 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
         D: GLWEInfos,
         K: GGLWEInfos,
         T: GGLWEInfos;
+
+    /// Scratch bytes required by [`Self::ckks_eval_linear_transformation_sum_into`] over streamed transforms, plaintext
+    /// diagonals: the resident sum's with the streamed diagonal slot of
+    /// [`Self::ckks_eval_linear_transformation_streamed_tmp_bytes`]. `plan` the schedule of the first term.
+    fn ckks_eval_linear_transformation_sum_streamed_tmp_bytes<C, K>(
+        &self,
+        ct: &C,
+        plan: &LinearTransformationPlan,
+        key: &K,
+    ) -> usize
+    where
+        C: CKKSCtBounds,
+        K: GGLWEInfos;
 
     // ----- populate -----
 
@@ -350,18 +363,19 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     /// schedule, diagonal layout, width, scale and slot kind, source layout and
     /// scale, or baby-cache layout and width. Also returns an error before writing `dst`
     /// if a term fails the checks of [`Self::ckks_eval_linear_transformation_into`].
-    fn ckks_eval_linear_transformation_sum_into<Dst, Src, H>(
+    fn ckks_eval_linear_transformation_sum_into<Dst, Src, P, H>(
         &self,
         dst: &mut Dst,
         srcs: &[&Src],
         babies: &[&LinearTransformationBabySteps<BE>],
-        lts: &[&LinearTransformationPrepared<BE>],
+        lts: &[&LinearTransformation<P>],
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
 
     // ----- eval (self-allocated baby cache) -----

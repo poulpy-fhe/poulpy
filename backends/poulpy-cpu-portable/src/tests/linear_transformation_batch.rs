@@ -107,6 +107,27 @@ unsafe impl poulpy_core::oep::LinearTransformationImpl for Batched {
         )
     }
 
+    fn glwe_eval_linear_transformation_sum_unprepared_rhs_tmp_bytes<R, A, B, K, T>(
+        module: &::poulpy_hal::layouts::Module<Batched>,
+        res: &R,
+        a: &A,
+        pt: &B,
+        plan: &poulpy_core::layouts::LinearTransformationPlan,
+        tsk: &T,
+        key: &K,
+    ) -> usize
+    where
+        R: poulpy_core::layouts::GLWEInfos,
+        A: poulpy_core::layouts::GLWEInfos,
+        B: poulpy_core::layouts::GLWEInfos,
+        K: poulpy_core::layouts::GGLWEInfos,
+        T: poulpy_core::layouts::GGLWEInfos,
+    {
+        poulpy_core::reference::linear_transformation::glwe_eval_linear_transformation_sum_unprepared_rhs_tmp_bytes_reference(
+            module, res, a, pt, plan, tsk, key,
+        )
+    }
+
     fn glwe_prepare_linear_transformation_baby_steps_tmp_bytes<A, K>(
         module: &::poulpy_hal::layouts::Module<Batched>,
         a: &A,
@@ -179,16 +200,17 @@ unsafe impl poulpy_core::oep::LinearTransformationImpl for Batched {
         )
     }
 
-    fn glwe_eval_linear_transformation_sum_into<R, H>(
+    fn glwe_eval_linear_transformation_sum_into<R, P, H>(
         module: &::poulpy_hal::layouts::Module<Batched>,
         cnv_offset: usize,
         res: &mut R,
         babies: &[&poulpy_core::layouts::prepared::LinearTransformationBabySteps<Batched>],
-        lts: &[&poulpy_core::layouts::prepared::LinearTransformationPrepared<Batched>],
+        lts: &[&poulpy_core::layouts::LinearTransformation<P>],
         keys: &H,
         scratch: &mut ::poulpy_hal::layouts::ScratchArena<Batched>,
     ) where
         R: poulpy_core::layouts::GLWEToBackendMut<Batched> + poulpy_core::layouts::GLWEInfos,
+        P: poulpy_core::DiagonalProd<Batched>,
         H: poulpy_core::layouts::GetAutomorphismKey<Batched> + poulpy_core::layouts::GetTensorKey<Batched>,
     {
         poulpy_core::reference::linear_transformation::glwe_eval_linear_transformation_sum_into_reference(

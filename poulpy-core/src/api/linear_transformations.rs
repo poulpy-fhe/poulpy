@@ -13,7 +13,7 @@ use poulpy_hal::layouts::{Backend, ScratchArena};
 use crate::layouts::{
     GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LinearTransformation,
     LinearTransformationPlan,
-    prepared::{LinearTransformationBabySteps, LinearTransformationPrepared, PreparedDiagonal},
+    prepared::{LinearTransformationBabySteps, PreparedDiagonal},
 };
 
 /// GLWE-level setup and evaluation of a resident (prepared) linear
@@ -70,6 +70,25 @@ pub trait GLWELinearTransformations<BE: Backend> {
     /// [`Self::glwe_eval_linear_transformation_tmp_bytes`] plus one giant-step product buffer,
     /// `plan` the schedule of the first term.
     fn glwe_eval_linear_transformation_sum_tmp_bytes<R, A, B, K, T>(
+        &self,
+        res: &R,
+        a: &A,
+        pt: &B,
+        plan: &LinearTransformationPlan,
+        tsk: &T,
+        key: &K,
+    ) -> usize
+    where
+        R: GLWEInfos,
+        A: GLWEInfos,
+        B: GLWEInfos,
+        K: GGLWEInfos,
+        T: GGLWEInfos;
+
+    /// Scratch bytes required by [`Self::glwe_eval_linear_transformation_sum_into`] when the transforms are
+    /// *streamed* (unprepared plaintext diagonals): [`Self::glwe_eval_linear_transformation_sum_tmp_bytes`] plus the
+    /// resident `CnvPVecR` slot of [`Self::glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes`].
+    fn glwe_eval_linear_transformation_sum_unprepared_rhs_tmp_bytes<R, A, B, K, T>(
         &self,
         res: &R,
         a: &A,
@@ -203,15 +222,16 @@ pub trait GLWELinearTransformations<BE: Backend> {
     /// every diagonal of a transform shares one width, scale and degree, as the
     /// encoder produces them, and preparing asserts the degree. Ciphertext diagonals and caches are checked as by
     /// [`Self::glwe_eval_linear_transformation_into`], every cache at the first one's width.
-    fn glwe_eval_linear_transformation_sum_into<R, H>(
+    fn glwe_eval_linear_transformation_sum_into<R, P, H>(
         &self,
         cnv_offset: usize,
         res: &mut R,
         babies: &[&LinearTransformationBabySteps<BE>],
-        lts: &[&LinearTransformationPrepared<BE>],
+        lts: &[&LinearTransformation<P>],
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
+        P: crate::layouts::DiagonalProd<BE>,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
 }

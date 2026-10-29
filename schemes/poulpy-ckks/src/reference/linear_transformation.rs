@@ -182,6 +182,23 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
             + BE::scratch_aligned(self.glwe_bytes_of_from_infos(ct))
     }
 
+    /// The streamed sum's query, `ct` standing for the destination and every source.
+    fn ckks_eval_linear_transformation_sum_streamed_tmp_bytes_reference<C, K>(
+        &self,
+        ct: &C,
+        plan: &LinearTransformationPlan,
+        key: &K,
+    ) -> usize
+    where
+        Self: GLWELinearTransformations<BE>,
+        C: CKKSCtBounds,
+        K: GGLWEInfos,
+    {
+        // Streamed diagonals are plaintexts, bounded by `ct`'s width, and read no tensor key.
+        let diagonal = crate::api::ckks_plaintext_diagonal_layout(ct);
+        self.glwe_eval_linear_transformation_sum_unprepared_rhs_tmp_bytes(ct, ct, &diagonal, plan, key, key)
+    }
+
     fn ckks_eval_linear_transformation_sum_tmp_bytes_reference<C, D, K, T>(
         &self,
         ct: &C,
@@ -317,12 +334,12 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         Ok(())
     }
 
-    fn ckks_eval_linear_transformation_sum_into_reference<Dst, Src, H>(
+    fn ckks_eval_linear_transformation_sum_into_reference<Dst, Src, P, H>(
         &self,
         dst: &mut Dst,
         srcs: &[&Src],
         babies: &[&LinearTransformationBabySteps<BE>],
-        lts: &[&LinearTransformationPrepared<BE>],
+        lts: &[&LinearTransformation<P>],
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -330,6 +347,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         Self: GLWELinearTransformations<BE> + CyclotomicOrder,
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
     {
         const OP: &str = "ckks_eval_linear_transformation_sum_into";
@@ -345,7 +363,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
             .ok_or_else(|| invalid_sum("linear transformation has no diagonals".into()))?;
         // Core sums each giant step's products over the terms before one rotation,
         // at one `cnv_offset`, so the terms must agree on everything those read.
-        let diagonal = |lt: &LinearTransformationPrepared<BE>| {
+        let diagonal = |lt: &LinearTransformation<P>| {
             lt.first_diagonal_plaintext()
                 .map(|d| (d.glwe_layout(), d.max_size(), d.lt_log_scale(), d.lt_slots()))
         };

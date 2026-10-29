@@ -259,8 +259,8 @@ where
 /// poisoned budget.
 ///
 /// One term is the single transform bit for bit. Distinct terms decrypt to the
-/// sum of the single transforms and carry the single transform's metadata. A
-/// mismatched term is rejected, for its own reason, before `dst` is written.
+/// sum of the single transforms and carry the single transform's metadata, and their streamed diagonals give the same
+/// bits on the streamed query's budget. A mismatched term is rejected, for its own reason, before `dst` is written.
 pub fn test_linear_transformation_sum<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -358,8 +358,8 @@ pub fn test_linear_transformation_sum<BE, F, E>(
     .unwrap();
     let have = snapshot::<BE, _>(&sum);
     assert_eq!(
-        (have.layout, have.canonical, have.noise),
-        (single.layout, single.canonical, single.noise),
+        (&have.layout, have.canonical, &have.noise),
+        (&single.layout, single.canonical, &single.noise),
         "the sum's metadata is not the single transform's"
     );
     let (want_re, want_im) = terms
@@ -378,6 +378,25 @@ pub fn test_linear_transformation_sum<BE, F, E>(
         &want_im,
         &mut scratch.borrow(),
     );
+
+    // The same terms streamed, plaintext diagonals: the resident sum, bit for bit.
+    let streamed_lts: Vec<_> = terms.iter().map(|&(_, l)| &lts[l]).collect();
+    let mut streamed = alloc_ct(&params, module, params.k);
+    with_scratch::<BE, _>(
+        module.ckks_eval_linear_transformation_sum_streamed_tmp_bytes(&cts[0], &prepared[0].index(), &params.atk_layout()),
+        |scratch| {
+            module.ckks_eval_linear_transformation_sum_into(
+                &mut streamed,
+                &term_srcs,
+                &term_babies,
+                &streamed_lts,
+                &keys,
+                scratch,
+            )
+        },
+    )
+    .unwrap();
+    assert_eq!(snapshot::<BE, _>(&streamed), have, "the streamed sum is not the resident one");
 
     // A mismatched term: rejected as `InvalidOperand` for `reason`, with `sum` untouched.
     let mut reject = |srcs: &[&CKKSCiphertextOwned<BE>],
