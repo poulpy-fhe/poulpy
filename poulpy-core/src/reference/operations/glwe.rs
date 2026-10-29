@@ -28,8 +28,8 @@ use crate::{
     api::{GLWEBytesOf, GLWENormalize},
     gadget::gglwe_product_output_size,
     layouts::{
-        Base2K, GGLWEInfos, GLWE, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey, IntPolyInfos,
-        LWEInfos, MulRightOperand, TorusPrecision,
+        Base2K, DiagonalOperand, GGLWEInfos, GLWE, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey,
+        IntPolyInfos, LWEInfos, TorusPrecision,
     },
     reference::keyswitching::GGLWEProductReference,
 };
@@ -816,7 +816,7 @@ pub trait GLWETensoringReference<BE: Backend> {
         res: &mut VecZnxDftBackendMut<'_, BE>,
         res_infos: &R,
         shape: &OnePassShape,
-        pairs: impl IntoIterator<Item = (&'a AP, MulRightOperand<'a, BP, B>)>,
+        pairs: impl IntoIterator<Item = (&'a AP, DiagonalOperand<'a, BP, B>)>,
         a_size: usize,
         a_k: TorusPrecision,
         b_size: usize,
@@ -1615,7 +1615,7 @@ where
             b.next().expect("one-pass product sum has no pairs"),
         );
         let summed = a.len() > 0;
-        let mut pairs = a.zip(b).map(|(a, b)| (a, MulRightOperand::<BP, NoOperand<BE>>::Prepared(b)));
+        let mut pairs = a.zip(b).map(|(a, b)| (a, DiagonalOperand::<BP, NoOperand<BE>>::Prepared(b)));
         glwe_mul_relinearize_one_pass(
             self,
             cnv_offset,
@@ -1666,7 +1666,7 @@ where
         res: &mut VecZnxDftBackendMut<'_, BE>,
         res_infos: &R,
         shape: &OnePassShape,
-        pairs: impl IntoIterator<Item = (&'a AP, MulRightOperand<'a, BP, B>)>,
+        pairs: impl IntoIterator<Item = (&'a AP, DiagonalOperand<'a, BP, B>)>,
         a_size: usize,
         a_k: TorusPrecision,
         b_size: usize,
@@ -1985,10 +1985,10 @@ enum MulRight<'a, B, BP> {
 }
 
 /// The [`MulRight`] of a right operand in its form, prepared on `size` limbs at width `k`.
-fn mul_right<'a, B, BP>(b: MulRightOperand<'a, BP, B>, size: usize, k: TorusPrecision) -> MulRight<'a, B, BP> {
+fn mul_right<'a, B, BP>(b: DiagonalOperand<'a, BP, B>, size: usize, k: TorusPrecision) -> MulRight<'a, B, BP> {
     match b {
-        MulRightOperand::Prepared(prep) => MulRight::Prepared { prep, size, k },
-        MulRightOperand::Ciphertext(ct) => MulRight::Operand(ct),
+        DiagonalOperand::Prepared(prep) => MulRight::Prepared { prep, size, k },
+        DiagonalOperand::Unprepared(ct) => MulRight::Operand(ct),
     }
 }
 
@@ -2000,7 +2000,7 @@ enum MulRest<'a, 'r, A, B, AP, BP> {
     /// pair's form: prepared and read where it is, or a ciphertext prepared into the first pair's right operand.
     /// `summed` unless the iterator is empty.
     Pairs {
-        pairs: &'r mut dyn Iterator<Item = (&'a AP, MulRightOperand<'a, BP, B>)>,
+        pairs: &'r mut dyn Iterator<Item = (&'a AP, DiagonalOperand<'a, BP, B>)>,
         summed: bool,
     },
 }
@@ -2284,8 +2284,8 @@ fn glwe_mul_relinearize_one_pass<BE, R, A, B, AP, BP, H>(
             for (a, b) in pairs {
                 let a = a.to_backend_ref();
                 match b {
-                    MulRightOperand::Prepared(b) => add_columns!(&a, &b.to_backend_ref()),
-                    MulRightOperand::Ciphertext(b) => {
+                    DiagonalOperand::Prepared(b) => add_columns!(&a, &b.to_backend_ref()),
+                    DiagonalOperand::Unprepared(b) => {
                         glwe_prepare_right(module, &mut b_prep, b, right_k.as_usize(), &mut scratch);
                         add_columns!(&a, &b_prep.to_backend_ref());
                     }

@@ -50,8 +50,8 @@ use super::LinearTransformationBabySteps;
 use crate::layouts::{GiantTreeLevel, operand_galois_element};
 
 impl<BE: Backend> DiagonalProd<BE> for PreparedDiagonal<BE::OwnedBuf, BE> {
-    fn mul_right_operand(&self) -> Option<crate::layouts::prepared::CiphertextDiagonal<'_, BE>> {
-        Some(crate::layouts::MulRightOperand::Prepared(&self.cnv))
+    fn operand(&self) -> Option<crate::layouts::prepared::CiphertextDiagonal<'_, BE>> {
+        Some(crate::layouts::DiagonalOperand::Prepared(&self.cnv))
     }
 
     fn accumulate_giant_prod<M>(

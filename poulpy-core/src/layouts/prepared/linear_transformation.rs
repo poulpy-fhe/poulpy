@@ -111,7 +111,7 @@ impl<D: Data, BE: Backend> PreparedDiagonal<D, BE> {
 }
 
 /// The right operand a ciphertext diagonal gives the products of its giant step.
-pub type CiphertextDiagonal<'a, BE> = crate::layouts::MulRightOperand<
+pub type CiphertextDiagonal<'a, BE> = crate::layouts::DiagonalOperand<
     'a,
     poulpy_hal::layouts::CnvPVecROwned<BE>,
     crate::layouts::GLWE<<BE as Backend>::OwnedBuf, <BE as Backend>::ZnxWord>,
@@ -251,11 +251,11 @@ impl<BE: Backend> LinearTransformationBabySteps<BE> {
 /// a blanket would clash with the resident impl.
 ///
 /// A transform whose diagonals are of the rank of its source multiplies them as ciphertexts, through
-/// [`Self::mul_right_operand`].
+/// [`Self::operand`].
 pub trait DiagonalProd<BE: Backend>: GLWEInfos + Sized {
     /// The diagonal as the right operand of a ciphertext product, prepared or a ciphertext the product prepares;
     /// `None` for a plaintext diagonal, which a transform never multiplies as a ciphertext.
-    fn mul_right_operand(&self) -> Option<CiphertextDiagonal<'_, BE>> {
+    fn operand(&self) -> Option<CiphertextDiagonal<'_, BE>> {
         None
     }
 

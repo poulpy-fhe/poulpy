@@ -1239,7 +1239,7 @@ macro_rules! impl_rank_one_tensoring {
                 res: &mut VecZnxDftBackendMut<'_, $be>,
                 res_infos: &R,
                 shape: &poulpy_core::reference::operations::OnePassShape,
-                pairs: impl IntoIterator<Item = (&'a AP, poulpy_core::layouts::MulRightOperand<'a, BP, B>)>,
+                pairs: impl IntoIterator<Item = (&'a AP, poulpy_core::layouts::DiagonalOperand<'a, BP, B>)>,
                 a_size: usize,
                 a_k: poulpy_core::layouts::TorusPrecision,
                 b_size: usize,

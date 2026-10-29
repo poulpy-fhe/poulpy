@@ -30,6 +30,7 @@
 #[macro_use]
 mod macros;
 
+mod diagonal_operand;
 mod diagonals;
 mod gglwe;
 mod gglwe_to_ggsw_key;
@@ -54,7 +55,6 @@ mod lwe_plaintext;
 mod lwe_secret;
 mod lwe_switching_key;
 mod lwe_to_glwe_key;
-mod mul_right;
 mod plaintext_meta;
 mod polynomial_evaluation;
 mod scratch_views;
@@ -73,6 +73,7 @@ pub use self::compressed::{
     GLWETensorKeyCompressed, GLWEToLWESwitchingKeyCompressed, LWECompressed, LWECompressedToBackendMut,
     LWECompressedToBackendRef, LWESwitchingKeyCompressed, LWEToGLWEKeyCompressed,
 };
+pub use diagonal_operand::*;
 pub use diagonals::*;
 pub use gglwe::*;
 pub use gglwe_to_ggsw_key::*;
@@ -99,7 +100,6 @@ pub use lwe_plaintext::*;
 pub use lwe_secret::*;
 pub use lwe_switching_key::*;
 pub use lwe_to_glwe_key::*;
-pub use mul_right::*;
 pub use plaintext_meta::*;
 pub use polynomial_evaluation::*;
 pub use prepared::*;

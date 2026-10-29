@@ -19,8 +19,8 @@ use crate::{
     gadget::cnv_offset_to_limb_offset,
     glwe_prepare_right, glwe_prepare_right_tmp_bytes,
     layouts::{
-        DiagonalProd, GGLWEInfos, GLWEInfos, GLWELayout, GLWEToBackendRef, GetTensorKey, LWEInfos, LinearTransformation,
-        MulRightOperand, TorusPrecision,
+        DiagonalOperand, DiagonalProd, GGLWEInfos, GLWEInfos, GLWELayout, GLWEToBackendRef, GetTensorKey, LWEInfos,
+        LinearTransformation, TorusPrecision,
         prepared::{
             GGLWEPreparedToBackendRef, GLWETensorKeyPrepared, GLWETensorKeyPreparedBackendRef, LinearTransformationBabySteps,
         },
@@ -79,7 +79,7 @@ where
                         "a ciphertext diagonal is not at the degree, base2k and rank of res and the first diagonal's width"
                     );
                     assert!(
-                        p.mul_right_operand().is_some(),
+                        p.operand().is_some(),
                         "a diagonal of the rank of res gives no ciphertext operand"
                     );
                 }
@@ -182,7 +182,7 @@ where
         for (prod, g) in prods.iter_mut().zip(steps) {
             let pairs = self.babies.iter().zip(self.lts).flat_map(|(lhs, lt)| {
                 lt.giant_steps[g].diagonals.iter().map(move |d| {
-                    let right = d.plaintext.mul_right_operand().expect("checked ciphertext diagonals");
+                    let right = d.plaintext.operand().expect("checked ciphertext diagonals");
                     (lhs.baby_step(d.baby), right)
                 })
             });
@@ -195,10 +195,10 @@ where
                 for (i, (a, b)) in pairs.enumerate() {
                     let out = if i == 0 { &mut acc } else { &mut term };
                     match b {
-                        MulRightOperand::Prepared(b) => {
+                        DiagonalOperand::Prepared(b) => {
                             module.glwe_tensor_apply_prepared(self.cnv_offset, out, a, a_size, b, b_size, base2k, &mut scratch)
                         }
-                        MulRightOperand::Ciphertext(b) => {
+                        DiagonalOperand::Unprepared(b) => {
                             glwe_prepare_right(module, &mut b_prep, b, diagonal.k().as_usize(), &mut scratch);
                             module.glwe_tensor_apply_prepared(
                                 self.cnv_offset,

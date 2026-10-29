@@ -70,8 +70,8 @@ impl<BE: Backend<ZnxWord = i64>> DiagonalProd<BE> for StreamedDiagonal<BE::Owned
 where
     GLWE<BE::OwnedBuf, i64>: GLWEToBackendRef<BE>,
 {
-    fn mul_right_operand(&self) -> Option<crate::layouts::prepared::CiphertextDiagonal<'_, BE>> {
-        Some(crate::layouts::MulRightOperand::Ciphertext(&self.0))
+    fn operand(&self) -> Option<crate::layouts::prepared::CiphertextDiagonal<'_, BE>> {
+        Some(crate::layouts::DiagonalOperand::Unprepared(&self.0))
     }
 
     fn accumulate_giant_prod<M>(
