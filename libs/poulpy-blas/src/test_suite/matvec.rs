@@ -229,9 +229,10 @@ pub fn matvec_layouts(params: &CKKSTestParams, slots: usize) -> Vec<BlasMatVecOp
 
 /// `dec(matvec_pt(W, enc(v)))` is `W v` at every repetition of the output's period, and zero elsewhere, for every
 /// layout of [`matvec_layouts`], with the operand resident and streamed, which give the same bits, on the operand's key
-/// set alone ([`matvec_pt_galois_elements`]), the metadata [`blas_matvec_pt_output_layout`] gives and the keys
-/// [`blas_matvec_pt_key_uses`] lists; `res` is one limb wider than the result. One byte short of its query, the call
-/// panics before it writes `res`.
+/// set alone ([`matvec_pt_galois_elements`], the encoded maps' Galois elements), at the metadata
+/// [`blas_matvec_pt_output_layout`] gives; `res` is one limb wider than the result. On a store answering only at the
+/// widths [`blas_matvec_pt_key_uses`] lists, it runs into `res` wider and narrower than the result. One byte short of
+/// its query, the call panics before it writes `res`.
 pub fn test_blas_matvec_pt<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend<Ring = Standard> + BlasMatVecImpl + BlasEncodingImpl,
@@ -292,11 +293,17 @@ where
             BlasVectorLayout::new(want_ct, layout.output),
             "{label}: output layout"
         );
-        let uses = blas_matvec_pt_key_uses(module, &template, &layout, &a);
-        assert!(
-            uses.rotations.iter().all(|(p, _)| keys.atks.contains_key(p)),
-            "{label}: a key use outside the operand's key set"
-        );
+        let mut encoded: Vec<i64> = resident
+            .block(0, 0)
+            .galois_elements(module.cyclotomic_order())
+            .into_iter()
+            .filter(|&p| p != 1)
+            .collect();
+        encoded.sort_unstable();
+        encoded.dedup();
+        let mut set = matvec_pt_galois_elements(module.cyclotomic_order(), &layout);
+        set.retain(|&p| p != 1);
+        assert_eq!(set, encoded, "{label}: key set against the encoded maps");
         let run = |w: &dyn Fn(&mut BlasVectorOwned<BE>, &mut ScratchArena<'_, BE>) -> CKKSResult<()>, bytes: usize| {
             let mut res = alloc_vector(&params, module, layout.output, res_k);
             let mut op_scratch = poisoned_scratch::<BE>(bytes);
@@ -318,6 +325,16 @@ where
             &want_layout,
             &mut scratch.borrow(),
         );
+        // Keys at the widths the key-use query lists and no other, into `res` wider and narrower than the result.
+        for k in [res_k, params.k - p_w - params.base2k] {
+            let res = alloc_vector(&params, module, layout.output, k);
+            let uses = blas_matvec_pt_key_uses(module, &res, &layout, &a);
+            let strict = keys.at_widths(uses.rotations.iter().map(|&(p, k)| (p, k.as_usize())), []);
+            let bytes = module.blas_matvec_pt_tmp_bytes(&res, &resident, &a, &params.atk_layout());
+            let mut res = res;
+            with_scratch::<BE, _>(bytes, |s| module.blas_matvec_pt(&mut res, &resident, &a, &strict, s))
+                .unwrap_or_else(|e| panic!("{label}: res.k={k} on the listed keys: {e}"));
+        }
         let have_streamed = run(&|res, s| module.blas_matvec_pt(res, &streamed, &a, &keys, s), streamed_bytes);
         assert_eq!(
             vector_snapshot::<BE>(&have_streamed),

@@ -192,6 +192,7 @@ macro_rules! blas_parity_test_suite {
             run_test!(inter, $crate::test_suite::parity::test_blas_inter_parity);
             run_test!(intra, $crate::test_suite::parity::test_blas_intra_parity);
             run_test!(matmul, $crate::test_suite::parity::test_blas_matmul_parity);
+            run_test!(matvec, $crate::test_suite::parity::test_blas_matvec_parity);
 
             #[test]
             fn concurrency() {

@@ -46,6 +46,7 @@ use super::helpers::{
     matmul_right_operand, other_scales, poisoned_scratch, product_layout, pt_operand,
 };
 use super::matmul::public_entry;
+use super::matvec::{matvec_layouts, matvec_operands};
 use crate::{
     api::{BlasEncodingOps, BlasMatInterOps, BlasMatIntraOps, BlasMatMulOps, BlasPtOperandPreparedFactory},
     layouts::{
@@ -55,6 +56,8 @@ use crate::{
         blas_matmul_pt_left_key_uses, blas_matmul_pt_right_key_uses, blas_rotate_cols_key_uses, blas_rotate_key_uses,
         blas_rotate_rows_key_uses, blas_sum_cols_key_uses, blas_sum_key_uses, blas_sum_rows_key_uses, blas_transpose_key_uses,
         context::context_shapes,
+        encoding::shape,
+        matvec_operand,
         planning::{MapDiagonal, operand_shapes},
         replicated, sum_galois_elements,
     },
@@ -915,7 +918,8 @@ where
 
 /// The shapes the queries read from a layout are those of the maps encoded and prepared from it, for the context of a
 /// plan of each kind and for public operands of either side and algorithm: the same schedules, and diagonals of the same
-/// width, scale and slot kind. So every query gives on a layout what it gives on the encoded maps.
+/// width, scale and slot kind, and for operands of products of a vector, every map of the one shape its layout gives. So
+/// every query gives on a layout what it gives on the encoded maps.
 pub fn test_blas_queries_from_layouts<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -940,5 +944,21 @@ pub fn test_blas_queries_from_layouts<BE, F, E>(
         let plan = BlasPlan::new(log_d).with_pt_algorithm(algorithm);
         assert_operand_shapes::<BE, F, Right>(module, plan, base2k, meta);
         assert_operand_shapes::<BE, F, Left>(module, plan, base2k, meta);
+    }
+    // Every map of a product of a vector, encoded and prepared, has the one shape its layout gives.
+    let slots = module.ckks_max_slots();
+    if slots >= 16 {
+        for layout in matvec_layouts(&params, slots) {
+            let (streamed, resident) = matvec_operands::<BE, F>(module, &layout);
+            let want = shape_of(&shape(&matvec_operand::map_layout(&layout)));
+            assert!(
+                streamed.maps.iter().all(|lt| shape_of(lt) == want),
+                "matvec {layout:?}: encoded"
+            );
+            assert!(
+                resident.maps.iter().all(|lt| shape_of(lt) == want),
+                "matvec {layout:?}: prepared"
+            );
+        }
     }
 }
