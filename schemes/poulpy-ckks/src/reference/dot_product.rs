@@ -211,6 +211,49 @@ pub trait CKKSDotProductReference<BE: Backend>: Sized {
         Ok(())
     }
 
+    /// Core's `glwe_mul_prepared_plain_sum_add` query.
+    fn ckks_mul_add_prepared_pt_tmp_bytes_reference<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
+    where
+        Self: GLWEMulPreparedPlainSum<BE>,
+        R: CKKSCtBounds,
+        A: GLWEInfos,
+        P: GLWEInfos,
+    {
+        self.glwe_mul_prepared_plain_sum_add_tmp_bytes(res, a.size(), b.size())
+    }
+
+    /// Core's `glwe_mul_prepared_plain_sum_add` of the one term at the rule of `ckks_mul_pt_vec_into`, after the checks
+    /// of [`Self::ckks_dot_product_prepared_pt_reference`] and that the rule leaves `dst`'s scale and budget, before any
+    /// write.
+    fn ckks_mul_add_prepared_pt_into_reference<Dst>(
+        &self,
+        dst: &mut Dst,
+        a: &CKKSPreparedLeft<BE>,
+        b: &CKKSPreparedRight<BE>,
+        galois: i64,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Self: GLWEMulPreparedPlainSum<BE>,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+    {
+        const OP: &str = "ckks_mul_add_prepared_pt_into";
+        let (log_budget, log_delta, cnv_offset) = prepared_pt_rule(OP, &*dst, &[a], &[b], &[galois])?;
+        ckks_ensure_operand!(
+            OP,
+            (log_budget, log_delta) == (dst.log_budget(), dst.log_delta()),
+            "dst must hold the product's scale and budget"
+        );
+        let log_sparsity = dst.log_sparsity().min(a.log_sparsity()).min(a.log_n() - b.log_n());
+        let slots = dst.slots().join(a.slots()).join(b.slots());
+        dst.set_log_sparsity(log_sparsity);
+        dst.set_slots(slots);
+        dst.set_noise(None);
+        let base2k = dst.base2k();
+        self.glwe_mul_prepared_plain_sum_add(cnv_offset, dst, &[a], a.size(), &[b], b.size(), &[galois], base2k, scratch);
+        Ok(())
+    }
+
     /// Core's `glwe_mul_prepared_plain_sum_dft` query on an accumulator of `a.size() + b.size()` limbs.
     fn ckks_dot_product_prepared_pt_dft_tmp_bytes_reference<R, A, P>(&self, _res: &R, a: &A, b: &P) -> usize
     where

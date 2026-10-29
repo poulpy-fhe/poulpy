@@ -226,6 +226,37 @@ pub trait GLWEMulPreparedPlainSum<BE: Backend> {
         AP: CnvPVecLToBackendRef<BE>,
         BP: CnvPVecRToBackendRef<BE>;
 
+    /// Scratch bytes of [`Self::glwe_mul_prepared_plain_sum_add`] for `res` and operands of `a_size` and `b_size` limbs,
+    /// whatever the number of terms.
+    fn glwe_mul_prepared_plain_sum_add_tmp_bytes<R>(&self, res: &R, a_size: usize, b_size: usize) -> usize
+    where
+        R: GLWEInfos;
+
+    /// `res += Σ_t a[t] ⊛ σ_{galois[t]}(b[t])`: the sum of [`Self::glwe_mul_prepared_plain_sum`] at `cnv_offset`, the
+    /// value `res` holds added before the one normalization that rounds the result into `res`, canonical at its `k`.
+    /// `res`, which may be flag-clear, is at radix `base2k`: its value enters the normalization exactly, shifted to the
+    /// frame of the products.
+    ///
+    /// # Panics
+    ///
+    /// As [`Self::glwe_mul_prepared_plain_sum`], and unless `res` is at radix `base2k`.
+    #[allow(clippy::too_many_arguments)]
+    fn glwe_mul_prepared_plain_sum_add<R, AP, BP>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        a: &[&AP],
+        a_size: usize,
+        b: &[&BP],
+        b_size: usize,
+        galois: &[i64],
+        base2k: crate::layouts::Base2K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        AP: CnvPVecLToBackendRef<BE>,
+        BP: CnvPVecRToBackendRef<BE>;
+
     /// Scratch bytes of [`Self::glwe_mul_prepared_plain_sum_dft`] for an accumulator of `res_size` limbs and operands of
     /// `a_size` and `b_size` limbs, whatever the number of terms.
     fn glwe_mul_prepared_plain_sum_dft_tmp_bytes(&self, res_size: usize, a_size: usize, b_size: usize) -> usize;

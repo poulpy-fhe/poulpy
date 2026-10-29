@@ -1272,6 +1272,77 @@ fn test_glwe_mul_prepared_plain_sum_case<BR, BT>(
         );
     }
 
+    // The accumulate form, at offsets whose fraction of a limb shifts `res` left (below one limb), not at all, and right:
+    // into a zero `res` it is the sum itself, bit for bit, and from any `res` both backends agree.
+    for offset in [0, params.base2k - 1, params.base2k, params.base2k + 3, 2 * params.base2k + 1] {
+        let mut sum = module_ref.glwe_alloc_from_infos(infos);
+        let bytes = module_ref.glwe_mul_prepared_plain_sum_tmp_bytes(&sum, size, size);
+        module_ref.glwe_mul_prepared_plain_sum(
+            offset,
+            &mut sum,
+            &a_refs,
+            size,
+            &b_refs,
+            size,
+            &GALOIS,
+            base2k,
+            &mut poisoned_scratch::<BR>(bytes).borrow(),
+        );
+        let mut from_zero = module_ref.glwe_alloc_from_infos(infos);
+        let bytes = module_ref.glwe_mul_prepared_plain_sum_add_tmp_bytes(&from_zero, size, size);
+        module_ref.glwe_mul_prepared_plain_sum_add(
+            offset,
+            &mut from_zero,
+            &a_refs,
+            size,
+            &b_refs,
+            size,
+            &GALOIS,
+            base2k,
+            &mut poisoned_scratch::<BR>(bytes).borrow(),
+        );
+        assert_glwe_eq!(
+            sum,
+            from_zero,
+            "glwe_mul_prepared_plain_sum_add into zero versus the sum: k={k} rank={rank:?} offset={offset}"
+        );
+
+        let mut acc_ref = ref_glwe(module_ref, infos, source);
+        let mut acc_test = module_test.glwe_alloc_from_infos(infos);
+        acc_ref.transfer_into(&mut acc_test);
+        let bytes = module_ref.glwe_mul_prepared_plain_sum_add_tmp_bytes(&acc_ref, size, size);
+        module_ref.glwe_mul_prepared_plain_sum_add(
+            offset,
+            &mut acc_ref,
+            &a_refs,
+            size,
+            &b_refs,
+            size,
+            &GALOIS,
+            base2k,
+            &mut poisoned_scratch::<BR>(bytes).borrow(),
+        );
+        let bytes = module_test.glwe_mul_prepared_plain_sum_add_tmp_bytes(&acc_test, size, size);
+        module_test.glwe_mul_prepared_plain_sum_add(
+            offset,
+            &mut acc_test,
+            &a_tests,
+            size,
+            &b_tests,
+            size,
+            &GALOIS,
+            base2k,
+            &mut poisoned_scratch::<BT>(bytes).borrow(),
+        );
+        let mut have = module_ref.glwe_alloc_from_infos(infos);
+        acc_test.transfer_into(&mut have);
+        assert_glwe_eq!(
+            acc_ref,
+            have,
+            "glwe_mul_prepared_plain_sum_add, three terms: k={k} rank={rank:?} offset={offset}"
+        );
+    }
+
     let mut res = ref_glwe(module_ref, infos, source);
     let mut before = module_ref.glwe_alloc_from_infos(infos);
     res.transfer_into(&mut before);

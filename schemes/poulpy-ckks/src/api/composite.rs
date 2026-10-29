@@ -504,6 +504,44 @@ pub trait CKKSDotProductOps<BE: Backend> {
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;
 
+    /// Scratch bytes of [`Self::ckks_mul_add_prepared_pt_into`] into `res` for a term prepared like `a` and a plaintext
+    /// prepared like `b`: pass the prepared operands, whose infos report their sources, or those sources.
+    fn ckks_mul_add_prepared_pt_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
+    where
+        R: CKKSCtBounds,
+        A: GLWEInfos,
+        P: GLWEInfos;
+
+    /// Computes `dst += a · σ_galois(b)`: the product of [`Self::ckks_dot_product_prepared_pt`] of one term, read
+    /// through the odd Galois element `galois`, added to `dst` before its one normalization (core's
+    /// `glwe_mul_prepared_plain_sum_add`), so the sum is rounded once, with no temporary.
+    ///
+    /// `dst` holds the product's frame: the scale of `a` and the width the rule of
+    /// [`CKKSMulOps::ckks_mul_pt_vec_into`](crate::api::CKKSMulOps::ckks_mul_pt_vec_into) leaves into it, so the product
+    /// is written at `dst`'s width and scale and `dst`'s value enters exactly. A masked insertion into a ciphertext
+    /// of diagonals reads one prepared mask through the Galois element of each shift, then re-prepares the updated
+    /// diagonals with [`CKKSMulOps::ckks_prepare_right_into`](crate::api::CKKSMulOps::ckks_prepare_right_into).
+    ///
+    /// # Metadata
+    ///
+    /// `dst`'s width, scale and budget are kept, its slots joined with the pair's and its sparsity the smallest of
+    /// `dst`'s and the pair's; `dst` is canonical, its noise tag cleared.
+    ///
+    /// # Errors
+    ///
+    /// Before writing `dst`: those of [`Self::ckks_dot_product_prepared_pt`] of the one term, and `InvalidOperand` when
+    /// the product's rule leaves another scale or budget than `dst`'s.
+    fn ckks_mul_add_prepared_pt_into<Dst>(
+        &self,
+        dst: &mut Dst,
+        a: &CKKSPreparedLeft<BE>,
+        b: &CKKSPreparedRight<BE>,
+        galois: i64,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;
+
     /// Scratch bytes of [`Self::ckks_dot_product_prepared_pt_dft`] for terms prepared like `a` and plaintexts prepared
     /// like `b`, whatever their number.
     fn ckks_dot_product_prepared_pt_dft_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize

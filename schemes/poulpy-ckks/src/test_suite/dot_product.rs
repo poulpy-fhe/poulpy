@@ -33,15 +33,15 @@ use poulpy_hal::{
 
 use crate::{
     CKKSCompositionError, CKKSError, CKKSInfos, CKKSModuleInfos, Scale, SetCKKSInfos, SlotsKind,
-    api::{CKKSDotProductOps, CKKSMulAddOps, CKKSMulOps},
+    api::{CKKSAddOps, CKKSDotProductOps, CKKSMulAddOps, CKKSMulOps},
     layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPreparedLeft, CKKSPreparedRight, plaintext::CKKSPlaintext},
 };
 
 use super::helpers::{
     PT_PREC, TestContextBackend, TestContextModule, TestScalar, TestVector, alloc_ct, alloc_scratch, assert_ckks_error,
-    assert_decrypt_precision, assert_decrypt_precision_at_log_delta, ckks_encrypt, ckks_encrypt_with_prec, ckks_pt_cst_full,
-    encode_and_upload_pt, gen_sk_with_raw, gen_tsk, precision_at, quantize, quantized_const, quantized_vector, test_vector_1,
-    test_vector_2, want_mul, want_rotate,
+    assert_decrypt_precision, assert_decrypt_precision_at_log_delta, assert_invalid_operand, ckks_encrypt,
+    ckks_encrypt_with_prec, ckks_pt_cst_full, encode_and_upload_pt, gen_sk_with_raw, gen_tsk, precision_at, quantize,
+    quantized_const, quantized_vector, test_vector_1, test_vector_2, want_mul, want_rotate,
 };
 use super::parity::helpers::{snapshot, with_scratch};
 
@@ -1458,6 +1458,116 @@ where
         },
     );
     assert!(snapshot::<BE, _>(&have) == before, "{OP}: a rejection changed dst");
+}
+
+/// `dst += a · σ_galois(b)` on `dst` at the product's frame, the scale of `a` and the width the product leaves: one
+/// rounding of the sum, so it decrypts to `c + a · rot(b, r)` and keeps `dst`'s metadata, as the product into a
+/// temporary added to `dst` does, on exactly its query's bytes. A `dst` at another scale, or wider than the product,
+/// is refused before any write.
+pub fn test_mul_add_prepared_pt<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
+where
+    BE: TestContextBackend<Ring = Standard>,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE> + GLWEMulPreparedPlainSum<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    const OP: &str = "ckks_mul_add_prepared_pt_into";
+    let m = params.n / 2;
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
+    let (re1, im1) = test_vector_1::<F>(m);
+    let (re2, im2) = test_vector_2::<F>(m);
+    let sk = super::helpers::gen_sk(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+    let log_delta = params.prec().log_delta();
+    let encrypt = |k: usize, re: &[F], im: &[F], scratch: &mut ScratchArena<'_, BE>| {
+        ckks_encrypt(&params, module, host_module, &encoder, &sk, k, re, im, scratch)
+    };
+    let a_ct = encrypt(params.k, &re1, &im1, &mut scratch.borrow());
+    let a = with_scratch::<BE, _>(module.ckks_prepare_tmp_bytes(&a_ct), |s| {
+        module.ckks_prepare_left(&a_ct, PrepareHint::Reuse, s)
+    })
+    .unwrap();
+    let pt = encode_and_upload_pt(host_module, module, &encoder, params.base2k.into(), params.prec(), &re2, &im2);
+    let b = with_scratch::<BE, _>(module.ckks_prepare_tmp_bytes(&pt), |s| {
+        module.ckks_prepare_right(&pt, PrepareHint::Reuse, s)
+    })
+    .unwrap();
+    // `c`, the value accumulated into, at the product's frame: the width `a` leaves through `b`'s scale.
+    let k_frame = params.k - log_delta;
+    for r in [0, 1, -3] {
+        let galois = module.ckks_galois_element(r);
+        let (b_re, b_im) = want_rotate(&quantize(&re2, log_delta), &quantize(&im2, log_delta), r, m);
+        let (mut want_re, mut want_im) = (im1.clone(), re1.clone());
+        cmul_acc(&mut want_re, &mut want_im, &re1, &im1, &b_re, &b_im);
+
+        let mut dst = encrypt(k_frame, &im1, &re1, &mut scratch.borrow());
+        let layout = (dst.glwe_layout(), dst.log_delta(), dst.log_budget());
+        let bytes = module.ckks_mul_add_prepared_pt_tmp_bytes(&dst, &a, &b);
+        with_scratch::<BE, _>(bytes, |s| module.ckks_mul_add_prepared_pt_into(&mut dst, &a, &b, galois, s)).unwrap();
+        assert_eq!(
+            (dst.glwe_layout(), dst.log_delta(), dst.log_budget()),
+            layout,
+            "{OP} r={r}: metadata"
+        );
+        assert!(dst.is_canonical() && dst.noise().is_none(), "{OP} r={r}: canonical, untagged");
+        assert_decrypt_precision(
+            &format!("{OP} r={r}"),
+            &params,
+            module,
+            &encoder,
+            &dst,
+            &sk,
+            &want_re,
+            &want_im,
+            &mut scratch.borrow(),
+        );
+
+        // The product into a temporary, then added: the same value.
+        let mut composed = encrypt(k_frame, &im1, &re1, &mut scratch.borrow());
+        let mut tmp = alloc_ct(&params, module, k_frame);
+        with_scratch::<BE, _>(module.ckks_dot_product_prepared_pt_tmp_bytes(&tmp, &a, &b), |s| {
+            module.ckks_dot_product_prepared_pt(&mut tmp, &[&a], &[&b], &[galois], s)
+        })
+        .unwrap();
+        with_scratch::<BE, _>(module.ckks_add_tmp_bytes(composed.size()), |s| {
+            module.ckks_add_assign(&mut composed, &tmp, s)
+        })
+        .unwrap();
+        assert_eq!(
+            (composed.glwe_layout(), composed.log_delta(), composed.log_budget()),
+            layout,
+            "{OP} r={r}: composed metadata"
+        );
+        assert_decrypt_precision(
+            &format!("{OP} r={r}, composed"),
+            &params,
+            module,
+            &encoder,
+            &composed,
+            &sk,
+            &want_re,
+            &want_im,
+            &mut scratch.borrow(),
+        );
+    }
+
+    // Refused before any write: `dst` at another scale, and `dst` wider than the product.
+    let galois = module.ckks_galois_element(1);
+    let mut other_scale = encrypt(k_frame, &re1, &im1, &mut scratch.borrow());
+    other_scale.set_log_delta(log_delta - 1);
+    let mut wider = encrypt(k_frame + params.base2k, &re1, &im1, &mut scratch.borrow());
+    for (label, dst) in [("another scale", &mut other_scale), ("wider than the product", &mut wider)] {
+        let before = snapshot::<BE, _>(&*dst);
+        let bytes = module.ckks_mul_add_prepared_pt_tmp_bytes(&*dst, &a, &b);
+        let err = with_scratch::<BE, _>(bytes, |s| module.ckks_mul_add_prepared_pt_into(dst, &a, &b, galois, s)).unwrap_err();
+        assert_invalid_operand(label, &err, OP, "the product's scale and budget");
+        assert!(
+            snapshot::<BE, _>(&*dst) == before,
+            "{OP} {label}: dst written before the refusal"
+        );
+    }
 }
 
 pub fn test_dot_product_const_aligned<BE, F, E>(

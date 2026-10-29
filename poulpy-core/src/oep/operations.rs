@@ -177,6 +177,33 @@ pub unsafe trait GLWEMulPreparedPlainSumImpl: Backend {
         AP: CnvPVecLToBackendRef<Self>,
         BP: CnvPVecRToBackendRef<Self>;
 
+    /// Scratch bound of [`Self::glwe_mul_prepared_plain_sum_add`], whatever the number of terms; may report less than
+    /// the reference, never less than the body takes.
+    fn glwe_mul_prepared_plain_sum_add_tmp_bytes<R>(module: &Module<Self>, res: &R, a_size: usize, b_size: usize) -> usize
+    where
+        R: GLWEInfos;
+
+    /// Reproduces
+    /// [`glwe_mul_prepared_plain_sum_add_reference`](crate::reference::operations::GLWEMulPreparedPlainSumReference::glwe_mul_prepared_plain_sum_add_reference)
+    /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
+    /// [`Self::glwe_mul_prepared_plain_sum_add_tmp_bytes`]; free in kernels and scratch use.
+    #[allow(clippy::too_many_arguments)]
+    fn glwe_mul_prepared_plain_sum_add<R, AP, BP>(
+        module: &Module<Self>,
+        cnv_offset: usize,
+        res: &mut R,
+        a: &[&AP],
+        a_size: usize,
+        b: &[&BP],
+        b_size: usize,
+        galois: &[i64],
+        base2k: crate::layouts::Base2K,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        R: GLWEToBackendMut<Self> + GLWEInfos,
+        AP: CnvPVecLToBackendRef<Self>,
+        BP: CnvPVecRToBackendRef<Self>;
+
     /// Scratch bound of [`Self::glwe_mul_prepared_plain_sum_dft`], whatever the number of terms; may report less than
     /// the reference, never less than the body takes.
     fn glwe_mul_prepared_plain_sum_dft_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize, b_size: usize) -> usize;
