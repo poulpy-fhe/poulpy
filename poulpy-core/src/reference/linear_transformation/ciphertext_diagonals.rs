@@ -62,6 +62,8 @@ where
     ) -> Self {
         let (lhs, diagonal) = (babies[0], lts[0].first_diagonal_plaintext().expect("checked non-empty"));
         let cols = res.rank.as_usize() + 1;
+        // 1. Checks, once per evaluation and before any write: every baby cache and diagonal at the degree, base2k and
+        //    rank of `res` and at the first one's width.
         assert!(
             babies.iter().all(|b| b.cols() == cols && b.k() == lhs.k()),
             "every baby cache must hold the rank of res and the first cache's width"
@@ -82,11 +84,14 @@ where
                 }
             }
         }
+        // 2. The tensor at the wider operand's width, and its key looked up once (`GetTensorKey::get_tensor_key`).
         let tensor = GLWELayout {
             k: lhs.k().max(diagonal.k()),
             ..res
         };
         let tsk = tsk_source.get_tensor_key(tensor.k).unwrap_or_else(|e| panic!("{e}"));
+        // 3. The route and the column limbs (`one_pass_shape`): one-pass at rank 1, `cnv_offset >= base2k` and `tsk` at
+        //    the base2k of `res` while it keeps the two-step noise, else a tensor.
         let shape = one_pass_shape(
             &res,
             &tensor,
@@ -162,15 +167,23 @@ where
         let (n, cols) = (self.res.n.as_usize(), self.res.rank.as_usize() + 1);
         let (cnv_offset_hi, _) = cnv_offset_to_limb_offset(self.cnv_offset, self.res.base2k.as_usize());
         for (prod, g) in prods.iter_mut().zip(steps) {
+            // 1. The pairs of giant step `g` over every term: a baby rotation and a diagonal, prepared or a GLWE view
+            //    (`DiagonalProd::operand`).
             let pairs = self.babies.iter().zip(self.lts).flat_map(|(lhs, lt)| {
                 lt.giant_steps[g]
                     .diagonals
                     .iter()
                     .map(move |d| (lhs.baby_step(d.baby), d.plaintext.operand()))
             });
+            // 2. The tensor route's result, and the tensor columns in DFT: `diag[i] = sum a[i] * b[i]` and `cross`, in row
+            //    order of `i < j`, `sum a[i] * b[j] + a[j] * b[i]`.
             let (mut tmp, scratch) = scratch.borrow().take_glwe_scratch(&self.res);
             let (mut diag, scratch) = scratch.take_vec_znx_dft_scratch(n, cols, self.shape.dft_size);
             let (mut cross, mut scratch) = scratch.take_vec_znx_dft_scratch(n, cols * (cols - 1) / 2, self.shape.dft_size);
+            // 3. Baby-step kernel, `GLWETensoringImpl::glwe_tensor_apply_prepared_sum_dft`. Reference, per pair:
+            //    `cnv_prepare_right` of a GLWE view, `cnv_apply_dft` (first pair) or `cnv_apply_dft_add` into `diag`,
+            //    `cnv_pairwise_apply_dft` into `cross` (then `vec_znx_dft_add_assign` after the first pair); once:
+            //    `vec_znx_dft_sub_assign` of `diag` from `cross`.
             BE::glwe_tensor_apply_prepared_sum_dft(
                 module,
                 cnv_offset_hi,
@@ -181,6 +194,12 @@ where
                 self.diagonal.k(),
                 &mut scratch,
             );
+            // 4. Relinearization into `prod`, left in DFT (`glwe_relinearize_columns`).
+            //    One-pass: `vec_znx_idft_normalize` of `d2 = diag[1]` alone, `gadget_dft_apply`, then
+            //    `GGLWEProductDigitsStridedImpl::gglwe_product_fused` of `tsk` with `d0 = diag[0]` and `d1 = cross[0]`
+            //    added in DFT, its low `cnv_offset` bits left to the final normalization.
+            //    Tensor: `vec_znx_idft_normalize` of every column into a tensor, `GLWETensoringImpl::glwe_tensor_relinearize`
+            //    into `tmp`, then `vec_znx_dft_apply` into `prod`.
             glwe_relinearize_columns(
                 module,
                 self.cnv_offset,
