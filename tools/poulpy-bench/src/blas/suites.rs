@@ -7,7 +7,7 @@ use criterion::{
 use poulpy_blas::oep::{BlasMatIntraImpl, BlasMatMulImpl};
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, MaxBase2k, Module, ScratchOwned, Standard},
+    layouts::{Backend, HostStaged, MaxBase2k, Module, ScratchOwned, Standard},
 };
 
 use crate::{
@@ -24,7 +24,7 @@ use crate::{
 /// the summed grid are the replicated ones.
 pub fn blas_dense_ops<BE, M>() -> [BenchOp<M, BlasBenchParams>; 2]
 where
-    BE: Backend<Ring = Standard> + 'static + BlasMatIntraImpl + BlasMatMulImpl + MaxBase2k,
+    BE: Backend<Ring = Standard> + HostStaged + 'static + BlasMatIntraImpl + BlasMatMulImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     M: Measurement,
@@ -48,7 +48,7 @@ where
 /// grid, and `blas_sum_cols`.
 pub fn blas_ops<BE, M>() -> [BenchOp<M, BlasBenchParams>; 9]
 where
-    BE: Backend<Ring = Standard> + 'static + BlasMatIntraImpl + BlasMatMulImpl + MaxBase2k,
+    BE: Backend<Ring = Standard> + HostStaged + 'static + BlasMatIntraImpl + BlasMatMulImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     M: Measurement,
@@ -105,7 +105,7 @@ where
 /// Every operation over `points`, the dense product only where a ciphertext holds several matrices.
 fn bench_points<BE>(c: &mut Criterion<WallTime>, points: Vec<BlasBenchParams>)
 where
-    BE: Backend<Ring = Standard> + 'static + BlasMatIntraImpl + BlasMatMulImpl + MaxBase2k,
+    BE: Backend<Ring = Standard> + HostStaged + 'static + BlasMatIntraImpl + BlasMatMulImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -122,7 +122,7 @@ where
 /// a `criterion_group!` registers it once per backend to cover.
 pub fn bench_blas<BE>(c: &mut Criterion<WallTime>)
 where
-    BE: Backend<Ring = Standard> + 'static + BlasMatIntraImpl + BlasMatMulImpl + MaxBase2k,
+    BE: Backend<Ring = Standard> + HostStaged + 'static + BlasMatIntraImpl + BlasMatMulImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -135,7 +135,7 @@ pub mod standard {
     use poulpy_blas::oep::{BlasMatIntraImpl, BlasMatMulImpl};
     use poulpy_hal::{
         api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-        layouts::{Backend, MaxBase2k, Module, ScratchOwned, Standard},
+        layouts::{Backend, HostStaged, MaxBase2k, Module, ScratchOwned, Standard},
     };
 
     use super::{BlasBenchModule, bench_points};
@@ -144,7 +144,7 @@ pub mod standard {
     /// `where` clause matches [`super::bench_blas`]'s own.
     pub fn bench_blas<BE>(c: &mut Criterion<WallTime>)
     where
-        BE: Backend<Ring = Standard> + 'static + BlasMatIntraImpl + BlasMatMulImpl + MaxBase2k,
+        BE: Backend<Ring = Standard> + HostStaged + 'static + BlasMatIntraImpl + BlasMatMulImpl + MaxBase2k,
         Module<BE>: BlasBenchModule<BE>,
         ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     {
@@ -162,7 +162,7 @@ pub mod light {
     use poulpy_blas::oep::{BlasMatIntraImpl, BlasMatMulImpl};
     use poulpy_hal::{
         api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-        layouts::{Backend, MaxBase2k, Module, ScratchOwned, Standard},
+        layouts::{Backend, HostStaged, MaxBase2k, Module, ScratchOwned, Standard},
     };
 
     use super::{BlasBenchModule, bench_points};
@@ -171,7 +171,7 @@ pub mod light {
     /// `where` clause matches [`super::bench_blas`]'s own.
     pub fn bench_blas<BE>(c: &mut Criterion<WallTime>)
     where
-        BE: Backend<Ring = Standard> + 'static + BlasMatIntraImpl + BlasMatMulImpl + MaxBase2k,
+        BE: Backend<Ring = Standard> + HostStaged + 'static + BlasMatIntraImpl + BlasMatMulImpl + MaxBase2k,
         Module<BE>: BlasBenchModule<BE>,
         ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     {

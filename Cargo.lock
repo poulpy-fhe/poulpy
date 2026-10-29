@@ -3538,6 +3538,7 @@ dependencies = [
  "once_cell",
  "pollster",
  "poulpy-bench",
+ "poulpy-blas",
  "poulpy-ckks",
  "poulpy-core",
  "poulpy-cpu-portable",

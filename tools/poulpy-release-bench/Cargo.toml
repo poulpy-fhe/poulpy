@@ -36,10 +36,10 @@ neon = [
     "poulpy-cpu-arm/enable-blas",
     "poulpy-cpu-arm/enable-rayon",
 ]
-cuda = ["dep:poulpy-gpu-portable", "poulpy-gpu-portable/enable-cuda", "poulpy-gpu-portable/enable-ckks"]
-hip = ["dep:poulpy-gpu-portable", "poulpy-gpu-portable/enable-hip", "poulpy-gpu-portable/enable-ckks"]
-metal = ["dep:poulpy-gpu-portable", "poulpy-gpu-portable/enable-metal", "poulpy-gpu-portable/enable-ckks"]
-vulkan = ["dep:poulpy-gpu-portable", "poulpy-gpu-portable/enable-vulkan", "poulpy-gpu-portable/enable-ckks"]
+cuda = ["dep:poulpy-gpu-portable", "poulpy-gpu-portable/enable-cuda", "poulpy-gpu-portable/enable-ckks", "poulpy-gpu-portable/enable-blas"]
+hip = ["dep:poulpy-gpu-portable", "poulpy-gpu-portable/enable-hip", "poulpy-gpu-portable/enable-ckks", "poulpy-gpu-portable/enable-blas"]
+metal = ["dep:poulpy-gpu-portable", "poulpy-gpu-portable/enable-metal", "poulpy-gpu-portable/enable-ckks", "poulpy-gpu-portable/enable-blas"]
+vulkan = ["dep:poulpy-gpu-portable", "poulpy-gpu-portable/enable-vulkan", "poulpy-gpu-portable/enable-ckks", "poulpy-gpu-portable/enable-blas"]
 
 # Outside the workspace, so that its builds and CI leave it out. Cargo.lock is
 # seeded from the workspace lock and pins the same versions.

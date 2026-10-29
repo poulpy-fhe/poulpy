@@ -1,5 +1,6 @@
 //! Release measurements of `poulpy-blas` operations on one `d x d` block per operand at `N = 2^16`, on the point
-//! builders of poulpy-bench.
+//! builders of poulpy-bench, with the evaluated backend as its own client on the CPU and `NTT4x30Portable` as the
+//! client of a GPU backend.
 //!
 //! A builder makes its whole point outside the timed region: the module, the secret, the context or the public matrix,
 //! the rotation keys its operation looks up (and the tensor key of a ciphertext by ciphertext product), and the
@@ -13,7 +14,8 @@ use anyhow::{Result, bail};
 use poulpy_bench::blas::{
     intra::point_blas_reduction,
     matmul::{
-        BlasBenchModule, BlasPoint, atk_layout, point_blas_matmul, point_blas_matmul_pt_right, point_blas_transpose, tsk_layout,
+        BlasClientModule, BlasEvalModule, BlasPoint, atk_layout, point_blas_matmul, point_blas_matmul_pt_right,
+        point_blas_transpose, tsk_layout,
     },
     params::BlasBenchParams,
 };
@@ -24,7 +26,7 @@ use poulpy_blas::{
 use poulpy_core::layouts::{GGLWEInfos, LWEInfos};
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, MaxBase2k, Module, ScratchOwned, Standard},
+    layouts::{Backend, HostStaged, MaxBase2k, Module, ScratchOwned, Standard},
 };
 use serde_json::{Value, json};
 
@@ -95,20 +97,24 @@ fn case(name: &str) -> Result<(Op, BlasBenchParams)> {
     bail!("no blas case named {name}")
 }
 
-/// Builds the case `args.case` on `BE`, times its calls, and reports its parameters, modulus and precision.
-pub fn run<BE>(args: &CaseArgs) -> Result<Value>
+/// Builds the case `args.case` on `BE` with `BC` as the client, times its calls, and reports its parameters, modulus
+/// and precision.
+pub fn run<BE, BC>(args: &CaseArgs) -> Result<Value>
 where
-    BE: Backend<Ring = Standard> + 'static + BlasMatIntraImpl + BlasMatMulImpl + MaxBase2k,
-    Module<BE>: BlasBenchModule<BE>,
+    BE: Backend<Ring = Standard> + HostStaged + 'static + BlasMatIntraImpl + BlasMatMulImpl + MaxBase2k,
+    BC: Backend<Ring = Standard> + HostStaged + 'static,
+    Module<BE>: BlasEvalModule<BE>,
+    Module<BC>: BlasClientModule<BC>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+    ScratchOwned<BC>: ScratchOwnedAlloc<BC> + ScratchOwnedBorrow<BC>,
 {
     let (op, bp) = case(&args.case)?;
     let start = Instant::now();
     let BlasPoint { mut call, check } = match op {
-        Op::Matmul => point_blas_matmul::<BE>(&bp, true),
-        Op::MatmulPtRight => point_blas_matmul_pt_right::<BE>(&bp, BlasPtAlgorithm::Jkls),
-        Op::Transpose => point_blas_transpose::<BE>(&bp),
-        Op::SumRows => point_blas_reduction::<BE>(&bp, "blas_sum_rows", true, bp.batch()),
+        Op::Matmul => point_blas_matmul::<BE, BC>(&bp, true),
+        Op::MatmulPtRight => point_blas_matmul_pt_right::<BE, BC>(&bp, BlasPtAlgorithm::Jkls),
+        Op::Transpose => point_blas_transpose::<BE, BC>(&bp),
+        Op::SumRows => point_blas_reduction::<BE, BC>(&bp, "blas_sum_rows", true, bp.batch()),
     };
     let setup_ns = start.elapsed().as_nanos() as u64;
     let timings = direct(&mut call, &|| {}, args.warmup, args.iters)?.expect("direct timing is always available");

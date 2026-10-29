@@ -90,7 +90,10 @@ macro_rules! gpu_entry {
                 select_device::<$rt>(args.device)?;
                 libm::run::<$backend, poulpy_cpu_portable::NTT4x30Portable>(args)
             }),
-            blas: None,
+            blas: Some(|args| {
+                select_device::<$rt>(args.device)?;
+                blas::run::<$backend, poulpy_cpu_portable::NTT4x30Portable>(args)
+            }),
         }
     };
 }
@@ -109,7 +112,7 @@ macro_rules! cpu_entry {
                 run::<$be, $be>(args, direct)
             },
             libm: Some(libm::run::<$be, $be>),
-            blas: Some(blas::run::<$be>),
+            blas: Some(blas::run::<$be, $be>),
         }
     };
 }

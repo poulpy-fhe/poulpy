@@ -3450,6 +3450,7 @@ dependencies = [
  "cubecl",
  "cubecl-environment",
  "pollster",
+ "poulpy-blas",
  "poulpy-ckks",
  "poulpy-core",
  "poulpy-cpu-portable",
