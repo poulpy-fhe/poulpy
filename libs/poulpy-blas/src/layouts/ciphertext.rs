@@ -673,7 +673,7 @@ impl<BE: Backend> BlasBytesOf<BE> for Module<BE> where Module<BE>: CKKSModuleAll
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::layouts::{BlasContext, BlasMatMulOperand, BlasPtOperand};
+    use crate::layouts::{BlasContext, BlasMatMulOperand, BlasMatVecOperand, BlasPtOperand, BlasVectorMut};
     use poulpy_ckks::{
         CKKSError, SetGLWEPlaintextInfos,
         layouts::{CKKSPreparedLeft, CKKSPreparedRight},
@@ -684,17 +684,21 @@ mod tests {
 
     type Grid = BlasCiphertextOwned<HostBytesBackend>;
 
-    /// Grids over owned storage are inputs and outputs of every operation on every backend, with no unsafe impl, and
-    /// contexts, public operands, the reference's prepared operands and the prepared terms the JKLS kernel shares across
-    /// one block's tasks, poulpy-core's prepared tensor key and errors cross threads: they meet the traits' `Send` and
-    /// `Sync` bounds as they are. Borrowed views are not grids, their blocks not being `GLWEToBackendRef`; they are as
+    /// Grids and vectors over owned storage are inputs and outputs of every operation on every backend, with no unsafe
+    /// impl, and contexts, public operands of either kind, the reference's prepared operands and the prepared terms the
+    /// JKLS kernel shares across one block's tasks, poulpy-core's prepared tensor key and errors cross threads: they meet
+    /// the traits' `Send` and `Sync` bounds as they are. Borrowed views are not grids, their blocks not being `GLWEToBackendRef`; they are as
     /// thread-safe as their buffers: `BufRef` views `Sync`, `BufMut` views only `Send`.
     fn assert_thread_safe<'a, BE: Backend + 'a>() {
         fn output<BE: Backend, G: BlasGridMut<BE> + Send + Sync>() {}
+        fn vector<BE: Backend, V: BlasVectorMut<BE> + Send + Sync>() {}
         fn sync<T: Sync>() {}
         fn send<T: Send>() {}
         fn operand<T: Send + Sync>() {}
         output::<BE, BlasCiphertextOwned<BE>>();
+        vector::<BE, BlasVectorOwned<BE>>();
+        sync::<BlasMatVecOperand<BE>>();
+        sync::<BlasMatVecOperandUnprepared<BE>>();
         sync::<BlasContext<BE>>();
         sync::<BlasPtOperand<BE>>();
         operand::<BlasMatMulOperand<BE, CKKSPreparedLeft<BE>>>();
