@@ -37,6 +37,9 @@ use crate::{
     oep::{BlasEncodingImpl, BlasMatVecImpl},
 };
 
+/// A call writing a vector on a scratch.
+type VectorCall<'c, BE> = dyn Fn(&mut BlasVectorOwned<BE>, &mut ScratchArena<'_, BE>) -> CKKSResult<()> + 'c;
+
 /// Entry `(row, col)` of the public matrices of these tests, dyadic in `[-1, 1]`.
 pub fn matvec_entry(row: usize, col: usize) -> f64 {
     ((row * 7 + col * 3) % 17) as f64 / 8.0 - 1.0
@@ -304,7 +307,7 @@ where
         let mut set = matvec_pt_galois_elements(module.cyclotomic_order(), &layout);
         set.retain(|&p| p != 1);
         assert_eq!(set, encoded, "{label}: key set against the encoded maps");
-        let run = |w: &dyn Fn(&mut BlasVectorOwned<BE>, &mut ScratchArena<'_, BE>) -> CKKSResult<()>, bytes: usize| {
+        let run = |w: &VectorCall<'_, BE>, bytes: usize| {
             let mut res = alloc_vector(&params, module, layout.output, res_k);
             let mut op_scratch = poisoned_scratch::<BE>(bytes);
             w(&mut res, &mut op_scratch.borrow()).unwrap();

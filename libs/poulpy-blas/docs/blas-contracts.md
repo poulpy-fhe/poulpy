@@ -1,8 +1,8 @@
 # Implementing BLAS operations
 
 Public matrix calls follow the [layering contract](../../../docs/guides/layering-contract.md): `Module<BE>` implements
-`BlasMatInterOps`, `BlasMatIntraOps` and `BlasMatMulOps`, and `BlasEncodingOps`,
-`BlasPtOperandPreparedFactory` and `BlasContextPreparedFactory`, for every
+`BlasMatInterOps`, `BlasMatIntraOps`, `BlasMatMulOps` and `BlasMatVecOps`, and `BlasEncodingOps`,
+`BlasPtOperandPreparedFactory`, `BlasMatVecOperandPreparedFactory` and `BlasContextPreparedFactory`, for every
 backend that implements the matching `*Impl` trait, and each OEP method of an
 operation runs its validator first. The BLAS
 crate imports no backend crate: each backend crate wires its own types.
@@ -22,14 +22,15 @@ changes bits.
 | `BlasMatInterImpl` | `blas_rotate`, `blas_sum` | |
 | `BlasMatIntraImpl` | the map hook `blas_map_blocks`, `blas_rotate_rows`, `blas_rotate_cols`, `blas_sum_rows`, `blas_sum_cols` | `blas_transpose`, over the hook |
 | `BlasMatMulImpl` | `blas_matmul`, `blas_matmul_prepare_left`, `blas_matmul_prepare_right`, `blas_matmul_prepared`, `blas_matmul_pt_right`, `blas_matmul_pt_left` | |
+| `BlasMatVecImpl` | `blas_matvec_pt` | |
 | `BlasJklsImpl` | the JKLS kernel `blas_jkls_block`, one output block of the prepared product, and the masked-unit hook `blas_jkls_pt_unit`, one unit of a product by public matrices under `JklsStored` and `JklsGalois` | |
-| `BlasEncodingImpl` | `blas_pt_operand_encode`, `blas_context_encode`, `blas_pt_operand_prepare`, `blas_context_prepare` | |
+| `BlasEncodingImpl` | `blas_pt_operand_encode`, `blas_matvec_operand_encode`, `blas_context_encode`, `blas_pt_operand_prepare`, `blas_matvec_operand_prepare`, `blas_context_prepare` | |
 
 Each operation's `_tmp_bytes` query belongs to the same family. The encodings
 take poulpy-ckks's encoding scalar `F` as a method parameter bounded by
 `Self: CKKSEncodingImpl<F>`, and the allocations of contexts and public
 operands, prepared or not, stay direct on the module. `BlasImpl`
-aggregates the five families as a test bound; it has a blanket implementation
+aggregates the six families as a test bound; it has a blanket implementation
 and is never implemented directly.
 
 The provided transpose, and the references of the shifts, of the reductions
@@ -59,10 +60,11 @@ APIs, so a backend's CKKS and core overrides remain effective inside them.
 | `BlasMatInterImpl` | `BlasMatInterReference`, [`reference/inter.rs`](../src/reference/inter.rs) | `impl_blas_mat_inter_reference_full!` |
 | `BlasMatIntraImpl` | `BlasMatIntraReference` (the hook, the shifts and the reductions), [`reference/intra.rs`](../src/reference/intra.rs) | `impl_blas_mat_intra_reference_full!` |
 | `BlasMatMulImpl` | `BlasMatMulReference`, [`reference/matmul.rs`](../src/reference/matmul.rs) | `impl_blas_mat_mul_reference_full!` |
+| `BlasMatVecImpl` | `BlasMatVecReference`, [`reference/matvec.rs`](../src/reference/matvec.rs) | `impl_blas_mat_vec_reference_full!` |
 | `BlasJklsImpl` | `BlasJklsReference` (the kernel and the masked-unit hook), [`reference/jkls.rs`](../src/reference/jkls.rs) | `impl_blas_jkls_reference_full!` |
 | `BlasEncodingImpl` | `BlasEncodingReference`, [`reference/encoding.rs`](../src/reference/encoding.rs) | `impl_blas_encoding_reference_full!` |
 
-`impl_blas_reference_full!` expands to the five family macros. The reference's
+`impl_blas_reference_full!` expands to the six family macros. The reference's
 cold preparations call the backend's map hook, and the reference prepared
 product, like the reference `blas_matmul`, calls it for the terms of a hot
 operand, then its JKLS kernel. So `impl_blas_mat_mul_reference_full!` needs the intra
@@ -192,6 +194,7 @@ public operand's scale `p_B`:
 | `blas_rotate_rows`, `blas_rotate_cols` by `k` | `rotate_rows_galois_elements(order, k)`, `rotate_cols_galois_elements(order, k)` | as the transpose; none for a shift by a multiple of `d`, a copy; a row shift of a replicated grid one block high, a rotation by `k d`, at `min(res.k, a.k)` |
 | `blas_sum_rows`, `blas_sum_cols` | `sum_rows_galois_elements(order)`, `sum_cols_galois_elements(order)` | the tree's rotations at `a.k`, the broadcast's at `min(res.k, a.k - p)`; along the rows of a replicated grid, the tree's at `min(res.k, a.k)` and no broadcast |
 | `blas_matmul_prepare_left`, `blas_matmul_prepare_right`, `blas_matmul`, and `blas_matmul_prepared` of a hot operand | `matmul_galois_elements(order)` | sigma's (tau's) baby steps at `a.k` and giant steps at `a.k - p`; the shifts' giant steps at `a.k - 2p`, those of a replicated right factor `b` at `b.k - p` |
+| `blas_matvec_pt` | `matvec_pt_galois_elements(order, w)` of the operand's layout | every map's baby steps at `a.k`, giant steps at `min(res.k, a.k - p_W)` |
 | `blas_matmul_pt_right`, `blas_matmul_pt_left` | `matmul_pt_right_galois_elements(order)`, `matmul_pt_left_galois_elements(order)` of the operand's plan | under `Diagonal`, the blocks' baby steps at `a.k`, giant steps at `min(res.k, a.k - p_B)`; under `Jkls`, the first map's baby steps at `a.k`, giant steps at `a.k - p_B`, then the blocks' baby steps at `a.k - p_B`, giant steps at `min(res.k, a.k - 2 p_B)`; under `JklsStored` and `JklsGalois`, the first map's as under `Jkls`, then the context's masks', `Direct`, at `a.k - p_B - p` |
 
 A plan also carries a `BlasPtAlgorithm` through `BlasPlan::with_pt_algorithm`,
@@ -245,7 +248,7 @@ Each operation has a query in `poulpy_blas::layouts` that lists the keys it
 looks up: `blas_matmul_key_uses`,
 `blas_matmul_prepare_left_key_uses`, `blas_matmul_prepare_right_key_uses`,
 `blas_matmul_prepared_key_uses`, `blas_matmul_pt_right_key_uses`,
-`blas_matmul_pt_left_key_uses`, `blas_transpose_key_uses`,
+`blas_matmul_pt_left_key_uses`, `blas_matvec_pt_key_uses`, `blas_transpose_key_uses`,
 `blas_rotate_rows_key_uses`, `blas_rotate_cols_key_uses`,
 `blas_rotate_key_uses`, `blas_sum_key_uses`, `blas_sum_rows_key_uses` and
 `blas_sum_cols_key_uses`. A
@@ -269,13 +272,15 @@ them.
 
 The output-layout queries next to them (`blas_matmul_output_layout`,
 `blas_matmul_prepared_output_layout`, `blas_matmul_pt_right_output_layout`,
-`blas_matmul_pt_left_output_layout`, `blas_transpose_output_layout`,
+`blas_matmul_pt_left_output_layout`, `blas_matvec_pt_output_layout`, `blas_transpose_output_layout`,
 `blas_rotate_rows_output_layout`, `blas_rotate_cols_output_layout`,
 `blas_rotate_output_layout`, `blas_sum_output_layout`, and in
 `poulpy_blas::layouts` `blas_sum_rows_output_layout` and
 `blas_sum_cols_output_layout`) take the input layouts
 and the allocated `res` and return the `BlasLayout` the call stamps on `res`,
 whose block gives `k`, `log_delta` and label; the record is the validator's.
+`blas_matvec_pt_output_layout` returns the `BlasVectorLayout` instead, labelled
+with the period the operand writes.
 They read a map's effect through the same function the preparations and staged
 blocks use, so a client plans every intermediate grid, and with it every key
 width, before it encrypts or runs anything.
@@ -502,6 +507,9 @@ the products by public matrices, the operand at another dimension, where only
 with a message. `test_blas_matmul_long_sums`, a `1 x 8` grid times an `8 x 1`
 grid of distinct blocks, runs on its own ring, `N = 32`, so a registration
 that sets `log_d` skips it with a message: its default registration runs it.
+`test_blas_matvec_pt` and its guards run vectors of one and several
+ciphertexts, dense and replicated, resident and streamed, which span 16 slots:
+below `N = 32` they are skipped with a message.
 
 `blas_conjugate_invariant_test_suite!(mod m, backend = …, params = …)`
 registers the test `conjugate_invariant` for a backend of the
@@ -528,8 +536,9 @@ poulpy_blas::blas_parity_test_suite! {
 }
 ```
 
-It registers the tests `inter`, `intra` and `matmul`, each on its own
-pair of modules of degree `params.n`, and `concurrency`, on the tested
+It registers the tests `inter`, `intra`, `matmul` and `matvec`, each on its own
+pair of modules of degree `params.n` (`matvec` skipped with a message below 16
+slots, which its vectors span), and `concurrency`, on the tested
 backend's module alone ([Parallelism](#parallelism)). Both backends
 run on identical fixtures and keys, and the operations are called
 through the API, which forwards to their `*Impl` methods. Every call,
@@ -581,13 +590,14 @@ dropping the suite:
 ```
 
 `log_d` is the only shapes axis: rank and `dsize` come from `params`, and one
-macro registers all three families, so none can be dropped silently.
+macro registers every family, so none can be dropped silently.
 
 `blas_max_base2k_test_suite!` registers the test `max_base2k` for one backend,
 scalar and parameter set: `blas_matmul_max_base2k`,
 `blas_matmul_pt_right_max_base2k` and `blas_matmul_pt_left_max_base2k` on
 `4 x 4` blocks on 32 slots (`n = 64`, or `n = 32` on the conjugate-invariant
-ring), under every algorithm, against counts made by hand, at every failure
+ring), under every algorithm, and `blas_matvec_pt_max_base2k` on vectors of one
+and several ciphertexts, against counts made by hand, at every failure
 target from 1 to 1000 bits. It needs a backend that implements `MaxBase2k`.
 
 The registrations of this workspace, and the commands and CI coverage, are in

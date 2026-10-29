@@ -37,9 +37,19 @@ the slots, takes its psi^k as rotations at no scale, so it may arrive one map sc
 encrypt it from a plaintext of `d^2` slots whose degree reaches the backend's `MIN_DEGREE`, since a degree-`N` one at
 label 0 proves one matrix only when one fills the slots.
 
+A vector, `BlasVector`, holds `len` entries over ciphertexts of `chunk` entries each, entry `e` of a ciphertext at slot
+`offset + stride e`, repeated with the period its label proves (`vector_period`). `blas_matvec_pt` multiplies it by a
+public matrix of any shape: a `BlasMatVecOperand` holds one linear transformation per pair of an output and an input
+ciphertext, built from the slot map of the matrix between the two vectors' slots, which writes each output entry at
+every repetition of the output's period and reads each input entry at the first slot its period reaches, so the maps
+have at most `input_period` diagonals. Every output ciphertext is one summed transformation over the input
+ciphertexts, which share their giant steps, and every output ciphertext shares one baby-step cache per input
+ciphertext. The operand is resident, `BlasMatVecOperand`, or streamed, `BlasMatVecOperandUnprepared`, whose plaintext
+diagonals are prepared at each use for less memory, with the same bits; `matvec_pt_galois_elements` lists its keys.
+
 `blas_matmul_max_base2k`, `blas_matmul_pt_right_max_base2k` and `blas_matmul_pt_left_max_base2k` return the largest
 `base2k` that `Module::max_base2k` allows for every lazy sum of a product, from the grids' layouts, the context and the
-public operand alone.
+public operand alone, and `blas_matvec_pt_max_base2k` that of a product of a vector.
 
 Calls with distinct `res` and `scratch` may run concurrently over a shared module, context, public operands, prepared
 operands and key stores: BLAS spawns no thread and holds no shared mutable state, its types are `Send` and `Sync`, and an
@@ -88,12 +98,14 @@ form, the backend's representation, which operations read.
 | Standard | Prepared | Layout and infos |
 |---|---|---|
 | `BlasCiphertext` | none | `BlasLayout`, `BlasGridInfos` |
+| `BlasVector` | none | `BlasVectorLayout`, `BlasVectorInfos` |
 | `BlasPtOperandUnprepared<BE, S>` | `BlasPtOperand<BE, S>` | `BlasPtOperandLayout<S>`, `BlasPtOperandInfos` |
+| `BlasMatVecOperandUnprepared<BE>` | `BlasMatVecOperand<BE>` | `BlasMatVecOperandLayout`, `BlasMatVecOperandInfos` |
 | `BlasContextUnprepared<BE>` | `BlasContext<BE>` | `BlasContextLayout`, `BlasContextInfos` |
 | none | `BlasMatMulLeft<BE>`, `BlasMatMulRight<BE>` | `BlasMatMulOperandLayout`, `BlasMatMulOperandInfos` |
 
-Each is allocated on a module from its layout (`BlasModuleAlloc`, and the factories `BlasPtOperandPreparedFactory` and
-`BlasContextPreparedFactory` of `poulpy_blas::api`), sized by the matching `bytes_of` (`BlasBytesOf` and the factories),
+Each is allocated on a module from its layout (`BlasModuleAlloc`, and the factories `BlasPtOperandPreparedFactory`,
+`BlasMatVecOperandPreparedFactory` and `BlasContextPreparedFactory` of `poulpy_blas::api`), sized by the matching `bytes_of` (`BlasBytesOf` and the factories),
 and filled in place: encoded into (`BlasEncodingOps`, at poulpy-ckks's encoding scalar `F`, a trait parameter), then
 prepared into. A public operand takes its matrices at encoding, and its side is its type parameter `S`, `Right` or
 `Left`. Encoding and preparing again into the same allocations refills them, with no reallocation of their storage:
@@ -121,15 +133,15 @@ A prepared operand of a product is allocated from the infos `blas_matmul_left_op
 `BlasCiphertext` implements `WriterTo` and `ReaderFrom`, little-endian, with no magic or version bytes: a header of its
 dimensions and its blocks' `n`, `base2k`, `k` and rank, then its blocks, row-major. A read fills a grid allocated from
 the writer's layout and rejects another layout with `InvalidData` before touching it; `write_to` rejects a grid holding
-a flag-clear block with `InvalidInput`, writing nothing. Public operands and contexts are not serialized: encode them
-again, then prepare them.
+a flag-clear block with `InvalidInput`, writing nothing. `BlasVector` does the same with a header of its shape and its
+ciphertexts' layout. Public operands and contexts are not serialized: encode them again, then prepare them.
 
 ## Tests and backend integration
 
 poulpy-blas imports no backend. Backend crates select the reference compositions with
 `poulpy_blas::impl_blas_reference_full!(Backend)`. To override a family, a backend wires the other families with
 `impl_blas_mat_inter_reference_full!`, `impl_blas_mat_intra_reference_full!`, `impl_blas_mat_mul_reference_full!`,
-`impl_blas_jkls_reference_full!` or `impl_blas_encoding_reference_full!` and implements that family's `oep` trait by
+`impl_blas_mat_vec_reference_full!`, `impl_blas_jkls_reference_full!` or `impl_blas_encoding_reference_full!` and implements that family's `oep` trait by
 hand, forwarding the methods it keeps to `reference`. `poulpy-cpu-oracle` and the CPU backends do so behind their
 `enable-blas` feature. A backend crate outside this workspace does the same for its own types. It takes `poulpy-hal`,
 `poulpy-core`, `poulpy-ckks` and `poulpy-blas` from one poulpy source, as direct dependencies under those names, because

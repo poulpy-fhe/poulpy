@@ -6,6 +6,7 @@
 //! - [`matmul`]: the runners of the products and the transpose, one per operation and variant. Each builds its point
 //!   once, with only the rotation keys (and the tensor key) its operation looks up, checks the radix and the first
 //!   result against the cleartext, then times the call.
+//! - [`matvec`]: the runners of the product of a vector by a public matrix, resident and streamed, built alike.
 //! - [`intra`]: the runners of the row and column sums and of the row rotation of a replicated grid, built alike.
 //! - [`suites`]: the `BenchOp` tables and the `bench_blas` functions of the full, standard and light tiers.
 //! - [`scale`]: large blocks, outside Criterion: the radix table of every product, and checks on grids of many
@@ -16,6 +17,7 @@
 
 pub mod intra;
 pub mod matmul;
+pub mod matvec;
 pub mod params;
 pub mod scale;
 pub mod suites;

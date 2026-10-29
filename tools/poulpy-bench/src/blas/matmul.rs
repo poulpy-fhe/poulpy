@@ -13,7 +13,10 @@ use std::collections::{BTreeSet, HashMap};
 
 use criterion::{Bencher, measurement::Measurement};
 use poulpy_blas::{
-    api::{BlasContextPreparedFactory, BlasEncodingOps, BlasMatIntraOps, BlasMatMulOps, BlasPtOperandPreparedFactory},
+    api::{
+        BlasContextPreparedFactory, BlasEncodingOps, BlasMatIntraOps, BlasMatMulOps, BlasMatVecOperandPreparedFactory,
+        BlasPtOperandPreparedFactory,
+    },
     layouts::{
         BlasCiphertext, BlasCiphertextOwned, BlasContext, BlasGridInfos, BlasModuleAlloc, BlasPlan, BlasPtAlgorithm,
         BlasPtOperand, BlasPtSide, Left, Right, blas_matmul_max_base2k, blas_matmul_pt_left_max_base2k,
@@ -29,7 +32,7 @@ use poulpy_ckks::{
         CKKSAllOpsTmpBytes, CKKSDecryptOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncryptOps, CKKSLinearTransformationOps,
         CKKSModuleInfos,
     },
-    layouts::CKKSModuleAlloc,
+    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc},
     test_suite::helpers::TestContextSharedModule,
 };
 use poulpy_core::{
@@ -110,7 +113,7 @@ pub(super) fn tsk_layout(bp: &BlasBenchParams) -> GLWETensorKeyLayout {
 }
 
 /// Deterministic pseudo-random value in `[-1, 1)` of entry `(r, c)` of matrix `s` in stream `tag`, a splitmix64 hash.
-pub(super) fn entry(tag: u64, s: usize, r: usize, c: usize) -> f64 {
+pub(crate) fn entry(tag: u64, s: usize, r: usize, c: usize) -> f64 {
     let mut x = tag ^ ((s as u64) << 40) ^ ((r as u64) << 20) ^ c as u64;
     x = (x ^ (x >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
     x = (x ^ (x >> 27)).wrapping_mul(0x94d049bb133111eb);
@@ -180,6 +183,7 @@ pub trait BlasBenchModule<BE: Backend>:
     + BlasEncodingOps<BE, f64>
     + BlasContextPreparedFactory<BE>
     + BlasPtOperandPreparedFactory<BE>
+    + BlasMatVecOperandPreparedFactory<BE>
     + CKKSLinearTransformationOps<BE>
     + CnvPVecAlloc<BE>
 {
@@ -191,6 +195,7 @@ impl<BE: Backend, M> BlasBenchModule<BE> for M where
         + BlasEncodingOps<BE, f64>
         + BlasContextPreparedFactory<BE>
         + BlasPtOperandPreparedFactory<BE>
+        + BlasMatVecOperandPreparedFactory<BE>
         + CKKSLinearTransformationOps<BE>
         + CnvPVecAlloc<BE>
 {
@@ -358,6 +363,43 @@ where
             .blas_ciphertext_alloc(bp.log_d, rows, cols, base2k(bp), TorusPrecision(bp.k as u32))
     }
 
+    /// A ciphertext of the slot values `re`, every slot of the ring, encrypted as [`Self::encrypt`]'s blocks.
+    pub(super) fn encrypt_slots(&mut self, bp: &BlasBenchParams, re: &[f64]) -> CKKSCiphertextOwned<BE> {
+        let mut pt = self
+            .module
+            .ckks_pt_vec_alloc(bp.slots(), base2k(bp), TorusPrecision((bp.log_delta + HEADROOM) as u32));
+        pt.set_meta(block_layout(bp).meta);
+        self.module
+            .ckks_encode_reim_into(&mut pt, re, &vec![0.0; bp.slots()], &mut self.arena.borrow())
+            .unwrap();
+        let mut ct = self.module.ckks_ciphertext_alloc(base2k(bp), TorusPrecision(bp.k as u32));
+        self.module
+            .ckks_encrypt_sk(&mut ct, &pt, &self.sk, &mut self.xe, &mut self.xa, &mut self.arena.borrow())
+            .unwrap();
+        ct
+    }
+
+    /// The real and imaginary slot values of the decrypted `ct`.
+    pub(super) fn decrypt_slots(&mut self, bp: &BlasBenchParams, ct: &CKKSCiphertextOwned<BE>) -> (Vec<f64>, Vec<f64>) {
+        let log_delta = ct.log_delta();
+        let mut pt = self
+            .module
+            .ckks_pt_vec_alloc(bp.slots(), base2k(bp), TorusPrecision((log_delta + DECODE_HEADROOM) as u32));
+        pt.set_meta(GLWEPlaintextMeta {
+            scale: Scale::Log(log_delta),
+            slots: SlotsKind::Complex,
+            log_sparsity: 0,
+        });
+        self.module
+            .ckks_decrypt(&mut pt, ct, &self.sk, &mut self.arena.borrow())
+            .unwrap();
+        let (mut re, mut im) = (vec![0.0; bp.slots()], vec![0.0; bp.slots()]);
+        self.module
+            .ckks_decode_reim_into(&pt, &mut re, &mut im, &mut self.arena.borrow())
+            .unwrap();
+        (re, im)
+    }
+
     /// The largest distance of the decrypted grid `res` to `want(s, r, c)`, entry `(r, c)` of matrix `s`, over the
     /// matrices of the batch, and of its imaginary part to zero.
     pub(super) fn max_error(
@@ -366,27 +408,7 @@ where
         res: &BlasCiphertextOwned<BE>,
         want: impl Fn(usize, usize, usize) -> f64,
     ) -> f64 {
-        let (mut re, mut im) = (Vec::new(), Vec::new());
-        for block in res.blocks() {
-            let log_delta = block.log_delta();
-            let mut pt =
-                self.module
-                    .ckks_pt_vec_alloc(bp.slots(), base2k(bp), TorusPrecision((log_delta + DECODE_HEADROOM) as u32));
-            pt.set_meta(GLWEPlaintextMeta {
-                scale: Scale::Log(log_delta),
-                slots: SlotsKind::Complex,
-                log_sparsity: 0,
-            });
-            self.module
-                .ckks_decrypt(&mut pt, block, &self.sk, &mut self.arena.borrow())
-                .unwrap();
-            let (mut block_re, mut block_im) = (vec![0.0; bp.slots()], vec![0.0; bp.slots()]);
-            self.module
-                .ckks_decode_reim_into(&pt, &mut block_re, &mut block_im, &mut self.arena.borrow())
-                .unwrap();
-            re.push(block_re);
-            im.push(block_im);
-        }
+        let (re, im): (Vec<_>, Vec<_>) = res.blocks().iter().map(|block| self.decrypt_slots(bp, block)).unzip();
         let (rows, cols) = (res.rows(), res.cols());
         let mut err = 0.0f64;
         join_blocks(&re, rows, cols, bp.log_d, bp.batch(), |s, r, c, have| {

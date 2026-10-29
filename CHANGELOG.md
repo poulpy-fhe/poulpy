@@ -175,6 +175,7 @@
 - poulpy-cpu-portable runs the linear-transformation parity suites on `BatchedGiantStepsFFT64Portable`, a fixture whose `glwe_giant_step_batch` is 3, so that the batched giant-step products and their scratch run in CI.
 - poulpy-cpu-portable, poulpy-cpu-avx and poulpy-cpu-arm register `bootstrapping_plan_keys_match_context`, and `NTT4x30Avx` and `NTT4x30Neon` register `small_s2c_preset_meets_precision_with_client` with an `NTT4x30Portable` client.
 - **Behaviour:** the oracle's table lookup and the portable FFT64 block assertions panic with static messages, formatting no degree or block size.
+- The IFMA linear transformations of `poulpy-cpu-avx512` and the batched test backend of `poulpy-cpu-portable` forward `glwe_eval_linear_transformation_sum_unprepared_rhs_tmp_bytes` to the reference, and their sums take streamed transforms.
 
 ### `poulpy-core`
 
@@ -394,6 +395,8 @@
   **Breaking:** `glwe_eval_linear_transformation_into` requires `keys: GetAutomorphismKey + GetTensorKey`, and a map of automorphism keys implements `GetTensorKey` by refusing. Its scratch queries take the tensor key layout before the giant key, `(res, a, pt, plan, tsk, key)`, `pt`'s rank selecting the budget; `alloc_prepared`, `alloc_prepared_from_index` and the rhs query take `GLWEInfos`. `DiagonalProd` requires `GLWEInfos` and `operand`, the diagonal as a `DiagonalOperand`: prepared, or a GLWE view of rank 0 (a plaintext) or of the source's rank (a ciphertext) the product prepares in the call; `accumulate_giant_prod` is provided, running the prepared or the streamed product by the form of a giant step's first diagonal, so a diagonal type implements `operand` only, and `reference::linear_transformation::glwe_accumulate_streamed_baby_steps_dft` is removed. In `LinearTransformationImpl`, `glwe_eval_linear_transformation_tmp_bytes` and `_unprepared_rhs_tmp_bytes` take `tsk: &T` (`T: GGLWEInfos`) before `key`, `glwe_eval_linear_transformation_into` requires `H: GetTensorKey`, `glwe_prepare_linear_transformation_rhs_tmp_bytes` takes `P: GLWEInfos`, and `glwe_prepare_linear_transformation_baby_steps` records the source's width with `set_k`; a hand-written impl forwards them to the `_reference` functions of `reference::linear_transformation` of the same names.
 - Add `GLWEMulPreparedPlainSum::glwe_mul_prepared_plain_sum_add` and its query: `res += Σ a[t] ⊛ σ_{galois[t]}(b[t])`, the value of `res`, at the operands' radix, entering the one normalization that rounds the sum, shifted by the fraction of a limb of the conversion offset onto one more limb, so it adds exactly. Into a zero `res` it is `glwe_mul_prepared_plain_sum`, bit for bit, which the multiplication parity checks at offsets that shift `res` both ways.
   **Breaking:** `GLWEMulPreparedPlainSumImpl` requires the method and its query, which `impl_glwe_mul_prepared_plain_sum_reference_full!` forwards.
+- `glwe_eval_linear_transformation_sum_into` sums streamed transforms too: it takes `lts: &[&LinearTransformation<P>]` for any `P: DiagonalProd`, the plaintext diagonals then prepared at each use, bit for bit the resident sum. Add `glwe_eval_linear_transformation_sum_unprepared_rhs_tmp_bytes`, its scratch over streamed transforms, and `DiagonalProd::log_scale`, the scale a scheme records on a diagonal, which summed terms share (0 by default, a prepared diagonal's own).
+  **Breaking:** `LinearTransformationImpl::glwe_eval_linear_transformation_sum_into` takes the diagonal type `P`, and the trait requires `glwe_eval_linear_transformation_sum_unprepared_rhs_tmp_bytes`, which `impl_linear_transformation_reference_full!` forwards and a hand-written impl forwards to `glwe_eval_linear_transformation_sum_unprepared_rhs_tmp_bytes_reference`.
 
 ### `poulpy-ckks`
 
@@ -664,6 +667,8 @@
 - **Behaviour:** `test_suite::helpers::assert_precision` reports its label only, no value read from the decrypted output or its metadata.
 - Add `CKKSDotProductOps::ckks_mul_add_prepared_pt_into` and its query: `dst += a · σ_galois(b)` for a prepared ciphertext and a prepared plaintext read through an odd Galois element, rounded once with `dst` added before the normalization, for `dst` at the product's scale and budget (`InvalidOperand` otherwise, before any write). It serves masked insertions into ciphertexts of diagonals, one prepared mask read through the Galois element of each shift. `test_mul_add_prepared_pt` registers in the CKKS suites.
   **Breaking:** `CKKSDotProductImpl` requires the method and its query, which `impl_ckks_dot_product_reference_full!` forwards.
+- `ckks_eval_linear_transformation_sum_into` takes resident or streamed transforms (`P: DiagonalProd + LtDiagonalMeta + IntPolyInfos`), the streamed sum giving the resident one's bits; add `ckks_eval_linear_transformation_sum_streamed_tmp_bytes`, its scratch over streamed transforms. `test_linear_transformation_sum` checks the streamed sum against the resident one.
+  **Breaking:** `CKKSLinearTransformationImpl::ckks_eval_linear_transformation_sum_into` takes `P`, and the trait requires `ckks_eval_linear_transformation_sum_streamed_tmp_bytes`, which `impl_ckks_linear_transformation_reference_full!` forwards to its `_reference` method.
 
 ### `poulpy-bin-fhe`
 
@@ -821,6 +826,10 @@
 - OEP methods have their API method's name and the hooks are `blas_map_blocks`, `blas_map_blocks_tmp_bytes`, `blas_jkls_block`, `blas_jkls_block_tmp_bytes`, `blas_jkls_pt_unit` and `blas_jkls_pt_unit_tmp_bytes`; each opt-in macro is named after its OEP trait (`impl_blas_mat_inter_reference_full!`, `impl_blas_mat_intra_reference_full!`, `impl_blas_mat_mul_reference_full!`, `impl_blas_jkls_reference_full!`, `impl_blas_encoding_reference_full!`).
 - `blas_pt_operand_prepare` and `blas_context_prepare` panic, naming the operation, before the first map is prepared on a map whose diagonals do not share one scale, width and slot kind, which `test_blas_context` pins for both, and with the operation and its refusal on any other refusal of `ckks_prepare_linear_transformation_rhs`; `BlasMatMulOperandPreparedFactory` allocates and sizes its terms through `CKKSModuleAlloc`.
 - `maps::per_matrix_map`, `maps::right_mul`, `maps::left_mul`, `maps::right_jkls` and `maps::left_jkls` build on `Diagonals::from_slot_map`, and `per_matrix_map` on `Diagonals::shrink_period`: their diagonals are unchanged.
+- Add vectors, `BlasVector` (`BlasVectorOwned`): `len` entries over ciphertexts of `chunk` entries each, entry `e` of a ciphertext at slot `offset + stride e`, repeated with the period the ciphertexts' label proves (`vector_period`). With `BlasVectorShape`, `BlasVectorLayout`, `BlasVectorInfos`, the operation bounds `BlasVectorRef` and `BlasVectorMut`, `BlasModuleAlloc::blas_vector_alloc` and `blas_vector_alloc_from_infos`, `BlasBytesOf::blas_vector_bytes_of_from_infos`, and `WriterTo` and `ReaderFrom` as for `BlasCiphertext`.
+- Add `BlasMatVecOps::blas_matvec_pt`, a vector by a public matrix of any shape. Its operand, of a `BlasMatVecOperandLayout` between two vector shapes and periods, holds one linear transformation per output and input ciphertext, from the matrix's slot map (`Diagonals::from_slot_map`): each output entry is written at every repetition of the output's period, each input entry read at the first slot its period reaches, so a map has at most `input_period` diagonals and every map one shape. The operand is resident (`BlasMatVecOperand`, `BlasMatVecOperandPreparedFactory`) or streamed (`BlasMatVecOperandUnprepared`), through `BlasMatVecMaps`, with the same bits. Each output ciphertext is one summed transformation over the input ciphertexts, which share their giant steps, and every output shares one baby cache per input ciphertext. Add `BlasEncodingOps::blas_matvec_operand_encode`, `BlasModuleAlloc::blas_matvec_operand_alloc` and `_from_infos`, `validate_blas_matvec_pt`, `blas_matvec_pt_key_uses`, `blas_matvec_pt_output_layout`, `blas_matvec_pt_max_base2k` and `matvec_pt_galois_elements`.
+  **Breaking:** the new OEP family `BlasMatVecImpl`, with `BlasMatVecReference` and `impl_blas_mat_vec_reference_full!`, joins `impl_blas_reference_full!` and `BlasImpl`; `BlasEncodingImpl` requires `blas_matvec_operand_encode`, `blas_matvec_operand_prepare` and their queries, which `impl_blas_encoding_reference_full!` forwards.
+- `test_blas_matvec_pt` and `test_blas_matvec_pt_guards` register in `blas_backend_test_suite!` and `test_blas_matvec_parity`, the test `matvec`, in `blas_parity_test_suite!`; the conjugate-invariant, radix and queries-from-layouts tests cover the product of a vector.
 
 ### `poulpy-libm`
 
@@ -861,6 +870,7 @@
   `handle` reaches a module's `GpuHandle`, which sets the convolution capacity step (`set_convolution_capacity_step`).
   It implements the step hooks of `poulpy-core` with fused launches.
   See `docs/guides/backends.md`.
+- The linear transformations forward `glwe_eval_linear_transformation_sum_unprepared_rhs_tmp_bytes` to the reference, and their sums take streamed transforms.
 
 ### `poulpy-bench`
 
@@ -885,6 +895,8 @@
 - Add the table `schemes::suites::ckks_linear_transformation_ops` with `runner_ckks_eval_linear_transformation_into_ct`, `ckks_eval_linear_transformation_into` of 128 resident encrypted diagonals at giant step 16 on uniform operands with prepared keys, and `runner_ckks_eval_linear_transformation_into_ct_composed`, the same product as one `ckks_dot_product_prepared` per giant step rotated and added, then normalized, both from the same prepared rotations and diagonals.
   **Breaking:** `schemes::suites::all_ops` and `bench_ckks` require `CKKSLinearTransformationOps`, `CKKSDotProductOps`, `GLWENormalize`, `GLWEMaskFill`, `ModuleCoreAlloc` and `CnvPVecAlloc`, and `ScratchOwned` alloc and borrow.
 - **Breaking:** the bin-fhe runners and tables require the factories of the prepared keys they allocate: `bin_fhe::runner_blind_rotate` and `blind_rotate_ops` `GGSWPreparedFactory`, `bin_fhe::runner_circuit_bootstrapping` and `circuit_bootstrapping_ops` `BlindRotationKeyPreparedFactory`, `GGLWEToGGSWKeyPreparedFactory` and `GLWEAutomorphismKeyPreparedFactory`, and `bin_fhe_standard_ops` and `bench_binfhe` `GGLWEToGGSWKeyPreparedFactory` and `GLWEAutomorphismKeyPreparedFactory`.
+- Add `blas::matvec::runner_blas_matvec_pt_resident` and `runner_blas_matvec_pt_streamed` to `blas_ops`: a `d x d` public matrix by one ciphertext of `d` entries at stride `N / (2d)`, the operand prepared or streamed.
+  **Breaking:** the blas suites require `BlasMatVecImpl`, and `BlasBenchModule` requires `BlasMatVecOperandPreparedFactory`.
 
 ### Dependencies
 
