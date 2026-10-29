@@ -163,11 +163,14 @@ pub fn glwe_prepare_linear_transformation_rhs_reference<BE, M, P>(
                 pt_k,
                 "linear transformation diagonal k does not match prepared cache"
             );
-            assert_eq!(
-                pt_k_usize.div_ceil(pt_base2k_usize),
-                plaintext.max_size(),
-                "linear transformation plaintext size does not match its effective precision"
-            );
+            // A ciphertext diagonal is read at its width, whatever its allocation.
+            if plaintext.rank().as_usize() == 0 {
+                assert_eq!(
+                    pt_k_usize.div_ceil(pt_base2k_usize),
+                    plaintext.max_size(),
+                    "linear transformation plaintext size does not match its effective precision"
+                );
+            }
             assert_eq!(
                 plaintext.n().as_usize(),
                 pt_n,

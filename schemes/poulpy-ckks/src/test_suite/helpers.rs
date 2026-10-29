@@ -1286,7 +1286,7 @@ where
     let min_bits = expected_log2_precision(log_delta, degree);
     assert!(
         stats.avg_log2_prec >= min_bits,
-        "{label}: avg precision below {min_bits:.1} bits (log_delta={log_delta}, degree={degree})"
+        "{label}: avg precision below the expected bound"
     );
 }
 

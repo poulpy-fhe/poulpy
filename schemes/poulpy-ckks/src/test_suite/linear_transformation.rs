@@ -15,8 +15,8 @@ use poulpy_core::{
     GLWEBytesOf,
     layouts::{
         BackendGLWESecret, Diagonals, Evaluate, GGLWEInfos, GLWEInfos, GLWELayout, GLWEPlaintextInfos, GLWEToBackendRef,
-        GetAutomorphismKey, GetTensorKey, LWEInfos, LinearTransformationPlan, LinearTransformationStrategy, Rank,
-        SetGLWEPlaintextInfos, TorusPrecision, k_digit_of,
+        GetAutomorphismKey, GetTensorKey, LWEInfos, LinearTransformationDiagonal, LinearTransformationGiantStep,
+        LinearTransformationPlan, LinearTransformationStrategy, Rank, SetGLWEPlaintextInfos, TorusPrecision, k_digit_of,
         prepared::{
             GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedBackendRef, GLWEAutomorphismKeyPreparedToBackendRef,
             GLWESecretPrepared, GLWETensorKeyPreparedBackendRef,
@@ -33,7 +33,10 @@ use poulpy_hal::{
 
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotsKind,
-    api::{CKKSLinearTransformationOps, LinearTransformation, LinearTransformationBabySteps, LinearTransformationPrepared},
+    api::{
+        CKKSCopyOps, CKKSLinearTransformationOps, LinearTransformation, LinearTransformationBabySteps,
+        LinearTransformationPrepared,
+    },
     layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, ComplexDiagonals},
     test_suite::reference_encoder::ReferenceEncoder,
     test_suite::{
@@ -1399,11 +1402,52 @@ pub fn test_linear_transformation_ct<BE, F, E>(
             |s| module.ckks_eval_linear_transformation_into(&mut streamed, &src, &babies, &lt, &keys, s),
         )
         .unwrap();
+        // Diagonals allocated wider than their width, as a copy into a larger ciphertext leaves them, read as theirs.
+        let wide_lt = LinearTransformation {
+            baby_steps: lt.baby_steps.clone(),
+            rotations: lt.rotations,
+            giant_steps: lt
+                .giant_steps
+                .iter()
+                .map(|gs| LinearTransformationGiantStep {
+                    rot: gs.rot,
+                    diagonals: gs
+                        .diagonals
+                        .iter()
+                        .map(|d| {
+                            let mut wide = alloc_ct(&params, module, diagonal_k + params.base2k);
+                            with_scratch::<BE, _>(module.ckks_copy_tmp_bytes(&wide, &d.plaintext), |s| {
+                                module.ckks_copy(&mut wide, &d.plaintext, s)
+                            })
+                            .unwrap();
+                            LinearTransformationDiagonal {
+                                baby: d.baby,
+                                plaintext: wide,
+                            }
+                        })
+                        .collect(),
+                })
+                .collect(),
+        };
+        let wide_prepared = prepare_lt(module, &wide_lt);
+        let mut wide_resident = alloc_ct(&params, module, src_k);
+        with_scratch::<BE, _>(bytes, |s| {
+            module.ckks_eval_linear_transformation_into(&mut wide_resident, &src, &babies, &wide_prepared, &keys, s)
+        })
+        .unwrap();
+        let mut wide_streamed = alloc_ct(&params, module, src_k);
+        with_scratch::<BE, _>(
+            module.ckks_eval_linear_transformation_streamed_tmp_bytes(&src, first, &plan, &tsk_layout, &params.atk_layout()),
+            |s| module.ckks_eval_linear_transformation_into(&mut wide_streamed, &src, &babies, &wide_lt, &keys, s),
+        )
+        .unwrap();
         for (form, out) in [
             ("_assign", &assigned),
             ("_self_into", &self_into),
             ("_self_assign", &self_assigned),
             ("streamed _into", &streamed),
+            ("wide diagonals _into", &wide_resident),
+            ("wide streamed diagonals _into", &wide_streamed),
         ] {
             assert_eq!(snapshot::<BE, _>(out), have, "{label}: {form} differs from _into");
         }
