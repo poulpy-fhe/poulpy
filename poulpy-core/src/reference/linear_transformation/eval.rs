@@ -36,9 +36,9 @@ use crate::{
                 glwe_prepare_baby_doubling_tmp_bytes, glwe_prepare_linear_transformation_baby_steps,
                 glwe_prepare_linear_transformation_baby_steps_tmp_bytes,
             },
+            giant_steps::{PlainProductsShape, giant_tree_tmp_bytes, glwe_eval_giant_steps, plain_products_tmp_bytes},
             inner_product::glwe_accumulate_prepared_baby_steps_dft_tmp_bytes,
             lazy::glwe_lazy_giant_automorphism_tmp_bytes,
-            prepared_giants::{PlainProductsShape, giant_tree_tmp_bytes, glwe_eval_giant_steps, plain_products_tmp_bytes},
         },
     },
 };

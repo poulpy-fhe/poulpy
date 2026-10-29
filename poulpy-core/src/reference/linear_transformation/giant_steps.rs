@@ -1,4 +1,4 @@
-//! Prepared giant-step evaluation.
+//! Giant-step evaluation.
 //!
 //! Main loop from docs/guides/linear_transformation.md: each giant bucket first runs PROD (a
 //! DFT-domain inner product over prepared baby rotations and prepared diagonals),

@@ -28,7 +28,7 @@ use crate::{
     oep::{GGLWEProductDigitsStridedImpl, GLWETensoringImpl},
     reference::{
         keyswitching::GGLWEProductReference,
-        linear_transformation::prepared_giants::GiantProducts,
+        linear_transformation::giant_steps::GiantProducts,
         operations::{
             GLWETensoringReference, OnePassShape, glwe_relinearize_columns, glwe_relinearize_columns_tmp_bytes, one_pass_shape,
         },

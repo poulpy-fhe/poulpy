@@ -10,10 +10,10 @@
 mod baby_steps;
 mod ciphertext_diagonals;
 mod eval;
+mod giant_steps;
 mod inner_product;
 mod lazy;
 mod prepare;
-mod prepared_giants;
 
 #[cfg(test)]
 mod tests;
