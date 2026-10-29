@@ -119,7 +119,7 @@ pub(crate) fn bin_fhe_n() -> u64 {
 // type BenchHostBackend = poulpy_cpu_portable::FFT64Portable;
 
 /// One call of a built point's operation.
-pub(crate) type Call = Box<dyn FnMut()>;
+pub type Call = Box<dyn FnMut()>;
 
 thread_local! {
     static POINT: std::cell::RefCell<Option<(String, Call)>> = const { std::cell::RefCell::new(None) };

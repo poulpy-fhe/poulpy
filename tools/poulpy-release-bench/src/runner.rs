@@ -1,5 +1,6 @@
 //! One measured preset: setup, warm-ups, timed bootstraps and the precision of
-//! the last output, on the shared [`BootstrappingPresetRun`] driver.
+//! the last output, on the shared [`BootstrappingPresetRun`] driver, and the
+//! direct timing the libm and blas cases share.
 
 use std::{cell::RefCell, time::Instant};
 
@@ -38,7 +39,14 @@ pub struct RunArgs {
     pub device: Option<usize>,
 }
 
-/// Wall-clock nanoseconds of every warm-up and every timed bootstrap.
+/// What `run` was asked to measure for a libm or blas case.
+pub struct CaseArgs {
+    pub case: String,
+    pub warmup: usize,
+    pub iters: usize,
+}
+
+/// Wall-clock nanoseconds of every warm-up and every timed call.
 pub struct Timings {
     pub warmup_ns: Vec<u64>,
     pub samples_ns: Vec<u64>,
@@ -58,7 +66,8 @@ fn timed(queue: &mut dyn FnMut(), sync: &dyn Fn()) -> u64 {
     start.elapsed().as_nanos() as u64
 }
 
-/// Every iteration calls the bootstrap.
+/// Every iteration calls the operation: the bootstrap, or the call of a libm or
+/// blas case.
 pub fn direct(queue: &mut dyn FnMut(), sync: &dyn Fn(), warmup: usize, iters: usize) -> Result<Option<Timings>> {
     sync();
     Ok(Some(Timings {

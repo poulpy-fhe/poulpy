@@ -72,6 +72,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "alloca"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e5a7d05ea6aea7e9e64d25b9156ba2fee3fdd659e34e41063cd2fc7cd020d7f4"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "allocator-api2"
 version = "0.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -91,6 +100,18 @@ checksum = "ae221649c9976a6f6c56ae1facf410f3ddb33cc661c4b7b61020a912d4237fbc"
 dependencies = [
  "libc",
 ]
+
+[[package]]
+name = "anes"
+version = "0.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4b46cbb362ab8752921c97e041f5e366ee6297bd428a31275b9fcf1e380f7299"
+
+[[package]]
+name = "anstyle"
+version = "1.0.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "940b3a0ca603d1eade50a4846a2afffd5ef57a9feac2c0e2ec2e14f9ead76000"
 
 [[package]]
 name = "antithesis_sdk"
@@ -465,6 +486,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "cast"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "37b2a672a2cb129a2e41c10b1224bb368f9f37a2b16b612598138befd7b37eb5"
+
+[[package]]
 name = "cc"
 version = "1.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -576,6 +603,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "clap"
+version = "4.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b193af5b67834b676abd72466a96c1024e6a6ad978a1f484bd90b85c94041351"
+dependencies = [
+ "clap_builder",
+]
+
+[[package]]
+name = "clap_builder"
+version = "4.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "714a53001bf66416adb0e2ef5ac857140e7dc3a0c48fb28b2f10762fc4b5069f"
+dependencies = [
+ "anstyle",
+ "clap_lex",
+]
+
+[[package]]
+name = "clap_lex"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
+
+[[package]]
 name = "codespan-reporting"
 version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -667,6 +719,41 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a47af21622d091a8f0fb295b88bc886ac74efcc613efc19f5d0b21de5c89e47"
 dependencies = [
  "rustc_version",
+]
+
+[[package]]
+name = "criterion"
+version = "0.8.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "950046b2aa2492f9a536f5f4f9a3de7b9e2476e575e05bd6c333371add4d98f3"
+dependencies = [
+ "alloca",
+ "anes",
+ "cast",
+ "ciborium",
+ "clap",
+ "criterion-plot",
+ "itertools 0.13.0",
+ "num-traits",
+ "oorandom",
+ "page_size",
+ "plotters",
+ "rayon",
+ "regex",
+ "serde",
+ "serde_json",
+ "tinytemplate",
+ "walkdir",
+]
+
+[[package]]
+name = "criterion-plot"
+version = "0.8.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d8d80a2f4f5b554395e47b5d8305bc3d27813bacb73493eb1001e8f76dae29ea"
+dependencies = [
+ "cast",
+ "itertools 0.13.0",
 ]
 
 [[package]]
@@ -2911,6 +2998,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cfe21416a02c693fb9f980befcb230ecc70b0b3d1cc4abf88b9675c4c1457f0c"
 
 [[package]]
+name = "oorandom"
+version = "11.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d6790f58c7ff633d8771f42965289203411a5e5c68388703c06e14f24770b41e"
+
+[[package]]
 name = "opaque-debug"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2944,6 +3037,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e3b7bb0ecf2e447b1f20ee94ee79ef6eed1e9d4b3c36ce1903b9dea3bf205523"
 dependencies = [
  "bytemuck",
+]
+
+[[package]]
+name = "page_size"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "30d5b2194ed13191c1999ae0704b7839fb18384fa22e49b57eeaa97d79ce40da"
+dependencies = [
+ "libc",
+ "winapi",
 ]
 
 [[package]]
@@ -3076,6 +3179,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "plotters"
+version = "0.3.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5aeb6f403d7a4911efb1e33402027fc44f29b5bf6def3effcc22d7bb75f2b747"
+dependencies = [
+ "num-traits",
+ "plotters-backend",
+ "plotters-svg",
+ "wasm-bindgen",
+ "web-sys",
+]
+
+[[package]]
+name = "plotters-backend"
+version = "0.3.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "df42e13c12958a16b3f7f4386b9ab1f3e7933914ecea48da7139435263a4172a"
+
+[[package]]
+name = "plotters-svg"
+version = "0.3.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "51bae2ac328883f7acdfea3d66a7c35751187f870bc81f94563733a154d7a670"
+dependencies = [
+ "plotters-backend",
+]
+
+[[package]]
 name = "polling"
 version = "3.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3137,6 +3268,47 @@ dependencies = [
 ]
 
 [[package]]
+name = "poulpy-bench"
+version = "0.9.0"
+dependencies = [
+ "criterion",
+ "poulpy-bin-fhe",
+ "poulpy-blas",
+ "poulpy-ckks",
+ "poulpy-core",
+ "poulpy-hal",
+ "poulpy-libm",
+ "rand 0.10.3",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "poulpy-bin-fhe"
+version = "0.9.0"
+dependencies = [
+ "anyhow",
+ "byteorder",
+ "itertools 0.15.0",
+ "paste",
+ "poulpy-core",
+ "poulpy-hal",
+ "rand 0.10.3",
+]
+
+[[package]]
+name = "poulpy-blas"
+version = "0.9.0"
+dependencies = [
+ "anyhow",
+ "byteorder",
+ "num-traits",
+ "poulpy-ckks",
+ "poulpy-core",
+ "poulpy-hal",
+]
+
+[[package]]
 name = "poulpy-ckks"
 version = "0.9.0"
 dependencies = [
@@ -3178,6 +3350,7 @@ dependencies = [
  "itertools 0.15.0",
  "once_cell",
  "paste",
+ "poulpy-blas",
  "poulpy-ckks",
  "poulpy-core",
  "poulpy-cpu-portable",
@@ -3199,6 +3372,7 @@ dependencies = [
  "itertools 0.15.0",
  "once_cell",
  "paste",
+ "poulpy-blas",
  "poulpy-ckks",
  "poulpy-core",
  "poulpy-cpu-portable",
@@ -3220,6 +3394,7 @@ dependencies = [
  "libc",
  "once_cell",
  "paste",
+ "poulpy-blas",
  "poulpy-ckks",
  "poulpy-core",
  "poulpy-cpu-portable",
@@ -3243,6 +3418,7 @@ dependencies = [
  "dashu-int",
  "itertools 0.15.0",
  "once_cell",
+ "poulpy-blas",
  "poulpy-ckks",
  "poulpy-core",
  "poulpy-hal",
@@ -3257,6 +3433,7 @@ name = "poulpy-cpu-rayon"
 version = "0.9.0"
 dependencies = [
  "bytemuck",
+ "poulpy-blas",
  "poulpy-ckks",
  "poulpy-core",
  "poulpy-cpu-portable",
@@ -3298,10 +3475,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "poulpy-libm"
+version = "0.9.0"
+dependencies = [
+ "anyhow",
+ "libm",
+ "num-traits",
+ "poulpy-ckks",
+ "poulpy-core",
+ "poulpy-hal",
+]
+
+[[package]]
 name = "poulpy-release-bench"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "poulpy-bench",
+ "poulpy-blas",
  "poulpy-ckks",
  "poulpy-core",
  "poulpy-cpu-arm",
@@ -3311,6 +3502,7 @@ dependencies = [
  "poulpy-cpu-rayon",
  "poulpy-gpu-portable",
  "poulpy-hal",
+ "poulpy-libm",
  "rayon",
  "serde_json",
 ]
@@ -4262,6 +4454,16 @@ dependencies = [
  "displaydoc",
  "serde_core",
  "zerovec",
+]
+
+[[package]]
+name = "tinytemplate"
+version = "1.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "be4d6b5f19ff7664e8c98d03e2139cb510db9b0a60b55f8e8709b689d939b6bc"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

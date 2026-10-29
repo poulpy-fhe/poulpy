@@ -1,22 +1,25 @@
 #!/usr/bin/env python3
-"""Measures the CKKS bootstrapping presets of a release on this machine.
+"""Measures the release benchmarks on this machine: the CKKS bootstrapping presets,
+poulpy-libm functions and poulpy-blas operations.
 
 Run it from the repository root on every machine of the release, then merge the files:
 
     python3 tools/release_bench.py run --label ryzen-9950x
+    python3 tools/release_bench.py run --label ryzen-9950x --suites libm blas
     python3 tools/release_bench.py merge release.json ryzen-9950x.json m5-pro.json
 
 `run` detects the instruction sets and GPU of the host, builds `poulpy-release-bench`
 once per set of target flags (each build in its own target directory under
-`target/release-bench`), then measures every backend, preset and key variant in its
-own process, one at a time. Rayon backends run on 16 threads on x86 and on every
-thread on ARM, capped at what the host has. The record is rewritten after every
-measurement, so an interrupted run keeps what it measured and `--resume` completes it.
+`target/release-bench`), then measures every backend and every preset or case of the
+selected suites in its own process, one at a time. Rayon backends run on 16 threads on
+x86 and on every thread on ARM, capped at what the host has. The record is rewritten
+after every measurement, so an interrupted run keeps what it measured and `--resume`
+completes it.
 
-Timing covers the bootstrap call alone, synchronized with the device on the GPU
-backends: setup, key generation, encryption and decryption are excluded and reported
-apart. Latency is the median of the timed iterations and spread is the median absolute
-deviation over the median.
+Timing covers the measured call alone (a bootstrap, a libm function or a blas
+operation), synchronized with the device on the GPU backends: setup, key generation,
+encryption and decryption are excluded and reported apart. Latency is the median of the
+timed iterations and spread is the median absolute deviation over the median.
 """
 
 import argparse
@@ -33,7 +36,7 @@ import sys
 import tempfile
 import time
 
-SCHEMA = "poulpy-release-bench/1"
+SCHEMA = "poulpy-release-bench/2"
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CRATE = "poulpy-release-bench"
 # The crate is outside the workspace and has its own lock.
@@ -56,6 +59,7 @@ X86_BUILDS = [
 ]
 ARM_BUILDS = [("base", ["portable-rayon", "neon"], "", ["neon"])]
 GPU_FEATURES = ["cuda", "hip", "metal", "vulkan"]
+SUITES = ["bootstrapping", "libm", "blas"]
 X86_RAYON_THREADS = 16
 
 
@@ -316,6 +320,8 @@ def build(spec):
         build_seconds=round(time.monotonic() - start, 1),
         backends=listed["backends"],
         presets=listed["presets"],
+        libm=listed["libm"],
+        blas=listed["blas"],
     )
 
 
@@ -366,22 +372,38 @@ def timing_stats(samples):
     }
 
 
-def result_id(backend, preset, pow2, mode):
-    return f"{backend}/{preset}/{'pow2' if pow2 else 'default'}/{mode}"
+def result_id(backend, suite, case, pow2, mode):
+    if suite == "bootstrapping":
+        return f"{backend}/{suite}/{case}/{'pow2' if pow2 else 'default'}/{mode}"
+    return f"{backend}/{suite}/{case}"
+
+
+def case_key(r):
+    """What a result measures, whatever the backend: its suite, preset or case, and key variant."""
+    if r["suite"] == "bootstrapping":
+        return ("bootstrapping", r["preset"]["name"], r["preset"]["pow2_keys"])
+    return (r["suite"], r[r["suite"]]["case"], None)
+
+
+def meets(r):
+    """Whether a result reached its precision: the advertised one of a preset, the target of a case."""
+    precision = r["precision"]
+    return precision["meets_advertised"] if r["suite"] == "bootstrapping" else precision["meets_target"]
 
 
 def derive(results):
     """Speedups against the serial portable backend and, for Rayon, against the
-    serial counterpart, on this host for the same preset, key variant and mode."""
+    serial counterpart, on this host for the same preset or case, key variant and
+    mode, and the time per matrix of a blas case."""
     medians = {
-        (r["backend"]["backend"], r["preset"]["name"], r["preset"]["pow2_keys"]): r["timing"]["median_ns"]
+        (r["backend"]["backend"], *case_key(r)): r["timing"]["median_ns"]
         for r in results
         if r["status"] == "ok" and r["mode"] == "direct"
     }
     for r in results:
         if r["status"] != "ok":
             continue
-        key = (r["preset"]["name"], r["preset"]["pow2_keys"])
+        key = case_key(r)
         median = r["timing"]["median_ns"]
         portable = medians.get(("NTT4x30Portable", *key))
         serial_name = r["backend"]["backend"].removesuffix("Rayon")
@@ -390,6 +412,8 @@ def derive(results):
             "speedup_vs_portable": portable / median if portable else None,
             "speedup_vs_serial": serial / median if serial else None,
         }
+        if r["suite"] == "blas":
+            r["derived"]["median_ns_per_matrix"] = median / r["blas"]["matrices"]
 
 
 def write(path, record):
@@ -406,7 +430,11 @@ def cmd_run(opts):
     if poulpy["dirty"] and not opts.allow_dirty:
         sys.exit("tracked files are modified: commit them or pass --allow-dirty")
     host_isa = isa()
+    suites = opts.suites or SUITES
     gpu_feature = None if opts.gpu == "none" else (default_gpu_feature() if opts.gpu == "auto" else opts.gpu)
+    # The GPU backends run the bootstrapping suite only.
+    if "bootstrapping" not in suites:
+        gpu_feature = None
     threads = min(opts.threads or default_threads(), os.cpu_count() or 1)
     builds = plan_builds(host_isa, gpu_feature)
     label = opts.label or platform.node().split(".")[0]
@@ -415,7 +443,7 @@ def cmd_run(opts):
 
     print(f"host {label}: {cpu().get('model')}, isa {','.join(host_isa) or 'none'}, gpu feature {gpu_feature}")
     print(f"builds: {', '.join(b['name'] + '[' + ','.join(b['features']) + ']' for b in builds)}")
-    print(f"rayon threads {threads}, warmup {opts.warmup}, iterations {opts.iters}, output {out}")
+    print(f"suites {', '.join(suites)}, rayon threads {threads}, warmup {opts.warmup}, iterations {opts.iters}, output {out}")
     for warning in power_warnings(power()):
         print(f"warning: {warning}")
     if opts.dry_run:
@@ -440,10 +468,17 @@ def cmd_run(opts):
                 continue
             seen.add(name)
             modes = ["direct", "replay"] if backend["parallelism"] == "device" and not opts.no_replay else ["direct"]
-            for preset in opts.presets or b["presets"]:
-                for pow2 in pow2_variants:
-                    for mode in modes:
-                        jobs.append((b, backend, preset, pow2, mode))
+            for suite in suites:
+                if suite not in backend["suites"]:
+                    continue
+                if suite == "bootstrapping":
+                    for preset in opts.presets or b["presets"]:
+                        for pow2 in pow2_variants:
+                            for mode in modes:
+                                jobs.append((b, backend, suite, preset, pow2, mode))
+                else:
+                    for case in getattr(opts, suite) or b[suite]:
+                        jobs.append((b, backend, suite, case, None, "direct"))
 
     record = {
         "schema": SCHEMA,
@@ -461,13 +496,14 @@ def cmd_run(opts):
             "gpus": gpus(),
         },
         "toolchain": toolchain(),
-        "builds": [{k: v for k, v in b.items() if k not in ("backends", "presets")} for b in built],
+        "builds": [{k: v for k, v in b.items() if k not in ("backends", "presets", "libm", "blas")} for b in built],
         "method": {
+            "suites": suites,
             "warmup": opts.warmup,
             "iterations": opts.iters,
             "rayon_threads": threads,
-            "timed_region": "one bootstrap call, followed by a device synchronization",
-            "excluded": "setup (context compilation, key generation and preparation, encryption, one checking bootstrap), reported as setup_ns, and decryption",
+            "timed_region": "one bootstrap, libm function or blas operation call, followed by a device synchronization",
+            "excluded": "setup (context compilation, plans, key generation and preparation, encryption, one checking call), reported as setup_ns, and decryption",
             "statistics": "latency is the median of the timed iterations, spread is the median absolute deviation over the median",
             "process": "one process per measurement, run sequentially",
             "load_average_start": os.getloadavg(),
@@ -478,13 +514,14 @@ def cmd_run(opts):
     write(out, record)
 
     env = dict(os.environ, RAYON_NUM_THREADS=str(threads))
-    for index, (b, backend, preset, pow2, mode) in enumerate(jobs, 1):
-        rid = result_id(backend["backend"], preset, pow2, mode)
+    for index, (b, backend, suite, case, pow2, mode) in enumerate(jobs, 1):
+        rid = result_id(backend["backend"], suite, case, pow2, mode)
         if rid in previous:
             record["results"].append(previous[rid])
             print(f"[{index}/{len(jobs)}] {rid}: kept from {out}")
             continue
-        args = ["--backend", backend["backend"], "--preset", preset, "--warmup", str(opts.warmup), "--iters", str(opts.iters)]
+        flag = {"bootstrapping": "--preset", "libm": "--libm", "blas": "--blas"}[suite]
+        args = ["--backend", backend["backend"], flag, case, "--warmup", str(opts.warmup), "--iters", str(opts.iters)]
         args += ["--pow2"] if pow2 else []
         args += ["--replay"] if mode == "replay" else []
         args += ["--device", str(opts.device)] if opts.device is not None and backend["parallelism"] == "device" else []
@@ -499,10 +536,14 @@ def cmd_run(opts):
             entry.update(measured)
             entry["timing"] = timing_stats(measured["samples_ns"])
             median = entry["timing"]["median_ns"] / 1e6
-            flag = "" if measured["precision"]["meets_advertised"] else "  BELOW ADVERTISED PRECISION"
+            flag = "" if meets(entry) else "  BELOW TARGET PRECISION"
             print(f"median {median:.1f} ms, spread {entry['timing']['spread']:.2%}{flag}")
         else:
-            entry.update({"backend": backend, "mode": mode, "preset": {"name": preset, "pow2_keys": pow2}, "error": error})
+            entry.update({"suite": suite, "backend": backend, "mode": mode, "error": error})
+            if suite == "bootstrapping":
+                entry["preset"] = {"name": case, "pow2_keys": pow2}
+            else:
+                entry[suite] = {"case": case}
             print(f"FAILED: {error.splitlines()[0] if error else ''}")
         record["results"].append(entry)
         derive(record["results"])
@@ -513,7 +554,7 @@ def cmd_run(opts):
     write(out, record)
     failed = [r["id"] for r in record["results"] if r["status"] == "error"]
     unavailable = [r["id"] for r in record["results"] if r["status"] == "unavailable"]
-    low = [r["id"] for r in record["results"] if r["status"] == "ok" and not r["precision"]["meets_advertised"]]
+    low = [r["id"] for r in record["results"] if r["status"] == "ok" and not meets(r)]
     measured = len(record["results"]) - len(failed) - len(unavailable)
     print(f"wrote {out}: {measured} measured, {len(failed)} failed, {len(unavailable)} without graph replay")
     for rid in failed:
@@ -521,7 +562,7 @@ def cmd_run(opts):
     for rid in unavailable:
         print(f"  no graph replay: {rid}")
     for rid in low:
-        print(f"  below advertised precision: {rid}")
+        print(f"  below target precision: {rid}")
 
 
 def cmd_merge(opts):
@@ -549,7 +590,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
 
-    run = sub.add_parser("run", help="measure the release presets on this host")
+    run = sub.add_parser("run", help="measure the release benchmarks on this host")
     run.add_argument("--label", help="name of this host in the record (default: hostname)")
     run.add_argument("--out", help="output file (default: target/release-bench/<label>-<commit>.json)")
     run.add_argument("--warmup", type=int, default=3)
@@ -559,7 +600,10 @@ def main():
     run.add_argument("--device", type=int, help="index of the GPU among those of its runtime")
     run.add_argument("--no-replay", action="store_true", help="skip the replayed GPU measurements")
     run.add_argument("--backends", nargs="+", help="only these backends")
-    run.add_argument("--presets", nargs="+", help="only these presets")
+    run.add_argument("--suites", nargs="+", choices=SUITES, help="only these suites (default: all)")
+    run.add_argument("--presets", nargs="+", help="only these bootstrapping presets")
+    run.add_argument("--libm", nargs="+", help="only these libm cases")
+    run.add_argument("--blas", nargs="+", help="only these blas cases")
     run.add_argument("--pow2", choices=["both", "on", "off"], default="both", help="power-of-two rotation keys")
     run.add_argument("--timeout", type=int, help="seconds before a measurement is killed")
     run.add_argument("--resume", action="store_true", help="keep the measurements already in --out")

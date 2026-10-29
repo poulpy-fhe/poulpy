@@ -47,7 +47,7 @@ use poulpy_hal::{
     source::Source,
 };
 
-use crate::{backend_name, blas::params::BlasBenchParams, timed};
+use crate::{Call, backend_name, blas::params::BlasBenchParams, timed};
 
 /// Secret-key Hamming weight.
 const HW: usize = 192;
@@ -85,7 +85,7 @@ fn key_shape(bp: &BlasBenchParams) -> (TorusPrecision, Dnum, TorusPrecision) {
     (k_digit, dnum, TorusPrecision(k_digit.0 + bp.n.ilog2()))
 }
 
-pub(super) fn atk_layout(bp: &BlasBenchParams) -> GLWEAutomorphismKeyLayout {
+pub fn atk_layout(bp: &BlasBenchParams) -> GLWEAutomorphismKeyLayout {
     let (k_digit, dnum, k_aux) = key_shape(bp);
     GLWEAutomorphismKeyLayout {
         n: Degree(bp.n as u32),
@@ -97,7 +97,7 @@ pub(super) fn atk_layout(bp: &BlasBenchParams) -> GLWEAutomorphismKeyLayout {
     }
 }
 
-fn tsk_layout(bp: &BlasBenchParams) -> GLWETensorKeyLayout {
+pub fn tsk_layout(bp: &BlasBenchParams) -> GLWETensorKeyLayout {
     let (k_digit, dnum, k_aux) = key_shape(bp);
     GLWETensorKeyLayout {
         n: Degree(bp.n as u32),
@@ -145,20 +145,70 @@ pub fn error_bound(bp: &BlasBenchParams) -> f64 {
     (7.0 - bp.log_delta as f64).exp2() * ((bp.n * bp.d()) as f64).sqrt()
 }
 
-/// Prints the error of a runner's first call and asserts it within [`error_bound`].
-pub(super) fn verify<BE>(op: &str, bp: &BlasBenchParams, max_err: f64, max_base2k: Option<usize>, keys: usize) {
+/// What the first call of a point showed: its error against the cleartext and the bound it met, the radix the lazy sums
+/// of its operation allow, the rotation keys it holds, the budget its operation consumed and the budget its result keeps.
+pub struct BlasCheck {
+    pub max_err: f64,
+    pub bound: f64,
+    pub max_base2k: Option<usize>,
+    pub keys: usize,
+    pub consumed_bits: usize,
+    pub output_log_budget: usize,
+}
+
+/// A built point: one call of its operation, and the check of its first call.
+pub struct BlasPoint {
+    pub call: Call,
+    pub check: BlasCheck,
+}
+
+impl BlasPoint {
+    /// Prints the check, as the Criterion runners report it, and returns the call.
+    pub(super) fn reported<BE>(self, op: &str, bp: &BlasBenchParams) -> Call {
+        let check = &self.check;
+        println!(
+            "PRECISION backend={} op={op} params={bp} max_err={:.3e} ({:.1} bits) bound={:.3e} ({:.1} bits) max_base2k={} keys={}",
+            backend_name::<BE>(),
+            check.max_err,
+            -check.max_err.log2(),
+            check.bound,
+            -check.bound.log2(),
+            check.max_base2k.map_or_else(|| "-".to_string(), |max| max.to_string()),
+            check.keys,
+        );
+        self.call
+    }
+}
+
+/// The budget of the one block of a grid.
+pub(super) fn log_budget<BE: Backend>(ct: &BlasCiphertextOwned<BE>) -> usize {
+    ct.blocks()[0].log_budget()
+}
+
+/// Asserts the error of a point's first call within [`error_bound`] and records its check, the consumed budget being
+/// what `res` holds less than the input's `input_log_budget`.
+pub(super) fn verify<BE: Backend>(
+    op: &str,
+    bp: &BlasBenchParams,
+    max_err: f64,
+    max_base2k: Option<usize>,
+    keys: usize,
+    input_log_budget: usize,
+    res: &BlasCiphertextOwned<BE>,
+) -> BlasCheck {
     let bound = error_bound(bp);
-    println!(
-        "PRECISION backend={} op={op} params={bp} max_err={max_err:.3e} ({:.1} bits) bound={bound:.3e} ({:.1} bits) max_base2k={} keys={keys}",
-        backend_name::<BE>(),
-        -max_err.log2(),
-        -bound.log2(),
-        max_base2k.map_or_else(|| "-".to_string(), |max| max.to_string()),
-    );
     assert!(
         max_err <= bound,
         "{op}: the first call deviates from the cleartext beyond the error bound"
     );
+    BlasCheck {
+        max_err,
+        bound,
+        max_base2k,
+        keys,
+        consumed_bits: input_log_budget - log_budget::<BE>(res),
+        output_log_budget: log_budget::<BE>(res),
+    }
 }
 
 /// What a runner asks of a module beyond the operation itself: the key generation, encryption and decryption of
@@ -356,6 +406,37 @@ where
     }
 }
 
+/// The point of `blas_transpose` of a grid of `batch` matrices.
+pub fn point_blas_transpose<BE>(bp: &BlasBenchParams) -> BlasPoint
+where
+    BE: Backend<Ring = Standard> + 'static + BlasMatIntraImpl,
+    Module<BE>: BlasBenchModule<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let mut client = Client::<BE>::new(bp);
+    let ctx = client.context(bp);
+    let ct_a = client.encrypt(bp, bp.batch(), a_entry);
+    let order = client.module.cyclotomic_order();
+    let atks = client.rotation_keys(bp, BlasPlan::new(bp.log_d).transpose_galois_elements(order));
+    let mut res = client.result(bp);
+    let mut scratch = ScratchOwned::<BE>::alloc(client.module.blas_transpose_tmp_bytes(&res, &ct_a, &ctx, &atk_layout(bp)));
+    client
+        .module
+        .blas_transpose(&mut res, &ct_a, &ctx, &atks, &mut scratch.borrow())
+        .unwrap();
+    let max_err = client.max_error(bp, &res, |s, r, c| a_entry(s, c, r));
+    let check = verify::<BE>("blas_transpose", bp, max_err, None, atks.len(), log_budget::<BE>(&ct_a), &res);
+    let module = client.module;
+    BlasPoint {
+        call: Box::new(move || {
+            module
+                .blas_transpose(&mut res, &ct_a, &ctx, &atks, &mut scratch.borrow())
+                .unwrap()
+        }),
+        check,
+    }
+}
+
 /// `blas_transpose` of a grid of `batch` matrices.
 pub fn runner_blas_transpose<BE, M>(bencher: &mut Bencher<'_, M>, bp: &BlasBenchParams)
 where
@@ -365,30 +446,72 @@ where
     M: Measurement,
 {
     timed::<BE, M, _>(bencher, "blas_transpose", bp, || {
-        let mut client = Client::<BE>::new(bp);
-        let ctx = client.context(bp);
-        let ct_a = client.encrypt(bp, bp.batch(), a_entry);
-        let order = client.module.cyclotomic_order();
-        let atks = client.rotation_keys(bp, BlasPlan::new(bp.log_d).transpose_galois_elements(order));
-        let mut res = client.result(bp);
-        let mut scratch = ScratchOwned::<BE>::alloc(client.module.blas_transpose_tmp_bytes(&res, &ct_a, &ctx, &atk_layout(bp)));
-        client
-            .module
-            .blas_transpose(&mut res, &ct_a, &ctx, &atks, &mut scratch.borrow())
-            .unwrap();
-        let max_err = client.max_error(bp, &res, |s, r, c| a_entry(s, c, r));
-        verify::<BE>("blas_transpose", bp, max_err, None, atks.len());
-        let module = client.module;
-        Box::new(move || {
-            module
-                .blas_transpose(&mut res, &ct_a, &ctx, &atks, &mut scratch.borrow())
-                .unwrap()
-        })
+        point_blas_transpose::<BE>(bp).reported::<BE>("blas_transpose", bp)
     });
 }
 
-/// `blas_matmul` of `bp.batch()` matrices by as many distinct matrices on the right (`dense`), or by one matrix whose
-/// compact encryption proves it, so that the right factor takes the replicated maps.
+/// The point of `blas_matmul` of `bp.batch()` matrices by as many distinct matrices on the right (`dense`), or by one
+/// matrix whose compact encryption proves it, so that the right factor takes the replicated maps.
+pub fn point_blas_matmul<BE>(bp: &BlasBenchParams, dense: bool) -> BlasPoint
+where
+    BE: Backend<Ring = Standard> + 'static + BlasMatMulImpl + MaxBase2k,
+    Module<BE>: BlasBenchModule<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let mut client = Client::<BE>::new(bp);
+    let ctx = client.context(bp);
+    let right = if dense { bp.batch() } else { 1 };
+    let ct_a = client.encrypt(bp, bp.batch(), a_entry);
+    let ct_b = client.encrypt(bp, right, b_entry(bp.d()));
+    assert!(
+        replicated::<Standard>(&ct_b) != dense,
+        "blas_matmul: the right factor is not the one the runner names"
+    );
+    let max_base2k = blas_matmul_max_base2k::<BE>(&ct_a, &ct_b, &ctx, FAILURE_BITS);
+    assert!(
+        max_base2k >= bp.base2k,
+        "blas_matmul: base2k exceeds the radix its lazy sums allow at 128 failure bits"
+    );
+    let order = client.module.cyclotomic_order();
+    let atks = client.rotation_keys(bp, BlasPlan::new(bp.log_d).matmul_galois_elements(order));
+    let tsk = client.tensor_key(bp);
+    let mut res = client.result(bp);
+    let mut scratch = ScratchOwned::<BE>::alloc(client.module.blas_matmul_tmp_bytes(
+        &res,
+        &ct_a,
+        &ct_b,
+        &ctx,
+        &tsk_layout(bp),
+        &atk_layout(bp),
+    ));
+    client
+        .module
+        .blas_matmul(&mut res, &ct_a, &ct_b, &ctx, &tsk, &atks, &mut scratch.borrow())
+        .unwrap();
+    let b = b_entry(bp.d());
+    let max_err = client.max_error(bp, &res, |s, r, c| {
+        (0..bp.d()).map(|l| a_entry(s, r, l) * b(s % right, l, c)).sum()
+    });
+    let check = verify::<BE>(
+        "blas_matmul",
+        bp,
+        max_err,
+        Some(max_base2k),
+        atks.len(),
+        log_budget::<BE>(&ct_a),
+        &res,
+    );
+    let module = client.module;
+    BlasPoint {
+        call: Box::new(move || {
+            module
+                .blas_matmul(&mut res, &ct_a, &ct_b, &ctx, &tsk, &atks, &mut scratch.borrow())
+                .unwrap()
+        }),
+        check,
+    }
+}
+
 fn matmul<BE, M>(bencher: &mut Bencher<'_, M>, bp: &BlasBenchParams, op: &'static str, dense: bool)
 where
     BE: Backend<Ring = Standard> + 'static + BlasMatMulImpl + MaxBase2k,
@@ -396,49 +519,7 @@ where
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     M: Measurement,
 {
-    timed::<BE, M, _>(bencher, op, bp, || {
-        let mut client = Client::<BE>::new(bp);
-        let ctx = client.context(bp);
-        let right = if dense { bp.batch() } else { 1 };
-        let ct_a = client.encrypt(bp, bp.batch(), a_entry);
-        let ct_b = client.encrypt(bp, right, b_entry(bp.d()));
-        assert!(
-            replicated::<Standard>(&ct_b) != dense,
-            "blas_matmul: the right factor is not the one the runner names"
-        );
-        let max_base2k = blas_matmul_max_base2k::<BE>(&ct_a, &ct_b, &ctx, FAILURE_BITS);
-        assert!(
-            max_base2k >= bp.base2k,
-            "blas_matmul: base2k exceeds the radix its lazy sums allow at 128 failure bits"
-        );
-        let order = client.module.cyclotomic_order();
-        let atks = client.rotation_keys(bp, BlasPlan::new(bp.log_d).matmul_galois_elements(order));
-        let tsk = client.tensor_key(bp);
-        let mut res = client.result(bp);
-        let mut scratch = ScratchOwned::<BE>::alloc(client.module.blas_matmul_tmp_bytes(
-            &res,
-            &ct_a,
-            &ct_b,
-            &ctx,
-            &tsk_layout(bp),
-            &atk_layout(bp),
-        ));
-        client
-            .module
-            .blas_matmul(&mut res, &ct_a, &ct_b, &ctx, &tsk, &atks, &mut scratch.borrow())
-            .unwrap();
-        let b = b_entry(bp.d());
-        let max_err = client.max_error(bp, &res, |s, r, c| {
-            (0..bp.d()).map(|l| a_entry(s, r, l) * b(s % right, l, c)).sum()
-        });
-        verify::<BE>(op, bp, max_err, Some(max_base2k), atks.len());
-        let module = client.module;
-        Box::new(move || {
-            module
-                .blas_matmul(&mut res, &ct_a, &ct_b, &ctx, &tsk, &atks, &mut scratch.borrow())
-                .unwrap()
-        })
-    });
+    timed::<BE, M, _>(bencher, op, bp, || point_blas_matmul::<BE>(bp, dense).reported::<BE>(op, bp));
 }
 
 /// `blas_matmul` with a dense right factor, distinct matrices per matrix slot: needs `bp.batch() > 1`.
@@ -463,7 +544,55 @@ where
     matmul::<BE, M>(bencher, bp, "blas_matmul_replicated", false);
 }
 
-/// `blas_matmul_pt_right` by the public matrix under `algorithm`.
+/// The point of `blas_matmul_pt_right` by the public matrix under `algorithm`.
+pub fn point_blas_matmul_pt_right<BE>(bp: &BlasBenchParams, algorithm: BlasPtAlgorithm) -> BlasPoint
+where
+    BE: Backend<Ring = Standard> + 'static + BlasMatMulImpl + MaxBase2k,
+    Module<BE>: BlasBenchModule<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let mut client = Client::<BE>::new(bp);
+    let pt = client.public::<Right>(bp, algorithm);
+    let ctx = client.context(bp);
+    let ct_a = client.encrypt(bp, bp.batch(), a_entry);
+    let max_base2k = blas_matmul_pt_right_max_base2k::<BE>(&ct_a, &pt, &ctx, FAILURE_BITS);
+    assert!(
+        max_base2k >= bp.base2k,
+        "blas_matmul_pt_right: base2k exceeds the radix its lazy sums allow at 128 failure bits"
+    );
+    let order = client.module.cyclotomic_order();
+    let atks = client.rotation_keys(bp, BlasPlan::new(bp.log_d).matmul_pt_right_galois_elements(order));
+    let mut res = client.result(bp);
+    let bytes = client
+        .module
+        .blas_matmul_pt_right_tmp_bytes(&res, &ct_a, &pt, &ctx, &atk_layout(bp));
+    let mut scratch = ScratchOwned::<BE>::alloc(bytes);
+    client
+        .module
+        .blas_matmul_pt_right(&mut res, &ct_a, &pt, &ctx, &atks, &mut scratch.borrow())
+        .unwrap();
+    let p = p_entry(bp.d());
+    let max_err = client.max_error(bp, &res, |s, r, c| (0..bp.d()).map(|l| a_entry(s, r, l) * p(0, l, c)).sum());
+    let check = verify::<BE>(
+        "blas_matmul_pt_right",
+        bp,
+        max_err,
+        Some(max_base2k),
+        atks.len(),
+        log_budget::<BE>(&ct_a),
+        &res,
+    );
+    let module = client.module;
+    BlasPoint {
+        call: Box::new(move || {
+            module
+                .blas_matmul_pt_right(&mut res, &ct_a, &pt, &ctx, &atks, &mut scratch.borrow())
+                .unwrap()
+        }),
+        check,
+    }
+}
+
 fn pt_right<BE, M>(bencher: &mut Bencher<'_, M>, bp: &BlasBenchParams, op: &'static str, algorithm: BlasPtAlgorithm)
 where
     BE: Backend<Ring = Standard> + 'static + BlasMatMulImpl + MaxBase2k,
@@ -472,35 +601,7 @@ where
     M: Measurement,
 {
     timed::<BE, M, _>(bencher, op, bp, || {
-        let mut client = Client::<BE>::new(bp);
-        let pt = client.public::<Right>(bp, algorithm);
-        let ctx = client.context(bp);
-        let ct_a = client.encrypt(bp, bp.batch(), a_entry);
-        let max_base2k = blas_matmul_pt_right_max_base2k::<BE>(&ct_a, &pt, &ctx, FAILURE_BITS);
-        assert!(
-            max_base2k >= bp.base2k,
-            "blas_matmul_pt_right: base2k exceeds the radix its lazy sums allow at 128 failure bits"
-        );
-        let order = client.module.cyclotomic_order();
-        let atks = client.rotation_keys(bp, BlasPlan::new(bp.log_d).matmul_pt_right_galois_elements(order));
-        let mut res = client.result(bp);
-        let bytes = client
-            .module
-            .blas_matmul_pt_right_tmp_bytes(&res, &ct_a, &pt, &ctx, &atk_layout(bp));
-        let mut scratch = ScratchOwned::<BE>::alloc(bytes);
-        client
-            .module
-            .blas_matmul_pt_right(&mut res, &ct_a, &pt, &ctx, &atks, &mut scratch.borrow())
-            .unwrap();
-        let p = p_entry(bp.d());
-        let max_err = client.max_error(bp, &res, |s, r, c| (0..bp.d()).map(|l| a_entry(s, r, l) * p(0, l, c)).sum());
-        verify::<BE>(op, bp, max_err, Some(max_base2k), atks.len());
-        let module = client.module;
-        Box::new(move || {
-            module
-                .blas_matmul_pt_right(&mut res, &ct_a, &pt, &ctx, &atks, &mut scratch.borrow())
-                .unwrap()
-        })
+        point_blas_matmul_pt_right::<BE>(bp, algorithm).reported::<BE>(op, bp)
     });
 }
 
@@ -557,13 +658,17 @@ where
             .unwrap();
         let p = p_entry(bp.d());
         let max_err = client.max_error(bp, &res, |s, r, c| (0..bp.d()).map(|l| p(0, r, l) * a_entry(s, l, c)).sum());
-        verify::<BE>(op, bp, max_err, Some(max_base2k), atks.len());
+        let check = verify::<BE>(op, bp, max_err, Some(max_base2k), atks.len(), log_budget::<BE>(&ct_a), &res);
         let module = client.module;
-        Box::new(move || {
-            module
-                .blas_matmul_pt_left(&mut res, &pt, &ct_a, &ctx, &atks, &mut scratch.borrow())
-                .unwrap()
-        })
+        BlasPoint {
+            call: Box::new(move || {
+                module
+                    .blas_matmul_pt_left(&mut res, &pt, &ct_a, &ctx, &atks, &mut scratch.borrow())
+                    .unwrap()
+            }),
+            check,
+        }
+        .reported::<BE>(op, bp)
     });
 }
 

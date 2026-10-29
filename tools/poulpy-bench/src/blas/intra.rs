@@ -13,12 +13,70 @@ use poulpy_hal::{
     layouts::{Backend, Module, ScratchOwned, Standard},
 };
 
-use super::matmul::{BlasBenchModule, Client, a_entry, atk_layout, b_entry, verify};
+use super::matmul::{BlasBenchModule, BlasPoint, Client, a_entry, atk_layout, b_entry, log_budget, verify};
 use crate::{blas::params::BlasBenchParams, timed};
 
-/// `blas_sum_rows` (`rows`) or `blas_sum_cols` of `matrices` matrices, `bp.batch()` distinct ones or one whose compact
+/// The point of `blas_sum_rows` (`rows`) or `blas_sum_cols` of `matrices` matrices, `bp.batch()` distinct ones or one whose compact
 /// encryption proves it, which sums its rows without the projection. Their entries lie in `[-1/d, 1/d)`, so that the
 /// sums stay in `[-1, 1)`.
+pub fn point_blas_reduction<BE>(bp: &BlasBenchParams, op: &'static str, rows: bool, matrices: usize) -> BlasPoint
+where
+    BE: Backend<Ring = Standard> + 'static + BlasMatIntraImpl,
+    Module<BE>: BlasBenchModule<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let mut client = Client::<BE>::new(bp);
+    let ctx = client.context(bp);
+    let entry = b_entry(bp.d());
+    let ct_a = client.encrypt(bp, matrices, &entry);
+    assert!(
+        replicated::<Standard>(&ct_a) == (matrices == 1),
+        "{op}: the grid is not the one the runner names"
+    );
+    let mut res = client.result(bp);
+    // The keys of the path the grid's label selects, without the broadcast's on a replicated grid.
+    let uses = if rows {
+        blas_sum_rows_key_uses(&client.module, &res, &ct_a, &ctx)
+    } else {
+        blas_sum_cols_key_uses(&client.module, &res, &ct_a, &ctx)
+    };
+    let atks = client.rotation_keys(bp, elements_of(&uses));
+    let atk = atk_layout(bp);
+    let bytes = if rows {
+        client.module.blas_sum_rows_tmp_bytes(&res, &ct_a, &ctx, &atk)
+    } else {
+        client.module.blas_sum_cols_tmp_bytes(&res, &ct_a, &ctx, &atk)
+    };
+    let mut scratch = ScratchOwned::<BE>::alloc(bytes);
+    let keys = atks.len();
+    let input_log_budget = log_budget::<BE>(&ct_a);
+    let call = move |module: &Module<BE>, res: &mut BlasCiphertextOwned<BE>, scratch: &mut ScratchOwned<BE>| {
+        if rows {
+            module.blas_sum_rows(res, &ct_a, &ctx, &atks, &mut scratch.borrow()).unwrap()
+        } else {
+            module.blas_sum_cols(res, &ct_a, &ctx, &atks, &mut scratch.borrow()).unwrap()
+        }
+    };
+    call(&client.module, &mut res, &mut scratch);
+    let max_err = client.max_error(bp, &res, |s, r, c| {
+        (0..bp.d())
+            .map(|l| {
+                if rows {
+                    entry(s % matrices, l, c)
+                } else {
+                    entry(s % matrices, r, l)
+                }
+            })
+            .sum()
+    });
+    let check = verify::<BE>(op, bp, max_err, None, keys, input_log_budget, &res);
+    let module = client.module;
+    BlasPoint {
+        call: Box::new(move || call(&module, &mut res, &mut scratch)),
+        check,
+    }
+}
+
 fn reduction<BE, M>(bencher: &mut Bencher<'_, M>, bp: &BlasBenchParams, op: &'static str, rows: bool, matrices: usize)
 where
     BE: Backend<Ring = Standard> + 'static + BlasMatIntraImpl,
@@ -27,52 +85,7 @@ where
     M: Measurement,
 {
     timed::<BE, M, _>(bencher, op, bp, || {
-        let mut client = Client::<BE>::new(bp);
-        let ctx = client.context(bp);
-        let entry = b_entry(bp.d());
-        let ct_a = client.encrypt(bp, matrices, &entry);
-        assert!(
-            replicated::<Standard>(&ct_a) == (matrices == 1),
-            "{op}: the grid is not the one the runner names"
-        );
-        let mut res = client.result(bp);
-        // The keys of the path the grid's label selects, without the broadcast's on a replicated grid.
-        let uses = if rows {
-            blas_sum_rows_key_uses(&client.module, &res, &ct_a, &ctx)
-        } else {
-            blas_sum_cols_key_uses(&client.module, &res, &ct_a, &ctx)
-        };
-        let atks = client.rotation_keys(bp, elements_of(&uses));
-        let atk = atk_layout(bp);
-        let bytes = if rows {
-            client.module.blas_sum_rows_tmp_bytes(&res, &ct_a, &ctx, &atk)
-        } else {
-            client.module.blas_sum_cols_tmp_bytes(&res, &ct_a, &ctx, &atk)
-        };
-        let mut scratch = ScratchOwned::<BE>::alloc(bytes);
-        let keys = atks.len();
-        let call = move |module: &Module<BE>, res: &mut BlasCiphertextOwned<BE>, scratch: &mut ScratchOwned<BE>| {
-            if rows {
-                module.blas_sum_rows(res, &ct_a, &ctx, &atks, &mut scratch.borrow()).unwrap()
-            } else {
-                module.blas_sum_cols(res, &ct_a, &ctx, &atks, &mut scratch.borrow()).unwrap()
-            }
-        };
-        call(&client.module, &mut res, &mut scratch);
-        let max_err = client.max_error(bp, &res, |s, r, c| {
-            (0..bp.d())
-                .map(|l| {
-                    if rows {
-                        entry(s % matrices, l, c)
-                    } else {
-                        entry(s % matrices, r, l)
-                    }
-                })
-                .sum()
-        });
-        verify::<BE>(op, bp, max_err, None, keys);
-        let module = client.module;
-        Box::new(move || call(&module, &mut res, &mut scratch))
+        point_blas_reduction::<BE>(bp, op, rows, matrices).reported::<BE>(op, bp)
     });
 }
 
@@ -139,12 +152,16 @@ where
             .unwrap();
         let d = bp.d();
         let max_err = client.max_error(bp, &res, |_, r, c| a_entry(0, (r + 1) % d, c));
-        verify::<BE>(op, bp, max_err, None, atks.len());
+        let check = verify::<BE>(op, bp, max_err, None, atks.len(), log_budget::<BE>(&ct_a), &res);
         let module = client.module;
-        Box::new(move || {
-            module
-                .blas_rotate_rows(&mut res, &ct_a, 1, &ctx, &atks, &mut scratch.borrow())
-                .unwrap()
-        })
+        BlasPoint {
+            call: Box::new(move || {
+                module
+                    .blas_rotate_rows(&mut res, &ct_a, 1, &ctx, &atks, &mut scratch.borrow())
+                    .unwrap()
+            }),
+            check,
+        }
+        .reported::<BE>(op, bp)
     });
 }

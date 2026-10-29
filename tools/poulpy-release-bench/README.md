@@ -1,17 +1,25 @@
 # poulpy-release-bench
 
-Release measurements of the CKKS bootstrapping presets, for the published benchmark tables.
+Release measurements of the CKKS bootstrapping presets, of `poulpy-libm` functions and of `poulpy-blas` operations, for the published benchmark tables.
 It is driven by [`tools/release_bench.py`](../release_bench.py), which builds this binary, runs it and writes the record of a host.
 
 ```sh
 # On every machine of the release, from the repository root
 python3 tools/release_bench.py run --label ryzen-9950x
 
+# One or two suites only
+python3 tools/release_bench.py run --label ryzen-9950x --suites libm blas
+
 # Then on one of them
 python3 tools/release_bench.py merge release.json ryzen-9950x.json m5-pro.json
 ```
 
 ## What is measured
+
+Three suites, each selected with `--suites` (all by default): `bootstrapping`, `libm` and `blas`.
+Every measurement reports its parameters, its modulus, its setup time, the time of every warm-up and timed call, and the precision of its output.
+
+### Bootstrapping
 
 The release set is three presets at `N = 2^16`: `n16_d35_k636_p20_c2s`, `n16_d35_k733_p20_s2c` and the fastest, `n16_d35_k685_p19_s2c_ffr_ci`.
 Each one is measured with the rotation keys the preset derives and with power-of-two rotation keys (`pow2_keys` in the record), at the radix `preset_for_backend` selects for a failure probability of `2^-128`.
@@ -23,6 +31,46 @@ The GPU backends are also measured with the bootstrap recorded once as a graph a
 On a runtime that records no graph, that row has `status: "unavailable"` and the direct measurement stands.
 A graph dropped during the iterations fails the row rather than mixing replayed and direct timings.
 A precision below the one the preset advertises is reported, not fatal.
+
+### libm
+
+One ciphertext at `N = 2^16`, `base2k = 52`, a scale of `2^50`, every slot holding a value of the domain.
+At `2^40` the noise caps the results near 21 bits relative to the largest output, below the targets of `rsqrt_r256` and `inv_r256`.
+
+| Case | Function | Domain | Target |
+|---|---|---|---|
+| `rsqrt_r16` | `ckks_rsqrt` | [1/16, 1] | 20 bits |
+| `rsqrt_r256` | `ckks_rsqrt` | [1/256, 1] | 20 bits |
+| `softmax_b20` | `ckks_softmax` | [-1, 1] | 20 bits |
+| `inv_r256` | `ckks_inverse_positive_domain` | [1/256, 1] | 20 bits |
+
+Targets are absolute-error bits, as libm's options count them.
+`ckks_rsqrt` only refines an estimate, so the rsqrt cases evaluate a minimax seed of `1/sqrt(x)` first, then Newton steps: the seed and step count of least depth that reach the target, both in the record.
+The inverse runs in place, so its timed call starts with a copy of the input.
+The ciphertext is as wide as the function consumes plus `2 log_delta` of headroom and two limbs of guard, rounded up to a limb.
+Keys use digits of 4 limbs, which keeps a softmax point, with its tensor key and 15 rotation keys, under 6 GB.
+
+### blas
+
+One `d x d` block per operand at `N = 2^16`, so a ciphertext holds `2^15 / d^2` matrices, each of distinct entries.
+The points are the ones of the poulpy-bench sweep (`base2k = 52`, `k = 208`, entries at scale `2^40`, maps and public matrices at `2^40`), built by its point builders.
+
+| Op | d = 32 (32 matrices) | d = 64 (8 matrices) | d = 128 (2 matrices) |
+|---|---|---|---|
+| `blas_matmul` (ct x ct) | `matmul_d32` | `matmul_d64` | `matmul_d128` |
+| `blas_matmul_pt_right` (Jkls) | `matmul_pt_right_d32` | `matmul_pt_right_d64` | `matmul_pt_right_d128` |
+| `blas_transpose` | `transpose_d32` | `transpose_d64` | `transpose_d128` |
+| `blas_sum_rows` | `sum_rows_d32` | `sum_rows_d64` | `sum_rows_d128` |
+
+A builder checks the radix against the lazy sums of its operation and the first result against the error bound of poulpy-bench, then the same call is timed.
+The record also gives the time per matrix.
+
+The libm and blas suites run on the CPU backends only: the GPU backend has no blas implementation, and libm on it is not measured.
+
+### Modulus
+
+A libm or blas record reports, under `modulus`, the width of a fresh ciphertext (`log_q`), the bits its operation consumed, the budget left in its output, and the key layout: its full width (`key_log_qp`), digit size, digit count and guard.
+A bootstrapping record reports its preset's moduli under `preset`.
 
 ## Builds
 
@@ -39,6 +87,7 @@ The driver builds this crate once per set of target flags, each in its own targe
 A build is skipped when the host lacks its instruction sets.
 The GPU feature is `metal` on Apple Silicon, `cuda` when `nvcc` is found, `hip` when ROCm is.
 `--gpu` overrides it and `--gpu none` skips it.
+It is left out when the bootstrapping suite is not selected.
 The GPU backends use `NTT4x30Portable` as the client that generates the keys and encrypts.
 
 Rayon backends run on 16 threads on x86 and on every thread on ARM, capped at what the host has (`--threads` overrides).
@@ -57,7 +106,9 @@ cargo metadata --format-version 1 --manifest-path tools/poulpy-release-bench/Car
 ```sh
 poulpy-release-bench list
 poulpy-release-bench run --backend NTT4x30NeonRayon --preset n16_d35_k733_p20_s2c [--pow2] [--replay] [--warmup 3] [--iters 20] [--device 0]
+poulpy-release-bench run --backend NTT4x30NeonRayon --libm rsqrt_r16 [--warmup 3] [--iters 20]
+poulpy-release-bench run --backend NTT4x30NeonRayon --blas matmul_d64 [--warmup 3] [--iters 20]
 ```
 
-`list` prints the backends of the build and the release presets.
-`run` prints one JSON object: the backend, its crate and features, the thread count, the preset and its parameters, the setup time, the time of every warm-up and timed iteration, and the precision of the real and imaginary parts.
+`list` prints the backends of the build with the suites each one runs, the release presets and the libm and blas cases.
+`run` prints one JSON object: the suite, the backend, its crate and features, the thread count, the preset or case and its parameters, the modulus of a case, the setup time, the time of every warm-up and timed iteration, and the precision.
