@@ -13,10 +13,7 @@ use std::time::Instant;
 use anyhow::{Result, bail};
 use poulpy_bench::blas::{
     intra::point_blas_reduction,
-    matmul::{
-        BlasClientModule, BlasEvalModule, BlasPoint, atk_layout, point_blas_matmul, point_blas_matmul_pt_right,
-        point_blas_transpose, tsk_layout,
-    },
+    matmul::{BlasClientModule, BlasEvalModule, BlasPoint, point_blas_matmul, point_blas_matmul_pt_right, point_blas_transpose},
     params::BlasBenchParams,
 };
 use poulpy_blas::{
@@ -119,8 +116,7 @@ where
     let setup_ns = start.elapsed().as_nanos() as u64;
     let timings = direct(&mut call, &|| {}, args.warmup, args.iters)?.expect("direct timing is always available");
 
-    let key = atk_layout(&bp);
-    let tensor_key = matches!(op, Op::Matmul).then(|| tsk_layout(&bp).k().as_usize());
+    let key = &check.key_layout;
     Ok(json!({
         "blas": {
             "case": args.case,
@@ -134,7 +130,7 @@ where
             "log_delta": bp.log_delta,
             "p": bp.p,
             "rotation_keys": check.keys,
-            "tensor_key": tensor_key.is_some(),
+            "tensor_key": matches!(op, Op::Matmul),
             "max_base2k": check.max_base2k,
         },
         "modulus": {

@@ -240,11 +240,12 @@ fn rsqrt_seed(min: f64) -> Result<(DegreeChoice<f64>, usize)> {
     best.ok_or_else(|| anyhow::anyhow!("rsqrt: no seed of degree at most {MAX_SEED_DEGREE} on [{min}, 1]"))
 }
 
-/// Goldschmidt iterations for [`TARGET_BITS`] of absolute error on `[min, 1]`: `i` iterations leave a relative error of
-/// `(1 - x)^(2^i)`, largest at `min`, where the result is `1/min`.
+/// Goldschmidt iterations for [`TARGET_BITS`] of absolute error on `[min, 1]`: libm starts from `a = 2 - x` and
+/// `b = 1 - x`, and each iteration squares `b` and adds `a b` to `a`, so `i` iterations leave a relative error of
+/// `(1 - x)^(2^(i + 1))`, largest at `min`, where the result is `1/min`.
 fn inverse_iters(min: f64) -> usize {
     let need = TARGET_BITS + (1.0 / min).log2();
-    (need / -(1.0 - min).log2()).log2().ceil() as usize
+    ((need / -(1.0 - min).log2()).log2().ceil() as usize).saturating_sub(1).max(1)
 }
 
 /// The two sides of a point: the evaluated module, and the client module with the secret and one arena for key
@@ -398,11 +399,13 @@ where
     }
 }
 
-/// A built point: one call of its function, what its first call returned against the cleartext, and what it consumed.
+/// A built point: one call of its function, what its first call returned against the cleartext, the ciphertext width,
+/// and the budget its first call consumed, measured from its input to its output.
 struct Point {
     call: Box<dyn FnMut()>,
     have: Vec<f64>,
     want: Vec<f64>,
+    k: usize,
     consumed_bits: usize,
     output_log_budget: usize,
     rotation_keys: usize,
@@ -429,6 +432,7 @@ where
     let x = spread(min, 1.0);
     let x_half: Vec<f64> = x.iter().map(|v| v / 2.0).collect();
     let (ct_x, ct_half) = (client.encrypt(&x), client.encrypt(&x_half));
+    let input_log_budget = ct_x.log_budget();
     let mut y = client.alloc();
     let tsk_infos = tsk_layout(client.k);
     let module = &client.module;
@@ -450,18 +454,21 @@ where
     op(&client.module, &mut y, &mut scratch);
     let have = client.decrypt(&y);
     let output_log_budget = y.log_budget();
+    let k = client.k;
     let module = client.module;
     Ok(Point {
         call: Box::new(move || op(&module, &mut y, &mut scratch)),
         have,
         want: x.iter().map(|v| 1.0 / v.sqrt()).collect(),
-        consumed_bits: consumed,
+        k,
+        consumed_bits: input_log_budget - output_log_budget,
         output_log_budget,
         rotation_keys: 0,
         details: json!({
             "function": "ckks_eval_approximation + ckks_rsqrt",
             "domain": [min, 1.0],
             "target_bits": TARGET_BITS,
+            "planned_consumed_bits": consumed,
             "seed_degree": seed.degree,
             "seed_depth": seed.depth,
             "seed_bits": seed.bits(),
@@ -493,6 +500,7 @@ where
     let tsk = client.tensor_key();
     let x = spread(a, b);
     let ct_x = client.encrypt(&x);
+    let input_log_budget = ct_x.log_budget();
     let atks = client.rotation_keys(client.module.ckks_sum_slots_galois_elements(&ct_x));
     let rotation_keys = atks.len();
     let mut res = client.alloc();
@@ -516,18 +524,21 @@ where
     let have = client.decrypt(&res);
     let output_log_budget = res.log_budget();
     let denominator: f64 = x.iter().map(|v| v.exp()).sum();
+    let k = client.k;
     let module = client.module;
     Ok(Point {
         call: Box::new(move || op(&module, &mut res, &mut scratch)),
         have,
         want: x.iter().map(|v| v.exp() / denominator).collect(),
-        consumed_bits: consumed,
+        k,
+        consumed_bits: input_log_budget - output_log_budget,
         output_log_budget,
         rotation_keys,
         details: json!({
             "function": "ckks_softmax",
             "domain": [a, b],
             "target_bits": target_bits,
+            "planned_consumed_bits": consumed,
             "exp_degree": exp_degree,
             "reciprocal_iters": reciprocal_iters,
             "depth": depth,
@@ -550,6 +561,7 @@ where
     let tsk = client.tensor_key();
     let x = spread(min, 1.0);
     let ct_x = client.encrypt(&x);
+    let input_log_budget = ct_x.log_budget();
     let mut res = client.alloc();
     let module = &client.module;
     let mut scratch = ScratchOwned::<BE>::alloc(
@@ -571,18 +583,21 @@ where
     op(&client.module, &mut res, &mut scratch);
     let have = client.decrypt(&res);
     let output_log_budget = res.log_budget();
+    let k = client.k;
     let module = client.module;
     Ok(Point {
         call: Box::new(move || op(&module, &mut res, &mut scratch)),
         have,
         want: x.iter().map(|v| 1.0 / v).collect(),
-        consumed_bits: consumed,
+        k,
+        consumed_bits: input_log_budget - output_log_budget,
         output_log_budget,
         rotation_keys: 0,
         details: json!({
             "function": "ckks_copy + ckks_inverse_positive_domain",
             "domain": [min, 1.0],
             "target_bits": TARGET_BITS,
+            "planned_consumed_bits": consumed,
             "iters": iters,
         }),
     })
@@ -613,7 +628,7 @@ where
         rel = rel.max(((have - want) / want).abs());
     }
     let target_bits = point.details["target_bits"].as_f64().unwrap();
-    let k = ct_k(point.consumed_bits);
+    let k = point.k;
     let key = tsk_layout(k);
     Ok(json!({
         "libm": {

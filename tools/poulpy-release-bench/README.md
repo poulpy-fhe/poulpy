@@ -53,7 +53,7 @@ Keys use digits of 4 limbs, which keeps a softmax point, with its tensor key and
 ### blas
 
 One `d x d` block per operand at `N = 2^16`, so a ciphertext holds `2^15 / d^2` matrices, each of distinct entries.
-The points are the ones of the poulpy-bench sweep (`base2k = 52`, `k = 208`, entries at scale `2^40`, maps and public matrices at `2^40`), built by its point builders.
+The points take the parameters of the poulpy-bench sweep (`base2k = 52`, `k = 208`, entries at scale `2^40`, maps and public matrices at `2^40`), at the degree and block sizes above, and are built by its point builders.
 
 | Op | d = 32 (32 matrices) | d = 64 (8 matrices) | d = 128 (2 matrices) |
 |---|---|---|---|
@@ -62,16 +62,17 @@ The points are the ones of the poulpy-bench sweep (`base2k = 52`, `k = 208`, ent
 | `blas_transpose` | `transpose_d32` | `transpose_d64` | `transpose_d128` |
 | `blas_sum_rows` | `sum_rows_d32` | `sum_rows_d64` | `sum_rows_d128` |
 
-A builder checks the radix against the lazy sums of its operation and the first result against the error bound of poulpy-bench, then the same call is timed.
+A builder checks the radix against the lazy sums of its operation and measures the error of the first result, which the record compares with the error bound of poulpy-bench (`meets_target`), then the same call is timed.
 The record also gives the time per matrix.
 
 The libm and blas suites run on every backend.
 As in the bootstrapping suite, a GPU backend evaluates and `NTT4x30Portable` generates the keys, encrypts and decrypts, the keys and ciphertexts moving between them.
 A CPU backend is its own client.
+A libm or blas case builds its point, calls it once, then moves the result to the client, decrypts and decodes it before the timed iterations, so its `setup_ns` includes that checking call.
 
 ### Modulus
 
-A libm or blas record reports, under `modulus`, the width of a fresh ciphertext (`log_q`), the bits its operation consumed, the budget left in its output, and the key layout: its full width (`key_log_qp`), digit size, digit count and guard.
+A libm or blas record reports, under `modulus`, the width of a fresh ciphertext (`log_q`), the bits its operation consumed, measured from the budget of its input to that of its output (a libm record also gives the plan's count, `planned_consumed_bits`), the budget left in its output, and the key layout: its full width (`key_log_qp`), digit size, digit count and guard.
 A bootstrapping record reports its preset's moduli under `preset`.
 
 ## Builds
@@ -102,12 +103,19 @@ cp Cargo.lock tools/poulpy-release-bench/Cargo.lock
 cargo metadata --format-version 1 --manifest-path tools/poulpy-release-bench/Cargo.toml > /dev/null
 ```
 
+Nothing else builds it, so a change to an API it calls (the CKKS test-suite presets, the libm plans, the poulpy-bench point builders, a backend type) or to the workspace lock breaks it silently.
+Before a release, and after such a change, check that it still builds:
+
+```sh
+cargo check --locked --manifest-path tools/poulpy-release-bench/Cargo.toml --features portable-rayon
+```
+
 ## The binary
 
 ```sh
 poulpy-release-bench list
 poulpy-release-bench run --backend NTT4x30NeonRayon --preset n16_d35_k733_p20_s2c [--pow2] [--replay] [--warmup 3] [--iters 20] [--device 0]
-`poulpy-release-bench run --backend NTT4x30NeonRayon --libm rsqrt_r16 [--warmup 3] [--iters 20] [--device 0]
+poulpy-release-bench run --backend NTT4x30NeonRayon --libm rsqrt_r16 [--warmup 3] [--iters 20] [--device 0]
 poulpy-release-bench run --backend NTT4x30NeonRayon --blas matmul_d64 [--warmup 3] [--iters 20]
 ```
 

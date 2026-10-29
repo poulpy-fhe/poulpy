@@ -229,28 +229,28 @@ fn entries() -> Vec<Entry> {
         "NTT4x30Cuda",
         poulpy_gpu_portable::NTT4x30Cuda,
         poulpy_gpu_portable::Cuda,
-        &["enable-cuda", "enable-ckks"]
+        &["enable-cuda", "enable-ckks", "enable-blas"]
     ));
     #[cfg(feature = "hip")]
     entries.push(gpu_entry!(
         "NTT4x30Hip",
         poulpy_gpu_portable::NTT4x30Hip,
         poulpy_gpu_portable::Hip,
-        &["enable-hip", "enable-ckks"]
+        &["enable-hip", "enable-ckks", "enable-blas"]
     ));
     #[cfg(feature = "metal")]
     entries.push(gpu_entry!(
         "NTT4x30Wgpu",
         poulpy_gpu_portable::NTT4x30Wgpu,
         poulpy_gpu_portable::Wgpu,
-        &["enable-metal", "enable-ckks"]
+        &["enable-metal", "enable-ckks", "enable-blas"]
     ));
     #[cfg(all(feature = "vulkan", not(feature = "metal")))]
     entries.push(gpu_entry!(
         "NTT4x30Wgpu",
         poulpy_gpu_portable::NTT4x30Wgpu,
         poulpy_gpu_portable::Wgpu,
-        &["enable-vulkan", "enable-ckks"]
+        &["enable-vulkan", "enable-ckks", "enable-blas"]
     ));
     entries
 }

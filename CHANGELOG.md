@@ -828,7 +828,7 @@
 ### `poulpy-gpu-portable`
 
 - New crate: the `NTT4x30` subfamily on GPUs through CubeCL 0.11, bit-identical to `NTT4x30Portable`, for both rings.
-  One implementation behind `NTT4x30Cuda`, `NTT4x30Hip` and `NTT4x30Wgpu` (`enable-cuda`, `enable-hip`, `enable-metal`, `enable-vulkan`, `enable-wgpu`), with `enable-core` and `enable-ckks`.
+  One implementation behind `NTT4x30Cuda`, `NTT4x30Hip` and `NTT4x30Wgpu` (`enable-cuda`, `enable-hip`, `enable-metal`, `enable-vulkan`, `enable-wgpu`), with `enable-core`, `enable-ckks` and `enable-blas`, the last registering the `poulpy-blas` reference compositions on both rings.
   CKKS encoding and decoding, the uniform fill of a coefficient column and the normalizations at radices above 62 bits are staged through the host, and everything else runs on the device, sampling included.
   `Replay` records a repeated sequence of calls and replays it as one graph.
   `handle` reaches a module's `GpuHandle`, which sets the convolution capacity step (`set_convolution_capacity_step`).
@@ -840,10 +840,12 @@
 - Add the `libm` layer: `runner_ckks_exp`, `runner_ckks_log` and `runner_ckks_pow` over `default_bench_params_libm`, in the `libm_ops` table, with `bench_libm` in the full, standard and light tiers, which the tier binaries of `poulpy-cpu-portable`, `poulpy-cpu-avx`, `poulpy-cpu-avx512` and `poulpy-cpu-arm` register on their NTT backend.
   The point-caching helper of the BLAS runners moves to the crate root, shared by both layers.
 - Add `runner_blas_sum_rows`, `runner_blas_sum_rows_replicated`, `runner_blas_sum_cols` and `runner_blas_rotate_rows_replicated` in `blas::intra`, the first in the `blas_dense_ops` table and the others in `blas_ops`.
+- Add the BLAS point builders `blas::matmul::point_blas_transpose`, `point_blas_matmul` and `point_blas_matmul_pt_right` and `blas::intra::point_blas_reduction`, with `BlasPoint`, `BlasCheck` and `Call`: a point built and checked outside Criterion, its keys and ciphertexts made by a client module beside the evaluated one, which the runners pass the evaluated module itself.
+- **Breaking:** the BLAS runners, tables and targets require `HostStaged`, and `BlasBenchModule` is `BlasEvalModule`, which adds `ModuleSynchronize` and `CKKSMulOps`, with `BlasClientModule`.
 - **Breaking:** `bench_ckks_bootstrapping` requires `CKKSBootstrappingCIOps`, and runs the presets with EvalMod on the conjugate-invariant ring.
 - **Breaking:** `bench_ckks_bootstrapping` takes no `FIXTURE_BASE2K`: it runs each preset at the radix `test_suite::presets::preset_for_backend` selects for the backend, so the ids of its NTT4x30 and FFT64 runs read `base2k=53` and `base2k=17` instead of 52 and 18.
 - **Breaking:** `hal::suites::bench_normalization` requires `VecZnxGadgetDecompose` and `VecZnxGadgetDecomposeTmpBytes`, and also sweeps `vec_znx_gadget_decompose` over the 27-limb key-switch columns of a bootstrap at radix 53 (`runner_vec_znx_gadget_decompose`, `GadgetDecomposeSweepParams`, `default_bench_params_gadget_decompose`).
-- Every timed closure of the HAL, core and scheme runners ends with `Module::synchronize`, so a backend that queues its work is timed to completion.
+- Every timed closure of the HAL, core, scheme and BLAS runners ends with `Module::synchronize`, so a backend that queues its work is timed to completion.
 - The HAL, core and CKKS runners and suites no longer bound `OwnedBuf = AlignedBuf` or host buffer views, except `bench_ckks_bootstrapping`, whose client stages the keys on the host; the bin-fhe ones still do.
 - Add `bench_ckks_bootstrapping_with_client`, and `bench_ckks_bootstrapping_replayed_with_client`, which times the replays of a bootstrap recorded through a closure the backend passes.
 - **Behaviour:** the bootstrapping runners also run each preset with the keys of power-of-two rotations only (`BootstrappingPreset::with_power_of_two_keys`), under the preset's name with a `+pow2` suffix (`test_suite::presets::preset_label`), so a filter on a preset name selects both.

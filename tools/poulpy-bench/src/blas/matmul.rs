@@ -90,7 +90,7 @@ fn key_shape(bp: &BlasBenchParams) -> (TorusPrecision, Dnum, TorusPrecision) {
     (k_digit, dnum, TorusPrecision(k_digit.0 + bp.n.ilog2()))
 }
 
-pub fn atk_layout(bp: &BlasBenchParams) -> GLWEAutomorphismKeyLayout {
+pub(super) fn atk_layout(bp: &BlasBenchParams) -> GLWEAutomorphismKeyLayout {
     let (k_digit, dnum, k_aux) = key_shape(bp);
     GLWEAutomorphismKeyLayout {
         n: Degree(bp.n as u32),
@@ -102,7 +102,7 @@ pub fn atk_layout(bp: &BlasBenchParams) -> GLWEAutomorphismKeyLayout {
     }
 }
 
-pub fn tsk_layout(bp: &BlasBenchParams) -> GLWETensorKeyLayout {
+fn tsk_layout(bp: &BlasBenchParams) -> GLWETensorKeyLayout {
     let (k_digit, dnum, k_aux) = key_shape(bp);
     GLWETensorKeyLayout {
         n: Degree(bp.n as u32),
@@ -150,25 +150,34 @@ pub fn error_bound(bp: &BlasBenchParams) -> f64 {
     (7.0 - bp.log_delta as f64).exp2() * ((bp.n * bp.d()) as f64).sqrt()
 }
 
-/// What the first call of a point showed: its error against the cleartext and the bound it met, the radix the lazy sums
-/// of its operation allow, the rotation keys it holds, the budget its operation consumed and the budget its result keeps.
+/// What the first call of a point showed, for a caller that reports it.
 pub struct BlasCheck {
+    /// The largest distance of a decrypted entry to the cleartext.
     pub max_err: f64,
+    /// The [`error_bound`] of the point, which a runner asserts `max_err` within.
     pub bound: f64,
+    /// The radix the lazy sums of a product allow at 128 failure bits, `None` for the other operations.
     pub max_base2k: Option<usize>,
+    /// The rotation keys the point holds.
     pub keys: usize,
+    /// The budget the operation consumed, from its input to its result.
     pub consumed_bits: usize,
+    /// The budget the result keeps.
     pub output_log_budget: usize,
+    /// The layout of the rotation keys, and of the tensor key of a ciphertext by ciphertext product.
+    pub key_layout: GLWEAutomorphismKeyLayout,
 }
 
-/// A built point: one call of its operation, ended by a synchronization of the module, and the check of its first call.
+/// A built point, for a caller that times it outside Criterion.
 pub struct BlasPoint {
+    /// One call of the operation, ended by a synchronization of the module.
     pub call: Call,
+    /// The check of the first call.
     pub check: BlasCheck,
 }
 
 impl BlasPoint {
-    /// Prints the check, as the Criterion runners report it, and returns the call.
+    /// Prints the check, as the Criterion runners report it, asserts the error within the bound and returns the call.
     pub(super) fn reported<BE>(self, op: &str, bp: &BlasBenchParams) -> Call {
         let check = &self.check;
         println!(
@@ -181,6 +190,10 @@ impl BlasPoint {
             check.max_base2k.map_or_else(|| "-".to_string(), |max| max.to_string()),
             check.keys,
         );
+        assert!(
+            check.max_err <= check.bound,
+            "{op}: the first call deviates from the cleartext beyond the error bound"
+        );
         self.call
     }
 }
@@ -190,10 +203,9 @@ pub(super) fn log_budget<BE: Backend>(ct: &BlasCiphertextOwned<BE>) -> usize {
     ct.blocks()[0].log_budget()
 }
 
-/// Asserts the error of a point's first call within [`error_bound`] and records its check, the consumed budget being
-/// what `res` holds less than the input's `input_log_budget`.
+/// Records the check of a point's first call, the consumed budget being what `res` holds less than the input's
+/// `input_log_budget`.
 pub(super) fn verify<BE: Backend>(
-    op: &str,
     bp: &BlasBenchParams,
     max_err: f64,
     max_base2k: Option<usize>,
@@ -201,18 +213,14 @@ pub(super) fn verify<BE: Backend>(
     input_log_budget: usize,
     res: &BlasCiphertextOwned<BE>,
 ) -> BlasCheck {
-    let bound = error_bound(bp);
-    assert!(
-        max_err <= bound,
-        "{op}: the first call deviates from the cleartext beyond the error bound"
-    );
     BlasCheck {
         max_err,
-        bound,
+        bound: error_bound(bp),
         max_base2k,
         keys,
         consumed_bits: input_log_budget - log_budget::<BE>(res),
         output_log_budget: log_budget::<BE>(res),
+        key_layout: atk_layout(bp),
     }
 }
 
@@ -490,7 +498,7 @@ where
         .blas_transpose(&mut res, &ct_a, &ctx, &atks, &mut scratch.borrow())
         .unwrap();
     let max_err = client.max_error(bp, &res, |s, r, c| a_entry(s, c, r));
-    let check = verify::<BE>("blas_transpose", bp, max_err, None, atks.len(), log_budget::<BE>(&ct_a), &res);
+    let check = verify::<BE>(bp, max_err, None, atks.len(), log_budget::<BE>(&ct_a), &res);
     let module = client.module;
     BlasPoint {
         call: Box::new(move || {
@@ -517,7 +525,7 @@ where
 }
 
 /// The point of `blas_matmul` of `bp.batch()` matrices by as many distinct matrices on the right (`dense`), or by one
-/// matrix whose compact encryption proves it, so that the right factor takes the replicated maps.
+/// matrix encrypted from a plaintext of `d^2` slots, which proves it, so that the right factor takes the replicated maps.
 pub fn point_blas_matmul<BE, BC>(bp: &BlasBenchParams, dense: bool) -> BlasPoint
 where
     BE: Backend<Ring = Standard> + HostStaged + 'static + BlasMatMulImpl + MaxBase2k,
@@ -561,15 +569,7 @@ where
     let max_err = client.max_error(bp, &res, |s, r, c| {
         (0..bp.d()).map(|l| a_entry(s, r, l) * b(s % right, l, c)).sum()
     });
-    let check = verify::<BE>(
-        "blas_matmul",
-        bp,
-        max_err,
-        Some(max_base2k),
-        atks.len(),
-        log_budget::<BE>(&ct_a),
-        &res,
-    );
+    let check = verify::<BE>(bp, max_err, Some(max_base2k), atks.len(), log_budget::<BE>(&ct_a), &res);
     let module = client.module;
     BlasPoint {
         call: Box::new(move || {
@@ -648,15 +648,7 @@ where
         .unwrap();
     let p = p_entry(bp.d());
     let max_err = client.max_error(bp, &res, |s, r, c| (0..bp.d()).map(|l| a_entry(s, r, l) * p(0, l, c)).sum());
-    let check = verify::<BE>(
-        "blas_matmul_pt_right",
-        bp,
-        max_err,
-        Some(max_base2k),
-        atks.len(),
-        log_budget::<BE>(&ct_a),
-        &res,
-    );
+    let check = verify::<BE>(bp, max_err, Some(max_base2k), atks.len(), log_budget::<BE>(&ct_a), &res);
     let module = client.module;
     BlasPoint {
         call: Box::new(move || {
@@ -734,7 +726,7 @@ where
             .unwrap();
         let p = p_entry(bp.d());
         let max_err = client.max_error(bp, &res, |s, r, c| (0..bp.d()).map(|l| p(0, r, l) * a_entry(s, l, c)).sum());
-        let check = verify::<BE>(op, bp, max_err, Some(max_base2k), atks.len(), log_budget::<BE>(&ct_a), &res);
+        let check = verify::<BE>(bp, max_err, Some(max_base2k), atks.len(), log_budget::<BE>(&ct_a), &res);
         let module = client.module;
         BlasPoint {
             call: Box::new(move || {

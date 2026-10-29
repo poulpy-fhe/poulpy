@@ -14,7 +14,7 @@ once per set of target flags (each build in its own target directory under
 selected suites in its own process, one at a time. Rayon backends run on 16 threads on
 x86 and on every thread on ARM, capped at what the host has. The record is rewritten
 after every measurement, so an interrupted run keeps what it measured and `--resume`
-completes it.
+completes it, keeping the results of the suites and backends it does not select.
 
 Timing covers the measured call alone (a bootstrap, a libm function or a blas
 operation), synchronized with the device on the GPU backends: setup, key generation,
@@ -446,13 +446,34 @@ def cmd_run(opts):
     if opts.dry_run:
         return
 
+    # A resumed record keeps every result measured or found unavailable, those of
+    # the suites and backends this run does not select included, and only accepts
+    # a run whose commit, builds and method match the ones they were measured with.
     previous = {}
+    recorded_suites = suites
     if opts.resume and os.path.exists(out):
         with open(out) as f:
             old = json.load(f)
         if old.get("poulpy", {}).get("commit") != poulpy["commit"]:
             sys.exit(f"{out} was measured at another commit")
-        previous = {r["id"]: r for r in old["results"] if r["status"] == "ok"}
+        method = old.get("method", {})
+        mismatched = [
+            name
+            for name, was, now_ in (
+                ("--warmup", method.get("warmup"), opts.warmup),
+                ("--iters", method.get("iterations"), opts.iters),
+                ("--threads", method.get("rayon_threads"), threads),
+                ("--device", method.get("device"), opts.device),
+            )
+            if was != now_
+        ]
+        old_builds = {b["name"]: (b["features"], b["rustflags"]) for b in old.get("builds", [])}
+        if any(old_builds.get(b["name"], (b["features"], b["rustflags"])) != (b["features"], b["rustflags"]) for b in builds):
+            mismatched.append("the builds (--gpu, or the host's instruction sets)")
+        if mismatched:
+            sys.exit(f"{out} was measured with other settings: {', '.join(mismatched)}")
+        previous = {r["id"]: r for r in old["results"] if r["status"] in ("ok", "unavailable")}
+        recorded_suites = [s for s in SUITES if s in suites or s in method.get("suites", [])]
 
     built = [build(spec) for spec in builds]
 
@@ -495,17 +516,18 @@ def cmd_run(opts):
         "toolchain": toolchain(),
         "builds": [{k: v for k, v in b.items() if k not in ("backends", "presets", "libm", "blas")} for b in built],
         "method": {
-            "suites": suites,
+            "suites": recorded_suites,
+            "device": opts.device,
             "warmup": opts.warmup,
             "iterations": opts.iters,
             "rayon_threads": threads,
             "timed_region": "one bootstrap, libm function or blas operation call, followed by a device synchronization",
-            "excluded": "setup (context compilation, plans, key generation and preparation, encryption, one checking call), reported as setup_ns, and decryption",
+            "excluded": "setup, reported as setup_ns: context compilation, plans, key generation and preparation, encryption and one checking call, which for libm and blas includes moving its result to the client, decrypting and decoding it. Bootstrapping decrypts its last output after the timed iterations, outside setup_ns",
             "statistics": "latency is the median of the timed iterations, spread is the median absolute deviation over the median",
             "process": "one process per measurement, run sequentially",
             "load_average_start": os.getloadavg(),
         },
-        "results": [],
+        "results": list(previous.values()),
     }
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
     write(out, record)
@@ -514,7 +536,6 @@ def cmd_run(opts):
     for index, (b, backend, suite, case, pow2, mode) in enumerate(jobs, 1):
         rid = result_id(backend["backend"], suite, case, pow2, mode)
         if rid in previous:
-            record["results"].append(previous[rid])
             print(f"[{index}/{len(jobs)}] {rid}: kept from {out}")
             continue
         flag = {"bootstrapping": "--preset", "libm": "--libm", "blas": "--blas"}[suite]
@@ -603,7 +624,7 @@ def main():
     run.add_argument("--blas", nargs="+", help="only these blas cases")
     run.add_argument("--pow2", choices=["both", "on", "off"], default="both", help="power-of-two rotation keys")
     run.add_argument("--timeout", type=int, help="seconds before a measurement is killed")
-    run.add_argument("--resume", action="store_true", help="keep the measurements already in --out")
+    run.add_argument("--resume", action="store_true", help="keep the measurements already in --out, measured with the same settings")
     run.add_argument("--allow-dirty", action="store_true", help="measure with modified tracked files")
     run.add_argument("--dry-run", action="store_true", help="print the plan and exit")
     run.set_defaults(func=cmd_run)

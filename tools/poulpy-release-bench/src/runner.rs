@@ -36,6 +36,10 @@ pub struct RunArgs {
     pub replay: bool,
     pub warmup: usize,
     pub iters: usize,
+    #[cfg_attr(
+        not(any(feature = "cuda", feature = "hip", feature = "metal", feature = "vulkan")),
+        allow(dead_code, reason = "read by the GPU entries")
+    )]
     pub device: Option<usize>,
 }
 
@@ -44,6 +48,10 @@ pub struct CaseArgs {
     pub case: String,
     pub warmup: usize,
     pub iters: usize,
+    #[cfg_attr(
+        not(any(feature = "cuda", feature = "hip", feature = "metal", feature = "vulkan")),
+        allow(dead_code, reason = "read by the GPU entries")
+    )]
     pub device: Option<usize>,
 }
 

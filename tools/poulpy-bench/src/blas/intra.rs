@@ -18,8 +18,8 @@ use super::matmul::{
 };
 use crate::{blas::params::BlasBenchParams, timed};
 
-/// The point of `blas_sum_rows` (`rows`) or `blas_sum_cols` of `matrices` matrices, `bp.batch()` distinct ones or one whose compact
-/// encryption proves it, which sums its rows without the projection. Their entries lie in `[-1/d, 1/d)`, so that the
+/// The point of `blas_sum_rows` (`rows`) or `blas_sum_cols` of `matrices` matrices, `bp.batch()` distinct ones or one
+/// encrypted from a plaintext of `d^2` slots, which proves it and sums its rows without the projection. Their entries lie in `[-1/d, 1/d)`, so that the
 /// sums stay in `[-1, 1)`.
 pub fn point_blas_reduction<BE, BC>(bp: &BlasBenchParams, op: &'static str, rows: bool, matrices: usize) -> BlasPoint
 where
@@ -74,7 +74,7 @@ where
             })
             .sum()
     });
-    let check = verify::<BE>(op, bp, max_err, None, keys, input_log_budget, &res);
+    let check = verify::<BE>(bp, max_err, None, keys, input_log_budget, &res);
     let module = client.module;
     BlasPoint {
         call: Box::new(move || {
@@ -160,7 +160,7 @@ where
             .unwrap();
         let d = bp.d();
         let max_err = client.max_error(bp, &res, |_, r, c| a_entry(0, (r + 1) % d, c));
-        let check = verify::<BE>(op, bp, max_err, None, atks.len(), log_budget::<BE>(&ct_a), &res);
+        let check = verify::<BE>(bp, max_err, None, atks.len(), log_budget::<BE>(&ct_a), &res);
         let module = client.module;
         BlasPoint {
             call: Box::new(move || {

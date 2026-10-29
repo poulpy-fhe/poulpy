@@ -90,7 +90,7 @@ The implementation is written once, and each CubeCL runtime has its own backend 
 | `NTT4x30Hip` | HIP | AMD | `enable-hip` |
 | `NTT4x30Wgpu` | wgpu | Metal on Apple, Vulkan, other wgpu targets | `enable-metal`, `enable-vulkan`, `enable-wgpu` |
 
-Each type is generic over the ring like the CPU types (`NTT4x30Wgpu<ConjugateInvariant>`), and `enable-core` and `enable-ckks` add the scheme layers.
+Each type is generic over the ring like the CPU types (`NTT4x30Wgpu<ConjugateInvariant>`), and `enable-core`, `enable-ckks` and `enable-blas` add the scheme layers.
 A backend type owns one device for the life of the process: the first device of its runtime, or the one chosen with `GpuRuntime::select_device` before the first module or buffer of that runtime is created.
 
 Buffers live on the device, so data moves explicitly: generate keys and encrypt with a host backend, move the layouts with `TransferInto`, prepare and evaluate on the GPU backend, and move results back to decrypt.
