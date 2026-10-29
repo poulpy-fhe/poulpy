@@ -1,7 +1,5 @@
 //! Diagonals of the per-matrix-slot linear maps, built on the host.
 
-use std::collections::BTreeMap;
-
 use num_traits::One;
 use poulpy_core::layouts::{DiagonalArithmetic, Diagonals};
 
@@ -14,57 +12,38 @@ where
     F: DiagonalArithmetic + PartialEq,
     I: IntoIterator<Item = (usize, usize, F)>,
 {
-    let acc = accumulate(slots, log_d, 1, |_, r, c| terms(r, c));
-    let period = acc.values().map(|values| min_period(values)).max().unwrap_or(1);
-    truncate(slots, acc, period)
+    let d = 1usize << log_d;
+    let mut diagonals = matrix_slot_map(slots, log_d, 1, d * d, |_, r, c| terms(r, c));
+    diagonals.shrink_period();
+    diagonals
 }
 
-/// The values of every diagonal of the map whose output `(r, c)` in matrix slot `s` sums `w * in(r2, c2)` over
-/// `terms(s mod count, r, c)`, `count d^2` slots each, by offset.
-fn accumulate<F, I>(slots: usize, log_d: usize, count: usize, terms: impl Fn(usize, usize, usize) -> I) -> BTreeMap<i64, Vec<F>>
+/// Diagonals over `slots` slots of the map whose output `(r, c)` in matrix slot `s` sums `w * in(r2, c2)` over
+/// `terms(s mod count, r, c)`, built from the outputs of its first `period` slots, every diagonal stored at `period`.
+fn matrix_slot_map<F, I>(
+    slots: usize,
+    log_d: usize,
+    count: usize,
+    period: usize,
+    terms: impl Fn(usize, usize, usize) -> I,
+) -> Diagonals<F>
 where
     F: DiagonalArithmetic,
     I: IntoIterator<Item = (usize, usize, F)>,
 {
     let d = 1usize << log_d;
     assert_tiles(slots, d, count);
-    let mut acc: BTreeMap<i64, Vec<F>> = BTreeMap::new();
-    for s in 0..count {
-        for r in 0..d {
-            for c in 0..d {
-                let t = r * d + c;
-                for (r2, c2, w) in terms(s, r, c) {
-                    // Offsets equal modulo `slots` are one diagonal: accumulate, never overwrite.
-                    let offset = ((r2 * d + c2) as i64 - t as i64).rem_euclid(slots as i64);
-                    acc.entry(offset)
-                        .or_insert_with(|| vec![<F as DiagonalArithmetic>::zero(); count * d * d])[s * d * d + t]
-                        .add_assign(&w);
-                }
-            }
-        }
-    }
-    acc
-}
-
-/// Every diagonal of `acc` stored at `period`, which each of them repeats with.
-fn truncate<F: DiagonalArithmetic>(slots: usize, acc: BTreeMap<i64, Vec<F>>, period: usize) -> Diagonals<F> {
-    // One period for every diagonal is only a hedge: upstream re-encodes every diagonal of a map at the least common
-    // multiple of their periods.
-    let mut diagonals = Diagonals::new(slots);
-    for (offset, mut values) in acc {
-        values.truncate(period);
-        diagonals.set(offset, values);
-    }
-    diagonals
-}
-
-/// The smallest power of two `p` dividing `v.len()` with `v[t] == v[t mod p]` for every `t`, else `v.len()`.
-fn min_period<F: PartialEq>(v: &[F]) -> usize {
-    (0..usize::BITS)
-        .map(|e| 1usize << e)
-        .take_while(|&p| v.len().is_multiple_of(p))
-        .find(|&p| v.iter().enumerate().all(|(t, x)| *x == v[t % p]))
-        .unwrap_or(v.len())
+    let terms = &terms;
+    Diagonals::from_slot_map(
+        slots,
+        period,
+        (0..period).flat_map(move |i| {
+            let (s, r, c) = (i / (d * d), (i / d) % d, i % d);
+            terms(s, r, c)
+                .into_iter()
+                .map(move |(r2, c2, w)| (i, s * d * d + r2 * d + c2, w))
+        }),
+    )
 }
 
 /// JKLS sigma: output `(r, c)` reads `(r, r + c mod d)`.
@@ -239,8 +218,8 @@ pub fn right_mul<F: DiagonalArithmetic + PartialEq>(
 ) -> Diagonals<F> {
     let d = 1usize << log_d;
     let b = &b;
-    let acc = accumulate(slots, log_d, count, |s, r, c| (0..d).map(move |l| (r, l, b(s, l, c))));
-    truncate(slots, acc, if count == 1 { d } else { count * d * d })
+    let period = if count == 1 { d } else { count * d * d };
+    matrix_slot_map(slots, log_d, count, period, |s, r, c| (0..d).map(move |l| (r, l, b(s, l, c))))
 }
 
 /// Left product in every matrix slot: output `(r, c)` of matrix slot `s` is `sum_l b(s mod count, r, l) in(l, c)`.
@@ -255,8 +234,9 @@ pub fn left_mul<F: DiagonalArithmetic + PartialEq>(
 ) -> Diagonals<F> {
     let d = 1usize << log_d;
     let b = &b;
-    let acc = accumulate(slots, log_d, count, |s, r, c| (0..d).map(move |l| (l, c, b(s, r, l))));
-    truncate(slots, acc, count * d * d)
+    matrix_slot_map(slots, log_d, count, count * d * d, |s, r, c| {
+        (0..d).map(move |l| (l, c, b(s, r, l)))
+    })
 }
 
 /// [`left_mul`] of one public matrix on a replicated input, every matrix slot holding the same matrix: the rotation by
@@ -291,10 +271,9 @@ pub fn right_jkls<F: DiagonalArithmetic + PartialEq>(
 ) -> Diagonals<F> {
     let d = 1usize << log_d;
     let b = &b;
-    let acc = accumulate(slots, log_d, count, |s, r, c| {
+    matrix_slot_map(slots, log_d, count, count * d * d, |s, r, c| {
         (0..d).map(move |k| (r, (c + k) % d, b(s, (r + c + k) % d, c)))
-    });
-    truncate(slots, acc, count * d * d)
+    })
 }
 
 /// JKLS stage 2 of the left product, applied to `y = tau(A)`: output `(r, c)` of matrix slot `s` is
@@ -311,10 +290,9 @@ pub fn left_jkls<F: DiagonalArithmetic + PartialEq>(
 ) -> Diagonals<F> {
     let d = 1usize << log_d;
     let b = &b;
-    let acc = accumulate(slots, log_d, count, |s, r, c| {
+    matrix_slot_map(slots, log_d, count, count * d * d, |s, r, c| {
         (0..d).map(move |k| ((r + k) % d, c, b(s, r, (r + c + k) % d)))
-    });
-    truncate(slots, acc, count * d * d)
+    })
 }
 
 #[cfg(test)]

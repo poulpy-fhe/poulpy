@@ -2,7 +2,7 @@ use crate::CKKSResult as Result;
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos};
-use poulpy_hal::layouts::{Backend, Data, ScratchArena};
+use poulpy_hal::layouts::{Backend, Data, ScratchArena, VecZnxDftBackendMut};
 
 use crate::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
@@ -499,6 +499,94 @@ pub trait CKKSDotProductOps<BE: Backend> {
         a: &[&CKKSPreparedLeft<BE>],
         b: &[&CKKSPreparedRight<BE>],
         galois: &[i64],
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;
+
+    /// Scratch bytes of [`Self::ckks_dot_product_prepared_pt_dft`] for terms prepared like `a` and plaintexts prepared
+    /// like `b`, whatever their number.
+    fn ckks_dot_product_prepared_pt_dft_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
+    where
+        R: CKKSCtBounds,
+        A: GLWEInfos,
+        P: GLWEInfos;
+
+    /// [`Self::ckks_dot_product_prepared_pt`] into `acc`, before its normalization: `acc` receives, in the transform
+    /// domain, the sum poulpy-core's `glwe_mul_prepared_plain_sum_dft` forms at the offset of the rule of
+    /// `ckks_mul_pt_vec_into` for a destination of `res`'s layout and metadata. `acc` holds the degree of `res`, its
+    /// `rank + 1` columns and `a[0].size() + b[0].size()` limbs. Sums added by
+    /// [`Self::ckks_dot_product_prepared_pt_dft_add`] for the same `res`, over terms of one layout and scale and
+    /// plaintexts of another, are finished by [`Self::ckks_dot_product_prepared_pt_from_dft`]: that is
+    /// `ckks_dot_product_prepared_pt` of the terms of every call, bit for bit, metadata included when every pair has the
+    /// slot kind and sparsity of the pair the finish reads. `acc` carries no metadata, and nothing checks the calls of one
+    /// sum against each other: that is the caller's.
+    ///
+    /// # Errors
+    ///
+    /// Before writing `acc`: those of [`Self::ckks_dot_product_prepared_pt`] with `res` as the destination, and
+    /// `InvalidOperand` for `acc` of another degree, column count or limb count.
+    fn ckks_dot_product_prepared_pt_dft<R>(
+        &self,
+        acc: &mut VecZnxDftBackendMut<'_, BE>,
+        res: &R,
+        a: &[&CKKSPreparedLeft<BE>],
+        b: &[&CKKSPreparedRight<BE>],
+        galois: &[i64],
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        R: CKKSCtBounds;
+
+    /// Scratch bytes of [`Self::ckks_dot_product_prepared_pt_dft_add`] for terms prepared like `a` and plaintexts
+    /// prepared like `b`, whatever their number.
+    fn ckks_dot_product_prepared_pt_dft_add_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
+    where
+        R: CKKSCtBounds,
+        A: GLWEInfos,
+        P: GLWEInfos;
+
+    /// `acc += Σ a[t] · σ_{galois[t]}(b[t])`, the sum of [`Self::ckks_dot_product_prepared_pt_dft`] added to `acc`.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::ckks_dot_product_prepared_pt_dft`].
+    fn ckks_dot_product_prepared_pt_dft_add<R>(
+        &self,
+        acc: &mut VecZnxDftBackendMut<'_, BE>,
+        res: &R,
+        a: &[&CKKSPreparedLeft<BE>],
+        b: &[&CKKSPreparedRight<BE>],
+        galois: &[i64],
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        R: CKKSCtBounds;
+
+    /// Scratch bytes of [`Self::ckks_dot_product_prepared_pt_from_dft`] into `res` from terms prepared like `a` and
+    /// plaintexts prepared like `b`.
+    fn ckks_dot_product_prepared_pt_from_dft_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
+    where
+        R: CKKSCtBounds,
+        A: GLWEInfos,
+        P: GLWEInfos;
+
+    /// Finishes a sum of [`Self::ckks_dot_product_prepared_pt_dft`] into `res`: stamps `res` with the metadata
+    /// `ckks_dot_product_prepared_pt` gives the pair `(a, b)`, a term and a plaintext of the sum, then normalizes each
+    /// column of `acc` once into `res`, at `res.k()`, canonical. `acc` is unspecified afterwards.
+    ///
+    /// # Errors
+    ///
+    /// Before writing `res`: `PreparedOperandLayoutMismatch` for `a` of another degree, `base2k` or rank than `res`;
+    /// `InvalidOperand` for `b` not a plaintext at `res`'s `base2k` or for `acc` of another degree, column count or limb
+    /// count than [`Self::ckks_dot_product_prepared_pt_dft`] takes; `PlaintextDegreeMismatch` for `b` of a degree that
+    /// does not embed into `res`'s; and the errors of the rule.
+    fn ckks_dot_product_prepared_pt_from_dft<Dst>(
+        &self,
+        res: &mut Dst,
+        acc: &mut VecZnxDftBackendMut<'_, BE>,
+        a: &CKKSPreparedLeft<BE>,
+        b: &CKKSPreparedRight<BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where

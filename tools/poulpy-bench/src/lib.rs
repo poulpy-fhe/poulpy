@@ -15,8 +15,11 @@
 //!   keyswitch, automorphism, external product, tensoring).
 //! - [`schemes`]: full scheme-level operations (`ckks`, `bin_fhe`).
 //! - [`blas`]: `poulpy-blas` encrypted matrix operations (`blas_matmul`, `blas_matmul_pt_right`, `blas_matmul_pt_left`,
-//!   `blas_transpose`, `blas_sum_rows`, `blas_sum_cols`, `blas_rotate_rows`).
+//!   `blas_transpose`, `blas_sum_rows`, `blas_sum_cols`, `blas_rotate_rows`), and `blas::scale`, their validation at
+//!   large blocks.
 //! - [`libm`]: `poulpy-libm` function plans (`exp`, `log`, `pow`).
+//!
+//! [`heap`] holds a counting global allocator, which a binary installs to read the heap an operation holds.
 //!
 //! # The runner / `BenchOp` / suite pattern
 //!
@@ -84,6 +87,7 @@
 pub mod blas;
 pub mod core;
 pub mod hal;
+pub mod heap;
 pub mod libm;
 pub mod schemes;
 
