@@ -5,8 +5,8 @@
 //! [`GLWELinearTransformations`](trait@poulpy_core::GLWELinearTransformations). See
 //! `docs/guides/linear_transformation.md`.
 
-use crate::SlotsKind;
 use crate::{CKKSError, CKKSResult as Result, ckks_ensure, ckks_ensure_operand, operand_cyclotomic_order};
+use crate::{GLWEPlaintextMeta, Scale, SlotsKind};
 use poulpy_core::layouts::GLWEPlaintextInfos;
 use poulpy_core::layouts::LinearTransformationPlan;
 use poulpy_core::{
@@ -90,24 +90,21 @@ impl<D: Data, W: ZnxWord, R: Ring> LtDiagonalMeta for CKKSCiphertext<D, W, R> {
     }
 }
 
-/// Resident-diagonal metadata: a core [`PreparedDiagonal`] carries the (opaque to
-/// the core engine) scale and real-slot claim the CKKS prepare step stashed on it.
+/// Resident-diagonal metadata: a core [`PreparedDiagonal`] carries the plaintext meta the CKKS prepare step stashed
+/// on it.
 impl<D: Data, BE: Backend> LtDiagonalMeta for PreparedDiagonal<D, BE> {
     fn lt_log_scale(&self) -> usize {
-        self.log_scale()
+        let Scale::Log(log_scale) = self.plaintext_meta().scale;
+        log_scale
     }
 
     fn lt_slots(&self) -> SlotsKind {
-        if self.real_slots() {
-            SlotsKind::Real
-        } else {
-            SlotsKind::Complex
-        }
+        self.plaintext_meta().slots
     }
 
     /// Its degree's sparsity, or the sparsity its ciphertexts claimed.
     fn lt_log_sparsity(&self, log_n: usize) -> usize {
-        log_n.saturating_sub(self.log_n()).max(self.log_sparsity())
+        log_n.saturating_sub(self.log_n()).max(self.plaintext_meta().log_sparsity)
     }
 
     fn lt_ciphertext_k(&self) -> Option<TorusPrecision> {
@@ -227,20 +224,22 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
             );
         }
         self.glwe_prepare_linear_transformation_rhs(prepared, lt, scratch);
-        // The first diagonal's scale and real-slot claim are stashed for all, so eval needs no `lt` for its
-        // `cnv_offset` and slot kind.
+        // The first diagonal's scale and slot kind are stashed for all, so eval needs no `lt` for its `cnv_offset` and
+        // slot kind. A plaintext is sparse by its degree; ciphertexts by their label, the products sparse where all are.
         if let Some(first_pt) = first_pt {
-            prepared.set_log_scale(first_pt.log_delta());
-            prepared.set_real_slots(first_pt.slots().is_real());
-        }
-        // A plaintext is sparse by its degree; ciphertexts by their label, the products sparse where all are.
-        let ciphertexts = lt
-            .giant_steps
-            .iter()
-            .flat_map(|gs| &gs.diagonals)
-            .filter(|d| d.plaintext.rank().as_usize() > 0);
-        if let Some(log_sparsity) = ciphertexts.map(|d| d.plaintext.log_sparsity()).min() {
-            prepared.set_log_sparsity(log_sparsity);
+            let log_sparsity = lt
+                .giant_steps
+                .iter()
+                .flat_map(|gs| &gs.diagonals)
+                .filter(|d| d.plaintext.rank().as_usize() > 0)
+                .map(|d| d.plaintext.log_sparsity())
+                .min()
+                .unwrap_or(0);
+            prepared.set_plaintext_meta(GLWEPlaintextMeta {
+                scale: Scale::Log(first_pt.log_delta()),
+                slots: first_pt.slots(),
+                log_sparsity,
+            });
         }
         Ok(())
     }

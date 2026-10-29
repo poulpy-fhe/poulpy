@@ -64,9 +64,7 @@ impl<BE: Backend> LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE>> {
                         cnv: module.cnv_pvec_right_alloc(pt_n, cols, pt_size, PrepareHint::Reuse),
                         base2k,
                         k,
-                        log_scale: 0,
-                        real_slots: false,
-                        log_sparsity: 0,
+                        plaintext_meta: Default::default(),
                     },
                 });
             }
@@ -80,41 +78,20 @@ impl<BE: Backend> LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE>> {
         }
     }
 
-    /// Sets the per-diagonal `log_scale` of every diagonal; called by the scheme
-    /// layer during the populate step (mirrors the streamed plaintext's
-    /// `log_delta`).
-    pub fn set_log_scale(&mut self, log_scale: usize) {
+    /// Sets the scheme's claim on every diagonal; called by the scheme layer during the populate step.
+    pub fn set_plaintext_meta(&mut self, meta: crate::layouts::GLWEPlaintextMeta) {
         for gs in &mut self.giant_steps {
             for d in &mut gs.diagonals {
-                d.plaintext.set_log_scale(log_scale);
+                d.plaintext.set_plaintext_meta(meta);
             }
         }
     }
 
-    /// Sets the real-slot claim of every diagonal; called by the scheme layer
-    /// during the populate step.
-    pub fn set_real_slots(&mut self, real_slots: bool) {
-        for gs in &mut self.giant_steps {
-            for d in &mut gs.diagonals {
-                d.plaintext.set_real_slots(real_slots);
-            }
-        }
-    }
-
-    /// Sets the sparsity claim of every diagonal; called by the scheme layer during the populate step.
-    pub fn set_log_sparsity(&mut self, log_sparsity: usize) {
-        for gs in &mut self.giant_steps {
-            for d in &mut gs.diagonals {
-                d.plaintext.set_log_sparsity(log_sparsity);
-            }
-        }
-    }
-
-    /// Base-2 log of the plaintext scaling factor shared by every diagonal.
-    pub fn log_scale(&self) -> usize {
+    /// The scheme's claim, shared by every diagonal.
+    pub fn plaintext_meta(&self) -> crate::layouts::GLWEPlaintextMeta {
         self.first_diagonal_plaintext()
             .expect("prepared linear transformation has no diagonals")
-            .log_scale()
+            .plaintext_meta()
     }
 }
 

@@ -32,7 +32,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSCompositionError, CKKSCtBounds, CKKSInfos, Scale, SetCKKSInfos, SlotsKind,
+    CKKSCompositionError, CKKSCtBounds, CKKSInfos, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotsKind,
     api::{CKKSLinearTransformationOps, LinearTransformation, LinearTransformationBabySteps, LinearTransformationPrepared},
     layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, ComplexDiagonals},
     test_suite::reference_encoder::ReferenceEncoder,
@@ -409,8 +409,13 @@ pub fn test_linear_transformation_sum<BE, F, E>(
         "giant schedule",
     );
     let mut bad = prepare_lt(module, &lts[1]);
-    let scale = bad.first_diagonal_plaintext().unwrap().log_scale();
-    bad.set_log_scale(scale + 1);
+    let meta = bad.plaintext_meta();
+    let Scale::Log(scale) = meta.scale;
+    let shifted = GLWEPlaintextMeta {
+        scale: Scale::Log(scale + 1),
+        ..meta
+    };
+    bad.set_plaintext_meta(shifted);
     reject(
         &two,
         &[&babies[0], &babies[1]],
@@ -418,10 +423,10 @@ pub fn test_linear_transformation_sum<BE, F, E>(
         "diagonal layout, width, scale and slot kind",
     );
     // Only a later diagonal differs, which core's first-diagonal check misses.
-    bad.set_log_scale(scale);
+    bad.set_plaintext_meta(meta);
     bad.giant_steps.last_mut().unwrap().diagonals[0]
         .plaintext
-        .set_log_scale(scale + 1);
+        .set_plaintext_meta(shifted);
     reject(&two, &[&babies[0], &babies[1]], &[&prepared[0], &bad], "not uniform");
     let narrow = alloc_ct(&params, module, params.k - params.base2k);
     reject(
@@ -518,7 +523,7 @@ where
         lt.giant_steps
             .iter()
             .flat_map(|gs| &gs.diagonals)
-            .map(|d| (d.plaintext.log_scale(), d.plaintext.real_slots()))
+            .map(|d| d.plaintext.plaintext_meta())
             .collect::<Vec<_>>()
     };
     assert_eq!(
@@ -789,12 +794,12 @@ pub fn test_prepare_linear_transformation_rhs_lifecycle<BE, F, E>(
             .map(|d| d.plaintext.cnv().data().as_ptr())
             .collect()
     };
-    let infos = |p: &LinearTransformationPrepared<BE>| -> (LinearTransformationPlan, Vec<(usize, bool)>) {
+    let infos = |p: &LinearTransformationPrepared<BE>| -> (LinearTransformationPlan, Vec<GLWEPlaintextMeta>) {
         let stashes = p
             .giant_steps
             .iter()
             .flat_map(|gs| &gs.diagonals)
-            .map(|d| (d.plaintext.log_scale(), d.plaintext.real_slots()))
+            .map(|d| d.plaintext.plaintext_meta())
             .collect();
         (p.index(), stashes)
     };

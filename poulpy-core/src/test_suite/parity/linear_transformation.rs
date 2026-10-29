@@ -400,8 +400,12 @@ where
                             poison::<BT>(diagonal.plaintext.cnv_mut().data_mut());
                         }
                     }
-                    resident_r.set_log_scale(19);
-                    resident_t.set_log_scale(19);
+                    let meta = crate::layouts::GLWEPlaintextMeta {
+                        scale: crate::layouts::Scale::Log(19),
+                        ..Default::default()
+                    };
+                    resident_r.set_plaintext_meta(meta);
+                    resident_t.set_plaintext_meta(meta);
                     r.glwe_prepare_linear_transformation_rhs(
                         &mut resident_r,
                         &rhs_r,
@@ -413,7 +417,7 @@ where
                         &mut poisoned_scratch::<BT>(t.glwe_prepare_linear_transformation_rhs_tmp_bytes(&pt)).borrow(),
                     );
                     assert_eq!(resident_r.index(), resident_t.index());
-                    assert_eq!((resident_r.log_scale(), resident_t.log_scale()), (19, 19));
+                    assert_eq!((resident_r.plaintext_meta(), resident_t.plaintext_meta()), (meta, meta));
                     for (gr, gt) in resident_r.giant_steps.iter().zip(&resident_t.giant_steps) {
                         for (dr, dt) in gr.diagonals.iter().zip(&gt.diagonals) {
                             assert_eq!(dr.plaintext.glwe_layout(), dt.plaintext.glwe_layout());

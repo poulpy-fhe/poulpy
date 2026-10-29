@@ -492,7 +492,9 @@ pub fn test_glwe_prepare_linear_transformation_rhs_rejects_wide_diagonal<BE: cra
 }
 
 /// Every prepared diagonal's bytes, shape and metadata.
-fn prepared_state<BE: Backend>(lt: &LinearTransformationPrepared<BE>) -> Vec<(i64, i64, Vec<u8>, usize, usize, usize)> {
+fn prepared_state<BE: Backend>(
+    lt: &LinearTransformationPrepared<BE>,
+) -> Vec<(i64, i64, Vec<u8>, usize, usize, crate::layouts::GLWEPlaintextMeta)> {
     lt.giant_steps
         .iter()
         .flat_map(|step| {
@@ -503,7 +505,7 @@ fn prepared_state<BE: Backend>(lt: &LinearTransformationPrepared<BE>) -> Vec<(i6
                     BE::to_host_bytes(d.plaintext.cnv.data()),
                     d.plaintext.cnv.size(),
                     d.plaintext.k.as_usize(),
-                    d.plaintext.log_scale,
+                    d.plaintext.plaintext_meta,
                 )
             })
         })
@@ -1233,7 +1235,10 @@ where
     };
     let mut lt: LinearTransformationPrepared<BE> =
         LinearTransformation::alloc_prepared(module, &schedule, &limbs_layout(params, module, pt_limbs, 0));
-    lt.set_log_scale(log_scale);
+    lt.set_plaintext_meta(crate::layouts::GLWEPlaintextMeta {
+        scale: crate::layouts::Scale::Log(log_scale),
+        ..Default::default()
+    });
     let babies = LinearTransformationBabySteps::alloc(module, &[0], &limbs_layout(params, module, ct_limbs, 1));
     (babies, lt)
 }

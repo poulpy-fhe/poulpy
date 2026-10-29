@@ -60,9 +60,8 @@ pub use poulpy_core::{
 /// streamed representations. Keeping it here, rather than on `poulpy-core`'s
 /// `DiagonalProd` engine trait, is deliberate: the core engine is scheme-agnostic
 /// (a scheme encoding values mod `P` has neither), so it treats a prepared
-/// diagonal's scale and real-slot claim as *opaque* values (stashed via
-/// [`PreparedDiagonal::set_log_scale`] and [`PreparedDiagonal::set_real_slots`]
-/// during preparation).
+/// diagonal's plaintext meta as *opaque* (stashed via
+/// [`PreparedDiagonal::set_plaintext_meta`] during preparation).
 ///
 /// Implemented for the diagonal representations: [`CKKSPlaintext`](crate::layouts::CKKSPlaintext) and
 /// [`CKKSCiphertext`](crate::layouts::CKKSCiphertext) (streamed) via their metadata, and the core [`PreparedDiagonal`]

@@ -119,7 +119,9 @@ fn checked_dft_construction_rejects_invalid_markers_and_layouts() {
         "DFT factor count does not match its plan",
     );
     let mut bad = factors();
-    bad[0].giant_steps[0].diagonals[0].plaintext.set_log_scale(0);
+    bad[0].giant_steps[0].diagonals[0]
+        .plaintext
+        .set_plaintext_meta(Default::default());
     refused(
         "scale",
         matrix.try_with_factor_operands(&module, bad).map(drop),

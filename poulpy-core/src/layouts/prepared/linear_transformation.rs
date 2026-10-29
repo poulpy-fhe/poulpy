@@ -59,18 +59,9 @@ pub struct PreparedDiagonal<D: Data, BE: Backend> {
     pub(crate) base2k: Base2K,
     /// Storage precision of the diagonal it was encoded from.
     pub(crate) k: TorusPrecision,
-    /// Base-2 log of the plaintext scaling factor. The only scheme-provided
-    /// quantity the convolution-offset computation needs; the core engine treats
-    /// it as opaque and only checks that summed transforms share it. Mirrors the
-    /// streamed plaintext's `log_delta`; set by the scheme layer during the
-    /// populate step.
-    pub(crate) log_scale: usize,
-    /// Whether the scheme claims the diagonal's slots are real. Opaque to the
-    /// core engine; `false` (no claim) until the scheme sets it.
-    pub(crate) real_slots: bool,
-    /// The sparsity the scheme claims for the diagonal beyond its degree. Opaque to the core engine; `0` (no claim)
-    /// until the scheme sets it.
-    pub(crate) log_sparsity: usize,
+    /// What the scheme claims of the plaintext the diagonal encodes, set during the populate step: opaque to the core
+    /// engine, which only checks that summed transforms share its scale. The default claims nothing.
+    pub(crate) plaintext_meta: crate::layouts::GLWEPlaintextMeta,
 }
 
 impl<D: Data, BE: Backend> PreparedDiagonal<D, BE> {
@@ -84,36 +75,14 @@ impl<D: Data, BE: Backend> PreparedDiagonal<D, BE> {
         &mut self.cnv
     }
 
-    /// Base-2 log of the plaintext scaling factor; the core engine only checks
-    /// that summed transforms share it.
-    pub fn log_scale(&self) -> usize {
-        self.log_scale
+    /// What the scheme claims of the plaintext the diagonal encodes.
+    pub fn plaintext_meta(&self) -> crate::layouts::GLWEPlaintextMeta {
+        self.plaintext_meta
     }
 
-    /// Sets the plaintext scale exponent; called by the scheme layer during the
-    /// populate step.
-    pub fn set_log_scale(&mut self, log_scale: usize) {
-        self.log_scale = log_scale;
-    }
-
-    /// Whether the scheme claims the diagonal's slots are real (opaque to the core engine).
-    pub fn real_slots(&self) -> bool {
-        self.real_slots
-    }
-
-    /// Sets the real-slot claim; called by the scheme layer during the populate step.
-    pub fn set_real_slots(&mut self, real_slots: bool) {
-        self.real_slots = real_slots;
-    }
-
-    /// The sparsity the scheme claims for the diagonal beyond its degree (opaque to the core engine).
-    pub fn log_sparsity(&self) -> usize {
-        self.log_sparsity
-    }
-
-    /// Sets the sparsity claim; called by the scheme layer during the populate step.
-    pub fn set_log_sparsity(&mut self, log_sparsity: usize) {
-        self.log_sparsity = log_sparsity;
+    /// Sets the scheme's claim; called by the scheme layer during the populate step.
+    pub fn set_plaintext_meta(&mut self, meta: crate::layouts::GLWEPlaintextMeta) {
+        self.plaintext_meta = meta;
     }
 }
 
