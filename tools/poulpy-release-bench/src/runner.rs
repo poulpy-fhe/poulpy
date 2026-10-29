@@ -44,6 +44,7 @@ pub struct CaseArgs {
     pub case: String,
     pub warmup: usize,
     pub iters: usize,
+    pub device: Option<usize>,
 }
 
 /// Wall-clock nanoseconds of every warm-up and every timed call.

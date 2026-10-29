@@ -11,7 +11,7 @@
 //! ```text
 //! poulpy-release-bench run --backend NTT4x30Portable --preset n16_d35_k733_p20_s2c
 //!     [--pow2] [--replay] [--warmup 3] [--iters 20] [--device 0]
-//! poulpy-release-bench run --backend NTT4x30Portable --libm rsqrt_r16 [--warmup 3] [--iters 20]
+//! poulpy-release-bench run --backend NTT4x30Portable --libm rsqrt_r16 [--warmup 3] [--iters 20] [--device 0]
 //! poulpy-release-bench run --backend NTT4x30Portable --blas matmul_d64 [--warmup 3] [--iters 20]
 //! ```
 
@@ -60,8 +60,8 @@ fn direct_only(args: &RunArgs) -> Result<()> {
 }
 
 #[cfg(any(feature = "cuda", feature = "hip", feature = "metal", feature = "vulkan"))]
-fn select_device<RT: poulpy_gpu_portable::GpuRuntime>(args: &RunArgs) -> Result<()> {
-    if let Some(index) = args.device {
+fn select_device<RT: poulpy_gpu_portable::GpuRuntime>(device: Option<usize>) -> Result<()> {
+    if let Some(index) = device {
         ensure!(
             RT::select_device(index),
             "device {index} of {} could not be selected",
@@ -82,11 +82,14 @@ macro_rules! gpu_entry {
             transform: "NTT4x30",
             parallelism: Parallelism::Device,
             bootstrapping: |args| {
-                select_device::<$rt>(args)?;
+                select_device::<$rt>(args.device)?;
                 let measure = if args.replay { runner::replay::<$rt> } else { direct };
                 run::<$backend, poulpy_cpu_portable::NTT4x30Portable>(args, measure)
             },
-            libm: None,
+            libm: Some(|args| {
+                select_device::<$rt>(args.device)?;
+                libm::run::<$backend, poulpy_cpu_portable::NTT4x30Portable>(args)
+            }),
             blas: None,
         }
     };
@@ -105,7 +108,7 @@ macro_rules! cpu_entry {
                 direct_only(args)?;
                 run::<$be, $be>(args, direct)
             },
-            libm: Some(libm::run::<$be>),
+            libm: Some(libm::run::<$be, $be>),
             blas: Some(blas::run::<$be>),
         }
     };
@@ -314,14 +317,12 @@ fn parse_run(args: &[String]) -> Result<(String, Job)> {
     ensure!(run.iters > 0, "--iters must be positive");
     let backend = backend.context("--backend is required")?;
     let case = |case| {
-        ensure!(
-            !run.pow2 && !run.replay && run.device.is_none(),
-            "--pow2, --replay and --device only apply to --preset"
-        );
+        ensure!(!run.pow2 && !run.replay, "--pow2 and --replay only apply to --preset");
         Ok(CaseArgs {
             case,
             warmup: run.warmup,
             iters: run.iters,
+            device: run.device,
         })
     };
     let job = match (run.preset.is_empty(), libm, blas) {
@@ -374,7 +375,7 @@ fn main() -> Result<()> {
             result
         }
         _ => bail!(
-            "usage: poulpy-release-bench list | run --backend NAME (--preset NAME [--pow2] [--replay] [--device N] | --libm CASE | --blas CASE) [--warmup N] [--iters N]"
+            "usage: poulpy-release-bench list | run --backend NAME (--preset NAME [--pow2] [--replay] | --libm CASE | --blas CASE) [--warmup N] [--iters N] [--device N]"
         ),
     };
     println!("{output}");

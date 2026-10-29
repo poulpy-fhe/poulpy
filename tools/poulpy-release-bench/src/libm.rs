@@ -1,8 +1,11 @@
 //! Release measurements of `poulpy-libm` functions on one ciphertext at `N = 2^16`.
 //!
-//! A case builds its point outside the timed region: its plan on a host module, transferred to the backend, the secret,
-//! the tensor key, the rotation keys of softmax, and the encryption of values spread over its domain. It calls the
-//! function once, decrypts the result and measures its error against `f64`, then times that same call. The ciphertext
+//! A case builds its point outside the timed region: its plan on a host module, transferred to the backend, and on a
+//! client backend the secret, the tensor key, the rotation keys of softmax, and the encryption of values spread over its
+//! domain, the keys and ciphertexts then moved to the evaluated backend and the keys prepared there. The client is the
+//! evaluated backend itself on the CPU, and `NTT4x30Portable` for a GPU backend, which encrypts nothing. A case calls
+//! the function once, moves the result back to the client, decrypts it and measures its error against `f64`, then
+//! times that same call. The ciphertext
 //! is as wide as what the function consumes plus `2 log_delta` of result headroom and two limbs of guard, rounded up to
 //! a limb, as in the libm benchmarks of poulpy-bench.
 
@@ -14,10 +17,11 @@ use poulpy_ckks::{
     api::{CKKSAllOpsTmpBytes, CKKSCopyOps, CKKSDecryptOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncryptOps},
     layouts::{CKKSCiphertextOwned, CKKSModuleAlloc},
     polynomial::SplitStrategy,
-    test_suite::helpers::{TestContextSharedModule, upload_pt},
+    test_suite::helpers::{TestContextBackend, TestContextSharedModule, upload_pt},
 };
 use poulpy_core::{
     GLWEAutomorphismKeyEncryptSk, GLWETensorKeyEncryptSk,
+    api::TransferInto,
     api::{GLWEAutomorphismKeyPreparedFactory, GLWESecretPreparedFactory, GLWESecretSampling, GLWETensorKeyPreparedFactory},
     layouts::{
         BackendGLWESecret, Base2K, Degree, Dsize, GGLWELayout, GLWEAutomorphismKeyLayout, GLWELayout, GLWETensorKeyLayout,
@@ -26,7 +30,7 @@ use poulpy_core::{
     },
 };
 use poulpy_hal::{
-    api::{ModuleSynchronize, ScratchOwnedAlloc, ScratchOwnedBorrow},
+    api::{ModuleNew, ModuleSynchronize, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{Backend, HostBytesBackend, HostStaged, Module, ScratchOwned, Standard},
     source::Source,
 };
@@ -82,31 +86,44 @@ fn case(name: &str) -> Result<Case> {
     })
 }
 
-/// What a case asks of a module: key generation, encryption, encoding and decryption, the functions it times, and
-/// synchronization.
+/// What a case asks of the evaluated module: allocation, the preparation of the keys the client made, the functions it
+/// times, and synchronization.
 pub trait LibmModule<BE: Backend>:
-    TestContextSharedModule<BE>
-    + CKKSEncodingOps<BE, f64>
+    ModuleNew<BE>
+    + ModuleSynchronize<BE>
+    + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+    + CKKSModuleAlloc<BE>
+    + GLWETensorKeyPreparedFactory<BE>
+    + GLWEAutomorphismKeyPreparedFactory<BE>
+    + CKKSCopyOps<BE>
     + CKKSApproximationOps<BE>
     + CKKSInverseOps<BE>
     + CKKSInverseDomainOps<BE>
     + CKKSSoftmaxOps<BE>
     + CKKSReductionOps<BE>
-    + ModuleSynchronize<BE>
 {
 }
 
 impl<BE: Backend, M> LibmModule<BE> for M where
-    M: TestContextSharedModule<BE>
-        + CKKSEncodingOps<BE, f64>
+    M: ModuleNew<BE>
+        + ModuleSynchronize<BE>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+        + CKKSModuleAlloc<BE>
+        + GLWETensorKeyPreparedFactory<BE>
+        + GLWEAutomorphismKeyPreparedFactory<BE>
+        + CKKSCopyOps<BE>
         + CKKSApproximationOps<BE>
         + CKKSInverseOps<BE>
         + CKKSInverseDomainOps<BE>
         + CKKSSoftmaxOps<BE>
         + CKKSReductionOps<BE>
-        + ModuleSynchronize<BE>
 {
 }
+
+/// What a case asks of the client module: key generation, encoding, encryption and decryption.
+pub trait LibmClientModule<BC: Backend>: TestContextSharedModule<BC> + CKKSEncodingOps<BC, f64> {}
+
+impl<BC: Backend, M> LibmClientModule<BC> for M where M: TestContextSharedModule<BC> + CKKSEncodingOps<BC, f64> {}
 
 fn n() -> usize {
     1 << LOG_N
@@ -230,73 +247,86 @@ fn inverse_iters(min: f64) -> usize {
     (need / -(1.0 - min).log2()).log2().ceil() as usize
 }
 
-/// The client side of a point: the module, the secret, and one arena for key generation, encoding, encryption and
-/// decryption.
-struct Client<BE: Backend> {
+/// The two sides of a point: the evaluated module, and the client module with the secret and one arena for key
+/// generation, encoding, encryption and decryption.
+struct Client<BE: Backend, BC: Backend> {
     module: Module<BE>,
+    client: Module<BC>,
     k: usize,
-    sk_raw: BackendGLWESecret<BE>,
-    sk: GLWESecretPrepared<BE::OwnedBuf, BE>,
-    arena: ScratchOwned<BE>,
+    sk_raw: BackendGLWESecret<BC>,
+    sk: GLWESecretPrepared<BC::OwnedBuf, BC>,
+    arena: ScratchOwned<BC>,
+    /// The evaluated module's arena for preparing the moved keys.
+    prepare: ScratchOwned<BE>,
     xe: Source,
     xa: Source,
 }
 
-impl<BE> Client<BE>
+impl<BE, BC> Client<BE, BC>
 where
-    BE: Backend<Ring = Standard> + 'static,
+    BE: Backend<Ring = Standard, ZnxWord = i64> + HostStaged + 'static,
+    BC: TestContextBackend<Ring = Standard>,
     Module<BE>: LibmModule<BE>,
+    Module<BC>: LibmClientModule<BC>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+    ScratchOwned<BC>: ScratchOwnedAlloc<BC> + ScratchOwnedBorrow<BC>,
 {
     fn new(k: usize) -> Self {
         let module = Module::<BE>::new(n() as u64);
+        let client = Module::<BC>::new(n() as u64);
         let layout = layout(k);
         let mut xs = Source::new([0u8; 32]);
-        let mut sk_raw = module.glwe_secret_alloc_from_infos(&layout);
-        module.glwe_secret_fill_ternary_hw(&mut sk_raw, HW, &mut xs);
-        let mut sk = module.glwe_secret_prepared_alloc_from_infos(&layout);
-        module.glwe_secret_prepare(&mut sk, &sk_raw);
+        let mut sk_raw = client.glwe_secret_alloc_from_infos(&layout);
+        client.glwe_secret_fill_ternary_hw(&mut sk_raw, HW, &mut xs);
+        let mut sk = client.glwe_secret_prepared_alloc_from_infos(&layout);
+        client.glwe_secret_prepare(&mut sk, &sk_raw);
         let (tsk, atk) = (tsk_layout(k), atk_layout(k));
-        let bytes = module
+        let bytes = client
             .ckks_all_ops_with_atk_tmp_bytes(&layout, &layout, &tsk, &atk)
-            .max(<Module<BE> as CKKSEncodingHostOps<BE, f64>>::ckks_reim_tmp_bytes(
-                &module,
+            .max(<Module<BC> as CKKSEncodingHostOps<BC, f64>>::ckks_reim_tmp_bytes(
+                &client,
                 slots(),
             ))
-            .max(module.glwe_tensor_key_encrypt_sk_tmp_bytes(&tsk))
-            .max(module.glwe_tensor_key_prepare_tmp_bytes(&tsk))
-            .max(module.glwe_automorphism_key_encrypt_sk_tmp_bytes(&atk))
+            .max(client.glwe_tensor_key_encrypt_sk_tmp_bytes(&tsk))
+            .max(client.glwe_automorphism_key_encrypt_sk_tmp_bytes(&atk));
+        let prepare = module
+            .glwe_tensor_key_prepare_tmp_bytes(&tsk)
             .max(module.glwe_automorphism_key_prepare_tmp_bytes(&atk));
         Self {
             module,
+            client,
             k,
             sk_raw,
             sk,
             arena: ScratchOwned::alloc(bytes),
+            prepare: ScratchOwned::alloc(prepare),
             xe: Source::new([2u8; 32]),
             xa: Source::new([1u8; 32]),
         }
     }
 
+    /// The tensor key, made on the client and prepared on the evaluated module.
     fn tensor_key(&mut self) -> GLWETensorKeyPrepared<BE::OwnedBuf, BE> {
         let layout = tsk_layout(self.k);
-        let mut tsk = self.module.glwe_tensor_key_alloc_from_infos(&layout);
-        self.module
+        let mut tsk = self.client.glwe_tensor_key_alloc_from_infos(&layout);
+        self.client
             .glwe_tensor_key_encrypt_sk(&mut tsk, &self.sk_raw, &mut self.xe, &mut self.xa, &mut self.arena.borrow());
+        let mut moved = self.module.glwe_tensor_key_alloc_from_infos(&layout);
+        tsk.transfer_into(&mut moved);
         let mut prepared = self.module.alloc_tensor_key_prepared_from_infos(&layout);
         self.module
-            .glwe_tensor_key_prepare(&mut prepared, &tsk, &mut self.arena.borrow());
+            .glwe_tensor_key_prepare(&mut prepared, &moved, &mut self.prepare.borrow());
         prepared
     }
 
-    /// One prepared rotation key for each Galois element.
+    /// One rotation key for each Galois element, made on the client and prepared on the evaluated module.
     fn rotation_keys(&mut self, elements: Vec<i64>) -> HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>> {
         let layout = atk_layout(self.k);
         elements
             .into_iter()
             .map(|p| {
-                let mut atk = self.module.glwe_automorphism_key_alloc_from_infos(&layout);
-                self.module.glwe_automorphism_key_encrypt_sk(
+                let mut atk = self.client.glwe_automorphism_key_alloc_from_infos(&layout);
+                self.client.glwe_automorphism_key_encrypt_sk(
                     &mut atk,
                     p,
                     &self.sk_raw,
@@ -304,53 +334,64 @@ where
                     &mut self.xa,
                     &mut self.arena.borrow(),
                 );
+                let mut moved = self.module.glwe_automorphism_key_alloc_from_infos(&layout);
+                atk.transfer_into(&mut moved);
                 let mut prepared = self.module.glwe_automorphism_key_prepared_alloc_from_infos(&layout);
                 self.module
-                    .glwe_automorphism_key_prepare(&mut prepared, &atk, &mut self.arena.borrow());
+                    .glwe_automorphism_key_prepare(&mut prepared, &moved, &mut self.prepare.borrow());
                 (p, prepared)
             })
             .collect()
     }
 
-    /// A fresh ciphertext of width `k` holding `values` in its real parts.
+    /// A fresh ciphertext of width `k` holding `values` in its real parts, encrypted on the client and moved to the
+    /// evaluated module.
     fn encrypt(&mut self, values: &[f64]) -> CKKSCiphertextOwned<BE> {
         let mut pt = self
-            .module
+            .client
             .ckks_pt_vec_alloc(slots(), base2k(), TorusPrecision((LOG_DELTA + HEADROOM) as u32));
         pt.set_meta(layout(self.k).meta);
-        self.module
+        self.client
             .ckks_encode_reim_into(&mut pt, values, &vec![0.0; slots()], &mut self.arena.borrow())
             .unwrap();
-        let mut ct = self.alloc();
-        self.module
+        let mut ct = self.client.ckks_ciphertext_alloc(base2k(), TorusPrecision(self.k as u32));
+        self.client
             .ckks_encrypt_sk(&mut ct, &pt, &self.sk, &mut self.xe, &mut self.xa, &mut self.arena.borrow())
             .unwrap();
-        ct
+        let mut moved = self.alloc();
+        (*ct).transfer_into(&mut *moved);
+        moved.set_meta(ct.meta());
+        moved
     }
 
-    /// A destination of width `k`.
+    /// A destination of width `k` on the evaluated module.
     fn alloc(&self) -> CKKSCiphertextOwned<BE> {
         let mut ct = self.module.ckks_ciphertext_alloc(base2k(), TorusPrecision(self.k as u32));
         ct.set_meta(layout(self.k).meta);
         ct
     }
 
-    /// The real parts of the slots of `ct`.
+    /// The real parts of the slots of `ct`, moved back to the client and decrypted there.
     fn decrypt(&mut self, ct: &CKKSCiphertextOwned<BE>) -> Vec<f64> {
-        let log_delta = ct.log_delta();
+        // The allocation keeps the full width, the function narrowed `k`.
+        let mut moved = self.client.ckks_ciphertext_alloc(base2k(), TorusPrecision(self.k as u32));
+        moved.set_k(ct.k());
+        (**ct).transfer_into(&mut *moved);
+        moved.set_meta(ct.meta());
+        let log_delta = moved.log_delta();
         let mut pt = self
-            .module
+            .client
             .ckks_pt_vec_alloc(slots(), base2k(), TorusPrecision((log_delta + DECODE_HEADROOM) as u32));
         pt.set_meta(GLWEPlaintextMeta {
             scale: Scale::Log(log_delta),
             slots: SlotsKind::Complex,
             log_sparsity: 0,
         });
-        self.module
-            .ckks_decrypt(&mut pt, ct, &self.sk, &mut self.arena.borrow())
+        self.client
+            .ckks_decrypt(&mut pt, &moved, &self.sk, &mut self.arena.borrow())
             .unwrap();
         let (mut re, mut im) = (vec![0.0; slots()], vec![0.0; slots()]);
-        self.module
+        self.client
             .ckks_decode_reim_into(&pt, &mut re, &mut im, &mut self.arena.borrow())
             .unwrap();
         re
@@ -368,18 +409,21 @@ struct Point {
     details: Value,
 }
 
-fn rsqrt<BE>(min: f64) -> Result<Point>
+fn rsqrt<BE, BC>(min: f64) -> Result<Point>
 where
-    BE: Backend<Ring = Standard> + HostStaged + 'static,
+    BE: Backend<Ring = Standard, ZnxWord = i64> + HostStaged + 'static,
+    BC: TestContextBackend<Ring = Standard>,
     Module<BE>: LibmModule<BE>,
+    Module<BC>: LibmClientModule<BC>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+    ScratchOwned<BC>: ScratchOwnedAlloc<BC> + ScratchOwnedBorrow<BC>,
 {
     let (seed, steps) = rsqrt_seed(min)?;
     let host = Module::<HostBytesBackend>::new(n() as u64);
     let approximation =
         PolynomialApproximation::from_polynomial(&seed.minimax.poly, base2k(), coeff_meta(), SplitStrategy::MinDepth, &host)?;
     let consumed = approximation.consumed_bits(LOG_DELTA) + 2 * steps * LOG_DELTA;
-    let mut client = Client::<BE>::new(ct_k(consumed));
+    let mut client = Client::<BE, BC>::new(ct_k(consumed));
     let approximation = approximation.map_plaintexts(|pt| upload_pt(&client.module, pt));
     let tsk = client.tensor_key();
     let x = spread(min, 1.0);
@@ -426,11 +470,14 @@ where
     })
 }
 
-fn softmax<BE>(target_bits: f64) -> Result<Point>
+fn softmax<BE, BC>(target_bits: f64) -> Result<Point>
 where
-    BE: Backend<Ring = Standard> + HostStaged + 'static,
+    BE: Backend<Ring = Standard, ZnxWord = i64> + HostStaged + 'static,
+    BC: TestContextBackend<Ring = Standard>,
     Module<BE>: LibmModule<BE>,
+    Module<BC>: LibmClientModule<BC>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+    ScratchOwned<BC>: ScratchOwnedAlloc<BC> + ScratchOwnedBorrow<BC>,
 {
     let host = Module::<HostBytesBackend>::new(n() as u64);
     let options = SoftmaxOptions {
@@ -441,7 +488,7 @@ where
     let plan = SoftmaxPlan::from_precision(a, b, base2k(), coeff_meta(), options, &host)?;
     let consumed = plan.consumed_bits(LOG_DELTA);
     let (depth, reciprocal_iters, exp_degree) = (plan.depth(), plan.reciprocal_iters(), plan.exp().degree());
-    let mut client = Client::<BE>::new(ct_k(consumed));
+    let mut client = Client::<BE, BC>::new(ct_k(consumed));
     let plan = plan.map_plaintexts(|pt| upload_pt(&client.module, pt));
     let tsk = client.tensor_key();
     let x = spread(a, b);
@@ -488,15 +535,18 @@ where
     })
 }
 
-fn inverse<BE>(min: f64) -> Result<Point>
+fn inverse<BE, BC>(min: f64) -> Result<Point>
 where
-    BE: Backend<Ring = Standard> + HostStaged + 'static,
+    BE: Backend<Ring = Standard, ZnxWord = i64> + HostStaged + 'static,
+    BC: TestContextBackend<Ring = Standard>,
     Module<BE>: LibmModule<BE>,
+    Module<BC>: LibmClientModule<BC>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+    ScratchOwned<BC>: ScratchOwnedAlloc<BC> + ScratchOwnedBorrow<BC>,
 {
     let iters = inverse_iters(min);
     let consumed = (iters + 1) * LOG_DELTA;
-    let mut client = Client::<BE>::new(ct_k(consumed));
+    let mut client = Client::<BE, BC>::new(ct_k(consumed));
     let tsk = client.tensor_key();
     let x = spread(min, 1.0);
     let ct_x = client.encrypt(&x);
@@ -538,18 +588,21 @@ where
     })
 }
 
-/// Builds the case `args.case` on `BE`, times its calls, and reports its parameters, modulus and precision.
-pub fn run<BE>(args: &CaseArgs) -> Result<Value>
+/// Builds the case `args.case` on `BE` with `BC` as the client, times its calls, and reports its parameters, modulus and precision.
+pub fn run<BE, BC>(args: &CaseArgs) -> Result<Value>
 where
-    BE: Backend<Ring = Standard> + HostStaged + 'static,
+    BE: Backend<Ring = Standard, ZnxWord = i64> + HostStaged + 'static,
+    BC: TestContextBackend<Ring = Standard>,
     Module<BE>: LibmModule<BE>,
+    Module<BC>: LibmClientModule<BC>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+    ScratchOwned<BC>: ScratchOwnedAlloc<BC> + ScratchOwnedBorrow<BC>,
 {
     let start = Instant::now();
     let mut point = match case(&args.case)? {
-        Case::Rsqrt { min } => rsqrt::<BE>(min)?,
-        Case::Softmax { target_bits } => softmax::<BE>(target_bits)?,
-        Case::Inverse { min } => inverse::<BE>(min)?,
+        Case::Rsqrt { min } => rsqrt::<BE, BC>(min)?,
+        Case::Softmax { target_bits } => softmax::<BE, BC>(target_bits)?,
+        Case::Inverse { min } => inverse::<BE, BC>(min)?,
     };
     let setup_ns = start.elapsed().as_nanos() as u64;
     let timings = direct(&mut point.call, &|| {}, args.warmup, args.iters)?.expect("direct timing is always available");

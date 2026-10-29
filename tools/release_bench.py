@@ -432,8 +432,8 @@ def cmd_run(opts):
     host_isa = isa()
     suites = opts.suites or SUITES
     gpu_feature = None if opts.gpu == "none" else (default_gpu_feature() if opts.gpu == "auto" else opts.gpu)
-    # The GPU backends run the bootstrapping suite only.
-    if "bootstrapping" not in suites:
+    # The GPU backends run the bootstrapping and libm suites only.
+    if "bootstrapping" not in suites and "libm" not in suites:
         gpu_feature = None
     threads = min(opts.threads or default_threads(), os.cpu_count() or 1)
     builds = plan_builds(host_isa, gpu_feature)

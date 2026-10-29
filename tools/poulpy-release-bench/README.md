@@ -65,7 +65,9 @@ The points are the ones of the poulpy-bench sweep (`base2k = 52`, `k = 208`, ent
 A builder checks the radix against the lazy sums of its operation and the first result against the error bound of poulpy-bench, then the same call is timed.
 The record also gives the time per matrix.
 
-The libm and blas suites run on the CPU backends only: the GPU backend has no blas implementation, and libm on it is not measured.
+The libm suite runs on every backend, the blas suite on the CPU backends only: the GPU backend has no blas implementation.
+As in the bootstrapping suite, a GPU backend evaluates and `NTT4x30Portable` generates the keys, encrypts and decrypts, the keys and ciphertexts moving between them.
+A CPU backend is its own client.
 
 ### Modulus
 
@@ -87,7 +89,7 @@ The driver builds this crate once per set of target flags, each in its own targe
 A build is skipped when the host lacks its instruction sets.
 The GPU feature is `metal` on Apple Silicon, `cuda` when `nvcc` is found, `hip` when ROCm is.
 `--gpu` overrides it and `--gpu none` skips it.
-It is left out when the bootstrapping suite is not selected.
+It is left out when neither the bootstrapping nor the libm suite is selected.
 The GPU backends use `NTT4x30Portable` as the client that generates the keys and encrypts.
 
 Rayon backends run on 16 threads on x86 and on every thread on ARM, capped at what the host has (`--threads` overrides).
@@ -106,7 +108,7 @@ cargo metadata --format-version 1 --manifest-path tools/poulpy-release-bench/Car
 ```sh
 poulpy-release-bench list
 poulpy-release-bench run --backend NTT4x30NeonRayon --preset n16_d35_k733_p20_s2c [--pow2] [--replay] [--warmup 3] [--iters 20] [--device 0]
-poulpy-release-bench run --backend NTT4x30NeonRayon --libm rsqrt_r16 [--warmup 3] [--iters 20]
+`poulpy-release-bench run --backend NTT4x30NeonRayon --libm rsqrt_r16 [--warmup 3] [--iters 20] [--device 0]
 poulpy-release-bench run --backend NTT4x30NeonRayon --blas matmul_d64 [--warmup 3] [--iters 20]
 ```
 
