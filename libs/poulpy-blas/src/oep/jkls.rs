@@ -148,7 +148,7 @@ pub unsafe trait BlasJklsImpl: Backend {
     where
         D: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos + Send,
         S: GLWEToBackendRef<Self> + CKKSCtBounds + Sync,
-        K: GetAutomorphismKey<Self> + Sync;
+        K: GetAutomorphismKey<Self> + GetTensorKey<Self> + Sync;
 }
 
 /// Selects the references of [`BlasJklsReference`](crate::reference::BlasJklsReference) as the JKLS kernels of `$be`.
@@ -225,7 +225,7 @@ macro_rules! impl_blas_jkls_reference_full {
                     + ::poulpy_ckks::SetCKKSInfos
                     + Send,
                 S: ::poulpy_core::layouts::GLWEToBackendRef<Self> + ::poulpy_ckks::CKKSCtBounds + Sync,
-                K: ::poulpy_core::layouts::GetAutomorphismKey<Self> + Sync,
+                K: ::poulpy_core::layouts::GetAutomorphismKey<Self> + ::poulpy_core::layouts::GetTensorKey<Self> + Sync,
             {
                 $crate::reference::BlasJklsReference::blas_jkls_pt_unit_reference(
                     module, res, sources, first, masks, plaintexts, galois, keys, scratch,

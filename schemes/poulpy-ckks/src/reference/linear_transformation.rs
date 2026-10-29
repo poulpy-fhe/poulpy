@@ -62,19 +62,6 @@ where
     }
 }
 
-/// A plaintext diagonal is of rank 0: the transform never multiplies it as a ciphertext.
-impl<BE: Backend, D: Data> poulpy_core::layouts::GLWEMulRight<BE> for CKKSPlaintext<D, BE::ZnxWord, BE::Ring>
-where
-    CKKSPlaintext<D, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE>,
-{
-    type Prepared = poulpy_hal::layouts::CnvPVecROwned<BE>;
-    type Ciphertext = Self;
-
-    fn mul_right(&self) -> poulpy_core::layouts::MulRightOperand<'_, Self::Prepared, Self> {
-        poulpy_core::layouts::MulRightOperand::Ciphertext(self)
-    }
-}
-
 /// Streamed-diagonal metadata: a [`CKKSPlaintext`] carries its scale as `log_delta`.
 impl<D: Data, W: ZnxWord, R: Ring> LtDiagonalMeta for CKKSPlaintext<D, W, R> {
     fn lt_log_scale(&self) -> usize {
@@ -305,7 +292,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         })?;
         let pt_slots = first.lt_slots();
         ensure_uniform_diagonals(OP, lt, lt_diagonal_meta)?;
-        let (res_log_budget, res_log_delta, cnv_offset) = lt_rule(OP, &*dst, src, first, keys)?;
+        let (res_log_budget, res_log_delta, cnv_offset) = lt_rule(OP, &*dst, src, babies, first, keys)?;
         let res_k: TorusPrecision = (res_log_budget + res_log_delta).into();
         debug_assert_eq!(
             res_k,
@@ -369,7 +356,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         let source = |src: &Src| (src.glwe_layout(), src.log_delta());
         // Core reads each source through its baby cache. A cache without the rotations its transform reads may hold
         // none, so its layout is read only once those are checked.
-        let cache = |babies: &LinearTransformationBabySteps<BE>| (babies.size(), babies.cols());
+        let cache = |babies: &LinearTransformationBabySteps<BE>| (babies.size(), babies.cols(), babies.k());
         check_babies(OP, lt, cache_0)?;
         for (t, ((&src_t, &babies_t), &lt_t)) in srcs.iter().zip(babies).zip(lts).enumerate().skip(1) {
             let mismatch = |what: &str| {
@@ -401,7 +388,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         }
         // The terms share the source and diagonal metadata, so the first term's
         // rule holds for all of them (see `ckks_eval_linear_transformation_into`).
-        let (res_log_budget, res_log_delta, cnv_offset) = lt_rule(OP, &*dst, src, first, keys)?;
+        let (res_log_budget, res_log_delta, cnv_offset) = lt_rule(OP, &*dst, src, cache_0, first, keys)?;
         let res_k: TorusPrecision = (res_log_budget + res_log_delta).into();
         let cyclotomic_order = operand_cyclotomic_order(OP, self, dst.n().as_usize())?;
         for (&babies_t, &lt_t) in babies.iter().zip(lts) {
@@ -427,9 +414,16 @@ impl<BE: Backend> CKKSLinearTransformationReference<BE> for Module<BE> {}
 /// `(log_budget, log_delta, cnv_offset)` of a transform of the diagonals `first` shares on `src` into `dst`, before any
 /// write: the rule of `ckks_mul_pt_vec_into` for plaintext diagonals, the diagonal described by its scale and the
 /// width its data was positioned at (its `log_budget` is dead in this math, so 0); for diagonals of the source's rank,
-/// the refusals of `ckks_dot_product_prepared` on the layouts, then the tensor key's lookup, then the rule of
-/// `ckks_mul_into`.
-fn lt_rule<BE, Dst, Src, P, H>(op: &'static str, dst: &Dst, src: &Src, first: &P, keys: &H) -> Result<(usize, usize, usize)>
+/// the refusals of `ckks_dot_product_prepared` on the layouts and a baby cache of `src`'s width, then the tensor key's
+/// lookup, then the rule of `ckks_mul_into`.
+fn lt_rule<BE, Dst, Src, P, H>(
+    op: &'static str,
+    dst: &Dst,
+    src: &Src,
+    babies: &LinearTransformationBabySteps<BE>,
+    first: &P,
+    keys: &H,
+) -> Result<(usize, usize, usize)>
 where
     BE: Backend,
     Dst: CKKSCtBounds,
@@ -454,6 +448,12 @@ where
         dst.base2k().as_usize() <= 62,
         "base2k {} > 62: two canonical tensor digits can overflow an i64",
         dst.base2k().as_usize()
+    );
+    // The product looks the tensor key up at the cache's width.
+    ckks_ensure_operand!(
+        op,
+        babies.k() == src.k(),
+        "the baby cache was prepared from a source of another width"
     );
     tensor_key_at(op, keys, src.k().max(first.k()))?;
     mul_ct_params_raw(

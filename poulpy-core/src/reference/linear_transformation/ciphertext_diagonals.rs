@@ -29,10 +29,7 @@ use crate::{
     reference::{
         keyswitching::GGLWEProductReference,
         linear_transformation::prepared_giants::GiantProducts,
-        operations::{
-            GLWETensoringReference, MulLeft, MulRest, MulRight, NoOperand, OnePassShape, glwe_mul_relinearize_one_pass,
-            one_pass_shape,
-        },
+        operations::{GLWETensoringReference, OnePassShape, one_pass_shape},
     },
 };
 
@@ -81,6 +78,10 @@ where
                         (p.n(), p.base2k(), p.rank(), p.k(), p.size())
                             == (res.n, res.base2k, res.rank, diagonal.k(), diagonal.size()),
                         "a ciphertext diagonal is not at the degree, base2k and rank of res and the first diagonal's width"
+                    );
+                    assert!(
+                        p.mul_right_operand().is_some(),
+                        "a diagonal of the rank of res gives no ciphertext operand"
                     );
                 }
             }
@@ -190,17 +191,17 @@ where
     }
 
     fn product(&self, module: &Module<BE>, prod: &mut VecZnxDftBackendMut<'_, BE>, g: usize, scratch: &mut ScratchArena<'_, BE>) {
-        let mut pairs = self.babies.iter().zip(self.lts).flat_map(|(lhs, lt)| {
-            lt.giant_steps[g]
-                .diagonals
-                .iter()
-                .map(move |d| (lhs.baby_step(d.baby), d.plaintext.mul_right()))
+        let pairs = self.babies.iter().zip(self.lts).flat_map(|(lhs, lt)| {
+            lt.giant_steps[g].diagonals.iter().map(move |d| {
+                let right = d.plaintext.mul_right_operand().expect("checked ciphertext diagonals");
+                (lhs.baby_step(d.baby), right)
+            })
         });
         let (lhs, diagonal) = (self.babies[0], self.diagonal());
-        let (mut tmp, mut scratch) = scratch.borrow().take_glwe_scratch(&self.res);
-        if self.one_pass.is_none() {
+        let (a_size, b_size) = (lhs.size(), diagonal.size());
+        let Some(shape) = &self.one_pass else {
             let (n, cols, base2k) = (self.res.n.as_usize(), self.res.rank.as_usize() + 1, self.res.base2k);
-            let (a_size, b_size) = (lhs.size(), diagonal.size());
+            let (mut tmp, scratch) = scratch.borrow().take_glwe_scratch(&self.res);
             let (mut acc, scratch) = scratch.take_glwe_tensor_scratch(&self.tensor);
             let (mut term, scratch) = scratch.take_glwe_tensor_scratch(&self.tensor);
             let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(n, cols, b_size, PrepareHint::Reuse);
@@ -229,34 +230,21 @@ where
                 module.vec_znx_dft_apply(1, 0, prod, col, &tmp.data, col);
             }
             return;
-        }
-        let (left, right) = pairs.next().expect("checked non-empty");
-        let right = match right {
-            MulRightOperand::Prepared(prep) => MulRight::Prepared {
-                prep,
-                size: diagonal.size(),
-                k: diagonal.k(),
-            },
-            MulRightOperand::Ciphertext(ct) => MulRight::Operand(ct),
         };
-        glwe_mul_relinearize_one_pass(
+        BE::glwe_mul_prepared_relinearize_sum_dft(
             module,
             self.cnv_offset,
-            &mut tmp,
-            self.res.k,
-            MulLeft::<NoOperand<BE>, _>::Prepared {
-                prep: left,
-                size: lhs.size(),
-                k: lhs.k(),
-            },
-            right,
-            MulRest::Pairs {
-                pairs: &mut pairs,
-                summed: self.summed(g),
-            },
+            prod,
+            &self.res,
+            shape,
+            pairs,
+            a_size,
+            lhs.k(),
+            b_size,
+            diagonal.k(),
+            self.summed(g),
             &Resolved(&self.tsk),
-            &mut scratch,
-            Some(prod),
+            scratch,
         );
     }
 }
@@ -271,9 +259,9 @@ impl<'a, BE: Backend + 'a> GetTensorKey<BE> for Resolved<'_, 'a, BE> {
 }
 
 /// Bytes the product of a giant step of [`CiphertextProducts`] takes beside it, into a result of the layout `res`
-/// from babies of `a_size` limbs and diagonals of `b_size` limbs through a tensor of width `tensor_k`: the result,
-/// then the larger of the one-pass dot product of the pairs, left in DFT by the fused product, and the tensor path's
-/// sum of two tensors with a right operand prepared in the call.
+/// from babies of `a_size` limbs and diagonals of `b_size` limbs through a tensor of width `tensor_k`: the larger of
+/// the backend's one-pass dot product left in DFT and the tensor path's result and sum of two tensors with a right
+/// operand prepared in the call.
 pub(super) fn ciphertext_products_tmp_bytes<BE, R, K>(
     module: &Module<BE>,
     res: &R,
@@ -283,15 +271,13 @@ pub(super) fn ciphertext_products_tmp_bytes<BE, R, K>(
     tsk: &K,
 ) -> usize
 where
-    BE: GGLWEProductDigitsStridedImpl,
+    BE: GLWETensoringImpl,
     Module<BE>:
         GLWEPreparedTensoring<BE> + GLWETensoring<BE> + GLWEBytesOf<BE> + GLWENormalize<BE> + Convolution<BE> + CnvPVecBytesOf,
     R: GLWEInfos,
     K: GGLWEInfos,
 {
-    let size = res.size().max(tsk.size());
-    let one_pass = module.glwe_mul_prepared_relinearize_sum_tmp_bytes(res, a_size, b_size, tensor_k, tsk)
-        + BE::gglwe_product_fused_tmp_bytes(module, size, size, a_size + b_size, tsk);
+    let one_pass = BE::glwe_mul_prepared_relinearize_sum_dft_tmp_bytes(module, res, a_size, b_size, tensor_k, tsk);
     let (n, cols) = (res.n().as_usize(), res.rank().as_usize() + 1);
     let tensor = GLWELayout {
         n: res.n(),
@@ -303,11 +289,12 @@ where
         k: TorusPrecision((b_size * res.base2k().as_usize()) as u32),
         ..tensor
     };
-    let tensor_path = 2 * BE::scratch_aligned(module.glwe_tensor_bytes_of_from_infos(&tensor))
+    let tensor_path = BE::scratch_aligned(module.glwe_bytes_of_from_infos(res))
+        + 2 * BE::scratch_aligned(module.glwe_tensor_bytes_of_from_infos(&tensor))
         + BE::scratch_aligned(module.bytes_of_cnv_pvec_right(n, cols, b_size, PrepareHint::Reuse))
         + glwe_prepare_right_tmp_bytes(module, b_size, &right)
             .max(module.glwe_tensor_apply_prepared_tmp_bytes(&tensor, a_size, b_size, res.base2k()))
             .max(module.glwe_normalize_tmp_bytes())
             .max(module.glwe_tensor_relinearize_tmp_bytes(res, &tensor, tsk));
-    BE::scratch_aligned(module.glwe_bytes_of_from_infos(res)) + one_pass.max(tensor_path)
+    one_pass.max(tensor_path)
 }

@@ -264,7 +264,7 @@ unsafe impl BlasJklsImpl for OverrideBackend {
     where
         D: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos + Send,
         S: GLWEToBackendRef<Self> + CKKSCtBounds + Sync,
-        K: GetAutomorphismKey<Self> + Sync,
+        K: GetAutomorphismKey<Self> + GetTensorKey<Self> + Sync,
     {
         PT_UNIT_CALLS.fetch_add(1, Relaxed);
         module.blas_jkls_pt_unit_reference(res, sources, first, masks, plaintexts, galois, keys, scratch)

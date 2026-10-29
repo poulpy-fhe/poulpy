@@ -1673,7 +1673,8 @@ pub fn test_linear_transformation_ct_tensor_path<BE, F, E>(
 
 /// A transform of ciphertext diagonals is refused before any write, on an empty arena and an empty key set: a
 /// destination of another degree, `base2k` or rank than the diagonals as `PreparedOperandLayoutMismatch`, and a
-/// destination and diagonals past `base2k` 62 as `InvalidOperand`. Ciphertext diagonals prepared into a cache allocated
+/// destination and diagonals past `base2k` 62 as `InvalidOperand`, and a baby cache of a source of another width than
+/// `src` as `InvalidOperand`. Ciphertext diagonals prepared into a cache allocated
 /// from a plaintext diagonal's layout are refused as `InvalidOperand`, the cache unchanged. Every operand is an
 /// allocation: each refusal comes before any value or key is read.
 pub fn test_linear_transformation_ct_rejects_foreign_layouts<BE, F, E>(
@@ -1738,6 +1739,21 @@ pub fn test_linear_transformation_ct_rejects_foreign_layouts<BE, F, E>(
             },
         );
     }
+
+    let narrow = LinearTransformationBabySteps::alloc_for(module, &prepared, &alloc_ct(p, module, p.k - p.base2k));
+    let mut dst = alloc_ct(p, module, p.k);
+    let before = snapshot::<BE, _>(&dst);
+    let err = with_scratch::<BE, _>(0, |s| {
+        module.ckks_eval_linear_transformation_into(&mut dst, &src, &narrow, &prepared, &no_keys, s)
+    })
+    .unwrap_err();
+    assert_eq!(snapshot::<BE, _>(&dst), before, "a refused transform wrote dst: {err}");
+    assert_invalid_operand(
+        "baby cache width",
+        &err,
+        OP,
+        "the baby cache was prepared from a source of another width",
+    );
 
     let wide = GLWELayout {
         base2k: 63_usize.into(),

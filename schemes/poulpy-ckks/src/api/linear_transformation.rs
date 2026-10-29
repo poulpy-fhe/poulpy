@@ -305,8 +305,8 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     /// - `InvalidOperand` when the diagonals of `lt` do not share one scale, width and slot kind, or when `src` is of
     ///   a degree above the module's;
     /// - for ciphertext diagonals, in this order, `PreparedOperandLayoutMismatch` for a diagonal of another degree,
-    ///   `base2k` or rank than `dst`, `InvalidOperand` past `base2k` 62 and `MissingRelinearizationKey` without the
-    ///   tensor key;
+    ///   `base2k` or rank than `dst`, `InvalidOperand` past `base2k` 62 or for `babies` prepared from a source of another
+    ///   width than `src`, and `MissingRelinearizationKey` without the tensor key;
     /// - `MultiplicationPrecisionUnderflow` or `InsufficientHomomorphicCapacity` when the budget rule leaves no result
     ///   at `dst`'s width;
     /// - `MissingAutomorphismKey` for a non-zero giant rotation of `lt` with no key at the output width;
@@ -353,7 +353,7 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     /// Returns `InvalidOperand`, before writing `dst`, if the slices differ in
     /// length or are empty, or if a term does not share the first one's giant
     /// schedule, diagonal layout, width, scale and slot kind, source layout and
-    /// scale, or baby-cache layout. Also returns an error before writing `dst`
+    /// scale, or baby-cache layout and width. Also returns an error before writing `dst`
     /// if a term fails the checks of [`Self::ckks_eval_linear_transformation_into`].
     fn ckks_eval_linear_transformation_sum_into<Dst, Src, H>(
         &self,

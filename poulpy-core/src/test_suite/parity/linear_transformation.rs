@@ -62,21 +62,14 @@ where
         self.0.to_backend_ref()
     }
 }
-impl<BE: Backend, D: Data> crate::layouts::GLWEMulRight<BE> for StreamedDiagonal<D>
+impl<BE: Backend<ZnxWord = i64>> DiagonalProd<BE> for StreamedDiagonal<BE::OwnedBuf>
 where
-    GLWE<D, i64>: GLWEToBackendRef<BE>,
+    GLWE<BE::OwnedBuf, i64>: GLWEToBackendRef<BE>,
 {
-    type Prepared = poulpy_hal::layouts::CnvPVecROwned<BE>;
-    type Ciphertext = GLWE<D, i64>;
-
-    fn mul_right(&self) -> crate::layouts::MulRightOperand<'_, Self::Prepared, Self::Ciphertext> {
-        crate::layouts::MulRightOperand::Ciphertext(&self.0)
+    fn mul_right_operand(&self) -> Option<crate::layouts::prepared::CiphertextDiagonal<'_, BE>> {
+        Some(crate::layouts::MulRightOperand::Ciphertext(&self.0))
     }
-}
-impl<BE: Backend, D: Data> DiagonalProd<BE> for StreamedDiagonal<D>
-where
-    GLWE<D, i64>: GLWEToBackendRef<BE>,
-{
+
     fn accumulate_giant_prod<M>(
         module: &M,
         cnv_offset_hi: usize,
