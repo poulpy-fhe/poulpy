@@ -830,6 +830,29 @@ pub trait GLWETensoringReference<BE: Backend> {
         AP: CnvPVecLToBackendRef<BE> + 'a,
         H: GetTensorKey<BE>;
 
+    /// Scratch bytes of [`Self::glwe_tensor_apply_prepared_sum_dft_reference`] for the tensor of the layout `res`, from
+    /// prepared left operands of `a_size` limbs and right operands of `b_size` limbs.
+    fn glwe_tensor_apply_prepared_sum_dft_tmp_bytes_reference<R>(&self, res: &R, a_size: usize, b_size: usize) -> usize
+    where
+        R: GLWEInfos;
+
+    /// The tensor columns of `sum (a, b)` over `pairs`, in DFT at the convolution's limb offset `cnv_offset_hi`: `diag[i]`
+    /// receives `sum a[i] * b[i]` and `cross`, in row order of `i < j`, `sum a[i] * b[j] + a[j] * b[i]`, every limb
+    /// written. A ciphertext right operand is prepared at width `b_k` into a slot of `b_size` limbs.
+    #[allow(clippy::too_many_arguments)]
+    fn glwe_tensor_apply_prepared_sum_dft_reference<'a, AP>(
+        &self,
+        cnv_offset_hi: usize,
+        diag: &mut VecZnxDftBackendMut<'_, BE>,
+        cross: &mut VecZnxDftBackendMut<'_, BE>,
+        pairs: impl IntoIterator<Item = (&'a AP, DiagonalOperand<'a, BE>)>,
+        b_size: usize,
+        b_k: TorusPrecision,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        BE: 'a,
+        AP: CnvPVecLToBackendRef<BE> + 'a;
+
     /// Scratch bytes of [`Self::glwe_tensor_apply_prepared_reference`]: the product's own, without the operand copies
     /// and preparation of [`Self::glwe_tensor_apply_tmp_bytes_reference`].
     fn glwe_tensor_apply_prepared_tmp_bytes_reference<R>(&self, res: &R, a_size: usize, b_size: usize, base2k: Base2K) -> usize
@@ -1715,6 +1738,88 @@ where
             &mut scratch,
             Some((res, shape)),
         )
+    }
+
+    fn glwe_tensor_apply_prepared_sum_dft_tmp_bytes_reference<R>(&self, res: &R, a_size: usize, b_size: usize) -> usize
+    where
+        R: GLWEInfos,
+    {
+        let (n, cols, base2k) = (res.n().as_usize(), res.rank().as_usize() + 1, res.base2k().as_usize());
+        let dft_size = normalize_input_limb_bound_worst_case(a_size + b_size, res.size(), base2k, base2k);
+        let cnv_offset = a_size.min(b_size);
+        let right = GLWELayout {
+            k: TorusPrecision((b_size * base2k) as u32),
+            ..res.glwe_layout()
+        };
+        BE::scratch_aligned(self.bytes_of_cnv_pvec_right(n, cols, b_size, PrepareHint::Reuse))
+            + BE::scratch_aligned(self.bytes_of_vec_znx_dft(n, 1, dft_size))
+            + glwe_prepare_right_tmp_bytes(self, b_size, &right)
+                .max(self.cnv_apply_dft_tmp_bytes(cnv_offset, dft_size, a_size, b_size))
+                .max(self.cnv_apply_dft_add_tmp_bytes(cnv_offset, dft_size, a_size, b_size))
+                .max(self.cnv_pairwise_apply_dft_tmp_bytes(cnv_offset, dft_size, a_size, b_size))
+    }
+
+    fn glwe_tensor_apply_prepared_sum_dft_reference<'a, AP>(
+        &self,
+        cnv_offset_hi: usize,
+        diag: &mut VecZnxDftBackendMut<'_, BE>,
+        cross: &mut VecZnxDftBackendMut<'_, BE>,
+        pairs: impl IntoIterator<Item = (&'a AP, DiagonalOperand<'a, BE>)>,
+        b_size: usize,
+        b_k: TorusPrecision,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        BE: 'a,
+        AP: CnvPVecLToBackendRef<BE> + 'a,
+    {
+        let (n, cols) = (diag.n(), diag.cols());
+        assert!(
+            cross.n() == n && cross.cols() == cols * (cols - 1) / 2 && cross.size() == diag.size(),
+            "cross does not hold the cross columns of diag"
+        );
+        let (mut b_prep, scratch) = scratch
+            .borrow()
+            .take_cnv_pvec_right_scratch(n, cols, b_size, PrepareHint::Reuse);
+        let (mut pairwise, mut scratch) = scratch.take_vec_znx_dft_scratch(n, 1, diag.size());
+        let mut pairs = pairs.into_iter().peekable();
+        assert!(pairs.peek().is_some(), "tensor product sum has no pairs");
+        for (t, (a, b)) in pairs.enumerate() {
+            let a = a.to_backend_ref();
+            if let DiagonalOperand::Unprepared(b) = &b {
+                glwe_prepare_right(self, &mut b_prep, &b, b_k.as_usize(), &mut scratch);
+            }
+            let b = match b {
+                DiagonalOperand::Prepared(b) => b.to_backend_ref(),
+                DiagonalOperand::Unprepared(_) => b_prep.to_backend_ref(),
+            };
+            let mut c = 0;
+            for i in 0..cols {
+                if t == 0 {
+                    self.cnv_apply_dft(cnv_offset_hi, diag, i, &a, i, &b, i, 1, &mut scratch.borrow());
+                } else {
+                    self.cnv_apply_dft_add(cnv_offset_hi, diag, i, &a, i, &b, i, 1, &mut scratch.borrow());
+                }
+                for j in i + 1..cols {
+                    if t == 0 {
+                        self.cnv_pairwise_apply_dft(cnv_offset_hi, cross, c, &a, &b, i, j, &mut scratch.borrow());
+                    } else {
+                        self.cnv_pairwise_apply_dft(cnv_offset_hi, &mut pairwise, 0, &a, &b, i, j, &mut scratch.borrow());
+                        self.vec_znx_dft_add_assign(cross, c, &pairwise.to_backend_ref(), 0);
+                    }
+                    c += 1;
+                }
+            }
+        }
+        // A cross column holds the sum of `(a[i] + a[j]) * (b[i] + b[j])` until the diagonal products are taken out.
+        let diag = poulpy_hal::layouts::vec_znx_dft_backend_ref_from_mut(diag);
+        let mut c = 0;
+        for i in 0..cols {
+            for j in i + 1..cols {
+                self.vec_znx_dft_sub_assign(cross, c, &diag, i);
+                self.vec_znx_dft_sub_assign(cross, c, &diag, j);
+                c += 1;
+            }
+        }
     }
 
     fn glwe_tensor_apply_prepared_tmp_bytes_reference<R>(&self, res: &R, a_size: usize, b_size: usize, base2k: Base2K) -> usize

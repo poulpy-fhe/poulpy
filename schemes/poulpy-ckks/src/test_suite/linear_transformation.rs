@@ -1323,7 +1323,7 @@ pub fn test_linear_transformation_ct<BE, F, E>(
     let secret = Secret::<BE, E>::new::<F>(&params, module, host_module);
     let mut scratch = alloc_scratch(&params, module);
     let tsk = gen_tsk(&params, module, &secret.sk_raw, &mut scratch.borrow());
-    // At another `base2k`, which the one-pass product cannot take: a tensor per pair.
+    // At another `base2k`, which the one-pass product cannot take: the tensor columns summed in DFT.
     let tensor_params = CKKSTestParams {
         base2k: params.base2k - 1,
         ..params
