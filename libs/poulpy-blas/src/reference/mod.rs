@@ -25,9 +25,7 @@ use poulpy_ckks::{
 };
 use poulpy_core::{
     DiagonalProd,
-    layouts::{
-        GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, IntPolyInfos, LinearTransformationPlan,
-    },
+    layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LinearTransformationPlan},
 };
 use poulpy_hal::{
     api::{CnvPVecAlloc, ModuleN},
@@ -72,12 +70,15 @@ where
     M: CKKSLinearTransformationOps<BE> + ?Sized,
     K: GGLWEInfos,
 {
-    // As in `lt_tmp_bytes`: a `res` of no width is never read, and every plan of a key per rotation sizes alike.
+    // As in `lt_tmp_bytes`: a `res` of no width is never read, every plan of a key per rotation sizes alike, and the
+    // rotation key stands for the tensor key that plaintext diagonals never read.
     let live = res.k().as_usize() > 0;
     let plan = LinearTransformationPlan::default();
-    let res_bytes = live.then(|| module.ckks_eval_linear_transformation_sum_streamed_tmp_bytes(res, &plan, key));
+    let (res_diagonal, a_diagonal) = (ckks_plaintext_diagonal_layout(res), ckks_plaintext_diagonal_layout(a));
+    let res_bytes =
+        live.then(|| module.ckks_eval_linear_transformation_sum_streamed_tmp_bytes(res, &res_diagonal, &plan, key, key));
     module
-        .ckks_eval_linear_transformation_sum_streamed_tmp_bytes(a, &plan, key)
+        .ckks_eval_linear_transformation_sum_streamed_tmp_bytes(a, &a_diagonal, &plan, key, key)
         .max(res_bytes.unwrap_or(0))
         .max(module.ckks_prepare_linear_transformation_baby_steps_tmp_bytes(a, &plan, key))
 }
@@ -121,7 +122,7 @@ where
     M: CKKSLinearTransformationOps<BE>,
     D: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     S: GLWEToBackendRef<BE> + CKKSCtBounds + 's,
-    P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos + 'm,
+    P: DiagonalProd<BE> + LtDiagonalMeta + 'm,
     K: GetAutomorphismKey<BE> + GetTensorKey<BE>,
 {
     let inner = caches.len();

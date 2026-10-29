@@ -9,7 +9,7 @@ use poulpy_ckks::{
 use poulpy_core::{
     DiagonalProd,
     layouts::{
-        Base2K, DiagonalArithmetic, Diagonals, GetDegree, IntPolyInfos, LinearTransformationLayout, LinearTransformationStrategy,
+        Base2K, DiagonalArithmetic, Diagonals, GetDegree, LinearTransformationLayout, LinearTransformationStrategy,
         optimal_bsgs_giant_step,
     },
 };
@@ -163,7 +163,7 @@ impl<BE: Backend> BlasMatVecOperandInfos for BlasMatVecOperand<BE> {
 /// [`BlasMatVecOperandUnprepared`] (streamed).
 pub trait BlasMatVecMaps<BE: Backend>: BlasMatVecOperandInfos + Sync {
     /// The form of a diagonal.
-    type Diagonal: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos + Sync;
+    type Diagonal: DiagonalProd<BE> + LtDiagonalMeta + Sync;
 
     /// Whether the diagonals are plaintexts a product prepares at each use.
     const STREAMED: bool;

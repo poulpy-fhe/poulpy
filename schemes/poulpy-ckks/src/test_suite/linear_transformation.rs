@@ -383,7 +383,13 @@ pub fn test_linear_transformation_sum<BE, F, E>(
     let streamed_lts: Vec<_> = terms.iter().map(|&(_, l)| &lts[l]).collect();
     let mut streamed = alloc_ct(&params, module, params.k);
     with_scratch::<BE, _>(
-        module.ckks_eval_linear_transformation_sum_streamed_tmp_bytes(&cts[0], &prepared[0].index(), &params.atk_layout()),
+        module.ckks_eval_linear_transformation_sum_streamed_tmp_bytes(
+            &cts[0],
+            &crate::api::ckks_plaintext_diagonal_layout(&cts[0]),
+            &prepared[0].index(),
+            &params.atk_layout(),
+            &params.atk_layout(),
+        ),
         |scratch| {
             module.ckks_eval_linear_transformation_sum_into(
                 &mut streamed,

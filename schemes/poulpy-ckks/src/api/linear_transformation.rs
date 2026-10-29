@@ -232,16 +232,21 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
 
     /// Scratch bytes required by [`Self::ckks_eval_linear_transformation_sum_into`] over streamed transforms, plaintext
     /// diagonals: the resident sum's with the streamed diagonal slot of
-    /// [`Self::ckks_eval_linear_transformation_streamed_tmp_bytes`]. `plan` the schedule of the first term.
-    fn ckks_eval_linear_transformation_sum_streamed_tmp_bytes<C, K>(
+    /// [`Self::ckks_eval_linear_transformation_streamed_tmp_bytes`], whose arguments it takes. `plan` the schedule of
+    /// the first term.
+    fn ckks_eval_linear_transformation_sum_streamed_tmp_bytes<C, D, K, T>(
         &self,
         ct: &C,
+        diagonal: &D,
         plan: &LinearTransformationPlan,
+        tsk: &T,
         key: &K,
     ) -> usize
     where
         C: CKKSCtBounds,
-        K: GGLWEInfos;
+        D: GLWEInfos,
+        K: GGLWEInfos,
+        T: GGLWEInfos;
 
     // ----- populate -----
 
@@ -375,7 +380,7 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
+        P: DiagonalProd<BE> + LtDiagonalMeta,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
 
     // ----- eval (self-allocated baby cache) -----

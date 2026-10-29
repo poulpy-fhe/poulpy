@@ -183,20 +183,22 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
     }
 
     /// The streamed sum's query, `ct` standing for the destination and every source.
-    fn ckks_eval_linear_transformation_sum_streamed_tmp_bytes_reference<C, K>(
+    fn ckks_eval_linear_transformation_sum_streamed_tmp_bytes_reference<C, D, K, T>(
         &self,
         ct: &C,
+        diagonal: &D,
         plan: &LinearTransformationPlan,
+        tsk: &T,
         key: &K,
     ) -> usize
     where
         Self: GLWELinearTransformations<BE>,
         C: CKKSCtBounds,
+        D: GLWEInfos,
         K: GGLWEInfos,
+        T: GGLWEInfos,
     {
-        // Streamed diagonals are plaintexts, bounded by `ct`'s width, and read no tensor key.
-        let diagonal = crate::api::ckks_plaintext_diagonal_layout(ct);
-        self.glwe_eval_linear_transformation_sum_unprepared_rhs_tmp_bytes(ct, ct, &diagonal, plan, key, key)
+        self.glwe_eval_linear_transformation_sum_unprepared_rhs_tmp_bytes(ct, ct, diagonal, plan, tsk, key)
     }
 
     fn ckks_eval_linear_transformation_sum_tmp_bytes_reference<C, D, K, T>(
@@ -347,7 +349,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         Self: GLWELinearTransformations<BE> + CyclotomicOrder,
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
+        P: DiagonalProd<BE> + LtDiagonalMeta,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
     {
         const OP: &str = "ckks_eval_linear_transformation_sum_into";
