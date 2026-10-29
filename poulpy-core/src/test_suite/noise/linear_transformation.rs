@@ -1,3 +1,4 @@
+use crate::test_suite::keys::TransformKeys;
 use crate::test_suite::poisoned_scratch;
 use crate::test_suite::refusal::{assert_refusal, glwe_state};
 use poulpy_hal::layouts::CnvPVecLToBackendRef;
@@ -31,7 +32,7 @@ use crate::{
         Dsize, GGLWEInfos, GLWE, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout, GLWEPlaintext,
         GLWESecret, GLWETensorKey, GLWETensorKeyLayout, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, LinearTransformation,
         LinearTransformationDiagonal, LinearTransformationGiantStep, LinearTransformationLayout, LinearTransformationPlan,
-        LinearTransformationStrategy, ModuleCoreAlloc, MulRightOperand, SetK, TorusPrecision, TransformKeys, k_digit_of,
+        LinearTransformationStrategy, ModuleCoreAlloc, MulRightOperand, SetK, TorusPrecision, k_digit_of,
         prepared::{
             GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedBackendRef, GLWEAutomorphismKeyPreparedToBackendRef,
             GLWESecretPrepared, GLWETensorKeyPrepared, PreparedDiagonal,

@@ -8,6 +8,7 @@
 //! which the homomorphic engine must match up to CKKS precision.
 
 use crate::api::CKKSEncodingOps;
+use poulpy_core::test_suite::keys::TransformKeys;
 use std::collections::{HashMap, HashSet};
 
 use poulpy_core::{
@@ -15,7 +16,7 @@ use poulpy_core::{
     layouts::{
         BackendGLWESecret, Diagonals, Evaluate, GGLWEInfos, GLWEInfos, GLWELayout, GLWEPlaintextInfos, GLWEToBackendRef,
         GetAutomorphismKey, GetTensorKey, LWEInfos, LinearTransformationPlan, LinearTransformationStrategy, Rank,
-        SetGLWEPlaintextInfos, TorusPrecision, TransformKeys, k_digit_of,
+        SetGLWEPlaintextInfos, TorusPrecision, k_digit_of,
         prepared::{
             GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedBackendRef, GLWEAutomorphismKeyPreparedToBackendRef,
             GLWESecretPrepared, GLWETensorKeyPreparedBackendRef,

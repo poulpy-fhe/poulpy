@@ -85,24 +85,6 @@ impl<BE: Backend, K: GLWEAutomorphismKeyPreparedToBackendRef<BE>> GetAutomorphis
     }
 }
 
-/// The automorphism keys and the tensor key of one key set, the keys of a transform of ciphertext diagonals.
-pub struct TransformKeys<'a, A, T> {
-    pub automorphism: &'a A,
-    pub tensor: &'a T,
-}
-
-impl<BE: Backend, A: GetAutomorphismKey<BE>, T> GetAutomorphismKey<BE> for TransformKeys<'_, A, T> {
-    fn lookup_automorphism_key(&self, p: i64, k: TorusPrecision) -> Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
-        self.automorphism.lookup_automorphism_key(p, k)
-    }
-}
-
-impl<BE: Backend, A, T: GetTensorKey<BE>> GetTensorKey<BE> for TransformKeys<'_, A, T> {
-    fn lookup_tensor_key(&self, k: TorusPrecision) -> Result<GLWETensorKeyPreparedBackendRef<'_, BE>> {
-        self.tensor.lookup_tensor_key(k)
-    }
-}
-
 /// A map of automorphism keys holds no tensor key: a transform of plaintext diagonals never asks for one.
 impl<BE: Backend, K: GLWEAutomorphismKeyPreparedToBackendRef<BE>> GetTensorKey<BE> for HashMap<i64, K> {
     fn lookup_tensor_key(&self, _k: TorusPrecision) -> Result<GLWETensorKeyPreparedBackendRef<'_, BE>> {

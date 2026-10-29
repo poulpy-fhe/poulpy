@@ -1,5 +1,6 @@
 use poulpy_ckks::CKKSModuleInfos;
 use poulpy_ckks::Scale;
+use poulpy_core::test_suite::keys::TransformKeys;
 use poulpy_hal::api::ModuleSynchronize;
 use std::{collections::HashMap, hint::black_box};
 
@@ -20,7 +21,7 @@ use poulpy_core::{
     layouts::{
         Base2K, Degree, Dnum, GLWEAutomorphismKeyLayout, GLWELayout, GLWETensorKeyLayout, LWEInfos, LinearTransformation,
         LinearTransformationDiagonal, LinearTransformationGiantStep, LinearTransformationPlan, ModuleCoreAlloc, Rank,
-        SetGaloisElement, TorusPrecision, TransformKeys, k_digit_of,
+        SetGaloisElement, TorusPrecision, k_digit_of,
         prepared::{GLWEAutomorphismKeyPrepared, GLWETensorKeyPrepared},
     },
     test_suite::keys::fill_by_digit,

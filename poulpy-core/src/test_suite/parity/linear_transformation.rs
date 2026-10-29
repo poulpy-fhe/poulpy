@@ -1,5 +1,6 @@
 //! Canonical cross-backend parity for every linear-transformation phase.
 
+use crate::test_suite::keys::TransformKeys;
 use std::collections::HashMap;
 
 use poulpy_hal::{
@@ -19,7 +20,7 @@ use crate::{
         Base2K, Degree, Dnum, GGLWEInfos, GLWE, GLWEAutomorphismKeyLayout, GLWEBackendRef, GLWEInfos, GLWELayout,
         GLWETensorKeyLayout, GLWEToBackendRef, IntPolyInfos, LWEInfos, LinearTransformation, LinearTransformationDiagonal,
         LinearTransformationGiantStep, LinearTransformationLayout, LinearTransformationStrategy, ModuleCoreAlloc, Rank,
-        TorusPrecision, TransformKeys,
+        TorusPrecision,
         prepared::{LinearTransformationBabySteps, PreparedDiagonal},
     },
     reference::linear_transformation::glwe_accumulate_streamed_baby_steps_dft,
