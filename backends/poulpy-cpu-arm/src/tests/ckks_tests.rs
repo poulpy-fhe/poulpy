@@ -20,6 +20,11 @@ fn ntt4x30_neon_small_s2c_preset_meets_precision() {
     poulpy_ckks::test_suite::presets::small_s2c_preset_meets_precision::<crate::NTT4x30Neon>();
 }
 
+#[test]
+fn ntt4x30_neon_small_c2s_preset_meets_precision() {
+    poulpy_ckks::test_suite::presets::small_c2s_preset_meets_precision::<crate::NTT4x30Neon>();
+}
+
 /// Keys and ciphertexts from a portable client: the transfers both ways between two backends.
 #[test]
 fn ntt4x30_neon_small_s2c_preset_meets_precision_with_portable_client() {
@@ -38,6 +43,12 @@ fn ntt4x30_neon_ci_bootstrap_refuses_invalid_inputs() {
 #[test]
 fn ntt4x30_neon_rayon_ci_bootstrap_refuses_invalid_inputs() {
     poulpy_ckks::test_suite::presets::ci_bootstrap_refuses_invalid_inputs::<crate::NTT4x30NeonRayon>();
+}
+
+#[cfg(feature = "enable-rayon")]
+#[test]
+fn ntt4x30_neon_rayon_small_c2s_preset_meets_precision() {
+    poulpy_ckks::test_suite::presets::small_c2s_preset_meets_precision::<crate::NTT4x30NeonRayon>();
 }
 
 /// Full logN16 bootstraps per preset: slow, so opt in with `--ignored`.

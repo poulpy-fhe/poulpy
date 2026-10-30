@@ -11,11 +11,11 @@ ckks_determinism_test_suite!(mod ckks_determinism_fft64avxrayon, backend = crate
 ckks_determinism_test_suite!(mod ckks_determinism_ntt4x30avxrayon, backend = crate::NTT4x30AvxRayon, f32);
 
 /// Full logN16 bootstraps per preset: slow, so opt in with `--ignored`. The
-/// small S2C-first preset runs by default.
+/// small S2C-first and C2S-first presets run by default.
 mod bootstrapping_presets {
     use poulpy_ckks::test_suite::presets::{
         bootstrapping_plan_keys_match_context, bootstrapping_presets_meet_precision, ci_bootstrap_refuses_invalid_inputs,
-        small_s2c_preset_meets_precision, small_s2c_preset_meets_precision_with_client,
+        small_c2s_preset_meets_precision, small_s2c_preset_meets_precision, small_s2c_preset_meets_precision_with_client,
     };
 
     #[test]
@@ -26,6 +26,11 @@ mod bootstrapping_presets {
     #[test]
     fn ntt4x30_small_s2c_preset_meets_precision() {
         small_s2c_preset_meets_precision::<crate::NTT4x30Avx>();
+    }
+
+    #[test]
+    fn ntt4x30_small_c2s_preset_meets_precision() {
+        small_c2s_preset_meets_precision::<crate::NTT4x30Avx>();
     }
 
     /// Keys and ciphertexts from a portable client: the transfers both ways between two backends.
@@ -43,6 +48,12 @@ mod bootstrapping_presets {
     #[test]
     fn ntt4x30_rayon_ci_bootstrap_refuses_invalid_inputs() {
         ci_bootstrap_refuses_invalid_inputs::<crate::NTT4x30AvxRayon>();
+    }
+
+    #[cfg(feature = "enable-rayon")]
+    #[test]
+    fn ntt4x30_rayon_small_c2s_preset_meets_precision() {
+        small_c2s_preset_meets_precision::<crate::NTT4x30AvxRayon>();
     }
 
     #[test]

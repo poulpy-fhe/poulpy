@@ -855,8 +855,8 @@ impl<'a, K, R, T> LoggedBootstrappingKeys<'a, K, R, T> {
     /// its width in `widths`, its entry check, and that its stages then used each rotation
     /// key on ciphertexts of at most that width and the tensor key at exactly that width.
     /// A rotation key used only for giant steps switches the product, one factor scale
-    /// below the width `widths` gives it.
-    pub(crate) fn assert_lookups_at(&self, widths: &BootstrappingKeyWidths, label: &str) {
+    /// below the width `widths` gives it. Returns how many times the stages looked the tensor key up.
+    pub(crate) fn assert_lookups_at(&self, widths: &BootstrappingKeyWidths, label: &str) -> usize {
         let rotations: Vec<(i64, usize)> = self
             .rotation_keys
             .take()
@@ -887,6 +887,7 @@ impl<'a, K, R, T> LoggedBootstrappingKeys<'a, K, R, T> {
             Some(&widths.tensor_key),
             "{label}: widest use of the tensor key"
         );
+        tensor.len() - 1
     }
 }
 

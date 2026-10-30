@@ -1,5 +1,26 @@
 use poulpy_ckks::ckks_determinism_test_suite;
 
+/// The small S2C-first and C2S-first presets at their 52-bit radix, by default.
+mod small_bootstrapping_presets {
+    use poulpy_ckks::test_suite::presets::{small_c2s_preset_meets_precision, small_s2c_preset_meets_precision};
+
+    #[test]
+    fn ntt4x30_small_s2c_preset_meets_precision() {
+        small_s2c_preset_meets_precision::<crate::NTT4x30Avx512>();
+    }
+
+    #[test]
+    fn ntt4x30_small_c2s_preset_meets_precision() {
+        small_c2s_preset_meets_precision::<crate::NTT4x30Avx512>();
+    }
+
+    #[cfg(feature = "enable-rayon")]
+    #[test]
+    fn ntt4x30_rayon_small_c2s_preset_meets_precision() {
+        small_c2s_preset_meets_precision::<crate::NTT4x30Avx512Rayon>();
+    }
+}
+
 #[cfg(feature = "enable-ifma")]
 mod bootstrapping_presets {
     use poulpy_ckks::{

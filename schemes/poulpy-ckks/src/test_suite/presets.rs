@@ -69,19 +69,14 @@ pub fn preset_for_backend<BE: MaxBase2k, BCI: MaxBase2k>(preset: &BootstrappingP
 /// Caps the nominal preset at the caller's explicit test or benchmark radix.
 ///
 /// This fixture choice carries no failure-probability guarantee. A smaller
-/// radix uses up to 7 high-modulus limbs, reduced to fit the modulus bounds,
-/// and 1 dense-to-sparse limb; the circuit and bit widths stay unchanged.
+/// radix caps the high-modulus digits at 7 limbs, each key taking the digit of
+/// fewest rows its use admits under the cap, and gives the dense-to-sparse key
+/// 1 limb. The circuit and bit widths stay unchanged.
 pub fn preset_with_max_base2k(preset: &BootstrappingPreset, fixture_base2k: usize) -> anyhow::Result<BootstrappingPreset> {
     if preset.base2k() <= fixture_base2k {
         Ok(preset.clone())
     } else {
-        let preset = preset.with_base2k(fixture_base2k)?;
-        for dsize in (2..=7).rev() {
-            if let Ok(adapted) = preset.with_dsizes(dsize, 1) {
-                return Ok(adapted);
-            }
-        }
-        preset.with_dsizes(1, 1)
+        preset.with_base2k(fixture_base2k)?.with_dsizes(7, 1)
     }
 }
 
@@ -124,9 +119,15 @@ impl<BE: Backend, M> PresetRunModule<BE> for M where
 {
 }
 
-/// The bootstrap of a preset run: its context and keys, and those of the CI ring.
+/// The bootstrap of a preset run: its context and keys, and those of the CI ring. It returns how many times its
+/// stages looked the tensor key up.
 type Bootstrap<BE> = Box<
-    dyn FnMut(&Module<BE>, &mut CKKSCiphertextOwned<BE>, &CKKSCiphertextOwned<BE>, &mut ScratchArena<'_, BE>) -> CKKSResult<()>,
+    dyn FnMut(
+        &Module<BE>,
+        &mut CKKSCiphertextOwned<BE>,
+        &CKKSCiphertextOwned<BE>,
+        &mut ScratchArena<'_, BE>,
+    ) -> CKKSResult<usize>,
 >;
 
 /// A preset set up end to end and ready to bootstrap repeatedly.
@@ -148,6 +149,8 @@ pub struct BootstrappingPresetRun<BE: Backend, BC: Backend = BE> {
     sk: GLWESecretPrepared<BC::OwnedBuf, BC>,
     want_re: Vec<f64>,
     want_im: Vec<f64>,
+    /// The tensor-key lookups of the stages of the last bootstrap.
+    tensor_lookups: usize,
 }
 
 impl<BE, BC> BootstrappingPresetRun<BE, BC>
@@ -212,8 +215,7 @@ where
             let widths = plan.key_widths(log_n, output.k().as_usize(), input.k().as_usize(), input.log_delta());
             let logged = LoggedBootstrappingKeys::new::<BE>(&keys);
             module.ckks_bootstrap(output, input, &context, &logged, scratch)?;
-            logged.assert_lookups_at(&widths, &label);
-            Ok(())
+            Ok(logged.assert_lookups_at(&widths, &label))
         });
         Self::with_bootstrap(
             preset,
@@ -332,8 +334,7 @@ where
             let widths = plan.key_widths(log_n, output.k().as_usize(), input.k().as_usize(), input.log_delta());
             let logged = LoggedBootstrappingKeys::new_ci::<BE, CIBackend<BE>>(&keys);
             module.ckks_bootstrap_ci_into(&ci, output, input, &context, &logged, scratch, &mut scratch_ci.borrow())?;
-            logged.assert_lookups_at(&widths, &label);
-            Ok(())
+            Ok(logged.assert_lookups_at(&widths, &label))
         });
         let client_scratch = ScratchOwned::<BC>::alloc(bootstrap_setup_tmp_bytes(&client, &layout, preset.plan(), keys_layout));
         Self::with_bootstrap(
@@ -355,34 +356,13 @@ where
         module: Module<BE>,
         scratch: ScratchOwned<BE>,
         client: Module<BC>,
-        mut client_scratch: ScratchOwned<BC>,
+        client_scratch: ScratchOwned<BC>,
         sk: GLWESecretPrepared<BC::OwnedBuf, BC>,
         bootstrap: Bootstrap<BE>,
     ) -> Self {
-        let (n, base2k) = (preset.n(), preset.base2k());
         let (input_layout, bootstrap_layout) = (preset.input_layout(), preset.bootstrap_layout());
-        let (want_re, want_im) = test_vector_1::<f64>(n / 2);
-        let mut input_pt = client.ckks_pt_vec_alloc(n / 2, base2k.into(), input_layout.k());
-        input_pt.set_meta(input_layout.meta());
-        client
-            .ckks_encode_reim_into(&mut input_pt, &want_re, &want_im, &mut client_scratch.borrow())
-            .unwrap();
-
-        let mut client_input = client.ckks_ciphertext_alloc_from_glwe_infos(&input_layout);
-        let (mut input_xa, mut input_xe) = (Source::new([3; 32]), Source::new([4; 32]));
-        client
-            .ckks_encrypt_sk(
-                &mut client_input,
-                &input_pt,
-                &sk,
-                &mut input_xe,
-                &mut input_xa,
-                &mut client_scratch.borrow(),
-            )
-            .unwrap();
-        let mut input = module.ckks_ciphertext_alloc_from_glwe_infos(&input_layout);
-        client_input.inner.transfer_into(&mut input.inner);
-        input.set_meta(client_input.meta());
+        let (want_re, want_im) = test_vector_1::<f64>(preset.n() / 2);
+        let input = module.ckks_ciphertext_alloc_from_glwe_infos(&input_layout);
         let output = module.ckks_ciphertext_alloc_from_glwe_infos(&bootstrap_layout);
 
         let mut run = Self {
@@ -397,7 +377,9 @@ where
             sk,
             want_re,
             want_im,
+            tensor_lookups: 0,
         };
+        run.encrypt_input(SlotsKind::Complex);
         run.bootstrap();
         assert_eq!(run.output.k().as_usize(), run.preset.output_k());
         assert_eq!(run.output.meta(), run.preset.output_layout().meta());
@@ -407,6 +389,56 @@ where
             run.preset.output_k() - run.preset.input_k()
         );
         run
+    }
+
+    /// Encrypts the reference vector into the input, at the preset's input layout
+    /// with slots of kind `slots`, on the client, and moves it to the evaluated backend.
+    fn encrypt_input(&mut self, slots: SlotsKind) {
+        let (n, base2k, input_layout) = (self.preset.n(), self.preset.base2k(), self.preset.input_layout());
+        let client = &self.client;
+        let mut input_pt = client.ckks_pt_vec_alloc(n / 2, base2k.into(), input_layout.k());
+        input_pt.set_meta(GLWEPlaintextMeta {
+            slots,
+            ..input_layout.meta()
+        });
+        client
+            .ckks_encode_reim_into(&mut input_pt, &self.want_re, &self.want_im, &mut self.client_scratch.borrow())
+            .unwrap();
+
+        let mut client_input = client.ckks_ciphertext_alloc_from_glwe_infos(&input_layout);
+        let (mut input_xa, mut input_xe) = (Source::new([3; 32]), Source::new([4; 32]));
+        client
+            .ckks_encrypt_sk(
+                &mut client_input,
+                &input_pt,
+                &self.sk,
+                &mut input_xe,
+                &mut input_xa,
+                &mut self.client_scratch.borrow(),
+            )
+            .unwrap();
+        client_input.inner.transfer_into(&mut self.input.inner);
+        self.input.set_meta(client_input.meta());
+    }
+
+    /// The run on real slots: the real part of the reference vector, an imaginary
+    /// part of zero, in an input of [`SlotsKind::Real`] slots, which the S2C-first
+    /// bootstrap evaluates with one EvalMod, where complex slots take two. Bootstraps it
+    /// once to check the output and the path.
+    pub fn with_real_slots(mut self) -> Self {
+        let complex = self.tensor_lookups;
+        self.want_im.fill(0.0);
+        self.encrypt_input(SlotsKind::Real);
+        self.bootstrap();
+        assert!(complex > 0, "the complex run relinearized nothing");
+        assert_eq!(
+            2 * self.tensor_lookups,
+            complex,
+            "real slots did not take the one-EvalMod path"
+        );
+        assert_eq!(self.output.k().as_usize(), self.preset.output_k());
+        assert_eq!(self.output.meta().slots, SlotsKind::Real);
+        self
     }
 
     /// The preset being exercised.
@@ -426,7 +458,7 @@ where
     /// this returns. [`Self::synchronize`] waits for it.
     pub fn bootstrap_queued(&mut self) {
         self.output.set_k(self.preset.bootstrap_k().into());
-        (self.bootstrap)(&self.module, &mut self.output, &self.input, &mut self.scratch.borrow()).unwrap();
+        self.tensor_lookups = (self.bootstrap)(&self.module, &mut self.output, &self.input, &mut self.scratch.borrow()).unwrap();
     }
 
     /// Returns once the evaluated backend has completed the work queued so far.
@@ -612,12 +644,12 @@ pub fn preset_label(preset: &BootstrappingPreset) -> String {
 }
 
 /// Runs the insecure `N = 2^11` S2C-first preset on `BE` and checks its key
-/// shapes and output precision, then the same preset with EvalMod on the
-/// conjugate-invariant ring, on the twin [`CIBackend`]. Unlike [`bootstrapping_presets_meet_precision`],
-/// it is small enough for a default test run, so the narrow conjugation and
-/// SlotsToCoeffs keys the presets derive run end to end. Backends register it
-/// when their radix takes the preset's 52 bits: a smaller fixture radix gives
-/// every key one digit, hence one shape.
+/// shapes and output precision, on complex and on real slots, then the same
+/// preset with EvalRound+, with EvalMod on the conjugate-invariant ring, on the
+/// twin [`CIBackend`], and with the keys of power-of-two rotations. Unlike
+/// [`bootstrapping_presets_meet_precision`], it is small enough for a default
+/// test run, so the narrow conjugation and SlotsToCoeffs keys the presets derive
+/// run end to end. Backends register it when their radix takes the preset's 52 bits.
 pub fn small_s2c_preset_meets_precision<BE>()
 where
     BE: TestContextBackend<Ring = Standard> + HostStaged + MaxBase2k,
@@ -659,6 +691,10 @@ where
 
     let backend = std::any::type_name::<BE>().rsplit("::").next().unwrap();
     BootstrappingPresetRun::<BE>::setup(preset.clone()).check(backend);
+    // Real slots take the S2C-first path of one EvalMod.
+    BootstrappingPresetRun::<BE>::setup(preset.clone())
+        .with_real_slots()
+        .check(backend);
     // EvalMod on the CI ring, with `u` as a product and folded, then all of it with
     // EvalRound+: CoeffsToSlots at 30 bits feeds EvalMod, the bypass at 50 sets the precision.
     // The keys of the first run, conversion keys included, go through their serialization.
@@ -692,6 +728,44 @@ where
         post: CIConversion::Product { log_delta: 38 },
     };
     BootstrappingPresetRun::<BE>::setup_ci(powers_of_two.with_eval_mod_ring(ci).unwrap()).check(backend);
+}
+
+/// Runs the insecure `N = 2^11` C2S-first preset on `BE` and checks its key shapes
+/// and output precision, then the same preset with EvalRound+. Small enough for a
+/// default test run, so the keys a C2S-first plan derives, SlotsToCoeffs keys used
+/// below EvalMod among them, run end to end. Backends register it when their radix
+/// takes the preset's 52 bits.
+pub fn small_c2s_preset_meets_precision<BE>()
+where
+    BE: TestContextBackend<Ring = Standard> + HostStaged + MaxBase2k,
+    Module<BE>: TestContextModule<BE> + PresetRunModule<BE>,
+    for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
+    for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+{
+    let preset = crate::presets::bootstrapping::insecure_n11_d35_k100_p17_c2s().unwrap();
+    let keys = preset.keys_layout();
+    let rows = |key: &dyn GGLWEInfos| key.dnum().as_usize();
+    let wide_rows = keys.rotation_keys.values().map(|key| rows(key)).max().unwrap();
+    // SlotsToCoeffs runs on what EvalMod leaves: its own keys get fewer rows than
+    // those of the raised width.
+    let cyclotomic_order = 2 * preset.n() as i64;
+    let (log_n, plan) = (preset.log_n(), preset.plan());
+    let c2s = plan.coeffs_to_slots().galois_elements(log_n, cyclotomic_order);
+    let s2c_only: Vec<i64> = plan
+        .slots_to_coeffs()
+        .galois_elements(log_n, cyclotomic_order)
+        .into_iter()
+        .filter(|p| !c2s.contains(p))
+        .collect();
+    assert!(!s2c_only.is_empty());
+    assert!(s2c_only.iter().all(|&p| rows(&keys.rotation_keys[&p]) < wide_rows));
+
+    let backend = std::any::type_name::<BE>().rsplit("::").next().unwrap();
+    BootstrappingPresetRun::<BE>::setup(preset.clone()).check(backend);
+    BootstrappingPresetRun::<BE>::setup(preset.with_eval_round_plus(30, 51).unwrap()).check(backend);
 }
 
 /// The insecure `N = 2^11` S2C-first preset of [`small_s2c_preset_meets_precision`] on an

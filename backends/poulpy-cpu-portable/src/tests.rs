@@ -90,7 +90,7 @@ fn bootstrapping_presets_take_the_backend_radix() {
     for preset in ci {
         // An output limb of EvalMod's squares on the CI ring holds one square: its mean keeps
         // the radix at the nominal 52 on NTT4x30. FFT64's model of the CI ring takes 14, at
-        // which the preset is re-derived with digits of 7 limbs.
+        // which the keys of the raised width take the runner's cap of 7 limbs.
         assert_eq!(
             preset.max_backend_base2k::<NTT4x30Portable, crate::NTT4x30CIPortable>(BOOTSTRAP_FAILURE_BITS),
             52
