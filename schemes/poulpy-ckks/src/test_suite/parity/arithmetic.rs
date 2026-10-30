@@ -2,7 +2,7 @@
 use super::helpers::*;
 use crate::Scale;
 use crate::{
-    CKKSInfos, CKKSLayout, GLWEPlaintextMeta, SlotsKind,
+    CKKSInfos, CKKSLayout, GLWEPlaintextMeta, SetCKKSInfos, SlotsKind,
     api::{CKKSDotProductOps, CKKSModuleInfos},
     oep::*,
     test_suite::CKKSTestParams,
@@ -471,6 +471,36 @@ where
                     "DFT forms of the prepared dot product by plaintexts"
                 );
                 results.push(("dot_product_prepared_pt", want));
+                // The summed product added into a ciphertext at its frame, `lazy` or not, by these plaintexts and by
+                // plaintexts narrower than a limb, whose product's offset falls below one.
+                let mut ln = lp;
+                ln.glwe_layout.k = (b - 1).into();
+                ln.meta.scale = Scale::Log(b - 3);
+                let narrow = fixture_plaintext(module, &ln, 55);
+                let narrow = with_scratch::<BE, _>(BE::ckks_prepare_tmp_bytes(module, &narrow), |scratch| {
+                    BE::ckks_prepare_right(module, &narrow, PrepareHint::OneShot, scratch)
+                })
+                .unwrap();
+                for (seed, right) in [(97, &right_pt), (96, &narrow)] {
+                    let mut frame = fixture_ciphertext(module, &lr, 99);
+                    with_scratch::<BE, _>(
+                        module.ckks_dot_product_prepared_pt_tmp_bytes(&frame, &left, right),
+                        |scratch| {
+                            module.ckks_dot_product_prepared_pt(&mut frame, &[&left, &left], &[right, right], &galois, scratch)
+                        },
+                    )
+                    .unwrap();
+                    let mut sum = fixture_operand(module, &lr, seed, lazy);
+                    sum.set_meta(frame.meta());
+                    with_scratch::<BE, _>(
+                        module.ckks_dot_product_prepared_pt_add_tmp_bytes(&sum, &left, right),
+                        |scratch| {
+                            module.ckks_dot_product_prepared_pt_add(&mut sum, &[&left, &left], &[right, right], &galois, scratch)
+                        },
+                    )
+                    .unwrap();
+                    results.push(("dot_product_prepared_pt_add", snapshot::<BE, _>(&sum)));
+                }
                 assert_eq!(before_pt, snapshot::<BE, _>(&pt));
             }
             assert_eq!(before_a, snapshot::<BE, _>(&a));
@@ -493,8 +523,8 @@ where
 }
 
 /// Ciphertext, square, prepared, vector and scalar multiplication, the prepared dot product, which equals
-/// `ckks_dot_product_ct` of its operands' sources, and the prepared dot product by plaintexts, which equals its DFT
-/// forms.
+/// `ckks_dot_product_ct` of its operands' sources, the prepared dot product by plaintexts, which equals its DFT forms,
+/// and its sum added into a ciphertext, by plaintexts of a limb and more and of less.
 pub fn test_multiplication_parity<BR, BT, F>(params: CKKSTestParams, module_ref: &Module<BR>, module_test: &Module<BT>)
 where
     BR: Backend<ZnxWord = i64> + CKKSMulImpl,

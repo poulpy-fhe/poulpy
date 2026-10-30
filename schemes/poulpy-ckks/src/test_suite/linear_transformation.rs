@@ -269,7 +269,11 @@ pub fn test_linear_transformation_sum<BE, F, E>(
     BE: TestContextBackend<Ring = Standard>,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + CKKSLinearTransformationOps<BE>
+        + poulpy_core::api::GLWELinearTransformations<BE>
+        + CnvPVecAlloc<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> ScratchArena<'a, BE>: ScratchAvailable,
@@ -403,6 +407,36 @@ pub fn test_linear_transformation_sum<BE, F, E>(
     )
     .unwrap();
     assert_eq!(snapshot::<BE, _>(&streamed), have, "the streamed sum is not the resident one");
+    // Streamed terms of two diagonal scales reach core's own sum check, which reads the scale each plaintext records.
+    let mut shifted = encode_lt(module, &params, &bs[1], n1, false, &mut scratch.borrow());
+    for diagonal in shifted.giant_steps.iter_mut().flat_map(|gs| gs.diagonals.iter_mut()) {
+        let mut meta = diagonal.plaintext.meta();
+        let Scale::Log(scale) = meta.scale;
+        meta.scale = Scale::Log(scale + 1);
+        diagonal.plaintext.set_meta(meta);
+    }
+    let mut core_sum = alloc_ct(&params, module, params.k);
+    let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        poulpy_core::api::GLWELinearTransformations::glwe_eval_linear_transformation_sum_into(
+            module,
+            0,
+            &mut core_sum,
+            &term_babies[..2],
+            &[&lts[terms[0].1], &shifted],
+            &keys,
+            &mut scratch.borrow(),
+        )
+    }))
+    .unwrap_err();
+    let message = panic
+        .downcast_ref::<&str>()
+        .copied()
+        .or_else(|| panic.downcast_ref::<String>().map(String::as_str));
+    assert_eq!(
+        message,
+        Some("summed linear transformation 1 does not share the first one's diagonal layout, width and scale"),
+        "streamed terms of two scales"
+    );
 
     // A mismatched term: rejected as `InvalidOperand` for `reason`, with `sum` untouched.
     let mut reject = |srcs: &[&CKKSCiphertextOwned<BE>],

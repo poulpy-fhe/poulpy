@@ -341,27 +341,27 @@ impl<BE: Backend + CKKSDotProductImpl> CKKSDotProductOps<BE> for Module<BE> {
         BE::ckks_dot_product_prepared_pt(self, dst, a, b, galois, scratch)
     }
 
-    fn ckks_mul_add_prepared_pt_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
+    fn ckks_dot_product_prepared_pt_add_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
     where
         R: CKKSCtBounds,
         A: GLWEInfos,
         P: GLWEInfos,
     {
-        BE::ckks_mul_add_prepared_pt_tmp_bytes(self, res, a, b)
+        BE::ckks_dot_product_prepared_pt_add_tmp_bytes(self, res, a, b)
     }
 
-    fn ckks_mul_add_prepared_pt_into<Dst>(
+    fn ckks_dot_product_prepared_pt_add<R>(
         &self,
-        dst: &mut Dst,
-        a: &CKKSPreparedLeft<BE>,
-        b: &CKKSPreparedRight<BE>,
-        galois: i64,
+        res: &mut R,
+        a: &[&CKKSPreparedLeft<BE>],
+        b: &[&CKKSPreparedRight<BE>],
+        galois: &[i64],
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     {
-        BE::ckks_mul_add_prepared_pt_into(self, dst, a, b, galois, scratch)
+        BE::ckks_dot_product_prepared_pt_add(self, res, a, b, galois, scratch)
     }
 
     fn ckks_dot_product_prepared_pt_dft_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize

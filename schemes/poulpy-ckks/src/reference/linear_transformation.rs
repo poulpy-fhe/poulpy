@@ -42,6 +42,9 @@ where
     fn operand(&self) -> DiagonalOperand<'_, BE> {
         DiagonalOperand::Unprepared(GLWEToBackendRef::to_backend_ref(self))
     }
+    fn log_scale(&self) -> usize {
+        self.log_delta()
+    }
 }
 
 /// A streamed ciphertext diagonal: a GLWE view of the source's rank the product prepares on the fly and multiplies as
@@ -52,6 +55,9 @@ where
 {
     fn operand(&self) -> DiagonalOperand<'_, BE> {
         DiagonalOperand::Unprepared(GLWEToBackendRef::to_backend_ref(self))
+    }
+    fn log_scale(&self) -> usize {
+        self.log_delta()
     }
 }
 

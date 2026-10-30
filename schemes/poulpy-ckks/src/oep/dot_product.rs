@@ -151,9 +151,10 @@ pub unsafe trait CKKSDotProductImpl: Backend + super::CKKSMulImpl + super::CKKSA
     where
         Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos;
 
-    /// Scratch bound of [`Self::ckks_mul_add_prepared_pt_into`]; may report less than the reference, never less than the
-    /// body takes. `a` and `b` are the prepared operands, whose infos report their sources, or those sources.
-    fn ckks_mul_add_prepared_pt_tmp_bytes<R: CKKSCtBounds, A: GLWEInfos, P: GLWEInfos>(
+    /// Scratch bound of [`Self::ckks_dot_product_prepared_pt_add`]; may report less than the reference, never less than
+    /// the body takes. `a` and `b` are the prepared operands, whose infos report their sources, or those sources. It does
+    /// not grow with the number of terms.
+    fn ckks_dot_product_prepared_pt_add_tmp_bytes<R: CKKSCtBounds, A: GLWEInfos, P: GLWEInfos>(
         module: &Module<Self>,
         res: &R,
         a: &A,
@@ -161,18 +162,18 @@ pub unsafe trait CKKSDotProductImpl: Backend + super::CKKSMulImpl + super::CKKSA
     ) -> usize;
 
     /// Reproduces
-    /// [`ckks_mul_add_prepared_pt_into_reference`](crate::reference::CKKSDotProductReference::ckks_mul_add_prepared_pt_into_reference)
-    /// bit for bit, within [`Self::ckks_mul_add_prepared_pt_tmp_bytes`]; free in kernels and scratch use.
-    fn ckks_mul_add_prepared_pt_into<Dst>(
+    /// [`ckks_dot_product_prepared_pt_add_reference`](crate::reference::CKKSDotProductReference::ckks_dot_product_prepared_pt_add_reference)
+    /// bit for bit, within [`Self::ckks_dot_product_prepared_pt_add_tmp_bytes`]; free in kernels and scratch use.
+    fn ckks_dot_product_prepared_pt_add<R>(
         module: &Module<Self>,
-        dst: &mut Dst,
-        a: &CKKSPreparedLeft<Self>,
-        b: &CKKSPreparedRight<Self>,
-        galois: i64,
+        res: &mut R,
+        a: &[&CKKSPreparedLeft<Self>],
+        b: &[&CKKSPreparedRight<Self>],
+        galois: &[i64],
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos;
+        R: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos;
 
     /// Scratch bound of [`Self::ckks_dot_product_prepared_pt_dft`]; may report less than the reference, never less than
     /// the body takes. It does not grow with the number of terms.
@@ -330,7 +331,7 @@ macro_rules! impl_ckks_dot_product_reference_full {
                 )
             }
 
-            fn ckks_mul_add_prepared_pt_tmp_bytes<
+            fn ckks_dot_product_prepared_pt_add_tmp_bytes<
                 R: $crate::CKKSCtBounds,
                 A: ::poulpy_core::layouts::GLWEInfos,
                 P: ::poulpy_core::layouts::GLWEInfos,
@@ -340,22 +341,24 @@ macro_rules! impl_ckks_dot_product_reference_full {
                 a: &A,
                 b: &P,
             ) -> usize {
-                $crate::reference::CKKSDotProductReference::ckks_mul_add_prepared_pt_tmp_bytes_reference(module, res, a, b)
+                $crate::reference::CKKSDotProductReference::ckks_dot_product_prepared_pt_add_tmp_bytes_reference(
+                    module, res, a, b,
+                )
             }
 
-            fn ckks_mul_add_prepared_pt_into<Dst>(
+            fn ckks_dot_product_prepared_pt_add<R>(
                 module: &::poulpy_hal::layouts::Module<Self>,
-                dst: &mut Dst,
-                a: &$crate::layouts::CKKSPreparedLeft<Self>,
-                b: &$crate::layouts::CKKSPreparedRight<Self>,
-                galois: i64,
+                res: &mut R,
+                a: &[&$crate::layouts::CKKSPreparedLeft<Self>],
+                b: &[&$crate::layouts::CKKSPreparedRight<Self>],
+                galois: &[i64],
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
             where
-                Dst: ::poulpy_core::layouts::GLWEToBackendMut<Self> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
+                R: ::poulpy_core::layouts::GLWEToBackendMut<Self> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
             {
-                $crate::reference::CKKSDotProductReference::ckks_mul_add_prepared_pt_into_reference(
-                    module, dst, a, b, galois, scratch,
+                $crate::reference::CKKSDotProductReference::ckks_dot_product_prepared_pt_add_reference(
+                    module, res, a, b, galois, scratch,
                 )
             }
 
