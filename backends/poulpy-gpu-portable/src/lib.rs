@@ -12,6 +12,7 @@
 //! - `enable-metal`, `enable-vulkan`, `enable-wgpu`: [`NTT4x30Wgpu`], on CubeCL's wgpu runtime with
 //!   the Metal, Vulkan or WebGPU shader compiler.
 //! - `enable-core`, `enable-ckks`: the `poulpy-core` and `poulpy-ckks` families on every backend type.
+//! - `enable-blas`: the `poulpy-blas` reference compositions on every backend type, on both rings.
 //!
 //! # Fused steps
 //!
@@ -30,6 +31,8 @@
 //! kernels the device decides: [`GpuHandle::set_convolution_capacity_step`].
 
 mod backend;
+#[cfg(feature = "enable-blas")]
+mod blas_impl;
 #[cfg(feature = "enable-ckks")]
 mod ckks_add_sub;
 #[cfg(feature = "enable-ckks")]

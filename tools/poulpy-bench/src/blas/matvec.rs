@@ -29,7 +29,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{ModuleSynchronize, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, CyclotomicOrder, MaxBase2k, Module, PrepareHint, ScratchOwned, Standard},
+    layouts::{Backend, CyclotomicOrder, HostStaged, MaxBase2k, Module, PrepareHint, ScratchOwned, Standard},
 };
 use std::collections::HashMap;
 
@@ -63,13 +63,13 @@ fn x_entry(e: usize) -> f64 {
 /// `blas_matvec_pt` by the operand, prepared when `resident`, else streamed from its encoding.
 fn matvec<BE, M>(bencher: &mut Bencher<'_, M>, bp: &BlasBenchParams, op: &'static str, resident: bool)
 where
-    BE: Backend<Ring = Standard> + 'static + BlasMatVecImpl + MaxBase2k,
+    BE: Backend<Ring = Standard> + HostStaged + 'static + BlasMatVecImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     M: Measurement,
 {
     timed::<BE, M, _>(bencher, op, bp, || {
-        let mut client = Client::<BE>::new(bp);
+        let mut client = Client::<BE, BE>::new(bp);
         let (layout, d) = (layout(bp), bp.d());
         let module = &client.module;
         let mut streamed = module.blas_matvec_operand_alloc_from_infos(&layout);
@@ -156,7 +156,7 @@ where
 /// `blas_matvec_pt` by the prepared operand.
 pub fn runner_blas_matvec_pt_resident<BE, M>(bencher: &mut Bencher<'_, M>, bp: &BlasBenchParams)
 where
-    BE: Backend<Ring = Standard> + 'static + BlasMatVecImpl + MaxBase2k,
+    BE: Backend<Ring = Standard> + HostStaged + 'static + BlasMatVecImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     M: Measurement,
@@ -167,7 +167,7 @@ where
 /// `blas_matvec_pt` streaming the operand's encoded diagonals.
 pub fn runner_blas_matvec_pt_streamed<BE, M>(bencher: &mut Bencher<'_, M>, bp: &BlasBenchParams)
 where
-    BE: Backend<Ring = Standard> + 'static + BlasMatVecImpl + MaxBase2k,
+    BE: Backend<Ring = Standard> + HostStaged + 'static + BlasMatVecImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     M: Measurement,
@@ -179,7 +179,7 @@ where
 /// frame of a ciphertext of the point's width through a mask of scale `p`.
 fn diagonal_ciphertext_layout(bp: &BlasBenchParams) -> BlasDiagonalCiphertextLayout {
     let (slots, d) = (bp.slots(), bp.d() as i64);
-    let mut ct = block_layout(bp);
+    let mut ct = block_layout::<Standard>(bp);
     ct.glwe_layout.k = TorusPrecision((bp.k - bp.p) as u32);
     BlasDiagonalCiphertextLayout::new(
         ct,
@@ -194,9 +194,9 @@ fn diagonal_ciphertext_layout(bp: &BlasBenchParams) -> BlasDiagonalCiphertextLay
 }
 
 /// The prepared mask of slot 0, at scale `p`.
-fn slot_mask<BE>(client: &Client<BE>, bp: &BlasBenchParams) -> CKKSPreparedRight<BE>
+fn slot_mask<BE>(client: &Client<BE, BE>, bp: &BlasBenchParams) -> CKKSPreparedRight<BE>
 where
-    BE: Backend<Ring = Standard> + 'static,
+    BE: Backend<Ring = Standard> + HostStaged + 'static,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -260,13 +260,13 @@ enum Timed {
 /// product's, so the product's keys append them too.
 fn diagonal_ciphertext<BE, M>(bencher: &mut Bencher<'_, M>, bp: &BlasBenchParams, op: &'static str, timed_call: Timed)
 where
-    BE: Backend<Ring = Standard> + 'static + BlasMatVecImpl + MaxBase2k,
+    BE: Backend<Ring = Standard> + HostStaged + 'static + BlasMatVecImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     M: Measurement,
 {
     timed::<BE, M, _>(bencher, op, bp, || {
-        let mut client = Client::<BE>::new(bp);
+        let mut client = Client::<BE, BE>::new(bp);
         let (layout, slots, d) = (diagonal_ciphertext_layout(bp), bp.slots(), bp.d());
         let order = client.module.cyclotomic_order();
         let elements = if timed_call == Timed::Append {
@@ -281,7 +281,7 @@ where
         let rows: Vec<Vec<f64>> = (0..3).map(|p| matrix_row(bp, p)).collect();
         let append_bytes = client.module.blas_append_row_diagonal_tmp_bytes(
             &layout,
-            &BlasVectorLayout::new(block_layout(bp), whole),
+            &BlasVectorLayout::new(block_layout::<Standard>(bp), whole),
             &mask,
             &atk_layout(bp),
         );
@@ -367,9 +367,14 @@ where
 
 /// The largest distance of the decrypted diagonals of `m` to those of the matrix of the rows `rows`: entry `(b, g)`
 /// holds `rot(D_(b + g), -g)`, `D_t[j] = M[j][j + t]`, and of their imaginary parts to zero.
-fn diagonals_error<BE>(client: &mut Client<BE>, bp: &BlasBenchParams, m: &BlasDiagonalCiphertext<BE>, rows: &[Vec<f64>]) -> f64
+fn diagonals_error<BE>(
+    client: &mut Client<BE, BE>,
+    bp: &BlasBenchParams,
+    m: &BlasDiagonalCiphertext<BE>,
+    rows: &[Vec<f64>],
+) -> f64
 where
-    BE: Backend<Ring = Standard> + 'static,
+    BE: Backend<Ring = Standard> + HostStaged + 'static,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -394,7 +399,7 @@ where
 /// `blas_matvec_diagonal` of a prepared diagonal ciphertext of `d` diagonals by a whole ciphertext.
 pub fn runner_blas_matvec_diagonal_resident<BE, M>(bencher: &mut Bencher<'_, M>, bp: &BlasBenchParams)
 where
-    BE: Backend<Ring = Standard> + 'static + BlasMatVecImpl + MaxBase2k,
+    BE: Backend<Ring = Standard> + HostStaged + 'static + BlasMatVecImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     M: Measurement,
@@ -405,7 +410,7 @@ where
 /// `blas_matvec_diagonal` of a diagonal ciphertext of `d` diagonals, each prepared at its use, by a whole ciphertext.
 pub fn runner_blas_matvec_diagonal_streamed<BE, M>(bencher: &mut Bencher<'_, M>, bp: &BlasBenchParams)
 where
-    BE: Backend<Ring = Standard> + 'static + BlasMatVecImpl + MaxBase2k,
+    BE: Backend<Ring = Standard> + HostStaged + 'static + BlasMatVecImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     M: Measurement,
@@ -416,7 +421,7 @@ where
 /// `blas_append_row_diagonal` of a whole ciphertext into a diagonal ciphertext of `d` diagonals.
 pub fn runner_blas_append_row_diagonal<BE, M>(bencher: &mut Bencher<'_, M>, bp: &BlasBenchParams)
 where
-    BE: Backend<Ring = Standard> + 'static + BlasMatVecImpl + MaxBase2k,
+    BE: Backend<Ring = Standard> + HostStaged + 'static + BlasMatVecImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     M: Measurement,
@@ -429,14 +434,14 @@ where
 /// stores every diagonal of a `d x d` matrix between these shapes, `2d - 1`, whatever its values.
 pub fn runner_blas_grid_to_vector_resident<BE, M>(bencher: &mut Bencher<'_, M>, bp: &BlasBenchParams)
 where
-    BE: Backend<Ring = Standard> + 'static + BlasMatVecImpl + MaxBase2k,
+    BE: Backend<Ring = Standard> + HostStaged + 'static + BlasMatVecImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     M: Measurement,
 {
     let op = "blas_grid_to_vector_resident";
     timed::<BE, M, _>(bencher, op, bp, || {
-        let mut client = Client::<BE>::new(bp);
+        let mut client = Client::<BE, BE>::new(bp);
         let (slots, d) = (bp.slots(), bp.d());
         let line = BlasGridLine::Row { mat_slot: 0, row: 1 };
         let a = client.encrypt(bp, 1, 1, bp.batch(), |s, r, c| entry(6, s, r, c));

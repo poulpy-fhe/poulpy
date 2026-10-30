@@ -31,11 +31,11 @@ use poulpy_blas::{
     oep::BlasImpl,
     test_suite::helpers::{HINTS, MASKED_PT_ALGORITHMS, MIXES, PT_ALGORITHMS},
 };
-use poulpy_ckks::{CKKSLayout, CoeffsMeta, SlotsKind};
+use poulpy_ckks::{CKKSLayout, CoeffsMeta};
 use poulpy_core::layouts::Degree;
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, ConjugateInvariant, MaxBase2k, Module, Ring, ScratchOwned, Standard},
+    layouts::{Backend, HostStaged, MaxBase2k, Module, Ring, ScratchOwned, Standard},
 };
 
 use crate::{
@@ -91,7 +91,6 @@ fn scale_params() -> Vec<BlasBenchParams> {
 /// product is that of one block of its output, and the products of one inner dimension share it: the queries run once
 /// per inner dimension, on one block column of the public matrix (row on the left).
 pub fn max_base2k_table<BE: Backend + MaxBase2k>(filter: &[String]) {
-    let real = BE::Ring::CYCLOTOMIC_ORDER_FACTOR == ConjugateInvariant::CYCLOTOMIC_ORDER_FACTOR;
     let backend = backend_name::<BE>();
     for bp in scale_params() {
         if !selected(filter, &format!("{backend}/blas/max_base2k/{bp}")) {
@@ -114,11 +113,8 @@ pub fn max_base2k_table<BE: Backend + MaxBase2k>(filter: &[String]) {
         };
         let plan = |algorithm| BlasPlan::new(bp.log_d).with_pt_algorithm(algorithm);
         for (grid, log_sparsity) in labels {
-            let mut block: CKKSLayout = block_layout(&bp);
+            let mut block: CKKSLayout = block_layout::<BE::Ring>(&bp);
             block.meta.log_sparsity = log_sparsity;
-            if real {
-                block.meta.slots = SlotsKind::Real;
-            }
             let encrypted = |rows, cols| BlasLayout::new(block, bp.log_d, rows, cols);
             let per_algorithm = |radix: &dyn Fn(BlasPlan) -> usize| {
                 pt_algorithms()
@@ -202,7 +198,7 @@ fn heap_since(base: usize) -> String {
 /// operation with the heap the call allocates beyond its scratch, and a `HEAP` line per prepared operand.
 pub fn validate<BE>(filter: &[String]) -> Vec<String>
 where
-    BE: Backend<Ring = Standard> + 'static + BlasImpl + MaxBase2k,
+    BE: Backend<Ring = Standard> + HostStaged + 'static + BlasImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -296,11 +292,11 @@ fn print_heap<BE>(op: &str, operand: &str, bp: &BlasBenchParams, base: usize) {
 /// `blas_matmul_pt_right` of a replicated grid of `1 x inner` blocks by `inner x 1` blocks of a public matrix.
 fn pt_right<BE>(bp: &BlasBenchParams, algorithm: BlasPtAlgorithm, inner: usize, op: &str)
 where
-    BE: Backend<Ring = Standard> + 'static + BlasImpl + MaxBase2k,
+    BE: Backend<Ring = Standard> + HostStaged + 'static + BlasImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
-    let mut client = Client::<BE>::new(bp);
+    let mut client = Client::<BE, BE>::new(bp);
     let w = public_entry(inner, bp.d());
     let base = heap::reset_peak();
     let pt = client.public::<Right>(bp, algorithm, inner, 1, &w);
@@ -333,11 +329,11 @@ where
 /// `blas_matmul_pt_left` of `1 x inner` blocks of a public matrix by a replicated grid of `inner x 1` blocks.
 fn pt_left<BE>(bp: &BlasBenchParams, algorithm: BlasPtAlgorithm, inner: usize, op: &str)
 where
-    BE: Backend<Ring = Standard> + 'static + BlasImpl + MaxBase2k,
+    BE: Backend<Ring = Standard> + HostStaged + 'static + BlasImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
-    let mut client = Client::<BE>::new(bp);
+    let mut client = Client::<BE, BE>::new(bp);
     let w = public_entry(inner, bp.d());
     let base = heap::reset_peak();
     let pt = client.public::<Left>(bp, algorithm, 1, inner, &w);
@@ -371,11 +367,11 @@ where
 /// right operand under `Reuse`, the one several products share.
 fn ct_product<BE>(bp: &BlasBenchParams, op: &str)
 where
-    BE: Backend<Ring = Standard> + 'static + BlasImpl + MaxBase2k,
+    BE: Backend<Ring = Standard> + HostStaged + 'static + BlasImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
-    let mut client = Client::<BE>::new(bp);
+    let mut client = Client::<BE, BE>::new(bp);
     let ctx = client.context(bp, BlasPlan::new(bp.log_d));
     let d = bp.d();
     let b_entry = move |s, r, c| entry(2, s, r, c) / d as f64;
@@ -456,11 +452,11 @@ enum Reduction {
 /// blocks summed for the row and column sums.
 fn reduction<BE>(bp: &BlasBenchParams, kind: Reduction, rows: usize, cols: usize, op: &str)
 where
-    BE: Backend<Ring = Standard> + 'static + BlasImpl + MaxBase2k,
+    BE: Backend<Ring = Standard> + HostStaged + 'static + BlasImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
-    let mut client = Client::<BE>::new(bp);
+    let mut client = Client::<BE, BE>::new(bp);
     let ctx = client.context(bp, BlasPlan::new(bp.log_d));
     let d = bp.d();
     let (matrices, terms) = match kind {
@@ -508,6 +504,6 @@ where
         Reduction::Sum => 1,
         Reduction::SumRows | Reduction::SumCols => rows * cols,
     };
-    let bound = error_bound(bp) * (summed as f64).sqrt();
+    let bound = error_bound::<BE::Ring>(bp) * (summed as f64).sqrt();
     verify_within::<BE>(op, bp, max_err, bound, None, atks.len());
 }
