@@ -53,7 +53,7 @@
 
 ### CPU backends
 
-- **Breaking:** `poulpy-cpu-portable`'s `paco_coeff_encodings_staged` and `ship_coeff_encodings_staged` read the input in place through its backend view and take no scratch, where they copied it into an owned ciphertext per call; they still refuse a scale above the input's width.
+- **Breaking:** `poulpy-cpu-portable`'s `paco_coeff_encodings_staged` and `ship_coeff_encodings_staged` take `scratch` and read the input as copied into its own layout, where they copied it into an owned ciphertext per call: a non-canonical input with limbs past its width is rounded into a copy carved from `scratch`, any other read in place through its backend view. Add `paco_coeff_encodings_staged_tmp_bytes` and `ship_coeff_encodings_staged_tmp_bytes`, which their coefficient-encoding queries now report; they still refuse a scale above the input's width.
 - The AVX2, AVX-512 NTT4x30, IFMA and NEON `svp_apply_dft` transform each limb of `b` into its limb of `res` and multiply it there, where they allocated a `VecZnxDft` for the transformed operand on every call; the AVX2, AVX-512 NTT4x30 and IFMA forms take the one-limb transform buffer from scratch, which `svp_apply_dft_tmp_bytes` now counts, and the NTT4x30 Rayon twins forward that query to their base. The IFMA `vec_znx_idft_apply` reads the scratch buffer it is handed, where it allocated one per call.
 - `poulpy-cpu-portable` exports `kernels::noise::gaussian_cumulative_table_portable` and `gaussian_rejection_constants_portable`, the cumulative table and the rejection constants its Gaussian samplers draw with, which the GPU backend samples by.
 - **Breaking:** `impl_cpu_core_defaults!` registers the core trace on both rings, where each standard backend registered it apart: an out-of-tree backend calling it drops its own `impl_glwe_trace_derived_full!`, which now conflicts.
@@ -409,6 +409,7 @@
 
 ### `poulpy-ckks`
 
+- **Breaking:** `ckks_paco_coeff_encodings_tmp_bytes` (`CKKSPaCoOps` and `CKKSPaCoCoeffEncodingImpl`) takes the input layout, `(context, input)`, whose radix sets the size of a rounded copy; the PaCo bootstrap queries pass each branch input.
 - **Breaking:** `paco_coeff_encodings_host` and `ship_coeff_encodings_host` take the ciphertext as a host-addressable `&GLWE<D, i64>`, owned or a view such as a scratch carve, where they took a `&CKKSCiphertext<D, i64, Standard>`; an owned CKKS ciphertext passes as `&*ct`.
 - The double-angle chain of a binary LUT squares into a temporary carved from scratch, which `ckks_functional_bootstrap_tmp_bytes` counts, its reference requiring `CKKSMulOps`, `CKKSAddOps` and `CKKSSubOps`.
 - `ShipKeySet::generate` wipes every copy of the dense and sparse secrets, host and backend, and the prepared dense secret before it returns, on error too, and the SHIP mux-key encryption its input and output secrets.

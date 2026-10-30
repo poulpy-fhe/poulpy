@@ -393,10 +393,15 @@ macro_rules! impl_ckks_standard {
         ::poulpy_ckks::impl_ckks_ship_reference_full!($be);
 
         unsafe impl ::poulpy_ckks::oep::CKKSPaCoCoeffEncodingImpl for $be {
-            fn ckks_paco_coeff_encodings_tmp_bytes<F>(_module: &Module<$be>, _context: &PaCoContext<$be, F>) -> CKKSResult<usize>
+            fn ckks_paco_coeff_encodings_tmp_bytes<F, A>(
+                _module: &Module<$be>,
+                _context: &PaCoContext<$be, F>,
+                _input: &A,
+            ) -> CKKSResult<usize>
             where
                 F: PaCoScalar,
                 $be: CKKSEncodingImpl<F>,
+                A: ::poulpy_core::layouts::GLWEInfos,
             {
                 Ok(0)
             }

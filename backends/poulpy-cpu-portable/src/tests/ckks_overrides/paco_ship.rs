@@ -20,7 +20,7 @@ use poulpy_ckks::{
 };
 use poulpy_core::{
     GLWEMaskFill,
-    layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos},
+    layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos},
 };
 use poulpy_cpu_oracle::FFT64Oracle;
 use poulpy_hal::{
@@ -69,16 +69,17 @@ fn count<const N: usize, R>(counters: [&AtomicUsize; N], call: impl FnOnce() -> 
 }
 
 unsafe impl poulpy_ckks::oep::CKKSPaCoCoeffEncodingImpl for OverrideBackend {
-    fn ckks_paco_coeff_encodings_tmp_bytes<F>(
-        _module: &Module<Self>,
+    fn ckks_paco_coeff_encodings_tmp_bytes<F, A>(
+        module: &Module<Self>,
         _context: &PaCoContext<Self, F>,
+        input: &A,
     ) -> poulpy_ckks::CKKSResult<usize>
     where
         F: PaCoScalar,
         Self: CKKSEncodingImpl<F>,
+        A: GLWEInfos,
     {
-        // The staged encoding it forwards to takes no scratch.
-        Ok(PACO_ENCODING_EXTRA.load(Relaxed))
+        Ok(PACO_ENCODING_EXTRA.load(Relaxed) + crate::ckks_paco::paco_coeff_encodings_staged_tmp_bytes(module, input))
     }
 
     fn ckks_paco_coeff_encodings<F, Src>(
@@ -93,9 +94,15 @@ unsafe impl poulpy_ckks::oep::CKKSPaCoCoeffEncodingImpl for OverrideBackend {
         Src: GLWEToBackendRef<Self> + CKKSCtBounds,
     {
         PACO_ENCODING_CALLS.fetch_add(1, Relaxed);
-        with_marked_bytes(PACO_ENCODING_EXTRA.load(Relaxed), scratch, |_| {
-            crate::ckks_paco::paco_coeff_encodings_staged::<Self, F, Src>(module, context.base2k(), ciphertext, context.plan())
-                .map_err(poulpy_ckks::CKKSError::from)
+        with_marked_bytes(PACO_ENCODING_EXTRA.load(Relaxed), scratch, |scratch| {
+            crate::ckks_paco::paco_coeff_encodings_staged::<Self, F, Src>(
+                module,
+                context.base2k(),
+                ciphertext,
+                context.plan(),
+                scratch,
+            )
+            .map_err(poulpy_ckks::CKKSError::from)
         })
     }
 }

@@ -249,7 +249,9 @@ where
             ));
         }
     }
-    required = required.max(BE::ckks_paco_coeff_encodings_tmp_bytes::<F>(module, context)?);
+    required = required
+        .max(BE::ckks_paco_coeff_encodings_tmp_bytes::<F, _>(module, context, input)?)
+        .max(BE::ckks_paco_coeff_encodings_tmp_bytes::<F, _>(module, context, &structured)?);
 
     // The shifted input, the accumulator and the temporary coexist through the whole branch.
     let work = BE::scratch_aligned(module.glwe_bytes_of_from_infos(&branch_work_layout(module, canonical.base2k(), working_k)?));

@@ -410,8 +410,8 @@ where
         let st = snapshot::<BT, _>(&ct);
         let ctx_r = paco_context::<BR, F>(module_ref, params, &plan);
         let ctx_t = paco_context::<BT, F>(module_test, params, &plan);
-        let bytes_r = BR::ckks_paco_coeff_encodings_tmp_bytes::<F>(module_ref, &ctx_r).unwrap();
-        let bytes_t = BT::ckks_paco_coeff_encodings_tmp_bytes::<F>(module_test, &ctx_t).unwrap();
+        let bytes_r = BR::ckks_paco_coeff_encodings_tmp_bytes::<F, _>(module_ref, &ctx_r, &cr).unwrap();
+        let bytes_t = BT::ckks_paco_coeff_encodings_tmp_bytes::<F, _>(module_test, &ctx_t, &ct).unwrap();
         let pr = with_scratch::<BR, _>(bytes_r, |s| BR::ckks_paco_coeff_encodings::<F, _>(module_ref, &cr, &ctx_r, s)).unwrap();
         let pt = with_scratch::<BT, _>(bytes_t, |s| {
             BT::ckks_paco_coeff_encodings::<F, _>(module_test, &ct, &ctx_t, s)
