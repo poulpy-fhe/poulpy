@@ -56,8 +56,8 @@ use super::{
         matmul_left_operand, matmul_right_operand,
     },
     matvec::{
-        append, append_tmp_bytes, diagonal_ciphertext_elements, diagonal_ciphertext_snapshot, matvec_entry, matvec_layouts,
-        matvec_operands, matvec_operands_of, prepared_of, vector_snapshot,
+        append, append_tmp_bytes, diagonal_ciphertext_elements, diagonal_ciphertext_snapshot, matvec_layouts, matvec_operands,
+        matvec_operands_of, prepared_of, vector_snapshot,
     },
     repack::{GRID, grid_to_vector_cases, vector_to_grid_cases},
 };
@@ -1371,7 +1371,7 @@ where
         ..layout
     };
     let mut out = Vec::new();
-    for (c, case) in grid_to_vector_cases(&params, slots).into_iter().enumerate() {
+    for (c, case) in grid_to_vector_cases(&params, slots, log_d).into_iter().enumerate() {
         let (line, layout) = (case.line, at_scale(case.layout));
         let (streamed, resident) = matvec_operands_of::<B, F>(module, &layout, case.entry);
         let keys = fixture_keys(
@@ -1429,9 +1429,9 @@ where
         }));
         assert_unchanged::<B>("repack, grid to vector", &[&a, &lazy], &before);
     }
-    for (c, case) in vector_to_grid_cases(&params, slots).into_iter().enumerate() {
+    for (c, case) in vector_to_grid_cases(&params, slots, log_d).into_iter().enumerate() {
         let (line, layout) = (case.line, at_scale(case.layout));
-        let (streamed, resident) = matvec_operands_of::<B, F>(module, &layout, matvec_entry);
+        let (streamed, resident) = matvec_operands_of::<B, F>(module, &layout, case.entry);
         let keys = fixture_keys(
             params,
             module,

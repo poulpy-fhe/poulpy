@@ -425,8 +425,8 @@ where
 }
 
 /// `blas_grid_to_vector` of row 1 of the first matrix of a one-block grid holding the dense batch, through the identity,
-/// the operand prepared, into one ciphertext of `d` contiguous entries. The operand stores every diagonal of a `d x d`
-/// matrix between these shapes, `2d - 1`, whatever its values.
+/// the operand prepared at the cost-optimal BSGS giant step, into one ciphertext of `d` contiguous entries. The operand
+/// stores every diagonal of a `d x d` matrix between these shapes, `2d - 1`, whatever its values.
 pub fn runner_blas_grid_to_vector_resident<BE, M>(bencher: &mut Bencher<'_, M>, bp: &BlasBenchParams)
 where
     BE: Backend<Ring = Standard> + 'static + BlasMatVecImpl + MaxBase2k,
@@ -442,7 +442,8 @@ where
         let a = client.encrypt(bp, 1, 1, bp.batch(), |s, r, c| entry(6, s, r, c));
         let output = BlasVectorShape::new(d, d, 0, 1);
         let meta = CoeffsMeta::from_delta_budget(bp.p, HEADROOM);
-        let layout = BlasMatVecOperandLayout::new(slots, line.shape(&a), slots, output, slots, base2k(bp), meta);
+        let layout =
+            BlasMatVecOperandLayout::new(slots, line.shape(&a), slots, output, slots, base2k(bp), meta).with_optimal_bsgs();
         let module = &client.module;
         let mut streamed = module.blas_matvec_operand_alloc_from_infos(&layout);
         let mut prepared = module.blas_matvec_operand_prepared_alloc_from_infos(&layout);
@@ -479,7 +480,8 @@ where
         Box::new(move || {
             module
                 .blas_grid_to_vector(&mut res, &prepared, &a, line, &atks, &mut scratch.borrow())
-                .unwrap()
+                .unwrap();
+            module.synchronize();
         })
     });
 }

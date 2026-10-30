@@ -25,20 +25,20 @@ impl BlasGridLine {
     ///
     /// When the line's length or slots overflow a `usize`.
     pub fn shape(&self, grid: &impl BlasGridInfos) -> BlasVectorShape {
-        let d = 1usize << grid.log_d();
-        let (lines, at, stride) = match *self {
-            Self::Row { row, .. } => (grid.cols(), (row % d) * d, 1),
-            Self::Col { col, .. } => (grid.rows(), col % d, d),
-        };
-        let offset = d
-            .checked_mul(d)
-            .and_then(|area| self.mat_slot().checked_mul(area))
-            .and_then(|first| first.checked_add(at));
-        let (len, offset) = lines
-            .checked_mul(d)
-            .zip(offset)
-            .expect("the line's length or slots overflow a usize");
-        BlasVectorShape::new(len, d, offset, stride)
+        let shape = u32::try_from(grid.log_d())
+            .ok()
+            .and_then(|log_d| 1usize.checked_shl(log_d))
+            .and_then(|d| {
+                let area = d.checked_mul(d)?;
+                // `(row mod d) d < d^2`, which fits.
+                let (lines, at, stride) = match *self {
+                    Self::Row { row, .. } => (grid.cols(), (row % d) * d, 1),
+                    Self::Col { col, .. } => (grid.rows(), col % d, d),
+                };
+                let offset = self.mat_slot().checked_mul(area)?.checked_add(at)?;
+                Some(BlasVectorShape::new(lines.checked_mul(d)?, d, offset, stride))
+            });
+        shape.expect("the line's length or slots overflow a usize")
     }
 
     /// The line of `grid` as a vector layout: [`Self::shape`] on the grid's block layout. The planning queries of

@@ -395,12 +395,14 @@ their results are canonical.
 Every method runs within the scratch its own `_tmp_bytes` reports for the
 layouts and keys it receives, which may differ from the reference's; the
 reference asserts its bound on entry and panics before any write when it falls
-short, for a call that looks up a key. An override that needs other scratch
-reports it in its own query, and every operation over it follows: the provided
-transpose query and the reference queries call the selected implementations'
-queries, and the reference
-`blas_matmul` query is the largest of both reference hot preparations' queries
-and the reference prepared product's on the layouts they give.
+short, for a call that looks up a key, and for a product of a vector, a
+repacking or an operation on a diagonal ciphertext that looks up none, which
+its query sizes without reading the keys' layout. An override that needs other
+scratch reports it in its own query, and every operation over it follows: the
+provided transpose query and the reference queries call the selected
+implementations' queries, and the reference `blas_matmul` query is the largest
+of both reference hot preparations' queries and the reference prepared
+product's on the layouts they give.
 
 The queries read layouts (`BlasGridInfos`, `CKKSCtBounds`, `GGLWEInfos`), never
 ciphertext data: the prepared product's query receives the prepared operands,
@@ -523,10 +525,13 @@ and `test_blas_matvec_diagonal` and its guards a diagonal ciphertext of diagonal
 `0..8`, by rotation and by powers of two, rows and columns appended by masks of
 one and two slots, its product resident and streamed, and one of the diagonal
 `0` alone, and `test_blas_grid_to_vector`, `test_blas_vector_to_grid` and
-`test_blas_repack_guards` rows and columns of `2 x 2` blocks past the first
-block and matrix: below `N = 32` they, and the diagonal-ciphertext cases of
-`test_blas_key_widths`, `test_blas_key_stores_from_queries`,
-`test_blas_result_meta` and `test_blas_refill`, are skipped with a message.
+`test_blas_repack_guards` rows and columns of `d x d` blocks past the first
+block and matrix, a line placed through the identity and a scalar spread into
+a row through maps that rotate nothing: below `N = 32` they, and the
+diagonal-ciphertext cases of `test_blas_key_widths`,
+`test_blas_key_stores_from_queries`, `test_blas_result_meta` and
+`test_blas_refill`, are skipped with a message, and the repacking tests and
+cases also below `4 d^2` slots.
 
 `blas_conjugate_invariant_test_suite!(mod m, backend = …, params = …)`
 registers the test `conjugate_invariant` for a backend of the

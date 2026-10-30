@@ -5,7 +5,10 @@ use poulpy_ckks::{
 };
 use poulpy_core::{
     GLWEBytesOf, ScratchArenaTakeCore,
-    layouts::{GGLWEInfos, GGLWELayout, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey},
+    layouts::{
+        GGLWEInfos, GGLWELayout, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos,
+        TorusPrecision,
+    },
 };
 use poulpy_hal::{
     api::{CnvPVecAlloc, ModuleN},
@@ -15,7 +18,7 @@ use poulpy_hal::{
 use super::{LtEval, baby_caches, lt_tmp_bytes, shared_giants};
 use crate::layouts::{
     BlasDiagonalCiphertext, BlasDiagonalCiphertextInfos, BlasDiagonalCiphertextMap, BlasGrid, BlasGridInfos, BlasGridLine,
-    BlasGridMut, BlasMatVecMaps, BlasVectorInfos, BlasVectorMut, BlasVectorRef,
+    BlasGridMut, BlasMatVecMaps, BlasVectorInfos, BlasVectorLayout, BlasVectorMut, BlasVectorRef,
     diagonal_ciphertext::{self, AppendAxis, append_rotations},
     matvec_operand::output_label,
     validate::{
@@ -31,7 +34,8 @@ use crate::layouts::{
 /// scratch, and the first error stops it.
 pub trait BlasMatVecReference<BE: Backend> {
     /// The baby steps of one input ciphertext and one summed linear transformation from ciphertexts of `a`'s layout into
-    /// one of `res`'s, by `w`'s diagonals: resident, or streamed for an unprepared operand.
+    /// one of `res`'s, by `w`'s diagonals: resident, or streamed for an unprepared operand. On maps that rotate nothing,
+    /// `keys` is never read and the smallest key covering `a`'s layout stands in for it.
     fn blas_matvec_pt_tmp_bytes_reference<R, W, A, K>(&self, res: &R, w: &W, a: &A, keys: &K) -> usize
     where
         Self: CKKSLinearTransformationOps<BE>,
@@ -210,7 +214,7 @@ pub trait BlasMatVecReference<BE: Backend> {
 }
 
 impl<BE: Backend> BlasMatVecReference<BE> for Module<BE> {
-    fn blas_matvec_pt_tmp_bytes_reference<R, W, A, K>(&self, res: &R, _w: &W, a: &A, keys: &K) -> usize
+    fn blas_matvec_pt_tmp_bytes_reference<R, W, A, K>(&self, res: &R, w: &W, a: &A, keys: &K) -> usize
     where
         Self: CKKSLinearTransformationOps<BE>,
         R: BlasVectorInfos,
@@ -218,7 +222,7 @@ impl<BE: Backend> BlasMatVecReference<BE> for Module<BE> {
         A: BlasVectorInfos,
         K: GGLWEInfos,
     {
-        maps_tmp_bytes::<BE, _, W, _>(self, &res.ct_layout(), &a.ct_layout(), keys)
+        maps_tmp_bytes(self, w, res.ct_layout(), a.ct_layout(), keys)
     }
 
     fn blas_matvec_pt_reference<R, W, A, K>(
@@ -240,7 +244,10 @@ impl<BE: Backend> BlasMatVecReference<BE> for Module<BE> {
         validate_blas_matvec_pt(self, &*res, w, a, keys)?;
         let used = KeyLayouts::new(keys);
         let _ = matvec_pt_uses(&*res, w.blocks(), a, &mut |u| ensure_rotation(op, self, &used, u));
-        let bytes = used.max_bytes(|key| self.blas_matvec_pt_tmp_bytes_reference(&*res, w, a, key));
+        let bytes = used.max_bytes_or_unused(|key| {
+            let key = key.copied().unwrap_or_else(|| covering_key(&a.ct_layout()));
+            self.blas_matvec_pt_tmp_bytes_reference(&*res, w, a, &key)
+        });
         assert_scratch(op, bytes, scratch);
         let cts = a.cts();
         apply_maps(
@@ -254,7 +261,7 @@ impl<BE: Backend> BlasMatVecReference<BE> for Module<BE> {
         )
     }
 
-    fn blas_grid_to_vector_tmp_bytes_reference<R, W, A, K>(&self, res: &R, _w: &W, a: &A, keys: &K) -> usize
+    fn blas_grid_to_vector_tmp_bytes_reference<R, W, A, K>(&self, res: &R, w: &W, a: &A, keys: &K) -> usize
     where
         Self: CKKSLinearTransformationOps<BE>,
         R: BlasVectorInfos,
@@ -262,7 +269,7 @@ impl<BE: Backend> BlasMatVecReference<BE> for Module<BE> {
         A: BlasGridInfos,
         K: GGLWEInfos,
     {
-        maps_tmp_bytes::<BE, _, W, _>(self, &res.ct_layout(), &a.block_layout(), keys)
+        maps_tmp_bytes(self, w, res.ct_layout(), a.block_layout(), keys)
     }
 
     fn blas_grid_to_vector_reference<R, W, A, K>(
@@ -286,7 +293,10 @@ impl<BE: Backend> BlasMatVecReference<BE> for Module<BE> {
         let used = KeyLayouts::new(keys);
         let view = line.vector_layout(a);
         let _ = matvec_pt_uses(&*res, w.blocks(), &view, &mut |u| ensure_rotation(op, self, &used, u));
-        let bytes = used.max_bytes(|key| self.blas_grid_to_vector_tmp_bytes_reference(&*res, w, a, key));
+        let bytes = used.max_bytes_or_unused(|key| {
+            let key = key.copied().unwrap_or_else(|| covering_key(&a.block_layout()));
+            self.blas_grid_to_vector_tmp_bytes_reference(&*res, w, a, &key)
+        });
         assert_scratch(op, bytes, scratch);
         let blocks = a.blocks();
         let source = |t| &blocks[line.block(a, t)];
@@ -301,7 +311,7 @@ impl<BE: Backend> BlasMatVecReference<BE> for Module<BE> {
         )
     }
 
-    fn blas_vector_to_grid_tmp_bytes_reference<R, W, A, K>(&self, res: &R, _w: &W, a: &A, keys: &K) -> usize
+    fn blas_vector_to_grid_tmp_bytes_reference<R, W, A, K>(&self, res: &R, w: &W, a: &A, keys: &K) -> usize
     where
         Self: CKKSLinearTransformationOps<BE>,
         R: BlasGridInfos,
@@ -309,7 +319,7 @@ impl<BE: Backend> BlasMatVecReference<BE> for Module<BE> {
         A: BlasVectorInfos,
         K: GGLWEInfos,
     {
-        maps_tmp_bytes::<BE, _, W, _>(self, &res.block_layout(), &a.ct_layout(), keys)
+        maps_tmp_bytes(self, w, res.block_layout(), a.ct_layout(), keys)
     }
 
     fn blas_vector_to_grid_reference<R, W, A, K>(
@@ -333,7 +343,10 @@ impl<BE: Backend> BlasMatVecReference<BE> for Module<BE> {
         let used = KeyLayouts::new(keys);
         let view = line.vector_layout(&*res);
         let _ = matvec_pt_uses(&view, w.blocks(), a, &mut |u| ensure_rotation(op, self, &used, u));
-        let bytes = used.max_bytes(|key| self.blas_vector_to_grid_tmp_bytes_reference(&*res, w, a, key));
+        let bytes = used.max_bytes_or_unused(|key| {
+            let key = key.copied().unwrap_or_else(|| covering_key(&a.ct_layout()));
+            self.blas_vector_to_grid_tmp_bytes_reference(&*res, w, a, &key)
+        });
         assert_scratch(op, bytes, scratch);
         let cts = a.cts();
         apply_maps(
@@ -600,17 +613,40 @@ where
     Ok(())
 }
 
+/// The smallest rotation key covering an input of layout `a`, one digit per limb, which sizes the scratch of maps that
+/// look up no key: any key covering `a` sizes at least as much.
+fn covering_key(a: &CKKSLayout) -> GGLWELayout {
+    let k_digit = TorusPrecision(a.base2k().0);
+    GGLWELayout {
+        n: a.n(),
+        base2k: a.base2k(),
+        dnum: GGLWELayout::dnum_for_input(a.k(), k_digit),
+        k_aux: k_digit,
+        rank_in: a.rank(),
+        rank_out: a.rank(),
+        k_digit,
+        k_offset: TorusPrecision(0),
+        stride: 1,
+    }
+}
+
 /// One baby-step cache of an input of layout `a` and one summed transform from it into an output of layout `res` by
-/// `W`'s diagonals: resident, or streamed for an unprepared operand.
-fn maps_tmp_bytes<BE, M, W, K>(module: &M, res: &CKKSLayout, a: &CKKSLayout, keys: &K) -> usize
+/// `w`'s diagonals: resident, or streamed for an unprepared operand, at `keys`' layout, or at [`covering_key`] for maps
+/// that look up no key.
+fn maps_tmp_bytes<BE, W>(module: &Module<BE>, w: &W, res: CKKSLayout, a: CKKSLayout, keys: &impl GGLWEInfos) -> usize
 where
     BE: Backend,
-    M: CKKSLinearTransformationOps<BE>,
+    Module<BE>: CKKSLinearTransformationOps<BE>,
     W: BlasMatVecMaps<BE>,
-    K: GGLWEInfos,
 {
+    let views = (BlasVectorLayout::new(res, w.output()), BlasVectorLayout::new(a, w.input()));
+    let key = if rotates(module, |f| matvec_pt_uses(&views.0, w.blocks(), &views.1, f)) {
+        keys.gglwe_layout()
+    } else {
+        covering_key(&a)
+    };
     let eval = if W::STREAMED { LtEval::StreamedSum } else { LtEval::Sum };
-    lt_tmp_bytes(module, res, a, keys, eval)
+    lt_tmp_bytes(module, &res, &a, &key, eval)
 }
 
 /// The products by `w`'s maps: one baby-step cache per input `source(i)`, `i < inputs`, which every output shares, then

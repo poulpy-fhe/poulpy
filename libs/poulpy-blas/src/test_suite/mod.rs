@@ -35,7 +35,8 @@ pub mod repack;
 /// key.
 /// `test_blas_matmul_long_sums`, a `1 x 8` grid times an `8 x 1` grid of distinct blocks, runs on its own ring,
 /// `N = 32`, so a registration that sets `log_d` skips it with a message: its default registration runs it. The
-/// products of a vector span 16 slots: below `N = 32` they are skipped with a message.
+/// products of a vector span 16 slots: below `N = 32` they are skipped with a message, and the repackings of a grid's
+/// line also `4 d^2` slots, below which they are.
 #[macro_export]
 macro_rules! blas_backend_test_suite {
     (mod $modname:ident, backend = $backend:ty, scalar = $scalar:ty, encoder = $encoder:ty, params = $params:expr
@@ -120,18 +121,9 @@ macro_rules! blas_backend_test_suite {
             fn matvec_pt() {
                 $crate::test_suite::matvec::test_blas_matvec_pt::<$backend, $scalar, $encoder>($params, &*MODULE, &*HOST_MODULE);
             }
-            #[test]
-            fn grid_to_vector() {
-                $crate::test_suite::repack::test_blas_grid_to_vector::<$backend, $scalar, $encoder>($params, &*MODULE, &*HOST_MODULE);
-            }
-            #[test]
-            fn vector_to_grid() {
-                $crate::test_suite::repack::test_blas_vector_to_grid::<$backend, $scalar, $encoder>($params, &*MODULE, &*HOST_MODULE);
-            }
-            #[test]
-            fn repack_guards() {
-                $crate::test_suite::repack::test_blas_repack_guards::<$backend, $scalar, $encoder>($params, &*MODULE, &*HOST_MODULE);
-            }
+            run_test_with_arg!(grid_to_vector, $crate::test_suite::repack::test_blas_grid_to_vector, log_d());
+            run_test_with_arg!(vector_to_grid, $crate::test_suite::repack::test_blas_vector_to_grid, log_d());
+            run_test_with_arg!(repack_guards, $crate::test_suite::repack::test_blas_repack_guards, log_d());
             #[test]
             fn matvec_diagonal() {
                 $crate::test_suite::matvec::test_blas_matvec_diagonal::<$backend, $scalar, $encoder>($params, &*MODULE, &*HOST_MODULE);

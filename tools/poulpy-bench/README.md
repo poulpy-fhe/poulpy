@@ -227,7 +227,7 @@ and scales `log_delta = p = 40`:
 | `blas_matvec_pt_resident`, `blas_matvec_pt_streamed` | a `d x d` public matrix by one ciphertext of `d` entries at stride `N / (2d)`, the operand prepared or streamed |
 | `blas_matvec_diagonal_resident`, `blas_matvec_diagonal_streamed` | a diagonal ciphertext of the diagonals `0..d` over the slots, three rows appended, by a whole ciphertext, prepared once or each diagonal at its use |
 | `blas_append_row_diagonal` | one row into that matrix, by a mask of one slot |
-| `blas_grid_to_vector_resident` | row 1 of the first matrix of a one-block grid through the identity, prepared, into `d` contiguous slots |
+| `blas_grid_to_vector_resident` | row 1 of the first matrix of a one-block grid through the identity, prepared at the cost-optimal BSGS giant step, into `d` contiguous slots |
 
 The sweep is over the ring degree `N` and the block dimension `d`, which fill the `N / 2` slots with `N / (2 d^2)`
 matrices: light `(2^14, 64)`; standard `(2^13, 32)`, `(2^14, 64)`, `(2^15, 128)`; full adds `(2^15, 64)`, `(2^16, 64)`

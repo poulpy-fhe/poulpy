@@ -24,7 +24,7 @@ use super::{
     BlasDiagonalCiphertextMap, BlasGrid, BlasGridInfos, BlasGridLine, BlasMatMulOperandInfos, BlasMatMulOperandLayout,
     BlasMatVecMaps, BlasPlan, BlasPtOperandInfos, BlasPtOperandPrepared, BlasVectorInfos, BlasVectorLayout, BlasVectorRef,
     BlasVectorShape, Left,
-    ciphertext::{batch_fits, layout_of, mat_slots_in, replicated_at, slots_of},
+    ciphertext::{batch_fits, layout_of, replicated_at, slots_of},
     context::{ContextMaps, reduction_projection, reduction_rotations, shift_maps, shift_rotates, sum_rotations},
     diagonal_ciphertext::{AppendAxis, append_rotations},
     grid_batch,
@@ -1393,13 +1393,13 @@ pub fn validate_blas_grid_to_vector<BE: Backend>(
 /// Checks a [`blas_vector_to_grid`](crate::api::BlasMatVecOps::blas_vector_to_grid) call, and returns the batch `res`
 /// records, `output_period / d^2`: `a` is a vector whose ciphertexts hold its shape and share one layout whose label
 /// proves a period holding its entries, `res` a grid whose blocks tile its shape and share one layout whose label allows
-/// its batch record, of one block row for a row and one block column for a column, `line` lies in it, its index below
-/// the grid's rows or columns and its matrix below the slots' dense batch, `w`'s output period holds a matrix, then the
-/// checks of [`validate_blas_matvec_pt`] with the line's view ([`BlasGridLine::vector_layout`]) as `res`.
+/// its batch record, of one block row for a row and one block column for a column, `w`'s output period holds a matrix,
+/// `line` lies in `res`, its index below the grid's rows or columns and its matrix below that batch, then the checks of
+/// [`validate_blas_matvec_pt`] with the line's view ([`BlasGridLine::vector_layout`]) as `res`.
 ///
 /// # Errors
 ///
-/// `InvalidOperand` for a vector, grid, shape, line, operand, layout or period it rejects, then, key by key,
+/// `InvalidOperand` for a vector, grid, shape, operand, line, layout or period it rejects, then, key by key,
 /// `MissingAutomorphismKey`, or `InvalidOperand` for a key of another rank.
 pub fn validate_blas_vector_to_grid<BE: Backend>(
     module: &Module<BE>,
@@ -1416,8 +1416,7 @@ pub fn validate_blas_vector_to_grid<BE: Backend>(
         BlasGridLine::Row { .. } => ensure_shape(op, res, 1, res.cols())?,
         BlasGridLine::Col { .. } => ensure_shape(op, res, res.rows(), 1)?,
     }
-    let (n, log_d) = (res.block_layout().n().as_usize(), res.log_d());
-    ensure_line(op, line, res, mat_slots_in(slots_of::<BE::Ring>(n), log_d, 0))?;
+    let log_d = res.log_d();
     let batch = w.output_period() >> (2 * log_d);
     if batch == 0 {
         return Err(reject(
@@ -1428,6 +1427,7 @@ pub fn validate_blas_vector_to_grid<BE: Backend>(
             ),
         ));
     }
+    ensure_line(op, line, res, batch)?;
     ensure_matvec_pt(op, module, &line.vector_layout(res), w, &a.blas_vector_layout(), keys)?;
     Ok(batch)
 }

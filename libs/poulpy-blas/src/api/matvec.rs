@@ -19,7 +19,7 @@ use crate::layouts::{
 /// ([`BlasDiagonalCiphertextLayout::ct`](crate::layouts::BlasDiagonalCiphertextLayout)), which appends keep.
 pub trait BlasMatVecOps<BE: Backend> {
     /// Scratch bytes [`Self::blas_matvec_pt`] needs into `res` from `a` through `w` with rotation keys of layout
-    /// `keys`, resident or streamed by `w`'s form.
+    /// `keys`, which it reads only when `w`'s maps rotate, resident or streamed by `w`'s form.
     ///
     /// # Panics
     ///
@@ -84,7 +84,7 @@ pub trait BlasMatVecOps<BE: Backend> {
         K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
 
     /// Scratch bytes [`Self::blas_grid_to_vector`] needs into `res` from a line of `a` through `w` with rotation keys of
-    /// layout `keys`, resident or streamed by `w`'s form, whatever the line.
+    /// layout `keys`, which it reads only when `w`'s maps rotate, resident or streamed by `w`'s form, whatever the line.
     ///
     /// # Panics
     ///
@@ -137,7 +137,8 @@ pub trait BlasMatVecOps<BE: Backend> {
         K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
 
     /// Scratch bytes [`Self::blas_vector_to_grid`] needs into a line of `res` from `a` through `w` with rotation keys
-    /// of layout `keys`, resident or streamed by `w`'s form, whatever the line.
+    /// of layout `keys`, which it reads only when `w`'s maps rotate, resident or streamed by `w`'s form, whatever the
+    /// line.
     ///
     /// # Panics
     ///
@@ -172,7 +173,7 @@ pub trait BlasMatVecOps<BE: Backend> {
     ///
     /// - The implementation runs [`validate_blas_vector_to_grid`](crate::layouts::validate_blas_vector_to_grid) before
     ///   any write, so on its errors `res` and the operands are untouched: `InvalidOperand` for a vector, grid, shape,
-    ///   line, operand, layout or period it rejects; then, key by key, `MissingAutomorphismKey` or `InvalidOperand`
+    ///   operand, line, layout or period it rejects; then, key by key, `MissingAutomorphismKey` or `InvalidOperand`
     ///   for a key of another rank.
     /// - poulpy-ckks's budget errors as [`Self::blas_matvec_pt`]'s, before any write.
     /// - Any other `Err` is a backend fault (a validator gap or a device failure), and `res` is then unspecified.
