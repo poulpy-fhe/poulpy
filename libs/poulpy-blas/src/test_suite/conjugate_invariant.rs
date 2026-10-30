@@ -37,10 +37,11 @@ use super::{
 use crate::{
     api::{BlasEncodingOps, BlasMatInterOps, BlasMatIntraOps, BlasMatMulOps, BlasMatVecOps},
     layouts::{
-        BlasCiphertext, BlasCiphertextOwned, BlasContextInfos, BlasGridInfos, BlasLayout, BlasModuleAlloc, BlasPlan,
-        BlasPtAlgorithm, BlasPtOperandPrepared, BlasVector, BlasVectorInfos, BlasVectorLayout, BlasVectorOwned, BlasVectorShape,
-        Left, Right, blas_matvec_diagonal_output_layout, blas_matvec_pt_output_layout, ciphertext::layout_of,
-        diagonal_ciphertext::AppendAxis, matvec_pt_galois_elements, replicated, sum_galois_elements,
+        BlasCiphertext, BlasCiphertextOwned, BlasContextInfos, BlasGridInfos, BlasGridLine, BlasLayout, BlasMatVecOperandLayout,
+        BlasModuleAlloc, BlasPlan, BlasPtAlgorithm, BlasPtOperandPrepared, BlasVector, BlasVectorInfos, BlasVectorLayout,
+        BlasVectorOwned, BlasVectorShape, Left, Right, blas_grid_to_vector_output_layout, blas_matvec_diagonal_output_layout,
+        blas_matvec_pt_output_layout, blas_vector_to_grid_output_layout, ciphertext::layout_of, diagonal_ciphertext::AppendAxis,
+        matvec_pt_galois_elements, replicated, sum_galois_elements,
     },
     oep::BlasImpl,
 };
@@ -52,8 +53,9 @@ use crate::{
 /// `blas_matmul_prepared` of every mix and `blas_matmul`, by a right factor of distinct matrices and by one whose
 /// compact encryption proves it holds one matrix, `blas_matmul_pt_right` and `blas_matmul_pt_left` under every
 /// algorithm, the masked ones under the context's masks and on the right of one public matrix, each on exactly the
-/// scratch its query reports, `blas_matvec_pt` of a real vector, resident and streamed, and the row and column appends of
-/// a diagonal ciphertext by real masks then its product by a real vector. Every output decrypts to its
+/// scratch its query reports, `blas_matvec_pt` of a real vector, resident and streamed, the row and column appends of a
+/// diagonal ciphertext by real masks then its product by a real vector, `blas_grid_to_vector` of a column and
+/// `blas_vector_to_grid` of a row. Every output decrypts to its
 /// cleartext model at the metadata [`copied_layout`],
 /// [`mapped_layout`] or [`product_layout`] gives, and its slots, like the prepared operands', are `Real`. On fewer than
 /// 16 slots, which hold no `4 x 4` block, it is skipped with a message.
@@ -456,6 +458,67 @@ pub fn test_blas_conjugate_invariant<BE>(
         &want_layout,
         &mut scratch.borrow(),
     );
+
+    // A column of the last matrix of `A` read into a vector, then a real vector written as a row of the last matrix of
+    // a grid of one block row.
+    let (base2k, meta) = (params.base2k.into(), params.prec().into());
+    let line = BlasGridLine::Col {
+        mat_slot: lanes - 1,
+        col: 5,
+    };
+    let output = BlasVectorShape::new(5, 5, 1, 2);
+    let read = BlasMatVecOperandLayout::new(slots, line.shape(&ct_a), slots, output, slots, base2k, meta);
+    let row = BlasGridLine::Row {
+        mat_slot: lanes - 1,
+        row: 2,
+    };
+    let input = BlasVectorShape::new(3, 3, 0, 1);
+    let grid_layout = BlasLayout::new(ct_a.block_layout(), log_d, 1, 3);
+    let write = BlasMatVecOperandLayout::new(slots, input, slots, row.shape(&grid_layout), slots, base2k, meta);
+    let ((_, w_read), (_, w_write)) = (
+        matvec_operands::<BE, f64>(module, &read),
+        matvec_operands::<BE, f64>(module, &write),
+    );
+    let elements: BTreeSet<i64> = matvec_pt_galois_elements(order, &read)
+        .into_iter()
+        .chain(matvec_pt_galois_elements(order, &write))
+        .collect();
+    let keys = TestKeys::<BE> {
+        atks: rotation_keys(&params, module, &sk_raw, elements, &mut scratch.borrow()),
+        tsk: None,
+    };
+    let mut res = alloc_vector(&params, module, output, k);
+    let want_layout = blas_grid_to_vector_output_layout(&res, &read, &ct_a);
+    with_scratch::<BE, _>(module.blas_grid_to_vector_tmp_bytes(&res, &w_read, &ct_a, &atk), |s| {
+        module.blas_grid_to_vector(&mut res, &w_read, &ct_a, line, &keys, s)
+    })
+    .unwrap();
+    let column: Vec<f64> = (0..2 * a.d()).map(|r| a.at(lanes - 1, r, 5).0).collect();
+    let want = matvec_model(output.len, &column);
+    assert_real_vector(
+        "grid_to_vector",
+        &params,
+        module,
+        &sk,
+        &res,
+        &want,
+        slots,
+        &want_layout,
+        &mut scratch.borrow(),
+    );
+    let v: Vec<f64> = (0..input.len).map(vector_entry).collect();
+    let ct_v = encrypt_real_vector(&params, module, &sk, input, slots, &v, &mut scratch.borrow());
+    let mut res = alloc(1, 3);
+    let layout = blas_vector_to_grid_output_layout(&res, &write, &ct_v);
+    with_scratch::<BE, _>(module.blas_vector_to_grid_tmp_bytes(&res, &w_write, &ct_v, &atk), |s| {
+        module.blas_vector_to_grid(&mut res, row, &w_write, &ct_v, &keys, s)
+    })
+    .unwrap();
+    let y = matvec_model(write.output.len, &v);
+    let want = Grid::from_fn(log_d, 1, 3, lanes, |s, r, c| {
+        (if s == lanes - 1 && r == 2 { y[c] } else { 0.0 }, 0.0)
+    });
+    check("vector_to_grid", &res, &want, layout, &mut scratch.borrow());
 }
 
 /// Encrypts the real `values` as a vector of `shape` repeated every `period` slots at width `params.k`, each ciphertext

@@ -207,10 +207,24 @@ where
     Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F> + BlasEncodingOps<BE, F> + CnvPVecAlloc<BE>,
     F: DiagonalArithmetic + TestScalar,
 {
+    matvec_operands_of::<BE, F>(module, layout, matvec_entry)
+}
+
+/// [`matvec_operands`] holding `entry`.
+pub(crate) fn matvec_operands_of<BE, F>(
+    module: &Module<BE>,
+    layout: &BlasMatVecOperandLayout,
+    entry: fn(usize, usize) -> f64,
+) -> (BlasMatVecOperand<BE>, BlasMatVecOperandPrepared<BE>)
+where
+    BE: Backend + BlasEncodingImpl,
+    Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F> + BlasEncodingOps<BE, F> + CnvPVecAlloc<BE>,
+    F: DiagonalArithmetic + TestScalar,
+{
     let mut streamed = module.blas_matvec_operand_alloc_from_infos(layout);
     with_scratch::<BE, _>(module.blas_matvec_operand_encode_tmp_bytes(&streamed), |s| {
         module
-            .blas_matvec_operand_encode(&mut streamed, |row, col| F::from_f64(matvec_entry(row, col)).unwrap(), s)
+            .blas_matvec_operand_encode(&mut streamed, |row, col| F::from_f64(entry(row, col)).unwrap(), s)
             .unwrap()
     });
     let mut resident = module.blas_matvec_operand_prepared_alloc_from_infos(layout);
@@ -379,7 +393,7 @@ where
 }
 
 /// Runs `call` on `res` and asserts it fails with `rejection` raised by `op` and leaves `res` unchanged.
-fn assert_vector_guard<BE>(
+pub(crate) fn assert_vector_guard<BE>(
     label: &str,
     op: &str,
     rejection: Rejection,
