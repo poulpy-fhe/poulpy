@@ -6,7 +6,7 @@ use poulpy_hal::layouts::*;
 /// Evaluates a BDD circuit that reads one encrypted integer and produces
 /// one encrypted integer.  After evaluating the per-bit BDD levels, the
 /// output bits are repacked into a single [`FheUint`] polynomial via
-/// [`GLWEPacking`](poulpy_core::GLWEPacking).
+/// [`GLWEPack`](poulpy_core::GLWEPack).
 pub trait ExecuteBDDCircuit1WTo1W<BE: Backend> {
     /// Workspace for this evaluator and output packing.
     fn execute_bdd_circuit_1w_to_1w_tmp_bytes<C, T, R, G, H>(&self, res_infos: &R, ggsw_infos: &G, circuit: &C, key: &H) -> usize

@@ -8,8 +8,8 @@ use poulpy_hal::{
 
 use crate::layouts::operand_degree;
 use crate::{
-    ScratchArenaTakeCore,
-    encryption::{GLWEEncryptSk, GLWEEncryptSkInternal, GLWEMaskFill},
+    ScratchArenaTakeGLWE,
+    encryption::{GLWEEncryptSk, GLWEEncryptSkInternal, GLWEFill},
     layouts::{
         GLWECompressedSeedMut, GLWEInfos, GLWEToBackendRef, LWEInfos, compressed::GLWECompressedToBackendMut,
         prepared::GLWESecretPreparedToBackendRef,
@@ -51,7 +51,7 @@ pub trait GLWECompressedEncryptSkReference<BE: Backend> {
 
 impl<BE: Backend> GLWECompressedEncryptSkReference<BE> for Module<BE>
 where
-    Self: GLWEEncryptSkInternal<BE> + GLWEEncryptSk<BE> + GLWEMaskFill<BE> + VecZnxCopy<BE> + VecZnxNormalize<BE>,
+    Self: GLWEEncryptSkInternal<BE> + GLWEEncryptSk<BE> + GLWEFill<BE> + VecZnxCopy<BE> + VecZnxNormalize<BE>,
 {
     fn glwe_compressed_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
@@ -89,7 +89,7 @@ where
                 );
 
                 let (mut full_ct, mut scratch_1) = scratch.borrow().take_glwe_scratch(&res_backend);
-                self.fill_glwe_mask_from_seed(&mut full_ct, seed_xa);
+                self.glwe_fill_mask_from_seed(&mut full_ct, seed_xa);
                 self.glwe_encrypt_sk_internal(
                     res_backend.base2k().into(),
                     full_ct.k().as_usize(),
@@ -134,7 +134,7 @@ where
             {
                 let (base2k, size): (usize, usize) = (res_backend.base2k().into(), res_backend.size());
                 let (mut full_ct, mut scratch_1) = scratch.borrow().take_glwe_scratch(&res_backend);
-                self.fill_glwe_mask_from_seed(&mut full_ct, seed_xa);
+                self.glwe_fill_mask_from_seed(&mut full_ct, seed_xa);
                 self.glwe_encrypt_sk_internal(
                     base2k,
                     res_backend.k().as_usize(),

@@ -2,8 +2,8 @@
 //! methods.
 //!
 //! These free `*_reference` functions are the reference algorithms a backend
-//! forwards to from its [`crate::oep::LinearTransformationImpl`] impl (see
-//! [`crate::impl_linear_transformation_reference_full`]). The prepared path
+//! forwards to from its [`crate::oep::GLWELinearTransformationImpl`] impl (see
+//! [`crate::impl_glwe_linear_transformation_reference_full`]). The prepared path
 //! follows docs/guides/linear_transformation.md: hoisted baby rotations, DFT-domain inner
 //! products, lazy giant rotations, and one final BIG normalization.
 
@@ -27,15 +27,15 @@ use crate::{
     GLWEAdd, GLWEAutomorphism, GLWECopy, GLWEMulPlain, LinearTransformation,
     gadget::prod_dft_size,
     layouts::{
-        DiagonalProd, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LinearTransformationPlan,
-        ModuleCoreAlloc, assert_linear_transformation_into, assert_linear_transformation_sum,
+        GGLWEInfos, GLWEDiagonalProd, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey,
+        LinearTransformationPlan, ModuleCoreAlloc, assert_linear_transformation_into, assert_linear_transformation_sum,
     },
     reference::{
         keyswitching::{GGLWEProductReference, GLWEKeyswitchInternal},
         linear_transformation::{
             baby_steps::{
-                glwe_prepare_baby_doubling_tmp_bytes, glwe_prepare_linear_transformation_baby_steps,
-                glwe_prepare_linear_transformation_baby_steps_tmp_bytes,
+                glwe_linear_transformation_baby_steps_prepare, glwe_linear_transformation_baby_steps_prepare_tmp_bytes,
+                glwe_prepare_baby_doubling_tmp_bytes,
             },
             giant_steps::{PlainProductsShape, giant_tree_tmp_bytes, glwe_eval_giant_steps, plain_products_tmp_bytes},
             inner_product::glwe_accumulate_prepared_baby_steps_dft_tmp_bytes,
@@ -49,7 +49,7 @@ use crate::api::GLWEBytesOf;
 
 /// HAL/op bounds required by the eval reference path. Repeated on each free
 /// function so backends only pull in what a method actually needs.
-pub fn glwe_eval_linear_transformation_tmp_bytes_reference<BE, R, A, B, K, T>(
+pub fn glwe_linear_transformation_eval_tmp_bytes_reference<BE, R, A, B, K, T>(
     module: &Module<BE>,
     res: &R,
     a: &A,
@@ -61,7 +61,7 @@ pub fn glwe_eval_linear_transformation_tmp_bytes_reference<BE, R, A, B, K, T>(
 where
     BE: Backend
         + crate::oep::GGLWEProductDigitsStridedImpl
-        + crate::oep::LinearTransformationImpl
+        + crate::oep::GLWELinearTransformationImpl
         + crate::oep::GLWETensoringImpl,
     Module<BE>: GLWEBytesOf<BE>
         + crate::GLWEPreparedTensoring<BE>
@@ -111,7 +111,7 @@ where
             tsk,
         );
         let prod_size = tsk.size().max(res.max_size());
-        return (glwe_prepare_linear_transformation_baby_steps_tmp_bytes::<BE, _, _>(module, a, key)
+        return (glwe_linear_transformation_baby_steps_prepare_tmp_bytes::<BE, _, _>(module, a, key)
             + glwe_prepare_baby_doubling_tmp_bytes::<BE, _, _, _>(module, a, plan, key))
         .max(giant_routes_tmp_bytes(module, cols, prod_size, products_bytes, 1, res, key))
         .max(giant_tree_tmp_bytes(module, res, prod_size, products_bytes, plan, key));
@@ -143,7 +143,7 @@ where
         .max(module.glwe_mul_plain_tmp_bytes(res, a, pt))
         .max(prepare_right)
         .max(
-            glwe_prepare_linear_transformation_baby_steps_tmp_bytes::<BE, _, _>(module, a, key)
+            glwe_linear_transformation_baby_steps_prepare_tmp_bytes::<BE, _, _>(module, a, key)
                 + glwe_prepare_baby_doubling_tmp_bytes::<BE, _, _, _>(module, a, plan, key),
         )
         .max(glwe_lazy_giant_automorphism_tmp_bytes::<BE, _, _, _>(module, res, key))
@@ -221,18 +221,18 @@ where
     fallback_path.max(lazy_dft_path)
 }
 
-/// Reference impl: scratch bytes for [`glwe_prepare_linear_transformation_baby_steps_reference`].
+/// Reference impl: scratch bytes for [`glwe_linear_transformation_baby_steps_prepare_reference`].
 ///
 /// Sizes both the hoisted baby route (DFT the mask once, VMP per key) and the
 /// plain per-baby `glwe_automorphism` fallback, and takes the larger.
-pub fn glwe_prepare_linear_transformation_baby_steps_tmp_bytes_reference<BE, A, K>(
+pub fn glwe_linear_transformation_baby_steps_prepare_tmp_bytes_reference<BE, A, K>(
     module: &Module<BE>,
     a: &A,
     plan: &LinearTransformationPlan,
     key: &K,
 ) -> usize
 where
-    BE: Backend + crate::oep::GGLWEProductDigitsStridedImpl + crate::oep::LinearTransformationImpl,
+    BE: Backend + crate::oep::GGLWEProductDigitsStridedImpl + crate::oep::GLWELinearTransformationImpl,
     Module<BE>: GLWEBytesOf<BE>
         + poulpy_hal::api::ModuleN
         + CnvOps<BE>
@@ -250,7 +250,7 @@ where
     A: GLWEInfos,
     K: GGLWEInfos,
 {
-    glwe_prepare_linear_transformation_baby_steps_tmp_bytes::<BE, _, _>(module, a, key)
+    glwe_linear_transformation_baby_steps_prepare_tmp_bytes::<BE, _, _>(module, a, key)
         + glwe_prepare_baby_doubling_tmp_bytes::<BE, _, _, _>(module, a, plan, key)
 }
 
@@ -261,15 +261,15 @@ where
 /// across all keys (docs/guides/linear_transformation.md). The LHS is independent of the matrix
 /// diagonals, so the same prepared cache is reused across every giant step and
 /// across transforms that share the input. Forwards to the internal
-/// `glwe_prepare_linear_transformation_baby_steps`.
-pub fn glwe_prepare_linear_transformation_baby_steps_reference<BE, A, H, L: BabyStepOperand<BE>>(
+/// `glwe_linear_transformation_baby_steps_prepare`.
+pub fn glwe_linear_transformation_baby_steps_prepare_reference<BE, A, H, L: BabyStepOperand<BE>>(
     module: &Module<BE>,
     cache: &mut LinearTransformationBabySteps<BE, L>,
     a: &A,
     keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: Backend + crate::oep::GGLWEProductDigitsStridedImpl + crate::oep::LinearTransformationImpl,
+    BE: Backend + crate::oep::GGLWEProductDigitsStridedImpl + crate::oep::GLWELinearTransformationImpl,
     Module<BE>: GLWEBytesOf<BE>
         + CnvPVecAlloc<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
@@ -297,7 +297,7 @@ pub fn glwe_prepare_linear_transformation_baby_steps_reference<BE, A, H, L: Baby
     A: GLWEToBackendRef<BE> + GLWEInfos,
     H: GetAutomorphismKey<BE>,
 {
-    glwe_prepare_linear_transformation_baby_steps(module, cache, a, keys, scratch);
+    glwe_linear_transformation_baby_steps_prepare(module, cache, a, keys, scratch);
     cache.set_k(a.k());
 }
 
@@ -309,12 +309,12 @@ pub fn glwe_prepare_linear_transformation_baby_steps_reference<BE, A, H, L: Baby
 /// This is Phases B/C of docs/guides/linear_transformation.md: per-giant PROD, lazy giant rotations,
 /// and one final normalization. `cnv_offset` is the CKKS-supplied limb alignment
 /// between the input and diagonal scales. The per-giant PROD is dispatched by the
-/// [`DiagonalProd::operand`] of `P`, so `P = PreparedDiagonal` runs the resident fused path
+/// [`GLWEDiagonalProd::operand`] of `P`, so `P = PreparedDiagonal` runs the resident fused path
 /// and an unprepared `P` streams each diagonal; the rest of the loop is shared.
 ///
 /// Runs [`assert_linear_transformation_into`] (a fully-pruned transform is a
 /// caller bug), then the shared `glwe_eval_giant_steps` loop.
-pub fn glwe_eval_linear_transformation_into_reference<BE, R, P, H, L: BabyStepOperand<BE>>(
+pub fn glwe_linear_transformation_eval_into_reference<BE, R, P, H, L: BabyStepOperand<BE>>(
     module: &Module<BE>,
     cnv_offset: usize,
     res: &mut R,
@@ -325,7 +325,7 @@ pub fn glwe_eval_linear_transformation_into_reference<BE, R, P, H, L: BabyStepOp
 ) where
     BE: Backend
         + crate::oep::GGLWEProductDigitsStridedImpl
-        + crate::oep::LinearTransformationImpl
+        + crate::oep::GLWELinearTransformationImpl
         + crate::oep::GLWETensoringImpl,
     Module<BE>: GLWEBytesOf<BE>
         + crate::GLWEPreparedTensoring<BE>
@@ -369,7 +369,7 @@ pub fn glwe_eval_linear_transformation_into_reference<BE, R, P, H, L: BabyStepOp
         + poulpy_hal::api::VecZnxIdftNormalizeTmpBytes
         + poulpy_hal::api::VecZnxDftAutomorphismAddWithPlanTmpBytes,
     R: GLWEToBackendMut<BE> + GLWEInfos,
-    P: DiagonalProd<BE>,
+    P: GLWEDiagonalProd<BE>,
     H: GetAutomorphismKey<BE> + crate::layouts::GetTensorKey<BE>,
 {
     assert_linear_transformation_into(lhs, rhs);
@@ -377,9 +377,9 @@ pub fn glwe_eval_linear_transformation_into_reference<BE, R, P, H, L: BabyStepOp
     res.set_canonical(true);
 }
 
-/// Reference impl: scratch bytes for [`glwe_eval_linear_transformation_sum_into_reference`],
+/// Reference impl: scratch bytes for [`glwe_linear_transformation_eval_sum_into_reference`],
 /// the single-transform budget plus the PROD bucket every term after the first is computed into.
-pub fn glwe_eval_linear_transformation_sum_tmp_bytes_reference<BE, R, A, B, K, T>(
+pub fn glwe_linear_transformation_eval_sum_tmp_bytes_reference<BE, R, A, B, K, T>(
     module: &Module<BE>,
     res: &R,
     a: &A,
@@ -391,7 +391,7 @@ pub fn glwe_eval_linear_transformation_sum_tmp_bytes_reference<BE, R, A, B, K, T
 where
     BE: Backend
         + crate::oep::GGLWEProductDigitsStridedImpl
-        + crate::oep::LinearTransformationImpl
+        + crate::oep::GLWELinearTransformationImpl
         + crate::oep::GLWETensoringImpl,
     Module<BE>: GLWEBytesOf<BE>
         + crate::GLWEPreparedTensoring<BE>
@@ -423,13 +423,13 @@ where
     // A batch of buckets, each sized like the single budget's PROD buffer.
     let bucket = BE::glwe_giant_step_batch(module)
         * BE::scratch_aligned(module.vec_znx_dft_bytes_of(module.n(), a.rank().as_usize() + 1, a.max_size() + pt.max_size()));
-    glwe_eval_linear_transformation_tmp_bytes_reference::<BE, _, _, _, _, _>(module, res, a, pt, plan, tsk, key) + bucket
+    glwe_linear_transformation_eval_tmp_bytes_reference::<BE, _, _, _, _, _>(module, res, a, pt, plan, tsk, key) + bucket
 }
 
-/// Reference impl: scratch bytes for [`glwe_eval_linear_transformation_sum_into_reference`] over streamed transforms:
+/// Reference impl: scratch bytes for [`glwe_linear_transformation_eval_sum_into_reference`] over streamed transforms:
 /// the sum's budget plus the resident `CnvPVecR` diagonal slot and the `cnv_prepare_right` scratch of the streamed
 /// inner product, sized at the module degree.
-pub fn glwe_eval_linear_transformation_sum_unprepared_rhs_tmp_bytes_reference<BE, R, A, B, K, T>(
+pub fn glwe_linear_transformation_eval_sum_unprepared_rhs_tmp_bytes_reference<BE, R, A, B, K, T>(
     module: &Module<BE>,
     res: &R,
     a: &A,
@@ -441,7 +441,7 @@ pub fn glwe_eval_linear_transformation_sum_unprepared_rhs_tmp_bytes_reference<BE
 where
     BE: Backend
         + crate::oep::GGLWEProductDigitsStridedImpl
-        + crate::oep::LinearTransformationImpl
+        + crate::oep::GLWELinearTransformationImpl
         + crate::oep::GLWETensoringImpl,
     Module<BE>: GLWEBytesOf<BE>
         + crate::GLWEPreparedTensoring<BE>
@@ -471,7 +471,7 @@ where
     K: GGLWEInfos,
     T: GGLWEInfos,
 {
-    glwe_eval_linear_transformation_sum_tmp_bytes_reference::<BE, _, _, _, _, _>(module, res, a, pt, plan, tsk, key)
+    glwe_linear_transformation_eval_sum_tmp_bytes_reference::<BE, _, _, _, _, _>(module, res, a, pt, plan, tsk, key)
         + module.cnv_pvec_right_bytes_of(module.n(), 1, pt.size(), PrepareHint::OneShot)
         + module.cnv_prepare_right_tmp_bytes(pt.size(), pt.size())
 }
@@ -480,12 +480,12 @@ where
 ///
 /// `babies[t]` is the baby cache of `a_t` and `lts[t]` is `M_t`. Each giant step's PROD is
 /// summed over the terms in DFT, then rotated once by the
-/// shared giant loop, so one term is [`glwe_eval_linear_transformation_into_reference`].
+/// shared giant loop, so one term is [`glwe_linear_transformation_eval_into_reference`].
 ///
 /// Runs [`assert_linear_transformation_sum`] first: every term shares the first
 /// one's giant schedule, first diagonal's layout, width and scale, and source
 /// layout, so one schedule, PROD bucket and `cnv_offset` serve them all.
-pub fn glwe_eval_linear_transformation_sum_into_reference<BE, R, P, H, L: BabyStepOperand<BE>>(
+pub fn glwe_linear_transformation_eval_sum_into_reference<BE, R, P, H, L: BabyStepOperand<BE>>(
     module: &Module<BE>,
     cnv_offset: usize,
     res: &mut R,
@@ -496,7 +496,7 @@ pub fn glwe_eval_linear_transformation_sum_into_reference<BE, R, P, H, L: BabySt
 ) where
     BE: Backend
         + crate::oep::GGLWEProductDigitsStridedImpl
-        + crate::oep::LinearTransformationImpl
+        + crate::oep::GLWELinearTransformationImpl
         + crate::oep::GLWETensoringImpl,
     Module<BE>: GLWEBytesOf<BE>
         + crate::GLWEPreparedTensoring<BE>
@@ -540,7 +540,7 @@ pub fn glwe_eval_linear_transformation_sum_into_reference<BE, R, P, H, L: BabySt
         + poulpy_hal::api::VecZnxIdftNormalizeTmpBytes
         + poulpy_hal::api::VecZnxDftAutomorphismAddWithPlanTmpBytes,
     R: GLWEToBackendMut<BE> + GLWEInfos,
-    P: DiagonalProd<BE>,
+    P: GLWEDiagonalProd<BE>,
     H: GetAutomorphismKey<BE> + crate::layouts::GetTensorKey<BE>,
 {
     assert_linear_transformation_sum(babies, lts);
@@ -554,7 +554,7 @@ pub fn glwe_eval_linear_transformation_sum_into_reference<BE, R, P, H, L: BabySt
 /// diagonal slot and a `cnv_prepare_right` scratch on top of the prepared
 /// evaluation budget, both sized at the module degree, an upper bound for a
 /// diagonal of any degree.
-pub fn glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes_reference<BE, R, A, B, K, T>(
+pub fn glwe_linear_transformation_eval_unprepared_rhs_tmp_bytes_reference<BE, R, A, B, K, T>(
     module: &Module<BE>,
     res: &R,
     a: &A,
@@ -566,7 +566,7 @@ pub fn glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes_reference<BE, R,
 where
     BE: Backend
         + crate::oep::GGLWEProductDigitsStridedImpl
-        + crate::oep::LinearTransformationImpl
+        + crate::oep::GLWELinearTransformationImpl
         + crate::oep::GLWETensoringImpl,
     Module<BE>: GLWEBytesOf<BE>
         + crate::GLWEPreparedTensoring<BE>
@@ -596,7 +596,7 @@ where
     K: GGLWEInfos,
     T: GGLWEInfos,
 {
-    glwe_eval_linear_transformation_tmp_bytes_reference::<BE, _, _, _, _, _>(module, res, a, pt, plan, tsk, key)
+    glwe_linear_transformation_eval_tmp_bytes_reference::<BE, _, _, _, _, _>(module, res, a, pt, plan, tsk, key)
         + module.cnv_pvec_right_bytes_of(module.n(), 1, pt.size(), PrepareHint::OneShot)
         + module.cnv_prepare_right_tmp_bytes(pt.size(), pt.size())
 }

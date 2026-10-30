@@ -22,7 +22,7 @@ use poulpy_core::api::GLWESecretSampling;
 use poulpy_core::{
     GLWETensorKeyEncryptSk,
     api::{GLWESecretPreparedFactory, GLWETensorKeyPreparedFactory},
-    layouts::{GLWELayout, GLWETensorKeyLayout, ModuleCoreAlloc, Rank},
+    layouts::{GLWELayout, GLWESecretAlloc, GLWETensorKeyAlloc, GLWETensorKeyLayout, Rank},
 };
 use poulpy_cpu_portable::NTT4x30Portable;
 use poulpy_hal::AlignedBuf;
@@ -89,7 +89,7 @@ fn main() -> Result<()> {
 
     let mut tsk = module.glwe_tensor_key_alloc_from_infos(&tsk_layout());
     module.glwe_tensor_key_encrypt_sk(&mut tsk, &sk_raw, &mut source_xa, &mut source_xe, &mut scratch.borrow());
-    let mut tsk_prepared = module.alloc_tensor_key_prepared_from_infos(&tsk_layout());
+    let mut tsk_prepared = module.glwe_tensor_key_prepared_alloc_from_infos(&tsk_layout());
     module.glwe_tensor_key_prepare(&mut tsk_prepared, &tsk, &mut scratch.borrow());
 
     // ── 2. encode + encrypt two slot vectors ────────────────────────────────

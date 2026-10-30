@@ -8,7 +8,7 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
-    DiagonalProd,
+    GLWEDiagonalProd,
     layouts::{Base2K, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LinearTransformation},
 };
 use poulpy_hal::layouts::{Backend, ScratchArena};
@@ -73,7 +73,7 @@ pub trait CKKSDFTOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + DiagonalProd<BE>;
+        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + GLWEDiagonalProd<BE>;
 
     /// [`Self::ckks_prepare_dft_matrix`] of `dft` into
     /// [`CKKSModuleAlloc::ckks_dft_matrix_prepared_alloc_from_infos`](crate::layouts::CKKSModuleAlloc::ckks_dft_matrix_prepared_alloc_from_infos)
@@ -88,7 +88,7 @@ pub trait CKKSDFTOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<DFTMatrixPrepared<BE, Dir, Fmt>>
     where
-        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + DiagonalProd<BE>;
+        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + GLWEDiagonalProd<BE>;
 
     /// Evaluates the homomorphic (I)DFT in place (raw chain, no format wrapper).
     fn ckks_dft_evaluate_assign<Dir, Fmt, P, Dst, H>(
@@ -99,7 +99,7 @@ pub trait CKKSDFTOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: DiagonalProd<BE> + LtDiagonalMeta,
+        P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
 
@@ -112,7 +112,7 @@ pub trait CKKSDFTOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: DiagonalProd<BE> + LtDiagonalMeta,
+        P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
 
@@ -125,7 +125,7 @@ pub trait CKKSDFTOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: DiagonalProd<BE> + LtDiagonalMeta,
+        P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
 
@@ -141,7 +141,7 @@ pub trait CKKSDFTOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: DiagonalProd<BE> + LtDiagonalMeta,
+        P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
@@ -157,7 +157,7 @@ pub trait CKKSDFTOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: DiagonalProd<BE> + LtDiagonalMeta,
+        P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
@@ -173,7 +173,7 @@ pub trait CKKSDFTOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: DiagonalProd<BE> + LtDiagonalMeta,
+        P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
@@ -188,7 +188,7 @@ pub trait CKKSDFTOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: DiagonalProd<BE> + LtDiagonalMeta,
+        P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>;

@@ -576,7 +576,7 @@ pub(in crate::layouts) mod tests {
     use poulpy_hal::layouts::{HostBytesBackend, Module};
 
     use super::*;
-    use crate::layouts::{GLWELayout, ModuleCoreAlloc, Scale, SlotsKind};
+    use crate::layouts::{GLWEAlloc, GLWELayout, Scale, SlotsKind};
 
     #[test]
     fn mutable_access_clears_metadata() {

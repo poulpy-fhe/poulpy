@@ -10,7 +10,7 @@ use poulpy_hal::{
 pub use crate::api::GLWEDecrypt;
 use crate::layouts::operand_degree;
 use crate::{
-    ScratchArenaTakeCore,
+    ScratchArenaTakeGLWE,
     api::{GLWEBytesOf, GLWENormalize},
     layouts::{
         Base2K, GLWEBackendMut, GLWEBackendRef, GLWEInfos, GLWEMaskToBackendRef, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,

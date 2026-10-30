@@ -28,7 +28,7 @@ mod trace {
     };
 
     use crate::{
-        GLWEAutomorphism, GLWECopy, GLWENormalize, GLWEShift, GLWETrace, ScratchArenaTakeCore,
+        GLWEAutomorphism, GLWECopy, GLWENormalize, GLWEShift, GLWETrace, ScratchArenaTakeGLWE,
         layouts::{Degree, GGLWEInfos, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos},
     };
 
@@ -142,7 +142,7 @@ mod trace {
 
         for p in trace_rotations::<BE, _>(module, n, levels, reverse) {
             if normalize {
-                module.glwe_rsh(1, res, scratch);
+                module.glwe_rsh_assign(1, res, scratch);
             }
             let key = keys
                 .get_automorphism_key(p, res.k())
@@ -353,7 +353,7 @@ mod packing {
     };
 
     use crate::{
-        GLWEAdd, GLWEAutomorphism, GLWENormalize, GLWERotate, GLWEShift, GLWESub, GLWETrace, ScratchArenaTakeCore,
+        GLWEAdd, GLWEAutomorphism, GLWENormalize, GLWERotate, GLWEShift, GLWESub, GLWETrace, ScratchArenaTakeGLWE,
         layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GetAutomorphismKey, LWEInfos},
     };
 
@@ -390,9 +390,9 @@ mod packing {
                 let (mut tmp_b, mut scratch_1) = scratch.borrow().take_glwe_scratch(&a_layout);
                 module.glwe_rotate_assign(-t, a, &mut scratch_1);
                 module.glwe_sub(&mut tmp_b, a, b);
-                module.glwe_rsh(1, &mut tmp_b, &mut scratch_1);
+                module.glwe_rsh_assign(1, &mut tmp_b, &mut scratch_1);
                 module.glwe_add_assign(a, b);
-                module.glwe_rsh(1, a, &mut scratch_1);
+                module.glwe_rsh_assign(1, a, &mut scratch_1);
                 module.glwe_normalize_assign(&mut tmp_b, &mut scratch_1);
                 let key = keys
                     .get_automorphism_key(p, tmp_b.k())
@@ -402,7 +402,7 @@ mod packing {
                 module.glwe_normalize_assign(a, &mut scratch_1);
                 module.glwe_rotate_assign(t, a, &mut scratch_1);
             } else {
-                module.glwe_rsh(1, a, scratch);
+                module.glwe_rsh_assign(1, a, scratch);
                 let key = keys
                     .get_automorphism_key(p, a.k())
                     .unwrap_or_else(|e| panic!("pack rotation {p}: {e}"));
@@ -414,7 +414,7 @@ mod packing {
             let b_layout = b.glwe_layout();
             let (mut tmp_b, mut scratch_1) = scratch.borrow().take_glwe_scratch(&b_layout);
             module.glwe_rotate(t, &mut tmp_b, b);
-            module.glwe_rsh(1, &mut tmp_b, &mut scratch_1);
+            module.glwe_rsh_assign(1, &mut tmp_b, &mut scratch_1);
             let key = keys
                 .get_automorphism_key(p, tmp_b.k())
                 .unwrap_or_else(|e| panic!("pack rotation {p}: {e}"));
@@ -504,7 +504,7 @@ mod packing {
             .unwrap_or_else(|e| panic!("packing rotation -1: {e}"));
         assert!(
             scratch.available() >= glwe_pack_tmp_bytes_derived::<BE, _, _, _, _>(module, res, &a_layout, &key_infos),
-            "scratch.available(): {} < GLWEPacking::glwe_pack_tmp_bytes: {}",
+            "scratch.available(): {} < GLWEPack::glwe_pack_tmp_bytes: {}",
             scratch.available(),
             glwe_pack_tmp_bytes_derived::<BE, _, _, _, _>(module, res, &a_layout, &key_infos)
         );

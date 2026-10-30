@@ -1,6 +1,6 @@
 use poulpy_core::{
     api::{GLWESecretPreparedFactory, GLWESecretSampling},
-    layouts::{GLWELayout, GLWEPublicKey, GLWEPublicKeyCompressedToBackendMut, GLWESecret, ModuleCoreAlloc, Rank},
+    layouts::{GLWELayout, GLWEPublicKey, GLWEPublicKeyAlloc, GLWEPublicKeyCompressedToBackendMut, GLWESecret, Rank},
     test_suite::with_scratch,
 };
 use poulpy_hal::{

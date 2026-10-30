@@ -1,6 +1,6 @@
 use poulpy_core::{
     ComponentNoise, FreshNoiseEstimate, GLWEAdd, GLWEBytesOf, GLWECompressedEncryptSk, GLWECopy, GLWEMaskInnerProduct,
-    GLWENormalize, GLWESub, GetDistribution, Noise, ScratchArenaTakeCore, VecZnxAddNoise,
+    GLWENormalize, GLWEPlaintextBytesOf, GLWESub, GetDistribution, Noise, ScratchArenaTakeGLWEPlaintext, VecZnxAddNoise,
     layouts::{GLWEInfos, GLWEMaskToBackendRef, GLWESecretPreparedToBackendRef, GLWEToBackendMut, GLWEToBackendRef, LWEInfos},
 };
 use poulpy_hal::{

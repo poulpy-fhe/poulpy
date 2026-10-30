@@ -20,11 +20,11 @@ use poulpy_ckks::{
     },
 };
 use poulpy_core::{
-    GLWEAutomorphismKeyEncryptSk, GLWEBytesOf, GLWETensorKeyEncryptSk,
+    GLWEAutomorphismKeyEncryptSk, GLWELinearTransformationBabyStepsBytesOf, GLWETensorKeyEncryptSk,
     api::{GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory},
     layouts::{
-        Base2K, DiagonalArithmetic, GGLWELayout, GLWEAutomorphismKeyLayout, GLWETensorKeyLayout, GLWEToBackendRef,
-        GetAutomorphismKey, GetTensorKey, LWEInfos, ModuleCoreAlloc, TorusPrecision,
+        Base2K, DiagonalArithmetic, GGLWELayout, GLWEAutomorphismKeyAlloc, GLWEAutomorphismKeyLayout, GLWETensorKeyAlloc,
+        GLWETensorKeyLayout, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos, TorusPrecision,
         prepared::{
             GLWEAutomorphismKeyPreparedBackendRef, GLWEAutomorphismKeyPreparedToBackendRef, GLWETensorKeyPreparedBackendRef,
             GLWETensorKeyPreparedToBackendRef,
@@ -555,7 +555,8 @@ pub fn test_blas_key_widths<BE, F, E>(
                     src.block(0, 0),
                     first,
                     &keys,
-                    &mut own(bytes + module.linear_transformation_baby_steps_bytes_of(&first.index(), src.block(0, 0))).borrow(),
+                    &mut own(bytes + module.glwe_linear_transformation_baby_steps_bytes_of(&first.index(), src.block(0, 0)))
+                        .borrow(),
                 )
                 .unwrap();
             let mut p = alloc(1, 1, width(&s));
@@ -565,7 +566,8 @@ pub fn test_blas_key_widths<BE, F, E>(
                     s.block(0, 0),
                     shift,
                     &keys,
-                    &mut own(bytes + module.linear_transformation_baby_steps_bytes_of(&shift.index(), s.block(0, 0))).borrow(),
+                    &mut own(bytes + module.glwe_linear_transformation_baby_steps_bytes_of(&shift.index(), s.block(0, 0)))
+                        .borrow(),
                 )
                 .unwrap();
             (width(&s), width(&p))
@@ -1188,7 +1190,7 @@ pub fn test_blas_key_stores_from_queries<BE, F, E>(
             };
             let mut raw = module.glwe_tensor_key_alloc_from_infos(&infos);
             module.glwe_tensor_key_encrypt_sk(&mut raw, &sk_raw, &mut xe, &mut xa, &mut scratch.borrow());
-            let mut prepared = module.alloc_tensor_key_prepared_from_infos(&infos);
+            let mut prepared = module.glwe_tensor_key_prepared_alloc_from_infos(&infos);
             module.glwe_tensor_key_prepare(&mut prepared, &raw, &mut scratch.borrow());
             keys.tsks.insert(width.as_u32(), prepared);
         }

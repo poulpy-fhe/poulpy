@@ -1,5 +1,6 @@
 use poulpy_core::layouts::{
-    Base2K, Degree, Dnum, GGLWEInfos, GGSWInfos, GLWEInfos, ModuleCoreAlloc, ModuleCoreCompressedAlloc, Rank, TorusPrecision,
+    Base2K, Degree, Dnum, GGLWEAlloc, GGLWECompressedAlloc, GGLWEInfos, GGSWInfos, GLWEAlloc, GLWECompressedAlloc, GLWEInfos,
+    GLWEPublicKeyCompressedAlloc, ModuleCoreAlloc, ModuleCoreCompressedAlloc, Rank, TorusPrecision,
 };
 use poulpy_hal::{
     api::ModuleN,
@@ -32,6 +33,11 @@ pub trait MHEModuleAlloc<BE: Backend>:
     ModuleN
     + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
     + ModuleCoreCompressedAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+    + GGLWEAlloc
+    + GGLWECompressedAlloc
+    + GLWEAlloc
+    + GLWECompressedAlloc
+    + GLWEPublicKeyCompressedAlloc
 {
     fn glwe_pat_compressed_alloc_from_infos<A: GLWEInfos>(&self, infos: &A) -> GLWEPatCompressedOwned<BE> {
         assert_degree(self.n(), infos.n());

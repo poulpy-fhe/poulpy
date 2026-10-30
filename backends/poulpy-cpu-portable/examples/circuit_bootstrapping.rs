@@ -3,8 +3,9 @@ use poulpy_core::{
     GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, LWEEncryptSk,
     api::{GGSWPreparedFactory, GLWESecretPreparedFactory},
     layouts::{
-        GGLWEToGGSWKeyLayout, GGSW, GGSWInfos, GGSWLayout, GLWE, GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout, GLWEPlaintext,
-        GLWESecret, LWE, LWEInfos, LWELayout, LWEPlaintext, LWESecret, ModuleCoreAlloc,
+        GGLWEToGGSWKeyLayout, GGSW, GGSWAlloc, GGSWInfos, GGSWLayout, GLWE, GLWEAlloc, GLWEAutomorphismKeyLayout, GLWEInfos,
+        GLWELayout, GLWEPlaintext, GLWEPlaintextAlloc, GLWESecret, GLWESecretAlloc, LWE, LWEAlloc, LWEInfos, LWELayout,
+        LWEPlaintext, LWEPlaintextAlloc, LWESecret, LWESecretAlloc,
         prepared::{GGSWPrepared, GLWESecretPrepared},
     },
 };

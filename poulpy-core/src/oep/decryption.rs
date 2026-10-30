@@ -112,7 +112,7 @@ macro_rules! impl_decryption_reference_full {
             where
                 A: $crate::layouts::GLWEInfos,
             {
-                $crate::reference::decryption::glwe::glwe_decrypt_tmp_bytes_reference::<::poulpy_hal::layouts::Module<$be>, $be, _>(module, infos)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::decryption::DecryptionReference<$be>>::glwe_decrypt_tmp_bytes_reference(module, infos)
             }
 
             fn glwe_decrypt<R, P, S>(
@@ -126,14 +126,14 @@ macro_rules! impl_decryption_reference_full {
                 P: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos + $crate::layouts::SetBase2k,
                 S: $crate::layouts::prepared::GLWESecretPreparedToBackendRef<$be> + $crate::layouts::GLWEInfos,
             {
-                $crate::reference::decryption::glwe::glwe_decrypt_reference::<::poulpy_hal::layouts::Module<$be>, $be, _, _, _>(module, res, pt, sk, scratch)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::decryption::DecryptionReference<$be>>::glwe_decrypt_reference(module, res, pt, sk, scratch)
             }
 
             fn glwe_mask_inner_product_tmp_bytes<A>(module: &::poulpy_hal::layouts::Module<$be>, infos: &A) -> usize
             where
                 A: $crate::layouts::GLWEInfos,
             {
-                $crate::reference::decryption::glwe::glwe_mask_inner_product_tmp_bytes_reference::<::poulpy_hal::layouts::Module<$be>, _>(module, infos)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::decryption::DecryptionReference<$be>>::glwe_mask_inner_product_tmp_bytes_reference(module, infos)
             }
 
             fn glwe_mask_inner_product<R, A, S>(
@@ -147,14 +147,14 @@ macro_rules! impl_decryption_reference_full {
                 A: $crate::layouts::GLWEMaskToBackendRef<$be> + $crate::layouts::GLWEInfos,
                 S: $crate::layouts::prepared::GLWESecretPreparedToBackendRef<$be> + $crate::layouts::GLWEInfos,
             {
-                $crate::reference::decryption::glwe::glwe_mask_inner_product_reference::<::poulpy_hal::layouts::Module<$be>, $be, _, _, _>(module, res, mask, sk, scratch)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::decryption::DecryptionReference<$be>>::glwe_mask_inner_product_reference(module, res, mask, sk, scratch)
             }
 
             fn lwe_decrypt_tmp_bytes<A>(module: &::poulpy_hal::layouts::Module<$be>, infos: &A) -> usize
             where
                 A: $crate::layouts::LWEInfos,
             {
-                $crate::reference::decryption::lwe::lwe_decrypt_tmp_bytes_reference::<::poulpy_hal::layouts::Module<$be>, $be, _>(module, infos)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::decryption::DecryptionReference<$be>>::lwe_decrypt_tmp_bytes_reference(module, infos)
             }
 
             fn lwe_decrypt<R, P, S>(
@@ -168,14 +168,14 @@ macro_rules! impl_decryption_reference_full {
                 P: $crate::layouts::LWEPlaintextToBackendMut<$be> + $crate::layouts::SetBase2k + $crate::layouts::LWEInfos,
                 S: $crate::layouts::LWESecretToBackendRef<$be> + $crate::layouts::LWEInfos,
             {
-                $crate::reference::decryption::lwe::lwe_decrypt_reference::<::poulpy_hal::layouts::Module<$be>, $be, _, _, _>(module, res, pt, sk, scratch)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::decryption::DecryptionReference<$be>>::lwe_decrypt_reference(module, res, pt, sk, scratch)
             }
 
             fn lwe_matrix_decrypt_tmp_bytes<A>(module: &::poulpy_hal::layouts::Module<$be>, infos: &A) -> usize
             where
                 A: $crate::layouts::LWEMatrixInfos,
             {
-                $crate::reference::decryption::lwe_matrix::lwe_matrix_decrypt_tmp_bytes_reference::<$be, _>(module, infos)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::decryption::DecryptionReference<$be>>::lwe_matrix_decrypt_tmp_bytes_reference(module, infos)
             }
 
             fn lwe_matrix_decrypt<R, P, S>(
@@ -189,7 +189,7 @@ macro_rules! impl_decryption_reference_full {
                 P: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::SetBase2k + $crate::layouts::GLWEInfos,
                 S: $crate::layouts::LWESecretToBackendRef<$be> + $crate::layouts::LWEInfos,
             {
-                $crate::reference::decryption::lwe_matrix::lwe_matrix_decrypt_reference::<$be, _, _, _>(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::decryption::DecryptionReference<$be>>::lwe_matrix_decrypt_reference(
                     module, res, pt, sk, scratch,
                 )
             }
@@ -216,7 +216,7 @@ macro_rules! impl_decryption_reference_full {
                 $crate::layouts::GLWESecretTensorPrepared<S1, $be>:
                     $crate::layouts::prepared::GLWESecretTensorPreparedToBackendRef<$be> + $crate::layouts::GLWEInfos,
             {
-                $crate::reference::decryption::glwe_tensor::glwe_tensor_decrypt_reference::<::poulpy_hal::layouts::Module<$be>, $be, R, P, S0, S1>(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::decryption::DecryptionReference<$be>>::glwe_tensor_decrypt_reference(
                     module, res, pt, sk, sk_tensor, scratch,
                 )
             }
@@ -225,7 +225,7 @@ macro_rules! impl_decryption_reference_full {
             where
                 A: $crate::layouts::GLWEInfos,
             {
-                $crate::reference::decryption::glwe_tensor::glwe_tensor_decrypt_tmp_bytes_reference::<::poulpy_hal::layouts::Module<$be>, $be, _>(module, infos)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::decryption::DecryptionReference<$be>>::glwe_tensor_decrypt_tmp_bytes_reference(module, infos)
             }
         }
     };

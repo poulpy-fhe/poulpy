@@ -24,7 +24,7 @@ poulpy_core::impl_glwe_rotate_reference_full!(OverrideBackend);
 poulpy_core::impl_glwe_mul_xp_minus_one_reference_full!(OverrideBackend);
 poulpy_core::impl_glwe_shift_reference_full!(OverrideBackend);
 poulpy_core::impl_glwe_normalize_reference_full!(OverrideBackend);
-poulpy_core::impl_polynomial_evaluation_derived_full!(OverrideBackend);
+poulpy_core::impl_glwe_polynomial_evaluation_derived_full!(OverrideBackend);
 poulpy_core::impl_gglwe_external_product_derived_full!(OverrideBackend);
 poulpy_core::impl_gglwe_keyswitch_derived_full!(OverrideBackend);
 poulpy_core::impl_ggsw_external_product_derived_full!(OverrideBackend);
@@ -33,7 +33,7 @@ poulpy_core::impl_automorphism_reference_full!(OverrideBackend);
 poulpy_core::impl_glwe_external_product_reference_full!(OverrideBackend);
 poulpy_core::impl_glwe_pack_derived_full!(OverrideBackend);
 poulpy_core::impl_glwe_trace_derived_full!(OverrideBackend);
-poulpy_core::impl_linear_transformation_reference_full!(OverrideBackend);
+poulpy_core::impl_glwe_linear_transformation_reference_full!(OverrideBackend);
 poulpy_core::impl_lwe_keyswitch_reference_full!(OverrideBackend);
 poulpy_core::impl_glwe_tensoring_reference_full!(OverrideBackend);
 poulpy_core::impl_gglwe_product_digits_strided_reference_full!(OverrideBackend);
@@ -74,7 +74,7 @@ unsafe impl poulpy_core::oep::GLWEKeyswitchImpl for OverrideBackend {
         key_infos: &B,
     ) -> usize {
         KEYSWITCH_PER_LIMB * a_infos.max_size()
-            + poulpy_core::reference::keyswitching::glwe::glwe_keyswitch_tmp_bytes_reference(
+            + <Module<Self> as poulpy_core::reference::keyswitching::GLWEKeyswitchReference<Self>>::glwe_keyswitch_tmp_bytes_reference(
                 module, res_infos, a_infos, key_infos,
             )
     }
@@ -92,7 +92,9 @@ unsafe impl poulpy_core::oep::GLWEKeyswitchImpl for OverrideBackend {
         let bytes = KEYSWITCH_PER_LIMB * a.max_size();
         let (mut marker, mut rest) = scratch.borrow().take_region(bytes);
         Self::copy_host_to_view(&mut marker, &vec![0x3a; bytes]);
-        poulpy_core::reference::keyswitching::glwe::glwe_keyswitch_reference(module, res, a, key, &mut rest);
+        <Module<Self> as poulpy_core::reference::keyswitching::GLWEKeyswitchReference<Self>>::glwe_keyswitch_reference(
+            module, res, a, key, &mut rest,
+        );
         assert!(marker.iter().all(|&x| x == 0x3a));
     }
 
@@ -104,7 +106,9 @@ unsafe impl poulpy_core::oep::GLWEKeyswitchImpl for OverrideBackend {
     ) where
         R: GLWEToBackendMut<Self> + GLWEInfos,
     {
-        poulpy_core::reference::keyswitching::glwe::glwe_keyswitch_assign_reference::<Self, _, _>(module, res, key, scratch)
+        <Module<Self> as poulpy_core::reference::keyswitching::GLWEKeyswitchReference<Self>>::glwe_keyswitch_assign_reference(
+            module, res, key, scratch,
+        )
     }
 
     fn glwe_keyswitch_dft_tmp_bytes<A: GLWEInfos, K: GGLWEInfos>(
@@ -113,7 +117,7 @@ unsafe impl poulpy_core::oep::GLWEKeyswitchImpl for OverrideBackend {
         a_infos: &A,
         key_infos: &K,
     ) -> usize {
-        poulpy_core::reference::keyswitching::glwe::glwe_keyswitch_dft_tmp_bytes_reference::<Self, _, _, _>(
+        <Module<Self> as poulpy_core::reference::keyswitching::GLWEKeyswitchReference<Self>>::glwe_keyswitch_dft_tmp_bytes_reference(
             module, res_size, a_infos, key_infos,
         )
     }
@@ -127,7 +131,9 @@ unsafe impl poulpy_core::oep::GLWEKeyswitchImpl for OverrideBackend {
     ) where
         A: GLWEToBackendRef<Self> + GLWEInfos,
     {
-        poulpy_core::reference::keyswitching::glwe::glwe_keyswitch_dft_reference::<Self, _, _>(module, res, a, key, scratch)
+        <Module<Self> as poulpy_core::reference::keyswitching::GLWEKeyswitchReference<Self>>::glwe_keyswitch_dft_reference(
+            module, res, a, key, scratch,
+        )
     }
 }
 
@@ -466,7 +472,7 @@ const _: () = {
     ) where
         OpaqueBackend<'env>:
             Backend<ZnxWord = i64, OwnedBuf = OpaqueOwned> + CmuxImpl + GLWEBlindRotationImpl + GLWEBlindSelectionImpl<u8>,
-        Module<OpaqueBackend<'env>>: GLWEExternalProductInternal<OpaqueBackend<'env>>
+        Module<OpaqueBackend<'env>>: GLWEExternalProductDft<OpaqueBackend<'env>>
             + GLWECopy<OpaqueBackend<'env>>
             + GLWESub<OpaqueBackend<'env>>
             + GLWEZero<OpaqueBackend<'env>>
@@ -830,7 +836,7 @@ fn lookup_table_api_dispatches_without_reference_arithmetic_bounds() {
 }
 
 unsafe impl poulpy_core::oep::GLWEExternalProductImpl for OpaqueBackend<'static> {
-    fn glwe_external_product_internal_tmp_bytes<R: GLWEInfos, A: GLWEInfos, B: GGSWInfos>(
+    fn glwe_external_product_dft_tmp_bytes<R: GLWEInfos, A: GLWEInfos, B: GGSWInfos>(
         _: &Module<Self>,
         _: &R,
         _: &A,
@@ -883,7 +889,7 @@ const _: () = {
         key: &GGSWPreparedBackendRef<'_, OpaqueBackend<'static>>,
         scratch: &mut ScratchArena<'_, OpaqueBackend<'static>>,
     ) {
-        use poulpy_core::GLWEExternalProductInternal;
+        use poulpy_core::GLWEExternalProductDft;
         module.glwe_external_product_dft(res, a, key, scratch);
     }
 };
@@ -901,7 +907,7 @@ fn synchronize_dispatches_to_the_backend_hook() {
 
 #[test]
 fn external_product_dft_query_accepts_opaque_noncontiguous_backend() {
-    use poulpy_core::GLWEExternalProductInternal;
+    use poulpy_core::GLWEExternalProductDft;
     let module = Module::<OpaqueBackend<'static>>::new(32);
     const { assert!(!<OpaqueBackend as Backend>::DFT_LIMBS_CONTIGUOUS) };
     let ct = GLWELayout {
@@ -918,5 +924,5 @@ fn external_product_dft_query_accepts_opaque_noncontiguous_backend() {
         dnum: Dnum(2),
         k_digit: TorusPrecision::from(ct.base2k),
     };
-    assert_eq!(module.glwe_external_product_internal_tmp_bytes(&ct, &ct, &key), 256);
+    assert_eq!(module.glwe_external_product_dft_tmp_bytes(&ct, &ct, &key), 256);
 }

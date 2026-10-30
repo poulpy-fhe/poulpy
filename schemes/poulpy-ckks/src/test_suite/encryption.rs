@@ -17,7 +17,7 @@ use crate::{
 use poulpy_core::{
     GLWEDecrypt, GLWENoise, GLWENormalize, GLWESub, GetDistribution,
     api::GLWESecretPreparedFactory,
-    layouts::{GLWEInfos, GLWELayout, IntPolyInfos, LWEInfos, ModuleCoreAlloc},
+    layouts::{GLWEInfos, GLWELayout, GLWEPlaintextAlloc, IntPolyInfos, LWEInfos},
 };
 use poulpy_hal::{
     api::{ModuleNew, ReimNew, ScratchOwnedAlloc, ScratchOwnedBorrow},

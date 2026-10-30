@@ -3,8 +3,9 @@ use crate::api::GLWENormalize;
 use poulpy_hal::{
     api::{
         ModuleN, ScratchArenaTakeVecZnx, ScratchArenaTakeVecZnxBig, ScratchArenaTakeVecZnxDft, ScratchArenaTakeVmpPMat,
-        VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxGadgetDecompose, VecZnxGadgetDecomposeTmpBytes, VmpApplyDftToDft,
-        VmpApplyDftToDftAdd, VmpApplyDftToDftAddTmpBytes, VmpApplyDftToDftTmpBytes, VmpExtractSelectedRows, VmpPMatBytesOf,
+        VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftAutomorphismAddWithPlanTmpBytes, VecZnxDftBytesOf,
+        VecZnxDftCopy, VecZnxGadgetDecompose, VecZnxGadgetDecomposeTmpBytes, VmpApplyDftToDft, VmpApplyDftToDftAdd,
+        VmpApplyDftToDftAddTmpBytes, VmpApplyDftToDftTmpBytes, VmpExtractSelectedRows, VmpPMatBytesOf,
     },
     layouts::{
         Backend, Module, PrepareHint, ScratchArena, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef,
@@ -13,8 +14,11 @@ use poulpy_hal::{
 };
 
 use crate::{
-    ScratchArenaTakeCore,
-    gadget::{gadget_dft_apply, gadget_dft_apply_tmp_bytes, gadget_input_size, gglwe_product_output_size, precision_limbs},
+    ScratchArenaTakeGLWE,
+    gadget::{
+        gglwe_gadget_dft_apply, gglwe_gadget_dft_apply_tmp_bytes, gglwe_gadget_input_size, gglwe_product_output_size,
+        precision_limbs,
+    },
     layouts::{
         Base2K, Dnum, GGLWEInfos, GGLWEPreparedBackendRef, GLWEInfos, GLWEToBackendRef, LWEInfos, TorusPrecision,
         assert_key_covers, assert_no_row_offset, digits_aligned, gadget_product_limbs,
@@ -46,7 +50,7 @@ where
         + VecZnxGadgetDecompose<BE>
         + VecZnxGadgetDecomposeTmpBytes,
 {
-    fn glwe_keyswitch_internal_tmp_bytes_from_sizes<K>(
+    fn glwe_keyswitch_internal_from_sizes_tmp_bytes<K>(
         &self,
         mask_cols: usize,
         res_size: usize,
@@ -67,7 +71,7 @@ where
         A: GLWEInfos,
         K: GGLWEInfos,
     {
-        self.glwe_keyswitch_internal_tmp_bytes_from_sizes(a_infos.rank().as_usize(), res_infos.size(), a_infos.size(), key_infos)
+        self.glwe_keyswitch_internal_from_sizes_tmp_bytes(a_infos.rank().as_usize(), res_infos.size(), a_infos.size(), key_infos)
     }
 
     fn glwe_keyswitch_internal<'r, A>(
@@ -116,7 +120,7 @@ where
     K: GGLWEInfos,
 {
     operand_degree(module.n(), &[a_infos.n(), key_infos.n()]);
-    module.glwe_keyswitch_internal_tmp_bytes_from_sizes(a_infos.rank().as_usize(), res_size, a_infos.size(), key_infos)
+    module.glwe_keyswitch_internal_from_sizes_tmp_bytes(a_infos.rank().as_usize(), res_size, a_infos.size(), key_infos)
 }
 
 /// The gadget product of a key switch of `a = (b, a_1, ..., a_rank)` over the
@@ -185,11 +189,11 @@ where
     // Sized for an input of `a_size` full limbs, an upper bound of its precision.
     let (base2k, k_digit, dnum) = (key_infos.base2k(), key_infos.k_digit(), key_infos.dnum());
     let a_k = TorusPrecision((a_size * base2k.as_usize()) as u32);
-    let operand_size: usize = gadget_input_size(base2k, k_digit, dnum, a_k, a_size);
+    let operand_size: usize = gglwe_gadget_input_size(base2k, k_digit, dnum, a_k, a_size);
     let lvl_0: usize = module.vec_znx_dft_bytes_of(module.n(), mask_cols, operand_size);
     let lvl_1: usize = module
         .gglwe_product_dft_tmp_bytes_reference(res_size, operand_size, key_infos)
-        .max(gadget_dft_apply_tmp_bytes::<BE, _>(
+        .max(gglwe_gadget_dft_apply_tmp_bytes::<BE, _>(
             module, base2k, k_digit, dnum, a_k, a_size,
         ));
     lvl_0 + lvl_1
@@ -352,33 +356,6 @@ where
     );
 }
 
-/// The HAL operations the references of the step hooks of `GGLWEProductDigitsStridedImpl` compose.
-pub trait GGLWEProductFusedReference<BE: Backend>:
-    GGLWEProductReference<BE>
-    + poulpy_hal::api::VecZnxDftAddAssign<BE>
-    + poulpy_hal::api::VecZnxDftAutomorphism<BE>
-    + poulpy_hal::api::VecZnxDftAutomorphismAddWithPlanTmpBytes
-    + poulpy_hal::api::VecZnxIdftNormalize<BE>
-    + poulpy_hal::api::VecZnxIdftNormalizeTmpBytes
-    + poulpy_hal::api::VecZnxDftApply<BE>
-    + VecZnxGadgetDecompose<BE>
-    + VecZnxGadgetDecomposeTmpBytes
-{
-}
-
-impl<BE: Backend, M> GGLWEProductFusedReference<BE> for M where
-    M: GGLWEProductReference<BE>
-        + poulpy_hal::api::VecZnxDftAddAssign<BE>
-        + poulpy_hal::api::VecZnxDftAutomorphism<BE>
-        + poulpy_hal::api::VecZnxDftAutomorphismAddWithPlanTmpBytes
-        + poulpy_hal::api::VecZnxIdftNormalize<BE>
-        + poulpy_hal::api::VecZnxIdftNormalizeTmpBytes
-        + poulpy_hal::api::VecZnxDftApply<BE>
-        + VecZnxGadgetDecompose<BE>
-        + VecZnxGadgetDecomposeTmpBytes
-{
-}
-
 #[doc(hidden)]
 #[allow(clippy::too_many_arguments)]
 pub fn gglwe_product_idft_normalize_reference<BE, M>(
@@ -397,7 +374,15 @@ pub fn gglwe_product_idft_normalize_reference<BE, M>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: GGLWEProductFusedReference<BE>,
+    M: GGLWEProductReference<BE>
+        + VecZnxDftAddAssign<BE>
+        + VecZnxDftAutomorphism<BE>
+        + VecZnxDftAutomorphismAddWithPlanTmpBytes
+        + VecZnxIdftNormalize<BE>
+        + VecZnxIdftNormalizeTmpBytes
+        + VecZnxDftApply<BE>
+        + VecZnxGadgetDecompose<BE>
+        + VecZnxGadgetDecomposeTmpBytes,
 {
     crate::layouts::assert_gglwe_product_idft_normalize("gglwe_product_idft_normalize", res, res_dft, a, key, addends, body);
     assert!(
@@ -438,7 +423,15 @@ pub fn gglwe_product_idft_normalize_tmp_bytes_reference<BE, M, K>(
 ) -> usize
 where
     BE: Backend,
-    M: GGLWEProductFusedReference<BE>,
+    M: GGLWEProductReference<BE>
+        + VecZnxDftAddAssign<BE>
+        + VecZnxDftAutomorphism<BE>
+        + VecZnxDftAutomorphismAddWithPlanTmpBytes
+        + VecZnxIdftNormalize<BE>
+        + VecZnxIdftNormalizeTmpBytes
+        + VecZnxDftApply<BE>
+        + VecZnxGadgetDecompose<BE>
+        + VecZnxGadgetDecomposeTmpBytes,
     K: GGLWEInfos,
 {
     module
@@ -456,7 +449,15 @@ pub fn gglwe_product_fused_tmp_bytes_reference<BE, M, K>(
 ) -> usize
 where
     BE: Backend,
-    M: GGLWEProductFusedReference<BE>,
+    M: GGLWEProductReference<BE>
+        + VecZnxDftAddAssign<BE>
+        + VecZnxDftAutomorphism<BE>
+        + VecZnxDftAutomorphismAddWithPlanTmpBytes
+        + VecZnxIdftNormalize<BE>
+        + VecZnxIdftNormalizeTmpBytes
+        + VecZnxDftApply<BE>
+        + VecZnxGadgetDecompose<BE>
+        + VecZnxGadgetDecomposeTmpBytes,
     K: GGLWEInfos,
 {
     // The product, then its automorphism added into `res`.
@@ -482,7 +483,15 @@ pub fn gglwe_product_fused_reference<BE, M>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: GGLWEProductFusedReference<BE>,
+    M: GGLWEProductReference<BE>
+        + VecZnxDftAddAssign<BE>
+        + VecZnxDftAutomorphism<BE>
+        + VecZnxDftAutomorphismAddWithPlanTmpBytes
+        + VecZnxIdftNormalize<BE>
+        + VecZnxIdftNormalizeTmpBytes
+        + VecZnxDftApply<BE>
+        + VecZnxGadgetDecompose<BE>
+        + VecZnxGadgetDecomposeTmpBytes,
 {
     use poulpy_hal::layouts::VecZnxDftToBackendRef;
     crate::layouts::assert_gglwe_product("gglwe_product_fused", res, product_size, a, key, addends);
@@ -630,7 +639,7 @@ fn glwe_keyswitch_dft_fill<'r, BE, M, A>(
 
 /// Limbs of the gadget operand [`glwe_keyswitch_operand`] lays the mask of `a` out on.
 pub(crate) fn glwe_keyswitch_operand_size<A: GLWEInfos, K: GGLWEInfos>(a: &A, key: &K) -> usize {
-    gadget_input_size(key.base2k(), key.k_digit(), key.dnum(), a.k(), a.size())
+    gglwe_gadget_input_size(key.base2k(), key.k_digit(), key.dnum(), a.k(), a.size())
 }
 
 /// The mask columns of `a`, laid out on the digit grid of `key` and transformed:
@@ -651,7 +660,7 @@ pub(crate) fn glwe_keyswitch_operand<BE, M, A>(
     let (base2k, k_digit, dnum) = (key.base2k(), key.k_digit(), key.dnum());
     for col_i in 0..a.rank().as_usize() {
         let a_data: &VecZnxBackendRef<'_, BE> = &a.data;
-        gadget_dft_apply(
+        gglwe_gadget_dft_apply(
             module,
             a_dft,
             col_i,
@@ -710,7 +719,7 @@ where
         let lvl_2_0: usize = module.glwe_bytes_of_from_infos(&a_conv_infos);
         let lvl_2_1: usize = module
             .glwe_normalize_tmp_bytes()
-            .max(module.glwe_keyswitch_internal_tmp_bytes_from_sizes(mask_cols, output_size, a_dft_size, key_infos));
+            .max(module.glwe_keyswitch_internal_from_sizes_tmp_bytes(mask_cols, output_size, a_dft_size, key_infos));
         let lvl_2_2: usize = small_term_tmp
             + consume_tmp.max(
                 lvl_1_big
@@ -722,7 +731,7 @@ where
         lvl_2_0 + lvl_2_1.max(lvl_2_2)
     } else {
         // The gadget operand is held across the product and the normalization.
-        let operand_size = gadget_input_size(
+        let operand_size = gglwe_gadget_input_size(
             key_infos.base2k(),
             key_infos.k_digit(),
             key_infos.dnum(),
@@ -730,7 +739,7 @@ where
             a_dft_size,
         );
         lvl_1
-            .max(module.glwe_keyswitch_internal_tmp_bytes_from_sizes(mask_cols, output_size, a_dft_size, key_infos))
+            .max(module.glwe_keyswitch_internal_from_sizes_tmp_bytes(mask_cols, output_size, a_dft_size, key_infos))
             .max(
                 BE::scratch_aligned(module.vec_znx_dft_bytes_of(n, mask_cols, operand_size))
                     + BE::gglwe_product_idft_normalize_tmp_bytes(module, res_infos.size(), output_size, operand_size, key_infos),
@@ -1048,15 +1057,15 @@ where
     K: GGLWEInfos,
 {
     let key_size = key_infos.size();
-    let operand_size = crate::gadget::gadget_dft_operand_size(key_infos, source_size, key_size);
+    let operand_size = crate::gadget::gglwe_gadget_dft_operand_size(key_infos, source_size, key_size);
     let operand = module.vec_znx_dft_bytes_of(module.n(), rank, operand_size);
     BE::scratch_aligned(operand)
-        + crate::gadget::gadget_dft_apply_from_dft_tmp_bytes::<BE, _, _>(module, source_size, key_size, key_infos)
+        + crate::gadget::gglwe_gadget_dft_apply_from_dft_tmp_bytes::<BE, _, _>(module, source_size, key_size, key_infos)
         + BE::gglwe_product_fused_tmp_bytes(module, source_size.max(key_size), key_size, operand_size, key_infos)
 }
 
 /// One key switch of a source in the transform domain: its operand laid out
-/// ([`gadget_dft_apply_from_dft`](crate::gadget::gadget_dft_apply_from_dft)), then its product by `key` over `output_size` limbs, at most
+/// ([`gglwe_gadget_dft_apply_from_dft`](crate::gadget::gglwe_gadget_dft_apply_from_dft)), then its product by `key` over `output_size` limbs, at most
 /// `key.size()`, with column 0 of `source` added and stored or accumulated through the
 /// automorphism of `p` ([`GGLWEProductDigitsStridedImpl::gglwe_product_fused`]). The mask
 /// columns of `source` are unspecified afterwards.
@@ -1074,14 +1083,22 @@ pub(crate) fn gglwe_product_from_dft<BE>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: GGLWEProductDigitsStridedImpl,
-    Module<BE>: GGLWEProductFusedReference<BE>,
+    Module<BE>: GGLWEProductReference<BE>
+        + VecZnxDftAddAssign<BE>
+        + VecZnxDftAutomorphism<BE>
+        + VecZnxDftAutomorphismAddWithPlanTmpBytes
+        + VecZnxIdftNormalize<BE>
+        + VecZnxIdftNormalizeTmpBytes
+        + VecZnxDftApply<BE>
+        + VecZnxGadgetDecompose<BE>
+        + VecZnxGadgetDecomposeTmpBytes,
 {
     let output_size = output_size.min(key.size());
-    let operand_size = crate::gadget::gadget_dft_operand_size(key, source.size(), output_size);
+    let operand_size = crate::gadget::gglwe_gadget_dft_operand_size(key, source.size(), output_size);
     let (mut operand, mut scratch_1) = scratch
         .borrow()
         .take_vec_znx_dft_scratch(res.n(), res.cols() - 1, operand_size);
-    crate::gadget::gadget_dft_apply_from_dft(module, &mut operand, source, source_base2k, key, output_size, &mut scratch_1);
+    crate::gadget::gglwe_gadget_dft_apply_from_dft(module, &mut operand, source, source_base2k, key, output_size, &mut scratch_1);
     BE::gglwe_product_fused(
         module,
         res,
@@ -1097,9 +1114,9 @@ pub(crate) fn gglwe_product_from_dft<BE>(
 }
 
 /// Reference of [`GGLWEProductDigitsStridedImpl::gglwe_products_from_dft`](crate::oep::GGLWEProductDigitsStridedImpl::gglwe_products_from_dft),
-/// which [`impl_gglwe_product_step_hooks_reference!`](crate::impl_gglwe_product_step_hooks_reference) forwards to:
+/// which [`impl_gglwe_product_digits_strided_reference!`](crate::impl_gglwe_product_digits_strided_reference) forwards to:
 /// every item checked, then one source at a time, its operand laid out and its product taken
-/// ([`gadget_dft_apply_from_dft`](crate::gadget::gadget_dft_apply_from_dft), [`GGLWEProductDigitsStridedImpl::gglwe_product_fused`]).
+/// ([`gglwe_gadget_dft_apply_from_dft`](crate::gadget::gglwe_gadget_dft_apply_from_dft), [`GGLWEProductDigitsStridedImpl::gglwe_product_fused`]).
 #[doc(hidden)]
 #[allow(clippy::too_many_arguments)]
 pub fn gglwe_products_from_dft_reference<BE>(
@@ -1116,7 +1133,15 @@ pub fn gglwe_products_from_dft_reference<BE>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: GGLWEProductDigitsStridedImpl,
-    Module<BE>: GGLWEProductFusedReference<BE>,
+    Module<BE>: GGLWEProductReference<BE>
+        + VecZnxDftAddAssign<BE>
+        + VecZnxDftAutomorphism<BE>
+        + VecZnxDftAutomorphismAddWithPlanTmpBytes
+        + VecZnxIdftNormalize<BE>
+        + VecZnxIdftNormalizeTmpBytes
+        + VecZnxDftApply<BE>
+        + VecZnxGadgetDecompose<BE>
+        + VecZnxGadgetDecomposeTmpBytes,
 {
     assert!(
         sources.len() == res.len() && source_sizes.len() == res.len() && accumulate.len() == res.len(),

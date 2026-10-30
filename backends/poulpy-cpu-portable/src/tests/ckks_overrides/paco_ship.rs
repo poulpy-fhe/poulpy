@@ -19,7 +19,7 @@ use poulpy_ckks::{
     },
 };
 use poulpy_core::{
-    GLWEMaskFill,
+    GLWEFill,
     layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos},
 };
 use poulpy_cpu_oracle::FFT64Oracle;
@@ -391,7 +391,7 @@ fn paco_drivers_enter_the_selected_coefficient_encoding() {
     };
     use poulpy_core::{
         GLWEAutomorphismKeyEncryptSk, GLWEBytesOf, GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk, TransferInto,
-        layouts::{ModuleCoreAlloc, SetGLWEPlaintextInfos},
+        layouts::{GLWEAutomorphismKeyAlloc, GLWESecretAlloc, GLWESwitchingKeyAlloc, GLWETensorKeyAlloc, SetGLWEPlaintextInfos},
     };
     type Out = CKKSCiphertextOwned<OverrideBackend>;
     type Run<'a> = &'a mut dyn FnMut(&mut Out, &mut ScratchArena<'_, OverrideBackend>) -> poulpy_ckks::CKKSResult<()>;
@@ -512,7 +512,7 @@ fn paco_drivers_enter_the_selected_coefficient_encoding() {
     // A destination holding other digits, so a write or a refused call that writes shows.
     let dirty = || -> Out {
         let mut out = module_test.ckks_ciphertext_alloc(ctx.base2k(), out_k);
-        module_test.fill_glwe_from_source(&mut out, &mut Source::new([5u8; 32]));
+        module_test.glwe_fill_from_source(&mut out, &mut Source::new([5u8; 32]));
         out
     };
     let out = dirty();
@@ -684,7 +684,7 @@ fn ship_drivers_enter_the_selected_masking_and_mux() {
             helpers::{alloc_ct, alloc_scratch, ckks_encrypt_pt, ckks_spec, gen_sk_with_raw},
         },
     };
-    use poulpy_core::{TransferInto, layouts::ModuleCoreAlloc};
+    use poulpy_core::{TransferInto, layouts::GLWESecretAlloc};
     let _probe = probe();
 
     let params = BASE19_PARAMS_F64;
@@ -774,7 +774,7 @@ fn ship_drivers_enter_the_selected_masking_and_mux() {
 
         let keys = key_set.prepare(&module_test, &mut scratch.borrow()).unwrap();
         let mut out = alloc_ct(&big, &module_test, kk);
-        module_test.fill_glwe_from_source(&mut out, &mut Source::new([5u8; 32]));
+        module_test.glwe_fill_from_source(&mut out, &mut Source::new([5u8; 32]));
         let unchanged = snapshot::<OverrideBackend, _>(&out);
         for (label, extra, default) in [
             ("masking", &SHIP_MASKING_EXTRA, SHIP_MASKING_DEFAULT),

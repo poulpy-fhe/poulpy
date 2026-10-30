@@ -20,7 +20,7 @@ use crate::api::CKKSEncodingOps;
 use poulpy_core::layouts::{GLWEPlaintextInfos, SetGLWEPlaintextInfos};
 use std::collections::HashMap;
 
-use poulpy_core::{GLWECopy, TransferInto, api::GLWESecretPreparedFactory, layouts::ModuleCoreAlloc};
+use poulpy_core::{GLWECopy, TransferInto, api::GLWESecretPreparedFactory, layouts::GLWESecretAlloc};
 use poulpy_hal::{
     api::{CnvPVecAlloc, ReimNew, ScratchOwnedBorrow},
     layouts::{HostBytesBackend, Module, Standard},

@@ -35,7 +35,7 @@ use poulpy_core::{
     GLWETensorKeyEncryptSk,
     api::{GLWESecretPreparedFactory, GLWETensorKeyPreparedFactory},
     layouts::{
-        Base2K, Degree, GLWELayout, GLWETensorKeyLayout, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
+        Base2K, Degree, GLWELayout, GLWESecretAlloc, GLWETensorKeyAlloc, GLWETensorKeyLayout, LWEInfos, Rank, TorusPrecision,
         prepared::{GLWESecretPrepared, GLWETensorKeyPrepared},
     },
 };
@@ -229,7 +229,7 @@ fn setup() -> Result<SetupArtifacts> {
         module.glwe_tensor_key_encrypt_sk(&mut tsk, &sk_raw, &mut source_xe, &mut source_xa, &mut scratch_local);
     }
 
-    let mut tsk_prepared = module.alloc_tensor_key_prepared_from_infos(&tsk_layout());
+    let mut tsk_prepared = module.glwe_tensor_key_prepared_alloc_from_infos(&tsk_layout());
     {
         let mut scratch_local = scratch.borrow();
         module.glwe_tensor_key_prepare(&mut tsk_prepared, &tsk, &mut scratch_local);

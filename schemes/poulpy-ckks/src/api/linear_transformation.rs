@@ -3,7 +3,7 @@
 //! decomposition.
 //!
 //! The transformation itself is the scheme-agnostic GLWE-level engine in
-//! [`poulpy_core`] (`LinearTransformation` / `GLWELinearTransformations`); this layer
+//! [`poulpy_core`] (`LinearTransformation` / `GLWELinearTransformationOps`); this layer
 //! re-exports the data type under CKKS names and adds the scale-aware entry point.
 //! All `log_delta` / `log_budget` accounting lives here — the core engine only
 //! receives base2k-level alignment integers. See
@@ -36,7 +36,7 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::BabyStepOperand;
 use poulpy_core::{
-    DiagonalProd,
+    GLWEDiagonalProd,
     layouts::{
         GGLWEInfos, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos, Rank,
         TorusPrecision,
@@ -59,7 +59,7 @@ pub use poulpy_core::{
 /// (together with the scheme-agnostic [`LWEInfos::k`]) off the transform's first
 /// diagonal, which every diagonal shares, uniformly across the resident and
 /// streamed representations. Keeping it here, rather than on `poulpy-core`'s
-/// `DiagonalProd` engine trait, is deliberate: the core engine is scheme-agnostic
+/// `GLWEDiagonalProd` engine trait, is deliberate: the core engine is scheme-agnostic
 /// (a scheme encoding values mod `P` has neither), so it treats a prepared
 /// diagonal's plaintext meta as *opaque* (stashed via
 /// [`PreparedDiagonal::set_plaintext_meta`] during preparation).
@@ -168,7 +168,7 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
 
     /// Scratch bytes required by [`Self::ckks_prepare_linear_transformation_baby_steps`] for a
     /// cache of the baby steps of `plan` (see
-    /// [`GLWELinearTransformations::glwe_prepare_linear_transformation_baby_steps_tmp_bytes`](poulpy_core::GLWELinearTransformations::glwe_prepare_linear_transformation_baby_steps_tmp_bytes)).
+    /// [`GLWELinearTransformationOps::glwe_linear_transformation_baby_steps_prepare_tmp_bytes`](poulpy_core::GLWELinearTransformationOps::glwe_linear_transformation_baby_steps_prepare_tmp_bytes)).
     fn ckks_prepare_linear_transformation_baby_steps_tmp_bytes<C, K>(
         &self,
         ct: &C,
@@ -183,7 +183,7 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     /// PreparedDiagonal`) a transform with the schedule `plan` and diagonals of the layout `diagonal`, plaintexts or
     /// ciphertexts by its rank ([`ckks_plaintext_diagonal_layout`] for plaintexts), with the tensor key `tsk` for
     /// ciphertexts (see
-    /// [`GLWELinearTransformations::glwe_eval_linear_transformation_tmp_bytes`](poulpy_core::GLWELinearTransformations::glwe_eval_linear_transformation_tmp_bytes)).
+    /// [`GLWELinearTransformationOps::glwe_linear_transformation_eval_tmp_bytes`](poulpy_core::GLWELinearTransformationOps::glwe_linear_transformation_eval_tmp_bytes)).
     fn ckks_eval_linear_transformation_tmp_bytes<C, D, K, T>(
         &self,
         ct: &C,
@@ -302,7 +302,7 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     ///
     /// `babies` must have been allocated by
     /// [`LinearTransformationBabySteps::alloc`], or carved by poulpy-core's
-    /// `ScratchArenaTakeCore::take_linear_transformation_baby_steps_scratch`, for the
+    /// `ScratchArenaTakeGLWELinearTransformationBabySteps::take_glwe_linear_transformation_baby_steps_scratch`, for the
     /// rotations the caller wants populated. Performs zero `CnvPVecL` allocations.
     fn ckks_prepare_linear_transformation_baby_steps<Src, H, L: BabyStepOperand<BE>>(
         &self,
@@ -360,7 +360,7 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: DiagonalProd<BE> + LtDiagonalMeta,
+        P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
 
     /// In-place `dst = M · dst` with a caller-supplied baby cache (see
@@ -375,14 +375,14 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        P: DiagonalProd<BE> + LtDiagonalMeta,
+        P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
 
     /// Computes `dst = Σ_t M_t · src_t` over resident transforms that share one
     /// giant schedule, at the giant key switches of one transform. Term `t` is
     /// `(srcs[t], babies[t], lts[t])`, as for [`Self::ckks_eval_linear_transformation_into`];
     /// one term is that method, bit for bit. The terms are added in slice order;
-    /// see [`GLWELinearTransformations::glwe_eval_linear_transformation_sum_into`](poulpy_core::GLWELinearTransformations::glwe_eval_linear_transformation_sum_into)
+    /// see [`GLWELinearTransformationOps::glwe_linear_transformation_eval_sum_into`](poulpy_core::GLWELinearTransformationOps::glwe_linear_transformation_eval_sum_into)
     /// for why the order matters and how to pick `base2k`.
     ///
     /// `dst` gets the single transform's metadata; its slot kind joins every term's.
@@ -404,7 +404,7 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: DiagonalProd<BE> + LtDiagonalMeta,
+        P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
 
     // ----- eval (baby cache carved from scratch) -----
@@ -433,7 +433,7 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: DiagonalProd<BE> + LtDiagonalMeta,
+        P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
 
     /// In-place `dst = M · dst`, carving the baby cache from `scratch` (see
@@ -453,6 +453,6 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        P: DiagonalProd<BE> + LtDiagonalMeta,
+        P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
 }

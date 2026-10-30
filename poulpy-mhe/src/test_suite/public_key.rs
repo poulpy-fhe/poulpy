@@ -6,8 +6,9 @@ use poulpy_core::{
     GetDistributionMut, Noise,
     api::{GLWEPublicKeyPreparedFactory, GLWESecretPreparedFactory, GLWESecretSampling},
     layouts::{
-        GLWE, GLWELayout, GLWEPlaintext, GLWEPublicKey, GLWEPublicKeyCompressedSeedMut, GLWEPublicKeyPrepared, GLWESecret,
-        GLWESecretPrepared, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
+        GLWE, GLWEAlloc, GLWELayout, GLWEPlaintext, GLWEPlaintextAlloc, GLWEPublicKey, GLWEPublicKeyAlloc,
+        GLWEPublicKeyCompressedSeedMut, GLWEPublicKeyPrepared, GLWESecret, GLWESecretAlloc, GLWESecretPrepared, LWEInfos, Rank,
+        TorusPrecision,
     },
     test_suite::with_scratch,
 };

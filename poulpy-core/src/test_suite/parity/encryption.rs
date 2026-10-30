@@ -199,7 +199,7 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
         results.push(source_snapshot("encrypt_sk_sources", &mut e, &mut a));
         let mut with_mask = module.glwe_alloc_from_infos(&infos);
         poison_glwe::<B, _>(&mut with_mask);
-        module.fill_glwe_mask_from_seed(&mut with_mask, [73; 32]);
+        module.glwe_fill_mask_from_seed(&mut with_mask, [73; 32]);
         module.glwe_encrypt_sk_with_mask(
             &mut with_mask,
             &pt,
@@ -321,7 +321,7 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
                         &mut e,
                         &mut poisoned_scratch::<B>(module.glwe_public_key_compressed_generate_tmp_bytes(&pk_infos)).arena(),
                     );
-                    module.decompress_glwe_public_key(&mut pk, &pk_compressed);
+                    module.glwe_public_key_decompress(&mut pk, &pk_compressed);
                 } else {
                     module.glwe_public_key_generate(
                         &mut pk,
@@ -387,7 +387,7 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
             &mut poisoned_scratch::<B>(module.glwe_compressed_encrypt_sk_tmp_bytes(&infos)).arena(),
         );
         poison_glwe::<B, _>(&mut out);
-        module.decompress_glwe(&mut out, &compressed);
+        module.glwe_decompress(&mut out, &compressed);
         results.push(snapshot_glwe::<B, _>("compressed_encrypt_sk", &out));
         results.push(source_snapshot("compressed_sources", &mut e, &mut a));
         poison_glwe_compressed::<B, _>(&mut compressed);
@@ -400,16 +400,16 @@ pub fn test_glwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPa
         );
         let mut zero = module.glwe_alloc_from_infos(&infos);
         poison_glwe::<B, _>(&mut zero);
-        module.decompress_glwe(&mut zero, &compressed);
+        module.glwe_decompress(&mut zero, &compressed);
         results.push(snapshot_glwe::<B, _>("compressed_encrypt_zero_sk", &zero));
         results.push(source_snapshot("compressed_zero_sources", &mut e, &mut a));
         assert!(out.noise().is_some());
         let previous_metadata = out.noise();
-        module.fill_glwe_mask_from_seed(&mut out, [83; 32]);
+        module.glwe_fill_mask_from_seed(&mut out, [83; 32]);
         assert!(out.noise().is_none());
         results.push(snapshot_glwe::<B, _>("mask_seed", &out));
         GLWEToBackendMut::<B>::set_noise(&mut out, previous_metadata);
-        module.fill_glwe_mask_from_source(&mut out, &mut a);
+        module.glwe_fill_mask_from_source(&mut out, &mut a);
         assert!(out.noise().is_none());
         results.push(snapshot_glwe::<B, _>("mask_source", &out));
         results.push(source_snapshot("mask_sources", &mut e, &mut a));
@@ -608,11 +608,11 @@ pub fn test_lwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
         });
         assert!(out.noise().is_some());
         let previous_metadata = out.noise();
-        module.fill_lwe_mask_from_seed(base2k, &mut out, [103; 32]);
+        module.lwe_fill_mask_from_seed(base2k, &mut out, [103; 32]);
         assert!(out.noise().is_none());
         results.push(snapshot_lwe::<B, _>("lwe_mask_seed", &out));
         LWEToBackendMut::<B>::set_noise(&mut out, previous_metadata);
-        module.fill_lwe_mask_from_source(base2k, &mut out, &mut a);
+        module.lwe_fill_mask_from_source(base2k, &mut out, &mut a);
         assert!(out.noise().is_none());
         results.push(snapshot_lwe::<B, _>("lwe_mask_source", &out));
         results.push(source_snapshot("lwe_mask_sources", &mut e, &mut a));
@@ -626,7 +626,7 @@ pub fn test_lwe_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
         B::copy_from_host(compact.data.data_mut(), bytemuck::cast_slice(&body));
         let mut before = vec![0; B::len_bytes(compact.data.data())];
         B::copy_to_host(compact.data.data(), &mut before);
-        module.decompress_lwe(&mut out, &compact);
+        module.lwe_decompress(&mut out, &compact);
         results.push(snapshot_lwe::<B, _>("lwe_decompress", &out));
         let mut after = vec![0; B::len_bytes(compact.data.data())];
         B::copy_to_host(compact.data.data(), &mut after);

@@ -3,8 +3,8 @@ use poulpy_core::{
     DEFAULT_SIGMA_XE, GLWEDecrypt, GLWEEncryptSk, GLWESub,
     api::GLWESecretPreparedFactory,
     layouts::{
-        Base2K, Degree, GLWE, GLWELayout, GLWEPlaintext, GLWEPlaintextLayout, GLWESecret, LWEInfos, ModuleCoreAlloc, Rank,
-        TorusPrecision, prepared::GLWESecretPrepared,
+        Base2K, Degree, GLWE, GLWEAlloc, GLWELayout, GLWEPlaintext, GLWEPlaintextAlloc, GLWEPlaintextLayout, GLWESecret,
+        GLWESecretAlloc, LWEInfos, Rank, TorusPrecision, prepared::GLWESecretPrepared,
     },
 };
 use poulpy_cpu_portable::FFT64Portable as BackendImpl;

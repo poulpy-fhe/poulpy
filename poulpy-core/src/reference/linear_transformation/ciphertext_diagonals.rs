@@ -17,11 +17,11 @@ use poulpy_hal::{
 };
 
 use crate::{
-    ScratchArenaTakeCore,
+    ScratchArenaTakeGLWE,
     api::GLWEBytesOf,
     gadget::{cnv_offset_to_limb_offset, normalize_input_limb_bound_with_offset},
     layouts::{
-        DiagonalProd, GGLWEInfos, GLWEInfos, GLWELayout, GetTensorKey, LWEInfos, LinearTransformation, TorusPrecision,
+        GGLWEInfos, GLWEDiagonalProd, GLWEInfos, GLWELayout, GetTensorKey, LWEInfos, LinearTransformation, TorusPrecision,
         prepared::{
             GGLWEPreparedToBackendRef, GLWETensorKeyPrepared, GLWETensorKeyPreparedBackendRef, LinearTransformationBabySteps,
         },
@@ -52,7 +52,7 @@ pub(super) struct CiphertextProducts<'a, BE: Backend, P, L> {
 impl<'a, BE, P, L> CiphertextProducts<'a, BE, P, L>
 where
     BE: Backend,
-    P: DiagonalProd<BE>,
+    P: GLWEDiagonalProd<BE>,
     L: BabyStepOperand<BE>,
 {
     pub(super) fn new<T: GetTensorKey<BE>>(
@@ -129,7 +129,7 @@ where
         + GGLWEProductReference<BE>
         + VecZnxGadgetDecompose<BE>
         + VecZnxGadgetDecomposeTmpBytes,
-    P: DiagonalProd<BE>,
+    P: GLWEDiagonalProd<BE>,
     L: BabyStepOperand<BE>,
 {
     fn size(&self) -> usize {
@@ -176,7 +176,7 @@ where
         let (cnv_offset_hi, _) = cnv_offset_to_limb_offset(self.cnv_offset, self.res.base2k.as_usize());
         for (prod, g) in prods.iter_mut().zip(steps) {
             // 1. The pairs of giant step `g` over every term: a baby rotation and a diagonal, prepared or a GLWE view
-            //    (`DiagonalProd::operand`).
+            //    (`GLWEDiagonalProd::operand`).
             let pairs = self.babies.iter().zip(self.lts).flat_map(|(lhs, lt)| {
                 lt.giant_steps[g]
                     .diagonals
@@ -203,7 +203,7 @@ where
                 &mut scratch,
             );
             // 4. Relinearization into `prod`, left in DFT (`glwe_relinearize_columns`).
-            //    One-pass: `vec_znx_idft_normalize` of `d2 = diag[1]` alone, `gadget_dft_apply`, then
+            //    One-pass: `vec_znx_idft_normalize` of `d2 = diag[1]` alone, `gglwe_gadget_dft_apply`, then
             //    `GGLWEProductDigitsStridedImpl::gglwe_product_fused` of `tsk` with `d0 = diag[0]` and `d1 = cross[0]`
             //    added in DFT, its low `cnv_offset` bits left to the final normalization.
             //    Tensor: `vec_znx_idft_normalize` of every column into a tensor, `GLWETensoringImpl::glwe_tensor_relinearize`

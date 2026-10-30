@@ -185,16 +185,16 @@ where
     ///
     /// # Panics
     /// Before writing `res`, when the ranks or the column counts of `res` and `other` differ.
-    fn glwe_secret_tensor_prepared_prepare<R, O>(&self, res: &mut R, other: &O)
+    fn glwe_secret_tensor_prepare<R, O>(&self, res: &mut R, other: &O)
     where
         R: GLWESecretTensorPreparedToBackendMut<BE> + GetDistributionMut,
         O: GLWESecretTensorToBackendRef<BE> + GetDistribution;
 }
 
 /// Tensoring of a GLWE secret with itself.
-pub trait GLWESecretTensorFactory<BE: Backend> {
-    /// Scratch bytes of [`Self::glwe_secret_tensor_prepare`] for a base secret of rank `rank`.
-    fn glwe_secret_tensor_prepare_tmp_bytes(&self, rank: Rank) -> usize;
+pub trait GLWESecretTensorFromGLWESecret<BE: Backend> {
+    /// Scratch bytes of [`Self::glwe_secret_tensor_from_glwe_secret`] for a base secret of rank `rank`.
+    fn glwe_secret_tensor_from_glwe_secret_tmp_bytes(&self, rank: Rank) -> usize;
 
     /// Fills `res` with the pairwise products `s_i * s_j` of the base secret
     /// `other` and wipes the scratch it reports.
@@ -206,14 +206,14 @@ pub trait GLWESecretTensorFactory<BE: Backend> {
     /// # Panics
     /// Before writing `res`, when the ranks or degrees of `res` and `other` differ, a degree
     /// exceeds the module's, or the scratch is smaller than the query.
-    fn glwe_secret_tensor_prepare<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_secret_tensor_from_glwe_secret<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWESecretTensorToBackendMut<BE> + GetDistributionMut + GLWEInfos,
         O: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos;
 }
 
-/// Conversions between LWE and GLWE secrets.
-pub trait SecretConversion<BE: Backend> {
+/// Derives a GLWE secret from an LWE secret.
+pub trait GLWESecretFromLWESecret<BE: Backend> {
     /// Derives the associated rank-1 `GLWESecret` from a `LWESecret` by applying
     /// the X → X⁻¹ automorphism (k = -1). The result is the GLWE polynomial key
     /// whose ring product with a mask decrypts LWE ciphertexts produced by
@@ -228,7 +228,10 @@ pub trait SecretConversion<BE: Backend> {
     fn glwe_secret_from_lwe_secret<S>(&self, src: &S) -> GLWESecret<BE::OwnedBuf, BE::ZnxWord>
     where
         S: LWESecretToBackendRef<BE>;
+}
 
+/// Derives an LWE secret from a GLWE secret.
+pub trait LWESecretFromGLWESecret<BE: Backend> {
     /// Scratch bytes of [`Self::lwe_secret_from_glwe_secret`] for a source GLWE secret of layout `infos`.
     fn lwe_secret_from_glwe_secret_tmp_bytes<A>(&self, infos: &A) -> usize
     where
@@ -244,7 +247,7 @@ pub trait SecretConversion<BE: Backend> {
     /// caller size the GLWE just enough for a target LWE dimension.
     ///
     /// For `lwe_n == n` and `rank == 1`, this is the inverse of
-    /// `glwe_secret_from_lwe_secret`: applying both conversions recovers the
+    /// [`GLWESecretFromLWESecret::glwe_secret_from_lwe_secret`]: applying both conversions recovers the
     /// original key.
     ///
     /// The source's [`Distribution`] tag is copied unchanged: the automorphism

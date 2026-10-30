@@ -9,11 +9,11 @@ use crate::api::LWESecretSampling;
 use crate::layouts::prepared::GGLWEPreparedToBackendRef;
 use crate::test_suite::poisoned_scratch;
 use crate::{
-    LWEDecrypt, LWEEncryptSk, LWEKeyswitch, LWESwitchingKeyEncrypt,
+    LWEDecrypt, LWEEncryptSk, LWEKeyswitch, LWESwitchingKeyEncryptSk,
     api::LWESwitchingKeyPreparedFactory,
     layouts::{
-        LWE, LWELayout, LWEPlaintext, LWESecret, LWESwitchingKey, LWESwitchingKeyLayout, ModuleCoreAlloc,
-        prepared::LWESwitchingKeyPrepared,
+        LWE, LWEAlloc, LWELayout, LWEPlaintext, LWEPlaintextAlloc, LWESecret, LWESecretAlloc, LWESwitchingKey,
+        LWESwitchingKeyAlloc, LWESwitchingKeyLayout, prepared::LWESwitchingKeyPrepared,
     },
 };
 
@@ -23,7 +23,7 @@ where
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: LWEKeyswitch<BE>
-        + LWESwitchingKeyEncrypt<BE>
+        + LWESwitchingKeyEncryptSk<BE>
         + LWEEncryptSk<BE>
         + LWESwitchingKeyPreparedFactory<BE>
         + LWEDecrypt<BE>

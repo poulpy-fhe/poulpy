@@ -21,13 +21,16 @@ use poulpy_core::test_suite::with_scratch;
 use poulpy_core::{
     GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, LWEEncryptSk,
     api::{GGLWEToGGSWKeyPreparedFactory, GGSWPreparedFactory, GLWEAutomorphismKeyPreparedFactory, GLWESecretPreparedFactory},
-    layouts::{GGLWEToGGSWKeyLayout, GGSWInfos, GGSWLayout, GLWEAutomorphismKeyLayout, GLWEInfos, LWELayout, ModuleCoreAlloc},
+    layouts::{
+        GGLWEToGGSWKeyLayout, GGSWAlloc, GGSWInfos, GGSWLayout, GLWEAlloc, GLWEAutomorphismKeyLayout, GLWEInfos,
+        GLWEPlaintextAlloc, GLWESecretAlloc, LWEAlloc, LWELayout, LWEPlaintextAlloc, LWESecretAlloc, ModuleCoreAlloc,
+    },
 };
 
 use poulpy_core::api::{GLWESecretSampling, LWESecretSampling};
 use poulpy_core::layouts::prepared::GGSWPreparedToBackendRef;
 use poulpy_core::layouts::{
-    GGSW, GLWE, GLWEPlaintext, GLWESecret, LWE, LWEPlaintext, LWESecret,
+    GGLWEToGGSWKeyAlloc, GGSW, GLWE, GLWEAutomorphismKeyAlloc, GLWEPlaintext, GLWESecret, LWE, LWEPlaintext, LWESecret,
     prepared::{GGSWPrepared, GLWESecretPrepared},
 };
 
@@ -38,8 +41,17 @@ pub fn test_circuit_bootstrapping_to_exponent<
 >(
     module: &M,
 ) where
-    M: ModuleN
+    M: GLWEAutomorphismKeyAlloc
+        + GGLWEToGGSWKeyAlloc
+        + ModuleN
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+        + GGSWAlloc
+        + GLWEAlloc
+        + GLWEPlaintextAlloc
+        + GLWESecretAlloc
+        + LWEAlloc
+        + LWEPlaintextAlloc
+        + LWESecretAlloc
         + GLWESecretPreparedFactory<BE>
         + GLWEExternalProduct<BE>
         + GLWEDecrypt<BE>
@@ -265,8 +277,17 @@ pub fn test_circuit_bootstrapping_to_constant<
 >(
     module: &M,
 ) where
-    M: ModuleN
+    M: GLWEAutomorphismKeyAlloc
+        + GGLWEToGGSWKeyAlloc
+        + ModuleN
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+        + GGSWAlloc
+        + GLWEAlloc
+        + GLWEPlaintextAlloc
+        + GLWESecretAlloc
+        + LWEAlloc
+        + LWEPlaintextAlloc
+        + LWESecretAlloc
         + GLWESecretPreparedFactory<BE>
         + GLWEExternalProduct<BE>
         + GLWEDecrypt<BE>
@@ -489,7 +510,9 @@ pub fn test_circuit_bootstrapping_key_encrypt_sk_rejects_secret_shape<
     poulpy_hal::layouts::Module<BE>: poulpy_hal::api::ModuleNew<BE>
         + CircuitBootstrappingKeyEncryptSk<BRA, BE>
         + LWESecretSampling<BE>
-        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>
+        + GLWESecretAlloc
+        + LWESecretAlloc,
 {
     use poulpy_hal::layouts::WriterTo;
 

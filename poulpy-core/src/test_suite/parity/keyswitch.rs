@@ -19,14 +19,14 @@ use poulpy_hal::{
 };
 
 use crate::{
-    GGLWEKeyswitch, GLWEKeyswitch, GLWEMaskFill,
+    GGLWEKeyswitch, GLWEFill, GLWEKeyswitch,
     api::{GGLWEPreparedFactory, TransferInto},
     layouts::{
-        Base2K, Degree, Dnum, Dsize, GGLWELayout, GGLWEPrepared, GGLWEPreparedBackendRef, GLWELayout, LWEInfos, ModuleCoreAlloc,
-        Rank, TorusPrecision, gadget_product_limbs, key_size,
+        Base2K, Degree, Dnum, Dsize, GGLWEAlloc, GGLWELayout, GGLWEPrepared, GGLWEPreparedBackendRef, GLWEAlloc, GLWELayout,
+        LWEInfos, Rank, TorusPrecision, gadget_product_limbs, key_size,
     },
     oep::GGLWEProductDigitsStridedImpl,
-    reference::keyswitching::GGLWEProductReference,
+    reference::keyswitching::{GGLWEProductDigitsStridedReference, GGLWEProductReference},
     test_suite::parity::{ParityBackend, ParityShapes, ref_gglwe, ref_glwe, unnormalized_twin, wide_twin},
 };
 
@@ -47,7 +47,8 @@ where
         + VmpApplyDftToDftAddTmpBytes
         + VmpPMatAlloc<BE>
         + VmpPrepare<BE>
-        + VmpPrepareTmpBytes,
+        + VmpPrepareTmpBytes
+        + GGLWEProductDigitsStridedReference<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
@@ -79,8 +80,8 @@ where
         let size_out = a_size;
         let product_terms = module.n().saturating_mul(rows).saturating_mul(dsize).saturating_mul(cols_in);
         let product_limbs = gadget_product_limbs(Base2K(base2k as u32), product_terms);
-        let default_tmp = crate::reference::keyswitching::glwe::gglwe_product_digits_strided_tmp_bytes_reference(
-            module, size_out, cols_in, a_size, dsize, rows, cols_in, cols_out, size_out,
+        let default_tmp = module.gglwe_product_digits_strided_tmp_bytes_reference(
+            size_out, cols_in, a_size, dsize, rows, cols_in, cols_out, size_out,
         );
         let backend_tmp = BE::gglwe_product_digits_strided_tmp_bytes(
             module, size_out, cols_in, a_size, dsize, rows, cols_in, cols_out, size_out,
@@ -119,8 +120,7 @@ where
         let sentinel = vec![1u8; BE::len_bytes(&want.data)];
         BE::copy_from_host(&mut want.data, &sentinel);
         let mut scratch = poisoned_scratch::<BE>(default_tmp);
-        crate::reference::keyswitching::glwe::gglwe_product_digits_strided_reference(
-            module,
+        module.gglwe_product_digits_strided_reference(
             &mut want.to_backend_mut(),
             &a_dft.to_backend_ref(),
             dsize,
@@ -306,7 +306,7 @@ pub fn test_glwe_keyswitch_parity<BR, BT>(
                         ..a_infos
                     };
                     let mut wide_test = module_test.glwe_alloc_from_infos(&wide_infos);
-                    module_test.fill_glwe_from_source(&mut wide_test, &mut source);
+                    module_test.glwe_fill_from_source(&mut wide_test, &mut source);
                     wide_twin::<BR, BT>(&a_ref, &mut wide_test);
                     module_test.glwe_keyswitch(
                         &mut res_test,

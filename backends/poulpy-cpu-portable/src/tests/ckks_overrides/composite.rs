@@ -22,9 +22,9 @@ use poulpy_ckks::{
     },
 };
 use poulpy_core::{
-    GLWEBytesOf, GLWEMaskFill, GLWENormalize, GLWETensorKeyEncryptSk,
+    GLWEBytesOf, GLWEFill, GLWENormalize, GLWETensorKeyEncryptSk,
     api::{GLWESecretSampling, GLWETensorKeyPreparedFactory},
-    layouts::{GLWETensorKeyLayout, LWEInfos, ModuleCoreAlloc},
+    layouts::{GLWESecretAlloc, GLWETensorKeyAlloc, GLWETensorKeyLayout, LWEInfos},
 };
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
@@ -154,7 +154,7 @@ fn add_many_enters_the_selected_additions() {
 fn run_pt_form<BE, Q, O>(module: &Module<BE>, query: Q, op: O) -> Snapshot
 where
     BE: Backend<ZnxWord = i64>,
-    Module<BE>: GLWEMaskFill<BE> + CKKSModuleAlloc<BE>,
+    Module<BE>: GLWEFill<BE> + CKKSModuleAlloc<BE>,
     Q: FnOnce(
         &poulpy_ckks::layouts::CKKSCiphertextOwned<BE>,
         &poulpy_ckks::layouts::CKKSCiphertextOwned<BE>,
@@ -279,9 +279,9 @@ fn multiply_accumulate_enters_the_selected_addition_and_subtraction() {
         &mut Source::new([3u8; 32]),
         &mut setup.borrow(),
     );
-    let mut key_ref = module_ref.alloc_tensor_key_prepared_from_infos(&tsk);
+    let mut key_ref = module_ref.glwe_tensor_key_prepared_alloc_from_infos(&tsk);
     module_ref.glwe_tensor_key_prepare(&mut key_ref, &key, &mut setup.borrow());
-    let mut key_test = module_test.alloc_tensor_key_prepared_from_infos(&tsk);
+    let mut key_test = module_test.glwe_tensor_key_prepared_alloc_from_infos(&tsk);
     let mut setup_test = ScratchOwned::<OverrideBackend>::alloc(module_test.glwe_tensor_key_prepare_tmp_bytes(&tsk));
     module_test.glwe_tensor_key_prepare(&mut key_test, &key, &mut setup_test.borrow());
     for subtract in [false, true] {
@@ -455,7 +455,7 @@ fn affine_forms_enter_the_selected_plaintext_additions() {
 /// digits from fixed seeds.
 fn approximation<BE: Backend<ZnxWord = i64>>(module: &Module<BE>) -> PolynomialApproximation<CKKSPlaintextOwned<BE>>
 where
-    Module<BE>: CKKSModuleAlloc<BE> + GLWEMaskFill<BE>,
+    Module<BE>: CKKSModuleAlloc<BE> + GLWEFill<BE>,
 {
     use poulpy_ckks::polynomial::{Basis, Polynomial, SplitStrategy};
     let seed = Cell::new(50u8);
@@ -466,7 +466,7 @@ where
             ..Default::default()
         });
         seed.set(seed.get() + 1);
-        module.fill_glwe_from_source(&mut pt, &mut Source::new([seed.get(); 32]));
+        module.glwe_fill_from_source(&mut pt, &mut Source::new([seed.get(); 32]));
         Ok(pt)
     };
     let poly: BSGSPolynomial<CKKSPlaintextOwned<BE>> = Polynomial::new(Basis::Monomial, vec![0.0f64, 1.0])

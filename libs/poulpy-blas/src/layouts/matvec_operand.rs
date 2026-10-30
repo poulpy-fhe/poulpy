@@ -7,7 +7,7 @@ use poulpy_ckks::{
     layouts::{CKKSModuleAlloc, CKKSPlaintextOwned},
 };
 use poulpy_core::{
-    DiagonalProd,
+    GLWEDiagonalProd,
     layouts::{
         Base2K, DiagonalArithmetic, Diagonals, GetDegree, LinearTransformationLayout, LinearTransformationStrategy,
         optimal_bsgs_giant_step,
@@ -183,7 +183,7 @@ impl<BE: Backend> BlasMatVecOperandInfos for BlasMatVecOperandPrepared<BE> {
 /// [`BlasMatVecOperand`] (streamed).
 pub trait BlasMatVecMaps<BE: Backend>: BlasMatVecOperandInfos + Sync {
     /// The form of a diagonal.
-    type Diagonal: DiagonalProd<BE> + LtDiagonalMeta + Sync;
+    type Diagonal: GLWEDiagonalProd<BE> + LtDiagonalMeta + Sync;
 
     /// Whether the diagonals are plaintexts a product prepares at each use.
     const STREAMED: bool;
@@ -195,7 +195,7 @@ pub trait BlasMatVecMaps<BE: Backend>: BlasMatVecOperandInfos + Sync {
 
 impl<BE: Backend> BlasMatVecMaps<BE> for BlasMatVecOperand<BE>
 where
-    CKKSPlaintextOwned<BE>: DiagonalProd<BE> + Sync,
+    CKKSPlaintextOwned<BE>: GLWEDiagonalProd<BE> + Sync,
 {
     type Diagonal = CKKSPlaintextOwned<BE>;
     const STREAMED: bool = true;

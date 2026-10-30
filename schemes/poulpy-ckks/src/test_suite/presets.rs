@@ -8,14 +8,16 @@
 
 use crate::Scale;
 use poulpy_core::{
-    DiagonalProd, GLWECIKeyEncryptSk,
+    GLWECIKeyEncryptSk, GLWEDiagonalProd,
     api::{
         GLWEAutomorphismKeyPreparedFactory, GLWECIKeyPreparedFactory, GLWESecretPreparedFactory, GLWESecretSampling,
         GLWESwitchingKeyPreparedFactory, GLWETensorKeyPreparedFactory, TransferInto,
     },
     layouts::{
-        BackendGLWESecret, BackendGLWESecretPrepared, Base2K, GGLWEInfos, GLWESecretPrepared, GLWETensorKeyPrepared,
-        GLWEToBackendMut, GLWEToBackendRef, LWEInfos, ModuleCoreAlloc, SetK, prepared::GLWETensorKeyPreparedToBackendRef,
+        BackendGLWESecret, BackendGLWESecretPrepared, Base2K, GGLWEInfos, GLWEAutomorphismKeyAlloc, GLWECIEmbedKeyAlloc,
+        GLWECITraceKeyAlloc, GLWESecretAlloc, GLWESecretPrepared, GLWESwitchingKeyAlloc, GLWETensorKeyAlloc,
+        GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, ModuleCoreAlloc, SetK,
+        prepared::GLWETensorKeyPreparedToBackendRef,
     },
 };
 use poulpy_hal::{
@@ -598,7 +600,7 @@ where
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
     ScratchOwned<CIBackend<BE>>: ScratchOwnedAlloc<CIBackend<BE>>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos + CKKSCtBounds + poulpy_core::layouts::DiagonalProd<BE>,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos + CKKSCtBounds + poulpy_core::layouts::GLWEDiagonalProd<BE>,
     CKKSCiphertextOwned<BC>: GLWEToBackendMut<BC> + GLWEToBackendRef<BC> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintextOwned<BC>: GLWEToBackendRef<BC> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
@@ -792,7 +794,7 @@ where
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
     ScratchOwned<CIBackend<BE>>: ScratchOwnedAlloc<CIBackend<BE>>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos + CKKSCtBounds + poulpy_core::layouts::DiagonalProd<BE>,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos + CKKSCtBounds + poulpy_core::layouts::GLWEDiagonalProd<BE>,
     CKKSCiphertextOwned<BC>: GLWEToBackendMut<BC> + GLWEToBackendRef<BC> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintextOwned<BC>: GLWEToBackendRef<BC> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
@@ -1217,7 +1219,7 @@ where
     BE: Backend,
     F: CKKSEncodingScalar,
     Module<BE>: CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F> + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE> + LWEInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + GLWEDiagonalProd<BE> + LWEInfos,
 {
     let bytes = BootstrappingContextPrepared::<BE, F>::compile_unprepared_tmp_bytes(module, plan).unwrap();
     let unprepared = with_scratch::<BE, _>(bytes, |s| {
@@ -1241,7 +1243,7 @@ where
     Module<CIBackend<BE>>: CKKSModuleAlloc<CIBackend<BE>> + CKKSEncodingOps<CIBackend<BE>, f64>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
     ScratchOwned<CIBackend<BE>>: ScratchOwnedAlloc<CIBackend<BE>>,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::DiagonalProd<BE>,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::GLWEDiagonalProd<BE>,
 {
     let (bytes, bytes_ci) =
         BootstrappingContextPrepared::<BE, f64>::compile_ci_unprepared_tmp_bytes(module, ci, preset.plan()).unwrap();

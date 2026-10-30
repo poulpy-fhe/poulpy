@@ -76,11 +76,11 @@ impl_preparation_delegate!(
     {
         BE::ggsw_prepare(self, res, other, scratch)
     },
-    fn ggsw_zero<R>(&self, res: &mut R)
+    fn ggsw_prepared_zero<R>(&self, res: &mut R)
     where
         R: GGSWPreparedToBackendMut<BE>,
     {
-        BE::ggsw_zero(self, res)
+        BE::ggsw_prepared_zero(self, res)
     }
 );
 

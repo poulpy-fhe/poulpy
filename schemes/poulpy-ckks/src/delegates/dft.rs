@@ -7,7 +7,7 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
-    DiagonalProd,
+    GLWEDiagonalProd,
     layouts::{Base2K, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LinearTransformation},
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
@@ -50,7 +50,7 @@ impl<BE: Backend + CKKSDFTImpl> CKKSDFTOps<BE> for Module<BE> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + DiagonalProd<BE>,
+        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + GLWEDiagonalProd<BE>,
     {
         BE::ckks_prepare_dft_matrix::<Dir, Fmt, P>(self, res, dft, scratch)
     }
@@ -61,7 +61,7 @@ impl<BE: Backend + CKKSDFTImpl> CKKSDFTOps<BE> for Module<BE> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<DFTMatrixPrepared<BE, Dir, Fmt>>
     where
-        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + DiagonalProd<BE>,
+        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + GLWEDiagonalProd<BE>,
     {
         BE::ckks_prepare_dft_matrix_alloc::<Dir, Fmt, P>(self, dft, scratch)
     }
@@ -74,7 +74,7 @@ impl<BE: Backend + CKKSDFTImpl> CKKSDFTOps<BE> for Module<BE> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: DiagonalProd<BE> + LtDiagonalMeta,
+        P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
     {
@@ -89,7 +89,7 @@ impl<BE: Backend + CKKSDFTImpl> CKKSDFTOps<BE> for Module<BE> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: DiagonalProd<BE> + LtDiagonalMeta,
+        P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
     {
@@ -104,7 +104,7 @@ impl<BE: Backend + CKKSDFTImpl> CKKSDFTOps<BE> for Module<BE> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: DiagonalProd<BE> + LtDiagonalMeta,
+        P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
     {
@@ -121,7 +121,7 @@ impl<BE: Backend + CKKSDFTImpl> CKKSDFTOps<BE> for Module<BE> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: DiagonalProd<BE> + LtDiagonalMeta,
+        P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
@@ -139,7 +139,7 @@ impl<BE: Backend + CKKSDFTImpl> CKKSDFTOps<BE> for Module<BE> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: DiagonalProd<BE> + LtDiagonalMeta,
+        P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
@@ -156,7 +156,7 @@ impl<BE: Backend + CKKSDFTImpl> CKKSDFTOps<BE> for Module<BE> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: DiagonalProd<BE> + LtDiagonalMeta,
+        P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
@@ -173,7 +173,7 @@ impl<BE: Backend + CKKSDFTImpl> CKKSDFTOps<BE> for Module<BE> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: DiagonalProd<BE> + LtDiagonalMeta,
+        P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>,

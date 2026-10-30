@@ -1,7 +1,7 @@
 use poulpy_core::{
-    GLWEMaskFill, Noise, TransferInto,
+    GLWEFill, Noise, TransferInto,
     api::{GLWESecretPreparedFactory, GLWESecretSampling},
-    layouts::{GLWE, GLWELayout, GLWEPlaintext, GLWESecret, ModuleCoreAlloc, TorusPrecision},
+    layouts::{GLWE, GLWEAlloc, GLWELayout, GLWEPlaintext, GLWEPlaintextAlloc, GLWESecret, TorusPrecision},
     test_suite::with_scratch,
 };
 use poulpy_hal::{layouts::Module, source::Source};
@@ -26,7 +26,7 @@ where
         + GLWEEncToShareMHEProtocol<BR>
         + GLWESecretSampling<BR>
         + GLWESecretPreparedFactory<BR>
-        + GLWEMaskFill<BR>,
+        + GLWEFill<BR>,
     Module<BT>: MHEModuleAlloc<BT> + GLWEEncToShareMHEProtocol<BT> + GLWESecretPreparedFactory<BT>,
 {
     let (secrets_ref, secrets_test) = fixture_secrets(module_ref, module_test, RANK, 100);

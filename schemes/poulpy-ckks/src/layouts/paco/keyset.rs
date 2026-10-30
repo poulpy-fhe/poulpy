@@ -393,7 +393,7 @@ where
     }
 
     let prepared_tensor = {
-        let mut prepared = module.alloc_tensor_key_prepared_from_infos(tensor_key);
+        let mut prepared = module.glwe_tensor_key_prepared_alloc_from_infos(tensor_key);
         module.glwe_tensor_key_prepare(&mut prepared, tensor_key, scratch);
         prepared
     };

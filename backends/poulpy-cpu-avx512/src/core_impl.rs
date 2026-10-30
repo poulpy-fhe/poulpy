@@ -13,9 +13,9 @@ use crate::ntt3x42_ifma::{
     traits::Ntt3x42IfmaDFTExecute,
 };
 use poulpy_core::{
-    GLWEBytesOf, GLWENormalize, ScratchArenaTakeCore, cnv_offset_to_limb_offset, gadget_dft_apply, gadget_dft_apply_tmp_bytes,
-    gadget_input_size, gglwe_product_output_size, impl_gglwe_product_digits_strided_reference_full,
-    impl_glwe_tensoring_reference_full,
+    GLWEBytesOf, GLWENormalize, ScratchArenaTakeGLWE, cnv_offset_to_limb_offset, gglwe_gadget_dft_apply,
+    gglwe_gadget_dft_apply_tmp_bytes, gglwe_gadget_input_size, gglwe_product_output_size,
+    impl_gglwe_product_digits_strided_reference_full, impl_glwe_tensoring_reference_full,
     layouts::{Degree, GGLWEInfos, GGLWEPreparedToBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos},
     normalize_input_limb_bound_with_offset,
     oep::GLWETensoringImpl,
@@ -924,11 +924,11 @@ macro_rules! impl_rank_one_tensoring {
                 let res_k = res.k().as_usize();
                 let (base2k, k_digit, dnum) = (key.base2k(), key.k_digit(), key.dnum());
                 let a_k = a.k();
-                let operand_size = gadget_input_size(base2k, k_digit, dnum, a_k, a_size);
+                let operand_size = gglwe_gadget_input_size(base2k, k_digit, dnum, a_k, a_size);
                 let (mut input, mut scratch) = scratch.borrow().take_vec_znx_dft_scratch(n, pairs, operand_size);
                 let a = a.to_backend_ref();
                 for i in 0..pairs {
-                    gadget_dft_apply(
+                    gglwe_gadget_dft_apply(
                         module,
                         &mut input,
                         i,
@@ -980,10 +980,10 @@ macro_rules! impl_rank_one_tensoring {
                 let a_size = a.k().div_ceil(tsk.base2k()) as usize;
                 let output_size = gglwe_product_output_size::<$be, _, _, _>(res, a, tsk);
                 let (base2k, k_digit, dnum) = (tsk.base2k(), tsk.k_digit(), tsk.dnum());
-                let operand_size = gadget_input_size(base2k, k_digit, dnum, a.k(), a_size);
+                let operand_size = gglwe_gadget_input_size(base2k, k_digit, dnum, a.k(), a_size);
                 // The digit layout runs before the output is taken, the product and
                 // the fused inverse transform after.
-                let layout = gadget_dft_apply_tmp_bytes::<$be, _>(module, base2k, k_digit, dnum, a.k(), a_size);
+                let layout = gglwe_gadget_dft_apply_tmp_bytes::<$be, _>(module, base2k, k_digit, dnum, a.k(), a_size);
                 let product = module.vec_znx_dft_bytes_of(n, tsk.rank_out().as_usize() + 1, output_size)
                     + module
                         .gglwe_product_dft_tmp_bytes_reference(output_size, operand_size, tsk)
@@ -1130,14 +1130,14 @@ macro_rules! impl_rank_one_tensoring {
                 }
             }
 
-            fn glwe_square_prepare(
+            fn glwe_square_operand_prepare(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 left: &mut ::poulpy_hal::layouts::CnvPVecLBackendMut<'_, $be>,
                 right: &mut ::poulpy_hal::layouts::CnvPVecRBackendMut<'_, $be>,
                 a: &::poulpy_hal::layouts::VecZnxBackendRef<'_, $be>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) {
-                <::poulpy_hal::layouts::Module<$be> as poulpy_core::reference::operations::GLWETensoringReference<$be>>::glwe_square_prepare_reference(
+                <::poulpy_hal::layouts::Module<$be> as poulpy_core::reference::operations::GLWETensoringReference<$be>>::glwe_square_operand_prepare_reference(
                     module, left, right, a, scratch,
                 )
             }
@@ -1387,7 +1387,7 @@ where
         );
     }
 
-    ::poulpy_core::impl_gglwe_product_step_hooks_reference!();
+    ::poulpy_core::impl_gglwe_product_digits_strided_reference!();
 }
 
 #[cfg(feature = "enable-ifma")]
@@ -1443,7 +1443,7 @@ where
         );
     }
 
-    ::poulpy_core::impl_gglwe_product_step_hooks_reference!();
+    ::poulpy_core::impl_gglwe_product_digits_strided_reference!();
 }
 
 poulpy_cpu_portable::impl_cpu_core_defaults!(super::FFT64Avx512, fft64);
@@ -1519,7 +1519,7 @@ mod ifma_rayon_defaults {
     ::poulpy_core::impl_gglwe_external_product_derived_full!(NTT3x42IfmaRayon);
     ::poulpy_core::impl_ggsw_external_product_derived_full!(NTT3x42IfmaRayon);
     ::poulpy_core::impl_operations_reference_full!(NTT3x42IfmaRayon);
-    ::poulpy_core::impl_polynomial_evaluation_derived_full!(NTT3x42IfmaRayon);
+    ::poulpy_core::impl_glwe_polynomial_evaluation_derived_full!(NTT3x42IfmaRayon);
     ::poulpy_core::impl_preparation_reference_full!(NTT3x42IfmaRayon);
     ::poulpy_core::impl_secret_reference_full!(NTT3x42IfmaRayon);
     ::poulpy_core::impl_glwe_trace_derived_full!(NTT3x42IfmaRayon);
@@ -1648,7 +1648,7 @@ mod relinearize_tests {
     use poulpy_core::{
         GLWETensoring,
         api::GLWETensorKeyPreparedFactory,
-        layouts::{GGLWEAtBackendMut, GLWELayout, GLWETensorKeyLayout, ModuleCoreAlloc},
+        layouts::{GGLWEAtBackendMut, GLWEAlloc, GLWELayout, GLWETensorAlloc, GLWETensorKeyAlloc, GLWETensorKeyLayout},
     };
     use poulpy_hal::{
         api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniformSource, VecZnxFillUniformSourceAll},
@@ -1699,7 +1699,7 @@ mod relinearize_tests {
                                 }
                             }
                         }
-                        let mut prepared = module.alloc_tensor_key_prepared_from_infos(&key_layout);
+                        let mut prepared = module.glwe_tensor_key_prepared_alloc_from_infos(&key_layout);
                         let mut prep_scratch = ScratchOwned::<$be>::alloc(module.glwe_tensor_key_prepare_tmp_bytes(&key_layout));
                         module.glwe_tensor_key_prepare(&mut prepared, &key, &mut prep_scratch.borrow());
                         for (res_base2k, res_k) in [(52usize, 311usize), (26, 415)] {
@@ -1741,8 +1741,8 @@ mod relinearize_tests {
 mod prepared_tensor_tests {
     use super::*;
     use poulpy_core::{
-        GLWETensoring, glwe_prepare_right, glwe_tensor_apply_prepared_right,
-        layouts::{GLWELayout, ModuleCoreAlloc, SetK},
+        GLWETensoring, glwe_right_operand_prepare,
+        layouts::{GLWEAlloc, GLWELayout, GLWETensorAlloc, SetK},
     };
     use poulpy_hal::{
         api::{CnvPVecAlloc, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAddAssign, VecZnxFillUniformSourceAll},
@@ -1782,7 +1782,7 @@ mod prepared_tensor_tests {
                     .cnv_prepare_right_tmp_bytes(b_size, b_size)
                     .max(module.glwe_normalize_tmp_bytes());
             let mut prep_scratch = ScratchOwned::<BE>::alloc(prep_bytes);
-            glwe_prepare_right(&module, &mut right, &b, b.k().as_usize(), &mut prep_scratch.borrow());
+            glwe_right_operand_prepare(&module, &mut right, &b, b.k().as_usize(), &mut prep_scratch.borrow());
             for lazy in [false, true] {
                 if lazy {
                     for col in 0..rank + 1 {
@@ -1830,7 +1830,14 @@ mod prepared_tensor_tests {
                     module.glwe_tensor_apply_prepared_right(offset, &mut got, &a, &right, b_size, &mut scratch.borrow());
                     assert_eq!(a, before_a);
                     assert!(right.data()[..] == before_right[..], "the prepared right operand changed");
-                    glwe_tensor_apply_prepared_right(&module, offset, &mut expected, &a, &right, b_size, &mut scratch.borrow());
+                    module.glwe_tensor_apply_prepared_right_reference(
+                        offset,
+                        &mut expected,
+                        &a,
+                        &right,
+                        b_size,
+                        &mut scratch.borrow(),
+                    );
                     assert_eq!(
                         got, expected,
                         "n={n}, rank={rank}, base={base}, lazy={lazy}, k={k}, offset={offset}"

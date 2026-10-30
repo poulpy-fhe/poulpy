@@ -21,20 +21,20 @@ use crate::{
     },
 };
 
-pub trait GLWEMaskFill<BE: Backend> {
+pub trait GLWEFill<BE: Backend> {
     /// Clears the previous noise metadata.
     /// Fills the mask columns `1..=rank` of `res`, uniform at its radix and `k`, from `source_xa`.
-    fn fill_glwe_mask_from_source<R>(&self, res: &mut R, source_xa: &mut Source)
+    fn glwe_fill_mask_from_source<R>(&self, res: &mut R, source_xa: &mut Source)
     where
         R: GLWEToBackendMut<BE>;
 
-    /// Fills the mask of `res` as [`Self::fill_glwe_mask_from_source`] does from `Source::new(seed_xa)`.
-    fn fill_glwe_mask_from_seed<R>(&self, res: &mut R, seed_xa: [u8; 32])
+    /// Fills the mask of `res` as [`Self::glwe_fill_mask_from_source`] does from `Source::new(seed_xa)`.
+    fn glwe_fill_mask_from_seed<R>(&self, res: &mut R, seed_xa: [u8; 32])
     where
         R: GLWEToBackendMut<BE>;
 
     /// Fills every column of `res`, body included, uniform at its radix and `k`, from `source`.
-    fn fill_glwe_from_source<R>(&self, res: &mut R, source: &mut Source)
+    fn glwe_fill_from_source<R>(&self, res: &mut R, source: &mut Source)
     where
         R: GLWEToBackendMut<BE>;
 }
@@ -42,13 +42,13 @@ pub trait GLWEMaskFill<BE: Backend> {
 pub trait LWEFillMask<BE: Backend> {
     /// Clears the previous noise metadata.
     /// Fill the LWE mask from `source_xa`.
-    fn fill_lwe_mask_from_source<R>(&self, base2k: usize, res: &mut R, source_xa: &mut Source)
+    fn lwe_fill_mask_from_source<R>(&self, base2k: usize, res: &mut R, source_xa: &mut Source)
     where
         R: LWEToBackendMut<BE>;
 
     /// Clears the previous noise metadata.
     /// Fill the LWE mask from a deterministic seed.
-    fn fill_lwe_mask_from_seed<R>(&self, base2k: usize, res: &mut R, seed_xa: [u8; 32])
+    fn lwe_fill_mask_from_seed<R>(&self, base2k: usize, res: &mut R, seed_xa: [u8; 32])
     where
         R: LWEToBackendMut<BE>;
 }
@@ -422,7 +422,7 @@ pub trait GLWETensorKeyEncryptSk<BE: Backend> {
 /// # Panics
 ///
 /// When the encrypting secret has the `NONE` distribution, before any draw or write.
-pub trait GLWEToLWESwitchingKeyEncryptSk<BE: Backend> {
+pub trait GLWEToLWEKeyEncryptSk<BE: Backend> {
     fn glwe_to_lwe_key_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos;
@@ -444,7 +444,7 @@ pub trait GLWEToLWESwitchingKeyEncryptSk<BE: Backend> {
 /// # Panics
 ///
 /// When the encrypting secret has the `NONE` distribution, before any draw or write.
-pub trait LWESwitchingKeyEncrypt<BE: Backend> {
+pub trait LWESwitchingKeyEncryptSk<BE: Backend> {
     fn lwe_switching_key_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos;
@@ -466,7 +466,7 @@ pub trait LWESwitchingKeyEncrypt<BE: Backend> {
 /// # Panics
 ///
 /// When the encrypting secret has the `NONE` distribution, before any draw or write.
-pub trait LWEToGLWESwitchingKeyEncryptSk<BE: Backend> {
+pub trait LWEToGLWEKeyEncryptSk<BE: Backend> {
     fn lwe_to_glwe_key_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos;

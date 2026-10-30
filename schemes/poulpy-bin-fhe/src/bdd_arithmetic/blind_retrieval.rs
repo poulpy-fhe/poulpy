@@ -3,7 +3,7 @@ use itertools::Itertools;
 use poulpy_core::layouts::prepared::GGSWPreparedToBackendRef;
 use poulpy_core::{
     GLWECopy, GLWEZero,
-    layouts::{GGSWInfos, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, ModuleCoreAlloc},
+    layouts::{GGSWInfos, GLWE, GLWEAlloc, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, ModuleCoreAlloc},
 };
 use poulpy_hal::layouts::{Backend, Data, ScratchArena};
 
@@ -54,7 +54,7 @@ pub struct GLWEBlindRetriever<D: poulpy_hal::layouts::Data, W: poulpy_hal::layou
 impl<D: Data> GLWEBlindRetriever<D, i64> {
     pub fn alloc<A, M>(module: &M, infos: &A, size: usize) -> Self
     where
-        M: ModuleCoreAlloc<OwnedBuf = D, ZnxWord = i64>,
+        M: GLWEAlloc + ModuleCoreAlloc<OwnedBuf = D, ZnxWord = i64>,
         A: GLWEInfos,
     {
         let bit_size = if size == 0 {
@@ -205,7 +205,7 @@ struct Accumulator<D: poulpy_hal::layouts::Data, W: poulpy_hal::layouts::ZnxWord
 impl<D: poulpy_hal::layouts::Data, W: poulpy_hal::layouts::ZnxWord> Accumulator<D, W> {
     pub fn alloc<A, M>(module: &M, infos: &A) -> Self
     where
-        M: ModuleCoreAlloc<OwnedBuf = D, ZnxWord = W>,
+        M: ModuleCoreAlloc<OwnedBuf = D, ZnxWord = W> + GLWEAlloc,
         A: GLWEInfos,
     {
         Self {

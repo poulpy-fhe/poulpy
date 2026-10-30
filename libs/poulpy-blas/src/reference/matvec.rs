@@ -4,7 +4,7 @@ use poulpy_ckks::{
     layouts::{CKKSModuleAlloc, CKKSPreparedRight, ScratchArenaTakeCKKS},
 };
 use poulpy_core::{
-    GLWEBytesOf, ScratchArenaTakeCore,
+    GLWEBytesOf, GLWELinearTransformationBabyStepsBytesOf, ScratchArenaTakeGLWELinearTransformationBabySteps,
     layouts::{
         GGLWEInfos, GGLWELayout, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos,
         TorusPrecision,
@@ -409,7 +409,7 @@ impl<BE: Backend> BlasMatVecReference<BE> for Module<BE> {
         let (mut babies, mut scratch) =
             scratch
                 .borrow()
-                .take_linear_transformation_baby_steps_scratch(self, &m.map().index(), src);
+                .take_glwe_linear_transformation_baby_steps_scratch(self, &m.map().index(), src);
         self.ckks_prepare_linear_transformation_baby_steps(&mut babies, src, keys, &mut scratch.borrow())?;
         self.ckks_eval_linear_transformation_into(&mut res.cts_mut()[0], src, &babies, m.map(), keys, &mut scratch)
     }
@@ -509,7 +509,7 @@ where
         }
     };
     // The baby-step cache of `a` beside the preparation and either evaluation.
-    module.linear_transformation_baby_steps_bytes_of(&plan, &a)
+    module.glwe_linear_transformation_baby_steps_bytes_of(&plan, &a)
         + module
             .ckks_prepare_linear_transformation_baby_steps_tmp_bytes(&a, &plan, keys)
             .max(eval(&a))

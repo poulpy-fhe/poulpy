@@ -17,7 +17,10 @@ use poulpy_core::{
         GGLWEToGGSWKeyPreparedFactory, GGSWPreparedFactory, GLWEAutomorphismKeyPreparedFactory, GLWESecretSampling,
         LWESecretSampling,
     },
-    layouts::{GGLWEToGGSWKeyLayout, GGSWLayout, GLWEAutomorphismKeyLayout, GLWEInfos, LWELayout, ModuleCoreAlloc},
+    layouts::{
+        GGLWEToGGSWKeyLayout, GGSWLayout, GLWEAutomorphismKeyLayout, GLWEInfos, GLWESecretAlloc, LWEAlloc, LWELayout,
+        LWEPlaintextAlloc, LWESecretAlloc,
+    },
 };
 use poulpy_hal::{
     layouts::{DataView, HostBytesBackend, Module},

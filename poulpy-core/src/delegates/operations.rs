@@ -6,7 +6,7 @@ use poulpy_hal::layouts::{Backend, CnvPVecLToBackendRef, CnvPVecRToBackendRef, M
 use crate::{
     api::{
         GGLWECopy, GGSWCopy, GGSWRotate, GLWEAdd, GLWECopy, GLWEMulConst, GLWEMulPlain, GLWEMulPreparedPlainSum,
-        GLWEMulRelinearizeSum, GLWEMulXpMinusOne, GLWENegate, GLWENormalize, GLWEPacking, GLWEPreparedTensoring, GLWERotate,
+        GLWEMulRelinearizeSum, GLWEMulXpMinusOne, GLWENegate, GLWENormalize, GLWEPack, GLWEPreparedTensoring, GLWERotate,
         GLWEShift, GLWESub, GLWETensoring, GLWETrace, GLWEZero,
     },
     layouts::{
@@ -674,11 +674,11 @@ impl_operations_delegate!(
     fn glwe_shift_tmp_bytes(&self, res_size: usize) -> usize {
         BE::glwe_shift_tmp_bytes(self, res_size)
     },
-    fn glwe_rsh<R>(&self, k: usize, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_rsh_assign<R>(&self, k: usize, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>,
     {
-        BE::glwe_rsh(self, k, res, scratch)
+        BE::glwe_rsh_assign(self, k, res, scratch)
     },
     fn glwe_lsh_assign<R>(&self, res: &mut R, k: usize, scratch: &mut ScratchArena<'_, BE>)
     where
@@ -784,7 +784,7 @@ impl_operations_delegate!(
 );
 
 impl_operations_delegate!(
-    GLWEPacking<BE>,
+    GLWEPack<BE>,
     GLWEPackImpl,
     fn glwe_pack_galois_elements(&self) -> Vec<i64> {
         BE::glwe_pack_galois_elements(self)

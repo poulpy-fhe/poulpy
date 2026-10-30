@@ -16,9 +16,9 @@
 //! sparse one, and these switches replace the sparse-to-dense one.
 
 use poulpy_core::{
-    GLWEBytesOf, GLWECopy, GLWEKeyswitch, GLWEMulPreparedPlainSum, GLWENormalize, GLWEShift, ScratchArenaTakeCore,
-    gglwe_product_accumulation_output_size, glwe_prepare_left, glwe_prepare_left_tmp_bytes, glwe_prepare_right,
-    glwe_prepare_right_tmp_bytes,
+    GLWEBytesOf, GLWECopy, GLWEKeyswitch, GLWEMulPreparedPlainSum, GLWENormalize, GLWEShift, ScratchArenaTakeGLWE,
+    gglwe_product_accumulation_output_size, glwe_left_operand_prepare, glwe_left_operand_prepare_tmp_bytes,
+    glwe_right_operand_prepare, glwe_right_operand_prepare_tmp_bytes,
     layouts::{
         GGLWEInfos, GGLWELayout, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos, LWEInfos,
         LinearTransformation, Rank, prepared::GGLWEPreparedToBackendRef,
@@ -242,12 +242,9 @@ where
     let diagonal_size = diagonal_limbs(diagonal, base2k);
     let product =
         BE::scratch_aligned(module.cnv_pvec_right_bytes_of(diagonal.n().into(), 1, diagonal_size, PrepareHint::OneShot))
-            + glwe_prepare_right_tmp_bytes(module, diagonal_size, diagonal).max(module.glwe_mul_prepared_plain_sum_tmp_bytes(
-                &small_layout,
-                small,
-                diagonal_size,
-            ));
-    let ops = glwe_prepare_left_tmp_bytes(module, small, &small_layout)
+            + glwe_right_operand_prepare_tmp_bytes(module, diagonal_size, diagonal)
+                .max(module.glwe_mul_prepared_plain_sum_tmp_bytes(&small_layout, small, diagonal_size));
+    let ops = glwe_left_operand_prepare_tmp_bytes(module, small, &small_layout)
         .max(product)
         .max(module.glwe_keyswitch_dft_add_tmp_bytes(acc_size, &small_layout, key_infos))
         .max(module.glwe_shift_tmp_bytes(small))
@@ -359,13 +356,13 @@ where
         // lift) above the bottom of the small width, which the keys lower to the
         // bottom of the working width.
         module.glwe_copy(&mut raised, &*src, &mut scratch.borrow());
-        module.glwe_rsh(
+        module.glwe_rsh_assign(
             small * base2k - k_small - scale_up - guard,
             &mut raised,
             &mut scratch.borrow(),
         );
         // Every diagonal multiplies the same ciphertext: it is prepared once.
-        glwe_prepare_left(module, &mut raised_prepared, &raised, small * base2k, &mut scratch.borrow());
+        glwe_left_operand_prepare(module, &mut raised_prepared, &raised, small * base2k, &mut scratch.borrow());
 
         for (index, giant) in factor.giant_steps.iter().enumerate() {
             // Product and division by the diagonal's scale, at the same width.
@@ -376,7 +373,7 @@ where
                     scratch
                         .borrow()
                         .take_cnv_pvec_right_scratch(diagonal.n().into(), 1, diagonal_size, PrepareHint::OneShot);
-                glwe_prepare_right(
+                glwe_right_operand_prepare(
                     module,
                     &mut diagonal_prepared,
                     diagonal,

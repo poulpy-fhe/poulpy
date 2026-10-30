@@ -1,18 +1,21 @@
 mod external_product;
 
 use poulpy_core::{
-    GLWEMaskFill,
+    GLWEFill,
     api::{
         GGSWRotate, GLWEAdd, GLWEAutomorphism, GLWEAutomorphismKeyPreparedFactory, GLWEMulXpMinusOne, GLWENormalize, GLWERotate,
         GLWEShift, GLWETrace,
     },
     layouts::{
-        Base2K, Degree, Dnum, GGLWEInfos, GGSWAtViewMut, GGSWInfos, GGSWLayout, GGSWToBackendMut, GLWE,
-        GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos,
-        ModuleCoreAlloc, Rank, SetGaloisElement, TorusPrecision,
+        Base2K, Degree, Dnum, GGLWEInfos, GGSWAlloc, GGSWAtViewMut, GGSWInfos, GGSWLayout, GGSWToBackendMut, GLWE, GLWEAlloc,
+        GLWEAutomorphismKeyAlloc, GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef,
+        GetAutomorphismKey, LWEInfos, Rank, SetGaloisElement, TorusPrecision,
     },
     oep::{GGLWEProductDigitsStridedImpl, GGSWRotateImpl, GLWEAddImpl, GLWERotateImpl, GLWETraceImpl},
-    reference::operations::{GLWEAddReference, GLWERotateReference},
+    reference::{
+        keyswitching::GGLWEProductDigitsStridedReference,
+        operations::{GLWEAddReference, GLWERotateReference},
+    },
     test_suite::keys::fill_by_digit,
 };
 use poulpy_hal::AlignedBuf;
@@ -151,8 +154,7 @@ unsafe impl GGLWEProductDigitsStridedImpl for DelegatingFFT64Portable {
     ) -> usize {
         DIGIT_PRODUCT_QUERY_CALLS.set(DIGIT_PRODUCT_QUERY_CALLS.get() + 1);
         DIGIT_PRODUCT_EXTRA_SCRATCH
-            + poulpy_core::reference::keyswitching::glwe::gglwe_product_digits_strided_tmp_bytes_reference(
-                module,
+            + module.gglwe_product_digits_strided_tmp_bytes_reference(
                 res_size,
                 a_cols,
                 a_size,
@@ -176,19 +178,11 @@ unsafe impl GGLWEProductDigitsStridedImpl for DelegatingFFT64Portable {
         DIGIT_PRODUCT_CALLS.set(DIGIT_PRODUCT_CALLS.get() + 1);
         let (marker, mut remaining) = scratch.borrow().take_region(DIGIT_PRODUCT_EXTRA_SCRATCH);
         marker.fill(0x39);
-        poulpy_core::reference::keyswitching::glwe::gglwe_product_digits_strided_reference(
-            module,
-            res,
-            a,
-            dsize,
-            product_limbs,
-            pmat,
-            &mut remaining,
-        );
+        module.gglwe_product_digits_strided_reference(res, a, dsize, product_limbs, pmat, &mut remaining);
         assert!(marker.iter().all(|&byte| byte == 0x39));
     }
 
-    ::poulpy_core::impl_gglwe_product_step_hooks_reference!();
+    ::poulpy_core::impl_gglwe_product_digits_strided_reference!();
 }
 poulpy_core::impl_conversion_reference_full!(DelegatingFFT64Portable);
 poulpy_core::impl_ggsw_conversion_reference_full!(DelegatingFFT64Portable);
@@ -272,7 +266,7 @@ unsafe impl GLWETraceImpl for DelegatingFFT64Portable {
                 let mut work = &mut work;
                 for &p in &rotations {
                     if normalize {
-                        module.glwe_rsh(1, &mut work, &mut remaining.borrow());
+                        module.glwe_rsh_assign(1, &mut work, &mut remaining.borrow());
                     }
                     let key = keys.get_automorphism_key(p, work.k()).unwrap();
                     module.glwe_automorphism_add_assign(&mut work, &key, &mut remaining.borrow());
@@ -420,7 +414,7 @@ fn derived_ggsw_rotation_uses_selected_glwe_methods_and_scratch() {
     for row in 0..layout.dnum.as_usize() {
         for col in 0..layout.rank.as_usize() + 1 {
             let mut entry = GGSWAtViewMut::<FFT64Portable>::at_view_mut(&mut input, row, col);
-            reference.fill_glwe_from_source(&mut entry, &mut source);
+            reference.glwe_fill_from_source(&mut entry, &mut source);
         }
     }
     let mut actual = module.ggsw_alloc_from_infos(&layout);
@@ -458,7 +452,7 @@ fn derived_trace_uses_selected_assign_and_its_larger_scratch_query() {
     let module = Module::<DelegatingFFT64Portable>::new(256);
     let reference = Module::<FFT64Portable>::new(256);
     let mut input = sample_glwe();
-    reference.fill_glwe_from_source(&mut input, &mut Source::new([61; 32]));
+    reference.glwe_fill_from_source(&mut input, &mut Source::new([61; 32]));
     let saved_input = input.clone();
     let key_layout = GLWEAutomorphismKeyLayout {
         n: input.n(),

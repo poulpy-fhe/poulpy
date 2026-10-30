@@ -7,7 +7,7 @@
 
 use anyhow::Result;
 use poulpy_core::{
-    GLWEMaskFill,
+    GLWEFill,
     layouts::{GLWEAutomorphismKeyPrepared, GLWETensorKeyPrepared, LWEInfos},
 };
 use poulpy_hal::{
@@ -57,7 +57,7 @@ pub(super) struct Setup<BE: TestContextBackend<Ring = Standard>> {
 
 impl<BE: TestContextBackend<Ring = Standard>> Setup<BE>
 where
-    Module<BE>: TestContextModule<BE> + CKKSReductionOps<BE> + GLWEMaskFill<BE>,
+    Module<BE>: TestContextModule<BE> + CKKSReductionOps<BE> + GLWEFill<BE>,
 {
     pub(super) fn new(
         base: CKKSTestParams,
@@ -180,7 +180,7 @@ pub fn test_exact_scratch_plans<BE, F, E>(base: CKKSTestParams, module: &Module<
 where
     BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE>
-        + GLWEMaskFill<BE>
+        + GLWEFill<BE>
         + CKKSArithmeticOps<BE>
         + CKKSExpOps<BE>
         + CKKSLogOps<BE>
@@ -333,7 +333,7 @@ pub fn test_exact_scratch_sign<BE, F, E>(base: CKKSTestParams, module: &Module<B
 where
     BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE>
-        + GLWEMaskFill<BE>
+        + GLWEFill<BE>
         + CKKSSignOps<BE>
         + CKKSComparisonOps<BE>
         + CKKSPredicateOps<BE>
@@ -465,7 +465,7 @@ pub fn test_exact_scratch_iterative<BE, F, E>(base: CKKSTestParams, module: &Mod
 where
     BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE>
-        + GLWEMaskFill<BE>
+        + GLWEFill<BE>
         + CKKSInverseOps<BE>
         + CKKSInverseDomainOps<BE>
         + CKKSDivSqrtOps<BE>

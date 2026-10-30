@@ -7,8 +7,9 @@
 
 use crate::layouts::operand_degree;
 use crate::{
-    Distribution, GLWENormalize, GetDistribution, GetDistributionMut, Noise, ScratchArenaTakeCore, VecZnxAddNoise,
-    api::{GLWEBytesOf, GLWESecretPreparedFactory},
+    Distribution, GLWENormalize, GetDistribution, GetDistributionMut, Noise, ScratchArenaTakeGLWEPlaintext,
+    ScratchArenaTakeGLWESecretPrepared, ScratchArenaTakeGLWESecretTensor, VecZnxAddNoise,
+    api::{GLWEPlaintextBytesOf, GLWESecretPreparedFactory, GLWESecretTensorBytesOf},
     fresh_noise_model::{PublicKeyBodyNoise, public_key_encryption_noise, public_key_sample_precision},
     layouts::{
         GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWEInfos, GGLWEToBackendMut, GGSWAtViewMut, GGSWInfos,
@@ -25,22 +26,22 @@ use poulpy_hal::{
 };
 
 /// Reconstruct a mask using the backend's source-driven mask sampler.
-pub(crate) fn fill_glwe_mask_from_seed_derived<BE: EncryptionImpl, R: GLWEToBackendMut<BE>>(
+pub(crate) fn glwe_fill_mask_from_seed_derived<BE: EncryptionImpl, R: GLWEToBackendMut<BE>>(
     module: &Module<BE>,
     res: &mut R,
     seed_xa: [u8; 32],
 ) {
-    BE::fill_glwe_mask_from_source(module, res, &mut Source::new(seed_xa));
+    BE::glwe_fill_mask_from_source(module, res, &mut Source::new(seed_xa));
 }
 
 /// Reconstruct an LWE mask using the backend's source-driven mask sampler.
-pub(crate) fn fill_lwe_mask_from_seed_derived<BE: EncryptionImpl, R: LWEToBackendMut<BE>>(
+pub(crate) fn lwe_fill_mask_from_seed_derived<BE: EncryptionImpl, R: LWEToBackendMut<BE>>(
     module: &Module<BE>,
     base2k: usize,
     res: &mut R,
     seed_xa: [u8; 32],
 ) {
-    BE::fill_lwe_mask_from_source(module, base2k, res, &mut Source::new(seed_xa));
+    BE::lwe_fill_mask_from_source(module, base2k, res, &mut Source::new(seed_xa));
 }
 
 pub(crate) fn glwe_public_key_generate_tmp_bytes_derived<BE: EncryptionImpl, A: GLWEInfos>(
@@ -280,7 +281,7 @@ pub(crate) fn ggsw_encrypt_pk_derived<BE, R, P, K>(
         let (mut tmp_pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(res);
         for row in 0..res.dnum().into() {
             // The encryption adds the plaintext's limbs to its accumulator as they are.
-            crate::gadget::gadget_row_plaintext(
+            crate::gadget::gglwe_gadget_row_plaintext(
                 module,
                 &mut tmp_pt.data,
                 0,
@@ -324,7 +325,7 @@ where
 
     let lvl_0: usize = sk_prepared;
     let lvl_1: usize = sk_tensor;
-    let lvl_2_prepare: usize = BE::glwe_secret_tensor_prepare_tmp_bytes(module, infos.rank());
+    let lvl_2_prepare: usize = BE::glwe_secret_tensor_from_glwe_secret_tmp_bytes(module, infos.rank());
     let lvl_2_encrypt: usize = BE::gglwe_encrypt_sk_tmp_bytes(module, infos);
 
     BE::scratch_aligned(lvl_0) + BE::scratch_aligned(lvl_1) + lvl_2_prepare.max(lvl_2_encrypt)
@@ -359,7 +360,7 @@ pub(crate) fn glwe_tensor_key_encrypt_sk_derived<BE, R, S>(
         let (mut sk_prepared, scratch_1) = scratch.take_glwe_secret_prepared_scratch(res.n(), res.rank());
         let (mut sk_tensor, mut scratch_2) = scratch_1.take_glwe_secret_tensor_scratch(res.n().as_usize().into(), res.rank());
         BE::glwe_secret_prepare(module, &mut sk_prepared, sk);
-        BE::glwe_secret_tensor_prepare(module, &mut sk_tensor, sk, &mut scratch_2.borrow());
+        BE::glwe_secret_tensor_from_glwe_secret(module, &mut sk_tensor, sk, &mut scratch_2.borrow());
 
         let sk_tensor_data = sk_tensor.data_mut();
         BE::gglwe_encrypt_sk(
@@ -387,7 +388,7 @@ where
 
     let lvl_0: usize = sk_prepared;
     let lvl_1: usize = sk_tensor;
-    let lvl_2_prepare: usize = BE::glwe_secret_tensor_prepare_tmp_bytes(module, infos.rank());
+    let lvl_2_prepare: usize = BE::glwe_secret_tensor_from_glwe_secret_tmp_bytes(module, infos.rank());
     let lvl_2_encrypt: usize = BE::gglwe_compressed_encrypt_sk_tmp_bytes(module, infos);
 
     BE::scratch_aligned(lvl_0) + BE::scratch_aligned(lvl_1) + lvl_2_prepare.max(lvl_2_encrypt)
@@ -422,7 +423,7 @@ pub(crate) fn glwe_tensor_key_compressed_encrypt_sk_derived<BE, R, S>(
         let (mut sk_prepared, scratch_1) = scratch.take_glwe_secret_prepared_scratch(res.n(), res.rank());
         let (mut sk_tensor, mut scratch_2) = scratch_1.take_glwe_secret_tensor_scratch(res.n().as_usize().into(), res.rank());
         BE::glwe_secret_prepare(module, &mut sk_prepared, sk);
-        BE::glwe_secret_tensor_prepare(module, &mut sk_tensor, sk, &mut scratch_2.borrow());
+        BE::glwe_secret_tensor_from_glwe_secret(module, &mut sk_tensor, sk, &mut scratch_2.borrow());
 
         let sk_tensor_data = sk_tensor.data_mut();
         BE::gglwe_compressed_encrypt_sk(module, res, &sk_tensor_data, &sk_prepared, seed_xa, source_xe, &mut scratch_2);

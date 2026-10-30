@@ -7,10 +7,10 @@ use poulpy_hal::{
     source::Source,
 };
 
-use crate::api::GLWEBytesOf;
+use crate::api::GLWESecretBytesOf;
 use crate::layouts::operand_degree;
 use crate::{
-    GGLWEEncryptSk, ScratchArenaTakeCore,
+    GGLWEEncryptSk, ScratchArenaTakeGLWESecret, ScratchArenaTakeGLWESecretPrepared,
     api::GLWESecretPreparedFactory,
     layouts::{GGLWEInfos, GGLWEToBackendMut, GLWESecretToBackendRef, LWEInfos, LWESecretToBackendRef, Rank},
 };
@@ -18,7 +18,7 @@ use crate::{
 /// Portable implementation using HAL operations.
 ///
 /// Backend implementations may call this helper without changing their override selection.
-pub trait GLWEToLWESwitchingKeyEncryptSkReference<BE: Backend> {
+pub trait GLWEToLWEKeyEncryptSkReference<BE: Backend> {
     fn glwe_to_lwe_key_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos;
@@ -37,7 +37,7 @@ pub trait GLWEToLWESwitchingKeyEncryptSkReference<BE: Backend> {
         R: GGLWEToBackendMut<BE> + GGLWEInfos;
 }
 
-impl<BE: Backend> GLWEToLWESwitchingKeyEncryptSkReference<BE> for Module<BE>
+impl<BE: Backend> GLWEToLWEKeyEncryptSkReference<BE> for Module<BE>
 where
     Self: ModuleN + GGLWEEncryptSk<BE> + GLWESecretPreparedFactory<BE> + VecZnxAutomorphism<BE> + VecZnxCopy<BE> + VecZnxZero<BE>,
 {
@@ -76,7 +76,7 @@ where
         crate::layouts::assert_secret_set(&sk_lwe.dist);
         assert!(
             scratch.available() >= self.glwe_to_lwe_key_encrypt_sk_tmp_bytes_reference(res),
-            "scratch.available(): {} < GLWEToLWESwitchingKeyEncryptSk::glwe_to_lwe_key_encrypt_sk_tmp_bytes: {}",
+            "scratch.available(): {} < GLWEToLWEKeyEncryptSk::glwe_to_lwe_key_encrypt_sk_tmp_bytes: {}",
             scratch.available(),
             self.glwe_to_lwe_key_encrypt_sk_tmp_bytes_reference(res)
         );

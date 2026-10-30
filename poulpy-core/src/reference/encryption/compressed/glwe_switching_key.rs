@@ -8,7 +8,7 @@ use poulpy_hal::{
 
 use crate::layouts::operand_degree;
 use crate::{
-    GGLWECompressedEncryptSk, GetDistribution, ScratchArenaTakeCore,
+    GGLWECompressedEncryptSk, GetDistribution, ScratchArenaTakeGLWESecret, ScratchArenaTakeGLWESecretPrepared,
     api::GLWESecretPreparedFactory,
     layouts::{
         GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWEInfos, GLWEInfos, GLWESecretToBackendRef,

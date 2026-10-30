@@ -17,13 +17,15 @@ use poulpy_hal::{
 };
 
 use crate::{
-    GGSWRotate, GLWEAdd, GLWEBytesOf, GLWECopy, GLWEMaskFill, GLWEMulConst, GLWEMulPlain, GLWEMulPreparedPlainSum,
-    GLWEMulXpMinusOne, GLWENegate, GLWENormalize, GLWEPreparedTensoring, GLWERotate, GLWEShift, GLWESub, GLWETensoring, GLWEZero,
+    GGSWRotate, GLWEAdd, GLWEBytesOf, GLWECopy, GLWEFill, GLWEMulConst, GLWEMulPlain, GLWEMulPreparedPlainSum, GLWEMulXpMinusOne,
+    GLWENegate, GLWENormalize, GLWEPreparedTensoring, GLWERotate, GLWEShift, GLWESub, GLWETensoring, GLWEZero,
     api::TransferInto,
     gadget::cnv_offset_to_limb_offset,
-    glwe_prepare_left, glwe_prepare_left_tmp_bytes, glwe_prepare_right, glwe_prepare_right_tmp_bytes,
+    glwe_left_operand_prepare, glwe_left_operand_prepare_tmp_bytes, glwe_right_operand_prepare,
+    glwe_right_operand_prepare_tmp_bytes,
     layouts::{
-        Base2K, Degree, GGSWAtViewMut, GLWEInfos, GLWELayout, GLWEToBackendMut, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
+        Base2K, Degree, GGSWAlloc, GGSWAtViewMut, GLWEAlloc, GLWEInfos, GLWELayout, GLWEPlaintextAlloc, GLWETensorAlloc,
+        GLWEToBackendMut, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
     },
     test_suite::parity::{ParityBackend, ParityShapes, poisoned_scratch, ref_glwe, unnormalized_twin},
 };
@@ -553,34 +555,34 @@ fn test_glwe_tensor_parity_case<BR, BT>(
     let mut a_prep_ref = module_ref.cnv_pvec_left_alloc(n, cols, b_size, a_hint);
     let mut a_prep_test = module_test.cnv_pvec_left_alloc(n, cols, b_size, a_hint);
     // Each preparation on exactly its own budget.
-    glwe_prepare_right(
+    glwe_right_operand_prepare(
         module_ref,
         &mut b_prep_ref,
         &b_ref,
         a_infos.k.as_usize(),
-        &mut poisoned_scratch::<BR>(glwe_prepare_right_tmp_bytes(module_ref, b_size, a_infos)).borrow(),
+        &mut poisoned_scratch::<BR>(glwe_right_operand_prepare_tmp_bytes(module_ref, b_size, a_infos)).borrow(),
     );
-    glwe_prepare_right(
+    glwe_right_operand_prepare(
         module_test,
         &mut b_prep_test,
         &b_test,
         a_infos.k.as_usize(),
-        &mut poisoned_scratch::<BT>(glwe_prepare_right_tmp_bytes(module_test, b_size, a_infos)).borrow(),
+        &mut poisoned_scratch::<BT>(glwe_right_operand_prepare_tmp_bytes(module_test, b_size, a_infos)).borrow(),
     );
-    glwe_prepare_left(
+    glwe_left_operand_prepare(
         module_ref,
         &mut a_prep_ref,
         &a_ref,
         a_infos.k.as_usize(),
-        &mut poisoned_scratch::<BR>(glwe_prepare_left_tmp_bytes(module_ref, b_size, a_infos)).borrow(),
+        &mut poisoned_scratch::<BR>(glwe_left_operand_prepare_tmp_bytes(module_ref, b_size, a_infos)).borrow(),
     );
     // The test side prepares its left operand from the unnormalized twin, when there is one.
-    glwe_prepare_left(
+    glwe_left_operand_prepare(
         module_test,
         &mut a_prep_test,
         twins.as_ref().map_or(&a_test, |(twin_a, _)| twin_a),
         a_infos.k.as_usize(),
-        &mut poisoned_scratch::<BT>(glwe_prepare_left_tmp_bytes(module_test, b_size, a_infos)).borrow(),
+        &mut poisoned_scratch::<BT>(glwe_left_operand_prepare_tmp_bytes(module_test, b_size, a_infos)).borrow(),
     );
     for (i, &cnv_offset) in offsets.iter().enumerate() {
         let twins = twins.as_ref().filter(|_| i == 0);
@@ -767,16 +769,16 @@ pub fn test_glwe_shift_parity<BR, BT>(
             shapes,
             module_ref,
             module_test,
-            "glwe_rsh",
+            "glwe_rsh_assign",
             47,
             (0, 0),
             move |m, res, _, _, _| {
                 let mut s = poisoned_scratch::<BR>(m.glwe_shift_tmp_bytes(res.size()));
-                m.glwe_rsh(k, res, &mut s.borrow());
+                m.glwe_rsh_assign(k, res, &mut s.borrow());
             },
             move |m, res, _, _, _| {
                 let mut s = poisoned_scratch::<BT>(m.glwe_shift_tmp_bytes(res.size()));
-                m.glwe_rsh(k, res, &mut s.borrow());
+                m.glwe_rsh_assign(k, res, &mut s.borrow());
             },
         );
     }
@@ -990,7 +992,7 @@ pub fn test_glwe_multiplication_parity<BR, BT>(
             let mut a_test = module_test.glwe_alloc_from_infos(&infos);
             a_ref.transfer_into(&mut a_test);
             let mut plain_ref = module_ref.glwe_plaintext_alloc_from_infos(&infos);
-            module_ref.fill_glwe_from_source(&mut plain_ref, &mut source);
+            module_ref.glwe_fill_from_source(&mut plain_ref, &mut source);
             let mut plain_test = module_test.glwe_plaintext_alloc_from_infos(&infos);
             plain_ref.transfer_into(&mut plain_test);
             for offset in [0, params.base2k - 1, params.base2k] {
@@ -1124,7 +1126,7 @@ fn test_glwe_mul_prepared_plain_sum_case<BR, BT>(
         let mut twin = module_test.glwe_alloc_from_infos(infos);
         unnormalized_twin::<BR, BT>(&ct, &mut twin);
         let mut plain = module_ref.glwe_plaintext_alloc_from_infos(infos);
-        module_ref.fill_glwe_from_source(&mut plain, source);
+        module_ref.glwe_fill_from_source(&mut plain, source);
         let mut plain_test = module_test.glwe_plaintext_alloc_from_infos(infos);
         plain.transfer_into(&mut plain_test);
 
@@ -1132,26 +1134,26 @@ fn test_glwe_mul_prepared_plain_sum_case<BR, BT>(
         let mut left_test = module_test.cnv_pvec_left_alloc(n, cols, size, other);
         let mut right_ref = module_ref.cnv_pvec_right_alloc(n, 1, size, other);
         let mut right_test = module_test.cnv_pvec_right_alloc(n, 1, size, hint);
-        let bytes = glwe_prepare_left_tmp_bytes(module_ref, size, infos);
-        glwe_prepare_left(module_ref, &mut left_ref, &ct, k, &mut poisoned_scratch::<BR>(bytes).borrow());
-        let bytes = glwe_prepare_left_tmp_bytes(module_test, size, infos);
-        glwe_prepare_left(
+        let bytes = glwe_left_operand_prepare_tmp_bytes(module_ref, size, infos);
+        glwe_left_operand_prepare(module_ref, &mut left_ref, &ct, k, &mut poisoned_scratch::<BR>(bytes).borrow());
+        let bytes = glwe_left_operand_prepare_tmp_bytes(module_test, size, infos);
+        glwe_left_operand_prepare(
             module_test,
             &mut left_test,
             &twin,
             k,
             &mut poisoned_scratch::<BT>(bytes).borrow(),
         );
-        let bytes = glwe_prepare_right_tmp_bytes(module_ref, size, &plain);
-        glwe_prepare_right(
+        let bytes = glwe_right_operand_prepare_tmp_bytes(module_ref, size, &plain);
+        glwe_right_operand_prepare(
             module_ref,
             &mut right_ref,
             &plain,
             k,
             &mut poisoned_scratch::<BR>(bytes).borrow(),
         );
-        let bytes = glwe_prepare_right_tmp_bytes(module_test, size, &plain_test);
-        glwe_prepare_right(
+        let bytes = glwe_right_operand_prepare_tmp_bytes(module_test, size, &plain_test);
+        glwe_right_operand_prepare(
             module_test,
             &mut right_test,
             &plain_test,
@@ -1495,7 +1497,7 @@ pub fn test_ggsw_rotate_parity<BR, BT>(
         let mut a_ref = module_ref.ggsw_alloc_from_infos(&infos);
         for row in 0..infos.dnum.as_usize() {
             for col in 0..rank + 1 {
-                module_ref.fill_glwe_from_source(&mut a_ref.at_view_mut(row, col), &mut source);
+                module_ref.glwe_fill_from_source(&mut a_ref.at_view_mut(row, col), &mut source);
             }
         }
         let mut a_test = module_test.ggsw_alloc_from_infos(&infos);

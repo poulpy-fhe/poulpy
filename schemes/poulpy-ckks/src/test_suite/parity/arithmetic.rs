@@ -8,7 +8,7 @@ use crate::{
     test_suite::CKKSTestParams,
 };
 use poulpy_core::{
-    GLWEAdd, GLWEMaskFill,
+    GLWEAdd, GLWEFill,
     api::{GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory},
     layouts::*,
     oep::GLWENormalizeImpl,
@@ -46,7 +46,7 @@ pub fn layout(params: CKKSTestParams, rank: usize, k: usize, delta: usize, spars
 
 fn arithmetic<BE: ArithmeticParityBackend>(params: CKKSTestParams, module: &Module<BE>) -> Vec<(&'static str, Snapshot)>
 where
-    Module<BE>: GLWEMaskFill<BE>,
+    Module<BE>: GLWEFill<BE>,
 {
     let b = params.base2k;
     let mut results = Vec::new();
@@ -200,8 +200,8 @@ pub fn test_arithmetic_parity<BR: ArithmeticParityBackend, BT: ArithmeticParityB
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
-    Module<BR>: GLWEMaskFill<BR>,
-    Module<BT>: GLWEMaskFill<BT>,
+    Module<BR>: GLWEFill<BR>,
+    Module<BT>: GLWEFill<BT>,
 {
     let _scalar = std::marker::PhantomData::<F>;
     let want = arithmetic(params, module_ref);
@@ -219,7 +219,7 @@ fn imaginary<BE: Backend<ZnxWord = i64> + CKKSImagImpl>(
     module: &Module<BE>,
 ) -> Vec<(&'static str, Snapshot)>
 where
-    Module<BE>: GLWEMaskFill<BE>,
+    Module<BE>: GLWEFill<BE>,
 {
     let b = params.base2k;
     let rank = params.rank;
@@ -278,8 +278,8 @@ pub fn test_imag_parity<BR, BT, F>(params: CKKSTestParams, module_ref: &Module<B
 where
     BR: Backend<ZnxWord = i64> + CKKSImagImpl,
     BT: Backend<ZnxWord = i64> + CKKSImagImpl,
-    Module<BR>: GLWEMaskFill<BR>,
-    Module<BT>: GLWEMaskFill<BT>,
+    Module<BR>: GLWEFill<BR>,
+    Module<BT>: GLWEFill<BT>,
 {
     let _scalar = std::marker::PhantomData::<F>;
     let want = imaginary(params, module_ref);
@@ -295,7 +295,7 @@ where
 fn products<BE>(params: CKKSTestParams, module: &Module<BE>) -> Vec<(&'static str, Snapshot)>
 where
     BE: Backend<ZnxWord = i64> + CKKSMulImpl,
-    Module<BE>: GLWETensorKeyPreparedFactory<BE> + GLWEMaskFill<BE> + GLWEAdd<BE> + CKKSDotProductOps<BE> + VecZnxDftAlloc<BE>,
+    Module<BE>: GLWETensorKeyPreparedFactory<BE> + GLWEFill<BE> + GLWEAdd<BE> + CKKSDotProductOps<BE> + VecZnxDftAlloc<BE>,
 {
     use super::keys::{key_layout, prepared_tensor_key};
     let b = params.base2k;
@@ -529,8 +529,8 @@ pub fn test_multiplication_parity<BR, BT, F>(params: CKKSTestParams, module_ref:
 where
     BR: Backend<ZnxWord = i64> + CKKSMulImpl,
     BT: Backend<ZnxWord = i64> + CKKSMulImpl,
-    Module<BR>: GLWETensorKeyPreparedFactory<BR> + GLWEMaskFill<BR> + GLWEAdd<BR> + CKKSDotProductOps<BR> + VecZnxDftAlloc<BR>,
-    Module<BT>: GLWETensorKeyPreparedFactory<BT> + GLWEMaskFill<BT> + GLWEAdd<BT> + CKKSDotProductOps<BT> + VecZnxDftAlloc<BT>,
+    Module<BR>: GLWETensorKeyPreparedFactory<BR> + GLWEFill<BR> + GLWEAdd<BR> + CKKSDotProductOps<BR> + VecZnxDftAlloc<BR>,
+    Module<BT>: GLWETensorKeyPreparedFactory<BT> + GLWEFill<BT> + GLWEAdd<BT> + CKKSDotProductOps<BT> + VecZnxDftAlloc<BT>,
 {
     let _scalar = std::marker::PhantomData::<F>;
     let want = products(params, module_ref);
@@ -548,13 +548,13 @@ pub fn test_prepared_multiplication_parity<BR, BT, F>(params: CKKSTestParams, mo
 where
     BR: Backend<ZnxWord = i64> + CKKSMulImpl,
     BT: Backend<ZnxWord = i64> + CKKSMulImpl,
-    Module<BR>: GLWETensorKeyPreparedFactory<BR> + GLWEMaskFill<BR> + GLWEAdd<BR>,
-    Module<BT>: GLWETensorKeyPreparedFactory<BT> + GLWEMaskFill<BT> + GLWEAdd<BT>,
+    Module<BR>: GLWETensorKeyPreparedFactory<BR> + GLWEFill<BR> + GLWEAdd<BR>,
+    Module<BT>: GLWETensorKeyPreparedFactory<BT> + GLWEFill<BT> + GLWEAdd<BT>,
 {
     fn products<BE>(params: CKKSTestParams, module: &Module<BE>) -> Vec<Snapshot>
     where
         BE: Backend<ZnxWord = i64> + CKKSMulImpl,
-        Module<BE>: GLWETensorKeyPreparedFactory<BE> + GLWEMaskFill<BE> + GLWEAdd<BE>,
+        Module<BE>: GLWETensorKeyPreparedFactory<BE> + GLWEFill<BE> + GLWEAdd<BE>,
     {
         use super::keys::{key_layout, prepared_tensor_key};
         let base = params.base2k;
@@ -604,7 +604,7 @@ where
 fn rotations<BE>(params: CKKSTestParams, module: &Module<BE>) -> Vec<(&'static str, Snapshot)>
 where
     BE: Backend<ZnxWord = i64> + CKKSRotateImpl,
-    Module<BE>: GLWEAutomorphismKeyPreparedFactory<BE> + GLWEMaskFill<BE> + GLWEAdd<BE>,
+    Module<BE>: GLWEAutomorphismKeyPreparedFactory<BE> + GLWEFill<BE> + GLWEAdd<BE>,
 {
     use super::keys::{key_layout, prepared_automorphism_key};
     let b = params.base2k;
@@ -671,8 +671,8 @@ pub fn test_rotate_parity<BR, BT, F>(params: CKKSTestParams, module_ref: &Module
 where
     BR: Backend<ZnxWord = i64> + CKKSRotateImpl,
     BT: Backend<ZnxWord = i64> + CKKSRotateImpl,
-    Module<BR>: GLWEAutomorphismKeyPreparedFactory<BR> + GLWEMaskFill<BR> + GLWEAdd<BR>,
-    Module<BT>: GLWEAutomorphismKeyPreparedFactory<BT> + GLWEMaskFill<BT> + GLWEAdd<BT>,
+    Module<BR>: GLWEAutomorphismKeyPreparedFactory<BR> + GLWEFill<BR> + GLWEAdd<BR>,
+    Module<BT>: GLWEAutomorphismKeyPreparedFactory<BT> + GLWEFill<BT> + GLWEAdd<BT>,
 {
     let _scalar = std::marker::PhantomData::<F>;
     let want = rotations(params, module_ref);
@@ -688,7 +688,7 @@ where
 fn conjugations<BE>(params: CKKSTestParams, module: &Module<BE>) -> Vec<(&'static str, Snapshot)>
 where
     BE: Backend<ZnxWord = i64> + CKKSConjugateImpl,
-    Module<BE>: GLWEAutomorphismKeyPreparedFactory<BE> + GLWEMaskFill<BE> + GLWEAdd<BE>,
+    Module<BE>: GLWEAutomorphismKeyPreparedFactory<BE> + GLWEFill<BE> + GLWEAdd<BE>,
 {
     use super::keys::{key_layout, prepared_automorphism_key};
     let b = params.base2k;
@@ -738,8 +738,8 @@ pub fn test_conjugate_parity<BR, BT, F>(params: CKKSTestParams, module_ref: &Mod
 where
     BR: Backend<ZnxWord = i64> + CKKSConjugateImpl,
     BT: Backend<ZnxWord = i64> + CKKSConjugateImpl,
-    Module<BR>: GLWEAutomorphismKeyPreparedFactory<BR> + GLWEMaskFill<BR> + GLWEAdd<BR>,
-    Module<BT>: GLWEAutomorphismKeyPreparedFactory<BT> + GLWEMaskFill<BT> + GLWEAdd<BT>,
+    Module<BR>: GLWEAutomorphismKeyPreparedFactory<BR> + GLWEFill<BR> + GLWEAdd<BR>,
+    Module<BT>: GLWEAutomorphismKeyPreparedFactory<BT> + GLWEFill<BT> + GLWEAdd<BT>,
 {
     let _scalar = std::marker::PhantomData::<F>;
     let want = conjugations(params, module_ref);

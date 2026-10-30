@@ -31,7 +31,10 @@ use crate::{
     },
     oep::{CKKSEncapsulatedModUpImpl, CKKSModUpFirstFactorImpl},
 };
-use poulpy_core::{GLWEBytesOf, GLWENormalize, ScratchArenaTakeCore};
+use poulpy_core::{
+    GLWEBytesOf, GLWELinearTransformationBabyStepsBytesOf, GLWENormalize, ScratchArenaTakeGLWE,
+    ScratchArenaTakeGLWELinearTransformationBabySteps,
+};
 
 /// [`CKKSBootstrappingReference::ckks_bootstrap_tmp_bytes_reference`]: the terms
 /// of the rotation keys are maximized over their layouts, those of EvalMod come
@@ -952,7 +955,7 @@ where
     // input already fills the storage, is a no-op.) Stopping `scale_up` bits
     // short of the natural magnitude is the fused lift: the value lands
     // multiplied by `2^scale_up`, absorbed by the matching `log_delta`.
-    module.glwe_rsh(k_large - k_small - scale_up, dst, scratch);
+    module.glwe_rsh_assign(k_large - k_small - scale_up, dst, scratch);
 
     // `log_delta` picks up the fused lift, so the encoded value is unchanged;
     // the remaining headroom now spans the full raised modulus, so the torus
@@ -1471,6 +1474,7 @@ where
     BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl,
     BCI: Backend,
     Module<BE>: GLWEBytesOf<BE>
+        + GLWELinearTransformationBabyStepsBytesOf<BE>
         + CKKSDFTOps<BE>
         + CKKSPow2Ops<BE>
         + GLWEShift<BE>
@@ -1517,7 +1521,7 @@ where
                     .max(module.ckks_eval_linear_transformation_tmp_bytes(&boot_layout, &diagonal, &even_plan, atk, atk))
                     .max(module.ckks_eval_linear_transformation_tmp_bytes(&boot_layout, &diagonal, &odd_plan, atk, atk));
             }
-            module.linear_transformation_baby_steps_bytes_of(&even_plan, &boot_layout)
+            module.glwe_linear_transformation_baby_steps_bytes_of(&even_plan, &boot_layout)
                 + 2 * BE::scratch_aligned(module.glwe_bytes_of_from_infos(&boot_layout))
                 + factors.max(embedded_bytes + module.glwe_rotate_tmp_bytes().max(module.ckks_add_tmp_bytes(embedded.size())))
         }
@@ -1565,7 +1569,7 @@ where
     let plan = even.index();
     let (mut babies, mut scratch) = scratch
         .borrow()
-        .take_linear_transformation_baby_steps_scratch(module, &plan, w);
+        .take_glwe_linear_transformation_baby_steps_scratch(module, &plan, w);
     module.ckks_prepare_linear_transformation_baby_steps(&mut babies, w, keys, &mut scratch)?;
     let (mut a, scratch_1) = scratch.borrow().take_ckks_ciphertext_scratch(w, w.meta());
     let (mut b, mut scratch_1) = scratch_1.take_ckks_ciphertext_scratch(w, w.meta());
@@ -1923,7 +1927,7 @@ where
         scratch.scope(|scratch_inner| {
             let (mut lowered, mut scratch_inner) = scratch_inner.take_glwe_scratch(&layout);
             module.glwe_copy(&mut lowered, src, &mut scratch_inner);
-            module.glwe_rsh(shift - k_offset, &mut lowered, &mut scratch_inner);
+            module.glwe_rsh_assign(shift - k_offset, &mut lowered, &mut scratch_inner);
             module.glwe_keyswitch(dst, &lowered, &key, &mut scratch_inner);
         });
     }

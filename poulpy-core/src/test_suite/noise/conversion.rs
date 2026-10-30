@@ -14,14 +14,15 @@ use crate::layouts::prepared::GGLWEPreparedToBackendRef;
 use crate::test_suite::noise::{glwe_decrypt_checked, glwe_noise_checked};
 use crate::test_suite::poisoned_scratch;
 use crate::{
-    DEFAULT_SIGMA_XE, GLWEDecrypt, GLWEEncryptSk, GLWEExpandLWE, GLWEExpandLWEMatrix, GLWEFromLWE, GLWEMaskFill, GLWENoise,
-    GLWENormalize, GLWEToLWESwitchingKeyEncryptSk, LWEDecrypt, LWEEncryptSk, LWEFromGLWE, LWEMatrixDecrypt,
-    LWEToGLWESwitchingKeyEncryptSk,
-    api::{GLWESecretPreparedFactory, GLWEToLWEKeyPreparedFactory, LWEToGLWEKeyPreparedFactory, SecretConversion},
+    DEFAULT_SIGMA_XE, GLWEDecrypt, GLWEEncryptSk, GLWEExpandLWE, GLWEExpandLWEMatrix, GLWEFill, GLWEFromLWE, GLWENoise,
+    GLWENormalize, GLWEToLWEKeyEncryptSk, LWEDecrypt, LWEEncryptSk, LWEFromGLWE, LWEMatrixDecrypt, LWEToGLWEKeyEncryptSk,
+    api::{GLWESecretPreparedFactory, GLWEToLWEKeyPreparedFactory, LWESecretFromGLWESecret, LWEToGLWEKeyPreparedFactory},
     layouts::{
-        Base2K, Degree, GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWEToLWEKey, GLWEToLWEKeyLayout, GLWEToLWEKeyPrepared, LWE,
-        LWEInfos, LWELayout, LWEMatrixLayout, LWEPlaintext, LWESecret, LWEToGLWEKey, LWEToGLWEKeyLayout, LWEToGLWEKeyPrepared,
-        ModuleCoreAlloc, Rank, TorusPrecision, prepared::GLWESecretPrepared,
+        Base2K, Degree, GLWE, GLWEAlloc, GLWELayout, GLWEPlaintext, GLWEPlaintextAlloc, GLWESecret, GLWESecretAlloc,
+        GLWEToLWEKey, GLWEToLWEKeyAlloc, GLWEToLWEKeyLayout, GLWEToLWEKeyPrepared, LWE, LWEAlloc, LWEInfos, LWELayout,
+        LWEMatrixAlloc, LWEMatrixLayout, LWEPlaintext, LWEPlaintextAlloc, LWESecret, LWESecretAlloc, LWEToGLWEKey,
+        LWEToGLWEKeyAlloc, LWEToGLWEKeyLayout, LWEToGLWEKeyPrepared, ModuleCoreAlloc, Rank, TorusPrecision,
+        prepared::GLWESecretPrepared,
     },
 };
 
@@ -75,7 +76,7 @@ pub fn test_lwe_secret_from_glwe_secret_flattens_rank_and_preserves_metadata<BE:
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord> + SecretConversion<BE>,
+    Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord> + LWESecretFromGLWESecret<BE>,
 {
     let rank = Rank(2);
     let mut source = Source::new([9u8; 32]);
@@ -99,12 +100,8 @@ where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: GLWEEncryptSk<BE>
-        + GLWEDecrypt<BE>
-        + GLWENormalize<BE>
-        + GLWESecretPreparedFactory<BE>
-        + GLWENoise<BE>
-        + GLWEMaskFill<BE>,
+    Module<BE>:
+        GLWEEncryptSk<BE> + GLWEDecrypt<BE> + GLWENormalize<BE> + GLWESecretPreparedFactory<BE> + GLWENoise<BE> + GLWEFill<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let n_glwe: Degree = Degree(module.n() as u32);
@@ -164,7 +161,7 @@ where
             let mut data: Vec<FBig<HalfEven>> = (0..module.n()).map(|_| FBig::ZERO).collect();
             ct_in.data().decode_vec_float(ct_in.base2k().into(), 0, &mut data);
 
-            module.fill_glwe_from_source(&mut ct_out, &mut source_xa);
+            module.glwe_fill_from_source(&mut ct_out, &mut source_xa);
             module.glwe_normalize(
                 &mut ct_out,
                 &ct_in,
@@ -192,7 +189,7 @@ pub fn test_lwe_to_glwe<BE: crate::test_suite::noise::TestBackend + crate::oep::
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: GLWEFromLWE<BE>
-        + LWEToGLWESwitchingKeyEncryptSk<BE>
+        + LWEToGLWEKeyEncryptSk<BE>
         + GLWEDecrypt<BE>
         + GLWESecretPreparedFactory<BE>
         + LWEEncryptSk<BE>
@@ -315,13 +312,13 @@ pub fn test_glwe_to_lwe<BE: crate::test_suite::noise::TestBackend + crate::oep::
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: GLWEFromLWE<BE>
-        + GLWEToLWESwitchingKeyEncryptSk<BE>
+        + GLWEToLWEKeyEncryptSk<BE>
         + GLWEEncryptSk<BE>
         + LWEDecrypt<BE>
         + LWEFromGLWE<BE>
         + GLWEDecrypt<BE>
         + GLWESecretPreparedFactory<BE>
-        + GLWEToLWESwitchingKeyEncryptSk<BE>
+        + GLWEToLWEKeyEncryptSk<BE>
         + GLWEToLWEKeyPreparedFactory<BE>
         + VecZnxNormalize<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
@@ -447,7 +444,7 @@ pub fn test_glwe_expand_lwe<BE: crate::test_suite::noise::TestBackend + crate::o
     Module<BE>: GLWEEncryptSk<BE>
         + LWEDecrypt<BE>
         + GLWEExpandLWE<BE>
-        + SecretConversion<BE>
+        + LWESecretFromGLWESecret<BE>
         + GLWESecretPreparedFactory<BE>
         + VecZnxNormalize<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
@@ -599,7 +596,7 @@ pub fn test_glwe_expand_lwe_matrix_decrypt<BE: crate::test_suite::noise::TestBac
         + GLWEDecrypt<BE>
         + GLWEExpandLWEMatrix<BE>
         + LWEMatrixDecrypt<BE>
-        + SecretConversion<BE>
+        + LWESecretFromGLWESecret<BE>
         + GLWESecretPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {

@@ -91,8 +91,8 @@ macro_rules! core_backend_test_suite {
                     $crate::test_suite::noise::glwe_tensor::test_glwe_mul_prepared_relinearize_sum_rejects_unequal_lengths,
                 glwe_tensor_apply_prepared_rejects_mismatched_operands =>
                     $crate::test_suite::noise::glwe_tensor::test_glwe_tensor_apply_prepared_rejects_mismatched_operands,
-                glwe_prepare_left_rejects_size_of_another_width =>
-                    $crate::test_suite::noise::glwe_tensor::test_glwe_prepare_left_rejects_size_of_another_width,
+                glwe_left_operand_prepare_rejects_size_of_another_width =>
+                    $crate::test_suite::noise::glwe_tensor::test_glwe_left_operand_prepare_rejects_size_of_another_width,
                 test_glwe_tensor_square => $crate::test_suite::noise::glwe_tensor::test_glwe_tensor_square,
                 glwe_tensor_relinearize_coarsened => $crate::test_suite::parity::test_glwe_tensor_relinearize_coarsened,
                 test_glwe_mul_plain => $crate::test_suite::noise::glwe_tensor::test_glwe_mul_plain,
@@ -125,8 +125,8 @@ macro_rules! core_backend_test_suite {
                 glwe_trace_coarsened => $crate::test_suite::parity::test_glwe_trace_coarsened,
                 glwe_hoisted_baby_rotations_match_automorphism =>
                     $crate::test_suite::noise::linear_transformation::test_glwe_hoisted_baby_rotations_match_automorphism,
-                glwe_prepare_linear_transformation_rhs_rejects_wide_diagonal =>
-                    $crate::test_suite::noise::linear_transformation::test_glwe_prepare_linear_transformation_rhs_rejects_wide_diagonal,
+                glwe_linear_transformation_rhs_prepare_rejects_wide_diagonal =>
+                    $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_rhs_prepare_rejects_wide_diagonal,
                 glwe_linear_transformation_sum => $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_sum,
                 glwe_linear_transformation_ciphertext_diagonals =>
                     $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_ciphertext_diagonals,
@@ -188,7 +188,7 @@ macro_rules! core_backend_test_suite {
                     $crate::test_suite::noise::automorphism::test_gglwe_automorphism_key_automorphism_assign,
                 gglwe_automorphism_key_automorphism_own_layout =>
                     $crate::test_suite::noise::automorphism::test_gglwe_automorphism_key_automorphism_own_layout,
-                gadget_row_plaintext => $crate::test_suite::encryption::test_gadget_row_plaintext,
+                gglwe_gadget_row_plaintext => $crate::test_suite::encryption::test_gglwe_gadget_row_plaintext,
                 ggsw_encrypt_sk => $crate::test_suite::noise::encryption::test_ggsw_encrypt_sk,
                 ggsw_encrypt_pk => $crate::test_suite::noise::encryption::test_ggsw_encrypt_pk,
                 ggsw_encrypt_pk_unnormalized_plaintext =>
@@ -220,8 +220,8 @@ macro_rules! core_backend_test_suite {
                     $crate::test_suite::step_hooks::test_gglwe_products_idft_normalize_rejects_invalid_items,
                 gglwe_products_from_dft_rejects_invalid_items =>
                     $crate::test_suite::step_hooks::test_gglwe_products_from_dft_rejects_invalid_items,
-                gadget_dft_apply_from_dft_rejects_invalid_operands =>
-                    $crate::test_suite::step_hooks::test_gadget_dft_apply_from_dft_rejects_invalid_operands,
+                gglwe_gadget_dft_apply_from_dft_rejects_invalid_operands =>
+                    $crate::test_suite::step_hooks::test_gglwe_gadget_dft_apply_from_dft_rejects_invalid_operands,
             }
         );
     };

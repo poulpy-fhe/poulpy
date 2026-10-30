@@ -1,7 +1,9 @@
 use poulpy_core::{
     TransferInto,
     api::{GLWESecretPreparedFactory, GLWESecretSampling, GLWESwitchingKeyPreparedFactory},
-    layouts::{Dnum, GGLWELayout, GGSWLayout, GLWESecret, GLWESwitchingKey, ModuleCoreAlloc, Rank, TorusPrecision},
+    layouts::{
+        Dnum, GGLWELayout, GGSWAlloc, GGSWLayout, GLWESecret, GLWESwitchingKey, GLWESwitchingKeyAlloc, Rank, TorusPrecision,
+    },
     test_suite::with_scratch,
 };
 use poulpy_hal::{

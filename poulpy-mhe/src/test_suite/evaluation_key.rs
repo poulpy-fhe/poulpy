@@ -5,8 +5,8 @@ use poulpy_core::{
     GGLWENoise,
     api::{GLWESecretPreparedFactory, GLWESecretSampling},
     layouts::{
-        Degree, GGLWELayout, GLWEAutomorphismKey, GLWEInfos, GLWESecret, GLWESecretLayout, GLWESecretPrepared, GLWESwitchingKey,
-        GLWESwitchingKeyDegrees, ModuleCoreAlloc, Rank,
+        Degree, GGLWELayout, GLWEAutomorphismKey, GLWEAutomorphismKeyAlloc, GLWEInfos, GLWESecret, GLWESecretAlloc,
+        GLWESecretLayout, GLWESecretPrepared, GLWESwitchingKey, GLWESwitchingKeyAlloc, GLWESwitchingKeyDegrees, Rank,
     },
     test_suite::with_scratch,
 };

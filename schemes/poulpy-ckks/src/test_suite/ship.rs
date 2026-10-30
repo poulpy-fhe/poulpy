@@ -8,7 +8,7 @@ use std::f64::consts::TAU;
 use poulpy_core::{
     GLWEZero, TransferInto,
     api::{GLWESecretPreparedFactory, GLWESwitchingKeyPreparedFactory},
-    layouts::{BackendGLWESecret, GGLWEInfos, LWEInfos, ModuleCoreAlloc, prepared::GLWESecretPrepared},
+    layouts::{BackendGLWESecret, GGLWEInfos, GLWESecretAlloc, LWEInfos, prepared::GLWESecretPrepared},
 };
 use poulpy_hal::{
     api::{CnvOps, CnvPVecAlloc, CnvPVecBytesOf, ReimNew, ScratchOwnedBorrow},

@@ -6,7 +6,8 @@ use poulpy_core::{
     GGSWEncryptSk, GLWEDecrypt, GLWEEncryptSk,
     api::{GGSWPreparedFactory, GLWESecretPreparedFactory},
     layouts::{
-        Base2K, Dnum, GGSWLayout, GLWE, GLWELayout, GLWEPlaintext, GLWESecretPrepared, ModuleCoreAlloc, Rank, TorusPrecision,
+        Base2K, Dnum, GGSWLayout, GLWE, GLWEAlloc, GLWELayout, GLWEPlaintext, GLWEPlaintextAlloc, GLWESecretPrepared, Rank,
+        TorusPrecision,
     },
 };
 use poulpy_hal::{

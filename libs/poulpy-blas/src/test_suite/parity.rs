@@ -35,7 +35,7 @@ use poulpy_ckks::{
     },
 };
 use poulpy_core::{
-    GLWEAdd, GLWEMaskFill, GLWENormalize,
+    GLWEAdd, GLWEFill, GLWENormalize,
     api::{GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory},
     layouts::{
         DiagonalArithmetic, GGLWELayout, GetAutomorphismKey, GetDegree, GetTensorKey, LWEInfos, TorusPrecision,
@@ -93,7 +93,7 @@ pub trait BlasParityModule<B: Backend, F: TestScalar + DiagonalArithmetic>:
     CKKSModuleAlloc<B>
     + CKKSModuleInfos
     + CyclotomicOrder
-    + GLWEMaskFill<B>
+    + GLWEFill<B>
     + GLWEAdd<B>
     + GLWEAutomorphismKeyPreparedFactory<B>
     + GLWETensorKeyPreparedFactory<B>
@@ -112,7 +112,7 @@ impl<B: Backend, F: TestScalar + DiagonalArithmetic, M> BlasParityModule<B, F> f
     M: CKKSModuleAlloc<B>
         + CKKSModuleInfos
         + CyclotomicOrder
-        + GLWEMaskFill<B>
+        + GLWEFill<B>
         + GLWEAdd<B>
         + GLWEAutomorphismKeyPreparedFactory<B>
         + GLWETensorKeyPreparedFactory<B>
@@ -204,7 +204,7 @@ fn grid_of<B: Backend<ZnxWord = i64>>(
     lazy: bool,
 ) -> BlasCiphertextOwned<B>
 where
-    Module<B>: GLWEMaskFill<B> + GLWEAdd<B>,
+    Module<B>: GLWEFill<B> + GLWEAdd<B>,
 {
     let blocks = (0..rows * cols)
         .map(|t| fixture_operand(module, la, seed + t as u8, lazy))
@@ -222,7 +222,7 @@ fn operand<B: Backend<ZnxWord = i64>>(
     seed: u8,
 ) -> BlasCiphertextOwned<B>
 where
-    Module<B>: GLWEMaskFill<B> + GLWEAdd<B>,
+    Module<B>: GLWEFill<B> + GLWEAdd<B>,
 {
     sized(params, module, log_d, rows, cols, width(params), seed)
 }
@@ -238,7 +238,7 @@ fn sized<B: Backend<ZnxWord = i64>>(
     seed: u8,
 ) -> BlasCiphertextOwned<B>
 where
-    Module<B>: GLWEMaskFill<B> + GLWEAdd<B>,
+    Module<B>: GLWEFill<B> + GLWEAdd<B>,
 {
     grid_of(
         module,
@@ -261,7 +261,7 @@ fn narrow<B: Backend<ZnxWord = i64>>(
     seed: u8,
 ) -> BlasCiphertextOwned<B>
 where
-    Module<B>: GLWEMaskFill<B> + GLWEAdd<B>,
+    Module<B>: GLWEFill<B> + GLWEAdd<B>,
 {
     grid_of(module, &layout_of_narrow(params), log_d, rows, cols, seed, false)
 }
@@ -285,7 +285,7 @@ fn lazy_real<B: Backend<ZnxWord = i64>>(
     seed: u8,
 ) -> BlasCiphertextOwned<B>
 where
-    Module<B>: GLWEMaskFill<B> + GLWEAdd<B> + CKKSModuleInfos,
+    Module<B>: GLWEFill<B> + GLWEAdd<B> + CKKSModuleInfos,
 {
     let la = block(params, width(params), one_slot(module, log_d).min(1), SlotsKind::Real);
     grid_of(module, &la, log_d, rows, cols, seed, true)
@@ -337,7 +337,7 @@ where
 fn fixture_keys<B>(params: CKKSTestParams, module: &Module<B>, elements: &[i64], tensor: bool) -> Recorded<B>
 where
     B: Backend<ZnxWord = i64>,
-    Module<B>: GLWEAutomorphismKeyPreparedFactory<B> + GLWETensorKeyPreparedFactory<B> + GLWEMaskFill<B>,
+    Module<B>: GLWEAutomorphismKeyPreparedFactory<B> + GLWETensorKeyPreparedFactory<B> + GLWEFill<B>,
 {
     let key = atk_layout(params);
     let keys = TestKeys {
@@ -781,7 +781,7 @@ fn product<B: BlasParityBackend>(
     k: usize,
 ) -> Output
 where
-    Module<B>: GLWEMaskFill<B> + GLWEAdd<B>,
+    Module<B>: GLWEFill<B> + GLWEAdd<B>,
 {
     let mut res = sized(params, module, a.log_d(), a.rows(), b.cols(), k, 126);
     let bytes = module.blas_matmul_tmp_bytes(&res, a, b, ctx, &tsk_layout(params), &atk_layout(params));
@@ -1181,7 +1181,7 @@ fn vector_of<B: Backend<ZnxWord = i64>>(
     lazy: bool,
 ) -> BlasVectorOwned<B>
 where
-    Module<B>: GLWEMaskFill<B> + GLWEAdd<B> + CKKSModuleInfos,
+    Module<B>: GLWEFill<B> + GLWEAdd<B> + CKKSModuleInfos,
 {
     let label = (module.ckks_max_slots() / period).ilog2() as usize;
     let slots = if lazy { SlotsKind::Real } else { SlotsKind::Complex };

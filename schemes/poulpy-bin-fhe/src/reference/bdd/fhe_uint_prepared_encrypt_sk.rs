@@ -26,7 +26,8 @@ pub fn fhe_uint_prepared_encrypt_sk_reference<T: UnsignedInteger + ToBits, BE: B
         + ModuleN
         + GGSWEncryptSk<BE>
         + GGSWPreparedFactory<BE>
-        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+        + GGSWAlloc,
 {
     assert!(module.n().is_multiple_of(T::BITS as usize));
     assert!(

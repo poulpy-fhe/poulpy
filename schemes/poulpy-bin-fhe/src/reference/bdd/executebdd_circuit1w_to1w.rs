@@ -18,7 +18,7 @@ where
     R: GLWEInfos,
     G: GGSWInfos,
     H: GetAutomorphismKey<BE>,
-    Module<BE>: ExecuteBDDCircuit<BE> + GLWEPacking<BE>,
+    Module<BE>: ExecuteBDDCircuit<BE> + GLWEPack<BE>,
 {
     let outputs = T::BITS as usize * module.glwe_bytes_of_from_infos(res_infos);
     let per_worker = poulpy_hal::execution::worker_scratch_bytes::<BE>(module.execute_bdd_circuit_tmp_bytes(
@@ -50,7 +50,7 @@ pub fn execute_bdd_circuit_1w_to_1w_multi_thread_reference<BE, C, H, T>(
     H: GetAutomorphismKey<BE>,
     BE: Backend<ZnxWord = i64>,
     Module<BE>: GLWEBytesOf<BE>,
-    Module<BE>: Sized + ModuleLogN + ExecuteBDDCircuit<BE> + GLWEPacking<BE> + GLWECopy<BE>,
+    Module<BE>: Sized + ModuleLogN + ExecuteBDDCircuit<BE> + GLWEPack<BE> + GLWECopy<BE>,
 {
     assert!(
         scratch.available()

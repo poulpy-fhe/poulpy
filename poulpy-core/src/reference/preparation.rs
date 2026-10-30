@@ -6,7 +6,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    GetDistribution, GetDistributionMut, ScratchArenaTakeCore,
+    GetDistribution, GetDistributionMut, ScratchArenaTakeGLWE,
     api::{GLWEBytesOf, GLWENormalize},
     layouts::{
         GGLWEInfos, GGLWEPreparedToBackendMut, GGLWEToBackendRef, GGLWEToGGSWKeyPreparedToBackendMut, GGLWEToGGSWKeyToBackendRef,

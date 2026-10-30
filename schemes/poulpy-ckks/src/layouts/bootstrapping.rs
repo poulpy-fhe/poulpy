@@ -28,7 +28,7 @@ use std::collections::BTreeMap;
 use crate::layouts::{CKKSPlaintext, CKKSPlaintextOwned};
 use anyhow::{Result, ensure};
 use poulpy_core::{
-    DiagonalProd, LinearTransformationPrepared,
+    GLWEDiagonalProd, LinearTransformationPrepared,
     layouts::{Base2K, Diagonals, GLWEToBackendRef, LWEInfos, LinearTransformation},
 };
 use poulpy_hal::layouts::{Backend, ConjugateInvariant, Module, ScratchArena};
@@ -935,7 +935,7 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
     pub fn prepare(self, module: &Module<BE>, scratch: &mut ScratchArena<'_, BE>) -> Result<BootstrappingContextPrepared<BE, F>>
     where
         Module<BE>: CKKSDFTOps<BE>,
-        CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE>,
+        CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + GLWEDiagonalProd<BE>,
     {
         let Self {
             plan,
@@ -1023,7 +1023,7 @@ where
     ) -> Result<Self>
     where
         Module<BE>: CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F> + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
-        CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE>,
+        CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + GLWEDiagonalProd<BE>,
     {
         Self::compile_unprepared(module, base2k, plan, scratch)?.prepare(module, scratch)
     }
@@ -1050,7 +1050,7 @@ where
         F: DftScalar,
         Module<BE>: CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F> + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
         Module<BCI>: CKKSModuleAlloc<BCI> + CKKSEncodingOps<BCI, F>,
-        CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE>,
+        CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + GLWEDiagonalProd<BE>,
     {
         Self::compile_ci_unprepared(module, ci, base2k, plan, scratch, scratch_ci)?.prepare(module, scratch)
     }

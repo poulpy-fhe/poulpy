@@ -70,7 +70,7 @@ pub(crate) fn mhe_glwe_public_key_share_finalize_derived<BE: HalMatZnxImpl + Enc
     );
     // Seeded masks are uniform digits, already canonical.
     for (l, seed) in seeds.iter().enumerate() {
-        BE::fill_glwe_mask_from_seed(module, &mut res.at_view_mut(l), *seed);
+        BE::glwe_fill_mask_from_seed(module, &mut res.at_view_mut(l), *seed);
     }
     *res.dist_mut() = dist;
     res.set_noise(share.noise());

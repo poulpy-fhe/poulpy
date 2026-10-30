@@ -2320,7 +2320,7 @@ pub fn test_blas_matmul_guards<BE, F, E>(
     // they meet the prepared product's validator at the first key it looks up: of a hot side's terms, or the tensor key.
     // Then that tensor key beside valid factors and `res`: both products meet it, the product past its rotation keys,
     // the prepared product past those of its hot sides. No case uses the tensor key, so an allocated key serves.
-    let rank_tsk = module.alloc_tensor_key_prepared_from_infos(&GLWETensorKeyLayout {
+    let rank_tsk = module.glwe_tensor_key_prepared_alloc_from_infos(&GLWETensorKeyLayout {
         rank: Rank(params.rank as u32 + 1),
         ..params.tsk_layout()
     });

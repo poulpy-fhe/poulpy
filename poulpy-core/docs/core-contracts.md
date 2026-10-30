@@ -23,7 +23,7 @@ A directly called reference helper checks its own budget; nested operations use 
 selected backend queries. An override can therefore reserve private workspace
 and pass the remaining arena to a helper.
 Trace, packing, gadget row operations and encryption wrappers reuse core
-operations this way. Polynomial evaluation composes caller-supplied `BSGSOps`:
+operations this way. Polynomial evaluation composes caller-supplied `GLWEBSGSOps`:
 the caller owns scheme arithmetic and precision, while the derived schedule
 chooses the order of those calls.
 
@@ -45,7 +45,7 @@ operand. Reference free functions remain independently callable. Tensor products
 normalize diagonal and pairwise products to full output limbs before subtraction,
 then round all tensor columns to the requested precision.
 
-Products of operands prepared once by `glwe_prepare_left` and `glwe_prepare_right`
+Products of operands prepared once by `glwe_left_operand_prepare` and `glwe_right_operand_prepare`
 are `GLWEPreparedTensoring` operations: `glwe_mul_prepared_relinearize_sum` and
 `glwe_tensor_apply_prepared` transform no operand and must give the unprepared
 products of the ciphertexts the operands were prepared from, bit for bit, whatever
@@ -92,7 +92,7 @@ The shared gadget-product and GLWE external-product algorithms need partial
 views of DFT limbs. They require `Backend::DFT_LIMBS_CONTIGUOUS = true`. A backend
 with another layout must provide its own `GGLWEProductDigitsStridedImpl` and
 `GLWEExternalProductImpl::glwe_external_product_dft` with its matching
-`glwe_external_product_internal_tmp_bytes` query. The public reference external
+`glwe_external_product_dft_tmp_bytes` query. The public reference external
 product calls these selected methods after any radix conversion, so it can be
 retained for another DFT layout. `GLWEExternalProductDftReference` exposes the
 contiguous-limb fallback without dispatching back to the override. Incompatible

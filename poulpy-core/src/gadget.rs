@@ -20,7 +20,7 @@ use crate::layouts::{
 /// Whole-limb digits read the input limbs. Other widths lay the input out as
 /// `ceil(k_digit / base2k)` sub-limbs per digit, for the digits it reaches and
 /// at most `dnum`.
-pub fn gadget_input_size(base2k: Base2K, k_digit: TorusPrecision, dnum: Dnum, a_k: TorusPrecision, a_size: usize) -> usize {
+pub fn gglwe_gadget_input_size(base2k: Base2K, k_digit: TorusPrecision, dnum: Dnum, a_k: TorusPrecision, a_size: usize) -> usize {
     if digits_aligned(base2k, k_digit) {
         a_size
     } else {
@@ -45,8 +45,8 @@ pub fn precision_limbs<'a, BE: Backend>(
     (live > 0).then(|| vec_znx_backend_ref_from_ref::<BE>(a).window_limbs(0, 1, live))
 }
 
-/// Scratch of [`gadget_dft_apply`]: none for whole-limb digits.
-pub fn gadget_dft_apply_tmp_bytes<BE, M>(
+/// Scratch of [`gglwe_gadget_dft_apply`]: none for whole-limb digits.
+pub fn gglwe_gadget_dft_apply_tmp_bytes<BE, M>(
     module: &M,
     base2k: Base2K,
     k_digit: TorusPrecision,
@@ -61,21 +61,21 @@ where
     if digits_aligned(base2k, k_digit) {
         0
     } else {
-        let size: usize = gadget_input_size(base2k, k_digit, dnum, a_k, a_size);
+        let size: usize = gglwe_gadget_input_size(base2k, k_digit, dnum, a_k, a_size);
         BE::scratch_aligned(BE::vec_znx_bytes_of(module.n(), 1, size)) + module.vec_znx_gadget_decompose_tmp_bytes()
     }
 }
 
 /// DFT of `a[a_col]`, at radix `base2k` and precision `a_k`, into `res[res_col]`
 /// as the operand of a gadget product with digits of `k_digit` bits; `res`
-/// holds at least [`gadget_input_size`] limbs.
+/// holds at least [`gglwe_gadget_input_size`] limbs.
 ///
 /// Whole-limb digits transform the input as is, exactly as before. Other
 /// widths first lay the limbs `a_k` covers ([`precision_limbs`]) out on
 /// the digit grid with `vec_znx_gadget_decompose`, rounded at the gadget
 /// precision.
 #[allow(clippy::too_many_arguments)]
-pub fn gadget_dft_apply<BE, M>(
+pub fn gglwe_gadget_dft_apply<BE, M>(
     module: &M,
     res: &mut VecZnxDftBackendMut<'_, BE>,
     res_col: usize,
@@ -94,7 +94,7 @@ pub fn gadget_dft_apply<BE, M>(
         module.vec_znx_dft_apply(1, 0, res, res_col, a, a_col);
         return;
     }
-    let size: usize = gadget_input_size(base2k, k_digit, dnum, a_k, a.size());
+    let size: usize = gglwe_gadget_input_size(base2k, k_digit, dnum, a_k, a.size());
     assert!(
         res.size() >= size,
         "gadget operand needs {size} limbs, res has {}",
@@ -236,7 +236,7 @@ pub fn normalize_input_limb_bound_with_offset(
 ///
 /// Unless the row lies within the precision, `k_offset + (row + 1) * k_digit <= k`.
 #[allow(clippy::too_many_arguments)]
-pub fn gadget_row_plaintext<BE>(
+pub fn gglwe_gadget_row_plaintext<BE>(
     module: &poulpy_hal::layouts::Module<BE>,
     res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, BE>,
     res_col: usize,
@@ -257,12 +257,12 @@ pub fn gadget_row_plaintext<BE>(
     BE::vec_znx_normalize(module, res, base2k, k, 1 - position as i64, res_col, &src, 1, pt_col, scratch);
 }
 
-/// Limbs of the gadget operand [`gadget_dft_apply_from_dft`] lays out for `key` from a source of
+/// Limbs of the gadget operand [`gglwe_gadget_dft_apply_from_dft`] lays out for `key` from a source of
 /// `a_size` limbs taken over `output_size`, at most `key.size()`.
-pub fn gadget_dft_operand_size<K: GGLWEInfos>(key: &K, a_size: usize, output_size: usize) -> usize {
+pub fn gglwe_gadget_dft_operand_size<K: GGLWEInfos>(key: &K, a_size: usize, output_size: usize) -> usize {
     let mask_small_size = a_size.min(output_size);
     let mask_k = TorusPrecision((mask_small_size * key.base2k().as_usize()) as u32);
-    gadget_input_size(key.base2k(), key.k_digit(), key.dnum(), mask_k, mask_small_size)
+    gglwe_gadget_input_size(key.base2k(), key.k_digit(), key.dnum(), mask_k, mask_small_size)
 }
 
 /// The gadget operand of `key` for the mask columns of the DFT source `a`, into the
@@ -270,7 +270,7 @@ pub fn gadget_dft_operand_size<K: GGLWEInfos>(key: &K, a_size: usize, output_siz
 /// `a.size().min(output_size)` limbs at radix `a_base2k`, then laid out in digits. The mask
 /// columns of `a` are unspecified afterwards. The operand of each source of
 /// [`GGLWEProductDigitsStridedImpl::gglwe_products_from_dft`](crate::oep::GGLWEProductDigitsStridedImpl::gglwe_products_from_dft).
-pub fn gadget_dft_apply_from_dft<BE, M>(
+pub fn gglwe_gadget_dft_apply_from_dft<BE, M>(
     module: &M,
     res: &mut VecZnxDftBackendMut<'_, BE>,
     a: &mut VecZnxDftBackendMut<'_, BE>,
@@ -291,11 +291,11 @@ pub fn gadget_dft_apply_from_dft<BE, M>(
     let key_base2k = key.base2k().as_usize();
     assert!(
         a_base2k == key_base2k,
-        "gadget_dft_apply_from_dft: the source's base2k differs from the key's"
+        "gglwe_gadget_dft_apply_from_dft: the source's base2k differs from the key's"
     );
     assert!(
-        scratch.available() >= gadget_dft_apply_from_dft_tmp_bytes::<BE, _, _>(module, a.size(), output_size, key),
-        "gadget_dft_apply_from_dft: scratch below its query"
+        scratch.available() >= gglwe_gadget_dft_apply_from_dft_tmp_bytes::<BE, _, _>(module, a.size(), output_size, key),
+        "gglwe_gadget_dft_apply_from_dft: scratch below its query"
     );
     let mask_small_size = a.size().min(output_size);
     let (k_digit, dnum) = (key.k_digit(), key.dnum());
@@ -314,7 +314,7 @@ pub fn gadget_dft_apply_from_dft<BE, M>(
             None,
             &mut scratch_1.borrow(),
         );
-        gadget_dft_apply(
+        gglwe_gadget_dft_apply(
             module,
             res,
             c,
@@ -329,9 +329,9 @@ pub fn gadget_dft_apply_from_dft<BE, M>(
     }
 }
 
-/// Scratch of [`gadget_dft_apply_from_dft`]: one normalized mask column beside its inverse
+/// Scratch of [`gglwe_gadget_dft_apply_from_dft`]: one normalized mask column beside its inverse
 /// transform and its gadget layout.
-pub fn gadget_dft_apply_from_dft_tmp_bytes<BE, M, K>(module: &M, a_size: usize, output_size: usize, key_infos: &K) -> usize
+pub fn gglwe_gadget_dft_apply_from_dft_tmp_bytes<BE, M, K>(module: &M, a_size: usize, output_size: usize, key_infos: &K) -> usize
 where
     BE: Backend,
     M: ModuleN + VecZnxIdftNormalizeTmpBytes + VecZnxGadgetDecomposeTmpBytes,
@@ -343,7 +343,7 @@ where
     BE::scratch_aligned(BE::vec_znx_bytes_of(module.n(), 1, mask_small_size))
         + module
             .vec_znx_idft_normalize_tmp_bytes(mask_small_size, a_size)
-            .max(gadget_dft_apply_tmp_bytes::<BE, _>(
+            .max(gglwe_gadget_dft_apply_tmp_bytes::<BE, _>(
                 module,
                 base2k,
                 k_digit,

@@ -7,7 +7,7 @@
 use crate::{FFT64Portable, hal_impl::delegating_backend::ProductStepsFFT64Portable as Probed};
 use poulpy_core::{
     layouts::{GGLWEInfos, prepared::GGLWEPreparedBackendRef},
-    reference::keyswitching::glwe as reference,
+    reference::keyswitching::GGLWEProductDigitsStridedReference,
     test_suite::parity::{ParityShapes, test_linear_transformation_powers_of_two_parity},
 };
 use poulpy_hal::{
@@ -46,7 +46,7 @@ poulpy_core::impl_ggsw_conversion_reference_full!(Probed);
 poulpy_core::impl_decryption_reference_full!(Probed);
 poulpy_core::impl_encryption_reference_full!(Probed);
 poulpy_core::impl_operations_reference_full!(Probed);
-poulpy_core::impl_polynomial_evaluation_derived_full!(Probed);
+poulpy_core::impl_glwe_polynomial_evaluation_derived_full!(Probed);
 poulpy_core::impl_preparation_reference_full!(Probed);
 poulpy_core::impl_secret_reference_full!(Probed);
 poulpy_core::impl_gglwe_external_product_derived_full!(Probed);
@@ -59,7 +59,7 @@ poulpy_core::impl_glwe_keyswitch_reference_full!(Probed);
 poulpy_core::impl_lwe_keyswitch_reference_full!(Probed);
 poulpy_core::impl_glwe_tensoring_reference_full!(Probed);
 poulpy_core::impl_glwe_trace_derived_full!(Probed);
-poulpy_core::impl_linear_transformation_reference_full!(Probed);
+poulpy_core::impl_glwe_linear_transformation_reference_full!(Probed);
 
 unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl for Probed {
     fn gglwe_product_digits_strided_tmp_bytes(
@@ -73,8 +73,7 @@ unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl for Probed {
         pmat_cols_out: usize,
         pmat_size: usize,
     ) -> usize {
-        reference::gglwe_product_digits_strided_tmp_bytes_reference(
-            module,
+        module.gglwe_product_digits_strided_tmp_bytes_reference(
             res_size,
             a_cols,
             a_size,
@@ -95,7 +94,7 @@ unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl for Probed {
         pmat: &VmpPMatBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        reference::gglwe_product_digits_strided_reference(module, res, a, dsize, product_limbs, pmat, scratch)
+        module.gglwe_product_digits_strided_reference(res, a, dsize, product_limbs, pmat, scratch)
     }
 
     fn gglwe_product_fused_tmp_bytes<K>(
@@ -108,7 +107,7 @@ unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl for Probed {
     where
         K: GGLWEInfos,
     {
-        EXTRA + reference::gglwe_product_fused_tmp_bytes_reference(module, res_size, product_size, a_size, key_infos)
+        EXTRA + module.gglwe_product_fused_tmp_bytes_reference(res_size, product_size, a_size, key_infos)
     }
 
     fn gglwe_product_fused(
@@ -123,7 +122,7 @@ unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl for Probed {
         accumulate: bool,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        reference::gglwe_product_fused_reference(module, res, product_size, a, key, term_count, addends, p, accumulate, scratch)
+        module.gglwe_product_fused_reference(res, product_size, a, key, term_count, addends, p, accumulate, scratch)
     }
 
     fn gglwe_products_from_dft_tmp_bytes<K>(
@@ -136,7 +135,7 @@ unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl for Probed {
     where
         K: GGLWEInfos,
     {
-        EXTRA + reference::gglwe_products_from_dft_tmp_bytes_reference(module, count, rank, source_size, key_infos)
+        EXTRA + module.gglwe_products_from_dft_tmp_bytes_reference(count, rank, source_size, key_infos)
     }
 
     fn gglwe_products_from_dft(
@@ -153,8 +152,7 @@ unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl for Probed {
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         probed(&PRODUCTS_FROM_DFT, scratch, |rest| {
-            reference::gglwe_products_from_dft_reference(
-                module,
+            module.gglwe_products_from_dft_reference(
                 p,
                 term_count,
                 res,
@@ -179,7 +177,7 @@ unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl for Probed {
     where
         K: GGLWEInfos,
     {
-        EXTRA + reference::gglwe_product_idft_normalize_tmp_bytes_reference(module, res_size, product_size, a_size, key_infos)
+        EXTRA + module.gglwe_product_idft_normalize_tmp_bytes_reference(res_size, product_size, a_size, key_infos)
     }
 
     fn gglwe_product_idft_normalize(
@@ -198,8 +196,8 @@ unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl for Probed {
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         probed(&PRODUCT_IDFT_NORMALIZE, scratch, |rest| {
-            reference::gglwe_product_idft_normalize_reference(
-                module, res, res_base2k, res_k, res_offset, res_dft, a, key, term_count, addends, body, a_base2k, rest,
+            module.gglwe_product_idft_normalize_reference(
+                res, res_base2k, res_k, res_offset, res_dft, a, key, term_count, addends, body, a_base2k, rest,
             )
         });
     }

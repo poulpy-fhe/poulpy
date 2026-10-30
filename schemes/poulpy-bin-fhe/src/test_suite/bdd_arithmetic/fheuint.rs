@@ -1,9 +1,11 @@
 use poulpy_core::{
-    GLWEAdd, GLWECopy, GLWEDecrypt, GLWEEncryptSk, GLWEKeyswitch, GLWENoise, GLWEPacking, GLWERotate, GLWESub, GLWETrace,
-    LWEDecrypt, LWEFillMask, LWEFromGLWE,
+    GLWEAdd, GLWECopy, GLWEDecrypt, GLWEEncryptSk, GLWEKeyswitch, GLWENoise, GLWEPack, GLWEPlaintextBytesOf, GLWERotate, GLWESub,
+    GLWETrace, LWEDecrypt, LWEFillMask, LWEFromGLWE,
     api::GLWESecretPreparedFactory,
+    layouts::GLWEPlaintextAlloc,
     layouts::{
-        GGLWEPreparedToBackendRef, GGSWLayout, GLWELayout, GLWESecretPrepared, LWE, LWEInfos, ModuleCoreAlloc, TorusPrecision,
+        GGLWEPreparedToBackendRef, GGSWLayout, GLWELayout, GLWESecretPrepared, LWE, LWEAlloc, LWEInfos, LWEPlaintextAlloc,
+        ModuleCoreAlloc, TorusPrecision,
     },
     test_suite::{noise::assert_glwe_flag_honest, with_scratch},
 };
@@ -30,7 +32,9 @@ type Uint<BE> = FheUint<<BE as Backend>::OwnedBuf, u32, i64>;
 pub(crate) fn decrypt_checked<BE, M, S>(module: &M, a: &Uint<BE>, sk: &S) -> u32
 where
     BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64> + HostBackend,
-    M: poulpy_core::GLWEBytesOf<BE>
+    M: GLWEPlaintextBytesOf<BE>
+        + GLWEPlaintextAlloc
+        + poulpy_core::GLWEBytesOf<BE>
         + poulpy_hal::api::ModuleLogN
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
         + GLWEDecrypt<BE>,
@@ -43,7 +47,9 @@ where
 fn encrypt<BE, M, S>(module: &M, a: &mut Uint<BE>, value: u32, sk: &S, source_xe: &mut Source, source_xa: &mut Source)
 where
     BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>,
-    M: poulpy_core::GLWEBytesOf<BE>
+    M: GLWEPlaintextBytesOf<BE>
+        + GLWEPlaintextAlloc
+        + poulpy_core::GLWEBytesOf<BE>
         + poulpy_hal::api::ModuleLogN
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
         + GLWEEncryptSk<BE>,
@@ -311,7 +317,9 @@ pub fn test_fhe_uint_get_bit_lwe<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = 
         + LWEFromGLWE<BE>
         + LWEDecrypt<BE>
         + LWEFillMask<BE>
-        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>
+        + LWEAlloc
+        + LWEPlaintextAlloc,
 {
     let module: &Module<BE> = &test_context.module;
     let sk: &GLWESecretPrepared<BE::OwnedBuf, BE> = &test_context.sk_glwe;
@@ -332,7 +340,7 @@ pub fn test_fhe_uint_get_bit_lwe<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = 
     let bytes = Uint::<BE>::get_bit_lwe_tmp_bytes(module, &lwe_infos, &a_enc, ks_glwe.as_ref(), &ks_lwe);
 
     let mut lwe: LWE<BE::OwnedBuf, BE::ZnxWord> = module.lwe_alloc_from_infos(&lwe_infos);
-    module.fill_lwe_mask_from_source(lwe_infos.base2k.as_usize(), &mut lwe, &mut source_xa);
+    module.lwe_fill_mask_from_source(lwe_infos.base2k.as_usize(), &mut lwe, &mut source_xa);
     let before = lwe.clone();
     assert_short_scratch_panics::<BE, _>(bytes, "get_bit_lwe: insufficient scratch", |s| {
         a_enc.get_bit_lwe(module, 0, &mut lwe, ks_glwe.as_ref(), &ks_lwe, s)
@@ -341,7 +349,7 @@ pub fn test_fhe_uint_get_bit_lwe<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = 
 
     let mut pt = module.lwe_plaintext_alloc_from_infos(&lwe_infos);
     for bit in [0usize, 1, 17, 31] {
-        module.fill_lwe_mask_from_source(lwe_infos.base2k.as_usize(), &mut lwe, &mut source_xa);
+        module.lwe_fill_mask_from_source(lwe_infos.base2k.as_usize(), &mut lwe, &mut source_xa);
         with_scratch::<BE, _>(bytes, |s| {
             a_enc.get_bit_lwe(module, bit, &mut lwe, ks_glwe.as_ref(), &ks_lwe, s)
         });
@@ -361,7 +369,7 @@ pub fn test_fhe_uint_from_fhe_uint_prepared<
     Module<BE>: GLWEEncryptSk<BE>
         + GLWEDecrypt<BE>
         + Cmux<BE>
-        + GLWEPacking<BE>
+        + GLWEPack<BE>
         + GLWECopy<BE>
         + FheUintPreparedEncryptSk<u32, BE>
         + FheUintPreparedFactory<u32, BE>

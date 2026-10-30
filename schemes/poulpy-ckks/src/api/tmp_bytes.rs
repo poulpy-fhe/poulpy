@@ -6,7 +6,7 @@ use crate::{
     },
 };
 use poulpy_core::{
-    GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWELinearTransformations, GLWEMulConst, GLWEMulPlain, GLWEShift,
+    GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWELinearTransformationOps, GLWEMulConst, GLWEMulPlain, GLWEShift,
     GLWETensorKeyEncryptSk, GLWETensoring,
     api::{GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory},
     layouts::{GGLWEInfos, LinearTransformationPlan},
@@ -65,7 +65,7 @@ where
         + GLWEAutomorphism<BE>
         + poulpy_core::GLWENormalize<BE>
         + GLWEAutomorphismKeyEncryptSk<BE>
-        + GLWELinearTransformations<BE>
+        + GLWELinearTransformationOps<BE>
         + GLWEAutomorphismKeyPreparedFactory<BE>
         + ModuleN
         + GLWEShift<BE>
@@ -140,8 +140,8 @@ where
         let diagonal = crate::api::ckks_plaintext_diagonal_layout(ct_infos);
         self.ckks_all_ops_tmp_bytes(ct_infos, pt_prec, tsk_infos)
             .max(self.ckks_rotate_tmp_bytes(ct_infos, atk_infos))
-            .max(self.glwe_eval_linear_transformation_tmp_bytes(ct_infos, ct_infos, &diagonal, &plan, tsk_infos, atk_infos))
-            .max(self.glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(
+            .max(self.glwe_linear_transformation_eval_tmp_bytes(ct_infos, ct_infos, &diagonal, &plan, tsk_infos, atk_infos))
+            .max(self.glwe_linear_transformation_eval_unprepared_rhs_tmp_bytes(
                 ct_infos, ct_infos, &diagonal, &plan, tsk_infos, atk_infos,
             ))
             .max(self.glwe_automorphism_key_encrypt_sk_tmp_bytes(atk_infos))

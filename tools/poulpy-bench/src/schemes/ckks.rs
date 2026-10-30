@@ -16,12 +16,12 @@ use poulpy_ckks::{
     layouts::{CKKSCiphertextOwned, CKKSEncodingBuffer, CKKSModuleAlloc},
 };
 use poulpy_core::{
-    GLWEMaskFill, GLWENormalize,
+    GLWEFill, GLWENormalize,
     api::{GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory},
     layouts::{
-        Base2K, Degree, Dnum, GLWEAutomorphismKeyLayout, GLWELayout, GLWETensorKeyLayout, LWEInfos, LinearTransformation,
-        LinearTransformationDiagonal, LinearTransformationGiantStep, LinearTransformationPlan, ModuleCoreAlloc, Rank,
-        SetGaloisElement, TorusPrecision, k_digit_of,
+        Base2K, Degree, Dnum, GLWEAutomorphismKeyAlloc, GLWEAutomorphismKeyLayout, GLWELayout, GLWETensorKeyAlloc,
+        GLWETensorKeyLayout, LWEInfos, LinearTransformation, LinearTransformationDiagonal, LinearTransformationGiantStep,
+        LinearTransformationPlan, ModuleCoreAlloc, Rank, SetGaloisElement, TorusPrecision, k_digit_of,
         prepared::{GLWEAutomorphismKeyPrepared, GLWETensorKeyPrepared},
     },
     test_suite::keys::fill_by_digit,
@@ -122,7 +122,7 @@ where
     ct_b.set_meta_checked(meta).unwrap();
     ct_dst.set_meta_checked(meta).unwrap();
 
-    let tsk = module.alloc_tensor_key_prepared_from_infos(&tsk_layout);
+    let tsk = module.glwe_tensor_key_prepared_alloc_from_infos(&tsk_layout);
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_mul_tmp_bytes(&ct_a, &ct_a, &ct_a, &tsk));
 
@@ -426,7 +426,7 @@ where
     ct_a.set_meta_checked(meta).unwrap();
     ct_dst.set_meta_checked(meta).unwrap();
 
-    let tsk = module.alloc_tensor_key_prepared_from_infos(&tsk_layout);
+    let tsk = module.glwe_tensor_key_prepared_alloc_from_infos(&tsk_layout);
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_square_tmp_bytes(&ct_a, &ct_a, &tsk));
 
@@ -611,7 +611,7 @@ fn ct_lt_operands<BE: Backend<ZnxWord = i64>>(
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
 )
 where
-    Module<BE>: GLWEMaskFill<BE>
+    Module<BE>: GLWEFill<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>
         + GLWEAutomorphismKeyPreparedFactory<BE>
         + GLWETensorKeyPreparedFactory<BE>,
@@ -622,7 +622,7 @@ where
     let mut source = Source::new([0u8; 32]);
     let ciphertext = |source: &mut Source| {
         let mut ct = module.ckks_ciphertext_alloc_from_glwe_infos(&ct_layout);
-        module.fill_glwe_from_source(&mut ct, source);
+        module.glwe_fill_from_source(&mut ct, source);
         ct.set_meta_checked(ckks_ct_meta(cp)).unwrap();
         ct
     };
@@ -674,7 +674,7 @@ where
         .collect();
     let mut tsk = module.glwe_tensor_key_alloc_from_infos(&tsk_layout);
     fill_by_digit(module, &mut tsk, 1, &mut source);
-    let mut tsk_prepared = module.alloc_tensor_key_prepared_from_infos(&tsk_layout);
+    let mut tsk_prepared = module.glwe_tensor_key_prepared_alloc_from_infos(&tsk_layout);
     module.glwe_tensor_key_prepare(&mut tsk_prepared, &tsk, &mut scratch.borrow());
     (src, lt, plan, atks, tsk_prepared)
 }
@@ -689,7 +689,7 @@ pub fn runner_ckks_eval_linear_transformation_into_ct<BE: Backend<ZnxWord = i64>
         + ModuleSynchronize<BE>
         + CKKSLinearTransformationOps<BE>
         + CnvPVecAlloc<BE>
-        + GLWEMaskFill<BE>
+        + GLWEFill<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>
         + GLWEAutomorphismKeyPreparedFactory<BE>
         + GLWETensorKeyPreparedFactory<BE>,
@@ -739,7 +739,7 @@ pub fn runner_ckks_eval_linear_transformation_into_ct_composed<BE: Backend<ZnxWo
         + CKKSRotateOps<BE>
         + CKKSAddOps<BE>
         + GLWENormalize<BE>
-        + GLWEMaskFill<BE>
+        + GLWEFill<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>
         + GLWEAutomorphismKeyPreparedFactory<BE>
         + GLWETensorKeyPreparedFactory<BE>,

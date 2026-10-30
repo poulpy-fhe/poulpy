@@ -1,6 +1,6 @@
 use poulpy_core::{
-    ComponentNoise, FreshNoiseEstimate, GGLWECompressedEncryptSk, GLWEBytesOf, GLWEEncryptSk, GLWEKeyswitch, GLWEMaskFill,
-    GLWENormalize, GetDistribution, ScratchArenaTakeCore,
+    ComponentNoise, FreshNoiseEstimate, GGLWECompressedEncryptSk, GLWEBytesOf, GLWEEncryptSk, GLWEFill, GLWEKeyswitch,
+    GLWENormalize, GetDistribution, ScratchArenaTakeGLWE, ScratchArenaTakeGLWEPlaintext,
     api::GLWESecretPreparedFactory,
     layouts::{
         GGLWECompressedSeed, GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWECompressedToBackendRef, GGLWEInfos,
@@ -66,7 +66,7 @@ where
         + GGLWECompressedEncryptSk<BE>
         + GLWEBytesOf<BE>
         + GLWEKeyswitch<BE>
-        + GLWEMaskFill<BE>
+        + GLWEFill<BE>
         + GLWENormalize<BE>
         + VecZnxAddAssign<BE>
         + VecZnxAddScalarAssign<BE>
@@ -168,14 +168,14 @@ where
                 circ_u.seed_mut().copy_from_slice(circ_s.seed());
                 for row in 0..dnum {
                     for i in 0..r {
-                        self.fill_glwe_mask_from_seed(&mut mask, circ_s.seed()[row * r + i]);
+                        self.glwe_fill_mask_from_seed(&mut mask, circ_s.seed()[row * r + i]);
                         for (l, col) in cols.iter_mut().enumerate() {
                             self.vec_znx_copy(col.data_mut(), i + 1, &vec_znx_backend_ref_from_mut::<BE>(mask.data()), l + 1);
                         }
                     }
                     for (l, col) in cols.iter_mut().enumerate() {
                         if l == j {
-                            poulpy_core::gadget_row_plaintext(
+                            poulpy_core::gglwe_gadget_row_plaintext(
                                 self,
                                 row_pt.data_mut(),
                                 0,
@@ -290,7 +290,7 @@ where
                     &mut scratch_1,
                 );
                 // Seeded masks are uniform digits, already canonical.
-                self.fill_glwe_mask_from_seed(&mut cell, share.col0.seed()[row]);
+                self.glwe_fill_mask_from_seed(&mut cell, share.col0.seed()[row]);
             }
         }
         // tmp's body stays zero; its masks are rewritten per entry.

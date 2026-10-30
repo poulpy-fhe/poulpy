@@ -12,11 +12,11 @@ use std::{
 };
 
 use anyhow::Result;
-use poulpy_core::ScratchArenaTakeCore;
 use poulpy_core::layouts::{
     BSGSMeta, Base2K, Degree, GLWE, GLWEInfos, GLWEPlaintextInfos, GLWEPlaintextMeta, GLWEToBackendMut, GLWEToBackendRef,
     GLWEViewMut, GLWEViewRef, LWEInfos, Rank, SetBSGSMeta, SetGLWEPlaintextInfos, SetK, TorusPrecision,
 };
+use poulpy_core::{ScratchArenaTakeGLWE, ScratchArenaTakeGLWEPlaintext};
 use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, Ring, ScratchArena, WriterTo, ZnxWord};
 
 use crate::{CKKSInfos, SetCKKSInfos, ckks_log_delta, error::CKKSCompositionError};
@@ -382,7 +382,9 @@ impl<BE: Backend> GLWEToBackendMut<BE> for CKKSCiphertextViewMut<'_, BE> {
 }
 
 /// CKKS layout carving helpers for backend-native scratch arenas.
-pub trait ScratchArenaTakeCKKS<'a, BE: Backend>: ScratchArenaTakeCore<'a, BE> + Sized {
+pub trait ScratchArenaTakeCKKS<'a, BE: Backend>:
+    ScratchArenaTakeGLWE<'a, BE> + ScratchArenaTakeGLWEPlaintext<'a, BE> + Sized
+{
     /// Carves a backend-resident scalar workspace for CKKS encoding.
     fn take_ckks_encoding_buffer_scratch<F>(self, len: usize) -> (CKKSEncodingBufferViewMut<'a, BE, F>, Self)
     where

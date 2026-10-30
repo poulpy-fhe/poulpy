@@ -24,7 +24,7 @@ use poulpy_ckks::{
     },
 };
 use poulpy_core::{
-    DiagonalProd,
+    GLWEDiagonalProd,
     layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LinearTransformationPlan},
 };
 use poulpy_hal::{
@@ -109,7 +109,7 @@ where
     M: CKKSLinearTransformationOps<BE>,
     D: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     S: GLWEToBackendRef<BE> + CKKSCtBounds + 's,
-    P: DiagonalProd<BE> + LtDiagonalMeta + 'm,
+    P: GLWEDiagonalProd<BE> + LtDiagonalMeta + 'm,
     K: GetAutomorphismKey<BE> + GetTensorKey<BE>,
 {
     let inner = caches.len();

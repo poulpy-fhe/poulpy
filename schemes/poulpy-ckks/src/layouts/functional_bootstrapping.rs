@@ -11,7 +11,7 @@ use anyhow::{Result, anyhow, ensure};
 use num_traits::{Float, FloatConst};
 use poulpy_core::api::TransferInto;
 use poulpy_core::layouts::Base2K;
-use poulpy_core::layouts::ModuleCoreAlloc;
+use poulpy_core::layouts::{GLWEPlaintextAlloc, ModuleCoreAlloc};
 use poulpy_hal::layouts::{Backend, HostBytesBackend, HostStaged, Module, Standard};
 
 use crate::{

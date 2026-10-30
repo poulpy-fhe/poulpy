@@ -7,7 +7,11 @@ use poulpy_hal::{
 };
 
 use super::{decryption::panic_message, poisoned_scratch};
-use crate::{GLWEEncryptSk, api::GLWESecretPreparedFactory, layouts::ModuleCoreAlloc};
+use crate::{
+    GLWEEncryptSk,
+    api::GLWESecretPreparedFactory,
+    layouts::{GLWEAlloc, GLWEPlaintextAlloc},
+};
 
 /// Secret-key encryption rejects mismatched operand degrees and degrees above the module in all builds.
 pub fn test_glwe_encrypt_degree_mismatch<BE: Backend>()
@@ -60,7 +64,7 @@ where
 /// bit, which for `k_digit = dsize * base2k` is the old limb placement. Where
 /// the vector fits an `i128`, the recomposed value is also checked exactly.
 /// The selected column is fully overwritten and the other is untouched.
-pub fn test_gadget_row_plaintext<BE: crate::test_suite::noise::TestBackend>(
+pub fn test_gglwe_gadget_row_plaintext<BE: crate::test_suite::noise::TestBackend>(
     params: &poulpy_hal::test_suite::TestParams,
     module: &Module<BE>,
 ) where
@@ -105,7 +109,7 @@ pub fn test_gadget_row_plaintext<BE: crate::test_suite::noise::TestBackend>(
                 };
                 let mut res = vec_znx_alloc_zeroed::<BE>(n, 2, size);
                 garbage(&mut res, 9);
-                crate::gadget::gadget_row_plaintext(
+                crate::gadget::gglwe_gadget_row_plaintext(
                     module,
                     &mut vec_znx_backend_mut::<BE>(&mut res),
                     res_col,

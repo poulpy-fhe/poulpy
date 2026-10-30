@@ -11,7 +11,7 @@ use crate::{
     oep::{CKKSDFTImpl, CKKSDFTMatrixImpl, CKKSEncodingImpl},
     test_suite::CKKSTestParams,
 };
-use poulpy_core::{GLWEMaskFill, api::GLWEAutomorphismKeyPreparedFactory, layouts::GLWELayout};
+use poulpy_core::{GLWEFill, api::GLWEAutomorphismKeyPreparedFactory, layouts::GLWELayout};
 use poulpy_hal::layouts::{Backend, CyclotomicOrder, Module};
 use std::collections::HashMap;
 
@@ -40,7 +40,7 @@ fn run<BE, F>(params: CKKSTestParams, module: &Module<BE>) -> Vec<Snapshot>
 where
     BE: Backend<ZnxWord = i64> + CKKSDFTImpl + CKKSDFTMatrixImpl<F> + CKKSEncodingImpl<F>,
     F: CKKSEncodingScalar,
-    Module<BE>: GLWEAutomorphismKeyPreparedFactory<BE> + GLWEMaskFill<BE>,
+    Module<BE>: GLWEAutomorphismKeyPreparedFactory<BE> + GLWEFill<BE>,
 {
     let b = params.base2k;
     let k = 8 * b + 7;
@@ -270,8 +270,8 @@ where
     BR: Backend<ZnxWord = i64> + CKKSDFTImpl + CKKSDFTMatrixImpl<F> + CKKSEncodingImpl<F>,
     BT: Backend<ZnxWord = i64> + CKKSDFTImpl + CKKSDFTMatrixImpl<F> + CKKSEncodingImpl<F>,
     F: CKKSEncodingScalar,
-    Module<BR>: GLWEAutomorphismKeyPreparedFactory<BR> + GLWEMaskFill<BR>,
-    Module<BT>: GLWEAutomorphismKeyPreparedFactory<BT> + GLWEMaskFill<BT>,
+    Module<BR>: GLWEAutomorphismKeyPreparedFactory<BR> + GLWEFill<BR>,
+    Module<BT>: GLWEAutomorphismKeyPreparedFactory<BT> + GLWEFill<BT>,
 {
     assert_eq!(module_ref.n(), module_test.n());
     let want = run::<BR, F>(params, module_ref);

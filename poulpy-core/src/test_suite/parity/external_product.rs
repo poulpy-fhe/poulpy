@@ -10,9 +10,9 @@ use poulpy_hal::{
 
 use crate::layouts::prepared::GGSWPreparedToBackendRef;
 use crate::{
-    GLWEExternalProduct, GLWEExternalProductInternal, GLWEMaskFill,
+    GLWEExternalProduct, GLWEExternalProductDft, GLWEFill,
     api::{GGSWPreparedFactory, TransferInto},
-    layouts::{Base2K, Degree, Dnum, GGSWAtViewMut, GGSWLayout, GLWELayout, ModuleCoreAlloc, Rank, TorusPrecision},
+    layouts::{Base2K, Degree, Dnum, GGSWAlloc, GGSWAtViewMut, GGSWLayout, GLWEAlloc, GLWELayout, Rank, TorusPrecision},
     test_suite::parity::{ParityBackend, ParityShapes, ref_glwe, unnormalized_twin, wide_twin},
 };
 
@@ -28,13 +28,13 @@ pub fn test_glwe_external_product_parity<BR, BT>(
     BR::OwnedBuf: HostDataMut,
     Module<BR>: GLWEExternalProduct<BR>
         + GGSWPreparedFactory<BR>
-        + GLWEExternalProductInternal<BR>
+        + GLWEExternalProductDft<BR>
         + VecZnxDftAlloc<BR>
         + VecZnxIdftNormalize<BR>
         + VecZnxIdftNormalizeTmpBytes,
     Module<BT>: GLWEExternalProduct<BT>
         + GGSWPreparedFactory<BT>
-        + GLWEExternalProductInternal<BT>
+        + GLWEExternalProductDft<BT>
         + VecZnxDftAlloc<BT>
         + VecZnxIdftNormalize<BT>
         + VecZnxIdftNormalizeTmpBytes,
@@ -76,7 +76,7 @@ pub fn test_glwe_external_product_parity<BR, BT>(
                 let mut ggsw_ref_coeffs = module_ref.ggsw_alloc_from_infos(&ggsw_infos);
                 for row in 0..ggsw_infos.dnum.as_usize() {
                     for col in 0..rank + 1 {
-                        module_ref.fill_glwe_from_source(&mut ggsw_ref_coeffs.at_view_mut(row, col), &mut source);
+                        module_ref.glwe_fill_from_source(&mut ggsw_ref_coeffs.at_view_mut(row, col), &mut source);
                     }
                 }
 
@@ -141,7 +141,7 @@ pub fn test_glwe_external_product_parity<BR, BT>(
                     ..a_infos
                 };
                 let mut wide_test = module_test.glwe_alloc_from_infos(&wide_infos);
-                module_test.fill_glwe_from_source(&mut wide_test, &mut source);
+                module_test.glwe_fill_from_source(&mut wide_test, &mut source);
                 wide_twin::<BR, BT>(&a_ref, &mut wide_test);
                 module_test.glwe_external_product(
                     &mut res_test,
@@ -167,7 +167,7 @@ pub fn test_glwe_external_product_parity<BR, BT>(
                     let mut dft=$module.vec_znx_dft_alloc(n as usize,rank+1,size);
                     let bytes=<$be as poulpy_hal::layouts::Backend>::len_bytes(&dft.data);
                     <$be as poulpy_hal::layouts::Backend>::copy_from_host(&mut dft.data,&vec![0x55;bytes]);
-                    $module.glwe_external_product_dft(&mut dft.to_backend_mut(),&$a,&$key.to_backend_ref(),&mut poisoned_scratch::<$be>($module.glwe_external_product_internal_tmp_bytes(&res_infos,&a_infos,&ggsw_infos)).borrow());
+                    $module.glwe_external_product_dft(&mut dft.to_backend_mut(),&$a,&$key.to_backend_ref(),&mut poisoned_scratch::<$be>($module.glwe_external_product_dft_tmp_bytes(&res_infos,&a_infos,&ggsw_infos)).borrow());
                     let mut normalized=$module.glwe_alloc_from_infos(&res_infos);
                     for col in 0..rank+1 {
                         let tmp=$module.vec_znx_idft_normalize_tmp_bytes(normalized.data.size(),size);
@@ -250,7 +250,7 @@ pub fn test_glwe_external_product_parity<BR, BT>(
         let mut ggsw_ref_coeffs = module_ref.ggsw_alloc_from_infos(&ggsw_infos);
         for row in 0..ggsw_infos.dnum.as_usize() {
             for col in 0..2 {
-                module_ref.fill_glwe_from_source(&mut ggsw_ref_coeffs.at_view_mut(row, col), &mut source);
+                module_ref.glwe_fill_from_source(&mut ggsw_ref_coeffs.at_view_mut(row, col), &mut source);
             }
         }
         let mut ggsw_test_coeffs = module_test.ggsw_alloc_from_infos(&ggsw_infos);

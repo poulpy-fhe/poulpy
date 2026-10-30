@@ -2,7 +2,7 @@
 
 use crate::{CKKSResult as Result, ckks_ensure_operand};
 use poulpy_core::{
-    gadget_dft_apply, gadget_dft_apply_tmp_bytes, gadget_input_size, gglwe_product_accumulation_output_size,
+    gglwe_gadget_dft_apply, gglwe_gadget_dft_apply_tmp_bytes, gglwe_gadget_input_size, gglwe_product_accumulation_output_size,
     layouts::{
         Base2K, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, TorusPrecision, digits_aligned,
         prepared::GGLWEPreparedToBackendRef,
@@ -42,8 +42,8 @@ where
     let a_size = ct.size();
     let output_size = gglwe_product_accumulation_output_size::<BE, _, _, _>(ct, ct, key, term_count);
     let (base2k, k_digit, dnum) = (key.base2k(), key.k_digit(), key.dnum());
-    let operand_size = gadget_input_size(base2k, k_digit, dnum, ct.k(), a_size);
-    let layout = gadget_dft_apply_tmp_bytes::<BE, _>(module, base2k, k_digit, dnum, ct.k(), a_size);
+    let operand_size = gglwe_gadget_input_size(base2k, k_digit, dnum, ct.k(), a_size);
+    let layout = gglwe_gadget_dft_apply_tmp_bytes::<BE, _>(module, base2k, k_digit, dnum, ct.k(), a_size);
     let product = module.gglwe_product_dft_tmp_bytes_reference(output_size, operand_size, key);
     let mux = 2 * module.vec_znx_dft_bytes_of(module.n(), 2, output_size) + product;
     let finalize = module.vec_znx_big_bytes_of(module.n(), 2, output_size)
@@ -127,7 +127,7 @@ where
     let base2k = ct.base2k().as_usize();
     let (k_digit, dnum) = (keys[0].key.k_digit(), keys[0].key.dnum());
     let key_base2k = keys[0].key.base2k();
-    let operand_size = gadget_input_size(key_base2k, k_digit, dnum, ct.k(), a_size);
+    let operand_size = gglwe_gadget_input_size(key_base2k, k_digit, dnum, ct.k(), a_size);
 
     let scratch = scratch.borrow();
     let (mut a_dft, mut scratch_1) = scratch.take_vec_znx_dft_scratch(module.n(), 2, operand_size);
@@ -136,7 +136,7 @@ where
         let mut a_dft_mut = a_dft.to_backend_mut();
         // The rank-2 input is (0, a_mask, a_body): the mask column then the body.
         for (res_col, a_col) in [(0, 1), (1, 0)] {
-            gadget_dft_apply(
+            gglwe_gadget_dft_apply(
                 module,
                 &mut a_dft_mut,
                 res_col,

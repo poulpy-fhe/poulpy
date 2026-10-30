@@ -10,7 +10,7 @@ pub fn bdd_key_encrypt_sk_tmp_bytes_reference<BRA: BlindRotationAlgo, BE: Backen
 where
     A: BDDKeyInfos,
     Module<BE>: CircuitBootstrappingKeyEncryptSk<BRA, BE>
-        + GLWEToLWESwitchingKeyEncryptSk<BE>
+        + GLWEToLWEKeyEncryptSk<BE>
         + GLWESwitchingKeyEncryptSk<BE>
         + GLWESecretSampling<BE>,
 {
@@ -40,7 +40,7 @@ pub fn bdd_key_encrypt_sk_reference<BRA: BlindRotationAlgo, BE: Backend<ZnxWord 
     S0: LWESecretToBackendRef<BE> + GetDistribution + LWEInfos,
     S1: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
     Module<BE>: CircuitBootstrappingKeyEncryptSk<BRA, BE>
-        + GLWEToLWESwitchingKeyEncryptSk<BE>
+        + GLWEToLWEKeyEncryptSk<BE>
         + GLWESwitchingKeyEncryptSk<BE>
         + GLWESecretSampling<BE>,
 {

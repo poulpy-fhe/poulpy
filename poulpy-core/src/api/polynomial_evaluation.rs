@@ -11,7 +11,7 @@ use crate::layouts::{BabyStep, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, Pa
 /// terms, the hoisted `ct×ct` giant-step multiply, the `ct+ct` add, the
 /// accumulator seed and the final copy) is supplied by the scheme through this
 /// trait, which owns all precision bookkeeping and normalization.
-pub trait BSGSOps<BE, V, P, A, R = V>
+pub trait GLWEBSGSOps<BE, V, P, A, R = V>
 where
     BE: Backend,
     V: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
@@ -113,7 +113,7 @@ pub trait GLWEPolynomialEvaluation<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Ops: BSGSOps<BE, V, P, A, V>,
+        Ops: GLWEBSGSOps<BE, V, P, A, V>,
         V: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
         P: GLWEToBackendRef<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE>,
@@ -130,7 +130,7 @@ pub trait GLWEPolynomialEvaluation<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Ops: BSGSOps<BE, V, P, A, R>,
+        Ops: GLWEBSGSOps<BE, V, P, A, R>,
         R: GLWEToBackendMut<BE>,
         B: BabyStep<BE, Value = V>,
         V: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,

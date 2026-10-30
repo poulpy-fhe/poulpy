@@ -42,7 +42,7 @@ The homomorphic DFT bridges the two: CoeffsToSlots moves the coefficients into t
 ## ModUp
 
 ModUp raises the ciphertext modulus from `q = 2^k_small` to the wider bootstrap modulus `2^k_large`.
-In the base-`2^K` representation this is a digit shift with no arithmetic: it MSB-aligns the source into the wide ciphertext (`glwe_copy`, leaving the new low-order limbs zero), then shifts the digits down (`glwe_rsh`).
+In the base-`2^K` representation this is a digit shift with no arithmetic: it MSB-aligns the source into the wide ciphertext (`glwe_copy`, leaving the new low-order limbs zero), then shifts the digits down (`glwe_rsh_assign`).
 The raised-from modulus `q` becomes an explicit, un-reduced multiple `I(X)·q` in the `[0, 2^k_large)` window, which EvalMod later removes.
 The shift stops `scale_up` bits short of the natural magnitude `k_large − k_small`, a lift fused into the raise: the value is multiplied by `2^scale_up` and `log_delta` grows by `scale_up`, so the message lands at the plan's working scale while the encoded value is unchanged.
 The headroom now spans the full raised modulus, so `log_budget = k_large − log_delta`.

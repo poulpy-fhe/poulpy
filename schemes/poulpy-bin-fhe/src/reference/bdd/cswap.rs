@@ -16,7 +16,7 @@ where
     Module<BE>: GLWEBytesOf<BE>
         + Sized
         + ModuleN
-        + GLWEExternalProductInternal<BE>
+        + GLWEExternalProductDft<BE>
         + GLWESub<BE>
         + GLWECopy<BE>
         + GLWENormalize<BE>
@@ -44,7 +44,7 @@ where
     let output_size = glwe_external_product_output_size::<BE, _, _, _>(res_a_infos, &tmp_c_infos, s_infos);
     let res_dft: usize = module.vec_znx_dft_bytes_of(module.n(), (s_infos.rank() + 1).into(), output_size);
     let mut tot = res_dft
-        + (module.glwe_external_product_internal_tmp_bytes(res_a_infos, &tmp_c_infos, s_infos)
+        + (module.glwe_external_product_dft_tmp_bytes(res_a_infos, &tmp_c_infos, s_infos)
             + module.glwe_bytes_of_from_infos(&tmp_c_infos))
         .max(module.vec_znx_big_normalize_tmp_bytes());
 
@@ -90,7 +90,7 @@ pub fn cswap_reference<BE, A, B>(
     Module<BE>: GLWEBytesOf<BE>
         + Sized
         + ModuleN
-        + GLWEExternalProductInternal<BE>
+        + GLWEExternalProductDft<BE>
         + GLWESub<BE>
         + GLWECopy<BE>
         + GLWENormalize<BE>

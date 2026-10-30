@@ -35,16 +35,18 @@ use crate::{
 };
 use num_traits::{Float, FromPrimitive, ToPrimitive};
 use poulpy_core::{
-    GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWECIKeyEncryptSk, GLWEDecrypt, GLWEKeyswitch, GLWEMaskFill, GLWENormalize,
-    GLWESub, GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk, ScratchArenaTakeCore, TransferInto,
+    GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWECIKeyEncryptSk, GLWEDecrypt, GLWEFill, GLWEKeyswitch, GLWENormalize,
+    GLWESub, GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk, TransferInto,
     api::{
         GLWEAutomorphismKeyPreparedFactory, GLWECIKeyPreparedFactory, GLWESecretPreparedFactory, GLWESwitchingKeyPreparedFactory,
         GLWETensorKeyPreparedFactory,
     },
     layouts::{
-        BackendGLWESecret, Base2K, Degree, GGLWEInfos, GLWEAutomorphismKeyPrepared, GLWECIEmbedKeyPrepared,
-        GLWECITraceKeyPrepared, GLWEInfos, GLWELayout, GLWESecretToBackendRef, GLWESwitchingKeyPrepared, GLWETensorKeyPrepared,
-        GetAutomorphismKey, GetTensorKey, LWEInfos, LinearTransformationPlan, ModuleCoreAlloc, Rank, TorusPrecision,
+        BackendGLWESecret, Base2K, Degree, GGLWEInfos, GLWEAutomorphismKeyAlloc, GLWEAutomorphismKeyPrepared,
+        GLWECIEmbedKeyAlloc, GLWECIEmbedKeyPrepared, GLWECITraceKeyAlloc, GLWECITraceKeyPrepared, GLWEInfos, GLWELayout,
+        GLWEPlaintextAlloc, GLWESecretAlloc, GLWESecretToBackendRef, GLWESwitchingKeyAlloc, GLWESwitchingKeyPrepared,
+        GLWETensorKeyAlloc, GLWETensorKeyPrepared, GetAutomorphismKey, GetTensorKey, LWEInfos, LinearTransformationPlan,
+        ModuleCoreAlloc, Rank, TorusPrecision,
         prepared::{GLWEAutomorphismKeyPreparedBackendRef, GLWESecretPrepared, GLWETensorKeyPreparedBackendRef},
     },
 };
@@ -164,7 +166,6 @@ pub trait TestContextBackend:
     Backend<OwnedBuf = AlignedBuf, ZnxWord = i64> + HostBackend + HostStaged + Send + Sync + 'static
 where
     ScratchOwned<Self>: ScratchOwnedAlloc<Self>,
-    for<'a> ScratchArena<'a, Self>: ScratchArenaTakeCore<'a, Self>,
 {
 }
 
@@ -199,7 +200,7 @@ pub trait TestContextSharedModule<BE: Backend>:
     + CKKSDotProductOps<BE>
     + GLWEAutomorphism<BE>
     + GLWEDecrypt<BE>
-    + GLWEMaskFill<BE>
+    + GLWEFill<BE>
     + GLWENormalize<BE>
     + GLWESub<BE>
     + GLWESecretPreparedFactory<BE>
@@ -239,7 +240,7 @@ impl<BE: Backend, M> TestContextSharedModule<BE> for M where
         + CKKSDotProductOps<BE>
         + GLWEAutomorphism<BE>
         + GLWEDecrypt<BE>
-        + GLWEMaskFill<BE>
+        + GLWEFill<BE>
         + GLWENormalize<BE>
         + GLWESub<BE>
         + GLWESecretPreparedFactory<BE>
@@ -552,7 +553,7 @@ pub(crate) fn dirty_ct<BE: Backend<ZnxWord = i64>>(
     k: usize,
 ) -> CKKSCiphertextOwned<BE>
 where
-    Module<BE>: GLWEMaskFill<BE>,
+    Module<BE>: GLWEFill<BE>,
 {
     let layout = CKKSLayout {
         glwe_layout: GLWELayout {
@@ -754,7 +755,7 @@ where
     let mut xe = Source::new(next_test_seed(2));
     let mut tsk = module.glwe_tensor_key_alloc_from_infos(&tsk_infos);
     module.glwe_tensor_key_encrypt_sk(&mut tsk, sk_raw, &mut xe, &mut xa, scratch);
-    let mut tsk_prepared = module.alloc_tensor_key_prepared_from_infos(&tsk_infos);
+    let mut tsk_prepared = module.glwe_tensor_key_prepared_alloc_from_infos(&tsk_infos);
     module.glwe_tensor_key_prepare(&mut tsk_prepared, &tsk, scratch);
     tsk_prepared
 }

@@ -1,7 +1,10 @@
 use poulpy_core::{
     TransferInto,
     api::{GLWEPublicKeyPreparedFactory, GLWESecretPreparedFactory, GLWESecretSampling},
-    layouts::{Dnum, Dsize, GLWEPublicKey, GLWESecret, GLWETensorKeyLayout, LWEInfos, ModuleCoreAlloc, TorusPrecision},
+    layouts::{
+        Dnum, Dsize, GLWEPublicKey, GLWEPublicKeyAlloc, GLWESecret, GLWETensorKeyAlloc, GLWETensorKeyLayout, LWEInfos,
+        TorusPrecision,
+    },
     test_suite::with_scratch,
 };
 use poulpy_hal::{layouts::Module, source::Source};

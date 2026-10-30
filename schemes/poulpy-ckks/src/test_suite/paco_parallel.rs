@@ -18,7 +18,10 @@ use std::collections::HashMap;
 use poulpy_core::{
     GLWERotate, TransferInto,
     api::GLWESecretPreparedFactory,
-    layouts::{GLWEInfos, GLWELayout, LWEInfos, ModuleCoreAlloc, Rank},
+    layouts::{
+        GLWEAutomorphismKeyAlloc, GLWEInfos, GLWELayout, GLWESecretAlloc, GLWESwitchingKeyAlloc, GLWETensorKeyAlloc, LWEInfos,
+        Rank,
+    },
 };
 use poulpy_hal::{
     api::{CnvPVecAlloc, ReimNew, ScratchOwnedAlloc, ScratchOwnedBorrow},

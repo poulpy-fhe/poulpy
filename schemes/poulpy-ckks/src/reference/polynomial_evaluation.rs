@@ -3,7 +3,7 @@ use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{BSGSMeta, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, SetBSGSMeta};
 use poulpy_core::oep::{ConstTerm, GLWEMulConstImpl};
-use poulpy_core::{BSGSOps, GLWEPolynomialEvaluation, GLWEZero};
+use poulpy_core::{GLWEBSGSOps, GLWEPolynomialEvaluation, GLWEZero};
 use poulpy_hal::{
     api::{CnvOps, VecZnxBigNormalize, VecZnxRsh, VecZnxRshTmpBytes},
     layouts::{Backend, Data, Module, PrepareHint, Ring, ScratchArena, ZnxWord, vec_znx_backend_ref_from_ref},
@@ -53,7 +53,7 @@ where
 /// has no single existing API equivalent.
 struct CKKSBSGSOps;
 
-impl<BE: Backend, V, P, A, R> BSGSOps<BE, V, P, A, R> for CKKSBSGSOps
+impl<BE: Backend, V, P, A, R> GLWEBSGSOps<BE, V, P, A, R> for CKKSBSGSOps
 where
     BE: GLWEMulConstImpl,
     Module<BE>: CKKSAddOps<BE> + CKKSMulOps<BE> + CKKSMulAddOps<BE> + CKKSCopyOps<BE> + GLWEZero<BE>,

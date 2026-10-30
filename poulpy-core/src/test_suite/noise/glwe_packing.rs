@@ -12,10 +12,11 @@ use crate::api::GLWESecretSampling;
 use crate::test_suite::noise::glwe_noise_checked;
 use crate::test_suite::poisoned_scratch;
 use crate::{
-    GLWEAutomorphismKeyEncryptSk, GLWEDecrypt, GLWEEncryptSk, GLWENoise, GLWEPacking, GLWERotate, GLWESub,
+    GLWEAutomorphismKeyEncryptSk, GLWEDecrypt, GLWEEncryptSk, GLWENoise, GLWEPack, GLWERotate, GLWESub,
     api::{GLWEAutomorphismKeyPreparedFactory, GLWESecretPreparedFactory},
     layouts::{
-        GLWE, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWELayout, GLWEPlaintext, GLWESecret, ModuleCoreAlloc,
+        GLWE, GLWEAlloc, GLWEAutomorphismKey, GLWEAutomorphismKeyAlloc, GLWEAutomorphismKeyLayout, GLWELayout, GLWEPlaintext,
+        GLWEPlaintextAlloc, GLWESecret, GLWESecretAlloc,
         prepared::{GLWEAutomorphismKeyPrepared, GLWESecretPrepared},
     },
 };
@@ -30,7 +31,7 @@ pub fn test_glwe_packing<BE: crate::test_suite::noise::TestBackend + crate::oep:
     Module<BE>: GLWEEncryptSk<BE>
         + GLWEAutomorphismKeyEncryptSk<BE>
         + GLWEAutomorphismKeyPreparedFactory<BE>
-        + GLWEPacking<BE>
+        + GLWEPack<BE>
         + GLWESecretPreparedFactory<BE>
         + GLWESub<BE>
         + GLWEDecrypt<BE>

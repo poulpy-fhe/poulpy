@@ -22,8 +22,8 @@ use crate::{
     encryption::DEFAULT_SIGMA_XE,
     gadget::gglwe_product_accumulation_output_size,
     layouts::{
-        GGLWEInfos, GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESwitchingKey, GLWESwitchingKeyLayout, LWEInfos,
-        ModuleCoreAlloc, TorusPrecision,
+        GGLWEInfos, GLWE, GLWEAlloc, GLWELayout, GLWEPlaintext, GLWEPlaintextAlloc, GLWESecret, GLWESecretAlloc,
+        GLWESwitchingKey, GLWESwitchingKeyAlloc, GLWESwitchingKeyLayout, LWEInfos, TorusPrecision,
         prepared::{GGLWEPreparedToBackendRef, GLWESecretPrepared, GLWESwitchingKeyPrepared},
     },
     noise::GGLWENoiseModel,
@@ -55,7 +55,7 @@ fn cases(base2k: usize, k_in: usize) -> Vec<Case> {
 }
 
 /// A switch with an offset key equals the input lowered by `k_offset` bits with
-/// `glwe_rsh` and switched with an offset-free key: both read the input digits as
+/// `glwe_rsh_assign` and switched with an offset-free key: both read the input digits as
 /// balanced integers, so their phases differ only by the two keys' noise.
 pub fn test_glwe_keyswitch_row_offset<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
@@ -193,7 +193,7 @@ where
             &glwe_in,
             &mut poisoned_scratch::<BE>(module.glwe_copy_tmp_bytes(&wide_infos, &in_infos)).borrow(),
         );
-        module.glwe_rsh(
+        module.glwe_rsh_assign(
             k_offset,
             &mut glwe_wide,
             &mut poisoned_scratch::<BE>(module.glwe_shift_tmp_bytes(wide_infos.size())).borrow(),

@@ -98,14 +98,14 @@ once, at setup (**saving #8**).
 and a plaintext-shape proxy (one `CnvPVecR(1, pt_size)` per real diagonal), recording the
 diagonals' `pt_base2k` / `pt_k` so the evaluator never needs the raw transform again.
 
-`glwe_prepare_linear_transformation_rhs_reference` then fills each pre-allocated slot with
+`glwe_linear_transformation_rhs_prepare_reference` then fills each pre-allocated slot with
 `cnv_prepare_right(plaintext)`. Zero allocations happen here; it only populates. The
 diagonals are expected pre-encoded (and pre-rotated `ũ_{j,k} = rot(u_{n1·j+k}, −n1·j)`) by
 the CKKS layer — the core engine is scheme-agnostic.
 
 ### 3.2 LHS — baby rotations → `CnvPVecL` ([`baby_steps.rs`](../../poulpy-core/src/reference/linear_transformation/baby_steps.rs), Phase A)
 
-`glwe_prepare_linear_transformation_baby_steps` materializes `rot(v,k)` for every baby `k` in the
+`glwe_linear_transformation_baby_steps_prepare` materializes `rot(v,k)` for every baby `k` in the
 cache. This is **Phase A** of the spec, and it carries three savings:
 
 - **Saving #3 (free identity).** `k == 0` skips the key-switch and automorphism entirely:
@@ -200,7 +200,7 @@ this final normalize.
 | Saving (spec §8) | Implementation site |
 |---|---|
 | #1 BSGS `O(√\|I\|)` | `linear_transformation_plan` + `optimal_bsgs_giant_step` |
-| #2 Hoisting | `glwe_prepare_linear_transformation_baby_steps` (`a_dft` computed once) |
+| #2 Hoisting | `glwe_linear_transformation_baby_steps_prepare` (`a_dft` computed once) |
 | #3 Free identities | `rot == 0` branches in baby_steps.rs **and** giant_steps.rs |
 | #4 Lazy normalize across giants | DFT accumulator + single final normalize (lazy.rs) |
 | #5 Lazy normalize inside PROD | DFT accumulation in inner_product.rs |
@@ -214,15 +214,15 @@ this final normalize.
 ## 5. Public entry points + scratch ([`eval.rs`](../../poulpy-core/src/reference/linear_transformation/eval.rs))
 
 These `*_reference` free functions are what a backend forwards to from its
-`crate::oep::LinearTransformationImpl` impl (via `impl_linear_transformation_reference_full!`):
+`crate::oep::GLWELinearTransformationImpl` impl (via `impl_glwe_linear_transformation_reference_full!`):
 
 | Function | Does |
 |---|---|
-| `glwe_prepare_linear_transformation_rhs_reference` | Setup §3.1 (prepare.rs). |
-| `glwe_prepare_linear_transformation_baby_steps_reference` | Setup §3.2 / Phase A (baby_steps.rs). |
-| `glwe_eval_linear_transformation_into_reference` | Prepared eval (§4): `assert_linear_transformation_into`, then `glwe_eval_giant_steps`. |
-| `glwe_eval_linear_transformation_into_reference` with unprepared diagonals | Streamed eval (§6). |
-| `glwe_eval_linear_transformation_sum_into_reference` | `Σ_t M_t·v_t` over prepared transforms sharing one giant schedule, checks the terms, then `glwe_eval_giant_steps` sums each giant's PROD over them in DFT before its one rotation. |
+| `glwe_linear_transformation_rhs_prepare_reference` | Setup §3.1 (prepare.rs). |
+| `glwe_linear_transformation_baby_steps_prepare_reference` | Setup §3.2 / Phase A (baby_steps.rs). |
+| `glwe_linear_transformation_eval_into_reference` | Prepared eval (§4): `assert_linear_transformation_into`, then `glwe_eval_giant_steps`. |
+| `glwe_linear_transformation_eval_into_reference` with unprepared diagonals | Streamed eval (§6). |
+| `glwe_linear_transformation_eval_sum_into_reference` | `Σ_t M_t·v_t` over prepared transforms sharing one giant schedule, checks the terms, then `glwe_eval_giant_steps` sums each giant's PROD over them in DFT before its one rotation. |
 | `*_tmp_bytes_reference` siblings | Scratch sizing. |
 
 **Scratch sizing.** The `*_tmp_bytes` functions follow the additive-layout pattern of

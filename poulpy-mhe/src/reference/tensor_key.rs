@@ -1,5 +1,5 @@
 use poulpy_core::{
-    Distribution, GLWEEncryptPk, GetDistribution, ScratchArenaTakeCore,
+    Distribution, GLWEEncryptPk, GLWEPlaintextBytesOf, GetDistribution, ScratchArenaTakeGLWEPlaintext,
     api::GLWEBytesOf,
     layouts::{GGLWEInfos, GGLWEToBackendMut, GLWEInfos, GLWEPublicKeyPreparedToBackendRef, GLWESecretToBackendRef, LWEInfos},
 };
@@ -108,7 +108,7 @@ where
             for row in 0..dnum {
                 for a in 0..rank {
                     for b in a..rank {
-                        poulpy_core::gadget_row_plaintext(
+                        poulpy_core::gglwe_gadget_row_plaintext(
                             self,
                             pt.data_mut(),
                             0,

@@ -34,7 +34,8 @@
 //! ## Scratch-space allocation
 //!
 //! Arithmetic operations accept a [`poulpy_hal::layouts::ScratchArena`] for
-//! their temporary backend storage, allocated via [`ScratchArenaTakeCore`].
+//! their temporary backend storage, allocated via the per-object
+//! `ScratchArenaTake*` traits ([`ScratchArenaTakeGLWE`], ...).
 //! The corresponding `*_tmp_bytes` query advertises the required arena capacity.
 //! Higher-level planning and polynomial-evaluation policies can own collections
 //! and allocate separately; the arena contract does not prohibit those allocations.
@@ -95,7 +96,7 @@ pub use dist::*;
 pub use error::{CoreError, Result};
 pub use fresh_noise_model::{PublicKeyBodyNoise, public_key_encryption_noise, public_key_sample_precision};
 pub use gadget::*;
-pub use layouts::DiagonalProd;
+pub use layouts::GLWEDiagonalProd;
 pub use noise_distribution::Noise;
 pub use reference::encryption::*;
 pub use reference::linear_transformation::*;

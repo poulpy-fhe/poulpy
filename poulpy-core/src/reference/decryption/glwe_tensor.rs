@@ -9,7 +9,7 @@ use poulpy_hal::{
 
 use crate::layouts::operand_degree;
 use crate::{
-    ScratchArenaTakeCore,
+    ScratchArenaTakeGLWESecretPrepared,
     api::GLWESecretPreparedFactory,
     decryption::{glwe::glwe_decrypt_body_tmp_bytes, glwe_decrypt_backend_inner},
     layouts::{

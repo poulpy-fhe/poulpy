@@ -23,7 +23,7 @@ use crate::{
     test_suite::CKKSTestParams,
 };
 use poulpy_core::{
-    DiagonalProd, GLWEAdd, GLWEMaskFill,
+    GLWEAdd, GLWEDiagonalProd, GLWEFill,
     api::{GGLWEPreparedFactory, GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory},
     layouts::{
         GGLWEInfos, GGLWELayout, GGLWEPrepared, GLWEAutomorphismKeyPrepared, GLWELayout, GLWETensorKeyPrepared, GLWEToBackendRef,
@@ -36,7 +36,7 @@ use poulpy_hal::layouts::{Backend, CyclotomicOrder, HostBytesBackend, HostStaged
 fn run<BE>(params: CKKSTestParams, module: &Module<BE>) -> Vec<(Result<(), String>, Snapshot, Snapshot)>
 where
     BE: Backend<ZnxWord = i64> + CKKSEncapsulatedModUpImpl,
-    Module<BE>: GGLWEPreparedFactory<BE> + GLWEMaskFill<BE> + GLWEAdd<BE>,
+    Module<BE>: GGLWEPreparedFactory<BE> + GLWEFill<BE> + GLWEAdd<BE>,
 {
     let b = params.base2k;
     let small = 3 * b + 1;
@@ -222,8 +222,8 @@ pub fn test_encapsulated_mod_up_parity<BR, BT, F>(params: CKKSTestParams, module
 where
     BR: Backend<ZnxWord = i64> + CKKSEncapsulatedModUpImpl,
     BT: Backend<ZnxWord = i64> + CKKSEncapsulatedModUpImpl,
-    Module<BR>: GGLWEPreparedFactory<BR> + GLWEMaskFill<BR> + GLWEAdd<BR>,
-    Module<BT>: GGLWEPreparedFactory<BT> + GLWEMaskFill<BT> + GLWEAdd<BT>,
+    Module<BR>: GGLWEPreparedFactory<BR> + GLWEFill<BR> + GLWEAdd<BR>,
+    Module<BT>: GGLWEPreparedFactory<BT> + GLWEFill<BT> + GLWEAdd<BT>,
 {
     assert_eq!(module_ref.n(), module_test.n());
     let want = run(params, module_ref);
@@ -370,7 +370,7 @@ where
     Module<BE>: GLWEAutomorphismKeyPreparedFactory<BE>
         + GLWETensorKeyPreparedFactory<BE>
         + GGLWEPreparedFactory<BE>
-        + GLWEMaskFill<BE>
+        + GLWEFill<BE>
         + CyclotomicOrder,
 {
     let rotation_keys = plan
@@ -403,9 +403,9 @@ where
         + GLWEAutomorphismKeyPreparedFactory<BE>
         + GLWETensorKeyPreparedFactory<BE>
         + GGLWEPreparedFactory<BE>
-        + GLWEMaskFill<BE>
+        + GLWEFill<BE>
         + CyclotomicOrder,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE>,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + GLWEDiagonalProd<BE>,
     FixtureKeys<BE>: BootstrappingKeys<BE> + Sync,
     <FixtureKeys<BE> as BootstrappingKeys<BE>>::TensorKey: Sync,
 {
@@ -527,7 +527,7 @@ where
         + GLWEAutomorphismKeyPreparedFactory<BR>
         + GLWETensorKeyPreparedFactory<BR>
         + GGLWEPreparedFactory<BR>
-        + GLWEMaskFill<BR>
+        + GLWEFill<BR>
         + CyclotomicOrder,
     Module<BT>: CKKSDFTOps<BT>
         + CKKSDFTMatrixOps<BT, F>
@@ -538,10 +538,10 @@ where
         + GLWEAutomorphismKeyPreparedFactory<BT>
         + GLWETensorKeyPreparedFactory<BT>
         + GGLWEPreparedFactory<BT>
-        + GLWEMaskFill<BT>
+        + GLWEFill<BT>
         + CyclotomicOrder,
-    CKKSPlaintextOwned<BR>: GLWEToBackendRef<BR> + CKKSCtBounds + DiagonalProd<BR>,
-    CKKSPlaintextOwned<BT>: GLWEToBackendRef<BT> + CKKSCtBounds + DiagonalProd<BT>,
+    CKKSPlaintextOwned<BR>: GLWEToBackendRef<BR> + CKKSCtBounds + GLWEDiagonalProd<BR>,
+    CKKSPlaintextOwned<BT>: GLWEToBackendRef<BT> + CKKSCtBounds + GLWEDiagonalProd<BT>,
     FixtureKeys<BR>: BootstrappingKeys<BR> + Sync,
     <FixtureKeys<BR> as BootstrappingKeys<BR>>::TensorKey: Sync,
     FixtureKeys<BT>: BootstrappingKeys<BT> + Sync,

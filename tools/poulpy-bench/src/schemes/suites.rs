@@ -11,7 +11,7 @@ use poulpy_ckks::api::{
     CKKSPow2Ops, CKKSRotateOps, CKKSSubOps,
 };
 use poulpy_core::{
-    GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, GLWEMaskFill, GLWENormalize, LWEEncryptSk, LWEFillMask,
+    GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, GLWEFill, GLWENormalize, LWEEncryptSk, LWEFillMask,
     api::{
         GGLWEToGGSWKeyPreparedFactory, GGSWPreparedFactory, GLWEAutomorphismKeyPreparedFactory, GLWESecretPreparedFactory,
         GLWESecretSampling, GLWETensorKeyPreparedFactory, LWESecretSampling,
@@ -203,7 +203,7 @@ where
         + CKKSAddOps<BE>
         + GLWENormalize<BE>
         + CnvPVecAlloc<BE>
-        + GLWEMaskFill<BE>
+        + GLWEFill<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>
         + GLWEAutomorphismKeyPreparedFactory<BE>
         + GLWETensorKeyPreparedFactory<BE>,
@@ -276,7 +276,7 @@ where
         + CKKSDotProductOps<BE>
         + GLWENormalize<BE>
         + CnvPVecAlloc<BE>
-        + GLWEMaskFill<BE>
+        + GLWEFill<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -312,7 +312,7 @@ where
         + GLWESecretPreparedFactory<BE>
         + GLWEDecrypt<BE>
         + LWEEncryptSk<BE>
-        + GLWEMaskFill<BE>
+        + GLWEFill<BE>
         + LWEFillMask<BE>
         + GLWESecretSampling<BE>
         + LWESecretSampling<BE>,
@@ -435,7 +435,7 @@ where
         + GLWESecretPreparedFactory<BE>
         + GLWEDecrypt<BE>
         + LWEEncryptSk<BE>
-        + GLWEMaskFill<BE>
+        + GLWEFill<BE>
         + LWEFillMask<BE>
         + GLWESecretSampling<BE>
         + LWESecretSampling<BE>
@@ -488,7 +488,7 @@ where
         + CKKSDotProductOps<BE>
         + GLWENormalize<BE>
         + CnvPVecAlloc<BE>
-        + GLWEMaskFill<BE>
+        + GLWEFill<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -513,7 +513,7 @@ where
         + GLWESecretPreparedFactory<BE>
         + GLWEDecrypt<BE>
         + LWEEncryptSk<BE>
-        + GLWEMaskFill<BE>
+        + GLWEFill<BE>
         + LWEFillMask<BE>
         + GLWESecretSampling<BE>
         + LWESecretSampling<BE>

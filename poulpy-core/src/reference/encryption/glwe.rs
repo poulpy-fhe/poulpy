@@ -16,7 +16,7 @@ use poulpy_hal::{
 
 use crate::layouts::operand_degree;
 use crate::{
-    GLWEMaskFill, GetDistribution, Noise, ScalarZnxFillDistribution, VecZnxAddNoise, VecZnxBigAddNoise,
+    GLWEFill, GetDistribution, Noise, ScalarZnxFillDistribution, VecZnxAddNoise, VecZnxBigAddNoise,
     dist::Distribution,
     layouts::{
         GLWEBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, TorusPrecision,
@@ -27,21 +27,21 @@ use crate::{
 /// Portable implementation using HAL operations.
 ///
 /// Backend implementations may call this helper without changing their override selection.
-pub trait GLWEMaskFillReference<BE: Backend> {
-    fn fill_glwe_mask_from_source_reference<R>(&self, res: &mut R, source_xa: &mut Source)
+pub trait GLWEFillReference<BE: Backend> {
+    fn glwe_fill_mask_from_source_reference<R>(&self, res: &mut R, source_xa: &mut Source)
     where
         R: GLWEToBackendMut<BE>;
 
-    fn fill_glwe_from_source_reference<R>(&self, res: &mut R, source: &mut Source)
+    fn glwe_fill_from_source_reference<R>(&self, res: &mut R, source: &mut Source)
     where
         R: GLWEToBackendMut<BE>;
 }
 
-impl<BE: Backend> GLWEMaskFillReference<BE> for Module<BE>
+impl<BE: Backend> GLWEFillReference<BE> for Module<BE>
 where
     Self: VecZnxFillUniformSource<BE>,
 {
-    fn fill_glwe_mask_from_source_reference<R>(&self, res: &mut R, source_xa: &mut Source)
+    fn glwe_fill_mask_from_source_reference<R>(&self, res: &mut R, source_xa: &mut Source)
     where
         R: GLWEToBackendMut<BE>,
     {
@@ -52,7 +52,7 @@ where
         }
     }
 
-    fn fill_glwe_from_source_reference<R>(&self, res: &mut R, source: &mut Source)
+    fn glwe_fill_from_source_reference<R>(&self, res: &mut R, source: &mut Source)
     where
         R: GLWEToBackendMut<BE>,
     {
@@ -118,7 +118,7 @@ where
         + VecZnxBigNormalizeTmpBytes
         + VecZnxIdftApplyTmpBytes
         + VecZnxDftBytesOf
-        + GLWEMaskFill<BE>
+        + GLWEFill<BE>
         + GLWEEncryptSkInternal<BE>,
 {
     fn glwe_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
@@ -176,7 +176,7 @@ where
 
             {
                 let mut res_ref = &mut *res;
-                self.fill_glwe_mask_from_source(&mut res_ref, source_xa);
+                self.glwe_fill_mask_from_source(&mut res_ref, source_xa);
             }
             self.glwe_encrypt_sk_internal(
                 res.base2k().into(),
@@ -224,7 +224,7 @@ where
 
             {
                 let mut res_ref = &mut *res;
-                self.fill_glwe_mask_from_source(&mut res_ref, source_xa);
+                self.glwe_fill_mask_from_source(&mut res_ref, source_xa);
             }
             self.glwe_encrypt_sk_internal(
                 res.base2k().into(),

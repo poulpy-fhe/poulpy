@@ -5,9 +5,9 @@
 //! the backend API, and checks scheduling independently of CKKS arithmetic.
 
 use crate::{
-    BSGSOps, GLWEPolynomialEvaluation,
+    GLWEBSGSOps, GLWEPolynomialEvaluation,
     layouts::{
-        BSGSMeta, BabyStep, BackendGLWE, Base2K, Basis, Degree, GLWEBackendMut, GLWEBackendRef, GLWEInfos, GLWELayout,
+        BSGSMeta, BabyStep, BackendGLWE, Base2K, Basis, Degree, GLWEAlloc, GLWEBackendMut, GLWEBackendRef, GLWEInfos, GLWELayout,
         GLWETensorKeyPreparedBackendRef, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey, LWEInfos, ModuleCoreAlloc, Parity,
         PowerBasis, Rank, SetBSGSMeta, TorusPrecision,
     },
@@ -138,7 +138,7 @@ struct ExactOps {
     prepare_calls: Cell<usize>,
     fail: bool,
 }
-impl<BE: Backend> BSGSOps<BE, Value<BE>, Value<BE>, Value<BE>> for ExactOps {
+impl<BE: Backend> GLWEBSGSOps<BE, Value<BE>, Value<BE>, Value<BE>> for ExactOps {
     type Prepared = (i64, usize);
     fn init_accumulator(
         &self,

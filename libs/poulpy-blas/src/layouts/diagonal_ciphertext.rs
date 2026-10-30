@@ -11,7 +11,7 @@ use poulpy_ckks::{
     layouts::{CKKSCiphertextOwned, CKKSModuleAlloc},
 };
 use poulpy_core::{
-    DiagonalProd, GLWEBytesOf,
+    GLWEBytesOf, GLWEDiagonalProd,
     layouts::{GLWEInfos, GetDegree, LWEInfos},
 };
 use poulpy_hal::layouts::{PrepareHint, galois_elements_from_rotations};
@@ -124,7 +124,7 @@ impl<BE: Backend> BlasDiagonalCiphertextPrepared<BE> {
 /// (resident), with the same bits.
 pub trait BlasDiagonalCiphertextMap<BE: Backend>: BlasDiagonalCiphertextInfos + Sync {
     /// The form of a diagonal.
-    type Diagonal: DiagonalProd<BE> + LtDiagonalMeta + Sync;
+    type Diagonal: GLWEDiagonalProd<BE> + LtDiagonalMeta + Sync;
 
     /// Whether the diagonals are ciphertexts a product prepares at each use.
     const STREAMED: bool;
@@ -135,7 +135,7 @@ pub trait BlasDiagonalCiphertextMap<BE: Backend>: BlasDiagonalCiphertextInfos + 
 
 impl<BE: Backend> BlasDiagonalCiphertextMap<BE> for BlasDiagonalCiphertext<BE>
 where
-    CKKSCiphertextOwned<BE>: DiagonalProd<BE> + Sync,
+    CKKSCiphertextOwned<BE>: GLWEDiagonalProd<BE> + Sync,
 {
     type Diagonal = CKKSCiphertextOwned<BE>;
     const STREAMED: bool = true;

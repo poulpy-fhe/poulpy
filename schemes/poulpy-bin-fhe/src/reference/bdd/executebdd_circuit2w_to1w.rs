@@ -38,7 +38,7 @@ where
     R: GLWEInfos,
     G: GGSWInfos,
     H: GetAutomorphismKey<BE>,
-    Module<BE>: Sized + GLWEBytesOf<BE> + ModuleLogN + ExecuteBDDCircuit<BE> + GLWEPacking<BE> + GLWECopy<BE>,
+    Module<BE>: Sized + GLWEBytesOf<BE> + ModuleLogN + ExecuteBDDCircuit<BE> + GLWEPack<BE> + GLWECopy<BE>,
 {
     let glwe_slot_bytes = T::BITS as usize * module.glwe_bytes_of_from_infos(res_infos);
     let bdd_per_thread = poulpy_hal::execution::worker_scratch_bytes::<BE>(module.execute_bdd_circuit_tmp_bytes(
@@ -71,7 +71,7 @@ pub fn execute_bdd_circuit_2w_to_1w_multi_thread_reference<BE, C, H, T>(
     C: GetBitCircuitInfo,
     H: GetAutomorphismKey<BE>,
     BE: Backend<ZnxWord = i64>,
-    Module<BE>: Sized + GLWEBytesOf<BE> + ModuleLogN + ExecuteBDDCircuit<BE> + GLWEPacking<BE> + GLWECopy<BE>,
+    Module<BE>: Sized + GLWEBytesOf<BE> + ModuleLogN + ExecuteBDDCircuit<BE> + GLWEPack<BE> + GLWECopy<BE>,
 {
     // Collects inputs into a single array
     let inputs: Vec<&dyn GetGGSWBit<BE>> = [a as &dyn GetGGSWBit<BE>, b as &dyn GetGGSWBit<BE>].to_vec();

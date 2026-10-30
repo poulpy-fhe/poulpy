@@ -14,7 +14,7 @@ use crate::layouts::{
 pub unsafe trait GLWEExternalProductImpl: Backend {
     /// Scratch bound of [`Self::glwe_external_product_dft`]; may report less than the reference, never less than the
     /// body takes.
-    fn glwe_external_product_internal_tmp_bytes<R, A, B>(module: &Module<Self>, res_infos: &R, a_infos: &A, b_infos: &B) -> usize
+    fn glwe_external_product_dft_tmp_bytes<R, A, B>(module: &Module<Self>, res_infos: &R, a_infos: &A, b_infos: &B) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
@@ -23,7 +23,7 @@ pub unsafe trait GLWEExternalProductImpl: Backend {
     /// Reproduces
     /// [`glwe_external_product_dft_reference`](crate::reference::external_product::glwe::GLWEExternalProductDftReference::glwe_external_product_dft_reference)
     /// in the integers under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
-    /// [`Self::glwe_external_product_internal_tmp_bytes`]: after inverse transform and rounding its output is bit for
+    /// [`Self::glwe_external_product_dft_tmp_bytes`]: after inverse transform and rounding its output is bit for
     /// bit the reference's, whatever the DFT representation; free in kernels and scratch use.
     ///
     /// It fills the full DFT output at the key radix, normalizing a noncanonical input whose radix must match the
@@ -187,7 +187,7 @@ pub unsafe trait GGSWExternalProductImpl: Backend + GLWEExternalProductImpl + cr
 macro_rules! impl_glwe_external_product_reference_full {
     ($be:ty) => {
         unsafe impl $crate::oep::GLWEExternalProductImpl for $be {
-            fn glwe_external_product_internal_tmp_bytes<R, A, B>(
+            fn glwe_external_product_dft_tmp_bytes<R, A, B>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 res_infos: &R,
                 a_infos: &A,
@@ -198,7 +198,7 @@ macro_rules! impl_glwe_external_product_reference_full {
                 A: $crate::layouts::GLWEInfos,
                 B: $crate::layouts::GGSWInfos,
             {
-                $crate::reference::external_product::glwe::GLWEExternalProductDftReference::glwe_external_product_internal_tmp_bytes_reference(
+                $crate::reference::external_product::glwe::GLWEExternalProductDftReference::glwe_external_product_dft_tmp_bytes_reference(
                     module, res_infos, a_infos, b_infos,
                 )
             }
@@ -228,7 +228,7 @@ macro_rules! impl_glwe_external_product_reference_full {
                 A: $crate::layouts::GLWEInfos,
                 B: $crate::layouts::GGSWInfos,
             {
-                $crate::reference::external_product::glwe::glwe_external_product_tmp_bytes_reference::<$be, _, _, _, _>(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::external_product::GLWEExternalProductReference<$be>>::glwe_external_product_tmp_bytes_reference(
                     module, res_infos, a_infos, b_infos,
                 )
             }
@@ -243,7 +243,7 @@ macro_rules! impl_glwe_external_product_reference_full {
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
                 A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
             {
-                $crate::reference::external_product::glwe::glwe_external_product_reference::<$be, _, _, _>(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::external_product::GLWEExternalProductReference<$be>>::glwe_external_product_reference(
                     module, res, lhs, rhs, scratch,
                 )
             }
@@ -256,7 +256,7 @@ macro_rules! impl_glwe_external_product_reference_full {
             ) where
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
             {
-                $crate::reference::external_product::glwe::glwe_external_product_assign_reference::<$be, _, _>(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::external_product::GLWEExternalProductReference<$be>>::glwe_external_product_assign_reference(
                     module, res, a, scratch,
                 )
             }

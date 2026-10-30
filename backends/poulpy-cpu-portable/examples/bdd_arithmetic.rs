@@ -16,8 +16,8 @@ use poulpy_core::{
         GLWESwitchingKeyPreparedFactory, GLWEToLWEKeyPreparedFactory,
     },
     layouts::{
-        Base2K, Degree, Dnum, GGLWEToGGSWKeyLayout, GGSWLayout, GLWEAutomorphismKeyLayout, GLWELayout, GLWESwitchingKeyLayout,
-        GLWEToLWEKeyLayout, ModuleCoreAlloc, Rank, TorusPrecision,
+        Base2K, Degree, Dnum, GGLWEToGGSWKeyLayout, GGSWLayout, GLWEAutomorphismKeyLayout, GLWELayout, GLWESecretAlloc,
+        GLWESwitchingKeyLayout, GLWEToLWEKeyLayout, LWESecretAlloc, Rank, TorusPrecision,
     },
 };
 use poulpy_hal::{

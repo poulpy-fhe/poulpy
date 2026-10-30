@@ -188,7 +188,7 @@ where
                 BE::len_bytes(p.data.data())
             );
             let source = m.glwe_secret_tensor_alloc_from_infos(&plain);
-            m.glwe_secret_tensor_prepared_prepare(&mut prepared, &source);
+            m.glwe_secret_tensor_prepare(&mut prepared, &source);
             let mut prepared = check!(
                 gglwe_prepared_alloc,
                 gglwe_prepared_alloc_from_infos,
@@ -240,7 +240,7 @@ where
             let mut prepared = check!(
                 glwe_switching_key_prepared_alloc,
                 glwe_switching_key_prepared_alloc_from_infos,
-                bytes_of_glwe_key_prepared,
+                glwe_switching_key_prepared_bytes_of,
                 glwe_switching_key_prepared_bytes_of_from_infos,
                 gadget,
                 [b, dn, crate::layouts::k_digit_of(b, ds), aux, rank, rank],
@@ -254,10 +254,10 @@ where
                 &mut poisoned_scratch::<BE>(m.glwe_switching_key_prepare_tmp_bytes(&source)).borrow(),
             );
             let mut prepared = check!(
-                alloc_tensor_key_prepared,
-                alloc_tensor_key_prepared_from_infos,
-                bytes_of_tensor_key_prepared,
-                bytes_of_tensor_key_prepared_from_infos,
+                glwe_tensor_key_prepared_alloc,
+                glwe_tensor_key_prepared_alloc_from_infos,
+                glwe_tensor_key_prepared_bytes_of,
+                glwe_tensor_key_prepared_bytes_of_from_infos,
                 tensor_infos,
                 [b, dn, crate::layouts::k_digit_of(b, ds), aux, rank],
                 p,
@@ -329,8 +329,8 @@ where
             let mut prepared = check!(
                 gglwe_to_ggsw_key_prepared_alloc,
                 gglwe_to_ggsw_key_prepared_alloc_from_infos,
-                bytes_of_gglwe_to_ggsw,
-                bytes_of_gglwe_to_ggsw_from_infos,
+                gglwe_to_ggsw_key_prepared_bytes_of,
+                gglwe_to_ggsw_key_prepared_bytes_of_from_infos,
                 gadget,
                 [b, dn, crate::layouts::k_digit_of(b, ds), aux, rank],
                 p,

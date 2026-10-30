@@ -9,7 +9,7 @@ use crate::{
 };
 use poulpy_core::GGSWNoise;
 
-use poulpy_core::layouts::{Base2K, Dnum, ModuleCoreAlloc, Rank, TorusPrecision};
+use poulpy_core::layouts::{Base2K, Dnum, GGSWAlloc, LWEAlloc, ModuleCoreAlloc, Rank, TorusPrecision};
 use poulpy_core::layouts::{GGSW, GLWESecretPreparedToBackendRef, LWE};
 use poulpy_core::{
     GLWEKeyswitch, LWEFromGLWE,
@@ -43,7 +43,7 @@ pub struct FheUintPreparedDebug<D: Data, T: UnsignedInteger, W: ZnxWord> {
 impl<D: Data, T: UnsignedInteger, W: ZnxWord> FheUintPreparedDebug<D, T, W> {
     pub fn alloc_from_infos<A, M>(module: &M, infos: &A) -> Self
     where
-        M: ModuleN + ModuleCoreAlloc<OwnedBuf = D, ZnxWord = W>,
+        M: GGSWAlloc + ModuleN + ModuleCoreAlloc<OwnedBuf = D, ZnxWord = W>,
         A: GGSWInfos,
     {
         Self::alloc(
@@ -58,7 +58,7 @@ impl<D: Data, T: UnsignedInteger, W: ZnxWord> FheUintPreparedDebug<D, T, W> {
 
     pub fn alloc<M>(module: &M, base2k: Base2K, dnum: Dnum, k_digit: TorusPrecision, k_aux: TorusPrecision, rank: Rank) -> Self
     where
-        M: ModuleN + ModuleCoreAlloc<OwnedBuf = D, ZnxWord = W>,
+        M: ModuleN + ModuleCoreAlloc<OwnedBuf = D, ZnxWord = W> + GGSWAlloc,
     {
         Self {
             bits: (0..T::BITS)

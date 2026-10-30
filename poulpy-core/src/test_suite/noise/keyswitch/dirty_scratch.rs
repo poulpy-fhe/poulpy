@@ -25,8 +25,8 @@ use crate::{
     GGSWEncryptSk, GLWEEncryptSk, GLWEExternalProduct, GLWEKeyswitch, GLWESwitchingKeyEncryptSk,
     api::{GGSWPreparedFactory, GLWESecretPreparedFactory, GLWESwitchingKeyPreparedFactory},
     layouts::{
-        GGSW, GGSWLayout, GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESwitchingKey, GLWESwitchingKeyLayout, LWEInfos,
-        ModuleCoreAlloc,
+        GGSW, GGSWAlloc, GGSWLayout, GLWE, GLWEAlloc, GLWELayout, GLWEPlaintext, GLWEPlaintextAlloc, GLWESecret, GLWESecretAlloc,
+        GLWESwitchingKey, GLWESwitchingKeyAlloc, GLWESwitchingKeyLayout, LWEInfos,
         prepared::{GGSWPrepared, GLWESecretPrepared, GLWESwitchingKeyPrepared},
     },
 };
