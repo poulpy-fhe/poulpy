@@ -17,7 +17,7 @@ use poulpy_hal::layouts::{Backend, galois_elements_from_rotations};
 use super::{
     BlasGridInfos,
     ciphertext::grid_batch_at,
-    encoding::{DiagonalShape, Encoded, Scheduled, real_map, shape},
+    encoding::{DiagonalShape, Encoded, Scheduled, real_map, ring_slots, shape},
     maps,
 };
 
@@ -215,7 +215,7 @@ impl BlasPlan {
 
     /// The slot count of a ring of cyclotomic order `cyclotomic_order`, if a block fits it.
     fn slots(&self, cyclotomic_order: i64) -> Option<usize> {
-        let slots = usize::try_from(cyclotomic_order / 4).ok().filter(|&slots| slots > 0)?;
+        let slots = ring_slots(cyclotomic_order).filter(|&slots| slots > 0)?;
         (self.log_d <= slots.ilog2() as usize / 2).then_some(slots)
     }
 
@@ -760,7 +760,7 @@ where
 /// Galois elements `blas_sum` needs on a grid of layout `infos` on a ring of `cyclotomic_order`: at its recorded batch,
 /// or for a layout without one the batch its label proves; none when one block does not fit the slots.
 pub fn sum_galois_elements(cyclotomic_order: i64, infos: &impl BlasGridInfos) -> Vec<i64> {
-    let slots = usize::try_from(cyclotomic_order / 4).unwrap_or(0);
+    let slots = ring_slots(cyclotomic_order).unwrap_or(0);
     galois_elements_from_rotations(sum_rotations(infos.log_d(), grid_batch_at(slots, infos)), cyclotomic_order)
 }
 

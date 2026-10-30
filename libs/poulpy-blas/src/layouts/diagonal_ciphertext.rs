@@ -17,7 +17,7 @@ use poulpy_core::{
 use poulpy_hal::layouts::{PrepareHint, galois_elements_from_rotations};
 use std::collections::BTreeSet;
 
-use super::encoding::{DiagonalShape, skeleton};
+use super::encoding::{DiagonalShape, ring_slots, skeleton};
 use poulpy_hal::{
     api::{CnvPVecAlloc, CnvPVecBytesOf},
     layouts::Backend,
@@ -222,7 +222,7 @@ pub(crate) fn shape(layout: &BlasDiagonalCiphertextLayout) -> LinearTransformati
 /// the matrix's.
 pub fn matvec_diagonal_galois_elements(cyclotomic_order: i64, infos: &impl BlasDiagonalCiphertextInfos) -> Vec<i64> {
     let layout = infos.blas_diagonal_ciphertext_layout();
-    if usize::try_from(cyclotomic_order / 4).ok() != Some(layout.lt.slots) {
+    if ring_slots(cyclotomic_order) != Some(layout.lt.slots) {
         return Vec::new();
     }
     layout.lt.galois_elements(cyclotomic_order)
@@ -244,7 +244,7 @@ pub fn append_col_diagonal_galois_elements(cyclotomic_order: i64, infos: &impl B
 
 fn append_galois_elements(cyclotomic_order: i64, infos: &impl BlasDiagonalCiphertextInfos, axis: AppendAxis) -> Vec<i64> {
     let layout = infos.blas_diagonal_ciphertext_layout();
-    if usize::try_from(cyclotomic_order / 4).ok() != Some(layout.lt.slots) {
+    if ring_slots(cyclotomic_order) != Some(layout.lt.slots) {
         return Vec::new();
     }
     let slots = layout.lt.slots as i64;

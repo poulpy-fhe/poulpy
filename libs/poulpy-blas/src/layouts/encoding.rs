@@ -32,6 +32,11 @@ pub(crate) struct Scheduled<F> {
     meta: CoeffsMeta,
 }
 
+/// The slot count of a ring of cyclotomic order `cyclotomic_order`.
+pub(crate) fn ring_slots(cyclotomic_order: i64) -> Option<usize> {
+    usize::try_from(cyclotomic_order / 4).ok()
+}
+
 /// `diagonals` with an empty imaginary part, its slots marked real, scheduled by `strategy` and encoded at `meta`.
 pub(crate) fn real_map<F>(diagonals: Diagonals<F>, strategy: LinearTransformationStrategy, mut meta: CoeffsMeta) -> Scheduled<F> {
     let im = Diagonals::new(diagonals.slots());

@@ -1315,6 +1315,15 @@ pub fn test_blas_matvec_diagonal_guards<BE, F, E>(
         product("no rotation key", MissingKey, &mut res, &m, &a, &empty);
     }
     product("no tensor key", MissingTensorKey, &mut res, &m, &a, &no_tensor);
+    let mut empty_res = alloc_vector(&params, module, whole, 0);
+    let empty_bytes = module.blas_matvec_diagonal_tmp_bytes(&empty_res, &m, &a, &params.tsk_layout(), &params.atk_layout());
+    assert_vector_guard::<BE>(
+        "a res of no width",
+        "ckks_eval_linear_transformation_into",
+        Budget,
+        &mut empty_res,
+        |res| with_scratch::<BE, _>(empty_bytes, |s| module.blas_matvec_diagonal(res, &m, &a, &keys, s)),
+    );
     // The resident form runs the same validator; its preparation refuses another layout.
     let mut prepared = prepared_of(module, &m);
     let resident_bytes = module.blas_matvec_diagonal_tmp_bytes(&res, &prepared, &a, &params.tsk_layout(), &params.atk_layout());
@@ -1329,6 +1338,15 @@ pub fn test_blas_matvec_diagonal_guards<BE, F, E>(
             with_scratch::<BE, _>(resident_bytes, |s| module.blas_matvec_diagonal(res, &prepared, &a, keys, s))
         });
     }
+    let empty_bytes =
+        module.blas_matvec_diagonal_tmp_bytes(&empty_res, &prepared, &a, &params.tsk_layout(), &params.atk_layout());
+    assert_vector_guard::<BE>(
+        "resident, a res of no width",
+        "ckks_eval_linear_transformation_into",
+        Budget,
+        &mut empty_res,
+        |res| with_scratch::<BE, _>(empty_bytes, |s| module.blas_matvec_diagonal(res, &prepared, &a, &keys, s)),
+    );
     let other = diagonal_ciphertext_with(&layout, vec![0, 1], LinearTransformationStrategy::Direct);
     let m_other = module.blas_diagonal_ciphertext_alloc_from_infos(&other);
     assert_panics("a preparation into another layout", "another layout", || {

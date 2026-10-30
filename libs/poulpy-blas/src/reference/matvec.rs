@@ -5,7 +5,7 @@ use poulpy_ckks::{
 };
 use poulpy_core::{
     GLWEBytesOf,
-    layouts::{GGLWEInfos, GGLWELayout, GLWEInfos, GetAutomorphismKey, GetTensorKey, LWEInfos},
+    layouts::{GGLWEInfos, GGLWELayout, GLWEInfos, GetAutomorphismKey, GetTensorKey},
 };
 use poulpy_hal::{
     api::{CnvPVecAlloc, ModuleN},
@@ -350,12 +350,10 @@ where
             module.ckks_eval_linear_transformation_tmp_bytes(ct, &layout.ct, &plan, tsk, keys)
         }
     };
-    // A `res` of no width is never read: the product fails its budget check before any scratch.
-    let res_bytes = (res.k().as_usize() > 0).then(|| eval(&res));
     module
         .ckks_prepare_linear_transformation_baby_steps_tmp_bytes(&a, &plan, keys)
         .max(eval(&a))
-        .max(res_bytes.unwrap_or(0))
+        .max(eval(&res))
 }
 
 /// The append query along `axis` on rotation keys of layout `keys`, read only when the append rotates `v`.
