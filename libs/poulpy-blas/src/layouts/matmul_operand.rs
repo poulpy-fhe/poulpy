@@ -34,8 +34,8 @@ pub type BlasMatMulRight<BE> = BlasMatMulOperand<BE, CKKSPreparedRight<BE>>;
 /// - cold, `Reuse`, prepared for many: the `d` terms of every block of its source, all of the infos' block layout, in
 ///   the transform domain, each converted once. On the left, term `0` of block `(i, l)` is sigma of the source block,
 ///   narrowed exactly to the terms' width, and term `k` its phi^k; on the right, tau and psi^k, or for a replicated
-///   source [`BlasContext::tau_rep`](crate::layouts::BlasContext::tau_rep) and
-///   [`BlasContext::rotate_rows_rep`](crate::layouts::BlasContext::rotate_rows_rep)
+///   source [`BlasContextPrepared::tau_rep`](crate::layouts::BlasContextPrepared::tau_rep) and
+///   [`BlasContextPrepared::rotate_rows_rep`](crate::layouts::BlasContextPrepared::rotate_rows_rep)
 ///   ([`blas_matmul_right_term_layout`]).
 ///
 /// Its [`BlasMatMulOperandInfos`] report the infos it was allocated from and the batch `0`, then those of its latest
@@ -275,8 +275,8 @@ pub fn blas_matmul_right_operand_layout(
 }
 
 /// The maps of the right factor's terms under `ctx`: tau and psi^k, or, when the right factor is replicated
-/// ([`crate::layouts::replicated`]), [`crate::layouts::BlasContext::tau_rep`] and
-/// [`crate::layouts::BlasContext::rotate_rows_rep`], which spend no scale on psi^k.
+/// ([`crate::layouts::replicated`]), [`crate::layouts::BlasContextPrepared::tau_rep`] and
+/// [`crate::layouts::BlasContextPrepared::rotate_rows_rep`], which spend no scale on psi^k.
 pub(crate) fn right_maps<'c, T>(maps: &'c ContextMaps<T>, rep: bool) -> (&'c T, impl Fn(usize) -> &'c T + Copy + 'c) {
     let first = if rep { maps.tau_rep() } else { maps.tau() };
     (

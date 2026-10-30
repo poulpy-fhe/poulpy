@@ -478,7 +478,7 @@ pub fn blas_matmul_pt_right_max_base2k<BE: MaxBase2k>(
 
 /// [`blas_matmul_pt_right_max_base2k`] for [`crate::api::BlasMatMulOps::blas_matmul_pt_left`]: the terms of a block of
 /// `res` number `K = a.rows()`, and the first map under JKLS is tau. The block maps counted are those the product takes
-/// for `a`: [`BlasPtOperand::block_replicated`](super::BlasPtOperand::block_replicated)'s when `a` is replicated
+/// for `a`: [`BlasPtOperandPrepared::block_replicated`](super::BlasPtOperandPrepared::block_replicated)'s when `a` is replicated
 /// ([`replicated`](super::replicated)) and `b` holds them. Under the masked paths the final step adds `K (2d - 1)`
 /// products.
 ///

@@ -3,7 +3,7 @@ use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAu
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use super::derived::intra::{blas_transpose_derived, blas_transpose_tmp_bytes_derived};
-use crate::layouts::{BlasContext, BlasGrid, BlasGridInfos, BlasGridMut};
+use crate::layouts::{BlasContextPrepared, BlasGrid, BlasGridInfos, BlasGridMut};
 
 /// Extension point of [`crate::api::BlasMatIntraOps`]: the map hook [`Self::blas_map_blocks`], both shifts and both
 /// axis reductions are required, and the transpose is provided over the hook.
@@ -43,7 +43,7 @@ pub unsafe trait BlasMatIntraImpl: Backend {
     /// receives `lts[m]` evaluated from `src[t]` by poulpy-ckks's `ckks_eval_linear_transformation_into`, then the
     /// label (`log_sparsity`) of `src[t]`, in any order. It looks up the keys of a map at the widths that evaluation
     /// does: the baby steps at the width of `src`, the giant steps at `src`'s width less the map's scale (`0` for
-    /// [`BlasContext::rotate_rows_rep`]), capped at `dst`'s. Within that scratch it returns `Ok`, or poulpy-ckks's
+    /// [`BlasContextPrepared::rotate_rows_rep`]), capped at `dst`'s. Within that scratch it returns `Ok`, or poulpy-ckks's
     /// budget error before any write to `dst`; with less scratch it panics before any write, as the reference does when
     /// it looks up a key.
     ///
@@ -78,7 +78,13 @@ pub unsafe trait BlasMatIntraImpl: Backend {
     /// Default body: `blas_transpose_tmp_bytes_derived`, [`Self::blas_map_blocks_tmp_bytes`] for the transpose of every
     /// block of `a` into a block of `res`. Scratch bound of [`Self::blas_transpose`]; may report less than the default
     /// body, never less than the body takes.
-    fn blas_transpose_tmp_bytes<R, A, K>(module: &Module<Self>, res: &R, a: &A, ctx: &BlasContext<Self>, keys: &K) -> usize
+    fn blas_transpose_tmp_bytes<R, A, K>(
+        module: &Module<Self>,
+        res: &R,
+        a: &A,
+        ctx: &BlasContextPrepared<Self>,
+        keys: &K,
+    ) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
@@ -100,7 +106,7 @@ pub unsafe trait BlasMatIntraImpl: Backend {
         module: &Module<Self>,
         res: &mut R,
         a: &A,
-        ctx: &BlasContext<Self>,
+        ctx: &BlasContextPrepared<Self>,
         keys: &K,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
@@ -115,7 +121,13 @@ pub unsafe trait BlasMatIntraImpl: Backend {
     /// Scratch bound of [`Self::blas_rotate_rows`] by any `k`; may report less than
     /// [`blas_rotate_rows_tmp_bytes_reference`](crate::reference::BlasMatIntraReference::blas_rotate_rows_tmp_bytes_reference),
     /// never less than the body takes.
-    fn blas_rotate_rows_tmp_bytes<R, A, K>(module: &Module<Self>, res: &R, a: &A, ctx: &BlasContext<Self>, keys: &K) -> usize
+    fn blas_rotate_rows_tmp_bytes<R, A, K>(
+        module: &Module<Self>,
+        res: &R,
+        a: &A,
+        ctx: &BlasContextPrepared<Self>,
+        keys: &K,
+    ) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
@@ -147,7 +159,7 @@ pub unsafe trait BlasMatIntraImpl: Backend {
         k: usize,
         res: &mut R,
         a: &A,
-        ctx: &BlasContext<Self>,
+        ctx: &BlasContextPrepared<Self>,
         keys: &K,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
@@ -159,7 +171,13 @@ pub unsafe trait BlasMatIntraImpl: Backend {
     /// Scratch bound of [`Self::blas_rotate_cols`] by any `k`; may report less than
     /// [`blas_rotate_cols_tmp_bytes_reference`](crate::reference::BlasMatIntraReference::blas_rotate_cols_tmp_bytes_reference),
     /// never less than the body takes.
-    fn blas_rotate_cols_tmp_bytes<R, A, K>(module: &Module<Self>, res: &R, a: &A, ctx: &BlasContext<Self>, keys: &K) -> usize
+    fn blas_rotate_cols_tmp_bytes<R, A, K>(
+        module: &Module<Self>,
+        res: &R,
+        a: &A,
+        ctx: &BlasContextPrepared<Self>,
+        keys: &K,
+    ) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
@@ -189,7 +207,7 @@ pub unsafe trait BlasMatIntraImpl: Backend {
         k: usize,
         res: &mut R,
         a: &A,
-        ctx: &BlasContext<Self>,
+        ctx: &BlasContextPrepared<Self>,
         keys: &K,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
@@ -201,7 +219,13 @@ pub unsafe trait BlasMatIntraImpl: Backend {
     /// Scratch bound of [`Self::blas_sum_rows`]; may report less than
     /// [`blas_sum_rows_tmp_bytes_reference`](crate::reference::BlasMatIntraReference::blas_sum_rows_tmp_bytes_reference),
     /// never less than the body takes.
-    fn blas_sum_rows_tmp_bytes<R, A, K>(module: &Module<Self>, res: &R, a: &A, ctx: &BlasContext<Self>, keys: &K) -> usize
+    fn blas_sum_rows_tmp_bytes<R, A, K>(
+        module: &Module<Self>,
+        res: &R,
+        a: &A,
+        ctx: &BlasContextPrepared<Self>,
+        keys: &K,
+    ) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
@@ -230,7 +254,7 @@ pub unsafe trait BlasMatIntraImpl: Backend {
         module: &Module<Self>,
         res: &mut R,
         a: &A,
-        ctx: &BlasContext<Self>,
+        ctx: &BlasContextPrepared<Self>,
         keys: &K,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
@@ -242,7 +266,13 @@ pub unsafe trait BlasMatIntraImpl: Backend {
     /// Scratch bound of [`Self::blas_sum_cols`]; may report less than
     /// [`blas_sum_cols_tmp_bytes_reference`](crate::reference::BlasMatIntraReference::blas_sum_cols_tmp_bytes_reference),
     /// never less than the body takes.
-    fn blas_sum_cols_tmp_bytes<R, A, K>(module: &Module<Self>, res: &R, a: &A, ctx: &BlasContext<Self>, keys: &K) -> usize
+    fn blas_sum_cols_tmp_bytes<R, A, K>(
+        module: &Module<Self>,
+        res: &R,
+        a: &A,
+        ctx: &BlasContextPrepared<Self>,
+        keys: &K,
+    ) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
@@ -258,7 +288,7 @@ pub unsafe trait BlasMatIntraImpl: Backend {
         module: &Module<Self>,
         res: &mut R,
         a: &A,
-        ctx: &BlasContext<Self>,
+        ctx: &BlasContextPrepared<Self>,
         keys: &K,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
@@ -315,7 +345,7 @@ macro_rules! impl_blas_mat_intra_reference_full {
                 module: &::poulpy_hal::layouts::Module<Self>,
                 res: &R,
                 a: &A,
-                ctx: &$crate::layouts::BlasContext<Self>,
+                ctx: &$crate::layouts::BlasContextPrepared<Self>,
                 keys: &K,
             ) -> usize
             where
@@ -331,7 +361,7 @@ macro_rules! impl_blas_mat_intra_reference_full {
                 k: usize,
                 res: &mut R,
                 a: &A,
-                ctx: &$crate::layouts::BlasContext<Self>,
+                ctx: &$crate::layouts::BlasContextPrepared<Self>,
                 keys: &K,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> ::poulpy_ckks::CKKSResult<()>
@@ -347,7 +377,7 @@ macro_rules! impl_blas_mat_intra_reference_full {
                 module: &::poulpy_hal::layouts::Module<Self>,
                 res: &R,
                 a: &A,
-                ctx: &$crate::layouts::BlasContext<Self>,
+                ctx: &$crate::layouts::BlasContextPrepared<Self>,
                 keys: &K,
             ) -> usize
             where
@@ -363,7 +393,7 @@ macro_rules! impl_blas_mat_intra_reference_full {
                 k: usize,
                 res: &mut R,
                 a: &A,
-                ctx: &$crate::layouts::BlasContext<Self>,
+                ctx: &$crate::layouts::BlasContextPrepared<Self>,
                 keys: &K,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> ::poulpy_ckks::CKKSResult<()>
@@ -379,7 +409,7 @@ macro_rules! impl_blas_mat_intra_reference_full {
                 module: &::poulpy_hal::layouts::Module<Self>,
                 res: &R,
                 a: &A,
-                ctx: &$crate::layouts::BlasContext<Self>,
+                ctx: &$crate::layouts::BlasContextPrepared<Self>,
                 keys: &K,
             ) -> usize
             where
@@ -394,7 +424,7 @@ macro_rules! impl_blas_mat_intra_reference_full {
                 module: &::poulpy_hal::layouts::Module<Self>,
                 res: &mut R,
                 a: &A,
-                ctx: &$crate::layouts::BlasContext<Self>,
+                ctx: &$crate::layouts::BlasContextPrepared<Self>,
                 keys: &K,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> ::poulpy_ckks::CKKSResult<()>
@@ -410,7 +440,7 @@ macro_rules! impl_blas_mat_intra_reference_full {
                 module: &::poulpy_hal::layouts::Module<Self>,
                 res: &R,
                 a: &A,
-                ctx: &$crate::layouts::BlasContext<Self>,
+                ctx: &$crate::layouts::BlasContextPrepared<Self>,
                 keys: &K,
             ) -> usize
             where
@@ -425,7 +455,7 @@ macro_rules! impl_blas_mat_intra_reference_full {
                 module: &::poulpy_hal::layouts::Module<Self>,
                 res: &mut R,
                 a: &A,
-                ctx: &$crate::layouts::BlasContext<Self>,
+                ctx: &$crate::layouts::BlasContextPrepared<Self>,
                 keys: &K,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> ::poulpy_ckks::CKKSResult<()>

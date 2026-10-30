@@ -18,8 +18,8 @@ use poulpy_blas::{
         BlasPtOperandPreparedFactory,
     },
     layouts::{
-        BlasCiphertext, BlasCiphertextOwned, BlasContext, BlasGridInfos, BlasModuleAlloc, BlasPlan, BlasPtAlgorithm,
-        BlasPtOperand, BlasPtSide, Left, Right, blas_matmul_max_base2k, blas_matmul_pt_left_max_base2k,
+        BlasCiphertext, BlasCiphertextOwned, BlasContextPrepared, BlasGridInfos, BlasModuleAlloc, BlasPlan, BlasPtAlgorithm,
+        BlasPtOperandPrepared, BlasPtSide, Left, Right, blas_matmul_max_base2k, blas_matmul_pt_left_max_base2k,
         blas_matmul_pt_right_max_base2k,
         grid::{join_blocks, split_into_blocks},
         replicated,
@@ -245,7 +245,7 @@ where
     }
 
     /// The prepared maps of the context of `plan` at scale `p`.
-    pub(super) fn context(&self, bp: &BlasBenchParams, plan: BlasPlan) -> BlasContext<BE> {
+    pub(super) fn context(&self, bp: &BlasBenchParams, plan: BlasPlan) -> BlasContextPrepared<BE> {
         let module = &self.module;
         let meta = CoeffsMeta::from_delta_budget(bp.p, HEADROOM);
         let mut ctx = module.blas_context_alloc(plan, base2k(bp), meta);
@@ -269,7 +269,7 @@ where
         rows: usize,
         cols: usize,
         entry: impl Fn(usize, usize, usize) -> f64,
-    ) -> BlasPtOperand<BE, S> {
+    ) -> BlasPtOperandPrepared<BE, S> {
         let module = &self.module;
         let plan = BlasPlan::new(bp.log_d).with_pt_algorithm(algorithm);
         let meta = CoeffsMeta::from_delta_budget(bp.p, HEADROOM);

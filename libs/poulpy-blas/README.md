@@ -57,7 +57,7 @@ operands and key stores: BLAS spawns no thread and holds no shared mutable state
 override keeps no state across calls ([Parallelism](docs/blas-contracts.md#parallelism)).
 
 A `BlasPlan` fixes the block dimension and how each block map is evaluated. The maps are encoded once from it, at a
-caller-chosen precision, into a `BlasContext`, and public matrices into a `BlasPtOperand`. Operations take the context
+caller-chosen precision, into a `BlasContextPrepared`, and public matrices into a `BlasPtOperandPrepared`. Operations take the context
 and `Sync` key stores: rotation keys through poulpy-core's `GetAutomorphismKey` (`keys`), the tensor key through
 `GetTensorKey` (`tsk`). The preparations take only `keys`, and `blas_matmul` and `blas_matmul_prepared` both: the latter
 looks up the rotation keys of a hot operand's terms, and of two cold operands the tensor key alone. Every operation
@@ -100,9 +100,9 @@ form, the backend's representation, which operations read.
 |---|---|---|
 | `BlasCiphertext` | none | `BlasLayout`, `BlasGridInfos` |
 | `BlasVector` | none | `BlasVectorLayout`, `BlasVectorInfos` |
-| `BlasPtOperandUnprepared<BE, S>` | `BlasPtOperand<BE, S>` | `BlasPtOperandLayout<S>`, `BlasPtOperandInfos` |
+| `BlasPtOperand<BE, S>` | `BlasPtOperandPrepared<BE, S>` | `BlasPtOperandLayout<S>`, `BlasPtOperandInfos` |
 | `BlasMatVecOperand<BE>` | `BlasMatVecOperandPrepared<BE>` | `BlasMatVecOperandLayout`, `BlasMatVecOperandInfos` |
-| `BlasContextUnprepared<BE>` | `BlasContext<BE>` | `BlasContextLayout`, `BlasContextInfos` |
+| `BlasContext<BE>` | `BlasContextPrepared<BE>` | `BlasContextLayout`, `BlasContextInfos` |
 | none | `BlasMatMulLeft<BE>`, `BlasMatMulRight<BE>` | `BlasMatMulOperandLayout`, `BlasMatMulOperandInfos` |
 
 Each is allocated on a module from its layout (`BlasModuleAlloc`, and the factories `BlasPtOperandPreparedFactory`,

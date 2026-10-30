@@ -144,7 +144,7 @@ fixes.
 `res` is a `BlasGridMut<BE>` and every ciphertext input a `BlasGrid<BE>`,
 which expose the blocks of a grid as a row-major slice. The prepared product
 reads prepared operands instead, and the products by public matrices also read
-a `BlasPtOperand`. A grid's blocks number exactly `rows x cols`, at least one,
+a `BlasPtOperandPrepared`. A grid's blocks number exactly `rows x cols`, at least one,
 and every operation rejects a grid that breaks this. `BlasCiphertext` over
 owned storage implements both traits on every backend. Borrowed views are not
 grids: a `BufRef` view is `Sync`, but its blocks are not `GLWEToBackendRef`.
@@ -216,7 +216,7 @@ the widths of the last row.
 
 A left product of a replicated input by an operand of one public matrix on more
 than one matrix slot takes the operand's replicated-input block maps
-(`BlasPtOperand::block_replicated`), `d` diagonals scheduled at `left_mul`'s
+(`BlasPtOperandPrepared::block_replicated`), `d` diagonals scheduled at `left_mul`'s
 giant step, so they rotate within `matmul_pt_left_galois_elements` and the
 table's widths hold: about 22 key switches per block instead of 30 at
 `d = 128`.
@@ -225,7 +225,7 @@ The sets list the rotations of the reference's maps as the plan schedules them:
 shift maps `Direct`, the others at the cost-optimal BSGS giant step; a product
 of a vector rotates as its operand's `strategy` schedules every map. The maps
 of a replicated right factor rotate within `matmul_galois_elements`:
-`BlasContext::tau_rep` at tau's giant step, and `BlasContext::rotate_rows_rep(k)`
+`BlasContextPrepared::tau_rep` at tau's giant step, and `BlasContextPrepared::rotate_rows_rep(k)`
 by `k d`, `Direct`, one of psi^k's rotations, as is the rotation of a row
 shift of a replicated grid one block high. The reductions rotate by `2^i d`
 (`2^i`) and its opposite, rotations of psi^(2^i) and psi^(d - 2^i) (phi^(2^i)

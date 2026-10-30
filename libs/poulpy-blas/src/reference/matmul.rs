@@ -17,8 +17,8 @@ use poulpy_hal::{
 use super::{LtEval, baby_caches, lt_tmp_bytes, shared_giants};
 use crate::{
     layouts::{
-        BlasContext, BlasGrid, BlasGridInfos, BlasGridMut, BlasMatMulOperand, BlasMatMulOperandInfos, BlasMatMulOperandLayout,
-        BlasPlan, BlasPtAlgorithm, BlasPtOperand, BlasPtOperandInfos, Left,
+        BlasContextPrepared, BlasGrid, BlasGridInfos, BlasGridMut, BlasMatMulOperand, BlasMatMulOperandInfos,
+        BlasMatMulOperandLayout, BlasPlan, BlasPtAlgorithm, BlasPtOperandInfos, BlasPtOperandPrepared, Left,
         ciphertext::layout_of,
         encoding::mapped_block,
         grid_batch,
@@ -71,7 +71,7 @@ pub trait BlasMatMulReference<BE: Backend> {
     fn blas_matmul_prepare_left_tmp_bytes_reference<A, K>(
         &self,
         a: &A,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
         hint: PrepareHint,
     ) -> usize
@@ -96,7 +96,7 @@ pub trait BlasMatMulReference<BE: Backend> {
         &self,
         res: &mut BlasMatMulOperand<BE, CKKSPreparedLeft<BE>>,
         a: &A,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -111,7 +111,7 @@ pub trait BlasMatMulReference<BE: Backend> {
     fn blas_matmul_prepare_right_tmp_bytes_reference<B, K>(
         &self,
         b: &B,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
         hint: PrepareHint,
     ) -> usize
@@ -128,7 +128,7 @@ pub trait BlasMatMulReference<BE: Backend> {
         &self,
         res: &mut BlasMatMulOperand<BE, CKKSPreparedRight<BE>>,
         b: &B,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -151,7 +151,7 @@ pub trait BlasMatMulReference<BE: Backend> {
         res: &R,
         a: &A,
         b: &B,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         tsk: &T,
         keys: &K,
     ) -> usize
@@ -186,7 +186,7 @@ pub trait BlasMatMulReference<BE: Backend> {
         res: &mut R,
         a: &BlasMatMulOperand<BE, CKKSPreparedLeft<BE>>,
         b: &BlasMatMulOperand<BE, CKKSPreparedRight<BE>>,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         tsk: &T,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
@@ -205,7 +205,7 @@ pub trait BlasMatMulReference<BE: Backend> {
         res: &R,
         a: &A,
         b: &B,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         tsk: &T,
         keys: &K,
     ) -> usize
@@ -227,7 +227,7 @@ pub trait BlasMatMulReference<BE: Backend> {
         res: &mut R,
         a: &A,
         b: &B,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         tsk: &T,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
@@ -252,8 +252,8 @@ pub trait BlasMatMulReference<BE: Backend> {
         &self,
         res: &R,
         a: &A,
-        b: &BlasPtOperand<BE>,
-        ctx: &BlasContext<BE>,
+        b: &BlasPtOperandPrepared<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
     ) -> usize
     where
@@ -283,8 +283,8 @@ pub trait BlasMatMulReference<BE: Backend> {
         &self,
         res: &mut R,
         a: &A,
-        b: &BlasPtOperand<BE>,
-        ctx: &BlasContext<BE>,
+        b: &BlasPtOperandPrepared<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -311,9 +311,9 @@ pub trait BlasMatMulReference<BE: Backend> {
     fn blas_matmul_pt_left_tmp_bytes_reference<R, A, K>(
         &self,
         res: &R,
-        b: &BlasPtOperand<BE, Left>,
+        b: &BlasPtOperandPrepared<BE, Left>,
         a: &A,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
     ) -> usize
     where
@@ -340,9 +340,9 @@ pub trait BlasMatMulReference<BE: Backend> {
     fn blas_matmul_pt_left_reference<R, A, K>(
         &self,
         res: &mut R,
-        b: &BlasPtOperand<BE, Left>,
+        b: &BlasPtOperandPrepared<BE, Left>,
         a: &A,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -365,7 +365,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
     fn blas_matmul_prepare_left_tmp_bytes_reference<A, K>(
         &self,
         a: &A,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
         hint: PrepareHint,
     ) -> usize
@@ -382,7 +382,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
         &self,
         res: &mut BlasMatMulOperand<BE, CKKSPreparedLeft<BE>>,
         a: &A,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -415,7 +415,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
     fn blas_matmul_prepare_right_tmp_bytes_reference<B, K>(
         &self,
         b: &B,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
         hint: PrepareHint,
     ) -> usize
@@ -433,7 +433,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
         &self,
         res: &mut BlasMatMulOperand<BE, CKKSPreparedRight<BE>>,
         b: &B,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -468,7 +468,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
         res: &R,
         a: &A,
         b: &B,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         tsk: &T,
         keys: &K,
     ) -> usize
@@ -489,7 +489,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
         res: &mut R,
         a: &BlasMatMulOperand<BE, CKKSPreparedLeft<BE>>,
         b: &BlasMatMulOperand<BE, CKKSPreparedRight<BE>>,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         tsk: &T,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
@@ -527,7 +527,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
         res: &R,
         a: &A,
         b: &B,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         tsk: &T,
         keys: &K,
     ) -> usize
@@ -555,7 +555,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
         res: &mut R,
         a: &A,
         b: &B,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         tsk: &T,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
@@ -591,8 +591,8 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
         &self,
         res: &R,
         a: &A,
-        b: &BlasPtOperand<BE>,
-        ctx: &BlasContext<BE>,
+        b: &BlasPtOperandPrepared<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
     ) -> usize
     where
@@ -615,8 +615,8 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
         &self,
         res: &mut R,
         a: &A,
-        b: &BlasPtOperand<BE>,
-        ctx: &BlasContext<BE>,
+        b: &BlasPtOperandPrepared<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -676,9 +676,9 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
     fn blas_matmul_pt_left_tmp_bytes_reference<R, A, K>(
         &self,
         res: &R,
-        b: &BlasPtOperand<BE, Left>,
+        b: &BlasPtOperandPrepared<BE, Left>,
         a: &A,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
     ) -> usize
     where
@@ -700,9 +700,9 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
     fn blas_matmul_pt_left_reference<R, A, K>(
         &self,
         res: &mut R,
-        b: &BlasPtOperand<BE, Left>,
+        b: &BlasPtOperandPrepared<BE, Left>,
         a: &A,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -795,7 +795,7 @@ fn product_scratch<BE, T, K>(
     res: &impl BlasGridInfos,
     a: &impl BlasMatMulOperandInfos,
     b: &impl BlasMatMulOperandInfos,
-    ctx: &BlasContext<BE>,
+    ctx: &BlasContextPrepared<BE>,
     tsk: &T,
     keys: &K,
 ) -> usize
@@ -828,7 +828,7 @@ fn product<BE, R, SA, SB, T, K>(
     b: Side<'_, SB, CKKSPreparedRight<BE>>,
     inner: usize,
     log_d: usize,
-    ctx: &BlasContext<BE>,
+    ctx: &BlasContextPrepared<BE>,
     b_rep: bool,
     tsk: &T,
     keys: &K,
@@ -950,7 +950,7 @@ fn kernel_tmp_bytes<BE: BlasJklsImpl>(
     res: &impl BlasGridInfos,
     a: &impl BlasMatMulOperandInfos,
     b: &impl BlasMatMulOperandInfos,
-    ctx: &BlasContext<BE>,
+    ctx: &BlasContextPrepared<BE>,
     tsk: &impl GGLWEInfos,
 ) -> usize {
     let (res, lhs, rhs) = (
@@ -975,7 +975,7 @@ fn hot_tmp_bytes<BE>(
     module: &Module<BE>,
     a: &impl BlasMatMulOperandInfos,
     b: &impl BlasMatMulOperandInfos,
-    ctx: &BlasContext<BE>,
+    ctx: &BlasContextPrepared<BE>,
     keys: &impl GGLWEInfos,
 ) -> usize
 where

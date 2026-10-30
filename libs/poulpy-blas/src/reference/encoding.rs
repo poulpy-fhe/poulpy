@@ -7,8 +7,8 @@ use poulpy_core::layouts::DiagonalArithmetic;
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::layouts::{
-    BlasContext, BlasContextInfos, BlasContextUnprepared, BlasMatVecOperand, BlasMatVecOperandInfos, BlasMatVecOperandPrepared,
-    BlasPtOperand, BlasPtOperandInfos, BlasPtOperandUnprepared, BlasPtSide,
+    BlasContext, BlasContextInfos, BlasContextPrepared, BlasMatVecOperand, BlasMatVecOperandInfos, BlasMatVecOperandPrepared,
+    BlasPtOperand, BlasPtOperandInfos, BlasPtOperandPrepared, BlasPtSide,
     context::{MapId, assert_fits_module, context_map},
     encoding::{encode_map_into, prepare_maps_into, real_map},
     maps, matvec_operand,
@@ -35,7 +35,7 @@ pub trait BlasEncodingReference<BE: Backend> {
     /// block's terms in order, then the replicated-input maps, every block sharing the first block's schedule.
     fn blas_pt_operand_encode_reference<F, S>(
         &self,
-        res: &mut BlasPtOperandUnprepared<BE, S>,
+        res: &mut BlasPtOperand<BE, S>,
         entry: impl Fn(usize, usize, usize) -> F,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -70,11 +70,7 @@ pub trait BlasEncodingReference<BE: Backend> {
         A: BlasContextInfos;
 
     /// After asserting its scratch query, every map of the plan of `res`, in walking order.
-    fn blas_context_encode_reference<F>(
-        &self,
-        res: &mut BlasContextUnprepared<BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
+    fn blas_context_encode_reference<F>(&self, res: &mut BlasContext<BE>, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Self: CKKSEncodingOps<BE, F>,
         F: DiagonalArithmetic + CKKSEncodingScalar;
@@ -90,8 +86,8 @@ pub trait BlasEncodingReference<BE: Backend> {
     /// map, then each term's one plaintext by `ckks_prepare_right_into`.
     fn blas_pt_operand_prepare_reference<S>(
         &self,
-        res: &mut BlasPtOperand<BE, S>,
-        other: &BlasPtOperandUnprepared<BE, S>,
+        res: &mut BlasPtOperandPrepared<BE, S>,
+        other: &BlasPtOperand<BE, S>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         Self: CKKSLinearTransformationOps<BE> + CKKSMulOps<BE>,
@@ -121,8 +117,8 @@ pub trait BlasEncodingReference<BE: Backend> {
     /// Every map of `other` prepared into the same position of `res`.
     fn blas_context_prepare_reference(
         &self,
-        res: &mut BlasContext<BE>,
-        other: &BlasContextUnprepared<BE>,
+        res: &mut BlasContextPrepared<BE>,
+        other: &BlasContext<BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         Self: CKKSLinearTransformationOps<BE>;
@@ -144,7 +140,7 @@ impl<BE: Backend> BlasEncodingReference<BE> for Module<BE> {
 
     fn blas_pt_operand_encode_reference<F, S>(
         &self,
-        res: &mut BlasPtOperandUnprepared<BE, S>,
+        res: &mut BlasPtOperand<BE, S>,
         entry: impl Fn(usize, usize, usize) -> F,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -235,11 +231,7 @@ impl<BE: Backend> BlasEncodingReference<BE> for Module<BE> {
         ckks_encode_linear_transformation_tmp_bytes::<BE, Self, F>(self, slots)
     }
 
-    fn blas_context_encode_reference<F>(
-        &self,
-        res: &mut BlasContextUnprepared<BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
+    fn blas_context_encode_reference<F>(&self, res: &mut BlasContext<BE>, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Self: CKKSEncodingOps<BE, F>,
         F: DiagonalArithmetic + CKKSEncodingScalar,
@@ -277,8 +269,8 @@ impl<BE: Backend> BlasEncodingReference<BE> for Module<BE> {
 
     fn blas_pt_operand_prepare_reference<S>(
         &self,
-        res: &mut BlasPtOperand<BE, S>,
-        other: &BlasPtOperandUnprepared<BE, S>,
+        res: &mut BlasPtOperandPrepared<BE, S>,
+        other: &BlasPtOperand<BE, S>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         Self: CKKSLinearTransformationOps<BE> + CKKSMulOps<BE>,
@@ -359,8 +351,8 @@ impl<BE: Backend> BlasEncodingReference<BE> for Module<BE> {
 
     fn blas_context_prepare_reference(
         &self,
-        res: &mut BlasContext<BE>,
-        other: &BlasContextUnprepared<BE>,
+        res: &mut BlasContextPrepared<BE>,
+        other: &BlasContext<BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         Self: CKKSLinearTransformationOps<BE>,

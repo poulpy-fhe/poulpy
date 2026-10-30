@@ -2,7 +2,7 @@ use poulpy_ckks::CKKSResult as Result;
 use poulpy_core::layouts::{GGLWEInfos, GetAutomorphismKey, GetTensorKey};
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
-use crate::layouts::{BlasContext, BlasGrid, BlasGridInfos, BlasGridMut};
+use crate::layouts::{BlasContextPrepared, BlasGrid, BlasGridInfos, BlasGridMut};
 
 /// The same map applied to every matrix of the batch, across the blocks of a grid. `res` records the batch of `a`
 /// ([`BlasGridInfos::mat_slots`]).
@@ -21,7 +21,7 @@ pub trait BlasMatIntraOps<BE: Backend> {
     ///
     /// May panic on layouts [`validate_blas_transpose`](crate::layouts::validate_blas_transpose) rejects: blocks of a
     /// degree other than the module's, or `rows * cols` overflowing `usize`.
-    fn blas_transpose_tmp_bytes<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContext<BE>, keys: &K) -> usize
+    fn blas_transpose_tmp_bytes<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContextPrepared<BE>, keys: &K) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
@@ -58,7 +58,7 @@ pub trait BlasMatIntraOps<BE: Backend> {
         &self,
         res: &mut R,
         a: &A,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -74,7 +74,7 @@ pub trait BlasMatIntraOps<BE: Backend> {
     ///
     /// As [`Self::blas_transpose_tmp_bytes`], on layouts
     /// [`validate_blas_rotate_rows`](crate::layouts::validate_blas_rotate_rows) rejects.
-    fn blas_rotate_rows_tmp_bytes<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContext<BE>, keys: &K) -> usize
+    fn blas_rotate_rows_tmp_bytes<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContextPrepared<BE>, keys: &K) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
@@ -119,7 +119,7 @@ pub trait BlasMatIntraOps<BE: Backend> {
         k: usize,
         res: &mut R,
         a: &A,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -135,7 +135,7 @@ pub trait BlasMatIntraOps<BE: Backend> {
     ///
     /// As [`Self::blas_transpose_tmp_bytes`], on layouts
     /// [`validate_blas_rotate_cols`](crate::layouts::validate_blas_rotate_cols) rejects.
-    fn blas_rotate_cols_tmp_bytes<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContext<BE>, keys: &K) -> usize
+    fn blas_rotate_cols_tmp_bytes<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContextPrepared<BE>, keys: &K) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
@@ -160,7 +160,7 @@ pub trait BlasMatIntraOps<BE: Backend> {
         k: usize,
         res: &mut R,
         a: &A,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -176,7 +176,7 @@ pub trait BlasMatIntraOps<BE: Backend> {
     ///
     /// As [`Self::blas_transpose_tmp_bytes`], on layouts [`validate_blas_sum_rows`](crate::layouts::validate_blas_sum_rows)
     /// rejects.
-    fn blas_sum_rows_tmp_bytes<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContext<BE>, keys: &K) -> usize
+    fn blas_sum_rows_tmp_bytes<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContextPrepared<BE>, keys: &K) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
@@ -192,7 +192,7 @@ pub trait BlasMatIntraOps<BE: Backend> {
     /// ([`replicated`](crate::layouts::replicated)), whose rotations by multiples of `d` wrap inside a block, in every
     /// row: block `(0, j)` of `res` is then `ckks_inner_sum` of `u`, at `res`'s width. Otherwise `u` takes its
     /// `ckks_inner_sum_assign`, and block `(0, j)` of `res` is the projection on row 0 of `ctx`
-    /// ([`BlasContext::first_row`]) evaluated from `u`, then its `ckks_replicate_assign` over `d` batches of `d` slots,
+    /// ([`BlasContextPrepared::first_row`]) evaluated from `u`, then its `ckks_replicate_assign` over `d` batches of `d` slots,
     /// which adds its own rotation by `-2^i d` slots for each `i < log2(d)` from the last down. The other blocks of the
     /// column are copies of block `(0, j)`:
     ///
@@ -226,7 +226,7 @@ pub trait BlasMatIntraOps<BE: Backend> {
         &self,
         res: &mut R,
         a: &A,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -242,7 +242,7 @@ pub trait BlasMatIntraOps<BE: Backend> {
     ///
     /// As [`Self::blas_transpose_tmp_bytes`], on layouts [`validate_blas_sum_cols`](crate::layouts::validate_blas_sum_cols)
     /// rejects.
-    fn blas_sum_cols_tmp_bytes<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContext<BE>, keys: &K) -> usize
+    fn blas_sum_cols_tmp_bytes<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContextPrepared<BE>, keys: &K) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
@@ -253,7 +253,7 @@ pub trait BlasMatIntraOps<BE: Backend> {
     /// # Metadata
     ///
     /// As [`Self::blas_sum_rows`] along the block rows, with the inner sum and the replicate over `d` batches of one
-    /// slot, rotations by `2^i` and `-2^i` slots, and the projection on column 0 ([`BlasContext::first_col`]) between
+    /// slot, rotations by `2^i` and `-2^i` slots, and the projection on column 0 ([`BlasContextPrepared::first_col`]) between
     /// them, on every grid: a rotation by `2^i` slots crosses into the next row, replicated or not, and the broadcast
     /// never does, since `2^(i+1) <= d`. For each block row `i`, `u` sums the blocks of the row, block `(i, 0)` of `res`
     /// receives the projection and the broadcast, and the other blocks of the row are copies of it. The column
@@ -266,7 +266,7 @@ pub trait BlasMatIntraOps<BE: Backend> {
         &self,
         res: &mut R,
         a: &A,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>

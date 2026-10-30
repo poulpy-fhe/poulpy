@@ -317,7 +317,7 @@ fn family_count(plan: BlasPlan) -> usize {
     if plan.pt_algorithm().masked() { FAMILIES } else { ROWS_LEFT }
 }
 
-/// The maps of a context, in the order [`BlasContextUnprepared::maps`] states.
+/// The maps of a context, in the order [`BlasContext::maps`] states.
 pub(crate) struct ContextMaps<T> {
     log_d: usize,
     slots: usize,
@@ -551,21 +551,15 @@ impl BlasContextInfos for BlasContextLayout {
 
 /// The JKLS maps of one matrix dimension, their one-diagonal halves and their variants on a replicated input, encoded
 /// and not yet prepared.
-pub struct BlasContextUnprepared<BE: Backend> {
+pub struct BlasContext<BE: Backend> {
     layout: BlasContextLayout,
     pub(crate) maps: ContextMaps<Encoded<BE>>,
 }
 
 /// The prepared JKLS maps of one matrix dimension, their one-diagonal halves and their variants on a replicated input.
-pub struct BlasContext<BE: Backend> {
+pub struct BlasContextPrepared<BE: Backend> {
     layout: BlasContextLayout,
     pub(crate) maps: ContextMaps<LinearTransformationPrepared<BE>>,
-}
-
-impl<BE: Backend> BlasContextInfos for BlasContextUnprepared<BE> {
-    fn blas_context_layout(&self) -> BlasContextLayout {
-        self.layout
-    }
 }
 
 impl<BE: Backend> BlasContextInfos for BlasContext<BE> {
@@ -574,18 +568,24 @@ impl<BE: Backend> BlasContextInfos for BlasContext<BE> {
     }
 }
 
-impl<BE: Backend> BlasContextUnprepared<BE> {
+impl<BE: Backend> BlasContextInfos for BlasContextPrepared<BE> {
+    fn blas_context_layout(&self) -> BlasContextLayout {
+        self.layout
+    }
+}
+
+impl<BE: Backend> BlasContext<BE> {
     /// Every encoded map, in the order encoding and preparation walk them: sigma, tau, tau on a replicated input, the
     /// transpose and the projections on row 0 and column 0, then psi^k, psi^k on a replicated input, phi^k and the
     /// halves of psi^k and of phi^k, then, under `JklsStored` and `JklsGalois`, the column halves of psi^k
-    /// ([`BlasContext::rows_left`], [`BlasContext::rows_right`]), each family for `k = 1..d`.
+    /// ([`BlasContextPrepared::rows_left`], [`BlasContextPrepared::rows_right`]), each family for `k = 1..d`.
     pub fn maps(&self) -> impl Iterator<Item = &LinearTransformation<CKKSPlaintextOwned<BE>>> {
         self.maps.iter()
     }
 }
 
-impl<BE: Backend> BlasContext<BE> {
-    /// Every prepared map, in the order of [`BlasContextUnprepared::maps`].
+impl<BE: Backend> BlasContextPrepared<BE> {
+    /// Every prepared map, in the order of [`BlasContext::maps`].
     pub fn maps(&self) -> impl Iterator<Item = &LinearTransformationPrepared<BE>> {
         self.maps.iter()
     }
@@ -730,7 +730,7 @@ pub(crate) fn module_layout(
 }
 
 /// [`super::BlasModuleAlloc::blas_context_alloc_from_infos`].
-pub(crate) fn alloc<BE, M>(module: &M, layout: &BlasContextLayout) -> BlasContextUnprepared<BE>
+pub(crate) fn alloc<BE, M>(module: &M, layout: &BlasContextLayout) -> BlasContext<BE>
 where
     BE: Backend,
     M: CKKSModuleAlloc<BE> + GetDegree,
@@ -739,11 +739,11 @@ where
     let maps = ContextMaps::build(layout.plan, layout.slots, |id| {
         context_map::<f64>(layout, id).layout().alloc::<BE, M>(module, layout.base2k)
     });
-    BlasContextUnprepared { layout: *layout, maps }
+    BlasContext { layout: *layout, maps }
 }
 
 /// [`crate::api::BlasContextPreparedFactory::blas_context_prepared_alloc_from_infos`].
-pub(crate) fn alloc_prepared<BE, M>(module: &M, layout: &BlasContextLayout) -> BlasContext<BE>
+pub(crate) fn alloc_prepared<BE, M>(module: &M, layout: &BlasContextLayout) -> BlasContextPrepared<BE>
 where
     BE: Backend,
     M: CKKSModuleAlloc<BE> + GetDegree,
@@ -754,7 +754,7 @@ where
             .layout()
             .alloc_prepared::<BE, M>(module, layout.base2k)
     });
-    BlasContext { layout: *layout, maps }
+    BlasContextPrepared { layout: *layout, maps }
 }
 
 /// Galois elements `blas_sum` needs on a grid of layout `infos` on a ring of `cyclotomic_order`: at its recorded batch,

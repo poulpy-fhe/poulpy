@@ -13,9 +13,9 @@ use poulpy_core::{
 use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, Module, PrepareHint, ReaderFrom, Ring, WriterTo, ZnxWord};
 
 use super::{
-    BlasContextInfos, BlasContextUnprepared, BlasMatVecOperand, BlasMatVecOperandInfos, BlasMatVecOperandLayout, BlasPlan,
-    BlasPtOperandInfos, BlasPtOperandLayout, BlasPtOperandUnprepared, BlasPtSide, BlasVector, BlasVectorInfos, BlasVectorOwned,
-    BlasVectorShape, context, matvec_operand, pt_operand, vector,
+    BlasContext, BlasContextInfos, BlasMatVecOperand, BlasMatVecOperandInfos, BlasMatVecOperandLayout, BlasPlan, BlasPtOperand,
+    BlasPtOperandInfos, BlasPtOperandLayout, BlasPtSide, BlasVector, BlasVectorInfos, BlasVectorOwned, BlasVectorShape, context,
+    matvec_operand, pt_operand, vector,
 };
 
 /// An `rows x cols` grid of `2^log_d x 2^log_d` blocks: block `(i, j)` is one CKKS ciphertext whose matrix slot `s`
@@ -562,7 +562,7 @@ pub trait BlasModuleAlloc<BE: Backend>: CKKSModuleAlloc<BE> + GetDegree + Sized 
         count: usize,
         base2k: Base2K,
         coeffs_meta: CoeffsMeta,
-    ) -> BlasPtOperandUnprepared<BE, S> {
+    ) -> BlasPtOperand<BE, S> {
         let layout = BlasPtOperandLayout::<S>::new(plan, self.ckks_max_slots(), rows, cols, count, base2k, coeffs_meta);
         self.blas_pt_operand_alloc_from_infos(&layout)
     }
@@ -572,7 +572,7 @@ pub trait BlasModuleAlloc<BE: Backend>: CKKSModuleAlloc<BE> + GetDegree + Sized 
     /// # Panics
     ///
     /// As [`Self::blas_pt_operand_alloc`], and if the slots of `infos` are not the module's.
-    fn blas_pt_operand_alloc_from_infos<A: BlasPtOperandInfos>(&self, infos: &A) -> BlasPtOperandUnprepared<BE, A::Side> {
+    fn blas_pt_operand_alloc_from_infos<A: BlasPtOperandInfos>(&self, infos: &A) -> BlasPtOperand<BE, A::Side> {
         pt_operand::alloc(self, &infos.blas_pt_operand_layout())
     }
 
@@ -628,7 +628,7 @@ pub trait BlasModuleAlloc<BE: Backend>: CKKSModuleAlloc<BE> + GetDegree + Sized 
     ///
     /// Panics if the blocks of `plan` are smaller than `2 x 2` or do not fit the module's slots, if `coeffs_meta.k` is
     /// `0` or if `base2k` is outside `1..=63`.
-    fn blas_context_alloc(&self, plan: BlasPlan, base2k: Base2K, coeffs_meta: CoeffsMeta) -> BlasContextUnprepared<BE> {
+    fn blas_context_alloc(&self, plan: BlasPlan, base2k: Base2K, coeffs_meta: CoeffsMeta) -> BlasContext<BE> {
         self.blas_context_alloc_from_infos(&context::module_layout(self, plan, base2k, coeffs_meta))
     }
 
@@ -637,7 +637,7 @@ pub trait BlasModuleAlloc<BE: Backend>: CKKSModuleAlloc<BE> + GetDegree + Sized 
     /// # Panics
     ///
     /// As [`Self::blas_context_alloc`], and if the degree or the slots of `infos` are not the module's.
-    fn blas_context_alloc_from_infos<A: BlasContextInfos>(&self, infos: &A) -> BlasContextUnprepared<BE> {
+    fn blas_context_alloc_from_infos<A: BlasContextInfos>(&self, infos: &A) -> BlasContext<BE> {
         context::alloc(self, &infos.blas_context_layout())
     }
 }
@@ -680,7 +680,9 @@ impl<BE: Backend> BlasBytesOf<BE> for Module<BE> where Module<BE>: CKKSModuleAll
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::layouts::{BlasContext, BlasMatMulOperand, BlasMatVecOperandPrepared, BlasPtOperand, BlasVectorMut};
+    use crate::layouts::{
+        BlasContextPrepared, BlasMatMulOperand, BlasMatVecOperandPrepared, BlasPtOperandPrepared, BlasVectorMut,
+    };
     use poulpy_ckks::{
         CKKSError, SetGLWEPlaintextInfos,
         layouts::{CKKSPreparedLeft, CKKSPreparedRight},
@@ -706,8 +708,8 @@ mod tests {
         vector::<BE, BlasVectorOwned<BE>>();
         sync::<BlasMatVecOperandPrepared<BE>>();
         sync::<BlasMatVecOperand<BE>>();
-        sync::<BlasContext<BE>>();
-        sync::<BlasPtOperand<BE>>();
+        sync::<BlasContextPrepared<BE>>();
+        sync::<BlasPtOperandPrepared<BE>>();
         operand::<BlasMatMulOperand<BE, CKKSPreparedLeft<BE>>>();
         operand::<BlasMatMulOperand<BE, CKKSPreparedRight<BE>>>();
         sync::<CKKSPreparedLeft<BE>>();

@@ -34,15 +34,15 @@ use super::{
 use crate::{
     api::{BlasContextPreparedFactory, BlasEncodingOps, BlasMatVecOperandPreparedFactory, BlasPtOperandPreparedFactory},
     layouts::{
-        BlasContext, BlasContextInfos, BlasContextLayout, BlasContextUnprepared, BlasMatVecOperand, BlasMatVecOperandLayout,
+        BlasContext, BlasContextInfos, BlasContextLayout, BlasContextPrepared, BlasMatVecOperand, BlasMatVecOperandLayout,
         BlasMatVecOperandPrepared, BlasModuleAlloc, BlasPlan, BlasPtAlgorithm, BlasPtOperand, BlasPtOperandInfos,
-        BlasPtOperandLayout, BlasPtOperandUnprepared, BlasPtSide, Left, Right, matvec_pt_galois_elements,
+        BlasPtOperandLayout, BlasPtOperandPrepared, BlasPtSide, Left, Right, matvec_pt_galois_elements,
     },
     oep::BlasEncodingImpl,
 };
 
 /// Every block map of `b`; none under `JklsStored` and `JklsGalois`, whose blocks are plaintexts.
-fn operand_maps<BE: Backend, S: BlasPtSide>(b: &BlasPtOperand<BE, S>) -> Vec<&LinearTransformationPrepared<BE>> {
+fn operand_maps<BE: Backend, S: BlasPtSide>(b: &BlasPtOperandPrepared<BE, S>) -> Vec<&LinearTransformationPrepared<BE>> {
     if b.blas_pt_operand_layout().plan.pt_algorithm().masked() {
         return Vec::new();
     }
@@ -579,7 +579,7 @@ fn prepared_diagonal<BE: Backend<OwnedBuf = AlignedBuf>>(d: &PreparedDiagonal<Al
 }
 
 /// The prepared maps of `p`, then its terms' prepared plaintexts under `JklsStored` and `JklsGalois`.
-fn prepared_operand<BE: Backend<OwnedBuf = AlignedBuf>, S: BlasPtSide>(p: &BlasPtOperand<BE, S>) -> Buffers {
+fn prepared_operand<BE: Backend<OwnedBuf = AlignedBuf>, S: BlasPtSide>(p: &BlasPtOperandPrepared<BE, S>) -> Buffers {
     let mut maps = buffers(p.maps(), prepared_diagonal::<BE>);
     maps.extend(p.plaintexts.iter().map(|pt| {
         let b: &[u8] = pt.cnv().data();
@@ -655,7 +655,7 @@ where
                 module.blas_pt_operand_prepared_alloc_from_infos(&layout),
             )
         },
-        |op: &BlasPtOperandUnprepared<BE, S>| buffers(op.maps(), plaintext::<BE>),
+        |op: &BlasPtOperand<BE, S>| buffers(op.maps(), plaintext::<BE>),
         prepared_operand::<BE, S>,
         |op, p| {
             poison_plaintexts::<BE>(op.maps.iter_mut());
@@ -709,8 +709,8 @@ pub fn test_blas_refill<BE, F, E>(
                     module.blas_context_prepared_alloc_from_infos(&layout),
                 )
             },
-            |c: &BlasContextUnprepared<BE>| buffers(c.maps(), plaintext::<BE>),
-            |p: &BlasContext<BE>| buffers(p.maps(), prepared_diagonal::<BE>),
+            |c: &BlasContext<BE>| buffers(c.maps(), plaintext::<BE>),
+            |p: &BlasContextPrepared<BE>| buffers(p.maps(), prepared_diagonal::<BE>),
             |c, p| {
                 poison_plaintexts::<BE>(c.maps.iter_mut());
                 poison_prepared::<BE>(p.maps.iter_mut());

@@ -6,8 +6,8 @@ use poulpy_hal::{
 };
 
 use crate::layouts::{
-    BlasContext, BlasContextInfos, BlasContextUnprepared, BlasMatVecOperand, BlasMatVecOperandInfos, BlasMatVecOperandPrepared,
-    BlasPtOperand, BlasPtOperandInfos, BlasPtOperandUnprepared, BlasPtSide, context, matvec_operand, pt_operand,
+    BlasContext, BlasContextInfos, BlasContextPrepared, BlasMatVecOperand, BlasMatVecOperandInfos, BlasMatVecOperandPrepared,
+    BlasPtOperand, BlasPtOperandInfos, BlasPtOperandPrepared, BlasPtSide, context, matvec_operand, pt_operand,
 };
 
 /// Encoding of public operands, and of contexts, into their allocations, at poulpy-ckks's encoding scalar `F`.
@@ -58,7 +58,7 @@ pub trait BlasEncodingOps<BE: Backend, F: CKKSEncodingScalar + DiagonalArithmeti
     /// [`maps::left_mul_rep`]: crate::layouts::maps::left_mul_rep
     fn blas_pt_operand_encode<S: BlasPtSide>(
         &self,
-        res: &mut BlasPtOperandUnprepared<BE, S>,
+        res: &mut BlasPtOperand<BE, S>,
         entry: impl Fn(usize, usize, usize) -> F,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> CKKSResult<()>;
@@ -107,8 +107,8 @@ pub trait BlasEncodingOps<BE: Backend, F: CKKSEncodingScalar + DiagonalArithmeti
     fn blas_context_encode_tmp_bytes<A: BlasContextInfos>(&self, infos: &A) -> usize;
 
     /// Encodes every map of `res`'s plan into it at its `coeffs_meta`, each scheduled as the plan schedules it, but tau on
-    /// a replicated input ([`BlasContext::tau_rep`]), scheduled at tau's giant step, and psi^k on a replicated input
-    /// ([`BlasContext::rotate_rows_rep`]), at no scale. Every diagonal is overwritten, so encoding again refills `res`
+    /// a replicated input ([`BlasContextPrepared::tau_rep`]), scheduled at tau's giant step, and psi^k on a replicated input
+    /// ([`BlasContextPrepared::rotate_rows_rep`]), at no scale. Every diagonal is overwritten, so encoding again refills `res`
     /// with no allocation of plaintexts. Operations reject the context on a module of other slots and on inputs whose
     /// blocks are not at its radix or are narrower than `coeffs_meta.k`.
     ///
@@ -123,7 +123,7 @@ pub trait BlasEncodingOps<BE: Backend, F: CKKSEncodingScalar + DiagonalArithmeti
     ///
     /// Panics if `res` was allocated on a module of another ring, or, before any write, if `scratch` holds less than
     /// [`Self::blas_context_encode_tmp_bytes`].
-    fn blas_context_encode(&self, res: &mut BlasContextUnprepared<BE>, scratch: &mut ScratchArena<'_, BE>) -> CKKSResult<()>;
+    fn blas_context_encode(&self, res: &mut BlasContext<BE>, scratch: &mut ScratchArena<'_, BE>) -> CKKSResult<()>;
 }
 
 /// Allocation, sizing and preparation of prepared public operands. The allocation is direct on the module; the
@@ -135,7 +135,7 @@ pub trait BlasPtOperandPreparedFactory<BE: Backend>: CKKSModuleAlloc<BE> + GetDe
     /// # Panics
     ///
     /// As [`BlasModuleAlloc::blas_pt_operand_alloc_from_infos`](crate::layouts::BlasModuleAlloc::blas_pt_operand_alloc_from_infos).
-    fn blas_pt_operand_prepared_alloc_from_infos<A: BlasPtOperandInfos>(&self, infos: &A) -> BlasPtOperand<BE, A::Side> {
+    fn blas_pt_operand_prepared_alloc_from_infos<A: BlasPtOperandInfos>(&self, infos: &A) -> BlasPtOperandPrepared<BE, A::Side> {
         pt_operand::alloc_prepared(self, &infos.blas_pt_operand_layout())
     }
 
@@ -157,8 +157,8 @@ pub trait BlasPtOperandPreparedFactory<BE: Backend>: CKKSModuleAlloc<BE> + GetDe
     /// slot kind.
     fn blas_pt_operand_prepare<S: BlasPtSide>(
         &self,
-        res: &mut BlasPtOperand<BE, S>,
-        other: &BlasPtOperandUnprepared<BE, S>,
+        res: &mut BlasPtOperandPrepared<BE, S>,
+        other: &BlasPtOperand<BE, S>,
         scratch: &mut ScratchArena<'_, BE>,
     );
 }
@@ -210,7 +210,7 @@ pub trait BlasContextPreparedFactory<BE: Backend>: CKKSModuleAlloc<BE> + GetDegr
     /// # Panics
     ///
     /// As [`BlasModuleAlloc::blas_context_alloc_from_infos`](crate::layouts::BlasModuleAlloc::blas_context_alloc_from_infos).
-    fn blas_context_prepared_alloc_from_infos<A: BlasContextInfos>(&self, infos: &A) -> BlasContext<BE> {
+    fn blas_context_prepared_alloc_from_infos<A: BlasContextInfos>(&self, infos: &A) -> BlasContextPrepared<BE> {
         context::alloc_prepared(self, &infos.blas_context_layout())
     }
 
@@ -231,8 +231,8 @@ pub trait BlasContextPreparedFactory<BE: Backend>: CKKSModuleAlloc<BE> + GetDegr
     /// slot kind.
     fn blas_context_prepare(
         &self,
-        res: &mut BlasContext<BE>,
-        other: &BlasContextUnprepared<BE>,
+        res: &mut BlasContextPrepared<BE>,
+        other: &BlasContext<BE>,
         scratch: &mut ScratchArena<'_, BE>,
     );
 }

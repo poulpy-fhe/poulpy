@@ -17,8 +17,8 @@ use poulpy_core::layouts::{
 use poulpy_hal::layouts::{Backend, Module, PrepareHint, Ring, ScratchArena};
 
 use super::{
-    BlasContext, BlasContextInfos, BlasGrid, BlasGridInfos, BlasMatMulOperandInfos, BlasMatMulOperandLayout, BlasMatVecMaps,
-    BlasPlan, BlasPtOperand, BlasPtOperandInfos, BlasVectorInfos, BlasVectorRef, BlasVectorShape, Left,
+    BlasContextInfos, BlasContextPrepared, BlasGrid, BlasGridInfos, BlasMatMulOperandInfos, BlasMatMulOperandLayout,
+    BlasMatVecMaps, BlasPlan, BlasPtOperandInfos, BlasPtOperandPrepared, BlasVectorInfos, BlasVectorRef, BlasVectorShape, Left,
     ciphertext::{batch_fits, layout_of, replicated_at, slots_of},
     context::{ContextMaps, reduction_projection, reduction_rotations, shift_maps, shift_rotates, sum_rotations},
     grid_batch,
@@ -565,7 +565,7 @@ pub fn validate_blas_transpose<BE: Backend>(
     module: &Module<BE>,
     res: &impl BlasGrid<BE>,
     a: &impl BlasGrid<BE>,
-    ctx: &BlasContext<BE>,
+    ctx: &BlasContextPrepared<BE>,
     keys: &impl GetAutomorphismKey<BE>,
 ) -> Result<usize> {
     let op = "blas_transpose";
@@ -589,7 +589,7 @@ pub fn validate_blas_rotate_rows<BE: Backend>(
     k: usize,
     res: &impl BlasGrid<BE>,
     a: &impl BlasGrid<BE>,
-    ctx: &BlasContext<BE>,
+    ctx: &BlasContextPrepared<BE>,
     keys: &impl GetAutomorphismKey<BE>,
 ) -> Result<usize> {
     validate_shift(module, k, res, a, true, ctx, keys)
@@ -605,7 +605,7 @@ pub fn validate_blas_rotate_cols<BE: Backend>(
     k: usize,
     res: &impl BlasGrid<BE>,
     a: &impl BlasGrid<BE>,
-    ctx: &BlasContext<BE>,
+    ctx: &BlasContextPrepared<BE>,
     keys: &impl GetAutomorphismKey<BE>,
 ) -> Result<usize> {
     validate_shift(module, k, res, a, false, ctx, keys)
@@ -618,7 +618,7 @@ fn ensure_intra<BE: Backend>(
     module: &Module<BE>,
     res: &impl BlasGrid<BE>,
     a: &impl BlasGrid<BE>,
-    ctx: &BlasContext<BE>,
+    ctx: &BlasContextPrepared<BE>,
     rows: usize,
     cols: usize,
 ) -> Result<()> {
@@ -630,7 +630,12 @@ fn ensure_intra<BE: Backend>(
 }
 
 /// The context's maps read `a`: its blocks at their radix and at least as wide.
-fn ensure_mapped<BE: Backend>(op: &'static str, module: &Module<BE>, ctx: &BlasContext<BE>, a: &impl BlasGrid<BE>) -> Result<()> {
+fn ensure_mapped<BE: Backend>(
+    op: &'static str,
+    module: &Module<BE>,
+    ctx: &BlasContextPrepared<BE>,
+    a: &impl BlasGrid<BE>,
+) -> Result<()> {
     ensure_maps(op, module, ctx.slots(), ctx.base2k(), ctx.coeffs_meta().k, &[a])
 }
 
@@ -645,7 +650,7 @@ pub fn validate_blas_sum_rows<BE: Backend>(
     module: &Module<BE>,
     res: &impl BlasGrid<BE>,
     a: &impl BlasGrid<BE>,
-    ctx: &BlasContext<BE>,
+    ctx: &BlasContextPrepared<BE>,
     keys: &impl GetAutomorphismKey<BE>,
 ) -> Result<usize> {
     validate_reduction(module, res, a, true, ctx, keys)
@@ -660,7 +665,7 @@ pub fn validate_blas_sum_cols<BE: Backend>(
     module: &Module<BE>,
     res: &impl BlasGrid<BE>,
     a: &impl BlasGrid<BE>,
-    ctx: &BlasContext<BE>,
+    ctx: &BlasContextPrepared<BE>,
     keys: &impl GetAutomorphismKey<BE>,
 ) -> Result<usize> {
     validate_reduction(module, res, a, false, ctx, keys)
@@ -672,7 +677,7 @@ fn validate_reduction<BE: Backend>(
     res: &impl BlasGrid<BE>,
     a: &impl BlasGrid<BE>,
     rows: bool,
-    ctx: &BlasContext<BE>,
+    ctx: &BlasContextPrepared<BE>,
     keys: &impl GetAutomorphismKey<BE>,
 ) -> Result<usize> {
     let op = if rows { "blas_sum_rows" } else { "blas_sum_cols" };
@@ -731,7 +736,7 @@ fn validate_shift<BE: Backend>(
     res: &impl BlasGrid<BE>,
     a: &impl BlasGrid<BE>,
     rows: bool,
-    ctx: &BlasContext<BE>,
+    ctx: &BlasContextPrepared<BE>,
     keys: &impl GetAutomorphismKey<BE>,
 ) -> Result<usize> {
     let op = if rows { "blas_rotate_rows" } else { "blas_rotate_cols" };
@@ -822,7 +827,7 @@ fn ensure_masks<BE: Backend>(
     op: &'static str,
     module: &Module<BE>,
     a: &impl BlasGridInfos,
-    ctx: &BlasContext<BE>,
+    ctx: &BlasContextPrepared<BE>,
     left: bool,
 ) -> Result<()> {
     ensure_dimension(op, ctx.log_d(), a)?;
@@ -849,7 +854,7 @@ pub fn validate_blas_matmul<BE: Backend>(
     res: &impl BlasGrid<BE>,
     a: &impl BlasGrid<BE>,
     b: &impl BlasGrid<BE>,
-    ctx: &BlasContext<BE>,
+    ctx: &BlasContextPrepared<BE>,
     tsk: &impl GetTensorKey<BE>,
     keys: &impl GetAutomorphismKey<BE>,
 ) -> Result<usize> {
@@ -879,7 +884,7 @@ pub fn validate_blas_matmul_prepare_left<BE: Backend>(
     module: &Module<BE>,
     res: &impl BlasMatMulOperandInfos,
     a: &impl BlasGrid<BE>,
-    ctx: &BlasContext<BE>,
+    ctx: &BlasContextPrepared<BE>,
     keys: &impl GetAutomorphismKey<BE>,
 ) -> Result<()> {
     let op = "blas_matmul_prepare_left";
@@ -890,7 +895,7 @@ pub fn validate_blas_matmul_prepare_left<BE: Backend>(
 
 /// [`validate_blas_matmul_prepare_left`] for
 /// [`blas_matmul_prepare_right`](crate::api::BlasMatMulOps::blas_matmul_prepare_right), with tau and psi^k, or for a
-/// replicated `b` [`BlasContext::tau_rep`] and [`BlasContext::rotate_rows_rep`], and the infos
+/// replicated `b` [`BlasContextPrepared::tau_rep`] and [`BlasContextPrepared::rotate_rows_rep`], and the infos
 /// [`blas_matmul_right_operand_layout`](crate::layouts::blas_matmul_right_operand_layout) gives.
 ///
 /// # Errors
@@ -900,7 +905,7 @@ pub fn validate_blas_matmul_prepare_right<BE: Backend>(
     module: &Module<BE>,
     res: &impl BlasMatMulOperandInfos,
     b: &impl BlasGrid<BE>,
-    ctx: &BlasContext<BE>,
+    ctx: &BlasContextPrepared<BE>,
     keys: &impl GetAutomorphismKey<BE>,
 ) -> Result<()> {
     let op = "blas_matmul_prepare_right";
@@ -942,7 +947,7 @@ pub fn validate_blas_matmul_prepared<BE: Backend>(
     res: &impl BlasGrid<BE>,
     a: &impl BlasMatMulOperandInfos,
     b: &impl BlasMatMulOperandInfos,
-    ctx: &BlasContext<BE>,
+    ctx: &BlasContextPrepared<BE>,
     tsk: &impl GetTensorKey<BE>,
     keys: &impl GetAutomorphismKey<BE>,
 ) -> Result<usize> {
@@ -976,8 +981,8 @@ pub fn validate_blas_matmul_pt_right<BE: Backend>(
     module: &Module<BE>,
     res: &impl BlasGrid<BE>,
     a: &impl BlasGrid<BE>,
-    b: &BlasPtOperand<BE>,
-    ctx: &BlasContext<BE>,
+    b: &BlasPtOperandPrepared<BE>,
+    ctx: &BlasContextPrepared<BE>,
     keys: &impl GetAutomorphismKey<BE>,
 ) -> Result<usize> {
     let op = "blas_matmul_pt_right";
@@ -1028,9 +1033,9 @@ pub fn validate_blas_matmul_pt_right<BE: Backend>(
 pub fn validate_blas_matmul_pt_left<BE: Backend>(
     module: &Module<BE>,
     res: &impl BlasGrid<BE>,
-    b: &BlasPtOperand<BE, Left>,
+    b: &BlasPtOperandPrepared<BE, Left>,
     a: &impl BlasGrid<BE>,
-    ctx: &BlasContext<BE>,
+    ctx: &BlasContextPrepared<BE>,
     keys: &impl GetAutomorphismKey<BE>,
 ) -> Result<usize> {
     let op = "blas_matmul_pt_left";
@@ -1056,7 +1061,12 @@ pub fn validate_blas_matmul_pt_left<BE: Backend>(
 }
 
 /// `a` is a grid at the context's `log_d` of blocks of the module's degree, which the context's maps read.
-fn ensure_factor<BE: Backend>(op: &'static str, module: &Module<BE>, a: &impl BlasGrid<BE>, ctx: &BlasContext<BE>) -> Result<()> {
+fn ensure_factor<BE: Backend>(
+    op: &'static str,
+    module: &Module<BE>,
+    a: &impl BlasGrid<BE>,
+    ctx: &BlasContextPrepared<BE>,
+) -> Result<()> {
     ensure_grid::<BE::Ring>(op, ctx.log_d(), a, a.blocks())?;
     ensure_layouts(op, module.n(), a, &[])?;
     ensure_maps(op, module, ctx.slots(), ctx.base2k(), ctx.coeffs_meta().k, &[a])
@@ -1068,7 +1078,7 @@ fn ensure_hot_context<BE: Backend>(
     op: &'static str,
     module: &Module<BE>,
     x: &impl BlasMatMulOperandInfos,
-    ctx: &BlasContext<BE>,
+    ctx: &BlasContextPrepared<BE>,
 ) -> Result<()> {
     if x.hint() == PrepareHint::Reuse {
         return Ok(());

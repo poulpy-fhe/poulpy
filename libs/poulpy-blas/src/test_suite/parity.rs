@@ -60,9 +60,9 @@ use crate::{
         BlasPtOperandPreparedFactory,
     },
     layouts::{
-        BlasCiphertext, BlasCiphertextOwned, BlasContext, BlasContextInfos, BlasContextLayout, BlasGridInfos, BlasLayout,
-        BlasMatMulOperandInfos, BlasMatVecOperandLayout, BlasModuleAlloc, BlasPlan, BlasPtAlgorithm, BlasPtOperand,
-        BlasPtOperandInfos, BlasPtOperandLayout, BlasPtSide, BlasVector, BlasVectorInfos, BlasVectorLayout, BlasVectorOwned,
+        BlasCiphertext, BlasCiphertextOwned, BlasContextInfos, BlasContextLayout, BlasContextPrepared, BlasGridInfos, BlasLayout,
+        BlasMatMulOperandInfos, BlasMatVecOperandLayout, BlasModuleAlloc, BlasPlan, BlasPtAlgorithm, BlasPtOperandInfos,
+        BlasPtOperandLayout, BlasPtOperandPrepared, BlasPtSide, BlasVector, BlasVectorInfos, BlasVectorLayout, BlasVectorOwned,
         BlasVectorShape, Left, Right, blas_matmul_left_term_layout, blas_matmul_max_base2k, blas_matmul_pt_left_max_base2k,
         blas_matmul_pt_right_max_base2k, blas_matmul_right_term_layout, blas_matvec_pt_max_base2k,
         context::module_layout,
@@ -350,7 +350,7 @@ fn diagonal_meta(params: CKKSTestParams, p: usize) -> CoeffsMeta {
 }
 
 /// The context of `2^log_d x 2^log_d` blocks, its maps at scale `p`, holding the masks of the masked products.
-fn context<B, F>(params: CKKSTestParams, module: &Module<B>, log_d: usize, p: usize) -> BlasContext<B>
+fn context<B, F>(params: CKKSTestParams, module: &Module<B>, log_d: usize, p: usize) -> BlasContextPrepared<B>
 where
     B: BlasParityBackend,
     Module<B>: BlasParityModule<B, F>,
@@ -568,7 +568,7 @@ where
         (true, &one_row, d + 1),
         (false, &one_row, 1),
     ];
-    let shift = |rows: bool, src: &BlasCiphertextOwned<B>, k: usize, ctx: &BlasContext<B>| {
+    let shift = |rows: bool, src: &BlasCiphertextOwned<B>, k: usize, ctx: &BlasContextPrepared<B>| {
         let mut res = operand(params, module, log_d, src.rows(), src.cols(), 100);
         if rows {
             let keys = fixture_keys(params, module, &plan.rotate_rows_galois_elements(order, k), false);
@@ -587,7 +587,7 @@ where
         }
     };
     out.extend(shifts.into_iter().map(|(rows, src, k)| shift(rows, src, k, &ctx)));
-    let sum = |rows: bool, src: &BlasCiphertextOwned<B>, k: usize, ctx: &BlasContext<B>| {
+    let sum = |rows: bool, src: &BlasCiphertextOwned<B>, k: usize, ctx: &BlasContextPrepared<B>| {
         let mut res = sized(params, module, log_d, src.rows(), src.cols(), k, 100);
         if rows {
             let keys = fixture_keys(params, module, &plan.sum_rows_galois_elements(order), false);
@@ -697,7 +697,7 @@ fn public_entry<F: TestScalar>(m: usize, r: usize, c: usize) -> F {
 }
 
 /// The public operand of `layout`, its entries [`public_entry`], prepared.
-fn prepared<B, F, S>(module: &Module<B>, layout: BlasPtOperandLayout<S>) -> BlasPtOperand<B, S>
+fn prepared<B, F, S>(module: &Module<B>, layout: BlasPtOperandLayout<S>) -> BlasPtOperandPrepared<B, S>
 where
     B: BlasParityBackend,
     Module<B>: BlasParityModule<B, F>,
@@ -724,7 +724,7 @@ fn public_operand<B, F>(
     count: usize,
     p: usize,
     algorithm: BlasPtAlgorithm,
-) -> BlasPtOperand<B>
+) -> BlasPtOperandPrepared<B>
 where
     B: BlasParityBackend,
     Module<B>: BlasParityModule<B, F>,
@@ -746,7 +746,7 @@ fn public_left_operand<B, F>(
     count: usize,
     p: usize,
     algorithm: BlasPtAlgorithm,
-) -> BlasPtOperand<B, Left>
+) -> BlasPtOperandPrepared<B, Left>
 where
     B: BlasParityBackend,
     Module<B>: BlasParityModule<B, F>,
@@ -764,7 +764,7 @@ where
 fn product<B: BlasParityBackend>(
     params: CKKSTestParams,
     module: &Module<B>,
-    ctx: &BlasContext<B>,
+    ctx: &BlasContextPrepared<B>,
     keys: &Recorded<B>,
     (a, b): (&BlasCiphertextOwned<B>, &BlasCiphertextOwned<B>),
     k: usize,
@@ -785,7 +785,7 @@ fn preparation<B: BlasParityBackend>(
     op: &'static str,
     operand: &impl BlasMatMulOperandInfos,
     input: &BlasCiphertextOwned<B>,
-    ctx: &BlasContext<B>,
+    ctx: &BlasContextPrepared<B>,
     right: bool,
     hint: PrepareHint,
     keys: &Recorded<B>,

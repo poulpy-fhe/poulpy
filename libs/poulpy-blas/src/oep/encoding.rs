@@ -3,8 +3,8 @@ use poulpy_core::layouts::DiagonalArithmetic;
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::layouts::{
-    BlasContext, BlasContextInfos, BlasContextUnprepared, BlasMatVecOperand, BlasMatVecOperandInfos, BlasMatVecOperandPrepared,
-    BlasPtOperand, BlasPtOperandInfos, BlasPtOperandUnprepared, BlasPtSide,
+    BlasContext, BlasContextInfos, BlasContextPrepared, BlasMatVecOperand, BlasMatVecOperandInfos, BlasMatVecOperandPrepared,
+    BlasPtOperand, BlasPtOperandInfos, BlasPtOperandPrepared, BlasPtSide,
 };
 
 /// Extension point of [`crate::api::BlasEncodingOps`], [`crate::api::BlasPtOperandPreparedFactory`],
@@ -34,14 +34,14 @@ pub unsafe trait BlasEncodingImpl: Backend {
     /// **Fixed:** each map's host diagonals, built from `entry` by [`crate::layouts::maps`], its schedule, the plan's,
     /// the blocks sharing the first block's, and its encoding by poulpy-ckks's `ckks_encode_linear_transformation_into`
     /// at the operand's `coeffs_meta`, map after map in the order of
-    /// [`BlasPtOperandUnprepared::maps`](crate::layouts::BlasPtOperandUnprepared::maps), the first error stopping it.
+    /// [`BlasPtOperand::maps`](crate::layouts::BlasPtOperand::maps), the first error stopping it.
     /// **Free:** its kernels and its scratch use.
     ///
     /// It panics on a `res` allocated for another module's slots or ring, then on a scratch short of its query, before
     /// any write, and returns poulpy-ckks's errors, after which `res` is unspecified.
     fn blas_pt_operand_encode<F, S>(
         module: &Module<Self>,
-        res: &mut BlasPtOperandUnprepared<Self, S>,
+        res: &mut BlasPtOperand<Self, S>,
         entry: impl Fn(usize, usize, usize) -> F,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> CKKSResult<()>
@@ -96,14 +96,14 @@ pub unsafe trait BlasEncodingImpl: Backend {
     ///
     /// **Fixed:** each map's host diagonals ([`crate::layouts::maps`]) and schedule, as the plan gives them, and its
     /// encoding by poulpy-ckks's `ckks_encode_linear_transformation_into` at the context's `coeffs_meta`, map after map
-    /// in the order of [`BlasContextUnprepared::maps`], the first error stopping it. **Free:** its kernels and its scratch
+    /// in the order of [`BlasContext::maps`], the first error stopping it. **Free:** its kernels and its scratch
     /// use.
     ///
     /// It panics on a `res` allocated for another module's slots or ring, then on a scratch short of its query, before
     /// any write, and returns poulpy-ckks's errors, after which `res` is unspecified.
     fn blas_context_encode<F>(
         module: &Module<Self>,
-        res: &mut BlasContextUnprepared<Self>,
+        res: &mut BlasContext<Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> CKKSResult<()>
     where
@@ -129,8 +129,8 @@ pub unsafe trait BlasEncodingImpl: Backend {
     /// preparation.
     fn blas_pt_operand_prepare<S: BlasPtSide>(
         module: &Module<Self>,
-        res: &mut BlasPtOperand<Self, S>,
-        other: &BlasPtOperandUnprepared<Self, S>,
+        res: &mut BlasPtOperandPrepared<Self, S>,
+        other: &BlasPtOperand<Self, S>,
         scratch: &mut ScratchArena<'_, Self>,
     );
 
@@ -172,8 +172,8 @@ pub unsafe trait BlasEncodingImpl: Backend {
     /// preparation.
     fn blas_context_prepare(
         module: &Module<Self>,
-        res: &mut BlasContext<Self>,
-        other: &BlasContextUnprepared<Self>,
+        res: &mut BlasContextPrepared<Self>,
+        other: &BlasContext<Self>,
         scratch: &mut ScratchArena<'_, Self>,
     );
 }
@@ -194,7 +194,7 @@ macro_rules! impl_blas_encoding_reference_full {
 
             fn blas_pt_operand_encode<F, S>(
                 module: &::poulpy_hal::layouts::Module<Self>,
-                res: &mut $crate::layouts::BlasPtOperandUnprepared<Self, S>,
+                res: &mut $crate::layouts::BlasPtOperand<Self, S>,
                 entry: impl Fn(usize, usize, usize) -> F,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> ::poulpy_ckks::CKKSResult<()>
@@ -239,7 +239,7 @@ macro_rules! impl_blas_encoding_reference_full {
 
             fn blas_context_encode<F>(
                 module: &::poulpy_hal::layouts::Module<Self>,
-                res: &mut $crate::layouts::BlasContextUnprepared<Self>,
+                res: &mut $crate::layouts::BlasContext<Self>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> ::poulpy_ckks::CKKSResult<()>
             where
@@ -258,8 +258,8 @@ macro_rules! impl_blas_encoding_reference_full {
 
             fn blas_pt_operand_prepare<S: $crate::layouts::BlasPtSide>(
                 module: &::poulpy_hal::layouts::Module<Self>,
-                res: &mut $crate::layouts::BlasPtOperand<Self, S>,
-                other: &$crate::layouts::BlasPtOperandUnprepared<Self, S>,
+                res: &mut $crate::layouts::BlasPtOperandPrepared<Self, S>,
+                other: &$crate::layouts::BlasPtOperand<Self, S>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) {
                 $crate::reference::BlasEncodingReference::blas_pt_operand_prepare_reference(module, res, other, scratch)
@@ -290,8 +290,8 @@ macro_rules! impl_blas_encoding_reference_full {
 
             fn blas_context_prepare(
                 module: &::poulpy_hal::layouts::Module<Self>,
-                res: &mut $crate::layouts::BlasContext<Self>,
-                other: &$crate::layouts::BlasContextUnprepared<Self>,
+                res: &mut $crate::layouts::BlasContextPrepared<Self>,
+                other: &$crate::layouts::BlasContext<Self>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) {
                 $crate::reference::BlasEncodingReference::blas_context_prepare_reference(module, res, other, scratch)

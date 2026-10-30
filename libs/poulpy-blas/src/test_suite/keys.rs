@@ -193,8 +193,8 @@ fn assert_vector_key_widths<BE>(
 /// alone, at the narrower of its input's and result's widths; a JKLS
 /// product by public matrices looks up its first map's keys from its input's width and its blocks' from the width that
 /// map leaves. The matrix products run on factors of one width, then on a narrower left or right factor; a right factor
-/// holding one matrix takes [`crate::layouts::BlasContext::tau_rep`] and
-/// [`crate::layouts::BlasContext::rotate_rows_rep`]. The context's maps and the public matrices sit a quarter of the
+/// holding one matrix takes [`crate::layouts::BlasContextPrepared::tau_rep`] and
+/// [`crate::layouts::BlasContextPrepared::rotate_rows_rep`]. The context's maps and the public matrices sit a quarter of the
 /// inputs' scale below it ([`other_scales`]), where a width taken from the inputs' scale in place of the maps' `p` or
 /// the public matrices' `p_B`, or capped by it, finds no key. The preparations, under either hint, look up every
 /// rotation key of their terms, each checked through the prepared product of their operand beside a cold one; the

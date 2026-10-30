@@ -35,7 +35,7 @@ use crate::{
     api::{BlasEncodingOps, BlasMatInterOps, BlasMatIntraOps, BlasMatMulOps, BlasMatVecOps},
     layouts::{
         BlasCiphertext, BlasCiphertextOwned, BlasContextInfos, BlasGridInfos, BlasLayout, BlasPlan, BlasPtAlgorithm,
-        BlasPtOperand, BlasVector, BlasVectorInfos, BlasVectorLayout, BlasVectorOwned, BlasVectorShape, Left, Right,
+        BlasPtOperandPrepared, BlasVector, BlasVectorInfos, BlasVectorLayout, BlasVectorOwned, BlasVectorShape, Left, Right,
         blas_matvec_pt_output_layout, ciphertext::layout_of, matvec_pt_galois_elements, replicated, sum_galois_elements,
     },
     oep::BlasImpl,
@@ -290,7 +290,7 @@ pub fn test_blas_conjugate_invariant<BE>(
             &mut scratch.borrow(),
         );
 
-        let pt_left: BlasPtOperand<BE, Left> = pt_operand::<BE, f64, Left>(
+        let pt_left: BlasPtOperandPrepared<BE, Left> = pt_operand::<BE, f64, Left>(
             module,
             BlasPlan::new(log_d).with_pt_algorithm(algorithm),
             2,

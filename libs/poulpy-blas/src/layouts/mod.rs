@@ -20,7 +20,7 @@ pub use ciphertext::{
     BlasMatMulOperandLayout, BlasModuleAlloc, grid_batch, replicated,
 };
 pub use context::{
-    BlasContext, BlasContextInfos, BlasContextLayout, BlasContextUnprepared, BlasPlan, BlasPtAlgorithm, sum_galois_elements,
+    BlasContext, BlasContextInfos, BlasContextLayout, BlasContextPrepared, BlasPlan, BlasPtAlgorithm, sum_galois_elements,
 };
 pub use matmul_operand::{
     BlasMatMulLeft, BlasMatMulOperand, BlasMatMulOperandPreparedFactory, BlasMatMulRight, blas_matmul_left_operand_layout,
@@ -40,7 +40,7 @@ pub use planning::{
     blas_sum_cols_key_uses, blas_sum_cols_output_layout, blas_sum_key_uses, blas_sum_output_layout, blas_sum_rows_key_uses,
     blas_sum_rows_output_layout, blas_transpose_key_uses, blas_transpose_output_layout,
 };
-pub use pt_operand::{BlasPtOperand, BlasPtOperandInfos, BlasPtOperandLayout, BlasPtOperandUnprepared, BlasPtSide, Left, Right};
+pub use pt_operand::{BlasPtOperand, BlasPtOperandInfos, BlasPtOperandLayout, BlasPtOperandPrepared, BlasPtSide, Left, Right};
 pub use validate::{
     validate_blas_matmul, validate_blas_matmul_prepare_left, validate_blas_matmul_prepare_right, validate_blas_matmul_prepared,
     validate_blas_matmul_pt_left, validate_blas_matmul_pt_right, validate_blas_matvec_pt, validate_blas_rotate,
