@@ -2,7 +2,7 @@
 
 ## 1. Layering, OEP and the reference macros
 
-- **Direct Module impls.** Only `GLWEBytesOf`, the host-only noise diagnostics and allocation and byte counts (`ModuleCoreAlloc`, `ModuleCoreCompressedAlloc`, the allocating and sizing methods `<X>PreparedFactory` provides as default bodies) have no OEP method, and `TransferInto` on the layout types.
+- **Direct Module impls.** Only the host-only noise diagnostics and allocation and byte counts (`<X>Alloc`, `<X>BytesOf`, the allocating and sizing methods `<X>PreparedFactory` provides as default bodies) have no OEP method, and `TransferInto` on the layout types.
 - **Host-only diagnostics.** Only `GLWENoise`, `GGLWENoise` and `GGSWNoise` read host coefficients, bounding `HostBackend<ZnxWord = i64>` and `HostData*` on the method with no OEP family; other host helpers (`at`, `Display`, codecs) bound `HostData*`, metadata accessors any `D: Data`, and a backend-owned value reaches the host only through `to_host_owned::<BE>()` or `display_host::<BE>()`.
 - **Coefficient-word fence.** Code working only for `ZnxWord = i64` says so in a comment at the impl or module naming the forcing HAL item.
 - **Reference placement.** A circuit over HAL operations is a `pub trait <ApiTrait>Reference<BE: Backend>` (or its grouped family's, `ConversionReference`) in `poulpy-core/src/reference/<family>`, its `<op>_reference` and `<op>_tmp_bytes_reference` written there or forwarded to same-named `pub fn`s.
@@ -11,7 +11,7 @@
 - **DFT limb layout.** A body forming a partial DFT view or calling `VecZnxDft::zero_at` states `const { assert!(BE::DFT_LIMBS_CONTIGUOUS, ..) }` and documents it, its hook exposed without dispatch where its reference would recurse. Runtime narrowing helpers keep their runtime assert.
 - **What may call reference.** The only operation bodies without API or OEP form that a core reference calls directly are `gglwe_product_dft_reference`, `gadget_dft_apply`, `glwe_keyswitch_internal`, `glwe_encrypt_sk_internal` and `glwe_encrypt_pk_internal`, each sized by its own query, a new such helper dispatching its own constituents, gadget sizing and placement helpers living in `poulpy_core::gadget`.
 - **Opt-in macros.** A family's opt-in macro, with one `<method>_reference` call per required method, is listed in `oep/mod.rs`'s `pub use crate::{impl_...}` block.
-- **Supertraits and bounds.** Only an allocation or sizing dependency (`ModuleCoreAlloc`, `GLWEBytesOf`) is a `Module<Self>: Trait<Self>` bound on the method needing it.
+- **Supertraits and bounds.** Only an allocation or sizing dependency (`<X>Alloc`, `<X>BytesOf`) is a `Module<Self>: Trait<Self>` bound on the method needing it.
 - **Registration lists.** A new core family is registered in the same diff:
   - ring-independent: in `impl_core_reference_full!` (`poulpy-core/src/oep/mod.rs`, directly or through `impl_operations_reference_full!`), `impl_oracle_core!` (`backends/poulpy-cpu-oracle/src/core_impl.rs`) and `impl_cpu_core_defaults!` (`backends/poulpy-cpu-portable/src/backend_defaults.rs`), per type instead of the last where a CPU backend overrides it;
   - standard-ring: in none of these, but on each standard backend type it serves, in or beside `impl_oracle_core_standard!`, and among the omissions the `impl_core_reference_full!` doc lists;
@@ -21,17 +21,12 @@
 
 ## 2. Naming and signatures
 
-- **Trait and family names.** A core API trait is `<Layout><Family>` with upper-case layout acronyms (`GLWE`, `GGLWE`, `GGSW`, `LWE`, `CI`), holding each method's `_assign`, `_add` and `_sub` siblings, and a new operation joins its closest neighbour's grouped OEP family (`GLWETensoringImpl` for products and relinearizations) when its circuit belongs there.
-- **Method grammar.** A method's object is the written layout in snake case, then any storage tier and `ci` (`glwe_switching_key_compressed_encrypt_sk`, `glwe_ci_embed`):
-  - qualifiers `_add`, `_sub`, `_sub_negate` (into or from `old(res)`), `_prepared` (prepared operands), `_sum` (term slices), `_dft`, `_dft_add` (DFT-domain result), `_at_col`, `_with_mask`, `_smudged`;
-  - encryption `<layout>[_compressed]_encrypt[_zero]_{sk|pk}[_<qualifier>]` in `<Layout>[Compressed]Encrypt{Sk|Pk}[<Qualifier>]`, generation from a secret alone `<layout>[_compressed]_generate`;
-  - conversions `<target>_from_<source>`, gadget products `_keyswitch`, `_automorphism`, `_external_product`.
-- **Destination suffixes.** Only new variants of existing `_into` operations (`glwe_add_into`) keep `_into`.
-- **Layout plumbing names.** Core's owned alias sits in `layouts/mod.rs`, entry views are `<X>AtViewRef`/`<X>AtViewMut`, decompression `decompress_<x>(res, other)` on `<X>Decompress`, and carving `take_<x>_scratch(infos)`, `(n, rank)` for secrets and `(module, infos)` for prepared GGLWE and GGSW.
+- **Trait families.** A core API trait holds each method's `_assign`, `_add` and `_sub` siblings, and a new operation joins its closest neighbour's grouped OEP family (`GLWETensoringImpl` for products and relinearizations) when its circuit belongs there.
+- **Layout plumbing.** Core's owned alias sits in `layouts/mod.rs`, decompression takes `(res, other)`, and carving takes `(infos)`, `(n, rank)` for secrets and `(module, infos)` for prepared GGLWE and GGSW.
 - **Key and secret parameters.** A single switching or automorphism key is `key`, a per-Galois-element source `keys: &H` (`H: GetAutomorphismKey<BE>`), a tensor key at a computed width `tsk: &H` (`H: GetTensorKey<BE>`), a public key `pk`, and secrets `sk`, `sk_in`/`sk_out`, `sk_lwe`/`sk_glwe` or `sk_prepared`; one evaluation key is a concrete prepared backend reference (`&GGLWEPreparedBackendRef<'_, BE>`, `&GGSWPreparedBackendRef<'_, BE>`), while ciphertexts, plaintexts, secrets and public keys stay generic over their view traits.
 - **Argument order.** After each operand with its qualifiers (`a, a_size, a_k`) come qualifiers shared by all terms or by infos-less prepared operands (a `galois` slice, their `base2k`), then keys or key sources.
 - **Encryption and decryption signatures.** Encryption takes `(res, [pt,] <key parameters>, <sources>, scratch)`, key encryptions' key parameters being `p, sk`, `sk_in, sk_out` or `sk_lwe, sk_glwe`, decryption takes `(res: &mut P, a: &A, sk, [sk_tensor,] scratch)`, and the host noise diagnostics `(res, [res_row, res_col,] pt_want, sk_prepared, scratch)`.
-- **Samplers and fills.** A `SamplingImpl` method `<layout>_add_noise` (adds) or `<layout>_fill_<what>` (overwrites) takes `base2k, k`, `res, res_col` (`res` alone for a whole-layout fill), the law (`dist`, `noise`), then `source: &mut Source`, or `seed_xa: [u8; 32]` on `_from_seed` fills.
+- **Samplers and fills.** A `SamplingImpl` method takes `base2k, k`, `res, res_col` (`res` alone for a whole-layout fill), the law (`dist`, `noise`), then `source: &mut Source`, or `seed_xa: [u8; 32]` on `_from_seed` fills.
 - **No optional operands.** Each variant of a public core API operation is its own method (`glwe_square_relinearize`), with its own `_assign` form where in place makes sense, never merged through an `Option` operand, which only internal OEP hooks take, or a caller-named type parameter.
 - **DFT-domain variants.** `<op>_dft` takes `res: &mut VecZnxDftBackendMut<'_, BE>`, `<op>_dft_add` (product into scratch, then `vec_znx_dft_add_assign`) is a required method with its own query, and their docs state the domain, input radix and how to finish the result.
 - **Reference functions.** A free reference function takes `module: &M` first with generics `<BE: Backend, M, ..>` (operand types after, in argument order), `M` bounded by the API traits its body calls, as the `*Reference` impl restates.
@@ -43,7 +38,7 @@
 
 ## 4. Scratch
 
-- **Core byte counts.** A carvable layout's `GLWEBytesOf::<x>_bytes_of_from_infos` (prepared: `<x>_prepared_bytes_of[_from_infos]`) pads every separately carved buffer but the last to `SCRATCH_ALIGN` and equals what `take_<x>_scratch` consumes at `infos.size()`.
+- **Core byte counts.** A carvable layout's `<X>BytesOf::<x>_bytes_of_from_infos` (prepared: `<x>_prepared_bytes_of[_from_infos]`) pads every separately carved buffer but the last to `SCRATCH_ALIGN` and equals what `take_<x>_scratch` consumes at `infos.size()`.
 - **Query arguments.** A core query takes `<param>_infos` (or its file neighbours' bare names, `infos` for one layout), `res_size` for a raw DFT accumulator and a limb count (`a_size`) for an infos-less prepared operand or a single-count body.
 - **Shared queries.** A form without its own query (`_assign`, `_add`, `_sub`, `_sub_negate`) is sized by its base query with `res` as input, a shared query is the maximum over its forms, each asserting it on its own operands (`(res, res, key)` for an assign form), an `_add`, `_sub` or `_sub_negate` form needing more getting its own, and a method sized by a query named otherwise says so.
 - **Prepare hints.** Single-product temporaries use `PrepareHint::OneShot`, and a byte count or query takes both hints' maximum when its infos do not fix the hint of what it sizes.
@@ -60,7 +55,7 @@
 
 ## 6. Layouts and allocation
 
-- **Module factories.** Outside its module a core layout is allocated only through `ModuleCoreAlloc`, `ModuleCoreCompressedAlloc` and `<X>PreparedFactory`, where a new layout adds its factory methods.
+- **Module factories.** Outside its module a core layout is allocated only through its `<X>Alloc` and `<X>PreparedFactory` traits, which a new layout adds.
 - **Fresh state.** Every core allocation starts with `noise: None` and `plaintext_meta: None`.
 - **Layout shape.** A new core layout is one struct `X` (its prepared tier over `<D: Data, BE: Backend>`) with `pub(crate)` fields of the domain newtypes (`Degree`, `Base2K`, `TorusPrecision`, `Rank`, `Dnum`, never `Dsize`), a public-field `<X>Layout` deriving `PartialEq, Eq, Copy, Clone, Debug` with the same Infos traits, an Infos trait providing `<x>_layout()`, and allocators and queries taking `&impl <X>Infos`.
 - **Threading a new field.** A field added to a core layout is also threaded in the same diff through:

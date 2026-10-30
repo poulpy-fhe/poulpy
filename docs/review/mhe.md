@@ -2,24 +2,22 @@
 
 ## 1. Protocol grammar and share types
 
-- **Protocol traits.** Every protocol is one API trait `<Thing>MHEProtocol<BE>` (OEP `<Thing>MHEProtocolImpl`), `<Thing>` naming the finalized core object (`GGSW`) or the ciphertext-transforming protocol (`GLWEEncToShare`, share `GLWEEncToShareShare`).
-- **Protocol methods.** A protocol's API and OEP traits hold exactly `mhe_<thing>_share_gen_tmp_bytes`, `mhe_<thing>_share_gen`, `mhe_<thing>_share_aggregate`, `mhe_<thing>_share_finalize_tmp_bytes`, `mhe_<thing>_share_finalize`, `<thing>` being `<Thing>` in snake case.
-- **One share type per protocol.** Each protocol has its own `<Thing>Share`; share types hold only published data, a party's private share (`secret` in the sharing conversions) staying a caller-owned core layout.
-- **PAT base traits.** Each PAT type has one trait `<PatType>Ops` (OEP `<PatType>Impl`, reference `<PatType>Reference`) with only `<pat>_aggregate_assign(res, a)`, `<pat>_finalize_tmp_bytes()` and `<pat>_finalize(res, pat, scratch)`, operands generic over core's backend-borrow, seed and infos traits.
-- **Non-protocol operations.** An operation outside gen, aggregate and finalize has a trait without `MHEProtocol` and `mhe_`-prefixed methods.
-- **Scheme-specific protocols.** A scheme-specific protocol lives under `poulpy-mhe/src/<scheme>/` mirroring the crate layers, with the scheme in every name (`<Scheme><Thing>MHEProtocol`, `<Scheme><Thing>Share`, `mhe_<scheme>_<thing>_share_*`) and share allocators in `MHE<Scheme>ModuleAlloc: MHEModuleAlloc`; scheme-agnostic protocols stay at the crate root.
+- **Protocol traits.** Every protocol is one API trait and one OEP trait holding exactly its share generation, aggregation and finalization and the generation and finalization queries.
+- **One share type per protocol.** Each protocol has its own share type; share types hold only published data, a party's private share (`secret` in the sharing conversions) staying a caller-owned core layout.
+- **PAT base traits.** Each PAT type has one trait with only an in-place aggregation `(res, a)`, a finalization query `()` and a finalization `(res, pat, scratch)`, operands generic over core's backend-borrow, seed and infos traits.
+- **Scheme-specific protocols.** A scheme-specific protocol lives under `poulpy-mhe/src/<scheme>/` mirroring the crate layers; scheme-agnostic protocols stay at the crate root.
 - **Owned shares, generic results.** Protocol methods take the share as the owned alias (`res: &mut <Thing>ShareOwned<BE>`, `a` and `share` as `&<Thing>ShareOwned<BE>`), other operands and the output generic over core traits.
 - **Argument order.** Signatures follow core's encryption order:
   - share generation: `res` (encryption-to-shares: `public`, then `secret`), key parameters (`p`), the data operand (`pt`, `mask` or input share `secret`), `sk` (or `sk_in`, `sk_out`), then `u`, `pk`, `pk_out`, `flood: Noise`, `seed: [u8; 32]`, `source_xu`, `source_xe`, `source_xm`, `source_smudge`, `scratch`;
   - finalization: `(res, [ct], share, [key], scratch)`.
 - **Mask-only share generation.** A generation reading only a ciphertext's mask takes `mask: &C` with `C: GLWEMaskToBackendRef<BE> + GLWEInfos`, its trait doc requiring a canonical mask and its body asserting the mask's canonical flag, the body entering only at finalization.
-- **Allocators mirror core.** Every PAT and share type has `MHEModuleAlloc` default bodies over core's allocation supertraits, leaving the blanket `impl MHEModuleAlloc<BE> for Module<BE>` empty: `<type_snake>_alloc_from_infos(&self, infos)` asserting the infos degree is the module's and `<type_snake>_alloc(&self, ..)` at the module degree, taking the wrapped core allocator's parameters in core's order minus those the protocol fixes.
+- **Allocators mirror core.** Every PAT and share type has its own allocation trait of default bodies over core's allocation traits, its blanket `impl` for `Module<BE>` empty, the `_alloc_from_infos(&self, infos)` form asserting the infos degree is the module's and the `_alloc(&self, ..)` form at the module degree, taking the wrapped core allocator's parameters in core's order minus those the protocol fixes.
 
 ## 2. Layers and extension points
 
 - **One stem per family.** A family's stem also names `test_suite/<stem>.rs`; a new protocol joins its family (switching and automorphism keys share `evaluation_key`) or adds its stem to every layer.
 - **Lists that enumerate protocols.** A new protocol or PAT type also updates:
-  - under `poulpy-mhe/src/`: `api/mod.rs` (module doc list, private `mod`, `pub use`), `delegates/mod.rs`, `oep/mod.rs` and `impl_mhe_reference_full!` (scheme families included), `reference/mod.rs`, `layouts/mod.rs` and the `MHEModuleAlloc` pair, `test_suite/mod.rs` and `mhe_backend_test_suite!`;
+  - under `poulpy-mhe/src/`: `api/mod.rs` (module doc list, private `mod`, `pub use`), `delegates/mod.rs`, `oep/mod.rs` and `impl_mhe_reference_full!` (scheme families included), `reference/mod.rs`, `layouts/mod.rs` and the type's `MHE<Type>Alloc` trait, `test_suite/mod.rs` and `mhe_backend_test_suite!`;
   - `poulpy-mhe/docs/mhe-contracts.md`: "Public API organization", the "Operation map" row, the "Replacing an operation" macro list;
   - the lists of `poulpy-mhe/README.md` and the poulpy-mhe line of the root `README.md`.
 - **Module exports.** `api` and `layouts` are glob re-exported at the crate root, `oep` and `reference` namespaced, in scheme modules too.
@@ -96,7 +94,7 @@
 
 ## 8. Documentation and CHANGELOG
 
-- **Protocol docs on the trait.** Each `*MHEProtocol` trait and its methods document the protocol's specifics (seed rules on `_share_gen`): what parties compute and the shares encrypt, what the common seed derives, what seed reuse or a dishonest input reveals, its private streams and their seeding rules, flood grid and required input properties, what shares must agree on and what finalization copies.
+- **Protocol docs on the trait.** Each `MHE*Protocol` trait and its methods document the protocol's specifics (seed rules on `_share_gen`): what parties compute and the shares encrypt, what the common seed derives, what seed reuse or a dishonest input reveals, its private streams and their seeding rules, flood grid and required input properties, what shares must agree on and what finalization copies.
 - **Contracts doc is cross-protocol.** `poulpy-mhe/docs/mhe-contracts.md` holds only cross-protocol rules, which a protocol diff touches only for such a rule or its rows and lists.
 
 ## 9. Tests and registration
