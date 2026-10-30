@@ -1,23 +1,23 @@
 use poulpy_core::layouts::*;
 use poulpy_hal::layouts::*;
-/// Backend implementation contract for [`Cswap`](crate::api::Cswap).
+/// Backend implementation contract for [`GLWECswap`](crate::api::GLWECswap).
 ///
 /// # Safety
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait CswapImpl: Backend {
-    /// Scratch bound of [`Self::cswap`]; may report less than the reference, never less than the body takes.
+pub unsafe trait GLWECswapImpl: Backend {
+    /// Scratch bound of [`Self::glwe_cswap_assign`]; may report less than the reference, never less than the body takes.
     #[allow(clippy::too_many_arguments)]
-    fn cswap_tmp_bytes<R, A, S>(module: &Module<Self>, res_a_infos: &R, res_b_infos: &A, s_infos: &S) -> usize
+    fn glwe_cswap_assign_tmp_bytes<R, A, S>(module: &Module<Self>, res_a_infos: &R, res_b_infos: &A, s_infos: &S) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
         S: GGSWInfos;
-    /// Reproduces [`cswap_reference`](crate::reference::bdd::cswap_reference) bit for bit, within
-    /// [`Self::cswap_tmp_bytes`]; free in kernels and scratch use.
+    /// Reproduces [`glwe_cswap_assign_reference`](crate::reference::bdd::glwe_cswap_assign_reference) bit for bit, within
+    /// [`Self::glwe_cswap_assign_tmp_bytes`]; free in kernels and scratch use.
     #[allow(clippy::too_many_arguments)]
-    fn cswap<A, B>(
+    fn glwe_cswap_assign<A, B>(
         module: &Module<Self>,
         res_a: &mut A,
         res_b: &mut B,

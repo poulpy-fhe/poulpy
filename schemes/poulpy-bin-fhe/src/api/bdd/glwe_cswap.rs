@@ -12,17 +12,22 @@ use poulpy_hal::layouts::*;
 ///
 /// but is performed entirely in the ciphertext domain.  Used by
 /// `GLWEBlindRetrieval` to implement oblivious array access.
-pub trait Cswap<BE: Backend> {
+pub trait GLWECswap<BE: Backend> {
     #[allow(clippy::too_many_arguments)]
-    /// Returns the minimum scratch-space size in bytes required by [`cswap`][Self::cswap].
-    fn cswap_tmp_bytes<R, A, S>(&self, res_a_infos: &R, res_b_infos: &A, s_infos: &S) -> usize
+    /// Returns the minimum scratch-space size in bytes required by [`glwe_cswap_assign`][Self::glwe_cswap_assign].
+    fn glwe_cswap_assign_tmp_bytes<R, A, S>(&self, res_a_infos: &R, res_b_infos: &A, s_infos: &S) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
         S: GGSWInfos;
     #[allow(clippy::too_many_arguments)]
-    fn cswap<A, B>(&self, res_a: &mut A, res_b: &mut B, s: &GGSWPreparedBackendRef<'_, BE>, scratch: &mut ScratchArena<'_, BE>)
-    where
+    fn glwe_cswap_assign<A, B>(
+        &self,
+        res_a: &mut A,
+        res_b: &mut B,
+        s: &GGSWPreparedBackendRef<'_, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
         A: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
         B: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos;
 }

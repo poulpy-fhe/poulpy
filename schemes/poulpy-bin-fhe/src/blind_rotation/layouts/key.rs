@@ -158,7 +158,7 @@ impl<D: Data, BRA: BlindRotationAlgo, W: ZnxWord> BlindRotationKey<D, BRA, W> {
         M: GGSWAlloc + ModuleCoreAlloc<OwnedBuf = D, ZnxWord = W> + ModuleN,
         A: BlindRotationKeyInfos,
     {
-        BRA::alloc_key(module, infos)
+        BRA::blind_rotation_key_alloc(module, infos)
     }
 }
 

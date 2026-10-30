@@ -58,3 +58,53 @@ pub fn bdd_key_encrypt_sk_reference<BRA: BlindRotationAlgo, BE: Backend<ZnxWord 
 
     scratch.wipe(bdd_key_encrypt_sk_tmp_bytes_reference::<BRA, BE, _>(module, &*res));
 }
+
+/// Reference bodies of the [`BDDKeyEncryptSkImpl`](crate::oep::BDDKeyEncryptSkImpl) methods, which
+/// [`impl_bdd_key_encrypt_sk_reference_full!`](crate::impl_bdd_key_encrypt_sk_reference_full) forwards to.
+pub trait BDDKeyEncryptSkReference<BRA: BlindRotationAlgo, BE: Backend> {
+    fn bdd_key_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
+    where
+        A: BDDKeyInfos;
+
+    fn bdd_key_encrypt_sk_reference<S0, S1>(
+        &self,
+        res: &mut BDDKey<BE::OwnedBuf, BRA, BE::ZnxWord>,
+        sk_lwe: &S0,
+        sk_glwe: &S1,
+        source_xe: &mut Source,
+        source_xa: &mut Source,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        S0: LWESecretToBackendRef<BE> + GetDistribution + LWEInfos,
+        S1: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos;
+}
+
+impl<BRA: BlindRotationAlgo, BE: Backend<ZnxWord = i64>> BDDKeyEncryptSkReference<BRA, BE> for Module<BE>
+where
+    Module<BE>: CircuitBootstrappingKeyEncryptSk<BRA, BE>
+        + GLWEToLWEKeyEncryptSk<BE>
+        + GLWESwitchingKeyEncryptSk<BE>
+        + GLWESecretSampling<BE>,
+{
+    fn bdd_key_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
+    where
+        A: BDDKeyInfos,
+    {
+        bdd_key_encrypt_sk_tmp_bytes_reference::<BRA, BE, A>(self, infos)
+    }
+
+    fn bdd_key_encrypt_sk_reference<S0, S1>(
+        &self,
+        res: &mut BDDKey<BE::OwnedBuf, BRA, BE::ZnxWord>,
+        sk_lwe: &S0,
+        sk_glwe: &S1,
+        source_xe: &mut Source,
+        source_xa: &mut Source,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        S0: LWESecretToBackendRef<BE> + GetDistribution + LWEInfos,
+        S1: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
+    {
+        bdd_key_encrypt_sk_reference(self, res, sk_lwe, sk_glwe, source_xe, source_xa, scratch)
+    }
+}

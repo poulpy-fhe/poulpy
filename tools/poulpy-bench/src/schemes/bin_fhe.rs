@@ -219,8 +219,12 @@ pub fn runner_circuit_bootstrapping<
     let ct_lwe: LWE<AlignedBuf, i64> = module.lwe_alloc_from_infos(&lwe_infos);
     let mut res: GGSW<AlignedBuf, i64> = module.ggsw_alloc_from_infos(&ggsw_infos);
 
-    let mut scratch: ScratchOwned<BE> =
-        ScratchOwned::alloc(module.circuit_bootstrapping_execute_tmp_bytes(7, params.extension_factor, &res, &cbt_infos));
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.circuit_bootstrapping_execute_to_constant_tmp_bytes(
+        7,
+        params.extension_factor,
+        &res,
+        &cbt_infos,
+    ));
     let mut cbt_key: CircuitBootstrappingKey<BE::OwnedBuf, BRA, BE::ZnxWord> =
         CircuitBootstrappingKey::alloc_from_infos(&module, &cbt_infos);
     module.circuit_bootstrapping_key_encrypt_sk(

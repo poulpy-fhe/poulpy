@@ -17,7 +17,7 @@ use poulpy_hal::{
 };
 use std::{collections::HashMap, marker::PhantomData, ops::Range};
 
-use crate::bdd_arithmetic::{Cmux, FheUintPrepared, FromBits, GetGGSWBit, ToBits, UnsignedInteger};
+use crate::bdd_arithmetic::{FheUintPrepared, FromBits, GLWECmux, GetGGSWBit, ToBits, UnsignedInteger};
 use poulpy_core::layouts::prepared::GGSWPreparedToBackendRef;
 use poulpy_core::{GLWEBytesOf, GLWEPlaintextBytesOf};
 
@@ -376,7 +376,7 @@ impl<D: Data, T: UnsignedInteger> FheUint<D, T, i64> {
             + GLWESub<BE>
             + GLWEAdd<BE>
             + GLWECopy<BE>,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeBDD<'a, T, BE>,
+        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeFheUint<'a, T, BE>,
     {
         assert!(dst < (T::BITS >> 4) as usize);
         assert!(src < (T::BITS >> 4) as usize);
@@ -415,7 +415,7 @@ impl<D: Data, T: UnsignedInteger> FheUint<D, T, i64> {
             + GLWESub<BE>
             + GLWEAdd<BE>
             + GLWECopy<BE>,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeBDD<'a, T, BE>,
+        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeFheUint<'a, T, BE>,
     {
         assert!(dst < (T::BITS >> 3) as usize);
         assert!(src < (T::BITS >> 3) as usize);
@@ -571,7 +571,7 @@ where
 }
 
 #[doc(hidden)]
-pub trait ScratchArenaTakeBDD<'a, T: UnsignedInteger, BE: Backend>
+pub trait ScratchArenaTakeFheUint<'a, T: UnsignedInteger, BE: Backend>
 where
     Self: ScratchArenaTakeGLWE<'a, BE>,
 {
@@ -579,7 +579,7 @@ where
     ///
     /// Returns the temporary and the remaining scratch space.
     #[allow(dead_code)]
-    fn take_fhe_uint<A>(self, infos: &A) -> (FheUint<BE::BufMut<'a>, T, BE::ZnxWord>, Self)
+    fn take_fhe_uint_scratch<A>(self, infos: &A) -> (FheUint<BE::BufMut<'a>, T, BE::ZnxWord>, Self)
     where
         A: GLWEInfos,
     {
@@ -594,7 +594,7 @@ where
     }
 }
 
-impl<'a, T: UnsignedInteger, BE: Backend> ScratchArenaTakeBDD<'a, T, BE> for ScratchArena<'a, BE> where
+impl<'a, T: UnsignedInteger, BE: Backend> ScratchArenaTakeFheUint<'a, T, BE> for ScratchArena<'a, BE> where
     Self: ScratchArenaTakeGLWE<'a, BE>
 {
 }
@@ -828,13 +828,13 @@ impl<T: UnsignedInteger> FheUint<AlignedBuf, T, i64> {
         R: GLWEInfos,
         A: GGSWInfos,
         H: GetAutomorphismKey<BE>,
-        M: Cmux<BE> + GLWEPack<BE>,
+        M: GLWECmux<BE> + GLWEPack<BE>,
     {
         let atk = keys
             .get_automorphism_key(-1, res_infos.k())
             .unwrap_or_else(|e| panic!("packing rotation -1: {e}"));
         module
-            .cmux_tmp_bytes(res_infos, res_infos, bit_infos)
+            .glwe_cmux_tmp_bytes(res_infos, res_infos, bit_infos)
             .max(module.glwe_pack_tmp_bytes(res_infos, res_infos, &atk))
     }
 
@@ -847,7 +847,7 @@ impl<T: UnsignedInteger> FheUint<AlignedBuf, T, i64> {
     ) where
         BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
         M: GLWEBytesOf<BE>
-            + Cmux<BE>
+            + GLWECmux<BE>
             + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
             + GLWEAlloc
             + ModuleLogN
@@ -872,7 +872,7 @@ impl<T: UnsignedInteger> FheUint<AlignedBuf, T, i64> {
         let mut scratch_1 = scratch.borrow();
 
         for (i, bits) in out_bits.iter_mut().enumerate().take(T::BITS as usize) {
-            module.cmux(bits, &one, &zero, &other.get_bit(i).to_backend_ref(), &mut scratch_1.borrow());
+            module.glwe_cmux(bits, &one, &zero, &other.get_bit(i).to_backend_ref(), &mut scratch_1.borrow());
         }
 
         self.pack(module, out_bits, keys, &mut scratch_1);
@@ -911,7 +911,7 @@ impl<D: Data, T: UnsignedInteger> FheUint<D, T, i64> {
             + GLWESub<BE>
             + GLWEAdd<BE>
             + GLWECopy<BE>,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeBDD<'a, T, BE>,
+        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeFheUint<'a, T, BE>,
     {
         assert!(
             scratch.available() >= Self::zero_byte_tmp_bytes(module, self, keys),
@@ -958,7 +958,7 @@ impl<D: Data, T: UnsignedInteger> FheUint<D, T, i64> {
             + GLWEAdd<BE>
             + GLWESub<BE>
             + GLWECopy<BE>,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeBDD<'a, T, BE>,
+        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeFheUint<'a, T, BE>,
     {
         assert!(byte < (1 << T::LOG_BYTES));
         assert!(

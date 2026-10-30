@@ -51,15 +51,15 @@ where
         BE::ggsw_blind_rotation::<R, A, K>(self, sign, bit_rsh, bit_mask, bit_lsh, res, a, fhe_uint, scratch)
     }
     #[allow(clippy::too_many_arguments)]
-    fn scalar_to_ggsw_blind_rotation_tmp_bytes<R, K>(&self, res_infos: &R, k_infos: &K) -> usize
+    fn ggsw_blind_rotation_from_scalar_tmp_bytes<R, K>(&self, res_infos: &R, k_infos: &K) -> usize
     where
         R: GLWEInfos,
         K: GGSWInfos,
     {
-        BE::scalar_to_ggsw_blind_rotation_tmp_bytes::<R, K>(self, res_infos, k_infos)
+        BE::ggsw_blind_rotation_from_scalar_tmp_bytes::<R, K>(self, res_infos, k_infos)
     }
     #[allow(clippy::too_many_arguments)]
-    fn scalar_to_ggsw_blind_rotation<R, A, K>(
+    fn ggsw_blind_rotation_from_scalar<R, A, K>(
         &self,
         sign: bool,
         bit_rsh: usize,
@@ -75,6 +75,16 @@ where
         K: GetGGSWBit<BE>,
         BE: Backend<ZnxWord = i64>,
     {
-        BE::scalar_to_ggsw_blind_rotation::<R, A, K>(self, sign, bit_rsh, bit_mask, bit_lsh, res, test_vector, fhe_uint, scratch)
+        BE::ggsw_blind_rotation_from_scalar::<R, A, K>(
+            self,
+            sign,
+            bit_rsh,
+            bit_mask,
+            bit_lsh,
+            res,
+            test_vector,
+            fhe_uint,
+            scratch,
+        )
     }
 }

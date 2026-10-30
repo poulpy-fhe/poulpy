@@ -9,7 +9,7 @@ use poulpy_hal::layouts::*;
 ///
 /// - `ggsw_blind_rotation`: rotates each GLWE row of an existing GGSW by the
 ///   encrypted exponent derived from `fhe_uint`.
-/// - `scalar_to_ggsw_blind_rotation`: constructs a fresh GGSW by first placing
+/// - `ggsw_blind_rotation_from_scalar`: constructs a fresh GGSW by first placing
 ///   the scalar test-vector into each row of a temporary GLWE and then rotating.
 pub trait GGSWBlindRotation<T: UnsignedInteger, BE: Backend> {
     #[allow(clippy::too_many_arguments)]
@@ -54,12 +54,12 @@ pub trait GGSWBlindRotation<T: UnsignedInteger, BE: Backend> {
         K: GetGGSWBit<BE>,
         BE: Backend<ZnxWord = i64>;
     #[allow(clippy::too_many_arguments)]
-    fn scalar_to_ggsw_blind_rotation_tmp_bytes<R, K>(&self, res_infos: &R, k_infos: &K) -> usize
+    fn ggsw_blind_rotation_from_scalar_tmp_bytes<R, K>(&self, res_infos: &R, k_infos: &K) -> usize
     where
         R: GLWEInfos,
         K: GGSWInfos;
     #[allow(clippy::too_many_arguments)]
-    fn scalar_to_ggsw_blind_rotation<R, A, K>(
+    fn ggsw_blind_rotation_from_scalar<R, A, K>(
         &self,
         sign: bool,
         bit_rsh: usize,

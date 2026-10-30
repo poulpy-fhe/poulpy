@@ -3,8 +3,8 @@ use std::collections::HashMap;
 
 use poulpy_bin_fhe::{
     bdd_arithmetic::{
-        Add, BDDKey, BDDKeyEncryptSk, BDDKeyLayout, BDDKeyPrepared, BDDKeyPreparedFactory, ExecuteBDDCircuit2WTo1W, FheUint,
-        FheUintPrepare, FheUintPrepared, GLWEBlindSelection, Xor,
+        BDDCircuitExecute2WTo1W, BDDKey, BDDKeyEncryptSk, BDDKeyLayout, BDDKeyPrepared, BDDKeyPreparedFactory, FheUint,
+        FheUintAdd, FheUintPrepare, FheUintPrepared, FheUintXor, GLWEBlindSelection,
     },
     blind_rotation::{BlindRotationAlgo, BlindRotationKeyLayout, BlindRotationKeyPreparedFactory, CGGI},
     circuit_bootstrapping::{CircuitBootstrappingKeyLayout, CircuitBootstrappingKeyPreparedFactory},
@@ -64,7 +64,7 @@ where
         + GLWESwitchingKeyPreparedFactory<BE>
         + GLWEToLWEKeyPreparedFactory<BE>
         + FheUintPrepare<BRA, BE>
-        + ExecuteBDDCircuit2WTo1W<BE>
+        + BDDCircuitExecute2WTo1W<BE>
         + GLWEBlindSelection<u32, BE>
         + GLWESecretSampling<BE>
         + LWESecretSampling<BE>,

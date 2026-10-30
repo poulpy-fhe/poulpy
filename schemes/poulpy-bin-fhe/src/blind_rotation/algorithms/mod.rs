@@ -17,7 +17,7 @@ use crate::blind_rotation::{BlindRotationKey, BlindRotationKeyInfos, BlindRotati
 /// usage at the type level.  Currently the only implementation is [`CGGI`].
 pub trait BlindRotationAlgo: Sync {
     /// Allocates a zero-filled [`BlindRotationKey`] from a dimension descriptor.
-    fn alloc_key<M, A>(module: &M, infos: &A) -> BlindRotationKey<M::OwnedBuf, Self, M::ZnxWord>
+    fn blind_rotation_key_alloc<M, A>(module: &M, infos: &A) -> BlindRotationKey<M::OwnedBuf, Self, M::ZnxWord>
     where
         M: GGSWAlloc + ModuleN,
         A: BlindRotationKeyInfos,

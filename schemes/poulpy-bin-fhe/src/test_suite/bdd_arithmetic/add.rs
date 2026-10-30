@@ -16,7 +16,7 @@ use crate::test_suite::bdd_arithmetic::{TEST_GGSW_INFOS, TEST_GLWE_INFOS, TestCo
 use crate::test_suite::parity::{assert_short_scratch_panics, snapshot_glwe};
 use crate::{
     bdd_arithmetic::{
-        Add, BDDKeyEncryptSk, BDDKeyPrepared, BDDKeyPreparedFactory, ExecuteBDDCircuit2WTo1W, FheUint, FheUintPrepare,
+        BDDCircuitExecute2WTo1W, BDDKeyEncryptSk, BDDKeyPrepared, BDDKeyPreparedFactory, FheUint, FheUintAdd, FheUintPrepare,
         FheUintPrepareDebug, FheUintPrepared, FheUintPreparedEncryptSk, FheUintPreparedFactory,
     },
     blind_rotation::BlindRotationAlgo,
@@ -37,7 +37,7 @@ pub fn test_bdd_add<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf: HostDataMut + 
         + BDDKeyPreparedFactory<BRA, BE>
         + GGSWNoise<BE>
         + FheUintPrepare<BRA, BE>
-        + ExecuteBDDCircuit2WTo1W<BE>
+        + BDDCircuitExecute2WTo1W<BE>
         + GLWEEncryptSk<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     for<'a> BE::BufMut<'a>: HostDataMut,
@@ -75,7 +75,7 @@ pub fn test_bdd_add<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf: HostDataMut + 
 
     let add_bytes: usize = res.add_tmp_bytes(module, &glwe_infos, &ggsw_infos, bdd_key_prepared);
     let before = snapshot_glwe::<BE, _>(&res);
-    assert_short_scratch_panics::<BE, _>(add_bytes, "execute_bdd_circuit_2w_to_1w: insufficient scratch", |s| {
+    assert_short_scratch_panics::<BE, _>(add_bytes, "bdd_circuit_execute_2w_to_1w: insufficient scratch", |s| {
         res.add(module, &a_enc_prep, &b_enc_prep, bdd_key_prepared, s)
     });
     assert_eq!(before, snapshot_glwe::<BE, _>(&res));
@@ -85,7 +85,7 @@ pub fn test_bdd_add<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf: HostDataMut + 
     let mt_threads: usize = 4;
     let add_mt_bytes: usize = res.add_multi_thread_tmp_bytes(module, mt_threads, &glwe_infos, &ggsw_infos, bdd_key_prepared);
     let before = snapshot_glwe::<BE, _>(&res);
-    assert_short_scratch_panics::<BE, _>(add_mt_bytes, "execute_bdd_circuit_2w_to_1w: insufficient scratch", |s| {
+    assert_short_scratch_panics::<BE, _>(add_mt_bytes, "bdd_circuit_execute_2w_to_1w: insufficient scratch", |s| {
         res.add_multi_thread(module, mt_threads, &a_enc_prep, &b_enc_prep, bdd_key_prepared, s)
     });
     assert_eq!(before, snapshot_glwe::<BE, _>(&res));

@@ -129,7 +129,7 @@ impl<D: Data, BRA: BlindRotationAlgo, W: ZnxWord> CircuitBootstrappingKey<D, BRA
         );
 
         Self {
-            brk: BRA::alloc_key(module, brk_infos),
+            brk: BRA::blind_rotation_key_alloc(module, brk_infos),
             atk: gal_els
                 .iter()
                 .map(|&gal_el| {

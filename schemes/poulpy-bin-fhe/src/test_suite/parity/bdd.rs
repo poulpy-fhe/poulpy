@@ -9,24 +9,24 @@ use std::collections::HashMap;
 
 /// Public operations and fixture preparation required for caller-selected parity.
 pub trait BddParityModule<BE: Backend>:
-    Cmux<BE>
-    + Cswap<BE>
+    GLWECmux<BE>
+    + GLWECswap<BE>
     + GLWEBlindRotation<BE>
     + GLWEBlindSelection<u8, BE>
     + GLWEBlindRetrieval<BE>
     + GGSWBlindRotation<u8, BE>
-    + ExecuteBDDCircuit<BE>
+    + BDDCircuitExecute<BE>
     + GGSWPreparedFactory<BE>
 {
 }
 impl<BE: Backend, M> BddParityModule<BE> for M where
-    M: Cmux<BE>
-        + Cswap<BE>
+    M: GLWECmux<BE>
+        + GLWECswap<BE>
         + GLWEBlindRotation<BE>
         + GLWEBlindSelection<u8, BE>
         + GLWEBlindRetrieval<BE>
         + GGSWBlindRotation<u8, BE>
-        + ExecuteBDDCircuit<BE>
+        + BDDCircuitExecute<BE>
         + GGSWPreparedFactory<BE>
 {
 }
@@ -102,8 +102,10 @@ where
         GLWEToBackendMut::<BE>::set_noise(&mut left, Some(provenance.clone()));
         GLWEToBackendMut::<BE>::set_noise(&mut right, Some(provenance.clone()));
         if swap {
-            let bytes = module.cswap_tmp_bytes(&left, &right, &bit);
-            with_scratch::<BE, _>(bytes, |scratch| module.cswap(&mut left, &mut right, &bit, scratch));
+            let bytes = module.glwe_cswap_assign_tmp_bytes(&left, &right, &bit);
+            with_scratch::<BE, _>(bytes, |scratch| {
+                module.glwe_cswap_assign(&mut left, &mut right, &bit, scratch)
+            });
             assert_eq!(left.noise(), None);
             assert_eq!(right.noise(), None);
             outputs.push(snapshot_glwe::<BE, _>(&left));
@@ -111,11 +113,11 @@ where
         } else {
             let mut out = fixture_glwe(module, &layout, 2);
             GLWEToBackendMut::<BE>::set_noise(&mut out, Some(provenance.clone()));
-            let bytes = module.cmux_tmp_bytes(&out, &left, &bit);
+            let bytes = module.glwe_cmux_tmp_bytes(&out, &left, &bit);
             with_scratch::<BE, _>(bytes, |scratch| match variant {
-                0 | 3 => module.cmux(&mut out, &left, &right, &bit, scratch),
-                1 => module.cmux_assign(&mut out, &right, &bit, scratch),
-                _ => module.cmux_assign_neg(&mut out, &right, &bit, scratch),
+                0 | 3 => module.glwe_cmux(&mut out, &left, &right, &bit, scratch),
+                1 => module.glwe_cmux_assign(&mut out, &right, &bit, scratch),
+                _ => module.glwe_cmux_neg_assign(&mut out, &right, &bit, scratch),
             });
             assert_eq!(out.noise(), None);
             assert_eq!(left.noise(), Some(provenance.clone()));
@@ -127,23 +129,23 @@ where
 }
 
 /// Checks all CMux method variants with exact advertised scratch.
-pub fn test_cmux_parity<BR: ParityBackend, BT: ParityBackend>(module_ref: &Module<BR>, module_test: &Module<BT>)
+pub fn test_glwe_cmux_parity<BR: ParityBackend, BT: ParityBackend>(module_ref: &Module<BR>, module_test: &Module<BT>)
 where
     Module<BR>: BddParityModule<BR>,
     Module<BT>: BddParityModule<BT>,
 {
     let want = gates(module_ref, false);
-    super::assert_untagged("cmux", &want);
+    super::assert_untagged("glwe_cmux", &want);
     assert_eq!(want, gates(module_test, false));
 }
 /// Checks conditional swap, including a selector radix different from the operands.
-pub fn test_cswap_parity<BR: ParityBackend, BT: ParityBackend>(module_ref: &Module<BR>, module_test: &Module<BT>)
+pub fn test_glwe_cswap_assign_parity<BR: ParityBackend, BT: ParityBackend>(module_ref: &Module<BR>, module_test: &Module<BT>)
 where
     Module<BR>: BddParityModule<BR>,
     Module<BT>: BddParityModule<BT>,
 {
     let want = gates(module_ref, true);
-    super::assert_untagged("cswap", &want);
+    super::assert_untagged("glwe_cswap_assign", &want);
     assert_eq!(want, gates(module_test, true));
 }
 
@@ -315,8 +317,8 @@ where
     let bytes = module.glwe_blind_retrieval_tmp_bytes(&layout, &key);
     for reverse in [false, true, false] {
         with_scratch::<BE, _>(bytes, |s| match reverse {
-            false => module.glwe_blind_retrieval_statefull(1, 2, &mut values, selectors, s),
-            true => module.glwe_blind_retrieval_statefull_rev(1, 2, &mut values, selectors, s),
+            false => module.glwe_blind_retrieval_stateful_assign(1, 2, &mut values, selectors, s),
+            true => module.glwe_blind_retrieval_stateful_rev_assign(1, 2, &mut values, selectors, s),
         });
         outputs.extend(values.iter().map(snapshot_glwe::<BE, _>));
     }
@@ -336,7 +338,7 @@ where
 
 fn streaming_retrieval<BE: ParityBackend>(module: &Module<BE>) -> Vec<GlweSnapshot>
 where
-    Module<BE>: Cmux<BE> + poulpy_core::GLWECopy<BE> + poulpy_core::GLWEZero<BE> + GGSWPreparedFactory<BE>,
+    Module<BE>: GLWECmux<BE> + poulpy_core::GLWECopy<BE> + poulpy_core::GLWEZero<BE> + GGSWPreparedFactory<BE>,
 {
     use std::panic::{AssertUnwindSafe, catch_unwind};
 
@@ -436,8 +438,8 @@ where
 /// retrieval, including exact workspace, borrowed selectors and state reuse.
 pub fn test_glwe_blind_retriever_parity<BR: ParityBackend, BT: ParityBackend>(module_ref: &Module<BR>, module_test: &Module<BT>)
 where
-    Module<BR>: Cmux<BR> + poulpy_core::GLWECopy<BR> + poulpy_core::GLWEZero<BR> + GGSWPreparedFactory<BR>,
-    Module<BT>: Cmux<BT> + poulpy_core::GLWECopy<BT> + poulpy_core::GLWEZero<BT> + GGSWPreparedFactory<BT>,
+    Module<BR>: GLWECmux<BR> + poulpy_core::GLWECopy<BR> + poulpy_core::GLWEZero<BR> + GGSWPreparedFactory<BR>,
+    Module<BT>: GLWECmux<BT> + poulpy_core::GLWECopy<BT> + poulpy_core::GLWEZero<BT> + GGSWPreparedFactory<BT>,
 {
     let want = streaming_retrieval(module_ref);
     super::assert_untagged("streaming retrieval", &want);
@@ -465,18 +467,18 @@ where
     let mut outputs = Vec::new();
     for threads in [1, 2, 8] {
         let mut out: Vec<_> = (0..3).map(|i| fixture_glwe(module, &layout, 50 + i)).collect();
-        let per_worker = module.execute_bdd_circuit_tmp_bytes_for(&layout, &key, &TinyCircuit);
+        let per_worker = module.bdd_circuit_execute_circuit_tmp_bytes(&layout, &key, &TinyCircuit);
         let workers = poulpy_hal::execution::worker_count::<BE::TaskExecutor>(threads, 2);
         let bytes = workers * poulpy_hal::execution::worker_scratch_bytes::<BE>(per_worker);
         with_scratch::<BE, _>(bytes, |s| {
-            module.execute_bdd_circuit_multi_thread(threads, &mut out, &inputs, &TinyCircuit, s)
+            module.bdd_circuit_execute_multi_thread(threads, &mut out, &inputs, &TinyCircuit, s)
         });
         outputs.extend(out.iter().map(snapshot_glwe::<BE, _>));
     }
     outputs
 }
 /// Checks BDD copy/CMux levels, zero output tails and several worker requests.
-pub fn test_execute_bdd_circuit_parity<BR: ParityBackend, BT: ParityBackend>(module_ref: &Module<BR>, module_test: &Module<BT>)
+pub fn test_bdd_circuit_execute_parity<BR: ParityBackend, BT: ParityBackend>(module_ref: &Module<BR>, module_test: &Module<BT>)
 where
     Module<BR>: BddParityModule<BR>,
     Module<BT>: BddParityModule<BT>,
@@ -500,7 +502,7 @@ where
         let input = fixture_ggsw(module, &key, 61);
         let mut out = fixture_ggsw(module, &key, 61);
         let bytes = if variant == 2 {
-            module.scalar_to_ggsw_blind_rotation_tmp_bytes(&key, &key)
+            module.ggsw_blind_rotation_from_scalar_tmp_bytes(&key, &key)
         } else if variant == 1 {
             module.ggsw_blind_rotation_tmp_bytes(&out, &out, &key)
         } else {
@@ -509,7 +511,7 @@ where
         with_scratch::<BE, _>(bytes, |s| match variant {
             0 => module.ggsw_blind_rotation(true, 1, 2, 0, &mut out, &input, &inputs, s),
             1 => module.ggsw_blind_rotation_assign(false, 1, 2, 0, &mut out, &inputs, s),
-            _ => module.scalar_to_ggsw_blind_rotation(true, 1, 2, 0, &mut out, &scalar, &inputs, s),
+            _ => module.ggsw_blind_rotation_from_scalar(true, 1, 2, 0, &mut out, &scalar, &inputs, s),
         });
         outputs.push(snapshot_ggsw::<BE, _>(&out));
     }

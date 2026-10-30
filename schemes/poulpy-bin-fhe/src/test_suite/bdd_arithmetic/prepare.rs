@@ -14,7 +14,7 @@ use rand::Rng;
 use crate::test_suite::bdd_arithmetic::{TEST_GGSW_INFOS, TEST_GLWE_INFOS, TestContext};
 use crate::{
     bdd_arithmetic::{
-        BDDKeyEncryptSk, BDDKeyPrepared, BDDKeyPreparedFactory, ExecuteBDDCircuit2WTo1W, FheUint, FheUintPrepare,
+        BDDCircuitExecute2WTo1W, BDDKeyEncryptSk, BDDKeyPrepared, BDDKeyPreparedFactory, FheUint, FheUintPrepare,
         FheUintPrepareDebug, FheUintPreparedDebug, FheUintPreparedEncryptSk, FheUintPreparedFactory,
     },
     blind_rotation::BlindRotationAlgo,
@@ -35,7 +35,7 @@ pub fn test_bdd_prepare<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = AlignedBu
         + BDDKeyPreparedFactory<BRA, BE>
         + GGSWNoise<BE>
         + FheUintPrepare<BRA, BE>
-        + ExecuteBDDCircuit2WTo1W<BE>
+        + BDDCircuitExecute2WTo1W<BE>
         + GLWEEncryptSk<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     for<'a> BE::BufRef<'a>: HostDataRef,
