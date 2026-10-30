@@ -227,20 +227,20 @@ pub fn test_word_compat_prepare_hint_sizes<BA: Backend, BB: Backend>(
     fn check<BE: Backend>(n: usize) {
         for hint in [PrepareHint::Reuse, PrepareHint::OneShot] {
             assert_eq!(
-                BE::bytes_of_svp_ppol(n, 2, hint),
-                BE::bytes_of_svp_ppol(n, 2, PrepareHint::Reuse)
+                BE::svp_ppol_bytes_of(n, 2, hint),
+                BE::svp_ppol_bytes_of(n, 2, PrepareHint::Reuse)
             );
             assert_eq!(
-                BE::bytes_of_vmp_pmat(n, 3, 2, 2, 4, hint),
-                BE::bytes_of_vmp_pmat(n, 3, 2, 2, 4, PrepareHint::Reuse)
+                BE::vmp_pmat_bytes_of(n, 3, 2, 2, 4, hint),
+                BE::vmp_pmat_bytes_of(n, 3, 2, 2, 4, PrepareHint::Reuse)
             );
             assert_eq!(
-                BE::bytes_of_cnv_pvec_left(n, 2, 3, hint),
-                BE::bytes_of_cnv_pvec_left(n, 2, 3, PrepareHint::Reuse)
+                BE::cnv_pvec_left_bytes_of(n, 2, 3, hint),
+                BE::cnv_pvec_left_bytes_of(n, 2, 3, PrepareHint::Reuse)
             );
             assert_eq!(
-                BE::bytes_of_cnv_pvec_right(n, 2, 3, hint),
-                BE::bytes_of_cnv_pvec_right(n, 2, 3, PrepareHint::Reuse)
+                BE::cnv_pvec_right_bytes_of(n, 2, 3, hint),
+                BE::cnv_pvec_right_bytes_of(n, 2, 3, PrepareHint::Reuse)
             );
             let pmat = VmpPMatOwned::<BE>::alloc(n, 3, 2, 2, 4, hint);
             assert_eq!(pmat.hint(), hint);

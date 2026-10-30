@@ -7,7 +7,7 @@ use poulpy_core::layouts::{
     GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos,
 };
 use poulpy_hal::{
-    api::{ScratchArenaTakeBasic, VecZnxDftBytesOf},
+    api::{ScratchArenaTakeVecZnxDft, VecZnxDftBytesOf},
     layouts::{Backend, Module, PrepareHint, ScratchArena, VecZnxDftToBackendMut},
 };
 
@@ -152,7 +152,7 @@ impl<BE: Backend> BlasJklsReference<BE> for Module<BE> {
         let staged = mapped_block(layout_of(src), first);
         let term = mapped_block(staged, masks[0]);
         let cols = res.rank().as_usize() + 1;
-        let acc = BE::scratch_aligned(self.bytes_of_vec_znx_dft(res.n().as_usize(), cols, term.size() + plaintext.size()));
+        let acc = BE::scratch_aligned(self.vec_znx_dft_bytes_of(res.n().as_usize(), cols, term.size() + plaintext.size()));
         let step = BE::blas_map_blocks_tmp_bytes(self, 1, &staged, src, &[first], keys)
             .max(BE::blas_map_blocks_tmp_bytes(self, 1, &term, &staged, masks, keys))
             .max(self.ckks_copy_tmp_bytes(&term, &staged))

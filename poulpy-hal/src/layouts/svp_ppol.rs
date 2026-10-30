@@ -100,7 +100,7 @@ impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>> ZnxView for SvpPPol<D,
         let element_bytes = crate::layouts::element_view_span(self)
             .checked_mul(size_of::<W>())
             .expect("SvpPPol element-view byte size overflows usize");
-        let backend_bytes = B::bytes_of_svp_ppol(self.n(), self.cols(), self.hint());
+        let backend_bytes = B::svp_ppol_bytes_of(self.n(), self.cols(), self.hint());
         assert_eq!(
             element_bytes, backend_bytes,
             "SvpPPol backend representation ({backend_bytes} bytes) does not expose a dense {element_bytes}-byte element view"
@@ -165,7 +165,7 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> SvpPPol<D, W, B> {
     where
         B: Backend<OwnedBuf = D>,
     {
-        let data: <B as Backend>::OwnedBuf = B::alloc_zeroed_bytes(B::bytes_of_svp_ppol(n, cols, hint));
+        let data: <B as Backend>::OwnedBuf = B::alloc_zeroed_bytes(B::svp_ppol_bytes_of(n, cols, hint));
         SvpPPol {
             data,
             shape: SvpPPolShape::new(n, cols, hint),
@@ -283,7 +283,7 @@ impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>> fmt::Display for SvpPP
         let element_bytes = crate::layouts::element_view_span(self)
             .checked_mul(size_of::<W>())
             .expect("SvpPPol element-view byte size overflows usize");
-        let backend_bytes = B::bytes_of_svp_ppol(self.n(), self.cols(), self.hint());
+        let backend_bytes = B::svp_ppol_bytes_of(self.n(), self.cols(), self.hint());
         if element_bytes != backend_bytes {
             return writeln!(f, "  <backend-packed representation: {backend_bytes} bytes>");
         }
@@ -327,8 +327,8 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> SvpPPol<D, W, B> {
     {
         let shape = self.shape;
         assert_eq!(
-            B::bytes_of_svp_ppol(shape.n(), shape.cols(), shape.hint()),
-            B2::bytes_of_svp_ppol(shape.n(), shape.cols(), shape.hint()),
+            B::svp_ppol_bytes_of(shape.n(), shape.cols(), shape.hint()),
+            B2::svp_ppol_bytes_of(shape.n(), shape.cols(), shape.hint()),
             "into_backend: byte sizes diverge despite declared layout compatibility"
         );
         SvpPPol {

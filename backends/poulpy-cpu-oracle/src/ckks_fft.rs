@@ -13,7 +13,7 @@
 //! value for value.
 
 use poulpy_ckks::numerics::CKKSFloat;
-use poulpy_hal::api::{NegacyclicFFT, NegacyclicFFTNew};
+use poulpy_hal::api::{ReimFFT, ReimIFFT, ReimM, ReimNew};
 
 use crate::ckks_roots::root_of_unity;
 
@@ -63,7 +63,7 @@ impl<F: CKKSFloat> EncodingFft<F> {
     }
 }
 
-impl<F: CKKSFloat> NegacyclicFFTNew<F> for EncodingFft<F> {
+impl<F: CKKSFloat> ReimNew<F> for EncodingFft<F> {
     fn new(m: usize) -> Self {
         let log_order = (4 * m).trailing_zeros();
         Self {
@@ -74,18 +74,22 @@ impl<F: CKKSFloat> NegacyclicFFTNew<F> for EncodingFft<F> {
     }
 }
 
-impl<F: CKKSFloat> NegacyclicFFT<F> for EncodingFft<F> {
+impl<F: CKKSFloat> ReimM for EncodingFft<F> {
     fn m(&self) -> usize {
         self.m
     }
+}
 
-    fn fft(&self, data: &mut [F]) {
+impl<F: CKKSFloat> ReimFFT<F> for EncodingFft<F> {
+    fn reim_fft(&self, data: &mut [F]) {
         assert_eq!(data.len(), 2 * self.m);
         let (re, im) = data.split_at_mut(self.m);
         self.forward(re, im, 0, self.m, self.m);
     }
+}
 
-    fn ifft(&self, data: &mut [F]) {
+impl<F: CKKSFloat> ReimIFFT<F> for EncodingFft<F> {
+    fn reim_ifft(&self, data: &mut [F]) {
         assert_eq!(data.len(), 2 * self.m);
         let (re, im) = data.split_at_mut(self.m);
         self.inverse(re, im, 0, self.m, self.m);
@@ -94,14 +98,14 @@ impl<F: CKKSFloat> NegacyclicFFT<F> for EncodingFft<F> {
 
 #[cfg(test)]
 mod tests {
-    use poulpy_hal::{api::NegacyclicFFTNew, test_suite::reim::test_negacyclic_fft};
+    use poulpy_hal::{api::ReimNew, test_suite::reim::test_reim_fft};
 
     use super::EncodingFft;
 
     #[test]
     fn transform_meets_the_hal_contract() {
         for log_m in 0..=8 {
-            test_negacyclic_fft(&EncodingFft::<f64>::new(1 << log_m));
+            test_reim_fft(&EncodingFft::<f64>::new(1 << log_m));
         }
     }
 }

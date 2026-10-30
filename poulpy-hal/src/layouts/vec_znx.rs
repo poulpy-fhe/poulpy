@@ -506,7 +506,7 @@ pub type VecZnxBackendMut<'a, B> = VecZnx<<B as Backend>::BufMut<'a>, <B as Back
 /// Allocates a zero-initialized backend-owned `VecZnx`.
 pub fn vec_znx_alloc_zeroed<B: Backend>(n: usize, cols: usize, size: usize) -> VecZnx<B::OwnedBuf, B::ZnxWord> {
     VecZnx {
-        data: B::alloc_zeroed_bytes(B::bytes_of_vec_znx(n, cols, size)),
+        data: B::alloc_zeroed_bytes(B::vec_znx_bytes_of(n, cols, size)),
         shape: VecZnxShape::new(n, cols, size),
         _phantom: PhantomData,
     }

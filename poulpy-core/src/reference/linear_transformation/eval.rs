@@ -13,7 +13,7 @@ use crate::layouts::BabyStepOperand;
 use poulpy_hal::layouts::Module;
 use poulpy_hal::{
     api::{
-        CnvPVecAlloc, CnvPVecBytesOf, Convolution, VecZnxAutomorphismAssign, VecZnxBigAddAssign, VecZnxBigAlloc,
+        CnvOps, CnvPVecAlloc, CnvPVecBytesOf, VecZnxAutomorphismAssign, VecZnxBigAddAssign, VecZnxBigAlloc,
         VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf, VecZnxBigFromSmall,
         VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftAutomorphism,
         VecZnxDftAutomorphismAddWithPlanTmpBytes, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApply,
@@ -70,7 +70,7 @@ where
         + poulpy_hal::api::ModuleN
         + GLWEAutomorphism<BE>
         + GLWEMulPlain<BE>
-        + Convolution<BE>
+        + CnvOps<BE>
         + GGLWEProductReference<BE>
         + poulpy_hal::api::VecZnxAutomorphism<BE>
         + crate::reference::keyswitching::GLWEKeyswitchInternal<BE>
@@ -195,11 +195,11 @@ where
     R: GLWEInfos,
     K: GGLWEInfos,
 {
-    let prod_col_big = module.bytes_of_vec_znx_big(module.n(), 1, prod_size);
-    let prod_dft = module.bytes_of_vec_znx_dft(module.n(), cols, prod_size);
+    let prod_col_big = module.vec_znx_big_bytes_of(module.n(), 1, prod_size);
+    let prod_dft = module.vec_znx_dft_bytes_of(module.n(), cols, prod_size);
     let lazy_size = key.size().max(prod_size);
-    let lazy_acc_dft = module.bytes_of_vec_znx_dft(module.n(), cols, lazy_size);
-    let lazy_acc_big = module.bytes_of_vec_znx_big(module.n(), cols, lazy_size);
+    let lazy_acc_dft = module.vec_znx_dft_bytes_of(module.n(), cols, lazy_size);
+    let lazy_acc_big = module.vec_znx_big_bytes_of(module.n(), cols, lazy_size);
     let lazy_dft = crate::reference::keyswitching::glwe::gglwe_product_from_dft_tmp_bytes(module, cols - 1, prod_size, key);
     let fallback_work = products_bytes
         .max(module.glwe_automorphism_tmp_bytes(res, res, key))
@@ -235,7 +235,7 @@ where
     BE: Backend + crate::oep::GGLWEProductDigitsStridedImpl + crate::oep::LinearTransformationImpl,
     Module<BE>: GLWEBytesOf<BE>
         + poulpy_hal::api::ModuleN
-        + Convolution<BE>
+        + CnvOps<BE>
         + GLWEAutomorphism<BE>
         + GGLWEProductReference<BE>
         + poulpy_hal::api::VecZnxAutomorphism<BE>
@@ -273,7 +273,7 @@ pub fn glwe_prepare_linear_transformation_baby_steps_reference<BE, A, H, L: Baby
     Module<BE>: GLWEBytesOf<BE>
         + CnvPVecAlloc<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
-        + Convolution<BE>
+        + CnvOps<BE>
         + GLWEAutomorphism<BE>
         + GGLWEProductReference<BE>
         + poulpy_hal::api::VecZnxAutomorphism<BE>
@@ -337,7 +337,7 @@ pub fn glwe_eval_linear_transformation_into_reference<BE, R, P, H, L: BabyStepOp
         + GLWECopy<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
         + CnvPVecBytesOf
-        + Convolution<BE>
+        + CnvOps<BE>
         + poulpy_hal::api::ModuleN
         + GGLWEProductReference<BE>
         + poulpy_hal::api::VecZnxAutomorphism<BE>
@@ -400,7 +400,7 @@ where
         + poulpy_hal::api::ModuleN
         + GLWEAutomorphism<BE>
         + GLWEMulPlain<BE>
-        + Convolution<BE>
+        + CnvOps<BE>
         + GGLWEProductReference<BE>
         + poulpy_hal::api::VecZnxAutomorphism<BE>
         + crate::reference::keyswitching::GLWEKeyswitchInternal<BE>
@@ -422,7 +422,7 @@ where
 {
     // A batch of buckets, each sized like the single budget's PROD buffer.
     let bucket = BE::glwe_giant_step_batch(module)
-        * BE::scratch_aligned(module.bytes_of_vec_znx_dft(module.n(), a.rank().as_usize() + 1, a.max_size() + pt.max_size()));
+        * BE::scratch_aligned(module.vec_znx_dft_bytes_of(module.n(), a.rank().as_usize() + 1, a.max_size() + pt.max_size()));
     glwe_eval_linear_transformation_tmp_bytes_reference::<BE, _, _, _, _, _>(module, res, a, pt, plan, tsk, key) + bucket
 }
 
@@ -450,7 +450,7 @@ where
         + poulpy_hal::api::ModuleN
         + GLWEAutomorphism<BE>
         + GLWEMulPlain<BE>
-        + Convolution<BE>
+        + CnvOps<BE>
         + GGLWEProductReference<BE>
         + poulpy_hal::api::VecZnxAutomorphism<BE>
         + crate::reference::keyswitching::GLWEKeyswitchInternal<BE>
@@ -472,7 +472,7 @@ where
     T: GGLWEInfos,
 {
     glwe_eval_linear_transformation_sum_tmp_bytes_reference::<BE, _, _, _, _, _>(module, res, a, pt, plan, tsk, key)
-        + module.bytes_of_cnv_pvec_right(module.n(), 1, pt.size(), PrepareHint::OneShot)
+        + module.cnv_pvec_right_bytes_of(module.n(), 1, pt.size(), PrepareHint::OneShot)
         + module.cnv_prepare_right_tmp_bytes(pt.size(), pt.size())
 }
 
@@ -508,7 +508,7 @@ pub fn glwe_eval_linear_transformation_sum_into_reference<BE, R, P, H, L: BabySt
         + GLWECopy<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
         + CnvPVecBytesOf
-        + Convolution<BE>
+        + CnvOps<BE>
         + poulpy_hal::api::ModuleN
         + GGLWEProductReference<BE>
         + poulpy_hal::api::VecZnxAutomorphism<BE>
@@ -575,7 +575,7 @@ where
         + GLWEAutomorphism<BE>
         + GLWEMulPlain<BE>
         + CnvPVecBytesOf
-        + Convolution<BE>
+        + CnvOps<BE>
         + GGLWEProductReference<BE>
         + poulpy_hal::api::VecZnxAutomorphism<BE>
         + crate::reference::keyswitching::GLWEKeyswitchInternal<BE>
@@ -597,6 +597,6 @@ where
     T: GGLWEInfos,
 {
     glwe_eval_linear_transformation_tmp_bytes_reference::<BE, _, _, _, _, _>(module, res, a, pt, plan, tsk, key)
-        + module.bytes_of_cnv_pvec_right(module.n(), 1, pt.size(), PrepareHint::OneShot)
+        + module.cnv_pvec_right_bytes_of(module.n(), 1, pt.size(), PrepareHint::OneShot)
         + module.cnv_prepare_right_tmp_bytes(pt.size(), pt.size())
 }

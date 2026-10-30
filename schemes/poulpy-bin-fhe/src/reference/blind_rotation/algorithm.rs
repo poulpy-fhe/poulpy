@@ -4,10 +4,10 @@ use poulpy_hal::layouts::SvpPPolToBackendRef;
 use poulpy_hal::layouts::VmpPMatToBackendRef;
 use poulpy_hal::{
     api::{
-        ModuleN, ScratchArenaTakeBasic, SvpApplyDftToDft, VecZnxBigAddSmallAssign, VecZnxBigBytesOf, VecZnxBigNormalize,
-        VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftSubAssign,
-        VecZnxDftSubNegateAssign, VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxRotate, VecZnxZero,
-        VmpApplyDftToDft, VmpApplyDftToDftTmpBytes,
+        ModuleN, ScratchArenaTakeVecZnx, ScratchArenaTakeVecZnxBig, ScratchArenaTakeVecZnxDft, SvpApplyDftToDft,
+        VecZnxBigAddSmallAssign, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxCopy,
+        VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftSubAssign, VecZnxDftSubNegateAssign, VecZnxDftZero,
+        VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxRotate, VecZnxZero, VmpApplyDftToDft, VmpApplyDftToDftTmpBytes,
     },
     execution::TaskExecutor,
     layouts::{
@@ -87,11 +87,11 @@ where
         let cols = brk_infos.rank().as_usize() + 1;
         let size = brk_infos.size();
         let dnum = brk_infos.dnum().as_usize();
-        let acc_dft = BE::scratch_aligned(module.bytes_of_vec_znx_dft(module.n(), cols, dnum)) * extension_factor;
-        let vmp_res = BE::scratch_aligned(module.bytes_of_vec_znx_dft(module.n(), cols, size)) * extension_factor;
-        let vmp_xai = BE::scratch_aligned(module.bytes_of_vec_znx_dft(module.n(), 1, size));
+        let acc_dft = BE::scratch_aligned(module.vec_znx_dft_bytes_of(module.n(), cols, dnum)) * extension_factor;
+        let vmp_res = BE::scratch_aligned(module.vec_znx_dft_bytes_of(module.n(), cols, size)) * extension_factor;
+        let vmp_xai = BE::scratch_aligned(module.vec_znx_dft_bytes_of(module.n(), 1, size));
         let vmp = module.vmp_apply_dft_to_dft_tmp_bytes(size, dnum, dnum, cols, cols, size);
-        let normalize = BE::scratch_aligned(module.bytes_of_vec_znx_big(module.n(), 1, size))
+        let normalize = BE::scratch_aligned(module.vec_znx_big_bytes_of(module.n(), 1, size))
             + module
                 .vec_znx_big_normalize_tmp_bytes()
                 .max(module.vec_znx_idft_apply_tmp_bytes());
@@ -105,7 +105,7 @@ where
                     .max(normalize)
                     .max(copy_out)
         } else {
-            let acc = BE::scratch_aligned(BE::bytes_of_vec_znx(module.n(), cols, glwe_infos.size())) * extension_factor;
+            let acc = BE::scratch_aligned(BE::vec_znx_bytes_of(module.n(), cols, glwe_infos.size())) * extension_factor;
             acc + acc_dft + 2 * vmp_res + vmp_xai + vmp.max(normalize).max(copy_out)
         }
     } else {
@@ -489,7 +489,7 @@ fn execute_block_binary<R, L, M, BE: Backend<ZnxWord = i64>>(
     let worker_scratch_bytes = poulpy_hal::execution::worker_scratch_bytes::<BE>(
         module
             .vmp_apply_dft_to_dft_tmp_bytes(brk.size(), dnum, dnum, cols, cols, brk.size())
-            .max(module.bytes_of_vec_znx_dft(module.n(), 1, brk.size())),
+            .max(module.vec_znx_dft_bytes_of(module.n(), 1, brk.size())),
     );
     let x_pow_a = brk.x_pow_a.as_ref().expect("invalid key: x_pow_a has not been initialized");
 

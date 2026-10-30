@@ -38,8 +38,8 @@ impl CnvPVecShape {
 ///
 /// Holds a polynomial vector in the prepared representation named by the
 /// [`DftWord`] type `W`, ready to be used as the right operand of
-/// [`Convolution::cnv_apply_dft`](crate::api::Convolution::cnv_apply_dft).
-/// Created via [`Convolution::cnv_prepare_right`](crate::api::Convolution::cnv_prepare_right).
+/// [`CnvOps::cnv_apply_dft`](crate::api::CnvOps::cnv_apply_dft).
+/// Created via [`CnvOps::cnv_prepare_right`](crate::api::CnvOps::cnv_prepare_right).
 ///
 /// A prepared value in the [layouts value model](crate::layouts#value-model),
 /// opaque in the representation the [`PrepareHint`] chosen at allocation
@@ -131,7 +131,7 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecR<D, W, B> {
     where
         B: Backend<OwnedBuf = D>,
     {
-        let data: B::OwnedBuf = B::alloc_zeroed_bytes(B::bytes_of_cnv_pvec_right(n, cols, size, hint));
+        let data: B::OwnedBuf = B::alloc_zeroed_bytes(B::cnv_pvec_right_bytes_of(n, cols, size, hint));
         CnvPVecR {
             data,
             shape: CnvPVecShape::new(n, cols, size, hint),
@@ -143,7 +143,7 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecR<D, W, B> {
     ///
     /// # Panics
     ///
-    /// Panics if the buffer length does not equal `B::bytes_of_cnv_pvec_right(n, cols, size, hint)`;
+    /// Panics if the buffer length does not equal `B::cnv_pvec_right_bytes_of(n, cols, size, hint)`;
     /// a `Vec<u8>` argument is first copied into storage padded to a 64-byte multiple, so
     /// its padded length is what is compared.
     pub fn from_bytes(
@@ -157,7 +157,7 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecR<D, W, B> {
         B: Backend<OwnedBuf = D>,
     {
         let data: AlignedBuf = bytes.into();
-        assert!(data.len() == crate::layouts::padded_bytes(B::bytes_of_cnv_pvec_right(n, cols, size, hint)));
+        assert!(data.len() == crate::layouts::padded_bytes(B::cnv_pvec_right_bytes_of(n, cols, size, hint)));
         let data: B::OwnedBuf = B::from_host_bytes(&data);
         CnvPVecR {
             data,
@@ -181,8 +181,8 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecR<D, W, B> {
 ///
 /// Holds a polynomial vector in the prepared representation named by the
 /// [`DftWord`] type `W`, ready to be used as the left operand of
-/// [`Convolution::cnv_apply_dft`](crate::api::Convolution::cnv_apply_dft).
-/// Created via [`Convolution::cnv_prepare_left`](crate::api::Convolution::cnv_prepare_left).
+/// [`CnvOps::cnv_apply_dft`](crate::api::CnvOps::cnv_apply_dft).
+/// Created via [`CnvOps::cnv_prepare_left`](crate::api::CnvOps::cnv_prepare_left).
 ///
 /// A prepared value in the [layouts value model](crate::layouts#value-model),
 /// opaque in the representation the [`PrepareHint`] chosen at allocation
@@ -274,7 +274,7 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecL<D, W, B> {
     where
         B: Backend<OwnedBuf = D>,
     {
-        let data: B::OwnedBuf = B::alloc_zeroed_bytes(B::bytes_of_cnv_pvec_left(n, cols, size, hint));
+        let data: B::OwnedBuf = B::alloc_zeroed_bytes(B::cnv_pvec_left_bytes_of(n, cols, size, hint));
         CnvPVecL {
             data,
             shape: CnvPVecShape::new(n, cols, size, hint),
@@ -286,7 +286,7 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecL<D, W, B> {
     ///
     /// # Panics
     ///
-    /// Panics if the buffer length does not equal `B::bytes_of_cnv_pvec_left(n, cols, size, hint)`;
+    /// Panics if the buffer length does not equal `B::cnv_pvec_left_bytes_of(n, cols, size, hint)`;
     /// a `Vec<u8>` argument is first copied into storage padded to a 64-byte multiple, so
     /// its padded length is what is compared.
     pub fn from_bytes(
@@ -300,7 +300,7 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecL<D, W, B> {
         B: Backend<OwnedBuf = D>,
     {
         let data: AlignedBuf = bytes.into();
-        assert!(data.len() == crate::layouts::padded_bytes(B::bytes_of_cnv_pvec_left(n, cols, size, hint)));
+        assert!(data.len() == crate::layouts::padded_bytes(B::cnv_pvec_left_bytes_of(n, cols, size, hint)));
         let data: B::OwnedBuf = B::from_host_bytes(&data);
         CnvPVecL {
             data,
@@ -322,7 +322,7 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecL<D, W, B> {
 
 /// One `(left, right)` operand pair of a fused convolution accumulation.
 ///
-/// Consumed by [`Convolution::cnv_apply_dft_sum`](crate::api::Convolution::cnv_apply_dft_sum),
+/// Consumed by [`CnvOps::cnv_apply_dft_sum`](crate::api::CnvOps::cnv_apply_dft_sum),
 /// which overwrites the destination column with the sum of the bivariate
 /// convolutions of all terms.
 pub struct CnvDftAccTerm<'a, BE: Backend + 'a> {
@@ -517,8 +517,8 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecL<D, W, B> {
     {
         let shape = self.shape;
         assert_eq!(
-            B::bytes_of_cnv_pvec_left(shape.n(), shape.cols(), shape.size(), shape.hint()),
-            B2::bytes_of_cnv_pvec_left(shape.n(), shape.cols(), shape.size(), shape.hint()),
+            B::cnv_pvec_left_bytes_of(shape.n(), shape.cols(), shape.size(), shape.hint()),
+            B2::cnv_pvec_left_bytes_of(shape.n(), shape.cols(), shape.size(), shape.hint()),
             "into_backend: byte sizes diverge despite declared layout compatibility"
         );
         CnvPVecL {
@@ -543,8 +543,8 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecR<D, W, B> {
     {
         let shape = self.shape;
         assert_eq!(
-            B::bytes_of_cnv_pvec_right(shape.n(), shape.cols(), shape.size(), shape.hint()),
-            B2::bytes_of_cnv_pvec_right(shape.n(), shape.cols(), shape.size(), shape.hint()),
+            B::cnv_pvec_right_bytes_of(shape.n(), shape.cols(), shape.size(), shape.hint()),
+            B2::cnv_pvec_right_bytes_of(shape.n(), shape.cols(), shape.size(), shape.hint()),
             "into_backend: byte sizes diverge despite declared layout compatibility"
         );
         CnvPVecR {

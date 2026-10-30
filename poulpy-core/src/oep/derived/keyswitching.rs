@@ -244,7 +244,7 @@ pub(crate) use ggsw::*;
 
 mod glwe_dft {
     use poulpy_hal::{
-        api::{ScratchArenaTakeBasic, VecZnxDftBytesOf},
+        api::{ScratchArenaTakeVecZnxDft, VecZnxDftBytesOf},
         layouts::{Module, ScratchArena, VecZnxDftBackendMut, VecZnxDftToBackendRef},
     };
 
@@ -266,7 +266,7 @@ mod glwe_dft {
         A: GLWEInfos,
         K: GGLWEInfos,
     {
-        let product = module.bytes_of_vec_znx_dft(module.n(), (key_infos.rank_out() + 1).as_usize(), res_size);
+        let product = module.vec_znx_dft_bytes_of(module.n(), (key_infos.rank_out() + 1).as_usize(), res_size);
         BE::scratch_aligned(product) + BE::glwe_keyswitch_dft_tmp_bytes(module, res_size, a_infos, key_infos)
     }
 

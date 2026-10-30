@@ -99,8 +99,8 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VecZnxDft<D, W, B> {
         crate::layouts::assert_dense(&self, "VecZnxDft::into_big");
         let shape = self.shape;
         assert!(
-            B::bytes_of_vec_znx_big(shape.n(), shape.cols(), shape.size())
-                <= B::bytes_of_vec_znx_dft(shape.n(), shape.cols(), shape.size()),
+            B::vec_znx_big_bytes_of(shape.n(), shape.cols(), shape.size())
+                <= B::vec_znx_dft_bytes_of(shape.n(), shape.cols(), shape.size()),
             "into_big: big-domain buffer would exceed the DFT-domain allocation"
         );
         VecZnxBig::<D, B::BigWord, B>::from_shape(self.data, shape)
@@ -163,7 +163,7 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VecZnxDft<D, W, B> {
         let element_bytes = crate::layouts::element_view_span(self)
             .checked_mul(size_of::<W>())
             .expect("VecZnxDft element-view byte size overflows usize");
-        element_bytes == B::bytes_of_vec_znx_dft(self.n(), self.cols(), self.size())
+        element_bytes == B::vec_znx_dft_bytes_of(self.n(), self.cols(), self.size())
     }
 }
 
@@ -213,8 +213,8 @@ impl<B: Backend> VecZnxDftBackendMut<'_, B> {
             B::DFT_LIMBS_CONTIGUOUS,
             "VecZnxDft::with_limb_range_mut: partial ranges require contiguous DFT limbs"
         );
-        let offset = B::bytes_of_vec_znx_dft(n, cols, start);
-        let len = B::bytes_of_vec_znx_dft(n, cols, end - start);
+        let offset = B::vec_znx_dft_bytes_of(n, cols, start);
+        let len = B::vec_znx_dft_bytes_of(n, cols, end - start);
         VecZnxDft {
             data: B::region_mut_ref(&mut self.data, offset, len),
             shape: VecZnxShape::new(n, cols, end - start),
@@ -230,7 +230,7 @@ impl<D: HostDataMut, W: DftWord, B: Backend<DftWord = W>> ZnxZero for VecZnxDft<
             return;
         }
 
-        let byte_len = B::bytes_of_vec_znx_dft(self.n(), self.cols(), self.size());
+        let byte_len = B::vec_znx_dft_bytes_of(self.n(), self.cols(), self.size());
         let data = self.data.as_mut();
         assert!(
             byte_len <= data.len(),
@@ -253,11 +253,11 @@ impl<D: HostDataMut, W: DftWord, B: Backend<DftWord = W>> ZnxZero for VecZnxDft<
         assert!(i < self.cols(), "cols: {} >= self.cols(): {}", i, self.cols());
         assert!(j < self.size(), "size: {} >= self.size(): {}", j, self.size());
 
-        let block_bytes = B::bytes_of_vec_znx_dft(self.n(), 1, 1);
+        let block_bytes = B::vec_znx_dft_bytes_of(self.n(), 1, 1);
         let byte_len = crate::layouts::checked_product(&[block_bytes, self.cols(), self.size()], "VecZnxDft packed byte size");
         assert_eq!(
             byte_len,
-            B::bytes_of_vec_znx_dft(self.n(), self.cols(), self.size()),
+            B::vec_znx_dft_bytes_of(self.n(), self.cols(), self.size()),
             "VecZnxDft backend representation is not block-linear"
         );
 
@@ -284,7 +284,7 @@ impl<D: HostDataMut, W: DftWord, B: Backend<DftWord = W>> ZnxZero for VecZnxDft<
 impl<B: Backend> VecZnxDft<B::OwnedBuf, B::DftWord, B> {
     /// Allocates a zero-initialized backend-owned `VecZnxDft`.
     pub fn alloc(n: usize, cols: usize, size: usize) -> VecZnxDftOwned<B> {
-        let data: <B as Backend>::OwnedBuf = B::alloc_zeroed_bytes(B::bytes_of_vec_znx_dft(n, cols, size));
+        let data: <B as Backend>::OwnedBuf = B::alloc_zeroed_bytes(B::vec_znx_dft_bytes_of(n, cols, size));
         VecZnxDft {
             data,
             shape: VecZnxShape::new(n, cols, size),
@@ -296,12 +296,12 @@ impl<B: Backend> VecZnxDft<B::OwnedBuf, B::DftWord, B> {
     ///
     /// # Panics
     ///
-    /// Panics if the buffer length does not equal `B::bytes_of_vec_znx_dft(n, cols, size)`;
+    /// Panics if the buffer length does not equal `B::vec_znx_dft_bytes_of(n, cols, size)`;
     /// a `Vec<u8>` argument is first copied into storage padded to a 64-byte multiple, so
     /// its padded length is what is compared.
     pub fn from_bytes(n: usize, cols: usize, size: usize, bytes: impl Into<AlignedBuf>) -> VecZnxDftOwned<B> {
         let data: AlignedBuf = bytes.into();
-        assert!(data.len() == crate::layouts::padded_bytes(B::bytes_of_vec_znx_dft(n, cols, size)));
+        assert!(data.len() == crate::layouts::padded_bytes(B::vec_znx_dft_bytes_of(n, cols, size)));
         let data: <B as Backend>::OwnedBuf = B::from_host_bytes(&data);
         VecZnxDft {
             data,
@@ -461,7 +461,7 @@ impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>> fmt::Display for VecZn
             return writeln!(
                 f,
                 "  <backend-packed representation: {} bytes>",
-                B::bytes_of_vec_znx_dft(self.n(), self.cols(), self.size())
+                B::vec_znx_dft_bytes_of(self.n(), self.cols(), self.size())
             );
         }
 
@@ -507,8 +507,8 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VecZnxDft<D, W, B> {
         crate::layouts::assert_dense(&self, "VecZnxDft::into_backend");
         let shape = self.shape;
         assert_eq!(
-            B::bytes_of_vec_znx_dft(shape.n(), shape.cols(), shape.size()),
-            B2::bytes_of_vec_znx_dft(shape.n(), shape.cols(), shape.size()),
+            B::vec_znx_dft_bytes_of(shape.n(), shape.cols(), shape.size()),
+            B2::vec_znx_dft_bytes_of(shape.n(), shape.cols(), shape.size()),
             "into_backend: byte sizes diverge despite declared layout compatibility"
         );
         VecZnxDft {
@@ -537,14 +537,14 @@ mod limb_range_tests {
         type Ring = crate::layouts::Standard;
         crate::layouts::impl_host_byte_storage!();
 
-        fn bytes_of_vec_znx_dft(n: usize, cols: usize, size: usize) -> usize {
+        fn vec_znx_dft_bytes_of(n: usize, cols: usize, size: usize) -> usize {
             n * cols * size * if PACKED { 4 } else { size_of::<i64>() }
         }
     }
 
     fn assert_non_contiguous_operations<const PACKED: bool>() {
         let (n, cols, size) = (4, 2, 4);
-        let bytes = NonContiguousDft::<PACKED>::bytes_of_vec_znx_dft(n, cols, size);
+        let bytes = NonContiguousDft::<PACKED>::vec_znx_dft_bytes_of(n, cols, size);
         let mut dft = VecZnxDft::<AlignedBuf, i64, NonContiguousDft<PACKED>>::from_shape(
             AlignedBuf::from(vec![0xA5; bytes]),
             VecZnxShape::new(n, cols, size),
@@ -560,7 +560,7 @@ mod limb_range_tests {
 
         // Both physical sizes are block-linear, so byte-count equality alone
         // cannot authorize indexed access to an unknown layout.
-        assert_eq!(NonContiguousDft::<PACKED>::bytes_of_vec_znx_dft(n, 1, 1) * cols * size, bytes);
+        assert_eq!(NonContiguousDft::<PACKED>::vec_znx_dft_bytes_of(n, 1, 1) * cols * size, bytes);
         let rejected = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| dft.zero_at(1, 1)));
         assert!(rejected.is_err());
         assert_eq!(dft.data, original);
@@ -606,7 +606,7 @@ mod limb_range_tests {
             middle.data.fill(0);
         }
 
-        let limb_bytes = <HostBytesBackend>::bytes_of_vec_znx_dft(n, cols, 1);
+        let limb_bytes = <HostBytesBackend>::vec_znx_dft_bytes_of(n, cols, 1);
         assert!(dft.data[..limb_bytes].iter().all(|byte| *byte == 0xA5));
         assert!(dft.data[limb_bytes..3 * limb_bytes].iter().all(|byte| *byte == 0));
         assert!(dft.data[3 * limb_bytes..].iter().all(|byte| *byte == 0xA5));
@@ -616,7 +616,7 @@ mod limb_range_tests {
     #[should_panic(expected = "VecZnxDft::from_shape: windowed shapes are not supported")]
     fn from_shape_rejects_a_coefficient_window() {
         let shape = VecZnxShape::new(8, 1, 2).window_coeffs(4, 4);
-        let bytes = <HostBytesBackend>::bytes_of_vec_znx_dft(8, 1, 2);
+        let bytes = <HostBytesBackend>::vec_znx_dft_bytes_of(8, 1, 2);
         let _ = VecZnxDft::<AlignedBuf, i64, HostBytesBackend>::from_shape(AlignedBuf::from(vec![0u8; bytes]), shape);
     }
 

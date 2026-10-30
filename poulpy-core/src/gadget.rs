@@ -3,7 +3,7 @@
 
 use poulpy_hal::{
     api::{
-        ModuleN, ScratchArenaTakeBasic, VecZnxDftApply, VecZnxGadgetDecompose, VecZnxGadgetDecomposeTmpBytes,
+        ModuleN, ScratchArenaTakeVecZnx, VecZnxDftApply, VecZnxGadgetDecompose, VecZnxGadgetDecomposeTmpBytes,
         VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes,
     },
     layouts::{Backend, ScratchArena, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxToBackendRef, vec_znx_backend_ref_from_ref},
@@ -62,7 +62,7 @@ where
         0
     } else {
         let size: usize = gadget_input_size(base2k, k_digit, dnum, a_k, a_size);
-        BE::scratch_aligned(BE::bytes_of_vec_znx(module.n(), 1, size)) + module.vec_znx_gadget_decompose_tmp_bytes()
+        BE::scratch_aligned(BE::vec_znx_bytes_of(module.n(), 1, size)) + module.vec_znx_gadget_decompose_tmp_bytes()
     }
 }
 
@@ -340,7 +340,7 @@ where
     let mask_small_size = a_size.min(output_size);
     let (base2k, k_digit, dnum) = (key_infos.base2k(), key_infos.k_digit(), key_infos.dnum());
     let mask_k = TorusPrecision((mask_small_size * base2k.as_usize()) as u32);
-    BE::scratch_aligned(BE::bytes_of_vec_znx(module.n(), 1, mask_small_size))
+    BE::scratch_aligned(BE::vec_znx_bytes_of(module.n(), 1, mask_small_size))
         + module
             .vec_znx_idft_normalize_tmp_bytes(mask_small_size, a_size)
             .max(gadget_dft_apply_tmp_bytes::<BE, _>(

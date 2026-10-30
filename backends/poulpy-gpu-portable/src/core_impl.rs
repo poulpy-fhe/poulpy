@@ -137,7 +137,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> GGLWEProductDigitsStridedImpl for NTT4x30Gp
     {
         // The operands of every source side by side, then the work of one source.
         let operand_size = gadget_dft_operand_size(key_infos, source_size, key_infos.size());
-        let operand = Self::scratch_aligned(Self::bytes_of_vec_znx_dft(module.n(), rank, operand_size));
+        let operand = Self::scratch_aligned(Self::vec_znx_dft_bytes_of(module.n(), rank, operand_size));
         gglwe_products_from_dft_tmp_bytes_reference(module, count, rank, source_size, key_infos)
             + count.saturating_sub(1) * operand
     }
@@ -157,7 +157,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> GGLWEProductDigitsStridedImpl for NTT4x30Gp
         key: &GGLWEPreparedBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        use poulpy_hal::api::ScratchArenaTakeBasic;
+        use poulpy_hal::api::ScratchArenaTakeVecZnxDft;
         assert!(
             sources.len() == res.len() && source_sizes.len() == res.len() && accumulate.len() == res.len(),
             "gglwe_products_from_dft: items of different lengths"
@@ -448,7 +448,7 @@ pub(crate) fn const_combination_shift_tmp_bytes<RT: GpuRuntime, R: Ring>(
     b_size: usize,
 ) -> usize {
     use poulpy_hal::{api::VecZnxRshTmpBytes, layouts::Backend};
-    NTT4x30Gpu::<RT, R>::scratch_aligned(NTT4x30Gpu::<RT, R>::bytes_of_vec_znx(1, CONST_TERMS, b_size + 1))
+    NTT4x30Gpu::<RT, R>::scratch_aligned(NTT4x30Gpu::<RT, R>::vec_znx_bytes_of(1, CONST_TERMS, b_size + 1))
         + module.vec_znx_rsh_tmp_bytes(b_size + 1)
 }
 
@@ -466,7 +466,7 @@ pub(crate) fn shifted_const_combination<RT: GpuRuntime, R: Ring>(
     scratch: &mut ScratchArena<'_, NTT4x30Gpu<RT, R>>,
 ) -> bool {
     use poulpy_hal::{
-        api::{ScratchArenaTakeBasic, VecZnxRsh},
+        api::{ScratchArenaTakeVecZnx, VecZnxRsh},
         layouts::{VecZnxToBackendMut, VecZnxToBackendRef, vec_znx_backend_ref_from_ref},
     };
     if terms.iter().all(|term| term.shift == 0) {

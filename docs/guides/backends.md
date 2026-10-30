@@ -199,6 +199,6 @@ A backend implementing `CKKSEncodingImpl` keeps this by following one arithmetic
 - Arithmetic runs in the default floating-point environment: round to nearest even, with subnormals kept.
 
 Two tests check the contract.
-`test_negacyclic_fft_bit_exact` in the HAL test suite compares a transform with `EncodingFFTTable` byte for byte, and the oracle's independent `EncodingFft` checks the portable table the same way.
+`test_reim_fft_bit_exact` in the HAL test suite compares a transform with `EncodingFFTTable` byte for byte, and the oracle's independent `EncodingFft` checks the portable table the same way.
 The determinism tests hash the encodings and setup constants and compare them with `schemes/poulpy-ckks/src/test_suite/determinism.txt`: `ckks_determinism_test_suite!`, which every CKKS backend type of the standard ring registers, and the encoding fixtures of `conjugate_invariant_ckks_test_suite!` on the conjugate-invariant ring, so every backend is held to the same bytes.
 After an intended change to the encoding or the setup math, `POULPY_UPDATE_FIXTURES=1` records new hashes, and every backend must then pass without the variable.

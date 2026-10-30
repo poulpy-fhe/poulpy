@@ -81,7 +81,7 @@ where
         + VecZnxRshAdd<BE>
         + VecZnxRshSub<BE>
         + VecZnxRshTmpBytes
-        + poulpy_hal::api::Convolution<BE>
+        + poulpy_hal::api::CnvOps<BE>
         + poulpy_hal::api::VecZnxBigNormalizeTmpBytes,
 {
     fn ckks_all_ops_tmp_bytes<C, T, P>(&self, ct_infos: &C, pt_prec: &P, tsk_infos: &T) -> usize

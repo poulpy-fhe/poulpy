@@ -5,8 +5,8 @@
 
 use poulpy_hal::{
     api::{
-        CnvPVecAlloc, Convolution, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAutomorphism, VecZnxDftAlloc,
-        VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes,
+        CnvOps, CnvPVecAlloc, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAutomorphism, VecZnxDftAlloc, VecZnxIdftNormalize,
+        VecZnxIdftNormalizeTmpBytes,
     },
     layouts::{
         Backend, CnvPVecLToBackendRef, CnvPVecRToBackendRef, HostDataMut, Module, ScratchOwned, VecZnxDftToBackendMut, ZnxView,
@@ -415,14 +415,14 @@ pub fn test_glwe_tensor_parity<BR, BT>(
         + GLWEPreparedTensoring<BR>
         + ModuleCoreAlloc<OwnedBuf = BR::OwnedBuf, ZnxWord = i64>
         + CnvPVecAlloc<BR>
-        + Convolution<BR>
+        + CnvOps<BR>
         + GLWENormalize<BR>
         + GLWEBytesOf<BR>,
     Module<BT>: GLWETensoring<BT>
         + GLWEPreparedTensoring<BT>
         + ModuleCoreAlloc<OwnedBuf = BT::OwnedBuf, ZnxWord = i64>
         + CnvPVecAlloc<BT>
-        + Convolution<BT>
+        + CnvOps<BT>
         + GLWENormalize<BT>
         + GLWEBytesOf<BT>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
@@ -473,14 +473,14 @@ pub fn test_glwe_tensor_parity_for_layout<BR, BT>(
         + GLWEPreparedTensoring<BR>
         + ModuleCoreAlloc<OwnedBuf = BR::OwnedBuf, ZnxWord = i64>
         + CnvPVecAlloc<BR>
-        + Convolution<BR>
+        + CnvOps<BR>
         + GLWENormalize<BR>
         + GLWEBytesOf<BR>,
     Module<BT>: GLWETensoring<BT>
         + GLWEPreparedTensoring<BT>
         + ModuleCoreAlloc<OwnedBuf = BT::OwnedBuf, ZnxWord = i64>
         + CnvPVecAlloc<BT>
-        + Convolution<BT>
+        + CnvOps<BT>
         + GLWENormalize<BT>
         + GLWEBytesOf<BT>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
@@ -505,14 +505,14 @@ fn test_glwe_tensor_parity_case<BR, BT>(
         + GLWEPreparedTensoring<BR>
         + ModuleCoreAlloc<OwnedBuf = BR::OwnedBuf, ZnxWord = i64>
         + CnvPVecAlloc<BR>
-        + Convolution<BR>
+        + CnvOps<BR>
         + GLWENormalize<BR>
         + GLWEBytesOf<BR>,
     Module<BT>: GLWETensoring<BT>
         + GLWEPreparedTensoring<BT>
         + ModuleCoreAlloc<OwnedBuf = BT::OwnedBuf, ZnxWord = i64>
         + CnvPVecAlloc<BT>
-        + Convolution<BT>
+        + CnvOps<BT>
         + GLWENormalize<BT>
         + GLWEBytesOf<BT>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
@@ -957,7 +957,7 @@ pub fn test_glwe_multiplication_parity<BR, BT>(
         + GLWEMulPreparedPlainSum<BR>
         + GLWEAdd<BR>
         + CnvPVecAlloc<BR>
-        + Convolution<BR>
+        + CnvOps<BR>
         + GLWENormalize<BR>
         + GLWEBytesOf<BR>
         + VecZnxAutomorphism<BR>
@@ -968,7 +968,7 @@ pub fn test_glwe_multiplication_parity<BR, BT>(
         + GLWEMulPlain<BT>
         + GLWEMulPreparedPlainSum<BT>
         + CnvPVecAlloc<BT>
-        + Convolution<BT>
+        + CnvOps<BT>
         + GLWENormalize<BT>
         + GLWEBytesOf<BT>
         + VecZnxDftAlloc<BT>
@@ -1095,7 +1095,7 @@ fn test_glwe_mul_prepared_plain_sum_case<BR, BT>(
         + GLWEMulPreparedPlainSum<BR>
         + GLWEAdd<BR>
         + CnvPVecAlloc<BR>
-        + Convolution<BR>
+        + CnvOps<BR>
         + GLWENormalize<BR>
         + GLWEBytesOf<BR>
         + VecZnxAutomorphism<BR>
@@ -1104,7 +1104,7 @@ fn test_glwe_mul_prepared_plain_sum_case<BR, BT>(
         + VecZnxIdftNormalizeTmpBytes,
     Module<BT>: GLWEMulPreparedPlainSum<BT>
         + CnvPVecAlloc<BT>
-        + Convolution<BT>
+        + CnvOps<BT>
         + GLWENormalize<BT>
         + GLWEBytesOf<BT>
         + VecZnxDftAlloc<BT>

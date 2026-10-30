@@ -5,8 +5,9 @@ use crate::{CKKSResult as Result, ckks_ensure};
 use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef, LWEInfos};
 use poulpy_hal::{
     api::{
-        CnvPVecBytesOf, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxBigBytesOf, VecZnxBigNormalize,
-        VecZnxBigNormalizeTmpBytes, VecZnxDftBytesOf, VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
+        CnvOps, CnvPVecBytesOf, ModuleN, ScratchArenaTakeCnvPVecR, ScratchArenaTakeVecZnxBig, ScratchArenaTakeVecZnxDft,
+        VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftBytesOf, VecZnxIdftApply,
+        VecZnxIdftApplyTmpBytes,
     },
     layouts::{
         Backend, CnvDftAccTerm, CnvPVecL, CnvPVecLToBackendRef, CnvPVecRToBackendRef, PrepareHint, ScratchArena,
@@ -25,7 +26,7 @@ pub(crate) fn ship_masking_tmp_bytes<BE, M>(module: &M, plan: &ShipPlan, base2k:
 where
     BE: Backend,
     M: ModuleN
-        + Convolution<BE>
+        + CnvOps<BE>
         + CnvPVecBytesOf
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
@@ -36,17 +37,17 @@ where
     let b_size = (plan.log_delta_work() + base2k).div_ceil(base2k);
     let res_dft_size = a_size + b_size;
     // Each right slot is taken at its plaintext's degree, at most the module's.
-    let preps = 4 * plan.theta() * module.bytes_of_cnv_pvec_right(module.n(), 1, b_size, PrepareHint::Reuse);
+    let preps = 4 * plan.theta() * module.cnv_pvec_right_bytes_of(module.n(), 1, b_size, PrepareHint::Reuse);
     let work = module
         .cnv_prepare_right_tmp_bytes(b_size, b_size)
         .max(module.cnv_apply_dft_sum_tmp_bytes(0, res_dft_size, a_size, b_size))
         .max(
-            module.bytes_of_vec_znx_big(module.n(), 2, res_dft_size)
+            module.vec_znx_big_bytes_of(module.n(), 2, res_dft_size)
                 + module
                     .vec_znx_big_normalize_tmp_bytes()
                     .max(module.vec_znx_idft_apply_tmp_bytes()),
         );
-    module.bytes_of_vec_znx_dft(module.n(), 2, res_dft_size) + preps + work
+    module.vec_znx_dft_bytes_of(module.n(), 2, res_dft_size) + preps + work
 }
 
 /// Lazy masking accumulation: `acc = sum_i masks[i] * pis[i]` over the
@@ -63,7 +64,7 @@ pub(crate) fn ship_masking_accumulate<BE, M>(
 where
     BE: Backend,
     M: ModuleN
-        + Convolution<BE>
+        + CnvOps<BE>
         + CnvPVecBytesOf
         + VecZnxDftBytesOf
         + VecZnxIdftApply<BE>

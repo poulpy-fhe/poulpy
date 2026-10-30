@@ -2,9 +2,9 @@ use crate::api::GLWEBytesOf;
 use crate::api::GLWENormalize;
 use poulpy_hal::{
     api::{
-        ModuleN, ScratchArenaTakeBasic, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxGadgetDecompose,
-        VecZnxGadgetDecomposeTmpBytes, VmpApplyDftToDft, VmpApplyDftToDftAdd, VmpApplyDftToDftAddTmpBytes,
-        VmpApplyDftToDftTmpBytes, VmpExtractSelectedRows, VmpPMatBytesOf,
+        ModuleN, ScratchArenaTakeVecZnx, ScratchArenaTakeVecZnxBig, ScratchArenaTakeVecZnxDft, ScratchArenaTakeVmpPMat,
+        VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxGadgetDecompose, VecZnxGadgetDecomposeTmpBytes, VmpApplyDftToDft,
+        VmpApplyDftToDftAdd, VmpApplyDftToDftAddTmpBytes, VmpApplyDftToDftTmpBytes, VmpExtractSelectedRows, VmpPMatBytesOf,
     },
     layouts::{
         Backend, Module, PrepareHint, ScratchArena, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef,
@@ -56,7 +56,7 @@ where
     where
         K: GGLWEInfos,
     {
-        let canonical: usize = BE::scratch_aligned(BE::bytes_of_vec_znx(self.n(), mask_cols + 1, a_size));
+        let canonical: usize = BE::scratch_aligned(BE::vec_znx_bytes_of(self.n(), mask_cols + 1, a_size));
         canonical
             + glwe_keyswitch_dft_fill_tmp_bytes(self, mask_cols, res_size, a_size, key_infos).max(self.glwe_normalize_tmp_bytes())
     }
@@ -186,7 +186,7 @@ where
     let (base2k, k_digit, dnum) = (key_infos.base2k(), key_infos.k_digit(), key_infos.dnum());
     let a_k = TorusPrecision((a_size * base2k.as_usize()) as u32);
     let operand_size: usize = gadget_input_size(base2k, k_digit, dnum, a_k, a_size);
-    let lvl_0: usize = module.bytes_of_vec_znx_dft(module.n(), mask_cols, operand_size);
+    let lvl_0: usize = module.vec_znx_dft_bytes_of(module.n(), mask_cols, operand_size);
     let lvl_1: usize = module
         .gglwe_product_dft_tmp_bytes_reference(res_size, operand_size, key_infos)
         .max(gadget_dft_apply_tmp_bytes::<BE, _>(
@@ -230,8 +230,8 @@ where
             // below); the layout infos do not carry it, so size for either
             // representation.
             let dense = self
-                .bytes_of_vmp_pmat(self.n(), dnum, cols_in, cols_out, key_size, PrepareHint::Reuse)
-                .max(self.bytes_of_vmp_pmat(self.n(), dnum, cols_in, cols_out, key_size, PrepareHint::OneShot));
+                .vmp_pmat_bytes_of(self.n(), dnum, cols_in, cols_out, key_size, PrepareHint::Reuse)
+                .max(self.vmp_pmat_bytes_of(self.n(), dnum, cols_in, cols_out, key_size, PrepareHint::OneShot));
             dense + product
         }
     }
@@ -461,7 +461,7 @@ where
 {
     // The product, then its automorphism added into `res`.
     let cols: usize = (key_infos.rank_out() + 1).into();
-    BE::scratch_aligned(module.bytes_of_vec_znx_dft(module.n(), cols, product_size))
+    BE::scratch_aligned(module.vec_znx_dft_bytes_of(module.n(), cols, product_size))
         + module
             .gglwe_product_dft_tmp_bytes_reference(product_size, a_size, key_infos)
             .max(module.vec_znx_dft_automorphism_add_with_plan_tmp_bytes(res_size, product_size))
@@ -531,7 +531,7 @@ where
     let apply = module.vmp_apply_dft_to_dft_tmp_bytes(res_size, digit_size, pmat_rows, pmat_cols_in, pmat_cols_out, pmat_size);
     let accumulate =
         module.vmp_apply_dft_to_dft_add_tmp_bytes(res_size, digit_size, pmat_rows, pmat_cols_in, pmat_cols_out, pmat_size);
-    module.bytes_of_vec_znx_dft(module.n(), a_cols, digit_size) + apply.max(accumulate)
+    module.vec_znx_dft_bytes_of(module.n(), a_cols, digit_size) + apply.max(accumulate)
 }
 
 /// Canonical GGLWE product over interleaved gadget digits: digit `di` gathers
@@ -690,8 +690,8 @@ where
     let mask_cols = a_infos.rank().as_usize();
     let output_size = gglwe_product_output_size::<BE, _, _, _>(res_infos, a_infos, key_infos);
     let a_dft_size = a_infos.k().div_ceil(key_infos.base2k()) as usize;
-    let lvl_0: usize = module.bytes_of_vec_znx_dft(n, output_cols, output_size);
-    let lvl_1_big: usize = module.bytes_of_vec_znx_big(n, output_cols, output_size);
+    let lvl_0: usize = module.vec_znx_dft_bytes_of(n, output_cols, output_size);
+    let lvl_1_big: usize = module.vec_znx_big_bytes_of(n, output_cols, output_size);
     let consume_tmp: usize = module.vec_znx_idft_normalize_tmp_bytes(output_size, output_size);
     let lvl_1: usize = consume_tmp.max(
         lvl_1_big
@@ -700,7 +700,7 @@ where
                 .max(module.vec_znx_big_normalize_tmp_bytes()),
     );
     let lvl_2: usize = if a_infos.base2k() != key_infos.base2k() || key_infos.k_offset().0 > 0 {
-        let small_term_tmp: usize = BE::bytes_of_vec_znx(n, 1, output_size);
+        let small_term_tmp: usize = BE::vec_znx_bytes_of(n, 1, output_size);
         let a_conv_infos: GLWELayout = GLWELayout {
             n: a_infos.n(),
             base2k: key_infos.base2k(),
@@ -732,7 +732,7 @@ where
         lvl_1
             .max(module.glwe_keyswitch_internal_tmp_bytes_from_sizes(mask_cols, output_size, a_dft_size, key_infos))
             .max(
-                BE::scratch_aligned(module.bytes_of_vec_znx_dft(n, mask_cols, operand_size))
+                BE::scratch_aligned(module.vec_znx_dft_bytes_of(n, mask_cols, operand_size))
                     + BE::gglwe_product_idft_normalize_tmp_bytes(module, res_infos.size(), output_size, operand_size, key_infos),
             )
     };
@@ -1049,7 +1049,7 @@ where
 {
     let key_size = key_infos.size();
     let operand_size = crate::gadget::gadget_dft_operand_size(key_infos, source_size, key_size);
-    let operand = module.bytes_of_vec_znx_dft(module.n(), rank, operand_size);
+    let operand = module.vec_znx_dft_bytes_of(module.n(), rank, operand_size);
     BE::scratch_aligned(operand)
         + crate::gadget::gadget_dft_apply_from_dft_tmp_bytes::<BE, _, _>(module, source_size, key_size, key_infos)
         + BE::gglwe_product_fused_tmp_bytes(module, source_size.max(key_size), key_size, operand_size, key_infos)

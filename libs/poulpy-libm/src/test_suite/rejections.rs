@@ -5,7 +5,7 @@
 
 use poulpy_core::GLWEMaskFill;
 use poulpy_hal::{
-    api::{NegacyclicFFT, NegacyclicFFTNew},
+    api::ReimNew,
     layouts::{HostBytesBackend, Module, Standard},
 };
 
@@ -71,7 +71,7 @@ where
         + CKKSReductionOps<BE>
         + CKKSSoftmaxOps<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let log_delta = base.prec().log_delta();
     let coeff_meta = ckks_spec(base.n, base.base2k, log_delta, base.base2k);

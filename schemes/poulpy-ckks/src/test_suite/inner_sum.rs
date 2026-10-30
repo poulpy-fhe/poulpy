@@ -24,7 +24,7 @@ use poulpy_core::layouts::{
     SetGLWEPlaintextInfos, prepared::GLWESecretPrepared,
 };
 use poulpy_hal::{
-    api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
+    api::{ReimNew, ScratchOwnedBorrow},
     layouts::{Backend, HostBytesBackend, Module, ScratchArena, ScratchOwned, Standard},
 };
 
@@ -147,7 +147,7 @@ where
     for<'a> <BE as Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -226,7 +226,7 @@ where
     for<'a> <BE as Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let mut f = fixture::<BE, F, E>(&params, module, host_module);
     let windows = windows(params.n / 2);
@@ -271,7 +271,7 @@ pub fn test_inner_sum_smaller_output<BE, F, E>(
     for<'a> <BE as Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let mut f = fixture::<BE, F, E>(&params, module, host_module);
     let windows = windows(params.n / 2);
@@ -328,7 +328,7 @@ where
     for<'a> <BE as Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let mut f = fixture::<BE, F, E>(&params, module, host_module);
     let windows = windows(params.n / 2);
@@ -383,7 +383,7 @@ pub fn test_inner_sum_rejects_window<BE, F, E>(
     for<'a> <BE as Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let f = fixture::<BE, F, E>(&params, module, host_module);
     let log_batch = (params.n / 2).ilog2() as usize - 1;
@@ -426,7 +426,7 @@ pub fn test_inner_sum_rejects_integer_slots<BE, F, E>(
     for<'a> <BE as Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let mut f = fixture::<BE, F, E>(&params, module, host_module);
     f.ct.set_slots(SlotsKind::Integer);
@@ -483,7 +483,7 @@ pub fn test_inner_sum_rejects_missing_key<BE, F, E>(
     for<'a> <BE as Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let mut f = fixture::<BE, F, E>(&params, module, host_module);
     let no_keys: Keys<BE> = HashMap::new();
@@ -549,7 +549,7 @@ pub fn test_inner_sum_rejects_budget<BE, F, E>(
     for<'a> <BE as Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let mut f = fixture::<BE, F, E>(&params, module, host_module);
     let keys = gen_keys(&params, module, &f.sk_raw, &[(0, LOG_COUNT)], &mut f.scratch.borrow());
@@ -604,7 +604,7 @@ pub fn test_inner_sum_rejects_short_scratch<BE, F, E>(
     for<'a> <BE as Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let mut f = fixture::<BE, F, E>(&params, module, host_module);
     let keys = gen_keys(&params, module, &f.sk_raw, &[(0, LOG_COUNT)], &mut f.scratch.borrow());
@@ -642,7 +642,7 @@ pub fn test_inner_sum_below_module_degree<BE, F, E>(
     for<'a> <BE as Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let mut f = fixture::<BE, F, E>(&params, module, host_module);
     let windows = windows(params.n / 2);

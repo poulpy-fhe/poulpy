@@ -14,7 +14,7 @@ use std::collections::HashMap;
 
 use poulpy_hal::{
     api::{
-        CnvPVecAlloc, Convolution, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAlloc, VecZnxBigAlloc, VecZnxBigNormalize,
+        CnvOps, CnvPVecAlloc, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAlloc, VecZnxBigAlloc, VecZnxBigNormalize,
         VecZnxBigNormalizeTmpBytes, VecZnxDftAlloc, VecZnxFillUniformSource, VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
     },
     layouts::{Backend, GaloisElement, HostDataMut, HostDataRef, Module, PrepareHint, ScratchOwned, VecZnx},
@@ -101,7 +101,7 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
         + GLWEAutomorphismKeyEncryptSk<BE>
         + GLWEAutomorphismKeyPreparedFactory<BE>
         + CnvPVecAlloc<BE>
-        + Convolution<BE>
+        + CnvOps<BE>
         + GLWECopy<BE>
         + GLWEEncryptSk<BE>
         + GLWELinearTransformations<BE>
@@ -315,7 +315,7 @@ fn assert_hoisted_babies_match<BE: crate::test_suite::noise::TestBackend, K: Get
         + GLWEAutomorphismKeyEncryptSk<BE>
         + GLWEAutomorphismKeyPreparedFactory<BE>
         + CnvPVecAlloc<BE>
-        + Convolution<BE>
+        + CnvOps<BE>
         + GLWECopy<BE>
         + GLWEEncryptSk<BE>
         + GLWELinearTransformations<BE>
@@ -1313,7 +1313,7 @@ pub fn test_glwe_linear_transformation_ciphertext_diagonals<BE: crate::test_suit
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
     Module<BE>: CnvPVecAlloc<BE>
-        + Convolution<BE>
+        + CnvOps<BE>
         + GLWEAdd<BE>
         + GLWEAutomorphism<BE>
         + GLWEAutomorphismKeyEncryptSk<BE>

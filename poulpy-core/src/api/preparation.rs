@@ -62,7 +62,7 @@ where
         A: GLWEInfos,
     {
         let n: usize = operand_degree(self.ring_degree().as_usize(), &[infos.n()]);
-        self.bytes_of_vec_znx_dft(n, (infos.rank() + 1).into(), infos.size())
+        self.vec_znx_dft_bytes_of(n, (infos.rank() + 1).into(), infos.size())
     }
 
     fn glwe_prepare_tmp_bytes<A>(&self, infos: &A) -> usize
@@ -161,7 +161,7 @@ where
         let n: usize = operand_degree(self.ring_degree().as_usize(), &[infos.n()]);
         let size: usize =
             crate::layouts::offset_key_size(infos.base2k(), infos.k_offset(), infos.dnum(), infos.k_digit(), infos.k_aux());
-        self.bytes_of_vmp_pmat(
+        self.vmp_pmat_bytes_of(
             n,
             infos.dnum().into(),
             infos.rank_in().into(),
@@ -255,7 +255,7 @@ where
     {
         let n: usize = operand_degree(self.ring_degree().as_usize(), &[infos.n()]);
         let size: usize = crate::layouts::key_size(infos.base2k(), infos.dnum(), infos.k_digit(), infos.k_aux());
-        self.bytes_of_vmp_pmat(
+        self.vmp_pmat_bytes_of(
             n,
             infos.dnum().into(),
             (infos.rank() + 1).into(),
@@ -328,7 +328,7 @@ where
     {
         let rank: usize = infos.rank().into();
         let n: usize = operand_degree(self.ring_degree().as_usize(), &[infos.n()]);
-        self.bytes_of_vmp_pmat(n, 1, rank, rank + 1, infos.size(), PrepareHint::Reuse)
+        self.vmp_pmat_bytes_of(n, 1, rank, rank + 1, infos.size(), PrepareHint::Reuse)
     }
 
     fn glwe_public_key_prepare_tmp_bytes<A>(&self, infos: &A) -> usize

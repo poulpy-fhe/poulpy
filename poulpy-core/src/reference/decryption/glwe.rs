@@ -1,8 +1,8 @@
 use poulpy_hal::{
     api::{
-        ModuleN, ScratchArenaTakeBasic, SvpApplyDftToDftAssign, VecZnxBigAddAssign, VecZnxBigBytesOf, VecZnxBigFromSmall,
-        VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftApply, VecZnxDftBytesOf, VecZnxIdftApply,
-        VecZnxIdftApplyTmpBytes,
+        ModuleN, ScratchArenaTakeVecZnxBig, ScratchArenaTakeVecZnxDft, SvpApplyDftToDftAssign, VecZnxBigAddAssign,
+        VecZnxBigBytesOf, VecZnxBigFromSmall, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftApply, VecZnxDftBytesOf,
+        VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
     },
     layouts::{Backend, ScratchArena, VecZnxBackendRef, VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef},
 };
@@ -42,9 +42,9 @@ where
     let size: usize = infos.size();
     let n: usize = operand_degree(module.n(), &[infos.n()]);
 
-    let lvl_0: usize = module.bytes_of_vec_znx_big(n, 1, size);
-    let lvl_1: usize = (module.bytes_of_vec_znx_dft(n, 1, size)
-        + module.bytes_of_vec_znx_big(n, 1, size)
+    let lvl_0: usize = module.vec_znx_big_bytes_of(n, 1, size);
+    let lvl_1: usize = (module.vec_znx_dft_bytes_of(n, 1, size)
+        + module.vec_znx_big_bytes_of(n, 1, size)
         + module.vec_znx_idft_apply_tmp_bytes())
     .max(module.vec_znx_big_normalize_tmp_bytes());
 

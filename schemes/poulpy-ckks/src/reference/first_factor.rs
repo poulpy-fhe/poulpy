@@ -26,8 +26,9 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{
-        CnvPVecBytesOf, Convolution, ScratchArenaTakeBasic, VecZnxAddAssign, VecZnxAutomorphism, VecZnxCopy, VecZnxDftAddAssign,
-        VecZnxDftBytesOf, VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes, VecZnxNormalize, VecZnxNormalizeTmpBytes,
+        CnvOps, CnvPVecBytesOf, ScratchArenaTakeCnvPVecL, ScratchArenaTakeCnvPVecR, ScratchArenaTakeVecZnx,
+        ScratchArenaTakeVecZnxDft, VecZnxAddAssign, VecZnxAutomorphism, VecZnxCopy, VecZnxDftAddAssign, VecZnxDftBytesOf,
+        VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes, VecZnxNormalize, VecZnxNormalizeTmpBytes,
     },
     layouts::{
         Backend, CyclotomicOrder, Module, PrepareHint, ScratchArena, VecZnxDftToBackendMut, VecZnxToBackendRef, galois_element,
@@ -203,7 +204,7 @@ where
         + GLWEShift<BE>
         + GLWENormalize<BE>
         + GLWEBytesOf<BE>
-        + Convolution<BE>
+        + CnvOps<BE>
         + VecZnxDftBytesOf
         + CnvPVecBytesOf
         + VecZnxNormalizeTmpBytes
@@ -232,15 +233,15 @@ where
         key_infos,
         factor.giant_steps.len(),
     );
-    let carved = 3 * BE::scratch_aligned(BE::bytes_of_vec_znx(n, 2, small))
-        + BE::scratch_aligned(module.bytes_of_cnv_pvec_left(n, 2, small, PrepareHint::Reuse))
-        + BE::scratch_aligned(BE::bytes_of_vec_znx(n, 1, small))
-        + BE::scratch_aligned(BE::bytes_of_vec_znx(n, 1, acc_size))
-        + module.bytes_of_vec_znx_dft(n, 2, acc_size);
+    let carved = 3 * BE::scratch_aligned(BE::vec_znx_bytes_of(n, 2, small))
+        + BE::scratch_aligned(module.cnv_pvec_left_bytes_of(n, 2, small, PrepareHint::Reuse))
+        + BE::scratch_aligned(BE::vec_znx_bytes_of(n, 1, small))
+        + BE::scratch_aligned(BE::vec_znx_bytes_of(n, 1, acc_size))
+        + module.vec_znx_dft_bytes_of(n, 2, acc_size);
     // Each diagonal is prepared beside the raised ciphertext, then multiplied by it.
     let diagonal_size = diagonal_limbs(diagonal, base2k);
     let product =
-        BE::scratch_aligned(module.bytes_of_cnv_pvec_right(diagonal.n().into(), 1, diagonal_size, PrepareHint::OneShot))
+        BE::scratch_aligned(module.cnv_pvec_right_bytes_of(diagonal.n().into(), 1, diagonal_size, PrepareHint::OneShot))
             + glwe_prepare_right_tmp_bytes(module, diagonal_size, diagonal).max(module.glwe_mul_prepared_plain_sum_tmp_bytes(
                 &small_layout,
                 small,
@@ -282,7 +283,7 @@ where
         + VecZnxDftAddAssign<BE>
         + VecZnxNormalize<BE>
         + VecZnxIdftNormalize<BE>
-        + Convolution<BE>
+        + CnvOps<BE>
         + GLWENormalize<BE>
         + GLWEMulPreparedPlainSum<BE>
         + CyclotomicOrder,

@@ -6,7 +6,7 @@ use crate::test_suite::{PoisonedArena, poisoned_arena};
 use crate::{
     AlignedBuf,
     api::{
-        CnvPVecAlloc, Convolution, VecZnxAdd, VecZnxAutomorphism, VecZnxBigAdd, VecZnxBigFromSmall, VecZnxBigNegate,
+        CnvOps, CnvPVecAlloc, VecZnxAdd, VecZnxAutomorphism, VecZnxBigAdd, VecZnxBigFromSmall, VecZnxBigNegate,
         VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxBigSub, VecZnxCopy, VecZnxDftAlloc, VecZnxDftApply,
         VecZnxFillUniformSourceAll, VecZnxLsh, VecZnxLshAdd, VecZnxLshAssign, VecZnxLshSub, VecZnxLshTmpBytes, VecZnxNegate,
         VecZnxNormalize, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxRotate, VecZnxRsh, VecZnxRshAdd, VecZnxRshAssign,
@@ -204,7 +204,7 @@ where
         + VecZnxDftAlloc<BE>
         + VecZnxDftApply<BE>
         + CnvPVecAlloc<BE>
-        + Convolution<BE>,
+        + CnvOps<BE>,
 {
     let n = params.size;
     let base2k = params.base2k;

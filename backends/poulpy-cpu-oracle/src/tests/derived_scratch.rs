@@ -34,7 +34,7 @@ where
         + poulpy_hal::oep::HalVecZnxImpl
         + poulpy_hal::oep::HalVmpImpl
         + poulpy_hal::oep::HalVecZnxDftImpl
-        + poulpy_hal::oep::HalConvolutionImpl,
+        + poulpy_hal::oep::HalCnvImpl,
 {
     test_vec_znx_lsh_add_derived(&PARAMS, module);
     test_vec_znx_lsh_sub_derived(&PARAMS, module);

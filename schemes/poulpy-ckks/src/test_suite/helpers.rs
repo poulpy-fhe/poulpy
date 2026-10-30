@@ -50,7 +50,7 @@ use poulpy_core::{
 };
 
 use poulpy_hal::{
-    api::{ModuleNew, NegacyclicFFT, ScratchOwnedAlloc},
+    api::{ModuleNew, ReimFFT, ReimIFFT, ScratchOwnedAlloc},
     layouts::{
         Backend, Data, GaloisElement, HostBackend, HostBytesBackend, HostDataMut, HostDataRef, Module, ReaderFrom, Ring,
         ScratchArena, ScratchOwned, WriterTo, ZnxView, ZnxWord,
@@ -444,7 +444,7 @@ pub fn quantized_const<F: TestScalar>(re: f64, im: f64, log_delta: usize) -> (F,
 // ─── slot quantization ────────────────────────────────────────────────────────
 
 /// Encodes then immediately decodes `(re, im)` to obtain quantized slots.
-pub fn quantized_slots<F: TestScalar, E: NegacyclicFFT<F>>(
+pub fn quantized_slots<F: TestScalar, E: ReimFFT<F> + ReimIFFT<F>>(
     host_module: &Module<HostBytesBackend>,
     encoder: &ReferenceEncoder<E>,
     base2k: Base2K,
@@ -463,7 +463,7 @@ pub fn quantized_slots<F: TestScalar, E: NegacyclicFFT<F>>(
 }
 
 /// Returns the quantized slots of a test vector scaled to `log_delta`.
-pub fn quantized_vector<F: TestScalar, E: NegacyclicFFT<F>>(
+pub fn quantized_vector<F: TestScalar, E: ReimFFT<F> + ReimIFFT<F>>(
     host_module: &Module<HostBytesBackend>,
     encoder: &ReferenceEncoder<E>,
     params: &CKKSTestParams,
@@ -602,7 +602,7 @@ pub fn encode_and_upload_pt<BE, F, E>(
 where
     BE: HostStaged,
     F: TestScalar,
-    E: NegacyclicFFT<F>,
+    E: ReimFFT<F> + ReimIFFT<F>,
 {
     let mut host_pt = host_module.ckks_pt_vec_alloc(host_module.ckks_max_slots(), base2k, prec.k());
     host_pt.set_meta(prec.meta());
@@ -1099,7 +1099,7 @@ where
     BE: TestContextBackend,
     Module<BE>: TestContextSharedModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F>,
+    E: ReimFFT<F> + ReimIFFT<F>,
 {
     ckks_encrypt_with_prec(params, module, host_module, encoder, sk, k, re, im, params.prec(), scratch)
 }
@@ -1157,7 +1157,7 @@ where
     BE: TestContextBackend,
     Module<BE>: TestContextSharedModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F>,
+    E: ReimFFT<F> + ReimIFFT<F>,
 {
     let mut host_pt = host_module.ckks_pt_vec_alloc(host_module.ckks_max_slots(), params.base2k.into(), prec.k());
     host_pt.set_meta(prec.meta());
@@ -1289,7 +1289,7 @@ where
     BE: TestContextBackend,
     Module<BE>: TestContextSharedModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F>,
+    E: ReimFFT<F> + ReimIFFT<F>,
 {
     // Cap the integer headroom so the centered plaintext fits the i128 decode codec
     // (`log_delta + log_budget <= 127`). This is the decode-time equivalent of
@@ -1327,7 +1327,7 @@ pub fn ckks_decode_pt<F, E, R: Ring>(
 ) -> (Vec<F>, Vec<F>)
 where
     F: TestScalar,
-    E: NegacyclicFFT<F>,
+    E: ReimFFT<F> + ReimIFFT<F>,
 {
     let mut re = vec![F::zero(); m];
     let mut im = vec![F::zero(); m];
@@ -1452,7 +1452,7 @@ pub fn assert_decrypt_precision<BE, F, E>(
     BE: TestContextBackend,
     Module<BE>: TestContextSharedModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F>,
+    E: ReimFFT<F> + ReimIFFT<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
@@ -1503,7 +1503,7 @@ pub fn assert_decrypt_precision_at_log_delta<BE, F, E>(
     BE: TestContextBackend,
     Module<BE>: TestContextSharedModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F>,
+    E: ReimFFT<F> + ReimIFFT<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {

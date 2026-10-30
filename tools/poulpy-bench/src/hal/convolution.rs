@@ -4,7 +4,7 @@ use std::hint::black_box;
 use criterion::{Bencher, measurement::Measurement};
 
 use poulpy_hal::{
-    api::{CnvPVecAlloc, Convolution, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxBigAlloc, VecZnxDftAlloc},
+    api::{CnvOps, CnvPVecAlloc, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxBigAlloc, VecZnxDftAlloc},
     layouts::{
         Backend, CnvDftAccTerm, CnvPVecLOwned, CnvPVecLToBackendMut, CnvPVecLToBackendRef, CnvPVecROwned, CnvPVecRToBackendMut,
         CnvPVecRToBackendRef, Module, PrepareHint, ScratchOwned, VecZnxBigOwned, VecZnxBigToBackendMut, VecZnxDftToBackendMut,
@@ -20,7 +20,7 @@ use crate::hal::params::CnvSweepParms;
 pub fn runner_cnv_prepare_left<BE, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &CnvSweepParms)
 where
     BE: Backend<ZnxWord = i64> + 'static,
-    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + Convolution<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CnvOps<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let mut source: Source = Source::new([0u8; 32]);
@@ -48,7 +48,7 @@ where
 pub fn runner_cnv_prepare_right<BE, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &CnvSweepParms)
 where
     BE: Backend<ZnxWord = i64> + 'static,
-    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + Convolution<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CnvOps<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let mut source: Source = Source::new([0u8; 32]);
@@ -76,7 +76,7 @@ where
 fn cnv_apply_dft_runner<BE, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &CnvSweepParms, b_galois: i64)
 where
     BE: Backend<ZnxWord = i64> + 'static,
-    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + Convolution<BE> + VecZnxDftAlloc<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CnvOps<BE> + VecZnxDftAlloc<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let mut source: Source = Source::new([0u8; 32]);
@@ -117,7 +117,7 @@ where
 pub fn runner_cnv_apply_dft<BE, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &CnvSweepParms)
 where
     BE: Backend<ZnxWord = i64> + 'static,
-    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + Convolution<BE> + VecZnxDftAlloc<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CnvOps<BE> + VecZnxDftAlloc<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     cnv_apply_dft_runner::<BE, M>(bencher, sweep, 1);
@@ -129,7 +129,7 @@ const BENCH_GALOIS: i64 = 5;
 pub fn runner_cnv_apply_dft_galois<BE, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &CnvSweepParms)
 where
     BE: Backend<ZnxWord = i64> + 'static,
-    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + Convolution<BE> + VecZnxDftAlloc<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CnvOps<BE> + VecZnxDftAlloc<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     cnv_apply_dft_runner::<BE, M>(bencher, sweep, BENCH_GALOIS);
@@ -138,7 +138,7 @@ where
 pub fn runner_cnv_apply_dft_add<BE, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &CnvSweepParms)
 where
     BE: Backend<ZnxWord = i64> + 'static,
-    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + Convolution<BE> + VecZnxDftAlloc<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CnvOps<BE> + VecZnxDftAlloc<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let mut source: Source = Source::new([0u8; 32]);
@@ -201,7 +201,7 @@ const SUM_TERMS: usize = 4;
 pub fn runner_cnv_apply_dft_sum<BE, M: Measurement, const EMBEDDED: bool>(bencher: &mut Bencher<'_, M>, sweep: &CnvSweepParms)
 where
     BE: Backend<ZnxWord = i64> + 'static,
-    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + Convolution<BE> + VecZnxDftAlloc<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CnvOps<BE> + VecZnxDftAlloc<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let mut source: Source = Source::new([0u8; 32]);
@@ -247,7 +247,7 @@ where
 pub fn runner_cnv_pairwise_apply_dft<BE, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &CnvSweepParms)
 where
     BE: Backend<ZnxWord = i64> + 'static,
-    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + Convolution<BE> + VecZnxDftAlloc<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CnvOps<BE> + VecZnxDftAlloc<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let mut source: Source = Source::new([0u8; 32]);
@@ -288,7 +288,7 @@ where
 pub fn runner_cnv_by_const_apply<BE, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &CnvSweepParms)
 where
     BE: Backend<ZnxWord = i64> + 'static,
-    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + Convolution<BE> + VecZnxBigAlloc<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CnvOps<BE> + VecZnxBigAlloc<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let mut source: Source = Source::new([0u8; 32]);
@@ -331,7 +331,7 @@ where
 pub fn runner_cnv_by_const_apply_add<BE, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &CnvSweepParms)
 where
     BE: Backend<ZnxWord = i64> + 'static,
-    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + Convolution<BE> + VecZnxBigAlloc<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CnvOps<BE> + VecZnxBigAlloc<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let mut source: Source = Source::new([0u8; 32]);
@@ -374,7 +374,7 @@ where
 pub fn runner_cnv_prepare_self<BE, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &CnvSweepParms)
 where
     BE: Backend<ZnxWord = i64> + 'static,
-    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + Convolution<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CnvOps<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let mut source: Source = Source::new([0u8; 32]);

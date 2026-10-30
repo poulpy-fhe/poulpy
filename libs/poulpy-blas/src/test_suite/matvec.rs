@@ -20,7 +20,7 @@ use poulpy_core::layouts::{
     prepared::GLWESecretPrepared,
 };
 use poulpy_hal::{
-    api::{CnvPVecAlloc, NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
+    api::{CnvPVecAlloc, ReimFFT, ReimIFFT, ReimNew, ScratchOwnedBorrow},
     layouts::{
         Backend, CyclotomicOrder, HostBytesBackend, HostDataMut, HostDataRef, Module, PrepareHint, ScratchArena, Standard,
     },
@@ -98,7 +98,7 @@ where
     BE: TestContextBackend,
     Module<BE>: TestContextSharedModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F>,
+    E: ReimFFT<F> + ReimIFFT<F>,
 {
     let slots = module.ckks_max_slots();
     let label = (slots / period).ilog2() as usize;
@@ -162,7 +162,7 @@ pub fn assert_vector_decrypt<BE, F, E>(
     BE: TestContextBackend,
     Module<BE>: TestContextSharedModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F>,
+    E: ReimFFT<F> + ReimIFFT<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
@@ -269,7 +269,7 @@ where
         + CKKSLinearTransformationOps<BE>
         + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
@@ -457,7 +457,7 @@ where
         + CKKSLinearTransformationOps<BE>
         + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
@@ -896,7 +896,7 @@ where
     BE: TestContextBackend<Ring = Standard> + BlasMatVecImpl + BlasEncodingImpl,
     Module<BE>: TestContextModule<BE> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
@@ -1189,7 +1189,7 @@ pub fn test_blas_matvec_diagonal_guards<BE, F, E>(
     BE: TestContextBackend<Ring = Standard> + BlasMatVecImpl + BlasEncodingImpl,
     Module<BE>: TestContextModule<BE> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {

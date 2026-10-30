@@ -1,7 +1,7 @@
 use poulpy_hal::{
     layouts::{Module, VecZnxBackendMut, VecZnxBackendRef},
     oep::{
-        HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVecZnxMonomialImpl,
+        HalCnvImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVecZnxMonomialImpl,
         HalVmpImpl,
     },
 };
@@ -185,8 +185,8 @@ macro_rules! impl_fft64_delegating_backend {
             crate::hal_impl_vmp!(FFT64VmpDefault);
         }
 
-        unsafe impl HalConvolutionImpl for $be {
-            crate::hal_impl_convolution!(FFT64ConvolutionDefault);
+        unsafe impl HalCnvImpl for $be {
+            crate::hal_impl_cnv!(FFT64ConvolutionDefault);
         }
 
         unsafe impl HalVecZnxBigImpl for $be {

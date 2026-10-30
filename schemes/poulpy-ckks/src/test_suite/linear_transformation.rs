@@ -24,7 +24,7 @@ use poulpy_core::{
     },
 };
 use poulpy_hal::{
-    api::{CnvPVecAlloc, CnvPVecBytesOf, NegacyclicFFT, NegacyclicFFTNew, ScratchAvailable, ScratchOwnedBorrow},
+    api::{CnvPVecAlloc, CnvPVecBytesOf, ReimFFT, ReimIFFT, ReimNew, ScratchAvailable, ScratchOwnedBorrow},
     layouts::{
         Backend, CyclotomicOrder, DataView, DataViewMut, HostBytesBackend, Module, PrepareHint, ScratchArena, Standard,
         galois_element,
@@ -134,7 +134,7 @@ where
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     for<'a> ScratchArena<'a, BE>: ScratchAvailable,
 {
     let m = params.n / 2;
@@ -267,7 +267,7 @@ pub fn test_linear_transformation_sum<BE, F, E>(
         + poulpy_core::api::GLWELinearTransformations<BE>
         + CnvPVecAlloc<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     for<'a> ScratchArena<'a, BE>: ScratchAvailable,
 {
     let m = params.n / 2;
@@ -810,7 +810,7 @@ pub fn test_prepare_linear_transformation_rhs_lifecycle<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let mut scratch = alloc_scratch(&params, module);
@@ -863,7 +863,7 @@ pub fn test_prepare_linear_transformation_rhs_lifecycle<BE, F, E>(
     let diagonal_count: usize = lt.index().index.iter().map(Vec::len).sum();
     assert_eq!(
         buffers(&res).iter().map(Vec::len).sum::<usize>(),
-        diagonal_count * module.bytes_of_cnv_pvec_right(first.n().as_usize(), 1, first.size(), PrepareHint::Reuse),
+        diagonal_count * module.cnv_pvec_right_bytes_of(first.n().as_usize(), 1, first.size(), PrepareHint::Reuse),
         "right side: bytes_of"
     );
     for lt in [&other, &lt] {
@@ -977,7 +977,7 @@ pub fn test_prepare_linear_transformation_rhs_lifecycle<BE, F, E>(
     let mut babies = LinearTransformationBabySteps::alloc_for(module, &lt, &ct);
     assert_eq!(
         baby_buffers(&babies).iter().map(Vec::len).sum::<usize>(),
-        babies.len() * module.bytes_of_cnv_pvec_left(ct.n().as_usize(), ct.rank().as_usize() + 1, ct.size(), PrepareHint::Reuse),
+        babies.len() * module.cnv_pvec_left_bytes_of(ct.n().as_usize(), ct.rank().as_usize() + 1, ct.size(), PrepareHint::Reuse),
         "left side: bytes_of"
     );
     for src in [&ct_other, &ct] {
@@ -1074,7 +1074,7 @@ pub fn test_linear_transformation_pins_operation_precisions<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     for<'a> ScratchArena<'a, BE>: ScratchAvailable,
 {
     let m = params.n / 2;
@@ -1162,7 +1162,7 @@ pub fn test_linear_transformation_mixed_key_layouts<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     for<'a> ScratchArena<'a, BE>: ScratchAvailable,
 {
     let m = params.n / 2;
@@ -1253,7 +1253,7 @@ where
 {
     fn new<F: TestScalar>(params: &'a CKKSTestParams, module: &'a Module<BE>, host_module: &'a Module<HostBytesBackend>) -> Self
     where
-        E: NegacyclicFFTNew<F>,
+        E: ReimNew<F>,
     {
         let (sk_raw, sk) = gen_sk_with_raw(params, module, host_module, [0u8; 32]);
         Self {
@@ -1276,7 +1276,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> CKKSCiphertextOwned<BE>
     where
-        E: NegacyclicFFT<F>,
+        E: ReimFFT<F> + ReimIFFT<F>,
     {
         let mut ct = ckks_encrypt(
             self.params,
@@ -1307,7 +1307,7 @@ where
         (want_re, want_im): &(Vec<F>, Vec<F>),
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        E: NegacyclicFFT<F>,
+        E: ReimFFT<F> + ReimIFFT<F>,
     {
         assert_mul_ct_output_meta(label, dst, dst_k, srcs[0], diagonals[0]);
         let operands = || srcs.iter().chain(diagonals);
@@ -1369,7 +1369,7 @@ pub fn test_linear_transformation_ct<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     const OP: &str = "ckks_eval_linear_transformation_into";
     let m = params.n / 2;
@@ -1562,7 +1562,7 @@ pub fn test_linear_transformation_sum_ct<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let secret = Secret::<BE, E>::new::<F>(&params, module, host_module);

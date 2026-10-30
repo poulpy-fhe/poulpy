@@ -1,7 +1,7 @@
 use poulpy_hal::{
     api::{
-        ScratchArenaTakeBasic, VecZnxBigAddSmallAssign, VecZnxBigBytesOf, VecZnxBigColWeightedSum, VecZnxBigNormalize,
-        VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxZero,
+        ScratchArenaTakeVecZnx, ScratchArenaTakeVecZnxBig, VecZnxBigAddSmallAssign, VecZnxBigBytesOf, VecZnxBigColWeightedSum,
+        VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxZero,
     },
     layouts::{
         Backend, Module, ScratchArena, VecZnxBigToBackendRef, VecZnxToBackendRef, vec_znx_backend_mut_from_mut,
@@ -18,8 +18,8 @@ where
     Module<BE>: VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes,
     A: LWEMatrixInfos,
 {
-    module.bytes_of_vec_znx_big(infos.rows(), 1, infos.size())
-        + module.bytes_of_vec_znx(infos.rows(), 1, infos.size())
+    module.vec_znx_big_bytes_of(infos.rows(), 1, infos.size())
+        + module.vec_znx_bytes_of(infos.rows(), 1, infos.size())
         + module.vec_znx_big_normalize_tmp_bytes()
         + 3 * (BE::SCRATCH_ALIGN - 1)
 }

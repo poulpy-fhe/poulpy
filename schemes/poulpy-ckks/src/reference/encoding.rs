@@ -10,7 +10,7 @@ use num_traits::NumCast;
 use poulpy_core::layouts::{GLWEInfos, IntPolyInfos, LWEInfos};
 use poulpy_hal::{
     GALOISGENERATOR,
-    api::NegacyclicFFT,
+    api::{ReimFFT, ReimIFFT},
     layouts::{Backend, ConjugateInvariant, HostDataMut, HostDataRef, Ring, Standard},
 };
 
@@ -75,7 +75,7 @@ impl EncodingPermutation {
     pub fn slots_to_coeffs_assign<F, T>(&self, fft: &T, values: &mut [F]) -> Result<()>
     where
         F: CKKSEncodingScalar + NumCast,
-        T: NegacyclicFFT<F>,
+        T: ReimFFT<F> + ReimIFFT<F>,
     {
         ensure!(values.len() == 2 * self.slots);
         ensure!(fft.m() == self.slots);
@@ -83,7 +83,7 @@ impl EncodingPermutation {
             values.swap(a, b);
             values.swap(self.slots + a, self.slots + b);
         }
-        fft.ifft(values);
+        fft.reim_ifft(values);
         let inv_slots = F::from(self.slots)
             .context("slot count is not representable by the encoding scalar")?
             .recip();
@@ -94,11 +94,11 @@ impl EncodingPermutation {
     pub fn coeffs_to_slots_assign<F, T>(&self, fft: &T, values: &mut [F]) -> Result<()>
     where
         F: CKKSEncodingScalar,
-        T: NegacyclicFFT<F>,
+        T: ReimFFT<F> + ReimIFFT<F>,
     {
         ensure!(values.len() == 2 * self.slots);
         ensure!(fft.m() == self.slots);
-        fft.fft(values);
+        fft.reim_fft(values);
         for &(a, b) in self.slot_scatter_swaps.iter().rev() {
             values.swap(a, b);
             values.swap(self.slots + a, self.slots + b);
@@ -117,13 +117,13 @@ pub trait CKKSSlotEmbedding: Ring {
     fn slots_to_coeffs_assign<F, T>(map: &EncodingPermutation, fft: &T, values: &mut [F]) -> Result<()>
     where
         F: CKKSEncodingScalar + NumCast,
-        T: NegacyclicFFT<F>;
+        T: ReimFFT<F> + ReimIFFT<F>;
 
     /// In-place coefficients to planar slots.
     fn coeffs_to_slots_assign<F, T>(map: &EncodingPermutation, fft: &T, values: &mut [F]) -> Result<()>
     where
         F: CKKSEncodingScalar,
-        T: NegacyclicFFT<F>;
+        T: ReimFFT<F> + ReimIFFT<F>;
 }
 
 /// Complex slots over all `2m` coefficients.
@@ -133,7 +133,7 @@ impl CKKSSlotEmbedding for Standard {
     fn slots_to_coeffs_assign<F, T>(map: &EncodingPermutation, fft: &T, values: &mut [F]) -> Result<()>
     where
         F: CKKSEncodingScalar + NumCast,
-        T: NegacyclicFFT<F>,
+        T: ReimFFT<F> + ReimIFFT<F>,
     {
         map.slots_to_coeffs_assign(fft, values)
     }
@@ -141,7 +141,7 @@ impl CKKSSlotEmbedding for Standard {
     fn coeffs_to_slots_assign<F, T>(map: &EncodingPermutation, fft: &T, values: &mut [F]) -> Result<()>
     where
         F: CKKSEncodingScalar,
-        T: NegacyclicFFT<F>,
+        T: ReimFFT<F> + ReimIFFT<F>,
     {
         map.coeffs_to_slots_assign(fft, values)
     }
@@ -155,7 +155,7 @@ impl CKKSSlotEmbedding for ConjugateInvariant {
     fn slots_to_coeffs_assign<F, T>(map: &EncodingPermutation, fft: &T, values: &mut [F]) -> Result<()>
     where
         F: CKKSEncodingScalar + NumCast,
-        T: NegacyclicFFT<F>,
+        T: ReimFFT<F> + ReimIFFT<F>,
     {
         ensure!(values.len() == 2 * map.slots);
         values[map.slots..].fill(F::zero());
@@ -165,7 +165,7 @@ impl CKKSSlotEmbedding for ConjugateInvariant {
     fn coeffs_to_slots_assign<F, T>(map: &EncodingPermutation, fft: &T, values: &mut [F]) -> Result<()>
     where
         F: CKKSEncodingScalar,
-        T: NegacyclicFFT<F>,
+        T: ReimFFT<F> + ReimIFFT<F>,
     {
         ensure!(values.len() == 2 * map.slots);
         // Unfold the invariant coefficients: `X^-j = -X^(2m-j)`.

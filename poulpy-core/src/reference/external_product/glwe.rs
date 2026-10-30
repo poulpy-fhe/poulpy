@@ -6,9 +6,10 @@ use crate::api::GLWEBytesOf;
 use poulpy_hal::layouts::VecZnxDftBackendMut;
 use poulpy_hal::{
     api::{
-        ModuleN, ScratchArenaTakeBasic, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftApply,
-        VecZnxDftBytesOf, VecZnxGadgetDecompose, VecZnxGadgetDecomposeTmpBytes, VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
-        VecZnxNormalize, VecZnxNormalizeTmpBytes, VmpApplyDftToDft, VmpApplyDftToDftAdd, VmpApplyDftToDftTmpBytes,
+        ModuleN, ScratchArenaTakeVecZnx, ScratchArenaTakeVecZnxBig, ScratchArenaTakeVecZnxDft, VecZnxBigBytesOf,
+        VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftApply, VecZnxDftBytesOf, VecZnxGadgetDecompose,
+        VecZnxGadgetDecomposeTmpBytes, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxNormalize, VecZnxNormalizeTmpBytes,
+        VmpApplyDftToDft, VmpApplyDftToDftAdd, VmpApplyDftToDftTmpBytes,
     },
     layouts::{
         Backend, Module, ScratchArena, VecZnxBackendRef, VecZnxBigToBackendRef, VecZnxDftToBackendRef, VecZnxToBackendRef,
@@ -43,7 +44,7 @@ where
     let bytes: usize = if ggsw_infos.digits_aligned() {
         0
     } else {
-        BE::scratch_aligned(BE::bytes_of_vec_znx(module.n(), (ggsw_infos.rank() + 1).into(), size))
+        BE::scratch_aligned(BE::vec_znx_bytes_of(module.n(), (ggsw_infos.rank() + 1).into(), size))
             + module.vec_znx_gadget_decompose_tmp_bytes()
     };
     (size, bytes)
@@ -176,15 +177,15 @@ where
         let in_size: usize = operand_size.div_ceil(b_infos.dsize().into());
         let output_size = glwe_external_product_output_size::<BE, _, _, _>(res_infos, a_infos, b_infos);
         let cols: usize = (b_infos.rank() + 1).into();
-        let lvl_0: usize = operand_bytes + self.bytes_of_vec_znx_dft(self.n(), cols, in_size);
+        let lvl_0: usize = operand_bytes + self.vec_znx_dft_bytes_of(self.n(), cols, in_size);
         let lvl_1: usize = if b_infos.dsize() > 1 {
-            self.bytes_of_vec_znx_dft(self.n(), cols, output_size)
+            self.vec_znx_dft_bytes_of(self.n(), cols, output_size)
         } else {
             0
         };
         let lvl_2: usize = self.vmp_apply_dft_to_dft_tmp_bytes(output_size, in_size, in_size, cols, cols, b_infos.size());
         let lvl_3: usize =
-            self.bytes_of_vec_znx_big(self.n(), cols, output_size).next_multiple_of(align) + self.vec_znx_idft_apply_tmp_bytes();
+            self.vec_znx_big_bytes_of(self.n(), cols, output_size).next_multiple_of(align) + self.vec_znx_idft_apply_tmp_bytes();
         BE::scratch_aligned(self.glwe_bytes_of_from_infos(a_infos))
             + (lvl_0.next_multiple_of(align) + lvl_1.next_multiple_of(align) + lvl_2)
                 .max(lvl_3)
@@ -249,9 +250,9 @@ where
     let in_size: usize = operand_size.div_ceil(ggsw_infos.dsize().into());
     let ggsw_size: usize = ggsw_infos.size();
     let cols: usize = (ggsw_infos.rank() + 1).into();
-    let lvl_0: usize = operand_bytes + module.bytes_of_vec_znx_dft(module.n(), cols, in_size);
+    let lvl_0: usize = operand_bytes + module.vec_znx_dft_bytes_of(module.n(), cols, in_size);
     let lvl_1: usize = if ggsw_infos.dsize() > 1 {
-        module.bytes_of_vec_znx_dft(module.n(), cols, ggsw_size)
+        module.vec_znx_dft_bytes_of(module.n(), cols, ggsw_size)
     } else {
         0
     };
@@ -279,9 +280,9 @@ where
     let align: usize = BE::SCRATCH_ALIGN;
     let cols: usize = res_infos.rank().as_usize() + 1;
     let output_size = glwe_external_product_output_size::<BE, _, _, _>(res_infos, a_infos, ggsw_infos);
-    let lvl_0: usize = module.bytes_of_vec_znx_dft(module.n(), cols, output_size);
+    let lvl_0: usize = module.vec_znx_dft_bytes_of(module.n(), cols, output_size);
     let lvl_1: usize = module
-        .bytes_of_vec_znx_big(module.n(), cols, output_size)
+        .vec_znx_big_bytes_of(module.n(), cols, output_size)
         .next_multiple_of(align)
         + module
             .vec_znx_idft_apply_tmp_bytes()

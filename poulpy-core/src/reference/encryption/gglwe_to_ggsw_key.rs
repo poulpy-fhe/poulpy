@@ -1,5 +1,5 @@
 use poulpy_hal::{
-    api::{ModuleN, ScratchArenaTakeBasic, VecZnxCopy},
+    api::{ModuleN, ScratchArenaTakeScalarZnx, VecZnxCopy},
     layouts::{
         Backend, Module, ScratchArena, scalar_znx_as_vec_znx_backend_mut_from_mut, scalar_znx_as_vec_znx_backend_ref_from_mut,
     },

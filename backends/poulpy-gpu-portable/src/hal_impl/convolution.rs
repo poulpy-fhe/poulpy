@@ -4,7 +4,7 @@ use poulpy_hal::{
         ScratchArena, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut, assert_dense, check_cnv_dft_term,
         check_cnv_dft_terms, check_degree,
     },
-    oep::HalConvolutionImpl,
+    oep::HalCnvImpl,
 };
 
 use super::operand::{
@@ -143,7 +143,7 @@ fn right_plan<RT: GpuRuntime, R: Ring>(
     AutomorphismPlan::new(b.n(), b_galois, handle(module).tables().invariant())
 }
 
-unsafe impl<RT: GpuRuntime, R: Ring> HalConvolutionImpl for NTT4x30Gpu<RT, R> {
+unsafe impl<RT: GpuRuntime, R: Ring> HalCnvImpl for NTT4x30Gpu<RT, R> {
     fn cnv_prepare_left_tmp_bytes(_module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
         0
     }

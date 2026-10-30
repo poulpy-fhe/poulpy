@@ -270,7 +270,7 @@ where
     C: CKKSCtBounds,
     T: GGLWEInfos,
 {
-    BE::scratch_aligned(BE::bytes_of_vec_znx(ct.n().into(), (ct.rank() + 1).into(), ct.max_size()))
+    BE::scratch_aligned(BE::vec_znx_bytes_of(ct.n().into(), (ct.rank() + 1).into(), ct.max_size()))
         + module
             .ckks_mul_tmp_bytes(ct, ct, ct, tsk)
             .max(module.ckks_square_tmp_bytes(ct, ct, tsk))

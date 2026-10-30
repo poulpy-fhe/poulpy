@@ -2,7 +2,7 @@
 //! GLWEs and secrets of degree `2N`, expressed with HAL operations of the standard module.
 use poulpy_hal::{
     api::{
-        ModuleN, ScalarZnxCIEmbed, ScratchArenaTakeBasic, VecZnxCIEmbed, VecZnxCITrace, VecZnxNormalize, VecZnxNormalizeTmpBytes,
+        ModuleN, ScalarZnxCIEmbed, ScratchArenaTakeVecZnx, VecZnxCIEmbed, VecZnxCITrace, VecZnxNormalize, VecZnxNormalizeTmpBytes,
     },
     layouts::{Backend, Module, ScratchArena, VecZnxToBackendMut, VecZnxToBackendRef},
 };
@@ -41,7 +41,7 @@ where
     R: GLWEInfos,
     A: GLWEInfos,
 {
-    BE::bytes_of_vec_znx(res_infos.n().as_usize(), 1, a_infos.size()) + module.vec_znx_normalize_tmp_bytes()
+    BE::vec_znx_bytes_of(res_infos.n().as_usize(), 1, a_infos.size()) + module.vec_znx_normalize_tmp_bytes()
 }
 
 /// Writes the trace of each column of `a` into a scratch polynomial at the radix of `a`,

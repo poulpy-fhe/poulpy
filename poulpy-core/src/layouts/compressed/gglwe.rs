@@ -332,7 +332,7 @@ impl<D: Data, W: ZnxWord> GGLWECompressed<D, W> {
         GGLWECompressed {
             noise: None,
             data: MatZnx::from_data(
-                B::alloc_zeroed_bytes(B::bytes_of_mat_znx(n.into(), dnum.into(), rank_in.into(), 1, size)),
+                B::alloc_zeroed_bytes(B::mat_znx_bytes_of(n.into(), dnum.into(), rank_in.into(), 1, size)),
                 n.into(),
                 dnum.into(),
                 rank_in.into(),

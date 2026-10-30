@@ -9,7 +9,7 @@ use poulpy_hal::{
         SvpPPolBackendRef, VecZnxBackendMut, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendMut,
         VmpPMatBackendRef,
     },
-    oep::{HalConvolutionImpl, HalSvpImpl, HalVecZnxDftImpl, HalVmpImpl},
+    oep::{HalCnvImpl, HalSvpImpl, HalVecZnxDftImpl, HalVmpImpl},
 };
 
 use super::NTT4x30Portable;
@@ -108,7 +108,7 @@ where
     }
 }
 
-unsafe impl<R: Ring> HalConvolutionImpl for NTT4x30Portable<R>
+unsafe impl<R: Ring> HalCnvImpl for NTT4x30Portable<R>
 where
     Self: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>> + ZnxAutomorphism,
 {

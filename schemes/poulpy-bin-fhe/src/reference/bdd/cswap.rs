@@ -42,7 +42,7 @@ where
         rank: s_infos.rank(),
     };
     let output_size = glwe_external_product_output_size::<BE, _, _, _>(res_a_infos, &tmp_c_infos, s_infos);
-    let res_dft: usize = module.bytes_of_vec_znx_dft(module.n(), (s_infos.rank() + 1).into(), output_size);
+    let res_dft: usize = module.vec_znx_dft_bytes_of(module.n(), (s_infos.rank() + 1).into(), output_size);
     let mut tot = res_dft
         + (module.glwe_external_product_internal_tmp_bytes(res_a_infos, &tmp_c_infos, s_infos)
             + module.glwe_bytes_of_from_infos(&tmp_c_infos))
@@ -67,8 +67,8 @@ where
     }
 
     // The full BIG output remains live during external product and IDFT.
-    tot + module.bytes_of_vec_znx_big(module.n(), 1, output_size)
-        + module.bytes_of_vec_znx_big(module.n(), (s_infos.rank() + 1).into(), output_size)
+    tot + module.vec_znx_big_bytes_of(module.n(), 1, output_size)
+        + module.vec_znx_big_bytes_of(module.n(), (s_infos.rank() + 1).into(), output_size)
         + module.vec_znx_idft_apply_tmp_bytes()
         + module.glwe_normalize_tmp_bytes()
         + module

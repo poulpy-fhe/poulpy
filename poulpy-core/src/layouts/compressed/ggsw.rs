@@ -295,7 +295,7 @@ impl<D: Data, W: ZnxWord> GGSWCompressed<D, W> {
         GGSWCompressed {
             noise: None,
             data: MatZnx::from_data(
-                B::alloc_zeroed_bytes(B::bytes_of_mat_znx(n.into(), dnum.into(), (rank + 1).into(), 1, size)),
+                B::alloc_zeroed_bytes(B::mat_znx_bytes_of(n.into(), dnum.into(), (rank + 1).into(), 1, size)),
                 n.into(),
                 dnum.into(),
                 (rank + 1).into(),

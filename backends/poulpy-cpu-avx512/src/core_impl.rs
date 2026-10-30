@@ -36,9 +36,10 @@ use poulpy_hal::layouts::{CnvPVecL, CnvPVecR, DataView};
 use poulpy_hal::layouts::{DataViewMut, VecZnxDft};
 use poulpy_hal::{
     api::{
-        CnvPVecBytesOf, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxBigBytesOf, VecZnxBigNormalize,
-        VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftBytesOf, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxIdftNormalize,
-        VecZnxIdftNormalizeTmpBytes, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxSubAssign,
+        CnvOps, CnvPVecBytesOf, ModuleN, ScratchArenaTakeCnvPVecL, ScratchArenaTakeCnvPVecR, ScratchArenaTakeVecZnx,
+        ScratchArenaTakeVecZnxBig, ScratchArenaTakeVecZnxDft, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
+        VecZnxCopy, VecZnxDftBytesOf, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes,
+        VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxSubAssign,
     },
     layouts::{
         Backend, CnvPVecLBackendRef, CnvPVecLToBackendRef, CnvPVecRBackendRef, CnvPVecRToBackendRef, Module, PrepareHint, Ring,
@@ -65,7 +66,7 @@ trait RankOneTensorDft: Backend {
     where
         Module<Self>: VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes + VecZnxIdftApplyTmpBytes,
     {
-        module.bytes_of_vec_znx_big(n, 1, size)
+        module.vec_znx_big_bytes_of(n, 1, size)
             + module
                 .vec_znx_big_normalize_tmp_bytes()
                 .max(module.vec_znx_idft_apply_tmp_bytes())
@@ -424,9 +425,9 @@ where
         VecZnxDftBytesOf + VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes + VecZnxIdftApplyTmpBytes + VecZnxNormalizeTmpBytes,
 {
     let kernel = BE::rank_one_tensor_dft_tmp_bytes(dft_size, a_size, b_size);
-    let normalize = BE::bytes_of_vec_znx(n, 1, res_size)
+    let normalize = BE::vec_znx_bytes_of(n, 1, res_size)
         + BE::tensor_finish_tmp_bytes(module, n, dft_size).max(module.vec_znx_normalize_tmp_bytes());
-    BE::bytes_of_vec_znx(n, 2, res_size) + module.bytes_of_vec_znx_dft(n, 3, dft_size) + kernel.max(normalize)
+    BE::vec_znx_bytes_of(n, 2, res_size) + module.vec_znx_dft_bytes_of(n, 3, dft_size) + kernel.max(normalize)
 }
 
 fn rank_one_tensor_apply_tmp_bytes<BE, R, A, B>(module: &Module<BE>, res: &R, a: &A, b: &B) -> usize
@@ -434,7 +435,7 @@ where
     BE: RankOneTensorDft,
     Module<BE>: ModuleN
         + CnvPVecBytesOf
-        + Convolution<BE>
+        + CnvOps<BE>
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
         + VecZnxBigNormalizeTmpBytes
@@ -450,8 +451,8 @@ where
     assert_eq!(b.base2k().as_usize(), base2k);
     let a_size = a.k().as_usize().div_ceil(base2k);
     let b_size = b.k().as_usize().div_ceil(base2k);
-    let prepared = module.bytes_of_cnv_pvec_left(n, 2, a_size, PrepareHint::Reuse)
-        + module.bytes_of_cnv_pvec_right(n, 2, b_size, PrepareHint::Reuse);
+    let prepared = module.cnv_pvec_left_bytes_of(n, 2, a_size, PrepareHint::Reuse)
+        + module.cnv_pvec_right_bytes_of(n, 2, b_size, PrepareHint::Reuse);
     let prepare = module
         .cnv_prepare_left_tmp_bytes(a_size, a_size)
         .max(module.cnv_prepare_right_tmp_bytes(b_size, b_size));
@@ -493,7 +494,7 @@ where
     BE: RankOneTensorDft,
     Module<BE>: ModuleN
         + CnvPVecBytesOf
-        + Convolution<BE>
+        + CnvOps<BE>
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
         + VecZnxBigNormalizeTmpBytes
@@ -507,8 +508,8 @@ where
     let base2k = a.base2k().as_usize();
     let a_size = a.k().as_usize().div_ceil(base2k);
     let dft_size = (2 * a_size).min((res.size() * res.base2k().as_usize() + base2k - 1).div_ceil(base2k));
-    let prepared = module.bytes_of_cnv_pvec_left(n, 2, a_size, PrepareHint::Reuse)
-        + module.bytes_of_cnv_pvec_right(n, 2, a_size, PrepareHint::Reuse);
+    let prepared = module.cnv_pvec_left_bytes_of(n, 2, a_size, PrepareHint::Reuse)
+        + module.cnv_pvec_right_bytes_of(n, 2, a_size, PrepareHint::Reuse);
     let prepare = module.cnv_prepare_self_tmp_bytes(a_size, a_size);
     BE::scratch_aligned(module.glwe_bytes_of_from_infos(a))
         + (prepared + prepare.max(rank_one_tensor_work_bytes(module, n, res.size(), dft_size, a_size, a_size)))
@@ -641,7 +642,7 @@ fn rank_one_tensor_apply<BE, R, A, B>(
     BE: RankOneTensorDft,
     Module<BE>: ModuleN
         + CnvPVecBytesOf
-        + Convolution<BE>
+        + CnvOps<BE>
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
         + VecZnxIdftApply<BE>
@@ -752,7 +753,7 @@ fn rank_one_tensor_square<BE, R, A>(
     BE: RankOneTensorDft,
     Module<BE>: ModuleN
         + CnvPVecBytesOf
-        + Convolution<BE>
+        + CnvOps<BE>
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
         + VecZnxIdftApply<BE>
@@ -983,11 +984,11 @@ macro_rules! impl_rank_one_tensoring {
                 // The digit layout runs before the output is taken, the product and
                 // the fused inverse transform after.
                 let layout = gadget_dft_apply_tmp_bytes::<$be, _>(module, base2k, k_digit, dnum, a.k(), a_size);
-                let product = module.bytes_of_vec_znx_dft(n, tsk.rank_out().as_usize() + 1, output_size)
+                let product = module.vec_znx_dft_bytes_of(n, tsk.rank_out().as_usize() + 1, output_size)
                     + module
                         .gglwe_product_dft_tmp_bytes_reference(output_size, operand_size, tsk)
                         .max(module.vec_znx_idft_normalize_tmp_bytes(res.size(), output_size));
-                module.bytes_of_vec_znx_dft(n, tsk.rank_in().as_usize(), operand_size) + layout.max(product)
+                module.vec_znx_dft_bytes_of(n, tsk.rank_in().as_usize(), operand_size) + layout.max(product)
             }
 
             fn glwe_mul_relinearize_tmp_bytes<R, B>(

@@ -22,7 +22,7 @@ use std::collections::HashMap;
 
 use poulpy_core::{GLWECopy, TransferInto, api::GLWESecretPreparedFactory, layouts::ModuleCoreAlloc};
 use poulpy_hal::{
-    api::{CnvPVecAlloc, NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
+    api::{CnvPVecAlloc, ReimNew, ScratchOwnedBorrow},
     layouts::{HostBytesBackend, Module, Standard},
     source::Source,
 };
@@ -60,7 +60,7 @@ where
         + CnvPVecAlloc<BE>
         + GLWECopy<BE>,
     F: TestScalar + PaCoScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let _ = (module, host_module);
     for slot_order in [
@@ -88,7 +88,7 @@ where
         + CnvPVecAlloc<BE>
         + GLWECopy<BE>,
     F: TestScalar + PaCoScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let _ = (module, host_module);
     for slot_order in [
@@ -127,7 +127,7 @@ fn seq_bootstrap_case<BE, F, E>(
         + CnvPVecAlloc<BE>
         + GLWECopy<BE>,
     F: TestScalar + PaCoScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let log_delta = params.prec().log_delta();
     // Base modulus below the working scale (the PaCo precision requirement

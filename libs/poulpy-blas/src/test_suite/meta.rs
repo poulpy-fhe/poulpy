@@ -15,7 +15,7 @@ use poulpy_ckks::{
 };
 use poulpy_core::layouts::{DiagonalArithmetic, GLWE, LWEInfos};
 use poulpy_hal::{
-    api::{CnvPVecAlloc, NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
+    api::{CnvPVecAlloc, ReimNew, ScratchOwnedBorrow},
     layouts::{
         CyclotomicOrder, HostBytesBackend, HostDataMut, HostDataRef, Module,
         PrepareHint::{OneShot, Reuse},
@@ -82,7 +82,7 @@ pub fn test_blas_result_meta<BE, F, E>(
         + CKKSLinearTransformationOps<BE>
         + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
@@ -707,7 +707,7 @@ pub fn test_blas_batch_record<BE, F, E>(
         + CKKSLinearTransformationOps<BE>
         + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {

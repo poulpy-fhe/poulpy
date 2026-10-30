@@ -126,7 +126,7 @@ use $crate::__private::poulpy_hal::{
         VecZnxDftBackendRef, VmpPMatBackendMut, VmpPMatBackendRef, ZnxView, ZnxViewMut,
     },
     oep::{
-        HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl,
+        HalCnvImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl,
     },
 };
 
@@ -828,8 +828,8 @@ unsafe impl HalVmpImpl for $rayon {
         <Self as FFT64VmpDefault>::vmp_zero_default(module, res)
     }
 }
-unsafe impl HalConvolutionImpl for $rayon {
-    poulpy_cpu_portable::hal_impl_convolution!(FFT64ConvolutionDefault);
+unsafe impl HalCnvImpl for $rayon {
+    poulpy_cpu_portable::hal_impl_cnv!(FFT64ConvolutionDefault);
 }
 unsafe impl HalVecZnxBigImpl for $rayon {
     fn vec_znx_big_from_small(
@@ -1077,7 +1077,7 @@ unsafe impl HalVecZnxBigImpl for $rayon {
         )
     }
 
-    fn vec_znx_scalar_product(
+    fn vec_znx_big_scalar_product(
         module: &Module<Self>,
         res: &mut VecZnxBigBackendMut<'_, Self>,
         res_col: usize,
@@ -1086,7 +1086,7 @@ unsafe impl HalVecZnxBigImpl for $rayon {
         b: &ScalarZnxBackendRef<'_, Self>,
         b_col: usize,
     ) {
-        <$base as HalVecZnxBigImpl>::vec_znx_scalar_product(
+        <$base as HalVecZnxBigImpl>::vec_znx_big_scalar_product(
             base_module(module),
             &mut base_big_mut(res),
             res_col,

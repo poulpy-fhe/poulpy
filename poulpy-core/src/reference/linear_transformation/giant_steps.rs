@@ -12,8 +12,8 @@ use poulpy_hal::api::VecZnxIdftNormalize as _;
 use poulpy_hal::layouts::Module;
 use poulpy_hal::{
     api::{
-        CnvPVecBytesOf, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxBigAddAssign, VecZnxBigAlloc,
-        VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf, VecZnxBigFromSmall,
+        CnvOps, CnvPVecBytesOf, ModuleN, ScratchArenaTakeVecZnxBig, ScratchArenaTakeVecZnxDft, VecZnxBigAddAssign,
+        VecZnxBigAlloc, VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf, VecZnxBigFromSmall,
         VecZnxBigNormalize, VecZnxCopy, VecZnxDftAddAssign, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftAutomorphism,
         VecZnxDftAutomorphismAddWithPlanTmpBytes, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero, VecZnxGadgetDecomposeTmpBytes,
         VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxIdftNormalizeTmpBytes, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes,
@@ -75,7 +75,7 @@ impl<BE: Backend> DiagonalProd<BE> for PreparedDiagonal<BE::OwnedBuf, BE> {
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         BE: crate::oep::LinearTransformationImpl,
-        Module<BE>: CnvPVecBytesOf + Convolution<BE> + ModuleN,
+        Module<BE>: CnvPVecBytesOf + CnvOps<BE> + ModuleN,
     {
         BE::glwe_accumulate_giant_steps(module, cnv_offset_hi, prods, lhs, steps, scratch);
     }
@@ -132,7 +132,7 @@ where
 impl<BE, P, L> GiantProducts<BE> for PlainProducts<'_, BE, P, L>
 where
     BE: Backend + crate::oep::GGLWEProductDigitsStridedImpl + crate::oep::LinearTransformationImpl,
-    Module<BE>: CnvPVecBytesOf + Convolution<BE> + ModuleN + VecZnxDftAddAssign<BE> + VecZnxDftBytesOf,
+    Module<BE>: CnvPVecBytesOf + CnvOps<BE> + ModuleN + VecZnxDftAddAssign<BE> + VecZnxDftBytesOf,
     P: DiagonalProd<BE>,
     L: BabyStepOperand<BE>,
 {
@@ -237,7 +237,7 @@ pub(super) fn glwe_eval_giant_steps<BE, R, P, H, L: BabyStepOperand<BE>>(
         + GLWECopy<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
         + CnvPVecBytesOf
-        + Convolution<BE>
+        + CnvOps<BE>
         + ModuleN
         + GGLWEProductReference<BE>
         + GLWEKeyswitchInternal<BE>
@@ -519,7 +519,7 @@ fn glwe_eval_giant_tree<BE, R, H>(
         + GLWECopy<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
         + CnvPVecBytesOf
-        + Convolution<BE>
+        + CnvOps<BE>
         + ModuleN
         + GGLWEProductReference<BE>
         + VecZnxDftAutomorphism<BE>
@@ -694,7 +694,7 @@ fn glwe_eval_giant_tree<BE, R, H>(
 
     let node_bytes: usize = sizes
         .iter()
-        .map(|&size| BE::scratch_aligned(module.bytes_of_vec_znx_dft(n, cols, size)))
+        .map(|&size| BE::scratch_aligned(module.vec_znx_dft_bytes_of(n, cols, size)))
         .sum();
     // Carved from the scratch beside the work of the tree ([`giant_tree_tmp_bytes`]).
     let need = node_bytes
@@ -848,17 +848,17 @@ pub(super) struct PlainProductsShape {
 pub(super) fn plain_products_tmp_bytes<BE, M>(module: &M, n: usize, cols: usize, shape: &PlainProductsShape) -> usize
 where
     BE: Backend,
-    M: Convolution<BE> + CnvPVecBytesOf + VecZnxDftBytesOf,
+    M: CnvOps<BE> + CnvPVecBytesOf + VecZnxDftBytesOf,
 {
     // A later term of a sum is computed into a bucket per step of a batch, a streamed diagonal prepared into a slot
     // and multiplied a diagonal at a time.
     let bucket = if shape.terms > 1 {
-        shape.batch * BE::scratch_aligned(module.bytes_of_vec_znx_dft(n, cols, shape.prod_size))
+        shape.batch * BE::scratch_aligned(module.vec_znx_dft_bytes_of(n, cols, shape.prod_size))
     } else {
         0
     };
     bucket
-        + BE::scratch_aligned(module.bytes_of_cnv_pvec_right(n, 1, shape.diagonal_size, PrepareHint::OneShot))
+        + BE::scratch_aligned(module.cnv_pvec_right_bytes_of(n, 1, shape.diagonal_size, PrepareHint::OneShot))
         + glwe_accumulate_prepared_baby_steps_dft_tmp_bytes::<BE, _>(
             module,
             shape.cnv_offset_hi,
@@ -876,8 +876,8 @@ where
     BE: Backend,
     M: VecZnxDftBytesOf,
 {
-    BE::scratch_aligned(module.bytes_of_vec_znx_dft(n, cols, shape.prod_size))
-        + BE::scratch_aligned(BE::bytes_of_vec_znx(n, cols, shape.res_size))
+    BE::scratch_aligned(module.vec_znx_dft_bytes_of(n, cols, shape.prod_size))
+        + BE::scratch_aligned(BE::vec_znx_bytes_of(n, cols, shape.res_size))
 }
 
 /// Bytes of the work of the giant-step tree beside its buffers that no key sizes: a product,
@@ -970,7 +970,7 @@ where
     // A buffer per giant step and at most one per switch, as wide as a node, beside the switches
     // of the level of most switches.
     let widest = levels.iter().map(|level| level.pairs.len()).max().unwrap_or(0);
-    let lazy = (steps + switches) * BE::scratch_aligned(module.bytes_of_vec_znx_dft(n, cols, node_size))
+    let lazy = (steps + switches) * BE::scratch_aligned(module.vec_znx_dft_bytes_of(n, cols, node_size))
         + giant_tree_work_bytes::<BE, _>(module, true, &shape, node_size)
             .max(giant_tree_switch_bytes::<BE, _, _>(module, res, key, true, widest, node_size));
     let fallback = steps * giant_tree_fallback_buffer_bytes::<BE, _>(module, n, cols, &shape)
@@ -1007,7 +1007,7 @@ fn sum_giant_prods<BE, P, L: BabyStepOperand<BE>>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend + crate::oep::GGLWEProductDigitsStridedImpl + crate::oep::LinearTransformationImpl,
-    Module<BE>: CnvPVecBytesOf + Convolution<BE> + ModuleN + VecZnxDftAddAssign<BE>,
+    Module<BE>: CnvPVecBytesOf + CnvOps<BE> + ModuleN + VecZnxDftAddAssign<BE>,
     P: DiagonalProd<BE>,
 {
     P::accumulate_giant_prods(

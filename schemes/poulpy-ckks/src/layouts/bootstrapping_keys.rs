@@ -420,10 +420,10 @@ impl BootstrappingKeysLayout {
             bytes = bytes.max(module.glwe_switching_key_encrypt_sk_tmp_bytes(&layout));
         }
         if let Some(layout) = &self.first_factor_key {
-            let secret = BE::scratch_aligned(BE::bytes_of_scalar_znx(n, rank));
+            let secret = BE::scratch_aligned(BE::scalar_znx_bytes_of(n, rank));
             bytes = bytes.max(secret + module.glwe_switching_key_encrypt_sk_tmp_bytes(layout));
         }
-        let secret_ci = BCI::scratch_aligned(BCI::bytes_of_scalar_znx(n, rank));
+        let secret_ci = BCI::scratch_aligned(BCI::scalar_znx_bytes_of(n, rank));
         (bytes, secret_ci + ci.glwe_tensor_key_encrypt_sk_tmp_bytes(&self.tensor_key))
     }
 
@@ -860,7 +860,7 @@ impl KeyRecipe {
                         keys.insert(rotation, key);
                     }
                 }
-                scratch.wipe(BE::bytes_of_scalar_znx(n.as_usize(), rank.as_usize()));
+                scratch.wipe(BE::scalar_znx_bytes_of(n.as_usize(), rank.as_usize()));
             }
             keys
         };
@@ -899,7 +899,7 @@ impl KeyRecipe {
                     );
                     (dense_to_sparse, sparse_to_dense)
                 };
-                scratch.wipe(BE::bytes_of_scalar_znx(n.as_usize(), rank.as_usize()));
+                scratch.wipe(BE::scalar_znx_bytes_of(n.as_usize(), rank.as_usize()));
                 Some(keys)
             }
             (None, None) => {
@@ -983,7 +983,7 @@ impl KeyRecipe {
             module.glwe_ci_embed_key_encrypt_sk(&mut embed_key, &sk_ci, sk_dense, source_xe, source_xa, scratch);
             (trace_key, embed_key)
         };
-        scratch_ci.wipe(BCI::bytes_of_scalar_znx(n, rank.as_usize()));
+        scratch_ci.wipe(BCI::scalar_znx_bytes_of(n, rank.as_usize()));
         keys.conversion_keys = Some(conversion_keys);
         Ok(keys)
     }

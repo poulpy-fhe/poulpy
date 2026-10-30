@@ -1,10 +1,10 @@
 use poulpy_hal::api::ModuleSynchronize;
 use poulpy_hal::{
     api::{
-        CnvPVecAlloc, Convolution, ModuleNew, ScalarZnxAlloc, ScratchOwnedAlloc, ScratchOwnedBorrow, SvpApplyDft,
-        SvpApplyDftTmpBytes, SvpApplyDftToDft, SvpApplyDftToDftAssign, SvpPPolAlloc, SvpPrepare, VecZnxAdd, VecZnxAddAssign,
-        VecZnxAddScalarAssign, VecZnxAlloc, VecZnxAutomorphism, VecZnxAutomorphismAssign, VecZnxAutomorphismAssignTmpBytes,
-        VecZnxBigAdd, VecZnxBigAddAssign, VecZnxBigAddSmall, VecZnxBigAddSmallAssign, VecZnxBigAlloc, VecZnxBigAutomorphism,
+        CnvOps, CnvPVecAlloc, ModuleNew, ScalarZnxAlloc, ScratchOwnedAlloc, ScratchOwnedBorrow, SvpApplyDft, SvpApplyDftTmpBytes,
+        SvpApplyDftToDft, SvpApplyDftToDftAssign, SvpPPolAlloc, SvpPrepare, VecZnxAdd, VecZnxAddAssign, VecZnxAddScalarAssign,
+        VecZnxAlloc, VecZnxAutomorphism, VecZnxAutomorphismAssign, VecZnxAutomorphismAssignTmpBytes, VecZnxBigAdd,
+        VecZnxBigAddAssign, VecZnxBigAddSmall, VecZnxBigAddSmallAssign, VecZnxBigAlloc, VecZnxBigAutomorphism,
         VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigNegate, VecZnxBigNegateAssign,
         VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxBigSub, VecZnxBigSubAssign, VecZnxBigSubNegateAssign,
         VecZnxBigSubSmallA, VecZnxBigSubSmallB, VecZnxDftAdd, VecZnxDftAddAssign, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftSub,
@@ -19,7 +19,7 @@ use poulpy_hal::{
     layouts::{Backend, Module, ScratchOwned},
 };
 
-use poulpy_hal::api::{NegacyclicFFT, NegacyclicFFTNew};
+use poulpy_hal::api::ReimNew;
 
 use std::marker::PhantomData;
 
@@ -506,7 +506,7 @@ where
 
 pub fn convolution_ops<B: Backend<ZnxWord = i64> + 'static, M: Measurement>() -> [BenchOp<M, CnvSweepParms>; 11]
 where
-    Module<B>: ModuleNew<B> + ModuleSynchronize<B> + Convolution<B> + CnvPVecAlloc<B> + VecZnxDftAlloc<B> + VecZnxBigAlloc<B>,
+    Module<B>: ModuleNew<B> + ModuleSynchronize<B> + CnvOps<B> + CnvPVecAlloc<B> + VecZnxDftAlloc<B> + VecZnxBigAlloc<B>,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
 {
     [
@@ -570,7 +570,7 @@ where
 
 // ── reim ─────────────────────────────────────────────────────────────────────
 
-pub fn reim_ops<T: NegacyclicFFT<f64> + NegacyclicFFTNew<f64>, M: Measurement>() -> [BenchOp<M, ReimSweepParams>; 2] {
+pub fn reim_ops<T: ReimNew<f64>, M: Measurement>() -> [BenchOp<M, ReimSweepParams>; 2] {
     [
         BenchOp {
             layer: "hal",
@@ -822,7 +822,7 @@ where
         + VmpApplyDftToDftTmpBytes
         + VmpApplyDftToDftAdd<B>
         + VmpApplyDftToDftAddTmpBytes
-        + Convolution<B>
+        + CnvOps<B>
         + CnvPVecAlloc<B>
         + VecZnxAddScalarAssign<B>
         + ScalarZnxAlloc<B>
@@ -928,7 +928,7 @@ where
         + VmpApplyDftToDftTmpBytes
         + VmpApplyDftToDftAdd<B>
         + VmpApplyDftToDftAddTmpBytes
-        + Convolution<B>
+        + CnvOps<B>
         + CnvPVecAlloc<B>
         + VecZnxAddScalarAssign<B>
         + ScalarZnxAlloc<B>

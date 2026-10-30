@@ -7,10 +7,11 @@ use crate::api::{GLWEAutomorphism, GLWEKeyswitch, GLWENormalize};
 use crate::api::GLWEBytesOf;
 use poulpy_hal::{
     api::{
-        ModuleN, ScratchArenaTakeBasic, VecZnxAutomorphismAssign, VecZnxAutomorphismAssignTmpBytes, VecZnxBigAddSmallAssign,
-        VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf, VecZnxBigNormalize,
-        VecZnxBigNormalizeTmpBytes, VecZnxBigSubSmallAssign, VecZnxBigSubSmallNegateAssign, VecZnxDftBytesOf,
-        VecZnxGadgetDecomposeTmpBytes, VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
+        ModuleN, ScratchArenaTakeVecZnxBig, ScratchArenaTakeVecZnxDft, VecZnxAutomorphismAssign,
+        VecZnxAutomorphismAssignTmpBytes, VecZnxBigAddSmallAssign, VecZnxBigAutomorphismAssign,
+        VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
+        VecZnxBigSubSmallAssign, VecZnxBigSubSmallNegateAssign, VecZnxDftBytesOf, VecZnxGadgetDecomposeTmpBytes, VecZnxIdftApply,
+        VecZnxIdftApplyTmpBytes,
     },
     layouts::{Backend, Module, ScratchArena, VecZnxBigToBackendRef, VecZnxDftToBackendRef},
 };
@@ -75,9 +76,9 @@ where
     let output_size: usize = gglwe_product_output_size::<BE, _, _, _>(res_infos, &a_conv_infos, key_infos);
     let a_dft_size: usize = a_conv_infos.size();
 
-    let lvl_dft: usize = module.bytes_of_vec_znx_dft(module.n(), cols, output_size);
+    let lvl_dft: usize = module.vec_znx_dft_bytes_of(module.n(), cols, output_size);
     let lvl_conv: usize = module.glwe_bytes_of_from_infos(&a_conv_infos);
-    let lvl_big: usize = module.bytes_of_vec_znx_big(module.n(), cols, output_size)
+    let lvl_big: usize = module.vec_znx_big_bytes_of(module.n(), cols, output_size)
         + module
             .vec_znx_idft_apply_tmp_bytes()
             .max(module.vec_znx_big_automorphism_assign_tmp_bytes())
@@ -668,10 +669,10 @@ where
     let (base2k, k_digit, dnum) = (key_infos.base2k(), key_infos.k_digit(), key_infos.dnum());
     let operand_size = gadget_input_size(base2k, k_digit, dnum, a_infos.k(), a_infos.size());
     let product_size = gglwe_product_output_size::<BE, _, _, _>(res_infos, a_infos, key_infos);
-    let switch = BE::scratch_aligned(module.bytes_of_vec_znx_dft(n, res_infos.rank().as_usize() + 1, product_size))
+    let switch = BE::scratch_aligned(module.vec_znx_dft_bytes_of(n, res_infos.rank().as_usize() + 1, product_size))
         + BE::gglwe_product_idft_normalize_tmp_bytes(module, res_infos.size(), product_size, operand_size, key_infos)
             .max(module.vec_znx_automorphism_assign_tmp_bytes());
-    let operand = BE::scratch_aligned(module.bytes_of_vec_znx_dft(n, a_infos.rank().as_usize(), operand_size))
+    let operand = BE::scratch_aligned(module.vec_znx_dft_bytes_of(n, a_infos.rank().as_usize(), operand_size))
         + gadget_dft_apply_tmp_bytes::<BE, _>(module, base2k, k_digit, dnum, a_infos.k(), a_infos.size()).max(switch);
     let hoisted = BE::scratch_aligned(module.glwe_bytes_of_from_infos(a_infos)) + module.glwe_normalize_tmp_bytes().max(operand);
     single.max(hoisted)

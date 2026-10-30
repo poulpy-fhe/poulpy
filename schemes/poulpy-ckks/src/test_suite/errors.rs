@@ -12,7 +12,7 @@ use crate::{
 use poulpy_core::layouts::{Diagonals, LWEInfos, LinearTransformationStrategy, TorusPrecision};
 use poulpy_hal::{
     AlignedBuf,
-    api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
+    api::{ReimNew, ScratchOwnedBorrow},
     layouts::{HostBytesBackend, Module, Standard, VecZnx},
 };
 
@@ -36,7 +36,7 @@ pub fn test_add_pt_vec_assign_rejects_alignment<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -86,7 +86,7 @@ pub fn test_encode_linear_transformation_from_diagonals_rejects_zero_k<BE, F, E>
     BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let slots = params.n / 2;
     let mut re = Diagonals::new(slots);
@@ -127,7 +127,7 @@ pub fn test_encode_linear_transformation_into<BE, F, E>(
     BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let slots = params.n / 2;
     let map = |indexes: &[i64], value: f64| {
@@ -226,7 +226,7 @@ pub fn test_encode_bsgs_with_rejects_zero_k<BE, F, E>(
     BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     // x + x³: odd, so the folded entry folds it.
     let poly = Polynomial::new(Basis::Monomial, vec![F::zero(), F::one(), F::zero(), F::one()]);

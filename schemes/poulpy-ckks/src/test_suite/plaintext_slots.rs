@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 use poulpy_core::layouts::{Diagonals, Evaluate, LWEInfos, LinearTransformationStrategy};
 use poulpy_hal::{
-    api::{CnvPVecAlloc, NegacyclicFFT, NegacyclicFFTNew, ScratchAvailable, ScratchOwnedBorrow},
+    api::{CnvPVecAlloc, ReimNew, ScratchAvailable, ScratchOwnedBorrow},
     layouts::{Backend, CyclotomicOrder, HostBytesBackend, Module, ScratchArena, Standard},
 };
 
@@ -45,7 +45,7 @@ pub fn test_plaintext_slots_add_sub_mul<BE, F, E>(
     for<'a> <BE as Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = test_slots(&params);
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -203,7 +203,7 @@ pub fn test_linear_transformation_diagonal_slots<BE, F, E>(
     for<'a> <BE as Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + CKKSEncodingHostOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     for<'a> ScratchArena<'a, BE>: ScratchAvailable,
 {
     let m = test_slots(&params);
@@ -297,7 +297,7 @@ where
     BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let mut scratch = alloc_scratch(&params, module);
     let strategy = LinearTransformationStrategy::Bsgs { giant_step: 2 };

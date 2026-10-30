@@ -11,8 +11,8 @@ use poulpy_hal::{
         ZnxView, ZnxViewMut, assert_dense,
     },
     oep::{
-        HalConvolutionImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxCIImpl, HalVecZnxDftImpl, HalVecZnxImpl,
-        HalVecZnxMonomialImpl, HalVmpImpl,
+        HalCnvImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxCIImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVecZnxMonomialImpl,
+        HalVmpImpl,
     },
     source::Source,
 };
@@ -460,7 +460,7 @@ unsafe impl<F: DFTFamily, R: OracleRing> HalVecZnxBigImpl for Oracle<F, R> {
     }
 
     // res[res_col, j, i] = a[a_col, j, i] b[b_col, 0, i]
-    fn vec_znx_scalar_product(
+    fn vec_znx_big_scalar_product(
         _module: &Module<Self>,
         res: &mut VecZnxBigBackendMut<'_, Self>,
         res_col: usize,
@@ -920,7 +920,7 @@ fn cnv_prepare<F: DFTFamily, R: OracleRing>(
     }
 }
 
-unsafe impl<F: DFTFamily, R: OracleRing> HalConvolutionImpl for Oracle<F, R> {
+unsafe impl<F: DFTFamily, R: OracleRing> HalCnvImpl for Oracle<F, R> {
     fn cnv_prepare_left_tmp_bytes(_module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
         0
     }

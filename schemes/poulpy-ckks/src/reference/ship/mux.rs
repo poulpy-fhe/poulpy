@@ -11,9 +11,10 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{
-        ModuleN, ScratchArenaTakeBasic, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign,
-        VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftAutomorphismPlan, VecZnxDftBytesOf, VecZnxDftZero, VecZnxGadgetDecompose,
-        VecZnxGadgetDecomposeTmpBytes, VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
+        ModuleN, ScratchArenaTakeVecZnxBig, ScratchArenaTakeVecZnxDft, VecZnxBigBytesOf, VecZnxBigNormalize,
+        VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftAutomorphismPlan,
+        VecZnxDftBytesOf, VecZnxDftZero, VecZnxGadgetDecompose, VecZnxGadgetDecomposeTmpBytes, VecZnxIdftApply,
+        VecZnxIdftApplyTmpBytes,
     },
     layouts::{
         Backend, ScratchArena, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef,
@@ -44,14 +45,14 @@ where
     let operand_size = gadget_input_size(base2k, k_digit, dnum, ct.k(), a_size);
     let layout = gadget_dft_apply_tmp_bytes::<BE, _>(module, base2k, k_digit, dnum, ct.k(), a_size);
     let product = module.gglwe_product_dft_tmp_bytes_reference(output_size, operand_size, key);
-    let mux = 2 * module.bytes_of_vec_znx_dft(module.n(), 2, output_size) + product;
-    let finalize = module.bytes_of_vec_znx_big(module.n(), 2, output_size)
+    let mux = 2 * module.vec_znx_dft_bytes_of(module.n(), 2, output_size) + product;
+    let finalize = module.vec_znx_big_bytes_of(module.n(), 2, output_size)
         + module
             .vec_znx_big_normalize_tmp_bytes()
             .max(module.vec_znx_idft_apply_tmp_bytes());
     // The operand is laid out before the accumulator is taken.
-    module.bytes_of_vec_znx_dft(module.n(), 2, operand_size)
-        + layout.max(module.bytes_of_vec_znx_dft(module.n(), 2, output_size) + mux.max(finalize))
+    module.vec_znx_dft_bytes_of(module.n(), 2, operand_size)
+        + layout.max(module.vec_znx_dft_bytes_of(module.n(), 2, output_size) + mux.max(finalize))
 }
 
 /// `InvalidOperand` for `op` unless `keys`, one mux digit position, rotate ciphertexts `k` bits wide of radix `base2k`

@@ -4,7 +4,7 @@ use crate::CKKSModuleInfos;
 use crate::Scale;
 use poulpy_core::layouts::Base2K;
 use poulpy_hal::{
-    api::{NegacyclicFFT, NegacyclicFFTNew},
+    api::ReimNew,
     layouts::{HostBytesBackend, Module, Standard},
 };
 
@@ -31,7 +31,7 @@ pub fn test_encode_decode_reim_roundtrip<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let log_delta = params.prec().log_delta();
@@ -69,7 +69,7 @@ pub fn test_encode_coeffs_into_rejects_coefficient_count<BE, F, E>(
     BE: crate::test_suite::helpers::TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     poulpy_hal::layouts::Module<BE>: crate::test_suite::helpers::TestContextModule<BE> + crate::api::CKKSEncodingOps<BE, F>,
     F: crate::test_suite::helpers::TestScalar,
-    E: poulpy_hal::api::NegacyclicFFT<F> + poulpy_hal::api::NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     use crate::test_suite::{
         helpers::assert_ckks_error,
@@ -108,7 +108,7 @@ pub fn test_encode_reim_into_rejects_slot_counts<BE, F, E>(
     BE: crate::test_suite::helpers::TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     poulpy_hal::layouts::Module<BE>: crate::test_suite::helpers::TestContextModule<BE> + crate::api::CKKSEncodingOps<BE, F>,
     F: crate::test_suite::helpers::TestScalar,
-    E: poulpy_hal::api::NegacyclicFFT<F> + poulpy_hal::api::NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     use crate::test_suite::{
         helpers::assert_ckks_error,

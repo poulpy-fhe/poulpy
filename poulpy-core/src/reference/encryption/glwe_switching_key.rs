@@ -1,5 +1,5 @@
 use poulpy_hal::{
-    api::{ModuleN, ScratchArenaTakeBasic, VecZnxSwitchRing},
+    api::{ModuleN, ScratchArenaTakeScalarZnx, VecZnxSwitchRing},
     layouts::{
         Backend, Module, ScratchArena, scalar_znx_as_vec_znx_backend_mut_from_mut, scalar_znx_as_vec_znx_backend_ref_from_ref,
     },
@@ -47,8 +47,8 @@ where
     {
         let n: usize = operand_degree(self.n(), &[infos.n()]);
 
-        let lvl_0: usize = BE::bytes_of_scalar_znx(n, infos.rank_in().into());
-        let lvl_1: usize = BE::bytes_of_scalar_znx(n, infos.rank_out().into());
+        let lvl_0: usize = BE::scalar_znx_bytes_of(n, infos.rank_in().into());
+        let lvl_1: usize = BE::scalar_znx_bytes_of(n, infos.rank_out().into());
         let lvl_2: usize = self.glwe_secret_prepared_bytes_of_from_infos(infos);
         let lvl_3_encrypt: usize = self.gglwe_encrypt_sk_tmp_bytes(infos);
         lvl_0 + lvl_1 + lvl_2 + lvl_3_encrypt

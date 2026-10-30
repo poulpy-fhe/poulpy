@@ -21,7 +21,7 @@ use poulpy_core::{
     layouts::{GLWEInfos, GLWELayout, LWEInfos, ModuleCoreAlloc, Rank},
 };
 use poulpy_hal::{
-    api::{CnvPVecAlloc, NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
+    api::{CnvPVecAlloc, ReimNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{HostBytesBackend, Module, ScratchOwned, Standard, ZnxView},
     source::Source,
 };
@@ -129,7 +129,7 @@ pub fn test_paco_parallel_bootstrap<BE, F, E>(
         + GLWERotate<BE>
         + Sync,
     F: TestScalar + PaCoScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F> + Sync,
+    E: ReimNew<F> + Sync,
 {
     let log_delta = params.prec().log_delta();
     let k_in = (log_delta - 2).min(52);
@@ -445,7 +445,7 @@ pub fn test_paco_encapsulated_bootstrap<BE, F, E>(
         + GLWERotate<BE>
         + Sync,
     F: TestScalar + PaCoScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F> + Sync,
+    E: ReimNew<F> + Sync,
 {
     use crate::test_suite::helpers::gen_sk_with_raw;
     use poulpy_core::{GLWEAutomorphismKeyEncryptSk, GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk};
@@ -633,7 +633,7 @@ pub fn test_paco_bootstrap_into_rejects_narrow_encapsulation_key<BE, F, E>(
         + GLWERotate<BE>
         + Sync,
     F: TestScalar + PaCoScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F> + Sync,
+    E: ReimNew<F> + Sync,
 {
     use crate::test_suite::helpers::gen_sk_with_raw;
     use crate::{CKKSCompositionError, CKKSError};

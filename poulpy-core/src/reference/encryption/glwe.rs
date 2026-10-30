@@ -1,9 +1,10 @@
 use poulpy_hal::{
     api::{
-        ModuleN, ScratchArenaTakeBasic, SvpApplyDftToDftAssign, VecZnxAddAssign, VecZnxBigAddSmallAssign, VecZnxBigBytesOf,
-        VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftZero,
-        VecZnxFillUniformSource, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxNormalize, VecZnxNormalizeAssign,
-        VecZnxNormalizeTmpBytes, VecZnxSubAssign, VecZnxSubNegateAssign, VecZnxZero, VmpApplyDftToDft, VmpApplyDftToDftTmpBytes,
+        ModuleN, ScratchArenaTakeScalarZnx, ScratchArenaTakeVecZnx, ScratchArenaTakeVecZnxBig, ScratchArenaTakeVecZnxDft,
+        SvpApplyDftToDftAssign, VecZnxAddAssign, VecZnxBigAddSmallAssign, VecZnxBigBytesOf, VecZnxBigNormalize,
+        VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftZero, VecZnxFillUniformSource,
+        VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxNormalize, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes,
+        VecZnxSubAssign, VecZnxSubNegateAssign, VecZnxZero, VmpApplyDftToDft, VmpApplyDftToDftTmpBytes,
     },
     layouts::{
         Backend, Module, ScalarZnxToBackendMut, ScratchArena, VecZnx, VecZnxBigToBackendMut, VecZnxBigToBackendRef,
@@ -127,11 +128,11 @@ where
         let size: usize = infos.size();
         let n: usize = operand_degree(self.n(), &[infos.n()]);
 
-        let lvl_0: usize = BE::bytes_of_vec_znx(n, 1, size);
-        let lvl_1: usize = BE::bytes_of_vec_znx(n, 1, size);
+        let lvl_0: usize = BE::vec_znx_bytes_of(n, 1, size);
+        let lvl_1: usize = BE::vec_znx_bytes_of(n, 1, size);
         let lvl_2: usize = self.vec_znx_normalize_tmp_bytes().max(
-            self.bytes_of_vec_znx_dft(n, 1, size)
-                + self.bytes_of_vec_znx_big(n, 1, size)
+            self.vec_znx_dft_bytes_of(n, 1, size)
+                + self.vec_znx_big_bytes_of(n, 1, size)
                 + self
                     .vec_znx_idft_apply_tmp_bytes()
                     .max(self.vec_znx_big_normalize_tmp_bytes()),
@@ -330,12 +331,12 @@ where
         let size: usize = res_infos.size().max(pk_infos.size());
         let rank: usize = pk_infos.rank().into();
         let n: usize = operand_degree(self.n(), &[res_infos.n(), pk_infos.n()]);
-        let lvl_0: usize = BE::bytes_of_scalar_znx(n, rank);
-        let lvl_1: usize = self.bytes_of_vec_znx_dft(n, rank, 1);
-        let lvl_2: usize = self.bytes_of_vec_znx_dft(n, rank + 1, size);
+        let lvl_0: usize = BE::scalar_znx_bytes_of(n, rank);
+        let lvl_1: usize = self.vec_znx_dft_bytes_of(n, rank, 1);
+        let lvl_2: usize = self.vec_znx_dft_bytes_of(n, rank + 1, size);
         let vmp: usize = self.vmp_apply_dft_to_dft_tmp_bytes(size, 1, 1, rank, rank + 1, size);
-        let lvl_3: usize = BE::bytes_of_vec_znx(n, 1, vmp.div_ceil(BE::bytes_of_vec_znx(n, 1, 1))).max(
-            self.bytes_of_vec_znx_big(n, 1, size)
+        let lvl_3: usize = BE::vec_znx_bytes_of(n, 1, vmp.div_ceil(BE::vec_znx_bytes_of(n, 1, 1))).max(
+            self.vec_znx_big_bytes_of(n, 1, size)
                 + self
                     .vec_znx_idft_apply_tmp_bytes()
                     .max(self.vec_znx_big_normalize_tmp_bytes()),

@@ -171,8 +171,8 @@
 //! to the integers the definition states, within the bounds it documents, so
 //! a DFT-domain result does not depend on the backend; DFT definitions are
 //! stated through `idft` and constrain neither representation equality nor
-//! accumulation order. The raw complex transform of `NegacyclicFFT` is the one
-//! floating-point operation: its definition is an ideal complex formula and
+//! accumulation order. The raw complex transform of `ReimFFT` and `ReimIFFT` is
+//! the one floating-point operation: its definition is an ideal complex formula and
 //! its result carries floating arithmetic error.
 //!
 //! # Degree
@@ -180,7 +180,7 @@
 //! A computing operation takes no degree argument: its operands share one
 //! degree `N`, read from `res` (or the in-place operand), and every kernel
 //! asserts at entry that the module serves it, coefficient-wise reductions and
-//! products excepted (see below). An allocation, `bytes_of_*`,
+//! products excepted (see below). An allocation, `*_bytes_of`,
 //! scratch take or plan has no polynomial operand and takes the degree `n`
 //! as its first argument. The `*_tmp_bytes` are sized at the module's degree,
 //! an upper bound for a call at a smaller one.

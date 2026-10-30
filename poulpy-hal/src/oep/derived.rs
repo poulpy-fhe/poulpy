@@ -17,7 +17,7 @@
 //! Rules every function in this module obeys:
 //!
 //! - only OEP methods of `BE`, backend-native views, [`ScratchArena`]
-//!   carving and `Backend::bytes_of_*`;
+//!   carving and `Backend::*_bytes_of`;
 //! - no `HostData*` bound, no family kernel trait, no knowledge of a prepared
 //!   representation;
 //! - `<op>_tmp_bytes_derived` reports exactly the scratch `<op>_derived` takes;
@@ -33,7 +33,7 @@
 #![allow(clippy::too_many_arguments)]
 
 use crate::{
-    api::ScratchArenaTakeBasic,
+    api::{ScratchArenaTakeVecZnx, ScratchArenaTakeVecZnxBig, ScratchArenaTakeVecZnxDft},
     layouts::{
         CnvDftAccTerm, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, MatZnxBackendMut,
         MatZnxBackendRef, MatZnxInfos, Module, ScalarZnxBackendMut, ScalarZnxBackendRef, ScratchArena, SvpPPolBackendRef,
@@ -44,8 +44,8 @@ use crate::{
         vec_znx_backend_ref_from_mut, vec_znx_dft_backend_ref_from_mut, vec_znx_reborrow_backend_mut,
     },
     oep::{
-        HalConvolutionImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxCIImpl, HalVecZnxDftImpl, HalVecZnxImpl,
-        HalVecZnxMonomialImpl, HalVmpImpl,
+        HalCnvImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxCIImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVecZnxMonomialImpl,
+        HalVmpImpl,
     },
     source::Source,
 };
@@ -66,7 +66,7 @@ where
     BE: HalVmpImpl,
 {
     let a_dft_size = a_size.min(b_rows);
-    BE::scratch_aligned(BE::bytes_of_vec_znx_dft(module.n(), b_cols_in, a_dft_size))
+    BE::scratch_aligned(BE::vec_znx_dft_bytes_of(module.n(), b_cols_in, a_dft_size))
         + BE::vmp_apply_dft_to_dft_tmp_bytes(module, res_size, a_dft_size, b_rows, b_cols_in, b_cols_out, b_size)
 }
 
@@ -92,8 +92,12 @@ pub fn vmp_apply_dft_derived<BE, R>(
     let a_dft_size: usize = a_size.min(b_rows);
     let offset: usize = MatZnxInfos::cols_in(b) - cols_to_copy;
 
-    let (mut a_dft, mut scratch) =
-        ScratchArenaTakeBasic::take_vec_znx_dft_scratch(scratch.borrow(), ZnxInfos::n(a), MatZnxInfos::cols_in(b), a_dft_size);
+    let (mut a_dft, mut scratch) = ScratchArenaTakeVecZnxDft::take_vec_znx_dft_scratch(
+        scratch.borrow(),
+        ZnxInfos::n(a),
+        MatZnxInfos::cols_in(b),
+        a_dft_size,
+    );
 
     for j in 0..offset {
         BE::vec_znx_dft_zero(module, &mut a_dft, j);
@@ -122,7 +126,7 @@ pub fn vmp_apply_dft_to_dft_add_tmp_bytes_derived<BE>(
 where
     BE: HalVmpImpl,
 {
-    BE::scratch_aligned(BE::bytes_of_vec_znx_dft(module.n(), b_cols_out, res_size))
+    BE::scratch_aligned(BE::vec_znx_dft_bytes_of(module.n(), b_cols_out, res_size))
         + BE::vmp_apply_dft_to_dft_tmp_bytes(module, res_size, a_size, b_rows, b_cols_in, b_cols_out, b_size)
 }
 
@@ -150,7 +154,7 @@ pub fn vmp_apply_dft_to_dft_add_derived<BE>(
     let cols_out: usize = VecZnxInfos::cols(res);
     let res_size: usize = ZnxInfos::size(res);
     let (mut tmp, mut scratch) =
-        ScratchArenaTakeBasic::take_vec_znx_dft_scratch(scratch.borrow(), ZnxInfos::n(res), cols_out, res_size);
+        ScratchArenaTakeVecZnxDft::take_vec_znx_dft_scratch(scratch.borrow(), ZnxInfos::n(res), cols_out, res_size);
     for col in 0..cols_out {
         BE::vec_znx_dft_zero(module, &mut tmp, col);
     }
@@ -189,7 +193,7 @@ pub fn vec_znx_lsh_tmp_bytes_derived<BE>(module: &Module<BE>, res_size: usize) -
 where
     BE: HalVecZnxImpl,
 {
-    BE::scratch_aligned(BE::bytes_of_vec_znx(module.n(), 1, res_size)) + BE::vec_znx_normalize_tmp_bytes(module)
+    BE::scratch_aligned(BE::vec_znx_bytes_of(module.n(), 1, res_size)) + BE::vec_znx_normalize_tmp_bytes(module)
 }
 
 /// `res = a * 2^k` at the same radix: a normalization with `offset = +k`.
@@ -218,7 +222,7 @@ pub fn vec_znx_rsh_tmp_bytes_derived<BE>(module: &Module<BE>, res_size: usize) -
 where
     BE: HalVecZnxImpl,
 {
-    BE::scratch_aligned(BE::bytes_of_vec_znx(module.n(), 1, res_size)) + BE::vec_znx_normalize_tmp_bytes(module)
+    BE::scratch_aligned(BE::vec_znx_bytes_of(module.n(), 1, res_size)) + BE::vec_znx_normalize_tmp_bytes(module)
 }
 
 /// `res = a / 2^k` at the same radix: a normalization with `offset = -k`.
@@ -258,7 +262,7 @@ pub fn vec_znx_lsh_add_derived<BE>(
     // The temporary takes a's degree: for a window it is the destination's
     // visible degree, for a dense degree-n operand it is n, and the add or sub
     // that follows reads it through its embedding slot.
-    let (mut tmp, mut scratch) = ScratchArenaTakeBasic::take_vec_znx_scratch(scratch.borrow(), ZnxInfos::n(a), 1, res_size);
+    let (mut tmp, mut scratch) = ScratchArenaTakeVecZnx::take_vec_znx_scratch(scratch.borrow(), ZnxInfos::n(a), 1, res_size);
     BE::vec_znx_lsh(module, base2k, k, &mut tmp, 0, a, a_col, &mut scratch);
     BE::vec_znx_add_assign(module, res, res_col, &tmp.to_backend_ref(), 0);
 }
@@ -281,7 +285,7 @@ pub fn vec_znx_lsh_sub_derived<BE>(
     // The temporary takes a's degree: for a window it is the destination's
     // visible degree, for a dense degree-n operand it is n, and the add or sub
     // that follows reads it through its embedding slot.
-    let (mut tmp, mut scratch) = ScratchArenaTakeBasic::take_vec_znx_scratch(scratch.borrow(), ZnxInfos::n(a), 1, res_size);
+    let (mut tmp, mut scratch) = ScratchArenaTakeVecZnx::take_vec_znx_scratch(scratch.borrow(), ZnxInfos::n(a), 1, res_size);
     BE::vec_znx_lsh(module, base2k, k, &mut tmp, 0, a, a_col, &mut scratch);
     BE::vec_znx_sub_assign(module, res, res_col, &tmp.to_backend_ref(), 0);
 }
@@ -304,7 +308,7 @@ pub fn vec_znx_rsh_add_derived<BE>(
     // The temporary takes a's degree: for a window it is the destination's
     // visible degree, for a dense degree-n operand it is n, and the add or sub
     // that follows reads it through its embedding slot.
-    let (mut tmp, mut scratch) = ScratchArenaTakeBasic::take_vec_znx_scratch(scratch.borrow(), ZnxInfos::n(a), 1, res_size);
+    let (mut tmp, mut scratch) = ScratchArenaTakeVecZnx::take_vec_znx_scratch(scratch.borrow(), ZnxInfos::n(a), 1, res_size);
     BE::vec_znx_rsh(module, base2k, k, &mut tmp, 0, a, a_col, &mut scratch);
     BE::vec_znx_add_assign(module, res, res_col, &tmp.to_backend_ref(), 0);
 }
@@ -327,7 +331,7 @@ pub fn vec_znx_rsh_sub_derived<BE>(
     // The temporary takes a's degree: for a window it is the destination's
     // visible degree, for a dense degree-n operand it is n, and the add or sub
     // that follows reads it through its embedding slot.
-    let (mut tmp, mut scratch) = ScratchArenaTakeBasic::take_vec_znx_scratch(scratch.borrow(), ZnxInfos::n(a), 1, res_size);
+    let (mut tmp, mut scratch) = ScratchArenaTakeVecZnx::take_vec_znx_scratch(scratch.borrow(), ZnxInfos::n(a), 1, res_size);
     BE::vec_znx_rsh(module, base2k, k, &mut tmp, 0, a, a_col, &mut scratch);
     BE::vec_znx_sub_assign(module, res, res_col, &tmp.to_backend_ref(), 0);
 }
@@ -345,7 +349,7 @@ pub fn vec_znx_lsh_assign_derived<BE>(
     BE: HalVecZnxImpl,
 {
     let size: usize = ZnxInfos::size(a);
-    let (mut tmp, mut scratch) = ScratchArenaTakeBasic::take_vec_znx_scratch(scratch.borrow(), ZnxInfos::n(a), 1, size);
+    let (mut tmp, mut scratch) = ScratchArenaTakeVecZnx::take_vec_znx_scratch(scratch.borrow(), ZnxInfos::n(a), 1, size);
     BE::vec_znx_lsh(
         module,
         base2k,
@@ -399,7 +403,7 @@ pub fn vec_znx_mul_xp_minus_one_assign_tmp_bytes_derived<BE>(module: &Module<BE>
 where
     BE: HalVecZnxMonomialImpl,
 {
-    BE::bytes_of_vec_znx(module.n(), 1, size)
+    BE::vec_znx_bytes_of(module.n(), 1, size)
 }
 
 /// `res = (X^p - 1) * res`: rotate into a full-width temporary, then copy back.
@@ -418,7 +422,7 @@ pub fn vec_znx_mul_xp_minus_one_assign_derived<BE>(
     BE: HalVecZnxMonomialImpl,
 {
     let size: usize = ZnxInfos::size(res);
-    let (mut tmp, _) = ScratchArenaTakeBasic::take_vec_znx_scratch(scratch.borrow(), ZnxInfos::n(res), 1, size);
+    let (mut tmp, _) = ScratchArenaTakeVecZnx::take_vec_znx_scratch(scratch.borrow(), ZnxInfos::n(res), 1, size);
     vec_znx_mul_xp_minus_one_derived::<BE>(module, p, &mut tmp, 0, &vec_znx_backend_ref_from_mut::<BE>(res), res_col);
     BE::vec_znx_copy(module, res, res_col, &tmp.to_backend_ref(), 0);
 }
@@ -727,7 +731,7 @@ pub fn vec_znx_idft_normalize_tmp_bytes_derived<BE>(module: &Module<BE>, _res_si
 where
     BE: HalVecZnxDftImpl,
 {
-    BE::scratch_aligned(BE::bytes_of_vec_znx_big(module.n(), 1, a_size))
+    BE::scratch_aligned(BE::vec_znx_big_bytes_of(module.n(), 1, a_size))
         + BE::vec_znx_idft_apply_tmp_bytes(module).max(BE::vec_znx_big_normalize_tmp_bytes(module))
 }
 
@@ -749,7 +753,7 @@ pub fn vec_znx_idft_normalize_derived<BE>(
     BE: HalVecZnxDftImpl,
 {
     let a_size: usize = ZnxInfos::size(a);
-    let (mut big, mut scratch) = ScratchArenaTakeBasic::take_vec_znx_big_scratch(scratch.borrow(), ZnxInfos::n(a), 1, a_size);
+    let (mut big, mut scratch) = ScratchArenaTakeVecZnxBig::take_vec_znx_big_scratch(scratch.borrow(), ZnxInfos::n(a), 1, a_size);
     BE::vec_znx_idft_apply(module, &mut big, 0, &vec_znx_dft_backend_ref_from_mut(a), a_col, &mut scratch);
     if let Some((add, add_col)) = addend {
         BE::vec_znx_big_add_small_assign(module, &mut big, 0, add, add_col);
@@ -791,7 +795,7 @@ pub fn vec_znx_dft_automorphism_add_with_plan_tmp_bytes_derived<BE>(module: &Mod
 where
     BE: HalVecZnxDftImpl,
 {
-    BE::bytes_of_vec_znx_dft(module.n(), 1, res_size.min(a_size))
+    BE::vec_znx_dft_bytes_of(module.n(), 1, res_size.min(a_size))
 }
 
 /// `res += automorphism(a)` over `min(res.size(), a.size())` limbs.
@@ -808,7 +812,7 @@ pub fn vec_znx_dft_automorphism_add_with_plan_derived<BE>(
     BE: HalVecZnxDftImpl,
 {
     let size: usize = ZnxInfos::size(res).min(ZnxInfos::size(a));
-    let (mut tmp, _) = ScratchArenaTakeBasic::take_vec_znx_dft_scratch(scratch.borrow(), ZnxInfos::n(res), 1, size);
+    let (mut tmp, _) = ScratchArenaTakeVecZnxDft::take_vec_znx_dft_scratch(scratch.borrow(), ZnxInfos::n(res), 1, size);
     BE::vec_znx_dft_automorphism_with_plan(module, plan, &mut tmp, 0, a, a_col);
     BE::vec_znx_dft_add_assign(module, res, res_col, &tmp.to_backend_ref(), 0);
 }
@@ -819,7 +823,7 @@ pub fn svp_apply_dft_tmp_bytes_derived<BE>(module: &Module<BE>, b_size: usize) -
 where
     BE: HalSvpImpl,
 {
-    BE::bytes_of_vec_znx_dft(module.n(), 1, b_size)
+    BE::vec_znx_dft_bytes_of(module.n(), 1, b_size)
 }
 
 /// `res = ppol * dft(b)`: transform `b`, then apply in the DFT domain.
@@ -837,7 +841,7 @@ pub fn svp_apply_dft_derived<BE>(
     BE: HalSvpImpl,
 {
     let b_size: usize = ZnxInfos::size(b);
-    let (mut b_dft, _) = ScratchArenaTakeBasic::take_vec_znx_dft_scratch(scratch.borrow(), ZnxInfos::n(res), 1, b_size);
+    let (mut b_dft, _) = ScratchArenaTakeVecZnxDft::take_vec_znx_dft_scratch(scratch.borrow(), ZnxInfos::n(res), 1, b_size);
     BE::vec_znx_dft_apply(module, 1, 0, &mut b_dft, 0, b, b_col);
     BE::svp_apply_dft_to_dft(module, res, res_col, a, a_col, &b_dft.to_backend_ref(), 0);
 }
@@ -846,7 +850,7 @@ pub fn svp_apply_dft_derived<BE>(
 #[doc(hidden)]
 pub fn cnv_prepare_self_tmp_bytes_derived<BE>(module: &Module<BE>, res_size: usize, a_size: usize) -> usize
 where
-    BE: HalConvolutionImpl,
+    BE: HalCnvImpl,
 {
     BE::cnv_prepare_left_tmp_bytes(module, res_size, a_size).max(BE::cnv_prepare_right_tmp_bytes(module, res_size, a_size))
 }
@@ -860,7 +864,7 @@ pub fn cnv_prepare_self_derived<BE>(
     a: &VecZnxBackendRef<'_, BE>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: HalConvolutionImpl,
+    BE: HalCnvImpl,
 {
     assert_eq!(right.size(), left.size());
     BE::cnv_prepare_left(module, left, a, scratch);
@@ -878,9 +882,9 @@ pub fn cnv_apply_dft_add_tmp_bytes_derived<BE>(
     b_size: usize,
 ) -> usize
 where
-    BE: HalConvolutionImpl,
+    BE: HalCnvImpl,
 {
-    BE::scratch_aligned(BE::bytes_of_vec_znx_dft(module.n(), 1, res_size))
+    BE::scratch_aligned(BE::vec_znx_dft_bytes_of(module.n(), 1, res_size))
         + BE::cnv_apply_dft_tmp_bytes(module, cnv_offset, res_size, a_size, b_size)
 }
 
@@ -901,10 +905,11 @@ pub fn cnv_apply_dft_add_derived<BE>(
     b_galois: i64,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: HalConvolutionImpl,
+    BE: HalCnvImpl,
 {
     let res_size: usize = ZnxInfos::size(res);
-    let (mut tmp, mut scratch) = ScratchArenaTakeBasic::take_vec_znx_dft_scratch(scratch.borrow(), ZnxInfos::n(res), 1, res_size);
+    let (mut tmp, mut scratch) =
+        ScratchArenaTakeVecZnxDft::take_vec_znx_dft_scratch(scratch.borrow(), ZnxInfos::n(res), 1, res_size);
     BE::cnv_apply_dft(module, cnv_offset, &mut tmp, 0, a, a_col, b, b_col, b_galois, &mut scratch);
     BE::vec_znx_dft_add_assign(module, res, res_col, &tmp.to_backend_ref(), 0);
 }
@@ -920,7 +925,7 @@ pub fn cnv_apply_dft_sum_tmp_bytes_derived<BE>(
     b_size: usize,
 ) -> usize
 where
-    BE: HalConvolutionImpl,
+    BE: HalCnvImpl,
 {
     BE::cnv_apply_dft_tmp_bytes(module, cnv_offset, res_size, a_size, b_size)
         .max(BE::cnv_apply_dft_add_tmp_bytes(module, cnv_offset, res_size, a_size, b_size))
@@ -939,7 +944,7 @@ pub fn cnv_apply_dft_sum_derived<BE>(
     terms: &[CnvDftAccTerm<'_, BE>],
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: HalConvolutionImpl,
+    BE: HalCnvImpl,
 {
     if terms.is_empty() {
         BE::vec_znx_dft_zero(module, res, res_col);
@@ -988,9 +993,9 @@ pub fn cnv_by_const_apply_add_tmp_bytes_derived<BE>(
     b_size: usize,
 ) -> usize
 where
-    BE: HalConvolutionImpl,
+    BE: HalCnvImpl,
 {
-    BE::scratch_aligned(BE::bytes_of_vec_znx_big(module.n(), 1, res_size))
+    BE::scratch_aligned(BE::vec_znx_big_bytes_of(module.n(), 1, res_size))
         + BE::cnv_by_const_apply_tmp_bytes(module, cnv_offset, res_size, a_size, b_size)
 }
 
@@ -1009,10 +1014,11 @@ pub fn cnv_by_const_apply_add_derived<BE>(
     b_coeff: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: HalConvolutionImpl,
+    BE: HalCnvImpl,
 {
     let res_size: usize = ZnxInfos::size(res);
-    let (mut tmp, mut scratch) = ScratchArenaTakeBasic::take_vec_znx_big_scratch(scratch.borrow(), ZnxInfos::n(res), 1, res_size);
+    let (mut tmp, mut scratch) =
+        ScratchArenaTakeVecZnxBig::take_vec_znx_big_scratch(scratch.borrow(), ZnxInfos::n(res), 1, res_size);
     BE::cnv_by_const_apply(module, cnv_offset, &mut tmp, 0, a, a_col, b, b_col, b_coeff, &mut scratch);
     BE::vec_znx_big_add_assign(module, res, res_col, &tmp.to_backend_ref(), 0);
 }
@@ -1028,7 +1034,7 @@ pub fn cnv_pairwise_apply_dft_tmp_bytes_derived<BE>(
     b_size: usize,
 ) -> usize
 where
-    BE: HalConvolutionImpl,
+    BE: HalCnvImpl,
 {
     BE::cnv_apply_dft_tmp_bytes(module, cnv_offset, res_size, a_size, b_size)
         .max(BE::cnv_apply_dft_add_tmp_bytes(module, cnv_offset, res_size, a_size, b_size))
@@ -1048,7 +1054,7 @@ pub fn cnv_pairwise_apply_dft_derived<BE>(
     j: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: HalConvolutionImpl,
+    BE: HalCnvImpl,
 {
     let n: usize = ZnxInfos::n(res);
     check_cnv_dft_term::<BE>(n, a, i, b, i, 1);
