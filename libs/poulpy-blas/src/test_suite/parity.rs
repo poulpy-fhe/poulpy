@@ -19,8 +19,11 @@ use std::{
 
 use poulpy_ckks::{
     CKKSCompositionError, CKKSInfos, CKKSLayout, CKKSResult, CoeffsMeta, SlotsKind,
-    api::{CKKSAddManyOps, CKKSAddOps, CKKSCopyOps, CKKSEncodingOps, CKKSLinearTransformationOps, CKKSModuleInfos},
-    layouts::CKKSModuleAlloc,
+    api::{
+        CKKSAddManyOps, CKKSAddOps, CKKSCopyOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSLinearTransformationOps,
+        CKKSModuleInfos, CKKSMulOps, LinearTransformationLayout, LinearTransformationStrategy,
+    },
+    layouts::{CKKSModuleAlloc, CKKSPreparedRight},
     test_suite::{
         CKKSTestParams,
         helpers::TestScalar,
@@ -52,7 +55,10 @@ use super::{
         HINTS, MASKED_PT_ALGORITHMS, MIXES, PT_ALGORITHMS, TestKeys, assert_panics, grid_infos, grid_snapshot,
         matmul_left_operand, matmul_right_operand,
     },
-    matvec::{matvec_layouts, matvec_operands, vector_snapshot},
+    matvec::{
+        append, append_tmp_bytes, diagonal_ciphertext_elements, diagonal_ciphertext_snapshot, matvec_layouts, matvec_operands,
+        prepared_of, vector_snapshot,
+    },
 };
 use crate::{
     api::{
@@ -60,12 +66,15 @@ use crate::{
         BlasPtOperandPreparedFactory,
     },
     layouts::{
-        BlasCiphertext, BlasCiphertextOwned, BlasContextInfos, BlasContextLayout, BlasContextPrepared, BlasGridInfos, BlasLayout,
-        BlasMatMulOperandInfos, BlasMatVecOperandLayout, BlasModuleAlloc, BlasPlan, BlasPtAlgorithm, BlasPtOperandInfos,
-        BlasPtOperandLayout, BlasPtOperandPrepared, BlasPtSide, BlasVector, BlasVectorInfos, BlasVectorLayout, BlasVectorOwned,
-        BlasVectorShape, Left, Right, blas_matmul_left_term_layout, blas_matmul_max_base2k, blas_matmul_pt_left_max_base2k,
-        blas_matmul_pt_right_max_base2k, blas_matmul_right_term_layout, blas_matvec_pt_max_base2k,
+        BlasCiphertext, BlasCiphertextOwned, BlasContextInfos, BlasContextLayout, BlasContextPrepared, BlasDiagonalCiphertext,
+        BlasDiagonalCiphertextInfos, BlasDiagonalCiphertextLayout, BlasGridInfos, BlasLayout, BlasMatMulOperandInfos,
+        BlasMatVecOperandLayout, BlasModuleAlloc, BlasPlan, BlasPtAlgorithm, BlasPtOperandInfos, BlasPtOperandLayout,
+        BlasPtOperandPrepared, BlasPtSide, BlasVector, BlasVectorInfos, BlasVectorLayout, BlasVectorOwned, BlasVectorShape, Left,
+        Right, blas_matmul_left_term_layout, blas_matmul_max_base2k, blas_matmul_pt_left_max_base2k,
+        blas_matmul_pt_right_max_base2k, blas_matmul_right_term_layout, blas_matvec_diagonal_max_base2k,
+        blas_matvec_pt_max_base2k,
         context::module_layout,
+        diagonal_ciphertext::AppendAxis,
         matvec_pt_galois_elements, sum_galois_elements,
         validate::{MASKLESS, MAX_BASE2K},
     },
@@ -390,6 +399,7 @@ struct Output {
 enum Infos {
     Grid((BlasLayout, Option<usize>)),
     Vector(BlasVectorLayout),
+    Matrix(BlasDiagonalCiphertextLayout),
 }
 
 /// The [`Output`] of `op` into `res`, with the lookups `keys` recorded since the last output.
@@ -1343,6 +1353,166 @@ where
     out
 }
 
+/// The [`Output`] of `op` into the matrix `m`, which `result` must leave written on `Ok`, or unchanged on `Err`, with
+/// the lookups `keys` recorded since the last output.
+fn diagonal_ciphertext_output<B: BlasParityBackend>(
+    op: &'static str,
+    m: &mut BlasDiagonalCiphertext<B>,
+    keys: &Recorded<B>,
+    call: impl FnOnce(&mut BlasDiagonalCiphertext<B>) -> CKKSResult<()>,
+) -> Output {
+    let before = diagonal_ciphertext_snapshot::<B>(m);
+    let error = call(m).err().map(|e| e.composition().cloned().expect("a composition error"));
+    let blocks = if error.is_some() {
+        assert!(
+            diagonal_ciphertext_snapshot::<B>(m) == before,
+            "{op} changed the matrix before failing"
+        );
+        Vec::new()
+    } else {
+        diagonal_ciphertext_snapshot::<B>(m)
+    };
+    Output {
+        op,
+        infos: Infos::Matrix(m.blas_diagonal_ciphertext_layout()),
+        blocks,
+        error,
+        lookups: keys.take(),
+    }
+}
+
+/// A prepared mask, `1` on the slots of `set` and `0` elsewhere, encoded at scale `p` and prepared under `hint`.
+fn mask_of<B, F>(params: CKKSTestParams, module: &Module<B>, set: &[usize], p: usize, hint: PrepareHint) -> CKKSPreparedRight<B>
+where
+    B: BlasParityBackend,
+    Module<B>: BlasParityModule<B, F>,
+    F: TestScalar + DiagonalArithmetic,
+{
+    let slots = module.ckks_max_slots();
+    let zero = <F as DiagonalArithmetic>::zero();
+    let mut re = vec![zero; slots];
+    set.iter().for_each(|&s| re[s] = F::from_f64(1.0).unwrap());
+    let meta = diagonal_meta(params, p);
+    let mut pt = module.ckks_pt_vec_alloc(slots, params.base2k.into(), meta.k);
+    poulpy_ckks::SetCKKSInfos::set_meta(&mut pt, meta.meta);
+    with_scratch::<B, _>(module.ckks_reim_tmp_bytes(slots), |s| {
+        module.ckks_encode_reim_into(&mut pt, &re, &vec![zero; slots], s)
+    })
+    .unwrap();
+    with_scratch::<B, _>(module.ckks_prepare_tmp_bytes(&pt), |s| {
+        module.ckks_prepare_right(&pt, hint, s)
+    })
+    .unwrap()
+}
+
+/// A diagonal ciphertext of diagonals `0..8` at giant step 4, by rotation and by powers of two: rows and columns appended
+/// by a mask of one slot prepared to reuse and one of two prepared once, of a vector with lazy digits on real slots
+/// too, a row and a column from a vector one limb narrower than the diagonals' frame (refused), then its product,
+/// prepared then streamed, by a vector and by one with lazy digits into `res` of the operand width, one limb wider and
+/// one limb narrower, and into a `res` narrower than the result's scale (refused).
+fn diagonal_ciphertext<B, F>(params: CKKSTestParams, module: &Module<B>) -> Vec<Output>
+where
+    B: BlasParityBackend,
+    Module<B>: BlasParityModule<B, F>,
+    F: TestScalar + DiagonalArithmetic,
+{
+    let (slots, w, p, order) = (
+        module.ckks_max_slots(),
+        width(params),
+        scale(params),
+        module.cyclotomic_order(),
+    );
+    let whole = BlasVectorShape::new(slots, slots, 0, 1);
+    let (one, two) = (
+        mask_of::<B, F>(params, module, &[0], p, PrepareHint::Reuse),
+        mask_of::<B, F>(params, module, &[0, slots / 2], p, PrepareHint::OneShot),
+    );
+    let (atk, tsk) = (atk_layout(params), tsk_layout(params));
+    let mut out = Vec::new();
+    let strategies = [
+        LinearTransformationStrategy::Bsgs { giant_step: 4 },
+        LinearTransformationStrategy::BsgsPowersOfTwo { giant_step: 4 },
+    ];
+    for strategy in strategies {
+        let layout = BlasDiagonalCiphertextLayout::new(
+            block(params, w - p, 0, SlotsKind::Complex),
+            LinearTransformationLayout {
+                indexes: (0..8).collect(),
+                slots,
+                strategy,
+            },
+        );
+        let elements: Vec<i64> = diagonal_ciphertext_elements(order, &layout).into_iter().collect();
+        let keys = fixture_keys(params, module, &elements, true);
+        let mut m = module.blas_diagonal_ciphertext_alloc_from_infos(&layout);
+        let appends = [
+            (AppendAxis::Row, 0, &one, 210, false),
+            (AppendAxis::Col, 3, &one, 214, false),
+            (AppendAxis::Row, -2, &two, 218, false),
+            (AppendAxis::Col, 6, &two, 220, true),
+        ];
+        for (axis, at, mask, seed, lazy) in appends {
+            let v = vector_of(params, module, whole, slots, w, seed, lazy);
+            let before = vector_snapshot::<B>(&v);
+            let bytes = append_tmp_bytes(module, axis, &m, &v, mask, &atk);
+            out.push(diagonal_ciphertext_output(axis.op(), &mut m, &keys, |m| {
+                with_scratch::<B, _>(bytes, |s| append(module, axis, m, at, &v, mask, &keys, s))
+            }));
+            assert!(
+                vector_snapshot::<B>(&v) == before,
+                "diagonal_ciphertext: {} wrote its vector",
+                axis.op()
+            );
+        }
+        let narrower = vector_of(params, module, whole, slots, w - params.base2k, 222, false);
+        for axis in [AppendAxis::Row, AppendAxis::Col] {
+            let bytes = append_tmp_bytes(module, axis, &m, &narrower, &one, &atk);
+            out.push(diagonal_ciphertext_output(axis.op(), &mut m, &keys, |m| {
+                with_scratch::<B, _>(bytes, |s| append(module, axis, m, 1, &narrower, &one, &keys, s))
+            }));
+        }
+        let prepared = prepared_of(module, &m);
+        assert!(
+            prepared.blas_diagonal_ciphertext_layout() == layout,
+            "diagonal_ciphertext: the prepared form's infos"
+        );
+        let a = vector_of(params, module, whole, slots, w, 226, false);
+        let lazy = vector_of(params, module, whole, slots, w, 228, true);
+        let before = [vector_snapshot::<B>(&a), vector_snapshot::<B>(&lazy)];
+        for (src, k) in [(&a, w), (&a, w + params.base2k), (&a, w - params.base2k), (&lazy, w)] {
+            let mut res = vector_of(params, module, whole, slots, k, 230, false);
+            with_scratch::<B, _>(module.blas_matvec_diagonal_tmp_bytes(&res, &prepared, src, &tsk, &atk), |s| {
+                module.blas_matvec_diagonal(&mut res, &prepared, src, &keys, s)
+            })
+            .unwrap();
+            out.push(vector_output("blas_matvec_diagonal", &res, &keys));
+            let mut res = vector_of(params, module, whole, slots, k, 230, false);
+            with_scratch::<B, _>(module.blas_matvec_diagonal_tmp_bytes(&res, &m, src, &tsk, &atk), |s| {
+                module.blas_matvec_diagonal(&mut res, &m, src, &keys, s)
+            })
+            .unwrap();
+            out.push(vector_output("blas_matvec_diagonal", &res, &keys));
+        }
+        assert!(
+            [vector_snapshot::<B>(&a), vector_snapshot::<B>(&lazy)] == before,
+            "diagonal_ciphertext: blas_matvec_diagonal wrote an input"
+        );
+        let ct = layout_of_narrow(params);
+        let mut res = BlasVector::from_cts(vec![fixture_operand(module, &ct, 234, false)], whole).unwrap();
+        out.push(vector_failure("blas_matvec_diagonal", &mut res, &[&a], &keys, |res| {
+            with_scratch::<B, _>(module.blas_matvec_diagonal_tmp_bytes(res, &m, &a, &tsk, &atk), |s| {
+                module.blas_matvec_diagonal(res, &m, &a, &keys, s)
+            })
+        }));
+        out.push(vector_failure("blas_matvec_diagonal", &mut res, &[&a], &keys, |res| {
+            with_scratch::<B, _>(module.blas_matvec_diagonal_tmp_bytes(res, &prepared, &a, &tsk, &atk), |s| {
+                module.blas_matvec_diagonal(res, &prepared, &a, &keys, s)
+            })
+        }));
+    }
+    out
+}
+
 /// The layout of [`narrow`]'s blocks: a width below the scale of any result.
 fn layout_of_narrow(params: CKKSTestParams) -> CKKSLayout {
     layout(params, params.rank, params.base2k - 2, 0, 0, SlotsKind::Complex)
@@ -1468,7 +1638,8 @@ pub fn test_blas_matmul_parity<BR, BT, F>(
 /// Products of a vector by a public matrix, resident and streamed, agree bit for bit over the layouts of
 /// [`matvec_layouts`] (dense and replicated vectors, one and several ciphertexts), into `res` wider and narrower than
 /// the result, of lazy real inputs, and by matrices at scales other than the inputs', and fail alike on a budget
-/// poulpy-ckks rejects, leaving `res` and the input unchanged. Vectors span 16 slots: below, it is skipped with a message.
+/// poulpy-ckks rejects, leaving `res` and the input unchanged; so do the appends and the product of a diagonal ciphertext,
+/// by rotation and by powers of two. Vectors span 16 slots: below, it is skipped with a message.
 pub fn test_blas_matvec_parity<BR, BT, F>(
     params: CKKSTestParams,
     _shapes: &BlasParityShapes,
@@ -1494,6 +1665,11 @@ pub fn test_blas_matvec_parity<BR, BT, F>(
         "matvec, budget",
         matvec_budget::<BR, F>(params, module_ref),
         matvec_budget::<BT, F>(params, module_test),
+    );
+    compare(
+        "matvec, diagonal ciphertext",
+        diagonal_ciphertext::<BR, F>(params, module_ref),
+        diagonal_ciphertext::<BT, F>(params, module_test),
     );
 }
 
@@ -1538,6 +1714,7 @@ fn assert_largest_radix<B: Backend + MaxBase2k>(
 ///
 /// - the products of a vector, over the layouts of [`matvec_layouts`]: `K g min(L, P)` over the `K` input
 ///   ciphertexts, `g` the most diagonals a giant step of the operand's encoded maps groups;
+/// - the product by a diagonal ciphertext of diagonals `0..8` at giant step 4: `2 g min(L, P)`;
 ///
 /// and, for a sum so long that no FFT64 radix holds it at a failure target of 2^60 bits, 0. Under the masked paths, a left
 /// product's query panics on a context without the column halves of psi^k, with a static message.
@@ -1662,6 +1839,27 @@ where
                 blas_matvec_pt_max_base2k::<B>(&layout, &a, bits)
             });
         }
+    }
+
+    // The product by a diagonal ciphertext: `2 g min(L, P)` per giant step, `g` read off the matrix's prepared schedule.
+    let m = module.blas_diagonal_ciphertext_alloc_from_infos(&BlasDiagonalCiphertextLayout::new(
+        block(params, 60, 0, SlotsKind::Complex),
+        LinearTransformationLayout {
+            indexes: (0..8).collect(),
+            slots: module.ckks_max_slots(),
+            strategy: LinearTransformationStrategy::Bsgs { giant_step: 4 },
+        },
+    ));
+    let g = m.diagonals().giant_steps.iter().map(|gs| gs.diagonals.len()).max().unwrap();
+    for a_k in [77, 40] {
+        let a = BlasVectorLayout::new(
+            block(params, a_k, 0, SlotsKind::Complex),
+            BlasVectorShape::new(module.ckks_max_slots(), module.ckks_max_slots(), 0, 1),
+        );
+        let hand = move |r: usize| 2 * g * a_k.div_ceil(r).min(60usize.div_ceil(r));
+        assert_largest_radix::<B>(&format!("matvec a.k={a_k}"), n, 1..=1000, hand, |bits| {
+            blas_matvec_diagonal_max_base2k::<B>(&m, &a, bits)
+        });
     }
 
     let maskless = module_layout(module, BlasPlan::new(log_d), params.base2k.into(), diagonal_meta(params, p));

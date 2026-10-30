@@ -48,9 +48,22 @@ ciphertexts, which share their giant steps, and every output ciphertext shares o
 ciphertext. The operand is resident, `BlasMatVecOperandPrepared`, or streamed, `BlasMatVecOperand`, whose plaintext
 diagonals are prepared at each use for less memory, with the same bits; `matvec_pt_galois_elements` lists its keys.
 
+A diagonal ciphertext, `BlasDiagonalCiphertext`, encrypts a square matrix over the slots of one ciphertext in diagonal
+encoding: a chosen set of its diagonals as ciphertexts, in the BSGS storage of poulpy-ckks's transforms (entry `(b, g)` holding `rot(D_(b + g), -g)`).
+It is allocated zero and grows by `blas_append_row_diagonal` and `blas_append_col_diagonal`: one prepared mask,
+read through the Galois element of each shift, times the baby (giant) rotations of the appended ciphertext, added
+into every diagonal with one rounding (poulpy-ckks's `ckks_dot_product_prepared_pt_add`). A mask of several slots writes
+several rows or columns at once. An append keeps the matrix's layout: one that would change the diagonals' slot kind or
+sparsity is rejected. `blas_matvec_diagonal` multiplies it by a whole ciphertext, poulpy-ckks's transform of ciphertext
+diagonals, relinearized once per giant step, resident, `BlasDiagonalCiphertextPrepared` from
+`blas_diagonal_ciphertext_prepare`, or streamed, each diagonal of the `BlasDiagonalCiphertext` prepared at its use, with
+the same bits;
+`matvec_diagonal_galois_elements`, `append_row_diagonal_galois_elements` and `append_col_diagonal_galois_elements` list the keys.
+
 `blas_matmul_max_base2k`, `blas_matmul_pt_right_max_base2k` and `blas_matmul_pt_left_max_base2k` return the largest
 `base2k` that `Module::max_base2k` allows for every lazy sum of a product, from the grids' layouts, the context and the
-public operand alone, and `blas_matvec_pt_max_base2k` that of a product of a vector.
+public operand alone, `blas_matvec_pt_max_base2k` that of a product of a vector, and `blas_matvec_diagonal_max_base2k` that of a
+product by a diagonal ciphertext.
 
 Calls with distinct `res` and `scratch` may run concurrently over a shared module, context, public operands, prepared
 operands and key stores: BLAS spawns no thread and holds no shared mutable state, its types are `Send` and `Sync`, and an
@@ -100,6 +113,7 @@ form, the backend's representation, which operations read.
 |---|---|---|
 | `BlasCiphertext` | none | `BlasLayout`, `BlasGridInfos` |
 | `BlasVector` | none | `BlasVectorLayout`, `BlasVectorInfos` |
+| `BlasDiagonalCiphertext<BE>` | `BlasDiagonalCiphertextPrepared<BE>` | `BlasDiagonalCiphertextLayout`, `BlasDiagonalCiphertextInfos` |
 | `BlasPtOperand<BE, S>` | `BlasPtOperandPrepared<BE, S>` | `BlasPtOperandLayout<S>`, `BlasPtOperandInfos` |
 | `BlasMatVecOperand<BE>` | `BlasMatVecOperandPrepared<BE>` | `BlasMatVecOperandLayout`, `BlasMatVecOperandInfos` |
 | `BlasContext<BE>` | `BlasContextPrepared<BE>` | `BlasContextLayout`, `BlasContextInfos` |

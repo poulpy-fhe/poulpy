@@ -1,39 +1,44 @@
 //! Products of a vector by a matrix.
 
 use poulpy_ckks::{
-    CKKSInfos, CKKSLayout, CKKSModuleInfos, CKKSResult, CoeffsMeta, GLWEPlaintextMeta, Scale, SetCKKSInfos,
+    CKKSInfos, CKKSLayout, CKKSModuleInfos, CKKSResult, CoeffsMeta, GLWEPlaintextInfos, GLWEPlaintextMeta, Scale, SetCKKSInfos,
     SetGLWEPlaintextInfos, SlotsKind,
-    api::{CKKSEncodingOps, CKKSLinearTransformationOps},
-    layouts::CKKSModuleAlloc,
+    api::{CKKSEncodingOps, CKKSLinearTransformationOps, CKKSMulOps, LinearTransformationLayout},
+    layouts::{CKKSModuleAlloc, CKKSPreparedRight},
     test_suite::{
         CKKSTestParams,
         helpers::{
             TestContextBackend, TestContextModule, TestContextSharedModule, TestScalar, alloc_scratch,
-            assert_decrypt_precision_at_log_delta, ckks_encrypt, gen_sk_with_raw,
+            assert_decrypt_precision_at_log_delta, ckks_encrypt, encode_and_upload_pt, gen_sk_with_raw, gen_tsk,
         },
         parity::helpers::{Snapshot, snapshot, with_scratch},
         reference_encoder::ReferenceEncoder,
     },
 };
 use poulpy_core::layouts::{
-    Base2K, DiagonalArithmetic, GLWELayout, GLWEToBackendRef, LWEInfos, LinearTransformationStrategy, TorusPrecision,
+    Base2K, DiagonalArithmetic, GLWEInfos, GLWELayout, GLWEToBackendRef, LWEInfos, LinearTransformationStrategy, TorusPrecision,
     prepared::GLWESecretPrepared,
 };
 use poulpy_hal::{
     api::{CnvPVecAlloc, NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
-    layouts::{Backend, CyclotomicOrder, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchArena, Standard},
+    layouts::{
+        Backend, CyclotomicOrder, HostBytesBackend, HostDataMut, HostDataRef, Module, PrepareHint, ScratchArena, Standard,
+    },
 };
 
 use super::helpers::{
-    Rejection::{self, Budget, InvalidOperand, MissingKey},
-    TestKeys, assert_rejected, assert_short_scratch_panics, poisoned_scratch, rotation_keys, to_f,
+    Rejection::{self, Budget, InvalidOperand, MissingKey, MissingTensorKey},
+    TestKeys, assert_panics, assert_rejected, assert_short_scratch_panics, poisoned_scratch, rotation_keys, to_f,
 };
 use crate::{
-    api::{BlasEncodingOps, BlasMatVecOperandPreparedFactory, BlasMatVecOps},
+    api::{BlasDiagonalCiphertextPreparedFactory, BlasEncodingOps, BlasMatVecOperandPreparedFactory, BlasMatVecOps},
     layouts::{
-        BlasMatVecOperand, BlasMatVecOperandLayout, BlasMatVecOperandPrepared, BlasModuleAlloc, BlasVector, BlasVectorInfos,
-        BlasVectorLayout, BlasVectorMut, BlasVectorOwned, BlasVectorRef, BlasVectorShape, blas_matvec_pt_output_layout,
-        matvec_pt_galois_elements,
+        BlasDiagonalCiphertext, BlasDiagonalCiphertextLayout, BlasDiagonalCiphertextPrepared, BlasMatVecOperand,
+        BlasMatVecOperandLayout, BlasMatVecOperandPrepared, BlasModuleAlloc, BlasVector, BlasVectorInfos, BlasVectorLayout,
+        BlasVectorMut, BlasVectorOwned, BlasVectorRef, BlasVectorShape, append_col_diagonal_galois_elements,
+        append_row_diagonal_galois_elements, blas_append_col_diagonal_key_uses, blas_append_row_diagonal_key_uses,
+        blas_matvec_diagonal_key_uses, blas_matvec_diagonal_output_layout, blas_matvec_pt_output_layout,
+        diagonal_ciphertext::AppendAxis, matvec_diagonal_galois_elements, matvec_pt_galois_elements,
     },
     oep::{BlasEncodingImpl, BlasMatVecImpl},
 };
@@ -665,4 +670,814 @@ where
         &mut res,
         |res| with_scratch::<BE, _>(bytes, |s| module.blas_matvec_pt(res, &w, &low, &keys, s)),
     );
+}
+
+/// The diagonals the diagonal-ciphertext tests hold, `0..8`, at giant step 4: four baby steps and two giant steps.
+pub fn diagonal_ciphertext_layout(params: &CKKSTestParams, slots: usize, ct_k: usize) -> BlasDiagonalCiphertextLayout {
+    let mut ct = params.prec();
+    ct.glwe_layout.k = ct_k.into();
+    BlasDiagonalCiphertextLayout::new(
+        ct,
+        LinearTransformationLayout {
+            indexes: (0..8).collect(),
+            slots,
+            strategy: LinearTransformationStrategy::Bsgs { giant_step: 4 },
+        },
+    )
+}
+
+/// `layout` holding the diagonals `indexes` under `strategy`.
+pub(crate) fn diagonal_ciphertext_with(
+    layout: &BlasDiagonalCiphertextLayout,
+    indexes: Vec<i64>,
+    strategy: LinearTransformationStrategy,
+) -> BlasDiagonalCiphertextLayout {
+    BlasDiagonalCiphertextLayout::new(
+        layout.ct,
+        LinearTransformationLayout {
+            indexes,
+            slots: layout.lt.slots,
+            strategy,
+        },
+    )
+}
+
+/// The Galois elements of every operation on a matrix of `layout`: its product, its row and its column appends.
+pub(crate) fn diagonal_ciphertext_elements(order: i64, layout: &BlasDiagonalCiphertextLayout) -> std::collections::BTreeSet<i64> {
+    matvec_diagonal_galois_elements(order, layout)
+        .into_iter()
+        .chain(append_row_diagonal_galois_elements(order, layout))
+        .chain(append_col_diagonal_galois_elements(order, layout))
+        .collect()
+}
+
+/// [`BlasMatVecOps::blas_append_row_diagonal`] at `at` for [`AppendAxis::Row`], else [`BlasMatVecOps::blas_append_col_diagonal`].
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn append<BE, V, K>(
+    module: &Module<BE>,
+    axis: AppendAxis,
+    m: &mut BlasDiagonalCiphertext<BE>,
+    at: i64,
+    v: &V,
+    mask: &CKKSPreparedRight<BE>,
+    keys: &K,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> CKKSResult<()>
+where
+    BE: Backend + BlasMatVecImpl,
+    V: crate::layouts::BlasVectorRef<BE>,
+    K: poulpy_core::layouts::GetAutomorphismKey<BE> + Sync,
+{
+    match axis {
+        AppendAxis::Row => module.blas_append_row_diagonal(m, at, v, mask, keys, scratch),
+        AppendAxis::Col => module.blas_append_col_diagonal(m, at, v, mask, keys, scratch),
+    }
+}
+
+/// The scratch query of [`append`] along `axis`.
+pub(crate) fn append_tmp_bytes<BE: Backend + BlasMatVecImpl>(
+    module: &Module<BE>,
+    axis: AppendAxis,
+    m: &impl crate::layouts::BlasDiagonalCiphertextInfos,
+    v: &impl BlasVectorInfos,
+    mask: &impl poulpy_core::layouts::GLWEInfos,
+    keys: &impl poulpy_core::layouts::GGLWEInfos,
+) -> usize {
+    match axis {
+        AppendAxis::Row => module.blas_append_row_diagonal_tmp_bytes(m, v, mask, keys),
+        AppendAxis::Col => module.blas_append_col_diagonal_tmp_bytes(m, v, mask, keys),
+    }
+}
+
+/// The key-use query of [`append`] along `axis`.
+pub(crate) fn append_key_uses<BE: Backend>(
+    module: &Module<BE>,
+    axis: AppendAxis,
+    m: &impl crate::layouts::BlasDiagonalCiphertextInfos,
+    v: &impl BlasVectorInfos,
+) -> crate::layouts::BlasKeyUses {
+    match axis {
+        AppendAxis::Row => blas_append_row_diagonal_key_uses(module, m, v),
+        AppendAxis::Col => blas_append_col_diagonal_key_uses(module, m, v),
+    }
+}
+
+/// The layout of the product of a matrix of diagonals of layout `m` by `a` into `res` of width `res_k`, read off the
+/// `blas_matvec_diagonal` doc: poulpy-ckks's ct x ct rule between `a` and a diagonal.
+pub(crate) fn matvec_diagonal_layout(a: CKKSLayout, m: CKKSLayout, res_k: usize) -> CKKSLayout {
+    let (a_delta, m_delta) = (a.log_delta(), m.log_delta());
+    let log_delta = a_delta.min(m_delta);
+    let budget = (a.k().as_usize() - a_delta).min(m.k().as_usize() - m_delta) - a_delta.max(m_delta);
+    let mut ct = a;
+    ct.glwe_layout.k = (budget + log_delta).min(res_k).into();
+    ct.meta.scale = poulpy_ckks::Scale::Log(log_delta);
+    ct.meta.log_sparsity = a.log_sparsity().min(m.log_sparsity());
+    ct.meta.slots = a.slots().join(m.slots());
+    ct
+}
+
+/// The cleartext of a matrix holding the diagonals `t` of `ts`: row `at` of `v` adds `v[at + t]` at `(at, at + t)`,
+/// column `at` adds `v[at - t]` at `(at - t, at)`, on every slot of `mask` shifted by `at`; `matvec` sums
+/// `D_t[i] x[i + t]`.
+pub(crate) struct DiagonalCiphertextModel {
+    slots: usize,
+    ts: Vec<usize>,
+    m: Vec<Vec<f64>>,
+}
+
+impl DiagonalCiphertextModel {
+    pub(crate) fn new(slots: usize, ts: Vec<usize>) -> Self {
+        Self {
+            slots,
+            ts,
+            m: vec![vec![0.0; slots]; slots],
+        }
+    }
+
+    pub(crate) fn append(&mut self, axis: AppendAxis, at: i64, mask: &[f64], v: &[f64]) {
+        let s = self.slots;
+        for (q0, &w) in mask.iter().enumerate() {
+            let q = (q0 as i64 + at).rem_euclid(s as i64) as usize;
+            for &t in &self.ts {
+                match axis {
+                    AppendAxis::Col => {
+                        let i = (q + s - t) % s;
+                        self.m[i][q] += w * v[i];
+                    }
+                    AppendAxis::Row => {
+                        let j = (q + t) % s;
+                        self.m[q][j] += w * v[j];
+                    }
+                }
+            }
+        }
+    }
+
+    pub(crate) fn matvec(&self, x: &[f64]) -> Vec<f64> {
+        let s = self.slots;
+        (0..s)
+            .map(|i| self.ts.iter().map(|&t| self.m[i][(i + t) % s] * x[(i + t) % s]).sum())
+            .collect()
+    }
+}
+
+/// Every diagonal ciphertext of `m`, digits and metadata.
+pub(crate) fn diagonal_ciphertext_snapshot<BE>(m: &BlasDiagonalCiphertext<BE>) -> Vec<Snapshot>
+where
+    BE: Backend<ZnxWord = i64>,
+    poulpy_ckks::layouts::CKKSCiphertextOwned<BE>: GLWEToBackendRef<BE>,
+{
+    m.diagonals()
+        .giant_steps
+        .iter()
+        .flat_map(|gs| gs.diagonals.iter())
+        .map(|d| snapshot::<BE, _>(&d.plaintext))
+        .collect()
+}
+
+/// Prepares `m` into `res` on exactly its query's bytes.
+pub(crate) fn prepare_diagonal_ciphertext<BE>(
+    module: &Module<BE>,
+    res: &mut BlasDiagonalCiphertextPrepared<BE>,
+    m: &BlasDiagonalCiphertext<BE>,
+) where
+    BE: Backend,
+    Module<BE>: BlasDiagonalCiphertextPreparedFactory<BE>,
+{
+    let bytes = module.blas_diagonal_ciphertext_prepare_tmp_bytes(m);
+    module.blas_diagonal_ciphertext_prepare(res, m, &mut poisoned_scratch::<BE>(bytes).borrow());
+}
+
+/// `m` prepared into a fresh allocation, on exactly the query's bytes.
+pub(crate) fn prepared_of<BE>(module: &Module<BE>, m: &BlasDiagonalCiphertext<BE>) -> BlasDiagonalCiphertextPrepared<BE>
+where
+    BE: Backend,
+    Module<BE>: BlasDiagonalCiphertextPreparedFactory<BE>,
+{
+    let mut prepared = module.blas_diagonal_ciphertext_prepared_alloc_from_infos(m);
+    prepare_diagonal_ciphertext(module, &mut prepared, m);
+    prepared
+}
+
+/// The appends of the diagonal-ciphertext tests: `(axis, at, mask index, seed)`, by the masks of one slot then two.
+const APPENDS: [(AppendAxis, i64, usize, usize); 5] = [
+    (AppendAxis::Row, 0, 0, 1),
+    (AppendAxis::Row, 3, 0, 2),
+    (AppendAxis::Col, 5, 0, 3),
+    (AppendAxis::Row, -2, 1, 4),
+    (AppendAxis::Col, 1, 1, 5),
+];
+
+/// A diagonal ciphertext over the slots, its diagonals `0..8` at giant step 4, by rotation and by powers of two: zero once
+/// allocated, so its product is zero; then rows and columns appended at several positions, by a mask of one slot
+/// prepared to reuse and one of two slots prepared once, and its product by a vector, prepared again into one
+/// allocation after each append (resident) and streamed, with the same bits, decrypts to the cleartext matrix's,
+/// at the metadata of its doc, which [`blas_matvec_diagonal_output_layout`] gives, on the keys of [`matvec_diagonal_galois_elements`],
+/// [`append_row_diagonal_galois_elements`] and [`append_col_diagonal_galois_elements`] alone, then on a store answering only at the widths
+/// [`blas_matvec_diagonal_key_uses`], [`blas_append_row_diagonal_key_uses`] and [`blas_append_col_diagonal_key_uses`] list. A matrix of the
+/// diagonal `0` alone, which rotates nothing, appends and multiplies, resident and streamed, on the tensor key alone.
+/// One byte short of its query, each call and the preparation panic before they write.
+pub fn test_blas_matvec_diagonal<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
+where
+    BE: TestContextBackend<Ring = Standard> + BlasMatVecImpl + BlasEncodingImpl,
+    Module<BE>: TestContextModule<BE> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    F: TestScalar + DiagonalArithmetic,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
+{
+    let slots = params.n / 2;
+    if slots < 16 {
+        eprintln!("matvec_diagonal skipped: its matrix holds diagonals up to 8 on at least 16 slots, the ring holds {slots}");
+        return;
+    }
+    let encoder = ReferenceEncoder::<E>::new(slots).unwrap();
+    let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+    let log_delta = params.prec().log_delta();
+    let by_rotation = diagonal_ciphertext_layout(&params, slots, params.k - log_delta);
+    let by_powers = diagonal_ciphertext_with(
+        &by_rotation,
+        (0..8).collect(),
+        LinearTransformationStrategy::BsgsPowersOfTwo { giant_step: 4 },
+    );
+    let order = module.cyclotomic_order();
+    let whole = BlasVectorShape::new(slots, slots, 0, 1);
+    let encrypt = |values: &[f64], scratch: &mut ScratchArena<'_, BE>| {
+        encrypt_vector::<BE, F, E>(
+            &params,
+            module,
+            host_module,
+            &encoder,
+            &sk,
+            params.k,
+            whole,
+            slots,
+            values,
+            scratch,
+        )
+    };
+    let mask_of = |slots_set: &[usize], hint: PrepareHint| {
+        let mut re = vec![0.0; slots];
+        slots_set.iter().for_each(|&s| re[s] = 1.0);
+        let pt = encode_and_upload_pt(
+            host_module,
+            module,
+            &encoder,
+            params.base2k.into(),
+            params.prec(),
+            &to_f::<F>(&re),
+            &to_f::<F>(&vec![0.0; slots]),
+        );
+        let prepared = with_scratch::<BE, _>(module.ckks_prepare_tmp_bytes(&pt), |s| {
+            module.ckks_prepare_right(&pt, hint, s)
+        })
+        .unwrap();
+        (re, prepared)
+    };
+    let masks = [
+        mask_of(&[0], PrepareHint::Reuse),
+        mask_of(&[0, slots / 2], PrepareHint::OneShot),
+    ];
+    let x: Vec<f64> = (0..slots).map(vector_entry).collect();
+    let a = encrypt(&x, &mut scratch.borrow());
+    let res_k = params.k;
+    let want_layout = BlasVectorLayout::new(matvec_diagonal_layout(a.ct_layout(), by_rotation.ct, res_k), whole);
+
+    for layout in [&by_rotation, &by_powers] {
+        let name = format!("{:?}", layout.lt.strategy);
+        let keys = TestKeys::<BE> {
+            atks: rotation_keys(
+                &params,
+                module,
+                &sk_raw,
+                diagonal_ciphertext_elements(order, layout),
+                &mut scratch.borrow(),
+            ),
+            tsk: Some(gen_tsk(&params, module, &sk_raw, &mut scratch.borrow())),
+        };
+        let mut m = module.blas_diagonal_ciphertext_alloc_from_infos(layout);
+        // One prepared allocation, refilled after each append.
+        let mut prepared = module.blas_diagonal_ciphertext_prepared_alloc_from_infos(layout);
+        let mut model = DiagonalCiphertextModel::new(slots, (0..8).collect());
+        let matvec = |m: &BlasDiagonalCiphertext<BE>,
+                      prepared: &mut BlasDiagonalCiphertextPrepared<BE>,
+                      model: &DiagonalCiphertextModel,
+                      label: &str,
+                      scratch: &mut ScratchArena<'_, BE>| {
+            prepare_diagonal_ciphertext(module, prepared, m);
+            let mut res = alloc_vector(&params, module, whole, res_k);
+            assert_eq!(
+                blas_matvec_diagonal_output_layout(&res, m, &a),
+                want_layout,
+                "{label}: output layout"
+            );
+            let bytes = module.blas_matvec_diagonal_tmp_bytes(&res, &*prepared, &a, &params.tsk_layout(), &params.atk_layout());
+            module
+                .blas_matvec_diagonal(&mut res, &*prepared, &a, &keys, &mut poisoned_scratch::<BE>(bytes).borrow())
+                .unwrap();
+            let mut streamed = alloc_vector(&params, module, whole, res_k);
+            let bytes = module.blas_matvec_diagonal_tmp_bytes(&streamed, m, &a, &params.tsk_layout(), &params.atk_layout());
+            module
+                .blas_matvec_diagonal(&mut streamed, m, &a, &keys, &mut poisoned_scratch::<BE>(bytes).borrow())
+                .unwrap();
+            assert!(
+                vector_snapshot::<BE>(&streamed) == vector_snapshot::<BE>(&res),
+                "{label}: streamed against resident"
+            );
+            assert_vector_decrypt::<BE, F, E>(
+                label,
+                &params,
+                module,
+                &encoder,
+                &res,
+                &sk,
+                &model.matvec(&x),
+                slots,
+                &want_layout,
+                scratch,
+            );
+        };
+        matvec(
+            &m,
+            &mut prepared,
+            &model,
+            &format!("{name}: a zero matrix"),
+            &mut scratch.borrow(),
+        );
+
+        for (axis, at, mask, seed) in APPENDS {
+            let (mask, mask_prepared) = &masks[mask];
+            let v: Vec<f64> = (0..slots).map(|e| vector_entry(e * seed + seed)).collect();
+            let ct_v = encrypt(&v, &mut scratch.borrow());
+            let bytes = append_tmp_bytes(module, axis, &m, &ct_v, mask_prepared, &params.atk_layout());
+            let mut op_scratch = poisoned_scratch::<BE>(bytes);
+            append(
+                module,
+                axis,
+                &mut m,
+                at,
+                &ct_v,
+                mask_prepared,
+                &keys,
+                &mut op_scratch.borrow(),
+            )
+            .unwrap();
+            model.append(axis, at, mask, &v);
+            let label = format!("{name}: after {} at {at}", axis.op());
+            assert!(
+                m.diagonals()
+                    .giant_steps
+                    .iter()
+                    .flat_map(|gs| &gs.diagonals)
+                    .all(|d| CKKSLayout {
+                        glwe_layout: d.plaintext.glwe_layout(),
+                        meta: d.plaintext.meta(),
+                    } == layout.ct
+                        && d.plaintext.noise().is_none()),
+                "{label}: the diagonals left the matrix's layout"
+            );
+            matvec(&m, &mut prepared, &model, &label, &mut scratch.borrow());
+
+            // The append on a store answering only at the widths its key-use query lists, then one byte short.
+            let uses = append_key_uses(module, axis, &m, &ct_v);
+            let strict = keys.at_widths(uses.rotations.iter().map(|&(p, k)| (p, k.as_usize())), []);
+            let mut copy = module.blas_diagonal_ciphertext_alloc_from_infos(layout);
+            with_scratch::<BE, _>(bytes, |s| {
+                append(module, axis, &mut copy, at, &ct_v, mask_prepared, &strict, s)
+            })
+            .unwrap_or_else(|e| panic!("{label}: on the listed keys: {e}"));
+            let before = diagonal_ciphertext_snapshot::<BE>(&copy);
+            assert_short_scratch_panics::<BE, _>(axis.op(), bytes, |s| {
+                append(module, axis, &mut copy, at, &ct_v, mask_prepared, &keys, s)
+            });
+            assert!(
+                diagonal_ciphertext_snapshot::<BE>(&copy) == before,
+                "{label}: wrote the matrix before panicking"
+            );
+        }
+
+        // The product, resident and streamed, on a store answering only at the listed widths, then one byte short; the
+        // preparation one byte short.
+        let res = alloc_vector(&params, module, whole, res_k);
+        let uses = blas_matvec_diagonal_key_uses(module, &res, &m, &a);
+        let strict = keys.at_widths(
+            uses.rotations.iter().map(|&(p, k)| (p, k.as_usize())),
+            uses.tensor.map(|k| k.as_usize()),
+        );
+        for form in ["resident", "streamed"] {
+            let bytes = if form == "resident" {
+                module.blas_matvec_diagonal_tmp_bytes(&res, &prepared, &a, &params.tsk_layout(), &params.atk_layout())
+            } else {
+                module.blas_matvec_diagonal_tmp_bytes(&res, &m, &a, &params.tsk_layout(), &params.atk_layout())
+            };
+            let mut out = alloc_vector(&params, module, whole, res_k);
+            with_scratch::<BE, _>(bytes, |s| {
+                if form == "resident" {
+                    module.blas_matvec_diagonal(&mut out, &prepared, &a, &strict, s)
+                } else {
+                    module.blas_matvec_diagonal(&mut out, &m, &a, &strict, s)
+                }
+            })
+            .unwrap_or_else(|e| panic!("{name}: {form} matvec_diagonal on the listed keys: {e}"));
+            let before = vector_snapshot::<BE>(&out);
+            assert_short_scratch_panics::<BE, _>("blas_matvec_diagonal", bytes, |s| {
+                if form == "resident" {
+                    module.blas_matvec_diagonal(&mut out, &prepared, &a, &keys, s)
+                } else {
+                    module.blas_matvec_diagonal(&mut out, &m, &a, &keys, s)
+                }
+            });
+            assert!(
+                vector_snapshot::<BE>(&out) == before,
+                "{name}: {form} matvec_diagonal wrote res before panicking"
+            );
+        }
+        let bytes = module.blas_diagonal_ciphertext_prepare_tmp_bytes(layout);
+        assert_short_scratch_panics::<BE, _>("blas_diagonal_ciphertext_prepare", bytes, |s| {
+            module.blas_diagonal_ciphertext_prepare(&mut prepared, &m, s)
+        });
+    }
+
+    // The diagonal `0` alone: no rotation, so no rotation key, and every call still asserts its scratch.
+    let diagonal = diagonal_ciphertext_with(&by_rotation, vec![0], LinearTransformationStrategy::Direct);
+    assert!(
+        diagonal_ciphertext_elements(order, &diagonal).is_empty(),
+        "the diagonal 0 rotates nothing"
+    );
+    let tensor_only = TestKeys::<BE> {
+        atks: Default::default(),
+        tsk: Some(gen_tsk(&params, module, &sk_raw, &mut scratch.borrow())),
+    };
+    let mut m = module.blas_diagonal_ciphertext_alloc_from_infos(&diagonal);
+    let mut model = DiagonalCiphertextModel::new(slots, vec![0]);
+    let (mask, mask_prepared) = &masks[1];
+    for (axis, at) in [(AppendAxis::Row, 2), (AppendAxis::Col, 5)] {
+        let v: Vec<f64> = (0..slots).map(|e| vector_entry(e + at as usize)).collect();
+        let ct_v = encrypt(&v, &mut scratch.borrow());
+        let bytes = append_tmp_bytes(module, axis, &m, &ct_v, mask_prepared, &params.atk_layout());
+        let mut copy = module.blas_diagonal_ciphertext_alloc_from_infos(&diagonal);
+        assert_short_scratch_panics::<BE, _>(axis.op(), bytes, |s| {
+            append(module, axis, &mut copy, at, &ct_v, mask_prepared, &tensor_only, s)
+        });
+        with_scratch::<BE, _>(bytes, |s| {
+            append(module, axis, &mut m, at, &ct_v, mask_prepared, &tensor_only, s)
+        })
+        .unwrap();
+        model.append(axis, at, mask, &v);
+    }
+    let prepared = prepared_of(module, &m);
+    let mut streamed = alloc_vector(&params, module, whole, res_k);
+    let bytes = module.blas_matvec_diagonal_tmp_bytes(&streamed, &m, &a, &params.tsk_layout(), &params.atk_layout());
+    assert_short_scratch_panics::<BE, _>("blas_matvec_diagonal", bytes, |s| {
+        module.blas_matvec_diagonal(&mut streamed, &m, &a, &tensor_only, s)
+    });
+    with_scratch::<BE, _>(bytes, |s| module.blas_matvec_diagonal(&mut streamed, &m, &a, &tensor_only, s)).unwrap();
+    let mut res = alloc_vector(&params, module, whole, res_k);
+    let bytes = module.blas_matvec_diagonal_tmp_bytes(&res, &prepared, &a, &params.tsk_layout(), &params.atk_layout());
+    assert_short_scratch_panics::<BE, _>("blas_matvec_diagonal", bytes, |s| {
+        module.blas_matvec_diagonal(&mut res, &prepared, &a, &tensor_only, s)
+    });
+    with_scratch::<BE, _>(bytes, |s| {
+        module.blas_matvec_diagonal(&mut res, &prepared, &a, &tensor_only, s)
+    })
+    .unwrap();
+    assert!(
+        vector_snapshot::<BE>(&streamed) == vector_snapshot::<BE>(&res),
+        "the diagonal 0: streamed against resident"
+    );
+    assert_vector_decrypt::<BE, F, E>(
+        "the diagonal 0",
+        &params,
+        module,
+        &encoder,
+        &res,
+        &sk,
+        &model.matvec(&x),
+        slots,
+        &want_layout,
+        &mut scratch.borrow(),
+    );
+}
+
+/// `blas_matvec_diagonal`, `blas_append_row_diagonal` and `blas_append_col_diagonal` reject, before any write: a vector that is not a whole
+/// ciphertext, as input and as `res`; an input of another radix than `res`, or at a radix above 62; a matrix of another
+/// module's slots, or whose diagonals are of another radix or rank than the vectors; a mask that is not a plaintext or
+/// of another radix; an append that would change the diagonals' slot kind or sparsity; a store lacking a rotation key
+/// or the tensor key, and operands of another rank than the keys; and an appended vector whose product does not land in
+/// the diagonals' frame, which poulpy-ckks's accumulate refuses. The resident product rejects the missing keys alike, a
+/// preparation into another layout panics, and a matrix layout the module cannot hold panics at allocation.
+pub fn test_blas_matvec_diagonal_guards<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend<Ring = Standard> + BlasMatVecImpl + BlasEncodingImpl,
+    Module<BE>: TestContextModule<BE> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    F: TestScalar + DiagonalArithmetic,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
+{
+    let slots = params.n / 2;
+    if slots < 16 {
+        eprintln!(
+            "matvec_diagonal_guards skipped: its matrix holds diagonals up to 8 on at least 16 slots, the ring holds {slots}"
+        );
+        return;
+    }
+    let encoder = ReferenceEncoder::<E>::new(slots).unwrap();
+    let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+    let log_delta = params.prec().log_delta();
+    let layout = diagonal_ciphertext_layout(&params, slots, params.k - log_delta);
+    let order = module.cyclotomic_order();
+    let keys = TestKeys::<BE> {
+        atks: rotation_keys(
+            &params,
+            module,
+            &sk_raw,
+            diagonal_ciphertext_elements(order, &layout),
+            &mut scratch.borrow(),
+        ),
+        tsk: Some(gen_tsk(&params, module, &sk_raw, &mut scratch.borrow())),
+    };
+    let no_tensor = TestKeys::<BE> {
+        atks: rotation_keys(
+            &params,
+            module,
+            &sk_raw,
+            matvec_diagonal_galois_elements(order, &layout),
+            &mut scratch.borrow(),
+        ),
+        tsk: None,
+    };
+    let empty = TestKeys::<BE> {
+        atks: Default::default(),
+        tsk: None,
+    };
+    let whole = BlasVectorShape::new(slots, slots, 0, 1);
+    let values: Vec<f64> = (0..slots).map(vector_entry).collect();
+    let encrypt = |shape: BlasVectorShape, k: usize, scratch: &mut ScratchArena<'_, BE>| {
+        encrypt_vector::<BE, F, E>(&params, module, host_module, &encoder, &sk, k, shape, slots, &values, scratch)
+    };
+    let a = encrypt(whole, params.k, &mut scratch.borrow());
+    let strided_shape = BlasVectorShape::new(slots / 2, slots / 2, 0, 2);
+    let strided = encrypt(strided_shape, params.k, &mut scratch.borrow());
+    let mask_at = |base2k: usize| {
+        let mut re = vec![0.0; slots];
+        re[0] = 1.0;
+        let pt = encode_and_upload_pt(
+            host_module,
+            module,
+            &encoder,
+            base2k.into(),
+            params.prec(),
+            &to_f::<F>(&re),
+            &to_f::<F>(&vec![0.0; slots]),
+        );
+        with_scratch::<BE, _>(module.ckks_prepare_tmp_bytes(&pt), |s| {
+            module.ckks_prepare_right(&pt, PrepareHint::Reuse, s)
+        })
+        .unwrap()
+    };
+    let mask = mask_at(params.base2k);
+    let ct_mask = with_scratch::<BE, _>(module.ckks_prepare_tmp_bytes(&a.cts()[0]), |s| {
+        module.ckks_prepare_right(&a.cts()[0], PrepareHint::Reuse, s)
+    })
+    .unwrap();
+    // Zero operands of another radix, then of another rank, than `params`'.
+    let other_radix = CKKSTestParams {
+        base2k: params.base2k - 1,
+        ..params
+    };
+    let other_rank = CKKSTestParams {
+        rank: params.rank + 1,
+        ..params
+    };
+    let at_params = |p: &CKKSTestParams| {
+        let mut l = diagonal_ciphertext_layout(p, slots, params.k - log_delta);
+        l.ct.glwe_layout = GLWELayout {
+            k: l.ct.k(),
+            ..p.glwe_layout()
+        };
+        l
+    };
+
+    let m = module.blas_diagonal_ciphertext_alloc_from_infos(&layout);
+    let mut res = alloc_vector(&params, module, whole, params.k);
+    let bytes = module.blas_matvec_diagonal_tmp_bytes(&res, &m, &a, &params.tsk_layout(), &params.atk_layout());
+    let product = |label: &str,
+                   rejection: Rejection,
+                   res: &mut BlasVectorOwned<BE>,
+                   m: &BlasDiagonalCiphertext<BE>,
+                   a: &BlasVectorOwned<BE>,
+                   keys: &TestKeys<BE>| {
+        assert_vector_guard::<BE>(label, "blas_matvec_diagonal", rejection, res, |res| {
+            with_scratch::<BE, _>(bytes, |s| module.blas_matvec_diagonal(res, m, a, keys, s))
+        });
+    };
+    product("a strided input", InvalidOperand, &mut res, &m, &strided, &keys);
+    let mut strided_res = alloc_vector(&params, module, strided_shape, params.k);
+    product("a strided res", InvalidOperand, &mut strided_res, &m, &a, &keys);
+    let mut radix_res = alloc_vector(&other_radix, module, whole, params.k);
+    product(
+        "an input of another radix than res",
+        InvalidOperand,
+        &mut radix_res,
+        &m,
+        &a,
+        &keys,
+    );
+    let wide_radix = CKKSTestParams { base2k: 63, ..params };
+    let (mut wide_res, wide_a) = (
+        alloc_vector(&wide_radix, module, whole, 126),
+        alloc_vector(&wide_radix, module, whole, 126),
+    );
+    product("a radix above 62", InvalidOperand, &mut wide_res, &m, &wide_a, &keys);
+    let doubled = Module::<BE>::new(2 * params.n as u64);
+    let mut doubled_layout = diagonal_ciphertext_layout(&params, 2 * slots, params.k - log_delta);
+    doubled_layout.ct.glwe_layout.n = (2 * params.n).into();
+    let foreign = doubled.blas_diagonal_ciphertext_alloc_from_infos(&doubled_layout);
+    product(
+        "a matrix of another module's slots",
+        InvalidOperand,
+        &mut res,
+        &foreign,
+        &a,
+        &keys,
+    );
+    let m_radix = module.blas_diagonal_ciphertext_alloc_from_infos(&at_params(&other_radix));
+    product("diagonals of another radix", InvalidOperand, &mut res, &m_radix, &a, &keys);
+    let m_rank = module.blas_diagonal_ciphertext_alloc_from_infos(&at_params(&other_rank));
+    product("diagonals of another rank", InvalidOperand, &mut res, &m_rank, &a, &keys);
+    if !matvec_diagonal_galois_elements(order, &layout).is_empty() {
+        product("no rotation key", MissingKey, &mut res, &m, &a, &empty);
+    }
+    product("no tensor key", MissingTensorKey, &mut res, &m, &a, &no_tensor);
+    // The resident form runs the same validator; its preparation refuses another layout.
+    let mut prepared = prepared_of(module, &m);
+    let resident_bytes = module.blas_matvec_diagonal_tmp_bytes(&res, &prepared, &a, &params.tsk_layout(), &params.atk_layout());
+    for (label, rejection, keys) in [
+        ("resident, no rotation key", MissingKey, &empty),
+        ("resident, no tensor key", MissingTensorKey, &no_tensor),
+    ] {
+        if rejection == MissingKey && matvec_diagonal_galois_elements(order, &layout).is_empty() {
+            continue;
+        }
+        assert_vector_guard::<BE>(label, "blas_matvec_diagonal", rejection, &mut res, |res| {
+            with_scratch::<BE, _>(resident_bytes, |s| module.blas_matvec_diagonal(res, &prepared, &a, keys, s))
+        });
+    }
+    let other = diagonal_ciphertext_with(&layout, vec![0, 1], LinearTransformationStrategy::Direct);
+    let m_other = module.blas_diagonal_ciphertext_alloc_from_infos(&other);
+    assert_panics("a preparation into another layout", "another layout", || {
+        with_scratch::<BE, _>(module.blas_diagonal_ciphertext_prepare_tmp_bytes(&layout), |s| {
+            module.blas_diagonal_ciphertext_prepare(&mut prepared, &m_other, s)
+        })
+    });
+    let (mut rank_res, rank_a) = (
+        alloc_vector(&other_rank, module, whole, params.k),
+        alloc_vector(&other_rank, module, whole, params.k),
+    );
+    product(
+        "operands of another rank than the keys",
+        InvalidOperand,
+        &mut rank_res,
+        &m_rank,
+        &rank_a,
+        &keys,
+    );
+    let diagonal = diagonal_ciphertext_with(&at_params(&other_rank), vec![0], LinearTransformationStrategy::Direct);
+    let m_diagonal = module.blas_diagonal_ciphertext_alloc_from_infos(&diagonal);
+    product(
+        "operands of another rank than the tensor key",
+        InvalidOperand,
+        &mut rank_res,
+        &m_diagonal,
+        &rank_a,
+        &keys,
+    );
+
+    let real = CKKSTestParams {
+        prec_meta: GLWEPlaintextMeta {
+            slots: SlotsKind::Real,
+            ..params.prec_meta
+        },
+        ..params
+    };
+    let narrower = encrypt(whole, params.k - params.base2k, &mut scratch.borrow());
+    let rank_v = alloc_vector(&other_rank, module, whole, params.k);
+    for axis in [AppendAxis::Row, AppendAxis::Col] {
+        let op = axis.op();
+        let check = |label: &str,
+                     rejection: Rejection,
+                     raised: &str,
+                     layout: &BlasDiagonalCiphertextLayout,
+                     v: &BlasVectorOwned<BE>,
+                     mask: &CKKSPreparedRight<BE>,
+                     keys: &TestKeys<BE>| {
+            let mut m = module.blas_diagonal_ciphertext_alloc_from_infos(layout);
+            let before = diagonal_ciphertext_snapshot::<BE>(&m);
+            let bytes = append_tmp_bytes(module, axis, &m, v, mask, &params.atk_layout());
+            assert_rejected(
+                &format!("{op}: {label}"),
+                raised,
+                rejection,
+                with_scratch::<BE, _>(bytes, |s| append(module, axis, &mut m, 1, v, mask, keys, s)),
+            );
+            assert!(
+                diagonal_ciphertext_snapshot::<BE>(&m) == before,
+                "{op}: {label}: the append wrote the matrix"
+            );
+        };
+        check("a strided vector", InvalidOperand, op, &layout, &strided, &mask, &keys);
+        check(
+            "diagonals of another radix",
+            InvalidOperand,
+            op,
+            &at_params(&other_radix),
+            &a,
+            &mask,
+            &keys,
+        );
+        check(
+            "diagonals of another rank",
+            InvalidOperand,
+            op,
+            &at_params(&other_rank),
+            &a,
+            &mask,
+            &keys,
+        );
+        check("a ciphertext mask", InvalidOperand, op, &layout, &a, &ct_mask, &keys);
+        check(
+            "a mask of another radix",
+            InvalidOperand,
+            op,
+            &layout,
+            &a,
+            &mask_at(params.base2k - 1),
+            &keys,
+        );
+        check(
+            "complex slots into a real matrix",
+            InvalidOperand,
+            op,
+            &at_params(&real),
+            &a,
+            &mask,
+            &keys,
+        );
+        let mut sparse = layout.clone();
+        sparse.ct.meta.log_sparsity = 1;
+        check(
+            "a dense vector into a sparse matrix",
+            InvalidOperand,
+            op,
+            &sparse,
+            &a,
+            &mask,
+            &keys,
+        );
+        let rotations = match axis {
+            AppendAxis::Row => append_row_diagonal_galois_elements(order, &layout),
+            AppendAxis::Col => append_col_diagonal_galois_elements(order, &layout),
+        };
+        if !rotations.is_empty() {
+            check("no rotation key", MissingKey, op, &layout, &a, &mask, &empty);
+            check(
+                "a vector of another rank than the keys",
+                InvalidOperand,
+                op,
+                &at_params(&other_rank),
+                &rank_v,
+                &mask,
+                &keys,
+            );
+        }
+        // One limb narrower: its products fall short of the diagonals' width.
+        check(
+            "a vector off the diagonals' frame",
+            InvalidOperand,
+            "ckks_dot_product_prepared_pt_add",
+            &layout,
+            &narrower,
+            &mask,
+            &keys,
+        );
+    }
+
+    // Layouts the module cannot hold.
+    let alloc = |label: &str, edit: &dyn Fn(&mut BlasDiagonalCiphertextLayout)| {
+        let mut bad = layout.clone();
+        edit(&mut bad);
+        assert_panics(label, "the matrix", || module.blas_diagonal_ciphertext_alloc_from_infos(&bad));
+    };
+    alloc("another slot count", &|l| l.lt.slots = 2 * slots);
+    alloc("no diagonal", &|l| l.lt.indexes.clear());
+    alloc("a diagonal past the slots", &|l| l.lt.indexes.push(slots as i64));
+    alloc("another degree", &|l| l.ct.glwe_layout.n = (2 * params.n).into());
+    alloc("plaintext diagonals", &|l| l.ct.glwe_layout.rank = 0usize.into());
+    alloc("a radix above 62", &|l| l.ct.glwe_layout.base2k = 63usize.into());
 }

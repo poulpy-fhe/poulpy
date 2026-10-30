@@ -3,13 +3,15 @@ use poulpy_core::layouts::DiagonalArithmetic;
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::layouts::{
-    BlasContext, BlasContextInfos, BlasContextPrepared, BlasMatVecOperand, BlasMatVecOperandInfos, BlasMatVecOperandPrepared,
-    BlasPtOperand, BlasPtOperandInfos, BlasPtOperandPrepared, BlasPtSide,
+    BlasContext, BlasContextInfos, BlasContextPrepared, BlasDiagonalCiphertext, BlasDiagonalCiphertextInfos,
+    BlasDiagonalCiphertextPrepared, BlasMatVecOperand, BlasMatVecOperandInfos, BlasMatVecOperandPrepared, BlasPtOperand,
+    BlasPtOperandInfos, BlasPtOperandPrepared, BlasPtSide,
 };
 
 /// Extension point of [`crate::api::BlasEncodingOps`], [`crate::api::BlasPtOperandPreparedFactory`],
-/// [`crate::api::BlasMatVecOperandPreparedFactory`] and [`crate::api::BlasContextPreparedFactory`]: the encodings of
-/// public operands and contexts and their preparations, all required. The encoding scalar `F` is a method parameter bounded by `Self: CKKSEncodingImpl<F>`.
+/// [`crate::api::BlasMatVecOperandPreparedFactory`], [`crate::api::BlasDiagonalCiphertextPreparedFactory`] and
+/// [`crate::api::BlasContextPreparedFactory`]: the encodings of public operands and contexts and the preparations of
+/// these and of diagonal ciphertexts, all required. The encoding scalar `F` is a method parameter bounded by `Self: CKKSEncodingImpl<F>`.
 ///
 /// # Safety
 /// Every method reproduces its `_reference` counterpart in
@@ -154,6 +156,27 @@ pub unsafe trait BlasEncodingImpl: Backend {
         scratch: &mut ScratchArena<'_, Self>,
     );
 
+    /// Scratch bound of [`Self::blas_diagonal_ciphertext_prepare`]; may report less than
+    /// [`BlasEncodingReference::blas_diagonal_ciphertext_prepare_tmp_bytes_reference`](crate::reference::BlasEncodingReference::blas_diagonal_ciphertext_prepare_tmp_bytes_reference),
+    /// never less than the body takes.
+    fn blas_diagonal_ciphertext_prepare_tmp_bytes<A: BlasDiagonalCiphertextInfos>(module: &Module<Self>, infos: &A) -> usize;
+
+    /// Reproduces
+    /// [`BlasEncodingReference::blas_diagonal_ciphertext_prepare_reference`](crate::reference::BlasEncodingReference::blas_diagonal_ciphertext_prepare_reference)
+    /// bit for bit, within [`Self::blas_diagonal_ciphertext_prepare_tmp_bytes`], writing `res` through
+    /// [`BlasDiagonalCiphertextPrepared::diagonals_mut`].
+    ///
+    /// **Fixed:** poulpy-ckks's `ckks_prepare_linear_transformation_rhs` of the diagonals. **Free:** the prepared form,
+    /// kernels, scratch use and the order of the diagonals.
+    ///
+    /// It panics as [`Self::blas_context_prepare`] does.
+    fn blas_diagonal_ciphertext_prepare(
+        module: &Module<Self>,
+        res: &mut BlasDiagonalCiphertextPrepared<Self>,
+        other: &BlasDiagonalCiphertext<Self>,
+        scratch: &mut ScratchArena<'_, Self>,
+    );
+
     /// Scratch bound of [`Self::blas_context_prepare`]; may report less than
     /// [`BlasEncodingReference::blas_context_prepare_tmp_bytes_reference`](crate::reference::BlasEncodingReference::blas_context_prepare_tmp_bytes_reference),
     /// never less than the body takes.
@@ -270,6 +293,22 @@ macro_rules! impl_blas_encoding_reference_full {
                 infos: &A,
             ) -> usize {
                 $crate::reference::BlasEncodingReference::blas_matvec_operand_prepare_tmp_bytes_reference(module, infos)
+            }
+
+            fn blas_diagonal_ciphertext_prepare_tmp_bytes<A: $crate::layouts::BlasDiagonalCiphertextInfos>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                infos: &A,
+            ) -> usize {
+                $crate::reference::BlasEncodingReference::blas_diagonal_ciphertext_prepare_tmp_bytes_reference(module, infos)
+            }
+
+            fn blas_diagonal_ciphertext_prepare(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                res: &mut $crate::layouts::BlasDiagonalCiphertextPrepared<Self>,
+                other: &$crate::layouts::BlasDiagonalCiphertext<Self>,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
+            ) {
+                $crate::reference::BlasEncodingReference::blas_diagonal_ciphertext_prepare_reference(module, res, other, scratch)
             }
 
             fn blas_matvec_operand_prepare(

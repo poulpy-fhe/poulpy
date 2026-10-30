@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 
 use poulpy_ckks::{
     CKKSInfos, CKKSModuleInfos, GLWEPlaintextInfos, SetCKKSInfos, SetGLWEPlaintextInfos, SlotsKind,
-    api::{CKKSEncodingHostOps, CKKSEncodingOps, CKKSLinearTransformationOps},
+    api::{CKKSEncodingHostOps, CKKSEncodingOps, CKKSLinearTransformationOps, CKKSMulOps},
     layouts::CKKSModuleAlloc,
     test_suite::{
         CKKSTestParams,
@@ -29,14 +29,18 @@ use super::{
         mapped_layout, matmul_left_operand, matmul_right_operand, product_layout, pt_operand, rotation_keys,
     },
     matmul::public_entry,
-    matvec::{alloc_vector, matvec_layouts, matvec_model, matvec_operands, vector_entry, vector_slots},
+    matvec::{
+        DiagonalCiphertextModel, alloc_vector, append, append_tmp_bytes, diagonal_ciphertext_elements,
+        diagonal_ciphertext_layout, matvec_layouts, matvec_model, matvec_operands, prepared_of, vector_entry, vector_slots,
+    },
 };
 use crate::{
     api::{BlasEncodingOps, BlasMatInterOps, BlasMatIntraOps, BlasMatMulOps, BlasMatVecOps},
     layouts::{
-        BlasCiphertext, BlasCiphertextOwned, BlasContextInfos, BlasGridInfos, BlasLayout, BlasPlan, BlasPtAlgorithm,
-        BlasPtOperandPrepared, BlasVector, BlasVectorInfos, BlasVectorLayout, BlasVectorOwned, BlasVectorShape, Left, Right,
-        blas_matvec_pt_output_layout, ciphertext::layout_of, matvec_pt_galois_elements, replicated, sum_galois_elements,
+        BlasCiphertext, BlasCiphertextOwned, BlasContextInfos, BlasGridInfos, BlasLayout, BlasModuleAlloc, BlasPlan,
+        BlasPtAlgorithm, BlasPtOperandPrepared, BlasVector, BlasVectorInfos, BlasVectorLayout, BlasVectorOwned, BlasVectorShape,
+        Left, Right, blas_matvec_diagonal_output_layout, blas_matvec_pt_output_layout, ciphertext::layout_of,
+        diagonal_ciphertext::AppendAxis, matvec_pt_galois_elements, replicated, sum_galois_elements,
     },
     oep::BlasImpl,
 };
@@ -48,7 +52,8 @@ use crate::{
 /// `blas_matmul_prepared` of every mix and `blas_matmul`, by a right factor of distinct matrices and by one whose
 /// compact encryption proves it holds one matrix, `blas_matmul_pt_right` and `blas_matmul_pt_left` under every
 /// algorithm, the masked ones under the context's masks and on the right of one public matrix, each on exactly the
-/// scratch its query reports, and `blas_matvec_pt` of a real vector, resident and streamed. Every output decrypts to its
+/// scratch its query reports, `blas_matvec_pt` of a real vector, resident and streamed, and the row and column appends of
+/// a diagonal ciphertext by real masks then its product by a real vector. Every output decrypts to its
 /// cleartext model at the metadata [`copied_layout`],
 /// [`mapped_layout`] or [`product_layout`] gives, and its slots, like the prepared operands', are `Real`. On fewer than
 /// 16 slots, which hold no `4 x 4` block, it is skipped with a message.
@@ -370,6 +375,84 @@ pub fn test_blas_conjugate_invariant<BE>(
         &res,
         &want,
         period,
+        &want_layout,
+        &mut scratch.borrow(),
+    );
+
+    // A diagonal ciphertext of real diagonals: a row and a column appended by real masks of one and two slots, prepared to
+    // reuse and once, then its product by a real vector.
+    let layout = diagonal_ciphertext_layout(&params, slots, k - p);
+    let keys = TestKeys::<BE> {
+        atks: rotation_keys(
+            &params,
+            module,
+            &sk_raw,
+            diagonal_ciphertext_elements(order, &layout),
+            &mut scratch.borrow(),
+        ),
+        tsk: Some(gen_tsk(&params, module, &sk_raw, &mut scratch.borrow())),
+    };
+    let whole = BlasVectorShape::new(slots, slots, 0, 1);
+    let real_mask = |set: &[usize], hint: PrepareHint, scratch: &mut ScratchArena<'_, BE>| {
+        let mut re = vec![0.0; slots];
+        set.iter().for_each(|&s| re[s] = 1.0);
+        let mut pt = module.ckks_pt_vec_alloc(slots, params.base2k.into(), params.prec().k());
+        pt.set_meta(params.prec().meta());
+        module
+            .ckks_encode_reim_into(&mut pt, &re, &vec![0.0; slots], scratch)
+            .unwrap();
+        let mask = module.ckks_prepare_right(&pt, hint, scratch).unwrap();
+        (re, mask)
+    };
+    let masks = [
+        real_mask(&[0], PrepareHint::Reuse, &mut scratch.borrow()),
+        real_mask(&[0, slots / 2], PrepareHint::OneShot, &mut scratch.borrow()),
+    ];
+    let mut m = module.blas_diagonal_ciphertext_alloc_from_infos(&layout);
+    let mut model = DiagonalCiphertextModel::new(slots, (0..8).collect());
+    for (axis, at, (mask, mask_prepared)) in [(AppendAxis::Row, 1, &masks[0]), (AppendAxis::Col, 4, &masks[1])] {
+        let v: Vec<f64> = (0..slots).map(|e| vector_entry(3 * e + at as usize)).collect();
+        let ct_v = encrypt_real_vector(&params, module, &sk, whole, slots, &v, &mut scratch.borrow());
+        with_scratch::<BE, _>(append_tmp_bytes(module, axis, &m, &ct_v, mask_prepared, &atk), |s| {
+            append(module, axis, &mut m, at, &ct_v, mask_prepared, &keys, s)
+        })
+        .unwrap();
+        model.append(axis, at, mask, &v);
+    }
+    let x: Vec<f64> = (0..slots).map(vector_entry).collect();
+    let ct_x = encrypt_real_vector(&params, module, &sk, whole, slots, &x, &mut scratch.borrow());
+    let mut res = alloc_vector(&params, module, whole, k);
+    let want_layout = blas_matvec_diagonal_output_layout(&res, &m, &ct_x);
+    with_scratch::<BE, _>(module.blas_matvec_diagonal_tmp_bytes(&res, &m, &ct_x, &tsk, &atk), |s| {
+        module.blas_matvec_diagonal(&mut res, &m, &ct_x, &keys, s)
+    })
+    .unwrap();
+    assert_real_vector(
+        "streamed matvec of a diagonal ciphertext",
+        &params,
+        module,
+        &sk,
+        &res,
+        &model.matvec(&x),
+        slots,
+        &want_layout,
+        &mut scratch.borrow(),
+    );
+    let prepared = prepared_of(module, &m);
+    let mut res = alloc_vector(&params, module, whole, k);
+    with_scratch::<BE, _>(
+        module.blas_matvec_diagonal_tmp_bytes(&res, &prepared, &ct_x, &tsk, &atk),
+        |s| module.blas_matvec_diagonal(&mut res, &prepared, &ct_x, &keys, s),
+    )
+    .unwrap();
+    assert_real_vector(
+        "resident matvec of a diagonal ciphertext",
+        &params,
+        module,
+        &sk,
+        &res,
+        &model.matvec(&x),
+        slots,
         &want_layout,
         &mut scratch.borrow(),
     );

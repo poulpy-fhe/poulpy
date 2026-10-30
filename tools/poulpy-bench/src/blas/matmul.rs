@@ -14,8 +14,8 @@ use std::collections::{BTreeSet, HashMap};
 use criterion::{Bencher, measurement::Measurement};
 use poulpy_blas::{
     api::{
-        BlasContextPreparedFactory, BlasEncodingOps, BlasMatIntraOps, BlasMatMulOps, BlasMatVecOperandPreparedFactory,
-        BlasPtOperandPreparedFactory,
+        BlasContextPreparedFactory, BlasDiagonalCiphertextPreparedFactory, BlasEncodingOps, BlasMatIntraOps, BlasMatMulOps,
+        BlasMatVecOperandPreparedFactory, BlasPtOperandPreparedFactory,
     },
     layouts::{
         BlasCiphertext, BlasCiphertextOwned, BlasContextPrepared, BlasGridInfos, BlasModuleAlloc, BlasPlan, BlasPtAlgorithm,
@@ -176,7 +176,7 @@ pub(super) fn verify_within<BE>(
 }
 
 /// What a runner asks of a module beyond the operation itself: the key generation, encryption and decryption of
-/// poulpy-ckks, the encoding of the maps, and their preparation.
+/// poulpy-ckks, the encoding of the maps, their preparation, and the synchronization that closes a timed call.
 pub trait BlasBenchModule<BE: Backend>:
     TestContextSharedModule<BE>
     + CKKSEncodingOps<BE, f64>
@@ -184,6 +184,7 @@ pub trait BlasBenchModule<BE: Backend>:
     + BlasContextPreparedFactory<BE>
     + BlasPtOperandPreparedFactory<BE>
     + BlasMatVecOperandPreparedFactory<BE>
+    + BlasDiagonalCiphertextPreparedFactory<BE>
     + CKKSLinearTransformationOps<BE>
     + CnvPVecAlloc<BE>
     + ModuleSynchronize<BE>
@@ -197,6 +198,7 @@ impl<BE: Backend, M> BlasBenchModule<BE> for M where
         + BlasContextPreparedFactory<BE>
         + BlasPtOperandPreparedFactory<BE>
         + BlasMatVecOperandPreparedFactory<BE>
+        + BlasDiagonalCiphertextPreparedFactory<BE>
         + CKKSLinearTransformationOps<BE>
         + CnvPVecAlloc<BE>
         + ModuleSynchronize<BE>
