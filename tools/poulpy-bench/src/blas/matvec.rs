@@ -434,14 +434,14 @@ where
 /// stores every diagonal of a `d x d` matrix between these shapes, `2d - 1`, whatever its values.
 pub fn runner_blas_grid_to_vector_resident<BE, M>(bencher: &mut Bencher<'_, M>, bp: &BlasBenchParams)
 where
-    BE: Backend<Ring = Standard> + 'static + BlasMatVecImpl + MaxBase2k,
+    BE: Backend<Ring = Standard> + HostStaged + 'static + BlasMatVecImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     M: Measurement,
 {
     let op = "blas_grid_to_vector_resident";
     timed::<BE, M, _>(bencher, op, bp, || {
-        let mut client = Client::<BE>::new(bp);
+        let mut client = Client::<BE, BE>::new(bp);
         let (slots, d) = (bp.slots(), bp.d());
         let line = BlasGridLine::Row { mat_slot: 0, row: 1 };
         let a = client.encrypt(bp, 1, 1, bp.batch(), |s, r, c| entry(6, s, r, c));
