@@ -149,7 +149,7 @@ pub(crate) fn grid_model(log_d: usize, proven: usize) -> Grid {
 /// and in a matrix the grid's label proves only as a repetition of the first, with the operand resident and streamed,
 /// which give the same bits, on the operand's key set alone, at the metadata [`blas_grid_to_vector_output_layout`]
 /// gives; `res` is one limb wider than the result. One byte short of its query, the call panics before it writes
-/// `res`. Below the slots [`repack_fits`] asks, it is skipped with a message.
+/// `res`. Below `4 d^2` slots, or 16, it is skipped with a message.
 pub fn test_blas_grid_to_vector<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -328,8 +328,7 @@ pub(crate) fn placed(case: &VectorToGridCase, y: &[f64]) -> Grid {
 /// grid, from dense and repeating vectors, for a column placed through the identity, and for a scalar spread into a
 /// row through maps that rotate nothing, resident and streamed giving the same bits, on the operand's key set alone, at
 /// the layout [`blas_vector_to_grid_output_layout`] gives; `res` is one limb wider than the result. One byte short of
-/// its query, the call panics before it writes `res`. Below the slots [`repack_fits`] asks, it is skipped with a
-/// message.
+/// its query, the call panics before it writes `res`. Below `4 d^2` slots, or 16, it is skipped with a message.
 pub fn test_blas_vector_to_grid<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -438,8 +437,7 @@ pub fn test_blas_vector_to_grid<BE, F, E>(
 /// output, an input of another shape than the operand's input, an operand whose output period holds no matrix, every
 /// `res` of [`rejected_grids`] and [`foreign_layouts`], a `res` whose blocks do not tile its shape, an input whose
 /// entries pass the period its label proves, a store lacking a key, `a` and `res` both of another rank than the keys,
-/// and an input whose budget is below the operand's scale. Below the slots [`repack_fits`] asks, it is skipped with a
-/// message.
+/// and an input whose budget is below the operand's scale. Below `4 d^2` slots, or 16, it is skipped with a message.
 pub fn test_blas_repack_guards<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
