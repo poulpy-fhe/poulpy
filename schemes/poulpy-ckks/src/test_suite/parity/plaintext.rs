@@ -1,12 +1,12 @@
 //! Plaintext extraction on coefficients each backend samples from the same seed, and metadata.
 use super::{arithmetic::layout, helpers::*};
 use crate::{CKKSInfos, SlotsKind, oep::CKKSPlaintextVecImpl, test_suite::CKKSTestParams};
-use poulpy_core::{GLWEMaskFill, layouts::LWEInfos};
+use poulpy_core::{GLWEFill, layouts::LWEInfos};
 use poulpy_hal::layouts::{Backend, Module};
 
 fn exercise<BE: Backend<ZnxWord = i64> + CKKSPlaintextVecImpl>(params: CKKSTestParams, module: &Module<BE>) -> Vec<Snapshot>
 where
-    Module<BE>: GLWEMaskFill<BE>,
+    Module<BE>: GLWEFill<BE>,
 {
     let b = params.base2k;
     let mut results = Vec::new();
@@ -43,8 +43,8 @@ pub fn test_plaintext_parity<BR, BT, F>(params: CKKSTestParams, module_ref: &Mod
 where
     BR: Backend<ZnxWord = i64> + CKKSPlaintextVecImpl,
     BT: Backend<ZnxWord = i64> + CKKSPlaintextVecImpl,
-    Module<BR>: GLWEMaskFill<BR>,
-    Module<BT>: GLWEMaskFill<BT>,
+    Module<BR>: GLWEFill<BR>,
+    Module<BT>: GLWEFill<BT>,
 {
     let _scalar = std::marker::PhantomData::<F>;
     let want = exercise(params, module_ref);

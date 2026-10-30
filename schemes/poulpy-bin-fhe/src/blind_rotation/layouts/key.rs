@@ -7,6 +7,7 @@ use std::{fmt, marker::PhantomData};
 
 use poulpy_core::{
     Distribution, TransferInto,
+    layouts::GGSWAlloc,
     layouts::{Base2K, Degree, Dnum, GGSW, GGSWInfos, GLWEInfos, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision},
 };
 
@@ -154,7 +155,7 @@ pub struct BlindRotationKey<D: Data, BRT: BlindRotationAlgo, W: ZnxWord> {
 impl<D: Data, BRA: BlindRotationAlgo, W: ZnxWord> BlindRotationKey<D, BRA, W> {
     pub fn alloc<M, A>(module: &M, infos: &A) -> BlindRotationKey<D, BRA, W>
     where
-        M: ModuleCoreAlloc<OwnedBuf = D, ZnxWord = W> + ModuleN,
+        M: GGSWAlloc + ModuleCoreAlloc<OwnedBuf = D, ZnxWord = W> + ModuleN,
         A: BlindRotationKeyInfos,
     {
         BRA::alloc_key(module, infos)

@@ -29,7 +29,7 @@ pub fn blind_rotation_key_decompress_reference<BE: Backend>(
 {
     assert_eq!(res.keys.len(), src.keys.len());
     for (output, input) in res.keys.iter_mut().zip(&src.keys) {
-        module.decompress_ggsw(output, input);
+        module.ggsw_decompress(output, input);
     }
     res.dist = src.dist;
 }

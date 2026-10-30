@@ -1,8 +1,10 @@
 use poulpy_core::{
     GetDistribution, TransferInto,
+    layouts::GGSWAlloc,
     layouts::{
-        GGLWEInfos, GGLWEToGGSWKey, GGLWEToGGSWKeyLayout, GGSWInfos, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWEInfos,
-        GLWESecretToBackendRef, LWEInfos, LWESecretToBackendRef, ModuleCoreAlloc,
+        GGLWEInfos, GGLWEToGGSWKey, GGLWEToGGSWKeyAlloc, GGLWEToGGSWKeyLayout, GGSWInfos, GLWEAutomorphismKey,
+        GLWEAutomorphismKeyAlloc, GLWEAutomorphismKeyLayout, GLWEInfos, GLWESecretToBackendRef, LWEInfos, LWESecretToBackendRef,
+        ModuleCoreAlloc,
     },
 };
 use poulpy_hal::layouts::ZnxWord;
@@ -110,7 +112,7 @@ impl<D: Data, BRA: BlindRotationAlgo, W: ZnxWord> CircuitBootstrappingKey<D, BRA
 
     pub fn alloc_from_infos<M, A: CircuitBootstrappingKeyInfos>(module: &M, infos: &A) -> Self
     where
-        M: ModuleCoreAlloc<OwnedBuf = D, ZnxWord = W> + ModuleN,
+        M: GGSWAlloc + ModuleCoreAlloc<OwnedBuf = D, ZnxWord = W> + GGLWEToGGSWKeyAlloc + GLWEAutomorphismKeyAlloc + ModuleN,
     {
         let atk_infos: &GLWEAutomorphismKeyLayout = &infos.atk_infos();
         let brk_infos: &BlindRotationKeyLayout = &infos.brk_infos();

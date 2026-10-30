@@ -7,7 +7,7 @@ use poulpy_hal::{
 use crate::test_suite::poisoned_scratch;
 use crate::{
     GLWERotate,
-    layouts::{GLWE, GLWEInfos, GLWELayout, ModuleCoreAlloc},
+    layouts::{GLWE, GLWEAlloc, GLWEInfos, GLWELayout},
 };
 
 fn negacyclic_rotate(src: &[i64], k: i64) -> Vec<i64> {

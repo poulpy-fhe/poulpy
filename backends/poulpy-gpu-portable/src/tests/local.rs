@@ -2,7 +2,7 @@
 //! against their reference compositions, and views the suites do not build.
 
 use once_cell::sync::Lazy;
-use poulpy_core::reference::operations::GLWETensoringReference;
+use poulpy_core::reference::{keyswitching::GGLWEProductDigitsStridedReference, operations::GLWETensoringReference};
 use poulpy_hal::{
     api::{
         CnvOps, CnvPVecAlloc, ScratchOwnedAlloc, VecZnxBigAlloc, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
@@ -75,8 +75,8 @@ fn digits_case<R: Ring>(
 ) {
     let mut seed = 0x1234_5678_9abc_def0u64 ^ ((a_size * 131 + dsize * 17 + rows * 7 + res_size) as u64);
     let mut scratch = ScratchOwned::<BE<R>>::alloc(module.vmp_prepare_tmp_bytes(rows, cols_in, cols_out, key_size).max(
-        poulpy_core::reference::keyswitching::glwe::gglwe_product_digits_strided_tmp_bytes_reference(
-            module, res_size, cols_in, a_size, dsize, rows, cols_in, cols_out, key_size,
+        module.gglwe_product_digits_strided_tmp_bytes_reference(
+            res_size, cols_in, a_size, dsize, rows, cols_in, cols_out, key_size,
         ),
     ));
     let fill = |count: usize, seed: &mut u64| {
@@ -125,8 +125,7 @@ fn digits_case<R: Ring>(
     let mut destination_seed = seed;
     let mut want = transformed(module, n, cols_out, res_size, &mut destination_seed);
     let mut have = transformed(module, n, cols_out, res_size, &mut seed);
-    poulpy_core::reference::keyswitching::glwe::gglwe_product_digits_strided_reference(
-        module,
+    module.gglwe_product_digits_strided_reference(
         &mut want.to_backend_mut(),
         &a.to_backend_ref(),
         dsize,
@@ -774,8 +773,8 @@ macro_rules! bootstrap_shapes {
         crate::hal_impl::gglwe_product_digits_strided($res, $a, $dsize, $limbs, $pmat)
     }};
     (@digits reference, $module:expr, $res:expr, $a:expr, $dsize:expr, $limbs:expr, $pmat:expr, $bytes:expr) => {
-        poulpy_core::reference::keyswitching::glwe::gglwe_product_digits_strided_reference(
-            $module, $res, $a, $dsize, $limbs, $pmat, &mut ScratchOwned::alloc($bytes).arena(),
+        $module.gglwe_product_digits_strided_reference(
+            $res, $a, $dsize, $limbs, $pmat, &mut ScratchOwned::alloc($bytes).arena(),
         )
     };
     (@tensor kernel, $module:expr, $offset:expr, $diag:expr, $cross:expr, $left:expr, $right:expr, $bytes:expr) => {{
@@ -854,8 +853,8 @@ macro_rules! bootstrap_shapes {
                 let mut a_dft = module.vec_znx_dft_alloc(n, 1, a_size);
                 module.vec_znx_dft_apply(1, 0, &mut a_dft.to_backend_mut(), 0, &vec_znx_backend_ref::<B>(&a), 0);
                 let mut switched = module.vec_znx_dft_alloc(n, 2, a_size + 2);
-                let bytes = poulpy_core::reference::keyswitching::glwe::gglwe_product_digits_strided_tmp_bytes_reference(
-                    &module, a_size + 2, 1, a_size, dsize, rows, 1, 2, key_size,
+                let bytes = module.gglwe_product_digits_strided_tmp_bytes_reference(
+                    a_size + 2, 1, a_size, dsize, rows, 1, 2, key_size,
                 );
                 bootstrap_shapes!(@digits $path, &module, &mut switched.to_backend_mut(), &a_dft.to_backend_ref(), dsize, 3,
                     &pmat.to_backend_ref(), bytes);
@@ -1552,7 +1551,7 @@ fn linear_transformation_parity_takes_the_batched_giant_steps() {
 #[cfg(feature = "enable-core")]
 #[test]
 fn const_combination_matches_reference() {
-    use poulpy_core::{oep::ConstTerm, reference::operations::glwe_const_combination_reference};
+    use poulpy_core::{oep::ConstTerm, reference::operations::GLWEMulConstReference};
     let module = &*MODULE;
     let mut scratch = ScratchOwned::<Gpu>::alloc(1 << 22);
     let (base2k, a_size, b_size, res_size) = (50, 6, 3, 5);
@@ -1578,8 +1577,7 @@ fn const_combination_matches_reference() {
             let mut destination_seed = seed;
             let mut want = vector::<poulpy_hal::layouts::Standard>(N, 2, res_size, &mut destination_seed);
             let mut have = vector::<poulpy_hal::layouts::Standard>(N, 2, res_size, &mut seed);
-            glwe_const_combination_reference(
-                module,
+            module.glwe_const_combination_reference(
                 &mut vec_znx_backend_mut::<Gpu>(&mut want),
                 base2k,
                 res_k,

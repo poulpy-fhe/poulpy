@@ -1,11 +1,11 @@
 //! Derived BSGS schedules over caller-supplied arithmetic policy operations.
 //!
-//! The schedule composes `BSGSOps` rather than HAL kernels. The policy owns
+//! The schedule composes `GLWEBSGSOps` rather than HAL kernels. The policy owns
 //! scheme-specific precision and normalization; default backend hooks preserve
 //! that policy dispatch, including fused baby steps and prepared giant products.
 
 use crate::{
-    api::BSGSOps,
+    api::GLWEBSGSOps,
     layouts::{BabyStep, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey, Parity, PowerBasisHelper},
 };
 use anyhow::{Result, ensure};
@@ -13,7 +13,7 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 /// Evaluates a single baby step into `res`.
 ///
-/// All arithmetic is delegated to the scheme via [`BSGSOps`]; the engine only
+/// All arithmetic is delegated to the scheme via [`GLWEBSGSOps`]; the engine only
 /// computes the parity schedule, seeds the accumulator from the *highest* power
 /// (the lowest-budget operand, so every term writes at the final result width)
 /// and sequences the terms.
@@ -27,7 +27,7 @@ pub(crate) fn glwe_eval_baby_step_derived<BE: Backend, Ops, V, P, G, A>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    Ops: BSGSOps<BE, V, P, A, V>,
+    Ops: GLWEBSGSOps<BE, V, P, A, V>,
     V: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
     P: GLWEToBackendRef<BE> + GLWEInfos,
     A: GLWEToBackendRef<BE>,
@@ -72,7 +72,7 @@ where
 /// Folds the evaluated baby steps into `res` using the giant-step schedule.
 ///
 /// The engine owns the schedule and the hoisting (`X^{gsp}` is prepared once per
-/// level via [`BSGSOps::prepare_right`] and reused across the level's
+/// level via [`GLWEBSGSOps::prepare_right`] and reused across the level's
 /// sibling pairs); the per-pair `ct×ct`/`ct+ct` arithmetic and the final copy are
 /// delegated to the scheme.
 pub(crate) fn glwe_eval_giant_steps_derived<R, B, V, P, A, G, H, BE: Backend, Ops>(
@@ -85,7 +85,7 @@ pub(crate) fn glwe_eval_giant_steps_derived<R, B, V, P, A, G, H, BE: Backend, Op
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    Ops: BSGSOps<BE, V, P, A, R>,
+    Ops: GLWEBSGSOps<BE, V, P, A, R>,
     R: GLWEToBackendMut<BE>,
     B: BabyStep<BE, Value = V>,
     V: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,

@@ -44,8 +44,9 @@ use poulpy_core::{
         TransferInto,
     },
     layouts::{
-        BackendGLWESecret, Base2K, Degree, Dnum, Dsize, GGLWELayout, GLWEAutomorphismKeyLayout, GLWELayout, GLWETensorKeyLayout,
-        LWEInfos, ModuleCoreAlloc, Rank, SetK, TorusPrecision, k_digit_of,
+        BackendGLWESecret, Base2K, Degree, Dnum, Dsize, GGLWELayout, GLWEAutomorphismKeyAlloc, GLWEAutomorphismKeyLayout,
+        GLWELayout, GLWESecretAlloc, GLWETensorKeyAlloc, GLWETensorKeyLayout, LWEInfos, ModuleCoreAlloc, Rank, SetK,
+        TorusPrecision, k_digit_of,
         prepared::{GLWEAutomorphismKeyPrepared, GLWESecretPrepared, GLWETensorKeyPrepared},
     },
 };
@@ -439,7 +440,7 @@ where
             .glwe_tensor_key_encrypt_sk(&mut tsk, &self.sk_raw, &mut self.xe, &mut self.xa, &mut self.arena.borrow());
         let mut moved = self.module.glwe_tensor_key_alloc_from_infos(&layout);
         tsk.transfer_into(&mut moved);
-        let mut prepared = self.module.alloc_tensor_key_prepared_from_infos(&layout);
+        let mut prepared = self.module.glwe_tensor_key_prepared_alloc_from_infos(&layout);
         self.module
             .glwe_tensor_key_prepare(&mut prepared, &moved, &mut self.prepare.borrow());
         prepared

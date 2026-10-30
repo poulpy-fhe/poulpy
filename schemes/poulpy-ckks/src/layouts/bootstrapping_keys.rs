@@ -34,20 +34,20 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use anyhow::Result;
 use poulpy_core::{
-    GLWEAutomorphismKeyEncryptSk, GLWEBytesOf, GLWECIKeyEncryptSk, GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk,
-    ScratchArenaTakeCore,
+    GGLWEBytesOf, GLWEAutomorphismKeyEncryptSk, GLWEBytesOf, GLWECIKeyEncryptSk, GLWESwitchingKeyEncryptSk,
+    GLWETensorKeyEncryptSk, ScratchArenaTakeGGLWE, ScratchArenaTakeGLWESecret,
     api::{
         GLWEAutomorphismKeyPreparedFactory, GLWECIKeyPreparedFactory, GLWESwitchingKeyPreparedFactory,
         GLWETensorKeyPreparedFactory,
     },
     layouts::{
         BackendGLWESecret, Degree, GGLWEBackendRef, GGLWEInfos, GGLWELayout, GGLWEPreparedToBackendMut,
-        GGLWEPreparedToBackendRef, GGLWEToBackendRef, GGLWEViewMut, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout,
-        GLWEAutomorphismKeyPrepared, GLWECIEmbedKey, GLWECIEmbedKeyPrepared, GLWECIKeyPrepared, GLWECITraceKey,
-        GLWECITraceKeyPrepared, GLWEInfos, GLWESecretBackendRef, GLWESecretToBackendRef, GLWESwitchingKey,
-        GLWESwitchingKeyDegrees, GLWESwitchingKeyDegreesMut, GLWESwitchingKeyLayout, GLWESwitchingKeyPrepared, GLWETensorKey,
-        GLWETensorKeyLayout, GLWETensorKeyPrepared, GetAutomorphismKey, GetGaloisElement, GetTensorKey, LWEInfos,
-        ModuleCoreAlloc,
+        GGLWEPreparedToBackendRef, GGLWEToBackendRef, GGLWEViewMut, GLWEAutomorphismKey, GLWEAutomorphismKeyAlloc,
+        GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPrepared, GLWECIEmbedKey, GLWECIEmbedKeyAlloc, GLWECIEmbedKeyPrepared,
+        GLWECIKeyPrepared, GLWECITraceKey, GLWECITraceKeyAlloc, GLWECITraceKeyPrepared, GLWEInfos, GLWESecretBackendRef,
+        GLWESecretToBackendRef, GLWESwitchingKey, GLWESwitchingKeyAlloc, GLWESwitchingKeyDegrees, GLWESwitchingKeyDegreesMut,
+        GLWESwitchingKeyLayout, GLWESwitchingKeyPrepared, GLWETensorKey, GLWETensorKeyAlloc, GLWETensorKeyLayout,
+        GLWETensorKeyPrepared, GetAutomorphismKey, GetGaloisElement, GetTensorKey, LWEInfos, ModuleCoreAlloc,
         prepared::{GLWEAutomorphismKeyPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
     },
 };
@@ -284,7 +284,7 @@ impl<D: Data, W: ZnxWord> BootstrappingKeySet<D, W> {
             + GLWESwitchingKeyPreparedFactory<BE>,
     {
         self.prepare_with(module, scratch, |tensor_key, scratch| {
-            let mut prepared = module.alloc_tensor_key_prepared_from_infos(tensor_key);
+            let mut prepared = module.glwe_tensor_key_prepared_alloc_from_infos(tensor_key);
             module.glwe_tensor_key_prepare(&mut prepared, tensor_key, scratch);
             prepared
         })
@@ -436,7 +436,8 @@ impl BootstrappingKeysLayout {
         Module<BE>: GLWEAutomorphismKeyPreparedFactory<BE>
             + GLWESwitchingKeyPreparedFactory<BE>
             + GLWETensorKeyPreparedFactory<BE>
-            + GLWEBytesOf<BE>,
+            + GLWEBytesOf<BE>
+            + GGLWEBytesOf<BE>,
     {
         // Each key's preparation, beside the copy [`BootstrappingKeySet::transfer_and_prepare`]
         // moves it into.
@@ -462,7 +463,8 @@ impl BootstrappingKeysLayout {
         Module<BE>: GLWEAutomorphismKeyPreparedFactory<BE>
             + GLWESwitchingKeyPreparedFactory<BE>
             + GLWECIKeyPreparedFactory<BE>
-            + GLWEBytesOf<BE>,
+            + GLWEBytesOf<BE>
+            + GGLWEBytesOf<BE>,
         Module<BCI>: GLWETensorKeyPreparedFactory<BCI> + GLWEBytesOf<BCI>,
     {
         let Some((trace, embed)) = &self.conversion_keys else {
@@ -1017,7 +1019,7 @@ impl<D: Data, W: ZnxWord> BootstrappingKeySet<D, W> {
             anyhow::bail!("the key set has no conversion keys, which EvalMod on the CI ring takes");
         };
         let mut keys = self.prepare_with(module, scratch, |tensor_key, _| {
-            let mut prepared = ci.alloc_tensor_key_prepared_from_infos(tensor_key);
+            let mut prepared = ci.glwe_tensor_key_prepared_alloc_from_infos(tensor_key);
             ci.glwe_tensor_key_prepare(&mut prepared, tensor_key, scratch_ci);
             prepared
         });
@@ -1049,7 +1051,7 @@ impl<D: Data, W: ZnxWord> BootstrappingKeySet<D, W> {
         self.transfer_and_prepare_with(module, scratch, |tensor_key, scratch| {
             let (mut moved, mut scratch) = scratch.borrow().take_gglwe_scratch(tensor_key);
             tensor_key.transfer_into(&mut moved);
-            let mut prepared = module.alloc_tensor_key_prepared_from_infos(tensor_key);
+            let mut prepared = module.glwe_tensor_key_prepared_alloc_from_infos(tensor_key);
             module.glwe_tensor_key_prepare(&mut prepared, &moved, &mut scratch);
             prepared
         })
@@ -1078,7 +1080,7 @@ impl<D: Data, W: ZnxWord> BootstrappingKeySet<D, W> {
         let mut keys = self.transfer_and_prepare_with(module, scratch, |tensor_key, _| {
             let (mut moved, mut scratch_ci) = scratch_ci.borrow().take_gglwe_scratch(tensor_key);
             tensor_key.transfer_into(&mut moved);
-            let mut prepared = ci.alloc_tensor_key_prepared_from_infos(tensor_key);
+            let mut prepared = ci.glwe_tensor_key_prepared_alloc_from_infos(tensor_key);
             ci.glwe_tensor_key_prepare(&mut prepared, &moved, &mut scratch_ci);
             prepared
         });

@@ -151,23 +151,27 @@ pub unsafe trait SecretImpl: Backend + SamplingImpl + HalVecZnxImpl {
         O: GLWESecretToBackendRef<Self> + GetDistribution;
 
     /// Reproduces
-    /// [`glwe_secret_tensor_prepared_prepare_reference`](crate::reference::secret::SecretReference::glwe_secret_tensor_prepared_prepare_reference)
+    /// [`glwe_secret_tensor_prepare_reference`](crate::reference::secret::SecretReference::glwe_secret_tensor_prepare_reference)
     /// bit for bit; it takes no scratch.
-    fn glwe_secret_tensor_prepared_prepare<R, O>(module: &Module<Self>, res: &mut R, other: &O)
+    fn glwe_secret_tensor_prepare<R, O>(module: &Module<Self>, res: &mut R, other: &O)
     where
         R: GLWESecretTensorPreparedToBackendMut<Self> + GetDistributionMut,
         O: GLWESecretTensorToBackendRef<Self> + GetDistribution;
 
-    /// Scratch bytes of [`Self::glwe_secret_tensor_prepare`]: those of
-    /// [`glwe_secret_tensor_prepare_tmp_bytes_reference`](crate::reference::secret::SecretReference::glwe_secret_tensor_prepare_tmp_bytes_reference),
+    /// Scratch bytes of [`Self::glwe_secret_tensor_from_glwe_secret`]: those of
+    /// [`glwe_secret_tensor_from_glwe_secret_tmp_bytes_reference`](crate::reference::secret::SecretReference::glwe_secret_tensor_from_glwe_secret_tmp_bytes_reference),
     /// or fewer for an override needing fewer.
-    fn glwe_secret_tensor_prepare_tmp_bytes(module: &Module<Self>, rank: Rank) -> usize;
+    fn glwe_secret_tensor_from_glwe_secret_tmp_bytes(module: &Module<Self>, rank: Rank) -> usize;
 
     /// Reproduces
-    /// [`glwe_secret_tensor_prepare_reference`](crate::reference::secret::SecretReference::glwe_secret_tensor_prepare_reference)
-    /// bit for bit within [`Self::glwe_secret_tensor_prepare_tmp_bytes`], wiping that budget before returning.
-    fn glwe_secret_tensor_prepare<R, O>(module: &Module<Self>, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, Self>)
-    where
+    /// [`glwe_secret_tensor_from_glwe_secret_reference`](crate::reference::secret::SecretReference::glwe_secret_tensor_from_glwe_secret_reference)
+    /// bit for bit within [`Self::glwe_secret_tensor_from_glwe_secret_tmp_bytes`], wiping that budget before returning.
+    fn glwe_secret_tensor_from_glwe_secret<R, O>(
+        module: &Module<Self>,
+        res: &mut R,
+        other: &O,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
         R: GLWESecretTensorToBackendMut<Self> + GetDistributionMut + GLWEInfos,
         O: GLWESecretToBackendRef<Self> + GetDistribution + GLWEInfos;
 
@@ -212,19 +216,19 @@ macro_rules! impl_secret_reference_full {
                 <::poulpy_hal::layouts::Module<$be> as $crate::reference::secret::SecretReference<$be>>::glwe_secret_prepare_reference(module, res, other)
             }
 
-            fn glwe_secret_tensor_prepared_prepare<R, O>(module: &::poulpy_hal::layouts::Module<$be>, res: &mut R, other: &O)
+            fn glwe_secret_tensor_prepare<R, O>(module: &::poulpy_hal::layouts::Module<$be>, res: &mut R, other: &O)
             where
                 R: $crate::layouts::GLWESecretTensorPreparedToBackendMut<$be> + $crate::GetDistributionMut,
                 O: $crate::layouts::GLWESecretTensorToBackendRef<$be> + $crate::GetDistribution,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::secret::SecretReference<$be>>::glwe_secret_tensor_prepared_prepare_reference(module, res, other)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::secret::SecretReference<$be>>::glwe_secret_tensor_prepare_reference(module, res, other)
             }
 
-            fn glwe_secret_tensor_prepare_tmp_bytes(module: &::poulpy_hal::layouts::Module<$be>, rank: $crate::layouts::Rank) -> usize {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::secret::SecretReference<$be>>::glwe_secret_tensor_prepare_tmp_bytes_reference(module, rank)
+            fn glwe_secret_tensor_from_glwe_secret_tmp_bytes(module: &::poulpy_hal::layouts::Module<$be>, rank: $crate::layouts::Rank) -> usize {
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::secret::SecretReference<$be>>::glwe_secret_tensor_from_glwe_secret_tmp_bytes_reference(module, rank)
             }
 
-            fn glwe_secret_tensor_prepare<R, O>(
+            fn glwe_secret_tensor_from_glwe_secret<R, O>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 res: &mut R,
                 other: &O,
@@ -233,7 +237,7 @@ macro_rules! impl_secret_reference_full {
                 R: $crate::layouts::GLWESecretTensorToBackendMut<$be> + $crate::GetDistributionMut + $crate::layouts::GLWEInfos,
                 O: $crate::layouts::GLWESecretToBackendRef<$be> + $crate::GetDistribution + $crate::layouts::GLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::secret::SecretReference<$be>>::glwe_secret_tensor_prepare_reference(module, res, other, scratch)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::secret::SecretReference<$be>>::glwe_secret_tensor_from_glwe_secret_reference(module, res, other, scratch)
             }
 
             fn glwe_secret_from_lwe_secret<S>(

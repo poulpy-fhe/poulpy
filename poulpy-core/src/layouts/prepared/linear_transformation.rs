@@ -35,7 +35,7 @@ use crate::{
 /// [`LinearTransformation`] container and differ only in the diagonal
 /// representation `P`. Allocated up-front via
 /// [`LinearTransformation::alloc_prepared`](LinearTransformation::alloc_prepared)
-/// and populated by `glwe_prepare_linear_transformation_rhs`.
+/// and populated by `glwe_linear_transformation_rhs_prepare`.
 pub type LinearTransformationPrepared<BE> = LinearTransformation<PreparedDiagonal<<BE as Backend>::OwnedBuf, BE>>;
 
 /// One prepared (convolution-domain) matrix diagonal: the right operand of the
@@ -127,10 +127,10 @@ impl<BE: Backend, T> BabyStepOperand<BE> for T where T: CnvPVecLToBackendRef<BE>
 
 /// Prepared left operands for the baby rotations of one input ciphertext.
 ///
-/// The values are populated by `glwe_prepare_linear_transformation_baby_steps`. A cache
+/// The values are populated by `glwe_linear_transformation_baby_steps_prepare`. A cache
 /// a caller keeps is allocated by [`LinearTransformationBabySteps::alloc`], and a cache
 /// one call uses is carved from its scratch arena by
-/// [`ScratchArenaTakeCore::take_linear_transformation_baby_steps_scratch`](crate::ScratchArenaTakeCore::take_linear_transformation_baby_steps_scratch),
+/// [`ScratchArenaTakeGLWELinearTransformationBabySteps::take_glwe_linear_transformation_baby_steps_scratch`](crate::ScratchArenaTakeGLWELinearTransformationBabySteps::take_glwe_linear_transformation_baby_steps_scratch),
 /// its operands of type `L` either way.
 // Generic over the operand rather than its storage `D`: hal gives backend views of a `CnvPVecL` of owned storage
 // and of its scratch wrapper, and a pair of impls over `BE::OwnedBuf` and `BE::BufMut<'_>` would overlap.
@@ -230,7 +230,7 @@ impl<BE: Backend, L: BabyStepOperand<BE>> LinearTransformationBabySteps<BE, L> {
 /// impls coherent: the backend type parameter prevents the compiler from
 /// ruling out a downstream `GLWEToBackendRef` impl for [`PreparedDiagonal`], so
 /// a blanket would clash with the resident impl.
-pub trait DiagonalProd<BE: Backend>: GLWEInfos + Sized {
+pub trait GLWEDiagonalProd<BE: Backend>: GLWEInfos + Sized {
     /// The diagonal as the right operand of its products: prepared, or a GLWE view the product prepares.
     fn operand(&self) -> DiagonalOperand<'_, BE>;
 
@@ -268,7 +268,7 @@ pub trait DiagonalProd<BE: Backend>: GLWEInfos + Sized {
     /// Most giant steps [`Self::accumulate_giant_prods`] takes per call, at least 1.
     fn giant_step_batch(_module: &Module<BE>) -> usize
     where
-        BE: crate::oep::LinearTransformationImpl,
+        BE: crate::oep::GLWELinearTransformationImpl,
     {
         1
     }
@@ -282,7 +282,7 @@ pub trait DiagonalProd<BE: Backend>: GLWEInfos + Sized {
         steps: &[LinearTransformationGiantStep<Self>],
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        BE: crate::oep::LinearTransformationImpl,
+        BE: crate::oep::GLWELinearTransformationImpl,
         Module<BE>: CnvPVecBytesOf + CnvOps<BE> + ModuleN,
     {
         assert_eq!(prods.len(), steps.len());
@@ -325,7 +325,7 @@ pub(crate) fn glwe_accumulate_prepared_baby_steps_dft<BE, M, P, L: BabyStepOpera
 ) where
     BE: Backend,
     M: CnvOps<BE>,
-    P: DiagonalProd<BE>,
+    P: GLWEDiagonalProd<BE>,
 {
     let cols = lhs.cols();
     let first = gs
@@ -375,7 +375,7 @@ fn glwe_accumulate_unprepared_baby_steps_dft<BE, M, P, L: BabyStepOperand<BE>>(
 ) where
     BE: Backend,
     M: CnvPVecBytesOf + CnvOps<BE> + ModuleN,
-    P: DiagonalProd<BE>,
+    P: GLWEDiagonalProd<BE>,
 {
     let cols = lhs.cols();
     let first = gs

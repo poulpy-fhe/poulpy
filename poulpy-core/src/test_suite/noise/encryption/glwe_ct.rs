@@ -20,15 +20,16 @@ use crate::test_suite::noise::glwe_noise_checked;
 use crate::test_suite::poisoned_scratch;
 use crate::test_suite::refusal::{assert_refusal, glwe_state};
 use crate::{
-    GLWECompressedEncryptSk, GLWEDecompress, GLWEDecrypt, GLWEEncryptPk, GLWEEncryptPkSmudged, GLWEEncryptSk, GLWEMaskFill,
+    GLWECompressedEncryptSk, GLWEDecompress, GLWEDecrypt, GLWEEncryptPk, GLWEEncryptPkSmudged, GLWEEncryptSk, GLWEFill,
     GLWENoise, GLWENormalize, GLWEPublicKeyCompressedGenerate, GLWEPublicKeyDecompress, GLWEPublicKeyGenerate, GLWESub,
     GetDistribution, GetDistributionMut, Noise, ScalarZnxFillDistribution, VecZnxAddNoise, VecZnxBigAddNoise,
     api::{GLWEPreparedFactory, GLWEPublicKeyPreparedFactory, GLWESecretPreparedFactory},
     dist::Distribution,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        GLWE, GLWEInfos, GLWELayout, GLWEPlaintext, GLWEPlaintextLayout, GLWEPrepared, GLWEPublicKey, GLWESecret, LWEInfos,
-        ModuleCoreAlloc, ModuleCoreCompressedAlloc, Rank,
+        GLWE, GLWEAlloc, GLWECompressedAlloc, GLWEInfos, GLWELayout, GLWEPlaintext, GLWEPlaintextAlloc, GLWEPlaintextLayout,
+        GLWEPrepared, GLWEPublicKey, GLWEPublicKeyAlloc, GLWEPublicKeyCompressedAlloc, GLWESecret, GLWESecretAlloc, LWEInfos,
+        Rank,
         compressed::GLWECompressed,
         prepared::{GLWEPublicKeyPrepared, GLWESecretPrepared},
     },
@@ -52,7 +53,7 @@ where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: GLWEEncryptSk<BE> + GLWEMaskFill<BE> + GLWESecretPreparedFactory<BE> + VecZnxFillUniformSource<BE>,
+    Module<BE>: GLWEEncryptSk<BE> + GLWEFill<BE> + GLWESecretPreparedFactory<BE> + VecZnxFillUniformSource<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
@@ -91,7 +92,7 @@ where
             &mut poisoned_scratch::<BE>(module.glwe_encrypt_sk_tmp_bytes(&glwe_infos)).borrow(),
         );
         let mut have: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_infos);
-        module.fill_glwe_mask_from_source(&mut have, &mut Source::new([4u8; 32]));
+        module.glwe_fill_mask_from_source(&mut have, &mut Source::new([4u8; 32]));
         module.glwe_encrypt_sk_with_mask(
             &mut have,
             &pt,
@@ -271,7 +272,7 @@ where
         );
 
         let mut ct: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_infos);
-        module.decompress_glwe(&mut ct, &ct_compressed);
+        module.glwe_decompress(&mut ct, &ct_compressed);
         assert_eq!(ct.noise(), ct_compressed.noise());
         assert_canonical(&ct);
         assert_eq!(
@@ -593,7 +594,7 @@ where
                         let mut restored = module.glwe_public_key_compressed_alloc_from_infos(&pk_infos);
                         restored.read_from(&mut bytes.as_slice()).unwrap();
                         assert!(restored == pk_compressed);
-                        module.decompress_glwe_public_key(&mut pk, &restored);
+                        module.glwe_public_key_decompress(&mut pk, &restored);
                         assert!(pk.dist() == sk_prepared.dist());
                     } else {
                         module.glwe_public_key_generate(

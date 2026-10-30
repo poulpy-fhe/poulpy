@@ -16,8 +16,9 @@ use crate::{
     decryption::GLWEDecrypt,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        GGLWE, GGLWECompressed, GGLWEInfos, GGLWELayout, GLWESecret, GLWESwitchingKey, GLWESwitchingKeyCompressed, LWEInfos,
-        ModuleCoreAlloc, ModuleCoreCompressedAlloc, prepared::GLWESecretPrepared,
+        GGLWE, GGLWEAlloc, GGLWECompressed, GGLWECompressedAlloc, GGLWEInfos, GGLWELayout, GLWESecret, GLWESecretAlloc,
+        GLWESwitchingKey, GLWESwitchingKeyAlloc, GLWESwitchingKeyCompressed, GLWESwitchingKeyCompressedAlloc, LWEInfos,
+        prepared::GLWESecretPrepared,
     },
     noise::GGLWENoise,
 };
@@ -234,7 +235,7 @@ pub fn test_gglwe_switching_key_compressed_encrypt_sk<BE: crate::test_suite::noi
 
                     let mut ksk: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord> =
                         module.glwe_switching_key_alloc_from_infos(&gglwe_infos);
-                    module.decompress_glwe_switching_key(&mut ksk, &ksk_compressed);
+                    module.glwe_switching_key_decompress(&mut ksk, &ksk_compressed);
 
                     let max_noise: f64 = DEFAULT_SIGMA_XE.log2() - (gglwe_infos.k().as_usize() as f64) + 0.5;
 
@@ -371,7 +372,7 @@ where
                     );
 
                     let mut ksk: GGLWE<BE::OwnedBuf, BE::ZnxWord> = module.gglwe_alloc_from_infos(&gglwe_infos);
-                    module.decompress_gglwe(&mut ksk, &ksk_compressed);
+                    module.gglwe_decompress(&mut ksk, &ksk_compressed);
 
                     let max_noise: f64 = DEFAULT_SIGMA_XE.log2() - (gglwe_infos.k().as_usize() as f64) + 0.5;
 

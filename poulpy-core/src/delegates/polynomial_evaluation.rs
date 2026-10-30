@@ -3,12 +3,12 @@ use anyhow::Result;
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
-    BSGSOps, GLWEPolynomialEvaluation,
+    GLWEBSGSOps, GLWEPolynomialEvaluation,
     layouts::{BabyStep, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, Parity, PowerBasisHelper},
-    oep::PolynomialEvaluationImpl,
+    oep::GLWEPolynomialEvaluationImpl,
 };
 
-impl<BE: Backend + PolynomialEvaluationImpl> GLWEPolynomialEvaluation<BE> for Module<BE> {
+impl<BE: Backend + GLWEPolynomialEvaluationImpl> GLWEPolynomialEvaluation<BE> for Module<BE> {
     fn glwe_eval_baby_step<Ops, V, P, A, G>(
         &self,
         ops: &Ops,
@@ -19,7 +19,7 @@ impl<BE: Backend + PolynomialEvaluationImpl> GLWEPolynomialEvaluation<BE> for Mo
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Ops: BSGSOps<BE, V, P, A, V>,
+        Ops: GLWEBSGSOps<BE, V, P, A, V>,
         V: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
         P: GLWEToBackendRef<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE>,
@@ -38,7 +38,7 @@ impl<BE: Backend + PolynomialEvaluationImpl> GLWEPolynomialEvaluation<BE> for Mo
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Ops: BSGSOps<BE, V, P, A, R>,
+        Ops: GLWEBSGSOps<BE, V, P, A, R>,
         R: GLWEToBackendMut<BE>,
         B: BabyStep<BE, Value = V>,
         V: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,

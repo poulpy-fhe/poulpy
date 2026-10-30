@@ -86,7 +86,7 @@ pub trait CircuitBootstrappingKeyPreparedFactory<BRA: BlindRotationAlgo, BE: Bac
         // The trace takes one automorphism key per level, log_n in all.
         self.glwe_automorphism_key_prepared_bytes_of_from_infos(&atk_infos)
             .checked_mul(atk_infos.log_n())
-            .and_then(|atk| atk.checked_add(self.bytes_of_gglwe_to_ggsw_from_infos(&tsk_infos)))
+            .and_then(|atk| atk.checked_add(self.gglwe_to_ggsw_key_prepared_bytes_of_from_infos(&tsk_infos)))
             .and_then(|bytes| bytes.checked_add(self.blind_rotation_key_prepared_bytes_of_from_infos(&infos.brk_infos())))
             .expect("circuit_bootstrapping_key_prepared_bytes_of_from_infos: the byte count overflows usize")
     }

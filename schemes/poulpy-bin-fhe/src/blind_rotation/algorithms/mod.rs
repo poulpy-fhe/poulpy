@@ -2,7 +2,7 @@ mod cggi;
 
 pub use cggi::*;
 
-use poulpy_core::layouts::{GLWEInfos, GLWEToBackendMut, LWEInfos, LWEToBackendRef, ModuleCoreAlloc};
+use poulpy_core::layouts::{GGSWAlloc, GLWEInfos, GLWEToBackendMut, LWEInfos, LWEToBackendRef};
 use poulpy_hal::{
     api::ModuleN,
     layouts::{Backend, ScratchArena},
@@ -19,7 +19,7 @@ pub trait BlindRotationAlgo: Sync {
     /// Allocates a zero-filled [`BlindRotationKey`] from a dimension descriptor.
     fn alloc_key<M, A>(module: &M, infos: &A) -> BlindRotationKey<M::OwnedBuf, Self, M::ZnxWord>
     where
-        M: ModuleCoreAlloc + ModuleN,
+        M: GGSWAlloc + ModuleN,
         A: BlindRotationKeyInfos,
         Self: Sized;
 }

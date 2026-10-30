@@ -15,9 +15,10 @@ use crate::{
 };
 use itertools::Itertools;
 use poulpy_core::{
-    Distribution, GGLWEToGGSWKeyEncryptSk, GGSWExpandRows, GLWEAutomorphismKeyEncryptSk, GLWEBytesOf, GLWECopy, GLWEPacking,
-    GLWERotate, GLWETrace, GetDistribution, ScratchArenaTakeCore,
+    Distribution, GGLWEToGGSWKeyEncryptSk, GGSWExpandRows, GLWEAutomorphismKeyEncryptSk, GLWEBytesOf, GLWECopy, GLWEPack,
+    GLWERotate, GLWETrace, GetDistribution, ScratchArenaTakeGLWE, ScratchArenaTakeGLWESecretPrepared,
     api::{GGLWEToGGSWKeyPreparedFactory, GLWEAutomorphismKeyPreparedFactory, GLWESecretPreparedFactory},
+    layouts::GLWEAlloc,
     layouts::{
         GGLWEInfos, GGLWELayout, GGLWEToGGSWKeyLayout, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut,
         GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout, GLWESecretToBackendRef, GLWEToBackendMut, GLWEToBackendRef,
@@ -46,7 +47,7 @@ where
     M: GLWEBytesOf<BE>
         + BlindRotationExecute<BRA, BE>
         + GLWETrace<BE>
-        + GLWEPacking<BE>
+        + GLWEPack<BE>
         + GGSWExpandRows<BE>
         + GLWERotate<BE>
         + GLWECopy<BE>,
@@ -81,7 +82,7 @@ where
     M: GLWEBytesOf<BE>
         + BlindRotationExecute<BRA, BE>
         + GLWETrace<BE>
-        + GLWEPacking<BE>
+        + GLWEPack<BE>
         + GGSWExpandRows<BE>
         + GLWERotate<BE>
         + GLWECopy<BE>,
@@ -246,7 +247,7 @@ where
     M: GLWEBytesOf<BE>
         + BlindRotationExecute<BRA, BE>
         + GLWETrace<BE>
-        + GLWEPacking<BE>
+        + GLWEPack<BE>
         + GGSWExpandRows<BE>
         + GLWERotate<BE>
         + GLWECopy<BE>,
@@ -313,7 +314,7 @@ where
         }
     };
     let online = atk_bytes + blind_phase.max(row_phase).max(rotate);
-    online.max(module.ggsw_expand_rows_tmp_bytes(res_infos, &tsk_infos))
+    online.max(module.ggsw_expand_rows_assign_tmp_bytes(res_infos, &tsk_infos))
 }
 
 fn prepare_circuit_bootstrapping_plan<R, M, BRA, BE>(
@@ -328,7 +329,7 @@ where
     BRA: BlindRotationAlgo,
     BE: Backend<ZnxWord = i64>,
     R: GGSWInfos,
-    M: ModuleN + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64> + LookupTableFactory<BE::OwnedBuf, i64>,
+    M: GLWEAlloc + ModuleN + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64> + LookupTableFactory<BE::OwnedBuf, i64>,
 {
     assert!(
         extension_factor.is_power_of_two(),
@@ -455,7 +456,7 @@ fn circuit_bootstrap_prepared<R, L, M, BRA, BE>(
         + GLWEBytesOf<BE>
         + BlindRotationExecute<BRA, BE>
         + GLWETrace<BE>
-        + GLWEPacking<BE>
+        + GLWEPack<BE>
         + GGSWExpandRows<BE>
         + GLWERotate<BE>
         + GLWECopy<BE>,
@@ -532,7 +533,7 @@ fn circuit_bootstrap_prepared<R, L, M, BRA, BE>(
     }
 
     // Expands GGLWE to GGSW using GGLWE(s^2)
-    module.ggsw_expand_row(res, &key.tsk.to_backend_ref(), scratch);
+    module.ggsw_expand_rows_assign(res, &key.tsk.to_backend_ref(), scratch);
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -550,7 +551,7 @@ fn post_process<R, A, M, H, BE>(
     R: GLWEToBackendMut<BE> + GLWEInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,
     H: GetAutomorphismKey<BE>,
-    M: ModuleLogN + GLWETrace<BE> + GLWEPacking<BE> + GLWERotate<BE> + GLWECopy<BE>,
+    M: ModuleLogN + GLWETrace<BE> + GLWEPack<BE> + GLWERotate<BE> + GLWECopy<BE>,
 {
     if log_gap_in != log_gap_out {
         let steps = 1usize
@@ -612,7 +613,7 @@ pub fn circuit_bootstrapping_prepare_to_constant_reference<R: GGSWInfos, M, BRA,
 where
     BRA: BlindRotationAlgo,
     BE: Backend<ZnxWord = i64>,
-    M: ModuleN + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64> + LookupTableFactory<BE::OwnedBuf, i64>,
+    M: GLWEAlloc + ModuleN + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64> + LookupTableFactory<BE::OwnedBuf, i64>,
 {
     prepare_circuit_bootstrapping_plan(
         module,
@@ -634,7 +635,7 @@ pub fn circuit_bootstrapping_prepare_to_exponent_reference<R: GGSWInfos, M, BRA,
 where
     BRA: BlindRotationAlgo,
     BE: Backend<ZnxWord = i64>,
-    M: ModuleN + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64> + LookupTableFactory<BE::OwnedBuf, i64>,
+    M: GLWEAlloc + ModuleN + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64> + LookupTableFactory<BE::OwnedBuf, i64>,
 {
     prepare_circuit_bootstrapping_plan(
         module,
@@ -656,7 +657,7 @@ where
     M: GLWEBytesOf<BE>
         + BlindRotationExecute<BRA, BE>
         + GLWETrace<BE>
-        + GLWEPacking<BE>
+        + GLWEPack<BE>
         + GGSWExpandRows<BE>
         + GLWERotate<BE>
         + GLWECopy<BE>,
@@ -692,7 +693,7 @@ pub fn circuit_bootstrapping_execute_prepared_reference<R, L, M, BRA, BE>(
         + GLWEBytesOf<BE>
         + BlindRotationExecute<BRA, BE>
         + GLWETrace<BE>
-        + GLWEPacking<BE>
+        + GLWEPack<BE>
         + GGSWExpandRows<BE>
         + GLWERotate<BE>
         + GLWECopy<BE>,

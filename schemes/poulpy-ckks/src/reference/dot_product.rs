@@ -1,7 +1,7 @@
 //! Dot products of ciphertexts, or of prepared operands, relinearized once where the pairs share one ct × ct rule.
 use poulpy_core::{
-    GLWEAdd, GLWEBytesOf, GLWEMulPreparedPlainSum, GLWEMulRelinearizeSum, GLWENormalize, GLWEPreparedTensoring, GLWETensoring,
-    ScratchArenaTakeCore,
+    GLWEAdd, GLWEBytesOf, GLWEMulPreparedPlainSum, GLWEMulRelinearizeSum, GLWENormalize, GLWEPreparedTensoring,
+    GLWETensorBytesOf, GLWETensoring, ScratchArenaTakeGLWETensor,
     gadget::cnv_offset_to_limb_offset,
     layouts::{
         GGLWEInfos, GLWEInfos, GLWELayout, GLWETensorViewMut, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey, LWEInfos,
@@ -31,6 +31,7 @@ pub trait CKKSDotProductReference<BE: Backend>: Sized {
         Self: CKKSMulOps<BE>
             + CKKSAddOps<BE>
             + GLWEBytesOf<BE>
+            + GLWETensorBytesOf<BE>
             + GLWETensoring<BE>
             + GLWEMulRelinearizeSum<BE>
             + GLWEPreparedTensoring<BE>

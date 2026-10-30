@@ -4,8 +4,9 @@ use crate::{
     GLWEExpandLWE, GLWEExpandLWEMatrix, GLWEFromLWE, LWEFillMask, LWEFromGLWE, LWEKeyswitch, LWESampleExtract,
     api::{GLWEToLWEKeyPreparedFactory, LWESwitchingKeyPreparedFactory, LWEToGLWEKeyPreparedFactory, TransferInto},
     layouts::{
-        Base2K, Degree, Dnum, GLWELayout, GLWEToLWEKeyLayout, LWEInfos, LWELayout, LWEMatrixInfos, LWEMatrixLayout,
-        LWESwitchingKeyLayout, LWEToGLWEKeyLayout, ModuleCoreAlloc, Rank, TorusPrecision, prepared::GGLWEPreparedToBackendRef,
+        Base2K, Degree, Dnum, GLWEAlloc, GLWELayout, GLWEToLWEKeyAlloc, GLWEToLWEKeyLayout, LWEAlloc, LWEInfos, LWELayout,
+        LWEMatrixAlloc, LWEMatrixInfos, LWEMatrixLayout, LWESwitchingKeyAlloc, LWESwitchingKeyLayout, LWEToGLWEKeyAlloc,
+        LWEToGLWEKeyLayout, Rank, TorusPrecision, prepared::GGLWEPreparedToBackendRef,
     },
     test_suite::keys::fill_by_digit,
 };
@@ -67,7 +68,7 @@ where
                 let mut out_r: Vec<_> = (0..count)
                     .map(|_| {
                         let mut v = r.lwe_alloc_from_infos(&l);
-                        r.fill_lwe_mask_from_source(b, &mut v, &mut source);
+                        r.lwe_fill_mask_from_source(b, &mut v, &mut source);
                         v
                     })
                     .collect();
@@ -148,7 +149,7 @@ where
                     ..l
                 };
                 let mut out_r = r.lwe_alloc_from_infos(&l);
-                r.fill_lwe_mask_from_source(b, &mut out_r, &mut source);
+                r.lwe_fill_mask_from_source(b, &mut out_r, &mut source);
                 let mut out_t = t.lwe_alloc_from_infos(&l);
                 out_r.transfer_into(&mut out_t);
                 r.lwe_sample_extract(&mut out_r, &a_r);
@@ -187,7 +188,7 @@ where
             );
             for index in [0, params.n - 1] {
                 let mut out_r = r.lwe_alloc_from_infos(&l);
-                r.fill_lwe_mask_from_source(b - 1, &mut out_r, &mut source);
+                r.lwe_fill_mask_from_source(b - 1, &mut out_r, &mut source);
                 let mut out_t = t.lwe_alloc_from_infos(&l);
                 out_r.transfer_into(&mut out_t);
                 r.lwe_from_glwe(
@@ -232,7 +233,7 @@ where
                 &mut poisoned_scratch::<BT>(t.lwe_to_glwe_key_prepare_tmp_bytes(&kt)).borrow(),
             );
             let mut a_r = r.lwe_alloc_from_infos(&l);
-            r.fill_lwe_mask_from_source(b - 1, &mut a_r, &mut source);
+            r.lwe_fill_mask_from_source(b - 1, &mut a_r, &mut source);
             let mut a_t = t.lwe_alloc_from_infos(&l);
             a_r.transfer_into(&mut a_t);
             let mut out_r = ref_glwe(r, &g, &mut source);
@@ -281,7 +282,7 @@ where
                 ..l
             };
             let mut out_r = r.lwe_alloc_from_infos(&res);
-            r.fill_lwe_mask_from_source(b - 2, &mut out_r, &mut source);
+            r.lwe_fill_mask_from_source(b - 2, &mut out_r, &mut source);
             let mut out_t = t.lwe_alloc_from_infos(&res);
             out_r.transfer_into(&mut out_t);
             r.lwe_keyswitch(

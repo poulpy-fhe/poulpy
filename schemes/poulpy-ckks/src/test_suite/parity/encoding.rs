@@ -7,7 +7,7 @@
 use crate::Scale;
 use poulpy_core::layouts::GLWEPlaintextInfos;
 use poulpy_core::{
-    GLWEMaskFill,
+    GLWEFill,
     layouts::{Diagonals, GLWELayout, IntPolyInfos, LWEInfos, LinearTransformationStrategy},
 };
 use poulpy_hal::layouts::{Backend, Module, ZnxView};
@@ -146,7 +146,7 @@ where
     BE: Backend<ZnxWord = i64> + CKKSEncodingImpl<F>,
     BE::Ring: CKKSSlotEmbedding,
     F: CKKSEncodingScalar,
-    Module<BE>: GLWEMaskFill<BE>,
+    Module<BE>: GLWEFill<BE>,
 {
     let mut observations = Vec::new();
     for (k, log_delta) in [(31usize, 20usize), (65, 40), (91, 70)] {
@@ -236,7 +236,7 @@ fn slot_codec<BE, F>(module: &Module<BE>, params: CKKSTestParams, floor: usize) 
 where
     BE: Backend<ZnxWord = i64> + CKKSEncodingImpl<F>,
     F: CKKSEncodingScalar,
-    Module<BE>: GLWEMaskFill<BE>,
+    Module<BE>: GLWEFill<BE>,
 {
     let layout = CKKSLayout {
         glwe_layout: GLWELayout {
@@ -289,8 +289,8 @@ where
     BR::Ring: CKKSSlotEmbedding,
     BT::Ring: CKKSSlotEmbedding,
     F: CKKSEncodingScalar,
-    Module<BR>: GLWEMaskFill<BR>,
-    Module<BT>: GLWEMaskFill<BT>,
+    Module<BR>: GLWEFill<BR>,
+    Module<BT>: GLWEFill<BT>,
 {
     assert!(params.n >= 8 && params.n.is_power_of_two());
     let reference = encoding_transforms::<BR, F>(module_ref);
@@ -343,8 +343,8 @@ where
     BR: Backend<ZnxWord = i64> + CKKSEncodingImpl<F>,
     BT: Backend<ZnxWord = i64> + CKKSEncodingImpl<F>,
     F: CKKSEncodingScalar,
-    Module<BR>: GLWEMaskFill<BR>,
-    Module<BT>: GLWEMaskFill<BT>,
+    Module<BR>: GLWEFill<BR>,
+    Module<BT>: GLWEFill<BT>,
 {
     // Both sides encode the slot counts whose degree both backends allocate.
     let floor = BR::MIN_DEGREE.max(BT::MIN_DEGREE);
@@ -377,8 +377,8 @@ where
     BR: Backend<ZnxWord = i64> + CKKSEncodingImpl<F> + CKKSPaCoCoeffEncodingImpl,
     BT: Backend<ZnxWord = i64> + CKKSEncodingImpl<F> + CKKSPaCoCoeffEncodingImpl,
     F: PaCoScalar,
-    Module<BR>: GLWEMaskFill<BR>,
-    Module<BT>: GLWEMaskFill<BT>,
+    Module<BR>: GLWEFill<BR>,
+    Module<BT>: GLWEFill<BT>,
 {
     for order in [PaCoSlotOrder::Natural, PaCoSlotOrder::BitRevLow] {
         let plan = PaCoPlan::new(params.log_n(), 2, 2, 17)
@@ -459,8 +459,8 @@ where
     BR: Backend<ZnxWord = i64> + CKKSEncodingImpl<F> + CKKSShipCoeffEncodingImpl,
     BT: Backend<ZnxWord = i64> + CKKSEncodingImpl<F> + CKKSShipCoeffEncodingImpl,
     F: ShipScalar,
-    Module<BR>: GLWEMaskFill<BR>,
-    Module<BT>: GLWEMaskFill<BT>,
+    Module<BR>: GLWEFill<BR>,
+    Module<BT>: GLWEFill<BT>,
 {
     let plan = ShipPlan::new(params.log_n(), 4, 40, 3, 2, 2, 2, 2).unwrap();
     let base2k = params.base2k;

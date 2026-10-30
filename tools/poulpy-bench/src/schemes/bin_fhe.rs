@@ -4,14 +4,15 @@ use std::hint::black_box;
 
 use criterion::{Bencher, measurement::Measurement};
 use poulpy_core::{
-    GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, GLWEMaskFill, LWEEncryptSk, LWEFillMask,
+    GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, GLWEFill, LWEEncryptSk, LWEFillMask,
     api::{
         GGLWEToGGSWKeyPreparedFactory, GGSWPreparedFactory, GLWEAutomorphismKeyPreparedFactory, GLWESecretPreparedFactory,
         GLWESecretSampling, LWESecretSampling,
     },
     layouts::{
-        Base2K, Dnum, GGLWEToGGSWKeyLayout, GGSW, GGSWLayout, GLWE, GLWEAutomorphismKeyLayout, GLWELayout, GLWESecret,
-        GLWESecretPrepared, LWE, LWEInfos, LWELayout, LWESecret, ModuleCoreAlloc, TorusPrecision, k_digit_of,
+        Base2K, Dnum, GGLWEToGGSWKeyLayout, GGSW, GGSWAlloc, GGSWLayout, GLWE, GLWEAlloc, GLWEAutomorphismKeyLayout, GLWELayout,
+        GLWESecret, GLWESecretAlloc, GLWESecretPrepared, LWE, LWEAlloc, LWEInfos, LWELayout, LWESecret, LWESecretAlloc,
+        TorusPrecision, k_digit_of,
     },
 };
 use poulpy_hal::{
@@ -49,7 +50,7 @@ pub fn runner_blind_rotate<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>, BR
         + GLWESecretPreparedFactory<BE>
         + GLWEDecrypt<BE>
         + LWEEncryptSk<BE>
-        + GLWEMaskFill<BE>
+        + GLWEFill<BE>
         + LWEFillMask<BE>
         + GLWESecretSampling<BE>
         + LWESecretSampling<BE>,
@@ -107,9 +108,9 @@ pub fn runner_blind_rotate<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>, BR
     brk_prepared.prepare(&module, &brk, &mut scratch.borrow());
 
     let mut res: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&glwe_infos);
-    module.fill_glwe_from_source(&mut res, &mut source_xa);
+    module.glwe_fill_from_source(&mut res, &mut source_xa);
     let mut lwe: LWE<AlignedBuf, i64> = module.lwe_alloc_from_infos(&lwe_infos);
-    module.fill_lwe_mask_from_source(lwe_infos.base2k().as_usize(), &mut lwe, &mut source_xa);
+    module.lwe_fill_mask_from_source(lwe_infos.base2k().as_usize(), &mut lwe, &mut source_xa);
 
     let mut f_vec: Vec<i64> = vec![0i64; message_modulus];
     f_vec.iter_mut().enumerate().for_each(|(i, x)| *x = 2 * i as i64 + 1);

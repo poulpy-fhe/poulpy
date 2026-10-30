@@ -1,6 +1,9 @@
 use poulpy_core::{
     api::{GLWESecretPreparedFactory, GLWESecretSampling},
-    layouts::{GGLWEInfos, GGLWELayout, GLWESecret, GLWESwitchingKeyDegrees, ModuleCoreAlloc, Rank, TorusPrecision},
+    layouts::{
+        GGLWEInfos, GGLWELayout, GLWEAutomorphismKeyAlloc, GLWESecret, GLWESwitchingKeyAlloc, GLWESwitchingKeyDegrees, Rank,
+        TorusPrecision,
+    },
     test_suite::with_scratch,
 };
 use poulpy_hal::{layouts::Module, source::Source};

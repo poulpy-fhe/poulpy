@@ -1,7 +1,7 @@
 use poulpy_core::{
     GGLWECompressedEncryptSk, GGLWEEncryptSk, GLWECompressedEncryptSk, TransferInto,
     api::{GLWESecretPreparedFactory, GLWESecretSampling},
-    layouts::{GGLWELayout, GLWELayout, ModuleCoreAlloc},
+    layouts::{GGLWEAlloc, GGLWELayout, GLWEAlloc, GLWELayout, GLWEPlaintextAlloc},
     test_suite::with_scratch,
 };
 use poulpy_hal::{AlignedBuf, api::VecZnxFillUniformSource, layouts::Module, source::Source, test_suite::vec_znx_backend_mut};

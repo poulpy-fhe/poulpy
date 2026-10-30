@@ -14,8 +14,9 @@ use crate::CKKSResult as Result;
 use poulpy_core::{
     GLWEAdd, GLWEAutomorphism, GLWECIEmbed, GLWECITrace, GLWEKeyswitch, GLWENormalize, GLWERotate, GLWEShift, GLWESub, GLWEZero,
     layouts::{
-        Base2K, Degree, GGLWEInfos, GLWE, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey,
-        GetGaloisElement, LWEInfos, ModuleCoreAlloc, Rank, SetK, TorusPrecision, prepared::GGLWEPreparedToBackendRef,
+        Base2K, Degree, GGLWEInfos, GLWE, GLWEAlloc, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef,
+        GetAutomorphismKey, GetGaloisElement, LWEInfos, ModuleCoreAlloc, Rank, SetK, TorusPrecision,
+        prepared::GGLWEPreparedToBackendRef,
     },
 };
 use poulpy_hal::{
@@ -635,7 +636,7 @@ where
     let wide = layout(n, part.base2k(), part.k() + log_g as u32);
     let mut root = module.ckks_ciphertext_alloc_from_glwe_infos(&wide);
     switch_ring(module, &mut root, part);
-    module.glwe_rsh(log_g, &mut root, scratch);
+    module.glwe_rsh_assign(log_g, &mut root, scratch);
     let mut nodes = vec![root];
     let mut image = module.ckks_ciphertext_alloc_from_glwe_infos(&wide);
     let mut difference = module.ckks_ciphertext_alloc_from_glwe_infos(&wide);

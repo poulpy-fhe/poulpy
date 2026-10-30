@@ -17,7 +17,7 @@ The diagram [`linear_transformation.png`](../img/linear_transformation.png) is t
 implementation that realizes this specification.
 
 > **Implementation status.** The engine lives in **poulpy-core** as the scheme-agnostic
-> `GLWELinearTransformations` module tree
+> `GLWELinearTransformationOps` module tree
 > ([`poulpy-core/src/reference/linear_transformation.rs`](../../poulpy-core/src/reference/linear_transformation.rs)):
 > the module root re-exports focused files for indexing (§3), preparation (§5), hoisted
 > baby rotations (§6.2), prepared inner products (§6.3), lazy giant rotations (§6.3), and
@@ -333,7 +333,7 @@ from poulpy-ckks they are not.
 
 - **Core engine.** `poulpy-core/src/reference/linear_transformation/` mirrors the
   `automorphism` and `keyswitching` split. It exposes prepared-transform evaluation
-  through `glwe_eval_linear_transformation`, which takes a prepared transform, prepared
+  through `glwe_linear_transformation_eval`, which takes a prepared transform, prepared
   baby rotations, and the keyed set of GGLWE automorphism keys (`GetGaloisElement`).
   Prepared baby rotations are addressed by the real baby-step rotation `k`, matching
   the BSGS index, not by a dense local list position. The prepared

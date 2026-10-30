@@ -994,7 +994,7 @@ where
         );
     }
 
-    ::poulpy_core::impl_gglwe_product_step_hooks_reference!();
+    ::poulpy_core::impl_gglwe_product_digits_strided_reference!();
 }
 
 unsafe impl<R: Ring> HalCnvImpl for NTT3x42IfmaRayon<R>

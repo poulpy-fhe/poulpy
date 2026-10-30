@@ -170,7 +170,7 @@ mod ggsw {
 
         module
             .glwe_keyswitch_tmp_bytes(res_infos, a_infos, key_infos)
-            .max(module.ggsw_expand_rows_tmp_bytes(res_infos, tsk_infos))
+            .max(module.ggsw_expand_rows_assign_tmp_bytes(res_infos, tsk_infos))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -208,7 +208,7 @@ mod ggsw {
             module.glwe_keyswitch(&mut res_at, &a_at, &key.to_backend_ref(), &mut scratch.borrow());
         }
 
-        module.ggsw_expand_row(&mut res_backend, tsk, scratch)
+        module.ggsw_expand_rows_assign(&mut res_backend, tsk, scratch)
     }
 
     pub(crate) fn ggsw_keyswitch_assign_derived<BE, M, R>(
@@ -237,7 +237,7 @@ mod ggsw {
             module.glwe_keyswitch_assign(&mut res_at, &key.to_backend_ref(), &mut scratch.borrow());
         }
 
-        module.ggsw_expand_row(&mut res_backend, tsk, scratch)
+        module.ggsw_expand_rows_assign(&mut res_backend, tsk, scratch)
     }
 }
 pub(crate) use ggsw::*;

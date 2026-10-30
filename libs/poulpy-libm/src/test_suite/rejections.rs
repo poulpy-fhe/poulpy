@@ -3,7 +3,7 @@
 //! Each case breaks one precondition of an operation (budget, iteration count, sparse packing, plan slot count) and
 //! checks the error message and that `res` and every `&mut` operand keep their digits and metadata.
 
-use poulpy_core::GLWEMaskFill;
+use poulpy_core::GLWEFill;
 use poulpy_hal::{
     api::ReimNew,
     layouts::{HostBytesBackend, Module, Standard},
@@ -61,7 +61,7 @@ pub fn test_rejections<BE, F, E>(base: CKKSTestParams, module: &Module<BE>, host
 where
     BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE>
-        + GLWEMaskFill<BE>
+        + GLWEFill<BE>
         + CKKSExpOps<BE>
         + CKKSLogOps<BE>
         + CKKSPowOps<BE>

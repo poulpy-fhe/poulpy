@@ -45,8 +45,9 @@ use poulpy_core::api::{
     GLWESecretSampling, GLWESwitchingKeyPreparedFactory, GLWEToLWEKeyPreparedFactory, LWESecretSampling,
 };
 use poulpy_core::layouts::{
-    Base2K, Degree, Dnum, GGLWEToGGSWKeyLayout, GGSWLayout, GLWEAutomorphismKeyLayout, GLWELayout, GLWESecret,
-    GLWESecretPrepared, GLWESwitchingKeyLayout, GLWEToLWEKeyLayout, LWESecret, ModuleCoreAlloc, Rank, TorusPrecision,
+    Base2K, Degree, Dnum, GGLWEToGGSWKeyLayout, GGSWLayout, GLWEAutomorphismKeyLayout, GLWELayout, GLWESecret, GLWESecretAlloc,
+    GLWESecretPrepared, GLWESwitchingKeyLayout, GLWEToLWEKeyLayout, LWESecret, LWESecretAlloc, ModuleCoreAlloc, Rank,
+    TorusPrecision,
 };
 
 use crate::{
@@ -105,6 +106,8 @@ impl<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64> +
             + GLWESecretPreparedFactory<BE>
             + BlindRotationKeyPreparedFactory<BRA, BE>
             + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+            + GLWESecretAlloc
+            + LWESecretAlloc
             + BDDKeyPreparedFactory<BRA, BE>
             + CircuitBootstrappingKeyPreparedFactory<BRA, BE>
             + GGSWPreparedFactory<BE>

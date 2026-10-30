@@ -11,11 +11,11 @@ use poulpy_ckks::{
     test_suite::helpers::{TestContextSharedModule, upload_pt},
 };
 use poulpy_core::{
-    GLWEMaskFill, GLWETensorKeyEncryptSk,
+    GLWEFill, GLWETensorKeyEncryptSk,
     api::{GLWESecretSampling, GLWETensorKeyPreparedFactory},
     layouts::{
-        Base2K, Degree, Dsize, GGLWELayout, GLWELayout, GLWETensorKeyLayout, ModuleCoreAlloc, Rank, TorusPrecision, k_digit_of,
-        prepared::GLWETensorKeyPrepared,
+        Base2K, Degree, Dsize, GGLWELayout, GLWELayout, GLWESecretAlloc, GLWETensorKeyAlloc, GLWETensorKeyLayout, Rank,
+        TorusPrecision, k_digit_of, prepared::GLWETensorKeyPrepared,
     },
 };
 use poulpy_hal::{
@@ -44,12 +44,12 @@ const EXPONENT_INTERVAL: (f64, f64) = (-1.0, 1.0);
 ///
 /// `HostStaged` serves only the transfer of the host-built plans, which poulpy-ckks setup builds on a host module.
 pub trait LibmBenchModule<BE: Backend>:
-    TestContextSharedModule<BE> + GLWEMaskFill<BE> + ModuleSynchronize<BE> + CKKSExpOps<BE> + CKKSLogOps<BE> + CKKSPowOps<BE>
+    TestContextSharedModule<BE> + GLWEFill<BE> + ModuleSynchronize<BE> + CKKSExpOps<BE> + CKKSLogOps<BE> + CKKSPowOps<BE>
 {
 }
 
 impl<BE: Backend, M> LibmBenchModule<BE> for M where
-    M: TestContextSharedModule<BE> + GLWEMaskFill<BE> + ModuleSynchronize<BE> + CKKSExpOps<BE> + CKKSLogOps<BE> + CKKSPowOps<BE>
+    M: TestContextSharedModule<BE> + GLWEFill<BE> + ModuleSynchronize<BE> + CKKSExpOps<BE> + CKKSLogOps<BE> + CKKSPowOps<BE>
 {
 }
 
@@ -130,11 +130,11 @@ where
         );
         let mut tsk_raw = module.glwe_tensor_key_alloc_from_infos(&tsk_layout);
         module.glwe_tensor_key_encrypt_sk(&mut tsk_raw, &sk_raw, &mut source_xe, &mut source_xa, &mut arena.borrow());
-        let mut tsk = module.alloc_tensor_key_prepared_from_infos(&tsk_layout);
+        let mut tsk = module.glwe_tensor_key_prepared_alloc_from_infos(&tsk_layout);
         module.glwe_tensor_key_prepare(&mut tsk, &tsk_raw, &mut arena.borrow());
         let mut filled = || {
             let mut ct = module.ckks_ciphertext_alloc_from_infos(&layout);
-            module.fill_glwe_from_source(&mut ct, &mut source_xu);
+            module.glwe_fill_from_source(&mut ct, &mut source_xu);
             ct.set_meta(layout.meta);
             ct
         };

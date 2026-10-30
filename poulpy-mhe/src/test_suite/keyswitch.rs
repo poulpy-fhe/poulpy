@@ -6,8 +6,8 @@ use poulpy_core::{
     DEFAULT_SIGMA_XE, Distribution, GLWEAdd, GLWEDecrypt, GLWEEncryptSk, GLWENoise, GLWENormalize, GetDistributionMut, Noise,
     api::{GLWEPublicKeyPreparedFactory, GLWESecretPreparedFactory, GLWESecretSampling},
     layouts::{
-        Base2K, GLWE, GLWEInfos, GLWELayout, GLWEMask, GLWEPlaintext, GLWEPublicKeyPrepared, GLWESecretPrepared, LWEInfos,
-        ModuleCoreAlloc, Rank, TorusPrecision,
+        Base2K, GLWE, GLWEAlloc, GLWEInfos, GLWELayout, GLWEMask, GLWEMaskAlloc, GLWEPlaintext, GLWEPlaintextAlloc,
+        GLWEPublicKeyPrepared, GLWESecretPrepared, LWEInfos, Rank, TorusPrecision,
     },
     test_suite::with_scratch,
 };

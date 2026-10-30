@@ -16,14 +16,14 @@ use crate::{
 use poulpy_core::test_suite::with_scratch;
 use poulpy_core::{
     GGLWEToGGSWKeyEncryptSk, GGSWEncryptSk, GLWEAutomorphismKeyEncryptSk, GLWEExternalProduct, GLWESwitchingKeyEncryptSk,
-    GLWEToLWESwitchingKeyEncryptSk, TransferInto,
+    GLWEToLWEKeyEncryptSk, TransferInto,
     api::{
         GGLWEToGGSWKeyPreparedFactory, GGSWPreparedFactory, GLWEAutomorphismKeyPreparedFactory, GLWESecretPreparedFactory,
         GLWESecretSampling, GLWESwitchingKeyPreparedFactory, GLWEToLWEKeyPreparedFactory, LWESecretSampling,
     },
     layouts::{
         GGLWEToGGSWKeyLayout, GGSWInfos, GGSWLayout, GGSWPreparedToBackendRef, GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout,
-        GLWESwitchingKeyLayout, GLWEToLWEKeyLayout, LWEInfos, ModuleCoreAlloc,
+        GLWESecretAlloc, GLWESwitchingKeyLayout, GLWEToLWEKeyLayout, LWEInfos, LWESecretAlloc,
     },
 };
 use poulpy_hal::{
@@ -417,7 +417,7 @@ where
         + BlindRotationKeyEncryptSk<CGGI, BE>
         + GGLWEToGGSWKeyEncryptSk<BE>
         + GLWEAutomorphismKeyEncryptSk<BE>
-        + GLWEToLWESwitchingKeyEncryptSk<BE>
+        + GLWEToLWEKeyEncryptSk<BE>
         + GLWESwitchingKeyEncryptSk<BE>
         + GLWESecretSampling<BE>
         + LWESecretSampling<BE>

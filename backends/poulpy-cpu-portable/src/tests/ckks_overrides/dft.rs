@@ -323,7 +323,7 @@ use super::carry::assert_query_takes_extra;
 use poulpy_ckks::api::LtDiagonalMeta;
 use poulpy_ckks::layouts::{CKKSModuleAlloc, DFTMatrixPrepared};
 use poulpy_ckks::{CKKSCtBounds, CKKSResult as Result, SetCKKSInfos};
-use poulpy_core::DiagonalProd;
+use poulpy_core::GLWEDiagonalProd;
 use poulpy_core::layouts::{
     GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, IntPolyInfos, LinearTransformation,
     SetGLWEPlaintextInfos,
@@ -377,7 +377,7 @@ unsafe impl poulpy_ckks::oep::CKKSDFTImpl for OverrideBackend {
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        P: GLWEToBackendRef<Self> + IntPolyInfos + CKKSCtBounds + DiagonalProd<Self>,
+        P: GLWEToBackendRef<Self> + IntPolyInfos + CKKSCtBounds + GLWEDiagonalProd<Self>,
     {
         super::carry::with_marked_bytes(DFT_PREPARE_EXTRA.get(), scratch, |rest| {
             poulpy_ckks::reference::dft::ckks_prepare_dft_matrix(module, res, dft, rest)
@@ -392,7 +392,7 @@ unsafe impl poulpy_ckks::oep::CKKSDFTImpl for OverrideBackend {
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        P: DiagonalProd<Self> + LtDiagonalMeta,
+        P: GLWEDiagonalProd<Self> + LtDiagonalMeta,
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<Self>,
     {

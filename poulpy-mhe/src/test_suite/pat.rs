@@ -6,8 +6,8 @@ use poulpy_core::{
     GLWENoise,
     api::{GLWEPublicKeyPreparedFactory, GLWESecretPreparedFactory, GLWESecretSampling},
     layouts::{
-        GGLWE, GGLWEAtViewRef, GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GLWE, GLWEInfos, GLWELayout, GLWEPlaintext,
-        GLWEPlaintextLayout, GLWESecret, LWEInfos, ModuleCoreAlloc, TorusPrecision,
+        GGLWE, GGLWEAlloc, GGLWEAtViewRef, GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GLWE, GLWEAlloc, GLWEInfos,
+        GLWELayout, GLWEPlaintext, GLWEPlaintextAlloc, GLWEPlaintextLayout, GLWESecret, LWEInfos, TorusPrecision,
         compressed::{GGLWECompressedSeedMut, GLWECompressedSeedMut, GLWECompressedToBackendMut},
     },
     test_suite::with_scratch,

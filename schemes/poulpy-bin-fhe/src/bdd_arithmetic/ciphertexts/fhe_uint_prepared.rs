@@ -2,8 +2,8 @@ pub use crate::api::{FheUintPrepare, FheUintPreparedEncryptSk};
 use poulpy_hal::AlignedBuf;
 use std::marker::PhantomData;
 
-use poulpy_core::layouts::{GGSWPreparedToBackendMut, GetAutomorphismKey};
-use poulpy_core::{GLWECopy, GLWEDecrypt, GLWEPacking};
+use poulpy_core::layouts::{GGSWPreparedToBackendMut, GLWEAlloc, GLWEPlaintextAlloc, GetAutomorphismKey};
+use poulpy_core::{GLWECopy, GLWEDecrypt, GLWEPack};
 use poulpy_core::{
     api::GGSWPreparedFactory,
     layouts::{
@@ -197,11 +197,13 @@ where
 {
     pub fn decrypt<M, S, H>(&self, module: &M, sk: &S, keys: &H, scratch: &mut ScratchArena<'_, BE>) -> T
     where
-        M: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+        M: GLWEAlloc
+            + GLWEPlaintextAlloc
+            + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
             + ModuleLogN
             + GLWEDecrypt<BE>
             + Cmux<BE>
-            + GLWEPacking<BE>
+            + GLWEPack<BE>
             + GLWECopy<BE>
             + GLWEBytesOf<BE>,
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,

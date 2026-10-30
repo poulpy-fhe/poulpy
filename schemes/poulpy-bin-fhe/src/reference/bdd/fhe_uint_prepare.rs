@@ -73,11 +73,11 @@ pub fn fhe_uint_prepare_custom_multi_thread_reference<BRA: BlindRotationAlgo, BE
     let ggsw_infos: &GGSWLayout = &res.ggsw_layout();
 
     for i in 0..bit_start {
-        module.ggsw_zero(&mut res.bits[i]);
+        module.ggsw_prepared_zero(&mut res.bits[i]);
     }
 
     for i in bit_end..T::BITS as usize {
-        module.ggsw_zero(&mut res.bits[i]);
+        module.ggsw_prepared_zero(&mut res.bits[i]);
     }
     if bit_count == 0 {
         return;

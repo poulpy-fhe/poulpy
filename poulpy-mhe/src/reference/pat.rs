@@ -1,5 +1,5 @@
 use poulpy_core::{
-    GGLWEDecompress, GLWEMaskFill,
+    GGLWEDecompress, GLWEFill,
     layouts::{
         GGLWECompressedSeed, GGLWECompressedToBackendMut, GGLWECompressedToBackendRef, GGLWEInfos, GGLWEToBackendMut,
         GGLWEToBackendRef, GLWECompressedSeed, GLWECompressedToBackendMut, GLWECompressedToBackendRef, GLWEInfos,
@@ -30,7 +30,7 @@ pub trait GLWEPatCompressedReference<BE: Backend> {
 
 impl<BE: Backend> GLWEPatCompressedReference<BE> for Module<BE>
 where
-    Self: VecZnxAddAssign<BE> + VecZnxNormalizeTmpBytes + VecZnxNormalize<BE> + GLWEMaskFill<BE>,
+    Self: VecZnxAddAssign<BE> + VecZnxNormalizeTmpBytes + VecZnxNormalize<BE> + GLWEFill<BE>,
 {
     fn glwe_pat_compressed_aggregate_assign_reference<R, A>(&self, res: &mut R, a: &A)
     where
@@ -69,7 +69,7 @@ where
             self.vec_znx_normalize(res_be.data_mut(), base2k, k, 0, 0, pat_be.data(), base2k, 0, scratch);
         }
         // Seeded masks are uniform digits, already canonical.
-        self.fill_glwe_mask_from_seed(res, *pat.seed());
+        self.glwe_fill_mask_from_seed(res, *pat.seed());
         res.set_noise(pat.noise());
     }
 }
@@ -124,7 +124,7 @@ where
             scratch.available() >= self.gglwe_pat_compressed_finalize_tmp_bytes_reference(),
             "invalid finalization: insufficient scratch"
         );
-        self.decompress_gglwe(res, pat);
+        self.gglwe_decompress(res, pat);
         let (base2k, k): (usize, usize) = (res.base2k().into(), res.k().into());
         let mut res_be = res.to_backend_mut();
         // Seeded masks are uniform digits, already canonical: only the bodies are normalized.

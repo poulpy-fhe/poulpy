@@ -5,7 +5,7 @@
 use poulpy_core::{
     DEFAULT_BOUND_XE, DEFAULT_SIGMA_XE, GLWEAdd, GLWEDecrypt, GLWEEncryptSk, GLWENormalize, Noise,
     api::{GLWESecretPreparedFactory, GLWESecretSampling},
-    layouts::{GLWE, GLWELayout, GLWEPlaintext, ModuleCoreAlloc, Rank, TorusPrecision},
+    layouts::{GLWE, GLWEAlloc, GLWELayout, GLWEPlaintext, GLWEPlaintextAlloc, Rank, TorusPrecision},
     test_suite::with_scratch,
 };
 use poulpy_hal::{

@@ -1,7 +1,7 @@
 //! Refusals of the blind-rotation key encryptions, each before any write or draw.
 use poulpy_core::{
     api::{GLWESecretPreparedFactory, LWESecretSampling},
-    layouts::{GLWESecretPrepared, LWESecret, ModuleCoreAlloc, Rank},
+    layouts::{GLWESecretPrepared, LWESecret, LWESecretAlloc, ModuleCoreAlloc, Rank},
     test_suite::with_scratch,
 };
 use poulpy_hal::AlignedBuf;
@@ -41,7 +41,10 @@ fn refused_secrets<BE: Backend<ZnxWord = i64>>(
     case: usize,
 ) -> (LWESecret<BE::OwnedBuf, i64>, GLWESecretPrepared<BE::OwnedBuf, BE>)
 where
-    Module<BE>: GLWESecretPreparedFactory<BE> + LWESecretSampling<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
+    Module<BE>: GLWESecretPreparedFactory<BE>
+        + LWESecretSampling<BE>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>
+        + LWESecretAlloc,
 {
     let n_lwe = layout.n_lwe.as_usize() + usize::from(case == 0);
     let rank = Rank(layout.rank.as_u32() + u32::from(case == 1));

@@ -16,7 +16,7 @@ use poulpy_ckks::{
     oep::CKKSEncodingImpl,
 };
 use poulpy_core::{
-    GLWEBytesOf, GLWENormalize, ScratchArenaTakeCore,
+    GLWEBytesOf, GLWENormalize, ScratchArenaTakeGLWE,
     layouts::{Base2K, GLWELayout, GLWEToBackendRef, LWEInfos, Rank},
 };
 use poulpy_hal::{

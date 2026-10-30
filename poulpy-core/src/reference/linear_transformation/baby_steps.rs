@@ -32,9 +32,9 @@ use poulpy_hal::{
     },
 };
 
-use crate::gadget::{gadget_dft_apply, gadget_dft_apply_tmp_bytes, gadget_input_size};
+use crate::gadget::{gglwe_gadget_dft_apply, gglwe_gadget_dft_apply_tmp_bytes, gglwe_gadget_input_size};
 use crate::{
-    GLWEAutomorphism, GLWENormalize, ScratchArenaTakeCore,
+    GLWEAutomorphism, GLWENormalize, ScratchArenaTakeGLWE,
     api::GLWEBytesOf,
     gadget::gglwe_product_output_size,
     layouts::{
@@ -108,7 +108,7 @@ impl<BE: Backend> LinearTransformationBabySteps<BE> {
     }
 }
 
-pub(super) fn glwe_prepare_linear_transformation_baby_steps_tmp_bytes<BE, A, K>(
+pub(super) fn glwe_linear_transformation_baby_steps_prepare_tmp_bytes<BE, A, K>(
     module: &Module<BE>,
     a_infos: &A,
     key_infos: &K,
@@ -136,22 +136,18 @@ where
     let prepare = module.cnv_prepare_left_tmp_bytes(a_infos.size(), a_infos.size());
 
     let (base2k, k_digit, dnum) = (key_infos.base2k(), key_infos.k_digit(), key_infos.dnum());
-    let operand_size = gadget_input_size(base2k, k_digit, dnum, a_infos.k(), a_size);
+    let operand_size = gglwe_gadget_input_size(base2k, k_digit, dnum, a_infos.k(), a_size);
     let hoisted_a_dft = module.vec_znx_dft_bytes_of(module.n(), cols - 1, operand_size);
     // The product, the normalized copy the automorphism reads, and their scratch.
     let hoisted_rot = module.vec_znx_dft_bytes_of(module.n(), cols, key_size)
         + baby
         + BE::gglwe_product_idft_normalize_tmp_bytes(module, a_size, key_size, operand_size, key_infos);
     let hoisted_worker = worker_scratch_bytes::<BE>(baby + hoisted_rot.max(prepare));
-    let hoisted = hoisted_a_dft
-        + (scratch_workers::<BE::TaskExecutor>(BABY_ROTATION_WORKERS) * hoisted_worker).max(gadget_dft_apply_tmp_bytes::<BE, _>(
-            module,
-            base2k,
-            k_digit,
-            dnum,
-            a_infos.k(),
-            a_size,
-        ));
+    let hoisted =
+        hoisted_a_dft
+            + (scratch_workers::<BE::TaskExecutor>(BABY_ROTATION_WORKERS) * hoisted_worker).max(
+                gglwe_gadget_dft_apply_tmp_bytes::<BE, _>(module, base2k, k_digit, dnum, a_infos.k(), a_size),
+            );
 
     let fallback = baby + module.glwe_automorphism_tmp_bytes(a_infos, a_infos, key_infos).max(prepare);
     BE::scratch_aligned(module.glwe_bytes_of_from_infos(a_infos))
@@ -224,7 +220,7 @@ fn glwe_hoisted_baby_rotation<BE, R>(
 /// or carved from a scratch arena: it performs zero `CnvPVecL` allocations
 /// because the slots belong to `cache`.
 #[allow(clippy::too_many_arguments)]
-pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, A, H, L>(
+pub(super) fn glwe_linear_transformation_baby_steps_prepare<BE, A, H, L>(
     module: &Module<BE>,
     cache: &mut LinearTransformationBabySteps<BE, L>,
     a: &A,
@@ -295,7 +291,7 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, A, H, L>(
         } else {
             (
                 key.k_digit().0,
-                gadget_input_size(a.base2k(), key.k_digit(), key.dnum(), a.k(), a_size),
+                gglwe_gadget_input_size(a.base2k(), key.k_digit(), key.dnum(), a.k(), a_size),
             )
         }
     };
@@ -341,10 +337,10 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, A, H, L>(
                 .map(|(index, entry)| (index, entry.take().unwrap()))
                 .collect();
             let scratch = scratch.borrow();
-            let operand_size = gadget_input_size(a.base2k(), k_digit, dnum, a.k(), a_size);
+            let operand_size = gglwe_gadget_input_size(a.base2k(), k_digit, dnum, a.k(), a_size);
             let (mut a_dft, mut loop_scratch) = scratch.take_vec_znx_dft_scratch(a.n().as_usize(), cols - 1, operand_size);
             for col_i in 0..cols - 1 {
-                gadget_dft_apply(
+                gglwe_gadget_dft_apply(
                     module,
                     &mut a_dft,
                     col_i,
@@ -416,7 +412,7 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, A, H, L>(
     }
 }
 
-/// [`glwe_prepare_linear_transformation_baby_steps`] for [`BsgsRotations::PowersOfTwo`]: the
+/// [`glwe_linear_transformation_baby_steps_prepare`] for [`BsgsRotations::PowersOfTwo`]: the
 /// rotations of a doubling pass rotate earlier ones with the pass's key, each source laid out
 /// and switched by one product call per task: a task each on a parallel executor, one task of
 /// every source otherwise. The rotations are held as ciphertexts until the last pass.
@@ -465,7 +461,7 @@ fn glwe_prepare_baby_steps_doubling<'h, BE, H, L>(
     // A pass switches its sources together when its key has their base2k.
     let hoisted = |key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>| key.base2k() == a.base2k();
     let operand_size = |key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>| {
-        gadget_input_size(a.base2k(), key.k_digit(), key.dnum(), a.k(), a_size)
+        gglwe_gadget_input_size(a.base2k(), key.k_digit(), key.dnum(), a.k(), a_size)
     };
     let key_size = |key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>| gglwe_product_output_size::<BE, _, _, _>(a, a, key);
     let hoisted_passes = || passes.iter().zip(&pass_keys).filter(|(_, key)| hoisted(key));
@@ -482,12 +478,12 @@ fn glwe_prepare_baby_steps_doubling<'h, BE, H, L>(
                 + BE::scratch_aligned(BE::vec_znx_bytes_of(n, cols, a_size)));
     let work = pass_keys
         .iter()
-        .map(|key| glwe_prepare_linear_transformation_baby_steps_tmp_bytes::<BE, _, _>(module, a, key))
+        .map(|key| glwe_linear_transformation_baby_steps_prepare_tmp_bytes::<BE, _, _>(module, a, key))
         .max()
         .unwrap_or(0);
     assert!(
         scratch.available() >= need + work,
-        "glwe_prepare_linear_transformation_baby_steps: scratch below its query"
+        "glwe_linear_transformation_baby_steps_prepare: scratch below its query"
     );
     let (mut rotated, work) = scratch.borrow().take_glwe_slice_scratch(rotations.len(), a);
     let (operands, work) = work.take_vec_znx_dft_slice_scratch(n, widest, cols - 1, operand_max);
@@ -563,7 +559,7 @@ fn glwe_prepare_baby_steps_doubling<'h, BE, H, L>(
                           source: &GLWEBackendRef<'_, BE>,
                           scratch: &mut ScratchArena<'_, BE>| {
                 for col_i in 0..cols - 1 {
-                    gadget_dft_apply(
+                    gglwe_gadget_dft_apply(
                         module,
                         operand,
                         col_i,
@@ -599,7 +595,7 @@ fn glwe_prepare_baby_steps_doubling<'h, BE, H, L>(
                 );
             };
             let task_bytes = worker_scratch_bytes::<BE>(
-                gadget_dft_apply_tmp_bytes::<BE, _>(module, a.base2k(), k_digit, dnum, a.k(), a_size).max(
+                gglwe_gadget_dft_apply_tmp_bytes::<BE, _>(module, a.base2k(), k_digit, dnum, a.k(), a_size).max(
                     BE::gglwe_product_idft_normalize_tmp_bytes(module, a_size, key_size, operand_size, key),
                 ),
             );
@@ -710,7 +706,7 @@ where
     K: GGLWEInfos,
 {
     let (n, cols, a_size) = (a.n().as_usize(), a.rank().as_usize() + 1, a.size());
-    let operand_size = gadget_input_size(a.base2k(), key.k_digit(), key.dnum(), a.k(), a_size);
+    let operand_size = gglwe_gadget_input_size(a.base2k(), key.k_digit(), key.dnum(), a.k(), a_size);
     let key_size = gglwe_product_output_size::<BE, _, _, _>(a, a, key);
     sources
         * (BE::scratch_aligned(module.vec_znx_dft_bytes_of(n, cols - 1, operand_size))

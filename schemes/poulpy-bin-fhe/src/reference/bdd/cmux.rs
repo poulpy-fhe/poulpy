@@ -14,7 +14,7 @@ where
     B: GGSWInfos,
     Module<BE>: GLWEBytesOf<BE>
         + Sized
-        + GLWEExternalProductInternal<BE>
+        + GLWEExternalProductDft<BE>
         + GLWECopy<BE>
         + GLWESub<BE>
         + ModuleN
@@ -44,7 +44,7 @@ where
         + res_dft
         + res_big
         + module
-            .glwe_external_product_internal_tmp_bytes(&tmp_infos, &tmp_infos, selector_infos)
+            .glwe_external_product_dft_tmp_bytes(&tmp_infos, &tmp_infos, selector_infos)
             .max(module.vec_znx_big_normalize_tmp_bytes())
             .max(module.vec_znx_idft_apply_tmp_bytes())
             // Blind selection/rotation also use this bound to copy inputs
@@ -71,7 +71,7 @@ pub fn cmux_reference<BE, R, T, F>(
     BE: Backend<ZnxWord = i64>,
     Module<BE>: GLWEBytesOf<BE>
         + Sized
-        + GLWEExternalProductInternal<BE>
+        + GLWEExternalProductDft<BE>
         + GLWECopy<BE>
         + GLWESub<BE>
         + ModuleN
@@ -148,7 +148,7 @@ pub fn cmux_assign_neg_reference<BE, R, A>(
     BE: Backend<ZnxWord = i64>,
     Module<BE>: GLWEBytesOf<BE>
         + Sized
-        + GLWEExternalProductInternal<BE>
+        + GLWEExternalProductDft<BE>
         + GLWECopy<BE>
         + GLWESub<BE>
         + ModuleN
@@ -232,7 +232,7 @@ pub fn cmux_assign_reference<BE, R, A>(
     BE: Backend<ZnxWord = i64>,
     Module<BE>: GLWEBytesOf<BE>
         + Sized
-        + GLWEExternalProductInternal<BE>
+        + GLWEExternalProductDft<BE>
         + GLWECopy<BE>
         + GLWESub<BE>
         + ModuleN

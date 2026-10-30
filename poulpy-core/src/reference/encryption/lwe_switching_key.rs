@@ -7,10 +7,10 @@ use poulpy_hal::{
     source::Source,
 };
 
-use crate::api::GLWEBytesOf;
+use crate::api::GLWESecretBytesOf;
 use crate::layouts::operand_degree;
 use crate::{
-    ScratchArenaTakeCore,
+    ScratchArenaTakeGLWESecret,
     encryption::glwe_switching_key::GLWESwitchingKeyEncryptSk,
     layouts::{GGLWEInfos, GGLWEToBackendMut, GLWESwitchingKeyDegreesMut, LWEInfos, LWESecretToBackendRef, Rank},
 };
@@ -18,7 +18,7 @@ use crate::{
 /// Portable implementation using HAL operations.
 ///
 /// Backend implementations may call this helper without changing their override selection.
-pub trait LWESwitchingKeyEncryptReference<BE: Backend> {
+pub trait LWESwitchingKeyEncryptSkReference<BE: Backend> {
     fn lwe_switching_key_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos;
@@ -37,7 +37,7 @@ pub trait LWESwitchingKeyEncryptReference<BE: Backend> {
         S2: LWESecretToBackendRef<BE>;
 }
 
-impl<BE: Backend> LWESwitchingKeyEncryptReference<BE> for Module<BE>
+impl<BE: Backend> LWESwitchingKeyEncryptSkReference<BE> for Module<BE>
 where
     Self: ModuleN + GLWESwitchingKeyEncryptSk<BE> + VecZnxAutomorphism<BE> + VecZnxCopy<BE> + VecZnxZero<BE>,
 {
@@ -84,9 +84,7 @@ where
         crate::layouts::assert_secret_set(&sk_lwe_out.dist);
         assert!(
             scratch.available() >= self.lwe_switching_key_encrypt_sk_tmp_bytes_reference(res),
-            "scratch.available(): {} < LWESwitchingKeyEncrypt::lwe_switching_key_encrypt_sk_tmp_bytes: {}",
-            scratch.available(),
-            self.lwe_switching_key_encrypt_sk_tmp_bytes_reference(res)
+            "insufficient scratch for LWE switching key encryption"
         );
         let tmp_bytes: usize = self.lwe_switching_key_encrypt_sk_tmp_bytes_reference(res);
         {

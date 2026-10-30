@@ -7,11 +7,11 @@ use poulpy_hal::{
     source::Source,
 };
 
-use crate::api::GLWEBytesOf;
+use crate::api::GLWEPlaintextBytesOf;
 use crate::layouts::operand_degree;
 use crate::{
-    ScratchArenaTakeCore,
-    encryption::{GLWEEncryptSk, GLWEEncryptSkInternal, GLWEMaskFill},
+    ScratchArenaTakeGLWE, ScratchArenaTakeGLWEPlaintext,
+    encryption::{GLWEEncryptSk, GLWEEncryptSkInternal, GLWEFill},
     layouts::{
         GGLWECompressedSeedMut, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
         compressed::GGLWECompressedToBackendMut, prepared::GLWESecretPreparedToBackendRef,
@@ -45,7 +45,7 @@ where
     Self: ModuleN
         + GLWEEncryptSkInternal<BE>
         + GLWEEncryptSk<BE>
-        + GLWEMaskFill<BE>
+        + GLWEFill<BE>
         + VecZnxCopy<BE>
         + VecZnxDftBytesOf
         + VecZnxNormalizeTmpBytes,
@@ -123,7 +123,7 @@ where
                     for row_i in 0..dnum {
                         scratch_1 = scratch_1.apply_mut(|scratch| {
                             let mut tmp_pt_backend = tmp_pt.to_backend_mut();
-                            crate::gadget::gadget_row_plaintext(
+                            crate::gadget::gglwe_gadget_row_plaintext(
                                 self,
                                 &mut tmp_pt_backend.data,
                                 0,
@@ -145,7 +145,7 @@ where
                         let base2k = res.base2k().into();
                         let scratch_full = scratch_1.borrow();
                         let (mut full_ct, mut scratch_2) = scratch_full.take_glwe_scratch(&res);
-                        self.fill_glwe_mask_from_seed(&mut full_ct, seed);
+                        self.glwe_fill_mask_from_seed(&mut full_ct, seed);
                         self.glwe_encrypt_sk_internal(
                             base2k,
                             full_ct.k().as_usize(),

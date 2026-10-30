@@ -13,8 +13,8 @@ use crate::{
     api::{GGSWPreparedFactory, GLWEPublicKeyPreparedFactory, GLWESecretPreparedFactory},
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        GGSW, GGSWInfos, GGSWLayout, GLWEInfos, GLWELayout, GLWEPublicKey, GLWESecret, LWEInfos, ModuleCoreAlloc,
-        ModuleCoreCompressedAlloc,
+        GGSW, GGSWAlloc, GGSWCompressedAlloc, GGSWInfos, GGSWLayout, GLWEInfos, GLWELayout, GLWEPublicKey, GLWEPublicKeyAlloc,
+        GLWESecret, GLWESecretAlloc, LWEInfos,
         compressed::GGSWCompressed,
         prepared::{GLWEPublicKeyPrepared, GLWESecretPrepared},
     },
@@ -347,7 +347,7 @@ where
             let noise_f = |_col_i: usize| -(ggsw_infos.k().as_usize() as f64) + DEFAULT_SIGMA_XE.log2() + 0.5;
 
             let mut ct: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_infos);
-            module.decompress_ggsw(&mut ct, &ct_compressed);
+            module.ggsw_decompress(&mut ct, &ct_compressed);
 
             for row in 0..ct.dnum().as_usize() {
                 for col in 0..ct.rank().as_usize() + 1 {

@@ -13,14 +13,15 @@ use crate::blind_rotation::{
 use crate::api::BlindRotationModSwitch;
 use crate::test_suite::parity::{assert_short_scratch_panics, snapshot_glwe};
 use poulpy_core::api::{GLWESecretSampling, LWESecretSampling};
+use poulpy_core::layouts::GGSWAlloc;
 use poulpy_core::test_suite::noise::glwe_decrypt_checked;
 use poulpy_core::test_suite::with_scratch;
 use poulpy_core::{
     GLWEDecrypt, LWEEncryptSk,
     api::{GGSWPreparedFactory, GLWESecretPreparedFactory},
     layouts::{
-        GLWE, GLWELayout, GLWEPlaintext, GLWESecret, LWE, LWEInfos, LWELayout, LWEPlaintext, LWESecret, ModuleCoreAlloc,
-        prepared::GLWESecretPrepared,
+        GLWE, GLWEAlloc, GLWELayout, GLWEPlaintext, GLWEPlaintextAlloc, GLWESecret, GLWESecretAlloc, LWE, LWEAlloc, LWEInfos,
+        LWELayout, LWEPlaintext, LWEPlaintextAlloc, LWESecret, LWESecretAlloc, ModuleCoreAlloc, prepared::GLWESecretPrepared,
     },
 };
 
@@ -31,8 +32,15 @@ pub fn test_blind_rotation<BRA: BlindRotationAlgo, M, BE: Backend<OwnedBuf = Ali
     extension_factor: usize,
 ) -> GLWE<AlignedBuf, i64>
 where
-    M: ModuleN
+    M: GGSWAlloc
+        + ModuleN
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+        + GLWEAlloc
+        + GLWEPlaintextAlloc
+        + GLWESecretAlloc
+        + LWEAlloc
+        + LWEPlaintextAlloc
+        + LWESecretAlloc
         + BlindRotationKeyEncryptSk<BRA, BE>
         + BlindRotationKeyPreparedFactory<BRA, BE>
         + GGSWPreparedFactory<BE>

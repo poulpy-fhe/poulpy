@@ -12,7 +12,7 @@ use poulpy_core::test_suite::keys::TransformKeys;
 use std::collections::{HashMap, HashSet};
 
 use poulpy_core::{
-    GLWEBytesOf,
+    GLWELinearTransformationBabyStepsBytesOf,
     layouts::{
         BackendGLWESecret, Diagonals, Evaluate, GGLWEInfos, GLWEInfos, GLWELayout, GLWEPlaintextInfos, GLWEToBackendRef,
         GetAutomorphismKey, GetTensorKey, LWEInfos, LinearTransformationDiagonal, LinearTransformationGiantStep,
@@ -264,7 +264,7 @@ pub fn test_linear_transformation_sum<BE, F, E>(
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSLinearTransformationOps<BE>
-        + poulpy_core::api::GLWELinearTransformations<BE>
+        + poulpy_core::api::GLWELinearTransformationOps<BE>
         + CnvPVecAlloc<BE>,
     F: TestScalar,
     E: ReimNew<F>,
@@ -409,7 +409,7 @@ pub fn test_linear_transformation_sum<BE, F, E>(
     }
     let mut core_sum = alloc_ct(&params, module, params.k);
     let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        poulpy_core::api::GLWELinearTransformations::glwe_eval_linear_transformation_sum_into(
+        poulpy_core::api::GLWELinearTransformationOps::glwe_linear_transformation_eval_sum_into(
             module,
             0,
             &mut core_sum,
@@ -1441,7 +1441,7 @@ pub fn test_linear_transformation_ct<BE, F, E>(
             &tsk_layout,
             &params.atk_layout(),
         );
-        let cache_bytes = module.linear_transformation_baby_steps_bytes_of(&plan, &src);
+        let cache_bytes = module.glwe_linear_transformation_baby_steps_bytes_of(&plan, &src);
         let mut self_into = alloc_ct(&params, module, src_k);
         let before = snapshot::<BE, _>(&self_into);
         let err = with_scratch::<BE, _>(cache_bytes - 1, |s| {

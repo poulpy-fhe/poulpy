@@ -8,8 +8,8 @@ use poulpy_hal::{
     oep::HalVecZnxImpl,
 };
 
-use crate::ScratchArenaTakeCore;
-use crate::api::GLWEBytesOf;
+use crate::ScratchArenaTakeGLWEPlaintext;
+use crate::api::GLWEPlaintextBytesOf;
 use crate::noise::glwe::{glwe_noise_backend_inner, glwe_noise_body_tmp_bytes};
 use crate::{
     GLWENormalize,
@@ -104,7 +104,7 @@ where
             ScalarZnx::from_data(BE::from_host_bytes(pt_want.data), pt_want.n(), pt_want.cols());
         {
             let mut pt_backend = pt.to_backend_mut();
-            crate::gadget::gadget_row_plaintext(
+            crate::gadget::gglwe_gadget_row_plaintext(
                 self,
                 &mut pt_backend.data,
                 0,

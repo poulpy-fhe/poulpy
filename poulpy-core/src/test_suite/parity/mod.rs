@@ -76,10 +76,10 @@ use poulpy_hal::{
 
 use crate::{
     ComponentNoise, Distribution,
-    api::{GLWEMaskFill, TransferInto},
+    api::{GLWEFill, TransferInto},
     layouts::{
-        BackendGGLWE, BackendGLWE, GGLWEInfos, GGLWEToBackendMut, GLWEInfos, GLWEToBackendMut, LWEInfos, ModuleCoreAlloc, Rank,
-        SetK, TorusPrecision,
+        BackendGGLWE, BackendGLWE, GGLWEAlloc, GGLWEInfos, GGLWEToBackendMut, GLWEAlloc, GLWEInfos, GLWEToBackendMut, LWEInfos,
+        Rank, SetK, TorusPrecision,
     },
     test_suite::keys::fill_by_digit,
 };
@@ -150,7 +150,7 @@ where
     A: GLWEInfos,
 {
     let mut glwe = module_ref.glwe_alloc_from_infos(infos);
-    module_ref.fill_glwe_from_source(&mut glwe, source);
+    module_ref.glwe_fill_from_source(&mut glwe, source);
     GLWEToBackendMut::<BR>::set_noise(&mut glwe, Some(fixture_noise(infos.k(), infos.rank())));
     glwe
 }

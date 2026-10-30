@@ -1,5 +1,5 @@
 use poulpy_core::api::TransferInto;
-use poulpy_core::layouts::{Base2K, Degree, GLWE, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision};
+use poulpy_core::layouts::{Base2K, Degree, GLWE, GLWEAlloc, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision};
 use poulpy_hal::layouts::{CopyFromHost, CopyToHost, Data, ZnxWord};
 
 /// Specifies in which direction the LUT is rotated by the LWE constant term
@@ -165,7 +165,7 @@ impl<D: Data, W: ZnxWord> LookupTable<D, W> {
     /// Panics if `infos.extension_factor()` is zero or not a power of two.
     pub fn alloc<M, A>(module: &M, infos: &A) -> Self
     where
-        M: ModuleCoreAlloc<OwnedBuf = D, ZnxWord = W>,
+        M: ModuleCoreAlloc<OwnedBuf = D, ZnxWord = W> + GLWEAlloc,
         A: LookupTableInfos,
     {
         assert!(

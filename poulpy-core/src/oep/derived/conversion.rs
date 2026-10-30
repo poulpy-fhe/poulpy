@@ -1,5 +1,5 @@
 //! Conversions expressed by composing core operations.
-use crate::ScratchArenaTakeCore;
+use crate::ScratchArenaTakeGLWE;
 use crate::layouts::operand_degree;
 use crate::{
     api::{GGSWExpandRows, GLWEBytesOf, GLWECopy, GLWEKeyswitch, GLWERotate, LWESampleExtract},
@@ -22,7 +22,7 @@ where
     T: GGLWEInfos,
 {
     module
-        .ggsw_expand_rows_tmp_bytes(res_infos, tsk_infos)
+        .ggsw_expand_rows_assign_tmp_bytes(res_infos, tsk_infos)
         .max(module.glwe_copy_tmp_bytes(res_infos, a_infos))
 }
 
@@ -58,7 +58,7 @@ pub(crate) fn ggsw_from_gglwe_derived<BE, M, R, A>(
         module.glwe_copy(&mut res_at, &a_at, scratch);
     }
 
-    module.ggsw_expand_row(&mut res_backend, tsk, scratch)
+    module.ggsw_expand_rows_assign(&mut res_backend, tsk, scratch)
 }
 
 pub(crate) fn lwe_from_glwe_tmp_bytes_derived<BE, M, R, A, K>(module: &M, lwe_infos: &R, glwe_infos: &A, key_infos: &K) -> usize

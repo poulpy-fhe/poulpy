@@ -2,7 +2,7 @@
 //!
 //! Computes the plaintext width, convolution offset, and final result metadata,
 //! then delegates the actual evaluation to the scheme-agnostic core engine
-//! [`GLWELinearTransformations`](trait@poulpy_core::GLWELinearTransformations). See
+//! [`GLWELinearTransformationOps`](trait@poulpy_core::GLWELinearTransformationOps). See
 //! `docs/guides/linear_transformation.md`.
 
 use crate::{CKKSError, CKKSResult as Result, ckks_ensure, ckks_ensure_operand, operand_cyclotomic_order};
@@ -11,7 +11,7 @@ use poulpy_core::layouts::BabyStepOperand;
 use poulpy_core::layouts::GLWEPlaintextInfos;
 use poulpy_core::layouts::LinearTransformationPlan;
 use poulpy_core::{
-    DiagonalProd, GLWELinearTransformations, LinearTransformationBabySteps, LinearTransformationPrepared,
+    GLWEDiagonalProd, GLWELinearTransformationOps, LinearTransformationBabySteps, LinearTransformationPrepared,
     layouts::{
         BsgsRotations, DiagonalOperand, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey,
         GetTensorKey, LWEInfos, TorusPrecision, prepared::PreparedDiagonal,
@@ -36,7 +36,7 @@ use poulpy_core::GLWEBytesOf;
 
 /// A streamed plaintext diagonal: where the resident path (core's [`PreparedDiagonal`]) fuses already-prepared
 /// diagonals, a [`CKKSPlaintext`] diagonal is a rank-0 GLWE view the product prepares on the fly.
-impl<BE: Backend, D: Data> DiagonalProd<BE> for CKKSPlaintext<D, BE::ZnxWord, BE::Ring>
+impl<BE: Backend, D: Data> GLWEDiagonalProd<BE> for CKKSPlaintext<D, BE::ZnxWord, BE::Ring>
 where
     CKKSPlaintext<D, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE>,
 {
@@ -50,7 +50,7 @@ where
 
 /// A streamed ciphertext diagonal: a GLWE view of the source's rank the product prepares on the fly and multiplies as
 /// a ciphertext.
-impl<BE: Backend, D: Data> DiagonalProd<BE> for CKKSCiphertext<D, BE::ZnxWord, BE::Ring>
+impl<BE: Backend, D: Data> GLWEDiagonalProd<BE> for CKKSCiphertext<D, BE::ZnxWord, BE::Ring>
 where
     CKKSCiphertext<D, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE>,
 {
@@ -124,10 +124,10 @@ impl<D: Data, BE: Backend> LtDiagonalMeta for PreparedDiagonal<D, BE> {
 pub trait CKKSLinearTransformationReference<BE: Backend> {
     fn ckks_prepare_linear_transformation_rhs_tmp_bytes_reference<P>(&self, pt_infos: &P) -> usize
     where
-        Self: GLWELinearTransformations<BE>,
+        Self: GLWELinearTransformationOps<BE>,
         P: GLWEInfos,
     {
-        self.glwe_prepare_linear_transformation_rhs_tmp_bytes(pt_infos)
+        self.glwe_linear_transformation_rhs_prepare_tmp_bytes(pt_infos)
     }
 
     fn ckks_prepare_linear_transformation_baby_steps_tmp_bytes_reference<C, K>(
@@ -137,11 +137,11 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         key: &K,
     ) -> usize
     where
-        Self: GLWELinearTransformations<BE>,
+        Self: GLWELinearTransformationOps<BE>,
         C: CKKSCtBounds,
         K: GGLWEInfos,
     {
-        self.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(ct, plan, key)
+        self.glwe_linear_transformation_baby_steps_prepare_tmp_bytes(ct, plan, key)
     }
 
     fn ckks_eval_linear_transformation_tmp_bytes_reference<C, D, K, T>(
@@ -153,7 +153,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         key: &K,
     ) -> usize
     where
-        Self: GLWELinearTransformations<BE> + GLWEBytesOf<BE> + CKKSCopyOps<BE>,
+        Self: GLWELinearTransformationOps<BE> + GLWEBytesOf<BE> + CKKSCopyOps<BE>,
         C: CKKSCtBounds,
         D: GLWEInfos,
         K: GGLWEInfos,
@@ -162,7 +162,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         // `ct` stands for the destination and the source. The extra ct-sized buffer is the dst-shaped working copy the
         // `_assign` wrappers carve from scratch and copy back with the selected `ckks_copy` (an upper bound for the
         // `_into` paths, which skip both).
-        self.glwe_eval_linear_transformation_tmp_bytes(ct, ct, diagonal, plan, tsk, key)
+        self.glwe_linear_transformation_eval_tmp_bytes(ct, ct, diagonal, plan, tsk, key)
             .max(self.ckks_copy_tmp_bytes(ct, ct))
             + BE::scratch_aligned(self.glwe_bytes_of_from_infos(ct))
     }
@@ -177,14 +177,14 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         key: &K,
     ) -> usize
     where
-        Self: GLWELinearTransformations<BE> + GLWEBytesOf<BE> + CKKSCopyOps<BE>,
+        Self: GLWELinearTransformationOps<BE> + GLWEBytesOf<BE> + CKKSCopyOps<BE>,
         C: CKKSCtBounds,
         D: GLWEInfos,
         K: GGLWEInfos,
         T: GGLWEInfos,
     {
         // The extra ct-sized buffer and the copy cover the `_assign` wrappers' scratch-carved working copy, as above.
-        self.glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(ct, ct, diagonal, plan, tsk, key)
+        self.glwe_linear_transformation_eval_unprepared_rhs_tmp_bytes(ct, ct, diagonal, plan, tsk, key)
             .max(self.ckks_copy_tmp_bytes(ct, ct))
             + BE::scratch_aligned(self.glwe_bytes_of_from_infos(ct))
     }
@@ -199,13 +199,13 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         key: &K,
     ) -> usize
     where
-        Self: GLWELinearTransformations<BE>,
+        Self: GLWELinearTransformationOps<BE>,
         C: CKKSCtBounds,
         D: GLWEInfos,
         K: GGLWEInfos,
         T: GGLWEInfos,
     {
-        self.glwe_eval_linear_transformation_sum_unprepared_rhs_tmp_bytes(ct, ct, diagonal, plan, tsk, key)
+        self.glwe_linear_transformation_eval_sum_unprepared_rhs_tmp_bytes(ct, ct, diagonal, plan, tsk, key)
     }
 
     fn ckks_eval_linear_transformation_sum_tmp_bytes_reference<C, D, K, T>(
@@ -217,14 +217,14 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         key: &K,
     ) -> usize
     where
-        Self: GLWELinearTransformations<BE>,
+        Self: GLWELinearTransformationOps<BE>,
         C: CKKSCtBounds,
         D: GLWEInfos,
         K: GGLWEInfos,
         T: GGLWEInfos,
     {
         // No `_assign` wrapper, so no dst-shaped working copy.
-        self.glwe_eval_linear_transformation_sum_tmp_bytes(ct, ct, diagonal, plan, tsk, key)
+        self.glwe_linear_transformation_eval_sum_tmp_bytes(ct, ct, diagonal, plan, tsk, key)
     }
 
     /// `InvalidOperand`, before any write, for a `prepared` allocated for another layout than `lt`'s or diagonals of
@@ -236,7 +236,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: GLWELinearTransformations<BE>,
+        Self: GLWELinearTransformationOps<BE>,
         P: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
         const OP: &str = "ckks_prepare_linear_transformation_rhs";
@@ -249,7 +249,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
                 "{OP}: scratch below its query"
             );
         }
-        self.glwe_prepare_linear_transformation_rhs(prepared, lt, scratch);
+        self.glwe_linear_transformation_rhs_prepare(prepared, lt, scratch);
         // The first diagonal's scale and slot kind are stashed for all, so eval needs no `lt` for its `cnv_offset` and
         // slot kind. A plaintext is sparse by its degree; ciphertexts by their label, the products sparse where all are.
         if let Some(first_pt) = first_pt {
@@ -278,7 +278,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: GLWELinearTransformations<BE> + CyclotomicOrder,
+        Self: GLWELinearTransformationOps<BE> + CyclotomicOrder,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetAutomorphismKey<BE>,
     {
@@ -296,7 +296,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
                 .into());
             }
         }
-        self.glwe_prepare_linear_transformation_baby_steps(babies, src, keys, scratch);
+        self.glwe_linear_transformation_baby_steps_prepare(babies, src, keys, scratch);
         Ok(())
     }
 
@@ -310,10 +310,10 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: GLWELinearTransformations<BE> + CyclotomicOrder,
+        Self: GLWELinearTransformationOps<BE> + CyclotomicOrder,
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: DiagonalProd<BE> + LtDiagonalMeta,
+        P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
     {
         const OP: &str = "ckks_eval_linear_transformation_into";
@@ -338,7 +338,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         dst.set_log_budget(res_log_budget);
         dst.set_log_delta(res_log_delta);
         dst.set_log_sparsity(out.meta.log_sparsity);
-        self.glwe_eval_linear_transformation_into(cnv_offset, dst, babies, lt, keys, scratch);
+        self.glwe_linear_transformation_eval_into(cnv_offset, dst, babies, lt, keys, scratch);
         dst.set_slots(out.meta.slots);
         Ok(())
     }
@@ -353,10 +353,10 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: GLWELinearTransformations<BE> + CyclotomicOrder,
+        Self: GLWELinearTransformationOps<BE> + CyclotomicOrder,
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: DiagonalProd<BE> + LtDiagonalMeta,
+        P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
     {
         const OP: &str = "ckks_eval_linear_transformation_sum_into";
@@ -426,7 +426,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         dst.set_log_budget(res_log_budget);
         dst.set_log_delta(res_log_delta);
         dst.set_log_sparsity(log_sparsity);
-        self.glwe_eval_linear_transformation_sum_into(cnv_offset, dst, babies, lts, keys, scratch);
+        self.glwe_linear_transformation_eval_sum_into(cnv_offset, dst, babies, lts, keys, scratch);
         dst.set_slots(slots);
         Ok(())
     }

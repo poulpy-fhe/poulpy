@@ -49,7 +49,7 @@ fn check_mul_columns<RT: GpuRuntime, R: Ring>(
 /// of `diag` receive `a0 * b0` and `a1 * b1`, column 0 of `cross` receives
 /// `(a0 + a1) * (b0 + b1) - diag0 - diag1`. A square reads the left prepared
 /// form on both sides: `a` and `b` then prepare one operand
-/// (`GLWETensoringImpl::glwe_square_prepare`), and `b` is only checked.
+/// (`GLWETensoringImpl::glwe_square_operand_prepare`), and `b` is only checked.
 // The body of the core hooks `GLWETensoringImpl::glwe_mul_columns` and `glwe_square_columns`.
 #[cfg_attr(not(feature = "enable-core"), allow(dead_code))]
 pub(crate) fn glwe_mul_columns<RT: GpuRuntime, R: Ring>(
@@ -82,7 +82,7 @@ pub(crate) fn glwe_mul_columns<RT: GpuRuntime, R: Ring>(
 
 /// The checks of `cnv_prepare_self`, then its left form alone, `None` when
 /// `left` holds no storage: the first half of `cnv_prepare_self`, and the
-/// preparation of a square (`GLWETensoringImpl::glwe_square_prepare`), which
+/// preparation of a square (`GLWETensoringImpl::glwe_square_operand_prepare`), which
 /// reads the left form on both sides and leaves `right` unwritten.
 #[cfg_attr(not(feature = "enable-core"), allow(dead_code))]
 pub(crate) fn cnv_prepare_self_left<RT: GpuRuntime, R: Ring>(

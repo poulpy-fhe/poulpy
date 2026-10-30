@@ -321,7 +321,7 @@ macro_rules! impl_digits_strided {
                 );
             }
 
-            ::poulpy_core::impl_gglwe_product_step_hooks_reference!();
+            ::poulpy_core::impl_gglwe_product_digits_strided_reference!();
         }
     };
 }

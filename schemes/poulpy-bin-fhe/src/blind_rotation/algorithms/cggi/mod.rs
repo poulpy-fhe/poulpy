@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use poulpy_core::{Distribution, layouts::ModuleCoreAlloc};
+use poulpy_core::{Distribution, layouts::GGSWAlloc};
 use poulpy_hal::api::ModuleN;
 
 use crate::blind_rotation::{BlindRotationAlgo, BlindRotationKey, BlindRotationKeyInfos};
@@ -30,7 +30,7 @@ pub struct CGGI {}
 impl BlindRotationAlgo for CGGI {
     fn alloc_key<M, A>(module: &M, infos: &A) -> BlindRotationKey<M::OwnedBuf, Self, M::ZnxWord>
     where
-        M: ModuleCoreAlloc + ModuleN,
+        M: GGSWAlloc + ModuleN,
         A: BlindRotationKeyInfos,
     {
         #[cfg(debug_assertions)]

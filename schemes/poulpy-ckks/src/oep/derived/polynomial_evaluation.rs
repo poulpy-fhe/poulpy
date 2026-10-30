@@ -16,7 +16,7 @@ use crate::{
     power_basis::{PowerBasis, PowerBasisGen},
 };
 
-/// Scratch upper bound for [`BSGSOps::eval_baby_linear_combination`]: the constant combination
+/// Scratch upper bound for [`GLWEBSGSOps::eval_baby_linear_combination`]: the constant combination
 /// for the widest term (`ct_size`) and constant (`pt_size`) in limbs.
 pub(crate) fn eval_baby_linear_combination_tmp_bytes<BE>(module: &Module<BE>, ct_size: usize, pt_size: usize) -> usize
 where

@@ -1,9 +1,9 @@
 use poulpy_core::{
-    GLWEExternalProduct, GLWEMaskFill,
+    GLWEExternalProduct, GLWEFill,
     api::GGSWPreparedFactory,
     layouts::{
-        Base2K, Degree, Dnum, GGSW, GGSWAtViewMut, GGSWLayout, GLWELayout, ModuleCoreAlloc, Rank, TorusPrecision, k_digit_of,
-        prepared::GGSWPrepared,
+        Base2K, Degree, Dnum, GGSW, GGSWAlloc, GGSWAtViewMut, GGSWLayout, GLWEAlloc, GLWELayout, ModuleCoreAlloc, Rank,
+        TorusPrecision, k_digit_of, prepared::GGSWPrepared,
     },
 };
 use poulpy_hal::api::ModuleSynchronize;
@@ -47,7 +47,7 @@ where
         + ModuleSynchronize<BE>
         + GLWEExternalProduct<BE>
         + GGSWPreparedFactory<BE>
-        + GLWEMaskFill<BE>
+        + GLWEFill<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -59,11 +59,11 @@ where
     let mut ct_glwe_in = module.glwe_alloc_from_infos(&glwe_infos);
     let mut ct_glwe_out = module.glwe_alloc_from_infos(&glwe_infos);
     let mut ct_ggsw: GGSW<BE::OwnedBuf, i64> = module.ggsw_alloc_from_infos(&ggsw_infos);
-    module.fill_glwe_from_source(&mut ct_glwe_in, &mut source);
+    module.glwe_fill_from_source(&mut ct_glwe_in, &mut source);
     for row in 0..ggsw_infos.dnum.as_usize() {
         for col in 0..cp.rank as usize + 1 {
             let mut entry = GGSWAtViewMut::<BE>::at_view_mut(&mut ct_ggsw, row, col);
-            module.fill_glwe_from_source(&mut entry, &mut source);
+            module.glwe_fill_from_source(&mut entry, &mut source);
         }
     }
 
@@ -97,7 +97,7 @@ pub fn runner_glwe_external_product_assign<BE: Backend<ZnxWord = i64>, M: Measur
         + ModuleSynchronize<BE>
         + GLWEExternalProduct<BE>
         + GGSWPreparedFactory<BE>
-        + GLWEMaskFill<BE>
+        + GLWEFill<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -108,11 +108,11 @@ pub fn runner_glwe_external_product_assign<BE: Backend<ZnxWord = i64>, M: Measur
 
     let mut ct_glwe = module.glwe_alloc_from_infos(&glwe_infos);
     let mut ct_ggsw: GGSW<BE::OwnedBuf, i64> = module.ggsw_alloc_from_infos(&ggsw_infos);
-    module.fill_glwe_from_source(&mut ct_glwe, &mut source);
+    module.glwe_fill_from_source(&mut ct_glwe, &mut source);
     for row in 0..ggsw_infos.dnum.as_usize() {
         for col in 0..cp.rank as usize + 1 {
             let mut entry = GGSWAtViewMut::<BE>::at_view_mut(&mut ct_ggsw, row, col);
-            module.fill_glwe_from_source(&mut entry, &mut source);
+            module.glwe_fill_from_source(&mut entry, &mut source);
         }
     }
 

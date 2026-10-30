@@ -7,8 +7,8 @@
 //!   [`GGSWEncryptSk`], [`LWEEncryptSk`](crate::api::LWEEncryptSk) for encrypting plaintexts under
 //!   GLWE, GGLWE, GGSW, and LWE schemes.
 //!
-//! - **Key-switching keys**: [`GLWESwitchingKeyEncryptSk`], [`LWESwitchingKeyEncrypt`](crate::api::LWESwitchingKeyEncrypt),
-//!   [`GLWEToLWESwitchingKeyEncryptSk`](crate::api::GLWEToLWESwitchingKeyEncryptSk), [`LWEToGLWESwitchingKeyEncryptSk`](crate::api::LWEToGLWESwitchingKeyEncryptSk) for
+//! - **Key-switching keys**: [`GLWESwitchingKeyEncryptSk`], [`LWESwitchingKeyEncryptSk`](crate::api::LWESwitchingKeyEncryptSk),
+//!   [`GLWEToLWEKeyEncryptSk`](crate::api::GLWEToLWEKeyEncryptSk), [`LWEToGLWEKeyEncryptSk`](crate::api::LWEToGLWEKeyEncryptSk) for
 //!   generating keys that enable switching between different secret keys or
 //!   between LWE and GLWE domains.
 //!
@@ -41,7 +41,7 @@ pub mod lwe;
 pub mod lwe_switching_key;
 pub mod lwe_to_glwe_key;
 
-pub use crate::api::{GGSWEncryptSk, GLWEEncryptSk, GLWEMaskFill, LWEFillMask};
+pub use crate::api::{GGSWEncryptSk, GLWEEncryptSk, GLWEFill, LWEFillMask};
 pub use compressed::*;
 pub use gglwe::*;
 pub use gglwe_to_ggsw_key::*;

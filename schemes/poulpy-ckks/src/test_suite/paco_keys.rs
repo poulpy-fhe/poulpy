@@ -29,7 +29,7 @@ use std::collections::HashMap;
 use poulpy_core::{
     TransferInto,
     api::GLWESecretPreparedFactory,
-    layouts::{Base2K, LinearTransformationStrategy, ModuleCoreAlloc},
+    layouts::{Base2K, GLWESecretAlloc, LinearTransformationStrategy},
 };
 use poulpy_hal::{
     api::{CnvPVecAlloc, ReimNew, ScratchOwnedBorrow},

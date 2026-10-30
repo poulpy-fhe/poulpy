@@ -1,5 +1,5 @@
 //! Deprecated HAL bounds of the polynomial evaluation, whose arithmetic policy
-//! is [`BSGSOps`](crate::api::BSGSOps).
+//! is [`GLWEBSGSOps`](crate::api::GLWEBSGSOps).
 
 use crate::{GLWEBytesOf, GLWENormalize};
 use poulpy_hal::{

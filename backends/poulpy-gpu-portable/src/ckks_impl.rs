@@ -20,8 +20,8 @@ use poulpy_ckks::{
 use poulpy_core::{
     ComponentNoise, GLWECopy,
     layouts::{
-        Base2K, Degree, GLWE, GLWEBackendMut, GLWEBackendRef, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef,
-        IntPolyInfos, LWEInfos, ModuleCoreAlloc, Rank, SetK, TorusPrecision,
+        Base2K, Degree, GLWE, GLWEAlloc, GLWEBackendMut, GLWEBackendRef, GLWEInfos, GLWELayout, GLWEToBackendMut,
+        GLWEToBackendRef, IntPolyInfos, LWEInfos, Rank, SetK, TorusPrecision,
     },
 };
 use poulpy_cpu_portable::ckks_encoding::{EncodingFFTTable, OwnedEncodingPlanSet};

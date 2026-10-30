@@ -17,7 +17,7 @@ use crate::{
 /// the mask polynomials from the stored PRNG seed.
 pub trait GLWEDecompress<BE: Backend> {
     /// Decompresses `other` into `res` by copying the stored data and regenerating the mask.
-    fn decompress_glwe<R, O>(&self, res: &mut R, other: &O)
+    fn glwe_decompress<R, O>(&self, res: &mut R, other: &O)
     where
         R: GLWEToBackendMut<BE> + SetBase2k + SetGLWEPlaintextInfos,
         O: GLWECompressedToBackendRef<BE> + GLWEInfos;
@@ -29,7 +29,7 @@ pub trait GLWEDecompress<BE: Backend> {
 /// compressed GLWE row individually via [`GLWEDecompress`].
 pub trait GGLWEDecompress<BE: Backend> {
     /// Decompresses `other` into `res`.
-    fn decompress_gglwe<R, O>(&self, res: &mut R, other: &O)
+    fn gglwe_decompress<R, O>(&self, res: &mut R, other: &O)
     where
         R: GGLWEToBackendMut<BE> + GGLWEInfos,
         O: GGLWECompressedToBackendRef<BE> + GGLWEInfos;
@@ -41,7 +41,7 @@ pub trait GGLWEDecompress<BE: Backend> {
 /// compressed GLWE individually via [`GLWEDecompress`].
 pub trait GGSWDecompress<BE: Backend> {
     /// Decompresses `other` into `res`.
-    fn decompress_ggsw<R, O>(&self, res: &mut R, other: &O)
+    fn ggsw_decompress<R, O>(&self, res: &mut R, other: &O)
     where
         R: GGSWToBackendMut<BE> + GGSWInfos,
         O: GGSWCompressedToBackendRef<BE> + GGSWInfos;
@@ -52,7 +52,7 @@ pub trait GGSWDecompress<BE: Backend> {
 pub trait GLWEPublicKeyDecompress<BE: Backend> {
     /// Copies each body, regenerates its mask from its seed, and copies the
     /// distribution.
-    fn decompress_glwe_public_key<R, O>(&self, res: &mut R, other: &O)
+    fn glwe_public_key_decompress<R, O>(&self, res: &mut R, other: &O)
     where
         R: GLWEPublicKeyToBackendMut<BE> + GetDistributionMut + GLWEInfos,
         O: GLWEPublicKeyCompressedToBackendRef<BE> + GetDistribution + GLWEInfos;
@@ -60,7 +60,7 @@ pub trait GLWEPublicKeyDecompress<BE: Backend> {
 
 /// Decompresses an [`LWECompressed`](crate::layouts::LWECompressed) into a standard [`LWE`](crate::layouts::LWE).
 pub trait LWEDecompress<BE: Backend> {
-    fn decompress_lwe<R, O>(&self, res: &mut R, other: &O)
+    fn lwe_decompress<R, O>(&self, res: &mut R, other: &O)
     where
         R: LWEToBackendMut<BE> + LWEInfos + SetBase2k,
         O: LWECompressedToBackendRef<BE>;
@@ -69,7 +69,7 @@ pub trait LWEDecompress<BE: Backend> {
 /// Decompresses a [`GLWEAutomorphismKeyCompressed`](crate::layouts::GLWEAutomorphismKeyCompressed) into a
 /// [`GLWEAutomorphismKey`](crate::layouts::GLWEAutomorphismKey).
 pub trait GLWEAutomorphismKeyDecompress<BE: Backend> {
-    fn decompress_automorphism_key<R, O>(&self, res: &mut R, other: &O)
+    fn glwe_automorphism_key_decompress<R, O>(&self, res: &mut R, other: &O)
     where
         R: GGLWEToBackendMut<BE> + GGLWEInfos + SetGaloisElement,
         O: GGLWECompressedToBackendRef<BE> + GGLWEInfos + GetGaloisElement;
@@ -79,7 +79,7 @@ pub trait GLWEAutomorphismKeyDecompress<BE: Backend> {
 /// [`GLWESwitchingKey`](crate::layouts::GLWESwitchingKey).
 pub trait GLWESwitchingKeyDecompress<BE: Backend> {
     /// Decompresses `other` into `res`, copying degree metadata.
-    fn decompress_glwe_switching_key<R, O>(&self, res: &mut R, other: &O)
+    fn glwe_switching_key_decompress<R, O>(&self, res: &mut R, other: &O)
     where
         R: GGLWEToBackendMut<BE> + GGLWEInfos + GLWESwitchingKeyDegreesMut,
         O: GGLWECompressedToBackendRef<BE> + GGLWEInfos + GLWESwitchingKeyDegrees;
@@ -88,16 +88,16 @@ pub trait GLWESwitchingKeyDecompress<BE: Backend> {
 /// Decompresses a [`GLWETensorKeyCompressed`](crate::layouts::GLWETensorKeyCompressed) into a
 /// [`GLWETensorKey`](crate::layouts::GLWETensorKey).
 pub trait GLWETensorKeyDecompress<BE: Backend> {
-    fn decompress_tensor_key<R, O>(&self, res: &mut R, other: &O)
+    fn glwe_tensor_key_decompress<R, O>(&self, res: &mut R, other: &O)
     where
         R: GGLWEToBackendMut<BE> + GGLWEInfos,
         O: GGLWECompressedToBackendRef<BE> + GGLWEInfos;
 }
 
-/// Decompresses a [`GLWEToLWESwitchingKeyCompressed`](crate::layouts::GLWEToLWESwitchingKeyCompressed) into a
+/// Decompresses a [`GLWEToLWEKeyCompressed`](crate::layouts::GLWEToLWEKeyCompressed) into a
 /// [`GLWEToLWEKey`](crate::layouts::GLWEToLWEKey).
-pub trait GLWEToLWESwitchingKeyDecompress<BE: Backend> {
-    fn decompress_glwe_to_lwe_key<R, O>(&self, res: &mut R, other: &O)
+pub trait GLWEToLWEKeyDecompress<BE: Backend> {
+    fn glwe_to_lwe_key_decompress<R, O>(&self, res: &mut R, other: &O)
     where
         R: GGLWEToBackendMut<BE> + GGLWEInfos + GLWESwitchingKeyDegreesMut,
         O: GGLWECompressedToBackendRef<BE> + GGLWEInfos + GLWESwitchingKeyDegrees;
@@ -106,7 +106,7 @@ pub trait GLWEToLWESwitchingKeyDecompress<BE: Backend> {
 /// Decompresses an [`LWESwitchingKeyCompressed`](crate::layouts::LWESwitchingKeyCompressed) into an
 /// [`LWESwitchingKey`](crate::layouts::LWESwitchingKey).
 pub trait LWESwitchingKeyDecompress<BE: Backend> {
-    fn decompress_lwe_switching_key<R, O>(&self, res: &mut R, other: &O)
+    fn lwe_switching_key_decompress<R, O>(&self, res: &mut R, other: &O)
     where
         R: GGLWEToBackendMut<BE> + GGLWEInfos + GLWESwitchingKeyDegreesMut,
         O: GGLWECompressedToBackendRef<BE> + GGLWEInfos + GLWESwitchingKeyDegrees;
@@ -115,7 +115,7 @@ pub trait LWESwitchingKeyDecompress<BE: Backend> {
 /// Decompresses an [`LWEToGLWEKeyCompressed`](crate::layouts::LWEToGLWEKeyCompressed) into an
 /// [`LWEToGLWEKey`](crate::layouts::LWEToGLWEKey).
 pub trait LWEToGLWEKeyDecompress<BE: Backend> {
-    fn decompress_lwe_to_glwe_key<R, O>(&self, res: &mut R, other: &O)
+    fn lwe_to_glwe_key_decompress<R, O>(&self, res: &mut R, other: &O)
     where
         R: GGLWEToBackendMut<BE> + GGLWEInfos + GLWESwitchingKeyDegreesMut,
         O: GGLWECompressedToBackendRef<BE> + GGLWEInfos + GLWESwitchingKeyDegrees;
@@ -125,7 +125,7 @@ pub trait LWEToGLWEKeyDecompress<BE: Backend> {
 /// [`GGLWEToGGSWKey`](crate::layouts::GGLWEToGGSWKey).
 pub trait GGLWEToGGSWKeyDecompress<BE: Backend> {
     /// Decompresses `other` into `res` by decompressing each GGLWE entry.
-    fn decompress_gglwe_to_ggsw_key<R, O>(&self, res: &mut R, other: &O)
+    fn gglwe_to_ggsw_key_decompress<R, O>(&self, res: &mut R, other: &O)
     where
         R: GGLWEToGGSWKeyToBackendMut<BE>,
         O: GGLWEToGGSWKeyCompressedToBackendRef<BE>;

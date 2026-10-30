@@ -1,7 +1,9 @@
 use poulpy_core::{
-    GLWEMaskFill, Noise, TransferInto,
+    GLWEFill, Noise, TransferInto,
     api::{GLWEPublicKeyPreparedFactory, GLWESecretPreparedFactory, GLWESecretSampling},
-    layouts::{GLWE, GLWELayout, GLWEPublicKey, GLWESecret, ModuleCoreAlloc, Rank, TorusPrecision},
+    layouts::{
+        GLWE, GLWEAlloc, GLWELayout, GLWEPublicKey, GLWEPublicKeyAlloc, GLWESecret, ModuleCoreAlloc, Rank, TorusPrecision,
+    },
     test_suite::with_scratch,
 };
 use poulpy_hal::{AlignedBuf, layouts::Module, source::Source};
@@ -28,11 +30,11 @@ pub(crate) fn ciphertext<BR, BT>(
 where
     BR: ReferenceBackend,
     BT: ParityBackend,
-    Module<BR>: GLWEMaskFill<BR> + ModuleCoreAlloc<OwnedBuf = AlignedBuf, ZnxWord = i64>,
+    Module<BR>: GLWEFill<BR> + ModuleCoreAlloc<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     Module<BT>: ModuleCoreAlloc<OwnedBuf = BT::OwnedBuf, ZnxWord = i64>,
 {
     let mut ct_ref = module_ref.glwe_alloc_from_infos(layout);
-    module_ref.fill_glwe_from_source(&mut ct_ref, &mut Source::new([seed; 32]));
+    module_ref.glwe_fill_from_source(&mut ct_ref, &mut Source::new([seed; 32]));
     let mut ct_test = module_test.glwe_alloc_from_infos(layout);
     ct_ref.transfer_into(&mut ct_test);
     (ct_ref, ct_test)
@@ -49,7 +51,7 @@ where
         + GLWEPrivateKeyswitchMHEProtocol<BR>
         + GLWESecretSampling<BR>
         + GLWESecretPreparedFactory<BR>
-        + GLWEMaskFill<BR>,
+        + GLWEFill<BR>,
     Module<BT>: MHEModuleAlloc<BT> + GLWEPrivateKeyswitchMHEProtocol<BT> + GLWESecretPreparedFactory<BT>,
 {
     let layout = glwe_layout_at(module_ref, K);
@@ -121,7 +123,7 @@ where
         + GLWESecretSampling<BR>
         + GLWESecretPreparedFactory<BR>
         + GLWEPublicKeyPreparedFactory<BR>
-        + GLWEMaskFill<BR>,
+        + GLWEFill<BR>,
     Module<BT>: MHEModuleAlloc<BT>
         + GLWEPublicKeyswitchMHEProtocol<BT>
         + GLWESecretPreparedFactory<BT>

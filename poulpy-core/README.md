@@ -93,7 +93,7 @@ compressed automorphism key and `module: &Module<BE>`:
 
 ```rust,ignore
 let mut key = module.glwe_automorphism_key_alloc_from_infos(&compressed);
-module.decompress_automorphism_key(&mut key, &compressed);
+module.glwe_automorphism_key_decompress(&mut key, &compressed);
 let mut prepared = module.glwe_automorphism_key_prepared_alloc_from_infos(&key);
 let mut scratch = ScratchOwned::<BE>::alloc(
     module.glwe_automorphism_key_prepare_tmp_bytes(&key),

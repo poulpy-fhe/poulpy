@@ -9,7 +9,7 @@ use poulpy_hal::{
 pub use crate::api::GLWESwitchingKeyEncryptSk;
 use crate::layouts::operand_degree;
 use crate::{
-    GetDistribution, ScratchArenaTakeCore,
+    GetDistribution, ScratchArenaTakeGLWESecret, ScratchArenaTakeGLWESecretPrepared,
     api::GLWESecretPreparedFactory,
     encryption::gglwe::GGLWEEncryptSk,
     layouts::{GGLWEInfos, GGLWEToBackendMut, GLWEInfos, GLWESecretToBackendRef, GLWESwitchingKeyDegreesMut, LWEInfos},

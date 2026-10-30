@@ -3,10 +3,10 @@
 
 use poulpy_core::{
     DEFAULT_SIGMA_XE, Distribution, GGLWENoise, GetDistributionMut,
-    api::{GLWEPublicKeyPreparedFactory, GLWESecretPreparedFactory, GLWESecretSampling, GLWESecretTensorFactory},
+    api::{GLWEPublicKeyPreparedFactory, GLWESecretPreparedFactory, GLWESecretSampling, GLWESecretTensorFromGLWESecret},
     layouts::{
-        Base2K, Dnum, Dsize, GLWELayout, GLWEPublicKeyPrepared, GLWESecret, GLWESecretLayout, GLWESecretTensor, GLWETensorKey,
-        GLWETensorKeyLayout, LWEInfos, ModuleCoreAlloc, TorusPrecision, k_digit_of,
+        Base2K, Dnum, Dsize, GLWELayout, GLWEPublicKeyPrepared, GLWESecret, GLWESecretAlloc, GLWESecretLayout, GLWESecretTensor,
+        GLWESecretTensorAlloc, GLWETensorKey, GLWETensorKeyAlloc, GLWETensorKeyLayout, LWEInfos, TorusPrecision, k_digit_of,
     },
     test_suite::with_scratch,
 };
@@ -39,7 +39,7 @@ where
         + GLWEPublicKeyMHEProtocol<BE>
         + GLWESecretSampling<BE>
         + GLWESecretPreparedFactory<BE>
-        + GLWESecretTensorFactory<BE>
+        + GLWESecretTensorFromGLWESecret<BE>
         + GLWEPublicKeyPreparedFactory<BE>
         + VecZnxAddScalarAssign<BE>
         + GGLWENoise<BE>,
@@ -55,11 +55,11 @@ where
         let mut pk = collective_public_key(module, &parties, &pk_layout);
         let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
             module
-                .glwe_secret_tensor_prepare_tmp_bytes(RANK)
+                .glwe_secret_tensor_from_glwe_secret_tmp_bytes(RANK)
                 .max(module.gglwe_noise_tmp_bytes(&layout)),
         );
         let mut pt_want: GLWESecretTensor<AlignedBuf, i64> = module.glwe_secret_tensor_alloc(RANK);
-        module.glwe_secret_tensor_prepare(&mut pt_want, &secret_sum(module, &parties), &mut scratch.borrow());
+        module.glwe_secret_tensor_from_glwe_secret(&mut pt_want, &secret_sum(module, &parties), &mut scratch.borrow());
 
         let mut acc = module.glwe_tensor_key_share_alloc_from_infos(&layout);
         let mut share = module.glwe_tensor_key_share_alloc_from_infos(&layout);

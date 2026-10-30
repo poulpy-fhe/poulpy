@@ -18,7 +18,7 @@ use poulpy_hal::{
 };
 
 use poulpy_core::{
-    Distribution, GLWEAdd, GLWECopy, GLWEExternalProduct, GLWEMulXpMinusOne, GLWENormalize, GLWEZero, ScratchArenaTakeCore,
+    Distribution, GLWEAdd, GLWECopy, GLWEExternalProduct, GLWEMulXpMinusOne, GLWENormalize, GLWEZero, ScratchArenaTakeGLWE,
     layouts::{GGSWInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, LWEToBackendRef, ModuleCoreAlloc},
 };
 

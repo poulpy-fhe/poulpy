@@ -221,7 +221,7 @@ pub(crate) fn glwe_ci_key_prepare_derived<BE, DR, O, M>(
     BE::glwe_switching_key_prepare(module, &mut res.0, other, scratch);
 }
 
-pub(crate) fn ggsw_zero_derived<BE, R>(module: &Module<BE>, res: &mut R)
+pub(crate) fn ggsw_prepared_zero_derived<BE, R>(module: &Module<BE>, res: &mut R)
 where
     BE: PreparationImpl,
     R: GGSWPreparedToBackendMut<BE>,

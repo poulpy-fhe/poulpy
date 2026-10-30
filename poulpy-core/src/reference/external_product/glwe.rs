@@ -17,9 +17,9 @@ use poulpy_hal::{
 };
 
 use crate::{
-    ScratchArenaTakeCore,
-    api::GLWEExternalProductInternal,
-    gadget::{gadget_input_size, precision_limbs},
+    ScratchArenaTakeGLWE,
+    api::GLWEExternalProductDft,
+    gadget::{gglwe_gadget_input_size, precision_limbs},
     layouts::{
         GGSWInfos, GGSWPreparedBackendRef, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
         gadget_product_limbs,
@@ -40,7 +40,7 @@ where
 {
     let (base2k, k_digit, dnum) = (ggsw_infos.base2k(), ggsw_infos.k_digit(), ggsw_infos.dnum());
     let a_size: usize = a_infos.k().div_ceil(base2k) as usize;
-    let size: usize = gadget_input_size(base2k, k_digit, dnum, a_infos.k(), a_size);
+    let size: usize = gglwe_gadget_input_size(base2k, k_digit, dnum, a_infos.k(), a_size);
     let bytes: usize = if ggsw_infos.digits_aligned() {
         0
     } else {
@@ -131,7 +131,7 @@ fn glwe_external_product_dft_fill<BE, M>(
 /// Callable contiguous-limb DFT external-product algorithm and its workspace query.
 pub trait GLWEExternalProductDftReference<BE: Backend> {
     /// Workspace for the contiguous-limb algorithm, including input normalization.
-    fn glwe_external_product_internal_tmp_bytes_reference<R, A, B>(&self, res_infos: &R, a_infos: &A, b_infos: &B) -> usize
+    fn glwe_external_product_dft_tmp_bytes_reference<R, A, B>(&self, res_infos: &R, a_infos: &A, b_infos: &B) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
@@ -166,7 +166,7 @@ where
         + VecZnxNormalize<BE>
         + GLWENormalize<BE>,
 {
-    fn glwe_external_product_internal_tmp_bytes_reference<R, A, B>(&self, res_infos: &R, a_infos: &A, b_infos: &B) -> usize
+    fn glwe_external_product_dft_tmp_bytes_reference<R, A, B>(&self, res_infos: &R, a_infos: &A, b_infos: &B) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
@@ -216,7 +216,7 @@ where
         // digit grid once, and the interleaved loop reads that layout.
         let cols: usize = (ggsw.rank() + 1).into();
         let (base2k, k_digit) = (ggsw.base2k(), ggsw.k_digit());
-        let size: usize = gadget_input_size(base2k, k_digit, ggsw.dnum(), a.k(), a.size());
+        let size: usize = gglwe_gadget_input_size(base2k, k_digit, ggsw.dnum(), a.k(), a.size());
         let (mut digits, mut scratch_1) = scratch.borrow().take_vec_znx_scratch(a.n().as_usize(), cols, size);
         // An input of precision 0 has no digit: the loop below reads no limb.
         if let Some(a_live) = precision_limbs::<BE>(&a.data, base2k, a.k()).filter(|_| size > 0) {
@@ -265,7 +265,7 @@ where
     BE: Backend,
     M: GLWEBytesOf<BE>
         + GLWEExternalProductReference<BE>
-        + GLWEExternalProductInternal<BE>
+        + GLWEExternalProductDft<BE>
         + GLWENormalize<BE>
         + ModuleN
         + VecZnxDftBytesOf
@@ -297,10 +297,10 @@ where
         let lvl_2_0: usize = module.glwe_bytes_of_from_infos(&a_conv_infos);
         let lvl_2_1: usize = module
             .glwe_normalize_tmp_bytes()
-            .max(module.glwe_external_product_internal_tmp_bytes(res_infos, &a_conv_infos, ggsw_infos));
+            .max(module.glwe_external_product_dft_tmp_bytes(res_infos, &a_conv_infos, ggsw_infos));
         lvl_2_0 + lvl_2_1
     } else {
-        module.glwe_external_product_internal_tmp_bytes(res_infos, a_infos, ggsw_infos)
+        module.glwe_external_product_dft_tmp_bytes(res_infos, a_infos, ggsw_infos)
     };
     lvl_0.next_multiple_of(align) + lvl_1.max(lvl_2)
 }
@@ -315,7 +315,7 @@ pub fn glwe_external_product_reference<BE, M, R, A>(
     BE: Backend,
     M: GLWEBytesOf<BE>
         + GLWEExternalProductReference<BE>
-        + GLWEExternalProductInternal<BE>
+        + GLWEExternalProductDft<BE>
         + GLWENormalize<BE>
         + ModuleN
         + VecZnxBigBytesOf
@@ -404,7 +404,7 @@ pub fn glwe_external_product_assign_reference<BE, M, R>(
     BE: Backend,
     M: GLWEBytesOf<BE>
         + GLWEExternalProductReference<BE>
-        + GLWEExternalProductInternal<BE>
+        + GLWEExternalProductDft<BE>
         + GLWENormalize<BE>
         + ModuleN
         + VecZnxBigBytesOf

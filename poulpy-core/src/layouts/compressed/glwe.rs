@@ -429,7 +429,7 @@ mod tests {
     use poulpy_hal::layouts::{HostBytesBackend, Module};
 
     use crate::layouts::{
-        ModuleCoreCompressedAlloc, TorusPrecision,
+        GLWECompressedAlloc, TorusPrecision,
         glwe::tests::{assert_accepts_larger_serialized_degree, assert_rejects_sparsity_exceeding_serialized_degree, layout},
     };
 

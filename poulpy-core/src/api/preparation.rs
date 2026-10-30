@@ -274,7 +274,7 @@ where
         R: GGSWPreparedToBackendMut<BE>,
         O: GGSWToBackendRef<BE>;
 
-    fn ggsw_zero<R>(&self, res: &mut R)
+    fn ggsw_prepared_zero<R>(&self, res: &mut R)
     where
         R: GGSWPreparedToBackendMut<BE>;
 }
@@ -438,7 +438,7 @@ where
         }
     }
 
-    fn bytes_of_glwe_key_prepared(
+    fn glwe_switching_key_prepared_bytes_of(
         &self,
         base2k: Base2K,
         dnum: Dnum,
@@ -471,7 +471,7 @@ pub trait GLWETensorKeyPreparedFactory<BE: Backend>
 where
     Self: GGLWEPreparedFactory<BE>,
 {
-    fn alloc_tensor_key_prepared(
+    fn glwe_tensor_key_prepared_alloc(
         &self,
         base2k: Base2K,
         dnum: Dnum,
@@ -483,14 +483,14 @@ where
         GLWETensorKeyPrepared(self.gglwe_prepared_alloc(base2k, dnum, k_digit, k_aux, Rank(pairs), rank))
     }
 
-    fn alloc_tensor_key_prepared_from_infos<A>(&self, infos: &A) -> GLWETensorKeyPrepared<BE::OwnedBuf, BE>
+    fn glwe_tensor_key_prepared_alloc_from_infos<A>(&self, infos: &A) -> GLWETensorKeyPrepared<BE::OwnedBuf, BE>
     where
         A: GGLWEInfos,
     {
         GLWETensorKeyPrepared(self.gglwe_prepared_alloc_from_infos(&tensor_key_layout(infos)))
     }
 
-    fn bytes_of_tensor_key_prepared(
+    fn glwe_tensor_key_prepared_bytes_of(
         &self,
         base2k: Base2K,
         dnum: Dnum,
@@ -502,7 +502,7 @@ where
         self.gglwe_prepared_bytes_of(base2k, dnum, k_digit, k_aux, Rank(pairs), rank)
     }
 
-    fn bytes_of_tensor_key_prepared_from_infos<A>(&self, infos: &A) -> usize
+    fn glwe_tensor_key_prepared_bytes_of_from_infos<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos,
     {
@@ -573,7 +573,7 @@ where
     }
 
     fn glwe_to_lwe_key_prepared_bytes_of(&self, base2k: Base2K, dnum: Dnum, k_aux: TorusPrecision, rank_in: Rank) -> usize {
-        self.bytes_of_glwe_key_prepared(base2k, dnum, TorusPrecision::from(base2k), k_aux, rank_in, Rank(1))
+        self.glwe_switching_key_prepared_bytes_of(base2k, dnum, TorusPrecision::from(base2k), k_aux, rank_in, Rank(1))
     }
 
     fn glwe_to_lwe_key_prepared_bytes_of_from_infos<A>(&self, infos: &A) -> usize
@@ -638,7 +638,7 @@ where
     }
 
     fn lwe_switching_key_prepared_bytes_of(&self, base2k: Base2K, dnum: Dnum, k_aux: TorusPrecision) -> usize {
-        self.bytes_of_glwe_key_prepared(base2k, dnum, TorusPrecision::from(base2k), k_aux, Rank(1), Rank(1))
+        self.glwe_switching_key_prepared_bytes_of(base2k, dnum, TorusPrecision::from(base2k), k_aux, Rank(1), Rank(1))
     }
 
     fn lwe_switching_key_prepared_bytes_of_from_infos<A>(&self, infos: &A) -> usize
@@ -699,7 +699,7 @@ where
     }
 
     fn lwe_to_glwe_key_prepared_bytes_of(&self, base2k: Base2K, dnum: Dnum, k_aux: TorusPrecision, rank_out: Rank) -> usize {
-        self.bytes_of_glwe_key_prepared(base2k, dnum, TorusPrecision::from(base2k), k_aux, Rank(1), rank_out)
+        self.glwe_switching_key_prepared_bytes_of(base2k, dnum, TorusPrecision::from(base2k), k_aux, Rank(1), rank_out)
     }
 
     fn lwe_to_glwe_key_prepared_bytes_of_from_infos<A>(&self, infos: &A) -> usize
@@ -770,7 +770,7 @@ where
     }
 
     /// Returns the byte size required to store a [`GGLWEToGGSWKeyPrepared`] matching `infos`.
-    fn bytes_of_gglwe_to_ggsw_from_infos<A>(&self, infos: &A) -> usize
+    fn gglwe_to_ggsw_key_prepared_bytes_of_from_infos<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos,
     {
@@ -783,7 +783,7 @@ where
     }
 
     /// Returns the byte size required to store a [`GGLWEToGGSWKeyPrepared`] with explicit parameters.
-    fn bytes_of_gglwe_to_ggsw(
+    fn gglwe_to_ggsw_key_prepared_bytes_of(
         &self,
         base2k: Base2K,
         dnum: Dnum,

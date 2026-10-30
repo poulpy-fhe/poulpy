@@ -1,11 +1,11 @@
 use poulpy_core::layouts::prepared::GGLWEPreparedBackendRef;
 use poulpy_core::{
-    GLWEAdd, GLWECopy, GLWEDecrypt, GLWEEncryptSk, GLWEKeyswitch, GLWENoise, GLWEPacking, GLWERotate, GLWESub, GLWETrace,
-    LWEFromGLWE, ScratchArenaTakeCore, TransferInto,
+    GLWEAdd, GLWECopy, GLWEDecrypt, GLWEEncryptSk, GLWEKeyswitch, GLWENoise, GLWEPack, GLWERotate, GLWESub, GLWETrace,
+    LWEFromGLWE, ScratchArenaTakeGLWE, TransferInto,
     layouts::{
-        Base2K, GGLWEInfos, GGSWInfos, GLWE, GLWEInfos, GLWELayout, GLWEPlaintext, GLWEPlaintextLayout,
-        GLWESecretPreparedToBackendRef, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, LWEToBackendMut,
-        ModuleCoreAlloc, Rank, SetK, TorusPrecision,
+        Base2K, GGLWEInfos, GGSWInfos, GLWE, GLWEAlloc, GLWEInfos, GLWELayout, GLWEPlaintext, GLWEPlaintextAlloc,
+        GLWEPlaintextLayout, GLWESecretPreparedToBackendRef, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos,
+        LWEToBackendMut, ModuleCoreAlloc, Rank, SetK, TorusPrecision,
     },
 };
 use poulpy_hal::AlignedBuf;
@@ -18,8 +18,8 @@ use poulpy_hal::{
 use std::{collections::HashMap, marker::PhantomData, ops::Range};
 
 use crate::bdd_arithmetic::{Cmux, FheUintPrepared, FromBits, GetGGSWBit, ToBits, UnsignedInteger};
-use poulpy_core::GLWEBytesOf;
 use poulpy_core::layouts::prepared::GGSWPreparedToBackendRef;
+use poulpy_core::{GLWEBytesOf, GLWEPlaintextBytesOf};
 
 /// A packed GLWE ciphertext encrypting the bits of a [`UnsignedInteger`].
 ///
@@ -49,7 +49,7 @@ pub struct FheUint<D: Data, T: UnsignedInteger, W: ZnxWord> {
 impl<D: Data, T: UnsignedInteger, W: ZnxWord> FheUint<D, T, W> {
     pub fn alloc_from_infos<M, A>(module: &M, infos: &A) -> Self
     where
-        M: ModuleCoreAlloc<OwnedBuf = D, ZnxWord = W> + ModuleN,
+        M: GLWEAlloc + ModuleCoreAlloc<OwnedBuf = D, ZnxWord = W> + ModuleN,
         A: GLWEInfos,
     {
         #[cfg(debug_assertions)]
@@ -62,7 +62,7 @@ impl<D: Data, T: UnsignedInteger, W: ZnxWord> FheUint<D, T, W> {
 
     pub fn alloc<M>(module: &M, base2k: Base2K, k: TorusPrecision, rank: Rank) -> Self
     where
-        M: ModuleCoreAlloc<OwnedBuf = D, ZnxWord = W> + ModuleN,
+        M: ModuleCoreAlloc<OwnedBuf = D, ZnxWord = W> + GLWEAlloc + ModuleN,
     {
         Self {
             bits: module.glwe_alloc(base2k, k, rank),
@@ -125,7 +125,11 @@ impl<D: HostDataMut, T: UnsignedInteger + ToBits> FheUint<D, T, i64> {
         BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>,
         GLWE<D, i64>: GLWEToBackendMut<BE>,
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
-        M: GLWEBytesOf<BE> + ModuleLogN + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord> + GLWEEncryptSk<BE>,
+        M: GLWEBytesOf<BE>
+            + ModuleLogN
+            + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+            + GLWEPlaintextAlloc
+            + GLWEEncryptSk<BE>,
     {
         assert!(
             module.n().is_multiple_of(T::BITS as usize),
@@ -163,7 +167,7 @@ impl<D: HostDataMut, T: UnsignedInteger + ToBits> FheUint<D, T, i64> {
 
     pub fn encrypt_sk_tmp_bytes<M, BE: Backend>(&self, module: &M) -> usize
     where
-        M: GLWEBytesOf<BE> + ModuleLogN + GLWEEncryptSk<BE>,
+        M: GLWEBytesOf<BE> + GLWEPlaintextBytesOf<BE> + ModuleLogN + GLWEEncryptSk<BE>,
     {
         let pt_infos = GLWEPlaintextLayout {
             n: self.n(),
@@ -183,6 +187,7 @@ impl<D: HostDataRef, T: UnsignedInteger + FromBits> FheUint<D, T, i64> {
         M: GLWEBytesOf<BE>
             + ModuleLogN
             + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+            + GLWEPlaintextAlloc
             + GLWEDecrypt<BE>
             + GLWENoise<BE>,
         for<'a> BE::BufRef<'a>: HostDataRef,
@@ -222,7 +227,11 @@ impl<D: HostDataRef, T: UnsignedInteger + FromBits> FheUint<D, T, i64> {
         BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64> + HostBackend,
         Self: GLWEToBackendRef<BE>,
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
-        M: GLWEBytesOf<BE> + ModuleLogN + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord> + GLWEDecrypt<BE>,
+        M: GLWEBytesOf<BE>
+            + ModuleLogN
+            + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+            + GLWEPlaintextAlloc
+            + GLWEDecrypt<BE>,
     {
         assert!(
             module.n().is_multiple_of(T::BITS as usize),
@@ -267,7 +276,7 @@ impl<D: HostDataRef, T: UnsignedInteger + FromBits> FheUint<D, T, i64> {
 
     pub fn decrypt_tmp_bytes<M, BE: Backend>(&self, module: &M) -> usize
     where
-        M: GLWEBytesOf<BE> + ModuleLogN + GLWEDecrypt<BE>,
+        M: GLWEBytesOf<BE> + GLWEPlaintextBytesOf<BE> + ModuleLogN + GLWEDecrypt<BE>,
     {
         let pt_infos = GLWEPlaintextLayout {
             n: self.n(),
@@ -284,7 +293,7 @@ impl<D: Data, T: UnsignedInteger> FheUint<D, T, i64> {
     where
         BE: Backend<OwnedBuf = D, ZnxWord = i64>,
         G: GLWEToBackendMut<BE> + GLWEInfos,
-        M: GLWEBytesOf<BE> + ModuleLogN + GLWEPacking<BE> + GLWECopy<BE>,
+        M: GLWEBytesOf<BE> + ModuleLogN + GLWEPack<BE> + GLWECopy<BE>,
         H: GetAutomorphismKey<BE>,
         GLWE<D, BE::ZnxWord>: GLWEToBackendMut<BE>,
     {
@@ -564,7 +573,7 @@ where
 #[doc(hidden)]
 pub trait ScratchArenaTakeBDD<'a, T: UnsignedInteger, BE: Backend>
 where
-    Self: ScratchArenaTakeCore<'a, BE>,
+    Self: ScratchArenaTakeGLWE<'a, BE>,
 {
     /// Carves a temporary [`FheUint`] from the scratch arena.
     ///
@@ -586,7 +595,7 @@ where
 }
 
 impl<'a, T: UnsignedInteger, BE: Backend> ScratchArenaTakeBDD<'a, T, BE> for ScratchArena<'a, BE> where
-    Self: ScratchArenaTakeCore<'a, BE>
+    Self: ScratchArenaTakeGLWE<'a, BE>
 {
 }
 
@@ -819,7 +828,7 @@ impl<T: UnsignedInteger> FheUint<AlignedBuf, T, i64> {
         R: GLWEInfos,
         A: GGSWInfos,
         H: GetAutomorphismKey<BE>,
-        M: Cmux<BE> + GLWEPacking<BE>,
+        M: Cmux<BE> + GLWEPack<BE>,
     {
         let atk = keys
             .get_automorphism_key(-1, res_infos.k())
@@ -840,8 +849,9 @@ impl<T: UnsignedInteger> FheUint<AlignedBuf, T, i64> {
         M: GLWEBytesOf<BE>
             + Cmux<BE>
             + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+            + GLWEAlloc
             + ModuleLogN
-            + GLWEPacking<BE>
+            + GLWEPack<BE>
             + GLWECopy<BE>,
         GLWE<AlignedBuf, BE::ZnxWord>: GLWEToBackendMut<BE>,
         Self: GLWEToBackendMut<BE>,

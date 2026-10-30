@@ -2,7 +2,7 @@ use crate::CKKSResult as Result;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{GLWEInfos, GLWELayout, GLWESecretPreparedToBackendRef, GLWEToBackendMut, LWEInfos, Rank};
 use poulpy_core::{ComponentNoise, GetDistribution};
-use poulpy_core::{GLWEDecrypt, GLWEEncryptSk, GLWENormalize, ScratchArenaTakeCore};
+use poulpy_core::{GLWEDecrypt, GLWEEncryptSk, GLWENormalize, ScratchArenaTakeGLWEPlaintext};
 use poulpy_hal::{
     api::{ModuleN, VecZnxLsh, VecZnxLshAdd, VecZnxLshTmpBytes, VecZnxRsh, VecZnxRshAdd, VecZnxRshTmpBytes, VecZnxSwitchRing},
     layouts::{Backend, ScratchArena},
@@ -16,7 +16,7 @@ use crate::{
 };
 
 use super::CKKSPlaintextVecReference;
-use poulpy_core::GLWEBytesOf;
+use poulpy_core::{GLWEBytesOf, GLWEPlaintextBytesOf};
 
 pub trait CKKSEncryptionReference<BE: Backend> {
     fn ckks_encrypt_sk_tmp_bytes_reference<A>(&self, ct_infos: &A) -> usize
@@ -82,7 +82,7 @@ pub trait CKKSEncryptionReference<BE: Backend> {
 
     fn ckks_decrypt_tmp_bytes_reference<Pt, Ct>(&self, pt_infos: &Pt, ct_infos: &Ct) -> usize
     where
-        Self: GLWEBytesOf<BE>,
+        Self: GLWEBytesOf<BE> + GLWEPlaintextBytesOf<BE>,
         Pt: CKKSInfos,
         Ct: GLWEInfos + CKKSInfos,
         Self: GLWEDecrypt<BE>
@@ -117,7 +117,8 @@ pub trait CKKSEncryptionReference<BE: Backend> {
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         Dpt: GLWEToBackendMut<BE> + CKKSInfos + IntPolyInfos + SetCKKSInfos,
         Dct: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
-        Self: ModuleN
+        Self: GLWEPlaintextBytesOf<BE>
+            + ModuleN
             + GLWEDecrypt<BE>
             + GLWEBytesOf<BE>
             + CKKSPlaintextVecReference<BE>

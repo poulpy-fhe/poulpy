@@ -6,8 +6,8 @@ use poulpy_core::{
     ComponentNoise, DEFAULT_SIGMA_XE, Distribution, GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct,
     api::{GGSWPreparedFactory, GLWESecretPreparedFactory, GLWESecretSampling, GLWESwitchingKeyPreparedFactory},
     layouts::{
-        Dnum, GGLWEInfos, GGLWELayout, GGLWEPreparedToBackendMut, GGSW, GGSWLayout, GLWE, GLWELayout, GLWESecretPrepared,
-        GLWESwitchingKey, GLWESwitchingKeyPrepared, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
+        Dnum, GGLWEInfos, GGLWELayout, GGLWEPreparedToBackendMut, GGSW, GGSWAlloc, GGSWLayout, GLWE, GLWEAlloc, GLWELayout,
+        GLWESecretPrepared, GLWESwitchingKey, GLWESwitchingKeyAlloc, GLWESwitchingKeyPrepared, LWEInfos, Rank, TorusPrecision,
         prepared::{GGSWPrepared, GGSWPreparedToBackendRef},
     },
     test_suite::with_scratch,

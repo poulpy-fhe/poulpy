@@ -40,7 +40,7 @@ use poulpy_core::{
         GGLWEToBackendMut, GGLWEToBackendRef, GGSWInfos, GGSWLayout, GGSWToBackendMut, GGSWToBackendRef, GLWECompressedSeed,
         GLWECompressedToBackendMut, GLWECompressedToBackendRef, GLWEInfos, GLWELayout, GLWEPlaintextInfos, GLWEPlaintextMeta,
         GLWEPublicKeyCompressedSeed, GLWEPublicKeyCompressedToBackendRef, GLWEPublicKeyToBackendMut, GLWEPublicKeyToBackendRef,
-        GLWESecret, GLWESecretPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, ModuleCoreAlloc, Rank,
+        GLWESecret, GLWESecretAlloc, GLWESecretPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, ModuleCoreAlloc, Rank,
     },
 };
 use poulpy_hal::{

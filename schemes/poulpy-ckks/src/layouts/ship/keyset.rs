@@ -18,10 +18,10 @@ use poulpy_core::{
         GLWETensorKeyPreparedFactory,
     },
     layouts::{
-        Base2K, GGLWEInfos, GGLWEToBackendRef, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPrepared,
-        GLWEInfos, GLWESecret, GLWESecretLayout, GLWESwitchingKey, GLWESwitchingKeyLayout, GLWESwitchingKeyPrepared,
-        GLWETensorKey, GLWETensorKeyLayout, GLWETensorKeyPrepared, GLWEToBackendRef, GetGaloisElement, LWEInfos, ModuleCoreAlloc,
-        Rank,
+        Base2K, GGLWEInfos, GGLWEToBackendRef, GLWEAutomorphismKey, GLWEAutomorphismKeyAlloc, GLWEAutomorphismKeyLayout,
+        GLWEAutomorphismKeyPrepared, GLWEInfos, GLWESecret, GLWESecretAlloc, GLWESecretLayout, GLWESwitchingKey,
+        GLWESwitchingKeyAlloc, GLWESwitchingKeyLayout, GLWESwitchingKeyPrepared, GLWETensorKey, GLWETensorKeyAlloc,
+        GLWETensorKeyLayout, GLWETensorKeyPrepared, GLWEToBackendRef, GetGaloisElement, LWEInfos, ModuleCoreAlloc, Rank,
     },
 };
 use poulpy_hal::AlignedBuf;
@@ -308,7 +308,7 @@ impl<D: Data, W: ZnxWord> ShipKeySet<D, W> {
 
         let mut dense_to_sparse = module.glwe_switching_key_prepared_alloc_from_infos(&self.dense_to_sparse);
         module.glwe_switching_key_prepare(&mut dense_to_sparse, &self.dense_to_sparse, scratch);
-        let mut tensor_key = module.alloc_tensor_key_prepared_from_infos(&self.tensor_key);
+        let mut tensor_key = module.glwe_tensor_key_prepared_alloc_from_infos(&self.tensor_key);
         module.glwe_tensor_key_prepare(&mut tensor_key, &self.tensor_key, scratch);
         let mut conjugation_key = module.glwe_automorphism_key_prepared_alloc_from_infos(&self.conjugation_key);
         module.glwe_automorphism_key_prepare(&mut conjugation_key, &self.conjugation_key, scratch);

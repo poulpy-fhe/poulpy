@@ -7,7 +7,7 @@ use poulpy_hal::layouts::{Backend, VecZnxBackendMut, VecZnxBackendRef, VecZnxDft
 use crate::{
     Distribution,
     layouts::{
-        DiagonalProd, GGLWEInfos, LWEInfos, LinearTransformation, LinearTransformationBabySteps, TorusPrecision,
+        GGLWEInfos, GLWEDiagonalProd, LWEInfos, LinearTransformation, LinearTransformationBabySteps, TorusPrecision,
         prepared::GGLWEPreparedBackendRef,
     },
 };
@@ -52,24 +52,24 @@ pub fn assert_key_covers<K: GGLWEInfos>(op: &str, k: TorusPrecision, key: &K) {
     );
 }
 
-/// The checks of [`glwe_eval_linear_transformation_into_reference`](crate::reference::linear_transformation::glwe_eval_linear_transformation_into_reference), run before it reads a key or writes `res`.
+/// The checks of [`glwe_linear_transformation_eval_into_reference`](crate::reference::linear_transformation::GLWELinearTransformationReference::glwe_linear_transformation_eval_into_reference), run before it reads a key or writes `res`.
 pub fn assert_linear_transformation_into<BE, P, L: BabyStepOperand<BE>>(
     lhs: &LinearTransformationBabySteps<BE, L>,
     rhs: &LinearTransformation<P>,
 ) where
     BE: Backend,
-    P: DiagonalProd<BE>,
+    P: GLWEDiagonalProd<BE>,
 {
     assert_linear_transformation_giant_steps(&[lhs], &[rhs]);
 }
 
-/// The checks of [`glwe_eval_linear_transformation_sum_into_reference`](crate::reference::linear_transformation::glwe_eval_linear_transformation_sum_into_reference), run before it reads a key or writes `res`.
+/// The checks of [`glwe_linear_transformation_eval_sum_into_reference`](crate::reference::linear_transformation::GLWELinearTransformationReference::glwe_linear_transformation_eval_sum_into_reference), run before it reads a key or writes `res`.
 pub fn assert_linear_transformation_sum<BE, P, L: BabyStepOperand<BE>>(
     babies: &[&LinearTransformationBabySteps<BE, L>],
     lts: &[&LinearTransformation<P>],
 ) where
     BE: Backend,
-    P: DiagonalProd<BE>,
+    P: GLWEDiagonalProd<BE>,
 {
     assert_eq!(
         babies.len(),
@@ -81,7 +81,7 @@ pub fn assert_linear_transformation_sum<BE, P, L: BabyStepOperand<BE>>(
     assert_linear_transformation_giant_steps(babies, lts);
     let diagonals = |lt: &LinearTransformation<P>| {
         lt.first_diagonal_plaintext()
-            .map(|d| (d.glwe_layout(), d.max_size(), DiagonalProd::log_scale(d)))
+            .map(|d| (d.glwe_layout(), d.max_size(), GLWEDiagonalProd::log_scale(d)))
     };
     for (t, (&l, &r)) in babies.iter().zip(lts).enumerate().skip(1) {
         assert!(

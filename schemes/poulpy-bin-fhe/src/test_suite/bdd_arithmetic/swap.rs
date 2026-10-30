@@ -3,7 +3,7 @@ use poulpy_core::test_suite::noise::glwe_decrypt_checked;
 use poulpy_core::{
     GGSWEncryptSk, GLWEDecrypt, GLWEEncryptSk,
     api::GGSWPreparedFactory,
-    layouts::{GGSW, GGSWPrepared, GLWELayout, GLWEPlaintext, GLWESecretPrepared, ModuleCoreAlloc},
+    layouts::{GGSW, GGSWAlloc, GGSWPrepared, GLWEAlloc, GLWELayout, GLWEPlaintext, GLWEPlaintextAlloc, GLWESecretPrepared},
 };
 use poulpy_hal::AlignedBuf;
 use poulpy_hal::layouts::{HostDataMut, HostDataRef};

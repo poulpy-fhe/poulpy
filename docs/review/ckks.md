@@ -10,7 +10,7 @@
 - **Reference family shape.** A family's reference is `pub trait CKKS<Family>Reference<BE: Backend>` of default-bodied `<api name>_reference` and `<api query>_reference` methods with their own `where Self:` bounds and an empty `Module<BE>` impl.
 - **Derived bodies.** A same-layer composition is a provided OEP method calling one `<op>_derived`.
 - **Scalar-generic seams.** Anything generic over the encoding scalar `F` is its own OEP trait (`CKKSEncodingImpl<F>`, `CKKSDFTMatrixImpl<F>`) or a method bounded by `Self: CKKSEncodingImpl<F>` (PaCo and SHIP coefficient encodings), never a parameter of `CKKSImpl` or a scalar-independent family; its API trait takes `F` as a trait parameter, its delegate impl, not its methods, requires the seam, and its reference macro covers every `F` of the backend's `CKKSEncodingImpl<F>`.
-- **Core through its public seams.** A CKKS reference reaches core through its bounded core API traits and queries, pure sizing helpers, API-less helpers (`GGLWEProductReference`) and the `DiagonalProd` hook, a missing core seam being added in core.
+- **Core through its public seams.** A CKKS reference reaches core through its bounded core API traits and queries, pure sizing helpers, API-less helpers (`GGLWEProductReference`) and the `GLWEDiagonalProd` hook, a missing core seam being added in core.
 - **Containers hold data, modules compute.** Computations are `Module<BE>` traits, and methods of `CKKSCiphertext`, `CKKSPlaintext` and their views only manage data (`set_meta_checked`, `to_ref`) or are host-named codecs.
 
 ## 2. Naming, signatures and argument order
@@ -144,7 +144,7 @@
 
 - **Depth from core's model.** Degree and depth selection uses core's `bsgs_eval_depth` and `BSGSPolynomial::eval_depth`, never a local formula.
 - **`consumed_bits` is the budget prediction.** Every compiled plan or approximation exposes `consumed_bits()` and its depth from its evaluation's accounting, the evaluation checks `log_budget >= consumed_bits()` or predicts its output metadata before any write, a predicting pipeline re-checks the evaluated width at the end, and budget changes update `consumed_bits()` and its pinned tests.
-- **Shared scratch bound.** Polynomial evaluation has no query of its own, callers sizing it by `ckks_all_ops_tmp_bytes` or `ckks_all_ops_with_atk_tmp_bytes`, so a new callee, larger callee query or BSGS temporary in it, its `BSGSOps` implementation, the power basis or the approximation layer updates the `CKKSAllOpsTmpBytes` maximum, and EvalMod's query when EvalMod reaches it; DFT and EvalMod queries stay outside that maximum.
+- **Shared scratch bound.** Polynomial evaluation has no query of its own, callers sizing it by `ckks_all_ops_tmp_bytes` or `ckks_all_ops_with_atk_tmp_bytes`, so a new callee, larger callee query or BSGS temporary in it, its `GLWEBSGSOps` implementation, the power basis or the approximation layer updates the `CKKSAllOpsTmpBytes` maximum, and EvalMod's query when EvalMod reaches it; DFT and EvalMod queries stay outside that maximum.
 - **Approximation entry points.** A host fitting or selection entry point comes as `name` (default `RemezOptions`) and `name_with(.., opts)` over one `*_multi_interval_with` body, validates every scalar argument first (finite, positive, ordered disjoint intervals, nonzero options), documents callbacks as pure and reads Remez samples from its per-fit cache.
 
 ## 14. Containers, secrets and serialization

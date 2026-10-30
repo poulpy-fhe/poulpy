@@ -2,7 +2,7 @@ use poulpy_core::{
     DEFAULT_SIGMA_XE, GGSWEncryptSk, GGSWNoise, GLWEDecrypt, GLWEEncryptSk,
     api::{GGSWPreparedFactory, GLWESecretPreparedFactory},
     layouts::{
-        Base2K, Dnum, GGSW, GGSWInfos, GGSWLayout, GLWEInfos, GLWESecretPrepared, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
+        Base2K, Dnum, GGSW, GGSWAlloc, GGSWInfos, GGSWLayout, GLWEInfos, GLWESecretPrepared, LWEInfos, Rank, TorusPrecision,
     },
 };
 use poulpy_hal::{

@@ -13,8 +13,8 @@ pub mod lifecycle;
 use poulpy_core::{
     ComponentNoise, Distribution, TransferInto,
     layouts::{
-        GGSW, GGSWInfos, GGSWLayout, GGSWToBackendMut, GGSWToBackendRef, GLWE, GLWEInfos, GLWELayout, GLWEToBackendMut,
-        GLWEToBackendRef, LWEInfos, ModuleCoreAlloc, prepared::GGLWEPreparedToBackendRef,
+        GGSW, GGSWAlloc, GGSWInfos, GGSWLayout, GGSWToBackendMut, GGSWToBackendRef, GLWE, GLWEAlloc, GLWEInfos, GLWELayout,
+        GLWEToBackendMut, GLWEToBackendRef, LWEInfos, prepared::GGLWEPreparedToBackendRef,
     },
 };
 use poulpy_hal::{

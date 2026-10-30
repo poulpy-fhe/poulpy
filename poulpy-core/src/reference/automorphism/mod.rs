@@ -87,12 +87,30 @@ pub trait GLWEAutomorphismReference<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos;
+
+    fn glwe_automorphism_many_tmp_bytes_reference<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
+    where
+        R: GLWEInfos,
+        A: GLWEInfos,
+        K: GGLWEInfos;
+
+    fn glwe_automorphism_many_reference<R, A>(
+        &self,
+        res: &mut [&mut R],
+        a: &A,
+        keys: &[&GLWEAutomorphismKeyPreparedBackendRef<'_, BE>],
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos;
 }
 
 impl<BE: Backend> GLWEAutomorphismReference<BE> for ::poulpy_hal::layouts::Module<BE>
 where
+    BE: crate::oep::GGLWEProductDigitsStridedImpl,
     Module<BE>: crate::api::GLWEBytesOf<BE>
         + poulpy_hal::api::ModuleN
+        + crate::api::GLWEAutomorphism<BE>
         + crate::api::GLWEKeyswitch<BE>
         + poulpy_hal::api::VecZnxAutomorphismAssignTmpBytes
         + poulpy_hal::api::VecZnxAutomorphismAssign<BE>
@@ -108,7 +126,8 @@ where
         + poulpy_hal::api::VecZnxBigSubSmallAssign<BE>
         + poulpy_hal::api::VecZnxBigSubSmallNegateAssign<BE>
         + poulpy_hal::api::VecZnxIdftApplyTmpBytes
-        + poulpy_hal::api::VecZnxBigNormalizeTmpBytes,
+        + poulpy_hal::api::VecZnxBigNormalizeTmpBytes
+        + poulpy_hal::api::VecZnxGadgetDecomposeTmpBytes,
 {
     fn glwe_automorphism_tmp_bytes_reference<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
@@ -216,11 +235,35 @@ where
     {
         crate::reference::automorphism::glwe::glwe_automorphism_sub_negate_assign_reference::<BE, _, _>(self, res, key, scratch)
     }
+
+    fn glwe_automorphism_many_tmp_bytes_reference<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
+    where
+        R: crate::layouts::GLWEInfos,
+        A: crate::layouts::GLWEInfos,
+        K: crate::layouts::GGLWEInfos,
+    {
+        crate::reference::automorphism::glwe::glwe_automorphism_many_tmp_bytes_reference::<BE, _, _, _>(
+            self, res_infos, a_infos, key_infos,
+        )
+    }
+
+    fn glwe_automorphism_many_reference<R, A>(
+        &self,
+        res: &mut [&mut R],
+        a: &A,
+        keys: &[&crate::layouts::prepared::GLWEAutomorphismKeyPreparedBackendRef<'_, BE>],
+        scratch: &mut ::poulpy_hal::layouts::ScratchArena<BE>,
+    ) where
+        R: crate::layouts::GLWEToBackendMut<BE> + crate::layouts::GLWEInfos,
+        A: crate::layouts::GLWEToBackendRef<BE> + crate::layouts::GLWEInfos,
+    {
+        crate::reference::automorphism::glwe::glwe_automorphism_many_reference::<BE, _, _>(self, res, a, keys, scratch)
+    }
 }
 
 /// Portable HAL algorithm helpers. Available when their capabilities are present;
 /// backend dispatch is selected independently through the corresponding `*Impl` trait.
-pub trait GGLWEAutomorphismReference<BE: Backend> {
+pub trait GLWEAutomorphismKeyAutomorphismReference<BE: Backend> {
     fn glwe_automorphism_key_automorphism_tmp_bytes_reference<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
         R: GGLWEInfos,
@@ -246,7 +289,7 @@ pub trait GGLWEAutomorphismReference<BE: Backend> {
         R: GGLWEToBackendMut<BE> + SetGaloisElement + GetGaloisElement + GGLWEInfos;
 }
 
-impl<BE: Backend> GGLWEAutomorphismReference<BE> for ::poulpy_hal::layouts::Module<BE>
+impl<BE: Backend> GLWEAutomorphismKeyAutomorphismReference<BE> for ::poulpy_hal::layouts::Module<BE>
 where
     Module<BE>: crate::api::GLWEBytesOf<BE>
         + poulpy_hal::api::ModuleN

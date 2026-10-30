@@ -24,12 +24,13 @@ use poulpy_hal::{
 };
 
 use crate::{
-    GLWEAutomorphism, GLWEMaskFill, GLWETensoring, GLWETrace,
+    GLWEAutomorphism, GLWEFill, GLWETensoring, GLWETrace,
     api::{GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory},
     error::{CoreError, Result},
     layouts::{
-        Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGLWELayout, GLWE, GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout,
-        GLWETensorKeyLayout, GetAutomorphismKey, GetTensorKey, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
+        Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGLWELayout, GLWE, GLWEAlloc, GLWEAutomorphismKeyAlloc,
+        GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout, GLWETensorAlloc, GLWETensorKeyAlloc, GLWETensorKeyLayout,
+        GetAutomorphismKey, GetTensorKey, LWEInfos, Rank, TorusPrecision,
         prepared::{
             GGLWEPrepared, GGLWEPreparedToBackendRef, GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedBackendRef,
             GLWETensorKeyPrepared, GLWETensorKeyPreparedBackendRef,
@@ -99,7 +100,7 @@ fn same<D: HostDataRef, E: HostDataRef>(have: &GLWE<D, i64>, want: &GLWE<E, i64>
 /// in for, for the plain, `add_assign` and `assign` forms.
 pub fn test_glwe_automorphism_coarsened<BE: CoarsenBackend>(params: &TestParams, module: &Module<BE>)
 where
-    Module<BE>: GLWEAutomorphism<BE> + GLWEAutomorphismKeyPreparedFactory<BE> + GLWEMaskFill<BE>,
+    Module<BE>: GLWEAutomorphism<BE> + GLWEAutomorphismKeyPreparedFactory<BE> + GLWEFill<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
@@ -186,7 +187,7 @@ where
             rank: Rank(rank as u32),
         };
         let mut ct_in = module.glwe_alloc_from_infos(&ct_infos);
-        module.fill_glwe_from_source(&mut ct_in, &mut source);
+        module.glwe_fill_from_source(&mut ct_in, &mut source);
 
         let mut have = module.glwe_alloc_from_infos(&ct_infos);
         let mut want = module.glwe_alloc_from_infos(&ct_infos);
@@ -252,7 +253,7 @@ where
 /// maximum over the keys the loop actually visits.
 pub fn test_glwe_trace_coarsened<BE: CoarsenBackend>(params: &TestParams, module: &Module<BE>)
 where
-    Module<BE>: GLWETrace<BE> + GLWEAutomorphismKeyPreparedFactory<BE> + GLWEMaskFill<BE>,
+    Module<BE>: GLWETrace<BE> + GLWEAutomorphismKeyPreparedFactory<BE> + GLWEFill<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
@@ -321,7 +322,7 @@ where
         rank: Rank(rank as u32),
     };
     let mut have = module.glwe_alloc_from_infos(&ct_infos);
-    module.fill_glwe_from_source(&mut have, &mut source);
+    module.glwe_fill_from_source(&mut have, &mut source);
     let mut want = module.glwe_alloc_from_infos(&ct_infos);
     want.data.raw_mut().copy_from_slice(have.data.raw());
 
@@ -342,7 +343,7 @@ where
 /// tensor key natively stored at that `dsize`.
 pub fn test_glwe_tensor_relinearize_coarsened<BE: CoarsenBackend>(params: &TestParams, module: &Module<BE>)
 where
-    Module<BE>: GLWETensoring<BE> + GLWETensorKeyPreparedFactory<BE> + GLWEMaskFill<BE>,
+    Module<BE>: GLWETensoring<BE> + GLWETensorKeyPreparedFactory<BE> + GLWEFill<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
@@ -373,8 +374,8 @@ where
         fill_by_digit(module, &mut tsk.0, stride, &mut Source::new(seed));
         fill_by_digit(module, &mut tsk_twin.0, 1, &mut Source::new(seed));
 
-        let mut tsk_prep: GLWETensorKeyPrepared<BE::OwnedBuf, BE> = module.alloc_tensor_key_prepared_from_infos(&stored);
-        let mut twin_prep: GLWETensorKeyPrepared<BE::OwnedBuf, BE> = module.alloc_tensor_key_prepared_from_infos(&twin);
+        let mut tsk_prep: GLWETensorKeyPrepared<BE::OwnedBuf, BE> = module.glwe_tensor_key_prepared_alloc_from_infos(&stored);
+        let mut twin_prep: GLWETensorKeyPrepared<BE::OwnedBuf, BE> = module.glwe_tensor_key_prepared_alloc_from_infos(&twin);
         module.glwe_tensor_key_prepare(
             &mut tsk_prep,
             &tsk,
@@ -393,7 +394,7 @@ where
             rank: Rank(rank as u32),
         };
         let mut a = module.glwe_tensor_alloc_from_infos(&ct_infos);
-        module.fill_glwe_from_source(&mut a, &mut source);
+        module.glwe_fill_from_source(&mut a, &mut source);
 
         let mut have = module.glwe_alloc_from_infos(&ct_infos);
         let mut want = module.glwe_alloc_from_infos(&ct_infos);

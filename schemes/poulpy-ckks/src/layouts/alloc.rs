@@ -1,7 +1,7 @@
 use poulpy_core::layouts::{
-    Base2K, Degree, GLWEInfos, GLWEPlaintextLayout, GetDegree, LWEInfos, LinearTransformation, LinearTransformationDiagonal,
-    LinearTransformationGiantStep, LinearTransformationLayout, LinearTransformationPrepared, ModuleCoreAlloc, Rank,
-    TorusPrecision,
+    Base2K, Degree, GLWEAlloc, GLWEInfos, GLWEPlaintextAlloc, GLWEPlaintextLayout, GetDegree, LWEInfos, LinearTransformation,
+    LinearTransformationDiagonal, LinearTransformationGiantStep, LinearTransformationLayout, LinearTransformationPrepared,
+    ModuleCoreAlloc, Rank, TorusPrecision,
 };
 use poulpy_hal::{
     api::{CnvPVecAlloc, CnvPVecBytesOf},
@@ -22,7 +22,12 @@ use super::{
 /// two primitive shapes (ciphertext with explicit rank, plaintext with explicit
 /// degree) plus thin conveniences over them, and the prepared operands and DFT matrices with their byte counts.
 pub trait CKKSModuleAlloc<BE: Backend>:
-    ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord> + CnvPVecAlloc<BE> + CnvPVecBytesOf + CKKSModuleInfos
+    ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+    + GLWEAlloc
+    + GLWEPlaintextAlloc
+    + CnvPVecAlloc<BE>
+    + CnvPVecBytesOf
+    + CKKSModuleInfos
 {
     /// Allocates a ciphertext with `infos`' layout **and** its CKKS metadata
     /// (`log_delta`, `log_sparsity`), mirroring
