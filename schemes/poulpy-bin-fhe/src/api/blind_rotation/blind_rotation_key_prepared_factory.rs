@@ -6,7 +6,7 @@ use std::marker::PhantomData;
 /// Allocates and prepares backend-owned blind-rotation key representations.
 ///
 /// Allocation and sizing are direct on the module; the preparation and its
-/// query dispatch through [`BlindRotationKeyPreparedImpl`](crate::oep::BlindRotationKeyPreparedImpl).
+/// query dispatch through [`BlindRotationKeyPreparedFactoryImpl`](crate::oep::BlindRotationKeyPreparedFactoryImpl).
 pub trait BlindRotationKeyPreparedFactory<BRA: BlindRotationAlgo, BE: Backend> {
     /// Allocates a zero-filled prepared key of `infos`, one prepared GGSW per
     /// LWE coefficient, with `Distribution::NONE` and no monomial table, which

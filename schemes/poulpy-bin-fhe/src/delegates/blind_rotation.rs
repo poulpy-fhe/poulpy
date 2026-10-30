@@ -85,7 +85,9 @@ impl<BRA: BlindRotationAlgo, BE: BlindRotationKeyCompressedEncryptSkImpl<BRA>> B
     }
 }
 
-impl<BRA: BlindRotationAlgo, BE: BlindRotationKeyPreparedImpl<BRA>> BlindRotationKeyPreparedFactory<BRA, BE> for Module<BE> {
+impl<BRA: BlindRotationAlgo, BE: BlindRotationKeyPreparedFactoryImpl<BRA>> BlindRotationKeyPreparedFactory<BRA, BE>
+    for Module<BE>
+{
     fn blind_rotation_key_prepare_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: BlindRotationKeyInfos,

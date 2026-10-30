@@ -1,4 +1,4 @@
-pub use crate::api::{Cmux, Cswap, ExecuteBDDCircuit};
+pub use crate::api::{BDDCircuitExecute, GLWECmux, GLWECswap};
 
 /// A single bit-output circuit stored as a flat node array.
 ///
@@ -13,7 +13,7 @@ pub trait BitCircuitInfo: Sync {
 /// A multi-output BDD circuit that maps encrypted inputs to encrypted output bits.
 ///
 /// Provides the dimensional information and per-bit circuit access needed by
-/// [`ExecuteBDDCircuit`].
+/// [`BDDCircuitExecute`].
 pub trait GetBitCircuitInfo: Sync {
     /// Number of input bits expected by this circuit (across all input words).
     fn input_size(&self) -> usize;

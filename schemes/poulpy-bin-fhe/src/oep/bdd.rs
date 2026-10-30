@@ -1,10 +1,10 @@
 //! Binary decision diagram operation oep.
-mod executebdd_circuit;
-pub use executebdd_circuit::*;
-mod cswap;
-pub use cswap::*;
-mod cmux;
-pub use cmux::*;
+mod bdd_circuit_execute;
+pub use bdd_circuit_execute::*;
+mod glwe_cswap;
+pub use glwe_cswap::*;
+mod glwe_cmux;
+pub use glwe_cmux::*;
 mod ggsw_blind_rotation;
 pub use ggsw_blind_rotation::*;
 mod glwe_blind_rotation;
@@ -13,10 +13,10 @@ mod glwe_blind_selection;
 pub use glwe_blind_selection::*;
 mod glwe_blind_retrieval;
 pub use glwe_blind_retrieval::*;
-mod executebdd_circuit1w_to1w;
-pub use executebdd_circuit1w_to1w::*;
-mod executebdd_circuit2w_to1w;
-pub use executebdd_circuit2w_to1w::*;
+mod bdd_circuit_execute_1w_to_1w;
+pub use bdd_circuit_execute_1w_to_1w::*;
+mod bdd_circuit_execute_2w_to_1w;
+pub use bdd_circuit_execute_2w_to_1w::*;
 mod fhe_uint_prepared_encrypt_sk;
 pub use fhe_uint_prepared_encrypt_sk::*;
 mod fhe_uint_prepare;
@@ -26,9 +26,9 @@ pub use bdd_key_encrypt_sk::*;
 mod bdd_key_prepared_factory;
 pub use bdd_key_prepared_factory::*;
 
-/// Selects the reference implementation of [`ExecuteBDDCircuitImpl`].
+/// Selects the reference implementation of [`BDDCircuitExecuteImpl`].
 #[macro_export]
-macro_rules! impl_execute_bdd_circuit_reference_full {
+macro_rules! impl_bdd_circuit_execute_reference_full {
     ($be:ty) => {
         const _: () = {
             use poulpy_core::{
@@ -43,9 +43,9 @@ macro_rules! impl_execute_bdd_circuit_reference_full {
                 blind_rotation::{BlindRotationAlgo, BlindRotationKeyInfos},
                 circuit_bootstrapping::*,
             };
-            unsafe impl $crate::oep::ExecuteBDDCircuitImpl for $be {
+            unsafe impl $crate::oep::BDDCircuitExecuteImpl for $be {
                 #[allow(clippy::too_many_arguments)]
-                fn execute_bdd_circuit_tmp_bytes<R, G>(
+                fn bdd_circuit_execute_tmp_bytes<R, G>(
                     module: &Module<$be>,
                     state_size: usize,
                     res_infos: &R,
@@ -55,12 +55,12 @@ macro_rules! impl_execute_bdd_circuit_reference_full {
                     R: GLWEInfos,
                     G: GGSWInfos,
                 {
-                    $crate::reference::bdd::execute_bdd_circuit_tmp_bytes_reference::<$be, _, _>(
+                    <::poulpy_hal::layouts::Module<$be> as $crate::reference::bdd::BDDCircuitExecuteReference<$be>>::bdd_circuit_execute_tmp_bytes_reference(
                         module, state_size, res_infos, ggsw_infos,
                     )
                 }
                 #[allow(clippy::too_many_arguments)]
-                fn execute_bdd_circuit_multi_thread<C, G, O>(
+                fn bdd_circuit_execute_multi_thread<C, G, O>(
                     module: &Module<$be>,
                     threads: usize,
                     out: &mut [O],
@@ -72,7 +72,7 @@ macro_rules! impl_execute_bdd_circuit_reference_full {
                     C: GetBitCircuitInfo,
                     O: GLWEToBackendMut<$be> + GLWEInfos + Send,
                 {
-                    $crate::reference::bdd::execute_bdd_circuit_multi_thread_reference::<$be, _, _, _>(
+                    <::poulpy_hal::layouts::Module<$be> as $crate::reference::bdd::BDDCircuitExecuteReference<$be>>::bdd_circuit_execute_multi_thread_reference(
                         module, threads, out, inputs, circuit, scratch,
                     )
                 }
@@ -81,9 +81,9 @@ macro_rules! impl_execute_bdd_circuit_reference_full {
     };
 }
 
-/// Selects the reference implementation of [`CswapImpl`].
+/// Selects the reference implementation of [`GLWECswapImpl`].
 #[macro_export]
-macro_rules! impl_cswap_reference_full {
+macro_rules! impl_glwe_cswap_reference_full {
     ($be:ty) => {
         const _: () = {
             use poulpy_core::{
@@ -98,18 +98,28 @@ macro_rules! impl_cswap_reference_full {
                 blind_rotation::{BlindRotationAlgo, BlindRotationKeyInfos},
                 circuit_bootstrapping::*,
             };
-            unsafe impl $crate::oep::CswapImpl for $be {
+            unsafe impl $crate::oep::GLWECswapImpl for $be {
                 #[allow(clippy::too_many_arguments)]
-                fn cswap_tmp_bytes<R, A, S>(module: &Module<$be>, res_a_infos: &R, res_b_infos: &A, s_infos: &S) -> usize
+                fn glwe_cswap_assign_tmp_bytes<R, A, S>(
+                    module: &Module<$be>,
+                    res_a_infos: &R,
+                    res_b_infos: &A,
+                    s_infos: &S,
+                ) -> usize
                 where
                     R: GLWEInfos,
                     A: GLWEInfos,
                     S: GGSWInfos,
                 {
-                    $crate::reference::bdd::cswap_tmp_bytes_reference::<$be, _, _, _>(module, res_a_infos, res_b_infos, s_infos)
+                    <::poulpy_hal::layouts::Module<$be> as $crate::reference::bdd::GLWECswapReference<$be>>::glwe_cswap_assign_tmp_bytes_reference(
+                        module,
+                        res_a_infos,
+                        res_b_infos,
+                        s_infos,
+                    )
                 }
                 #[allow(clippy::too_many_arguments)]
-                fn cswap<A, B>(
+                fn glwe_cswap_assign<A, B>(
                     module: &Module<$be>,
                     res_a: &mut A,
                     res_b: &mut B,
@@ -119,16 +129,16 @@ macro_rules! impl_cswap_reference_full {
                     A: GLWEToBackendMut<$be> + GLWEToBackendRef<$be> + GLWEInfos,
                     B: GLWEToBackendMut<$be> + GLWEToBackendRef<$be> + GLWEInfos,
                 {
-                    $crate::reference::bdd::cswap_reference::<$be, _, _>(module, res_a, res_b, s, scratch)
+                    <::poulpy_hal::layouts::Module<$be> as $crate::reference::bdd::GLWECswapReference<$be>>::glwe_cswap_assign_reference(module, res_a, res_b, s, scratch)
                 }
             }
         };
     };
 }
 
-/// Selects the reference implementation of [`CmuxImpl`].
+/// Selects the reference implementation of [`GLWECmuxImpl`].
 #[macro_export]
-macro_rules! impl_cmux_reference_full {
+macro_rules! impl_glwe_cmux_reference_full {
     ($be:ty) => {
         const _: () = {
             use poulpy_core::{
@@ -143,18 +153,23 @@ macro_rules! impl_cmux_reference_full {
                 blind_rotation::{BlindRotationAlgo, BlindRotationKeyInfos},
                 circuit_bootstrapping::*,
             };
-            unsafe impl $crate::oep::CmuxImpl for $be {
+            unsafe impl $crate::oep::GLWECmuxImpl for $be {
                 #[allow(clippy::too_many_arguments)]
-                fn cmux_tmp_bytes<R, A, B>(module: &Module<$be>, res_infos: &R, a_infos: &A, selector_infos: &B) -> usize
+                fn glwe_cmux_tmp_bytes<R, A, B>(module: &Module<$be>, res_infos: &R, a_infos: &A, selector_infos: &B) -> usize
                 where
                     R: GLWEInfos,
                     A: GLWEInfos,
                     B: GGSWInfos,
                 {
-                    $crate::reference::bdd::cmux_tmp_bytes_reference::<$be, _, _, _>(module, res_infos, a_infos, selector_infos)
+                    <::poulpy_hal::layouts::Module<$be> as $crate::reference::bdd::GLWECmuxReference<$be>>::glwe_cmux_tmp_bytes_reference(
+                        module,
+                        res_infos,
+                        a_infos,
+                        selector_infos,
+                    )
                 }
                 #[allow(clippy::too_many_arguments)]
-                fn cmux<R, T, F>(
+                fn glwe_cmux<R, T, F>(
                     module: &Module<$be>,
                     res: &mut R,
                     t: &T,
@@ -166,10 +181,10 @@ macro_rules! impl_cmux_reference_full {
                     T: GLWEToBackendRef<$be>,
                     F: GLWEToBackendRef<$be>,
                 {
-                    $crate::reference::bdd::cmux_reference::<$be, _, T, _>(module, res, t, f, s, scratch)
+                    <::poulpy_hal::layouts::Module<$be> as $crate::reference::bdd::GLWECmuxReference<$be>>::glwe_cmux_reference(module, res, t, f, s, scratch)
                 }
                 #[allow(clippy::too_many_arguments)]
-                fn cmux_assign_neg<R, A>(
+                fn glwe_cmux_neg_assign<R, A>(
                     module: &Module<$be>,
                     res: &mut R,
                     a: &A,
@@ -179,10 +194,10 @@ macro_rules! impl_cmux_reference_full {
                     R: GLWEToBackendMut<$be> + GLWEInfos,
                     A: GLWEToBackendRef<$be>,
                 {
-                    $crate::reference::bdd::cmux_assign_neg_reference::<$be, _, _>(module, res, a, s, scratch)
+                    <::poulpy_hal::layouts::Module<$be> as $crate::reference::bdd::GLWECmuxReference<$be>>::glwe_cmux_neg_assign_reference(module, res, a, s, scratch)
                 }
                 #[allow(clippy::too_many_arguments)]
-                fn cmux_assign<R, A>(
+                fn glwe_cmux_assign<R, A>(
                     module: &Module<$be>,
                     res: &mut R,
                     a: &A,
@@ -192,7 +207,7 @@ macro_rules! impl_cmux_reference_full {
                     R: GLWEToBackendMut<$be> + GLWEInfos,
                     A: GLWEToBackendRef<$be>,
                 {
-                    $crate::reference::bdd::cmux_assign_reference::<$be, _, _>(module, res, a, s, scratch)
+                    <::poulpy_hal::layouts::Module<$be> as $crate::reference::bdd::GLWECmuxReference<$be>>::glwe_cmux_assign_reference(module, res, a, s, scratch)
                 }
             }
         };
@@ -218,17 +233,17 @@ macro_rules! impl_ggsw_blind_rotation_reference_full {
             };
             unsafe impl<T: UnsignedInteger> $crate::oep::GGSWBlindRotationImpl<T> for $be {
                 #[allow(clippy::too_many_arguments)]
-                fn scalar_to_ggsw_blind_rotation_tmp_bytes<R, K>(module: &Module<$be>, res_infos: &R, k_infos: &K) -> usize
+                fn ggsw_blind_rotation_from_scalar_tmp_bytes<R, K>(module: &Module<$be>, res_infos: &R, k_infos: &K) -> usize
                 where
                     R: GLWEInfos,
                     K: GGSWInfos,
                 {
-                    $crate::reference::bdd::scalar_to_ggsw_blind_rotation_tmp_bytes_reference::<T, $be, _, _>(
+                    <::poulpy_hal::layouts::Module<$be> as $crate::reference::bdd::GGSWBlindRotationReference<T, $be>>::ggsw_blind_rotation_from_scalar_tmp_bytes_reference(
                         module, res_infos, k_infos,
                     )
                 }
                 #[allow(clippy::too_many_arguments)]
-                fn scalar_to_ggsw_blind_rotation<R, A, K>(
+                fn ggsw_blind_rotation_from_scalar<R, A, K>(
                     module: &Module<$be>,
                     sign: bool,
                     bit_rsh: usize,
@@ -244,7 +259,7 @@ macro_rules! impl_ggsw_blind_rotation_reference_full {
                     K: GetGGSWBit<$be>,
                     $be: Backend<ZnxWord = i64>,
                 {
-                    $crate::reference::bdd::scalar_to_ggsw_blind_rotation_reference::<T, $be, _, _, _>(
+                    <::poulpy_hal::layouts::Module<$be> as $crate::reference::bdd::GGSWBlindRotationReference<T, $be>>::ggsw_blind_rotation_from_scalar_reference(
                         module,
                         sign,
                         bit_rsh,
@@ -286,7 +301,7 @@ macro_rules! impl_glwe_blind_rotation_reference_full {
                     A: GLWEInfos,
                     K: GGSWInfos,
                 {
-                    $crate::reference::bdd::glwe_blind_rotation_tmp_bytes_reference::<$be, _, _, _>(
+                    <::poulpy_hal::layouts::Module<$be> as $crate::reference::bdd::GLWEBlindRotationReference<$be>>::glwe_blind_rotation_tmp_bytes_reference(
                         module, res_infos, a_infos, k_infos,
                     )
                 }
@@ -305,7 +320,7 @@ macro_rules! impl_glwe_blind_rotation_reference_full {
                     K: GetGGSWBit<$be>,
                     $be: Backend<ZnxWord = i64>,
                 {
-                    $crate::reference::bdd::glwe_blind_rotation_assign_reference::<$be, _, _>(
+                    <::poulpy_hal::layouts::Module<$be> as $crate::reference::bdd::GLWEBlindRotationReference<$be>>::glwe_blind_rotation_assign_reference(
                         module, sign, bit_rsh, bit_mask, bit_lsh, res, value, scratch,
                     )
                 }
@@ -326,7 +341,7 @@ macro_rules! impl_glwe_blind_rotation_reference_full {
                     K: GetGGSWBit<$be>,
                     $be: Backend<ZnxWord = i64>,
                 {
-                    $crate::reference::bdd::glwe_blind_rotation_reference::<$be, _, _, _>(
+                    <::poulpy_hal::layouts::Module<$be> as $crate::reference::bdd::GLWEBlindRotationReference<$be>>::glwe_blind_rotation_reference(
                         module, sign, bit_rsh, bit_mask, bit_lsh, res, a, fhe_uint, scratch,
                     )
                 }
@@ -365,7 +380,7 @@ macro_rules! impl_glwe_blind_selection_reference_full {
                     A: GLWEInfos,
                     K: GGSWInfos,
                 {
-                    $crate::reference::bdd::glwe_blind_selection_tmp_bytes_reference::<T, $be, _, _, _>(
+                    <::poulpy_hal::layouts::Module<$be> as $crate::reference::bdd::GLWEBlindSelectionReference<T, $be>>::glwe_blind_selection_tmp_bytes_reference(
                         module,
                         res_infos,
                         input_infos,
@@ -386,7 +401,7 @@ macro_rules! impl_glwe_blind_selection_reference_full {
                     A: GLWEToBackendMut<$be> + GLWEToBackendRef<$be> + GLWEInfos,
                     K: GetGGSWBit<$be>,
                 {
-                    $crate::reference::bdd::glwe_blind_selection_reference::<T, $be, _, _, _>(
+                    <::poulpy_hal::layouts::Module<$be> as $crate::reference::bdd::GLWEBlindSelectionReference<T, $be>>::glwe_blind_selection_reference(
                         module, bit_rsh, bit_mask, res, a, fhe_uint, scratch,
                     )
                 }
@@ -403,9 +418,9 @@ macro_rules! impl_glwe_blind_retrieval_derived_full {
     };
 }
 
-/// Selects the reference implementation of [`ExecuteBDDCircuit1WTo1WImpl`].
+/// Selects the reference implementation of [`BDDCircuitExecute1WTo1WImpl`].
 #[macro_export]
-macro_rules! impl_execute_bdd_circuit_1w_to_1w_reference_full {
+macro_rules! impl_bdd_circuit_execute_1w_to_1w_reference_full {
     ($be:ty) => {
         const _: () = {
             use poulpy_core::{
@@ -420,8 +435,8 @@ macro_rules! impl_execute_bdd_circuit_1w_to_1w_reference_full {
                 blind_rotation::{BlindRotationAlgo, BlindRotationKeyInfos},
                 circuit_bootstrapping::*,
             };
-            unsafe impl $crate::oep::ExecuteBDDCircuit1WTo1WImpl for $be {
-                fn execute_bdd_circuit_1w_to_1w_multi_thread_tmp_bytes<C, T, R, G, H>(
+            unsafe impl $crate::oep::BDDCircuitExecute1WTo1WImpl for $be {
+                fn bdd_circuit_execute_1w_to_1w_multi_thread_tmp_bytes<C, T, R, G, H>(
                     module: &Module<$be>,
                     threads: usize,
                     res_infos: &R,
@@ -436,12 +451,12 @@ macro_rules! impl_execute_bdd_circuit_1w_to_1w_reference_full {
                     G: GGSWInfos,
                     H: GetAutomorphismKey<$be>,
                 {
-                    $crate::reference::bdd::execute_bdd_circuit_1w_to_1w_multi_thread_tmp_bytes_reference::<$be, C, T, R, G, H>(
+                    <::poulpy_hal::layouts::Module<$be> as $crate::reference::bdd::BDDCircuitExecute1WTo1WReference<$be>>::bdd_circuit_execute_1w_to_1w_multi_thread_tmp_bytes_reference::<C, T, R, G, H>(
                         module, threads, res_infos, ggsw_infos, circuit, key,
                     )
                 }
                 #[allow(clippy::too_many_arguments)]
-                fn execute_bdd_circuit_1w_to_1w_multi_thread<C, H, T>(
+                fn bdd_circuit_execute_1w_to_1w_multi_thread<C, H, T>(
                     module: &Module<$be>,
                     threads: usize,
                     out: &mut FheUint<Self::OwnedBuf, T, Self::ZnxWord>,
@@ -455,7 +470,7 @@ macro_rules! impl_execute_bdd_circuit_1w_to_1w_reference_full {
                     H: GetAutomorphismKey<$be>,
                     $be: Backend<ZnxWord = i64>,
                 {
-                    $crate::reference::bdd::execute_bdd_circuit_1w_to_1w_multi_thread_reference::<$be, _, _, T>(
+                    <::poulpy_hal::layouts::Module<$be> as $crate::reference::bdd::BDDCircuitExecute1WTo1WReference<$be>>::bdd_circuit_execute_1w_to_1w_multi_thread_reference(
                         module, threads, out, a, circuit, key, scratch,
                     )
                 }
@@ -464,9 +479,9 @@ macro_rules! impl_execute_bdd_circuit_1w_to_1w_reference_full {
     };
 }
 
-/// Selects the reference implementation of [`ExecuteBDDCircuit2WTo1WImpl`].
+/// Selects the reference implementation of [`BDDCircuitExecute2WTo1WImpl`].
 #[macro_export]
-macro_rules! impl_execute_bdd_circuit_2w_to_1w_reference_full {
+macro_rules! impl_bdd_circuit_execute_2w_to_1w_reference_full {
     ($be:ty) => {
         const _: () = {
             use poulpy_core::{
@@ -481,9 +496,9 @@ macro_rules! impl_execute_bdd_circuit_2w_to_1w_reference_full {
                 blind_rotation::{BlindRotationAlgo, BlindRotationKeyInfos},
                 circuit_bootstrapping::*,
             };
-            unsafe impl $crate::oep::ExecuteBDDCircuit2WTo1WImpl for $be {
+            unsafe impl $crate::oep::BDDCircuitExecute2WTo1WImpl for $be {
                 #[allow(clippy::too_many_arguments)]
-                fn execute_bdd_circuit_2w_to_1w_multi_thread_tmp_bytes<C, T, R, G, H>(
+                fn bdd_circuit_execute_2w_to_1w_multi_thread_tmp_bytes<C, T, R, G, H>(
                     module: &Module<$be>,
                     threads: usize,
                     res_infos: &R,
@@ -498,12 +513,12 @@ macro_rules! impl_execute_bdd_circuit_2w_to_1w_reference_full {
                     G: GGSWInfos,
                     H: GetAutomorphismKey<$be>,
                 {
-                    $crate::reference::bdd::execute_bdd_circuit_2w_to_1w_multi_thread_tmp_bytes_reference::<$be, _, T, _, _, _>(
+                    <::poulpy_hal::layouts::Module<$be> as $crate::reference::bdd::BDDCircuitExecute2WTo1WReference<$be>>::bdd_circuit_execute_2w_to_1w_multi_thread_tmp_bytes_reference::<_, T, _, _, _>(
                         module, threads, res_infos, ggsw_infos, circuit, key,
                     )
                 }
                 #[allow(clippy::too_many_arguments)]
-                fn execute_bdd_circuit_2w_to_1w_multi_thread<C, H, T>(
+                fn bdd_circuit_execute_2w_to_1w_multi_thread<C, H, T>(
                     module: &Module<$be>,
                     threads: usize,
                     out: &mut FheUint<Self::OwnedBuf, T, Self::ZnxWord>,
@@ -518,7 +533,7 @@ macro_rules! impl_execute_bdd_circuit_2w_to_1w_reference_full {
                     H: GetAutomorphismKey<$be>,
                     $be: Backend<ZnxWord = i64>,
                 {
-                    $crate::reference::bdd::execute_bdd_circuit_2w_to_1w_multi_thread_reference::<$be, _, _, T>(
+                    <::poulpy_hal::layouts::Module<$be> as $crate::reference::bdd::BDDCircuitExecute2WTo1WReference<$be>>::bdd_circuit_execute_2w_to_1w_multi_thread_reference(
                         module, threads, out, a, b, circuit, key, scratch,
                     )
                 }
@@ -546,7 +561,7 @@ macro_rules! impl_fhe_uint_prepared_encrypt_sk_reference_full {
             };
             unsafe impl<T: UnsignedInteger + ToBits> $crate::oep::FheUintPreparedEncryptSkImpl<T> for $be {
                 fn fhe_uint_prepared_encrypt_sk_tmp_bytes<A: GGSWInfos>(module: &Module<$be>, infos: &A) -> usize {
-                    $crate::reference::bdd::fhe_uint_prepared_encrypt_sk_tmp_bytes_reference(module, infos)
+                    <::poulpy_hal::layouts::Module<$be> as $crate::reference::bdd::FheUintPreparedEncryptSkReference<T, $be>>::fhe_uint_prepared_encrypt_sk_tmp_bytes_reference(module, infos)
                 }
                 #[allow(clippy::too_many_arguments)]
                 fn fhe_uint_prepared_encrypt_sk<S>(
@@ -560,7 +575,7 @@ macro_rules! impl_fhe_uint_prepared_encrypt_sk_reference_full {
                 ) where
                     S: GLWESecretPreparedToBackendRef<$be> + GLWEInfos,
                 {
-                    $crate::reference::bdd::fhe_uint_prepared_encrypt_sk_reference::<T, $be, _>(
+                    <::poulpy_hal::layouts::Module<$be> as $crate::reference::bdd::FheUintPreparedEncryptSkReference<T, $be>>::fhe_uint_prepared_encrypt_sk_reference(
                         module, res, value, sk, source_xe, source_xa, scratch,
                     )
                 }
@@ -601,7 +616,7 @@ macro_rules! impl_fhe_uint_prepare_reference_full {
                     A: GLWEInfos,
                     B: BDDKeyInfos,
                 {
-                    $crate::reference::bdd::fhe_uint_prepare_tmp_bytes_reference::<$algo, $be, _, _, _>(
+                    <::poulpy_hal::layouts::Module<$be> as $crate::reference::bdd::FheUintPrepareReference<$algo, $be>>::fhe_uint_prepare_tmp_bytes_reference(
                         module,
                         block_size,
                         extension_factor,
@@ -623,7 +638,7 @@ macro_rules! impl_fhe_uint_prepare_reference_full {
                 ) where
                     K: BDDKeyHelper<Self::OwnedBuf, $algo, $be> + BDDKeyInfos,
                 {
-                    $crate::reference::bdd::fhe_uint_prepare_custom_multi_thread_reference::<$algo, $be, _, T>(
+                    <::poulpy_hal::layouts::Module<$be> as $crate::reference::bdd::FheUintPrepareReference<$algo, $be>>::fhe_uint_prepare_custom_multi_thread_reference(
                         module, threads, res, bits, bit_start, bit_count, key, scratch,
                     )
                 }
@@ -655,7 +670,7 @@ macro_rules! impl_bdd_key_encrypt_sk_reference_full {
                 where
                     A: BDDKeyInfos,
                 {
-                    $crate::reference::bdd::bdd_key_encrypt_sk_tmp_bytes_reference::<$algo, $be, _>(module, infos)
+                    <::poulpy_hal::layouts::Module<$be> as $crate::reference::bdd::BDDKeyEncryptSkReference<$algo, $be>>::bdd_key_encrypt_sk_tmp_bytes_reference(module, infos)
                 }
                 #[allow(clippy::too_many_arguments)]
                 fn bdd_key_encrypt_sk<S0, S1>(
@@ -670,7 +685,7 @@ macro_rules! impl_bdd_key_encrypt_sk_reference_full {
                     S0: LWESecretToBackendRef<$be> + GetDistribution + LWEInfos,
                     S1: GLWESecretToBackendRef<$be> + GetDistribution + GLWEInfos,
                 {
-                    $crate::reference::bdd::bdd_key_encrypt_sk_reference::<$algo, $be, _, _>(
+                    <::poulpy_hal::layouts::Module<$be> as $crate::reference::bdd::BDDKeyEncryptSkReference<$algo, $be>>::bdd_key_encrypt_sk_reference(
                         module, res, sk_lwe, sk_glwe, source_xe, source_xa, scratch,
                     )
                 }
@@ -701,7 +716,7 @@ macro_rules! impl_bdd_key_prepared_factory_reference_full {
                 where
                     A: BDDKeyInfos,
                 {
-                    $crate::reference::bdd::bdd_key_prepare_tmp_bytes_reference::<$algo, $be, _>(module, infos)
+                    <::poulpy_hal::layouts::Module<$be> as $crate::reference::bdd::BDDKeyPreparedFactoryReference<$algo, $be>>::bdd_key_prepare_tmp_bytes_reference(module, infos)
                 }
                 fn bdd_key_prepare(
                     module: &Module<$be>,
@@ -709,7 +724,7 @@ macro_rules! impl_bdd_key_prepared_factory_reference_full {
                     other: &BDDKey<Self::OwnedBuf, $algo, Self::ZnxWord>,
                     scratch: &mut ScratchArena<'_, $be>,
                 ) {
-                    $crate::reference::bdd::bdd_key_prepare_reference::<$algo, $be>(module, res, other, scratch)
+                    <::poulpy_hal::layouts::Module<$be> as $crate::reference::bdd::BDDKeyPreparedFactoryReference<$algo, $be>>::bdd_key_prepare_reference(module, res, other, scratch)
                 }
             }
         };
@@ -723,15 +738,15 @@ macro_rules! impl_bdd_key_prepared_factory_reference_full {
 #[macro_export]
 macro_rules! impl_bdd_reference_full {
     ($be:ty, $algo:ty) => {
-        $crate::impl_execute_bdd_circuit_reference_full!($be);
-        $crate::impl_cswap_reference_full!($be);
-        $crate::impl_cmux_reference_full!($be);
+        $crate::impl_bdd_circuit_execute_reference_full!($be);
+        $crate::impl_glwe_cswap_reference_full!($be);
+        $crate::impl_glwe_cmux_reference_full!($be);
         $crate::impl_ggsw_blind_rotation_reference_full!($be);
         $crate::impl_glwe_blind_rotation_reference_full!($be);
         $crate::impl_glwe_blind_selection_reference_full!($be);
         $crate::impl_glwe_blind_retrieval_derived_full!($be);
-        $crate::impl_execute_bdd_circuit_1w_to_1w_reference_full!($be);
-        $crate::impl_execute_bdd_circuit_2w_to_1w_reference_full!($be);
+        $crate::impl_bdd_circuit_execute_1w_to_1w_reference_full!($be);
+        $crate::impl_bdd_circuit_execute_2w_to_1w_reference_full!($be);
         $crate::impl_fhe_uint_prepared_encrypt_sk_reference_full!($be);
         $crate::impl_fhe_uint_prepare_reference_full!($be, $algo);
         $crate::impl_bdd_key_encrypt_sk_reference_full!($be, $algo);

@@ -15,8 +15,8 @@ use crate::test_suite::bdd_arithmetic::decrypt_checked;
 use crate::test_suite::bdd_arithmetic::{TEST_GGSW_INFOS, TEST_GLWE_INFOS, TestContext};
 use crate::{
     bdd_arithmetic::{
-        BDDKeyEncryptSk, BDDKeyPrepared, BDDKeyPreparedFactory, ExecuteBDDCircuit2WTo1W, FheUint, FheUintPrepare,
-        FheUintPrepareDebug, FheUintPrepared, FheUintPreparedEncryptSk, FheUintPreparedFactory, Sll,
+        BDDCircuitExecute2WTo1W, BDDKeyEncryptSk, BDDKeyPrepared, BDDKeyPreparedFactory, FheUint, FheUintPrepare,
+        FheUintPrepareDebug, FheUintPrepared, FheUintPreparedEncryptSk, FheUintPreparedFactory, FheUintSll,
     },
     blind_rotation::BlindRotationAlgo,
 };
@@ -36,7 +36,7 @@ pub fn test_bdd_sll<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf: HostDataMut + 
         + BDDKeyPreparedFactory<BRA, BE>
         + GGSWNoise<BE>
         + FheUintPrepare<BRA, BE>
-        + ExecuteBDDCircuit2WTo1W<BE>
+        + BDDCircuitExecute2WTo1W<BE>
         + GLWEEncryptSk<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     for<'a> BE::BufMut<'a>: HostDataMut,

@@ -1,8 +1,8 @@
 use poulpy_core::{layouts::*, *};
 use poulpy_hal::{api::*, layouts::*};
 #[allow(clippy::too_many_arguments)]
-/// Independently callable canonical implementation of [`crate::api::Cmux::cmux_tmp_bytes`].
-pub fn cmux_tmp_bytes_reference<BE: Backend<ZnxWord = i64>, R, A, B>(
+/// Independently callable canonical implementation of [`crate::api::GLWECmux::glwe_cmux_tmp_bytes`].
+pub fn glwe_cmux_tmp_bytes_reference<BE: Backend<ZnxWord = i64>, R, A, B>(
     module: &Module<BE>,
     res_infos: &R,
     a_infos: &A,
@@ -56,8 +56,8 @@ where
             .max(module.glwe_copy_tmp_bytes(a_infos, a_infos))
 }
 #[allow(clippy::too_many_arguments)]
-/// Independently callable canonical implementation of [`crate::api::Cmux::cmux`].
-pub fn cmux_reference<BE, R, T, F>(
+/// Independently callable canonical implementation of [`crate::api::GLWECmux::glwe_cmux`].
+pub fn glwe_cmux_reference<BE, R, T, F>(
     module: &Module<BE>,
     res: &mut R,
     t: &T,
@@ -86,8 +86,8 @@ pub fn cmux_reference<BE, R, T, F>(
 {
     let f_backend = f.to_backend_ref();
     assert!(
-        scratch.available() >= cmux_tmp_bytes_reference(module, res, &t.to_backend_ref(), s),
-        "cmux: insufficient scratch"
+        scratch.available() >= glwe_cmux_tmp_bytes_reference(module, res, &t.to_backend_ref(), s),
+        "glwe_cmux: insufficient scratch"
     );
 
     let scratch = scratch.borrow();
@@ -135,8 +135,8 @@ pub fn cmux_reference<BE, R, T, F>(
     module.glwe_copy(res, &tmp_in, &mut scratch_norm);
 }
 #[allow(clippy::too_many_arguments)]
-/// Independently callable canonical implementation of [`crate::api::Cmux::cmux_assign_neg`].
-pub fn cmux_assign_neg_reference<BE, R, A>(
+/// Independently callable canonical implementation of [`crate::api::GLWECmux::glwe_cmux_neg_assign`].
+pub fn glwe_cmux_neg_assign_reference<BE, R, A>(
     module: &Module<BE>,
     res: &mut R,
     a: &A,
@@ -165,8 +165,8 @@ pub fn cmux_assign_neg_reference<BE, R, A>(
 
     assert_eq!(res.base2k(), a_backend.base2k());
     assert!(
-        scratch.available() >= cmux_tmp_bytes_reference(module, res, &a_backend, s),
-        "cmux_assign_neg: insufficient scratch"
+        scratch.available() >= glwe_cmux_tmp_bytes_reference(module, res, &a_backend, s),
+        "glwe_cmux_neg_assign: insufficient scratch"
     );
 
     let scratch = scratch.borrow();
@@ -219,8 +219,8 @@ pub fn cmux_assign_neg_reference<BE, R, A>(
     module.glwe_copy(res, &tmp, &mut scratch_norm);
 }
 #[allow(clippy::too_many_arguments)]
-/// Independently callable canonical implementation of [`crate::api::Cmux::cmux_assign`].
-pub fn cmux_assign_reference<BE, R, A>(
+/// Independently callable canonical implementation of [`crate::api::GLWECmux::glwe_cmux_assign`].
+pub fn glwe_cmux_assign_reference<BE, R, A>(
     module: &Module<BE>,
     res: &mut R,
     a: &A,
@@ -247,8 +247,8 @@ pub fn cmux_assign_reference<BE, R, A>(
 {
     let a_backend = a.to_backend_ref();
     assert!(
-        scratch.available() >= cmux_tmp_bytes_reference(module, res, &a_backend, s),
-        "cmux_assign: insufficient scratch"
+        scratch.available() >= glwe_cmux_tmp_bytes_reference(module, res, &a_backend, s),
+        "glwe_cmux_assign: insufficient scratch"
     );
     let scratch = scratch.borrow();
     let res_base2k: usize = res.base2k().into();
@@ -293,4 +293,113 @@ pub fn cmux_assign_reference<BE, R, A>(
         );
     }
     module.glwe_copy(res, &tmp, &mut scratch_norm);
+}
+
+/// Reference bodies of the [`GLWECmuxImpl`](crate::oep::GLWECmuxImpl) methods, which
+/// [`impl_glwe_cmux_reference_full!`](crate::impl_glwe_cmux_reference_full) forwards to.
+pub trait GLWECmuxReference<BE: Backend> {
+    fn glwe_cmux_tmp_bytes_reference<R, A, B>(&self, res_infos: &R, a_infos: &A, selector_infos: &B) -> usize
+    where
+        R: GLWEInfos,
+        A: GLWEInfos,
+        B: GGSWInfos;
+
+    fn glwe_cmux_reference<R, T, F>(
+        &self,
+        res: &mut R,
+        t: &T,
+        f: &F,
+        s: &GGSWPreparedBackendRef<'_, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        T: GLWEToBackendRef<BE>,
+        F: GLWEToBackendRef<BE>;
+
+    fn glwe_cmux_neg_assign_reference<R, A>(
+        &self,
+        res: &mut R,
+        a: &A,
+        s: &GGSWPreparedBackendRef<'_, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE>;
+
+    fn glwe_cmux_assign_reference<R, A>(
+        &self,
+        res: &mut R,
+        a: &A,
+        s: &GGSWPreparedBackendRef<'_, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE>;
+}
+
+impl<BE: Backend<ZnxWord = i64>> GLWECmuxReference<BE> for Module<BE>
+where
+    Module<BE>: GLWEBytesOf<BE>
+        + GLWEExternalProductDft<BE>
+        + GLWECopy<BE>
+        + GLWESub<BE>
+        + ModuleN
+        + VecZnxBigAddSmallAssign<BE>
+        + VecZnxBigBytesOf
+        + GLWENormalize<BE>
+        + VecZnxDftBytesOf
+        + VecZnxIdftApply<BE>
+        + VecZnxIdftApplyTmpBytes
+        + VecZnxBigNormalize<BE>
+        + VecZnxBigNormalizeTmpBytes,
+{
+    fn glwe_cmux_tmp_bytes_reference<R, A, B>(&self, res_infos: &R, a_infos: &A, selector_infos: &B) -> usize
+    where
+        R: GLWEInfos,
+        A: GLWEInfos,
+        B: GGSWInfos,
+    {
+        glwe_cmux_tmp_bytes_reference(self, res_infos, a_infos, selector_infos)
+    }
+
+    fn glwe_cmux_reference<R, T, F>(
+        &self,
+        res: &mut R,
+        t: &T,
+        f: &F,
+        s: &GGSWPreparedBackendRef<'_, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        T: GLWEToBackendRef<BE>,
+        F: GLWEToBackendRef<BE>,
+    {
+        glwe_cmux_reference(self, res, t, f, s, scratch)
+    }
+
+    fn glwe_cmux_neg_assign_reference<R, A>(
+        &self,
+        res: &mut R,
+        a: &A,
+        s: &GGSWPreparedBackendRef<'_, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE>,
+    {
+        glwe_cmux_neg_assign_reference(self, res, a, s, scratch)
+    }
+
+    fn glwe_cmux_assign_reference<R, A>(
+        &self,
+        res: &mut R,
+        a: &A,
+        s: &GGSWPreparedBackendRef<'_, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE>,
+    {
+        glwe_cmux_assign_reference(self, res, a, s, scratch)
+    }
 }

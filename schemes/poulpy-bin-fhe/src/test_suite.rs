@@ -125,8 +125,8 @@ macro_rules! bin_fhe_backend_test_suite {
                 }
 
                 #[test]
-                fn glwe_blind_retrieval_statefull() {
-                    test_suite::test_glwe_blind_retrieval_statefull(&CTX);
+                fn glwe_blind_retrieval_stateful_assign() {
+                    test_suite::test_glwe_blind_retrieval_stateful_assign(&CTX);
                 }
 
                 #[test]
@@ -140,8 +140,8 @@ macro_rules! bin_fhe_backend_test_suite {
                 }
 
                 #[test]
-                fn scalar_to_ggsw_blind_rotation() {
-                    test_suite::test_scalar_to_ggsw_blind_rotation(&CTX);
+                fn ggsw_blind_rotation_from_scalar() {
+                    test_suite::test_ggsw_blind_rotation_from_scalar(&CTX);
                 }
 
                 #[test]
@@ -210,13 +210,13 @@ macro_rules! bin_fhe_backend_test_suite {
                 }
 
                 #[test]
-                fn cswap() {
-                    test_suite::test_cswap_direct(&CTX);
+                fn glwe_cswap_assign() {
+                    test_suite::test_glwe_cswap_assign_direct(&CTX);
                 }
 
                 #[test]
-                fn cmux() {
-                    test_suite::test_cmux_direct(&CTX);
+                fn glwe_cmux() {
+                    test_suite::test_glwe_cmux_direct(&CTX);
                 }
 
                 #[test]
@@ -292,12 +292,12 @@ macro_rules! bin_fhe_parity_test_suite {
                 parity::lifecycle::test_lifecycle_parity(&Module::<$backend_ref>::new(64), &Module::<$backend_test>::new(64));
             }
             #[test]
-            fn cmux() {
-                parity::bdd::test_cmux_parity(&Module::<$backend_ref>::new(64), &Module::<$backend_test>::new(64));
+            fn glwe_cmux() {
+                parity::bdd::test_glwe_cmux_parity(&Module::<$backend_ref>::new(64), &Module::<$backend_test>::new(64));
             }
             #[test]
-            fn cswap() {
-                parity::bdd::test_cswap_parity(&Module::<$backend_ref>::new(64), &Module::<$backend_test>::new(64));
+            fn glwe_cswap_assign() {
+                parity::bdd::test_glwe_cswap_assign_parity(&Module::<$backend_ref>::new(64), &Module::<$backend_test>::new(64));
             }
             #[test]
             fn glwe_blind_rotation() {
@@ -329,8 +329,8 @@ macro_rules! bin_fhe_parity_test_suite {
                 parity::bdd::test_ggsw_blind_rotation_parity(&Module::<$backend_ref>::new(64), &Module::<$backend_test>::new(64));
             }
             #[test]
-            fn execute_bdd_circuit() {
-                parity::bdd::test_execute_bdd_circuit_parity(&Module::<$backend_ref>::new(64), &Module::<$backend_test>::new(64));
+            fn bdd_circuit_execute() {
+                parity::bdd::test_bdd_circuit_execute_parity(&Module::<$backend_ref>::new(64), &Module::<$backend_test>::new(64));
             }
             #[test]
             fn blind_rotation() {

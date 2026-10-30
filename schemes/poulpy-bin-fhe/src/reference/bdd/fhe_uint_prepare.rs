@@ -32,7 +32,12 @@ where
         &bdd_infos.ks_lwe_infos(),
     );
     let operation = extraction
-        .max(module.circuit_bootstrapping_execute_tmp_bytes(block_size, extension_factor, res_infos, &bdd_infos.cbt_infos()))
+        .max(module.circuit_bootstrapping_execute_to_constant_tmp_bytes(
+            block_size,
+            extension_factor,
+            res_infos,
+            &bdd_infos.cbt_infos(),
+        ))
         .max(module.ggsw_prepare_tmp_bytes(res_infos));
     poulpy_hal::execution::worker_scratch_bytes::<BE>(
         module.ggsw_bytes_of_from_infos(res_infos) + module.lwe_bytes_of_from_infos(&lwe_infos) + operation,
@@ -104,4 +109,79 @@ pub fn fhe_uint_prepare_custom_multi_thread_reference<BRA: BlindRotationAlgo, BE
             module.ggsw_prepare(res_bit, &tmp_ggsw, &mut scratch_bit);
         },
     );
+}
+
+/// Reference bodies of the required [`FheUintPrepareImpl`](crate::oep::FheUintPrepareImpl) methods, which
+/// [`impl_fhe_uint_prepare_reference_full!`](crate::impl_fhe_uint_prepare_reference_full) forwards to.
+pub trait FheUintPrepareReference<BRA: BlindRotationAlgo, BE: Backend> {
+    fn fhe_uint_prepare_tmp_bytes_reference<R, A, B>(
+        &self,
+        block_size: usize,
+        extension_factor: usize,
+        res_infos: &R,
+        bits_infos: &A,
+        bdd_infos: &B,
+    ) -> usize
+    where
+        R: GGSWInfos,
+        A: GLWEInfos,
+        B: BDDKeyInfos;
+
+    #[allow(clippy::too_many_arguments)]
+    fn fhe_uint_prepare_custom_multi_thread_reference<K, T: UnsignedInteger>(
+        &self,
+        threads: usize,
+        res: &mut FheUintPrepared<BE::OwnedBuf, T, BE>,
+        bits: &FheUint<BE::OwnedBuf, T, BE::ZnxWord>,
+        bit_start: usize,
+        bit_count: usize,
+        key: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        K: BDDKeyHelper<BE::OwnedBuf, BRA, BE> + BDDKeyInfos;
+}
+
+impl<BRA: BlindRotationAlgo, BE: Backend<ZnxWord = i64>> FheUintPrepareReference<BRA, BE> for Module<BE>
+where
+    Module<BE>: LWEFromGLWE<BE> + GLWEKeyswitch<BE> + CircuitBootstrappingExecute<BRA, BE> + GGSWPreparedFactory<BE>,
+{
+    fn fhe_uint_prepare_tmp_bytes_reference<R, A, B>(
+        &self,
+        block_size: usize,
+        extension_factor: usize,
+        res_infos: &R,
+        bits_infos: &A,
+        bdd_infos: &B,
+    ) -> usize
+    where
+        R: GGSWInfos,
+        A: GLWEInfos,
+        B: BDDKeyInfos,
+    {
+        fhe_uint_prepare_tmp_bytes_reference::<BRA, BE, R, A, B>(
+            self,
+            block_size,
+            extension_factor,
+            res_infos,
+            bits_infos,
+            bdd_infos,
+        )
+    }
+
+    fn fhe_uint_prepare_custom_multi_thread_reference<K, T: UnsignedInteger>(
+        &self,
+        threads: usize,
+        res: &mut FheUintPrepared<BE::OwnedBuf, T, BE>,
+        bits: &FheUint<BE::OwnedBuf, T, BE::ZnxWord>,
+        bit_start: usize,
+        bit_count: usize,
+        key: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        K: BDDKeyHelper<BE::OwnedBuf, BRA, BE> + BDDKeyInfos,
+    {
+        fhe_uint_prepare_custom_multi_thread_reference::<BRA, BE, K, T>(
+            self, threads, res, bits, bit_start, bit_count, key, scratch,
+        )
+    }
 }

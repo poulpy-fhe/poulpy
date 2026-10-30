@@ -94,6 +94,33 @@ fn switch_coefficient(
     (rounded & (modulus as i128 - 1)) as i64
 }
 
+/// Reference body of the [`BlindRotationModSwitchImpl`](crate::oep::BlindRotationModSwitchImpl) method, which
+/// [`impl_blind_rotation_mod_switch_reference_full!`](crate::impl_blind_rotation_mod_switch_reference_full) forwards to.
+pub trait BlindRotationModSwitchReference<BE: Backend> {
+    fn blind_rotation_mod_switch_reference<A>(
+        &self,
+        modulus: usize,
+        direction: LookUpTableRotationDirection,
+        res: &mut [i64],
+        lwe: &A,
+    ) where
+        A: LWEToBackendRef<BE> + LWEInfos;
+}
+
+impl<BE: Backend<ZnxWord = i64>> BlindRotationModSwitchReference<BE> for Module<BE> {
+    fn blind_rotation_mod_switch_reference<A>(
+        &self,
+        modulus: usize,
+        direction: LookUpTableRotationDirection,
+        res: &mut [i64],
+        lwe: &A,
+    ) where
+        A: LWEToBackendRef<BE> + LWEInfos,
+    {
+        blind_rotation_mod_switch_reference(self, modulus, direction, res, lwe)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

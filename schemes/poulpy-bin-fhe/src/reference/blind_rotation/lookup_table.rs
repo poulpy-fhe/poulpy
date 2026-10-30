@@ -121,17 +121,17 @@ where
         module.vec_znx_normalize_assign(res.base2k.into(), res.k.as_usize(), 0, &mut a_data, 0, &mut scratch.borrow());
     }
 
-    lookup_table_rotate_reference(module, -(drift as i64), res);
+    lookup_table_rotate_assign_reference(module, -(drift as i64), res);
 
     res.drift = drift
 }
 
 /// Independently callable canonical implementation of
-/// [`LookupTableFactory::lookup_table_rotate`](crate::api::LookupTableFactory::lookup_table_rotate), selected by
+/// [`LookupTableFactory::lookup_table_rotate_assign`](crate::api::LookupTableFactory::lookup_table_rotate_assign), selected by
 /// `impl_lookup_table_factory_reference_full!`.
 ///
 /// Rotates an encoded LUT using HAL polynomial rotation and its scratch query.
-pub fn lookup_table_rotate_reference<BE>(module: &Module<BE>, k: i64, res: &mut LookupTable<BE::OwnedBuf, BE::ZnxWord>)
+pub fn lookup_table_rotate_assign_reference<BE>(module: &Module<BE>, k: i64, res: &mut LookupTable<BE::OwnedBuf, BE::ZnxWord>)
 where
     BE: Backend<ZnxWord = i64>,
     Module<BE>: VecZnxRotateAssign<BE> + VecZnxRotateAssignTmpBytes,
@@ -173,4 +173,26 @@ fn max_bit_size(vec: &[i64]) -> u32 {
         .map(|&v| if v == 0 { 0 } else { v.unsigned_abs().ilog2() + 1 })
         .max()
         .unwrap_or(0)
+}
+
+/// Reference bodies of the [`LookupTableFactoryImpl`](crate::oep::LookupTableFactoryImpl) methods, which
+/// [`impl_lookup_table_factory_reference_full!`](crate::impl_lookup_table_factory_reference_full) forwards to.
+pub trait LookupTableFactoryReference<BE: Backend> {
+    fn lookup_table_set_reference(&self, k: usize, res: &mut LookupTable<BE::OwnedBuf, BE::ZnxWord>, f: &[i64]);
+
+    fn lookup_table_rotate_assign_reference(&self, k: i64, res: &mut LookupTable<BE::OwnedBuf, BE::ZnxWord>);
+}
+
+impl<BE: Backend<ZnxWord = i64>> LookupTableFactoryReference<BE> for Module<BE>
+where
+    Module<BE>: VecZnxNormalizeAssign<BE> + VecZnxNormalizeTmpBytes + VecZnxRotateAssign<BE> + VecZnxRotateAssignTmpBytes,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    fn lookup_table_set_reference(&self, k: usize, res: &mut LookupTable<BE::OwnedBuf, BE::ZnxWord>, f: &[i64]) {
+        lookup_table_set_reference(self, k, res, f)
+    }
+
+    fn lookup_table_rotate_assign_reference(&self, k: i64, res: &mut LookupTable<BE::OwnedBuf, BE::ZnxWord>) {
+        lookup_table_rotate_assign_reference(self, k, res)
+    }
 }

@@ -7,7 +7,7 @@ use poulpy_core::{
 };
 use poulpy_hal::layouts::{Backend, Data, ScratchArena};
 
-use crate::bdd_arithmetic::{Cmux, GetGGSWBit};
+use crate::bdd_arithmetic::{GLWECmux, GetGGSWBit};
 use poulpy_core::GLWEBytesOf;
 
 /// Stateful accumulator for oblivious retrieval of one GLWE ciphertext from a
@@ -22,7 +22,7 @@ use poulpy_core::GLWEBytesOf;
 /// `reset`, all `add` calls, and `flush` in a single step. Inputs are borrowed
 /// without mutation. Unlike [`GLWEBlindRetrieval`], this helper does not permute
 /// a ciphertext array for later reversal: it owns persistent accumulation state
-/// and composes the selected [`Cmux`] and core operations.
+/// and composes the selected [`GLWECmux`] and core operations.
 ///
 /// For a nonempty stream, the encrypted index starting at `offset` must refer
 /// to an input actually added; missing positions are not padded with zero.
@@ -77,14 +77,14 @@ impl<D: Data> GLWEBlindRetriever<D, i64> {
     pub fn retrieve_tmp_bytes<M, R, S, BE>(module: &M, res: &R, selector: &S) -> usize
     where
         BE: Backend<OwnedBuf = D, ZnxWord = i64>,
-        M: GLWEBytesOf<BE> + GLWECopy<BE> + Cmux<BE>,
+        M: GLWEBytesOf<BE> + GLWECopy<BE> + GLWECmux<BE>,
         R: GLWEInfos,
         S: GGSWInfos,
     {
         let acc = res.glwe_layout();
         module
-            .cmux_tmp_bytes(&acc, res, selector)
-            .max(module.cmux_tmp_bytes(&acc, &acc, selector))
+            .glwe_cmux_tmp_bytes(&acc, res, selector)
+            .max(module.glwe_cmux_tmp_bytes(&acc, &acc, selector))
             .max(module.glwe_copy_tmp_bytes(&acc, res))
             .max(module.glwe_copy_tmp_bytes(&acc, &acc))
             .max(module.glwe_copy_tmp_bytes(res, &acc))
@@ -96,7 +96,7 @@ impl<D: Data> GLWEBlindRetriever<D, i64> {
     pub fn add_tmp_bytes<M, A, S, BE>(&self, module: &M, a: &A, selector: &S) -> usize
     where
         BE: Backend<OwnedBuf = D, ZnxWord = i64>,
-        M: GLWEBytesOf<BE> + GLWECopy<BE> + Cmux<BE>,
+        M: GLWEBytesOf<BE> + GLWECopy<BE> + GLWECmux<BE>,
         A: GLWEInfos,
         S: GGSWInfos,
     {
@@ -104,8 +104,8 @@ impl<D: Data> GLWEBlindRetriever<D, i64> {
             return 0;
         };
         module
-            .cmux_tmp_bytes(acc, a, selector)
-            .max(module.cmux_tmp_bytes(acc, acc, selector))
+            .glwe_cmux_tmp_bytes(acc, a, selector)
+            .max(module.glwe_cmux_tmp_bytes(acc, acc, selector))
             .max(module.glwe_copy_tmp_bytes(acc, a))
             .max(module.glwe_copy_tmp_bytes(acc, acc))
     }
@@ -116,7 +116,7 @@ impl<D: Data> GLWEBlindRetriever<D, i64> {
     pub fn flush_tmp_bytes<M, R, S, BE>(&self, module: &M, res: &R, selector: &S) -> usize
     where
         BE: Backend<OwnedBuf = D, ZnxWord = i64>,
-        M: GLWEBytesOf<BE> + GLWECopy<BE> + Cmux<BE>,
+        M: GLWEBytesOf<BE> + GLWECopy<BE> + GLWECmux<BE>,
         R: GLWEInfos,
         S: GGSWInfos,
     {
@@ -124,7 +124,7 @@ impl<D: Data> GLWEBlindRetriever<D, i64> {
             return 0;
         };
         module
-            .cmux_tmp_bytes(acc, acc, selector)
+            .glwe_cmux_tmp_bytes(acc, acc, selector)
             .max(module.glwe_copy_tmp_bytes(acc, acc))
             .max(module.glwe_copy_tmp_bytes(res, acc))
     }
@@ -138,7 +138,7 @@ impl<D: Data> GLWEBlindRetriever<D, i64> {
         offset: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        M: GLWEBytesOf<BE> + GLWECopy<BE> + GLWEZero<BE> + Cmux<BE>,
+        M: GLWEBytesOf<BE> + GLWECopy<BE> + GLWEZero<BE> + GLWECmux<BE>,
         BE: Backend<OwnedBuf = D, ZnxWord = i64>,
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
@@ -156,7 +156,7 @@ impl<D: Data> GLWEBlindRetriever<D, i64> {
     where
         A: GLWEToBackendRef<BE>,
         S: GetGGSWBit<BE>,
-        M: GLWEBytesOf<BE> + GLWECopy<BE> + Cmux<BE>,
+        M: GLWEBytesOf<BE> + GLWECopy<BE> + GLWECmux<BE>,
         BE: Backend<OwnedBuf = D, ZnxWord = i64>,
     {
         assert!(self.counter < self.capacity, "retrieval capacity exceeded");
@@ -169,7 +169,7 @@ impl<D: Data> GLWEBlindRetriever<D, i64> {
     where
         R: GLWEToBackendMut<BE>,
         S: GetGGSWBit<BE>,
-        M: GLWEBytesOf<BE> + GLWECopy<BE> + GLWEZero<BE> + Cmux<BE>,
+        M: GLWEBytesOf<BE> + GLWECopy<BE> + GLWEZero<BE> + GLWECmux<BE>,
         BE: Backend<OwnedBuf = D, ZnxWord = i64>,
     {
         if self.counter == 0 {
@@ -226,7 +226,7 @@ fn add_core<A, S, M, BE>(
 ) where
     A: GLWEToBackendRef<BE>,
     S: GetGGSWBit<BE>,
-    M: GLWEBytesOf<BE> + GLWECopy<BE> + Cmux<BE>,
+    M: GLWEBytesOf<BE> + GLWECopy<BE> + GLWECmux<BE>,
     BE: Backend<ZnxWord = i64>,
 {
     // Isolate the first accumulator
@@ -239,7 +239,7 @@ fn add_core<A, S, M, BE>(
         }
         1 => {
             let selector_bit = selector.get_bit(i + offset);
-            module.cmux_assign_neg(&mut acc_prev[0].data, a, &selector_bit.to_backend_ref(), scratch);
+            module.glwe_cmux_neg_assign(&mut acc_prev[0].data, a, &selector_bit.to_backend_ref(), scratch);
 
             if !acc_next.is_empty() {
                 add_core(module, &acc_prev[0].data, acc_next, i + 1, selector, offset, scratch);

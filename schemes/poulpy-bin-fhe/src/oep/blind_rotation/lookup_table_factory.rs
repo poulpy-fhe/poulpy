@@ -11,9 +11,9 @@ pub unsafe trait LookupTableFactoryImpl: Backend<Ring = Standard> {
     /// bit; free in kernels.
     fn lookup_table_set(module: &Module<Self>, k: usize, res: &mut LookupTable<Self::OwnedBuf, Self::ZnxWord>, f: &[i64]);
 
-    /// Reproduces [`lookup_table_rotate_reference`](crate::reference::blind_rotation::lookup_table_rotate_reference) bit
+    /// Reproduces [`lookup_table_rotate_assign_reference`](crate::reference::blind_rotation::lookup_table_rotate_assign_reference) bit
     /// for bit; free in kernels.
-    fn lookup_table_rotate(module: &Module<Self>, k: i64, res: &mut LookupTable<Self::OwnedBuf, Self::ZnxWord>);
+    fn lookup_table_rotate_assign(module: &Module<Self>, k: i64, res: &mut LookupTable<Self::OwnedBuf, Self::ZnxWord>);
 }
 
 /// Selects canonical LUT encoding and rotation through HAL operations.
@@ -27,15 +27,19 @@ macro_rules! impl_lookup_table_factory_reference_full {
                 res: &mut $crate::blind_rotation::LookupTable<Self::OwnedBuf, Self::ZnxWord>,
                 f: &[i64],
             ) {
-                $crate::reference::blind_rotation::lookup_table_set_reference(module, k, res, f)
+                <::poulpy_hal::layouts::Module<$backend> as $crate::reference::blind_rotation::LookupTableFactoryReference<
+                    $backend,
+                >>::lookup_table_set_reference(module, k, res, f)
             }
 
-            fn lookup_table_rotate(
+            fn lookup_table_rotate_assign(
                 module: &poulpy_hal::layouts::Module<Self>,
                 k: i64,
                 res: &mut $crate::blind_rotation::LookupTable<Self::OwnedBuf, Self::ZnxWord>,
             ) {
-                $crate::reference::blind_rotation::lookup_table_rotate_reference(module, k, res)
+                <::poulpy_hal::layouts::Module<$backend> as $crate::reference::blind_rotation::LookupTableFactoryReference<
+                    $backend,
+                >>::lookup_table_rotate_assign_reference(module, k, res)
             }
         }
     };

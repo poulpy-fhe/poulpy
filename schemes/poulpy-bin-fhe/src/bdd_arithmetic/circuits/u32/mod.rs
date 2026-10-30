@@ -1,6 +1,6 @@
 pub(crate) mod add_codegen;
 pub(crate) mod and_codegen;
-pub(crate) mod identity_codgen;
+pub(crate) mod identity_codegen;
 pub(crate) mod or_codegen;
 pub(crate) mod sll_codegen;
 pub(crate) mod slt_codegen;

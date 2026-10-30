@@ -36,10 +36,10 @@ Every operation that uses caller workspace has a selected scratch query.
 | `BlindRotationKeyCompressedFactory` | Direct on the module, no OEP family | Compressed key lifecycle, byte counts, degree refusals and allocation on opaque storage. |
 | `CircuitBootstrappingExecute` | [`reference/circuit_bootstrapping.rs`](../src/reference/circuit_bootstrapping.rs); one-shot constant/exponent wrappers are derived | Constant/exponent outputs, prepared plans, repeated execution, differing radices and invalid shapes. |
 | `CircuitBootstrappingKeyEncryptSk`, `CircuitBootstrappingKeyPreparedFactory` | Same reference module | Shared raw key, independently prepared components and exact query-sized workspace. |
-| `Cmux`, `Cswap` | [`reference/bdd`](../src/reference/bdd/) | Assignment variants, differing precisions, output capacity and operand preservation. |
+| `GLWECmux`, `GLWECswap` | [`reference/bdd`](../src/reference/bdd/) | Assignment variants, differing precisions, output capacity and operand preservation. |
 | `GLWEBlindRotation`, `GGSWBlindRotation`, `GLWEBlindSelection`, `GLWEBlindRetrieval` | Same reference directory; same-layer wrappers in [`oep/derived/bdd`](../src/oep/derived/bdd/) | Rotation/selection variants, sparse branches and reusable retrieval state. |
-| `GLWEBlindRetriever` | Stateful streaming helper composed from selected `Cmux`, `GLWECopy` and `GLWEZero` operations | Batch/incremental parity, borrowed selectors, empty/singleton streams, capacity limits, reuse and exact layout-dependent workspace. |
-| `ExecuteBDDCircuit`, `ExecuteBDDCircuit1WTo1W`, `ExecuteBDDCircuit2WTo1W` | Same directories | Single/multiple outputs, serial/parallel calls and worker counts. |
+| `GLWEBlindRetriever` | Stateful streaming helper composed from selected `GLWECmux`, `GLWECopy` and `GLWEZero` operations | Batch/incremental parity, borrowed selectors, empty/singleton streams, capacity limits, reuse and exact layout-dependent workspace. |
+| `BDDCircuitExecute`, `BDDCircuitExecute1WTo1W`, `BDDCircuitExecute2WTo1W` | Same directories | Single/multiple outputs, serial/parallel calls and worker counts. |
 | `FheUintPrepare`, `FheUintPreparedEncryptSk`, `BDDKeyEncryptSk`, `BDDKeyPreparedFactory` | Same directories | Preparation and key lifecycle, including optional switching keys. |
 
 Layout accessors, serialization, plain container constructors, and generated
@@ -72,18 +72,18 @@ being the trait in snake case without `Impl`: circuit execution, key
 encryption and key preparation have
 `impl_circuit_bootstrapping_execute_reference_full!`,
 `impl_circuit_bootstrapping_key_encrypt_sk_reference_full!` and
-`impl_circuit_bootstrapping_key_prepared_reference_full!`, allowing a backend
+`impl_circuit_bootstrapping_key_prepared_factory_reference_full!`, allowing a backend
 to replace execution while retaining the key lifecycle implementations.
 
 BDD opt-ins are also available per operation contract. For example, keep the
 reference CMux, blind selection, and derived retrieval while implementing a
-custom Cswap:
+custom GLWECswap:
 
 ```rust,ignore
-poulpy_bin_fhe::impl_cmux_reference_full!(MyBackend);
+poulpy_bin_fhe::impl_glwe_cmux_reference_full!(MyBackend);
 poulpy_bin_fhe::impl_glwe_blind_selection_reference_full!(MyBackend);
 poulpy_bin_fhe::impl_glwe_blind_retrieval_derived_full!(MyBackend);
-// Implement CswapImpl for MyBackend with the selected execution and scratch query.
+// Implement GLWECswapImpl for MyBackend with the selected execution and scratch query.
 ```
 
 Select the other required contracts through their individual macros in

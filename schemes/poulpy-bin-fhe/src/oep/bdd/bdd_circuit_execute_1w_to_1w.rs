@@ -1,20 +1,20 @@
 use crate::bdd_arithmetic::*;
 use poulpy_core::layouts::*;
 use poulpy_hal::layouts::*;
-/// Backend implementation contract for [`ExecuteBDDCircuit1WTo1W`](crate::api::ExecuteBDDCircuit1WTo1W), on the standard
+/// Backend implementation contract for [`BDDCircuitExecute1WTo1W`](crate::api::BDDCircuitExecute1WTo1W), on the standard
 /// ring only.
 ///
 /// # Safety
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait ExecuteBDDCircuit1WTo1WImpl: Backend<Ring = Standard> {
-    /// Default body: `execute_bdd_circuit_1w_to_1w_tmp_bytes_derived`, the selected
-    /// [`Self::execute_bdd_circuit_1w_to_1w_multi_thread_tmp_bytes`] with `threads = 1`.
+pub unsafe trait BDDCircuitExecute1WTo1WImpl: Backend<Ring = Standard> {
+    /// Default body: `bdd_circuit_execute_1w_to_1w_tmp_bytes_derived`, the selected
+    /// [`Self::bdd_circuit_execute_1w_to_1w_multi_thread_tmp_bytes`] with `threads = 1`.
     ///
-    /// Scratch bound of [`Self::execute_bdd_circuit_1w_to_1w`]; may report less than the reference, never less than the
+    /// Scratch bound of [`Self::bdd_circuit_execute_1w_to_1w`]; may report less than the reference, never less than the
     /// body takes.
-    fn execute_bdd_circuit_1w_to_1w_tmp_bytes<C, T, R, G, H>(
+    fn bdd_circuit_execute_1w_to_1w_tmp_bytes<C, T, R, G, H>(
         module: &Module<Self>,
         res_infos: &R,
         ggsw_infos: &G,
@@ -28,13 +28,13 @@ pub unsafe trait ExecuteBDDCircuit1WTo1WImpl: Backend<Ring = Standard> {
         G: GGSWInfos,
         H: GetAutomorphismKey<Self>,
     {
-        crate::oep::derived::bdd::execute_bdd_circuit_1w_to_1w_tmp_bytes_derived::<Self, C, T, R, G, H>(
+        crate::oep::derived::bdd::bdd_circuit_execute_1w_to_1w_tmp_bytes_derived::<Self, C, T, R, G, H>(
             module, res_infos, ggsw_infos, circuit, key,
         )
     }
-    /// Scratch bound of [`Self::execute_bdd_circuit_1w_to_1w_multi_thread`] at `threads`; may report less than the
+    /// Scratch bound of [`Self::bdd_circuit_execute_1w_to_1w_multi_thread`] at `threads`; may report less than the
     /// reference, never less than the body takes. The bound covers one rounded worker bound per active worker.
-    fn execute_bdd_circuit_1w_to_1w_multi_thread_tmp_bytes<C, T, R, G, H>(
+    fn bdd_circuit_execute_1w_to_1w_multi_thread_tmp_bytes<C, T, R, G, H>(
         module: &Module<Self>,
         threads: usize,
         res_infos: &R,
@@ -48,11 +48,11 @@ pub unsafe trait ExecuteBDDCircuit1WTo1WImpl: Backend<Ring = Standard> {
         R: GLWEInfos,
         G: GGSWInfos,
         H: GetAutomorphismKey<Self>;
-    /// Default body: `execute_bdd_circuit_1w_to_1w_derived`, the selected
-    /// [`Self::execute_bdd_circuit_1w_to_1w_multi_thread`] with `threads = 1`, within
-    /// [`Self::execute_bdd_circuit_1w_to_1w_tmp_bytes`].
+    /// Default body: `bdd_circuit_execute_1w_to_1w_derived`, the selected
+    /// [`Self::bdd_circuit_execute_1w_to_1w_multi_thread`] with `threads = 1`, within
+    /// [`Self::bdd_circuit_execute_1w_to_1w_tmp_bytes`].
     #[allow(clippy::too_many_arguments)]
-    fn execute_bdd_circuit_1w_to_1w<C, H, T>(
+    fn bdd_circuit_execute_1w_to_1w<C, H, T>(
         module: &Module<Self>,
         out: &mut FheUint<Self::OwnedBuf, T, Self::ZnxWord>,
         a: &FheUintPrepared<Self::OwnedBuf, T, Self>,
@@ -65,14 +65,14 @@ pub unsafe trait ExecuteBDDCircuit1WTo1WImpl: Backend<Ring = Standard> {
         H: GetAutomorphismKey<Self>,
         Self: Backend<ZnxWord = i64>,
     {
-        crate::oep::derived::bdd::execute_bdd_circuit_1w_to_1w_derived::<Self, _, _, T>(module, out, a, circuit, key, scratch)
+        crate::oep::derived::bdd::bdd_circuit_execute_1w_to_1w_derived::<Self, _, _, T>(module, out, a, circuit, key, scratch)
     }
     /// Reproduces
-    /// [`execute_bdd_circuit_1w_to_1w_multi_thread_reference`](crate::reference::bdd::execute_bdd_circuit_1w_to_1w_multi_thread_reference)
-    /// bit for bit, within [`Self::execute_bdd_circuit_1w_to_1w_multi_thread_tmp_bytes`]; free in kernels, scheduling and
+    /// [`bdd_circuit_execute_1w_to_1w_multi_thread_reference`](crate::reference::bdd::bdd_circuit_execute_1w_to_1w_multi_thread_reference)
+    /// bit for bit, within [`Self::bdd_circuit_execute_1w_to_1w_multi_thread_tmp_bytes`]; free in kernels, scheduling and
     /// scratch use, output bit-identical for every `threads` and executor.
     #[allow(clippy::too_many_arguments)]
-    fn execute_bdd_circuit_1w_to_1w_multi_thread<C, H, T>(
+    fn bdd_circuit_execute_1w_to_1w_multi_thread<C, H, T>(
         module: &Module<Self>,
         threads: usize,
         out: &mut FheUint<Self::OwnedBuf, T, Self::ZnxWord>,

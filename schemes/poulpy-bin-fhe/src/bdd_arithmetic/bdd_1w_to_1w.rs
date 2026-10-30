@@ -1,4 +1,4 @@
-pub use crate::api::ExecuteBDDCircuit1WTo1W;
+pub use crate::api::BDDCircuitExecute1WTo1W;
 use poulpy_core::layouts::{GLWEToBackendMut, GetAutomorphismKey};
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
@@ -19,7 +19,7 @@ macro_rules! define_bdd_1w_to_1w_trait {
                     key: &H,
                     scratch: &mut ScratchArena<'_, BE>,
                 ) where
-                    M: ExecuteBDDCircuit1WTo1W<BE>,
+                    M: BDDCircuitExecute1WTo1W<BE>,
                     H: GetAutomorphismKey<BE>,
                     BE: Backend<ZnxWord = i64>,
                     Self: GLWEToBackendMut<BE>;
@@ -33,7 +33,7 @@ macro_rules! define_bdd_1w_to_1w_trait {
                     key: &H,
                     scratch: &mut ScratchArena<'_, BE>,
                 ) where
-                    M: ExecuteBDDCircuit1WTo1W<BE>,
+                    M: BDDCircuitExecute1WTo1W<BE>,
                     H: GetAutomorphismKey<BE>,
                     BE: Backend<ZnxWord = i64>,
                     Self: GLWEToBackendMut<BE>;
@@ -55,11 +55,11 @@ macro_rules! impl_bdd_1w_to_1w_trait {
                     key: &H,
                     scratch: &mut ScratchArena<'_, BE>,
                 ) where
-                    M: ExecuteBDDCircuit1WTo1W<BE>,
+                    M: BDDCircuitExecute1WTo1W<BE>,
                     H: GetAutomorphismKey<BE>,
                     BE: Backend<ZnxWord = i64>,
                 {
-                    module.execute_bdd_circuit_1w_to_1w(self, a, &$output_circuits, key, scratch)
+                    module.bdd_circuit_execute_1w_to_1w(self, a, &$output_circuits, key, scratch)
                 }
 
                 fn [<$method_name _multi_thread>]<M, H>(
@@ -70,11 +70,11 @@ macro_rules! impl_bdd_1w_to_1w_trait {
                     key: &H,
                     scratch: &mut ScratchArena<'_, BE>,
                 ) where
-                    M: ExecuteBDDCircuit1WTo1W<BE>,
+                    M: BDDCircuitExecute1WTo1W<BE>,
                     H: GetAutomorphismKey<BE>,
                     BE: Backend<ZnxWord = i64>,
                 {
-                    module.execute_bdd_circuit_1w_to_1w_multi_thread(threads, self, a, &$output_circuits, key, scratch)
+                    module.bdd_circuit_execute_1w_to_1w_multi_thread(threads, self, a, &$output_circuits, key, scratch)
                 }
             }
         }
@@ -86,12 +86,12 @@ define_bdd_1w_to_1w_trait!(
     /// Re-bootstraps all bits of `a` through the BDD circuit and repacks the
     /// result into a fresh [`FheUint`].  Useful for noise refreshing without
     /// computing any arithmetic.
-    pub Identity, identity);
+    pub FheUintIdentity, identity);
 
 impl_bdd_1w_to_1w_trait!(
-    Identity,
+    FheUintIdentity,
     identity,
     u32,
-    circuits::u32::identity_codgen::AnyBitCircuit,
-    circuits::u32::identity_codgen::OUTPUT_CIRCUITS
+    circuits::u32::identity_codegen::AnyBitCircuit,
+    circuits::u32::identity_codegen::OUTPUT_CIRCUITS
 );
