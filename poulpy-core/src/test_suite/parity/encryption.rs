@@ -32,7 +32,7 @@ pub trait EncryptionParityBackend:
     + HalVecZnxDftImpl
     + HalSvpImpl
     + HalVmpImpl
-    + HalConvolutionImpl
+    + HalCnvImpl
 {
 }
 impl<B> EncryptionParityBackend for B where
@@ -49,7 +49,7 @@ impl<B> EncryptionParityBackend for B where
         + HalVecZnxDftImpl
         + HalSvpImpl
         + HalVmpImpl
-        + HalConvolutionImpl
+        + HalCnvImpl
 {
 }
 

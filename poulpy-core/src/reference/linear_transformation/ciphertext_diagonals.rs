@@ -10,8 +10,8 @@
 use crate::layouts::BabyStepOperand;
 use poulpy_hal::{
     api::{
-        ModuleN, ScratchArenaTakeBasic, VecZnxDftApply, VecZnxDftBytesOf, VecZnxGadgetDecompose, VecZnxGadgetDecomposeTmpBytes,
-        VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes,
+        ModuleN, ScratchArenaTakeVecZnxDft, VecZnxDftApply, VecZnxDftBytesOf, VecZnxGadgetDecompose,
+        VecZnxGadgetDecomposeTmpBytes, VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes,
     },
     layouts::{Backend, Module, ScratchArena, VecZnxDftBackendMut},
 };
@@ -259,8 +259,8 @@ where
     // The widest columns, at any offset.
     let dft_size = normalize_input_limb_bound_with_offset(a_size + b_size, tensor.size(), base2k, base2k, base2k as i64 - 1);
     BE::scratch_aligned(module.glwe_bytes_of_from_infos(res))
-        + BE::scratch_aligned(module.bytes_of_vec_znx_dft(n, cols, dft_size))
-        + BE::scratch_aligned(module.bytes_of_vec_znx_dft(n, cols * (cols - 1) / 2, dft_size))
+        + BE::scratch_aligned(module.vec_znx_dft_bytes_of(n, cols, dft_size))
+        + BE::scratch_aligned(module.vec_znx_dft_bytes_of(n, cols * (cols - 1) / 2, dft_size))
         + BE::glwe_tensor_apply_prepared_sum_dft_tmp_bytes(module, &tensor, a_size, b_size).max(
             glwe_relinearize_columns_tmp_bytes(module, res, &tensor, dft_size, tsk, true, true),
         )

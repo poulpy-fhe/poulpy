@@ -125,8 +125,8 @@ impl ReimFFTExecute<ReimIFFTTable<f64>, f64> for ReimIFFTAvx {
 mod encoding_tests {
     use poulpy_cpu_portable::ckks_encoding::EncodingFFTTable;
     use poulpy_hal::{
-        api::NegacyclicFFTNew,
-        test_suite::reim::{test_negacyclic_fft, test_negacyclic_fft_bit_exact},
+        api::ReimNew,
+        test_suite::reim::{test_reim_fft, test_reim_fft_bit_exact},
     };
 
     use super::FFT64AvxEncodingTable;
@@ -134,7 +134,7 @@ mod encoding_tests {
     #[test]
     fn raw_transform_matches_contract() {
         for m in [16, 32, 64, 128, 256] {
-            test_negacyclic_fft(&FFT64AvxEncodingTable::new(m));
+            test_reim_fft(&FFT64AvxEncodingTable::new(m));
         }
     }
 
@@ -142,7 +142,7 @@ mod encoding_tests {
     fn encoding_transform_matches_portable() {
         for log_m in 0..=15 {
             let m = 1 << log_m;
-            test_negacyclic_fft_bit_exact::<f64, _, _>(&FFT64AvxEncodingTable::new(m), &EncodingFFTTable::<f64>::new(m));
+            test_reim_fft_bit_exact::<f64, _, _>(&FFT64AvxEncodingTable::new(m), &EncodingFFTTable::<f64>::new(m));
         }
     }
 }

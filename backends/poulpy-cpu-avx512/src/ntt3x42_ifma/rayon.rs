@@ -23,7 +23,7 @@ use poulpy_hal::{
         SvpPPolBackendRef, VecZnxBackendMut, VecZnxBackendRef, VecZnxBig, VecZnxBigBackendMut, VecZnxDft, VecZnxDftBackendMut,
         VecZnxDftBackendRef, VmpPMat, VmpPMatBackendMut, VmpPMatBackendRef, ZnxView, ZnxViewMut,
     },
-    oep::{HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
+    oep::{HalCnvImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
 };
 
 use super::{NTT3x42Ifma, NTT3x42IfmaRayon, NTT3x42IfmaRayonExecutor};
@@ -997,7 +997,7 @@ where
     ::poulpy_core::impl_gglwe_product_step_hooks_reference!();
 }
 
-unsafe impl<R: Ring> HalConvolutionImpl for NTT3x42IfmaRayon<R>
+unsafe impl<R: Ring> HalCnvImpl for NTT3x42IfmaRayon<R>
 where
     NTT3x42Ifma<R>: Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>>
         + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>

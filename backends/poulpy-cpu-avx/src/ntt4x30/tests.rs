@@ -50,7 +50,7 @@ cross_backend_test_suite! {
 fn test_vmp_pmat_packed_byte_size() {
     let (n, rows, cols_in, cols_out, size) = (256, 3, 2, 4, 5);
     assert_eq!(
-        <NTT4x30Avx as Backend>::bytes_of_vmp_pmat(n, rows, cols_in, cols_out, size, PrepareHint::Reuse),
+        <NTT4x30Avx as Backend>::vmp_pmat_bytes_of(n, rows, cols_in, cols_out, size, PrepareHint::Reuse),
         n * rows * cols_in * cols_out * size * 2 * size_of::<u64>()
     );
 }
@@ -59,17 +59,17 @@ fn test_vmp_pmat_packed_byte_size() {
 fn test_transform_domain_packed_byte_sizes() {
     let (n, cols, size) = (256, 3, 5);
     let packed_bytes = n * cols * size * 4 * size_of::<u32>();
-    assert_eq!(<NTT4x30Avx as Backend>::bytes_of_vec_znx_dft(n, cols, size), packed_bytes);
+    assert_eq!(<NTT4x30Avx as Backend>::vec_znx_dft_bytes_of(n, cols, size), packed_bytes);
     assert_eq!(
-        <NTT4x30Avx as Backend>::bytes_of_cnv_pvec_left(n, cols, size, PrepareHint::Reuse),
+        <NTT4x30Avx as Backend>::cnv_pvec_left_bytes_of(n, cols, size, PrepareHint::Reuse),
         packed_bytes
     );
     assert_eq!(
-        <NTT4x30Avx as Backend>::bytes_of_cnv_pvec_right(n, cols, size, PrepareHint::Reuse),
+        <NTT4x30Avx as Backend>::cnv_pvec_right_bytes_of(n, cols, size, PrepareHint::Reuse),
         packed_bytes
     );
     assert_eq!(
-        <NTT4x30Avx as Backend>::bytes_of_svp_ppol(n, cols, PrepareHint::Reuse),
+        <NTT4x30Avx as Backend>::svp_ppol_bytes_of(n, cols, PrepareHint::Reuse),
         n * cols * 4 * size_of::<u32>()
     );
 }
@@ -111,7 +111,7 @@ cross_backend_test_suite! {
         test_vec_znx_big_from_small => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_from_small,
         test_vec_znx_big_inner_sum => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_inner_sum,
         test_vec_znx_big_col_weighted_sum => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_col_weighted_sum,
-        test_vec_znx_scalar_product => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_scalar_product,
+        test_vec_znx_big_scalar_product => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_scalar_product,
     }
 }
 

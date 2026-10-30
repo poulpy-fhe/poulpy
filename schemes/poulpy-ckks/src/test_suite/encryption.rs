@@ -20,7 +20,7 @@ use poulpy_core::{
     layouts::{GLWEInfos, GLWELayout, IntPolyInfos, LWEInfos, ModuleCoreAlloc},
 };
 use poulpy_hal::{
-    api::{ModuleNew, NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
+    api::{ModuleNew, ReimNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{Backend, HostBytesBackend, Module, ScratchOwned, Standard},
     source::Source,
 };
@@ -49,7 +49,7 @@ fn assert_decrypt_extract_success<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     Module<BE>: CKKSDecryptOps<BE>,
 {
     let src_prec = extract_src_prec(params);
@@ -97,7 +97,7 @@ where
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + GLWENoise<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -247,7 +247,7 @@ pub fn test_decrypt_extract_same_meta<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     Module<BE>: CKKSDecryptOps<BE>,
 {
     let m = params.n / 2;
@@ -272,7 +272,7 @@ pub fn test_decrypt_extract_truncates_log_budget<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     Module<BE>: CKKSDecryptOps<BE>,
 {
     let m = params.n / 2;
@@ -298,7 +298,7 @@ pub fn test_decrypt_extract_rsh_for_smaller_log_delta<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     Module<BE>: CKKSDecryptOps<BE>,
 {
     let m = params.n / 2;
@@ -324,7 +324,7 @@ pub fn test_decrypt_extract_lsh_for_larger_log_delta<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     Module<BE>: CKKSDecryptOps<BE>,
 {
     let m = params.n / 2;
@@ -350,7 +350,7 @@ pub fn test_decrypt_rejects_output_hom_rem_too_large<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -409,7 +409,7 @@ pub fn test_decrypt_rejects_base2k_mismatch<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -460,7 +460,7 @@ pub fn test_decrypt_rejects_degree_mismatch<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -547,7 +547,7 @@ pub fn test_decrypt_wipes_scratch<BE, F, E>(
     BE: crate::test_suite::helpers::TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     poulpy_hal::layouts::Module<BE>: crate::test_suite::helpers::TestContextModule<BE>,
     F: crate::test_suite::helpers::TestScalar,
-    E: poulpy_hal::api::NegacyclicFFT<F> + poulpy_hal::api::NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -585,7 +585,7 @@ pub fn test_decrypt_rejects_alignment_on_empty_arena<BE, F, E>(
     BE: crate::test_suite::helpers::TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     poulpy_hal::layouts::Module<BE>: crate::test_suite::helpers::TestContextModule<BE>,
     F: crate::test_suite::helpers::TestScalar,
-    E: poulpy_hal::api::NegacyclicFFT<F> + poulpy_hal::api::NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     use super::parity::{helpers::fixture_ciphertext, layout};
     let b = params.base2k;
@@ -628,7 +628,7 @@ pub fn test_encrypt_sk_rejects_plaintext_base2k_mismatch<BE, F, E>(
     BE: crate::test_suite::helpers::TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     poulpy_hal::layouts::Module<BE>: crate::test_suite::helpers::TestContextModule<BE>,
     F: crate::test_suite::helpers::TestScalar,
-    E: poulpy_hal::api::NegacyclicFFT<F> + poulpy_hal::api::NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     use super::parity::{
         helpers::{fixture_ciphertext, fixture_plaintext},

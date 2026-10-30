@@ -320,7 +320,7 @@ pub(crate) fn bytes_of<BE: Backend>(module: &impl GLWEBytesOf<BE>, layout: &Blas
 /// prepared right operand of the diagonals' layout per diagonal.
 pub(crate) fn prepared_bytes_of(module: &impl CnvPVecBytesOf, layout: &BlasDiagonalCiphertextLayout) -> usize {
     let ct = layout.ct;
-    let diagonal = module.bytes_of_cnv_pvec_right(ct.n().as_usize(), ct.rank().as_usize() + 1, ct.size(), PrepareHint::Reuse);
+    let diagonal = module.cnv_pvec_right_bytes_of(ct.n().as_usize(), ct.rank().as_usize() + 1, ct.size(), PrepareHint::Reuse);
     count(layout)
         .checked_mul(diagonal)
         .expect("the prepared diagonal ciphertext's bytes overflow usize")

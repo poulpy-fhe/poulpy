@@ -6,7 +6,7 @@ use poulpy_core::{
     },
 };
 use poulpy_hal::{
-    api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
+    api::{ReimFFT, ReimIFFT, ReimNew, ScratchOwnedBorrow},
     layouts::{HostBytesBackend, Module, Standard},
 };
 
@@ -212,7 +212,7 @@ pub fn test_power_basis_populate_degree7<BE, F, E>(
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -280,7 +280,7 @@ pub fn test_power_basis_populate_chebyshev_degree7<BE, F, E>(
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -345,7 +345,7 @@ pub fn test_chebyshev_interpolation_quadratic<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     F: TestScalar,
-    E: NegacyclicFFT<F>,
+    E: ReimFFT<F> + ReimIFFT<F>,
 {
     let zero = F::zero();
     let one = F::one();
@@ -378,7 +378,7 @@ pub fn test_encode_bsgs_preserves_chebyshev_eval<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     F: TestScalar,
-    E: NegacyclicFFT<F>,
+    E: ReimFFT<F> + ReimIFFT<F>,
 {
     let poly = Polynomial::chebyshev_interpolate(31, -F::one(), F::one(), |x: F| x.sin())
         .expect("degree-31 Chebyshev interpolation of sin(x) should succeed");
@@ -418,7 +418,7 @@ pub fn test_eval_poly_const_coeffs_cubic<BE, F, E>(
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -521,7 +521,7 @@ pub fn test_eval_poly_rejects_power_basis_mismatch<BE, F, E>(
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -628,7 +628,7 @@ pub fn test_eval_poly_rejects_malformed_polynomials<BE, F, E>(
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     const REAL: &str = "ckks_eval_poly_real_const_coeffs";
     const REAL_FROM_BASIS: &str = "ckks_eval_poly_real_const_coeffs_from_power_basis";
@@ -787,7 +787,7 @@ pub fn test_eval_poly_const_coeffs_exp7<BE, F, E>(
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let raw_coeffs: [f64; 8] = [
         1.0,
@@ -879,7 +879,7 @@ pub fn test_eval_poly_const_coeffs_even_monomial<BE, F, E>(
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     // f(x) = 0.5 + 0.25·x² + 0.125·x⁴  (is_even: all odd coefficients zero)
     let raw_coeffs = [0.5f64, 0.0, 0.25, 0.0, 0.125];
@@ -967,7 +967,7 @@ pub fn test_eval_poly_const_coeffs_odd_monomial<BE, F, E>(
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     // f(x) = 0.25·x + 0.125·x³ + 0.0625·x⁵  (is_odd: all even coefficients zero)
     let raw_coeffs = [0.0f64, 0.25, 0.0, 0.125, 0.0, 0.0625];
@@ -1055,7 +1055,7 @@ pub fn test_eval_poly_const_coeffs_chebyshev_degree31<BE, F, E>(
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -1132,7 +1132,7 @@ pub fn test_eval_poly_const_coeffs_chebyshev_degree31_min_mult<BE, F, E>(
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -1209,7 +1209,7 @@ pub fn test_eval_poly_const_coeffs_parity_folds<BE, F, E>(
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -1338,7 +1338,7 @@ pub fn test_eval_poly_const_coeffs_complex_cubic<BE, F, E>(
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     // p(z) = Σ_k (a_k + i·b_k)·z^k, evaluated on complex slot values z.
     let m = params.n / 2;
@@ -1456,7 +1456,7 @@ pub fn test_eval_poly_const_coeffs_complex_chebyshev<BE, F, E>(
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     // p(z) = Σ_k (a_k + i·b_k)·T_k(z), Chebyshev basis, on complex slot values z.
     let m = params.n / 2;
@@ -1592,7 +1592,7 @@ pub fn test_eval_poly_const_coeffs_complex_even<BE, F, E>(
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     // Even-parity complex monomial: only even-degree complex coeffs nonzero.
     let m = params.n / 2;
@@ -1696,7 +1696,7 @@ pub fn test_eval_poly_const_coeffs_complex_odd<BE, F, E>(
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     // Odd-parity complex monomial: only odd-degree complex coeffs nonzero.
     let m = params.n / 2;
@@ -1800,7 +1800,7 @@ pub fn test_eval_poly_const_coeffs_complex_fold<BE, F, E>(
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     // Degree-8 Full complex monomial: the BSGS decomposition leaves a lone
     // trailing constant and `populate` generates X^8, so the complex fold path
@@ -1915,7 +1915,7 @@ pub fn test_eval_poly_consumed_bits_sweep<BE, F, E>(
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let n = 16usize;
     let base2k = 16usize;
@@ -2012,7 +2012,7 @@ pub fn test_eval_approximation_rejects_insufficient_capacity<BE, F, E>(
     BE: crate::test_suite::helpers::TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     poulpy_hal::layouts::Module<BE>: crate::test_suite::helpers::TestContextModule<BE> + crate::api::CKKSApproximationOps<BE>,
     F: crate::test_suite::helpers::TestScalar,
-    E: poulpy_hal::api::NegacyclicFFT<F> + poulpy_hal::api::NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     use crate::test_suite::{
         helpers::{alloc_scratch, assert_ckks_error, gen_sk_with_raw, gen_tsk},

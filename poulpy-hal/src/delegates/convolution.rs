@@ -1,17 +1,17 @@
 use crate::{
-    api::{CnvPVecAlloc, CnvPVecBytesOf, Convolution},
+    api::{CnvOps, CnvPVecAlloc, CnvPVecBytesOf},
     layouts::{
         Backend, CnvDftAccTerm, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecLOwned, CnvPVecRBackendMut, CnvPVecRBackendRef,
         CnvPVecROwned, Module, PrepareHint, ScratchArena, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut,
     },
-    oep::{HalConvolutionImpl, HalVecZnxDftImpl},
+    oep::{HalCnvImpl, HalVecZnxDftImpl},
 };
 
-macro_rules! impl_convolution_delegate {
+macro_rules! impl_cnv_delegate {
     ($trait:ty, $($body:item),+ $(,)?) => {
         impl<BE: Backend<ZnxWord = i64>> $trait for Module<BE>
         where
-            BE: HalConvolutionImpl + HalVecZnxDftImpl,
+            BE: HalCnvImpl + HalVecZnxDftImpl,
         {
             $($body)+
         }
@@ -29,17 +29,17 @@ impl<BE: Backend> CnvPVecAlloc<BE> for Module<BE> {
 }
 
 impl<BE: Backend> CnvPVecBytesOf for Module<BE> {
-    fn bytes_of_cnv_pvec_left(&self, n: usize, cols: usize, size: usize, hint: PrepareHint) -> usize {
-        BE::bytes_of_cnv_pvec_left(n, cols, size, hint)
+    fn cnv_pvec_left_bytes_of(&self, n: usize, cols: usize, size: usize, hint: PrepareHint) -> usize {
+        BE::cnv_pvec_left_bytes_of(n, cols, size, hint)
     }
 
-    fn bytes_of_cnv_pvec_right(&self, n: usize, cols: usize, size: usize, hint: PrepareHint) -> usize {
-        BE::bytes_of_cnv_pvec_right(n, cols, size, hint)
+    fn cnv_pvec_right_bytes_of(&self, n: usize, cols: usize, size: usize, hint: PrepareHint) -> usize {
+        BE::cnv_pvec_right_bytes_of(n, cols, size, hint)
     }
 }
 
-impl_convolution_delegate!(
-    Convolution<BE>,
+impl_cnv_delegate!(
+    CnvOps<BE>,
     fn cnv_prepare_left_tmp_bytes(&self, res_size: usize, a_size: usize) -> usize {
         BE::cnv_prepare_left_tmp_bytes(self, res_size, a_size)
     },

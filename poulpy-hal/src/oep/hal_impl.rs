@@ -674,7 +674,7 @@ pub unsafe trait HalVecZnxBigImpl: Backend {
         coeffs: usize,
     );
 
-    fn vec_znx_scalar_product(
+    fn vec_znx_big_scalar_product(
         module: &Module<Self>,
         res: &mut crate::layouts::VecZnxBigBackendMut<'_, Self>,
         res_col: usize,
@@ -1085,7 +1085,7 @@ pub unsafe trait HalVmpImpl: Backend + HalVecZnxDftImpl {
 /// # Safety
 /// Implementations must uphold the backend safety contract for prepared matrix
 /// layouts, scratch usage, and arithmetic correctness.
-pub unsafe trait HalConvolutionImpl: Backend + HalVecZnxDftImpl + HalVecZnxBigImpl {
+pub unsafe trait HalCnvImpl: Backend + HalVecZnxDftImpl + HalVecZnxBigImpl {
     fn cnv_prepare_left_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize) -> usize;
 
     fn cnv_prepare_left(
@@ -1128,7 +1128,7 @@ pub unsafe trait HalConvolutionImpl: Backend + HalVecZnxDftImpl + HalVecZnxBigIm
         scratch: &mut ScratchArena<'_, Self>,
     );
 
-    /// Returns scratch bytes required for [`HalConvolutionImpl::cnv_by_const_apply_add`].
+    /// Returns scratch bytes required for [`HalCnvImpl::cnv_by_const_apply_add`].
     fn cnv_by_const_apply_add_tmp_bytes(
         module: &Module<Self>,
         cnv_offset: usize,
@@ -1171,7 +1171,7 @@ pub unsafe trait HalConvolutionImpl: Backend + HalVecZnxDftImpl + HalVecZnxBigIm
         scratch: &mut ScratchArena<'_, Self>,
     );
 
-    /// Returns scratch bytes required for [`HalConvolutionImpl::cnv_apply_dft_add`].
+    /// Returns scratch bytes required for [`HalCnvImpl::cnv_apply_dft_add`].
     fn cnv_apply_dft_add_tmp_bytes(
         module: &Module<Self>,
         cnv_offset: usize,
@@ -1201,7 +1201,7 @@ pub unsafe trait HalConvolutionImpl: Backend + HalVecZnxDftImpl + HalVecZnxBigIm
         crate::oep::cnv_apply_dft_add_derived::<Self>(module, cnv_offset, res, res_col, a, a_col, b, b_col, b_galois, scratch)
     }
 
-    /// Returns scratch bytes required for [`HalConvolutionImpl::cnv_apply_dft_sum`].
+    /// Returns scratch bytes required for [`HalCnvImpl::cnv_apply_dft_sum`].
     ///
     /// The default sizes the per-term fallback (one `cnv_apply_dft` /
     /// `cnv_apply_dft_add` scratch). Backends with a fused kernel should

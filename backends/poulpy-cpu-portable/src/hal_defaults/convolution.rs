@@ -54,7 +54,7 @@ where
     where
         Self: Backend<DftWord = f64, ZnxWord = i64>,
     {
-        Self::bytes_of_vec_znx_dft(module.n(), 1, res_size.min(a_size))
+        Self::vec_znx_dft_bytes_of(module.n(), 1, res_size.min(a_size))
     }
 
     fn cnv_prepare_left_default(
@@ -72,7 +72,7 @@ where
         check_degree::<Self>(module.n(), n);
         assert_eq!(a.n(), n, "cnv_prepare_left: a.n():{} != res.n():{n}", a.n());
         let tmp_size = res.size().min(a.size());
-        let (tmp_bytes, _) = take_host_typed::<Self, u8>(scratch.borrow(), Self::bytes_of_vec_znx_dft(n, 1, tmp_size));
+        let (tmp_bytes, _) = take_host_typed::<Self, u8>(scratch.borrow(), Self::vec_znx_dft_bytes_of(n, 1, tmp_size));
         let mut tmp = VecZnxDft::from_data(tmp_bytes, n, 1, tmp_size);
         let mut tmp_ref = vec_znx_dft_backend_mut_from_mut::<Self>(&mut tmp);
         convolution_prepare_left_portable::<Self>(module.get_fft_plan(n), res, a, &mut tmp_ref);
@@ -82,7 +82,7 @@ where
     where
         Self: Backend<DftWord = f64, ZnxWord = i64>,
     {
-        Self::bytes_of_vec_znx_dft(module.n(), 1, res_size.min(a_size))
+        Self::vec_znx_dft_bytes_of(module.n(), 1, res_size.min(a_size))
     }
 
     fn cnv_prepare_right_default(
@@ -100,7 +100,7 @@ where
         check_degree::<Self>(module.n(), n);
         assert_eq!(a.n(), n, "cnv_prepare_right: a.n():{} != res.n():{n}", a.n());
         let tmp_size = res.size().min(a.size());
-        let (tmp_bytes, _) = take_host_typed::<Self, u8>(scratch.borrow(), Self::bytes_of_vec_znx_dft(n, 1, tmp_size));
+        let (tmp_bytes, _) = take_host_typed::<Self, u8>(scratch.borrow(), Self::vec_znx_dft_bytes_of(n, 1, tmp_size));
         let mut tmp = VecZnxDft::from_data(tmp_bytes, n, 1, tmp_size);
         let mut tmp_ref = vec_znx_dft_backend_mut_from_mut::<Self>(&mut tmp);
         convolution_prepare_right_portable::<Self>(module.get_fft_plan(n), res, a, &mut tmp_ref);
@@ -278,7 +278,7 @@ where
     where
         Self: Backend<DftWord = f64, ZnxWord = i64>,
     {
-        Self::bytes_of_vec_znx_dft(module.n(), 1, res_size.min(a_size))
+        Self::vec_znx_dft_bytes_of(module.n(), 1, res_size.min(a_size))
     }
 
     fn cnv_prepare_self_default(
@@ -298,7 +298,7 @@ where
         assert_eq!(right.n(), n, "cnv_prepare_self: right.n():{} != left.n():{n}", right.n());
         assert_eq!(a.n(), n, "cnv_prepare_self: a.n():{} != left.n():{n}", a.n());
         let tmp_size = left.size().min(a.size());
-        let (tmp_bytes, _) = take_host_typed::<Self, u8>(scratch.borrow(), Self::bytes_of_vec_znx_dft(n, 1, tmp_size));
+        let (tmp_bytes, _) = take_host_typed::<Self, u8>(scratch.borrow(), Self::vec_znx_dft_bytes_of(n, 1, tmp_size));
         let mut tmp = VecZnxDft::from_data(tmp_bytes, n, 1, tmp_size);
         let mut tmp_ref = vec_znx_dft_backend_mut_from_mut::<Self>(&mut tmp);
         convolution_prepare_self_portable::<Self>(module.get_fft_plan(n), left, right, a, &mut tmp_ref);

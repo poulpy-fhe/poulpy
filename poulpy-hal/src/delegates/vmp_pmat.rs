@@ -36,8 +36,8 @@ impl<B: Backend> VmpPMatAlloc<B> for Module<B> {
 }
 
 impl<B: Backend> VmpPMatBytesOf for Module<B> {
-    fn bytes_of_vmp_pmat(&self, n: usize, rows: usize, cols_in: usize, cols_out: usize, size: usize, hint: PrepareHint) -> usize {
-        B::bytes_of_vmp_pmat(n, rows, cols_in, cols_out, size, hint)
+    fn vmp_pmat_bytes_of(&self, n: usize, rows: usize, cols_in: usize, cols_out: usize, size: usize, hint: PrepareHint) -> usize {
+        B::vmp_pmat_bytes_of(n, rows, cols_in, cols_out, size, hint)
     }
 }
 

@@ -1,5 +1,5 @@
 #[macro_export]
-macro_rules! hal_impl_convolution {
+macro_rules! hal_impl_cnv {
     ($defaults:ident) => {
         fn cnv_prepare_left_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize) -> usize {
             <Self as $defaults>::cnv_prepare_left_tmp_bytes_default(module, res_size, a_size)

@@ -7,7 +7,7 @@
 
 use crate::layouts::BabyStepOperand;
 use poulpy_hal::{
-    api::Convolution,
+    api::CnvOps,
     layouts::{Backend, ScratchArena, VecZnxDftBackendMut},
 };
 
@@ -37,7 +37,7 @@ pub fn glwe_accumulate_giant_steps_reference<BE, M, L: BabyStepOperand<BE>>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: Convolution<BE>,
+    M: CnvOps<BE>,
 {
     assert_eq!(prods.len(), steps.len());
     for (prod, step) in prods.iter_mut().zip(steps) {
@@ -54,7 +54,7 @@ pub(super) fn glwe_accumulate_prepared_baby_steps_dft_tmp_bytes<BE, M>(
 ) -> usize
 where
     BE: Backend,
-    M: Convolution<BE>,
+    M: CnvOps<BE>,
 {
     let res_dft_size = prod_dft_size(baby_size, diagonal_size, cnv_offset_hi);
     module.cnv_apply_dft_sum_tmp_bytes(cnv_offset_hi, res_dft_size, baby_size, diagonal_size)

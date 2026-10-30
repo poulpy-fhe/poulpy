@@ -48,7 +48,7 @@ where
         A: GGSWInfos,
     {
         let n: usize = operand_degree(self.n(), &[infos.n()]);
-        let full_ct = self.bytes_of_vec_znx(n, infos.rank().as_usize() + 1, infos.size());
+        let full_ct = self.vec_znx_bytes_of(n, infos.rank().as_usize() + 1, infos.size());
         self.ggsw_encrypt_sk_tmp_bytes(infos) + full_ct
     }
 

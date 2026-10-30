@@ -12,7 +12,7 @@ use poulpy_hal::layouts::{CnvPVecLBackendMut, CnvPVecLOwned, CnvPVecLToBackendMu
 use std::collections::BTreeMap;
 
 use poulpy_hal::{
-    api::{CnvPVecBytesOf, Convolution, ModuleN, ScratchArenaTakeBasic},
+    api::{CnvOps, CnvPVecBytesOf, ModuleN, ScratchArenaTakeCnvPVecR},
     layouts::{
         Backend, CnvDftAccTerm, CnvPVecLToBackendRef, CnvPVecR, CnvPVecRToBackendRef, Data, Module, PrepareHint, ScratchArena,
         VecZnxDftBackendMut,
@@ -249,7 +249,7 @@ pub trait DiagonalProd<BE: Backend>: GLWEInfos + Sized {
         gs: &LinearTransformationGiantStep<Self>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        M: CnvPVecBytesOf + Convolution<BE> + ModuleN,
+        M: CnvPVecBytesOf + CnvOps<BE> + ModuleN,
     {
         let first = gs
             .diagonals
@@ -283,7 +283,7 @@ pub trait DiagonalProd<BE: Backend>: GLWEInfos + Sized {
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         BE: crate::oep::LinearTransformationImpl,
-        Module<BE>: CnvPVecBytesOf + Convolution<BE> + ModuleN,
+        Module<BE>: CnvPVecBytesOf + CnvOps<BE> + ModuleN,
     {
         assert_eq!(prods.len(), steps.len());
         for (prod, step) in prods.iter_mut().zip(steps) {
@@ -324,7 +324,7 @@ pub(crate) fn glwe_accumulate_prepared_baby_steps_dft<BE, M, P, L: BabyStepOpera
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: Convolution<BE>,
+    M: CnvOps<BE>,
     P: DiagonalProd<BE>,
 {
     let cols = lhs.cols();
@@ -374,7 +374,7 @@ fn glwe_accumulate_unprepared_baby_steps_dft<BE, M, P, L: BabyStepOperand<BE>>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: CnvPVecBytesOf + Convolution<BE> + ModuleN,
+    M: CnvPVecBytesOf + CnvOps<BE> + ModuleN,
     P: DiagonalProd<BE>,
 {
     let cols = lhs.cols();

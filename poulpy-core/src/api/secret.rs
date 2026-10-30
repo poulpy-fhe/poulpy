@@ -126,7 +126,7 @@ where
         A: GLWEInfos,
     {
         let n: usize = operand_degree(self.ring_degree().as_usize(), &[infos.n()]);
-        self.bytes_of_svp_ppol(n, infos.rank().into(), PrepareHint::Reuse)
+        self.svp_ppol_bytes_of(n, infos.rank().into(), PrepareHint::Reuse)
     }
 
     /// Moves the first `res.rank()` polynomials of `other` to the DFT domain and copies its
@@ -171,7 +171,7 @@ where
         A: GLWEInfos,
     {
         let n: usize = operand_degree(self.ring_degree().as_usize(), &[infos.n()]);
-        self.bytes_of_svp_ppol(n, pairs(infos.rank().into()), PrepareHint::Reuse)
+        self.svp_ppol_bytes_of(n, pairs(infos.rank().into()), PrepareHint::Reuse)
     }
 
     /// Moves a [`GLWESecretTensor`](crate::layouts::GLWESecretTensor) to the

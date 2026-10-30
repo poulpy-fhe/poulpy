@@ -32,7 +32,7 @@ use poulpy_core::{
     layouts::{Base2K, LinearTransformationStrategy, ModuleCoreAlloc},
 };
 use poulpy_hal::{
-    api::{CnvPVecAlloc, NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
+    api::{CnvPVecAlloc, ReimNew, ScratchOwnedBorrow},
     layouts::{CyclotomicOrder, HostBytesBackend, Module, Standard, galois_elements_from_rotations},
     source::Source,
 };
@@ -70,7 +70,7 @@ where
     BE: TestContextBackend<Ring = Standard> + CKKSPaCoImpl,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     for slot_order in [
         crate::layouts::PaCoSlotOrder::Natural,
@@ -88,7 +88,7 @@ where
     BE: TestContextBackend<Ring = Standard> + CKKSPaCoImpl,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let params = *params;
     // Exhausted-input modulus: a multiple of base2k around 38 bits, so the

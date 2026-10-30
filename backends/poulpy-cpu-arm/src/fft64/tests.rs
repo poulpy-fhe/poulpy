@@ -80,7 +80,7 @@ cross_backend_test_suite! {
         test_vec_znx_big_from_small => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_from_small,
         test_vec_znx_big_inner_sum => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_inner_sum,
         test_vec_znx_big_col_weighted_sum => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_col_weighted_sum,
-        test_vec_znx_scalar_product => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_scalar_product,
+        test_vec_znx_big_scalar_product => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_scalar_product,
     }
 }
 

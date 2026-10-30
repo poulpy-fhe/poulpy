@@ -2,8 +2,9 @@
 
 use poulpy_hal::{
     api::{
-        ScalarZnxAutomorphism, ScratchArenaTakeBasic, SvpApplyDftToDft, SvpPrepare, VecZnxBigBytesOf, VecZnxBigNormalize,
-        VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftApply, VecZnxDftBytesOf, VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
+        ScalarZnxAutomorphism, ScratchArenaTakeVecZnxBig, ScratchArenaTakeVecZnxDft, SvpApplyDftToDft, SvpPrepare,
+        VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftApply, VecZnxDftBytesOf,
+        VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
     },
     layouts::{
         Backend, Module, ScratchArena, SvpPPolReborrowBackendMut, SvpPPolReborrowBackendRef, VecZnxBigToBackendMut,
@@ -126,9 +127,9 @@ where
     fn glwe_secret_tensor_prepare_tmp_bytes_reference(&self, rank: Rank) -> usize {
         let n: usize = self.n();
         BE::scratch_aligned(self.glwe_secret_prepared_bytes_of(rank))
-            + BE::scratch_aligned(self.bytes_of_vec_znx_dft(n, rank.into(), 1))
-            + BE::scratch_aligned(self.bytes_of_vec_znx_dft(n, 1, 1))
-            + BE::scratch_aligned(self.bytes_of_vec_znx_big(n, 1, 1))
+            + BE::scratch_aligned(self.vec_znx_dft_bytes_of(n, rank.into(), 1))
+            + BE::scratch_aligned(self.vec_znx_dft_bytes_of(n, 1, 1))
+            + BE::scratch_aligned(self.vec_znx_big_bytes_of(n, 1, 1))
             + self
                 .vec_znx_big_normalize_tmp_bytes()
                 .max(self.vec_znx_idft_apply_tmp_bytes())

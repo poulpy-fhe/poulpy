@@ -144,7 +144,7 @@ pub trait CKKSModuleAlloc<BE: Backend>:
     where
         A: GLWEInfos,
     {
-        self.bytes_of_cnv_pvec_left(infos.n().as_usize(), infos.rank().as_usize() + 1, infos.size(), hint)
+        self.cnv_pvec_left_bytes_of(infos.n().as_usize(), infos.rank().as_usize() + 1, infos.size(), hint)
     }
 
     /// Bytes of a right operand [`Self::ckks_prepared_right_alloc_from_infos`] allocates for `infos` under `hint`.
@@ -152,7 +152,7 @@ pub trait CKKSModuleAlloc<BE: Backend>:
     where
         A: GLWEInfos,
     {
-        self.bytes_of_cnv_pvec_right(infos.n().as_usize(), infos.rank().as_usize() + 1, infos.size(), hint)
+        self.cnv_pvec_right_bytes_of(infos.n().as_usize(), infos.rank().as_usize() + 1, infos.size(), hint)
     }
 
     /// A left operand for a ciphertext of `infos`, on its `ceil(k / base2k)` limbs and `rank + 1` columns, in the
@@ -205,7 +205,7 @@ pub trait CKKSModuleAlloc<BE: Backend>:
                 .expect("ckks_dft_matrix_prepared_bytes_of_from_infos: every factor has a diagonal");
             let diagonals: usize = factor.index().index.iter().map(Vec::len).sum();
             diagonals
-                .checked_mul(self.bytes_of_cnv_pvec_right(first.n().as_usize(), 1, first.size(), PrepareHint::Reuse))
+                .checked_mul(self.cnv_pvec_right_bytes_of(first.n().as_usize(), 1, first.size(), PrepareHint::Reuse))
                 .and_then(|factor_bytes| bytes.checked_add(factor_bytes))
                 .expect("ckks_dft_matrix_prepared_bytes_of_from_infos: the byte count overflows usize")
         })

@@ -4,7 +4,7 @@
 use crate::{GLWEBytesOf, GLWENormalize};
 use poulpy_hal::{
     api::{
-        CnvPVecBytesOf, Convolution, ModuleN, VecZnxAddAssign, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
+        CnvOps, CnvPVecBytesOf, ModuleN, VecZnxAddAssign, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
         VecZnxCopy, VecZnxDftBytesOf, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxNegate, VecZnxNormalizeAssign,
         VecZnxNormalizeTmpBytes, VecZnxSubAssign,
     },
@@ -26,7 +26,7 @@ pub trait GiantStepTensorBounds<BE: Backend>:
     + VecZnxIdftApply<BE>
     + VecZnxIdftApplyTmpBytes
     + VecZnxBigNormalize<BE>
-    + Convolution<BE>
+    + CnvOps<BE>
     + VecZnxSubAssign<BE>
     + VecZnxAddAssign<BE>
     + VecZnxBigNormalizeTmpBytes
@@ -49,7 +49,7 @@ impl<BE: Backend, M> GiantStepTensorBounds<BE> for M where
         + VecZnxIdftApply<BE>
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BE>
-        + Convolution<BE>
+        + CnvOps<BE>
         + VecZnxSubAssign<BE>
         + VecZnxAddAssign<BE>
         + VecZnxBigNormalizeTmpBytes

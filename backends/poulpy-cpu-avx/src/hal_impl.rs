@@ -26,7 +26,7 @@ use poulpy_hal::{
         DataView, DataViewMut, MatZnxBackendRef, Module, ScalarZnxBackendRef, ScratchArena, SvpPPolBackendMut, SvpPPolBackendRef,
         VecZnxBackendMut, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendMut, VmpPMatBackendRef,
     },
-    oep::{HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
+    oep::{HalCnvImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
 };
 
 pub(crate) use poulpy_cpu_portable::hal_defaults::take_host_typed;
@@ -63,11 +63,11 @@ where
     poulpy_cpu_portable::hal_impl_vmp!(FFT64VmpDefault);
 }
 
-unsafe impl<R: Ring> HalConvolutionImpl for FFT64Avx<R>
+unsafe impl<R: Ring> HalCnvImpl for FFT64Avx<R>
 where
     Self: Fft64RingArith + ZnxAutomorphism,
 {
-    poulpy_cpu_portable::hal_impl_convolution!(FFT64ConvolutionDefault);
+    poulpy_cpu_portable::hal_impl_cnv!(FFT64ConvolutionDefault);
 }
 
 unsafe impl<R: Ring> HalVecZnxBigImpl for FFT64Avx<R>
@@ -214,7 +214,7 @@ where
     }
 }
 
-unsafe impl<R: Ring> HalConvolutionImpl for NTT4x30Avx<R>
+unsafe impl<R: Ring> HalCnvImpl for NTT4x30Avx<R>
 where
     Self: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>> + ZnxAutomorphism,
 {

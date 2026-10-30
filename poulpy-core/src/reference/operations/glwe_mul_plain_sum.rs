@@ -2,9 +2,10 @@
 
 use poulpy_hal::{
     api::{
-        Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxAddAssign, VecZnxBigBytesOf, VecZnxBigNormalize,
-        VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign, VecZnxDftBytesOf, VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
-        VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes, VecZnxNormalize, VecZnxNormalizeTmpBytes, VecZnxRsh, VecZnxRshTmpBytes,
+        CnvOps, ModuleN, ScratchArenaTakeVecZnx, ScratchArenaTakeVecZnxBig, ScratchArenaTakeVecZnxDft, VecZnxAddAssign,
+        VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign, VecZnxDftBytesOf, VecZnxIdftApply,
+        VecZnxIdftApplyTmpBytes, VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes, VecZnxNormalize, VecZnxNormalizeTmpBytes,
+        VecZnxRsh, VecZnxRshTmpBytes,
     },
     layouts::{
         Backend, CnvDftAccTerm, CnvPVecLToBackendRef, CnvPVecRToBackendRef, Module, ScratchArena, VecZnxBigToBackendRef,
@@ -104,7 +105,7 @@ where
     Self: ModuleN
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
-        + Convolution<BE>
+        + CnvOps<BE>
         + VecZnxDftAddAssign<BE>
         + VecZnxIdftApply<BE>
         + VecZnxIdftApplyTmpBytes
@@ -125,9 +126,9 @@ where
     {
         let n = operand_degree(self.n(), &[res.n()]);
         let res_dft_size = a_size + b_size;
-        self.bytes_of_vec_znx_dft(n, 1, res_dft_size)
+        self.vec_znx_dft_bytes_of(n, 1, res_dft_size)
             + self.cnv_apply_dft_sum_tmp_bytes(0, res_dft_size, a_size, b_size).max(
-                self.bytes_of_vec_znx_big(n, 1, res_dft_size)
+                self.vec_znx_big_bytes_of(n, 1, res_dft_size)
                     + self
                         .vec_znx_idft_apply_tmp_bytes()
                         .max(self.vec_znx_big_normalize_tmp_bytes()),
@@ -196,15 +197,15 @@ where
         let n = operand_degree(self.n(), &[res.n()]);
         let (res_dft_size, addend_size) = ((a_size + b_size).max(res.size() + 1), res.size() + 1);
         let sum_size = (res_dft_size + 1).max(res.size());
-        let shifted = BE::scratch_aligned(BE::bytes_of_vec_znx(n, 1, addend_size))
+        let shifted = BE::scratch_aligned(BE::vec_znx_bytes_of(n, 1, addend_size))
             + self
                 .vec_znx_rsh_tmp_bytes(addend_size)
                 .max(self.vec_znx_idft_normalize_tmp_bytes(res.size(), res_dft_size));
-        let lossless = BE::scratch_aligned(BE::bytes_of_vec_znx(n, 1, sum_size))
+        let lossless = BE::scratch_aligned(BE::vec_znx_bytes_of(n, 1, sum_size))
             + self
                 .vec_znx_idft_normalize_tmp_bytes(sum_size, res_dft_size)
                 .max(self.vec_znx_normalize_tmp_bytes());
-        BE::scratch_aligned(self.bytes_of_vec_znx_dft(n, 1, res_dft_size))
+        BE::scratch_aligned(self.vec_znx_dft_bytes_of(n, 1, res_dft_size))
             + self
                 .cnv_apply_dft_sum_tmp_bytes(0, res_dft_size, a_size, b_size)
                 .max(shifted)
@@ -353,7 +354,7 @@ where
 
     /// A one-column sum of `res_size` limbs, then the convolution sum into it.
     fn glwe_mul_prepared_plain_sum_dft_add_tmp_bytes_reference(&self, res_size: usize, a_size: usize, b_size: usize) -> usize {
-        BE::scratch_aligned(self.bytes_of_vec_znx_dft(self.n(), 1, res_size))
+        BE::scratch_aligned(self.vec_znx_dft_bytes_of(self.n(), 1, res_size))
             + self.cnv_apply_dft_sum_tmp_bytes(0, res_size, a_size, b_size)
     }
 

@@ -35,8 +35,8 @@ where
     };
     let output_size = glwe_external_product_output_size::<BE, _, _, _>(&tmp_infos, &tmp_infos, selector_infos);
     let cols: usize = (selector_infos.rank() + 1).into();
-    let res_dft: usize = module.bytes_of_vec_znx_dft(module.n(), cols, output_size);
-    let res_big: usize = module.bytes_of_vec_znx_big(module.n(), cols, output_size);
+    let res_dft: usize = module.vec_znx_dft_bytes_of(module.n(), cols, output_size);
+    let res_big: usize = module.vec_znx_big_bytes_of(module.n(), cols, output_size);
     module.glwe_bytes_of_from_infos(res_infos)
         + module
             .glwe_bytes_of_from_infos(a_infos)

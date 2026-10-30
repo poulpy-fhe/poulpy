@@ -66,9 +66,9 @@ pub fn blind_rotation_key_compressed_encrypt_sk_reference<BE, S0, S1>(
 
         let mut pt: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(module.n(), 1);
         let sk_ref = sk_lwe.data();
-        let mut sk_host = vec![0u8; BE::bytes_of_scalar_znx(sk_ref.n(), sk_ref.cols())];
+        let mut sk_host = vec![0u8; BE::scalar_znx_bytes_of(sk_ref.n(), sk_ref.cols())];
         BE::copy_view_to_host(&BE::region_ref(&sk_ref.data, 0, sk_host.len()), &mut sk_host);
-        let mut pt_host = vec![0u8; BE::bytes_of_scalar_znx(pt.n(), pt.cols())];
+        let mut pt_host = vec![0u8; BE::scalar_znx_bytes_of(pt.n(), pt.cols())];
 
         for (i, ggsw) in res.keys.iter_mut().enumerate() {
             let word_bytes = core::mem::size_of::<i64>();

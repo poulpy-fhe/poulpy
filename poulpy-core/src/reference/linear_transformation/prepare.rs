@@ -12,7 +12,7 @@
 
 use poulpy_hal::layouts::CnvPVecRToBackendMut;
 use poulpy_hal::{
-    api::{CnvPVecAlloc, Convolution},
+    api::{CnvOps, CnvPVecAlloc},
     layouts::{Backend, PrepareHint, ScratchArena},
 };
 
@@ -102,7 +102,7 @@ impl<BE: Backend> LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE>> {
 pub fn glwe_prepare_linear_transformation_rhs_tmp_bytes_reference<BE, M, P>(module: &M, pt_infos: &P) -> usize
 where
     BE: Backend,
-    M: Convolution<BE> + crate::api::GLWENormalize<BE> + crate::api::GLWEBytesOf<BE>,
+    M: CnvOps<BE> + crate::api::GLWENormalize<BE> + crate::api::GLWEBytesOf<BE>,
     P: GLWEInfos,
 {
     if pt_infos.rank().as_usize() > 0 {
@@ -125,7 +125,7 @@ pub fn glwe_prepare_linear_transformation_rhs_reference<BE, M, P>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: CnvPVecAlloc<BE> + Convolution<BE> + crate::api::GLWENormalize<BE>,
+    M: CnvPVecAlloc<BE> + CnvOps<BE> + crate::api::GLWENormalize<BE>,
     P: GLWEToBackendRef<BE> + GLWEInfos,
 {
     if !lt.baby_steps.is_empty() {

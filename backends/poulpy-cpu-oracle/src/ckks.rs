@@ -7,7 +7,7 @@ use poulpy_ckks::{
     api::CKKSEncodingScalar,
     reference::encoding::{CKKSSlotEmbedding, EncodingPermutation},
 };
-use poulpy_hal::api::NegacyclicFFTNew;
+use poulpy_hal::api::ReimNew;
 
 use crate::{FFT64CIOracle, FFT64Oracle, NTT4x30CIOracle, NTT4x30Oracle, ckks_fft::EncodingFft};
 

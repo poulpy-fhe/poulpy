@@ -1,5 +1,5 @@
 use poulpy_hal::{
-    api::ScratchArenaTakeBasic,
+    api::ScratchArenaTakeVecZnxDft,
     layouts::{
         Backend, MatZnxBackendRef, Module, Ring, ScratchArena, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef,
         VecZnxDftToBackendMut, VmpPMatBackendMut, VmpPMatBackendRef, assert_dense, check_degree,
@@ -329,7 +329,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVmpImpl for NTT4x30Gpu<RT, R> {
         _b_cols_out: usize,
         _b_size: usize,
     ) -> usize {
-        Self::bytes_of_vec_znx_dft(module.n(), b_cols_in, a_size.min(b_rows))
+        Self::vec_znx_dft_bytes_of(module.n(), b_cols_in, a_size.min(b_rows))
     }
 
     fn vmp_apply_dft<D>(

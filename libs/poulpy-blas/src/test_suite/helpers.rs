@@ -26,7 +26,7 @@ use poulpy_core::layouts::{
     },
 };
 use poulpy_hal::{
-    api::NegacyclicFFT,
+    api::{ReimFFT, ReimIFFT},
     layouts::{
         Backend, Data, HostBytesBackend, HostDataMut, HostDataRef, Module, PrepareHint, Ring, ScratchArena, ScratchOwned, ZnxWord,
     },
@@ -265,7 +265,7 @@ where
     BE: TestContextBackend,
     Module<BE>: TestContextSharedModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F>,
+    E: ReimFFT<F> + ReimIFFT<F>,
 {
     let blocks = grid
         .blocks(params.n / 2)
@@ -380,7 +380,7 @@ pub fn assert_grid_decrypt<BE, F, E>(
     BE: TestContextBackend,
     Module<BE>: TestContextSharedModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F>,
+    E: ReimFFT<F> + ReimIFFT<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {

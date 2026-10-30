@@ -45,7 +45,7 @@ const DIGIT_PRODUCT_EXTRA_SCRATCH: usize = 256;
 #[test]
 fn downstream_baby_step_preparation_preserves_cache_shape() {
     use poulpy_core::layouts::LinearTransformationBabySteps;
-    use poulpy_hal::api::Convolution;
+    use poulpy_hal::api::CnvOps;
     let module = Module::<FFT64Portable>::new(256);
     let input = sample_glwe();
     let mut normalized = module.glwe_alloc_from_infos(&input);

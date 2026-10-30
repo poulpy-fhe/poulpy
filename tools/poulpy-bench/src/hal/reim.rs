@@ -2,7 +2,7 @@ use std::hint::black_box;
 
 use criterion::{Bencher, measurement::Measurement};
 
-use poulpy_hal::api::{NegacyclicFFT, NegacyclicFFTNew};
+use poulpy_hal::api::ReimNew;
 
 use crate::hal::params::ReimSweepParams;
 
@@ -15,26 +15,26 @@ fn reim_values(m: usize) -> Vec<f64> {
 
 pub fn runner_reim_fft<T, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &ReimSweepParams)
 where
-    T: NegacyclicFFT<f64> + NegacyclicFFTNew<f64>,
+    T: ReimNew<f64>,
 {
     let table: T = T::new(sweep.m);
     let mut values: Vec<f64> = reim_values(sweep.m);
 
     bencher.iter(|| {
-        table.fft(&mut values);
+        table.reim_fft(&mut values);
         black_box(());
     });
 }
 
 pub fn runner_reim_ifft<T, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &ReimSweepParams)
 where
-    T: NegacyclicFFT<f64> + NegacyclicFFTNew<f64>,
+    T: ReimNew<f64>,
 {
     let table: T = T::new(sweep.m);
     let mut values: Vec<f64> = reim_values(sweep.m);
 
     bencher.iter(|| {
-        table.ifft(&mut values);
+        table.reim_ifft(&mut values);
         black_box(());
     });
 }

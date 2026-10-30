@@ -24,8 +24,8 @@ macro_rules! impl_vec_znx_dft_delegate {
 }
 
 impl<B: Backend> VecZnxDftBytesOf for Module<B> {
-    fn bytes_of_vec_znx_dft(&self, n: usize, cols: usize, size: usize) -> usize {
-        B::bytes_of_vec_znx_dft(n, cols, size)
+    fn vec_znx_dft_bytes_of(&self, n: usize, cols: usize, size: usize) -> usize {
+        B::vec_znx_dft_bytes_of(n, cols, size)
     }
 }
 

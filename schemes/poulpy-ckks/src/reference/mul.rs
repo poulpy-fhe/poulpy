@@ -10,7 +10,7 @@ use poulpy_core::{
     },
 };
 use poulpy_hal::{
-    api::{Convolution, VecZnxCopy},
+    api::{CnvOps, VecZnxCopy},
     layouts::{Backend, ScratchArena},
 };
 
@@ -155,7 +155,7 @@ pub trait CKKSMulReference<BE: Backend> {
     /// What `glwe_prepare_left` and `glwe_prepare_right` take to prepare `a` on its own limbs.
     fn ckks_prepare_tmp_bytes_reference<A>(&self, a: &A) -> usize
     where
-        Self: GLWEBytesOf<BE> + GLWENormalize<BE> + Convolution<BE> + Sized,
+        Self: GLWEBytesOf<BE> + GLWENormalize<BE> + CnvOps<BE> + Sized,
         A: GLWEInfos,
     {
         glwe_prepare_left_tmp_bytes(self, a.size(), a).max(glwe_prepare_right_tmp_bytes(self, a.size(), a))
@@ -171,7 +171,7 @@ pub trait CKKSMulReference<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: Convolution<BE> + GLWENormalize<BE> + Sized,
+        Self: CnvOps<BE> + GLWENormalize<BE> + Sized,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
     {
         check_source_layout("ckks_prepare_left_into", res, a)?;
@@ -188,7 +188,7 @@ pub trait CKKSMulReference<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: Convolution<BE> + GLWENormalize<BE> + Sized,
+        Self: CnvOps<BE> + GLWENormalize<BE> + Sized,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
     {
         check_source_layout("ckks_prepare_right_into", res, a)?;

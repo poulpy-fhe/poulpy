@@ -24,7 +24,7 @@
 use crate::test_suite::{PoisonedArena, poisoned_arena};
 use crate::{
     api::{
-        CnvPVecAlloc, Convolution, MatZnxAlloc, ModuleN, ScalarZnxAutomorphism, ScalarZnxCIEmbed, SvpApplyDftToDft, SvpPPolAlloc,
+        CnvOps, CnvPVecAlloc, MatZnxAlloc, ModuleN, ScalarZnxAutomorphism, ScalarZnxCIEmbed, SvpApplyDftToDft, SvpPPolAlloc,
         SvpPrepare, VecZnxAdd, VecZnxAddAssign, VecZnxAddScalarAssign, VecZnxAlloc, VecZnxAutomorphism, VecZnxBigAddAssign,
         VecZnxBigAddSmall, VecZnxBigAddSmallAssign, VecZnxBigAlloc, VecZnxBigFromSmall, VecZnxBigNormalize,
         VecZnxBigNormalizeTmpBytes, VecZnxBigSubAssign, VecZnxBigSubNegateAssign, VecZnxBigSubSmallA, VecZnxBigSubSmallB,
@@ -44,11 +44,11 @@ use crate::{
         VmpPMatToBackendMut, VmpPMatToBackendRef, ZnxInfos, ZnxView, ZnxViewMut, vec_znx_backend_mut, vec_znx_backend_ref,
     },
     oep::{
-        HalConvolutionImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxCIImpl, HalVecZnxDftImpl, HalVecZnxImpl,
-        HalVecZnxMonomialImpl, HalVmpImpl, cnv_apply_dft_add_derived, cnv_apply_dft_add_tmp_bytes_derived,
-        cnv_apply_dft_sum_derived, cnv_apply_dft_sum_tmp_bytes_derived, cnv_by_const_apply_add_derived,
-        cnv_by_const_apply_add_tmp_bytes_derived, cnv_pairwise_apply_dft_derived, cnv_pairwise_apply_dft_tmp_bytes_derived,
-        cnv_prepare_self_derived, cnv_prepare_self_tmp_bytes_derived, vmp_apply_dft_derived, vmp_apply_dft_to_dft_add_derived,
+        HalCnvImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxCIImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVecZnxMonomialImpl,
+        HalVmpImpl, cnv_apply_dft_add_derived, cnv_apply_dft_add_tmp_bytes_derived, cnv_apply_dft_sum_derived,
+        cnv_apply_dft_sum_tmp_bytes_derived, cnv_by_const_apply_add_derived, cnv_by_const_apply_add_tmp_bytes_derived,
+        cnv_pairwise_apply_dft_derived, cnv_pairwise_apply_dft_tmp_bytes_derived, cnv_prepare_self_derived,
+        cnv_prepare_self_tmp_bytes_derived, vmp_apply_dft_derived, vmp_apply_dft_to_dft_add_derived,
         vmp_apply_dft_to_dft_add_tmp_bytes_derived,
     },
     source::Source,
@@ -2386,10 +2386,10 @@ where
 /// equality. The arena for the derived call is sized only by
 /// `cnv_apply_dft_add_tmp_bytes_derived`, so a decomposition that
 /// under-reports its own scratch panics here.
-pub fn test_cnv_apply_dft_add_derived<BE: TestBackend + HalConvolutionImpl>(params: &TestParams, module: &Module<BE>)
+pub fn test_cnv_apply_dft_add_derived<BE: TestBackend + HalCnvImpl>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: ModuleN
-        + Convolution<BE>
+        + CnvOps<BE>
         + CnvPVecAlloc<BE>
         + VecZnxDftAlloc<BE>
         + VecZnxDftAddAssign<BE>
@@ -2503,10 +2503,10 @@ where
 /// suite states DFT-domain equality. The arena for the derived call is sized
 /// only by `cnv_apply_dft_sum_tmp_bytes_derived`, so a decomposition that
 /// under-reports its own scratch panics here.
-pub fn test_cnv_apply_dft_sum_derived<BE: TestBackend + HalConvolutionImpl>(params: &TestParams, module: &Module<BE>)
+pub fn test_cnv_apply_dft_sum_derived<BE: TestBackend + HalCnvImpl>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: ModuleN
-        + Convolution<BE>
+        + CnvOps<BE>
         + CnvPVecAlloc<BE>
         + VecZnxDftAlloc<BE>
         + VecZnxBigAlloc<BE>
@@ -2623,10 +2623,10 @@ where
 /// writes out the expansion, one `cnv_apply_dft` when `i == j`, and the four
 /// cross terms as `cnv_apply_dft` + three `cnv_apply_dft_add` otherwise, and
 /// versus the backend's own `module.cnv_pairwise_apply_dft`.
-pub fn test_cnv_pairwise_apply_dft_derived<BE: TestBackend + HalConvolutionImpl>(params: &TestParams, module: &Module<BE>)
+pub fn test_cnv_pairwise_apply_dft_derived<BE: TestBackend + HalCnvImpl>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: ModuleN
-        + Convolution<BE>
+        + CnvOps<BE>
         + CnvPVecAlloc<BE>
         + VecZnxDftAlloc<BE>
         + VecZnxBigAlloc<BE>
@@ -2728,10 +2728,10 @@ where
 /// decision 4), so equality is stated on an observable: the same
 /// `cnv_apply_dft` is run against each of the three prepared pairs and the
 /// normalized products are compared.
-pub fn test_cnv_prepare_self_derived<BE: TestBackend + HalConvolutionImpl>(params: &TestParams, module: &Module<BE>)
+pub fn test_cnv_prepare_self_derived<BE: TestBackend + HalCnvImpl>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: ModuleN
-        + Convolution<BE>
+        + CnvOps<BE>
         + CnvPVecAlloc<BE>
         + VecZnxAlloc<BE>
         + VecZnxDftAlloc<BE>
@@ -2830,10 +2830,10 @@ where
 /// `vec_znx_big_add_assign`), and versus the backend's own
 /// `module.cnv_by_const_apply_add`. The result never enters the DFT domain,
 /// so the comparison is on the `vec_znx_big_normalize` output alone.
-pub fn test_cnv_by_const_apply_add_derived<BE: TestBackend + HalConvolutionImpl>(params: &TestParams, module: &Module<BE>)
+pub fn test_cnv_by_const_apply_add_derived<BE: TestBackend + HalCnvImpl>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: ModuleN
-        + Convolution<BE>
+        + CnvOps<BE>
         + VecZnxAlloc<BE>
         + VecZnxBigAlloc<BE>
         + VecZnxBigAddAssign<BE>
@@ -2958,7 +2958,7 @@ where
 /// plus an arena covering every `_tmp_bytes` the convolution parity tests use
 /// on the module-dispatch side.
 #[allow(clippy::type_complexity)]
-fn prepare_convolution_operands<BE: TestBackend + HalConvolutionImpl>(
+fn prepare_convolution_operands<BE: TestBackend + HalCnvImpl>(
     module: &Module<BE>,
     n: usize,
     cols: usize,
@@ -2967,7 +2967,7 @@ fn prepare_convolution_operands<BE: TestBackend + HalConvolutionImpl>(
     fill_base2k: usize,
 ) -> (CnvPVecLOwned<BE>, CnvPVecROwned<BE>, PoisonedArena<BE>)
 where
-    Module<BE>: ModuleN + Convolution<BE> + CnvPVecAlloc<BE> + VecZnxAlloc<BE> + VecZnxBigNormalizeTmpBytes,
+    Module<BE>: ModuleN + CnvOps<BE> + CnvPVecAlloc<BE> + VecZnxAlloc<BE> + VecZnxBigNormalizeTmpBytes,
 {
     let res_size: usize = a_size + b_size;
     let mut source: Source = Source::new([0u8; 32]);

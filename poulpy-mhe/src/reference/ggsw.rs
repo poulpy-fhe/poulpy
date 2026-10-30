@@ -10,7 +10,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{
-        ScratchArenaTakeBasic, VecZnxAddAssign, VecZnxAddScalarAssign, VecZnxCopy, VecZnxNegate, VecZnxNormalize,
+        ScratchArenaTakeScalarZnx, VecZnxAddAssign, VecZnxAddScalarAssign, VecZnxCopy, VecZnxNegate, VecZnxNormalize,
         VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxZero,
     },
     layouts::{
@@ -90,9 +90,9 @@ where
         let circ = ggsw_share_part_layout(infos, rank, rank);
         let n = infos.n().as_usize();
         // The zero plaintext of `circ_s`, then the `rank + 1` mask holders and the row plaintext of `circ_u`.
-        BE::scratch_aligned(BE::bytes_of_scalar_znx(n, rank.as_usize()))
+        BE::scratch_aligned(BE::scalar_znx_bytes_of(n, rank.as_usize()))
             + (rank.as_usize() + 1) * BE::scratch_aligned(self.glwe_bytes_of_from_infos(&circ))
-            + BE::scratch_aligned(BE::bytes_of_vec_znx(n, 1, circ.size()))
+            + BE::scratch_aligned(BE::vec_znx_bytes_of(n, 1, circ.size()))
             + self
                 .gglwe_compressed_encrypt_sk_tmp_bytes(&col0)
                 .max(self.gglwe_compressed_encrypt_sk_tmp_bytes(&circ))

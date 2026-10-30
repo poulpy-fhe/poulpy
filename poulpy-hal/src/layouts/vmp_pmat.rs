@@ -68,7 +68,7 @@ impl VmpPMatShape {
 /// [`MatZnx`](crate::layouts::MatZnx).
 ///
 /// Note that a backend may pack this matrix more compactly than
-/// `size_of::<W>()` per coefficient; [`Backend::bytes_of_vmp_pmat`] is
+/// `size_of::<W>()` per coefficient; [`Backend::vmp_pmat_bytes_of`] is
 /// authoritative for the buffer size.
 ///
 /// Ring degree `n` is always a power of two, so each prepared polynomial's DFT
@@ -226,7 +226,7 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VmpPMat<D, W, B> {
     where
         B: Backend<OwnedBuf = D>,
     {
-        let data: <B as Backend>::OwnedBuf = B::alloc_zeroed_bytes(B::bytes_of_vmp_pmat(n, rows, cols_in, cols_out, size, hint));
+        let data: <B as Backend>::OwnedBuf = B::alloc_zeroed_bytes(B::vmp_pmat_bytes_of(n, rows, cols_in, cols_out, size, hint));
         VmpPMat {
             data,
             shape: VmpPMatShape::new(n, rows, cols_in, cols_out, size, hint),
@@ -370,7 +370,7 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VmpPMat<D, W, B> {
     {
         let shape = self.shape;
         assert_eq!(
-            B::bytes_of_vmp_pmat(
+            B::vmp_pmat_bytes_of(
                 shape.n(),
                 shape.rows(),
                 shape.cols_in(),
@@ -378,7 +378,7 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VmpPMat<D, W, B> {
                 shape.size(),
                 shape.hint()
             ),
-            B2::bytes_of_vmp_pmat(
+            B2::vmp_pmat_bytes_of(
                 shape.n(),
                 shape.rows(),
                 shape.cols_in(),

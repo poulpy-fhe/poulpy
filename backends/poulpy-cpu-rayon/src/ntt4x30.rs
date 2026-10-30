@@ -574,7 +574,7 @@ use $crate::__private::poulpy_hal::{
         SvpPPolBackendMut, SvpPPolBackendRef, VecZnx, VecZnxBackendMut, VecZnxBackendRef, VecZnxBig, VecZnxBigBackendMut,
         VecZnxDft, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMat, VmpPMatBackendMut, VmpPMatBackendRef, ZnxView, ZnxViewMut,
     },
-    oep::{HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
+    oep::{HalCnvImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
 };
 
 use $crate::{RayonTaskExecutor, SendPtr, parallel_limb_tasks};
@@ -961,7 +961,7 @@ unsafe impl HalVmpImpl for $rayon
     }
 }
 
-unsafe impl HalConvolutionImpl for $rayon
+unsafe impl HalCnvImpl for $rayon
 {
     fn cnv_prepare_left_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
         $crate::workers(<Self as $crate::__private::poulpy_hal::execution::ScratchWorkers>::PREPARE)

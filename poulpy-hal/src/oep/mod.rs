@@ -47,14 +47,14 @@
 //! HalVecZnxDftImpl      -> HalVecZnxBigImpl
 //! HalSvpImpl            -> HalVecZnxDftImpl
 //! HalVmpImpl            -> HalVecZnxDftImpl
-//! HalConvolutionImpl    -> HalVecZnxDftImpl, HalVecZnxBigImpl
+//! HalCnvImpl    -> HalVecZnxDftImpl, HalVecZnxBigImpl
 //! ```
 //!
 //! The graph is acyclic; a new backend implements the families in topological
 //! order: `HalModuleImpl`, `HalVecZnxImpl` (and, on the standard ring,
 //! `HalVecZnxMonomialImpl` and `HalVecZnxCIImpl`), `HalMatZnxImpl`,
 //! `HalVecZnxBigImpl`, `HalVecZnxDftImpl`, then `HalSvpImpl` / `HalVmpImpl` /
-//! `HalConvolutionImpl` in any order.
+//! `HalCnvImpl` in any order.
 
 pub mod derived;
 mod hal_impl;

@@ -32,7 +32,7 @@ use poulpy_core::{
     },
 };
 use poulpy_hal::{
-    api::{CnvPVecAlloc, NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
+    api::{CnvPVecAlloc, ReimFFT, ReimIFFT, ReimNew, ScratchOwnedBorrow},
     layouts::{
         Backend, CyclotomicOrder, Data, HostBytesBackend, HostDataMut, HostDataRef, Module,
         PrepareHint::{OneShot, Reuse},
@@ -222,7 +222,7 @@ pub fn test_blas_key_widths<BE, F, E>(
         + CKKSLinearTransformationOps<BE>
         + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
@@ -918,7 +918,7 @@ where
     BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F>,
+    E: ReimFFT<F> + ReimIFFT<F>,
 {
     let slots = module.ckks_max_slots();
     let mut re = vec![0.0; slots];
@@ -995,7 +995,7 @@ pub fn test_blas_key_stores_from_queries<BE, F, E>(
         + CKKSLinearTransformationOps<BE>
         + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {

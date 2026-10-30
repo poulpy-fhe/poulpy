@@ -5,10 +5,10 @@ use crate::api::GLWEKeyswitch;
 use crate::api::GLWEBytesOf;
 use poulpy_hal::{
     api::{
-        ModuleN, ScratchArenaTakeBasic, VecZnxBigAddSmallAssign, VecZnxBigBytesOf, VecZnxBigNormalize,
-        VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftZero, VecZnxGadgetDecompose,
-        VecZnxGadgetDecomposeTmpBytes, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxNormalize, VecZnxNormalizeTmpBytes,
-        VecZnxRotate, VecZnxZero,
+        ModuleN, ScratchArenaTakeVecZnx, ScratchArenaTakeVecZnxBig, ScratchArenaTakeVecZnxDft, VecZnxBigAddSmallAssign,
+        VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftApply, VecZnxDftBytesOf,
+        VecZnxDftZero, VecZnxGadgetDecompose, VecZnxGadgetDecomposeTmpBytes, VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
+        VecZnxNormalize, VecZnxNormalizeTmpBytes, VecZnxRotate, VecZnxZero,
     },
     layouts::{
         Backend, Module, ScratchArena, VecZnxBackendRef, VecZnxBigToBackendRef, VecZnxDftBackendRef, VecZnxDftToBackendRef,
@@ -71,7 +71,7 @@ where
     if a_infos.rank().as_usize() == 1 {
         0
     } else {
-        BE::bytes_of_vec_znx(a_infos.n().as_usize(), 1, lwe_infos.size())
+        BE::vec_znx_bytes_of(a_infos.n().as_usize(), 1, lwe_infos.size())
     }
 }
 
@@ -160,7 +160,7 @@ where
     R: LWEMatrixInfos,
     A: GLWEInfos,
 {
-    BE::bytes_of_vec_znx(module.n(), 1, a_infos.size())
+    BE::vec_znx_bytes_of(module.n(), 1, a_infos.size())
 }
 
 pub fn glwe_expand_lwe_matrix_reference<BE, M, R, A>(module: &M, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
@@ -244,7 +244,7 @@ where
     let lvl_1_a_conv: usize = if lwe_infos.base2k() == key_infos.base2k() {
         0
     } else {
-        BE::bytes_of_vec_znx(key_infos.n().as_usize(), 1, lwe_infos.size()) + module.vec_znx_normalize_tmp_bytes()
+        BE::vec_znx_bytes_of(key_infos.n().as_usize(), 1, lwe_infos.size()) + module.vec_znx_normalize_tmp_bytes()
     };
 
     let lvl_1: usize = lvl_1_ks.max(lvl_1_a_conv);
@@ -386,10 +386,10 @@ where
     let operand_size: usize = gadget_input_size(tsk_infos.base2k(), k_digit, dnum, res_infos.k(), a_size);
     let layout: usize = gadget_dft_apply_tmp_bytes::<BE, _>(module, tsk_infos.base2k(), k_digit, dnum, res_infos.k(), a_size);
 
-    let lvl_0: usize = module.bytes_of_vec_znx_dft(n, cols - 1, operand_size) + BE::bytes_of_vec_znx(n, 1, a_size);
-    let lvl_1_res_dft: usize = module.bytes_of_vec_znx_dft(n, cols, output_size);
+    let lvl_0: usize = module.vec_znx_dft_bytes_of(n, cols - 1, operand_size) + BE::vec_znx_bytes_of(n, 1, a_size);
+    let lvl_1_res_dft: usize = module.vec_znx_dft_bytes_of(n, cols, output_size);
     let lvl_1_gglwe_prod: usize = module.gglwe_product_dft_tmp_bytes_reference(output_size, operand_size, tsk_infos);
-    let lvl_1_big: usize = module.bytes_of_vec_znx_big(n, cols, output_size)
+    let lvl_1_big: usize = module.vec_znx_big_bytes_of(n, cols, output_size)
         + module
             .vec_znx_idft_apply_tmp_bytes()
             .max(module.vec_znx_big_normalize_tmp_bytes());

@@ -44,7 +44,7 @@ pub trait VecZnxBigAlloc<B: Backend> {
 /// Byte size of a big-word vector.
 ///
 /// ```text
-/// op         bytes_of_vec_znx_big(n, cols, size)
+/// op         vec_znx_big_bytes_of(n, cols, size)
 /// class      support
 /// mutation   none
 /// domain     n: a power of two, MIN_DEGREE <= n <= the module's degree; cols >= 1, size >= 1
@@ -53,7 +53,7 @@ pub trait VecZnxBigAlloc<B: Backend> {
 /// ```
 pub trait VecZnxBigBytesOf {
     /// Returns the byte size of a degree-`n` big-word vector with `cols` columns and `size` limbs.
-    fn bytes_of_vec_znx_big(&self, n: usize, cols: usize, size: usize) -> usize;
+    fn vec_znx_big_bytes_of(&self, n: usize, cols: usize, size: usize) -> usize;
 }
 
 /// Sum of two big-word vectors.
@@ -377,17 +377,17 @@ pub trait VecZnxBigColWeightedSum<B: Backend> {
 /// Coefficient-wise product of a coefficient-domain vector and a scalar vector, in big words.
 ///
 /// ```text
-/// op         vec_znx_scalar_product(res, res_col, a, a_col, b, b_col)
+/// op         vec_znx_big_scalar_product(res, res_col, a, a_col, b, b_col)
 /// class      basis
 /// mutation   out-of-place
 /// definition res[res_col,j,i] = wrap(a[a_col,j,i] * b[b_col,0,i]) for 0 <= i < a.n(); coefficients a.n() <= i < res.n() and other columns of res are unchanged
 /// domain     res: a dense VecZnxBig with res.n() >= a.n() and res.size() <= a.size(); a: a dense VecZnx of any degree, the module's does not enter; b: a ScalarZnx of a's degree
 /// ensures    only the first a.n() coefficients in each selected output limb are written
-/// test       test_vec_znx_scalar_product
+/// test       test_vec_znx_big_scalar_product
 /// ```
-pub trait VecZnxScalarProduct<B: Backend> {
+pub trait VecZnxBigScalarProduct<B: Backend> {
     /// Writes the coefficient-wise product of `a` and `b` into `res`.
-    fn vec_znx_scalar_product(
+    fn vec_znx_big_scalar_product(
         &self,
         res: &mut VecZnxBigBackendMut<'_, B>,
         res_col: usize,

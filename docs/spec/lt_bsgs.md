@@ -356,7 +356,7 @@ from poulpy-ckks they are not.
   one common digit width.
 - **Glue is raw HAL.** Everything around the VMP is HAL: `vec_znx_idft_apply`,
   `vec_znx_big_add_small_assign` / `vec_znx_big_add_assign`, `vec_znx_automorphism` /
-  `vec_znx_big_automorphism_assign`, `vec_znx_big_normalize`, and the `Convolution` trait
+  `vec_znx_big_automorphism_assign`, `vec_znx_big_normalize`, and the `CnvOps` trait
   (`cnv_apply_dft`, `vec_znx_dft_add_assign`, `vec_znx_idft_apply`) for `PROD`. This is
   the same "reused VMP + HAL glue" construction style as `glwe_automorphism_add_reference`.
 - **New helper needed.** Phase B's `ROT` is a *deferred-normalization plain

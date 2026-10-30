@@ -402,7 +402,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
         GGLWE {
             noise: None,
             data: MatZnx::from_data(
-                B::alloc_zeroed_bytes(B::bytes_of_mat_znx(
+                B::alloc_zeroed_bytes(B::mat_znx_bytes_of(
                     infos.n().as_usize(),
                     dnum.as_usize(),
                     infos.rank_in().as_usize(),
@@ -450,7 +450,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
         GGSW {
             noise: None,
             data: MatZnx::from_data(
-                B::alloc_zeroed_bytes(B::bytes_of_mat_znx(
+                B::alloc_zeroed_bytes(B::mat_znx_bytes_of(
                     infos.n().as_usize(),
                     dnum.as_usize(),
                     (infos.rank() + 1).as_usize(),
@@ -506,7 +506,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
     fn glwe_secret_alloc_from_infos<A: GLWEInfos>(&self, infos: &A) -> GLWESecret<B::OwnedBuf, B::ZnxWord> {
         GLWESecret {
             data: ScalarZnx::from_data(
-                B::alloc_zeroed_bytes(B::bytes_of_scalar_znx(infos.n().as_usize(), infos.rank().as_usize())),
+                B::alloc_zeroed_bytes(B::scalar_znx_bytes_of(infos.n().as_usize(), infos.rank().as_usize())),
                 infos.n().as_usize(),
                 infos.rank().as_usize(),
             ),
@@ -524,7 +524,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
         let pairs = crate::layouts::pairs(infos.rank().as_usize());
         GLWESecretTensor {
             data: ScalarZnx::from_data(
-                B::alloc_zeroed_bytes(B::bytes_of_scalar_znx(infos.n().as_usize(), pairs)),
+                B::alloc_zeroed_bytes(B::scalar_znx_bytes_of(infos.n().as_usize(), pairs)),
                 infos.n().as_usize(),
                 pairs,
             ),
@@ -565,7 +565,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
         GLWEPublicKey {
             noise: None,
             data: MatZnx::from_data(
-                B::alloc_zeroed_bytes(B::bytes_of_mat_znx(n, 1, rank, rank + 1, size)),
+                B::alloc_zeroed_bytes(B::mat_znx_bytes_of(n, 1, rank, rank + 1, size)),
                 n,
                 1,
                 rank,
@@ -798,7 +798,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
     fn lwe_secret_alloc(&self, n: Degree) -> LWESecret<B::OwnedBuf, B::ZnxWord> {
         LWESecret {
             data: ScalarZnx::from_data(
-                B::alloc_zeroed_bytes(B::bytes_of_scalar_znx(n.as_usize(), 1)),
+                B::alloc_zeroed_bytes(B::scalar_znx_bytes_of(n.as_usize(), 1)),
                 n.as_usize(),
                 1,
             ),
@@ -1039,7 +1039,7 @@ impl<B: Backend> ModuleCoreCompressedAlloc for Module<B> {
     }
     fn ggsw_compressed_bytes_of_from_infos<A: GGSWInfos>(&self, infos: &A) -> usize {
         let size: usize = key_size(infos.base2k(), infos.dnum(), infos.k_digit(), infos.k_aux());
-        B::bytes_of_mat_znx(infos.n().into(), infos.dnum().into(), (infos.rank() + 1).into(), 1, size)
+        B::mat_znx_bytes_of(infos.n().into(), infos.dnum().into(), (infos.rank() + 1).into(), 1, size)
     }
     fn ggsw_compressed_alloc(
         &self,

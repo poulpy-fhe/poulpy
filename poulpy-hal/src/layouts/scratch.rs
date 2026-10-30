@@ -189,7 +189,7 @@ mod tests {
     use std::marker::PhantomData;
 
     use crate::{
-        api::ScratchArenaTakeBasic,
+        api::ScratchArenaTakeVecZnx,
         layouts::{Backend, HostBytesBackend, ScratchOwned},
     };
 
@@ -201,7 +201,7 @@ mod tests {
         };
         let arena = scratch.arena();
         // Sized from the same source as `take_vec_znx_scratch`, so a backend overriding its sizing stays in step.
-        let chunk_len = <HostBytesBackend as Backend>::bytes_of_vec_znx(64, 2, 2);
+        let chunk_len = <HostBytesBackend as Backend>::vec_znx_bytes_of(64, 2, 2);
         let (chunks, rem) = arena.split(2, chunk_len);
 
         assert!(rem.available() < (1 << 12));

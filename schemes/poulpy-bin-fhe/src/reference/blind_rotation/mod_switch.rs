@@ -36,8 +36,8 @@ pub fn blind_rotation_mod_switch_reference<BE, A>(
     let lwe = lwe.to_backend_ref();
     let base2k = lwe.base2k().as_usize();
     assert!((1..=63).contains(&base2k), "the LWE radix is outside [1, 63]");
-    let body_bytes = BE::bytes_of_vec_znx(lwe.body().n(), lwe.body().cols(), lwe.body().size());
-    let mask_bytes = BE::bytes_of_vec_znx(lwe.mask().n(), lwe.mask().cols(), lwe.mask().size());
+    let body_bytes = BE::vec_znx_bytes_of(lwe.body().n(), lwe.body().cols(), lwe.body().size());
+    let mask_bytes = BE::vec_znx_bytes_of(lwe.mask().n(), lwe.mask().cols(), lwe.mask().size());
     let mut body = vec![0u8; body_bytes];
     let mut mask = vec![0u8; mask_bytes];
     BE::copy_view_to_host(&BE::region_ref(lwe.body().data(), 0, body_bytes), &mut body);

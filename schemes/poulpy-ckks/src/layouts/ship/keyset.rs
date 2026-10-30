@@ -27,7 +27,7 @@ use poulpy_core::{
 use poulpy_hal::AlignedBuf;
 use poulpy_hal::layouts::{HostStaged, Standard};
 use poulpy_hal::{
-    api::{CnvPVecAlloc, CnvPVecBytesOf, Convolution},
+    api::{CnvOps, CnvPVecAlloc, CnvPVecBytesOf},
     layouts::{
         Backend, CnvPVecL, CnvPVecLToBackendMut, Data, DataViewMut, GaloisElement, HostBytesBackend, HostDataMut, HostDataRef,
         Module, PrepareHint, ScratchArena, ZnxView, ZnxViewMut, ZnxWord, ZnxZero,
@@ -243,7 +243,7 @@ impl<D: Data, W: ZnxWord> ShipKeySet<D, W> {
             + GLWESwitchingKeyPreparedFactory<BE>
             + GLWEAutomorphismKeyPreparedFactory<BE>
             + GLWETensorKeyPreparedFactory<BE>
-            + Convolution<BE>
+            + CnvOps<BE>
             + CnvPVecAlloc<BE>
             + CnvPVecBytesOf,
     {

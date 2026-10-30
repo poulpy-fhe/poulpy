@@ -11,9 +11,9 @@ use crate::{
         VecZnxAddAssign, VecZnxBigAdd, VecZnxBigAddAssign, VecZnxBigAddSmall, VecZnxBigAddSmallAssign, VecZnxBigAlloc,
         VecZnxBigAutomorphism, VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigColWeightedSum,
         VecZnxBigFromSmall, VecZnxBigInnerSum, VecZnxBigNegate, VecZnxBigNegateAssign, VecZnxBigNormalize,
-        VecZnxBigNormalizeTmpBytes, VecZnxBigSub, VecZnxBigSubAssign, VecZnxBigSubNegateAssign, VecZnxBigSubSmallA,
-        VecZnxBigSubSmallAssign, VecZnxBigSubSmallB, VecZnxBigSubSmallNegateAssign, VecZnxFillUniformSourceAll,
-        VecZnxScalarProduct, VecZnxSubNegateAssign,
+        VecZnxBigNormalizeTmpBytes, VecZnxBigScalarProduct, VecZnxBigSub, VecZnxBigSubAssign, VecZnxBigSubNegateAssign,
+        VecZnxBigSubSmallA, VecZnxBigSubSmallAssign, VecZnxBigSubSmallB, VecZnxBigSubSmallNegateAssign,
+        VecZnxFillUniformSourceAll, VecZnxSubNegateAssign,
     },
     layouts::{
         DigestU64, HostDataRef, Module, ScalarZnx, ScalarZnxOwned, VecZnx, VecZnxOwned, VecZnxToBackendMut, ZnxView, ZnxViewMut,
@@ -129,7 +129,7 @@ where
 /// Fills a `ScalarZnx` with ternary coefficients.
 ///
 /// The scalar operands of `vec_znx_big_col_weighted_sum` and
-/// `vec_znx_scalar_product` are secret-key-like in practice, and a small one
+/// `vec_znx_big_scalar_product` are secret-key-like in practice, and a small one
 /// keeps the host oracle's products inside `i64` at every `base2k` the suites
 /// run at.
 fn fill_ternary(a: &mut ScalarZnx<impl crate::layouts::HostDataMut, i64>, source: &mut Source) {
@@ -1381,21 +1381,21 @@ pub fn test_vec_znx_big_col_weighted_sum<BR: crate::test_suite::TestBackend, BT:
     }
 }
 
-/// Pins `vec_znx_scalar_product`: the coefficient-wise product of a `VecZnx`
+/// Pins `vec_znx_big_scalar_product`: the coefficient-wise product of a `VecZnx`
 /// limb with a `ScalarZnx`, widened to big words.
-pub fn test_vec_znx_scalar_product<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
+pub fn test_vec_znx_big_scalar_product<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
     Module<BR>: VecZnxBigAlloc<BR>
         + VecZnxBigFromSmall<BR>
-        + VecZnxScalarProduct<BR>
+        + VecZnxBigScalarProduct<BR>
         + VecZnxBigNormalize<BR>
         + VecZnxBigNormalizeTmpBytes,
     Module<BT>: VecZnxBigAlloc<BT>
         + VecZnxBigFromSmall<BT>
-        + VecZnxScalarProduct<BT>
+        + VecZnxBigScalarProduct<BT>
         + VecZnxBigNormalize<BT>
         + VecZnxBigNormalizeTmpBytes,
 {
@@ -1428,7 +1428,7 @@ pub fn test_vec_znx_scalar_product<BR: crate::test_suite::TestBackend, BT: crate
             let mut res_test = big_from_small(module_test, &upload_vec_znx::<BT>(&zeros));
 
             for j in 0..cols {
-                module_ref.vec_znx_scalar_product(
+                module_ref.vec_znx_big_scalar_product(
                     &mut res_ref.to_backend_mut(),
                     j,
                     &vec_znx_backend_ref::<BR>(&a_ref_backend),
@@ -1436,7 +1436,7 @@ pub fn test_vec_znx_scalar_product<BR: crate::test_suite::TestBackend, BT: crate
                     &scalar_znx_backend_ref::<BR>(&b_ref),
                     j,
                 );
-                module_test.vec_znx_scalar_product(
+                module_test.vec_znx_big_scalar_product(
                     &mut res_test.to_backend_mut(),
                     j,
                     &vec_znx_backend_ref::<BT>(&a_test_backend),

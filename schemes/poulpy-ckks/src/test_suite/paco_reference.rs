@@ -9,7 +9,7 @@
 //! cleartext: no ciphertexts, no keys, no backend modules are touched.
 
 use poulpy_hal::{
-    api::{NegacyclicFFT, NegacyclicFFTNew},
+    api::ReimNew,
     layouts::{HostBytesBackend, Module, Standard},
     source::Source,
 };
@@ -63,7 +63,7 @@ pub fn test_paco_cleartext_reference<BE, F, E>(
     BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     // ── Eq. (11) packing relation ───────────────────────────────────────────
     for (log_n, h, c) in [(9usize, 8usize, 4usize), (9, 4, 8), (10, 8, 8)] {

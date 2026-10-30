@@ -149,7 +149,7 @@ mod ntt3x42_ifma_tests {
             test_vec_znx_big_from_small => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_from_small,
             test_vec_znx_big_inner_sum => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_inner_sum,
             test_vec_znx_big_col_weighted_sum => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_col_weighted_sum,
-            test_vec_znx_scalar_product => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_scalar_product,
+            test_vec_znx_big_scalar_product => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_scalar_product,
             test_vec_znx_big_automorphism => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_automorphism,
             test_vec_znx_big_automorphism_assign => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_automorphism_assign,
         }
@@ -308,8 +308,8 @@ mod ntt3x42_ifma_tests {
         const SIZE: usize = 3;
 
         let mut dft = VecZnxDftOwned::<crate::NTT3x42Ifma>::alloc(N, COLS, SIZE);
-        let block_bytes = <crate::NTT3x42Ifma as Backend>::bytes_of_vec_znx_dft(N, 1, 1);
-        let byte_len = <crate::NTT3x42Ifma as Backend>::bytes_of_vec_znx_dft(N, COLS, SIZE);
+        let block_bytes = <crate::NTT3x42Ifma as Backend>::vec_znx_dft_bytes_of(N, 1, 1);
+        let byte_len = <crate::NTT3x42Ifma as Backend>::vec_znx_dft_bytes_of(N, COLS, SIZE);
         dft.data[..byte_len].fill(0xa5);
 
         dft.zero_at(1, 1);

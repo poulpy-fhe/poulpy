@@ -18,7 +18,7 @@ use crate::Scale;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{GLWELayout, LWEInfos, Rank};
 use poulpy_hal::{
-    api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
+    api::{ReimFFT, ReimIFFT, ReimNew, ScratchOwnedBorrow},
     layouts::{CyclotomicOrder, HostBytesBackend, Module, Standard, galois_element, galois_elements_from_rotations},
 };
 use std::collections::HashMap;
@@ -96,7 +96,7 @@ pub(crate) fn assert_slots<BE, F, E>(
     BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F>,
+    E: ReimFFT<F> + ReimIFFT<F>,
 {
     use crate::test_suite::helpers::ckks_decrypt_with_prec;
     use poulpy_hal::layouts::ZnxView;
@@ -159,7 +159,7 @@ where
     BE: TestContextBackend<Ring = Standard> + CKKSPaCoImpl,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new::<F>(m).unwrap();
@@ -213,7 +213,7 @@ where
     BE: TestContextBackend<Ring = Standard> + CKKSPaCoImpl,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     for (a_div_m, b) in [(1usize, 16usize), (2, 8)] {
         // (a, b) pairs relative to the slot count: (m, m/8)-style folds of
@@ -298,7 +298,7 @@ where
     BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new::<F>(m).unwrap();
@@ -351,7 +351,7 @@ pub fn test_slot_product_assign_rejects_missing_later_key<BE, F, E>(
     BE: TestContextBackend<Ring = Standard> + CKKSPaCoImpl,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     use super::parity::{
         helpers::{fixture_ciphertext, snapshot, with_scratch},
@@ -401,7 +401,7 @@ pub fn test_slot_trace_assign_rejects_missing_later_key<BE, F, E>(
     BE: TestContextBackend<Ring = Standard> + CKKSPaCoImpl,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     use super::parity::{
         helpers::{fixture_ciphertext, snapshot, with_scratch},

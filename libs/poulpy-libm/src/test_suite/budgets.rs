@@ -12,7 +12,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     AlignedBuf,
-    api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc},
+    api::{ReimNew, ScratchOwnedAlloc},
     layouts::{HostBytesBackend, Module, ScratchArena, ScratchOwned, Standard},
 };
 
@@ -189,7 +189,7 @@ where
         + CKKSRootOps<BE>
         + CKKSTrigOps<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let log_delta = base.prec().log_delta();
     let coeff_meta = ckks_spec(base.n, base.base2k, log_delta, base.base2k);
@@ -341,7 +341,7 @@ where
         + CKKSReductionOps<BE>
         + CKKSSoftmaxOps<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let log_delta = base.prec().log_delta();
     let coeff_meta = ckks_spec(base.n, base.base2k, log_delta, base.base2k);
@@ -471,7 +471,7 @@ where
         + CKKSDivSqrtOps<BE>
         + CKKSReductionOps<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let log_delta = base.prec().log_delta();
     let coeff_meta = ckks_spec(base.n, base.base2k, log_delta, base.base2k);

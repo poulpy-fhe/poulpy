@@ -17,7 +17,7 @@ use std::marker::PhantomData;
 
 use anyhow::{Result, ensure};
 use poulpy_ckks::{api::CKKSEncodingScalar, numerics::ROOT_TABLE_LOG_ORDER};
-use poulpy_hal::api::{NegacyclicFFT, NegacyclicFFTNew};
+use poulpy_hal::api::{ReimFFT, ReimIFFT, ReimM, ReimNew};
 
 use crate::kernels::fft64::reim::{ReimFFTExecute, ReimFFTPortableFused, ReimFFTTable, ReimIFFTPortableFused, ReimIFFTTable};
 
@@ -69,14 +69,14 @@ pub struct NegacyclicFFTSet<F, T> {
 
 impl<F, T> NegacyclicFFTSet<F, T>
 where
-    T: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    T: ReimNew<F>,
 {
     pub fn new(max_slots: usize) -> Result<Self> {
         ensure!(
             max_slots > 0 && max_slots.is_power_of_two(),
             "maximum slot count must be a non-zero power of two"
         );
-        // `NegacyclicFFTNew::new` takes the transform half-length, which for a
+        // `ReimNew::new` takes the transform half-length, which for a
         // `slots`-slot encoding is `slots` itself.
         let ffts = (0..=max_slots.ilog2() as usize)
             .map(|log_slots| T::new(1usize << log_slots))
@@ -112,7 +112,7 @@ pub struct OwnedEncodingPlanSet<F, T> {
 
 impl<F, T> OwnedEncodingPlanSet<F, T>
 where
-    T: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    T: ReimNew<F>,
 {
     /// Builds the family for every power-of-two slot count up to `max_n / 2`.
     pub fn new(max_n: usize) -> Result<Self> {
@@ -146,7 +146,7 @@ pub struct EncodingFFTTable<F: CKKSEncodingScalar, FWD = ReimFFTPortableFused, I
     kernels: PhantomData<(FWD, INV)>,
 }
 
-impl<F, FWD, INV> NegacyclicFFTNew<F> for EncodingFFTTable<F, FWD, INV>
+impl<F, FWD, INV> ReimNew<F> for EncodingFFTTable<F, FWD, INV>
 where
     F: CKKSEncodingScalar,
     FWD: ReimFFTExecute<ReimFFTTable<F>, F>,
@@ -179,7 +179,7 @@ where
     }
 }
 
-impl<F, FWD, INV> NegacyclicFFT<F> for EncodingFFTTable<F, FWD, INV>
+impl<F, FWD, INV> ReimM for EncodingFFTTable<F, FWD, INV>
 where
     F: CKKSEncodingScalar,
     FWD: ReimFFTExecute<ReimFFTTable<F>, F>,
@@ -188,12 +188,26 @@ where
     fn m(&self) -> usize {
         self.fft.m()
     }
+}
 
-    fn fft(&self, data: &mut [F]) {
+impl<F, FWD, INV> ReimFFT<F> for EncodingFFTTable<F, FWD, INV>
+where
+    F: CKKSEncodingScalar,
+    FWD: ReimFFTExecute<ReimFFTTable<F>, F>,
+    INV: ReimFFTExecute<ReimIFFTTable<F>, F>,
+{
+    fn reim_fft(&self, data: &mut [F]) {
         FWD::reim_dft_execute(&self.fft, data);
     }
+}
 
-    fn ifft(&self, data: &mut [F]) {
+impl<F, FWD, INV> ReimIFFT<F> for EncodingFFTTable<F, FWD, INV>
+where
+    F: CKKSEncodingScalar,
+    FWD: ReimFFTExecute<ReimFFTTable<F>, F>,
+    INV: ReimFFTExecute<ReimIFFTTable<F>, F>,
+{
+    fn reim_ifft(&self, data: &mut [F]) {
         INV::reim_dft_execute(&self.ifft, data);
     }
 }
@@ -211,7 +225,7 @@ where
 /// backends enumerate their precisions explicitly (one line each).
 pub trait CKKSEncodingTransform<F> {
     /// The transform family used for precision `F`.
-    type Fft: NegacyclicFFT<F> + NegacyclicFFTNew<F> + Send + Sync + 'static;
+    type Fft: ReimNew<F> + Send + Sync + 'static;
 }
 
 /// Instantiates the generic CKKS encoder for a backend.
@@ -460,14 +474,14 @@ mod tests {
 mod transform_tests {
     use poulpy_ckks::{Quad, api::CKKSEncodingScalar};
     use poulpy_cpu_oracle::EncodingFft;
-    use poulpy_hal::{api::NegacyclicFFTNew, test_suite::reim::test_negacyclic_fft_bit_exact};
+    use poulpy_hal::{api::ReimNew, test_suite::reim::test_reim_fft_bit_exact};
 
     use super::EncodingFFTTable;
 
     fn matches_oracle<F: CKKSEncodingScalar>(max_log_m: usize) {
         for log_m in 0..=max_log_m {
             let m = 1 << log_m;
-            test_negacyclic_fft_bit_exact::<F, _, _>(&EncodingFFTTable::<F>::new(m), &EncodingFft::<F>::new(m));
+            test_reim_fft_bit_exact::<F, _, _>(&EncodingFFTTable::<F>::new(m), &EncodingFft::<F>::new(m));
         }
     }
 

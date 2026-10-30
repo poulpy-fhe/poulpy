@@ -1,6 +1,6 @@
 use poulpy_hal::{
     api::{
-        CnvPVecAlloc, Convolution, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniformSource, VecZnxNormalize,
+        CnvOps, CnvPVecAlloc, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniformSource, VecZnxNormalize,
         VecZnxNormalizeAssign, VecZnxSwitchRing,
     },
     layouts::{Backend, HostDataRef, Module, PrepareHint, ScratchOwned, VecZnx, ZnxView, ZnxViewMut},
@@ -57,7 +57,7 @@ where
         + GLWEMulRelinearizeSum<BE>
         + GLWEPreparedTensoring<BE>
         + CnvPVecAlloc<BE>
-        + Convolution<BE>
+        + CnvOps<BE>
         + GLWENormalize<BE>
         + GLWEAdd<BE>
         + GLWEEncryptSk<BE>
@@ -599,7 +599,7 @@ where
         + GLWEMulRelinearizeSum<BE>
         + GLWEPreparedTensoring<BE>
         + CnvPVecAlloc<BE>
-        + Convolution<BE>
+        + CnvOps<BE>
         + GLWENormalize<BE>
         + GLWEAdd<BE>
         + GLWEEncryptSk<BE>
@@ -1184,7 +1184,7 @@ where
 /// prepared without scratch into one limb more than `ceil(k / base2k)`.
 pub fn test_glwe_prepare_left_rejects_size_of_another_width<BE: Backend>(params: &TestParams, module: &Module<BE>)
 where
-    Module<BE>: CnvPVecAlloc<BE> + Convolution<BE> + GLWENormalize<BE>,
+    Module<BE>: CnvPVecAlloc<BE> + CnvOps<BE> + GLWENormalize<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k = params.base2k;

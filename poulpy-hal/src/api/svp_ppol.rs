@@ -21,7 +21,7 @@ pub trait SvpPPolAlloc<B: Backend> {
 /// Returns the byte size of an [`SvpPPol`](crate::layouts::SvpPPol).
 ///
 /// ```text
-/// op         bytes_of_svp_ppol(n, cols, hint)
+/// op         svp_ppol_bytes_of(n, cols, hint)
 /// class      support
 /// mutation   none
 /// domain     n: a power of two, MIN_DEGREE <= n <= the module's degree; cols >= 1
@@ -30,7 +30,7 @@ pub trait SvpPPolAlloc<B: Backend> {
 /// ```
 pub trait SvpPPolBytesOf {
     /// Returns the bytes a degree-`n` [`SvpPPol`](crate::layouts::SvpPPol) with `cols` columns under `hint` occupies.
-    fn bytes_of_svp_ppol(&self, n: usize, cols: usize, hint: PrepareHint) -> usize;
+    fn svp_ppol_bytes_of(&self, n: usize, cols: usize, hint: PrepareHint) -> usize;
 }
 
 /// Preparation of a [`ScalarZnx`](crate::layouts::ScalarZnx) into an [`SvpPPol`](crate::layouts::SvpPPol).

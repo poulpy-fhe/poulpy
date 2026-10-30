@@ -14,7 +14,7 @@
 
 - **Backend parameter only when used.** An API trait takes a backend type parameter only when its signature names a backend type, never on `_tmp_bytes` or `<Layout>BytesOf` traits.
 - **Declared where the checker sees.** An API trait is a plain `pub trait Name` at column 0 of a file under `poulpy-hal/src/api`, not macro-generated, `pub(crate)`, `pub unsafe` or cfg-gated, with methods `fn` or `unsafe fn`.
-- **Operands are backend views.** API and OEP methods take layout operands as `&XBackendRef<'_, B>` or `&mut XBackendMut<'_, B>` (`R: XToBackendMut<B>` for a whole destination), and only `NegacyclicFFT` takes host slices.
+- **Operands are backend views.** API and OEP methods take layout operands as `&XBackendRef<'_, B>` or `&mut XBackendMut<'_, B>` (`R: XToBackendMut<B>` for a whole destination), and only `ReimFFT` and `ReimIFFT` take host slices.
 - **Radix and precision are arguments.** Ops that read digits take `base2k` as a parameter; HAL layouts carry no radix or precision.
 - **Degree first on allocation calls.** Functions with no polynomial operand to read a degree from (`<layout>_alloc`, `<layout>_bytes_of`, `Backend::<layout>_bytes_of`, `take_<layout>_scratch`, plan constructors, `Module::max_base2k`) take `n` first, then `rows, cols_in, cols_out, size` (matrices) or `cols, size` (vectors), then the `PrepareHint` of a prepared layout.
 - **Clobbered sources.** A clobbered source says so in its sentence and definition.

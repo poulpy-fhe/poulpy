@@ -5,7 +5,7 @@ use poulpy_core::layouts::{BSGSMeta, GLWEInfos, GLWEToBackendMut, GLWEToBackendR
 use poulpy_core::oep::{ConstTerm, GLWEMulConstImpl};
 use poulpy_core::{BSGSOps, GLWEPolynomialEvaluation, GLWEZero};
 use poulpy_hal::{
-    api::{Convolution, VecZnxBigNormalize, VecZnxRsh, VecZnxRshTmpBytes},
+    api::{CnvOps, VecZnxBigNormalize, VecZnxRsh, VecZnxRshTmpBytes},
     layouts::{Backend, Data, Module, PrepareHint, Ring, ScratchArena, ZnxWord, vec_znx_backend_ref_from_ref},
 };
 
@@ -265,7 +265,7 @@ pub trait CKKSPolynomialEvaluationReference<BE: Backend> {
             + CKKSMulAddOps<BE>
             + CKKSModuleAlloc<BE>
             + CKKSCopyOps<BE>
-            + Convolution<BE>
+            + CnvOps<BE>
             + VecZnxBigNormalize<BE>
             + VecZnxRsh<BE>
             + VecZnxRshTmpBytes
@@ -293,7 +293,7 @@ pub trait CKKSPolynomialEvaluationReference<BE: Backend> {
             + CKKSMulAddOps<BE>
             + CKKSModuleAlloc<BE>
             + CKKSCopyOps<BE>
-            + Convolution<BE>
+            + CnvOps<BE>
             + VecZnxBigNormalize<BE>
             + VecZnxRsh<BE>
             + VecZnxRshTmpBytes
@@ -326,7 +326,7 @@ where
             + CKKSMulAddOps<BE>
             + CKKSModuleAlloc<BE>
             + CKKSCopyOps<BE>
-            + Convolution<BE>
+            + CnvOps<BE>
             + VecZnxBigNormalize<BE>
             + VecZnxRsh<BE>
             + VecZnxRshTmpBytes
@@ -401,7 +401,7 @@ where
             + CKKSMulAddOps<BE>
             + CKKSModuleAlloc<BE>
             + CKKSCopyOps<BE>
-            + Convolution<BE>
+            + CnvOps<BE>
             + VecZnxBigNormalize<BE>
             + VecZnxRsh<BE>
             + VecZnxRshTmpBytes

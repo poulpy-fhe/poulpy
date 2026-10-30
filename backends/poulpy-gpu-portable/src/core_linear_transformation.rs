@@ -15,7 +15,7 @@ use poulpy_core::{
     prod_dft_size,
 };
 use poulpy_hal::{
-    api::ScratchArenaTakeBasic,
+    api::ScratchArenaTakeVecZnxDft,
     layouts::{Backend, CnvPVecRToBackendRef, Module, Ring, ScratchArena, VecZnxDftBackendMut, check_cnv_dft_term, check_degree},
 };
 
@@ -35,7 +35,7 @@ pub(crate) const GIANT_BATCH: usize = MANY_PRODUCTS;
 
 /// Scratch of the gathered diagonals of [`accumulate_giant_steps`] for `diagonals` diagonals.
 fn gathered_bytes<RT: GpuRuntime, R: Ring>(n: usize, diagonals: usize) -> usize {
-    NTT4x30Gpu::<RT, R>::scratch_aligned(NTT4x30Gpu::<RT, R>::bytes_of_vec_znx_dft(n, 1, diagonals))
+    NTT4x30Gpu::<RT, R>::scratch_aligned(NTT4x30Gpu::<RT, R>::vec_znx_dft_bytes_of(n, 1, diagonals))
 }
 
 /// Scratch [`accumulate_giant_steps`] takes beside the reference's in an

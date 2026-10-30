@@ -29,7 +29,7 @@ where
 {
     let cols = a_infos.rank().as_usize() + 1;
     let key_size = key_infos.size();
-    let lvl_0 = module.bytes_of_vec_znx_dft(module.n(), cols, key_size);
+    let lvl_0 = module.vec_znx_dft_bytes_of(module.n(), cols, key_size);
     let lvl_1 = module
         .glwe_keyswitch_internal_tmp_bytes(key_infos, a_infos, key_infos)
         .max(module.vec_znx_idft_apply_tmp_bytes())

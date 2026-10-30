@@ -2,7 +2,11 @@ use std::collections::{BTreeMap, btree_map::Entry};
 use std::marker::PhantomData;
 
 use poulpy_hal::{
-    api::{ModuleN, ScratchArenaTakeBasic, VmpPMatBytesOf},
+    api::{
+        ModuleN, ScratchArenaTakeCnvPVecL, ScratchArenaTakeCnvPVecR, ScratchArenaTakeMatZnx, ScratchArenaTakeScalarZnx,
+        ScratchArenaTakeSvpPPol, ScratchArenaTakeVecZnx, ScratchArenaTakeVecZnxBig, ScratchArenaTakeVecZnxDft,
+        ScratchArenaTakeVmpPMat, VmpPMatBytesOf,
+    },
     layouts::{Backend, CnvPVecLViewMut, PrepareHint, ScratchArena},
 };
 
@@ -21,7 +25,18 @@ use crate::{
 /// Backend-native arena allocation for core ciphertext/key layouts.
 ///
 /// Returns backend-native borrows (`B::BufMut<'a>`) carved from a [`ScratchArena`].
-pub trait ScratchArenaTakeCore<'a, B: Backend>: ScratchArenaTakeBasic<'a, B> + Sized {
+pub trait ScratchArenaTakeCore<'a, B: Backend>:
+    ScratchArenaTakeCnvPVecL<'a, B>
+    + ScratchArenaTakeCnvPVecR<'a, B>
+    + ScratchArenaTakeScalarZnx<'a, B>
+    + ScratchArenaTakeSvpPPol<'a, B>
+    + ScratchArenaTakeVecZnx<'a, B>
+    + ScratchArenaTakeVecZnxBig<'a, B>
+    + ScratchArenaTakeVecZnxDft<'a, B>
+    + ScratchArenaTakeVmpPMat<'a, B>
+    + ScratchArenaTakeMatZnx<'a, B>
+    + Sized
+{
     /// Carves the baby-step cache of the transformation schedule `plan` (a transformation's
     /// [`index`](crate::layouts::LinearTransformation::index)) for a source of the layout `a`, in
     /// [`GLWEBytesOf::linear_transformation_baby_steps_bytes_of`](crate::GLWEBytesOf::linear_transformation_baby_steps_bytes_of)

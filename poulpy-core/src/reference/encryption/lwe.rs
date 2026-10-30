@@ -1,7 +1,7 @@
 use poulpy_hal::{
     api::{
-        ScratchArenaTakeBasic, VecZnxBigBytesOf, VecZnxBigInnerSum, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
-        VecZnxBigSubSmallNegateAssign, VecZnxFillUniformSource, VecZnxScalarProduct,
+        ScratchArenaTakeVecZnxBig, VecZnxBigBytesOf, VecZnxBigInnerSum, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
+        VecZnxBigScalarProduct, VecZnxBigSubSmallNegateAssign, VecZnxFillUniformSource,
     },
     layouts::{Backend, Module, ScratchArena, VecZnxBigToBackendRef},
     source::Source,
@@ -66,7 +66,7 @@ where
         + VecZnxBigInnerSum<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes
-        + VecZnxScalarProduct<BE>
+        + VecZnxBigScalarProduct<BE>
         + VecZnxBigSubSmallNegateAssign<BE>,
 {
     fn lwe_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
@@ -75,8 +75,8 @@ where
     {
         let n: usize = infos.n().into();
         let size: usize = infos.size();
-        let tmp_hadamard: usize = self.bytes_of_vec_znx_big(n, 1, size);
-        let tmp_scalar: usize = self.bytes_of_vec_znx_big(1, 1, size);
+        let tmp_hadamard: usize = self.vec_znx_big_bytes_of(n, 1, size);
+        let tmp_scalar: usize = self.vec_znx_big_bytes_of(1, 1, size);
         let normalize: usize = self.vec_znx_big_normalize_tmp_bytes();
         // Each take starts on a SCRATCH_ALIGN boundary.
         BE::scratch_aligned(tmp_hadamard) + BE::scratch_aligned(tmp_scalar) + normalize
@@ -131,7 +131,7 @@ where
                 let (mut tmp_hadamard, scratch_1) = scratch.borrow().take_vec_znx_big_scratch(res_n, 1, res_size);
                 {
                     let res_ref = res.to_backend_ref();
-                    self.vec_znx_scalar_product(&mut tmp_hadamard, 0, &res_ref.mask, 0, &sk.data, 0);
+                    self.vec_znx_big_scalar_product(&mut tmp_hadamard, 0, &res_ref.mask, 0, &sk.data, 0);
                 }
 
                 // tmp_scalar[limb][0] = sum_k tmp_hadamard[limb][k] = <mask, sk>

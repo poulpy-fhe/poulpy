@@ -11,7 +11,7 @@ use poulpy_core::{
     layouts::{BackendGLWESecret, GGLWEInfos, LWEInfos, ModuleCoreAlloc, prepared::GLWESecretPrepared},
 };
 use poulpy_hal::{
-    api::{CnvPVecAlloc, CnvPVecBytesOf, Convolution, NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
+    api::{CnvOps, CnvPVecAlloc, CnvPVecBytesOf, ReimNew, ScratchOwnedBorrow},
     layouts::{HostBytesBackend, Module, ScratchOwned, Standard},
     source::Source,
 };
@@ -260,7 +260,7 @@ where
     BE: TestContextBackend<Ring = Standard> + CKKSShipImpl + poulpy_hal::oep::HalVecZnxDftImpl,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
 {
@@ -465,11 +465,11 @@ fn ship_bootstrap_case<BE, F, E>(
         + CKKSShipOps<BE, F>
         + CKKSEncodingOps<BE, F>
         + GLWEZero<BE>
-        + Convolution<BE>
+        + CnvOps<BE>
         + CnvPVecAlloc<BE>
         + CnvPVecBytesOf,
     F: TestScalar + ShipScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let n = params.n;
     let m = n / 2;
@@ -609,11 +609,11 @@ where
         + CKKSShipOps<BE, F>
         + CKKSEncodingOps<BE, F>
         + GLWEZero<BE>
-        + Convolution<BE>
+        + CnvOps<BE>
         + CnvPVecAlloc<BE>
         + CnvPVecBytesOf,
     F: TestScalar + ShipScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     ship_bootstrap_case::<BE, F, E>(params, module, host_module, false);
 }
@@ -627,11 +627,11 @@ where
         + CKKSShipOps<BE, F>
         + CKKSEncodingOps<BE, F>
         + GLWEZero<BE>
-        + Convolution<BE>
+        + CnvOps<BE>
         + CnvPVecAlloc<BE>
         + CnvPVecBytesOf,
     F: TestScalar + ShipScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     ship_bootstrap_case::<BE, F, E>(params, module, host_module, true);
 }
@@ -648,11 +648,11 @@ pub fn test_ship_bootstrap_into_rejects_output_radix<BE, F, E>(
         + CKKSShipOps<BE, F>
         + CKKSEncodingOps<BE, F>
         + GLWEZero<BE>
-        + Convolution<BE>
+        + CnvOps<BE>
         + CnvPVecAlloc<BE>
         + CnvPVecBytesOf,
     F: TestScalar + ShipScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     use super::parity::{helpers::fixture_ciphertext, layout};
     use crate::{CKKSCompositionError, CKKSError};

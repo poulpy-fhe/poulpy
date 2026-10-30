@@ -5,7 +5,7 @@
 //! evaluation at `w^e` with `w = exp(i pi / n)` and `e = 4 bitrev(j) + 1`,
 //! which is the HAL's `omega(m, j)`.
 
-use poulpy_hal::api::{NegacyclicFFT, NegacyclicFFTNew};
+use poulpy_hal::api::{ReimFFT, ReimIFFT, ReimM, ReimNew};
 use rand_distr::num_traits::{Float, FloatConst};
 
 use crate::family::{DFTFamily, bitrev};
@@ -75,7 +75,7 @@ fn transform<F: Float>(m: usize, roots: &[F], data: &mut [F], inverse: bool) {
     }
 }
 
-impl<F: Float + FloatConst> NegacyclicFFTNew<F> for ComplexFft<F> {
+impl<F: Float + FloatConst> ReimNew<F> for ComplexFft<F> {
     fn new(m: usize) -> Self {
         Self {
             m,
@@ -85,16 +85,20 @@ impl<F: Float + FloatConst> NegacyclicFFTNew<F> for ComplexFft<F> {
     }
 }
 
-impl<F: Float> NegacyclicFFT<F> for ComplexFft<F> {
+impl<F: Float> ReimM for ComplexFft<F> {
     fn m(&self) -> usize {
         self.m
     }
+}
 
-    fn fft(&self, data: &mut [F]) {
+impl<F: Float> ReimFFT<F> for ComplexFft<F> {
+    fn reim_fft(&self, data: &mut [F]) {
         transform(self.m, &self.forward, data, false);
     }
+}
 
-    fn ifft(&self, data: &mut [F]) {
+impl<F: Float> ReimIFFT<F> for ComplexFft<F> {
+    fn reim_ifft(&self, data: &mut [F]) {
         transform(self.m, &self.inverse, data, true);
     }
 }
@@ -112,12 +116,12 @@ impl DFTFamily for Fft64 {
         for (r, &x) in res.iter_mut().zip(a) {
             *r = x as f64;
         }
-        table.fft(res);
+        table.reim_fft(res);
     }
 
     fn inverse(table: &ComplexFft<f64>, res: &mut [i64], a: &[f64]) {
         let mut values = a.to_vec();
-        table.ifft(&mut values);
+        table.reim_ifft(&mut values);
         for (r, v) in res.iter_mut().zip(&values) {
             *r = (v / table.m as f64).round() as i64;
         }
@@ -224,7 +228,7 @@ mod tests {
     #[test]
     fn transform_meets_the_hal_contract() {
         for log_m in 0..=8 {
-            poulpy_hal::test_suite::reim::test_negacyclic_fft(&ComplexFft::<f64>::new(1 << log_m));
+            poulpy_hal::test_suite::reim::test_reim_fft(&ComplexFft::<f64>::new(1 << log_m));
         }
     }
 }

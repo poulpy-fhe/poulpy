@@ -5,7 +5,7 @@ use once_cell::sync::Lazy;
 use poulpy_core::reference::operations::GLWETensoringReference;
 use poulpy_hal::{
     api::{
-        CnvPVecAlloc, Convolution, ScratchOwnedAlloc, VecZnxBigAlloc, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
+        CnvOps, CnvPVecAlloc, ScratchOwnedAlloc, VecZnxBigAlloc, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
         VecZnxDftAddAssign, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftAutomorphismPlan, VecZnxDftCopy,
         VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes, VmpPMatAlloc, VmpPrepare,
         VmpPrepareTmpBytes,
@@ -1613,7 +1613,7 @@ fn const_combination_matches_reference() {
 /// and the product added, rotated and stored or accumulated of the giant-step tree.
 #[test]
 fn many_source_products_match_one_launch_each_at_full_degree() {
-    use poulpy_hal::api::ScratchArenaTakeBasic;
+    use poulpy_hal::api::ScratchArenaTakeVecZnxDft;
     let n = 1 << 16;
     let module = Module::<Gpu>::new(n as u64);
     let (a_size, dsize, rows, key_size, res_size, product_limbs) = (27, 4, 7, 33, 29, 3);

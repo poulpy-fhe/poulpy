@@ -1,7 +1,7 @@
 use poulpy_hal::{
     api::{
-        ScratchArenaTakeBasic, SvpApplyDftToDftAssign, VecZnxBigAddAssign, VecZnxBigBytesOf, VecZnxBigFromSmall,
-        VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftApply, VecZnxDftBytesOf, VecZnxIdftApply,
+        ScratchArenaTakeVecZnxBig, ScratchArenaTakeVecZnxDft, SvpApplyDftToDftAssign, VecZnxBigAddAssign, VecZnxBigBytesOf,
+        VecZnxBigFromSmall, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftApply, VecZnxDftBytesOf, VecZnxIdftApply,
         VecZnxIdftApplyTmpBytes, VecZnxNormalizeTmpBytes, VecZnxSubAssign,
     },
     layouts::{
@@ -74,8 +74,8 @@ where
 
         let lvl_0: usize = self.glwe_plaintext_bytes_of_from_infos(infos);
         let lvl_1_glwe_noise: usize = glwe_noise_body_tmp_bytes(self, infos);
-        let lvl_1_mul: usize = self.bytes_of_vec_znx_dft(n, 1, infos.size())
-            + self.bytes_of_vec_znx_big(n, 1, infos.size())
+        let lvl_1_mul: usize = self.vec_znx_dft_bytes_of(n, 1, infos.size())
+            + self.vec_znx_big_bytes_of(n, 1, infos.size())
             + self
                 .vec_znx_idft_apply_tmp_bytes()
                 .max(self.vec_znx_big_normalize_tmp_bytes());

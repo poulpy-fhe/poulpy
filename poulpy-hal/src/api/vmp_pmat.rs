@@ -29,7 +29,7 @@ pub trait VmpPMatAlloc<B: Backend> {
 /// Returns the byte size of a [`VmpPMat`](crate::layouts::VmpPMat).
 ///
 /// ```text
-/// op         bytes_of_vmp_pmat(n, rows, cols_in, cols_out, size, hint)
+/// op         vmp_pmat_bytes_of(n, rows, cols_in, cols_out, size, hint)
 /// class      support
 /// mutation   none
 /// domain     n: a power of two, MIN_DEGREE <= n <= the module's degree; every other dimension >= 1
@@ -38,7 +38,7 @@ pub trait VmpPMatAlloc<B: Backend> {
 /// ```
 pub trait VmpPMatBytesOf {
     /// Returns the bytes a degree-`n` [`VmpPMat`](crate::layouts::VmpPMat) of the given dimensions under `hint` occupies.
-    fn bytes_of_vmp_pmat(&self, n: usize, rows: usize, cols_in: usize, cols_out: usize, size: usize, hint: PrepareHint) -> usize;
+    fn vmp_pmat_bytes_of(&self, n: usize, rows: usize, cols_in: usize, cols_out: usize, size: usize, hint: PrepareHint) -> usize;
 }
 
 /// Returns the scratch bytes [`VmpPrepare`] requires.

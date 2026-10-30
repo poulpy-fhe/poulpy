@@ -15,7 +15,7 @@ use crate::{
     test_suite::{decryption::panic_message, keys::fill_by_digit, noise::assert_refuses_uncovered_input},
 };
 use poulpy_hal::{
-    api::{CnvPVecAlloc, Convolution, ScratchOwnedAlloc, ScratchOwnedBorrow},
+    api::{CnvOps, CnvPVecAlloc, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{HostDataMut, Module, Ring, ScratchOwned, Standard, ZnxViewMut},
     source::Source,
     test_suite::TestParams,
@@ -491,7 +491,7 @@ where
         + GLWEMulRelinearizeSum<BR>
         + GLWEPreparedTensoring<BR>
         + CnvPVecAlloc<BR>
-        + Convolution<BR>
+        + CnvOps<BR>
         + GLWENormalize<BR>
         + GLWETensorDecrypt<BR>
         + GLWETensorKeyPreparedFactory<BR>
@@ -502,7 +502,7 @@ where
         + GLWEMulRelinearizeSum<BT>
         + GLWEPreparedTensoring<BT>
         + CnvPVecAlloc<BT>
-        + Convolution<BT>
+        + CnvOps<BT>
         + GLWENormalize<BT>
         + GLWETensorDecrypt<BT>
         + GLWETensorKeyPreparedFactory<BT>
@@ -532,7 +532,7 @@ pub fn test_tensor_relinearize_decrypt_parity_roles<BR, BT>(
         + GLWEMulRelinearizeSum<BR>
         + GLWEPreparedTensoring<BR>
         + CnvPVecAlloc<BR>
-        + Convolution<BR>
+        + CnvOps<BR>
         + GLWENormalize<BR>
         + GLWETensorDecrypt<BR>
         + GLWETensorKeyPreparedFactory<BR>
@@ -543,7 +543,7 @@ pub fn test_tensor_relinearize_decrypt_parity_roles<BR, BT>(
         + GLWEMulRelinearizeSum<BT>
         + GLWEPreparedTensoring<BT>
         + CnvPVecAlloc<BT>
-        + Convolution<BT>
+        + CnvOps<BT>
         + GLWENormalize<BT>
         + GLWETensorDecrypt<BT>
         + GLWETensorKeyPreparedFactory<BT>

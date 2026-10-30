@@ -32,7 +32,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     AlignedBuf,
-    api::{CnvPVecAlloc, NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
+    api::{CnvPVecAlloc, ReimNew, ScratchOwnedBorrow},
     layouts::{
         Backend, CyclotomicOrder, DataView, HostBytesBackend, HostDataMut, HostDataRef, Module, PrepareHint,
         PrepareHint::{OneShot, Reuse},
@@ -90,7 +90,7 @@ pub fn test_blas_matmul<BE, F, E>(
         + CKKSLinearTransformationOps<BE>
         + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
@@ -493,7 +493,7 @@ pub fn test_blas_matmul_pt_right<BE, F, E>(
         + CKKSLinearTransformationOps<BE>
         + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
@@ -712,7 +712,7 @@ pub fn test_blas_matmul_pt_right_guards<BE, F, E>(
         + CKKSLinearTransformationOps<BE>
         + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
@@ -1006,7 +1006,7 @@ pub fn test_blas_matmul_pt_left<BE, F, E>(
         + CKKSLinearTransformationOps<BE>
         + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
@@ -1249,7 +1249,7 @@ pub fn test_blas_matmul_pt_left_replicated<BE, F, E>(
         + CKKSLinearTransformationOps<BE>
         + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
@@ -1399,7 +1399,7 @@ pub fn test_blas_matmul_pt_left_guards<BE, F, E>(
         + CKKSLinearTransformationOps<BE>
         + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
@@ -1684,7 +1684,7 @@ where
     BE: TestContextBackend<Ring = Standard> + BlasEncodingImpl,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + BlasEncodingOps<BE, F> + CKKSLinearTransformationOps<BE>,
     F: TestScalar + DiagonalArithmetic,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let (sk_raw, sk) = gen_sk_with_raw(params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(params, module);
@@ -1733,7 +1733,7 @@ fn assert_masked_product<BE, F, E>(
     BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
@@ -1773,7 +1773,7 @@ pub fn test_blas_matmul_pt_masked<BE, F, E>(
         + CKKSLinearTransformationOps<BE>
         + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
@@ -1903,7 +1903,7 @@ pub fn test_blas_matmul_pt_masked_guards<BE, F, E>(
         + CKKSLinearTransformationOps<BE>
         + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
@@ -2045,7 +2045,7 @@ pub fn test_blas_matmul_guards<BE, F, E>(
         + CKKSLinearTransformationOps<BE>
         + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
@@ -2580,7 +2580,7 @@ where
         + CKKSLinearTransformationOps<BE>
         + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
@@ -2686,7 +2686,7 @@ pub fn test_blas_replicated_shifts<BE, F, E>(
         + CKKSRotateOps<BE>
         + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
@@ -2780,7 +2780,7 @@ pub fn test_blas_matmul_operands<BE, F, E>(
         + CKKSLinearTransformationOps<BE>
         + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
@@ -2992,7 +2992,7 @@ pub fn test_blas_matmul_flag_clear<BE, F, E>(
         + CKKSLinearTransformationOps<BE>
         + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {

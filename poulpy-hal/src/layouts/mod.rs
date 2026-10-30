@@ -642,23 +642,23 @@ macro_rules! impl_backend_from {
             // Sizing must be forwarded explicitly: these are defaulted trait
             // methods, so without forwarding the delegate would silently get
             // the word-derived defaults instead of the source backend's
-            // overrides (e.g. a backend's packed `bytes_of_vmp_pmat`), breaking
+            // overrides (e.g. a backend's packed `vmp_pmat_bytes_of`), breaking
             // the layout compatibility asserted by the markers below.
             const SCRATCH_ALIGN: usize = <$from as poulpy_hal::layouts::Backend>::SCRATCH_ALIGN;
 
-            fn bytes_of_vec_znx_dft(n: usize, cols: usize, size: usize) -> usize {
-                <$from as poulpy_hal::layouts::Backend>::bytes_of_vec_znx_dft(n, cols, size)
+            fn vec_znx_dft_bytes_of(n: usize, cols: usize, size: usize) -> usize {
+                <$from as poulpy_hal::layouts::Backend>::vec_znx_dft_bytes_of(n, cols, size)
             }
 
-            fn bytes_of_vec_znx_big(n: usize, cols: usize, size: usize) -> usize {
-                <$from as poulpy_hal::layouts::Backend>::bytes_of_vec_znx_big(n, cols, size)
+            fn vec_znx_big_bytes_of(n: usize, cols: usize, size: usize) -> usize {
+                <$from as poulpy_hal::layouts::Backend>::vec_znx_big_bytes_of(n, cols, size)
             }
 
-            fn bytes_of_svp_ppol(n: usize, cols: usize, hint: poulpy_hal::layouts::PrepareHint) -> usize {
-                <$from as poulpy_hal::layouts::Backend>::bytes_of_svp_ppol(n, cols, hint)
+            fn svp_ppol_bytes_of(n: usize, cols: usize, hint: poulpy_hal::layouts::PrepareHint) -> usize {
+                <$from as poulpy_hal::layouts::Backend>::svp_ppol_bytes_of(n, cols, hint)
             }
 
-            fn bytes_of_vmp_pmat(
+            fn vmp_pmat_bytes_of(
                 n: usize,
                 rows: usize,
                 cols_in: usize,
@@ -666,15 +666,15 @@ macro_rules! impl_backend_from {
                 size: usize,
                 hint: poulpy_hal::layouts::PrepareHint,
             ) -> usize {
-                <$from as poulpy_hal::layouts::Backend>::bytes_of_vmp_pmat(n, rows, cols_in, cols_out, size, hint)
+                <$from as poulpy_hal::layouts::Backend>::vmp_pmat_bytes_of(n, rows, cols_in, cols_out, size, hint)
             }
 
-            fn bytes_of_cnv_pvec_left(n: usize, cols: usize, size: usize, hint: poulpy_hal::layouts::PrepareHint) -> usize {
-                <$from as poulpy_hal::layouts::Backend>::bytes_of_cnv_pvec_left(n, cols, size, hint)
+            fn cnv_pvec_left_bytes_of(n: usize, cols: usize, size: usize, hint: poulpy_hal::layouts::PrepareHint) -> usize {
+                <$from as poulpy_hal::layouts::Backend>::cnv_pvec_left_bytes_of(n, cols, size, hint)
             }
 
-            fn bytes_of_cnv_pvec_right(n: usize, cols: usize, size: usize, hint: poulpy_hal::layouts::PrepareHint) -> usize {
-                <$from as poulpy_hal::layouts::Backend>::bytes_of_cnv_pvec_right(n, cols, size, hint)
+            fn cnv_pvec_right_bytes_of(n: usize, cols: usize, size: usize, hint: poulpy_hal::layouts::PrepareHint) -> usize {
+                <$from as poulpy_hal::layouts::Backend>::cnv_pvec_right_bytes_of(n, cols, size, hint)
             }
         }
 

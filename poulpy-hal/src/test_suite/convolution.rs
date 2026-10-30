@@ -14,7 +14,7 @@ use rand::Rng;
 use crate::test_suite::{PoisonedArena, poisoned_arena};
 use crate::{
     api::{
-        CnvPVecAlloc, Convolution, ModuleN, VecZnxAdd, VecZnxAlloc, VecZnxAutomorphism, VecZnxBigAlloc, VecZnxBigNormalize,
+        CnvOps, CnvPVecAlloc, ModuleN, VecZnxAdd, VecZnxAlloc, VecZnxAutomorphism, VecZnxBigAlloc, VecZnxBigNormalize,
         VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftAddAssign, VecZnxDftAlloc, VecZnxDftApply, VecZnxFillUniformSourceAll,
         VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxSwitchRing,
     },
@@ -31,7 +31,7 @@ use crate::layouts::{CnvPVecLOwned, CnvPVecROwned, VecZnxBigOwned};
 pub fn test_convolution_by_const<M, BE: crate::test_suite::TestBackend>(module: &M, n: usize, base2k: usize)
 where
     M: ModuleN
-        + Convolution<BE>
+        + CnvOps<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes
         + VecZnxNormalizeAssign<BE>
@@ -122,7 +122,7 @@ where
 pub fn test_convolution_by_const_add<M, BE: crate::test_suite::TestBackend>(module: &M, n: usize, base2k: usize)
 where
     M: ModuleN
-        + Convolution<BE>
+        + CnvOps<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes
         + crate::api::VecZnxBigAddAssign<BE>
@@ -230,7 +230,7 @@ where
 pub fn test_convolution<M, BE: crate::test_suite::TestBackend>(module: &M, n: usize, base2k: usize)
 where
     M: ModuleN
-        + Convolution<BE>
+        + CnvOps<BE>
         + CnvPVecAlloc<BE>
         + VecZnxDftAlloc<BE>
         + VecZnxDftApply<BE>
@@ -359,7 +359,7 @@ where
 pub fn test_convolution_add<M, BE: crate::test_suite::TestBackend>(module: &M, n: usize, _base2k: usize)
 where
     M: ModuleN
-        + Convolution<BE>
+        + CnvOps<BE>
         + CnvPVecAlloc<BE>
         + VecZnxDftAlloc<BE>
         + VecZnxDftAddAssign<BE>
@@ -483,7 +483,7 @@ where
 pub fn test_convolution_sum<M, BE: crate::test_suite::TestBackend>(module: &M, n: usize, base2k: usize)
 where
     M: ModuleN
-        + Convolution<BE>
+        + CnvOps<BE>
         + CnvPVecAlloc<BE>
         + VecZnxDftAlloc<BE>
         + VecZnxIdftApply<BE>
@@ -649,7 +649,7 @@ where
 pub fn test_convolution_pairwise<M, BE: crate::test_suite::TestBackend>(module: &M, n: usize, base2k: usize)
 where
     M: ModuleN
-        + Convolution<BE>
+        + CnvOps<BE>
         + CnvPVecAlloc<BE>
         + VecZnxDftAlloc<BE>
         + VecZnxDftApply<BE>
@@ -967,7 +967,7 @@ pub fn test_cnv_prepare_rejects_mismatched_shape<BE: crate::test_suite::TestBack
     params: &TestParams,
     module: &crate::layouts::Module<BE>,
 ) where
-    crate::layouts::Module<BE>: CnvPVecAlloc<BE> + Convolution<BE>,
+    crate::layouts::Module<BE>: CnvPVecAlloc<BE> + CnvOps<BE>,
 {
     let (cols, size) = (2usize, 2usize);
     let mut source = Source::new([5u8; 32]);
@@ -1078,7 +1078,7 @@ pub fn test_cnv_by_const_rejects_degree_mismatch<BE: crate::test_suite::TestBack
     params: &TestParams,
     module: &crate::layouts::Module<BE>,
 ) where
-    crate::layouts::Module<BE>: Convolution<BE> + VecZnxBigAlloc<BE> + VecZnxBigFromSmall<BE>,
+    crate::layouts::Module<BE>: CnvOps<BE> + VecZnxBigAlloc<BE> + VecZnxBigFromSmall<BE>,
 {
     let size = 2usize;
     let mut source = Source::new([6u8; 32]);
@@ -1211,7 +1211,7 @@ type ConvolutionForm<'a, BE> = dyn Fn(&mut VecZnxDftOwned<BE>, &CnvPVecROwned<BE
 pub fn test_convolution_embed<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: ModuleN
-        + Convolution<BE>
+        + CnvOps<BE>
         + CnvPVecAlloc<BE>
         + VecZnxDftAlloc<BE>
         + VecZnxIdftApply<BE>
@@ -1542,7 +1542,7 @@ where
 pub fn test_convolution_galois<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: ModuleN
-        + Convolution<BE>
+        + CnvOps<BE>
         + CnvPVecAlloc<BE>
         + VecZnxDftAlloc<BE>
         + VecZnxIdftApply<BE>

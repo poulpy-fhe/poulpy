@@ -28,8 +28,8 @@ impl<B: Backend> SvpPPolAlloc<B> for Module<B> {
 }
 
 impl<B: Backend> SvpPPolBytesOf for Module<B> {
-    fn bytes_of_svp_ppol(&self, n: usize, cols: usize, hint: PrepareHint) -> usize {
-        B::bytes_of_svp_ppol(n, cols, hint)
+    fn svp_ppol_bytes_of(&self, n: usize, cols: usize, hint: PrepareHint) -> usize {
+        B::svp_ppol_bytes_of(n, cols, hint)
     }
 }
 

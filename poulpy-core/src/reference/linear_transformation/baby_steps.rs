@@ -20,8 +20,9 @@ use std::collections::BTreeMap;
 
 use poulpy_hal::{
     api::{
-        CnvPVecAlloc, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxAutomorphism, VecZnxAutomorphismAssign, VecZnxDftApply,
-        VecZnxDftBytesOf, VecZnxDftZero, VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes,
+        CnvOps, CnvPVecAlloc, ModuleN, ScratchArenaTakeVecZnx, ScratchArenaTakeVecZnxDft, VecZnxAutomorphism,
+        VecZnxAutomorphismAssign, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftZero, VecZnxIdftNormalize,
+        VecZnxIdftNormalizeTmpBytes,
     },
     execution::{for_each_with_scratch, scratch_workers, worker_count, worker_scratch_bytes},
     layouts::{
@@ -116,7 +117,7 @@ where
     BE: Backend + crate::oep::GGLWEProductDigitsStridedImpl,
     Module<BE>: GLWEBytesOf<BE>
         + ModuleN
-        + Convolution<BE>
+        + CnvOps<BE>
         + GLWEAutomorphism<BE>
         + GGLWEProductReference<BE>
         + VecZnxAutomorphismAssign<BE>
@@ -136,9 +137,9 @@ where
 
     let (base2k, k_digit, dnum) = (key_infos.base2k(), key_infos.k_digit(), key_infos.dnum());
     let operand_size = gadget_input_size(base2k, k_digit, dnum, a_infos.k(), a_size);
-    let hoisted_a_dft = module.bytes_of_vec_znx_dft(module.n(), cols - 1, operand_size);
+    let hoisted_a_dft = module.vec_znx_dft_bytes_of(module.n(), cols - 1, operand_size);
     // The product, the normalized copy the automorphism reads, and their scratch.
-    let hoisted_rot = module.bytes_of_vec_znx_dft(module.n(), cols, key_size)
+    let hoisted_rot = module.vec_znx_dft_bytes_of(module.n(), cols, key_size)
         + baby
         + BE::gglwe_product_idft_normalize_tmp_bytes(module, a_size, key_size, operand_size, key_infos);
     let hoisted_worker = worker_scratch_bytes::<BE>(baby + hoisted_rot.max(prepare));
@@ -234,7 +235,7 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, A, H, L>(
     Module<BE>: GLWEBytesOf<BE>
         + CnvPVecAlloc<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
-        + Convolution<BE>
+        + CnvOps<BE>
         + GaloisElement
         + GLWEAutomorphism<BE>
         + GGLWEProductReference<BE>
@@ -364,7 +365,7 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, A, H, L>(
                 .iter()
                 .filter_map(|(index, _)| key_refs[*index].as_ref().map(|key| (key, key_sizes[*index])))
                 .map(|(key, key_size)| {
-                    module.bytes_of_vec_znx_dft(module.n(), cols, key_size)
+                    module.vec_znx_dft_bytes_of(module.n(), cols, key_size)
                         + module.glwe_bytes_of_from_infos(a)
                         + BE::gglwe_product_idft_normalize_tmp_bytes(module, a_size, key_size, operand_size, key)
                 })
@@ -430,7 +431,7 @@ fn glwe_prepare_baby_steps_doubling<'h, BE, H, L>(
     BE: Backend + crate::oep::GGLWEProductDigitsStridedImpl,
     Module<BE>: GLWEBytesOf<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
-        + Convolution<BE>
+        + CnvOps<BE>
         + GaloisElement
         + GLWEAutomorphism<BE>
         + GGLWEProductReference<BE>
@@ -476,9 +477,9 @@ fn glwe_prepare_baby_steps_doubling<'h, BE, H, L>(
     // ([`glwe_prepare_baby_doubling_tmp_bytes`]).
     let need = baby_doubling_rotations_bytes::<BE, _, _>(module, a, rotations.len())
         + widest
-            * (BE::scratch_aligned(module.bytes_of_vec_znx_dft(n, cols - 1, operand_max))
-                + BE::scratch_aligned(module.bytes_of_vec_znx_dft(n, cols, key_max))
-                + BE::scratch_aligned(BE::bytes_of_vec_znx(n, cols, a_size)));
+            * (BE::scratch_aligned(module.vec_znx_dft_bytes_of(n, cols - 1, operand_max))
+                + BE::scratch_aligned(module.vec_znx_dft_bytes_of(n, cols, key_max))
+                + BE::scratch_aligned(BE::vec_znx_bytes_of(n, cols, a_size)));
     let work = pass_keys
         .iter()
         .map(|key| glwe_prepare_linear_transformation_baby_steps_tmp_bytes::<BE, _, _>(module, a, key))
@@ -712,9 +713,9 @@ where
     let operand_size = gadget_input_size(a.base2k(), key.k_digit(), key.dnum(), a.k(), a_size);
     let key_size = gglwe_product_output_size::<BE, _, _, _>(a, a, key);
     sources
-        * (BE::scratch_aligned(module.bytes_of_vec_znx_dft(n, cols - 1, operand_size))
-            + BE::scratch_aligned(module.bytes_of_vec_znx_dft(n, cols, key_size))
-            + BE::scratch_aligned(BE::bytes_of_vec_znx(n, cols, a_size)))
+        * (BE::scratch_aligned(module.vec_znx_dft_bytes_of(n, cols - 1, operand_size))
+            + BE::scratch_aligned(module.vec_znx_dft_bytes_of(n, cols, key_size))
+            + BE::scratch_aligned(BE::vec_znx_bytes_of(n, cols, a_size)))
 }
 
 /// Bytes the doubling of a cache on [`BsgsRotations::PowersOfTwo`] for the schedule `plan`

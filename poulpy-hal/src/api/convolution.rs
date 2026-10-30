@@ -23,7 +23,7 @@ pub trait CnvPVecAlloc<BE: Backend> {
 /// Returns the byte sizes for prepared convolution operands.
 ///
 /// ```text
-/// op         bytes_of_cnv_pvec_left(n, cols, size, hint) / bytes_of_cnv_pvec_right(n, cols, size, hint)
+/// op         cnv_pvec_left_bytes_of(n, cols, size, hint) / cnv_pvec_right_bytes_of(n, cols, size, hint)
 /// class      support
 /// mutation   none
 /// domain     n: a power of two, MIN_DEGREE <= n <= the module's degree; cols >= 1, size >= 1
@@ -32,14 +32,14 @@ pub trait CnvPVecAlloc<BE: Backend> {
 /// ```
 pub trait CnvPVecBytesOf {
     /// Returns the bytes a degree-`n` [`CnvPVecL`](crate::layouts::CnvPVecL) of `cols` columns and `size` limbs under `hint` occupies.
-    fn bytes_of_cnv_pvec_left(&self, n: usize, cols: usize, size: usize, hint: PrepareHint) -> usize;
+    fn cnv_pvec_left_bytes_of(&self, n: usize, cols: usize, size: usize, hint: PrepareHint) -> usize;
     /// Returns the bytes a degree-`n` [`CnvPVecR`](crate::layouts::CnvPVecR) of `cols` columns and `size` limbs under `hint` occupies.
-    fn bytes_of_cnv_pvec_right(&self, n: usize, cols: usize, size: usize, hint: PrepareHint) -> usize;
+    fn cnv_pvec_right_bytes_of(&self, n: usize, cols: usize, size: usize, hint: PrepareHint) -> usize;
 }
 
 /// Limb convolution over the module ring `R_N[Y]`, where `Y = 2^{-K}`.
-pub trait Convolution<BE: Backend> {
-    /// Returns the scratch bytes [`cnv_prepare_left`](Convolution::cnv_prepare_left) requires for those sizes.
+pub trait CnvOps<BE: Backend> {
+    /// Returns the scratch bytes [`cnv_prepare_left`](CnvOps::cnv_prepare_left) requires for those sizes.
     ///
     /// ```text
     /// op         cnv_prepare_left_tmp_bytes(res_size, a_size)
@@ -69,7 +69,7 @@ pub trait Convolution<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
-    /// Returns the scratch bytes [`cnv_prepare_right`](Convolution::cnv_prepare_right) requires for those sizes.
+    /// Returns the scratch bytes [`cnv_prepare_right`](CnvOps::cnv_prepare_right) requires for those sizes.
     ///
     /// ```text
     /// op         cnv_prepare_right_tmp_bytes(res_size, a_size)
@@ -99,7 +99,7 @@ pub trait Convolution<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
-    /// Returns the scratch bytes [`cnv_apply_dft`](Convolution::cnv_apply_dft) requires for those sizes.
+    /// Returns the scratch bytes [`cnv_apply_dft`](CnvOps::cnv_apply_dft) requires for those sizes.
     ///
     /// ```text
     /// op         cnv_apply_dft_tmp_bytes(cnv_offset, res_size, a_size, b_size)
@@ -111,7 +111,7 @@ pub trait Convolution<BE: Backend> {
     /// ```
     fn cnv_apply_dft_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize;
 
-    /// Returns the scratch bytes [`cnv_by_const_apply`](Convolution::cnv_by_const_apply) requires for those sizes.
+    /// Returns the scratch bytes [`cnv_by_const_apply`](CnvOps::cnv_by_const_apply) requires for those sizes.
     ///
     /// ```text
     /// op         cnv_by_const_apply_tmp_bytes(cnv_offset, res_size, a_size, b_size)
@@ -149,7 +149,7 @@ pub trait Convolution<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
-    /// Returns the scratch bytes [`cnv_by_const_apply_add`](Convolution::cnv_by_const_apply_add) requires for those sizes.
+    /// Returns the scratch bytes [`cnv_by_const_apply_add`](CnvOps::cnv_by_const_apply_add) requires for those sizes.
     ///
     /// ```text
     /// op         cnv_by_const_apply_add_tmp_bytes(cnv_offset, res_size, a_size, b_size)
@@ -216,7 +216,7 @@ pub trait Convolution<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
-    /// Returns the scratch bytes [`cnv_apply_dft_add`](Convolution::cnv_apply_dft_add) requires for those sizes.
+    /// Returns the scratch bytes [`cnv_apply_dft_add`](CnvOps::cnv_apply_dft_add) requires for those sizes.
     ///
     /// ```text
     /// op         cnv_apply_dft_add_tmp_bytes(cnv_offset, res_size, a_size, b_size)
@@ -257,7 +257,7 @@ pub trait Convolution<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
-    /// Returns the scratch bytes [`cnv_apply_dft_sum`](Convolution::cnv_apply_dft_sum) requires for those sizes.
+    /// Returns the scratch bytes [`cnv_apply_dft_sum`](CnvOps::cnv_apply_dft_sum) requires for those sizes.
     ///
     /// ```text
     /// op         cnv_apply_dft_sum_tmp_bytes(cnv_offset, res_size, a_size, b_size)
@@ -293,7 +293,7 @@ pub trait Convolution<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
-    /// Returns the scratch bytes [`cnv_pairwise_apply_dft`](Convolution::cnv_pairwise_apply_dft) requires for those sizes.
+    /// Returns the scratch bytes [`cnv_pairwise_apply_dft`](CnvOps::cnv_pairwise_apply_dft) requires for those sizes.
     ///
     /// ```text
     /// op         cnv_pairwise_apply_dft_tmp_bytes(cnv_offset, res_size, a_size, b_size)
@@ -333,7 +333,7 @@ pub trait Convolution<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
-    /// Returns the scratch bytes [`cnv_prepare_self`](Convolution::cnv_prepare_self) requires for those sizes.
+    /// Returns the scratch bytes [`cnv_prepare_self`](CnvOps::cnv_prepare_self) requires for those sizes.
     ///
     /// ```text
     /// op         cnv_prepare_self_tmp_bytes(res_size, a_size)
