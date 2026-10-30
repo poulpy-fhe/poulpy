@@ -1,13 +1,14 @@
 use poulpy_ckks::{CKKSResult, api::CKKSEncodingScalar, layouts::CKKSModuleAlloc};
 use poulpy_core::layouts::{DiagonalArithmetic, GetDegree};
 use poulpy_hal::{
-    api::CnvPVecAlloc,
+    api::{CnvPVecAlloc, CnvPVecBytesOf},
     layouts::{Backend, ScratchArena},
 };
 
 use crate::layouts::{
-    BlasContext, BlasContextInfos, BlasContextPrepared, BlasMatVecOperand, BlasMatVecOperandInfos, BlasMatVecOperandPrepared,
-    BlasPtOperand, BlasPtOperandInfos, BlasPtOperandPrepared, BlasPtSide, context, matvec_operand, pt_operand,
+    BlasContext, BlasContextInfos, BlasContextPrepared, BlasDiagonalCiphertext, BlasDiagonalCiphertextInfos,
+    BlasDiagonalCiphertextPrepared, BlasMatVecOperand, BlasMatVecOperandInfos, BlasMatVecOperandPrepared, BlasPtOperand,
+    BlasPtOperandInfos, BlasPtOperandPrepared, BlasPtSide, context, diagonal_ciphertext, matvec_operand, pt_operand,
 };
 
 /// Encoding of public operands, and of contexts, into their allocations, at poulpy-ckks's encoding scalar `F`.
@@ -198,6 +199,50 @@ pub trait BlasMatVecOperandPreparedFactory<BE: Backend>: CKKSModuleAlloc<BE> + C
         &self,
         res: &mut BlasMatVecOperandPrepared<BE>,
         other: &BlasMatVecOperand<BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    );
+}
+
+/// Allocation, sizing and preparation of prepared diagonal ciphertexts. The allocation and its size are direct on the
+/// module; the preparation and its query dispatch through [`BlasEncodingImpl`](crate::oep::BlasEncodingImpl).
+pub trait BlasDiagonalCiphertextPreparedFactory<BE: Backend>:
+    CKKSModuleAlloc<BE> + CnvPVecAlloc<BE> + CnvPVecBytesOf + GetDegree + Sized
+{
+    /// A prepared diagonal ciphertext of `infos`, every diagonal zero, carrying the layout's metadata.
+    ///
+    /// # Panics
+    ///
+    /// As [`BlasModuleAlloc::blas_diagonal_ciphertext_alloc_from_infos`](crate::layouts::BlasModuleAlloc::blas_diagonal_ciphertext_alloc_from_infos).
+    fn blas_diagonal_ciphertext_prepared_alloc_from_infos<A: BlasDiagonalCiphertextInfos>(
+        &self,
+        infos: &A,
+    ) -> BlasDiagonalCiphertextPrepared<BE> {
+        diagonal_ciphertext::alloc_prepared(self, &infos.blas_diagonal_ciphertext_layout())
+    }
+
+    /// Bytes of [`Self::blas_diagonal_ciphertext_prepared_alloc_from_infos`] of `infos`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the bytes overflow `usize`.
+    fn blas_diagonal_ciphertext_prepared_bytes_of_from_infos<A: BlasDiagonalCiphertextInfos>(&self, infos: &A) -> usize {
+        diagonal_ciphertext::prepared_bytes_of(self, &infos.blas_diagonal_ciphertext_layout())
+    }
+
+    /// Scratch bytes [`Self::blas_diagonal_ciphertext_prepare`] needs for a diagonal ciphertext of `infos`.
+    fn blas_diagonal_ciphertext_prepare_tmp_bytes<A: BlasDiagonalCiphertextInfos>(&self, infos: &A) -> usize;
+
+    /// Prepares every diagonal of `other` into `res`, in place: preparing again after appends refills `res` with no
+    /// allocation.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `res` and `other` were allocated from different layouts, or if `scratch` holds less than
+    /// [`Self::blas_diagonal_ciphertext_prepare_tmp_bytes`].
+    fn blas_diagonal_ciphertext_prepare(
+        &self,
+        res: &mut BlasDiagonalCiphertextPrepared<BE>,
+        other: &BlasDiagonalCiphertext<BE>,
         scratch: &mut ScratchArena<'_, BE>,
     );
 }

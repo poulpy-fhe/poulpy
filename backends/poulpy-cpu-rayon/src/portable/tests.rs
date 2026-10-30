@@ -265,6 +265,11 @@ mod ckks {
 
     poulpy_ckks::ckks_determinism_test_suite!(mod determinism_ntt4x30, backend = crate::NTT4x30PortableRayon, f32);
 
+    #[test]
+    fn ntt4x30_small_c2s_preset_meets_precision() {
+        poulpy_ckks::test_suite::presets::small_c2s_preset_meets_precision::<crate::NTT4x30PortableRayon>();
+    }
+
     poulpy_ckks::conjugate_invariant_ckks_test_suite!(
         ckks_ci_fft64,
         crate::FFT64CIPortableRayon,

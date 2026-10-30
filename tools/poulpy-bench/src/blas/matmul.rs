@@ -16,8 +16,8 @@ use std::collections::{BTreeSet, HashMap};
 use criterion::{Bencher, measurement::Measurement};
 use poulpy_blas::{
     api::{
-        BlasContextPreparedFactory, BlasEncodingOps, BlasMatIntraOps, BlasMatMulOps, BlasMatVecOperandPreparedFactory,
-        BlasPtOperandPreparedFactory,
+        BlasContextPreparedFactory, BlasDiagonalCiphertextPreparedFactory, BlasEncodingOps, BlasMatIntraOps, BlasMatMulOps,
+        BlasMatVecOperandPreparedFactory, BlasPtOperandPreparedFactory,
     },
     layouts::{
         BlasCiphertext, BlasCiphertextOwned, BlasContextPrepared, BlasGridInfos, BlasModuleAlloc, BlasPlan, BlasPtAlgorithm,
@@ -267,6 +267,7 @@ pub trait BlasEvalModule<BE: Backend>:
     + BlasContextPreparedFactory<BE>
     + BlasPtOperandPreparedFactory<BE>
     + BlasMatVecOperandPreparedFactory<BE>
+    + BlasDiagonalCiphertextPreparedFactory<BE>
     + CKKSLinearTransformationOps<BE>
     + CKKSMulOps<BE>
     + CnvPVecAlloc<BE>
@@ -287,6 +288,7 @@ impl<BE: Backend, M> BlasEvalModule<BE> for M where
         + BlasContextPreparedFactory<BE>
         + BlasPtOperandPreparedFactory<BE>
         + BlasMatVecOperandPreparedFactory<BE>
+        + BlasDiagonalCiphertextPreparedFactory<BE>
         + CKKSLinearTransformationOps<BE>
         + CKKSMulOps<BE>
         + CnvPVecAlloc<BE>

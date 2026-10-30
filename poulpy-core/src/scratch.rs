@@ -1,6 +1,9 @@
+use std::collections::{BTreeMap, btree_map::Entry};
+use std::marker::PhantomData;
+
 use poulpy_hal::{
     api::{ModuleN, ScratchArenaTakeBasic, VmpPMatBytesOf},
-    layouts::{Backend, PrepareHint, ScratchArena},
+    layouts::{Backend, CnvPVecLViewMut, PrepareHint, ScratchArena},
 };
 
 use crate::layouts::operand_degree;
@@ -10,8 +13,8 @@ use crate::{
         Degree, GGLWE, GGLWEInfos, GGLWEPreparedViewMut, GGLWEViewMut, GGSW, GGSWInfos, GGSWPreparedViewMut, GGSWViewMut, GLWE,
         GLWEInfos, GLWEPlaintext, GLWEPlaintextViewMut, GLWESecret, GLWESecretPreparedViewMut, GLWESecretTensor,
         GLWESecretTensorViewMut, GLWESecretViewMut, GLWETensor, GLWETensorViewMut, GLWEViewMut, LWE, LWEInfos, LWEPlaintext,
-        LWEPlaintextViewMut, LWEViewMut, Rank,
-        prepared::{GGLWEPrepared, GGSWPrepared, GLWESecretPrepared},
+        LWEPlaintextViewMut, LWEViewMut, LinearTransformationPlan, Rank,
+        prepared::{GGLWEPrepared, GGSWPrepared, GLWESecretPrepared, LinearTransformationBabySteps},
     },
 };
 
@@ -19,6 +22,47 @@ use crate::{
 ///
 /// Returns backend-native borrows (`B::BufMut<'a>`) carved from a [`ScratchArena`].
 pub trait ScratchArenaTakeCore<'a, B: Backend>: ScratchArenaTakeBasic<'a, B> + Sized {
+    /// Carves the baby-step cache of the transformation schedule `plan` (a transformation's
+    /// [`index`](crate::layouts::LinearTransformation::index)) for a source of the layout `a`, in
+    /// [`GLWEBytesOf::linear_transformation_baby_steps_bytes_of`](crate::GLWEBytesOf::linear_transformation_baby_steps_bytes_of)
+    /// bytes. Its operands are arbitrary until a preparation fills them.
+    ///
+    /// # Panics
+    ///
+    /// When the module does not serve the degree of `a`, or the arena is below that size.
+    fn take_linear_transformation_baby_steps_scratch<M, A>(
+        self,
+        module: &M,
+        plan: &LinearTransformationPlan,
+        a: &A,
+    ) -> (LinearTransformationBabySteps<B, CnvPVecLViewMut<'a, B>>, Self)
+    where
+        B: 'a,
+        M: ModuleN,
+        A: GLWEInfos,
+    {
+        let n: usize = operand_degree(module.n(), &[a.n()]);
+        let (cols, size) = (a.rank().as_usize() + 1, a.size());
+        let mut values = BTreeMap::new();
+        let mut scratch = self;
+        for &rot in &plan.baby_steps {
+            if let Entry::Vacant(entry) = values.entry(rot) {
+                let (operand, rest) = scratch.take_cnv_pvec_left_scratch(n, cols, size, PrepareHint::Reuse);
+                entry.insert(operand);
+                scratch = rest;
+            }
+        }
+        (
+            LinearTransformationBabySteps {
+                values,
+                rotations: plan.rotations,
+                k: a.k(),
+                _backend: PhantomData,
+            },
+            scratch,
+        )
+    }
+
     /// Allocates an [`LWE`] ciphertext from scratch space.
     fn take_lwe_scratch<A>(self, infos: &A) -> (LWEViewMut<'a, B>, Self)
     where

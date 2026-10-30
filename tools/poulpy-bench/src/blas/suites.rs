@@ -46,8 +46,9 @@ where
 
 /// The operations that run at every point: `blas_matmul` by a replicated right factor, the products by a public matrix
 /// on either side under `Diagonal` and `Jkls`, the transpose, `blas_sum_rows` and `blas_rotate_rows` of a replicated
-/// grid, `blas_sum_cols`, and the product of a vector by a public matrix, resident and streamed.
-pub fn blas_ops<BE, M>() -> [BenchOp<M, BlasBenchParams>; 11]
+/// grid, `blas_sum_cols`, the product of a vector by a public matrix, resident and streamed, and a diagonal ciphertext's
+/// product by a ciphertext, resident and streamed, and append of a row.
+pub fn blas_ops<BE, M>() -> [BenchOp<M, BlasBenchParams>; 14]
 where
     BE: Backend<Ring = Standard> + HostStaged + 'static + BlasMatIntraImpl + BlasMatMulImpl + BlasMatVecImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
@@ -109,6 +110,21 @@ where
             layer: "blas",
             name: "blas_matvec_pt_streamed",
             runner: matvec::runner_blas_matvec_pt_streamed::<BE, _>,
+        },
+        BenchOp {
+            layer: "blas",
+            name: "blas_matvec_diagonal_resident",
+            runner: matvec::runner_blas_matvec_diagonal_resident::<BE, _>,
+        },
+        BenchOp {
+            layer: "blas",
+            name: "blas_matvec_diagonal_streamed",
+            runner: matvec::runner_blas_matvec_diagonal_streamed::<BE, _>,
+        },
+        BenchOp {
+            layer: "blas",
+            name: "blas_append_row_diagonal",
+            runner: matvec::runner_blas_append_row_diagonal::<BE, _>,
         },
     ]
 }

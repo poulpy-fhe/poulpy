@@ -17,7 +17,7 @@ use poulpy_hal::{api::CnvPVecAlloc, layouts::Backend};
 
 use super::{
     BlasVectorShape,
-    encoding::{Encoded, MapLayout, Scheduled, real_map},
+    encoding::{Encoded, MapLayout, Scheduled, real_map, ring_slots},
 };
 
 /// A public operand's dimensions, without its maps: a matrix of `output.len` rows and `input.len` columns, from vectors
@@ -366,7 +366,7 @@ pub(crate) fn output_label(infos: &impl BlasMatVecOperandInfos) -> usize {
 /// As [`super::BlasModuleAlloc::blas_matvec_operand_alloc`], for a layout that does not fit.
 pub fn matvec_pt_galois_elements(cyclotomic_order: i64, infos: &impl BlasMatVecOperandInfos) -> Vec<i64> {
     let layout = infos.blas_matvec_operand_layout();
-    if usize::try_from(cyclotomic_order / 4).ok() != Some(layout.slots) {
+    if ring_slots(cyclotomic_order) != Some(layout.slots) {
         return Vec::new();
     }
     map_layout(&layout).lt().galois_elements(cyclotomic_order)

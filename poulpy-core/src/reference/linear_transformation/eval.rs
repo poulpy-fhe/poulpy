@@ -9,6 +9,7 @@
 
 #![allow(clippy::too_many_arguments)]
 
+use crate::layouts::BabyStepOperand;
 use poulpy_hal::layouts::Module;
 use poulpy_hal::{
     api::{
@@ -256,9 +257,9 @@ where
 /// diagonals, so the same prepared cache is reused across every giant step and
 /// across transforms that share the input. Forwards to the internal
 /// `glwe_prepare_linear_transformation_baby_steps`.
-pub fn glwe_prepare_linear_transformation_baby_steps_reference<BE, A, H>(
+pub fn glwe_prepare_linear_transformation_baby_steps_reference<BE, A, H, L: BabyStepOperand<BE>>(
     module: &Module<BE>,
-    cache: &mut LinearTransformationBabySteps<BE>,
+    cache: &mut LinearTransformationBabySteps<BE, L>,
     a: &A,
     keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
@@ -308,11 +309,11 @@ pub fn glwe_prepare_linear_transformation_baby_steps_reference<BE, A, H>(
 ///
 /// Runs [`assert_linear_transformation_into`] (a fully-pruned transform is a
 /// caller bug), then the shared `glwe_eval_giant_steps` loop.
-pub fn glwe_eval_linear_transformation_into_reference<BE, R, P, H>(
+pub fn glwe_eval_linear_transformation_into_reference<BE, R, P, H, L: BabyStepOperand<BE>>(
     module: &Module<BE>,
     cnv_offset: usize,
     res: &mut R,
-    lhs: &LinearTransformationBabySteps<BE>,
+    lhs: &LinearTransformationBabySteps<BE, L>,
     rhs: &LinearTransformation<P>,
     keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
@@ -479,11 +480,11 @@ where
 /// Runs [`assert_linear_transformation_sum`] first: every term shares the first
 /// one's giant schedule, first diagonal's layout, width and scale, and source
 /// layout, so one schedule, PROD bucket and `cnv_offset` serve them all.
-pub fn glwe_eval_linear_transformation_sum_into_reference<BE, R, P, H>(
+pub fn glwe_eval_linear_transformation_sum_into_reference<BE, R, P, H, L: BabyStepOperand<BE>>(
     module: &Module<BE>,
     cnv_offset: usize,
     res: &mut R,
-    babies: &[&LinearTransformationBabySteps<BE>],
+    babies: &[&LinearTransformationBabySteps<BE, L>],
     lts: &[&LinearTransformation<P>],
     keys: &H,
     scratch: &mut ScratchArena<'_, BE>,

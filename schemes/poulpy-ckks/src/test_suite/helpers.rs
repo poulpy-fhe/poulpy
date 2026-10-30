@@ -16,7 +16,7 @@ use crate::Scale;
 use poulpy_core::layouts::SetGLWEPlaintextInfos;
 use poulpy_hal::AlignedBuf;
 use poulpy_hal::layouts::HostStaged;
-use std::{cell::RefCell, collections::HashMap, f64::consts::TAU, fmt::Debug};
+use std::{f64::consts::TAU, fmt::Debug, sync::Mutex};
 
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSLayout, GLWEPlaintextMeta, SetCKKSInfos,
@@ -27,6 +27,7 @@ use crate::{
     },
     api::{CKKSDecryptOps, CKKSEncryptOps},
     layouts::{
+        BootstrappingCIKeys, BootstrappingKeyWidths, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys,
         CKKSCiphertext, CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, CKKSPlaintextVecHostCodec,
         plaintext::CKKSPlaintext,
     },
@@ -44,10 +45,7 @@ use poulpy_core::{
         BackendGLWESecret, Base2K, Degree, GGLWEInfos, GLWEAutomorphismKeyPrepared, GLWECIEmbedKeyPrepared,
         GLWECITraceKeyPrepared, GLWEInfos, GLWELayout, GLWESecretToBackendRef, GLWESwitchingKeyPrepared, GLWETensorKeyPrepared,
         GetAutomorphismKey, GetTensorKey, LWEInfos, LinearTransformationPlan, ModuleCoreAlloc, Rank, TorusPrecision,
-        prepared::{
-            GLWEAutomorphismKeyPreparedBackendRef, GLWEAutomorphismKeyPreparedToBackendRef, GLWESecretPrepared,
-            GLWETensorKeyPreparedBackendRef,
-        },
+        prepared::{GLWEAutomorphismKeyPreparedBackendRef, GLWESecretPrepared, GLWETensorKeyPreparedBackendRef},
     },
 };
 
@@ -784,41 +782,173 @@ where
     atk_prepared
 }
 
-/// Key set that records the Galois element and precision of each lookup.
-pub(crate) struct QueryLog<K> {
-    keys: HashMap<i64, K>,
-    seen: RefCell<Vec<(i64, TorusPrecision)>>,
+/// Key source that records the Galois element and precision of each lookup, tensor-key lookups under element 0;
+/// shareable across threads.
+pub(crate) struct QueryLog<'a, K> {
+    keys: &'a K,
+    seen: Mutex<Vec<(i64, TorusPrecision)>>,
 }
 
-impl<K> QueryLog<K> {
-    pub(crate) fn new(keys: HashMap<i64, K>) -> Self {
+impl<'a, K> QueryLog<'a, K> {
+    pub(crate) fn new(keys: &'a K) -> Self {
         Self {
             keys,
-            seen: RefCell::new(Vec::new()),
+            seen: Mutex::new(Vec::new()),
         }
     }
 
     /// The lookups recorded since the last call.
     pub(crate) fn take(&self) -> Vec<(i64, TorusPrecision)> {
-        self.seen.take()
+        std::mem::take(&mut *self.seen.lock().unwrap())
     }
 }
 
-impl<BE: Backend, K: GLWEAutomorphismKeyPreparedToBackendRef<BE>> GetAutomorphismKey<BE> for QueryLog<K> {
+impl<BE: Backend, K: GetAutomorphismKey<BE>> GetAutomorphismKey<BE> for QueryLog<'_, K> {
     fn lookup_automorphism_key(
         &self,
         p: i64,
         k: TorusPrecision,
     ) -> poulpy_core::Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
-        self.seen.borrow_mut().push((p, k));
-        self.keys.get_automorphism_key(p, k)
+        self.seen.lock().unwrap().push((p, k));
+        self.keys.lookup_automorphism_key(p, k)
     }
 }
 
-/// A map of automorphism keys, logged or not, holds no tensor key.
-impl<BE: Backend, K: GLWEAutomorphismKeyPreparedToBackendRef<BE>> GetTensorKey<BE> for QueryLog<K> {
+impl<BE: Backend, K: GetTensorKey<BE>> GetTensorKey<BE> for QueryLog<'_, K> {
     fn lookup_tensor_key(&self, k: TorusPrecision) -> poulpy_core::Result<GLWETensorKeyPreparedBackendRef<'_, BE>> {
+        self.seen.lock().unwrap().push((0, k));
         self.keys.lookup_tensor_key(k)
+    }
+}
+
+/// Bootstrapping keys whose rotation and tensor keys log their lookups.
+pub(crate) struct LoggedBootstrappingKeys<'a, K, R, T> {
+    keys: &'a K,
+    rotation_keys: QueryLog<'a, R>,
+    tensor_key: QueryLog<'a, T>,
+}
+
+impl<'a, K, R, T> LoggedBootstrappingKeys<'a, K, R, T> {
+    pub(crate) fn new<BE: Backend>(keys: &'a K) -> Self
+    where
+        K: BootstrappingKeys<BE, RotationKeys = R, TensorKey = T>,
+    {
+        Self {
+            keys,
+            rotation_keys: QueryLog::new(keys.rotation_keys()),
+            tensor_key: QueryLog::new(BootstrappingKeys::tensor_key(keys)),
+        }
+    }
+
+    pub(crate) fn new_ci<BE: Backend, BCI: Backend>(keys: &'a K) -> Self
+    where
+        K: BootstrappingCIKeys<BE, BCI, RotationKeys = R, TensorKey = T>,
+    {
+        Self {
+            keys,
+            rotation_keys: QueryLog::new(keys.rotation_keys()),
+            tensor_key: QueryLog::new(BootstrappingCIKeys::tensor_key(keys)),
+        }
+    }
+
+    /// Asserts that the bootstrap first looked up every rotation key and the tensor key at
+    /// its width in `widths`, its entry check, and that its stages then used each rotation
+    /// key on ciphertexts of at most that width and the tensor key at exactly that width.
+    /// A rotation key used only for giant steps switches the product, one factor scale
+    /// below the width `widths` gives it. Returns how many times the stages looked the tensor key up.
+    pub(crate) fn assert_lookups_at(&self, widths: &BootstrappingKeyWidths, label: &str) -> usize {
+        let rotations: Vec<(i64, usize)> = self
+            .rotation_keys
+            .take()
+            .into_iter()
+            .map(|(p, k)| (p, k.as_usize()))
+            .collect();
+        let entry: Vec<(i64, usize)> = widths.rotation_keys.iter().map(|(&p, &k)| (p, k)).collect();
+        assert!(
+            rotations.starts_with(&entry),
+            "{label}: the entry check did not look up every rotation key at its width"
+        );
+        let stages = &rotations[entry.len()..];
+        assert!(!stages.is_empty(), "{label}: no rotation key used");
+        for &(p, k) in stages {
+            assert!(
+                widths.rotation_keys.get(&p).is_some_and(|&width| k <= width),
+                "{label}: rotation key {p} used at {k} bits, past its width"
+            );
+        }
+        let tensor: Vec<usize> = self.tensor_key.take().into_iter().map(|(_, k)| k.as_usize()).collect();
+        assert_eq!(
+            tensor.first(),
+            Some(&widths.tensor_key),
+            "{label}: the entry check did not look up the tensor key at its width"
+        );
+        assert_eq!(
+            tensor[1..].iter().max(),
+            Some(&widths.tensor_key),
+            "{label}: widest use of the tensor key"
+        );
+        tensor.len() - 1
+    }
+}
+
+impl<'a, BE, K, R, T> BootstrappingLinearKeys<BE> for LoggedBootstrappingKeys<'a, K, R, T>
+where
+    BE: Backend,
+    K: BootstrappingLinearKeys<BE, RotationKeys = R>,
+    R: GetAutomorphismKey<BE> + GetTensorKey<BE>,
+{
+    type RotationKeys = QueryLog<'a, R>;
+    type SwitchingKey = K::SwitchingKey;
+
+    fn rotation_keys(&self) -> &Self::RotationKeys {
+        &self.rotation_keys
+    }
+
+    fn encapsulation_keys(&self) -> Option<(&Self::SwitchingKey, Option<&Self::SwitchingKey>)> {
+        self.keys.encapsulation_keys()
+    }
+
+    fn first_factor_key(&self, rotation: i64) -> Option<&Self::SwitchingKey> {
+        self.keys.first_factor_key(rotation)
+    }
+}
+
+impl<'a, BE, K, R, T> BootstrappingKeys<BE> for LoggedBootstrappingKeys<'a, K, R, T>
+where
+    BE: Backend,
+    K: BootstrappingKeys<BE, RotationKeys = R, TensorKey = T>,
+    R: GetAutomorphismKey<BE> + GetTensorKey<BE>,
+    T: GetTensorKey<BE>,
+{
+    type TensorKey = QueryLog<'a, T>;
+
+    fn tensor_key(&self) -> &Self::TensorKey {
+        &self.tensor_key
+    }
+}
+
+impl<'a, BE, BCI, K, R, T> BootstrappingCIKeys<BE, BCI> for LoggedBootstrappingKeys<'a, K, R, T>
+where
+    BE: Backend,
+    BCI: Backend,
+    K: BootstrappingCIKeys<BE, BCI, RotationKeys = R, TensorKey = T>,
+    R: GetAutomorphismKey<BE> + GetTensorKey<BE>,
+    T: GetTensorKey<BCI>,
+{
+    type TensorKey = QueryLog<'a, T>;
+    type TraceKey = K::TraceKey;
+    type EmbedKey = K::EmbedKey;
+
+    fn tensor_key(&self) -> &Self::TensorKey {
+        &self.tensor_key
+    }
+
+    fn conversion_keys(&self) -> Option<(&Self::TraceKey, &Self::EmbedKey)> {
+        self.keys.conversion_keys()
+    }
+
+    fn keys_layout(&self) -> Option<BootstrappingKeysLayout> {
+        self.keys.keys_layout()
     }
 }
 
@@ -834,15 +964,23 @@ where
     module.ckks_eval_linear_transformation_tmp_bytes(ct, &ckks_plaintext_diagonal_layout(ct), plan, key, key)
 }
 
-/// The streamed twin of [`pt_eval_tmp_bytes`].
-pub(crate) fn pt_streamed_eval_tmp_bytes<BE, C, K>(module: &Module<BE>, ct: &C, plan: &LinearTransformationPlan, key: &K) -> usize
+/// The query of `ckks_eval_linear_transformation_self_into` and `ckks_eval_linear_transformation_self_assign` on `ct`
+/// for a transform of plaintext diagonals, resident or `streamed`, the rotation key `key` standing for the tensor key
+/// they do not read.
+pub(crate) fn pt_self_into_tmp_bytes<BE, C, K>(
+    module: &Module<BE>,
+    streamed: bool,
+    ct: &C,
+    plan: &LinearTransformationPlan,
+    key: &K,
+) -> usize
 where
     BE: Backend,
     Module<BE>: CKKSLinearTransformationOps<BE>,
     C: CKKSCtBounds,
     K: GGLWEInfos,
 {
-    module.ckks_eval_linear_transformation_streamed_tmp_bytes(ct, &ckks_plaintext_diagonal_layout(ct), plan, key, key)
+    module.ckks_eval_linear_transformation_self_into_tmp_bytes(streamed, ct, &ckks_plaintext_diagonal_layout(ct), plan, key, key)
 }
 
 /// Generates a prepared rank-1 GLWE key-switching key from `sk_in` to `sk_out`,

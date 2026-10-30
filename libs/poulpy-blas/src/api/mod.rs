@@ -6,7 +6,10 @@ mod intra;
 mod matmul;
 mod matvec;
 
-pub use encoding::{BlasContextPreparedFactory, BlasEncodingOps, BlasMatVecOperandPreparedFactory, BlasPtOperandPreparedFactory};
+pub use encoding::{
+    BlasContextPreparedFactory, BlasDiagonalCiphertextPreparedFactory, BlasEncodingOps, BlasMatVecOperandPreparedFactory,
+    BlasPtOperandPreparedFactory,
+};
 pub use inter::BlasMatInterOps;
 pub use intra::BlasMatIntraOps;
 pub use matmul::BlasMatMulOps;

@@ -3,23 +3,38 @@
 
 use criterion::{Bencher, measurement::Measurement};
 use poulpy_blas::{
-    api::{BlasEncodingOps, BlasMatVecOperandPreparedFactory, BlasMatVecOps},
+    api::{BlasDiagonalCiphertextPreparedFactory, BlasEncodingOps, BlasMatVecOperandPreparedFactory, BlasMatVecOps},
     layouts::{
-        BlasMatVecMaps, BlasMatVecOperandLayout, BlasModuleAlloc, BlasVector, BlasVectorShape, blas_matvec_pt_max_base2k,
-        matvec_pt_galois_elements,
+        BlasDiagonalCiphertext, BlasDiagonalCiphertextLayout, BlasMatVecMaps, BlasMatVecOperandLayout, BlasModuleAlloc,
+        BlasVector, BlasVectorLayout, BlasVectorShape, append_row_diagonal_galois_elements, blas_matvec_diagonal_max_base2k,
+        blas_matvec_pt_max_base2k, matvec_diagonal_galois_elements, matvec_pt_galois_elements,
     },
     oep::BlasMatVecImpl,
 };
-use poulpy_ckks::CoeffsMeta;
-use poulpy_core::layouts::TorusPrecision;
+use poulpy_ckks::{
+    CoeffsMeta, SetCKKSInfos,
+    api::{CKKSEncodingHostOps, CKKSMulOps, LinearTransformationLayout, LinearTransformationStrategy, optimal_bsgs_giant_step},
+    layouts::{CKKSModuleAlloc, CKKSPreparedRight},
+};
+use poulpy_core::{
+    Result as CoreResult,
+    layouts::{
+        GetAutomorphismKey, GetTensorKey, TorusPrecision,
+        prepared::{
+            GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedBackendRef, GLWEAutomorphismKeyPreparedToBackendRef,
+            GLWETensorKeyPrepared, GLWETensorKeyPreparedBackendRef, GLWETensorKeyPreparedToBackendRef,
+        },
+    },
+};
 use poulpy_hal::{
     api::{ModuleSynchronize, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, CyclotomicOrder, HostStaged, MaxBase2k, Module, ScratchOwned, Standard},
+    layouts::{Backend, CyclotomicOrder, HostStaged, MaxBase2k, Module, PrepareHint, ScratchOwned, Standard},
 };
+use std::collections::HashMap;
 
 use crate::{
     blas::{
-        matmul::{BlasBenchModule, Client, FAILURE_BITS, HEADROOM, base2k, entry, verify},
+        matmul::{BlasBenchModule, Client, FAILURE_BITS, HEADROOM, atk_layout, base2k, block_layout, entry, tsk_layout, verify},
         params::BlasBenchParams,
     },
     timed,
@@ -131,7 +146,7 @@ where
     K: poulpy_core::layouts::GetAutomorphismKey<BE> + poulpy_core::layouts::GetTensorKey<BE> + Sync,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
-    let bytes = module.blas_matvec_pt_tmp_bytes(&*res, w, a, &super::matmul::atk_layout(bp));
+    let bytes = module.blas_matvec_pt_tmp_bytes(&*res, w, a, &atk_layout(bp));
     let mut scratch = ScratchOwned::<BE>::alloc(bytes);
     module.blas_matvec_pt(res, w, a, keys, &mut scratch.borrow()).unwrap();
     scratch
@@ -157,4 +172,258 @@ where
     M: Measurement,
 {
     matvec::<BE, M>(bencher, bp, "blas_matvec_pt_streamed", false);
+}
+
+/// A diagonal ciphertext of the diagonals `0..d` over the slots, at the cost-optimal giant step, whose diagonals hold the
+/// frame of a ciphertext of the point's width through a mask of scale `p`.
+fn diagonal_ciphertext_layout(bp: &BlasBenchParams) -> BlasDiagonalCiphertextLayout {
+    let (slots, d) = (bp.slots(), bp.d() as i64);
+    let mut ct = block_layout::<Standard>(bp);
+    ct.glwe_layout.k = TorusPrecision((bp.k - bp.p) as u32);
+    BlasDiagonalCiphertextLayout::new(
+        ct,
+        LinearTransformationLayout {
+            indexes: (0..d).collect(),
+            slots,
+            strategy: LinearTransformationStrategy::Bsgs {
+                giant_step: optimal_bsgs_giant_step(0..d, slots),
+            },
+        },
+    )
+}
+
+/// The prepared mask of slot 0, at scale `p`.
+fn slot_mask<BE>(client: &Client<BE, BE>, bp: &BlasBenchParams) -> CKKSPreparedRight<BE>
+where
+    BE: Backend<Ring = Standard> + HostStaged + 'static,
+    Module<BE>: BlasBenchModule<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let module = &client.module;
+    let meta = CoeffsMeta::from_delta_budget(bp.p, HEADROOM);
+    let mut pt = module.ckks_pt_vec_alloc(bp.slots(), base2k(bp), meta.k);
+    SetCKKSInfos::set_meta(&mut pt, meta.meta);
+    let mut re = vec![0.0; bp.slots()];
+    re[0] = 1.0;
+    let mut arena = ScratchOwned::<BE>::alloc(
+        <Module<BE> as CKKSEncodingHostOps<BE, f64>>::ckks_reim_tmp_bytes(module, bp.slots())
+            .max(module.ckks_prepare_tmp_bytes(&pt)),
+    );
+    module
+        .ckks_encode_reim_into(&mut pt, &re, &vec![0.0; bp.slots()], &mut arena.borrow())
+        .unwrap();
+    module
+        .ckks_prepare_right(&pt, PrepareHint::Reuse, &mut arena.borrow())
+        .unwrap()
+}
+
+/// Row `p` of the diagonal ciphertext, `p < 3`: entry `j` is `M[p][j]`, scaled so that the products stay in `[-1, 1)`.
+fn matrix_row(bp: &BlasBenchParams, p: usize) -> Vec<f64> {
+    (0..bp.slots()).map(|j| entry(6, p, 0, j) / bp.d() as f64).collect()
+}
+
+/// The rotation keys and the tensor key of a product by a diagonal ciphertext, as the one source it reads.
+struct ProductKeys<BE: Backend> {
+    atks: HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>>,
+    tsk: GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
+}
+
+impl<BE: Backend> GetAutomorphismKey<BE> for ProductKeys<BE>
+where
+    GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>: GLWEAutomorphismKeyPreparedToBackendRef<BE>,
+{
+    fn lookup_automorphism_key(&self, p: i64, k: TorusPrecision) -> CoreResult<GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
+        self.atks.lookup_automorphism_key(p, k)
+    }
+}
+
+impl<BE: Backend> GetTensorKey<BE> for ProductKeys<BE>
+where
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE>,
+{
+    fn lookup_tensor_key(&self, k: TorusPrecision) -> CoreResult<GLWETensorKeyPreparedBackendRef<'_, BE>> {
+        self.tsk.lookup_tensor_key(k)
+    }
+}
+
+/// The call a diagonal-ciphertext runner times.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Timed {
+    Append,
+    Resident,
+    Streamed,
+}
+
+/// `blas_append_row_diagonal` of one more row into a matrix holding three appended rows, or the matrix's
+/// `blas_matvec_diagonal`, prepared once or streamed, each on its own key set: the rows' rotations are baby steps of the
+/// product's, so the product's keys append them too.
+fn diagonal_ciphertext<BE, M>(bencher: &mut Bencher<'_, M>, bp: &BlasBenchParams, op: &'static str, timed_call: Timed)
+where
+    BE: Backend<Ring = Standard> + HostStaged + 'static + BlasMatVecImpl + MaxBase2k,
+    Module<BE>: BlasBenchModule<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+    M: Measurement,
+{
+    timed::<BE, M, _>(bencher, op, bp, || {
+        let mut client = Client::<BE, BE>::new(bp);
+        let (layout, slots, d) = (diagonal_ciphertext_layout(bp), bp.slots(), bp.d());
+        let order = client.module.cyclotomic_order();
+        let elements = if timed_call == Timed::Append {
+            append_row_diagonal_galois_elements(order, &layout)
+        } else {
+            matvec_diagonal_galois_elements(order, &layout)
+        };
+        let atks = client.rotation_keys(bp, elements);
+        let mask = slot_mask(&client, bp);
+        let whole = BlasVectorShape::new(slots, slots, 0, 1);
+        let mut m = client.module.blas_diagonal_ciphertext_alloc_from_infos(&layout);
+        let rows: Vec<Vec<f64>> = (0..3).map(|p| matrix_row(bp, p)).collect();
+        let append_bytes = client.module.blas_append_row_diagonal_tmp_bytes(
+            &layout,
+            &BlasVectorLayout::new(block_layout::<Standard>(bp), whole),
+            &mask,
+            &atk_layout(bp),
+        );
+        let mut append_scratch = ScratchOwned::<BE>::alloc(append_bytes);
+        for (p, row) in rows.iter().enumerate() {
+            let v = BlasVector::from_cts(vec![client.encrypt_slots(bp, row)], whole).unwrap();
+            client
+                .module
+                .blas_append_row_diagonal(&mut m, p as i64, &v, &mask, &atks, &mut append_scratch.borrow())
+                .unwrap();
+        }
+        let x: Vec<f64> = (0..slots).map(|e| entry(5, 0, 0, e)).collect();
+        let a = BlasVector::from_cts(vec![client.encrypt_slots(bp, &x)], whole).unwrap();
+        if timed_call == Timed::Append {
+            let max_err = diagonals_error(&mut client, bp, &m, &rows);
+            verify::<BE>(op, bp, max_err, None, atks.len());
+            let module = client.module;
+            return Box::new(move || {
+                module
+                    .blas_append_row_diagonal(&mut m, 0, &a, &mask, &atks, &mut append_scratch.borrow())
+                    .unwrap();
+                module.synchronize();
+            });
+        }
+        let keys = ProductKeys {
+            atks,
+            tsk: client.tensor_key(bp),
+        };
+        let mut res = client
+            .module
+            .blas_vector_alloc(whole, base2k(bp), TorusPrecision(bp.k as u32));
+        let module = &client.module;
+        let mut prepared = module.blas_diagonal_ciphertext_prepared_alloc_from_infos(&layout);
+        let mut arena = ScratchOwned::<BE>::alloc(module.blas_diagonal_ciphertext_prepare_tmp_bytes(&layout));
+        module.blas_diagonal_ciphertext_prepare(&mut prepared, &m, &mut arena.borrow());
+        let (tsk_layout, atk_layout) = (tsk_layout(bp), atk_layout(bp));
+        let mut scratch = if timed_call == Timed::Resident {
+            let mut scratch =
+                ScratchOwned::<BE>::alloc(module.blas_matvec_diagonal_tmp_bytes(&res, &prepared, &a, &tsk_layout, &atk_layout));
+            module
+                .blas_matvec_diagonal(&mut res, &prepared, &a, &keys, &mut scratch.borrow())
+                .unwrap();
+            scratch
+        } else {
+            let mut scratch =
+                ScratchOwned::<BE>::alloc(module.blas_matvec_diagonal_tmp_bytes(&res, &m, &a, &tsk_layout, &atk_layout));
+            module
+                .blas_matvec_diagonal(&mut res, &m, &a, &keys, &mut scratch.borrow())
+                .unwrap();
+            scratch
+        };
+        let max_base2k = blas_matvec_diagonal_max_base2k::<BE>(&m, &a, FAILURE_BITS);
+        assert!(
+            max_base2k >= bp.base2k,
+            "blas_matvec_diagonal: base2k exceeds the radix its lazy sums allow at 128 failure bits"
+        );
+        let (re, im) = client.decrypt_slots(bp, res.ct(0));
+        let mut max_err = im.iter().fold(0.0f64, |err, v| err.max(v.abs()));
+        for (i, have) in re.iter().enumerate() {
+            let want: f64 = rows
+                .get(i)
+                .map_or(0.0, |row| (0..d).map(|t| row[(i + t) % slots] * x[(i + t) % slots]).sum());
+            max_err = max_err.max((have - want).abs());
+        }
+        verify::<BE>(op, bp, max_err, Some(max_base2k), keys.atks.len());
+        let module = client.module;
+        if timed_call == Timed::Resident {
+            return Box::new(move || {
+                module
+                    .blas_matvec_diagonal(&mut res, &prepared, &a, &keys, &mut scratch.borrow())
+                    .unwrap();
+                module.synchronize();
+            });
+        }
+        Box::new(move || {
+            module
+                .blas_matvec_diagonal(&mut res, &m, &a, &keys, &mut scratch.borrow())
+                .unwrap();
+            module.synchronize();
+        })
+    });
+}
+
+/// The largest distance of the decrypted diagonals of `m` to those of the matrix of the rows `rows`: entry `(b, g)`
+/// holds `rot(D_(b + g), -g)`, `D_t[j] = M[j][j + t]`, and of their imaginary parts to zero.
+fn diagonals_error<BE>(
+    client: &mut Client<BE, BE>,
+    bp: &BlasBenchParams,
+    m: &BlasDiagonalCiphertext<BE>,
+    rows: &[Vec<f64>],
+) -> f64
+where
+    BE: Backend<Ring = Standard> + HostStaged + 'static,
+    Module<BE>: BlasBenchModule<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let slots = bp.slots() as i64;
+    let mut max_err = 0.0f64;
+    for gs in &m.diagonals().giant_steps {
+        for diagonal in &gs.diagonals {
+            let t = diagonal.baby + gs.rot;
+            let (re, im) = client.decrypt_slots(bp, &diagonal.plaintext);
+            for (i, (have, imag)) in re.iter().zip(&im).enumerate() {
+                let j = (i as i64 - gs.rot).rem_euclid(slots);
+                let want = rows
+                    .get(j as usize)
+                    .map_or(0.0, |row| row[(j + t).rem_euclid(slots) as usize]);
+                max_err = max_err.max((have - want).abs()).max(imag.abs());
+            }
+        }
+    }
+    max_err
+}
+
+/// `blas_matvec_diagonal` of a prepared diagonal ciphertext of `d` diagonals by a whole ciphertext.
+pub fn runner_blas_matvec_diagonal_resident<BE, M>(bencher: &mut Bencher<'_, M>, bp: &BlasBenchParams)
+where
+    BE: Backend<Ring = Standard> + HostStaged + 'static + BlasMatVecImpl + MaxBase2k,
+    Module<BE>: BlasBenchModule<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+    M: Measurement,
+{
+    diagonal_ciphertext::<BE, M>(bencher, bp, "blas_matvec_diagonal_resident", Timed::Resident);
+}
+
+/// `blas_matvec_diagonal` of a diagonal ciphertext of `d` diagonals, each prepared at its use, by a whole ciphertext.
+pub fn runner_blas_matvec_diagonal_streamed<BE, M>(bencher: &mut Bencher<'_, M>, bp: &BlasBenchParams)
+where
+    BE: Backend<Ring = Standard> + HostStaged + 'static + BlasMatVecImpl + MaxBase2k,
+    Module<BE>: BlasBenchModule<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+    M: Measurement,
+{
+    diagonal_ciphertext::<BE, M>(bencher, bp, "blas_matvec_diagonal_streamed", Timed::Streamed);
+}
+
+/// `blas_append_row_diagonal` of a whole ciphertext into a diagonal ciphertext of `d` diagonals.
+pub fn runner_blas_append_row_diagonal<BE, M>(bencher: &mut Bencher<'_, M>, bp: &BlasBenchParams)
+where
+    BE: Backend<Ring = Standard> + HostStaged + 'static + BlasMatVecImpl + MaxBase2k,
+    Module<BE>: BlasBenchModule<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+    M: Measurement,
+{
+    diagonal_ciphertext::<BE, M>(bencher, bp, "blas_append_row_diagonal", Timed::Append);
 }

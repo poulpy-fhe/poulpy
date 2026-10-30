@@ -7,6 +7,7 @@
 //! with one final normalization. Where the one-pass relinearization does not apply, the columns are normalized into a
 //! tensor, relinearized, then transformed.
 
+use crate::layouts::BabyStepOperand;
 use poulpy_hal::{
     api::{
         ModuleN, ScratchArenaTakeBasic, VecZnxDftApply, VecZnxDftBytesOf, VecZnxGadgetDecompose, VecZnxGadgetDecomposeTmpBytes,
@@ -37,8 +38,8 @@ use crate::{
 
 /// The products of the transforms `lts` from the baby caches `babies`, into a result of the layout `res`: giant step
 /// `g`'s is the dot product of the baby rotations of every term by its diagonals of giant step `g`.
-pub(super) struct CiphertextProducts<'a, BE: Backend, P> {
-    babies: &'a [&'a LinearTransformationBabySteps<BE>],
+pub(super) struct CiphertextProducts<'a, BE: Backend, P, L> {
+    babies: &'a [&'a LinearTransformationBabySteps<BE, L>],
     lts: &'a [&'a LinearTransformation<P>],
     diagonal: &'a P,
     tsk: GLWETensorKeyPreparedBackendRef<'a, BE>,
@@ -48,13 +49,14 @@ pub(super) struct CiphertextProducts<'a, BE: Backend, P> {
     shape: OnePassShape,
 }
 
-impl<'a, BE, P> CiphertextProducts<'a, BE, P>
+impl<'a, BE, P, L> CiphertextProducts<'a, BE, P, L>
 where
     BE: Backend,
     P: DiagonalProd<BE>,
+    L: BabyStepOperand<BE>,
 {
     pub(super) fn new<T: GetTensorKey<BE>>(
-        babies: &'a [&'a LinearTransformationBabySteps<BE>],
+        babies: &'a [&'a LinearTransformationBabySteps<BE, L>],
         lts: &'a [&'a LinearTransformation<P>],
         tsk_source: &'a T,
         res: GLWELayout,
@@ -115,7 +117,7 @@ where
     }
 }
 
-impl<BE, P> GiantProducts<BE> for CiphertextProducts<'_, BE, P>
+impl<BE, P, L> GiantProducts<BE> for CiphertextProducts<'_, BE, P, L>
 where
     BE: GLWETensoringImpl + GGLWEProductDigitsStridedImpl,
     Module<BE>: GLWETensoringReference<BE>
@@ -128,6 +130,7 @@ where
         + VecZnxGadgetDecompose<BE>
         + VecZnxGadgetDecomposeTmpBytes,
     P: DiagonalProd<BE>,
+    L: BabyStepOperand<BE>,
 {
     fn size(&self) -> usize {
         self.shape.dft_out_size(self.res.size())
@@ -140,6 +143,11 @@ where
         } else {
             0
         }
+    }
+
+    /// The one-pass route leaves the low bits of the offset below `res_k` to the final normalization.
+    fn switch_k(&self, res_k: usize) -> usize {
+        res_k + self.cnv_offset_lo() as usize
     }
 
     fn batch(&self, _module: &Module<BE>) -> usize {

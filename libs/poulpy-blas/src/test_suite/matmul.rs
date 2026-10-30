@@ -459,8 +459,13 @@ where
     let k = a.block_layout().k().as_usize() - p_b;
     let mut s = alloc_grid(params, module, a.log_d(), a.rows(), a.cols(), k);
     for (dst, src) in s.blocks_mut().iter_mut().zip(a.blocks()) {
+        // An owned cache, which the setup arena need not hold beside the evaluation.
+        let mut cache = LinearTransformationBabySteps::alloc_for(module, first, src);
         module
-            .ckks_eval_linear_transformation_self_into(dst, src, first, keys, scratch)
+            .ckks_prepare_linear_transformation_baby_steps(&mut cache, src, keys, scratch)
+            .unwrap();
+        module
+            .ckks_eval_linear_transformation_into(dst, src, &cache, first, keys, scratch)
             .unwrap();
         dst.set_log_sparsity(src.log_sparsity());
     }

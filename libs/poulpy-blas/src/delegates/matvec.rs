@@ -1,10 +1,14 @@
 use poulpy_ckks::CKKSResult as Result;
-use poulpy_core::layouts::{GGLWEInfos, GetAutomorphismKey, GetTensorKey};
+use poulpy_ckks::layouts::CKKSPreparedRight;
+use poulpy_core::layouts::{GGLWEInfos, GLWEInfos, GetAutomorphismKey, GetTensorKey};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
     api::BlasMatVecOps,
-    layouts::{BlasMatVecMaps, BlasVectorInfos, BlasVectorMut, BlasVectorRef},
+    layouts::{
+        BlasDiagonalCiphertext, BlasDiagonalCiphertextInfos, BlasDiagonalCiphertextMap, BlasMatVecMaps, BlasVectorInfos,
+        BlasVectorMut, BlasVectorRef,
+    },
     oep::BlasMatVecImpl,
 };
 
@@ -27,5 +31,85 @@ impl<BE: Backend + BlasMatVecImpl> BlasMatVecOps<BE> for Module<BE> {
         K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync,
     {
         BE::blas_matvec_pt(self, res, w, a, keys, scratch)
+    }
+
+    fn blas_matvec_diagonal_tmp_bytes<R, M, A, T, K>(&self, res: &R, m: &M, a: &A, tsk: &T, keys: &K) -> usize
+    where
+        R: BlasVectorInfos,
+        M: BlasDiagonalCiphertextMap<BE>,
+        A: BlasVectorInfos,
+        T: GGLWEInfos,
+        K: GGLWEInfos,
+    {
+        BE::blas_matvec_diagonal_tmp_bytes(self, res, m, a, tsk, keys)
+    }
+
+    fn blas_matvec_diagonal<R, M, A, K>(
+        &self,
+        res: &mut R,
+        m: &M,
+        a: &A,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        R: BlasVectorMut<BE>,
+        M: BlasDiagonalCiphertextMap<BE>,
+        A: BlasVectorRef<BE>,
+        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync,
+    {
+        BE::blas_matvec_diagonal(self, res, m, a, keys, scratch)
+    }
+
+    fn blas_append_row_diagonal_tmp_bytes<M, V, P, K>(&self, m: &M, v: &V, mask: &P, keys: &K) -> usize
+    where
+        M: BlasDiagonalCiphertextInfos,
+        V: BlasVectorInfos,
+        P: GLWEInfos,
+        K: GGLWEInfos,
+    {
+        BE::blas_append_row_diagonal_tmp_bytes(self, m, v, mask, keys)
+    }
+
+    fn blas_append_row_diagonal<V, K>(
+        &self,
+        m: &mut BlasDiagonalCiphertext<BE>,
+        row: i64,
+        v: &V,
+        mask: &CKKSPreparedRight<BE>,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        V: BlasVectorRef<BE>,
+        K: GetAutomorphismKey<BE> + Sync,
+    {
+        BE::blas_append_row_diagonal(self, m, row, v, mask, keys, scratch)
+    }
+
+    fn blas_append_col_diagonal_tmp_bytes<M, V, P, K>(&self, m: &M, v: &V, mask: &P, keys: &K) -> usize
+    where
+        M: BlasDiagonalCiphertextInfos,
+        V: BlasVectorInfos,
+        P: GLWEInfos,
+        K: GGLWEInfos,
+    {
+        BE::blas_append_col_diagonal_tmp_bytes(self, m, v, mask, keys)
+    }
+
+    fn blas_append_col_diagonal<V, K>(
+        &self,
+        m: &mut BlasDiagonalCiphertext<BE>,
+        col: i64,
+        v: &V,
+        mask: &CKKSPreparedRight<BE>,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        V: BlasVectorRef<BE>,
+        K: GetAutomorphismKey<BE> + Sync,
+    {
+        BE::blas_append_col_diagonal(self, m, col, v, mask, keys, scratch)
     }
 }

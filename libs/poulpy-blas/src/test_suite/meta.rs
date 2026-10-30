@@ -1,8 +1,8 @@
 //! The metadata operations leave on their results: the batch's sparsity and record, the noise tag and the slot kind.
 
 use poulpy_ckks::{
-    CKKSInfos, GLWEPlaintextInfos, SetCKKSInfos, SlotsKind,
-    api::{CKKSAddOps, CKKSEncodingOps, CKKSLinearTransformationOps, CKKSModuleInfos},
+    CKKSInfos, GLWEPlaintextInfos, GLWEPlaintextMeta, SetCKKSInfos, SetGLWEPlaintextInfos, SlotsKind,
+    api::{CKKSAddOps, CKKSEncodingOps, CKKSLinearTransformationOps, CKKSModuleInfos, LtDiagonalMeta},
     layouts::CKKSModuleAlloc,
     test_suite::{
         CKKSTestParams,
@@ -28,17 +28,22 @@ use super::helpers::{
     copied_layout, encrypt_grid, mapped_layout, matmul_left_operand, matmul_right_operand, operand_infos, poisoned_scratch,
     product_layout, pt_operand, relabel, rotation_keys, to_f, want_operand_infos,
 };
-use super::matvec::{assert_vector_decrypt, encrypt_vector, matvec_layouts, matvec_model, matvec_operands, vector_entry};
+use super::keys::slot_mask;
+use super::matvec::{
+    append, append_tmp_bytes, assert_vector_decrypt, diagonal_ciphertext_elements, diagonal_ciphertext_layout, encrypt_vector,
+    matvec_diagonal_layout, matvec_layouts, matvec_model, matvec_operands, prepared_of, vector_entry,
+};
 use crate::{
     api::{BlasEncodingOps, BlasMatInterOps, BlasMatIntraOps, BlasMatMulOps, BlasMatVecOps},
     layouts::{
         BlasCiphertext, BlasCiphertextOwned, BlasContextInfos, BlasGridInfos, BlasLayout, BlasModuleAlloc, BlasPlan,
-        BlasVectorShape, Left, Right, blas_matmul_left_operand_layout, blas_matmul_left_term_layout, blas_matmul_output_layout,
-        blas_matmul_prepared_output_layout, blas_matmul_pt_left_output_layout, blas_matmul_pt_right_output_layout,
-        blas_matmul_right_operand_layout, blas_matmul_right_term_layout, blas_matvec_pt_output_layout,
-        blas_rotate_cols_output_layout, blas_rotate_output_layout, blas_rotate_rows_output_layout, blas_sum_cols_output_layout,
-        blas_sum_output_layout, blas_sum_rows_output_layout, blas_transpose_output_layout, matvec_pt_galois_elements, replicated,
-        sum_galois_elements,
+        BlasVectorInfos, BlasVectorShape, Left, Right, blas_matmul_left_operand_layout, blas_matmul_left_term_layout,
+        blas_matmul_output_layout, blas_matmul_prepared_output_layout, blas_matmul_pt_left_output_layout,
+        blas_matmul_pt_right_output_layout, blas_matmul_right_operand_layout, blas_matmul_right_term_layout,
+        blas_matvec_diagonal_output_layout, blas_matvec_pt_output_layout, blas_rotate_cols_output_layout,
+        blas_rotate_output_layout, blas_rotate_rows_output_layout, blas_sum_cols_output_layout, blas_sum_output_layout,
+        blas_sum_rows_output_layout, blas_transpose_output_layout, diagonal_ciphertext::AppendAxis, matvec_pt_galois_elements,
+        replicated, sum_galois_elements,
     },
     oep::BlasImpl,
 };
@@ -56,7 +61,9 @@ use crate::{
 /// each of its matrices once, canonical, and records them. The sum of one matrix copies it, the transpose of a real batch keeps its
 /// slots real, and the terms of an integer batch are real, while its hot operand reports its own slots. On one matrix
 /// slot no batch is half full: only the full one runs. A product of a vector into a `res` that held another
-/// encryption, tagged and flag-clear, stamps the metadata of its output-layout query, canonical and untagged.
+/// encryption, tagged and flag-clear, stamps the metadata of its output-layout query, canonical and untagged. The
+/// appends of a diagonal ciphertext keep its layout, and its product is real by a real vector, complex by a complex
+/// one, at the layout its doc gives, from 16 slots.
 pub fn test_blas_result_meta<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -437,6 +444,111 @@ pub fn test_blas_result_meta<BE, F, E>(
             &want,
             &mut scratch.borrow(),
         );
+    }
+
+    // A diagonal ciphertext of real diagonals keeps its layout through appends of a real vector by a real mask, its
+    // diagonals canonical and untagged; its product into a `res` of other metadata is real by a real vector and complex
+    // by a complex one, canonical and untagged, at the layout of its doc and of its output query.
+    if slots < 16 {
+        eprintln!("result_meta: the diagonal ciphertext skipped, its diagonals span 16 slots");
+        return;
+    }
+    let real_params = CKKSTestParams {
+        prec_meta: GLWEPlaintextMeta {
+            slots: SlotsKind::Real,
+            ..params.prec_meta
+        },
+        ..params
+    };
+    let whole = BlasVectorShape::new(slots, slots, 0, 1);
+    let layout = diagonal_ciphertext_layout(&real_params, slots, k - p);
+    let keys = TestKeys::<BE> {
+        atks: rotation_keys(
+            &params,
+            module,
+            &sk_raw,
+            diagonal_ciphertext_elements(order, &layout),
+            &mut scratch.borrow(),
+        ),
+        tsk: Some(gen_tsk(&params, module, &sk_raw, &mut scratch.borrow())),
+    };
+    let values: Vec<f64> = (0..slots).map(vector_entry).collect();
+    let complex = encrypt_vector::<BE, F, E>(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        k,
+        whole,
+        slots,
+        &values,
+        &mut scratch.borrow(),
+    );
+    let mut real = complex.clone();
+    real.cts_mut()[0].set_slots(SlotsKind::Real);
+    let mask = slot_mask::<BE, F, E>(&real_params, module, host_module, &encoder, &[0]);
+    let mut m = module.blas_diagonal_ciphertext_alloc_from_infos(&layout);
+    for (axis, at) in [(AppendAxis::Row, 0), (AppendAxis::Col, 2)] {
+        let bytes = append_tmp_bytes(module, axis, &m, &real, &mask, &params.atk_layout());
+        append(
+            module,
+            axis,
+            &mut m,
+            at,
+            &real,
+            &mask,
+            &keys,
+            &mut poisoned_scratch::<BE>(bytes).borrow(),
+        )
+        .unwrap();
+        for d in m.diagonals().giant_steps.iter().flat_map(|gs| &gs.diagonals) {
+            let diagonal = &d.plaintext;
+            assert_eq!(
+                (diagonal.k(), diagonal.meta()),
+                (layout.ct.k(), layout.ct.meta),
+                "{}: the diagonals' layout",
+                axis.op()
+            );
+            assert!(
+                diagonal.is_canonical() && diagonal.noise().is_none(),
+                "{}: canonical, untagged",
+                axis.op()
+            );
+        }
+    }
+    let prepared = prepared_of(module, &m);
+    assert!(
+        prepared.diagonals().first_diagonal_plaintext().map(|d| d.lt_slots()) == Some(layout.ct.slots()),
+        "prepared: the diagonals' slots"
+    );
+    for (a, slots_kind) in [(&real, SlotsKind::Real), (&complex, SlotsKind::Complex)] {
+        let want = matvec_diagonal_layout(a.ct_layout(), layout.ct, k);
+        assert_eq!(want.slots(), slots_kind);
+        for form in ["resident", "streamed"] {
+            let mut res = complex.clone();
+            res.cts_mut()[0].set_log_delta(p / 2);
+            assert_eq!(
+                blas_matvec_diagonal_output_layout(&res, &m, a).ct,
+                want,
+                "matvec {slots_kind:?}: output query"
+            );
+            let (tsk_layout, atk_layout) = (params.tsk_layout(), params.atk_layout());
+            if form == "resident" {
+                let bytes = module.blas_matvec_diagonal_tmp_bytes(&res, &prepared, a, &tsk_layout, &atk_layout);
+                module.blas_matvec_diagonal(&mut res, &prepared, a, &keys, &mut poisoned_scratch::<BE>(bytes).borrow())
+            } else {
+                let bytes = module.blas_matvec_diagonal_tmp_bytes(&res, &m, a, &tsk_layout, &atk_layout);
+                module.blas_matvec_diagonal(&mut res, &m, a, &keys, &mut poisoned_scratch::<BE>(bytes).borrow())
+            }
+            .unwrap();
+            let ct = &res.cts()[0];
+            assert_eq!(res.ct_layout(), want, "matvec {slots_kind:?} {form}: layout");
+            assert!(
+                ct.is_canonical() && ct.noise().is_none(),
+                "matvec {slots_kind:?} {form}: canonical, untagged"
+            );
+        }
     }
 }
 

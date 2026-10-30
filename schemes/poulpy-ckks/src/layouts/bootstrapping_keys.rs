@@ -239,16 +239,13 @@ where
     }
 
     fn keys_layout(&self) -> Option<BootstrappingKeysLayout> {
-        let rotation_keys: BTreeMap<i64, GLWEAutomorphismKeyLayout> = self
+        let rotation_keys = self
             .rotation_keys
             .iter()
             .map(|(&p, key)| (p, key.gglwe_layout().into()))
             .collect();
-        // Every rotation key is listed: the shared layout is any of theirs.
-        let automorphism_key = *rotation_keys.values().next()?;
         let switching = |key: &GLWESwitchingKeyPrepared<D, BE>| GLWESwitchingKeyLayout::from(key.gglwe_layout());
         Some(BootstrappingKeysLayout {
-            automorphism_key,
             rotation_keys,
             tensor_key: self.tensor_key.gglwe_layout().into(),
             encapsulation: self.encapsulation_keys.as_ref().map(|(d2s, s2d)| EncapsulationKeysLayout {
@@ -348,19 +345,14 @@ impl<D: Data, W: ZnxWord> BootstrappingKeySet<D, W> {
 /// [`BootstrappingContextPrepared::generate_keys`].
 ///
 /// Key generation uses [`poulpy_core::Noise::ENCRYPTION`] at each
-/// destination key's precision. The Galois elements of the rotation keys are read from the compiled DFT matrices,
-/// so this layout only gives their shapes.
-///
-/// A rotation key used on narrow ciphertexts only can take a wider digit under
-/// the same modulus bound, hence fewer rows: `rotation_keys` holds such shapes.
-/// Left empty, every rotation key has the shape of the widest use.
+/// destination key's precision.
 #[derive(Clone, Debug)]
 pub struct BootstrappingKeysLayout {
-    /// Layout of the rotation and conjugation keys `rotation_keys` does not
-    /// list. It must cover the widest ciphertext of the pipeline.
-    pub automorphism_key: GLWEAutomorphismKeyLayout,
-    /// Layouts of single rotation keys, by Galois element. Each must cover the
-    /// widest ciphertext its key switches.
+    /// Layouts of the rotation keys, by Galois element: exactly the elements of
+    /// [`BootstrappingPlan::key_widths`], those of [`BootstrappingPlan::galois_elements`]
+    /// and, with EvalMod on the standard ring, the conjugation `-1`. Each must cover the
+    /// widest ciphertext its key switches, which a key used on narrow ciphertexts only
+    /// can do with a wider digit, hence fewer rows, under the same modulus bound.
     pub rotation_keys: BTreeMap<i64, GLWEAutomorphismKeyLayout>,
     /// Layout of the EvalMod relinearization (tensor) key. It must cover the
     /// widest ciphertext EvalMod relinearizes.
@@ -382,14 +374,9 @@ pub struct BootstrappingKeysLayout {
 }
 
 impl BootstrappingKeysLayout {
-    /// Layout of the rotation key of Galois element `p`.
-    pub fn rotation_key(&self, p: i64) -> GLWEAutomorphismKeyLayout {
-        self.rotation_keys.get(&p).copied().unwrap_or(self.automorphism_key)
-    }
-
-    /// The distinct rotation key layouts, the shared one first.
+    /// The distinct rotation key layouts, in the order of their first Galois element.
     pub fn rotation_key_layouts(&self) -> Vec<GLWEAutomorphismKeyLayout> {
-        let mut layouts = vec![self.automorphism_key];
+        let mut layouts = Vec::new();
         for layout in self.rotation_keys.values() {
             if !layouts.contains(layout) {
                 layouts.push(*layout);
@@ -822,9 +809,16 @@ impl KeyRecipe {
             );
         }
 
+        anyhow::ensure!(
+            layout.rotation_keys.keys().eq(&self.galois_elements),
+            "bootstrapping key layout has rotation keys of Galois elements {:?}, the compiled recipe uses {:?}",
+            layout.rotation_keys.keys().collect::<Vec<_>>(),
+            self.galois_elements
+        );
+
         let mut rotation_keys = HashMap::with_capacity(self.galois_elements.len());
-        for &p in &self.galois_elements {
-            let mut atk = module.glwe_automorphism_key_alloc_from_infos(&layout.rotation_key(p));
+        for (&p, atk_layout) in &layout.rotation_keys {
+            let mut atk = module.glwe_automorphism_key_alloc_from_infos(atk_layout);
             module.glwe_automorphism_key_encrypt_sk(&mut atk, p, sk_dense, source_xe, source_xa, scratch);
             rotation_keys.insert(p, atk);
         }
