@@ -257,7 +257,8 @@ impl<D: HostDataMut, W: ZnxWord, R: Ring> ReaderFrom for BlasVector<D, W, R> {
     /// Deserialises into a vector allocated from the writer's layout, or one of more limbs per ciphertext, which then
     /// holds the written limbs: a receiver whose ciphertexts differ in layout fails with
     /// [`std::io::ErrorKind::InvalidInput`], another shape, or ciphertext `n`, `base2k`, `k` or rank with
-    /// [`std::io::ErrorKind::InvalidData`], before any ciphertext is read.
+    /// [`std::io::ErrorKind::InvalidData`], before any ciphertext is read, and a ciphertext of another `n`, `base2k` or
+    /// limb count than the header's with [`std::io::ErrorKind::InvalidData`] before its limbs are read.
     fn read_from<Rd: std::io::Read>(&mut self, reader: &mut Rd) -> std::io::Result<()> {
         let header = self.header()?;
         let mut read = vec![0u8; header.len()];
@@ -268,7 +269,7 @@ impl<D: HostDataMut, W: ZnxWord, R: Ring> ReaderFrom for BlasVector<D, W, R> {
                 "the serialized layout differs from the receiver's",
             ));
         }
-        self.cts.iter_mut().try_for_each(|ct| ct.read_from(reader))
+        self.cts.iter_mut().try_for_each(|ct| ct.read_live_from(reader))
     }
 }
 
@@ -431,6 +432,38 @@ mod tests {
             back.write_to(&mut again).unwrap();
             assert!(again == bytes, "{label}: a read vector serializes as the original");
         }
+    }
+
+    #[test]
+    fn vectors_refuse_ciphertexts_unlike_their_header() {
+        let shape = BlasVectorShape::new(4, 2, 0, 1);
+        let stream = |n: u64| {
+            let mut bytes = Vec::new();
+            let v = Module::<HostBytesBackend>::new(n).blas_vector_alloc(shape, 13usize.into(), 26usize.into());
+            v.write_to(&mut bytes).unwrap();
+            (v.header().unwrap().len(), bytes)
+        };
+        // The header of a vector of degree 64 over the ciphertexts of one of degree 32.
+        let ((len, wide), (_, narrow)) = (stream(64), stream(32));
+        let forged = [&wide[..len], &narrow[len..]].concat();
+        let mut receiver = Module::<HostBytesBackend>::new(64).blas_vector_alloc(shape, 13usize.into(), 26usize.into());
+        receiver.ct_mut(0).data_mut().at_mut(0, 0)[0] = 7;
+        let before = receiver.clone();
+        let err = receiver.read_from(&mut forged.as_slice()).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+        assert_eq!(receiver, before, "a refused read changed the vector");
+    }
+
+    #[test]
+    fn vectors_of_no_width_round_trip() {
+        let module = Module::<HostBytesBackend>::new(64);
+        let shape = BlasVectorShape::new(4, 2, 0, 1);
+        let v = module.blas_vector_alloc(shape, 13usize.into(), 0usize.into());
+        let mut bytes = Vec::new();
+        v.write_to(&mut bytes).unwrap();
+        let mut back = module.blas_vector_alloc_from_infos(&v);
+        back.read_from(&mut bytes.as_slice()).unwrap();
+        assert_eq!(back, v);
     }
 
     #[test]

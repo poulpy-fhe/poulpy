@@ -110,7 +110,7 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for LWECompressed<D, W> {
         let base2k = Base2K(reader.read_u32::<LittleEndian>()?);
         let mut seed = [0u8; 32];
         reader.read_exact(&mut seed)?;
-        crate::layouts::read_vec_znx_with_shape(&mut self.data, reader, Some(1), 1)?;
+        crate::layouts::read_vec_znx_with_shape(&mut self.data, reader, Some(1), 1, None)?;
         self.k = k;
         self.base2k = base2k;
         self.seed = seed;

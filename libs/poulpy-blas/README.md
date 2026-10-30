@@ -134,7 +134,8 @@ A prepared operand of a product is allocated from the infos `blas_matmul_left_op
 `BlasCiphertext` implements `WriterTo` and `ReaderFrom`, little-endian, with no magic or version bytes: a header of its
 dimensions and its blocks' `n`, `base2k`, `k` and rank, then its blocks, row-major, each at its `ceil(k / base2k)` live
 limbs, so the stream follows `k` and not the allocation. A read fills a grid allocated from the writer's layout, or
-one of more limbs per block, and rejects another layout with `InvalidData` before touching it; `write_to` rejects a grid holding
+one of more limbs per block, and rejects another layout with `InvalidData` before touching it, and a block of another
+degree, radix or limb count than the header's before its limbs; `write_to` rejects a grid holding
 a flag-clear block with `InvalidInput`, writing nothing. `BlasVector` does the same with a header of its shape and its
 ciphertexts' layout. Public operands and contexts are not serialized: encode them again, then prepare them.
 

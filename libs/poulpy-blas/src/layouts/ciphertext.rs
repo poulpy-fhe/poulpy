@@ -442,7 +442,8 @@ impl<D: HostDataMut, W: ZnxWord, R: Ring> ReaderFrom for BlasCiphertext<D, W, R>
     /// Deserialises into a grid allocated from the writer's layout, or one of more limbs per block, which then holds the
     /// written limbs: a receiver whose blocks differ in layout fails with [`std::io::ErrorKind::InvalidInput`], another
     /// `log_d`, row or column count, or block `n`, `base2k`, `k` or rank with [`std::io::ErrorKind::InvalidData`], before
-    /// any block is read. The grid then records the written batch.
+    /// any block is read, and a block of another `n`, `base2k` or limb count than the header's with
+    /// [`std::io::ErrorKind::InvalidData`] before its limbs are read. The grid then records the written batch.
     fn read_from<Rd: std::io::Read>(&mut self, reader: &mut Rd) -> std::io::Result<()> {
         let header = self.header()?;
         let mut read = vec![0u8; header.len()];
@@ -455,7 +456,7 @@ impl<D: HostDataMut, W: ZnxWord, R: Ring> ReaderFrom for BlasCiphertext<D, W, R>
         }
         let mat_slots = usize::try_from(reader.read_u64::<LittleEndian>()?)
             .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidData, "the batch record exceeds a usize"))?;
-        self.blocks.iter_mut().try_for_each(|block| block.read_from(reader))?;
+        self.blocks.iter_mut().try_for_each(|block| block.read_live_from(reader))?;
         self.mat_slots = mat_slots;
         Ok(())
     }
@@ -919,6 +920,42 @@ mod tests {
             back.write_to(&mut again).unwrap();
             assert!(again == bytes, "{label}: a read grid serializes as the original");
         }
+    }
+
+    #[test]
+    fn grids_refuse_blocks_unlike_their_header() {
+        let stream = |n: u64| {
+            let mut bytes = Vec::new();
+            let grid = Module::<HostBytesBackend>::new(n).blas_ciphertext_alloc(2, 2, 1, 19usize.into(), 57usize.into());
+            grid.write_to(&mut bytes).unwrap();
+            // The header, then the batch record.
+            (grid.header().unwrap().len() + 8, bytes)
+        };
+        // The header of a grid of degree 64 over the blocks of one of degree 32.
+        let ((len, wide), (_, narrow)) = (stream(64), stream(32));
+        let forged = [&wide[..len], &narrow[len..]].concat();
+        let mut receiver = Module::<HostBytesBackend>::new(64).blas_ciphertext_alloc(2, 2, 1, 19usize.into(), 57usize.into());
+        receiver.blocks_mut()[0].data_mut().raw_mut()[0] = 7;
+        let mut before = Vec::new();
+        receiver.write_to(&mut before).unwrap();
+        let err = receiver.read_from(&mut forged.as_slice()).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+        let mut after = Vec::new();
+        receiver.write_to(&mut after).unwrap();
+        assert!(after == before, "a refused read changed the grid");
+    }
+
+    #[test]
+    fn grids_of_no_width_round_trip() {
+        let module = module();
+        let grid = module.blas_ciphertext_alloc(2, 2, 1, 19usize.into(), 0usize.into());
+        let mut bytes = Vec::new();
+        grid.write_to(&mut bytes).unwrap();
+        let mut back = module.blas_ciphertext_alloc_from_infos(&grid);
+        back.read_from(&mut bytes.as_slice()).unwrap();
+        let mut again = Vec::new();
+        back.write_to(&mut again).unwrap();
+        assert!(again == bytes, "a read grid of no width serializes as the original");
     }
 
     #[test]
