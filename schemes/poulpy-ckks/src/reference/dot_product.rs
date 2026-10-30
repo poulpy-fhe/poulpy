@@ -16,7 +16,7 @@ use poulpy_hal::{
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSResult as Result, GLWEPlaintextInfos, SetCKKSInfos, SlotsKind,
     api::{CKKSAddOps, CKKSMulOps},
-    ckks_ensure_operand, ensure_plaintext_degree_embeds, get_mul_ct_params,
+    ckks_ensure, ckks_ensure_operand, ensure_plaintext_degree_embeds, get_mul_ct_params,
     layouts::{CKKSPreparedLeft, CKKSPreparedRight},
     mul_pt_params_raw,
     oep::derived::dot_product::{accumulate, check_lengths},
@@ -135,13 +135,7 @@ pub trait CKKSDotProductReference<BE: Backend>: Sized {
         if !share_layout(a) || !share_layout(b) {
             return invalid("every a[i] must share one layout and scale, and every b[i] one".into());
         }
-        // Past base2k 62, where `ckks_dot_product_ct` keeps the eager path, which prepared pairs do not have.
-        if dst.base2k().as_usize() > 62 {
-            return invalid(format!(
-                "base2k {} > 62: two canonical tensor digits can overflow an i64",
-                dst.base2k().as_usize()
-            ));
-        }
+        check_lazy_base2k(OP, dst)?;
         dot_product_lazy(
             self,
             OP,
@@ -151,8 +145,19 @@ pub trait CKKSDotProductReference<BE: Backend>: Sized {
             tsk,
             scratch,
             |dst, cnv_offset, res_k, s| {
-                let (a0, b0) = (a[0], b[0]);
-                self.glwe_mul_prepared_relinearize_sum(cnv_offset, dst, res_k, a, b, a0.size(), a0.k(), b0.size(), b0.k(), tsk, s)
+                self.glwe_mul_prepared_relinearize_sum(
+                    cnv_offset,
+                    dst,
+                    res_k,
+                    a.iter().map(|a| a.cnv()),
+                    a[0].size(),
+                    a[0].k(),
+                    b.iter().map(|b| b.cnv()),
+                    b[0].size(),
+                    b[0].k(),
+                    tsk,
+                    s,
+                )
             },
             |term, i, cnv_offset, s| {
                 let (a, b) = (a[i], b[i]);
@@ -203,6 +208,60 @@ pub trait CKKSDotProductReference<BE: Backend>: Sized {
         dst.set_log_sparsity(log_sparsity);
         dst.set_slots(slots);
         self.glwe_mul_prepared_plain_sum(cnv_offset, dst, a, a0.size(), b, b0.size(), galois, base2k, scratch);
+        Ok(())
+    }
+
+    /// Core's `glwe_mul_prepared_plain_sum_add` query, whatever the number of terms.
+    fn ckks_dot_product_prepared_pt_add_tmp_bytes_reference<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
+    where
+        Self: GLWEMulPreparedPlainSum<BE>,
+        R: CKKSCtBounds,
+        A: GLWEInfos,
+        P: GLWEInfos,
+    {
+        self.glwe_mul_prepared_plain_sum_add_tmp_bytes(res, a.size(), b.size())
+    }
+
+    /// Core's `glwe_mul_prepared_plain_sum_add` at the rule of `ckks_mul_pt_vec_into`, after the checks of
+    /// [`Self::ckks_dot_product_prepared_pt_reference`], that the rule leaves `res`'s scale and budget, and its scratch,
+    /// before any write.
+    fn ckks_dot_product_prepared_pt_add_reference<R>(
+        &self,
+        res: &mut R,
+        a: &[&CKKSPreparedLeft<BE>],
+        b: &[&CKKSPreparedRight<BE>],
+        galois: &[i64],
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Self: GLWEMulPreparedPlainSum<BE>,
+        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+    {
+        const OP: &str = "ckks_dot_product_prepared_pt_add";
+        let (log_budget, log_delta, cnv_offset) = prepared_pt_rule(OP, &*res, a, b, galois)?;
+        ckks_ensure_operand!(
+            OP,
+            (log_budget, log_delta) == (res.log_budget(), res.log_delta()),
+            "res must hold the product's scale and budget"
+        );
+        let (a0, b0, base2k) = (a[0], b[0], res.base2k());
+        ckks_ensure!(
+            scratch.available() >= self.ckks_dot_product_prepared_pt_add_tmp_bytes_reference(&*res, a0, b0),
+            "{OP}: scratch below its query"
+        );
+        let log_sparsity = a
+            .iter()
+            .zip(b)
+            .map(|(ct, pt)| ct.log_sparsity().min(ct.log_n() - pt.log_n()))
+            .fold(res.log_sparsity(), usize::min);
+        let slots = a
+            .iter()
+            .zip(b)
+            .fold(res.slots(), |slots, (ct, pt)| slots.join(ct.slots()).join(pt.slots()));
+        res.set_log_sparsity(log_sparsity);
+        res.set_slots(slots);
+        res.set_noise(None);
+        self.glwe_mul_prepared_plain_sum_add(cnv_offset, res, a, a0.size(), b, b0.size(), galois, base2k, scratch);
         Ok(())
     }
 
@@ -393,6 +452,17 @@ fn check_accumulator<BE: Backend, R: CKKSCtBounds>(
 
 impl<BE: Backend> CKKSDotProductReference<BE> for Module<BE> {}
 
+/// `InvalidOperand` past base2k 62, where `ckks_dot_product_ct` keeps the eager path, which prepared pairs do not have.
+pub(crate) fn check_lazy_base2k<D: GLWEInfos>(op: &'static str, dst: &D) -> Result<()> {
+    ckks_ensure_operand!(
+        op,
+        dst.base2k().as_usize() <= 62,
+        "base2k {} > 62: two canonical tensor digits can overflow an i64",
+        dst.base2k().as_usize()
+    );
+    Ok(())
+}
+
 /// Whether every ciphertext shares the first one's layout and scale, the inputs of the ct × ct rule.
 fn share_layout<C: CKKSCtBounds>(cts: &[&C]) -> bool {
     cts.iter()
@@ -437,12 +507,7 @@ where
         k: a[0].k().max(b[0].k()),
         rank: dst.rank(),
     };
-    tsk.get_tensor_key(tensor_layout.k)
-        .map_err(|source| CKKSCompositionError::MissingRelinearizationKey {
-            op,
-            k: tensor_layout.k.into(),
-            source,
-        })?;
+    crate::reference::mul::tensor_key_at(op, tsk, tensor_layout.k)?;
     let (log_budget, log_delta, cnv_offset) = get_mul_ct_params(op, dst, a[0], b[0])?;
     // The eager sum's label and slot kind: the smallest label and the join over every operand.
     let metas = || a.iter().map(|ct| ct.meta()).chain(b.iter().map(|ct| ct.meta()));

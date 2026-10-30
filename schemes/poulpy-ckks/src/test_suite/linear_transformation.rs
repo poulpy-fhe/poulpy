@@ -8,12 +8,20 @@
 //! which the homomorphic engine must match up to CKKS precision.
 
 use crate::api::CKKSEncodingOps;
+use poulpy_core::test_suite::keys::TransformKeys;
 use std::collections::{HashMap, HashSet};
 
-use poulpy_core::layouts::{
-    Diagonals, Evaluate, GGLWEInfos, GLWEInfos, GetAutomorphismKey, LWEInfos, LinearTransformationPlan,
-    LinearTransformationStrategy, SetGLWEPlaintextInfos, TorusPrecision, k_digit_of,
-    prepared::{GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedBackendRef, GLWEAutomorphismKeyPreparedToBackendRef},
+use poulpy_core::{
+    GLWEBytesOf,
+    layouts::{
+        BackendGLWESecret, Diagonals, Evaluate, GGLWEInfos, GLWEInfos, GLWELayout, GLWEPlaintextInfos, GLWEToBackendRef,
+        GetAutomorphismKey, GetTensorKey, LWEInfos, LinearTransformationDiagonal, LinearTransformationGiantStep,
+        LinearTransformationPlan, LinearTransformationStrategy, Rank, SetGLWEPlaintextInfos, TorusPrecision, k_digit_of,
+        prepared::{
+            GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedBackendRef, GLWEAutomorphismKeyPreparedToBackendRef,
+            GLWESecretPrepared, GLWETensorKeyPreparedBackendRef,
+        },
+    },
 };
 use poulpy_hal::{
     api::{CnvPVecAlloc, CnvPVecBytesOf, NegacyclicFFT, NegacyclicFFTNew, ScratchAvailable, ScratchOwnedBorrow},
@@ -24,16 +32,21 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSCompositionError, CKKSInfos, Scale, SetCKKSInfos, SlotsKind,
-    api::{CKKSLinearTransformationOps, LinearTransformation, LinearTransformationBabySteps, LinearTransformationPrepared},
-    layouts::{CKKSCiphertextOwned, CKKSPlaintextOwned, ComplexDiagonals},
+    CKKSCompositionError, CKKSCtBounds, CKKSInfos, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotsKind,
+    api::{
+        CKKSCopyOps, CKKSLinearTransformationOps, LinearTransformation, LinearTransformationBabySteps,
+        LinearTransformationPrepared,
+    },
+    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, ComplexDiagonals},
     test_suite::reference_encoder::ReferenceEncoder,
     test_suite::{
         CKKSTestParams,
+        dot_product::TensorKeyAt,
         helpers::{
             QueryLog, TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_ckks_error,
-            assert_ckks_internal, assert_decrypt_precision, assert_invalid_operand, ckks_encrypt, dirty_ct, gen_atk,
-            gen_sk_with_raw, test_vector_1, test_vector_2, want_add,
+            assert_ckks_internal, assert_decrypt_precision, assert_invalid_operand, assert_mul_ct_output_meta, ckks_encrypt,
+            dirty_ct, gen_atk, gen_sk_with_raw, gen_tsk, pt_eval_tmp_bytes, pt_streamed_eval_tmp_bytes, test_vector_1,
+            test_vector_2, want_add,
         },
         parity::helpers::{snapshot, with_scratch},
     },
@@ -93,15 +106,16 @@ where
     .unwrap()
 }
 
-/// Materializes the prepared (resident-RHS) form of a plaintext linear
-/// transformation, so the same unified evaluator can be exercised on both the
-/// resident (`P = PreparedDiagonal`) and streamed (`P = CKKSPlaintext`) paths.
-fn prepare_lt<BE>(module: &Module<BE>, lt: &LinearTransformation<CKKSPlaintextOwned<BE>>) -> LinearTransformationPrepared<BE>
+/// Materializes the prepared (resident-RHS) form of a linear transformation of plaintext or ciphertext diagonals, so
+/// the same unified evaluator can be exercised on both the resident (`P = PreparedDiagonal`) and streamed
+/// (`P = CKKSPlaintext`) paths.
+fn prepare_lt<BE, P>(module: &Module<BE>, lt: &LinearTransformation<P>) -> LinearTransformationPrepared<BE>
 where
     BE: TestContextBackend<Ring = Standard>,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    P: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     let first = lt.first_diagonal_plaintext().expect("linear transformation has no diagonals");
     let mut prepared = LinearTransformationPrepared::<BE>::alloc_prepared_from_index(module, &lt.index(), first);
@@ -170,9 +184,9 @@ where
     // The documented bound of `self_into`: the larger of the baby-step and evaluation queries.
     let self_into_bytes = |plan: &LinearTransformationPlan, streamed: bool| {
         let eval = if streamed {
-            module.ckks_eval_linear_transformation_streamed_tmp_bytes(&ct, plan, &key_params.atk_layout())
+            pt_streamed_eval_tmp_bytes(module, &ct, plan, &key_params.atk_layout())
         } else {
-            module.ckks_eval_linear_transformation_tmp_bytes(&ct, plan, &key_params.atk_layout())
+            pt_eval_tmp_bytes(module, &ct, plan, &key_params.atk_layout())
         };
         module
             .ckks_prepare_linear_transformation_baby_steps_tmp_bytes(&ct, plan, &key_params.atk_layout())
@@ -245,8 +259,8 @@ where
 /// poisoned budget.
 ///
 /// One term is the single transform bit for bit. Distinct terms decrypt to the
-/// sum of the single transforms and carry the single transform's metadata. A
-/// mismatched term is rejected, for its own reason, before `dst` is written.
+/// sum of the single transforms and carry the single transform's metadata, and their streamed diagonals give the same
+/// bits on the streamed query's budget. A mismatched term is rejected, for its own reason, before `dst` is written.
 pub fn test_linear_transformation_sum<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -255,7 +269,11 @@ pub fn test_linear_transformation_sum<BE, F, E>(
     BE: TestContextBackend<Ring = Standard>,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + CKKSLinearTransformationOps<BE>
+        + poulpy_core::api::GLWELinearTransformations<BE>
+        + CnvPVecAlloc<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> ScratchArena<'a, BE>: ScratchAvailable,
@@ -309,12 +327,18 @@ pub fn test_linear_transformation_sum<BE, F, E>(
             babies
         })
         .collect();
-    let sum_bytes = module.ckks_eval_linear_transformation_sum_tmp_bytes(&cts[0], &prepared[0].index(), &params.atk_layout());
+    let sum_bytes = module.ckks_eval_linear_transformation_sum_tmp_bytes(
+        &cts[0],
+        &crate::api::ckks_plaintext_diagonal_layout(&cts[0]),
+        &prepared[0].index(),
+        &params.atk_layout(),
+        &params.atk_layout(),
+    );
 
     // One term: the single transform, bit for bit.
     let mut single = alloc_ct(&params, module, params.k);
     with_scratch::<BE, _>(
-        module.ckks_eval_linear_transformation_tmp_bytes(&cts[0], &prepared[0].index(), &params.atk_layout()),
+        pt_eval_tmp_bytes(module, &cts[0], &prepared[0].index(), &params.atk_layout()),
         |s| module.ckks_eval_linear_transformation_into(&mut single, &cts[0], &babies[0], &prepared[0], &keys, s),
     )
     .unwrap();
@@ -338,8 +362,8 @@ pub fn test_linear_transformation_sum<BE, F, E>(
     .unwrap();
     let have = snapshot::<BE, _>(&sum);
     assert_eq!(
-        (have.layout, have.canonical, have.noise),
-        (single.layout, single.canonical, single.noise),
+        (&have.layout, have.canonical, &have.noise),
+        (&single.layout, single.canonical, &single.noise),
         "the sum's metadata is not the single transform's"
     );
     let (want_re, want_im) = terms
@@ -357,6 +381,61 @@ pub fn test_linear_transformation_sum<BE, F, E>(
         &want_re,
         &want_im,
         &mut scratch.borrow(),
+    );
+
+    // The same terms streamed, plaintext diagonals: the resident sum, bit for bit.
+    let streamed_lts: Vec<_> = terms.iter().map(|&(_, l)| &lts[l]).collect();
+    let mut streamed = alloc_ct(&params, module, params.k);
+    with_scratch::<BE, _>(
+        module.ckks_eval_linear_transformation_sum_streamed_tmp_bytes(
+            &cts[0],
+            &crate::api::ckks_plaintext_diagonal_layout(&cts[0]),
+            &prepared[0].index(),
+            &params.atk_layout(),
+            &params.atk_layout(),
+        ),
+        |scratch| {
+            module.ckks_eval_linear_transformation_sum_into(
+                &mut streamed,
+                &term_srcs,
+                &term_babies,
+                &streamed_lts,
+                &keys,
+                scratch,
+            )
+        },
+    )
+    .unwrap();
+    assert_eq!(snapshot::<BE, _>(&streamed), have, "the streamed sum is not the resident one");
+    // Streamed terms of two diagonal scales reach core's own sum check, which reads the scale each plaintext records.
+    let mut shifted = encode_lt(module, &params, &bs[1], n1, false, &mut scratch.borrow());
+    for diagonal in shifted.giant_steps.iter_mut().flat_map(|gs| gs.diagonals.iter_mut()) {
+        let mut meta = diagonal.plaintext.meta();
+        let Scale::Log(scale) = meta.scale;
+        meta.scale = Scale::Log(scale + 1);
+        diagonal.plaintext.set_meta(meta);
+    }
+    let mut core_sum = alloc_ct(&params, module, params.k);
+    let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        poulpy_core::api::GLWELinearTransformations::glwe_eval_linear_transformation_sum_into(
+            module,
+            0,
+            &mut core_sum,
+            &term_babies[..2],
+            &[&lts[terms[0].1], &shifted],
+            &keys,
+            &mut scratch.borrow(),
+        )
+    }))
+    .unwrap_err();
+    let message = panic
+        .downcast_ref::<&str>()
+        .copied()
+        .or_else(|| panic.downcast_ref::<String>().map(String::as_str));
+    assert_eq!(
+        message,
+        Some("summed linear transformation 1 does not share the first one's diagonal layout, width and scale"),
+        "streamed terms of two scales"
     );
 
     // A mismatched term: rejected as `InvalidOperand` for `reason`, with `sum` untouched.
@@ -392,8 +471,13 @@ pub fn test_linear_transformation_sum<BE, F, E>(
         "giant schedule",
     );
     let mut bad = prepare_lt(module, &lts[1]);
-    let scale = bad.first_diagonal_plaintext().unwrap().log_scale();
-    bad.set_log_scale(scale + 1);
+    let meta = bad.plaintext_meta();
+    let Scale::Log(scale) = meta.scale;
+    let shifted = GLWEPlaintextMeta {
+        scale: Scale::Log(scale + 1),
+        ..meta
+    };
+    bad.set_plaintext_meta(shifted);
     reject(
         &two,
         &[&babies[0], &babies[1]],
@@ -401,10 +485,10 @@ pub fn test_linear_transformation_sum<BE, F, E>(
         "diagonal layout, width, scale and slot kind",
     );
     // Only a later diagonal differs, which core's first-diagonal check misses.
-    bad.set_log_scale(scale);
+    bad.set_plaintext_meta(meta);
     bad.giant_steps.last_mut().unwrap().diagonals[0]
         .plaintext
-        .set_log_scale(scale + 1);
+        .set_plaintext_meta(shifted);
     reject(&two, &[&babies[0], &babies[1]], &[&prepared[0], &bad], "not uniform");
     let narrow = alloc_ct(&params, module, params.k - params.base2k);
     reject(
@@ -460,15 +544,16 @@ pub fn test_linear_transformation_sum<BE, F, E>(
 
 /// Prepares `lt` into `res` on an empty arena, which must be refused as `InvalidOperand` for `reason` before any write,
 /// `res` staying equal to `want`.
-fn assert_prepare_refused<BE>(
+fn assert_prepare_refused<BE, P>(
     module: &Module<BE>,
     res: &mut LinearTransformationPrepared<BE>,
     want: &LinearTransformationPrepared<BE>,
-    lt: &LinearTransformation<CKKSPlaintextOwned<BE>>,
+    lt: &LinearTransformation<P>,
     reason: &str,
 ) where
     BE: TestContextBackend<Ring = Standard>,
     Module<BE>: CKKSLinearTransformationOps<BE>,
+    P: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     let err = with_scratch::<BE, _>(0, |scratch| module.ckks_prepare_linear_transformation_rhs(res, lt, scratch)).unwrap_err();
     assert!(
@@ -500,7 +585,7 @@ where
         lt.giant_steps
             .iter()
             .flat_map(|gs| &gs.diagonals)
-            .map(|d| (d.plaintext.log_scale(), d.plaintext.real_slots()))
+            .map(|d| d.plaintext.plaintext_meta())
             .collect::<Vec<_>>()
     };
     assert_eq!(
@@ -771,12 +856,12 @@ pub fn test_prepare_linear_transformation_rhs_lifecycle<BE, F, E>(
             .map(|d| d.plaintext.cnv().data().as_ptr())
             .collect()
     };
-    let infos = |p: &LinearTransformationPrepared<BE>| -> (LinearTransformationPlan, Vec<(usize, bool)>) {
+    let infos = |p: &LinearTransformationPrepared<BE>| -> (LinearTransformationPlan, Vec<GLWEPlaintextMeta>) {
         let stashes = p
             .giant_steps
             .iter()
             .flat_map(|gs| &gs.diagonals)
-            .map(|d| (d.plaintext.log_scale(), d.plaintext.real_slots()))
+            .map(|d| d.plaintext.plaintext_meta())
             .collect();
         (p.index(), stashes)
     };
@@ -974,6 +1059,12 @@ impl<BE: Backend> GetAutomorphismKey<BE> for MixedDsize<BE> {
     }
 }
 
+impl<BE: Backend> GetTensorKey<BE> for MixedDsize<BE> {
+    fn lookup_tensor_key(&self, k: TorusPrecision) -> poulpy_core::Result<GLWETensorKeyPreparedBackendRef<'_, BE>> {
+        self.keys.lookup_tensor_key(k)
+    }
+}
+
 /// Baby rotations resolve at the source precision, giant rotations at the
 /// destination one.
 ///
@@ -1033,7 +1124,7 @@ pub fn test_linear_transformation_pins_operation_precisions<BE, F, E>(
     with_scratch::<BE, _>(
         module
             .ckks_prepare_linear_transformation_baby_steps_tmp_bytes(&ct, &lt.index(), &key_params.atk_layout())
-            .max(module.ckks_eval_linear_transformation_tmp_bytes(&ct, &lt.index(), &key_params.atk_layout())),
+            .max(pt_eval_tmp_bytes(module, &ct, &lt.index(), &key_params.atk_layout())),
         |s| module.ckks_eval_linear_transformation_self_into(&mut res, &ct, &prepared, &keys, s),
     )
     .unwrap();
@@ -1143,10 +1234,513 @@ pub fn test_linear_transformation_mixed_key_layouts<BE, F, E>(
     let eval_bytes = module
         .ckks_prepare_linear_transformation_baby_steps_tmp_bytes(&ct, &prepared.index(), &stored_infos)
         .max(module.ckks_prepare_linear_transformation_baby_steps_tmp_bytes(&ct, &prepared.index(), &coarse_infos))
-        .max(module.ckks_eval_linear_transformation_tmp_bytes(&ct, &prepared.index(), &stored_infos))
-        .max(module.ckks_eval_linear_transformation_tmp_bytes(&ct, &prepared.index(), &coarse_infos));
+        .max(pt_eval_tmp_bytes(module, &ct, &prepared.index(), &stored_infos))
+        .max(pt_eval_tmp_bytes(module, &ct, &prepared.index(), &coarse_infos));
     with_scratch::<BE, _>(eval_bytes, |s| {
         module.ckks_eval_linear_transformation_self_into(&mut res, &ct, &prepared, &keys, s)
     })
     .unwrap();
+}
+
+/// The secret side of the tests of ciphertext diagonals: encrypts sources and diagonals, and checks results.
+struct Secret<'a, BE: Backend, E> {
+    params: &'a CKKSTestParams,
+    module: &'a Module<BE>,
+    host_module: &'a Module<HostBytesBackend>,
+    encoder: ReferenceEncoder<E>,
+    sk: GLWESecretPrepared<BE::OwnedBuf, BE>,
+    sk_raw: BackendGLWESecret<BE>,
+}
+
+impl<'a, BE, E> Secret<'a, BE, E>
+where
+    BE: TestContextBackend<Ring = Standard>,
+    for<'b> <BE as Backend>::BufRef<'b>: poulpy_hal::layouts::HostDataRef,
+    for<'b> <BE as Backend>::BufMut<'b>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE>,
+{
+    fn new<F: TestScalar>(params: &'a CKKSTestParams, module: &'a Module<BE>, host_module: &'a Module<HostBytesBackend>) -> Self
+    where
+        E: NegacyclicFFTNew<F>,
+    {
+        let (sk_raw, sk) = gen_sk_with_raw(params, module, host_module, [0u8; 32]);
+        Self {
+            params,
+            module,
+            host_module,
+            encoder: ReferenceEncoder::new(params.n / 2).unwrap(),
+            sk,
+            sk_raw,
+        }
+    }
+
+    /// `(re, im)` encrypted at `k` bits, labelled `log_sparsity`.
+    fn encrypt<F: TestScalar>(
+        &self,
+        re: &[F],
+        im: &[F],
+        k: usize,
+        log_sparsity: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> CKKSCiphertextOwned<BE>
+    where
+        E: NegacyclicFFT<F>,
+    {
+        let mut ct = ckks_encrypt(
+            self.params,
+            self.module,
+            self.host_module,
+            &self.encoder,
+            &self.sk,
+            k,
+            re,
+            im,
+            scratch,
+        );
+        ct.set_log_sparsity(log_sparsity);
+        ct
+    }
+
+    /// Asserts that `dst`, of `dst_k` bits before the call, is `Σ_t M_t·srcs[t]` for transforms of the ciphertext
+    /// diagonals `diagonals[t]`: the rule of `ckks_mul_into` between a source and a diagonal, the slots of every
+    /// operand joined, the smallest of their sparsities, and a decryption to `want`.
+    #[allow(clippy::too_many_arguments)]
+    fn assert_transform<F: TestScalar>(
+        &self,
+        label: &str,
+        dst: &CKKSCiphertextOwned<BE>,
+        dst_k: usize,
+        srcs: &[&CKKSCiphertextOwned<BE>],
+        diagonals: &[&CKKSCiphertextOwned<BE>],
+        (want_re, want_im): &(Vec<F>, Vec<F>),
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        E: NegacyclicFFT<F>,
+    {
+        assert_mul_ct_output_meta(label, dst, dst_k, srcs[0], diagonals[0]);
+        let operands = || srcs.iter().chain(diagonals);
+        assert_eq!(
+            (dst.slots(), dst.log_sparsity()),
+            (
+                operands().map(|ct| ct.slots()).reduce(SlotsKind::join).unwrap(),
+                operands().map(|ct| ct.log_sparsity()).min().unwrap()
+            ),
+            "{label}: slots and sparsity"
+        );
+        assert_decrypt_precision(
+            label,
+            self.params,
+            self.module,
+            &self.encoder,
+            dst,
+            &self.sk,
+            want_re,
+            want_im,
+            scratch,
+        );
+    }
+}
+
+/// The baby cache of `src` for `lt`, prepared on its query.
+fn prepare_babies<BE, P, H>(
+    module: &Module<BE>,
+    params: &CKKSTestParams,
+    lt: &LinearTransformation<P>,
+    src: &CKKSCiphertextOwned<BE>,
+    keys: &H,
+) -> LinearTransformationBabySteps<BE>
+where
+    BE: TestContextBackend<Ring = Standard>,
+    Module<BE>: TestContextModule<BE> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    H: GetAutomorphismKey<BE>,
+{
+    let mut babies = LinearTransformationBabySteps::alloc_for(module, lt, src);
+    with_scratch::<BE, _>(
+        module.ckks_prepare_linear_transformation_baby_steps_tmp_bytes(src, &lt.index(), &params.atk_layout()),
+        |s| module.ckks_prepare_linear_transformation_baby_steps(&mut babies, src, keys, s),
+    )
+    .unwrap();
+    babies
+}
+
+/// `dec(lt(enc(a), M)) ≈ B·a` for `M` the encrypted, pre-rotated diagonals of `B`, on its exact poisoned budget, with
+/// diagonals narrower or wider than the source and with a tensor key the one-pass product cannot take. The `_assign` and
+/// `_self_` forms give the bits of `_into`. Keys without the tensor key at the larger width are refused as
+/// `MissingRelinearizationKey` before `dst` is written.
+pub fn test_linear_transformation_ct<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend<Ring = Standard>,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    const OP: &str = "ckks_eval_linear_transformation_into";
+    let m = params.n / 2;
+    let (a_re, a_im) = test_vector_1::<F>(m);
+    let secret = Secret::<BE, E>::new::<F>(&params, module, host_module);
+    let mut scratch = alloc_scratch(&params, module);
+    let tsk = gen_tsk(&params, module, &secret.sk_raw, &mut scratch.borrow());
+    // At another `base2k`, which the one-pass product cannot take: relinearized as a tensor.
+    let tensor_params = CKKSTestParams {
+        base2k: params.base2k - 1,
+        ..params
+    };
+    let tensor_tsk = gen_tsk(&tensor_params, module, &secret.sk_raw, &mut scratch.borrow());
+    let b = complex_diagonals::<F>(&[0, 1, 2, 3, 4, 5], m, 0);
+    let order = module.cyclotomic_order();
+    let narrow = params.k - params.base2k;
+    let (bsgs, pow2) = (
+        LinearTransformationStrategy::Bsgs { giant_step: 2 },
+        LinearTransformationStrategy::BsgsPowersOfTwo { giant_step: 2 },
+    );
+
+    for (strategy, src_k, diagonal_k, tsk, tsk_layout) in [
+        (bsgs, params.k, narrow, &tsk, params.tsk_layout()),
+        (pow2, narrow, params.k, &tsk, params.tsk_layout()),
+        (bsgs, params.k, narrow, &tensor_tsk, tensor_params.tsk_layout()),
+    ] {
+        let label = format!("linear_transformation_ct {strategy:?}, key base2k {}", tsk_layout.base2k());
+        let src = secret.encrypt(&a_re, &a_im, src_k, 1, &mut scratch.borrow());
+        let lt = b.build_transform(strategy, |re, im| {
+            secret.encrypt(re, im, diagonal_k, 1, &mut scratch.borrow())
+        });
+        let atks: HashMap<_, _> = lt
+            .galois_elements(order)
+            .into_iter()
+            .map(|p| (p, gen_atk(&params, module, p, &secret.sk_raw, &mut scratch.borrow())))
+            .collect();
+        let key_k = TorusPrecision(src_k.max(diagonal_k) as u32);
+        let at_key_k = TensorKeyAt(tsk, key_k);
+        let keys = TransformKeys {
+            automorphism: &atks,
+            tensor: &at_key_k,
+        };
+        let prepared = prepare_lt(module, &lt);
+        let babies = prepare_babies(module, &params, &prepared, &src, &atks);
+        let first = lt.first_diagonal_plaintext().unwrap();
+        let plan = lt.index();
+        let bytes = module.ckks_eval_linear_transformation_tmp_bytes(&src, first, &plan, &tsk_layout, &params.atk_layout());
+        let baby_bytes = module.ckks_prepare_linear_transformation_baby_steps_tmp_bytes(&src, &plan, &params.atk_layout());
+
+        let mut dst = alloc_ct(&params, module, src_k);
+        with_scratch::<BE, _>(bytes, |s| {
+            module.ckks_eval_linear_transformation_into(&mut dst, &src, &babies, &prepared, &keys, s)
+        })
+        .unwrap();
+        let want = b.evaluate((a_re.as_slice(), a_im.as_slice()), strategy);
+        secret.assert_transform(&label, &dst, src_k, &[&src], &[first], &want, &mut scratch.borrow());
+        let have = snapshot::<BE, _>(&dst);
+
+        let mut assigned = src.clone();
+        with_scratch::<BE, _>(bytes, |s| {
+            module.ckks_eval_linear_transformation_assign(&mut assigned, &babies, &prepared, &keys, s)
+        })
+        .unwrap();
+        let mut self_into = alloc_ct(&params, module, src_k);
+        with_scratch::<BE, _>(baby_bytes.max(bytes), |s| {
+            module.ckks_eval_linear_transformation_self_into(&mut self_into, &src, &prepared, &keys, s)
+        })
+        .unwrap();
+        // The documented bound of `self_assign`: a working copy of `src` plus the larger of the baby-step and
+        // evaluation queries.
+        let mut self_assigned = src.clone();
+        with_scratch::<BE, _>(
+            BE::scratch_aligned(module.glwe_bytes_of_from_infos(&src)) + baby_bytes.max(bytes),
+            |s| module.ckks_eval_linear_transformation_self_assign(&mut self_assigned, &prepared, &keys, s),
+        )
+        .unwrap();
+        // The unprepared diagonals, prepared in the call.
+        let mut streamed = alloc_ct(&params, module, src_k);
+        with_scratch::<BE, _>(
+            module.ckks_eval_linear_transformation_streamed_tmp_bytes(&src, first, &plan, &tsk_layout, &params.atk_layout()),
+            |s| module.ckks_eval_linear_transformation_into(&mut streamed, &src, &babies, &lt, &keys, s),
+        )
+        .unwrap();
+        // Diagonals allocated wider than their width, as a copy into a larger ciphertext leaves them, read as theirs.
+        let wide_lt = LinearTransformation {
+            baby_steps: lt.baby_steps.clone(),
+            rotations: lt.rotations,
+            giant_steps: lt
+                .giant_steps
+                .iter()
+                .map(|gs| LinearTransformationGiantStep {
+                    rot: gs.rot,
+                    diagonals: gs
+                        .diagonals
+                        .iter()
+                        .map(|d| {
+                            let mut wide = alloc_ct(&params, module, diagonal_k + params.base2k);
+                            with_scratch::<BE, _>(module.ckks_copy_tmp_bytes(&wide, &d.plaintext), |s| {
+                                module.ckks_copy(&mut wide, &d.plaintext, s)
+                            })
+                            .unwrap();
+                            LinearTransformationDiagonal {
+                                baby: d.baby,
+                                plaintext: wide,
+                            }
+                        })
+                        .collect(),
+                })
+                .collect(),
+        };
+        let wide_prepared = prepare_lt(module, &wide_lt);
+        let mut wide_resident = alloc_ct(&params, module, src_k);
+        with_scratch::<BE, _>(bytes, |s| {
+            module.ckks_eval_linear_transformation_into(&mut wide_resident, &src, &babies, &wide_prepared, &keys, s)
+        })
+        .unwrap();
+        let mut wide_streamed = alloc_ct(&params, module, src_k);
+        with_scratch::<BE, _>(
+            module.ckks_eval_linear_transformation_streamed_tmp_bytes(&src, first, &plan, &tsk_layout, &params.atk_layout()),
+            |s| module.ckks_eval_linear_transformation_into(&mut wide_streamed, &src, &babies, &wide_lt, &keys, s),
+        )
+        .unwrap();
+        for (form, out) in [
+            ("_assign", &assigned),
+            ("_self_into", &self_into),
+            ("_self_assign", &self_assigned),
+            ("streamed _into", &streamed),
+            ("wide diagonals _into", &wide_resident),
+            ("wide streamed diagonals _into", &wide_streamed),
+        ] {
+            assert_eq!(snapshot::<BE, _>(out), have, "{label}: {form} differs from _into");
+        }
+
+        for (case, k) in [("no tensor key", 1), ("smaller width", src_k.min(diagonal_k))] {
+            let at_k = TensorKeyAt(tsk, TorusPrecision(k as u32));
+            let keys = TransformKeys {
+                automorphism: &atks,
+                tensor: &at_k,
+            };
+            let err = with_scratch::<BE, _>(0, |s| {
+                module.ckks_eval_linear_transformation_into(&mut dst, &src, &babies, &prepared, &keys, s)
+            })
+            .unwrap_err();
+            assert!(
+                matches!(
+                    err.composition(),
+                    Some(CKKSCompositionError::MissingRelinearizationKey { op, k, .. }) if *op == OP && *k == key_k.as_u32()
+                ),
+                "{label}, {case}: unexpected error: {err}"
+            );
+            assert_eq!(
+                snapshot::<BE, _>(&dst),
+                have,
+                "{label}, {case}: a refused call wrote into dst"
+            );
+        }
+    }
+}
+
+/// The summed transform of ciphertext diagonals, `Σ_t M_t·a_t`, over terms sharing one schedule, on its exact poisoned
+/// budget: one term is the single transform bit for bit, two decrypt to the sum of the single transforms.
+pub fn test_linear_transformation_sum_ct<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend<Ring = Standard>,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let m = params.n / 2;
+    let secret = Secret::<BE, E>::new::<F>(&params, module, host_module);
+    let mut scratch = alloc_scratch(&params, module);
+    let tsk = gen_tsk(&params, module, &secret.sk_raw, &mut scratch.borrow());
+
+    // Two matrices on the same diagonals, hence one schedule, with distinct values.
+    let strategy = LinearTransformationStrategy::Bsgs { giant_step: 2 };
+    let bs: Vec<_> = (0..2).map(|t| complex_diagonals::<F>(&[0, 1, 2, 3, 4, 5], m, t)).collect();
+    let inputs = [test_vector_1::<F>(m), test_vector_2::<F>(m)];
+    let srcs: Vec<_> = inputs
+        .iter()
+        .map(|(re, im)| secret.encrypt(re, im, params.k, 1, &mut scratch.borrow()))
+        .collect();
+    let lts: Vec<_> = bs
+        .iter()
+        .zip([1, 0])
+        .map(|(b, log_sparsity)| {
+            b.build_transform(strategy, |re, im| {
+                secret.encrypt(re, im, params.k, log_sparsity, &mut scratch.borrow())
+            })
+        })
+        .collect();
+    let atks: HashMap<_, _> = lts[0]
+        .galois_elements(module.cyclotomic_order())
+        .into_iter()
+        .map(|p| (p, gen_atk(&params, module, p, &secret.sk_raw, &mut scratch.borrow())))
+        .collect();
+    let keys = TransformKeys {
+        automorphism: &atks,
+        tensor: &tsk,
+    };
+    let prepared: Vec<_> = lts.iter().map(|lt| prepare_lt(module, lt)).collect();
+    let babies: Vec<_> = srcs
+        .iter()
+        .map(|src| prepare_babies(module, &params, &prepared[0], src, &atks))
+        .collect();
+    let diagonals: Vec<_> = lts.iter().map(|lt| lt.first_diagonal_plaintext().unwrap()).collect();
+    let plan = lts[0].index();
+
+    let mut single = alloc_ct(&params, module, params.k);
+    with_scratch::<BE, _>(
+        module.ckks_eval_linear_transformation_tmp_bytes(
+            &srcs[0],
+            diagonals[0],
+            &plan,
+            &params.tsk_layout(),
+            &params.atk_layout(),
+        ),
+        |s| module.ckks_eval_linear_transformation_into(&mut single, &srcs[0], &babies[0], &prepared[0], &keys, s),
+    )
+    .unwrap();
+    let sum_bytes = module.ckks_eval_linear_transformation_sum_tmp_bytes(
+        &srcs[0],
+        diagonals[0],
+        &plan,
+        &params.tsk_layout(),
+        &params.atk_layout(),
+    );
+    let mut one = alloc_ct(&params, module, params.k);
+    with_scratch::<BE, _>(sum_bytes, |s| {
+        module.ckks_eval_linear_transformation_sum_into(&mut one, &[&srcs[0]], &[&babies[0]], &[&prepared[0]], &keys, s)
+    })
+    .unwrap();
+    assert_eq!(
+        snapshot::<BE, _>(&one),
+        snapshot::<BE, _>(&single),
+        "a one-term sum is not the single transform"
+    );
+
+    let mut sum = alloc_ct(&params, module, params.k);
+    with_scratch::<BE, _>(sum_bytes, |s| {
+        module.ckks_eval_linear_transformation_sum_into(
+            &mut sum,
+            &[&srcs[0], &srcs[1]],
+            &[&babies[0], &babies[1]],
+            &[&prepared[0], &prepared[1]],
+            &keys,
+            s,
+        )
+    })
+    .unwrap();
+    let want = inputs
+        .iter()
+        .zip(&bs)
+        .map(|((re, im), b)| b.evaluate((re.as_slice(), im.as_slice()), strategy))
+        .reduce(|(re, im), (re_t, im_t)| want_add(&re, &im, &re_t, &im_t))
+        .unwrap();
+    secret.assert_transform(
+        "linear_transformation_sum_ct",
+        &sum,
+        params.k,
+        &[&srcs[0], &srcs[1]],
+        &diagonals,
+        &want,
+        &mut scratch.borrow(),
+    );
+}
+
+/// A transform of ciphertext diagonals is refused before any write or key read: a destination of another degree,
+/// `base2k` or rank than the diagonals, `base2k` past 62, a baby cache of another width than the source, and the
+/// preparation of ciphertext diagonals into a cache allocated for plaintext ones.
+pub fn test_linear_transformation_ct_rejects_foreign_layouts<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    _host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend<Ring = Standard>,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    F: TestScalar,
+{
+    const OP: &str = "ckks_eval_linear_transformation_into";
+    let p = &params;
+    let lt = complex_diagonals::<F>(&[0, 1, 2, 3, 4, 5], p.n / 2, 0)
+        .build_transform(LinearTransformationStrategy::Bsgs { giant_step: 2 }, |_, _| {
+            alloc_ct(p, module, p.k)
+        });
+    let plan = lt.index();
+    let prepared =
+        LinearTransformationPrepared::<BE>::alloc_prepared_from_index(module, &plan, lt.first_diagonal_plaintext().unwrap());
+    let src = alloc_ct(p, module, p.k);
+    let babies = LinearTransformationBabySteps::alloc_for(module, &prepared, &src);
+    let no_keys: HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>> = HashMap::new();
+    let refused = |dst: &mut CKKSCiphertextOwned<BE>, babies: &_, lt: &LinearTransformationPrepared<BE>| {
+        let before = snapshot::<BE, _>(&*dst);
+        let err = with_scratch::<BE, _>(0, |s| {
+            module.ckks_eval_linear_transformation_into(dst, &src, babies, lt, &no_keys, s)
+        })
+        .unwrap_err();
+        assert_eq!(snapshot::<BE, _>(&*dst), before, "a refused transform wrote dst: {err}");
+        err
+    };
+
+    for layout in [
+        GLWELayout {
+            n: (p.n / 2).into(),
+            ..p.glwe_layout()
+        },
+        GLWELayout {
+            base2k: (p.base2k - 1).into(),
+            ..p.glwe_layout()
+        },
+        GLWELayout {
+            rank: Rank((p.rank % 2 + 1) as u32),
+            ..p.glwe_layout()
+        },
+    ] {
+        let err = refused(&mut module.ckks_ciphertext_alloc_from_glwe_infos(&layout), &babies, &prepared);
+        assert_ckks_error(
+            &format!("{layout:?}"),
+            &err,
+            CKKSCompositionError::PreparedOperandLayoutMismatch {
+                op: OP,
+                dst_n: layout.n.as_usize(),
+                dst_base2k: layout.base2k.as_usize(),
+                dst_rank: layout.rank.as_usize(),
+                prep_n: p.n,
+                prep_base2k: p.base2k,
+                prep_rank: p.rank,
+            },
+        );
+    }
+
+    let narrow = LinearTransformationBabySteps::alloc_for(module, &prepared, &alloc_ct(p, module, p.k - p.base2k));
+    let err = refused(&mut alloc_ct(p, module, p.k), &narrow, &prepared);
+    assert_invalid_operand(
+        "baby cache width",
+        &err,
+        OP,
+        "the baby cache was prepared from a source of another width",
+    );
+
+    let wide = GLWELayout {
+        base2k: 63_usize.into(),
+        k: (2 * 63_usize).into(),
+        ..p.glwe_layout()
+    };
+    let wide_lt = LinearTransformationPrepared::<BE>::alloc_prepared_from_index(module, &plan, &wide);
+    let err = refused(&mut module.ckks_ciphertext_alloc_from_glwe_infos(&wide), &babies, &wide_lt);
+    assert_invalid_operand("base2k 63", &err, OP, "base2k 63 > 62");
+
+    let proxy = crate::api::ckks_plaintext_diagonal_layout(&src);
+    let want = LinearTransformationPrepared::<BE>::alloc_prepared_from_index(module, &plan, &proxy);
+    let mut res = LinearTransformationPrepared::<BE>::alloc_prepared_from_index(module, &plan, &proxy);
+    assert_prepare_refused(
+        module,
+        &mut res,
+        &want,
+        &lt,
+        "a diagonal's layout differs from the prepared transformation's",
+    );
 }

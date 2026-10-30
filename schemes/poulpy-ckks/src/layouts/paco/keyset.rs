@@ -107,7 +107,7 @@ pub trait PaCoKeys<BE: Backend> {
     type AutomorphismKey: GetAutomorphismKey<BE>;
 
     /// Collection that resolves automorphism keys by Galois element.
-    type RotationKeys: GetAutomorphismKey<BE>;
+    type RotationKeys: GetAutomorphismKey<BE> + GetTensorKey<BE>;
 
     /// Prepared tensor (relinearization) key used by the product fold.
     type TensorKey: GetTensorKey<BE>;

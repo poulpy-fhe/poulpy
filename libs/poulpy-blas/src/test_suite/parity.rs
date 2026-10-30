@@ -47,22 +47,26 @@ use poulpy_hal::{
     },
 };
 
-use super::helpers::{
-    HINTS, MASKED_PT_ALGORITHMS, MIXES, PT_ALGORITHMS, TestKeys, assert_panics, grid_infos, grid_snapshot, matmul_left_operand,
-    matmul_right_operand,
+use super::{
+    helpers::{
+        HINTS, MASKED_PT_ALGORITHMS, MIXES, PT_ALGORITHMS, TestKeys, assert_panics, grid_infos, grid_snapshot,
+        matmul_left_operand, matmul_right_operand,
+    },
+    matvec::{matvec_layouts, matvec_operands, vector_snapshot},
 };
 use crate::{
     api::{
-        BlasContextPreparedFactory, BlasEncodingOps, BlasMatInterOps, BlasMatIntraOps, BlasMatMulOps,
+        BlasContextPreparedFactory, BlasEncodingOps, BlasMatInterOps, BlasMatIntraOps, BlasMatMulOps, BlasMatVecOps,
         BlasPtOperandPreparedFactory,
     },
     layouts::{
-        BlasCiphertext, BlasCiphertextOwned, BlasContext, BlasContextInfos, BlasContextLayout, BlasGridInfos, BlasLayout,
-        BlasMatMulOperandInfos, BlasModuleAlloc, BlasPlan, BlasPtAlgorithm, BlasPtOperand, BlasPtOperandInfos,
-        BlasPtOperandLayout, BlasPtSide, Left, Right, blas_matmul_left_term_layout, blas_matmul_max_base2k,
-        blas_matmul_pt_left_max_base2k, blas_matmul_pt_right_max_base2k, blas_matmul_right_term_layout,
+        BlasCiphertext, BlasCiphertextOwned, BlasContextInfos, BlasContextLayout, BlasContextPrepared, BlasGridInfos, BlasLayout,
+        BlasMatMulOperandInfos, BlasMatVecOperandLayout, BlasModuleAlloc, BlasPlan, BlasPtAlgorithm, BlasPtOperandInfos,
+        BlasPtOperandLayout, BlasPtOperandPrepared, BlasPtSide, BlasVector, BlasVectorInfos, BlasVectorLayout, BlasVectorOwned,
+        BlasVectorShape, Left, Right, blas_matmul_left_term_layout, blas_matmul_max_base2k, blas_matmul_pt_left_max_base2k,
+        blas_matmul_pt_right_max_base2k, blas_matmul_right_term_layout, blas_matvec_pt_max_base2k,
         context::module_layout,
-        sum_galois_elements,
+        matvec_pt_galois_elements, sum_galois_elements,
         validate::{MASKLESS, MAX_BASE2K},
     },
     oep::BlasImpl,
@@ -249,8 +253,7 @@ fn narrow<B: Backend<ZnxWord = i64>>(
 where
     Module<B>: GLWEMaskFill<B> + GLWEAdd<B>,
 {
-    let la = layout(params, params.rank, params.base2k - 2, 0, 0, SlotsKind::Complex);
-    grid_of(module, &la, log_d, rows, cols, seed, false)
+    grid_of(module, &layout_of_narrow(params), log_d, rows, cols, seed, false)
 }
 
 /// The label of one matrix per batch, `log2(S / d^2)` on `S` slots.
@@ -347,7 +350,7 @@ fn diagonal_meta(params: CKKSTestParams, p: usize) -> CoeffsMeta {
 }
 
 /// The context of `2^log_d x 2^log_d` blocks, its maps at scale `p`, holding the masks of the masked products.
-fn context<B, F>(params: CKKSTestParams, module: &Module<B>, log_d: usize, p: usize) -> BlasContext<B>
+fn context<B, F>(params: CKKSTestParams, module: &Module<B>, log_d: usize, p: usize) -> BlasContextPrepared<B>
 where
     B: BlasParityBackend,
     Module<B>: BlasParityModule<B, F>,
@@ -376,17 +379,24 @@ where
 /// composition error of a call that fails; and the keys it looked up.
 struct Output {
     op: &'static str,
-    infos: (BlasLayout, Option<usize>),
+    infos: Infos,
     blocks: Vec<Snapshot>,
     error: Option<CKKSCompositionError>,
     lookups: Lookups,
+}
+
+/// The infos of a call's result: a grid's `(layout, batch record)`, or a vector's layout.
+#[derive(Debug, PartialEq)]
+enum Infos {
+    Grid((BlasLayout, Option<usize>)),
+    Vector(BlasVectorLayout),
 }
 
 /// The [`Output`] of `op` into `res`, with the lookups `keys` recorded since the last output.
 fn output<B: BlasParityBackend>(op: &'static str, res: &BlasCiphertextOwned<B>, keys: &Recorded<B>) -> Output {
     Output {
         op,
-        infos: grid_infos(res),
+        infos: Infos::Grid(grid_infos(res)),
         blocks: grid_snapshot::<B, _>(res),
         error: None,
         lookups: keys.take(),
@@ -466,7 +476,7 @@ fn failure<B: BlasParityBackend>(
     assert!(state(res) == before, "{op} changed res or an input before failing");
     Output {
         op,
-        infos: grid_infos(res),
+        infos: Infos::Grid(grid_infos(res)),
         blocks: Vec::new(),
         error,
         lookups: keys.take(),
@@ -558,7 +568,7 @@ where
         (true, &one_row, d + 1),
         (false, &one_row, 1),
     ];
-    let shift = |rows: bool, src: &BlasCiphertextOwned<B>, k: usize, ctx: &BlasContext<B>| {
+    let shift = |rows: bool, src: &BlasCiphertextOwned<B>, k: usize, ctx: &BlasContextPrepared<B>| {
         let mut res = operand(params, module, log_d, src.rows(), src.cols(), 100);
         if rows {
             let keys = fixture_keys(params, module, &plan.rotate_rows_galois_elements(order, k), false);
@@ -577,7 +587,7 @@ where
         }
     };
     out.extend(shifts.into_iter().map(|(rows, src, k)| shift(rows, src, k, &ctx)));
-    let sum = |rows: bool, src: &BlasCiphertextOwned<B>, k: usize, ctx: &BlasContext<B>| {
+    let sum = |rows: bool, src: &BlasCiphertextOwned<B>, k: usize, ctx: &BlasContextPrepared<B>| {
         let mut res = sized(params, module, log_d, src.rows(), src.cols(), k, 100);
         if rows {
             let keys = fixture_keys(params, module, &plan.sum_rows_galois_elements(order), false);
@@ -687,7 +697,7 @@ fn public_entry<F: TestScalar>(m: usize, r: usize, c: usize) -> F {
 }
 
 /// The public operand of `layout`, its entries [`public_entry`], prepared.
-fn prepared<B, F, S>(module: &Module<B>, layout: BlasPtOperandLayout<S>) -> BlasPtOperand<B, S>
+fn prepared<B, F, S>(module: &Module<B>, layout: BlasPtOperandLayout<S>) -> BlasPtOperandPrepared<B, S>
 where
     B: BlasParityBackend,
     Module<B>: BlasParityModule<B, F>,
@@ -714,7 +724,7 @@ fn public_operand<B, F>(
     count: usize,
     p: usize,
     algorithm: BlasPtAlgorithm,
-) -> BlasPtOperand<B>
+) -> BlasPtOperandPrepared<B>
 where
     B: BlasParityBackend,
     Module<B>: BlasParityModule<B, F>,
@@ -736,7 +746,7 @@ fn public_left_operand<B, F>(
     count: usize,
     p: usize,
     algorithm: BlasPtAlgorithm,
-) -> BlasPtOperand<B, Left>
+) -> BlasPtOperandPrepared<B, Left>
 where
     B: BlasParityBackend,
     Module<B>: BlasParityModule<B, F>,
@@ -754,7 +764,7 @@ where
 fn product<B: BlasParityBackend>(
     params: CKKSTestParams,
     module: &Module<B>,
-    ctx: &BlasContext<B>,
+    ctx: &BlasContextPrepared<B>,
     keys: &Recorded<B>,
     (a, b): (&BlasCiphertextOwned<B>, &BlasCiphertextOwned<B>),
     k: usize,
@@ -775,7 +785,7 @@ fn preparation<B: BlasParityBackend>(
     op: &'static str,
     operand: &impl BlasMatMulOperandInfos,
     input: &BlasCiphertextOwned<B>,
-    ctx: &BlasContext<B>,
+    ctx: &BlasContextPrepared<B>,
     right: bool,
     hint: PrepareHint,
     keys: &Recorded<B>,
@@ -798,7 +808,7 @@ fn preparation<B: BlasParityBackend>(
     );
     Output {
         op,
-        infos,
+        infos: Infos::Grid(infos),
         blocks: Vec::new(),
         error: None,
         lookups: keys.take(),
@@ -1148,6 +1158,196 @@ where
     out
 }
 
+/// A vector of `shape` at torus width `k` repeating every `period` slots, ciphertext `t` filled from `seed + t`, with lazy
+/// digits on real slots with `lazy` ([`fixture_operand`]).
+fn vector_of<B: Backend<ZnxWord = i64>>(
+    params: CKKSTestParams,
+    module: &Module<B>,
+    shape: BlasVectorShape,
+    period: usize,
+    k: usize,
+    seed: u8,
+    lazy: bool,
+) -> BlasVectorOwned<B>
+where
+    Module<B>: GLWEMaskFill<B> + GLWEAdd<B> + CKKSModuleInfos,
+{
+    let label = (module.ckks_max_slots() / period).ilog2() as usize;
+    let slots = if lazy { SlotsKind::Real } else { SlotsKind::Complex };
+    let ct = block(params, k, label, slots);
+    let cts = (0..shape.count())
+        .map(|t| fixture_operand(module, &ct, seed + t as u8, lazy))
+        .collect();
+    BlasVector::from_cts(cts, shape).unwrap()
+}
+
+/// The [`Output`] of `op` into the vector `res`, with the lookups `keys` recorded since the last output.
+fn vector_output<B: BlasParityBackend>(op: &'static str, res: &BlasVectorOwned<B>, keys: &Recorded<B>) -> Output {
+    Output {
+        op,
+        infos: Infos::Vector(res.blas_vector_layout()),
+        blocks: vector_snapshot::<B>(res),
+        error: None,
+        lookups: keys.take(),
+    }
+}
+
+/// The [`Output`] of `call` into the vector `res`, which must fail and leave `res` and `inputs` unchanged, with the
+/// lookups `keys` recorded since the last output.
+fn vector_failure<B: BlasParityBackend>(
+    op: &'static str,
+    res: &mut BlasVectorOwned<B>,
+    inputs: &[&BlasVectorOwned<B>],
+    keys: &Recorded<B>,
+    call: impl FnOnce(&mut BlasVectorOwned<B>) -> CKKSResult<()>,
+) -> Output {
+    let state = |res: &BlasVectorOwned<B>| {
+        let inputs: Vec<_> = inputs.iter().map(|v| vector_snapshot::<B>(v)).collect();
+        (vector_snapshot::<B>(res), inputs)
+    };
+    let before = state(res);
+    let error = call(res).expect_err(op).composition().cloned();
+    assert!(state(res) == before, "{op} changed res or an input before failing");
+    Output {
+        op,
+        infos: Infos::Vector(res.blas_vector_layout()),
+        blocks: Vec::new(),
+        error,
+        lookups: keys.take(),
+    }
+}
+
+/// The layouts of [`matvec_layouts`] with diagonals at scale `p`.
+fn matvec_layouts_at(params: CKKSTestParams, slots: usize, p: usize) -> Vec<BlasMatVecOperandLayout> {
+    matvec_layouts(&params, slots)
+        .into_iter()
+        .map(|layout| BlasMatVecOperandLayout {
+            coeffs_meta: diagonal_meta(params, p),
+            ..layout
+        })
+        .collect()
+}
+
+/// Products of a vector by a public matrix for every layout of [`matvec_layouts`], resident then streamed, into `res`
+/// of the operand width, one limb wider and one limb narrower; of a [`vector_of`] with lazy digits on real slots; and,
+/// on the multi-ciphertext layout, by matrices at scales below and above the inputs'.
+fn matvec<B, F>(params: CKKSTestParams, module: &Module<B>) -> Vec<Output>
+where
+    B: BlasParityBackend,
+    Module<B>: BlasParityModule<B, F>,
+    F: TestScalar + DiagonalArithmetic,
+{
+    let (slots, w, key) = (module.ckks_max_slots(), width(params), atk_layout(params));
+    let mut out = Vec::new();
+    let scales = std::iter::once(scale(params)).chain(other_scales(params));
+    for (s, p) in scales.enumerate() {
+        let layouts = matvec_layouts_at(params, slots, p);
+        // The other scales run on the multi-ciphertext layout alone.
+        let layouts = if s == 0 {
+            layouts
+        } else {
+            layouts.into_iter().skip(3).collect()
+        };
+        for (l, layout) in layouts.into_iter().enumerate() {
+            let (streamed, resident) = matvec_operands::<B, F>(module, &layout);
+            let keys = fixture_keys(
+                params,
+                module,
+                &matvec_pt_galois_elements(module.cyclotomic_order(), &layout),
+                false,
+            );
+            let seed = 150 + 10 * l as u8;
+            let a = vector_of(params, module, layout.input, layout.input_period, w, seed, false);
+            let lazy = vector_of(params, module, layout.input, layout.input_period, w, seed + 5, true);
+            let before = [vector_snapshot::<B>(&a), vector_snapshot::<B>(&lazy)];
+            for (src, k) in [(&a, w), (&a, w + params.base2k), (&a, w - params.base2k), (&lazy, w)] {
+                let mut res = vector_of(params, module, layout.output, slots, k, 140, false);
+                with_scratch::<B, _>(module.blas_matvec_pt_tmp_bytes(&res, &resident, src, &key), |s| {
+                    module.blas_matvec_pt(&mut res, &resident, src, &keys, s)
+                })
+                .unwrap();
+                out.push(vector_output("blas_matvec_pt", &res, &keys));
+                let mut res = vector_of(params, module, layout.output, slots, k, 140, false);
+                with_scratch::<B, _>(module.blas_matvec_pt_tmp_bytes(&res, &streamed, src, &key), |s| {
+                    module.blas_matvec_pt(&mut res, &streamed, src, &keys, s)
+                })
+                .unwrap();
+                out.push(vector_output("blas_matvec_pt", &res, &keys));
+            }
+            assert!(
+                [vector_snapshot::<B>(&a), vector_snapshot::<B>(&lazy)] == before,
+                "matvec: {} wrote an input",
+                std::any::type_name::<B>()
+            );
+        }
+    }
+    out
+}
+
+/// Products of a vector by a public matrix, resident and streamed, into a vector narrower than the result's scale, and
+/// of an input whose budget is below the matrix's scale where its width allows one, which poulpy-ckks rejects inside
+/// the implementation.
+fn matvec_budget<B, F>(params: CKKSTestParams, module: &Module<B>) -> Vec<Output>
+where
+    B: BlasParityBackend,
+    Module<B>: BlasParityModule<B, F>,
+    F: TestScalar + DiagonalArithmetic,
+{
+    let (slots, w, key, p) = (module.ckks_max_slots(), width(params), atk_layout(params), scale(params));
+    let layout = matvec_layouts_at(params, slots, p).pop().unwrap();
+    let (streamed, resident) = matvec_operands::<B, F>(module, &layout);
+    let keys = fixture_keys(
+        params,
+        module,
+        &matvec_pt_galois_elements(module.cyclotomic_order(), &layout),
+        false,
+    );
+    let a = vector_of(params, module, layout.input, layout.input_period, w, 190, false);
+    let mut inputs = vec![(a, None)];
+    // An input at the matrix's width, `p + base2k`, keeps a budget of `base2k` bits, below `p` when `base2k < p`.
+    if params.base2k < p {
+        let low = vector_of(
+            params,
+            module,
+            layout.input,
+            layout.input_period,
+            p + params.base2k,
+            195,
+            false,
+        );
+        inputs.push((low, Some(w)));
+    }
+    let mut out = Vec::new();
+    for (src, res_k) in &inputs {
+        let mut res = match res_k {
+            None => {
+                let ct = layout_of_narrow(params);
+                let cts = (0..layout.output.count())
+                    .map(|t| fixture_operand(module, &ct, 200 + t as u8, false))
+                    .collect();
+                BlasVector::from_cts(cts, layout.output).unwrap()
+            }
+            Some(k) => vector_of(params, module, layout.output, slots, *k, 200, false),
+        };
+        out.push(vector_failure("blas_matvec_pt", &mut res, &[src], &keys, |res| {
+            with_scratch::<B, _>(module.blas_matvec_pt_tmp_bytes(res, &resident, src, &key), |s| {
+                module.blas_matvec_pt(res, &resident, src, &keys, s)
+            })
+        }));
+        out.push(vector_failure("blas_matvec_pt", &mut res, &[src], &keys, |res| {
+            with_scratch::<B, _>(module.blas_matvec_pt_tmp_bytes(res, &streamed, src, &key), |s| {
+                module.blas_matvec_pt(res, &streamed, src, &keys, s)
+            })
+        }));
+    }
+    out
+}
+
+/// The layout of [`narrow`]'s blocks: a width below the scale of any result.
+fn layout_of_narrow(params: CKKSTestParams) -> CKKSLayout {
+    layout(params, params.rank, params.base2k - 2, 0, 0, SlotsKind::Complex)
+}
+
 /// Asserts the tested backend's outputs, `got`, equal the reference's, `want`, call by call, errors included, except
 /// for the keys: each call of `got` may look up only keys, at widths, that the same call of `want` looked up.
 fn compare(label: &str, want: Vec<Output>, got: Vec<Output>) {
@@ -1265,6 +1465,38 @@ pub fn test_blas_matmul_parity<BR, BT, F>(
     }
 }
 
+/// Products of a vector by a public matrix, resident and streamed, agree bit for bit over the layouts of
+/// [`matvec_layouts`] (dense and replicated vectors, one and several ciphertexts), into `res` wider and narrower than
+/// the result, of lazy real inputs, and by matrices at scales other than the inputs', and fail alike on a budget
+/// poulpy-ckks rejects, leaving `res` and the input unchanged. Vectors span 16 slots: below, it is skipped with a message.
+pub fn test_blas_matvec_parity<BR, BT, F>(
+    params: CKKSTestParams,
+    _shapes: &BlasParityShapes,
+    module_ref: &Module<BR>,
+    module_test: &Module<BT>,
+) where
+    BR: BlasParityBackend,
+    BT: BlasParityBackend,
+    Module<BR>: BlasParityModule<BR, F>,
+    Module<BT>: BlasParityModule<BT, F>,
+    F: TestScalar + DiagonalArithmetic,
+{
+    if module_ref.ckks_max_slots() < 16 {
+        eprintln!("matvec parity skipped: its vectors span 16 slots");
+        return;
+    }
+    compare(
+        "matvec",
+        matvec::<BR, F>(params, module_ref),
+        matvec::<BT, F>(params, module_test),
+    );
+    compare(
+        "matvec, budget",
+        matvec_budget::<BR, F>(params, module_ref),
+        matvec_budget::<BT, F>(params, module_test),
+    );
+}
+
 /// Asserts `got` is the largest radix `hand` allows at every failure target of `targets`, bits per output polynomial: it
 /// satisfies [`Module::max_base2k`] at the products `hand` counts at that radix, and no larger one does, none at all for
 /// 0.
@@ -1303,6 +1535,9 @@ fn assert_largest_radix<B: Backend + MaxBase2k>(
 ///   NTT model. A left product of an input labelled one matrix counts the operand's replicated-input maps, whose
 ///   largest giant group equals `left_mul`'s at every shape (the dimensions `d = 2` to `128` at one to eight matrix
 ///   slots were checked), so that case covers the wiring only;
+///
+/// - the products of a vector, over the layouts of [`matvec_layouts`]: `K g min(L, P)` over the `K` input
+///   ciphertexts, `g` the most diagonals a giant step of the operand's encoded maps groups;
 ///
 /// and, for a sum so long that no FFT64 radix holds it at a failure target of 2^60 bits, 0. Under the masked paths, a left
 /// product's query panics on a context without the column halves of psi^k, with a static message.
@@ -1411,6 +1646,20 @@ where
             let hand_rep = hand(algorithm, 3, 7, inner, a_k, p_b);
             assert_largest_radix::<B>(&format!("left replicated {label}"), n, 1..=1000, hand_rep, |bits| {
                 blas_matmul_pt_left_max_base2k::<B>(&pt, &a_rep, &ctx, bits)
+            });
+        }
+    }
+
+    // Products of a vector: `K g min(L, P)` over the `K` input ciphertexts, `g` read off the operand's encoded maps.
+    for layout in matvec_layouts_at(params, module.ckks_max_slots(), p) {
+        let (_, w) = matvec_operands::<B, F>(module, &layout);
+        let g = w.block(0, 0).giant_steps.iter().map(|gs| gs.diagonals.len()).max().unwrap();
+        let (inputs, diagonal_k) = (layout.input.count(), layout.coeffs_meta.k.as_usize());
+        for a_k in [77, 20] {
+            let a = BlasVectorLayout::new(block(params, a_k, 0, SlotsKind::Complex), layout.input);
+            let hand = move |r: usize| inputs * g * a_k.div_ceil(r).min(diagonal_k.div_ceil(r));
+            assert_largest_radix::<B>(&format!("matvec {layout:?} a.k={a_k}"), n, 1..=1000, hand, |bits| {
+                blas_matvec_pt_max_base2k::<B>(&layout, &a, bits)
             });
         }
     }

@@ -80,7 +80,11 @@ impl<BE: Backend> LinearTransformationBabySteps<BE> {
                 .entry(rot)
                 .or_insert_with(|| module.cnv_pvec_left_alloc(a.n().as_usize(), cols, size, PrepareHint::Reuse));
         }
-        Self { values, rotations }
+        Self {
+            values,
+            rotations,
+            k: a.k(),
+        }
     }
 
     /// Pre-allocates the baby-step cache the transformation `lt` reads, prepared as it says.

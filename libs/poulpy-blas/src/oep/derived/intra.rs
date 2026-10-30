@@ -2,11 +2,13 @@
 //! runs its validator before any write and, on `Ok`, stamps the batch record of `res`, as the references do.
 
 use poulpy_ckks::CKKSResult as Result;
-use poulpy_core::layouts::{GGLWEInfos, GGLWELayout, GLWEInfos, GetAutomorphismKey, LWEInfos};
+use poulpy_core::layouts::{GGLWEInfos, GGLWELayout, GLWEInfos, GetAutomorphismKey, GetTensorKey, LWEInfos};
 use poulpy_hal::layouts::{Module, ScratchArena};
 
 use crate::{
-    layouts::{BlasContext, BlasGrid, BlasGridInfos, BlasGridMut, validate::assert_maps_scratch, validate_blas_transpose},
+    layouts::{
+        BlasContextPrepared, BlasGrid, BlasGridInfos, BlasGridMut, validate::assert_maps_scratch, validate_blas_transpose,
+    },
     oep::BlasMatIntraImpl,
 };
 
@@ -16,7 +18,7 @@ pub(crate) fn blas_transpose_tmp_bytes_derived<BE, R, A, K>(
     module: &Module<BE>,
     res: &R,
     a: &A,
-    ctx: &BlasContext<BE>,
+    ctx: &BlasContextPrepared<BE>,
     keys: &K,
 ) -> usize
 where
@@ -42,7 +44,7 @@ pub(crate) fn blas_transpose_derived<BE, R, A, K>(
     module: &Module<BE>,
     res: &mut R,
     a: &A,
-    ctx: &BlasContext<BE>,
+    ctx: &BlasContextPrepared<BE>,
     keys: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
@@ -50,7 +52,7 @@ where
     BE: BlasMatIntraImpl,
     R: BlasGridMut<BE>,
     A: BlasGrid<BE>,
-    K: GetAutomorphismKey<BE> + Sync,
+    K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync,
 {
     let batch = validate_blas_transpose(module, &*res, a, ctx, keys)?;
     let lts = [ctx.transpose()];

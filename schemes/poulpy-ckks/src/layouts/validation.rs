@@ -13,8 +13,9 @@ use poulpy_hal::layouts::Backend;
 use crate::{CKKSCompositionError, SlotsKind};
 
 /// `InvalidOperand` for `op` unless `prepared` was allocated for `lt`'s layout: the same schedule, every diagonal of
-/// both at one degree, radix, width and limb count, and `lt`'s baby steps led by the identity rotation.
-pub(crate) fn ensure_prepared_transformation_layout<BE: Backend, P: LWEInfos>(
+/// both at one degree, radix, rank, width and prepared limb count (a ciphertext diagonal's live limbs, a plaintext's
+/// allocated ones), and `lt`'s baby steps led by the identity rotation.
+pub(crate) fn ensure_prepared_transformation_layout<BE: Backend, P: GLWEInfos>(
     op: &'static str,
     prepared: &LinearTransformationPrepared<BE>,
     lt: &LinearTransformation<P>,
@@ -32,17 +33,17 @@ pub(crate) fn ensure_prepared_transformation_layout<BE: Backend, P: LWEInfos>(
     let Some(first) = prepared.first_diagonal_plaintext() else {
         return Err(invalid("the prepared transformation has no diagonal"));
     };
-    let layout = (first.n(), first.base2k(), first.k(), first.max_size());
+    let layout = (first.glwe_layout(), first.max_size());
     let prepared_layouts = prepared
         .giant_steps
         .iter()
         .flat_map(|gs| &gs.diagonals)
-        .map(|d| (d.plaintext.n(), d.plaintext.base2k(), d.plaintext.k(), d.plaintext.max_size()));
-    let source_layouts = lt
-        .giant_steps
-        .iter()
-        .flat_map(|gs| &gs.diagonals)
-        .map(|d| (d.plaintext.n(), d.plaintext.base2k(), d.plaintext.k(), d.plaintext.max_size()));
+        .map(|d| (d.plaintext.glwe_layout(), d.plaintext.max_size()));
+    // A ciphertext diagonal is prepared at its width, a plaintext one across its allocation.
+    let source_layouts = lt.giant_steps.iter().flat_map(|gs| &gs.diagonals).map(|d| {
+        let p = &d.plaintext;
+        (p.glwe_layout(), if p.rank().as_usize() > 0 { p.size() } else { p.max_size() })
+    });
     if prepared_layouts.chain(source_layouts).any(|diagonal| diagonal != layout) {
         return Err(invalid("a diagonal's layout differs from the prepared transformation's"));
     }

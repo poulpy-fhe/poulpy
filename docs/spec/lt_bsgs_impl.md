@@ -28,7 +28,7 @@ and so the layout/schedule math stays free of any backend.
 | [`baby_steps.rs`](../../poulpy-core/src/reference/linear_transformation/baby_steps.rs) | **Setup, LHS / Phase A:** hoisted baby rotations `rot(v,k)`, prepared as `CnvPVecL`. | §6.2 |
 | [`inner_product.rs`](../../poulpy-core/src/reference/linear_transformation/inner_product.rs) | **Phase B, PROD:** per-giant DFT-domain inner sum `Σ_k ũ_{j,k} ⊙ rot(v,k)`. | §6.3 |
 | [`lazy.rs`](../../poulpy-core/src/reference/linear_transformation/lazy.rs) | **Phase B, ROT + Phase C:** lazy DFT giant rotation, DFT accumulate helpers, final normalize. | §6.3–§6.4 |
-| [`prepared_giants.rs`](../../poulpy-core/src/reference/linear_transformation/prepared_giants.rs) | **Phase B driver:** the giant-step loop `glwe_eval_giant_steps`; dispatches lazy vs fallback; the `LinearTransformationRhs` trait that unifies prepared and streamed RHS. | §6.1, §6.3 |
+| [`giant_steps.rs`](../../poulpy-core/src/reference/linear_transformation/giant_steps.rs) | **Phase B driver:** the giant-step loop `glwe_eval_giant_steps`; dispatches lazy vs fallback; the `LinearTransformationRhs` trait that unifies prepared and streamed RHS. | §6.1, §6.3 |
 | [`eval.rs`](../../poulpy-core/src/reference/linear_transformation/eval.rs) | **Public entry points** + scratch sizing (`*_tmp_bytes`). Thin forwards into the files above. | §11 |
 | [`tests.rs`](../../poulpy-core/src/reference/linear_transformation/tests.rs) | Functional / identity / sparse / `n1`-sweep / headroom validation. | §12 |
 
@@ -125,7 +125,7 @@ rotations reused across **all** `n2` giant steps.
 
 ---
 
-## 4. Evaluation — the giant-step loop ([`prepared_giants.rs`](../../poulpy-core/src/reference/linear_transformation/prepared_giants.rs))
+## 4. Evaluation — the giant-step loop ([`giant_steps.rs`](../../poulpy-core/src/reference/linear_transformation/giant_steps.rs))
 
 `glwe_eval_giant_steps` is the heart of Phase B/C. It is generic over the `LinearTransformationRhs`
 trait so the **same loop** drives both RHS flavors:
@@ -200,10 +200,10 @@ this final normalize.
 |---|---|
 | #1 BSGS `O(√\|I\|)` | `linear_transformation_plan` + `optimal_bsgs_giant_step` |
 | #2 Hoisting | `glwe_prepare_linear_transformation_baby_steps` (`a_dft` computed once) |
-| #3 Free identities | `rot == 0` branches in baby_steps.rs **and** prepared_giants.rs |
+| #3 Free identities | `rot == 0` branches in baby_steps.rs **and** giant_steps.rs |
 | #4 Lazy normalize across giants | DFT accumulator + single final normalize (lazy.rs) |
 | #5 Lazy normalize inside PROD | DFT accumulation in inner_product.rs |
-| #6 Skip `j=0` mask normalize | `rot == 0` giant branch of `glwe_eval_giant_steps` (prepared_giants.rs) |
+| #6 Skip `j=0` mask normalize | `rot == 0` giant branch of `glwe_eval_giant_steps` (giant_steps.rs) |
 | #7 Prune zero diagonals | schedule only stores real `(j,k)` (linear_transformation.rs) |
 | #8 Setup-time preparation | prepare.rs (RHS) + baby_steps.rs (LHS) |
 | #9 One rescale level | single `glwe_normalize_big_into` (lazy.rs) |

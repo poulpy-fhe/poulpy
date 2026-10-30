@@ -25,8 +25,8 @@ use poulpy_ckks::{
 use poulpy_core::{
     api::GLWETensorKeyPreparedFactory,
     layouts::{
-        BackendGLWESecret, DiagonalArithmetic, GLWETensorKeyLayout, GLWEToBackendMut, GetAutomorphismKey, LWEInfos, Rank,
-        TorusPrecision,
+        BackendGLWESecret, DiagonalArithmetic, GLWETensorKeyLayout, GLWEToBackendMut, GetAutomorphismKey, GetTensorKey, LWEInfos,
+        Rank, TorusPrecision,
         prepared::{GLWEAutomorphismKeyPreparedBackendRef, GLWESecretPrepared},
     },
 };
@@ -52,9 +52,9 @@ use super::helpers::{
 use crate::{
     api::{BlasEncodingOps, BlasMatIntraOps, BlasMatMulOps},
     layouts::{
-        BlasCiphertext, BlasCiphertextOwned, BlasContext, BlasContextInfos, BlasGridInfos, BlasKeyUses, BlasLayout,
+        BlasCiphertext, BlasCiphertextOwned, BlasContextInfos, BlasContextPrepared, BlasGridInfos, BlasKeyUses, BlasLayout,
         BlasMatMulLeft, BlasMatMulOperand, BlasMatMulOperandLayout, BlasMatMulOperandPreparedFactory, BlasMatMulRight,
-        BlasModuleAlloc, BlasPlan, BlasPtAlgorithm, BlasPtOperand, BlasPtOperandInfos, Left, Right,
+        BlasModuleAlloc, BlasPlan, BlasPtAlgorithm, BlasPtOperandInfos, BlasPtOperandPrepared, Left, Right,
         blas_matmul_left_operand_layout, blas_matmul_pt_left_key_uses, blas_matmul_pt_left_output_layout,
         blas_matmul_pt_right_key_uses, blas_matmul_pt_right_output_layout, blas_matmul_right_operand_layout,
         ciphertext::layout_of, planning::pt_label, replicated, validate::MASKLESS, validate_blas_matmul_prepared,
@@ -158,15 +158,15 @@ pub fn test_blas_matmul<BE, F, E>(
         .map(|&p| blas_context::<BE, F>(&at_scale(&params, p), module, log_d))
         .collect();
     // Each preparation and product on exactly the scratch its query reports.
-    let prepare_left = |x: &BlasCiphertextOwned<BE>, ctx: &BlasContext<BE>, hint| {
+    let prepare_left = |x: &BlasCiphertextOwned<BE>, ctx: &BlasContextPrepared<BE>, hint| {
         let bytes = module.blas_matmul_prepare_left_tmp_bytes(x, ctx, &atk_layout, hint);
         matmul_left_operand(module, x, ctx, &keys, hint, &mut poisoned_scratch::<BE>(bytes).borrow()).unwrap()
     };
-    let prepare_right = |y: &BlasCiphertextOwned<BE>, ctx: &BlasContext<BE>, hint| {
+    let prepare_right = |y: &BlasCiphertextOwned<BE>, ctx: &BlasContextPrepared<BE>, hint| {
         let bytes = module.blas_matmul_prepare_right_tmp_bytes(y, ctx, &atk_layout, hint);
         matmul_right_operand(module, y, ctx, &keys, hint, &mut poisoned_scratch::<BE>(bytes).borrow()).unwrap()
     };
-    let product = |left: &BlasMatMulLeft<BE>, right: &BlasMatMulRight<BE>, ctx: &BlasContext<BE>| {
+    let product = |left: &BlasMatMulLeft<BE>, right: &BlasMatMulRight<BE>, ctx: &BlasContextPrepared<BE>| {
         let mut res = alloc_grid(&params, module, log_d, m, n, params.k);
         let bytes = module.blas_matmul_prepared_tmp_bytes(&res, left, right, ctx, &tsk_layout, &atk_layout);
         module
@@ -381,6 +381,15 @@ impl<BE: Backend, K: GetAutomorphismKey<BE>> GetAutomorphismKey<BE> for Counting
     }
 }
 
+impl<BE: Backend, K: GetTensorKey<BE>> GetTensorKey<BE> for CountingKeys<'_, K> {
+    fn lookup_tensor_key(
+        &self,
+        k: TorusPrecision,
+    ) -> poulpy_core::Result<poulpy_core::layouts::prepared::GLWETensorKeyPreparedBackendRef<'_, BE>> {
+        self.keys.lookup_tensor_key(k)
+    }
+}
+
 /// Rotating giant steps of `lt` that hold diagonals: the key switches of one evaluation.
 fn rotating_giant_steps<BE: Backend>(lt: &LinearTransformationPrepared<BE>) -> usize {
     lt.giant_steps
@@ -399,7 +408,7 @@ fn summed_terms<'t, BE>(
     inner: usize,
     label: usize,
     term: impl Fn(usize, usize, usize) -> (&'t CKKSCiphertextOwned<BE>, &'t LinearTransformationPrepared<BE>),
-    keys: &impl GetAutomorphismKey<BE>,
+    keys: &(impl GetAutomorphismKey<BE> + GetTensorKey<BE>),
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Vec<Snapshot>
 where
@@ -435,9 +444,9 @@ fn staged<BE, S>(
     params: &CKKSTestParams,
     module: &Module<BE>,
     a: &BlasCiphertextOwned<BE>,
-    b: &BlasPtOperand<BE, S>,
+    b: &BlasPtOperandPrepared<BE, S>,
     p_b: usize,
-    keys: &impl GetAutomorphismKey<BE>,
+    keys: &(impl GetAutomorphismKey<BE> + GetTensorKey<BE>),
     scratch: &mut ScratchArena<'_, BE>,
 ) -> BlasCiphertextOwned<BE>
 where
@@ -1001,7 +1010,7 @@ pub fn test_blas_matmul_pt_left<BE, F, E>(
     let ctx = blas_context::<BE, F>(&params, module, log_d);
     let encoder = ReferenceEncoder::<E>::new(slots).unwrap();
     let (m, inner, n) = (2, 3, 2);
-    let encode = |params: &CKKSTestParams, algorithm: BlasPtAlgorithm, count: usize| -> BlasPtOperand<BE, Left> {
+    let encode = |params: &CKKSTestParams, algorithm: BlasPtAlgorithm, count: usize| -> BlasPtOperandPrepared<BE, Left> {
         pt_operand::<BE, F, Left>(
             module,
             BlasPlan::new(log_d).with_pt_algorithm(algorithm),
@@ -1217,7 +1226,7 @@ pub fn test_blas_matmul_pt_left<BE, F, E>(
 
 /// `blas_matmul_pt_left` of a replicated input, a dense grid of copies of one matrix labelled `log2` of the matrix slots,
 /// by a `Diagonal` operand of one public matrix takes the operand's replicated-input block maps
-/// ([`BlasPtOperand::block_replicated`]): it decrypts to `B A` with the keys of the plan's left set alone, equals the
+/// ([`BlasPtOperandPrepared::block_replicated`]): it decrypts to `B A` with the keys of the plan's left set alone, equals the
 /// summed linear transformation of those maps bit for bit and stamps a replicated result. The same operand on a grid of
 /// distinct matrices, and operands of two matrices or of one per matrix slot, `Jkls` operands and one matrix slot hold
 /// no such maps or do not take them; the first of these equals the summed transformation of the `2d - 1` maps. Skipped,
@@ -1248,7 +1257,7 @@ pub fn test_blas_matmul_pt_left_replicated<BE, F, E>(
     let ctx = blas_context::<BE, F>(&params, module, log_d);
     let encoder = ReferenceEncoder::<E>::new(slots).unwrap();
     let (m, inner, n) = (2, 3, 2);
-    let encode = |algorithm: BlasPtAlgorithm, count: usize| -> BlasPtOperand<BE, Left> {
+    let encode = |algorithm: BlasPtAlgorithm, count: usize| -> BlasPtOperandPrepared<BE, Left> {
         pt_operand::<BE, F, Left>(
             module,
             BlasPlan::new(log_d).with_pt_algorithm(algorithm),
@@ -1654,7 +1663,7 @@ struct MaskedFixture<BE: Backend, E> {
     sk_raw: BackendGLWESecret<BE>,
     sk: GLWESecretPrepared<BE::OwnedBuf, BE>,
     scratch: ScratchOwned<BE>,
-    ctx: BlasContext<BE>,
+    ctx: BlasContextPrepared<BE>,
     plans: [BlasPlan; 2],
     keys: TestKeys<BE>,
 }

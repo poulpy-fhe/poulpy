@@ -3,10 +3,10 @@ use poulpy_core::layouts::DiagonalArithmetic;
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
-    api::{BlasContextPreparedFactory, BlasEncodingOps, BlasPtOperandPreparedFactory},
+    api::{BlasContextPreparedFactory, BlasEncodingOps, BlasMatVecOperandPreparedFactory, BlasPtOperandPreparedFactory},
     layouts::{
-        BlasContext, BlasContextInfos, BlasContextUnprepared, BlasPtOperand, BlasPtOperandInfos, BlasPtOperandUnprepared,
-        BlasPtSide,
+        BlasContext, BlasContextInfos, BlasContextPrepared, BlasMatVecOperand, BlasMatVecOperandInfos, BlasMatVecOperandPrepared,
+        BlasPtOperand, BlasPtOperandInfos, BlasPtOperandPrepared, BlasPtSide,
     },
     oep::BlasEncodingImpl,
 };
@@ -22,18 +22,31 @@ where
 
     fn blas_pt_operand_encode<S: BlasPtSide>(
         &self,
-        res: &mut BlasPtOperandUnprepared<BE, S>,
+        res: &mut BlasPtOperand<BE, S>,
         entry: impl Fn(usize, usize, usize) -> F,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> CKKSResult<()> {
         BE::blas_pt_operand_encode(self, res, entry, scratch)
     }
 
+    fn blas_matvec_operand_encode_tmp_bytes<A: BlasMatVecOperandInfos>(&self, infos: &A) -> usize {
+        BE::blas_matvec_operand_encode_tmp_bytes::<F, A>(self, infos)
+    }
+
+    fn blas_matvec_operand_encode(
+        &self,
+        res: &mut BlasMatVecOperand<BE>,
+        entry: impl Fn(usize, usize) -> F,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> CKKSResult<()> {
+        BE::blas_matvec_operand_encode(self, res, entry, scratch)
+    }
+
     fn blas_context_encode_tmp_bytes<A: BlasContextInfos>(&self, infos: &A) -> usize {
         BE::blas_context_encode_tmp_bytes::<F, A>(self, infos)
     }
 
-    fn blas_context_encode(&self, res: &mut BlasContextUnprepared<BE>, scratch: &mut ScratchArena<'_, BE>) -> CKKSResult<()> {
+    fn blas_context_encode(&self, res: &mut BlasContext<BE>, scratch: &mut ScratchArena<'_, BE>) -> CKKSResult<()> {
         BE::blas_context_encode::<F>(self, res, scratch)
     }
 }
@@ -45,11 +58,26 @@ impl<BE: Backend + BlasEncodingImpl> BlasPtOperandPreparedFactory<BE> for Module
 
     fn blas_pt_operand_prepare<S: BlasPtSide>(
         &self,
-        res: &mut BlasPtOperand<BE, S>,
-        other: &BlasPtOperandUnprepared<BE, S>,
+        res: &mut BlasPtOperandPrepared<BE, S>,
+        other: &BlasPtOperand<BE, S>,
         scratch: &mut ScratchArena<'_, BE>,
     ) {
         BE::blas_pt_operand_prepare(self, res, other, scratch)
+    }
+}
+
+impl<BE: Backend + BlasEncodingImpl> BlasMatVecOperandPreparedFactory<BE> for Module<BE> {
+    fn blas_matvec_operand_prepare_tmp_bytes<A: BlasMatVecOperandInfos>(&self, infos: &A) -> usize {
+        BE::blas_matvec_operand_prepare_tmp_bytes(self, infos)
+    }
+
+    fn blas_matvec_operand_prepare(
+        &self,
+        res: &mut BlasMatVecOperandPrepared<BE>,
+        other: &BlasMatVecOperand<BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) {
+        BE::blas_matvec_operand_prepare(self, res, other, scratch)
     }
 }
 
@@ -60,8 +88,8 @@ impl<BE: Backend + BlasEncodingImpl> BlasContextPreparedFactory<BE> for Module<B
 
     fn blas_context_prepare(
         &self,
-        res: &mut BlasContext<BE>,
-        other: &BlasContextUnprepared<BE>,
+        res: &mut BlasContextPrepared<BE>,
+        other: &BlasContext<BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) {
         BE::blas_context_prepare(self, res, other, scratch)

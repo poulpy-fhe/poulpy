@@ -13,11 +13,11 @@
 //! - optionally, the **sparse-secret encapsulation** key-switching keys
 //!   (`denseToSparse`, `sparseToDense`; <https://eprint.iacr.org/2022/024>),
 //!   whose sparse ephemeral secret is sampled inside
-//!   [`BootstrappingContext::generate_keys`] and never escapes it.
+//!   [`BootstrappingContextPrepared::generate_keys`] and never escapes it.
 //!
 //! ## Unprepared vs prepared
 //!
-//! [`BootstrappingContext::generate_keys`] returns an **unprepared**
+//! [`BootstrappingContextPrepared::generate_keys`] returns an **unprepared**
 //! [`BootstrappingKeySet`] — the encrypted, *not yet preprocessed* keys. Keys are
 //! kept unprepared on purpose: the unprepared form is what one serializes to send
 //! online, and on accelerators (GPU) it is what lives in device memory, prepared
@@ -59,7 +59,7 @@ use poulpy_hal::{
     source::Source,
 };
 
-use crate::layouts::{BootstrappingContext, BootstrappingPlan, EvalModRing};
+use crate::layouts::{BootstrappingContextPrepared, BootstrappingPlan, EvalModRing};
 use poulpy_core::api::{GLWESecretSampling, TransferInto};
 use poulpy_core::layouts::GLWESecretViewMut;
 use poulpy_core::{Distribution, GetDistribution, GetDistributionMut};
@@ -73,7 +73,7 @@ use poulpy_core::{Distribution, GetDistribution, GetDistributionMut};
 /// the fly. [`BootstrappingKeysPrepared`] is the eager in-memory implementation.
 pub trait BootstrappingLinearKeys<BE: Backend> {
     /// The rotation-key collection passed to the homomorphic DFT stages.
-    type RotationKeys: GetAutomorphismKey<BE>;
+    type RotationKeys: GetAutomorphismKey<BE> + GetTensorKey<BE>;
 
     /// The prepared key-switching key type for sparse-secret encapsulation.
     type SwitchingKey: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
@@ -142,7 +142,7 @@ pub type EncapsulationKeys<K> = (K, Option<K>);
 
 /// The **unprepared** bootstrapping keys: encrypted but not yet preprocessed.
 ///
-/// This is the form produced by [`BootstrappingContext::generate_keys`] and the
+/// This is the form produced by [`BootstrappingContextPrepared::generate_keys`] and the
 /// form to serialize / store (incl. GPU device memory). Generic over the key data
 /// buffer `D` (backend agnostic). Call [`Self::prepare`] to obtain the prepared
 /// [`BootstrappingKeysPrepared`] the pipeline consumes, or prepare individual keys
@@ -345,7 +345,7 @@ impl<D: Data, W: ZnxWord> BootstrappingKeySet<D, W> {
 }
 
 /// Layout parameters for the evaluation keys produced by
-/// [`BootstrappingContext::generate_keys`].
+/// [`BootstrappingContextPrepared::generate_keys`].
 ///
 /// Key generation uses [`poulpy_core::Noise::ENCRYPTION`] at each
 /// destination key's precision. The Galois elements of the rotation keys are read from the compiled DFT matrices,
@@ -407,7 +407,7 @@ impl BootstrappingKeysLayout {
         encapsulation.chain([self.first_factor_key]).flatten().collect()
     }
 
-    /// Scratch of [`BootstrappingContext::generate_keys_ci`] for these layouts:
+    /// Scratch of [`BootstrappingContextPrepared::generate_keys_ci`] for these layouts:
     /// `(scratch, scratch_ci)`. On `module`, the encryption of each key, a
     /// first-factor key beside the rotated secret it is carved with; on `ci`, the
     /// tensor key beside the CI secret. Zero without conversion key layouts.
@@ -517,7 +517,7 @@ pub struct EncapsulationKeysLayout {
     pub sparse_to_dense: Option<GLWESwitchingKeyLayout>,
 }
 
-impl<BE: Backend, F> BootstrappingContext<BE, F> {
+impl<BE: Backend, F> BootstrappingContextPrepared<BE, F> {
     /// Generates the **unprepared** [`BootstrappingKeySet`] for `sk_dense`.
     ///
     /// The keys are encrypted but **not preprocessed** (see the [module
@@ -569,7 +569,7 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
     }
 }
 
-impl<BE: Backend<Ring = Standard>, F> BootstrappingContext<BE, F> {
+impl<BE: Backend<Ring = Standard>, F> BootstrappingContextPrepared<BE, F> {
     /// [`Self::generate_keys`] with EvalMod on the conjugate-invariant ring: a CI
     /// secret of the dense secret's Hamming weight, sampled after the raise keys,
     /// has the tensor key on `ci`, of degree `N`; the trace and embedding keys
@@ -617,7 +617,7 @@ impl<BE: Backend<Ring = Standard>, F> BootstrappingContext<BE, F> {
 }
 
 impl BootstrappingPlan {
-    /// [`BootstrappingContext::generate_keys`] from the plan alone, for a key
+    /// [`BootstrappingContextPrepared::generate_keys`] from the plan alone, for a key
     /// owner that does not compile the context: the client of an evaluation on
     /// another backend. The keys are those the compiled context generates.
     #[allow(clippy::too_many_arguments)]
@@ -647,7 +647,7 @@ impl BootstrappingPlan {
             .generate_keys(module, sk_dense, layout, source_xs, source_xe, source_xa, scratch)
     }
 
-    /// [`BootstrappingContext::generate_keys_ci`] from the plan alone, as
+    /// [`BootstrappingContextPrepared::generate_keys_ci`] from the plan alone, as
     /// [`Self::generate_keys`].
     #[expect(
         clippy::too_many_arguments,

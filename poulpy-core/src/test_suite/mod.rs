@@ -128,6 +128,8 @@ macro_rules! core_backend_test_suite {
                 glwe_prepare_linear_transformation_rhs_rejects_wide_diagonal =>
                     $crate::test_suite::noise::linear_transformation::test_glwe_prepare_linear_transformation_rhs_rejects_wide_diagonal,
                 glwe_linear_transformation_sum => $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_sum,
+                glwe_linear_transformation_ciphertext_diagonals =>
+                    $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_ciphertext_diagonals,
                 glwe_linear_transformation_powers_of_two =>
                     $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_powers_of_two,
                 glwe_linear_transformation_sum_rejects_mismatched_schedule =>

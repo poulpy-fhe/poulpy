@@ -6,8 +6,8 @@ use poulpy_hal::layouts::{Backend, VecZnxBackendMut, VecZnxBackendRef, VecZnxDft
 use crate::{
     Distribution,
     layouts::{
-        DiagonalProd, GGLWEInfos, GLWEInfos, LWEInfos, LinearTransformation, LinearTransformationBabySteps,
-        LinearTransformationPrepared, TorusPrecision, prepared::GGLWEPreparedBackendRef,
+        DiagonalProd, GGLWEInfos, LWEInfos, LinearTransformation, LinearTransformationBabySteps, TorusPrecision,
+        prepared::GGLWEPreparedBackendRef,
     },
 };
 
@@ -61,10 +61,11 @@ where
 }
 
 /// The checks of [`glwe_eval_linear_transformation_sum_into_reference`](crate::reference::linear_transformation::glwe_eval_linear_transformation_sum_into_reference), run before it reads a key or writes `res`.
-pub fn assert_linear_transformation_sum<BE: Backend>(
-    babies: &[&LinearTransformationBabySteps<BE>],
-    lts: &[&LinearTransformationPrepared<BE>],
-) {
+pub fn assert_linear_transformation_sum<BE, P>(babies: &[&LinearTransformationBabySteps<BE>], lts: &[&LinearTransformation<P>])
+where
+    BE: Backend,
+    P: DiagonalProd<BE>,
+{
     assert_eq!(
         babies.len(),
         lts.len(),
@@ -73,9 +74,9 @@ pub fn assert_linear_transformation_sum<BE: Backend>(
     let (&lhs, &rhs) = (babies.first().expect("linear transformation sum has no terms"), &lts[0]);
     // First, so that a later term's cache holds the rotations its schedule reads before its layout is read.
     assert_linear_transformation_giant_steps(babies, lts);
-    let diagonals = |lt: &LinearTransformationPrepared<BE>| {
+    let diagonals = |lt: &LinearTransformation<P>| {
         lt.first_diagonal_plaintext()
-            .map(|d| (d.glwe_layout(), d.max_size(), d.log_scale()))
+            .map(|d| (d.glwe_layout(), d.max_size(), DiagonalProd::log_scale(d)))
     };
     for (t, (&l, &r)) in babies.iter().zip(lts).enumerate().skip(1) {
         assert!(
@@ -109,7 +110,7 @@ fn assert_linear_transformation_giant_steps<BE, P>(
     lts: &[&LinearTransformation<P>],
 ) where
     BE: Backend,
-    P: DiagonalProd<BE>,
+    P: LWEInfos,
 {
     assert!(
         !lts[0].giant_steps.is_empty(),

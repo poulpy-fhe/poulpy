@@ -1,25 +1,25 @@
 //! Canonical cross-backend parity for every linear-transformation phase.
 
+use crate::test_suite::keys::TransformKeys;
 use std::collections::HashMap;
 
 use poulpy_hal::{
-    api::{CnvPVecAlloc, CnvPVecBytesOf, Convolution, ModuleN},
-    layouts::{Backend, Data, DataViewMut, GaloisElement, HostDataMut, Module, ScratchArena, VecZnxDftBackendMut, ZnxViewMut},
+    api::CnvPVecAlloc,
+    layouts::{Backend, CyclotomicOrder, Data, DataViewMut, GaloisElement, HostDataMut, Module, ZnxViewMut},
     source::Source,
     test_suite::TestParams,
 };
 
 use crate::{
     DiagonalProd, GLWELinearTransformations,
-    api::{GLWEAutomorphismKeyPreparedFactory, TransferInto},
+    api::{GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory, TransferInto},
     layouts::{
-        Base2K, Degree, Dnum, GGLWEInfos, GLWE, GLWEAutomorphismKeyLayout, GLWEBackendRef, GLWEInfos, GLWELayout,
-        GLWEToBackendRef, IntPolyInfos, LWEInfos, LinearTransformation, LinearTransformationDiagonal,
+        Base2K, Degree, DiagonalOperand, Dnum, GGLWEInfos, GLWE, GLWEAutomorphismKeyLayout, GLWEBackendRef, GLWEInfos,
+        GLWELayout, GLWETensorKeyLayout, GLWEToBackendRef, LWEInfos, LinearTransformation, LinearTransformationDiagonal,
         LinearTransformationGiantStep, LinearTransformationLayout, LinearTransformationStrategy, ModuleCoreAlloc, Rank,
         TorusPrecision,
         prepared::{LinearTransformationBabySteps, PreparedDiagonal},
     },
-    reference::linear_transformation::glwe_accumulate_streamed_baby_steps_dft,
     test_suite::{
         keys::fill_by_digit,
         noise::assert_refuses_uncovered_input,
@@ -49,11 +49,6 @@ impl<D: Data> GLWEInfos for StreamedDiagonal<D> {
         self.0.rank()
     }
 }
-impl<D: Data> IntPolyInfos for StreamedDiagonal<D> {
-    fn encoded_k(&self) -> TorusPrecision {
-        self.max_k()
-    }
-}
 impl<D: Data, BE: Backend> GLWEToBackendRef<BE> for StreamedDiagonal<D>
 where
     GLWE<D, i64>: GLWEToBackendRef<BE>,
@@ -62,21 +57,12 @@ where
         self.0.to_backend_ref()
     }
 }
-impl<BE: Backend, D: Data> DiagonalProd<BE> for StreamedDiagonal<D>
+impl<BE: Backend<ZnxWord = i64>> DiagonalProd<BE> for StreamedDiagonal<BE::OwnedBuf>
 where
-    GLWE<D, i64>: GLWEToBackendRef<BE>,
+    GLWE<BE::OwnedBuf, i64>: GLWEToBackendRef<BE>,
 {
-    fn accumulate_giant_prod<M>(
-        module: &M,
-        cnv_offset_hi: usize,
-        prod_dft: &mut VecZnxDftBackendMut<'_, BE>,
-        lhs: &LinearTransformationBabySteps<BE>,
-        gs: &LinearTransformationGiantStep<Self>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        M: CnvPVecBytesOf + Convolution<BE> + ModuleN,
-    {
-        glwe_accumulate_streamed_baby_steps_dft(module, cnv_offset_hi, prod_dft, lhs, gs, scratch);
+    fn operand(&self) -> DiagonalOperand<'_, BE> {
+        DiagonalOperand::Unprepared(self.0.to_backend_ref())
     }
 }
 
@@ -85,15 +71,24 @@ fn poison<B: Backend>(buffer: &mut B::OwnedBuf) {
     B::copy_from_host(buffer, &vec![0xA5; bytes]);
 }
 
+/// Resident and streamed plaintext transforms, single and summed over two terms, agree with each other and across
+/// the backends.
 /// Queries are exercised by their consumers using independently poisoned, exact budgets.
 /// Prepared caches are compared only through canonical output and semantic metadata.
+/// Then diagonals of the source's rank, multiplied as ciphertexts, on the per-rotation schedule.
 pub fn test_linear_transformation_parity<BR, BT>(params: &TestParams, shapes: &ParityShapes, r: &Module<BR>, t: &Module<BT>)
 where
     BR: ParityBackend,
     BT: ParityBackend,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GLWELinearTransformations<BR> + GLWEAutomorphismKeyPreparedFactory<BR> + CnvPVecAlloc<BR>,
-    Module<BT>: GLWELinearTransformations<BT> + GLWEAutomorphismKeyPreparedFactory<BT> + CnvPVecAlloc<BT>,
+    Module<BR>: GLWELinearTransformations<BR>
+        + GLWEAutomorphismKeyPreparedFactory<BR>
+        + GLWETensorKeyPreparedFactory<BR>
+        + CnvPVecAlloc<BR>,
+    Module<BT>: GLWELinearTransformations<BT>
+        + GLWEAutomorphismKeyPreparedFactory<BT>
+        + GLWETensorKeyPreparedFactory<BT>
+        + CnvPVecAlloc<BT>,
 {
     assert!(params.n <= r.n() && params.n <= t.n());
     let base = params.base2k.min(12);
@@ -290,6 +285,7 @@ where
                             &one_layout,
                             &identity_schedule.index(),
                             &key,
+                            &key,
                         ))
                         .borrow(),
                     );
@@ -304,6 +300,7 @@ where
                             &ct,
                             &one_layout,
                             &identity_schedule.index(),
+                            &key,
                             &key,
                         ))
                         .borrow(),
@@ -328,6 +325,7 @@ where
                             &one_layout,
                             &identity_schedule.index(),
                             &key,
+                            &key,
                         ))
                         .borrow(),
                     );
@@ -342,6 +340,7 @@ where
                             &ct,
                             &one_layout,
                             &identity_schedule.index(),
+                            &key,
                             &key,
                         ))
                         .borrow(),
@@ -403,8 +402,12 @@ where
                             poison::<BT>(diagonal.plaintext.cnv_mut().data_mut());
                         }
                     }
-                    resident_r.set_log_scale(19);
-                    resident_t.set_log_scale(19);
+                    let meta = crate::layouts::GLWEPlaintextMeta {
+                        scale: crate::layouts::Scale::Log(19),
+                        ..Default::default()
+                    };
+                    resident_r.set_plaintext_meta(meta);
+                    resident_t.set_plaintext_meta(meta);
                     r.glwe_prepare_linear_transformation_rhs(
                         &mut resident_r,
                         &rhs_r,
@@ -416,7 +419,7 @@ where
                         &mut poisoned_scratch::<BT>(t.glwe_prepare_linear_transformation_rhs_tmp_bytes(&pt)).borrow(),
                     );
                     assert_eq!(resident_r.index(), resident_t.index());
-                    assert_eq!((resident_r.log_scale(), resident_t.log_scale()), (19, 19));
+                    assert_eq!((resident_r.plaintext_meta(), resident_t.plaintext_meta()), (meta, meta));
                     for (gr, gt) in resident_r.giant_steps.iter().zip(&resident_t.giant_steps) {
                         for (dr, dt) in gr.diagonals.iter().zip(&gt.diagonals) {
                             assert_eq!(dr.plaintext.glwe_layout(), dt.plaintext.glwe_layout());
@@ -428,7 +431,7 @@ where
                 // The summed evaluations' second transform: with one transform
                 // for both terms, a sum that applied the first term's transform
                 // to every term would give the same bits.
-                let (_, _, resident2_r, resident2_t) = transform(&mut source);
+                let (rhs2_r, rhs2_t, resident2_r, resident2_t) = transform(&mut source);
                 // Different destination radix forces the per-giant normalized
                 // fallback instead of the lazy DFT accumulation path.
                 for out_base in [base, base - 1] {
@@ -446,8 +449,10 @@ where
                             &lhs_r,
                             &resident_r,
                             &keys_r,
-                            &mut poisoned_scratch::<BR>(r.glwe_eval_linear_transformation_tmp_bytes(&out, &ct, &pt, &plan, &key))
-                                .borrow(),
+                            &mut poisoned_scratch::<BR>(
+                                r.glwe_eval_linear_transformation_tmp_bytes(&out, &ct, &pt, &plan, &key, &key),
+                            )
+                            .borrow(),
                         );
                         t.glwe_eval_linear_transformation_into(
                             offset,
@@ -455,8 +460,10 @@ where
                             &lhs_t,
                             &resident_t,
                             &keys_t,
-                            &mut poisoned_scratch::<BT>(t.glwe_eval_linear_transformation_tmp_bytes(&out, &ct, &pt, &plan, &key))
-                                .borrow(),
+                            &mut poisoned_scratch::<BT>(
+                                t.glwe_eval_linear_transformation_tmp_bytes(&out, &ct, &pt, &plan, &key, &key),
+                            )
+                            .borrow(),
                         );
                         let mut have = r.glwe_alloc_from_infos(&out);
                         out_t.transfer_into(&mut have);
@@ -475,7 +482,7 @@ where
                             &rhs_r,
                             &keys_r,
                             &mut poisoned_scratch::<BR>(
-                                r.glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(&out, &ct, &pt, &plan, &key),
+                                r.glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(&out, &ct, &pt, &plan, &key, &key),
                             )
                             .borrow(),
                         );
@@ -486,7 +493,7 @@ where
                             &rhs_t,
                             &keys_t,
                             &mut poisoned_scratch::<BT>(
-                                t.glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(&out, &ct, &pt, &plan, &key),
+                                t.glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(&out, &ct, &pt, &plan, &key, &key),
                             )
                             .borrow(),
                         );
@@ -512,7 +519,7 @@ where
                             &[&resident_r, &resident2_r],
                             &keys_r,
                             &mut poisoned_scratch::<BR>(
-                                r.glwe_eval_linear_transformation_sum_tmp_bytes(&out, &ct, &pt, &plan, &key),
+                                r.glwe_eval_linear_transformation_sum_tmp_bytes(&out, &ct, &pt, &plan, &key, &key),
                             )
                             .borrow(),
                         );
@@ -523,7 +530,7 @@ where
                             &[&resident_t, &resident2_t],
                             &keys_t,
                             &mut poisoned_scratch::<BT>(
-                                t.glwe_eval_linear_transformation_sum_tmp_bytes(&out, &ct, &pt, &plan, &key),
+                                t.glwe_eval_linear_transformation_sum_tmp_bytes(&out, &ct, &pt, &plan, &key, &key),
                             )
                             .borrow(),
                         );
@@ -532,6 +539,43 @@ where
                             sum_r,
                             have,
                             "summed linear transform rank={rank} k_digit={k_digit} offset={offset} out_base={out_base}"
+                        );
+                        // The same terms streamed, on the streamed query's budget: the resident sum, bit for bit.
+                        let mut streamed_sum_r = ref_glwe(r, &out, &mut source);
+                        let mut streamed_sum_t = t.glwe_alloc_from_infos(&out);
+                        streamed_sum_r.transfer_into(&mut streamed_sum_t);
+                        r.glwe_eval_linear_transformation_sum_into(
+                            offset,
+                            &mut streamed_sum_r,
+                            &[&lhs_r, &lhs2_r],
+                            &[&rhs_r, &rhs2_r],
+                            &keys_r,
+                            &mut poisoned_scratch::<BR>(
+                                r.glwe_eval_linear_transformation_sum_unprepared_rhs_tmp_bytes(&out, &ct, &pt, &plan, &key, &key),
+                            )
+                            .borrow(),
+                        );
+                        t.glwe_eval_linear_transformation_sum_into(
+                            offset,
+                            &mut streamed_sum_t,
+                            &[&lhs_t, &lhs2_t],
+                            &[&rhs_t, &rhs2_t],
+                            &keys_t,
+                            &mut poisoned_scratch::<BT>(
+                                t.glwe_eval_linear_transformation_sum_unprepared_rhs_tmp_bytes(&out, &ct, &pt, &plan, &key, &key),
+                            )
+                            .borrow(),
+                        );
+                        streamed_sum_t.transfer_into(&mut have);
+                        assert_glwe_eq!(
+                            streamed_sum_r,
+                            have,
+                            "streamed summed linear transform rank={rank} k_digit={k_digit} offset={offset} out_base={out_base}"
+                        );
+                        assert_glwe_eq!(
+                            sum_r,
+                            streamed_sum_r,
+                            "resident/streamed summed linear transform rank={rank} k_digit={k_digit} offset={offset} out_base={out_base}"
                         );
                         // One term is the single transform, bit for bit, on the tested backend too.
                         let mut one_t = t.glwe_alloc_from_infos(&out);
@@ -542,7 +586,7 @@ where
                             &[&resident_t],
                             &keys_t,
                             &mut poisoned_scratch::<BT>(
-                                t.glwe_eval_linear_transformation_sum_tmp_bytes(&out, &ct, &pt, &plan, &key),
+                                t.glwe_eval_linear_transformation_sum_tmp_bytes(&out, &ct, &pt, &plan, &key, &key),
                             )
                             .borrow(),
                         );
@@ -566,20 +610,31 @@ where
                         &lhs_t,
                         &resident_t,
                         &keys_t,
-                        &mut poisoned_scratch::<BT>(t.glwe_eval_linear_transformation_tmp_bytes(&wide, &ct, &pt, &plan, &key))
-                            .borrow(),
+                        &mut poisoned_scratch::<BT>(
+                            t.glwe_eval_linear_transformation_tmp_bytes(&wide, &ct, &pt, &plan, &key, &key),
+                        )
+                        .borrow(),
                     )
                 });
             }
         }
     }
+    ciphertext_diagonals_parity(
+        params,
+        shapes,
+        r,
+        t,
+        LinearTransformationStrategy::Bsgs { giant_step: 4 },
+        &mut source,
+    );
 }
 
 /// The transformation of diagonals `-16..16` with the keys of the power-of-two rotations, the
 /// baby steps by doubling, whose second pass switches two ciphertexts with one key, and the giant
 /// steps as a tree whose first level switches four: the same bits on both backends, on the lazy route and on the
 /// normalized one of a destination of another radix. Then the diagonals `{0, 1, 60, 61}`, whose giant digits are
-/// `{0, 15}` with 128 slots or more: their tree takes a buffer per switch, more than two per giant step.
+/// `{0, 15}` with 128 slots or more: their tree takes a buffer per switch, more than two per giant step. Then
+/// diagonals of the source's rank, multiplied as ciphertexts, on a power-of-two schedule.
 /// Every call runs on the scratch its query returns.
 pub fn test_linear_transformation_powers_of_two_parity<BR, BT>(
     params: &TestParams,
@@ -590,8 +645,14 @@ pub fn test_linear_transformation_powers_of_two_parity<BR, BT>(
     BR: ParityBackend,
     BT: ParityBackend,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GLWELinearTransformations<BR> + GLWEAutomorphismKeyPreparedFactory<BR> + CnvPVecAlloc<BR>,
-    Module<BT>: GLWELinearTransformations<BT> + GLWEAutomorphismKeyPreparedFactory<BT> + CnvPVecAlloc<BT>,
+    Module<BR>: GLWELinearTransformations<BR>
+        + GLWEAutomorphismKeyPreparedFactory<BR>
+        + GLWETensorKeyPreparedFactory<BR>
+        + CnvPVecAlloc<BR>,
+    Module<BT>: GLWELinearTransformations<BT>
+        + GLWEAutomorphismKeyPreparedFactory<BT>
+        + GLWETensorKeyPreparedFactory<BT>
+        + CnvPVecAlloc<BT>,
 {
     assert!(params.n <= r.n() && params.n <= t.n());
     let base = params.base2k.min(12);
@@ -748,7 +809,7 @@ pub fn test_linear_transformation_powers_of_two_parity<BR, BT>(
                     &lhs_r,
                     &resident_r,
                     &keys_r,
-                    &mut poisoned_scratch::<BR>(r.glwe_eval_linear_transformation_tmp_bytes(&out, &ct, &pt, &plan, &key))
+                    &mut poisoned_scratch::<BR>(r.glwe_eval_linear_transformation_tmp_bytes(&out, &ct, &pt, &plan, &key, &key))
                         .borrow(),
                 );
                 t.glwe_eval_linear_transformation_into(
@@ -757,7 +818,7 @@ pub fn test_linear_transformation_powers_of_two_parity<BR, BT>(
                     &lhs_t,
                     &resident_t,
                     &keys_t,
-                    &mut poisoned_scratch::<BT>(t.glwe_eval_linear_transformation_tmp_bytes(&out, &ct, &pt, &plan, &key))
+                    &mut poisoned_scratch::<BT>(t.glwe_eval_linear_transformation_tmp_bytes(&out, &ct, &pt, &plan, &key, &key))
                         .borrow(),
                 );
                 let mut have = r.glwe_alloc_from_infos(&out);
@@ -767,6 +828,262 @@ pub fn test_linear_transformation_powers_of_two_parity<BR, BT>(
                     have,
                     "powers-of-two linear transform rank={rank} key_base={key_base} k_digit={k_digit} out_base={out_base}"
                 );
+            }
+        }
+    }
+    ciphertext_diagonals_parity(
+        params,
+        shapes,
+        r,
+        t,
+        LinearTransformationStrategy::BsgsPowersOfTwo { giant_step: 4 },
+        &mut source,
+    );
+}
+
+/// Diagonals of the rank of the source on `strategy`'s schedule of `{0, 1, 4, 5}`, multiplied as ciphertexts: the
+/// resident transformation, the streamed one, a two-term and a one-term sum, the same bits on both backends and in
+/// either form. At rank 1, keys at the source's radix take the one-pass products from an offset of a limb, and with
+/// digits of two limbs a backend's fused giant steps where it has them; keys one bit narrower take the tensor products
+/// and the normalized giant route. Every call runs on the scratch its query returns.
+fn ciphertext_diagonals_parity<BR, BT>(
+    params: &TestParams,
+    shapes: &ParityShapes,
+    r: &Module<BR>,
+    t: &Module<BT>,
+    strategy: LinearTransformationStrategy,
+    source: &mut Source,
+) where
+    BR: ParityBackend,
+    BT: ParityBackend,
+    BR::OwnedBuf: HostDataMut,
+    Module<BR>: GLWELinearTransformations<BR>
+        + GLWEAutomorphismKeyPreparedFactory<BR>
+        + GLWETensorKeyPreparedFactory<BR>
+        + CnvPVecAlloc<BR>,
+    Module<BT>: GLWELinearTransformations<BT>
+        + GLWEAutomorphismKeyPreparedFactory<BT>
+        + GLWETensorKeyPreparedFactory<BT>
+        + CnvPVecAlloc<BT>,
+{
+    let base = params.base2k.min(12);
+    let k = 2 * base + 1;
+    let schedule = LinearTransformationLayout {
+        indexes: vec![0, 1, 4, 5],
+        slots: params.n / 2,
+        strategy,
+    };
+    let plan = schedule.index();
+    let rotations = plan.rotations;
+    for &rank in &shapes.ranks {
+        let ct = GLWELayout {
+            n: params.n.into(),
+            base2k: base.into(),
+            k: k.into(),
+            rank: rank.into(),
+        };
+        // Digits off a limb boundary are the keys' concern, swept by the plaintext cases.
+        let mut cases: Vec<(usize, usize)> = shapes.dsizes(k, base).into_iter().map(|dsize| (base, dsize * base)).collect();
+        cases.push((base - 1, base - 1));
+        // A higher rank takes the tensor products whatever the keys and the offset.
+        let offsets: &[usize] = if rank == 1 {
+            &[base - 1, 2 * base, 2 * base + 1]
+        } else {
+            cases.truncate(1);
+            &[2 * base + 1]
+        };
+        for (key_base, k_digit) in cases {
+            let key = GLWEAutomorphismKeyLayout {
+                n: ct.n,
+                base2k: key_base.into(),
+                rank: ct.rank,
+                dnum: Dnum(k.div_ceil(k_digit) as u32),
+                k_digit: TorusPrecision(k_digit as u32),
+                k_aux: TorusPrecision((k_digit + (params.n.ilog2() as usize)) as u32),
+            };
+            let tsk = GLWETensorKeyLayout {
+                n: key.n,
+                base2k: key.base2k,
+                rank: key.rank,
+                dnum: key.dnum,
+                k_digit: key.k_digit,
+                k_aux: key.k_aux,
+            };
+            let mut atks_r = HashMap::new();
+            let mut atks_t = HashMap::new();
+            for p in plan.galois_elements(r.cyclotomic_order()) {
+                let mut key_r = r.glwe_automorphism_key_alloc_from_infos(&key);
+                fill_by_digit(r, &mut key_r, 1, source);
+                key_r.p = p;
+                let mut key_t = t.glwe_automorphism_key_alloc_from_infos(&key);
+                key_r.transfer_into(&mut key_t);
+                let mut prepared_r = r.glwe_automorphism_key_prepared_alloc_from_infos(&key);
+                let mut prepared_t = t.glwe_automorphism_key_prepared_alloc_from_infos(&key);
+                r.glwe_automorphism_key_prepare(
+                    &mut prepared_r,
+                    &key_r,
+                    &mut poisoned_scratch::<BR>(r.glwe_automorphism_key_prepare_tmp_bytes(&key)).borrow(),
+                );
+                t.glwe_automorphism_key_prepare(
+                    &mut prepared_t,
+                    &key_t,
+                    &mut poisoned_scratch::<BT>(t.glwe_automorphism_key_prepare_tmp_bytes(&key)).borrow(),
+                );
+                atks_r.insert(p, prepared_r);
+                atks_t.insert(p, prepared_t);
+            }
+            let mut tsk_r = r.glwe_tensor_key_alloc_from_infos(&tsk);
+            fill_by_digit(r, &mut tsk_r, 1, source);
+            let mut tsk_t = t.glwe_tensor_key_alloc_from_infos(&tsk);
+            tsk_r.transfer_into(&mut tsk_t);
+            let mut tsk_prepared_r = r.alloc_tensor_key_prepared_from_infos(&tsk);
+            let mut tsk_prepared_t = t.alloc_tensor_key_prepared_from_infos(&tsk);
+            r.glwe_tensor_key_prepare(
+                &mut tsk_prepared_r,
+                &tsk_r,
+                &mut poisoned_scratch::<BR>(r.glwe_tensor_key_prepare_tmp_bytes(&tsk)).borrow(),
+            );
+            t.glwe_tensor_key_prepare(
+                &mut tsk_prepared_t,
+                &tsk_t,
+                &mut poisoned_scratch::<BT>(t.glwe_tensor_key_prepare_tmp_bytes(&tsk)).borrow(),
+            );
+            let keys_r = TransformKeys {
+                automorphism: &atks_r,
+                tensor: &tsk_prepared_r,
+            };
+            let keys_t = TransformKeys {
+                automorphism: &atks_t,
+                tensor: &tsk_prepared_t,
+            };
+
+            // The baby steps of a random source, the same on both backends.
+            let baby_steps = |source: &mut Source| {
+                let input_r = ref_glwe(r, &ct, source);
+                let mut input_t = t.glwe_alloc_from_infos(&ct);
+                input_r.transfer_into(&mut input_t);
+                let mut lhs_r = LinearTransformationBabySteps::alloc_with(r, &plan.baby_steps, rotations, &ct);
+                let mut lhs_t = LinearTransformationBabySteps::alloc_with(t, &plan.baby_steps, rotations, &ct);
+                r.glwe_prepare_linear_transformation_baby_steps(
+                    &mut lhs_r,
+                    &input_r,
+                    &atks_r,
+                    &mut poisoned_scratch::<BR>(r.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(&ct, &plan, &key))
+                        .borrow(),
+                );
+                t.glwe_prepare_linear_transformation_baby_steps(
+                    &mut lhs_t,
+                    &input_t,
+                    &atks_t,
+                    &mut poisoned_scratch::<BT>(t.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(&ct, &plan, &key))
+                        .borrow(),
+                );
+                (lhs_r, lhs_t)
+            };
+            // Random ciphertext diagonals, the same on both backends, and their resident preparations.
+            let transform = |source: &mut Source| {
+                let mut rhs_r = LinearTransformation {
+                    baby_steps: plan.baby_steps.clone(),
+                    rotations,
+                    giant_steps: Vec::new(),
+                };
+                let mut rhs_t = LinearTransformation {
+                    baby_steps: plan.baby_steps.clone(),
+                    rotations,
+                    giant_steps: Vec::new(),
+                };
+                for (&rot, babies) in plan.giant_steps.iter().zip(&plan.index) {
+                    let (mut diagonals_r, mut diagonals_t) = (Vec::new(), Vec::new());
+                    for &baby in babies {
+                        let diagonal_r = ref_glwe(r, &ct, source);
+                        let mut diagonal_t = t.glwe_alloc_from_infos(&ct);
+                        diagonal_r.transfer_into(&mut diagonal_t);
+                        diagonals_r.push(LinearTransformationDiagonal {
+                            baby,
+                            plaintext: StreamedDiagonal(diagonal_r),
+                        });
+                        diagonals_t.push(LinearTransformationDiagonal {
+                            baby,
+                            plaintext: StreamedDiagonal(diagonal_t),
+                        });
+                    }
+                    rhs_r.giant_steps.push(LinearTransformationGiantStep {
+                        rot,
+                        diagonals: diagonals_r,
+                    });
+                    rhs_t.giant_steps.push(LinearTransformationGiantStep {
+                        rot,
+                        diagonals: diagonals_t,
+                    });
+                }
+                let mut resident_r: LinearTransformation<PreparedDiagonal<BR::OwnedBuf, BR>> =
+                    LinearTransformation::alloc_prepared(r, &schedule, &ct);
+                let mut resident_t: LinearTransformation<PreparedDiagonal<BT::OwnedBuf, BT>> =
+                    LinearTransformation::alloc_prepared(t, &schedule, &ct);
+                r.glwe_prepare_linear_transformation_rhs(
+                    &mut resident_r,
+                    &rhs_r,
+                    &mut poisoned_scratch::<BR>(r.glwe_prepare_linear_transformation_rhs_tmp_bytes(&ct)).borrow(),
+                );
+                t.glwe_prepare_linear_transformation_rhs(
+                    &mut resident_t,
+                    &rhs_t,
+                    &mut poisoned_scratch::<BT>(t.glwe_prepare_linear_transformation_rhs_tmp_bytes(&ct)).borrow(),
+                );
+                (rhs_r, rhs_t, resident_r, resident_t)
+            };
+            let (lhs_r, lhs_t) = baby_steps(source);
+            let (lhs2_r, lhs2_t) = baby_steps(source);
+            let (rhs_r, rhs_t, resident_r, resident_t) = transform(source);
+            let (_, _, resident2_r, resident2_t) = transform(source);
+            let mut have = r.glwe_alloc_from_infos(&ct);
+            for &offset in offsets {
+                let label = format!("rank={rank} key_base={key_base} k_digit={k_digit} offset={offset} {strategy:?}");
+                // `$method` from one random destination on both backends, each on exactly the scratch `$query` returns.
+                macro_rules! check {
+                    ($what:literal, $method:ident, $query:ident, ($lhs_r:expr, $rhs_r:expr), ($lhs_t:expr, $rhs_t:expr)) => {{
+                        let mut out_r = ref_glwe(r, &ct, source);
+                        let mut out_t = t.glwe_alloc_from_infos(&ct);
+                        out_r.transfer_into(&mut out_t);
+                        let mut scratch = poisoned_scratch::<BR>(r.$query(&ct, &ct, &ct, &plan, &tsk, &key));
+                        r.$method(offset, &mut out_r, $lhs_r, $rhs_r, &keys_r, &mut scratch.borrow());
+                        let mut scratch = poisoned_scratch::<BT>(t.$query(&ct, &ct, &ct, &plan, &tsk, &key));
+                        t.$method(offset, &mut out_t, $lhs_t, $rhs_t, &keys_t, &mut scratch.borrow());
+                        out_t.transfer_into(&mut have);
+                        assert_glwe_eq!(out_r, have, "{} ciphertext-diagonal transform {label}", $what);
+                        out_r
+                    }};
+                }
+                let resident = check!(
+                    "resident",
+                    glwe_eval_linear_transformation_into,
+                    glwe_eval_linear_transformation_tmp_bytes,
+                    (&lhs_r, &resident_r),
+                    (&lhs_t, &resident_t)
+                );
+                let streamed = check!(
+                    "streamed",
+                    glwe_eval_linear_transformation_into,
+                    glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes,
+                    (&lhs_r, &rhs_r),
+                    (&lhs_t, &rhs_t)
+                );
+                assert_glwe_eq!(resident, streamed, "resident/streamed ciphertext-diagonal transform {label}");
+                check!(
+                    "summed",
+                    glwe_eval_linear_transformation_sum_into,
+                    glwe_eval_linear_transformation_sum_tmp_bytes,
+                    (&[&lhs_r, &lhs2_r], &[&resident_r, &resident2_r]),
+                    (&[&lhs_t, &lhs2_t], &[&resident_t, &resident2_t])
+                );
+                let one_term = check!(
+                    "one-term summed",
+                    glwe_eval_linear_transformation_sum_into,
+                    glwe_eval_linear_transformation_sum_tmp_bytes,
+                    (&[&lhs_r], &[&resident_r]),
+                    (&[&lhs_t], &[&resident_t])
+                );
+                assert_glwe_eq!(resident, one_term, "one-term ciphertext-diagonal transform sum {label}");
             }
         }
     }

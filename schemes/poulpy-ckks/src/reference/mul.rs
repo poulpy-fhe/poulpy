@@ -6,7 +6,7 @@ use poulpy_core::{
     glwe_prepare_left_tmp_bytes, glwe_prepare_right, glwe_prepare_right_tmp_bytes,
     layouts::{
         GGLWEInfos, GLWEInfos, GLWELayout, GLWEPlaintextLayout, GLWETensorViewMut, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
-        ModuleCoreAlloc, TorusPrecision,
+        ModuleCoreAlloc, TorusPrecision, prepared::GLWETensorKeyPreparedBackendRef,
     },
 };
 use poulpy_hal::{
@@ -596,6 +596,20 @@ where
     }
     module.glwe_tensor_relinearize(dst, &tmp, tsk, &mut scratch_local);
     Ok(())
+}
+
+/// The tensor key of a product of width `k`, `MissingRelinearizationKey` for `op` where `tsk` holds none.
+pub(crate) fn tensor_key_at<'k, BE, T>(
+    op: &'static str,
+    tsk: &'k T,
+    k: TorusPrecision,
+) -> Result<GLWETensorKeyPreparedBackendRef<'k, BE>>
+where
+    BE: Backend,
+    T: GetTensorKey<BE>,
+{
+    tsk.get_tensor_key(k)
+        .map_err(|source| CKKSCompositionError::MissingRelinearizationKey { op, k: k.into(), source }.into())
 }
 
 /// Whether a product of width `tensor_k` takes the one-pass product and relinearization.

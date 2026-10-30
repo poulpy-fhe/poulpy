@@ -248,6 +248,30 @@ impl_operations_delegate!(
     {
         BE::glwe_mul_prepared_plain_sum(self, cnv_offset, res, a, a_size, b, b_size, galois, base2k, scratch)
     },
+    fn glwe_mul_prepared_plain_sum_add_tmp_bytes<R>(&self, res: &R, a_size: usize, b_size: usize) -> usize
+    where
+        R: GLWEInfos,
+    {
+        BE::glwe_mul_prepared_plain_sum_add_tmp_bytes(self, res, a_size, b_size)
+    },
+    fn glwe_mul_prepared_plain_sum_add<R, AP, BP>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        a: &[&AP],
+        a_size: usize,
+        b: &[&BP],
+        b_size: usize,
+        galois: &[i64],
+        base2k: crate::layouts::Base2K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        AP: CnvPVecLToBackendRef<BE>,
+        BP: CnvPVecRToBackendRef<BE>,
+    {
+        BE::glwe_mul_prepared_plain_sum_add(self, cnv_offset, res, a, a_size, b, b_size, galois, base2k, scratch)
+    },
     fn glwe_mul_prepared_plain_sum_dft_tmp_bytes(&self, res_size: usize, a_size: usize, b_size: usize) -> usize {
         BE::glwe_mul_prepared_plain_sum_dft_tmp_bytes(self, res_size, a_size, b_size)
     },
@@ -529,26 +553,26 @@ impl_operations_delegate!(
     {
         BE::glwe_mul_prepared_relinearize_sum_tmp_bytes(self, res, a_size, b_size, tensor_k, tsk)
     },
-    fn glwe_mul_prepared_relinearize_sum<R, AP, BP, H>(
+    fn glwe_mul_prepared_relinearize_sum<'a, R, AP, BP, H>(
         &self,
         cnv_offset: usize,
         res: &mut R,
         res_k: crate::layouts::TorusPrecision,
-        a: &[&AP],
-        b: &[&BP],
+        a: impl IntoIterator<Item = &'a AP, IntoIter: ExactSizeIterator + Clone>,
         a_size: usize,
         a_k: crate::layouts::TorusPrecision,
+        b: impl IntoIterator<Item = &'a BP, IntoIter: ExactSizeIterator + Clone>,
         b_size: usize,
         b_k: crate::layouts::TorusPrecision,
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        AP: CnvPVecLToBackendRef<BE>,
-        BP: CnvPVecRToBackendRef<BE>,
+        AP: CnvPVecLToBackendRef<BE> + 'a,
+        BP: CnvPVecRToBackendRef<BE> + 'a,
         H: GetTensorKey<BE>,
     {
-        BE::glwe_mul_prepared_relinearize_sum(self, cnv_offset, res, res_k, a, b, a_size, a_k, b_size, b_k, tsk, scratch)
+        BE::glwe_mul_prepared_relinearize_sum(self, cnv_offset, res, res_k, a, a_size, a_k, b, b_size, b_k, tsk, scratch)
     },
     fn glwe_tensor_apply_prepared_tmp_bytes<R>(
         &self,

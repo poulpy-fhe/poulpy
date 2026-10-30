@@ -1,8 +1,7 @@
 use poulpy_ckks::{
     CKKSCtBounds, CKKSLayout, CKKSResult as Result, SetCKKSInfos,
     api::{
-        CKKSCopyOps, CKKSDotProductOps, CKKSLinearTransformationOps, CKKSModuleInfos, CKKSMulOps, LinearTransformationBabySteps,
-        LinearTransformationPrepared,
+        CKKSCopyOps, CKKSDotProductOps, CKKSLinearTransformationOps, CKKSModuleInfos, CKKSMulOps, LinearTransformationPrepared,
     },
     layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPreparedLeft, CKKSPreparedRight},
 };
@@ -15,11 +14,11 @@ use poulpy_hal::{
     layouts::{Backend, Module, PrepareHint, ScratchArena},
 };
 
-use super::lt_tmp_bytes;
+use super::{LtEval, baby_caches, lt_tmp_bytes, shared_giants};
 use crate::{
     layouts::{
-        BlasContext, BlasGrid, BlasGridInfos, BlasGridMut, BlasMatMulOperand, BlasMatMulOperandInfos, BlasMatMulOperandLayout,
-        BlasPlan, BlasPtAlgorithm, BlasPtOperand, BlasPtOperandInfos, Left,
+        BlasContextPrepared, BlasGrid, BlasGridInfos, BlasGridMut, BlasMatMulOperand, BlasMatMulOperandInfos,
+        BlasMatMulOperandLayout, BlasPlan, BlasPtAlgorithm, BlasPtOperandInfos, BlasPtOperandPrepared, Left,
         ciphertext::layout_of,
         encoding::mapped_block,
         grid_batch,
@@ -72,7 +71,7 @@ pub trait BlasMatMulReference<BE: Backend> {
     fn blas_matmul_prepare_left_tmp_bytes_reference<A, K>(
         &self,
         a: &A,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
         hint: PrepareHint,
     ) -> usize
@@ -97,7 +96,7 @@ pub trait BlasMatMulReference<BE: Backend> {
         &self,
         res: &mut BlasMatMulOperand<BE, CKKSPreparedLeft<BE>>,
         a: &A,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -105,14 +104,14 @@ pub trait BlasMatMulReference<BE: Backend> {
         BE: BlasMatIntraImpl,
         Self: CKKSMulOps<BE> + CKKSCopyOps<BE>,
         A: BlasGrid<BE>,
-        K: GetAutomorphismKey<BE> + Sync;
+        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
 
     /// As [`Self::blas_matmul_prepare_left_tmp_bytes_reference`], with the right maps
     /// [`blas_matmul_right_term_layout`](crate::layouts::blas_matmul_right_term_layout) reads.
     fn blas_matmul_prepare_right_tmp_bytes_reference<B, K>(
         &self,
         b: &B,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
         hint: PrepareHint,
     ) -> usize
@@ -129,7 +128,7 @@ pub trait BlasMatMulReference<BE: Backend> {
         &self,
         res: &mut BlasMatMulOperand<BE, CKKSPreparedRight<BE>>,
         b: &B,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -137,7 +136,7 @@ pub trait BlasMatMulReference<BE: Backend> {
         BE: BlasMatIntraImpl,
         Self: CKKSMulOps<BE> + CKKSCopyOps<BE>,
         B: BlasGrid<BE>,
-        K: GetAutomorphismKey<BE> + Sync;
+        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
 
     /// The largest of the JKLS kernel's query for a block of `res` and the `K d` pairs of terms of the operands `a` and
     /// `b`, or of the layouts [`blas_matmul_left_operand_layout`](crate::layouts::blas_matmul_left_operand_layout) and
@@ -152,7 +151,7 @@ pub trait BlasMatMulReference<BE: Backend> {
         res: &R,
         a: &A,
         b: &B,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         tsk: &T,
         keys: &K,
     ) -> usize
@@ -187,7 +186,7 @@ pub trait BlasMatMulReference<BE: Backend> {
         res: &mut R,
         a: &BlasMatMulOperand<BE, CKKSPreparedLeft<BE>>,
         b: &BlasMatMulOperand<BE, CKKSPreparedRight<BE>>,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         tsk: &T,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
@@ -197,7 +196,7 @@ pub trait BlasMatMulReference<BE: Backend> {
         Self: CKKSMulOps<BE> + CKKSCopyOps<BE>,
         R: BlasGridMut<BE>,
         T: GetTensorKey<BE> + Sync,
-        K: GetAutomorphismKey<BE> + Sync;
+        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
 
     /// The larger of both reference hot preparations' queries and the reference prepared product's on the layouts they
     /// give.
@@ -206,7 +205,7 @@ pub trait BlasMatMulReference<BE: Backend> {
         res: &R,
         a: &A,
         b: &B,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         tsk: &T,
         keys: &K,
     ) -> usize
@@ -228,7 +227,7 @@ pub trait BlasMatMulReference<BE: Backend> {
         res: &mut R,
         a: &A,
         b: &B,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         tsk: &T,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
@@ -240,7 +239,7 @@ pub trait BlasMatMulReference<BE: Backend> {
         A: BlasGrid<BE>,
         B: BlasGrid<BE>,
         T: GetTensorKey<BE> + Sync,
-        K: GetAutomorphismKey<BE> + Sync;
+        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
 
     /// The baby steps of one block and one summed linear transformation from blocks of `a`'s layout into a block of
     /// `res`'s; under JKLS, from blocks of the layout `b`'s first map leaves, and the map hook's query of that map from
@@ -253,8 +252,8 @@ pub trait BlasMatMulReference<BE: Backend> {
         &self,
         res: &R,
         a: &A,
-        b: &BlasPtOperand<BE>,
-        ctx: &BlasContext<BE>,
+        b: &BlasPtOperandPrepared<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
     ) -> usize
     where
@@ -284,8 +283,8 @@ pub trait BlasMatMulReference<BE: Backend> {
         &self,
         res: &mut R,
         a: &A,
-        b: &BlasPtOperand<BE>,
-        ctx: &BlasContext<BE>,
+        b: &BlasPtOperandPrepared<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -301,7 +300,7 @@ pub trait BlasMatMulReference<BE: Backend> {
             + Sized,
         R: BlasGridMut<BE>,
         A: BlasGrid<BE>,
-        K: GetAutomorphismKey<BE> + Sync;
+        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
 
     /// As [`Self::blas_matmul_pt_right_tmp_bytes_reference`], under JKLS from a block column of `a`, and under
     /// `JklsStored` and `JklsGalois` through `ctx`'s column halves of psi^k, `rows_left(k)` then `rows_right(k)`.
@@ -312,9 +311,9 @@ pub trait BlasMatMulReference<BE: Backend> {
     fn blas_matmul_pt_left_tmp_bytes_reference<R, A, K>(
         &self,
         res: &R,
-        b: &BlasPtOperand<BE, Left>,
+        b: &BlasPtOperandPrepared<BE, Left>,
         a: &A,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
     ) -> usize
     where
@@ -341,9 +340,9 @@ pub trait BlasMatMulReference<BE: Backend> {
     fn blas_matmul_pt_left_reference<R, A, K>(
         &self,
         res: &mut R,
-        b: &BlasPtOperand<BE, Left>,
+        b: &BlasPtOperandPrepared<BE, Left>,
         a: &A,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -359,14 +358,14 @@ pub trait BlasMatMulReference<BE: Backend> {
             + Sized,
         R: BlasGridMut<BE>,
         A: BlasGrid<BE>,
-        K: GetAutomorphismKey<BE> + Sync;
+        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
 }
 
 impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
     fn blas_matmul_prepare_left_tmp_bytes_reference<A, K>(
         &self,
         a: &A,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
         hint: PrepareHint,
     ) -> usize
@@ -383,7 +382,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
         &self,
         res: &mut BlasMatMulOperand<BE, CKKSPreparedLeft<BE>>,
         a: &A,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -391,7 +390,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
         BE: BlasMatIntraImpl,
         Self: CKKSMulOps<BE> + CKKSCopyOps<BE>,
         A: BlasGrid<BE>,
-        K: GetAutomorphismKey<BE> + Sync,
+        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync,
     {
         validate_blas_matmul_prepare_left(self, &*res, a, ctx, keys)?;
         let convert = |res: &mut CKKSPreparedLeft<BE>, term: &CKKSCiphertextOwned<BE>, s: &mut ScratchArena<'_, BE>| {
@@ -416,7 +415,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
     fn blas_matmul_prepare_right_tmp_bytes_reference<B, K>(
         &self,
         b: &B,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
         hint: PrepareHint,
     ) -> usize
@@ -434,7 +433,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
         &self,
         res: &mut BlasMatMulOperand<BE, CKKSPreparedRight<BE>>,
         b: &B,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -442,7 +441,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
         BE: BlasMatIntraImpl,
         Self: CKKSMulOps<BE> + CKKSCopyOps<BE>,
         B: BlasGrid<BE>,
-        K: GetAutomorphismKey<BE> + Sync,
+        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync,
     {
         validate_blas_matmul_prepare_right(self, &*res, b, ctx, keys)?;
         let convert = |res: &mut CKKSPreparedRight<BE>, term: &CKKSCiphertextOwned<BE>, s: &mut ScratchArena<'_, BE>| {
@@ -469,7 +468,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
         res: &R,
         a: &A,
         b: &B,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         tsk: &T,
         keys: &K,
     ) -> usize
@@ -490,7 +489,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
         res: &mut R,
         a: &BlasMatMulOperand<BE, CKKSPreparedLeft<BE>>,
         b: &BlasMatMulOperand<BE, CKKSPreparedRight<BE>>,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         tsk: &T,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
@@ -500,7 +499,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
         Self: CKKSMulOps<BE> + CKKSCopyOps<BE>,
         R: BlasGridMut<BE>,
         T: GetTensorKey<BE> + Sync,
-        K: GetAutomorphismKey<BE> + Sync,
+        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync,
     {
         let op = "blas_matmul_prepared";
         let batch = validate_blas_matmul_prepared(self, &*res, a, b, ctx, tsk, keys)?;
@@ -528,7 +527,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
         res: &R,
         a: &A,
         b: &B,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         tsk: &T,
         keys: &K,
     ) -> usize
@@ -556,7 +555,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
         res: &mut R,
         a: &A,
         b: &B,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         tsk: &T,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
@@ -568,7 +567,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
         A: BlasGrid<BE>,
         B: BlasGrid<BE>,
         T: GetTensorKey<BE> + Sync,
-        K: GetAutomorphismKey<BE> + Sync,
+        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync,
     {
         let op = "blas_matmul";
         let batch = validate_blas_matmul(self, &*res, a, b, ctx, tsk, keys)?;
@@ -592,8 +591,8 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
         &self,
         res: &R,
         a: &A,
-        b: &BlasPtOperand<BE>,
-        ctx: &BlasContext<BE>,
+        b: &BlasPtOperandPrepared<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
     ) -> usize
     where
@@ -616,8 +615,8 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
         &self,
         res: &mut R,
         a: &A,
-        b: &BlasPtOperand<BE>,
-        ctx: &BlasContext<BE>,
+        b: &BlasPtOperandPrepared<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -633,7 +632,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
             + Sized,
         R: BlasGridMut<BE>,
         A: BlasGrid<BE>,
-        K: GetAutomorphismKey<BE> + Sync,
+        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync,
     {
         let op = "blas_matmul_pt_right";
         let batch = validate_blas_matmul_pt_right(self, &*res, a, b, ctx, keys)?;
@@ -677,9 +676,9 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
     fn blas_matmul_pt_left_tmp_bytes_reference<R, A, K>(
         &self,
         res: &R,
-        b: &BlasPtOperand<BE, Left>,
+        b: &BlasPtOperandPrepared<BE, Left>,
         a: &A,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
     ) -> usize
     where
@@ -701,9 +700,9 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
     fn blas_matmul_pt_left_reference<R, A, K>(
         &self,
         res: &mut R,
-        b: &BlasPtOperand<BE, Left>,
+        b: &BlasPtOperandPrepared<BE, Left>,
         a: &A,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -719,7 +718,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
             + Sized,
         R: BlasGridMut<BE>,
         A: BlasGrid<BE>,
-        K: GetAutomorphismKey<BE> + Sync,
+        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync,
     {
         let op = "blas_matmul_pt_left";
         let batch = validate_blas_matmul_pt_left(self, &*res, b, a, ctx, keys)?;
@@ -796,7 +795,7 @@ fn product_scratch<BE, T, K>(
     res: &impl BlasGridInfos,
     a: &impl BlasMatMulOperandInfos,
     b: &impl BlasMatMulOperandInfos,
-    ctx: &BlasContext<BE>,
+    ctx: &BlasContextPrepared<BE>,
     tsk: &T,
     keys: &K,
 ) -> usize
@@ -829,7 +828,7 @@ fn product<BE, R, SA, SB, T, K>(
     b: Side<'_, SB, CKKSPreparedRight<BE>>,
     inner: usize,
     log_d: usize,
-    ctx: &BlasContext<BE>,
+    ctx: &BlasContextPrepared<BE>,
     b_rep: bool,
     tsk: &T,
     keys: &K,
@@ -842,7 +841,7 @@ where
     SA: GLWEToBackendRef<BE> + CKKSCtBounds + Sync,
     SB: GLWEToBackendRef<BE> + CKKSCtBounds + Sync,
     T: GetTensorKey<BE> + Sync,
-    K: GetAutomorphismKey<BE> + Sync,
+    K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync,
 {
     let (m, n, d, hot) = (res.rows(), res.cols(), 1usize << log_d, PrepareHint::OneShot);
     let (b_first, b_shift) = right_maps(&ctx.maps, b_rep);
@@ -951,7 +950,7 @@ fn kernel_tmp_bytes<BE: BlasJklsImpl>(
     res: &impl BlasGridInfos,
     a: &impl BlasMatMulOperandInfos,
     b: &impl BlasMatMulOperandInfos,
-    ctx: &BlasContext<BE>,
+    ctx: &BlasContextPrepared<BE>,
     tsk: &impl GGLWEInfos,
 ) -> usize {
     let (res, lhs, rhs) = (
@@ -976,7 +975,7 @@ fn hot_tmp_bytes<BE>(
     module: &Module<BE>,
     a: &impl BlasMatMulOperandInfos,
     b: &impl BlasMatMulOperandInfos,
-    ctx: &BlasContext<BE>,
+    ctx: &BlasContextPrepared<BE>,
     keys: &impl GGLWEInfos,
 ) -> usize
 where
@@ -1080,7 +1079,7 @@ where
     BE: BlasMatIntraImpl + 'c,
     Module<BE>: CKKSMulOps<BE> + CKKSCopyOps<BE>,
     A: BlasGrid<BE>,
-    K: GetAutomorphismKey<BE> + Sync,
+    K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync,
 {
     match res.layout.hint {
         PrepareHint::OneShot => {
@@ -1132,7 +1131,7 @@ where
     BE: BlasMatIntraImpl,
     Module<BE>: CKKSCopyOps<BE>,
     S: GLWEToBackendRef<BE> + CKKSCtBounds + Sync,
-    K: GetAutomorphismKey<BE> + Sync,
+    K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync,
 {
     let (block, per) = (layout_of(sources[0]), shifts.len() + 1);
     let staged = mapped_block(block, first);
@@ -1169,7 +1168,7 @@ where
     BE: BlasMatIntraImpl,
     Module<BE>: CKKSCopyOps<BE>,
     S: GLWEToBackendRef<BE> + CKKSCtBounds + Sync,
-    K: GetAutomorphismKey<BE> + Sync,
+    K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync,
 {
     let mut terms = Vec::with_capacity(sources.len() * (shifts.len() + 1));
     let emit = |_: usize, term: &CKKSCiphertextOwned<BE>, s: &mut ScratchArena<'_, BE>| {
@@ -1201,74 +1200,19 @@ where
 {
     let (res, block) = (res.block_layout(), a.block_layout());
     let Some(first) = first else {
-        return lt_tmp_bytes(module, &res, &block, keys, true);
+        return lt_tmp_bytes(module, &res, &block, keys, LtEval::Sum);
     };
     let Some((masks, plaintext)) = masked else {
         let staged = mapped_block(block, first);
-        return BE::blas_map_blocks_tmp_bytes(module, sources, &staged, &block, &[first], keys)
-            .max(lt_tmp_bytes(module, &res, &staged, keys, true));
+        return BE::blas_map_blocks_tmp_bytes(module, sources, &staged, &block, &[first], keys).max(lt_tmp_bytes(
+            module,
+            &res,
+            &staged,
+            keys,
+            LtEval::Sum,
+        ));
     };
     BE::blas_jkls_pt_unit_tmp_bytes(module, outputs, &res, &block, first, masks, plaintext, keys)
-}
-
-/// `count` baby-step caches for sources of `src`'s layout, each covering the baby steps of every map of `maps`.
-fn baby_caches<BE, M, S>(
-    module: &M,
-    maps: &[&LinearTransformationPrepared<BE>],
-    src: &S,
-    count: usize,
-) -> Vec<LinearTransformationBabySteps<BE>>
-where
-    BE: Backend,
-    M: CKKSLinearTransformationOps<BE> + ModuleN + CnvPVecAlloc<BE>,
-    S: GLWEToBackendRef<BE> + CKKSCtBounds,
-{
-    let rotations: Vec<i64> = maps.iter().flat_map(|lt| lt.baby_steps().iter().copied()).collect();
-    (0..count)
-        .map(|_| LinearTransformationBabySteps::alloc(module, &rotations, src))
-        .collect()
-}
-
-/// The products by public matrices, which share their giant steps across their terms, one per cache of `caches`
-/// ([`baby_caches`]): group `g` of `groups` holds the blocks `o` of `res` it writes, block `o` receiving poulpy-ckks's
-/// summed linear transformation of the terms `(source(g, l), map(g, o, l))` in ascending `l`, then `label`, the
-/// product's [`pt_label`]. The caches are filled from a group's sources and serve all its blocks. The groups run in
-/// order, refilling the same caches, and the first error stops them.
-#[allow(clippy::too_many_arguments)]
-fn shared_giants<'s, 'm, BE, M, D, S, K>(
-    module: &M,
-    caches: &mut [LinearTransformationBabySteps<BE>],
-    groups: Vec<Vec<&mut D>>,
-    source: impl Fn(usize, usize) -> &'s S,
-    map: impl Fn(usize, usize, usize) -> &'m LinearTransformationPrepared<BE>,
-    label: usize,
-    keys: &K,
-    scratch: &mut ScratchArena<'_, BE>,
-) -> Result<()>
-where
-    BE: Backend + 's + 'm,
-    M: CKKSLinearTransformationOps<BE>,
-    D: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-    S: GLWEToBackendRef<BE> + CKKSCtBounds + 's,
-    K: GetAutomorphismKey<BE>,
-{
-    let inner = caches.len();
-    let (mut srcs, mut lts) = (Vec::with_capacity(inner), Vec::with_capacity(inner));
-    for (g, blocks) in groups.into_iter().enumerate() {
-        for (l, cache) in caches.iter_mut().enumerate() {
-            module.ckks_prepare_linear_transformation_baby_steps(cache, source(g, l), keys, scratch)?;
-        }
-        let babies: Vec<_> = caches.iter().collect();
-        srcs.clear();
-        srcs.extend((0..inner).map(|l| source(g, l)));
-        for (o, dst) in blocks.into_iter().enumerate() {
-            lts.clear();
-            lts.extend((0..inner).map(|l| map(g, o, l)));
-            module.ckks_eval_linear_transformation_sum_into(&mut *dst, &srcs, &babies, &lts, keys, scratch)?;
-            dst.set_log_sparsity(label);
-        }
-    }
-    Ok(())
 }
 
 /// The products by public matrices under `JklsStored` and `JklsGalois`: one [`BlasJklsImpl::blas_jkls_pt_unit`] per
@@ -1293,7 +1237,7 @@ where
     BE: BlasJklsImpl + 's + 'p,
     D: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + Send,
     S: GLWEToBackendRef<BE> + CKKSCtBounds + Sync + 's,
-    K: GetAutomorphismKey<BE> + Sync,
+    K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync,
 {
     let (mut sources, mut pts) = (Vec::with_capacity(inner), Vec::new());
     for (g, mut blocks) in groups.into_iter().enumerate() {

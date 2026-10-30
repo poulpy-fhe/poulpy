@@ -30,7 +30,7 @@ use super::helpers::{
 };
 use crate::{
     api::{BlasEncodingOps, BlasMatIntraOps},
-    layouts::{BlasCiphertextOwned, BlasContext, BlasContextInfos, BlasGridInfos, BlasPlan, replicated},
+    layouts::{BlasCiphertextOwned, BlasContextInfos, BlasContextPrepared, BlasGridInfos, BlasPlan, replicated},
     oep::{BlasEncodingImpl, BlasMatIntraImpl},
     reference::{sum_line, sum_line_tmp_bytes},
 };
@@ -722,7 +722,7 @@ pub fn test_blas_intra_guards<BE, F, E>(
             .max(module.blas_rotate_rows_tmp_bytes(&res_one, &ct_one, &ctx, &atk))
             .max(module.blas_sum_rows_tmp_bytes(&res_one, &ct_one, &ctx, &atk)),
     );
-    let mut unmapped = |ctx: &BlasContext<BE>| {
+    let mut unmapped = |ctx: &BlasContextPrepared<BE>| {
         let (mut shifted, mut rotated, mut summed) = (alloc(rows, cols), alloc(1, 2), alloc(1, 2));
         let mut s = unmapped_scratch.borrow();
         module.blas_rotate_rows(d, &mut shifted, &ct, ctx, &keys, &mut s).unwrap();

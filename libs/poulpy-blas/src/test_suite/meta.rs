@@ -13,7 +13,7 @@ use poulpy_ckks::{
         reference_encoder::ReferenceEncoder,
     },
 };
-use poulpy_core::layouts::{DiagonalArithmetic, LWEInfos};
+use poulpy_core::layouts::{DiagonalArithmetic, GLWE, LWEInfos};
 use poulpy_hal::{
     api::{CnvPVecAlloc, NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
     layouts::{
@@ -26,17 +26,19 @@ use poulpy_hal::{
 use super::helpers::{
     Grid, HINTS, MIXES, Rejection::InvalidOperand, TestKeys, alloc_grid, assert_grid_decrypt, assert_guard, context_and_keys,
     copied_layout, encrypt_grid, mapped_layout, matmul_left_operand, matmul_right_operand, operand_infos, poisoned_scratch,
-    product_layout, pt_operand, relabel, to_f, want_operand_infos,
+    product_layout, pt_operand, relabel, rotation_keys, to_f, want_operand_infos,
 };
+use super::matvec::{assert_vector_decrypt, encrypt_vector, matvec_layouts, matvec_model, matvec_operands, vector_entry};
 use crate::{
-    api::{BlasEncodingOps, BlasMatInterOps, BlasMatIntraOps, BlasMatMulOps},
+    api::{BlasEncodingOps, BlasMatInterOps, BlasMatIntraOps, BlasMatMulOps, BlasMatVecOps},
     layouts::{
-        BlasCiphertext, BlasCiphertextOwned, BlasContextInfos, BlasGridInfos, BlasLayout, BlasModuleAlloc, BlasPlan, Left, Right,
-        blas_matmul_left_operand_layout, blas_matmul_left_term_layout, blas_matmul_output_layout,
+        BlasCiphertext, BlasCiphertextOwned, BlasContextInfos, BlasGridInfos, BlasLayout, BlasModuleAlloc, BlasPlan,
+        BlasVectorShape, Left, Right, blas_matmul_left_operand_layout, blas_matmul_left_term_layout, blas_matmul_output_layout,
         blas_matmul_prepared_output_layout, blas_matmul_pt_left_output_layout, blas_matmul_pt_right_output_layout,
-        blas_matmul_right_operand_layout, blas_matmul_right_term_layout, blas_rotate_cols_output_layout,
-        blas_rotate_output_layout, blas_rotate_rows_output_layout, blas_sum_cols_output_layout, blas_sum_output_layout,
-        blas_sum_rows_output_layout, blas_transpose_output_layout, replicated, sum_galois_elements,
+        blas_matmul_right_operand_layout, blas_matmul_right_term_layout, blas_matvec_pt_output_layout,
+        blas_rotate_cols_output_layout, blas_rotate_output_layout, blas_rotate_rows_output_layout, blas_sum_cols_output_layout,
+        blas_sum_output_layout, blas_sum_rows_output_layout, blas_transpose_output_layout, matvec_pt_galois_elements, replicated,
+        sum_galois_elements,
     },
     oep::BlasImpl,
 };
@@ -53,7 +55,8 @@ use crate::{
 /// ([`blas_matmul_right_operand_layout`]) gives them all before preparing. Summing a transposed half-full batch adds
 /// each of its matrices once, canonical, and records them. The sum of one matrix copies it, the transpose of a real batch keeps its
 /// slots real, and the terms of an integer batch are real, while its hot operand reports its own slots. On one matrix
-/// slot no batch is half full: only the full one runs.
+/// slot no batch is half full: only the full one runs. A product of a vector into a `res` that held another
+/// encryption, tagged and flag-clear, stamps the metadata of its output-layout query, canonical and untagged.
 pub fn test_blas_result_meta<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -392,6 +395,47 @@ pub fn test_blas_result_meta<BE, F, E>(
             operand_infos(&left),
             want_operand_infos(&integer, hint, layout),
             "integer batch: {hint:?} operand infos"
+        );
+    }
+
+    // A product of a vector into a `res` that held another encryption, tagged with its fresh noise and one ciphertext
+    // flag-clear: the metadata its output-layout query gives, canonical and untagged, and the values of its model.
+    if slots >= 16 {
+        let layout = matvec_layouts(&params, slots).pop().unwrap();
+        let (_, w) = matvec_operands::<BE, F>(module, &layout);
+        let elements = matvec_pt_galois_elements(module.cyclotomic_order(), &layout);
+        let keys = TestKeys::<BE> {
+            atks: rotation_keys(&params, module, &sk_raw, elements, &mut scratch.borrow()),
+            tsk: None,
+        };
+        let vector = |shape: BlasVectorShape, period: usize, scratch: &mut ScratchArena<'_, BE>| {
+            let v: Vec<f64> = (0..shape.len).map(vector_entry).collect();
+            let ct = encrypt_vector::<BE, F, E>(&params, module, host_module, &encoder, &sk, k, shape, period, &v, scratch);
+            (v, ct)
+        };
+        let (v, x) = vector(layout.input, layout.input_period, &mut scratch.borrow());
+        let (_, mut res) = vector(layout.output, layout.output_period, &mut scratch.borrow());
+        GLWE::set_canonical(res.ct_mut(0), false);
+        let want = blas_matvec_pt_output_layout(&res, &layout, &x);
+        let bytes = module.blas_matvec_pt_tmp_bytes(&res, &w, &x, &params.atk_layout());
+        module
+            .blas_matvec_pt(&mut res, &w, &x, &keys, &mut poisoned_scratch::<BE>(bytes).borrow())
+            .unwrap();
+        assert!(
+            res.cts().iter().all(|ct| GLWE::is_canonical(ct)),
+            "matvec_pt over a used res: canonical"
+        );
+        assert_vector_decrypt::<BE, F, E>(
+            "matvec_pt over a used res",
+            &params,
+            module,
+            &encoder,
+            &res,
+            &sk,
+            &matvec_model(layout.output.len, &v),
+            layout.output_period,
+            &want,
+            &mut scratch.borrow(),
         );
     }
 }

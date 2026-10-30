@@ -62,7 +62,7 @@
 
 - **Module factories.** Outside its module a core layout is allocated only through `ModuleCoreAlloc`, `ModuleCoreCompressedAlloc` and `<X>PreparedFactory`, where a new layout adds its factory methods.
 - **Fresh state.** Every core allocation starts with `noise: None` and `plaintext_meta: None`.
-- **Layout shape.** A new core layout is one struct `X` (prepared `XPrepared<D: Data, BE: Backend>`) with `pub(crate)` fields of the domain newtypes (`Degree`, `Base2K`, `TorusPrecision`, `Rank`, `Dnum`, never `Dsize`), a public-field `<X>Layout` deriving `PartialEq, Eq, Copy, Clone, Debug` with the same Infos traits, an Infos trait providing `<x>_layout()`, and allocators and queries taking `&impl <X>Infos`.
+- **Layout shape.** A new core layout is one struct `X` (its prepared tier over `<D: Data, BE: Backend>`) with `pub(crate)` fields of the domain newtypes (`Degree`, `Base2K`, `TorusPrecision`, `Rank`, `Dnum`, never `Dsize`), a public-field `<X>Layout` deriving `PartialEq, Eq, Copy, Clone, Debug` with the same Infos traits, an Infos trait providing `<x>_layout()`, and allocators and queries taking `&impl <X>Infos`.
 - **Threading a new field.** A field added to a core layout is also threaded in the same diff through:
   - `<x>_layout()` and every forwarding impl (`&T`, `&mut T`, key wrappers, backend newtypes, scratch views, `impl_gglwe_infos_for_inner!`);
   - module, host and compressed allocators, static and backend-routed byte counts, carves;
@@ -110,7 +110,7 @@
 ### 8.4. Linear transformations
 
 - **One schedule.** Baby and giant steps, baby caches, `galois_elements` and the plaintext mirror `Diagonals::evaluate` derive only from `LinearTransformationLayout::index()`/`plan()` and `LinearTransformation::index()`, keys covering only rotations a non-empty giant step uses.
-- **Engine paths.** `glwe_eval_giant_steps` (`poulpy-core/src/reference/linear_transformation/prepared_giants.rs`) keeps both paths: the lazy one, only when destination, product output and every giant key share one base2k or no giant rotation exists, keeping products, body add, giant automorphisms and the cross-giant sum in DFT until one IDFT and one normalization, and the fallback, taken only where the lazy one cannot run, rotating each normalized giant contribution with the public `glwe_automorphism`.
+- **Engine paths.** `glwe_eval_giant_steps` (`poulpy-core/src/reference/linear_transformation/giant_steps.rs`) keeps both paths: the lazy one, only when destination, product output and every giant key share one base2k or no giant rotation exists, keeping products, body add, giant automorphisms and the cross-giant sum in DFT until one IDFT and one normalization, and the fallback, taken only where the lazy one cannot run, rotating each normalized giant contribution with the public `glwe_automorphism`.
 - **Diagonal periods.** A `Diagonals` entry stores one period (`set` takes any length dividing `slots`), readers index modulo the stored length, slot-wise combinations use `period_lcm`, never `max`, and rotations use `rotate_slots_into`.
 
 ## 9. Noise and plaintext metadata

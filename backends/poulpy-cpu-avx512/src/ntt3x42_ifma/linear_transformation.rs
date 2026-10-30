@@ -14,12 +14,13 @@ use poulpy_core::{
 };
 use poulpy_hal::{api::*, layouts::*};
 unsafe impl poulpy_core::oep::LinearTransformationImpl for BE {
-    fn glwe_eval_linear_transformation_tmp_bytes<R, A, B, K>(
+    fn glwe_eval_linear_transformation_tmp_bytes<R, A, B, K, T>(
         module: &Module<BE>,
         res: &R,
         a: &A,
         pt: &B,
         plan: &poulpy_core::layouts::LinearTransformationPlan,
+        tsk: &T,
         key: &K,
     ) -> usize
     where
@@ -27,18 +28,20 @@ unsafe impl poulpy_core::oep::LinearTransformationImpl for BE {
         A: poulpy_core::layouts::GLWEInfos,
         B: poulpy_core::layouts::GLWEInfos,
         K: poulpy_core::layouts::GGLWEInfos,
+        T: poulpy_core::layouts::GGLWEInfos,
     {
         poulpy_core::reference::linear_transformation::glwe_eval_linear_transformation_tmp_bytes_reference(
-            module, res, a, pt, plan, key,
+            module, res, a, pt, plan, tsk, key,
         )
     }
 
-    fn glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes<R, A, B, K>(
+    fn glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes<R, A, B, K, T>(
         module: &Module<BE>,
         res: &R,
         a: &A,
         pt: &B,
         plan: &poulpy_core::layouts::LinearTransformationPlan,
+        tsk: &T,
         key: &K,
     ) -> usize
     where
@@ -46,18 +49,20 @@ unsafe impl poulpy_core::oep::LinearTransformationImpl for BE {
         A: poulpy_core::layouts::GLWEInfos,
         B: poulpy_core::layouts::GLWEInfos,
         K: poulpy_core::layouts::GGLWEInfos,
+        T: poulpy_core::layouts::GGLWEInfos,
     {
         poulpy_core::reference::linear_transformation::glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes_reference(
-            module, res, a, pt, plan, key,
+            module, res, a, pt, plan, tsk, key,
         )
     }
 
-    fn glwe_eval_linear_transformation_sum_tmp_bytes<R, A, B, K>(
+    fn glwe_eval_linear_transformation_sum_tmp_bytes<R, A, B, K, T>(
         module: &Module<BE>,
         res: &R,
         a: &A,
         pt: &B,
         plan: &poulpy_core::layouts::LinearTransformationPlan,
+        tsk: &T,
         key: &K,
     ) -> usize
     where
@@ -65,9 +70,31 @@ unsafe impl poulpy_core::oep::LinearTransformationImpl for BE {
         A: poulpy_core::layouts::GLWEInfos,
         B: poulpy_core::layouts::GLWEInfos,
         K: poulpy_core::layouts::GGLWEInfos,
+        T: poulpy_core::layouts::GGLWEInfos,
     {
         poulpy_core::reference::linear_transformation::glwe_eval_linear_transformation_sum_tmp_bytes_reference(
-            module, res, a, pt, plan, key,
+            module, res, a, pt, plan, tsk, key,
+        )
+    }
+
+    fn glwe_eval_linear_transformation_sum_unprepared_rhs_tmp_bytes<R, A, B, K, T>(
+        module: &Module<BE>,
+        res: &R,
+        a: &A,
+        pt: &B,
+        plan: &poulpy_core::layouts::LinearTransformationPlan,
+        tsk: &T,
+        key: &K,
+    ) -> usize
+    where
+        R: poulpy_core::layouts::GLWEInfos,
+        A: poulpy_core::layouts::GLWEInfos,
+        B: poulpy_core::layouts::GLWEInfos,
+        K: poulpy_core::layouts::GGLWEInfos,
+        T: poulpy_core::layouts::GGLWEInfos,
+    {
+        poulpy_core::reference::linear_transformation::glwe_eval_linear_transformation_sum_unprepared_rhs_tmp_bytes_reference(
+            module, res, a, pt, plan, tsk, key,
         )
     }
 
@@ -88,7 +115,7 @@ unsafe impl poulpy_core::oep::LinearTransformationImpl for BE {
 
     fn glwe_prepare_linear_transformation_rhs_tmp_bytes<P>(module: &Module<BE>, pt_infos: &P) -> usize
     where
-        P: poulpy_core::layouts::LWEInfos,
+        P: poulpy_core::layouts::GLWEInfos,
     {
         poulpy_core::reference::linear_transformation::glwe_prepare_linear_transformation_rhs_tmp_bytes_reference(
             module, pt_infos,
@@ -136,7 +163,7 @@ unsafe impl poulpy_core::oep::LinearTransformationImpl for BE {
     ) where
         R: poulpy_core::layouts::GLWEToBackendMut<BE> + poulpy_core::layouts::GLWEInfos,
         P: poulpy_core::DiagonalProd<BE>,
-        H: poulpy_core::layouts::GetAutomorphismKey<BE>,
+        H: poulpy_core::layouts::GetAutomorphismKey<BE> + poulpy_core::layouts::GetTensorKey<BE>,
     {
         assert_linear_transformation_into(lhs, rhs);
         if !eval(module, cnv_offset, res, &[lhs], &[rhs], keys, scratch) {
@@ -144,17 +171,18 @@ unsafe impl poulpy_core::oep::LinearTransformationImpl for BE {
         }
     }
 
-    fn glwe_eval_linear_transformation_sum_into<R, H>(
+    fn glwe_eval_linear_transformation_sum_into<R, P, H>(
         module: &Module<BE>,
         cnv_offset: usize,
         res: &mut R,
         babies: &[&poulpy_core::layouts::prepared::LinearTransformationBabySteps<BE>],
-        lts: &[&poulpy_core::layouts::prepared::LinearTransformationPrepared<BE>],
+        lts: &[&poulpy_core::layouts::LinearTransformation<P>],
         keys: &H,
         scratch: &mut ::poulpy_hal::layouts::ScratchArena<BE>,
     ) where
         R: poulpy_core::layouts::GLWEToBackendMut<BE> + poulpy_core::layouts::GLWEInfos,
-        H: poulpy_core::layouts::GetAutomorphismKey<BE>,
+        P: poulpy_core::DiagonalProd<BE>,
+        H: poulpy_core::layouts::GetAutomorphismKey<BE> + poulpy_core::layouts::GetTensorKey<BE>,
     {
         assert_linear_transformation_sum(babies, lts);
         if !eval(module, cnv_offset, res, babies, lts, keys, scratch) {
@@ -190,8 +218,8 @@ unsafe impl poulpy_core::oep::LinearTransformationImpl for BE {
 /// Lowered under test so that the parity suites, whose destinations hold a few limbs, take the parallel path.
 const PARALLEL_EVAL_MIN_SIZE: usize = if cfg!(test) { 2 } else { 16 };
 
-/// The parallel evaluation of `Σ_t M_t(a_t)` over checked terms, each giant step's PROD summed over the terms as the
-/// reference sums it. Returns `false`, with `res` untouched, where it does not apply.
+/// The parallel evaluation of `Σ_t M_t(a_t)` over checked terms of plaintext diagonals, each giant step's PROD summed
+/// over the terms as the reference sums it. Returns `false`, with `res` untouched, where it does not apply.
 fn eval<R, P, H>(
     module: &Module<BE>,
     cnv_offset: usize,
@@ -210,6 +238,7 @@ where
     // The fused evaluator uses one key per giant step.
     // Power-of-two schedules require the reference rotation tree.
     if rhs.rotations != BsgsRotations::PerRotation
+        || rhs.first_diagonal_plaintext().unwrap().rank().as_usize() != 0
         || !E::is_parallel()
         || res.size() < PARALLEL_EVAL_MIN_SIZE
         || res.rank().as_usize() != 1

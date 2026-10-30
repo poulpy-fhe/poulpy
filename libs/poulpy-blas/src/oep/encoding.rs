@@ -3,12 +3,13 @@ use poulpy_core::layouts::DiagonalArithmetic;
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::layouts::{
-    BlasContext, BlasContextInfos, BlasContextUnprepared, BlasPtOperand, BlasPtOperandInfos, BlasPtOperandUnprepared, BlasPtSide,
+    BlasContext, BlasContextInfos, BlasContextPrepared, BlasMatVecOperand, BlasMatVecOperandInfos, BlasMatVecOperandPrepared,
+    BlasPtOperand, BlasPtOperandInfos, BlasPtOperandPrepared, BlasPtSide,
 };
 
-/// Extension point of [`crate::api::BlasEncodingOps`], [`crate::api::BlasPtOperandPreparedFactory`] and
-/// [`crate::api::BlasContextPreparedFactory`]: the encodings of public operands and contexts and their preparations, all
-/// required. The encoding scalar `F` is a method parameter bounded by `Self: CKKSEncodingImpl<F>`.
+/// Extension point of [`crate::api::BlasEncodingOps`], [`crate::api::BlasPtOperandPreparedFactory`],
+/// [`crate::api::BlasMatVecOperandPreparedFactory`] and [`crate::api::BlasContextPreparedFactory`]: the encodings of
+/// public operands and contexts and their preparations, all required. The encoding scalar `F` is a method parameter bounded by `Self: CKKSEncodingImpl<F>`.
 ///
 /// # Safety
 /// Every method reproduces its `_reference` counterpart in
@@ -33,14 +34,14 @@ pub unsafe trait BlasEncodingImpl: Backend {
     /// **Fixed:** each map's host diagonals, built from `entry` by [`crate::layouts::maps`], its schedule, the plan's,
     /// the blocks sharing the first block's, and its encoding by poulpy-ckks's `ckks_encode_linear_transformation_into`
     /// at the operand's `coeffs_meta`, map after map in the order of
-    /// [`BlasPtOperandUnprepared::maps`](crate::layouts::BlasPtOperandUnprepared::maps), the first error stopping it.
+    /// [`BlasPtOperand::maps`](crate::layouts::BlasPtOperand::maps), the first error stopping it.
     /// **Free:** its kernels and its scratch use.
     ///
     /// It panics on a `res` allocated for another module's slots or ring, then on a scratch short of its query, before
     /// any write, and returns poulpy-ckks's errors, after which `res` is unspecified.
     fn blas_pt_operand_encode<F, S>(
         module: &Module<Self>,
-        res: &mut BlasPtOperandUnprepared<Self, S>,
+        res: &mut BlasPtOperand<Self, S>,
         entry: impl Fn(usize, usize, usize) -> F,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> CKKSResult<()>
@@ -48,6 +49,37 @@ pub unsafe trait BlasEncodingImpl: Backend {
         Self: CKKSEncodingImpl<F>,
         F: CKKSEncodingScalar + DiagonalArithmetic,
         S: BlasPtSide;
+
+    /// Scratch bound of [`Self::blas_matvec_operand_encode`]; may report less than
+    /// [`BlasEncodingReference::blas_matvec_operand_encode_tmp_bytes_reference`](crate::reference::BlasEncodingReference::blas_matvec_operand_encode_tmp_bytes_reference),
+    /// never less than the body takes.
+    fn blas_matvec_operand_encode_tmp_bytes<F, A>(module: &Module<Self>, infos: &A) -> usize
+    where
+        Self: CKKSEncodingImpl<F>,
+        F: CKKSEncodingScalar + DiagonalArithmetic,
+        A: BlasMatVecOperandInfos;
+
+    /// Reproduces
+    /// [`BlasEncodingReference::blas_matvec_operand_encode_reference`](crate::reference::BlasEncodingReference::blas_matvec_operand_encode_reference)
+    /// bit for bit, within [`Self::blas_matvec_operand_encode_tmp_bytes`].
+    ///
+    /// **Fixed:** each block's host diagonals, from `entry` by the slot map
+    /// [`BlasEncodingOps::blas_matvec_operand_encode`](crate::api::BlasEncodingOps::blas_matvec_operand_encode) states,
+    /// its schedule, and its encoding by poulpy-ckks's `ckks_encode_linear_transformation_into` at the operand's
+    /// `coeffs_meta`, block after block, output-major, the first error stopping it. **Free:** its kernels and its
+    /// scratch use.
+    ///
+    /// It panics on a `res` allocated for another module's slots, then on a scratch short of its query, before any
+    /// write, and returns poulpy-ckks's errors, after which `res` is unspecified.
+    fn blas_matvec_operand_encode<F>(
+        module: &Module<Self>,
+        res: &mut BlasMatVecOperand<Self>,
+        entry: impl Fn(usize, usize) -> F,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) -> CKKSResult<()>
+    where
+        Self: CKKSEncodingImpl<F>,
+        F: CKKSEncodingScalar + DiagonalArithmetic;
 
     /// Scratch bound of [`Self::blas_context_encode`]; may report less than
     /// [`BlasEncodingReference::blas_context_encode_tmp_bytes_reference`](crate::reference::BlasEncodingReference::blas_context_encode_tmp_bytes_reference),
@@ -64,14 +96,14 @@ pub unsafe trait BlasEncodingImpl: Backend {
     ///
     /// **Fixed:** each map's host diagonals ([`crate::layouts::maps`]) and schedule, as the plan gives them, and its
     /// encoding by poulpy-ckks's `ckks_encode_linear_transformation_into` at the context's `coeffs_meta`, map after map
-    /// in the order of [`BlasContextUnprepared::maps`], the first error stopping it. **Free:** its kernels and its scratch
+    /// in the order of [`BlasContext::maps`], the first error stopping it. **Free:** its kernels and its scratch
     /// use.
     ///
     /// It panics on a `res` allocated for another module's slots or ring, then on a scratch short of its query, before
     /// any write, and returns poulpy-ckks's errors, after which `res` is unspecified.
     fn blas_context_encode<F>(
         module: &Module<Self>,
-        res: &mut BlasContextUnprepared<Self>,
+        res: &mut BlasContext<Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> CKKSResult<()>
     where
@@ -97,8 +129,28 @@ pub unsafe trait BlasEncodingImpl: Backend {
     /// preparation.
     fn blas_pt_operand_prepare<S: BlasPtSide>(
         module: &Module<Self>,
-        res: &mut BlasPtOperand<Self, S>,
-        other: &BlasPtOperandUnprepared<Self, S>,
+        res: &mut BlasPtOperandPrepared<Self, S>,
+        other: &BlasPtOperand<Self, S>,
+        scratch: &mut ScratchArena<'_, Self>,
+    );
+
+    /// Scratch bound of [`Self::blas_matvec_operand_prepare`]; may report less than
+    /// [`BlasEncodingReference::blas_matvec_operand_prepare_tmp_bytes_reference`](crate::reference::BlasEncodingReference::blas_matvec_operand_prepare_tmp_bytes_reference),
+    /// never less than the body takes.
+    fn blas_matvec_operand_prepare_tmp_bytes<A: BlasMatVecOperandInfos>(module: &Module<Self>, infos: &A) -> usize;
+
+    /// Reproduces
+    /// [`BlasEncodingReference::blas_matvec_operand_prepare_reference`](crate::reference::BlasEncodingReference::blas_matvec_operand_prepare_reference)
+    /// bit for bit, within [`Self::blas_matvec_operand_prepare_tmp_bytes`].
+    ///
+    /// **Fixed:** poulpy-ckks's `ckks_prepare_linear_transformation_rhs` of every map. **Free:** the prepared form,
+    /// kernels, scratch use and the order of the maps.
+    ///
+    /// It panics as [`Self::blas_context_prepare`] does.
+    fn blas_matvec_operand_prepare(
+        module: &Module<Self>,
+        res: &mut BlasMatVecOperandPrepared<Self>,
+        other: &BlasMatVecOperand<Self>,
         scratch: &mut ScratchArena<'_, Self>,
     );
 
@@ -120,8 +172,8 @@ pub unsafe trait BlasEncodingImpl: Backend {
     /// preparation.
     fn blas_context_prepare(
         module: &Module<Self>,
-        res: &mut BlasContext<Self>,
-        other: &BlasContextUnprepared<Self>,
+        res: &mut BlasContextPrepared<Self>,
+        other: &BlasContext<Self>,
         scratch: &mut ScratchArena<'_, Self>,
     );
 }
@@ -142,7 +194,7 @@ macro_rules! impl_blas_encoding_reference_full {
 
             fn blas_pt_operand_encode<F, S>(
                 module: &::poulpy_hal::layouts::Module<Self>,
-                res: &mut $crate::layouts::BlasPtOperandUnprepared<Self, S>,
+                res: &mut $crate::layouts::BlasPtOperand<Self, S>,
                 entry: impl Fn(usize, usize, usize) -> F,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> ::poulpy_ckks::CKKSResult<()>
@@ -152,6 +204,28 @@ macro_rules! impl_blas_encoding_reference_full {
                 S: $crate::layouts::BlasPtSide,
             {
                 $crate::reference::BlasEncodingReference::blas_pt_operand_encode_reference(module, res, entry, scratch)
+            }
+
+            fn blas_matvec_operand_encode_tmp_bytes<F, A>(module: &::poulpy_hal::layouts::Module<Self>, infos: &A) -> usize
+            where
+                Self: ::poulpy_ckks::oep::CKKSEncodingImpl<F>,
+                F: ::poulpy_ckks::api::CKKSEncodingScalar + ::poulpy_core::layouts::DiagonalArithmetic,
+                A: $crate::layouts::BlasMatVecOperandInfos,
+            {
+                $crate::reference::BlasEncodingReference::blas_matvec_operand_encode_tmp_bytes_reference::<F, A>(module, infos)
+            }
+
+            fn blas_matvec_operand_encode<F>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                res: &mut $crate::layouts::BlasMatVecOperand<Self>,
+                entry: impl Fn(usize, usize) -> F,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
+            ) -> ::poulpy_ckks::CKKSResult<()>
+            where
+                Self: ::poulpy_ckks::oep::CKKSEncodingImpl<F>,
+                F: ::poulpy_ckks::api::CKKSEncodingScalar + ::poulpy_core::layouts::DiagonalArithmetic,
+            {
+                $crate::reference::BlasEncodingReference::blas_matvec_operand_encode_reference(module, res, entry, scratch)
             }
 
             fn blas_context_encode_tmp_bytes<F, A>(module: &::poulpy_hal::layouts::Module<Self>, infos: &A) -> usize
@@ -165,7 +239,7 @@ macro_rules! impl_blas_encoding_reference_full {
 
             fn blas_context_encode<F>(
                 module: &::poulpy_hal::layouts::Module<Self>,
-                res: &mut $crate::layouts::BlasContextUnprepared<Self>,
+                res: &mut $crate::layouts::BlasContext<Self>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> ::poulpy_ckks::CKKSResult<()>
             where
@@ -184,11 +258,27 @@ macro_rules! impl_blas_encoding_reference_full {
 
             fn blas_pt_operand_prepare<S: $crate::layouts::BlasPtSide>(
                 module: &::poulpy_hal::layouts::Module<Self>,
-                res: &mut $crate::layouts::BlasPtOperand<Self, S>,
-                other: &$crate::layouts::BlasPtOperandUnprepared<Self, S>,
+                res: &mut $crate::layouts::BlasPtOperandPrepared<Self, S>,
+                other: &$crate::layouts::BlasPtOperand<Self, S>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) {
                 $crate::reference::BlasEncodingReference::blas_pt_operand_prepare_reference(module, res, other, scratch)
+            }
+
+            fn blas_matvec_operand_prepare_tmp_bytes<A: $crate::layouts::BlasMatVecOperandInfos>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                infos: &A,
+            ) -> usize {
+                $crate::reference::BlasEncodingReference::blas_matvec_operand_prepare_tmp_bytes_reference(module, infos)
+            }
+
+            fn blas_matvec_operand_prepare(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                res: &mut $crate::layouts::BlasMatVecOperandPrepared<Self>,
+                other: &$crate::layouts::BlasMatVecOperand<Self>,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
+            ) {
+                $crate::reference::BlasEncodingReference::blas_matvec_operand_prepare_reference(module, res, other, scratch)
             }
 
             fn blas_context_prepare_tmp_bytes<A: $crate::layouts::BlasContextInfos>(
@@ -200,8 +290,8 @@ macro_rules! impl_blas_encoding_reference_full {
 
             fn blas_context_prepare(
                 module: &::poulpy_hal::layouts::Module<Self>,
-                res: &mut $crate::layouts::BlasContext<Self>,
-                other: &$crate::layouts::BlasContextUnprepared<Self>,
+                res: &mut $crate::layouts::BlasContextPrepared<Self>,
+                other: &$crate::layouts::BlasContext<Self>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) {
                 $crate::reference::BlasEncodingReference::blas_context_prepare_reference(module, res, other, scratch)

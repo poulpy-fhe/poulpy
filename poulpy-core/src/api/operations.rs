@@ -226,6 +226,37 @@ pub trait GLWEMulPreparedPlainSum<BE: Backend> {
         AP: CnvPVecLToBackendRef<BE>,
         BP: CnvPVecRToBackendRef<BE>;
 
+    /// Scratch bytes of [`Self::glwe_mul_prepared_plain_sum_add`] for `res` and operands of `a_size` and `b_size` limbs,
+    /// whatever the number of terms.
+    fn glwe_mul_prepared_plain_sum_add_tmp_bytes<R>(&self, res: &R, a_size: usize, b_size: usize) -> usize
+    where
+        R: GLWEInfos;
+
+    /// `res += Σ_t a[t] ⊛ σ_{galois[t]}(b[t])`: the sum of [`Self::glwe_mul_prepared_plain_sum`] at `cnv_offset`, the
+    /// value `res` holds added before the one normalization that rounds the result into `res`, canonical at its `k`.
+    /// `res`, which may be flag-clear, is at radix `base2k`: its value enters the normalization exactly, shifted to the
+    /// frame of the products.
+    ///
+    /// # Panics
+    ///
+    /// As [`Self::glwe_mul_prepared_plain_sum`], and unless `res` is at radix `base2k`.
+    #[allow(clippy::too_many_arguments)]
+    fn glwe_mul_prepared_plain_sum_add<R, AP, BP>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        a: &[&AP],
+        a_size: usize,
+        b: &[&BP],
+        b_size: usize,
+        galois: &[i64],
+        base2k: crate::layouts::Base2K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        AP: CnvPVecLToBackendRef<BE>,
+        BP: CnvPVecRToBackendRef<BE>;
+
     /// Scratch bytes of [`Self::glwe_mul_prepared_plain_sum_dft`] for an accumulator of `res_size` limbs and operands of
     /// `a_size` and `b_size` limbs, whatever the number of terms.
     fn glwe_mul_prepared_plain_sum_dft_tmp_bytes(&self, res_size: usize, a_size: usize, b_size: usize) -> usize;
@@ -542,8 +573,9 @@ pub trait GLWEMulRelinearizeSum<BE: Backend> {
 /// each of its `rank + 1` columns on `ceil(k / base2k)` limbs. Operands prepared so give the unprepared products of
 /// the ciphertexts they were prepared from, bit for bit.
 pub trait GLWEPreparedTensoring<BE: Backend> {
-    /// Scratch bytes of [`Self::glwe_mul_prepared_relinearize_sum`], whatever the number of pairs. One pair needs no
-    /// more than [`GLWETensoring::glwe_mul_relinearize_tmp_bytes`].
+    /// Scratch bytes of [`Self::glwe_mul_prepared_relinearize_sum`], whatever the number of pairs and the form of the
+    /// right operands, for operands of `a_size` and `b_size` limbs. One pair of prepared operands needs no more than
+    /// [`GLWETensoring::glwe_mul_relinearize_tmp_bytes`] and a right operand of `b_size` limbs.
     fn glwe_mul_prepared_relinearize_sum_tmp_bytes<R, B>(
         &self,
         res: &R,
@@ -556,36 +588,34 @@ pub trait GLWEPreparedTensoring<BE: Backend> {
         R: GLWEInfos,
         B: GGLWEInfos;
 
-    /// [`GLWEMulRelinearizeSum::glwe_mul_relinearize_sum`] over prepared pairs `(a[i], b[i])`: `a_size` and
-    /// `b_size` limbs of rank-1 ciphertexts of widths `a_k` and `b_k`, of the degree and `base2k` of `res`, with
-    /// `a_size = ceil(a_k / base2k)` and `b_size = ceil(b_k / base2k)`.
-    ///
-    /// The pairs feed the product columns where they are, under the conditions of the unprepared sum, whose result
-    /// they give.
+    /// The dot product `Σ_i a_i * b_i` of [`GLWEMulRelinearizeSum::glwe_mul_relinearize_sum`], over operands prepared
+    /// from rank-1 ciphertexts, read where they are: left operands of width `a_k` on `a_size = ceil(a_k / base2k)`
+    /// limbs and right operands of width `b_k` on `b_size = ceil(b_k / base2k)` limbs. They give the bits of the
+    /// unprepared sum under its conditions.
     ///
     /// # Panics
     ///
-    /// Before writing `res`, if `a` is empty or `b` is not as long, if a given size is not the limb count of
-    /// its width, if a prepared operand is not of the degree of `res`, of two columns and of its given size, or under
-    /// the conditions of [`GLWEMulRelinearizeSum::glwe_mul_relinearize_sum`].
+    /// Before writing `res`, if `a` is empty or `b` is not as long, if `a_size` or `b_size` is not the limb count of
+    /// its width, if an operand is not of the degree of `res`, of two columns and of its side's limbs, or under the
+    /// conditions of [`GLWEMulRelinearizeSum::glwe_mul_relinearize_sum`].
     #[allow(clippy::too_many_arguments)]
-    fn glwe_mul_prepared_relinearize_sum<R, AP, BP, H>(
+    fn glwe_mul_prepared_relinearize_sum<'a, R, AP, BP, H>(
         &self,
         cnv_offset: usize,
         res: &mut R,
         res_k: crate::layouts::TorusPrecision,
-        a: &[&AP],
-        b: &[&BP],
+        a: impl IntoIterator<Item = &'a AP, IntoIter: ExactSizeIterator + Clone>,
         a_size: usize,
         a_k: crate::layouts::TorusPrecision,
+        b: impl IntoIterator<Item = &'a BP, IntoIter: ExactSizeIterator + Clone>,
         b_size: usize,
         b_k: crate::layouts::TorusPrecision,
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        AP: CnvPVecLToBackendRef<BE>,
-        BP: CnvPVecRToBackendRef<BE>,
+        AP: CnvPVecLToBackendRef<BE> + 'a,
+        BP: CnvPVecRToBackendRef<BE> + 'a,
         H: GetTensorKey<BE>;
 
     /// Scratch bytes of [`Self::glwe_tensor_apply_prepared`] for the same sizes and radix.

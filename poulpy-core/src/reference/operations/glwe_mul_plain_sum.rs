@@ -2,12 +2,14 @@
 
 use poulpy_hal::{
     api::{
-        Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
-        VecZnxDftAddAssign, VecZnxDftBytesOf, VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
+        Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxAddAssign, VecZnxBigBytesOf, VecZnxBigNormalize,
+        VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign, VecZnxDftBytesOf, VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
+        VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes, VecZnxNormalize, VecZnxNormalizeTmpBytes, VecZnxRsh, VecZnxRshTmpBytes,
     },
     layouts::{
         Backend, CnvDftAccTerm, CnvPVecLToBackendRef, CnvPVecRToBackendRef, Module, ScratchArena, VecZnxBigToBackendRef,
-        VecZnxDftBackendMut, VecZnxDftToBackendMut, VecZnxDftToBackendRef,
+        VecZnxDftBackendMut, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendMut, VecZnxToBackendRef,
+        vec_znx_backend_ref_from_mut,
     },
 };
 
@@ -24,6 +26,27 @@ pub trait GLWEMulPreparedPlainSumReference<BE: Backend> {
 
     #[allow(clippy::too_many_arguments)]
     fn glwe_mul_prepared_plain_sum_reference<R, AP, BP>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        a: &[&AP],
+        a_size: usize,
+        b: &[&BP],
+        b_size: usize,
+        galois: &[i64],
+        base2k: Base2K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        AP: CnvPVecLToBackendRef<BE>,
+        BP: CnvPVecRToBackendRef<BE>;
+
+    fn glwe_mul_prepared_plain_sum_add_tmp_bytes_reference<R>(&self, res: &R, a_size: usize, b_size: usize) -> usize
+    where
+        R: GLWEInfos;
+
+    #[allow(clippy::too_many_arguments)]
+    fn glwe_mul_prepared_plain_sum_add_reference<R, AP, BP>(
         &self,
         cnv_offset: usize,
         res: &mut R,
@@ -86,7 +109,14 @@ where
         + VecZnxIdftApply<BE>
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BE>
-        + VecZnxBigNormalizeTmpBytes,
+        + VecZnxBigNormalizeTmpBytes
+        + VecZnxIdftNormalize<BE>
+        + VecZnxIdftNormalizeTmpBytes
+        + VecZnxNormalize<BE>
+        + VecZnxNormalizeTmpBytes
+        + VecZnxAddAssign<BE>
+        + VecZnxRsh<BE>
+        + VecZnxRshTmpBytes,
 {
     /// One column's sum, inverse transform and normalization: the call transforms no operand.
     fn glwe_mul_prepared_plain_sum_tmp_bytes_reference<R>(&self, res: &R, a_size: usize, b_size: usize) -> usize
@@ -155,6 +185,134 @@ where
                 &mut scratch_2.borrow(),
             );
         }
+    }
+
+    /// One column's sum, on at least one limb more than `res`, then either the shifted column of `res` and the fused
+    /// inverse transform, or the lossless inverse transform, `res` added, and the normalization.
+    fn glwe_mul_prepared_plain_sum_add_tmp_bytes_reference<R>(&self, res: &R, a_size: usize, b_size: usize) -> usize
+    where
+        R: GLWEInfos,
+    {
+        let n = operand_degree(self.n(), &[res.n()]);
+        let (res_dft_size, addend_size) = ((a_size + b_size).max(res.size() + 1), res.size() + 1);
+        let sum_size = (res_dft_size + 1).max(res.size());
+        let shifted = BE::scratch_aligned(BE::bytes_of_vec_znx(n, 1, addend_size))
+            + self
+                .vec_znx_rsh_tmp_bytes(addend_size)
+                .max(self.vec_znx_idft_normalize_tmp_bytes(res.size(), res_dft_size));
+        let lossless = BE::scratch_aligned(BE::bytes_of_vec_znx(n, 1, sum_size))
+            + self
+                .vec_znx_idft_normalize_tmp_bytes(sum_size, res_dft_size)
+                .max(self.vec_znx_normalize_tmp_bytes());
+        BE::scratch_aligned(self.bytes_of_vec_znx_dft(n, 1, res_dft_size))
+            + self
+                .cnv_apply_dft_sum_tmp_bytes(0, res_dft_size, a_size, b_size)
+                .max(shifted)
+                .max(lossless)
+    }
+
+    fn glwe_mul_prepared_plain_sum_add_reference<R, AP, BP>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        a: &[&AP],
+        a_size: usize,
+        b: &[&BP],
+        b_size: usize,
+        galois: &[i64],
+        base2k: Base2K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        AP: CnvPVecLToBackendRef<BE>,
+        BP: CnvPVecRToBackendRef<BE>,
+    {
+        const OP: &str = "glwe_mul_prepared_plain_sum_add";
+        let (n, cols) = (res.n().as_usize(), res.rank().as_usize() + 1);
+        check_terms::<BE, _, _>(OP, n, cols, a, a_size, b, b_size, galois);
+        assert!(res.base2k() == base2k, "{OP}: res must be at the radix of the operands");
+        assert!(
+            scratch.available() >= self.glwe_mul_prepared_plain_sum_add_tmp_bytes_reference(res, a_size, b_size),
+            "glwe_mul_prepared_plain_sum_add: scratch below its query"
+        );
+
+        let (res_k, base2k) = (res.k().as_usize(), base2k.as_usize());
+        let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, base2k);
+        // Limbs past the product are zero, and the fused inverse transform reads only as many limbs of its addend.
+        let res_dft_size = (a_size + b_size - cnv_offset_hi).max(res.size() + 1);
+        let mut terms = Vec::with_capacity(a.len());
+        for col in 0..cols {
+            column_terms(&mut terms, col, a, b, galois);
+            let (mut res_dft, mut scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(n, 1, res_dft_size);
+            self.cnv_apply_dft_sum(cnv_offset_hi, &mut res_dft.to_backend_mut(), 0, &terms, &mut scratch_1);
+            if cnv_offset_lo >= 0 {
+                // `res` enters the fused inverse transform scaled by `2^-cnv_offset_lo`: fewer bits than a limb, exact
+                // on one more limb.
+                let (mut addend, mut scratch_2) = scratch_1.take_vec_znx_scratch(n, 1, res.size() + 1);
+                {
+                    let res_backend = res.to_backend_mut();
+                    let res_data = vec_znx_backend_ref_from_mut::<BE>(&res_backend.data);
+                    let bits = cnv_offset_lo as usize;
+                    self.vec_znx_rsh(
+                        base2k,
+                        bits,
+                        &mut addend.to_backend_mut(),
+                        0,
+                        &res_data,
+                        col,
+                        &mut scratch_2.borrow(),
+                    );
+                }
+                let mut res_backend = res.to_backend_mut();
+                self.vec_znx_idft_normalize(
+                    &mut res_backend.data,
+                    base2k,
+                    res_k,
+                    cnv_offset_lo,
+                    col,
+                    &mut res_dft.to_backend_mut(),
+                    0,
+                    base2k,
+                    Some((&addend.to_backend_ref(), 0)),
+                    &mut scratch_2.borrow(),
+                );
+            } else {
+                // Scaled down, the sum carries bits above the torus that no addend holds: it is rounded losslessly,
+                // one limb wider, then `res` is added and the total rounded once.
+                let sum_size = (res_dft_size + 1).max(res.size());
+                let (mut sum, mut scratch_2) = scratch_1.take_vec_znx_scratch(n, 1, sum_size);
+                self.vec_znx_idft_normalize(
+                    &mut sum.to_backend_mut(),
+                    base2k,
+                    sum_size * base2k,
+                    cnv_offset_lo,
+                    0,
+                    &mut res_dft.to_backend_mut(),
+                    0,
+                    base2k,
+                    None,
+                    &mut scratch_2.borrow(),
+                );
+                {
+                    let res_backend = res.to_backend_mut();
+                    let res_data = vec_znx_backend_ref_from_mut::<BE>(&res_backend.data);
+                    self.vec_znx_add_assign(&mut sum.to_backend_mut(), 0, &res_data, col);
+                }
+                let mut res_backend = res.to_backend_mut();
+                self.vec_znx_normalize(
+                    &mut res_backend.data,
+                    base2k,
+                    res_k,
+                    0,
+                    col,
+                    &sum.to_backend_ref(),
+                    base2k,
+                    0,
+                    &mut scratch_2.borrow(),
+                );
+            }
+        }
+        res.set_canonical(true);
     }
 
     /// The convolution sums, written straight into `res`.
@@ -298,6 +456,20 @@ macro_rules! impl_glwe_mul_prepared_plain_sum_reference_full {
         AP: ::poulpy_hal::layouts::CnvPVecLToBackendRef<$be>,
         BP: ::poulpy_hal::layouts::CnvPVecRToBackendRef<$be> {
             <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEMulPreparedPlainSumReference<$be>>::glwe_mul_prepared_plain_sum_reference::<R, AP, BP>(module, cnv_offset, res, a, a_size, b, b_size, galois, base2k, scratch)
+        }
+
+    fn glwe_mul_prepared_plain_sum_add_tmp_bytes<R>(module: &::poulpy_hal::layouts::Module<$be>, res: &R, a_size: usize, b_size: usize) -> usize
+    where
+        R: $crate::layouts::GLWEInfos {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEMulPreparedPlainSumReference<$be>>::glwe_mul_prepared_plain_sum_add_tmp_bytes_reference::<R>(module, res, a_size, b_size)
+        }
+
+    fn glwe_mul_prepared_plain_sum_add<R, AP, BP>(module: &::poulpy_hal::layouts::Module<$be>, cnv_offset: usize, res: &mut R, a: &[&AP], a_size: usize, b: &[&BP], b_size: usize, galois: &[i64], base2k: $crate::layouts::Base2K, scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>)
+    where
+        R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
+        AP: ::poulpy_hal::layouts::CnvPVecLToBackendRef<$be>,
+        BP: ::poulpy_hal::layouts::CnvPVecRToBackendRef<$be> {
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEMulPreparedPlainSumReference<$be>>::glwe_mul_prepared_plain_sum_add_reference::<R, AP, BP>(module, cnv_offset, res, a, a_size, b, b_size, galois, base2k, scratch)
         }
 
     fn glwe_mul_prepared_plain_sum_dft_tmp_bytes(module: &::poulpy_hal::layouts::Module<$be>, res_size: usize, a_size: usize, b_size: usize) -> usize {

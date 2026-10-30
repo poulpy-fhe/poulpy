@@ -118,9 +118,11 @@ pub(crate) mod validation;
 
 pub use alloc::CKKSModuleAlloc;
 pub use approximation::PolynomialApproximation;
+#[allow(deprecated)]
+pub use bootstrapping::BootstrappingContextUnprepared;
 pub use bootstrapping::{
-    BootstrappingContext, BootstrappingContextUnprepared, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques,
-    CIConversion, CIPre, EvalModCI, EvalModRing, EvalRoundPlus, SparseSecretEncapsulation,
+    BootstrappingContext, BootstrappingContextPrepared, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques,
+    CIConversion, CIPrePrepared, EvalModCIPrepared, EvalModRing, EvalRoundPlus, SparseSecretEncapsulation,
 };
 pub use bootstrapping_keys::{
     BootstrappingCIKeys, BootstrappingKeySet, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingKeysPrepared,

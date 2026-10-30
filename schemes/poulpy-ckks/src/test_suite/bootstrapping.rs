@@ -15,7 +15,7 @@
 //! 4. EvalMod removes `q·I_j` from each.
 //! 5. SlotsToCoeffs maps the slots back to coefficients — a refreshed `z`.
 //!
-//! Scale bridge (see [`BootstrappingContext`](crate::layouts::BootstrappingContext)): CoeffsToSlots is pre-scaled by
+//! Scale bridge (see [`BootstrappingContextPrepared`](crate::layouts::BootstrappingContextPrepared)): CoeffsToSlots is pre-scaled by
 //! `1/K` (`K = f_mod_interval`) into EvalMod's `[-1, 1]` domain; after ModUp the
 //! ciphertext is relabeled at the input-modulus scale (free division by the
 //! message ratio), restored by a `2^R` scale-up after SlotsToCoeffs.

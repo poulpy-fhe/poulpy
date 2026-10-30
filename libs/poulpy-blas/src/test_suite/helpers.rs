@@ -35,10 +35,10 @@ use poulpy_hal::{
 use crate::{
     api::{BlasContextPreparedFactory, BlasEncodingOps, BlasMatMulOps, BlasPtOperandPreparedFactory},
     layouts::{
-        BlasCiphertext, BlasCiphertextOwned, BlasContext, BlasContextInfos, BlasGrid, BlasGridInfos, BlasGridMut, BlasLayout,
-        BlasMatMulLeft, BlasMatMulOperandInfos, BlasMatMulOperandPreparedFactory, BlasMatMulRight, BlasModuleAlloc, BlasPlan,
-        BlasPtAlgorithm, BlasPtOperand, BlasPtSide, blas_matmul_left_operand_layout, blas_matmul_right_operand_layout,
-        ciphertext::layout_of, grid::split_into_blocks,
+        BlasCiphertext, BlasCiphertextOwned, BlasContextInfos, BlasContextPrepared, BlasGrid, BlasGridInfos, BlasGridMut,
+        BlasLayout, BlasMatMulLeft, BlasMatMulOperandInfos, BlasMatMulOperandPreparedFactory, BlasMatMulRight, BlasModuleAlloc,
+        BlasPlan, BlasPtAlgorithm, BlasPtOperandPrepared, BlasPtSide, blas_matmul_left_operand_layout,
+        blas_matmul_right_operand_layout, ciphertext::layout_of, grid::split_into_blocks,
     },
     oep::{BlasEncodingImpl, BlasMatMulImpl},
 };
@@ -51,8 +51,8 @@ pub const HINTS: [PrepareHint; 2] = [PrepareHint::OneShot, PrepareHint::Reuse];
 pub fn matmul_left_operand<BE: BlasMatMulImpl>(
     module: &Module<BE>,
     a: &impl BlasGrid<BE>,
-    ctx: &BlasContext<BE>,
-    keys: &(impl GetAutomorphismKey<BE> + Sync),
+    ctx: &BlasContextPrepared<BE>,
+    keys: &(impl GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync),
     hint: PrepareHint,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> CKKSResult<BlasMatMulLeft<BE>> {
@@ -66,8 +66,8 @@ pub fn matmul_left_operand<BE: BlasMatMulImpl>(
 pub fn matmul_right_operand<BE: BlasMatMulImpl>(
     module: &Module<BE>,
     b: &impl BlasGrid<BE>,
-    ctx: &BlasContext<BE>,
-    keys: &(impl GetAutomorphismKey<BE> + Sync),
+    ctx: &BlasContextPrepared<BE>,
+    keys: &(impl GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync),
     hint: PrepareHint,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> CKKSResult<BlasMatMulRight<BE>> {
@@ -671,7 +671,7 @@ pub fn pt_operand<BE, F, S>(
     entry: impl Fn(usize, usize, usize) -> F,
     base2k: Base2K,
     coeffs_meta: CoeffsMeta,
-) -> BlasPtOperand<BE, S>
+) -> BlasPtOperandPrepared<BE, S>
 where
     BE: Backend + BlasEncodingImpl,
     Module<BE>:
@@ -918,7 +918,12 @@ pub fn other_scales(params: &CKKSTestParams) -> [usize; 2] {
 
 /// The context of `plan` at `coeffs_meta` on `module`, allocated, encoded and prepared, each call on exactly its
 /// query's bytes.
-pub fn encoded_context<BE, F>(module: &Module<BE>, plan: BlasPlan, base2k: Base2K, coeffs_meta: CoeffsMeta) -> BlasContext<BE>
+pub fn encoded_context<BE, F>(
+    module: &Module<BE>,
+    plan: BlasPlan,
+    base2k: Base2K,
+    coeffs_meta: CoeffsMeta,
+) -> BlasContextPrepared<BE>
 where
     BE: Backend + BlasEncodingImpl,
     Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F> + BlasEncodingOps<BE, F> + CKKSLinearTransformationOps<BE>,
@@ -936,7 +941,7 @@ where
 }
 
 /// The context of `2^log_d x 2^log_d` blocks at `params.prec()`, each call on exactly its query's bytes.
-pub fn blas_context<BE, F>(params: &CKKSTestParams, module: &Module<BE>, log_d: usize) -> crate::layouts::BlasContext<BE>
+pub fn blas_context<BE, F>(params: &CKKSTestParams, module: &Module<BE>, log_d: usize) -> crate::layouts::BlasContextPrepared<BE>
 where
     BE: TestContextBackend + BlasEncodingImpl,
     Module<BE>: TestContextSharedModule<BE>
@@ -981,7 +986,7 @@ pub fn context_and_keys<BE, F>(
     sk_raw: &poulpy_core::layouts::BackendGLWESecret<BE>,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> (
-    crate::layouts::BlasContext<BE>,
+    crate::layouts::BlasContextPrepared<BE>,
     HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>>,
 )
 where
@@ -1026,7 +1031,7 @@ pub fn foreign_contexts<BE, F>(
     sk_raw: &poulpy_core::layouts::BackendGLWESecret<BE>,
     atks: &mut HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>>,
     scratch: &mut ScratchArena<'_, BE>,
-) -> [(&'static str, crate::layouts::BlasContext<BE>); 2]
+) -> [(&'static str, crate::layouts::BlasContextPrepared<BE>); 2]
 where
     BE: TestContextBackend + BlasEncodingImpl,
     Module<BE>: TestContextSharedModule<BE>

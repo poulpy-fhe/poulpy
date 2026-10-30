@@ -2,7 +2,7 @@
 //! baby-step preparation.
 use poulpy_core::{
     DiagonalProd, GLWEBytesOf, LinearTransformation, LinearTransformationBabySteps,
-    layouts::{GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, IntPolyInfos},
+    layouts::{GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey},
 };
 use poulpy_hal::layouts::{Module, ScratchArena};
 
@@ -25,8 +25,8 @@ pub(crate) fn ckks_eval_linear_transformation_assign_derived<BE, Dst, P, H>(
 where
     BE: CKKSLinearTransformationImpl,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
-    H: GetAutomorphismKey<BE>,
+    P: DiagonalProd<BE> + LtDiagonalMeta,
+    H: GetAutomorphismKey<BE> + poulpy_core::layouts::GetTensorKey<BE>,
 {
     // The evaluation checks its own query on what the working copy leaves.
     ckks_ensure!(
@@ -53,10 +53,10 @@ where
     BE: CKKSLinearTransformationImpl,
     Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-    P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
-    H: GetAutomorphismKey<BE>,
+    P: DiagonalProd<BE> + LtDiagonalMeta,
+    H: GetAutomorphismKey<BE> + poulpy_core::layouts::GetTensorKey<BE>,
 {
-    // Only the baby cache is allocated: a plaintext `lt` streams its diagonals inside the evaluation.
+    // Only the baby cache is allocated: an unprepared `lt` streams its diagonals inside the evaluation.
     let mut babies = LinearTransformationBabySteps::alloc_for(module, lt, src);
     BE::ckks_prepare_linear_transformation_baby_steps(module, &mut babies, src, keys, scratch)?;
     BE::ckks_eval_linear_transformation_into(module, dst, src, &babies, lt, keys, scratch)
@@ -72,8 +72,8 @@ pub(crate) fn ckks_eval_linear_transformation_self_assign_derived<BE, Dst, P, H>
 where
     BE: CKKSLinearTransformationImpl,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
-    H: GetAutomorphismKey<BE>,
+    P: DiagonalProd<BE> + LtDiagonalMeta,
+    H: GetAutomorphismKey<BE> + poulpy_core::layouts::GetTensorKey<BE>,
 {
     // The evaluation checks its own query on what the working copy leaves.
     ckks_ensure!(

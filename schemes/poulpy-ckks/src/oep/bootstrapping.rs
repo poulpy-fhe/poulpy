@@ -12,7 +12,7 @@ use poulpy_hal::layouts::{Backend, ConjugateInvariant, Module, ScratchArena, Sta
 use crate::{
     CKKSCtBounds, CKKSResult, SetCKKSInfos,
     layouts::{
-        BootstrappingCIKeys, BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys,
+        BootstrappingCIKeys, BootstrappingContextPrepared, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys,
         CKKSCiphertextOwned, CKKSPlaintextOwned, EncodedLut, EvalModPlan,
     },
 };
@@ -34,7 +34,7 @@ pub unsafe trait CKKSBootstrappingImpl: Backend<Ring = Standard> {
         module: &Module<Self>,
         ct_out: &C1,
         ct_in: &C2,
-        ctx: &BootstrappingContext<Self, F>,
+        ctx: &BootstrappingContextPrepared<Self, F>,
         keys_layout: &BootstrappingKeysLayout,
     ) -> usize
     where
@@ -47,7 +47,7 @@ pub unsafe trait CKKSBootstrappingImpl: Backend<Ring = Standard> {
         module: &Module<Self>,
         ct_out: &C1,
         ct_in: &C2,
-        ctx: &BootstrappingContext<Self, F>,
+        ctx: &BootstrappingContextPrepared<Self, F>,
         luts: &[EncodedLut<CKKSPlaintextOwned<Self>>],
         keys_layout: &BootstrappingKeysLayout,
     ) -> usize
@@ -93,7 +93,7 @@ pub unsafe trait CKKSBootstrappingImpl: Backend<Ring = Standard> {
         module: &Module<Self>,
         ct_out: &mut CKKSCiphertextOwned<Self>,
         ct_in: &CKKSCiphertextOwned<Self>,
-        ctx: &BootstrappingContext<Self, F>,
+        ctx: &BootstrappingContextPrepared<Self, F>,
         keys: &K,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> CKKSResult<()>
@@ -109,7 +109,7 @@ pub unsafe trait CKKSBootstrappingImpl: Backend<Ring = Standard> {
         module: &Module<Self>,
         ct_outs: &mut [CKKSCiphertextOwned<Self>],
         ct_in: &CKKSCiphertextOwned<Self>,
-        ctx: &BootstrappingContext<Self, F>,
+        ctx: &BootstrappingContextPrepared<Self, F>,
         luts: &[EncodedLut<CKKSPlaintextOwned<Self>>],
         keys: &K,
         scratch: &mut ScratchArena<'_, Self>,
@@ -139,7 +139,7 @@ pub unsafe trait CKKSBootstrappingCIImpl: Backend<Ring = Standard> {
         ci: &Module<Self::CI>,
         ct_out: &C1,
         ct_in: &C2,
-        ctx: &BootstrappingContext<Self, F>,
+        ctx: &BootstrappingContextPrepared<Self, F>,
         keys_layout: &BootstrappingKeysLayout,
     ) -> (usize, usize)
     where
@@ -158,7 +158,7 @@ pub unsafe trait CKKSBootstrappingCIImpl: Backend<Ring = Standard> {
         ci: &Module<Self::CI>,
         dst: &mut Dst,
         src: &Src,
-        ctx: &BootstrappingContext<Self, F>,
+        ctx: &BootstrappingContextPrepared<Self, F>,
         keys: &K,
         scratch: &mut ScratchArena<'_, Self>,
         scratch_ci: &mut ScratchArena<'_, Self::CI>,
@@ -274,7 +274,7 @@ macro_rules! impl_ckks_bootstrapping_reference_full {
                 module: &::poulpy_hal::layouts::Module<$be>,
                 ct_out: &C1,
                 ct_in: &C2,
-                ctx: &$crate::layouts::BootstrappingContext<$be, F>,
+                ctx: &$crate::layouts::BootstrappingContextPrepared<$be, F>,
                 keys_layout: &$crate::layouts::BootstrappingKeysLayout,
             ) -> usize
             where
@@ -294,7 +294,7 @@ macro_rules! impl_ckks_bootstrapping_reference_full {
                 module: &::poulpy_hal::layouts::Module<$be>,
                 ct_out: &C1,
                 ct_in: &C2,
-                ctx: &$crate::layouts::BootstrappingContext<$be, F>,
+                ctx: &$crate::layouts::BootstrappingContextPrepared<$be, F>,
                 luts: &[$crate::layouts::EncodedLut<$crate::layouts::CKKSPlaintextOwned<$be>>],
                 keys_layout: &$crate::layouts::BootstrappingKeysLayout,
             ) -> usize
@@ -353,7 +353,7 @@ macro_rules! impl_ckks_bootstrapping_reference_full {
                 module: &::poulpy_hal::layouts::Module<$be>,
                 ct_out: &mut $crate::layouts::CKKSCiphertextOwned<$be>,
                 ct_in: &$crate::layouts::CKKSCiphertextOwned<$be>,
-                ctx: &$crate::layouts::BootstrappingContext<$be, F>,
+                ctx: &$crate::layouts::BootstrappingContextPrepared<$be, F>,
                 keys: &K,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) -> $crate::CKKSResult<()>
@@ -371,7 +371,7 @@ macro_rules! impl_ckks_bootstrapping_reference_full {
                 module: &::poulpy_hal::layouts::Module<$be>,
                 ct_outs: &mut [$crate::layouts::CKKSCiphertextOwned<$be>],
                 ct_in: &$crate::layouts::CKKSCiphertextOwned<$be>,
-                ctx: &$crate::layouts::BootstrappingContext<$be, F>,
+                ctx: &$crate::layouts::BootstrappingContextPrepared<$be, F>,
                 luts: &[$crate::layouts::EncodedLut<$crate::layouts::CKKSPlaintextOwned<$be>>],
                 keys: &K,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
@@ -400,7 +400,7 @@ macro_rules! impl_ckks_bootstrapping_ci_reference_full {
                 ci: &::poulpy_hal::layouts::Module<$ci>,
                 ct_out: &C1,
                 ct_in: &C2,
-                ctx: &$crate::layouts::BootstrappingContext<$be, F>,
+                ctx: &$crate::layouts::BootstrappingContextPrepared<$be, F>,
                 keys_layout: &$crate::layouts::BootstrappingKeysLayout,
             ) -> (usize, usize)
             where
@@ -422,7 +422,7 @@ macro_rules! impl_ckks_bootstrapping_ci_reference_full {
                 ci: &::poulpy_hal::layouts::Module<$ci>,
                 dst: &mut Dst,
                 src: &Src,
-                ctx: &$crate::layouts::BootstrappingContext<$be, F>,
+                ctx: &$crate::layouts::BootstrappingContextPrepared<$be, F>,
                 keys: &K,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
                 scratch_ci: &mut ::poulpy_hal::layouts::ScratchArena<'_, $ci>,

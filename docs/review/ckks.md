@@ -10,7 +10,7 @@
 - **Reference family shape.** A family's reference is `pub trait CKKS<Family>Reference<BE: Backend>` of default-bodied `<api name>_reference` and `<api query>_reference` methods with their own `where Self:` bounds and an empty `Module<BE>` impl.
 - **Derived bodies.** A same-layer composition is a provided OEP method calling one `<op>_derived`.
 - **Scalar-generic seams.** Anything generic over the encoding scalar `F` is its own OEP trait (`CKKSEncodingImpl<F>`, `CKKSDFTMatrixImpl<F>`) or a method bounded by `Self: CKKSEncodingImpl<F>` (PaCo and SHIP coefficient encodings), never a parameter of `CKKSImpl` or a scalar-independent family; its API trait takes `F` as a trait parameter, its delegate impl, not its methods, requires the seam, and its reference macro covers every `F` of the backend's `CKKSEncodingImpl<F>`.
-- **Core through its public seams.** A CKKS reference reaches core through its bounded core API traits and queries, pure sizing helpers, API-less helpers (`GGLWEProductReference`) and the `DiagonalProd` hook with `glwe_accumulate_streamed_baby_steps_dft`, a missing core seam being added in core.
+- **Core through its public seams.** A CKKS reference reaches core through its bounded core API traits and queries, pure sizing helpers, API-less helpers (`GGLWEProductReference`) and the `DiagonalProd` hook, a missing core seam being added in core.
 - **Containers hold data, modules compute.** Computations are `Module<BE>` traits, and methods of `CKKSCiphertext`, `CKKSPlaintext` and their views only manage data (`set_meta_checked`, `to_ref`) or are host-named codecs.
 
 ## 2. Naming, signatures and argument order

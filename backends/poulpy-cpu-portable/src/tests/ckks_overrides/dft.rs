@@ -119,7 +119,9 @@ fn checked_dft_construction_rejects_invalid_markers_and_layouts() {
         "DFT factor count does not match its plan",
     );
     let mut bad = factors();
-    bad[0].giant_steps[0].diagonals[0].plaintext.set_log_scale(0);
+    bad[0].giant_steps[0].diagonals[0]
+        .plaintext
+        .set_plaintext_meta(Default::default());
     refused(
         "scale",
         matrix.try_with_factor_operands(&module, bad).map(drop),
@@ -323,7 +325,8 @@ use poulpy_ckks::layouts::{CKKSModuleAlloc, DFTMatrixPrepared};
 use poulpy_ckks::{CKKSCtBounds, CKKSResult as Result, SetCKKSInfos};
 use poulpy_core::DiagonalProd;
 use poulpy_core::layouts::{
-    GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, IntPolyInfos, LinearTransformation, SetGLWEPlaintextInfos,
+    GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, IntPolyInfos, LinearTransformation,
+    SetGLWEPlaintextInfos,
 };
 use poulpy_hal::layouts::ScratchArena;
 use std::cell::{Cell, RefCell};
@@ -343,7 +346,7 @@ unsafe impl poulpy_ckks::oep::CKKSDFTImpl for OverrideBackend {
         dft: &DFTMatrix<Self, Dir, Fmt, LinearTransformation<P>>,
     ) -> usize
     where
-        P: poulpy_core::layouts::LWEInfos,
+        P: poulpy_core::layouts::GLWEInfos,
     {
         DFT_PREPARE_EXTRA.get() + poulpy_ckks::reference::dft::ckks_prepare_dft_matrix_tmp_bytes(module, dft)
     }
@@ -389,7 +392,7 @@ unsafe impl poulpy_ckks::oep::CKKSDFTImpl for OverrideBackend {
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        P: DiagonalProd<Self> + LtDiagonalMeta + IntPolyInfos,
+        P: DiagonalProd<Self> + LtDiagonalMeta,
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<Self>,
     {
@@ -409,6 +412,14 @@ impl<BE: poulpy_hal::layouts::Backend> GetAutomorphismKey<BE> for NoAutomorphism
         _: i64,
         _: poulpy_core::layouts::TorusPrecision,
     ) -> poulpy_core::Result<poulpy_core::layouts::GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
+        panic!("DFT dispatch probe must not request keys")
+    }
+}
+impl<BE: poulpy_hal::layouts::Backend> GetTensorKey<BE> for NoAutomorphismKey {
+    fn lookup_tensor_key(
+        &self,
+        _: poulpy_core::layouts::TorusPrecision,
+    ) -> poulpy_core::Result<poulpy_core::layouts::prepared::GLWETensorKeyPreparedBackendRef<'_, BE>> {
         panic!("DFT dispatch probe must not request keys")
     }
 }
@@ -496,7 +507,7 @@ fn bootstrap_sizing_includes_selected_dft_workspace() {
     use poulpy_ckks::layouts::DFTType;
     use poulpy_ckks::layouts::eval_mod::EvalModPlan;
     use poulpy_ckks::layouts::{
-        BootstrappingContext, BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques,
+        BootstrappingContextPrepared, BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques,
     };
     use poulpy_ckks::polynomial::SplitStrategy;
     let module = Module::<OverrideBackend>::new(64);
@@ -510,7 +521,7 @@ fn bootstrap_sizing_includes_selected_dft_workspace() {
         plan(poulpy_ckks::layouts::DFTType::Decode, DFTOutputFormat::SplitRealAndImag),
     )
     .unwrap();
-    type Context = BootstrappingContext<OverrideBackend, f64>;
+    type Context = BootstrappingContextPrepared<OverrideBackend, f64>;
     let compile = |plan: &BootstrappingPlan| {
         let unprepared = with_scratch::<OverrideBackend, _>(Context::compile_unprepared_tmp_bytes(&module, plan).unwrap(), |s| {
             Context::compile_unprepared(&module, 16usize.into(), plan, s)

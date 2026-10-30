@@ -23,7 +23,7 @@ ModUp is the modulus raise, provided by the bootstrapping trait (`CKKSBootstrapp
 CoeffsToSlots and SlotsToCoeffs are the homomorphic DFT (`CKKSDFTOps`), a chain of linear transformations over the slots (see [linear_transformation.md](linear_transformation.md)); EvalMod is homomorphic `x mod 1`, a polynomial evaluation (`CKKSEvalModOps`, see [polynomial_evaluation.md](polynomial_evaluation.md)).
 
 The engine follows the usual `api` / `oep` / `reference` / `delegates` split.
-A ready-made orchestrator, `ckks_bootstrap`, runs the whole refresh from a compiled `BootstrappingContext` and a prepared `BootstrappingKeys`; [a fold](#batches) packs batches for it.
+A ready-made orchestrator, `ckks_bootstrap`, runs the whole refresh from a compiled `BootstrappingContextPrepared` and a prepared `BootstrappingKeys`; [a fold](#batches) packs batches for it.
 Backends select the pipeline through `CKKSBootstrappingImpl` (`impl_ckks_bootstrapping_reference_full!`), which also covers ModUp and functional bootstrapping, and `test_bootstrapping_parity` compares an override against a reference backend.
 The individual stages stay public, so a caller can assemble a custom pipeline instead.
 The end-to-end tests drive the orchestrator through every pipeline.
@@ -65,7 +65,7 @@ Its rows then cover only the bits the raised ciphertext fills at the bottom of t
 A raise whose shift exceeds the key's offset first shifts its input by the difference, inside the key's window, as S2C-first does for its narrower inputs.
 It is selected by the bootstrapping recipe through `BootstrappingTechniques::sparse_secret_encapsulation`, whose Hamming weight must be chosen together with EvalMod's interval.
 `BootstrappingKeysLayout::encapsulation` contains only the two physical key-switch layouts; key generation rejects its presence or absence when it disagrees with the compiled recipe, and execution likewise rejects a mismatched key set.
-The generated keys remain part of the key bundle, while the public Hamming-weight parameter is retained by the otherwise secret-independent `BootstrappingPlan`/`BootstrappingContext`.
+The generated keys remain part of the key bundle, while the public Hamming-weight parameter is retained by the otherwise secret-independent `BootstrappingPlan`/`BootstrappingContextPrepared`.
 
 ## The homomorphic DFT (CoeffsToSlots / SlotsToCoeffs)
 
@@ -165,7 +165,7 @@ For now it still uses a `BootstrappingPlan` containing an EvalMod plan because E
 After an unsplit CoeffsToSlots, the `N` coefficients sit in `N/2` complex slots `z_j = c_j + i·c_{j+N/2}`, and EvalMod's real polynomial runs once per half. The conjugate-invariant (CI) ring of degree `N` has `N` real slots, so one EvalMod there reduces them all (`BootstrappingPlan::with_eval_mod_ring(EvalModRing::ConjugateInvariant { .. })`, S2C-first only).
 The ciphertext is embedded in the standard ring of degree `2N` as `z(X²)`, which holds each slot twice, multiplied by `u` (`1` on one copy, `−i` on the other) and traced onto the CI ring with a key switch, which leaves `c_j` and `c_{j+N/2}` in two real slots. After EvalMod on the CI backend, the result is embedded back and multiplied by `v` (`2` and `2i`), and its even coefficients, back at degree `N`, pair the halves again as `r_j + i·r_{j+N/2}`. The two products consume the scales of `u` and `v`; the trace and embedding keys are of degree `2N`.
 The product by `u` can instead be folded into the last CoeffsToSlots factor (`CIConversion::Folded`). Writing `u = u_e(X²) + X·u_o(X²)`, `u·z(X²) = (u_e·z)(X²) + X·(u_o·z)(X²)`, where `u_e·z` and `u_o·z` are slot-wise products at degree `N`: the last factor runs twice from the same baby steps, scaled by the slots of `u_e`, `(1 − i)/2`, and of `u_o`, `(1 + i)/(2ω_j)` at the root `ω_j` of slot `j`. The fold costs no level, which narrows the raised width and so every key, at the price of the second pass over the factor. `v` does not fold: nothing linear follows EvalMod in the S2C-first pipeline.
-`CKKSBootstrappingCIOps::ckks_bootstrap_ci_into` runs it with one standard module of degree `2N`, which serves the conversions and the stages of degree `N`, and a CI module of degree `N` whose backend shares the buffers of the bootstrap's, on a context of `BootstrappingContext::compile_ci` and keys of `generate_keys_ci` and `prepare_ci`: no conjugation key, a tensor key of a CI secret, and the conversion keys, all checked at entry, as are both arenas against `ckks_bootstrap_ci_tmp_bytes`. Backends override it through `CKKSBootstrappingCIImpl`, whose `CI` names the twin.
+`CKKSBootstrappingCIOps::ckks_bootstrap_ci_into` runs it with one standard module of degree `2N`, which serves the conversions and the stages of degree `N`, and a CI module of degree `N` whose backend shares the buffers of the bootstrap's, on a context of `BootstrappingContextPrepared::compile_ci` and keys of `generate_keys_ci` and `prepare_ci`: no conjugation key, a tensor key of a CI secret, and the conversion keys, all checked at entry, as are both arenas against `ckks_bootstrap_ci_tmp_bytes`. Backends override it through `CKKSBootstrappingCIImpl`, whose `CI` names the twin.
 
 ## Pipeline order and EvalRound+
 
@@ -238,9 +238,9 @@ let plan = BootstrappingPlan::new(
 )?;
 ```
 
-`BootstrappingContext::compile` turns the plan into the resident, secret-independent form: the prepared backend-resident DFT matrices and the encoded, uploaded EvalMod.
+`BootstrappingContextPrepared::compile` turns the plan into the resident, secret-independent form: the prepared backend-resident DFT matrices and the encoded, uploaded EvalMod.
 It is built once and reused across bootstraps.
-To size the preparation scratch exactly, compile in two stages: `BootstrappingContext::compile_unprepared` generates the matrices on the scratch `compile_unprepared_tmp_bytes` reports, `prepare_tmp_bytes` reports the backend's preparation budget for them, and `prepare` returns the context.
+To size the preparation scratch exactly, compile in two stages: `BootstrappingContextPrepared::compile_unprepared` generates the matrices on the scratch `compile_unprepared_tmp_bytes` reports, `prepare_tmp_bytes` reports the backend's preparation budget for them, and `prepare` returns the context.
 
 ### Default presets
 

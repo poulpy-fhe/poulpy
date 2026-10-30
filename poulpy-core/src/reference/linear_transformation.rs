@@ -8,11 +8,12 @@
 //! and rotations, and final normalization.
 
 mod baby_steps;
+mod ciphertext_diagonals;
 mod eval;
+mod giant_steps;
 mod inner_product;
 mod lazy;
 mod prepare;
-mod prepared_giants;
 
 #[cfg(test)]
 mod tests;
@@ -31,10 +32,10 @@ pub use crate::layouts::{
 // Reference implementations forwarded to from `crate::oep::LinearTransformationImpl`.
 pub use eval::{
     glwe_eval_linear_transformation_into_reference, glwe_eval_linear_transformation_sum_into_reference,
-    glwe_eval_linear_transformation_sum_tmp_bytes_reference, glwe_eval_linear_transformation_tmp_bytes_reference,
+    glwe_eval_linear_transformation_sum_tmp_bytes_reference,
+    glwe_eval_linear_transformation_sum_unprepared_rhs_tmp_bytes_reference, glwe_eval_linear_transformation_tmp_bytes_reference,
     glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes_reference, glwe_prepare_linear_transformation_baby_steps_reference,
     glwe_prepare_linear_transformation_baby_steps_tmp_bytes_reference,
 };
 pub use inner_product::{glwe_accumulate_giant_steps_reference, glwe_giant_step_batch_reference};
 pub use prepare::{glwe_prepare_linear_transformation_rhs_reference, glwe_prepare_linear_transformation_rhs_tmp_bytes_reference};
-pub use prepared_giants::glwe_accumulate_streamed_baby_steps_dft;

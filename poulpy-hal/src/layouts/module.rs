@@ -601,8 +601,7 @@ impl<BE: Backend> CyclotomicOrder for Module<BE> {
 pub fn check_degree<BE: Backend>(module_n: usize, n: usize) {
     assert!(
         n.is_power_of_two() && n >= BE::MIN_DEGREE && n <= module_n,
-        "degree {n} is not served by the module: it must be a power of two between {} and {module_n}",
-        BE::MIN_DEGREE
+        "degree is not served by the module: it must be a power of two between the backend's minimum degree and the module's"
     );
 }
 
@@ -712,19 +711,19 @@ mod degree_tests {
     }
 
     #[test]
-    #[should_panic(expected = "degree 512 is not served by the module")]
+    #[should_panic(expected = "degree is not served by the module")]
     fn check_degree_rejects_above_module() {
         check_degree::<HostBytesBackend>(256, 512);
     }
 
     #[test]
-    #[should_panic(expected = "degree 4 is not served by the module")]
+    #[should_panic(expected = "degree is not served by the module")]
     fn check_degree_rejects_below_floor() {
         check_degree::<HostBytesBackend>(256, 4);
     }
 
     #[test]
-    #[should_panic(expected = "degree 24 is not served by the module")]
+    #[should_panic(expected = "degree is not served by the module")]
     fn check_degree_rejects_non_power_of_two() {
         check_degree::<HostBytesBackend>(256, 24);
     }

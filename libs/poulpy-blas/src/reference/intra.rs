@@ -9,7 +9,8 @@ use poulpy_ckks::{
 use poulpy_core::{
     GLWEBytesOf, GLWENormalize,
     layouts::{
-        GGLWEInfos, GGLWELayout, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, max_lazy_terms,
+        GGLWEInfos, GGLWELayout, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos,
+        max_lazy_terms,
     },
 };
 use poulpy_hal::{
@@ -17,10 +18,10 @@ use poulpy_hal::{
     layouts::{Backend, Module, ScratchArena},
 };
 
-use super::lt_tmp_bytes;
+use super::{LtEval, lt_tmp_bytes};
 use crate::{
     layouts::{
-        BlasContext, BlasContextInfos, BlasGrid, BlasGridInfos, BlasGridMut,
+        BlasContextInfos, BlasContextPrepared, BlasGrid, BlasGridInfos, BlasGridMut,
         ciphertext::{layout_of, replicated_at},
         context::{reduction_projection, shift_maps, shift_rotates},
         encoding::{copied_block, mapped_block_into},
@@ -62,7 +63,7 @@ pub trait BlasMatIntraReference<BE: Backend> {
         S: CKKSCtBounds,
         K: GGLWEInfos,
     {
-        lt_tmp_bytes(self, dst, src, keys, false)
+        lt_tmp_bytes(self, dst, src, keys, LtEval::Single)
     }
 
     /// `dst[t * lts.len() + m] = lts[m](src[t])`, stamped with the label of `src[t]`. Per source, one baby-step cache
@@ -84,7 +85,7 @@ pub trait BlasMatIntraReference<BE: Backend> {
         Self: CKKSLinearTransformationOps<BE> + CKKSModuleInfos + ModuleN + CnvPVecAlloc<BE> + Sized,
         D: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + Send,
         S: GLWEToBackendRef<BE> + CKKSCtBounds + Sync,
-        K: GetAutomorphismKey<BE> + Sync,
+        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync,
     {
         let op = "blas_map_blocks";
         assert!(
@@ -116,7 +117,7 @@ pub trait BlasMatIntraReference<BE: Backend> {
     /// The scratch of a row shift by any `k`: the copy for `k' = 0`, otherwise the rotation where the shift rotates, or
     /// else for every `k'` the hook with psi^k' along one block, or with both half maps plus the addition along
     /// several.
-    fn blas_rotate_rows_tmp_bytes_reference<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContext<BE>, keys: &K) -> usize
+    fn blas_rotate_rows_tmp_bytes_reference<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContextPrepared<BE>, keys: &K) -> usize
     where
         BE: BlasMatIntraImpl,
         Self: CKKSCopyOps<BE> + CKKSRotateOps<BE> + CKKSAddOps<BE>,
@@ -135,7 +136,7 @@ pub trait BlasMatIntraReference<BE: Backend> {
         k: usize,
         res: &mut R,
         a: &A,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -144,10 +145,10 @@ pub trait BlasMatIntraReference<BE: Backend> {
         Self: CKKSCopyOps<BE> + CKKSRotateOps<BE> + CKKSAddOps<BE>,
         R: BlasGridMut<BE>,
         A: BlasGrid<BE>,
-        K: GetAutomorphismKey<BE> + Sync;
+        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
 
     /// [`Self::blas_rotate_rows_tmp_bytes_reference`] for a column shift, phi^k' along one block.
-    fn blas_rotate_cols_tmp_bytes_reference<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContext<BE>, keys: &K) -> usize
+    fn blas_rotate_cols_tmp_bytes_reference<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContextPrepared<BE>, keys: &K) -> usize
     where
         BE: BlasMatIntraImpl,
         Self: CKKSCopyOps<BE> + CKKSRotateOps<BE> + CKKSAddOps<BE>,
@@ -162,7 +163,7 @@ pub trait BlasMatIntraReference<BE: Backend> {
         k: usize,
         res: &mut R,
         a: &A,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -171,13 +172,13 @@ pub trait BlasMatIntraReference<BE: Backend> {
         Self: CKKSCopyOps<BE> + CKKSRotateOps<BE> + CKKSAddOps<BE>,
         R: BlasGridMut<BE>,
         A: BlasGrid<BE>,
-        K: GetAutomorphismKey<BE> + Sync;
+        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
 
     /// The scratch of a row sum: a block `u` of `a`'s layout, beside a line's sum into it, with a second block where
     /// the line sum normalizes flag-clear blocks, then the inner sum of `u` into the line's first block of `res`, or
     /// its inner sum in place, the hook with the projection and the replicate on a block of the layout the projection
     /// leaves, then the copies of that block.
-    fn blas_sum_rows_tmp_bytes_reference<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContext<BE>, keys: &K) -> usize
+    fn blas_sum_rows_tmp_bytes_reference<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContextPrepared<BE>, keys: &K) -> usize
     where
         BE: BlasMatIntraImpl,
         Self: CKKSCopyOps<BE> + CKKSAddOps<BE> + CKKSAddManyOps<BE> + CKKSInnerSumOps<BE> + GLWENormalize<BE> + GLWEBytesOf<BE>,
@@ -194,7 +195,7 @@ pub trait BlasMatIntraReference<BE: Backend> {
         &self,
         res: &mut R,
         a: &A,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -203,10 +204,10 @@ pub trait BlasMatIntraReference<BE: Backend> {
         Self: CKKSCopyOps<BE> + CKKSAddOps<BE> + CKKSAddManyOps<BE> + CKKSInnerSumOps<BE> + GLWENormalize<BE> + GLWEBytesOf<BE>,
         R: BlasGridMut<BE>,
         A: BlasGrid<BE>,
-        K: GetAutomorphismKey<BE> + Sync;
+        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
 
     /// [`Self::blas_sum_rows_tmp_bytes_reference`] along the rows of blocks.
-    fn blas_sum_cols_tmp_bytes_reference<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContext<BE>, keys: &K) -> usize
+    fn blas_sum_cols_tmp_bytes_reference<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContextPrepared<BE>, keys: &K) -> usize
     where
         BE: BlasMatIntraImpl,
         Self: CKKSCopyOps<BE> + CKKSAddOps<BE> + CKKSAddManyOps<BE> + CKKSInnerSumOps<BE> + GLWENormalize<BE> + GLWEBytesOf<BE>,
@@ -220,7 +221,7 @@ pub trait BlasMatIntraReference<BE: Backend> {
         &self,
         res: &mut R,
         a: &A,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -229,11 +230,11 @@ pub trait BlasMatIntraReference<BE: Backend> {
         Self: CKKSCopyOps<BE> + CKKSAddOps<BE> + CKKSAddManyOps<BE> + CKKSInnerSumOps<BE> + GLWENormalize<BE> + GLWEBytesOf<BE>,
         R: BlasGridMut<BE>,
         A: BlasGrid<BE>,
-        K: GetAutomorphismKey<BE> + Sync;
+        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
 }
 
 impl<BE: Backend> BlasMatIntraReference<BE> for Module<BE> {
-    fn blas_rotate_rows_tmp_bytes_reference<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContext<BE>, keys: &K) -> usize
+    fn blas_rotate_rows_tmp_bytes_reference<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContextPrepared<BE>, keys: &K) -> usize
     where
         BE: BlasMatIntraImpl,
         Self: CKKSCopyOps<BE> + CKKSRotateOps<BE> + CKKSAddOps<BE>,
@@ -249,7 +250,7 @@ impl<BE: Backend> BlasMatIntraReference<BE> for Module<BE> {
         k: usize,
         res: &mut R,
         a: &A,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -258,12 +259,12 @@ impl<BE: Backend> BlasMatIntraReference<BE> for Module<BE> {
         Self: CKKSCopyOps<BE> + CKKSRotateOps<BE> + CKKSAddOps<BE>,
         R: BlasGridMut<BE>,
         A: BlasGrid<BE>,
-        K: GetAutomorphismKey<BE> + Sync,
+        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync,
     {
         shift(self, "blas_rotate_rows", k, res, a, true, ctx, keys, scratch)
     }
 
-    fn blas_rotate_cols_tmp_bytes_reference<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContext<BE>, keys: &K) -> usize
+    fn blas_rotate_cols_tmp_bytes_reference<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContextPrepared<BE>, keys: &K) -> usize
     where
         BE: BlasMatIntraImpl,
         Self: CKKSCopyOps<BE> + CKKSRotateOps<BE> + CKKSAddOps<BE>,
@@ -279,7 +280,7 @@ impl<BE: Backend> BlasMatIntraReference<BE> for Module<BE> {
         k: usize,
         res: &mut R,
         a: &A,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -288,12 +289,12 @@ impl<BE: Backend> BlasMatIntraReference<BE> for Module<BE> {
         Self: CKKSCopyOps<BE> + CKKSRotateOps<BE> + CKKSAddOps<BE>,
         R: BlasGridMut<BE>,
         A: BlasGrid<BE>,
-        K: GetAutomorphismKey<BE> + Sync,
+        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync,
     {
         shift(self, "blas_rotate_cols", k, res, a, false, ctx, keys, scratch)
     }
 
-    fn blas_sum_rows_tmp_bytes_reference<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContext<BE>, keys: &K) -> usize
+    fn blas_sum_rows_tmp_bytes_reference<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContextPrepared<BE>, keys: &K) -> usize
     where
         BE: BlasMatIntraImpl,
         Self: CKKSCopyOps<BE> + CKKSAddOps<BE> + CKKSAddManyOps<BE> + CKKSInnerSumOps<BE> + GLWENormalize<BE> + GLWEBytesOf<BE>,
@@ -308,7 +309,7 @@ impl<BE: Backend> BlasMatIntraReference<BE> for Module<BE> {
         &self,
         res: &mut R,
         a: &A,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -317,12 +318,12 @@ impl<BE: Backend> BlasMatIntraReference<BE> for Module<BE> {
         Self: CKKSCopyOps<BE> + CKKSAddOps<BE> + CKKSAddManyOps<BE> + CKKSInnerSumOps<BE> + GLWENormalize<BE> + GLWEBytesOf<BE>,
         R: BlasGridMut<BE>,
         A: BlasGrid<BE>,
-        K: GetAutomorphismKey<BE> + Sync,
+        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync,
     {
         reduction(self, res, a, true, ctx, keys, scratch)
     }
 
-    fn blas_sum_cols_tmp_bytes_reference<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContext<BE>, keys: &K) -> usize
+    fn blas_sum_cols_tmp_bytes_reference<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContextPrepared<BE>, keys: &K) -> usize
     where
         BE: BlasMatIntraImpl,
         Self: CKKSCopyOps<BE> + CKKSAddOps<BE> + CKKSAddManyOps<BE> + CKKSInnerSumOps<BE> + GLWENormalize<BE> + GLWEBytesOf<BE>,
@@ -337,7 +338,7 @@ impl<BE: Backend> BlasMatIntraReference<BE> for Module<BE> {
         &self,
         res: &mut R,
         a: &A,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -346,14 +347,14 @@ impl<BE: Backend> BlasMatIntraReference<BE> for Module<BE> {
         Self: CKKSCopyOps<BE> + CKKSAddOps<BE> + CKKSAddManyOps<BE> + CKKSInnerSumOps<BE> + GLWENormalize<BE> + GLWEBytesOf<BE>,
         R: BlasGridMut<BE>,
         A: BlasGrid<BE>,
-        K: GetAutomorphismKey<BE> + Sync,
+        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync,
     {
         reduction(self, res, a, false, ctx, keys, scratch)
     }
 }
 
 /// [`BlasMatIntraReference::blas_rotate_rows_tmp_bytes_reference`] (`rows`) or its column form.
-fn shift_tmp_bytes<BE, R, A, K>(module: &Module<BE>, res: &R, a: &A, rows: bool, ctx: &BlasContext<BE>, keys: &K) -> usize
+fn shift_tmp_bytes<BE, R, A, K>(module: &Module<BE>, res: &R, a: &A, rows: bool, ctx: &BlasContextPrepared<BE>, keys: &K) -> usize
 where
     BE: BlasMatIntraImpl,
     Module<BE>: CKKSCopyOps<BE> + CKKSRotateOps<BE> + CKKSAddOps<BE>,
@@ -392,7 +393,7 @@ fn shift<BE, R, A, K>(
     res: &mut R,
     a: &A,
     rows: bool,
-    ctx: &BlasContext<BE>,
+    ctx: &BlasContextPrepared<BE>,
     keys: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
@@ -401,7 +402,7 @@ where
     Module<BE>: CKKSCopyOps<BE> + CKKSRotateOps<BE> + CKKSAddOps<BE>,
     R: BlasGridMut<BE>,
     A: BlasGrid<BE>,
-    K: GetAutomorphismKey<BE> + Sync,
+    K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync,
 {
     let batch = if rows {
         validate_blas_rotate_rows(module, k, &*res, a, ctx, keys)?
@@ -422,7 +423,7 @@ fn shift_blocks<BE, R, A, K>(
     res: &mut R,
     a: &A,
     rows: bool,
-    ctx: &BlasContext<BE>,
+    ctx: &BlasContextPrepared<BE>,
     keys: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
@@ -431,7 +432,7 @@ where
     Module<BE>: CKKSCopyOps<BE> + CKKSRotateOps<BE> + CKKSAddOps<BE>,
     R: BlasGridMut<BE>,
     A: BlasGrid<BE>,
-    K: GetAutomorphismKey<BE> + Sync,
+    K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync,
 {
     let d = 1usize << ctx.log_d();
     let (a_rows, a_cols) = (a.rows(), a.cols());
@@ -486,7 +487,14 @@ where
 }
 
 /// [`BlasMatIntraReference::blas_sum_rows_tmp_bytes_reference`] (`rows`) or its column form.
-fn reduction_tmp_bytes<BE, R, A, K>(module: &Module<BE>, res: &R, a: &A, rows: bool, ctx: &BlasContext<BE>, keys: &K) -> usize
+fn reduction_tmp_bytes<BE, R, A, K>(
+    module: &Module<BE>,
+    res: &R,
+    a: &A,
+    rows: bool,
+    ctx: &BlasContextPrepared<BE>,
+    keys: &K,
+) -> usize
 where
     BE: BlasMatIntraImpl,
     Module<BE>: CKKSCopyOps<BE> + CKKSAddOps<BE> + CKKSAddManyOps<BE> + CKKSInnerSumOps<BE> + GLWENormalize<BE> + GLWEBytesOf<BE>,
@@ -589,7 +597,7 @@ fn reduction<BE, R, A, K>(
     res: &mut R,
     a: &A,
     rows: bool,
-    ctx: &BlasContext<BE>,
+    ctx: &BlasContextPrepared<BE>,
     keys: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
@@ -598,7 +606,7 @@ where
     Module<BE>: CKKSCopyOps<BE> + CKKSAddOps<BE> + CKKSAddManyOps<BE> + CKKSInnerSumOps<BE> + GLWENormalize<BE> + GLWEBytesOf<BE>,
     R: BlasGridMut<BE>,
     A: BlasGrid<BE>,
-    K: GetAutomorphismKey<BE> + Sync,
+    K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync,
 {
     let (op, batch) = if rows {
         ("blas_sum_rows", validate_blas_sum_rows(module, &*res, a, ctx, keys)?)
