@@ -62,7 +62,7 @@
 
 - **Module factories.** Outside its module a core layout is allocated only through `ModuleCoreAlloc`, `ModuleCoreCompressedAlloc` and `<X>PreparedFactory`, where a new layout adds its factory methods.
 - **Fresh state.** Every core allocation starts with `noise: None` and `plaintext_meta: None`.
-- **Layout shape.** A new core layout is one struct `X` (prepared `XPrepared<D: Data, BE: Backend>`) with `pub(crate)` fields of the domain newtypes (`Degree`, `Base2K`, `TorusPrecision`, `Rank`, `Dnum`, never `Dsize`), a public-field `<X>Layout` deriving `PartialEq, Eq, Copy, Clone, Debug` with the same Infos traits, an Infos trait providing `<x>_layout()`, and allocators and queries taking `&impl <X>Infos`.
+- **Layout shape.** A new core layout is one struct `X` (its prepared tier over `<D: Data, BE: Backend>`) with `pub(crate)` fields of the domain newtypes (`Degree`, `Base2K`, `TorusPrecision`, `Rank`, `Dnum`, never `Dsize`), a public-field `<X>Layout` deriving `PartialEq, Eq, Copy, Clone, Debug` with the same Infos traits, an Infos trait providing `<x>_layout()`, and allocators and queries taking `&impl <X>Infos`.
 - **Threading a new field.** A field added to a core layout is also threaded in the same diff through:
   - `<x>_layout()` and every forwarding impl (`&T`, `&mut T`, key wrappers, backend newtypes, scratch views, `impl_gglwe_infos_for_inner!`);
   - module, host and compressed allocators, static and backend-routed byte counts, carves;
