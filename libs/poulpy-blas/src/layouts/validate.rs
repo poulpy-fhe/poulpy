@@ -21,8 +21,9 @@ use poulpy_hal::layouts::{Backend, Module, PrepareHint, Ring, ScratchArena};
 
 use super::{
     BlasContextInfos, BlasContextPrepared, BlasDiagonalCiphertext, BlasDiagonalCiphertextInfos, BlasDiagonalCiphertextLayout,
-    BlasDiagonalCiphertextMap, BlasGrid, BlasGridInfos, BlasMatMulOperandInfos, BlasMatMulOperandLayout, BlasMatVecMaps,
-    BlasPlan, BlasPtOperandInfos, BlasPtOperandPrepared, BlasVectorInfos, BlasVectorRef, BlasVectorShape, Left,
+    BlasDiagonalCiphertextMap, BlasGrid, BlasGridInfos, BlasGridLine, BlasMatMulOperandInfos, BlasMatMulOperandLayout,
+    BlasMatVecMaps, BlasPlan, BlasPtOperandInfos, BlasPtOperandPrepared, BlasVectorInfos, BlasVectorLayout, BlasVectorRef,
+    BlasVectorShape, Left,
     ciphertext::{batch_fits, layout_of, replicated_at, slots_of},
     context::{ContextMaps, reduction_projection, reduction_rotations, shift_maps, shift_rotates, sum_rotations},
     diagonal_ciphertext::{AppendAxis, append_rotations},
@@ -1319,18 +1320,25 @@ pub fn validate_blas_matvec_pt<BE: Backend>(
     let op = "blas_matvec_pt";
     ensure_vector::<BE::Ring>(op, a, a.cts())?;
     ensure_vector::<BE::Ring>(op, res, res.cts())?;
-    ensure_vector_shape(op, "input", a.vector_shape(), w.input())?;
-    ensure_vector_shape(op, "output", res.vector_shape(), w.output())?;
-    ensure_vector_layouts(op, module.n(), res.ct_layout(), a.ct_layout())?;
-    ensure_maps_reading(
-        op,
-        module,
-        w.slots(),
-        w.base2k(),
-        w.coeffs_meta().k,
-        &[a.ct_layout()],
-        "ciphertexts",
-    )?;
+    ensure_matvec_pt(op, module, &res.blas_vector_layout(), w, &a.blas_vector_layout(), keys)
+}
+
+/// The checks of a product by `w` from a vector of layout `a` into one of layout `res`, whose ciphertexts passed their
+/// own: `a` of `w`'s input shape and `res` of its output shape, the ciphertexts of `res` of the module's degree and
+/// those of `a` of their radix and rank, `w` encoded on a module of the module's slot count at `a`'s radix and no
+/// wider than `a`, `a` repeating within `w`'s input period, and `keys` holding every key of `w`'s maps.
+fn ensure_matvec_pt<BE: Backend>(
+    op: &'static str,
+    module: &Module<BE>,
+    res: &BlasVectorLayout,
+    w: &impl BlasMatVecMaps<BE>,
+    a: &BlasVectorLayout,
+    keys: &impl GetAutomorphismKey<BE>,
+) -> Result<()> {
+    ensure_vector_shape(op, "input", a.shape, w.input())?;
+    ensure_vector_shape(op, "output", res.shape, w.output())?;
+    ensure_vector_layouts(op, module.n(), res.ct, a.ct)?;
+    ensure_maps_reading(op, module, w.slots(), w.base2k(), w.coeffs_meta().k, &[a.ct], "ciphertexts")?;
     let period = vector_period::<BE::Ring>(a);
     if period > w.input_period() {
         return Err(reject(
@@ -1342,6 +1350,86 @@ pub fn validate_blas_matvec_pt<BE: Backend>(
         ));
     }
     matvec_pt_uses(res, w.blocks(), a, &mut |u| ensure_rotation(op, module, keys, u))
+}
+
+/// Rejects `line` unless it lies in `g`: its index below the grid's `rows d` rows or `cols d` columns and its matrix
+/// below `batch`.
+fn ensure_line(op: &'static str, line: BlasGridLine, g: &impl BlasGridInfos, batch: usize) -> Result<()> {
+    let (index, lines) = line.index(g);
+    if lines.is_none_or(|lines| index >= lines) {
+        return Err(reject(op, format!("{line:?} is outside a {} x {} grid", g.rows(), g.cols())));
+    }
+    if line.mat_slot() >= batch {
+        return Err(reject(op, format!("{line:?} is outside a batch of {batch} matrices")));
+    }
+    Ok(())
+}
+
+/// Checks a [`blas_grid_to_vector`](crate::api::BlasMatVecOps::blas_grid_to_vector) call: `a` is a grid whose blocks
+/// tile its shape and share one layout whose label allows its batch record, `line` lies in it, its index below the
+/// grid's rows or columns and its matrix below the batch, then the checks of
+/// [`validate_blas_matvec_pt`] with the line's view ([`BlasGridLine::vector_layout`]) as the input, except that its
+/// entries may sit past the period the label proves, in a repetition of it.
+///
+/// # Errors
+///
+/// `InvalidOperand` for a grid, line, vector, shape, layout, operand or period it rejects, then, key by key,
+/// `MissingAutomorphismKey`, or `InvalidOperand` for a key of another rank.
+pub fn validate_blas_grid_to_vector<BE: Backend>(
+    module: &Module<BE>,
+    res: &impl BlasVectorRef<BE>,
+    w: &impl BlasMatVecMaps<BE>,
+    a: &impl BlasGrid<BE>,
+    line: BlasGridLine,
+    keys: &impl GetAutomorphismKey<BE>,
+) -> Result<()> {
+    let op = "blas_grid_to_vector";
+    ensure_grid::<BE::Ring>(op, a.log_d(), a, a.blocks())?;
+    ensure_line(op, line, a, grid_batch::<BE::Ring>(a))?;
+    ensure_vector::<BE::Ring>(op, res, res.cts())?;
+    ensure_matvec_pt(op, module, &res.blas_vector_layout(), w, &line.vector_layout(a), keys)
+}
+
+/// Checks a [`blas_vector_to_grid`](crate::api::BlasMatVecOps::blas_vector_to_grid) call, and returns the batch `res`
+/// records, `output_period / d^2`: `a` is a vector whose ciphertexts hold its shape and share one layout whose label
+/// proves a period holding its entries, `res` a grid whose blocks tile its shape and share one layout whose label allows
+/// its batch record, of one block row for a row and one block column for a column, `w`'s output period holds a matrix,
+/// `line` lies in `res`, its index below the grid's rows or columns and its matrix below that batch, then the checks of
+/// [`validate_blas_matvec_pt`] with the line's view ([`BlasGridLine::vector_layout`]) as `res`.
+///
+/// # Errors
+///
+/// `InvalidOperand` for a vector, grid, shape, operand, line, layout or period it rejects, then, key by key,
+/// `MissingAutomorphismKey`, or `InvalidOperand` for a key of another rank.
+pub fn validate_blas_vector_to_grid<BE: Backend>(
+    module: &Module<BE>,
+    res: &impl BlasGrid<BE>,
+    line: BlasGridLine,
+    w: &impl BlasMatVecMaps<BE>,
+    a: &impl BlasVectorRef<BE>,
+    keys: &impl GetAutomorphismKey<BE>,
+) -> Result<usize> {
+    let op = "blas_vector_to_grid";
+    ensure_vector::<BE::Ring>(op, a, a.cts())?;
+    ensure_grid::<BE::Ring>(op, res.log_d(), res, res.blocks())?;
+    match line {
+        BlasGridLine::Row { .. } => ensure_shape(op, res, 1, res.cols())?,
+        BlasGridLine::Col { .. } => ensure_shape(op, res, res.rows(), 1)?,
+    }
+    let log_d = res.log_d();
+    let batch = w.output_period() >> (2 * log_d);
+    if batch == 0 {
+        return Err(reject(
+            op,
+            format!(
+                "an operand of output period {} writes no matrix of 2^{log_d} x 2^{log_d} blocks",
+                w.output_period()
+            ),
+        ));
+    }
+    ensure_line(op, line, res, batch)?;
+    ensure_matvec_pt(op, module, &line.vector_layout(res), w, &a.blas_vector_layout(), keys)?;
+    Ok(batch)
 }
 
 /// The look-ups of [`validate_blas_matvec_pt`]: every map of `maps`, output-major, from `a`'s width into `res`, of `a`'s
