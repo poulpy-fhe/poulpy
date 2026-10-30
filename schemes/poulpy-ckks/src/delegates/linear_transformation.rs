@@ -1,4 +1,5 @@
 use crate::CKKSResult as Result;
+use poulpy_core::layouts::BabyStepOperand;
 use poulpy_core::{
     DiagonalProd, LinearTransformation, LinearTransformationBabySteps, LinearTransformationPrepared,
     layouts::{
@@ -68,6 +69,24 @@ impl<BE: Backend + CKKSLinearTransformationImpl> CKKSLinearTransformationOps<BE>
         BE::ckks_eval_linear_transformation_streamed_tmp_bytes(self, ct, diagonal, plan, tsk, key)
     }
 
+    fn ckks_eval_linear_transformation_self_into_tmp_bytes<C, D, K, T>(
+        &self,
+        streamed: bool,
+        ct: &C,
+        diagonal: &D,
+        plan: &LinearTransformationPlan,
+        tsk: &T,
+        key: &K,
+    ) -> usize
+    where
+        C: CKKSCtBounds,
+        D: GLWEInfos,
+        K: GGLWEInfos,
+        T: GGLWEInfos,
+    {
+        BE::ckks_eval_linear_transformation_self_into_tmp_bytes(self, streamed, ct, diagonal, plan, tsk, key)
+    }
+
     fn ckks_eval_linear_transformation_sum_streamed_tmp_bytes<C, D, K, T>(
         &self,
         ct: &C,
@@ -114,9 +133,9 @@ impl<BE: Backend + CKKSLinearTransformationImpl> CKKSLinearTransformationOps<BE>
         BE::ckks_prepare_linear_transformation_rhs(self, prepared, lt, scratch)
     }
 
-    fn ckks_prepare_linear_transformation_baby_steps<Src, H>(
+    fn ckks_prepare_linear_transformation_baby_steps<Src, H, L: BabyStepOperand<BE>>(
         &self,
-        babies: &mut LinearTransformationBabySteps<BE>,
+        babies: &mut LinearTransformationBabySteps<BE, L>,
         src: &Src,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
@@ -128,11 +147,11 @@ impl<BE: Backend + CKKSLinearTransformationImpl> CKKSLinearTransformationOps<BE>
         BE::ckks_prepare_linear_transformation_baby_steps(self, babies, src, keys, scratch)
     }
 
-    fn ckks_eval_linear_transformation_into<Dst, Src, P, H>(
+    fn ckks_eval_linear_transformation_into<Dst, Src, P, H, L: BabyStepOperand<BE>>(
         &self,
         dst: &mut Dst,
         src: &Src,
-        babies: &LinearTransformationBabySteps<BE>,
+        babies: &LinearTransformationBabySteps<BE, L>,
         lt: &LinearTransformation<P>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
@@ -146,10 +165,10 @@ impl<BE: Backend + CKKSLinearTransformationImpl> CKKSLinearTransformationOps<BE>
         BE::ckks_eval_linear_transformation_into(self, dst, src, babies, lt, keys, scratch)
     }
 
-    fn ckks_eval_linear_transformation_assign<Dst, P, H>(
+    fn ckks_eval_linear_transformation_assign<Dst, P, H, L: BabyStepOperand<BE>>(
         &self,
         dst: &mut Dst,
-        babies: &LinearTransformationBabySteps<BE>,
+        babies: &LinearTransformationBabySteps<BE, L>,
         lt: &LinearTransformation<P>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
@@ -162,11 +181,11 @@ impl<BE: Backend + CKKSLinearTransformationImpl> CKKSLinearTransformationOps<BE>
         BE::ckks_eval_linear_transformation_assign(self, dst, babies, lt, keys, scratch)
     }
 
-    fn ckks_eval_linear_transformation_sum_into<Dst, Src, P, H>(
+    fn ckks_eval_linear_transformation_sum_into<Dst, Src, P, H, L: BabyStepOperand<BE>>(
         &self,
         dst: &mut Dst,
         srcs: &[&Src],
-        babies: &[&LinearTransformationBabySteps<BE>],
+        babies: &[&LinearTransformationBabySteps<BE, L>],
         lts: &[&LinearTransformation<P>],
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,

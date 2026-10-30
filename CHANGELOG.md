@@ -176,6 +176,7 @@
 - poulpy-cpu-portable, poulpy-cpu-avx and poulpy-cpu-arm register `bootstrapping_plan_keys_match_context`, and `NTT4x30Avx` and `NTT4x30Neon` register `small_s2c_preset_meets_precision_with_client` with an `NTT4x30Portable` client.
 - **Behaviour:** the oracle's table lookup and the portable FFT64 block assertions panic with static messages, formatting no degree or block size.
 - The IFMA linear transformations of `poulpy-cpu-avx512` and the batched test backend of `poulpy-cpu-portable` forward `glwe_eval_linear_transformation_sum_unprepared_rhs_tmp_bytes` to the reference, and their sums take streamed transforms.
+- `NTT3x42Ifma`'s `LinearTransformationImpl` takes the baby-step cache at any operand type of poulpy-core's `BabyStepOperand`.
 
 ### `poulpy-core`
 
@@ -398,6 +399,10 @@
   **Breaking:** `GLWEMulPreparedPlainSumImpl` requires the method and its query, which `impl_glwe_mul_prepared_plain_sum_reference_full!` forwards.
 - `glwe_eval_linear_transformation_sum_into` sums streamed transforms too: it takes `lts: &[&LinearTransformation<P>]` for any `P: DiagonalProd`, the plaintext diagonals then prepared at each use, bit for bit the resident sum. Add `glwe_eval_linear_transformation_sum_unprepared_rhs_tmp_bytes`, its scratch over streamed transforms, and `DiagonalProd::log_scale`, the scale a scheme records on a diagonal, which summed terms share (0 by default, a prepared diagonal's own). `test_linear_transformation_parity` checks the streamed sum against the resident one on both backends.
   **Breaking:** `LinearTransformationImpl::glwe_eval_linear_transformation_sum_into` takes the diagonal type `P`, and the trait requires `glwe_eval_linear_transformation_sum_unprepared_rhs_tmp_bytes`, which `impl_linear_transformation_reference_full!` forwards and a hand-written impl forwards to `glwe_eval_linear_transformation_sum_unprepared_rhs_tmp_bytes_reference`.
+- **Breaking:** `LinearTransformationBabySteps<BE, L = CnvPVecLOwned<BE>>` takes the type of its operands: owned by default, or scratch views (`CnvPVecLViewMut`), any type of the blanket-implemented `layouts::BabyStepOperand<BE>`, and `baby_step` returns `&L`.
+  `ScratchArenaTakeCore::take_linear_transformation_baby_steps_scratch(module, plan, a)` carves the cache of the schedule `plan`, a transformation's `index()`, for a source of the layout `a`, panicking for a degree the module does not serve, in `GLWEBytesOf::linear_transformation_baby_steps_bytes_of(plan, a)` bytes.
+  The methods taking a cache take it at any operand type, through a type parameter `L: BabyStepOperand<..>`: the OEP family `LinearTransformationImpl` (`glwe_prepare_linear_transformation_baby_steps`, `glwe_eval_linear_transformation_into`, `glwe_eval_linear_transformation_sum_into`, `glwe_accumulate_giant_steps`), the matching methods of `GLWELinearTransformations`, `DiagonalProd::accumulate_giant_prod` and `accumulate_giant_prods`, and `layouts::validation::assert_linear_transformation_into` and `assert_linear_transformation_sum`.
+  A hand-written `LinearTransformationImpl` or `DiagonalProd` adds the parameter to these methods. Callers are unchanged, and so are the results.
 
 ### `poulpy-ckks`
 
@@ -677,6 +682,12 @@
 - `ckks_eval_linear_transformation_sum_into` takes resident or streamed transforms (`P: DiagonalProd + LtDiagonalMeta`), the streamed sum giving the resident one's bits; add `ckks_eval_linear_transformation_sum_streamed_tmp_bytes`, its scratch over streamed transforms, on the arguments of the streamed query. `test_linear_transformation_sum` checks the streamed sum against the resident one. `CKKSPlaintext` and `CKKSCiphertext` report their `log_delta` as `DiagonalProd::log_scale`, so core's sum check compares the scales of streamed terms.
   **Breaking:** `CKKSLinearTransformationImpl::ckks_eval_linear_transformation_sum_into` takes `P`, and the trait requires `ckks_eval_linear_transformation_sum_streamed_tmp_bytes`, which `impl_ckks_linear_transformation_reference_full!` forwards to its `_reference` method.
 - **Breaking:** the prepared bootstrapping context `BootstrappingContext` is `BootstrappingContextPrepared`, and the unprepared `BootstrappingContextUnprepared` is `BootstrappingContext`, its former name kept as a deprecated alias. Code naming the prepared context, its constructors and accessors included (`compile`, `compile_ci`, `compile_unprepared`, `compile_ci_unprepared`, `generate_keys`, `eval_mod`), names it `BootstrappingContextPrepared`; `prepare` and `prepare_tmp_bytes` stay on the unprepared `BootstrappingContext`.
+- **Breaking:** the OEP family `CKKSLinearTransformationImpl` takes the baby-step cache at any operand type of poulpy-core's `BabyStepOperand`: `ckks_prepare_linear_transformation_baby_steps`, `ckks_eval_linear_transformation_into`, `ckks_eval_linear_transformation_assign` and `ckks_eval_linear_transformation_sum_into`, and their `CKKSLinearTransformationOps` methods, gain a type parameter `L: BabyStepOperand<..>`.
+  A hand-written implementation adds it to these methods. Callers are unchanged.
+- **Breaking, behaviour:** `ckks_eval_linear_transformation_self_into` and `ckks_eval_linear_transformation_self_assign` carve their baby-step cache from `scratch` instead of allocating it on the heap, and `self_into` returns `CKKSError::Internal` before any write on an arena below the cache.
+  Their bound is the added query `ckks_eval_linear_transformation_self_into_tmp_bytes(streamed, ct, diagonal, plan, tsk, key)`, a working copy of `ct` and the cache beside the larger of the baby-step and evaluation queries, which `CKKSLinearTransformationImpl` provides as a derived default.
+  The bootstrap with EvalMod on the conjugate-invariant ring and `u` folded (`CIConversion::Folded`) carves the baby-step cache of its folded factors the same way, and `ckks_bootstrap_ci_tmp_bytes` counts it.
+  The PaCo bootstrap queries size each CoeffsToSlots, psi-tail and SlotsToCoeffs transform through that query on its own schedule, where they took only the streamed evaluation query of an empty schedule, which left out the working copy and the baby steps. Results are unchanged.
 
 ### `poulpy-bin-fhe`
 
@@ -886,6 +897,7 @@
   It implements the step hooks of `poulpy-core` with fused launches.
   See `docs/guides/backends.md`.
 - The linear transformations forward `glwe_eval_linear_transformation_sum_unprepared_rhs_tmp_bytes` to the reference, and their sums take streamed transforms.
+- The linear-transformation registration and its batched giant steps take the baby-step cache at any operand type of poulpy-core's `BabyStepOperand`.
 
 ### `poulpy-bench`
 

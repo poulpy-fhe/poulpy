@@ -5,6 +5,7 @@
 //! [`DiagonalProd`](crate::layouts::DiagonalProd), whose provided product calls them; this module
 //! holds the references of the batched backend hooks and the query.
 
+use crate::layouts::BabyStepOperand;
 use poulpy_hal::{
     api::Convolution,
     layouts::{Backend, ScratchArena, VecZnxDftBackendMut},
@@ -27,11 +28,11 @@ pub fn glwe_giant_step_batch_reference<BE: Backend>(_module: &poulpy_hal::layout
 /// Reference of [`LinearTransformationImpl::glwe_accumulate_giant_steps`](crate::oep::LinearTransformationImpl::glwe_accumulate_giant_steps),
 /// which `impl_linear_transformation_reference_full!` forwards to: each product accumulated on
 /// its own with `cnv_apply_dft_sum`.
-pub fn glwe_accumulate_giant_steps_reference<BE, M>(
+pub fn glwe_accumulate_giant_steps_reference<BE, M, L: BabyStepOperand<BE>>(
     module: &M,
     cnv_offset_hi: usize,
     prods: &mut [VecZnxDftBackendMut<'_, BE>],
-    lhs: &LinearTransformationBabySteps<BE>,
+    lhs: &LinearTransformationBabySteps<BE, L>,
     steps: &[LinearTransformationGiantStep<PreparedDiagonal<BE::OwnedBuf, BE>>],
     scratch: &mut ScratchArena<'_, BE>,
 ) where

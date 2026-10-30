@@ -45,8 +45,8 @@ use crate::{
         helpers::{
             QueryLog, TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_ckks_error,
             assert_ckks_internal, assert_decrypt_precision, assert_invalid_operand, assert_mul_ct_output_meta, ckks_encrypt,
-            dirty_ct, gen_atk, gen_sk_with_raw, gen_tsk, pt_eval_tmp_bytes, pt_streamed_eval_tmp_bytes, test_vector_1,
-            test_vector_2, want_add,
+            dirty_ct, gen_atk, gen_sk_with_raw, gen_tsk, pt_eval_tmp_bytes, pt_self_into_tmp_bytes, test_vector_1, test_vector_2,
+            want_add,
         },
         parity::helpers::{snapshot, with_scratch},
     },
@@ -181,16 +181,8 @@ where
         &mut scratch.borrow(),
     );
 
-    // The documented bound of `self_into`: the larger of the baby-step and evaluation queries.
     let self_into_bytes = |plan: &LinearTransformationPlan, streamed: bool| {
-        let eval = if streamed {
-            pt_streamed_eval_tmp_bytes(module, &ct, plan, &key_params.atk_layout())
-        } else {
-            pt_eval_tmp_bytes(module, &ct, plan, &key_params.atk_layout())
-        };
-        module
-            .ckks_prepare_linear_transformation_baby_steps_tmp_bytes(&ct, plan, &key_params.atk_layout())
-            .max(eval)
+        pt_self_into_tmp_bytes(module, streamed, &ct, plan, &key_params.atk_layout())
     };
 
     // transpose = false: dec(lt(enc(a), B)) ≈ B·a. Resident path (prepared RHS).
@@ -1122,9 +1114,7 @@ pub fn test_linear_transformation_pins_operation_precisions<BE, F, E>(
     let prepared = prepare_lt(module, &lt);
     let mut res = alloc_ct(&params, module, params.k - params.base2k);
     with_scratch::<BE, _>(
-        module
-            .ckks_prepare_linear_transformation_baby_steps_tmp_bytes(&ct, &lt.index(), &key_params.atk_layout())
-            .max(pt_eval_tmp_bytes(module, &ct, &lt.index(), &key_params.atk_layout())),
+        pt_self_into_tmp_bytes(module, false, &ct, &lt.index(), &key_params.atk_layout()),
         |s| module.ckks_eval_linear_transformation_self_into(&mut res, &ct, &prepared, &keys, s),
     )
     .unwrap();
@@ -1231,11 +1221,13 @@ pub fn test_linear_transformation_mixed_key_layouts<BE, F, E>(
     let mut res = alloc_ct(&params, module, params.k - params.base2k);
 
     // One call reading both layouts takes the larger of the baby-step and evaluation queries at each.
-    let eval_bytes = module
-        .ckks_prepare_linear_transformation_baby_steps_tmp_bytes(&ct, &prepared.index(), &stored_infos)
-        .max(module.ckks_prepare_linear_transformation_baby_steps_tmp_bytes(&ct, &prepared.index(), &coarse_infos))
-        .max(pt_eval_tmp_bytes(module, &ct, &prepared.index(), &stored_infos))
-        .max(pt_eval_tmp_bytes(module, &ct, &prepared.index(), &coarse_infos));
+    let eval_bytes = pt_self_into_tmp_bytes(module, false, &ct, &prepared.index(), &stored_infos).max(pt_self_into_tmp_bytes(
+        module,
+        false,
+        &ct,
+        &prepared.index(),
+        &coarse_infos,
+    ));
     with_scratch::<BE, _>(eval_bytes, |s| {
         module.ckks_eval_linear_transformation_self_into(&mut res, &ct, &prepared, &keys, s)
     })
@@ -1425,7 +1417,6 @@ pub fn test_linear_transformation_ct<BE, F, E>(
         let first = lt.first_diagonal_plaintext().unwrap();
         let plan = lt.index();
         let bytes = module.ckks_eval_linear_transformation_tmp_bytes(&src, first, &plan, &tsk_layout, &params.atk_layout());
-        let baby_bytes = module.ckks_prepare_linear_transformation_baby_steps_tmp_bytes(&src, &plan, &params.atk_layout());
 
         let mut dst = alloc_ct(&params, module, src_k);
         with_scratch::<BE, _>(bytes, |s| {
@@ -1441,18 +1432,40 @@ pub fn test_linear_transformation_ct<BE, F, E>(
             module.ckks_eval_linear_transformation_assign(&mut assigned, &babies, &prepared, &keys, s)
         })
         .unwrap();
+        // One byte short of its baby-step cache, `self_into` refuses at entry.
+        let self_into_bytes = module.ckks_eval_linear_transformation_self_into_tmp_bytes(
+            false,
+            &src,
+            first,
+            &plan,
+            &tsk_layout,
+            &params.atk_layout(),
+        );
+        let cache_bytes = module.linear_transformation_baby_steps_bytes_of(&plan, &src);
         let mut self_into = alloc_ct(&params, module, src_k);
-        with_scratch::<BE, _>(baby_bytes.max(bytes), |s| {
+        let before = snapshot::<BE, _>(&self_into);
+        let err = with_scratch::<BE, _>(cache_bytes - 1, |s| {
+            module.ckks_eval_linear_transformation_self_into(&mut self_into, &src, &prepared, &keys, s)
+        })
+        .unwrap_err();
+        assert_ckks_internal(
+            &label,
+            &err,
+            "ckks_eval_linear_transformation_self_into: scratch below its baby-step cache",
+        );
+        assert_eq!(
+            snapshot::<BE, _>(&self_into),
+            before,
+            "{label}: a refused self_into wrote dst"
+        );
+        with_scratch::<BE, _>(self_into_bytes, |s| {
             module.ckks_eval_linear_transformation_self_into(&mut self_into, &src, &prepared, &keys, s)
         })
         .unwrap();
-        // The documented bound of `self_assign`: a working copy of `src` plus the larger of the baby-step and
-        // evaluation queries.
         let mut self_assigned = src.clone();
-        with_scratch::<BE, _>(
-            BE::scratch_aligned(module.glwe_bytes_of_from_infos(&src)) + baby_bytes.max(bytes),
-            |s| module.ckks_eval_linear_transformation_self_assign(&mut self_assigned, &prepared, &keys, s),
-        )
+        with_scratch::<BE, _>(self_into_bytes, |s| {
+            module.ckks_eval_linear_transformation_self_assign(&mut self_assigned, &prepared, &keys, s)
+        })
         .unwrap();
         // The unprepared diagonals, prepared in the call.
         let mut streamed = alloc_ct(&params, module, src_k);

@@ -20,8 +20,8 @@ use crate::{
         CKKSTestParams,
         helpers::{
             TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_ckks_error,
-            assert_decrypt_precision, ckks_encrypt, gen_atk, gen_sk, gen_sk_with_raw, pt_eval_tmp_bytes,
-            pt_streamed_eval_tmp_bytes, quantize, test_vector_1, test_vector_2, upload_pt, want_add, want_mul,
+            assert_decrypt_precision, ckks_encrypt, gen_atk, gen_sk, gen_sk_with_raw, pt_self_into_tmp_bytes, quantize,
+            test_vector_1, test_vector_2, upload_pt, want_add, want_mul,
         },
         reference_encoder::ReferenceEncoder,
     },
@@ -251,11 +251,9 @@ pub fn test_linear_transformation_diagonal_slots<BE, F, E>(
         module.ckks_prepare_linear_transformation_rhs(&mut prepared, &lt, s)
     })
     .unwrap();
-    // The documented bound of `self_into`: the larger of the baby-step and evaluation queries.
-    let baby_bytes = module.ckks_prepare_linear_transformation_baby_steps_tmp_bytes(&ct, &lt.index(), &key_params.atk_layout());
     let mut ct_out = alloc_ct(&params, module, params.k);
     with_scratch::<BE, _>(
-        baby_bytes.max(pt_eval_tmp_bytes(module, &ct, &lt.index(), &key_params.atk_layout())),
+        pt_self_into_tmp_bytes(module, false, &ct, &lt.index(), &key_params.atk_layout()),
         |s| module.ckks_eval_linear_transformation_self_into(&mut ct_out, &ct, &prepared, &atks, s),
     )
     .unwrap();
@@ -275,7 +273,7 @@ pub fn test_linear_transformation_diagonal_slots<BE, F, E>(
     // prepared on the fly at their degree.
     let mut ct_streamed = alloc_ct(&params, module, params.k);
     with_scratch::<BE, _>(
-        baby_bytes.max(pt_streamed_eval_tmp_bytes(module, &ct, &lt.index(), &key_params.atk_layout())),
+        pt_self_into_tmp_bytes(module, true, &ct, &lt.index(), &key_params.atk_layout()),
         |s| module.ckks_eval_linear_transformation_self_into(&mut ct_streamed, &ct, &lt, &atks, s),
     )
     .unwrap();

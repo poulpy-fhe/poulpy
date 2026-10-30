@@ -21,7 +21,7 @@ use crate::{
     api::{
         CKKSAddOps, CKKSAllOpsTmpBytes, CKKSComplexPolynomialEvaluationOps, CKKSConjugateOps, CKKSCopyOps, CKKSDFTOps,
         CKKSEvalModOps, CKKSImagOps, CKKSLinearTransformationOps, CKKSMulOps, CKKSNegOps, CKKSPolynomialEvaluationOps,
-        CKKSPow2Ops, CKKSSubOps, LinearTransformationBabySteps,
+        CKKSPow2Ops, CKKSSubOps,
     },
     eval_lut::{ckks_eval_lut, ckks_eval_lut_binary, ckks_eval_lut_from_basis, ckks_lut_power_basis},
     layouts::{
@@ -1475,8 +1475,8 @@ where
             .max(module.glwe_ci_trace_tmp_bytes(&boot_layout, &embedded));
     let pre = match &eval_mod_ci.pre.0 {
         crate::layouts::bootstrapping::CIPreForm::Product(u) => module.ckks_mul_pt_vec_tmp_bytes(&embedded, &embedded, u),
-        // The outputs of the two folded factors beside their evaluation, then the odd
-        // one's embedding beside its rotation.
+        // The baby steps of `even` and the outputs of the two folded factors beside
+        // their evaluation, then the odd one's embedding beside its rotation.
         crate::layouts::bootstrapping::CIPreForm::Folded { even, odd } => {
             // The baby steps of `even`, which `odd` shares, and each factor on its own schedule,
             // which counts the doubling and the giant-step tree of power-of-two keys.
@@ -1489,7 +1489,8 @@ where
                     .max(module.ckks_eval_linear_transformation_tmp_bytes(&boot_layout, &diagonal, &even_plan, atk, atk))
                     .max(module.ckks_eval_linear_transformation_tmp_bytes(&boot_layout, &diagonal, &odd_plan, atk, atk));
             }
-            2 * BE::scratch_aligned(module.glwe_bytes_of_from_infos(&boot_layout))
+            module.linear_transformation_baby_steps_bytes_of(&even_plan, &boot_layout)
+                + 2 * BE::scratch_aligned(module.glwe_bytes_of_from_infos(&boot_layout))
                 + factors.max(embedded_bytes + module.glwe_rotate_tmp_bytes().max(module.ckks_add_tmp_bytes(embedded.size())))
         }
     };
@@ -1533,8 +1534,11 @@ where
     R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
 {
-    let mut babies = LinearTransformationBabySteps::alloc_for(module, even, w);
-    module.ckks_prepare_linear_transformation_baby_steps(&mut babies, w, keys, scratch)?;
+    let plan = even.index();
+    let (mut babies, mut scratch) = scratch
+        .borrow()
+        .take_linear_transformation_baby_steps_scratch(module, &plan, w);
+    module.ckks_prepare_linear_transformation_baby_steps(&mut babies, w, keys, &mut scratch)?;
     let (mut a, scratch_1) = scratch.borrow().take_ckks_ciphertext_scratch(w, w.meta());
     let (mut b, mut scratch_1) = scratch_1.take_ckks_ciphertext_scratch(w, w.meta());
     module.ckks_eval_linear_transformation_into(&mut a, w, &babies, even, keys, &mut scratch_1)?;

@@ -7,6 +7,7 @@
 //! only mask preparation uses scratch BIG/SMALL before key-switching. Incompatible
 //! bases fall back to the regular normalized GLWE automorphism path.
 
+use crate::layouts::BabyStepOperand;
 use poulpy_hal::api::VecZnxIdftNormalize as _;
 use poulpy_hal::layouts::Module;
 use poulpy_hal::{
@@ -65,11 +66,11 @@ impl<BE: Backend> DiagonalProd<BE> for PreparedDiagonal<BE::OwnedBuf, BE> {
     }
 
     /// The backend's [`LinearTransformationImpl::glwe_accumulate_giant_steps`](crate::oep::LinearTransformationImpl::glwe_accumulate_giant_steps).
-    fn accumulate_giant_prods(
+    fn accumulate_giant_prods<L: BabyStepOperand<BE>>(
         module: &Module<BE>,
         cnv_offset_hi: usize,
         prods: &mut [VecZnxDftBackendMut<'_, BE>],
-        lhs: &LinearTransformationBabySteps<BE>,
+        lhs: &LinearTransformationBabySteps<BE, L>,
         steps: &[LinearTransformationGiantStep<Self>],
         scratch: &mut ScratchArena<'_, BE>,
     ) where
@@ -110,28 +111,30 @@ pub(super) trait GiantProducts<BE: Backend> {
 
 /// The products of the transforms `lts` from the baby caches `babies`, summed over the terms `(babies[t], lts[t])`,
 /// in the diagonals' base2k.
-struct PlainProducts<'a, BE: Backend, P> {
-    babies: &'a [&'a LinearTransformationBabySteps<BE>],
+struct PlainProducts<'a, BE: Backend, P, L> {
+    babies: &'a [&'a LinearTransformationBabySteps<BE, L>],
     lts: &'a [&'a LinearTransformation<P>],
     cnv_offset_hi: usize,
     cnv_offset_lo: i64,
 }
 
-impl<BE, P> PlainProducts<'_, BE, P>
+impl<BE, P, L> PlainProducts<'_, BE, P, L>
 where
     BE: Backend,
     P: DiagonalProd<BE>,
+    L: BabyStepOperand<BE>,
 {
     fn diagonal(&self) -> &P {
         &self.lts[0].giant_steps[0].diagonals[0].plaintext
     }
 }
 
-impl<BE, P> GiantProducts<BE> for PlainProducts<'_, BE, P>
+impl<BE, P, L> GiantProducts<BE> for PlainProducts<'_, BE, P, L>
 where
     BE: Backend + crate::oep::GGLWEProductDigitsStridedImpl + crate::oep::LinearTransformationImpl,
     Module<BE>: CnvPVecBytesOf + Convolution<BE> + ModuleN + VecZnxDftAddAssign<BE> + VecZnxDftBytesOf,
     P: DiagonalProd<BE>,
+    L: BabyStepOperand<BE>,
 {
     fn size(&self) -> usize {
         prod_dft_size(self.babies[0].size(), self.diagonal().size(), self.cnv_offset_hi)
@@ -212,11 +215,11 @@ where
 ///   `glwe_automorphism`. Correct, but gives up the lazy savings.
 ///
 /// Writes the encryption of `Σ_j rot(PROD_j, n1·j)` into `res`.
-pub(super) fn glwe_eval_giant_steps<BE, R, P, H>(
+pub(super) fn glwe_eval_giant_steps<BE, R, P, H, L: BabyStepOperand<BE>>(
     module: &Module<BE>,
     cnv_offset: usize,
     res: &mut R,
-    babies: &[&LinearTransformationBabySteps<BE>],
+    babies: &[&LinearTransformationBabySteps<BE, L>],
     lts: &[&LinearTransformation<P>],
     keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
@@ -993,12 +996,12 @@ fn take_sum_buckets<BE: Backend>(
 /// `steps.start + i`, through [`DiagonalProd::accumulate_giant_prods`]: the first term writes the products, each
 /// later one is computed into the first `prods.len()` of `buckets` ([`take_sum_buckets`]) and added in DFT.
 #[allow(clippy::too_many_arguments)]
-fn sum_giant_prods<BE, P>(
+fn sum_giant_prods<BE, P, L: BabyStepOperand<BE>>(
     module: &Module<BE>,
     cnv_offset_hi: usize,
     prods: &mut [VecZnxDftBackendMut<'_, BE>],
     buckets: &mut [VecZnxDftBackendMut<'_, BE>],
-    babies: &[&LinearTransformationBabySteps<BE>],
+    babies: &[&LinearTransformationBabySteps<BE, L>],
     lts: &[&LinearTransformation<P>],
     steps: core::ops::Range<usize>,
     scratch: &mut ScratchArena<'_, BE>,

@@ -1,5 +1,6 @@
 #![allow(clippy::too_many_arguments)]
 
+use crate::layouts::BabyStepOperand;
 use poulpy_hal::layouts::{Backend, Module, ScratchArena, VecZnxDftBackendMut};
 
 use crate::layouts::{
@@ -122,9 +123,9 @@ pub unsafe trait LinearTransformationImpl: Backend {
     /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
     /// [`Self::glwe_prepare_linear_transformation_baby_steps_tmp_bytes`]; free in kernels and scratch use. The cache
     /// records `a`'s width ([`LinearTransformationBabySteps::set_k`]).
-    fn glwe_prepare_linear_transformation_baby_steps<A, H>(
+    fn glwe_prepare_linear_transformation_baby_steps<A, H, L: BabyStepOperand<Self>>(
         module: &Module<Self>,
-        cache: &mut LinearTransformationBabySteps<Self>,
+        cache: &mut LinearTransformationBabySteps<Self, L>,
         a: &A,
         keys: &H,
         scratch: &mut ScratchArena<'_, Self>,
@@ -138,11 +139,11 @@ pub unsafe trait LinearTransformationImpl: Backend {
     /// [`Self::glwe_eval_linear_transformation_tmp_bytes`], or
     /// [`Self::glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes`] for a streamed right-hand side; free in
     /// kernels and scratch use.
-    fn glwe_eval_linear_transformation_into<R, P, H>(
+    fn glwe_eval_linear_transformation_into<R, P, H, L: BabyStepOperand<Self>>(
         module: &Module<Self>,
         cnv_offset: usize,
         res: &mut R,
-        lhs: &LinearTransformationBabySteps<Self>,
+        lhs: &LinearTransformationBabySteps<Self, L>,
         rhs: &LinearTransformation<P>,
         keys: &H,
         scratch: &mut ScratchArena<'_, Self>,
@@ -155,11 +156,11 @@ pub unsafe trait LinearTransformationImpl: Backend {
     /// [`glwe_eval_linear_transformation_sum_into_reference`](crate::reference::linear_transformation::glwe_eval_linear_transformation_sum_into_reference)
     /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
     /// [`Self::glwe_eval_linear_transformation_sum_tmp_bytes`]; free in kernels and scratch use.
-    fn glwe_eval_linear_transformation_sum_into<R, P, H>(
+    fn glwe_eval_linear_transformation_sum_into<R, P, H, L: BabyStepOperand<Self>>(
         module: &Module<Self>,
         cnv_offset: usize,
         res: &mut R,
-        babies: &[&LinearTransformationBabySteps<Self>],
+        babies: &[&LinearTransformationBabySteps<Self, L>],
         lts: &[&LinearTransformation<P>],
         keys: &H,
         scratch: &mut ScratchArena<'_, Self>,
@@ -183,11 +184,11 @@ pub unsafe trait LinearTransformationImpl: Backend {
     /// accumulates each step with `cnv_apply_dft_sum`. Overrides must reproduce it bit for bit.
     /// Scratch is the per-step product scratch of [`Self::glwe_eval_linear_transformation_tmp_bytes`],
     /// which reserves the `prods` of a full batch; an internal hook, it records no metadata.
-    fn glwe_accumulate_giant_steps(
+    fn glwe_accumulate_giant_steps<L: BabyStepOperand<Self>>(
         module: &Module<Self>,
         cnv_offset_hi: usize,
         prods: &mut [VecZnxDftBackendMut<'_, Self>],
-        lhs: &LinearTransformationBabySteps<Self>,
+        lhs: &LinearTransformationBabySteps<Self, L>,
         steps: &[LinearTransformationGiantStep<PreparedDiagonal<Self::OwnedBuf, Self>>],
         scratch: &mut ScratchArena<'_, Self>,
     );
@@ -327,9 +328,9 @@ macro_rules! impl_linear_transformation_reference_full {
                 )
             }
 
-            fn glwe_prepare_linear_transformation_baby_steps<A, H>(
+            fn glwe_prepare_linear_transformation_baby_steps<A, H, L: $crate::layouts::BabyStepOperand<$be>>(
                 module: &::poulpy_hal::layouts::Module<$be>,
-                cache: &mut $crate::layouts::prepared::LinearTransformationBabySteps<$be>,
+                cache: &mut $crate::layouts::prepared::LinearTransformationBabySteps<$be, L>,
                 a: &A,
                 keys: &H,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
@@ -342,11 +343,11 @@ macro_rules! impl_linear_transformation_reference_full {
                 )
             }
 
-            fn glwe_eval_linear_transformation_into<R, P, H>(
+            fn glwe_eval_linear_transformation_into<R, P, H, L: $crate::layouts::BabyStepOperand<$be>>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 cnv_offset: usize,
                 res: &mut R,
-                lhs: &$crate::layouts::prepared::LinearTransformationBabySteps<$be>,
+                lhs: &$crate::layouts::prepared::LinearTransformationBabySteps<$be, L>,
                 rhs: &$crate::layouts::LinearTransformation<P>,
                 keys: &H,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
@@ -360,11 +361,11 @@ macro_rules! impl_linear_transformation_reference_full {
                 )
             }
 
-            fn glwe_eval_linear_transformation_sum_into<R, P, H>(
+            fn glwe_eval_linear_transformation_sum_into<R, P, H, L: $crate::layouts::BabyStepOperand<$be>>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 cnv_offset: usize,
                 res: &mut R,
-                babies: &[&$crate::layouts::prepared::LinearTransformationBabySteps<$be>],
+                babies: &[&$crate::layouts::prepared::LinearTransformationBabySteps<$be, L>],
                 lts: &[&$crate::layouts::LinearTransformation<P>],
                 keys: &H,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
@@ -382,11 +383,11 @@ macro_rules! impl_linear_transformation_reference_full {
                 $crate::reference::linear_transformation::glwe_giant_step_batch_reference(module)
             }
 
-            fn glwe_accumulate_giant_steps(
+            fn glwe_accumulate_giant_steps<L: $crate::layouts::BabyStepOperand<$be>>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 cnv_offset_hi: usize,
                 prods: &mut [::poulpy_hal::layouts::VecZnxDftBackendMut<'_, $be>],
-                lhs: &$crate::layouts::prepared::LinearTransformationBabySteps<$be>,
+                lhs: &$crate::layouts::prepared::LinearTransformationBabySteps<$be, L>,
                 steps: &[$crate::layouts::LinearTransformationGiantStep<
                     $crate::layouts::prepared::PreparedDiagonal<<$be as ::poulpy_hal::layouts::Backend>::OwnedBuf, $be>,
                 >],

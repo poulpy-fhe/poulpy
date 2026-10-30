@@ -1,4 +1,5 @@
 use crate::CKKSResult as Result;
+use poulpy_core::layouts::BabyStepOperand;
 use poulpy_core::{
     DiagonalProd, LinearTransformation, LinearTransformationBabySteps, LinearTransformationPrepared,
     layouts::{
@@ -12,7 +13,7 @@ use crate::{
     api::LtDiagonalMeta,
     oep::derived::linear_transformation::{
         ckks_eval_linear_transformation_assign_derived, ckks_eval_linear_transformation_self_assign_derived,
-        ckks_eval_linear_transformation_self_into_derived,
+        ckks_eval_linear_transformation_self_into_derived, ckks_eval_linear_transformation_self_into_tmp_bytes_derived,
     },
 };
 
@@ -100,9 +101,9 @@ pub unsafe trait CKKSLinearTransformationImpl: Backend + super::CKKSCopyImpl {
     /// [`ckks_prepare_linear_transformation_baby_steps_reference`](crate::reference::CKKSLinearTransformationReference::ckks_prepare_linear_transformation_baby_steps_reference)
     /// bit for bit, within [`Self::ckks_prepare_linear_transformation_baby_steps_tmp_bytes`]; free in kernels and
     /// scratch use.
-    fn ckks_prepare_linear_transformation_baby_steps<Src, H>(
+    fn ckks_prepare_linear_transformation_baby_steps<Src, H, L: BabyStepOperand<Self>>(
         module: &Module<Self>,
-        babies: &mut LinearTransformationBabySteps<Self>,
+        babies: &mut LinearTransformationBabySteps<Self, L>,
         src: &Src,
         keys: &H,
         scratch: &mut ScratchArena<'_, Self>,
@@ -116,11 +117,11 @@ pub unsafe trait CKKSLinearTransformationImpl: Backend + super::CKKSCopyImpl {
     /// bit for bit, within [`Self::ckks_eval_linear_transformation_tmp_bytes`] for a prepared right side and
     /// [`Self::ckks_eval_linear_transformation_streamed_tmp_bytes`] for a streamed one; free in kernels and scratch
     /// use.
-    fn ckks_eval_linear_transformation_into<Dst, Src, P, H>(
+    fn ckks_eval_linear_transformation_into<Dst, Src, P, H, L: BabyStepOperand<Self>>(
         module: &Module<Self>,
         dst: &mut Dst,
         src: &Src,
-        babies: &LinearTransformationBabySteps<Self>,
+        babies: &LinearTransformationBabySteps<Self, L>,
         lt: &LinearTransformation<P>,
         keys: &H,
         scratch: &mut ScratchArena<'_, Self>,
@@ -134,10 +135,10 @@ pub unsafe trait CKKSLinearTransformationImpl: Backend + super::CKKSCopyImpl {
     /// Default body: `ckks_eval_linear_transformation_assign_derived`, [`Self::ckks_eval_linear_transformation_into`]
     /// from `dst` into a `dst`-shaped working copy carved from scratch, then the selected `ckks_copy` of the copy back
     /// into `dst`, which moves the metadata the evaluation stamped.
-    fn ckks_eval_linear_transformation_assign<Dst, P, H>(
+    fn ckks_eval_linear_transformation_assign<Dst, P, H, L: BabyStepOperand<Self>>(
         module: &Module<Self>,
         dst: &mut Dst,
-        babies: &LinearTransformationBabySteps<Self>,
+        babies: &LinearTransformationBabySteps<Self, L>,
         lt: &LinearTransformation<P>,
         keys: &H,
         scratch: &mut ScratchArena<'_, Self>,
@@ -155,11 +156,11 @@ pub unsafe trait CKKSLinearTransformationImpl: Backend + super::CKKSCopyImpl {
     /// bit for bit, within [`Self::ckks_eval_linear_transformation_sum_tmp_bytes`] for resident transforms and
     /// [`Self::ckks_eval_linear_transformation_sum_streamed_tmp_bytes`] for streamed ones; free in kernels and scratch
     /// use.
-    fn ckks_eval_linear_transformation_sum_into<Dst, Src, P, H>(
+    fn ckks_eval_linear_transformation_sum_into<Dst, Src, P, H, L: BabyStepOperand<Self>>(
         module: &Module<Self>,
         dst: &mut Dst,
         srcs: &[&Src],
-        babies: &[&LinearTransformationBabySteps<Self>],
+        babies: &[&LinearTransformationBabySteps<Self, L>],
         lts: &[&LinearTransformation<P>],
         keys: &H,
         scratch: &mut ScratchArena<'_, Self>,
@@ -170,12 +171,38 @@ pub unsafe trait CKKSLinearTransformationImpl: Backend + super::CKKSCopyImpl {
         P: DiagonalProd<Self> + LtDiagonalMeta,
         H: GetAutomorphismKey<Self> + GetTensorKey<Self>;
 
-    /// Default body: `ckks_eval_linear_transformation_self_into_derived`, a baby cache allocated for `src`,
-    /// [`Self::ckks_prepare_linear_transformation_baby_steps`] into it, then
+    /// Default body: `ckks_eval_linear_transformation_self_into_tmp_bytes_derived`, the scratch bound of
+    /// [`Self::ckks_eval_linear_transformation_self_into`] and of
+    /// [`Self::ckks_eval_linear_transformation_self_assign`], whose working copy of `ct` it counts: that copy and the
+    /// baby-step cache of `plan` for `ct`
+    /// ([`GLWEBytesOf::linear_transformation_baby_steps_bytes_of`](poulpy_core::GLWEBytesOf::linear_transformation_baby_steps_bytes_of))
+    /// beside the larger of [`Self::ckks_prepare_linear_transformation_baby_steps_tmp_bytes`] and the evaluation
+    /// query of the right side, [`Self::ckks_eval_linear_transformation_streamed_tmp_bytes`] when `streamed`, else
+    /// [`Self::ckks_eval_linear_transformation_tmp_bytes`]. May report less than the derived body, never less than
+    /// the bodies take.
+    #[allow(clippy::too_many_arguments)]
+    fn ckks_eval_linear_transformation_self_into_tmp_bytes<C, D, K, T>(
+        module: &Module<Self>,
+        streamed: bool,
+        ct: &C,
+        diagonal: &D,
+        plan: &LinearTransformationPlan,
+        tsk: &T,
+        key: &K,
+    ) -> usize
+    where
+        C: CKKSCtBounds,
+        D: GLWEInfos,
+        K: GGLWEInfos,
+        T: GGLWEInfos,
+    {
+        ckks_eval_linear_transformation_self_into_tmp_bytes_derived(module, streamed, ct, diagonal, plan, tsk, key)
+    }
+
+    /// Default body: `ckks_eval_linear_transformation_self_into_derived`, a baby cache for `src` carved from
+    /// `scratch`, [`Self::ckks_prepare_linear_transformation_baby_steps`] into it, then
     /// [`Self::ckks_eval_linear_transformation_into`] over it. An unprepared `lt` streams its diagonals inside the
-    /// evaluation. Bounded by the larger of [`Self::ckks_prepare_linear_transformation_baby_steps_tmp_bytes`] and the
-    /// evaluation query of the right side, [`Self::ckks_eval_linear_transformation_tmp_bytes`] or
-    /// [`Self::ckks_eval_linear_transformation_streamed_tmp_bytes`].
+    /// evaluation. Bounded by [`Self::ckks_eval_linear_transformation_self_into_tmp_bytes`].
     fn ckks_eval_linear_transformation_self_into<Dst, Src, P, H>(
         module: &Module<Self>,
         dst: &mut Dst,
@@ -195,9 +222,8 @@ pub unsafe trait CKKSLinearTransformationImpl: Backend + super::CKKSCopyImpl {
 
     /// Default body: `ckks_eval_linear_transformation_self_assign_derived`,
     /// [`Self::ckks_eval_linear_transformation_self_into`] from `dst` into a `dst`-shaped working copy carved from
-    /// scratch, then the selected `ckks_copy` of the copy back into `dst`. Bounded by the bytes of that working copy
-    /// plus the bound of [`Self::ckks_eval_linear_transformation_self_into`], whose evaluation query already counts the
-    /// copy back.
+    /// scratch, then the selected `ckks_copy` of the copy back into `dst`. Bounded by
+    /// [`Self::ckks_eval_linear_transformation_self_into_tmp_bytes`] at `dst`.
     fn ckks_eval_linear_transformation_self_assign<Dst, P, H>(
         module: &Module<Self>,
         dst: &mut Dst,
@@ -323,9 +349,9 @@ macro_rules! impl_ckks_linear_transformation_reference_full {
                 )
             }
 
-            fn ckks_prepare_linear_transformation_baby_steps<Src, H>(
+            fn ckks_prepare_linear_transformation_baby_steps<Src, H, L: ::poulpy_core::layouts::BabyStepOperand<Self>>(
                 module: &::poulpy_hal::layouts::Module<Self>,
-                babies: &mut ::poulpy_core::LinearTransformationBabySteps<Self>,
+                babies: &mut ::poulpy_core::LinearTransformationBabySteps<Self, L>,
                 src: &Src,
                 keys: &H,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
@@ -339,11 +365,11 @@ macro_rules! impl_ckks_linear_transformation_reference_full {
                 )
             }
 
-            fn ckks_eval_linear_transformation_into<Dst, Src, P, H>(
+            fn ckks_eval_linear_transformation_into<Dst, Src, P, H, L: ::poulpy_core::layouts::BabyStepOperand<Self>>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
                 src: &Src,
-                babies: &::poulpy_core::LinearTransformationBabySteps<Self>,
+                babies: &::poulpy_core::LinearTransformationBabySteps<Self, L>,
                 lt: &::poulpy_core::LinearTransformation<P>,
                 keys: &H,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
@@ -359,11 +385,11 @@ macro_rules! impl_ckks_linear_transformation_reference_full {
                 )
             }
 
-            fn ckks_eval_linear_transformation_sum_into<Dst, Src, P, H>(
+            fn ckks_eval_linear_transformation_sum_into<Dst, Src, P, H, L: ::poulpy_core::layouts::BabyStepOperand<Self>>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
                 srcs: &[&Src],
-                babies: &[&::poulpy_core::LinearTransformationBabySteps<Self>],
+                babies: &[&::poulpy_core::LinearTransformationBabySteps<Self, L>],
                 lts: &[&::poulpy_core::LinearTransformation<P>],
                 keys: &H,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,

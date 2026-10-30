@@ -964,15 +964,23 @@ where
     module.ckks_eval_linear_transformation_tmp_bytes(ct, &ckks_plaintext_diagonal_layout(ct), plan, key, key)
 }
 
-/// The streamed twin of [`pt_eval_tmp_bytes`].
-pub(crate) fn pt_streamed_eval_tmp_bytes<BE, C, K>(module: &Module<BE>, ct: &C, plan: &LinearTransformationPlan, key: &K) -> usize
+/// The query of `ckks_eval_linear_transformation_self_into` and `ckks_eval_linear_transformation_self_assign` on `ct`
+/// for a transform of plaintext diagonals, resident or `streamed`, the rotation key `key` standing for the tensor key
+/// they do not read.
+pub(crate) fn pt_self_into_tmp_bytes<BE, C, K>(
+    module: &Module<BE>,
+    streamed: bool,
+    ct: &C,
+    plan: &LinearTransformationPlan,
+    key: &K,
+) -> usize
 where
     BE: Backend,
     Module<BE>: CKKSLinearTransformationOps<BE>,
     C: CKKSCtBounds,
     K: GGLWEInfos,
 {
-    module.ckks_eval_linear_transformation_streamed_tmp_bytes(ct, &ckks_plaintext_diagonal_layout(ct), plan, key, key)
+    module.ckks_eval_linear_transformation_self_into_tmp_bytes(streamed, ct, &ckks_plaintext_diagonal_layout(ct), plan, key, key)
 }
 
 /// Generates a prepared rank-1 GLWE key-switching key from `sk_in` to `sk_out`,

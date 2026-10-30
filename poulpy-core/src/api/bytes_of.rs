@@ -5,9 +5,11 @@
 //! sizing methods, so bounding on those lets `poulpy-core` implement the trait
 //! directly for [`Module`] instead of dispatching through `oep`/`delegates`.
 
-use poulpy_hal::layouts::{Backend, Module};
+use poulpy_hal::layouts::{Backend, Module, PrepareHint};
 
-use crate::layouts::{Base2K, Degree, GGLWEInfos, GGSWInfos, GLWEInfos, LWEInfos, Rank, TorusPrecision, key_size, pairs};
+use crate::layouts::{
+    Base2K, Degree, GGLWEInfos, GGSWInfos, GLWEInfos, LWEInfos, LinearTransformationPlan, Rank, TorusPrecision, key_size, pairs,
+};
 
 /// Byte sizes of core layouts, routed through the backend.
 ///
@@ -64,6 +66,15 @@ pub trait GLWEBytesOf<BE: Backend> {
 
     /// Byte size of a [`GGSW`](crate::layouts::GGSW) described by `infos`.
     fn ggsw_bytes_of_from_infos<A: GGSWInfos>(&self, infos: &A) -> usize;
+
+    /// Byte size of the baby-step cache of the transformation schedule `plan` for a source of the layout `a`, as
+    /// [`ScratchArenaTakeCore::take_linear_transformation_baby_steps_scratch`](crate::ScratchArenaTakeCore::take_linear_transformation_baby_steps_scratch)
+    /// carves it: one aligned operand per baby rotation.
+    ///
+    /// # Panics
+    ///
+    /// When the size overflows `usize`.
+    fn linear_transformation_baby_steps_bytes_of<A: GLWEInfos>(&self, plan: &LinearTransformationPlan, a: &A) -> usize;
 }
 
 impl<B: Backend> GLWEBytesOf<B> for Module<B> {
@@ -109,6 +120,13 @@ impl<B: Backend> GLWEBytesOf<B> for Module<B> {
             (infos.rank_out() + 1).into(),
             size,
         )
+    }
+
+    fn linear_transformation_baby_steps_bytes_of<A: GLWEInfos>(&self, plan: &LinearTransformationPlan, a: &A) -> usize {
+        let operand = B::bytes_of_cnv_pvec_left(a.n().into(), (a.rank() + 1).into(), a.size(), PrepareHint::Reuse);
+        B::scratch_aligned(operand)
+            .checked_mul(plan.baby_steps.len())
+            .expect("baby-step cache byte size overflows usize")
     }
 
     fn ggsw_bytes_of_from_infos<A: GGSWInfos>(&self, infos: &A) -> usize {

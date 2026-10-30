@@ -1,6 +1,7 @@
 use crate::test_suite::keys::TransformKeys;
 use crate::test_suite::poisoned_scratch;
 use crate::test_suite::refusal::{assert_refusal, glwe_state};
+use crate::{GLWEBytesOf, ScratchArenaTakeCore};
 use poulpy_hal::layouts::CnvPVecLToBackendRef;
 use poulpy_hal::layouts::CnvPVecRToBackendMut;
 use poulpy_hal::layouts::CnvPVecRToBackendRef;
@@ -774,24 +775,22 @@ pub fn test_glwe_linear_transformation_powers_of_two<BE: crate::test_suite::nois
     elements.sort_unstable();
     elements.dedup();
 
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
-        module.glwe_automorphism_key_encrypt_sk_tmp_bytes(&atk_infos)
-            | module.glwe_automorphism_key_prepare_tmp_bytes(&atk_infos)
-            | module.glwe_encrypt_sk_tmp_bytes(&ct_infos)
-            | module.glwe_decrypt_tmp_bytes(&ct_infos)
-            | module.glwe_noise_tmp_bytes(&ct_infos)
-            | module.glwe_prepare_linear_transformation_rhs_tmp_bytes(&pt_infos)
-            | schedules
-                .iter()
-                .map(|schedule| {
-                    let plan = schedule.index();
-                    module.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(&ct_infos, &plan, &atk_infos)
-                        | module.glwe_eval_linear_transformation_tmp_bytes(
-                            &ct_infos, &ct_infos, &pt_infos, &plan, &atk_infos, &atk_infos,
-                        )
-                })
-                .fold(0, usize::max),
-    );
+    let work = module.glwe_automorphism_key_encrypt_sk_tmp_bytes(&atk_infos)
+        | module.glwe_automorphism_key_prepare_tmp_bytes(&atk_infos)
+        | module.glwe_encrypt_sk_tmp_bytes(&ct_infos)
+        | module.glwe_decrypt_tmp_bytes(&ct_infos)
+        | module.glwe_noise_tmp_bytes(&ct_infos)
+        | module.glwe_prepare_linear_transformation_rhs_tmp_bytes(&pt_infos)
+        | schedules
+            .iter()
+            .map(|schedule| {
+                let plan = schedule.index();
+                module.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(&ct_infos, &plan, &atk_infos)
+                    | module
+                        .glwe_eval_linear_transformation_tmp_bytes(&ct_infos, &ct_infos, &pt_infos, &plan, &atk_infos, &atk_infos)
+            })
+            .fold(0, usize::max);
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(work);
     let mut source_xs = Source::new([9u8; 32]);
     let mut source_xe = Source::new([10u8; 32]);
     let mut source_xa = Source::new([11u8; 32]);
@@ -863,6 +862,25 @@ pub fn test_glwe_linear_transformation_powers_of_two<BE: crate::test_suite::nois
         module.glwe_prepare_linear_transformation_baby_steps(&mut cache, &ct, &keys, &mut scratch.borrow());
         let mut res: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ct_infos);
         module.glwe_eval_linear_transformation_into(base2k, &mut res, &cache, &prepared, &keys, &mut scratch.borrow());
+
+        // A cache carved from scratch takes its byte count less at most the alignment of its last operand, and
+        // gives the same ciphertext.
+        let plan = prepared.index();
+        let cache_bytes = module.linear_transformation_baby_steps_bytes_of(&plan, &ct);
+        let mut carved_scratch: ScratchOwned<BE> = ScratchOwned::alloc(cache_bytes + work);
+        let arena = carved_scratch.borrow();
+        let available = arena.available();
+        let (mut carved, mut rest) = arena.take_linear_transformation_baby_steps_scratch(module, &plan, &ct);
+        let taken = available - rest.available();
+        assert!(
+            taken <= cache_bytes && cache_bytes - taken < BE::SCRATCH_ALIGN,
+            "the carve took {taken} bytes of {cache_bytes}"
+        );
+        assert_eq!(carved.baby_steps().collect::<Vec<_>>(), plan.baby_steps);
+        module.glwe_prepare_linear_transformation_baby_steps(&mut carved, &ct, &keys, &mut rest);
+        let mut from_carved: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ct_infos);
+        module.glwe_eval_linear_transformation_into(base2k, &mut from_carved, &carved, &prepared, &keys, &mut rest);
+        assert_eq!(from_carved, res, "a carved baby-step cache gave another ciphertext");
         results.push(res);
     }
     assert!(results[1] != results[0], "the two schedules gave the same ciphertext");
