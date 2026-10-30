@@ -45,7 +45,7 @@ use poulpy_core::{
     },
 };
 use poulpy_hal::{
-    api::{CnvPVecAlloc, ScratchOwnedAlloc, ScratchOwnedBorrow},
+    api::{CnvPVecAlloc, ModuleSynchronize, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{Backend, CyclotomicOrder, MaxBase2k, Module, ScratchOwned, Standard},
     source::Source,
 };
@@ -186,6 +186,7 @@ pub trait BlasBenchModule<BE: Backend>:
     + BlasMatVecOperandPreparedFactory<BE>
     + CKKSLinearTransformationOps<BE>
     + CnvPVecAlloc<BE>
+    + ModuleSynchronize<BE>
 {
 }
 
@@ -198,6 +199,7 @@ impl<BE: Backend, M> BlasBenchModule<BE> for M where
         + BlasMatVecOperandPreparedFactory<BE>
         + CKKSLinearTransformationOps<BE>
         + CnvPVecAlloc<BE>
+        + ModuleSynchronize<BE>
 {
 }
 

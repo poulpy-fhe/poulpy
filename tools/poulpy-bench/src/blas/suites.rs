@@ -25,7 +25,7 @@ use crate::{
 /// the summed grid are the replicated ones.
 pub fn blas_dense_ops<BE, M>() -> [BenchOp<M, BlasBenchParams>; 2]
 where
-    BE: Backend<Ring = Standard> + 'static + BlasMatIntraImpl + BlasMatMulImpl + BlasMatVecImpl + MaxBase2k,
+    BE: Backend<Ring = Standard> + 'static + BlasMatIntraImpl + BlasMatMulImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     M: Measurement,

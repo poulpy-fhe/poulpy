@@ -13,7 +13,7 @@ use poulpy_blas::{
 use poulpy_ckks::CoeffsMeta;
 use poulpy_core::layouts::TorusPrecision;
 use poulpy_hal::{
-    api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
+    api::{ModuleSynchronize, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{Backend, CyclotomicOrder, MaxBase2k, Module, ScratchOwned, Standard},
 };
 
@@ -25,12 +25,13 @@ use crate::{
     timed,
 };
 
-/// The operand's layout: `d` entries at stride `S / d` on each side, one ciphertext, dense.
+/// The operand's layout: `d` entries at stride `S / d` on each side, one ciphertext, dense, at the cost-optimal BSGS
+/// giant step.
 fn layout(bp: &BlasBenchParams) -> BlasMatVecOperandLayout {
     let (slots, d) = (bp.slots(), bp.d());
     let shape = BlasVectorShape::new(d, d, 0, slots / d);
     let meta = CoeffsMeta::from_delta_budget(bp.p, HEADROOM);
-    BlasMatVecOperandLayout::new(slots, shape, slots, shape, slots, base2k(bp), meta)
+    BlasMatVecOperandLayout::new(slots, shape, slots, shape, slots, base2k(bp), meta).with_optimal_bsgs()
 }
 
 /// The public matrix, scaled so that the products stay in `[-1, 1)`.
@@ -101,13 +102,15 @@ where
             Box::new(move || {
                 module
                     .blas_matvec_pt(&mut res, &prepared, &a, &atks, &mut scratch.borrow())
-                    .unwrap()
+                    .unwrap();
+                module.synchronize();
             })
         } else {
             Box::new(move || {
                 module
                     .blas_matvec_pt(&mut res, &streamed, &a, &atks, &mut scratch.borrow())
-                    .unwrap()
+                    .unwrap();
+                module.synchronize();
             })
         }
     });
