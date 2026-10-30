@@ -1,10 +1,10 @@
 use poulpy_ckks::{
     CKKSModuleInfos, CKKSResult as Result,
-    api::{CKKSDotProductOps, CKKSLinearTransformationOps, CKKSMulOps, CKKSRotateOps, LinearTransformationBabySteps},
+    api::{CKKSDotProductOps, CKKSLinearTransformationOps, CKKSMulOps, CKKSRotateOps},
     layouts::{CKKSModuleAlloc, CKKSPreparedRight, ScratchArenaTakeCKKS},
 };
 use poulpy_core::{
-    GLWEBytesOf,
+    GLWEBytesOf, ScratchArenaTakeCore,
     layouts::{GGLWEInfos, GGLWELayout, GLWEInfos, GetAutomorphismKey, GetTensorKey},
 };
 use poulpy_hal::{
@@ -59,8 +59,9 @@ pub trait BlasMatVecReference<BE: Backend> {
         A: BlasVectorRef<BE>,
         K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
 
-    /// The baby steps of `a` and poulpy-ckks's transform of `m`'s ciphertext diagonals from `a`'s layout, and from
-    /// `res`'s. On a schedule that rotates nothing, `keys` is never read and `tsk`'s layout stands in for it.
+    /// The baby-step cache of `a` beside the larger of its preparation and poulpy-ckks's transform of `m`'s ciphertext
+    /// diagonals from `a`'s layout and from `res`'s. On a schedule that rotates nothing, `keys` is never read and
+    /// `tsk`'s layout stands in for it.
     fn blas_matvec_diagonal_tmp_bytes_reference<R, M, A, T, K>(&self, res: &R, m: &M, a: &A, tsk: &T, keys: &K) -> usize
     where
         Self: CKKSLinearTransformationOps<BE>,
@@ -82,7 +83,7 @@ pub trait BlasMatVecReference<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: CKKSLinearTransformationOps<BE> + ModuleN + CnvPVecAlloc<BE> + Sized,
+        Self: CKKSLinearTransformationOps<BE> + ModuleN + Sized,
         R: BlasVectorMut<BE>,
         M: BlasDiagonalCiphertextMap<BE>,
         A: BlasVectorRef<BE>,
@@ -230,7 +231,7 @@ impl<BE: Backend> BlasMatVecReference<BE> for Module<BE> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: CKKSLinearTransformationOps<BE> + ModuleN + CnvPVecAlloc<BE> + Sized,
+        Self: CKKSLinearTransformationOps<BE> + ModuleN + Sized,
         R: BlasVectorMut<BE>,
         M: BlasDiagonalCiphertextMap<BE>,
         A: BlasVectorRef<BE>,
@@ -251,9 +252,12 @@ impl<BE: Backend> BlasMatVecReference<BE> for Module<BE> {
         });
         assert_scratch(op, bytes, scratch);
         let src = &a.cts()[0];
-        let mut babies = LinearTransformationBabySteps::alloc_for(self, m.map(), src);
-        self.ckks_prepare_linear_transformation_baby_steps(&mut babies, src, keys, scratch)?;
-        self.ckks_eval_linear_transformation_into(&mut res.cts_mut()[0], src, &babies, m.map(), keys, scratch)
+        let (mut babies, mut scratch) =
+            scratch
+                .borrow()
+                .take_linear_transformation_baby_steps_scratch(self, &m.map().index(), src);
+        self.ckks_prepare_linear_transformation_baby_steps(&mut babies, src, keys, &mut scratch.borrow())?;
+        self.ckks_eval_linear_transformation_into(&mut res.cts_mut()[0], src, &babies, m.map(), keys, &mut scratch)
     }
 
     fn blas_append_row_diagonal_tmp_bytes_reference<M, V, P, K>(&self, m: &M, v: &V, mask: &P, keys: &K) -> usize
@@ -350,10 +354,12 @@ where
             module.ckks_eval_linear_transformation_tmp_bytes(ct, &layout.ct, &plan, tsk, keys)
         }
     };
-    module
-        .ckks_prepare_linear_transformation_baby_steps_tmp_bytes(&a, &plan, keys)
-        .max(eval(&a))
-        .max(eval(&res))
+    // The baby-step cache of `a` beside the preparation and either evaluation.
+    module.linear_transformation_baby_steps_bytes_of(&plan, &a)
+        + module
+            .ckks_prepare_linear_transformation_baby_steps_tmp_bytes(&a, &plan, keys)
+            .max(eval(&a))
+            .max(eval(&res))
 }
 
 /// The append query along `axis` on rotation keys of layout `keys`, read only when the append rotates `v`.
