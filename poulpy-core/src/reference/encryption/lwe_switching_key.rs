@@ -84,9 +84,7 @@ where
         crate::layouts::assert_secret_set(&sk_lwe_out.dist);
         assert!(
             scratch.available() >= self.lwe_switching_key_encrypt_sk_tmp_bytes_reference(res),
-            "scratch.available(): {} < LWESwitchingKeyEncryptSk::lwe_switching_key_encrypt_sk_tmp_bytes: {}",
-            scratch.available(),
-            self.lwe_switching_key_encrypt_sk_tmp_bytes_reference(res)
+            "insufficient scratch for LWE switching key encryption"
         );
         let tmp_bytes: usize = self.lwe_switching_key_encrypt_sk_tmp_bytes_reference(res);
         {

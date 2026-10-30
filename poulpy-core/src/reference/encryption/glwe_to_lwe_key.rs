@@ -76,9 +76,7 @@ where
         crate::layouts::assert_secret_set(&sk_lwe.dist);
         assert!(
             scratch.available() >= self.glwe_to_lwe_key_encrypt_sk_tmp_bytes_reference(res),
-            "scratch.available(): {} < GLWEToLWEKeyEncryptSk::glwe_to_lwe_key_encrypt_sk_tmp_bytes: {}",
-            scratch.available(),
-            self.glwe_to_lwe_key_encrypt_sk_tmp_bytes_reference(res)
+            "insufficient scratch for GLWE-to-LWE key encryption"
         );
         let tmp_bytes: usize = self.glwe_to_lwe_key_encrypt_sk_tmp_bytes_reference(res);
         {
