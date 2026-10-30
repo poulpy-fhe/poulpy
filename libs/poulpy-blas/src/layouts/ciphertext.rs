@@ -421,9 +421,9 @@ impl<D: Data, W: ZnxWord, R: Ring> BlasCiphertext<D, W, R> {
 
 impl<D: HostDataRef, W: ZnxWord, R: Ring> WriterTo for BlasCiphertext<D, W, R> {
     /// Serialises the grid in little-endian binary format: its header, its batch record (u64), then every block,
-    /// row-major, as a [`CKKSCiphertext`]. Blocks that differ in `n`, `base2k`, `k` or rank, which the header cannot
-    /// describe, and a flag-clear block, fail with [`std::io::ErrorKind::InvalidInput`], writing nothing: normalize it
-    /// first.
+    /// row-major, as a [`CKKSCiphertext`] of its first `ceil(k / base2k)` limbs, so the stream follows the header's `k`,
+    /// not the allocation. Blocks that differ in `n`, `base2k`, `k` or rank, which the header cannot describe, and a
+    /// flag-clear block, fail with [`std::io::ErrorKind::InvalidInput`], writing nothing: normalize it first.
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
         let header = self.header()?;
         if self.blocks.iter().any(|block| !GLWE::is_canonical(block)) {
@@ -434,14 +434,15 @@ impl<D: HostDataRef, W: ZnxWord, R: Ring> WriterTo for BlasCiphertext<D, W, R> {
         }
         writer.write_all(&header)?;
         writer.write_u64::<LittleEndian>(self.mat_slots as u64)?;
-        self.blocks.iter().try_for_each(|block| block.write_to(writer))
+        self.blocks.iter().try_for_each(|block| block.write_live_to(writer))
     }
 }
 
 impl<D: HostDataMut, W: ZnxWord, R: Ring> ReaderFrom for BlasCiphertext<D, W, R> {
-    /// Deserialises into a grid allocated from the writer's layout: a receiver whose blocks differ in layout fails with
-    /// [`std::io::ErrorKind::InvalidInput`], another `log_d`, row or column count, or block `n`, `base2k`, `k` or rank
-    /// with [`std::io::ErrorKind::InvalidData`], before any block is read. The grid then records the written batch.
+    /// Deserialises into a grid allocated from the writer's layout, or one of more limbs per block, which then holds the
+    /// written limbs: a receiver whose blocks differ in layout fails with [`std::io::ErrorKind::InvalidInput`], another
+    /// `log_d`, row or column count, or block `n`, `base2k`, `k` or rank with [`std::io::ErrorKind::InvalidData`], before
+    /// any block is read. The grid then records the written batch.
     fn read_from<Rd: std::io::Read>(&mut self, reader: &mut Rd) -> std::io::Result<()> {
         let header = self.header()?;
         let mut read = vec![0u8; header.len()];
@@ -684,7 +685,7 @@ mod tests {
         CKKSError, SetGLWEPlaintextInfos,
         layouts::{CKKSPreparedLeft, CKKSPreparedRight},
     };
-    use poulpy_core::layouts::prepared::GLWETensorKeyPrepared;
+    use poulpy_core::layouts::{SetK, prepared::GLWETensorKeyPrepared};
     use poulpy_hal::layouts::{HostBytesBackend, Standard};
     use poulpy_hal::layouts::{ReaderFrom, WriterTo, ZnxView, ZnxViewMut};
 
@@ -877,6 +878,44 @@ mod tests {
             let mut after = Vec::new();
             other.write_to(&mut after).unwrap();
             assert!(after == before, "a rejected read changed the grid: {base2k} {k}");
+        }
+    }
+
+    #[test]
+    fn grids_narrowed_below_their_allocation_read_into_their_layout() {
+        let module = module();
+        // Four limbs allocated, three live after `k` drops to 50, as an operation writing a narrower result leaves them.
+        let narrowed = |fill: bool| {
+            let mut grid = module.blas_ciphertext_alloc(2, 2, 1, 19usize.into(), 76usize.into());
+            for (t, block) in grid.blocks_mut().iter_mut().enumerate() {
+                if fill {
+                    for limb in 0..3 {
+                        block.data_mut().at_mut(0, limb).fill(t as i64 - limb as i64);
+                    }
+                }
+                block.set_k(50usize.into());
+                GLWE::set_canonical(block, true);
+            }
+            grid
+        };
+        let grid = narrowed(true);
+        let mut bytes = Vec::new();
+        grid.write_to(&mut bytes).unwrap();
+        for (label, mut back) in [
+            ("allocated from its layout", module.blas_ciphertext_alloc_from_infos(&grid)),
+            ("allocated as the writer", narrowed(false)),
+        ] {
+            back.read_from(&mut bytes.as_slice()).unwrap();
+            assert_eq!(back.blas_layout(), grid.blas_layout(), "{label}");
+            for (have, want) in back.blocks().iter().zip(grid.blocks()) {
+                assert_eq!(have.data().size(), 3, "{label}: the live limbs");
+                for limb in 0..3 {
+                    assert_eq!(have.data().at(0, limb), want.data().at(0, limb), "{label}");
+                }
+            }
+            let mut again = Vec::new();
+            back.write_to(&mut again).unwrap();
+            assert!(again == bytes, "{label}: a read grid serializes as the original");
         }
     }
 

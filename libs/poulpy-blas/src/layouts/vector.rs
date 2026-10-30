@@ -237,8 +237,9 @@ impl<D: Data, W: ZnxWord, R: Ring> std::fmt::Debug for BlasVector<D, W, R> {
 
 impl<D: HostDataRef, W: ZnxWord, R: Ring> WriterTo for BlasVector<D, W, R> {
     /// Serialises the vector in little-endian binary format: its header, then every ciphertext, in entry order, as a
-    /// [`CKKSCiphertext`]. Ciphertexts that differ in `n`, `base2k`, `k` or rank, which the header cannot describe, and
-    /// a flag-clear ciphertext, fail with [`std::io::ErrorKind::InvalidInput`], writing nothing: normalize it first.
+    /// [`CKKSCiphertext`] of its first `ceil(k / base2k)` limbs, so the stream follows the header's `k`, not the
+    /// allocation. Ciphertexts that differ in `n`, `base2k`, `k` or rank, which the header cannot describe, and a
+    /// flag-clear ciphertext, fail with [`std::io::ErrorKind::InvalidInput`], writing nothing: normalize it first.
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
         let header = self.header()?;
         if self.cts.iter().any(|ct| !GLWE::is_canonical(ct)) {
@@ -248,13 +249,14 @@ impl<D: HostDataRef, W: ZnxWord, R: Ring> WriterTo for BlasVector<D, W, R> {
             ));
         }
         writer.write_all(&header)?;
-        self.cts.iter().try_for_each(|ct| ct.write_to(writer))
+        self.cts.iter().try_for_each(|ct| ct.write_live_to(writer))
     }
 }
 
 impl<D: HostDataMut, W: ZnxWord, R: Ring> ReaderFrom for BlasVector<D, W, R> {
-    /// Deserialises into a vector allocated from the writer's layout: a receiver whose ciphertexts differ in layout
-    /// fails with [`std::io::ErrorKind::InvalidInput`], another shape, or ciphertext `n`, `base2k`, `k` or rank with
+    /// Deserialises into a vector allocated from the writer's layout, or one of more limbs per ciphertext, which then
+    /// holds the written limbs: a receiver whose ciphertexts differ in layout fails with
+    /// [`std::io::ErrorKind::InvalidInput`], another shape, or ciphertext `n`, `base2k`, `k` or rank with
     /// [`std::io::ErrorKind::InvalidData`], before any ciphertext is read.
     fn read_from<Rd: std::io::Read>(&mut self, reader: &mut Rd) -> std::io::Result<()> {
         let header = self.header()?;
@@ -322,7 +324,8 @@ where
 #[cfg(test)]
 mod tests {
     use poulpy_ckks::SetGLWEPlaintextInfos;
-    use poulpy_hal::layouts::{HostBytesBackend, Module, Standard, ZnxViewMut};
+    use poulpy_core::layouts::SetK;
+    use poulpy_hal::layouts::{HostBytesBackend, Module, Standard, ZnxView, ZnxViewMut};
 
     use super::*;
     use crate::layouts::{BlasBytesOf, BlasModuleAlloc};
@@ -388,6 +391,45 @@ mod tests {
             let err = other.read_from(&mut bytes.as_slice()).unwrap_err();
             assert_eq!(err.kind(), std::io::ErrorKind::InvalidData, "{shape:?} {base2k} {k}");
             assert_eq!(other, before, "a rejected read changed the vector: {shape:?} {base2k} {k}");
+        }
+    }
+
+    #[test]
+    fn vectors_narrowed_below_their_allocation_read_into_their_layout() {
+        let module = Module::<HostBytesBackend>::new(64);
+        let shape = BlasVectorShape::new(4, 2, 0, 1);
+        // Three limbs allocated, two live after `k` drops to 26, as an operation writing a narrower result leaves them.
+        let narrowed = |fill: bool| {
+            let mut v = module.blas_vector_alloc(shape, 13usize.into(), 39usize.into());
+            for (t, ct) in v.cts_mut().iter_mut().enumerate() {
+                if fill {
+                    for (col, limb) in [(0, 0), (0, 1), (1, 0), (1, 1)] {
+                        ct.data_mut().at_mut(col, limb).fill(t as i64 + col as i64 - limb as i64);
+                    }
+                }
+                ct.set_k(26usize.into());
+                GLWE::set_canonical(ct, true);
+            }
+            v
+        };
+        let v = narrowed(true);
+        let mut bytes = Vec::new();
+        v.write_to(&mut bytes).unwrap();
+        for (label, mut back) in [
+            ("allocated from its layout", module.blas_vector_alloc_from_infos(&v)),
+            ("allocated as the writer", narrowed(false)),
+        ] {
+            back.read_from(&mut bytes.as_slice()).unwrap();
+            assert_eq!(back.blas_vector_layout(), v.blas_vector_layout(), "{label}");
+            for (have, want) in back.cts().iter().zip(v.cts()) {
+                assert_eq!(have.data().size(), 2, "{label}: the live limbs");
+                for (col, limb) in [(0, 0), (0, 1), (1, 0), (1, 1)] {
+                    assert_eq!(have.data().at(col, limb), want.data().at(col, limb), "{label}");
+                }
+            }
+            let mut again = Vec::new();
+            back.write_to(&mut again).unwrap();
+            assert!(again == bytes, "{label}: a read vector serializes as the original");
         }
     }
 
