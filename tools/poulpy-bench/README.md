@@ -48,7 +48,7 @@ the same underlying `*_ops` tables.
 | [`hal`](src/hal) | `poulpy-hal` trait operations: `vec_znx`, `vec_znx_dft`, `vec_znx_big`, `svp`, `vmp`, `convolution`, `reim` |
 | [`core`](src/core) | `poulpy-core` GLWE/GGSW operations: encryption, decryption, keyswitch, automorphism, external product, tensoring |
 | [`schemes`](src/schemes) | `poulpy-ckks` (CKKS) and `poulpy-bin-fhe` (blind rotation, circuit bootstrapping) |
-| [`blas`](src/blas) | `poulpy-blas` encrypted matrix operations on one `d x d` block: `blas_matmul` by a dense and by a replicated right factor, `blas_matmul_pt_right` and `blas_matmul_pt_left` under `Diagonal` and `Jkls`, `blas_transpose`, `blas_sum_rows`, `blas_sum_cols` and `blas_rotate_rows` of a replicated grid, `blas_matvec_pt` of a vector, resident and streamed, `blas_matvec_diagonal`, resident and streamed, and `blas_append_row_diagonal` of a diagonal ciphertext |
+| [`blas`](src/blas) | `poulpy-blas` encrypted matrix operations on one `d x d` block: `blas_matmul` by a dense and by a replicated right factor, `blas_matmul_pt_right` and `blas_matmul_pt_left` under `Diagonal` and `Jkls`, `blas_transpose`, `blas_sum_rows`, `blas_sum_cols` and `blas_rotate_rows` of a replicated grid, `blas_matvec_pt` of a vector, resident and streamed, `blas_matvec_diagonal`, resident and streamed, and `blas_append_row_diagonal` of a diagonal ciphertext, `blas_grid_to_vector` of a grid's row, resident |
 | [`libm`](src/libm) | `poulpy-libm` function plans on one ciphertext: `ckks_exp`, `ckks_log`, `ckks_pow` |
 | [`heap`](src/heap.rs) | a counting global allocator: the bytes held and their high-water mark |
 
@@ -227,6 +227,7 @@ and scales `log_delta = p = 40`:
 | `blas_matvec_pt_resident`, `blas_matvec_pt_streamed` | a `d x d` public matrix by one ciphertext of `d` entries at stride `N / (2d)`, the operand prepared or streamed |
 | `blas_matvec_diagonal_resident`, `blas_matvec_diagonal_streamed` | a diagonal ciphertext of the diagonals `0..d` over the slots, three rows appended, by a whole ciphertext, prepared once or each diagonal at its use |
 | `blas_append_row_diagonal` | one row into that matrix, by a mask of one slot |
+| `blas_grid_to_vector_resident` | row 1 of the first matrix of a one-block grid through the identity, prepared, into `d` contiguous slots |
 
 The sweep is over the ring degree `N` and the block dimension `d`, which fill the `N / 2` slots with `N / (2 d^2)`
 matrices: light `(2^14, 64)`; standard `(2^13, 32)`, `(2^14, 64)`, `(2^15, 128)`; full adds `(2^15, 64)`, `(2^16, 64)`

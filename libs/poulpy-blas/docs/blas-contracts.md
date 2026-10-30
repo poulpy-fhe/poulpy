@@ -22,7 +22,7 @@ changes bits.
 | `BlasMatInterImpl` | `blas_rotate`, `blas_sum` | |
 | `BlasMatIntraImpl` | the map hook `blas_map_blocks`, `blas_rotate_rows`, `blas_rotate_cols`, `blas_sum_rows`, `blas_sum_cols` | `blas_transpose`, over the hook |
 | `BlasMatMulImpl` | `blas_matmul`, `blas_matmul_prepare_left`, `blas_matmul_prepare_right`, `blas_matmul_prepared`, `blas_matmul_pt_right`, `blas_matmul_pt_left` | |
-| `BlasMatVecImpl` | `blas_matvec_pt`, `blas_matvec_diagonal`, `blas_append_row_diagonal`, `blas_append_col_diagonal` | |
+| `BlasMatVecImpl` | `blas_matvec_pt`, `blas_grid_to_vector`, `blas_vector_to_grid`, `blas_matvec_diagonal`, `blas_append_row_diagonal`, `blas_append_col_diagonal` | |
 | `BlasJklsImpl` | the JKLS kernel `blas_jkls_block`, one output block of the prepared product, and the masked-unit hook `blas_jkls_pt_unit`, one unit of a product by public matrices under `JklsStored` and `JklsGalois` | |
 | `BlasEncodingImpl` | `blas_pt_operand_encode`, `blas_matvec_operand_encode`, `blas_context_encode`, `blas_pt_operand_prepare`, `blas_matvec_operand_prepare`, `blas_diagonal_ciphertext_prepare`, `blas_context_prepare` | |
 
@@ -195,6 +195,7 @@ public operand's scale `p_B`:
 | `blas_sum_rows`, `blas_sum_cols` | `sum_rows_galois_elements(order)`, `sum_cols_galois_elements(order)` | the tree's rotations at `a.k`, the broadcast's at `min(res.k, a.k - p)`; along the rows of a replicated grid, the tree's at `min(res.k, a.k)` and no broadcast |
 | `blas_matmul_prepare_left`, `blas_matmul_prepare_right`, `blas_matmul`, and `blas_matmul_prepared` of a hot operand | `matmul_galois_elements(order)` | sigma's (tau's) baby steps at `a.k` and giant steps at `a.k - p`; the shifts' giant steps at `a.k - 2p`, those of a replicated right factor `b` at `b.k - p` |
 | `blas_matvec_pt` | `matvec_pt_galois_elements(order, w)` of the operand's layout | every map's baby steps at `a.k`, giant steps at `min(res.k, a.k - p_W)` |
+| `blas_grid_to_vector`, `blas_vector_to_grid` | `matvec_pt_galois_elements(order, w)` of the operand's layout | as `blas_matvec_pt`, the grid's blocks giving `a.k` (`res.k` when they are `res`) |
 | `blas_matvec_diagonal` | `matvec_diagonal_galois_elements(order, m)` of the matrix's layout, and the tensor key | the keys of its schedule, per rotation or by powers of two: baby steps at `a.k`, giant steps at the result's width (the ct x ct rule); the tensor key at `max(a.k, m.k)` |
 | `blas_append_row_diagonal` | `append_row_diagonal_galois_elements(order, m)` | the rotations of the appended ciphertext by the baby steps the diagonals read, at its width |
 | `blas_append_col_diagonal` | `append_col_diagonal_galois_elements(order, m)` | the rotations of the appended ciphertext by the opposites of the giant steps, at its width |
@@ -252,7 +253,8 @@ Each operation has a query in `poulpy_blas::layouts` that lists the keys it
 looks up: `blas_matmul_key_uses`,
 `blas_matmul_prepare_left_key_uses`, `blas_matmul_prepare_right_key_uses`,
 `blas_matmul_prepared_key_uses`, `blas_matmul_pt_right_key_uses`,
-`blas_matmul_pt_left_key_uses`, `blas_matvec_pt_key_uses`, `blas_matvec_diagonal_key_uses`, `blas_append_row_diagonal_key_uses`,
+`blas_matmul_pt_left_key_uses`, `blas_matvec_pt_key_uses`, `blas_grid_to_vector_key_uses`,
+`blas_vector_to_grid_key_uses`, `blas_matvec_diagonal_key_uses`, `blas_append_row_diagonal_key_uses`,
 `blas_append_col_diagonal_key_uses`,
 `blas_transpose_key_uses`,
 `blas_rotate_rows_key_uses`, `blas_rotate_cols_key_uses`,
@@ -285,9 +287,10 @@ The output-layout queries next to them (`blas_matmul_output_layout`,
 `blas_sum_cols_output_layout`) take the input layouts
 and the allocated `res` and return the `BlasLayout` the call stamps on `res`,
 whose block gives `k`, `log_delta` and label; the record is the validator's.
-`blas_matvec_pt_output_layout` returns the `BlasVectorLayout` instead, labelled
-with the period the operand writes, and `blas_matvec_diagonal_output_layout` that of the
-ct x ct rule.
+`blas_matvec_pt_output_layout` and `blas_grid_to_vector_output_layout` return
+the `BlasVectorLayout` instead, labelled with the period the operand writes,
+`blas_vector_to_grid_output_layout` the grid's, whose label proves the batch it
+records, and `blas_matvec_diagonal_output_layout` that of the ct x ct rule.
 They read a map's effect through the same function the preparations and staged
 blocks use, so a client plans every intermediate grid, and with it every key
 width, before it encrypts or runs anything.
@@ -519,7 +522,9 @@ ciphertexts, dense and replicated, resident and streamed, which span 16 slots,
 and `test_blas_matvec_diagonal` and its guards a diagonal ciphertext of diagonals
 `0..8`, by rotation and by powers of two, rows and columns appended by masks of
 one and two slots, its product resident and streamed, and one of the diagonal
-`0` alone: below `N = 32` they, and the diagonal-ciphertext cases of
+`0` alone, and `test_blas_grid_to_vector`, `test_blas_vector_to_grid` and
+`test_blas_repack_guards` rows and columns of `2 x 2` blocks past the first
+block and matrix: below `N = 32` they, and the diagonal-ciphertext cases of
 `test_blas_key_widths`, `test_blas_key_stores_from_queries`,
 `test_blas_result_meta` and `test_blas_refill`, are skipped with a message.
 
@@ -608,9 +613,11 @@ macro registers every family, so none can be dropped silently.
 scalar and parameter set: `blas_matmul_max_base2k`,
 `blas_matmul_pt_right_max_base2k` and `blas_matmul_pt_left_max_base2k` on
 `4 x 4` blocks on 32 slots (`n = 64`, or `n = 32` on the conjugate-invariant
-ring), under every algorithm, and `blas_matvec_pt_max_base2k` on vectors of one
-and several ciphertexts, against counts made by hand, at every failure
-target from 1 to 1000 bits. It needs a backend that implements `MaxBase2k`.
+ring), under every algorithm, `blas_matvec_pt_max_base2k`,
+`blas_grid_to_vector_max_base2k` and `blas_vector_to_grid_max_base2k` on
+vectors of one and several ciphertexts, and `blas_matvec_diagonal_max_base2k` on
+a diagonal ciphertext, against counts made by hand, at every failure target from 1
+to 1000 bits. It needs a backend that implements `MaxBase2k`.
 
 The registrations of this workspace, and the commands and CI coverage, are in
 the [repository README](../../../README.md#testing-a-backend).

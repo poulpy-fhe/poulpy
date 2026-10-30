@@ -15,7 +15,7 @@ use poulpy_hal::layouts::{Backend, Data, MaxBase2k, Module};
 
 use super::{
     BlasContextInfos, BlasDiagonalCiphertextInfos, BlasGridInfos, BlasLayout, BlasMatMulOperandInfos, BlasMatVecOperandInfos,
-    BlasPlan, BlasPtOperandInfos, BlasPtSide, BlasVectorInfos, BlasVectorLayout, Left, Right,
+    BlasPlan, BlasPtOperandInfos, BlasPtSide, BlasVectorInfos, BlasVectorLayout, BlasVectorShape, Left, Right,
     ciphertext::{mat_slots_in, replicated_at},
     context::{ContextMaps, context_shapes, reduction_projection, shift_maps, shift_rotates},
     diagonal_ciphertext::{self, AppendAxis},
@@ -806,6 +806,97 @@ pub fn blas_matvec_pt_max_base2k<BE: MaxBase2k>(
     max_radix::<BE>(ct.n().as_usize(), failure_bits, |r| {
         giant_products(map_shape([&map]), terms, ct.k().as_usize(), r)
     })
+}
+
+/// The layout [`crate::api::BlasMatVecOps::blas_grid_to_vector`] stamps on `res` for `w` and `a`:
+/// [`blas_matvec_pt_output_layout`] with a line of `a`, of `w`'s input shape, as the input; the line does not change it.
+///
+/// # Panics
+///
+/// As [`blas_matvec_pt_output_layout`].
+pub fn blas_grid_to_vector_output_layout(
+    res: &impl BlasVectorInfos,
+    w: &impl BlasMatVecOperandInfos,
+    a: &impl BlasGridInfos,
+) -> BlasVectorLayout {
+    blas_matvec_pt_output_layout(res, w, &line_of(a, w.input()))
+}
+
+/// The keys [`crate::api::BlasMatVecOps::blas_grid_to_vector`] looks up for `a` into `res` through `w`:
+/// [`blas_matvec_pt_key_uses`] with a line of `a` as the input, whatever the line.
+///
+/// # Panics
+///
+/// As [`blas_matvec_pt_output_layout`].
+pub fn blas_grid_to_vector_key_uses<BE: Backend>(
+    module: &Module<BE>,
+    res: &impl BlasVectorInfos,
+    w: &impl BlasMatVecOperandInfos,
+    a: &impl BlasGridInfos,
+) -> BlasKeyUses {
+    blas_matvec_pt_key_uses(module, res, w, &line_of(a, w.input()))
+}
+
+/// [`blas_matvec_pt_max_base2k`] of a [`crate::api::BlasMatVecOps::blas_grid_to_vector`] of `w` by a line of `a`.
+///
+/// # Panics
+///
+/// As [`blas_matvec_pt_max_base2k`].
+pub fn blas_grid_to_vector_max_base2k<BE: MaxBase2k>(
+    w: &impl BlasMatVecOperandInfos,
+    a: &impl BlasGridInfos,
+    failure_bits: usize,
+) -> usize {
+    blas_matvec_pt_max_base2k::<BE>(w, &line_of(a, w.input()), failure_bits)
+}
+
+/// The layout [`crate::api::BlasMatVecOps::blas_vector_to_grid`] stamps on `res` for `w` and `a`: `res`'s dimensions,
+/// its blocks at [`blas_matvec_pt_output_layout`] with a line of `res`, of `w`'s output shape, as `res`. Its label
+/// proves the batch the call records, `output_period / d^2`.
+///
+/// # Panics
+///
+/// As [`blas_matvec_pt_output_layout`].
+pub fn blas_vector_to_grid_output_layout(
+    res: &impl BlasGridInfos,
+    w: &impl BlasMatVecOperandInfos,
+    a: &impl BlasVectorInfos,
+) -> BlasLayout {
+    let block = blas_matvec_pt_output_layout(&line_of(res, w.output()), w, a).ct;
+    BlasLayout::new(block, res.log_d(), res.rows(), res.cols())
+}
+
+/// The keys [`crate::api::BlasMatVecOps::blas_vector_to_grid`] looks up for `a` into `res` through `w`:
+/// [`blas_matvec_pt_key_uses`] with a line of `res` as `res`, whatever the line.
+///
+/// # Panics
+///
+/// As [`blas_matvec_pt_output_layout`].
+pub fn blas_vector_to_grid_key_uses<BE: Backend>(
+    module: &Module<BE>,
+    res: &impl BlasGridInfos,
+    w: &impl BlasMatVecOperandInfos,
+    a: &impl BlasVectorInfos,
+) -> BlasKeyUses {
+    blas_matvec_pt_key_uses(module, &line_of(res, w.output()), w, a)
+}
+
+/// [`blas_matvec_pt_max_base2k`] of a [`crate::api::BlasMatVecOps::blas_vector_to_grid`] of `w` by `a`.
+///
+/// # Panics
+///
+/// As [`blas_matvec_pt_max_base2k`].
+pub fn blas_vector_to_grid_max_base2k<BE: MaxBase2k>(
+    w: &impl BlasMatVecOperandInfos,
+    a: &impl BlasVectorInfos,
+    failure_bits: usize,
+) -> usize {
+    blas_matvec_pt_max_base2k::<BE>(w, a, failure_bits)
+}
+
+/// A line of `g` of `shape` as a vector layout: the queries read only its blocks' layout.
+fn line_of(g: &impl BlasGridInfos, shape: BlasVectorShape) -> BlasVectorLayout {
+    BlasVectorLayout::new(g.block_layout(), shape)
 }
 
 /// The layout [`crate::api::BlasMatVecOps::blas_matvec_diagonal`] stamps on `res` for `m` and `a`: poulpy-ckks's ct x ct rule

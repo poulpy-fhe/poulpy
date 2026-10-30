@@ -856,6 +856,8 @@
   Each is a `BlasMatVecImpl` method with its query, which `impl_blas_mat_vec_reference_full!` forwards; an override writes either form through its `diagonals_mut`.
   Add `validate_blas_matvec_diagonal`, `validate_blas_append_row_diagonal`, `validate_blas_append_col_diagonal`, `blas_matvec_diagonal_key_uses`, `blas_append_row_diagonal_key_uses`, `blas_append_col_diagonal_key_uses`, `blas_matvec_diagonal_output_layout`, `blas_matvec_diagonal_max_base2k`, `matvec_diagonal_galois_elements`, `append_row_diagonal_galois_elements` and `append_col_diagonal_galois_elements`.
 - `test_blas_matvec_diagonal` and `test_blas_matvec_diagonal_guards` register in `blas_backend_test_suite!`, and the `matvec` parity, conjugate-invariant, key-width, key-store, result-metadata, radix and queries-from-layouts tests cover the diagonal ciphertext.
+- Add the repacking of a grid's line, `BlasGridLine` (a row or a column of one matrix of the batch, read as a vector of the blocks holding it, `BlasGridLine::shape` and `vector_layout`), through a public operand of products of a vector: `BlasMatVecOps::blas_grid_to_vector` reads `W x` for the line `x` of a grid into a vector, and `blas_vector_to_grid` writes `W a` as the line of a grid of one block row (column), every other slot zero, recording the batch of the operand's output period. The identity extracts or places the line. Add `validate_blas_grid_to_vector`, `validate_blas_vector_to_grid`, their key-use, output-layout and radix queries. `BlasMatVecImpl` requires both operations and their queries, which `impl_blas_mat_vec_reference_full!` forwards.
+- `test_blas_grid_to_vector`, `test_blas_vector_to_grid` and `test_blas_repack_guards` register in `blas_backend_test_suite!`, and the `matvec` parity, radix and conjugate-invariant tests cover the repacking.
 
 ### `poulpy-libm`
 
@@ -925,6 +927,7 @@
 - Add `blas::matvec::runner_blas_matvec_pt_resident` and `runner_blas_matvec_pt_streamed` to `blas_ops`: a `d x d` public matrix by one ciphertext of `d` entries at stride `N / (2d)`, at the cost-optimal BSGS giant step, the operand prepared or streamed.
   **Breaking:** the blas suites require `BlasMatVecImpl`, and `BlasBenchModule` requires `BlasMatVecOperandPreparedFactory`.
 - Add `blas::matvec::runner_blas_matvec_diagonal_resident`, `runner_blas_matvec_diagonal_streamed` and `runner_blas_append_row_diagonal` to `blas_ops`: a diagonal ciphertext of the diagonals `0..d`, three rows appended, by a whole ciphertext, prepared once or streamed, and one more row appended, each on its own key set.
+- Add `blas::matvec::runner_blas_grid_to_vector_resident` to `blas_ops`: row 1 of the first matrix of a one-block grid, through the identity, prepared, into `d` contiguous slots.
 
 ### Dependencies
 

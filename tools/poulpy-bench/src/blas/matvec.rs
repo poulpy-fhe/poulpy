@@ -5,9 +5,10 @@ use criterion::{Bencher, measurement::Measurement};
 use poulpy_blas::{
     api::{BlasDiagonalCiphertextPreparedFactory, BlasEncodingOps, BlasMatVecOperandPreparedFactory, BlasMatVecOps},
     layouts::{
-        BlasDiagonalCiphertext, BlasDiagonalCiphertextLayout, BlasMatVecMaps, BlasMatVecOperandLayout, BlasModuleAlloc,
-        BlasVector, BlasVectorLayout, BlasVectorShape, append_row_diagonal_galois_elements, blas_matvec_diagonal_max_base2k,
-        blas_matvec_pt_max_base2k, matvec_diagonal_galois_elements, matvec_pt_galois_elements,
+        BlasDiagonalCiphertext, BlasDiagonalCiphertextLayout, BlasGridLine, BlasMatVecMaps, BlasMatVecOperandLayout,
+        BlasModuleAlloc, BlasVector, BlasVectorLayout, BlasVectorShape, append_row_diagonal_galois_elements,
+        blas_grid_to_vector_max_base2k, blas_matvec_diagonal_max_base2k, blas_matvec_pt_max_base2k,
+        matvec_diagonal_galois_elements, matvec_pt_galois_elements,
     },
     oep::BlasMatVecImpl,
 };
@@ -421,4 +422,64 @@ where
     M: Measurement,
 {
     diagonal_ciphertext::<BE, M>(bencher, bp, "blas_append_row_diagonal", Timed::Append);
+}
+
+/// `blas_grid_to_vector` of row 1 of the first matrix of a one-block grid holding the dense batch, through the identity,
+/// the operand prepared, into one ciphertext of `d` contiguous entries. The operand stores every diagonal of a `d x d`
+/// matrix between these shapes, `2d - 1`, whatever its values.
+pub fn runner_blas_grid_to_vector_resident<BE, M>(bencher: &mut Bencher<'_, M>, bp: &BlasBenchParams)
+where
+    BE: Backend<Ring = Standard> + 'static + BlasMatVecImpl + MaxBase2k,
+    Module<BE>: BlasBenchModule<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+    M: Measurement,
+{
+    let op = "blas_grid_to_vector_resident";
+    timed::<BE, M, _>(bencher, op, bp, || {
+        let mut client = Client::<BE>::new(bp);
+        let (slots, d) = (bp.slots(), bp.d());
+        let line = BlasGridLine::Row { mat_slot: 0, row: 1 };
+        let a = client.encrypt(bp, 1, 1, bp.batch(), |s, r, c| entry(6, s, r, c));
+        let output = BlasVectorShape::new(d, d, 0, 1);
+        let meta = CoeffsMeta::from_delta_budget(bp.p, HEADROOM);
+        let layout = BlasMatVecOperandLayout::new(slots, line.shape(&a), slots, output, slots, base2k(bp), meta);
+        let module = &client.module;
+        let mut streamed = module.blas_matvec_operand_alloc_from_infos(&layout);
+        let mut prepared = module.blas_matvec_operand_prepared_alloc_from_infos(&layout);
+        let mut arena = ScratchOwned::<BE>::alloc(
+            module
+                .blas_matvec_operand_encode_tmp_bytes(&layout)
+                .max(module.blas_matvec_operand_prepare_tmp_bytes(&layout)),
+        );
+        let identity = |r: usize, c: usize| f64::from(u8::from(r == c));
+        module
+            .blas_matvec_operand_encode(&mut streamed, identity, &mut arena.borrow())
+            .unwrap();
+        module.blas_matvec_operand_prepare(&mut prepared, &streamed, &mut arena.borrow());
+        let atks = client.rotation_keys(bp, matvec_pt_galois_elements(client.module.cyclotomic_order(), &layout));
+        let max_base2k = blas_grid_to_vector_max_base2k::<BE>(&layout, &a, FAILURE_BITS);
+        assert!(
+            max_base2k >= bp.base2k,
+            "{op}: base2k exceeds the radix its lazy sums allow at 128 failure bits"
+        );
+        let module = &client.module;
+        let mut res = module.blas_vector_alloc(output, base2k(bp), TorusPrecision(bp.k as u32));
+        let mut scratch = ScratchOwned::<BE>::alloc(module.blas_grid_to_vector_tmp_bytes(&res, &prepared, &a, &atk_layout(bp)));
+        module
+            .blas_grid_to_vector(&mut res, &prepared, &a, line, &atks, &mut scratch.borrow())
+            .unwrap();
+        let (re, im) = client.decrypt_slots(bp, res.ct(0));
+        let mut max_err = im.iter().fold(0.0f64, |err, v| err.max(v.abs()));
+        for (s, have) in re.iter().enumerate() {
+            let want = if s < d { entry(6, 0, 1, s) } else { 0.0 };
+            max_err = max_err.max((have - want).abs());
+        }
+        verify::<BE>(op, bp, max_err, Some(max_base2k), atks.len());
+        let module = client.module;
+        Box::new(move || {
+            module
+                .blas_grid_to_vector(&mut res, &prepared, &a, line, &atks, &mut scratch.borrow())
+                .unwrap()
+        })
+    });
 }

@@ -1,11 +1,11 @@
 use poulpy_ckks::{
-    CKKSModuleInfos, CKKSResult as Result,
+    CKKSCtBounds, CKKSLayout, CKKSModuleInfos, CKKSResult as Result, SetCKKSInfos,
     api::{CKKSDotProductOps, CKKSLinearTransformationOps, CKKSMulOps, CKKSRotateOps},
     layouts::{CKKSModuleAlloc, CKKSPreparedRight, ScratchArenaTakeCKKS},
 };
 use poulpy_core::{
     GLWEBytesOf, ScratchArenaTakeCore,
-    layouts::{GGLWEInfos, GGLWELayout, GLWEInfos, GetAutomorphismKey, GetTensorKey},
+    layouts::{GGLWEInfos, GGLWELayout, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey},
 };
 use poulpy_hal::{
     api::{CnvPVecAlloc, ModuleN},
@@ -14,14 +14,14 @@ use poulpy_hal::{
 
 use super::{LtEval, baby_caches, lt_tmp_bytes, shared_giants};
 use crate::layouts::{
-    BlasDiagonalCiphertext, BlasDiagonalCiphertextInfos, BlasDiagonalCiphertextMap, BlasMatVecMaps, BlasVectorInfos,
-    BlasVectorMut, BlasVectorRef,
+    BlasDiagonalCiphertext, BlasDiagonalCiphertextInfos, BlasDiagonalCiphertextMap, BlasGrid, BlasGridInfos, BlasGridLine,
+    BlasGridMut, BlasMatVecMaps, BlasVectorInfos, BlasVectorMut, BlasVectorRef,
     diagonal_ciphertext::{self, AppendAxis, append_rotations},
     matvec_operand::output_label,
     validate::{
         KeyLayouts, append_uses, assert_scratch, ensure_rotation, ensure_tensor_key, matvec_diagonal_tensor,
         matvec_diagonal_uses, matvec_pt_uses, rotates, validate_blas_append_col_diagonal, validate_blas_append_row_diagonal,
-        validate_blas_matvec_diagonal, validate_blas_matvec_pt,
+        validate_blas_grid_to_vector, validate_blas_matvec_diagonal, validate_blas_matvec_pt, validate_blas_vector_to_grid,
     },
 };
 
@@ -55,6 +55,59 @@ pub trait BlasMatVecReference<BE: Backend> {
     where
         Self: CKKSLinearTransformationOps<BE> + ModuleN + CnvPVecAlloc<BE> + Sized,
         R: BlasVectorMut<BE>,
+        W: BlasMatVecMaps<BE>,
+        A: BlasVectorRef<BE>,
+        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
+
+    /// [`Self::blas_matvec_pt_tmp_bytes_reference`] from `a`'s blocks.
+    fn blas_grid_to_vector_tmp_bytes_reference<R, W, A, K>(&self, res: &R, w: &W, a: &A, keys: &K) -> usize
+    where
+        Self: CKKSLinearTransformationOps<BE>,
+        R: BlasVectorInfos,
+        W: BlasMatVecMaps<BE>,
+        A: BlasGridInfos,
+        K: GGLWEInfos;
+
+    /// [`Self::blas_matvec_pt_reference`] with the blocks holding `line`, in entry order, as the input ciphertexts.
+    fn blas_grid_to_vector_reference<R, W, A, K>(
+        &self,
+        res: &mut R,
+        w: &W,
+        a: &A,
+        line: BlasGridLine,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Self: CKKSLinearTransformationOps<BE> + ModuleN + CnvPVecAlloc<BE> + Sized,
+        R: BlasVectorMut<BE>,
+        W: BlasMatVecMaps<BE>,
+        A: BlasGrid<BE>,
+        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
+
+    /// [`Self::blas_matvec_pt_tmp_bytes_reference`] into `res`'s blocks.
+    fn blas_vector_to_grid_tmp_bytes_reference<R, W, A, K>(&self, res: &R, w: &W, a: &A, keys: &K) -> usize
+    where
+        Self: CKKSLinearTransformationOps<BE>,
+        R: BlasGridInfos,
+        W: BlasMatVecMaps<BE>,
+        A: BlasVectorInfos,
+        K: GGLWEInfos;
+
+    /// [`Self::blas_matvec_pt_reference`] with the blocks of `res`, which all hold `line`, in entry order, as the output
+    /// ciphertexts, then the batch `output_period / d^2` recorded on `res`.
+    fn blas_vector_to_grid_reference<R, W, A, K>(
+        &self,
+        res: &mut R,
+        line: BlasGridLine,
+        w: &W,
+        a: &A,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Self: CKKSLinearTransformationOps<BE> + ModuleN + CnvPVecAlloc<BE> + Sized,
+        R: BlasGridMut<BE>,
         W: BlasMatVecMaps<BE>,
         A: BlasVectorRef<BE>,
         K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
@@ -165,9 +218,7 @@ impl<BE: Backend> BlasMatVecReference<BE> for Module<BE> {
         A: BlasVectorInfos,
         K: GGLWEInfos,
     {
-        let (res, a) = (res.ct_layout(), a.ct_layout());
-        let eval = if W::STREAMED { LtEval::StreamedSum } else { LtEval::Sum };
-        lt_tmp_bytes(self, &res, &a, keys, eval)
+        maps_tmp_bytes::<BE, _, W, _>(self, &res.ct_layout(), &a.ct_layout(), keys)
     }
 
     fn blas_matvec_pt_reference<R, W, A, K>(
@@ -191,21 +242,111 @@ impl<BE: Backend> BlasMatVecReference<BE> for Module<BE> {
         let _ = matvec_pt_uses(&*res, w.blocks(), a, &mut |u| ensure_rotation(op, self, &used, u));
         let bytes = used.max_bytes(|key| self.blas_matvec_pt_tmp_bytes_reference(&*res, w, a, key));
         assert_scratch(op, bytes, scratch);
-        let (cts, maps) = (a.cts(), w.blocks());
-        let inputs = cts.len();
-        // Every map shares one schedule, so the first one's baby steps serve them all.
-        let mut caches = baby_caches(self, &[&maps[0]], &cts[0], inputs);
-        let outputs = vec![res.cts_mut().iter_mut().collect()];
-        shared_giants(
+        let cts = a.cts();
+        apply_maps(
             self,
-            &mut caches,
-            outputs,
-            |_, i| &cts[i],
-            |_, o, i| &maps[o * inputs + i],
-            output_label(w),
+            res.cts_mut().iter_mut().collect(),
+            cts.len(),
+            |i| &cts[i],
+            w,
             keys,
             scratch,
         )
+    }
+
+    fn blas_grid_to_vector_tmp_bytes_reference<R, W, A, K>(&self, res: &R, _w: &W, a: &A, keys: &K) -> usize
+    where
+        Self: CKKSLinearTransformationOps<BE>,
+        R: BlasVectorInfos,
+        W: BlasMatVecMaps<BE>,
+        A: BlasGridInfos,
+        K: GGLWEInfos,
+    {
+        maps_tmp_bytes::<BE, _, W, _>(self, &res.ct_layout(), &a.block_layout(), keys)
+    }
+
+    fn blas_grid_to_vector_reference<R, W, A, K>(
+        &self,
+        res: &mut R,
+        w: &W,
+        a: &A,
+        line: BlasGridLine,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Self: CKKSLinearTransformationOps<BE> + ModuleN + CnvPVecAlloc<BE> + Sized,
+        R: BlasVectorMut<BE>,
+        W: BlasMatVecMaps<BE>,
+        A: BlasGrid<BE>,
+        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync,
+    {
+        let op = "blas_grid_to_vector";
+        validate_blas_grid_to_vector(self, &*res, w, a, line, keys)?;
+        let used = KeyLayouts::new(keys);
+        let view = line.vector_layout(a);
+        let _ = matvec_pt_uses(&*res, w.blocks(), &view, &mut |u| ensure_rotation(op, self, &used, u));
+        let bytes = used.max_bytes(|key| self.blas_grid_to_vector_tmp_bytes_reference(&*res, w, a, key));
+        assert_scratch(op, bytes, scratch);
+        let blocks = a.blocks();
+        let source = |t| &blocks[line.block(a, t)];
+        apply_maps(
+            self,
+            res.cts_mut().iter_mut().collect(),
+            view.shape.count(),
+            source,
+            w,
+            keys,
+            scratch,
+        )
+    }
+
+    fn blas_vector_to_grid_tmp_bytes_reference<R, W, A, K>(&self, res: &R, _w: &W, a: &A, keys: &K) -> usize
+    where
+        Self: CKKSLinearTransformationOps<BE>,
+        R: BlasGridInfos,
+        W: BlasMatVecMaps<BE>,
+        A: BlasVectorInfos,
+        K: GGLWEInfos,
+    {
+        maps_tmp_bytes::<BE, _, W, _>(self, &res.block_layout(), &a.ct_layout(), keys)
+    }
+
+    fn blas_vector_to_grid_reference<R, W, A, K>(
+        &self,
+        res: &mut R,
+        line: BlasGridLine,
+        w: &W,
+        a: &A,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Self: CKKSLinearTransformationOps<BE> + ModuleN + CnvPVecAlloc<BE> + Sized,
+        R: BlasGridMut<BE>,
+        W: BlasMatVecMaps<BE>,
+        A: BlasVectorRef<BE>,
+        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync,
+    {
+        let op = "blas_vector_to_grid";
+        let batch = validate_blas_vector_to_grid(self, &*res, line, w, a, keys)?;
+        let used = KeyLayouts::new(keys);
+        let view = line.vector_layout(&*res);
+        let _ = matvec_pt_uses(&view, w.blocks(), a, &mut |u| ensure_rotation(op, self, &used, u));
+        let bytes = used.max_bytes(|key| self.blas_vector_to_grid_tmp_bytes_reference(&*res, w, a, key));
+        assert_scratch(op, bytes, scratch);
+        let cts = a.cts();
+        apply_maps(
+            self,
+            res.blocks_mut().iter_mut().collect(),
+            cts.len(),
+            |i| &cts[i],
+            w,
+            keys,
+            scratch,
+        )?;
+        res.set_mat_slots(batch);
+        Ok(())
     }
 
     fn blas_matvec_diagonal_tmp_bytes_reference<R, M, A, T, K>(&self, res: &R, m: &M, a: &A, tsk: &T, keys: &K) -> usize
@@ -457,4 +598,52 @@ where
         }
     }
     Ok(())
+}
+
+/// One baby-step cache of an input of layout `a` and one summed transform from it into an output of layout `res` by
+/// `W`'s diagonals: resident, or streamed for an unprepared operand.
+fn maps_tmp_bytes<BE, M, W, K>(module: &M, res: &CKKSLayout, a: &CKKSLayout, keys: &K) -> usize
+where
+    BE: Backend,
+    M: CKKSLinearTransformationOps<BE>,
+    W: BlasMatVecMaps<BE>,
+    K: GGLWEInfos,
+{
+    let eval = if W::STREAMED { LtEval::StreamedSum } else { LtEval::Sum };
+    lt_tmp_bytes(module, res, a, keys, eval)
+}
+
+/// The products by `w`'s maps: one baby-step cache per input `source(i)`, `i < inputs`, which every output shares, then
+/// output `o` of `dsts` is poulpy-ckks's summed linear transformation of the terms `(source(i), w_oi)` in ascending
+/// `i`, stamped with the label `w`'s output period proves.
+fn apply_maps<'s, BE, M, D, S, W, K>(
+    module: &M,
+    dsts: Vec<&mut D>,
+    inputs: usize,
+    source: impl Fn(usize) -> &'s S,
+    w: &W,
+    keys: &K,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<()>
+where
+    BE: Backend + 's,
+    M: CKKSLinearTransformationOps<BE> + ModuleN + CnvPVecAlloc<BE>,
+    D: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+    S: GLWEToBackendRef<BE> + CKKSCtBounds + 's,
+    W: BlasMatVecMaps<BE>,
+    K: GetAutomorphismKey<BE> + GetTensorKey<BE>,
+{
+    let maps = w.blocks();
+    // Every map shares one schedule, so the first one's baby steps serve them all.
+    let mut caches = baby_caches(module, &[&maps[0]], source(0), inputs);
+    shared_giants(
+        module,
+        &mut caches,
+        vec![dsts],
+        |_, i| source(i),
+        |_, o, i| &maps[o * inputs + i],
+        output_label(w),
+        keys,
+        scratch,
+    )
 }

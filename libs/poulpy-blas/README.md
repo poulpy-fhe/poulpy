@@ -60,10 +60,20 @@ diagonals, relinearized once per giant step, resident, `BlasDiagonalCiphertextPr
 the same bits;
 `matvec_diagonal_galois_elements`, `append_row_diagonal_galois_elements` and `append_col_diagonal_galois_elements` list the keys.
 
+A line of a grid, `BlasGridLine`, is a row or a column of one matrix of the batch, read as a vector of the blocks
+holding it, `d` entries per block. `blas_grid_to_vector` reads `W x` for the line `x` into a vector, and
+`blas_vector_to_grid` writes `W a` as the line of a grid of one block row (column), every other slot zero: both are the
+product of a vector by a public operand, the line's blocks its input or output ciphertexts, so the identity extracts or
+places the line and another matrix applies to it in the same transforms. The operand stores every diagonal between the
+two shapes whatever its values, so the identity costs a product by a dense matrix: fold the next public matrix into the
+repacking rather than extract then multiply. A grid's matrix becomes a diagonal ciphertext row by row:
+`blas_grid_to_vector` of each row into a whole ciphertext, then `blas_append_row_diagonal`.
+
 `blas_matmul_max_base2k`, `blas_matmul_pt_right_max_base2k` and `blas_matmul_pt_left_max_base2k` return the largest
 `base2k` that `Module::max_base2k` allows for every lazy sum of a product, from the grids' layouts, the context and the
-public operand alone, `blas_matvec_pt_max_base2k` that of a product of a vector, and `blas_matvec_diagonal_max_base2k` that of a
-product by a diagonal ciphertext.
+public operand alone, `blas_matvec_pt_max_base2k` that of a product of a vector, `blas_grid_to_vector_max_base2k` and
+`blas_vector_to_grid_max_base2k` those of the repacking, and `blas_matvec_diagonal_max_base2k` that of a product by a
+diagonal ciphertext.
 
 Calls with distinct `res` and `scratch` may run concurrently over a shared module, context, public operands, prepared
 operands and key stores: BLAS spawns no thread and holds no shared mutable state, its types are `Send` and `Sync`, and an

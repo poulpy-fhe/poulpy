@@ -18,6 +18,7 @@ pub mod matmul;
 pub mod matvec;
 pub mod meta;
 pub mod parity;
+pub mod repack;
 
 /// Registers the functional tests for one backend, scalar, encoder and parameter set, on blocks of dimension
 /// `2^log_d`: 2 unless the optional `log_d` sets it. The ring degree `N` is free within two bounds: the blocks fit the
@@ -118,6 +119,18 @@ macro_rules! blas_backend_test_suite {
             #[test]
             fn matvec_pt() {
                 $crate::test_suite::matvec::test_blas_matvec_pt::<$backend, $scalar, $encoder>($params, &*MODULE, &*HOST_MODULE);
+            }
+            #[test]
+            fn grid_to_vector() {
+                $crate::test_suite::repack::test_blas_grid_to_vector::<$backend, $scalar, $encoder>($params, &*MODULE, &*HOST_MODULE);
+            }
+            #[test]
+            fn vector_to_grid() {
+                $crate::test_suite::repack::test_blas_vector_to_grid::<$backend, $scalar, $encoder>($params, &*MODULE, &*HOST_MODULE);
+            }
+            #[test]
+            fn repack_guards() {
+                $crate::test_suite::repack::test_blas_repack_guards::<$backend, $scalar, $encoder>($params, &*MODULE, &*HOST_MODULE);
             }
             #[test]
             fn matvec_diagonal() {
