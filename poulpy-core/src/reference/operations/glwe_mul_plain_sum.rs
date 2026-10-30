@@ -2,14 +2,14 @@
 
 use poulpy_hal::{
     api::{
-        Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxBigAddSmallAssign, VecZnxBigBytesOf, VecZnxBigNormalize,
-        VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign, VecZnxDftBytesOf, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxLsh,
-        VecZnxLshTmpBytes, VecZnxRsh, VecZnxRshTmpBytes,
+        Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxAddAssign, VecZnxBigBytesOf, VecZnxBigNormalize,
+        VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign, VecZnxDftBytesOf, VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
+        VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes, VecZnxNormalize, VecZnxNormalizeTmpBytes, VecZnxRsh, VecZnxRshTmpBytes,
     },
     layouts::{
-        Backend, CnvDftAccTerm, CnvPVecLToBackendRef, CnvPVecRToBackendRef, Module, ScratchArena, VecZnxBigToBackendMut,
-        VecZnxBigToBackendRef, VecZnxDftBackendMut, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendMut,
-        VecZnxToBackendRef, vec_znx_backend_ref_from_mut,
+        Backend, CnvDftAccTerm, CnvPVecLToBackendRef, CnvPVecRToBackendRef, Module, ScratchArena, VecZnxBigToBackendRef,
+        VecZnxDftBackendMut, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendMut, VecZnxToBackendRef,
+        vec_znx_backend_ref_from_mut,
     },
 };
 
@@ -110,9 +110,11 @@ where
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes
-        + VecZnxBigAddSmallAssign<BE>
-        + VecZnxLsh<BE>
-        + VecZnxLshTmpBytes
+        + VecZnxIdftNormalize<BE>
+        + VecZnxIdftNormalizeTmpBytes
+        + VecZnxNormalize<BE>
+        + VecZnxNormalizeTmpBytes
+        + VecZnxAddAssign<BE>
         + VecZnxRsh<BE>
         + VecZnxRshTmpBytes,
 {
@@ -185,25 +187,28 @@ where
         }
     }
 
-    /// One column's sum, its inverse transform and the shifted column of `res` beside it, and the normalization.
+    /// One column's sum, on at least one limb more than `res`, then either the shifted column of `res` and the fused
+    /// inverse transform, or the lossless inverse transform, `res` added, and the normalization.
     fn glwe_mul_prepared_plain_sum_add_tmp_bytes_reference<R>(&self, res: &R, a_size: usize, b_size: usize) -> usize
     where
         R: GLWEInfos,
     {
         let n = operand_degree(self.n(), &[res.n()]);
-        let (res_dft_size, addend_size) = (a_size + b_size, res.size() + 1);
-        let big_size = res_dft_size.max(addend_size);
-        let shift = self
-            .vec_znx_lsh_tmp_bytes(addend_size)
-            .max(self.vec_znx_rsh_tmp_bytes(addend_size));
+        let (res_dft_size, addend_size) = ((a_size + b_size).max(res.size() + 1), res.size() + 1);
+        let sum_size = (res_dft_size + 1).max(res.size());
+        let shifted = BE::scratch_aligned(BE::bytes_of_vec_znx(n, 1, addend_size))
+            + self
+                .vec_znx_rsh_tmp_bytes(addend_size)
+                .max(self.vec_znx_idft_normalize_tmp_bytes(res.size(), res_dft_size));
+        let lossless = BE::scratch_aligned(BE::bytes_of_vec_znx(n, 1, sum_size))
+            + self
+                .vec_znx_idft_normalize_tmp_bytes(sum_size, res_dft_size)
+                .max(self.vec_znx_normalize_tmp_bytes());
         BE::scratch_aligned(self.bytes_of_vec_znx_dft(n, 1, res_dft_size))
-            + self.cnv_apply_dft_sum_tmp_bytes(0, res_dft_size, a_size, b_size).max(
-                BE::scratch_aligned(self.bytes_of_vec_znx_big(n, 1, big_size))
-                    + BE::scratch_aligned(BE::bytes_of_vec_znx(n, 1, addend_size))
-                    + shift
-                        .max(self.vec_znx_idft_apply_tmp_bytes())
-                        .max(self.vec_znx_big_normalize_tmp_bytes()),
-            )
+            + self
+                .cnv_apply_dft_sum_tmp_bytes(0, res_dft_size, a_size, b_size)
+                .max(shifted)
+                .max(lossless)
     }
 
     fn glwe_mul_prepared_plain_sum_add_reference<R, AP, BP>(
@@ -233,45 +238,79 @@ where
 
         let (res_k, base2k) = (res.k().as_usize(), base2k.as_usize());
         let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, base2k);
-        let res_dft_size = a_size + b_size - cnv_offset_hi;
-        let addend_size = res.size() + 1;
+        // Limbs past the product are zero, and the fused inverse transform reads only as many limbs of its addend.
+        let res_dft_size = (a_size + b_size - cnv_offset_hi).max(res.size() + 1);
         let mut terms = Vec::with_capacity(a.len());
         for col in 0..cols {
             column_terms(&mut terms, col, a, b, galois);
             let (mut res_dft, mut scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(n, 1, res_dft_size);
-            {
-                let mut res_dft_backend = res_dft.to_backend_mut();
-                self.cnv_apply_dft_sum(cnv_offset_hi, &mut res_dft_backend, 0, &terms, &mut scratch_1);
-            }
-            let (mut res_big, scratch_2) = scratch_1.take_vec_znx_big_scratch(n, 1, res_dft_size.max(addend_size));
-            let (mut addend, mut scratch_3) = scratch_2.take_vec_znx_scratch(n, 1, addend_size);
-            self.vec_znx_idft_apply(&mut res_big, 0, &res_dft.to_backend_ref(), 0, &mut scratch_3.borrow());
-            // The normalization scales its input by `2^cnv_offset_lo`, so `res` enters scaled by its inverse: a shift
-            // by fewer bits than a limb, exact on one more limb.
-            {
-                let res_backend = res.to_backend_mut();
-                let res_data = vec_znx_backend_ref_from_mut::<BE>(&res_backend.data);
-                let mut addend_backend = addend.to_backend_mut();
-                let bits = cnv_offset_lo.unsigned_abs() as usize;
-                if cnv_offset_lo >= 0 {
-                    self.vec_znx_rsh(base2k, bits, &mut addend_backend, 0, &res_data, col, &mut scratch_3.borrow());
-                } else {
-                    self.vec_znx_lsh(base2k, bits, &mut addend_backend, 0, &res_data, col, &mut scratch_3.borrow());
+            self.cnv_apply_dft_sum(cnv_offset_hi, &mut res_dft.to_backend_mut(), 0, &terms, &mut scratch_1);
+            if cnv_offset_lo >= 0 {
+                // `res` enters the fused inverse transform scaled by `2^-cnv_offset_lo`: fewer bits than a limb, exact
+                // on one more limb.
+                let (mut addend, mut scratch_2) = scratch_1.take_vec_znx_scratch(n, 1, res.size() + 1);
+                {
+                    let res_backend = res.to_backend_mut();
+                    let res_data = vec_znx_backend_ref_from_mut::<BE>(&res_backend.data);
+                    let bits = cnv_offset_lo as usize;
+                    self.vec_znx_rsh(
+                        base2k,
+                        bits,
+                        &mut addend.to_backend_mut(),
+                        0,
+                        &res_data,
+                        col,
+                        &mut scratch_2.borrow(),
+                    );
                 }
+                let mut res_backend = res.to_backend_mut();
+                self.vec_znx_idft_normalize(
+                    &mut res_backend.data,
+                    base2k,
+                    res_k,
+                    cnv_offset_lo,
+                    col,
+                    &mut res_dft.to_backend_mut(),
+                    0,
+                    base2k,
+                    Some((&addend.to_backend_ref(), 0)),
+                    &mut scratch_2.borrow(),
+                );
+            } else {
+                // Scaled down, the sum carries bits above the torus that no addend holds: it is rounded losslessly,
+                // one limb wider, then `res` is added and the total rounded once.
+                let sum_size = (res_dft_size + 1).max(res.size());
+                let (mut sum, mut scratch_2) = scratch_1.take_vec_znx_scratch(n, 1, sum_size);
+                self.vec_znx_idft_normalize(
+                    &mut sum.to_backend_mut(),
+                    base2k,
+                    sum_size * base2k,
+                    cnv_offset_lo,
+                    0,
+                    &mut res_dft.to_backend_mut(),
+                    0,
+                    base2k,
+                    None,
+                    &mut scratch_2.borrow(),
+                );
+                {
+                    let res_backend = res.to_backend_mut();
+                    let res_data = vec_znx_backend_ref_from_mut::<BE>(&res_backend.data);
+                    self.vec_znx_add_assign(&mut sum.to_backend_mut(), 0, &res_data, col);
+                }
+                let mut res_backend = res.to_backend_mut();
+                self.vec_znx_normalize(
+                    &mut res_backend.data,
+                    base2k,
+                    res_k,
+                    0,
+                    col,
+                    &sum.to_backend_ref(),
+                    base2k,
+                    0,
+                    &mut scratch_2.borrow(),
+                );
             }
-            self.vec_znx_big_add_small_assign(&mut res_big.to_backend_mut(), 0, &addend.to_backend_ref(), 0);
-            let mut res_backend = res.to_backend_mut();
-            self.vec_znx_big_normalize(
-                &mut res_backend.data,
-                base2k,
-                res_k,
-                cnv_offset_lo,
-                col,
-                &res_big.to_backend_ref(),
-                base2k,
-                0,
-                &mut scratch_3.borrow(),
-            );
         }
         res.set_canonical(true);
     }

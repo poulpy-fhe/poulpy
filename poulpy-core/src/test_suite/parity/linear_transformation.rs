@@ -71,6 +71,8 @@ fn poison<B: Backend>(buffer: &mut B::OwnedBuf) {
     B::copy_from_host(buffer, &vec![0xA5; bytes]);
 }
 
+/// Resident and streamed plaintext transforms, single and summed over two terms, agree with each other and across
+/// the backends.
 /// Queries are exercised by their consumers using independently poisoned, exact budgets.
 /// Prepared caches are compared only through canonical output and semantic metadata.
 /// Then diagonals of the source's rank, multiplied as ciphertexts, on the per-rotation schedule.
@@ -429,7 +431,7 @@ where
                 // The summed evaluations' second transform: with one transform
                 // for both terms, a sum that applied the first term's transform
                 // to every term would give the same bits.
-                let (_, _, resident2_r, resident2_t) = transform(&mut source);
+                let (rhs2_r, rhs2_t, resident2_r, resident2_t) = transform(&mut source);
                 // Different destination radix forces the per-giant normalized
                 // fallback instead of the lazy DFT accumulation path.
                 for out_base in [base, base - 1] {
@@ -537,6 +539,43 @@ where
                             sum_r,
                             have,
                             "summed linear transform rank={rank} k_digit={k_digit} offset={offset} out_base={out_base}"
+                        );
+                        // The same terms streamed, on the streamed query's budget: the resident sum, bit for bit.
+                        let mut streamed_sum_r = ref_glwe(r, &out, &mut source);
+                        let mut streamed_sum_t = t.glwe_alloc_from_infos(&out);
+                        streamed_sum_r.transfer_into(&mut streamed_sum_t);
+                        r.glwe_eval_linear_transformation_sum_into(
+                            offset,
+                            &mut streamed_sum_r,
+                            &[&lhs_r, &lhs2_r],
+                            &[&rhs_r, &rhs2_r],
+                            &keys_r,
+                            &mut poisoned_scratch::<BR>(
+                                r.glwe_eval_linear_transformation_sum_unprepared_rhs_tmp_bytes(&out, &ct, &pt, &plan, &key, &key),
+                            )
+                            .borrow(),
+                        );
+                        t.glwe_eval_linear_transformation_sum_into(
+                            offset,
+                            &mut streamed_sum_t,
+                            &[&lhs_t, &lhs2_t],
+                            &[&rhs_t, &rhs2_t],
+                            &keys_t,
+                            &mut poisoned_scratch::<BT>(
+                                t.glwe_eval_linear_transformation_sum_unprepared_rhs_tmp_bytes(&out, &ct, &pt, &plan, &key, &key),
+                            )
+                            .borrow(),
+                        );
+                        streamed_sum_t.transfer_into(&mut have);
+                        assert_glwe_eq!(
+                            streamed_sum_r,
+                            have,
+                            "streamed summed linear transform rank={rank} k_digit={k_digit} offset={offset} out_base={out_base}"
+                        );
+                        assert_glwe_eq!(
+                            sum_r,
+                            streamed_sum_r,
+                            "resident/streamed summed linear transform rank={rank} k_digit={k_digit} offset={offset} out_base={out_base}"
                         );
                         // One term is the single transform, bit for bit, on the tested backend too.
                         let mut one_t = t.glwe_alloc_from_infos(&out);
