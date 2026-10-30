@@ -14,7 +14,7 @@ use crate::{
     CKKSCtBounds, CKKSInfos, CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, SlotsKind,
     api::{CKKSAllOpsTmpBytes, CKKSDFTMatrixOps, CKKSDFTOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar},
     layouts::{
-        BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys, BootstrappingPipeline,
+        BootstrappingContextPrepared, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys, BootstrappingPipeline,
         BootstrappingPlan, BootstrappingTechniques, CKKSModuleAlloc, CKKSPlaintextOwned, DFTOutputFormat, DFTPlan, DFTType,
         EncapsulationKeysLayout, EncodedLut, EvalModPlan, EvalModType, EvalRoundPlus, SparseSecretEncapsulation,
     },
@@ -454,7 +454,7 @@ where
             .max(<Module<BE> as CKKSEncodingHostOps<BE, F>>::ckks_reim_tmp_bytes(module, n / 2));
         // Staged compilation: preparation runs with exactly its advertised scratch.
         let unprepared = with_scratch::<BE, _>(compile, |scratch| {
-            BootstrappingContext::<BE, F>::compile_unprepared(module, b.into(), &plan, scratch)
+            BootstrappingContextPrepared::<BE, F>::compile_unprepared(module, b.into(), &plan, scratch)
         })
         .unwrap();
         let ctx = with_scratch::<BE, _>(unprepared.prepare_tmp_bytes(module), |scratch| {
