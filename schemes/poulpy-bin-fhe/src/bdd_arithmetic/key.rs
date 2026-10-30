@@ -2,6 +2,7 @@ pub use crate::api::{BDDKeyEncryptSk, BDDKeyPreparedFactory};
 use crate::bdd_arithmetic::FheUintPreparedDebug;
 use crate::circuit_bootstrapping::CircuitBootstrappingKeyInfos;
 use crate::{
+    api::{BlindRotationKeyPreparedFactory, CircuitBootstrappingKeyPreparedFactory},
     bdd_arithmetic::{FheUint, UnsignedInteger},
     blind_rotation::BlindRotationAlgo,
     circuit_bootstrapping::{CircuitBootstrappingKey, CircuitBootstrappingKeyLayout, CircuitBootstrappingKeyPrepared},
@@ -10,6 +11,10 @@ use poulpy_hal::AlignedBuf;
 
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use poulpy_core::TransferInto;
+use poulpy_core::api::{
+    GGLWEToGGSWKeyPreparedFactory, GGSWPreparedFactory, GLWEAutomorphismKeyPreparedFactory, GLWESwitchingKeyPreparedFactory,
+    GLWEToLWEKeyPreparedFactory,
+};
 use poulpy_core::layouts::{
     GGLWEInfos, GLWESwitchingKey, GLWESwitchingKeyLayout, GLWESwitchingKeyPrepared, GetAutomorphismKey, ModuleCoreAlloc,
 };
@@ -240,34 +245,47 @@ where
     pub(crate) ks_lwe: GLWEToLWEKeyPrepared<D, BE>,
 }
 
+/// The circuit-bootstrapping layout of a key bundle, raw or prepared.
+fn cbt_layout(cbt: &impl CircuitBootstrappingKeyInfos) -> CircuitBootstrappingKeyLayout {
+    CircuitBootstrappingKeyLayout {
+        brk_layout: cbt.brk_infos(),
+        atk_layout: cbt.atk_infos(),
+        tsk_layout: cbt.tsk_infos(),
+    }
+}
+
+/// The extraction-key layout of a key bundle, raw or prepared.
+fn ks_lwe_layout(ks_lwe: &impl GGLWEInfos) -> GLWEToLWEKeyLayout {
+    GLWEToLWEKeyLayout {
+        n: ks_lwe.n(),
+        base2k: ks_lwe.base2k(),
+        dnum: ks_lwe.dnum(),
+        rank_in: ks_lwe.rank_in(),
+        k_aux: ks_lwe.k_aux(),
+    }
+}
+
 impl<D: Data, BRA: BlindRotationAlgo, BE: Backend> BDDKeyInfos for BDDKeyPrepared<D, BRA, BE> {
     fn cbt_infos(&self) -> CircuitBootstrappingKeyLayout {
-        CircuitBootstrappingKeyLayout {
-            brk_layout: self.cbt.brk_infos(),
-            atk_layout: self.cbt.atk_infos(),
-            tsk_layout: self.cbt.tsk_infos(),
-        }
+        cbt_layout(&self.cbt)
     }
     fn ks_glwe_infos(&self) -> Option<GLWESwitchingKeyLayout> {
-        self.ks_glwe.as_ref().map(|ks_glwe| GLWESwitchingKeyLayout {
-            n: ks_glwe.n(),
-            base2k: ks_glwe.base2k(),
-            dnum: ks_glwe.dnum(),
-            rank_in: ks_glwe.rank_in(),
-            rank_out: ks_glwe.rank_out(),
-            k_aux: ks_glwe.k_aux(),
-            k_digit: ks_glwe.k_digit(),
-            k_offset: ks_glwe.k_offset(),
-        })
+        self.ks_glwe.as_ref().map(|ks_glwe| ks_glwe.gglwe_layout().into())
     }
     fn ks_lwe_infos(&self) -> GLWEToLWEKeyLayout {
-        GLWEToLWEKeyLayout {
-            n: self.ks_lwe.n(),
-            base2k: self.ks_lwe.base2k(),
-            dnum: self.ks_lwe.dnum(),
-            rank_in: self.ks_lwe.rank_in(),
-            k_aux: self.ks_lwe.k_aux(),
-        }
+        ks_lwe_layout(&self.ks_lwe)
+    }
+}
+
+impl<D: Data, BRA: BlindRotationAlgo, W: ZnxWord> BDDKeyInfos for BDDKey<D, BRA, W> {
+    fn cbt_infos(&self) -> CircuitBootstrappingKeyLayout {
+        cbt_layout(&self.cbt)
+    }
+    fn ks_glwe_infos(&self) -> Option<GLWESwitchingKeyLayout> {
+        self.ks_glwe.as_ref().map(|ks_glwe| ks_glwe.gglwe_layout().into())
+    }
+    fn ks_lwe_infos(&self) -> GLWEToLWEKeyLayout {
+        ks_lwe_layout(&self.ks_lwe)
     }
 }
 
@@ -284,10 +302,17 @@ impl<BRA: BlindRotationAlgo, BE: Backend> GetAutomorphismKey<BE> for BDDKeyPrepa
 impl<BRA: BlindRotationAlgo, BE: Backend<ZnxWord = i64>> BDDKeyPrepared<BE::OwnedBuf, BRA, BE> {
     pub fn alloc_from_infos<M, A>(module: &M, infos: &A) -> Self
     where
-        M: BDDKeyPreparedFactory<BRA, BE>,
+        M: BDDKeyPreparedFactory<BRA, BE>
+            + CircuitBootstrappingKeyPreparedFactory<BRA, BE>
+            + BlindRotationKeyPreparedFactory<BRA, BE>
+            + GGSWPreparedFactory<BE>
+            + GGLWEToGGSWKeyPreparedFactory<BE>
+            + GLWEAutomorphismKeyPreparedFactory<BE>
+            + GLWESwitchingKeyPreparedFactory<BE>
+            + GLWEToLWEKeyPreparedFactory<BE>,
         A: BDDKeyInfos,
     {
-        module.alloc_bdd_key_from_infos(infos)
+        module.bdd_key_prepared_alloc_from_infos(infos)
     }
 }
 

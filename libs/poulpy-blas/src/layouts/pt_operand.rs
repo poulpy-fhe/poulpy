@@ -4,25 +4,18 @@ use std::marker::PhantomData;
 
 use num_traits::One;
 use poulpy_ckks::{
-    CKKSResult, CoeffsMeta,
-    api::{
-        CKKSEncodingOps, CKKSEncodingScalar, CKKSLinearTransformationOps, CKKSModuleInfos, CKKSMulOps, LinearTransformation,
-        LinearTransformationPrepared,
-    },
+    CoeffsMeta,
+    api::{CKKSModuleInfos, LinearTransformation, LinearTransformationPrepared},
     layouts::{CKKSModuleAlloc, CKKSPlaintextOwned, CKKSPreparedRight},
 };
 use poulpy_core::layouts::{Base2K, DiagonalArithmetic, GetDegree, LinearTransformationStrategy};
-use poulpy_hal::{
-    api::CnvPVecAlloc,
-    layouts::{Backend, Module, PrepareHint, ScratchArena},
-};
+use poulpy_hal::layouts::{Backend, PrepareHint};
 
 use super::{
     BlasPlan, BlasPtAlgorithm,
     context::assert_maps_fit,
-    encoding::{Encoded, MapLayout, Scheduled, encode_map_into, prepare_maps_into, real_map},
+    encoding::{Encoded, MapLayout, Scheduled, real_map},
     maps,
-    validate::assert_scratch,
 };
 
 /// The left side of a product by public matrices, `B` in `B A`: a [`BlasPtOperand`] on the left.
@@ -169,7 +162,7 @@ impl<S: BlasPtSide> BlasPtOperandInfos for BlasPtOperandLayout<S> {
 pub(crate) struct OperandMaps<T> {
     slots: usize,
     cols: usize,
-    terms: usize,
+    pub(crate) terms: usize,
     pub(crate) first: Option<T>,
     pub(crate) blocks: Vec<T>,
     pub(crate) blocks_rep: Option<Vec<T>>,
@@ -351,7 +344,7 @@ fn assert_fits<S>(layout: &BlasPtOperandLayout<S>) {
 }
 
 /// Panics unless `layout` is of `module`'s slots.
-fn assert_module_slots<S>(module: &impl CKKSModuleInfos, layout: &BlasPtOperandLayout<S>) {
+pub(crate) fn assert_module_slots<S>(module: &impl CKKSModuleInfos, layout: &BlasPtOperandLayout<S>) {
     assert!(
         layout.slots == module.ckks_max_slots(),
         "the operand's slots are not the module's"
@@ -398,7 +391,7 @@ fn block_entry<'a, F, S>(
 }
 
 /// Tau (sigma on the left) of block `t`'s public matrices, the slot vector the masked paths' plaintexts rotate.
-fn public_values<F, S: BlasPtSide>(
+pub(crate) fn public_values<F, S: BlasPtSide>(
     layout: &BlasPtOperandLayout<S>,
     entry: &impl Fn(usize, usize, usize) -> F,
     t: usize,
@@ -413,7 +406,7 @@ fn public_values<F, S: BlasPtSide>(
 
 /// The map every block of the encrypted grid goes through first under JKLS and the masked paths: sigma on the right, tau
 /// on the left.
-fn first_map<F, S>(layout: &BlasPtOperandLayout<S>) -> Option<Scheduled<F>>
+pub(crate) fn first_map<F, S>(layout: &BlasPtOperandLayout<S>) -> Option<Scheduled<F>>
 where
     F: DiagonalArithmetic + One + PartialEq,
     S: BlasPtSide,
@@ -433,7 +426,7 @@ where
 /// The map of block `t`, row-major, holding `entry`: `A -> A B` on the right and `A -> B A` on the left, of the first
 /// map's results under JKLS. Under the masked paths, the product by tau (sigma) of the block, its first term. Every
 /// block shares one schedule, so `strategy`, when given, skips its search.
-fn block_map<F, S>(
+pub(crate) fn block_map<F, S>(
     layout: &BlasPtOperandLayout<S>,
     entry: &impl Fn(usize, usize, usize) -> F,
     t: usize,
@@ -461,7 +454,7 @@ where
 
 /// The replicated-input map of block `t`, scheduled by `strategy`, the plan's `left_mul_strategy`, so that it rotates
 /// within the left product's key set.
-fn rep_map<F, S>(
+pub(crate) fn rep_map<F, S>(
     layout: &BlasPtOperandLayout<S>,
     entry: &impl Fn(usize, usize, usize) -> F,
     t: usize,
@@ -483,7 +476,7 @@ fn operand_layouts<S: BlasPtSide>(module: &impl CKKSModuleInfos, layout: &BlasPt
 
 /// [`operand_layouts`] split as a prepared operand holds them: the maps, and under `JklsStored` and `JklsGalois` the
 /// terms, taken out of the blocks, which are prepared as plaintexts.
-fn prepared_shapes<S: BlasPtSide>(
+pub(crate) fn prepared_shapes<S: BlasPtSide>(
     module: &impl CKKSModuleInfos,
     layout: &BlasPtOperandLayout<S>,
 ) -> (OperandMaps<MapLayout>, Vec<MapLayout>) {
@@ -524,137 +517,26 @@ where
     BlasPtOperandUnprepared { layout: *layout, maps }
 }
 
-/// [`super::BlasEncodingOps::blas_pt_operand_encode_into`].
-pub(crate) fn encode_into<BE, M, F, S>(
-    module: &M,
-    res: &mut BlasPtOperandUnprepared<BE, S>,
-    entry: impl Fn(usize, usize, usize) -> F,
-    scratch: &mut ScratchArena<'_, BE>,
-) -> CKKSResult<()>
+/// [`crate::api::BlasPtOperandPreparedFactory::blas_pt_operand_prepared_alloc_from_infos`].
+pub(crate) fn alloc_prepared<BE, M, S>(module: &M, layout: &BlasPtOperandLayout<S>) -> BlasPtOperand<BE, S>
 where
     BE: Backend,
-    M: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
-    F: DiagonalArithmetic + CKKSEncodingScalar,
+    M: CKKSModuleAlloc<BE> + GetDegree,
     S: BlasPtSide,
 {
-    let layout = res.layout;
-    assert_module_slots(module, &layout);
-    if let (Some(lt), Some(map)) = (&mut res.maps.first, first_map::<F, S>(&layout)) {
-        encode_map_into(module, lt, map, scratch)?;
+    let (shapes, terms) = prepared_shapes(module, layout);
+    let plaintexts = terms
+        .iter()
+        .map(|term| {
+            module.ckks_prepared_right_alloc_from_infos(&term.plaintext::<BE, M>(module, layout.base2k), PrepareHint::Reuse)
+        })
+        .collect();
+    let maps = shapes.map(|map| map.alloc_prepared::<BE, M>(module, layout.base2k));
+    BlasPtOperand {
+        layout: *layout,
+        maps,
+        plaintexts,
     }
-    if layout.plan.pt_algorithm().masked() {
-        let rotations = masked_rotations(layout.plan.log_d(), S::LEFT);
-        for (t, block) in res.maps.blocks.chunks_mut(res.maps.terms).enumerate() {
-            let values = public_values(&layout, &entry, t);
-            // `JklsGalois` stores one map per block, the first rotation, 0.
-            for (lt, &rotation) in block.iter_mut().zip(&rotations) {
-                let map = maps::slot_product(layout.slots, &values, rotation);
-                let strategy = layout.plan.strategy(&map, false);
-                encode_map_into(module, lt, real_map(map, strategy, layout.coeffs_meta), scratch)?;
-            }
-        }
-    } else {
-        let mut strategy = None;
-        for (t, lt) in res.maps.blocks.iter_mut().enumerate() {
-            let map = block_map(&layout, &entry, t, strategy);
-            strategy = Some(map.strategy);
-            encode_map_into(module, lt, map, scratch)?;
-        }
-    }
-    if let Some(blocks_rep) = &mut res.maps.blocks_rep {
-        let strategy = layout.plan.left_mul_strategy(layout.slots);
-        for (t, lt) in blocks_rep.iter_mut().enumerate() {
-            encode_map_into(module, lt, rep_map(&layout, &entry, t, strategy), scratch)?;
-        }
-    }
-    Ok(())
-}
-
-/// Allocation, sizing and preparation of prepared public operands.
-pub trait BlasPtOperandPreparedFactory<BE: Backend>:
-    CKKSModuleAlloc<BE> + CKKSLinearTransformationOps<BE> + CKKSMulOps<BE> + CnvPVecAlloc<BE> + GetDegree + Sized
-{
-    /// A prepared operand of `infos`, which must be of this module's slots. Under `JklsStored` and `JklsGalois` it holds
-    /// the first map and, per term, a right operand of poulpy-ckks's products at the layout of the term's plaintext.
-    ///
-    /// # Panics
-    ///
-    /// As [`super::BlasModuleAlloc::blas_pt_operand_alloc_from_infos`].
-    fn blas_pt_operand_prepared_alloc_from_infos<A: BlasPtOperandInfos>(&self, infos: &A) -> BlasPtOperand<BE, A::Side> {
-        let layout = infos.blas_pt_operand_layout();
-        let (shapes, terms) = prepared_shapes(self, &layout);
-        let plaintexts = terms
-            .iter()
-            .map(|term| {
-                self.ckks_prepared_right_alloc_from_infos(&term.plaintext::<BE, Self>(self, layout.base2k), PrepareHint::Reuse)
-            })
-            .collect();
-        let maps = shapes.map(|map| map.alloc_prepared::<BE, Self>(self, layout.base2k));
-        BlasPtOperand {
-            layout,
-            maps,
-            plaintexts,
-        }
-    }
-
-    /// Scratch bytes [`Self::blas_pt_operand_prepare`] needs for an operand of `infos`.
-    fn blas_pt_operand_prepare_tmp_bytes<A: BlasPtOperandInfos>(&self, infos: &A) -> usize {
-        let layout = infos.blas_pt_operand_layout();
-        let (shapes, terms) = prepared_shapes(self, &layout);
-        let terms = terms
-            .first()
-            .map(|term| self.ckks_prepare_tmp_bytes(&term.plaintext::<BE, Self>(self, layout.base2k)));
-        shapes
-            .iter()
-            .map(|map| map.prepare_tmp_bytes::<BE, Self>(self, layout.base2k))
-            .chain(terms)
-            .max()
-            .unwrap_or(0)
-    }
-
-    /// Prepares every map of `other` into `res`, in place, and under `JklsStored` and `JklsGalois` the one plaintext of
-    /// each term's map by `ckks_prepare_right_into`: preparing again after a new encoding refills `res` with no
-    /// allocation.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `res` and `other` were allocated from different layouts, if `scratch` holds less than
-    /// [`Self::blas_pt_operand_prepare_tmp_bytes`], or if a map of `other` has diagonals of more than one scale, width or
-    /// slot kind.
-    fn blas_pt_operand_prepare<S: BlasPtSide>(
-        &self,
-        res: &mut BlasPtOperand<BE, S>,
-        other: &BlasPtOperandUnprepared<BE, S>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) {
-        const OP: &str = "blas_pt_operand_prepare";
-        assert!(
-            res.layout == other.layout,
-            "the prepared operand was allocated for another layout"
-        );
-        if !res.layout.plan.pt_algorithm().masked() {
-            prepare_maps_into(self, OP, res.maps.iter_mut(), other.maps.iter(), scratch);
-            return;
-        }
-        prepare_maps_into(self, OP, res.maps.first.iter_mut(), other.maps.first.iter(), scratch);
-        let terms = other.maps.blocks.iter().map(|lt| {
-            lt.first_diagonal_plaintext()
-                .expect("every term of a masked operand holds one diagonal")
-        });
-        let bytes = terms.clone().map(|pt| self.ckks_prepare_tmp_bytes(pt)).max().unwrap_or(0);
-        assert_scratch(OP, bytes, scratch);
-        let prepared: CKKSResult<()> = res
-            .plaintexts
-            .iter_mut()
-            .zip(terms)
-            .try_for_each(|(dst, pt)| self.ckks_prepare_right_into(dst, pt, scratch));
-        prepared.expect("every term's plaintext has the layout its prepared operand was allocated for");
-    }
-}
-
-impl<BE: Backend> BlasPtOperandPreparedFactory<BE> for Module<BE> where
-    Module<BE>: CKKSModuleAlloc<BE> + CKKSLinearTransformationOps<BE> + CKKSMulOps<BE>
-{
 }
 
 #[cfg(test)]

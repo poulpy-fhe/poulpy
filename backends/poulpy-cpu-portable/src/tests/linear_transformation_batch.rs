@@ -44,12 +44,13 @@ poulpy_core::impl_gglwe_product_digits_strided_reference_full!(Batched);
 poulpy_core::impl_glwe_trace_derived_full!(Batched);
 
 unsafe impl poulpy_core::oep::LinearTransformationImpl for Batched {
-    fn glwe_eval_linear_transformation_tmp_bytes<R, A, B, K>(
+    fn glwe_eval_linear_transformation_tmp_bytes<R, A, B, K, T>(
         module: &::poulpy_hal::layouts::Module<Batched>,
         res: &R,
         a: &A,
         pt: &B,
         plan: &poulpy_core::layouts::LinearTransformationPlan,
+        tsk: &T,
         key: &K,
     ) -> usize
     where
@@ -57,18 +58,20 @@ unsafe impl poulpy_core::oep::LinearTransformationImpl for Batched {
         A: poulpy_core::layouts::GLWEInfos,
         B: poulpy_core::layouts::GLWEInfos,
         K: poulpy_core::layouts::GGLWEInfos,
+        T: poulpy_core::layouts::GGLWEInfos,
     {
         poulpy_core::reference::linear_transformation::glwe_eval_linear_transformation_tmp_bytes_reference(
-            module, res, a, pt, plan, key,
+            module, res, a, pt, plan, tsk, key,
         )
     }
 
-    fn glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes<R, A, B, K>(
+    fn glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes<R, A, B, K, T>(
         module: &::poulpy_hal::layouts::Module<Batched>,
         res: &R,
         a: &A,
         pt: &B,
         plan: &poulpy_core::layouts::LinearTransformationPlan,
+        tsk: &T,
         key: &K,
     ) -> usize
     where
@@ -76,18 +79,20 @@ unsafe impl poulpy_core::oep::LinearTransformationImpl for Batched {
         A: poulpy_core::layouts::GLWEInfos,
         B: poulpy_core::layouts::GLWEInfos,
         K: poulpy_core::layouts::GGLWEInfos,
+        T: poulpy_core::layouts::GGLWEInfos,
     {
         poulpy_core::reference::linear_transformation::glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes_reference(
-            module, res, a, pt, plan, key,
+            module, res, a, pt, plan, tsk, key,
         )
     }
 
-    fn glwe_eval_linear_transformation_sum_tmp_bytes<R, A, B, K>(
+    fn glwe_eval_linear_transformation_sum_tmp_bytes<R, A, B, K, T>(
         module: &::poulpy_hal::layouts::Module<Batched>,
         res: &R,
         a: &A,
         pt: &B,
         plan: &poulpy_core::layouts::LinearTransformationPlan,
+        tsk: &T,
         key: &K,
     ) -> usize
     where
@@ -95,9 +100,10 @@ unsafe impl poulpy_core::oep::LinearTransformationImpl for Batched {
         A: poulpy_core::layouts::GLWEInfos,
         B: poulpy_core::layouts::GLWEInfos,
         K: poulpy_core::layouts::GGLWEInfos,
+        T: poulpy_core::layouts::GGLWEInfos,
     {
         poulpy_core::reference::linear_transformation::glwe_eval_linear_transformation_sum_tmp_bytes_reference(
-            module, res, a, pt, plan, key,
+            module, res, a, pt, plan, tsk, key,
         )
     }
 
@@ -118,7 +124,7 @@ unsafe impl poulpy_core::oep::LinearTransformationImpl for Batched {
 
     fn glwe_prepare_linear_transformation_rhs_tmp_bytes<P>(module: &::poulpy_hal::layouts::Module<Batched>, pt_infos: &P) -> usize
     where
-        P: poulpy_core::layouts::LWEInfos,
+        P: poulpy_core::layouts::GLWEInfos,
     {
         poulpy_core::reference::linear_transformation::glwe_prepare_linear_transformation_rhs_tmp_bytes_reference(
             module, pt_infos,
@@ -166,7 +172,7 @@ unsafe impl poulpy_core::oep::LinearTransformationImpl for Batched {
     ) where
         R: poulpy_core::layouts::GLWEToBackendMut<Batched> + poulpy_core::layouts::GLWEInfos,
         P: poulpy_core::layouts::DiagonalProd<Batched>,
-        H: poulpy_core::layouts::GetAutomorphismKey<Batched>,
+        H: poulpy_core::layouts::GetAutomorphismKey<Batched> + poulpy_core::layouts::GetTensorKey<Batched>,
     {
         poulpy_core::reference::linear_transformation::glwe_eval_linear_transformation_into_reference(
             module, cnv_offset, res, lhs, rhs, keys, scratch,
@@ -183,7 +189,7 @@ unsafe impl poulpy_core::oep::LinearTransformationImpl for Batched {
         scratch: &mut ::poulpy_hal::layouts::ScratchArena<Batched>,
     ) where
         R: poulpy_core::layouts::GLWEToBackendMut<Batched> + poulpy_core::layouts::GLWEInfos,
-        H: poulpy_core::layouts::GetAutomorphismKey<Batched>,
+        H: poulpy_core::layouts::GetAutomorphismKey<Batched> + poulpy_core::layouts::GetTensorKey<Batched>,
     {
         poulpy_core::reference::linear_transformation::glwe_eval_linear_transformation_sum_into_reference(
             module, cnv_offset, res, babies, lts, keys, scratch,

@@ -42,17 +42,6 @@ poulpy_core::core_parity_test_suite! {
     }
 }
 
-#[cfg(feature = "enable-bin-fhe")]
-poulpy_bin_fhe::bin_fhe_backend_test_suite!(mod bin_fhe_fft64, backend = crate::FFT64Neon);
-
-#[cfg(feature = "enable-rayon")]
-#[cfg(feature = "enable-bin-fhe")]
-poulpy_bin_fhe::bin_fhe_backend_test_suite!(mod bin_fhe_fft64_rayon, backend = crate::FFT64NeonRayon);
-
-#[cfg(feature = "enable-rayon")]
-#[cfg(feature = "enable-bin-fhe")]
-poulpy_bin_fhe::bin_fhe_backend_test_suite!(mod bin_fhe_ntt4x30_rayon, backend = crate::NTT4x30NeonRayon);
-
 #[cfg(feature = "enable-rayon")]
 poulpy_core::core_parity_test_suite! {
     mod core_parity_fft64_rayon,

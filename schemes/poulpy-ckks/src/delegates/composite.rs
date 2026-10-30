@@ -2,7 +2,7 @@ use crate::CKKSResult as Result;
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef};
-use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena, VecZnxDftBackendMut};
 
 use crate::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
@@ -349,6 +349,77 @@ impl<BE: Backend + CKKSDotProductImpl> CKKSDotProductOps<BE> for Module<BE> {
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     {
         BE::ckks_dot_product_prepared_pt(self, dst, a, b, galois, scratch)
+    }
+
+    fn ckks_dot_product_prepared_pt_dft_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
+    where
+        R: CKKSCtBounds,
+        A: GLWEInfos,
+        P: GLWEInfos,
+    {
+        BE::ckks_dot_product_prepared_pt_dft_tmp_bytes(self, res, a, b)
+    }
+
+    fn ckks_dot_product_prepared_pt_dft<R>(
+        &self,
+        acc: &mut VecZnxDftBackendMut<'_, BE>,
+        res: &R,
+        a: &[&CKKSPreparedLeft<BE>],
+        b: &[&CKKSPreparedRight<BE>],
+        galois: &[i64],
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        R: CKKSCtBounds,
+    {
+        BE::ckks_dot_product_prepared_pt_dft(self, acc, res, a, b, galois, scratch)
+    }
+
+    fn ckks_dot_product_prepared_pt_dft_add_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
+    where
+        R: CKKSCtBounds,
+        A: GLWEInfos,
+        P: GLWEInfos,
+    {
+        BE::ckks_dot_product_prepared_pt_dft_add_tmp_bytes(self, res, a, b)
+    }
+
+    fn ckks_dot_product_prepared_pt_dft_add<R>(
+        &self,
+        acc: &mut VecZnxDftBackendMut<'_, BE>,
+        res: &R,
+        a: &[&CKKSPreparedLeft<BE>],
+        b: &[&CKKSPreparedRight<BE>],
+        galois: &[i64],
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        R: CKKSCtBounds,
+    {
+        BE::ckks_dot_product_prepared_pt_dft_add(self, acc, res, a, b, galois, scratch)
+    }
+
+    fn ckks_dot_product_prepared_pt_from_dft_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
+    where
+        R: CKKSCtBounds,
+        A: GLWEInfos,
+        P: GLWEInfos,
+    {
+        BE::ckks_dot_product_prepared_pt_from_dft_tmp_bytes(self, res, a, b)
+    }
+
+    fn ckks_dot_product_prepared_pt_from_dft<Dst>(
+        &self,
+        res: &mut Dst,
+        acc: &mut VecZnxDftBackendMut<'_, BE>,
+        a: &CKKSPreparedLeft<BE>,
+        b: &CKKSPreparedRight<BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+    {
+        BE::ckks_dot_product_prepared_pt_from_dft(self, res, acc, a, b, scratch)
     }
 
     fn ckks_dot_product_pt_vec<Dst: Data, D: Data, E>(

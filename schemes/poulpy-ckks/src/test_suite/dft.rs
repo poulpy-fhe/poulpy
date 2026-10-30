@@ -776,7 +776,7 @@ where
             .map(|d| d.plaintext.cnv().data().as_ptr())
             .collect()
     };
-    let infos = |m: &DFTMatrixPrepared<BE, Encode, Standard>| -> (String, Vec<(i64, i64, usize, bool)>) {
+    let infos = |m: &DFTMatrixPrepared<BE, Encode, Standard>| -> (String, Vec<(i64, i64, crate::GLWEPlaintextMeta)>) {
         let diagonals = m
             .factor_operands()
             .iter()
@@ -784,7 +784,7 @@ where
                 factor.giant_steps.iter().flat_map(|gs| {
                     gs.diagonals
                         .iter()
-                        .map(move |d| (gs.rot, d.baby, d.plaintext.log_scale(), d.plaintext.real_slots()))
+                        .map(move |d| (gs.rot, d.baby, d.plaintext.plaintext_meta()))
                 })
             })
             .collect();

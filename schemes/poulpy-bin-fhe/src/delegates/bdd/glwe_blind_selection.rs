@@ -18,17 +18,17 @@ where
     #[allow(clippy::too_many_arguments)]
     fn glwe_blind_selection<R, A, K>(
         &self,
+        bit_rsh: usize,
+        bit_mask: usize,
         res: &mut R,
         a: HashMap<usize, &mut A>,
         fhe_uint: &K,
-        bit_rsh: usize,
-        bit_mask: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
         K: GetGGSWBit<BE>,
     {
-        BE::glwe_blind_selection::<R, A, K>(self, res, a, fhe_uint, bit_rsh, bit_mask, scratch)
+        BE::glwe_blind_selection::<R, A, K>(self, bit_rsh, bit_mask, res, a, fhe_uint, scratch)
     }
 }

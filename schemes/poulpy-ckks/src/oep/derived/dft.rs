@@ -6,7 +6,9 @@ use crate::layouts::{
 use crate::oep::CKKSDFTImpl;
 use crate::{CKKSCtBounds, CKKSResult as Result, SetCKKSInfos, SlotsKind};
 use poulpy_core::DiagonalProd;
-use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, IntPolyInfos, LinearTransformation};
+use poulpy_core::layouts::{
+    GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, IntPolyInfos, LinearTransformation,
+};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 /// A prepared matrix of `dft`'s layout, allocated then prepared into from `dft`.
@@ -35,10 +37,10 @@ pub(crate) fn ckks_coeffs_to_slots_assign_derived<BE, P, Dst, H>(
 ) -> Result<()>
 where
     BE: Backend,
-    P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
+    P: DiagonalProd<BE> + LtDiagonalMeta,
     Module<BE>: crate::api::CKKSDFTOps<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    H: GetAutomorphismKey<BE>,
+    H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
 {
     module.ckks_dft_evaluate_assign(ct, dft, keys, scratch)
 }
@@ -54,10 +56,10 @@ pub(crate) fn ckks_slots_to_coeffs_assign_derived<BE, P, Dst, H>(
 ) -> Result<()>
 where
     BE: Backend,
-    P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
+    P: DiagonalProd<BE> + LtDiagonalMeta,
     Module<BE>: crate::api::CKKSDFTOps<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    H: GetAutomorphismKey<BE>,
+    H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
 {
     module.ckks_dft_evaluate_assign(ct, dft, keys, scratch)
 }
@@ -83,7 +85,7 @@ pub(crate) fn ckks_coeffs_to_slots_split_derived<BE, P, Dst, Src, H>(
 ) -> Result<()>
 where
     BE: Backend,
-    P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
+    P: DiagonalProd<BE> + LtDiagonalMeta,
     Module<BE>: crate::api::CKKSDFTOps<BE>
         + CKKSModuleAlloc<BE>
         + CKKSCopyOps<BE>
@@ -93,7 +95,7 @@ where
         + CKKSImagOps<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-    H: GetAutomorphismKey<BE>,
+    H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
 {
     // ct_real := z = Encode(ct_in).
     module.ckks_copy(ct_real, ct_in, scratch)?;
@@ -131,11 +133,11 @@ pub(crate) fn ckks_slots_to_coeffs_split_derived<BE, P, Dst, Src, H>(
 ) -> Result<()>
 where
     BE: Backend,
-    P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
+    P: DiagonalProd<BE> + LtDiagonalMeta,
     Module<BE>: crate::api::CKKSDFTOps<BE> + CKKSAddOps<BE> + CKKSImagOps<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-    H: GetAutomorphismKey<BE>,
+    H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
 {
     // op_out := ct_real + i·ct_imag, then Decode.
     module.ckks_mul_i_into(op_out, ct_imag, scratch)?;
@@ -161,7 +163,7 @@ pub(crate) fn ckks_coeffs_to_slots_repack_derived<BE, P, Dst, Src, H>(
 ) -> Result<()>
 where
     BE: Backend,
-    P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
+    P: DiagonalProd<BE> + LtDiagonalMeta,
     Module<BE>: crate::api::CKKSDFTOps<BE>
         + CKKSModuleAlloc<BE>
         + CKKSCopyOps<BE>
@@ -172,7 +174,7 @@ where
         + CKKSRotateOps<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-    H: GetAutomorphismKey<BE>,
+    H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
 {
     let slots = 1i64 << dft.plan().log_slots();
 
@@ -219,11 +221,11 @@ pub(crate) fn ckks_slots_to_coeffs_repack_derived<BE, P, Dst, Src, H>(
 ) -> Result<()>
 where
     BE: Backend,
-    P: DiagonalProd<BE> + LtDiagonalMeta + IntPolyInfos,
+    P: DiagonalProd<BE> + LtDiagonalMeta,
     Module<BE>: crate::api::CKKSDFTOps<BE> + CKKSCopyOps<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-    H: GetAutomorphismKey<BE>,
+    H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
 {
     module.ckks_copy(op_out, ct_in, scratch)?;
     module.ckks_dft_evaluate_assign(op_out, dft, keys, scratch)?;

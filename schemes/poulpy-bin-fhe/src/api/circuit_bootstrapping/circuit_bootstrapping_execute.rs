@@ -66,11 +66,11 @@ where
     /// LUT has `2^log_domain` entries).
     fn circuit_bootstrapping_execute_to_constant<R, L>(
         &self,
+        log_domain: usize,
+        extension_factor: usize,
         res: &mut R,
         lwe: &L,
         key: &CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE>,
-        log_domain: usize,
-        extension_factor: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGSWToBackendMut<BE> + GGSWAtViewRef<BE> + GGSWAtViewMut<BE> + GGSWInfos,
@@ -87,11 +87,11 @@ where
     fn circuit_bootstrapping_execute_to_exponent<R, L>(
         &self,
         log_gap_out: usize,
+        log_domain: usize,
+        extension_factor: usize,
         res: &mut R,
         lwe: &L,
         key: &CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE>,
-        log_domain: usize,
-        extension_factor: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGSWToBackendMut<BE> + GGSWAtViewRef<BE> + GGSWAtViewMut<BE> + GGSWInfos,
@@ -100,19 +100,19 @@ where
     /// Builds the constant-mode LUT on the host and uploads it once.
     fn circuit_bootstrapping_prepare_to_constant<R: GGSWInfos>(
         &self,
-        res_infos: &R,
-        key: &CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE>,
         log_domain: usize,
         extension_factor: usize,
+        res_infos: &R,
+        key: &CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE>,
     ) -> CircuitBootstrappingPlan<BE::OwnedBuf>;
     /// Builds the exponent-mode LUT on the host and uploads it once.
     fn circuit_bootstrapping_prepare_to_exponent<R: GGSWInfos>(
         &self,
         log_gap_out: usize,
-        res_infos: &R,
-        key: &CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE>,
         log_domain: usize,
         extension_factor: usize,
+        res_infos: &R,
+        key: &CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE>,
     ) -> CircuitBootstrappingPlan<BE::OwnedBuf>;
     /// Workspace for repeated execution of a prepared plan.
     fn circuit_bootstrapping_execute_prepared_tmp_bytes<A: CircuitBootstrappingKeyInfos>(
@@ -125,8 +125,8 @@ where
         &self,
         res: &mut R,
         lwe: &L,
-        key: &CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE>,
         plan: &CircuitBootstrappingPlan<BE::OwnedBuf>,
+        key: &CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGSWToBackendMut<BE> + GGSWAtViewRef<BE> + GGSWAtViewMut<BE> + GGSWInfos,

@@ -5,25 +5,19 @@ use std::collections::BTreeSet;
 
 use num_traits::One;
 use poulpy_ckks::{
-    CKKSResult, CoeffsMeta, GLWEPlaintextMeta, Scale,
-    api::{
-        CKKSEncodingOps, CKKSEncodingScalar, CKKSLinearTransformationOps, CKKSModuleInfos, LinearTransformation,
-        LinearTransformationPrepared, optimal_bsgs_giant_step,
-    },
+    CoeffsMeta, GLWEPlaintextMeta, Scale,
+    api::{CKKSModuleInfos, LinearTransformation, LinearTransformationPrepared, optimal_bsgs_giant_step},
     layouts::{CKKSModuleAlloc, CKKSPlaintextOwned},
 };
 use poulpy_core::layouts::{
     Base2K, Degree, DiagonalArithmetic, Diagonals, GetDegree, LinearTransformationLayout, LinearTransformationStrategy,
 };
-use poulpy_hal::{
-    api::CnvPVecAlloc,
-    layouts::{Backend, Module, ScratchArena, galois_elements_from_rotations},
-};
+use poulpy_hal::layouts::{Backend, galois_elements_from_rotations};
 
 use super::{
     BlasGridInfos,
     ciphertext::grid_batch_at,
-    encoding::{DiagonalShape, Encoded, Scheduled, encode_map_into, prepare_maps_into, real_map, shape},
+    encoding::{DiagonalShape, Encoded, Scheduled, real_map, shape},
     maps,
 };
 
@@ -310,7 +304,7 @@ const FAMILIES: usize = 9;
 
 impl MapId {
     /// Every map of a context of `plan`, in the order [`ContextMaps`] holds them.
-    fn all(plan: BlasPlan) -> impl Iterator<Item = Self> {
+    pub(crate) fn all(plan: BlasPlan) -> impl Iterator<Item = Self> {
         let (log_d, families) = (plan.log_d(), family_count(plan));
         let shifts = (0..families).flat_map(move |family| (1..1usize << log_d).map(move |k| Self::Shift(family, k)));
         (0..SINGLES).map(Self::Single).chain(shifts)
@@ -711,7 +705,7 @@ pub(crate) fn assert_maps_fit(owner: &str, log_d: usize, slots: usize, coeffs_me
 }
 
 /// Panics unless `layout` fits, as [`assert_fits`] states, and is of `module`'s ring.
-fn assert_fits_module(module: &(impl GetDegree + CKKSModuleInfos), layout: &BlasContextLayout) {
+pub(crate) fn assert_fits_module(module: &(impl GetDegree + CKKSModuleInfos), layout: &BlasContextLayout) {
     assert_fits(layout);
     assert!(
         layout.n == module.ring_degree() && layout.slots == module.ckks_max_slots(),
@@ -748,84 +742,19 @@ where
     BlasContextUnprepared { layout: *layout, maps }
 }
 
-/// [`super::BlasEncodingOps::blas_context_encode_into`].
-pub(crate) fn encode_into<BE, M, F>(
-    module: &M,
-    res: &mut BlasContextUnprepared<BE>,
-    scratch: &mut ScratchArena<'_, BE>,
-) -> CKKSResult<()>
+/// [`crate::api::BlasContextPreparedFactory::blas_context_prepared_alloc_from_infos`].
+pub(crate) fn alloc_prepared<BE, M>(module: &M, layout: &BlasContextLayout) -> BlasContext<BE>
 where
     BE: Backend,
-    M: CKKSModuleAlloc<BE> + GetDegree + CKKSEncodingOps<BE, F>,
-    F: DiagonalArithmetic + CKKSEncodingScalar,
+    M: CKKSModuleAlloc<BE> + GetDegree,
 {
-    let layout = res.layout;
-    assert_fits_module(module, &layout);
-    for (id, lt) in MapId::all(layout.plan).zip(res.maps.iter_mut()) {
-        encode_map_into(module, lt, context_map::<F>(&layout, id), scratch)?;
-    }
-    Ok(())
-}
-
-/// Allocation, sizing and preparation of prepared contexts.
-pub trait BlasContextPreparedFactory<BE: Backend>:
-    CKKSModuleAlloc<BE> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE> + GetDegree + Sized
-{
-    /// A prepared context of `infos`, which must be of this module's ring.
-    ///
-    /// # Panics
-    ///
-    /// As [`super::BlasModuleAlloc::blas_context_alloc_from_infos`].
-    fn blas_context_prepared_alloc_from_infos<A: BlasContextInfos>(&self, infos: &A) -> BlasContext<BE> {
-        let layout = infos.blas_context_layout();
-        assert_fits_module(self, &layout);
-        let maps = ContextMaps::build(layout.plan, layout.slots, |id| {
-            context_map::<f64>(&layout, id)
-                .layout()
-                .alloc_prepared::<BE, Self>(self, layout.base2k)
-        });
-        BlasContext { layout, maps }
-    }
-
-    /// Scratch bytes [`Self::blas_context_prepare`] needs for a context of `infos`.
-    fn blas_context_prepare_tmp_bytes<A: BlasContextInfos>(&self, infos: &A) -> usize {
-        let layout = infos.blas_context_layout();
-        assert_fits_module(self, &layout);
-        MapId::all(layout.plan)
-            .map(|id| {
-                context_map::<f64>(&layout, id)
-                    .layout()
-                    .prepare_tmp_bytes::<BE, Self>(self, layout.base2k)
-            })
-            .max()
-            .unwrap_or(0)
-    }
-
-    /// Prepares every map of `other` into `res`, in place: preparing again after a new encoding refills `res` with no
-    /// allocation.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `res` and `other` were allocated from different layouts, if `scratch` holds less than
-    /// [`Self::blas_context_prepare_tmp_bytes`], or if a map of `other` has diagonals of more than one scale, width or
-    /// slot kind.
-    fn blas_context_prepare(
-        &self,
-        res: &mut BlasContext<BE>,
-        other: &BlasContextUnprepared<BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) {
-        assert!(
-            res.layout == other.layout,
-            "the prepared context was allocated for another layout"
-        );
-        prepare_maps_into(self, "blas_context_prepare", res.maps.iter_mut(), other.maps.iter(), scratch);
-    }
-}
-
-impl<BE: Backend> BlasContextPreparedFactory<BE> for Module<BE> where
-    Module<BE>: CKKSModuleAlloc<BE> + CKKSLinearTransformationOps<BE>
-{
+    assert_fits_module(module, layout);
+    let maps = ContextMaps::build(layout.plan, layout.slots, |id| {
+        context_map::<f64>(layout, id)
+            .layout()
+            .alloc_prepared::<BE, M>(module, layout.base2k)
+    });
+    BlasContext { layout: *layout, maps }
 }
 
 /// Galois elements `blas_sum` needs on a grid of layout `infos` on a ring of `cyclotomic_order`: at its recorded batch,
@@ -884,7 +813,7 @@ mod tests {
     use super::*;
     use crate::layouts::{BlasLayout, BlasModuleAlloc, replicated};
     use poulpy_ckks::{CKKSInfos, SetGLWEPlaintextInfos};
-    use poulpy_hal::layouts::{CyclotomicOrder, HostBytesBackend, Standard};
+    use poulpy_hal::layouts::{CyclotomicOrder, HostBytesBackend, Module, Standard};
 
     #[test]
     fn contexts_allocate_every_map_of_their_layout() {

@@ -8,7 +8,7 @@ use crate::{
 };
 use poulpy_core::layouts::{
     GGLWEInfos, GGLWEPreparedToBackendRef, GLWECIEmbedKeyPrepared, GLWECITraceKeyPrepared, GLWEToBackendMut, GLWEToBackendRef,
-    GetAutomorphismKey,
+    GetAutomorphismKey, GetTensorKey,
 };
 use poulpy_core::{GLWECIEmbed, GLWECITrace, GLWECopy, GLWEKeyswitch, GLWEShift, GLWETrace};
 use poulpy_hal::layouts::{Backend, ConjugateInvariant, Data, Module, ScratchArena, Standard};
@@ -69,7 +69,7 @@ pub trait CKKSReplicatedOps<BE: Backend> {
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: GetAutomorphismKey<BE>;
+        H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
 
     /// # Errors
     /// Incompatible source and destination degrees or ranks, or a workspace
@@ -87,7 +87,7 @@ pub trait CKKSReplicatedOps<BE: Backend> {
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: GetAutomorphismKey<BE>;
+        H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
 }
 
 /// Bootstrapping of a replicated slot layout of `k` values, `R | k`, in
@@ -179,7 +179,7 @@ where
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: GetAutomorphismKey<BE>,
+        H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
     {
         crate::reference::replicated::ckks_to_replicated_into(self, dst, src, conv, workspace, keys, scratch)
     }
@@ -196,7 +196,7 @@ where
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: GetAutomorphismKey<BE>,
+        H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
     {
         crate::reference::replicated::ckks_from_replicated_into(self, dst, src, conv, workspace, keys, scratch)
     }

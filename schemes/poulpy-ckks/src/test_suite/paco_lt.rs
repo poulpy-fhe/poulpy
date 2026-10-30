@@ -47,7 +47,7 @@ use crate::{
         CKKSTestParams,
         helpers::{
             TestContextBackend, TestContextModule, TestScalar, alloc_scratch, ckks_encrypt, gen_atk, gen_sk_with_raw,
-            test_vector_1,
+            pt_streamed_eval_tmp_bytes, test_vector_1,
         },
     },
 };
@@ -176,7 +176,7 @@ where
         let bytes = BE::scratch_aligned(poulpy_core::GLWEBytesOf::glwe_bytes_of_from_infos(&module, &ct))
             + module
                 .ckks_prepare_linear_transformation_baby_steps_tmp_bytes(&ct, &lt.index(), &params.atk_layout())
-                .max(module.ckks_eval_linear_transformation_streamed_tmp_bytes(&ct, &lt.index(), &params.atk_layout()));
+                .max(pt_streamed_eval_tmp_bytes(&module, &ct, &lt.index(), &params.atk_layout()));
         with_scratch::<BE, _>(bytes, |s| {
             module.ckks_eval_linear_transformation_self_assign(&mut ct, lt, &atks, s)
         })

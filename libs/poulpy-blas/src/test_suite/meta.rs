@@ -29,18 +29,16 @@ use super::helpers::{
     product_layout, pt_operand, relabel, to_f, want_operand_infos,
 };
 use crate::{
-    api::{BlasMatInterOps, BlasMatIntraOps, BlasMatMulOps},
+    api::{BlasEncodingOps, BlasMatInterOps, BlasMatIntraOps, BlasMatMulOps},
     layouts::{
         BlasCiphertext, BlasCiphertextOwned, BlasContextInfos, BlasGridInfos, BlasLayout, BlasModuleAlloc, BlasPlan, Left, Right,
-        blas_matmul_left_operand_layout, blas_matmul_left_term_layout, blas_matmul_right_operand_layout,
-        blas_matmul_right_term_layout, blas_sum_cols_output_layout, blas_sum_rows_output_layout, replicated, sum_galois_elements,
+        blas_matmul_left_operand_layout, blas_matmul_left_term_layout, blas_matmul_output_layout,
+        blas_matmul_prepared_output_layout, blas_matmul_pt_left_output_layout, blas_matmul_pt_right_output_layout,
+        blas_matmul_right_operand_layout, blas_matmul_right_term_layout, blas_rotate_cols_output_layout,
+        blas_rotate_output_layout, blas_rotate_rows_output_layout, blas_sum_cols_output_layout, blas_sum_output_layout,
+        blas_sum_rows_output_layout, blas_transpose_output_layout, replicated, sum_galois_elements,
     },
     oep::BlasImpl,
-    reference::{
-        blas_matmul_output_layout, blas_matmul_prepared_output_layout, blas_matmul_pt_left_output_layout,
-        blas_matmul_pt_right_output_layout, blas_rotate_cols_output_layout, blas_rotate_output_layout,
-        blas_rotate_rows_output_layout, blas_sum_output_layout, blas_transpose_output_layout,
-    },
 };
 
 /// Every per-matrix map, the matrix-slot rotation and the sum give their result the metadata [`copied_layout`] or
@@ -63,7 +61,11 @@ pub fn test_blas_result_meta<BE, F, E>(
     log_d: usize,
 ) where
     BE: TestContextBackend<Ring = Standard> + BlasImpl,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + BlasEncodingOps<BE, F>
+        + CKKSLinearTransformationOps<BE>
+        + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
@@ -86,7 +88,6 @@ pub fn test_blas_result_meta<BE, F, E>(
         |m, r, c| F::from_f64(entry(m, r, c)).unwrap(),
         params.base2k.into(),
         params.prec().into(),
-        &mut scratch.borrow(),
     );
     // `1 x 2` blocks on the left, whose product takes the two block rows of a column.
     let pt_left = pt_operand::<BE, F, Left>(
@@ -98,7 +99,6 @@ pub fn test_blas_result_meta<BE, F, E>(
         |m, r, c| F::from_f64(entry(m, r, c)).unwrap(),
         params.base2k.into(),
         params.prec().into(),
-        &mut scratch.borrow(),
     );
     // Grids encrypted from `grid` and labelled `log_sparsity`: `grid` holds `lanes >> log_sparsity` matrices, each
     // repeated over the slots, and the grid records them.
@@ -223,21 +223,21 @@ pub fn test_blas_result_meta<BE, F, E>(
                 let rows_layout = if rotates { copied_layout(a, rows, cols, k) } else { layout };
                 let mut res = alloc(rows, cols, stale);
                 module
-                    .blas_rotate_rows(&mut res, a, shift, &ctx, &keys, &mut op_scratch.borrow())
+                    .blas_rotate_rows(shift, &mut res, a, &ctx, &keys, &mut op_scratch.borrow())
                     .unwrap();
                 let op = label(&format!("rotate_rows {shape}"));
                 assert_eq!(
-                    blas_rotate_rows_output_layout(&res, a, shift, &ctx),
+                    blas_rotate_rows_output_layout(shift, &res, a, &ctx),
                     rows_layout,
                     "{op}: query"
                 );
                 check(&op, &res, &model.rotate_rows(shift), &rows_layout, &mut scratch.borrow());
                 let mut res = alloc(rows, cols, stale);
                 module
-                    .blas_rotate_cols(&mut res, a, shift, &ctx, &keys, &mut op_scratch.borrow())
+                    .blas_rotate_cols(shift, &mut res, a, &ctx, &keys, &mut op_scratch.borrow())
                     .unwrap();
                 let op = label(&format!("rotate_cols {shape}"));
-                assert_eq!(blas_rotate_cols_output_layout(&res, a, shift, &ctx), layout, "{op}: query");
+                assert_eq!(blas_rotate_cols_output_layout(shift, &res, a, &ctx), layout, "{op}: query");
                 check(&op, &res, &model.rotate_cols(shift), &layout, &mut scratch.borrow());
             }
         }
@@ -324,7 +324,7 @@ pub fn test_blas_result_meta<BE, F, E>(
         );
         check(&label("matmul_pt_left"), &res, &want_left, &layout, &mut scratch.borrow());
         let mut res = alloc(1, 2, stale);
-        module.blas_rotate(&mut res, row, 1, &keys, &mut op_scratch.borrow()).unwrap();
+        module.blas_rotate(1, &mut res, row, &keys, &mut op_scratch.borrow()).unwrap();
         let layout = copied_layout(row, 1, 2, k);
         assert_eq!(blas_rotate_output_layout(&res, row), layout, "{}", label("rotate query"));
         check(
@@ -409,7 +409,11 @@ pub fn test_blas_batch_record<BE, F, E>(
     log_d: usize,
 ) where
     BE: TestContextBackend<Ring = Standard> + BlasImpl,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + BlasEncodingOps<BE, F>
+        + CKKSLinearTransformationOps<BE>
+        + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,

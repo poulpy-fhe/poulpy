@@ -31,7 +31,6 @@ poulpy_core::impl_ggsw_external_product_derived_full!(OverrideBackend);
 poulpy_core::impl_ggsw_keyswitch_derived_full!(OverrideBackend);
 poulpy_core::impl_automorphism_reference_full!(OverrideBackend);
 poulpy_core::impl_glwe_external_product_reference_full!(OverrideBackend);
-poulpy_core::impl_glwe_keyswitch_reference_full!(OverrideBackend);
 poulpy_core::impl_glwe_pack_derived_full!(OverrideBackend);
 poulpy_core::impl_glwe_trace_derived_full!(OverrideBackend);
 poulpy_core::impl_linear_transformation_reference_full!(OverrideBackend);
@@ -65,26 +64,127 @@ unsafe impl poulpy_core::oep::GLWECopyImpl for OverrideBackend {
         assert!(marker.iter().all(|&x| x == 0x39));
     }
 }
-poulpy_bin_fhe::impl_bin_fhe_blind_rotation_key_encrypt_reference!(OverrideBackend);
-poulpy_bin_fhe::impl_bin_fhe_blind_rotation_key_compressed_reference!(OverrideBackend);
-poulpy_bin_fhe::impl_bin_fhe_blind_rotation_key_decompress_reference!(OverrideBackend);
-poulpy_bin_fhe::impl_bin_fhe_blind_rotation_key_compressed_factory_reference!(OverrideBackend);
-poulpy_bin_fhe::impl_bin_fhe_lookup_table_reference!(OverrideBackend);
-poulpy_bin_fhe::impl_bin_fhe_circuit_bootstrapping_key_encrypt_sk_reference!(OverrideBackend, CGGI);
-poulpy_bin_fhe::impl_bin_fhe_circuit_bootstrapping_key_prepared_reference!(OverrideBackend, CGGI);
+const KEYSWITCH_PER_LIMB: usize = 4096;
+/// A key switch whose workspace grows with the source's allocated capacity, as the contract allows.
+unsafe impl poulpy_core::oep::GLWEKeyswitchImpl for OverrideBackend {
+    fn glwe_keyswitch_tmp_bytes<R: GLWEInfos, A: GLWEInfos, B: GGLWEInfos>(
+        module: &Module<Self>,
+        res_infos: &R,
+        a_infos: &A,
+        key_infos: &B,
+    ) -> usize {
+        KEYSWITCH_PER_LIMB * a_infos.max_size()
+            + poulpy_core::reference::keyswitching::glwe::glwe_keyswitch_tmp_bytes_reference(
+                module, res_infos, a_infos, key_infos,
+            )
+    }
+
+    fn glwe_keyswitch<R, A>(
+        module: &Module<Self>,
+        res: &mut R,
+        a: &A,
+        key: &prepared::GGLWEPreparedBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        R: GLWEToBackendMut<Self> + GLWEInfos,
+        A: GLWEToBackendRef<Self> + GLWEInfos,
+    {
+        let bytes = KEYSWITCH_PER_LIMB * a.max_size();
+        let (mut marker, mut rest) = scratch.borrow().take_region(bytes);
+        Self::copy_host_to_view(&mut marker, &vec![0x3a; bytes]);
+        poulpy_core::reference::keyswitching::glwe::glwe_keyswitch_reference(module, res, a, key, &mut rest);
+        assert!(marker.iter().all(|&x| x == 0x3a));
+    }
+
+    fn glwe_keyswitch_assign<R>(
+        module: &Module<Self>,
+        res: &mut R,
+        key: &prepared::GGLWEPreparedBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        R: GLWEToBackendMut<Self> + GLWEInfos,
+    {
+        poulpy_core::reference::keyswitching::glwe::glwe_keyswitch_assign_reference::<Self, _, _>(module, res, key, scratch)
+    }
+
+    fn glwe_keyswitch_dft_tmp_bytes<A: GLWEInfos, K: GGLWEInfos>(
+        module: &Module<Self>,
+        res_size: usize,
+        a_infos: &A,
+        key_infos: &K,
+    ) -> usize {
+        poulpy_core::reference::keyswitching::glwe::glwe_keyswitch_dft_tmp_bytes_reference::<Self, _, _, _>(
+            module, res_size, a_infos, key_infos,
+        )
+    }
+
+    fn glwe_keyswitch_dft<A>(
+        module: &Module<Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self>,
+        a: &A,
+        key: &prepared::GGLWEPreparedBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        A: GLWEToBackendRef<Self> + GLWEInfos,
+    {
+        poulpy_core::reference::keyswitching::glwe::glwe_keyswitch_dft_reference::<Self, _, _>(module, res, a, key, scratch)
+    }
+}
+
+#[test]
+fn capacity_sensitive_keyswitch_is_covered_by_the_extraction_budget() {
+    use poulpy_bin_fhe::bdd_arithmetic::FheUint;
+    use poulpy_core::{GLWESwitchingKeyPreparedFactory, GLWEToLWEKeyPreparedFactory};
+
+    let module = Module::<OverrideBackend>::new(32);
+    let ks_layout = GLWESwitchingKeyLayout {
+        n: 32usize.into(),
+        base2k: 12usize.into(),
+        rank_in: 1usize.into(),
+        rank_out: 1usize.into(),
+        dnum: 1usize.into(),
+        k_aux: 12usize.into(),
+        k_digit: 12usize.into(),
+        k_offset: 0usize.into(),
+    };
+    let ks_glwe = module.glwe_switching_key_prepared_alloc_from_infos(&ks_layout);
+    let ks_lwe = module.glwe_to_lwe_key_prepared_alloc_from_infos(&ks_layout);
+    let ks_glwe = prepared::GGLWEPreparedToBackendRef::to_backend_ref(&ks_glwe);
+    let ks_lwe = prepared::GGLWEPreparedToBackendRef::to_backend_ref(&ks_lwe);
+    // Three limbs, narrowed to the one limb the keys decompose: the view keeps all three.
+    let a = FheUint::<_, u8, i64>::alloc(&module, 12usize.into(), 36usize.into(), 1usize.into());
+    let mut lwe = module.lwe_alloc_from_infos(&LWELayout {
+        n: 32usize.into(),
+        base2k: 12usize.into(),
+        k: 12usize.into(),
+    });
+    for ks_glwe in [Some(&ks_glwe), None] {
+        let bytes = FheUint::<poulpy_hal::AlignedBuf, u8, i64>::get_bit_lwe_tmp_bytes(&module, &lwe, &a, ks_glwe, &ks_lwe);
+        poulpy_core::test_suite::with_scratch::<OverrideBackend, _>(bytes, |s| {
+            a.get_bit_lwe(&module, 0, &mut lwe, ks_glwe, &ks_lwe, s)
+        });
+    }
+}
+
+poulpy_bin_fhe::impl_blind_rotation_key_encrypt_sk_reference_full!(OverrideBackend);
+poulpy_bin_fhe::impl_blind_rotation_key_compressed_encrypt_sk_reference_full!(OverrideBackend);
+poulpy_bin_fhe::impl_blind_rotation_key_decompress_reference_full!(OverrideBackend);
+poulpy_bin_fhe::impl_lookup_table_factory_reference_full!(OverrideBackend);
+poulpy_bin_fhe::impl_circuit_bootstrapping_key_encrypt_sk_reference_full!(OverrideBackend, CGGI);
+poulpy_bin_fhe::impl_circuit_bootstrapping_key_prepared_reference_full!(OverrideBackend, CGGI);
 // Select BDD peers independently, keeping Cswap available for an override.
-poulpy_bin_fhe::impl_bin_fhe_execute_bdd_circuit_reference!(OverrideBackend);
-poulpy_bin_fhe::impl_bin_fhe_cmux_reference!(OverrideBackend);
-poulpy_bin_fhe::impl_bin_fhe_ggsw_blind_rotation_reference!(OverrideBackend);
-poulpy_bin_fhe::impl_bin_fhe_glwe_blind_rotation_reference!(OverrideBackend);
-poulpy_bin_fhe::impl_bin_fhe_glwe_blind_selection_reference!(OverrideBackend);
-poulpy_bin_fhe::impl_bin_fhe_glwe_blind_retrieval_derived!(OverrideBackend);
-poulpy_bin_fhe::impl_bin_fhe_execute_bdd_circuit_1w_to_1w_reference!(OverrideBackend);
-poulpy_bin_fhe::impl_bin_fhe_execute_bdd_circuit_2w_to_1w_reference!(OverrideBackend);
-poulpy_bin_fhe::impl_bin_fhe_fhe_uint_prepared_encrypt_sk_reference!(OverrideBackend);
-poulpy_bin_fhe::impl_bin_fhe_fhe_uint_prepare_reference!(OverrideBackend, CGGI);
-poulpy_bin_fhe::impl_bin_fhe_bdd_key_encrypt_sk_reference!(OverrideBackend, CGGI);
-poulpy_bin_fhe::impl_bin_fhe_bdd_key_prepared_reference!(OverrideBackend, CGGI);
+poulpy_bin_fhe::impl_execute_bdd_circuit_reference_full!(OverrideBackend);
+poulpy_bin_fhe::impl_cmux_reference_full!(OverrideBackend);
+poulpy_bin_fhe::impl_ggsw_blind_rotation_reference_full!(OverrideBackend);
+poulpy_bin_fhe::impl_glwe_blind_rotation_reference_full!(OverrideBackend);
+poulpy_bin_fhe::impl_glwe_blind_selection_reference_full!(OverrideBackend);
+poulpy_bin_fhe::impl_glwe_blind_retrieval_derived_full!(OverrideBackend);
+poulpy_bin_fhe::impl_execute_bdd_circuit_1w_to_1w_reference_full!(OverrideBackend);
+poulpy_bin_fhe::impl_execute_bdd_circuit_2w_to_1w_reference_full!(OverrideBackend);
+poulpy_bin_fhe::impl_fhe_uint_prepared_encrypt_sk_reference_full!(OverrideBackend);
+poulpy_bin_fhe::impl_fhe_uint_prepare_reference_full!(OverrideBackend, CGGI);
+poulpy_bin_fhe::impl_bdd_key_encrypt_sk_reference_full!(OverrideBackend, CGGI);
+poulpy_bin_fhe::impl_bdd_key_prepared_factory_reference_full!(OverrideBackend, CGGI);
 
 thread_local! {
     static CSWAP_CALLS: Cell<usize> = const { Cell::new(0) };
@@ -135,8 +235,8 @@ thread_local! {
     static STAGING_CALLS: Cell<usize> = const { Cell::new(0) };
 }
 const EXTRA: usize = 256;
-poulpy_bin_fhe::impl_bin_fhe_blind_rotation_key_prepared_reference!(OverrideBackend);
-poulpy_bin_fhe::impl_bin_fhe_blind_rotation_mod_switch_reference!(OverrideBackend);
+poulpy_bin_fhe::impl_blind_rotation_key_prepared_reference_full!(OverrideBackend);
+poulpy_bin_fhe::impl_blind_rotation_mod_switch_reference_full!(OverrideBackend);
 unsafe impl BlindRotationExecuteImpl<CGGI> for OverrideBackend {
     fn blind_rotation_execute_tmp_bytes<G: GLWEInfos, K: BlindRotationKeyInfos>(
         module: &Module<Self>,
@@ -147,7 +247,7 @@ unsafe impl BlindRotationExecuteImpl<CGGI> for OverrideBackend {
     ) -> usize {
         QUERY_CALLS.set(QUERY_CALLS.get() + 1);
         EXTRA
-            + poulpy_bin_fhe::reference::blind_rotation::blind_rotation_execute_tmp_bytes_ref(
+            + poulpy_bin_fhe::reference::blind_rotation::blind_rotation_execute_tmp_bytes_reference(
                 module, block_size, extension, output, key,
             )
     }
@@ -162,7 +262,7 @@ unsafe impl BlindRotationExecuteImpl<CGGI> for OverrideBackend {
         EXECUTION_CALLS.set(EXECUTION_CALLS.get() + 1);
         let (mut marker, mut rest) = scratch.borrow().take_region(EXTRA);
         Self::copy_host_to_view(&mut marker, &[0x5A; EXTRA]);
-        poulpy_bin_fhe::reference::blind_rotation::blind_rotation_execute_ref(module, res, lwe, lut, key, &mut rest);
+        poulpy_bin_fhe::reference::blind_rotation::blind_rotation_execute_reference(module, res, lwe, lut, key, &mut rest);
         let mut marker_after = [0u8; EXTRA];
         Self::copy_view_to_host(&Self::view_ref_mut(&marker), &mut marker_after);
         assert_eq!(marker_after, [0x5A; EXTRA]);
@@ -188,7 +288,8 @@ fn independent_blind_rotation_override_and_query_preserve_parity() {
         rank: 1usize.into(),
     };
     let before = QUERY_CALLS.get();
-    let plain = poulpy_bin_fhe::reference::blind_rotation::blind_rotation_execute_tmp_bytes_ref(&tested, 1, 1, &layout, &layout);
+    let plain =
+        poulpy_bin_fhe::reference::blind_rotation::blind_rotation_execute_tmp_bytes_reference(&tested, 1, 1, &layout, &layout);
     assert_eq!(QUERY_CALLS.get(), before);
     assert_eq!(tested.blind_rotation_execute_tmp_bytes(1, 1, &layout, &layout), plain + EXTRA);
 }
@@ -335,14 +436,14 @@ unsafe impl HalModuleImpl for OpaqueBackend<'_> {
 }
 unsafe impl BlindRotationModSwitchImpl for OpaqueBackend<'_> {
     fn blind_rotation_mod_switch<L: LWEToBackendRef<Self> + LWEInfos>(
-        _module: &Module<Self>,
+        module: &Module<Self>,
         modulus: usize,
+        direction: LookUpTableRotationDirection,
         res: &mut [i64],
         lwe: &L,
-        direction: LookUpTableRotationDirection,
     ) {
         STAGING_CALLS.set(STAGING_CALLS.get() + 1);
-        poulpy_bin_fhe::reference::blind_rotation::mod_switch_2n_ref::<Self, _>(modulus, res, lwe, direction);
+        poulpy_bin_fhe::reference::blind_rotation::blind_rotation_mod_switch_reference(module, modulus, direction, res, lwe);
     }
 }
 
@@ -390,27 +491,25 @@ const _: () = {
         cmux_assign_neg_reference(module, res, input, &selector, scratch);
 
         module.glwe_blind_rotation_tmp_bytes(res, input, &selector);
-        module.glwe_blind_rotation_assign_tmp_bytes(res, &selector);
-        module.glwe_blind_rotation(res, input, value, true, 0, 1, 0, scratch);
-        module.glwe_blind_rotation_assign(res, value, true, 0, 1, 0, scratch);
+        module.glwe_blind_rotation(true, 0, 1, 0, res, input, value, scratch);
+        module.glwe_blind_rotation_assign(true, 0, 1, 0, res, value, scratch);
         glwe_blind_rotation_tmp_bytes_reference(module, res, input, &selector);
-        glwe_blind_rotation_assign_tmp_bytes_reference(module, res, &selector);
-        glwe_blind_rotation_reference(module, res, input, value, true, 0, 1, 0, scratch);
-        glwe_blind_rotation_assign_reference(module, res, value, true, 0, 1, 0, scratch);
+        glwe_blind_rotation_reference(module, true, 0, 1, 0, res, input, value, scratch);
+        glwe_blind_rotation_assign_reference(module, true, 0, 1, 0, res, value, scratch);
 
         let input_infos = [input.glwe_layout()];
         GLWEBlindSelection::<u8, _>::glwe_blind_selection_tmp_bytes(module, res, &input_infos, &selector);
         GLWEBlindSelection::<u8, _>::glwe_blind_selection::<_, GLWE<OpaqueOwned, i64>, _>(
             module,
+            0,
+            1,
             res,
             HashMap::new(),
             value,
-            0,
-            1,
             scratch,
         );
         glwe_blind_selection_tmp_bytes_reference::<u8, _, _, _, _>(module, res, &input_infos, &selector);
-        glwe_blind_selection_reference::<u8, _, _, GLWE<OpaqueOwned, i64>, _>(module, res, HashMap::new(), value, 0, 1, scratch);
+        glwe_blind_selection_reference::<u8, _, _, GLWE<OpaqueOwned, i64>, _>(module, 0, 1, res, HashMap::new(), value, scratch);
     }
 };
 
@@ -437,8 +536,14 @@ fn modulus_switch_accepts_opaque_storage_and_dispatches_override() {
     for direction in [LookUpTableRotationDirection::Left, LookUpTableRotationDirection::Right] {
         let mut expected = [0i64; 5];
         let mut actual = [0i64; 5];
-        poulpy_bin_fhe::reference::blind_rotation::mod_switch_2n_ref::<OpaqueBackend, _>(64, &mut expected, &lwe, direction);
-        module.blind_rotation_mod_switch(64, &mut actual, &lwe, direction);
+        poulpy_bin_fhe::reference::blind_rotation::blind_rotation_mod_switch_reference(
+            &module,
+            64,
+            direction,
+            &mut expected,
+            &lwe,
+        );
+        module.blind_rotation_mod_switch(64, direction, &mut actual, &lwe);
         assert_eq!(actual, expected);
     }
     assert_eq!(STAGING_CALLS.get(), 2);
@@ -471,7 +576,7 @@ fn blind_rotation_rejects_invalid_shapes_before_writes() {
         k_aux: 12usize.into(),
         rank: 1usize.into(),
     };
-    let mut key = module.blind_rotation_key_prepared_alloc(&layout);
+    let mut key = module.blind_rotation_key_prepared_alloc_from_infos(&layout);
     key.set_distribution(poulpy_core::Distribution::ZERO);
     let mut output = module.glwe_alloc_from_infos(&layout);
     output.data_mut().data_mut().fill(0x55);
@@ -514,34 +619,34 @@ thread_local! { static PREPARED_CIRCUIT_CALLS: Cell<usize> = const { Cell::new(0
 unsafe impl CircuitBootstrappingExecuteImpl<CGGI> for OverrideBackend {
     fn circuit_bootstrapping_prepare_to_constant<R: GGSWInfos>(
         module: &Module<Self>,
-        res_infos: &R,
-        key: &poulpy_bin_fhe::circuit_bootstrapping::CircuitBootstrappingKeyPrepared<Self::OwnedBuf, CGGI, Self>,
         log_domain: usize,
         extension_factor: usize,
+        res_infos: &R,
+        key: &poulpy_bin_fhe::circuit_bootstrapping::CircuitBootstrappingKeyPrepared<Self::OwnedBuf, CGGI, Self>,
     ) -> poulpy_bin_fhe::circuit_bootstrapping::CircuitBootstrappingPlan<Self::OwnedBuf> {
         poulpy_bin_fhe::reference::circuit_bootstrapping::circuit_bootstrapping_prepare_to_constant_reference(
             module,
-            res_infos,
-            key,
             log_domain,
             extension_factor,
+            res_infos,
+            key,
         )
     }
     fn circuit_bootstrapping_prepare_to_exponent<R: GGSWInfos>(
         module: &Module<Self>,
         log_gap_out: usize,
-        res_infos: &R,
-        key: &poulpy_bin_fhe::circuit_bootstrapping::CircuitBootstrappingKeyPrepared<Self::OwnedBuf, CGGI, Self>,
         log_domain: usize,
         extension_factor: usize,
+        res_infos: &R,
+        key: &poulpy_bin_fhe::circuit_bootstrapping::CircuitBootstrappingKeyPrepared<Self::OwnedBuf, CGGI, Self>,
     ) -> poulpy_bin_fhe::circuit_bootstrapping::CircuitBootstrappingPlan<Self::OwnedBuf> {
         poulpy_bin_fhe::reference::circuit_bootstrapping::circuit_bootstrapping_prepare_to_exponent_reference(
             module,
             log_gap_out,
-            res_infos,
-            key,
             log_domain,
             extension_factor,
+            res_infos,
+            key,
         )
     }
     fn circuit_bootstrapping_execute_prepared_tmp_bytes<
@@ -563,8 +668,8 @@ unsafe impl CircuitBootstrappingExecuteImpl<CGGI> for OverrideBackend {
         module: &Module<Self>,
         res: &mut R,
         lwe: &L,
-        key: &poulpy_bin_fhe::circuit_bootstrapping::CircuitBootstrappingKeyPrepared<Self::OwnedBuf, CGGI, Self>,
         plan: &poulpy_bin_fhe::circuit_bootstrapping::CircuitBootstrappingPlan<Self::OwnedBuf>,
+        key: &poulpy_bin_fhe::circuit_bootstrapping::CircuitBootstrappingKeyPrepared<Self::OwnedBuf, CGGI, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         R: GGSWToBackendMut<Self> + GGSWAtViewRef<Self> + GGSWAtViewMut<Self> + GGSWInfos,
@@ -577,8 +682,8 @@ unsafe impl CircuitBootstrappingExecuteImpl<CGGI> for OverrideBackend {
             module,
             res,
             lwe,
-            key,
             plan,
+            key,
             &mut remaining,
         );
         assert!(marker.iter().all(|&byte| byte == 0x63));
@@ -596,28 +701,12 @@ fn prepared_circuit_override_propagates_to_direct_scratch_queries() {
 }
 
 thread_local! {
-    static COMPRESSED_FACTORY_CALLS: Cell<usize> = const { Cell::new(0) };
     static LUT_SET_CALLS: Cell<usize> = const { Cell::new(0) };
     static LUT_ROTATE_CALLS: Cell<usize> = const { Cell::new(0) };
 }
 
-// These overrides use only storage allocation and transfers. OpaqueBackend has
-// no polynomial arithmetic implementations or host-accessible buffer views.
-unsafe impl BlindRotationKeyCompressedFactoryImpl<CGGI> for OpaqueBackend<'_> {
-    fn blind_rotation_key_compressed_alloc<A: BlindRotationKeyInfos>(
-        module: &Module<Self>,
-        infos: &A,
-    ) -> BlindRotationKeyCompressed<Self::OwnedBuf, CGGI, Self::ZnxWord> {
-        assert_eq!(module.n(), infos.n_glwe().as_usize());
-        COMPRESSED_FACTORY_CALLS.set(COMPRESSED_FACTORY_CALLS.get() + 1);
-        BlindRotationKeyCompressed::from_parts(
-            (0..infos.n_lwe().as_usize())
-                .map(|_| module.ggsw_compressed_alloc_from_infos(infos))
-                .collect(),
-            poulpy_core::Distribution::NONE,
-        )
-    }
-}
+// The LUT override uses only storage transfers. OpaqueBackend has no
+// polynomial arithmetic implementations or host-accessible buffer views.
 
 fn opaque_lut_coefficients(lut: &LookupTable<OpaqueOwned, i64>) -> Vec<i64> {
     assert_eq!(lut.extension_factor(), 1);
@@ -645,7 +734,7 @@ fn rotate_opaque_lut(lut: &mut LookupTable<OpaqueOwned, i64>, k: i64) {
 }
 
 unsafe impl LookupTableFactoryImpl for OpaqueBackend<'_> {
-    fn lookup_table_set(module: &Module<Self>, res: &mut LookupTable<Self::OwnedBuf, i64>, f: &[i64], k: usize) {
+    fn lookup_table_set(module: &Module<Self>, k: usize, res: &mut LookupTable<Self::OwnedBuf, i64>, f: &[i64]) {
         // This independent test implementation supports one normalized limb.
         assert_eq!(res.extension_factor(), 1);
         assert_eq!(res.size(), 1);
@@ -678,8 +767,7 @@ unsafe impl LookupTableFactoryImpl for OpaqueBackend<'_> {
 }
 
 #[test]
-fn compressed_key_factory_dispatches_with_opaque_storage() {
-    COMPRESSED_FACTORY_CALLS.set(0);
+fn compressed_key_allocation_is_direct_on_opaque_storage() {
     let environment = ();
     let module = OpaqueBackend::module(&environment);
     let layout = BlindRotationKeyLayout {
@@ -690,10 +778,8 @@ fn compressed_key_factory_dispatches_with_opaque_storage() {
         k_aux: 12usize.into(),
         rank: 1usize.into(),
     };
-    let direct = module.blind_rotation_key_compressed_alloc(&layout);
-    assert_eq!(COMPRESSED_FACTORY_CALLS.get(), 1);
+    let direct = module.blind_rotation_key_compressed_alloc_from_infos(&layout);
     let wrapped = BlindRotationKeyCompressed::<poulpy_hal::AlignedBuf, CGGI, i64>::alloc(&module, &layout);
-    assert_eq!(COMPRESSED_FACTORY_CALLS.get(), 2);
     for key in [&direct, &wrapped] {
         assert_eq!(key.keys().len(), layout.n_lwe.as_usize());
         assert_eq!(key.distribution(), poulpy_core::Distribution::NONE);
@@ -724,9 +810,9 @@ fn lookup_table_api_dispatches_without_reference_arithmetic_bounds() {
     let mut wrapped = LookupTable::alloc(&module, &layout);
     direct.set_rotation_direction(LookUpTableRotationDirection::Right);
     wrapped.set_rotation_direction(LookUpTableRotationDirection::Right);
-    module.lookup_table_set(&mut direct, &[1, -1, 2, -2], 4);
+    module.lookup_table_set(4, &mut direct, &[1, -1, 2, -2]);
     assert_eq!(LUT_SET_CALLS.get(), 1);
-    wrapped.set(&module, &[1, -1, 2, -2], 4);
+    wrapped.set(&module, 4, &[1, -1, 2, -2]);
     assert_eq!(LUT_SET_CALLS.get(), 2);
     let expected = [vec![256; 4], vec![-256; 8], vec![512; 8], vec![-512; 8], vec![-256; 4]].concat();
     for lut in [&direct, &wrapped] {

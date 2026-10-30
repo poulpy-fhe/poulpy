@@ -1,20 +1,18 @@
 //! Multiply-accumulate and affine forms compose the selected products and additions.
 use poulpy_core::{
     GLWEBytesOf,
-    layouts::{
-        GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey, IntPolyInfos,
-        prepared::GLWETensorKeyPreparedBackendRef,
-    },
+    layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey, IntPolyInfos},
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
-    CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSResult as Result, SetCKKSInfos,
+    CKKSCtBounds, CKKSInfos, CKKSResult as Result, SetCKKSInfos,
     api::{CKKSAddOps, CKKSMulOps, CKKSSubOps},
     ckks_ensure, ckks_mul_pt_const_checks, ckks_mul_pt_vec_checks, ensure_plaintext_const_operand, ensure_plaintext_vec_operand,
     get_mul_ct_params,
     layouts::{CKKSCiphertextViewMut, ScratchArenaTakeCKKS},
     oep::{CKKSAffineImpl, CKKSMulAddImpl, CKKSMulSubImpl},
+    reference::mul::tensor_key_at,
 };
 
 /// Checks the arena against the caller's query `bytes`, then carves a `dst`-shaped temporary in a scratch scope, runs
@@ -39,19 +37,6 @@ where
         mul(&mut tmp, &mut scratch_local)?;
         combine(dst, &tmp, &mut scratch_local)
     })
-}
-
-/// The tensor key the product `a * b` looks up first, at the wider operand's `k`.
-fn tensor_key<'k, BE, A, B, H>(op: &'static str, a: &A, b: &B, tsk: &'k H) -> Result<GLWETensorKeyPreparedBackendRef<'k, BE>>
-where
-    BE: Backend,
-    A: CKKSCtBounds,
-    B: CKKSCtBounds,
-    H: GetTensorKey<BE>,
-{
-    let k = a.k().max(b.k());
-    tsk.get_tensor_key(k)
-        .map_err(|source| CKKSCompositionError::MissingRelinearizationKey { op, k: k.into(), source }.into())
 }
 
 /// The checks the addition of coefficient `offset_coeff` of `cst` at coefficient 0 runs on `dst` once the product left
@@ -147,7 +132,7 @@ where
     H: GetTensorKey<BE>,
 {
     const OP: &str = "ckks_mul_add_ct_into";
-    let key = tensor_key(OP, a, b, tsk)?;
+    let key = tensor_key_at(OP, tsk, a.k().max(b.k()))?;
     get_mul_ct_params(OP, &*dst, a, b)?;
     let bytes = ckks_mul_add_ct_tmp_bytes_derived(module, &*dst, a, b, &key);
     mul_then_combine(
@@ -377,7 +362,7 @@ where
     H: GetTensorKey<BE>,
 {
     const OP: &str = "ckks_mul_sub_ct_into";
-    let key = tensor_key(OP, a, b, tsk)?;
+    let key = tensor_key_at(OP, tsk, a.k().max(b.k()))?;
     get_mul_ct_params(OP, &*dst, a, b)?;
     let bytes = ckks_mul_sub_ct_tmp_bytes_derived(module, &*dst, a, b, &key);
     mul_then_combine(

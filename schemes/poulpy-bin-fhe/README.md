@@ -6,11 +6,10 @@ The crate depends on no concrete backend.
 
 ## User-facing API
 
-Import operations from `poulpy_bin_fhe::api::blind_rotation`,
-`poulpy_bin_fhe::api::circuit_bootstrapping`, or `poulpy_bin_fhe::api::bdd`.
-All traits are also re-exported by `poulpy_bin_fhe::api` and the crate root.
-Every operation follows `API -> delegate -> OEP`, including LUT construction
-and compressed-key allocation. Backends explicitly select their implementations.
+Import operations from `poulpy_bin_fhe::api`; they are also re-exported at the crate root.
+Every operation follows `API -> delegate -> OEP`, including LUT construction;
+key allocation and sizing are direct on the module. Backends explicitly select
+their implementations.
 
 - [Blind rotation](src/api/blind_rotation.rs) exposes LUT evaluation, standard
   and compressed key encryption, decompression, preparation, and LUT helpers.
@@ -19,8 +18,8 @@ and compressed-key allocation. Backends explicitly select their implementations.
 
 Each execution trait includes its scratch queries. Use the selected module's
 query for the actual inputs and output before calling the matching operation.
-The API module documentation includes generic examples; existing key convenience
-methods and import paths remain available.
+The API module documentation includes generic examples; key convenience methods
+remain available, and traits that moved to `api` keep their domain-module paths.
 
 ## Backend integration
 

@@ -14,17 +14,17 @@ use poulpy_core::{
     ComponentNoise, Distribution, TransferInto,
     layouts::{
         GGSW, GGSWInfos, GGSWLayout, GGSWToBackendMut, GGSWToBackendRef, GLWE, GLWEInfos, GLWELayout, GLWEToBackendMut,
-        GLWEToBackendRef, LWEInfos, ModuleCoreAlloc,
+        GLWEToBackendRef, LWEInfos, ModuleCoreAlloc, prepared::GGLWEPreparedToBackendRef,
     },
 };
 use poulpy_hal::{
-    layouts::{Backend, CopyFromHost, CopyToHost, HostBytesBackend, HostDataMut, Module, ScratchArena, ScratchOwned, ZnxViewMut},
+    layouts::{Backend, CopyFromHost, CopyToHost, DataView, HostBytesBackend, HostDataMut, Module, ScratchArena, ZnxViewMut},
     source::Source,
 };
 
 /// Storage operations needed to transfer test fixtures, without host-view bounds.
 pub trait ParityBackend: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost + CopyToHost> {}
-impl<B: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost + CopyToHost>> ParityBackend for B {}
+impl<BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost + CopyToHost>> ParityBackend for BE {}
 
 /// Coefficient-domain representation including precision, noise estimate and allocated tails.
 #[derive(PartialEq, Eq)]
@@ -57,10 +57,10 @@ pub(crate) fn assert_untagged<'a>(label: &str, outputs: impl IntoIterator<Item =
     }
 }
 
-pub(crate) fn snapshot_glwe<B: Backend<ZnxWord = i64>, A: GLWEToBackendRef<B>>(ct: &A) -> GlweSnapshot {
+pub(crate) fn snapshot_glwe<BE: Backend<ZnxWord = i64>, A: GLWEToBackendRef<BE>>(ct: &A) -> GlweSnapshot {
     let view = ct.to_backend_ref();
     let mut bytes = vec![0; view.n().as_usize() * (view.rank().as_usize() + 1) * view.max_size() * size_of::<i64>()];
-    B::copy_view_to_host(view.data().data(), &mut bytes);
+    BE::copy_view_to_host(view.data().data(), &mut bytes);
     GlweSnapshot {
         layout: view.glwe_layout(),
         capacity: view.max_size(),
@@ -69,12 +69,12 @@ pub(crate) fn snapshot_glwe<B: Backend<ZnxWord = i64>, A: GLWEToBackendRef<B>>(c
     }
 }
 
-pub(crate) fn snapshot_ggsw<B: Backend<ZnxWord = i64>, A: GGSWToBackendRef<B>>(ct: &A) -> GgswSnapshot {
+pub(crate) fn snapshot_ggsw<BE: Backend<ZnxWord = i64>, A: GGSWToBackendRef<BE>>(ct: &A) -> GgswSnapshot {
     let view = ct.to_backend_ref();
     let mut rows = Vec::new();
     for row in 0..view.dnum().as_usize() {
         for col in 0..=view.rank().as_usize() {
-            rows.push(snapshot_glwe::<B, _>(&view.at_view(row, col)));
+            rows.push(snapshot_glwe::<BE, _>(&view.at_view(row, col)));
         }
     }
     GgswSnapshot {
@@ -107,7 +107,7 @@ fn canonicalize(ct: &mut GLWE<impl HostDataMut, i64>) {
     }
 }
 
-pub(crate) fn fixture_glwe<B: ParityBackend>(module: &Module<B>, infos: &impl GLWEInfos, seed: u8) -> GLWE<B::OwnedBuf, i64> {
+pub(crate) fn fixture_glwe<BE: ParityBackend>(module: &Module<BE>, infos: &impl GLWEInfos, seed: u8) -> GLWE<BE::OwnedBuf, i64> {
     let host = Module::<HostBytesBackend>::new(module.n() as u64);
     let mut input = host.glwe_alloc_from_infos(infos);
     fill_digits(
@@ -124,7 +124,7 @@ pub(crate) fn fixture_glwe<B: ParityBackend>(module: &Module<B>, infos: &impl GL
     output
 }
 
-pub(crate) fn fixture_ggsw<B: ParityBackend>(module: &Module<B>, infos: &impl GGSWInfos, seed: u8) -> GGSW<B::OwnedBuf, i64> {
+pub(crate) fn fixture_ggsw<BE: ParityBackend>(module: &Module<BE>, infos: &impl GGSWInfos, seed: u8) -> GGSW<BE::OwnedBuf, i64> {
     let host = Module::<HostBytesBackend>::new(module.n() as u64);
     let mut input = host.ggsw_alloc_from_infos(infos);
     let mut source = Source::new([seed; 32]);
@@ -143,24 +143,32 @@ pub(crate) fn fixture_ggsw<B: ParityBackend>(module: &Module<B>, infos: &impl GG
     output
 }
 
-/// Runs with exactly the advertised scratch, poisoned and surrounded by guards.
-pub(crate) fn with_scratch<B: Backend, R>(bytes: usize, run: impl FnOnce(&mut ScratchArena<'_, B>) -> R) -> R {
-    let guard = B::scratch_aligned(64);
-    let mut owned = ScratchOwned::<B> {
-        data: B::from_host_bytes(&vec![0xA5; guard + bytes + guard]),
-        _phantom: std::marker::PhantomData,
+/// Runs `call` and asserts that it panics with exactly `message`, formatted or static.
+pub(crate) fn assert_panics_with<R>(message: &str, call: impl FnOnce() -> R) {
+    let payload = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(call)) {
+        Ok(_) => panic!("expected a panic with \"{message}\""),
+        Err(payload) => payload,
     };
-    let result = {
-        let (_, rest) = owned.arena().split_at(guard);
-        let (mut exact, _) = rest.split_at(bytes);
-        assert_eq!(exact.available(), bytes);
-        run(&mut exact)
-    };
-    let host = B::to_host_bytes(&owned.data);
-    assert!(host[..guard].iter().all(|v| *v == 0xA5), "scratch prefix overwritten");
-    assert!(
-        host[guard + bytes..guard + bytes + guard].iter().all(|v| *v == 0xA5),
-        "scratch suffix overwritten"
-    );
-    result
+    let actual = payload
+        .downcast_ref::<&str>()
+        .copied()
+        .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+        .unwrap_or_default();
+    assert_eq!(actual, message);
+}
+
+/// Runs `call` one byte below its query `bytes`, expecting the panic `message`; a zero query has no shorter arena.
+pub(crate) fn assert_short_scratch_panics<BE: Backend, R>(
+    bytes: usize,
+    message: &str,
+    call: impl FnOnce(&mut ScratchArena<'_, BE>) -> R,
+) {
+    if let Some(short) = bytes.checked_sub(1) {
+        assert_panics_with(message, || poulpy_core::test_suite::with_scratch::<BE, _>(short, call));
+    }
+}
+
+/// Bytes of the backend buffer behind a prepared GGLWE.
+pub(crate) fn gglwe_prepared_bytes<BE: Backend, K: GGLWEPreparedToBackendRef<BE>>(key: &K) -> usize {
+    BE::len_bytes_ref(key.to_backend_ref().data().data())
 }

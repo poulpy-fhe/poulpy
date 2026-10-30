@@ -25,16 +25,16 @@ use std::collections::{BTreeMap, HashMap};
 
 use anyhow::Result;
 use poulpy_blas::{
-    api::{BlasMatInterOps, BlasMatIntraOps, BlasMatMulOps},
-    layouts::{
-        BlasCiphertext, BlasCiphertextOwned, BlasContextPreparedFactory, BlasEncodingOps, BlasGridInfos, BlasKeyUses, BlasLayout,
-        BlasModuleAlloc, BlasPlan, BlasPtOperandPreparedFactory, Left, Right,
-        grid::{join_blocks, split_into_blocks},
+    api::{
+        BlasContextPreparedFactory, BlasEncodingOps, BlasMatInterOps, BlasMatIntraOps, BlasMatMulOps,
+        BlasPtOperandPreparedFactory,
     },
-    reference::{
+    layouts::{
+        BlasCiphertext, BlasCiphertextOwned, BlasGridInfos, BlasKeyUses, BlasLayout, BlasModuleAlloc, BlasPlan, Left, Right,
         blas_matmul_key_uses, blas_matmul_output_layout, blas_matmul_pt_left_key_uses, blas_matmul_pt_left_output_layout,
         blas_matmul_pt_right_key_uses, blas_matmul_pt_right_output_layout, blas_sum_key_uses, blas_sum_output_layout,
         blas_transpose_key_uses, blas_transpose_output_layout,
+        grid::{join_blocks, split_into_blocks},
     },
 };
 use poulpy_ckks::prelude::*;
@@ -192,16 +192,15 @@ fn main() -> Result<()> {
     let mut pt_p = module.blas_pt_operand_alloc::<Right>(plan, 2, 1, 1, BASE2K.into(), public);
     let mut pt_q = module.blas_pt_operand_alloc::<Left>(plan, 1, 2, BATCH, BASE2K.into(), public);
     let mut arena = Arena::alloc(
-        module
-            .blas_context_encode_tmp_bytes::<f64, _>(&ctx)
-            .max(module.blas_pt_operand_encode_tmp_bytes::<f64, _>(&pt_q))
+        BlasEncodingOps::<_, f64>::blas_context_encode_tmp_bytes(&module, &ctx)
+            .max(BlasEncodingOps::<_, f64>::blas_pt_operand_encode_tmp_bytes(&module, &pt_q))
             .max(module.blas_context_prepare_tmp_bytes(&ctx))
             .max(module.blas_pt_operand_prepare_tmp_bytes(&pt_p))
             .max(module.blas_pt_operand_prepare_tmp_bytes(&pt_q)),
     );
-    module.blas_context_encode_into::<f64>(&mut ctx, &mut arena.borrow())?;
-    module.blas_pt_operand_encode_into(&mut pt_p, |_, r, c| p(r, c), &mut arena.borrow())?;
-    module.blas_pt_operand_encode_into(&mut pt_q, q, &mut arena.borrow())?;
+    BlasEncodingOps::<_, f64>::blas_context_encode(&module, &mut ctx, &mut arena.borrow())?;
+    module.blas_pt_operand_encode(&mut pt_p, |_, r, c| p(r, c), &mut arena.borrow())?;
+    module.blas_pt_operand_encode(&mut pt_q, q, &mut arena.borrow())?;
     let (mut ctx_prepared, mut pt_p_prepared, mut pt_q_prepared) = (
         module.blas_context_prepared_alloc_from_infos(&ctx),
         module.blas_pt_operand_prepared_alloc_from_infos(&pt_p),

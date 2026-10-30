@@ -2,17 +2,21 @@
 use poulpy_core::{
     GLWEAdd, GLWEBytesOf, GLWEMulPreparedPlainSum, GLWEMulRelinearizeSum, GLWENormalize, GLWEPreparedTensoring, GLWETensoring,
     ScratchArenaTakeCore,
+    gadget::cnv_offset_to_limb_offset,
     layouts::{
         GGLWEInfos, GLWEInfos, GLWELayout, GLWETensorViewMut, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey, LWEInfos,
         TorusPrecision,
     },
 };
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::{
+    api::{VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes},
+    layouts::{Backend, Module, ScratchArena, VecZnxDftBackendMut},
+};
 
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSResult as Result, GLWEPlaintextInfos, SetCKKSInfos, SlotLayout, SlotsKind,
     api::{CKKSAddOps, CKKSMulOps},
-    ensure_plaintext_degree_embeds, get_mul_ct_params,
+    ckks_ensure_operand, ensure_plaintext_degree_embeds, get_mul_ct_params,
     layouts::{CKKSPreparedLeft, CKKSPreparedRight},
     mul_pt_params_raw,
     oep::derived::dot_product::{accumulate, check_lengths},
@@ -136,13 +140,7 @@ pub trait CKKSDotProductReference<BE: Backend>: Sized {
         if a.iter().any(|ct| ct.slot_layout() != SlotLayout::Full) {
             return invalid("prepared dot products round plainly, which a replicated slot layout forbids".into());
         }
-        // Past base2k 62, where `ckks_dot_product_ct` keeps the eager path, which prepared pairs do not have.
-        if dst.base2k().as_usize() > 62 {
-            return invalid(format!(
-                "base2k {} > 62: two canonical tensor digits can overflow an i64",
-                dst.base2k().as_usize()
-            ));
-        }
+        check_lazy_base2k(OP, dst)?;
         dot_product_lazy(
             self,
             OP,
@@ -152,8 +150,19 @@ pub trait CKKSDotProductReference<BE: Backend>: Sized {
             tsk,
             scratch,
             |dst, cnv_offset, res_k, s| {
-                let (a0, b0) = (a[0], b[0]);
-                self.glwe_mul_prepared_relinearize_sum(cnv_offset, dst, res_k, a, b, a0.size(), a0.k(), b0.size(), b0.k(), tsk, s)
+                self.glwe_mul_prepared_relinearize_sum(
+                    cnv_offset,
+                    dst,
+                    res_k,
+                    a.iter().map(|a| a.cnv()),
+                    a[0].size(),
+                    a[0].k(),
+                    b.iter().map(|b| b.cnv()),
+                    b[0].size(),
+                    b[0].k(),
+                    tsk,
+                    s,
+                )
             },
             |term, i, cnv_offset, s| {
                 let (a, b) = (a[i], b[i]);
@@ -187,44 +196,8 @@ pub trait CKKSDotProductReference<BE: Backend>: Sized {
         Self: GLWEMulPreparedPlainSum<BE>,
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     {
-        const OP: &str = "ckks_dot_product_prepared_pt";
-        check_lengths(OP, a.len(), b.len())?;
-        let invalid = |reason: &str| -> Result<()> {
-            Err(CKKSCompositionError::InvalidOperand {
-                op: OP,
-                reason: reason.into(),
-            }
-            .into())
-        };
-        if galois.len() != a.len() {
-            return invalid("one Galois element per term");
-        }
-        for operand in a {
-            check_prepared_layout(OP, &*dst, *operand)?;
-        }
-        if galois.iter().any(|&g| g & 1 == 0) {
-            return invalid("a Galois element is even");
-        }
-        if a.iter().any(|ct| ct.slot_layout() != SlotLayout::Full) || b.iter().any(|pt| pt.slot_layout() != SlotLayout::Full) {
-            return invalid("prepared dot products round plainly, which a replicated slot layout forbids");
-        }
-        if b.iter().any(|pt| pt.rank().as_usize() != 0 || pt.base2k() != dst.base2k()) {
-            return invalid("every b[t] must be a plaintext at the base2k of dst");
-        }
-        if !share_layout(a) || !share_layout(b) {
-            return invalid("every a[t] must share one layout and scale, and every b[t] one");
-        }
+        let (log_budget, log_delta, cnv_offset) = prepared_pt_rule("ckks_dot_product_prepared_pt", &*dst, a, b, galois)?;
         let (a0, b0, base2k) = (a[0], b[0], dst.base2k());
-        ensure_plaintext_degree_embeds(OP, dst.n().as_usize(), b0.n().as_usize(), BE::MIN_DEGREE)?;
-        let (log_budget, log_delta, cnv_offset) = mul_pt_params_raw(
-            OP,
-            dst.k().as_usize(),
-            a0.log_delta(),
-            a0.log_budget(),
-            b0.log_delta(),
-            b0.log_budget(),
-            b0.max_k().as_usize(),
-        )?;
         let log_sparsity = a
             .iter()
             .zip(b)
@@ -243,9 +216,208 @@ pub trait CKKSDotProductReference<BE: Backend>: Sized {
         self.glwe_mul_prepared_plain_sum(cnv_offset, dst, a, a0.size(), b, b0.size(), galois, base2k, scratch);
         Ok(())
     }
+
+    /// Core's `glwe_mul_prepared_plain_sum_dft` query on an accumulator of `a.size() + b.size()` limbs.
+    fn ckks_dot_product_prepared_pt_dft_tmp_bytes_reference<R, A, P>(&self, _res: &R, a: &A, b: &P) -> usize
+    where
+        Self: GLWEMulPreparedPlainSum<BE>,
+        R: CKKSCtBounds,
+        A: GLWEInfos,
+        P: GLWEInfos,
+    {
+        self.glwe_mul_prepared_plain_sum_dft_tmp_bytes(a.size() + b.size(), a.size(), b.size())
+    }
+
+    /// Core's `glwe_mul_prepared_plain_sum_dft` at the rule of `ckks_mul_pt_vec_into` for `res`, after the checks of
+    /// [`Self::ckks_dot_product_prepared_pt_reference`] with `res` as the destination, then those of `acc`.
+    fn ckks_dot_product_prepared_pt_dft_reference<R>(
+        &self,
+        acc: &mut VecZnxDftBackendMut<'_, BE>,
+        res: &R,
+        a: &[&CKKSPreparedLeft<BE>],
+        b: &[&CKKSPreparedRight<BE>],
+        galois: &[i64],
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Self: GLWEMulPreparedPlainSum<BE>,
+        R: CKKSCtBounds,
+    {
+        const OP: &str = "ckks_dot_product_prepared_pt_dft";
+        let (_, _, cnv_offset) = prepared_pt_rule(OP, res, a, b, galois)?;
+        let (a_size, b_size) = (a[0].size(), b[0].size());
+        check_accumulator(OP, acc, res, a_size + b_size)?;
+        self.glwe_mul_prepared_plain_sum_dft(cnv_offset, acc, a, a_size, b, b_size, galois, res.base2k(), scratch);
+        Ok(())
+    }
+
+    /// Core's `glwe_mul_prepared_plain_sum_dft_add` query on an accumulator of `a.size() + b.size()` limbs.
+    fn ckks_dot_product_prepared_pt_dft_add_tmp_bytes_reference<R, A, P>(&self, _res: &R, a: &A, b: &P) -> usize
+    where
+        Self: GLWEMulPreparedPlainSum<BE>,
+        R: CKKSCtBounds,
+        A: GLWEInfos,
+        P: GLWEInfos,
+    {
+        self.glwe_mul_prepared_plain_sum_dft_add_tmp_bytes(a.size() + b.size(), a.size(), b.size())
+    }
+
+    /// Core's `glwe_mul_prepared_plain_sum_dft_add`, after the checks of
+    /// [`Self::ckks_dot_product_prepared_pt_dft_reference`].
+    fn ckks_dot_product_prepared_pt_dft_add_reference<R>(
+        &self,
+        acc: &mut VecZnxDftBackendMut<'_, BE>,
+        res: &R,
+        a: &[&CKKSPreparedLeft<BE>],
+        b: &[&CKKSPreparedRight<BE>],
+        galois: &[i64],
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Self: GLWEMulPreparedPlainSum<BE>,
+        R: CKKSCtBounds,
+    {
+        const OP: &str = "ckks_dot_product_prepared_pt_dft_add";
+        let (_, _, cnv_offset) = prepared_pt_rule(OP, res, a, b, galois)?;
+        let (a_size, b_size) = (a[0].size(), b[0].size());
+        check_accumulator(OP, acc, res, a_size + b_size)?;
+        self.glwe_mul_prepared_plain_sum_dft_add(cnv_offset, acc, a, a_size, b, b_size, galois, res.base2k(), scratch);
+        Ok(())
+    }
+
+    /// One `vec_znx_idft_normalize` per column from an accumulator of `a.size() + b.size()` limbs.
+    fn ckks_dot_product_prepared_pt_from_dft_tmp_bytes_reference<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
+    where
+        Self: VecZnxIdftNormalizeTmpBytes,
+        R: CKKSCtBounds,
+        A: GLWEInfos,
+        P: GLWEInfos,
+    {
+        self.vec_znx_idft_normalize_tmp_bytes(res.size(), a.size() + b.size())
+    }
+
+    /// The stamp of [`Self::ckks_dot_product_prepared_pt_reference`] for the one pair `(a, b)`, after its checks and
+    /// those of `acc`, then one `vec_znx_idft_normalize` per column at `res.k()` and the offset's sub-limb part.
+    fn ckks_dot_product_prepared_pt_from_dft_reference<Dst>(
+        &self,
+        res: &mut Dst,
+        acc: &mut VecZnxDftBackendMut<'_, BE>,
+        a: &CKKSPreparedLeft<BE>,
+        b: &CKKSPreparedRight<BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Self: VecZnxIdftNormalize<BE>,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+    {
+        const OP: &str = "ckks_dot_product_prepared_pt_from_dft";
+        let (log_budget, log_delta, cnv_offset) = prepared_pt_rule(OP, &*res, &[a], &[b], &[1])?;
+        check_accumulator(OP, acc, &*res, a.size() + b.size())?;
+        res.set_log_budget(log_budget);
+        res.set_log_delta(log_delta);
+        res.set_log_sparsity(a.log_sparsity().min(a.log_n() - b.log_n()));
+        res.set_slots(a.slots().join(b.slots()));
+        res.set_slot_layout(SlotLayout::Full);
+        let (base2k, res_k, cols) = (res.base2k().as_usize(), res.k().as_usize(), res.rank().as_usize() + 1);
+        let (_, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, base2k);
+        {
+            let mut res_backend = res.to_backend_mut();
+            for col in 0..cols {
+                self.vec_znx_idft_normalize(
+                    res_backend.data_mut(),
+                    base2k,
+                    res_k,
+                    cnv_offset_lo,
+                    col,
+                    acc,
+                    col,
+                    base2k,
+                    None,
+                    &mut scratch.borrow(),
+                );
+            }
+        }
+        res.set_canonical(true);
+        Ok(())
+    }
+}
+
+/// The checks of the summed products by prepared plaintexts into a destination of `res`'s layout and metadata, in
+/// their order and before any write, then the rule of `ckks_mul_pt_vec_into`: `(log_budget, log_delta, cnv_offset)`.
+fn prepared_pt_rule<BE: Backend, R: CKKSCtBounds>(
+    op: &'static str,
+    res: &R,
+    a: &[&CKKSPreparedLeft<BE>],
+    b: &[&CKKSPreparedRight<BE>],
+    galois: &[i64],
+) -> Result<(usize, usize, usize)> {
+    check_lengths(op, a.len(), b.len())?;
+    let invalid = |reason: &str| -> Result<(usize, usize, usize)> {
+        Err(CKKSCompositionError::InvalidOperand {
+            op,
+            reason: reason.into(),
+        }
+        .into())
+    };
+    if galois.len() != a.len() {
+        return invalid("one Galois element per term");
+    }
+    for operand in a {
+        check_prepared_layout(op, res, *operand)?;
+    }
+    if galois.iter().any(|&g| g & 1 == 0) {
+        return invalid("a Galois element is even");
+    }
+    if a.iter().any(|ct| ct.slot_layout() != SlotLayout::Full) || b.iter().any(|pt| pt.slot_layout() != SlotLayout::Full) {
+        return invalid("prepared dot products round plainly, which a replicated slot layout forbids");
+    }
+    if b.iter().any(|pt| pt.rank().as_usize() != 0 || pt.base2k() != res.base2k()) {
+        return invalid("every b[t] must be a plaintext at the base2k of dst");
+    }
+    if !share_layout(a) || !share_layout(b) {
+        return invalid("every a[t] must share one layout and scale, and every b[t] one");
+    }
+    let (a0, b0) = (a[0], b[0]);
+    ensure_plaintext_degree_embeds(op, res.n().as_usize(), b0.n().as_usize(), BE::MIN_DEGREE)?;
+    mul_pt_params_raw(
+        op,
+        res.k().as_usize(),
+        a0.log_delta(),
+        a0.log_budget(),
+        b0.log_delta(),
+        b0.log_budget(),
+        b0.max_k().as_usize(),
+    )
+}
+
+/// `InvalidOperand` unless `acc` holds the degree and the `rank + 1` columns of `res` on `size` limbs.
+fn check_accumulator<BE: Backend, R: CKKSCtBounds>(
+    op: &'static str,
+    acc: &VecZnxDftBackendMut<'_, BE>,
+    res: &R,
+    size: usize,
+) -> Result<()> {
+    let (n, cols) = (res.n().as_usize(), res.rank().as_usize() + 1);
+    ckks_ensure_operand!(
+        op,
+        (acc.n(), acc.cols(), acc.size()) == (n, cols, size),
+        "acc must hold the degree and rank + 1 columns of res on a.size() + b.size() limbs"
+    );
+    Ok(())
 }
 
 impl<BE: Backend> CKKSDotProductReference<BE> for Module<BE> {}
+
+/// `InvalidOperand` past base2k 62, where `ckks_dot_product_ct` keeps the eager path, which prepared pairs do not have.
+pub(crate) fn check_lazy_base2k<D: GLWEInfos>(op: &'static str, dst: &D) -> Result<()> {
+    ckks_ensure_operand!(
+        op,
+        dst.base2k().as_usize() <= 62,
+        "base2k {} > 62: two canonical tensor digits can overflow an i64",
+        dst.base2k().as_usize()
+    );
+    Ok(())
+}
 
 /// Whether every ciphertext shares the first one's layout and scale, the inputs of the ct × ct rule.
 fn share_layout<C: CKKSCtBounds>(cts: &[&C]) -> bool {
@@ -291,12 +463,7 @@ where
         k: a[0].k().max(b[0].k()),
         rank: dst.rank(),
     };
-    tsk.get_tensor_key(tensor_layout.k)
-        .map_err(|source| CKKSCompositionError::MissingRelinearizationKey {
-            op,
-            k: tensor_layout.k.into(),
-            source,
-        })?;
+    crate::reference::mul::tensor_key_at(op, tsk, tensor_layout.k)?;
     let (log_budget, log_delta, cnv_offset) = get_mul_ct_params(op, dst, a[0], b[0])?;
     // The eager sum's label and slot kind: the smallest label and the join over every operand.
     let metas = || a.iter().map(|ct| ct.meta()).chain(b.iter().map(|ct| ct.meta()));

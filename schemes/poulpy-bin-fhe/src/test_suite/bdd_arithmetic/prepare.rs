@@ -1,0 +1,135 @@
+use poulpy_core::{
+    DEFAULT_SIGMA_XE, GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWENoise,
+    api::GLWESecretPreparedFactory,
+    layouts::{GGSWInfos, GGSWLayout, GLWEInfos, GLWELayout, LWEInfos, prepared::GLWESecretPrepared},
+};
+use poulpy_hal::AlignedBuf;
+use poulpy_hal::{
+    api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
+    layouts::{Backend, HostBackend, HostDataMut, HostDataRef, Module, ScratchOwned, Stats},
+    source::Source,
+};
+use rand::Rng;
+
+use crate::test_suite::bdd_arithmetic::{TEST_GGSW_INFOS, TEST_GLWE_INFOS, TestContext};
+use crate::{
+    bdd_arithmetic::{
+        BDDKeyEncryptSk, BDDKeyPrepared, BDDKeyPreparedFactory, ExecuteBDDCircuit2WTo1W, FheUint, FheUintPrepare,
+        FheUintPrepareDebug, FheUintPreparedDebug, FheUintPreparedEncryptSk, FheUintPreparedFactory,
+    },
+    blind_rotation::BlindRotationAlgo,
+};
+use poulpy_core::test_suite::with_scratch;
+
+pub fn test_bdd_prepare<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64> + HostBackend>(
+    test_context: &TestContext<BRA, BE>,
+) where
+    Module<BE>: ModuleNew<BE>
+        + GLWESecretPreparedFactory<BE>
+        + GLWEDecrypt<BE>
+        + GLWENoise<BE>
+        + FheUintPreparedFactory<u32, BE>
+        + FheUintPreparedEncryptSk<u32, BE>
+        + FheUintPrepareDebug<BRA, u32, BE>
+        + BDDKeyEncryptSk<BRA, BE>
+        + BDDKeyPreparedFactory<BRA, BE>
+        + GGSWNoise<BE>
+        + FheUintPrepare<BRA, BE>
+        + ExecuteBDDCircuit2WTo1W<BE>
+        + GLWEEncryptSk<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
+{
+    let glwe_infos: GLWELayout = TEST_GLWE_INFOS;
+    let ggsw_infos: GGSWLayout = TEST_GGSW_INFOS;
+
+    let module: &Module<BE> = &test_context.module;
+    let sk_glwe_prep: &GLWESecretPrepared<BE::OwnedBuf, BE> = &test_context.sk_glwe;
+    let bdd_key_prepared: &BDDKeyPrepared<BE::OwnedBuf, BRA, BE> = &test_context.bdd_key;
+
+    let mut source: Source = Source::new([6u8; 32]);
+
+    let mut source_xa: Source = Source::new([2u8; 32]);
+    let mut source_xe: Source = Source::new([3u8; 32]);
+
+    // GLWE(value)
+    let mut c_enc: FheUint<BE::OwnedBuf, u32, BE::ZnxWord> = FheUint::alloc_from_infos(module, &glwe_infos);
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+        c_enc
+            .encrypt_sk_tmp_bytes::<_, BE>(module)
+            .max(module.glwe_noise_tmp_bytes(&c_enc))
+            .max(module.ggsw_noise_tmp_bytes(&ggsw_infos)),
+    );
+    let value: u32 = source.next_u32();
+    c_enc.encrypt_sk(
+        module,
+        value,
+        sk_glwe_prep,
+        &mut source_xe,
+        &mut source_xa,
+        &mut scratch.borrow(),
+    );
+
+    let mut measured = 0.0;
+    let mut modeled = 0.0;
+    for trial in 0..16 {
+        if trial != 0 {
+            c_enc.encrypt_sk(
+                module,
+                value,
+                sk_glwe_prep,
+                &mut source_xe,
+                &mut source_xa,
+                &mut scratch.borrow(),
+            );
+        }
+        let metadata = LWEInfos::noise(&c_enc).expect("FheUint encryption must record metadata");
+        assert_eq!(metadata.precision(), c_enc.k());
+        measured += c_enc
+            .noise_stats(module, value, sk_glwe_prep, &mut scratch.borrow())
+            .second_moment();
+        modeled += metadata.phase_noise(module.n()).variance_at(0u32.into());
+    }
+    let ratio = measured / modeled;
+    assert!(
+        (0.75..=1.25).contains(&ratio),
+        "FheUint empirical/model second moment={ratio}"
+    );
+
+    // GGSW(0)
+    let mut c_enc_prep_debug: FheUintPreparedDebug<BE::OwnedBuf, u32, BE::ZnxWord> =
+        FheUintPreparedDebug::<AlignedBuf, u32, i64>::alloc_from_infos(module, &ggsw_infos);
+
+    let prepare_bytes = module.fhe_uint_prepare_tmp_bytes(7, 1, &c_enc_prep_debug, &c_enc, bdd_key_prepared);
+
+    // GGSW(value)
+    with_scratch::<BE, _>(prepare_bytes, |s| {
+        c_enc_prep_debug.prepare(module, &c_enc, bdd_key_prepared, s)
+    });
+
+    let max_noise = |col_i: usize| {
+        // Noise floor sits at the semantic precision `k()` (gadget + guard), not at the
+        // physical limb capacity `size * base2k`.
+        let mut noise: f64 = -(ggsw_infos.k().as_usize() as f64) + DEFAULT_SIGMA_XE.log2() + 4.0;
+        noise += 0.5 * ggsw_infos.log_n() as f64;
+        if col_i != 0 {
+            noise += 0.5 * ggsw_infos.log_n() as f64
+        }
+        noise
+    };
+
+    for row in 0..c_enc_prep_debug.dnum().as_usize() {
+        for col in 0..c_enc_prep_debug.rank().as_usize() + 1 {
+            let stats: Vec<Stats> = c_enc_prep_debug.noise_stats(module, row, col, value, sk_glwe_prep, &mut scratch.borrow());
+            for (i, stat) in stats.iter().enumerate() {
+                let noise_have: f64 = stat.std().log2();
+                let noise_max: f64 = max_noise(col);
+                assert!(
+                    noise_have <= noise_max,
+                    "bit: {i} noise_have: {noise_have} > noise_max: {noise_max}"
+                )
+            }
+        }
+    }
+}

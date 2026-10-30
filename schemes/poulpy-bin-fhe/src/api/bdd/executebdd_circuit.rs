@@ -22,12 +22,12 @@ pub trait ExecuteBDDCircuit<BE: Backend> {
     ///
     /// Delegates to [`execute_bdd_circuit_multi_thread`][Self::execute_bdd_circuit_multi_thread]
     /// with `threads = 1`.
-    fn execute_bdd_circuit_tmp_bytes<R, G>(&self, res_infos: &R, state_size: usize, ggsw_infos: &G) -> usize
+    fn execute_bdd_circuit_tmp_bytes<R, G>(&self, state_size: usize, res_infos: &R, ggsw_infos: &G) -> usize
     where
         R: GLWEInfos,
         G: GGSWInfos;
     #[allow(clippy::too_many_arguments)]
-    fn execute_bdd_circuit_tmp_bytes_for<R, G, C>(&self, res_infos: &R, circuit: &C, ggsw_infos: &G) -> usize
+    fn execute_bdd_circuit_tmp_bytes_for<R, G, C>(&self, res_infos: &R, ggsw_infos: &G, circuit: &C) -> usize
     where
         R: GLWEInfos,
         G: GGSWInfos,

@@ -3,7 +3,7 @@ use poulpy_core::{
     GLWECIEmbed, GLWECITrace, GLWECopy, GLWEKeyswitch, GLWEShift, GLWETrace,
     layouts::{
         GGLWEInfos, GGLWEPreparedToBackendRef, GLWECIEmbedKeyPrepared, GLWECITraceKeyPrepared, GLWEInfos, GLWELayout,
-        GLWEPlaintextMeta, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, Scale, SetK,
+        GLWEPlaintextMeta, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos, Scale, SetK,
     },
 };
 use poulpy_hal::layouts::{Backend, ConjugateInvariant, Data, Module, ScratchArena, Standard};
@@ -70,7 +70,7 @@ where
     Module<BE>: CKKSLinearTransformationOps<BE> + CKKSCopyOps<BE> + CKKSRoundOps<BE>,
     Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-    H: GetAutomorphismKey<BE>,
+    H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
 {
     let working = working_layout(src, extra_bits, 0);
     let (mut x, scratch) = scratch.borrow().take_ckks_ciphertext_scratch(&working, src.meta());
@@ -105,7 +105,7 @@ where
     Module<BE>: CKKSLinearTransformationOps<BE> + CKKSRotateOps<BE> + CKKSAddOps<BE> + CKKSCopyOps<BE> + CKKSPow2Ops<BE>,
     Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-    H: GetAutomorphismKey<BE>,
+    H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
 {
     let working = working_layout(src, extra_bits, trace.len());
     let (mut x, scratch) = scratch.borrow().take_ckks_ciphertext_scratch(&working, src.meta());
@@ -164,7 +164,7 @@ fn apply_transform<BE, H>(
 where
     BE: Backend,
     Module<BE>: CKKSLinearTransformationOps<BE>,
-    H: GetAutomorphismKey<BE>,
+    H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
 {
     check_workspace("replicated_transform", workspace, &x.glwe_layout(), transform)?;
     module.ckks_prepare_linear_transformation_baby_steps(&mut workspace.babies, x, keys, scratch)?;
@@ -201,7 +201,9 @@ where
         )
         .max(module.ckks_eval_linear_transformation_tmp_bytes(
             wide,
+            &crate::api::ckks_plaintext_diagonal_layout(wide),
             &poulpy_core::layouts::LinearTransformationPlan::default(),
+            key_infos,
             key_infos,
         ))
 }
@@ -268,7 +270,7 @@ where
         + CKKSRoundOps<BE>
         + CKKSConjugateOps<BE>
         + CKKSImagOps<BE>,
-    H: GetAutomorphismKey<BE>,
+    H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
 {
     let working = working_layout(src, extra_bits, 0);
     let (mut x, scratch) = scratch.borrow().take_ckks_ciphertext_scratch(&working, src.meta());
@@ -350,7 +352,7 @@ where
         + CKKSRoundOps<BE>,
     Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-    H: GetAutomorphismKey<BE>,
+    H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
 {
     const OP: &str = "ckks_to_replicated_into";
     check_destination(OP, dst, src)?;
@@ -394,7 +396,7 @@ where
         + CKKSRoundOps<BE>,
     Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-    H: GetAutomorphismKey<BE>,
+    H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
 {
     const OP: &str = "ckks_from_replicated_into";
     check_destination(OP, dst, src)?;

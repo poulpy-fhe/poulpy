@@ -22,6 +22,7 @@ pub mod parity;
 pub(crate) mod refusal;
 pub mod sampling;
 pub mod serialization;
+pub mod step_hooks;
 
 #[macro_export]
 macro_rules! core_backend_test_suite {
@@ -104,6 +105,7 @@ macro_rules! core_backend_test_suite {
                 glwe_keyswitch_row_offset_refusals => $crate::test_suite::noise::keyswitch::test_glwe_keyswitch_row_offset_refusals,
                 glwe_automorphism => $crate::test_suite::noise::automorphism::test_glwe_automorphism,
                 glwe_automorphism_assign => $crate::test_suite::noise::automorphism::test_glwe_automorphism_assign,
+                glwe_automorphism_many => $crate::test_suite::noise::automorphism::test_glwe_automorphism_many,
                 glwe_automorphism_coarsened => $crate::test_suite::parity::test_glwe_automorphism_coarsened,
                 glwe_tensor_relinearize_cross_radix =>
                     $crate::test_suite::noise::glwe_tensor::test_glwe_tensor_relinearize_cross_radix,
@@ -126,6 +128,8 @@ macro_rules! core_backend_test_suite {
                 glwe_prepare_linear_transformation_rhs_rejects_wide_diagonal =>
                     $crate::test_suite::noise::linear_transformation::test_glwe_prepare_linear_transformation_rhs_rejects_wide_diagonal,
                 glwe_linear_transformation_sum => $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_sum,
+                glwe_linear_transformation_ciphertext_diagonals =>
+                    $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_ciphertext_diagonals,
                 glwe_linear_transformation_powers_of_two =>
                     $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_powers_of_two,
                 glwe_linear_transformation_sum_rejects_mismatched_schedule =>
@@ -208,6 +212,16 @@ macro_rules! core_backend_test_suite {
                 lwe_read_from_rejects_malformed_shape => $crate::test_suite::noise::test_lwe_read_from_rejects_malformed_shape,
                 lwe_secret_from_glwe_secret_flattens_rank_and_preserves_metadata =>
                     $crate::test_suite::noise::test_lwe_secret_from_glwe_secret_flattens_rank_and_preserves_metadata,
+                gglwe_product_fused_rejects_invalid_operands =>
+                    $crate::test_suite::step_hooks::test_gglwe_product_fused_rejects_invalid_operands,
+                gglwe_product_idft_normalize_rejects_invalid_operands =>
+                    $crate::test_suite::step_hooks::test_gglwe_product_idft_normalize_rejects_invalid_operands,
+                gglwe_products_idft_normalize_rejects_invalid_items =>
+                    $crate::test_suite::step_hooks::test_gglwe_products_idft_normalize_rejects_invalid_items,
+                gglwe_products_from_dft_rejects_invalid_items =>
+                    $crate::test_suite::step_hooks::test_gglwe_products_from_dft_rejects_invalid_items,
+                gadget_dft_apply_from_dft_rejects_invalid_operands =>
+                    $crate::test_suite::step_hooks::test_gadget_dft_apply_from_dft_rejects_invalid_operands,
             }
         );
     };

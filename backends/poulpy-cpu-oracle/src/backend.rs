@@ -47,7 +47,7 @@ pub(crate) fn table<F: DFTFamily, R: OracleRing>(module: &Module<Oracle<F, R>>, 
     let handle: &Handle<F> = unsafe { &*module.ptr() };
     assert!(
         n.is_power_of_two() && (n.ilog2() as usize) < handle.tables.len(),
-        "degree {n} is not served by the module"
+        "degree is not served by the module"
     );
     &handle.tables[n.ilog2() as usize]
 }

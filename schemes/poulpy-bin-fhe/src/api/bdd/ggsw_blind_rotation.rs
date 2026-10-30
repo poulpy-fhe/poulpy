@@ -14,28 +14,24 @@ use poulpy_hal::layouts::*;
 pub trait GGSWBlindRotation<T: UnsignedInteger, BE: Backend> {
     #[allow(clippy::too_many_arguments)]
     /// Returns the minimum scratch-space size in bytes required by
-    /// [`ggsw_blind_rotation`][Self::ggsw_blind_rotation].
-    fn ggsw_to_ggsw_blind_rotation_tmp_bytes<R, A, K>(&self, res_infos: &R, a_infos: &A, k_infos: &K) -> usize
+    /// [`ggsw_blind_rotation`][Self::ggsw_blind_rotation], and with `res` as
+    /// `a` by [`ggsw_blind_rotation_assign`][Self::ggsw_blind_rotation_assign].
+    fn ggsw_blind_rotation_tmp_bytes<R, A, K>(&self, res_infos: &R, a_infos: &A, k_infos: &K) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
-        K: GGSWInfos;
-    /// Scratch required for rotating each GGSW row in place.
-    fn ggsw_blind_rotation_assign_tmp_bytes<R, K>(&self, res_infos: &R, k_infos: &K) -> usize
-    where
-        R: GLWEInfos,
         K: GGSWInfos;
     #[allow(clippy::too_many_arguments)]
     /// res <- res * X^{((k>>bit_rsh) % 2^bit_mask) << bit_lsh}.
     /// res <- a * X^{((k>>bit_rsh) % 2^bit_mask) << bit_lsh}.
     fn ggsw_blind_rotation_assign<R, K>(
         &self,
-        res: &mut R,
-        fhe_uint: &K,
         sign: bool,
         bit_rsh: usize,
         bit_mask: usize,
         bit_lsh: usize,
+        res: &mut R,
+        fhe_uint: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,
@@ -44,13 +40,13 @@ pub trait GGSWBlindRotation<T: UnsignedInteger, BE: Backend> {
     #[allow(clippy::too_many_arguments)]
     fn ggsw_blind_rotation<R, A, K>(
         &self,
-        res: &mut R,
-        a: &A,
-        fhe_uint: &K,
         sign: bool,
         bit_rsh: usize,
         bit_mask: usize,
         bit_lsh: usize,
+        res: &mut R,
+        a: &A,
+        fhe_uint: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,
@@ -65,13 +61,13 @@ pub trait GGSWBlindRotation<T: UnsignedInteger, BE: Backend> {
     #[allow(clippy::too_many_arguments)]
     fn scalar_to_ggsw_blind_rotation<R, A, K>(
         &self,
-        res: &mut R,
-        test_vector: &A,
-        fhe_uint: &K,
         sign: bool,
         bit_rsh: usize,
         bit_mask: usize,
         bit_lsh: usize,
+        res: &mut R,
+        test_vector: &A,
+        fhe_uint: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,

@@ -1,7 +1,7 @@
 use crate::bdd_arithmetic::*;
 use poulpy_core::{layouts::*, *};
 use poulpy_hal::layouts::*;
-/// Workspace for copying the actual source and then invoking the selected in-place rotation.
+/// Workspace for the out-of-place rotation and, with the destination as the source, the in-place one.
 pub fn glwe_blind_rotation_tmp_bytes_reference<BE: Backend, R, A, K>(
     module: &Module<BE>,
     res_infos: &R,
@@ -12,15 +12,15 @@ where
     R: GLWEInfos,
     A: GLWEInfos,
     K: GGSWInfos,
-    Module<BE>: GLWECopy<BE> + GLWEBlindRotation<BE>,
+    Module<BE>: GLWEBytesOf<BE> + GLWECopy<BE> + Cmux<BE>,
 {
     module
         .glwe_copy_tmp_bytes(res_infos, a_infos)
-        .max(module.glwe_blind_rotation_assign_tmp_bytes(res_infos, k_infos))
+        .max(glwe_blind_rotation_assign_scratch(module, res_infos, k_infos))
 }
 
 /// Workspace for the canonical in-place rotation, including the final copy.
-pub fn glwe_blind_rotation_assign_tmp_bytes_reference<BE: Backend, R, K>(module: &Module<BE>, res_infos: &R, k_infos: &K) -> usize
+fn glwe_blind_rotation_assign_scratch<BE: Backend, R, K>(module: &Module<BE>, res_infos: &R, k_infos: &K) -> usize
 where
     R: GLWEInfos,
     K: GGSWInfos,
@@ -40,12 +40,12 @@ where
 /// Independently callable canonical implementation of [`GLWEBlindRotation::glwe_blind_rotation_assign`].
 pub fn glwe_blind_rotation_assign_reference<BE, R, K>(
     module: &Module<BE>,
-    res: &mut R,
-    value: &K,
     sign: bool,
     bit_rsh: usize,
     bit_mask: usize,
     bit_lsh: usize,
+    res: &mut R,
+    value: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -53,6 +53,10 @@ pub fn glwe_blind_rotation_assign_reference<BE, R, K>(
     BE: Backend<ZnxWord = i64>,
     Module<BE>: GLWEBytesOf<BE> + GLWECopy<BE> + GLWERotate<BE> + Cmux<BE>,
 {
+    assert!(
+        scratch.available() >= glwe_blind_rotation_tmp_bytes_reference(module, res, res, value.get_bit(0)),
+        "glwe_blind_rotation_assign: insufficient scratch"
+    );
     let (mut tmp_res, mut scratch_1) = scratch.borrow().take_glwe_scratch(res);
     let mut res_is_cur = true;
 
@@ -88,13 +92,13 @@ pub fn glwe_blind_rotation_assign_reference<BE, R, K>(
 /// Independently callable canonical implementation of [`GLWEBlindRotation::glwe_blind_rotation`].
 pub fn glwe_blind_rotation_reference<BE, R, A, K>(
     module: &Module<BE>,
-    res: &mut R,
-    a: &A,
-    fhe_uint: &K,
     sign: bool,
     bit_rsh: usize,
     bit_mask: usize,
     bit_lsh: usize,
+    res: &mut R,
+    a: &A,
+    fhe_uint: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -103,6 +107,10 @@ pub fn glwe_blind_rotation_reference<BE, R, A, K>(
     BE: Backend<ZnxWord = i64>,
     Module<BE>: GLWECopy<BE> + GLWEBlindRotation<BE>,
 {
+    assert!(
+        scratch.available() >= module.glwe_blind_rotation_tmp_bytes(res, &a.to_backend_ref(), fhe_uint.get_bit(0)),
+        "glwe_blind_rotation: insufficient scratch"
+    );
     module.glwe_copy(res, a, scratch);
-    module.glwe_blind_rotation_assign(res, fhe_uint, sign, bit_rsh, bit_mask, bit_lsh, scratch);
+    module.glwe_blind_rotation_assign(sign, bit_rsh, bit_mask, bit_lsh, res, fhe_uint, scratch);
 }

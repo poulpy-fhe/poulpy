@@ -82,11 +82,11 @@ impl<BRA: BlindRotationAlgo, BE: CircuitBootstrappingExecuteImpl<BRA>> CircuitBo
     }
     fn circuit_bootstrapping_execute_to_constant<R, L>(
         &self,
+        log_domain: usize,
+        extension_factor: usize,
         res: &mut R,
         lwe: &L,
         key: &CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE>,
-        log_domain: usize,
-        extension_factor: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGSWToBackendMut<BE> + GGSWAtViewRef<BE> + GGSWAtViewMut<BE> + GGSWInfos,
@@ -94,22 +94,22 @@ impl<BRA: BlindRotationAlgo, BE: CircuitBootstrappingExecuteImpl<BRA>> CircuitBo
     {
         <BE as CircuitBootstrappingExecuteImpl<BRA>>::circuit_bootstrapping_execute_to_constant(
             self,
+            log_domain,
+            extension_factor,
             res,
             lwe,
             key,
-            log_domain,
-            extension_factor,
             scratch,
         )
     }
     fn circuit_bootstrapping_execute_to_exponent<R, L>(
         &self,
         log_gap_out: usize,
+        log_domain: usize,
+        extension_factor: usize,
         res: &mut R,
         lwe: &L,
         key: &CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE>,
-        log_domain: usize,
-        extension_factor: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGSWToBackendMut<BE> + GGSWAtViewRef<BE> + GGSWAtViewMut<BE> + GGSWInfos,
@@ -118,44 +118,44 @@ impl<BRA: BlindRotationAlgo, BE: CircuitBootstrappingExecuteImpl<BRA>> CircuitBo
         <BE as CircuitBootstrappingExecuteImpl<BRA>>::circuit_bootstrapping_execute_to_exponent(
             self,
             log_gap_out,
+            log_domain,
+            extension_factor,
             res,
             lwe,
             key,
-            log_domain,
-            extension_factor,
             scratch,
         )
     }
     fn circuit_bootstrapping_prepare_to_constant<R: GGSWInfos>(
         &self,
-        res_infos: &R,
-        key: &CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE>,
         log_domain: usize,
         extension_factor: usize,
+        res_infos: &R,
+        key: &CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE>,
     ) -> CircuitBootstrappingPlan<BE::OwnedBuf> {
         <BE as CircuitBootstrappingExecuteImpl<BRA>>::circuit_bootstrapping_prepare_to_constant(
             self,
-            res_infos,
-            key,
             log_domain,
             extension_factor,
+            res_infos,
+            key,
         )
     }
     fn circuit_bootstrapping_prepare_to_exponent<R: GGSWInfos>(
         &self,
         log_gap_out: usize,
-        res_infos: &R,
-        key: &CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE>,
         log_domain: usize,
         extension_factor: usize,
+        res_infos: &R,
+        key: &CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE>,
     ) -> CircuitBootstrappingPlan<BE::OwnedBuf> {
         <BE as CircuitBootstrappingExecuteImpl<BRA>>::circuit_bootstrapping_prepare_to_exponent(
             self,
             log_gap_out,
-            res_infos,
-            key,
             log_domain,
             extension_factor,
+            res_infos,
+            key,
         )
     }
     fn circuit_bootstrapping_execute_prepared_tmp_bytes<A: CircuitBootstrappingKeyInfos>(
@@ -169,14 +169,14 @@ impl<BRA: BlindRotationAlgo, BE: CircuitBootstrappingExecuteImpl<BRA>> CircuitBo
         &self,
         res: &mut R,
         lwe: &L,
-        key: &CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE>,
         plan: &CircuitBootstrappingPlan<BE::OwnedBuf>,
+        key: &CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGSWToBackendMut<BE> + GGSWAtViewRef<BE> + GGSWAtViewMut<BE> + GGSWInfos,
         L: LWEToBackendRef<BE> + LWEInfos,
     {
-        <BE as CircuitBootstrappingExecuteImpl<BRA>>::circuit_bootstrapping_execute_prepared(self, res, lwe, key, plan, scratch)
+        <BE as CircuitBootstrappingExecuteImpl<BRA>>::circuit_bootstrapping_execute_prepared(self, res, lwe, plan, key, scratch)
     }
 }
 impl<BRA: BlindRotationAlgo, BE: CircuitBootstrappingKeyEncryptSkImpl<BRA>> CircuitBootstrappingKeyEncryptSk<BRA, BE>
@@ -208,15 +208,6 @@ impl<BRA: BlindRotationAlgo, BE: CircuitBootstrappingKeyEncryptSkImpl<BRA>> Circ
 impl<BRA: BlindRotationAlgo, BE: CircuitBootstrappingKeyPreparedImpl<BRA>> CircuitBootstrappingKeyPreparedFactory<BRA, BE>
     for Module<BE>
 {
-    fn circuit_bootstrapping_key_prepared_alloc_from_infos<A>(
-        &self,
-        infos: &A,
-    ) -> CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE>
-    where
-        A: CircuitBootstrappingKeyInfos,
-    {
-        <BE as CircuitBootstrappingKeyPreparedImpl<BRA>>::circuit_bootstrapping_key_prepared_alloc_from_infos(self, infos)
-    }
     fn circuit_bootstrapping_key_prepare_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: CircuitBootstrappingKeyInfos,

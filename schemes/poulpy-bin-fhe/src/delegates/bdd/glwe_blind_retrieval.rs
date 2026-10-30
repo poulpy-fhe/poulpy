@@ -16,29 +16,29 @@ where
     #[allow(clippy::too_many_arguments)]
     fn glwe_blind_retrieval_statefull<R, K>(
         &self,
-        res: &mut Vec<R>,
-        bits: &K,
         bit_rsh: usize,
         bit_mask: usize,
+        res: &mut Vec<R>,
+        bits: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
         K: GetGGSWBit<BE>,
     {
-        BE::glwe_blind_retrieval_statefull::<R, K>(self, res, bits, bit_rsh, bit_mask, scratch)
+        BE::glwe_blind_retrieval_statefull::<R, K>(self, bit_rsh, bit_mask, res, bits, scratch)
     }
     #[allow(clippy::too_many_arguments)]
     fn glwe_blind_retrieval_statefull_rev<R, K>(
         &self,
-        res: &mut Vec<R>,
-        bits: &K,
         bit_rsh: usize,
         bit_mask: usize,
+        res: &mut Vec<R>,
+        bits: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
         K: GetGGSWBit<BE>,
     {
-        BE::glwe_blind_retrieval_statefull_rev::<R, K>(self, res, bits, bit_rsh, bit_mask, scratch)
+        BE::glwe_blind_retrieval_statefull_rev::<R, K>(self, bit_rsh, bit_mask, res, bits, scratch)
     }
 }

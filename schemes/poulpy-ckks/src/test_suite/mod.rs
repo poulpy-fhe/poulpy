@@ -205,8 +205,9 @@ pub const BASE52_PARAMS_QUAD: CKKSTestParams = CKKSTestParams {
 
 /// Registers the **rank-generic arithmetic subset** of the CKKS suite for a
 /// parameter set with `rank > 1`: encrypt/decrypt, add/sub (ct and pt), mul
-/// (ct, square, prepared, pt), the ct and prepared dot products, neg, copy,
-/// pow2, rotate, inner sum and replicate, and conjugate.
+/// (ct, square, prepared, pt), the ct and prepared dot products, the linear
+/// transformation of ciphertext diagonals, neg, copy, pow2, rotate, inner sum
+/// and replicate, and conjugate.
 ///
 /// The full [`ckks_backend_test_suite!`](crate::ckks_backend_test_suite) hardwires rank-1-only pipelines
 /// (bootstrapping, EvalMod, DFT, PaCo, which reject `rank != 1` by
@@ -393,6 +394,10 @@ macro_rules! ckks_backend_rank2_test_suite {
             run_test!(
                 dot_product_prepared_pt,
                 $crate::test_suite::dot_product::test_dot_product_prepared_pt
+            );
+            run_test!(
+                linear_transformation_ct,
+                $crate::test_suite::linear_transformation::test_linear_transformation_ct
             );
             run_test!(
                 mul_pt_vec_into_aligned,
@@ -794,6 +799,18 @@ macro_rules! ckks_backend_test_suite {
             run_test!(
                 linear_transformation_sum,
                 $crate::test_suite::linear_transformation::test_linear_transformation_sum
+            );
+            run_test!(
+                linear_transformation_ct,
+                $crate::test_suite::linear_transformation::test_linear_transformation_ct
+            );
+            run_test!(
+                linear_transformation_sum_ct,
+                $crate::test_suite::linear_transformation::test_linear_transformation_sum_ct
+            );
+            run_test!(
+                linear_transformation_ct_rejects_foreign_layouts,
+                $crate::test_suite::linear_transformation::test_linear_transformation_ct_rejects_foreign_layouts
             );
             run_test!(
                 prepare_linear_transformation_rhs_rejects_mixed_diagonals,

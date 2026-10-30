@@ -12,7 +12,9 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
 use poulpy_hal::{
     api::ModuleN,
-    layouts::{Backend, CopyFromHost, CopyToHost, Data, HostDataMut, HostDataRef, ReaderFrom, ScratchArena, WriterTo},
+    layouts::{
+        Backend, CopyFromHost, CopyToHost, Data, HostDataMut, HostDataRef, ReaderFrom, Ring, ScratchArena, Standard, WriterTo,
+    },
     source::Source,
 };
 
@@ -113,7 +115,10 @@ impl<D: Data, BRA: BlindRotationAlgo, W: ZnxWord> CircuitBootstrappingKey<D, BRA
         let atk_infos: &GLWEAutomorphismKeyLayout = &infos.atk_infos();
         let brk_infos: &BlindRotationKeyLayout = &infos.brk_infos();
         let trk_infos: &GGLWEToGGSWKeyLayout = &infos.tsk_infos();
-        let gal_els: Vec<i64> = trace_galois_elements(atk_infos.log_n(), 2 * atk_infos.n().as_usize() as i64);
+        let gal_els: Vec<i64> = trace_galois_elements(
+            atk_infos.log_n(),
+            Standard::CYCLOTOMIC_ORDER_FACTOR * atk_infos.n().as_usize() as i64,
+        );
 
         assert!(
             !gal_els.is_empty(),

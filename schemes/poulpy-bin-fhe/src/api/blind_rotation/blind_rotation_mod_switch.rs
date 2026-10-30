@@ -10,8 +10,8 @@ pub trait BlindRotationModSwitch<BE: Backend<ZnxWord = i64>> {
     fn blind_rotation_mod_switch<L: LWEToBackendRef<BE> + LWEInfos>(
         &self,
         modulus: usize,
+        direction: LookUpTableRotationDirection,
         res: &mut [i64],
         lwe: &L,
-        direction: LookUpTableRotationDirection,
     );
 }

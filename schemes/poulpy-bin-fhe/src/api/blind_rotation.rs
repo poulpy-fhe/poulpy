@@ -1,9 +1,10 @@
 //! User-facing blind-rotation execution, key lifecycle, and lookup-table helpers.
 //!
-//! Import these traits to call operations on a backend module. Every trait,
-//! including compressed-key allocation and LUT construction, dispatches through
-//! the selected backend's [`crate::oep`] implementation. Operations that take
-//! caller workspace keep their scratch queries with their execution methods.
+//! Import these traits to call operations on a backend module. Every
+//! operation, LUT construction included, dispatches through the selected
+//! backend's [`crate::oep`] implementation, while key allocation and sizing
+//! are direct on the module. Operations that take caller workspace keep their
+//! scratch queries with their execution methods.
 //!
 //! [`BlindRotationKeyPrepared`](crate::blind_rotation::BlindRotationKeyPrepared)
 //! also exposes convenience methods using the same operation traits.
@@ -15,7 +16,7 @@
 //!
 //! ```
 //! use poulpy_bin_fhe::{
-//!     api::blind_rotation::BlindRotationExecute,
+//!     api::BlindRotationExecute,
 //!     blind_rotation::{BlindRotationKeyPrepared, CGGI, LookupTable},
 //! };
 //! use poulpy_core::layouts::{GLWEInfos, GLWEToBackendMut, LWEInfos, LWEToBackendRef};

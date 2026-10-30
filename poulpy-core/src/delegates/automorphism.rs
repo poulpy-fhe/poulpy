@@ -92,6 +92,23 @@ impl_automorphism_delegate!(
     {
         BE::glwe_automorphism_sub_negate_assign(self, res, key, scratch)
     }
+
+    fn glwe_automorphism_many_tmp_bytes<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
+    where
+        R: GLWEInfos,
+        A: GLWEInfos,
+        K: GGLWEInfos,
+    {
+        BE::glwe_automorphism_many_tmp_bytes(self, res_infos, a_infos, key_infos)
+    }
+
+    fn glwe_automorphism_many<R, A>(&self, res: &mut [&mut R], a: &A, keys: &[&GLWEAutomorphismKeyPreparedBackendRef<'_, BE>], scratch: &mut ScratchArena<'_, BE>)
+    where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos,
+    {
+        BE::glwe_automorphism_many(self, res, a, keys, scratch)
+    }
 );
 
 impl_automorphism_delegate!(

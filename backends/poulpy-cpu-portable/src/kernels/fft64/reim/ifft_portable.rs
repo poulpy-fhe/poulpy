@@ -379,7 +379,7 @@ fn inv_twiddle_ifft_portable<R: Float + FloatConst, const FUSED: bool>(h: usize,
 /// Two merged layers over a block of `4 * h` elements, `h` a multiple of [`LANES`].
 #[inline(always)]
 fn inv_bitwiddle_ifft_portable<R: Float + FloatConst, const FUSED: bool>(h: usize, re: &mut [R], im: &mut [R], omg: &[R; 4]) {
-    debug_assert!(h.is_multiple_of(LANES), "h:{h} is not a multiple of {LANES}");
+    debug_assert!(h.is_multiple_of(LANES), "h is not a multiple of LANES");
     let (r0, r2) = re.split_at_mut(2 * h);
     let (r0, r1) = r0.split_at_mut(h);
     let (r2, r3) = r2.split_at_mut(h);

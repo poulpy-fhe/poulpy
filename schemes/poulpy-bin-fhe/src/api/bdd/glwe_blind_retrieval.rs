@@ -29,10 +29,10 @@ pub trait GLWEBlindRetrieval<BE: Backend> {
     /// most-significant to the least-significant bit of the selector sub-field.
     fn glwe_blind_retrieval_statefull<R, K>(
         &self,
-        res: &mut Vec<R>,
-        bits: &K,
         bit_rsh: usize,
         bit_mask: usize,
+        res: &mut Vec<R>,
+        bits: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
@@ -45,10 +45,10 @@ pub trait GLWEBlindRetrieval<BE: Backend> {
     /// element ordering after an oblivious retrieval.
     fn glwe_blind_retrieval_statefull_rev<R, K>(
         &self,
-        res: &mut Vec<R>,
-        bits: &K,
         bit_rsh: usize,
         bit_mask: usize,
+        res: &mut Vec<R>,
+        bits: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,

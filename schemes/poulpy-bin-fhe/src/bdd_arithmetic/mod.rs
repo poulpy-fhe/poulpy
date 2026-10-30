@@ -1,7 +1,7 @@
 //! Word-level FHE arithmetic on encrypted unsigned integers.
 //!
-//! This module provides [`FheUint`] — a packed-GLWE ciphertext encoding all bits
-//! of an unsigned integer — together with its DFT-prepared counterpart
+//! This module provides [`FheUint`], a packed-GLWE ciphertext encoding all bits
+//! of an unsigned integer, together with its DFT-prepared counterpart
 //! [`FheUintPrepared`], the key material ([`BDDKey`] / [`BDDKeyPrepared`]) needed
 //! to operate on it, and a library of arithmetic and logical operations driven by
 //! pre-compiled Binary Decision Diagram (BDD) circuits.
@@ -71,10 +71,6 @@ pub use ciphertexts::*;
 pub(crate) use circuits::*;
 pub use eval::*;
 pub use key::*;
-
-/// Backend-generic test bodies, instantiated by the backend crates through
-/// [`bin_fhe_backend_test_suite!`](crate::bin_fhe_backend_test_suite).
-pub mod test_suite;
 
 /// Marker trait for unsigned integer types whose bits can be encrypted by [`FheUint`].
 ///

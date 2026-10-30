@@ -6,12 +6,15 @@ use poulpy_bin_fhe::{
         BDDKey, BDDKeyEncryptSk, BDDKeyLayout, BDDKeyPrepared, BDDKeyPreparedFactory, ExecuteBDDCircuit2WTo1W, FheUint,
         FheUintPrepare, FheUintPrepared, GLWEBlindSelection, Sltu,
     },
-    blind_rotation::{BlindRotationAlgo, BlindRotationKeyLayout, CGGI},
-    circuit_bootstrapping::CircuitBootstrappingKeyLayout,
+    blind_rotation::{BlindRotationAlgo, BlindRotationKeyLayout, BlindRotationKeyPreparedFactory, CGGI},
+    circuit_bootstrapping::{CircuitBootstrappingKeyLayout, CircuitBootstrappingKeyPreparedFactory},
 };
 use poulpy_core::{
     GLWECopy, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, LWEEncryptSk,
-    api::{GGSWPreparedFactory, GLWESecretPreparedFactory},
+    api::{
+        GGLWEToGGSWKeyPreparedFactory, GGSWPreparedFactory, GLWEAutomorphismKeyPreparedFactory, GLWESecretPreparedFactory,
+        GLWESwitchingKeyPreparedFactory, GLWEToLWEKeyPreparedFactory,
+    },
     layouts::{
         Base2K, Degree, Dnum, GGLWEToGGSWKeyLayout, GGSWLayout, GLWEAutomorphismKeyLayout, GLWELayout, GLWESwitchingKeyLayout,
         GLWEToLWEKeyLayout, ModuleCoreAlloc, Rank, TorusPrecision,
@@ -45,6 +48,12 @@ where
         + VecZnxRotateAssign<BE>
         + BDDKeyEncryptSk<BRA, BE>
         + BDDKeyPreparedFactory<BRA, BE>
+        + CircuitBootstrappingKeyPreparedFactory<BRA, BE>
+        + BlindRotationKeyPreparedFactory<BRA, BE>
+        + GGLWEToGGSWKeyPreparedFactory<BE>
+        + GLWEAutomorphismKeyPreparedFactory<BE>
+        + GLWESwitchingKeyPreparedFactory<BE>
+        + GLWEToLWEKeyPreparedFactory<BE>
         + FheUintPrepare<BRA, BE>
         + ExecuteBDDCircuit2WTo1W<BE>
         + GLWEBlindSelection<u32, BE>
@@ -237,11 +246,11 @@ where
 
         <Module<BE> as GLWEBlindSelection<u32, BE>>::glwe_blind_selection(
             &module,
+            0,
+            1,
             &mut max_enc,
             cts,
             &compare_enc_prepared,
-            0,
-            1,
             &mut scratch.borrow(),
         );
     }

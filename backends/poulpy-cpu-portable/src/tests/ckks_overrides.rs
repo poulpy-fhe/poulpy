@@ -825,6 +825,26 @@ impl poulpy_core::GLWEAutomorphism<OverrideBackend> for CoreQueryOverrides<'_> {
     {
         poulpy_core::GLWEAutomorphism::glwe_automorphism_sub_negate_assign(self.module, res, key, scratch)
     }
+    fn glwe_automorphism_many_tmp_bytes<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
+    where
+        R: poulpy_core::layouts::GLWEInfos,
+        A: poulpy_core::layouts::GLWEInfos,
+        K: poulpy_core::layouts::GGLWEInfos,
+    {
+        poulpy_core::GLWEAutomorphism::glwe_automorphism_many_tmp_bytes(self.module, res_infos, a_infos, key_infos)
+    }
+    fn glwe_automorphism_many<R, A>(
+        &self,
+        res: &mut [&mut R],
+        a: &A,
+        keys: &[&poulpy_core::layouts::prepared::GLWEAutomorphismKeyPreparedBackendRef<'_, OverrideBackend>],
+        scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, OverrideBackend>,
+    ) where
+        R: poulpy_core::layouts::GLWEToBackendMut<OverrideBackend> + poulpy_core::layouts::GLWEInfos,
+        A: poulpy_core::layouts::GLWEToBackendRef<OverrideBackend> + poulpy_core::layouts::GLWEInfos,
+    {
+        poulpy_core::GLWEAutomorphism::glwe_automorphism_many(self.module, res, a, keys, scratch)
+    }
 }
 
 #[test]

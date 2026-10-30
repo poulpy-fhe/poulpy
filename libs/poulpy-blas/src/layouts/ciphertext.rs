@@ -525,7 +525,7 @@ pub trait BlasModuleAlloc<BE: Backend>: CKKSModuleAlloc<BE> + GetDegree + Sized 
 
     /// A public operand of `rows x cols` blocks of `count` public matrices per batch on side `S`, on this module's
     /// slots, every diagonal zero, which
-    /// [`BlasEncodingOps::blas_pt_operand_encode_into`](crate::layouts::BlasEncodingOps::blas_pt_operand_encode_into)
+    /// [`BlasEncodingOps::blas_pt_operand_encode`](crate::api::BlasEncodingOps::blas_pt_operand_encode)
     /// fills.
     ///
     /// # Panics
@@ -555,7 +555,7 @@ pub trait BlasModuleAlloc<BE: Backend>: CKKSModuleAlloc<BE> + GetDegree + Sized 
         pt_operand::alloc(self, &infos.blas_pt_operand_layout())
     }
     /// A context of `plan` on this module's ring, every diagonal zero, which
-    /// [`BlasEncodingOps::blas_context_encode_into`](crate::layouts::BlasEncodingOps::blas_context_encode_into) fills.
+    /// [`BlasEncodingOps::blas_context_encode`](crate::api::BlasEncodingOps::blas_context_encode) fills.
     ///
     /// # Panics
     ///

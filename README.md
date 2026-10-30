@@ -205,15 +205,15 @@ cargo test -p poulpy-cpu-portable --profile ci --features enable-ckks
 cargo run -p poulpy-cpu-portable --example ckks_poly2 --features enable-ckks
 ```
 
-BLAS runs its functional suite on `poulpy-cpu-oracle` and registers bit-exact
-parity through `blas_parity_test_suite!`: every other backend type, Rayon and
-IFMA variants included, is compared against the oracle of its family (`NTT3x42`
-types against the `NTT4x30` oracles) in `f64` and `Quad`. Every
-conjugate-invariant backend type, the oracle's included, also runs
-`blas_conjugate_invariant_test_suite!`. Native CI runs every BLAS test. Under
-Intel SDE, the AVX-512 job runs the `f64` parity of each of its serial types
-once, in a step with its own execution budget; the emulated AVX job and the optional QEMU
-run do not run BLAS. See
+BLAS runs its functional suite on `poulpy-cpu-oracle` and the portable serial
+types and registers bit-exact parity through `blas_parity_test_suite!`: every
+other backend type, Rayon and IFMA variants included, is compared against the
+oracle of its family (`NTT3x42` types against the `NTT4x30` oracles) in `f64`
+and `Quad`. Every conjugate-invariant backend type, the oracle's included, also
+runs `blas_conjugate_invariant_test_suite!`. Native CI runs every BLAS test.
+Under Intel SDE, the AVX-512 job runs the `f64` parity of each of its serial
+types once, in a step with its own execution budget; the emulated AVX job and
+the optional QEMU run do not run BLAS. See
 [implementing BLAS operations](libs/poulpy-blas/docs/blas-contracts.md).
 
 Run portable BLAS parity with:
@@ -225,7 +225,8 @@ cargo test -p poulpy-cpu-portable --lib --profile ci --features enable-blas -- b
 The oracle runs the BLAS functional tests on `FFT64Oracle` at `log_d` 1, 2 and 3
 (the last at `N = 128`) and at `log_d` 1 also at `N = 16`, and on `NTT4x30Oracle`
 in `f64`, in `Quad` and at rank 2, each also at radix 54 (`N = 128`), and parity
-between its FFT64 and NTT4x30 families in both directions. The NTT types also
+between its FFT64 and NTT4x30 families in both directions. `FFT64Portable` runs
+them in `f64` and `NTT4x30Portable` in `f64` and `Quad`. The NTT types also
 register parity at radix 54, at `N = 64` on the standard ring and `N = 32` on
 the conjugate-invariant ring, and the FFT64 types of the standard ring at
 `N = 32`, where one `4 x 4` block fills the 16 slots. `poulpy-cpu-portable`
@@ -374,7 +375,8 @@ RUSTFLAGS="-C target-feature=+avx2,+fma" cargo test -p poulpy-cpu-avx --features
 Native CI runs binary-FHE parity for the supported FFT/NTT and Rayon backends.
 Intel SDE runs no binary-FHE, keeping instruction emulation within the
 five-minute test execution budget. Scheme parity runs with its own compact
-fixtures; full correctness workflows remain in the backend test suites.
+fixtures; full correctness workflows (`bin_fhe_backend_test_suite!`) run on the
+oracle and the portable serial types.
 
 Benchmark targets are split by family:
 
