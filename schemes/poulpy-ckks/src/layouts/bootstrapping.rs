@@ -15,11 +15,11 @@
 //! prime-basis extension).
 //!
 //! [`CKKSBootstrappingOps::ckks_bootstrap`](crate::api::CKKSBootstrappingOps)
-//! composes the selected pipeline from a compiled [`BootstrappingContext`] and
+//! composes the selected pipeline from a compiled [`BootstrappingContextPrepared`] and
 //! a prepared key set. The plan remains a plain parameter bundle, so callers
 //! can also compose the stages manually from the respective op traits.
 //!
-//! [`BootstrappingContext`] is the *compiled* form of a [`BootstrappingPlan`]:
+//! [`BootstrappingContextPrepared`] is the *compiled* form of a [`BootstrappingPlan`]:
 //! the prepared, backend-resident homomorphic DFT matrices and the encoded,
 //! uploaded EvalMod, built once and reused across bootstraps.
 
@@ -176,7 +176,7 @@ impl BootstrappingPlan {
     /// plan (errors [`InvalidPlan`](crate::CKKSCompositionError::InvalidPlan)
     /// otherwise) — a swapped direction would make [`Self::galois_elements`]
     /// derive rotation keys for a transform that
-    /// [`BootstrappingContext::compile`] never builds. The constructor also
+    /// [`BootstrappingContextPrepared::compile`] never builds. The constructor also
     /// rejects recipe techniques that the selected pipeline cannot evaluate.
     pub fn new(
         pipeline: BootstrappingPipeline,
@@ -486,7 +486,7 @@ impl BootstrappingPlan {
 /// Built once by [`Self::compile`] and reused across bootstraps. The
 /// `SplitRealAndImag` format is used for both transforms so the real and
 /// imaginary coefficient halves can be reduced independently by EvalMod.
-pub struct BootstrappingContext<BE: Backend, F> {
+pub struct BootstrappingContextPrepared<BE: Backend, F> {
     /// The plan the context was compiled from, at the degree it was compiled for: the recipe
     /// of its keys.
     pub(crate) plan: BootstrappingPlan,
@@ -518,7 +518,7 @@ pub struct BootstrappingContext<BE: Backend, F> {
     /// The ring EvalMod runs on, and its plaintexts on the conjugate-invariant
     /// ring ([`Self::compile_ci`]).
     eval_mod_ring: EvalModRing,
-    eval_mod_ci: Option<EvalModCI<BE, F>>,
+    eval_mod_ci: Option<EvalModCIPrepared<BE, F>>,
 
     /// Selected ModUp/EvalMod pipeline.
     pipeline: BootstrappingPipeline,
@@ -530,25 +530,25 @@ pub struct BootstrappingContext<BE: Backend, F> {
 /// EvalMod on the conjugate-invariant ring of degree `N` and the plaintexts of
 /// degree `2N` of the conversions there and back
 /// ([`EvalModRing::ConjugateInvariant`]).
-pub struct EvalModCI<BE: Backend, F> {
+pub struct EvalModCIPrepared<BE: Backend, F> {
     /// EvalMod in plaintexts of the CI ring.
     pub(crate) eval_mod: EvalMod<F, CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, ConjugateInvariant>>,
     /// `u`, `1` on slot `j` and `−i` on slot `j + N/2`: the trace of `u·z(X²)`
     /// holds the real parts of `z_j` and `−i·z_j`, `c_j` and `c_{j+N/2}`.
-    pub(crate) pre: CIPre<BE>,
+    pub(crate) pre: CIPrePrepared<BE>,
     /// `v`, `2` on slot `j` and `2i` on slot `j + N/2`, which pairs them back and restores the
     /// factor 2 of the conjugate pair.
     pub(crate) post: CKKSPlaintextOwned<BE>,
 }
 
-impl<BE: Backend, F> EvalModCI<BE, F> {
+impl<BE: Backend, F> EvalModCIPrepared<BE, F> {
     /// EvalMod in plaintexts of the CI ring.
     pub fn eval_mod(&self) -> &EvalMod<F, CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, ConjugateInvariant>> {
         &self.eval_mod
     }
 
     /// `u`, the conversion before EvalMod.
-    pub fn pre(&self) -> &CIPre<BE> {
+    pub fn pre(&self) -> &CIPrePrepared<BE> {
         &self.pre
     }
 
@@ -558,8 +558,8 @@ impl<BE: Backend, F> EvalModCI<BE, F> {
     }
 }
 
-/// `u` of [`EvalModCI`], as its [`CIConversion`] applies it.
-pub struct CIPre<BE: Backend>(pub(crate) CIPreForm<BE>);
+/// `u` of [`EvalModCIPrepared`], as its [`CIConversion`] applies it.
+pub struct CIPrePrepared<BE: Backend>(pub(crate) CIPreForm<BE>);
 
 pub(crate) enum CIPreForm<BE: Backend> {
     Product(CKKSPlaintextOwned<BE>),
@@ -569,7 +569,7 @@ pub(crate) enum CIPreForm<BE: Backend> {
     },
 }
 
-impl<BE: Backend> CIPre<BE> {
+impl<BE: Backend> CIPrePrepared<BE> {
     /// `u` as a plaintext of degree `2N`, for [`CIConversion::Product`].
     pub fn product(&self) -> Option<&CKKSPlaintextOwned<BE>> {
         match &self.0 {
@@ -590,15 +590,15 @@ impl<BE: Backend> CIPre<BE> {
     }
 }
 
-/// [`EvalModCI`] before its folded factors are prepared.
-struct EvalModCIUnprepared<BE: Backend, F> {
+/// [`EvalModCIPrepared`] before its folded factors are prepared.
+struct EvalModCI<BE: Backend, F> {
     eval_mod: EvalMod<F, CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, ConjugateInvariant>>,
-    pre: CIPreUnprepared<BE>,
+    pre: CIPre<BE>,
     post: CKKSPlaintextOwned<BE>,
 }
 
-/// [`CIPre`] before its folded factors are prepared.
-enum CIPreUnprepared<BE: Backend> {
+/// [`CIPrePrepared`] before its folded factors are prepared.
+enum CIPre<BE: Backend> {
     Product(CKKSPlaintextOwned<BE>),
     /// The even and odd factors, in a matrix of the CoeffsToSlots plan.
     Folded(DFTMatrix<BE, Encode, Split>),
@@ -709,7 +709,7 @@ impl KeyWidths<'_> {
     }
 }
 
-impl<BE: Backend, F> BootstrappingContext<BE, F> {
+impl<BE: Backend, F> BootstrappingContextPrepared<BE, F> {
     /// The stages that set the widths at which a bootstrap uses its keys.
     pub(crate) fn key_widths(&self) -> KeyWidths<'_> {
         KeyWidths {
@@ -786,7 +786,7 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
     }
 
     /// EvalMod on the conjugate-invariant ring and its conversions, if compiled by [`Self::compile_ci`].
-    pub fn eval_mod_ci(&self) -> Option<&EvalModCI<BE, F>> {
+    pub fn eval_mod_ci(&self) -> Option<&EvalModCIPrepared<BE, F>> {
         self.eval_mod_ci.as_ref()
     }
 
@@ -796,14 +796,14 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
     }
 }
 
-/// Unprepared stage of a [`BootstrappingContext`]: the generated DFT matrices and
-/// the encoded EvalMod, before the matrices are prepared.
+/// A bootstrapping context before preparation, the unprepared stage of a [`BootstrappingContextPrepared`]: the
+/// generated DFT matrices and the encoded EvalMod, before the matrices are prepared.
 ///
-/// Built by [`BootstrappingContext::compile_unprepared`]. Preparation is a
+/// Built by [`BootstrappingContextPrepared::compile_unprepared`]. Preparation is a
 /// separate step so that its scratch can be sized with
 /// [`Self::prepare_tmp_bytes`], which follows the backend's selected
 /// preparation budget.
-pub struct BootstrappingContextUnprepared<BE: Backend, F> {
+pub struct BootstrappingContext<BE: Backend, F> {
     plan: BootstrappingPlan,
     c2s_guard_bits: usize,
     functional_message_modulus: Option<usize>,
@@ -814,12 +814,16 @@ pub struct BootstrappingContextUnprepared<BE: Backend, F> {
     eval_mod_plan: EvalModPlan,
     eval_mod: Option<EvalMod<F, CKKSPlaintextOwned<BE>>>,
     eval_mod_ring: EvalModRing,
-    eval_mod_ci: Option<EvalModCIUnprepared<BE, F>>,
+    eval_mod_ci: Option<EvalModCI<BE, F>>,
     pipeline: BootstrappingPipeline,
     sparse_secret_hamming_weight: Option<usize>,
 }
 
-impl<BE: Backend, F> BootstrappingContextUnprepared<BE, F> {
+/// The former name of [`BootstrappingContext`].
+#[deprecated(note = "renamed BootstrappingContext; the prepared context is BootstrappingContextPrepared")]
+pub type BootstrappingContextUnprepared<BE, F> = BootstrappingContext<BE, F>;
+
+impl<BE: Backend, F> BootstrappingContext<BE, F> {
     /// Scratch required by [`Self::prepare`]: the largest selected preparation
     /// budget among the matrices.
     pub fn prepare_tmp_bytes(&self, module: &Module<BE>) -> usize
@@ -833,7 +837,7 @@ impl<BE: Backend, F> BootstrappingContextUnprepared<BE, F> {
         if let Some(bypass) = &self.coeffs_to_slots_bypass {
             bytes = bytes.max(module.ckks_prepare_dft_matrix_tmp_bytes(bypass));
         }
-        if let Some(CIPreUnprepared::Folded(folded)) = self.eval_mod_ci.as_ref().map(|ci| &ci.pre) {
+        if let Some(CIPre::Folded(folded)) = self.eval_mod_ci.as_ref().map(|ci| &ci.pre) {
             bytes = bytes.max(module.ckks_prepare_dft_matrix_tmp_bytes(folded));
         }
         bytes
@@ -845,7 +849,7 @@ impl<BE: Backend, F> BootstrappingContextUnprepared<BE, F> {
     /// # Errors
     ///
     /// As [`CKKSDFTOps::ckks_prepare_dft_matrix`].
-    pub fn prepare(self, module: &Module<BE>, scratch: &mut ScratchArena<'_, BE>) -> Result<BootstrappingContext<BE, F>>
+    pub fn prepare(self, module: &Module<BE>, scratch: &mut ScratchArena<'_, BE>) -> Result<BootstrappingContextPrepared<BE, F>>
     where
         Module<BE>: CKKSDFTOps<BE>,
         CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE>,
@@ -877,25 +881,25 @@ impl<BE: Backend, F> BootstrappingContextUnprepared<BE, F> {
             .map(|unprepared| module.ckks_prepare_dft_matrix_alloc(&unprepared, scratch))
             .transpose()?;
         let eval_mod_ci = match eval_mod_ci {
-            Some(ci) => Some(EvalModCI {
+            Some(ci) => Some(EvalModCIPrepared {
                 eval_mod: ci.eval_mod,
                 pre: match ci.pre {
-                    CIPreUnprepared::Product(pre) => CIPre(CIPreForm::Product(pre)),
-                    CIPreUnprepared::Folded(folded) => {
+                    CIPre::Product(pre) => CIPrePrepared(CIPreForm::Product(pre)),
+                    CIPre::Folded(folded) => {
                         let [even, odd]: [_; 2] = module
                             .ckks_prepare_dft_matrix_alloc(&folded, scratch)?
                             .inner
                             .factors
                             .try_into()
                             .unwrap_or_else(|_| unreachable!("an even and an odd factor"));
-                        CIPre(CIPreForm::Folded { even, odd })
+                        CIPrePrepared(CIPreForm::Folded { even, odd })
                     }
                 },
                 post: ci.post,
             }),
             None => None,
         };
-        Ok(BootstrappingContext {
+        Ok(BootstrappingContextPrepared {
             plan,
             c2s_guard_bits,
             functional_message_modulus,
@@ -913,7 +917,7 @@ impl<BE: Backend, F> BootstrappingContextUnprepared<BE, F> {
     }
 }
 
-impl<BE: Backend, F> BootstrappingContext<BE, F>
+impl<BE: Backend, F> BootstrappingContextPrepared<BE, F>
 where
     F: CKKSEncodingScalar,
 {
@@ -925,9 +929,9 @@ where
     ///
     /// `scratch` serves both generation and preparation, so it must cover
     /// [`Self::compile_unprepared_tmp_bytes`] and
-    /// [`BootstrappingContextUnprepared::prepare_tmp_bytes`]. The latter is only
+    /// [`BootstrappingContext::prepare_tmp_bytes`]. The latter is only
     /// known once the matrices exist: use [`Self::compile_unprepared`] followed by
-    /// [`BootstrappingContextUnprepared::prepare`] to size preparation exactly.
+    /// [`BootstrappingContext::prepare`] to size preparation exactly.
     pub fn compile(
         module: &Module<BE>,
         base2k: Base2K,
@@ -948,8 +952,8 @@ where
     ///
     /// `scratch` serves generation and preparation, as for [`Self::compile`]:
     /// [`Self::compile_ci_unprepared_tmp_bytes`] and
-    /// [`BootstrappingContextUnprepared::prepare_tmp_bytes`] size the two stages of
-    /// [`Self::compile_ci_unprepared`] and [`BootstrappingContextUnprepared::prepare`].
+    /// [`BootstrappingContext::prepare_tmp_bytes`] size the two stages of
+    /// [`Self::compile_ci_unprepared`] and [`BootstrappingContext::prepare`].
     pub fn compile_ci<BCI>(
         module: &Module<BE>,
         ci: &Module<BCI>,
@@ -1004,7 +1008,7 @@ where
         plan: &BootstrappingPlan,
         scratch: &mut ScratchArena<'_, BE>,
         scratch_ci: &mut ScratchArena<'_, BCI>,
-    ) -> Result<BootstrappingContextUnprepared<BE, F>>
+    ) -> Result<BootstrappingContext<BE, F>>
     where
         BCI: Backend<Ring = ConjugateInvariant, OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
         Module<BE>: CKKSDFTMatrixOps<BE, F> + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
@@ -1043,7 +1047,7 @@ where
         // back at degree `N`.
         let post = pair(2.0, 1.0, post.consumed_bits())?;
         let pre = match pre {
-            CIConversion::Product { log_delta } => CIPreUnprepared::Product(pair(1.0, -1.0, log_delta)?),
+            CIConversion::Product { log_delta } => CIPre::Product(pair(1.0, -1.0, log_delta)?),
             CIConversion::Folded => {
                 // `u` is `1` at the roots `ω_j = ζ_{4N}^{5^j}` of slots `j` and `−i` at
                 // `−ω_j`, slots `j + N/2`: `u_e = (1 − i)/2` and `u_o = (1 + i)/(2ω_j)`
@@ -1068,7 +1072,7 @@ where
                 let scales = [slot_scales(vec![one_half], vec![-one_half]), slot_scales(odd_re, odd_im)];
                 let dft = &mut context.coeffs_to_slots.inner;
                 dft.factors.pop();
-                CIPreUnprepared::Folded(crate::layouts::dft::ckks_scaled_last_factors::<BE, F>(
+                CIPre::Folded(crate::layouts::dft::ckks_scaled_last_factors::<BE, F>(
                     module,
                     base2k,
                     &dft.plan,
@@ -1078,7 +1082,7 @@ where
                 )?)
             }
         };
-        context.eval_mod_ci = Some(EvalModCIUnprepared {
+        context.eval_mod_ci = Some(EvalModCI {
             eval_mod: compile_eval_mod(base2k, plan.eval_mod, ci, scratch_ci)?,
             pre,
             post,
@@ -1119,7 +1123,7 @@ where
         base2k: Base2K,
         plan: &BootstrappingPlan,
         scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<BootstrappingContextUnprepared<BE, F>>
+    ) -> Result<BootstrappingContext<BE, F>>
     where
         Module<BE>: CKKSDFTMatrixOps<BE, F> + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
     {
@@ -1141,7 +1145,7 @@ where
             None => None,
         };
 
-        Ok(BootstrappingContextUnprepared {
+        Ok(BootstrappingContext {
             plan: plan.clone(),
             c2s_guard_bits: plan.c2s_guard_bits,
             functional_message_modulus: plan.functional_message_modulus,

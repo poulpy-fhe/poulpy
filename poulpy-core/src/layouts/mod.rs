@@ -1700,11 +1700,12 @@ pub(crate) fn read_vec_znx_with_shape<D: HostDataMut, W: ZnxWord, R: Read>(
     reader: &mut R,
     degree: Option<usize>,
     cols: usize,
+    size: Option<usize>,
 ) -> IoResult<()> {
     let mut header = [0u8; 32];
     reader.read_exact(&mut header)?;
     let fields = read_shape_fields::<4>(&header)?;
-    if fields[0] == 0 || degree.is_some_and(|n| n != fields[0]) || fields[1] != cols {
+    if fields[0] == 0 || degree.is_some_and(|n| n != fields[0]) || fields[1] != cols || size.is_some_and(|s| s != fields[2]) {
         return Err(invalid_serialized_shape());
     }
     validate_serialized_size::<W>(&fields[..3], fields[3])?;

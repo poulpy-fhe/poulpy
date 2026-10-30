@@ -31,7 +31,7 @@ use crate::{
     gadget::{cnv_offset_to_limb_offset, prod_dft_size},
     layouts::{
         Base2K, DiagonalOperand, DiagonalProd, GGLWEInfos, GLWE, GLWEInfos, GLWEToBackendMut, GetAutomorphismKey, LWEInfos,
-        LinearTransformationPlan, ModuleCoreAlloc,
+        LinearTransformationPlan, ModuleCoreAlloc, Scale,
         prepared::{GLWEAutomorphismKeyPreparedBackendRef, PreparedDiagonal},
     },
     reference::{
@@ -49,6 +49,11 @@ use crate::layouts::{GiantTreeLevel, operand_galois_element};
 impl<BE: Backend> DiagonalProd<BE> for PreparedDiagonal<BE::OwnedBuf, BE> {
     fn operand(&self) -> DiagonalOperand<'_, BE> {
         DiagonalOperand::Prepared(&self.cnv)
+    }
+
+    fn log_scale(&self) -> usize {
+        let Scale::Log(log_scale) = self.plaintext_meta().scale;
+        log_scale
     }
 
     /// The backend's [`LinearTransformationImpl::glwe_giant_step_batch`](crate::oep::LinearTransformationImpl::glwe_giant_step_batch).

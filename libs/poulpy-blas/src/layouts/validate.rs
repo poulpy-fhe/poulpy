@@ -5,7 +5,7 @@
 use std::cell::RefCell;
 
 use poulpy_ckks::{
-    CKKSCompositionError, CKKSCtBounds, CKKSError, CKKSInfos, CKKSResult as Result, GLWEPlaintextInfos,
+    CKKSCompositionError, CKKSCtBounds, CKKSError, CKKSInfos, CKKSLayout, CKKSResult as Result, GLWEPlaintextInfos,
     api::{
         CKKSModuleInfos, LinearTransformation, LinearTransformationPrepared, LtDiagonalMeta, ckks_linear_transformation_output_k,
     },
@@ -17,15 +17,16 @@ use poulpy_core::layouts::{
 use poulpy_hal::layouts::{Backend, Module, PrepareHint, Ring, ScratchArena};
 
 use super::{
-    BlasContext, BlasContextInfos, BlasGrid, BlasGridInfos, BlasMatMulOperandInfos, BlasMatMulOperandLayout, BlasPlan,
-    BlasPtOperand, BlasPtOperandInfos, Left,
-    ciphertext::{batch_fits, layout_of, replicated_at},
+    BlasContextInfos, BlasContextPrepared, BlasGrid, BlasGridInfos, BlasMatMulOperandInfos, BlasMatMulOperandLayout,
+    BlasMatVecMaps, BlasPlan, BlasPtOperandInfos, BlasPtOperandPrepared, BlasVectorInfos, BlasVectorRef, BlasVectorShape, Left,
+    ciphertext::{batch_fits, layout_of, replicated_at, slots_of},
     context::{ContextMaps, reduction_projection, reduction_rotations, shift_maps, shift_rotates, sum_rotations},
     grid_batch,
     matmul_operand::{
         left_operand_layout, left_term_layout, product_terms, right_maps, right_operand_layout, right_term_layout, same_shape,
     },
     pt_operand::OperandMaps,
+    vector_period,
 };
 
 /// The largest radix of a product, as poulpy-ckks's prepared dot product takes: past it two canonical tensor digits can
@@ -153,6 +154,20 @@ pub(crate) fn ensure_maps<M: CKKSModuleInfos + ?Sized>(
     k: TorusPrecision,
     inputs: &[&dyn BlasGridInfos],
 ) -> Result<()> {
+    let inputs: Vec<CKKSLayout> = inputs.iter().map(|g| g.block_layout()).collect();
+    ensure_maps_reading(op, module, slots, base2k, k, &inputs, "blocks")
+}
+
+/// [`ensure_maps`] over the layouts of the ciphertexts the maps read, named `what` in its reasons.
+fn ensure_maps_reading<M: CKKSModuleInfos + ?Sized>(
+    op: &'static str,
+    module: &M,
+    slots: usize,
+    base2k: Base2K,
+    k: TorusPrecision,
+    inputs: &[CKKSLayout],
+    what: &str,
+) -> Result<()> {
     if module.ckks_max_slots() != slots {
         return Err(reject(
             op,
@@ -162,23 +177,106 @@ pub(crate) fn ensure_maps<M: CKKSModuleInfos + ?Sized>(
             ),
         ));
     }
-    if let Some(input) = inputs.iter().find(|g| g.block_layout().base2k() != base2k) {
+    if let Some(input) = inputs.iter().find(|ct| ct.base2k() != base2k) {
         return Err(reject(
             op,
             format!(
-                "blocks at base2k={} read by maps at base2k={}",
-                input.block_layout().base2k().as_usize(),
+                "{what} at base2k={} read by maps at base2k={}",
+                input.base2k().as_usize(),
                 base2k.as_usize()
             ),
         ));
     }
-    if let Some(input) = inputs.iter().find(|g| g.block_layout().k() < k) {
+    if let Some(input) = inputs.iter().find(|ct| ct.k() < k) {
+        return Err(reject(
+            op,
+            format!("{what} at k={} read by maps at k={}", input.k().as_usize(), k.as_usize()),
+        ));
+    }
+    Ok(())
+}
+
+/// Rejects `v`, whose ciphertexts are `cts`, unless its shape holds an entry, an entry per ciphertext and a positive
+/// stride, and `cts` number its ciphertexts, share one layout whose `log_delta` does not exceed its `k`, and carry a
+/// label, at most `log2` of the degree, proving a period on ring `R` that holds the entries.
+pub(crate) fn ensure_vector<R: Ring>(op: &'static str, v: &impl BlasVectorInfos, cts: &[impl CKKSCtBounds]) -> Result<()> {
+    let shape = v.vector_shape();
+    if shape.len == 0 || shape.chunk == 0 || shape.stride == 0 {
         return Err(reject(
             op,
             format!(
-                "blocks at k={} read by maps at k={}",
-                input.block_layout().k().as_usize(),
-                k.as_usize()
+                "a vector of {} entries, {} per ciphertext, at stride {}",
+                shape.len, shape.chunk, shape.stride
+            ),
+        ));
+    }
+    if cts.len() != shape.count() {
+        return Err(reject(
+            op,
+            format!(
+                "{} ciphertexts do not hold {} entries of {} per ciphertext",
+                cts.len(),
+                shape.len,
+                shape.chunk
+            ),
+        ));
+    }
+    let first = v.ct_layout();
+    if cts.iter().any(|ct| layout_of(ct) != first) {
+        return Err(reject(op, "the ciphertexts of a vector do not share one layout".into()));
+    }
+    if first.log_delta() > first.k().as_usize() {
+        return Err(reject(
+            op,
+            format!(
+                "log_delta={} exceeds the ciphertexts' k={}",
+                first.log_delta(),
+                first.k().as_usize()
+            ),
+        ));
+    }
+    let (n, s) = (first.n().as_usize(), first.log_sparsity());
+    let period = vector_period::<R>(v);
+    if s > n.ilog2() as usize || !shape.fits(slots_of::<R>(n), period) {
+        return Err(reject(
+            op,
+            format!(
+                "entries at slots {} + {} e for e < {} do not fit ciphertexts of degree {n} labelled log_sparsity={s}",
+                shape.offset, shape.stride, shape.chunk
+            ),
+        ));
+    }
+    Ok(())
+}
+
+/// Rejects a vector of shape `have` where the operand reads or writes one of shape `want`, its `side`.
+fn ensure_vector_shape(op: &'static str, side: &str, have: BlasVectorShape, want: BlasVectorShape) -> Result<()> {
+    if have != want {
+        return Err(reject(
+            op,
+            format!("a vector of {have:?} where the operand's {side} is {want:?}"),
+        ));
+    }
+    Ok(())
+}
+
+/// Rejects `res` unless its ciphertexts are of degree `n`, the module's, and `a`'s of the degree, radix and rank of
+/// `res`'s.
+fn ensure_vector_layouts(op: &'static str, n: usize, res: CKKSLayout, a: CKKSLayout) -> Result<()> {
+    let ring = |ct: CKKSLayout| (ct.n().as_usize(), ct.base2k().as_usize(), ct.rank().as_usize());
+    if ring(res).0 != n {
+        return Err(reject(
+            op,
+            format!("ciphertexts of degree {} on a module of degree {n}", ring(res).0),
+        ));
+    }
+    if ring(a) != ring(res) {
+        return Err(reject(
+            op,
+            format!(
+                "ciphertexts of (n, base2k, rank) = {:?} read into ciphertexts of {:?}",
+                ring(a),
+                ring(res)
             ),
         ));
     }
@@ -467,7 +565,7 @@ pub fn validate_blas_transpose<BE: Backend>(
     module: &Module<BE>,
     res: &impl BlasGrid<BE>,
     a: &impl BlasGrid<BE>,
-    ctx: &BlasContext<BE>,
+    ctx: &BlasContextPrepared<BE>,
     keys: &impl GetAutomorphismKey<BE>,
 ) -> Result<usize> {
     let op = "blas_transpose";
@@ -491,7 +589,7 @@ pub fn validate_blas_rotate_rows<BE: Backend>(
     k: usize,
     res: &impl BlasGrid<BE>,
     a: &impl BlasGrid<BE>,
-    ctx: &BlasContext<BE>,
+    ctx: &BlasContextPrepared<BE>,
     keys: &impl GetAutomorphismKey<BE>,
 ) -> Result<usize> {
     validate_shift(module, k, res, a, true, ctx, keys)
@@ -507,7 +605,7 @@ pub fn validate_blas_rotate_cols<BE: Backend>(
     k: usize,
     res: &impl BlasGrid<BE>,
     a: &impl BlasGrid<BE>,
-    ctx: &BlasContext<BE>,
+    ctx: &BlasContextPrepared<BE>,
     keys: &impl GetAutomorphismKey<BE>,
 ) -> Result<usize> {
     validate_shift(module, k, res, a, false, ctx, keys)
@@ -520,7 +618,7 @@ fn ensure_intra<BE: Backend>(
     module: &Module<BE>,
     res: &impl BlasGrid<BE>,
     a: &impl BlasGrid<BE>,
-    ctx: &BlasContext<BE>,
+    ctx: &BlasContextPrepared<BE>,
     rows: usize,
     cols: usize,
 ) -> Result<()> {
@@ -532,7 +630,12 @@ fn ensure_intra<BE: Backend>(
 }
 
 /// The context's maps read `a`: its blocks at their radix and at least as wide.
-fn ensure_mapped<BE: Backend>(op: &'static str, module: &Module<BE>, ctx: &BlasContext<BE>, a: &impl BlasGrid<BE>) -> Result<()> {
+fn ensure_mapped<BE: Backend>(
+    op: &'static str,
+    module: &Module<BE>,
+    ctx: &BlasContextPrepared<BE>,
+    a: &impl BlasGrid<BE>,
+) -> Result<()> {
     ensure_maps(op, module, ctx.slots(), ctx.base2k(), ctx.coeffs_meta().k, &[a])
 }
 
@@ -547,7 +650,7 @@ pub fn validate_blas_sum_rows<BE: Backend>(
     module: &Module<BE>,
     res: &impl BlasGrid<BE>,
     a: &impl BlasGrid<BE>,
-    ctx: &BlasContext<BE>,
+    ctx: &BlasContextPrepared<BE>,
     keys: &impl GetAutomorphismKey<BE>,
 ) -> Result<usize> {
     validate_reduction(module, res, a, true, ctx, keys)
@@ -562,7 +665,7 @@ pub fn validate_blas_sum_cols<BE: Backend>(
     module: &Module<BE>,
     res: &impl BlasGrid<BE>,
     a: &impl BlasGrid<BE>,
-    ctx: &BlasContext<BE>,
+    ctx: &BlasContextPrepared<BE>,
     keys: &impl GetAutomorphismKey<BE>,
 ) -> Result<usize> {
     validate_reduction(module, res, a, false, ctx, keys)
@@ -574,7 +677,7 @@ fn validate_reduction<BE: Backend>(
     res: &impl BlasGrid<BE>,
     a: &impl BlasGrid<BE>,
     rows: bool,
-    ctx: &BlasContext<BE>,
+    ctx: &BlasContextPrepared<BE>,
     keys: &impl GetAutomorphismKey<BE>,
 ) -> Result<usize> {
     let op = if rows { "blas_sum_rows" } else { "blas_sum_cols" };
@@ -633,7 +736,7 @@ fn validate_shift<BE: Backend>(
     res: &impl BlasGrid<BE>,
     a: &impl BlasGrid<BE>,
     rows: bool,
-    ctx: &BlasContext<BE>,
+    ctx: &BlasContextPrepared<BE>,
     keys: &impl GetAutomorphismKey<BE>,
 ) -> Result<usize> {
     let op = if rows { "blas_rotate_rows" } else { "blas_rotate_cols" };
@@ -724,7 +827,7 @@ fn ensure_masks<BE: Backend>(
     op: &'static str,
     module: &Module<BE>,
     a: &impl BlasGridInfos,
-    ctx: &BlasContext<BE>,
+    ctx: &BlasContextPrepared<BE>,
     left: bool,
 ) -> Result<()> {
     ensure_dimension(op, ctx.log_d(), a)?;
@@ -751,7 +854,7 @@ pub fn validate_blas_matmul<BE: Backend>(
     res: &impl BlasGrid<BE>,
     a: &impl BlasGrid<BE>,
     b: &impl BlasGrid<BE>,
-    ctx: &BlasContext<BE>,
+    ctx: &BlasContextPrepared<BE>,
     tsk: &impl GetTensorKey<BE>,
     keys: &impl GetAutomorphismKey<BE>,
 ) -> Result<usize> {
@@ -781,7 +884,7 @@ pub fn validate_blas_matmul_prepare_left<BE: Backend>(
     module: &Module<BE>,
     res: &impl BlasMatMulOperandInfos,
     a: &impl BlasGrid<BE>,
-    ctx: &BlasContext<BE>,
+    ctx: &BlasContextPrepared<BE>,
     keys: &impl GetAutomorphismKey<BE>,
 ) -> Result<()> {
     let op = "blas_matmul_prepare_left";
@@ -792,7 +895,7 @@ pub fn validate_blas_matmul_prepare_left<BE: Backend>(
 
 /// [`validate_blas_matmul_prepare_left`] for
 /// [`blas_matmul_prepare_right`](crate::api::BlasMatMulOps::blas_matmul_prepare_right), with tau and psi^k, or for a
-/// replicated `b` [`BlasContext::tau_rep`] and [`BlasContext::rotate_rows_rep`], and the infos
+/// replicated `b` [`BlasContextPrepared::tau_rep`] and [`BlasContextPrepared::rotate_rows_rep`], and the infos
 /// [`blas_matmul_right_operand_layout`](crate::layouts::blas_matmul_right_operand_layout) gives.
 ///
 /// # Errors
@@ -802,7 +905,7 @@ pub fn validate_blas_matmul_prepare_right<BE: Backend>(
     module: &Module<BE>,
     res: &impl BlasMatMulOperandInfos,
     b: &impl BlasGrid<BE>,
-    ctx: &BlasContext<BE>,
+    ctx: &BlasContextPrepared<BE>,
     keys: &impl GetAutomorphismKey<BE>,
 ) -> Result<()> {
     let op = "blas_matmul_prepare_right";
@@ -844,7 +947,7 @@ pub fn validate_blas_matmul_prepared<BE: Backend>(
     res: &impl BlasGrid<BE>,
     a: &impl BlasMatMulOperandInfos,
     b: &impl BlasMatMulOperandInfos,
-    ctx: &BlasContext<BE>,
+    ctx: &BlasContextPrepared<BE>,
     tsk: &impl GetTensorKey<BE>,
     keys: &impl GetAutomorphismKey<BE>,
 ) -> Result<usize> {
@@ -878,8 +981,8 @@ pub fn validate_blas_matmul_pt_right<BE: Backend>(
     module: &Module<BE>,
     res: &impl BlasGrid<BE>,
     a: &impl BlasGrid<BE>,
-    b: &BlasPtOperand<BE>,
-    ctx: &BlasContext<BE>,
+    b: &BlasPtOperandPrepared<BE>,
+    ctx: &BlasContextPrepared<BE>,
     keys: &impl GetAutomorphismKey<BE>,
 ) -> Result<usize> {
     let op = "blas_matmul_pt_right";
@@ -930,9 +1033,9 @@ pub fn validate_blas_matmul_pt_right<BE: Backend>(
 pub fn validate_blas_matmul_pt_left<BE: Backend>(
     module: &Module<BE>,
     res: &impl BlasGrid<BE>,
-    b: &BlasPtOperand<BE, Left>,
+    b: &BlasPtOperandPrepared<BE, Left>,
     a: &impl BlasGrid<BE>,
-    ctx: &BlasContext<BE>,
+    ctx: &BlasContextPrepared<BE>,
     keys: &impl GetAutomorphismKey<BE>,
 ) -> Result<usize> {
     let op = "blas_matmul_pt_left";
@@ -958,7 +1061,12 @@ pub fn validate_blas_matmul_pt_left<BE: Backend>(
 }
 
 /// `a` is a grid at the context's `log_d` of blocks of the module's degree, which the context's maps read.
-fn ensure_factor<BE: Backend>(op: &'static str, module: &Module<BE>, a: &impl BlasGrid<BE>, ctx: &BlasContext<BE>) -> Result<()> {
+fn ensure_factor<BE: Backend>(
+    op: &'static str,
+    module: &Module<BE>,
+    a: &impl BlasGrid<BE>,
+    ctx: &BlasContextPrepared<BE>,
+) -> Result<()> {
     ensure_grid::<BE::Ring>(op, ctx.log_d(), a, a.blocks())?;
     ensure_layouts(op, module.n(), a, &[])?;
     ensure_maps(op, module, ctx.slots(), ctx.base2k(), ctx.coeffs_meta().k, &[a])
@@ -970,7 +1078,7 @@ fn ensure_hot_context<BE: Backend>(
     op: &'static str,
     module: &Module<BE>,
     x: &impl BlasMatMulOperandInfos,
-    ctx: &BlasContext<BE>,
+    ctx: &BlasContextPrepared<BE>,
 ) -> Result<()> {
     if x.hint() == PrepareHint::Reuse {
         return Ok(());
@@ -1153,6 +1261,64 @@ pub(crate) fn pt_left_uses<P: LtDiagonalMeta>(
     let rep = left_takes_replicated(b, a);
     let maps = (0..b.rows()).flat_map(|i| (0..b.cols()).map(move |l| b.at_for(i, l, rep)));
     pt_uses(res, a, b.first(), masks, maps, f)
+}
+
+/// Checks a [`blas_matvec_pt`](crate::api::BlasMatVecOps::blas_matvec_pt) call: `a` and `res` are vectors whose
+/// ciphertexts tile their shape and share one layout whose label proves a period holding their entries, `a` of `w`'s
+/// input shape and `res` of its output shape, the ciphertexts of `res` of the module's degree and those of `a` of their
+/// radix and rank, `w` encoded on a module of the module's slot count at `a`'s radix and no wider than `a`, `a`
+/// repeating within `w`'s input period, and `keys` holding every key of `w`'s maps, the baby steps at `a`'s width, the
+/// giant steps at the width they leave into `res`, of `a`'s rank.
+///
+/// # Errors
+///
+/// `InvalidOperand` for a vector, shape, layout, operand or period it rejects, then, key by key,
+/// `MissingAutomorphismKey`, or `InvalidOperand` for a key of another rank.
+pub fn validate_blas_matvec_pt<BE: Backend>(
+    module: &Module<BE>,
+    res: &impl BlasVectorRef<BE>,
+    w: &impl BlasMatVecMaps<BE>,
+    a: &impl BlasVectorRef<BE>,
+    keys: &impl GetAutomorphismKey<BE>,
+) -> Result<()> {
+    let op = "blas_matvec_pt";
+    ensure_vector::<BE::Ring>(op, a, a.cts())?;
+    ensure_vector::<BE::Ring>(op, res, res.cts())?;
+    ensure_vector_shape(op, "input", a.vector_shape(), w.input())?;
+    ensure_vector_shape(op, "output", res.vector_shape(), w.output())?;
+    ensure_vector_layouts(op, module.n(), res.ct_layout(), a.ct_layout())?;
+    ensure_maps_reading(
+        op,
+        module,
+        w.slots(),
+        w.base2k(),
+        w.coeffs_meta().k,
+        &[a.ct_layout()],
+        "ciphertexts",
+    )?;
+    let period = vector_period::<BE::Ring>(a);
+    if period > w.input_period() {
+        return Err(reject(
+            op,
+            format!(
+                "an input repeating every {period} slots read by an operand of input period {}",
+                w.input_period()
+            ),
+        ));
+    }
+    matvec_pt_uses(res, w.blocks(), a, &mut |u| ensure_rotation(op, module, keys, u))
+}
+
+/// The look-ups of [`validate_blas_matvec_pt`]: every map of `maps`, output-major, from `a`'s width into `res`, of `a`'s
+/// rank.
+pub(crate) fn matvec_pt_uses<'m, P: LtDiagonalMeta + 'm>(
+    res: &impl BlasVectorInfos,
+    maps: impl IntoIterator<Item = &'m LinearTransformation<P>>,
+    a: &impl BlasVectorInfos,
+    f: UseSink<'_>,
+) -> Result<()> {
+    let (a_k, rank, res_k) = (a.ct_layout().k(), a.ct_layout().rank(), res.ct_layout().k());
+    maps.into_iter().try_for_each(|lt| lt_uses(lt, a_k, res_k, rank, &mut *f))
 }
 
 #[cfg(test)]

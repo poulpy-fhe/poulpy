@@ -314,6 +314,10 @@ macro_rules! ckks_backend_rank2_test_suite {
                 $crate::test_suite::dot_product::test_dot_product_prepared_pt
             );
             run_test!(
+                dot_product_prepared_pt_add,
+                $crate::test_suite::dot_product::test_dot_product_prepared_pt_add
+            );
+            run_test!(
                 linear_transformation_ct,
                 $crate::test_suite::linear_transformation::test_linear_transformation_ct
             );
@@ -1230,6 +1234,10 @@ macro_rules! ckks_backend_test_suite {
             run_test!(
                 dot_product_prepared_pt,
                 $crate::test_suite::dot_product::test_dot_product_prepared_pt
+            );
+            run_test!(
+                dot_product_prepared_pt_add,
+                $crate::test_suite::dot_product::test_dot_product_prepared_pt_add
             );
             run_test!(
                 dot_product_const_aligned,

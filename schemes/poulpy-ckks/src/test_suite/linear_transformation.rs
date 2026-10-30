@@ -259,8 +259,8 @@ where
 /// poisoned budget.
 ///
 /// One term is the single transform bit for bit. Distinct terms decrypt to the
-/// sum of the single transforms and carry the single transform's metadata. A
-/// mismatched term is rejected, for its own reason, before `dst` is written.
+/// sum of the single transforms and carry the single transform's metadata, and their streamed diagonals give the same
+/// bits on the streamed query's budget. A mismatched term is rejected, for its own reason, before `dst` is written.
 pub fn test_linear_transformation_sum<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -269,7 +269,11 @@ pub fn test_linear_transformation_sum<BE, F, E>(
     BE: TestContextBackend<Ring = Standard>,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + CKKSLinearTransformationOps<BE>
+        + poulpy_core::api::GLWELinearTransformations<BE>
+        + CnvPVecAlloc<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> ScratchArena<'a, BE>: ScratchAvailable,
@@ -358,8 +362,8 @@ pub fn test_linear_transformation_sum<BE, F, E>(
     .unwrap();
     let have = snapshot::<BE, _>(&sum);
     assert_eq!(
-        (have.layout, have.canonical, have.noise),
-        (single.layout, single.canonical, single.noise),
+        (&have.layout, have.canonical, &have.noise),
+        (&single.layout, single.canonical, &single.noise),
         "the sum's metadata is not the single transform's"
     );
     let (want_re, want_im) = terms
@@ -377,6 +381,61 @@ pub fn test_linear_transformation_sum<BE, F, E>(
         &want_re,
         &want_im,
         &mut scratch.borrow(),
+    );
+
+    // The same terms streamed, plaintext diagonals: the resident sum, bit for bit.
+    let streamed_lts: Vec<_> = terms.iter().map(|&(_, l)| &lts[l]).collect();
+    let mut streamed = alloc_ct(&params, module, params.k);
+    with_scratch::<BE, _>(
+        module.ckks_eval_linear_transformation_sum_streamed_tmp_bytes(
+            &cts[0],
+            &crate::api::ckks_plaintext_diagonal_layout(&cts[0]),
+            &prepared[0].index(),
+            &params.atk_layout(),
+            &params.atk_layout(),
+        ),
+        |scratch| {
+            module.ckks_eval_linear_transformation_sum_into(
+                &mut streamed,
+                &term_srcs,
+                &term_babies,
+                &streamed_lts,
+                &keys,
+                scratch,
+            )
+        },
+    )
+    .unwrap();
+    assert_eq!(snapshot::<BE, _>(&streamed), have, "the streamed sum is not the resident one");
+    // Streamed terms of two diagonal scales reach core's own sum check, which reads the scale each plaintext records.
+    let mut shifted = encode_lt(module, &params, &bs[1], n1, false, &mut scratch.borrow());
+    for diagonal in shifted.giant_steps.iter_mut().flat_map(|gs| gs.diagonals.iter_mut()) {
+        let mut meta = diagonal.plaintext.meta();
+        let Scale::Log(scale) = meta.scale;
+        meta.scale = Scale::Log(scale + 1);
+        diagonal.plaintext.set_meta(meta);
+    }
+    let mut core_sum = alloc_ct(&params, module, params.k);
+    let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        poulpy_core::api::GLWELinearTransformations::glwe_eval_linear_transformation_sum_into(
+            module,
+            0,
+            &mut core_sum,
+            &term_babies[..2],
+            &[&lts[terms[0].1], &shifted],
+            &keys,
+            &mut scratch.borrow(),
+        )
+    }))
+    .unwrap_err();
+    let message = panic
+        .downcast_ref::<&str>()
+        .copied()
+        .or_else(|| panic.downcast_ref::<String>().map(String::as_str));
+    assert_eq!(
+        message,
+        Some("summed linear transformation 1 does not share the first one's diagonal layout, width and scale"),
+        "streamed terms of two scales"
     );
 
     // A mismatched term: rejected as `InvalidOperand` for `reason`, with `sum` untouched.

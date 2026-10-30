@@ -359,12 +359,35 @@ impl<W: ZnxWord> GLWE<AlignedBuf, W> {
 impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWE<D, W> {
     /// Deserialises a [`GLWE`] in little-endian binary format.
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
+        self.read_expecting(reader, None)
+    }
+}
+
+impl<D: HostDataMut, W: ZnxWord> GLWE<D, W> {
+    /// Deserialises a stream of [`Self::write_live_to`] as [`ReaderFrom::read_from`] does, at this [`GLWE`]'s `base2k`,
+    /// degree, column count and `ceil(k / base2k)` limbs, which it then holds: a stream of others is
+    /// [`std::io::ErrorKind::InvalidData`] before its limbs are read.
+    pub fn read_live_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
+        let live = self.k.as_usize().div_ceil(self.base2k.as_usize());
+        self.read_expecting(reader, Some((self.base2k, self.data.n(), live)))
+    }
+
+    /// [`ReaderFrom::read_from`], refusing a stream not of `expected` `(base2k, degree, limbs)` before its limbs.
+    fn read_expecting<R: std::io::Read>(
+        &mut self,
+        reader: &mut R,
+        expected: Option<(Base2K, usize, usize)>,
+    ) -> std::io::Result<()> {
         self.noise = None;
         let components = self.data.cols();
         let noise = crate::ComponentNoise::read_optional(reader, components)?;
         let base2k = Base2K(reader.read_u32::<LittleEndian>()?);
+        if expected.is_some_and(|(want, ..)| want != base2k) {
+            return Err(crate::layouts::invalid_serialized_shape());
+        }
         let plaintext_meta = GLWEPlaintextMeta::read_from(reader)?;
-        crate::layouts::read_vec_znx_with_shape(&mut self.data, reader, None, components)?;
+        let (degree, size) = (expected.map(|(_, n, _)| n), expected.map(|(.., size)| size));
+        crate::layouts::read_vec_znx_with_shape(&mut self.data, reader, degree, components, size)?;
         if let Some(meta) = plaintext_meta {
             meta.validate_degree(self.data.n())?;
         }
@@ -383,6 +406,29 @@ impl<D: HostDataRef, W: ZnxWord> WriterTo for GLWE<D, W> {
     /// Fails with [`std::io::ErrorKind::InvalidInput`], writing nothing, when the
     /// canonical flag is clear: normalize first.
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
+        self.write_metadata_to(writer)?;
+        self.data.write_to(writer)
+    }
+}
+
+impl<D: HostDataRef, W: ZnxWord> GLWE<D, W> {
+    /// Serialises the [`GLWE`] as [`WriterTo::write_to`] does, its first `ceil(k / base2k)` limbs alone, past which a
+    /// canonical value is zero: the stream follows `k`, not the allocation, and reads into a [`GLWE`] of that many limbs
+    /// or more, of which it keeps that many.
+    ///
+    /// Fails as [`WriterTo::write_to`] does.
+    pub fn write_live_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
+        poulpy_hal::layouts::assert_dense(&self.data, "GLWE::write_live_to");
+        self.write_metadata_to(writer)?;
+        let (data, live) = (
+            &self.data,
+            self.k.as_usize().div_ceil(self.base2k.as_usize()).min(self.data.size()),
+        );
+        VecZnx::<&[u8], W>::from_data(data.data().as_ref(), data.n(), data.cols(), live).write_to(writer)
+    }
+
+    /// Everything [`WriterTo::write_to`] writes before the limbs, after refusing a flag-clear [`GLWE`].
+    fn write_metadata_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
         if !self.canonical {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
@@ -392,8 +438,7 @@ impl<D: HostDataRef, W: ZnxWord> WriterTo for GLWE<D, W> {
         crate::layouts::validate_noise_components(self.noise.as_ref(), self.data.cols())?;
         crate::ComponentNoise::write_optional(self.noise.as_ref(), writer)?;
         writer.write_u32::<LittleEndian>(self.base2k.0)?;
-        GLWEPlaintextMeta::write_to(&self.plaintext_meta, writer)?;
-        self.data.write_to(writer)
+        GLWEPlaintextMeta::write_to(&self.plaintext_meta, writer)
     }
 }
 
@@ -607,6 +652,79 @@ pub(in crate::layouts) mod tests {
         assert!(bytes.is_empty());
         glwe.set_canonical(true);
         glwe.write_to(&mut bytes).unwrap();
+    }
+
+    #[test]
+    fn write_live_to_writes_the_limbs_of_k() {
+        use poulpy_hal::layouts::{ZnxView, ZnxViewMut};
+        let mut glwe = GLWE::<AlignedBuf, i64>::alloc(Degree(8), Base2K(12), TorusPrecision(33), Rank(1));
+        for col in 0..2 {
+            for limb in 0..2 {
+                let values = glwe.data_mut().at_mut(col, limb);
+                values
+                    .iter_mut()
+                    .enumerate()
+                    .for_each(|(i, x)| *x = (i + col + limb) as i64 % 7 - 3);
+            }
+        }
+        // Two live limbs at `k = 20`, the third zero as a canonical value's.
+        glwe.set_k(TorusPrecision(20));
+        glwe.set_canonical(true);
+        let (mut live, mut full) = (Vec::new(), Vec::new());
+        glwe.write_live_to(&mut live).unwrap();
+        glwe.write_to(&mut full).unwrap();
+        let mut back = GLWE::<AlignedBuf, i64>::alloc(Degree(8), Base2K(12), TorusPrecision(20), Rank(1));
+        back.data_mut().at_mut(0, 0)[0] = 9;
+        back.read_from(&mut live.as_slice()).unwrap();
+        assert_eq!(back.data().size(), 2);
+        for col in 0..2 {
+            for limb in 0..2 {
+                assert_eq!(back.data().at(col, limb), glwe.data().at(col, limb), "col {col} limb {limb}");
+            }
+        }
+        // The stream of every allocated limb does not fit the live allocation.
+        assert_eq!(
+            back.read_from(&mut full.as_slice()).unwrap_err().kind(),
+            ErrorKind::InvalidData
+        );
+        glwe.set_canonical(false);
+        assert_eq!(
+            glwe.write_live_to(&mut Vec::new()).unwrap_err().kind(),
+            ErrorKind::InvalidInput
+        );
+    }
+
+    #[test]
+    fn read_live_from_refuses_another_shape_before_its_limbs() {
+        use poulpy_hal::layouts::{ZnxView, ZnxViewMut};
+        let live = |n: u32, base2k: u32, k: u32| {
+            let mut glwe = GLWE::<AlignedBuf, i64>::alloc(Degree(n), Base2K(base2k), TorusPrecision(k), Rank(1));
+            glwe.set_canonical(true);
+            let mut bytes = Vec::new();
+            glwe.write_live_to(&mut bytes).unwrap();
+            bytes
+        };
+        let mut receiver = GLWE::<AlignedBuf, i64>::alloc(Degree(16), Base2K(12), TorusPrecision(24), Rank(1));
+        receiver.data_mut().at_mut(0, 0)[0] = 9;
+        let before = (receiver.data().raw().to_vec(), receiver.data().size());
+        for (label, bytes) in [
+            ("degree", live(8, 12, 24)),
+            ("radix", live(16, 11, 24)),
+            ("limbs", live(16, 12, 36)),
+        ] {
+            let err = receiver.read_live_from(&mut bytes.as_slice()).unwrap_err();
+            assert_eq!(err.kind(), ErrorKind::InvalidData, "{label}");
+            assert!(
+                (receiver.data().raw().to_vec(), receiver.data().size()) == before,
+                "{label}: the limbs changed"
+            );
+        }
+        receiver.read_live_from(&mut live(16, 12, 24).as_slice()).unwrap();
+
+        // At `k = 0` no limb is live: the stream holds none.
+        let mut zero = GLWE::<AlignedBuf, i64>::alloc(Degree(8), Base2K(12), TorusPrecision(0), Rank(1));
+        zero.read_live_from(&mut live(8, 12, 0).as_slice()).unwrap();
+        assert_eq!(zero.data().size(), 0);
     }
 
     pub(in crate::layouts) fn layout(n: u32, k: u32) -> GLWELayout {

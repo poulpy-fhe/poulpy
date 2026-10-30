@@ -6,7 +6,7 @@ use crate::{
     CKKSCtBounds, SetCKKSInfos,
     layouts::EvalModPlan,
     layouts::{
-        BootstrappingCIKeys, BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, CKKSCiphertextOwned,
+        BootstrappingCIKeys, BootstrappingContextPrepared, BootstrappingKeys, BootstrappingKeysLayout, CKKSCiphertextOwned,
         CKKSPlaintextOwned, EncodedLut,
     },
 };
@@ -25,7 +25,7 @@ use crate::{
 ///
 /// The composable stages stay public so callers can assemble custom pipelines,
 /// but a ready-made orchestrator is provided: [`ckks_bootstrap`](Self::ckks_bootstrap).
-/// It consumes a compiled [`BootstrappingContext`] and a prepared
+/// It consumes a compiled [`BootstrappingContextPrepared`] and a prepared
 /// [`BootstrappingKeys`], and selects C2S-first or S2C-first from the context.
 /// EvalRound+ is selected separately by either recipe's optional bypass.
 /// Sparse-secret encapsulation is also selected by the compiled recipe; the
@@ -45,7 +45,7 @@ pub trait CKKSBootstrappingOps<BE: Backend> {
         &self,
         ct_out: &C1,
         ct_in: &C2,
-        ctx: &BootstrappingContext<BE, F>,
+        ctx: &BootstrappingContextPrepared<BE, F>,
         keys_layout: &BootstrappingKeysLayout,
     ) -> usize
     where
@@ -59,7 +59,7 @@ pub trait CKKSBootstrappingOps<BE: Backend> {
         &self,
         ct_out: &C1,
         ct_in: &C2,
-        ctx: &BootstrappingContext<BE, F>,
+        ctx: &BootstrappingContextPrepared<BE, F>,
         luts: &[EncodedLut<CKKSPlaintextOwned<BE>>],
         keys_layout: &BootstrappingKeysLayout,
     ) -> usize
@@ -123,7 +123,7 @@ pub trait CKKSBootstrappingOps<BE: Backend> {
     /// folds EvalMod's required input scaling into CoeffsToSlots, so no further
     /// scaling is needed at call time.
     ///
-    /// The pipeline is selected from [`BootstrappingContext::pipeline`]:
+    /// The pipeline is selected from [`BootstrappingContextPrepared::pipeline`]:
     ///
     /// - [`C2SFirst`](crate::layouts::BootstrappingPipeline::C2SFirst): `ModUp → CoeffsToSlots →
     ///   EvalMod → SlotsToCoeffs`. The final transform restores the message ratio,
@@ -148,7 +148,7 @@ pub trait CKKSBootstrappingOps<BE: Backend> {
         &self,
         ct_out: &mut CKKSCiphertextOwned<BE>,
         ct_in: &CKKSCiphertextOwned<BE>,
-        ctx: &BootstrappingContext<BE, F>,
+        ctx: &BootstrappingContextPrepared<BE, F>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -177,7 +177,7 @@ pub trait CKKSBootstrappingOps<BE: Backend> {
         &self,
         ct_outs: &mut [CKKSCiphertextOwned<BE>],
         ct_in: &CKKSCiphertextOwned<BE>,
-        ctx: &BootstrappingContext<BE, F>,
+        ctx: &BootstrappingContextPrepared<BE, F>,
         luts: &[EncodedLut<CKKSPlaintextOwned<BE>>],
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
@@ -188,7 +188,7 @@ pub trait CKKSBootstrappingOps<BE: Backend> {
 
 /// [`CKKSBootstrappingOps::ckks_bootstrap`] with EvalMod on the
 /// conjugate-invariant ring ([`EvalModRing::ConjugateInvariant`](crate::layouts::EvalModRing::ConjugateInvariant)),
-/// for a context compiled by [`BootstrappingContext::compile_ci`]: this module
+/// for a context compiled by [`BootstrappingContextPrepared::compile_ci`]: this module
 /// serves degree `2N` for the conversions and `N` for the other stages, and `ci`
 /// is the CI module of degree `N`, on the twin [`Self::CI`].
 /// The keys, the conversion keys included, are checked at entry.
@@ -204,7 +204,7 @@ pub trait CKKSBootstrappingCIOps<BE: Backend> {
         ci: &Module<Self::CI>,
         ct_out: &C1,
         ct_in: &C2,
-        ctx: &BootstrappingContext<BE, F>,
+        ctx: &BootstrappingContextPrepared<BE, F>,
         keys_layout: &BootstrappingKeysLayout,
     ) -> (usize, usize)
     where
@@ -240,7 +240,7 @@ pub trait CKKSBootstrappingCIOps<BE: Backend> {
         ci: &Module<Self::CI>,
         dst: &mut Dst,
         src: &Src,
-        ctx: &BootstrappingContext<BE, F>,
+        ctx: &BootstrappingContextPrepared<BE, F>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
         scratch_ci: &mut ScratchArena<'_, Self::CI>,

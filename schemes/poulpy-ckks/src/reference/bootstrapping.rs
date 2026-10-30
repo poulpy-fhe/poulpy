@@ -25,7 +25,7 @@ use crate::{
     },
     eval_lut::{ckks_eval_lut, ckks_eval_lut_binary, ckks_eval_lut_from_basis, ckks_lut_power_basis},
     layouts::{
-        BootstrappingCIKeys, BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys,
+        BootstrappingCIKeys, BootstrappingContextPrepared, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys,
         BootstrappingPipeline, CKKSCiphertextOwned, CKKSCiphertextViewMut, CKKSModuleAlloc, CKKSPlaintextOwned, EncodedLut,
         EncodedLutKind, EvalModRing, EvalModType, ScratchArenaTakeCKKS,
     },
@@ -40,7 +40,7 @@ fn bootstrap_tmp_bytes_for<BE, C1, C2, F>(
     module: &Module<BE>,
     ct_out: &C1,
     ct_in: &C2,
-    ctx: &BootstrappingContext<BE, F>,
+    ctx: &BootstrappingContextPrepared<BE, F>,
     keys_layout: &BootstrappingKeysLayout,
 ) -> usize
 where
@@ -140,7 +140,7 @@ fn raise_tmp_bytes<BE, F>(
     module: &Module<BE>,
     boot_layout: &CKKSLayout,
     in_layout: &CKKSLayout,
-    ctx: &BootstrappingContext<BE, F>,
+    ctx: &BootstrappingContextPrepared<BE, F>,
     keys_layout: &BootstrappingKeysLayout,
 ) -> usize
 where
@@ -187,7 +187,7 @@ fn check_key_widths<BE, M, F, K, T, C1, C2>(
     op: &'static str,
     ct_out: &C1,
     ct_in: &C2,
-    ctx: &BootstrappingContext<BE, F>,
+    ctx: &BootstrappingContextPrepared<BE, F>,
     keys: &K,
     tensor_key: &T,
 ) -> Result<()>
@@ -229,7 +229,7 @@ pub(crate) fn check_raise_keys<BE, F, K, C1, C2>(
     op: &'static str,
     ct_out: &C1,
     ct_in: &C2,
-    ctx: &BootstrappingContext<BE, F>,
+    ctx: &BootstrappingContextPrepared<BE, F>,
     keys: &K,
 ) -> Result<()>
 where
@@ -299,7 +299,7 @@ pub trait CKKSBootstrappingReference<BE: Backend> {
         &self,
         ct_out: &C1,
         ct_in: &C2,
-        ctx: &BootstrappingContext<BE, F>,
+        ctx: &BootstrappingContextPrepared<BE, F>,
         keys_layout: &BootstrappingKeysLayout,
     ) -> usize
     where
@@ -316,7 +316,7 @@ pub trait CKKSBootstrappingReference<BE: Backend> {
         &self,
         ct_out: &C1,
         ct_in: &C2,
-        ctx: &BootstrappingContext<BE, F>,
+        ctx: &BootstrappingContextPrepared<BE, F>,
         luts: &[EncodedLut<CKKSPlaintextOwned<BE>>],
         keys_layout: &BootstrappingKeysLayout,
     ) -> usize
@@ -365,7 +365,7 @@ pub trait CKKSBootstrappingReference<BE: Backend> {
         &self,
         ct_out: &mut CKKSCiphertextOwned<BE>,
         ct_in: &CKKSCiphertextOwned<BE>,
-        ctx: &BootstrappingContext<BE, F>,
+        ctx: &BootstrappingContextPrepared<BE, F>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -400,7 +400,7 @@ pub trait CKKSBootstrappingReference<BE: Backend> {
         &self,
         ct_outs: &mut [CKKSCiphertextOwned<BE>],
         ct_in: &CKKSCiphertextOwned<BE>,
-        ctx: &BootstrappingContext<BE, F>,
+        ctx: &BootstrappingContextPrepared<BE, F>,
         luts: &[EncodedLut<CKKSPlaintextOwned<BE>>],
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
@@ -441,7 +441,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl> CKKSBoo
         &self,
         ct_out: &C1,
         ct_in: &C2,
-        ctx: &BootstrappingContext<BE, F>,
+        ctx: &BootstrappingContextPrepared<BE, F>,
         keys_layout: &BootstrappingKeysLayout,
     ) -> usize
     where
@@ -458,7 +458,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl> CKKSBoo
         &self,
         ct_out: &C1,
         ct_in: &C2,
-        ctx: &BootstrappingContext<BE, F>,
+        ctx: &BootstrappingContextPrepared<BE, F>,
         luts: &[EncodedLut<CKKSPlaintextOwned<BE>>],
         keys_layout: &BootstrappingKeysLayout,
     ) -> usize
@@ -537,7 +537,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl> CKKSBoo
         &self,
         ct_out: &mut CKKSCiphertextOwned<BE>,
         ct_in: &CKKSCiphertextOwned<BE>,
-        ctx: &BootstrappingContext<BE, F>,
+        ctx: &BootstrappingContextPrepared<BE, F>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -670,7 +670,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl> CKKSBoo
                         &mut scratch_local,
                     )?;
 
-                    // `BootstrappingContext::compile` rejects this, but re-check
+                    // `BootstrappingContextPrepared::compile` rejects this, but re-check
                     // before the power-of-two shift.
                     ckks_ensure!(
                         ctx.eval_mod_plan().f_mod_interval.is_power_of_two(),
@@ -723,7 +723,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl> CKKSBoo
         &self,
         ct_outs: &mut [CKKSCiphertextOwned<BE>],
         ct_in: &CKKSCiphertextOwned<BE>,
-        ctx: &BootstrappingContext<BE, F>,
+        ctx: &BootstrappingContextPrepared<BE, F>,
         luts: &[EncodedLut<CKKSPlaintextOwned<BE>>],
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
@@ -1080,7 +1080,7 @@ fn ckks_bootstrap_coeffs_to_slots<BE, F, K, C, R>(
     ct: &C,
     r0: &mut R,
     i0: &mut R,
-    ctx: &BootstrappingContext<BE, F>,
+    ctx: &BootstrappingContextPrepared<BE, F>,
     keys: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
@@ -1098,7 +1098,7 @@ fn ckks_bootstrap_coeffs_to_slots_real<BE, F, K, R1, R2>(
     module: &Module<BE>,
     ct: &mut R1,
     conjugate: &mut R2,
-    ctx: &BootstrappingContext<BE, F>,
+    ctx: &BootstrappingContextPrepared<BE, F>,
     keys: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
@@ -1124,7 +1124,7 @@ fn ckks_bootstrap_eval_mod_halves<BE, F, K, C, R1, R2>(
     i0: &C,
     res_real: &mut R1,
     res_imag: &mut R2,
-    ctx: &BootstrappingContext<BE, F>,
+    ctx: &BootstrappingContextPrepared<BE, F>,
     keys: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
@@ -1166,7 +1166,7 @@ fn ckks_bootstrap_s2c_first<BE, F, K>(
     module: &Module<BE>,
     ct_out: &mut CKKSCiphertextOwned<BE>,
     ct_in: &CKKSCiphertextOwned<BE>,
-    ctx: &BootstrappingContext<BE, F>,
+    ctx: &BootstrappingContextPrepared<BE, F>,
     keys: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
@@ -1280,7 +1280,7 @@ fn ckks_bootstrap_s2c_mod_up<BE, F, K, R, Src>(
     module: &Module<BE>,
     ct_raised: &mut R,
     ct_in: &Src,
-    ctx: &BootstrappingContext<BE, F>,
+    ctx: &BootstrappingContextPrepared<BE, F>,
     keys: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
@@ -1340,7 +1340,7 @@ fn bootstrap_real_inner<BE, F, K>(
     module: &Module<BE>,
     ct_out: &mut CKKSCiphertextOwned<BE>,
     ct_in: &CKKSCiphertextOwned<BE>,
-    ctx: &BootstrappingContext<BE, F>,
+    ctx: &BootstrappingContextPrepared<BE, F>,
     keys: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
@@ -1395,7 +1395,7 @@ fn s2c_first_linear_tmp_bytes<BE, C1, C2, F>(
     module: &Module<BE>,
     ct_raised: &C1,
     ct_in: &C2,
-    ctx: &BootstrappingContext<BE, F>,
+    ctx: &BootstrappingContextPrepared<BE, F>,
     keys_layout: &BootstrappingKeysLayout,
 ) -> usize
 where
@@ -1433,7 +1433,7 @@ pub fn ckks_bootstrap_ci_tmp_bytes_reference<BE, BCI, C1, C2, F>(
     ci: &Module<BCI>,
     ct_out: &C1,
     ct_in: &C2,
-    ctx: &BootstrappingContext<BE, F>,
+    ctx: &BootstrappingContextPrepared<BE, F>,
     keys_layout: &BootstrappingKeysLayout,
 ) -> (usize, usize)
 where
@@ -1514,7 +1514,7 @@ where
 }
 
 /// `u·z(X²)` into `embedded`, of degree `2N`, from the input `w` of the last
-/// CoeffsToSlots factor folded with `u` ([`CIPre::Folded`]): `a(X²) + X·b(X²)`,
+/// CoeffsToSlots factor folded with `u` ([`CIPrePrepared::Folded`]): `a(X²) + X·b(X²)`,
 /// with `a` and `b` the even and odd factors on `w`, which share its baby steps.
 fn ci_folded_pre<BE, R, H>(
     module: &Module<BE>,
@@ -1561,7 +1561,7 @@ pub fn ckks_bootstrap_ci_reference<BE, BCI, Dst, Src, F, K>(
     ci: &Module<BCI>,
     ct_out: &mut Dst,
     ct_in: &Src,
-    ctx: &BootstrappingContext<BE, F>,
+    ctx: &BootstrappingContextPrepared<BE, F>,
     keys: &K,
     scratch: &mut ScratchArena<'_, BE>,
     scratch_ci: &mut ScratchArena<'_, BCI>,
@@ -1958,7 +1958,7 @@ where
         .max(module.glwe_keyswitch_tmp_bytes(dst_infos, dst_infos, sparse_to_dense_infos))
 }
 
-fn ensure_unit_circle_exp_context<BE: Backend, F>(op: &'static str, ctx: &BootstrappingContext<BE, F>) -> Result<()> {
+fn ensure_unit_circle_exp_context<BE: Backend, F>(op: &'static str, ctx: &BootstrappingContextPrepared<BE, F>) -> Result<()> {
     ckks_ensure_operand!(
         op,
         ctx.eval_mod_plan().eval_mod_type == EvalModType::ExpCmplx,
@@ -1975,7 +1975,7 @@ fn ensure_unit_circle_exp_context<BE: Backend, F>(op: &'static str, ctx: &Bootst
 fn functional_output_contract<BE: Backend, F>(
     op: &'static str,
     ct_in: &CKKSCiphertextOwned<BE>,
-    ctx: &BootstrappingContext<BE, F>,
+    ctx: &BootstrappingContextPrepared<BE, F>,
     lut: &EncodedLut<CKKSPlaintextOwned<BE>>,
     bootstrap_k: usize,
 ) -> Result<(GLWEPlaintextMeta, usize)> {
@@ -2020,7 +2020,7 @@ fn ckks_eval_encoded_lut<BE, F, K, C, R>(
     module: &Module<BE>,
     ct_out: &mut R,
     ct_in: &C,
-    ctx: &BootstrappingContext<BE, F>,
+    ctx: &BootstrappingContextPrepared<BE, F>,
     lut: &EncodedLut<CKKSPlaintextOwned<BE>>,
     keys: &K,
     scratch: &mut ScratchArena<'_, BE>,
@@ -2070,7 +2070,7 @@ fn eval_lut_batch<BE, F, K, C>(
     module: &Module<BE>,
     outs: &mut [CKKSCiphertextOwned<BE>],
     ct: &C,
-    ctx: &BootstrappingContext<BE, F>,
+    ctx: &BootstrappingContextPrepared<BE, F>,
     luts: &[EncodedLut<CKKSPlaintextOwned<BE>>],
     keys: &K,
     shared: bool,

@@ -221,6 +221,11 @@ pub trait DiagonalProd<BE: Backend>: GLWEInfos + Sized {
     /// The diagonal as the right operand of its products: prepared, or a GLWE view the product prepares.
     fn operand(&self) -> DiagonalOperand<'_, BE>;
 
+    /// The scale the scheme records on the diagonal, which the terms of a sum share; 0 where it records none.
+    fn log_scale(&self) -> usize {
+        0
+    }
+
     /// Runs the PROD inner product of one giant step of plaintext diagonals into `prod_dft`, in the form of its first
     /// diagonal, which every diagonal of a transform shares.
     fn accumulate_giant_prod<M>(

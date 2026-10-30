@@ -955,6 +955,7 @@ pub fn test_glwe_multiplication_parity<BR, BT>(
     Module<BR>: GLWEMulConst<BR>
         + GLWEMulPlain<BR>
         + GLWEMulPreparedPlainSum<BR>
+        + GLWEAdd<BR>
         + CnvPVecAlloc<BR>
         + Convolution<BR>
         + GLWENormalize<BR>
@@ -1092,6 +1093,7 @@ fn test_glwe_mul_prepared_plain_sum_case<BR, BT>(
     BR::OwnedBuf: HostDataMut,
     Module<BR>: GLWEMulPlain<BR>
         + GLWEMulPreparedPlainSum<BR>
+        + GLWEAdd<BR>
         + CnvPVecAlloc<BR>
         + Convolution<BR>
         + GLWENormalize<BR>
@@ -1269,6 +1271,106 @@ fn test_glwe_mul_prepared_plain_sum_case<BR, BT>(
             res_ref,
             have,
             "glwe_mul_prepared_plain_sum_dft, three terms: k={k} rank={rank:?} offset={offset}"
+        );
+    }
+
+    // The accumulate form, at offsets whose fraction of a limb is negative (below one limb), zero and positive: into a
+    // zero `res` it is the sum itself, bit for bit; from any `res` it is the sum rounded losslessly, one limb wider than
+    // its product, plus `res`, rounded once at `res.k()`; and both backends agree.
+    for offset in [0, params.base2k - 1, params.base2k, params.base2k + 3, 2 * params.base2k + 1] {
+        let mut sum = module_ref.glwe_alloc_from_infos(infos);
+        let bytes = module_ref.glwe_mul_prepared_plain_sum_tmp_bytes(&sum, size, size);
+        module_ref.glwe_mul_prepared_plain_sum(
+            offset,
+            &mut sum,
+            &a_refs,
+            size,
+            &b_refs,
+            size,
+            &GALOIS,
+            base2k,
+            &mut poisoned_scratch::<BR>(bytes).borrow(),
+        );
+        let mut from_zero = module_ref.glwe_alloc_from_infos(infos);
+        let bytes = module_ref.glwe_mul_prepared_plain_sum_add_tmp_bytes(&from_zero, size, size);
+        module_ref.glwe_mul_prepared_plain_sum_add(
+            offset,
+            &mut from_zero,
+            &a_refs,
+            size,
+            &b_refs,
+            size,
+            &GALOIS,
+            base2k,
+            &mut poisoned_scratch::<BR>(bytes).borrow(),
+        );
+        assert_glwe_eq!(
+            sum,
+            from_zero,
+            "glwe_mul_prepared_plain_sum_add into zero versus the sum: k={k} rank={rank:?} offset={offset}"
+        );
+
+        let mut acc_ref = ref_glwe(module_ref, infos, source);
+        let mut acc_test = module_test.glwe_alloc_from_infos(infos);
+        acc_ref.transfer_into(&mut acc_test);
+        let mut composed = module_ref.glwe_alloc_from_infos(infos);
+        {
+            let wide = GLWELayout {
+                k: TorusPrecision(((2 * size + 1) * base2k.as_usize()) as u32),
+                ..*infos
+            };
+            let mut lossless = module_ref.glwe_alloc_from_infos(&wide);
+            let bytes = module_ref.glwe_mul_prepared_plain_sum_tmp_bytes(&lossless, size, size);
+            module_ref.glwe_mul_prepared_plain_sum(
+                offset,
+                &mut lossless,
+                &a_refs,
+                size,
+                &b_refs,
+                size,
+                &GALOIS,
+                base2k,
+                &mut poisoned_scratch::<BR>(bytes).borrow(),
+            );
+            module_ref.glwe_add_assign(&mut lossless, &acc_ref);
+            let bytes = module_ref.glwe_normalize_tmp_bytes();
+            module_ref.glwe_normalize(&mut composed, &lossless, &mut poisoned_scratch::<BR>(bytes).borrow());
+        }
+        let bytes = module_ref.glwe_mul_prepared_plain_sum_add_tmp_bytes(&acc_ref, size, size);
+        module_ref.glwe_mul_prepared_plain_sum_add(
+            offset,
+            &mut acc_ref,
+            &a_refs,
+            size,
+            &b_refs,
+            size,
+            &GALOIS,
+            base2k,
+            &mut poisoned_scratch::<BR>(bytes).borrow(),
+        );
+        let bytes = module_test.glwe_mul_prepared_plain_sum_add_tmp_bytes(&acc_test, size, size);
+        module_test.glwe_mul_prepared_plain_sum_add(
+            offset,
+            &mut acc_test,
+            &a_tests,
+            size,
+            &b_tests,
+            size,
+            &GALOIS,
+            base2k,
+            &mut poisoned_scratch::<BT>(bytes).borrow(),
+        );
+        assert_glwe_eq!(
+            composed,
+            acc_ref,
+            "glwe_mul_prepared_plain_sum_add versus the lossless sum plus res: k={k} rank={rank:?} offset={offset}"
+        );
+        let mut have = module_ref.glwe_alloc_from_infos(infos);
+        acc_test.transfer_into(&mut have);
+        assert_glwe_eq!(
+            acc_ref,
+            have,
+            "glwe_mul_prepared_plain_sum_add, three terms: k={k} rank={rank:?} offset={offset}"
         );
     }
 

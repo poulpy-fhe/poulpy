@@ -6,7 +6,7 @@ use crate::{
     CKKSCtBounds, SetCKKSInfos,
     api::{CKKSBootstrappingCIOps, CKKSBootstrappingOps},
     layouts::{
-        BootstrappingCIKeys, BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, CKKSCiphertextOwned,
+        BootstrappingCIKeys, BootstrappingContextPrepared, BootstrappingKeys, BootstrappingKeysLayout, CKKSCiphertextOwned,
         CKKSPlaintextOwned, EncodedLut, EvalModPlan,
     },
     oep::{CKKSBootstrappingCIImpl, CKKSBootstrappingImpl},
@@ -21,7 +21,7 @@ impl<BE: Backend + CKKSBootstrappingImpl> CKKSBootstrappingOps<BE> for Module<BE
         &self,
         ct_out: &C1,
         ct_in: &C2,
-        ctx: &BootstrappingContext<BE, F>,
+        ctx: &BootstrappingContextPrepared<BE, F>,
         keys_layout: &BootstrappingKeysLayout,
     ) -> usize
     where
@@ -35,7 +35,7 @@ impl<BE: Backend + CKKSBootstrappingImpl> CKKSBootstrappingOps<BE> for Module<BE
         &self,
         ct_out: &C1,
         ct_in: &C2,
-        ctx: &BootstrappingContext<BE, F>,
+        ctx: &BootstrappingContextPrepared<BE, F>,
         luts: &[EncodedLut<CKKSPlaintextOwned<BE>>],
         keys_layout: &BootstrappingKeysLayout,
     ) -> usize
@@ -80,7 +80,7 @@ impl<BE: Backend + CKKSBootstrappingImpl> CKKSBootstrappingOps<BE> for Module<BE
         &self,
         ct_out: &mut CKKSCiphertextOwned<BE>,
         ct_in: &CKKSCiphertextOwned<BE>,
-        ctx: &BootstrappingContext<BE, F>,
+        ctx: &BootstrappingContextPrepared<BE, F>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -96,7 +96,7 @@ impl<BE: Backend + CKKSBootstrappingImpl> CKKSBootstrappingOps<BE> for Module<BE
         &self,
         ct_outs: &mut [CKKSCiphertextOwned<BE>],
         ct_in: &CKKSCiphertextOwned<BE>,
-        ctx: &BootstrappingContext<BE, F>,
+        ctx: &BootstrappingContextPrepared<BE, F>,
         luts: &[EncodedLut<CKKSPlaintextOwned<BE>>],
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
@@ -119,7 +119,7 @@ where
         ci: &Module<BE::CI>,
         ct_out: &C1,
         ct_in: &C2,
-        ctx: &BootstrappingContext<BE, F>,
+        ctx: &BootstrappingContextPrepared<BE, F>,
         keys_layout: &BootstrappingKeysLayout,
     ) -> (usize, usize)
     where
@@ -134,7 +134,7 @@ where
         ci: &Module<BE::CI>,
         dst: &mut Dst,
         src: &Src,
-        ctx: &BootstrappingContext<BE, F>,
+        ctx: &BootstrappingContextPrepared<BE, F>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
         scratch_ci: &mut ScratchArena<'_, BE::CI>,

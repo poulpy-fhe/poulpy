@@ -3,8 +3,8 @@ use poulpy_core::layouts::{GGLWEInfos, GetAutomorphismKey, GetTensorKey};
 use poulpy_hal::layouts::{Backend, PrepareHint, ScratchArena};
 
 use crate::layouts::{
-    BlasContext, BlasGrid, BlasGridInfos, BlasGridMut, BlasMatMulLeft, BlasMatMulOperandInfos, BlasMatMulRight, BlasPtOperand,
-    Left,
+    BlasContextPrepared, BlasGrid, BlasGridInfos, BlasGridMut, BlasMatMulLeft, BlasMatMulOperandInfos, BlasMatMulRight,
+    BlasPtOperandPrepared, Left,
 };
 
 /// Matrix products of every matrix of the batch, across the blocks of a grid. A product records the larger batch of its
@@ -45,7 +45,15 @@ pub trait BlasMatMulOps<BE: Backend> {
     /// May panic on layouts [`validate_blas_matmul`](crate::layouts::validate_blas_matmul) rejects: blocks of a degree
     /// other than the module's, factors of different radices, a factor at another `log_d` than `ctx`'s, or `rows * cols`
     /// overflowing `usize`.
-    fn blas_matmul_tmp_bytes<R, A, B, T, K>(&self, res: &R, a: &A, b: &B, ctx: &BlasContext<BE>, tsk: &T, keys: &K) -> usize
+    fn blas_matmul_tmp_bytes<R, A, B, T, K>(
+        &self,
+        res: &R,
+        a: &A,
+        b: &B,
+        ctx: &BlasContextPrepared<BE>,
+        tsk: &T,
+        keys: &K,
+    ) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
@@ -114,7 +122,7 @@ pub trait BlasMatMulOps<BE: Backend> {
         res: &mut R,
         a: &A,
         b: &B,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         tsk: &T,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
@@ -134,7 +142,13 @@ pub trait BlasMatMulOps<BE: Backend> {
     /// May panic on layouts [`validate_blas_matmul_prepare_left`](crate::layouts::validate_blas_matmul_prepare_left)
     /// rejects: blocks of a degree other than the module's, a grid at another `log_d` than `ctx`'s, or `rows * cols`
     /// overflowing `usize`.
-    fn blas_matmul_prepare_left_tmp_bytes<A, K>(&self, a: &A, ctx: &BlasContext<BE>, keys: &K, hint: PrepareHint) -> usize
+    fn blas_matmul_prepare_left_tmp_bytes<A, K>(
+        &self,
+        a: &A,
+        ctx: &BlasContextPrepared<BE>,
+        keys: &K,
+        hint: PrepareHint,
+    ) -> usize
     where
         A: BlasGridInfos,
         K: GGLWEInfos;
@@ -187,7 +201,7 @@ pub trait BlasMatMulOps<BE: Backend> {
         &self,
         res: &mut BlasMatMulLeft<BE>,
         a: &A,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -202,7 +216,13 @@ pub trait BlasMatMulOps<BE: Backend> {
     /// # Panics
     ///
     /// As [`Self::blas_matmul_prepare_left_tmp_bytes`].
-    fn blas_matmul_prepare_right_tmp_bytes<B, K>(&self, b: &B, ctx: &BlasContext<BE>, keys: &K, hint: PrepareHint) -> usize
+    fn blas_matmul_prepare_right_tmp_bytes<B, K>(
+        &self,
+        b: &B,
+        ctx: &BlasContextPrepared<BE>,
+        keys: &K,
+        hint: PrepareHint,
+    ) -> usize
     where
         B: BlasGridInfos,
         K: GGLWEInfos;
@@ -211,7 +231,7 @@ pub trait BlasMatMulOps<BE: Backend> {
     /// [`blas_matmul_right_operand_layout`](crate::layouts::blas_matmul_right_operand_layout) gives for `b`, `ctx` and a
     /// hint, from `b` under that hint, as [`Self::blas_matmul_prepare_left`]: hot, a relabel of `b`; cold, tau of every
     /// block and its shifts, each converted once by poulpy-ckks's `ckks_prepare_right_into`. On a replicated `b` the maps
-    /// are [`BlasContext::tau_rep`] and [`BlasContext::rotate_rows_rep`], whose psi^k spend no scale.
+    /// are [`BlasContextPrepared::tau_rep`] and [`BlasContextPrepared::rotate_rows_rep`], whose psi^k spend no scale.
     ///
     /// # Metadata
     ///
@@ -228,7 +248,7 @@ pub trait BlasMatMulOps<BE: Backend> {
         &self,
         res: &mut BlasMatMulRight<BE>,
         b: &B,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -253,7 +273,7 @@ pub trait BlasMatMulOps<BE: Backend> {
         res: &R,
         a: &A,
         b: &B,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         tsk: &T,
         keys: &K,
     ) -> usize
@@ -321,7 +341,7 @@ pub trait BlasMatMulOps<BE: Backend> {
         res: &mut R,
         a: &BlasMatMulLeft<BE>,
         b: &BlasMatMulRight<BE>,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         tsk: &T,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
@@ -343,8 +363,8 @@ pub trait BlasMatMulOps<BE: Backend> {
         &self,
         res: &R,
         a: &A,
-        b: &BlasPtOperand<BE>,
-        ctx: &BlasContext<BE>,
+        b: &BlasPtOperandPrepared<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
     ) -> usize
     where
@@ -423,8 +443,8 @@ pub trait BlasMatMulOps<BE: Backend> {
         &self,
         res: &mut R,
         a: &A,
-        b: &BlasPtOperand<BE>,
-        ctx: &BlasContext<BE>,
+        b: &BlasPtOperandPrepared<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -444,9 +464,9 @@ pub trait BlasMatMulOps<BE: Backend> {
     fn blas_matmul_pt_left_tmp_bytes<R, A, K>(
         &self,
         res: &R,
-        b: &BlasPtOperand<BE, Left>,
+        b: &BlasPtOperandPrepared<BE, Left>,
         a: &A,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
     ) -> usize
     where
@@ -473,9 +493,9 @@ pub trait BlasMatMulOps<BE: Backend> {
     /// `Module::max_base2k` allows for it.
     ///
     /// **Replicated input.** When `a` is replicated ([`crate::layouts::replicated`], read from its label) and `b` holds
-    /// them ([`BlasPtOperand::block_replicated`]: `Diagonal`, one public matrix, more than one matrix slot), the blocks'
+    /// them ([`BlasPtOperandPrepared::block_replicated`]: `Diagonal`, one public matrix, more than one matrix slot), the blocks'
     /// maps are those `d`-diagonal maps, scheduled at `left_mul`'s giant step so they rotate within the same key set, in
-    /// place of the `2d - 1` of [`BlasPtOperand::block`]: about 22 key switches per block instead of 30 at `d = 128`. The
+    /// place of the `2d - 1` of [`BlasPtOperandPrepared::block`]: about 22 key switches per block instead of 30 at `d = 128`. The
     /// choice is made once per call from `a`'s label, by the validator, the call and
     /// [`blas_matmul_pt_left_max_base2k`](crate::layouts::blas_matmul_pt_left_max_base2k) alike, and changes the bits
     /// against the `2d - 1` maps. Metadata and keys are unchanged, and the scratch query does not read the maps.
@@ -495,9 +515,9 @@ pub trait BlasMatMulOps<BE: Backend> {
     fn blas_matmul_pt_left<R, A, K>(
         &self,
         res: &mut R,
-        b: &BlasPtOperand<BE, Left>,
+        b: &BlasPtOperandPrepared<BE, Left>,
         a: &A,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>

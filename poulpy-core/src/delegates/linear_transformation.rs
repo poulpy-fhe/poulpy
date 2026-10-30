@@ -7,7 +7,7 @@ use crate::{
     layouts::{
         GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LinearTransformation,
         LinearTransformationPlan,
-        prepared::{LinearTransformationBabySteps, LinearTransformationPrepared, PreparedDiagonal},
+        prepared::{LinearTransformationBabySteps, PreparedDiagonal},
     },
     oep::LinearTransformationImpl,
 };
@@ -73,6 +73,25 @@ where
         BE::glwe_eval_linear_transformation_sum_tmp_bytes(self, res, a, pt, plan, tsk, key)
     }
 
+    fn glwe_eval_linear_transformation_sum_unprepared_rhs_tmp_bytes<R, A, B, K, T>(
+        &self,
+        res: &R,
+        a: &A,
+        pt: &B,
+        plan: &LinearTransformationPlan,
+        tsk: &T,
+        key: &K,
+    ) -> usize
+    where
+        R: GLWEInfos,
+        A: GLWEInfos,
+        B: GLWEInfos,
+        K: GGLWEInfos,
+        T: GGLWEInfos,
+    {
+        BE::glwe_eval_linear_transformation_sum_unprepared_rhs_tmp_bytes(self, res, a, pt, plan, tsk, key)
+    }
+
     fn glwe_prepare_linear_transformation_baby_steps_tmp_bytes<A, K>(
         &self,
         a: &A,
@@ -133,16 +152,17 @@ where
         BE::glwe_eval_linear_transformation_into(self, cnv_offset, res, lhs, rhs, keys, scratch)
     }
 
-    fn glwe_eval_linear_transformation_sum_into<R, H>(
+    fn glwe_eval_linear_transformation_sum_into<R, P, H>(
         &self,
         cnv_offset: usize,
         res: &mut R,
         babies: &[&LinearTransformationBabySteps<BE>],
-        lts: &[&LinearTransformationPrepared<BE>],
+        lts: &[&LinearTransformation<P>],
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
+        P: crate::layouts::DiagonalProd<BE>,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
     {
         BE::glwe_eval_linear_transformation_sum_into(self, cnv_offset, res, babies, lts, keys, scratch)

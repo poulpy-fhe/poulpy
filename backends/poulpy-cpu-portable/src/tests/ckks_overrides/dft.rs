@@ -507,7 +507,7 @@ fn bootstrap_sizing_includes_selected_dft_workspace() {
     use poulpy_ckks::layouts::DFTType;
     use poulpy_ckks::layouts::eval_mod::EvalModPlan;
     use poulpy_ckks::layouts::{
-        BootstrappingContext, BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques,
+        BootstrappingContextPrepared, BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques,
     };
     use poulpy_ckks::polynomial::SplitStrategy;
     let module = Module::<OverrideBackend>::new(64);
@@ -521,7 +521,7 @@ fn bootstrap_sizing_includes_selected_dft_workspace() {
         plan(poulpy_ckks::layouts::DFTType::Decode, DFTOutputFormat::SplitRealAndImag),
     )
     .unwrap();
-    type Context = BootstrappingContext<OverrideBackend, f64>;
+    type Context = BootstrappingContextPrepared<OverrideBackend, f64>;
     let compile = |plan: &BootstrappingPlan| {
         let unprepared = with_scratch::<OverrideBackend, _>(Context::compile_unprepared_tmp_bytes(&module, plan).unwrap(), |s| {
             Context::compile_unprepared(&module, 16usize.into(), plan, s)

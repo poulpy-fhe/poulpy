@@ -77,6 +77,27 @@ unsafe impl poulpy_core::oep::LinearTransformationImpl for BE {
         )
     }
 
+    fn glwe_eval_linear_transformation_sum_unprepared_rhs_tmp_bytes<R, A, B, K, T>(
+        module: &Module<BE>,
+        res: &R,
+        a: &A,
+        pt: &B,
+        plan: &poulpy_core::layouts::LinearTransformationPlan,
+        tsk: &T,
+        key: &K,
+    ) -> usize
+    where
+        R: poulpy_core::layouts::GLWEInfos,
+        A: poulpy_core::layouts::GLWEInfos,
+        B: poulpy_core::layouts::GLWEInfos,
+        K: poulpy_core::layouts::GGLWEInfos,
+        T: poulpy_core::layouts::GGLWEInfos,
+    {
+        poulpy_core::reference::linear_transformation::glwe_eval_linear_transformation_sum_unprepared_rhs_tmp_bytes_reference(
+            module, res, a, pt, plan, tsk, key,
+        )
+    }
+
     fn glwe_prepare_linear_transformation_baby_steps_tmp_bytes<A, K>(
         module: &Module<BE>,
         a: &A,
@@ -150,16 +171,17 @@ unsafe impl poulpy_core::oep::LinearTransformationImpl for BE {
         }
     }
 
-    fn glwe_eval_linear_transformation_sum_into<R, H>(
+    fn glwe_eval_linear_transformation_sum_into<R, P, H>(
         module: &Module<BE>,
         cnv_offset: usize,
         res: &mut R,
         babies: &[&poulpy_core::layouts::prepared::LinearTransformationBabySteps<BE>],
-        lts: &[&poulpy_core::layouts::prepared::LinearTransformationPrepared<BE>],
+        lts: &[&poulpy_core::layouts::LinearTransformation<P>],
         keys: &H,
         scratch: &mut ::poulpy_hal::layouts::ScratchArena<BE>,
     ) where
         R: poulpy_core::layouts::GLWEToBackendMut<BE> + poulpy_core::layouts::GLWEInfos,
+        P: poulpy_core::DiagonalProd<BE>,
         H: poulpy_core::layouts::GetAutomorphismKey<BE> + poulpy_core::layouts::GetTensorKey<BE>,
     {
         assert_linear_transformation_sum(babies, lts);

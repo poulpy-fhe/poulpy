@@ -341,6 +341,29 @@ impl<BE: Backend + CKKSDotProductImpl> CKKSDotProductOps<BE> for Module<BE> {
         BE::ckks_dot_product_prepared_pt(self, dst, a, b, galois, scratch)
     }
 
+    fn ckks_dot_product_prepared_pt_add_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
+    where
+        R: CKKSCtBounds,
+        A: GLWEInfos,
+        P: GLWEInfos,
+    {
+        BE::ckks_dot_product_prepared_pt_add_tmp_bytes(self, res, a, b)
+    }
+
+    fn ckks_dot_product_prepared_pt_add<R>(
+        &self,
+        res: &mut R,
+        a: &[&CKKSPreparedLeft<BE>],
+        b: &[&CKKSPreparedRight<BE>],
+        galois: &[i64],
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+    {
+        BE::ckks_dot_product_prepared_pt_add(self, res, a, b, galois, scratch)
+    }
+
     fn ckks_dot_product_prepared_pt_dft_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
     where
         R: CKKSCtBounds,

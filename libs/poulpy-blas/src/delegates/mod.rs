@@ -5,3 +5,4 @@ mod encoding;
 mod inter;
 mod intra;
 mod matmul;
+mod matvec;

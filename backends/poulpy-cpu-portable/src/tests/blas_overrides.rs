@@ -4,7 +4,7 @@
 use crate::{ckks_encoding::EncodingFFTTable, hal_impl::delegating_backend::DifferentSamplingFFT64Portable as OverrideBackend};
 use poulpy_blas::{
     api::{BlasMatIntraOps, BlasMatMulOps},
-    layouts::{BlasContext, BlasGrid, BlasGridInfos, BlasGridMut, BlasPlan, BlasPtAlgorithm, Left, Right},
+    layouts::{BlasContextPrepared, BlasGrid, BlasGridInfos, BlasGridMut, BlasPlan, BlasPtAlgorithm, Left, Right},
     oep::{BlasJklsImpl, BlasMatIntraImpl},
     reference::{BlasJklsReference, BlasMatIntraReference},
     test_suite::{
@@ -66,6 +66,7 @@ fn calls() -> (usize, usize, usize) {
 
 poulpy_blas::impl_blas_mat_inter_reference_full!(OverrideBackend);
 poulpy_blas::impl_blas_mat_mul_reference_full!(OverrideBackend);
+poulpy_blas::impl_blas_mat_vec_reference_full!(OverrideBackend);
 poulpy_blas::impl_blas_encoding_reference_full!(OverrideBackend);
 
 unsafe impl BlasMatIntraImpl for OverrideBackend {
@@ -102,7 +103,13 @@ unsafe impl BlasMatIntraImpl for OverrideBackend {
         module.blas_map_blocks_reference(dst, src, lts, keys, scratch)
     }
 
-    fn blas_rotate_rows_tmp_bytes<R, A, K>(module: &Module<Self>, res: &R, a: &A, ctx: &BlasContext<Self>, keys: &K) -> usize
+    fn blas_rotate_rows_tmp_bytes<R, A, K>(
+        module: &Module<Self>,
+        res: &R,
+        a: &A,
+        ctx: &BlasContextPrepared<Self>,
+        keys: &K,
+    ) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
@@ -116,7 +123,7 @@ unsafe impl BlasMatIntraImpl for OverrideBackend {
         k: usize,
         res: &mut R,
         a: &A,
-        ctx: &BlasContext<Self>,
+        ctx: &BlasContextPrepared<Self>,
         keys: &K,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> CKKSResult<()>
@@ -128,7 +135,13 @@ unsafe impl BlasMatIntraImpl for OverrideBackend {
         module.blas_rotate_rows_reference(k, res, a, ctx, keys, scratch)
     }
 
-    fn blas_rotate_cols_tmp_bytes<R, A, K>(module: &Module<Self>, res: &R, a: &A, ctx: &BlasContext<Self>, keys: &K) -> usize
+    fn blas_rotate_cols_tmp_bytes<R, A, K>(
+        module: &Module<Self>,
+        res: &R,
+        a: &A,
+        ctx: &BlasContextPrepared<Self>,
+        keys: &K,
+    ) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
@@ -142,7 +155,7 @@ unsafe impl BlasMatIntraImpl for OverrideBackend {
         k: usize,
         res: &mut R,
         a: &A,
-        ctx: &BlasContext<Self>,
+        ctx: &BlasContextPrepared<Self>,
         keys: &K,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> CKKSResult<()>
@@ -154,7 +167,7 @@ unsafe impl BlasMatIntraImpl for OverrideBackend {
         module.blas_rotate_cols_reference(k, res, a, ctx, keys, scratch)
     }
 
-    fn blas_sum_rows_tmp_bytes<R, A, K>(module: &Module<Self>, res: &R, a: &A, ctx: &BlasContext<Self>, keys: &K) -> usize
+    fn blas_sum_rows_tmp_bytes<R, A, K>(module: &Module<Self>, res: &R, a: &A, ctx: &BlasContextPrepared<Self>, keys: &K) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
@@ -167,7 +180,7 @@ unsafe impl BlasMatIntraImpl for OverrideBackend {
         module: &Module<Self>,
         res: &mut R,
         a: &A,
-        ctx: &BlasContext<Self>,
+        ctx: &BlasContextPrepared<Self>,
         keys: &K,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> CKKSResult<()>
@@ -179,7 +192,7 @@ unsafe impl BlasMatIntraImpl for OverrideBackend {
         module.blas_sum_rows_reference(res, a, ctx, keys, scratch)
     }
 
-    fn blas_sum_cols_tmp_bytes<R, A, K>(module: &Module<Self>, res: &R, a: &A, ctx: &BlasContext<Self>, keys: &K) -> usize
+    fn blas_sum_cols_tmp_bytes<R, A, K>(module: &Module<Self>, res: &R, a: &A, ctx: &BlasContextPrepared<Self>, keys: &K) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
@@ -192,7 +205,7 @@ unsafe impl BlasMatIntraImpl for OverrideBackend {
         module: &Module<Self>,
         res: &mut R,
         a: &A,
-        ctx: &BlasContext<Self>,
+        ctx: &BlasContextPrepared<Self>,
         keys: &K,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> CKKSResult<()>

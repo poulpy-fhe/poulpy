@@ -16,7 +16,7 @@ use poulpy_hal::{
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSResult as Result, GLWEPlaintextInfos, SetCKKSInfos, SlotsKind,
     api::{CKKSAddOps, CKKSMulOps},
-    ckks_ensure_operand, ensure_plaintext_degree_embeds, get_mul_ct_params,
+    ckks_ensure, ckks_ensure_operand, ensure_plaintext_degree_embeds, get_mul_ct_params,
     layouts::{CKKSPreparedLeft, CKKSPreparedRight},
     mul_pt_params_raw,
     oep::derived::dot_product::{accumulate, check_lengths},
@@ -208,6 +208,60 @@ pub trait CKKSDotProductReference<BE: Backend>: Sized {
         dst.set_log_sparsity(log_sparsity);
         dst.set_slots(slots);
         self.glwe_mul_prepared_plain_sum(cnv_offset, dst, a, a0.size(), b, b0.size(), galois, base2k, scratch);
+        Ok(())
+    }
+
+    /// Core's `glwe_mul_prepared_plain_sum_add` query, whatever the number of terms.
+    fn ckks_dot_product_prepared_pt_add_tmp_bytes_reference<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
+    where
+        Self: GLWEMulPreparedPlainSum<BE>,
+        R: CKKSCtBounds,
+        A: GLWEInfos,
+        P: GLWEInfos,
+    {
+        self.glwe_mul_prepared_plain_sum_add_tmp_bytes(res, a.size(), b.size())
+    }
+
+    /// Core's `glwe_mul_prepared_plain_sum_add` at the rule of `ckks_mul_pt_vec_into`, after the checks of
+    /// [`Self::ckks_dot_product_prepared_pt_reference`], that the rule leaves `res`'s scale and budget, and its scratch,
+    /// before any write.
+    fn ckks_dot_product_prepared_pt_add_reference<R>(
+        &self,
+        res: &mut R,
+        a: &[&CKKSPreparedLeft<BE>],
+        b: &[&CKKSPreparedRight<BE>],
+        galois: &[i64],
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Self: GLWEMulPreparedPlainSum<BE>,
+        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+    {
+        const OP: &str = "ckks_dot_product_prepared_pt_add";
+        let (log_budget, log_delta, cnv_offset) = prepared_pt_rule(OP, &*res, a, b, galois)?;
+        ckks_ensure_operand!(
+            OP,
+            (log_budget, log_delta) == (res.log_budget(), res.log_delta()),
+            "res must hold the product's scale and budget"
+        );
+        let (a0, b0, base2k) = (a[0], b[0], res.base2k());
+        ckks_ensure!(
+            scratch.available() >= self.ckks_dot_product_prepared_pt_add_tmp_bytes_reference(&*res, a0, b0),
+            "{OP}: scratch below its query"
+        );
+        let log_sparsity = a
+            .iter()
+            .zip(b)
+            .map(|(ct, pt)| ct.log_sparsity().min(ct.log_n() - pt.log_n()))
+            .fold(res.log_sparsity(), usize::min);
+        let slots = a
+            .iter()
+            .zip(b)
+            .fold(res.slots(), |slots, (ct, pt)| slots.join(ct.slots()).join(pt.slots()));
+        res.set_log_sparsity(log_sparsity);
+        res.set_slots(slots);
+        res.set_noise(None);
+        self.glwe_mul_prepared_plain_sum_add(cnv_offset, res, a, a0.size(), b, b0.size(), galois, base2k, scratch);
         Ok(())
     }
 

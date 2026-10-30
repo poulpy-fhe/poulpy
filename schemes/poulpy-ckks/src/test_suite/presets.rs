@@ -34,8 +34,8 @@ use crate::{
         CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, CKKSEncryptOps, CKKSEvalModOps,
     },
     layouts::{
-        BootstrappingContext, BootstrappingKeysLayout, BootstrappingPlan, CIConversion, CKKSCiphertextOwned, CKKSModuleAlloc,
-        CKKSPlaintextOwned, EvalModRing,
+        BootstrappingContextPrepared, BootstrappingKeysLayout, BootstrappingPlan, CIConversion, CKKSCiphertextOwned,
+        CKKSModuleAlloc, CKKSPlaintextOwned, EvalModRing,
     },
     presets::bootstrapping::{BootstrappingPreset, all},
     test_suite::helpers::{
@@ -771,7 +771,8 @@ where
         let (plan, layout) = (preset.plan(), preset.keys_layout());
         let mut scratch = ScratchOwned::<BE>::alloc(bootstrap_setup_tmp_bytes(&module, &preset.bootstrap_layout(), plan, layout));
         let context =
-            BootstrappingContext::<BE, f64>::compile(&module, preset.base2k().into(), plan, &mut scratch.borrow()).unwrap();
+            BootstrappingContextPrepared::<BE, f64>::compile(&module, preset.base2k().into(), plan, &mut scratch.borrow())
+                .unwrap();
         let (mut xs, mut xa, mut xe) = sources();
         let from_context = context
             .generate_keys(&module, &sk_raw, layout, &mut xs, &mut xe, &mut xa, &mut scratch.borrow())
@@ -857,7 +858,10 @@ where
 /// The Galois elements and first-factor rotations the matrices of a compiled context switch
 /// with: the homomorphic DFTs, the bypass, the folded factors, and conjugation with EvalMod on
 /// the standard ring.
-fn compiled_key_rotations<BE: Backend, F>(context: &BootstrappingContext<BE, F>, cyclotomic_order: i64) -> (Vec<i64>, Vec<i64>) {
+fn compiled_key_rotations<BE: Backend, F>(
+    context: &BootstrappingContextPrepared<BE, F>,
+    cyclotomic_order: i64,
+) -> (Vec<i64>, Vec<i64>) {
     let mut elements: std::collections::BTreeSet<i64> = context
         .coeffs_to_slots()
         .galois_elements(cyclotomic_order)
@@ -939,7 +943,7 @@ where
     let compiled = {
         let bytes = bootstrap_setup_tmp_bytes(&module, &standard.bootstrap_layout(), standard.plan(), standard.keys_layout());
         with_scratch::<BE, _>(bytes, |s| {
-            BootstrappingContext::<BE, f64>::compile(&module, preset.base2k().into(), standard.plan(), s)
+            BootstrappingContextPrepared::<BE, f64>::compile(&module, preset.base2k().into(), standard.plan(), s)
         })
         .unwrap()
     };
@@ -996,7 +1000,7 @@ where
         preset.keys_layout(),
     );
     let mut bootstrap_on = |module: &Module<BE>,
-                            context: &BootstrappingContext<BE, f64>,
+                            context: &BootstrappingContextPrepared<BE, f64>,
                             keys: &crate::layouts::BootstrappingKeysPrepared<BE::OwnedBuf, BE, CIBackend<BE>>,
                             (bytes, bytes_ci): (usize, usize)| {
         output.set_k(preset.bootstrap_k().into());
@@ -1025,7 +1029,7 @@ where
     }
     let mut bootstrap =
         |module: &Module<BE>,
-         context: &BootstrappingContext<BE, f64>,
+         context: &BootstrappingContextPrepared<BE, f64>,
          keys: &crate::layouts::BootstrappingKeysPrepared<BE::OwnedBuf, BE, CIBackend<BE>>| {
             bootstrap_on(module, context, keys, (bytes, bytes_ci))
         };
@@ -1051,25 +1055,33 @@ where
     }
 }
 
-/// [`BootstrappingContext::compile`] of `plan`, each stage on an arena of exactly its query.
-pub(crate) fn compile_context<BE, F>(module: &Module<BE>, base2k: Base2K, plan: &BootstrappingPlan) -> BootstrappingContext<BE, F>
+/// [`BootstrappingContextPrepared::compile`] of `plan`, each stage on an arena of exactly its query.
+pub(crate) fn compile_context<BE, F>(
+    module: &Module<BE>,
+    base2k: Base2K,
+    plan: &BootstrappingPlan,
+) -> BootstrappingContextPrepared<BE, F>
 where
     BE: Backend,
     F: CKKSEncodingScalar,
     Module<BE>: CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F> + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE> + LWEInfos,
 {
-    let bytes = BootstrappingContext::<BE, F>::compile_unprepared_tmp_bytes(module, plan).unwrap();
+    let bytes = BootstrappingContextPrepared::<BE, F>::compile_unprepared_tmp_bytes(module, plan).unwrap();
     let unprepared = with_scratch::<BE, _>(bytes, |s| {
-        BootstrappingContext::<BE, F>::compile_unprepared(module, base2k, plan, s)
+        BootstrappingContextPrepared::<BE, F>::compile_unprepared(module, base2k, plan, s)
     })
     .unwrap();
     let bytes = unprepared.prepare_tmp_bytes(module);
     with_scratch::<BE, _>(bytes, |s| unprepared.prepare(module, s)).unwrap()
 }
 
-/// [`BootstrappingContext::compile_ci`] of `preset`, each stage on arenas of exactly its query.
-fn compile_ci<BE>(module: &Module<BE>, ci: &Module<CIBackend<BE>>, preset: &BootstrappingPreset) -> BootstrappingContext<BE, f64>
+/// [`BootstrappingContextPrepared::compile_ci`] of `preset`, each stage on arenas of exactly its query.
+fn compile_ci<BE>(
+    module: &Module<BE>,
+    ci: &Module<CIBackend<BE>>,
+    preset: &BootstrappingPreset,
+) -> BootstrappingContextPrepared<BE, f64>
 where
     BE: Backend<Ring = Standard>,
     Module<BE>:
@@ -1079,10 +1091,18 @@ where
     ScratchOwned<CIBackend<BE>>: ScratchOwnedAlloc<CIBackend<BE>>,
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::DiagonalProd<BE>,
 {
-    let (bytes, bytes_ci) = BootstrappingContext::<BE, f64>::compile_ci_unprepared_tmp_bytes(module, ci, preset.plan()).unwrap();
+    let (bytes, bytes_ci) =
+        BootstrappingContextPrepared::<BE, f64>::compile_ci_unprepared_tmp_bytes(module, ci, preset.plan()).unwrap();
     let unprepared = with_scratch::<BE, _>(bytes, |s| {
         with_scratch::<CIBackend<BE>, _>(bytes_ci, |sc| {
-            BootstrappingContext::<BE, f64>::compile_ci_unprepared(module, ci, preset.base2k().into(), preset.plan(), s, sc)
+            BootstrappingContextPrepared::<BE, f64>::compile_ci_unprepared(
+                module,
+                ci,
+                preset.base2k().into(),
+                preset.plan(),
+                s,
+                sc,
+            )
         })
     })
     .unwrap();
@@ -1090,11 +1110,11 @@ where
     with_scratch::<BE, _>(bytes, |s| unprepared.prepare(module, s)).unwrap()
 }
 
-/// [`BootstrappingContext::generate_keys_ci`] of `layout`, on arenas of exactly its query.
+/// [`BootstrappingContextPrepared::generate_keys_ci`] of `layout`, on arenas of exactly its query.
 fn generate_keys_ci<BE>(
     module: &Module<BE>,
     ci: &Module<CIBackend<BE>>,
-    context: &BootstrappingContext<BE, f64>,
+    context: &BootstrappingContextPrepared<BE, f64>,
     sk_raw: &poulpy_core::layouts::BackendGLWESecret<BE>,
     layout: &BootstrappingKeysLayout,
 ) -> crate::layouts::BootstrappingKeySet<BE::OwnedBuf, BE::ZnxWord>

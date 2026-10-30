@@ -42,6 +42,9 @@ where
     fn operand(&self) -> DiagonalOperand<'_, BE> {
         DiagonalOperand::Unprepared(GLWEToBackendRef::to_backend_ref(self))
     }
+    fn log_scale(&self) -> usize {
+        self.log_delta()
+    }
 }
 
 /// A streamed ciphertext diagonal: a GLWE view of the source's rank the product prepares on the fly and multiplies as
@@ -52,6 +55,9 @@ where
 {
     fn operand(&self) -> DiagonalOperand<'_, BE> {
         DiagonalOperand::Unprepared(GLWEToBackendRef::to_backend_ref(self))
+    }
+    fn log_scale(&self) -> usize {
+        self.log_delta()
     }
 }
 
@@ -180,6 +186,25 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         self.glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(ct, ct, diagonal, plan, tsk, key)
             .max(self.ckks_copy_tmp_bytes(ct, ct))
             + BE::scratch_aligned(self.glwe_bytes_of_from_infos(ct))
+    }
+
+    /// The streamed sum's query, `ct` standing for the destination and every source.
+    fn ckks_eval_linear_transformation_sum_streamed_tmp_bytes_reference<C, D, K, T>(
+        &self,
+        ct: &C,
+        diagonal: &D,
+        plan: &LinearTransformationPlan,
+        tsk: &T,
+        key: &K,
+    ) -> usize
+    where
+        Self: GLWELinearTransformations<BE>,
+        C: CKKSCtBounds,
+        D: GLWEInfos,
+        K: GGLWEInfos,
+        T: GGLWEInfos,
+    {
+        self.glwe_eval_linear_transformation_sum_unprepared_rhs_tmp_bytes(ct, ct, diagonal, plan, tsk, key)
     }
 
     fn ckks_eval_linear_transformation_sum_tmp_bytes_reference<C, D, K, T>(
@@ -317,12 +342,12 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         Ok(())
     }
 
-    fn ckks_eval_linear_transformation_sum_into_reference<Dst, Src, H>(
+    fn ckks_eval_linear_transformation_sum_into_reference<Dst, Src, P, H>(
         &self,
         dst: &mut Dst,
         srcs: &[&Src],
         babies: &[&LinearTransformationBabySteps<BE>],
-        lts: &[&LinearTransformationPrepared<BE>],
+        lts: &[&LinearTransformation<P>],
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -330,6 +355,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         Self: GLWELinearTransformations<BE> + CyclotomicOrder,
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: DiagonalProd<BE> + LtDiagonalMeta,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
     {
         const OP: &str = "ckks_eval_linear_transformation_sum_into";
@@ -345,7 +371,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
             .ok_or_else(|| invalid_sum("linear transformation has no diagonals".into()))?;
         // Core sums each giant step's products over the terms before one rotation,
         // at one `cnv_offset`, so the terms must agree on everything those read.
-        let diagonal = |lt: &LinearTransformationPrepared<BE>| {
+        let diagonal = |lt: &LinearTransformation<P>| {
             lt.first_diagonal_plaintext()
                 .map(|d| (d.glwe_layout(), d.max_size(), d.lt_log_scale(), d.lt_slots()))
         };
