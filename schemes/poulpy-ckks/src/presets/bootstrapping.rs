@@ -55,8 +55,8 @@ use std::collections::BTreeMap;
 
 use anyhow::{Context, Result, ensure};
 use poulpy_core::layouts::{
-    Base2K, BsgsRotations, Degree, GGLWEInfos, GGLWELayout, GLWELayout, GLWESwitchingKeyLayout, LWEInfos,
-    LinearTransformationLayout, Rank, TorusPrecision,
+    Base2K, BsgsRotations, Degree, GGLWEInfos, GGLWELayout, GLWEAutomorphismKeyLayout, GLWELayout, GLWESwitchingKeyLayout,
+    LWEInfos, LinearTransformationLayout, Rank, TorusPrecision,
 };
 use poulpy_hal::layouts::{MaxBase2k, Module};
 
@@ -246,12 +246,21 @@ impl BootstrappingPreset {
     /// alike, the keys used on narrower ciphertexts have wider digits (see
     /// [`Self::keys_layout`]).
     pub fn key_dsize(&self) -> usize {
-        self.keys_layout.automorphism_key.dsize().as_usize()
+        self.widest_rotation_key().dsize().as_usize()
     }
 
     /// Gadget digit width, in bits, of the keys used at the raised width.
     pub fn key_k_digit(&self) -> usize {
-        self.keys_layout.automorphism_key.k_digit.as_usize()
+        self.widest_rotation_key().k_digit.as_usize()
+    }
+
+    /// The rotation key that covers the widest input.
+    fn widest_rotation_key(&self) -> &GLWEAutomorphismKeyLayout {
+        self.keys_layout
+            .rotation_keys
+            .values()
+            .max_by_key(|key| key.gglwe_layout().max_input_k())
+            .expect("a bootstrapping preset has rotation keys")
     }
 
     /// Gadget digit size (in limbs) of the dense-to-sparse key.
@@ -850,21 +859,17 @@ fn keys_layout(
 
     // With no digit imposed, a key only used on narrower ciphertexts takes the
     // widest digit those admit.
-    let mut rotation_keys = BTreeMap::new();
-    let mut tensor_key = wide;
-    // EvalRound+ runs its bypass at widths of its own, which the stage widths
-    // below do not model: its keys keep the shape of the raised width.
-    if spec.key_dsize.is_none() && plan.coeffs_to_slots_bypass().is_none() {
-        let widths = plan.key_widths();
-        for (p, k) in widths.rotation_key_inputs(spec.log_n, bootstrap_k, input_k) {
-            let layout = key_layout(spec, "rotation", k, widest_k_digit(spec, k, dense), dense)?;
-            if layout != wide {
-                rotation_keys.insert(p, layout.into());
-            }
-        }
-        let k = widths.eval_mod_relinearization_k(bootstrap_k, spec.log_delta);
-        tensor_key = key_layout(spec, "tensor", k, widest_k_digit(spec, k, dense), dense)?;
-    }
+    let widths = plan.key_widths(spec.log_n, bootstrap_k, input_k, spec.log_delta);
+    let shape = |name, k| match spec.key_dsize {
+        Some(_) => Ok(wide),
+        None => key_layout(spec, name, k, widest_k_digit(spec, k, dense), dense),
+    };
+    let rotation_keys = widths
+        .rotation_keys
+        .iter()
+        .map(|(&p, &k)| Ok((p, shape("rotation", k)?.into())))
+        .collect::<Result<BTreeMap<_, _>>>()?;
+    let tensor_key = shape("tensor", widths.tensor_key)?;
     // The conversion keys are of degree 2N, under secrets of degree-N subrings
     // (`s(X²)`, the embedded CI secret), so the bounds of degree N apply.
     let wide_spec = PresetSpec {
@@ -874,7 +879,6 @@ fn keys_layout(
     let conversion_key = |k| key_layout(&wide_spec, "conversion", k, widest_k_digit(&wide_spec, k, dense), dense);
 
     Ok(BootstrappingKeysLayout {
-        automorphism_key: wide.into(),
         rotation_keys,
         tensor_key: tensor_key.into(),
         encapsulation: Some(EncapsulationKeysLayout {
@@ -885,7 +889,7 @@ fn keys_layout(
             .c2s_first_factor_on_raise
             .then(|| first_factor_key_layout(spec, plan, bootstrap_k, dense))
             .transpose()?,
-        conversion_keys: match plan.key_widths().conversions(bootstrap_k) {
+        conversion_keys: match widths.conversion_keys {
             Some((traced, embedded)) => Some((conversion_key(traced)?.into(), conversion_key(embedded)?.into())),
             None => None,
         },
@@ -1071,8 +1075,6 @@ fn validate_key<K: GGLWEInfos + LWEInfos>(name: &str, key: &K, limit: usize) -> 
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeSet;
-
     use super::*;
     use crate::CKKSInfos;
     use crate::presets::first_factor::FIRST_FACTOR_GUARD_BITS;
@@ -1106,10 +1108,11 @@ mod tests {
 
         let keys = preset.keys_layout();
         let encapsulation = keys.encapsulation.as_ref().unwrap();
-        assert_eq!(keys.automorphism_key.dsize().as_usize(), 1);
-        assert_eq!(gadget_k(&keys.automorphism_key), 780);
-        assert_eq!(keys.automorphism_key.k_aux.as_usize(), 67);
-        assert_eq!(keys.automorphism_key.k().as_usize(), 847);
+        let wide = preset.widest_rotation_key();
+        assert_eq!(wide.dsize().as_usize(), 1);
+        assert_eq!(gadget_k(wide), 780);
+        assert_eq!(wide.k_aux.as_usize(), 67);
+        assert_eq!(wide.k().as_usize(), 847);
         // EvalMod starts 100 bits below the raised width: room for a 2-limb digit.
         assert_eq!(key_shapes([&keys.tensor_key]), [(104, 7)]);
         // The raise switches to the dense secret: two rows under the raised ciphertext, ending at the
@@ -1181,12 +1184,12 @@ mod tests {
             [(208, 7), (260, 5), (416, 3), (156, 1), (104, 1)]
         );
         assert_eq!(key_shapes([&keys.tensor_key]), [(416, 3)]);
-        assert_eq!(keys.rotation_key(-1).gglwe_layout().max_input_k().as_usize(), 1248);
+        assert_eq!(keys.rotation_keys[&-1].gglwe_layout().max_input_k().as_usize(), 1248);
         assert!(keys.tensor_key.gglwe_layout().max_input_k().as_usize() >= 1207);
 
         // One digit for every key leaves a single shape.
         let uniform = preset.with_dsizes(4, 1).unwrap();
-        assert!(uniform.keys_layout().rotation_keys.is_empty());
+        assert_eq!(uniform.keys_layout().rotation_key_layouts().len(), 1);
         assert_eq!(uniform.keys_layout().tensor_key.dnum.as_usize(), 7);
     }
 
@@ -1211,7 +1214,7 @@ mod tests {
         // The keys of the raised width, under the dense bound.
         assert_eq!((preset.max_dense_modulus(), preset.max_sparse_modulus()), (1707, 345));
         let keys = preset.keys_layout();
-        let wide = &keys.automorphism_key;
+        let wide = preset.widest_rotation_key();
         assert_eq!(
             (
                 wide.k_digit.as_usize(),
@@ -1277,7 +1280,7 @@ mod tests {
         let encapsulation = keys.encapsulation.as_ref().unwrap();
 
         assert_eq!((preset.max_dense_modulus(), preset.max_sparse_modulus()), (1707, 345));
-        let key = &keys.automorphism_key;
+        let key = preset.widest_rotation_key();
         assert_eq!(
             (
                 key.k_digit.as_usize(),
@@ -1330,7 +1333,7 @@ mod tests {
         assert!(base.keys_layout().encapsulation.unwrap().sparse_to_dense.is_some());
 
         // The first paid factor runs at the raised width, where the first factor ran before.
-        assert!(keys.automorphism_key.gglwe_layout().max_input_k().as_usize() >= preset.bootstrap_k());
+        assert!(preset.widest_rotation_key().gglwe_layout().max_input_k().as_usize() >= preset.bootstrap_k());
         assert!(preset.with_dsizes(4, 1).unwrap().keys_layout().first_factor_key.is_some());
     }
 
@@ -1344,13 +1347,7 @@ mod tests {
     /// trace and embed keys of EvalMod on the CI ring.
     fn key_set_bytes(preset: &BootstrappingPreset) -> [usize; 5] {
         let (keys, plan, log_n) = (preset.keys_layout(), preset.plan(), preset.log_n());
-        let order = 2i64 << log_n;
-        let mut elements: BTreeSet<i64> = plan.coeffs_to_slots().galois_elements(log_n, order).into_iter().collect();
-        elements.extend(plan.slots_to_coeffs().galois_elements(log_n, order));
-        if plan.eval_mod_ring() == EvalModRing::Standard {
-            elements.insert(-1);
-        }
-        let rotations = elements.iter().map(|&p| key_bytes(&keys.rotation_key(p))).sum();
+        let rotations = keys.rotation_keys.values().map(key_bytes).sum();
         let encapsulation = keys.encapsulation.as_ref().map_or(0, |encaps| {
             key_bytes(&encaps.dense_to_sparse) + encaps.sparse_to_dense.as_ref().map_or(0, key_bytes)
         });
@@ -1484,18 +1481,15 @@ mod tests {
                 (18, fft_dsize, 1)
             );
             assert_eq!(fft.bootstrap_layout().glwe_layout.base2k.as_usize(), 18);
-            let keys = fft.keys_layout();
-            assert_eq!(
-                keys.automorphism_key.dnum.as_usize(),
-                preset.bootstrap_k().div_ceil(fft_dsize * 18)
-            );
+            let (keys, wide) = (fft.keys_layout(), fft.widest_rotation_key());
+            assert_eq!(wide.dnum.as_usize(), preset.bootstrap_k().div_ceil(fft_dsize * 18));
             // A digit and `log_n` bits of guard, or what the bound leaves.
-            let gadget = keys.automorphism_key.dnum.as_usize() * fft_dsize * 18;
+            let gadget = wide.dnum.as_usize() * fft_dsize * 18;
             assert_eq!(
-                keys.automorphism_key.k_aux.as_usize(),
+                wide.k_aux.as_usize(),
                 (fft_dsize * 18 + preset.log_n()).min(fft.max_dense_modulus() - gadget)
             );
-            assert!(keys.automorphism_key.k().as_usize() <= fft.max_dense_modulus());
+            assert!(wide.k().as_usize() <= fft.max_dense_modulus());
 
             let small_key = &keys.encapsulation.as_ref().unwrap().dense_to_sparse;
             assert_eq!(

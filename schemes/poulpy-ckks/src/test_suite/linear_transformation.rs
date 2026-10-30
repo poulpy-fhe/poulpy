@@ -1105,7 +1105,7 @@ pub fn test_linear_transformation_pins_operation_precisions<BE, F, E>(
         keys.entry(p)
             .or_insert_with(|| gen_atk(&key_params, module, p, &sk_raw, &mut scratch.borrow()));
     }
-    let keys = QueryLog::new(keys);
+    let keys = QueryLog::new(&keys);
 
     let ct = ckks_encrypt(
         &params,

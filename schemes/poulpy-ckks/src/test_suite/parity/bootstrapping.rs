@@ -338,12 +338,18 @@ fn ct_layout(n: usize, base2k: usize, k: usize, log_delta: usize, slots: SlotsKi
     }
 }
 
-fn keys_layout(atk: &GGLWELayout, d2s: &GGLWELayout, s2d: &GGLWELayout, encapsulate: bool) -> BootstrappingKeysLayout {
+/// Every rotation key of `elements` of layout `atk`.
+fn keys_layout(
+    elements: impl Iterator<Item = i64>,
+    atk: &GGLWELayout,
+    d2s: &GGLWELayout,
+    s2d: &GGLWELayout,
+    encapsulate: bool,
+) -> BootstrappingKeysLayout {
     BootstrappingKeysLayout {
-        rotation_keys: Default::default(),
+        rotation_keys: elements.map(|p| (p, (*atk).into())).collect(),
         first_factor_key: None,
         conversion_keys: None,
-        automorphism_key: (*atk).into(),
         tensor_key: (*atk).into(),
         encapsulation: encapsulate.then(|| EncapsulationKeysLayout {
             dense_to_sparse: (*d2s).into(),
@@ -447,7 +453,11 @@ where
         let atk = key_layout(n, b, k_boot, 2, 1, 1);
         let d2s = key_layout(n, b, k_in, 1, 1, 1);
         let s2d = key_layout(n, b, k_boot, 2, 1, 1);
-        let layout = keys_layout(&atk, &d2s, &s2d, encapsulate);
+        let elements = plan
+            .key_widths(n.ilog2() as usize, k_boot, k_in, log_delta)
+            .rotation_keys
+            .into_keys();
+        let layout = keys_layout(elements, &atk, &d2s, &s2d, encapsulate);
         let pt = ct_layout(n, b, 16 + 2 * b, 16, SlotsKind::Complex);
         let compile = module
             .ckks_all_ops_with_atk_tmp_bytes(&out_layout, &pt, &atk, &atk)

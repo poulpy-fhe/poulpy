@@ -19,7 +19,8 @@ mod bootstrapping_presets {
             );
             let adapted = preset_for_backend::<crate::NTT3x42Ifma, crate::NTT3x42CIIfma>(&preset).unwrap();
             assert_eq!(adapted.base2k(), 56);
-            assert!(adapted.keys_layout().automorphism_key.k().as_usize() <= adapted.max_dense_modulus());
+            let keys = adapted.keys_layout().rotation_key_layouts();
+            assert!(keys.iter().all(|key| key.k().as_usize() <= adapted.max_dense_modulus()));
             let small_key = &adapted.keys_layout().encapsulation.as_ref().unwrap().dense_to_sparse;
             assert!(small_key.k().as_usize() <= adapted.max_sparse_modulus());
         }

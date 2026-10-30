@@ -128,7 +128,8 @@ fn bootstrapping_presets_take_the_backend_radix() {
                 (preset.input_k(), preset.output_k(), preset.bootstrap_k())
             );
             assert_eq!(adapted.plan().c2s_guard_bits(), preset.plan().c2s_guard_bits());
-            assert!(adapted.keys_layout().automorphism_key.k().as_usize() <= adapted.max_dense_modulus());
+            let keys = adapted.keys_layout().rotation_key_layouts();
+            assert!(keys.iter().all(|key| key.k().as_usize() <= adapted.max_dense_modulus()));
             let small_key = &adapted.keys_layout().encapsulation.as_ref().unwrap().dense_to_sparse;
             assert!(small_key.k().as_usize() <= adapted.max_sparse_modulus());
         }

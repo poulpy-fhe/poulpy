@@ -33,8 +33,9 @@ use crate::layouts::CKKSCiphertextOwned;
 use crate::layouts::CKKSPlaintextOwned;
 
 use poulpy_core::layouts::{
-    GGLWEInfos, GLWEInfos, GLWEPlaintextInfos, GLWESecretPreparedToBackendRef, GLWETensorKeyPrepared, GLWEToBackendMut,
-    GLWEToBackendRef, LWEInfos, LinearTransformation, SetGLWEPlaintextInfos, prepared::GLWETensorKeyPreparedToBackendRef,
+    GGLWEInfos, GLWEAutomorphismKeyLayout, GLWEInfos, GLWEPlaintextInfos, GLWESecretPreparedToBackendRef, GLWETensorKeyPrepared,
+    GLWEToBackendMut, GLWEToBackendRef, LWEInfos, LinearTransformation, SetGLWEPlaintextInfos,
+    prepared::GLWETensorKeyPreparedToBackendRef,
 };
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
@@ -59,8 +60,9 @@ use crate::{
     test_suite::{
         CKKSTestParams,
         helpers::{
-            TestContextBackend, TestContextModule, TestScalar, assert_canonical_at_k, assert_ckks_error, assert_invalid_operand,
-            ckks_encrypt_with_prec, ckks_spec, gen_sk_with_raw, next_test_seed, precision_stats, test_vector_1,
+            LoggedBootstrappingKeys, TestContextBackend, TestContextModule, TestScalar, assert_canonical_at_k, assert_ckks_error,
+            assert_invalid_operand, ckks_encrypt_with_prec, ckks_spec, gen_sk_with_raw, next_test_seed, precision_stats,
+            test_vector_1,
         },
         parity::helpers::{fixture_ciphertext, snapshot, with_scratch},
         presets::{bootstrap_setup_tmp_bytes, compile_context},
@@ -128,6 +130,18 @@ fn bootstrap_plan(
         first_factor_on_raise,
         true,
     )
+}
+
+/// Every rotation key of `plan`, at the layout of `tp`, for an input of `input_k` bits at scale
+/// `2^log_delta` bootstrapped at `tp.k`.
+fn uniform_rotation_keys(
+    plan: &BootstrappingPlan,
+    tp: &CKKSTestParams,
+    input_k: usize,
+    log_delta: usize,
+) -> std::collections::BTreeMap<i64, GLWEAutomorphismKeyLayout> {
+    let widths = plan.key_widths(tp.log_n(), tp.k, input_k, log_delta);
+    widths.rotation_keys.into_keys().map(|p| (p, tp.atk_layout())).collect()
 }
 
 /// [`bootstrap_plan`], with sparse-secret encapsulation or without it.
@@ -276,10 +290,9 @@ where
         };
         let first_factor_key = tp.first_factor_key_layout(&plan, k_boot, log_modulus_in);
         let keys_layout = BootstrappingKeysLayout {
-            rotation_keys: Default::default(),
+            rotation_keys: uniform_rotation_keys(&plan, &tp, k_in, log_delta),
             first_factor_key: Some(first_factor_key),
             conversion_keys: None,
-            automorphism_key: tp.atk_layout(),
             tensor_key: tp.tsk_layout(),
             // The first-factor keys switch back to the dense secret.
             encapsulation: plan.sparse_secret_hamming_weight().map(|_| EncapsulationKeysLayout {
@@ -388,7 +401,10 @@ where
             );
             ct0.set_slots(slots);
             let mut ct_bs = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
-            with_scratch::<BE, _>(boot_tmp, |s| module.ckks_bootstrap(&mut ct_bs, &ct0, &ctx, &bsk, s)).unwrap();
+            let logged = LoggedBootstrappingKeys::new::<BE>(&bsk);
+            with_scratch::<BE, _>(boot_tmp, |s| module.ckks_bootstrap(&mut ct_bs, &ct0, &ctx, &logged, s)).unwrap();
+            let widths = plan.key_widths(tp.log_n(), k_boot, ct0.k().as_usize(), ct0.log_delta());
+            logged.assert_lookups_at(&widths, "first factor on the raise");
             assert_eq!((ct_bs.log_delta(), ct_bs.slots()), (log_delta, slots));
             let scale_drop = if s2c_first {
                 0
@@ -466,25 +482,20 @@ where
 
     // One scratch for the whole pipeline (plaintext precision sized for the
     // largest plaintext op, EvalMod).
-    // Keys shaped by use, as the presets do: rotation keys of the last
-    // CoeffsToSlots factor sized for the width that factor runs at.
-    let c2s = plan.coeffs_to_slots();
-    let after_c2s = k_boot - c2s.consumed_bits();
+    // Keys shaped by use, as the presets do: a rotation key used below the
+    // raised width only covers the widest ciphertext it switches there.
+    let after_c2s = k_boot - plan.coeffs_to_slots().consumed_bits();
     let narrow = |k: usize| CKKSTestParams { k, ..tp };
-    let factors = c2s.galois_elements_per_factor(tp.log_n(), 2 * n as i64);
-    let last = factors.len() - 1;
-    let last_k = k_boot - last * c2s.coeffs_meta().log_delta();
-    let rotation_keys: std::collections::BTreeMap<_, _> = factors[last]
-        .iter()
-        .filter(|p| !factors[..last].iter().any(|elements| elements.contains(p)))
-        .map(|&p| (p, narrow(last_k).atk_layout()))
+    let widths = |k_boot: usize| plan.key_widths(tp.log_n(), k_boot, log_modulus_in, log_delta);
+    let rotation_keys: std::collections::BTreeMap<_, _> = widths(k_boot)
+        .rotation_keys
+        .into_iter()
+        .map(|(p, k)| (p, narrow(k).atk_layout()))
         .collect();
-    assert!(!rotation_keys.is_empty());
     let keys_layout = BootstrappingKeysLayout {
         rotation_keys,
         first_factor_key: None,
         conversion_keys: None,
-        automorphism_key: tp.atk_layout(),
         tensor_key: tp.tsk_layout(),
         encapsulation: plan.sparse_secret_hamming_weight().map(|_| EncapsulationKeysLayout {
             dense_to_sparse: tp.ksk_layout(log_modulus_in),
@@ -549,17 +560,31 @@ where
         &mut scratch.borrow(),
     );
 
-    // A working width that takes the last CoeffsToSlots factor past its narrow
-    // keys fails at entry, with the key source's refusal as its source.
+    // A working width narrower than CoeffsToSlots and EvalMod consume fails at entry.
+    {
+        let mut ct_narrow = fixture_ciphertext(&module, &ckks_spec(n, base2k, log_delta, base2k), 31);
+        let before = snapshot::<BE, _>(&ct_narrow);
+        let err = with_scratch::<BE, _>(0, |s| module.ckks_bootstrap(&mut ct_narrow, &ct0, &ctx, &bsk, s)).unwrap_err();
+        assert_invalid_operand(
+            "a bootstrap narrower than its stages",
+            &err,
+            "ckks_bootstrap",
+            "is narrower than the bits its stages consume",
+        );
+        assert_eq!(snapshot::<BE, _>(&ct_narrow), before, "a refused bootstrap wrote res");
+    }
+
+    // The narrowest working width that takes a key past its layout fails at
+    // entry, with the key source's refusal as its source.
     {
         use poulpy_core::layouts::GGLWEInfos;
-        let narrow_k = bsk
-            .rotation_keys
-            .values()
-            .map(|key| key.gglwe_layout().max_input_k().as_usize())
-            .min()
-            .unwrap();
-        let wide_k = (narrow_k + last * c2s.coeffs_meta().log_delta() + 1).next_multiple_of(base2k);
+        let covered = |k_boot: usize| {
+            widths(k_boot)
+                .rotation_keys
+                .iter()
+                .all(|(p, &k)| k <= bsk.rotation_keys[p].gglwe_layout().max_input_k().as_usize())
+        };
+        let wide_k = (k_boot..).step_by(base2k).find(|&k| !covered(k)).unwrap();
         let mut ct_wide = fixture_ciphertext(&module, &ckks_spec(n, base2k, log_delta, wide_k - log_delta), 23);
         let before = snapshot::<BE, _>(&ct_wide);
         let err = with_scratch::<BE, _>(0, |s| module.ckks_bootstrap(&mut ct_wide, &ct0, &ctx, &bsk, s)).unwrap_err();
@@ -577,7 +602,10 @@ where
     // Compare the public orchestrator with the explicit pipeline below.
     let ct_bs = {
         let mut ct_bs = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
-        with_scratch::<BE, _>(boot_tmp, |s| module.ckks_bootstrap(&mut ct_bs, &ct0, &ctx, &bsk, s)).unwrap();
+        let logged = LoggedBootstrappingKeys::new::<BE>(&bsk);
+        with_scratch::<BE, _>(boot_tmp, |s| module.ckks_bootstrap(&mut ct_bs, &ct0, &ctx, &logged, s)).unwrap();
+        let widths = plan.key_widths(tp.log_n(), k_boot, ct0.k().as_usize(), ct0.log_delta());
+        logged.assert_lookups_at(&widths, "C2S-first");
         assert_eq!(ct_bs.log_delta(), log_delta);
         assert_eq!(
             ct_bs.k().as_usize(),
@@ -800,10 +828,9 @@ where
     };
 
     let keys_layout = BootstrappingKeysLayout {
-        rotation_keys: Default::default(),
+        rotation_keys: uniform_rotation_keys(&plan, &tp, log_modulus_in, log_delta),
         first_factor_key: None,
         conversion_keys: None,
-        automorphism_key: tp.atk_layout(),
         tensor_key: tp.tsk_layout(),
         encapsulation: plan.sparse_secret_hamming_weight().map(|_| EncapsulationKeysLayout {
             dense_to_sparse: tp.ksk_layout(log_modulus_in),
@@ -861,7 +888,10 @@ where
     // Compare the public EvalRound+ orchestrator with the explicit pipeline below.
     let ct_bs = {
         let mut ct_bs = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
-        with_scratch::<BE, _>(boot_tmp, |s| module.ckks_bootstrap(&mut ct_bs, &ct0, &ctx, &bsk, s)).unwrap();
+        let logged = LoggedBootstrappingKeys::new::<BE>(&bsk);
+        with_scratch::<BE, _>(boot_tmp, |s| module.ckks_bootstrap(&mut ct_bs, &ct0, &ctx, &logged, s)).unwrap();
+        let widths = plan.key_widths(tp.log_n(), k_boot, ct0.k().as_usize(), ct0.log_delta());
+        logged.assert_lookups_at(&widths, "EvalRound+, C2S-first");
         assert_eq!(ct_bs.log_delta(), log_delta);
         assert_eq!(
             ct_bs.k().as_usize(),
@@ -1118,10 +1148,9 @@ where
     };
 
     let keys_layout = BootstrappingKeysLayout {
-        rotation_keys: Default::default(),
+        rotation_keys: uniform_rotation_keys(&plan, &tp, k_in, log_delta),
         first_factor_key: None,
         conversion_keys: None,
-        automorphism_key: tp.atk_layout(),
         tensor_key: tp.tsk_layout(),
         encapsulation: plan.sparse_secret_hamming_weight().map(|_| EncapsulationKeysLayout {
             dense_to_sparse: tp.ksk_layout(log_modulus_in),
@@ -1177,7 +1206,10 @@ where
 
     let (bs_re, bs_im) = {
         let mut ct_bs = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
-        with_scratch::<BE, _>(boot_tmp, |s| module.ckks_bootstrap(&mut ct_bs, &ct0, &ctx, &bsk, s)).unwrap();
+        let logged = LoggedBootstrappingKeys::new::<BE>(&bsk);
+        with_scratch::<BE, _>(boot_tmp, |s| module.ckks_bootstrap(&mut ct_bs, &ct0, &ctx, &logged, s)).unwrap();
+        let widths = plan.key_widths(tp.log_n(), k_boot, ct0.k().as_usize(), ct0.log_delta());
+        logged.assert_lookups_at(&widths, "S2C-first");
         assert_eq!(ct_bs.k().as_usize(), k_boot - plan.post_mod_up_consumed_bits());
         assert_eq!(ct_bs.log_delta(), log_delta);
         decrypt(&module, &encoder, &ct_bs, &sk, &mut scratch.borrow())

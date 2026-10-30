@@ -174,15 +174,15 @@ where
 }
 
 /// Fails before any work unless every key covers the widest ciphertext the
-/// bootstrap switches with it.
+/// bootstrap switches with it, and with `InvalidOperand` when the working width
+/// or the input is narrower than the bits the stages running on it consume.
 ///
 /// The bootstrap runs at `ct_out.k()`, which need not be the width the keys
 /// were laid out for. Each stage's key lookup also refuses a key too narrow for
-/// its width; this check only moves the failure ahead of the computation. An
-/// EvalRound+ recipe runs its bypass at widths of its own and is left to those
-/// checks. Keys with a row offset (sparse-to-dense, first factor) are laid out
-/// for one raise: they are checked against the raise this bootstrap runs. `op`
-/// names the bootstrap in the errors.
+/// its width; this check only moves the failure ahead of the computation. Keys
+/// with a row offset (sparse-to-dense, first factor) are laid out for one raise:
+/// they are checked against the raise this bootstrap runs. `op` names the
+/// bootstrap in the errors.
 fn check_key_widths<BE, M, F, K, T, C1, C2>(
     op: &'static str,
     ct_out: &C1,
@@ -199,26 +199,29 @@ where
     C1: CKKSCtBounds,
     C2: CKKSCtBounds,
 {
-    let widths = ctx.key_widths();
+    let log_n = ct_out.n().as_usize().trailing_zeros() as usize;
     let (bootstrap_k, input_k) = (ct_out.k().as_usize(), ct_in.k().as_usize());
-    if ctx.coeffs_to_slots_bypass().is_none() {
-        let log_n = ct_out.n().as_usize().trailing_zeros() as usize;
-        for (p, k) in widths.rotation_key_inputs(log_n, bootstrap_k, input_k) {
-            let k = TorusPrecision(k as u32);
-            keys.rotation_keys()
-                .get_automorphism_key(p, k)
-                .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
-                    op,
-                    rotation: p,
-                    k: k.into(),
-                    source,
-                })?;
-        }
-        let k = TorusPrecision(widths.eval_mod_relinearization_k(bootstrap_k, ct_in.log_delta()) as u32);
-        tensor_key
-            .get_tensor_key(k)
-            .map_err(|source| CKKSCompositionError::MissingRelinearizationKey { op, k: k.into(), source })?;
+    let Some(widths) = ctx.stage_widths().key_widths(log_n, bootstrap_k, input_k, ct_in.log_delta()) else {
+        let reason = format!(
+            "a bootstrap at {bootstrap_k} bits of an input of {input_k} bits is narrower than the bits its stages consume"
+        );
+        return Err(CKKSCompositionError::InvalidOperand { op, reason }.into());
+    };
+    for (p, k) in widths.rotation_keys {
+        let k = TorusPrecision(k as u32);
+        keys.rotation_keys()
+            .get_automorphism_key(p, k)
+            .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
+                op,
+                rotation: p,
+                k: k.into(),
+                source,
+            })?;
     }
+    let k = TorusPrecision(widths.tensor_key as u32);
+    tensor_key
+        .get_tensor_key(k)
+        .map_err(|source| CKKSCompositionError::MissingRelinearizationKey { op, k: k.into(), source })?;
     check_raise_keys(op, ct_out, ct_in, ctx, keys)
 }
 
@@ -239,7 +242,7 @@ where
     C2: CKKSCtBounds,
 {
     let bootstrap_k = ct_out.k().as_usize();
-    let (k_small, raised) = ctx.key_widths().raise(ct_in.k().as_usize());
+    let (k_small, raised) = ctx.stage_widths().raise(ct_in.k().as_usize());
     if let Some(factor) = ctx.coeffs_to_slots_first_factor() {
         crate::reference::first_factor::check_first_factor_raise(
             op,
@@ -1633,7 +1636,7 @@ where
             },
         )?;
     }
-    let (traced, embedded) = ctx.key_widths().conversions(ct_out.k().as_usize()).unwrap_or_default();
+    let (traced, embedded) = ctx.stage_widths().conversions(ct_out.k().as_usize()).unwrap_or_default();
     for (key, k) in [(trace_key.gglwe_layout(), traced), (embed_key.gglwe_layout(), embedded)] {
         let covered = key.max_input_k().as_usize();
         if k > covered {

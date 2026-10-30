@@ -275,7 +275,8 @@ pub fn test_inner_sum_smaller_output<BE, F, E>(
 {
     let mut f = fixture::<BE, F, E>(&params, module, host_module);
     let windows = windows(params.n / 2);
-    let keys = QueryLog::new(gen_keys(&params, module, &f.sk_raw, &windows, &mut f.scratch.borrow()));
+    let keys = gen_keys(&params, module, &f.sk_raw, &windows, &mut f.scratch.borrow());
+    let keys = QueryLog::new(&keys);
     let atk = params.atk_layout();
     let narrow_k = params.k - params.base2k - 1;
     let offset = f.ct.k().as_usize() - narrow_k;
