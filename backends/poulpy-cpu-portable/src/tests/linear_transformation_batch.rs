@@ -167,9 +167,9 @@ unsafe impl poulpy_core::oep::LinearTransformationImpl for Batched {
         )
     }
 
-    fn glwe_prepare_linear_transformation_baby_steps<A, H>(
+    fn glwe_prepare_linear_transformation_baby_steps<A, H, L: poulpy_core::layouts::BabyStepOperand<Batched>>(
         module: &::poulpy_hal::layouts::Module<Batched>,
-        cache: &mut poulpy_core::layouts::prepared::LinearTransformationBabySteps<Batched>,
+        cache: &mut poulpy_core::layouts::prepared::LinearTransformationBabySteps<Batched, L>,
         a: &A,
         keys: &H,
         scratch: &mut ::poulpy_hal::layouts::ScratchArena<Batched>,
@@ -182,11 +182,11 @@ unsafe impl poulpy_core::oep::LinearTransformationImpl for Batched {
         )
     }
 
-    fn glwe_eval_linear_transformation_into<R, P, H>(
+    fn glwe_eval_linear_transformation_into<R, P, H, L: poulpy_core::layouts::BabyStepOperand<Batched>>(
         module: &::poulpy_hal::layouts::Module<Batched>,
         cnv_offset: usize,
         res: &mut R,
-        lhs: &poulpy_core::layouts::prepared::LinearTransformationBabySteps<Batched>,
+        lhs: &poulpy_core::layouts::prepared::LinearTransformationBabySteps<Batched, L>,
         rhs: &poulpy_core::layouts::LinearTransformation<P>,
         keys: &H,
         scratch: &mut ::poulpy_hal::layouts::ScratchArena<Batched>,
@@ -200,11 +200,11 @@ unsafe impl poulpy_core::oep::LinearTransformationImpl for Batched {
         )
     }
 
-    fn glwe_eval_linear_transformation_sum_into<R, P, H>(
+    fn glwe_eval_linear_transformation_sum_into<R, P, H, L: poulpy_core::layouts::BabyStepOperand<Batched>>(
         module: &::poulpy_hal::layouts::Module<Batched>,
         cnv_offset: usize,
         res: &mut R,
-        babies: &[&poulpy_core::layouts::prepared::LinearTransformationBabySteps<Batched>],
+        babies: &[&poulpy_core::layouts::prepared::LinearTransformationBabySteps<Batched, L>],
         lts: &[&poulpy_core::layouts::LinearTransformation<P>],
         keys: &H,
         scratch: &mut ::poulpy_hal::layouts::ScratchArena<Batched>,
@@ -222,11 +222,11 @@ unsafe impl poulpy_core::oep::LinearTransformationImpl for Batched {
         BATCH
     }
 
-    fn glwe_accumulate_giant_steps(
+    fn glwe_accumulate_giant_steps<L: poulpy_core::layouts::BabyStepOperand<Self>>(
         module: &Module<Self>,
         cnv_offset_hi: usize,
         prods: &mut [VecZnxDftBackendMut<'_, Self>],
-        lhs: &poulpy_core::layouts::prepared::LinearTransformationBabySteps<Self>,
+        lhs: &poulpy_core::layouts::prepared::LinearTransformationBabySteps<Self, L>,
         steps: &[poulpy_core::layouts::LinearTransformationGiantStep<
             poulpy_core::layouts::prepared::PreparedDiagonal<<Self as Backend>::OwnedBuf, Self>,
         >],

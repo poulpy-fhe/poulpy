@@ -8,6 +8,7 @@
 
 #![allow(clippy::too_many_arguments)]
 
+use crate::layouts::BabyStepOperand;
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::layouts::{
@@ -142,11 +143,12 @@ pub trait GLWELinearTransformations<BE: Backend> {
     /// Fills a pre-allocated baby-step cache with the rotated, prepared versions
     /// of `a`.
     ///
-    /// `cache` must have been sized via [`LinearTransformationBabySteps::alloc`].
+    /// `cache` must have been allocated by [`LinearTransformationBabySteps::alloc`] or carved by
+    /// [`ScratchArenaTakeCore::take_linear_transformation_baby_steps_scratch`](crate::ScratchArenaTakeCore::take_linear_transformation_baby_steps_scratch).
     /// Performs zero `CnvPVecL` allocations.
-    fn glwe_prepare_linear_transformation_baby_steps<A, H>(
+    fn glwe_prepare_linear_transformation_baby_steps<A, H, L: BabyStepOperand<BE>>(
         &self,
-        cache: &mut LinearTransformationBabySteps<BE>,
+        cache: &mut LinearTransformationBabySteps<BE, L>,
         a: &A,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
@@ -187,11 +189,11 @@ pub trait GLWELinearTransformations<BE: Backend> {
     /// them, and preparing asserts the degree. Ciphertext diagonals are each checked against the degree, `base2k` and
     /// rank of `res` and the first one's width, and `lhs` against the rank of `res`, and `keys` must hold the tensor
     /// key, also before writing `res`.
-    fn glwe_eval_linear_transformation_into<R, P, H>(
+    fn glwe_eval_linear_transformation_into<R, P, H, L: BabyStepOperand<BE>>(
         &self,
         cnv_offset: usize,
         res: &mut R,
-        lhs: &LinearTransformationBabySteps<BE>,
+        lhs: &LinearTransformationBabySteps<BE, L>,
         rhs: &LinearTransformation<P>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
@@ -222,11 +224,11 @@ pub trait GLWELinearTransformations<BE: Backend> {
     /// every diagonal of a transform shares one width, scale and degree, as the
     /// encoder produces them, and preparing asserts the degree. Ciphertext diagonals and caches are checked as by
     /// [`Self::glwe_eval_linear_transformation_into`], every cache at the first one's width.
-    fn glwe_eval_linear_transformation_sum_into<R, P, H>(
+    fn glwe_eval_linear_transformation_sum_into<R, P, H, L: BabyStepOperand<BE>>(
         &self,
         cnv_offset: usize,
         res: &mut R,
-        babies: &[&LinearTransformationBabySteps<BE>],
+        babies: &[&LinearTransformationBabySteps<BE, L>],
         lts: &[&LinearTransformation<P>],
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,

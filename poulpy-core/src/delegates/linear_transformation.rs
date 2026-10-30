@@ -1,5 +1,6 @@
 #![allow(clippy::too_many_arguments)]
 
+use crate::layouts::BabyStepOperand;
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
@@ -123,9 +124,9 @@ where
         BE::glwe_prepare_linear_transformation_rhs(self, prepared, lt, scratch)
     }
 
-    fn glwe_prepare_linear_transformation_baby_steps<A, H>(
+    fn glwe_prepare_linear_transformation_baby_steps<A, H, L: BabyStepOperand<BE>>(
         &self,
-        cache: &mut LinearTransformationBabySteps<BE>,
+        cache: &mut LinearTransformationBabySteps<BE, L>,
         a: &A,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
@@ -136,11 +137,11 @@ where
         BE::glwe_prepare_linear_transformation_baby_steps(self, cache, a, keys, scratch)
     }
 
-    fn glwe_eval_linear_transformation_into<R, P, H>(
+    fn glwe_eval_linear_transformation_into<R, P, H, L: BabyStepOperand<BE>>(
         &self,
         cnv_offset: usize,
         res: &mut R,
-        lhs: &LinearTransformationBabySteps<BE>,
+        lhs: &LinearTransformationBabySteps<BE, L>,
         rhs: &LinearTransformation<P>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
@@ -152,11 +153,11 @@ where
         BE::glwe_eval_linear_transformation_into(self, cnv_offset, res, lhs, rhs, keys, scratch)
     }
 
-    fn glwe_eval_linear_transformation_sum_into<R, P, H>(
+    fn glwe_eval_linear_transformation_sum_into<R, P, H, L: BabyStepOperand<BE>>(
         &self,
         cnv_offset: usize,
         res: &mut R,
-        babies: &[&LinearTransformationBabySteps<BE>],
+        babies: &[&LinearTransformationBabySteps<BE, L>],
         lts: &[&LinearTransformation<P>],
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,

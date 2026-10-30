@@ -90,7 +90,7 @@ fn bootstrapping_presets_take_the_backend_radix() {
     for preset in ci {
         // An output limb of EvalMod's squares on the CI ring holds one square: its mean keeps
         // the radix at the nominal 52 on NTT4x30. FFT64's model of the CI ring takes 14, at
-        // which the preset is re-derived with digits of 7 limbs.
+        // which the keys of the raised width take the runner's cap of 7 limbs.
         assert_eq!(
             preset.max_backend_base2k::<NTT4x30Portable, crate::NTT4x30CIPortable>(BOOTSTRAP_FAILURE_BITS),
             52
@@ -128,7 +128,8 @@ fn bootstrapping_presets_take_the_backend_radix() {
                 (preset.input_k(), preset.output_k(), preset.bootstrap_k())
             );
             assert_eq!(adapted.plan().c2s_guard_bits(), preset.plan().c2s_guard_bits());
-            assert!(adapted.keys_layout().automorphism_key.k().as_usize() <= adapted.max_dense_modulus());
+            let keys = adapted.keys_layout().rotation_key_layouts();
+            assert!(keys.iter().all(|key| key.k().as_usize() <= adapted.max_dense_modulus()));
             let small_key = &adapted.keys_layout().encapsulation.as_ref().unwrap().dense_to_sparse;
             assert!(small_key.k().as_usize() <= adapted.max_sparse_modulus());
         }

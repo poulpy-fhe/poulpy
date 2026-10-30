@@ -14,7 +14,7 @@
 //! definition lives in [`crate::layouts`]); this module owns the HAL-dependent
 //! allocator and population routines.
 
-use poulpy_hal::layouts::CnvPVecLToBackendMut;
+use crate::layouts::BabyStepOperand;
 use poulpy_hal::layouts::Module;
 use std::collections::BTreeMap;
 
@@ -84,6 +84,7 @@ impl<BE: Backend> LinearTransformationBabySteps<BE> {
             values,
             rotations,
             k: a.k(),
+            _backend: std::marker::PhantomData,
         }
     }
 
@@ -218,14 +219,13 @@ fn glwe_hoisted_baby_rotation<BE, R>(
 /// Fills a pre-allocated baby-step cache with `rot(a, k)` for every `k` already
 /// stored in `cache`.
 ///
-/// The cache must have been sized via [`LinearTransformationBabySteps::alloc`].
-/// This is the populating counterpart of the old returning variant: it
-/// performs zero `CnvPVecL` allocations because the slots are owned by
-/// `cache`.
+/// The cache must have been allocated by [`LinearTransformationBabySteps::alloc`]
+/// or carved from a scratch arena: it performs zero `CnvPVecL` allocations
+/// because the slots belong to `cache`.
 #[allow(clippy::too_many_arguments)]
-pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, A, H>(
+pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, A, H, L>(
     module: &Module<BE>,
-    cache: &mut LinearTransformationBabySteps<BE>,
+    cache: &mut LinearTransformationBabySteps<BE, L>,
     a: &A,
     keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
@@ -252,6 +252,7 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, A, H>(
         + Sync,
     A: GLWEToBackendRef<BE> + GLWEInfos,
     H: GetAutomorphismKey<BE>,
+    L: BabyStepOperand<BE>,
 {
     let (mut a_tmp, mut scratch) = scratch.borrow().take_glwe_scratch(a);
     let a_ref = if a.is_canonical() {
@@ -419,9 +420,9 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, A, H>(
 /// and switched by one product call per task: a task each on a parallel executor, one task of
 /// every source otherwise. The rotations are held as ciphertexts until the last pass.
 #[allow(clippy::type_complexity)]
-fn glwe_prepare_baby_steps_doubling<'h, BE, H>(
+fn glwe_prepare_baby_steps_doubling<'h, BE, H, L>(
     module: &Module<BE>,
-    cache: &mut LinearTransformationBabySteps<BE>,
+    cache: &mut LinearTransformationBabySteps<BE, L>,
     a: &GLWEBackendRef<'h, BE>,
     keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
@@ -446,6 +447,7 @@ fn glwe_prepare_baby_steps_doubling<'h, BE, H>(
         + GLWENormalize<BE>
         + Sync,
     H: GetAutomorphismKey<BE>,
+    L: BabyStepOperand<BE>,
 {
     let n = a.n().as_usize();
     let cols = a.rank().as_usize() + 1;

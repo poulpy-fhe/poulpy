@@ -33,8 +33,7 @@ use super::{
     helpers::{
         TestContextBackend, TestContextModule, TestContextSharedModule, alloc_ct, alloc_scratch, assert_ckks_error,
         assert_ckks_internal, assert_precision, ckks_decrypt_with_prec, ckks_encrypt_coeffs, ckks_encrypt_pt, gen_atk,
-        gen_ci_keys, gen_sk_with_raw, gen_tsk, next_test_seed, precision_at, precision_stats, pt_eval_tmp_bytes,
-        pt_streamed_eval_tmp_bytes,
+        gen_ci_keys, gen_sk_with_raw, gen_tsk, next_test_seed, precision_at, precision_stats, pt_self_into_tmp_bytes,
     },
     parity::helpers::{fixture_ciphertext, snapshot, with_scratch},
 };
@@ -350,10 +349,7 @@ pub fn test_conjugate_invariant_leveled<BE>(
             let (want, _) = diagonals.evaluate((values, &im[..diagonal_slots]), strategy);
             let want = (0..slots).map(|i| want[i % diagonal_slots]).collect::<Vec<_>>();
             let mut result = alloc_ct(&params, module, params.k);
-            // The documented bound of `self_into`: the larger of the baby-step and evaluation queries.
-            let baby_bytes =
-                module.ckks_prepare_linear_transformation_baby_steps_tmp_bytes(input, &lt.index(), &params.atk_layout());
-            let streamed_bytes = baby_bytes.max(pt_streamed_eval_tmp_bytes(module, input, &lt.index(), &params.atk_layout()));
+            let streamed_bytes = pt_self_into_tmp_bytes(module, true, input, &lt.index(), &params.atk_layout());
             with_scratch::<BE, _>(streamed_bytes, |s| {
                 module.ckks_eval_linear_transformation_self_into(&mut result, input, &lt, &keys, s)
             })
@@ -366,7 +362,7 @@ pub fn test_conjugate_invariant_leveled<BE>(
                 module.ckks_prepare_linear_transformation_rhs(&mut prepared, &lt, s)
             })
             .unwrap();
-            let resident_bytes = baby_bytes.max(pt_eval_tmp_bytes(module, input, &lt.index(), &params.atk_layout()));
+            let resident_bytes = pt_self_into_tmp_bytes(module, false, input, &lt.index(), &params.atk_layout());
             with_scratch::<BE, _>(resident_bytes, |s| {
                 module.ckks_eval_linear_transformation_self_into(&mut result, input, &prepared, &keys, s)
             })

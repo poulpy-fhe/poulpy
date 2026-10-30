@@ -34,6 +34,7 @@
 //! ```
 
 use crate::CKKSResult as Result;
+use poulpy_core::layouts::BabyStepOperand;
 use poulpy_core::{
     DiagonalProd,
     layouts::{
@@ -214,6 +215,28 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
         K: GGLWEInfos,
         T: GGLWEInfos;
 
+    /// Scratch bytes required by [`Self::ckks_eval_linear_transformation_self_into`] and
+    /// [`Self::ckks_eval_linear_transformation_self_assign`] on a source of the layout `ct`, for a transform of the
+    /// schedule `plan` (its [`index`](LinearTransformation::index)) with diagonals of the layout `diagonal`, streamed
+    /// when `streamed`, else resident, `diagonal`, `tsk` and `key` as in
+    /// [`Self::ckks_eval_linear_transformation_tmp_bytes`]: a working copy of `ct` and the baby-step cache beside the
+    /// larger of the baby-step and evaluation queries.
+    #[allow(clippy::too_many_arguments)]
+    fn ckks_eval_linear_transformation_self_into_tmp_bytes<C, D, K, T>(
+        &self,
+        streamed: bool,
+        ct: &C,
+        diagonal: &D,
+        plan: &LinearTransformationPlan,
+        tsk: &T,
+        key: &K,
+    ) -> usize
+    where
+        C: CKKSCtBounds,
+        D: GLWEInfos,
+        K: GGLWEInfos,
+        T: GGLWEInfos;
+
     /// Scratch bytes required by [`Self::ckks_eval_linear_transformation_sum_into`] over resident transforms, `plan`
     /// the schedule of the first term.
     fn ckks_eval_linear_transformation_sum_tmp_bytes<C, D, K, T>(
@@ -277,12 +300,13 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
 
     /// Fills `babies` with the prepared baby-step rotations of `src`.
     ///
-    /// `babies` must have been sized via
-    /// [`LinearTransformationBabySteps::alloc`] for the rotations the caller wants
-    /// populated. Performs zero `CnvPVecL` allocations.
-    fn ckks_prepare_linear_transformation_baby_steps<Src, H>(
+    /// `babies` must have been allocated by
+    /// [`LinearTransformationBabySteps::alloc`], or carved by poulpy-core's
+    /// `ScratchArenaTakeCore::take_linear_transformation_baby_steps_scratch`, for the
+    /// rotations the caller wants populated. Performs zero `CnvPVecL` allocations.
+    fn ckks_prepare_linear_transformation_baby_steps<Src, H, L: BabyStepOperand<BE>>(
         &self,
-        babies: &mut LinearTransformationBabySteps<BE>,
+        babies: &mut LinearTransformationBabySteps<BE, L>,
         src: &Src,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
@@ -324,11 +348,11 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     ///   at `dst`'s width;
     /// - `MissingAutomorphismKey` for a non-zero giant rotation of `lt` with no key at the output width;
     /// - `CKKSError::Internal` when `lt` has no diagonals or `babies` lacks one of `lt`'s baby rotations.
-    fn ckks_eval_linear_transformation_into<Dst, Src, P, H>(
+    fn ckks_eval_linear_transformation_into<Dst, Src, P, H, L: BabyStepOperand<BE>>(
         &self,
         dst: &mut Dst,
         src: &Src,
-        babies: &LinearTransformationBabySteps<BE>,
+        babies: &LinearTransformationBabySteps<BE, L>,
         lt: &LinearTransformation<P>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
@@ -341,10 +365,10 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
 
     /// In-place `dst = M · dst` with a caller-supplied baby cache (see
     /// [`Self::ckks_eval_linear_transformation_into`]).
-    fn ckks_eval_linear_transformation_assign<Dst, P, H>(
+    fn ckks_eval_linear_transformation_assign<Dst, P, H, L: BabyStepOperand<BE>>(
         &self,
         dst: &mut Dst,
-        babies: &LinearTransformationBabySteps<BE>,
+        babies: &LinearTransformationBabySteps<BE, L>,
         lt: &LinearTransformation<P>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
@@ -368,11 +392,11 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     /// schedule, diagonal layout, width, scale and slot kind, source layout and
     /// scale, or baby-cache layout and width. Also returns an error before writing `dst`
     /// if a term fails the checks of [`Self::ckks_eval_linear_transformation_into`].
-    fn ckks_eval_linear_transformation_sum_into<Dst, Src, P, H>(
+    fn ckks_eval_linear_transformation_sum_into<Dst, Src, P, H, L: BabyStepOperand<BE>>(
         &self,
         dst: &mut Dst,
         srcs: &[&Src],
-        babies: &[&LinearTransformationBabySteps<BE>],
+        babies: &[&LinearTransformationBabySteps<BE, L>],
         lts: &[&LinearTransformation<P>],
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
@@ -383,15 +407,21 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
         P: DiagonalProd<BE> + LtDiagonalMeta,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
 
-    // ----- eval (self-allocated baby cache) -----
+    // ----- eval (baby cache carved from scratch) -----
 
-    /// Computes `dst = M · src`, allocating and preparing the baby cache
-    /// internally.
+    /// Computes `dst = M · src`, preparing a baby cache it carves from
+    /// `scratch`, within [`Self::ckks_eval_linear_transformation_self_into_tmp_bytes`].
     ///
     /// Convenience over [`Self::ckks_eval_linear_transformation_into`] for one-off
     /// evaluations; for repeated evaluation that shares a baby cache, use that
     /// method. An unprepared `lt` takes the streamed path; a prepared `lt` the
     /// resident path.
+    ///
+    /// # Errors
+    ///
+    /// [`CKKSError::Internal`](crate::CKKSError::Internal) for an arena below the baby-step cache, before any
+    /// write, then the errors of [`Self::ckks_prepare_linear_transformation_baby_steps`] and
+    /// [`Self::ckks_eval_linear_transformation_into`], which they return as they do.
     fn ckks_eval_linear_transformation_self_into<Dst, Src, P, H>(
         &self,
         dst: &mut Dst,
@@ -406,8 +436,14 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
         P: DiagonalProd<BE> + LtDiagonalMeta,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
 
-    /// In-place `dst = M · dst`, self-allocating the baby cache (see
-    /// [`Self::ckks_eval_linear_transformation_self_into`]).
+    /// In-place `dst = M · dst`, carving the baby cache from `scratch` (see
+    /// [`Self::ckks_eval_linear_transformation_self_into`]), within
+    /// [`Self::ckks_eval_linear_transformation_self_into_tmp_bytes`] at `dst`.
+    ///
+    /// # Errors
+    ///
+    /// [`CKKSError::Internal`](crate::CKKSError::Internal) for an arena below its working copy, before any write,
+    /// then the errors of [`Self::ckks_eval_linear_transformation_self_into`] into that copy, `dst` unchanged.
     fn ckks_eval_linear_transformation_self_assign<Dst, P, H>(
         &self,
         dst: &mut Dst,

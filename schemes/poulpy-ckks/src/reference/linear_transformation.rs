@@ -7,6 +7,7 @@
 
 use crate::{CKKSError, CKKSResult as Result, ckks_ensure, ckks_ensure_operand, operand_cyclotomic_order};
 use crate::{GLWEPlaintextMeta, Scale, SlotsKind};
+use poulpy_core::layouts::BabyStepOperand;
 use poulpy_core::layouts::GLWEPlaintextInfos;
 use poulpy_core::layouts::LinearTransformationPlan;
 use poulpy_core::{
@@ -269,9 +270,9 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         Ok(())
     }
 
-    fn ckks_prepare_linear_transformation_baby_steps_reference<Src, H>(
+    fn ckks_prepare_linear_transformation_baby_steps_reference<Src, H, L: BabyStepOperand<BE>>(
         &self,
-        babies: &mut LinearTransformationBabySteps<BE>,
+        babies: &mut LinearTransformationBabySteps<BE, L>,
         src: &Src,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
@@ -299,11 +300,11 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         Ok(())
     }
 
-    fn ckks_eval_linear_transformation_into_reference<Dst, Src, P, H>(
+    fn ckks_eval_linear_transformation_into_reference<Dst, Src, P, H, L: BabyStepOperand<BE>>(
         &self,
         dst: &mut Dst,
         src: &Src,
-        babies: &LinearTransformationBabySteps<BE>,
+        babies: &LinearTransformationBabySteps<BE, L>,
         lt: &LinearTransformation<P>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
@@ -342,11 +343,11 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         Ok(())
     }
 
-    fn ckks_eval_linear_transformation_sum_into_reference<Dst, Src, P, H>(
+    fn ckks_eval_linear_transformation_sum_into_reference<Dst, Src, P, H, L: BabyStepOperand<BE>>(
         &self,
         dst: &mut Dst,
         srcs: &[&Src],
-        babies: &[&LinearTransformationBabySteps<BE>],
+        babies: &[&LinearTransformationBabySteps<BE, L>],
         lts: &[&LinearTransformation<P>],
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
@@ -378,7 +379,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         let source = |src: &Src| (src.glwe_layout(), src.log_delta());
         // Core reads each source through its baby cache. A cache without the rotations its transform reads may hold
         // none, so its layout is read only once those are checked.
-        let cache = |babies: &LinearTransformationBabySteps<BE>| (babies.size(), babies.cols(), babies.k());
+        let cache = |babies: &LinearTransformationBabySteps<BE, L>| (babies.size(), babies.cols(), babies.k());
         check_babies(OP, lt, cache_0)?;
         for (t, ((&src_t, &babies_t), &lt_t)) in srcs.iter().zip(babies).zip(lts).enumerate().skip(1) {
             let mismatch = |what: &str| {
@@ -434,11 +435,11 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
 impl<BE: Backend> CKKSLinearTransformationReference<BE> for Module<BE> {}
 
 /// `(log_budget, log_delta, cnv_offset)` of a transform of the diagonals `first` shares on `src` into `dst`, before any write.
-fn lt_rule<BE, Dst, Src, P, H>(
+fn lt_rule<BE, Dst, Src, P, H, L: BabyStepOperand<BE>>(
     op: &'static str,
     dst: &Dst,
     src: &Src,
-    babies: &LinearTransformationBabySteps<BE>,
+    babies: &LinearTransformationBabySteps<BE, L>,
     first: &P,
     keys: &H,
 ) -> Result<(usize, usize, usize)>
@@ -494,10 +495,10 @@ fn invalid_sum(reason: String) -> CKKSError {
 }
 
 /// `InvalidOperand` for `op` unless `babies` covers every baby rotation `lt` needs.
-fn check_babies<BE: Backend, P>(
+fn check_babies<BE: Backend, P, L: BabyStepOperand<BE>>(
     op: &'static str,
     lt: &LinearTransformation<P>,
-    babies: &LinearTransformationBabySteps<BE>,
+    babies: &LinearTransformationBabySteps<BE, L>,
 ) -> Result<()> {
     for rotation in lt.baby_steps().iter().copied() {
         ckks_ensure_operand!(
@@ -511,10 +512,10 @@ fn check_babies<BE: Backend, P>(
 
 /// Verifies that `babies` covers every baby rotation `lt` needs and that all
 /// automorphism keys required by `lt` are present (keyed by Galois element).
-fn check_required_keys<BE: Backend, P, H>(
+fn check_required_keys<BE: Backend, P, H, L: BabyStepOperand<BE>>(
     op: &'static str,
     lt: &LinearTransformation<P>,
-    babies: &LinearTransformationBabySteps<BE>,
+    babies: &LinearTransformationBabySteps<BE, L>,
     keys: &H,
     cyclotomic_order: i64,
     giant_k: TorusPrecision,

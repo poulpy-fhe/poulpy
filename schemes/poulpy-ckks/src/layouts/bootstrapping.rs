@@ -158,15 +158,34 @@ pub struct BootstrappingPlan {
 
 impl BootstrappingPlan {
     /// The stages that set the widths at which a bootstrap uses its keys.
-    pub(crate) fn key_widths(&self) -> KeyWidths<'_> {
-        KeyWidths {
+    fn stage_widths(&self) -> StageWidths<'_> {
+        StageWidths {
             pipeline: self.pipeline,
             c2s_guard_bits: self.c2s_guard_bits,
             eval_mod_ring: self.eval_mod_ring,
             coeffs_to_slots: &self.coeffs_to_slots,
+            coeffs_to_slots_bypass: self.coeffs_to_slots_bypass(),
             slots_to_coeffs: &self.slots_to_coeffs,
             eval_mod: &self.eval_mod,
         }
+    }
+
+    /// The widths at which a bootstrap of this plan uses its keys, at degree
+    /// `2^log_n`, working at `bootstrap_k` bits on an input of `input_k` bits at
+    /// scale `2^input_log_delta`.
+    ///
+    /// The presets lay their keys out from them, and
+    /// [`ckks_bootstrap`](crate::api::CKKSBootstrappingOps::ckks_bootstrap) checks
+    /// every rotation and tensor key against them before it starts.
+    ///
+    /// # Panics
+    ///
+    /// When `bootstrap_k` or `input_k` is narrower than the bits the stages running
+    /// on it consume.
+    pub fn key_widths(&self, log_n: usize, bootstrap_k: usize, input_k: usize, input_log_delta: usize) -> BootstrappingKeyWidths {
+        self.stage_widths()
+            .key_widths(log_n, bootstrap_k, input_k, input_log_delta)
+            .expect("a bootstrap width is narrower than the bits its stages consume")
     }
 
     /// Validated constructor for a complete bootstrapping recipe.
@@ -604,44 +623,91 @@ enum CIPre<BE: Backend> {
     Folded(DFTMatrix<BE, Encode, Split>),
 }
 
-/// The widths, in bits, at which a bootstrap uses its keys, given the width it
-/// runs at and its input.
+/// The widths, in bits, at which a bootstrap uses its keys
+/// ([`BootstrappingPlan::key_widths`]): a key covers its width when its
+/// `max_input_k` is at least that width.
 ///
-/// The presets size their keys from them, and
-/// [`ckks_bootstrap`](crate::api::CKKSBootstrappingOps::ckks_bootstrap) checks
-/// every key against them before it starts. Not for a recipe with the
-/// EvalRound+ bypass, which runs at widths of its own.
-pub(crate) struct KeyWidths<'a> {
+/// A rotation key's width is the input width of the widest transform factor
+/// using it, which bounds the ciphertexts it switches: a key used only for giant
+/// steps switches the factor's product, one factor scale narrower. The tensor
+/// key's width is that of the widest product EvalMod relinearizes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BootstrappingKeyWidths {
+    /// Every rotation key of the plan, by Galois element, the conjugation `-1`
+    /// included with EvalMod on the standard ring.
+    pub rotation_keys: BTreeMap<i64, usize>,
+    /// The EvalMod relinearization (tensor) key.
+    pub tensor_key: usize,
+    /// The trace and embedding keys, with EvalMod on the conjugate-invariant ring.
+    pub conversion_keys: Option<(usize, usize)>,
+}
+
+/// The stages that set the widths at which a bootstrap uses its keys, given the
+/// width it runs at and its input.
+pub(crate) struct StageWidths<'a> {
     pipeline: BootstrappingPipeline,
     c2s_guard_bits: usize,
     eval_mod_ring: EvalModRing,
     coeffs_to_slots: &'a DFTPlan,
+    coeffs_to_slots_bypass: Option<&'a DFTPlan>,
     slots_to_coeffs: &'a DFTPlan,
     eval_mod: &'a EvalModPlan,
 }
 
-impl KeyWidths<'_> {
-    /// Widest ciphertext, in bits, each rotation key switches, by Galois element.
+impl StageWidths<'_> {
+    /// [`BootstrappingPlan::key_widths`], or `None` when `bootstrap_k` or `input_k`
+    /// is narrower than the bits the stages running on it consume.
+    pub(crate) fn key_widths(
+        &self,
+        log_n: usize,
+        bootstrap_k: usize,
+        input_k: usize,
+        input_log_delta: usize,
+    ) -> Option<BootstrappingKeyWidths> {
+        Some(BootstrappingKeyWidths {
+            rotation_keys: self.rotation_key_inputs(log_n, bootstrap_k, input_k)?,
+            tensor_key: self.eval_mod_relinearization_k(bootstrap_k, input_log_delta),
+            conversion_keys: self.conversions(bootstrap_k),
+        })
+    }
+
+    /// Width, in bits, of each rotation key, by Galois element: the input width of
+    /// the widest factor using it (see [`BootstrappingKeyWidths`]).
     ///
     /// Factor `i` of a transform runs on a ciphertext `i` factor scales below the
     /// width the transform starts at: the raised width `bootstrap_k` for
-    /// CoeffsToSlots, and for SlotsToCoeffs the input width `input_k`
-    /// (S2C-first) or what EvalMod leaves (C2S-first). The conjugation follows
+    /// CoeffsToSlots and its EvalRound+ bypass, and for SlotsToCoeffs the input
+    /// width `input_k` (S2C-first) or what EvalMod, and the bypass, leave
+    /// (C2S-first). The folded factors of [`CIConversion::Folded`] run where the
+    /// last CoeffsToSlots factor would. The conjugation follows each split
     /// CoeffsToSlots, which on the conjugate-invariant ring does not split.
-    pub(crate) fn rotation_key_inputs(&self, log_n: usize, bootstrap_k: usize, input_k: usize) -> BTreeMap<i64, usize> {
+    fn rotation_key_inputs(&self, log_n: usize, bootstrap_k: usize, input_k: usize) -> Option<BTreeMap<i64, usize>> {
         let cyclotomic_order = 1i64 << (log_n + 1);
-        let after_c2s = bootstrap_k - self.coeffs_to_slots.consumed_bits();
+        let after_c2s = bootstrap_k.checked_sub(self.coeffs_to_slots.consumed_bits())?;
+        let after_bypass = match self.coeffs_to_slots_bypass {
+            Some(bypass) => Some(bootstrap_k.checked_sub(bypass.consumed_bits())?),
+            None => None,
+        };
         let s2c_k = match self.pipeline {
             BootstrappingPipeline::S2CFirst => input_k,
-            BootstrappingPipeline::C2SFirst => after_c2s - self.eval_mod.consumed_bits(),
+            BootstrappingPipeline::C2SFirst => {
+                let after_eval_mod = after_c2s.checked_sub(self.eval_mod.consumed_bits())?;
+                after_bypass.map_or(after_eval_mod, |k| k.min(after_eval_mod))
+            }
         };
+        // Every factor below then runs above the bits its transform consumes.
+        s2c_k.checked_sub(self.slots_to_coeffs.consumed_bits())?;
 
         let mut inputs: BTreeMap<i64, usize> = BTreeMap::new();
         let mut widen = |p: i64, k: usize| {
             let widest = inputs.entry(p).or_insert(k);
             *widest = (*widest).max(k);
         };
-        for (dft, start) in [(self.coeffs_to_slots, bootstrap_k), (self.slots_to_coeffs, s2c_k)] {
+        let bypass = self.coeffs_to_slots_bypass.map(|bypass| (bypass, bootstrap_k));
+        for (dft, start) in [(self.coeffs_to_slots, bootstrap_k), (self.slots_to_coeffs, s2c_k)]
+            .into_iter()
+            .chain(bypass)
+        {
             let log_delta = dft.coeffs_meta().log_delta();
             let factors = dft.galois_elements_per_factor(log_n, cyclotomic_order);
             // The repack rotation of the sparse path belongs to no factor.
@@ -658,10 +724,25 @@ impl KeyWidths<'_> {
                 }
             }
         }
+        if let EvalModRing::ConjugateInvariant {
+            pre: CIConversion::Folded,
+            ..
+        } = self.eval_mod_ring
+        {
+            let c2s = self.coeffs_to_slots.resolved_at(log_n);
+            let last = c2s.num_factors() - 1;
+            let last_k = bootstrap_k - (last - usize::from(c2s.first_factor_on_raise())) * c2s.coeffs_meta().log_delta();
+            for p in c2s.last_factor_galois_elements_at(log_n, 1 << (log_n - 1), cyclotomic_order) {
+                widen(p, last_k);
+            }
+        }
         if self.eval_mod_ring == EvalModRing::Standard {
             widen(-1, after_c2s);
+            if let Some(k) = after_bypass {
+                widen(-1, k);
+            }
         }
-        inputs
+        Some(inputs)
     }
 
     /// Widths of the ciphertexts the trace and the embedding switch on the way
@@ -691,14 +772,15 @@ impl KeyWidths<'_> {
     }
 
     /// Widest ciphertext EvalMod relinearizes, in bits, for an input of scale
-    /// `2^input_log_delta`.
+    /// `2^input_log_delta`. EvalMod reads the low-precision CoeffsToSlots alone,
+    /// with or without the EvalRound+ bypass.
     ///
     /// EvalMod relabels its input at its own scale and keeps its budget, so its
     /// widest product is at that budget plus `f_mod_log_delta`. The budget is what
     /// CoeffsToSlots and the product by `u` leave of the raised width above the scale the raise labels:
     /// EvalMod's own scale (C2S-first), or the input scale, the message ratio and
     /// the guard bits (S2C-first).
-    pub(crate) fn eval_mod_relinearization_k(&self, bootstrap_k: usize, input_log_delta: usize) -> usize {
+    fn eval_mod_relinearization_k(&self, bootstrap_k: usize, input_log_delta: usize) -> usize {
         let f_mod_log_delta = self.eval_mod.f_mod_log_delta;
         let raised_log_delta = match self.pipeline {
             BootstrappingPipeline::C2SFirst => f_mod_log_delta,
@@ -711,12 +793,13 @@ impl KeyWidths<'_> {
 
 impl<BE: Backend, F> BootstrappingContextPrepared<BE, F> {
     /// The stages that set the widths at which a bootstrap uses its keys.
-    pub(crate) fn key_widths(&self) -> KeyWidths<'_> {
-        KeyWidths {
+    pub(crate) fn stage_widths(&self) -> StageWidths<'_> {
+        StageWidths {
             pipeline: self.pipeline,
             c2s_guard_bits: self.c2s_guard_bits,
             eval_mod_ring: self.eval_mod_ring,
             coeffs_to_slots: self.coeffs_to_slots.plan(),
+            coeffs_to_slots_bypass: self.coeffs_to_slots_bypass.as_ref().map(|bypass| bypass.plan()),
             slots_to_coeffs: self.slots_to_coeffs.plan(),
             eval_mod: &self.eval_mod_plan,
         }

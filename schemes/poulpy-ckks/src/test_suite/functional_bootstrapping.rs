@@ -341,10 +341,14 @@ fn run_case<BE, F, E>(
         Some(compile_context::<BE, F>(module, params.base2k.into(), &plan))
     };
     let keys_layout = BootstrappingKeysLayout {
-        rotation_keys: Default::default(),
+        rotation_keys: plan
+            .key_widths(tp.log_n(), k_boot, k_in, INPUT_LOG_DELTA)
+            .rotation_keys
+            .into_keys()
+            .map(|p| (p, tp.atk_layout()))
+            .collect(),
         first_factor_key: first_factor_on_raise.then(|| tp.first_factor_key_layout(&plan, k_boot, log_modulus_in)),
         conversion_keys: None,
-        automorphism_key: tp.atk_layout(),
         tensor_key: tp.tsk_layout(),
         // The first-factor keys switch back to the dense secret.
         encapsulation: plan.sparse_secret_hamming_weight().map(|_| EncapsulationKeysLayout {

@@ -1,5 +1,26 @@
 use poulpy_ckks::ckks_determinism_test_suite;
 
+/// The small S2C-first and C2S-first presets at their 52-bit radix, by default.
+mod small_bootstrapping_presets {
+    use poulpy_ckks::test_suite::presets::{small_c2s_preset_meets_precision, small_s2c_preset_meets_precision};
+
+    #[test]
+    fn ntt4x30_small_s2c_preset_meets_precision() {
+        small_s2c_preset_meets_precision::<crate::NTT4x30Avx512>();
+    }
+
+    #[test]
+    fn ntt4x30_small_c2s_preset_meets_precision() {
+        small_c2s_preset_meets_precision::<crate::NTT4x30Avx512>();
+    }
+
+    #[cfg(feature = "enable-rayon")]
+    #[test]
+    fn ntt4x30_rayon_small_c2s_preset_meets_precision() {
+        small_c2s_preset_meets_precision::<crate::NTT4x30Avx512Rayon>();
+    }
+}
+
 #[cfg(feature = "enable-ifma")]
 mod bootstrapping_presets {
     use poulpy_ckks::{
@@ -19,7 +40,8 @@ mod bootstrapping_presets {
             );
             let adapted = preset_for_backend::<crate::NTT3x42Ifma, crate::NTT3x42CIIfma>(&preset).unwrap();
             assert_eq!(adapted.base2k(), 56);
-            assert!(adapted.keys_layout().automorphism_key.k().as_usize() <= adapted.max_dense_modulus());
+            let keys = adapted.keys_layout().rotation_key_layouts();
+            assert!(keys.iter().all(|key| key.k().as_usize() <= adapted.max_dense_modulus()));
             let small_key = &adapted.keys_layout().encapsulation.as_ref().unwrap().dense_to_sparse;
             assert!(small_key.k().as_usize() <= adapted.max_sparse_modulus());
         }

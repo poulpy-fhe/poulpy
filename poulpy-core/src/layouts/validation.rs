@@ -1,6 +1,7 @@
 //! Refusal checks shared by the reference bodies, the derived defaults and
 //! backend overrides, so that every implementation refuses the same inputs.
 
+use crate::layouts::BabyStepOperand;
 use poulpy_hal::layouts::{Backend, VecZnxBackendMut, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef};
 
 use crate::{
@@ -52,8 +53,10 @@ pub fn assert_key_covers<K: GGLWEInfos>(op: &str, k: TorusPrecision, key: &K) {
 }
 
 /// The checks of [`glwe_eval_linear_transformation_into_reference`](crate::reference::linear_transformation::glwe_eval_linear_transformation_into_reference), run before it reads a key or writes `res`.
-pub fn assert_linear_transformation_into<BE, P>(lhs: &LinearTransformationBabySteps<BE>, rhs: &LinearTransformation<P>)
-where
+pub fn assert_linear_transformation_into<BE, P, L: BabyStepOperand<BE>>(
+    lhs: &LinearTransformationBabySteps<BE, L>,
+    rhs: &LinearTransformation<P>,
+) where
     BE: Backend,
     P: DiagonalProd<BE>,
 {
@@ -61,8 +64,10 @@ where
 }
 
 /// The checks of [`glwe_eval_linear_transformation_sum_into_reference`](crate::reference::linear_transformation::glwe_eval_linear_transformation_sum_into_reference), run before it reads a key or writes `res`.
-pub fn assert_linear_transformation_sum<BE, P>(babies: &[&LinearTransformationBabySteps<BE>], lts: &[&LinearTransformation<P>])
-where
+pub fn assert_linear_transformation_sum<BE, P, L: BabyStepOperand<BE>>(
+    babies: &[&LinearTransformationBabySteps<BE, L>],
+    lts: &[&LinearTransformation<P>],
+) where
     BE: Backend,
     P: DiagonalProd<BE>,
 {
@@ -105,8 +110,8 @@ where
 ///
 /// Unless the first term has a giant step, and every giant step of every term has a diagonal as wide as its
 /// transform's first diagonal and reads only baby rotations its term's cache holds.
-fn assert_linear_transformation_giant_steps<BE, P>(
-    babies: &[&LinearTransformationBabySteps<BE>],
+fn assert_linear_transformation_giant_steps<BE, P, L: BabyStepOperand<BE>>(
+    babies: &[&LinearTransformationBabySteps<BE, L>],
     lts: &[&LinearTransformation<P>],
 ) where
     BE: Backend,

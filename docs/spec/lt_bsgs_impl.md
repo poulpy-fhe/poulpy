@@ -45,9 +45,10 @@ and so the layout/schedule math stays free of any backend.
 - [`LinearTransformationRhsPrepared<BE>`](../../poulpy-core/src/layouts/prepared/linear_transformation.rs)
   — the prepared **right** operand: pruned giant steps, each holding `CnvPVecR` diagonals
   keyed by the real baby rotation `k`, plus the plaintext limb layout the evaluator needs.
-- [`LinearTransformationBabySteps<BE>`](../../poulpy-core/src/layouts/prepared/linear_transformation.rs)
-  — the prepared **left** operand: a `BTreeMap<i64, CnvPVecL>` of baby rotations
-  `rot(v,k)`, addressed by the real BSGS index `k` (not a dense position).
+- [`LinearTransformationBabySteps<BE, L>`](../../poulpy-core/src/layouts/prepared/linear_transformation.rs)
+  is the prepared **left** operand: a `BTreeMap<i64, L>` of baby rotations
+  `rot(v,k)`, addressed by the real BSGS index `k` (not a dense position), each an owned
+  `CnvPVecL` or one carved from a scratch arena.
 
 ---
 

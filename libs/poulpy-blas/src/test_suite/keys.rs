@@ -20,7 +20,7 @@ use poulpy_ckks::{
     },
 };
 use poulpy_core::{
-    GLWEAutomorphismKeyEncryptSk, GLWETensorKeyEncryptSk,
+    GLWEAutomorphismKeyEncryptSk, GLWEBytesOf, GLWETensorKeyEncryptSk,
     api::{GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory},
     layouts::{
         Base2K, DiagonalArithmetic, GGLWELayout, GLWEAutomorphismKeyLayout, GLWETensorKeyLayout, GLWEToBackendRef,
@@ -550,7 +550,7 @@ pub fn test_blas_key_widths<BE, F, E>(
                     src.block(0, 0),
                     first,
                     &keys,
-                    &mut own(bytes).borrow(),
+                    &mut own(bytes + module.linear_transformation_baby_steps_bytes_of(&first.index(), src.block(0, 0))).borrow(),
                 )
                 .unwrap();
             let mut p = alloc(1, 1, width(&s));
@@ -560,7 +560,7 @@ pub fn test_blas_key_widths<BE, F, E>(
                     s.block(0, 0),
                     shift,
                     &keys,
-                    &mut own(bytes).borrow(),
+                    &mut own(bytes + module.linear_transformation_baby_steps_bytes_of(&shift.index(), s.block(0, 0))).borrow(),
                 )
                 .unwrap();
             (width(&s), width(&p))

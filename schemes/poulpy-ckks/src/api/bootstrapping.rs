@@ -138,12 +138,15 @@ pub trait CKKSBootstrappingOps<BE: Backend> {
     /// to `bootstrap_k` so it accounts for C2S-first's output scale restoration.
     ///
     /// Before any work, every rotation key and the tensor key must cover the
-    /// widest ciphertext the bootstrap switches with it at this working width:
+    /// widest ciphertext the bootstrap switches with it at this working width
+    /// ([`BootstrappingPlan::key_widths`](crate::layouts::BootstrappingPlan::key_widths)):
     /// otherwise it fails with
     /// [`MissingAutomorphismKey`](crate::CKKSCompositionError::MissingAutomorphismKey)
     /// or [`MissingRelinearizationKey`](crate::CKKSCompositionError::MissingRelinearizationKey),
     /// whose `source` is the key source's refusal. Keys laid out by a preset
-    /// cover its `bootstrap_k`.
+    /// cover its `bootstrap_k`. A working width or an input narrower than the bits
+    /// the stages running on it consume fails with
+    /// [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand) before any work.
     fn ckks_bootstrap<F, K>(
         &self,
         ct_out: &mut CKKSCiphertextOwned<BE>,
@@ -220,7 +223,8 @@ pub trait CKKSBootstrappingCIOps<BE: Backend> {
     /// [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand) for a context not compiled
     /// by `compile_ci` or keys not prepared by `prepare_ci`, modules of other degrees than `2N`
     /// and `N`, ciphertexts of another degree or rank, an encapsulation that does not match the
-    /// recipe, or conversion keys of another degree, radix or rank, or narrower than the widths
+    /// recipe, a working width or an input narrower than the bits the stages running on it
+    /// consume, or conversion keys of another degree, radix or rank, or narrower than the widths
     /// they switch; [`MissingAutomorphismKey`](crate::CKKSCompositionError::MissingAutomorphismKey)
     /// or [`MissingRelinearizationKey`](crate::CKKSCompositionError::MissingRelinearizationKey)
     /// for a rotation or tensor key narrower than its widest use, as

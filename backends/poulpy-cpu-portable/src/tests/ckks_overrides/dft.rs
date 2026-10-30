@@ -545,18 +545,23 @@ fn bootstrap_sizing_includes_selected_dft_workspace() {
         dnum: 16usize.into(),
         k_digit: 16usize.into(),
     };
+    let rotation_key = poulpy_core::layouts::GLWEAutomorphismKeyLayout {
+        n: key.n,
+        base2k: key.base2k,
+        k_aux: key.k_aux,
+        rank: key.rank,
+        dnum: key.dnum,
+        k_digit: key.k_digit,
+    };
     let keys = BootstrappingKeysLayout {
-        rotation_keys: Default::default(),
+        rotation_keys: plan
+            .galois_elements(6, 128)
+            .into_iter()
+            .chain([-1])
+            .map(|p| (p, rotation_key))
+            .collect(),
         first_factor_key: None,
         conversion_keys: None,
-        automorphism_key: poulpy_core::layouts::GLWEAutomorphismKeyLayout {
-            n: key.n,
-            base2k: key.base2k,
-            k_aux: key.k_aux,
-            rank: key.rank,
-            dnum: key.dnum,
-            k_digit: key.k_digit,
-        },
         tensor_key: key,
         encapsulation: None,
     };

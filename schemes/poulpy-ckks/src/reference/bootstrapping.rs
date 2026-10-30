@@ -21,7 +21,7 @@ use crate::{
     api::{
         CKKSAddOps, CKKSAllOpsTmpBytes, CKKSComplexPolynomialEvaluationOps, CKKSConjugateOps, CKKSCopyOps, CKKSDFTOps,
         CKKSEvalModOps, CKKSImagOps, CKKSLinearTransformationOps, CKKSMulOps, CKKSNegOps, CKKSPolynomialEvaluationOps,
-        CKKSPow2Ops, CKKSSubOps, LinearTransformationBabySteps,
+        CKKSPow2Ops, CKKSSubOps,
     },
     eval_lut::{ckks_eval_lut, ckks_eval_lut_binary, ckks_eval_lut_from_basis, ckks_lut_power_basis},
     layouts::{
@@ -174,15 +174,15 @@ where
 }
 
 /// Fails before any work unless every key covers the widest ciphertext the
-/// bootstrap switches with it.
+/// bootstrap switches with it, and with `InvalidOperand` when the working width
+/// or the input is narrower than the bits the stages running on it consume.
 ///
 /// The bootstrap runs at `ct_out.k()`, which need not be the width the keys
 /// were laid out for. Each stage's key lookup also refuses a key too narrow for
-/// its width; this check only moves the failure ahead of the computation. An
-/// EvalRound+ recipe runs its bypass at widths of its own and is left to those
-/// checks. Keys with a row offset (sparse-to-dense, first factor) are laid out
-/// for one raise: they are checked against the raise this bootstrap runs. `op`
-/// names the bootstrap in the errors.
+/// its width; this check only moves the failure ahead of the computation. Keys
+/// with a row offset (sparse-to-dense, first factor) are laid out for one raise:
+/// they are checked against the raise this bootstrap runs. `op` names the
+/// bootstrap in the errors.
 fn check_key_widths<BE, M, F, K, T, C1, C2>(
     op: &'static str,
     ct_out: &C1,
@@ -199,26 +199,29 @@ where
     C1: CKKSCtBounds,
     C2: CKKSCtBounds,
 {
-    let widths = ctx.key_widths();
+    let log_n = ct_out.n().as_usize().trailing_zeros() as usize;
     let (bootstrap_k, input_k) = (ct_out.k().as_usize(), ct_in.k().as_usize());
-    if ctx.coeffs_to_slots_bypass().is_none() {
-        let log_n = ct_out.n().as_usize().trailing_zeros() as usize;
-        for (p, k) in widths.rotation_key_inputs(log_n, bootstrap_k, input_k) {
-            let k = TorusPrecision(k as u32);
-            keys.rotation_keys()
-                .get_automorphism_key(p, k)
-                .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
-                    op,
-                    rotation: p,
-                    k: k.into(),
-                    source,
-                })?;
-        }
-        let k = TorusPrecision(widths.eval_mod_relinearization_k(bootstrap_k, ct_in.log_delta()) as u32);
-        tensor_key
-            .get_tensor_key(k)
-            .map_err(|source| CKKSCompositionError::MissingRelinearizationKey { op, k: k.into(), source })?;
+    let Some(widths) = ctx.stage_widths().key_widths(log_n, bootstrap_k, input_k, ct_in.log_delta()) else {
+        let reason = format!(
+            "a bootstrap at {bootstrap_k} bits of an input of {input_k} bits is narrower than the bits its stages consume"
+        );
+        return Err(CKKSCompositionError::InvalidOperand { op, reason }.into());
+    };
+    for (p, k) in widths.rotation_keys {
+        let k = TorusPrecision(k as u32);
+        keys.rotation_keys()
+            .get_automorphism_key(p, k)
+            .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
+                op,
+                rotation: p,
+                k: k.into(),
+                source,
+            })?;
     }
+    let k = TorusPrecision(widths.tensor_key as u32);
+    tensor_key
+        .get_tensor_key(k)
+        .map_err(|source| CKKSCompositionError::MissingRelinearizationKey { op, k: k.into(), source })?;
     check_raise_keys(op, ct_out, ct_in, ctx, keys)
 }
 
@@ -239,7 +242,7 @@ where
     C2: CKKSCtBounds,
 {
     let bootstrap_k = ct_out.k().as_usize();
-    let (k_small, raised) = ctx.key_widths().raise(ct_in.k().as_usize());
+    let (k_small, raised) = ctx.stage_widths().raise(ct_in.k().as_usize());
     if let Some(factor) = ctx.coeffs_to_slots_first_factor() {
         crate::reference::first_factor::check_first_factor_raise(
             op,
@@ -1472,8 +1475,8 @@ where
             .max(module.glwe_ci_trace_tmp_bytes(&boot_layout, &embedded));
     let pre = match &eval_mod_ci.pre.0 {
         crate::layouts::bootstrapping::CIPreForm::Product(u) => module.ckks_mul_pt_vec_tmp_bytes(&embedded, &embedded, u),
-        // The outputs of the two folded factors beside their evaluation, then the odd
-        // one's embedding beside its rotation.
+        // The baby steps of `even` and the outputs of the two folded factors beside
+        // their evaluation, then the odd one's embedding beside its rotation.
         crate::layouts::bootstrapping::CIPreForm::Folded { even, odd } => {
             // The baby steps of `even`, which `odd` shares, and each factor on its own schedule,
             // which counts the doubling and the giant-step tree of power-of-two keys.
@@ -1486,7 +1489,8 @@ where
                     .max(module.ckks_eval_linear_transformation_tmp_bytes(&boot_layout, &diagonal, &even_plan, atk, atk))
                     .max(module.ckks_eval_linear_transformation_tmp_bytes(&boot_layout, &diagonal, &odd_plan, atk, atk));
             }
-            2 * BE::scratch_aligned(module.glwe_bytes_of_from_infos(&boot_layout))
+            module.linear_transformation_baby_steps_bytes_of(&even_plan, &boot_layout)
+                + 2 * BE::scratch_aligned(module.glwe_bytes_of_from_infos(&boot_layout))
                 + factors.max(embedded_bytes + module.glwe_rotate_tmp_bytes().max(module.ckks_add_tmp_bytes(embedded.size())))
         }
     };
@@ -1530,8 +1534,11 @@ where
     R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
 {
-    let mut babies = LinearTransformationBabySteps::alloc_for(module, even, w);
-    module.ckks_prepare_linear_transformation_baby_steps(&mut babies, w, keys, scratch)?;
+    let plan = even.index();
+    let (mut babies, mut scratch) = scratch
+        .borrow()
+        .take_linear_transformation_baby_steps_scratch(module, &plan, w);
+    module.ckks_prepare_linear_transformation_baby_steps(&mut babies, w, keys, &mut scratch)?;
     let (mut a, scratch_1) = scratch.borrow().take_ckks_ciphertext_scratch(w, w.meta());
     let (mut b, mut scratch_1) = scratch_1.take_ckks_ciphertext_scratch(w, w.meta());
     module.ckks_eval_linear_transformation_into(&mut a, w, &babies, even, keys, &mut scratch_1)?;
@@ -1633,7 +1640,7 @@ where
             },
         )?;
     }
-    let (traced, embedded) = ctx.key_widths().conversions(ct_out.k().as_usize()).unwrap_or_default();
+    let (traced, embedded) = ctx.stage_widths().conversions(ct_out.k().as_usize()).unwrap_or_default();
     for (key, k) in [(trace_key.gglwe_layout(), traced), (embed_key.gglwe_layout(), embedded)] {
         let covered = key.max_input_k().as_usize();
         if k > covered {

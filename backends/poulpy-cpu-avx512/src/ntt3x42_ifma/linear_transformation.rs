@@ -1,4 +1,5 @@
 use crate::NTT3x42IfmaRayon as BE;
+use poulpy_core::layouts::BabyStepOperand;
 use poulpy_cpu_rayon::RayonTaskExecutor as E;
 use poulpy_hal::execution::TaskExecutor;
 
@@ -137,9 +138,9 @@ unsafe impl poulpy_core::oep::LinearTransformationImpl for BE {
         )
     }
 
-    fn glwe_prepare_linear_transformation_baby_steps<A, H>(
+    fn glwe_prepare_linear_transformation_baby_steps<A, H, L: BabyStepOperand<BE>>(
         module: &Module<BE>,
-        cache: &mut poulpy_core::layouts::prepared::LinearTransformationBabySteps<BE>,
+        cache: &mut poulpy_core::layouts::prepared::LinearTransformationBabySteps<BE, L>,
         a: &A,
         keys: &H,
         scratch: &mut ::poulpy_hal::layouts::ScratchArena<BE>,
@@ -152,11 +153,11 @@ unsafe impl poulpy_core::oep::LinearTransformationImpl for BE {
         )
     }
 
-    fn glwe_eval_linear_transformation_into<R, P, H>(
+    fn glwe_eval_linear_transformation_into<R, P, H, L: BabyStepOperand<BE>>(
         module: &Module<BE>,
         cnv_offset: usize,
         res: &mut R,
-        lhs: &poulpy_core::layouts::prepared::LinearTransformationBabySteps<BE>,
+        lhs: &poulpy_core::layouts::prepared::LinearTransformationBabySteps<BE, L>,
         rhs: &poulpy_core::layouts::LinearTransformation<P>,
         keys: &H,
         scratch: &mut ::poulpy_hal::layouts::ScratchArena<BE>,
@@ -171,11 +172,11 @@ unsafe impl poulpy_core::oep::LinearTransformationImpl for BE {
         }
     }
 
-    fn glwe_eval_linear_transformation_sum_into<R, P, H>(
+    fn glwe_eval_linear_transformation_sum_into<R, P, H, L: BabyStepOperand<BE>>(
         module: &Module<BE>,
         cnv_offset: usize,
         res: &mut R,
-        babies: &[&poulpy_core::layouts::prepared::LinearTransformationBabySteps<BE>],
+        babies: &[&poulpy_core::layouts::prepared::LinearTransformationBabySteps<BE, L>],
         lts: &[&poulpy_core::layouts::LinearTransformation<P>],
         keys: &H,
         scratch: &mut ::poulpy_hal::layouts::ScratchArena<BE>,
@@ -194,11 +195,11 @@ unsafe impl poulpy_core::oep::LinearTransformationImpl for BE {
         poulpy_core::reference::linear_transformation::glwe_giant_step_batch_reference(module)
     }
 
-    fn glwe_accumulate_giant_steps(
+    fn glwe_accumulate_giant_steps<L: BabyStepOperand<BE>>(
         module: &Module<BE>,
         cnv_offset_hi: usize,
         prods: &mut [VecZnxDftBackendMut<'_, BE>],
-        lhs: &poulpy_core::layouts::prepared::LinearTransformationBabySteps<BE>,
+        lhs: &poulpy_core::layouts::prepared::LinearTransformationBabySteps<BE, L>,
         steps: &[poulpy_core::layouts::LinearTransformationGiantStep<
             poulpy_core::layouts::prepared::PreparedDiagonal<<BE as Backend>::OwnedBuf, BE>,
         >],
@@ -220,11 +221,11 @@ const PARALLEL_EVAL_MIN_SIZE: usize = if cfg!(test) { 2 } else { 16 };
 
 /// The parallel evaluation of `Σ_t M_t(a_t)` over checked terms of plaintext diagonals, each giant step's PROD summed
 /// over the terms as the reference sums it. Returns `false`, with `res` untouched, where it does not apply.
-fn eval<R, P, H>(
+fn eval<R, P, H, L: BabyStepOperand<BE>>(
     module: &Module<BE>,
     cnv_offset: usize,
     res: &mut R,
-    babies: &[&LinearTransformationBabySteps<BE>],
+    babies: &[&LinearTransformationBabySteps<BE, L>],
     lts: &[&LinearTransformation<P>],
     keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
