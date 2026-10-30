@@ -88,6 +88,10 @@ pub(super) trait GiantProducts<BE: Backend> {
 
     fn cnv_offset_lo(&self) -> i64;
 
+    /// Width a lazy giant rotation decomposes from these products into a result of width `res_k`: a key that covers
+    /// less sends the products through the normalized fallback.
+    fn switch_k(&self, res_k: usize) -> usize;
+
     /// Most giant steps [`Self::products`] takes per call, at least 1.
     fn batch(&self, module: &Module<BE>) -> usize;
 
@@ -135,6 +139,11 @@ where
 
     fn cnv_offset_lo(&self) -> i64 {
         self.cnv_offset_lo
+    }
+
+    // The partial low limb past `res_k` is the plaintext route's alignment tail.
+    fn switch_k(&self, res_k: usize) -> usize {
+        res_k
     }
 
     fn batch(&self, module: &Module<BE>) -> usize {
@@ -296,9 +305,9 @@ pub(super) fn glwe_eval_giant_steps<BE, R, P, H>(
     // the ones the destination's precision asks for. Every rotating step's key
     // is resolved once, indexed by step, because the steps need not share a
     // layout: the lazy route is only taken when all of them carry the
-    // destination's base2k, and the accumulator is sized by the widest key
-    // (each key-switch then clamps to its own width). An identity-only
-    // transform legitimately resolves no key at all.
+    // destination's base2k and decompose the products whole, and the accumulator
+    // is sized by the widest key (each key-switch then clamps to its own width).
+    // An identity-only transform legitimately resolves no key at all.
     let giant_keys: Vec<Option<GLWEAutomorphismKeyPreparedBackendRef<'_, BE>>> = schedule
         .giant_steps
         .iter()
@@ -310,10 +319,10 @@ pub(super) fn glwe_eval_giant_steps<BE, R, P, H>(
         })
         .collect();
     // No giant rotation: BIG-flow accumulator is always valid (no key required).
-    let use_lazy_giant_rotation = giant_keys
-        .iter()
-        .flatten()
-        .all(|key| res_base2k == key.base2k() && prod_base2k == key.base2k());
+    let switch_k = products.switch_k(res_k);
+    let use_lazy_giant_rotation = giant_keys.iter().flatten().all(|key| {
+        res_base2k == key.base2k() && prod_base2k == key.base2k() && switch_k <= key.gglwe_layout().max_input_k().as_usize()
+    });
     // PROD may carry a partial low limb beyond the destination's live
     // precision. Preserve the same guard below that wider input while the
     // sizing helper applies the key's work-region cap.
@@ -546,10 +555,10 @@ fn glwe_eval_giant_tree<BE, R, H>(
         })
         .collect();
     let switches: usize = tree.levels.iter().map(|level| level.pairs.len()).sum();
-    let lazy = level_keys
-        .iter()
-        .flatten()
-        .all(|key| res_base2k == key.base2k() && prod_base2k == key.base2k());
+    let switch_k = products.switch_k(res.k().as_usize());
+    let lazy = level_keys.iter().flatten().all(|key| {
+        res_base2k == key.base2k() && prod_base2k == key.base2k() && switch_k <= key.gglwe_layout().max_input_k().as_usize()
+    });
 
     let batch = products.batch(module).min(steps);
     let shape = GiantTreeShape {

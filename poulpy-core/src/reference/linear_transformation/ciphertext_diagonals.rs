@@ -142,6 +142,11 @@ where
         }
     }
 
+    /// The one-pass route leaves the low bits of the offset below `res_k` to the final normalization.
+    fn switch_k(&self, res_k: usize) -> usize {
+        res_k + self.cnv_offset_lo() as usize
+    }
+
     fn batch(&self, _module: &Module<BE>) -> usize {
         1
     }
