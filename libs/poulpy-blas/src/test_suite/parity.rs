@@ -57,8 +57,9 @@ use super::{
     },
     matvec::{
         append, append_tmp_bytes, diagonal_ciphertext_elements, diagonal_ciphertext_snapshot, matvec_layouts, matvec_operands,
-        prepared_of, vector_snapshot,
+        matvec_operands_of, prepared_of, vector_snapshot,
     },
+    repack::{GRID, grid_to_vector_cases, vector_to_grid_cases},
 };
 use crate::{
     api::{
@@ -67,12 +68,12 @@ use crate::{
     },
     layouts::{
         BlasCiphertext, BlasCiphertextOwned, BlasContextInfos, BlasContextLayout, BlasContextPrepared, BlasDiagonalCiphertext,
-        BlasDiagonalCiphertextInfos, BlasDiagonalCiphertextLayout, BlasGridInfos, BlasLayout, BlasMatMulOperandInfos,
-        BlasMatVecOperandLayout, BlasModuleAlloc, BlasPlan, BlasPtAlgorithm, BlasPtOperandInfos, BlasPtOperandLayout,
-        BlasPtOperandPrepared, BlasPtSide, BlasVector, BlasVectorInfos, BlasVectorLayout, BlasVectorOwned, BlasVectorShape, Left,
-        Right, blas_matmul_left_term_layout, blas_matmul_max_base2k, blas_matmul_pt_left_max_base2k,
-        blas_matmul_pt_right_max_base2k, blas_matmul_right_term_layout, blas_matvec_diagonal_max_base2k,
-        blas_matvec_pt_max_base2k,
+        BlasDiagonalCiphertextInfos, BlasDiagonalCiphertextLayout, BlasGridInfos, BlasGridMut, BlasLayout,
+        BlasMatMulOperandInfos, BlasMatVecOperandLayout, BlasModuleAlloc, BlasPlan, BlasPtAlgorithm, BlasPtOperandInfos,
+        BlasPtOperandLayout, BlasPtOperandPrepared, BlasPtSide, BlasVector, BlasVectorInfos, BlasVectorLayout, BlasVectorOwned,
+        BlasVectorShape, Left, Right, blas_grid_to_vector_max_base2k, blas_matmul_left_term_layout, blas_matmul_max_base2k,
+        blas_matmul_pt_left_max_base2k, blas_matmul_pt_right_max_base2k, blas_matmul_right_term_layout,
+        blas_matvec_diagonal_max_base2k, blas_matvec_pt_max_base2k, blas_vector_to_grid_max_base2k,
         context::module_layout,
         diagonal_ciphertext::AppendAxis,
         matvec_pt_galois_elements, sum_galois_elements,
@@ -1353,6 +1354,135 @@ where
     out
 }
 
+/// Repacking for every case of [`grid_to_vector_cases`] and [`vector_to_grid_cases`], resident then streamed, into `res`
+/// of the operand width, one limb wider and one limb narrower, and of lazy real inputs, then into a `res` narrower than
+/// the result's scale, which poulpy-ckks rejects inside the implementation.
+fn repack<B, F>(params: CKKSTestParams, module: &Module<B>) -> Vec<Output>
+where
+    B: BlasParityBackend,
+    Module<B>: BlasParityModule<B, F>,
+    F: TestScalar + DiagonalArithmetic,
+{
+    let (slots, w, key, p) = (module.ckks_max_slots(), width(params), atk_layout(params), scale(params));
+    let widths = [w, w + params.base2k, w - params.base2k];
+    let (log_d, (rows, cols, lanes)) = (1, GRID);
+    let at_scale = |layout| BlasMatVecOperandLayout {
+        coeffs_meta: diagonal_meta(params, p),
+        ..layout
+    };
+    let mut out = Vec::new();
+    for (c, case) in grid_to_vector_cases(&params, slots, log_d).into_iter().enumerate() {
+        let (line, layout) = (case.line, at_scale(case.layout));
+        let (streamed, resident) = matvec_operands_of::<B, F>(module, &layout, case.entry);
+        let keys = fixture_keys(
+            params,
+            module,
+            &matvec_pt_galois_elements(module.cyclotomic_order(), &layout),
+            false,
+        );
+        let (label, seed) = (case.label(slots), 10 + 20 * c as u8);
+        let mut a = grid_of(
+            module,
+            &block(params, w, label, SlotsKind::Complex),
+            log_d,
+            rows,
+            cols,
+            seed,
+            false,
+        );
+        let mut lazy = grid_of(
+            module,
+            &block(params, w, label, SlotsKind::Real),
+            log_d,
+            rows,
+            cols,
+            seed + 8,
+            true,
+        );
+        BlasGridMut::<B>::set_mat_slots(&mut a, lanes);
+        BlasGridMut::<B>::set_mat_slots(&mut lazy, lanes);
+        let before = snapshots::<B>(&[&a, &lazy]);
+        let srcs = widths.iter().map(|&k| (&a, k)).chain([(&lazy, w)]);
+        for (src, k) in srcs {
+            let mut res = vector_of(params, module, layout.output, slots, k, 140, false);
+            with_scratch::<B, _>(module.blas_grid_to_vector_tmp_bytes(&res, &resident, src, &key), |s| {
+                module.blas_grid_to_vector(&mut res, &resident, src, line, &keys, s)
+            })
+            .unwrap();
+            out.push(vector_output("blas_grid_to_vector", &res, &keys));
+            let mut res = vector_of(params, module, layout.output, slots, k, 140, false);
+            with_scratch::<B, _>(module.blas_grid_to_vector_tmp_bytes(&res, &streamed, src, &key), |s| {
+                module.blas_grid_to_vector(&mut res, &streamed, src, line, &keys, s)
+            })
+            .unwrap();
+            out.push(vector_output("blas_grid_to_vector", &res, &keys));
+        }
+        let narrow = layout_of_narrow(params);
+        let cts = (0..layout.output.count())
+            .map(|t| fixture_operand(module, &narrow, 200 + t as u8, false))
+            .collect();
+        let mut res = BlasVector::from_cts(cts, layout.output).unwrap();
+        out.push(vector_failure("blas_grid_to_vector", &mut res, &[], &keys, |res| {
+            with_scratch::<B, _>(module.blas_grid_to_vector_tmp_bytes(res, &resident, &a, &key), |s| {
+                module.blas_grid_to_vector(res, &resident, &a, line, &keys, s)
+            })
+        }));
+        assert_unchanged::<B>("repack, grid to vector", &[&a, &lazy], &before);
+    }
+    for (c, case) in vector_to_grid_cases(&params, slots, log_d).into_iter().enumerate() {
+        let (line, layout) = (case.line, at_scale(case.layout));
+        let (streamed, resident) = matvec_operands_of::<B, F>(module, &layout, case.entry);
+        let keys = fixture_keys(
+            params,
+            module,
+            &matvec_pt_galois_elements(module.cyclotomic_order(), &layout),
+            false,
+        );
+        let seed = 60 + 20 * c as u8;
+        let a = vector_of(params, module, layout.input, layout.input_period, w, seed, false);
+        let lazy = vector_of(params, module, layout.input, layout.input_period, w, seed + 5, true);
+        let before = [vector_snapshot::<B>(&a), vector_snapshot::<B>(&lazy)];
+        let grid = |k: usize| {
+            grid_of(
+                module,
+                &block(params, k, 0, SlotsKind::Complex),
+                log_d,
+                case.rows,
+                case.cols,
+                140,
+                false,
+            )
+        };
+        let srcs = widths.iter().map(|&k| (&a, k)).chain([(&lazy, w)]);
+        for (src, k) in srcs {
+            let mut res = grid(k);
+            with_scratch::<B, _>(module.blas_vector_to_grid_tmp_bytes(&res, &resident, src, &key), |s| {
+                module.blas_vector_to_grid(&mut res, line, &resident, src, &keys, s)
+            })
+            .unwrap();
+            out.push(output("blas_vector_to_grid", &res, &keys));
+            let mut res = grid(k);
+            with_scratch::<B, _>(module.blas_vector_to_grid_tmp_bytes(&res, &streamed, src, &key), |s| {
+                module.blas_vector_to_grid(&mut res, line, &streamed, src, &keys, s)
+            })
+            .unwrap();
+            out.push(output("blas_vector_to_grid", &res, &keys));
+        }
+        let mut res = grid_of(module, &layout_of_narrow(params), log_d, case.rows, case.cols, 200, false);
+        out.push(failure("blas_vector_to_grid", &mut res, &[], &keys, |res| {
+            with_scratch::<B, _>(module.blas_vector_to_grid_tmp_bytes(res, &resident, &a, &key), |s| {
+                module.blas_vector_to_grid(res, line, &resident, &a, &keys, s)
+            })
+        }));
+        assert!(
+            [vector_snapshot::<B>(&a), vector_snapshot::<B>(&lazy)] == before,
+            "repack, vector to grid: {} wrote an input",
+            std::any::type_name::<B>()
+        );
+    }
+    out
+}
+
 /// The [`Output`] of `op` into the matrix `m`, which `result` must leave written on `Ok`, or unchanged on `Err`, with
 /// the lookups `keys` recorded since the last output.
 fn diagonal_ciphertext_output<B: BlasParityBackend>(
@@ -1639,7 +1769,8 @@ pub fn test_blas_matmul_parity<BR, BT, F>(
 /// [`matvec_layouts`] (dense and replicated vectors, one and several ciphertexts), into `res` wider and narrower than
 /// the result, of lazy real inputs, and by matrices at scales other than the inputs', and fail alike on a budget
 /// poulpy-ckks rejects, leaving `res` and the input unchanged; so do the appends and the product of a diagonal ciphertext,
-/// by rotation and by powers of two. Vectors span 16 slots: below, it is skipped with a message.
+/// by rotation and by powers of two, and the repacking of a grid's line to and from a vector. Vectors span 16 slots:
+/// below, it is skipped with a message.
 pub fn test_blas_matvec_parity<BR, BT, F>(
     params: CKKSTestParams,
     _shapes: &BlasParityShapes,
@@ -1670,6 +1801,11 @@ pub fn test_blas_matvec_parity<BR, BT, F>(
         "matvec, diagonal ciphertext",
         diagonal_ciphertext::<BR, F>(params, module_ref),
         diagonal_ciphertext::<BT, F>(params, module_test),
+    );
+    compare(
+        "matvec, repacking",
+        repack::<BR, F>(params, module_ref),
+        repack::<BT, F>(params, module_test),
     );
 }
 
@@ -1712,8 +1848,9 @@ fn assert_largest_radix<B: Backend + MaxBase2k>(
 ///   largest giant group equals `left_mul`'s at every shape (the dimensions `d = 2` to `128` at one to eight matrix
 ///   slots were checked), so that case covers the wiring only;
 ///
-/// - the products of a vector, over the layouts of [`matvec_layouts`]: `K g min(L, P)` over the `K` input
-///   ciphertexts, `g` the most diagonals a giant step of the operand's encoded maps groups;
+/// - the products of a vector, over the layouts of [`matvec_layouts`], and the repacking of a grid's line to and from a
+///   vector by the same operands: `K g min(L, P)` over the `K` input ciphertexts, `g` the most diagonals a giant step of
+///   the operand's encoded maps groups;
 /// - the product by a diagonal ciphertext of diagonals `0..8` at giant step 4: `2 g min(L, P)`;
 ///
 /// and, for a sum so long that no FFT64 radix holds it at a failure target of 2^60 bits, 0. Under the masked paths, a left
@@ -1837,6 +1974,16 @@ where
             let hand = move |r: usize| inputs * g * a_k.div_ceil(r).min(diagonal_k.div_ceil(r));
             assert_largest_radix::<B>(&format!("matvec {layout:?} a.k={a_k}"), n, 1..=1000, hand, |bits| {
                 blas_matvec_pt_max_base2k::<B>(&layout, &a, bits)
+            });
+            // The repacking of a line reads the same maps over the same `K` ciphertexts.
+            let grid = BlasLayout::new(a.ct, 1, 1, 1);
+            let label = format!("grid_to_vector {layout:?} a.k={a_k}");
+            assert_largest_radix::<B>(&label, n, 1..=1000, hand, |bits| {
+                blas_grid_to_vector_max_base2k::<B>(&layout, &grid, bits)
+            });
+            let label = format!("vector_to_grid {layout:?} a.k={a_k}");
+            assert_largest_radix::<B>(&label, n, 1..=1000, hand, |bits| {
+                blas_vector_to_grid_max_base2k::<B>(&layout, &a, bits)
             });
         }
     }

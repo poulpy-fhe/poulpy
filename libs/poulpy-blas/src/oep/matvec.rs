@@ -6,8 +6,8 @@ use poulpy_ckks::layouts::CKKSPreparedRight;
 use poulpy_core::layouts::GLWEInfos;
 
 use crate::layouts::{
-    BlasDiagonalCiphertext, BlasDiagonalCiphertextInfos, BlasDiagonalCiphertextMap, BlasMatVecMaps, BlasVectorInfos,
-    BlasVectorMut, BlasVectorRef,
+    BlasDiagonalCiphertext, BlasDiagonalCiphertextInfos, BlasDiagonalCiphertextMap, BlasGrid, BlasGridInfos, BlasGridLine,
+    BlasGridMut, BlasMatVecMaps, BlasVectorInfos, BlasVectorMut, BlasVectorRef,
 };
 
 /// Extension point of [`crate::api::BlasMatVecOps`]: the products of a vector, all required.
@@ -57,6 +57,71 @@ pub unsafe trait BlasMatVecImpl: Backend {
     ) -> Result<()>
     where
         R: BlasVectorMut<Self>,
+        W: BlasMatVecMaps<Self>,
+        A: BlasVectorRef<Self>,
+        K: GetAutomorphismKey<Self> + GetTensorKey<Self> + Sync;
+
+    /// Scratch bound of [`Self::blas_grid_to_vector`]; may report less than the reference, never less than the body
+    /// takes.
+    fn blas_grid_to_vector_tmp_bytes<R, W, A, K>(module: &Module<Self>, res: &R, w: &W, a: &A, keys: &K) -> usize
+    where
+        R: BlasVectorInfos,
+        W: BlasMatVecMaps<Self>,
+        A: BlasGridInfos,
+        K: GGLWEInfos;
+
+    /// Reproduces
+    /// [`BlasMatVecReference::blas_grid_to_vector_reference`](crate::reference::BlasMatVecReference::blas_grid_to_vector_reference)
+    /// bit for bit, within [`Self::blas_grid_to_vector_tmp_bytes`]; validator:
+    /// [`crate::layouts::validate_blas_grid_to_vector`].
+    ///
+    /// **Fixed:** as [`Self::blas_matvec_pt`], the input ciphertexts being the blocks holding `line`, in entry order.
+    ///
+    /// **Free:** as [`Self::blas_matvec_pt`].
+    fn blas_grid_to_vector<R, W, A, K>(
+        module: &Module<Self>,
+        res: &mut R,
+        w: &W,
+        a: &A,
+        line: BlasGridLine,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) -> Result<()>
+    where
+        R: BlasVectorMut<Self>,
+        W: BlasMatVecMaps<Self>,
+        A: BlasGrid<Self>,
+        K: GetAutomorphismKey<Self> + GetTensorKey<Self> + Sync;
+
+    /// Scratch bound of [`Self::blas_vector_to_grid`]; may report less than the reference, never less than the body
+    /// takes.
+    fn blas_vector_to_grid_tmp_bytes<R, W, A, K>(module: &Module<Self>, res: &R, w: &W, a: &A, keys: &K) -> usize
+    where
+        R: BlasGridInfos,
+        W: BlasMatVecMaps<Self>,
+        A: BlasVectorInfos,
+        K: GGLWEInfos;
+
+    /// Reproduces
+    /// [`BlasMatVecReference::blas_vector_to_grid_reference`](crate::reference::BlasMatVecReference::blas_vector_to_grid_reference)
+    /// bit for bit, within [`Self::blas_vector_to_grid_tmp_bytes`]; validator:
+    /// [`crate::layouts::validate_blas_vector_to_grid`].
+    ///
+    /// **Fixed:** as [`Self::blas_matvec_pt`], the output ciphertexts being the blocks of `res`, in entry order, then
+    /// the batch `output_period / d^2` recorded on `res` after `Ok`.
+    ///
+    /// **Free:** as [`Self::blas_matvec_pt`].
+    fn blas_vector_to_grid<R, W, A, K>(
+        module: &Module<Self>,
+        res: &mut R,
+        line: BlasGridLine,
+        w: &W,
+        a: &A,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) -> Result<()>
+    where
+        R: BlasGridMut<Self>,
         W: BlasMatVecMaps<Self>,
         A: BlasVectorRef<Self>,
         K: GetAutomorphismKey<Self> + GetTensorKey<Self> + Sync;
@@ -186,6 +251,74 @@ macro_rules! impl_blas_mat_vec_reference_full {
                 K: ::poulpy_core::layouts::GetAutomorphismKey<Self> + ::poulpy_core::layouts::GetTensorKey<Self> + Sync,
             {
                 $crate::reference::BlasMatVecReference::blas_matvec_pt_reference(module, res, w, a, keys, scratch)
+            }
+
+            fn blas_grid_to_vector_tmp_bytes<R, W, A, K>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                res: &R,
+                w: &W,
+                a: &A,
+                keys: &K,
+            ) -> usize
+            where
+                R: $crate::layouts::BlasVectorInfos,
+                W: $crate::layouts::BlasMatVecMaps<Self>,
+                A: $crate::layouts::BlasGridInfos,
+                K: ::poulpy_core::layouts::GGLWEInfos,
+            {
+                $crate::reference::BlasMatVecReference::blas_grid_to_vector_tmp_bytes_reference(module, res, w, a, keys)
+            }
+
+            fn blas_grid_to_vector<R, W, A, K>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                res: &mut R,
+                w: &W,
+                a: &A,
+                line: $crate::layouts::BlasGridLine,
+                keys: &K,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
+            ) -> ::poulpy_ckks::CKKSResult<()>
+            where
+                R: $crate::layouts::BlasVectorMut<Self>,
+                W: $crate::layouts::BlasMatVecMaps<Self>,
+                A: $crate::layouts::BlasGrid<Self>,
+                K: ::poulpy_core::layouts::GetAutomorphismKey<Self> + ::poulpy_core::layouts::GetTensorKey<Self> + Sync,
+            {
+                $crate::reference::BlasMatVecReference::blas_grid_to_vector_reference(module, res, w, a, line, keys, scratch)
+            }
+
+            fn blas_vector_to_grid_tmp_bytes<R, W, A, K>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                res: &R,
+                w: &W,
+                a: &A,
+                keys: &K,
+            ) -> usize
+            where
+                R: $crate::layouts::BlasGridInfos,
+                W: $crate::layouts::BlasMatVecMaps<Self>,
+                A: $crate::layouts::BlasVectorInfos,
+                K: ::poulpy_core::layouts::GGLWEInfos,
+            {
+                $crate::reference::BlasMatVecReference::blas_vector_to_grid_tmp_bytes_reference(module, res, w, a, keys)
+            }
+
+            fn blas_vector_to_grid<R, W, A, K>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                res: &mut R,
+                line: $crate::layouts::BlasGridLine,
+                w: &W,
+                a: &A,
+                keys: &K,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
+            ) -> ::poulpy_ckks::CKKSResult<()>
+            where
+                R: $crate::layouts::BlasGridMut<Self>,
+                W: $crate::layouts::BlasMatVecMaps<Self>,
+                A: $crate::layouts::BlasVectorRef<Self>,
+                K: ::poulpy_core::layouts::GetAutomorphismKey<Self> + ::poulpy_core::layouts::GetTensorKey<Self> + Sync,
+            {
+                $crate::reference::BlasMatVecReference::blas_vector_to_grid_reference(module, res, line, w, a, keys, scratch)
             }
 
             fn blas_matvec_diagonal_tmp_bytes<R, M, A, T, K>(

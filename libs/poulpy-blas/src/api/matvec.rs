@@ -6,12 +6,12 @@ use poulpy_ckks::layouts::CKKSPreparedRight;
 use poulpy_core::layouts::GLWEInfos;
 
 use crate::layouts::{
-    BlasDiagonalCiphertext, BlasDiagonalCiphertextInfos, BlasDiagonalCiphertextMap, BlasMatVecMaps, BlasVectorInfos,
-    BlasVectorMut, BlasVectorRef,
+    BlasDiagonalCiphertext, BlasDiagonalCiphertextInfos, BlasDiagonalCiphertextMap, BlasGrid, BlasGridInfos, BlasGridLine,
+    BlasGridMut, BlasMatVecMaps, BlasVectorInfos, BlasVectorMut, BlasVectorRef,
 };
 
 /// Products of a vector ([`crate::layouts::BlasVector`]) by a matrix, each named after the matrix's encoding: `_pt` a
-/// public operand, `_diagonal` a [`BlasDiagonalCiphertext`].
+/// public operand, `_diagonal` a [`BlasDiagonalCiphertext`], and the repacking of a grid's line to and from a vector.
 ///
 /// In the `# Metadata` sections, `x.k` is the width of the ciphertexts of `x`, for `res` the width they have before the
 /// call, `S` the slots of a ciphertext, and `p_W` the scale a public operand was encoded at. For a diagonal ciphertext `m`,
@@ -19,7 +19,7 @@ use crate::layouts::{
 /// ([`BlasDiagonalCiphertextLayout::ct`](crate::layouts::BlasDiagonalCiphertextLayout)), which appends keep.
 pub trait BlasMatVecOps<BE: Backend> {
     /// Scratch bytes [`Self::blas_matvec_pt`] needs into `res` from `a` through `w` with rotation keys of layout
-    /// `keys`, resident or streamed by `w`'s form.
+    /// `keys`, which it reads only when `w`'s maps rotate, resident or streamed by `w`'s form.
     ///
     /// # Panics
     ///
@@ -79,6 +79,115 @@ pub trait BlasMatVecOps<BE: Backend> {
     fn blas_matvec_pt<R, W, A, K>(&self, res: &mut R, w: &W, a: &A, keys: &K, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         R: BlasVectorMut<BE>,
+        W: BlasMatVecMaps<BE>,
+        A: BlasVectorRef<BE>,
+        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
+
+    /// Scratch bytes [`Self::blas_grid_to_vector`] needs into `res` from a line of `a` through `w` with rotation keys of
+    /// layout `keys`, which it reads only when `w`'s maps rotate, resident or streamed by `w`'s form, whatever the line.
+    ///
+    /// # Panics
+    ///
+    /// May panic on layouts [`validate_blas_grid_to_vector`](crate::layouts::validate_blas_grid_to_vector) rejects:
+    /// ciphertexts of a degree other than the module's.
+    fn blas_grid_to_vector_tmp_bytes<R, W, A, K>(&self, res: &R, w: &W, a: &A, keys: &K) -> usize
+    where
+        R: BlasVectorInfos,
+        W: BlasMatVecMaps<BE>,
+        A: BlasGridInfos,
+        K: GGLWEInfos;
+
+    /// `res = W x` for `x` the line `line` of `a` ([`BlasGridLine`]) and the public matrix `W` of `w`: a row of a
+    /// matrix of the batch as a vector of its columns, or a column as a vector of its rows. `W` the identity extracts
+    /// the line; another matrix applies to it in the same transforms, at the cost of the identity: `w` stores every
+    /// diagonal between the two shapes whatever its values. A row read into a whole ciphertext feeds
+    /// [`Self::blas_append_row_diagonal`], which builds a diagonal ciphertext row by row. It is [`Self::blas_matvec_pt`] with
+    /// the blocks holding the line, in entry order, as the input ciphertexts: `w`'s input is the line's shape
+    /// ([`BlasGridLine::shape`]) and its input period at least the one `a`'s label proves. Its planning queries are
+    /// [`blas_grid_to_vector_key_uses`](crate::layouts::blas_grid_to_vector_key_uses),
+    /// [`blas_grid_to_vector_output_layout`](crate::layouts::blas_grid_to_vector_output_layout) and
+    /// [`blas_grid_to_vector_max_base2k`](crate::layouts::blas_grid_to_vector_max_base2k), and its keys
+    /// [`matvec_pt_galois_elements`](crate::layouts::matvec_pt_galois_elements).
+    ///
+    /// # Metadata
+    ///
+    /// As [`Self::blas_matvec_pt`], with `a`'s blocks as the input ciphertexts.
+    ///
+    /// # Errors
+    ///
+    /// - The implementation runs [`validate_blas_grid_to_vector`](crate::layouts::validate_blas_grid_to_vector) before
+    ///   any write, so on its errors `res` and the operands are untouched: `InvalidOperand` for a grid, line, vector,
+    ///   shape, layout, operand or period it rejects; then, key by key, `MissingAutomorphismKey` or `InvalidOperand`
+    ///   for a key of another rank.
+    /// - poulpy-ckks's budget errors as [`Self::blas_matvec_pt`]'s, before any write.
+    /// - Any other `Err` is a backend fault (a validator gap or a device failure), and `res` is then unspecified.
+    fn blas_grid_to_vector<R, W, A, K>(
+        &self,
+        res: &mut R,
+        w: &W,
+        a: &A,
+        line: BlasGridLine,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        R: BlasVectorMut<BE>,
+        W: BlasMatVecMaps<BE>,
+        A: BlasGrid<BE>,
+        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
+
+    /// Scratch bytes [`Self::blas_vector_to_grid`] needs into a line of `res` from `a` through `w` with rotation keys
+    /// of layout `keys`, which it reads only when `w`'s maps rotate, resident or streamed by `w`'s form, whatever the
+    /// line.
+    ///
+    /// # Panics
+    ///
+    /// May panic on layouts [`validate_blas_vector_to_grid`](crate::layouts::validate_blas_vector_to_grid) rejects:
+    /// ciphertexts of a degree other than the module's.
+    fn blas_vector_to_grid_tmp_bytes<R, W, A, K>(&self, res: &R, w: &W, a: &A, keys: &K) -> usize
+    where
+        R: BlasGridInfos,
+        W: BlasMatVecMaps<BE>,
+        A: BlasVectorInfos,
+        K: GGLWEInfos;
+
+    /// Writes `W a` as the line `line` of `res` ([`BlasGridLine`]), every other slot of `res` zero, for the public
+    /// matrix `W` of `w`: `res` is the grid of the blocks holding the line, one block row for a row (so `row < d`) and
+    /// one block column for a column, and records the batch `output_period / d^2`, its label proving it. It is
+    /// [`Self::blas_matvec_pt`] with the blocks of `res`, in entry order, as the output ciphertexts: `w`'s output is the
+    /// line's shape ([`BlasGridLine::shape`]) and its output period holds a matrix. Its planning queries are
+    /// [`blas_vector_to_grid_key_uses`](crate::layouts::blas_vector_to_grid_key_uses),
+    /// [`blas_vector_to_grid_output_layout`](crate::layouts::blas_vector_to_grid_output_layout) and
+    /// [`blas_vector_to_grid_max_base2k`](crate::layouts::blas_vector_to_grid_max_base2k), and its keys
+    /// [`matvec_pt_galois_elements`](crate::layouts::matvec_pt_galois_elements).
+    ///
+    /// # Metadata
+    ///
+    /// As [`Self::blas_matvec_pt`], with the blocks of `res` as the output ciphertexts, and the batch record:
+    ///
+    /// ```text
+    /// mat_slots    = output_period / d^2
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// - The implementation runs [`validate_blas_vector_to_grid`](crate::layouts::validate_blas_vector_to_grid) before
+    ///   any write, so on its errors `res` and the operands are untouched: `InvalidOperand` for a vector, grid, shape,
+    ///   operand, line, layout or period it rejects; then, key by key, `MissingAutomorphismKey` or `InvalidOperand`
+    ///   for a key of another rank.
+    /// - poulpy-ckks's budget errors as [`Self::blas_matvec_pt`]'s, before any write.
+    /// - Any other `Err` is a backend fault (a validator gap or a device failure), and `res` is then unspecified.
+    fn blas_vector_to_grid<R, W, A, K>(
+        &self,
+        res: &mut R,
+        line: BlasGridLine,
+        w: &W,
+        a: &A,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        R: BlasGridMut<BE>,
         W: BlasMatVecMaps<BE>,
         A: BlasVectorRef<BE>,
         K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;

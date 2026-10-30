@@ -52,7 +52,10 @@ use super::matmul::public_entry;
 use super::matvec::{
     DiagonalCiphertextModel, alloc_vector, append, append_key_uses, append_tmp_bytes, assert_vector_decrypt,
     diagonal_ciphertext_elements, diagonal_ciphertext_layout, diagonal_ciphertext_snapshot, encrypt_vector, matvec_layouts,
-    matvec_model, matvec_operands, prepared_of, vector_entry, vector_snapshot,
+    matvec_model, matvec_operands, matvec_operands_of, prepared_of, vector_entry, vector_snapshot,
+};
+use super::repack::{
+    GRID, grid_model, grid_to_vector_cases, line_values, matrix_times, placed, repack_fits, vector_to_grid_cases,
 };
 use crate::{
     api::{
@@ -60,14 +63,15 @@ use crate::{
         BlasPtOperandPreparedFactory,
     },
     layouts::{
-        BlasCiphertext, BlasCiphertextOwned, BlasContextInfos, BlasDiagonalCiphertext, BlasGridInfos, BlasKeyUses,
+        BlasCiphertext, BlasCiphertextOwned, BlasContextInfos, BlasDiagonalCiphertext, BlasGridInfos, BlasGridMut, BlasKeyUses,
         BlasMatMulLeft, BlasMatMulRight, BlasMatVecOperandLayout, BlasModuleAlloc, BlasPlan, BlasPtAlgorithm, BlasPtOperandInfos,
         BlasPtSide, BlasVectorInfos, BlasVectorOwned, BlasVectorShape, Left, Right, blas_append_col_diagonal_key_uses,
-        blas_append_row_diagonal_key_uses, blas_matmul_key_uses, blas_matmul_prepare_left_key_uses,
-        blas_matmul_prepare_right_key_uses, blas_matmul_prepared_key_uses, blas_matmul_pt_left_key_uses,
-        blas_matmul_pt_right_key_uses, blas_matvec_diagonal_key_uses, blas_matvec_diagonal_output_layout,
-        blas_matvec_pt_key_uses, blas_matvec_pt_output_layout, blas_rotate_cols_key_uses, blas_rotate_key_uses,
-        blas_rotate_rows_key_uses, blas_sum_cols_key_uses, blas_sum_key_uses, blas_sum_rows_key_uses, blas_transpose_key_uses,
+        blas_append_row_diagonal_key_uses, blas_grid_to_vector_key_uses, blas_grid_to_vector_output_layout, blas_matmul_key_uses,
+        blas_matmul_prepare_left_key_uses, blas_matmul_prepare_right_key_uses, blas_matmul_prepared_key_uses,
+        blas_matmul_pt_left_key_uses, blas_matmul_pt_right_key_uses, blas_matvec_diagonal_key_uses,
+        blas_matvec_diagonal_output_layout, blas_matvec_pt_key_uses, blas_matvec_pt_output_layout, blas_rotate_cols_key_uses,
+        blas_rotate_key_uses, blas_rotate_rows_key_uses, blas_sum_cols_key_uses, blas_sum_key_uses, blas_sum_rows_key_uses,
+        blas_transpose_key_uses, blas_vector_to_grid_key_uses, blas_vector_to_grid_output_layout,
         context::context_shapes,
         diagonal_ciphertext::{self, AppendAxis},
         encoding::shape,
@@ -203,7 +207,8 @@ fn assert_key_widths<BE, X>(
 /// prepared product looks up those of each hot side's terms and the tensor key, and of two cold operands the tensor key
 /// alone. A product of a vector by matrices below the inputs' scale, into `res` half as wide as its input, then one limb
 /// wider, looks up every map's baby steps at its input's width and its giant steps at the width the map leaves into
-/// `res`. Every operation runs on exactly the scratch its own query reports.
+/// `res`, and so does the repacking of a grid's line to and from a vector through such matrices, the grid's blocks its
+/// input or `res`, where its cases fit the slots. Every operation runs on exactly the scratch its own query reports.
 pub fn test_blas_key_widths<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -724,6 +729,95 @@ pub fn test_blas_key_widths<BE, F, E>(
         }
     }
 
+    // Repacking through matrices below the inputs' scale, the grid's blocks the input or `res`, into `res` as above: as
+    // the product of a vector.
+    if repack_fits(slots, log_d) {
+        let p_w = below.prec().log_delta();
+        let at_below = |layout: BlasMatVecOperandLayout| BlasMatVecOperandLayout {
+            coeffs_meta: below.prec().into(),
+            ..layout
+        };
+        let keys_of = |layout: &BlasMatVecOperandLayout, scratch: &mut ScratchArena<'_, BE>| TestKeys::<BE> {
+            atks: rotation_keys(&params, module, &sk_raw, matvec_pt_galois_elements(order, layout), scratch),
+            tsk: None,
+        };
+        for case in grid_to_vector_cases(&params, slots, log_d) {
+            let (line, layout) = (case.line, at_below(case.layout));
+            let (_, w) = matvec_operands_of::<BE, F>(module, &layout, case.entry);
+            let keys = keys_of(&layout, &mut scratch.borrow());
+            let mut a = encrypt_grid::<BE, F, E>(
+                &params,
+                module,
+                host_module,
+                &encoder,
+                &sk,
+                a_k,
+                case.label(slots),
+                &grid_model(log_d, case.proven),
+                &mut scratch.borrow(),
+            );
+            BlasGridMut::<BE>::set_mat_slots(&mut a, GRID.2);
+            for res_k in [narrow, wide] {
+                let template = alloc_vector(&params, module, layout.output, res_k);
+                let bytes = module.blas_grid_to_vector_tmp_bytes(&template, &w, &a, &atk_layout);
+                let mut full = template.clone();
+                module
+                    .blas_grid_to_vector(&mut full, &w, &a, line, &keys, &mut own(bytes).borrow())
+                    .unwrap();
+                let giant_k = res_k.min(a_k - p_w);
+                assert_key_widths(
+                    &format!("grid_to_vector {line:?} {layout:?} res.k={res_k}"),
+                    "blas_grid_to_vector",
+                    &keys,
+                    blas_grid_to_vector_key_uses(module, &template, &layout, &a),
+                    w.maps.iter().flat_map(|lt| lt_key_uses(module, lt, a_k, giant_k)),
+                    [],
+                    &full,
+                    &mut template.clone(),
+                    |res, strict| module.blas_grid_to_vector(res, &w, &a, line, strict, &mut own(bytes).borrow()),
+                );
+            }
+        }
+        for case in vector_to_grid_cases(&params, slots, log_d) {
+            let (line, layout) = (case.line, at_below(case.layout));
+            let (_, w) = matvec_operands_of::<BE, F>(module, &layout, case.entry);
+            let keys = keys_of(&layout, &mut scratch.borrow());
+            let v: Vec<f64> = (0..layout.input.len).map(vector_entry).collect();
+            let a = encrypt_vector::<BE, F, E>(
+                &params,
+                module,
+                host_module,
+                &encoder,
+                &sk,
+                a_k,
+                layout.input,
+                layout.input_period,
+                &v,
+                &mut scratch.borrow(),
+            );
+            for res_k in [narrow, wide] {
+                let template = alloc_grid(&params, module, log_d, case.rows, case.cols, res_k);
+                let bytes = module.blas_vector_to_grid_tmp_bytes(&template, &w, &a, &atk_layout);
+                let mut full = template.clone();
+                module
+                    .blas_vector_to_grid(&mut full, line, &w, &a, &keys, &mut own(bytes).borrow())
+                    .unwrap();
+                let giant_k = res_k.min(a_k - p_w);
+                assert_key_widths(
+                    &format!("vector_to_grid {line:?} {layout:?} res.k={res_k}"),
+                    "blas_vector_to_grid",
+                    &keys,
+                    blas_vector_to_grid_key_uses(module, &template, &layout, &a),
+                    w.maps.iter().flat_map(|lt| lt_key_uses(module, lt, a_k, giant_k)),
+                    [],
+                    &full,
+                    &mut template.clone(),
+                    |res, strict| module.blas_vector_to_grid(res, line, &w, &a, strict, &mut own(bytes).borrow()),
+                );
+            }
+        }
+    }
+
     // A diagonal ciphertext of the diagonals `0..8` at giant step 4: its appends look up the rotations of their vector
     // at its width, a row by the baby steps 1 to 3, a column by the opposite of the giant step 4; its product looks up
     // the baby steps at the input's width, the giant step at the result's and the tensor key at the wider of the
@@ -885,9 +979,9 @@ impl<BE: Backend, A, T: GLWETensorKeyPreparedToBackendRef<BE>> GetTensorKey<BE> 
 }
 
 /// With a store holding one key per `(element, width)` the key-use queries list, generated for that width and no other,
-/// a product of two encrypted grids, a product by public matrices, row and column sums, a product of a vector, and, from
-/// 16 slots, the row and column appends of a diagonal ciphertext and its product by a vector run and decrypt as under
-/// the full keys.
+/// a product of two encrypted grids, a product by public matrices, row and column sums, a product of a vector, a
+/// repacking each way between a grid's line and a vector where its cases fit, and, from 16 slots, the row and column
+/// appends of a diagonal ciphertext and its product by a vector run and decrypt as under the full keys.
 pub fn test_blas_key_stores_from_queries<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -966,6 +1060,47 @@ pub fn test_blas_key_stores_from_queries<BE, F, E>(
             x,
         ));
     }
+    // A repacking each way, on the first case of each, where the cases fit the slots.
+    let to_vector = repack_fits(slots, log_d).then(|| {
+        let case = grid_to_vector_cases(&params, slots, log_d).swap_remove(0);
+        let model = grid_model(log_d, case.proven);
+        let mut grid = encrypt_grid::<BE, F, E>(
+            &params,
+            module,
+            host_module,
+            &encoder,
+            &sk,
+            params.k,
+            case.label(slots),
+            &model,
+            &mut scratch.borrow(),
+        );
+        BlasGridMut::<BE>::set_mat_slots(&mut grid, GRID.2);
+        let (_, w) = matvec_operands_of::<BE, F>(module, &case.layout, case.entry);
+        let res = alloc_vector(&params, module, case.layout.output, params.k);
+        uses.push(blas_grid_to_vector_key_uses(module, &res, &case.layout, &grid));
+        (case, model, grid, w)
+    });
+    let to_grid = repack_fits(slots, log_d).then(|| {
+        let case = vector_to_grid_cases(&params, slots, log_d).swap_remove(0);
+        let v: Vec<f64> = (0..case.layout.input.len).map(vector_entry).collect();
+        let x = encrypt_vector::<BE, F, E>(
+            &params,
+            module,
+            host_module,
+            &encoder,
+            &sk,
+            params.k,
+            case.layout.input,
+            case.layout.input_period,
+            &v,
+            &mut scratch.borrow(),
+        );
+        let (_, w) = matvec_operands_of::<BE, F>(module, &case.layout, case.entry);
+        let res = alloc_grid(&params, module, log_d, case.rows, case.cols, params.k);
+        uses.push(blas_vector_to_grid_key_uses(module, &res, &case.layout, &x));
+        (case, v, x, w)
+    });
     // A diagonal ciphertext of the diagonals `0..8`, a row and a column appended, by a whole vector.
     let whole = BlasVectorShape::new(slots, slots, 0, 1);
     let diagonal_ciphertext = (slots >= 16).then(|| {
@@ -1157,6 +1292,51 @@ pub fn test_blas_key_stores_from_queries<BE, F, E>(
                 &matvec_model(layout.output.len, v),
                 layout.output_period,
                 &blas_matvec_pt_output_layout(&res, layout, x),
+                &mut scratch.borrow(),
+            );
+        }
+        if let Some((case, model, grid, w)) = &to_vector {
+            let mut res = alloc_vector(&params, module, case.layout.output, params.k);
+            let bytes = module.blas_grid_to_vector_tmp_bytes(&res, w, grid, &atk_layout);
+            module
+                .blas_grid_to_vector(
+                    &mut res,
+                    w,
+                    grid,
+                    case.line,
+                    &keys,
+                    &mut poisoned_scratch::<BE>(bytes).borrow(),
+                )
+                .unwrap();
+            let x = line_values(model, case.line, case.proven);
+            assert_vector_decrypt::<BE, F, E>(
+                &format!("grid_to_vector under the queries' keys, {mode}"),
+                &params,
+                module,
+                &encoder,
+                &res,
+                &sk,
+                &matrix_times(case.entry, case.layout.output.len, &x),
+                case.layout.output_period,
+                &blas_grid_to_vector_output_layout(&res, &case.layout, grid),
+                &mut scratch.borrow(),
+            );
+        }
+        if let Some((case, v, x, w)) = &to_grid {
+            let mut res = alloc_grid(&params, module, log_d, case.rows, case.cols, params.k);
+            let bytes = module.blas_vector_to_grid_tmp_bytes(&res, w, x, &atk_layout);
+            module
+                .blas_vector_to_grid(&mut res, case.line, w, x, &keys, &mut poisoned_scratch::<BE>(bytes).borrow())
+                .unwrap();
+            assert_grid_decrypt::<BE, F, E>(
+                &format!("vector_to_grid under the queries' keys, {mode}"),
+                &params,
+                module,
+                &encoder,
+                &res,
+                &sk,
+                &placed(case, &matrix_times(case.entry, case.layout.output.len, v)),
+                &blas_vector_to_grid_output_layout(&res, &case.layout, x),
                 &mut scratch.borrow(),
             );
         }
