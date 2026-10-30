@@ -65,35 +65,29 @@ impl BlasVectorShape {
 
 /// A vector's shape and the layout every one of its ciphertexts shares.
 pub trait BlasVectorInfos {
+    /// The vector's shape and ciphertext layout.
+    fn blas_vector_layout(&self) -> BlasVectorLayout;
+
     /// Where the entries sit.
-    fn vector_shape(&self) -> BlasVectorShape;
+    fn vector_shape(&self) -> BlasVectorShape {
+        self.blas_vector_layout().shape
+    }
 
     /// Layout of every ciphertext.
-    fn ct_layout(&self) -> CKKSLayout;
-
-    /// The vector's shape and ciphertext layout.
-    fn blas_vector_layout(&self) -> BlasVectorLayout {
-        BlasVectorLayout::new(self.ct_layout(), self.vector_shape())
+    fn ct_layout(&self) -> CKKSLayout {
+        self.blas_vector_layout().ct
     }
 }
 
 impl<T: BlasVectorInfos + ?Sized> BlasVectorInfos for &T {
-    fn vector_shape(&self) -> BlasVectorShape {
-        (**self).vector_shape()
-    }
-
-    fn ct_layout(&self) -> CKKSLayout {
-        (**self).ct_layout()
+    fn blas_vector_layout(&self) -> BlasVectorLayout {
+        (**self).blas_vector_layout()
     }
 }
 
 impl<T: BlasVectorInfos + ?Sized> BlasVectorInfos for &mut T {
-    fn vector_shape(&self) -> BlasVectorShape {
-        (**self).vector_shape()
-    }
-
-    fn ct_layout(&self) -> CKKSLayout {
-        (**self).ct_layout()
+    fn blas_vector_layout(&self) -> BlasVectorLayout {
+        (**self).blas_vector_layout()
     }
 }
 
@@ -113,12 +107,8 @@ impl BlasVectorLayout {
 }
 
 impl BlasVectorInfos for BlasVectorLayout {
-    fn vector_shape(&self) -> BlasVectorShape {
-        self.shape
-    }
-
-    fn ct_layout(&self) -> CKKSLayout {
-        self.ct
+    fn blas_vector_layout(&self) -> BlasVectorLayout {
+        *self
     }
 }
 
@@ -218,12 +208,30 @@ where
 }
 
 impl<D: Data, W: ZnxWord, R: Ring> BlasVectorInfos for BlasVector<D, W, R> {
-    fn vector_shape(&self) -> BlasVectorShape {
-        self.shape
+    fn blas_vector_layout(&self) -> BlasVectorLayout {
+        BlasVectorLayout::new(layout_of(&self.cts[0]), self.shape)
     }
+}
 
-    fn ct_layout(&self) -> CKKSLayout {
-        layout_of(&self.cts[0])
+impl<D: Data, W: ZnxWord, R: Ring> PartialEq for BlasVector<D, W, R>
+where
+    GLWE<D, W>: PartialEq,
+{
+    fn eq(&self, other: &Self) -> bool {
+        self.shape == other.shape && self.cts.len() == other.cts.len() && self.cts.iter().zip(&other.cts).all(|(a, b)| **a == **b)
+    }
+}
+
+impl<D: Data, W: ZnxWord, R: Ring> Eq for BlasVector<D, W, R> where GLWE<D, W>: Eq {}
+
+/// The shape, the ciphertext count and the first ciphertext's layout, never a coefficient.
+impl<D: Data, W: ZnxWord, R: Ring> std::fmt::Debug for BlasVector<D, W, R> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BlasVector")
+            .field("shape", &self.shape)
+            .field("cts", &self.cts.len())
+            .field("ct_layout", &layout_of(&self.cts[0]))
+            .finish()
     }
 }
 
@@ -314,10 +322,10 @@ where
 #[cfg(test)]
 mod tests {
     use poulpy_ckks::SetGLWEPlaintextInfos;
-    use poulpy_hal::layouts::{HostBytesBackend, Module, Standard};
+    use poulpy_hal::layouts::{HostBytesBackend, Module, Standard, ZnxViewMut};
 
     use super::*;
-    use crate::layouts::BlasModuleAlloc;
+    use crate::layouts::{BlasBytesOf, BlasModuleAlloc};
 
     #[test]
     fn shapes_count_their_ciphertexts_and_span() {
@@ -353,14 +361,85 @@ mod tests {
     fn vectors_round_trip_through_their_serialization() {
         let module = Module::<HostBytesBackend>::new(64);
         let shape = BlasVectorShape::new(5, 2, 1, 4);
-        let v = module.blas_vector_alloc(shape, 13usize.into(), 39usize.into());
+        let mut v = module.blas_vector_alloc(shape, 13usize.into(), 39usize.into());
+        for (t, ct) in v.cts_mut().iter_mut().enumerate() {
+            ct.data_mut().raw_mut().iter_mut().for_each(|x| *x = t as i64 - 1);
+            ct.set_log_sparsity(1);
+        }
         let mut bytes = Vec::new();
         v.write_to(&mut bytes).unwrap();
         let mut back = module.blas_vector_alloc(shape, 13usize.into(), 39usize.into());
+        back.cts_mut()[0].data_mut().raw_mut()[0] = 7;
         back.read_from(&mut bytes.as_slice()).unwrap();
-        assert_eq!(back.blas_vector_layout(), v.blas_vector_layout());
-        let mut other = module.blas_vector_alloc(BlasVectorShape::new(5, 2, 0, 4), 13usize.into(), 39usize.into());
-        let err = other.read_from(&mut bytes.as_slice()).unwrap_err();
-        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+        assert_eq!(back, v, "a read vector is the original, digits and metadata");
+        let mut again = Vec::new();
+        back.write_to(&mut again).unwrap();
+        assert!(again == bytes, "a read vector serializes as the original");
+
+        // Another shape, radix or precision is rejected before any ciphertext is read, the receiver left equal.
+        for (shape, base2k, k) in [
+            (BlasVectorShape::new(5, 2, 0, 4), 13usize, 39usize),
+            (shape, 12, 39),
+            (shape, 13, 38),
+        ] {
+            let mut other = module.blas_vector_alloc(shape, base2k.into(), k.into());
+            other.cts_mut()[0].data_mut().raw_mut()[0] = 7;
+            let before = other.clone();
+            let err = other.read_from(&mut bytes.as_slice()).unwrap_err();
+            assert_eq!(err.kind(), std::io::ErrorKind::InvalidData, "{shape:?} {base2k} {k}");
+            assert_eq!(other, before, "a rejected read changed the vector: {shape:?} {base2k} {k}");
+        }
+    }
+
+    #[test]
+    fn vector_bytes_match_their_allocation() {
+        let module = Module::<HostBytesBackend>::new(64);
+        let v = module.blas_vector_alloc(BlasVectorShape::new(5, 2, 1, 4), 13usize.into(), 39usize.into());
+        let held: usize = v
+            .cts()
+            .iter()
+            .map(|ct| <HostBytesBackend as Backend>::len_bytes(ct.data().data()))
+            .sum();
+        assert_eq!(module.blas_vector_bytes_of_from_infos(&v), held);
+        assert_eq!(module.blas_vector_bytes_of_from_infos(&v.blas_vector_layout()), held);
+        let from_infos = module.blas_vector_alloc_from_infos(&v.blas_vector_layout());
+        assert_eq!(from_infos.blas_vector_layout(), v.blas_vector_layout());
+    }
+
+    #[test]
+    fn vector_write_rejects_a_flag_clear_ciphertext_writing_nothing() {
+        let module = Module::<HostBytesBackend>::new(64);
+        let mut v = module.blas_vector_alloc(BlasVectorShape::new(4, 2, 0, 1), 13usize.into(), 39usize.into());
+        GLWE::set_canonical(v.ct_mut(1), false);
+        let mut bytes = Vec::new();
+        assert_eq!(v.write_to(&mut bytes).unwrap_err().kind(), std::io::ErrorKind::InvalidInput);
+        assert!(bytes.is_empty());
+    }
+
+    #[test]
+    fn vectors_of_ciphertexts_of_different_layouts_neither_write_nor_read() {
+        let module = Module::<HostBytesBackend>::new(64);
+        let shape = BlasVectorShape::new(4, 2, 0, 1);
+        let cts = (0..2usize)
+            .map(|t| module.ckks_ciphertext_alloc(13usize.into(), (26 + 13 * t).into()))
+            .collect();
+        let mut mixed = BlasVector::from_cts(cts, shape).unwrap();
+        let mut bytes = Vec::new();
+        assert_eq!(
+            mixed.write_to(&mut bytes).unwrap_err().kind(),
+            std::io::ErrorKind::InvalidInput
+        );
+        assert!(bytes.is_empty());
+
+        // A stream whose header matches the first ciphertext is rejected before any ciphertext is read.
+        let mut uniform = module.blas_vector_alloc(shape, 13usize.into(), 26usize.into());
+        uniform.ct_mut(1).data_mut().raw_mut()[0] = 7;
+        uniform.write_to(&mut bytes).unwrap();
+        let before = mixed.clone();
+        assert_eq!(
+            mixed.read_from(&mut bytes.as_slice()).unwrap_err().kind(),
+            std::io::ErrorKind::InvalidInput
+        );
+        assert_eq!(mixed, before, "a rejected read changed the vector");
     }
 }

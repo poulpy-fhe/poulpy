@@ -5,7 +5,7 @@ use poulpy_hal::{
     layouts::{Backend, Module, ScratchArena},
 };
 
-use super::{baby_caches, lt_streamed_sum_tmp_bytes, lt_tmp_bytes, shared_giants};
+use super::{LtEval, baby_caches, lt_tmp_bytes, shared_giants};
 use crate::layouts::{
     BlasMatVecMaps, BlasVectorInfos, BlasVectorMut, BlasVectorRef,
     matvec_operand::output_label,
@@ -57,11 +57,8 @@ impl<BE: Backend> BlasMatVecReference<BE> for Module<BE> {
         K: GGLWEInfos,
     {
         let (res, a) = (res.ct_layout(), a.ct_layout());
-        if W::STREAMED {
-            lt_streamed_sum_tmp_bytes(self, &res, &a, keys)
-        } else {
-            lt_tmp_bytes(self, &res, &a, keys, true)
-        }
+        let eval = if W::STREAMED { LtEval::StreamedSum } else { LtEval::Sum };
+        lt_tmp_bytes(self, &res, &a, keys, eval)
     }
 
     fn blas_matvec_pt_reference<R, W, A, K>(

@@ -42,7 +42,8 @@ A vector, `BlasVector`, holds `len` entries over ciphertexts of `chunk` entries 
 public matrix of any shape: a `BlasMatVecOperand` holds one linear transformation per pair of an output and an input
 ciphertext, built from the slot map of the matrix between the two vectors' slots, which writes each output entry at
 every repetition of the output's period and reads each input entry at the first slot its period reaches, so the maps
-have at most `input_period` diagonals. Every output ciphertext is one summed transformation over the input
+have at most `input_period` diagonals, on the schedule the layout names: `Direct` by default, or `Bsgs` at a giant
+step, `with_optimal_bsgs` picking the cost-optimal one. Every output ciphertext is one summed transformation over the input
 ciphertexts, which share their giant steps, and every output ciphertext shares one baby-step cache per input
 ciphertext. The operand is resident, `BlasMatVecOperand`, or streamed, `BlasMatVecOperandUnprepared`, whose plaintext
 diagonals are prepared at each use for less memory, with the same bits; `matvec_pt_galois_elements` lists its keys.

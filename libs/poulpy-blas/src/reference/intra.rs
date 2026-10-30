@@ -18,7 +18,7 @@ use poulpy_hal::{
     layouts::{Backend, Module, ScratchArena},
 };
 
-use super::lt_tmp_bytes;
+use super::{LtEval, lt_tmp_bytes};
 use crate::{
     layouts::{
         BlasContext, BlasContextInfos, BlasGrid, BlasGridInfos, BlasGridMut,
@@ -63,7 +63,7 @@ pub trait BlasMatIntraReference<BE: Backend> {
         S: CKKSCtBounds,
         K: GGLWEInfos,
     {
-        lt_tmp_bytes(self, dst, src, keys, false)
+        lt_tmp_bytes(self, dst, src, keys, LtEval::Single)
     }
 
     /// `dst[t * lts.len() + m] = lts[m](src[t])`, stamped with the label of `src[t]`. Per source, one baby-step cache

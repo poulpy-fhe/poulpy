@@ -76,7 +76,7 @@ pub trait BlasEncodingOps<BE: Backend, F: CKKSEncodingScalar + DiagonalArithmeti
     /// `o chunk_out ..` and columns `i chunk_in ..`, zero past the matrix. The map writes each output entry at every
     /// repetition of the output's period, from the input entry at the first slot at or after it that the input's period
     /// reaches, so it has at most `input_period` diagonals, every one stored over the larger period, and every block the
-    /// same diagonals, whatever their values, scheduled at the cost-optimal BSGS giant step. Every diagonal of `res` is
+    /// same diagonals, whatever their values, on the schedule of the operand's `strategy`. Every diagonal of `res` is
     /// overwritten, so encoding again into the same operand refills it, with no allocation of plaintexts. Products
     /// reject the operand on inputs whose ciphertexts are not at its radix or are narrower than `coeffs_meta.k`.
     ///

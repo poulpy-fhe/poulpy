@@ -222,7 +222,8 @@ table's widths hold: about 22 key switches per block instead of 30 at
 `d = 128`.
 
 The sets list the rotations of the reference's maps as the plan schedules them:
-shift maps `Direct`, the others at the cost-optimal BSGS giant step. The maps
+shift maps `Direct`, the others at the cost-optimal BSGS giant step; a product
+of a vector rotates as its operand's `strategy` schedules every map. The maps
 of a replicated right factor rotate within `matmul_galois_elements`:
 `BlasContext::tau_rep` at tau's giant step, and `BlasContext::rotate_rows_rep(k)`
 by `k d`, `Direct`, one of psi^k's rotations, as is the rotation of a row

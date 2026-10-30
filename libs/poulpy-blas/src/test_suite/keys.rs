@@ -41,23 +41,27 @@ use poulpy_hal::{
 use super::helpers::{
     Grid, HINTS, MASKED_PT_ALGORITHMS, MIXES, PT_ALGORITHMS,
     Rejection::{MissingKey, MissingTensorKey},
-    StrictKeys, TestKeys, alloc_grid, assert_grid_decrypt, assert_guard_on, at_scale, blas_context, context_and_keys,
-    copied_layout, encoded_context, encrypt_grid, grid_snapshot, lt_key_uses, mapped_layout, matmul_left_operand,
-    matmul_right_operand, other_scales, poisoned_scratch, product_layout, pt_operand,
+    StrictKeys, TestKeys, alloc_grid, assert_grid_decrypt, assert_guard_on, assert_rejected, at_scale, blas_context,
+    context_and_keys, copied_layout, encoded_context, encrypt_grid, grid_snapshot, lt_key_uses, mapped_layout,
+    matmul_left_operand, matmul_right_operand, other_scales, poisoned_scratch, product_layout, pt_operand, rotation_keys,
 };
 use super::matmul::public_entry;
-use super::matvec::{matvec_layouts, matvec_operands};
+use super::matvec::{
+    alloc_vector, assert_vector_decrypt, encrypt_vector, matvec_layouts, matvec_model, matvec_operands, vector_entry,
+    vector_snapshot,
+};
 use crate::{
-    api::{BlasEncodingOps, BlasMatInterOps, BlasMatIntraOps, BlasMatMulOps, BlasPtOperandPreparedFactory},
+    api::{BlasEncodingOps, BlasMatInterOps, BlasMatIntraOps, BlasMatMulOps, BlasMatVecOps, BlasPtOperandPreparedFactory},
     layouts::{
         BlasCiphertext, BlasCiphertextOwned, BlasContextInfos, BlasGridInfos, BlasKeyUses, BlasMatMulLeft, BlasMatMulRight,
-        BlasModuleAlloc, BlasPlan, BlasPtAlgorithm, BlasPtOperandInfos, BlasPtSide, Left, Right, blas_matmul_key_uses,
-        blas_matmul_prepare_left_key_uses, blas_matmul_prepare_right_key_uses, blas_matmul_prepared_key_uses,
-        blas_matmul_pt_left_key_uses, blas_matmul_pt_right_key_uses, blas_rotate_cols_key_uses, blas_rotate_key_uses,
-        blas_rotate_rows_key_uses, blas_sum_cols_key_uses, blas_sum_key_uses, blas_sum_rows_key_uses, blas_transpose_key_uses,
+        BlasMatVecOperandLayout, BlasModuleAlloc, BlasPlan, BlasPtAlgorithm, BlasPtOperandInfos, BlasPtSide, BlasVectorOwned,
+        Left, Right, blas_matmul_key_uses, blas_matmul_prepare_left_key_uses, blas_matmul_prepare_right_key_uses,
+        blas_matmul_prepared_key_uses, blas_matmul_pt_left_key_uses, blas_matmul_pt_right_key_uses, blas_matvec_pt_key_uses,
+        blas_matvec_pt_output_layout, blas_rotate_cols_key_uses, blas_rotate_key_uses, blas_rotate_rows_key_uses,
+        blas_sum_cols_key_uses, blas_sum_key_uses, blas_sum_rows_key_uses, blas_transpose_key_uses,
         context::context_shapes,
         encoding::shape,
-        matvec_operand,
+        matvec_operand, matvec_pt_galois_elements,
         planning::{MapDiagonal, operand_shapes},
         replicated, sum_galois_elements,
     },
@@ -132,6 +136,51 @@ fn assert_key_widths<BE, X>(
     );
 }
 
+/// [`assert_key_widths`] for a product writing a vector: `call` rejects `keys` answering only the rotation keys `atks`,
+/// short of any one of them, before the unwritten `res` changes, then writes `full` bit for bit under all of them.
+/// `query` is the operation's key-use query, which must list exactly these keys.
+#[allow(clippy::too_many_arguments)]
+fn assert_vector_key_widths<BE>(
+    label: &str,
+    op: &str,
+    keys: &TestKeys<BE>,
+    query: BlasKeyUses,
+    atks: impl IntoIterator<Item = (i64, usize)>,
+    full: &BlasVectorOwned<BE>,
+    res: &mut BlasVectorOwned<BE>,
+    mut call: impl FnMut(&mut BlasVectorOwned<BE>, &StrictKeys<'_, BE>) -> CKKSResult<()>,
+) where
+    BE: Backend<ZnxWord = i64>,
+    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE>,
+{
+    let mut atks: Vec<(i64, usize)> = atks.into_iter().filter(|&(p, _)| p != 1).collect();
+    atks.sort_unstable();
+    atks.dedup();
+    let want = BlasKeyUses {
+        rotations: atks.iter().map(|&(p, k)| (p, k.into())).collect(),
+        tensor: None,
+    };
+    assert_eq!(
+        query, want,
+        "{label}: the key-use query differs from the widths read off the maps"
+    );
+    for (i, &(p, k)) in atks.iter().enumerate() {
+        let others = atks.iter().enumerate().filter(|&(j, _)| j != i).map(|(_, &key)| key);
+        let short = keys.at_widths(others, []);
+        let before = vector_snapshot::<BE>(res);
+        assert_rejected(&format!("{label} without p={p} at k={k}"), op, MissingKey, call(res, &short));
+        assert!(
+            vector_snapshot::<BE>(res) == before,
+            "{label} without p={p} at k={k}: {op} changed res"
+        );
+    }
+    call(res, &keys.at_widths(atks.iter().copied(), [])).unwrap_or_else(|e| panic!("{label}: {e}"));
+    assert!(
+        vector_snapshot::<BE>(res) == vector_snapshot::<BE>(full),
+        "{label}: the result under the width-restricted keys differs"
+    );
+}
+
 /// With a key store answering only at the widths poulpy-ckks uses each key at, read off real results (a rotation at the
 /// narrower of its input's and its result's widths, a sum's rotations at its result's, baby steps at the source's
 /// width, giant steps at the result's, the tensor key at the wider of the products' term widths), every operation runs
@@ -150,7 +199,9 @@ fn assert_key_widths<BE, X>(
 /// the public matrices' `p_B`, or capped by it, finds no key. The preparations, under either hint, look up every
 /// rotation key of their terms, each checked through the prepared product of their operand beside a cold one; the
 /// prepared product looks up those of each hot side's terms and the tensor key, and of two cold operands the tensor key
-/// alone. Every operation runs on exactly the scratch its own query reports.
+/// alone. A product of a vector by matrices below the inputs' scale, into `res` half as wide as its input, then one limb
+/// wider, looks up every map's baby steps at its input's width and its giant steps at the width the map leaves into
+/// `res`. Every operation runs on exactly the scratch its own query reports.
 pub fn test_blas_key_widths<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -632,6 +683,57 @@ pub fn test_blas_key_widths<BE, F, E>(
             );
         }
     }
+
+    // Products of a vector by matrices below the inputs' scale, into `res` half as wide as the input, then one limb
+    // wider: every map's baby steps at the input's width, its giant steps at the width it leaves into `res`.
+    let slots = module.ckks_max_slots();
+    if slots >= 16 {
+        let p_w = below.prec().log_delta();
+        for layout in matvec_layouts(&params, slots) {
+            let layout = BlasMatVecOperandLayout {
+                coeffs_meta: below.prec().into(),
+                ..layout
+            };
+            let (_, w) = matvec_operands::<BE, F>(module, &layout);
+            let elements = matvec_pt_galois_elements(module.cyclotomic_order(), &layout);
+            let keys = TestKeys::<BE> {
+                atks: rotation_keys(&params, module, &sk_raw, elements, &mut scratch.borrow()),
+                tsk: None,
+            };
+            let v: Vec<f64> = (0..layout.input.len).map(vector_entry).collect();
+            let a = encrypt_vector::<BE, F, E>(
+                &params,
+                module,
+                host_module,
+                &encoder,
+                &sk,
+                a_k,
+                layout.input,
+                layout.input_period,
+                &v,
+                &mut scratch.borrow(),
+            );
+            for res_k in [a_k / 2, a_k + params.base2k] {
+                let template = alloc_vector(&params, module, layout.output, res_k);
+                let bytes = module.blas_matvec_pt_tmp_bytes(&template, &w, &a, &params.atk_layout());
+                let mut full = template.clone();
+                module
+                    .blas_matvec_pt(&mut full, &w, &a, &keys, &mut poisoned_scratch::<BE>(bytes).borrow())
+                    .unwrap();
+                let giant_k = res_k.min(a_k - p_w);
+                assert_vector_key_widths(
+                    &format!("matvec_pt {layout:?} res.k={res_k}"),
+                    "blas_matvec_pt",
+                    &keys,
+                    blas_matvec_pt_key_uses(module, &template, &layout, &a),
+                    w.maps.iter().flat_map(|lt| lt_key_uses(module, lt, a_k, giant_k)),
+                    &full,
+                    &mut template.clone(),
+                    |res, strict| module.blas_matvec_pt(res, &w, &a, strict, &mut poisoned_scratch::<BE>(bytes).borrow()),
+                );
+            }
+        }
+    }
 }
 
 /// Rotation keys by `(element, width)` and tensor keys by width, each generated for its width: a look-up at `k` answers
@@ -675,8 +777,8 @@ impl<BE: Backend, A, T: GLWETensorKeyPreparedToBackendRef<BE>> GetTensorKey<BE> 
 }
 
 /// With a store holding one key per `(element, width)` the key-use queries list, generated for that width and no other,
-/// a product of two encrypted grids, a product by public matrices and row and column sums run and decrypt as under the
-/// full keys.
+/// a product of two encrypted grids, a product by public matrices, row and column sums and a product of a vector run and
+/// decrypt as under the full keys.
 pub fn test_blas_key_stores_from_queries<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -722,12 +824,39 @@ pub fn test_blas_key_stores_from_queries<BE, F, E>(
 
     let alloc = |k: usize| alloc_grid(&params, module, log_d, 1, 1, k);
     let alloc_like_a = || alloc_grid(&params, module, log_d, 1, 2, params.k);
-    let uses = [
+    // A product of a vector, several ciphertexts on each side, where its vectors fit the slots.
+    let vector = (slots >= 16).then(|| {
+        let layout = matvec_layouts(&params, slots).pop().unwrap();
+        let (_, w) = matvec_operands::<BE, F>(module, &layout);
+        let v: Vec<f64> = (0..layout.input.len).map(vector_entry).collect();
+        let x = encrypt_vector::<BE, F, E>(
+            &params,
+            module,
+            host_module,
+            &encoder,
+            &sk,
+            params.k,
+            layout.input,
+            layout.input_period,
+            &v,
+            &mut scratch.borrow(),
+        );
+        (layout, w, v, x)
+    });
+    let mut uses = vec![
         blas_matmul_key_uses(module, &a, &b, &ctx),
         blas_matmul_pt_right_key_uses(module, &alloc(params.k), &a, &public, &ctx),
         blas_sum_rows_key_uses(module, &alloc_like_a(), &a, &ctx),
         blas_sum_cols_key_uses(module, &alloc_like_a(), &a, &ctx),
     ];
+    if let Some((layout, _, _, x)) = &vector {
+        uses.push(blas_matvec_pt_key_uses(
+            module,
+            &alloc_vector(&params, module, layout.output, params.k),
+            layout,
+            x,
+        ));
+    }
 
     // One key per `(element, width)` the queries list, laid out for that width; then one key per element, at the widest
     // width listed, which serves the narrower look-ups of its element.
@@ -865,6 +994,25 @@ pub fn test_blas_key_stores_from_queries<BE, F, E>(
             &mapped_layout(&a, 1, 2, params.k, p),
             &mut scratch.borrow(),
         );
+        if let Some((layout, w, v, x)) = &vector {
+            let mut res = alloc_vector(&params, module, layout.output, params.k);
+            let bytes = module.blas_matvec_pt_tmp_bytes(&res, w, x, &atk_layout);
+            module
+                .blas_matvec_pt(&mut res, w, x, &keys, &mut poisoned_scratch::<BE>(bytes).borrow())
+                .unwrap();
+            assert_vector_decrypt::<BE, F, E>(
+                &format!("matvec_pt under the queries' keys, {mode}"),
+                &params,
+                module,
+                &encoder,
+                &res,
+                &sk,
+                &matvec_model(layout.output.len, v),
+                layout.output_period,
+                &blas_matvec_pt_output_layout(&res, layout, x),
+                &mut scratch.borrow(),
+            );
+        }
     }
 }
 

@@ -17,7 +17,7 @@ pub use matmul::BlasMatMulReference;
 pub use matvec::BlasMatVecReference;
 
 use poulpy_ckks::{
-    CKKSCtBounds, CKKSResult as Result, SetCKKSInfos,
+    CKKSCtBounds, CKKSLayout, CKKSResult as Result, SetCKKSInfos,
     api::{
         CKKSLinearTransformationOps, LinearTransformation, LinearTransformationBabySteps, LtDiagonalMeta,
         ckks_plaintext_diagonal_layout,
@@ -32,9 +32,20 @@ use poulpy_hal::{
     layouts::{Backend, ScratchArena},
 };
 
-/// Scratch of the baby steps of a block of layout `a` and of one linear transformation, summed when `summed`, from
+use crate::layouts::ciphertext::layout_of;
+
+/// How [`lt_tmp_bytes`] evaluates its linear transformation: alone, summed over resident terms, or summed over
+/// streamed terms of plaintext diagonals.
+#[derive(Clone, Copy)]
+pub(crate) enum LtEval {
+    Single,
+    Sum,
+    StreamedSum,
+}
+
+/// Scratch of the baby steps of a block of layout `a` and of one linear transformation evaluated as `eval`, from
 /// blocks of layout `a` into a block of layout `res`.
-pub(crate) fn lt_tmp_bytes<BE, M, K>(module: &M, res: &impl CKKSCtBounds, a: &impl CKKSCtBounds, key: &K, summed: bool) -> usize
+pub(crate) fn lt_tmp_bytes<BE, M, K>(module: &M, res: &impl CKKSCtBounds, a: &impl CKKSCtBounds, key: &K, eval: LtEval) -> usize
 where
     BE: Backend,
     M: CKKSLinearTransformationOps<BE> + ?Sized,
@@ -45,42 +56,18 @@ where
     // The maps take a key per rotation, which every plan of that kind sizes alike.
     let plan = LinearTransformationPlan::default();
     // Plaintext diagonals read no tensor key, so the rotation key stands for its layout.
-    let (res_diagonal, a_diagonal) = (ckks_plaintext_diagonal_layout(res), ckks_plaintext_diagonal_layout(a));
-    let eval = if summed {
-        let res_bytes = live.then(|| module.ckks_eval_linear_transformation_sum_tmp_bytes(res, &res_diagonal, &plan, key, key));
-        module
-            .ckks_eval_linear_transformation_sum_tmp_bytes(a, &a_diagonal, &plan, key, key)
-            .max(res_bytes.unwrap_or(0))
-    } else {
-        let res_bytes = live.then(|| module.ckks_eval_linear_transformation_tmp_bytes(res, &res_diagonal, &plan, key, key));
-        module
-            .ckks_eval_linear_transformation_tmp_bytes(a, &a_diagonal, &plan, key, key)
-            .max(res_bytes.unwrap_or(0))
+    let query = |ct: &CKKSLayout| {
+        let diagonal = ckks_plaintext_diagonal_layout(ct);
+        match eval {
+            LtEval::Single => module.ckks_eval_linear_transformation_tmp_bytes(ct, &diagonal, &plan, key, key),
+            LtEval::Sum => module.ckks_eval_linear_transformation_sum_tmp_bytes(ct, &diagonal, &plan, key, key),
+            LtEval::StreamedSum => module.ckks_eval_linear_transformation_sum_streamed_tmp_bytes(ct, &diagonal, &plan, key, key),
+        }
     };
+    let res_bytes = if live { query(&layout_of(res)) } else { 0 };
     module
         .ckks_prepare_linear_transformation_baby_steps_tmp_bytes(a, &plan, key)
-        .max(eval)
-}
-
-/// Scratch of the baby steps of a block of layout `a` and of one summed linear transformation of streamed, plaintext
-/// diagonals from blocks of layout `a` into a block of layout `res`.
-pub(crate) fn lt_streamed_sum_tmp_bytes<BE, M, K>(module: &M, res: &impl CKKSCtBounds, a: &impl CKKSCtBounds, key: &K) -> usize
-where
-    BE: Backend,
-    M: CKKSLinearTransformationOps<BE> + ?Sized,
-    K: GGLWEInfos,
-{
-    // As in `lt_tmp_bytes`: a `res` of no width is never read, every plan of a key per rotation sizes alike, and the
-    // rotation key stands for the tensor key that plaintext diagonals never read.
-    let live = res.k().as_usize() > 0;
-    let plan = LinearTransformationPlan::default();
-    let (res_diagonal, a_diagonal) = (ckks_plaintext_diagonal_layout(res), ckks_plaintext_diagonal_layout(a));
-    let res_bytes =
-        live.then(|| module.ckks_eval_linear_transformation_sum_streamed_tmp_bytes(res, &res_diagonal, &plan, key, key));
-    module
-        .ckks_eval_linear_transformation_sum_streamed_tmp_bytes(a, &a_diagonal, &plan, key, key)
-        .max(res_bytes.unwrap_or(0))
-        .max(module.ckks_prepare_linear_transformation_baby_steps_tmp_bytes(a, &plan, key))
+        .max(query(&layout_of(a)).max(res_bytes))
 }
 
 /// `count` baby-step caches for sources of `src`'s layout, each covering the baby steps of every map of `maps`.

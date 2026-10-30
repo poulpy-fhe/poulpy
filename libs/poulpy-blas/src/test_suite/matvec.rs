@@ -1,8 +1,8 @@
 //! Products of a vector by a matrix.
 
 use poulpy_ckks::{
-    CKKSInfos, CKKSLayout, CKKSModuleInfos, CKKSResult, CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos, SetGLWEPlaintextInfos,
-    SlotsKind,
+    CKKSInfos, CKKSLayout, CKKSModuleInfos, CKKSResult, CoeffsMeta, GLWEPlaintextMeta, Scale, SetCKKSInfos,
+    SetGLWEPlaintextInfos, SlotsKind,
     api::{CKKSEncodingOps, CKKSLinearTransformationOps},
     layouts::CKKSModuleAlloc,
     test_suite::{
@@ -16,7 +16,8 @@ use poulpy_ckks::{
     },
 };
 use poulpy_core::layouts::{
-    Base2K, DiagonalArithmetic, GLWELayout, GLWEToBackendRef, LWEInfos, TorusPrecision, prepared::GLWESecretPrepared,
+    Base2K, DiagonalArithmetic, GLWELayout, GLWEToBackendRef, LWEInfos, LinearTransformationStrategy, TorusPrecision,
+    prepared::GLWESecretPrepared,
 };
 use poulpy_hal::{
     api::{CnvPVecAlloc, NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
@@ -31,7 +32,7 @@ use crate::{
     api::{BlasEncodingOps, BlasMatVecOperandPreparedFactory, BlasMatVecOps},
     layouts::{
         BlasMatVecOperand, BlasMatVecOperandLayout, BlasMatVecOperandUnprepared, BlasModuleAlloc, BlasVector, BlasVectorInfos,
-        BlasVectorLayout, BlasVectorOwned, BlasVectorShape, blas_matvec_pt_key_uses, blas_matvec_pt_output_layout,
+        BlasVectorLayout, BlasVectorMut, BlasVectorOwned, BlasVectorRef, BlasVectorShape, blas_matvec_pt_output_layout,
         matvec_pt_galois_elements,
     },
     oep::{BlasEncodingImpl, BlasMatVecImpl},
@@ -39,6 +40,9 @@ use crate::{
 
 /// A call writing a vector on a scratch.
 type VectorCall<'c, BE> = dyn Fn(&mut BlasVectorOwned<BE>, &mut ScratchArena<'_, BE>) -> CKKSResult<()> + 'c;
+
+/// A change of a ciphertext layout.
+type LayoutEdit = fn(&mut GLWELayout);
 
 /// Entry `(row, col)` of the public matrices of these tests, dyadic in `[-1, 1]`.
 pub fn matvec_entry(row: usize, col: usize) -> f64 {
@@ -212,8 +216,9 @@ where
 }
 
 /// The operand layouts the tests run, on `slots` slots, at least 16, at `params`' radix and precision: one ciphertext
-/// each side, dense; a replicated input into a dense output; a dense input into a replicated output; several
-/// ciphertexts on each side, the last ones partial, both replicated.
+/// each side, dense, on the `Direct` schedule; a replicated input into a dense output on the BSGS schedule of giant step
+/// 2; a dense input into a replicated output, and several ciphertexts on
+/// each side, the last ones partial, both replicated, at the cost-optimal BSGS giant step.
 pub fn matvec_layouts(params: &CKKSTestParams, slots: usize) -> Vec<BlasMatVecOperandLayout> {
     let (base2k, meta): (Base2K, CoeffsMeta) = (params.base2k.into(), params.prec().into());
     let at = |input, p_in, output, p_out| BlasMatVecOperandLayout::new(slots, input, p_in, output, p_out, base2k, meta);
@@ -224,17 +229,17 @@ pub fn matvec_layouts(params: &CKKSTestParams, slots: usize) -> Vec<BlasMatVecOp
             BlasVectorShape::new(3, 3, 0, 5),
             slots,
         ),
-        at(BlasVectorShape::new(4, 4, 0, 2), 8, BlasVectorShape::new(5, 5, 1, 3), slots),
-        at(BlasVectorShape::new(5, 5, 2, 3), slots, BlasVectorShape::new(4, 4, 0, 1), 4),
-        at(BlasVectorShape::new(7, 3, 1, 2), 8, BlasVectorShape::new(5, 2, 0, 3), 8),
+        at(BlasVectorShape::new(4, 4, 0, 2), 8, BlasVectorShape::new(5, 5, 1, 3), slots)
+            .with_strategy(LinearTransformationStrategy::Bsgs { giant_step: 2 }),
+        at(BlasVectorShape::new(5, 5, 2, 3), slots, BlasVectorShape::new(4, 4, 0, 1), 4).with_optimal_bsgs(),
+        at(BlasVectorShape::new(7, 3, 1, 2), 8, BlasVectorShape::new(5, 2, 0, 3), 8).with_optimal_bsgs(),
     ]
 }
 
 /// `dec(matvec_pt(W, enc(v)))` is `W v` at every repetition of the output's period, and zero elsewhere, for every
 /// layout of [`matvec_layouts`], with the operand resident and streamed, which give the same bits, on the operand's key
-/// set alone ([`matvec_pt_galois_elements`], the encoded maps' Galois elements), at the metadata
-/// [`blas_matvec_pt_output_layout`] gives; `res` is one limb wider than the result. On a store answering only at the
-/// widths [`blas_matvec_pt_key_uses`] lists, it runs into `res` wider and narrower than the result. One byte short of
+/// set alone ([`matvec_pt_galois_elements`]), at the metadata
+/// [`blas_matvec_pt_output_layout`] gives, into `res` one limb wider than the result and at its width. One byte short of
 /// its query, the call panics before it writes `res`.
 pub fn test_blas_matvec_pt<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
@@ -296,26 +301,19 @@ where
             BlasVectorLayout::new(want_ct, layout.output),
             "{label}: output layout"
         );
-        let mut encoded: Vec<i64> = resident
-            .block(0, 0)
-            .galois_elements(module.cyclotomic_order())
-            .into_iter()
-            .filter(|&p| p != 1)
-            .collect();
-        encoded.sort_unstable();
-        encoded.dedup();
-        let mut set = matvec_pt_galois_elements(module.cyclotomic_order(), &layout);
-        set.retain(|&p| p != 1);
-        assert_eq!(set, encoded, "{label}: key set against the encoded maps");
-        let run = |w: &VectorCall<'_, BE>, bytes: usize| {
-            let mut res = alloc_vector(&params, module, layout.output, res_k);
+        let run = |w: &VectorCall<'_, BE>, bytes: usize, k: usize| {
+            let mut res = alloc_vector(&params, module, layout.output, k);
             let mut op_scratch = poisoned_scratch::<BE>(bytes);
             w(&mut res, &mut op_scratch.borrow()).unwrap();
             res
         };
         let resident_bytes = module.blas_matvec_pt_tmp_bytes(&template, &resident, &a, &params.atk_layout());
         let streamed_bytes = module.blas_matvec_pt_tmp_bytes(&template, &streamed, &a, &params.atk_layout());
-        let have = run(&|res, s| module.blas_matvec_pt(res, &resident, &a, &keys, s), resident_bytes);
+        let have = run(
+            &|res, s| module.blas_matvec_pt(res, &resident, &a, &keys, s),
+            resident_bytes,
+            res_k,
+        );
         assert_vector_decrypt::<BE, F, E>(
             &label,
             &params,
@@ -328,17 +326,30 @@ where
             &want_layout,
             &mut scratch.borrow(),
         );
-        // Keys at the widths the key-use query lists and no other, into `res` wider and narrower than the result.
-        for k in [res_k, params.k - p_w - params.base2k] {
-            let res = alloc_vector(&params, module, layout.output, k);
-            let uses = blas_matvec_pt_key_uses(module, &res, &layout, &a);
-            let strict = keys.at_widths(uses.rotations.iter().map(|&(p, k)| (p, k.as_usize())), []);
-            let bytes = module.blas_matvec_pt_tmp_bytes(&res, &resident, &a, &params.atk_layout());
-            let mut res = res;
-            with_scratch::<BE, _>(bytes, |s| module.blas_matvec_pt(&mut res, &resident, &a, &strict, s))
-                .unwrap_or_else(|e| panic!("{label}: res.k={k} on the listed keys: {e}"));
-        }
-        let have_streamed = run(&|res, s| module.blas_matvec_pt(res, &streamed, &a, &keys, s), streamed_bytes);
+        let template_at = alloc_vector(&params, module, layout.output, params.k - p_w);
+        let bytes = module.blas_matvec_pt_tmp_bytes(&template_at, &resident, &a, &params.atk_layout());
+        let at = run(
+            &|res, s| module.blas_matvec_pt(res, &resident, &a, &keys, s),
+            bytes,
+            params.k - p_w,
+        );
+        assert_vector_decrypt::<BE, F, E>(
+            &format!("{label} at the result's width"),
+            &params,
+            module,
+            &encoder,
+            &at,
+            &sk,
+            &matvec_model(layout.output.len, &v),
+            layout.output_period,
+            &blas_matvec_pt_output_layout(&template_at, &layout, &a),
+            &mut scratch.borrow(),
+        );
+        let have_streamed = run(
+            &|res, s| module.blas_matvec_pt(res, &streamed, &a, &keys, s),
+            streamed_bytes,
+            res_k,
+        );
         assert_eq!(
             vector_snapshot::<BE>(&have_streamed),
             vector_snapshot::<BE>(&have),
@@ -378,11 +389,46 @@ fn assert_vector_guard<BE>(
     assert!(vector_snapshot::<BE>(res) == before, "{label}: {op} changed its output");
 }
 
-/// `blas_matvec_pt` rejects, before any write: a vector whose ciphertexts do not tile its shape, share no layout, or
-/// whose entries do not fit the period its label proves, as input and as `res`; a vector of another shape than the
-/// operand's input or output; an input of another radix or rank than `res`, or narrower than the operand; an input
-/// repeating with a longer period than the operand reads; a store lacking a key of the operand's set; and an input whose
-/// budget is below the operand's scale, which poulpy-ckks's summed transformation rejects.
+/// `v` read as a vector of `shape` whatever it holds: ciphertexts that do not tile the shape it reports, which every
+/// operation rejects before `res` changes.
+struct Untiled<BE: Backend> {
+    v: BlasVectorOwned<BE>,
+    shape: BlasVectorShape,
+}
+
+impl<BE: Backend> BlasVectorInfos for Untiled<BE> {
+    fn blas_vector_layout(&self) -> BlasVectorLayout {
+        BlasVectorLayout::new(self.v.ct_layout(), self.shape)
+    }
+}
+
+impl<BE: Backend> BlasVectorRef<BE> for Untiled<BE>
+where
+    BlasVectorOwned<BE>: BlasVectorRef<BE>,
+{
+    type Ct = <BlasVectorOwned<BE> as BlasVectorRef<BE>>::Ct;
+
+    fn cts(&self) -> &[Self::Ct] {
+        BlasVectorRef::<BE>::cts(&self.v)
+    }
+}
+
+impl<BE: Backend> BlasVectorMut<BE> for Untiled<BE>
+where
+    BlasVectorOwned<BE>: BlasVectorMut<BE>,
+{
+    fn cts_mut(&mut self) -> &mut [Self::Ct] {
+        BlasVectorMut::<BE>::cts_mut(&mut self.v)
+    }
+}
+
+/// `blas_matvec_pt` rejects, before any write, as input and as `res`: a vector whose ciphertexts do not tile its shape,
+/// share no layout, have no slot between entries, carry a scale past their width, or whose entries do not fit the period
+/// its label proves, and one of twice the degree, another radix or another rank than the other side. It also rejects a
+/// vector of another shape than the operand's input or output; an input and `res` at a radix the operand is not at, or
+/// at a rank its keys are not at; an operand of other slots; an input narrower than the operand; an input repeating with
+/// a longer period than the operand reads; a store lacking a key of the operand's set; and an input whose budget is below
+/// the operand's scale, which poulpy-ckks's summed transformation rejects.
 pub fn test_blas_matvec_pt_guards<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend<Ring = Standard> + BlasMatVecImpl + BlasEncodingImpl,
@@ -438,6 +484,27 @@ where
         .iter_mut()
         .for_each(|ct| ct.set_log_sparsity((slots / 4).ilog2() as usize));
     rejected.push(("entries past the period the label proves", sparse));
+    rejected.push((
+        "no slot between entries",
+        BlasVector::from_cts(
+            a.clone().into_cts(),
+            BlasVectorShape {
+                stride: 0,
+                ..layout.input
+            },
+        )
+        .unwrap(),
+    ));
+    let scale = a.ct_layout().k().as_usize() + 1;
+    let mut past_width = a.clone();
+    past_width.cts_mut().iter_mut().for_each(|ct| {
+        let meta = GLWEPlaintextMeta {
+            scale: Scale::Log(scale),
+            ..ct.meta()
+        };
+        ct.set_meta(meta)
+    });
+    rejected.push(("a scale past the ciphertexts' width", past_width));
     for (what, bad) in &rejected {
         call(&format!("input: {what}"), InvalidOperand, &mut res, bad, &keys);
         let mut bad_res = bad.clone();
@@ -445,6 +512,90 @@ where
             with_scratch::<BE, _>(bytes, |s| module.blas_matvec_pt(res, &w, &a, &keys, s))
         });
     }
+
+    // A vector whose ciphertexts do not tile the shape it reports, as input, then as `res`.
+    let untiled = |v: &BlasVectorOwned<BE>| Untiled {
+        shape: BlasVectorShape {
+            len: v.vector_shape().len + v.vector_shape().chunk,
+            ..v.vector_shape()
+        },
+        v: v.clone(),
+    };
+    let before = vector_snapshot::<BE>(&res);
+    let untiled_a = untiled(&a);
+    assert_rejected(
+        "input: ciphertexts that do not tile the shape",
+        op,
+        InvalidOperand,
+        with_scratch::<BE, _>(bytes, |s| module.blas_matvec_pt(&mut res, &w, &untiled_a, &keys, s)),
+    );
+    assert!(
+        vector_snapshot::<BE>(&res) == before,
+        "input untiled: {op} changed its output"
+    );
+    let mut untiled_res = untiled(&res);
+    assert_rejected(
+        "res: ciphertexts that do not tile the shape",
+        op,
+        InvalidOperand,
+        with_scratch::<BE, _>(bytes, |s| module.blas_matvec_pt(&mut untiled_res, &w, &a, &keys, s)),
+    );
+    assert!(
+        vector_snapshot::<BE>(&untiled_res.v) == before,
+        "res untiled: {op} changed its output"
+    );
+
+    // Foreign layouts, as input beside a regular `res`, then as `res` beside a regular input: twice the degree, one bit
+    // less radix, one more rank.
+    let foreign = |v: &BlasVectorOwned<BE>, edit: fn(&mut GLWELayout)| {
+        let mut ct = v.ct_layout();
+        edit(&mut ct.glwe_layout);
+        module.blas_vector_alloc_from_infos(&BlasVectorLayout::new(ct, v.vector_shape()))
+    };
+    let edits: [(&str, LayoutEdit); 3] = [
+        ("degree", |l| l.n = (2 * l.n.as_usize()).into()),
+        ("base2k", |l| l.base2k = (l.base2k.as_usize() - 1).into()),
+        ("rank", |l| l.rank = (l.rank.as_usize() + 1).into()),
+    ];
+    for (what, edit) in edits {
+        call(
+            &format!("input of another {what}"),
+            InvalidOperand,
+            &mut res,
+            &foreign(&a, edit),
+            &keys,
+        );
+        assert_vector_guard::<BE>(
+            &format!("res of another {what}"),
+            op,
+            InvalidOperand,
+            &mut foreign(&res, edit),
+            |res| with_scratch::<BE, _>(bytes, |s| module.blas_matvec_pt(res, &w, &a, &keys, s)),
+        );
+    }
+    // Input and `res` agreeing on a radix the operand is not at, then on a rank its keys are not at.
+    for (what, edit) in [edits[1], edits[2]] {
+        let (a_other, mut res_other) = (foreign(&a, edit), foreign(&res, edit));
+        assert_vector_guard::<BE>(
+            &format!("input and res of another {what} than the operand"),
+            op,
+            InvalidOperand,
+            &mut res_other,
+            |res| with_scratch::<BE, _>(bytes, |s| module.blas_matvec_pt(res, &w, &a_other, &keys, s)),
+        );
+    }
+    // An operand encoded on a module of other slots.
+    let double = Module::<BE>::new(2 * params.n as u64);
+    let (_, wide_slots) = matvec_operands::<BE, F>(
+        &double,
+        &BlasMatVecOperandLayout {
+            slots: 2 * slots,
+            ..layout
+        },
+    );
+    assert_vector_guard::<BE>("an operand of other slots", op, InvalidOperand, &mut res, |res| {
+        with_scratch::<BE, _>(bytes, |s| module.blas_matvec_pt(res, &wide_slots, &a, &keys, s))
+    });
 
     // Shapes and layouts against the operand's.
     let other_shape = encrypt(
@@ -456,14 +607,6 @@ where
     call("input of another shape", InvalidOperand, &mut res, &other_shape, &keys);
     let mut other_res = alloc_vector(&params, module, BlasVectorShape::new(5, 2, 1, 3), params.k);
     assert_vector_guard::<BE>("res of another shape", op, InvalidOperand, &mut other_res, |res| {
-        with_scratch::<BE, _>(bytes, |s| module.blas_matvec_pt(res, &w, &a, &keys, s))
-    });
-    let other_radix = CKKSTestParams {
-        base2k: params.base2k - 1,
-        ..params
-    };
-    let mut res_radix = alloc_vector(&other_radix, module, layout.output, params.k);
-    assert_vector_guard::<BE>("input of another radix than res", op, InvalidOperand, &mut res_radix, |res| {
         with_scratch::<BE, _>(bytes, |s| module.blas_matvec_pt(res, &w, &a, &keys, s))
     });
     let mut wide_meta = layout.coeffs_meta;

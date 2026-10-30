@@ -22,7 +22,8 @@ use super::{
 
 /// A public operand's dimensions, without its maps: a matrix of `output.len` rows and `input.len` columns, from vectors
 /// of shape `input` repeating every `input_period` slots into vectors of shape `output` repeating every `output_period`
-/// slots, on a module of `slots` slots, every map encoded at `coeffs_meta` and radix `base2k`.
+/// slots, on a module of `slots` slots, every map encoded at `coeffs_meta` and radix `base2k` and evaluated on the
+/// schedule of `strategy`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct BlasMatVecOperandLayout {
@@ -40,10 +41,13 @@ pub struct BlasMatVecOperandLayout {
     pub base2k: Base2K,
     /// Torus width and metadata the maps are encoded at.
     pub coeffs_meta: CoeffsMeta,
+    /// The schedule every map shares, with a key per rotation: one giant step per diagonal (`Direct`, the default of
+    /// [`Self::new`]) or a BSGS giant step (`Bsgs`), which [`Self::with_optimal_bsgs`] sets to the cost-optimal one.
+    pub strategy: LinearTransformationStrategy,
 }
 
 impl BlasMatVecOperandLayout {
-    /// The layout of an operand of these fields.
+    /// The layout of an operand of these fields, on the `Direct` schedule.
     pub fn new(
         slots: usize,
         input: BlasVectorShape,
@@ -61,7 +65,23 @@ impl BlasMatVecOperandLayout {
             output_period,
             base2k,
             coeffs_meta,
+            strategy: LinearTransformationStrategy::Direct,
         }
+    }
+
+    /// This layout on the schedule of `strategy`.
+    pub fn with_strategy(self, strategy: LinearTransformationStrategy) -> Self {
+        Self { strategy, ..self }
+    }
+
+    /// This layout on the BSGS schedule at the cost-optimal giant step of its maps' diagonals.
+    ///
+    /// # Panics
+    ///
+    /// As [`super::BlasModuleAlloc::blas_matvec_operand_alloc`], for a layout that does not fit.
+    pub fn with_optimal_bsgs(self) -> Self {
+        let giant_step = optimal_bsgs_giant_step(map_indexes(&self), self.slots);
+        self.with_strategy(LinearTransformationStrategy::Bsgs { giant_step })
     }
 
     /// The period every map repeats with, the larger of the two.
@@ -215,7 +235,8 @@ fn block_index(layout: &BlasMatVecOperandLayout, o: usize, i: usize) -> usize {
 }
 
 /// Panics unless `layout` fits: slots a power of two, each vector's shape within its period, which divides the slots,
-/// a block count that a `usize` holds, a torus width and a radix in `1..=63`.
+/// a block count that a `usize` holds, a torus width, a radix in `1..=63` and a `Direct` or `Bsgs` schedule, its giant
+/// step at least 1.
 pub(crate) fn assert_fits(layout: &BlasMatVecOperandLayout) {
     let slots = layout.slots;
     assert!(slots.is_power_of_two(), "the operand's slots are not a power of two");
@@ -236,6 +257,13 @@ pub(crate) fn assert_fits(layout: &BlasMatVecOperandLayout) {
         (1..=63).contains(&layout.base2k.as_usize()),
         "the operand's radix is outside 1..=63"
     );
+    match layout.strategy {
+        LinearTransformationStrategy::Direct => {}
+        LinearTransformationStrategy::Bsgs { giant_step } => assert!(giant_step > 0, "the operand's BSGS giant step is zero"),
+        LinearTransformationStrategy::BsgsPowersOfTwo { .. } => {
+            panic!("the operand's schedule takes a key per rotation: Direct or Bsgs")
+        }
+    }
 }
 
 /// Panics unless `layout` fits and is of `module`'s slots.
@@ -267,16 +295,14 @@ fn terms(layout: &BlasMatVecOperandLayout) -> impl Iterator<Item = (usize, usize
 }
 
 /// The map of block `(o, i)`, entry `(row, col)` of the matrix reading `entry(row, col)` for `row < output.len`, `col <
-/// input.len`, scheduled at the cost-optimal BSGS giant step of its shape, which every block shares.
+/// input.len`, on the layout's schedule, which every block shares.
 pub(crate) fn block_map<F: DiagonalArithmetic>(
     layout: &BlasMatVecOperandLayout,
     entry: &impl Fn(usize, usize) -> F,
     o: usize,
     i: usize,
 ) -> Scheduled<F> {
-    let map = block_diagonals(layout, entry, o, i);
-    let strategy = strategy(map.indexes(), layout.slots);
-    real_map(map, strategy, layout.coeffs_meta)
+    real_map(block_diagonals(layout, entry, o, i), layout.strategy, layout.coeffs_meta)
 }
 
 /// The host diagonals of [`block_map`].
@@ -299,28 +325,26 @@ fn block_diagonals<F: DiagonalArithmetic>(
     Diagonals::from_slot_map(layout.slots, layout.map_period(), terms)
 }
 
-fn strategy(indexes: Vec<i64>, slots: usize) -> LinearTransformationStrategy {
-    LinearTransformationStrategy::Bsgs {
-        giant_step: optimal_bsgs_giant_step(indexes, slots),
-    }
-}
-
-/// The shape every map of an operand of `layout` shares, [`block_map`]'s, from the layout alone.
-pub(crate) fn map_layout(layout: &BlasMatVecOperandLayout) -> MapLayout {
+/// The diagonals every map of an operand of `layout` has, whatever its values, ascending.
+fn map_indexes(layout: &BlasMatVecOperandLayout) -> Vec<i64> {
     assert_fits(layout);
     let (p_in, slots) = (layout.input_period, layout.slots);
     let mut used = vec![false; p_in];
     for (s, j, _, _) in terms(layout) {
         used[(j + slots - s) % slots] = true;
     }
-    let indexes: Vec<i64> = (0..p_in).filter(|&d| used[d]).map(|d| d as i64).collect();
+    (0..p_in).filter(|&d| used[d]).map(|d| d as i64).collect()
+}
+
+/// The shape every map of an operand of `layout` shares, [`block_map`]'s, from the layout alone.
+pub(crate) fn map_layout(layout: &BlasMatVecOperandLayout) -> MapLayout {
     let mut meta = layout.coeffs_meta;
     meta.meta.slots = SlotsKind::Real;
     MapLayout::new(
         LinearTransformationLayout {
-            strategy: strategy(indexes.clone(), slots),
-            indexes,
-            slots,
+            strategy: layout.strategy,
+            indexes: map_indexes(layout),
+            slots: layout.slots,
         },
         layout.map_period(),
         meta,
@@ -470,6 +494,8 @@ mod tests {
                 base2k: Base2K(64),
                 ..base
             },
+            base.with_strategy(LinearTransformationStrategy::Bsgs { giant_step: 0 }),
+            base.with_strategy(LinearTransformationStrategy::BsgsPowersOfTwo { giant_step: 2 }),
         ];
         for layout in bad {
             assert!(std::panic::catch_unwind(|| map_layout(&layout)).is_err(), "{layout:?}");

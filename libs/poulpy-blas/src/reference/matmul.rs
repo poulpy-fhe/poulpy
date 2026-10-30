@@ -14,7 +14,7 @@ use poulpy_hal::{
     layouts::{Backend, Module, PrepareHint, ScratchArena},
 };
 
-use super::{baby_caches, lt_tmp_bytes, shared_giants};
+use super::{LtEval, baby_caches, lt_tmp_bytes, shared_giants};
 use crate::{
     layouts::{
         BlasContext, BlasGrid, BlasGridInfos, BlasGridMut, BlasMatMulOperand, BlasMatMulOperandInfos, BlasMatMulOperandLayout,
@@ -1200,12 +1200,17 @@ where
 {
     let (res, block) = (res.block_layout(), a.block_layout());
     let Some(first) = first else {
-        return lt_tmp_bytes(module, &res, &block, keys, true);
+        return lt_tmp_bytes(module, &res, &block, keys, LtEval::Sum);
     };
     let Some((masks, plaintext)) = masked else {
         let staged = mapped_block(block, first);
-        return BE::blas_map_blocks_tmp_bytes(module, sources, &staged, &block, &[first], keys)
-            .max(lt_tmp_bytes(module, &res, &staged, keys, true));
+        return BE::blas_map_blocks_tmp_bytes(module, sources, &staged, &block, &[first], keys).max(lt_tmp_bytes(
+            module,
+            &res,
+            &staged,
+            keys,
+            LtEval::Sum,
+        ));
     };
     BE::blas_jkls_pt_unit_tmp_bytes(module, outputs, &res, &block, first, masks, plaintext, keys)
 }

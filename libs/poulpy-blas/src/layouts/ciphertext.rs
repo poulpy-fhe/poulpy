@@ -574,16 +574,22 @@ pub trait BlasModuleAlloc<BE: Backend>: CKKSModuleAlloc<BE> + GetDegree + Sized 
     fn blas_pt_operand_alloc_from_infos<A: BlasPtOperandInfos>(&self, infos: &A) -> BlasPtOperandUnprepared<BE, A::Side> {
         pt_operand::alloc(self, &infos.blas_pt_operand_layout())
     }
+
     /// A public operand of products of a vector by a matrix from vectors of shape `input` repeating every
     /// `input_period` slots into vectors of shape `output` repeating every `output_period` slots, on this module's
-    /// slots, every diagonal zero, which
+    /// slots and the `Direct` schedule, every diagonal zero, which
     /// [`BlasEncodingOps::blas_matvec_operand_encode`](crate::api::BlasEncodingOps::blas_matvec_operand_encode) fills.
+    /// Another schedule is a [`BlasMatVecOperandLayout`] built with
+    /// [`with_strategy`](BlasMatVecOperandLayout::with_strategy) or
+    /// [`with_optimal_bsgs`](BlasMatVecOperandLayout::with_optimal_bsgs), allocated by
+    /// [`Self::blas_matvec_operand_alloc_from_infos`].
     ///
     /// # Panics
     ///
     /// Panics unless each shape holds an entry, an entry per ciphertext and a positive stride, and its entries fit its
     /// period, which divides the slots, if the operand has more blocks than a `usize` counts, if `coeffs_meta.k` is `0`,
-    /// or if `base2k` is outside `1..=63`.
+    /// if `base2k` is outside `1..=63`, or, from infos, for a schedule other than `Direct` and `Bsgs` of a positive
+    /// giant step.
     fn blas_matvec_operand_alloc(
         &self,
         input: BlasVectorShape,
