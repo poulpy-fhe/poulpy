@@ -6,7 +6,7 @@
 - **One share type per protocol.** Each protocol has its own share type; share types hold only published data, a party's private share (`secret` in the sharing conversions) staying a caller-owned core layout.
 - **PAT base traits.** Each PAT type has one trait with only an in-place aggregation `(res, a)`, a finalization query `()` and a finalization `(res, pat, scratch)`, operands generic over core's backend-borrow, seed and infos traits.
 - **Scheme-specific protocols.** A scheme-specific protocol lives under `poulpy-mhe/src/<scheme>/` mirroring the crate layers; scheme-agnostic protocols stay at the crate root.
-- **Owned shares, generic results.** Protocol methods take the share as the owned alias (`res: &mut <Thing>ShareOwned<BE>`, `a` and `share` as `&<Thing>ShareOwned<BE>`), other operands and the output generic over core traits.
+- **Owned shares, generic results.** Protocol methods take the share as the owned alias (`res: &mut MHE<Thing>ShareOwned<BE>`, `a` and `share` as `&MHE<Thing>ShareOwned<BE>`), other operands and the output generic over core traits.
 - **Argument order.** Signatures follow core's encryption order:
   - share generation: `res` (encryption-to-shares: `public`, then `secret`), key parameters (`p`), the data operand (`pt`, `mask` or input share `secret`), `sk` (or `sk_in`, `sk_out`), then `u`, `pk`, `pk_out`, `flood: Noise`, `seed: [u8; 32]`, `source_xu`, `source_xe`, `source_xm`, `source_smudge`, `scratch`;
   - finalization: `(res, [ct], share, [key], scratch)`.
