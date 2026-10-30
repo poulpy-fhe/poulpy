@@ -1295,8 +1295,8 @@ unsafe impl HalSvpImpl for $rayon
         );
     }
 
-    fn svp_apply_dft_tmp_bytes(_module: &Module<Self>, _b_size: usize) -> usize {
-        0
+    fn svp_apply_dft_tmp_bytes(module: &Module<Self>, b_size: usize) -> usize {
+        <$base>::svp_apply_dft_tmp_bytes(base_module(module), b_size)
     }
 
     #[allow(clippy::too_many_arguments)]

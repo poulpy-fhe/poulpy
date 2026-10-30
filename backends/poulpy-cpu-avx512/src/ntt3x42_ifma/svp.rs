@@ -4,12 +4,9 @@ use bytemuck::{cast_slice, cast_slice_mut};
 use core::arch::x86_64::{__m512i, _mm512_loadu_si512, _mm512_set1_epi64, _mm512_storeu_si512};
 use poulpy_hal::layouts::{PrimeSet, Ring};
 
-use poulpy_hal::{
-    api::VecZnxDftAlloc,
-    layouts::{
-        DataView, DataViewMut, Module, ScalarZnxBackendRef, SvpPPolBackendMut, SvpPPolBackendRef, VecZnxBackendRef,
-        VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftReborrowBackendRef, VecZnxDftToBackendMut, ZnxView, check_degree,
-    },
+use poulpy_hal::layouts::{
+    DataView, DataViewMut, Module, ScalarZnxBackendRef, SvpPPolBackendMut, SvpPPolBackendRef, VecZnxBackendRef,
+    VecZnxDftBackendMut, VecZnxDftBackendRef, ZnxView, check_degree,
 };
 
 use crate::NTT3x42Ifma;
@@ -20,7 +17,7 @@ use crate::ntt3x42_ifma::{
     primes::Primes42,
     tables::{Ntt3x42IfmaTable, Ntt3x42IfmaTableInv, harvey_quotient},
     traits::{Ntt3x42IfmaCFromB, Ntt3x42IfmaDFTExecute, Ntt3x42IfmaFromZnx64},
-    vec_znx_dft::{MASK20, MASK22, MASK42},
+    vec_znx_dft::{MASK20, MASK22, MASK42, check_operand, vec_znx_dft_apply_limb},
     vmp::{pack_y, unpack_y},
 };
 
@@ -104,8 +101,14 @@ pub(crate) fn svp_ppol_copy<R: Ring>(
     res_u64[6 * n * res_col..][..6 * n].copy_from_slice(&a_u64[6 * n * a_col..][..6 * n]);
 }
 
-/// Lift `a` (`VecZnx`) to DFT-domain via the forward NTT, then apply the
-/// prepared SVP factor: `res = svp ⊙ NTT(a)`.
+/// Scratch of [`svp_apply_dft`]: the three-prime form of one limb.
+pub(crate) fn svp_apply_dft_tmp_bytes(n: usize) -> usize {
+    3 * n * size_of::<u64>()
+}
+
+/// Lift `b` (`VecZnx`) to DFT-domain via the forward NTT, each limb into its destination through `tmp`, then apply
+/// the prepared SVP factor there: `res = svp ⊙ NTT(b)`.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn svp_apply_dft<R: Ring, E: poulpy_hal::execution::TaskExecutor>(
     module: &Module<NTT3x42Ifma<R>>,
     res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma<R>>,
@@ -114,16 +117,35 @@ pub(crate) fn svp_apply_dft<R: Ring, E: poulpy_hal::execution::TaskExecutor>(
     a_col: usize,
     b: &VecZnxBackendRef<'_, NTT3x42Ifma<R>>,
     b_col: usize,
+    tmp: &mut [u64],
 ) where
     NTT3x42Ifma<R>:
         Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>> + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>,
 {
-    let b_size = b.size();
-    let mut b_dft_owned = module.vec_znx_dft_alloc(b.n(), 1, b_size);
-    let mut b_dft = b_dft_owned.to_backend_mut();
-    super::vec_znx_dft::vec_znx_dft_apply(module, 1, 0, &mut b_dft, 0, b, b_col);
-    let b_dft_ref = b_dft.reborrow_backend_ref();
-    svp_apply_dft_to_dft::<_, E>(module, res, res_col, a, a_col, &b_dft_ref, 0);
+    poulpy_hal::layouts::assert_dense(b, "svp_apply_dft");
+    let n = res.n();
+    check_operand(n, res, res_col);
+    check_operand(n, b, b_col);
+    check_degree::<NTT3x42Ifma<R>>(module.n(), n);
+    assert_eq!(a.n(), n, "svp_apply_dft: a.n() != res.n()");
+    assert!(tmp.len() >= 3 * n, "svp_apply_dft: scratch below its query");
+    let res_size = res.size();
+    let res_cols = res.cols();
+    let min_size = res_size.min(b.size());
+
+    let a_u64: &[u64] = cast_slice(a.data());
+    let prepared = &a_u64[6 * n * a_col..][..6 * n];
+    let res_data: &mut [u64] = cast_slice_mut(res.data_mut());
+    for j in 0..res_size {
+        let dst = &mut res_data[2 * n * (j * res_cols + res_col)..][..2 * n];
+        vec_znx_dft_apply_limb(module, n, dst, (j < min_size).then(|| b.at(b_col, j)), tmp);
+    }
+    let res_ptr = SendPtr(res_data.as_mut_ptr());
+    for_index_exec::<E>(min_size, 2 * n * min_size, |j| {
+        let start = 2 * n * (j * res_cols + res_col);
+        let ptr = unsafe { res_ptr.get().add(start) };
+        unsafe { mul_packed_limb(n, ptr, ptr, prepared) };
+    });
 }
 
 /// Pointwise DFT-domain multiply: `res = a ⊙ b` (`b` and `res` packed).

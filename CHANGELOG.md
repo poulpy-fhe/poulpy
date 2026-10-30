@@ -53,6 +53,8 @@
 
 ### CPU backends
 
+- **Breaking:** `poulpy-cpu-portable`'s `paco_coeff_encodings_staged` and `ship_coeff_encodings_staged` take `scratch` and read the input as copied into its own layout, where they copied it into an owned ciphertext per call: a non-canonical input with limbs past its width is rounded into a copy carved from `scratch`, any other read in place through its backend view. Add `paco_coeff_encodings_staged_tmp_bytes` and `ship_coeff_encodings_staged_tmp_bytes`, which their coefficient-encoding queries now report; they still refuse a scale above the input's width.
+- The AVX2, AVX-512 NTT4x30, IFMA and NEON `svp_apply_dft` transform each limb of `b` into its limb of `res` and multiply it there, where they allocated a `VecZnxDft` for the transformed operand on every call; the AVX2, AVX-512 NTT4x30 and IFMA forms take the one-limb transform buffer from scratch, which `svp_apply_dft_tmp_bytes` now counts, and the NTT4x30 Rayon twins forward that query to their base. The IFMA `vec_znx_idft_apply` reads the scratch buffer it is handed, where it allocated one per call.
 - `poulpy-cpu-portable` exports `kernels::noise::gaussian_cumulative_table_portable` and `gaussian_rejection_constants_portable`, the cumulative table and the rejection constants its Gaussian samplers draw with, which the GPU backend samples by.
 - **Breaking:** `impl_cpu_core_defaults!` registers the core trace on both rings, where each standard backend registered it apart: an out-of-tree backend calling it drops its own `impl_glwe_trace_derived_full!`, which now conflicts.
 - `conjugate_invariant_core_test_suite!` also runs `test_glwe_trace_parity`.
@@ -180,6 +182,7 @@
 
 ### `poulpy-core`
 
+- The giant steps of a linear transformation on the base-mismatch route take their accumulator from scratch, which `glwe_eval_linear_transformation_tmp_bytes` counts, where they allocated one per evaluation.
 - Add `ModuleCoreAlloc::glwe_host_alloc_from_infos`, a zeroed host GLWE of a layout allocated through a module of any backend, for the host copies of host-staged operations.
 - Add the evaluation of BSGS linear transformations with the keys of power-of-two rotations only (`LinearTransformationStrategy::BsgsPowersOfTwo`, `BsgsRotations::PowersOfTwo`, with `BsgsRotations::giant_key_switches`): the baby rotations come from doubling passes, whose sources share the pass's key and are switched a task each on a parallel executor, and the giant steps are summed as a binary tree over the two's-complement digits of their index, each level switching with one key.
   For the baby steps `0..n1` and contiguous giant digits, the key switches are as many as with a key per rotation, up to one more per level of the tree, the keys about `log2(n1) + log2(n2)` instead of `n1 + n2`, and a product goes through more switches.
@@ -406,6 +409,12 @@
 
 ### `poulpy-ckks`
 
+- **Breaking:** `ckks_paco_coeff_encodings_tmp_bytes` (`CKKSPaCoOps` and `CKKSPaCoCoeffEncodingImpl`) takes the input layout, `(context, input)`, whose radix sets the size of a rounded copy; the PaCo bootstrap queries pass each branch input.
+- **Breaking:** `paco_coeff_encodings_host` and `ship_coeff_encodings_host` take the ciphertext as a host-addressable `&GLWE<D, i64>`, owned or a view such as a scratch carve, where they took a `&CKKSCiphertext<D, i64, Standard>`; an owned CKKS ciphertext passes as `&*ct`.
+- The double-angle chain of a binary LUT squares into a temporary carved from scratch, which `ckks_functional_bootstrap_tmp_bytes` counts, its reference requiring `CKKSMulOps`, `CKKSAddOps` and `CKKSSubOps`.
+- `ShipKeySet::generate` wipes every copy of the dense and sparse secrets, host and backend, and the prepared dense secret before it returns, on error too, and the SHIP mux-key encryption its input and output secrets.
+- The product of each Chebyshev power and the square of the `T2` input transform come from scratch, which `ckks_all_ops_tmp_bytes` and the EvalMod query count, where they were allocated per power.
+- **Behaviour:** `ckks_dft_evaluate_assign` carves the baby-step cache of each factor from scratch, which `ckks_dft_tmp_bytes` counts, where it allocated one per factor, and returns `CKKSError::Internal` before any write on an arena below the cache.
 - **Behaviour:** `test_suite::presets::bootstrapping_presets_meet_precision` and its client form also run each preset with the keys of power-of-two rotations only (`BootstrappingPreset::with_power_of_two_keys`).
 - Add `layouts::ckks_one_pt`, the constant-`1.0` plaintext of the add-one and sub-one operations, for a backend that caches it.
 - Add `DFTPlan::with_power_of_two_keys` and `BootstrappingPreset::with_power_of_two_keys`, the transforms evaluated with the keys of power-of-two rotations only (`BsgsPowersOfTwo`): `n16_d35_k685_p19_s2c_ffr_ci` takes 21 rotation keys instead of 35, 3419 MiB instead of 5149, at the same widths.
@@ -691,6 +700,7 @@
 
 ### `poulpy-bin-fhe`
 
+- The blind rotation's output accumulator, the byte temporaries of `FheUint::zero_byte`, `splice_u8`, `splice_u16` and `sext`, the switched GLWE of `get_bit_lwe` and the GLWE switch's output secret of the BDD key encryption come from scratch, where they were allocated on every call; their queries count them, and the secret now falls in the region `bdd_key_encrypt_sk` wipes.
 - Add the scratch queries of the `FheUint` operations that took scratch without one, associated functions over layouts and key sources: `FheUint::sext_tmp_bytes(module, res_infos, keys)`, `splice_u8_tmp_bytes(module, res_infos, a_infos, b_infos, keys)`, `splice_u16_tmp_bytes` with the same arguments, `get_bit_glwe_tmp_bytes(module, res_infos, keys)`, `get_bit_lwe_tmp_bytes(module, res_infos, a_infos, ks_glwe, ks_lwe)` over the key layouts, which sizes the narrowed source at its allocated capacity, as the extraction reads it, `get_byte_tmp_bytes(module, res_infos, keys)`, `from_fhe_uint_prepared_tmp_bytes(module, res_infos, bit_infos, keys)` and `zero_byte_tmp_bytes(module, res_infos, keys)`.
   Each operation panics with a static `"<method>: insufficient scratch"` before any write on an arena below its query, and the `fheuint` tests run each call on exactly its query and once one byte short.
 - **Behaviour:** the key encryptions of blind rotation (plain and compressed), circuit bootstrapping and BDD keys and `FheUintPreparedEncryptSk` end by wiping the scratch their query reports.

@@ -2,14 +2,16 @@ use crate::layouts::CKKSCiphertextOwned;
 use anyhow::{Result, ensure};
 use poulpy_core::GLWENormalize;
 use poulpy_core::layouts::GetTensorKey;
-use poulpy_core::layouts::{GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, split_degree};
+use poulpy_core::layouts::{
+    GGLWEInfos, GLWEInfos, GLWELayout, GLWEPlaintextMeta, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank, split_degree,
+};
 use poulpy_hal::layouts::{Backend, Data, Module, Ring, ScratchArena, ZnxWord};
 
 use crate::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
     api::{CKKSMulOps, CKKSPow2Ops, CKKSSubOps},
     checked_mul_ct_log_budget,
-    layouts::{CKKSCiphertext, CKKSModuleAlloc},
+    layouts::{CKKSCiphertext, CKKSModuleAlloc, ScratchArenaTakeCKKS},
 };
 
 pub use crate::api::{Basis, Parity};
@@ -159,13 +161,19 @@ impl<BE: Backend> PowerBasisGen<BE> for PowerBasis<CKKSCiphertextOwned<BE>> {
             self.gen_power_chebyshev(c, module, tsk, scratch)?;
         }
 
-        let result = scratch.scope(|mut scratch| -> Result<CKKSCiphertextOwned<BE>> {
+        let result = scratch.scope(|scratch| -> Result<CKKSCiphertextOwned<BE>> {
             let a_val = self.get_stored(a).expect("gen_power_chebyshev(a) just succeeded");
             let b_val = self.get_stored(b).expect("gen_power_chebyshev(b) just succeeded");
             let k = mul_ct_k(if a == b { "ckks_square_into" } else { "ckks_mul_into" }, a_val, b_val)?;
 
             // `2·T_a·T_b − T_c`, normalized once at the end.
-            let mut product = module.ckks_ciphertext_alloc(a_val.base2k(), k.into());
+            let product_layout = GLWELayout {
+                n: module.n().into(),
+                base2k: a_val.base2k(),
+                k: k.into(),
+                rank: Rank(1),
+            };
+            let (mut product, mut scratch) = scratch.take_ckks_ciphertext_scratch(&product_layout, GLWEPlaintextMeta::default());
             if a == b {
                 module.ckks_square_into(&mut product, a_val, tsk, &mut scratch)?;
             } else {
@@ -251,6 +259,25 @@ impl<BE: Backend> PowerBasisGen<BE> for PowerBasis<CKKSCiphertextOwned<BE>> {
 
         Ok(())
     }
+}
+
+/// Scratch of one product a basis takes for ciphertexts of the layout of `ct`: the product carved beside its
+/// multiplication, then the doubling and the subtraction of the Chebyshev recurrence.
+pub(crate) fn ckks_power_product_tmp_bytes<BE, C, T>(module: &Module<BE>, ct: &C, tsk: &T) -> usize
+where
+    BE: Backend,
+    Module<BE>: CKKSMulOps<BE> + CKKSPow2Ops<BE> + CKKSSubOps<BE> + GLWENormalize<BE>,
+    C: CKKSCtBounds,
+    T: GGLWEInfos,
+{
+    BE::scratch_aligned(BE::bytes_of_vec_znx(ct.n().into(), (ct.rank() + 1).into(), ct.max_size()))
+        + module
+            .ckks_mul_tmp_bytes(ct, ct, ct, tsk)
+            .max(module.ckks_square_tmp_bytes(ct, ct, tsk))
+            .max(module.ckks_mul_pow2_tmp_bytes(ct.max_size()))
+            .max(module.ckks_sub_one_tmp_bytes(ct.max_size()))
+            .max(module.ckks_sub_tmp_bytes(ct.max_size()))
+            .max(module.glwe_normalize_tmp_bytes())
 }
 
 /// `k` of a ciphertext square, shared with the input-transform path.

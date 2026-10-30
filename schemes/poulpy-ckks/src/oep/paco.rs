@@ -1,6 +1,6 @@
 use crate::CKKSResult as Result;
 use crate::layouts::CKKSPlaintextOwned;
-use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey};
+use poulpy_core::layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey};
 use poulpy_hal::{
     api::ScratchOwnedBorrow,
     layouts::{Backend, Module, ScratchArena, ScratchOwned, Standard},
@@ -36,12 +36,17 @@ use crate::{
 /// platform, report for the `_tmp_bytes` query a bound that covers the body, and refuse as documented. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait CKKSPaCoCoeffEncodingImpl: Backend<Ring = Standard> {
-    /// Scratch bound of [`Self::ckks_paco_coeff_encodings`], the scalar buffers of native FFT kernels included. That
-    /// method refuses a smaller arena with `CKKSError::Internal` before any work.
-    fn ckks_paco_coeff_encodings_tmp_bytes<F>(module: &Module<Self>, context: &PaCoContext<Self, F>) -> Result<usize>
+    /// Scratch bound of [`Self::ckks_paco_coeff_encodings`] for an input of the layout `input`, the scalar buffers of
+    /// native FFT kernels included. That method refuses a smaller arena with `CKKSError::Internal` before any work.
+    fn ckks_paco_coeff_encodings_tmp_bytes<F, A>(
+        module: &Module<Self>,
+        context: &PaCoContext<Self, F>,
+        input: &A,
+    ) -> Result<usize>
     where
         F: PaCoScalar,
-        Self: CKKSEncodingImpl<F>;
+        Self: CKKSEncodingImpl<F>,
+        A: GLWEInfos;
 
     /// No reference body is wired: this crate carries no implementation. Encodes the exhausted ciphertext's public
     /// coefficients as the four dense beta plaintexts consumed by PaCo blind rotation, byte-identical with the host

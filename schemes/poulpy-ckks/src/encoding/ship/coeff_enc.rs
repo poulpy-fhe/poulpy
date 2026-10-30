@@ -8,7 +8,7 @@
 
 use crate::CKKSModuleInfos;
 use anyhow::{Context, Result, ensure};
-use poulpy_core::layouts::{Base2K, GLWEInfos, LWEInfos};
+use poulpy_core::layouts::{Base2K, GLWE, GLWEInfos, LWEInfos};
 use poulpy_hal::layouts::{Backend, HostDataRef, Module, Standard};
 
 use crate::SlotsKind;
@@ -16,7 +16,7 @@ use crate::{
     GLWEPlaintextMeta, Scale,
     api::{CKKSEncodingOps, ShipScalar},
     encoding::paco::coeff_enc::glwe_column_residues,
-    layouts::{CKKSCiphertext, CKKSEncodingBuffer, CKKSModuleAlloc, CKKSPlaintextOwned, ShipCoeffEncodings, ShipPlan},
+    layouts::{CKKSEncodingBuffer, CKKSModuleAlloc, CKKSPlaintextOwned, ShipCoeffEncodings, ShipPlan},
 };
 
 /// Phases `(cos, sin)(2*pi*x/q0)` of a residue vector.
@@ -72,7 +72,7 @@ pub fn ship_coeff_encodings_host<BE, D, F>(
     module: &Module<BE>,
     base2k: Base2K,
     complex: bool,
-    ct: &CKKSCiphertext<D, BE::ZnxWord, Standard>,
+    ct: &GLWE<D, BE::ZnxWord>,
     plan: &ShipPlan,
 ) -> Result<ShipCoeffEncodings<BE::OwnedBuf, BE::ZnxWord>>
 where

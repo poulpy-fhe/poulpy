@@ -9,18 +9,15 @@ use poulpy_cpu_portable::kernels::ntt4x30::{
     vec_znx_dft::NttModuleHandle,
 };
 use poulpy_hal::layouts::Ring;
-use poulpy_hal::{
-    api::VecZnxDftAlloc,
-    layouts::{
-        DataView, DataViewMut, Module, ScalarZnxBackendRef, SvpPPolBackendMut, SvpPPolBackendRef, VecZnxBackendRef,
-        VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftReborrowBackendRef, VecZnxDftToBackendMut, ZnxView, check_degree,
-    },
+use poulpy_hal::layouts::{
+    DataView, DataViewMut, Module, ScalarZnxBackendRef, SvpPPolBackendMut, SvpPPolBackendRef, VecZnxBackendRef,
+    VecZnxDftBackendMut, VecZnxDftBackendRef, ZnxView, check_degree,
 };
 
 use super::{
     NTT4x30Avx512,
     arithmetic_avx512::{BARRETT_MU, Q_VEC, barrett_reduce_512, bcast_quad},
-    vec_znx_dft::{pack_limb_q120, packed_limb, packed_limb_mut},
+    vec_znx_dft::{check_operand, dft_limb_wide, pack_limb_q120, packed_limb, packed_limb_mut},
 };
 
 #[target_feature(enable = "avx512f")]
@@ -95,6 +92,13 @@ pub(crate) fn svp_ppol_copy<R: Ring>(
     dst[4 * n * res_col..][..4 * n].copy_from_slice(&src[4 * n * a_col..][..4 * n]);
 }
 
+/// Scratch of [`svp_apply_dft`]: the q120 form of one limb, twice the destination limb.
+pub(crate) fn svp_apply_dft_tmp_bytes(n: usize) -> usize {
+    4 * n * size_of::<u64>()
+}
+
+/// `res = a * dft(b)`: each limb of `b` is transformed into its destination through `tmp`, then multiplied there.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn svp_apply_dft<R: Ring>(
     module: &Module<NTT4x30Avx512<R>>,
     res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512<R>>,
@@ -103,13 +107,35 @@ pub(crate) fn svp_apply_dft<R: Ring>(
     a_col: usize,
     b: &VecZnxBackendRef<'_, NTT4x30Avx512<R>>,
     b_col: usize,
+    tmp: &mut [u64],
 ) where
     NTT4x30Avx512<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
 {
-    let mut b_dft_owned = module.vec_znx_dft_alloc(b.n(), 1, b.size());
-    let mut b_dft = b_dft_owned.to_backend_mut();
-    super::vec_znx_dft::vec_znx_dft_apply(module, 1, 0, &mut b_dft, 0, b, b_col);
-    svp_apply_dft_to_dft(module, res, res_col, a, a_col, &b_dft.reborrow_backend_ref(), 0);
+    poulpy_hal::layouts::assert_dense(b, "svp_apply_dft");
+    let n = res.n();
+    check_operand(n, res, res_col);
+    check_degree::<NTT4x30Avx512<R>>(module.n(), n);
+    check_operand(n, b, b_col);
+    assert_eq!(a.n(), n, "svp_apply_dft: a.n() != res.n()");
+    assert!(tmp.len() >= 4 * n, "svp_apply_dft: scratch below its query");
+    let tmp = &mut tmp[..4 * n];
+    let (res_cols, res_size) = (res.cols(), res.size());
+    let min_size = res_size.min(b.size());
+    let factor_data: &[u32] = cast_slice(a.data());
+    let factor = &factor_data[4 * n * a_col..][..4 * n];
+    let res_data: &mut [u32] = cast_slice_mut(res.data_mut());
+    for limb in 0..res_size {
+        let dst = packed_limb_mut(res_data, n, res_cols, res_col, limb);
+        if limb < min_size {
+            dft_limb_wide(module, n, tmp, b.at(b_col, limb));
+            unsafe {
+                pack_limb_q120(n, dst, tmp);
+                mul_packed_limb_assign(n, dst, factor);
+            }
+        } else {
+            dst.fill(0);
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]

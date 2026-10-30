@@ -17,7 +17,7 @@ use crate::{
     layouts::{CKKSCiphertextOwned, PaCoContext, PaCoKeys, PaCoWorker},
 };
 
-use poulpy_core::layouts::GLWEToBackendRef;
+use poulpy_core::layouts::{GLWEInfos, GLWEToBackendRef};
 use poulpy_hal::{
     api::ScratchOwnedBorrow,
     layouts::{Backend, ScratchArena, ScratchOwned},
@@ -114,8 +114,9 @@ pub trait CKKSPaCoOps<BE: Backend, F: PaCoScalar> {
         Src: GLWEToBackendRef<BE> + CKKSCtBounds;
 
     /// Standard-arena bytes required to build the four input-dependent β
-    /// plaintexts, including backend-native scalar/FFT workspace.
-    fn ckks_paco_coeff_encodings_tmp_bytes(&self, context: &PaCoContext<BE, F>) -> Result<usize>;
+    /// plaintexts from an input of the layout `input`, including backend-native
+    /// scalar/FFT workspace.
+    fn ckks_paco_coeff_encodings_tmp_bytes<A: GLWEInfos>(&self, context: &PaCoContext<BE, F>, input: &A) -> Result<usize>;
 
     /// Builds the four input-dependent beta plaintexts used by PaCo's blind
     /// rotation. This is the only PaCo primitive intended for native backend

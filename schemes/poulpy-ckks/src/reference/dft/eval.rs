@@ -23,7 +23,7 @@
 use crate::{CKKSResult as Result, ckks_ensure};
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
-    DiagonalProd,
+    DiagonalProd, GLWEBytesOf, ScratchArenaTakeCore,
     layouts::{Base2K, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LinearTransformation},
 };
 use poulpy_hal::{
@@ -33,10 +33,7 @@ use poulpy_hal::{
 
 use crate::{
     CKKSCompositionError, CKKSCtBounds, SetCKKSInfos,
-    api::{
-        CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, CKKSLinearTransformationOps, LinearTransformationBabySteps,
-        LtDiagonalMeta,
-    },
+    api::{CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, CKKSLinearTransformationOps, LtDiagonalMeta},
     layouts::{
         CKKSModuleAlloc, CKKSPlaintextOwned, ComplexDiagonals, DFTMatrix, DFTMatrixFactors, DFTMatrixPrepared, DFTPlan,
         DftDirection, DftFormat, DftScalar,
@@ -287,7 +284,7 @@ pub fn ckks_dft_evaluate_assign<BE, Dir, Fmt, P, Dst, H>(
 where
     BE: Backend,
     P: DiagonalProd<BE> + LtDiagonalMeta,
-    Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: CKKSLinearTransformationOps<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
 {
@@ -300,8 +297,8 @@ where
     Ok(())
 }
 
-/// Evaluates a single homomorphic-DFT factor in place on `running`: (re)allocates
-/// and prepares the baby rotations of the current operand, then applies the
+/// Evaluates a single homomorphic-DFT factor in place on `running`: carves from
+/// scratch and prepares the baby rotations of the current operand, then applies the
 /// unified linear-transformation eval. `P` only decides how the factor's RHS is
 /// materialized inside the eval (resident vs streamed).
 fn eval_factor<BE, P, Dst, H>(
@@ -314,13 +311,20 @@ fn eval_factor<BE, P, Dst, H>(
 where
     BE: Backend,
     P: DiagonalProd<BE> + LtDiagonalMeta,
-    Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: CKKSLinearTransformationOps<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
 {
-    let mut babies = LinearTransformationBabySteps::alloc_for(module, factor, running);
-    module.ckks_prepare_linear_transformation_baby_steps(&mut babies, running, keys, scratch)?;
-    module.ckks_eval_linear_transformation_assign(running, &babies, factor, keys, scratch)?;
+    let plan = factor.index();
+    ckks_ensure!(
+        scratch.available() >= module.linear_transformation_baby_steps_bytes_of(&plan, &*running),
+        "ckks_dft_evaluate_assign: scratch below its baby-step cache"
+    );
+    let (mut babies, mut scratch) = scratch
+        .borrow()
+        .take_linear_transformation_baby_steps_scratch(module, &plan, &*running);
+    module.ckks_prepare_linear_transformation_baby_steps(&mut babies, running, keys, &mut scratch)?;
+    module.ckks_eval_linear_transformation_assign(running, &babies, factor, keys, &mut scratch)?;
     Ok(())
 }
 
@@ -405,9 +409,10 @@ where
         );
         for factor in dft.factor_operands() {
             // Each factor's own schedule, so that a factor on power-of-two keys counts its
-            // doubling and its giant-step tree.
+            // doubling and its giant-step tree, beside its baby cache.
             let plan = factor.index();
-            bytes = bytes.max(module.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(ct, &plan, key));
+            let babies = module.linear_transformation_baby_steps_bytes_of(&plan, ct);
+            bytes = bytes.max(babies + module.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(ct, &plan, key));
             for pt in factor
                 .giant_steps
                 .iter()
@@ -420,7 +425,7 @@ where
                     .glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(ct, ct, pt, &plan, key, key)
                     .max(module.glwe_eval_linear_transformation_tmp_bytes(ct, ct, pt, &plan, key, key))
                     .max(module.ckks_copy_tmp_bytes(ct, ct));
-                bytes = bytes.max(BE::scratch_aligned(module.glwe_bytes_of_from_infos(ct)) + factor_work);
+                bytes = bytes.max(babies + BE::scratch_aligned(module.glwe_bytes_of_from_infos(ct)) + factor_work);
             }
         }
     }

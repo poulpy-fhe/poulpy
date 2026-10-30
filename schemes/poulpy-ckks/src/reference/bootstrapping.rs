@@ -325,7 +325,13 @@ pub trait CKKSBootstrappingReference<BE: Backend> {
     ) -> usize
     where
         Module<BE>: GLWEBytesOf<BE>,
-        Module<BE>: CKKSAllOpsTmpBytes<BE> + CKKSDFTOps<BE> + CKKSEvalModOps<BE> + GLWEKeyswitch<BE>,
+        Module<BE>: CKKSAllOpsTmpBytes<BE>
+            + CKKSDFTOps<BE>
+            + CKKSEvalModOps<BE>
+            + GLWEKeyswitch<BE>
+            + CKKSMulOps<BE>
+            + CKKSAddOps<BE>
+            + CKKSSubOps<BE>,
         C1: CKKSCtBounds,
         C2: CKKSCtBounds,
         CKKSCiphertextOwned<BE>: CKKSCtBounds;
@@ -467,7 +473,13 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl> CKKSBoo
     ) -> usize
     where
         Module<BE>: GLWEBytesOf<BE>,
-        Module<BE>: CKKSAllOpsTmpBytes<BE> + CKKSDFTOps<BE> + CKKSEvalModOps<BE> + GLWEKeyswitch<BE>,
+        Module<BE>: CKKSAllOpsTmpBytes<BE>
+            + CKKSDFTOps<BE>
+            + CKKSEvalModOps<BE>
+            + GLWEKeyswitch<BE>
+            + CKKSMulOps<BE>
+            + CKKSAddOps<BE>
+            + CKKSSubOps<BE>,
         C1: CKKSCtBounds,
         C2: CKKSCtBounds,
         CKKSCiphertextOwned<BE>: CKKSCtBounds,
@@ -493,6 +505,22 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl> CKKSBoo
                     .max(self.ckks_all_ops_with_atk_tmp_bytes(&boot_layout, lut.coeffs(), tsk, atk))
                     .max(self.ckks_all_ops_with_atk_tmp_bytes(&in_layout, lut.coeffs(), tsk, atk));
             }
+        }
+        // A double-angle chain squares into a temporary of its output's layout.
+        if luts
+            .iter()
+            .any(|lut| matches!(lut.kind(), EncodedLutKind::Binary { chain: Some(_), .. }))
+        {
+            let size = ct_out.max_size();
+            nested = nested.max(
+                BE::scratch_aligned(self.glwe_bytes_of_from_infos(&GLWELayout {
+                    k: ct_out.max_k(),
+                    ..ct_out.glwe_layout()
+                })) + self
+                    .ckks_square_tmp_bytes(ct_out, ct_out, tsk)
+                    .max(self.ckks_add_pt_const_tmp_bytes(size))
+                    .max(self.ckks_sub_pt_const_tmp_bytes(size)),
+            );
         }
         base.max(carved + nested)
     }

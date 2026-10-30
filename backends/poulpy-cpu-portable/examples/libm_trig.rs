@@ -30,14 +30,11 @@ fn run() -> Result<()> {
     let cos_consumed = host_cos.consumed_bits(LOG_DELTA);
 
     // 2. Prepare both plans for encrypted evaluation.
-    // sincos reuses one temporary memory area, so the larger reported size is sufficient.
     let sin_plan = host_sin.map_plaintexts(|pt| upload_pt(&setup.module, pt));
     let cos_plan = host_cos.map_plaintexts(|pt| upload_pt(&setup.module, pt));
     let max_consumed = sin_consumed.max(cos_consumed);
     let mut context = setup.prepare(max_consumed, |module, sizing, params| {
-        module
-            .ckks_sin_tmp_bytes(sizing, sizing, &params.tsk_layout(), &sin_plan)
-            .max(module.ckks_cos_tmp_bytes(sizing, sizing, &params.tsk_layout(), &cos_plan))
+        module.ckks_sincos_tmp_bytes(sizing, sizing, sizing, &params.tsk_layout(), &sin_plan, &cos_plan)
     });
 
     // 3. Pack and encrypt the input once because both functions use the same values.

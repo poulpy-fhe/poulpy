@@ -63,6 +63,7 @@ where
         + CKKSMulAddOps<BE>
         + CKKSMulSubOps<BE>
         + GLWEAutomorphism<BE>
+        + poulpy_core::GLWENormalize<BE>
         + GLWEAutomorphismKeyEncryptSk<BE>
         + GLWELinearTransformations<BE>
         + GLWEAutomorphismKeyPreparedFactory<BE>
@@ -113,6 +114,7 @@ where
             .max(self.ckks_mul_sub_ct_tmp_bytes(ct_infos, ct_infos, ct_infos, tsk_infos))
             .max(self.ckks_square_tmp_bytes(ct_infos, ct_infos, tsk_infos))
             .max(polynomial_giant_steps_tmp_bytes)
+            .max(crate::power_basis::ckks_power_product_tmp_bytes(self, ct_infos, tsk_infos))
             .max(
                 crate::oep::derived::polynomial_evaluation::eval_baby_linear_combination_tmp_bytes(
                     self,

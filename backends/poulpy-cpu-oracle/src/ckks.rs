@@ -102,13 +102,15 @@ macro_rules! impl_oracle_ckks_encoding {
 macro_rules! impl_oracle_ckks_coeff_encodings {
     ($be:ty) => {
         unsafe impl ::poulpy_ckks::oep::CKKSPaCoCoeffEncodingImpl for $be {
-            fn ckks_paco_coeff_encodings_tmp_bytes<S>(
+            fn ckks_paco_coeff_encodings_tmp_bytes<S, A>(
                 _module: &::poulpy_hal::layouts::Module<$be>,
                 _context: &::poulpy_ckks::layouts::PaCoContext<$be, S>,
+                _input: &A,
             ) -> CKKSResult<usize>
             where
                 S: ::poulpy_ckks::api::PaCoScalar,
                 $be: ::poulpy_ckks::oep::CKKSEncodingImpl<S>,
+                A: ::poulpy_core::layouts::GLWEInfos,
             {
                 Ok(0)
             }
