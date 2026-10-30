@@ -65,6 +65,8 @@ where
     Module<BE>: CKKSAddOps<BE>
         + CKKSSubOps<BE>
         + CKKSMulOps<BE>
+        + crate::api::CKKSPow2Ops<BE>
+        + poulpy_core::GLWENormalize<BE>
         + CKKSCopyOps<BE>
         + GLWECopy<BE>
         + CnvPVecBytesOf
@@ -146,5 +148,6 @@ where
             .max(module.ckks_sub_one_tmp_bytes(work.max_size()))
             .max(bsgs_giant)
             .max(square_scope)
+            .max(crate::power_basis::ckks_power_product_tmp_bytes(module, &work, tsk))
             .max(fused_baby)
 }

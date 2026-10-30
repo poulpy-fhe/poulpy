@@ -9,17 +9,14 @@ use poulpy_cpu_portable::kernels::ntt4x30::{
     primes::Primes30,
 };
 use poulpy_hal::layouts::Ring;
-use poulpy_hal::{
-    api::VecZnxDftAlloc,
-    layouts::{
-        DataView, DataViewMut, Module, ScalarZnxBackendRef, SvpPPolBackendMut, SvpPPolBackendRef, VecZnxBackendRef,
-        VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftReborrowBackendRef, VecZnxDftToBackendMut, ZnxView, check_degree,
-    },
+use poulpy_hal::layouts::{
+    DataView, DataViewMut, Module, ScalarZnxBackendRef, SvpPPolBackendMut, SvpPPolBackendRef, VecZnxBackendRef,
+    VecZnxDftBackendMut, VecZnxDftBackendRef, ZnxView, check_degree,
 };
 
 use super::{
     NTT4x30Neon,
-    vec_znx_dft::{dft_limb_scaled, packed_limb, packed_limb_mut},
+    vec_znx_dft::{check_operand, dft_limb, dft_limb_scaled, packed_limb, packed_limb_mut},
 };
 use crate::neon::ntt4x30_packed::{OP_MONT_MUL, limb_op};
 
@@ -76,6 +73,7 @@ pub(crate) fn svp_ppol_copy<R: Ring>(
     dst[4 * n * res_col..][..4 * n].copy_from_slice(&src[4 * n * a_col..][..4 * n]);
 }
 
+/// `res = a * dft(b)`: each limb of `b` is transformed into its destination, then multiplied there.
 pub(crate) fn svp_apply_dft<R: Ring>(
     module: &Module<NTT4x30Neon<R>>,
     res: &mut VecZnxDftBackendMut<'_, NTT4x30Neon<R>>,
@@ -87,10 +85,24 @@ pub(crate) fn svp_apply_dft<R: Ring>(
 ) where
     NTT4x30Neon<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
 {
-    let mut b_dft_owned = module.vec_znx_dft_alloc(b.n(), 1, b.size());
-    let mut b_dft = b_dft_owned.to_backend_mut();
-    super::vec_znx_dft::vec_znx_dft_apply(module, 1, 0, &mut b_dft, 0, b, b_col);
-    svp_apply_dft_to_dft(module, res, res_col, a, a_col, &b_dft.reborrow_backend_ref(), 0);
+    poulpy_hal::layouts::assert_dense(b, "svp_apply_dft");
+    let n = res.n();
+    check_operand(n, res, res_col);
+    check_degree::<NTT4x30Neon<R>>(module.n(), n);
+    check_operand(n, b, b_col);
+    assert_eq!(a.n(), n, "svp_apply_dft: a.n() != res.n()");
+    let (res_cols, res_size) = (res.cols(), res.size());
+    let min_size = res_size.min(b.size());
+    let factor_data: &[u32] = cast_slice(a.data());
+    let factor = &factor_data[4 * n * a_col..][..4 * n];
+    let res_data: &mut [u32] = cast_slice_mut(res.data_mut());
+    for limb in 0..res_size {
+        let dst = packed_limb_mut(res_data, n, res_cols, res_col, limb);
+        dft_limb::<R, poulpy_hal::execution::SerialTaskExecutor>(module, n, dst, (limb < min_size).then(|| b.at(b_col, limb)));
+        if limb < min_size {
+            mul_packed_limb_assign(n, dst, factor);
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]

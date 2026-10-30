@@ -6,8 +6,8 @@
 //! work through the backend's CKKS encoding operations
 //! ([`CKKSEncodingImpl`]); precomputed
 //! encoding material is the module's own memoized state. This module only
-//! stages generic inputs (e.g. scratch-carved views) into an owned buffer
-//! before their residues are read. Invoke
+//! reads generic inputs (e.g. scratch-carved views) in place through their
+//! host-addressable backend views. Invoke
 //! [`impl_ckks_paco_coeff_encoding`](crate::impl_ckks_paco_coeff_encoding)
 //! after installing the backend's CKKS encoding implementation; a backend
 //! with a fused native kernel implements the OEP directly instead.
@@ -20,32 +20,29 @@ use poulpy_ckks::{
     layouts::{CKKSModuleAlloc, CKKSPlaintextOwned, PaCoPlan},
     oep::CKKSEncodingImpl,
 };
-use poulpy_core::{
-    GLWECopy,
-    layouts::{Base2K, GLWEToBackendRef},
-};
+use poulpy_core::layouts::{Base2K, GLWEToBackendRef};
 use poulpy_hal::{
     api::ModuleN,
-    layouts::{Backend, HostDataRef, Module, ScratchArena, Standard},
+    layouts::{Backend, HostDataRef, Module, Standard},
 };
 
-/// Stages a generic input (e.g. a scratch-carved view) into one owned copy of
-/// the small modulus-q ciphertext, then runs the scheme-defining
-/// [`paco_coeff_encodings_host`] with the prepared encoding material.
+/// Runs the scheme-defining [`paco_coeff_encodings_host`] with the prepared
+/// encoding material on the small modulus-q ciphertext `ct`, owned or a view
+/// such as a scratch carve, read in place.
 ///
-/// Returns an error for incompatible degree/rank/radix metadata,
-/// non-representable coefficients, or a failed encoding.
+/// Returns an error for incompatible degree/rank/radix metadata, a scale
+/// above the ciphertext's width, non-representable coefficients, or a failed
+/// encoding.
 pub fn paco_coeff_encodings_staged<BE, F, Src>(
     module: &Module<BE>,
     base2k: Base2K,
     ct: &Src,
     plan: &PaCoPlan,
-    scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<[CKKSPlaintextOwned<BE>; 4]>
 where
     BE: Backend<ZnxWord = i64, Ring = Standard> + CKKSEncodingImpl<F>,
-    BE::OwnedBuf: HostDataRef,
-    Module<BE>: ModuleN + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F> + GLWECopy<BE>,
+    for<'x> BE::BufRef<'x>: HostDataRef,
+    Module<BE>: ModuleN + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
     F: PaCoScalar,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
@@ -55,10 +52,13 @@ where
         module.n(),
         plan.n()
     );
-    let mut owned = module.ckks_ciphertext_alloc_from_infos(ct);
-    module.glwe_copy(&mut owned, ct, scratch);
-    owned.set_meta_checked(ct.meta())?;
-    paco_coeff_encodings_host::<BE, _, F>(module, base2k, &owned, plan)
+    ensure!(
+        ct.log_delta() <= ct.k().as_usize(),
+        "PaCo ciphertext scale {} exceeds its width {}",
+        ct.log_delta(),
+        ct.k()
+    );
+    paco_coeff_encodings_host::<BE, _, F>(module, base2k, &ct.to_backend_ref(), plan)
 }
 
 /// Opts a CPU backend into the reference PaCo coefficient encoding: the
@@ -93,12 +93,12 @@ macro_rules! impl_ckks_paco_coeff_encoding {
                 $be: ::poulpy_ckks::oep::CKKSEncodingImpl<F>,
                 Src: ::poulpy_core::layouts::GLWEToBackendRef<$be> + ::poulpy_ckks::CKKSCtBounds,
             {
+                let _ = scratch;
                 $crate::ckks_paco::paco_coeff_encodings_staged::<$be, F, Src>(
                     module,
                     context.base2k(),
                     ciphertext,
                     context.plan(),
-                    scratch,
                 )
                 .map_err(::poulpy_ckks::CKKSError::from)
             }

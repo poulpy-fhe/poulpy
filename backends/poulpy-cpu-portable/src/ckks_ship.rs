@@ -2,9 +2,9 @@
 //! ([`CKKSShipCoeffEncodingImpl`](poulpy_ckks::oep::CKKSShipCoeffEncodingImpl)).
 //!
 //! The scheme-defining transformation lives in `poulpy-ckks`
-//! ([`ship_coeff_encodings_host`]); this module only stages generic inputs
-//! (e.g. scratch-carved views) into an owned buffer before their residues are
-//! read. Invoke [`impl_ckks_ship_coeff_encoding`](crate::impl_ckks_ship_coeff_encoding)
+//! ([`ship_coeff_encodings_host`]); this module only reads generic inputs
+//! (e.g. scratch-carved views) in place through their host-addressable backend
+//! views. Invoke [`impl_ckks_ship_coeff_encoding`](crate::impl_ckks_ship_coeff_encoding)
 //! after installing the backend's CKKS encoding implementation; a backend
 //! with a fused native kernel implements the OEP directly instead.
 
@@ -16,30 +16,26 @@ use poulpy_ckks::{
     layouts::{CKKSModuleAlloc, ShipCoeffEncodings, ShipPlan},
     oep::CKKSEncodingImpl,
 };
-use poulpy_core::{
-    GLWECopy,
-    layouts::{Base2K, GLWEToBackendRef},
-};
+use poulpy_core::layouts::{Base2K, GLWEToBackendRef};
 use poulpy_hal::{
     api::ModuleN,
-    layouts::{Backend, HostDataRef, Module, ScratchArena, Standard},
+    layouts::{Backend, HostDataRef, Module, Standard},
 };
 
-/// Stages a generic input (e.g. a scratch-carved view) into one owned copy of
-/// the one-limb bottom ciphertext, then runs the scheme-defining
-/// [`ship_coeff_encodings_host`].
+/// Runs the scheme-defining [`ship_coeff_encodings_host`] on the one-limb
+/// bottom ciphertext `ct`, owned or a view such as a scratch carve, read in
+/// place.
 pub fn ship_coeff_encodings_staged<BE, F, Src>(
     module: &Module<BE>,
     base2k: Base2K,
     complex: bool,
     ct: &Src,
     plan: &ShipPlan,
-    scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<ShipCoeffEncodings<BE::OwnedBuf, BE::ZnxWord>>
 where
     BE: Backend<ZnxWord = i64, Ring = Standard> + CKKSEncodingImpl<F>,
-    BE::OwnedBuf: HostDataRef,
-    Module<BE>: ModuleN + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F> + GLWECopy<BE>,
+    for<'x> BE::BufRef<'x>: HostDataRef,
+    Module<BE>: ModuleN + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
     F: ShipScalar,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
@@ -49,10 +45,13 @@ where
         module.n(),
         plan.n()
     );
-    let mut owned = module.ckks_ciphertext_alloc_from_infos(ct);
-    module.glwe_copy(&mut owned, ct, scratch);
-    owned.set_meta_checked(ct.meta())?;
-    ship_coeff_encodings_host::<BE, _, F>(module, base2k, complex, &owned, plan)
+    ensure!(
+        ct.log_delta() <= ct.k().as_usize(),
+        "SHIP ciphertext scale {} exceeds its width {}",
+        ct.log_delta(),
+        ct.k()
+    );
+    ship_coeff_encodings_host::<BE, _, F>(module, base2k, complex, &ct.to_backend_ref(), plan)
 }
 
 /// Opts a CPU backend into the reference SHIP coefficient encoding. Requires
@@ -94,7 +93,8 @@ macro_rules! impl_ckks_ship_coeff_encoding {
                 $be: ::poulpy_ckks::oep::CKKSEncodingImpl<F>,
                 Src: ::poulpy_core::layouts::GLWEToBackendRef<$be> + ::poulpy_ckks::CKKSCtBounds,
             {
-                $crate::ckks_ship::ship_coeff_encodings_staged::<$be, F, Src>(module, base2k, complex, ciphertext, plan, scratch)
+                let _ = scratch;
+                $crate::ckks_ship::ship_coeff_encodings_staged::<$be, F, Src>(module, base2k, complex, ciphertext, plan)
                     .map_err(::poulpy_ckks::CKKSError::from)
             }
         }

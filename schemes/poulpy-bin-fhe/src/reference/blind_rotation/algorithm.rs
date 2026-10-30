@@ -19,7 +19,7 @@ use poulpy_hal::{
 
 use poulpy_core::{
     Distribution, GLWEAdd, GLWECopy, GLWEExternalProduct, GLWEMulXpMinusOne, GLWENormalize, GLWEZero, ScratchArenaTakeCore,
-    layouts::{GGSWInfos, GLWE, GLWEInfos, GLWEToBackendMut, LWEInfos, LWEToBackendRef, ModuleCoreAlloc},
+    layouts::{GGSWInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, LWEToBackendRef, ModuleCoreAlloc},
 };
 
 use crate::api::BlindRotationModSwitch;
@@ -74,9 +74,10 @@ where
     BE: HalVecZnxImpl,
 {
     assert!(block_size > 0 && extension_factor.is_power_of_two());
-    // The owned output temporary is compact even when the destination retains
-    // spare capacity. Copy workspace can depend on either operand's allocation.
+    // The output temporary is compact even when the destination retains spare
+    // capacity. Copy workspace can depend on either operand's allocation.
     let compact = glwe_infos.glwe_layout();
+    let out = BE::scratch_aligned(module.glwe_bytes_of_from_infos(&compact));
     let copy_out = if extension_factor == 1 {
         module.glwe_copy_tmp_bytes(glwe_infos, &compact)
     } else {
@@ -98,7 +99,7 @@ where
             let slots = block_slots::<BE>(block_size);
             let workers = poulpy_hal::execution::scratch_workers::<BE::TaskExecutor>(block_size);
             let per_worker = vmp.max(vmp_xai);
-            acc_dft
+            out + acc_dft
                 + (slots + 1) * vmp_res
                 + (workers * poulpy_hal::execution::worker_scratch_bytes::<BE>(per_worker))
                     .max(normalize)
@@ -112,7 +113,7 @@ where
         let acc = BE::scratch_aligned(module.glwe_bytes_of_from_infos(&compact));
         // The initial copy precedes acc_tmp; subsequent operations, including
         // the final copy, execute while that compact scratch allocation is live.
-        copy_in.max(
+        out + copy_in.max(
             acc + module
                 .glwe_external_product_tmp_bytes(&compact, &compact, brk_infos)
                 .max(module.glwe_mul_xp_minus_one_assign_tmp_bytes(compact.size()))
@@ -459,7 +460,7 @@ fn execute_block_binary<R, L, M, BE: Backend<ZnxWord = i64>>(
 {
     let n_glwe: usize = brk.n_glwe().into();
     let mut lwe_2n: Vec<i64> = vec![0i64; (lwe.n() + 1).into()]; // TODO: from scratch space
-    let mut out_tmp: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(res);
+    let (mut out_tmp, mut scratch_0) = scratch.borrow().take_glwe_scratch(res);
     let two_n: usize = n_glwe << 1;
     let base2k: usize = brk.base2k().into();
     let res_k = out_tmp.k().as_usize();
@@ -478,7 +479,7 @@ fn execute_block_binary<R, L, M, BE: Backend<ZnxWord = i64>>(
     let lut_ref: poulpy_hal::layouts::VecZnxBackendRef<'_, BE> =
         <poulpy_hal::layouts::VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendRef<BE>>::to_backend_ref(lut.data[0].data());
     {
-        let mut out_backend = <GLWE<BE::OwnedBuf, BE::ZnxWord> as GLWEToBackendMut<BE>>::to_backend_mut(&mut out_tmp);
+        let mut out_backend = out_tmp.to_backend_mut();
         module.vec_znx_rotate(b, out_backend.data_mut(), 0, &lut_ref, 0);
     }
 
@@ -494,17 +495,15 @@ fn execute_block_binary<R, L, M, BE: Backend<ZnxWord = i64>>(
 
     // ACC + [sum DFT(X^ai -1) * (DFT(ACC) x BRKi)]
 
-    let scratch = scratch.borrow();
+    let scratch = scratch_0.borrow();
     let (mut acc_dft, scratch_1) = scratch.take_vec_znx_dft_scratch(module.n(), cols, dnum);
     let (mut acc_add_dft, scratch_2) = scratch_1.take_vec_znx_dft_scratch(module.n(), cols, brk.size());
     let (mut vmp_res, mut scratch_3) = scratch_2.take_vec_znx_dft_slice_scratch(module.n(), slots, cols, brk.size());
 
     for (ai, ski) in izip!(a.chunks_exact(block_size), brk.data.chunks_exact(block_size)) {
         for j in 0..cols {
-            let out_ref = <poulpy_hal::layouts::VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendRef<BE>>::to_backend_ref(
-                out_tmp.data(),
-            );
-            module.vec_znx_dft_apply(1, 0, &mut acc_dft, j, &out_ref, j);
+            let out_ref = out_tmp.to_backend_ref();
+            module.vec_znx_dft_apply(1, 0, &mut acc_dft, j, out_ref.data(), j);
             module.vec_znx_dft_zero(&mut acc_add_dft, j);
         }
 
@@ -555,13 +554,11 @@ fn execute_block_binary<R, L, M, BE: Backend<ZnxWord = i64>>(
             let acc_add_dft_ref = vec_znx_dft_backend_ref_from_mut::<BE>(&acc_add_dft);
             module.vec_znx_idft_apply(&mut acc_add_big, 0, &acc_add_dft_ref, col, &mut scratch_4.borrow());
             {
-                let out_ref = <poulpy_hal::layouts::VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendRef<BE>>::to_backend_ref(
-                    out_tmp.data(),
-                );
-                module.vec_znx_big_add_small_assign(&mut acc_add_big, 0, &out_ref, col);
+                let out_ref = out_tmp.to_backend_ref();
+                module.vec_znx_big_add_small_assign(&mut acc_add_big, 0, out_ref.data(), col);
             }
             let acc_add_big_ref = vec_znx_big_backend_ref_from_mut::<BE>(&acc_add_big);
-            let mut out_backend = <GLWE<BE::OwnedBuf, BE::ZnxWord> as GLWEToBackendMut<BE>>::to_backend_mut(&mut out_tmp);
+            let mut out_backend = out_tmp.to_backend_mut();
             module.vec_znx_big_normalize(
                 out_backend.data_mut(),
                 base2k,
@@ -635,8 +632,8 @@ fn execute_standard<R, L, M, BE: Backend<ZnxWord = i64>>(
     }
 
     let mut lwe_2n: Vec<i64> = vec![0i64; (lwe.n() + 1).into()]; // TODO: from scratch space
-    let mut out_tmp: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(res);
-    module.glwe_copy(&mut out_tmp, res, scratch);
+    let (mut out_tmp, mut scratch_0) = scratch.borrow().take_glwe_scratch(res);
+    module.glwe_copy(&mut out_tmp, res, &mut scratch_0);
 
     module.blind_rotation_mod_switch(2 * lut.domain_size(), lut.rotation_direction(), &mut lwe_2n, lwe);
 
@@ -649,12 +646,12 @@ fn execute_standard<R, L, M, BE: Backend<ZnxWord = i64>>(
     let lut_ref: poulpy_hal::layouts::VecZnxBackendRef<'_, BE> =
         <poulpy_hal::layouts::VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendRef<BE>>::to_backend_ref(lut.data[0].data());
     {
-        let mut out_backend = <GLWE<BE::OwnedBuf, BE::ZnxWord> as GLWEToBackendMut<BE>>::to_backend_mut(&mut out_tmp);
+        let mut out_backend = out_tmp.to_backend_mut();
         module.vec_znx_rotate(b, out_backend.data_mut(), 0, &lut_ref, 0);
     }
 
     // ACC + [sum DFT(X^ai -1) * (DFT(ACC) x BRKi)]
-    let scratch = scratch.borrow();
+    let scratch = scratch_0.borrow();
     let (mut acc_tmp, mut scratch_1) = scratch.take_glwe_scratch(&out_tmp);
 
     // TODO: see if faster by skipping normalization in external product and keeping acc in big coeffs

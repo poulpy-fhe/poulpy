@@ -206,7 +206,12 @@ where
         .max(module.vec_znx_normalize_tmp_bytes())
         .max(module.vec_znx_big_normalize_tmp_bytes())
         .max(module.vec_znx_idft_apply_tmp_bytes());
-    let fallback_path = BE::scratch_aligned(prod_dft) + BE::scratch_aligned(prod_col_big) + fallback_work;
+    let fallback_acc = module.glwe_bytes_of_from_infos(&crate::layouts::GLWELayout {
+        k: res.max_k(),
+        ..res.glwe_layout()
+    });
+    let fallback_path =
+        BE::scratch_aligned(prod_dft) + BE::scratch_aligned(prod_col_big) + BE::scratch_aligned(fallback_acc) + fallback_work;
     let lazy_final = BE::scratch_aligned(lazy_acc_big)
         + module
             .vec_znx_idft_apply_tmp_bytes()

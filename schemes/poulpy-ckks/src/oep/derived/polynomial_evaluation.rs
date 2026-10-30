@@ -3,7 +3,7 @@ use crate::api::{CKKSComplexPolynomialEvaluationOps, CKKSPolynomialEvaluationOps
 use poulpy_core::GLWENormalize;
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
-use poulpy_core::layouts::{GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta};
+use poulpy_core::layouts::{GLWEInfos, GLWELayout, GLWEPlaintextMeta, GLWEToBackendMut, GLWEToBackendRef, Rank, SetBSGSMeta};
 use poulpy_core::oep::GLWEMulConstImpl;
 
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
@@ -11,7 +11,7 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
     api::{BSGSPolynomialInfos, CKKSCopyOps, CKKSMulOps, CKKSPow2Ops, CKKSSubOps, PolynomialInputTransform},
-    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc},
+    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, ScratchArenaTakeCKKS},
     polynomial::ComplexBSGSPolynomial,
     power_basis::{PowerBasis, PowerBasisGen},
 };
@@ -55,11 +55,19 @@ where
         }
         PolynomialInputTransform::ChebyshevT2 | PolynomialInputTransform::ChebyshevT2TimesInput => {
             let k = crate::power_basis::square_ct_k(src)?;
-            let mut squared = module.ckks_ciphertext_alloc(src.base2k(), k.into());
-            module.ckks_square_into(&mut squared, src, tsk, scratch)?;
             let mut doubled = module.ckks_ciphertext_alloc(src.base2k(), k.into());
-            module.ckks_double_into(&mut doubled, &squared, scratch)?;
-            module.ckks_sub_one_assign(&mut doubled, scratch)?;
+            let squared_layout = GLWELayout {
+                n: module.n().into(),
+                base2k: src.base2k(),
+                k: k.into(),
+                rank: Rank(1),
+            };
+            let (mut squared, mut scratch) = scratch
+                .borrow()
+                .take_ckks_ciphertext_scratch(&squared_layout, GLWEPlaintextMeta::default());
+            module.ckks_square_into(&mut squared, src, tsk, &mut scratch)?;
+            module.ckks_double_into(&mut doubled, &squared, &mut scratch)?;
+            module.ckks_sub_one_assign(&mut doubled, &mut scratch)?;
             Ok(doubled)
         }
     }

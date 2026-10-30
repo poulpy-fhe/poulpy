@@ -18,7 +18,7 @@
 use crate::CKKSModuleInfos;
 use crate::layouts::CKKSPlaintextOwned;
 use anyhow::{Context, Result, ensure};
-use poulpy_core::layouts::{Base2K, GLWEInfos, LWEInfos};
+use poulpy_core::layouts::{Base2K, GLWE, GLWEInfos, LWEInfos};
 use poulpy_hal::layouts::{Backend, HostDataRef, Module, Standard, VecZnx};
 
 use crate::api::{CKKSEncodingOps, PaCoScalar};
@@ -26,8 +26,6 @@ use crate::{
     GLWEPlaintextMeta, Scale,
     layouts::{CKKSEncodingBuffer, CKKSModuleAlloc},
 };
-
-use crate::layouts::CKKSCiphertext;
 
 use std::fmt::Debug;
 
@@ -184,8 +182,9 @@ where
 /// generation, and the complete scheme definition of
 /// [`CKKSPaCoOps::ckks_paco_coeff_encodings`](crate::api::CKKSPaCoOps::ckks_paco_coeff_encodings).
 ///
-/// This scheme-defining reference routine reads a host-accessible ciphertext
-/// and explicitly stages its scalar blocks into backend buffers. The block FFT
+/// This scheme-defining reference routine reads the limbs of a host-accessible
+/// ciphertext, owned or a view such as a scratch carve, and explicitly stages its
+/// scalar blocks into backend buffers. The block FFT
 /// and final slot encoding dispatch through the module's
 /// [`CKKSEncodingOps`](crate::api::CKKSEncodingOps). Device backends bypass
 /// this host reference path and implement the fused, arena-backed operation in
@@ -196,7 +195,7 @@ where
 pub fn paco_coeff_encodings_host<BE, D, F>(
     module: &Module<BE>,
     base2k: Base2K,
-    ct: &CKKSCiphertext<D, BE::ZnxWord, Standard>,
+    ct: &GLWE<D, BE::ZnxWord>,
     plan: &PaCoPlan,
 ) -> Result<[CKKSPlaintextOwned<BE>; 4]>
 where
@@ -318,10 +317,7 @@ pub(crate) fn glwe_column_residues<D: HostDataRef>(
 /// base2k limbs and builds the four packed β_t slot vectors. Poulpy decrypts
 /// as `body + mask·s`, matching the paper's `m = ct0 + s·ct1`; no sign
 /// adjustment is needed.
-pub(crate) fn exhausted_ciphertext_residues<D: HostDataRef>(
-    ct: &CKKSCiphertext<D, i64, Standard>,
-    p: &PaCoPlan,
-) -> Result<(Vec<i64>, Vec<i64>)> {
+pub(crate) fn exhausted_ciphertext_residues<D: HostDataRef>(ct: &GLWE<D, i64>, p: &PaCoPlan) -> Result<(Vec<i64>, Vec<i64>)> {
     ensure!(
         ct.n().as_usize() == p.n(),
         "exhausted ciphertext degree is {}, expected PaCo degree {}",

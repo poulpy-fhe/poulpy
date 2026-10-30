@@ -707,8 +707,8 @@ where
         )
     }
 
-    fn svp_apply_dft_tmp_bytes(_module: &Module<Self>, _b_size: usize) -> usize {
-        0
+    fn svp_apply_dft_tmp_bytes(module: &Module<Self>, _b_size: usize) -> usize {
+        super::svp::svp_apply_dft_tmp_bytes(module.n())
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -722,7 +722,8 @@ where
         b_col: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let _ = scratch;
+        let bytes = super::svp::svp_apply_dft_tmp_bytes(res.n());
+        let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
         super::svp::svp_apply_dft::<_, NTT3x42IfmaRayonExecutor>(
             base_module(module),
             &mut base_dft_mut::<R>(res),
@@ -731,6 +732,7 @@ where
             a_col,
             b,
             b_col,
+            tmp,
         )
     }
 

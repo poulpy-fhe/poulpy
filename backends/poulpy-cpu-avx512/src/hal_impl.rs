@@ -499,8 +499,8 @@ where
         crate::ntt4x30_avx512::svp::svp_ppol_copy(res, res_col, a, a_col);
     }
 
-    fn svp_apply_dft_tmp_bytes(_module: &Module<Self>, _b_size: usize) -> usize {
-        0
+    fn svp_apply_dft_tmp_bytes(module: &Module<Self>, _b_size: usize) -> usize {
+        crate::ntt4x30_avx512::svp::svp_apply_dft_tmp_bytes(module.n())
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -514,8 +514,9 @@ where
         b_col: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let _ = scratch;
-        crate::ntt4x30_avx512::svp::svp_apply_dft(module, res, res_col, a, a_col, b, b_col);
+        let bytes = crate::ntt4x30_avx512::svp::svp_apply_dft_tmp_bytes(res.n());
+        let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
+        crate::ntt4x30_avx512::svp::svp_apply_dft(module, res, res_col, a, a_col, b, b_col, tmp);
     }
 
     fn svp_apply_dft_to_dft(
@@ -921,8 +922,8 @@ mod ifma_impl {
             crate::ntt3x42_ifma::svp::svp_ppol_copy(res, res_col, a, a_col);
         }
 
-        fn svp_apply_dft_tmp_bytes(_module: &Module<Self>, _b_size: usize) -> usize {
-            0
+        fn svp_apply_dft_tmp_bytes(module: &Module<Self>, _b_size: usize) -> usize {
+            crate::ntt3x42_ifma::svp::svp_apply_dft_tmp_bytes(module.n())
         }
 
         #[allow(clippy::too_many_arguments)]
@@ -936,9 +937,10 @@ mod ifma_impl {
             b_col: usize,
             scratch: &mut ScratchArena<'_, Self>,
         ) {
-            let _ = scratch;
+            let bytes = crate::ntt3x42_ifma::svp::svp_apply_dft_tmp_bytes(res.n());
+            let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
             crate::ntt3x42_ifma::svp::svp_apply_dft::<_, poulpy_hal::execution::SerialTaskExecutor>(
-                module, res, res_col, a, a_col, b, b_col,
+                module, res, res_col, a, a_col, b, b_col, tmp,
             );
         }
 

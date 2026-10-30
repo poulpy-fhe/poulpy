@@ -93,15 +93,9 @@ unsafe impl poulpy_ckks::oep::CKKSPaCoCoeffEncodingImpl for OverrideBackend {
         Src: GLWEToBackendRef<Self> + CKKSCtBounds,
     {
         PACO_ENCODING_CALLS.fetch_add(1, Relaxed);
-        with_marked_bytes(PACO_ENCODING_EXTRA.load(Relaxed), scratch, |rest| {
-            crate::ckks_paco::paco_coeff_encodings_staged::<Self, F, Src>(
-                module,
-                context.base2k(),
-                ciphertext,
-                context.plan(),
-                rest,
-            )
-            .map_err(poulpy_ckks::CKKSError::from)
+        with_marked_bytes(PACO_ENCODING_EXTRA.load(Relaxed), scratch, |_| {
+            crate::ckks_paco::paco_coeff_encodings_staged::<Self, F, Src>(module, context.base2k(), ciphertext, context.plan())
+                .map_err(poulpy_ckks::CKKSError::from)
         })
     }
 }

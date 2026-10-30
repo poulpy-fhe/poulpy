@@ -31,7 +31,7 @@ use crate::{
     api::GLWENormalize,
     gadget::{cnv_offset_to_limb_offset, prod_dft_size},
     layouts::{
-        Base2K, DiagonalOperand, DiagonalProd, GGLWEInfos, GLWE, GLWEInfos, GLWEToBackendMut, GetAutomorphismKey, LWEInfos,
+        Base2K, DiagonalOperand, DiagonalProd, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GetAutomorphismKey, LWEInfos,
         LinearTransformationPlan, ModuleCoreAlloc, Scale,
         prepared::{GLWEAutomorphismKeyPreparedBackendRef, PreparedDiagonal},
     },
@@ -432,8 +432,8 @@ pub(super) fn glwe_eval_giant_steps<BE, R, P, H, L: BabyStepOperand<BE>>(
     // column is IDFT'd through a one-column BIG scratch only where it is
     // normalized into the temporary SMALL ciphertext.
     let (mut prod_dft, scratch_phase) = scratch.take_vec_znx_dft_scratch(res.n().as_usize(), cols, prod_size);
-    let (mut prod_col_big, mut scratch_phase) = scratch_phase.take_vec_znx_big_scratch(res.n().as_usize(), 1, prod_size);
-    let mut fallback_acc: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(res);
+    let (mut prod_col_big, scratch_phase) = scratch_phase.take_vec_znx_big_scratch(res.n().as_usize(), 1, prod_size);
+    let (mut fallback_acc, mut scratch_phase) = scratch_phase.take_glwe_scratch(res);
     let mut res_initialized = false;
 
     for (g, giant_key) in giant_keys.iter().enumerate() {
@@ -445,7 +445,7 @@ pub(super) fn glwe_eval_giant_steps<BE, R, P, H, L: BabyStepOperand<BE>>(
                 g..g + 1,
                 &mut scratch_phase,
             );
-            let mut acc_backend = <GLWE<BE::OwnedBuf, BE::ZnxWord> as GLWEToBackendMut<BE>>::to_backend_mut(&mut fallback_acc);
+            let mut acc_backend = fallback_acc.to_backend_mut();
             let prod_dft_ref = poulpy_hal::layouts::vec_znx_dft_backend_ref_from_mut(&prod_dft_backend);
             for col in 0..cols {
                 module.vec_znx_idft_apply(&mut prod_col_big, 0, &prod_dft_ref, col, &mut scratch_phase.borrow());

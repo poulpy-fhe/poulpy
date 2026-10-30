@@ -29,8 +29,8 @@ use poulpy_hal::layouts::{HostStaged, Standard};
 use poulpy_hal::{
     api::{CnvPVecAlloc, CnvPVecBytesOf, Convolution},
     layouts::{
-        Backend, CnvPVecL, CnvPVecLToBackendMut, Data, GaloisElement, HostBytesBackend, HostDataMut, HostDataRef, Module,
-        PrepareHint, ScratchArena, ZnxView, ZnxViewMut, ZnxWord, ZnxZero,
+        Backend, CnvPVecL, CnvPVecLToBackendMut, Data, DataViewMut, GaloisElement, HostBytesBackend, HostDataMut, HostDataRef,
+        Module, PrepareHint, ScratchArena, ZnxView, ZnxViewMut, ZnxWord, ZnxZero,
     },
     source::Source,
 };
@@ -380,11 +380,12 @@ where
     sk_in_host.data_mut().zero();
     *sk_in_host.dist_mut() = Distribution::ZERO;
     if beta {
-        let src = sk_dense_host.data().at(0, 0).to_vec();
+        let mut src = sk_dense_host.data().at(0, 0).to_vec();
         let data = sk_in_host.data_mut();
         data.at_mut(0, 0).copy_from_slice(&src);
         data.at_mut(1, 0)[0] = 1;
         *sk_in_host.dist_mut() = Distribution::ENCAPSULATED("ship");
+        wipe(&mut src);
     }
     let mut sk_in = module.glwe_secret_alloc_from_infos(&sk_in_host);
     sk_in_host.transfer_into(&mut sk_in);
@@ -413,7 +414,25 @@ where
     };
     let mut key = module.glwe_switching_key_alloc_from_infos(&ksk_infos);
     module.glwe_switching_key_encrypt_sk(&mut key, &sk_in, &sk_out, source_xe, source_xa, scratch);
+    wipe_secret(&mut sk_in_host);
+    wipe_secret(&mut sk_out_host);
+    wipe_secret(&mut sk_in);
+    wipe_secret(&mut sk_out);
     Ok(HMuxRotKey { key, gal_el })
+}
+
+/// Zeroes `values` through volatile writes, which the compiler keeps although the buffer is dropped next.
+fn wipe<T: Copy + Default>(values: &mut [T]) {
+    for value in values.iter_mut() {
+        // SAFETY: `value` is a valid, aligned and exclusive reference.
+        unsafe { std::ptr::write_volatile(value, T::default()) };
+    }
+    std::sync::atomic::compiler_fence(std::sync::atomic::Ordering::SeqCst);
+}
+
+/// Zeroes the coefficients of a host-addressable secret before it is dropped.
+fn wipe_secret<D: HostDataMut, W: ZnxWord>(sk: &mut GLWESecret<D, W>) {
+    wipe(DataViewMut::data_mut(sk.data_mut()).as_mut());
 }
 
 // Generation is word-pinned, not by choice: `generate` stages its key material
@@ -489,90 +508,99 @@ impl<D: Data> ShipKeySet<D, i64> {
         sk_dense_host.transfer_into(&mut sk_dense);
         let mut sk_dense_prepared = module.glwe_secret_prepared_alloc_from_infos(&GLWESecretLayout { n, rank: Rank(1) });
         module.glwe_secret_prepare(&mut sk_dense_prepared, &sk_dense);
-
-        let mut index_keys = Vec::with_capacity(h);
-        for (slot, &(j, s_j)) in spec.support().iter().enumerate() {
-            let u = spec.offset(plan, slot);
-
-            let mut encrypt_masks = |omega2: bool| -> Result<Vec<CKKSCiphertextOwned<BE>>> {
-                ship_mask_slot_vectors::<F>(plan, slot, j, s_j, u, omega2)
-                    .into_iter()
-                    .map(|re| {
-                        let im = vec![F::zero(); m];
-                        let mut pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), base2k, kk.into());
-                        pt.set_meta_checked(mask_meta)?;
-                        module.ckks_encode_reim_into(&mut pt, &re, &im, scratch)?;
-                        let mut ct = module.ckks_ciphertext_alloc(base2k, kk.into());
-                        module.ckks_encrypt_sk(&mut ct, &pt, &sk_dense_prepared, source_xe, source_xa, scratch)?;
-                        Ok(ct)
-                    })
-                    .collect()
-            };
-            let masks = encrypt_masks(false)?;
-            let masks2 = if layout.complex { encrypt_masks(true)? } else { Vec::new() };
-
-            let mut mux_keys = Vec::with_capacity(bases.len());
-            let mut weight = theta;
-            for &b in &bases {
-                let digit = (u / weight) % b;
-                let mut group = Vec::with_capacity(b);
-                for d in 0..b {
-                    group.push(hmux_rot_key_encrypt_sk(
-                        module,
-                        host_module,
-                        sk_dense_host,
-                        d == digit,
-                        (d * weight) % m,
-                        kk,
-                        base2k,
-                        layout.mux_dsize * base2k.as_usize(),
-                        source_xe,
-                        source_xa,
-                        scratch,
-                    )?);
-                }
-                mux_keys.push(group);
-                weight *= b;
-            }
-            index_keys.push(ShipIndexKeys { mux_keys, masks, masks2 });
-        }
-
-        // Dense -> sparse encapsulation key at the bottom modulus: the only
-        // object encrypted under the sparse secret.
         let mut sk_sparse_host = host_module.glwe_secret_alloc_from_infos(&GLWESecretLayout { n, rank: Rank(1) });
-        spec.fill_glwe_secret(plan, &mut sk_sparse_host)?;
         let mut sk_sparse = module.glwe_secret_alloc_from_infos(&sk_sparse_host);
-        sk_sparse_host.transfer_into(&mut sk_sparse);
-        let d2s_infos = GLWESwitchingKeyLayout {
-            n,
-            base2k,
-            dnum: 1usize.into(),
-            k_aux: b2k.into(),
-            rank_in: Rank(1),
-            rank_out: Rank(1),
-            k_digit: b2k.into(),
-            k_offset: poulpy_core::layouts::TorusPrecision(0),
-        };
-        let mut dense_to_sparse = module.glwe_switching_key_alloc_from_infos(&d2s_infos);
-        module.glwe_switching_key_encrypt_sk(&mut dense_to_sparse, &sk_dense, &sk_sparse, source_xe, source_xa, scratch);
 
-        let tsk_infos = layout.tensor_key;
-        let mut tensor_key = module.glwe_tensor_key_alloc_from_infos(&tsk_infos);
-        module.glwe_tensor_key_encrypt_sk(&mut tensor_key, &sk_dense, source_xe, source_xa, scratch);
+        // Every secret copy is wiped after the keys, on every return.
+        let keys = (|| -> Result<Self> {
+            let mut index_keys = Vec::with_capacity(h);
+            for (slot, &(j, s_j)) in spec.support().iter().enumerate() {
+                let u = spec.offset(plan, slot);
 
-        let atk_infos = layout.conjugation_key;
-        let mut conjugation_key = module.glwe_automorphism_key_alloc_from_infos(&atk_infos);
-        module.glwe_automorphism_key_encrypt_sk(&mut conjugation_key, -1, &sk_dense, source_xe, source_xa, scratch);
+                let mut encrypt_masks = |omega2: bool| -> Result<Vec<CKKSCiphertextOwned<BE>>> {
+                    ship_mask_slot_vectors::<F>(plan, slot, j, s_j, u, omega2)
+                        .into_iter()
+                        .map(|re| {
+                            let im = vec![F::zero(); m];
+                            let mut pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), base2k, kk.into());
+                            pt.set_meta_checked(mask_meta)?;
+                            module.ckks_encode_reim_into(&mut pt, &re, &im, scratch)?;
+                            let mut ct = module.ckks_ciphertext_alloc(base2k, kk.into());
+                            module.ckks_encrypt_sk(&mut ct, &pt, &sk_dense_prepared, source_xe, source_xa, scratch)?;
+                            Ok(ct)
+                        })
+                        .collect()
+                };
+                let masks = encrypt_masks(false)?;
+                let masks2 = if layout.complex { encrypt_masks(true)? } else { Vec::new() };
 
-        Self::new(
-            plan,
-            base2k,
-            layout.complex,
-            index_keys,
-            dense_to_sparse,
-            tensor_key,
-            conjugation_key,
-        )
+                let mut mux_keys = Vec::with_capacity(bases.len());
+                let mut weight = theta;
+                for &b in &bases {
+                    let digit = (u / weight) % b;
+                    let mut group = Vec::with_capacity(b);
+                    for d in 0..b {
+                        group.push(hmux_rot_key_encrypt_sk(
+                            module,
+                            host_module,
+                            sk_dense_host,
+                            d == digit,
+                            (d * weight) % m,
+                            kk,
+                            base2k,
+                            layout.mux_dsize * base2k.as_usize(),
+                            source_xe,
+                            source_xa,
+                            scratch,
+                        )?);
+                    }
+                    mux_keys.push(group);
+                    weight *= b;
+                }
+                index_keys.push(ShipIndexKeys { mux_keys, masks, masks2 });
+            }
+
+            // Dense -> sparse encapsulation key at the bottom modulus: the only
+            // object encrypted under the sparse secret.
+            spec.fill_glwe_secret(plan, &mut sk_sparse_host)?;
+            sk_sparse_host.transfer_into(&mut sk_sparse);
+            let d2s_infos = GLWESwitchingKeyLayout {
+                n,
+                base2k,
+                dnum: 1usize.into(),
+                k_aux: b2k.into(),
+                rank_in: Rank(1),
+                rank_out: Rank(1),
+                k_digit: b2k.into(),
+                k_offset: poulpy_core::layouts::TorusPrecision(0),
+            };
+            let mut dense_to_sparse = module.glwe_switching_key_alloc_from_infos(&d2s_infos);
+            module.glwe_switching_key_encrypt_sk(&mut dense_to_sparse, &sk_dense, &sk_sparse, source_xe, source_xa, scratch);
+
+            let tsk_infos = layout.tensor_key;
+            let mut tensor_key = module.glwe_tensor_key_alloc_from_infos(&tsk_infos);
+            module.glwe_tensor_key_encrypt_sk(&mut tensor_key, &sk_dense, source_xe, source_xa, scratch);
+
+            let atk_infos = layout.conjugation_key;
+            let mut conjugation_key = module.glwe_automorphism_key_alloc_from_infos(&atk_infos);
+            module.glwe_automorphism_key_encrypt_sk(&mut conjugation_key, -1, &sk_dense, source_xe, source_xa, scratch);
+
+            Self::new(
+                plan,
+                base2k,
+                layout.complex,
+                index_keys,
+                dense_to_sparse,
+                tensor_key,
+                conjugation_key,
+            )
+        })();
+        wipe_secret(&mut sk_sparse_host);
+        wipe_secret(&mut sk_sparse);
+        wipe_secret(&mut sk_dense);
+        // The prepared secret's buffer is opaque: preparing the wiped secret overwrites it.
+        module.glwe_secret_prepare(&mut sk_dense_prepared, &sk_dense);
+        keys
     }
 }
 

@@ -44,17 +44,18 @@ use poulpy_core::{
         BackendGLWESecret, Degree, GGLWEBackendRef, GGLWEInfos, GGLWELayout, GGLWEPreparedToBackendMut,
         GGLWEPreparedToBackendRef, GGLWEToBackendRef, GGLWEViewMut, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout,
         GLWEAutomorphismKeyPrepared, GLWECIEmbedKey, GLWECIEmbedKeyPrepared, GLWECIKeyPrepared, GLWECITraceKey,
-        GLWECITraceKeyPrepared, GLWEInfos, GLWESecretLayout, GLWESwitchingKey, GLWESwitchingKeyDegrees,
-        GLWESwitchingKeyDegreesMut, GLWESwitchingKeyLayout, GLWESwitchingKeyPrepared, GLWETensorKey, GLWETensorKeyLayout,
-        GLWETensorKeyPrepared, GetAutomorphismKey, GetGaloisElement, GetTensorKey, LWEInfos, ModuleCoreAlloc,
+        GLWECITraceKeyPrepared, GLWEInfos, GLWESecretBackendRef, GLWESecretToBackendRef, GLWESwitchingKey,
+        GLWESwitchingKeyDegrees, GLWESwitchingKeyDegreesMut, GLWESwitchingKeyLayout, GLWESwitchingKeyPrepared, GLWETensorKey,
+        GLWETensorKeyLayout, GLWETensorKeyPrepared, GetAutomorphismKey, GetGaloisElement, GetTensorKey, LWEInfos,
+        ModuleCoreAlloc,
         prepared::{GLWEAutomorphismKeyPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
     },
 };
 use poulpy_hal::{
     api::VecZnxAutomorphism,
     layouts::{
-        Backend, ConjugateInvariant, CopyToHost, CyclotomicOrder, Data, HostDataMut, HostDataRef, Module,
-        ScalarZnxAsVecZnxBackendRef, ScratchArena, Standard, ZnxWord, galois_element, scalar_znx_as_vec_znx_backend_mut_from_mut,
+        Backend, ConjugateInvariant, CopyToHost, CyclotomicOrder, Data, HostDataMut, HostDataRef, Module, ScratchArena, Standard,
+        ZnxWord, galois_element, scalar_znx_as_vec_znx_backend_mut_from_mut, scalar_znx_as_vec_znx_backend_ref_from_ref,
     },
     source::Source,
 };
@@ -523,9 +524,10 @@ impl<BE: Backend, F> BootstrappingContextPrepared<BE, F> {
     /// [`Distribution::ENCAPSULATED`], so it can neither back a public key nor
     /// be serialized.
     ///
-    /// `scratch` must be large enough for the key encrypt operations and, with
-    /// first-factor keys, a secret beside them: each rotated raise secret is
-    /// carved from it, and the region it took is wiped before returning.
+    /// `scratch` must be large enough for the key encrypt operations beside the
+    /// secrets carved from it, each wiped before returning: the ephemeral sparse
+    /// secret with encapsulation, and each rotated raise secret beside it with
+    /// first-factor keys.
     #[allow(clippy::too_many_arguments)]
     pub fn generate_keys(
         &self,
@@ -832,7 +834,7 @@ impl KeyRecipe {
 
         // First-factor keys: each diagonal's term is rotated with no key, which leaves
         // it under the rotated raise secret, then switched to the dense secret.
-        let first_factor = |sk_raise: &BackendGLWESecret<BE>,
+        let first_factor = |sk_raise: &GLWESecretBackendRef<'_, BE>,
                             source_xe: &mut Source,
                             source_xa: &mut Source,
                             scratch: &mut ScratchArena<'_, BE>| {
@@ -847,7 +849,7 @@ impl KeyRecipe {
                     *sk_rotated.dist_mut() = *sk_raise.dist();
                     for &rotation in first_factor_rotations {
                         {
-                            let sk = ScalarZnxAsVecZnxBackendRef::<BE>::as_vec_znx_backend(sk_raise.data());
+                            let sk = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(sk_raise.data());
                             let mut res = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(sk_rotated.data_mut());
                             for col in 0..rank.as_usize() {
                                 module.vec_znx_automorphism(galois_element(rotation, order), &mut res, col, &sk, col);
@@ -867,27 +869,46 @@ impl KeyRecipe {
         // Sparse-secret encapsulation key-switching keys.
         let encapsulation_keys = match (sparse_secret_hamming_weight, &layout.encapsulation) {
             (Some(hamming_weight), Some(encaps)) => {
-                let sk_layout = GLWESecretLayout {
-                    n: sk_dense.n(),
-                    rank: sk_dense.rank(),
-                };
-                let mut sk_sparse = module.glwe_secret_alloc_from_infos(&sk_layout);
-                module.glwe_secret_fill_ternary_hw(&mut sk_sparse, hamming_weight, source_xs);
-                *sk_sparse.dist_mut() = Distribution::ENCAPSULATED("sparse-encapsulation");
+                // The ephemeral secret is carved from scratch, which is wiped once its keys are encrypted.
+                let (n, rank) = (sk_dense.n(), sk_dense.rank());
+                let keys = {
+                    let (mut sk_sparse, mut scratch) = scratch.borrow().take_glwe_secret_scratch(n, rank);
+                    module.glwe_secret_fill_ternary_hw(&mut sk_sparse, hamming_weight, source_xs);
+                    *sk_sparse.dist_mut() = Distribution::ENCAPSULATED("sparse-encapsulation");
 
-                let mut dense_to_sparse = module.glwe_switching_key_alloc_from_infos(&encaps.dense_to_sparse);
-                module.glwe_switching_key_encrypt_sk(&mut dense_to_sparse, sk_dense, &sk_sparse, source_xe, source_xa, scratch);
-                let sparse_to_dense = encaps.sparse_to_dense.map(|s2d_layout| {
-                    let mut key = module.glwe_switching_key_alloc_from_infos(&s2d_layout);
-                    module.glwe_switching_key_encrypt_sk(&mut key, &sk_sparse, sk_dense, source_xe, source_xa, scratch);
-                    key
-                });
-                // The raise runs under the sparse secret: so do the first factor's products.
-                first_factor_keys = first_factor(&sk_sparse, source_xe, source_xa, scratch);
-                Some((dense_to_sparse, sparse_to_dense))
+                    let mut dense_to_sparse = module.glwe_switching_key_alloc_from_infos(&encaps.dense_to_sparse);
+                    module.glwe_switching_key_encrypt_sk(
+                        &mut dense_to_sparse,
+                        sk_dense,
+                        &sk_sparse,
+                        source_xe,
+                        source_xa,
+                        &mut scratch,
+                    );
+                    let sparse_to_dense = encaps.sparse_to_dense.map(|s2d_layout| {
+                        let mut key = module.glwe_switching_key_alloc_from_infos(&s2d_layout);
+                        module.glwe_switching_key_encrypt_sk(&mut key, &sk_sparse, sk_dense, source_xe, source_xa, &mut scratch);
+                        key
+                    });
+                    // The raise runs under the sparse secret: so do the first factor's products.
+                    first_factor_keys = first_factor(
+                        &GLWESecretToBackendRef::<BE>::to_backend_ref(&sk_sparse),
+                        source_xe,
+                        source_xa,
+                        &mut scratch,
+                    );
+                    (dense_to_sparse, sparse_to_dense)
+                };
+                scratch.wipe(BE::bytes_of_scalar_znx(n.as_usize(), rank.as_usize()));
+                Some(keys)
             }
             (None, None) => {
-                first_factor_keys = first_factor(sk_dense, source_xe, source_xa, scratch);
+                first_factor_keys = first_factor(
+                    &GLWESecretToBackendRef::<BE>::to_backend_ref(sk_dense),
+                    source_xe,
+                    source_xa,
+                    scratch,
+                );
                 None
             }
             _ => unreachable!("recipe/layout encapsulation mismatch validated above"),

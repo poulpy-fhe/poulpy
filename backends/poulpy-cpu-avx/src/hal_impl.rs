@@ -495,8 +495,8 @@ where
         super::ntt4x30::svp::svp_ppol_copy(res, res_col, a, a_col);
     }
 
-    fn svp_apply_dft_tmp_bytes(_module: &Module<Self>, _b_size: usize) -> usize {
-        0
+    fn svp_apply_dft_tmp_bytes(module: &Module<Self>, _b_size: usize) -> usize {
+        super::ntt4x30::svp::svp_apply_dft_tmp_bytes(module.n())
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -510,8 +510,9 @@ where
         b_col: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let _ = scratch;
-        super::ntt4x30::svp::svp_apply_dft(module, res, res_col, a, a_col, b, b_col);
+        let bytes = super::ntt4x30::svp::svp_apply_dft_tmp_bytes(res.n());
+        let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
+        super::ntt4x30::svp::svp_apply_dft(module, res, res_col, a, a_col, b, b_col, tmp);
     }
 
     fn svp_apply_dft_to_dft(
