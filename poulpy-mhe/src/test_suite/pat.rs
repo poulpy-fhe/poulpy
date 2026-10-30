@@ -24,8 +24,9 @@ use super::fixtures::{
     ideal_secret, party_messages, party_secrets, secret_sum,
 };
 use crate::{
-    api::{GGLWEPatCompressedOps, GGLWEPatOps, GLWEPatCompressedOps, GLWEPublicKeyMHEProtocol},
-    layouts::MHEModuleAlloc,
+    MHEGGLWEPatCompressedAlloc, MHEGLWEPatCompressedAlloc,
+    api::{MHEGGLWEPatCompressedOps, MHEGGLWEPatOps, MHEGLWEPatCompressedOps, MHEGLWEPublicKeyProtocol},
+    layouts::MHEGGLWEPatAlloc,
 };
 
 /// Bound on the log2 noise of the sum of `PARTIES` fresh encryptions at precision `k`.
@@ -33,13 +34,13 @@ pub(crate) fn aggregate_noise_bound(k: usize) -> f64 {
     (DEFAULT_SIGMA_XE * (PARTIES as f64).sqrt()).log2() - k as f64 + 0.5
 }
 
-pub fn test_glwe_pat_compressed_ops<BE>(module: &Module<BE>)
+pub fn test_mhe_glwe_pat_compressed_ops<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: MHEModuleAlloc<BE>
-        + GLWEPatCompressedOps<BE>
+    Module<BE>: MHEGLWEPatCompressedAlloc<BE>
+        + MHEGLWEPatCompressedOps<BE>
         + GLWESecretSampling<BE>
         + GLWESecretPreparedFactory<BE>
         + VecZnxAddScalarAssign<BE>
@@ -91,14 +92,14 @@ where
             .max(module.glwe_noise_tmp_bytes(&layout)),
     );
 
-    let mut acc = module.glwe_pat_compressed_alloc_from_infos(&layout);
-    let mut share = module.glwe_pat_compressed_alloc_from_infos(&layout);
+    let mut acc = module.mhe_glwe_pat_compressed_alloc_from_infos(&layout);
+    let mut share = module.mhe_glwe_pat_compressed_alloc_from_infos(&layout);
     for (i, (_, sk)) in parties.iter().enumerate() {
         let dst = if i == 0 { &mut acc } else { &mut share };
         let mut source_xe = Source::new([10 + i as u8; 32]);
         module.glwe_compressed_encrypt_sk(dst, &pts[i], sk, SEEDS[0], &mut source_xe, &mut scratch.borrow());
         if i > 0 {
-            module.glwe_pat_compressed_aggregate_assign(&mut acc, &share);
+            module.mhe_glwe_pat_compressed_aggregate_assign(&mut acc, &share);
         }
     }
 
@@ -114,18 +115,18 @@ where
         )),
     );
     super::fixtures::assert_panics_with("invalid aggregation: secret distributions differ", || {
-        module.glwe_pat_compressed_aggregate_assign(&mut acc, &mismatched);
+        module.mhe_glwe_pat_compressed_aggregate_assign(&mut acc, &mismatched);
     });
     assert!(acc == before);
 
     let mut res: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
-    let finalize_bytes = module.glwe_pat_compressed_finalize_tmp_bytes();
+    let finalize_bytes = module.mhe_glwe_pat_compressed_finalize_tmp_bytes();
     let before = res.clone();
     assert_short_scratch_panics::<BE>(finalize_bytes, "invalid finalization: insufficient scratch", |s| {
-        module.glwe_pat_compressed_finalize(&mut res, &acc, s)
+        module.mhe_glwe_pat_compressed_finalize(&mut res, &acc, s)
     });
     assert!(res == before);
-    with_scratch::<BE, _>(finalize_bytes, |s| module.glwe_pat_compressed_finalize(&mut res, &acc, s));
+    with_scratch::<BE, _>(finalize_bytes, |s| module.mhe_glwe_pat_compressed_finalize(&mut res, &acc, s));
     super::fixtures::assert_collective_metadata(&res, PARTIES);
     assert!(res.is_canonical());
     let noise: f64 = module
@@ -135,13 +136,13 @@ where
     assert!(noise <= aggregate_noise_bound(K.as_usize()), "noise {noise} above bound");
 }
 
-pub fn test_gglwe_pat_compressed_ops<BE>(module: &Module<BE>)
+pub fn test_mhe_gglwe_pat_compressed_ops<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: MHEModuleAlloc<BE>
-        + GGLWEPatCompressedOps<BE>
+    Module<BE>: MHEGGLWEPatCompressedAlloc<BE>
+        + MHEGGLWEPatCompressedOps<BE>
         + GLWESecretSampling<BE>
         + GLWESecretPreparedFactory<BE>
         + VecZnxAddScalarAssign<BE>
@@ -161,39 +162,41 @@ where
             .max(module.gglwe_noise_tmp_bytes(&layout)),
     );
 
-    let mut acc = module.gglwe_pat_compressed_alloc_from_infos(&layout);
-    let mut share = module.gglwe_pat_compressed_alloc_from_infos(&layout);
+    let mut acc = module.mhe_gglwe_pat_compressed_alloc_from_infos(&layout);
+    let mut share = module.mhe_gglwe_pat_compressed_alloc_from_infos(&layout);
     for (i, (_, sk)) in parties.iter().enumerate() {
         let dst = if i == 0 { &mut acc } else { &mut share };
         let mut source_xe = Source::new([10 + i as u8; 32]);
         module.gglwe_compressed_encrypt_sk(dst, messages[i].0.data(), sk, SEEDS[0], &mut source_xe, &mut scratch.borrow());
         if i > 0 {
-            module.gglwe_pat_compressed_aggregate_assign(&mut acc, &share);
+            module.mhe_gglwe_pat_compressed_aggregate_assign(&mut acc, &share);
         }
     }
 
     let mut res: GGLWE<AlignedBuf, i64> = module.gglwe_alloc_from_infos(&layout);
-    let finalize_bytes = module.gglwe_pat_compressed_finalize_tmp_bytes();
+    let finalize_bytes = module.mhe_gglwe_pat_compressed_finalize_tmp_bytes();
     let before = res.clone();
     assert_short_scratch_panics::<BE>(finalize_bytes, "invalid finalization: insufficient scratch", |s| {
-        module.gglwe_pat_compressed_finalize(&mut res, &acc, s)
+        module.mhe_gglwe_pat_compressed_finalize(&mut res, &acc, s)
     });
     assert!(res == before);
-    with_scratch::<BE, _>(finalize_bytes, |s| module.gglwe_pat_compressed_finalize(&mut res, &acc, s));
+    with_scratch::<BE, _>(finalize_bytes, |s| {
+        module.mhe_gglwe_pat_compressed_finalize(&mut res, &acc, s)
+    });
     super::fixtures::assert_collective_metadata(&res, PARTIES);
     assert_gglwe_noise(module, &res, &pt_want, &sk_ideal, &mut scratch);
 }
 
 /// Unseeded shares of public-key encryptions under the collective key: the
 /// aggregate encrypts the sum of the plaintexts under the ideal secret.
-pub fn test_gglwe_pat_ops<BE>(module: &Module<BE>)
+pub fn test_mhe_gglwe_pat_ops<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: MHEModuleAlloc<BE>
-        + GGLWEPatOps<BE>
-        + GLWEPublicKeyMHEProtocol<BE>
+    Module<BE>: MHEGGLWEPatAlloc<BE>
+        + MHEGGLWEPatOps<BE>
+        + MHEGLWEPublicKeyProtocol<BE>
         + GLWEPublicKeyPreparedFactory<BE>
         + GLWESecretSampling<BE>
         + GLWESecretPreparedFactory<BE>
@@ -232,8 +235,8 @@ where
     let mut pts_want: Vec<GLWEPlaintext<AlignedBuf, i64>> = (0..dnum * rank_in)
         .map(|_| module.glwe_plaintext_alloc_from_infos(&pt_layout))
         .collect();
-    let mut acc = module.gglwe_pat_alloc_from_infos(&layout);
-    let mut share = module.gglwe_pat_alloc_from_infos(&layout);
+    let mut acc = module.mhe_gglwe_pat_alloc_from_infos(&layout);
+    let mut share = module.mhe_gglwe_pat_alloc_from_infos(&layout);
     for i in 0..PARTIES {
         let dst = if i == 0 { &mut acc } else { &mut share };
         let mut source_xm = Source::new([30 + i as u8; 32]);
@@ -268,21 +271,21 @@ where
             // Backend borrows stand in for the owned PATs. A mutable borrow
             // carries no tag, so the owner is stamped afterwards.
             let metadata = crate::metadata::aggregate_common_key_metadata(acc.noise(), share.noise(), module.n());
-            module.gglwe_pat_aggregate_assign(&mut acc.to_backend_mut(), &share.to_backend_ref());
+            module.mhe_gglwe_pat_aggregate_assign(&mut acc.to_backend_mut(), &share.to_backend_ref());
             GGLWEToBackendMut::<BE>::set_noise(&mut acc, metadata);
         } else if i > 1 {
-            module.gglwe_pat_aggregate_assign(&mut acc, &share);
+            module.mhe_gglwe_pat_aggregate_assign(&mut acc, &share);
         }
     }
 
     let mut res: GGLWE<AlignedBuf, i64> = module.gglwe_alloc_from_infos(&layout);
-    let finalize_bytes = module.gglwe_pat_finalize_tmp_bytes();
+    let finalize_bytes = module.mhe_gglwe_pat_finalize_tmp_bytes();
     let before = res.clone();
     assert_short_scratch_panics::<BE>(finalize_bytes, "invalid finalization: insufficient scratch", |s| {
-        module.gglwe_pat_finalize(&mut res, &acc, s)
+        module.mhe_gglwe_pat_finalize(&mut res, &acc, s)
     });
     assert!(res == before);
-    with_scratch::<BE, _>(finalize_bytes, |s| module.gglwe_pat_finalize(&mut res, &acc, s));
+    with_scratch::<BE, _>(finalize_bytes, |s| module.mhe_gglwe_pat_finalize(&mut res, &acc, s));
     super::fixtures::assert_collective_metadata(&res, PARTIES);
     // The public key test variance, times PARTIES independent encryptions.
     let n = module.n() as f64;
@@ -305,64 +308,64 @@ where
 }
 
 /// Aggregating shares drawn under different seeds panics.
-pub fn test_glwe_pat_compressed_aggregate_assign_rejects_seed_mismatch<BE>(module: &Module<BE>)
+pub fn test_mhe_glwe_pat_compressed_aggregate_assign_rejects_seed_mismatch<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: MHEModuleAlloc<BE> + GLWEPatCompressedOps<BE>,
+    Module<BE>: MHEGLWEPatCompressedAlloc<BE> + MHEGLWEPatCompressedOps<BE>,
 {
-    let mut a = module.glwe_pat_compressed_alloc(BASE2K, K, RANK);
-    let mut b = module.glwe_pat_compressed_alloc(BASE2K, K, RANK);
+    let mut a = module.mhe_glwe_pat_compressed_alloc(BASE2K, K, RANK);
+    let mut b = module.mhe_glwe_pat_compressed_alloc(BASE2K, K, RANK);
     *a.seed_mut() = SEEDS[0];
     *b.seed_mut() = SEEDS[1];
     let before = a.clone();
     assert_panics_with("invalid aggregation: seeds differ", || {
-        module.glwe_pat_compressed_aggregate_assign(&mut a, &b);
+        module.mhe_glwe_pat_compressed_aggregate_assign(&mut a, &b);
     });
     assert!(a == before);
 }
 
 /// Aggregating GGLWE shares drawn under different seeds panics.
-pub fn test_gglwe_pat_compressed_aggregate_assign_rejects_seed_mismatch<BE>(module: &Module<BE>)
+pub fn test_mhe_gglwe_pat_compressed_aggregate_assign_rejects_seed_mismatch<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: MHEModuleAlloc<BE> + GGLWEPatCompressedOps<BE>,
+    Module<BE>: MHEGGLWEPatCompressedAlloc<BE> + MHEGGLWEPatCompressedOps<BE>,
 {
     let layout = gglwe_layout(module);
-    let mut a = module.gglwe_pat_compressed_alloc_from_infos(&layout);
-    let mut b = module.gglwe_pat_compressed_alloc_from_infos(&layout);
+    let mut a = module.mhe_gglwe_pat_compressed_alloc_from_infos(&layout);
+    let mut b = module.mhe_gglwe_pat_compressed_alloc_from_infos(&layout);
     b.seed_mut()[0] = SEEDS[1];
     let before = a.clone();
     assert_panics_with("invalid aggregation: seeds differ", || {
-        module.gglwe_pat_compressed_aggregate_assign(&mut a, &b);
+        module.mhe_gglwe_pat_compressed_aggregate_assign(&mut a, &b);
     });
     assert!(a == before);
 }
 
 /// Aggregating PATs of different layouts panics.
-pub fn test_glwe_pat_compressed_aggregate_assign_rejects_layout_mismatch<BE>(module: &Module<BE>)
+pub fn test_mhe_glwe_pat_compressed_aggregate_assign_rejects_layout_mismatch<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: MHEModuleAlloc<BE> + GLWEPatCompressedOps<BE>,
+    Module<BE>: MHEGLWEPatCompressedAlloc<BE> + MHEGLWEPatCompressedOps<BE>,
 {
-    let mut a = module.glwe_pat_compressed_alloc(BASE2K, K, RANK);
-    let b = module.glwe_pat_compressed_alloc(BASE2K, TorusPrecision(K.0 + BASE2K.0), RANK);
+    let mut a = module.mhe_glwe_pat_compressed_alloc(BASE2K, K, RANK);
+    let b = module.mhe_glwe_pat_compressed_alloc(BASE2K, TorusPrecision(K.0 + BASE2K.0), RANK);
     let before = a.clone();
     assert_panics_with("invalid aggregation: layouts differ", || {
-        module.glwe_pat_compressed_aggregate_assign(&mut a, &b);
+        module.mhe_glwe_pat_compressed_aggregate_assign(&mut a, &b);
     });
     assert!(a == before);
 }
 
 /// Finalizing a PAT into a target of a different layout panics.
-pub fn test_glwe_pat_compressed_finalize_rejects_layout_mismatch<BE>(module: &Module<BE>)
+pub fn test_mhe_glwe_pat_compressed_finalize_rejects_layout_mismatch<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: MHEModuleAlloc<BE> + GLWEPatCompressedOps<BE>,
+    Module<BE>: MHEGLWEPatCompressedAlloc<BE> + MHEGLWEPatCompressedOps<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
-    let pat = module.glwe_pat_compressed_alloc(BASE2K, K, RANK);
+    let pat = module.mhe_glwe_pat_compressed_alloc(BASE2K, K, RANK);
     let mut res: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&GLWELayout {
         n: module.n().into(),
         base2k: BASE2K,
@@ -371,8 +374,8 @@ where
     });
     let before = res.clone();
     assert_panics_with("invalid finalization: layouts differ", || {
-        with_scratch::<BE, _>(module.glwe_pat_compressed_finalize_tmp_bytes(), |s| {
-            module.glwe_pat_compressed_finalize(&mut res, &pat, s)
+        with_scratch::<BE, _>(module.mhe_glwe_pat_compressed_finalize_tmp_bytes(), |s| {
+            module.mhe_glwe_pat_compressed_finalize(&mut res, &pat, s)
         });
     });
     assert!(res == before);

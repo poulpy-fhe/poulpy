@@ -14,8 +14,8 @@ use super::{
     snapshot_source,
 };
 use crate::{
-    api::{GLWEPublicKeyMHEProtocol, GLWETensorKeyMHEProtocol},
-    layouts::MHEModuleAlloc,
+    api::{MHEGLWEPublicKeyProtocol, MHEGLWETensorKeyProtocol},
+    layouts::MHEGLWETensorKeyShareAlloc,
     test_suite::{
         fixtures::{BASE2K, DNUM, DSIZE, RANK, glwe_layout_at},
         tensor_key::tensor_key_layout,
@@ -29,13 +29,12 @@ pub fn test_glwe_tensor_key_parity<BR, BT>(module_ref: &Module<BR>, module_test:
 where
     BR: ReferenceBackend,
     BT: ParityBackend,
-    Module<BR>: MHEModuleAlloc<BR>
-        + GLWETensorKeyMHEProtocol<BR>
-        + GLWEPublicKeyMHEProtocol<BR>
+    Module<BR>: MHEGLWETensorKeyProtocol<BR>
+        + MHEGLWEPublicKeyProtocol<BR>
         + GLWESecretSampling<BR>
         + GLWESecretPreparedFactory<BR>
         + GLWEPublicKeyPreparedFactory<BR>,
-    Module<BT>: MHEModuleAlloc<BT> + GLWETensorKeyMHEProtocol<BT> + GLWEPublicKeyPreparedFactory<BT>,
+    Module<BT>: MHEGLWETensorKeyProtocol<BT> + GLWEPublicKeyPreparedFactory<BT>,
 {
     for (dnum, dsize) in [(DNUM, DSIZE), (Dnum(2), Dsize(2))] {
         let layout = tensor_key_layout(module_ref, dnum, dsize);
@@ -57,15 +56,15 @@ fn run<BE: ParityBackend>(
     pk: &GLWEPublicKey<BE::OwnedBuf, i64>,
 ) -> Vec<Snapshot>
 where
-    Module<BE>: MHEModuleAlloc<BE> + GLWETensorKeyMHEProtocol<BE> + GLWEPublicKeyPreparedFactory<BE>,
+    Module<BE>: MHEGLWETensorKeyShareAlloc<BE> + MHEGLWETensorKeyProtocol<BE> + GLWEPublicKeyPreparedFactory<BE>,
 {
     let mut pk_prepared = module.glwe_public_key_prepared_alloc_from_infos(pk);
     with_scratch::<BE, _>(module.glwe_public_key_prepare_tmp_bytes(pk), |scratch| {
         module.glwe_public_key_prepare(&mut pk_prepared, pk, scratch)
     });
     let mut out = Vec::new();
-    let mut acc = module.glwe_tensor_key_share_alloc_from_infos(layout);
-    let mut share = module.glwe_tensor_key_share_alloc_from_infos(layout);
+    let mut acc = module.mhe_glwe_tensor_key_share_alloc_from_infos(layout);
+    let mut share = module.mhe_glwe_tensor_key_share_alloc_from_infos(layout);
     for (i, sk) in secrets.iter().enumerate() {
         let dst = if i == 0 { &mut acc } else { &mut share };
         poison_gglwe::<BE, _>(&mut dst.key);

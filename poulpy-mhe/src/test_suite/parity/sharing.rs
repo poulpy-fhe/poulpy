@@ -11,8 +11,9 @@ use super::{
     prepare_secrets, snapshot_glwe, snapshot_glwe_compressed, snapshot_source,
 };
 use crate::{
-    api::{GLWEEncToShareMHEProtocol, GLWEShareToEncMHEProtocol},
-    layouts::MHEModuleAlloc,
+    MHEGLWEShareToEncShareAlloc,
+    api::{MHEGLWEEncToShareProtocol, MHEGLWEShareToEncProtocol},
+    layouts::MHEGLWEEncToShareShareAlloc,
     test_suite::fixtures::{BASE2K, K, K_OUT, PARTIES, RANK, SEEDS, bounded_integers, glwe_layout_at, integer_plaintext},
 };
 
@@ -22,12 +23,8 @@ pub fn test_glwe_enc_to_share_parity<BR, BT>(module_ref: &Module<BR>, module_tes
 where
     BR: ReferenceBackend,
     BT: ParityBackend,
-    Module<BR>: MHEModuleAlloc<BR>
-        + GLWEEncToShareMHEProtocol<BR>
-        + GLWESecretSampling<BR>
-        + GLWESecretPreparedFactory<BR>
-        + GLWEFill<BR>,
-    Module<BT>: MHEModuleAlloc<BT> + GLWEEncToShareMHEProtocol<BT> + GLWESecretPreparedFactory<BT>,
+    Module<BR>: MHEGLWEEncToShareProtocol<BR> + GLWESecretSampling<BR> + GLWESecretPreparedFactory<BR> + GLWEFill<BR>,
+    Module<BT>: MHEGLWEEncToShareProtocol<BT> + GLWESecretPreparedFactory<BT>,
 {
     let (secrets_ref, secrets_test) = fixture_secrets(module_ref, module_test, RANK, 100);
     for k in [K, TorusPrecision(3 * BASE2K.0)] {
@@ -46,15 +43,15 @@ fn run_enc_to_share<BE: ParityBackend>(
     secrets: &[GLWESecret<BE::OwnedBuf, i64>],
 ) -> Vec<Snapshot>
 where
-    Module<BE>: MHEModuleAlloc<BE> + GLWEEncToShareMHEProtocol<BE> + GLWESecretPreparedFactory<BE>,
+    Module<BE>: MHEGLWEEncToShareShareAlloc<BE> + MHEGLWEEncToShareProtocol<BE> + GLWESecretPreparedFactory<BE>,
 {
     let secrets = prepare_secrets(module, secrets);
     let flood = Noise::Gaussian { sigma: 1024.0 };
     let mut out = Vec::new();
     let mut masks: Vec<GLWEPlaintext<BE::OwnedBuf, i64>> =
         (0..PARTIES).map(|_| module.glwe_plaintext_alloc_from_infos(layout)).collect();
-    let mut acc = module.glwe_enc_to_share_share_alloc_from_infos(layout);
-    let mut public = module.glwe_enc_to_share_share_alloc_from_infos(layout);
+    let mut acc = module.mhe_glwe_enc_to_share_share_alloc_from_infos(layout);
+    let mut public = module.mhe_glwe_enc_to_share_share_alloc_from_infos(layout);
     for (i, (sk, mask)) in secrets.iter().zip(masks.iter_mut()).enumerate() {
         let dst = if i == 0 { &mut acc } else { &mut public };
         poison_glwe::<BE, _>(&mut dst.inner);
@@ -89,8 +86,8 @@ pub fn test_glwe_share_to_enc_parity<BR, BT>(module_ref: &Module<BR>, module_tes
 where
     BR: ReferenceBackend,
     BT: ParityBackend,
-    Module<BR>: MHEModuleAlloc<BR> + GLWEShareToEncMHEProtocol<BR> + GLWESecretSampling<BR> + GLWESecretPreparedFactory<BR>,
-    Module<BT>: MHEModuleAlloc<BT> + GLWEShareToEncMHEProtocol<BT> + GLWESecretPreparedFactory<BT>,
+    Module<BR>: MHEGLWEShareToEncProtocol<BR> + GLWESecretSampling<BR> + GLWESecretPreparedFactory<BR>,
+    Module<BT>: MHEGLWEShareToEncProtocol<BT> + GLWESecretPreparedFactory<BT>,
 {
     let in_layout = glwe_layout_at(module_ref, K);
     let out_layout = glwe_layout_at(module_ref, K_OUT);
@@ -117,12 +114,12 @@ fn run_share_to_enc<BE: ParityBackend>(
     secrets: &[GLWESecret<BE::OwnedBuf, i64>],
 ) -> Vec<Snapshot>
 where
-    Module<BE>: MHEModuleAlloc<BE> + GLWEShareToEncMHEProtocol<BE> + GLWESecretPreparedFactory<BE>,
+    Module<BE>: MHEGLWEShareToEncShareAlloc<BE> + MHEGLWEShareToEncProtocol<BE> + GLWESecretPreparedFactory<BE>,
 {
     let secrets = prepare_secrets(module, secrets);
     let mut out = Vec::new();
-    let mut acc = module.glwe_share_to_enc_share_alloc_from_infos(out_layout);
-    let mut share = module.glwe_share_to_enc_share_alloc_from_infos(out_layout);
+    let mut acc = module.mhe_glwe_share_to_enc_share_alloc_from_infos(out_layout);
+    let mut share = module.mhe_glwe_share_to_enc_share_alloc_from_infos(out_layout);
     for (i, (sk, secret)) in secrets.iter().zip(shares).enumerate() {
         let dst = if i == 0 { &mut acc } else { &mut share };
         poison_glwe_compressed::<BE, _>(&mut dst.inner);

@@ -9,8 +9,8 @@ use poulpy_hal::{
 
 use super::derived::evaluation_key as derived;
 use crate::{
-    layouts::{GLWEAutomorphismKeyShareOwned, GLWESwitchingKeyShareOwned},
-    oep::GGLWEPatCompressedImpl,
+    layouts::{MHEGLWEAutomorphismKeyShareOwned, MHEGLWESwitchingKeyShareOwned},
+    oep::MHEGGLWEPatCompressedImpl,
 };
 
 /// # Safety
@@ -19,15 +19,15 @@ use crate::{
 /// Share generation wipes that scratch before returning.
 /// The memory, layout, synchrony and aliasing rules of
 /// `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait GLWESwitchingKeyMHEProtocolImpl: GGLWEPatCompressedImpl {
+pub unsafe trait MHEGLWESwitchingKeyProtocolImpl: MHEGGLWEPatCompressedImpl {
     /// Upper bound on the scratch of `mhe_glwe_switching_key_share_gen`, as
-    /// `GLWESwitchingKeyMHEProtocolReference::mhe_glwe_switching_key_share_gen_tmp_bytes_reference`.
+    /// `MHEGLWESwitchingKeyProtocolReference::mhe_glwe_switching_key_share_gen_tmp_bytes_reference`.
     fn mhe_glwe_switching_key_share_gen_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GGLWEInfos;
 
     /// Reproduces
-    /// `GLWESwitchingKeyMHEProtocolReference::mhe_glwe_switching_key_share_gen_reference`:
+    /// `MHEGLWESwitchingKeyProtocolReference::mhe_glwe_switching_key_share_gen_reference`:
     /// the compressed GGLWE encryption of `sk_in` under `sk_out`, masks drawn
     /// from `seed`, errors from `source_xe`, recording the secret degrees in
     /// `res`.
@@ -37,7 +37,7 @@ pub unsafe trait GLWESwitchingKeyMHEProtocolImpl: GGLWEPatCompressedImpl {
     #[allow(clippy::too_many_arguments)]
     fn mhe_glwe_switching_key_share_gen<S1, S2>(
         module: &Module<Self>,
-        res: &mut GLWESwitchingKeyShareOwned<Self>,
+        res: &mut MHEGLWESwitchingKeyShareOwned<Self>,
         sk_in: &S1,
         sk_out: &S2,
         seed: [u8; 32],
@@ -51,15 +51,15 @@ pub unsafe trait GLWESwitchingKeyMHEProtocolImpl: GGLWEPatCompressedImpl {
     /// compressed PAT aggregation, panicking unless the secret degrees agree.
     fn mhe_glwe_switching_key_share_aggregate(
         module: &Module<Self>,
-        res: &mut GLWESwitchingKeyShareOwned<Self>,
-        a: &GLWESwitchingKeyShareOwned<Self>,
+        res: &mut MHEGLWESwitchingKeyShareOwned<Self>,
+        a: &MHEGLWESwitchingKeyShareOwned<Self>,
     ) {
         derived::mhe_glwe_switching_key_share_aggregate_derived(module, res, a)
     }
 
     /// Default body: the scratch of the compressed GGLWE PAT finalization.
     fn mhe_glwe_switching_key_share_finalize_tmp_bytes(module: &Module<Self>) -> usize {
-        Self::gglwe_pat_compressed_finalize_tmp_bytes(module)
+        Self::mhe_gglwe_pat_compressed_finalize_tmp_bytes(module)
     }
 
     /// Default body `mhe_glwe_switching_key_share_finalize_derived`: the
@@ -68,7 +68,7 @@ pub unsafe trait GLWESwitchingKeyMHEProtocolImpl: GGLWEPatCompressedImpl {
     fn mhe_glwe_switching_key_share_finalize<R>(
         module: &Module<Self>,
         res: &mut R,
-        share: &GLWESwitchingKeyShareOwned<Self>,
+        share: &MHEGLWESwitchingKeyShareOwned<Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         R: GGLWEToBackendMut<Self> + GGLWEInfos + GLWESwitchingKeyDegreesMut,
@@ -83,15 +83,15 @@ pub unsafe trait GLWESwitchingKeyMHEProtocolImpl: GGLWEPatCompressedImpl {
 /// Share generation wipes that scratch before returning.
 /// The memory, layout, synchrony and aliasing rules of
 /// `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait GLWEAutomorphismKeyMHEProtocolImpl: GGLWEPatCompressedImpl {
+pub unsafe trait MHEGLWEAutomorphismKeyProtocolImpl: MHEGGLWEPatCompressedImpl {
     /// Upper bound on the scratch of `mhe_glwe_automorphism_key_share_gen`, as
-    /// `GLWEAutomorphismKeyMHEProtocolReference::mhe_glwe_automorphism_key_share_gen_tmp_bytes_reference`.
+    /// `MHEGLWEAutomorphismKeyProtocolReference::mhe_glwe_automorphism_key_share_gen_tmp_bytes_reference`.
     fn mhe_glwe_automorphism_key_share_gen_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GGLWEInfos;
 
     /// Reproduces
-    /// `GLWEAutomorphismKeyMHEProtocolReference::mhe_glwe_automorphism_key_share_gen_reference`:
+    /// `MHEGLWEAutomorphismKeyProtocolReference::mhe_glwe_automorphism_key_share_gen_reference`:
     /// the compressed GGLWE encryption of the automorphism `p` of `sk` under
     /// `sk`, masks drawn from `seed`, errors from `source_xe`, recording `p` in
     /// `res`.
@@ -100,7 +100,7 @@ pub unsafe trait GLWEAutomorphismKeyMHEProtocolImpl: GGLWEPatCompressedImpl {
     #[allow(clippy::too_many_arguments)]
     fn mhe_glwe_automorphism_key_share_gen<S>(
         module: &Module<Self>,
-        res: &mut GLWEAutomorphismKeyShareOwned<Self>,
+        res: &mut MHEGLWEAutomorphismKeyShareOwned<Self>,
         p: i64,
         sk: &S,
         seed: [u8; 32],
@@ -113,15 +113,15 @@ pub unsafe trait GLWEAutomorphismKeyMHEProtocolImpl: GGLWEPatCompressedImpl {
     /// compressed PAT aggregation, panicking unless the Galois elements agree.
     fn mhe_glwe_automorphism_key_share_aggregate(
         module: &Module<Self>,
-        res: &mut GLWEAutomorphismKeyShareOwned<Self>,
-        a: &GLWEAutomorphismKeyShareOwned<Self>,
+        res: &mut MHEGLWEAutomorphismKeyShareOwned<Self>,
+        a: &MHEGLWEAutomorphismKeyShareOwned<Self>,
     ) {
         derived::mhe_glwe_automorphism_key_share_aggregate_derived(module, res, a)
     }
 
     /// Default body: the scratch of the compressed GGLWE PAT finalization.
     fn mhe_glwe_automorphism_key_share_finalize_tmp_bytes(module: &Module<Self>) -> usize {
-        Self::gglwe_pat_compressed_finalize_tmp_bytes(module)
+        Self::mhe_gglwe_pat_compressed_finalize_tmp_bytes(module)
     }
 
     /// Default body `mhe_glwe_automorphism_key_share_finalize_derived`: the
@@ -130,7 +130,7 @@ pub unsafe trait GLWEAutomorphismKeyMHEProtocolImpl: GGLWEPatCompressedImpl {
     fn mhe_glwe_automorphism_key_share_finalize<R>(
         module: &Module<Self>,
         res: &mut R,
-        share: &GLWEAutomorphismKeyShareOwned<Self>,
+        share: &MHEGLWEAutomorphismKeyShareOwned<Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         R: GGLWEToBackendMut<Self> + GGLWEInfos + SetGaloisElement,
@@ -142,19 +142,19 @@ pub unsafe trait GLWEAutomorphismKeyMHEProtocolImpl: GGLWEPatCompressedImpl {
 /// Selects the reference switching key share generation; aggregation and
 /// finalization keep their derived defaults.
 #[macro_export]
-macro_rules! impl_glwe_switching_key_mhe_protocol_reference_full {
+macro_rules! impl_mhe_glwe_switching_key_protocol_reference_full {
     ($be:ty) => {
-        unsafe impl $crate::oep::GLWESwitchingKeyMHEProtocolImpl for $be {
+        unsafe impl $crate::oep::MHEGLWESwitchingKeyProtocolImpl for $be {
             fn mhe_glwe_switching_key_share_gen_tmp_bytes<A>(module: &::poulpy_hal::layouts::Module<$be>, infos: &A) -> usize
             where
                 A: ::poulpy_core::layouts::GGLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWESwitchingKeyMHEProtocolReference<$be>>::mhe_glwe_switching_key_share_gen_tmp_bytes_reference(module, infos)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::MHEGLWESwitchingKeyProtocolReference<$be>>::mhe_glwe_switching_key_share_gen_tmp_bytes_reference(module, infos)
             }
 
             fn mhe_glwe_switching_key_share_gen<S1, S2>(
                 module: &::poulpy_hal::layouts::Module<$be>,
-                res: &mut $crate::layouts::GLWESwitchingKeyShareOwned<$be>,
+                res: &mut $crate::layouts::MHEGLWESwitchingKeyShareOwned<$be>,
                 sk_in: &S1,
                 sk_out: &S2,
                 seed: [u8; 32],
@@ -166,7 +166,7 @@ macro_rules! impl_glwe_switching_key_mhe_protocol_reference_full {
                     + ::poulpy_core::GetDistribution
                     + ::poulpy_core::layouts::GLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWESwitchingKeyMHEProtocolReference<$be>>::mhe_glwe_switching_key_share_gen_reference(module, res, sk_in, sk_out, seed, source_xe, scratch)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::MHEGLWESwitchingKeyProtocolReference<$be>>::mhe_glwe_switching_key_share_gen_reference(module, res, sk_in, sk_out, seed, source_xe, scratch)
             }
         }
     };
@@ -175,19 +175,19 @@ macro_rules! impl_glwe_switching_key_mhe_protocol_reference_full {
 /// Selects the reference automorphism key share generation; aggregation and
 /// finalization keep their derived defaults.
 #[macro_export]
-macro_rules! impl_glwe_automorphism_key_mhe_protocol_reference_full {
+macro_rules! impl_mhe_glwe_automorphism_key_protocol_reference_full {
     ($be:ty) => {
-        unsafe impl $crate::oep::GLWEAutomorphismKeyMHEProtocolImpl for $be {
+        unsafe impl $crate::oep::MHEGLWEAutomorphismKeyProtocolImpl for $be {
             fn mhe_glwe_automorphism_key_share_gen_tmp_bytes<A>(module: &::poulpy_hal::layouts::Module<$be>, infos: &A) -> usize
             where
                 A: ::poulpy_core::layouts::GGLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWEAutomorphismKeyMHEProtocolReference<$be>>::mhe_glwe_automorphism_key_share_gen_tmp_bytes_reference(module, infos)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::MHEGLWEAutomorphismKeyProtocolReference<$be>>::mhe_glwe_automorphism_key_share_gen_tmp_bytes_reference(module, infos)
             }
 
             fn mhe_glwe_automorphism_key_share_gen<S>(
                 module: &::poulpy_hal::layouts::Module<$be>,
-                res: &mut $crate::layouts::GLWEAutomorphismKeyShareOwned<$be>,
+                res: &mut $crate::layouts::MHEGLWEAutomorphismKeyShareOwned<$be>,
                 p: i64,
                 sk: &S,
                 seed: [u8; 32],
@@ -196,7 +196,7 @@ macro_rules! impl_glwe_automorphism_key_mhe_protocol_reference_full {
             ) where
                 S: ::poulpy_core::layouts::GLWESecretToBackendRef<$be> + ::poulpy_core::layouts::GLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWEAutomorphismKeyMHEProtocolReference<$be>>::mhe_glwe_automorphism_key_share_gen_reference(module, res, p, sk, seed, source_xe, scratch)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::MHEGLWEAutomorphismKeyProtocolReference<$be>>::mhe_glwe_automorphism_key_share_gen_reference(module, res, p, sk, seed, source_xe, scratch)
             }
         }
     };

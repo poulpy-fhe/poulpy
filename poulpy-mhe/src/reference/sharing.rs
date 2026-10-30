@@ -9,9 +9,9 @@ use poulpy_hal::{
     source::Source,
 };
 
-use crate::layouts::{GLWEEncToShareShareOwned, GLWEShareToEncShareOwned};
+use crate::layouts::{MHEGLWEEncToShareShareOwned, MHEGLWEShareToEncShareOwned};
 
-pub trait GLWEEncToShareMHEProtocolReference<BE: Backend> {
+pub trait MHEGLWEEncToShareProtocolReference<BE: Backend> {
     fn mhe_glwe_enc_to_share_share_gen_tmp_bytes_reference<A>(&self, ct_infos: &A) -> usize
     where
         A: GLWEInfos;
@@ -19,7 +19,7 @@ pub trait GLWEEncToShareMHEProtocolReference<BE: Backend> {
     #[allow(clippy::too_many_arguments)]
     fn mhe_glwe_enc_to_share_share_gen_reference<P, C, S>(
         &self,
-        public: &mut GLWEEncToShareShareOwned<BE>,
+        public: &mut MHEGLWEEncToShareShareOwned<BE>,
         secret: &mut P,
         mask: &C,
         sk: &S,
@@ -34,8 +34,8 @@ pub trait GLWEEncToShareMHEProtocolReference<BE: Backend> {
 
     fn mhe_glwe_enc_to_share_share_aggregate_reference(
         &self,
-        res: &mut GLWEEncToShareShareOwned<BE>,
-        a: &GLWEEncToShareShareOwned<BE>,
+        res: &mut MHEGLWEEncToShareShareOwned<BE>,
+        a: &MHEGLWEEncToShareShareOwned<BE>,
     );
 
     fn mhe_glwe_enc_to_share_share_finalize_tmp_bytes_reference(&self) -> usize;
@@ -44,14 +44,14 @@ pub trait GLWEEncToShareMHEProtocolReference<BE: Backend> {
         &self,
         secret: &mut P,
         ct: &C,
-        public: &GLWEEncToShareShareOwned<BE>,
+        public: &MHEGLWEEncToShareShareOwned<BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         P: GLWEToBackendMut<BE> + GLWEInfos,
         C: GLWEToBackendRef<BE> + GLWEInfos;
 }
 
-impl<BE: Backend> GLWEEncToShareMHEProtocolReference<BE> for Module<BE>
+impl<BE: Backend> MHEGLWEEncToShareProtocolReference<BE> for Module<BE>
 where
     Self: GLWEMaskInnerProduct<BE>
         + GLWESub<BE>
@@ -74,7 +74,7 @@ where
 
     fn mhe_glwe_enc_to_share_share_gen_reference<P, C, S>(
         &self,
-        public: &mut GLWEEncToShareShareOwned<BE>,
+        public: &mut MHEGLWEEncToShareShareOwned<BE>,
         secret: &mut P,
         mask: &C,
         sk: &S,
@@ -140,8 +140,8 @@ where
 
     fn mhe_glwe_enc_to_share_share_aggregate_reference(
         &self,
-        res: &mut GLWEEncToShareShareOwned<BE>,
-        a: &GLWEEncToShareShareOwned<BE>,
+        res: &mut MHEGLWEEncToShareShareOwned<BE>,
+        a: &MHEGLWEEncToShareShareOwned<BE>,
     ) {
         assert!(res.glwe_layout() == a.glwe_layout(), "invalid aggregation: layouts differ");
         let metadata = crate::metadata::aggregate_metadata(res.noise(), a.noise());
@@ -157,7 +157,7 @@ where
         &self,
         secret: &mut P,
         ct: &C,
-        public: &GLWEEncToShareShareOwned<BE>,
+        public: &MHEGLWEEncToShareShareOwned<BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         P: GLWEToBackendMut<BE> + GLWEInfos,
@@ -187,7 +187,7 @@ where
     }
 }
 
-pub trait GLWEShareToEncMHEProtocolReference<BE: Backend> {
+pub trait MHEGLWEShareToEncProtocolReference<BE: Backend> {
     fn mhe_glwe_share_to_enc_share_gen_tmp_bytes_reference<A, B>(&self, res_infos: &A, secret_infos: &B) -> usize
     where
         A: GLWEInfos,
@@ -196,7 +196,7 @@ pub trait GLWEShareToEncMHEProtocolReference<BE: Backend> {
     #[allow(clippy::too_many_arguments)]
     fn mhe_glwe_share_to_enc_share_gen_reference<P, S>(
         &self,
-        res: &mut GLWEShareToEncShareOwned<BE>,
+        res: &mut MHEGLWEShareToEncShareOwned<BE>,
         secret: &P,
         sk: &S,
         seed: [u8; 32],
@@ -207,7 +207,7 @@ pub trait GLWEShareToEncMHEProtocolReference<BE: Backend> {
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos;
 }
 
-impl<BE: Backend> GLWEShareToEncMHEProtocolReference<BE> for Module<BE>
+impl<BE: Backend> MHEGLWEShareToEncProtocolReference<BE> for Module<BE>
 where
     Self: GLWECopy<BE> + GLWECompressedEncryptSk<BE> + GLWEBytesOf<BE>,
 {
@@ -224,7 +224,7 @@ where
 
     fn mhe_glwe_share_to_enc_share_gen_reference<P, S>(
         &self,
-        res: &mut GLWEShareToEncShareOwned<BE>,
+        res: &mut MHEGLWEShareToEncShareOwned<BE>,
         secret: &P,
         sk: &S,
         seed: [u8; 32],

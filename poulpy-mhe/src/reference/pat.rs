@@ -14,25 +14,25 @@ use poulpy_hal::{
     layouts::{Backend, Module, ScratchArena},
 };
 
-pub trait GLWEPatCompressedReference<BE: Backend> {
-    fn glwe_pat_compressed_aggregate_assign_reference<R, A>(&self, res: &mut R, a: &A)
+pub trait MHEGLWEPatCompressedReference<BE: Backend> {
+    fn mhe_glwe_pat_compressed_aggregate_assign_reference<R, A>(&self, res: &mut R, a: &A)
     where
         R: GLWECompressedToBackendMut<BE> + GLWECompressedSeed + GLWEInfos,
         A: GLWECompressedToBackendRef<BE> + GLWECompressedSeed + GLWEInfos;
 
-    fn glwe_pat_compressed_finalize_tmp_bytes_reference(&self) -> usize;
+    fn mhe_glwe_pat_compressed_finalize_tmp_bytes_reference(&self) -> usize;
 
-    fn glwe_pat_compressed_finalize_reference<R, P>(&self, res: &mut R, pat: &P, scratch: &mut ScratchArena<'_, BE>)
+    fn mhe_glwe_pat_compressed_finalize_reference<R, P>(&self, res: &mut R, pat: &P, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         P: GLWECompressedToBackendRef<BE> + GLWECompressedSeed + GLWEInfos;
 }
 
-impl<BE: Backend> GLWEPatCompressedReference<BE> for Module<BE>
+impl<BE: Backend> MHEGLWEPatCompressedReference<BE> for Module<BE>
 where
     Self: VecZnxAddAssign<BE> + VecZnxNormalizeTmpBytes + VecZnxNormalize<BE> + GLWEFill<BE>,
 {
-    fn glwe_pat_compressed_aggregate_assign_reference<R, A>(&self, res: &mut R, a: &A)
+    fn mhe_glwe_pat_compressed_aggregate_assign_reference<R, A>(&self, res: &mut R, a: &A)
     where
         R: GLWECompressedToBackendMut<BE> + GLWECompressedSeed + GLWEInfos,
         A: GLWECompressedToBackendRef<BE> + GLWECompressedSeed + GLWEInfos,
@@ -47,18 +47,18 @@ where
         res.set_noise(metadata);
     }
 
-    fn glwe_pat_compressed_finalize_tmp_bytes_reference(&self) -> usize {
+    fn mhe_glwe_pat_compressed_finalize_tmp_bytes_reference(&self) -> usize {
         self.vec_znx_normalize_tmp_bytes()
     }
 
-    fn glwe_pat_compressed_finalize_reference<R, P>(&self, res: &mut R, pat: &P, scratch: &mut ScratchArena<'_, BE>)
+    fn mhe_glwe_pat_compressed_finalize_reference<R, P>(&self, res: &mut R, pat: &P, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         P: GLWECompressedToBackendRef<BE> + GLWECompressedSeed + GLWEInfos,
     {
         assert!(res.glwe_layout() == pat.glwe_layout(), "invalid finalization: layouts differ");
         assert!(
-            scratch.available() >= self.glwe_pat_compressed_finalize_tmp_bytes_reference(),
+            scratch.available() >= self.mhe_glwe_pat_compressed_finalize_tmp_bytes_reference(),
             "invalid finalization: insufficient scratch"
         );
         res.set_canonical(true);
@@ -74,25 +74,25 @@ where
     }
 }
 
-pub trait GGLWEPatCompressedReference<BE: Backend> {
-    fn gglwe_pat_compressed_aggregate_assign_reference<R, A>(&self, res: &mut R, a: &A)
+pub trait MHEGGLWEPatCompressedReference<BE: Backend> {
+    fn mhe_gglwe_pat_compressed_aggregate_assign_reference<R, A>(&self, res: &mut R, a: &A)
     where
         R: GGLWECompressedToBackendMut<BE> + GGLWECompressedSeed + GGLWEInfos,
         A: GGLWECompressedToBackendRef<BE> + GGLWECompressedSeed + GGLWEInfos;
 
-    fn gglwe_pat_compressed_finalize_tmp_bytes_reference(&self) -> usize;
+    fn mhe_gglwe_pat_compressed_finalize_tmp_bytes_reference(&self) -> usize;
 
-    fn gglwe_pat_compressed_finalize_reference<R, P>(&self, res: &mut R, pat: &P, scratch: &mut ScratchArena<'_, BE>)
+    fn mhe_gglwe_pat_compressed_finalize_reference<R, P>(&self, res: &mut R, pat: &P, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GGLWEToBackendMut<BE> + GGLWEInfos,
         P: GGLWECompressedToBackendRef<BE> + GGLWEInfos;
 }
 
-impl<BE: Backend> GGLWEPatCompressedReference<BE> for Module<BE>
+impl<BE: Backend> MHEGGLWEPatCompressedReference<BE> for Module<BE>
 where
     Self: MatZnxAddAssign<BE> + MatZnxNormalizeTmpBytes + MatZnxNormalizeAssign<BE> + GGLWEDecompress<BE>,
 {
-    fn gglwe_pat_compressed_aggregate_assign_reference<R, A>(&self, res: &mut R, a: &A)
+    fn mhe_gglwe_pat_compressed_aggregate_assign_reference<R, A>(&self, res: &mut R, a: &A)
     where
         R: GGLWECompressedToBackendMut<BE> + GGLWECompressedSeed + GGLWEInfos,
         A: GGLWECompressedToBackendRef<BE> + GGLWECompressedSeed + GGLWEInfos,
@@ -107,11 +107,11 @@ where
         res.set_noise(metadata);
     }
 
-    fn gglwe_pat_compressed_finalize_tmp_bytes_reference(&self) -> usize {
+    fn mhe_gglwe_pat_compressed_finalize_tmp_bytes_reference(&self) -> usize {
         self.mat_znx_normalize_tmp_bytes()
     }
 
-    fn gglwe_pat_compressed_finalize_reference<R, P>(&self, res: &mut R, pat: &P, scratch: &mut ScratchArena<'_, BE>)
+    fn mhe_gglwe_pat_compressed_finalize_reference<R, P>(&self, res: &mut R, pat: &P, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GGLWEToBackendMut<BE> + GGLWEInfos,
         P: GGLWECompressedToBackendRef<BE> + GGLWEInfos,
@@ -121,7 +121,7 @@ where
             "invalid finalization: layouts differ"
         );
         assert!(
-            scratch.available() >= self.gglwe_pat_compressed_finalize_tmp_bytes_reference(),
+            scratch.available() >= self.mhe_gglwe_pat_compressed_finalize_tmp_bytes_reference(),
             "invalid finalization: insufficient scratch"
         );
         self.gglwe_decompress(res, pat);
@@ -134,25 +134,25 @@ where
     }
 }
 
-pub trait GGLWEPatReference<BE: Backend> {
-    fn gglwe_pat_aggregate_assign_reference<R, A>(&self, res: &mut R, a: &A)
+pub trait MHEGGLWEPatReference<BE: Backend> {
+    fn mhe_gglwe_pat_aggregate_assign_reference<R, A>(&self, res: &mut R, a: &A)
     where
         R: GGLWEToBackendMut<BE> + GGLWEInfos,
         A: GGLWEToBackendRef<BE> + GGLWEInfos;
 
-    fn gglwe_pat_finalize_tmp_bytes_reference(&self) -> usize;
+    fn mhe_gglwe_pat_finalize_tmp_bytes_reference(&self) -> usize;
 
-    fn gglwe_pat_finalize_reference<R, P>(&self, res: &mut R, pat: &P, scratch: &mut ScratchArena<'_, BE>)
+    fn mhe_gglwe_pat_finalize_reference<R, P>(&self, res: &mut R, pat: &P, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GGLWEToBackendMut<BE> + GGLWEInfos,
         P: GGLWEToBackendRef<BE> + GGLWEInfos;
 }
 
-impl<BE: Backend> GGLWEPatReference<BE> for Module<BE>
+impl<BE: Backend> MHEGGLWEPatReference<BE> for Module<BE>
 where
     Self: MatZnxAddAssign<BE> + MatZnxNormalize<BE> + MatZnxNormalizeTmpBytes,
 {
-    fn gglwe_pat_aggregate_assign_reference<R, A>(&self, res: &mut R, a: &A)
+    fn mhe_gglwe_pat_aggregate_assign_reference<R, A>(&self, res: &mut R, a: &A)
     where
         R: GGLWEToBackendMut<BE> + GGLWEInfos,
         A: GGLWEToBackendRef<BE> + GGLWEInfos,
@@ -166,11 +166,11 @@ where
         res.set_noise(metadata);
     }
 
-    fn gglwe_pat_finalize_tmp_bytes_reference(&self) -> usize {
+    fn mhe_gglwe_pat_finalize_tmp_bytes_reference(&self) -> usize {
         self.mat_znx_normalize_tmp_bytes()
     }
 
-    fn gglwe_pat_finalize_reference<R, P>(&self, res: &mut R, pat: &P, scratch: &mut ScratchArena<'_, BE>)
+    fn mhe_gglwe_pat_finalize_reference<R, P>(&self, res: &mut R, pat: &P, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GGLWEToBackendMut<BE> + GGLWEInfos,
         P: GGLWEToBackendRef<BE> + GGLWEInfos,
@@ -180,7 +180,7 @@ where
             "invalid finalization: layouts differ"
         );
         assert!(
-            scratch.available() >= self.gglwe_pat_finalize_tmp_bytes_reference(),
+            scratch.available() >= self.mhe_gglwe_pat_finalize_tmp_bytes_reference(),
             "invalid finalization: insufficient scratch"
         );
         let (res_base2k, res_k, pat_base2k): (usize, usize, usize) = (res.base2k().into(), res.k().into(), pat.base2k().into());

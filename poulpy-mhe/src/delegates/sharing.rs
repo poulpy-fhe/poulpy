@@ -8,12 +8,12 @@ use poulpy_hal::{
 };
 
 use crate::{
-    api::{GLWEEncToShareMHEProtocol, GLWEShareToEncMHEProtocol},
-    layouts::{GLWEEncToShareShareOwned, GLWEShareToEncShareOwned},
-    oep::{GLWEEncToShareMHEProtocolImpl, GLWEShareToEncMHEProtocolImpl},
+    api::{MHEGLWEEncToShareProtocol, MHEGLWEShareToEncProtocol},
+    layouts::{MHEGLWEEncToShareShareOwned, MHEGLWEShareToEncShareOwned},
+    oep::{MHEGLWEEncToShareProtocolImpl, MHEGLWEShareToEncProtocolImpl},
 };
 
-impl<BE: Backend + GLWEEncToShareMHEProtocolImpl> GLWEEncToShareMHEProtocol<BE> for Module<BE> {
+impl<BE: Backend + MHEGLWEEncToShareProtocolImpl> MHEGLWEEncToShareProtocol<BE> for Module<BE> {
     fn mhe_glwe_enc_to_share_share_gen_tmp_bytes<A>(&self, ct_infos: &A) -> usize
     where
         A: GLWEInfos,
@@ -23,7 +23,7 @@ impl<BE: Backend + GLWEEncToShareMHEProtocolImpl> GLWEEncToShareMHEProtocol<BE> 
 
     fn mhe_glwe_enc_to_share_share_gen<P, C, S>(
         &self,
-        public: &mut GLWEEncToShareShareOwned<BE>,
+        public: &mut MHEGLWEEncToShareShareOwned<BE>,
         secret: &mut P,
         mask: &C,
         sk: &S,
@@ -39,7 +39,11 @@ impl<BE: Backend + GLWEEncToShareMHEProtocolImpl> GLWEEncToShareMHEProtocol<BE> 
         BE::mhe_glwe_enc_to_share_share_gen(self, public, secret, mask, sk, flood, source_xm, source_smudge, scratch)
     }
 
-    fn mhe_glwe_enc_to_share_share_aggregate(&self, res: &mut GLWEEncToShareShareOwned<BE>, a: &GLWEEncToShareShareOwned<BE>) {
+    fn mhe_glwe_enc_to_share_share_aggregate(
+        &self,
+        res: &mut MHEGLWEEncToShareShareOwned<BE>,
+        a: &MHEGLWEEncToShareShareOwned<BE>,
+    ) {
         BE::mhe_glwe_enc_to_share_share_aggregate(self, res, a)
     }
 
@@ -51,7 +55,7 @@ impl<BE: Backend + GLWEEncToShareMHEProtocolImpl> GLWEEncToShareMHEProtocol<BE> 
         &self,
         secret: &mut P,
         ct: &C,
-        public: &GLWEEncToShareShareOwned<BE>,
+        public: &MHEGLWEEncToShareShareOwned<BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         P: GLWEToBackendMut<BE> + GLWEInfos,
@@ -61,7 +65,7 @@ impl<BE: Backend + GLWEEncToShareMHEProtocolImpl> GLWEEncToShareMHEProtocol<BE> 
     }
 }
 
-impl<BE: Backend + GLWEShareToEncMHEProtocolImpl> GLWEShareToEncMHEProtocol<BE> for Module<BE> {
+impl<BE: Backend + MHEGLWEShareToEncProtocolImpl> MHEGLWEShareToEncProtocol<BE> for Module<BE> {
     fn mhe_glwe_share_to_enc_share_gen_tmp_bytes<A, B>(&self, res_infos: &A, secret_infos: &B) -> usize
     where
         A: GLWEInfos,
@@ -72,7 +76,7 @@ impl<BE: Backend + GLWEShareToEncMHEProtocolImpl> GLWEShareToEncMHEProtocol<BE> 
 
     fn mhe_glwe_share_to_enc_share_gen<P, S>(
         &self,
-        res: &mut GLWEShareToEncShareOwned<BE>,
+        res: &mut MHEGLWEShareToEncShareOwned<BE>,
         secret: &P,
         sk: &S,
         seed: [u8; 32],
@@ -85,7 +89,11 @@ impl<BE: Backend + GLWEShareToEncMHEProtocolImpl> GLWEShareToEncMHEProtocol<BE> 
         BE::mhe_glwe_share_to_enc_share_gen(self, res, secret, sk, seed, source_xe, scratch)
     }
 
-    fn mhe_glwe_share_to_enc_share_aggregate(&self, res: &mut GLWEShareToEncShareOwned<BE>, a: &GLWEShareToEncShareOwned<BE>) {
+    fn mhe_glwe_share_to_enc_share_aggregate(
+        &self,
+        res: &mut MHEGLWEShareToEncShareOwned<BE>,
+        a: &MHEGLWEShareToEncShareOwned<BE>,
+    ) {
         BE::mhe_glwe_share_to_enc_share_aggregate(self, res, a)
     }
 
@@ -96,7 +104,7 @@ impl<BE: Backend + GLWEShareToEncMHEProtocolImpl> GLWEShareToEncMHEProtocol<BE> 
     fn mhe_glwe_share_to_enc_share_finalize<R>(
         &self,
         res: &mut R,
-        share: &GLWEShareToEncShareOwned<BE>,
+        share: &MHEGLWEShareToEncShareOwned<BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,

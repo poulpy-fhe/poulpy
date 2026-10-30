@@ -17,7 +17,7 @@ use poulpy_hal::{
     source::Source,
 };
 
-use crate::{api::GLWEPublicKeyMHEProtocol, layouts::MHEModuleAlloc};
+use crate::{api::MHEGLWEPublicKeyProtocol, layouts::MHEGLWEPublicKeyShareAlloc};
 
 pub(crate) const BASE2K: Base2K = Base2K(12);
 pub(crate) const K: TorusPrecision = TorusPrecision(33);
@@ -148,7 +148,7 @@ pub(crate) fn collective_public_key<BE>(
 ) -> GLWEPublicKeyPrepared<AlignedBuf, BE>
 where
     BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: MHEModuleAlloc<BE> + GLWEPublicKeyMHEProtocol<BE> + GLWEPublicKeyPreparedFactory<BE>,
+    Module<BE>: MHEGLWEPublicKeyShareAlloc<BE> + MHEGLWEPublicKeyProtocol<BE> + GLWEPublicKeyPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
@@ -157,8 +157,8 @@ where
             .max(module.mhe_glwe_public_key_share_finalize_tmp_bytes())
             .max(module.glwe_public_key_prepare_tmp_bytes(layout)),
     );
-    let mut acc = module.glwe_public_key_share_alloc_from_infos(layout);
-    let mut share = module.glwe_public_key_share_alloc_from_infos(layout);
+    let mut acc = module.mhe_glwe_public_key_share_alloc_from_infos(layout);
+    let mut share = module.mhe_glwe_public_key_share_alloc_from_infos(layout);
     for (i, (_, sk)) in parties.iter().enumerate() {
         let dst = if i == 0 { &mut acc } else { &mut share };
         let mut source_xe = Source::new([40 + i as u8; 32]);
@@ -175,7 +175,7 @@ where
     }
     let mut encoded = Vec::new();
     acc.write_to(&mut encoded).unwrap();
-    let mut decoded = module.glwe_public_key_share_alloc_from_infos(layout);
+    let mut decoded = module.mhe_glwe_public_key_share_alloc_from_infos(layout);
     decoded.read_from(&mut encoded.as_slice()).unwrap();
     assert!(decoded == acc);
     assert_collective_metadata(&decoded, parties.len());

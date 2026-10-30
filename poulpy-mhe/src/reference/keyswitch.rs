@@ -1,4 +1,4 @@
-use crate::layouts::{GLWEPrivateKeyswitchShareOwned, GLWEPublicKeyswitchShareOwned};
+use crate::layouts::{MHEGLWEPrivateKeyswitchShareOwned, MHEGLWEPublicKeyswitchShareOwned};
 use poulpy_core::{
     ComponentNoise, FreshNoiseEstimate, GLWEAdd, GLWEBytesOf, GLWEEncryptPkSmudged, GLWEMaskInnerProduct, GLWENormalize,
     GLWEPlaintextBytesOf, GLWESub, GetDistribution, Noise, ScratchArenaTakeGLWEPlaintext, VecZnxAddNoise,
@@ -13,7 +13,7 @@ use poulpy_hal::{
     source::Source,
 };
 
-pub trait GLWEPrivateKeyswitchMHEProtocolReference<BE: Backend> {
+pub trait MHEGLWEPrivateKeyswitchProtocolReference<BE: Backend> {
     fn mhe_glwe_private_keyswitch_share_gen_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GLWEInfos;
@@ -21,7 +21,7 @@ pub trait GLWEPrivateKeyswitchMHEProtocolReference<BE: Backend> {
     #[allow(clippy::too_many_arguments)]
     fn mhe_glwe_private_keyswitch_share_gen_reference<C, S1, S2>(
         &self,
-        res: &mut GLWEPrivateKeyswitchShareOwned<BE>,
+        res: &mut MHEGLWEPrivateKeyswitchShareOwned<BE>,
         mask: &C,
         sk_in: &S1,
         sk_out: &S2,
@@ -35,8 +35,8 @@ pub trait GLWEPrivateKeyswitchMHEProtocolReference<BE: Backend> {
 
     fn mhe_glwe_private_keyswitch_share_aggregate_reference(
         &self,
-        res: &mut GLWEPrivateKeyswitchShareOwned<BE>,
-        a: &GLWEPrivateKeyswitchShareOwned<BE>,
+        res: &mut MHEGLWEPrivateKeyswitchShareOwned<BE>,
+        a: &MHEGLWEPrivateKeyswitchShareOwned<BE>,
     );
 
     fn mhe_glwe_private_keyswitch_share_finalize_tmp_bytes_reference(&self) -> usize;
@@ -45,14 +45,14 @@ pub trait GLWEPrivateKeyswitchMHEProtocolReference<BE: Backend> {
         &self,
         res: &mut R,
         ct: &C,
-        share: &GLWEPrivateKeyswitchShareOwned<BE>,
+        share: &MHEGLWEPrivateKeyswitchShareOwned<BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         C: GLWEToBackendRef<BE> + GLWEInfos;
 }
 
-impl<BE: Backend> GLWEPrivateKeyswitchMHEProtocolReference<BE> for Module<BE>
+impl<BE: Backend> MHEGLWEPrivateKeyswitchProtocolReference<BE> for Module<BE>
 where
     Self: GLWEMaskInnerProduct<BE> + GLWESub<BE> + GLWEAdd<BE> + GLWENormalize<BE> + GLWEBytesOf<BE> + VecZnxAddNoise<BE>,
 {
@@ -72,7 +72,7 @@ where
 
     fn mhe_glwe_private_keyswitch_share_gen_reference<C, S1, S2>(
         &self,
-        res: &mut GLWEPrivateKeyswitchShareOwned<BE>,
+        res: &mut MHEGLWEPrivateKeyswitchShareOwned<BE>,
         mask: &C,
         sk_in: &S1,
         sk_out: &S2,
@@ -148,8 +148,8 @@ where
 
     fn mhe_glwe_private_keyswitch_share_aggregate_reference(
         &self,
-        res: &mut GLWEPrivateKeyswitchShareOwned<BE>,
-        a: &GLWEPrivateKeyswitchShareOwned<BE>,
+        res: &mut MHEGLWEPrivateKeyswitchShareOwned<BE>,
+        a: &MHEGLWEPrivateKeyswitchShareOwned<BE>,
     ) {
         assert!(res.glwe_layout() == a.glwe_layout(), "invalid aggregation: layouts differ");
         let metadata = crate::metadata::aggregate_metadata(res.noise(), a.noise());
@@ -165,7 +165,7 @@ where
         &self,
         res: &mut R,
         ct: &C,
-        share: &GLWEPrivateKeyswitchShareOwned<BE>,
+        share: &MHEGLWEPrivateKeyswitchShareOwned<BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -193,7 +193,7 @@ where
     }
 }
 
-pub trait GLWEPublicKeyswitchMHEProtocolReference<BE: Backend> {
+pub trait MHEGLWEPublicKeyswitchProtocolReference<BE: Backend> {
     fn mhe_glwe_public_keyswitch_share_gen_tmp_bytes_reference<A, B, P>(
         &self,
         ct_infos: &A,
@@ -208,7 +208,7 @@ pub trait GLWEPublicKeyswitchMHEProtocolReference<BE: Backend> {
     #[allow(clippy::too_many_arguments)]
     fn mhe_glwe_public_keyswitch_share_gen_reference<C, S, K>(
         &self,
-        res: &mut GLWEPublicKeyswitchShareOwned<BE>,
+        res: &mut MHEGLWEPublicKeyswitchShareOwned<BE>,
         mask: &C,
         sk_in: &S,
         pk_out: &K,
@@ -224,8 +224,8 @@ pub trait GLWEPublicKeyswitchMHEProtocolReference<BE: Backend> {
 
     fn mhe_glwe_public_keyswitch_share_aggregate_reference(
         &self,
-        res: &mut GLWEPublicKeyswitchShareOwned<BE>,
-        a: &GLWEPublicKeyswitchShareOwned<BE>,
+        res: &mut MHEGLWEPublicKeyswitchShareOwned<BE>,
+        a: &MHEGLWEPublicKeyswitchShareOwned<BE>,
     );
 
     fn mhe_glwe_public_keyswitch_share_finalize_tmp_bytes_reference(&self) -> usize;
@@ -234,14 +234,14 @@ pub trait GLWEPublicKeyswitchMHEProtocolReference<BE: Backend> {
         &self,
         res: &mut R,
         ct: &C,
-        share: &GLWEPublicKeyswitchShareOwned<BE>,
+        share: &MHEGLWEPublicKeyswitchShareOwned<BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         C: GLWEToBackendRef<BE> + GLWEInfos;
 }
 
-impl<BE: Backend> GLWEPublicKeyswitchMHEProtocolReference<BE> for Module<BE>
+impl<BE: Backend> MHEGLWEPublicKeyswitchProtocolReference<BE> for Module<BE>
 where
     Self: GLWEMaskInnerProduct<BE>
         + GLWEAdd<BE>
@@ -268,7 +268,7 @@ where
 
     fn mhe_glwe_public_keyswitch_share_gen_reference<C, S, K>(
         &self,
-        res: &mut GLWEPublicKeyswitchShareOwned<BE>,
+        res: &mut MHEGLWEPublicKeyswitchShareOwned<BE>,
         mask: &C,
         sk_in: &S,
         pk_out: &K,
@@ -327,8 +327,8 @@ where
 
     fn mhe_glwe_public_keyswitch_share_aggregate_reference(
         &self,
-        res: &mut GLWEPublicKeyswitchShareOwned<BE>,
-        a: &GLWEPublicKeyswitchShareOwned<BE>,
+        res: &mut MHEGLWEPublicKeyswitchShareOwned<BE>,
+        a: &MHEGLWEPublicKeyswitchShareOwned<BE>,
     ) {
         assert!(res.glwe_layout() == a.glwe_layout(), "invalid aggregation: layouts differ");
         let metadata = crate::metadata::aggregate_common_key_metadata(res.noise(), a.noise(), res.n().as_usize());
@@ -344,7 +344,7 @@ where
         &self,
         res: &mut R,
         ct: &C,
-        share: &GLWEPublicKeyswitchShareOwned<BE>,
+        share: &MHEGLWEPublicKeyswitchShareOwned<BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,

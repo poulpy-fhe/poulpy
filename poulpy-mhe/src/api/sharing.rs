@@ -7,7 +7,7 @@ use poulpy_hal::{
     source::Source,
 };
 
-use crate::layouts::{GLWEEncToShareShareOwned, GLWEShareToEncShareOwned};
+use crate::layouts::{MHEGLWEEncToShareShareOwned, MHEGLWEShareToEncShareOwned};
 
 /// Encryption to additive shares: every party keeps a random mask `M_i` as its
 /// share and publishes the inner product of the ciphertext's mask with its
@@ -27,8 +27,8 @@ use crate::layouts::{GLWEEncToShareShareOwned, GLWEShareToEncShareOwned};
 /// section of `docs/mhe-contracts.md` describes. Share generation reads the
 /// ciphertext's mask alone, which must be canonical and the session's honest
 /// ciphertext's, as for
-/// [`GLWEPrivateKeyswitchMHEProtocol`](crate::api::GLWEPrivateKeyswitchMHEProtocol).
-pub trait GLWEEncToShareMHEProtocol<BE: Backend> {
+/// [`MHEGLWEPrivateKeyswitchProtocol`](crate::api::MHEGLWEPrivateKeyswitchProtocol).
+pub trait MHEGLWEEncToShareProtocol<BE: Backend> {
     /// `ct_infos` is the ciphertext layout.
     fn mhe_glwe_enc_to_share_share_gen_tmp_bytes<A>(&self, ct_infos: &A) -> usize
     where
@@ -42,7 +42,7 @@ pub trait GLWEEncToShareMHEProtocol<BE: Backend> {
     #[allow(clippy::too_many_arguments)]
     fn mhe_glwe_enc_to_share_share_gen<P, C, S>(
         &self,
-        public: &mut GLWEEncToShareShareOwned<BE>,
+        public: &mut MHEGLWEEncToShareShareOwned<BE>,
         secret: &mut P,
         mask: &C,
         sk: &S,
@@ -57,7 +57,11 @@ pub trait GLWEEncToShareMHEProtocol<BE: Backend> {
 
     /// Adds share `a` into `res`, which starts as the first share. The shares
     /// must have the same layout.
-    fn mhe_glwe_enc_to_share_share_aggregate(&self, res: &mut GLWEEncToShareShareOwned<BE>, a: &GLWEEncToShareShareOwned<BE>);
+    fn mhe_glwe_enc_to_share_share_aggregate(
+        &self,
+        res: &mut MHEGLWEEncToShareShareOwned<BE>,
+        a: &MHEGLWEEncToShareShareOwned<BE>,
+    );
 
     fn mhe_glwe_enc_to_share_share_finalize_tmp_bytes(&self) -> usize;
 
@@ -68,7 +72,7 @@ pub trait GLWEEncToShareMHEProtocol<BE: Backend> {
         &self,
         secret: &mut P,
         ct: &C,
-        public: &GLWEEncToShareShareOwned<BE>,
+        public: &MHEGLWEEncToShareShareOwned<BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         P: GLWEToBackendMut<BE> + GLWEInfos,
@@ -79,10 +83,10 @@ pub trait GLWEEncToShareMHEProtocol<BE: Backend> {
 /// share under the common seed, and any party aggregates the shares and
 /// finalizes the encryption of their sum under the ideal secret.
 ///
-/// A share is a [`GLWEPatCompressed`](crate::layouts::GLWEPatCompressed), the
+/// A share is a [`MHEGLWEPatCompressed`](crate::layouts::MHEGLWEPatCompressed), the
 /// seeded encryption of the party's additive share, a torus value, at the
 /// output's precision.
-pub trait GLWEShareToEncMHEProtocol<BE: Backend> {
+pub trait MHEGLWEShareToEncProtocol<BE: Backend> {
     /// `res_infos` is the output layout, `secret_infos` the share layout.
     fn mhe_glwe_share_to_enc_share_gen_tmp_bytes<A, B>(&self, res_infos: &A, secret_infos: &B) -> usize
     where
@@ -99,7 +103,7 @@ pub trait GLWEShareToEncMHEProtocol<BE: Backend> {
     #[allow(clippy::too_many_arguments)]
     fn mhe_glwe_share_to_enc_share_gen<P, S>(
         &self,
-        res: &mut GLWEShareToEncShareOwned<BE>,
+        res: &mut MHEGLWEShareToEncShareOwned<BE>,
         secret: &P,
         sk: &S,
         seed: [u8; 32],
@@ -111,7 +115,11 @@ pub trait GLWEShareToEncMHEProtocol<BE: Backend> {
 
     /// Adds share `a` into `res`, which starts as the first share. The shares
     /// must have the same layout and seed.
-    fn mhe_glwe_share_to_enc_share_aggregate(&self, res: &mut GLWEShareToEncShareOwned<BE>, a: &GLWEShareToEncShareOwned<BE>);
+    fn mhe_glwe_share_to_enc_share_aggregate(
+        &self,
+        res: &mut MHEGLWEShareToEncShareOwned<BE>,
+        a: &MHEGLWEShareToEncShareOwned<BE>,
+    );
 
     fn mhe_glwe_share_to_enc_share_finalize_tmp_bytes(&self) -> usize;
 
@@ -120,7 +128,7 @@ pub trait GLWEShareToEncMHEProtocol<BE: Backend> {
     fn mhe_glwe_share_to_enc_share_finalize<R>(
         &self,
         res: &mut R,
-        share: &GLWEShareToEncShareOwned<BE>,
+        share: &MHEGLWEShareToEncShareOwned<BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos;

@@ -21,9 +21,10 @@ use super::fixtures::{
     party_secrets, plaintext_integers, plaintext_state, secret_from_seed,
 };
 use crate::{
-    api::{GLWEEncToShareMHEProtocol, GLWEShareToEncMHEProtocol},
-    layouts::GLWEEncToShareShare,
-    layouts::MHEModuleAlloc,
+    MHEGLWEShareToEncShareAlloc,
+    api::{MHEGLWEEncToShareProtocol, MHEGLWEShareToEncProtocol},
+    layouts::MHEGLWEEncToShareShare,
+    layouts::MHEGLWEEncToShareShareAlloc,
 };
 
 pub fn test_glwe_enc_to_share<BE>(module: &Module<BE>)
@@ -31,7 +32,7 @@ where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: GLWEEncToShareMHEProtocol<BE>
+    Module<BE>: MHEGLWEEncToShareProtocol<BE>
         + GLWESecretSampling<BE>
         + GLWESecretPreparedFactory<BE>
         + GLWEEncryptSk<BE>
@@ -53,8 +54,8 @@ where
             let mut secrets: Vec<GLWEPlaintext<AlignedBuf, i64>> = (0..PARTIES)
                 .map(|_| module.glwe_plaintext_alloc_from_infos(&layout))
                 .collect();
-            let mut acc = module.glwe_enc_to_share_share_alloc_from_infos(&layout);
-            let mut public = module.glwe_enc_to_share_share_alloc_from_infos(&layout);
+            let mut acc = module.mhe_glwe_enc_to_share_share_alloc_from_infos(&layout);
+            let mut public = module.mhe_glwe_enc_to_share_share_alloc_from_infos(&layout);
             for (i, ((_, sk), secret)) in parties.iter().zip(secrets.iter_mut()).enumerate() {
                 let dst = if i == 0 { &mut acc } else { &mut public };
                 dst.inner.set_canonical(false);
@@ -124,8 +125,8 @@ where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: MHEModuleAlloc<BE>
-        + GLWEShareToEncMHEProtocol<BE>
+    Module<BE>: MHEGLWEShareToEncShareAlloc<BE>
+        + MHEGLWEShareToEncProtocol<BE>
         + GLWESecretSampling<BE>
         + GLWESecretPreparedFactory<BE>
         + GLWEDecrypt<BE>
@@ -142,8 +143,8 @@ where
             .map(|i| bounded_integers(module.n(), K.as_usize(), [70 + i as u8; 32]))
             .collect();
 
-        let mut acc = module.glwe_share_to_enc_share_alloc_from_infos(&out_layout);
-        let mut share = module.glwe_share_to_enc_share_alloc_from_infos(&out_layout);
+        let mut acc = module.mhe_glwe_share_to_enc_share_alloc_from_infos(&out_layout);
+        let mut share = module.mhe_glwe_share_to_enc_share_alloc_from_infos(&out_layout);
         for (i, ((_, sk), data)) in parties.iter().zip(&shares).enumerate() {
             let dst = if i == 0 { &mut acc } else { &mut share };
             let secret = integer_plaintext(module, &in_layout, data);
@@ -195,14 +196,15 @@ where
 pub fn test_mhe_glwe_share_to_enc_share_gen_rejects_precision<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: MHEModuleAlloc<BE> + GLWEShareToEncMHEProtocol<BE> + GLWESecretSampling<BE> + GLWESecretPreparedFactory<BE>,
+    Module<BE>:
+        MHEGLWEShareToEncShareAlloc<BE> + MHEGLWEShareToEncProtocol<BE> + GLWESecretSampling<BE> + GLWESecretPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let layout = glwe_layout_at(module, K);
     let secret_layout = glwe_layout_at(module, K_OUT);
     let (_, sk) = secret_from_seed(module, [100u8; 32]);
     let secret: GLWEPlaintext<AlignedBuf, i64> = module.glwe_plaintext_alloc_from_infos(&secret_layout);
-    let mut res = module.glwe_share_to_enc_share_alloc_from_infos(&layout);
+    let mut res = module.mhe_glwe_share_to_enc_share_alloc_from_infos(&layout);
 
     let before = res.clone();
     let mut source_xe = Source::new(SEED_XE);
@@ -220,14 +222,14 @@ where
 pub fn test_mhe_glwe_enc_to_share_share_gen_rejects_precision<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: GLWEEncToShareMHEProtocol<BE> + GLWESecretSampling<BE> + GLWESecretPreparedFactory<BE>,
+    Module<BE>: MHEGLWEEncToShareProtocol<BE> + GLWESecretSampling<BE> + GLWESecretPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let ct_layout = glwe_layout_at(module, K);
     let secret_layout = glwe_layout_at(module, K_OUT);
     let (_, sk) = secret_from_seed(module, [100u8; 32]);
     let ct: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&ct_layout);
-    let mut public = GLWEEncToShareShare {
+    let mut public = MHEGLWEEncToShareShare {
         inner: module.glwe_alloc_from_infos(&GLWELayout {
             rank: Rank(0),
             ..ct_layout
@@ -262,7 +264,7 @@ where
 pub fn test_mhe_glwe_enc_to_share_share_finalize_rejects_layout_mismatch<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: GLWEEncToShareMHEProtocol<BE>,
+    Module<BE>: MHEGLWEEncToShareProtocol<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let ct_layout = glwe_layout_at(module, K);
@@ -278,7 +280,7 @@ where
         ),
         (ct_layout, K, "invalid finalization: additive shares must have rank zero"),
     ] {
-        let share = GLWEEncToShareShare {
+        let share = MHEGLWEEncToShareShare {
             inner: module.glwe_alloc_from_infos(&share_layout),
         };
         let mut secret: GLWEPlaintext<AlignedBuf, i64> =
@@ -297,13 +299,13 @@ where
 pub fn test_mhe_glwe_enc_to_share_share_gen_rejects_nonzero_rank<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: GLWEEncToShareMHEProtocol<BE> + GLWESecretSampling<BE> + GLWESecretPreparedFactory<BE>,
+    Module<BE>: MHEGLWEEncToShareProtocol<BE> + GLWESecretSampling<BE> + GLWESecretPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let layout = glwe_layout_at(module, K);
     let (_, sk) = secret_from_seed(module, [100u8; 32]);
     let ct: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
-    let mut public = GLWEEncToShareShare {
+    let mut public = MHEGLWEEncToShareShare {
         inner: module.glwe_alloc_from_infos(&layout),
     };
     let mut secret: GLWEPlaintext<AlignedBuf, i64> = module.glwe_plaintext_alloc_from_infos(&layout);
@@ -333,13 +335,14 @@ where
 pub fn test_mhe_glwe_share_to_enc_share_gen_rejects_nonzero_rank<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: MHEModuleAlloc<BE> + GLWEShareToEncMHEProtocol<BE> + GLWESecretSampling<BE> + GLWESecretPreparedFactory<BE>,
+    Module<BE>:
+        MHEGLWEShareToEncShareAlloc<BE> + MHEGLWEShareToEncProtocol<BE> + GLWESecretSampling<BE> + GLWESecretPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let layout = glwe_layout_at(module, K);
     let (_, sk) = secret_from_seed(module, [100u8; 32]);
     let share: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
-    let mut res = module.glwe_share_to_enc_share_alloc_from_infos(&layout);
+    let mut res = module.mhe_glwe_share_to_enc_share_alloc_from_infos(&layout);
     let before = res.clone();
     let mut source_xe = Source::new(SEED_XE);
     assert_panics_with("invalid share: additive share must have rank zero", || {
@@ -355,13 +358,13 @@ where
 pub fn test_mhe_glwe_enc_to_share_share_gen_rejects_flood<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: GLWEEncToShareMHEProtocol<BE> + GLWESecretSampling<BE> + GLWESecretPreparedFactory<BE>,
+    Module<BE>: MHEGLWEEncToShareProtocol<BE> + GLWESecretSampling<BE> + GLWESecretPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let layout = glwe_layout_at(module, K);
     let (_, sk) = secret_from_seed(module, [100u8; 32]);
     let ct: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
-    let mut public = GLWEEncToShareShare {
+    let mut public = MHEGLWEEncToShareShare {
         inner: module.glwe_alloc_from_infos(&GLWELayout { rank: Rank(0), ..layout }),
     };
     let mut secret: GLWEPlaintext<AlignedBuf, i64> = module.glwe_plaintext_alloc_from_infos(&layout);
@@ -409,14 +412,14 @@ where
 pub fn test_mhe_glwe_enc_to_share_share_gen_rejects_flag_clear_mask<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: GLWEEncToShareMHEProtocol<BE> + GLWESecretSampling<BE> + GLWESecretPreparedFactory<BE>,
+    Module<BE>: MHEGLWEEncToShareProtocol<BE> + GLWESecretSampling<BE> + GLWESecretPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let layout = glwe_layout_at(module, K);
     let (_, sk) = secret_from_seed(module, [100u8; 32]);
     let mut ct: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
     ct.set_canonical(false);
-    let mut public = GLWEEncToShareShare {
+    let mut public = MHEGLWEEncToShareShare {
         inner: module.glwe_alloc_from_infos(&GLWELayout { rank: Rank(0), ..layout }),
     };
     let mut secret: GLWEPlaintext<AlignedBuf, i64> = module.glwe_plaintext_alloc_from_infos(&layout);

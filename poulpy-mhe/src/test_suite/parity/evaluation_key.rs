@@ -13,8 +13,9 @@ use super::{
     snapshot_gglwe_compressed, snapshot_source,
 };
 use crate::{
-    api::{GLWEAutomorphismKeyMHEProtocol, GLWESwitchingKeyMHEProtocol},
-    layouts::MHEModuleAlloc,
+    MHEGLWESwitchingKeyShareAlloc,
+    api::{MHEGLWEAutomorphismKeyProtocol, MHEGLWESwitchingKeyProtocol},
+    layouts::MHEGLWEAutomorphismKeyShareAlloc,
     test_suite::fixtures::{BASE2K, P, RANK, SEEDS, gglwe_layout},
 };
 
@@ -45,8 +46,8 @@ pub fn test_glwe_switching_key_parity<BR, BT>(module_ref: &Module<BR>, module_te
 where
     BR: ReferenceBackend,
     BT: ParityBackend,
-    Module<BR>: MHEModuleAlloc<BR> + GLWESwitchingKeyMHEProtocol<BR> + GLWESecretSampling<BR> + GLWESecretPreparedFactory<BR>,
-    Module<BT>: MHEModuleAlloc<BT> + GLWESwitchingKeyMHEProtocol<BT>,
+    Module<BR>: MHEGLWESwitchingKeyProtocol<BR> + GLWESecretSampling<BR> + GLWESecretPreparedFactory<BR>,
+    Module<BT>: MHEGLWESwitchingKeyProtocol<BT>,
 {
     for layout in key_layouts(module_ref, true) {
         let (in_ref, in_test) = fixture_secrets(module_ref, module_test, layout.rank_in(), 150);
@@ -64,11 +65,11 @@ fn run_switching_key<BE: ParityBackend>(
     secrets_out: &[GLWESecret<BE::OwnedBuf, i64>],
 ) -> Vec<Snapshot>
 where
-    Module<BE>: MHEModuleAlloc<BE> + GLWESwitchingKeyMHEProtocol<BE>,
+    Module<BE>: MHEGLWESwitchingKeyShareAlloc<BE> + MHEGLWESwitchingKeyProtocol<BE>,
 {
     let mut out = Vec::new();
-    let mut acc = module.glwe_switching_key_share_alloc_from_infos(layout);
-    let mut share = module.glwe_switching_key_share_alloc_from_infos(layout);
+    let mut acc = module.mhe_glwe_switching_key_share_alloc_from_infos(layout);
+    let mut share = module.mhe_glwe_switching_key_share_alloc_from_infos(layout);
     for (i, (sk_in, sk_out)) in secrets_in.iter().zip(secrets_out).enumerate() {
         let dst = if i == 0 { &mut acc } else { &mut share };
         poison_gglwe_compressed::<BE, _>(&mut dst.key);
@@ -101,8 +102,8 @@ pub fn test_glwe_automorphism_key_parity<BR, BT>(module_ref: &Module<BR>, module
 where
     BR: ReferenceBackend,
     BT: ParityBackend,
-    Module<BR>: MHEModuleAlloc<BR> + GLWEAutomorphismKeyMHEProtocol<BR> + GLWESecretSampling<BR> + GLWESecretPreparedFactory<BR>,
-    Module<BT>: MHEModuleAlloc<BT> + GLWEAutomorphismKeyMHEProtocol<BT>,
+    Module<BR>: MHEGLWEAutomorphismKeyProtocol<BR> + GLWESecretSampling<BR> + GLWESecretPreparedFactory<BR>,
+    Module<BT>: MHEGLWEAutomorphismKeyProtocol<BT>,
 {
     for layout in key_layouts(module_ref, false) {
         let (secrets_ref, secrets_test) = fixture_secrets(module_ref, module_test, RANK, 100);
@@ -118,11 +119,11 @@ fn run_automorphism_key<BE: ParityBackend>(
     secrets: &[GLWESecret<BE::OwnedBuf, i64>],
 ) -> Vec<Snapshot>
 where
-    Module<BE>: MHEModuleAlloc<BE> + GLWEAutomorphismKeyMHEProtocol<BE>,
+    Module<BE>: MHEGLWEAutomorphismKeyShareAlloc<BE> + MHEGLWEAutomorphismKeyProtocol<BE>,
 {
     let mut out = Vec::new();
-    let mut acc = module.glwe_automorphism_key_share_alloc_from_infos(layout);
-    let mut share = module.glwe_automorphism_key_share_alloc_from_infos(layout);
+    let mut acc = module.mhe_glwe_automorphism_key_share_alloc_from_infos(layout);
+    let mut share = module.mhe_glwe_automorphism_key_share_alloc_from_infos(layout);
     for (i, sk) in secrets.iter().enumerate() {
         let dst = if i == 0 { &mut acc } else { &mut share };
         poison_gglwe_compressed::<BE, _>(&mut dst.key);

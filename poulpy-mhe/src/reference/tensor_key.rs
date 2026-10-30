@@ -10,9 +10,9 @@ use poulpy_hal::{
     source::Source,
 };
 
-use crate::layouts::GLWETensorKeyShareOwned;
+use crate::layouts::MHEGLWETensorKeyShareOwned;
 
-pub trait GLWETensorKeyMHEProtocolReference<BE: Backend> {
+pub trait MHEGLWETensorKeyProtocolReference<BE: Backend> {
     fn mhe_glwe_tensor_key_share_gen_tmp_bytes_reference<A, B>(&self, res_infos: &A, pk_infos: &B) -> usize
     where
         A: GGLWEInfos,
@@ -21,7 +21,7 @@ pub trait GLWETensorKeyMHEProtocolReference<BE: Backend> {
     #[allow(clippy::too_many_arguments)]
     fn mhe_glwe_tensor_key_share_gen_reference<S, K>(
         &self,
-        res: &mut GLWETensorKeyShareOwned<BE>,
+        res: &mut MHEGLWETensorKeyShareOwned<BE>,
         sk: &S,
         pk: &K,
         source_xu: &mut Source,
@@ -32,7 +32,7 @@ pub trait GLWETensorKeyMHEProtocolReference<BE: Backend> {
         K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos;
 }
 
-impl<BE: Backend + HalVecZnxImpl> GLWETensorKeyMHEProtocolReference<BE> for Module<BE>
+impl<BE: Backend + HalVecZnxImpl> MHEGLWETensorKeyProtocolReference<BE> for Module<BE>
 where
     Self: GLWEEncryptPk<BE> + GLWEBytesOf<BE> + VecZnxNormalizeTmpBytes,
 {
@@ -53,7 +53,7 @@ where
 
     fn mhe_glwe_tensor_key_share_gen_reference<S, K>(
         &self,
-        res: &mut GLWETensorKeyShareOwned<BE>,
+        res: &mut MHEGLWETensorKeyShareOwned<BE>,
         sk: &S,
         pk: &K,
         source_xu: &mut Source,

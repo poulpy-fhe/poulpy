@@ -8,12 +8,12 @@ use poulpy_hal::{
 };
 
 use crate::{
-    api::{GLWEAutomorphismKeyMHEProtocol, GLWESwitchingKeyMHEProtocol},
-    layouts::{GLWEAutomorphismKeyShareOwned, GLWESwitchingKeyShareOwned},
-    oep::{GLWEAutomorphismKeyMHEProtocolImpl, GLWESwitchingKeyMHEProtocolImpl},
+    api::{MHEGLWEAutomorphismKeyProtocol, MHEGLWESwitchingKeyProtocol},
+    layouts::{MHEGLWEAutomorphismKeyShareOwned, MHEGLWESwitchingKeyShareOwned},
+    oep::{MHEGLWEAutomorphismKeyProtocolImpl, MHEGLWESwitchingKeyProtocolImpl},
 };
 
-impl<BE: Backend + GLWESwitchingKeyMHEProtocolImpl> GLWESwitchingKeyMHEProtocol<BE> for Module<BE> {
+impl<BE: Backend + MHEGLWESwitchingKeyProtocolImpl> MHEGLWESwitchingKeyProtocol<BE> for Module<BE> {
     fn mhe_glwe_switching_key_share_gen_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos,
@@ -23,7 +23,7 @@ impl<BE: Backend + GLWESwitchingKeyMHEProtocolImpl> GLWESwitchingKeyMHEProtocol<
 
     fn mhe_glwe_switching_key_share_gen<S1, S2>(
         &self,
-        res: &mut GLWESwitchingKeyShareOwned<BE>,
+        res: &mut MHEGLWESwitchingKeyShareOwned<BE>,
         sk_in: &S1,
         sk_out: &S2,
         seed: [u8; 32],
@@ -38,8 +38,8 @@ impl<BE: Backend + GLWESwitchingKeyMHEProtocolImpl> GLWESwitchingKeyMHEProtocol<
 
     fn mhe_glwe_switching_key_share_aggregate(
         &self,
-        res: &mut GLWESwitchingKeyShareOwned<BE>,
-        a: &GLWESwitchingKeyShareOwned<BE>,
+        res: &mut MHEGLWESwitchingKeyShareOwned<BE>,
+        a: &MHEGLWESwitchingKeyShareOwned<BE>,
     ) {
         BE::mhe_glwe_switching_key_share_aggregate(self, res, a)
     }
@@ -51,7 +51,7 @@ impl<BE: Backend + GLWESwitchingKeyMHEProtocolImpl> GLWESwitchingKeyMHEProtocol<
     fn mhe_glwe_switching_key_share_finalize<R>(
         &self,
         res: &mut R,
-        share: &GLWESwitchingKeyShareOwned<BE>,
+        share: &MHEGLWESwitchingKeyShareOwned<BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGLWEToBackendMut<BE> + GGLWEInfos + GLWESwitchingKeyDegreesMut,
@@ -60,7 +60,7 @@ impl<BE: Backend + GLWESwitchingKeyMHEProtocolImpl> GLWESwitchingKeyMHEProtocol<
     }
 }
 
-impl<BE: Backend + GLWEAutomorphismKeyMHEProtocolImpl> GLWEAutomorphismKeyMHEProtocol<BE> for Module<BE> {
+impl<BE: Backend + MHEGLWEAutomorphismKeyProtocolImpl> MHEGLWEAutomorphismKeyProtocol<BE> for Module<BE> {
     fn mhe_glwe_automorphism_key_share_gen_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos,
@@ -70,7 +70,7 @@ impl<BE: Backend + GLWEAutomorphismKeyMHEProtocolImpl> GLWEAutomorphismKeyMHEPro
 
     fn mhe_glwe_automorphism_key_share_gen<S>(
         &self,
-        res: &mut GLWEAutomorphismKeyShareOwned<BE>,
+        res: &mut MHEGLWEAutomorphismKeyShareOwned<BE>,
         p: i64,
         sk: &S,
         seed: [u8; 32],
@@ -84,8 +84,8 @@ impl<BE: Backend + GLWEAutomorphismKeyMHEProtocolImpl> GLWEAutomorphismKeyMHEPro
 
     fn mhe_glwe_automorphism_key_share_aggregate(
         &self,
-        res: &mut GLWEAutomorphismKeyShareOwned<BE>,
-        a: &GLWEAutomorphismKeyShareOwned<BE>,
+        res: &mut MHEGLWEAutomorphismKeyShareOwned<BE>,
+        a: &MHEGLWEAutomorphismKeyShareOwned<BE>,
     ) {
         BE::mhe_glwe_automorphism_key_share_aggregate(self, res, a)
     }
@@ -97,7 +97,7 @@ impl<BE: Backend + GLWEAutomorphismKeyMHEProtocolImpl> GLWEAutomorphismKeyMHEPro
     fn mhe_glwe_automorphism_key_share_finalize<R>(
         &self,
         res: &mut R,
-        share: &GLWEAutomorphismKeyShareOwned<BE>,
+        share: &MHEGLWEAutomorphismKeyShareOwned<BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGLWEToBackendMut<BE> + GGLWEInfos + SetGaloisElement,

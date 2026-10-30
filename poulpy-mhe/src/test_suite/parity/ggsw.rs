@@ -18,8 +18,8 @@ use super::{
     snapshot_gglwe_compressed, snapshot_ggsw, snapshot_source,
 };
 use crate::{
-    api::{GGSWMHEProtocol, GLWESwitchingKeyMHEProtocol},
-    layouts::{GGSWShareOwned, MHEModuleAlloc},
+    api::{MHEGGSWProtocol, MHEGLWESwitchingKeyProtocol},
+    layouts::{MHEGGSWShareAlloc, MHEGGSWShareOwned, MHEGLWESwitchingKeyShareAlloc},
     test_suite::{
         fixtures::{BASE2K, PARTIES, SEEDS, bounded_integers, ggsw_layout},
         ggsw::ephemeral_key_layout,
@@ -33,18 +33,13 @@ pub fn test_ggsw_parity<BR, BT>(module_ref: &Module<BR>, module_test: &Module<BT
 where
     BR: ReferenceBackend,
     BT: ParityBackend,
-    Module<BR>: MHEModuleAlloc<BR>
-        + GGSWMHEProtocol<BR>
-        + GLWESwitchingKeyMHEProtocol<BR>
+    Module<BR>: MHEGGSWProtocol<BR>
+        + MHEGLWESwitchingKeyProtocol<BR>
         + GLWESecretSampling<BR>
         + GLWESecretPreparedFactory<BR>
         + GLWESwitchingKeyPreparedFactory<BR>
         + ScalarZnxAlloc<BR>,
-    Module<BT>: MHEModuleAlloc<BT>
-        + GGSWMHEProtocol<BT>
-        + GLWESecretPreparedFactory<BT>
-        + GLWESwitchingKeyPreparedFactory<BT>
-        + ScalarZnxAlloc<BT>,
+    Module<BT>: MHEGGSWProtocol<BT> + GLWESecretPreparedFactory<BT> + GLWESwitchingKeyPreparedFactory<BT> + ScalarZnxAlloc<BT>,
 {
     let base = ggsw_layout(module_ref);
     let k_digit = BASE2K.0 + 1;
@@ -112,10 +107,10 @@ fn ephemeral_key<BR>(
 ) -> GLWESwitchingKey<AlignedBuf, i64>
 where
     BR: ReferenceBackend,
-    Module<BR>: MHEModuleAlloc<BR> + GLWESwitchingKeyMHEProtocol<BR>,
+    Module<BR>: MHEGLWESwitchingKeyShareAlloc<BR> + MHEGLWESwitchingKeyProtocol<BR>,
 {
-    let mut acc = module_ref.glwe_switching_key_share_alloc_from_infos(layout);
-    let mut share = module_ref.glwe_switching_key_share_alloc_from_infos(layout);
+    let mut acc = module_ref.mhe_glwe_switching_key_share_alloc_from_infos(layout);
+    let mut share = module_ref.mhe_glwe_switching_key_share_alloc_from_infos(layout);
     for (i, (u, sk)) in ephemerals.iter().zip(secrets).enumerate() {
         let dst = if i == 0 { &mut acc } else { &mut share };
         let mut source_xe = Source::new([60 + i as u8; 32]);
@@ -143,7 +138,7 @@ fn run<BE: ParityBackend>(
     key: &GLWESwitchingKey<BE::OwnedBuf, i64>,
 ) -> Vec<Snapshot>
 where
-    Module<BE>: MHEModuleAlloc<BE> + GGSWMHEProtocol<BE> + GLWESecretPreparedFactory<BE> + GLWESwitchingKeyPreparedFactory<BE>,
+    Module<BE>: MHEGGSWShareAlloc<BE> + MHEGGSWProtocol<BE> + GLWESecretPreparedFactory<BE> + GLWESwitchingKeyPreparedFactory<BE>,
 {
     let secrets = prepare_secrets(module, secrets);
     let ephemerals = prepare_secrets(module, ephemerals);
@@ -152,8 +147,8 @@ where
         module.glwe_switching_key_prepare(&mut key_prepared, key, scratch)
     });
     let mut out = Vec::new();
-    let mut acc = module.ggsw_share_alloc_from_infos(layout);
-    let mut share = module.ggsw_share_alloc_from_infos(layout);
+    let mut acc = module.mhe_ggsw_share_alloc_from_infos(layout);
+    let mut share = module.mhe_ggsw_share_alloc_from_infos(layout);
     for (i, ((sk, u), m)) in secrets.iter().zip(&ephemerals).zip(messages).enumerate() {
         let dst = if i == 0 { &mut acc } else { &mut share };
         dst.parts_mut().for_each(poison_gglwe_compressed::<BE, _>);
@@ -178,7 +173,7 @@ where
     out
 }
 
-fn snapshot_share<BE: Backend>(label: &'static str, share: &GGSWShareOwned<BE>) -> Vec<Snapshot> {
+fn snapshot_share<BE: Backend>(label: &'static str, share: &MHEGGSWShareOwned<BE>) -> Vec<Snapshot> {
     share
         .parts()
         .map(|part| snapshot_gglwe_compressed::<BE, _>(label, part))
