@@ -10,6 +10,8 @@
 
 use poulpy_hal::{backend_test_suite, cross_backend_test_suite};
 
+#[cfg(feature = "enable-blas")]
+mod blas;
 #[cfg(feature = "enable-ckks")]
 mod ckks;
 #[cfg(feature = "enable-core")]

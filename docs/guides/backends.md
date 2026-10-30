@@ -90,7 +90,7 @@ The implementation is written once, and each CubeCL runtime has its own backend 
 | `NTT4x30Hip` | HIP | AMD | `enable-hip` |
 | `NTT4x30Wgpu` | wgpu | Metal on Apple, Vulkan, other wgpu targets | `enable-metal`, `enable-vulkan`, `enable-wgpu` |
 
-Each type is generic over the ring like the CPU types (`NTT4x30Wgpu<ConjugateInvariant>`), and `enable-core` and `enable-ckks` add the scheme layers.
+Each type is generic over the ring like the CPU types (`NTT4x30Wgpu<ConjugateInvariant>`), and `enable-core`, `enable-ckks` and `enable-blas` add the scheme layers.
 A backend type owns one device for the life of the process: the first device of its runtime, or the one chosen with `GpuRuntime::select_device` before the first module or buffer of that runtime is created.
 
 Buffers live on the device, so data moves explicitly: generate keys and encrypt with a host backend, move the layouts with `TransferInto`, prepare and evaluate on the GPU backend, and move results back to decrypt.
@@ -118,6 +118,8 @@ replay.replay();
 
 The closure must bind the same buffers and issue the same launches at every call, and must not read from the device, write host data to it or synchronize; `Replay` documents the contract, and `Replay::check` tests a closure against its recording.
 A recording keeps the temporaries of the closure reserved on the device until it is dropped, and while a closure is recorded or a graph is queued, other threads wait for the device.
+
+CKKS bootstrapping on a GPU is usually faster with the keys of power-of-two rotations only (`BootstrappingPreset::with_power_of_two_keys`, see [Default presets](bootstrapping.md#default-presets)).
 
 Each module carries the device-dependent tuning of its kernels: `poulpy_gpu_portable::handle(&module).set_convolution_capacity_step(limbs)` sets the limbs by which the convolution kernels grow the operand copies a thread holds (8 by default, at most `MAX_CAPACITY_STEP`).
 
