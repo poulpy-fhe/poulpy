@@ -29,8 +29,8 @@ pub trait BlasMatVecOps<BE: Backend> {
     ///
     /// Each output ciphertext is one linear transformation over the `K` input ciphertexts, which share their giant
     /// steps: it costs the giant-step key switches of one of `w`'s maps, whatever `K`, and every output ciphertext
-    /// shares one baby-step cache per input ciphertext. `w` is resident ([`BlasMatVecOperand`]) or streamed
-    /// ([`BlasMatVecOperandUnprepared`], whose plaintext diagonals are prepared at each use, for less memory), with the
+    /// shares one baby-step cache per input ciphertext. `w` is resident ([`BlasMatVecOperandPrepared`]) or streamed
+    /// ([`BlasMatVecOperand`], whose plaintext diagonals are prepared at each use, for less memory), with the
     /// same bits. Each giant step adds the products of every term with each of its diagonals in the transform domain
     /// before its rotation, so choose `base2k` for the `K g min(L, P)` limb products it adds in an output limb: `g` the
     /// most diagonals a giant step of `w`'s maps groups, `L` the limbs of `a.k` and `P` those of a diagonal;
@@ -65,8 +65,8 @@ pub trait BlasMatVecOps<BE: Backend> {
     /// - Any other `Err` is a backend fault (a validator gap or a device failure), and `res` is then unspecified.
     ///
     /// [`BlasEncodingOps::blas_matvec_operand_encode`]: crate::api::BlasEncodingOps::blas_matvec_operand_encode
+    /// [`BlasMatVecOperandPrepared`]: crate::layouts::BlasMatVecOperandPrepared
     /// [`BlasMatVecOperand`]: crate::layouts::BlasMatVecOperand
-    /// [`BlasMatVecOperandUnprepared`]: crate::layouts::BlasMatVecOperandUnprepared
     fn blas_matvec_pt<R, W, A, K>(&self, res: &mut R, w: &W, a: &A, keys: &K, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         R: BlasVectorMut<BE>,

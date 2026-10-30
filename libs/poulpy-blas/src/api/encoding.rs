@@ -6,7 +6,7 @@ use poulpy_hal::{
 };
 
 use crate::layouts::{
-    BlasContext, BlasContextInfos, BlasContextUnprepared, BlasMatVecOperand, BlasMatVecOperandInfos, BlasMatVecOperandUnprepared,
+    BlasContext, BlasContextInfos, BlasContextUnprepared, BlasMatVecOperand, BlasMatVecOperandInfos, BlasMatVecOperandPrepared,
     BlasPtOperand, BlasPtOperandInfos, BlasPtOperandUnprepared, BlasPtSide, context, matvec_operand, pt_operand,
 };
 
@@ -93,7 +93,7 @@ pub trait BlasEncodingOps<BE: Backend, F: CKKSEncodingScalar + DiagonalArithmeti
     /// [`Self::blas_matvec_operand_encode_tmp_bytes`].
     fn blas_matvec_operand_encode(
         &self,
-        res: &mut BlasMatVecOperandUnprepared<BE>,
+        res: &mut BlasMatVecOperand<BE>,
         entry: impl Fn(usize, usize) -> F,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> CKKSResult<()>;
@@ -172,7 +172,10 @@ pub trait BlasMatVecOperandPreparedFactory<BE: Backend>: CKKSModuleAlloc<BE> + C
     /// # Panics
     ///
     /// As [`BlasModuleAlloc::blas_matvec_operand_alloc_from_infos`](crate::layouts::BlasModuleAlloc::blas_matvec_operand_alloc_from_infos).
-    fn blas_matvec_operand_prepared_alloc_from_infos<A: BlasMatVecOperandInfos>(&self, infos: &A) -> BlasMatVecOperand<BE> {
+    fn blas_matvec_operand_prepared_alloc_from_infos<A: BlasMatVecOperandInfos>(
+        &self,
+        infos: &A,
+    ) -> BlasMatVecOperandPrepared<BE> {
         matvec_operand::alloc_prepared(self, &infos.blas_matvec_operand_layout())
     }
 
@@ -193,8 +196,8 @@ pub trait BlasMatVecOperandPreparedFactory<BE: Backend>: CKKSModuleAlloc<BE> + C
     /// width or slot kind.
     fn blas_matvec_operand_prepare(
         &self,
-        res: &mut BlasMatVecOperand<BE>,
-        other: &BlasMatVecOperandUnprepared<BE>,
+        res: &mut BlasMatVecOperandPrepared<BE>,
+        other: &BlasMatVecOperand<BE>,
         scratch: &mut ScratchArena<'_, BE>,
     );
 }

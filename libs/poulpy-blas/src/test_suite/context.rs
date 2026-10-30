@@ -35,7 +35,7 @@ use crate::{
     api::{BlasContextPreparedFactory, BlasEncodingOps, BlasMatVecOperandPreparedFactory, BlasPtOperandPreparedFactory},
     layouts::{
         BlasContext, BlasContextInfos, BlasContextLayout, BlasContextUnprepared, BlasMatVecOperand, BlasMatVecOperandLayout,
-        BlasMatVecOperandUnprepared, BlasModuleAlloc, BlasPlan, BlasPtAlgorithm, BlasPtOperand, BlasPtOperandInfos,
+        BlasMatVecOperandPrepared, BlasModuleAlloc, BlasPlan, BlasPtAlgorithm, BlasPtOperand, BlasPtOperandInfos,
         BlasPtOperandLayout, BlasPtOperandUnprepared, BlasPtSide, Left, Right, matvec_pt_galois_elements,
     },
     oep::BlasEncodingImpl,
@@ -754,8 +754,8 @@ where
                 module.blas_matvec_operand_prepared_alloc_from_infos(layout),
             )
         },
-        |op: &BlasMatVecOperandUnprepared<BE>| buffers(op.maps.iter(), plaintext::<BE>),
-        |p: &BlasMatVecOperand<BE>| buffers(p.maps.iter(), prepared_diagonal::<BE>),
+        |op: &BlasMatVecOperand<BE>| buffers(op.maps.iter(), plaintext::<BE>),
+        |p: &BlasMatVecOperandPrepared<BE>| buffers(p.maps.iter(), prepared_diagonal::<BE>),
         |op, p| {
             poison_plaintexts::<BE>(op.maps.iter_mut());
             poison_prepared::<BE>(p.maps.iter_mut());

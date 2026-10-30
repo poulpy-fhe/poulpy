@@ -3,7 +3,7 @@ use poulpy_core::layouts::DiagonalArithmetic;
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::layouts::{
-    BlasContext, BlasContextInfos, BlasContextUnprepared, BlasMatVecOperand, BlasMatVecOperandInfos, BlasMatVecOperandUnprepared,
+    BlasContext, BlasContextInfos, BlasContextUnprepared, BlasMatVecOperand, BlasMatVecOperandInfos, BlasMatVecOperandPrepared,
     BlasPtOperand, BlasPtOperandInfos, BlasPtOperandUnprepared, BlasPtSide,
 };
 
@@ -73,7 +73,7 @@ pub unsafe trait BlasEncodingImpl: Backend {
     /// write, and returns poulpy-ckks's errors, after which `res` is unspecified.
     fn blas_matvec_operand_encode<F>(
         module: &Module<Self>,
-        res: &mut BlasMatVecOperandUnprepared<Self>,
+        res: &mut BlasMatVecOperand<Self>,
         entry: impl Fn(usize, usize) -> F,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> CKKSResult<()>
@@ -149,8 +149,8 @@ pub unsafe trait BlasEncodingImpl: Backend {
     /// It panics as [`Self::blas_context_prepare`] does.
     fn blas_matvec_operand_prepare(
         module: &Module<Self>,
-        res: &mut BlasMatVecOperand<Self>,
-        other: &BlasMatVecOperandUnprepared<Self>,
+        res: &mut BlasMatVecOperandPrepared<Self>,
+        other: &BlasMatVecOperand<Self>,
         scratch: &mut ScratchArena<'_, Self>,
     );
 
@@ -217,7 +217,7 @@ macro_rules! impl_blas_encoding_reference_full {
 
             fn blas_matvec_operand_encode<F>(
                 module: &::poulpy_hal::layouts::Module<Self>,
-                res: &mut $crate::layouts::BlasMatVecOperandUnprepared<Self>,
+                res: &mut $crate::layouts::BlasMatVecOperand<Self>,
                 entry: impl Fn(usize, usize) -> F,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> ::poulpy_ckks::CKKSResult<()>
@@ -274,8 +274,8 @@ macro_rules! impl_blas_encoding_reference_full {
 
             fn blas_matvec_operand_prepare(
                 module: &::poulpy_hal::layouts::Module<Self>,
-                res: &mut $crate::layouts::BlasMatVecOperand<Self>,
-                other: &$crate::layouts::BlasMatVecOperandUnprepared<Self>,
+                res: &mut $crate::layouts::BlasMatVecOperandPrepared<Self>,
+                other: &$crate::layouts::BlasMatVecOperand<Self>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) {
                 $crate::reference::BlasEncodingReference::blas_matvec_operand_prepare_reference(module, res, other, scratch)

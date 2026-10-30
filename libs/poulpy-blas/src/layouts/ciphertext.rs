@@ -13,9 +13,9 @@ use poulpy_core::{
 use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, Module, PrepareHint, ReaderFrom, Ring, WriterTo, ZnxWord};
 
 use super::{
-    BlasContextInfos, BlasContextUnprepared, BlasMatVecOperandInfos, BlasMatVecOperandLayout, BlasMatVecOperandUnprepared,
-    BlasPlan, BlasPtOperandInfos, BlasPtOperandLayout, BlasPtOperandUnprepared, BlasPtSide, BlasVector, BlasVectorInfos,
-    BlasVectorOwned, BlasVectorShape, context, matvec_operand, pt_operand, vector,
+    BlasContextInfos, BlasContextUnprepared, BlasMatVecOperand, BlasMatVecOperandInfos, BlasMatVecOperandLayout, BlasPlan,
+    BlasPtOperandInfos, BlasPtOperandLayout, BlasPtOperandUnprepared, BlasPtSide, BlasVector, BlasVectorInfos, BlasVectorOwned,
+    BlasVectorShape, context, matvec_operand, pt_operand, vector,
 };
 
 /// An `rows x cols` grid of `2^log_d x 2^log_d` blocks: block `(i, j)` is one CKKS ciphertext whose matrix slot `s`
@@ -599,7 +599,7 @@ pub trait BlasModuleAlloc<BE: Backend>: CKKSModuleAlloc<BE> + GetDegree + Sized 
         output_period: usize,
         base2k: Base2K,
         coeffs_meta: CoeffsMeta,
-    ) -> BlasMatVecOperandUnprepared<BE> {
+    ) -> BlasMatVecOperand<BE> {
         let layout = BlasMatVecOperandLayout::new(
             self.ckks_max_slots(),
             input,
@@ -617,7 +617,7 @@ pub trait BlasModuleAlloc<BE: Backend>: CKKSModuleAlloc<BE> + GetDegree + Sized 
     /// # Panics
     ///
     /// As [`Self::blas_matvec_operand_alloc`], and if the slots of `infos` are not the module's.
-    fn blas_matvec_operand_alloc_from_infos<A: BlasMatVecOperandInfos>(&self, infos: &A) -> BlasMatVecOperandUnprepared<BE> {
+    fn blas_matvec_operand_alloc_from_infos<A: BlasMatVecOperandInfos>(&self, infos: &A) -> BlasMatVecOperand<BE> {
         matvec_operand::alloc(self, &infos.blas_matvec_operand_layout())
     }
 
@@ -680,7 +680,7 @@ impl<BE: Backend> BlasBytesOf<BE> for Module<BE> where Module<BE>: CKKSModuleAll
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::layouts::{BlasContext, BlasMatMulOperand, BlasMatVecOperand, BlasPtOperand, BlasVectorMut};
+    use crate::layouts::{BlasContext, BlasMatMulOperand, BlasMatVecOperandPrepared, BlasPtOperand, BlasVectorMut};
     use poulpy_ckks::{
         CKKSError, SetGLWEPlaintextInfos,
         layouts::{CKKSPreparedLeft, CKKSPreparedRight},
@@ -704,8 +704,8 @@ mod tests {
         fn operand<T: Send + Sync>() {}
         output::<BE, BlasCiphertextOwned<BE>>();
         vector::<BE, BlasVectorOwned<BE>>();
+        sync::<BlasMatVecOperandPrepared<BE>>();
         sync::<BlasMatVecOperand<BE>>();
-        sync::<BlasMatVecOperandUnprepared<BE>>();
         sync::<BlasContext<BE>>();
         sync::<BlasPtOperand<BE>>();
         operand::<BlasMatMulOperand<BE, CKKSPreparedLeft<BE>>>();

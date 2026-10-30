@@ -156,21 +156,15 @@ impl BlasMatVecOperandInfos for BlasMatVecOperandLayout {
 
 /// A public matrix encoded for products of a vector, not yet prepared: its diagonals are plaintexts, which a product
 /// prepares at each use (streamed).
-pub struct BlasMatVecOperandUnprepared<BE: Backend> {
+pub struct BlasMatVecOperand<BE: Backend> {
     layout: BlasMatVecOperandLayout,
     pub(crate) maps: Vec<Encoded<BE>>,
 }
 
 /// A public matrix prepared for products of a vector: its diagonals are resident.
-pub struct BlasMatVecOperand<BE: Backend> {
+pub struct BlasMatVecOperandPrepared<BE: Backend> {
     layout: BlasMatVecOperandLayout,
     pub(crate) maps: Vec<LinearTransformationPrepared<BE>>,
-}
-
-impl<BE: Backend> BlasMatVecOperandInfos for BlasMatVecOperandUnprepared<BE> {
-    fn blas_matvec_operand_layout(&self) -> BlasMatVecOperandLayout {
-        self.layout
-    }
 }
 
 impl<BE: Backend> BlasMatVecOperandInfos for BlasMatVecOperand<BE> {
@@ -179,8 +173,14 @@ impl<BE: Backend> BlasMatVecOperandInfos for BlasMatVecOperand<BE> {
     }
 }
 
-/// The maps of a public operand of products of a vector, in either form: [`BlasMatVecOperand`] (resident) or
-/// [`BlasMatVecOperandUnprepared`] (streamed).
+impl<BE: Backend> BlasMatVecOperandInfos for BlasMatVecOperandPrepared<BE> {
+    fn blas_matvec_operand_layout(&self) -> BlasMatVecOperandLayout {
+        self.layout
+    }
+}
+
+/// The maps of a public operand of products of a vector, in either form: [`BlasMatVecOperandPrepared`] (resident) or
+/// [`BlasMatVecOperand`] (streamed).
 pub trait BlasMatVecMaps<BE: Backend>: BlasMatVecOperandInfos + Sync {
     /// The form of a diagonal.
     type Diagonal: DiagonalProd<BE> + LtDiagonalMeta + Sync;
@@ -193,7 +193,7 @@ pub trait BlasMatVecMaps<BE: Backend>: BlasMatVecOperandInfos + Sync {
     fn blocks(&self) -> &[LinearTransformation<Self::Diagonal>];
 }
 
-impl<BE: Backend> BlasMatVecMaps<BE> for BlasMatVecOperandUnprepared<BE>
+impl<BE: Backend> BlasMatVecMaps<BE> for BlasMatVecOperand<BE>
 where
     CKKSPlaintextOwned<BE>: DiagonalProd<BE> + Sync,
 {
@@ -205,7 +205,7 @@ where
     }
 }
 
-impl<BE: Backend> BlasMatVecMaps<BE> for BlasMatVecOperand<BE> {
+impl<BE: Backend> BlasMatVecMaps<BE> for BlasMatVecOperandPrepared<BE> {
     type Diagonal = PreparedDiagonal<BE::OwnedBuf, BE>;
     const STREAMED: bool = false;
 
@@ -214,14 +214,14 @@ impl<BE: Backend> BlasMatVecMaps<BE> for BlasMatVecOperand<BE> {
     }
 }
 
-impl<BE: Backend> BlasMatVecOperandUnprepared<BE> {
+impl<BE: Backend> BlasMatVecOperand<BE> {
     /// The encoded map of output ciphertext `o` from input ciphertext `i`. Panics outside the operand.
     pub fn block(&self, o: usize, i: usize) -> &LinearTransformation<CKKSPlaintextOwned<BE>> {
         &self.maps[block_index(&self.layout, o, i)]
     }
 }
 
-impl<BE: Backend> BlasMatVecOperand<BE> {
+impl<BE: Backend> BlasMatVecOperandPrepared<BE> {
     /// The prepared map of output ciphertext `o` from input ciphertext `i`. Panics outside the operand.
     pub fn block(&self, o: usize, i: usize) -> &LinearTransformationPrepared<BE> {
         &self.maps[block_index(&self.layout, o, i)]
@@ -373,7 +373,7 @@ pub fn matvec_pt_galois_elements(cyclotomic_order: i64, infos: &impl BlasMatVecO
 }
 
 /// [`super::BlasModuleAlloc::blas_matvec_operand_alloc_from_infos`].
-pub(crate) fn alloc<BE, M>(module: &M, layout: &BlasMatVecOperandLayout) -> BlasMatVecOperandUnprepared<BE>
+pub(crate) fn alloc<BE, M>(module: &M, layout: &BlasMatVecOperandLayout) -> BlasMatVecOperand<BE>
 where
     BE: Backend,
     M: CKKSModuleAlloc<BE> + GetDegree,
@@ -383,11 +383,11 @@ where
     let maps = (0..layout.blocks())
         .map(|_| map.alloc::<BE, M>(module, layout.base2k))
         .collect();
-    BlasMatVecOperandUnprepared { layout: *layout, maps }
+    BlasMatVecOperand { layout: *layout, maps }
 }
 
 /// [`crate::api::BlasMatVecOperandPreparedFactory::blas_matvec_operand_prepared_alloc_from_infos`].
-pub(crate) fn alloc_prepared<BE, M>(module: &M, layout: &BlasMatVecOperandLayout) -> BlasMatVecOperand<BE>
+pub(crate) fn alloc_prepared<BE, M>(module: &M, layout: &BlasMatVecOperandLayout) -> BlasMatVecOperandPrepared<BE>
 where
     BE: Backend,
     M: CKKSModuleAlloc<BE> + CnvPVecAlloc<BE> + GetDegree,
@@ -397,7 +397,7 @@ where
     let maps = (0..layout.blocks())
         .map(|_| map.alloc_prepared::<BE, M>(module, layout.base2k))
         .collect();
-    BlasMatVecOperand { layout: *layout, maps }
+    BlasMatVecOperandPrepared { layout: *layout, maps }
 }
 
 #[cfg(test)]

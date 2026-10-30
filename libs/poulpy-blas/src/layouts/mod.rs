@@ -27,7 +27,7 @@ pub use matmul_operand::{
     blas_matmul_left_term_layout, blas_matmul_right_operand_layout, blas_matmul_right_term_layout,
 };
 pub use matvec_operand::{
-    BlasMatVecMaps, BlasMatVecOperand, BlasMatVecOperandInfos, BlasMatVecOperandLayout, BlasMatVecOperandUnprepared,
+    BlasMatVecMaps, BlasMatVecOperand, BlasMatVecOperandInfos, BlasMatVecOperandLayout, BlasMatVecOperandPrepared,
     matvec_pt_galois_elements,
 };
 pub use planning::{

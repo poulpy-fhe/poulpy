@@ -7,7 +7,7 @@ use poulpy_core::layouts::DiagonalArithmetic;
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::layouts::{
-    BlasContext, BlasContextInfos, BlasContextUnprepared, BlasMatVecOperand, BlasMatVecOperandInfos, BlasMatVecOperandUnprepared,
+    BlasContext, BlasContextInfos, BlasContextUnprepared, BlasMatVecOperand, BlasMatVecOperandInfos, BlasMatVecOperandPrepared,
     BlasPtOperand, BlasPtOperandInfos, BlasPtOperandUnprepared, BlasPtSide,
     context::{MapId, assert_fits_module, context_map},
     encoding::{encode_map_into, prepare_maps_into, real_map},
@@ -54,7 +54,7 @@ pub trait BlasEncodingReference<BE: Backend> {
     /// After asserting its scratch query, the map of every block, output-major.
     fn blas_matvec_operand_encode_reference<F>(
         &self,
-        res: &mut BlasMatVecOperandUnprepared<BE>,
+        res: &mut BlasMatVecOperand<BE>,
         entry: impl Fn(usize, usize) -> F,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -106,8 +106,8 @@ pub trait BlasEncodingReference<BE: Backend> {
     /// Every map of `other` prepared into the same position of `res`.
     fn blas_matvec_operand_prepare_reference(
         &self,
-        res: &mut BlasMatVecOperand<BE>,
-        other: &BlasMatVecOperandUnprepared<BE>,
+        res: &mut BlasMatVecOperandPrepared<BE>,
+        other: &BlasMatVecOperand<BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         Self: CKKSLinearTransformationOps<BE>;
@@ -201,7 +201,7 @@ impl<BE: Backend> BlasEncodingReference<BE> for Module<BE> {
 
     fn blas_matvec_operand_encode_reference<F>(
         &self,
-        res: &mut BlasMatVecOperandUnprepared<BE>,
+        res: &mut BlasMatVecOperand<BE>,
         entry: impl Fn(usize, usize) -> F,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -320,8 +320,8 @@ impl<BE: Backend> BlasEncodingReference<BE> for Module<BE> {
 
     fn blas_matvec_operand_prepare_reference(
         &self,
-        res: &mut BlasMatVecOperand<BE>,
-        other: &BlasMatVecOperandUnprepared<BE>,
+        res: &mut BlasMatVecOperandPrepared<BE>,
+        other: &BlasMatVecOperand<BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         Self: CKKSLinearTransformationOps<BE>,

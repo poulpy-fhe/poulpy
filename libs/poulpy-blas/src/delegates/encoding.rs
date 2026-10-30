@@ -6,7 +6,7 @@ use crate::{
     api::{BlasContextPreparedFactory, BlasEncodingOps, BlasMatVecOperandPreparedFactory, BlasPtOperandPreparedFactory},
     layouts::{
         BlasContext, BlasContextInfos, BlasContextUnprepared, BlasMatVecOperand, BlasMatVecOperandInfos,
-        BlasMatVecOperandUnprepared, BlasPtOperand, BlasPtOperandInfos, BlasPtOperandUnprepared, BlasPtSide,
+        BlasMatVecOperandPrepared, BlasPtOperand, BlasPtOperandInfos, BlasPtOperandUnprepared, BlasPtSide,
     },
     oep::BlasEncodingImpl,
 };
@@ -35,7 +35,7 @@ where
 
     fn blas_matvec_operand_encode(
         &self,
-        res: &mut BlasMatVecOperandUnprepared<BE>,
+        res: &mut BlasMatVecOperand<BE>,
         entry: impl Fn(usize, usize) -> F,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> CKKSResult<()> {
@@ -73,8 +73,8 @@ impl<BE: Backend + BlasEncodingImpl> BlasMatVecOperandPreparedFactory<BE> for Mo
 
     fn blas_matvec_operand_prepare(
         &self,
-        res: &mut BlasMatVecOperand<BE>,
-        other: &BlasMatVecOperandUnprepared<BE>,
+        res: &mut BlasMatVecOperandPrepared<BE>,
+        other: &BlasMatVecOperand<BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) {
         BE::blas_matvec_operand_prepare(self, res, other, scratch)

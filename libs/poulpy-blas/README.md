@@ -45,7 +45,7 @@ every repetition of the output's period and reads each input entry at the first 
 have at most `input_period` diagonals, on the schedule the layout names: `Direct` by default, or `Bsgs` at a giant
 step, `with_optimal_bsgs` picking the cost-optimal one. Every output ciphertext is one summed transformation over the input
 ciphertexts, which share their giant steps, and every output ciphertext shares one baby-step cache per input
-ciphertext. The operand is resident, `BlasMatVecOperand`, or streamed, `BlasMatVecOperandUnprepared`, whose plaintext
+ciphertext. The operand is resident, `BlasMatVecOperandPrepared`, or streamed, `BlasMatVecOperand`, whose plaintext
 diagonals are prepared at each use for less memory, with the same bits; `matvec_pt_galois_elements` lists its keys.
 
 `blas_matmul_max_base2k`, `blas_matmul_pt_right_max_base2k` and `blas_matmul_pt_left_max_base2k` return the largest
@@ -101,7 +101,7 @@ form, the backend's representation, which operations read.
 | `BlasCiphertext` | none | `BlasLayout`, `BlasGridInfos` |
 | `BlasVector` | none | `BlasVectorLayout`, `BlasVectorInfos` |
 | `BlasPtOperandUnprepared<BE, S>` | `BlasPtOperand<BE, S>` | `BlasPtOperandLayout<S>`, `BlasPtOperandInfos` |
-| `BlasMatVecOperandUnprepared<BE>` | `BlasMatVecOperand<BE>` | `BlasMatVecOperandLayout`, `BlasMatVecOperandInfos` |
+| `BlasMatVecOperand<BE>` | `BlasMatVecOperandPrepared<BE>` | `BlasMatVecOperandLayout`, `BlasMatVecOperandInfos` |
 | `BlasContextUnprepared<BE>` | `BlasContext<BE>` | `BlasContextLayout`, `BlasContextInfos` |
 | none | `BlasMatMulLeft<BE>`, `BlasMatMulRight<BE>` | `BlasMatMulOperandLayout`, `BlasMatMulOperandInfos` |
 

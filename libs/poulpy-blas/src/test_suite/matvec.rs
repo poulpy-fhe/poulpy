@@ -31,7 +31,7 @@ use super::helpers::{
 use crate::{
     api::{BlasEncodingOps, BlasMatVecOperandPreparedFactory, BlasMatVecOps},
     layouts::{
-        BlasMatVecOperand, BlasMatVecOperandLayout, BlasMatVecOperandUnprepared, BlasModuleAlloc, BlasVector, BlasVectorInfos,
+        BlasMatVecOperand, BlasMatVecOperandLayout, BlasMatVecOperandPrepared, BlasModuleAlloc, BlasVector, BlasVectorInfos,
         BlasVectorLayout, BlasVectorMut, BlasVectorOwned, BlasVectorRef, BlasVectorShape, blas_matvec_pt_output_layout,
         matvec_pt_galois_elements,
     },
@@ -196,7 +196,7 @@ where
 pub fn matvec_operands<BE, F>(
     module: &Module<BE>,
     layout: &BlasMatVecOperandLayout,
-) -> (BlasMatVecOperandUnprepared<BE>, BlasMatVecOperand<BE>)
+) -> (BlasMatVecOperand<BE>, BlasMatVecOperandPrepared<BE>)
 where
     BE: Backend + BlasEncodingImpl,
     Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F> + BlasEncodingOps<BE, F> + CnvPVecAlloc<BE>,
