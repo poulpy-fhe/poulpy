@@ -120,6 +120,18 @@ macro_rules! blas_backend_test_suite {
                 $crate::test_suite::matvec::test_blas_matvec_pt::<$backend, $scalar, $encoder>($params, &*MODULE, &*HOST_MODULE);
             }
             #[test]
+            fn matvec_diagonal() {
+                $crate::test_suite::matvec::test_blas_matvec_diagonal::<$backend, $scalar, $encoder>($params, &*MODULE, &*HOST_MODULE);
+            }
+            #[test]
+            fn matvec_diagonal_guards() {
+                $crate::test_suite::matvec::test_blas_matvec_diagonal_guards::<$backend, $scalar, $encoder>(
+                    $params,
+                    &*MODULE,
+                    &*HOST_MODULE,
+                );
+            }
+            #[test]
             fn matvec_pt_guards() {
                 $crate::test_suite::matvec::test_blas_matvec_pt_guards::<$backend, $scalar, $encoder>(
                     $params,

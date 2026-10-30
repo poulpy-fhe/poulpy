@@ -5,24 +5,28 @@ use std::cell::OnceCell;
 
 use poulpy_ckks::{
     CKKSInfos, CKKSLayout, CKKSResult as Result, GLWEPlaintextInfos, Scale, SlotsKind,
-    api::{CKKSModuleInfos, LinearTransformation, LtDiagonalMeta, PreparedDiagonal, ckks_linear_transformation_output_k},
+    api::{
+        CKKSModuleInfos, LinearTransformation, LtDiagonalMeta, PreparedDiagonal, ckks_linear_transformation_output_k,
+        ckks_linear_transformation_output_layout,
+    },
 };
 use poulpy_core::layouts::{LWEInfos, TorusPrecision};
 use poulpy_hal::layouts::{Backend, Data, MaxBase2k, Module};
 
 use super::{
-    BlasContextInfos, BlasGridInfos, BlasLayout, BlasMatMulOperandInfos, BlasMatVecOperandInfos, BlasPlan, BlasPtOperandInfos,
-    BlasPtSide, BlasVectorInfos, BlasVectorLayout, Left, Right,
+    BlasContextInfos, BlasDiagonalCiphertextInfos, BlasGridInfos, BlasLayout, BlasMatMulOperandInfos, BlasMatVecOperandInfos,
+    BlasPlan, BlasPtOperandInfos, BlasPtSide, BlasVectorInfos, BlasVectorLayout, Left, Right,
     ciphertext::{mat_slots_in, replicated_at},
     context::{ContextMaps, context_shapes, reduction_projection, shift_maps, shift_rotates},
+    diagonal_ciphertext::{self, AppendAxis},
     encoding::{DiagonalShape, copied_block, mapped_block, mapped_block_into, shape},
     matmul_operand::{left_term_layout, product_terms, right_maps, right_term_layout},
     matvec_operand::{map_layout, output_label},
     pt_operand::{OperandMaps, layouts_of},
     validate::{
-        MAX_BASE2K, UseSink, context_masks, left_takes_replicated, left_uses, matmul_tensor, matmul_uses, matvec_pt_uses,
-        prepared_tensor, prepared_uses, pt_left_uses, pt_right_uses, reduction_uses, right_uses, rotate_uses, shift_uses,
-        sum_uses, transpose_uses,
+        MAX_BASE2K, UseSink, append_uses, context_masks, left_takes_replicated, left_uses, matmul_tensor, matmul_uses,
+        matvec_diagonal_tensor, matvec_diagonal_uses, matvec_pt_uses, prepared_tensor, prepared_uses, pt_left_uses,
+        pt_right_uses, reduction_uses, right_uses, rotate_uses, shift_uses, sum_uses, transpose_uses,
     },
 };
 
@@ -801,6 +805,86 @@ pub fn blas_matvec_pt_max_base2k<BE: MaxBase2k>(
     let (ct, terms) = (a.ct_layout(), w.input().count());
     max_radix::<BE>(ct.n().as_usize(), failure_bits, |r| {
         giant_products(map_shape([&map]), terms, ct.k().as_usize(), r)
+    })
+}
+
+/// The layout [`crate::api::BlasMatVecOps::blas_matvec_diagonal`] stamps on `res` for `m` and `a`: poulpy-ckks's ct x ct rule
+/// between `a`'s ciphertext and `m`'s diagonals, into `res`'s width, of `a`'s shape. `m` is a matrix or its layout.
+pub fn blas_matvec_diagonal_output_layout(
+    res: &impl BlasVectorInfos,
+    m: &impl BlasDiagonalCiphertextInfos,
+    a: &impl BlasVectorInfos,
+) -> BlasVectorLayout {
+    let shape = diagonal_ciphertext::shape(&m.blas_diagonal_ciphertext_layout());
+    let ct = ckks_linear_transformation_output_layout(&shape, a.ct_layout(), res.ct_layout().k());
+    BlasVectorLayout::new(ct, a.vector_shape())
+}
+
+/// The keys [`crate::api::BlasMatVecOps::blas_matvec_diagonal`] looks up for `a` into `res` through `m`, by `m`'s schedule: those
+/// of its baby steps at `a`'s width, those of its giant steps at the width of the result, and the tensor key at the
+/// wider of `a`'s and the diagonals' widths. See [`BlasKeyUses`].
+pub fn blas_matvec_diagonal_key_uses<BE: Backend>(
+    module: &Module<BE>,
+    res: &impl BlasVectorInfos,
+    m: &impl BlasDiagonalCiphertextInfos,
+    a: &impl BlasVectorInfos,
+) -> BlasKeyUses {
+    let layout = m.blas_diagonal_ciphertext_layout();
+    let shape = diagonal_ciphertext::shape(&layout);
+    BlasKeyUses::collect(module, Some(matvec_diagonal_tensor(&layout, a)), |f| {
+        matvec_diagonal_uses(res, &shape, a, f)
+    })
+}
+
+/// The keys [`crate::api::BlasMatVecOps::blas_append_row_diagonal`] looks up on `m` for `v`: the rotations of `v` by the baby
+/// steps `m`'s diagonals read, at `v`'s width. See [`BlasKeyUses`].
+pub fn blas_append_row_diagonal_key_uses<BE: Backend>(
+    module: &Module<BE>,
+    m: &impl BlasDiagonalCiphertextInfos,
+    v: &impl BlasVectorInfos,
+) -> BlasKeyUses {
+    append_key_uses(module, AppendAxis::Row, m, v)
+}
+
+/// The keys [`crate::api::BlasMatVecOps::blas_append_col_diagonal`] looks up on `m` for `v`: the rotations of `v` by the
+/// opposites of `m`'s giant steps, at `v`'s width. See [`BlasKeyUses`].
+pub fn blas_append_col_diagonal_key_uses<BE: Backend>(
+    module: &Module<BE>,
+    m: &impl BlasDiagonalCiphertextInfos,
+    v: &impl BlasVectorInfos,
+) -> BlasKeyUses {
+    append_key_uses(module, AppendAxis::Col, m, v)
+}
+
+fn append_key_uses<BE: Backend>(
+    module: &Module<BE>,
+    axis: AppendAxis,
+    m: &impl BlasDiagonalCiphertextInfos,
+    v: &impl BlasVectorInfos,
+) -> BlasKeyUses {
+    let shape = diagonal_ciphertext::shape(&m.blas_diagonal_ciphertext_layout());
+    BlasKeyUses::collect(module, None, |f| append_uses(axis, &shape, v, f))
+}
+
+/// The largest `base2k`, at most 62, that [`Module::max_base2k`] allows for every lazy sum of a
+/// [`crate::api::BlasMatVecOps::blas_matvec_diagonal`] of `m` by `a`, 0 if none does: each giant step sums, before its one
+/// relinearization, the tensor products of its `g` pairs, `2 g min(L, P)` limb products in an output limb of the middle
+/// term, `g` the most diagonals a giant step groups, `L` the limbs of `a.k` and `P` those of a diagonal, counted at each
+/// candidate radix. `failure_bits` and the model are those of [`Module::max_base2k`]. Name the backend, as
+/// [`blas_matmul_max_base2k`] does.
+///
+/// # Panics
+///
+/// As [`blas_matmul_max_base2k`] on the degree and `failure_bits`.
+pub fn blas_matvec_diagonal_max_base2k<BE: MaxBase2k>(
+    m: &impl BlasDiagonalCiphertextInfos,
+    a: &impl BlasVectorInfos,
+    failure_bits: usize,
+) -> usize {
+    let shape = diagonal_ciphertext::shape(&m.blas_diagonal_ciphertext_layout());
+    let ct = a.ct_layout();
+    max_radix::<BE>(ct.n().as_usize(), failure_bits, |r| {
+        2 * giant_products(map_shape([&shape]), 1, ct.k().as_usize(), r)
     })
 }
 

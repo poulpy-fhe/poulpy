@@ -13,9 +13,10 @@ use poulpy_core::{
 use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, Module, PrepareHint, ReaderFrom, Ring, WriterTo, ZnxWord};
 
 use super::{
-    BlasContext, BlasContextInfos, BlasMatVecOperand, BlasMatVecOperandInfos, BlasMatVecOperandLayout, BlasPlan, BlasPtOperand,
-    BlasPtOperandInfos, BlasPtOperandLayout, BlasPtSide, BlasVector, BlasVectorInfos, BlasVectorOwned, BlasVectorShape, context,
-    matvec_operand, pt_operand, vector,
+    BlasContext, BlasContextInfos, BlasDiagonalCiphertext, BlasDiagonalCiphertextInfos, BlasMatVecOperand,
+    BlasMatVecOperandInfos, BlasMatVecOperandLayout, BlasPlan, BlasPtOperand, BlasPtOperandInfos, BlasPtOperandLayout,
+    BlasPtSide, BlasVector, BlasVectorInfos, BlasVectorOwned, BlasVectorShape, context, diagonal_ciphertext, matvec_operand,
+    pt_operand, vector,
 };
 
 /// An `rows x cols` grid of `2^log_d x 2^log_d` blocks: block `(i, j)` is one CKKS ciphertext whose matrix slot `s`
@@ -622,6 +623,17 @@ pub trait BlasModuleAlloc<BE: Backend>: CKKSModuleAlloc<BE> + GetDegree + Sized 
         matvec_operand::alloc(self, &infos.blas_matvec_operand_layout())
     }
 
+    /// A diagonal ciphertext of `infos`, every diagonal zero: a matrix `blas_append_row_diagonal` and
+    /// `blas_append_col_diagonal` fill.
+    ///
+    /// # Panics
+    ///
+    /// Panics unless the slots of `infos` are the module's, it holds at least one diagonal, each below the slots, and its
+    /// diagonals are ciphertexts of the module's degree at a radix in `1..=62`.
+    fn blas_diagonal_ciphertext_alloc_from_infos<A: BlasDiagonalCiphertextInfos>(&self, infos: &A) -> BlasDiagonalCiphertext<BE> {
+        diagonal_ciphertext::alloc(self, &infos.blas_diagonal_ciphertext_layout())
+    }
+
     /// A context of `plan` on this module's ring, every diagonal zero, which
     /// [`BlasEncodingOps::blas_context_encode`](crate::api::BlasEncodingOps::blas_context_encode) fills.
     ///
@@ -674,6 +686,15 @@ pub trait BlasBytesOf<BE: Backend>: GLWEBytesOf<BE> + CKKSModuleAlloc<BE> + GetD
             .checked_mul(ct)
             .expect("the vector's bytes overflow usize")
     }
+
+    /// Bytes of [`BlasModuleAlloc::blas_diagonal_ciphertext_alloc_from_infos`] of `infos`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the bytes overflow `usize`.
+    fn blas_diagonal_ciphertext_bytes_of_from_infos<A: BlasDiagonalCiphertextInfos>(&self, infos: &A) -> usize {
+        diagonal_ciphertext::bytes_of(self, &infos.blas_diagonal_ciphertext_layout())
+    }
 }
 
 impl<BE: Backend> BlasBytesOf<BE> for Module<BE> where Module<BE>: CKKSModuleAlloc<BE> {}
@@ -682,7 +703,8 @@ impl<BE: Backend> BlasBytesOf<BE> for Module<BE> where Module<BE>: CKKSModuleAll
 mod tests {
     use super::*;
     use crate::layouts::{
-        BlasContextPrepared, BlasMatMulOperand, BlasMatVecOperandPrepared, BlasPtOperandPrepared, BlasVectorMut,
+        BlasContextPrepared, BlasDiagonalCiphertext, BlasDiagonalCiphertextPrepared, BlasMatMulOperand,
+        BlasMatVecOperandPrepared, BlasPtOperandPrepared, BlasVectorMut,
     };
     use poulpy_ckks::{
         CKKSError, SetGLWEPlaintextInfos,
@@ -709,6 +731,8 @@ mod tests {
         vector::<BE, BlasVectorOwned<BE>>();
         sync::<BlasMatVecOperandPrepared<BE>>();
         sync::<BlasMatVecOperand<BE>>();
+        operand::<BlasDiagonalCiphertext<BE>>();
+        operand::<BlasDiagonalCiphertextPrepared<BE>>();
         sync::<BlasContextPrepared<BE>>();
         sync::<BlasPtOperandPrepared<BE>>();
         operand::<BlasMatMulOperand<BE, CKKSPreparedLeft<BE>>>();

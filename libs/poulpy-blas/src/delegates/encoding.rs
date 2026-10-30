@@ -3,10 +3,14 @@ use poulpy_core::layouts::DiagonalArithmetic;
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
-    api::{BlasContextPreparedFactory, BlasEncodingOps, BlasMatVecOperandPreparedFactory, BlasPtOperandPreparedFactory},
+    api::{
+        BlasContextPreparedFactory, BlasDiagonalCiphertextPreparedFactory, BlasEncodingOps, BlasMatVecOperandPreparedFactory,
+        BlasPtOperandPreparedFactory,
+    },
     layouts::{
-        BlasContext, BlasContextInfos, BlasContextPrepared, BlasMatVecOperand, BlasMatVecOperandInfos, BlasMatVecOperandPrepared,
-        BlasPtOperand, BlasPtOperandInfos, BlasPtOperandPrepared, BlasPtSide,
+        BlasContext, BlasContextInfos, BlasContextPrepared, BlasDiagonalCiphertext, BlasDiagonalCiphertextInfos,
+        BlasDiagonalCiphertextPrepared, BlasMatVecOperand, BlasMatVecOperandInfos, BlasMatVecOperandPrepared, BlasPtOperand,
+        BlasPtOperandInfos, BlasPtOperandPrepared, BlasPtSide,
     },
     oep::BlasEncodingImpl,
 };
@@ -78,6 +82,21 @@ impl<BE: Backend + BlasEncodingImpl> BlasMatVecOperandPreparedFactory<BE> for Mo
         scratch: &mut ScratchArena<'_, BE>,
     ) {
         BE::blas_matvec_operand_prepare(self, res, other, scratch)
+    }
+}
+
+impl<BE: Backend + BlasEncodingImpl> BlasDiagonalCiphertextPreparedFactory<BE> for Module<BE> {
+    fn blas_diagonal_ciphertext_prepare_tmp_bytes<A: BlasDiagonalCiphertextInfos>(&self, infos: &A) -> usize {
+        BE::blas_diagonal_ciphertext_prepare_tmp_bytes(self, infos)
+    }
+
+    fn blas_diagonal_ciphertext_prepare(
+        &self,
+        res: &mut BlasDiagonalCiphertextPrepared<BE>,
+        other: &BlasDiagonalCiphertext<BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) {
+        BE::blas_diagonal_ciphertext_prepare(self, res, other, scratch)
     }
 }
 

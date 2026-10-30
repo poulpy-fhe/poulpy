@@ -32,6 +32,11 @@ pub(crate) struct Scheduled<F> {
     meta: CoeffsMeta,
 }
 
+/// The slot count of a ring of cyclotomic order `cyclotomic_order`.
+pub(crate) fn ring_slots(cyclotomic_order: i64) -> Option<usize> {
+    usize::try_from(cyclotomic_order / 4).ok()
+}
+
 /// `diagonals` with an empty imaginary part, its slots marked real, scheduled by `strategy` and encoded at `meta`.
 pub(crate) fn real_map<F>(diagonals: Diagonals<F>, strategy: LinearTransformationStrategy, mut meta: CoeffsMeta) -> Scheduled<F> {
     let im = Diagonals::new(diagonals.slots());
@@ -163,13 +168,14 @@ pub(crate) fn skeleton<P: Copy>(plan: &LinearTransformationPlan, diagonal: P) ->
 }
 
 /// What the planning queries read of a map's diagonals: their width, scale, slot kind and the sparsity their period
-/// proves on the module's degree.
+/// proves on the module's degree, and for ciphertext diagonals their width as ciphertexts.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct DiagonalShape {
     pub(crate) k: TorusPrecision,
     pub(crate) log_scale: usize,
     pub(crate) slots: SlotsKind,
     pub(crate) log_sparsity: usize,
+    pub(crate) ciphertext_k: Option<TorusPrecision>,
 }
 
 impl LtDiagonalMeta for DiagonalShape {
@@ -183,6 +189,10 @@ impl LtDiagonalMeta for DiagonalShape {
 
     fn lt_log_sparsity(&self, _log_n: usize) -> usize {
         self.log_sparsity
+    }
+
+    fn lt_ciphertext_k(&self) -> Option<TorusPrecision> {
+        self.ciphertext_k
     }
 }
 
@@ -199,6 +209,7 @@ pub(crate) fn shape(map: &MapLayout) -> LinearTransformation<DiagonalShape> {
         log_scale: map.meta.log_delta(),
         slots,
         log_sparsity: map.log_sparsity(),
+        ciphertext_k: None,
     };
     skeleton(&map.prepared_index(), diagonal)
 }

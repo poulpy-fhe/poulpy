@@ -7,8 +7,9 @@ use poulpy_core::layouts::DiagonalArithmetic;
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::layouts::{
-    BlasContext, BlasContextInfos, BlasContextPrepared, BlasMatVecOperand, BlasMatVecOperandInfos, BlasMatVecOperandPrepared,
-    BlasPtOperand, BlasPtOperandInfos, BlasPtOperandPrepared, BlasPtSide,
+    BlasContext, BlasContextInfos, BlasContextPrepared, BlasDiagonalCiphertext, BlasDiagonalCiphertextInfos,
+    BlasDiagonalCiphertextPrepared, BlasMatVecOperand, BlasMatVecOperandInfos, BlasMatVecOperandPrepared, BlasPtOperand,
+    BlasPtOperandInfos, BlasPtOperandPrepared, BlasPtSide,
     context::{MapId, assert_fits_module, context_map},
     encoding::{encode_map_into, prepare_maps_into, real_map},
     maps, matvec_operand,
@@ -18,8 +19,8 @@ use crate::layouts::{
 
 /// References of [`crate::oep::BlasEncodingImpl`], which
 /// [`impl_blas_encoding_reference_full!`](crate::impl_blas_encoding_reference_full) forwards to: the encodings and
-/// preparations of [`crate::api::BlasEncodingOps`], [`crate::api::BlasPtOperandPreparedFactory`] and
-/// [`crate::api::BlasContextPreparedFactory`]. An encoding builds each map's host diagonals and encodes them by
+/// preparations of [`crate::api::BlasEncodingOps`], [`crate::api::BlasPtOperandPreparedFactory`],
+/// [`crate::api::BlasDiagonalCiphertextPreparedFactory`] and [`crate::api::BlasContextPreparedFactory`]. An encoding builds each map's host diagonals and encodes them by
 /// poulpy-ckks's `ckks_encode_linear_transformation_into`, map after map in walking order, and the first error stops it;
 /// a preparation prepares each map by poulpy-ckks's `ckks_prepare_linear_transformation_rhs`, and a masked operand's
 /// terms by `ckks_prepare_right_into`, into the allocations of `res`.
@@ -104,6 +105,21 @@ pub trait BlasEncodingReference<BE: Backend> {
         &self,
         res: &mut BlasMatVecOperandPrepared<BE>,
         other: &BlasMatVecOperand<BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        Self: CKKSLinearTransformationOps<BE>;
+
+    /// poulpy-ckks's preparation query of a diagonal of `infos`.
+    fn blas_diagonal_ciphertext_prepare_tmp_bytes_reference<A>(&self, infos: &A) -> usize
+    where
+        Self: CKKSLinearTransformationOps<BE>,
+        A: BlasDiagonalCiphertextInfos;
+
+    /// After asserting its scratch query, every diagonal of `other` prepared into the same position of `res`.
+    fn blas_diagonal_ciphertext_prepare_reference(
+        &self,
+        res: &mut BlasDiagonalCiphertextPrepared<BE>,
+        other: &BlasDiagonalCiphertext<BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         Self: CKKSLinearTransformationOps<BE>;
@@ -330,6 +346,38 @@ impl<BE: Backend> BlasEncodingReference<BE> for Module<BE> {
             0,
             scratch,
         );
+    }
+
+    fn blas_diagonal_ciphertext_prepare_tmp_bytes_reference<A>(&self, infos: &A) -> usize
+    where
+        Self: CKKSLinearTransformationOps<BE>,
+        A: BlasDiagonalCiphertextInfos,
+    {
+        self.ckks_prepare_linear_transformation_rhs_tmp_bytes(&infos.blas_diagonal_ciphertext_layout().ct)
+    }
+
+    fn blas_diagonal_ciphertext_prepare_reference(
+        &self,
+        res: &mut BlasDiagonalCiphertextPrepared<BE>,
+        other: &BlasDiagonalCiphertext<BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        Self: CKKSLinearTransformationOps<BE>,
+    {
+        let op = "blas_diagonal_ciphertext_prepare";
+        let layout = other.blas_diagonal_ciphertext_layout();
+        assert!(
+            res.blas_diagonal_ciphertext_layout() == layout,
+            "the prepared diagonal ciphertext was allocated for another layout"
+        );
+        assert_scratch(
+            op,
+            self.blas_diagonal_ciphertext_prepare_tmp_bytes_reference(&layout),
+            scratch,
+        );
+        if let Err(err) = self.ckks_prepare_linear_transformation_rhs(&mut res.diagonals, &other.diagonals, scratch) {
+            panic!("{op}: {err}");
+        }
     }
 
     fn blas_context_prepare_tmp_bytes_reference<A>(&self, infos: &A) -> usize
