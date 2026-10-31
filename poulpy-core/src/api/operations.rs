@@ -85,7 +85,8 @@ pub trait GLWETrace<BE: Backend> {
 ///
 /// On invalid maps, mixed input layouts or gaps, before changing inputs or destination.
 pub trait GLWEPack<BE: Backend> {
-    fn glwe_pack_galois_elements(&self) -> Vec<i64>;
+    /// Galois elements of the automorphism keys packing degree-`n` inputs needs.
+    fn glwe_pack_galois_elements(&self, n: Degree) -> Vec<i64>;
 
     /// Scratch for packing inputs of layout `a` into a destination of layout `res`.
     /// The derived implementation sizes the merge tree at `a` and the final

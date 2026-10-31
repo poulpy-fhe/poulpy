@@ -256,11 +256,8 @@ where
 {
     let b = params.base2k;
     let mut source = Source::new([131; 32]);
-    // The key lists name the module's Galois elements; keys for operands of a smaller
-    // degree are those of a module of that degree.
-    if r.n() == t.n() {
-        assert_eq!(r.glwe_pack_galois_elements(), t.glwe_pack_galois_elements());
-    }
+    let n = Degree(params.n as u32);
+    assert_eq!(r.glwe_pack_galois_elements(n), t.glwe_pack_galois_elements(n));
     for &rank in &shapes.ranks {
         let g = GLWELayout {
             n: Degree(params.n as u32),
@@ -279,7 +276,7 @@ where
         };
         let mut keys_r = HashMap::new();
         let mut keys_t = HashMap::new();
-        for p in r.glwe_pack_galois_elements() {
+        for p in r.glwe_pack_galois_elements(n) {
             let mut key_r = r.glwe_automorphism_key_alloc_from_infos(&k);
             fill_by_digit(r, &mut key_r, 1, &mut source);
             key_r.p = p;

@@ -447,7 +447,7 @@ pub trait ScratchArenaTakeCKKSCiphertext<'a, BE: Backend>: ScratchArenaTakeGLWE<
     /// Carves several same-layout CKKS ciphertexts from scratch space.
     fn take_ckks_ciphertext_slice_scratch<I>(
         self,
-        size: usize,
+        len: usize,
         infos: &I,
         meta: GLWEPlaintextMeta,
     ) -> (Vec<CKKSCiphertextViewMut<'a, BE>>, Self)
@@ -455,7 +455,7 @@ pub trait ScratchArenaTakeCKKSCiphertext<'a, BE: Backend>: ScratchArenaTakeGLWE<
         BE: 'a,
         I: GLWEInfos,
     {
-        let (inner, scratch) = self.take_glwe_slice_scratch(size, infos);
+        let (inner, scratch) = self.take_glwe_slice_scratch(len, infos);
         (
             inner
                 .into_iter()

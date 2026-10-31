@@ -132,15 +132,15 @@ pub trait ScratchArenaTakeGLWE<'a, B: Backend>: ScratchArenaTakeVecZnx<'a, B> + 
         )
     }
 
-    /// Allocates a `Vec` of `size` [`GLWE`] ciphertexts from scratch space.
-    fn take_glwe_slice_scratch<A>(self, size: usize, infos: &A) -> (Vec<GLWEViewMut<'a, B>>, Self)
+    /// Allocates a `Vec` of `len` [`GLWE`] ciphertexts from scratch space.
+    fn take_glwe_slice_scratch<A>(self, len: usize, infos: &A) -> (Vec<GLWEViewMut<'a, B>>, Self)
     where
         B: 'a,
         A: GLWEInfos,
     {
         let mut scratch: Self = self;
-        let mut cts: Vec<GLWEViewMut<'a, B>> = Vec::with_capacity(size);
-        for _ in 0..size {
+        let mut cts: Vec<GLWEViewMut<'a, B>> = Vec::with_capacity(len);
+        for _ in 0..len {
             let (ct, new_scratch) = scratch.take_glwe_scratch(infos);
             scratch = new_scratch;
             cts.push(ct);
