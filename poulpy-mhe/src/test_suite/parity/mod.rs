@@ -50,7 +50,7 @@ use poulpy_hal::{
 };
 
 use super::fixtures::{PARTIES, secret_from_seed_at};
-use crate::layouts::GLWEPublicKeyShareOwned;
+use crate::layouts::MHEGLWEPublicKeyShareOwned;
 
 /// Storage the suite transfers fixtures into and reads outputs from, without host views.
 pub trait ParityBackend: Backend<ZnxWord = i64, OwnedBuf: CopyToHost + CopyFromHost> {}
@@ -210,7 +210,7 @@ where
     }
 }
 
-fn snapshot_public_key_share<BE: Backend>(label: &'static str, a: &GLWEPublicKeyShareOwned<BE>) -> Snapshot {
+fn snapshot_public_key_share<BE: Backend>(label: &'static str, a: &MHEGLWEPublicKeyShareOwned<BE>) -> Snapshot {
     let view = GLWEPublicKeyCompressedToBackendRef::<BE>::to_backend_ref(a);
     Snapshot {
         label,

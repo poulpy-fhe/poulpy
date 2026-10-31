@@ -23,15 +23,15 @@ use poulpy_hal::{
 use super::fixtures::{
     BASE2K, K, PARTIES, RANK, SEEDS, assert_short_scratch_panics, collective_public_key, ideal_secret, party_secrets,
 };
-use crate::{api::GLWEPublicKeyMHEProtocol, layouts::MHEModuleAlloc};
+use crate::{api::MHEGLWEPublicKeyProtocol, layouts::MHEGLWEPublicKeyShareAlloc};
 
 pub fn test_glwe_public_key<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: MHEModuleAlloc<BE>
-        + GLWEPublicKeyMHEProtocol<BE>
+    Module<BE>: MHEGLWEPublicKeyShareAlloc<BE>
+        + MHEGLWEPublicKeyProtocol<BE>
         + GLWESecretSampling<BE>
         + GLWESecretPreparedFactory<BE>
         + VecZnxAddScalarAssign<BE>
@@ -55,8 +55,8 @@ where
 
     // A mismatch in the last entry must be rejected before an earlier entry
     // changes, including its coefficients and the aggregate's provenance.
-    let mut acc = module.glwe_public_key_share_alloc_from_infos(&layout);
-    let mut share = module.glwe_public_key_share_alloc_from_infos(&layout);
+    let mut acc = module.mhe_glwe_public_key_share_alloc_from_infos(&layout);
+    let mut share = module.mhe_glwe_public_key_share_alloc_from_infos(&layout);
     for (i, dst) in [&mut acc, &mut share].into_iter().enumerate() {
         let gen_bytes = module.mhe_glwe_public_key_share_gen_tmp_bytes(&layout);
         if i == 0 {
@@ -125,8 +125,8 @@ where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: MHEModuleAlloc<BE>
-        + GLWEPublicKeyMHEProtocol<BE>
+    Module<BE>: MHEGLWEPublicKeyShareAlloc<BE>
+        + MHEGLWEPublicKeyProtocol<BE>
         + GLWESecretSampling<BE>
         + GLWESecretPreparedFactory<BE>
         + GLWEPublicKeyPreparedFactory<BE>
@@ -164,8 +164,8 @@ where
             _ => unreachable!(),
         };
         let mut secrets = Vec::new();
-        let mut aggregate = module.glwe_public_key_share_alloc_from_infos(&key_layout);
-        let mut share = module.glwe_public_key_share_alloc_from_infos(&key_layout);
+        let mut aggregate = module.mhe_glwe_public_key_share_alloc_from_infos(&key_layout);
+        let mut share = module.mhe_glwe_public_key_share_alloc_from_infos(&key_layout);
         for i in 0..PARTIES {
             let mut sk: GLWESecret<AlignedBuf, i64> = module.glwe_secret_alloc(RANK);
             let mut source = Source::new([100 + i as u8; 32]);
@@ -192,7 +192,7 @@ where
 
         let mut encoded = Vec::new();
         aggregate.write_to(&mut encoded).unwrap();
-        let mut decoded = module.glwe_public_key_share_alloc_from_infos(&key_layout);
+        let mut decoded = module.mhe_glwe_public_key_share_alloc_from_infos(&key_layout);
         decoded.read_from(&mut encoded.as_slice()).unwrap();
         assert!(decoded == aggregate);
         let mut collective: GLWEPublicKey<AlignedBuf, i64> = module.glwe_public_key_alloc_from_infos(&key_layout);
@@ -371,7 +371,7 @@ where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: MHEModuleAlloc<BE> + GLWEPublicKeyMHEProtocol<BE>,
+    Module<BE>: MHEGLWEPublicKeyShareAlloc<BE> + MHEGLWEPublicKeyProtocol<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let layout = GLWELayout {
@@ -380,7 +380,7 @@ where
         k: K,
         rank: RANK,
     };
-    let share = module.glwe_public_key_share_alloc_from_infos(&layout);
+    let share = module.mhe_glwe_public_key_share_alloc_from_infos(&layout);
     let mut pk = dirty_public_key(module, &layout);
     let before = dirty_public_key(module, &layout);
     super::fixtures::assert_panics_with("invalid distribution: a public key needs a samplable distribution", || {
@@ -397,7 +397,7 @@ where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: MHEModuleAlloc<BE> + GLWEPublicKeyMHEProtocol<BE>,
+    Module<BE>: MHEGLWEPublicKeyShareAlloc<BE> + MHEGLWEPublicKeyProtocol<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let layout = GLWELayout {
@@ -406,7 +406,7 @@ where
         k: K,
         rank: RANK,
     };
-    let mut share = module.glwe_public_key_share_alloc_from_infos(&layout);
+    let mut share = module.mhe_glwe_public_key_share_alloc_from_infos(&layout);
     *share.dist_mut() = Distribution::TernaryProb(0.5);
     let mut pk = dirty_public_key(module, &layout);
     let before = dirty_public_key(module, &layout);
@@ -422,7 +422,6 @@ where
 fn dirty_public_key<BE>(module: &Module<BE>, layout: &GLWELayout) -> GLWEPublicKey<AlignedBuf, i64>
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: MHEModuleAlloc<BE>,
 {
     let mut pk: GLWEPublicKey<AlignedBuf, i64> = module.glwe_public_key_alloc_from_infos(layout);
     pk.data_mut()
@@ -438,12 +437,12 @@ where
 pub fn test_glwe_public_key_share_read_rank_mismatch<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: MHEModuleAlloc<BE>,
+    Module<BE>: MHEGLWEPublicKeyShareAlloc<BE>,
 {
-    let share = module.glwe_public_key_share_alloc(BASE2K, K, RANK);
+    let share = module.mhe_glwe_public_key_share_alloc(BASE2K, K, RANK);
     let mut bytes = Vec::new();
     share.write_to(&mut bytes).unwrap();
-    let mut res = module.glwe_public_key_share_alloc(BASE2K, K, Rank(1));
+    let mut res = module.mhe_glwe_public_key_share_alloc(BASE2K, K, Rank(1));
     assert!(res.read_from(&mut bytes.as_slice()).is_err());
 }
 
@@ -451,10 +450,10 @@ where
 pub fn test_mhe_glwe_public_key_share_aggregate_rejects_rank_mismatch<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: MHEModuleAlloc<BE> + GLWEPublicKeyMHEProtocol<BE>,
+    Module<BE>: MHEGLWEPublicKeyShareAlloc<BE> + MHEGLWEPublicKeyProtocol<BE>,
 {
-    let mut a = module.glwe_public_key_share_alloc(BASE2K, K, RANK);
-    let b = module.glwe_public_key_share_alloc(BASE2K, K, Rank(1));
+    let mut a = module.mhe_glwe_public_key_share_alloc(BASE2K, K, RANK);
+    let b = module.mhe_glwe_public_key_share_alloc(BASE2K, K, Rank(1));
     let before = a.clone();
     super::fixtures::assert_panics_with("invalid aggregation: layouts differ", || {
         module.mhe_glwe_public_key_share_aggregate(&mut a, &b);
@@ -466,7 +465,7 @@ where
 pub fn test_mhe_glwe_public_key_share_aggregate_rejects_dist_mismatch<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: MHEModuleAlloc<BE> + GLWEPublicKeyMHEProtocol<BE>,
+    Module<BE>: MHEGLWEPublicKeyShareAlloc<BE> + MHEGLWEPublicKeyProtocol<BE>,
 {
     let layout = GLWELayout {
         n: module.n().into(),
@@ -474,8 +473,8 @@ where
         k: K,
         rank: RANK,
     };
-    let mut a = module.glwe_public_key_share_alloc_from_infos(&layout);
-    let mut b = module.glwe_public_key_share_alloc_from_infos(&layout);
+    let mut a = module.mhe_glwe_public_key_share_alloc_from_infos(&layout);
+    let mut b = module.mhe_glwe_public_key_share_alloc_from_infos(&layout);
     *b.dist_mut() = Distribution::TernaryProb(0.5);
     let before = a.clone();
     super::fixtures::assert_panics_with("invalid aggregation: secret distributions differ", || {
@@ -490,7 +489,7 @@ where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: MHEModuleAlloc<BE> + GLWEPublicKeyMHEProtocol<BE> + GLWESecretPreparedFactory<BE>,
+    Module<BE>: MHEGLWEPublicKeyShareAlloc<BE> + MHEGLWEPublicKeyProtocol<BE> + GLWESecretPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let layout = GLWELayout {
@@ -501,7 +500,7 @@ where
     };
 
     let sk: GLWESecretPrepared<AlignedBuf, BE> = module.glwe_secret_prepared_alloc(RANK);
-    let mut res = module.glwe_public_key_share_alloc_from_infos(&layout);
+    let mut res = module.mhe_glwe_public_key_share_alloc_from_infos(&layout);
     let before = res.clone();
     let mut source_xe = Source::new([10u8; 32]);
     super::fixtures::assert_panics_with("invalid secret: a public key share needs a samplable distribution", || {
@@ -518,7 +517,7 @@ where
 pub fn test_mhe_glwe_public_key_share_gen_rejects_shape<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: ModuleNew<BE> + MHEModuleAlloc<BE> + GLWEPublicKeyMHEProtocol<BE> + GLWESecretPreparedFactory<BE>,
+    Module<BE>: ModuleNew<BE> + MHEGLWEPublicKeyShareAlloc<BE> + MHEGLWEPublicKeyProtocol<BE> + GLWESecretPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let layout = GLWELayout {
@@ -540,7 +539,7 @@ where
         ),
     ];
     for (sk, expected) in &secrets {
-        let mut res = module.glwe_public_key_share_alloc_from_infos(&layout);
+        let mut res = module.mhe_glwe_public_key_share_alloc_from_infos(&layout);
         let before = res.clone();
         let mut source_xe = Source::new([10u8; 32]);
         super::fixtures::assert_panics_with(expected, || {

@@ -14,8 +14,8 @@ use super::{
     snapshot_public_key, snapshot_public_key_share, snapshot_source,
 };
 use crate::{
-    api::GLWEPublicKeyMHEProtocol,
-    layouts::{GLWEPublicKeyShareOwned, MHEModuleAlloc},
+    api::MHEGLWEPublicKeyProtocol,
+    layouts::{MHEGLWEPublicKeyShareAlloc, MHEGLWEPublicKeyShareOwned},
     test_suite::fixtures::{K, RANK, SEEDS, glwe_layout_at},
 };
 
@@ -25,8 +25,8 @@ pub fn test_glwe_public_key_parity<BR, BT>(module_ref: &Module<BR>, module_test:
 where
     BR: ReferenceBackend,
     BT: ParityBackend,
-    Module<BR>: MHEModuleAlloc<BR> + GLWEPublicKeyMHEProtocol<BR> + GLWESecretSampling<BR> + GLWESecretPreparedFactory<BR>,
-    Module<BT>: MHEModuleAlloc<BT> + GLWEPublicKeyMHEProtocol<BT> + GLWESecretPreparedFactory<BT>,
+    Module<BR>: MHEGLWEPublicKeyProtocol<BR> + GLWESecretSampling<BR> + GLWESecretPreparedFactory<BR>,
+    Module<BT>: MHEGLWEPublicKeyProtocol<BT> + GLWESecretPreparedFactory<BT>,
 {
     for rank in [RANK, Rank(1)] {
         let layout = GLWELayout {
@@ -42,12 +42,12 @@ where
 
 fn run<BE: ParityBackend>(module: &Module<BE>, layout: &GLWELayout, secrets: &[GLWESecret<BE::OwnedBuf, i64>]) -> Vec<Snapshot>
 where
-    Module<BE>: MHEModuleAlloc<BE> + GLWEPublicKeyMHEProtocol<BE> + GLWESecretPreparedFactory<BE>,
+    Module<BE>: MHEGLWEPublicKeyShareAlloc<BE> + MHEGLWEPublicKeyProtocol<BE> + GLWESecretPreparedFactory<BE>,
 {
     let secrets = prepare_secrets(module, secrets);
     let mut out = Vec::new();
-    let mut acc = module.glwe_public_key_share_alloc_from_infos(layout);
-    let mut share = module.glwe_public_key_share_alloc_from_infos(layout);
+    let mut acc = module.mhe_glwe_public_key_share_alloc_from_infos(layout);
+    let mut share = module.mhe_glwe_public_key_share_alloc_from_infos(layout);
     for (i, sk) in secrets.iter().enumerate() {
         let dst = if i == 0 { &mut acc } else { &mut share };
         poison_public_key_share::<BE>(dst);
@@ -72,7 +72,7 @@ where
     out
 }
 
-fn poison_public_key_share<BE: Backend>(share: &mut GLWEPublicKeyShareOwned<BE>) {
+fn poison_public_key_share<BE: Backend>(share: &mut MHEGLWEPublicKeyShareOwned<BE>) {
     poison_view::<BE>(
         GLWEPublicKeyCompressedToBackendMut::<BE>::to_backend_mut(share)
             .data_mut()
@@ -88,11 +88,11 @@ pub(crate) fn collective_public_key<BR>(
 ) -> GLWEPublicKey<AlignedBuf, i64>
 where
     BR: ReferenceBackend,
-    Module<BR>: MHEModuleAlloc<BR> + GLWEPublicKeyMHEProtocol<BR> + GLWESecretPreparedFactory<BR>,
+    Module<BR>: MHEGLWEPublicKeyShareAlloc<BR> + MHEGLWEPublicKeyProtocol<BR> + GLWESecretPreparedFactory<BR>,
 {
     let secrets = prepare_secrets(module_ref, secrets);
-    let mut acc = module_ref.glwe_public_key_share_alloc_from_infos(layout);
-    let mut share = module_ref.glwe_public_key_share_alloc_from_infos(layout);
+    let mut acc = module_ref.mhe_glwe_public_key_share_alloc_from_infos(layout);
+    let mut share = module_ref.mhe_glwe_public_key_share_alloc_from_infos(layout);
     for (i, sk) in secrets.iter().enumerate() {
         let dst = if i == 0 { &mut acc } else { &mut share };
         let mut source_xe = Source::new([40 + i as u8; 32]);

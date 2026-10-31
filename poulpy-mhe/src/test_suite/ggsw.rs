@@ -27,8 +27,9 @@ use super::fixtures::{
     encrypt_integers, ggsw_layout, glwe_layout_at, ideal_secret, secret_from_seed_at,
 };
 use crate::{
-    api::{GGSWMHEProtocol, GLWESwitchingKeyMHEProtocol},
-    layouts::MHEModuleAlloc,
+    MHEGLWESwitchingKeyShareAlloc,
+    api::{MHEGGSWProtocol, MHEGLWESwitchingKeyProtocol},
+    layouts::MHEGGSWShareAlloc,
 };
 
 fn trial_seed(role: u8, trial: u8) -> [u8; 32] {
@@ -78,7 +79,7 @@ fn ephemeral_key<BE>(
 ) -> GLWESwitchingKeyPrepared<AlignedBuf, BE>
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: MHEModuleAlloc<BE> + GLWESwitchingKeyMHEProtocol<BE> + GLWESwitchingKeyPreparedFactory<BE>,
+    Module<BE>: MHEGLWESwitchingKeyShareAlloc<BE> + MHEGLWESwitchingKeyProtocol<BE> + GLWESwitchingKeyPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
@@ -87,8 +88,8 @@ where
             .max(module.mhe_glwe_switching_key_share_finalize_tmp_bytes())
             .max(module.glwe_switching_key_prepare_tmp_bytes(layout)),
     );
-    let mut acc = module.glwe_switching_key_share_alloc_from_infos(layout);
-    let mut share = module.glwe_switching_key_share_alloc_from_infos(layout);
+    let mut acc = module.mhe_glwe_switching_key_share_alloc_from_infos(layout);
+    let mut share = module.mhe_glwe_switching_key_share_alloc_from_infos(layout);
     for (i, ((u, _), (sk, _))) in ephemerals.iter().zip(secrets).enumerate() {
         let dst = if i == 0 { &mut acc } else { &mut share };
         let mut source_xe = Source::new(trial_seed(60 + i as u8, trial));
@@ -133,10 +134,10 @@ where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: MHEModuleAlloc<BE>
-        + GGSWMHEProtocol<BE>
+    Module<BE>: MHEGGSWShareAlloc<BE>
+        + MHEGGSWProtocol<BE>
         + VecZnxAddScalarAssign<BE>
-        + GLWESwitchingKeyMHEProtocol<BE>
+        + MHEGLWESwitchingKeyProtocol<BE>
         + GLWESwitchingKeyPreparedFactory<BE>
         + GLWESecretSampling<BE>
         + GLWESecretPreparedFactory<BE>,
@@ -154,8 +155,8 @@ where
 
     let finalize_bytes = module.mhe_ggsw_share_finalize_tmp_bytes(layout, &key_layout);
 
-    let mut acc = module.ggsw_share_alloc_from_infos(layout);
-    let mut share = module.ggsw_share_alloc_from_infos(layout);
+    let mut acc = module.mhe_ggsw_share_alloc_from_infos(layout);
+    let mut share = module.mhe_ggsw_share_alloc_from_infos(layout);
     for (i, (((_, sk), (_, u)), m)) in secrets.iter().zip(&ephemerals).zip(messages).enumerate() {
         let dst = if i == 0 { &mut acc } else { &mut share };
         let mut source_xe = Source::new(trial_seed(10 + i as u8, trial));
@@ -214,10 +215,9 @@ where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: MHEModuleAlloc<BE>
-        + GGSWMHEProtocol<BE>
+    Module<BE>: MHEGGSWProtocol<BE>
         + VecZnxAddScalarAssign<BE>
-        + GLWESwitchingKeyMHEProtocol<BE>
+        + MHEGLWESwitchingKeyProtocol<BE>
         + GLWESwitchingKeyPreparedFactory<BE>
         + GLWESecretSampling<BE>
         + GLWESecretPreparedFactory<BE>
@@ -297,10 +297,9 @@ where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: MHEModuleAlloc<BE>
-        + GGSWMHEProtocol<BE>
+    Module<BE>: MHEGGSWProtocol<BE>
         + VecZnxAddScalarAssign<BE>
-        + GLWESwitchingKeyMHEProtocol<BE>
+        + MHEGLWESwitchingKeyProtocol<BE>
         + GLWESwitchingKeyPreparedFactory<BE>
         + GLWESecretSampling<BE>
         + GLWESecretPreparedFactory<BE>
@@ -319,10 +318,9 @@ where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: MHEModuleAlloc<BE>
-        + GGSWMHEProtocol<BE>
+    Module<BE>: MHEGGSWProtocol<BE>
         + VecZnxAddScalarAssign<BE>
-        + GLWESwitchingKeyMHEProtocol<BE>
+        + MHEGLWESwitchingKeyProtocol<BE>
         + GLWESwitchingKeyPreparedFactory<BE>
         + GLWESecretSampling<BE>
         + GLWESecretPreparedFactory<BE>
@@ -349,10 +347,9 @@ where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: MHEModuleAlloc<BE>
-        + GGSWMHEProtocol<BE>
+    Module<BE>: MHEGGSWProtocol<BE>
         + VecZnxAddScalarAssign<BE>
-        + GLWESwitchingKeyMHEProtocol<BE>
+        + MHEGLWESwitchingKeyProtocol<BE>
         + GLWESwitchingKeyPreparedFactory<BE>
         + GLWESecretSampling<BE>
         + GLWESecretPreparedFactory<BE>
@@ -381,10 +378,9 @@ where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: MHEModuleAlloc<BE>
-        + GGSWMHEProtocol<BE>
+    Module<BE>: MHEGGSWProtocol<BE>
         + VecZnxAddScalarAssign<BE>
-        + GLWESwitchingKeyMHEProtocol<BE>
+        + MHEGLWESwitchingKeyProtocol<BE>
         + GLWESwitchingKeyPreparedFactory<BE>
         + GLWESecretSampling<BE>
         + GLWESecretPreparedFactory<BE>
@@ -431,7 +427,7 @@ pub fn test_mhe_ggsw_share_aggregate_rejects_seed_mismatch<BE>(module: &Module<B
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     Module<BE>:
-        MHEModuleAlloc<BE> + GGSWMHEProtocol<BE> + GLWESecretSampling<BE> + GLWESecretPreparedFactory<BE> + ScalarZnxAlloc<BE>,
+        MHEGGSWShareAlloc<BE> + MHEGGSWProtocol<BE> + GLWESecretSampling<BE> + GLWESecretPreparedFactory<BE> + ScalarZnxAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let layout = ggsw_layout(module);
@@ -439,7 +435,7 @@ where
     let (secrets, ephemerals) = parties(module, layout.rank, 0);
     let m: ScalarZnx<AlignedBuf, i64> = module.scalar_znx_alloc(module.n(), 1);
     let [mut a, b] = [0, 1].map(|i| {
-        let mut share = module.ggsw_share_alloc_from_infos(&layout);
+        let mut share = module.mhe_ggsw_share_alloc_from_infos(&layout);
         let mut source_xe = Source::new([10 + i as u8; 32]);
         with_scratch::<BE, _>(module.mhe_ggsw_share_gen_tmp_bytes(&layout), |s| {
             module.mhe_ggsw_share_gen(&mut share, &m, &secrets[i].1, &ephemerals[i].1, SEEDS[i], &mut source_xe, s)
@@ -457,7 +453,7 @@ pub fn test_mhe_ggsw_share_gen_rejects_ephemeral_rank_mismatch<BE>(module: &Modu
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     Module<BE>:
-        MHEModuleAlloc<BE> + GGSWMHEProtocol<BE> + GLWESecretSampling<BE> + GLWESecretPreparedFactory<BE> + ScalarZnxAlloc<BE>,
+        MHEGGSWShareAlloc<BE> + MHEGGSWProtocol<BE> + GLWESecretSampling<BE> + GLWESecretPreparedFactory<BE> + ScalarZnxAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let layout = ggsw_layout(module);
@@ -465,7 +461,7 @@ where
     let (secrets, _) = parties(module, layout.rank, 0);
     let u = secret_from_seed_at(module, Rank(1), [9u8; 32]);
     let m: ScalarZnx<AlignedBuf, i64> = module.scalar_znx_alloc(module.n(), 1);
-    let mut share = module.ggsw_share_alloc_from_infos(&layout);
+    let mut share = module.mhe_ggsw_share_alloc_from_infos(&layout);
     let before = share.clone();
     let mut source_xe = Source::new([10u8; 32]);
     super::fixtures::assert_panics_with("invalid share: ephemeral secret rank differs from the secret's", || {
@@ -480,7 +476,7 @@ where
 pub fn test_mhe_ggsw_share_finalize_rejects_key_rank_mismatch<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: MHEModuleAlloc<BE> + GGSWMHEProtocol<BE> + GLWESwitchingKeyPreparedFactory<BE>,
+    Module<BE>: MHEGGSWShareAlloc<BE> + MHEGGSWProtocol<BE> + GLWESwitchingKeyPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let layout = ggsw_layout(module);
@@ -488,7 +484,7 @@ where
         rank_out: Rank(1),
         ..ephemeral_key_layout(module, &layout)
     };
-    let pat = module.ggsw_share_alloc_from_infos(&layout);
+    let pat = module.mhe_ggsw_share_alloc_from_infos(&layout);
     let key: GLWESwitchingKeyPrepared<AlignedBuf, BE> = module.glwe_switching_key_prepared_alloc_from_infos(&key_layout);
     let mut res: GGSW<AlignedBuf, i64> = module.ggsw_alloc_from_infos(&layout);
     let before = res.clone();
@@ -505,7 +501,7 @@ where
 pub fn test_mhe_ggsw_share_finalize_rejects_key_precision<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: MHEModuleAlloc<BE> + GGSWMHEProtocol<BE> + GLWESwitchingKeyPreparedFactory<BE>,
+    Module<BE>: MHEGGSWShareAlloc<BE> + MHEGGSWProtocol<BE> + GLWESwitchingKeyPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let layout = ggsw_layout(module);
@@ -513,7 +509,7 @@ where
         dnum: Dnum(3),
         ..ephemeral_key_layout(module, &layout)
     };
-    let pat = module.ggsw_share_alloc_from_infos(&layout);
+    let pat = module.mhe_ggsw_share_alloc_from_infos(&layout);
     let key: GLWESwitchingKeyPrepared<AlignedBuf, BE> = module.glwe_switching_key_prepared_alloc_from_infos(&key_layout);
     let mut res: GGSW<AlignedBuf, i64> = module.ggsw_alloc_from_infos(&layout);
     let before = res.clone();
@@ -534,8 +530,8 @@ pub fn test_mhe_ggsw_share_gen_rejects_shape<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     Module<BE>: ModuleNew<BE>
-        + MHEModuleAlloc<BE>
-        + GGSWMHEProtocol<BE>
+        + MHEGGSWShareAlloc<BE>
+        + MHEGGSWProtocol<BE>
         + GLWESecretSampling<BE>
         + GLWESecretPreparedFactory<BE>
         + ScalarZnxAlloc<BE>,
@@ -560,7 +556,7 @@ where
         );
         let sk = if case == 0 { &small_sk } else { &secrets[0].1 };
         let u = if case == 1 { &small_u } else { &ephemerals[0].1 };
-        let mut pat = module.ggsw_share_alloc_from_infos(&layout);
+        let mut pat = module.mhe_ggsw_share_alloc_from_infos(&layout);
         let before = pat.clone();
         let mut source_xe = Source::new([10u8; 32]);
         super::fixtures::assert_panics_with(expected, || {
@@ -577,12 +573,12 @@ where
 pub fn test_mhe_ggsw_share_finalize_rejects_key_degree_mismatch<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: MHEModuleAlloc<BE> + GGSWMHEProtocol<BE> + GLWESwitchingKeyPreparedFactory<BE>,
+    Module<BE>: MHEGGSWShareAlloc<BE> + MHEGGSWProtocol<BE> + GLWESwitchingKeyPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let layout = ggsw_layout(module);
     let key_layout = ephemeral_key_layout(module, &layout);
-    let pat = module.ggsw_share_alloc_from_infos(&layout);
+    let pat = module.mhe_ggsw_share_alloc_from_infos(&layout);
     let key: GLWESwitchingKeyPrepared<AlignedBuf, BE> = module.glwe_switching_key_prepared_alloc_from_infos(&GGLWELayout {
         n: (module.n() / 2).into(),
         ..key_layout
@@ -601,12 +597,12 @@ where
 pub fn test_ggsw_share_read_rank_mismatch<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: MHEModuleAlloc<BE>,
+    Module<BE>: MHEGGSWShareAlloc<BE>,
 {
     let layout = ggsw_layout(module);
-    let share = module.ggsw_share_alloc_from_infos(&layout);
+    let share = module.mhe_ggsw_share_alloc_from_infos(&layout);
     let mut bytes = Vec::new();
     share.write_to(&mut bytes).unwrap();
-    let mut res = module.ggsw_share_alloc_from_infos(&GGSWLayout { rank: Rank(1), ..layout });
+    let mut res = module.mhe_ggsw_share_alloc_from_infos(&GGSWLayout { rank: Rank(1), ..layout });
     assert!(res.read_from(&mut bytes.as_slice()).is_err());
 }

@@ -9,7 +9,7 @@ use poulpy_core::{
 };
 use poulpy_hal::layouts::{Backend, CopyFromHost, CopyToHost, Data, HostDataMut, HostDataRef, ReaderFrom, WriterTo, ZnxWord};
 
-pub type GGLWEPatOwned<BE> = GGLWEPat<<BE as Backend>::OwnedBuf, <BE as Backend>::ZnxWord>;
+pub type MHEGGLWEPatOwned<BE> = MHEGGLWEPat<<BE as Backend>::OwnedBuf, <BE as Backend>::ZnxWord>;
 
 /// Unseeded public aggregatable transcript of a GGLWE: a full [`GGLWE`], for
 /// transcripts whose masks are not uniform, such as public-key encryptions.
@@ -17,11 +17,11 @@ pub type GGLWEPatOwned<BE> = GGLWEPat<<BE as Backend>::OwnedBuf, <BE as Backend>
 /// Aggregation adds limbs without normalizing; finalization produces canonical
 /// digits and leaves the PAT unchanged.
 #[derive(Clone)]
-pub struct GGLWEPat<D: Data, W: ZnxWord> {
+pub struct MHEGGLWEPat<D: Data, W: ZnxWord> {
     pub(crate) inner: GGLWE<D, W>,
 }
 
-impl<D: Data, W: ZnxWord> PartialEq for GGLWEPat<D, W>
+impl<D: Data, W: ZnxWord> PartialEq for MHEGGLWEPat<D, W>
 where
     GGLWE<D, W>: PartialEq,
 {
@@ -30,9 +30,9 @@ where
     }
 }
 
-impl<D: Data, W: ZnxWord> Eq for GGLWEPat<D, W> where GGLWE<D, W>: Eq {}
+impl<D: Data, W: ZnxWord> Eq for MHEGGLWEPat<D, W> where GGLWE<D, W>: Eq {}
 
-impl<D: Data, W: ZnxWord> LWEInfos for GGLWEPat<D, W> {
+impl<D: Data, W: ZnxWord> LWEInfos for MHEGGLWEPat<D, W> {
     fn noise(&self) -> Option<poulpy_core::ComponentNoise> {
         self.inner.noise()
     }
@@ -54,13 +54,13 @@ impl<D: Data, W: ZnxWord> LWEInfos for GGLWEPat<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWEInfos for GGLWEPat<D, W> {
+impl<D: Data, W: ZnxWord> GLWEInfos for MHEGGLWEPat<D, W> {
     fn rank(&self) -> Rank {
         self.inner.rank()
     }
 }
 
-impl<D: Data, W: ZnxWord> GGLWEInfos for GGLWEPat<D, W> {
+impl<D: Data, W: ZnxWord> GGLWEInfos for MHEGGLWEPat<D, W> {
     fn k_aux(&self) -> TorusPrecision {
         self.inner.k_aux()
     }
@@ -86,7 +86,7 @@ impl<D: Data, W: ZnxWord> GGLWEInfos for GGLWEPat<D, W> {
     }
 }
 
-impl<BE: Backend, D: Data> GGLWEToBackendRef<BE> for GGLWEPat<D, BE::ZnxWord>
+impl<BE: Backend, D: Data> GGLWEToBackendRef<BE> for MHEGGLWEPat<D, BE::ZnxWord>
 where
     GGLWE<D, BE::ZnxWord>: GGLWEToBackendRef<BE>,
 {
@@ -95,7 +95,7 @@ where
     }
 }
 
-impl<BE: Backend, D: Data> GGLWEToBackendMut<BE> for GGLWEPat<D, BE::ZnxWord>
+impl<BE: Backend, D: Data> GGLWEToBackendMut<BE> for MHEGGLWEPat<D, BE::ZnxWord>
 where
     GGLWE<D, BE::ZnxWord>: GGLWEToBackendMut<BE>,
 {
@@ -108,37 +108,43 @@ where
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> fmt::Debug for GGLWEPat<D, W> {
+impl<D: HostDataRef, W: ZnxWord> fmt::Debug for MHEGGLWEPat<D, W> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{self}")
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> fmt::Display for GGLWEPat<D, W> {
+impl<D: HostDataRef, W: ZnxWord> fmt::Display for MHEGGLWEPat<D, W> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "GGLWEPat: {}", self.inner)
+        write!(f, "MHEGGLWEPat: {}", self.inner)
     }
 }
 
-impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GGLWEPat<D, W> {
+impl<D: HostDataMut, W: ZnxWord> ReaderFrom for MHEGGLWEPat<D, W> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         self.inner.read_from(reader)
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> WriterTo for GGLWEPat<D, W> {
+impl<D: HostDataRef, W: ZnxWord> WriterTo for MHEGGLWEPat<D, W> {
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
         self.inner.write_to(writer)
     }
 }
 
-impl<D1, D2, W> TransferInto<GGLWEPat<D2, W>> for GGLWEPat<D1, W>
+impl<D1, D2, W> TransferInto<MHEGGLWEPat<D2, W>> for MHEGGLWEPat<D1, W>
 where
     D1: Data + CopyToHost,
     D2: Data + CopyFromHost,
     W: ZnxWord,
 {
-    fn transfer_into(&self, dst: &mut GGLWEPat<D2, W>) {
+    fn transfer_into(&self, dst: &mut MHEGGLWEPat<D2, W>) {
         self.inner.transfer_into(&mut dst.inner);
     }
 }
+
+#[deprecated(note = "renamed MHEGGLWEPat")]
+pub type GGLWEPat<D, W> = MHEGGLWEPat<D, W>;
+
+#[deprecated(note = "renamed MHEGGLWEPatOwned")]
+pub type GGLWEPatOwned<BE> = MHEGGLWEPatOwned<BE>;

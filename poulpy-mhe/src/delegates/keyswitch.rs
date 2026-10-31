@@ -1,4 +1,4 @@
-use crate::layouts::{GLWEPrivateKeyswitchShareOwned, GLWEPublicKeyswitchShareOwned};
+use crate::layouts::{MHEGLWEPrivateKeyswitchShareOwned, MHEGLWEPublicKeyswitchShareOwned};
 use poulpy_core::{
     Noise,
     layouts::{
@@ -12,11 +12,11 @@ use poulpy_hal::{
 };
 
 use crate::{
-    api::{GLWEPrivateKeyswitchMHEProtocol, GLWEPublicKeyswitchMHEProtocol},
-    oep::{GLWEPrivateKeyswitchMHEProtocolImpl, GLWEPublicKeyswitchMHEProtocolImpl},
+    api::{MHEGLWEPrivateKeyswitchProtocol, MHEGLWEPublicKeyswitchProtocol},
+    oep::{MHEGLWEPrivateKeyswitchProtocolImpl, MHEGLWEPublicKeyswitchProtocolImpl},
 };
 
-impl<BE: Backend + GLWEPrivateKeyswitchMHEProtocolImpl> GLWEPrivateKeyswitchMHEProtocol<BE> for Module<BE> {
+impl<BE: Backend + MHEGLWEPrivateKeyswitchProtocolImpl> MHEGLWEPrivateKeyswitchProtocol<BE> for Module<BE> {
     fn mhe_glwe_private_keyswitch_share_gen_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GLWEInfos,
@@ -26,7 +26,7 @@ impl<BE: Backend + GLWEPrivateKeyswitchMHEProtocolImpl> GLWEPrivateKeyswitchMHEP
 
     fn mhe_glwe_private_keyswitch_share_gen<C, S1, S2>(
         &self,
-        res: &mut GLWEPrivateKeyswitchShareOwned<BE>,
+        res: &mut MHEGLWEPrivateKeyswitchShareOwned<BE>,
         mask: &C,
         sk_in: &S1,
         sk_out: &S2,
@@ -43,8 +43,8 @@ impl<BE: Backend + GLWEPrivateKeyswitchMHEProtocolImpl> GLWEPrivateKeyswitchMHEP
 
     fn mhe_glwe_private_keyswitch_share_aggregate(
         &self,
-        res: &mut GLWEPrivateKeyswitchShareOwned<BE>,
-        a: &GLWEPrivateKeyswitchShareOwned<BE>,
+        res: &mut MHEGLWEPrivateKeyswitchShareOwned<BE>,
+        a: &MHEGLWEPrivateKeyswitchShareOwned<BE>,
     ) {
         BE::mhe_glwe_private_keyswitch_share_aggregate(self, res, a)
     }
@@ -57,7 +57,7 @@ impl<BE: Backend + GLWEPrivateKeyswitchMHEProtocolImpl> GLWEPrivateKeyswitchMHEP
         &self,
         res: &mut R,
         ct: &C,
-        share: &GLWEPrivateKeyswitchShareOwned<BE>,
+        share: &MHEGLWEPrivateKeyswitchShareOwned<BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -67,7 +67,7 @@ impl<BE: Backend + GLWEPrivateKeyswitchMHEProtocolImpl> GLWEPrivateKeyswitchMHEP
     }
 }
 
-impl<BE: Backend + GLWEPublicKeyswitchMHEProtocolImpl> GLWEPublicKeyswitchMHEProtocol<BE> for Module<BE> {
+impl<BE: Backend + MHEGLWEPublicKeyswitchProtocolImpl> MHEGLWEPublicKeyswitchProtocol<BE> for Module<BE> {
     fn mhe_glwe_public_keyswitch_share_gen_tmp_bytes<A, B, P>(&self, ct_infos: &A, res_infos: &B, pk_infos: &P) -> usize
     where
         A: GLWEInfos,
@@ -79,7 +79,7 @@ impl<BE: Backend + GLWEPublicKeyswitchMHEProtocolImpl> GLWEPublicKeyswitchMHEPro
 
     fn mhe_glwe_public_keyswitch_share_gen<C, S, K>(
         &self,
-        res: &mut GLWEPublicKeyswitchShareOwned<BE>,
+        res: &mut MHEGLWEPublicKeyswitchShareOwned<BE>,
         mask: &C,
         sk_in: &S,
         pk_out: &K,
@@ -109,8 +109,8 @@ impl<BE: Backend + GLWEPublicKeyswitchMHEProtocolImpl> GLWEPublicKeyswitchMHEPro
 
     fn mhe_glwe_public_keyswitch_share_aggregate(
         &self,
-        res: &mut GLWEPublicKeyswitchShareOwned<BE>,
-        a: &GLWEPublicKeyswitchShareOwned<BE>,
+        res: &mut MHEGLWEPublicKeyswitchShareOwned<BE>,
+        a: &MHEGLWEPublicKeyswitchShareOwned<BE>,
     ) {
         BE::mhe_glwe_public_keyswitch_share_aggregate(self, res, a)
     }
@@ -123,7 +123,7 @@ impl<BE: Backend + GLWEPublicKeyswitchMHEProtocolImpl> GLWEPublicKeyswitchMHEPro
         &self,
         res: &mut R,
         ct: &C,
-        share: &GLWEPublicKeyswitchShareOwned<BE>,
+        share: &MHEGLWEPublicKeyswitchShareOwned<BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,

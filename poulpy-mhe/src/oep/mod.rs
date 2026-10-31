@@ -31,17 +31,17 @@ pub use tensor_key::*;
 #[macro_export]
 macro_rules! impl_mhe_reference_full {
     ($be:ty) => {
-        $crate::impl_glwe_pat_compressed_reference_full!($be);
-        $crate::impl_gglwe_pat_compressed_reference_full!($be);
-        $crate::impl_gglwe_pat_reference_full!($be);
-        $crate::impl_glwe_switching_key_mhe_protocol_reference_full!($be);
-        $crate::impl_glwe_automorphism_key_mhe_protocol_reference_full!($be);
-        $crate::impl_ggsw_mhe_protocol_reference_full!($be);
-        $crate::impl_glwe_private_keyswitch_mhe_protocol_reference_full!($be);
-        $crate::impl_glwe_public_keyswitch_mhe_protocol_reference_full!($be);
-        $crate::impl_glwe_public_key_mhe_protocol_reference_full!($be);
-        $crate::impl_glwe_enc_to_share_mhe_protocol_reference_full!($be);
-        $crate::impl_glwe_share_to_enc_mhe_protocol_reference_full!($be);
-        $crate::impl_glwe_tensor_key_mhe_protocol_reference_full!($be);
+        $crate::impl_mhe_glwe_pat_compressed_reference_full!($be);
+        $crate::impl_mhe_gglwe_pat_compressed_reference_full!($be);
+        $crate::impl_mhe_gglwe_pat_reference_full!($be);
+        $crate::impl_mhe_glwe_switching_key_protocol_reference_full!($be);
+        $crate::impl_mhe_glwe_automorphism_key_protocol_reference_full!($be);
+        $crate::impl_mhe_ggsw_protocol_reference_full!($be);
+        $crate::impl_mhe_glwe_private_keyswitch_protocol_reference_full!($be);
+        $crate::impl_mhe_glwe_public_keyswitch_protocol_reference_full!($be);
+        $crate::impl_mhe_glwe_public_key_protocol_reference_full!($be);
+        $crate::impl_mhe_glwe_enc_to_share_protocol_reference_full!($be);
+        $crate::impl_mhe_glwe_share_to_enc_protocol_reference_full!($be);
+        $crate::impl_mhe_glwe_tensor_key_protocol_reference_full!($be);
     };
 }

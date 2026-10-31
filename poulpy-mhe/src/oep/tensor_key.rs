@@ -5,7 +5,7 @@ use poulpy_hal::{
 };
 
 use super::derived::tensor_key as derived;
-use crate::{layouts::GLWETensorKeyShareOwned, oep::GGLWEPatImpl};
+use crate::{layouts::MHEGLWETensorKeyShareOwned, oep::MHEGGLWEPatImpl};
 
 /// # Safety
 /// Every method reproduces the reference or derived body its doc names, checks
@@ -13,9 +13,9 @@ use crate::{layouts::GLWETensorKeyShareOwned, oep::GGLWEPatImpl};
 /// Share generation wipes that scratch before returning.
 /// The memory, layout, synchrony and aliasing rules of
 /// `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait GLWETensorKeyMHEProtocolImpl: GGLWEPatImpl {
+pub unsafe trait MHEGLWETensorKeyProtocolImpl: MHEGGLWEPatImpl {
     /// Upper bound on the scratch of `mhe_glwe_tensor_key_share_gen`, as
-    /// `GLWETensorKeyMHEProtocolReference::mhe_glwe_tensor_key_share_gen_tmp_bytes_reference`;
+    /// `MHEGLWETensorKeyProtocolReference::mhe_glwe_tensor_key_share_gen_tmp_bytes_reference`;
     /// panics unless `res_infos` has the module's degree.
     fn mhe_glwe_tensor_key_share_gen_tmp_bytes<A, B>(module: &Module<Self>, res_infos: &A, pk_infos: &B) -> usize
     where
@@ -23,7 +23,7 @@ pub unsafe trait GLWETensorKeyMHEProtocolImpl: GGLWEPatImpl {
         B: GLWEInfos;
 
     /// Reproduces
-    /// `GLWETensorKeyMHEProtocolReference::mhe_glwe_tensor_key_share_gen_reference`:
+    /// `MHEGLWETensorKeyProtocolReference::mhe_glwe_tensor_key_share_gen_reference`:
     /// public-key encryptions of the products of `sk` entries under `pk`,
     /// ephemerals from `source_xu`, errors from `source_xe`.
     /// Panics unless `res`, `sk` and `pk` have the module's degree, the key
@@ -33,7 +33,7 @@ pub unsafe trait GLWETensorKeyMHEProtocolImpl: GGLWEPatImpl {
     #[allow(clippy::too_many_arguments)]
     fn mhe_glwe_tensor_key_share_gen<S, K>(
         module: &Module<Self>,
-        res: &mut GLWETensorKeyShareOwned<Self>,
+        res: &mut MHEGLWETensorKeyShareOwned<Self>,
         sk: &S,
         pk: &K,
         source_xu: &mut Source,
@@ -44,26 +44,26 @@ pub unsafe trait GLWETensorKeyMHEProtocolImpl: GGLWEPatImpl {
         K: GLWEPublicKeyPreparedToBackendRef<Self> + GLWEInfos;
 
     /// Default body `mhe_glwe_tensor_key_share_aggregate_derived`: the
-    /// `GGLWEPat` aggregation of the inner shares.
+    /// `MHEGGLWEPat` aggregation of the inner shares.
     fn mhe_glwe_tensor_key_share_aggregate(
         module: &Module<Self>,
-        res: &mut GLWETensorKeyShareOwned<Self>,
-        a: &GLWETensorKeyShareOwned<Self>,
+        res: &mut MHEGLWETensorKeyShareOwned<Self>,
+        a: &MHEGLWETensorKeyShareOwned<Self>,
     ) {
         derived::mhe_glwe_tensor_key_share_aggregate_derived(module, res, a)
     }
 
-    /// Default body: the scratch of the `GGLWEPat` finalization.
+    /// Default body: the scratch of the `MHEGGLWEPat` finalization.
     fn mhe_glwe_tensor_key_share_finalize_tmp_bytes(module: &Module<Self>) -> usize {
-        Self::gglwe_pat_finalize_tmp_bytes(module)
+        Self::mhe_gglwe_pat_finalize_tmp_bytes(module)
     }
 
     /// Default body `mhe_glwe_tensor_key_share_finalize_derived`: the
-    /// `GGLWEPat` finalization of the inner share.
+    /// `MHEGGLWEPat` finalization of the inner share.
     fn mhe_glwe_tensor_key_share_finalize<R>(
         module: &Module<Self>,
         res: &mut R,
-        share: &GLWETensorKeyShareOwned<Self>,
+        share: &MHEGLWETensorKeyShareOwned<Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         R: GGLWEToBackendMut<Self> + GGLWEInfos,
@@ -75,9 +75,9 @@ pub unsafe trait GLWETensorKeyMHEProtocolImpl: GGLWEPatImpl {
 /// Selects the reference share generation; aggregation and finalization keep
 /// their derived defaults.
 #[macro_export]
-macro_rules! impl_glwe_tensor_key_mhe_protocol_reference_full {
+macro_rules! impl_mhe_glwe_tensor_key_protocol_reference_full {
     ($be:ty) => {
-        unsafe impl $crate::oep::GLWETensorKeyMHEProtocolImpl for $be {
+        unsafe impl $crate::oep::MHEGLWETensorKeyProtocolImpl for $be {
             fn mhe_glwe_tensor_key_share_gen_tmp_bytes<A, B>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 res_infos: &A,
@@ -87,12 +87,12 @@ macro_rules! impl_glwe_tensor_key_mhe_protocol_reference_full {
                 A: ::poulpy_core::layouts::GGLWEInfos,
                 B: ::poulpy_core::layouts::GLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWETensorKeyMHEProtocolReference<$be>>::mhe_glwe_tensor_key_share_gen_tmp_bytes_reference(module, res_infos, pk_infos)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::MHEGLWETensorKeyProtocolReference<$be>>::mhe_glwe_tensor_key_share_gen_tmp_bytes_reference(module, res_infos, pk_infos)
             }
 
             fn mhe_glwe_tensor_key_share_gen<S, K>(
                 module: &::poulpy_hal::layouts::Module<$be>,
-                res: &mut $crate::layouts::GLWETensorKeyShareOwned<$be>,
+                res: &mut $crate::layouts::MHEGLWETensorKeyShareOwned<$be>,
                 sk: &S,
                 pk: &K,
                 source_xu: &mut ::poulpy_hal::source::Source,
@@ -102,7 +102,7 @@ macro_rules! impl_glwe_tensor_key_mhe_protocol_reference_full {
                 S: ::poulpy_core::layouts::GLWESecretToBackendRef<$be> + ::poulpy_core::layouts::GLWEInfos,
                 K: ::poulpy_core::layouts::GLWEPublicKeyPreparedToBackendRef<$be> + ::poulpy_core::layouts::GLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWETensorKeyMHEProtocolReference<$be>>::mhe_glwe_tensor_key_share_gen_reference(module, res, sk, pk, source_xu, source_xe, scratch)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::MHEGLWETensorKeyProtocolReference<$be>>::mhe_glwe_tensor_key_share_gen_reference(module, res, sk, pk, source_xu, source_xe, scratch)
             }
         }
     };

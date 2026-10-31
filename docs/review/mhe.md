@@ -44,7 +44,7 @@
 ### 3.3. Normalization
 
 - **Where mhe normalizes.** No mhe trait exposes normalize: generation yields a canonical share (normalizing after a flag-clearing last step), aggregation an unnormalized sum and finalization the canonical result of normalizing that sum.
-- **Normalize only non-canonical parts.** A seeded finalization normalizes only aggregated bodies, regenerating masks from seeds (`glwe_fill_mask_from_seed`, `gglwe_decompress`); an unseeded sum (`GGLWEPat`, GLWE-backed shares) normalizes every column.
+- **Normalize only non-canonical parts.** A seeded finalization normalizes only aggregated bodies, regenerating masks from seeds (`glwe_fill_mask_from_seed`, `gglwe_decompress`); an unseeded sum (`MHEGGLWEPat`, GLWE-backed shares) normalizes every column.
 
 ### 3.4. Metadata
 

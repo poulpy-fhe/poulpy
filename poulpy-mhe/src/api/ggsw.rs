@@ -7,7 +7,7 @@ use poulpy_hal::{
     source::Source,
 };
 
-use crate::layouts::GGSWShareOwned;
+use crate::layouts::MHEGGSWShareOwned;
 
 /// Collective GGSW: parties holding secrets `s_i` and messages `m_i` produce, in
 /// one round, the GGSW of `Sum_i m_i` under the ideal secret `s = Sum_i s_i`.
@@ -16,7 +16,7 @@ use crate::layouts::GGSWShareOwned;
 /// party also holds an ephemeral secret `u_i` of the GGSW's rank, used in two
 /// places: as the `u` of every GGSW share it generates, and as the input secret
 /// of its share of the collective switching key from `u = Sum_i u_i` to `s`
-/// ([`GLWESwitchingKeyMHEProtocol`](crate::api::GLWESwitchingKeyMHEProtocol)).
+/// ([`MHEGLWESwitchingKeyProtocol`](crate::api::MHEGLWESwitchingKeyProtocol)).
 /// That key, the ephemeral key, is what finalization consumes; one serves every
 /// GGSW of a key set, so `u_i` is reused across shares, never drawn per share.
 ///
@@ -37,14 +37,14 @@ use crate::layouts::GGSWShareOwned;
 /// difference of their messages.
 ///
 /// A key set that already holds the collective tensor key
-/// ([`GLWETensorKeyMHEProtocol`](crate::api::GLWETensorKeyMHEProtocol)) can
+/// ([`MHEGLWETensorKeyProtocol`](crate::api::MHEGLWETensorKeyProtocol)) can
 /// instead build the GGSW from a collective GGLWE of `m` alone: every party
 /// shares the seeded encryption of `m_i` under `s_i` (column 0 of this share),
 /// and [`GGSWFromGGLWE`](poulpy_core::GGSWFromGGLWE) expands the finalized
 /// GGLWE with the tensor key, laid out as a
 /// [`GGLWEToGGSWKey`](poulpy_core::layouts::GGLWEToGGSWKey), whose key `i`
 /// column `j` is the tensor key entry of `s_i * s_j`.
-pub trait GGSWMHEProtocol<BE: Backend> {
+pub trait MHEGGSWProtocol<BE: Backend> {
     fn mhe_ggsw_share_gen_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGSWInfos;
@@ -58,7 +58,7 @@ pub trait GGSWMHEProtocol<BE: Backend> {
     #[allow(clippy::too_many_arguments)]
     fn mhe_ggsw_share_gen<P, S, U>(
         &self,
-        res: &mut GGSWShareOwned<BE>,
+        res: &mut MHEGGSWShareOwned<BE>,
         pt: &P,
         sk: &S,
         u: &U,
@@ -72,7 +72,7 @@ pub trait GGSWMHEProtocol<BE: Backend> {
 
     /// Adds share `a` into `res`, which starts as the first share. The shares
     /// must have the same layout and seeds.
-    fn mhe_ggsw_share_aggregate(&self, res: &mut GGSWShareOwned<BE>, a: &GGSWShareOwned<BE>);
+    fn mhe_ggsw_share_aggregate(&self, res: &mut MHEGGSWShareOwned<BE>, a: &MHEGGSWShareOwned<BE>);
 
     /// `res_infos` is the GGSW layout, `key_infos` the ephemeral key layout.
     fn mhe_ggsw_share_finalize_tmp_bytes<R, K>(&self, res_infos: &R, key_infos: &K) -> usize
@@ -89,8 +89,13 @@ pub trait GGSWMHEProtocol<BE: Backend> {
     /// (`dnum * k_digit`) must cover the GGSW precision, and one guard
     /// digit (`k_aux >= base2k + log2 n`) keeps its noise far below the
     /// circular term.
-    fn mhe_ggsw_share_finalize<R, K>(&self, res: &mut R, share: &GGSWShareOwned<BE>, key: &K, scratch: &mut ScratchArena<'_, BE>)
-    where
+    fn mhe_ggsw_share_finalize<R, K>(
+        &self,
+        res: &mut R,
+        share: &MHEGGSWShareOwned<BE>,
+        key: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
         R: GGSWToBackendMut<BE> + GGSWInfos,
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 }

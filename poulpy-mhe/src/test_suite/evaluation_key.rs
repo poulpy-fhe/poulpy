@@ -28,8 +28,9 @@ use super::{
     pat::assert_gglwe_noise,
 };
 use crate::{
-    api::{GLWEAutomorphismKeyMHEProtocol, GLWESwitchingKeyMHEProtocol},
-    layouts::MHEModuleAlloc,
+    MHEGLWESwitchingKeyShareAlloc,
+    api::{MHEGLWEAutomorphismKeyProtocol, MHEGLWESwitchingKeyProtocol},
+    layouts::MHEGLWEAutomorphismKeyShareAlloc,
 };
 
 pub fn test_glwe_switching_key<BE>(module: &Module<BE>)
@@ -37,8 +38,8 @@ where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: MHEModuleAlloc<BE>
-        + GLWESwitchingKeyMHEProtocol<BE>
+    Module<BE>: MHEGLWESwitchingKeyShareAlloc<BE>
+        + MHEGLWESwitchingKeyProtocol<BE>
         + GLWESecretSampling<BE>
         + GLWESecretPreparedFactory<BE>
         + GGLWENoise<BE>
@@ -53,8 +54,8 @@ where
     let sk_out_ideal = ideal_secret(module, &parties_out);
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.gglwe_noise_tmp_bytes(&layout));
 
-    let mut acc = module.glwe_switching_key_share_alloc_from_infos(&layout);
-    let mut share = module.glwe_switching_key_share_alloc_from_infos(&layout);
+    let mut acc = module.mhe_glwe_switching_key_share_alloc_from_infos(&layout);
+    let mut share = module.mhe_glwe_switching_key_share_alloc_from_infos(&layout);
     for (i, ((sk_in, _), (sk_out, _))) in parties_in.iter().zip(&parties_out).enumerate() {
         let dst = if i == 0 { &mut acc } else { &mut share };
         let mut source_xe = Source::new([10 + i as u8; 32]);
@@ -102,8 +103,8 @@ where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: MHEModuleAlloc<BE>
-        + GLWEAutomorphismKeyMHEProtocol<BE>
+    Module<BE>: MHEGLWEAutomorphismKeyShareAlloc<BE>
+        + MHEGLWEAutomorphismKeyProtocol<BE>
         + GLWESecretSampling<BE>
         + GLWESecretPreparedFactory<BE>
         + GGLWENoise<BE>
@@ -119,8 +120,8 @@ where
     let sk_out = automorphism_inv_prepared(module, &pt_want, P);
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.gglwe_noise_tmp_bytes(&layout));
 
-    let mut acc = module.glwe_automorphism_key_share_alloc_from_infos(&layout);
-    let mut share = module.glwe_automorphism_key_share_alloc_from_infos(&layout);
+    let mut acc = module.mhe_glwe_automorphism_key_share_alloc_from_infos(&layout);
+    let mut share = module.mhe_glwe_automorphism_key_share_alloc_from_infos(&layout);
     for (i, (sk, _)) in parties.iter().enumerate() {
         let dst = if i == 0 { &mut acc } else { &mut share };
         let mut source_xe = Source::new([10 + i as u8; 32]);
@@ -166,11 +167,11 @@ where
 pub fn test_mhe_glwe_switching_key_share_aggregate_rejects_degree_mismatch<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: MHEModuleAlloc<BE> + GLWESwitchingKeyMHEProtocol<BE>,
+    Module<BE>: MHEGLWESwitchingKeyShareAlloc<BE> + MHEGLWESwitchingKeyProtocol<BE>,
 {
     let layout = gglwe_layout(module);
-    let mut a = module.glwe_switching_key_share_alloc_from_infos(&layout);
-    let mut b = module.glwe_switching_key_share_alloc_from_infos(&layout);
+    let mut a = module.mhe_glwe_switching_key_share_alloc_from_infos(&layout);
+    let mut b = module.mhe_glwe_switching_key_share_alloc_from_infos(&layout);
     b.input_degree = Degree(module.n() as u32);
     let before = a.clone();
     super::fixtures::assert_panics_with("invalid aggregation: degrees differ", || {
@@ -183,11 +184,11 @@ where
 pub fn test_mhe_glwe_switching_key_share_aggregate_rejects_out_degree_mismatch<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: MHEModuleAlloc<BE> + GLWESwitchingKeyMHEProtocol<BE>,
+    Module<BE>: MHEGLWESwitchingKeyShareAlloc<BE> + MHEGLWESwitchingKeyProtocol<BE>,
 {
     let layout = gglwe_layout(module);
-    let mut a = module.glwe_switching_key_share_alloc_from_infos(&layout);
-    let mut b = module.glwe_switching_key_share_alloc_from_infos(&layout);
+    let mut a = module.mhe_glwe_switching_key_share_alloc_from_infos(&layout);
+    let mut b = module.mhe_glwe_switching_key_share_alloc_from_infos(&layout);
     b.output_degree = Degree(module.n() as u32);
     let before = a.clone();
     super::fixtures::assert_panics_with("invalid aggregation: degrees differ", || {
@@ -200,11 +201,11 @@ where
 pub fn test_mhe_glwe_automorphism_key_share_aggregate_rejects_p_mismatch<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: MHEModuleAlloc<BE> + GLWEAutomorphismKeyMHEProtocol<BE>,
+    Module<BE>: MHEGLWEAutomorphismKeyShareAlloc<BE> + MHEGLWEAutomorphismKeyProtocol<BE>,
 {
     let layout = gglwe_layout(module);
-    let mut a = module.glwe_automorphism_key_share_alloc_from_infos(&layout);
-    let mut b = module.glwe_automorphism_key_share_alloc_from_infos(&layout);
+    let mut a = module.mhe_glwe_automorphism_key_share_alloc_from_infos(&layout);
+    let mut b = module.mhe_glwe_automorphism_key_share_alloc_from_infos(&layout);
     b.p = P;
     let before = a.clone();
     super::fixtures::assert_panics_with("invalid aggregation: Galois elements differ", || {
@@ -242,8 +243,8 @@ pub fn test_mhe_glwe_switching_key_share_gen_rejects_shape<BE>(module: &Module<B
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     Module<BE>: ModuleNew<BE>
-        + MHEModuleAlloc<BE>
-        + GLWESwitchingKeyMHEProtocol<BE>
+        + MHEGLWESwitchingKeyShareAlloc<BE>
+        + MHEGLWESwitchingKeyProtocol<BE>
         + GLWESecretSampling<BE>
         + GLWESecretPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
@@ -260,7 +261,7 @@ where
         (&large_sk, &sk, "invalid share: unsupported input secret degree"),
         (&sk, &large_sk, "invalid share: unsupported output secret degree"),
     ] {
-        let mut share = module.glwe_switching_key_share_alloc_from_infos(&layout);
+        let mut share = module.mhe_glwe_switching_key_share_alloc_from_infos(&layout);
         let before = share.clone();
         let mut source_xe = Source::new([10u8; 32]);
         super::fixtures::assert_panics_with(expected, || {
@@ -279,7 +280,7 @@ where
     module.glwe_secret_fill_ternary_prob(&mut sk_in, 0.5, &mut Source::new([150u8; 32]));
     let mut key_layout = layout;
     key_layout.rank_in = Rank(1);
-    let mut share = module.glwe_switching_key_share_alloc_from_infos(&key_layout);
+    let mut share = module.mhe_glwe_switching_key_share_alloc_from_infos(&key_layout);
     with_scratch::<BE, _>(module.mhe_glwe_switching_key_share_gen_tmp_bytes(&key_layout), |s| {
         module.mhe_glwe_switching_key_share_gen(&mut share, &sk_in, &sk, SEEDS[0], &mut Source::new([10u8; 32]), s)
     });
@@ -292,7 +293,10 @@ where
 pub fn test_mhe_glwe_automorphism_key_share_gen_rejects_shape<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: MHEModuleAlloc<BE> + GLWEAutomorphismKeyMHEProtocol<BE> + GLWESecretSampling<BE> + GLWESecretPreparedFactory<BE>,
+    Module<BE>: MHEGLWEAutomorphismKeyShareAlloc<BE>
+        + MHEGLWEAutomorphismKeyProtocol<BE>
+        + GLWESecretSampling<BE>
+        + GLWESecretPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let layout = gglwe_layout(module);
@@ -316,7 +320,7 @@ where
         ),
         (layout, 2, &sk, "invalid share: Galois element must be odd"),
     ] {
-        let mut share = module.glwe_automorphism_key_share_alloc_from_infos(&key_layout);
+        let mut share = module.mhe_glwe_automorphism_key_share_alloc_from_infos(&key_layout);
         let before = share.clone();
         let mut source_xe = Source::new([10u8; 32]);
         super::fixtures::assert_panics_with(expected, || {

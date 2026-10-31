@@ -24,9 +24,10 @@ use super::fixtures::{
     party_secrets, secret_from_seed, secret_from_seed_at,
 };
 use crate::{
-    api::{GLWEPrivateKeyswitchMHEProtocol, GLWEPublicKeyMHEProtocol, GLWEPublicKeyswitchMHEProtocol},
-    layouts::MHEModuleAlloc,
-    layouts::{GLWEPrivateKeyswitchShare, GLWEPublicKeyswitchShare},
+    MHEGLWEPublicKeyswitchShareAlloc,
+    api::{MHEGLWEPrivateKeyswitchProtocol, MHEGLWEPublicKeyProtocol, MHEGLWEPublicKeyswitchProtocol},
+    layouts::MHEGLWEPrivateKeyswitchShareAlloc,
+    layouts::{MHEGLWEPrivateKeyswitchShare, MHEGLWEPublicKeyswitchShare},
 };
 
 /// Smudging noise sigma of every party, well above the fresh noise.
@@ -38,7 +39,7 @@ where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: GLWEPrivateKeyswitchMHEProtocol<BE>
+    Module<BE>: MHEGLWEPrivateKeyswitchProtocol<BE>
         + GLWESecretSampling<BE>
         + GLWESecretPreparedFactory<BE>
         + GLWEEncryptSk<BE>
@@ -66,8 +67,8 @@ where
 
     for share_k in [K, TorusPrecision(K.0 - BASE2K.0)] {
         let share_layout = GLWELayout { k: share_k, ..layout };
-        let mut acc = module.glwe_private_keyswitch_share_alloc_from_infos(&share_layout);
-        let mut share = module.glwe_private_keyswitch_share_alloc_from_infos(&share_layout);
+        let mut acc = module.mhe_glwe_private_keyswitch_share_alloc_from_infos(&share_layout);
+        let mut share = module.mhe_glwe_private_keyswitch_share_alloc_from_infos(&share_layout);
         for (i, ((_, sk_in), (_, sk_out_i))) in parties_in.iter().zip(&parties_out).enumerate() {
             let dst = if i == 0 { &mut acc } else { &mut share };
             dst.inner.set_canonical(false);
@@ -118,9 +119,9 @@ where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: MHEModuleAlloc<BE>
-        + GLWEPublicKeyswitchMHEProtocol<BE>
-        + GLWEPublicKeyMHEProtocol<BE>
+    Module<BE>: MHEGLWEPublicKeyswitchShareAlloc<BE>
+        + MHEGLWEPublicKeyswitchProtocol<BE>
+        + MHEGLWEPublicKeyProtocol<BE>
         + GLWESecretSampling<BE>
         + GLWESecretPreparedFactory<BE>
         + GLWEPublicKeyPreparedFactory<BE>
@@ -171,8 +172,8 @@ where
         let (pt, ct) = encrypted_plaintext(module, &ideal_secret(module, &parties_in), &mut scratch);
         let mask = ciphertext_mask(module, &ct);
 
-        let mut acc = module.glwe_public_keyswitch_share_alloc_from_infos(&share_layout);
-        let mut share = module.glwe_public_keyswitch_share_alloc_from_infos(&share_layout);
+        let mut acc = module.mhe_glwe_public_keyswitch_share_alloc_from_infos(&share_layout);
+        let mut share = module.mhe_glwe_public_keyswitch_share_alloc_from_infos(&share_layout);
         for (i, (_, sk_in)) in parties_in.iter().enumerate() {
             let dst = if i == 0 { &mut acc } else { &mut share };
             dst.inner.set_canonical(false);
@@ -318,7 +319,7 @@ where
 pub fn test_mhe_glwe_public_keyswitch_share_finalize_rejects_layout_mismatch<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: GLWEPublicKeyswitchMHEProtocol<BE>,
+    Module<BE>: MHEGLWEPublicKeyswitchProtocol<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let layout = glwe_layout(module);
@@ -347,7 +348,7 @@ where
             "invalid finalization: share and output layouts differ",
         ),
     ] {
-        let share = GLWEPublicKeyswitchShare {
+        let share = MHEGLWEPublicKeyswitchShare {
             inner: module.glwe_alloc_from_infos(&share_layout),
         };
         let mut res: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
@@ -365,10 +366,10 @@ where
 pub fn test_mhe_glwe_private_keyswitch_share_aggregate_rejects_layout_mismatch<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: MHEModuleAlloc<BE> + GLWEPrivateKeyswitchMHEProtocol<BE>,
+    Module<BE>: MHEGLWEPrivateKeyswitchShareAlloc<BE> + MHEGLWEPrivateKeyswitchProtocol<BE>,
 {
-    let mut a = module.glwe_private_keyswitch_share_alloc(BASE2K, K);
-    let b = module.glwe_private_keyswitch_share_alloc(BASE2K, TorusPrecision(K.0 + BASE2K.0));
+    let mut a = module.mhe_glwe_private_keyswitch_share_alloc(BASE2K, K);
+    let b = module.mhe_glwe_private_keyswitch_share_alloc(BASE2K, TorusPrecision(K.0 + BASE2K.0));
     let before = a.clone();
     assert_panics_with("invalid aggregation: layouts differ", || {
         module.mhe_glwe_private_keyswitch_share_aggregate(&mut a, &b);
@@ -380,7 +381,7 @@ where
 pub fn test_mhe_glwe_public_keyswitch_share_gen_rejects_pk_precision<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: GLWEPublicKeyswitchMHEProtocol<BE>
+    Module<BE>: MHEGLWEPublicKeyswitchProtocol<BE>
         + GLWESecretSampling<BE>
         + GLWESecretPreparedFactory<BE>
         + GLWEPublicKeyPreparedFactory<BE>,
@@ -395,7 +396,7 @@ where
     let (_, sk_in) = secret_from_seed(module, [150u8; 32]);
     let pk_out: GLWEPublicKeyPrepared<AlignedBuf, BE> = module.glwe_public_key_prepared_alloc_from_infos(&pk_layout);
     let ct: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
-    let mut res = GLWEPublicKeyswitchShare {
+    let mut res = MHEGLWEPublicKeyswitchShare {
         inner: module.glwe_alloc_from_infos(&layout),
     };
     let before = res.inner.clone();
@@ -434,7 +435,7 @@ where
 pub fn test_mhe_glwe_private_keyswitch_share_gen_rejects_layout_mismatch<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: GLWEPrivateKeyswitchMHEProtocol<BE> + GLWESecretPreparedFactory<BE>,
+    Module<BE>: MHEGLWEPrivateKeyswitchProtocol<BE> + GLWESecretPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let layout = glwe_layout(module);
@@ -465,7 +466,7 @@ where
             "invalid share: output secret rank differs from the mask's",
         ),
     ] {
-        let mut res = GLWEPrivateKeyswitchShare {
+        let mut res = MHEGLWEPrivateKeyswitchShare {
             inner: module.glwe_alloc_from_infos(&res_layout),
         };
         let sk_in: GLWESecretPrepared<AlignedBuf, BE> = module.glwe_secret_prepared_alloc(rank_in);
@@ -486,7 +487,7 @@ where
 pub fn test_mhe_glwe_public_keyswitch_share_gen_rejects_layout_mismatch<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: GLWEPublicKeyswitchMHEProtocol<BE> + GLWESecretPreparedFactory<BE> + GLWEPublicKeyPreparedFactory<BE>,
+    Module<BE>: MHEGLWEPublicKeyswitchProtocol<BE> + GLWESecretPreparedFactory<BE> + GLWEPublicKeyPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let layout = glwe_layout(module);
@@ -516,7 +517,7 @@ where
             "invalid share: public key and share layouts differ",
         ),
     ] {
-        let mut res = GLWEPublicKeyswitchShare {
+        let mut res = MHEGLWEPublicKeyswitchShare {
             inner: module.glwe_alloc_from_infos(&res_layout),
         };
         let sk_in: GLWESecretPrepared<AlignedBuf, BE> = module.glwe_secret_prepared_alloc(rank_in);
@@ -552,7 +553,7 @@ where
 pub fn test_mhe_glwe_private_keyswitch_share_finalize_rejects_layout_mismatch<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: GLWEPrivateKeyswitchMHEProtocol<BE>,
+    Module<BE>: MHEGLWEPrivateKeyswitchProtocol<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let layout = glwe_layout(module);
@@ -568,7 +569,7 @@ where
         ),
     ] {
         let mut res: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&res_layout);
-        let share = GLWEPrivateKeyswitchShare {
+        let share = MHEGLWEPrivateKeyswitchShare {
             inner: module.glwe_alloc_from_infos(&share_layout),
         };
         let before = res.clone();
@@ -585,7 +586,7 @@ where
 pub fn test_mhe_glwe_private_keyswitch_share_gen_rejects_flood_bound<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: GLWEPrivateKeyswitchMHEProtocol<BE> + GLWESecretPreparedFactory<BE>,
+    Module<BE>: MHEGLWEPrivateKeyswitchProtocol<BE> + GLWESecretPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let layout = glwe_layout(module);
@@ -596,7 +597,7 @@ where
     };
     let ct: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
     let sk: GLWESecretPrepared<AlignedBuf, BE> = module.glwe_secret_prepared_alloc(RANK);
-    let mut res = GLWEPrivateKeyswitchShare {
+    let mut res = MHEGLWEPrivateKeyswitchShare {
         inner: module.glwe_alloc_from_infos(&body_layout),
     };
     let before = res.clone();
@@ -615,7 +616,7 @@ where
 pub fn test_mhe_glwe_public_keyswitch_share_gen_rejects_flood_bound<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: GLWEPublicKeyswitchMHEProtocol<BE> + GLWESecretPreparedFactory<BE> + GLWEPublicKeyPreparedFactory<BE>,
+    Module<BE>: MHEGLWEPublicKeyswitchProtocol<BE> + GLWESecretPreparedFactory<BE> + GLWEPublicKeyPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let layout = glwe_layout(module);
@@ -626,7 +627,7 @@ where
     let ct: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
     let sk: GLWESecretPrepared<AlignedBuf, BE> = module.glwe_secret_prepared_alloc(RANK);
     let pk: GLWEPublicKeyPrepared<AlignedBuf, BE> = module.glwe_public_key_prepared_alloc_from_infos(&public_layout);
-    let mut res = GLWEPublicKeyswitchShare {
+    let mut res = MHEGLWEPublicKeyswitchShare {
         inner: module.glwe_alloc_from_infos(&public_layout),
     };
     let before = res.clone();
@@ -764,13 +765,13 @@ where
 pub fn test_mhe_glwe_private_keyswitch_share_gen_rejects_flag_clear_mask<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: GLWEPrivateKeyswitchMHEProtocol<BE> + GLWESecretPreparedFactory<BE>,
+    Module<BE>: MHEGLWEPrivateKeyswitchProtocol<BE> + GLWESecretPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let layout = glwe_layout(module);
     let mut ct: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
     ct.set_canonical(false);
-    let mut res = module.glwe_private_keyswitch_share_alloc_from_infos(&layout);
+    let mut res = module.mhe_glwe_private_keyswitch_share_alloc_from_infos(&layout);
     let before = res.clone();
     let sk: GLWESecretPrepared<AlignedBuf, BE> = module.glwe_secret_prepared_alloc(RANK);
     let gen_bytes = module.mhe_glwe_private_keyswitch_share_gen_tmp_bytes(&layout);
@@ -788,13 +789,13 @@ where
 pub fn test_mhe_glwe_public_keyswitch_share_gen_rejects_flag_clear_mask<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: GLWEPublicKeyswitchMHEProtocol<BE> + GLWESecretPreparedFactory<BE> + GLWEPublicKeyPreparedFactory<BE>,
+    Module<BE>: MHEGLWEPublicKeyswitchProtocol<BE> + GLWESecretPreparedFactory<BE> + GLWEPublicKeyPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let layout = glwe_layout(module);
     let mut ct: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
     ct.set_canonical(false);
-    let mut res = module.glwe_public_keyswitch_share_alloc_from_infos(&layout);
+    let mut res = module.mhe_glwe_public_keyswitch_share_alloc_from_infos(&layout);
     let before = res.clone();
     let sk: GLWESecretPrepared<AlignedBuf, BE> = module.glwe_secret_prepared_alloc(RANK);
     let pk: GLWEPublicKeyPrepared<AlignedBuf, BE> = module.glwe_public_key_prepared_alloc_from_infos(&layout);
