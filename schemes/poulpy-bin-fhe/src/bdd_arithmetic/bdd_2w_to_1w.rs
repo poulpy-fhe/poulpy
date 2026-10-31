@@ -6,7 +6,6 @@ use poulpy_hal::layouts::{Backend, ScratchArena};
 use crate::bdd_arithmetic::{FheUint, FheUintPrepared, UnsignedInteger, circuits};
 use poulpy_core::GLWEBytesOf;
 
-#[macro_export]
 macro_rules! define_bdd_2w_to_1w_trait {
     ($(#[$meta:meta])* $vis:vis $trait_name:ident, $method_name:ident) => {
         paste::paste! {
@@ -75,7 +74,6 @@ macro_rules! define_bdd_2w_to_1w_trait {
     };
 }
 
-#[macro_export]
 macro_rules! impl_bdd_2w_to_1w_trait {
     ($trait_name:ident, $method_name:ident, $ty:ty, $circuit_ty:ty, $output_circuits:path) => {
         paste::paste! {

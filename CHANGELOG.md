@@ -736,6 +736,8 @@
 
 ### `poulpy-bin-fhe`
 
+- **Breaking:** `BlindRotationKeyAlloc`, which no type implemented, is removed: `BlindRotationAlgo::blind_rotation_key_alloc(module, infos)` allocates a key ([#376](https://github.com/poulpy-fhe/poulpy/issues/376)).
+  The exported opt-in and suite macros reach `poulpy_core`, `poulpy_hal` and `std` by absolute paths, and `define_bdd_1w_to_1w_trait!`, `define_bdd_2w_to_1w_trait!`, `impl_bdd_1w_to_1w_trait!` and `impl_bdd_2w_to_1w_trait!`, the code generators of the `FheUint` arithmetic traits, are no longer exported.
 - **Breaking:** bin-fhe names lead with the object they act on ([#376](https://github.com/poulpy-fhe/poulpy/issues/376)); no deprecated aliases are kept, and callers rename:
   - `Cmux::{cmux, cmux_assign, cmux_assign_neg, cmux_tmp_bytes}` becomes `GLWECmux::{glwe_cmux, glwe_cmux_assign, glwe_cmux_neg_assign, glwe_cmux_tmp_bytes}`, and `Cswap::{cswap, cswap_tmp_bytes}`, which swaps in place, `GLWECswap::{glwe_cswap_assign, glwe_cswap_assign_tmp_bytes}`;
   - `ExecuteBDDCircuit`, `ExecuteBDDCircuit1WTo1W` and `ExecuteBDDCircuit2WTo1W` become `BDDCircuitExecute`, `BDDCircuitExecute1WTo1W` and `BDDCircuitExecute2WTo1W`, their `execute_bdd_circuit*` methods `bdd_circuit_execute*`, and `execute_bdd_circuit_tmp_bytes_for` becomes `bdd_circuit_execute_circuit_tmp_bytes`;
