@@ -130,10 +130,10 @@ pub trait PackedNtt4x30Base: PackedWord + HalVecZnxDftImpl {
     );
 
     /// Scratch (in bytes) of the convolution prepares, per worker.
-    fn cnv_prepare_tmp_bytes(n: usize) -> usize;
+    fn cnv_pvec_prepare_tmp_bytes(n: usize) -> usize;
 
     /// `base` is the module of this backend, whose tables transform the limbs of `a`.
-    fn cnv_prepare_left<BE: PackedWord, E: TaskExecutor>(
+    fn cnv_pvec_left_prepare<BE: PackedWord, E: TaskExecutor>(
         base: &Module<Self>,
         module: &Module<BE>,
         res: &mut CnvPVecLBackendMut<'_, BE>,
@@ -143,7 +143,7 @@ pub trait PackedNtt4x30Base: PackedWord + HalVecZnxDftImpl {
         for<'a> BE::BufRef<'a>: HostDataRef,
         for<'a> BE::BufMut<'a>: HostDataMut;
 
-    fn cnv_prepare_right<BE: PackedWord, E: TaskExecutor>(
+    fn cnv_pvec_right_prepare<BE: PackedWord, E: TaskExecutor>(
         base: &Module<Self>,
         module: &Module<BE>,
         res: &mut CnvPVecRBackendMut<'_, BE>,
@@ -153,7 +153,7 @@ pub trait PackedNtt4x30Base: PackedWord + HalVecZnxDftImpl {
         for<'a> BE::BufRef<'a>: HostDataRef,
         for<'a> BE::BufMut<'a>: HostDataMut;
 
-    fn cnv_prepare_self<BE: PackedWord, E: TaskExecutor>(
+    fn cnv_pvec_self_prepare<BE: PackedWord, E: TaskExecutor>(
         base: &Module<Self>,
         module: &Module<BE>,
         left: &mut CnvPVecLBackendMut<'_, BE>,
@@ -419,11 +419,11 @@ macro_rules! impl_packed_ntt4x30_base {
                 $drivers::vec_znx_dft_automorphism_add::<$ring, E>(plan, res, res_col, a, a_col)
             }
 
-            fn cnv_prepare_tmp_bytes(n: usize) -> usize {
-                $drivers::cnv_prepare_tmp_bytes(n)
+            fn cnv_pvec_prepare_tmp_bytes(n: usize) -> usize {
+                $drivers::cnv_pvec_prepare_tmp_bytes(n)
             }
 
-            fn cnv_prepare_left<BE: $crate::ntt4x30::PackedWord, E: $crate::__private::poulpy_hal::execution::TaskExecutor>(
+            fn cnv_pvec_left_prepare<BE: $crate::ntt4x30::PackedWord, E: $crate::__private::poulpy_hal::execution::TaskExecutor>(
                 base: &$crate::__private::poulpy_hal::layouts::Module<Self>,
                 module: &$crate::__private::poulpy_hal::layouts::Module<BE>,
                 res: &mut $crate::__private::poulpy_hal::layouts::CnvPVecLBackendMut<'_, BE>,
@@ -433,10 +433,13 @@ macro_rules! impl_packed_ntt4x30_base {
                 for<'a> BE::BufRef<'a>: $crate::__private::poulpy_hal::layouts::HostDataRef,
                 for<'a> BE::BufMut<'a>: $crate::__private::poulpy_hal::layouts::HostDataMut,
             {
-                $drivers::cnv_prepare_left::<$ring, BE, E>(base, module, res, a, tmp)
+                $drivers::cnv_pvec_left_prepare::<$ring, BE, E>(base, module, res, a, tmp)
             }
 
-            fn cnv_prepare_right<BE: $crate::ntt4x30::PackedWord, E: $crate::__private::poulpy_hal::execution::TaskExecutor>(
+            fn cnv_pvec_right_prepare<
+                BE: $crate::ntt4x30::PackedWord,
+                E: $crate::__private::poulpy_hal::execution::TaskExecutor,
+            >(
                 base: &$crate::__private::poulpy_hal::layouts::Module<Self>,
                 module: &$crate::__private::poulpy_hal::layouts::Module<BE>,
                 res: &mut $crate::__private::poulpy_hal::layouts::CnvPVecRBackendMut<'_, BE>,
@@ -446,10 +449,10 @@ macro_rules! impl_packed_ntt4x30_base {
                 for<'a> BE::BufRef<'a>: $crate::__private::poulpy_hal::layouts::HostDataRef,
                 for<'a> BE::BufMut<'a>: $crate::__private::poulpy_hal::layouts::HostDataMut,
             {
-                $drivers::cnv_prepare_right::<$ring, BE, E>(base, module, res, a, tmp)
+                $drivers::cnv_pvec_right_prepare::<$ring, BE, E>(base, module, res, a, tmp)
             }
 
-            fn cnv_prepare_self<BE: $crate::ntt4x30::PackedWord, E: $crate::__private::poulpy_hal::execution::TaskExecutor>(
+            fn cnv_pvec_self_prepare<BE: $crate::ntt4x30::PackedWord, E: $crate::__private::poulpy_hal::execution::TaskExecutor>(
                 base: &$crate::__private::poulpy_hal::layouts::Module<Self>,
                 module: &$crate::__private::poulpy_hal::layouts::Module<BE>,
                 left: &mut $crate::__private::poulpy_hal::layouts::CnvPVecLBackendMut<'_, BE>,
@@ -460,7 +463,7 @@ macro_rules! impl_packed_ntt4x30_base {
                 for<'a> BE::BufRef<'a>: $crate::__private::poulpy_hal::layouts::HostDataRef,
                 for<'a> BE::BufMut<'a>: $crate::__private::poulpy_hal::layouts::HostDataMut,
             {
-                $drivers::cnv_prepare_self::<$ring, BE, E>(base, module, left, right, a, tmp)
+                $drivers::cnv_pvec_self_prepare::<$ring, BE, E>(base, module, left, right, a, tmp)
             }
 
             fn cnv_apply_tmp_words(res_size: usize) -> usize {
@@ -772,6 +775,7 @@ impl BigWordHadamardProduct for $rayon {
     }
 }
 
+unsafe impl $crate::__private::poulpy_hal::oep::HalScalarZnxImpl for $rayon {}
 unsafe impl $crate::__private::poulpy_hal::oep::HalMatZnxImpl for $rayon {}
 
 unsafe impl HalVecZnxImpl for $rayon
@@ -828,18 +832,18 @@ unsafe impl HalModuleImpl for $rayon
 }
 unsafe impl HalVmpImpl for $rayon
 {
-    fn vmp_prepare_tmp_bytes(module: &Module<Self>, _rows: usize, _cols_in: usize, _cols_out: usize, _size: usize) -> usize {
-        <$base>::vmp_prepare_tmp_bytes(base_module(module), _rows, _cols_in, _cols_out, _size)
+    fn vmp_pmat_prepare_tmp_bytes(module: &Module<Self>, _rows: usize, _cols_in: usize, _cols_out: usize, _size: usize) -> usize {
+        <$base>::vmp_pmat_prepare_tmp_bytes(base_module(module), _rows, _cols_in, _cols_out, _size)
     }
 
-    fn vmp_prepare(
+    fn vmp_pmat_prepare(
         module: &Module<Self>,
         res: &mut VmpPMatBackendMut<'_, Self>,
         a: &MatZnxBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let mut base_scratch = scratch.borrow().into_backend::<$base>();
-        <$base>::vmp_prepare(base_module(module), &mut base_vmp_mut(res), a, &mut base_scratch);
+        <$base>::vmp_pmat_prepare(base_module(module), &mut base_vmp_mut(res), a, &mut base_scratch);
     }
 
     fn vmp_apply_dft_to_dft_tmp_bytes(
@@ -963,46 +967,46 @@ unsafe impl HalVmpImpl for $rayon
 
 unsafe impl HalCnvImpl for $rayon
 {
-    fn cnv_prepare_left_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
+    fn cnv_pvec_left_prepare_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
         $crate::workers(<Self as $crate::__private::poulpy_hal::execution::ScratchWorkers>::PREPARE)
-            * <$base as $crate::ntt4x30::PackedNtt4x30Base>::cnv_prepare_tmp_bytes(module.n())
+            * <$base as $crate::ntt4x30::PackedNtt4x30Base>::cnv_pvec_prepare_tmp_bytes(module.n())
     }
 
-    fn cnv_prepare_left(
+    fn cnv_pvec_left_prepare(
         module: &Module<Self>,
         res: &mut $crate::__private::poulpy_hal::layouts::CnvPVecLBackendMut<'_, Self>,
         a: &VecZnxBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let per_worker = <$base as $crate::ntt4x30::PackedNtt4x30Base>::cnv_prepare_tmp_bytes(res.n());
+        let per_worker = <$base as $crate::ntt4x30::PackedNtt4x30Base>::cnv_pvec_prepare_tmp_bytes(res.n());
         let bytes = $crate::workers_within(
             res.size().min(<Self as $crate::__private::poulpy_hal::execution::ScratchWorkers>::PREPARE),
             per_worker,
             scratch.available(),
         ) * per_worker;
         let (tmp, _) = $crate::take_scratch::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        <$base as $crate::ntt4x30::PackedNtt4x30Base>::cnv_prepare_left::<Self, RayonTaskExecutor>(base_module(module), module, res, a, tmp);
+        <$base as $crate::ntt4x30::PackedNtt4x30Base>::cnv_pvec_left_prepare::<Self, RayonTaskExecutor>(base_module(module), module, res, a, tmp);
     }
 
-    fn cnv_prepare_right_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
+    fn cnv_pvec_right_prepare_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
         $crate::workers(<Self as $crate::__private::poulpy_hal::execution::ScratchWorkers>::PREPARE)
-            * <$base as $crate::ntt4x30::PackedNtt4x30Base>::cnv_prepare_tmp_bytes(module.n())
+            * <$base as $crate::ntt4x30::PackedNtt4x30Base>::cnv_pvec_prepare_tmp_bytes(module.n())
     }
 
-    fn cnv_prepare_right(
+    fn cnv_pvec_right_prepare(
         module: &Module<Self>,
         res: &mut $crate::__private::poulpy_hal::layouts::CnvPVecRBackendMut<'_, Self>,
         a: &VecZnxBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let per_worker = <$base as $crate::ntt4x30::PackedNtt4x30Base>::cnv_prepare_tmp_bytes(res.n());
+        let per_worker = <$base as $crate::ntt4x30::PackedNtt4x30Base>::cnv_pvec_prepare_tmp_bytes(res.n());
         let bytes = $crate::workers_within(
             res.size().min(<Self as $crate::__private::poulpy_hal::execution::ScratchWorkers>::PREPARE),
             per_worker,
             scratch.available(),
         ) * per_worker;
         let (tmp, _) = $crate::take_scratch::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        <$base as $crate::ntt4x30::PackedNtt4x30Base>::cnv_prepare_right::<Self, RayonTaskExecutor>(base_module(module), module, res, a, tmp);
+        <$base as $crate::ntt4x30::PackedNtt4x30Base>::cnv_pvec_right_prepare::<Self, RayonTaskExecutor>(base_module(module), module, res, a, tmp);
     }
 
     fn cnv_apply_dft_tmp_bytes(
@@ -1211,26 +1215,26 @@ unsafe impl HalCnvImpl for $rayon
         <$base as $crate::ntt4x30::PackedNtt4x30Base>::cnv_pairwise_apply_dft::<Self, RayonTaskExecutor>(base_module(module), module, cnv_offset, res, res_col, a, b, i, j, tmp);
     }
 
-    fn cnv_prepare_self_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
+    fn cnv_pvec_self_prepare_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
         $crate::workers(<Self as $crate::__private::poulpy_hal::execution::ScratchWorkers>::PREPARE)
-            * <$base as $crate::ntt4x30::PackedNtt4x30Base>::cnv_prepare_tmp_bytes(module.n())
+            * <$base as $crate::ntt4x30::PackedNtt4x30Base>::cnv_pvec_prepare_tmp_bytes(module.n())
     }
 
-    fn cnv_prepare_self(
+    fn cnv_pvec_self_prepare(
         module: &Module<Self>,
         left: &mut $crate::__private::poulpy_hal::layouts::CnvPVecLBackendMut<'_, Self>,
         right: &mut $crate::__private::poulpy_hal::layouts::CnvPVecRBackendMut<'_, Self>,
         a: &VecZnxBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let per_worker = <$base as $crate::ntt4x30::PackedNtt4x30Base>::cnv_prepare_tmp_bytes(left.n());
+        let per_worker = <$base as $crate::ntt4x30::PackedNtt4x30Base>::cnv_pvec_prepare_tmp_bytes(left.n());
         let bytes = $crate::workers_within(
             left.size().min(<Self as $crate::__private::poulpy_hal::execution::ScratchWorkers>::PREPARE),
             per_worker,
             scratch.available(),
         ) * per_worker;
         let (tmp, _) = $crate::take_scratch::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        <$base as $crate::ntt4x30::PackedNtt4x30Base>::cnv_prepare_self::<Self, RayonTaskExecutor>(base_module(module), module, left, right, a, tmp);
+        <$base as $crate::ntt4x30::PackedNtt4x30Base>::cnv_pvec_self_prepare::<Self, RayonTaskExecutor>(base_module(module), module, left, right, a, tmp);
     }
 }
 unsafe impl HalVecZnxBigImpl for $rayon
@@ -1263,14 +1267,14 @@ unsafe impl HalVecZnxBigImpl for $rayon
 }
 unsafe impl HalSvpImpl for $rayon
 {
-    fn svp_prepare(
+    fn svp_ppol_prepare(
         module: &Module<Self>,
         res: &mut SvpPPolBackendMut<'_, Self>,
         res_col: usize,
         a: &ScalarZnxBackendRef<'_, Self>,
         a_col: usize,
     ) {
-        <$base>::svp_prepare(
+        <$base>::svp_ppol_prepare(
             base_module(module),
             &mut base_svp_mut(res),
             res_col,

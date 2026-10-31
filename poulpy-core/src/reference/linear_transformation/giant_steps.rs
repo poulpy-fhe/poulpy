@@ -866,7 +866,7 @@ where
             shape.diagonal_size,
         )
         .max(module.cnv_apply_dft_tmp_bytes(shape.cnv_offset_hi, shape.prod_size, shape.baby_size, shape.diagonal_size))
-        .max(module.cnv_prepare_right_tmp_bytes(shape.diagonal_size, shape.diagonal_size))
+        .max(module.cnv_pvec_right_prepare_tmp_bytes(shape.diagonal_size, shape.diagonal_size))
 }
 
 /// Bytes of the buffers of a giant step on the route on ciphertexts: its product and that

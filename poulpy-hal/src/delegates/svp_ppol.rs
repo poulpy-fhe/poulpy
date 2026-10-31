@@ -1,7 +1,7 @@
 use crate::{
     api::{
         SvpApplyDft, SvpApplyDftTmpBytes, SvpApplyDftToDft, SvpApplyDftToDftAssign, SvpPPolAlloc, SvpPPolBytesOf, SvpPPolCopy,
-        SvpPrepare,
+        SvpPPolPrepare,
     },
     layouts::{
         Backend, Module, PrepareHint, ScalarZnxBackendRef, ScratchArena, SvpPPolBackendMut, SvpPPolBackendRef, SvpPPolOwned,
@@ -34,9 +34,9 @@ impl<B: Backend> SvpPPolBytesOf for Module<B> {
 }
 
 impl_svp_delegate!(
-    SvpPrepare<B>,
-    fn svp_prepare(&self, res: &mut SvpPPolBackendMut<'_, B>, res_col: usize, a: &ScalarZnxBackendRef<'_, B>, a_col: usize) {
-        B::svp_prepare(self, res, res_col, a, a_col);
+    SvpPPolPrepare<B>,
+    fn svp_ppol_prepare(&self, res: &mut SvpPPolBackendMut<'_, B>, res_col: usize, a: &ScalarZnxBackendRef<'_, B>, a_col: usize) {
+        B::svp_ppol_prepare(self, res, res_col, a, a_col);
     }
 );
 

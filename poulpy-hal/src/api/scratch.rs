@@ -148,7 +148,7 @@ pub trait ScratchArenaTakeSvpPPol<'a, B: Backend>: Sized {
 /// Arena allocation of [`VecZnx`] layouts out of a [`ScratchArena`].
 ///
 /// ```text
-/// op         take_vec_znx_scratch(n, cols, size) / take_vec_znx_slice_scratch(len, n, cols, size)
+/// op         take_vec_znx_scratch(n, cols, size) / take_vec_znx_slice_scratch(n, len, cols, size)
 /// class      support
 /// mutation   none
 /// domain     n: the degree of the carved layout, a power of two at most the module's degree; a take fed to a kernel obeys that kernel's degree floor; the arena holds at least the matching *_bytes_of
@@ -162,7 +162,7 @@ pub trait ScratchArenaTakeVecZnx<'a, B: Backend>: Sized {
         B: 'a;
 
     /// Returns `len` consecutive degree-`n` [`VecZnx`] of `cols` columns and `size` limbs, beside the remaining arena.
-    fn take_vec_znx_slice_scratch(self, len: usize, n: usize, cols: usize, size: usize) -> (Vec<VecZnxViewMut<'a, B>>, Self)
+    fn take_vec_znx_slice_scratch(self, n: usize, len: usize, cols: usize, size: usize) -> (Vec<VecZnxViewMut<'a, B>>, Self)
     where
         B: 'a,
     {

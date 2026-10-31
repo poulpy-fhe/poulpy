@@ -640,10 +640,10 @@ pub unsafe trait GLWETensoringImpl: Backend {
     /// Prepares the operand of a one-pass square for [`Self::glwe_square_columns`].
     ///
     /// The reference, [`GLWETensoringReference::glwe_square_operand_prepare_reference`](crate::reference::operations::GLWETensoringReference::glwe_square_operand_prepare_reference),
-    /// prepares both forms with `cnv_prepare_self`. A backend whose [`Self::glwe_square_columns`]
+    /// prepares both forms with `cnv_pvec_self_prepare`. A backend whose [`Self::glwe_square_columns`]
     /// reads the left form alone may leave `right` unwritten, and only that one: the default
     /// `glwe_square_columns` reads both forms.
-    /// Scratch is `cnv_prepare_self_tmp_bytes`, which the one-pass relinearization queries reserve.
+    /// Scratch is `cnv_pvec_self_prepare_tmp_bytes`, which the one-pass relinearization queries reserve.
     fn glwe_square_operand_prepare(
         module: &Module<Self>,
         left: &mut CnvPVecLBackendMut<'_, Self>,

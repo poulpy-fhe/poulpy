@@ -34,43 +34,48 @@ pub trait VmpPMatAlloc<B: Backend> {
 /// mutation   none
 /// domain     n: a power of two, MIN_DEGREE <= n <= the module's degree; every other dimension >= 1
 /// ensures    returns the byte size required for the given prepared matrix dimensions and hint
-/// test       test_word_compat_prepare_hint_sizes, test_word_compat_vmp_prepare_bytes
+/// test       test_word_compat_prepare_hint_sizes, test_word_compat_vmp_pmat_prepare_bytes
 /// ```
 pub trait VmpPMatBytesOf {
     /// Returns the bytes a degree-`n` [`VmpPMat`](crate::layouts::VmpPMat) of the given dimensions under `hint` occupies.
     fn vmp_pmat_bytes_of(&self, n: usize, rows: usize, cols_in: usize, cols_out: usize, size: usize, hint: PrepareHint) -> usize;
 }
 
-/// Returns the scratch bytes [`VmpPrepare`] requires.
+/// Returns the scratch bytes [`VmpPMatPrepare`] requires.
 ///
 /// ```text
-/// op         vmp_prepare_tmp_bytes(rows, cols_in, cols_out, size)
+/// op         vmp_pmat_prepare_tmp_bytes(rows, cols_in, cols_out, size)
 /// class      support
 /// mutation   none
 /// domain     every dimension >= 1
-/// ensures    returns the scratch bytes vmp_prepare needs on a matrix of those dimensions
+/// ensures    returns the scratch bytes vmp_pmat_prepare needs on a matrix of those dimensions
 /// test       test_vmp_apply_dft_to_dft
 /// ```
-pub trait VmpPrepareTmpBytes {
-    /// Returns the scratch bytes `vmp_prepare` requires for a matrix of the given dimensions.
-    fn vmp_prepare_tmp_bytes(&self, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> usize;
+pub trait VmpPMatPrepareTmpBytes {
+    /// Returns the scratch bytes `vmp_pmat_prepare` requires for a matrix of the given dimensions.
+    fn vmp_pmat_prepare_tmp_bytes(&self, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> usize;
 }
 
 /// Preparation of a coefficient-domain [`MatZnx`](crate::layouts::MatZnx) into a [`VmpPMat`](crate::layouts::VmpPMat).
 ///
 /// ```text
-/// op         vmp_prepare(pmat, mat, scratch)
+/// op         vmp_pmat_prepare(pmat, mat, scratch)
 /// class      basis
 /// mutation   out-of-place
 /// definition pmat[r,c,d,j] reads as mat[r,c,d,j] for every 0 <= r < pmat.rows(), 0 <= c < pmat.cols_in(), 0 <= d < pmat.cols_out() and 0 <= j < pmat.size()
 /// domain     pmat: a VmpPMat; mat: a MatZnx of the same degree and dimensions
-/// requires   scratch >= vmp_prepare_tmp_bytes(pmat.rows(), pmat.cols_in(), pmat.cols_out(), pmat.size())
+/// requires   scratch >= vmp_pmat_prepare_tmp_bytes(pmat.rows(), pmat.cols_in(), pmat.cols_out(), pmat.size())
 /// ensures    every prepared matrix entry reads the corresponding source entry
 /// test       test_vmp_apply_dft_to_dft
 /// ```
-pub trait VmpPrepare<B: Backend> {
+pub trait VmpPMatPrepare<B: Backend> {
     /// Writes every entry of `mat` into `pmat` in the prepared representation.
-    fn vmp_prepare(&self, pmat: &mut VmpPMatBackendMut<'_, B>, mat: &MatZnxBackendRef<'_, B>, scratch: &mut ScratchArena<'_, B>);
+    fn vmp_pmat_prepare(
+        &self,
+        pmat: &mut VmpPMatBackendMut<'_, B>,
+        mat: &MatZnxBackendRef<'_, B>,
+        scratch: &mut ScratchArena<'_, B>,
+    );
 }
 
 #[allow(clippy::too_many_arguments)]

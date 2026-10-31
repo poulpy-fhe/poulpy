@@ -361,7 +361,7 @@ pub(crate) fn glwe_accumulate_prepared_baby_steps_dft<BE, M, P, L: BabyStepOpera
 
 /// PROD block for one giant step from an *unprepared* matrix: identical to
 /// [`glwe_accumulate_prepared_baby_steps_dft`] except each diagonal is prepared
-/// (`cnv_prepare_right`) on the fly into a single reused scratch `CnvPVecR` and
+/// (`cnv_pvec_right_prepare`) on the fly into a single reused scratch `CnvPVecR` and
 /// discarded immediately, so the full prepared RHS is never materialized. Trades
 /// per-eval recompute for memory when memory bandwidth is the limiting factor. The
 /// baby loop is the outer one so each diagonal is prepared exactly once per eval.
@@ -414,7 +414,7 @@ fn glwe_accumulate_unprepared_baby_steps_dft<BE, M, P, L: BabyStepOperand<BE>>(
         );
 
         // Stream the RHS: prepare this diagonal on the fly, then reuse the slot.
-        module.cnv_prepare_right(&mut diagonal, &plaintext.data, &mut scratch_1.borrow());
+        module.cnv_pvec_right_prepare(&mut diagonal, &plaintext.data, &mut scratch_1.borrow());
 
         for col in 0..cols {
             if term_idx == 0 {

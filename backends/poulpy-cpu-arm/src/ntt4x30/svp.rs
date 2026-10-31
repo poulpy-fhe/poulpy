@@ -31,7 +31,7 @@ fn mul_packed_limb_assign(n: usize, dst: &mut [u32], factor: &[u32]) {
     unsafe { limb_op::<OP_MONT_MUL>(n, dst, dst, factor.as_ptr()) }
 }
 
-pub(crate) fn svp_prepare<R: Ring>(
+pub(crate) fn svp_ppol_prepare<R: Ring>(
     module: &Module<NTT4x30Neon<R>>,
     res: &mut SvpPPolBackendMut<'_, NTT4x30Neon<R>>,
     res_col: usize,
@@ -42,7 +42,7 @@ pub(crate) fn svp_prepare<R: Ring>(
 {
     let n = res.n();
     check_degree::<NTT4x30Neon<R>>(module.n(), n);
-    assert!(a.n() == n, "svp_prepare: a.n() != res.n()");
+    assert!(a.n() == n, "svp_ppol_prepare: a.n() != res.n()");
     let data: &mut [u32] = cast_slice_mut(res.data_mut());
     dft_limb_scaled::<R, poulpy_hal::execution::SerialTaskExecutor>(
         module,

@@ -19,6 +19,7 @@ unsafe impl poulpy_hal::oep::HalVecZnxCIImpl for FFT64Portable {
     crate::hal_impl_vec_znx_ci!();
 }
 
+unsafe impl<R: Ring> poulpy_hal::oep::HalScalarZnxImpl for FFT64Portable<R> where Self: HalVecZnxImpl {}
 unsafe impl<R: Ring> poulpy_hal::oep::HalMatZnxImpl for FFT64Portable<R> where Self: HalVecZnxImpl {}
 
 unsafe impl<R: Ring> HalVecZnxImpl for FFT64Portable<R>
@@ -78,6 +79,7 @@ unsafe impl poulpy_hal::oep::HalVecZnxCIImpl for NTT4x30Portable {
     crate::hal_impl_vec_znx_ci!();
 }
 
+unsafe impl<R: Ring> poulpy_hal::oep::HalScalarZnxImpl for NTT4x30Portable<R> where Self: HalVecZnxImpl {}
 unsafe impl<R: Ring> poulpy_hal::oep::HalMatZnxImpl for NTT4x30Portable<R> where Self: HalVecZnxImpl {}
 
 unsafe impl<R: Ring> HalVecZnxImpl for NTT4x30Portable<R>

@@ -1,7 +1,8 @@
 use crate::{
     api::{
         VmpApplyDft, VmpApplyDftTmpBytes, VmpApplyDftToDft, VmpApplyDftToDftAdd, VmpApplyDftToDftAddTmpBytes,
-        VmpApplyDftToDftTmpBytes, VmpExtractSelectedRows, VmpPMatAlloc, VmpPMatBytesOf, VmpPrepare, VmpPrepareTmpBytes, VmpZero,
+        VmpApplyDftToDftTmpBytes, VmpExtractSelectedRows, VmpPMatAlloc, VmpPMatBytesOf, VmpPMatPrepare, VmpPMatPrepareTmpBytes,
+        VmpZero,
     },
     layouts::{
         Backend, MatZnxBackendRef, Module, PrepareHint, ScratchArena, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef,
@@ -42,16 +43,21 @@ impl<B: Backend> VmpPMatBytesOf for Module<B> {
 }
 
 impl_vmp_delegate!(
-    VmpPrepareTmpBytes,
-    fn vmp_prepare_tmp_bytes(&self, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> usize {
-        B::vmp_prepare_tmp_bytes(self, rows, cols_in, cols_out, size)
+    VmpPMatPrepareTmpBytes,
+    fn vmp_pmat_prepare_tmp_bytes(&self, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> usize {
+        B::vmp_pmat_prepare_tmp_bytes(self, rows, cols_in, cols_out, size)
     }
 );
 
 impl_vmp_delegate!(
-    VmpPrepare<B>,
-    fn vmp_prepare(&self, res: &mut VmpPMatBackendMut<'_, B>, a: &MatZnxBackendRef<'_, B>, scratch: &mut ScratchArena<'_, B>) {
-        B::vmp_prepare(self, res, a, scratch);
+    VmpPMatPrepare<B>,
+    fn vmp_pmat_prepare(
+        &self,
+        res: &mut VmpPMatBackendMut<'_, B>,
+        a: &MatZnxBackendRef<'_, B>,
+        scratch: &mut ScratchArena<'_, B>,
+    ) {
+        B::vmp_pmat_prepare(self, res, a, scratch);
     }
 );
 

@@ -51,6 +51,7 @@ fn switch_ring(res: &mut [i64], a: &[i64]) {
     }
 }
 
+unsafe impl<F: DFTFamily, R: OracleRing> poulpy_hal::oep::HalScalarZnxImpl for Oracle<F, R> {}
 unsafe impl<F: DFTFamily, R: OracleRing> poulpy_hal::oep::HalMatZnxImpl for Oracle<F, R> {}
 
 unsafe impl<F: DFTFamily, R: OracleRing> HalVecZnxImpl for Oracle<F, R> {
@@ -233,18 +234,18 @@ unsafe impl<F: DFTFamily, R: OracleRing> HalVecZnxImpl for Oracle<F, R> {
 
     // Digits centered in [-2^(base2k-1), 2^(base2k-1)), low bits of the last
     // limb cleared to precision k, limbs past k zero.
-    fn vec_znx_fill_uniform(
+    fn vec_znx_fill_uniform_source(
         _module: &Module<Self>,
         base2k: usize,
         k: usize,
         res: &mut VecZnxBackendMut<'_, Self>,
         res_col: usize,
-        seed: [u8; 32],
+        source: &mut Source,
     ) {
         assert!(k != 0, "uniform sampling precision must be non-zero");
         let size = k.div_ceil(base2k);
         assert!(size <= res.size(), "k ({k}) exceeds the allocation ({} limbs)", res.size());
-        let mut source = Source::new(seed);
+        let mut source = Source::new(source.new_seed());
         let (range, half) = (1u64 << base2k, 1i64 << (base2k - 1));
         for j in 0..res.size() {
             let limb = res.at_mut(res_col, j);
@@ -743,7 +744,7 @@ unsafe impl<F: DFTFamily, R: OracleRing> HalVecZnxDftImpl for Oracle<F, R> {
 }
 
 unsafe impl<F: DFTFamily, R: OracleRing> HalSvpImpl for Oracle<F, R> {
-    fn svp_prepare(
+    fn svp_ppol_prepare(
         module: &Module<Self>,
         res: &mut SvpPPolBackendMut<'_, Self>,
         res_col: usize,
@@ -797,11 +798,17 @@ unsafe impl<F: DFTFamily, R: OracleRing> HalSvpImpl for Oracle<F, R> {
 // A prepared matrix keeps the MatZnx order: row, input column, limb, output
 // column, each block the transform of one polynomial.
 unsafe impl<F: DFTFamily, R: OracleRing> HalVmpImpl for Oracle<F, R> {
-    fn vmp_prepare_tmp_bytes(_module: &Module<Self>, _rows: usize, _cols_in: usize, _cols_out: usize, _size: usize) -> usize {
+    fn vmp_pmat_prepare_tmp_bytes(
+        _module: &Module<Self>,
+        _rows: usize,
+        _cols_in: usize,
+        _cols_out: usize,
+        _size: usize,
+    ) -> usize {
         0
     }
 
-    fn vmp_prepare(
+    fn vmp_pmat_prepare(
         module: &Module<Self>,
         res: &mut VmpPMatBackendMut<'_, Self>,
         a: &MatZnxBackendRef<'_, Self>,
@@ -921,11 +928,11 @@ fn cnv_prepare<F: DFTFamily, R: OracleRing>(
 }
 
 unsafe impl<F: DFTFamily, R: OracleRing> HalCnvImpl for Oracle<F, R> {
-    fn cnv_prepare_left_tmp_bytes(_module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
+    fn cnv_pvec_left_prepare_tmp_bytes(_module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
         0
     }
 
-    fn cnv_prepare_left(
+    fn cnv_pvec_left_prepare(
         module: &Module<Self>,
         res: &mut CnvPVecLBackendMut<'_, Self>,
         a: &VecZnxBackendRef<'_, Self>,
@@ -936,11 +943,11 @@ unsafe impl<F: DFTFamily, R: OracleRing> HalCnvImpl for Oracle<F, R> {
         cnv_prepare(module, res.raw_mut(), cols, size, a);
     }
 
-    fn cnv_prepare_right_tmp_bytes(_module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
+    fn cnv_pvec_right_prepare_tmp_bytes(_module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
         0
     }
 
-    fn cnv_prepare_right(
+    fn cnv_pvec_right_prepare(
         module: &Module<Self>,
         res: &mut CnvPVecRBackendMut<'_, Self>,
         a: &VecZnxBackendRef<'_, Self>,

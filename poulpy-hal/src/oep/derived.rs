@@ -427,8 +427,8 @@ pub fn vec_znx_mul_xp_minus_one_assign_derived<BE>(
     BE::vec_znx_copy(module, res, res_col, &tmp.to_backend_ref(), 0);
 }
 
-/// Every column of `res`, in increasing order, filled by `vec_znx_fill_uniform`
-/// with the next seed of `source`: the draws of the per-column api op, column
+/// Every column of `res`, in increasing order, filled by `vec_znx_fill_uniform_source`
+/// on `source`: the draws of the per-column api op, column
 /// by column.
 #[doc(hidden)]
 pub fn vec_znx_fill_uniform_source_all_derived<BE, R>(
@@ -443,7 +443,7 @@ pub fn vec_znx_fill_uniform_source_all_derived<BE, R>(
 {
     let mut res = res.to_backend_mut();
     for col in 0..res.cols() {
-        BE::vec_znx_fill_uniform(module, base2k, k, &mut res, col, source.new_seed());
+        BE::vec_znx_fill_uniform_source(module, base2k, k, &mut res, col, source);
     }
 }
 
@@ -846,18 +846,19 @@ pub fn svp_apply_dft_derived<BE>(
     BE::svp_apply_dft_to_dft(module, res, res_col, a, a_col, &b_dft.to_backend_ref(), 0);
 }
 
-/// Scratch for [`cnv_prepare_self_derived`]: the larger of the two prepares.
+/// Scratch for [`cnv_pvec_self_prepare_derived`]: the larger of the two prepares.
 #[doc(hidden)]
-pub fn cnv_prepare_self_tmp_bytes_derived<BE>(module: &Module<BE>, res_size: usize, a_size: usize) -> usize
+pub fn cnv_pvec_self_prepare_tmp_bytes_derived<BE>(module: &Module<BE>, res_size: usize, a_size: usize) -> usize
 where
     BE: HalCnvImpl,
 {
-    BE::cnv_prepare_left_tmp_bytes(module, res_size, a_size).max(BE::cnv_prepare_right_tmp_bytes(module, res_size, a_size))
+    BE::cnv_pvec_left_prepare_tmp_bytes(module, res_size, a_size)
+        .max(BE::cnv_pvec_right_prepare_tmp_bytes(module, res_size, a_size))
 }
 
 /// Prepares one operand as both a left and a right convolution factor.
 #[doc(hidden)]
-pub fn cnv_prepare_self_derived<BE>(
+pub fn cnv_pvec_self_prepare_derived<BE>(
     module: &Module<BE>,
     left: &mut CnvPVecLBackendMut<'_, BE>,
     right: &mut CnvPVecRBackendMut<'_, BE>,
@@ -867,8 +868,8 @@ pub fn cnv_prepare_self_derived<BE>(
     BE: HalCnvImpl,
 {
     assert_eq!(right.size(), left.size());
-    BE::cnv_prepare_left(module, left, a, scratch);
-    BE::cnv_prepare_right(module, right, a, scratch);
+    BE::cnv_pvec_left_prepare(module, left, a, scratch);
+    BE::cnv_pvec_right_prepare(module, right, a, scratch);
 }
 
 /// Scratch for [`cnv_apply_dft_add_derived`]: one `res_size`-limb `VecZnxDft`

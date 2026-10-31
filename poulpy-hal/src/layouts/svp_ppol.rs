@@ -40,7 +40,7 @@ impl SvpPPolShape {
 /// [`SvpApplyDft`](crate::api::SvpApplyDft) to efficiently multiply a
 /// scalar polynomial by each column of a [`VecZnxDft`](crate::layouts::VecZnxDft).
 ///
-/// Create via [`SvpPrepare`](crate::api::SvpPrepare) from a
+/// Create via [`SvpPPolPrepare`](crate::api::SvpPPolPrepare) from a
 /// coefficient-domain [`ScalarZnx`](crate::layouts::ScalarZnx).
 ///
 /// Ring degree `n` is always a power of two, so the DFT-domain layout has a

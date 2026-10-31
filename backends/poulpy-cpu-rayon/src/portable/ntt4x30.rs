@@ -131,11 +131,11 @@ macro_rules! impl_packed_base {
                 drivers::vec_znx_dft_automorphism_add::<$ring, E>(plan, res, res_col, a, a_col)
             }
 
-            fn cnv_prepare_tmp_bytes(n: usize) -> usize {
-                drivers::cnv_prepare_tmp_bytes(n)
+            fn cnv_pvec_prepare_tmp_bytes(n: usize) -> usize {
+                drivers::cnv_pvec_prepare_tmp_bytes(n)
             }
 
-            fn cnv_prepare_left<BE: PackedWord, E: TaskExecutor>(
+            fn cnv_pvec_left_prepare<BE: PackedWord, E: TaskExecutor>(
                 base: &Module<Self>,
                 module: &Module<BE>,
                 res: &mut CnvPVecLBackendMut<'_, BE>,
@@ -145,12 +145,12 @@ macro_rules! impl_packed_base {
                 for<'a> BE::BufRef<'a>: HostDataRef,
                 for<'a> BE::BufMut<'a>: HostDataMut,
             {
-                drivers::cnv_prepare_left::<BE, E>(module, res, a, tmp, |n, dst, src, prepared| {
+                drivers::cnv_pvec_left_prepare::<BE, E>(module, res, a, tmp, |n, dst, src, prepared| {
                     drivers::dft_limb_scaled::<$ring, E>(base, n, dst, src, prepared)
                 })
             }
 
-            fn cnv_prepare_right<BE: PackedWord, E: TaskExecutor>(
+            fn cnv_pvec_right_prepare<BE: PackedWord, E: TaskExecutor>(
                 base: &Module<Self>,
                 module: &Module<BE>,
                 res: &mut CnvPVecRBackendMut<'_, BE>,
@@ -160,12 +160,12 @@ macro_rules! impl_packed_base {
                 for<'a> BE::BufRef<'a>: HostDataRef,
                 for<'a> BE::BufMut<'a>: HostDataMut,
             {
-                drivers::cnv_prepare_right::<BE, E>(module, res, a, tmp, |n, dst, src, prepared| {
+                drivers::cnv_pvec_right_prepare::<BE, E>(module, res, a, tmp, |n, dst, src, prepared| {
                     drivers::dft_limb_scaled::<$ring, E>(base, n, dst, src, prepared)
                 })
             }
 
-            fn cnv_prepare_self<BE: PackedWord, E: TaskExecutor>(
+            fn cnv_pvec_self_prepare<BE: PackedWord, E: TaskExecutor>(
                 base: &Module<Self>,
                 module: &Module<BE>,
                 left: &mut CnvPVecLBackendMut<'_, BE>,
@@ -176,7 +176,7 @@ macro_rules! impl_packed_base {
                 for<'a> BE::BufRef<'a>: HostDataRef,
                 for<'a> BE::BufMut<'a>: HostDataMut,
             {
-                drivers::cnv_prepare_self::<BE, E>(module, left, right, a, tmp, |n, dst, src, prepared| {
+                drivers::cnv_pvec_self_prepare::<BE, E>(module, left, right, a, tmp, |n, dst, src, prepared| {
                     drivers::dft_limb_scaled::<$ring, E>(base, n, dst, src, prepared)
                 })
             }

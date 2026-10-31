@@ -1,7 +1,7 @@
 //! Preparation of stored GLWE, GGLWE, GGSW, public-key and GGLWE-to-GGSW-key layouts.
 
 use poulpy_hal::{
-    api::{VecZnxDftApply, VmpPrepare, VmpPrepareTmpBytes},
+    api::{VecZnxDftApply, VmpPMatPrepare, VmpPMatPrepareTmpBytes},
     layouts::{Backend, Module, ScratchArena},
 };
 
@@ -66,7 +66,7 @@ pub trait PreparationReference<BE: Backend> {
 
 impl<BE: Backend> PreparationReference<BE> for Module<BE>
 where
-    Module<BE>: GLWENormalize<BE> + VecZnxDftApply<BE> + VmpPrepare<BE> + VmpPrepareTmpBytes,
+    Module<BE>: GLWENormalize<BE> + VecZnxDftApply<BE> + VmpPMatPrepare<BE> + VmpPMatPrepareTmpBytes,
 {
     fn glwe_prepare_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
@@ -117,7 +117,7 @@ where
     where
         A: GGLWEInfos,
     {
-        let lvl_0: usize = self.vmp_prepare_tmp_bytes(
+        let lvl_0: usize = self.vmp_pmat_prepare_tmp_bytes(
             infos.dnum().into(),
             infos.rank_in().into(),
             (infos.rank() + 1).into(),
@@ -147,7 +147,7 @@ where
                 scratch.available(),
                 self.gglwe_prepare_tmp_bytes_reference(&res)
             );
-            self.vmp_prepare(&mut res.data, &other.data, scratch);
+            self.vmp_pmat_prepare(&mut res.data, &other.data, scratch);
         }
         res.set_noise(noise);
     }
@@ -157,7 +157,7 @@ where
         A: GGSWInfos,
     {
         operand_degree(self.ring_degree().as_usize(), &[infos.n()]);
-        let lvl_0: usize = self.vmp_prepare_tmp_bytes(
+        let lvl_0: usize = self.vmp_pmat_prepare_tmp_bytes(
             infos.dnum().into(),
             (infos.rank() + 1).into(),
             (infos.rank() + 1).into(),
@@ -184,7 +184,7 @@ where
                 scratch.available(),
                 self.ggsw_prepare_tmp_bytes_reference(&res)
             );
-            self.vmp_prepare(&mut res.data, &other.data, scratch);
+            self.vmp_pmat_prepare(&mut res.data, &other.data, scratch);
         }
         res.set_noise(noise);
     }
@@ -194,7 +194,7 @@ where
         A: GLWEInfos,
     {
         let rank: usize = infos.rank().into();
-        self.vmp_prepare_tmp_bytes(1, rank, rank + 1, infos.size())
+        self.vmp_pmat_prepare_tmp_bytes(1, rank, rank + 1, infos.size())
     }
 
     fn glwe_public_key_prepare_reference<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, BE>)
@@ -214,7 +214,7 @@ where
             assert_eq!(res.k(), other.k());
             assert_eq!(res.size(), other.size());
 
-            self.vmp_prepare(&mut res.data, &other.data, scratch);
+            self.vmp_pmat_prepare(&mut res.data, &other.data, scratch);
         }
         res.set_noise(other.to_backend_ref().noise());
         *res.dist_mut() = *other.dist();
@@ -224,7 +224,7 @@ where
     where
         A: GGLWEInfos,
     {
-        let lvl_0: usize = self.vmp_prepare_tmp_bytes(
+        let lvl_0: usize = self.vmp_pmat_prepare_tmp_bytes(
             infos.dnum().into(),
             infos.rank_in().into(),
             (infos.rank() + 1).into(),
@@ -251,7 +251,7 @@ where
                 needed
             );
             for (a, b) in res.keys.iter_mut().zip(other.keys.iter()) {
-                self.vmp_prepare(&mut a.data, &b.data, &mut scratch.borrow());
+                self.vmp_pmat_prepare(&mut a.data, &b.data, &mut scratch.borrow());
             }
         }
         res.set_noise(noise);

@@ -294,11 +294,17 @@ fn product<RT: GpuRuntime, R: Ring>(
 }
 
 unsafe impl<RT: GpuRuntime, R: Ring> HalVmpImpl for NTT4x30Gpu<RT, R> {
-    fn vmp_prepare_tmp_bytes(_module: &Module<Self>, _rows: usize, _cols_in: usize, _cols_out: usize, _size: usize) -> usize {
+    fn vmp_pmat_prepare_tmp_bytes(
+        _module: &Module<Self>,
+        _rows: usize,
+        _cols_in: usize,
+        _cols_out: usize,
+        _size: usize,
+    ) -> usize {
         0
     }
 
-    fn vmp_prepare(
+    fn vmp_pmat_prepare(
         module: &Module<Self>,
         res: &mut VmpPMatBackendMut<'_, Self>,
         a: &MatZnxBackendRef<'_, Self>,
@@ -311,10 +317,10 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVmpImpl for NTT4x30Gpu<RT, R> {
                 && a.cols_in() == res.cols_in()
                 && a.cols_out() == res.cols_out()
                 && a.size() == res.size(),
-            "vmp_prepare: the matrices differ in degree or dimensions"
+            "vmp_pmat_prepare: the matrices differ in degree or dimensions"
         );
         let Some(res) = pmat(res) else { return };
-        let a = mat_blocks(a).expect("vmp_prepare: a holds no storage");
+        let a = mat_blocks(a).expect("vmp_pmat_prepare: a holds no storage");
         // Both matrices order their polynomials alike: one batched transform.
         let blocks = res.blocks();
         forward::<RT>(handle(module).tables(), &blocks, &a, blocks.size);

@@ -220,21 +220,21 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxImpl for NTT4x30Gpu<RT, R> {
         lincomb::<RT>(&res, res.size, Term::plus(&a), Term::zero(&a));
     }
 
-    fn vec_znx_fill_uniform(
+    fn vec_znx_fill_uniform_source(
         _module: &Module<Self>,
         base2k: usize,
         k: usize,
         res: &mut VecZnxBackendMut<'_, Self>,
         res_col: usize,
-        seed: [u8; 32],
+        source: &mut Source,
     ) {
         // The stream is part of the contract, so the draws come from the
         // portable sampler and reach the device limb by limb.
         assert!(res_col < res.cols(), "operand column out of range");
-        poulpy_hal::layouts::assert_dense(res, "vec_znx_fill_uniform");
+        poulpy_hal::layouts::assert_dense(res, "vec_znx_fill_uniform_source");
         let (n, size) = (res.n(), res.size());
         let mut host = VecZnx::<AlignedBuf, i64>::from_data(AlignedBuf::from(vec![0u8; n * size * size_of::<i64>()]), n, 1, size);
-        let mut source = Source::new(seed);
+        let mut source = Source::new(source.new_seed());
         {
             let mut host_mut: VecZnxBackendMut<'_, HostBytesBackend> = VecZnx::from_data(&mut host.data_mut()[..], n, 1, size);
             vec_znx_fill_uniform_portable::<HostBytesBackend>(base2k, k, &mut host_mut, 0, &mut source);
@@ -326,4 +326,5 @@ unsafe impl<RT: GpuRuntime> HalVecZnxCIImpl for NTT4x30Gpu<RT, Standard> {
 }
 
 // The matrix family composes the vector kernels: its derived bodies.
+unsafe impl<RT: GpuRuntime, R: Ring> poulpy_hal::oep::HalScalarZnxImpl for NTT4x30Gpu<RT, R> {}
 unsafe impl<RT: GpuRuntime, R: Ring> poulpy_hal::oep::HalMatZnxImpl for NTT4x30Gpu<RT, R> {}

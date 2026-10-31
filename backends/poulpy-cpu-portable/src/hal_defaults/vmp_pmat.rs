@@ -13,8 +13,9 @@ use crate::kernels::{
             vmp_apply_dft_to_dft_add_with_kernel_portable as fft64_vmp_apply_dft_to_dft_add_with_kernel,
             vmp_apply_dft_to_dft_tmp_bytes_portable as fft64_vmp_apply_dft_to_dft_tmp_bytes,
             vmp_apply_dft_to_dft_with_kernel_portable as fft64_vmp_apply_dft_to_dft_with_kernel,
-            vmp_extract_selected_rows_portable as fft64_vmp_extract_selected_rows, vmp_prepare_portable as fft64_vmp_prepare,
-            vmp_prepare_tmp_bytes_portable as fft64_vmp_prepare_tmp_bytes, vmp_zero_portable as fft64_vmp_zero,
+            vmp_extract_selected_rows_portable as fft64_vmp_extract_selected_rows,
+            vmp_pmat_prepare_portable as fft64_vmp_pmat_prepare,
+            vmp_pmat_prepare_tmp_bytes_portable as fft64_vmp_pmat_prepare_tmp_bytes, vmp_zero_portable as fft64_vmp_zero,
         },
     },
     ntt4x30::{
@@ -25,8 +26,8 @@ use crate::kernels::{
         vec_znx_dft::NttModuleHandle,
         vmp::{
             ntt4x30_vmp_apply_dft_to_dft_portable, ntt4x30_vmp_apply_dft_to_dft_tmp_bytes_portable,
-            ntt4x30_vmp_extract_selected_rows_portable, ntt4x30_vmp_prepare_portable, ntt4x30_vmp_prepare_tmp_bytes_portable,
-            ntt4x30_vmp_zero_portable,
+            ntt4x30_vmp_extract_selected_rows_portable, ntt4x30_vmp_pmat_prepare_portable,
+            ntt4x30_vmp_pmat_prepare_tmp_bytes_portable, ntt4x30_vmp_zero_portable,
         },
     },
 };
@@ -48,7 +49,7 @@ where
     for<'x> Self::BufMut<'x>: HostDataMut,
     for<'x> Self::BufRef<'x>: HostDataRef,
 {
-    fn vmp_prepare_tmp_bytes_default(
+    fn vmp_pmat_prepare_tmp_bytes_default(
         module: &Module<Self>,
         _rows: usize,
         _cols_in: usize,
@@ -58,10 +59,10 @@ where
     where
         Self: Backend<DftWord = f64, ZnxWord = i64>,
     {
-        fft64_vmp_prepare_tmp_bytes(module.n())
+        fft64_vmp_pmat_prepare_tmp_bytes(module.n())
     }
 
-    fn vmp_prepare_default(
+    fn vmp_pmat_prepare_default(
         module: &Module<Self>,
         res: &mut VmpPMatBackendMut<'_, Self>,
         a: &MatZnxBackendRef<'_, Self>,
@@ -75,10 +76,10 @@ where
     {
         let n: usize = res.n();
         check_degree::<Self>(module.n(), n);
-        assert_eq!(a.n(), n, "vmp_prepare: a.n():{} != res.n():{n}", a.n());
-        let bytes = fft64_vmp_prepare_tmp_bytes(n);
+        assert_eq!(a.n(), n, "vmp_pmat_prepare: a.n():{} != res.n():{n}", a.n());
+        let bytes = fft64_vmp_pmat_prepare_tmp_bytes(n);
         let (tmp, _) = take_host_typed::<Self, f64>(scratch.borrow(), bytes / size_of::<f64>());
-        fft64_vmp_prepare::<Self>(module.get_fft_plan(n), res, a, tmp);
+        fft64_vmp_pmat_prepare::<Self>(module.get_fft_plan(n), res, a, tmp);
     }
 
     fn vmp_apply_dft_to_dft_tmp_bytes_default(
@@ -225,7 +226,7 @@ where
     for<'x> Self::BufMut<'x>: HostDataMut,
     for<'x> Self::BufRef<'x>: HostDataRef,
 {
-    fn vmp_prepare_tmp_bytes_default(
+    fn vmp_pmat_prepare_tmp_bytes_default(
         module: &Module<Self>,
         _rows: usize,
         _cols_in: usize,
@@ -235,10 +236,10 @@ where
     where
         Self: Backend<DftWord = Q120bScalar, ZnxWord = i64>,
     {
-        ntt4x30_vmp_prepare_tmp_bytes_portable(module.n())
+        ntt4x30_vmp_pmat_prepare_tmp_bytes_portable(module.n())
     }
 
-    fn vmp_prepare_default(
+    fn vmp_pmat_prepare_default(
         module: &Module<Self>,
         res: &mut VmpPMatBackendMut<'_, Self>,
         a: &MatZnxBackendRef<'_, Self>,
@@ -253,9 +254,9 @@ where
         for<'x> <Self as Backend>::BufRef<'x>: HostDataRef,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
     {
-        let bytes = ntt4x30_vmp_prepare_tmp_bytes_portable(res.n());
+        let bytes = ntt4x30_vmp_pmat_prepare_tmp_bytes_portable(res.n());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        ntt4x30_vmp_prepare_portable::<Self>(module, res, a, tmp);
+        ntt4x30_vmp_pmat_prepare_portable::<Self>(module, res, a, tmp);
     }
 
     fn vmp_apply_dft_to_dft_tmp_bytes_default(

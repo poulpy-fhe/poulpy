@@ -1,14 +1,14 @@
 #[macro_export]
 macro_rules! hal_impl_svp {
     ($defaults:ident) => {
-        fn svp_prepare(
+        fn svp_ppol_prepare(
             module: &Module<Self>,
             mut res: &mut poulpy_hal::layouts::SvpPPolBackendMut<'_, Self>,
             res_col: usize,
             a: &poulpy_hal::layouts::ScalarZnxBackendRef<'_, Self>,
             a_col: usize,
         ) {
-            <Self as $defaults>::svp_prepare_default(module, &mut res, res_col, a, a_col)
+            <Self as $defaults>::svp_ppol_prepare_default(module, &mut res, res_col, a, a_col)
         }
 
         fn svp_ppol_copy(

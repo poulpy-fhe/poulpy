@@ -54,7 +54,7 @@ fn conjugate_invariant_square_mean_sets_the_ntt_radix() {
         let mut ppol = module.svp_ppol_alloc(n, 1, PrepareHint::Reuse);
         let mut dft = module.vec_znx_dft_alloc(n, 1, 1);
         let mut big = module.vec_znx_big_alloc(n, 1, 1);
-        module.svp_prepare(
+        module.svp_ppol_prepare(
             &mut ppol.to_backend_mut(),
             0,
             &poulpy_hal::test_suite::scalar_znx_backend_ref::<BE>(&b),
@@ -264,15 +264,15 @@ fn test_packed_kernels_reject_out_of_range_operands() {
     let mut scratch: ScratchOwned<NTT4x30Portable> = ScratchOwned::alloc(
         module
             .cnv_apply_dft_add_tmp_bytes(0, size, size, size)
-            .max(module.cnv_prepare_left_tmp_bytes(size, size))
-            .max(module.cnv_prepare_right_tmp_bytes(size, size)),
+            .max(module.cnv_pvec_left_prepare_tmp_bytes(size, size))
+            .max(module.cnv_pvec_right_prepare_tmp_bytes(size, size)),
     );
-    module.cnv_prepare_left(
+    module.cnv_pvec_left_prepare(
         &mut left.to_backend_mut(),
         &vec_znx_backend_ref::<NTT4x30Portable>(&a),
         &mut scratch.arena(),
     );
-    module.cnv_prepare_right(
+    module.cnv_pvec_right_prepare(
         &mut right.to_backend_mut(),
         &vec_znx_backend_ref::<NTT4x30Portable>(&a),
         &mut scratch.arena(),
@@ -676,7 +676,7 @@ backend_test_suite! {
         test_vec_znx_dft_automorphism_add_with_plan_derived => poulpy_hal::test_suite::derived::test_vec_znx_dft_automorphism_add_with_plan_derived,
         test_vec_znx_dft_automorphism_derived => poulpy_hal::test_suite::derived::test_vec_znx_dft_automorphism_derived,
         test_svp_apply_dft_derived => poulpy_hal::test_suite::derived::test_svp_apply_dft_derived,
-        test_cnv_prepare_self_derived => poulpy_hal::test_suite::derived::test_cnv_prepare_self_derived,
+        test_cnv_pvec_self_prepare_derived => poulpy_hal::test_suite::derived::test_cnv_pvec_self_prepare_derived,
         test_cnv_apply_dft_add_derived => poulpy_hal::test_suite::derived::test_cnv_apply_dft_add_derived,
         test_cnv_apply_dft_sum_derived => poulpy_hal::test_suite::derived::test_cnv_apply_dft_sum_derived,
         test_cnv_pairwise_apply_dft_derived => poulpy_hal::test_suite::derived::test_cnv_pairwise_apply_dft_derived,
@@ -712,7 +712,7 @@ backend_test_suite! {
         test_vec_znx_dft_automorphism_add_with_plan_derived => poulpy_hal::test_suite::derived::test_vec_znx_dft_automorphism_add_with_plan_derived,
         test_vec_znx_dft_automorphism_derived => poulpy_hal::test_suite::derived::test_vec_znx_dft_automorphism_derived,
         test_svp_apply_dft_derived => poulpy_hal::test_suite::derived::test_svp_apply_dft_derived,
-        test_cnv_prepare_self_derived => poulpy_hal::test_suite::derived::test_cnv_prepare_self_derived,
+        test_cnv_pvec_self_prepare_derived => poulpy_hal::test_suite::derived::test_cnv_pvec_self_prepare_derived,
         test_cnv_apply_dft_add_derived => poulpy_hal::test_suite::derived::test_cnv_apply_dft_add_derived,
         test_cnv_apply_dft_sum_derived => poulpy_hal::test_suite::derived::test_cnv_apply_dft_sum_derived,
         test_cnv_pairwise_apply_dft_derived => poulpy_hal::test_suite::derived::test_cnv_pairwise_apply_dft_derived,

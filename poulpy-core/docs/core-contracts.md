@@ -134,7 +134,7 @@ encryptions of zero as a GGLWE does, one matrix of one row, entry `l` at input
 column `l`; `at` and `at_mut` view an entry as a GLWE. The entries are
 canonical: generation writes them so, `read_from` trusts the stream, and a
 writer through a mutable view must leave them so. `GLWEPublicKeyPrepared` is
-that matrix prepared by one `vmp_prepare`, and the reference encryption
+that matrix prepared by one `vmp_pmat_prepare`, and the reference encryption
 computes `Sum_l u_l pk_l` as one vector-matrix product over the key's leading
 `ceil(k_sample / base2k)` limbs, then adds each column's error at `k_sample`
 before its single normalization at the output's `k`. The library selects

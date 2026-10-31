@@ -651,15 +651,15 @@ fn zero_row_u32(dst: &mut [u32], size: usize, row: usize, n_blks: usize) {
     }
 }
 
-/// Scratch bytes required by [`ntt4x30_cnv_prepare_left_portable`]: NTT and canonical limbs.
-pub fn ntt4x30_cnv_prepare_left_tmp_bytes_portable(n: usize) -> usize {
+/// Scratch bytes required by [`ntt4x30_cnv_pvec_left_prepare_portable`]: NTT and canonical limbs.
+pub fn ntt4x30_cnv_pvec_left_prepare_tmp_bytes_portable(n: usize) -> usize {
     8 * n * size_of::<u64>()
 }
 
 /// Encode a `VecZnx` into a `CnvPVecL` (canonical u32 rows, block-major).
 ///
 /// Limbs of `res` beyond `a.size()` are zeroed.
-pub fn ntt4x30_cnv_prepare_left_portable<BE>(
+pub fn ntt4x30_cnv_pvec_left_prepare_portable<BE>(
     module: &Module<BE>,
     res: &mut CnvPVecLBackendMut<'_, BE>,
     a: &VecZnxBackendRef<'_, BE>,
@@ -673,7 +673,7 @@ pub fn ntt4x30_cnv_prepare_left_portable<BE>(
         + 'static,
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
 {
-    poulpy_hal::layouts::assert_dense(a, "ntt4x30_cnv_prepare_left");
+    poulpy_hal::layouts::assert_dense(a, "ntt4x30_cnv_pvec_left_prepare");
     let n = res.n();
     check_degree::<BE>(module.n(), n);
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
@@ -742,14 +742,14 @@ pub fn ntt4x30_cnv_prepare_left_portable<BE>(
     }
 }
 
-/// Scratch bytes required by [`ntt4x30_cnv_prepare_right_portable`]: NTT and converted limbs.
-pub fn ntt4x30_cnv_prepare_right_tmp_bytes_portable(n: usize) -> usize {
+/// Scratch bytes required by [`ntt4x30_cnv_pvec_right_prepare_portable`]: NTT and converted limbs.
+pub fn ntt4x30_cnv_pvec_right_prepare_tmp_bytes_portable(n: usize) -> usize {
     8 * n * size_of::<u64>()
 }
 
 /// Encode a `VecZnx` into a `CnvPVecR` (q120c rows, block-major, reversed
 /// limb order). Limbs of `res` beyond `a.size()` are zeroed.
-pub fn ntt4x30_cnv_prepare_right_portable<BE>(
+pub fn ntt4x30_cnv_pvec_right_prepare_portable<BE>(
     module: &Module<BE>,
     res: &mut CnvPVecRBackendMut<'_, BE>,
     a: &VecZnxBackendRef<'_, BE>,
@@ -763,7 +763,7 @@ pub fn ntt4x30_cnv_prepare_right_portable<BE>(
         + 'static,
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
 {
-    poulpy_hal::layouts::assert_dense(a, "ntt4x30_cnv_prepare_right");
+    poulpy_hal::layouts::assert_dense(a, "ntt4x30_cnv_pvec_right_prepare");
     let n = res.n();
     check_degree::<BE>(module.n(), n);
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
@@ -822,14 +822,14 @@ pub fn ntt4x30_cnv_prepare_right_portable<BE>(
     }
 }
 
-/// Scratch bytes required by [`ntt4x30_cnv_prepare_self_portable`]: NTT, canonical and
+/// Scratch bytes required by [`ntt4x30_cnv_pvec_self_prepare_portable`]: NTT, canonical and
 /// converted limbs.
-pub fn ntt4x30_cnv_prepare_self_tmp_bytes_portable(n: usize) -> usize {
+pub fn ntt4x30_cnv_pvec_self_prepare_tmp_bytes_portable(n: usize) -> usize {
     12 * n * size_of::<u64>()
 }
 
 /// Encode a `VecZnx` into both `CnvPVecL` and `CnvPVecR` sharing the NTT.
-pub fn ntt4x30_cnv_prepare_self_portable<BE>(
+pub fn ntt4x30_cnv_pvec_self_prepare_portable<BE>(
     module: &Module<BE>,
     left: &mut CnvPVecLBackendMut<'_, BE>,
     right: &mut CnvPVecRBackendMut<'_, BE>,
@@ -845,14 +845,14 @@ pub fn ntt4x30_cnv_prepare_self_portable<BE>(
         + 'static,
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
 {
-    poulpy_hal::layouts::assert_dense(a, "ntt4x30_cnv_prepare_self");
+    poulpy_hal::layouts::assert_dense(a, "ntt4x30_cnv_pvec_self_prepare");
     let n = left.n();
     check_degree::<BE>(module.n(), n);
-    assert_eq!(a.n(), n, "ntt4x30_cnv_prepare_self: a.n():{} != left.n():{n}", a.n());
+    assert_eq!(a.n(), n, "ntt4x30_cnv_pvec_self_prepare: a.n():{} != left.n():{n}", a.n());
     assert_eq!(
         right.n(),
         n,
-        "ntt4x30_cnv_prepare_self: right.n():{} != left.n():{n}",
+        "ntt4x30_cnv_pvec_self_prepare: right.n():{} != left.n():{n}",
         right.n()
     );
     let table = module.get_ntt_table_for(n);

@@ -126,7 +126,7 @@ where
     let min_cnv_offset = 0;
     let prod_size = a_size + pt_size;
     let inner_dft = glwe_accumulate_prepared_baby_steps_dft_tmp_bytes::<BE, _>(module, min_cnv_offset, a_size, pt_size);
-    let prepare_right = module.cnv_prepare_right_tmp_bytes(pt_size, pt_size);
+    let prepare_right = module.cnv_pvec_right_prepare_tmp_bytes(pt_size, pt_size);
     let tree_products = PlainProductsShape {
         cnv_offset_hi: min_cnv_offset,
         baby_size: a_size,
@@ -427,7 +427,7 @@ where
 }
 
 /// Reference impl: scratch bytes for [`glwe_linear_transformation_eval_sum_into_reference`] over streamed transforms:
-/// the sum's budget plus the resident `CnvPVecR` diagonal slot and the `cnv_prepare_right` scratch of the streamed
+/// the sum's budget plus the resident `CnvPVecR` diagonal slot and the `cnv_pvec_right_prepare` scratch of the streamed
 /// inner product, sized at the module degree.
 pub fn glwe_linear_transformation_eval_sum_unprepared_rhs_tmp_bytes_reference<BE, R, A, B, K, T>(
     module: &Module<BE>,
@@ -473,7 +473,7 @@ where
 {
     glwe_linear_transformation_eval_sum_tmp_bytes_reference::<BE, _, _, _, _, _>(module, res, a, pt, plan, tsk, key)
         + module.cnv_pvec_right_bytes_of(module.n(), 1, pt.size(), PrepareHint::OneShot)
-        + module.cnv_prepare_right_tmp_bytes(pt.size(), pt.size())
+        + module.cnv_pvec_right_prepare_tmp_bytes(pt.size(), pt.size())
 }
 
 /// Reference impl: `res = Σ_t M_t(a_t)` for resident transforms sharing one giant schedule.
@@ -551,7 +551,7 @@ pub fn glwe_linear_transformation_eval_sum_into_reference<BE, R, P, H, L: BabySt
 /// Reference impl: scratch bytes for the streamed (unprepared-RHS) evaluation.
 ///
 /// The streamed inner product additionally holds one resident `CnvPVecR`
-/// diagonal slot and a `cnv_prepare_right` scratch on top of the prepared
+/// diagonal slot and a `cnv_pvec_right_prepare` scratch on top of the prepared
 /// evaluation budget, both sized at the module degree, an upper bound for a
 /// diagonal of any degree.
 pub fn glwe_linear_transformation_eval_unprepared_rhs_tmp_bytes_reference<BE, R, A, B, K, T>(
@@ -598,5 +598,5 @@ where
 {
     glwe_linear_transformation_eval_tmp_bytes_reference::<BE, _, _, _, _, _>(module, res, a, pt, plan, tsk, key)
         + module.cnv_pvec_right_bytes_of(module.n(), 1, pt.size(), PrepareHint::OneShot)
-        + module.cnv_prepare_right_tmp_bytes(pt.size(), pt.size())
+        + module.cnv_pvec_right_prepare_tmp_bytes(pt.size(), pt.size())
 }

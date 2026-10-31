@@ -24,9 +24,9 @@ use crate::kernels::{
             ntt4x30_cnv_apply_dft_tmp_bytes_portable, ntt4x30_cnv_by_const_apply_add_portable,
             ntt4x30_cnv_by_const_apply_portable, ntt4x30_cnv_by_const_apply_tmp_bytes_portable,
             ntt4x30_cnv_pairwise_apply_dft_portable, ntt4x30_cnv_pairwise_apply_dft_tmp_bytes_portable,
-            ntt4x30_cnv_prepare_left_portable, ntt4x30_cnv_prepare_left_tmp_bytes_portable, ntt4x30_cnv_prepare_right_portable,
-            ntt4x30_cnv_prepare_right_tmp_bytes_portable, ntt4x30_cnv_prepare_self_portable,
-            ntt4x30_cnv_prepare_self_tmp_bytes_portable,
+            ntt4x30_cnv_pvec_left_prepare_portable, ntt4x30_cnv_pvec_left_prepare_tmp_bytes_portable,
+            ntt4x30_cnv_pvec_right_prepare_portable, ntt4x30_cnv_pvec_right_prepare_tmp_bytes_portable,
+            ntt4x30_cnv_pvec_self_prepare_portable, ntt4x30_cnv_pvec_self_prepare_tmp_bytes_portable,
         },
         ntt::NttTable,
         primes::Primes30,
@@ -50,14 +50,14 @@ pub trait FFT64ConvolutionDefault: Backend<ZnxWord = i64> + ScratchWorkers
 where
     Self::OwnedBuf: poulpy_hal::layouts::HostDataMut,
 {
-    fn cnv_prepare_left_tmp_bytes_default(module: &Module<Self>, res_size: usize, a_size: usize) -> usize
+    fn cnv_pvec_left_prepare_tmp_bytes_default(module: &Module<Self>, res_size: usize, a_size: usize) -> usize
     where
         Self: Backend<DftWord = f64, ZnxWord = i64>,
     {
         Self::vec_znx_dft_bytes_of(module.n(), 1, res_size.min(a_size))
     }
 
-    fn cnv_prepare_left_default(
+    fn cnv_pvec_left_prepare_default(
         module: &Module<Self>,
         res: &mut CnvPVecLBackendMut<'_, Self>,
         a: &VecZnxBackendRef<'_, Self>,
@@ -70,7 +70,7 @@ where
     {
         let n: usize = res.n();
         check_degree::<Self>(module.n(), n);
-        assert_eq!(a.n(), n, "cnv_prepare_left: a.n():{} != res.n():{n}", a.n());
+        assert_eq!(a.n(), n, "cnv_pvec_left_prepare: a.n():{} != res.n():{n}", a.n());
         let tmp_size = res.size().min(a.size());
         let (tmp_bytes, _) = take_host_typed::<Self, u8>(scratch.borrow(), Self::vec_znx_dft_bytes_of(n, 1, tmp_size));
         let mut tmp = VecZnxDft::from_data(tmp_bytes, n, 1, tmp_size);
@@ -78,14 +78,14 @@ where
         convolution_prepare_left_portable::<Self>(module.get_fft_plan(n), res, a, &mut tmp_ref);
     }
 
-    fn cnv_prepare_right_tmp_bytes_default(module: &Module<Self>, res_size: usize, a_size: usize) -> usize
+    fn cnv_pvec_right_prepare_tmp_bytes_default(module: &Module<Self>, res_size: usize, a_size: usize) -> usize
     where
         Self: Backend<DftWord = f64, ZnxWord = i64>,
     {
         Self::vec_znx_dft_bytes_of(module.n(), 1, res_size.min(a_size))
     }
 
-    fn cnv_prepare_right_default(
+    fn cnv_pvec_right_prepare_default(
         module: &Module<Self>,
         res: &mut CnvPVecRBackendMut<'_, Self>,
         a: &VecZnxBackendRef<'_, Self>,
@@ -98,7 +98,7 @@ where
     {
         let n: usize = res.n();
         check_degree::<Self>(module.n(), n);
-        assert_eq!(a.n(), n, "cnv_prepare_right: a.n():{} != res.n():{n}", a.n());
+        assert_eq!(a.n(), n, "cnv_pvec_right_prepare: a.n():{} != res.n():{n}", a.n());
         let tmp_size = res.size().min(a.size());
         let (tmp_bytes, _) = take_host_typed::<Self, u8>(scratch.borrow(), Self::vec_znx_dft_bytes_of(n, 1, tmp_size));
         let mut tmp = VecZnxDft::from_data(tmp_bytes, n, 1, tmp_size);
@@ -274,14 +274,14 @@ where
         convolution_pairwise_apply_dft_portable::<Self>(cnv_offset, &mut res_ref, res_col, a, b, i, j, tmp);
     }
 
-    fn cnv_prepare_self_tmp_bytes_default(module: &Module<Self>, res_size: usize, a_size: usize) -> usize
+    fn cnv_pvec_self_prepare_tmp_bytes_default(module: &Module<Self>, res_size: usize, a_size: usize) -> usize
     where
         Self: Backend<DftWord = f64, ZnxWord = i64>,
     {
         Self::vec_znx_dft_bytes_of(module.n(), 1, res_size.min(a_size))
     }
 
-    fn cnv_prepare_self_default(
+    fn cnv_pvec_self_prepare_default(
         module: &Module<Self>,
         left: &mut CnvPVecLBackendMut<'_, Self>,
         right: &mut CnvPVecRBackendMut<'_, Self>,
@@ -295,8 +295,8 @@ where
     {
         let n: usize = left.n();
         check_degree::<Self>(module.n(), n);
-        assert_eq!(right.n(), n, "cnv_prepare_self: right.n():{} != left.n():{n}", right.n());
-        assert_eq!(a.n(), n, "cnv_prepare_self: a.n():{} != left.n():{n}", a.n());
+        assert_eq!(right.n(), n, "cnv_pvec_self_prepare: right.n():{} != left.n():{n}", right.n());
+        assert_eq!(a.n(), n, "cnv_pvec_self_prepare: a.n():{} != left.n():{n}", a.n());
         let tmp_size = left.size().min(a.size());
         let (tmp_bytes, _) = take_host_typed::<Self, u8>(scratch.borrow(), Self::vec_znx_dft_bytes_of(n, 1, tmp_size));
         let mut tmp = VecZnxDft::from_data(tmp_bytes, n, 1, tmp_size);
@@ -337,15 +337,15 @@ pub trait NTT4x30ConvolutionDefault: Backend<ZnxWord = i64> + ScratchWorkers
 where
     Self::OwnedBuf: poulpy_hal::layouts::HostDataMut,
 {
-    fn cnv_prepare_left_tmp_bytes_default(module: &Module<Self>, res_size: usize, _a_size: usize) -> usize
+    fn cnv_pvec_left_prepare_tmp_bytes_default(module: &Module<Self>, res_size: usize, _a_size: usize) -> usize
     where
         Self: Backend<DftWord = Q120bScalar, ZnxWord = i64>,
     {
         scratch_workers::<Self::TaskExecutor>(res_size.min(Self::PREPARE))
-            * ntt4x30_cnv_prepare_left_tmp_bytes_portable(module.n())
+            * ntt4x30_cnv_pvec_left_prepare_tmp_bytes_portable(module.n())
     }
 
-    fn cnv_prepare_left_default(
+    fn cnv_pvec_left_prepare_default(
         module: &Module<Self>,
         res: &mut CnvPVecLBackendMut<'_, Self>,
         a: &VecZnxBackendRef<'_, Self>,
@@ -360,22 +360,22 @@ where
         for<'x> Self: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
     {
-        let per_worker = ntt4x30_cnv_prepare_left_tmp_bytes_portable(res.n());
+        let per_worker = ntt4x30_cnv_pvec_left_prepare_tmp_bytes_portable(res.n());
         let bytes = scratch_workers_within::<Self::TaskExecutor>(res.size().min(Self::PREPARE), per_worker, scratch.available())
             * per_worker;
         let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-        ntt4x30_cnv_prepare_left_portable::<Self>(module, res, a, tmp);
+        ntt4x30_cnv_pvec_left_prepare_portable::<Self>(module, res, a, tmp);
     }
 
-    fn cnv_prepare_right_tmp_bytes_default(module: &Module<Self>, res_size: usize, _a_size: usize) -> usize
+    fn cnv_pvec_right_prepare_tmp_bytes_default(module: &Module<Self>, res_size: usize, _a_size: usize) -> usize
     where
         Self: Backend<DftWord = Q120bScalar, ZnxWord = i64>,
     {
         scratch_workers::<Self::TaskExecutor>(res_size.min(Self::PREPARE))
-            * ntt4x30_cnv_prepare_right_tmp_bytes_portable(module.n())
+            * ntt4x30_cnv_pvec_right_prepare_tmp_bytes_portable(module.n())
     }
 
-    fn cnv_prepare_right_default(
+    fn cnv_pvec_right_prepare_default(
         module: &Module<Self>,
         res: &mut CnvPVecRBackendMut<'_, Self>,
         a: &VecZnxBackendRef<'_, Self>,
@@ -390,11 +390,11 @@ where
         for<'x> Self: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
     {
-        let per_worker = ntt4x30_cnv_prepare_right_tmp_bytes_portable(res.n());
+        let per_worker = ntt4x30_cnv_pvec_right_prepare_tmp_bytes_portable(res.n());
         let bytes = scratch_workers_within::<Self::TaskExecutor>(res.size().min(Self::PREPARE), per_worker, scratch.available())
             * per_worker;
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        ntt4x30_cnv_prepare_right_portable::<Self>(module, res, a, tmp);
+        ntt4x30_cnv_pvec_right_prepare_portable::<Self>(module, res, a, tmp);
     }
 
     fn cnv_apply_dft_tmp_bytes_default(
@@ -622,15 +622,15 @@ where
         ntt4x30_cnv_pairwise_apply_dft_portable::<Self>(module, cnv_offset, &mut res_ref, res_col, a, b, i, j, tmp);
     }
 
-    fn cnv_prepare_self_tmp_bytes_default(module: &Module<Self>, res_size: usize, _a_size: usize) -> usize
+    fn cnv_pvec_self_prepare_tmp_bytes_default(module: &Module<Self>, res_size: usize, _a_size: usize) -> usize
     where
         Self: Backend<DftWord = Q120bScalar, ZnxWord = i64>,
     {
         scratch_workers::<Self::TaskExecutor>(res_size.min(Self::PREPARE))
-            * ntt4x30_cnv_prepare_self_tmp_bytes_portable(module.n())
+            * ntt4x30_cnv_pvec_self_prepare_tmp_bytes_portable(module.n())
     }
 
-    fn cnv_prepare_self_default(
+    fn cnv_pvec_self_prepare_default(
         module: &Module<Self>,
         left: &mut CnvPVecLBackendMut<'_, Self>,
         right: &mut CnvPVecRBackendMut<'_, Self>,
@@ -647,11 +647,11 @@ where
         for<'x> Self: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
     {
-        let per_worker = ntt4x30_cnv_prepare_self_tmp_bytes_portable(left.n());
+        let per_worker = ntt4x30_cnv_pvec_self_prepare_tmp_bytes_portable(left.n());
         let bytes = scratch_workers_within::<Self::TaskExecutor>(left.size().min(Self::PREPARE), per_worker, scratch.available())
             * per_worker;
         let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-        ntt4x30_cnv_prepare_self_portable::<Self>(module, left, right, a, tmp);
+        ntt4x30_cnv_pvec_self_prepare_portable::<Self>(module, left, right, a, tmp);
     }
 }
 

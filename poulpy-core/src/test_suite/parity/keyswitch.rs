@@ -7,7 +7,7 @@ use poulpy_hal::{
     api::{
         ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAlloc, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftCopy,
         VecZnxDftZero, VecZnxFillUniformSource, VecZnxFillUniformSourceAll, VmpApplyDftToDft, VmpApplyDftToDftAdd,
-        VmpApplyDftToDftAddTmpBytes, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
+        VmpApplyDftToDftAddTmpBytes, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPMatPrepare, VmpPMatPrepareTmpBytes,
     },
     layouts::{
         Backend, HostDataMut, HostDataRef, MatZnx, MatZnxAtBackendMut, MatZnxToBackendRef, Module, PrepareHint, ScratchOwned,
@@ -46,8 +46,8 @@ where
         + VmpApplyDftToDftTmpBytes
         + VmpApplyDftToDftAddTmpBytes
         + VmpPMatAlloc<BE>
-        + VmpPrepare<BE>
-        + VmpPrepareTmpBytes
+        + VmpPMatPrepare<BE>
+        + VmpPMatPrepareTmpBytes
         + GGLWEProductDigitsStridedReference<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
     for<'a> BE::BufRef<'a>: HostDataRef,
@@ -86,7 +86,7 @@ where
         let backend_tmp = BE::gglwe_product_digits_strided_tmp_bytes(
             module, size_out, cols_in, a_size, dsize, rows, cols_in, cols_out, size_out,
         );
-        let mut scratch = poisoned_scratch::<BE>(module.vmp_prepare_tmp_bytes(rows, cols_in, cols_out, size_out));
+        let mut scratch = poisoned_scratch::<BE>(module.vmp_pmat_prepare_tmp_bytes(rows, cols_in, cols_out, size_out));
 
         let mut a = module.vec_znx_alloc(module.n(), cols_in, a_size);
         module.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a, &mut source);
@@ -114,7 +114,7 @@ where
         }
         let mut pmat = module.vmp_pmat_alloc(module.n(), rows, cols_in, cols_out, size_out, PrepareHint::Reuse);
         let mat = <MatZnx<BE::OwnedBuf, i64> as MatZnxToBackendRef<BE>>::to_backend_ref(&mat);
-        module.vmp_prepare(&mut pmat.to_backend_mut(), &mat, &mut scratch.borrow());
+        module.vmp_pmat_prepare(&mut pmat.to_backend_mut(), &mat, &mut scratch.borrow());
 
         let mut want = module.vec_znx_dft_alloc(module.n(), cols_out, size_out);
         let sentinel = vec![1u8; BE::len_bytes(&want.data)];
@@ -552,8 +552,8 @@ where
         + VecZnxDftAlloc<BE>
         + VecZnxDftApply<BE>
         + VmpPMatAlloc<BE>
-        + VmpPrepare<BE>
-        + VmpPrepareTmpBytes,
+        + VmpPMatPrepare<BE>
+        + VmpPMatPrepareTmpBytes,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
     let mut source = Source::new([3u8; 32]);
@@ -592,7 +592,7 @@ where
         // Coarsening moves rows into the guard, so the two spans agree.
         assert_eq!(key_size(parent.base2k, sel_dnum, effective, sel_k_aux), size);
 
-        let mut prep = ScratchOwned::<BE>::alloc(module.vmp_prepare_tmp_bytes(rows, cols_in, cols_out, size));
+        let mut prep = ScratchOwned::<BE>::alloc(module.vmp_pmat_prepare_tmp_bytes(rows, cols_in, cols_out, size));
 
         let mut a = module.vec_znx_alloc(module.n(), cols_in, input_size);
         module.vec_znx_fill_uniform_source_all(base2k, input_size * base2k, &mut a, &mut source);
@@ -641,7 +641,7 @@ where
 
         let prepare = |m: &MatZnx<AlignedBuf, i64>, rows: usize, scratch: &mut ScratchOwned<BE>| {
             let mut pmat = module.vmp_pmat_alloc(module.n(), rows, cols_in, cols_out, size, PrepareHint::Reuse);
-            module.vmp_prepare(
+            module.vmp_pmat_prepare(
                 &mut pmat.to_backend_mut(),
                 &<MatZnx<BE::OwnedBuf, i64> as MatZnxToBackendRef<BE>>::to_backend_ref(&upload_mat_znx::<BE>(m)),
                 &mut scratch.borrow(),

@@ -273,8 +273,8 @@ where
     let mut scratch_apply: PoisonedArena<BE> = poisoned_arena(module.cnv_apply_dft_tmp_bytes(0, res_size, a_size, b_size));
     let mut scratch_setup: PoisonedArena<BE> = poisoned_arena(
         module
-            .cnv_prepare_left_tmp_bytes(res_size, a_size)
-            .max(module.cnv_prepare_right_tmp_bytes(res_size, b_size))
+            .cnv_pvec_left_prepare_tmp_bytes(res_size, a_size)
+            .max(module.cnv_pvec_right_prepare_tmp_bytes(res_size, b_size))
             .max(module.vec_znx_big_normalize_tmp_bytes())
             .max(module.vec_znx_idft_apply_tmp_bytes())
             .max(module.vec_znx_normalize_tmp_bytes()),
@@ -282,7 +282,7 @@ where
 
     {
         let mut a_prep_backend = a_prep.to_backend_mut();
-        module.cnv_prepare_left(
+        module.cnv_pvec_left_prepare(
             &mut a_prep_backend,
             &vec_znx_backend_ref::<BE>(&a_backend),
             &mut scratch_setup.arena(),
@@ -290,7 +290,7 @@ where
     }
     {
         let mut b_prep_backend = b_prep.to_backend_mut();
-        module.cnv_prepare_right(
+        module.cnv_pvec_right_prepare(
             &mut b_prep_backend,
             &vec_znx_backend_ref::<BE>(&b_backend),
             &mut scratch_setup.arena(),
@@ -392,13 +392,13 @@ where
     let mut scratch_add: PoisonedArena<BE> = poisoned_arena(module.cnv_apply_dft_add_tmp_bytes(0, res_size, a_size, b_size));
     let mut scratch_setup: PoisonedArena<BE> = poisoned_arena(
         module
-            .cnv_prepare_left_tmp_bytes(res_size, a_size)
-            .max(module.cnv_prepare_right_tmp_bytes(res_size, b_size)),
+            .cnv_pvec_left_prepare_tmp_bytes(res_size, a_size)
+            .max(module.cnv_pvec_right_prepare_tmp_bytes(res_size, b_size)),
     );
 
     {
         let mut a_prep_backend = a_prep.to_backend_mut();
-        module.cnv_prepare_left(
+        module.cnv_pvec_left_prepare(
             &mut a_prep_backend,
             &vec_znx_backend_ref::<BE>(&a_backend),
             &mut scratch_setup.arena(),
@@ -406,7 +406,7 @@ where
     }
     {
         let mut b_prep_backend = b_prep.to_backend_mut();
-        module.cnv_prepare_right(
+        module.cnv_pvec_right_prepare(
             &mut b_prep_backend,
             &vec_znx_backend_ref::<BE>(&b_backend),
             &mut scratch_setup.arena(),
@@ -524,15 +524,15 @@ where
     let mut scratch_add: PoisonedArena<BE> = poisoned_arena(module.cnv_apply_dft_add_tmp_bytes(0, res_size, a_size, b_size));
     let mut scratch_setup: PoisonedArena<BE> = poisoned_arena(
         module
-            .cnv_prepare_left_tmp_bytes(res_size, a_size)
-            .max(module.cnv_prepare_right_tmp_bytes(res_size, b_size))
+            .cnv_pvec_left_prepare_tmp_bytes(res_size, a_size)
+            .max(module.cnv_pvec_right_prepare_tmp_bytes(res_size, b_size))
             .max(module.vec_znx_big_normalize_tmp_bytes())
             .max(module.vec_znx_idft_apply_tmp_bytes()),
     );
 
     {
         let mut a_prep_backend = a_prep.to_backend_mut();
-        module.cnv_prepare_left(
+        module.cnv_pvec_left_prepare(
             &mut a_prep_backend,
             &vec_znx_backend_ref::<BE>(&a_backend),
             &mut scratch_setup.arena(),
@@ -540,7 +540,7 @@ where
     }
     {
         let mut b_prep_backend = b_prep.to_backend_mut();
-        module.cnv_prepare_right(
+        module.cnv_pvec_right_prepare(
             &mut b_prep_backend,
             &vec_znx_backend_ref::<BE>(&b_backend),
             &mut scratch_setup.arena(),
@@ -694,8 +694,8 @@ where
         poisoned_arena(module.cnv_pairwise_apply_dft_tmp_bytes(0, res_size, a_size, b_size));
     let mut scratch_setup: PoisonedArena<BE> = poisoned_arena(
         module
-            .cnv_prepare_left_tmp_bytes(res_size, a_size)
-            .max(module.cnv_prepare_right_tmp_bytes(res_size, b_size))
+            .cnv_pvec_left_prepare_tmp_bytes(res_size, a_size)
+            .max(module.cnv_pvec_right_prepare_tmp_bytes(res_size, b_size))
             .max(module.vec_znx_big_normalize_tmp_bytes())
             .max(module.vec_znx_idft_apply_tmp_bytes())
             .max(module.vec_znx_normalize_tmp_bytes()),
@@ -703,7 +703,7 @@ where
 
     {
         let mut a_prep_backend = a_prep.to_backend_mut();
-        module.cnv_prepare_left(
+        module.cnv_pvec_left_prepare(
             &mut a_prep_backend,
             &vec_znx_backend_ref::<BE>(&a_backend),
             &mut scratch_setup.arena(),
@@ -711,7 +711,7 @@ where
     }
     {
         let mut b_prep_backend = b_prep.to_backend_mut();
-        module.cnv_prepare_right(
+        module.cnv_pvec_right_prepare(
             &mut b_prep_backend,
             &vec_znx_backend_ref::<BE>(&b_backend),
             &mut scratch_setup.arena(),
@@ -959,7 +959,7 @@ fn negacyclic_convolution_naive(res: &mut [i64], a: &[i64], b: &[i64]) {
 }
 
 /// The prepare kernels take their column count from the operand they write
-/// and read `a` by it, so `a.cols()` must equal it; `cnv_prepare_self` writes
+/// and read `a` by it, so `a.cols()` must equal it; `cnv_pvec_self_prepare` writes
 /// `right` with `left`'s shape, so the pair must agree in columns and size.
 /// Every backend must reject a mismatch, writing nothing, rather than index
 /// past an operand.
@@ -979,13 +979,13 @@ pub fn test_cnv_prepare_rejects_mismatched_shape<BE: crate::test_suite::TestBack
     let a_be = operand(cols, size);
     let a_narrow = operand(cols - 1, size);
     let a_short = operand(cols, size - 1);
-    let mut scratch_left: PoisonedArena<BE> = poisoned_arena(module.cnv_prepare_left_tmp_bytes(size, size));
-    let mut scratch_right: PoisonedArena<BE> = poisoned_arena(module.cnv_prepare_right_tmp_bytes(size, size));
-    let mut scratch_self: PoisonedArena<BE> = poisoned_arena(module.cnv_prepare_self_tmp_bytes(size, size));
+    let mut scratch_left: PoisonedArena<BE> = poisoned_arena(module.cnv_pvec_left_prepare_tmp_bytes(size, size));
+    let mut scratch_right: PoisonedArena<BE> = poisoned_arena(module.cnv_pvec_right_prepare_tmp_bytes(size, size));
+    let mut scratch_self: PoisonedArena<BE> = poisoned_arena(module.cnv_pvec_self_prepare_tmp_bytes(size, size));
     let mut scratch_setup: PoisonedArena<BE> = poisoned_arena(
         module
-            .cnv_prepare_left_tmp_bytes(size, size)
-            .max(module.cnv_prepare_right_tmp_bytes(size, size)),
+            .cnv_pvec_left_prepare_tmp_bytes(size, size)
+            .max(module.cnv_pvec_right_prepare_tmp_bytes(size, size)),
     );
 
     macro_rules! rejects {
@@ -1001,16 +1001,16 @@ pub fn test_cnv_prepare_rejects_mismatched_shape<BE: crate::test_suite::TestBack
     }
 
     let mut narrow_left = module.cnv_pvec_left_alloc(params.n, cols - 1, size, PrepareHint::Reuse);
-    module.cnv_prepare_left(
+    module.cnv_pvec_left_prepare(
         &mut narrow_left.to_backend_mut(),
         &vec_znx_backend_ref::<BE>(&a_narrow),
         &mut scratch_setup.arena(),
     );
     rejects!(
-        "cnv_prepare_left",
+        "cnv_pvec_left_prepare",
         "res.cols() != a.cols()",
         [narrow_left],
-        module.cnv_prepare_left(
+        module.cnv_pvec_left_prepare(
             &mut narrow_left.to_backend_mut(),
             &vec_znx_backend_ref::<BE>(&a_be),
             &mut scratch_left.arena(),
@@ -1018,16 +1018,16 @@ pub fn test_cnv_prepare_rejects_mismatched_shape<BE: crate::test_suite::TestBack
     );
 
     let mut narrow_right = module.cnv_pvec_right_alloc(params.n, cols - 1, size, PrepareHint::Reuse);
-    module.cnv_prepare_right(
+    module.cnv_pvec_right_prepare(
         &mut narrow_right.to_backend_mut(),
         &vec_znx_backend_ref::<BE>(&a_narrow),
         &mut scratch_setup.arena(),
     );
     rejects!(
-        "cnv_prepare_right",
+        "cnv_pvec_right_prepare",
         "res.cols() != a.cols()",
         [narrow_right],
-        module.cnv_prepare_right(
+        module.cnv_pvec_right_prepare(
             &mut narrow_right.to_backend_mut(),
             &vec_znx_backend_ref::<BE>(&a_be),
             &mut scratch_right.arena(),
@@ -1035,22 +1035,22 @@ pub fn test_cnv_prepare_rejects_mismatched_shape<BE: crate::test_suite::TestBack
     );
 
     let mut left = module.cnv_pvec_left_alloc(params.n, cols, size, PrepareHint::Reuse);
-    module.cnv_prepare_left(
+    module.cnv_pvec_left_prepare(
         &mut left.to_backend_mut(),
         &vec_znx_backend_ref::<BE>(&a_be),
         &mut scratch_setup.arena(),
     );
     let mut short_right = module.cnv_pvec_right_alloc(params.n, cols, size - 1, PrepareHint::Reuse);
-    module.cnv_prepare_right(
+    module.cnv_pvec_right_prepare(
         &mut short_right.to_backend_mut(),
         &vec_znx_backend_ref::<BE>(&a_short),
         &mut scratch_setup.arena(),
     );
     rejects!(
-        "cnv_prepare_self",
+        "cnv_pvec_self_prepare",
         "right.size() != left.size()",
         [left, short_right],
-        module.cnv_prepare_self(
+        module.cnv_pvec_self_prepare(
             &mut left.to_backend_mut(),
             &mut short_right.to_backend_mut(),
             &vec_znx_backend_ref::<BE>(&a_be),
@@ -1058,10 +1058,10 @@ pub fn test_cnv_prepare_rejects_mismatched_shape<BE: crate::test_suite::TestBack
         )
     );
     rejects!(
-        "cnv_prepare_self",
+        "cnv_pvec_self_prepare",
         "right.cols() != left.cols()",
         [left, narrow_right],
-        module.cnv_prepare_self(
+        module.cnv_pvec_self_prepare(
             &mut left.to_backend_mut(),
             &mut narrow_right.to_backend_mut(),
             &vec_znx_backend_ref::<BE>(&a_be),
@@ -1203,8 +1203,8 @@ type ConvolutionForm<'a, BE> = dyn Fn(&mut VecZnxDftOwned<BE>, &CnvPVecROwned<BE
 /// `switch_ring_{b_n->n}` of the same input gives, through `cnv_apply_dft`,
 /// `cnv_apply_dft_add`, `cnv_apply_dft_sum` and `cnv_pairwise_apply_dft`, compared
 /// after `idft` and normalization. The prepares are not embedding-aware, `res` and `a` share one
-/// degree: `cnv_prepare_left`, `cnv_prepare_right` and `cnv_prepare_self` with a
-/// degree-`n/2` input into a degree-`n` destination panic, `cnv_prepare_self`
+/// degree: `cnv_pvec_left_prepare`, `cnv_pvec_right_prepare` and `cnv_pvec_self_prepare` with a
+/// degree-`n/2` input into a degree-`n` destination panic, `cnv_pvec_self_prepare`
 /// rejects a `right` whose degree differs from `left`'s, and `cnv_apply_dft`
 /// rejects a prepared left operand whose degree differs from `res`'s, and
 /// `cnv_apply_dft` rejects a right operand below `BE::MIN_DEGREE` without writing `res`.
@@ -1232,15 +1232,15 @@ where
     let add_arena = || poisoned_arena::<BE>(module.cnv_apply_dft_add_tmp_bytes(0, res_size, a_size, b_size));
     let sum_arena = || poisoned_arena::<BE>(module.cnv_apply_dft_sum_tmp_bytes(0, res_size, a_size, b_size));
     let pairwise_arena = || poisoned_arena::<BE>(module.cnv_pairwise_apply_dft_tmp_bytes(0, res_size, a_size, b_size));
-    let prepare_left_arena = || poisoned_arena::<BE>(module.cnv_prepare_left_tmp_bytes(a_size, a_size));
-    let prepare_right_arena = || poisoned_arena::<BE>(module.cnv_prepare_right_tmp_bytes(b_size, b_size));
-    let prepare_self_arena = || poisoned_arena::<BE>(module.cnv_prepare_self_tmp_bytes(a_size, a_size));
+    let prepare_left_arena = || poisoned_arena::<BE>(module.cnv_pvec_left_prepare_tmp_bytes(a_size, a_size));
+    let prepare_right_arena = || poisoned_arena::<BE>(module.cnv_pvec_right_prepare_tmp_bytes(b_size, b_size));
+    let prepare_self_arena = || poisoned_arena::<BE>(module.cnv_pvec_self_prepare_tmp_bytes(a_size, a_size));
 
     // The left operand is dense at the module degree, shared by every form.
     let mut a_be = module.vec_znx_alloc(n, cols, a_size);
     module.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a_be, &mut source);
     let mut a_prep: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(params.n, cols, a_size, PrepareHint::Reuse);
-    module.cnv_prepare_left(
+    module.cnv_pvec_left_prepare(
         &mut a_prep.to_backend_mut(),
         &vec_znx_backend_ref::<BE>(&a_be),
         &mut prepare_left_arena().arena(),
@@ -1255,7 +1255,7 @@ where
         let b_dense = switch_ring_up(module, n, &b_be);
 
         let mut b_prep_dense: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(params.n, cols, b_size, PrepareHint::Reuse);
-        module.cnv_prepare_right(
+        module.cnv_pvec_right_prepare(
             &mut b_prep_dense.to_backend_mut(),
             &vec_znx_backend_ref::<BE>(&b_dense),
             &mut prepare_right_arena().arena(),
@@ -1263,7 +1263,7 @@ where
         // The operand at its own degree, prepared under the same module; the
         // apply below crosses the two degrees.
         let mut b_prep: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(b_n, cols, b_size, PrepareHint::Reuse);
-        module.cnv_prepare_right(
+        module.cnv_pvec_right_prepare(
             &mut b_prep.to_backend_mut(),
             &vec_znx_backend_ref::<BE>(&b_be),
             &mut prepare_right_arena().arena(),
@@ -1367,7 +1367,7 @@ where
         let mut seed_be = module.vec_znx_alloc(n, cols, b_size);
         module.vec_znx_fill_uniform_source_all(base2k, b_size * base2k, &mut seed_be, &mut source);
         let mut seed_right: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(params.n, cols, b_size, PrepareHint::Reuse);
-        module.cnv_prepare_right(
+        module.cnv_pvec_right_prepare(
             &mut seed_right.to_backend_mut(),
             &vec_znx_backend_ref::<BE>(&seed_be),
             &mut prepare_right_arena().arena(),
@@ -1462,16 +1462,16 @@ where
     let mut full_left: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(params.n, cols, a_size, PrepareHint::Reuse);
     let mut full_right: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(params.n, cols, a_size, PrepareHint::Reuse);
     let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        module.cnv_prepare_left(
+        module.cnv_pvec_left_prepare(
             &mut full_left.to_backend_mut(),
             &vec_znx_backend_ref::<BE>(&half_be),
             &mut prepare_left_arena().arena(),
         );
     }))
     .is_err();
-    assert!(panicked, "cnv_prepare_left accepted a.n() != res.n()");
+    assert!(panicked, "cnv_pvec_left_prepare accepted a.n() != res.n()");
     let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        module.cnv_prepare_self(
+        module.cnv_pvec_self_prepare(
             &mut full_left.to_backend_mut(),
             &mut full_right.to_backend_mut(),
             &vec_znx_backend_ref::<BE>(&half_be),
@@ -1479,26 +1479,26 @@ where
         );
     }))
     .is_err();
-    assert!(panicked, "cnv_prepare_self accepted a.n() != left.n()");
+    assert!(panicked, "cnv_pvec_self_prepare accepted a.n() != left.n()");
     let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        module.cnv_prepare_right(
+        module.cnv_pvec_right_prepare(
             &mut full_right.to_backend_mut(),
             &vec_znx_backend_ref::<BE>(&half_be),
             &mut prepare_right_arena().arena(),
         );
     }))
     .is_err();
-    assert!(panicked, "cnv_prepare_right accepted a.n() != params.n");
+    assert!(panicked, "cnv_pvec_right_prepare accepted a.n() != params.n");
     // A degree-n/2 prepared right operand is served by this module like any other
     // degree it covers, so it is only a stand-in for the mismatch check below.
     let mut half_right: CnvPVecROwned<BE> = CnvPVecR::alloc(n / 2, cols, a_size, PrepareHint::Reuse);
 
-    // `cnv_prepare_self` prepares one input into both halves, so the two must share a degree:
+    // `cnv_pvec_self_prepare` prepares one input into both halves, so the two must share a degree:
     // the parallel path writes into `right` at offsets computed from `left`'s degree.
     let mut full_be = module.vec_znx_alloc(n, cols, a_size);
     module.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut full_be, &mut source);
     let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        module.cnv_prepare_self(
+        module.cnv_pvec_self_prepare(
             &mut full_left.to_backend_mut(),
             &mut half_right.to_backend_mut(),
             &vec_znx_backend_ref::<BE>(&full_be),
@@ -1506,14 +1506,14 @@ where
         );
     }))
     .is_err();
-    assert!(panicked, "cnv_prepare_self accepted right.n() != left.n()");
+    assert!(panicked, "cnv_pvec_self_prepare accepted right.n() != left.n()");
 
     // The left operand of an apply takes the module degree: the entry assert fires
     // before the kernel reads the zeroed half-degree operand.
     let half_left: CnvPVecLOwned<BE> = CnvPVecL::alloc(n / 2, cols, a_size, PrepareHint::Reuse);
     let mut res_dft: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(params.n, 2, res_size);
     let mut b_full: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(params.n, cols, a_size, PrepareHint::Reuse);
-    module.cnv_prepare_right(
+    module.cnv_pvec_right_prepare(
         &mut b_full.to_backend_mut(),
         &vec_znx_backend_ref::<BE>(&full_be),
         &mut prepare_right_arena().arena(),
@@ -1562,12 +1562,12 @@ where
     let apply_arena = || poisoned_arena::<BE>(module.cnv_apply_dft_tmp_bytes(0, res_size, a_size, b_size));
     let add_arena = || poisoned_arena::<BE>(module.cnv_apply_dft_add_tmp_bytes(0, res_size, a_size, b_size));
     let sum_arena = || poisoned_arena::<BE>(module.cnv_apply_dft_sum_tmp_bytes(0, res_size, a_size, b_size));
-    let prepare_left_arena = || poisoned_arena::<BE>(module.cnv_prepare_left_tmp_bytes(a_size, a_size));
-    let prepare_right_arena = || poisoned_arena::<BE>(module.cnv_prepare_right_tmp_bytes(b_size, b_size));
+    let prepare_left_arena = || poisoned_arena::<BE>(module.cnv_pvec_left_prepare_tmp_bytes(a_size, a_size));
+    let prepare_right_arena = || poisoned_arena::<BE>(module.cnv_pvec_right_prepare_tmp_bytes(b_size, b_size));
     let mut a_be = module.vec_znx_alloc(n, cols, a_size);
     module.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a_be, &mut source);
     let mut a_prep: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(n, cols, a_size, PrepareHint::Reuse);
-    module.cnv_prepare_left(
+    module.cnv_pvec_left_prepare(
         &mut a_prep.to_backend_mut(),
         &vec_znx_backend_ref::<BE>(&a_be),
         &mut prepare_left_arena().arena(),
@@ -1576,7 +1576,7 @@ where
     let a_ref = &a_prep;
     let prepare_right = |b: &VecZnx<BE::OwnedBuf, i64>| {
         let mut prep: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(b.n(), cols, b_size, PrepareHint::Reuse);
-        module.cnv_prepare_right(
+        module.cnv_pvec_right_prepare(
             &mut prep.to_backend_mut(),
             &vec_znx_backend_ref::<BE>(b),
             &mut prepare_right_arena().arena(),

@@ -1,7 +1,7 @@
 #![allow(clippy::too_many_arguments)]
 use poulpy_hal::{AlignedBuf, alloc_aligned};
 use poulpy_hal::{
-    api::{SvpPPolAlloc, SvpPrepare},
+    api::{SvpPPolAlloc, SvpPPolPrepare},
     layouts::{Backend, Module, PrepareHint, ScalarZnx, ScratchArena, SvpPPolOwned},
 };
 
@@ -18,7 +18,7 @@ pub fn blind_rotation_key_prepare_tmp_bytes_reference<BE, A>(module: &Module<BE>
 where
     A: BlindRotationKeyInfos,
     BE: Backend<ZnxWord = i64>,
-    Module<BE>: GGSWPreparedFactory<BE> + SvpPPolAlloc<BE> + SvpPrepare<BE>,
+    Module<BE>: GGSWPreparedFactory<BE> + SvpPPolAlloc<BE> + SvpPPolPrepare<BE>,
 {
     module.ggsw_prepare_tmp_bytes(infos)
 }
@@ -33,7 +33,7 @@ pub fn blind_rotation_key_prepare_reference<BE>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend<ZnxWord = i64>,
-    Module<BE>: GGSWPreparedFactory<BE> + SvpPPolAlloc<BE> + SvpPrepare<BE>,
+    Module<BE>: GGSWPreparedFactory<BE> + SvpPPolAlloc<BE> + SvpPPolPrepare<BE>,
 {
     assert_eq!(res.data.len(), other.keys.len(), "blind-rotation key dimensions differ");
 
@@ -78,7 +78,7 @@ pub trait BlindRotationKeyPreparedFactoryReference<BRA: BlindRotationAlgo, BE: B
 
 impl<BE: Backend<ZnxWord = i64>> BlindRotationKeyPreparedFactoryReference<CGGI, BE> for Module<BE>
 where
-    Module<BE>: GGSWPreparedFactory<BE> + SvpPPolAlloc<BE> + SvpPrepare<BE>,
+    Module<BE>: GGSWPreparedFactory<BE> + SvpPPolAlloc<BE> + SvpPPolPrepare<BE>,
 {
     fn blind_rotation_key_prepare_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where

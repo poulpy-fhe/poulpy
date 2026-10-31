@@ -39,7 +39,7 @@ impl CnvPVecShape {
 /// Holds a polynomial vector in the prepared representation named by the
 /// [`DftWord`] type `W`, ready to be used as the right operand of
 /// [`CnvOps::cnv_apply_dft`](crate::api::CnvOps::cnv_apply_dft).
-/// Created via [`CnvOps::cnv_prepare_right`](crate::api::CnvOps::cnv_prepare_right).
+/// Created via [`CnvOps::cnv_pvec_right_prepare`](crate::api::CnvOps::cnv_pvec_right_prepare).
 ///
 /// A prepared value in the [layouts value model](crate::layouts#value-model),
 /// opaque in the representation the [`PrepareHint`] chosen at allocation
@@ -182,7 +182,7 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecR<D, W, B> {
 /// Holds a polynomial vector in the prepared representation named by the
 /// [`DftWord`] type `W`, ready to be used as the left operand of
 /// [`CnvOps::cnv_apply_dft`](crate::api::CnvOps::cnv_apply_dft).
-/// Created via [`CnvOps::cnv_prepare_left`](crate::api::CnvOps::cnv_prepare_left).
+/// Created via [`CnvOps::cnv_pvec_left_prepare`](crate::api::CnvOps::cnv_pvec_left_prepare).
 ///
 /// A prepared value in the [layouts value model](crate::layouts#value-model),
 /// opaque in the representation the [`PrepareHint`] chosen at allocation

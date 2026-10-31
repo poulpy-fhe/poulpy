@@ -23,12 +23,12 @@ use crate::kernels::vmp_select::assert_extractable_portable;
 /// Scratch space (in bytes) required by the VMP prepare kernel.
 ///
 /// Holds one packed limb.
-pub(crate) fn vmp_prepare_tmp_bytes(n: usize) -> usize {
+pub(crate) fn vmp_pmat_prepare_tmp_bytes(n: usize) -> usize {
     prepare_tmp_words(n) * size_of::<u64>()
 }
 
 /// VMP prepare into the block-major prepared layout.
-pub(crate) fn vmp_prepare<R: Ring>(
+pub(crate) fn vmp_pmat_prepare<R: Ring>(
     module: &Module<NTT4x30Portable<R>>,
     res: &mut VmpPMatBackendMut<'_, NTT4x30Portable<R>>,
     a: &MatZnxBackendRef<'_, NTT4x30Portable<R>>,
@@ -42,7 +42,7 @@ pub(crate) fn vmp_prepare<R: Ring>(
     assert_eq!(res.rows(), a.rows());
     assert_eq!(res.cols_out(), a.cols_out());
     assert_eq!(res.size(), a.size());
-    assert!(std::mem::size_of_val(tmp) >= vmp_prepare_tmp_bytes(n));
+    assert!(std::mem::size_of_val(tmp) >= vmp_pmat_prepare_tmp_bytes(n));
 
     let nrows = a.cols_in() * a.rows();
     let ncols = a.cols_out() * a.size();

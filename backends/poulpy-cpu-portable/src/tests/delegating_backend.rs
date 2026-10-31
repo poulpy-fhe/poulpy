@@ -56,14 +56,15 @@ fn downstream_baby_step_preparation_preserves_cache_shape() {
     module.glwe_normalize(&mut normalized, &input, &mut scratch.borrow());
     let mut cache = LinearTransformationBabySteps::alloc(&module, &[0, 1, 1], &normalized);
     let mut expected = LinearTransformationBabySteps::alloc(&module, &[0], &normalized);
-    let mut scratch = ScratchOwned::<FFT64Portable>::alloc(module.cnv_prepare_left_tmp_bytes(cache.size(), normalized.size()));
-    module.cnv_prepare_left(
+    let mut scratch =
+        ScratchOwned::<FFT64Portable>::alloc(module.cnv_pvec_left_prepare_tmp_bytes(cache.size(), normalized.size()));
+    module.cnv_pvec_left_prepare(
         &mut expected.baby_step_mut(0),
         GLWEToBackendRef::<FFT64Portable>::to_backend_ref(&normalized).data(),
         &mut scratch.borrow(),
     );
     for (_, mut operand) in cache.baby_steps_mut() {
-        module.cnv_prepare_left(
+        module.cnv_pvec_left_prepare(
             &mut operand,
             GLWEToBackendRef::<FFT64Portable>::to_backend_ref(&normalized).data(),
             &mut scratch.borrow(),
