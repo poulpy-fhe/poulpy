@@ -290,7 +290,7 @@ module.ckks_decode_slots_host_into(&pt, &mut re_out, &mut im_out, &mut scratch)?
 
 The backend implements `oep::CKKSEncodingImpl<F>` for each supported scalar
 precision: the coefficient codecs `ckks_{quantize,dequantize}_coeffs_into`, the
-slot transforms `ckks_{slots_to_coeffs,coeffs_to_slots}_assign_with_plan` and its
+slot transforms `ckks_encoding_buffer_{slots_to_coeffs,coeffs_to_slots}_assign_with_plan` and its
 plan cache. The API operations are derived defaults that check their operands and
 read the cached plans; callers pass only encoding buffers and plaintexts. The canonical slot ordering, normalization,
 and quantization live in [`reference::encoding`](src/reference/encoding.rs).
