@@ -59,7 +59,7 @@ pub unsafe trait BlasMatMulImpl: Backend + CKKSMulImpl {
     /// **Fixed:**
     ///
     /// - the left terms of `a`, as the first item of [`Self::blas_matmul`]'s **Fixed** list gives them, the terms of a
-    ///   cold operand being those of the preparation's `ctx`, converted once by `ckks_prepare_left_into`;
+    ///   cold operand being those of the preparation's `ctx`, converted once by `ckks_left_operand_prepare`;
     /// - the key widths of the Keys table of `libs/poulpy-blas/docs/blas-contracts.md`;
     /// - the errors and their order: the validator's, then poulpy-ckks's budget errors of a cold preparation's terms,
     ///   before any write to `res`. A hot side's come from the product, so a hot preparation of an input short of its
@@ -102,7 +102,7 @@ pub unsafe trait BlasMatMulImpl: Backend + CKKSMulImpl {
     /// **Fixed:**
     ///
     /// - the right terms of `b`, as the first item of [`Self::blas_matmul`]'s **Fixed** list gives them, the terms of a
-    ///   cold operand being those of the preparation's `ctx`, converted once by `ckks_prepare_right_into`;
+    ///   cold operand being those of the preparation's `ctx`, converted once by `ckks_right_operand_prepare`;
     /// - the key widths of the Keys table of `libs/poulpy-blas/docs/blas-contracts.md`;
     /// - the errors and their order: the validator's, then poulpy-ckks's budget errors of a cold preparation's terms,
     ///   before any write to `res`. A hot side's come from the product, so a hot preparation of an input short of its
@@ -160,8 +160,8 @@ pub unsafe trait BlasMatMulImpl: Backend + CKKSMulImpl {
     ///   through the `Direct` shift maps the plan records. On the right, tau and psi^k, or, for a replicated `b`
     ///   ([`crate::layouts::replicated`], read from its label), [`BlasContextPrepared::tau_rep`] and
     ///   [`BlasContextPrepared::rotate_rows_rep`], all at the width `b.k - p`. Each term is converted once, by poulpy-ckks's
-    ///   `ckks_prepare_left_into` (`ckks_prepare_right_into`) in a preparation and `ckks_prepare_left`
-    ///   (`ckks_prepare_right`) in a product, on its `ceil(w / base2k)` limbs;
+    ///   `ckks_left_operand_prepare` (`ckks_right_operand_prepare`) in a preparation and `ckks_left_operand_prepare_alloc`
+    ///   (`ckks_right_operand_prepare_alloc`) in a product, on its `ceil(w / base2k)` limbs;
     /// - one JKLS kernel per block of `res`, [`crate::oep::BlasJklsImpl::blas_jkls_block`], over its `K d` pairs of
     ///   terms `(a_il[k], b_lj[k])`, `l`-major: ascending `l`, then ascending `k` within each `l`, the order the
     ///   one-pass kernel sums them in, part of the bits on FFT; the kernel's doc fixes its circuit;
@@ -212,7 +212,7 @@ pub unsafe trait BlasMatMulImpl: Backend + CKKSMulImpl {
     /// **Fixed:**
     ///
     /// - the products by public matrices under `Diagonal` and `Jkls` share their giant steps across the inner index:
-    ///   block `res_ij` is poulpy-ckks's `ckks_eval_linear_transformation_sum_into` of its `K` terms in ascending `l`,
+    ///   block `res_ij` is poulpy-ckks's `ckks_linear_transformation_eval_sum_into` of its `K` terms in ascending `l`,
     ///   `(s_il, b_lj)` on the right and `(s_lj, b_il)` on the left, where `s` is `a` under `Diagonal`, and under
     ///   `Jkls` the blocks of `a` through the operand's first map, one map-hook call
     ///   ([`crate::oep::BlasMatIntraImpl::blas_map_blocks`]) per block row of `a` on the right and per block column on
@@ -326,8 +326,8 @@ pub unsafe trait BlasMatMulImpl: Backend + CKKSMulImpl {
     ///   through the `Direct` shift maps the plan records. On the right, tau and psi^k, or, for a replicated `b`
     ///   ([`crate::layouts::replicated`], read from its label), [`BlasContextPrepared::tau_rep`] and
     ///   [`BlasContextPrepared::rotate_rows_rep`], all at the width `b.k - p`. Each term is converted once, by poulpy-ckks's
-    ///   `ckks_prepare_left_into` (`ckks_prepare_right_into`) in a preparation and `ckks_prepare_left`
-    ///   (`ckks_prepare_right`) in a product, on its `ceil(w / base2k)` limbs;
+    ///   `ckks_left_operand_prepare` (`ckks_right_operand_prepare`) in a preparation and `ckks_left_operand_prepare_alloc`
+    ///   (`ckks_right_operand_prepare_alloc`) in a product, on its `ceil(w / base2k)` limbs;
     /// - one JKLS kernel per block of `res`, [`crate::oep::BlasJklsImpl::blas_jkls_block`], over its `K d` pairs of
     ///   terms `(a_il[k], b_lj[k])`, `l`-major: ascending `l`, then ascending `k` within each `l`, the order the
     ///   one-pass kernel sums them in, part of the bits on FFT; the kernel's doc fixes its circuit;

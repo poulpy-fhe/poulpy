@@ -18,7 +18,10 @@ use poulpy_core::{
         prepared::GLWETensorKeyPreparedToBackendRef,
     },
 };
-use poulpy_hal::layouts::{Backend, ConjugateInvariant, Module, Ring, ScratchArena, Standard};
+use poulpy_hal::{
+    api::{CnvOps, CnvPVecBytesOf, VecZnxBigNormalizeTmpBytes, VecZnxRshTmpBytes},
+    layouts::{Backend, ConjugateInvariant, Module, Ring, ScratchArena, Standard},
+};
 
 use crate::{
     CKKSCtBounds, GLWEPlaintextMeta, Scale, SetCKKSInfos,
@@ -27,11 +30,11 @@ use crate::{
         CKKSSubOps, PolynomialInputTransform,
     },
     layouts::{
-        CKKSCiphertextOwned, CKKSModuleAlloc, ScratchArenaTakeCKKS,
+        CKKSCiphertextAlloc, CKKSCiphertextOwned, ScratchArenaTakeCKKSCiphertext,
         eval_mod::{EvalMod, EvalModBsgs},
     },
     polynomial::ComplexBSGSPolynomial,
-    power_basis::{PowerBasis, PowerBasisGen},
+    power_basis::{CKKSPowerBasisGen, PowerBasis},
 };
 
 /// Backend-generic reference implementation of [`CKKSEvalModOps`].
@@ -62,7 +65,6 @@ pub trait CKKSEvalModReference<BE: Backend> {
             + CKKSSubOps<BE>
             + CKKSMulOps<BE>
             + CKKSCopyOps<BE>
-            + CKKSModuleAlloc<BE>
             + Sized,
         BE: Backend,
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
@@ -70,6 +72,26 @@ pub trait CKKSEvalModReference<BE: Backend> {
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
         H: GetTensorKey<BE>,
         CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos;
+
+    /// Scratch of [`Self::ckks_eval_mod_reference`].
+    fn ckks_eval_mod_tmp_bytes_reference<R, C, P, F, T>(&self, res: &R, ct: &C, params: &EvalMod<F, P>, tsk: &T) -> usize
+    where
+        BE: poulpy_core::oep::GLWEMulConstImpl,
+        Self: CKKSAddOps<BE>
+            + CKKSSubOps<BE>
+            + CKKSMulOps<BE>
+            + CKKSPow2Ops<BE>
+            + GLWENormalize<BE>
+            + CKKSCopyOps<BE>
+            + GLWECopy<BE>
+            + CnvPVecBytesOf
+            + CnvOps<BE>
+            + VecZnxRshTmpBytes
+            + VecZnxBigNormalizeTmpBytes,
+        R: CKKSCtBounds,
+        C: CKKSCtBounds,
+        P: CKKSCtBounds,
+        T: GGLWEInfos;
 }
 
 impl<BE: Backend> CKKSEvalModReference<BE> for Module<BE>
@@ -80,7 +102,6 @@ where
         + CKKSSubOps<BE>
         + CKKSMulOps<BE>
         + CKKSCopyOps<BE>
-        + CKKSModuleAlloc<BE>
         + CKKSPow2Ops<BE>
         + GLWECopy<BE>
         + GLWENormalize<BE>,
@@ -102,6 +123,28 @@ where
         H: GetTensorKey<BE>,
     {
         eval_mod(self, res, ct, params, tsk, scratch)
+    }
+
+    fn ckks_eval_mod_tmp_bytes_reference<R, C, P, F, T>(&self, res: &R, ct: &C, params: &EvalMod<F, P>, tsk: &T) -> usize
+    where
+        BE: poulpy_core::oep::GLWEMulConstImpl,
+        Self: CKKSAddOps<BE>
+            + CKKSSubOps<BE>
+            + CKKSMulOps<BE>
+            + CKKSPow2Ops<BE>
+            + GLWENormalize<BE>
+            + CKKSCopyOps<BE>
+            + GLWECopy<BE>
+            + CnvPVecBytesOf
+            + CnvOps<BE>
+            + VecZnxRshTmpBytes
+            + VecZnxBigNormalizeTmpBytes,
+        R: CKKSCtBounds,
+        C: CKKSCtBounds,
+        P: CKKSCtBounds,
+        T: GGLWEInfos,
+    {
+        ckks_eval_mod_tmp_bytes_reference(self, res, ct, params, tsk)
     }
 }
 
@@ -136,7 +179,6 @@ where
         + CKKSSubOps<BE>
         + CKKSMulOps<BE>
         + CKKSCopyOps<BE>
-        + CKKSModuleAlloc<BE>
         + CKKSPow2Ops<BE>
         + GLWECopy<BE>
         + GLWENormalize<BE>,
@@ -296,7 +338,6 @@ where
         + CKKSMulOps<BE>
         + CKKSSubOps<BE>
         + CKKSPow2Ops<BE>
-        + CKKSModuleAlloc<BE>
         + GLWECopy<BE>
         + GLWENormalize<BE>,
 {
@@ -354,7 +395,7 @@ fn eval_mod_input<BE, C>(
 ) -> CKKSCiphertextOwned<BE>
 where
     BE: Backend,
-    Module<BE>: CKKSModuleAlloc<BE> + GLWECopy<BE>,
+    Module<BE>: CKKSCiphertextAlloc<BE> + GLWECopy<BE>,
     C: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     let mut input = module.ckks_ciphertext_alloc(layout.base2k, layout.k);

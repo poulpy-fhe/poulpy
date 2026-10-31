@@ -8,8 +8,8 @@ use poulpy_ckks::{
         LinearTransformation, LinearTransformationLayout, LinearTransformationPlan, LinearTransformationPrepared, LtDiagonalMeta,
         ckks_linear_transformation_output_layout,
     },
-    encoding::ckks_encode_linear_transformation_into,
-    layouts::{CKKSModuleAlloc, CKKSPlaintextOwned, ComplexDiagonals},
+    encoding::ckks_linear_transformation_encode_into,
+    layouts::{CKKSLinearTransformationAlloc, CKKSPlaintextOwned, ComplexDiagonals},
 };
 use poulpy_core::layouts::{
     Base2K, DiagonalArithmetic, Diagonals, GLWELayout, GLWEPlaintextInfos, GetDegree, IntPolyInfos, LWEInfos,
@@ -82,7 +82,7 @@ impl MapLayout {
     pub(crate) fn plaintext<BE, M>(&self, module: &M, base2k: Base2K) -> CKKSLayout
     where
         BE: Backend,
-        M: CKKSModuleAlloc<BE> + GetDegree,
+        M: CKKSModuleInfos + GetDegree,
     {
         CKKSLayout {
             glwe_layout: GLWELayout {
@@ -116,7 +116,7 @@ impl MapLayout {
     pub(crate) fn alloc<BE, M>(&self, module: &M, base2k: Base2K) -> Encoded<BE>
     where
         BE: Backend,
-        M: CKKSModuleAlloc<BE> + GetDegree,
+        M: CKKSLinearTransformationAlloc<BE> + GetDegree,
     {
         module.ckks_linear_transformation_alloc_from_infos(&self.lt, &self.plaintext::<BE, M>(module, base2k))
     }
@@ -125,7 +125,7 @@ impl MapLayout {
     pub(crate) fn alloc_prepared<BE, M>(&self, module: &M, base2k: Base2K) -> LinearTransformationPrepared<BE>
     where
         BE: Backend,
-        M: CKKSModuleAlloc<BE> + CnvPVecAlloc<BE> + GetDegree,
+        M: CnvPVecAlloc<BE> + CKKSModuleInfos + GetDegree,
     {
         LinearTransformationPrepared::<BE>::alloc_prepared_from_index(
             module,
@@ -138,9 +138,9 @@ impl MapLayout {
     pub(crate) fn prepare_tmp_bytes<BE, M>(&self, module: &M, base2k: Base2K) -> usize
     where
         BE: Backend,
-        M: CKKSModuleAlloc<BE> + CKKSLinearTransformationOps<BE> + GetDegree,
+        M: CKKSLinearTransformationOps<BE> + CKKSModuleInfos + GetDegree,
     {
-        module.ckks_prepare_linear_transformation_rhs_tmp_bytes(&self.plaintext::<BE, M>(module, base2k))
+        module.ckks_linear_transformation_rhs_prepare_tmp_bytes(&self.plaintext::<BE, M>(module, base2k))
     }
 }
 
@@ -226,7 +226,7 @@ where
     M: CKKSModuleInfos + CKKSEncodingOps<BE, F>,
     F: DiagonalArithmetic + CKKSEncodingScalar,
 {
-    ckks_encode_linear_transformation_into(module, lt, map.meta.meta, &map.map, map.strategy, scratch)
+    ckks_linear_transformation_encode_into(module, lt, map.meta.meta, &map.map, map.strategy, scratch)
 }
 
 /// Whether every diagonal of `map` shares the first one's scale, encoded width and slot kind, which its preparation
@@ -262,12 +262,12 @@ pub(crate) fn prepare_maps_into<'a, BE, M>(
     let bytes = maps
         .clone()
         .filter_map(LinearTransformation::first_diagonal_plaintext)
-        .map(|pt| module.ckks_prepare_linear_transformation_rhs_tmp_bytes(pt))
+        .map(|pt| module.ckks_linear_transformation_rhs_prepare_tmp_bytes(pt))
         .max()
         .unwrap_or(0);
     assert_scratch(op, bytes.max(rest), scratch);
     for (dst, src) in res.zip(maps) {
-        if let Err(err) = module.ckks_prepare_linear_transformation_rhs(dst, src, scratch) {
+        if let Err(err) = module.ckks_linear_transformation_rhs_prepare(dst, src, scratch) {
             panic!("{op}: {err}");
         }
     }

@@ -34,9 +34,9 @@ use poulpy_core::{GLWENoise, layouts::LWEInfos};
 use crate::SlotsKind;
 use crate::{
     CKKSCompositionError, CKKSInfos, CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos,
-    api::{CKKSDFTMatrixOps, CKKSDFTOps, CKKSEncodingScalar},
+    api::{CKKSDFTMatrixOps, CKKSDFTMatrixPreparedFactory, CKKSDFTOps, CKKSEncodingScalar},
     layouts::{
-        CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, CKKSPlaintextVecHostCodec, DFTMatrix, DFTMatrixPrepared,
+        CKKSCiphertextOwned, CKKSPlaintextAlloc, CKKSPlaintextOwned, CKKSPlaintextVecHostCodec, DFTMatrix, DFTMatrixPrepared,
         DFTOutputFormat, DFTPlan, DFTType, Decode, DftDirection, DftFormat, Encode, Repack, Split, Standard,
     },
     test_suite::reference_encoder::ReferenceEncoder,
@@ -127,19 +127,19 @@ where
     Dir: DftDirection,
     Fmt: DftFormat,
 {
-    let bytes = module.ckks_new_dft_matrix_tmp_bytes::<Dir, Fmt>(literal).unwrap();
-    with_scratch::<BE, _>(bytes, |s| module.ckks_new_dft_matrix::<Dir, Fmt>(base2k, literal, s)).unwrap()
+    let bytes = module.ckks_dft_matrix_new_tmp_bytes::<Dir, Fmt>(literal).unwrap();
+    with_scratch::<BE, _>(bytes, |s| module.ckks_dft_matrix_new::<Dir, Fmt>(base2k, literal, s)).unwrap()
 }
 
 /// Prepares a test matrix on exactly the query of its preparation.
 fn prepare_dft<BE, Dir, Fmt>(module: &Module<BE>, matrix: &DFTMatrix<BE, Dir, Fmt>) -> DFTMatrixPrepared<BE, Dir, Fmt>
 where
     BE: TestContextBackend,
-    Module<BE>: CKKSDFTOps<BE>,
+    Module<BE>: CKKSDFTOps<BE> + CKKSDFTMatrixPreparedFactory<BE>,
 {
     let mut prepared = module.ckks_dft_matrix_prepared_alloc_from_infos(matrix);
-    with_scratch::<BE, _>(module.ckks_prepare_dft_matrix_tmp_bytes(matrix), |s| {
-        module.ckks_prepare_dft_matrix(&mut prepared, matrix, s)
+    with_scratch::<BE, _>(module.ckks_dft_matrix_prepare_tmp_bytes(matrix), |s| {
+        module.ckks_dft_matrix_prepare(&mut prepared, matrix, s)
     })
     .unwrap();
     prepared
@@ -196,9 +196,9 @@ fn noise_bound(log_delta: usize) -> f64 {
 fn want_plaintext<BE>(module: &Module<BE>, ct: &CKKSCiphertextOwned<BE>) -> CKKSPlaintextOwned<BE>
 where
     BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
-    Module<BE>: CKKSModuleAlloc<BE>,
+    Module<BE>: CKKSPlaintextAlloc<BE>,
 {
-    let mut pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), ct.base2k(), ct.k());
+    let mut pt = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), ct.base2k(), ct.k());
     pt.set_meta(GLWEPlaintextMeta {
         scale: Scale::Log(ct.log_delta()),
         slots: SlotsKind::Complex,
@@ -216,7 +216,12 @@ pub fn test_dft_coeffs_to_slots_standard<BE, F, E>(
     _host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F> + GLWENoise<BE>,
+    Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + CKKSDFTOps<BE>
+        + CKKSDFTMatrixOps<BE, F>
+        + GLWENoise<BE>,
     F: TestScalar,
     E: ReimNew<F>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
@@ -263,7 +268,7 @@ pub fn test_dft_coeffs_to_slots_standard<BE, F, E>(
     );
 
     with_scratch::<BE, _>(dft_eval_bytes(&params, &module, &enc_dft), |s| {
-        module.ckks_coeffs_to_slots(&mut ct, &enc_dft, &atks, s)
+        module.ckks_coeffs_to_slots_assign(&mut ct, &enc_dft, &atks, s)
     })
     .unwrap();
 
@@ -290,7 +295,12 @@ pub fn test_dft_slots_to_coeffs_standard<BE, F, E>(
     _host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F> + GLWENoise<BE>,
+    Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + CKKSDFTOps<BE>
+        + CKKSDFTMatrixOps<BE, F>
+        + GLWENoise<BE>,
     F: TestScalar,
     E: ReimNew<F>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
@@ -337,7 +347,7 @@ pub fn test_dft_slots_to_coeffs_standard<BE, F, E>(
     );
 
     with_scratch::<BE, _>(dft_eval_bytes(&params, &module, &dec_dft), |s| {
-        module.ckks_slots_to_coeffs(&mut ct, &dec_dft, &atks, s)
+        module.ckks_slots_to_coeffs_assign(&mut ct, &dec_dft, &atks, s)
     })
     .unwrap();
 
@@ -364,7 +374,12 @@ pub fn test_dft_coeffs_to_slots_split<BE, F, E>(
     _host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F> + GLWENoise<BE>,
+    Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + CKKSDFTOps<BE>
+        + CKKSDFTMatrixOps<BE, F>
+        + GLWENoise<BE>,
     F: TestScalar,
     E: ReimNew<F>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
@@ -447,7 +462,12 @@ pub fn test_dft_coeffs_to_slots_repack_sparse<BE, F, E>(
     _host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F> + GLWENoise<BE>,
+    Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + CKKSDFTOps<BE>
+        + CKKSDFTMatrixOps<BE, F>
+        + GLWENoise<BE>,
     F: TestScalar,
     E: ReimNew<F>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
@@ -539,7 +559,12 @@ pub fn test_dft_slots_to_coeffs_split<BE, F, E>(
     _host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F> + GLWENoise<BE>,
+    Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + CKKSDFTOps<BE>
+        + CKKSDFTMatrixOps<BE, F>
+        + GLWENoise<BE>,
     F: TestScalar,
     E: ReimNew<F>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
@@ -626,7 +651,12 @@ pub fn test_dft_slots_to_coeffs_repack_sparse<BE, F, E>(
     _host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F> + GLWENoise<BE>,
+    Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + CKKSDFTOps<BE>
+        + CKKSDFTMatrixOps<BE, F>
+        + GLWENoise<BE>,
     F: TestScalar,
     E: ReimNew<F>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
@@ -668,7 +698,7 @@ pub fn test_dft_slots_to_coeffs_repack_sparse<BE, F, E>(
     want_re[..slots].copy_from_slice(re);
     want_re[slots..].copy_from_slice(im);
     let want_im = vec![F::from_f64(0.0).unwrap(); 2 * slots];
-    let mut host_pt = host_module.ckks_pt_vec_alloc(
+    let mut host_pt = host_module.ckks_plaintext_alloc_from_slots(
         host_module.ckks_max_slots(),
         Base2K(base2k as u32),
         ((log_delta + 10) as u32).into(),
@@ -735,10 +765,14 @@ fn assert_factor_degrees<BE: Backend, Dir, Fmt: DftFormat>(
 /// the allocating preparation's bytes, preparing into it again after poisoning it keeps its buffers and gives them
 /// again, and a matrix of another schedule or with non-uniform diagonals is refused as `InvalidOperand` before any write
 /// and any scratch, its bytes and infos unchanged.
-pub fn test_prepare_dft_matrix<BE, F, E>(params: CKKSTestParams, _module: &Module<BE>, _host_module: &Module<HostBytesBackend>)
+pub fn test_dft_matrix_prepare<BE, F, E>(params: CKKSTestParams, _module: &Module<BE>, _host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F>,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + CKKSDFTOps<BE>
+        + CKKSDFTMatrixPreparedFactory<BE>
+        + CKKSDFTMatrixOps<BE, F>,
     F: TestScalar,
     E: ReimNew<F>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
@@ -788,8 +822,8 @@ where
     };
 
     let dft = build(2);
-    let prepare_bytes = module.ckks_prepare_dft_matrix_tmp_bytes(&dft);
-    let fresh = with_scratch::<BE, _>(prepare_bytes, |scratch| module.ckks_prepare_dft_matrix_alloc(&dft, scratch)).unwrap();
+    let prepare_bytes = module.ckks_dft_matrix_prepare_tmp_bytes(&dft);
+    let fresh = with_scratch::<BE, _>(prepare_bytes, |scratch| module.ckks_dft_matrix_prepare_alloc(&dft, scratch)).unwrap();
     let mut res = module.ckks_dft_matrix_prepared_alloc_from_infos(&dft);
     assert_eq!(
         buffers(&res).iter().map(Vec::len).sum::<usize>(),
@@ -797,7 +831,7 @@ where
         "bytes_of"
     );
     with_scratch::<BE, _>(prepare_bytes, |scratch| {
-        module.ckks_prepare_dft_matrix(&mut res, &dft, scratch)
+        module.ckks_dft_matrix_prepare(&mut res, &dft, scratch)
     })
     .unwrap();
     assert!(buffers(&res) == buffers(&fresh), "prepare-into differs from prepare");
@@ -810,7 +844,7 @@ where
         }
     }
     with_scratch::<BE, _>(prepare_bytes, |scratch| {
-        module.ckks_prepare_dft_matrix(&mut res, &dft, scratch)
+        module.ckks_dft_matrix_prepare(&mut res, &dft, scratch)
     })
     .unwrap();
     assert_eq!(addresses(&res), before, "the refill reallocated");
@@ -818,10 +852,10 @@ where
     if prepare_bytes > 0 {
         let (want_buffers, want_infos) = (buffers(&res), infos(&res));
         let err = with_scratch::<BE, _>(prepare_bytes - 1, |scratch| {
-            module.ckks_prepare_dft_matrix(&mut res, &dft, scratch)
+            module.ckks_dft_matrix_prepare(&mut res, &dft, scratch)
         })
         .unwrap_err();
-        assert_ckks_internal("one byte short", &err, "ckks_prepare_dft_matrix: scratch below its query");
+        assert_ckks_internal("one byte short", &err, "ckks_dft_matrix_prepare: scratch below its query");
         assert!(
             buffers(&res) == want_buffers,
             "a refused preparation changed the prepared bytes"
@@ -844,12 +878,12 @@ where
     last.set_meta(meta);
     let (want_buffers, want_infos) = (buffers(&res), infos(&res));
     for (other, reason) in [(&other_schedule, "schedule"), (&non_uniform, "not uniform")] {
-        let err = with_scratch::<BE, _>(0, |scratch| module.ckks_prepare_dft_matrix(&mut res, other, scratch)).unwrap_err();
+        let err = with_scratch::<BE, _>(0, |scratch| module.ckks_dft_matrix_prepare(&mut res, other, scratch)).unwrap_err();
         assert!(
             matches!(
                 err.composition(),
                 Some(CKKSCompositionError::InvalidOperand {
-                    op: "ckks_prepare_dft_matrix",
+                    op: "ckks_dft_matrix_prepare",
                     ..
                 })
             ),

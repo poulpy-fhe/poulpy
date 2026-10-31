@@ -21,9 +21,9 @@ use poulpy_ckks::{
     CKKSCompositionError, CKKSInfos, CKKSLayout, CKKSResult, CoeffsMeta, SlotsKind,
     api::{
         CKKSAddManyOps, CKKSAddOps, CKKSCopyOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSLinearTransformationOps,
-        CKKSModuleInfos, CKKSMulOps, LinearTransformationLayout, LinearTransformationStrategy,
+        CKKSModuleInfos, CKKSRightOperandPreparedFactory, LinearTransformationLayout, LinearTransformationStrategy,
     },
-    layouts::{CKKSModuleAlloc, CKKSPreparedRight},
+    layouts::{CKKSPlaintextAlloc, CKKSRightOperandPrepared},
     test_suite::{
         CKKSTestParams,
         helpers::TestScalar,
@@ -90,8 +90,7 @@ impl<B: Backend<ZnxWord = i64> + BlasImpl> BlasParityBackend for B {}
 
 /// What blas parity needs from a module: fixtures, lazy ones included, prepared keys and maps encoded at scalar `F`.
 pub trait BlasParityModule<B: Backend, F: TestScalar + DiagonalArithmetic>:
-    CKKSModuleAlloc<B>
-    + CKKSModuleInfos
+    CKKSModuleInfos
     + CyclotomicOrder
     + GLWEFill<B>
     + GLWEAdd<B>
@@ -109,8 +108,7 @@ pub trait BlasParityModule<B: Backend, F: TestScalar + DiagonalArithmetic>:
 }
 
 impl<B: Backend, F: TestScalar + DiagonalArithmetic, M> BlasParityModule<B, F> for M where
-    M: CKKSModuleAlloc<B>
-        + CKKSModuleInfos
+    M: CKKSModuleInfos
         + CyclotomicOrder
         + GLWEFill<B>
         + GLWEAdd<B>
@@ -1512,7 +1510,13 @@ fn diagonal_ciphertext_output<B: BlasParityBackend>(
 }
 
 /// A prepared mask, `1` on the slots of `set` and `0` elsewhere, encoded at scale `p` and prepared under `hint`.
-fn mask_of<B, F>(params: CKKSTestParams, module: &Module<B>, set: &[usize], p: usize, hint: PrepareHint) -> CKKSPreparedRight<B>
+fn mask_of<B, F>(
+    params: CKKSTestParams,
+    module: &Module<B>,
+    set: &[usize],
+    p: usize,
+    hint: PrepareHint,
+) -> CKKSRightOperandPrepared<B>
 where
     B: BlasParityBackend,
     Module<B>: BlasParityModule<B, F>,
@@ -1523,14 +1527,14 @@ where
     let mut re = vec![zero; slots];
     set.iter().for_each(|&s| re[s] = F::from_f64(1.0).unwrap());
     let meta = diagonal_meta(params, p);
-    let mut pt = module.ckks_pt_vec_alloc(slots, params.base2k.into(), meta.k);
+    let mut pt = module.ckks_plaintext_alloc_from_slots(slots, params.base2k.into(), meta.k);
     poulpy_ckks::SetCKKSInfos::set_meta(&mut pt, meta.meta);
-    with_scratch::<B, _>(module.ckks_reim_tmp_bytes(slots), |s| {
-        module.ckks_encode_reim_into(&mut pt, &re, &vec![zero; slots], s)
+    with_scratch::<B, _>(module.ckks_encoding_host_tmp_bytes(slots), |s| {
+        module.ckks_encode_slots_host_into(&mut pt, &re, &vec![zero; slots], s)
     })
     .unwrap();
-    with_scratch::<B, _>(module.ckks_prepare_tmp_bytes(&pt), |s| {
-        module.ckks_prepare_right(&pt, hint, s)
+    with_scratch::<B, _>(module.ckks_right_operand_prepare_tmp_bytes(&pt), |s| {
+        module.ckks_right_operand_prepare_alloc(&pt, hint, s)
     })
     .unwrap()
 }

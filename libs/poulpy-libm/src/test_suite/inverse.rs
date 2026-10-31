@@ -12,7 +12,7 @@ use poulpy_hal::{
 use poulpy_ckks::{
     CKKSCtBounds, CKKSInfos, GLWEPlaintextMeta, Scale, SetCKKSInfos,
     api::{CKKSAllOpsTmpBytes, CKKSMulOps},
-    layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext},
+    layouts::{CKKSCiphertext, CKKSCiphertextAlloc, CKKSPlaintext},
     polynomial::SplitStrategy,
     test_suite::{
         CKKSTestParams,

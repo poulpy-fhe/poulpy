@@ -4,7 +4,7 @@ use anyhow::{Result, ensure};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use poulpy_ckks::{
     CKKSCtBounds, CKKSInfos, CKKSLayout, CoeffsMeta, GLWEPlaintextInfos, SetCKKSInfos,
-    layouts::{CKKSCiphertext, CKKSModuleAlloc},
+    layouts::{CKKSCiphertext, CKKSCiphertextAlloc, CKKSLinearTransformationAlloc},
 };
 use poulpy_core::{
     GLWEBytesOf,
@@ -488,7 +488,7 @@ where
 }
 
 /// Allocation of grids.
-pub trait BlasModuleAlloc<BE: Backend>: CKKSModuleAlloc<BE> + GetDegree + Sized {
+pub trait BlasModuleAlloc<BE: Backend>: CKKSCiphertextAlloc<BE> + CKKSLinearTransformationAlloc<BE> + GetDegree + Sized {
     /// A grid of `rows x cols` rank-1 blocks of dimension `2^log_d` at torus width `k`, recording the dense batch.
     ///
     /// # Panics
@@ -655,10 +655,10 @@ pub trait BlasModuleAlloc<BE: Backend>: CKKSModuleAlloc<BE> + GetDegree + Sized 
     }
 }
 
-impl<BE: Backend> BlasModuleAlloc<BE> for Module<BE> where Module<BE>: CKKSModuleAlloc<BE> {}
+impl<BE: Backend> BlasModuleAlloc<BE> for Module<BE> where Module<BE>: CKKSCiphertextAlloc<BE> + CKKSLinearTransformationAlloc<BE> {}
 
 /// Byte sizes of grids, routed through the backend.
-pub trait BlasBytesOf<BE: Backend>: GLWEBytesOf<BE> + CKKSModuleAlloc<BE> + GetDegree + Sized {
+pub trait BlasBytesOf<BE: Backend>: GLWEBytesOf<BE> + GetDegree + Sized {
     /// Bytes of [`BlasModuleAlloc::blas_ciphertext_alloc_from_infos`] of `infos`.
     ///
     /// # Panics
@@ -697,7 +697,7 @@ pub trait BlasBytesOf<BE: Backend>: GLWEBytesOf<BE> + CKKSModuleAlloc<BE> + GetD
     }
 }
 
-impl<BE: Backend> BlasBytesOf<BE> for Module<BE> where Module<BE>: CKKSModuleAlloc<BE> {}
+impl<BE: Backend> BlasBytesOf<BE> for Module<BE> {}
 
 #[cfg(test)]
 mod tests {
@@ -708,7 +708,7 @@ mod tests {
     };
     use poulpy_ckks::{
         CKKSError, SetGLWEPlaintextInfos,
-        layouts::{CKKSPreparedLeft, CKKSPreparedRight},
+        layouts::{CKKSLeftOperandPrepared, CKKSRightOperandPrepared},
     };
     use poulpy_core::layouts::{SetK, prepared::GLWETensorKeyPrepared};
     use poulpy_hal::layouts::{HostBytesBackend, Standard};
@@ -735,10 +735,10 @@ mod tests {
         operand::<BlasDiagonalCiphertextPrepared<BE>>();
         sync::<BlasContextPrepared<BE>>();
         sync::<BlasPtOperandPrepared<BE>>();
-        operand::<BlasMatMulOperand<BE, CKKSPreparedLeft<BE>>>();
-        operand::<BlasMatMulOperand<BE, CKKSPreparedRight<BE>>>();
-        sync::<CKKSPreparedLeft<BE>>();
-        sync::<CKKSPreparedRight<BE>>();
+        operand::<BlasMatMulOperand<BE, CKKSLeftOperandPrepared<BE>>>();
+        operand::<BlasMatMulOperand<BE, CKKSRightOperandPrepared<BE>>>();
+        sync::<CKKSLeftOperandPrepared<BE>>();
+        sync::<CKKSRightOperandPrepared<BE>>();
         sync::<GLWETensorKeyPrepared<BE::OwnedBuf, BE>>();
         send::<CKKSError>();
         sync::<BlasCiphertext<BE::BufRef<'a>, BE::ZnxWord, BE::Ring>>();

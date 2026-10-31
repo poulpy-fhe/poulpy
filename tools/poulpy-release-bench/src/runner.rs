@@ -7,8 +7,8 @@ use std::{cell::RefCell, time::Instant};
 use anyhow::{Context, Result};
 use poulpy_ckks::{
     CKKSCtBounds, SetCKKSInfos,
-    api::{CKKSBootstrappingCIOps, CKKSDFTOps, CKKSEncodingOps},
-    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, EvalModRing},
+    api::{CKKSBootstrappingCIOps, CKKSDFTMatrixPreparedFactory, CKKSDFTOps, CKKSEncodingOps},
+    layouts::{CKKSCiphertextOwned, CKKSPlaintextOwned, EvalModRing},
     presets::bootstrapping::{BootstrappingPreset, all},
     test_suite::{
         helpers::{PrecisionStats, TestContextBackend, TestContextModule, TestContextSharedModule},
@@ -191,10 +191,13 @@ where
     CIBackend<BE>: MaxBase2k,
     BC: TestContextBackend<Ring = Standard>,
     CIBackend<BC>: TestContextBackend,
-    Module<BE>: PresetRunModule<BE> + CKKSDFTOps<BE> + CKKSBootstrappingCIOps<BE> + GLWECIKeyPreparedFactory<BE>,
+    Module<BE>: PresetRunModule<BE>
+        + CKKSDFTOps<BE>
+        + CKKSDFTMatrixPreparedFactory<BE>
+        + CKKSBootstrappingCIOps<BE>
+        + GLWECIKeyPreparedFactory<BE>,
     Module<CIBackend<BE>>: ModuleNew<CIBackend<BE>>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
-        + CKKSModuleAlloc<CIBackend<BE>>
         + CKKSEncodingOps<CIBackend<BE>, f64>
         + GLWETensorKeyPreparedFactory<CIBackend<BE>>,
     Module<BC>: TestContextModule<BC> + CKKSEncodingOps<BC, f64> + CKKSBootstrappingCIOps<BC> + GLWECIKeyEncryptSk<BC>,

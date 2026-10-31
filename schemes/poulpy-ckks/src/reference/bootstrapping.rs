@@ -26,8 +26,8 @@ use crate::{
     eval_lut::{ckks_eval_lut, ckks_eval_lut_binary, ckks_eval_lut_from_basis, ckks_lut_power_basis},
     layouts::{
         BootstrappingCIKeys, BootstrappingContextPrepared, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys,
-        BootstrappingPipeline, CKKSCiphertextOwned, CKKSCiphertextViewMut, CKKSModuleAlloc, CKKSPlaintextOwned, EncodedLut,
-        EncodedLutKind, EvalModRing, EvalModType, ScratchArenaTakeCKKS,
+        BootstrappingPipeline, CKKSCiphertextOwned, CKKSCiphertextViewMut, CKKSPlaintextOwned, EncodedLut, EncodedLutKind,
+        EvalModRing, EvalModType, ScratchArenaTakeCKKSCiphertext,
     },
     oep::{CKKSEncapsulatedModUpImpl, CKKSModUpFirstFactorImpl},
 };
@@ -420,7 +420,6 @@ pub trait CKKSBootstrappingReference<BE: Backend> {
     where
         Module<BE>: GLWECopy<BE>
             + GLWEShift<BE>
-            + CKKSModuleAlloc<BE>
             + GLWEKeyswitch<BE>
             + CKKSDFTOps<BE>
             + CKKSConjugateOps<BE>
@@ -765,7 +764,6 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl> CKKSBoo
     where
         Module<BE>: GLWECopy<BE>
             + GLWEShift<BE>
-            + CKKSModuleAlloc<BE>
             + GLWEKeyswitch<BE>
             + CKKSDFTOps<BE>
             + CKKSConjugateOps<BE>
@@ -1143,7 +1141,7 @@ where
     R1: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     R2: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
-    module.ckks_dft_evaluate_assign(ct, ctx.coeffs_to_slots(), keys.rotation_keys(), scratch)?;
+    module.ckks_dft_matrix_eval_assign(ct, ctx.coeffs_to_slots(), keys.rotation_keys(), scratch)?;
     module.ckks_conjugate_into(conjugate, &*ct, keys.rotation_keys(), scratch)?;
     module.ckks_add_assign(ct, &*conjugate, scratch)?;
     // `z + conj(z) = 2·Re(z)` holds the input polynomial's coefficients.
@@ -1340,7 +1338,7 @@ where
         // path's `2 * ct_in`, then intentionally use the format-agnostic
         // evaluator directly.
         module.ckks_double_into(&mut ct_coeffs, ct_in, &mut scratch_inner)?;
-        module.ckks_dft_evaluate_assign(
+        module.ckks_dft_matrix_eval_assign(
             &mut ct_coeffs,
             ctx.slots_to_coeffs(),
             keys.rotation_keys(),
@@ -1517,9 +1515,9 @@ where
             let mut factors = 0;
             for atk in &keys_layout.rotation_key_layouts() {
                 factors = factors
-                    .max(module.ckks_prepare_linear_transformation_baby_steps_tmp_bytes(&boot_layout, &even_plan, atk))
-                    .max(module.ckks_eval_linear_transformation_tmp_bytes(&boot_layout, &diagonal, &even_plan, atk, atk))
-                    .max(module.ckks_eval_linear_transformation_tmp_bytes(&boot_layout, &diagonal, &odd_plan, atk, atk));
+                    .max(module.ckks_linear_transformation_baby_steps_prepare_tmp_bytes(&boot_layout, &even_plan, atk))
+                    .max(module.ckks_linear_transformation_eval_tmp_bytes(&boot_layout, &diagonal, &even_plan, atk, atk))
+                    .max(module.ckks_linear_transformation_eval_tmp_bytes(&boot_layout, &diagonal, &odd_plan, atk, atk));
             }
             module.glwe_linear_transformation_baby_steps_bytes_of(&even_plan, &boot_layout)
                 + 2 * BE::scratch_aligned(module.glwe_bytes_of_from_infos(&boot_layout))
@@ -1570,11 +1568,11 @@ where
     let (mut babies, mut scratch) = scratch
         .borrow()
         .take_glwe_linear_transformation_baby_steps_scratch(module, &plan, w);
-    module.ckks_prepare_linear_transformation_baby_steps(&mut babies, w, keys, &mut scratch)?;
+    module.ckks_linear_transformation_baby_steps_prepare(&mut babies, w, keys, &mut scratch)?;
     let (mut a, scratch_1) = scratch.borrow().take_ckks_ciphertext_scratch(w, w.meta());
     let (mut b, mut scratch_1) = scratch_1.take_ckks_ciphertext_scratch(w, w.meta());
-    module.ckks_eval_linear_transformation_into(&mut a, w, &babies, even, keys, &mut scratch_1)?;
-    module.ckks_eval_linear_transformation_into(&mut b, w, &babies, odd, keys, &mut scratch_1)?;
+    module.ckks_linear_transformation_eval_into(&mut a, w, &babies, even, keys, &mut scratch_1)?;
+    module.ckks_linear_transformation_eval_into(&mut b, w, &babies, odd, keys, &mut scratch_1)?;
     let (mut odd_wide, mut scratch_2) = scratch_1.take_ckks_ciphertext_scratch(embedded, b.meta());
     odd_wide.set_k(b.k());
     module.glwe_switch_degree(&mut odd_wide, &b);
@@ -1704,14 +1702,14 @@ where
             Some(bypass) => {
                 let (mut z_hp, mut scratch) = scratch.borrow().take_ckks_ciphertext_scratch(&boot_layout, z.meta());
                 module.ckks_copy(&mut z_hp, &z, &mut scratch)?;
-                module.ckks_dft_evaluate_assign(&mut z_hp, bypass, keys.rotation_keys(), &mut scratch)?;
+                module.ckks_dft_matrix_eval_assign(&mut z_hp, bypass, keys.rotation_keys(), &mut scratch)?;
                 (Some(z_hp), scratch)
             }
             None => (None, scratch.borrow()),
         };
         // CoeffsToSlots without the split: the complex slots `z_j = c_j + i·c_{j+N/2}`,
         // embedded as `z(X²)`.
-        module.ckks_dft_evaluate_assign(&mut z, ctx.coeffs_to_slots(), keys.rotation_keys(), &mut scratch)?;
+        module.ckks_dft_matrix_eval_assign(&mut z, ctx.coeffs_to_slots(), keys.rotation_keys(), &mut scratch)?;
         let wide_layout = GLWELayout {
             n: (2 * boot_layout.n.as_usize()).into(),
             ..boot_layout
@@ -1997,6 +1995,210 @@ where
         .max(module.glwe_keyswitch_tmp_bytes(dst_infos, dst_infos, sparse_to_dense_infos))
 }
 
+/// Reference bodies of the required [`CKKSBootstrappingCIImpl`](crate::oep::CKKSBootstrappingCIImpl) methods, which
+/// [`impl_ckks_bootstrapping_ci_reference_full!`](crate::impl_ckks_bootstrapping_ci_reference_full) forwards to.
+pub trait CKKSBootstrappingCIReference<BE: Backend> {
+    fn ckks_bootstrap_ci_tmp_bytes_reference<BCI, C1, C2, F>(
+        &self,
+        ci: &Module<BCI>,
+        ct_out: &C1,
+        ct_in: &C2,
+        ctx: &BootstrappingContextPrepared<BE, F>,
+        keys_layout: &BootstrappingKeysLayout,
+    ) -> (usize, usize)
+    where
+        BCI: Backend,
+        Module<BE>: GLWEBytesOf<BE>
+            + GLWELinearTransformationBabyStepsBytesOf<BE>
+            + CKKSDFTOps<BE>
+            + CKKSPow2Ops<BE>
+            + GLWEShift<BE>
+            + GLWEKeyswitch<BE>
+            + GLWECITrace<BE>
+            + CKKSMulOps<BE>
+            + CKKSAddOps<BE>
+            + CKKSLinearTransformationOps<BE>
+            + GLWERotate<BE>,
+        Module<BCI>: GLWEBytesOf<BCI> + CKKSEvalModOps<BCI>,
+        C1: CKKSCtBounds,
+        C2: CKKSCtBounds;
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the bootstrap takes a module and a scratch arena per ring"
+    )]
+    fn ckks_bootstrap_ci_reference<BCI, Dst, Src, F, K>(
+        &self,
+        ci: &Module<BCI>,
+        ct_out: &mut Dst,
+        ct_in: &Src,
+        ctx: &BootstrappingContextPrepared<BE, F>,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+        scratch_ci: &mut ScratchArena<'_, BCI>,
+    ) -> Result<()>
+    where
+        BCI: Backend<Ring = ConjugateInvariant, OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+            + for<'a> Backend<BufRef<'a> = BE::BufRef<'a>, BufMut<'a> = BE::BufMut<'a>>
+            + 'static,
+        Module<BE>: GLWECopy<BE>
+            + GLWEShift<BE>
+            + GLWEKeyswitch<BE>
+            + GLWECITrace<BE>
+            + GLWECIEmbed<BE>
+            + GLWERotate<BE>
+            + CKKSSubOps<BE>
+            + CKKSLinearTransformationOps<BE>
+            + CKKSCopyOps<BE>
+            + CKKSPow2Ops<BE>
+            + CKKSMulOps<BE>
+            + CKKSAddOps<BE>
+            + CKKSDFTOps<BE>
+            + GLWESwitchDegree<BE>,
+        Module<BCI>: CKKSEvalModOps<BCI>,
+        K: BootstrappingCIKeys<BE, BCI>,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+        CKKSCiphertextOwned<BE>:
+            GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta;
+}
+
+impl<BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl> CKKSBootstrappingCIReference<BE> for Module<BE> {
+    fn ckks_bootstrap_ci_tmp_bytes_reference<BCI, C1, C2, F>(
+        &self,
+        ci: &Module<BCI>,
+        ct_out: &C1,
+        ct_in: &C2,
+        ctx: &BootstrappingContextPrepared<BE, F>,
+        keys_layout: &BootstrappingKeysLayout,
+    ) -> (usize, usize)
+    where
+        BCI: Backend,
+        Module<BE>: GLWEBytesOf<BE>
+            + GLWELinearTransformationBabyStepsBytesOf<BE>
+            + CKKSDFTOps<BE>
+            + CKKSPow2Ops<BE>
+            + GLWEShift<BE>
+            + GLWEKeyswitch<BE>
+            + GLWECITrace<BE>
+            + CKKSMulOps<BE>
+            + CKKSAddOps<BE>
+            + CKKSLinearTransformationOps<BE>
+            + GLWERotate<BE>,
+        Module<BCI>: GLWEBytesOf<BCI> + CKKSEvalModOps<BCI>,
+        C1: CKKSCtBounds,
+        C2: CKKSCtBounds,
+    {
+        ckks_bootstrap_ci_tmp_bytes_reference(self, ci, ct_out, ct_in, ctx, keys_layout)
+    }
+
+    fn ckks_bootstrap_ci_reference<BCI, Dst, Src, F, K>(
+        &self,
+        ci: &Module<BCI>,
+        ct_out: &mut Dst,
+        ct_in: &Src,
+        ctx: &BootstrappingContextPrepared<BE, F>,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+        scratch_ci: &mut ScratchArena<'_, BCI>,
+    ) -> Result<()>
+    where
+        BCI: Backend<Ring = ConjugateInvariant, OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+            + for<'a> Backend<BufRef<'a> = BE::BufRef<'a>, BufMut<'a> = BE::BufMut<'a>>
+            + 'static,
+        Module<BE>: GLWECopy<BE>
+            + GLWEShift<BE>
+            + GLWEKeyswitch<BE>
+            + GLWECITrace<BE>
+            + GLWECIEmbed<BE>
+            + GLWERotate<BE>
+            + CKKSSubOps<BE>
+            + CKKSLinearTransformationOps<BE>
+            + CKKSCopyOps<BE>
+            + CKKSPow2Ops<BE>
+            + CKKSMulOps<BE>
+            + CKKSAddOps<BE>
+            + CKKSDFTOps<BE>
+            + GLWESwitchDegree<BE>,
+        Module<BCI>: CKKSEvalModOps<BCI>,
+        K: BootstrappingCIKeys<BE, BCI>,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+        CKKSCiphertextOwned<BE>:
+            GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
+    {
+        ckks_bootstrap_ci_reference(self, ci, ct_out, ct_in, ctx, keys, scratch, scratch_ci)
+    }
+}
+
+/// Reference bodies of the required [`CKKSEncapsulatedModUpImpl`] methods, which
+/// [`impl_ckks_encapsulated_mod_up_reference_full!`](crate::impl_ckks_encapsulated_mod_up_reference_full) forwards to.
+pub trait CKKSEncapsulatedModUpReference<BE: Backend> {
+    fn ckks_encapsulated_mod_up_tmp_bytes_reference<Dst, Src, D2S, S2D>(
+        &self,
+        dst_infos: &Dst,
+        src_infos: &Src,
+        dense_to_sparse_infos: &D2S,
+        sparse_to_dense_infos: &S2D,
+    ) -> usize
+    where
+        Module<BE>: GLWEShift<BE> + GLWEKeyswitch<BE>,
+        Dst: CKKSCtBounds,
+        Src: CKKSCtBounds,
+        D2S: GGLWEInfos,
+        S2D: GGLWEInfos;
+
+    fn ckks_encapsulated_mod_up_reference<Dst, Src>(
+        &self,
+        dst: &mut Dst,
+        src: &mut Src,
+        scale_up: usize,
+        dense_to_sparse: &GGLWEPreparedBackendRef<'_, BE>,
+        sparse_to_dense: &GGLWEPreparedBackendRef<'_, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Module<BE>: GLWECopy<BE> + GLWEShift<BE> + GLWEKeyswitch<BE> + CKKSPow2Ops<BE>,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos;
+}
+
+impl<BE: Backend + CKKSEncapsulatedModUpImpl> CKKSEncapsulatedModUpReference<BE> for Module<BE> {
+    fn ckks_encapsulated_mod_up_tmp_bytes_reference<Dst, Src, D2S, S2D>(
+        &self,
+        dst_infos: &Dst,
+        src_infos: &Src,
+        dense_to_sparse_infos: &D2S,
+        sparse_to_dense_infos: &S2D,
+    ) -> usize
+    where
+        Module<BE>: GLWEShift<BE> + GLWEKeyswitch<BE>,
+        Dst: CKKSCtBounds,
+        Src: CKKSCtBounds,
+        D2S: GGLWEInfos,
+        S2D: GGLWEInfos,
+    {
+        ckks_encapsulated_mod_up_tmp_bytes_reference(self, dst_infos, src_infos, dense_to_sparse_infos, sparse_to_dense_infos)
+    }
+
+    fn ckks_encapsulated_mod_up_reference<Dst, Src>(
+        &self,
+        dst: &mut Dst,
+        src: &mut Src,
+        scale_up: usize,
+        dense_to_sparse: &GGLWEPreparedBackendRef<'_, BE>,
+        sparse_to_dense: &GGLWEPreparedBackendRef<'_, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Module<BE>: GLWECopy<BE> + GLWEShift<BE> + GLWEKeyswitch<BE> + CKKSPow2Ops<BE>,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    {
+        ckks_encapsulated_mod_up_reference(self, dst, src, scale_up, dense_to_sparse, sparse_to_dense, scratch)
+    }
+}
+
 fn ensure_unit_circle_exp_context<BE: Backend, F>(op: &'static str, ctx: &BootstrappingContextPrepared<BE, F>) -> Result<()> {
     ckks_ensure_operand!(
         op,
@@ -2066,8 +2268,7 @@ fn ckks_eval_encoded_lut<BE, F, K, C, R>(
 ) -> Result<()>
 where
     BE: Backend,
-    Module<BE>: CKKSModuleAlloc<BE>
-        + CKKSConjugateOps<BE>
+    Module<BE>: CKKSConjugateOps<BE>
         + CKKSAddOps<BE>
         + CKKSSubOps<BE>
         + CKKSEvalModOps<BE>
@@ -2117,8 +2318,7 @@ fn eval_lut_batch<BE, F, K, C>(
 ) -> Result<()>
 where
     BE: Backend,
-    Module<BE>: CKKSModuleAlloc<BE>
-        + CKKSConjugateOps<BE>
+    Module<BE>: CKKSConjugateOps<BE>
         + CKKSAddOps<BE>
         + CKKSSubOps<BE>
         + CKKSEvalModOps<BE>

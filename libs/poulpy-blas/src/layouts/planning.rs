@@ -981,7 +981,7 @@ pub fn blas_matvec_diagonal_max_base2k<BE: MaxBase2k>(
 
 #[cfg(test)]
 mod tests {
-    use poulpy_ckks::{CoeffsMeta, layouts::CKKSModuleAlloc};
+    use poulpy_ckks::{CoeffsMeta, layouts::CKKSCiphertextAlloc};
     use poulpy_core::layouts::Base2K;
     use poulpy_hal::layouts::{CyclotomicOrder, HostBytesBackend};
 

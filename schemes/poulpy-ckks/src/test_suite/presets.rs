@@ -32,12 +32,12 @@ use poulpy_hal::{
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSLayout, CKKSResult, GLWEPlaintextMeta, SetCKKSInfos, SlotsKind,
     api::{
-        CKKSAllOpsTmpBytes, CKKSBootstrappingCIOps, CKKSBootstrappingOps, CKKSDFTMatrixOps, CKKSDFTOps, CKKSDecryptOps,
-        CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, CKKSEncryptOps, CKKSEvalModOps,
+        CKKSAllOpsTmpBytes, CKKSBootstrappingCIOps, CKKSBootstrappingOps, CKKSDFTMatrixOps, CKKSDFTMatrixPreparedFactory,
+        CKKSDFTOps, CKKSDecryptOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, CKKSEncryptOps, CKKSEvalModOps,
     },
     layouts::{
-        BootstrappingContextPrepared, BootstrappingKeysLayout, BootstrappingPlan, CIConversion, CKKSCiphertextOwned,
-        CKKSModuleAlloc, CKKSPlaintextOwned, EvalModRing,
+        BootstrappingContextPrepared, BootstrappingKeysLayout, BootstrappingPlan, CIConversion, CKKSCiphertextAlloc,
+        CKKSCiphertextOwned, CKKSPlaintextAlloc, CKKSPlaintextOwned, EvalModRing,
     },
     presets::bootstrapping::{BootstrappingPreset, all},
     test_suite::helpers::{
@@ -91,7 +91,6 @@ pub trait PresetRunModule<BE: Backend>:
     ModuleNew<BE>
     + ModuleSynchronize<BE>
     + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
-    + CKKSModuleAlloc<BE>
     + CKKSAllOpsTmpBytes<BE>
     + CKKSEncodingOps<BE, f64>
     + CKKSBootstrappingOps<BE>
@@ -108,7 +107,6 @@ impl<BE: Backend, M> PresetRunModule<BE> for M where
     M: ModuleNew<BE>
         + ModuleSynchronize<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
-        + CKKSModuleAlloc<BE>
         + CKKSAllOpsTmpBytes<BE>
         + CKKSEncodingOps<BE, f64>
         + CKKSBootstrappingOps<BE>
@@ -159,7 +157,7 @@ impl<BE, BC> BootstrappingPresetRun<BE, BC>
 where
     BE: Backend<Ring = Standard, ZnxWord = i64> + HostStaged + 'static,
     BC: TestContextBackend<Ring = Standard>,
-    Module<BE>: PresetRunModule<BE>,
+    Module<BE>: CKKSDFTMatrixPreparedFactory<BE> + PresetRunModule<BE>,
     Module<BC>: TestContextModule<BC> + CKKSEncodingOps<BC, f64>,
     for<'a> <BC as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BC as Backend>::BufMut<'a>: HostDataMut,
@@ -261,10 +259,9 @@ where
     /// [`CIBackend`] of the evaluated backend and of the client.
     pub fn setup_ci(preset: BootstrappingPreset) -> Self
     where
-        Module<BE>: CKKSBootstrappingCIOps<BE> + CKKSDFTOps<BE> + GLWECIKeyPreparedFactory<BE>,
+        Module<BE>: CKKSDFTMatrixPreparedFactory<BE> + CKKSBootstrappingCIOps<BE> + CKKSDFTOps<BE> + GLWECIKeyPreparedFactory<BE>,
         Module<CIBackend<BE>>: ModuleNew<CIBackend<BE>>
             + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
-            + CKKSModuleAlloc<CIBackend<BE>>
             + CKKSEncodingOps<CIBackend<BE>, f64>
             + GLWETensorKeyPreparedFactory<CIBackend<BE>>,
         ScratchOwned<CIBackend<BE>>: ScratchOwnedAlloc<CIBackend<BE>>,
@@ -279,10 +276,9 @@ where
     /// `roundtrip_keys`.
     fn setup_ci_with_roundtrip(preset: BootstrappingPreset, roundtrip_keys: bool) -> Self
     where
-        Module<BE>: CKKSBootstrappingCIOps<BE> + CKKSDFTOps<BE> + GLWECIKeyPreparedFactory<BE>,
+        Module<BE>: CKKSDFTMatrixPreparedFactory<BE> + CKKSBootstrappingCIOps<BE> + CKKSDFTOps<BE> + GLWECIKeyPreparedFactory<BE>,
         Module<CIBackend<BE>>: ModuleNew<CIBackend<BE>>
             + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
-            + CKKSModuleAlloc<CIBackend<BE>>
             + CKKSEncodingOps<CIBackend<BE>, f64>
             + GLWETensorKeyPreparedFactory<CIBackend<BE>>,
         ScratchOwned<CIBackend<BE>>: ScratchOwnedAlloc<CIBackend<BE>>,
@@ -398,13 +394,13 @@ where
     fn encrypt_input(&mut self, slots: SlotsKind) {
         let (n, base2k, input_layout) = (self.preset.n(), self.preset.base2k(), self.preset.input_layout());
         let client = &self.client;
-        let mut input_pt = client.ckks_pt_vec_alloc(n / 2, base2k.into(), input_layout.k());
+        let mut input_pt = client.ckks_plaintext_alloc_from_slots(n / 2, base2k.into(), input_layout.k());
         input_pt.set_meta(GLWEPlaintextMeta {
             slots,
             ..input_layout.meta()
         });
         client
-            .ckks_encode_reim_into(&mut input_pt, &self.want_re, &self.want_im, &mut self.client_scratch.borrow())
+            .ckks_encode_slots_host_into(&mut input_pt, &self.want_re, &self.want_im, &mut self.client_scratch.borrow())
             .unwrap();
 
         let mut client_input = client.ckks_ciphertext_alloc_from_glwe_infos(&input_layout);
@@ -484,9 +480,11 @@ where
             .log_budget()
             .min(PRECISION_LOG_BUDGET)
             .min(127usize.saturating_sub(output.log_delta()));
-        let mut output_pt =
-            self.client
-                .ckks_pt_vec_alloc(self.preset.n() / 2, output.base2k(), (output.log_delta() + log_budget).into());
+        let mut output_pt = self.client.ckks_plaintext_alloc_from_slots(
+            self.preset.n() / 2,
+            output.base2k(),
+            (output.log_delta() + log_budget).into(),
+        );
         output_pt.set_meta(GLWEPlaintextMeta {
             scale: Scale::Log(output.log_delta()),
             slots: SlotsKind::Complex,
@@ -498,7 +496,7 @@ where
         let n = self.preset.n();
         let (mut got_re, mut got_im) = (vec![0.0; n / 2], vec![0.0; n / 2]);
         self.client
-            .ckks_decode_reim_into(&output_pt, &mut got_re, &mut got_im, &mut self.client_scratch.borrow())
+            .ckks_decode_slots_host_into(&output_pt, &mut got_re, &mut got_im, &mut self.client_scratch.borrow())
             .unwrap();
         let log_delta = self.preset.log_delta();
         (
@@ -559,14 +557,14 @@ pub fn bootstrapping_presets_meet_precision<BE>()
 where
     BE: TestContextBackend<Ring = Standard> + HostStaged + MaxBase2k,
     CIBackend<BE>: TestContextBackend + MaxBase2k,
-    Module<BE>: TestContextModule<BE>
+    Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + TestContextModule<BE>
         + PresetRunModule<BE>
         + CKKSDFTOps<BE>
         + CKKSBootstrappingCIOps<BE>
         + GLWECIKeyEncryptSk<BE>
         + GLWECIKeyPreparedFactory<BE>,
     Module<CIBackend<BE>>: TestContextSharedModule<CIBackend<BE>>
-        + CKKSModuleAlloc<CIBackend<BE>>
         + CKKSEncodingOps<CIBackend<BE>, f64>
         + GLWETensorKeyPreparedFactory<CIBackend<BE>>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
@@ -587,10 +585,13 @@ where
     CIBackend<BE>: MaxBase2k,
     BC: TestContextBackend<Ring = Standard>,
     CIBackend<BC>: TestContextBackend,
-    Module<BE>: PresetRunModule<BE> + CKKSDFTOps<BE> + CKKSBootstrappingCIOps<BE> + GLWECIKeyPreparedFactory<BE>,
+    Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + PresetRunModule<BE>
+        + CKKSDFTOps<BE>
+        + CKKSBootstrappingCIOps<BE>
+        + GLWECIKeyPreparedFactory<BE>,
     Module<CIBackend<BE>>: ModuleNew<CIBackend<BE>>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
-        + CKKSModuleAlloc<CIBackend<BE>>
         + CKKSEncodingOps<CIBackend<BE>, f64>
         + GLWETensorKeyPreparedFactory<CIBackend<BE>>,
     Module<BC>: TestContextModule<BC> + CKKSEncodingOps<BC, f64> + CKKSBootstrappingCIOps<BC> + GLWECIKeyEncryptSk<BC>,
@@ -656,14 +657,14 @@ pub fn small_s2c_preset_meets_precision<BE>()
 where
     BE: TestContextBackend<Ring = Standard> + HostStaged + MaxBase2k,
     CIBackend<BE>: TestContextBackend + MaxBase2k,
-    Module<BE>: TestContextModule<BE>
+    Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + TestContextModule<BE>
         + PresetRunModule<BE>
         + CKKSDFTOps<BE>
         + CKKSBootstrappingCIOps<BE>
         + GLWECIKeyEncryptSk<BE>
         + GLWECIKeyPreparedFactory<BE>,
     Module<CIBackend<BE>>: TestContextSharedModule<CIBackend<BE>>
-        + CKKSModuleAlloc<CIBackend<BE>>
         + CKKSEncodingOps<CIBackend<BE>, f64>
         + GLWETensorKeyPreparedFactory<CIBackend<BE>>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
@@ -740,7 +741,7 @@ where
 pub fn small_c2s_preset_meets_precision<BE>()
 where
     BE: TestContextBackend<Ring = Standard> + HostStaged + MaxBase2k,
-    Module<BE>: TestContextModule<BE> + PresetRunModule<BE>,
+    Module<BE>: CKKSDFTMatrixPreparedFactory<BE> + TestContextModule<BE> + PresetRunModule<BE>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
@@ -781,10 +782,13 @@ where
     CIBackend<BE>: MaxBase2k,
     BC: TestContextBackend<Ring = Standard>,
     CIBackend<BC>: TestContextBackend,
-    Module<BE>: PresetRunModule<BE> + CKKSDFTOps<BE> + CKKSBootstrappingCIOps<BE> + GLWECIKeyPreparedFactory<BE>,
+    Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + PresetRunModule<BE>
+        + CKKSDFTOps<BE>
+        + CKKSBootstrappingCIOps<BE>
+        + GLWECIKeyPreparedFactory<BE>,
     Module<CIBackend<BE>>: ModuleNew<CIBackend<BE>>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
-        + CKKSModuleAlloc<CIBackend<BE>>
         + CKKSEncodingOps<CIBackend<BE>, f64>
         + GLWETensorKeyPreparedFactory<CIBackend<BE>>,
     Module<BC>: TestContextModule<BC> + CKKSEncodingOps<BC, f64> + CKKSBootstrappingCIOps<BC> + GLWECIKeyEncryptSk<BC>,
@@ -820,14 +824,14 @@ pub fn bootstrapping_plan_keys_match_context<BE>()
 where
     BE: TestContextBackend<Ring = Standard> + HostStaged + MaxBase2k,
     CIBackend<BE>: TestContextBackend + MaxBase2k,
-    Module<BE>: TestContextModule<BE>
+    Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + TestContextModule<BE>
         + PresetRunModule<BE>
         + CKKSDFTOps<BE>
         + CKKSBootstrappingCIOps<BE>
         + GLWECIKeyEncryptSk<BE>
         + GLWECIKeyPreparedFactory<BE>,
     Module<CIBackend<BE>>: TestContextSharedModule<CIBackend<BE>>
-        + CKKSModuleAlloc<CIBackend<BE>>
         + CKKSEncodingOps<CIBackend<BE>, f64>
         + GLWETensorKeyPreparedFactory<CIBackend<BE>>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
@@ -1044,7 +1048,8 @@ pub fn ci_bootstrap_refuses_invalid_inputs<BE>()
 where
     BE: TestContextBackend<Ring = Standard>,
     CIBackend<BE>: TestContextBackend,
-    Module<BE>: TestContextModule<BE>
+    Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + TestContextModule<BE>
         + CKKSEncodingOps<BE, f64>
         + CKKSBootstrappingOps<BE>
         + CKKSDFTOps<BE>
@@ -1218,7 +1223,7 @@ pub(crate) fn compile_context<BE, F>(
 where
     BE: Backend,
     F: CKKSEncodingScalar,
-    Module<BE>: CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F> + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
+    Module<BE>: CKKSDFTMatrixPreparedFactory<BE> + CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F> + CKKSEncodingOps<BE, F>,
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + GLWEDiagonalProd<BE> + LWEInfos,
 {
     let bytes = BootstrappingContextPrepared::<BE, F>::compile_unprepared_tmp_bytes(module, plan).unwrap();
@@ -1238,9 +1243,12 @@ fn compile_ci<BE>(
 ) -> BootstrappingContextPrepared<BE, f64>
 where
     BE: Backend<Ring = Standard>,
-    Module<BE>:
-        CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, f64> + CKKSDFTMatrixOps<BE, f64> + CKKSBootstrappingCIOps<BE> + CKKSDFTOps<BE>,
-    Module<CIBackend<BE>>: CKKSModuleAlloc<CIBackend<BE>> + CKKSEncodingOps<CIBackend<BE>, f64>,
+    Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + CKKSEncodingOps<BE, f64>
+        + CKKSDFTMatrixOps<BE, f64>
+        + CKKSBootstrappingCIOps<BE>
+        + CKKSDFTOps<BE>,
+    Module<CIBackend<BE>>: CKKSEncodingOps<CIBackend<BE>, f64>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
     ScratchOwned<CIBackend<BE>>: ScratchOwnedAlloc<CIBackend<BE>>,
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::GLWEDiagonalProd<BE>,

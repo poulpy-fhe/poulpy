@@ -8,8 +8,11 @@ use std::{
 use poulpy_ckks::{
     CKKSCompositionError, CKKSInfos, CKKSLayout, CKKSModuleInfos, CKKSResult, CoeffsMeta, GLWEPlaintextInfos, GLWEPlaintextMeta,
     Scale, SetCKKSInfos, SetGLWEPlaintextInfos, SlotsKind,
-    api::{CKKSEncodingOps, CKKSEncodingScalar, CKKSLinearTransformationOps, CKKSMulOps, LinearTransformationPrepared},
-    layouts::{CKKSCiphertext, CKKSModuleAlloc},
+    api::{
+        CKKSEncodingOps, CKKSEncodingScalar, CKKSLinearTransformationOps, CKKSMulOps, CKKSRightOperandPreparedFactory,
+        LinearTransformationPrepared,
+    },
+    layouts::{CKKSCiphertext, CKKSCiphertextAlloc},
     test_suite::{
         CKKSTestParams,
         helpers::{TestContextBackend, TestContextSharedModule, TestScalar, assert_decrypt_precision_at_log_delta, ckks_encrypt},
@@ -298,10 +301,7 @@ pub fn alloc_grid<BE: Backend>(
     rows: usize,
     cols: usize,
     k: usize,
-) -> BlasCiphertextOwned<BE>
-where
-    Module<BE>: CKKSModuleAlloc<BE>,
-{
+) -> BlasCiphertextOwned<BE> {
     let block = CKKSLayout {
         glwe_layout: GLWELayout {
             k: k.into(),
@@ -489,7 +489,6 @@ where
 pub fn foreign_layouts<BE>(module: &Module<BE>, grid: &impl BlasGridInfos) -> [(&'static str, BlasCiphertextOwned<BE>); 3]
 where
     BE: Backend,
-    Module<BE>: CKKSModuleAlloc<BE>,
 {
     let alloc = |edit: fn(&mut GLWELayout)| {
         let mut block = grid.block_layout();
@@ -674,8 +673,11 @@ pub fn pt_operand<BE, F, S>(
 ) -> BlasPtOperandPrepared<BE, S>
 where
     BE: Backend + BlasEncodingImpl,
-    Module<BE>:
-        CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F> + BlasEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CKKSMulOps<BE>,
+    Module<BE>: CKKSRightOperandPreparedFactory<BE>
+        + CKKSEncodingOps<BE, F>
+        + BlasEncodingOps<BE, F>
+        + CKKSLinearTransformationOps<BE>
+        + CKKSMulOps<BE>,
     F: DiagonalArithmetic + CKKSEncodingScalar,
     S: BlasPtSide,
 {
@@ -926,7 +928,7 @@ pub fn encoded_context<BE, F>(
 ) -> BlasContextPrepared<BE>
 where
     BE: Backend + BlasEncodingImpl,
-    Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F> + BlasEncodingOps<BE, F> + CKKSLinearTransformationOps<BE>,
+    Module<BE>: CKKSEncodingOps<BE, F> + BlasEncodingOps<BE, F> + CKKSLinearTransformationOps<BE>,
     F: DiagonalArithmetic + CKKSEncodingScalar,
 {
     let mut ctx = module.blas_context_alloc(plan, base2k, coeffs_meta);

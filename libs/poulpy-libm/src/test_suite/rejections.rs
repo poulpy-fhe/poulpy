@@ -165,8 +165,11 @@ where
     ));
 
     // An inner poulpy-ckks refusal keeps its type through the libm context.
-    let err = rejects!("ckks_log budget", "ckks_eval_approximation cannot consume", |r, s| module
-        .ckks_log(r, &low, &log, tsk, s));
+    let err = rejects!(
+        "ckks_log budget",
+        "ckks_polynomial_approximation_eval cannot consume",
+        |r, s| module.ckks_log(r, &low, &log, tsk, s)
+    );
     assert!(
         err.downcast_ref::<CKKSError>().is_some(),
         "ckks_log: the poulpy-ckks error lost its type"

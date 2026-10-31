@@ -30,8 +30,11 @@ use super::{context::PaCoContext, plan::PaCoPlan};
 use crate::encoding::paco::cpx::Cpx;
 use crate::layouts::DftScalar;
 use crate::{
-    api::{CKKSEncodingOps, PaCoScalar},
-    layouts::{CKKSEncodingBuffer, ScratchArenaTakeCKKS, copy_encoding_buffer_into_reim_host, copy_host_into_encoding_buffer},
+    api::{CKKSEncodingOps, CKKSPaCoScalar},
+    layouts::{
+        CKKSEncodingBuffer, ScratchArenaTakeCKKSEncodingBuffer, copy_encoding_buffer_into_reim_host,
+        copy_host_into_encoding_buffer,
+    },
 };
 
 /// Packs one raw chunk (length `n = 2hC`, `h` blocks of `2C` complex
@@ -84,7 +87,7 @@ impl<F: DftScalar> PaCoPackingWorkspace<F> {
 
 /// Transform-parameterized packing core: `transform` is the `2C`-slot
 /// coefficient → slot transform (a reference FFT in tests or a backend's
-/// [`ckks_coeffs_to_slots_assign`](crate::oep::CKKSEncodingImpl::ckks_coeffs_to_slots_assign)
+/// [`ckks_encoding_buffer_coeffs_to_slots_assign`](crate::oep::CKKSEncodingImpl::ckks_encoding_buffer_coeffs_to_slots_assign)
 /// on the operation path). Both paths realize the identical packing map.
 pub(crate) fn pack_chunk_into_with<F, T>(
     p: &PaCoPlan,
@@ -452,7 +455,7 @@ impl PaCoSecretSpec {
     /// packing transform dispatches through `module`'s CKKS encoding plans and
     /// uses the caller's standard arena. The returned vectors each have `N/2`
     /// entries and can be passed to
-    /// [`CKKSEncodingHostOps::ckks_encode_reim_into`](crate::api::CKKSEncodingHostOps::ckks_encode_reim_into).
+    /// [`CKKSEncodingHostOps::ckks_encode_slots_host_into`](crate::api::CKKSEncodingHostOps::ckks_encode_slots_host_into).
     pub fn sigma_slots_reim<BE, F>(
         &self,
         module: &Module<BE>,
@@ -463,7 +466,7 @@ impl PaCoSecretSpec {
     where
         BE: Backend<Ring = Standard>,
         Module<BE>: CKKSEncodingOps<BE, F>,
-        F: PaCoScalar,
+        F: CKKSPaCoScalar,
     {
         let plan = context.plan();
         self.check(plan)?;
@@ -478,7 +481,7 @@ impl PaCoSecretSpec {
             scratch.scope(|arena| {
                 let (mut values, _) = arena.take_ckks_encoding_buffer_scratch::<F>(coeffs.len());
                 copy_host_into_encoding_buffer::<BE, F, _>(&mut values, coeffs)?;
-                module.ckks_coeffs_to_slots_assign(&mut values)?;
+                module.ckks_encoding_buffer_coeffs_to_slots_assign(&mut values)?;
                 copy_encoding_buffer_into_reim_host::<BE, F, _>(&values, re, im)
             })
         })?;

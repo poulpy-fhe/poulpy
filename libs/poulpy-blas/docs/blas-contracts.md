@@ -208,7 +208,7 @@ sigma (tau) once, then by one map per block, two scales. `JklsStored` and
 `JklsGalois` put JKLS's masks on the ciphertext: that first map, then the
 context's masks of its results, phi^k on the right and the column halves of
 psi^k on the left, then one sum of products by prepared public plaintexts
-(poulpy-ckks's `ckks_dot_product_prepared_pt`), three scales; `JklsStored`
+(poulpy-ckks's `ckks_dot_product_prepared_pt_vec`), three scales; `JklsStored`
 stores `d` plaintexts per block on the right and `2d - 1` on the left,
 `JklsGalois` one, read through the Galois elements of their rotations. On the
 right these two take one public matrix. Each path is its own circuit. The

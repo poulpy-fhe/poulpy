@@ -8,7 +8,7 @@ use poulpy_ckks::{
         CKKSModuleInfos, Diagonal, GiantStep, LinearTransformation, LinearTransformationLayout, LinearTransformationPrepared,
         LtDiagonalMeta, PreparedDiagonal,
     },
-    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc},
+    layouts::{CKKSCiphertextAlloc, CKKSCiphertextOwned},
 };
 use poulpy_core::{
     GLWEBytesOf, GLWEDiagonalProd,
@@ -258,7 +258,7 @@ fn append_galois_elements(cyclotomic_order: i64, infos: &impl BlasDiagonalCipher
 pub(crate) fn alloc<BE, M>(module: &M, layout: &BlasDiagonalCiphertextLayout) -> BlasDiagonalCiphertext<BE>
 where
     BE: Backend,
-    M: CKKSModuleAlloc<BE> + GetDegree,
+    M: CKKSCiphertextAlloc<BE> + CKKSModuleInfos + GetDegree,
 {
     assert_fits(module, layout);
     let plan = layout.lt.index();
@@ -331,7 +331,7 @@ mod tests {
     use poulpy_ckks::{
         Scale,
         api::{LinearTransformationStrategy, ckks_linear_transformation_output_layout},
-        layouts::CKKSModuleAlloc,
+        layouts::CKKSCiphertextAlloc,
     };
     use poulpy_hal::layouts::{CyclotomicOrder, HostBytesBackend, Module};
 

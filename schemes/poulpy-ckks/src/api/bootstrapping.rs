@@ -17,8 +17,8 @@ use crate::{
 /// EvalMod, and SlotsToCoeffs are reused from their own op traits:
 ///
 /// - CoeffsToSlots / SlotsToCoeffs via [`CKKSDFTOps`](crate::api::CKKSDFTOps)
-///   ([`ckks_coeffs_to_slots`](crate::api::CKKSDFTOps::ckks_coeffs_to_slots),
-///   [`ckks_slots_to_coeffs`](crate::api::CKKSDFTOps::ckks_slots_to_coeffs), and their
+///   ([`ckks_coeffs_to_slots_assign`](crate::api::CKKSDFTOps::ckks_coeffs_to_slots_assign),
+///   [`ckks_slots_to_coeffs_assign`](crate::api::CKKSDFTOps::ckks_slots_to_coeffs_assign), and their
 ///   `_split` / `_repack` variants);
 /// - EvalMod via [`CKKSEvalModOps`](crate::api::CKKSEvalModOps)
 ///   ([`ckks_eval_mod`](crate::api::CKKSEvalModOps::ckks_eval_mod)).

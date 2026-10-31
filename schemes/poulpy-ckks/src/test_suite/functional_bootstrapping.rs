@@ -17,12 +17,12 @@ use poulpy_hal::{
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos, SlotsKind,
     api::{
-        CKKSAllOpsTmpBytes, CKKSBootstrappingOps, CKKSDFTMatrixOps, CKKSDFTOps, CKKSEncodingOps, CKKSEvalModOps,
-        CKKSPolynomialEvaluationOps,
+        CKKSAllOpsTmpBytes, CKKSBootstrappingOps, CKKSDFTMatrixOps, CKKSDFTMatrixPreparedFactory, CKKSDFTOps, CKKSEncodingOps,
+        CKKSEvalModOps, CKKSPolynomialEvaluationOps,
     },
     layouts::{
-        BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques, CKKSCiphertextOwned,
-        CKKSModuleAlloc, CKKSPlaintextOwned, DFTOutputFormat, DFTPlan, DFTType, EncapsulationKeysLayout, EncodedLut,
+        BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques, CKKSCiphertextAlloc,
+        CKKSCiphertextOwned, CKKSPlaintextOwned, DFTOutputFormat, DFTPlan, DFTType, EncapsulationKeysLayout, EncodedLut,
         SparseSecretEncapsulation, eval_mod::EvalModPlan,
     },
     polynomial::SplitStrategy,
@@ -60,7 +60,8 @@ pub fn test_functional_bootstrapping_e2e<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend<Ring = Standard> + Backend<OwnedBuf = AlignedBuf>,
-    Module<BE>: TestContextModule<BE>
+    Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSBootstrappingOps<BE>
         + CKKSDFTOps<BE>
@@ -89,7 +90,8 @@ pub fn test_functional_bootstrapping_non_power_of_two_e2e<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend<Ring = Standard> + Backend<OwnedBuf = AlignedBuf>,
-    Module<BE>: TestContextModule<BE>
+    Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSBootstrappingOps<BE>
         + CKKSDFTOps<BE>
@@ -121,7 +123,8 @@ pub fn test_functional_bootstrapping_multi_e2e<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend<Ring = Standard> + Backend<OwnedBuf = AlignedBuf>,
-    Module<BE>: TestContextModule<BE>
+    Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSBootstrappingOps<BE>
         + CKKSDFTOps<BE>
@@ -148,7 +151,8 @@ pub fn test_functional_bootstrapping_binary_e2e<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend<Ring = Standard> + Backend<OwnedBuf = AlignedBuf>,
-    Module<BE>: TestContextModule<BE>
+    Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSBootstrappingOps<BE>
         + CKKSDFTOps<BE>
@@ -182,7 +186,8 @@ fn run_case<BE, F, E>(
     first_factor_on_raise: bool,
 ) where
     BE: TestContextBackend<Ring = Standard> + Backend<OwnedBuf = AlignedBuf>,
-    Module<BE>: TestContextModule<BE>
+    Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSBootstrappingOps<BE>
         + CKKSDFTOps<BE>

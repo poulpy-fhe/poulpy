@@ -14,7 +14,7 @@ use poulpy_hal::layouts::{Backend, HostBytesBackend, Module, ScratchArena};
 use poulpy_ckks::{
     CKKSCtBounds, CKKSInfos, CKKSLayout, SetCKKSInfos,
     api::{CKKSAddOps, CKKSMulOps},
-    layouts::{CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar, ScratchArenaTakeCKKS},
+    layouts::{CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar, ScratchArenaTakeCKKSCiphertext},
 };
 
 use crate::{
@@ -185,11 +185,11 @@ pub trait CKKSRootOps<BE: Backend> {
     ///
     /// # Metadata
     ///
-    /// As `ckks_eval_approximation` of the square-root polynomial on `x^2 + y^2`, computed at the layout of `x`.
+    /// As `ckks_polynomial_approximation_eval` of the square-root polynomial on `x^2 + y^2`, computed at the layout of `x`.
     ///
     /// # Errors
     ///
-    /// The errors of the squares, the sum and `ckks_eval_approximation`, the last call and the only write of `res`.
+    /// The errors of the squares, the sum and `ckks_polynomial_approximation_eval`, the last call and the only write of `res`.
     fn ckks_hypot<R, X, Y, P, H>(
         &self,
         res: &mut R,
@@ -227,7 +227,7 @@ where
         sum + self
             .ckks_square_tmp_bytes(x, x, tsk)
             .max(y2 + self.ckks_square_tmp_bytes(y, y, tsk).max(self.ckks_add_tmp_bytes(x.size())))
-            .max(self.ckks_approximation_tmp_bytes(res, x, &plan.sqrt, tsk))
+            .max(self.ckks_polynomial_approximation_eval_tmp_bytes(res, x, &plan.sqrt, tsk))
     }
 
     fn ckks_hypot<R, X, Y, P, H>(
@@ -254,7 +254,7 @@ where
                 self.ckks_square_into(&mut y2, y, tsk, &mut stage)?;
                 self.ckks_add_assign(&mut sum, &y2, &mut stage)
             })?;
-            self.ckks_eval_approximation(res, &sum, &plan.sqrt, tsk, &mut scratch_local)?;
+            self.ckks_polynomial_approximation_eval(res, &sum, &plan.sqrt, tsk, &mut scratch_local)?;
             Ok(())
         })
     }

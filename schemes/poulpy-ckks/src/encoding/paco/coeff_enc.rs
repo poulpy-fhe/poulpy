@@ -21,10 +21,10 @@ use anyhow::{Context, Result, ensure};
 use poulpy_core::layouts::{Base2K, GLWE, GLWEInfos, LWEInfos};
 use poulpy_hal::layouts::{Backend, HostDataRef, Module, Standard, VecZnx};
 
-use crate::api::{CKKSEncodingOps, PaCoScalar};
+use crate::api::{CKKSEncodingOps, CKKSPaCoScalar};
 use crate::{
     GLWEPlaintextMeta, Scale,
-    layouts::{CKKSEncodingBuffer, CKKSModuleAlloc},
+    layouts::{CKKSEncodingBuffer, CKKSPlaintextAlloc},
 };
 
 use std::fmt::Debug;
@@ -146,7 +146,7 @@ fn beta_raw_chunk_into_validated<F: DftScalar>(
 
 /// Transform-parameterized β core shared by reference tests and the backend
 /// operation path
-/// ([`ckks_coeffs_to_slots_assign`](crate::oep::CKKSEncodingImpl::ckks_coeffs_to_slots_assign)).
+/// ([`ckks_encoding_buffer_coeffs_to_slots_assign`](crate::oep::CKKSEncodingImpl::ckks_encoding_buffer_coeffs_to_slots_assign)).
 pub(crate) fn coeff_encodings_with<F, T>(ct0: &[i64], ct1: &[i64], p: &PaCoPlan, transform: &mut T) -> Result<[Vec<Cpx<F>>; 4]>
 where
     F: DftScalar + Debug,
@@ -192,7 +192,7 @@ where
 ///
 /// Returns an error for incompatible degree/rank/radix metadata,
 /// non-representable coefficients, or a failed encoding.
-pub fn paco_coeff_encodings_host<BE, D, F>(
+pub fn ckks_paco_coeff_encodings_host<BE, D, F>(
     module: &Module<BE>,
     base2k: Base2K,
     ct: &GLWE<D, BE::ZnxWord>,
@@ -203,9 +203,9 @@ where
     // `decode_vec_i64` path, so it applies only to an i64-word backend. Device
     // backends bypass it via the OEP impl.
     BE: Backend<ZnxWord = i64, Ring = Standard>,
-    Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
+    Module<BE>: CKKSPlaintextAlloc<BE> + CKKSEncodingOps<BE, F>,
     D: HostDataRef,
-    F: PaCoScalar,
+    F: CKKSPaCoScalar,
 {
     let log_delta = plan.log_delta_bsk();
     let k_pt = log_delta
@@ -233,7 +233,7 @@ where
     let mut block_buffer = CKKSEncodingBuffer::<BE::OwnedBuf, F>::from_host::<BE>(&vec![F::zero(); block_coeff_count]);
     let beta = coeff_encodings_with::<F, _>(&ct0, &ct1, plan, &mut |coeffs, re, im| {
         block_buffer.copy_from_host::<BE>(coeffs);
-        module.ckks_coeffs_to_slots_assign(&mut block_buffer)?;
+        module.ckks_encoding_buffer_coeffs_to_slots_assign(&mut block_buffer)?;
         let values = block_buffer.to_host::<BE>();
         re.copy_from_slice(&values[..re.len()]);
         im.copy_from_slice(&values[re.len()..]);
@@ -256,7 +256,7 @@ where
             *re_slot = value.re;
             *im_slot = value.im;
         }
-        let mut pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), base2k, k_pt.into());
+        let mut pt = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), base2k, k_pt.into());
         pt.set_meta_checked(GLWEPlaintextMeta {
             scale: Scale::Log(log_delta),
             slots: SlotsKind::Complex,
@@ -265,7 +265,7 @@ where
         encoding_values[..re.len()].copy_from_slice(&re);
         encoding_values[re.len()..].copy_from_slice(&im);
         encoding_buffer.copy_from_host::<BE>(&encoding_values);
-        module.ckks_encode_slots_assign_into(&mut pt, &mut encoding_buffer)?;
+        module.ckks_encode_slots_into(&mut pt, &mut encoding_buffer)?;
         out.push(pt);
     }
     out.try_into().map_err(|values: Vec<_>| {

@@ -3,7 +3,7 @@
 use poulpy_ckks::{
     CKKSInfos, GLWEPlaintextInfos, GLWEPlaintextMeta, SetCKKSInfos, SetGLWEPlaintextInfos, SlotsKind,
     api::{CKKSAddOps, CKKSEncodingOps, CKKSLinearTransformationOps, CKKSModuleInfos, LtDiagonalMeta},
-    layouts::CKKSModuleAlloc,
+    layouts::CKKSPlaintextAlloc,
     test_suite::{
         CKKSTestParams,
         helpers::{
@@ -732,7 +732,7 @@ pub fn test_blas_batch_record<BE, F, E>(
             .blocks(count * d * d)
             .iter()
             .map(|(re, im)| {
-                let mut pt = host_module.ckks_pt_coeffs_alloc(degree, params.base2k.into(), prec.k());
+                let mut pt = host_module.ckks_plaintext_alloc(degree.into(), params.base2k.into(), prec.k());
                 pt.set_meta(prec.meta);
                 encoder.encode_reim(&mut pt, &to_f::<F>(re), &to_f::<F>(im)).unwrap();
                 ckks_encrypt_pt(&params, module, &sk, params.k, &pt, scratch)
@@ -774,7 +774,7 @@ pub fn test_blas_batch_record<BE, F, E>(
     );
 
     let (re, im) = &Grid::model(log_d, 1, 1, lanes, 2).blocks(slots)[0];
-    let mut dense = host_module.ckks_pt_vec_alloc(host_module.ckks_max_slots(), params.base2k.into(), prec.k());
+    let mut dense = host_module.ckks_plaintext_alloc_from_slots(host_module.ckks_max_slots(), params.base2k.into(), prec.k());
     dense.set_meta(prec.meta);
     encoder.encode_reim(&mut dense, &to_f::<F>(re), &to_f::<F>(im)).unwrap();
     let dense = upload_pt(module, &dense);

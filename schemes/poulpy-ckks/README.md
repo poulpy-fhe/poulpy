@@ -256,10 +256,10 @@ operations derive their working width from the input ciphertext and the key's
 
 Slot and coefficient encoding are backend-resident operations on `Module<BE>`,
 exposed by `api::CKKSEncodingOps<BE, F>`:
-`ckks_encode_slots_assign_into` / `ckks_decode_slots_into` operate on a
+`ckks_encode_slots_into` / `ckks_decode_slots_into` operate on a
 backend-resident `CKKSEncodingBuffer`, `ckks_encode_coeffs_into` /
 `ckks_decode_coeffs_into` on raw coefficients, and
-`ckks_slots_to_coeffs_assign` / `ckks_coeffs_to_slots_assign` convert a buffer
+`ckks_encoding_buffer_slots_to_coeffs_assign` / `ckks_encoding_buffer_coeffs_to_slots_assign` convert a buffer
 in place. `api::CKKSEncodingHostOps` layers host-slice convenience adapters on
 top:
 
@@ -267,25 +267,25 @@ top:
 use poulpy_ckks::{
     GLWEPlaintextMeta, Scale, SlotsKind,
     api::CKKSEncodingHostOps,
-    layouts::CKKSModuleAlloc,
+    layouts::CKKSPlaintextAlloc,
 };
 
 let m = 8;  // number of complex slots
 let re = vec![0.0f64; m];
 let im = vec![1.0f64; m];
 
-let mut pt = module.ckks_pt_vec_alloc(m, base2k.into(), 50usize.into());
+let mut pt = module.ckks_plaintext_alloc_from_slots(m, base2k.into(), 50usize.into());
 pt.set_meta_checked(GLWEPlaintextMeta {
     scale: Scale::Log(40),
     slots: SlotsKind::Complex,
     log_sparsity: 0,
 })?;
-// The host adapter needs module.ckks_reim_tmp_bytes(m) scratch bytes.
-module.ckks_encode_reim_into(&mut pt, &re, &im, &mut scratch)?;
+// The host adapter needs module.ckks_encoding_host_tmp_bytes(m) scratch bytes.
+module.ckks_encode_slots_host_into(&mut pt, &re, &im, &mut scratch)?;
 
 let mut re_out = vec![0.0f64; m];
 let mut im_out = vec![0.0f64; m];
-module.ckks_decode_reim_into(&pt, &mut re_out, &mut im_out, &mut scratch)?;
+module.ckks_decode_slots_host_into(&pt, &mut re_out, &mut im_out, &mut scratch)?;
 ```
 
 The backend implements `oep::CKKSEncodingImpl<F>` for each supported scalar
@@ -304,7 +304,7 @@ For applications that choose a polynomial from an accuracy target instead of
 fixing its degree, `poulpy_ckks::approximation` provides Remez minimax fitting,
 precision/depth-based degree selection, composite sign coefficients, and
 `PolynomialApproximation`. The latter owns both the prepared BSGS polynomial
-and its interval map; `CKKSApproximationOps::ckks_eval_approximation` applies
+and its interval map; `CKKSApproximationOps::ckks_polynomial_approximation_eval` applies
 that map and evaluates the polynomial in one reusable operation.
 The `_with` selectors accept explicit `RemezOptions` for downstream planners.
 Composite-sign generation can propagate a CKKS error margin between factors.
@@ -323,8 +323,8 @@ power basis built from the encrypted input:
 ```rust,ignore
 use poulpy_ckks::{
     api::CKKSPolynomialEvaluationOps,
-    polynomial::{Basis, EncodeBSGS, Polynomial},
-    power_basis::{PowerBasis, PowerBasisGen},
+    polynomial::{Basis, CKKSPolynomialEncode, Polynomial},
+    power_basis::{PowerBasis, CKKSPowerBasisGen},
 };
 
 // host side: degree-31 Chebyshev interpolation of sin on [-1, 1], in BSGS form

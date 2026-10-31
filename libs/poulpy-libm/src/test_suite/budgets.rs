@@ -19,7 +19,10 @@ use poulpy_hal::{
 use poulpy_ckks::{
     CKKSInfos, CKKSLayout, SetCKKSInfos,
     api::{CKKSAllOpsTmpBytes, CKKSCopyOps},
-    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextOwned, CKKSPlaintextVecHostCodec},
+    layouts::{
+        CKKSCiphertextAlloc, CKKSCiphertextOwned, CKKSPlaintext, CKKSPlaintextAlloc, CKKSPlaintextOwned,
+        CKKSPlaintextVecHostCodec,
+    },
     test_suite::{
         CKKSTestParams,
         helpers::{TestContextBackend, TestContextModule, TestScalar, ckks_spec, gen_atk, gen_sk_with_raw, gen_tsk, upload_pt},
@@ -76,7 +79,7 @@ where
         )
         .expect("SignComposite::from_coeffs");
         let params = params_for(&base, consumed + composite.consumed_bits(log_delta));
-        let mut bounds = host_module.ckks_pt_coeffs_alloc(2, base.base2k.into(), coeff_meta.k());
+        let mut bounds = host_module.ckks_plaintext_alloc(2usize.into(), base.base2k.into(), coeff_meta.k());
         bounds.set_meta(coeff_meta.meta());
         bounds.encode_host_floats(&[-0.5f64, 0.5]).expect("bounds");
         let (sk_raw, _) = gen_sk_with_raw(&params, module, host_module, [0x5Bu8; 32]);

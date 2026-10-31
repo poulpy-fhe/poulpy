@@ -19,12 +19,12 @@ use crate::{
         CKKSNegOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops, CKKSSubOps,
     },
     layouts::{
-        CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, EncodedLut, ScratchArenaTakeCKKS, eval_mod::EvalMod,
-        functional_bootstrapping::DoubleAngleChain,
+        CKKSCiphertextAlloc, CKKSCiphertextOwned, CKKSPlaintextOwned, EncodedLut, ScratchArenaTakeCKKSCiphertext,
+        eval_mod::EvalMod, functional_bootstrapping::DoubleAngleChain,
     },
     numerics::CKKSFloat,
     polynomial::{BSGSPolynomial, ComplexBSGSPolynomial, ComplexPolynomial, Polynomial},
-    power_basis::{PowerBasis, PowerBasisGen},
+    power_basis::{CKKSPowerBasisGen, PowerBasis},
 };
 
 /// Builds the LUT power series `Σ (α_k/2)·E^k`; `T + conj(T)` recovers the
@@ -146,7 +146,7 @@ where
         + CKKSMulOps<BE>
         + CKKSPow2Ops<BE>
         + CKKSSubOps<BE>
-        + CKKSModuleAlloc<BE>
+        + CKKSCiphertextAlloc<BE>
         + GLWENormalize<BE>,
     C: GLWEToBackendRef<BE> + CKKSCtBounds,
     H: GetTensorKey<BE>,
@@ -296,8 +296,7 @@ pub(crate) fn ckks_eval_lut_binary<BE, C, R, H>(
 ) -> Result<()>
 where
     BE: Backend,
-    Module<BE>:
-        CKKSPolynomialEvaluationOps<BE> + CKKSMulOps<BE> + CKKSAddOps<BE> + CKKSSubOps<BE> + CKKSNegOps<BE> + CKKSModuleAlloc<BE>,
+    Module<BE>: CKKSPolynomialEvaluationOps<BE> + CKKSMulOps<BE> + CKKSAddOps<BE> + CKKSSubOps<BE> + CKKSNegOps<BE>,
     C: GLWEToBackendRef<BE> + CKKSCtBounds,
     R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     H: GetTensorKey<BE>,

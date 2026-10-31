@@ -2,7 +2,7 @@ use poulpy_ckks::CKKSResult as Result;
 use poulpy_core::layouts::{GGLWEInfos, GetAutomorphismKey, GetTensorKey};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
-use poulpy_ckks::layouts::CKKSPreparedRight;
+use poulpy_ckks::layouts::CKKSRightOperandPrepared;
 use poulpy_core::layouts::GLWEInfos;
 
 use crate::layouts::{
@@ -38,7 +38,7 @@ pub unsafe trait BlasMatVecImpl: Backend {
     ///
     /// **Fixed:**
     ///
-    /// - output ciphertext `res_o` is poulpy-ckks's `ckks_eval_linear_transformation_sum_into` of its `K` terms
+    /// - output ciphertext `res_o` is poulpy-ckks's `ckks_linear_transformation_eval_sum_into` of its `K` terms
     ///   `(a_i, w_oi)` in ascending `i`, by the operand's resident or streamed diagonals. Each giant step sums the
     ///   products of every term in the transform domain, in that order, before its one rotation; an FFT backend rounds
     ///   that sum, so the order is part of the bits. Each ciphertext of `res` is then stamped with the label
@@ -139,7 +139,7 @@ pub unsafe trait BlasMatVecImpl: Backend {
     /// [`BlasMatVecReference::blas_matvec_diagonal_reference`](crate::reference::BlasMatVecReference::blas_matvec_diagonal_reference) bit
     /// for bit, within [`Self::blas_matvec_diagonal_tmp_bytes`]; validator: [`crate::layouts::validate_blas_matvec_diagonal`].
     ///
-    /// **Fixed:** poulpy-ckks's `ckks_eval_linear_transformation_into` of `m`'s ciphertext diagonals from `a`, resident or
+    /// **Fixed:** poulpy-ckks's `ckks_linear_transformation_eval_into` of `m`'s ciphertext diagonals from `a`, resident or
     /// prepared at each use as `m`'s form says,
     /// its baby steps prepared as `m`'s schedule reaches them (one key per rotation, or doubling passes), its key widths,
     /// and the errors and their order: the validator's, then poulpy-ckks's, before any write to `res`.
@@ -172,7 +172,7 @@ pub unsafe trait BlasMatVecImpl: Backend {
     /// bit for bit, within [`Self::blas_append_row_diagonal_tmp_bytes`]; validator: [`crate::layouts::validate_blas_append_row_diagonal`].
     /// It writes `m` through [`BlasDiagonalCiphertext::diagonals_mut`].
     ///
-    /// **Fixed:** the masked accumulates of the reference, each poulpy-ckks's `ckks_dot_product_prepared_pt_add` of the
+    /// **Fixed:** the masked accumulates of the reference, each poulpy-ckks's `ckks_dot_product_prepared_pt_vec_add` of the
     /// mask read through its shift's Galois element and a baby rotation of `v`; the key widths and the errors and their order: the validator's, then poulpy-ckks's, before any write to `m`.
     ///
     /// **Free:** kernels, scratch use, how the rotations of `v` are made and prepared, and the order of the entries.
@@ -181,7 +181,7 @@ pub unsafe trait BlasMatVecImpl: Backend {
         m: &mut BlasDiagonalCiphertext<Self>,
         row: i64,
         v: &V,
-        mask: &CKKSPreparedRight<Self>,
+        mask: &CKKSRightOperandPrepared<Self>,
         keys: &K,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
@@ -206,7 +206,7 @@ pub unsafe trait BlasMatVecImpl: Backend {
         m: &mut BlasDiagonalCiphertext<Self>,
         col: i64,
         v: &V,
-        mask: &CKKSPreparedRight<Self>,
+        mask: &CKKSRightOperandPrepared<Self>,
         keys: &K,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
@@ -377,7 +377,7 @@ macro_rules! impl_blas_mat_vec_reference_full {
                 m: &mut $crate::layouts::BlasDiagonalCiphertext<Self>,
                 row: i64,
                 v: &V,
-                mask: &::poulpy_ckks::layouts::CKKSPreparedRight<Self>,
+                mask: &::poulpy_ckks::layouts::CKKSRightOperandPrepared<Self>,
                 keys: &K,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> ::poulpy_ckks::CKKSResult<()>
@@ -409,7 +409,7 @@ macro_rules! impl_blas_mat_vec_reference_full {
                 m: &mut $crate::layouts::BlasDiagonalCiphertext<Self>,
                 col: i64,
                 v: &V,
-                mask: &::poulpy_ckks::layouts::CKKSPreparedRight<Self>,
+                mask: &::poulpy_ckks::layouts::CKKSRightOperandPrepared<Self>,
                 keys: &K,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> ::poulpy_ckks::CKKSResult<()>

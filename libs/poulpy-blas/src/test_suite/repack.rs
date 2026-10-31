@@ -598,7 +598,7 @@ pub fn test_blas_repack_guards<BE, F, E>(
     );
     assert_vector_guard::<BE>(
         "an input budget below the operand's scale",
-        "ckks_eval_linear_transformation_sum_into",
+        "ckks_linear_transformation_eval_sum_into",
         Budget,
         &mut res,
         |res| with_scratch::<BE, _>(bytes, |s| module.blas_grid_to_vector(res, &w, &low, line, &keys, s)),
@@ -757,7 +757,7 @@ pub fn test_blas_repack_guards<BE, F, E>(
     );
     assert_guard::<BE, _>(
         "an input budget below the operand's scale",
-        "ckks_eval_linear_transformation_sum_into",
+        "ckks_linear_transformation_eval_sum_into",
         Budget,
         &mut alloc(case.rows, case.cols),
         |res| with_scratch::<BE, _>(bytes, |s| module.blas_vector_to_grid(res, line, &w, &low, &keys, s)),

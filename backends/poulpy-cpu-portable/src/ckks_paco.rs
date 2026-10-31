@@ -2,7 +2,7 @@
 //! ([`CKKSPaCoCoeffEncodingImpl`](poulpy_ckks::oep::CKKSPaCoCoeffEncodingImpl)).
 //!
 //! The scheme-defining ciphertext → four-plaintexts transformation lives in
-//! `poulpy-ckks` ([`paco_coeff_encodings_host`]) and dispatches all value-level
+//! `poulpy-ckks` ([`ckks_paco_coeff_encodings_host`]) and dispatches all value-level
 //! work through the backend's CKKS encoding operations
 //! ([`CKKSEncodingImpl`]); precomputed
 //! encoding material is the module's own memoized state. This module only
@@ -15,9 +15,9 @@
 use anyhow::{Result, ensure};
 use poulpy_ckks::{
     CKKSCtBounds,
-    api::{CKKSEncodingOps, PaCoScalar},
-    encoding::paco_coeff_encodings_host,
-    layouts::{CKKSModuleAlloc, CKKSPlaintextOwned, PaCoPlan},
+    api::{CKKSEncodingOps, CKKSPaCoScalar},
+    encoding::ckks_paco_coeff_encodings_host,
+    layouts::{CKKSPlaintextOwned, PaCoPlan},
     oep::CKKSEncodingImpl,
 };
 use poulpy_core::{
@@ -40,7 +40,7 @@ where
     BE::scratch_aligned(module.glwe_bytes_of_from_infos(&ct.glwe_layout())) + module.glwe_normalize_tmp_bytes()
 }
 
-/// Runs the scheme-defining [`paco_coeff_encodings_host`] with the prepared
+/// Runs the scheme-defining [`ckks_paco_coeff_encodings_host`] with the prepared
 /// encoding material on the small modulus-q ciphertext `ct`, owned or a view
 /// such as a scratch carve, as copied into its own layout: limbs past its
 /// width of a non-canonical `ct` are rounded in, into a copy carved from
@@ -60,8 +60,8 @@ pub fn paco_coeff_encodings_staged<BE, F, Src>(
 where
     BE: Backend<ZnxWord = i64, Ring = Standard> + CKKSEncodingImpl<F>,
     for<'x> BE::BufRef<'x>: HostDataRef,
-    Module<BE>: ModuleN + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F> + GLWEBytesOf<BE> + GLWENormalize<BE>,
-    F: PaCoScalar,
+    Module<BE>: ModuleN + CKKSEncodingOps<BE, F> + GLWEBytesOf<BE> + GLWENormalize<BE>,
+    F: CKKSPaCoScalar,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     ensure!(
@@ -85,7 +85,7 @@ where
     let layout = ct.glwe_layout();
     let ct_ref = ct.to_backend_ref();
     if ct_ref.is_canonical() || ct_ref.max_size() <= layout.max_size() {
-        return paco_coeff_encodings_host::<BE, _, F>(module, base2k, &ct_ref, plan);
+        return ckks_paco_coeff_encodings_host::<BE, _, F>(module, base2k, &ct_ref, plan);
     }
     ensure!(
         scratch.available() >= paco_coeff_encodings_staged_tmp_bytes(module, ct),
@@ -93,7 +93,7 @@ where
     );
     let (mut rounded, mut scratch) = scratch.borrow().take_glwe_scratch(&layout);
     module.glwe_normalize(&mut rounded, ct, &mut scratch);
-    paco_coeff_encodings_host::<BE, _, F>(module, base2k, &rounded.to_backend_ref(), plan)
+    ckks_paco_coeff_encodings_host::<BE, _, F>(module, base2k, &rounded.to_backend_ref(), plan)
 }
 
 /// Opts a CPU backend into the reference PaCo coefficient encoding: the
@@ -110,7 +110,7 @@ macro_rules! impl_ckks_paco_coeff_encoding {
                 input: &A,
             ) -> ::poulpy_ckks::CKKSResult<usize>
             where
-                F: ::poulpy_ckks::api::PaCoScalar,
+                F: ::poulpy_ckks::api::CKKSPaCoScalar,
                 $be: ::poulpy_ckks::oep::CKKSEncodingImpl<F>,
                 A: ::poulpy_core::layouts::GLWEInfos,
             {
@@ -124,7 +124,7 @@ macro_rules! impl_ckks_paco_coeff_encoding {
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) -> ::poulpy_ckks::CKKSResult<[::poulpy_ckks::layouts::CKKSPlaintextOwned<$be>; 4]>
             where
-                F: ::poulpy_ckks::api::PaCoScalar,
+                F: ::poulpy_ckks::api::CKKSPaCoScalar,
                 $be: ::poulpy_ckks::oep::CKKSEncodingImpl<F>,
                 Src: ::poulpy_core::layouts::GLWEToBackendRef<$be> + ::poulpy_ckks::CKKSCtBounds,
             {

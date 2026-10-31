@@ -5,8 +5,8 @@ use std::marker::PhantomData;
 use num_traits::One;
 use poulpy_ckks::{
     CoeffsMeta,
-    api::{CKKSModuleInfos, LinearTransformation, LinearTransformationPrepared},
-    layouts::{CKKSModuleAlloc, CKKSPlaintextOwned, CKKSPreparedRight},
+    api::{CKKSModuleInfos, CKKSRightOperandPreparedFactory, LinearTransformation, LinearTransformationPrepared},
+    layouts::{CKKSLinearTransformationAlloc, CKKSPlaintextOwned, CKKSRightOperandPrepared},
 };
 use poulpy_core::layouts::{Base2K, DiagonalArithmetic, GetDegree, LinearTransformationStrategy};
 use poulpy_hal::layouts::{Backend, PrepareHint};
@@ -240,7 +240,7 @@ pub struct BlasPtOperandPrepared<BE: Backend, S = Right> {
     pub(crate) maps: OperandMaps<LinearTransformationPrepared<BE>>,
     /// Under `JklsStored` and `JklsGalois`, the terms of every block, row-major, each block's in term order; `maps` then
     /// holds the first map alone. Empty under the other paths.
-    pub(crate) plaintexts: Vec<CKKSPreparedRight<BE>>,
+    pub(crate) plaintexts: Vec<CKKSRightOperandPrepared<BE>>,
 }
 
 impl<BE: Backend, S: BlasPtSide> BlasPtOperandInfos for BlasPtOperand<BE, S> {
@@ -294,13 +294,13 @@ impl<BE: Backend, S> BlasPtOperandPrepared<BE, S> {
     /// [`BlasPtAlgorithm::JklsGalois`], in term order: under `JklsStored`, `d` on the right and `2d - 1` on the left, tau
     /// (sigma) of the block rotated by each rotation of its terms; under `JklsGalois`, that of the block, unrotated.
     /// Empty under the other paths. Panics if `(l, j)` is outside the grid.
-    pub fn block_plaintexts(&self, l: usize, j: usize) -> &[CKKSPreparedRight<BE>] {
+    pub fn block_plaintexts(&self, l: usize, j: usize) -> &[CKKSRightOperandPrepared<BE>] {
         self.assert_block(l, j);
         self.plaintexts_at(l, j)
     }
 
     /// [`Self::block_plaintexts`] without a bounds assertion.
-    pub(crate) fn plaintexts_at(&self, l: usize, j: usize) -> &[CKKSPreparedRight<BE>] {
+    pub(crate) fn plaintexts_at(&self, l: usize, j: usize) -> &[CKKSRightOperandPrepared<BE>] {
         let per = self.plaintexts.len() / (self.layout.rows * self.layout.cols);
         let t = (l * self.layout.cols + j) * per;
         &self.plaintexts[t..t + per]
@@ -510,7 +510,7 @@ pub(crate) fn layouts_of<S: BlasPtSide>(layout: &BlasPtOperandLayout<S>) -> Oper
 pub(crate) fn alloc<BE, M, S>(module: &M, layout: &BlasPtOperandLayout<S>) -> BlasPtOperand<BE, S>
 where
     BE: Backend,
-    M: CKKSModuleAlloc<BE> + GetDegree,
+    M: CKKSLinearTransformationAlloc<BE> + GetDegree,
     S: BlasPtSide,
 {
     let maps = operand_layouts(module, layout).map(|map| map.alloc::<BE, M>(module, layout.base2k));
@@ -521,14 +521,15 @@ where
 pub(crate) fn alloc_prepared<BE, M, S>(module: &M, layout: &BlasPtOperandLayout<S>) -> BlasPtOperandPrepared<BE, S>
 where
     BE: Backend,
-    M: CKKSModuleAlloc<BE> + GetDegree,
+    M: CKKSRightOperandPreparedFactory<BE> + CKKSModuleInfos + GetDegree,
     S: BlasPtSide,
 {
     let (shapes, terms) = prepared_shapes(module, layout);
     let plaintexts = terms
         .iter()
         .map(|term| {
-            module.ckks_prepared_right_alloc_from_infos(&term.plaintext::<BE, M>(module, layout.base2k), PrepareHint::Reuse)
+            module
+                .ckks_right_operand_prepared_alloc_from_infos(&term.plaintext::<BE, M>(module, layout.base2k), PrepareHint::Reuse)
         })
         .collect();
     let maps = shapes.map(|map| map.alloc_prepared::<BE, M>(module, layout.base2k));

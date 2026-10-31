@@ -186,6 +186,124 @@ where
     })
 }
 
+/// Reference bodies of the required [`CKKSModUpFirstFactorImpl`](crate::oep::CKKSModUpFirstFactorImpl) methods, which
+/// [`impl_ckks_mod_up_first_factor_reference_full!`](crate::impl_ckks_mod_up_first_factor_reference_full) forwards to.
+pub trait CKKSModUpFirstFactorReference<BE: Backend> {
+    fn ckks_mod_up_first_factor_tmp_bytes_reference<Dst, Src, D2S, K>(
+        &self,
+        dst_infos: &Dst,
+        src_infos: &Src,
+        factor: &LinearTransformation<CKKSPlaintextOwned<BE>>,
+        d2s_infos: Option<&D2S>,
+        key_infos: &K,
+    ) -> usize
+    where
+        Module<BE>: GLWEKeyswitch<BE>
+            + GLWEMulPreparedPlainSum<BE>
+            + GLWEShift<BE>
+            + GLWENormalize<BE>
+            + GLWEBytesOf<BE>
+            + CnvOps<BE>
+            + VecZnxDftBytesOf
+            + CnvPVecBytesOf
+            + VecZnxNormalizeTmpBytes
+            + VecZnxIdftNormalizeTmpBytes,
+        Dst: CKKSCtBounds,
+        Src: CKKSCtBounds,
+        D2S: GGLWEInfos,
+        K: GGLWEInfos,
+        CKKSPlaintextOwned<BE>: IntPolyInfos + CKKSInfos;
+
+    fn ckks_mod_up_first_factor_reference<Dst, Src, K>(
+        &self,
+        dst: &mut Dst,
+        src: &mut Src,
+        scale_up: usize,
+        factor: &LinearTransformation<CKKSPlaintextOwned<BE>>,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Module<BE>: GLWECopy<BE>
+            + GLWEShift<BE>
+            + GLWEKeyswitch<BE>
+            + VecZnxAutomorphism<BE>
+            + VecZnxCopy<BE>
+            + VecZnxAddAssign<BE>
+            + VecZnxDftAddAssign<BE>
+            + VecZnxNormalize<BE>
+            + VecZnxIdftNormalize<BE>
+            + CnvOps<BE>
+            + GLWENormalize<BE>
+            + GLWEMulPreparedPlainSum<BE>
+            + CyclotomicOrder,
+        K: BootstrappingLinearKeys<BE>,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds;
+}
+
+impl<BE: Backend> CKKSModUpFirstFactorReference<BE> for Module<BE> {
+    fn ckks_mod_up_first_factor_tmp_bytes_reference<Dst, Src, D2S, K>(
+        &self,
+        dst_infos: &Dst,
+        src_infos: &Src,
+        factor: &LinearTransformation<CKKSPlaintextOwned<BE>>,
+        d2s_infos: Option<&D2S>,
+        key_infos: &K,
+    ) -> usize
+    where
+        Module<BE>: GLWEKeyswitch<BE>
+            + GLWEMulPreparedPlainSum<BE>
+            + GLWEShift<BE>
+            + GLWENormalize<BE>
+            + GLWEBytesOf<BE>
+            + CnvOps<BE>
+            + VecZnxDftBytesOf
+            + CnvPVecBytesOf
+            + VecZnxNormalizeTmpBytes
+            + VecZnxIdftNormalizeTmpBytes,
+        Dst: CKKSCtBounds,
+        Src: CKKSCtBounds,
+        D2S: GGLWEInfos,
+        K: GGLWEInfos,
+        CKKSPlaintextOwned<BE>: IntPolyInfos + CKKSInfos,
+    {
+        ckks_mod_up_first_factor_tmp_bytes_reference(self, dst_infos, src_infos, factor, d2s_infos, key_infos)
+    }
+
+    fn ckks_mod_up_first_factor_reference<Dst, Src, K>(
+        &self,
+        dst: &mut Dst,
+        src: &mut Src,
+        scale_up: usize,
+        factor: &LinearTransformation<CKKSPlaintextOwned<BE>>,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Module<BE>: GLWECopy<BE>
+            + GLWEShift<BE>
+            + GLWEKeyswitch<BE>
+            + VecZnxAutomorphism<BE>
+            + VecZnxCopy<BE>
+            + VecZnxAddAssign<BE>
+            + VecZnxDftAddAssign<BE>
+            + VecZnxNormalize<BE>
+            + VecZnxIdftNormalize<BE>
+            + CnvOps<BE>
+            + GLWENormalize<BE>
+            + GLWEMulPreparedPlainSum<BE>
+            + CyclotomicOrder,
+        K: BootstrappingLinearKeys<BE>,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds,
+    {
+        ckks_mod_up_first_factor_reference(self, dst, src, scale_up, factor, keys, scratch)
+    }
+}
+
 /// Scratch of [`ckks_mod_up_first_factor_reference`]. `d2s_infos` is the
 /// dense-to-sparse key under encapsulation, `key_infos` the layout of the
 /// first-factor keys.

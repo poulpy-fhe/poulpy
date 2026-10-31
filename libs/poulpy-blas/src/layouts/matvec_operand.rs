@@ -4,7 +4,7 @@
 use poulpy_ckks::{
     CoeffsMeta, SlotsKind,
     api::{CKKSModuleInfos, LinearTransformation, LinearTransformationPrepared, LtDiagonalMeta, PreparedDiagonal},
-    layouts::{CKKSModuleAlloc, CKKSPlaintextOwned},
+    layouts::{CKKSLinearTransformationAlloc, CKKSPlaintextOwned},
 };
 use poulpy_core::{
     GLWEDiagonalProd,
@@ -376,7 +376,7 @@ pub fn matvec_pt_galois_elements(cyclotomic_order: i64, infos: &impl BlasMatVecO
 pub(crate) fn alloc<BE, M>(module: &M, layout: &BlasMatVecOperandLayout) -> BlasMatVecOperand<BE>
 where
     BE: Backend,
-    M: CKKSModuleAlloc<BE> + GetDegree,
+    M: CKKSLinearTransformationAlloc<BE> + GetDegree,
 {
     assert_module_slots(module, layout);
     let map = map_layout(layout);
@@ -390,7 +390,7 @@ where
 pub(crate) fn alloc_prepared<BE, M>(module: &M, layout: &BlasMatVecOperandLayout) -> BlasMatVecOperandPrepared<BE>
 where
     BE: Backend,
-    M: CKKSModuleAlloc<BE> + CnvPVecAlloc<BE> + GetDegree,
+    M: CnvPVecAlloc<BE> + CKKSModuleInfos + GetDegree,
 {
     assert_module_slots(module, layout);
     let map = map_layout(layout);

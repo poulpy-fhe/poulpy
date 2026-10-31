@@ -40,7 +40,7 @@
 //! | [`test_add_const_into_real_only`] | out-of-place, real coefficient only |
 //! | [`test_add_const_into_lsh_alignment`] | out-of-place, constant `max_k` above budget → left-shift alignment |
 use crate::CKKSModuleInfos;
-use crate::{CKKSCompositionError, CKKSInfos, SetCKKSInfos, api::CKKSAddOps, layouts::CKKSModuleAlloc};
+use crate::{CKKSCompositionError, CKKSInfos, SetCKKSInfos, api::CKKSAddOps, layouts::CKKSPlaintextAlloc};
 use poulpy_core::layouts::IntPolyInfos;
 
 use super::helpers::{
@@ -1274,7 +1274,7 @@ pub fn test_add_pt_vec_assign_rejects_base2k_mismatch<BE, F, E>(
         &mut scratch.borrow(),
     );
     let mismatched_base2k = Base2K((params.base2k / 2) as u32);
-    let mut pt = host_module.ckks_pt_vec_alloc(host_module.ckks_max_slots(), mismatched_base2k, PT_PREC.k());
+    let mut pt = host_module.ckks_plaintext_alloc_from_slots(host_module.ckks_max_slots(), mismatched_base2k, PT_PREC.k());
     pt.set_meta(PT_PREC.meta());
     let before = snapshot::<BE, _>(&ct);
     let err = with_scratch::<BE, _>(0, |s| module.ckks_add_pt_vec_assign(&mut ct, &pt, s)).unwrap_err();

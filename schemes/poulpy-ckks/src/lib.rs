@@ -107,7 +107,7 @@ pub mod prelude {
         CKKSEncodingOps, CKKSEncryptOps, CKKSImagOps, CKKSModuleInfos, CKKSMulOps, CKKSNegOps, CKKSPlaintextVecOps, CKKSPow2Ops,
         CKKSRotateOps, CKKSSubOps,
     };
-    pub use crate::layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, PolynomialApproximation};
+    pub use crate::layouts::{CKKSCiphertext, CKKSCiphertextAlloc, CKKSPlaintext, CKKSPlaintextAlloc, PolynomialApproximation};
     pub use crate::{
         CKKSCompositionError, CKKSError, CKKSInfos, CKKSLayout, CKKSResult, CoeffsMeta, GLWEPlaintextInfos, GLWEPlaintextMeta,
         Quad, Scale, SetCKKSInfos, SetGLWEPlaintextInfos, SlotsKind,
@@ -273,7 +273,7 @@ pub struct CKKSLayout {
 /// Coefficient metadata for plan-compiled operands: the DFT factor diagonals
 /// ([`layouts::DFTPlan`]), the EvalMod polynomial coefficients
 /// ([`layouts::EvalModPlan`]), and the BSGS polynomial encoders
-/// ([`polynomial::EncodeBSGS`]).
+/// ([`polynomial::CKKSPolynomialEncode`]).
 ///
 /// The reduced form of a [`CKKSLayout`]: only the torus width `k` the operand
 /// plaintexts are allocated with and the [`GLWEPlaintextMeta`] they are stamped with.

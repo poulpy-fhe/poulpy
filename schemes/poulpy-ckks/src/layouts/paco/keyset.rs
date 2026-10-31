@@ -690,7 +690,7 @@ mod tests {
     use poulpy_hal::AlignedBuf;
     use poulpy_hal::layouts::HostBytesBackend;
 
-    use crate::layouts::CKKSModuleAlloc;
+    use crate::layouts::CKKSCiphertextAlloc;
 
     struct MisreportedCiphertext(CKKSCiphertext<AlignedBuf, i64, Standard>);
 

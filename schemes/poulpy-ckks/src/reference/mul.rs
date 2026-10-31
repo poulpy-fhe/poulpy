@@ -18,7 +18,7 @@ use poulpy_hal::{
 use crate::{CKKSCompositionError, SlotsKind};
 use crate::{
     CKKSInfos, GLWEPlaintextInfos, SetCKKSInfos, ckks_mul_pt_const_checks, ckks_mul_pt_vec_checks, get_mul_ct_params,
-    layouts::{CKKSPreparedLeft, CKKSPreparedRight},
+    layouts::{CKKSLeftOperandPrepared, CKKSRightOperandPrepared},
     mul_ct_params_raw,
 };
 use poulpy_core::{GLWEBytesOf, GLWETensorBytesOf};
@@ -153,21 +153,30 @@ pub trait CKKSMulReference<BE: Backend> {
         )
     }
 
-    /// What `glwe_left_operand_prepare` and `glwe_right_operand_prepare` take to prepare `a` on its own limbs.
-    fn ckks_prepare_tmp_bytes_reference<A>(&self, a: &A) -> usize
+    /// What `glwe_left_operand_prepare` takes to prepare `a` on its own limbs.
+    fn ckks_left_operand_prepare_tmp_bytes_reference<A>(&self, a: &A) -> usize
     where
         Self: GLWEBytesOf<BE> + GLWENormalize<BE> + CnvOps<BE> + Sized,
         A: GLWEInfos,
     {
-        glwe_left_operand_prepare_tmp_bytes(self, a.size(), a).max(glwe_right_operand_prepare_tmp_bytes(self, a.size(), a))
+        glwe_left_operand_prepare_tmp_bytes(self, a.size(), a)
+    }
+
+    /// What `glwe_right_operand_prepare` takes to prepare `a` on its own limbs.
+    fn ckks_right_operand_prepare_tmp_bytes_reference<A>(&self, a: &A) -> usize
+    where
+        Self: GLWEBytesOf<BE> + GLWENormalize<BE> + CnvOps<BE> + Sized,
+        A: GLWEInfos,
+    {
+        glwe_right_operand_prepare_tmp_bytes(self, a.size(), a)
     }
 
     /// `glwe_left_operand_prepare` of `a`, normalized first if its canonical flag is clear, on its `ceil(k / base2k)` limbs,
     /// into `res`, which then reports `a`'s metadata. `InvalidOperand` for an `a` of another layout than `res`'s,
     /// before any write.
-    fn ckks_prepare_left_into_reference<A>(
+    fn ckks_left_operand_prepare_reference<A>(
         &self,
-        res: &mut CKKSPreparedLeft<BE>,
+        res: &mut CKKSLeftOperandPrepared<BE>,
         a: &A,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -175,16 +184,16 @@ pub trait CKKSMulReference<BE: Backend> {
         Self: CnvOps<BE> + GLWENormalize<BE> + Sized,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
     {
-        check_source_layout("ckks_prepare_left_into", res, a)?;
+        check_source_layout("ckks_left_operand_prepare", res, a)?;
         glwe_left_operand_prepare(self, &mut res.prep, a, a.k().as_usize(), scratch);
         res.meta = a.plaintext_meta();
         Ok(())
     }
 
-    /// As [`Self::ckks_prepare_left_into_reference`], by `glwe_right_operand_prepare` into a right operand.
-    fn ckks_prepare_right_into_reference<A>(
+    /// As [`Self::ckks_left_operand_prepare_reference`], by `glwe_right_operand_prepare` into a right operand.
+    fn ckks_right_operand_prepare_reference<A>(
         &self,
-        res: &mut CKKSPreparedRight<BE>,
+        res: &mut CKKSRightOperandPrepared<BE>,
         a: &A,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -192,7 +201,7 @@ pub trait CKKSMulReference<BE: Backend> {
         Self: CnvOps<BE> + GLWENormalize<BE> + Sized,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
     {
-        check_source_layout("ckks_prepare_right_into", res, a)?;
+        check_source_layout("ckks_right_operand_prepare", res, a)?;
         glwe_right_operand_prepare(self, &mut res.prep, a, a.k().as_usize(), scratch);
         res.meta = a.plaintext_meta();
         Ok(())
@@ -201,7 +210,7 @@ pub trait CKKSMulReference<BE: Backend> {
     fn ckks_mul_prepared_assign_reference<Dst, T>(
         &self,
         dst: &mut Dst,
-        prepared: &CKKSPreparedRight<BE>,
+        prepared: &CKKSRightOperandPrepared<BE>,
         tsk: &T,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -672,7 +681,7 @@ fn check_source_layout(op: &'static str, res: &impl GLWEInfos, a: &impl GLWEInfo
 /// an earlier lane modified.
 pub(crate) fn get_mul_prepared_params<BE: Backend, D: GLWEInfos + CKKSInfos>(
     dst: &D,
-    prepared: &CKKSPreparedRight<BE>,
+    prepared: &CKKSRightOperandPrepared<BE>,
 ) -> Result<(usize, usize, usize, TorusPrecision)> {
     const OP: &str = "ckks_mul_prepared_assign";
     check_prepared_layout(OP, dst, prepared)?;

@@ -122,7 +122,7 @@ impl<D: Data, BE: Backend> LtDiagonalMeta for PreparedDiagonal<D, BE> {
 /// The reference algorithms of [`CKKSLinearTransformationImpl`](crate::oep::CKKSLinearTransformationImpl), which
 /// `impl_ckks_linear_transformation_reference_full!` forwards to and an override can call for the methods it keeps.
 pub trait CKKSLinearTransformationReference<BE: Backend> {
-    fn ckks_prepare_linear_transformation_rhs_tmp_bytes_reference<P>(&self, pt_infos: &P) -> usize
+    fn ckks_linear_transformation_rhs_prepare_tmp_bytes_reference<P>(&self, pt_infos: &P) -> usize
     where
         Self: GLWELinearTransformationOps<BE>,
         P: GLWEInfos,
@@ -130,7 +130,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         self.glwe_linear_transformation_rhs_prepare_tmp_bytes(pt_infos)
     }
 
-    fn ckks_prepare_linear_transformation_baby_steps_tmp_bytes_reference<C, K>(
+    fn ckks_linear_transformation_baby_steps_prepare_tmp_bytes_reference<C, K>(
         &self,
         ct: &C,
         plan: &LinearTransformationPlan,
@@ -144,7 +144,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         self.glwe_linear_transformation_baby_steps_prepare_tmp_bytes(ct, plan, key)
     }
 
-    fn ckks_eval_linear_transformation_tmp_bytes_reference<C, D, K, T>(
+    fn ckks_linear_transformation_eval_tmp_bytes_reference<C, D, K, T>(
         &self,
         ct: &C,
         diagonal: &D,
@@ -168,7 +168,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
     }
 
     /// Sized at the module degree, an upper bound for a diagonal below the ring degree.
-    fn ckks_eval_linear_transformation_streamed_tmp_bytes_reference<C, D, K, T>(
+    fn ckks_linear_transformation_eval_streamed_tmp_bytes_reference<C, D, K, T>(
         &self,
         ct: &C,
         diagonal: &D,
@@ -190,7 +190,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
     }
 
     /// The streamed sum's query, `ct` standing for the destination and every source.
-    fn ckks_eval_linear_transformation_sum_streamed_tmp_bytes_reference<C, D, K, T>(
+    fn ckks_linear_transformation_eval_sum_streamed_tmp_bytes_reference<C, D, K, T>(
         &self,
         ct: &C,
         diagonal: &D,
@@ -208,7 +208,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         self.glwe_linear_transformation_eval_sum_unprepared_rhs_tmp_bytes(ct, ct, diagonal, plan, tsk, key)
     }
 
-    fn ckks_eval_linear_transformation_sum_tmp_bytes_reference<C, D, K, T>(
+    fn ckks_linear_transformation_eval_sum_tmp_bytes_reference<C, D, K, T>(
         &self,
         ct: &C,
         diagonal: &D,
@@ -229,7 +229,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
 
     /// `InvalidOperand`, before any write, for a `prepared` allocated for another layout than `lt`'s or diagonals of
     /// `lt` not sharing one scale, width and slot kind.
-    fn ckks_prepare_linear_transformation_rhs_reference<P>(
+    fn ckks_linear_transformation_rhs_prepare_reference<P>(
         &self,
         prepared: &mut LinearTransformationPrepared<BE>,
         lt: &LinearTransformation<P>,
@@ -239,13 +239,13 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         Self: GLWELinearTransformationOps<BE>,
         P: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        const OP: &str = "ckks_prepare_linear_transformation_rhs";
+        const OP: &str = "ckks_linear_transformation_rhs_prepare";
         ensure_prepared_transformation_layout(OP, prepared, lt)?;
         ensure_uniform_diagonals(OP, lt, |pt| (pt.log_delta(), pt.max_k().as_usize(), pt.slots()))?;
         let first_pt = lt.first_diagonal_plaintext();
         if let Some(first_pt) = first_pt {
             ckks_ensure!(
-                scratch.available() >= self.ckks_prepare_linear_transformation_rhs_tmp_bytes_reference(first_pt),
+                scratch.available() >= self.ckks_linear_transformation_rhs_prepare_tmp_bytes_reference(first_pt),
                 "{OP}: scratch below its query"
             );
         }
@@ -270,7 +270,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         Ok(())
     }
 
-    fn ckks_prepare_linear_transformation_baby_steps_reference<Src, H, L: BabyStepOperand<BE>>(
+    fn ckks_linear_transformation_baby_steps_prepare_reference<Src, H, L: BabyStepOperand<BE>>(
         &self,
         babies: &mut LinearTransformationBabySteps<BE, L>,
         src: &Src,
@@ -283,12 +283,12 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         H: GetAutomorphismKey<BE>,
     {
         let cyclotomic_order =
-            operand_cyclotomic_order("ckks_prepare_linear_transformation_baby_steps", self, src.n().as_usize())?;
+            operand_cyclotomic_order("ckks_linear_transformation_baby_steps_prepare", self, src.n().as_usize())?;
         let src_k = src.k();
         for rotation in babies.rotations().baby_key_rotations(babies.baby_steps()) {
             if let Err(source) = keys.get_automorphism_key(galois_element(rotation, cyclotomic_order), src_k) {
                 return Err(CKKSCompositionError::MissingAutomorphismKey {
-                    op: "ckks_prepare_linear_transformation_baby_steps",
+                    op: "ckks_linear_transformation_baby_steps_prepare",
                     rotation,
                     k: src_k.into(),
                     source,
@@ -300,7 +300,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         Ok(())
     }
 
-    fn ckks_eval_linear_transformation_into_reference<Dst, Src, P, H, L: BabyStepOperand<BE>>(
+    fn ckks_linear_transformation_eval_into_reference<Dst, Src, P, H, L: BabyStepOperand<BE>>(
         &self,
         dst: &mut Dst,
         src: &Src,
@@ -316,7 +316,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
     {
-        const OP: &str = "ckks_eval_linear_transformation_into";
+        const OP: &str = "ckks_linear_transformation_eval_into";
         let first = lt.first_diagonal_plaintext().ok_or_else(|| -> CKKSError {
             CKKSCompositionError::InvalidOperand {
                 op: OP,
@@ -343,7 +343,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         Ok(())
     }
 
-    fn ckks_eval_linear_transformation_sum_into_reference<Dst, Src, P, H, L: BabyStepOperand<BE>>(
+    fn ckks_linear_transformation_eval_sum_into_reference<Dst, Src, P, H, L: BabyStepOperand<BE>>(
         &self,
         dst: &mut Dst,
         srcs: &[&Src],
@@ -359,7 +359,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
     {
-        const OP: &str = "ckks_eval_linear_transformation_sum_into";
+        const OP: &str = "ckks_linear_transformation_eval_sum_into";
         if babies.len() != srcs.len() || lts.len() != srcs.len() {
             return Err(invalid_sum("srcs, babies and lts differ in length".into()));
         }
@@ -410,7 +410,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
             ensure_uniform_diagonals(OP, lt_t, lt_diagonal_meta)?;
         }
         // The terms share the source and diagonal metadata, so the first term's
-        // rule holds for all of them (see `ckks_eval_linear_transformation_into`).
+        // rule holds for all of them (see `ckks_linear_transformation_eval_into`).
         let (res_log_budget, res_log_delta, cnv_offset) = lt_rule(OP, &*dst, src, cache_0, first, keys)?;
         let res_k: TorusPrecision = (res_log_budget + res_log_delta).into();
         let cyclotomic_order = operand_cyclotomic_order(OP, self, dst.n().as_usize())?;
@@ -488,7 +488,7 @@ fn lt_diagonal_meta<P: LtDiagonalMeta + LWEInfos>(pt: &P) -> (usize, usize, Slot
 
 fn invalid_sum(reason: String) -> CKKSError {
     CKKSCompositionError::InvalidOperand {
-        op: "ckks_eval_linear_transformation_sum_into",
+        op: "ckks_linear_transformation_eval_sum_into",
         reason,
     }
     .into()

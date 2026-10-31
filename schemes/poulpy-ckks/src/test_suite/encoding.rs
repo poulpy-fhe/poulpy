@@ -11,7 +11,7 @@ use poulpy_hal::{
 use crate::SlotsKind;
 use crate::{
     CKKSInfos, GLWEPlaintextMeta, SetCKKSInfos,
-    layouts::CKKSModuleAlloc,
+    layouts::CKKSPlaintextAlloc,
     test_suite::reference_encoder::ReferenceEncoder,
     test_suite::{
         CKKSTestParams,
@@ -22,7 +22,7 @@ use crate::{
 /// The reim [`ReferenceEncoder`] is its own inverse: `decode_reim(encode_reim(re, im))`
 /// recovers `(re, im)` up to the encoding (`log_delta`) quantization, with no
 /// encryption involved. Backend-generic over the scalar `F` and FFT engine `E`.
-pub fn test_encode_decode_reim_roundtrip<BE, F, E>(
+pub fn test_encode_decode_slots_host_roundtrip<BE, F, E>(
     params: CKKSTestParams,
     _module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
@@ -39,7 +39,7 @@ pub fn test_encode_decode_reim_roundtrip<BE, F, E>(
 
     let (re_in, im_in) = test_vector_1::<F>(m);
 
-    let mut pt = host_module.ckks_pt_vec_alloc(
+    let mut pt = host_module.ckks_plaintext_alloc_from_slots(
         host_module.ckks_max_slots(),
         Base2K(params.base2k as u32),
         poulpy_core::layouts::TorusPrecision((log_delta + 10) as u32),
@@ -55,8 +55,8 @@ pub fn test_encode_decode_reim_roundtrip<BE, F, E>(
     let mut im_out = vec![F::from_f64(0.0).unwrap(); m];
     encoder.decode_reim(&pt, &mut re_out, &mut im_out).unwrap();
 
-    assert_precision_for_log_delta("encode_decode_reim re", &re_out, &re_in, log_delta, params.n);
-    assert_precision_for_log_delta("encode_decode_reim im", &im_out, &im_in, log_delta, params.n);
+    assert_precision_for_log_delta("encode_decode_slots_host re", &re_out, &re_in, log_delta, params.n);
+    assert_precision_for_log_delta("encode_decode_slots_host im", &im_out, &im_in, log_delta, params.n);
 }
 
 /// A coefficient buffer of another length than the plaintext's degree is `InvalidOperand` of `ckks_encode_coeffs_into`
@@ -100,7 +100,7 @@ pub fn test_encode_coeffs_into_rejects_coefficient_count<BE, F, E>(
 
 /// The host slot adapters refuse real and imaginary slices of two lengths, and a slot count that is not a nonzero
 /// power of two, as `InvalidOperand` of the invoked adapter on an empty arena, the plaintext and slices untouched.
-pub fn test_encode_reim_into_rejects_slot_counts<BE, F, E>(
+pub fn test_encode_slots_host_into_rejects_slot_counts<BE, F, E>(
     params: crate::test_suite::CKKSTestParams,
     module: &poulpy_hal::layouts::Module<BE>,
     host_module: &poulpy_hal::layouts::Module<poulpy_hal::layouts::HostBytesBackend>,
@@ -134,21 +134,21 @@ pub fn test_encode_reim_into_rejects_slot_counts<BE, F, E>(
     ] {
         let (mut re, mut im): (Vec<F>, Vec<F>) = ((0..re_len).map(value).collect(), (0..im_len).map(value).collect());
         let before = (snapshot::<BE, _>(&pt), re.clone(), im.clone());
-        let err = with_scratch::<BE, _>(0, |s| module.ckks_encode_reim_into(&mut pt, &re, &im, s)).unwrap_err();
+        let err = with_scratch::<BE, _>(0, |s| module.ckks_encode_slots_host_into(&mut pt, &re, &im, s)).unwrap_err();
         assert_ckks_error(
-            &format!("encode_reim_into: {case}"),
+            &format!("encode_slots_host_into: {case}"),
             &err,
             CKKSCompositionError::InvalidOperand {
-                op: "ckks_encode_reim_into",
+                op: "ckks_encode_slots_host_into",
                 reason: reason.clone(),
             },
         );
-        let err = with_scratch::<BE, _>(0, |s| module.ckks_decode_reim_into(&pt, &mut re, &mut im, s)).unwrap_err();
+        let err = with_scratch::<BE, _>(0, |s| module.ckks_decode_slots_host_into(&pt, &mut re, &mut im, s)).unwrap_err();
         assert_ckks_error(
-            &format!("decode_reim_into: {case}"),
+            &format!("decode_slots_host_into: {case}"),
             &err,
             CKKSCompositionError::InvalidOperand {
-                op: "ckks_decode_reim_into",
+                op: "ckks_decode_slots_host_into",
                 reason,
             },
         );

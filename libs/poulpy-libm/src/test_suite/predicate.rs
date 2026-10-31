@@ -13,7 +13,7 @@ use poulpy_hal::{
 use poulpy_ckks::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
     api::CKKSMulOps,
-    layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec},
+    layouts::{CKKSCiphertext, CKKSCiphertextAlloc, CKKSPlaintext, CKKSPlaintextAlloc, CKKSPlaintextVecHostCodec},
     test_suite::{
         CKKSTestParams,
         helpers::{
@@ -354,7 +354,7 @@ where
         .map(|(&av, &bv)| step(av - bv + epsilon) * step(bv - av + epsilon))
         .collect();
 
-    let mut host_constants = host_module.ckks_pt_coeffs_alloc(3, base.base2k.into(), coeff_meta.k());
+    let mut host_constants = host_module.ckks_plaintext_alloc(3usize.into(), base.base2k.into(), coeff_meta.k());
     host_constants.set_meta(coeff_meta.meta());
     host_constants.encode_host_floats(&[lo, hi, epsilon]).unwrap();
     let constants = upload_pt(module, &host_constants);

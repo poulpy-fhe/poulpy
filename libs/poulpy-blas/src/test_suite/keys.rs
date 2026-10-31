@@ -5,10 +5,10 @@ use std::collections::{BTreeMap, HashSet};
 use poulpy_ckks::{
     CKKSInfos, CKKSResult, CoeffsMeta, SlotsKind,
     api::{
-        CKKSEncodingOps, CKKSEncodingScalar, CKKSLinearTransformationOps, CKKSModuleInfos, CKKSMulOps, LinearTransformation,
-        LinearTransformationPrepared,
+        CKKSEncodingOps, CKKSEncodingScalar, CKKSLinearTransformationOps, CKKSModuleInfos, CKKSMulOps,
+        CKKSRightOperandPreparedFactory, LinearTransformation, LinearTransformationPrepared,
     },
-    layouts::{CKKSCiphertext, CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintext, CKKSPreparedRight},
+    layouts::{CKKSCiphertext, CKKSCiphertextOwned, CKKSPlaintext, CKKSRightOperandPrepared},
     test_suite::{
         CKKSTestParams,
         helpers::{
@@ -550,7 +550,7 @@ pub fn test_blas_key_widths<BE, F, E>(
             let bytes = module.blas_matmul_prepare_left_tmp_bytes(src, &ctx, &atk_layout, Reuse);
             let mut s = alloc(1, 1, width(src));
             module
-                .ckks_eval_linear_transformation_self_into(
+                .ckks_linear_transformation_eval_self_into(
                     s.block_mut(0, 0),
                     src.block(0, 0),
                     first,
@@ -561,7 +561,7 @@ pub fn test_blas_key_widths<BE, F, E>(
                 .unwrap();
             let mut p = alloc(1, 1, width(&s));
             module
-                .ckks_eval_linear_transformation_self_into(
+                .ckks_linear_transformation_eval_self_into(
                     p.block_mut(0, 0),
                     s.block(0, 0),
                     shift,
@@ -915,7 +915,7 @@ pub(crate) fn slot_mask<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
     encoder: &ReferenceEncoder<E>,
     set: &[usize],
-) -> CKKSPreparedRight<BE>
+) -> CKKSRightOperandPrepared<BE>
 where
     BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE>,
@@ -934,8 +934,8 @@ where
         &to_f::<F>(&re),
         &to_f::<F>(&vec![0.0; slots]),
     );
-    with_scratch::<BE, _>(module.ckks_prepare_tmp_bytes(&pt), |s| {
-        module.ckks_prepare_right(&pt, Reuse, s)
+    with_scratch::<BE, _>(module.ckks_right_operand_prepare_tmp_bytes(&pt), |s| {
+        module.ckks_right_operand_prepare_alloc(&pt, Reuse, s)
     })
     .unwrap()
 }
@@ -1412,8 +1412,11 @@ fn shape_of<P: MapDiagonal>(lt: &LinearTransformation<P>) -> Shape {
 fn assert_operand_shapes<BE, F, S>(module: &Module<BE>, plan: BlasPlan, base2k: Base2K, meta: CoeffsMeta)
 where
     BE: Backend + BlasEncodingImpl,
-    Module<BE>:
-        CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F> + BlasEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CKKSMulOps<BE>,
+    Module<BE>: CKKSRightOperandPreparedFactory<BE>
+        + CKKSEncodingOps<BE, F>
+        + BlasEncodingOps<BE, F>
+        + CKKSLinearTransformationOps<BE>
+        + CKKSMulOps<BE>,
     F: DiagonalArithmetic + CKKSEncodingScalar,
     S: BlasPtSide,
 {

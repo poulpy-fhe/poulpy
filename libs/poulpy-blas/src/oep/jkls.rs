@@ -1,7 +1,7 @@
 use poulpy_ckks::{
     CKKSCtBounds, CKKSResult as Result, SetCKKSInfos,
     api::LinearTransformationPrepared,
-    layouts::{CKKSPreparedLeft, CKKSPreparedRight},
+    layouts::{CKKSLeftOperandPrepared, CKKSRightOperandPrepared},
 };
 use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
@@ -37,8 +37,8 @@ pub unsafe trait BlasJklsImpl: Backend {
     /// [`blas_jkls_block_reference`](crate::reference::BlasJklsReference::blas_jkls_block_reference) bit for bit,
     /// digits and CKKS metadata, within [`Self::blas_jkls_block_tmp_bytes`]: `res = sum_t lhs[t] rhs[t]` as
     /// poulpy-ckks's `ckks_dot_product_ct` computes it for the terms the pairs were prepared from, which share one
-    /// layout per side. The pairs are terms prepared once by poulpy-ckks's `ckks_prepare_left` and
-    /// `ckks_prepare_right`, which report the terms they were prepared from and give their convolution operands through
+    /// layout per side. The pairs are terms prepared once by poulpy-ckks's `ckks_left_operand_prepare_alloc` and
+    /// `ckks_right_operand_prepare_alloc`, which report the terms they were prepared from and give their convolution operands through
     /// `cnv()`: the kernel transforms no operand.
     ///
     /// **Fixed:**
@@ -73,12 +73,12 @@ pub unsafe trait BlasJklsImpl: Backend {
     /// `res` is then unspecified. The reference products call it once per block of `res`, block after block, row by row
     /// or column by column, on one scratch. The pairs and the key are `Sync`, so an implementation may compute one
     /// block's terms concurrently, within the one operation. A backend holds the terms in its own representation
-    /// through its poulpy-ckks preparations, the storage of `CKKSPreparedLeft<Self>` and `CKKSPreparedRight<Self>`.
+    /// through its poulpy-ckks preparations, the storage of `CKKSLeftOperandPrepared<Self>` and `CKKSRightOperandPrepared<Self>`.
     fn blas_jkls_block<R, T>(
         module: &Module<Self>,
         res: &mut R,
-        lhs: &[&CKKSPreparedLeft<Self>],
-        rhs: &[&CKKSPreparedRight<Self>],
+        lhs: &[&CKKSLeftOperandPrepared<Self>],
+        rhs: &[&CKKSRightOperandPrepared<Self>],
         tsk: &T,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
@@ -98,7 +98,7 @@ pub unsafe trait BlasJklsImpl: Backend {
         src: &S,
         first: &LinearTransformationPrepared<Self>,
         masks: &[&LinearTransformationPrepared<Self>],
-        plaintext: &CKKSPreparedRight<Self>,
+        plaintext: &CKKSRightOperandPrepared<Self>,
         keys: &K,
     ) -> usize
     where
@@ -113,10 +113,10 @@ pub unsafe trait BlasJklsImpl: Backend {
     /// The terms of source `l` are `per = masks.len() + 1` blocks: term `0` is `first` evaluated from `sources[l]` by the
     /// map hook, then copied by poulpy-ckks's `ckks_copy` into a block of the terms' layout, and term `k >= 1` is
     /// `masks[k - 1]` evaluated by the map hook from that same evaluation of `first`. Each term is prepared by
-    /// `ckks_prepare_left` and multiplied by `plaintexts[o * sources.len() + l][k % len]` read through `galois[k]`.
-    /// Block `o` of `res` receives poulpy-ckks's `ckks_dot_product_prepared_pt_dft` of the first source's terms,
-    /// `ckks_dot_product_prepared_pt_dft_add` of each next source's, in order, into one transform-domain accumulator,
-    /// then `ckks_dot_product_prepared_pt_from_dft`: `ckks_dot_product_prepared_pt` over every term, sources in order
+    /// `ckks_left_operand_prepare_alloc` and multiplied by `plaintexts[o * sources.len() + l][k % len]` read through `galois[k]`.
+    /// Block `o` of `res` receives poulpy-ckks's `ckks_dot_product_prepared_pt_vec_dft` of the first source's terms,
+    /// `ckks_dot_product_prepared_pt_vec_dft_add` of each next source's, in order, into one transform-domain accumulator,
+    /// then `ckks_dot_product_prepared_pt_vec_from_dft`: `ckks_dot_product_prepared_pt_vec` over every term, sources in order
     /// and terms in order within a source, normalized once.
     ///
     /// **Fixed:** the circuit above; on an FFT backend, which adds in floating point, the order of the terms and their
@@ -140,7 +140,7 @@ pub unsafe trait BlasJklsImpl: Backend {
         sources: &[&S],
         first: &LinearTransformationPrepared<Self>,
         masks: &[&LinearTransformationPrepared<Self>],
-        plaintexts: &[&[CKKSPreparedRight<Self>]],
+        plaintexts: &[&[CKKSRightOperandPrepared<Self>]],
         galois: &[i64],
         keys: &K,
         scratch: &mut ScratchArena<'_, Self>,
@@ -176,8 +176,8 @@ macro_rules! impl_blas_jkls_reference_full {
             fn blas_jkls_block<R, T>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 res: &mut R,
-                lhs: &[&::poulpy_ckks::layouts::CKKSPreparedLeft<Self>],
-                rhs: &[&::poulpy_ckks::layouts::CKKSPreparedRight<Self>],
+                lhs: &[&::poulpy_ckks::layouts::CKKSLeftOperandPrepared<Self>],
+                rhs: &[&::poulpy_ckks::layouts::CKKSRightOperandPrepared<Self>],
                 tsk: &T,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> ::poulpy_ckks::CKKSResult<()>
@@ -195,7 +195,7 @@ macro_rules! impl_blas_jkls_reference_full {
                 src: &S,
                 first: &::poulpy_ckks::api::LinearTransformationPrepared<Self>,
                 masks: &[&::poulpy_ckks::api::LinearTransformationPrepared<Self>],
-                plaintext: &::poulpy_ckks::layouts::CKKSPreparedRight<Self>,
+                plaintext: &::poulpy_ckks::layouts::CKKSRightOperandPrepared<Self>,
                 keys: &K,
             ) -> usize
             where
@@ -214,7 +214,7 @@ macro_rules! impl_blas_jkls_reference_full {
                 sources: &[&S],
                 first: &::poulpy_ckks::api::LinearTransformationPrepared<Self>,
                 masks: &[&::poulpy_ckks::api::LinearTransformationPrepared<Self>],
-                plaintexts: &[&[::poulpy_ckks::layouts::CKKSPreparedRight<Self>]],
+                plaintexts: &[&[::poulpy_ckks::layouts::CKKSRightOperandPrepared<Self>]],
                 galois: &[i64],
                 keys: &K,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,

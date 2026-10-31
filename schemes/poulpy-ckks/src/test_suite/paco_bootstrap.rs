@@ -29,9 +29,11 @@ use poulpy_hal::{
 
 use crate::{
     CKKSInfos,
-    api::{CKKSLinearTransformationOps, CKKSPaCoOps, PaCoScalar},
+    api::{CKKSLinearTransformationOps, CKKSPaCoOps, CKKSPaCoScalar},
     encoding::paco::coeff_enc::glwe_column_residues,
-    layouts::{CKKSModuleAlloc, PaCoContext, PaCoDFTPlan, PaCoKeysPrepared, PaCoPlan, PaCoSecretSpec, ScratchArenaTakeCKKS},
+    layouts::{
+        CKKSCiphertextAlloc, PaCoContext, PaCoDFTPlan, PaCoKeysPrepared, PaCoPlan, PaCoSecretSpec, ScratchArenaTakeCKKSCiphertext,
+    },
     test_suite::reference_encoder::ReferenceEncoder,
     test_suite::{
         CKKSTestParams,
@@ -59,7 +61,7 @@ where
         + CKKSPaCoOps<BE, F>
         + CnvPVecAlloc<BE>
         + GLWECopy<BE>,
-    F: TestScalar + PaCoScalar,
+    F: TestScalar + CKKSPaCoScalar,
     E: ReimNew<F>,
 {
     let _ = (module, host_module);
@@ -87,7 +89,7 @@ where
         + CKKSPaCoOps<BE, F>
         + CnvPVecAlloc<BE>
         + GLWECopy<BE>,
-    F: TestScalar + PaCoScalar,
+    F: TestScalar + CKKSPaCoScalar,
     E: ReimNew<F>,
 {
     let _ = (module, host_module);
@@ -126,7 +128,7 @@ fn seq_bootstrap_case<BE, F, E>(
         + CKKSPaCoOps<BE, F>
         + CnvPVecAlloc<BE>
         + GLWECopy<BE>,
-    F: TestScalar + PaCoScalar,
+    F: TestScalar + CKKSPaCoScalar,
     E: ReimNew<F>,
 {
     let log_delta = params.prec().log_delta();

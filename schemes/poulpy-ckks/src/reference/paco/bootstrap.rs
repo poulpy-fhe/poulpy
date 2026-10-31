@@ -16,9 +16,9 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, GLWEPlaintextMeta, Scale, SetCKKSInfos,
-    api::{CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSLinearTransformationOps, CKKSMulOps, CKKSSubOps, PaCoScalar},
+    api::{CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSLinearTransformationOps, CKKSMulOps, CKKSPaCoScalar, CKKSSubOps},
     layouts::{
-        CKKSCiphertextOwned, ScratchArenaTakeCKKS,
+        CKKSCiphertextOwned, ScratchArenaTakeCKKSCiphertext,
         paco::{
             context::{PaCoContext, PaCoPsiTailMaterial},
             keyset::{PaCoKeyParameters, PaCoKeys, validate_backend_storage_capacity},
@@ -193,7 +193,7 @@ pub(super) fn validate_runtime<BE, F, K, Src>(
 ) -> Result<(usize, usize)>
 where
     BE: Backend,
-    F: PaCoScalar,
+    F: CKKSPaCoScalar,
     K: PaCoKeys<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
@@ -377,7 +377,7 @@ pub(super) fn paco_bootstrap_branch_validated_into<BE, F, K, Dst, Src>(
 where
     BE: super::PaCoBackend + CKKSEncodingImpl<F>,
     K: PaCoKeys<BE>,
-    F: PaCoScalar,
+    F: CKKSPaCoScalar,
     Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
@@ -432,7 +432,7 @@ where
     // linear transformation per factor matrix), moving the packed coefficients
     // onto slots.
     for factor in context.coeffs_to_slots() {
-        module.ckks_eval_linear_transformation_self_assign(output, factor, keys.rotation_keys(), scratch)?;
+        module.ckks_linear_transformation_eval_self_assign(output, factor, keys.rotation_keys(), scratch)?;
     }
 
     // Step 5 — CoeffsToSlots (ψ tail). The conjugation-augmented final C2S
@@ -443,8 +443,8 @@ where
     match context.psi_tail() {
         PaCoPsiTailMaterial::Pair(pair) => {
             module.ckks_conjugate_into(&mut temporary, output, keys.rotation_keys(), scratch)?;
-            module.ckks_eval_linear_transformation_self_assign(output, &pair[0], keys.rotation_keys(), scratch)?;
-            module.ckks_eval_linear_transformation_self_assign(&mut temporary, &pair[1], keys.rotation_keys(), scratch)?;
+            module.ckks_linear_transformation_eval_self_assign(output, &pair[0], keys.rotation_keys(), scratch)?;
+            module.ckks_linear_transformation_eval_self_assign(&mut temporary, &pair[1], keys.rotation_keys(), scratch)?;
             module.ckks_add_assign(output, &temporary, scratch)?;
         }
         PaCoPsiTailMaterial::Mask { mu, rotation } => {
@@ -477,7 +477,7 @@ where
     // Step 8 — SlotsToCoeffs′. Apply the compiled S2C factor chain, moving the
     // recovered slot values back to coefficient positions.
     for factor in context.slots_to_coeffs() {
-        module.ckks_eval_linear_transformation_self_assign(output, factor, keys.rotation_keys(), scratch)?;
+        module.ckks_linear_transformation_eval_self_assign(output, factor, keys.rotation_keys(), scratch)?;
     }
 
     // Step 9 — Scale relabel (budget-neutral). Verify the evaluated torus width

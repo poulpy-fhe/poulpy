@@ -12,7 +12,7 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena, Standard};
 use poulpy_ckks::{
     CKKSCtBounds, CKKSInfos, CKKSModuleInfos, SetCKKSInfos,
     api::{CKKSAddOps, CKKSCopyOps, CKKSRotateOps},
-    layouts::ScratchArenaTakeCKKS,
+    layouts::ScratchArenaTakeCKKSCiphertext,
 };
 
 use crate::comparison::{CKKSComparisonOps, SignComposite};

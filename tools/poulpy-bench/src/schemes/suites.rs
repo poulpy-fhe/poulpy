@@ -7,8 +7,8 @@ use poulpy_bin_fhe::{
     },
 };
 use poulpy_ckks::api::{
-    CKKSAddOps, CKKSConjugateOps, CKKSDotProductOps, CKKSEncodingOps, CKKSLinearTransformationOps, CKKSMulOps, CKKSNegOps,
-    CKKSPow2Ops, CKKSRotateOps, CKKSSubOps,
+    CKKSAddOps, CKKSConjugateOps, CKKSDotProductOps, CKKSEncodingOps, CKKSLeftOperandPreparedFactory,
+    CKKSLinearTransformationOps, CKKSMulOps, CKKSNegOps, CKKSPow2Ops, CKKSRightOperandPreparedFactory, CKKSRotateOps, CKKSSubOps,
 };
 use poulpy_core::{
     GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, GLWEFill, GLWENormalize, LWEEncryptSk, LWEFillMask,
@@ -198,6 +198,8 @@ where
         + ModuleSynchronize<BE>
         + CKKSLinearTransformationOps<BE>
         + CKKSMulOps<BE>
+        + CKKSLeftOperandPreparedFactory<BE>
+        + CKKSRightOperandPreparedFactory<BE>
         + CKKSDotProductOps<BE>
         + CKKSRotateOps<BE>
         + CKKSAddOps<BE>
@@ -212,13 +214,13 @@ where
     [
         BenchOp {
             layer: "ckks",
-            name: "ckks_eval_linear_transformation_into_ct",
-            runner: ckks::runner_ckks_eval_linear_transformation_into_ct::<BE, _>,
+            name: "ckks_linear_transformation_eval_into_ct",
+            runner: ckks::runner_ckks_linear_transformation_eval_into_ct::<BE, _>,
         },
         BenchOp {
             layer: "ckks",
-            name: "ckks_eval_linear_transformation_into_ct_composed",
-            runner: ckks::runner_ckks_eval_linear_transformation_into_ct_composed::<BE, _>,
+            name: "ckks_linear_transformation_eval_into_ct_composed",
+            runner: ckks::runner_ckks_linear_transformation_eval_into_ct_composed::<BE, _>,
         },
     ]
 }
@@ -232,8 +234,8 @@ where
     [
         BenchOp {
             layer: "ckks",
-            name: "ckks_encode_slots_assign_into",
-            runner: ckks::runner_ckks_encode_slots_assign_into::<BE, _>,
+            name: "ckks_encode_slots_into",
+            runner: ckks::runner_ckks_encode_slots_into::<BE, _>,
         },
         BenchOp {
             layer: "ckks",
@@ -267,6 +269,8 @@ where
         + CKKSNegOps<BE>
         + CKKSPow2Ops<BE>
         + CKKSMulOps<BE>
+        + CKKSLeftOperandPreparedFactory<BE>
+        + CKKSRightOperandPreparedFactory<BE>
         + GLWETensorKeyPreparedFactory<BE>
         + CKKSRotateOps<BE>
         + GLWEAutomorphismKeyPreparedFactory<BE>
@@ -400,8 +404,8 @@ where
         },
         BenchOp {
             layer: "ckks",
-            name: "ckks_encode_slots_assign_into",
-            runner: ckks::runner_ckks_encode_slots_assign_into::<BE, _>,
+            name: "ckks_encode_slots_into",
+            runner: ckks::runner_ckks_encode_slots_into::<BE, _>,
         },
         BenchOp {
             layer: "ckks",
@@ -479,6 +483,8 @@ where
         + CKKSNegOps<BE>
         + CKKSPow2Ops<BE>
         + CKKSMulOps<BE>
+        + CKKSLeftOperandPreparedFactory<BE>
+        + CKKSRightOperandPreparedFactory<BE>
         + GLWETensorKeyPreparedFactory<BE>
         + CKKSRotateOps<BE>
         + GLWEAutomorphismKeyPreparedFactory<BE>

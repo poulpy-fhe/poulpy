@@ -12,8 +12,8 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 use super::ship_mux_plans;
 use crate::{
     CKKSCtBounds, CKKSInfos, GLWEPlaintextMeta, Scale, SlotsKind,
-    api::{CKKSAddOps, CKKSConjugateOps, CKKSImagOps, CKKSMulOps, CKKSSubOps, ShipScalar},
-    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, ScratchArenaTakeCKKS, ShipKeysPrepared, ShipPlan},
+    api::{CKKSAddOps, CKKSConjugateOps, CKKSImagOps, CKKSMulOps, CKKSShipScalar, CKKSSubOps},
+    layouts::{CKKSCiphertextAlloc, CKKSCiphertextOwned, ScratchArenaTakeCKKSCiphertext, ShipKeysPrepared, ShipPlan},
     oep::CKKSEncodingImpl,
 };
 
@@ -120,7 +120,7 @@ fn ship_bootstrap_roots<BE, F, Src>(
 ) -> Result<Vec<CKKSCiphertextOwned<BE>>>
 where
     BE: super::ShipBackend + CKKSEncodingImpl<F>,
-    F: ShipScalar,
+    F: CKKSShipScalar,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     let params = keys.parameters();
@@ -233,7 +233,7 @@ pub(super) fn ckks_ship_bootstrap_into<BE, F, Src>(
 ) -> Result<()>
 where
     BE: super::ShipBackend + CKKSEncodingImpl<F>,
-    F: ShipScalar,
+    F: CKKSShipScalar,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     const OP: &str = "ckks_ship_bootstrap_into";
@@ -265,7 +265,7 @@ pub(super) fn ckks_ship_bootstrap_complex_into<BE, F, Src>(
 ) -> Result<()>
 where
     BE: super::ShipBackend + CKKSEncodingImpl<F>,
-    F: ShipScalar,
+    F: CKKSShipScalar,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     const OP: &str = "ckks_ship_bootstrap_complex_into";

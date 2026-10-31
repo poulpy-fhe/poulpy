@@ -19,7 +19,7 @@ use crate::{
     CKKSCompositionError, CKKSLayout, CKKSResult, CoeffsMeta,
     api::{CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, LinearTransformation},
     ckks_ensure_operand,
-    layouts::{CKKSModuleAlloc, CKKSPlaintextOwned, ComplexDiagonals},
+    layouts::{CKKSLinearTransformationAlloc, CKKSPlaintextOwned, ComplexDiagonals},
 };
 
 fn validate_compile_inputs<F>(
@@ -96,7 +96,7 @@ fn ensure_complex_fits<M: CKKSModuleInfos, F: CKKSEncodingScalar>(
 /// - `true`:  encode `Bᵀ` via [`ComplexDiagonals::transpose`] — engine produces
 ///   `Bᵀ·a = a·B` (matrix on the right of the row vector `a`).
 ///
-/// `scratch` holds [`ckks_encode_linear_transformation_tmp_bytes`] of `diagonals.period()`.
+/// `scratch` holds [`ckks_linear_transformation_encode_tmp_bytes`] of `diagonals.period()`.
 ///
 /// # Errors
 ///
@@ -117,7 +117,7 @@ fn ensure_complex_fits<M: CKKSModuleInfos, F: CKKSEncodingScalar>(
     clippy::too_many_arguments,
     reason = "linear-transformation compilation needs the encoding layout, matrix, schedule, and arena"
 )]
-pub fn ckks_encode_linear_transformation_from_diagonals<BE, F>(
+pub fn ckks_linear_transformation_encode_from_diagonals<BE, F>(
     module: &Module<BE>,
     base2k: Base2K,
     coeffs_meta: CoeffsMeta,
@@ -128,10 +128,10 @@ pub fn ckks_encode_linear_transformation_from_diagonals<BE, F>(
 ) -> Result<LinearTransformation<CKKSPlaintextOwned<BE>>>
 where
     BE: Backend,
-    Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
+    Module<BE>: CKKSLinearTransformationAlloc<BE> + CKKSEncodingOps<BE, F>,
     F: DiagonalArithmetic + CKKSEncodingScalar,
 {
-    const OP: &str = "ckks_encode_linear_transformation_from_diagonals";
+    const OP: &str = "ckks_linear_transformation_encode_from_diagonals";
     coeffs_meta.ensure_width(OP)?;
     if !(1..=63).contains(&base2k.as_usize()) {
         return Err(CKKSCompositionError::InvalidOperand {
@@ -168,35 +168,36 @@ where
         meta: coeffs_meta.meta,
     };
     let mut lt = module.ckks_linear_transformation_alloc_from_infos(&layout, &infos);
-    ckks_encode_linear_transformation_into(module, &mut lt, coeffs_meta.meta, cd, strategy, scratch)
+    ckks_linear_transformation_encode_into(module, &mut lt, coeffs_meta.meta, cd, strategy, scratch)
         .context("cannot encode a linear-transformation diagonal")?;
     Ok(lt)
 }
 
-/// Scratch bytes [`ckks_encode_linear_transformation_into`] and [`ckks_encode_linear_transformation_from_diagonals`]
+/// Scratch bytes [`ckks_linear_transformation_encode_into`] and [`ckks_linear_transformation_encode_from_diagonals`]
 /// need for a map of period at most `period`: the slot encoding of one diagonal, which fills its plaintext, so a period
 /// below the backend's minimum degree counts the slots of that degree.
-pub fn ckks_encode_linear_transformation_tmp_bytes<BE, M, F>(module: &M, period: usize) -> usize
+pub fn ckks_linear_transformation_encode_tmp_bytes<BE, M, F>(module: &M, period: usize) -> usize
 where
     BE: Backend,
     M: CKKSModuleInfos + GetDegree + CKKSEncodingHostOps<BE, F>,
     F: CKKSEncodingScalar,
 {
     let slots = module.ckks_slots_of_degree(period_degree::<BE, M>(module, period).as_usize());
-    <M as CKKSEncodingHostOps<BE, F>>::ckks_reim_tmp_bytes(module, slots)
+    <M as CKKSEncodingHostOps<BE, F>>::ckks_encoding_host_tmp_bytes(module, slots)
 }
 
 /// Encodes `diagonals` into `res`, allocated by
-/// [`CKKSModuleAlloc::ckks_linear_transformation_alloc_from_infos`] for their layout under `strategy`: every diagonal at
-/// `meta`, in the schedule's order, each plaintext overwritten, so encoding again into the same transform refills it.
-/// `scratch` holds [`ckks_encode_linear_transformation_tmp_bytes`] of the period of `diagonals`.
+/// [`CKKSLinearTransformationAlloc::ckks_linear_transformation_alloc_from_infos`] for their layout under `strategy`:
+/// every diagonal at `meta`, in the schedule's order, each plaintext overwritten, so encoding again into the same
+/// transform refills it.
+/// `scratch` holds [`ckks_linear_transformation_encode_tmp_bytes`] of the period of `diagonals`.
 ///
 /// # Errors
 ///
 /// [`CKKSCompositionError::InvalidOperand`], before anything is written, for malformed `diagonals` or `strategy`, a
 /// schedule of `res` other than the one they give, or a nonzero imaginary part encoded into real slots; then the
 /// encoding's errors, after which the content of `res` is unspecified.
-pub fn ckks_encode_linear_transformation_into<BE, M, F>(
+pub fn ckks_linear_transformation_encode_into<BE, M, F>(
     module: &M,
     res: &mut LinearTransformation<CKKSPlaintextOwned<BE>>,
     meta: GLWEPlaintextMeta,
@@ -209,7 +210,7 @@ where
     M: CKKSModuleInfos + CKKSEncodingOps<BE, F>,
     F: DiagonalArithmetic + CKKSEncodingScalar,
 {
-    const OP: &str = "ckks_encode_linear_transformation_into";
+    const OP: &str = "ckks_linear_transformation_encode_into";
     validate_compile_inputs(OP, module.ckks_max_slots(), diagonals, strategy)?;
     let plan = LinearTransformationLayout {
         indexes: diagonals.indexes(),
@@ -263,9 +264,9 @@ where
     // A period below the backend's minimum degree fills fewer slots than the plaintext holds.
     let reps = module.ckks_slots_of_degree(pt.n().as_usize()) / re.len();
     if reps > 1 {
-        module.ckks_encode_reim_into(pt, &re.repeat(reps), &im.repeat(reps), scratch)?;
+        module.ckks_encode_slots_host_into(pt, &re.repeat(reps), &im.repeat(reps), scratch)?;
     } else {
-        module.ckks_encode_reim_into(pt, re, im, scratch)?;
+        module.ckks_encode_slots_host_into(pt, re, im, scratch)?;
     }
     Ok(())
 }

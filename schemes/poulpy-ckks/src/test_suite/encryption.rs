@@ -12,7 +12,7 @@ use crate::Scale;
 use crate::{
     CKKSCompositionError, CKKSInfos, CKKSLayout, GLWEPlaintextMeta, SetCKKSInfos,
     api::{CKKSDecryptOps, CKKSEncryptOps},
-    layouts::CKKSModuleAlloc,
+    layouts::{CKKSCiphertextAlloc, CKKSPlaintextAlloc},
 };
 use poulpy_core::{
     GLWEDecrypt, GLWENoise, GLWENormalize, GLWESub, GetDistribution,
@@ -127,7 +127,8 @@ where
         metadata.phase_noise(ct.n().as_usize()).std_dev(),
         poulpy_core::DEFAULT_SIGMA_XE
     );
-    let mut host_pt = host_module.ckks_pt_vec_alloc(host_module.ckks_max_slots(), params.base2k.into(), params.prec().k());
+    let mut host_pt =
+        host_module.ckks_plaintext_alloc_from_slots(host_module.ckks_max_slots(), params.base2k.into(), params.prec().k());
     host_pt.set_meta(params.prec().meta());
     encoder.encode_reim(&mut host_pt, &re1, &im1).unwrap();
     // CKKS aligns the encoded integer message to the ciphertext's torus grid.
@@ -196,7 +197,7 @@ where
         rank: 1usize.into(),
     };
     let mut ct = module.ckks_ciphertext_alloc_from_glwe_infos(&enc);
-    let mut pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), 8usize.into(), 8usize.into());
+    let mut pt = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), 8usize.into(), 8usize.into());
     let sk = other.glwe_secret_prepared_alloc(1usize.into());
     let ct_before = snapshot::<BE, _>(&ct);
     let pt_before = snapshot::<BE, _>(&pt);
@@ -371,7 +372,7 @@ pub fn test_decrypt_rejects_output_hom_rem_too_large<BE, F, E>(
         src_prec,
         &mut scratch.borrow(),
     );
-    let mut pt = module.ckks_pt_vec_alloc(
+    let mut pt = module.ckks_plaintext_alloc_from_slots(
         module.ckks_max_slots(),
         params.base2k.into(),
         (src_prec.log_delta() + src_prec.log_budget() + 1).into(),
@@ -431,7 +432,7 @@ pub fn test_decrypt_rejects_base2k_mismatch<BE, F, E>(
         &mut scratch.borrow(),
     );
     let mismatched_base2k = (params.base2k / 2).into();
-    let mut pt = host_module.ckks_pt_vec_alloc(host_module.ckks_max_slots(), mismatched_base2k, src_prec.k());
+    let mut pt = host_module.ckks_plaintext_alloc_from_slots(host_module.ckks_max_slots(), mismatched_base2k, src_prec.k());
     pt.set_meta(src_prec.meta());
     let (pt_before, ct_before) = (snapshot::<BE, _>(&pt), snapshot::<BE, _>(&ct));
     let err = with_scratch::<BE, _>(0, |s| module.ckks_decrypt(&mut pt, &ct, &sk, s)).unwrap_err();
@@ -481,7 +482,7 @@ pub fn test_decrypt_rejects_degree_mismatch<BE, F, E>(
         src_prec,
         &mut scratch.borrow(),
     );
-    let mut pt = host_module.ckks_pt_vec_alloc(m / 2, params.base2k.into(), src_prec.k());
+    let mut pt = host_module.ckks_plaintext_alloc_from_slots(m / 2, params.base2k.into(), src_prec.k());
     pt.set_meta(src_prec.meta());
     let (pt_before, ct_before) = (snapshot::<BE, _>(&pt), snapshot::<BE, _>(&ct));
     let err = with_scratch::<BE, _>(0, |s| module.ckks_decrypt(&mut pt, &ct, &sk, s)).unwrap_err();
@@ -513,7 +514,7 @@ pub fn test_decrypt_rejects_degree_mismatch<BE, F, E>(
         sparse_prec,
         &mut scratch.borrow(),
     );
-    let mut pt = module.ckks_pt_vec_alloc(m / 2, params.base2k.into(), src_prec.k());
+    let mut pt = module.ckks_plaintext_alloc_from_slots(m / 2, params.base2k.into(), src_prec.k());
     pt.set_meta(src_prec.meta());
     with_scratch::<BE, _>(module.ckks_decrypt_tmp_bytes(&pt, &ct), |s| {
         module.ckks_decrypt(&mut pt, &ct, &sk, s)
@@ -568,7 +569,7 @@ pub fn test_decrypt_wipes_scratch<BE, F, E>(
     // Half the degree reads every second coefficient, which a sparsity of one allows.
     poulpy_core::layouts::SetGLWEPlaintextInfos::set_log_sparsity(&mut ct, 1);
     for slots in [module.ckks_max_slots(), module.ckks_max_slots() / 2] {
-        let mut pt = module.ckks_pt_vec_alloc(slots, params.base2k.into(), ct.k());
+        let mut pt = module.ckks_plaintext_alloc_from_slots(slots, params.base2k.into(), ct.k());
         pt.set_meta(ct.meta());
         let bytes = module.ckks_decrypt_tmp_bytes(&pt, &ct);
         poulpy_core::test_suite::assert_wipes_scratch::<BE>(bytes, |s| module.ckks_decrypt(&mut pt, &ct, &sk, s).unwrap());
@@ -595,7 +596,7 @@ pub fn test_decrypt_rejects_alignment_on_empty_arena<BE, F, E>(
         &layout(params, params.rank, 3 * b + 5, b - 1, 0, SlotsKind::Complex),
         41,
     );
-    let mut pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), b.into(), (3 * b + 6).into());
+    let mut pt = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), b.into(), (3 * b + 6).into());
     pt.set_meta(GLWEPlaintextMeta {
         scale: Scale::Log(b - 1),
         slots: SlotsKind::Complex,

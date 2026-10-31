@@ -338,7 +338,7 @@ from poulpy-ckks they are not.
   Prepared baby rotations are addressed by the real baby-step rotation `k`, matching
   the BSGS index, not by a dense local list position. The prepared
   `LinearTransformation<BE>` data type also lives core-side.
-- **CKKS wrapper.** `CKKSLinearTransformationOps::ckks_eval_linear_transformation_into` /
+- **CKKS wrapper.** `CKKSLinearTransformationOps::ckks_linear_transformation_eval_into` /
   `_assign` in
   [`schemes/poulpy-ckks/src/api/linear_transformation.rs`](../../schemes/poulpy-ckks/src/api/linear_transformation.rs)
   becomes thin: encode the diagonals (CKKS scale/`Δ_pt`), build the galois-element map,

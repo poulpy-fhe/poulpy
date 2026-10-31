@@ -13,8 +13,8 @@ use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos,
     api::{CKKSAllOpsTmpBytes, CKKSEncodingHostOps, CKKSEvalModOps},
     layouts::{
-        CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned,
-        eval_mod::{EvalMod, EvalModPlan, EvalModPoly, EvalModType, compile_eval_mod},
+        CKKSCiphertextAlloc, CKKSCiphertextOwned, CKKSPlaintextOwned,
+        eval_mod::{EvalMod, EvalModPlan, EvalModPoly, EvalModType, ckks_eval_mod_compile},
     },
     polynomial::SplitStrategy,
     test_suite::CKKSTestParams,
@@ -141,11 +141,11 @@ fn run_eval_mod_case<BE, F, E>(
     // Coefficients are encoded at the scale EvalMod runs at (`f_mod_log_delta`).
     let mut lit = lit;
     lit.coeffs_meta = CoeffsMeta::from_delta_budget(lit.f_mod_log_delta, params.base2k);
-    let compile_bytes = CKKSEncodingHostOps::<BE, F>::ckks_reim_tmp_bytes(module, module.n() / 2);
+    let compile_bytes = CKKSEncodingHostOps::<BE, F>::ckks_encoding_host_tmp_bytes(module, module.n() / 2);
     let params_be = with_scratch::<BE, _>(compile_bytes, |s| {
-        compile_eval_mod::<BE, F>(params.base2k.into(), lit, module, s)
+        ckks_eval_mod_compile::<BE, F>(params.base2k.into(), lit, module, s)
     })
-    .expect("compile_eval_mod");
+    .expect("ckks_eval_mod_compile");
     assert_eq!(lit.consumed_bits(), params_be.consumed_bits(), "{label}: consumed bits");
     assert_eq!(lit.eval_depth(), params_be.eval_depth(), "{label}: eval depth");
 

@@ -6,7 +6,7 @@ use poulpy_ckks::Scale;
 use poulpy_ckks::api::{
     CKKSAllOpsTmpBytes, CKKSComplexPolynomialEvaluationOps, CKKSCopyOps, CKKSEvalModOps, CKKSPolynomialEvaluationOps,
 };
-use poulpy_ckks::layouts::{CKKSModuleAlloc, CKKSPlaintextOwned};
+use poulpy_ckks::layouts::{CKKSCiphertextAlloc, CKKSPlaintextAlloc, CKKSPlaintextOwned};
 use poulpy_ckks::oep::CKKSComplexPolynomialEvaluationImpl;
 use poulpy_ckks::test_suite::{
     helpers::{assert_ckks_error, assert_ckks_internal},
@@ -197,7 +197,7 @@ fn polynomial(module: &Module<OverrideBackend>) -> poulpy_ckks::polynomial::BSGS
     use poulpy_ckks::polynomial::{Basis, Polynomial, SplitStrategy};
     Polynomial::new(Basis::Monomial, vec![0.0f64, 1.0])
         .decompose_bsgs_with(SplitStrategy::MinDepth, |coeffs| -> anyhow::Result<_> {
-            let mut pt = module.ckks_pt_coeffs_alloc(coeffs.len(), 16usize.into(), 32usize.into());
+            let mut pt = module.ckks_plaintext_alloc(coeffs.len().into(), 16usize.into(), 32usize.into());
             pt.set_meta(GLWEPlaintextMeta {
                 scale: Scale::Log(8),
                 ..Default::default()
@@ -357,7 +357,7 @@ fn eval_mod_reference_sizes_the_final_destination_copy() {
     use poulpy_ckks::{
         CKKSInfos,
         layouts::eval_mod::{EvalMod, EvalModBsgs, EvalModPlan, EvalModPoly},
-        polynomial::{Basis, ComplexBSGSPolynomial, ComplexPolynomial, EncodeBSGS, Polynomial, SplitStrategy},
+        polynomial::{Basis, CKKSPolynomialEncode, ComplexBSGSPolynomial, ComplexPolynomial, Polynomial, SplitStrategy},
         reference::eval_mod::{CKKSEvalModReference, ckks_eval_mod_tmp_bytes_reference},
     };
     use poulpy_hal::layouts::{HostBytesBackend, ZnxViewMut};
@@ -938,8 +938,8 @@ fn decrypt_query_uses_plaintext_allocation_width() {
 
     let module = Module::<OverrideBackend>::new(64);
     let ct = module.ckks_ciphertext_alloc(16usize.into(), 64usize.into());
-    let narrow = module.ckks_pt_vec_alloc(module.ckks_max_slots(), 16usize.into(), 64usize.into());
-    let mut wide = module.ckks_pt_vec_alloc(module.ckks_max_slots(), 16usize.into(), 1024usize.into());
+    let narrow = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), 16usize.into(), 64usize.into());
+    let mut wide = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), 16usize.into(), 1024usize.into());
     SetK::set_k(&mut wide, 32usize.into());
     let expected = |pt_size: usize| {
         module.glwe_plaintext_bytes_of_from_infos(&ct)

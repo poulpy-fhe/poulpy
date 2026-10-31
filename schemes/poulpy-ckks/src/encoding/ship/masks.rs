@@ -1,6 +1,6 @@
 //! Cleartext SHIP selector masks (Lemma 1 / Eq. (5) of the SHIP paper).
 
-use crate::api::ShipScalar;
+use crate::api::CKKSShipScalar;
 use crate::layouts::ShipPlan;
 
 /// The four pre-rotated slot masks `m'^(k) = Rot_{-j}(m^(k))`, in `pi_k`
@@ -43,7 +43,7 @@ pub(crate) fn ship_pre_rotated_masks_omega2(j: usize, s_j: i64, m: usize) -> [Ve
 /// part and the public rotation `p` both folded in; the column/mux hybrid of
 /// SHIP §4.4 in the low-digit-column variant used by the paper's own
 /// implementation (end of §4.4). All imaginary parts are zero.
-pub(crate) fn ship_mask_slot_vectors<F: ShipScalar>(
+pub(crate) fn ship_mask_slot_vectors<F: CKKSShipScalar>(
     plan: &ShipPlan,
     slot: usize,
     j: usize,

@@ -17,8 +17,8 @@ use poulpy_hal::layouts::{Backend, HostBytesBackend, HostStaged, Module, Standar
 use crate::{
     CKKSInfos, CoeffsMeta, SetCKKSInfos, SlotsKind,
     eval_lut::{cos_hermite_binary, trig_hermite_lut},
-    layouts::{CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextOwned, CKKSPlaintextVecHostCodec, CKKSScalar},
-    polynomial::{BSGSPolynomial, ComplexBSGSPolynomial, EncodeBSGS, Polynomial, SplitStrategy},
+    layouts::{CKKSPlaintext, CKKSPlaintextAlloc, CKKSPlaintextOwned, CKKSPlaintextVecHostCodec, CKKSScalar},
+    polynomial::{BSGSPolynomial, CKKSPolynomialEncode, ComplexBSGSPolynomial, Polynomial, SplitStrategy},
 };
 
 /// A lookup table encoded as plaintext polynomial coefficients.
@@ -123,11 +123,12 @@ impl EncodedLut<CKKSPlaintextOwned<HostBytesBackend>> {
         F: CKKSScalar + Float + FloatConst,
     {
         let binary = cos_hermite_binary(f0, f1, degree, k_interval, log_interval_reduction)?;
-        let cos = <Polynomial<F> as EncodeBSGS>::encode_bsgs_with(&binary.poly, host_module, base2k, coeffs_meta, strategy)?;
+        let cos =
+            <Polynomial<F> as CKKSPolynomialEncode>::encode_bsgs_with(&binary.poly, host_module, base2k, coeffs_meta, strategy)?;
         let chain = match NonZeroUsize::new(binary.consts.len()) {
             None => None,
             Some(steps) => {
-                let mut consts = host_module.ckks_pt_coeffs_alloc(steps.get(), base2k, coeffs_meta.k);
+                let mut consts = host_module.ckks_plaintext_alloc(steps.get().into(), base2k, coeffs_meta.k);
                 let mut meta = coeffs_meta.meta;
                 meta.slots = SlotsKind::Real;
                 consts.set_meta(meta);

@@ -18,7 +18,7 @@ use poulpy_hal::layouts::{Backend, HostBytesBackend, Module, ScratchArena};
 use poulpy_ckks::{
     CKKSCtBounds, CKKSInfos, CKKSLayout, SetCKKSInfos,
     api::CKKSCopyOps,
-    layouts::{CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar, ScratchArenaTakeCKKS},
+    layouts::{CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar, ScratchArenaTakeCKKSCiphertext},
 };
 
 use crate::{

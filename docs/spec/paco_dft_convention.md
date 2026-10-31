@@ -4,7 +4,7 @@ The PaCo bootstrapping (`poulpy-ckks`, split across `layouts/paco/`, `encoding/p
 
 ## Why diverge
 
-The library convention is that special-purpose re-implementations exist only where the homomorphic evaluation requires them (a factorization to extract encodable diagonals from). Following the paper's conventions requires a private DFT stack — the `D_{n,2^l}`/`E^{(B)}_{n,2^l}` factor generators and an extended-bit-reversal permutation `Π^{(C/2)}` — living next to, and subtly different from, the official generator (`gen_dft_matrices`) that the standard bootstrapping already uses. The packing of the bootstrapping keys and of the public coefficient encodings is "just a small FFT per block"; there is no reason for it to come from anywhere but the official pipeline. Nothing in PaCo's math depends on the paper's specific transform: any truncated DFT with consistent per-block points works, so the choice of convention is free — and the library exercises that freedom.
+The library convention is that special-purpose re-implementations exist only where the homomorphic evaluation requires them (a factorization to extract encodable diagonals from). Following the paper's conventions requires a private DFT stack — the `D_{n,2^l}`/`E^{(B)}_{n,2^l}` factor generators and an extended-bit-reversal permutation `Π^{(C/2)}` — living next to, and subtly different from, the official generator (`ckks_dft_matrices_gen`) that the standard bootstrapping already uses. The packing of the bootstrapping keys and of the public coefficient encodings is "just a small FFT per block"; there is no reason for it to come from anywhere but the official pipeline. Nothing in PaCo's math depends on the paper's specific transform: any truncated DFT with consistent per-block points works, so the choice of convention is free — and the library exercises that freedom.
 
 ## The hybrid encoding, in both conventions
 
@@ -14,7 +14,7 @@ PaCo packs data so that one slot-wise ciphertext multiplication performs `h·k` 
 |---|---|---|
 | Block ring | `ℂ[Z]/(Z^{2C} − α_v)`, `α_v` **varies** per block (twiddles `2^l·5^{bitrev(i)} mod 4n`) | `ℂ[Z]/(Z^{2C} − i)`, **uniform** for every block and chunk |
 | Slot order | extended-bit-reversed by `C/2` (`Π^{(C/2)}` applied after packing) | natural coefficient order (bit-reversed *point* order, invisible to the pipeline) |
-| Factor generator | dedicated `D`/`E` matrices (`E = Π·D·Π` to stay tridiagonal in the permuted layout) | `gen_dft_matrices_blockwise` (same butterflies as `gen_dft_matrices`, diagonals canonicalized modulo the `n`-tile) |
+| Factor generator | dedicated `D`/`E` matrices (`E = Π·D·Π` to stay tridiagonal in the permuted layout) | `ckks_dft_matrices_gen_blockwise` (same butterflies as `ckks_dft_matrices_gen`, diagonals canonicalized modulo the `n`-tile) |
 | Packing (cleartext) | `D`-chain layers + extended bit-reversal | the encoder's own FFT per `2C` block (the test suite's `ReferenceEncoder::unpack_reim_coeffs`) + bit-reversal gather (`P_br·U_enc`) |
 | Partial CoeffToSlot | inverse `E^{(C/2)}` chain | blockwise `2C`-point Encode chain (`bit_reversed = true`) |
 | PartialC2s output | coefficient `b'_{ext_bit_rev(i, C/2)}` at slot `i` | coefficient `b'_i` at slot `i` (**natural**) |
@@ -150,7 +150,7 @@ For a `C/2`-point transform the fully merged or two-level schedules are normally
 - **No private DFT machinery**: the paper's `D`/`E` generators do not exist in the codebase. The `BitRevLow` convention realizes the paper's `Π^{(C/2)}` conjugation as a generic post-transform (`conjugate_by_low_bitrev`) on the official generator's factors, not as a parallel factor stack.
 - **Natural-order semantics** everywhere in the pipeline: every mask, rotation, packing relation and read-off is the unpermuted formula, which simplifies the documentation, the annotated example, and debugging.
 - **Block-uniform `α = i`**: the paper's per-block `α_v` was never load-bearing (products stay below degree `2C`), and uniformity removes a whole class of "which block am I in" reasoning.
-- **Reusable facility**: `gen_dft_matrices_blockwise` is general — any future scheme that needs a small transform replicated across a tile (CinS-style hybrid encodings, batched small convolutions à la NeuJeans) uses the same entry point.
+- **Reusable facility**: `ckks_dft_matrices_gen_blockwise` is general — any future scheme that needs a small transform replicated across a tile (CinS-style hybrid encodings, batched small convolutions à la NeuJeans) uses the same entry point.
 
 ## Costs
 

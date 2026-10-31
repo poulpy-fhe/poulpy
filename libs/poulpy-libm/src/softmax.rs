@@ -17,7 +17,7 @@ use poulpy_hal::layouts::{Backend, HostBytesBackend, Module, ScratchArena};
 use poulpy_ckks::{
     CKKSCtBounds, CKKSInfos, CKKSLayout, SetCKKSInfos,
     api::{CKKSAddOps, CKKSCopyOps, CKKSMulOps},
-    layouts::{CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar, ScratchArenaTakeCKKS},
+    layouts::{CKKSPlaintext, CKKSPlaintextAlloc, CKKSPlaintextVecHostCodec, CKKSScalar, ScratchArenaTakeCKKSCiphertext},
     polynomial::SplitStrategy,
 };
 
@@ -114,7 +114,7 @@ impl SoftmaxPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
             }
             None => reciprocal_iters(a64 - b64, options.target_bits + 3.0)?,
         };
-        let mut constants = module.ckks_pt_coeffs_alloc(2, base2k, coeff_meta.k());
+        let mut constants = module.ckks_plaintext_alloc(2usize.into(), base2k, coeff_meta.k());
         constants.set_meta(coeff_meta.meta());
         constants
             .encode_host_floats(&[-b, F::one() / F::from_usize(slots).unwrap()])

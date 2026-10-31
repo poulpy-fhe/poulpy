@@ -12,7 +12,7 @@ use poulpy_hal::{
 
 use poulpy_ckks::{
     CKKSCtBounds, CKKSInfos, GLWEPlaintextMeta, Scale, SetCKKSInfos,
-    layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec},
+    layouts::{CKKSCiphertext, CKKSCiphertextAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec},
     polynomial::{Polynomial, SplitStrategy},
     test_suite::{
         CKKSTestParams,
@@ -85,7 +85,7 @@ where
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0x62; 32]);
     let mut sizing = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
     sizing.set_meta(params.prec().meta);
-    let size = module.ckks_approximation_tmp_bytes(&sizing, &sizing, &plan, &params.tsk_layout());
+    let size = module.ckks_polynomial_approximation_eval_tmp_bytes(&sizing, &sizing, &plan, &params.tsk_layout());
     let mut scratch = ScratchOwned::<BE>::alloc(size);
     let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
     let input = ckks_encrypt_with_prec(
@@ -102,8 +102,8 @@ where
     );
     let mut res = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
     module
-        .ckks_eval_approximation(&mut res, &input, &plan, &tsk, &mut scratch.borrow())
-        .expect("ckks_eval_approximation");
+        .ckks_polynomial_approximation_eval(&mut res, &input, &plan, &tsk, &mut scratch.borrow())
+        .expect("ckks_polynomial_approximation_eval");
     assert_eq!(input.log_budget() - res.log_budget(), consumed);
 
     let (re_out, _) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &res, &sk, &mut scratch.borrow());

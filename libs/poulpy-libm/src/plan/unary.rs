@@ -68,11 +68,11 @@ macro_rules! declare_unary_op {
         ///
         /// # Metadata
         ///
-        /// As `ckks_eval_approximation`.
+        /// As `ckks_polynomial_approximation_eval`.
         ///
         /// # Errors
         ///
-        /// The errors of `ckks_eval_approximation`, with its guarantee on `res`.
+        /// The errors of `ckks_polynomial_approximation_eval`, with its guarantee on `res`.
         fn $eval<R, I, P, H>(
             &self,
             res: &mut R,
@@ -104,7 +104,7 @@ macro_rules! impl_unary_op {
             T: poulpy_core::layouts::GGLWEInfos,
             P: poulpy_ckks::CKKSInfos + poulpy_core::layouts::LWEInfos,
         {
-            self.ckks_approximation_tmp_bytes(res, input, &plan.approximation, tsk)
+            self.ckks_polynomial_approximation_eval_tmp_bytes(res, input, &plan.approximation, tsk)
         }
 
         fn $eval<R, I, P, H>(
@@ -128,7 +128,7 @@ macro_rules! impl_unary_op {
             H: poulpy_core::layouts::GetTensorKey<BE>,
         {
             anyhow::Context::context(
-                self.ckks_eval_approximation(res, input, &plan.approximation, tsk, scratch),
+                self.ckks_polynomial_approximation_eval(res, input, &plan.approximation, tsk, scratch),
                 stringify!($eval),
             )
         }

@@ -310,12 +310,12 @@ macro_rules! ckks_backend_rank2_test_suite {
                 $crate::test_suite::dot_product::test_dot_product_prepared
             );
             run_test!(
-                dot_product_prepared_pt,
-                $crate::test_suite::dot_product::test_dot_product_prepared_pt
+                dot_product_prepared_pt_vec,
+                $crate::test_suite::dot_product::test_dot_product_prepared_pt_vec
             );
             run_test!(
-                dot_product_prepared_pt_add,
-                $crate::test_suite::dot_product::test_dot_product_prepared_pt_add
+                dot_product_prepared_pt_vec_add,
+                $crate::test_suite::dot_product::test_dot_product_prepared_pt_vec_add
             );
             run_test!(
                 linear_transformation_ct,
@@ -423,8 +423,8 @@ macro_rules! ckks_backend_test_suite {
             }
 
             run_test!(
-                encode_decode_reim_roundtrip,
-                $crate::test_suite::encoding::test_encode_decode_reim_roundtrip
+                encode_decode_slots_host_roundtrip,
+                $crate::test_suite::encoding::test_encode_decode_slots_host_roundtrip
             );
             run_test!(
                 slots_kind_composition,
@@ -464,12 +464,12 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::errors::test_add_pt_vec_assign_rejects_alignment
             );
             run_test!(
-                encode_linear_transformation_from_diagonals_rejects_zero_k,
-                $crate::test_suite::errors::test_encode_linear_transformation_from_diagonals_rejects_zero_k
+                linear_transformation_encode_from_diagonals_rejects_zero_k,
+                $crate::test_suite::errors::test_linear_transformation_encode_from_diagonals_rejects_zero_k
             );
             run_test!(
-                encode_linear_transformation_into,
-                $crate::test_suite::errors::test_encode_linear_transformation_into
+                linear_transformation_encode_into,
+                $crate::test_suite::errors::test_linear_transformation_encode_into
             );
             run_test!(
                 encode_bsgs_with_rejects_zero_k,
@@ -640,24 +640,24 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::linear_transformation::test_linear_transformation_ct_rejects_foreign_layouts
             );
             run_test!(
-                prepare_linear_transformation_rhs_rejects_mixed_diagonals,
-                $crate::test_suite::linear_transformation::test_prepare_linear_transformation_rhs_rejects_mixed_diagonals
+                linear_transformation_rhs_prepare_rejects_mixed_diagonals,
+                $crate::test_suite::linear_transformation::test_linear_transformation_rhs_prepare_rejects_mixed_diagonals
             );
             run_test!(
-                prepare_linear_transformation_rhs_rejects_foreign_layout,
-                $crate::test_suite::linear_transformation::test_prepare_linear_transformation_rhs_rejects_foreign_layout
+                linear_transformation_rhs_prepare_rejects_foreign_layout,
+                $crate::test_suite::linear_transformation::test_linear_transformation_rhs_prepare_rejects_foreign_layout
             );
             run_test!(
-                prepare_linear_transformation_rhs_rejects_short_scratch,
-                $crate::test_suite::linear_transformation::test_prepare_linear_transformation_rhs_rejects_short_scratch
+                linear_transformation_rhs_prepare_rejects_short_scratch,
+                $crate::test_suite::linear_transformation::test_linear_transformation_rhs_prepare_rejects_short_scratch
             );
             run_test!(
-                prepare_linear_transformation_rhs_rejects_malformed_schedule,
-                $crate::test_suite::linear_transformation::test_prepare_linear_transformation_rhs_rejects_malformed_schedule
+                linear_transformation_rhs_prepare_rejects_malformed_schedule,
+                $crate::test_suite::linear_transformation::test_linear_transformation_rhs_prepare_rejects_malformed_schedule
             );
             run_test!(
-                prepare_linear_transformation_rhs_lifecycle,
-                $crate::test_suite::linear_transformation::test_prepare_linear_transformation_rhs_lifecycle
+                linear_transformation_rhs_prepare_lifecycle,
+                $crate::test_suite::linear_transformation::test_linear_transformation_rhs_prepare_lifecycle
             );
             run_test!(
                 linear_transformation_mixed_key_layouts,
@@ -760,7 +760,7 @@ macro_rules! ckks_backend_test_suite {
                 dft_plan_helpers_match_compiled,
                 $crate::test_suite::dft::test_dft_plan_helpers_match_compiled
             );
-            run_test!(prepare_dft_matrix, $crate::test_suite::dft::test_prepare_dft_matrix);
+            run_test!(dft_matrix_prepare, $crate::test_suite::dft::test_dft_matrix_prepare);
             run_test!(mul_ct_aligned, $crate::test_suite::mul::test_mul_ct_aligned);
             run_test!(mul_ct_delta_a_gt_b, $crate::test_suite::mul::test_mul_ct_delta_a_gt_b);
             run_test!(mul_ct_delta_a_lt_b, $crate::test_suite::mul::test_mul_ct_delta_a_lt_b);
@@ -1094,16 +1094,16 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::encryption::test_encrypt_sk_rejects_plaintext_base2k_mismatch
             );
             run_test!(
-                eval_approximation_rejects_insufficient_capacity,
-                $crate::test_suite::polynomial_evaluation::test_eval_approximation_rejects_insufficient_capacity
+                polynomial_approximation_eval_rejects_insufficient_capacity,
+                $crate::test_suite::polynomial_evaluation::test_polynomial_approximation_eval_rejects_insufficient_capacity
             );
             run_test!(
                 encode_coeffs_into_rejects_coefficient_count,
                 $crate::test_suite::encoding::test_encode_coeffs_into_rejects_coefficient_count
             );
             run_test!(
-                encode_reim_into_rejects_slot_counts,
-                $crate::test_suite::encoding::test_encode_reim_into_rejects_slot_counts
+                encode_slots_host_into_rejects_slot_counts,
+                $crate::test_suite::encoding::test_encode_slots_host_into_rejects_slot_counts
             );
             run_params_test!(
                 bootstrapping_standard_e2e,
@@ -1232,12 +1232,12 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::dot_product::test_dot_product_pt_vec_aligned
             );
             run_test!(
-                dot_product_prepared_pt,
-                $crate::test_suite::dot_product::test_dot_product_prepared_pt
+                dot_product_prepared_pt_vec,
+                $crate::test_suite::dot_product::test_dot_product_prepared_pt_vec
             );
             run_test!(
-                dot_product_prepared_pt_add,
-                $crate::test_suite::dot_product::test_dot_product_prepared_pt_add
+                dot_product_prepared_pt_vec_add,
+                $crate::test_suite::dot_product::test_dot_product_prepared_pt_vec_add
             );
             run_test!(
                 dot_product_const_aligned,

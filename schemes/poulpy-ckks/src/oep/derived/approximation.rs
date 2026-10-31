@@ -12,11 +12,11 @@ use crate::{
     CKKSCtBounds, CKKSInfos, CKKSResult as Result, SetCKKSInfos, SlotsKind,
     api::{CKKSAddOps, CKKSAffineOps, CKKSAllOpsTmpBytes, CKKSCopyOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops},
     checked_log_budget_sub, ckks_ensure,
-    layouts::{PolynomialApproximation, ScratchArenaTakeCKKS},
+    layouts::{PolynomialApproximation, ScratchArenaTakeCKKSCiphertext},
     oep::CKKSApproximationImpl,
 };
 
-pub(crate) fn ckks_approximation_tmp_bytes_derived<BE, R, I, T, P>(
+pub(crate) fn ckks_polynomial_approximation_eval_tmp_bytes_derived<BE, R, I, T, P>(
     module: &Module<BE>,
     res: &R,
     input: &I,
@@ -68,7 +68,7 @@ where
     BE::scratch_aligned(module.glwe_bytes_of_from_infos(input)) + map
 }
 
-pub(crate) fn ckks_eval_approximation_derived<BE, R, I, P, H>(
+pub(crate) fn ckks_polynomial_approximation_eval_derived<BE, R, I, P, H>(
     module: &Module<BE>,
     res: &mut R,
     input: &I,
@@ -83,7 +83,7 @@ where
     P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta + IntPolyInfos,
     H: GetTensorKey<BE>,
 {
-    const OP: &str = "ckks_eval_approximation";
+    const OP: &str = "ckks_polynomial_approximation_eval";
     checked_log_budget_sub(OP, input.log_budget(), approximation.consumed_bits(input.log_delta()))?;
     if let Some(affine) = &approximation.affine {
         ckks_ensure!(

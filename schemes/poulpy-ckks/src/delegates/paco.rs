@@ -7,7 +7,7 @@ use poulpy_hal::{
 
 use crate::{
     CKKSCtBounds,
-    api::{CKKSPaCoOps, PaCoScalar},
+    api::{CKKSPaCoOps, CKKSPaCoScalar},
     layouts::{CKKSCiphertextOwned, CKKSPlaintextOwned, PaCoContext, PaCoKeys, PaCoWorker},
     oep::{CKKSEncodingImpl, CKKSPaCoCoeffEncodingImpl, CKKSPaCoImpl},
 };
@@ -15,7 +15,7 @@ use crate::{
 impl<BE, F> CKKSPaCoOps<BE, F> for Module<BE>
 where
     BE: Backend + CKKSPaCoImpl + CKKSPaCoCoeffEncodingImpl + CKKSEncodingImpl<F>,
-    F: PaCoScalar,
+    F: CKKSPaCoScalar,
 {
     fn ckks_paco_bootstrap_direct_tmp_bytes<K, Src>(
         &self,

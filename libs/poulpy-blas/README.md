@@ -52,7 +52,7 @@ A diagonal ciphertext, `BlasDiagonalCiphertext`, encrypts a square matrix over t
 encoding: a chosen set of its diagonals as ciphertexts, in the BSGS storage of poulpy-ckks's transforms (entry `(b, g)` holding `rot(D_(b + g), -g)`).
 It is allocated zero and grows by `blas_append_row_diagonal` and `blas_append_col_diagonal`: one prepared mask,
 read through the Galois element of each shift, times the baby (giant) rotations of the appended ciphertext, added
-into every diagonal with one rounding (poulpy-ckks's `ckks_dot_product_prepared_pt_add`). A mask of several slots writes
+into every diagonal with one rounding (poulpy-ckks's `ckks_dot_product_prepared_pt_vec_add`). A mask of several slots writes
 several rows or columns at once. An append keeps the matrix's layout: one that would change the diagonals' slot kind or
 sparsity is rejected. `blas_matvec_diagonal` multiplies it by a whole ciphertext, poulpy-ckks's transform of ciphertext
 diagonals, relinearized once per giant step, resident, `BlasDiagonalCiphertextPrepared` from

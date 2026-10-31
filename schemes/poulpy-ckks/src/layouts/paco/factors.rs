@@ -8,7 +8,7 @@
 //!
 //! - [`paco_c2s_factors`] — the **partial CoeffToSlot** chain (seqPaCo
 //!   line 7): the `2C`-point Encode (IFFT) factorization of
-//!   [`gen_dft_matrices_blockwise`](crate::layouts::dft_matrices::gen_dft_matrices_blockwise) over the `n = 2hC`
+//!   [`ckks_dft_matrices_gen_blockwise`](crate::layouts::dft_matrices::ckks_dft_matrices_gen_blockwise) over the `n = 2hC`
 //!   tile, returning each block's coefficients to the slots in **natural
 //!   order**. Its product is exactly the inverse of the cleartext packing
 //!   [`pack_chunk`](super::key::pack_chunk) — the encoder's own per-block
@@ -39,7 +39,7 @@ use poulpy_core::layouts::DiagonalArithmetic;
 use crate::layouts::{
     ComplexDiagonals,
     dft::{DFTType, DftScalar},
-    dft_matrices::gen_dft_matrices_blockwise,
+    dft_matrices::ckks_dft_matrices_gen_blockwise,
 };
 use crate::{
     encoding::paco::cpx::Cpx,
@@ -63,7 +63,7 @@ pub(crate) fn paco_c2s_factors<F: DftScalar>(p: &PaCoPlan, schedule: &[usize]) -
         log_block,
         "c2s butterfly schedule {schedule:?} must sum to log 2C = {log_block}"
     );
-    let factors = gen_dft_matrices_blockwise(DFTType::Encode, log_block, log_tile, schedule, 1.0, true);
+    let factors = ckks_dft_matrices_gen_blockwise(DFTType::Encode, log_block, log_tile, schedule, 1.0, true);
     match p.slot_order() {
         PaCoSlotOrder::Natural => factors,
         // Conjugate every factor by the tiled low-bit reversal `Π`: the chain
@@ -247,7 +247,7 @@ pub(crate) fn paco_stc_factors<F: DftScalar + DiagonalArithmetic>(p: &PaCoPlan) 
         Vec::new()
     } else {
         let log_half_c = p.log_c() - 1;
-        let mut f = gen_dft_matrices_blockwise(DFTType::Decode, log_half_c, log_half_c, &butterfly, 1.0, false);
+        let mut f = ckks_dft_matrices_gen_blockwise(DFTType::Decode, log_half_c, log_half_c, &butterfly, 1.0, false);
         // The raw encoder-convention factorization consumes its coefficient
         // input in bit-reversed order. Under `Natural` the mid-pipeline data
         // is in natural order, so the reversal is folded into the first

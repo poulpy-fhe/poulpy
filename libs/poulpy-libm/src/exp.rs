@@ -14,7 +14,7 @@ use poulpy_hal::layouts::{Backend, HostBytesBackend, Module, ScratchArena};
 use poulpy_ckks::{
     CKKSCtBounds, CKKSInfos, CKKSLayout, SetCKKSInfos,
     api::{CKKSAddOps, CKKSCopyOps, CKKSMulOps},
-    layouts::{CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar, ScratchArenaTakeCKKS},
+    layouts::{CKKSPlaintext, CKKSPlaintextAlloc, CKKSPlaintextVecHostCodec, CKKSScalar, ScratchArenaTakeCKKSCiphertext},
     polynomial::SplitStrategy,
 };
 
@@ -227,7 +227,7 @@ impl Expm1Plan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
         let approximation =
             PolynomialApproximation::from_polynomial(&choice.minimax.poly, base2k, coeff_meta, options.strategy, module)
                 .context("expm1")?;
-        let mut two = module.ckks_pt_coeffs_alloc(1, base2k, coeff_meta.k());
+        let mut two = module.ckks_plaintext_alloc(1usize.into(), base2k, coeff_meta.k());
         two.set_meta(coeff_meta.meta());
         two.encode_host_floats(&[F::from_f64(2.0).unwrap()])
             .context("expm1: constant encoding failed")?;
@@ -701,7 +701,7 @@ where
         module.ckks_square_tmp_bytes(input, input, tsk)
     };
     ct + module
-        .ckks_approximation_tmp_bytes(input, input, approximation, tsk)
+        .ckks_polynomial_approximation_eval_tmp_bytes(input, input, approximation, tsk)
         .max(step)
         .max(module.ckks_copy_tmp_bytes(res, input))
 }
@@ -738,7 +738,7 @@ where
     scratch.scope(|scratch_local| {
         let (mut acc, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(input);
         module
-            .ckks_eval_approximation(&mut acc, input, approximation, tsk, &mut scratch_local)
+            .ckks_polynomial_approximation_eval(&mut acc, input, approximation, tsk, &mut scratch_local)
             .context(op)?;
         for _ in 0..reduction_steps {
             match two {

@@ -364,7 +364,7 @@ fn conjugate_invariant_encoding_matches_portable() {
     use poulpy_ckks::{
         GLWEPlaintextInfos, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotsKind,
         api::{CKKSEncodingHostOps, CKKSEncodingOps},
-        layouts::CKKSModuleAlloc,
+        layouts::CKKSPlaintextAlloc,
     };
     use poulpy_core::layouts::GLWEToBackendRef;
     use poulpy_hal::{
@@ -378,21 +378,23 @@ fn conjugate_invariant_encoding_matches_portable() {
     fn encode<BE>(module: &Module<BE>, slots: usize, re: &[f64]) -> Encoded
     where
         BE: Backend<Ring = ConjugateInvariant, ZnxWord = i64>,
-        Module<BE>: ModuleN + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, f64> + CKKSEncodingHostOps<BE, f64>,
+        Module<BE>: ModuleN + CKKSPlaintextAlloc<BE> + CKKSEncodingOps<BE, f64> + CKKSEncodingHostOps<BE, f64>,
         ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
     {
-        let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_reim_tmp_bytes(module.n()));
-        let mut pt = module.ckks_pt_vec_alloc(slots, 19usize.into(), 76usize.into());
+        let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_encoding_host_tmp_bytes(module.n()));
+        let mut pt = module.ckks_plaintext_alloc_from_slots(slots, 19usize.into(), 76usize.into());
         pt.set_meta(GLWEPlaintextMeta {
             scale: Scale::Log(40),
             ..Default::default()
         });
         let im = vec![0.25; slots];
-        module.ckks_encode_reim_into(&mut pt, re, &im, &mut scratch.arena()).unwrap();
+        module
+            .ckks_encode_slots_host_into(&mut pt, re, &im, &mut scratch.arena())
+            .unwrap();
         assert_eq!(pt.slots(), SlotsKind::Real);
         let (mut got_re, mut got_im) = (vec![0.0; slots], vec![1.0; slots]);
         module
-            .ckks_decode_reim_into(&pt, &mut got_re, &mut got_im, &mut scratch.arena())
+            .ckks_decode_slots_host_into(&pt, &mut got_re, &mut got_im, &mut scratch.arena())
             .unwrap();
         assert!(got_im.iter().all(|&value| value == 0.0));
         let host = pt.to_host_owned::<BE>();

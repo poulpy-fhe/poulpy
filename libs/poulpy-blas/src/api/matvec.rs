@@ -2,7 +2,7 @@ use poulpy_ckks::CKKSResult as Result;
 use poulpy_core::layouts::{GGLWEInfos, GetAutomorphismKey, GetTensorKey};
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
-use poulpy_ckks::layouts::CKKSPreparedRight;
+use poulpy_ckks::layouts::CKKSRightOperandPrepared;
 use poulpy_core::layouts::GLWEInfos;
 
 use crate::layouts::{
@@ -49,7 +49,7 @@ pub trait BlasMatVecOps<BE: Backend> {
     ///
     /// # Metadata
     ///
-    /// Ciphertext `o` of `res` is poulpy-ckks's `ckks_eval_linear_transformation_sum_into` of the `K` terms
+    /// Ciphertext `o` of `res` is poulpy-ckks's `ckks_linear_transformation_eval_sum_into` of the `K` terms
     /// `(a_i, w_oi)`, labelled with the period the operand writes:
     ///
     /// ```text
@@ -208,7 +208,7 @@ pub trait BlasMatVecOps<BE: Backend> {
 
     /// `res = M a` for the diagonal ciphertext `m` and the whole ciphertext `a`: entry `i` of `res` is the sum, over the
     /// diagonals `t` `m` holds, of `D_t[i] a[i + t]`. It is poulpy-ckks's linear transformation of ciphertext diagonals
-    /// (`ckks_eval_linear_transformation_into`): the baby rotations of `a` are made once, each giant step's products
+    /// (`ckks_linear_transformation_eval_into`): the baby rotations of `a` are made once, each giant step's products
     /// are summed and relinearized once with the tensor key of `keys`, rotated, and summed, with one final normalization. Each giant step
     /// adds the tensor products of its pairs in the transform domain before its relinearization, so choose `base2k` for
     /// the `2 g min(L, P)` limb products it adds in an output limb of the middle term: `g` the most diagonals a giant
@@ -221,7 +221,7 @@ pub trait BlasMatVecOps<BE: Backend> {
     ///
     /// # Metadata
     ///
-    /// The ciphertext of `res` is poulpy-ckks's `ckks_eval_linear_transformation_into` of `m`'s diagonals from `a`, at
+    /// The ciphertext of `res` is poulpy-ckks's `ckks_linear_transformation_eval_into` of `m`'s diagonals from `a`, at
     /// poulpy-ckks's ct x ct rule between `a` and a diagonal:
     ///
     /// ```text
@@ -275,7 +275,7 @@ pub trait BlasMatVecOps<BE: Backend> {
     /// with `s` in the mask and every diagonal `t` `m` holds. With `D_t` the diagonals and entry `(b, g)` of the storage
     /// holding `rot(D_(b + g), -g)`, that is `m_(row + g) rot(v, b)` added to entry `(b, g)`: one prepared mask `m_0`,
     /// read through the Galois element of `-(row + g)`, times the baby rotation `rot(v, b)`, by poulpy-ckks's
-    /// `ckks_dot_product_prepared_pt_add`. A mask of several slots writes several rows at once. A resident product reads
+    /// `ckks_dot_product_prepared_pt_vec_add`. A mask of several slots writes several rows at once. A resident product reads
     /// the diagonals once prepared again
     /// ([`BlasDiagonalCiphertextPreparedFactory::blas_diagonal_ciphertext_prepare`](crate::api::BlasDiagonalCiphertextPreparedFactory::blas_diagonal_ciphertext_prepare)),
     /// a streamed one reads them as they are. Its keys are [`append_row_diagonal_galois_elements`](crate::layouts::append_row_diagonal_galois_elements): the rotations of
@@ -309,7 +309,7 @@ pub trait BlasMatVecOps<BE: Backend> {
         m: &mut BlasDiagonalCiphertext<BE>,
         row: i64,
         v: &V,
-        mask: &CKKSPreparedRight<BE>,
+        mask: &CKKSRightOperandPrepared<BE>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -339,7 +339,7 @@ pub trait BlasMatVecOps<BE: Backend> {
         m: &mut BlasDiagonalCiphertext<BE>,
         col: i64,
         v: &V,
-        mask: &CKKSPreparedRight<BE>,
+        mask: &CKKSRightOperandPrepared<BE>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>

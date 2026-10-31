@@ -32,8 +32,8 @@ use crate::SlotsKind;
 use crate::layouts::paco::factors::{PaCoPsiTail, paco_psi_c2s_factors, paco_stc_factors};
 use crate::{
     GLWEPlaintextMeta, Scale,
-    api::{CKKSEncodingHostOps, CKKSEncodingOps, LinearTransformation, PaCoScalar},
-    layouts::{CKKSModuleAlloc, CKKSScalar},
+    api::{CKKSEncodingHostOps, CKKSEncodingOps, CKKSPaCoScalar, LinearTransformation},
+    layouts::{CKKSPlaintextAlloc, CKKSScalar},
 };
 
 /// Owned plaintext of `BE` on the standard ring, the only ring PaCo runs on.
@@ -119,7 +119,7 @@ fn validate_factor_encoding<F: CKKSScalar>(diagonals: &crate::layouts::ComplexDi
 /// `2^log_delta_bsk` conservatively bounds every quantized coefficient. The
 /// host codec stores those coefficients in either `i64` or `i128`, selected
 /// from the semantic plaintext width.
-fn validate_beta_encoding<F: PaCoScalar>(plan: &PaCoPlan) -> Result<()> {
+fn validate_beta_encoding<F: CKKSPaCoScalar>(plan: &PaCoPlan) -> Result<()> {
     let width = plan
         .log_delta_bsk()
         .checked_add(plan.log_beta_budget())
@@ -152,8 +152,8 @@ impl<BE: Backend, F> PaCoContext<BE, F> {
     pub fn compile(module: &Module<BE>, base2k: Base2K, plan: PaCoPlan, scratch: &mut ScratchArena<'_, BE>) -> Result<Self>
     where
         BE: Backend<Ring = Standard>,
-        Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
-        F: PaCoScalar,
+        Module<BE>: CKKSPlaintextAlloc<BE> + CKKSEncodingOps<BE, F>,
+        F: CKKSPaCoScalar,
     {
         plan.check_evaluation().context("invalid PaCo evaluation plan")?;
         ensure!(
@@ -191,7 +191,7 @@ impl<BE: Backend, F> PaCoContext<BE, F> {
                 .log_delta()
                 .checked_add(dft.log_budget())
                 .context("PaCo factor torus width overflows usize")?;
-            crate::encoding::ckks_encode_linear_transformation_from_diagonals(
+            crate::encoding::ckks_linear_transformation_encode_from_diagonals(
                 module,
                 base2k,
                 crate::CoeffsMeta {
@@ -273,14 +273,14 @@ impl<BE: Backend, F> PaCoContext<BE, F> {
                     .log_delta()
                     .checked_add(dft.log_budget())
                     .context("PaCo ψ mask torus width overflows usize")?;
-                let mut pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), base2k, k_pt.into());
+                let mut pt = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), base2k, k_pt.into());
                 pt.set_meta_checked(GLWEPlaintextMeta {
                     scale: Scale::Log(dft.log_delta()),
                     slots: SlotsKind::Complex,
                     log_sparsity: 0,
                 })?;
                 module
-                    .ckks_encode_reim_into(&mut pt, &re, &im, scratch)
+                    .ckks_encode_slots_host_into(&mut pt, &re, &im, scratch)
                     .context("cannot encode the PaCo ψ mask plaintext")?;
                 PaCoPsiTailMaterial::Mask {
                     mu: pt,

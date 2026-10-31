@@ -8,7 +8,7 @@ use poulpy_hal::layouts::{HostBytesBackend, Module, Ring};
 use crate::SlotsKind;
 use crate::{
     CoeffsMeta, SetCKKSInfos,
-    layouts::{CKKSModuleAlloc, CKKSPlaintextOwned, CKKSPlaintextVecHostCodec, CKKSScalar},
+    layouts::{CKKSPlaintextAlloc, CKKSPlaintextOwned, CKKSPlaintextVecHostCodec, CKKSScalar},
 };
 
 pub use poulpy_core::layouts::{
@@ -20,7 +20,7 @@ pub use poulpy_core::layouts::{
 ///
 /// Each encoder rejects a zero torus width, `coeff_meta.k = 0`, with
 /// [`CKKSCompositionError::InvalidOperand`](crate::CKKSCompositionError::InvalidOperand) before allocating anything.
-pub trait EncodeBSGS {
+pub trait CKKSPolynomialEncode {
     /// Decomposes and encodes using [`DEFAULT_SPLIT_STRATEGY`].
     fn encode_bsgs<R: Ring>(
         &self,
@@ -49,7 +49,7 @@ pub trait EncodeBSGS {
     ) -> Result<BSGSPolynomial<CKKSPlaintextOwned<HostBytesBackend<R>>>>;
 }
 
-impl<F> EncodeBSGS for Polynomial<F>
+impl<F> CKKSPolynomialEncode for Polynomial<F>
 where
     F: Float + FloatConst + FromPrimitive + Debug + CKKSScalar,
 {
@@ -72,7 +72,7 @@ where
         coeff_meta.ensure_width("encode_bsgs_with")?;
         let mut step_idx = 0usize;
         self.decompose_bsgs_with(strategy, |baby_coeffs| {
-            let mut pt = module.ckks_pt_coeffs_alloc(baby_coeffs.len(), base2k, coeff_meta.k);
+            let mut pt = module.ckks_plaintext_alloc(baby_coeffs.len().into(), base2k, coeff_meta.k);
             let mut meta = coeff_meta.meta;
             meta.slots = SlotsKind::Real;
             pt.set_meta(meta);
@@ -93,7 +93,7 @@ where
         coeff_meta.ensure_width("encode_bsgs_folded_with")?;
         let mut step_idx = 0usize;
         self.decompose_bsgs_folded_with(strategy, |baby_coeffs| {
-            let mut pt = module.ckks_pt_coeffs_alloc(baby_coeffs.len(), base2k, coeff_meta.k);
+            let mut pt = module.ckks_plaintext_alloc(baby_coeffs.len().into(), base2k, coeff_meta.k);
             pt.set_meta(coeff_meta.meta);
             pt.encode_host_floats(baby_coeffs)
                 .map_err(|e| anyhow!("encode_bsgs_folded: step {step_idx}: {e}"))?;

@@ -11,8 +11,8 @@ use crate::{
         LinearTransformationPrepared,
     },
     layouts::{
-        CKKSFoldKeysLayout, CKKSModuleAlloc, RingSwitchKeys,
-        eval_mod::{EvalModPlan, EvalModType, compile_eval_mod},
+        CKKSCiphertextAlloc, CKKSFoldKeysLayout, CKKSPlaintextAlloc, RingSwitchKeys,
+        eval_mod::{EvalModPlan, EvalModType, ckks_eval_mod_compile},
     },
     polynomial::SplitStrategy,
 };
@@ -37,7 +37,7 @@ use super::{
     },
     parity::helpers::{fixture_ciphertext, snapshot, with_scratch},
 };
-use crate::encoding::ckks_encode_linear_transformation_from_diagonals;
+use crate::encoding::ckks_linear_transformation_encode_from_diagonals;
 use poulpy_hal::api::CnvPVecAlloc;
 
 pub fn test_conjugate_invariant_leveled<BE>(
@@ -63,10 +63,10 @@ pub fn test_conjugate_invariant_leveled<BE>(
     let re2 = (0..slots).map(|i| (slots - i) as f64 / 389.0).collect::<Vec<_>>();
     let im = vec![0.0; slots];
 
-    let mut pt1 = module.ckks_pt_vec_alloc(module.ckks_max_slots(), params.base2k.into(), params.prec().k());
+    let mut pt1 = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), params.base2k.into(), params.prec().k());
     pt1.set_meta(params.prec().meta());
     module
-        .ckks_encode_reim_into(&mut pt1, &re1, &im, &mut scratch.borrow())
+        .ckks_encode_slots_host_into(&mut pt1, &re1, &im, &mut scratch.borrow())
         .unwrap();
     let ct1 = ckks_encrypt_pt(
         &params,
@@ -77,10 +77,10 @@ pub fn test_conjugate_invariant_leveled<BE>(
         &mut scratch.borrow(),
     );
 
-    let mut pt2 = module.ckks_pt_vec_alloc(module.ckks_max_slots(), params.base2k.into(), params.prec().k());
+    let mut pt2 = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), params.base2k.into(), params.prec().k());
     pt2.set_meta(params.prec().meta());
     module
-        .ckks_encode_reim_into(&mut pt2, &re2, &im, &mut scratch.borrow())
+        .ckks_encode_slots_host_into(&mut pt2, &re2, &im, &mut scratch.borrow())
         .unwrap();
     let ct2 = ckks_encrypt_pt(
         &params,
@@ -91,7 +91,7 @@ pub fn test_conjugate_invariant_leveled<BE>(
         &mut scratch.borrow(),
     );
 
-    let mut decrypted = module.ckks_pt_vec_alloc(module.ckks_max_slots(), params.base2k.into(), params.prec().k());
+    let mut decrypted = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), params.base2k.into(), params.prec().k());
     let mut got_re = vec![0.0; slots];
     let mut got_im = vec![0.0; slots];
     macro_rules! assert_output {
@@ -99,7 +99,7 @@ pub fn test_conjugate_invariant_leveled<BE>(
             decrypted.set_meta(params.prec().meta());
             module.ckks_decrypt(&mut decrypted, $ct, &sk, &mut scratch.borrow()).unwrap();
             module
-                .ckks_decode_reim_into(&decrypted, &mut got_re, &mut got_im, &mut scratch.borrow())
+                .ckks_decode_slots_host_into(&decrypted, &mut got_re, &mut got_im, &mut scratch.borrow())
                 .unwrap();
             assert_reim_close(&got_re, &got_im, $want);
             assert_eq!($ct.slots(), SlotsKind::Real);
@@ -245,10 +245,10 @@ pub fn test_conjugate_invariant_leveled<BE>(
     assert_eq!(exhausted.data(), exhausted_before.data());
 
     let pt_slots = slots / 4;
-    let mut pt = module.ckks_pt_vec_alloc(pt_slots, params.base2k.into(), params.prec().k());
+    let mut pt = module.ckks_plaintext_alloc_from_slots(pt_slots, params.base2k.into(), params.prec().k());
     pt.set_meta(params.prec().meta());
     module
-        .ckks_encode_reim_into(&mut pt, &re2[..pt_slots], &im[..pt_slots], &mut scratch.arena())
+        .ckks_encode_slots_host_into(&mut pt, &re2[..pt_slots], &im[..pt_slots], &mut scratch.arena())
         .unwrap();
     let ct2 = ckks_encrypt_pt(
         &params,
@@ -268,7 +268,7 @@ pub fn test_conjugate_invariant_leveled<BE>(
     let mixed_want = (0..slots).map(|i| re1[i] * want2[i]).collect::<Vec<_>>();
     assert_output!(&mixed, &mixed_want);
 
-    use crate::polynomial::{Basis, EncodeBSGS, Polynomial};
+    use crate::polynomial::{Basis, CKKSPolynomialEncode, Polynomial};
     for basis in [Basis::Monomial, Basis::Chebyshev] {
         let poly = Polynomial::new(basis, vec![0.125f64, 0.25, 0.125, -0.0625]);
         let host_poly = poly
@@ -305,7 +305,7 @@ pub fn test_conjugate_invariant_leveled<BE>(
         let mut complex = diagonals.clone();
         complex.im.set(0, vec![0.25; diagonal_slots]);
         let err = with_scratch::<BE, _>(0, |s| {
-            ckks_encode_linear_transformation_from_diagonals(
+            ckks_linear_transformation_encode_from_diagonals(
                 module,
                 params.base2k.into(),
                 params.prec().into(),
@@ -321,7 +321,7 @@ pub fn test_conjugate_invariant_leveled<BE>(
             "complex diagonals on the invariant ring",
             &crate::CKKSError::from(err),
             CKKSCompositionError::InvalidOperand {
-                op: "ckks_encode_linear_transformation_from_diagonals",
+                op: "ckks_linear_transformation_encode_from_diagonals",
                 reason: "complex linear-transformation diagonals cannot be encoded into real slots".into(),
             },
         );
@@ -329,7 +329,7 @@ pub fn test_conjugate_invariant_leveled<BE>(
             LinearTransformationStrategy::Direct,
             LinearTransformationStrategy::Bsgs { giant_step: 2 },
         ] {
-            let lt = ckks_encode_linear_transformation_from_diagonals(
+            let lt = ckks_linear_transformation_encode_from_diagonals(
                 module,
                 params.base2k.into(),
                 params.prec().into(),
@@ -351,20 +351,20 @@ pub fn test_conjugate_invariant_leveled<BE>(
             let mut result = alloc_ct(&params, module, params.k);
             let streamed_bytes = pt_self_into_tmp_bytes(module, true, input, &lt.index(), &params.atk_layout());
             with_scratch::<BE, _>(streamed_bytes, |s| {
-                module.ckks_eval_linear_transformation_self_into(&mut result, input, &lt, &keys, s)
+                module.ckks_linear_transformation_eval_self_into(&mut result, input, &lt, &keys, s)
             })
             .unwrap();
             assert_output!(&result, &want);
             let first = lt.first_diagonal_plaintext().unwrap();
             let mut prepared = LinearTransformationPrepared::<BE>::alloc_prepared_from_index(module, &lt.index(), first);
-            let prepare_bytes = module.ckks_prepare_linear_transformation_rhs_tmp_bytes(first);
+            let prepare_bytes = module.ckks_linear_transformation_rhs_prepare_tmp_bytes(first);
             with_scratch::<BE, _>(prepare_bytes, |s| {
-                module.ckks_prepare_linear_transformation_rhs(&mut prepared, &lt, s)
+                module.ckks_linear_transformation_rhs_prepare(&mut prepared, &lt, s)
             })
             .unwrap();
             let resident_bytes = pt_self_into_tmp_bytes(module, false, input, &lt.index(), &params.atk_layout());
             with_scratch::<BE, _>(resident_bytes, |s| {
-                module.ckks_eval_linear_transformation_self_into(&mut result, input, &prepared, &keys, s)
+                module.ckks_linear_transformation_eval_self_into(&mut result, input, &prepared, &keys, s)
             })
             .unwrap();
             assert_output!(&result, &want);
@@ -390,10 +390,10 @@ pub fn test_conjugate_invariant_inner_sum<BE>(
     let slots = params.n;
     let re = (0..slots).map(|i| (i as f64 + 1.0) / 521.0).collect::<Vec<_>>();
     let im = vec![0.0; slots];
-    let mut pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), params.base2k.into(), params.prec().k());
+    let mut pt = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), params.base2k.into(), params.prec().k());
     pt.set_meta(params.prec().meta());
     module
-        .ckks_encode_reim_into(&mut pt, &re, &im, &mut scratch.borrow())
+        .ckks_encode_slots_host_into(&mut pt, &re, &im, &mut scratch.borrow())
         .unwrap();
     let ct = ckks_encrypt_pt(
         &params,
@@ -418,7 +418,7 @@ pub fn test_conjugate_invariant_inner_sum<BE>(
         }
     }
     let atk = params.atk_layout();
-    let mut decrypted = module.ckks_pt_vec_alloc(module.ckks_max_slots(), params.base2k.into(), params.prec().k());
+    let mut decrypted = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), params.base2k.into(), params.prec().k());
     let (mut got_re, mut got_im) = (vec![0.0; slots], vec![0.0; slots]);
     for (log_batch, log_count) in windows {
         for (replicate, normalize) in [(false, false), (false, true), (true, false)] {
@@ -446,7 +446,7 @@ pub fn test_conjugate_invariant_inner_sum<BE>(
             decrypted.set_meta(params.prec().meta());
             module.ckks_decrypt(&mut decrypted, &res, &sk, &mut scratch.borrow()).unwrap();
             module
-                .ckks_decode_reim_into(&decrypted, &mut got_re, &mut got_im, &mut scratch.borrow())
+                .ckks_decode_slots_host_into(&decrypted, &mut got_re, &mut got_im, &mut scratch.borrow())
                 .unwrap();
             assert_reim_close(&got_re, &got_im, &want);
             assert_eq!(res.slots(), SlotsKind::Real, "{label}: slot kind");
@@ -479,7 +479,7 @@ pub fn test_conjugate_invariant_encoding<BE, F>(module: &Module<BE>, log_delta: 
 where
     BE: TestContextBackend<Ring = ConjugateInvariant>,
     F: CKKSEncodingScalar,
-    Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
+    Module<BE>: CKKSPlaintextAlloc<BE> + CKKSEncodingOps<BE, F>,
 {
     use crate::{GLWEPlaintextMeta, api::CKKSEncodingOps, layouts::CKKSEncodingBuffer};
     use poulpy_hal::AlignedBuf;
@@ -487,23 +487,26 @@ where
     assert_eq!(module.ckks_max_slots(), module.n());
     for log_slots in 0..=module.n().ilog2() {
         let slots = 1usize << log_slots;
-        let reim_bytes = module.ckks_reim_tmp_bytes(slots);
+        let reim_bytes = module.ckks_encoding_host_tmp_bytes(slots);
         let re = (0..slots)
             .map(|i| F::from_f64(((17 * i + 3) % 31) as f64 / 37.0).unwrap())
             .collect::<Vec<_>>();
         let im = vec![F::from_f64(0.25).unwrap(); slots];
         if slots >= BE::MIN_DEGREE {
-            let mut pt = module.ckks_pt_vec_alloc(slots, 19usize.into(), (log_delta + 36).into());
+            let mut pt = module.ckks_plaintext_alloc_from_slots(slots, 19usize.into(), (log_delta + 36).into());
             pt.set_meta(GLWEPlaintextMeta {
                 scale: Scale::Log(log_delta),
                 slots: SlotsKind::Complex,
                 log_sparsity: 0,
             });
-            with_scratch::<BE, _>(reim_bytes, |s| module.ckks_encode_reim_into(&mut pt, &re, &im, s)).unwrap();
+            with_scratch::<BE, _>(reim_bytes, |s| module.ckks_encode_slots_host_into(&mut pt, &re, &im, s)).unwrap();
             assert_eq!(pt.slots(), SlotsKind::Real);
             let mut got_re = vec![F::zero(); slots];
             let mut got_im = vec![F::one(); slots];
-            with_scratch::<BE, _>(reim_bytes, |s| module.ckks_decode_reim_into(&pt, &mut got_re, &mut got_im, s)).unwrap();
+            with_scratch::<BE, _>(reim_bytes, |s| {
+                module.ckks_decode_slots_host_into(&pt, &mut got_re, &mut got_im, s)
+            })
+            .unwrap();
             for (got, expected) in got_re.iter().zip(&re) {
                 assert!((*got - *expected).abs().to_f64().unwrap() < tolerance);
             }
@@ -538,7 +541,7 @@ where
             })
             .unwrap();
             with_scratch::<BE, _>(reim_bytes, |s| {
-                module.ckks_decode_reim_into(&raw, &mut got_re, &mut got_im, s)
+                module.ckks_decode_slots_host_into(&raw, &mut got_re, &mut got_im, s)
             })
             .unwrap();
             for (got, expected) in got_re.iter().zip(&re) {
@@ -546,8 +549,8 @@ where
             }
         }
         let mut values = CKKSEncodingBuffer::<AlignedBuf, F>::from_host::<BE>(&re.iter().chain(&im).copied().collect::<Vec<_>>());
-        module.ckks_slots_to_coeffs_assign(&mut values).unwrap();
-        module.ckks_coeffs_to_slots_assign(&mut values).unwrap();
+        module.ckks_encoding_buffer_slots_to_coeffs_assign(&mut values).unwrap();
+        module.ckks_encoding_buffer_coeffs_to_slots_assign(&mut values).unwrap();
         let values = values.to_host::<BE>();
         for (got, expected) in values[..slots].iter().zip(&re) {
             assert!((*got - *expected).abs().to_f64().unwrap() < tolerance);
@@ -555,8 +558,8 @@ where
         assert!(values[slots..].iter().all(|&value| value == F::zero()));
     }
     let mut oversized = CKKSEncodingBuffer::<AlignedBuf, F>::from_host::<BE>(&vec![F::zero(); 4 * module.n()]);
-    assert!(module.ckks_slots_to_coeffs_assign(&mut oversized).is_err());
-    let mut pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), 19usize.into(), (log_delta + 36).into());
+    assert!(module.ckks_encoding_buffer_slots_to_coeffs_assign(&mut oversized).is_err());
+    let mut pt = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), 19usize.into(), (log_delta + 36).into());
     assert!(module.ckks_encode_coeffs_into(&mut pt, &oversized).is_err());
 }
 
@@ -681,9 +684,9 @@ pub fn test_conjugate_invariant_eval_mod<BE>(
         rank: 1,
         ..params
     };
-    let compile_bytes = module.ckks_reim_tmp_bytes(params.n);
+    let compile_bytes = module.ckks_encoding_host_tmp_bytes(params.n);
     let eval_mod = with_scratch::<BE, _>(compile_bytes, |s| {
-        compile_eval_mod::<BE, f64>(params.base2k.into(), lit, module, s)
+        ckks_eval_mod_compile::<BE, f64>(params.base2k.into(), lit, module, s)
     })
     .unwrap();
 
@@ -708,10 +711,10 @@ pub fn test_conjugate_invariant_eval_mod<BE>(
             (source.next_f64(-bound, bound).round() * ratio + source.next_f64(-1.0, 1.0)) * lit.input_scaling().unwrap() / ratio
         })
         .collect();
-    let mut pt = module.ckks_pt_vec_alloc(slots, params.base2k.into(), params.prec().k());
+    let mut pt = module.ckks_plaintext_alloc_from_slots(slots, params.base2k.into(), params.prec().k());
     pt.set_meta(params.prec().meta());
     module
-        .ckks_encode_reim_into(&mut pt, &x, &vec![0.0; slots], &mut scratch.borrow())
+        .ckks_encode_slots_host_into(&mut pt, &x, &vec![0.0; slots], &mut scratch.borrow())
         .unwrap();
     let ct = ckks_encrypt_pt(
         &params,
@@ -729,7 +732,7 @@ pub fn test_conjugate_invariant_eval_mod<BE>(
     let decrypted = ckks_decrypt_with_prec(module, &res, &sk, prec, &mut scratch.borrow()).unwrap();
     let (mut re, mut im) = (vec![0.0; slots], vec![0.0; slots]);
     module
-        .ckks_decode_reim_into(&decrypted, &mut re, &mut im, &mut scratch.borrow())
+        .ckks_decode_slots_host_into(&decrypted, &mut re, &mut im, &mut scratch.borrow())
         .unwrap();
     let tau = std::f64::consts::TAU;
     let want: Vec<f64> = x
@@ -752,7 +755,7 @@ pub fn test_conjugate_invariant_eval_mod<BE>(
         ..lit
     };
     let complex = with_scratch::<BE, _>(compile_bytes, |s| {
-        compile_eval_mod::<BE, f64>(params.base2k.into(), complex, module, s)
+        ckks_eval_mod_compile::<BE, f64>(params.base2k.into(), complex, module, s)
     })
     .unwrap();
     let before = res.to_host_owned::<BE>();
@@ -812,9 +815,9 @@ where
     let slots = params.n;
     let want = (0..slots).map(|i| (i as f64 + 1.0) / 521.0).collect::<Vec<_>>();
     let zeros = vec![0.0; slots];
-    let mut pt = ci.ckks_pt_vec_alloc(ci.ckks_max_slots(), params.base2k.into(), params.prec().k());
+    let mut pt = ci.ckks_plaintext_alloc_from_slots(ci.ckks_max_slots(), params.base2k.into(), params.prec().k());
     pt.set_meta(params.prec().meta());
-    ci.ckks_encode_reim_into(&mut pt, &want, &zeros, &mut scratch.borrow())
+    ci.ckks_encode_slots_host_into(&mut pt, &want, &zeros, &mut scratch.borrow())
         .unwrap();
     let ct = ckks_encrypt_pt(
         &params,
@@ -832,7 +835,7 @@ where
             let pt = ckks_decrypt_with_prec(&$module, &$ct, &$sk, prec, &mut $scratch.borrow()).unwrap();
             let (mut re, mut im) = (vec![0.0; slots], vec![0.0; slots]);
             $module
-                .ckks_decode_reim_into(&pt, &mut re, &mut im, &mut $scratch.borrow())
+                .ckks_decode_slots_host_into(&pt, &mut re, &mut im, &mut $scratch.borrow())
                 .unwrap();
             assert_precision(concat!(stringify!($ct), " re"), &re, &want, $ct.log_delta(), $params.n);
             assert_precision(concat!(stringify!($ct), " im"), &im, &zeros, $ct.log_delta(), $params.n);
@@ -872,7 +875,7 @@ where
         prec.meta = back.meta();
         let pt = ckks_decrypt_with_prec(&ci, &back, &ci_sk, prec, &mut scratch.borrow()).unwrap();
         let (mut re, mut im) = (vec![0.0; slots], vec![0.0; slots]);
-        ci.ckks_decode_reim_into(&pt, &mut re, &mut im, &mut scratch.borrow())
+        ci.ckks_decode_slots_host_into(&pt, &mut re, &mut im, &mut scratch.borrow())
             .unwrap();
         let mut errors: Vec<f64> = re.iter().zip(&want).map(|(got, want)| (got - want).abs()).collect();
         let first = errors[..4].iter().cloned().fold(0.0, f64::max);

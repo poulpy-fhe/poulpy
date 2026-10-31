@@ -1,7 +1,7 @@
 //! Coefficient-domain fixtures and exact scratch checks, using explicit transfers.
 use crate::{
     CKKSInfos, CKKSLayout,
-    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned},
+    layouts::{CKKSCiphertextAlloc, CKKSCiphertextOwned, CKKSPlaintextAlloc, CKKSPlaintextOwned},
 };
 use poulpy_core::{
     ComponentNoise, Distribution, GLWEAdd, GLWEFill,

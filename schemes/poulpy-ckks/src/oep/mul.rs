@@ -7,7 +7,7 @@ use poulpy_hal::layouts::{Backend, Module, PrepareHint, ScratchArena};
 
 use crate::{
     CKKSCtBounds, CKKSInfos, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos,
-    layouts::{CKKSPreparedLeft, CKKSPreparedRight},
+    layouts::{CKKSLeftOperandPrepared, CKKSRightOperandPrepared},
 };
 
 /// Backend contract of [`CKKSMulOps`](crate::api::CKKSMulOps).
@@ -78,20 +78,25 @@ pub unsafe trait CKKSMulImpl: Backend {
         A: GLWEToBackendRef<Self> + CKKSInfos + GLWEInfos,
         H: GetTensorKey<Self>;
 
-    /// Scratch bound of [`Self::ckks_prepare_left`], [`Self::ckks_prepare_right`] and their `_into` forms for an
+    /// Scratch bound of [`Self::ckks_left_operand_prepare`] and [`Self::ckks_left_operand_prepare_alloc`] for an operand
+    /// shaped like `a`; may report less than the reference, never less than the body takes.
+    /// [`Self::ckks_mul_tmp_bytes`] of a product reading such an operand covers it, as the API promises.
+    fn ckks_left_operand_prepare_tmp_bytes<A: GLWEInfos>(module: &Module<Self>, a: &A) -> usize;
+
+    /// Scratch bound of [`Self::ckks_right_operand_prepare`] and [`Self::ckks_right_operand_prepare_alloc`] for an
     /// operand shaped like `a`; may report less than the reference, never less than the body takes.
     /// [`Self::ckks_mul_tmp_bytes`] of a product reading such an operand covers it, as the API promises.
-    fn ckks_prepare_tmp_bytes<A: GLWEInfos>(module: &Module<Self>, a: &A) -> usize;
+    fn ckks_right_operand_prepare_tmp_bytes<A: GLWEInfos>(module: &Module<Self>, a: &A) -> usize;
 
     /// Reproduces
-    /// [`ckks_prepare_left_into_reference`](crate::reference::mul::CKKSMulReference::ckks_prepare_left_into_reference)
-    /// bit for bit, within [`Self::ckks_prepare_tmp_bytes`]; free in kernels and scratch use. Prepares `a` into `res`,
-    /// with no allocation: `res` then reports `a`'s layout and metadata, and the products that read it give the
-    /// reference's bits. An `a` of another layout than `res` was allocated for is `InvalidOperand`, before any write to
-    /// `res`.
-    fn ckks_prepare_left_into<A>(
+    /// [`ckks_left_operand_prepare_reference`](crate::reference::mul::CKKSMulReference::ckks_left_operand_prepare_reference)
+    /// bit for bit, within [`Self::ckks_left_operand_prepare_tmp_bytes`]; free in kernels and scratch use. Prepares `a`
+    /// into `res`, with no allocation: `res` then reports `a`'s layout and metadata, and the products that read it give
+    /// the reference's bits. An `a` of another layout than `res` was allocated for is `InvalidOperand`, before any write
+    /// to `res`.
+    fn ckks_left_operand_prepare<A>(
         module: &Module<Self>,
-        res: &mut CKKSPreparedLeft<Self>,
+        res: &mut CKKSLeftOperandPrepared<Self>,
         a: &A,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
@@ -99,46 +104,46 @@ pub unsafe trait CKKSMulImpl: Backend {
         A: GLWEToBackendRef<Self> + CKKSInfos + GLWEInfos;
 
     /// Reproduces
-    /// [`ckks_prepare_right_into_reference`](crate::reference::mul::CKKSMulReference::ckks_prepare_right_into_reference)
-    /// bit for bit, within [`Self::ckks_prepare_tmp_bytes`]; free in kernels and scratch use. As
-    /// [`Self::ckks_prepare_left_into`], into a right operand.
-    fn ckks_prepare_right_into<A>(
+    /// [`ckks_right_operand_prepare_reference`](crate::reference::mul::CKKSMulReference::ckks_right_operand_prepare_reference)
+    /// bit for bit, within [`Self::ckks_right_operand_prepare_tmp_bytes`]; free in kernels and scratch use. As
+    /// [`Self::ckks_left_operand_prepare`], into a right operand.
+    fn ckks_right_operand_prepare<A>(
         module: &Module<Self>,
-        res: &mut CKKSPreparedRight<Self>,
+        res: &mut CKKSRightOperandPrepared<Self>,
         a: &A,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
         A: GLWEToBackendRef<Self> + CKKSInfos + GLWEInfos;
 
-    /// Default body: `ckks_prepare_left_derived`, a left operand allocated from `a` under `hint` with
-    /// [`ckks_prepared_left_alloc_from_infos`](crate::layouts::CKKSModuleAlloc::ckks_prepared_left_alloc_from_infos),
-    /// then [`Self::ckks_prepare_left_into`] into it.
-    fn ckks_prepare_left<A>(
+    /// Default body: `ckks_left_operand_prepare_alloc_derived`, a left operand allocated from `a` under `hint` with
+    /// [`ckks_left_operand_prepared_alloc_from_infos`](crate::api::CKKSLeftOperandPreparedFactory::ckks_left_operand_prepared_alloc_from_infos),
+    /// then [`Self::ckks_left_operand_prepare`] into it.
+    fn ckks_left_operand_prepare_alloc<A>(
         module: &Module<Self>,
         a: &A,
         hint: PrepareHint,
         scratch: &mut ScratchArena<'_, Self>,
-    ) -> Result<CKKSPreparedLeft<Self>>
+    ) -> Result<CKKSLeftOperandPrepared<Self>>
     where
         A: GLWEToBackendRef<Self> + CKKSInfos + GLWEInfos,
     {
-        super::derived::mul::ckks_prepare_left_derived(module, a, hint, scratch)
+        super::derived::mul::ckks_left_operand_prepare_alloc_derived(module, a, hint, scratch)
     }
 
-    /// Default body: `ckks_prepare_right_derived`, a right operand allocated from `a` under `hint` with
-    /// [`ckks_prepared_right_alloc_from_infos`](crate::layouts::CKKSModuleAlloc::ckks_prepared_right_alloc_from_infos),
-    /// then [`Self::ckks_prepare_right_into`] into it.
-    fn ckks_prepare_right<A>(
+    /// Default body: `ckks_right_operand_prepare_alloc_derived`, a right operand allocated from `a` under `hint` with
+    /// [`ckks_right_operand_prepared_alloc_from_infos`](crate::api::CKKSRightOperandPreparedFactory::ckks_right_operand_prepared_alloc_from_infos),
+    /// then [`Self::ckks_right_operand_prepare`] into it.
+    fn ckks_right_operand_prepare_alloc<A>(
         module: &Module<Self>,
         a: &A,
         hint: PrepareHint,
         scratch: &mut ScratchArena<'_, Self>,
-    ) -> Result<CKKSPreparedRight<Self>>
+    ) -> Result<CKKSRightOperandPrepared<Self>>
     where
         A: GLWEToBackendRef<Self> + CKKSInfos + GLWEInfos,
     {
-        super::derived::mul::ckks_prepare_right_derived(module, a, hint, scratch)
+        super::derived::mul::ckks_right_operand_prepare_alloc_derived(module, a, hint, scratch)
     }
 
     /// Reproduces
@@ -147,7 +152,7 @@ pub unsafe trait CKKSMulImpl: Backend {
     fn ckks_mul_prepared_assign<Dst, H>(
         module: &Module<Self>,
         dst: &mut Dst,
-        prepared: &CKKSPreparedRight<Self>,
+        prepared: &CKKSRightOperandPrepared<Self>,
         tsk: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
@@ -331,41 +336,48 @@ macro_rules! impl_ckks_mul_reference_full {
                 $crate::reference::mul::CKKSMulReference::ckks_mul_assign_reference(module, dst, a, tsk, scratch)
             }
 
-            fn ckks_prepare_tmp_bytes<A: ::poulpy_core::layouts::GLWEInfos>(
+            fn ckks_left_operand_prepare_tmp_bytes<A: ::poulpy_core::layouts::GLWEInfos>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 a: &A,
             ) -> usize {
-                $crate::reference::mul::CKKSMulReference::ckks_prepare_tmp_bytes_reference(module, a)
+                $crate::reference::mul::CKKSMulReference::ckks_left_operand_prepare_tmp_bytes_reference(module, a)
             }
 
-            fn ckks_prepare_left_into<A>(
+            fn ckks_right_operand_prepare_tmp_bytes<A: ::poulpy_core::layouts::GLWEInfos>(
                 module: &::poulpy_hal::layouts::Module<Self>,
-                res: &mut $crate::layouts::CKKSPreparedLeft<Self>,
+                a: &A,
+            ) -> usize {
+                $crate::reference::mul::CKKSMulReference::ckks_right_operand_prepare_tmp_bytes_reference(module, a)
+            }
+
+            fn ckks_left_operand_prepare<A>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                res: &mut $crate::layouts::CKKSLeftOperandPrepared<Self>,
                 a: &A,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
             where
                 A: ::poulpy_core::layouts::GLWEToBackendRef<Self> + $crate::CKKSInfos + ::poulpy_core::layouts::GLWEInfos,
             {
-                $crate::reference::mul::CKKSMulReference::ckks_prepare_left_into_reference(module, res, a, scratch)
+                $crate::reference::mul::CKKSMulReference::ckks_left_operand_prepare_reference(module, res, a, scratch)
             }
 
-            fn ckks_prepare_right_into<A>(
+            fn ckks_right_operand_prepare<A>(
                 module: &::poulpy_hal::layouts::Module<Self>,
-                res: &mut $crate::layouts::CKKSPreparedRight<Self>,
+                res: &mut $crate::layouts::CKKSRightOperandPrepared<Self>,
                 a: &A,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
             where
                 A: ::poulpy_core::layouts::GLWEToBackendRef<Self> + $crate::CKKSInfos + ::poulpy_core::layouts::GLWEInfos,
             {
-                $crate::reference::mul::CKKSMulReference::ckks_prepare_right_into_reference(module, res, a, scratch)
+                $crate::reference::mul::CKKSMulReference::ckks_right_operand_prepare_reference(module, res, a, scratch)
             }
 
             fn ckks_mul_prepared_assign<Dst, H>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
-                prepared: &$crate::layouts::CKKSPreparedRight<Self>,
+                prepared: &$crate::layouts::CKKSRightOperandPrepared<Self>,
                 tsk: &H,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>

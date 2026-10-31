@@ -47,12 +47,13 @@ use crate::SlotsKind;
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos,
     api::{
-        CKKSAddOps, CKKSBootstrappingOps, CKKSDFTMatrixOps, CKKSDFTOps, CKKSDecryptOps, CKKSEvalModOps, CKKSPow2Ops, CKKSSubOps,
+        CKKSAddOps, CKKSBootstrappingOps, CKKSDFTMatrixOps, CKKSDFTMatrixPreparedFactory, CKKSDFTOps, CKKSDecryptOps,
+        CKKSEvalModOps, CKKSPow2Ops, CKKSSubOps,
     },
     layouts::{
         BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys, BootstrappingPipeline, BootstrappingPlan,
-        BootstrappingTechniques, CKKSModuleAlloc, DFTMatrix, DFTOutputFormat, DFTPlan, DFTType, EncapsulationKeysLayout,
-        EvalRoundPlus, SparseSecretEncapsulation,
+        BootstrappingTechniques, CKKSCiphertextAlloc, CKKSPlaintextAlloc, DFTMatrix, DFTOutputFormat, DFTPlan, DFTType,
+        EncapsulationKeysLayout, EvalRoundPlus, SparseSecretEncapsulation,
         eval_mod::{EvalModPlan, EvalModType},
     },
     polynomial::SplitStrategy,
@@ -225,7 +226,8 @@ fn plan_with_encapsulation(
 pub fn test_bootstrapping_first_factor_on_raise<BE, F, E>(params: CKKSTestParams)
 where
     BE: TestContextBackend<Ring = Standard>,
-    Module<BE>: TestContextModule<BE>
+    Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSBootstrappingOps<BE>
         + CKKSDFTOps<BE>
@@ -433,7 +435,8 @@ where
 pub fn test_bootstrapping_standard_e2e<BE, F, E>(params: CKKSTestParams)
 where
     BE: TestContextBackend<Ring = Standard>,
-    Module<BE>: TestContextModule<BE>
+    Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSBootstrappingOps<BE>
         + CKKSDFTOps<BE>
@@ -781,7 +784,8 @@ where
 pub fn test_bootstrapping_evalround_e2e<BE, F, E>(params: CKKSTestParams)
 where
     BE: TestContextBackend<Ring = Standard>,
-    Module<BE>: TestContextModule<BE>
+    Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSBootstrappingOps<BE>
         + CKKSDFTOps<BE>
@@ -1057,7 +1061,8 @@ where
 pub fn test_bootstrapping_s2c_first_e2e<BE, F, E>(params: CKKSTestParams)
 where
     BE: TestContextBackend<Ring = Standard>,
-    Module<BE>: TestContextModule<BE>
+    Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSBootstrappingOps<BE>
         + CKKSDFTOps<BE>
@@ -1099,7 +1104,8 @@ fn run_s2c_first_case<BE, F, E>(
 ) -> (f64, f64)
 where
     BE: TestContextBackend<Ring = Standard>,
-    Module<BE>: TestContextModule<BE>
+    Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSBootstrappingOps<BE>
         + CKKSDFTOps<BE>
@@ -1294,7 +1300,7 @@ where
     // `log_delta + log_budget <= 127` fits the i128 decode codec (the unused
     // high-order budget is dropped losslessly).
     let prec = meta(ct.log_delta(), ct.log_budget().min(127usize.saturating_sub(ct.log_delta())));
-    let mut pt_out = module.ckks_pt_vec_alloc(module.ckks_max_slots(), ct.base2k(), prec.k);
+    let mut pt_out = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), ct.base2k(), prec.k);
     pt_out.set_meta(prec.meta);
     module.ckks_decrypt(&mut pt_out, ct, sk, &mut scratch.borrow()).unwrap();
     let m = 1 << (ct.log_n() - ct.log_sparsity() - 1);

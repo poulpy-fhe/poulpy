@@ -22,14 +22,15 @@ use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSLayout, GLWEPlaintextMeta, SetCKKSInfos,
     api::{
         CKKSAddManyOps, CKKSAddOps, CKKSAffineOps, CKKSAllOpsTmpBytes, CKKSConjugateOps, CKKSCopyOps, CKKSDotProductOps,
-        CKKSEncodingScalar, CKKSEvalModOps, CKKSImagOps, CKKSInnerSumOps, CKKSLinearTransformationOps, CKKSMulAddOps, CKKSMulOps,
-        CKKSMulSubOps, CKKSNegOps, CKKSPlaintextVecOps, CKKSPow2Ops, CKKSRotateOps, CKKSSubOps, ckks_plaintext_diagonal_layout,
+        CKKSEncodingScalar, CKKSEvalModOps, CKKSImagOps, CKKSInnerSumOps, CKKSLeftOperandPreparedFactory,
+        CKKSLinearTransformationOps, CKKSMulAddOps, CKKSMulOps, CKKSMulSubOps, CKKSNegOps, CKKSPlaintextVecOps, CKKSPow2Ops,
+        CKKSRightOperandPreparedFactory, CKKSRotateOps, CKKSSubOps, ckks_plaintext_diagonal_layout,
     },
     api::{CKKSDecryptOps, CKKSEncryptOps},
     layouts::{
         BootstrappingCIKeys, BootstrappingKeyWidths, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys,
-        CKKSCiphertext, CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, CKKSPlaintextVecHostCodec,
-        plaintext::CKKSPlaintext,
+        CKKSCiphertext, CKKSCiphertextAlloc, CKKSCiphertextOwned, CKKSPlaintextAlloc, CKKSPlaintextOwned,
+        CKKSPlaintextVecHostCodec, plaintext::CKKSPlaintext,
     },
     test_suite::reference_encoder::ReferenceEncoder,
 };
@@ -180,13 +181,16 @@ where
 pub trait TestContextSharedModule<BE: Backend>:
     ModuleNew<BE>
     + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
-    + CKKSModuleAlloc<BE>
+    + CKKSCiphertextAlloc<BE>
+    + CKKSPlaintextAlloc<BE>
     + CKKSAllOpsTmpBytes<BE>
     + CKKSEncryptOps<BE>
     + CKKSDecryptOps<BE>
     + CKKSAddOps<BE>
     + CKKSSubOps<BE>
     + CKKSMulOps<BE>
+    + CKKSLeftOperandPreparedFactory<BE>
+    + CKKSRightOperandPreparedFactory<BE>
     + CKKSNegOps<BE>
     + CKKSCopyOps<BE>
     + CKKSRotateOps<BE>
@@ -220,13 +224,16 @@ pub trait TestContextSharedModule<BE: Backend>:
 impl<BE: Backend, M> TestContextSharedModule<BE> for M where
     M: ModuleNew<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
-        + CKKSModuleAlloc<BE>
+        + CKKSCiphertextAlloc<BE>
+        + CKKSPlaintextAlloc<BE>
         + CKKSAllOpsTmpBytes<BE>
         + CKKSEncryptOps<BE>
         + CKKSDecryptOps<BE>
         + CKKSAddOps<BE>
         + CKKSSubOps<BE>
         + CKKSMulOps<BE>
+        + CKKSLeftOperandPreparedFactory<BE>
+        + CKKSRightOperandPreparedFactory<BE>
         + CKKSNegOps<BE>
         + CKKSCopyOps<BE>
         + CKKSRotateOps<BE>
@@ -453,7 +460,7 @@ pub fn quantized_slots<F: TestScalar, E: ReimFFT<F> + ReimIFFT<F>>(
     re: &[F],
     im: &[F],
 ) -> (Vec<F>, Vec<F>) {
-    let mut pt = host_module.ckks_pt_vec_alloc(host_module.ckks_max_slots(), base2k, prec.k());
+    let mut pt = host_module.ckks_plaintext_alloc_from_slots(host_module.ckks_max_slots(), base2k, prec.k());
     pt.set_meta(prec.meta());
     encoder.encode_reim(&mut pt, re, im).unwrap();
     let m = re.len();
@@ -538,7 +545,7 @@ where
 /// Allocates a ciphertext with `k` limbs according to `params`.
 pub fn alloc_ct<BE: Backend>(params: &CKKSTestParams, module: &Module<BE>, k: usize) -> CKKSCiphertextOwned<BE>
 where
-    Module<BE>: CKKSModuleAlloc<BE>,
+    Module<BE>: CKKSCiphertextAlloc<BE>,
 {
     let mut layout = params.glwe_layout();
     layout.k = k.into();
@@ -605,7 +612,7 @@ where
     F: TestScalar,
     E: ReimFFT<F> + ReimIFFT<F>,
 {
-    let mut host_pt = host_module.ckks_pt_vec_alloc(host_module.ckks_max_slots(), base2k, prec.k());
+    let mut host_pt = host_module.ckks_plaintext_alloc_from_slots(host_module.ckks_max_slots(), base2k, prec.k());
     host_pt.set_meta(prec.meta());
     encoder.encode_reim(&mut host_pt, re, im).unwrap();
     upload_pt(module, &host_pt)
@@ -625,7 +632,7 @@ where
     F: TestScalar,
 {
     let coeff_count = if im.is_some() { 2 } else { 1 };
-    let mut host_pt = host_module.ckks_pt_coeffs_alloc(coeff_count, base2k, prec.k());
+    let mut host_pt = host_module.ckks_plaintext_alloc(coeff_count.into(), base2k, prec.k());
     host_pt.set_meta(prec.meta());
     let mut packed: Vec<F> = vec![F::zero(); coeff_count];
     if let Some(r) = re {
@@ -653,7 +660,7 @@ where
     F: TestScalar,
 {
     let n = m * 2;
-    let mut host_pt = host_module.ckks_pt_vec_alloc(host_module.ckks_max_slots(), base2k, prec.k());
+    let mut host_pt = host_module.ckks_plaintext_alloc_from_slots(host_module.ckks_max_slots(), base2k, prec.k());
     host_pt.set_meta(prec.meta());
     let mut coeffs: Vec<F> = vec![F::zero(); n];
     if let Some(r) = re {
@@ -962,10 +969,10 @@ where
     C: CKKSCtBounds,
     K: GGLWEInfos,
 {
-    module.ckks_eval_linear_transformation_tmp_bytes(ct, &ckks_plaintext_diagonal_layout(ct), plan, key, key)
+    module.ckks_linear_transformation_eval_tmp_bytes(ct, &ckks_plaintext_diagonal_layout(ct), plan, key, key)
 }
 
-/// The query of `ckks_eval_linear_transformation_self_into` and `ckks_eval_linear_transformation_self_assign` on `ct`
+/// The query of `ckks_linear_transformation_eval_self_into` and `ckks_linear_transformation_eval_self_assign` on `ct`
 /// for a transform of plaintext diagonals, resident or `streamed`, the rotation key `key` standing for the tensor key
 /// they do not read.
 pub(crate) fn pt_self_into_tmp_bytes<BE, C, K>(
@@ -981,7 +988,7 @@ where
     C: CKKSCtBounds,
     K: GGLWEInfos,
 {
-    module.ckks_eval_linear_transformation_self_into_tmp_bytes(streamed, ct, &ckks_plaintext_diagonal_layout(ct), plan, key, key)
+    module.ckks_linear_transformation_eval_self_tmp_bytes(streamed, ct, &ckks_plaintext_diagonal_layout(ct), plan, key, key)
 }
 
 /// Generates a prepared rank-1 GLWE key-switching key from `sk_in` to `sk_out`,
@@ -1160,7 +1167,7 @@ where
     F: TestScalar,
     E: ReimFFT<F> + ReimIFFT<F>,
 {
-    let mut host_pt = host_module.ckks_pt_vec_alloc(host_module.ckks_max_slots(), params.base2k.into(), prec.k());
+    let mut host_pt = host_module.ckks_plaintext_alloc_from_slots(host_module.ckks_max_slots(), params.base2k.into(), prec.k());
     host_pt.set_meta(prec.meta());
     encoder.encode_reim(&mut host_pt, re, im).unwrap();
     let pt = upload_pt(module, &host_pt);
@@ -1513,7 +1520,7 @@ pub fn assert_decrypt_precision_at_log_delta<BE, F, E>(
     // Encode the expected message at the ciphertext's full metadata, so the
     // reference spans the same limbs as a full-width decryption (no head-room
     // clipping — any corruption above the head-room shows up as noise).
-    let mut pt_want = module.ckks_pt_vec_alloc(module.ckks_max_slots(), ct.base2k(), ct.k());
+    let mut pt_want = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), ct.base2k(), ct.k());
     pt_want.set_meta(GLWEPlaintextMeta {
         scale: Scale::Log(ct.log_delta()),
         slots: SlotsKind::Complex,
@@ -1559,7 +1566,7 @@ pub fn assert_decrypt_precision_at_log_delta<BE, F, E>(
     // Re-precision the decryption down to a budget the decoder can represent —
     // decoding the full storage width would overflow the decoder's
     // `log_delta + log_budget <= 127` limit.
-    let mut pt_decode = module.ckks_pt_vec_alloc(
+    let mut pt_decode = module.ckks_plaintext_alloc_from_slots(
         module.ckks_max_slots(),
         ct.base2k(),
         (ct.log_delta() + ct.log_budget().min(params.prec().log_budget())).into(),

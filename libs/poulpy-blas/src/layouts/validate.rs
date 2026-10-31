@@ -10,7 +10,7 @@ use poulpy_ckks::{
         CKKSModuleInfos, LinearTransformation, LinearTransformationPrepared, LtDiagonalMeta, ckks_linear_transformation_output_k,
         ckks_linear_transformation_output_layout,
     },
-    layouts::CKKSPreparedRight,
+    layouts::CKKSRightOperandPrepared,
 };
 use poulpy_core::layouts::{
     Base2K, BsgsRotations, GGLWEInfos, GGLWELayout, GLWEInfos, GetAutomorphismKey, GetDegree, GetTensorKey, LWEInfos, Rank,
@@ -1553,7 +1553,7 @@ pub fn validate_blas_append_row_diagonal<BE: Backend>(
     module: &Module<BE>,
     m: &BlasDiagonalCiphertext<BE>,
     v: &impl BlasVectorRef<BE>,
-    mask: &CKKSPreparedRight<BE>,
+    mask: &CKKSRightOperandPrepared<BE>,
     keys: &impl GetAutomorphismKey<BE>,
 ) -> Result<()> {
     validate_append(module, AppendAxis::Row, m, v, mask, keys)
@@ -1569,7 +1569,7 @@ pub fn validate_blas_append_col_diagonal<BE: Backend>(
     module: &Module<BE>,
     m: &BlasDiagonalCiphertext<BE>,
     v: &impl BlasVectorRef<BE>,
-    mask: &CKKSPreparedRight<BE>,
+    mask: &CKKSRightOperandPrepared<BE>,
     keys: &impl GetAutomorphismKey<BE>,
 ) -> Result<()> {
     validate_append(module, AppendAxis::Col, m, v, mask, keys)
@@ -1580,7 +1580,7 @@ fn validate_append<BE: Backend>(
     axis: AppendAxis,
     m: &BlasDiagonalCiphertext<BE>,
     v: &impl BlasVectorRef<BE>,
-    mask: &CKKSPreparedRight<BE>,
+    mask: &CKKSRightOperandPrepared<BE>,
     keys: &impl GetAutomorphismKey<BE>,
 ) -> Result<()> {
     let op = axis.op();
@@ -1631,7 +1631,7 @@ pub(crate) fn append_uses<P>(
 
 #[cfg(test)]
 mod tests {
-    use poulpy_ckks::layouts::CKKSModuleAlloc;
+    use poulpy_ckks::layouts::CKKSCiphertextAlloc;
     use poulpy_hal::layouts::HostBytesBackend;
 
     use super::*;

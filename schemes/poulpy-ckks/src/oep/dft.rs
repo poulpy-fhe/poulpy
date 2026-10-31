@@ -35,17 +35,17 @@ pub unsafe trait CKKSDFTImpl:
     + super::CKKSImagImpl
     + super::CKKSRotateImpl
 {
-    /// Scratch bound of [`Self::ckks_prepare_dft_matrix`] and [`Self::ckks_prepare_dft_matrix_alloc`]; may report less
+    /// Scratch bound of [`Self::ckks_dft_matrix_prepare`] and [`Self::ckks_dft_matrix_prepare_alloc`]; may report less
     /// than the reference, never less than the body takes.
-    fn ckks_prepare_dft_matrix_tmp_bytes<Dir, Fmt, P>(
+    fn ckks_dft_matrix_prepare_tmp_bytes<Dir, Fmt, P>(
         module: &Module<Self>,
         dft: &DFTMatrix<Self, Dir, Fmt, LinearTransformation<P>>,
     ) -> usize
     where
         P: poulpy_core::layouts::GLWEInfos;
 
-    /// Scratch bound of [`Self::ckks_dft_evaluate_assign`], [`Self::ckks_coeffs_to_slots`],
-    /// [`Self::ckks_slots_to_coeffs`], [`Self::ckks_coeffs_to_slots_split`], [`Self::ckks_slots_to_coeffs_split`],
+    /// Scratch bound of [`Self::ckks_dft_matrix_eval_assign`], [`Self::ckks_coeffs_to_slots_assign`],
+    /// [`Self::ckks_slots_to_coeffs_assign`], [`Self::ckks_coeffs_to_slots_split`], [`Self::ckks_slots_to_coeffs_split`],
     /// [`Self::ckks_coeffs_to_slots_repack`] and [`Self::ckks_slots_to_coeffs_repack`]; may report less than the
     /// reference, never less than the body takes.
     fn ckks_dft_tmp_bytes<Dir, Fmt, P, Dst, Src, K>(
@@ -61,12 +61,14 @@ pub unsafe trait CKKSDFTImpl:
         Src: CKKSCtBounds,
         K: poulpy_core::layouts::GGLWEInfos;
 
-    /// Reproduces [`ckks_prepare_dft_matrix`](crate::reference::dft::ckks_prepare_dft_matrix) bit for bit, within
-    /// [`Self::ckks_prepare_dft_matrix_tmp_bytes`]; free in kernels, prepared form and scratch use. A `res` allocated
+    /// Reproduces
+    /// [`ckks_dft_matrix_prepare_reference`](crate::reference::dft::CKKSDFTReference::ckks_dft_matrix_prepare_reference)
+    /// bit for bit, within
+    /// [`Self::ckks_dft_matrix_prepare_tmp_bytes`]; free in kernels, prepared form and scratch use. A `res` allocated
     /// for another matrix layout, or a factor whose diagonals do not share one scale, width and slot kind, is
-    /// `InvalidOperand`, then an arena below [`Self::ckks_prepare_dft_matrix_tmp_bytes`] is `CKKSError::Internal`, both
+    /// `InvalidOperand`, then an arena below [`Self::ckks_dft_matrix_prepare_tmp_bytes`] is `CKKSError::Internal`, both
     /// before any write.
-    fn ckks_prepare_dft_matrix<Dir, Fmt, P>(
+    fn ckks_dft_matrix_prepare<Dir, Fmt, P>(
         module: &Module<Self>,
         res: &mut DFTMatrixPrepared<Self, Dir, Fmt>,
         dft: &DFTMatrix<Self, Dir, Fmt, LinearTransformation<P>>,
@@ -75,10 +77,10 @@ pub unsafe trait CKKSDFTImpl:
     where
         P: GLWEToBackendRef<Self> + IntPolyInfos + CKKSCtBounds + GLWEDiagonalProd<Self>;
 
-    /// Default body: `ckks_prepare_dft_matrix_alloc_derived`, a prepared matrix allocated from `dft` with
-    /// [`ckks_dft_matrix_prepared_alloc_from_infos`](crate::layouts::CKKSModuleAlloc::ckks_dft_matrix_prepared_alloc_from_infos),
-    /// then [`Self::ckks_prepare_dft_matrix`] into it.
-    fn ckks_prepare_dft_matrix_alloc<Dir, Fmt, P>(
+    /// Default body: `ckks_dft_matrix_prepare_alloc_derived`, a prepared matrix allocated from `dft` with
+    /// [`ckks_dft_matrix_prepared_alloc_from_infos`](crate::api::CKKSDFTMatrixPreparedFactory::ckks_dft_matrix_prepared_alloc_from_infos),
+    /// then [`Self::ckks_dft_matrix_prepare`] into it.
+    fn ckks_dft_matrix_prepare_alloc<Dir, Fmt, P>(
         module: &Module<Self>,
         dft: &DFTMatrix<Self, Dir, Fmt, LinearTransformation<P>>,
         scratch: &mut ScratchArena<'_, Self>,
@@ -86,12 +88,14 @@ pub unsafe trait CKKSDFTImpl:
     where
         P: GLWEToBackendRef<Self> + IntPolyInfos + CKKSCtBounds + GLWEDiagonalProd<Self>,
     {
-        crate::oep::derived::dft::ckks_prepare_dft_matrix_alloc_derived(module, dft, scratch)
+        crate::oep::derived::dft::ckks_dft_matrix_prepare_alloc_derived(module, dft, scratch)
     }
 
-    /// Reproduces [`ckks_dft_evaluate_assign`](crate::reference::dft::ckks_dft_evaluate_assign) bit for bit, within
+    /// Reproduces
+    /// [`ckks_dft_matrix_eval_assign_reference`](crate::reference::dft::CKKSDFTReference::ckks_dft_matrix_eval_assign_reference)
+    /// bit for bit, within
     /// [`Self::ckks_dft_tmp_bytes`]; free in kernels and scratch use.
-    fn ckks_dft_evaluate_assign<Dir, Fmt, P, Dst, H>(
+    fn ckks_dft_matrix_eval_assign<Dir, Fmt, P, Dst, H>(
         module: &Module<Self>,
         ct: &mut Dst,
         dft: &DFTMatrix<Self, Dir, Fmt, LinearTransformation<P>>,
@@ -103,9 +107,9 @@ pub unsafe trait CKKSDFTImpl:
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<Self> + GetTensorKey<Self>;
 
-    /// Default body: `ckks_coeffs_to_slots_assign_derived`, the selected `ckks_dft_evaluate_assign` of the encode
+    /// Default body: `ckks_encoding_buffer_coeffs_to_slots_assign_derived`, the selected `ckks_dft_matrix_eval_assign` of the encode
     /// matrix.
-    fn ckks_coeffs_to_slots<P, Dst, H>(
+    fn ckks_coeffs_to_slots_assign<P, Dst, H>(
         module: &Module<Self>,
         ct: &mut Dst,
         dft: &DFTMatrix<Self, Encode, Standard, LinearTransformation<P>>,
@@ -117,12 +121,12 @@ pub unsafe trait CKKSDFTImpl:
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<Self> + GetTensorKey<Self>,
     {
-        crate::oep::derived::dft::ckks_coeffs_to_slots_assign_derived(module, ct, dft, keys, scratch)
+        crate::oep::derived::dft::ckks_encoding_buffer_coeffs_to_slots_assign_derived(module, ct, dft, keys, scratch)
     }
 
-    /// Default body: `ckks_slots_to_coeffs_assign_derived`, the selected `ckks_dft_evaluate_assign` of the decode
+    /// Default body: `ckks_encoding_buffer_slots_to_coeffs_assign_derived`, the selected `ckks_dft_matrix_eval_assign` of the decode
     /// matrix.
-    fn ckks_slots_to_coeffs<P, Dst, H>(
+    fn ckks_slots_to_coeffs_assign<P, Dst, H>(
         module: &Module<Self>,
         ct: &mut Dst,
         dft: &DFTMatrix<Self, Decode, Standard, LinearTransformation<P>>,
@@ -134,11 +138,11 @@ pub unsafe trait CKKSDFTImpl:
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<Self> + GetTensorKey<Self>,
     {
-        crate::oep::derived::dft::ckks_slots_to_coeffs_assign_derived(module, ct, dft, keys, scratch)
+        crate::oep::derived::dft::ckks_encoding_buffer_slots_to_coeffs_assign_derived(module, ct, dft, keys, scratch)
     }
 
     /// Default body: `ckks_coeffs_to_slots_split_derived`, `ckks_copy` of `ct_in` into `ct_real`,
-    /// `ckks_dft_evaluate_assign` on it, `ckks_conjugate_into` of the result into `ct_imag`, `ckks_sub_into` of the two
+    /// `ckks_dft_matrix_eval_assign` on it, `ckks_conjugate_into` of the result into `ct_imag`, `ckks_sub_into` of the two
     /// into an allocated temporary, `ckks_add_assign` of `ct_imag` into `ct_real`, `ckks_div_i_into` of the temporary
     /// into `ct_imag`, then both slot kinds set to real.
     fn ckks_coeffs_to_slots_split<P, Dst, Src, H>(
@@ -160,7 +164,7 @@ pub unsafe trait CKKSDFTImpl:
     }
 
     /// Default body: `ckks_slots_to_coeffs_split_derived`, `ckks_mul_i_into` of `ct_imag` into `op_out`,
-    /// `ckks_add_assign` of `ct_real`, then `ckks_dft_evaluate_assign` on `op_out`.
+    /// `ckks_add_assign` of `ct_real`, then `ckks_dft_matrix_eval_assign` on `op_out`.
     fn ckks_slots_to_coeffs_split<P, Dst, Src, H>(
         module: &Module<Self>,
         op_out: &mut Dst,
@@ -180,7 +184,7 @@ pub unsafe trait CKKSDFTImpl:
     }
 
     /// Default body: `ckks_coeffs_to_slots_repack_derived`, `ckks_copy` of `ct_in` into `ct_out`,
-    /// `ckks_dft_evaluate_assign` on it, `ckks_conjugate_into` of the result into an allocated temporary,
+    /// `ckks_dft_matrix_eval_assign` on it, `ckks_conjugate_into` of the result into an allocated temporary,
     /// `ckks_sub_into` of the two into a second allocated temporary, `ckks_div_i_assign` on that one,
     /// `ckks_add_assign` of the conjugate into `ct_out`, `ckks_rotate_assign` of the second temporary by the slot
     /// count, `ckks_add_assign` of it into `ct_out`, then the input's `log_sparsity` less one (saturating) and real
@@ -203,7 +207,7 @@ pub unsafe trait CKKSDFTImpl:
     }
 
     /// Default body: `ckks_slots_to_coeffs_repack_derived`, `ckks_copy` of `ct_in` into `op_out`,
-    /// `ckks_dft_evaluate_assign` on it, then the input's `log_sparsity` plus one on `op_out`.
+    /// `ckks_dft_matrix_eval_assign` on it, then the input's `log_sparsity` plus one on `op_out`.
     fn ckks_slots_to_coeffs_repack<P, Dst, Src, H>(
         module: &Module<Self>,
         op_out: &mut Dst,
@@ -233,16 +237,18 @@ pub unsafe trait CKKSDFTImpl:
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait CKKSDFTMatrixImpl<F: CKKSEncodingScalar>: Backend<Ring = poulpy_hal::layouts::Standard> {
-    /// Scratch bound of [`Self::ckks_new_dft_matrix`]; may report less than the reference, never less than the body takes.
+    /// Scratch bound of [`Self::ckks_dft_matrix_new`]; may report less than the reference, never less than the body takes.
     /// The reference reports the largest slot encoding of one factor's diagonals.
-    fn ckks_new_dft_matrix_tmp_bytes<Dir, Fmt>(module: &Module<Self>, literal: &DFTPlan) -> Result<usize>
+    fn ckks_dft_matrix_new_tmp_bytes<Dir, Fmt>(module: &Module<Self>, literal: &DFTPlan) -> Result<usize>
     where
         Dir: DftDirection,
         Fmt: DftFormat;
 
-    /// Reproduces [`ckks_new_dft_matrix`](crate::reference::dft::ckks_new_dft_matrix) bit for bit, within
-    /// [`Self::ckks_new_dft_matrix_tmp_bytes`]; free in kernels.
-    fn ckks_new_dft_matrix<Dir, Fmt>(
+    /// Reproduces
+    /// [`ckks_dft_matrix_new_reference`](crate::reference::dft::CKKSDFTMatrixReference::ckks_dft_matrix_new_reference)
+    /// bit for bit, within
+    /// [`Self::ckks_dft_matrix_new_tmp_bytes`]; free in kernels.
+    fn ckks_dft_matrix_new<Dir, Fmt>(
         module: &Module<Self>,
         base2k: Base2K,
         literal: &DFTPlan,
@@ -258,14 +264,14 @@ pub unsafe trait CKKSDFTMatrixImpl<F: CKKSEncodingScalar>: Backend<Ring = poulpy
 macro_rules! impl_ckks_dft_reference_full {
     ($be:ty) => {
         unsafe impl $crate::oep::CKKSDFTImpl for $be {
-            fn ckks_prepare_dft_matrix_tmp_bytes<Dir, Fmt, P>(
+            fn ckks_dft_matrix_prepare_tmp_bytes<Dir, Fmt, P>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dft: &$crate::layouts::DFTMatrix<Self, Dir, Fmt, ::poulpy_core::layouts::LinearTransformation<P>>,
             ) -> usize
             where
                 P: ::poulpy_core::layouts::GLWEInfos,
             {
-                $crate::reference::dft::ckks_prepare_dft_matrix_tmp_bytes(module, dft)
+                $crate::reference::dft::CKKSDFTReference::ckks_dft_matrix_prepare_tmp_bytes_reference(module, dft)
             }
 
             fn ckks_dft_tmp_bytes<Dir, Fmt, P, Dst, Src, K>(
@@ -281,9 +287,9 @@ macro_rules! impl_ckks_dft_reference_full {
                 Src: $crate::CKKSCtBounds,
                 K: ::poulpy_core::layouts::GGLWEInfos,
             {
-                $crate::reference::dft::ckks_dft_tmp_bytes(module, dst, src, dft, key)
+                $crate::reference::dft::CKKSDFTReference::ckks_dft_tmp_bytes_reference(module, dst, src, dft, key)
             }
-            fn ckks_prepare_dft_matrix<Dir, Fmt, P>(
+            fn ckks_dft_matrix_prepare<Dir, Fmt, P>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 res: &mut $crate::layouts::DFTMatrixPrepared<Self, Dir, Fmt>,
                 dft: &$crate::layouts::DFTMatrix<Self, Dir, Fmt, ::poulpy_core::layouts::LinearTransformation<P>>,
@@ -295,9 +301,9 @@ macro_rules! impl_ckks_dft_reference_full {
                     + $crate::CKKSCtBounds
                     + ::poulpy_core::GLWEDiagonalProd<Self>,
             {
-                $crate::reference::dft::ckks_prepare_dft_matrix::<Dir, Fmt, Self, P>(module, res, dft, scratch)
+                $crate::reference::dft::CKKSDFTReference::ckks_dft_matrix_prepare_reference(module, res, dft, scratch)
             }
-            fn ckks_dft_evaluate_assign<Dir, Fmt, P, Dst, H>(
+            fn ckks_dft_matrix_eval_assign<Dir, Fmt, P, Dst, H>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 ct: &mut Dst,
                 dft: &$crate::layouts::DFTMatrix<Self, Dir, Fmt, ::poulpy_core::layouts::LinearTransformation<P>>,
@@ -312,7 +318,7 @@ macro_rules! impl_ckks_dft_reference_full {
                     + $crate::SetCKKSInfos,
                 H: ::poulpy_core::layouts::GetAutomorphismKey<Self> + ::poulpy_core::layouts::GetTensorKey<Self>,
             {
-                $crate::reference::dft::ckks_dft_evaluate_assign(module, ct, dft, keys, scratch)
+                $crate::reference::dft::CKKSDFTReference::ckks_dft_matrix_eval_assign_reference(module, ct, dft, keys, scratch)
             }
         }
     };
@@ -326,7 +332,7 @@ macro_rules! impl_ckks_dft_matrix_reference_full {
         where
             $be: $crate::oep::CKKSEncodingImpl<F>,
         {
-            fn ckks_new_dft_matrix_tmp_bytes<Dir, Fmt>(
+            fn ckks_dft_matrix_new_tmp_bytes<Dir, Fmt>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 literal: &$crate::layouts::DFTPlan,
             ) -> $crate::CKKSResult<usize>
@@ -334,10 +340,12 @@ macro_rules! impl_ckks_dft_matrix_reference_full {
                 Dir: $crate::layouts::DftDirection,
                 Fmt: $crate::layouts::DftFormat,
             {
-                $crate::reference::dft::ckks_new_dft_matrix_tmp_bytes::<Dir, Fmt, Self, F>(module, literal)
+                <::poulpy_hal::layouts::Module<Self> as $crate::reference::dft::CKKSDFTMatrixReference<Self, F>>::ckks_dft_matrix_new_tmp_bytes_reference::<Dir, Fmt>(
+                    module, literal,
+                )
             }
 
-            fn ckks_new_dft_matrix<Dir, Fmt>(
+            fn ckks_dft_matrix_new<Dir, Fmt>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 base2k: ::poulpy_core::layouts::Base2K,
                 literal: &$crate::layouts::DFTPlan,
@@ -347,7 +355,9 @@ macro_rules! impl_ckks_dft_matrix_reference_full {
                 Dir: $crate::layouts::DftDirection,
                 Fmt: $crate::layouts::DftFormat,
             {
-                $crate::reference::dft::ckks_new_dft_matrix::<Dir, Fmt, Self, F>(module, base2k, literal, scratch)
+                <::poulpy_hal::layouts::Module<Self> as $crate::reference::dft::CKKSDFTMatrixReference<Self, F>>::ckks_dft_matrix_new_reference::<Dir, Fmt>(
+                    module, base2k, literal, scratch,
+                )
             }
         }
     };

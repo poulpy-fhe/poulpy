@@ -4,7 +4,7 @@ use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena, VecZnxDftBackendM
 
 use crate::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
-    layouts::{CKKSCiphertext, CKKSPreparedLeft, CKKSPreparedRight},
+    layouts::{CKKSCiphertext, CKKSLeftOperandPrepared, CKKSRightOperandPrepared},
     oep::derived::dot_product::{
         ckks_dot_product_pt_const_derived, ckks_dot_product_pt_const_tmp_bytes_derived, ckks_dot_product_pt_vec_derived,
         ckks_dot_product_pt_vec_tmp_bytes_derived,
@@ -80,8 +80,8 @@ pub unsafe trait CKKSDotProductImpl: Backend + super::CKKSMulImpl + super::CKKSA
     fn ckks_dot_product_prepared<Dst, H>(
         module: &Module<Self>,
         dst: &mut Dst,
-        a: &[&CKKSPreparedLeft<Self>],
-        b: &[&CKKSPreparedRight<Self>],
+        a: &[&CKKSLeftOperandPrepared<Self>],
+        b: &[&CKKSRightOperandPrepared<Self>],
         tsk: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
@@ -127,10 +127,10 @@ pub unsafe trait CKKSDotProductImpl: Backend + super::CKKSMulImpl + super::CKKSA
         ckks_dot_product_pt_const_derived(module, dst, a, b, pt_coeffs, scratch)
     }
 
-    /// Scratch bound of [`Self::ckks_dot_product_prepared_pt`]; may report less than the reference, never less than the
+    /// Scratch bound of [`Self::ckks_dot_product_prepared_pt_vec`]; may report less than the reference, never less than the
     /// body takes. It does not grow with the number of terms. `a` and `b` are the prepared operands, whose infos report
     /// their sources, or those sources.
-    fn ckks_dot_product_prepared_pt_tmp_bytes<R: CKKSCtBounds, A: GLWEInfos, P: GLWEInfos>(
+    fn ckks_dot_product_prepared_pt_vec_tmp_bytes<R: CKKSCtBounds, A: GLWEInfos, P: GLWEInfos>(
         module: &Module<Self>,
         res: &R,
         a: &A,
@@ -138,23 +138,23 @@ pub unsafe trait CKKSDotProductImpl: Backend + super::CKKSMulImpl + super::CKKSA
     ) -> usize;
 
     /// Reproduces
-    /// [`ckks_dot_product_prepared_pt_reference`](crate::reference::CKKSDotProductReference::ckks_dot_product_prepared_pt_reference)
-    /// bit for bit, within [`Self::ckks_dot_product_prepared_pt_tmp_bytes`]; free in kernels and scratch use.
-    fn ckks_dot_product_prepared_pt<Dst>(
+    /// [`ckks_dot_product_prepared_pt_vec_reference`](crate::reference::CKKSDotProductReference::ckks_dot_product_prepared_pt_vec_reference)
+    /// bit for bit, within [`Self::ckks_dot_product_prepared_pt_vec_tmp_bytes`]; free in kernels and scratch use.
+    fn ckks_dot_product_prepared_pt_vec<Dst>(
         module: &Module<Self>,
         dst: &mut Dst,
-        a: &[&CKKSPreparedLeft<Self>],
-        b: &[&CKKSPreparedRight<Self>],
+        a: &[&CKKSLeftOperandPrepared<Self>],
+        b: &[&CKKSRightOperandPrepared<Self>],
         galois: &[i64],
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos;
 
-    /// Scratch bound of [`Self::ckks_dot_product_prepared_pt_add`]; may report less than the reference, never less than
+    /// Scratch bound of [`Self::ckks_dot_product_prepared_pt_vec_add`]; may report less than the reference, never less than
     /// the body takes. `a` and `b` are the prepared operands, whose infos report their sources, or those sources. It does
     /// not grow with the number of terms.
-    fn ckks_dot_product_prepared_pt_add_tmp_bytes<R: CKKSCtBounds, A: GLWEInfos, P: GLWEInfos>(
+    fn ckks_dot_product_prepared_pt_vec_add_tmp_bytes<R: CKKSCtBounds, A: GLWEInfos, P: GLWEInfos>(
         module: &Module<Self>,
         res: &R,
         a: &A,
@@ -162,22 +162,22 @@ pub unsafe trait CKKSDotProductImpl: Backend + super::CKKSMulImpl + super::CKKSA
     ) -> usize;
 
     /// Reproduces
-    /// [`ckks_dot_product_prepared_pt_add_reference`](crate::reference::CKKSDotProductReference::ckks_dot_product_prepared_pt_add_reference)
-    /// bit for bit, within [`Self::ckks_dot_product_prepared_pt_add_tmp_bytes`]; free in kernels and scratch use.
-    fn ckks_dot_product_prepared_pt_add<R>(
+    /// [`ckks_dot_product_prepared_pt_vec_add_reference`](crate::reference::CKKSDotProductReference::ckks_dot_product_prepared_pt_vec_add_reference)
+    /// bit for bit, within [`Self::ckks_dot_product_prepared_pt_vec_add_tmp_bytes`]; free in kernels and scratch use.
+    fn ckks_dot_product_prepared_pt_vec_add<R>(
         module: &Module<Self>,
         res: &mut R,
-        a: &[&CKKSPreparedLeft<Self>],
-        b: &[&CKKSPreparedRight<Self>],
+        a: &[&CKKSLeftOperandPrepared<Self>],
+        b: &[&CKKSRightOperandPrepared<Self>],
         galois: &[i64],
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
         R: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos;
 
-    /// Scratch bound of [`Self::ckks_dot_product_prepared_pt_dft`]; may report less than the reference, never less than
+    /// Scratch bound of [`Self::ckks_dot_product_prepared_pt_vec_dft`]; may report less than the reference, never less than
     /// the body takes. It does not grow with the number of terms.
-    fn ckks_dot_product_prepared_pt_dft_tmp_bytes<R: CKKSCtBounds, A: GLWEInfos, P: GLWEInfos>(
+    fn ckks_dot_product_prepared_pt_vec_dft_tmp_bytes<R: CKKSCtBounds, A: GLWEInfos, P: GLWEInfos>(
         module: &Module<Self>,
         res: &R,
         a: &A,
@@ -185,24 +185,24 @@ pub unsafe trait CKKSDotProductImpl: Backend + super::CKKSMulImpl + super::CKKSA
     ) -> usize;
 
     /// Reproduces
-    /// [`ckks_dot_product_prepared_pt_dft_reference`](crate::reference::CKKSDotProductReference::ckks_dot_product_prepared_pt_dft_reference)
-    /// bit for bit through `idft`, within [`Self::ckks_dot_product_prepared_pt_dft_tmp_bytes`]; free in kernels and
+    /// [`ckks_dot_product_prepared_pt_vec_dft_reference`](crate::reference::CKKSDotProductReference::ckks_dot_product_prepared_pt_vec_dft_reference)
+    /// bit for bit through `idft`, within [`Self::ckks_dot_product_prepared_pt_vec_dft_tmp_bytes`]; free in kernels and
     /// scratch use.
-    fn ckks_dot_product_prepared_pt_dft<R>(
+    fn ckks_dot_product_prepared_pt_vec_dft<R>(
         module: &Module<Self>,
         acc: &mut VecZnxDftBackendMut<'_, Self>,
         res: &R,
-        a: &[&CKKSPreparedLeft<Self>],
-        b: &[&CKKSPreparedRight<Self>],
+        a: &[&CKKSLeftOperandPrepared<Self>],
+        b: &[&CKKSRightOperandPrepared<Self>],
         galois: &[i64],
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
         R: CKKSCtBounds;
 
-    /// Scratch bound of [`Self::ckks_dot_product_prepared_pt_dft_add`]; may report less than the reference, never less
+    /// Scratch bound of [`Self::ckks_dot_product_prepared_pt_vec_dft_add`]; may report less than the reference, never less
     /// than the body takes. It does not grow with the number of terms.
-    fn ckks_dot_product_prepared_pt_dft_add_tmp_bytes<R: CKKSCtBounds, A: GLWEInfos, P: GLWEInfos>(
+    fn ckks_dot_product_prepared_pt_vec_dft_add_tmp_bytes<R: CKKSCtBounds, A: GLWEInfos, P: GLWEInfos>(
         module: &Module<Self>,
         res: &R,
         a: &A,
@@ -210,24 +210,24 @@ pub unsafe trait CKKSDotProductImpl: Backend + super::CKKSMulImpl + super::CKKSA
     ) -> usize;
 
     /// Reproduces
-    /// [`ckks_dot_product_prepared_pt_dft_add_reference`](crate::reference::CKKSDotProductReference::ckks_dot_product_prepared_pt_dft_add_reference)
-    /// bit for bit through `idft`, within [`Self::ckks_dot_product_prepared_pt_dft_add_tmp_bytes`]; free in kernels and
+    /// [`ckks_dot_product_prepared_pt_vec_dft_add_reference`](crate::reference::CKKSDotProductReference::ckks_dot_product_prepared_pt_vec_dft_add_reference)
+    /// bit for bit through `idft`, within [`Self::ckks_dot_product_prepared_pt_vec_dft_add_tmp_bytes`]; free in kernels and
     /// scratch use.
-    fn ckks_dot_product_prepared_pt_dft_add<R>(
+    fn ckks_dot_product_prepared_pt_vec_dft_add<R>(
         module: &Module<Self>,
         acc: &mut VecZnxDftBackendMut<'_, Self>,
         res: &R,
-        a: &[&CKKSPreparedLeft<Self>],
-        b: &[&CKKSPreparedRight<Self>],
+        a: &[&CKKSLeftOperandPrepared<Self>],
+        b: &[&CKKSRightOperandPrepared<Self>],
         galois: &[i64],
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
         R: CKKSCtBounds;
 
-    /// Scratch bound of [`Self::ckks_dot_product_prepared_pt_from_dft`]; may report less than the reference, never
+    /// Scratch bound of [`Self::ckks_dot_product_prepared_pt_vec_from_dft`]; may report less than the reference, never
     /// less than the body takes.
-    fn ckks_dot_product_prepared_pt_from_dft_tmp_bytes<R: CKKSCtBounds, A: GLWEInfos, P: GLWEInfos>(
+    fn ckks_dot_product_prepared_pt_vec_from_dft_tmp_bytes<R: CKKSCtBounds, A: GLWEInfos, P: GLWEInfos>(
         module: &Module<Self>,
         res: &R,
         a: &A,
@@ -235,14 +235,14 @@ pub unsafe trait CKKSDotProductImpl: Backend + super::CKKSMulImpl + super::CKKSA
     ) -> usize;
 
     /// Reproduces
-    /// [`ckks_dot_product_prepared_pt_from_dft_reference`](crate::reference::CKKSDotProductReference::ckks_dot_product_prepared_pt_from_dft_reference)
-    /// bit for bit, within [`Self::ckks_dot_product_prepared_pt_from_dft_tmp_bytes`]; free in kernels and scratch use.
-    fn ckks_dot_product_prepared_pt_from_dft<Dst>(
+    /// [`ckks_dot_product_prepared_pt_vec_from_dft_reference`](crate::reference::CKKSDotProductReference::ckks_dot_product_prepared_pt_vec_from_dft_reference)
+    /// bit for bit, within [`Self::ckks_dot_product_prepared_pt_vec_from_dft_tmp_bytes`]; free in kernels and scratch use.
+    fn ckks_dot_product_prepared_pt_vec_from_dft<Dst>(
         module: &Module<Self>,
         res: &mut Dst,
         acc: &mut VecZnxDftBackendMut<'_, Self>,
-        a: &CKKSPreparedLeft<Self>,
-        b: &CKKSPreparedRight<Self>,
+        a: &CKKSLeftOperandPrepared<Self>,
+        b: &CKKSRightOperandPrepared<Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
@@ -290,8 +290,8 @@ macro_rules! impl_ckks_dot_product_reference_full {
             fn ckks_dot_product_prepared<Dst, H>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
-                a: &[&$crate::layouts::CKKSPreparedLeft<Self>],
-                b: &[&$crate::layouts::CKKSPreparedRight<Self>],
+                a: &[&$crate::layouts::CKKSLeftOperandPrepared<Self>],
+                b: &[&$crate::layouts::CKKSRightOperandPrepared<Self>],
                 tsk: &H,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
@@ -302,7 +302,7 @@ macro_rules! impl_ckks_dot_product_reference_full {
                 $crate::reference::CKKSDotProductReference::ckks_dot_product_prepared_reference(module, dst, a, b, tsk, scratch)
             }
 
-            fn ckks_dot_product_prepared_pt_tmp_bytes<
+            fn ckks_dot_product_prepared_pt_vec_tmp_bytes<
                 R: $crate::CKKSCtBounds,
                 A: ::poulpy_core::layouts::GLWEInfos,
                 P: ::poulpy_core::layouts::GLWEInfos,
@@ -312,26 +312,28 @@ macro_rules! impl_ckks_dot_product_reference_full {
                 a: &A,
                 b: &P,
             ) -> usize {
-                $crate::reference::CKKSDotProductReference::ckks_dot_product_prepared_pt_tmp_bytes_reference(module, res, a, b)
+                $crate::reference::CKKSDotProductReference::ckks_dot_product_prepared_pt_vec_tmp_bytes_reference(
+                    module, res, a, b,
+                )
             }
 
-            fn ckks_dot_product_prepared_pt<Dst>(
+            fn ckks_dot_product_prepared_pt_vec<Dst>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
-                a: &[&$crate::layouts::CKKSPreparedLeft<Self>],
-                b: &[&$crate::layouts::CKKSPreparedRight<Self>],
+                a: &[&$crate::layouts::CKKSLeftOperandPrepared<Self>],
+                b: &[&$crate::layouts::CKKSRightOperandPrepared<Self>],
                 galois: &[i64],
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
             where
                 Dst: ::poulpy_core::layouts::GLWEToBackendMut<Self> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
             {
-                $crate::reference::CKKSDotProductReference::ckks_dot_product_prepared_pt_reference(
+                $crate::reference::CKKSDotProductReference::ckks_dot_product_prepared_pt_vec_reference(
                     module, dst, a, b, galois, scratch,
                 )
             }
 
-            fn ckks_dot_product_prepared_pt_add_tmp_bytes<
+            fn ckks_dot_product_prepared_pt_vec_add_tmp_bytes<
                 R: $crate::CKKSCtBounds,
                 A: ::poulpy_core::layouts::GLWEInfos,
                 P: ::poulpy_core::layouts::GLWEInfos,
@@ -341,28 +343,28 @@ macro_rules! impl_ckks_dot_product_reference_full {
                 a: &A,
                 b: &P,
             ) -> usize {
-                $crate::reference::CKKSDotProductReference::ckks_dot_product_prepared_pt_add_tmp_bytes_reference(
+                $crate::reference::CKKSDotProductReference::ckks_dot_product_prepared_pt_vec_add_tmp_bytes_reference(
                     module, res, a, b,
                 )
             }
 
-            fn ckks_dot_product_prepared_pt_add<R>(
+            fn ckks_dot_product_prepared_pt_vec_add<R>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 res: &mut R,
-                a: &[&$crate::layouts::CKKSPreparedLeft<Self>],
-                b: &[&$crate::layouts::CKKSPreparedRight<Self>],
+                a: &[&$crate::layouts::CKKSLeftOperandPrepared<Self>],
+                b: &[&$crate::layouts::CKKSRightOperandPrepared<Self>],
                 galois: &[i64],
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
             where
                 R: ::poulpy_core::layouts::GLWEToBackendMut<Self> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
             {
-                $crate::reference::CKKSDotProductReference::ckks_dot_product_prepared_pt_add_reference(
+                $crate::reference::CKKSDotProductReference::ckks_dot_product_prepared_pt_vec_add_reference(
                     module, res, a, b, galois, scratch,
                 )
             }
 
-            fn ckks_dot_product_prepared_pt_dft_tmp_bytes<
+            fn ckks_dot_product_prepared_pt_vec_dft_tmp_bytes<
                 R: $crate::CKKSCtBounds,
                 A: ::poulpy_core::layouts::GLWEInfos,
                 P: ::poulpy_core::layouts::GLWEInfos,
@@ -372,29 +374,29 @@ macro_rules! impl_ckks_dot_product_reference_full {
                 a: &A,
                 b: &P,
             ) -> usize {
-                $crate::reference::CKKSDotProductReference::ckks_dot_product_prepared_pt_dft_tmp_bytes_reference(
+                $crate::reference::CKKSDotProductReference::ckks_dot_product_prepared_pt_vec_dft_tmp_bytes_reference(
                     module, res, a, b,
                 )
             }
 
-            fn ckks_dot_product_prepared_pt_dft<R>(
+            fn ckks_dot_product_prepared_pt_vec_dft<R>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 acc: &mut ::poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>,
                 res: &R,
-                a: &[&$crate::layouts::CKKSPreparedLeft<Self>],
-                b: &[&$crate::layouts::CKKSPreparedRight<Self>],
+                a: &[&$crate::layouts::CKKSLeftOperandPrepared<Self>],
+                b: &[&$crate::layouts::CKKSRightOperandPrepared<Self>],
                 galois: &[i64],
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
             where
                 R: $crate::CKKSCtBounds,
             {
-                $crate::reference::CKKSDotProductReference::ckks_dot_product_prepared_pt_dft_reference(
+                $crate::reference::CKKSDotProductReference::ckks_dot_product_prepared_pt_vec_dft_reference(
                     module, acc, res, a, b, galois, scratch,
                 )
             }
 
-            fn ckks_dot_product_prepared_pt_dft_add_tmp_bytes<
+            fn ckks_dot_product_prepared_pt_vec_dft_add_tmp_bytes<
                 R: $crate::CKKSCtBounds,
                 A: ::poulpy_core::layouts::GLWEInfos,
                 P: ::poulpy_core::layouts::GLWEInfos,
@@ -404,29 +406,29 @@ macro_rules! impl_ckks_dot_product_reference_full {
                 a: &A,
                 b: &P,
             ) -> usize {
-                $crate::reference::CKKSDotProductReference::ckks_dot_product_prepared_pt_dft_add_tmp_bytes_reference(
+                $crate::reference::CKKSDotProductReference::ckks_dot_product_prepared_pt_vec_dft_add_tmp_bytes_reference(
                     module, res, a, b,
                 )
             }
 
-            fn ckks_dot_product_prepared_pt_dft_add<R>(
+            fn ckks_dot_product_prepared_pt_vec_dft_add<R>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 acc: &mut ::poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>,
                 res: &R,
-                a: &[&$crate::layouts::CKKSPreparedLeft<Self>],
-                b: &[&$crate::layouts::CKKSPreparedRight<Self>],
+                a: &[&$crate::layouts::CKKSLeftOperandPrepared<Self>],
+                b: &[&$crate::layouts::CKKSRightOperandPrepared<Self>],
                 galois: &[i64],
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
             where
                 R: $crate::CKKSCtBounds,
             {
-                $crate::reference::CKKSDotProductReference::ckks_dot_product_prepared_pt_dft_add_reference(
+                $crate::reference::CKKSDotProductReference::ckks_dot_product_prepared_pt_vec_dft_add_reference(
                     module, acc, res, a, b, galois, scratch,
                 )
             }
 
-            fn ckks_dot_product_prepared_pt_from_dft_tmp_bytes<
+            fn ckks_dot_product_prepared_pt_vec_from_dft_tmp_bytes<
                 R: $crate::CKKSCtBounds,
                 A: ::poulpy_core::layouts::GLWEInfos,
                 P: ::poulpy_core::layouts::GLWEInfos,
@@ -436,23 +438,23 @@ macro_rules! impl_ckks_dot_product_reference_full {
                 a: &A,
                 b: &P,
             ) -> usize {
-                $crate::reference::CKKSDotProductReference::ckks_dot_product_prepared_pt_from_dft_tmp_bytes_reference(
+                $crate::reference::CKKSDotProductReference::ckks_dot_product_prepared_pt_vec_from_dft_tmp_bytes_reference(
                     module, res, a, b,
                 )
             }
 
-            fn ckks_dot_product_prepared_pt_from_dft<Dst>(
+            fn ckks_dot_product_prepared_pt_vec_from_dft<Dst>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 res: &mut Dst,
                 acc: &mut ::poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>,
-                a: &$crate::layouts::CKKSPreparedLeft<Self>,
-                b: &$crate::layouts::CKKSPreparedRight<Self>,
+                a: &$crate::layouts::CKKSLeftOperandPrepared<Self>,
+                b: &$crate::layouts::CKKSRightOperandPrepared<Self>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
             where
                 Dst: ::poulpy_core::layouts::GLWEToBackendMut<Self> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
             {
-                $crate::reference::CKKSDotProductReference::ckks_dot_product_prepared_pt_from_dft_reference(
+                $crate::reference::CKKSDotProductReference::ckks_dot_product_prepared_pt_vec_from_dft_reference(
                     module, res, acc, a, b, scratch,
                 )
             }

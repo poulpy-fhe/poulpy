@@ -4,8 +4,8 @@ use std::collections::BTreeSet;
 
 use poulpy_ckks::{
     CKKSInfos, CKKSModuleInfos, GLWEPlaintextInfos, SetCKKSInfos, SetGLWEPlaintextInfos, SlotsKind,
-    api::{CKKSEncodingHostOps, CKKSEncodingOps, CKKSLinearTransformationOps, CKKSMulOps},
-    layouts::CKKSModuleAlloc,
+    api::{CKKSEncodingHostOps, CKKSEncodingOps, CKKSLinearTransformationOps, CKKSRightOperandPreparedFactory},
+    layouts::CKKSPlaintextAlloc,
     test_suite::{
         CKKSTestParams,
         helpers::{
@@ -398,12 +398,12 @@ pub fn test_blas_conjugate_invariant<BE>(
     let real_mask = |set: &[usize], hint: PrepareHint, scratch: &mut ScratchArena<'_, BE>| {
         let mut re = vec![0.0; slots];
         set.iter().for_each(|&s| re[s] = 1.0);
-        let mut pt = module.ckks_pt_vec_alloc(slots, params.base2k.into(), params.prec().k());
+        let mut pt = module.ckks_plaintext_alloc_from_slots(slots, params.base2k.into(), params.prec().k());
         pt.set_meta(params.prec().meta());
         module
-            .ckks_encode_reim_into(&mut pt, &re, &vec![0.0; slots], scratch)
+            .ckks_encode_slots_host_into(&mut pt, &re, &vec![0.0; slots], scratch)
             .unwrap();
-        let mask = module.ckks_prepare_right(&pt, hint, scratch).unwrap();
+        let mask = module.ckks_right_operand_prepare_alloc(&pt, hint, scratch).unwrap();
         (re, mask)
     };
     let masks = [
@@ -540,10 +540,10 @@ where
     let zeros = vec![0.0; slots];
     let cts = (0..shape.count())
         .map(|t| {
-            let mut pt = module.ckks_pt_vec_alloc(slots, params.base2k.into(), params.prec().k());
+            let mut pt = module.ckks_plaintext_alloc_from_slots(slots, params.base2k.into(), params.prec().k());
             pt.set_meta(params.prec().meta());
             let re = vector_slots(shape, period, slots, t, values);
-            module.ckks_encode_reim_into(&mut pt, &re, &zeros, scratch).unwrap();
+            module.ckks_encode_slots_host_into(&mut pt, &re, &zeros, scratch).unwrap();
             let mut ct = ckks_encrypt_pt(params, module, sk, params.k, &pt.to_host_owned::<BE>(), scratch);
             ct.set_log_sparsity((slots / period).ilog2() as usize);
             ct
@@ -579,7 +579,7 @@ fn assert_real_vector<BE>(
         prec.meta = ct.meta();
         let pt = ckks_decrypt_with_prec(module, ct, sk, prec, scratch).unwrap();
         let (mut re, mut im) = (vec![0.0; slots], vec![0.0; slots]);
-        module.ckks_decode_reim_into(&pt, &mut re, &mut im, scratch).unwrap();
+        module.ckks_decode_slots_host_into(&pt, &mut re, &mut im, scratch).unwrap();
         let want = vector_slots(shape, period, slots, t, want);
         assert_precision(&format!("{label} ciphertext {t}"), &re, &want, log_delta, params.n);
         assert!(im.iter().all(|&x| x == 0.0), "{label} ciphertext {t}: imaginary parts");
@@ -605,9 +605,9 @@ where
         .blocks(slots)
         .iter()
         .map(|(re, _)| {
-            let mut pt = module.ckks_pt_vec_alloc(slots, params.base2k.into(), params.prec().k());
+            let mut pt = module.ckks_plaintext_alloc_from_slots(slots, params.base2k.into(), params.prec().k());
             pt.set_meta(params.prec().meta());
-            module.ckks_encode_reim_into(&mut pt, re, &zeros, scratch).unwrap();
+            module.ckks_encode_slots_host_into(&mut pt, re, &zeros, scratch).unwrap();
             ckks_encrypt_pt(params, module, sk, params.k, &pt.to_host_owned::<BE>(), scratch)
         })
         .collect();
@@ -649,7 +649,7 @@ fn assert_real_grid<BE>(
         prec.meta = block.meta();
         let pt = ckks_decrypt_with_prec(module, block, sk, prec, scratch).unwrap();
         let (mut re, mut im) = (vec![0.0; slots], vec![0.0; slots]);
-        module.ckks_decode_reim_into(&pt, &mut re, &mut im, scratch).unwrap();
+        module.ckks_decode_slots_host_into(&pt, &mut re, &mut im, scratch).unwrap();
         assert_precision(&format!("{label} block {b}"), &re, &want_re, log_delta, params.n);
         assert!(im.iter().all(|&x| x == 0.0), "{label} block {b}: imaginary parts");
     }

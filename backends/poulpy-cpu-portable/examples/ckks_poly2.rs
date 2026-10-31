@@ -26,9 +26,9 @@ use poulpy_ckks::{
     CKKSInfos, CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos, SlotsKind,
     api::CKKSEncodingHostOps,
     api::{CKKSAllOpsTmpBytes, CKKSDecryptOps, CKKSEncryptOps, CKKSPolynomialEvaluationOps},
-    layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext},
-    polynomial::{BSGSPolynomial, Basis, EncodeBSGS, Polynomial},
-    power_basis::{PowerBasis, PowerBasisGen},
+    layouts::{CKKSCiphertext, CKKSCiphertextAlloc, CKKSPlaintext, CKKSPlaintextAlloc},
+    polynomial::{BSGSPolynomial, Basis, CKKSPolynomialEncode, Polynomial},
+    power_basis::{CKKSPowerBasisGen, PowerBasis},
 };
 use poulpy_core::api::GLWESecretSampling;
 use poulpy_core::{
@@ -263,11 +263,11 @@ fn encoding(setup: &mut SetupArtifacts) -> Result<EncodingArtifacts> {
 
     let mut pt_znx = setup
         .module
-        .ckks_pt_vec_alloc(setup.module.ckks_max_slots(), BASE2K.into(), PREC_CT.k());
+        .ckks_plaintext_alloc_from_slots(setup.module.ckks_max_slots(), BASE2K.into(), PREC_CT.k());
     pt_znx.set_meta(PREC_CT.meta());
     setup
         .module
-        .ckks_encode_reim_into(&mut pt_znx, &x_re, &x_im, &mut setup.scratch.borrow())?;
+        .ckks_encode_slots_host_into(&mut pt_znx, &x_re, &x_im, &mut setup.scratch.borrow())?;
     print_pt_meta("encoded plaintext x", &pt_znx);
     println!("  x[0] = {:.6}", x_re[0]);
 
@@ -368,7 +368,7 @@ fn decryption(setup: &mut SetupArtifacts, evaluation: &EvaluationArtifacts) -> R
     let mut have_im = vec![0.0; M];
     setup
         .module
-        .ckks_decode_reim_into(&pt_znx, &mut have_re, &mut have_im, &mut setup.scratch.borrow())?;
+        .ckks_decode_slots_host_into(&pt_znx, &mut have_re, &mut have_im, &mut setup.scratch.borrow())?;
     println!("  sin(x[0]) decrypted = {:.15}", have_re[0]);
 
     Ok(DecryptionArtifacts { have_re })

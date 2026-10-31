@@ -14,9 +14,9 @@ use poulpy_hal::layouts::{Backend, ScratchArena};
 use crate::{
     CKKSPlaintextToBackendMut, CKKSPlaintextToBackendRef, SetCKKSInfos,
     layouts::{
-        CKKSEncodingBuffer, CKKSEncodingBufferToBackendMut, CKKSEncodingBufferToBackendRef, CKKSScalar, ScratchArenaTakeCKKS,
-        copy_encoding_buffer_into_host, copy_encoding_buffer_into_reim_host, copy_host_into_encoding_buffer,
-        copy_reim_host_into_encoding_buffer,
+        CKKSEncodingBuffer, CKKSEncodingBufferToBackendMut, CKKSEncodingBufferToBackendRef, CKKSScalar,
+        ScratchArenaTakeCKKSEncodingBuffer, copy_encoding_buffer_into_host, copy_encoding_buffer_into_reim_host,
+        copy_host_into_encoding_buffer, copy_reim_host_into_encoding_buffer,
     },
 };
 
@@ -51,7 +51,7 @@ pub trait CKKSEncodingOps<BE: Backend, F: CKKSEncodingScalar> {
     /// Destructively encodes a planar backend slot buffer `[re | im]` into a
     /// plaintext by composing the slot→coefficient transform and coefficient
     /// mapping.
-    fn ckks_encode_slots_assign_into<P, C>(&self, pt: &mut P, slots: &mut C) -> Result<()>
+    fn ckks_encode_slots_into<P, C>(&self, pt: &mut P, slots: &mut C) -> Result<()>
     where
         P: CKKSPlaintextToBackendMut<BE> + IntPolyInfos + SetCKKSInfos,
         C: CKKSEncodingBufferToBackendMut<BE, F>;
@@ -76,12 +76,12 @@ pub trait CKKSEncodingOps<BE: Backend, F: CKKSEncodingScalar> {
         C: CKKSEncodingBufferToBackendMut<BE, F>;
 
     /// In-place planar slots → polynomial coefficients.
-    fn ckks_slots_to_coeffs_assign<C>(&self, values: &mut C) -> Result<()>
+    fn ckks_encoding_buffer_slots_to_coeffs_assign<C>(&self, values: &mut C) -> Result<()>
     where
         C: CKKSEncodingBufferToBackendMut<BE, F>;
 
     /// In-place polynomial coefficients → planar slots.
-    fn ckks_coeffs_to_slots_assign<C>(&self, values: &mut C) -> Result<()>
+    fn ckks_encoding_buffer_coeffs_to_slots_assign<C>(&self, values: &mut C) -> Result<()>
     where
         C: CKKSEncodingBufferToBackendMut<BE, F>;
 }
@@ -93,23 +93,23 @@ pub trait CKKSEncodingOps<BE: Backend, F: CKKSEncodingScalar> {
 /// plaintext mapping to the backend-resident operations above.
 pub trait CKKSEncodingHostOps<BE: Backend, F: CKKSEncodingScalar>: CKKSEncodingOps<BE, F> {
     /// Standard-arena bytes required by a host-slice encode/decode adapter.
-    fn ckks_reim_tmp_bytes(&self, slots: usize) -> usize {
+    fn ckks_encoding_host_tmp_bytes(&self, slots: usize) -> usize {
         let len = slots.checked_mul(2).expect("CKKS slot count overflow");
         CKKSEncodingBuffer::<BE::OwnedBuf, F>::bytes_of(len)
     }
 
     /// Encodes host complex slots through one backend-native arena buffer.
-    fn ckks_encode_reim_into<P>(&self, pt: &mut P, re: &[F], im: &[F], scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_encode_slots_host_into<P>(&self, pt: &mut P, re: &[F], im: &[F], scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         P: CKKSPlaintextToBackendMut<BE> + IntPolyInfos + SetCKKSInfos,
     {
         ckks_ensure_operand!(
-            "ckks_encode_reim_into",
+            "ckks_encode_slots_host_into",
             re.len() == im.len(),
             "real and imaginary slot counts differ"
         );
         ckks_ensure_operand!(
-            "ckks_encode_reim_into",
+            "ckks_encode_slots_host_into",
             !re.is_empty() && re.len().is_power_of_two(),
             "slot count must be a non-zero power of two, got {}",
             re.len()
@@ -127,23 +127,23 @@ pub trait CKKSEncodingHostOps<BE: Backend, F: CKKSEncodingScalar>: CKKSEncodingO
         scratch.scope(|arena| -> Result<()> {
             let (mut values, _) = arena.take_ckks_encoding_buffer_scratch::<F>(len);
             copy_reim_host_into_encoding_buffer::<BE, F, _>(&mut values, re, im)?;
-            self.ckks_encode_slots_assign_into(pt, &mut values)
+            self.ckks_encode_slots_into(pt, &mut values)
         })
     }
 
     /// Decodes a plaintext to host complex slots through one backend-native
     /// arena buffer.
-    fn ckks_decode_reim_into<P>(&self, pt: &P, re: &mut [F], im: &mut [F], scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_decode_slots_host_into<P>(&self, pt: &P, re: &mut [F], im: &mut [F], scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         P: CKKSPlaintextToBackendRef<BE> + IntPolyInfos,
     {
         ckks_ensure_operand!(
-            "ckks_decode_reim_into",
+            "ckks_decode_slots_host_into",
             re.len() == im.len(),
             "real and imaginary slot counts differ"
         );
         ckks_ensure_operand!(
-            "ckks_decode_reim_into",
+            "ckks_decode_slots_host_into",
             !re.is_empty() && re.len().is_power_of_two(),
             "slot count must be a non-zero power of two, got {}",
             re.len()

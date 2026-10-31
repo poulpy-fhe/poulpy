@@ -34,7 +34,7 @@ pub unsafe trait BlasEncodingImpl: Backend {
     /// bit for bit, within [`Self::blas_pt_operand_encode_tmp_bytes`].
     ///
     /// **Fixed:** each map's host diagonals, built from `entry` by [`crate::layouts::maps`], its schedule, the plan's,
-    /// the blocks sharing the first block's, and its encoding by poulpy-ckks's `ckks_encode_linear_transformation_into`
+    /// the blocks sharing the first block's, and its encoding by poulpy-ckks's `ckks_linear_transformation_encode_into`
     /// at the operand's `coeffs_meta`, map after map in the order of
     /// [`BlasPtOperand::maps`](crate::layouts::BlasPtOperand::maps), the first error stopping it.
     /// **Free:** its kernels and its scratch use.
@@ -67,7 +67,7 @@ pub unsafe trait BlasEncodingImpl: Backend {
     ///
     /// **Fixed:** each block's host diagonals, from `entry` by the slot map
     /// [`BlasEncodingOps::blas_matvec_operand_encode`](crate::api::BlasEncodingOps::blas_matvec_operand_encode) states,
-    /// its schedule, and its encoding by poulpy-ckks's `ckks_encode_linear_transformation_into` at the operand's
+    /// its schedule, and its encoding by poulpy-ckks's `ckks_linear_transformation_encode_into` at the operand's
     /// `coeffs_meta`, block after block, output-major, the first error stopping it. **Free:** its kernels and its
     /// scratch use.
     ///
@@ -97,7 +97,7 @@ pub unsafe trait BlasEncodingImpl: Backend {
     /// bit for bit, within [`Self::blas_context_encode_tmp_bytes`].
     ///
     /// **Fixed:** each map's host diagonals ([`crate::layouts::maps`]) and schedule, as the plan gives them, and its
-    /// encoding by poulpy-ckks's `ckks_encode_linear_transformation_into` at the context's `coeffs_meta`, map after map
+    /// encoding by poulpy-ckks's `ckks_linear_transformation_encode_into` at the context's `coeffs_meta`, map after map
     /// in the order of [`BlasContext::maps`], the first error stopping it. **Free:** its kernels and its scratch
     /// use.
     ///
@@ -121,8 +121,8 @@ pub unsafe trait BlasEncodingImpl: Backend {
     /// [`BlasEncodingReference::blas_pt_operand_prepare_reference`](crate::reference::BlasEncodingReference::blas_pt_operand_prepare_reference)
     /// bit for bit, within [`Self::blas_pt_operand_prepare_tmp_bytes`].
     ///
-    /// **Fixed:** poulpy-ckks's `ckks_prepare_linear_transformation_rhs` of every map, and under `JklsStored` and
-    /// `JklsGalois` its `ckks_prepare_right_into` of each term's one plaintext. **Free:** the prepared form, kernels,
+    /// **Fixed:** poulpy-ckks's `ckks_linear_transformation_rhs_prepare` of every map, and under `JklsStored` and
+    /// `JklsGalois` its `ckks_right_operand_prepare` of each term's one plaintext. **Free:** the prepared form, kernels,
     /// scratch use and the order of the maps.
     ///
     /// It panics before any write on `res` and `other` of different layouts, on a map whose diagonals do not share one
@@ -145,7 +145,7 @@ pub unsafe trait BlasEncodingImpl: Backend {
     /// [`BlasEncodingReference::blas_matvec_operand_prepare_reference`](crate::reference::BlasEncodingReference::blas_matvec_operand_prepare_reference)
     /// bit for bit, within [`Self::blas_matvec_operand_prepare_tmp_bytes`].
     ///
-    /// **Fixed:** poulpy-ckks's `ckks_prepare_linear_transformation_rhs` of every map. **Free:** the prepared form,
+    /// **Fixed:** poulpy-ckks's `ckks_linear_transformation_rhs_prepare` of every map. **Free:** the prepared form,
     /// kernels, scratch use and the order of the maps.
     ///
     /// It panics as [`Self::blas_context_prepare`] does.
@@ -166,7 +166,7 @@ pub unsafe trait BlasEncodingImpl: Backend {
     /// bit for bit, within [`Self::blas_diagonal_ciphertext_prepare_tmp_bytes`], writing `res` through
     /// [`BlasDiagonalCiphertextPrepared::diagonals_mut`].
     ///
-    /// **Fixed:** poulpy-ckks's `ckks_prepare_linear_transformation_rhs` of the diagonals. **Free:** the prepared form,
+    /// **Fixed:** poulpy-ckks's `ckks_linear_transformation_rhs_prepare` of the diagonals. **Free:** the prepared form,
     /// kernels, scratch use and the order of the diagonals.
     ///
     /// It panics as [`Self::blas_context_prepare`] does.
@@ -186,7 +186,7 @@ pub unsafe trait BlasEncodingImpl: Backend {
     /// [`BlasEncodingReference::blas_context_prepare_reference`](crate::reference::BlasEncodingReference::blas_context_prepare_reference)
     /// bit for bit, within [`Self::blas_context_prepare_tmp_bytes`].
     ///
-    /// **Fixed:** poulpy-ckks's `ckks_prepare_linear_transformation_rhs` of every map. **Free:** the prepared form,
+    /// **Fixed:** poulpy-ckks's `ckks_linear_transformation_rhs_prepare` of every map. **Free:** the prepared form,
     /// kernels, scratch use and the order of the maps.
     ///
     /// It panics before any write on `res` and `other` of different layouts, on a map whose diagonals do not share one
