@@ -3,21 +3,14 @@
 use anyhow::{Result, ensure};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use poulpy_ckks::{
-    CKKSCtBounds, CKKSInfos, CKKSLayout, CoeffsMeta, GLWEPlaintextInfos, SetCKKSInfos,
-    layouts::{CKKSCiphertext, CKKSCiphertextAlloc, CKKSLinearTransformationAlloc},
+    CKKSCtBounds, CKKSInfos, CKKSLayout, GLWEPlaintextInfos, SetCKKSInfos,
+    layouts::{CKKSCiphertext, CKKSCiphertextAlloc},
 };
 use poulpy_core::{
     GLWEBytesOf,
-    layouts::{Base2K, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetDegree, LWEInfos, TorusPrecision},
+    layouts::{Base2K, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, TorusPrecision},
 };
 use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, Module, PrepareHint, ReaderFrom, Ring, WriterTo, ZnxWord};
-
-use super::{
-    BlasContext, BlasContextInfos, BlasDiagonalCiphertext, BlasDiagonalCiphertextInfos, BlasMatVecOperand,
-    BlasMatVecOperandInfos, BlasMatVecOperandLayout, BlasPlan, BlasPtOperand, BlasPtOperandInfos, BlasPtOperandLayout,
-    BlasPtSide, BlasVector, BlasVectorInfos, BlasVectorOwned, BlasVectorShape, context, diagonal_ciphertext, matvec_operand,
-    pt_operand, vector,
-};
 
 /// An `rows x cols` grid of `2^log_d x 2^log_d` blocks: block `(i, j)` is one CKKS ciphertext whose matrix slot `s`
 /// holds block `(i, j)` of the `s`-th matrix of the batch.
@@ -488,7 +481,7 @@ where
 }
 
 /// Allocation of grids.
-pub trait BlasModuleAlloc<BE: Backend>: CKKSCiphertextAlloc<BE> + CKKSLinearTransformationAlloc<BE> + GetDegree + Sized {
+pub trait BlasCiphertextAlloc<BE: Backend>: CKKSCiphertextAlloc<BE> {
     /// A grid of `rows x cols` rank-1 blocks of dimension `2^log_d` at torus width `k`, recording the dense batch.
     ///
     /// # Panics
@@ -526,140 +519,13 @@ pub trait BlasModuleAlloc<BE: Backend>: CKKSCiphertextAlloc<BE> + CKKSLinearTran
             ..grid
         }
     }
-
-    /// A vector of `shape` on rank-1 ciphertexts at torus width `k`, labelled dense.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `shape` counts no ciphertext: no entry, or no entry per ciphertext.
-    fn blas_vector_alloc(&self, shape: BlasVectorShape, base2k: Base2K, k: TorusPrecision) -> BlasVectorOwned<BE> {
-        let cts = (0..shape.count()).map(|_| self.ckks_ciphertext_alloc(base2k, k)).collect();
-        BlasVector::from_cts(cts, shape).expect("a vector has at least one entry and one entry per ciphertext")
-    }
-
-    /// A vector of the shape and ciphertext layout of `infos`.
-    ///
-    /// # Panics
-    ///
-    /// As [`Self::blas_vector_alloc`].
-    fn blas_vector_alloc_from_infos<V: BlasVectorInfos>(&self, infos: &V) -> BlasVectorOwned<BE> {
-        vector::alloc(self, &infos.ct_layout(), infos.vector_shape())
-    }
-
-    /// A public operand of `rows x cols` blocks of `count` public matrices per batch on side `S`, on this module's
-    /// slots, every diagonal zero, which
-    /// [`BlasEncodingOps::blas_pt_operand_encode`](crate::api::BlasEncodingOps::blas_pt_operand_encode)
-    /// fills.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the blocks of `plan` are smaller than `2 x 2` or do not fit the module's slots, if the grid has no block
-    /// or more than a `usize` counts, if `count` does not divide the matrix slots, if `coeffs_meta.k` is `0`, or if
-    /// `base2k` is outside `1..=63`.
-    fn blas_pt_operand_alloc<S: BlasPtSide>(
-        &self,
-        plan: BlasPlan,
-        rows: usize,
-        cols: usize,
-        count: usize,
-        base2k: Base2K,
-        coeffs_meta: CoeffsMeta,
-    ) -> BlasPtOperand<BE, S> {
-        let layout = BlasPtOperandLayout::<S>::new(plan, self.ckks_max_slots(), rows, cols, count, base2k, coeffs_meta);
-        self.blas_pt_operand_alloc_from_infos(&layout)
-    }
-
-    /// A public operand of `infos`, which must be of this module's slots.
-    ///
-    /// # Panics
-    ///
-    /// As [`Self::blas_pt_operand_alloc`], and if the slots of `infos` are not the module's.
-    fn blas_pt_operand_alloc_from_infos<A: BlasPtOperandInfos>(&self, infos: &A) -> BlasPtOperand<BE, A::Side> {
-        pt_operand::alloc(self, &infos.blas_pt_operand_layout())
-    }
-
-    /// A public operand of products of a vector by a matrix from vectors of shape `input` repeating every
-    /// `input_period` slots into vectors of shape `output` repeating every `output_period` slots, on this module's
-    /// slots and the `Direct` schedule, every diagonal zero, which
-    /// [`BlasEncodingOps::blas_matvec_operand_encode`](crate::api::BlasEncodingOps::blas_matvec_operand_encode) fills.
-    /// Another schedule is a [`BlasMatVecOperandLayout`] built with
-    /// [`with_strategy`](BlasMatVecOperandLayout::with_strategy) or
-    /// [`with_optimal_bsgs`](BlasMatVecOperandLayout::with_optimal_bsgs), allocated by
-    /// [`Self::blas_matvec_operand_alloc_from_infos`].
-    ///
-    /// # Panics
-    ///
-    /// Panics unless each shape holds an entry, an entry per ciphertext and a positive stride, and its entries fit its
-    /// period, which divides the slots, if the operand has more blocks than a `usize` counts, if `coeffs_meta.k` is `0`,
-    /// if `base2k` is outside `1..=63`, or, from infos, for a schedule other than `Direct` and `Bsgs` of a positive
-    /// giant step.
-    fn blas_matvec_operand_alloc(
-        &self,
-        input: BlasVectorShape,
-        input_period: usize,
-        output: BlasVectorShape,
-        output_period: usize,
-        base2k: Base2K,
-        coeffs_meta: CoeffsMeta,
-    ) -> BlasMatVecOperand<BE> {
-        let layout = BlasMatVecOperandLayout::new(
-            self.ckks_max_slots(),
-            input,
-            input_period,
-            output,
-            output_period,
-            base2k,
-            coeffs_meta,
-        );
-        self.blas_matvec_operand_alloc_from_infos(&layout)
-    }
-
-    /// A public operand of products of a vector by a matrix of `infos`, which must be of this module's slots.
-    ///
-    /// # Panics
-    ///
-    /// As [`Self::blas_matvec_operand_alloc`], and if the slots of `infos` are not the module's.
-    fn blas_matvec_operand_alloc_from_infos<A: BlasMatVecOperandInfos>(&self, infos: &A) -> BlasMatVecOperand<BE> {
-        matvec_operand::alloc(self, &infos.blas_matvec_operand_layout())
-    }
-
-    /// A diagonal ciphertext of `infos`, every diagonal zero: a matrix `blas_append_row_diagonal` and
-    /// `blas_append_col_diagonal` fill.
-    ///
-    /// # Panics
-    ///
-    /// Panics unless the slots of `infos` are the module's, it holds at least one diagonal, each below the slots, and its
-    /// diagonals are ciphertexts of the module's degree at a radix in `1..=62`.
-    fn blas_diagonal_ciphertext_alloc_from_infos<A: BlasDiagonalCiphertextInfos>(&self, infos: &A) -> BlasDiagonalCiphertext<BE> {
-        diagonal_ciphertext::alloc(self, &infos.blas_diagonal_ciphertext_layout())
-    }
-
-    /// A context of `plan` on this module's ring, every diagonal zero, which
-    /// [`BlasEncodingOps::blas_context_encode`](crate::api::BlasEncodingOps::blas_context_encode) fills.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the blocks of `plan` are smaller than `2 x 2` or do not fit the module's slots, if `coeffs_meta.k` is
-    /// `0` or if `base2k` is outside `1..=63`.
-    fn blas_context_alloc(&self, plan: BlasPlan, base2k: Base2K, coeffs_meta: CoeffsMeta) -> BlasContext<BE> {
-        self.blas_context_alloc_from_infos(&context::module_layout(self, plan, base2k, coeffs_meta))
-    }
-
-    /// A context of `infos`, which must be of this module's ring.
-    ///
-    /// # Panics
-    ///
-    /// As [`Self::blas_context_alloc`], and if the degree or the slots of `infos` are not the module's.
-    fn blas_context_alloc_from_infos<A: BlasContextInfos>(&self, infos: &A) -> BlasContext<BE> {
-        context::alloc(self, &infos.blas_context_layout())
-    }
 }
 
-impl<BE: Backend> BlasModuleAlloc<BE> for Module<BE> where Module<BE>: CKKSCiphertextAlloc<BE> + CKKSLinearTransformationAlloc<BE> {}
+impl<BE: Backend> BlasCiphertextAlloc<BE> for Module<BE> where Module<BE>: CKKSCiphertextAlloc<BE> {}
 
 /// Byte sizes of grids, routed through the backend.
-pub trait BlasBytesOf<BE: Backend>: GLWEBytesOf<BE> + GetDegree + Sized {
-    /// Bytes of [`BlasModuleAlloc::blas_ciphertext_alloc_from_infos`] of `infos`.
+pub trait BlasCiphertextBytesOf<BE: Backend>: GLWEBytesOf<BE> {
+    /// Bytes of [`BlasCiphertextAlloc::blas_ciphertext_alloc_from_infos`] of `infos`.
     ///
     /// # Panics
     ///
@@ -672,39 +538,16 @@ pub trait BlasBytesOf<BE: Backend>: GLWEBytesOf<BE> + GetDegree + Sized {
             .and_then(|blocks| blocks.checked_mul(block))
             .expect("the grid's bytes overflow usize")
     }
-
-    /// Bytes of [`BlasModuleAlloc::blas_vector_alloc_from_infos`] of `infos`.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the bytes overflow `usize`.
-    fn blas_vector_bytes_of_from_infos<V: BlasVectorInfos>(&self, infos: &V) -> usize {
-        let ct = self.glwe_bytes_of_from_infos(&infos.ct_layout());
-        infos
-            .vector_shape()
-            .count()
-            .checked_mul(ct)
-            .expect("the vector's bytes overflow usize")
-    }
-
-    /// Bytes of [`BlasModuleAlloc::blas_diagonal_ciphertext_alloc_from_infos`] of `infos`.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the bytes overflow `usize`.
-    fn blas_diagonal_ciphertext_bytes_of_from_infos<A: BlasDiagonalCiphertextInfos>(&self, infos: &A) -> usize {
-        diagonal_ciphertext::bytes_of(self, &infos.blas_diagonal_ciphertext_layout())
-    }
 }
 
-impl<BE: Backend> BlasBytesOf<BE> for Module<BE> {}
+impl<BE: Backend> BlasCiphertextBytesOf<BE> for Module<BE> {}
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::layouts::{
-        BlasContextPrepared, BlasDiagonalCiphertext, BlasDiagonalCiphertextPrepared, BlasMatMulOperand,
-        BlasMatVecOperandPrepared, BlasPtOperandPrepared, BlasVectorMut,
+        BlasContextPrepared, BlasDiagonalCiphertext, BlasDiagonalCiphertextPrepared, BlasMatMulOperandPrepared,
+        BlasMatVecOperand, BlasMatVecOperandPrepared, BlasPtOperandPrepared, BlasVectorMut, BlasVectorOwned,
     };
     use poulpy_ckks::{
         CKKSError, SetGLWEPlaintextInfos,
@@ -735,8 +578,8 @@ mod tests {
         operand::<BlasDiagonalCiphertextPrepared<BE>>();
         sync::<BlasContextPrepared<BE>>();
         sync::<BlasPtOperandPrepared<BE>>();
-        operand::<BlasMatMulOperand<BE, CKKSLeftOperandPrepared<BE>>>();
-        operand::<BlasMatMulOperand<BE, CKKSRightOperandPrepared<BE>>>();
+        operand::<BlasMatMulOperandPrepared<BE, CKKSLeftOperandPrepared<BE>>>();
+        operand::<BlasMatMulOperandPrepared<BE, CKKSRightOperandPrepared<BE>>>();
         sync::<CKKSLeftOperandPrepared<BE>>();
         sync::<CKKSRightOperandPrepared<BE>>();
         sync::<GLWETensorKeyPrepared<BE::OwnedBuf, BE>>();

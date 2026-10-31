@@ -63,17 +63,18 @@ use super::{
 };
 use crate::{
     api::{
-        BlasContextPreparedFactory, BlasEncodingOps, BlasMatInterOps, BlasMatIntraOps, BlasMatMulOps, BlasMatVecOps,
-        BlasPtOperandPreparedFactory,
+        BlasContextPreparedFactory, BlasEncodingOps, BlasMatInterOps, BlasMatIntraOps, BlasMatMulLeftOperandPreparedFactory,
+        BlasMatMulOps, BlasMatMulRightOperandPreparedFactory, BlasMatVecOps, BlasPtOperandPreparedFactory,
     },
     layouts::{
-        BlasCiphertext, BlasCiphertextOwned, BlasContextInfos, BlasContextLayout, BlasContextPrepared, BlasDiagonalCiphertext,
-        BlasDiagonalCiphertextInfos, BlasDiagonalCiphertextLayout, BlasGridInfos, BlasGridMut, BlasLayout,
-        BlasMatMulOperandInfos, BlasMatVecOperandLayout, BlasModuleAlloc, BlasPlan, BlasPtAlgorithm, BlasPtOperandInfos,
-        BlasPtOperandLayout, BlasPtOperandPrepared, BlasPtSide, BlasVector, BlasVectorInfos, BlasVectorLayout, BlasVectorOwned,
-        BlasVectorShape, Left, Right, blas_grid_to_vector_max_base2k, blas_matmul_left_term_layout, blas_matmul_max_base2k,
-        blas_matmul_pt_left_max_base2k, blas_matmul_pt_right_max_base2k, blas_matmul_right_term_layout,
-        blas_matvec_diagonal_max_base2k, blas_matvec_pt_max_base2k, blas_vector_to_grid_max_base2k,
+        BlasCiphertext, BlasCiphertextOwned, BlasContextAlloc, BlasContextInfos, BlasContextLayout, BlasContextPrepared,
+        BlasDiagonalCiphertext, BlasDiagonalCiphertextAlloc, BlasDiagonalCiphertextInfos, BlasDiagonalCiphertextLayout,
+        BlasGridInfos, BlasGridMut, BlasLayout, BlasMatMulOperandInfos, BlasMatVecOperandLayout, BlasPlan, BlasPtAlgorithm,
+        BlasPtOperandAlloc, BlasPtOperandInfos, BlasPtOperandLayout, BlasPtOperandPrepared, BlasPtSide, BlasVector,
+        BlasVectorInfos, BlasVectorLayout, BlasVectorOwned, BlasVectorShape, Left, Right, blas_grid_to_vector_max_base2k,
+        blas_matmul_left_term_layout, blas_matmul_max_base2k, blas_matmul_pt_left_max_base2k, blas_matmul_pt_right_max_base2k,
+        blas_matmul_right_term_layout, blas_matvec_diagonal_max_base2k, blas_matvec_pt_max_base2k,
+        blas_vector_to_grid_max_base2k,
         context::module_layout,
         diagonal_ciphertext::AppendAxis,
         matvec_pt_galois_elements, sum_galois_elements,
@@ -914,20 +915,28 @@ where
             // Hot operands at `side(OneShot)`, cold ones at `side(Reuse)`.
             let side = |hint| usize::from(hint == Reuse);
             let lefts = HINTS.map(|hint| {
-                let left = with_scratch::<B, _>(module.blas_matmul_prepare_left_tmp_bytes(x, ctx, &atk, hint), |s| {
+                let left = with_scratch::<B, _>(module.blas_matmul_left_operand_prepare_tmp_bytes(x, ctx, &atk, hint), |s| {
                     matmul_left_operand(module, x, ctx, &products, hint, s)
                 })
                 .unwrap();
-                out.push(preparation("blas_matmul_prepare_left", &left, x, ctx, false, hint, &products));
+                out.push(preparation(
+                    "blas_matmul_left_operand_prepare",
+                    &left,
+                    x,
+                    ctx,
+                    false,
+                    hint,
+                    &products,
+                ));
                 left
             });
             let rights = HINTS.map(|hint| {
-                let right = with_scratch::<B, _>(module.blas_matmul_prepare_right_tmp_bytes(y, ctx, &atk, hint), |s| {
+                let right = with_scratch::<B, _>(module.blas_matmul_right_operand_prepare_tmp_bytes(y, ctx, &atk, hint), |s| {
                     matmul_right_operand(module, y, ctx, &products, hint, s)
                 })
                 .unwrap();
                 out.push(preparation(
-                    "blas_matmul_prepare_right",
+                    "blas_matmul_right_operand_prepare",
                     &right,
                     y,
                     ctx,
@@ -1042,12 +1051,13 @@ where
         operand(params, module, log_d, 2, 2, 120),
         operand(params, module, log_d, 2, 1, 124),
     );
-    let left = with_scratch::<B, _>(module.blas_matmul_prepare_left_tmp_bytes(&a, &ctx, &atk, Reuse), |s| {
-        matmul_left_operand(module, &a, &ctx, &products, Reuse, s)
-    })
+    let left = with_scratch::<B, _>(
+        module.blas_matmul_left_operand_prepare_tmp_bytes(&a, &ctx, &atk, Reuse),
+        |s| matmul_left_operand(module, &a, &ctx, &products, Reuse, s),
+    )
     .unwrap();
     let mut out = vec![preparation(
-        "blas_matmul_prepare_left",
+        "blas_matmul_left_operand_prepare",
         &left,
         &a,
         &ctx,
@@ -1055,12 +1065,13 @@ where
         Reuse,
         &products,
     )];
-    let right = with_scratch::<B, _>(module.blas_matmul_prepare_right_tmp_bytes(&b, &ctx, &atk, Reuse), |s| {
-        matmul_right_operand(module, &b, &ctx, &products, Reuse, s)
-    })
+    let right = with_scratch::<B, _>(
+        module.blas_matmul_right_operand_prepare_tmp_bytes(&b, &ctx, &atk, Reuse),
+        |s| matmul_right_operand(module, &b, &ctx, &products, Reuse, s),
+    )
     .unwrap();
     out.push(preparation(
-        "blas_matmul_prepare_right",
+        "blas_matmul_right_operand_prepare",
         &right,
         &b,
         &ctx,
@@ -1096,12 +1107,13 @@ where
     // operand width.
     let p = scale(params);
     let short = sized(params, module, log_d, 2, 2, 3 * p - 1, 132);
-    let hot = with_scratch::<B, _>(module.blas_matmul_prepare_left_tmp_bytes(&short, &ctx, &atk, OneShot), |s| {
-        matmul_left_operand(module, &short, &ctx, &products, OneShot, s)
-    })
+    let hot = with_scratch::<B, _>(
+        module.blas_matmul_left_operand_prepare_tmp_bytes(&short, &ctx, &atk, OneShot),
+        |s| matmul_left_operand(module, &short, &ctx, &products, OneShot, s),
+    )
     .unwrap();
     out.push(preparation(
-        "blas_matmul_prepare_left",
+        "blas_matmul_left_operand_prepare",
         &hot,
         &short,
         &ctx,
@@ -2045,13 +2057,15 @@ where
         operand(params, module, log_d, 2, 1, 124),
     );
     let pt = public_operand::<B, F>(params, module, log_d, 1, scale(params), BlasPtAlgorithm::Jkls);
-    let left = with_scratch::<B, _>(module.blas_matmul_prepare_left_tmp_bytes(&a, &ctx, &atk, Reuse), |s| {
-        matmul_left_operand(module, &a, &ctx, &keys, Reuse, s)
-    })
+    let left = with_scratch::<B, _>(
+        module.blas_matmul_left_operand_prepare_tmp_bytes(&a, &ctx, &atk, Reuse),
+        |s| matmul_left_operand(module, &a, &ctx, &keys, Reuse, s),
+    )
     .unwrap();
-    let right = with_scratch::<B, _>(module.blas_matmul_prepare_right_tmp_bytes(&b, &ctx, &atk, Reuse), |s| {
-        matmul_right_operand(module, &b, &ctx, &keys, Reuse, s)
-    })
+    let right = with_scratch::<B, _>(
+        module.blas_matmul_right_operand_prepare_tmp_bytes(&b, &ctx, &atk, Reuse),
+        |s| matmul_right_operand(module, &b, &ctx, &keys, Reuse, s),
+    )
     .unwrap();
     let res = || sized(params, module, log_d, 2, 1, width(params), 126);
     let matmul = || {

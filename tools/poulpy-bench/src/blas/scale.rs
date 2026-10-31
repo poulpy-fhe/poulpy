@@ -20,13 +20,17 @@ use std::{
 };
 
 use poulpy_blas::{
-    api::{BlasMatInterOps, BlasMatIntraOps, BlasMatMulOps},
+    api::{
+        BlasMatInterOps, BlasMatIntraOps, BlasMatMulLeftOperandPreparedFactory, BlasMatMulOps,
+        BlasMatMulRightOperandPreparedFactory,
+    },
     layouts::{
-        BlasContextLayout, BlasLayout, BlasMatMulOperandPreparedFactory, BlasPlan, BlasPtAlgorithm, BlasPtOperandLayout, Left,
-        Right, blas_matmul_left_operand_layout, blas_matmul_max_base2k, blas_matmul_prepare_left_key_uses,
-        blas_matmul_prepare_right_key_uses, blas_matmul_prepared_key_uses, blas_matmul_pt_left_key_uses,
-        blas_matmul_pt_left_max_base2k, blas_matmul_pt_right_key_uses, blas_matmul_pt_right_max_base2k,
-        blas_matmul_right_operand_layout, blas_sum_cols_key_uses, blas_sum_key_uses, blas_sum_rows_key_uses, replicated,
+        BlasContextLayout, BlasLayout, BlasPlan, BlasPtAlgorithm, BlasPtOperandLayout, Left, Right,
+        blas_matmul_left_operand_layout, blas_matmul_left_operand_prepare_key_uses, blas_matmul_max_base2k,
+        blas_matmul_prepared_key_uses, blas_matmul_pt_left_key_uses, blas_matmul_pt_left_max_base2k,
+        blas_matmul_pt_right_key_uses, blas_matmul_pt_right_max_base2k, blas_matmul_right_operand_layout,
+        blas_matmul_right_operand_prepare_key_uses, blas_sum_cols_key_uses, blas_sum_key_uses, blas_sum_rows_key_uses,
+        replicated,
     },
     oep::BlasImpl,
     test_suite::helpers::{HINTS, MASKED_PT_ALGORITHMS, MIXES, PT_ALGORITHMS},
@@ -378,8 +382,8 @@ where
     let (a, b) = (client.encrypt(bp, 1, 1, 1, a_entry), client.encrypt(bp, 1, 1, 1, b_entry));
     let max_base2k = blas_matmul_max_base2k::<BE>(&a, &b, &ctx, FAILURE_BITS);
     let module = &client.module;
-    let mut elements = elements_of(&blas_matmul_prepare_left_key_uses(module, &a, &ctx));
-    elements.extend(elements_of(&blas_matmul_prepare_right_key_uses(module, &b, &ctx)));
+    let mut elements = elements_of(&blas_matmul_left_operand_prepare_key_uses(module, &a, &ctx));
+    elements.extend(elements_of(&blas_matmul_right_operand_prepare_key_uses(module, &b, &ctx)));
     for (hl, hr) in MIXES {
         let (left, right) = (
             blas_matmul_left_operand_layout(&a, &ctx, hl),
@@ -396,10 +400,11 @@ where
         let base = heap::reset_peak();
         let left = {
             let mut scratch =
-                ScratchOwned::<BE>::alloc(module.blas_matmul_prepare_left_tmp_bytes(&a, &ctx, &atk_layout(bp), hint));
-            let mut left = module.blas_matmul_left_alloc_from_infos(&blas_matmul_left_operand_layout(&a, &ctx, hint));
+                ScratchOwned::<BE>::alloc(module.blas_matmul_left_operand_prepare_tmp_bytes(&a, &ctx, &atk_layout(bp), hint));
+            let mut left =
+                module.blas_matmul_left_operand_prepared_alloc_from_infos(&blas_matmul_left_operand_layout(&a, &ctx, hint));
             module
-                .blas_matmul_prepare_left(&mut left, &a, &ctx, &atks, &mut scratch.borrow())
+                .blas_matmul_left_operand_prepare(&mut left, &a, &ctx, &atks, &mut scratch.borrow())
                 .unwrap();
             left
         };
@@ -408,10 +413,11 @@ where
         let base = heap::reset_peak();
         let right = {
             let mut scratch =
-                ScratchOwned::<BE>::alloc(module.blas_matmul_prepare_right_tmp_bytes(&b, &ctx, &atk_layout(bp), hint));
-            let mut right = module.blas_matmul_right_alloc_from_infos(&blas_matmul_right_operand_layout(&b, &ctx, hint));
+                ScratchOwned::<BE>::alloc(module.blas_matmul_right_operand_prepare_tmp_bytes(&b, &ctx, &atk_layout(bp), hint));
+            let mut right =
+                module.blas_matmul_right_operand_prepared_alloc_from_infos(&blas_matmul_right_operand_layout(&b, &ctx, hint));
             module
-                .blas_matmul_prepare_right(&mut right, &b, &ctx, &atks, &mut scratch.borrow())
+                .blas_matmul_right_operand_prepare(&mut right, &b, &ctx, &atks, &mut scratch.borrow())
                 .unwrap();
             right
         };

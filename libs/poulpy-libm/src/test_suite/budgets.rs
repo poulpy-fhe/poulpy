@@ -532,28 +532,28 @@ where
         };
         let l = |op: &str| format!("{op} at ct.k = {k}");
         check_exact_in_place(
-            &l("ckks_goldschmidt_division"),
+            &l("ckks_goldschmidt_division_assign"),
             module,
             make,
-            |c| module.ckks_goldschmidt_division_tmp_bytes(c, &tl),
-            |c, s| module.ckks_goldschmidt_division(c, iters, tsk, s),
+            |c| module.ckks_goldschmidt_division_assign_tmp_bytes(c, &tl),
+            |c, s| module.ckks_goldschmidt_division_assign(c, iters, tsk, s),
         );
         check_exact_in_place(
-            &l("ckks_rsqrt"),
+            &l("ckks_rsqrt_assign"),
             module,
             make,
-            |c| module.ckks_rsqrt_tmp_bytes(c, &b, &tl),
-            |c, s| module.ckks_rsqrt(c, &b, r, tsk, s),
+            |c| module.ckks_rsqrt_assign_tmp_bytes(c, &b, &tl),
+            |c, s| module.ckks_rsqrt_assign(c, &b, r, tsk, s),
         );
         let dom_q = |c: &CKKSCiphertextOwned<BE>| module.ckks_inverse_domain_tmp_bytes(c, &tl, &al, &cm);
-        check_exact_in_place(&l("ckks_inverse_positive_domain"), module, make, dom_q, |c, s| {
-            module.ckks_inverse_positive_domain(c, iters, tsk, s)
+        check_exact_in_place(&l("ckks_inverse_positive_domain_assign"), module, make, dom_q, |c, s| {
+            module.ckks_inverse_positive_domain_assign(c, iters, tsk, s)
         });
-        check_exact_in_place(&l("ckks_inverse_negative_domain"), module, make, dom_q, |c, s| {
-            module.ckks_inverse_negative_domain(c, iters, tsk, s)
+        check_exact_in_place(&l("ckks_inverse_negative_domain_assign"), module, make, dom_q, |c, s| {
+            module.ckks_inverse_negative_domain_assign(c, iters, tsk, s)
         });
-        check_exact_in_place(&l("ckks_inverse_full_domain"), module, make, dom_q, |c, s| {
-            module.ckks_inverse_full_domain(c, iters, comp, tsk, conj, s)
+        check_exact_in_place(&l("ckks_inverse_full_domain_assign"), module, make, dom_q, |c, s| {
+            module.ckks_inverse_full_domain_assign(c, iters, comp, tsk, conj, s)
         });
     }
 }

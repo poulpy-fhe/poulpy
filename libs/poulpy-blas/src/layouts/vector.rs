@@ -7,8 +7,11 @@ use poulpy_ckks::{
     CKKSCtBounds, CKKSLayout, GLWEPlaintextInfos, SetCKKSInfos,
     layouts::{CKKSCiphertext, CKKSCiphertextAlloc},
 };
-use poulpy_core::layouts::{GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos};
-use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, Ring, WriterTo, ZnxWord};
+use poulpy_core::{
+    GLWEBytesOf,
+    layouts::{Base2K, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, TorusPrecision},
+};
+use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, Module, ReaderFrom, Ring, WriterTo, ZnxWord};
 
 use super::ciphertext::{layout_of, slots_of};
 
@@ -310,8 +313,51 @@ where
     }
 }
 
-/// [`super::BlasModuleAlloc::blas_vector_alloc_from_infos`].
-pub(crate) fn alloc<BE, M>(module: &M, ct: &CKKSLayout, shape: BlasVectorShape) -> BlasVectorOwned<BE>
+/// Allocation of vectors.
+pub trait BlasVectorAlloc<BE: Backend>: CKKSCiphertextAlloc<BE> + Sized {
+    /// A vector of `shape` on rank-1 ciphertexts at torus width `k`, labelled dense.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `shape` counts no ciphertext: no entry, or no entry per ciphertext.
+    fn blas_vector_alloc(&self, shape: BlasVectorShape, base2k: Base2K, k: TorusPrecision) -> BlasVectorOwned<BE> {
+        let cts = (0..shape.count()).map(|_| self.ckks_ciphertext_alloc(base2k, k)).collect();
+        BlasVector::from_cts(cts, shape).expect("a vector has at least one entry and one entry per ciphertext")
+    }
+
+    /// A vector of the shape and ciphertext layout of `infos`.
+    ///
+    /// # Panics
+    ///
+    /// As [`Self::blas_vector_alloc`].
+    fn blas_vector_alloc_from_infos<V: BlasVectorInfos>(&self, infos: &V) -> BlasVectorOwned<BE> {
+        alloc(self, &infos.ct_layout(), infos.vector_shape())
+    }
+}
+
+impl<BE: Backend> BlasVectorAlloc<BE> for Module<BE> where Module<BE>: CKKSCiphertextAlloc<BE> {}
+
+/// Byte sizes of vectors, routed through the backend.
+pub trait BlasVectorBytesOf<BE: Backend>: GLWEBytesOf<BE> {
+    /// Bytes of [`BlasVectorAlloc::blas_vector_alloc_from_infos`] of `infos`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the bytes overflow `usize`.
+    fn blas_vector_bytes_of_from_infos<V: BlasVectorInfos>(&self, infos: &V) -> usize {
+        let ct = self.glwe_bytes_of_from_infos(&infos.ct_layout());
+        infos
+            .vector_shape()
+            .count()
+            .checked_mul(ct)
+            .expect("the vector's bytes overflow usize")
+    }
+}
+
+impl<BE: Backend> BlasVectorBytesOf<BE> for Module<BE> {}
+
+/// [`BlasVectorAlloc::blas_vector_alloc_from_infos`].
+fn alloc<BE, M>(module: &M, ct: &CKKSLayout, shape: BlasVectorShape) -> BlasVectorOwned<BE>
 where
     BE: Backend,
     M: CKKSCiphertextAlloc<BE>,
@@ -329,7 +375,6 @@ mod tests {
     use poulpy_hal::layouts::{HostBytesBackend, Module, Standard, ZnxView, ZnxViewMut};
 
     use super::*;
-    use crate::layouts::{BlasBytesOf, BlasModuleAlloc};
 
     #[test]
     fn shapes_count_their_ciphertexts_and_span() {

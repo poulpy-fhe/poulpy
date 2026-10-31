@@ -33,12 +33,13 @@ use super::helpers::{
 use crate::{
     api::{BlasDiagonalCiphertextPreparedFactory, BlasEncodingOps, BlasMatVecOperandPreparedFactory, BlasMatVecOps},
     layouts::{
-        BlasDiagonalCiphertext, BlasDiagonalCiphertextLayout, BlasDiagonalCiphertextPrepared, BlasMatVecOperand,
-        BlasMatVecOperandLayout, BlasMatVecOperandPrepared, BlasModuleAlloc, BlasVector, BlasVectorInfos, BlasVectorLayout,
-        BlasVectorMut, BlasVectorOwned, BlasVectorRef, BlasVectorShape, append_col_diagonal_galois_elements,
-        append_row_diagonal_galois_elements, blas_append_col_diagonal_key_uses, blas_append_row_diagonal_key_uses,
-        blas_matvec_diagonal_key_uses, blas_matvec_diagonal_output_layout, blas_matvec_pt_output_layout,
-        diagonal_ciphertext::AppendAxis, matvec_diagonal_galois_elements, matvec_pt_galois_elements,
+        BlasDiagonalCiphertext, BlasDiagonalCiphertextAlloc, BlasDiagonalCiphertextLayout, BlasDiagonalCiphertextPrepared,
+        BlasMatVecOperand, BlasMatVecOperandAlloc, BlasMatVecOperandLayout, BlasMatVecOperandPrepared, BlasVector,
+        BlasVectorAlloc, BlasVectorInfos, BlasVectorLayout, BlasVectorMut, BlasVectorOwned, BlasVectorRef, BlasVectorShape,
+        append_col_diagonal_galois_elements, append_row_diagonal_galois_elements, blas_append_col_diagonal_key_uses,
+        blas_append_row_diagonal_key_uses, blas_matvec_diagonal_key_uses, blas_matvec_diagonal_output_layout,
+        blas_matvec_pt_output_layout, diagonal_ciphertext::AppendAxis, matvec_diagonal_galois_elements,
+        matvec_pt_galois_elements,
     },
     oep::{BlasEncodingImpl, BlasMatVecImpl},
 };

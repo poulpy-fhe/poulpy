@@ -9,7 +9,7 @@ use poulpy_ckks::{
     layouts::{CKKSLinearTransformationAlloc, CKKSPlaintextOwned, CKKSRightOperandPrepared},
 };
 use poulpy_core::layouts::{Base2K, DiagonalArithmetic, GetDegree, LinearTransformationStrategy};
-use poulpy_hal::layouts::{Backend, PrepareHint};
+use poulpy_hal::layouts::{Backend, Module, PrepareHint};
 
 use super::{
     BlasPlan, BlasPtAlgorithm,
@@ -506,8 +506,45 @@ pub(crate) fn layouts_of<S: BlasPtSide>(layout: &BlasPtOperandLayout<S>) -> Oper
     }
 }
 
-/// [`super::BlasModuleAlloc::blas_pt_operand_alloc_from_infos`].
-pub(crate) fn alloc<BE, M, S>(module: &M, layout: &BlasPtOperandLayout<S>) -> BlasPtOperand<BE, S>
+/// Allocation of public operands.
+pub trait BlasPtOperandAlloc<BE: Backend>: CKKSLinearTransformationAlloc<BE> + GetDegree + Sized {
+    /// A public operand of `rows x cols` blocks of `count` public matrices per batch on side `S`, on this module's
+    /// slots, every diagonal zero, which
+    /// [`BlasEncodingOps::blas_pt_operand_encode`](crate::api::BlasEncodingOps::blas_pt_operand_encode)
+    /// fills.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the blocks of `plan` are smaller than `2 x 2` or do not fit the module's slots, if the grid has no
+    /// block or more than a `usize` counts, if `count` does not divide the matrix slots, if `coeffs_meta.k` is `0`, or
+    /// if `base2k` is outside `1..=63`.
+    fn blas_pt_operand_alloc<S: BlasPtSide>(
+        &self,
+        plan: BlasPlan,
+        rows: usize,
+        cols: usize,
+        count: usize,
+        base2k: Base2K,
+        coeffs_meta: CoeffsMeta,
+    ) -> BlasPtOperand<BE, S> {
+        let layout = BlasPtOperandLayout::<S>::new(plan, self.ckks_max_slots(), rows, cols, count, base2k, coeffs_meta);
+        self.blas_pt_operand_alloc_from_infos(&layout)
+    }
+
+    /// A public operand of `infos`, which must be of this module's slots.
+    ///
+    /// # Panics
+    ///
+    /// As [`Self::blas_pt_operand_alloc`], and if the slots of `infos` are not the module's.
+    fn blas_pt_operand_alloc_from_infos<A: BlasPtOperandInfos>(&self, infos: &A) -> BlasPtOperand<BE, A::Side> {
+        alloc(self, &infos.blas_pt_operand_layout())
+    }
+}
+
+impl<BE: Backend> BlasPtOperandAlloc<BE> for Module<BE> where Module<BE>: CKKSLinearTransformationAlloc<BE> {}
+
+/// [`BlasPtOperandAlloc::blas_pt_operand_alloc_from_infos`].
+fn alloc<BE, M, S>(module: &M, layout: &BlasPtOperandLayout<S>) -> BlasPtOperand<BE, S>
 where
     BE: Backend,
     M: CKKSLinearTransformationAlloc<BE> + GetDegree,
@@ -544,10 +581,9 @@ where
 mod tests {
     use std::panic::{AssertUnwindSafe, catch_unwind};
 
-    use poulpy_hal::layouts::{HostBytesBackend, Module};
+    use poulpy_hal::layouts::HostBytesBackend;
 
     use super::*;
-    use crate::layouts::BlasModuleAlloc;
 
     fn module() -> Module<HostBytesBackend> {
         Module::<HostBytesBackend>::new(256)

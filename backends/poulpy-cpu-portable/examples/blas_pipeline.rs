@@ -30,10 +30,10 @@ use poulpy_blas::{
         BlasPtOperandPreparedFactory,
     },
     layouts::{
-        BlasCiphertext, BlasCiphertextOwned, BlasGridInfos, BlasKeyUses, BlasLayout, BlasModuleAlloc, BlasPlan, Left, Right,
-        blas_matmul_key_uses, blas_matmul_output_layout, blas_matmul_pt_left_key_uses, blas_matmul_pt_left_output_layout,
-        blas_matmul_pt_right_key_uses, blas_matmul_pt_right_output_layout, blas_sum_key_uses, blas_sum_output_layout,
-        blas_transpose_key_uses, blas_transpose_output_layout,
+        BlasCiphertext, BlasCiphertextAlloc, BlasCiphertextOwned, BlasContextAlloc, BlasGridInfos, BlasKeyUses, BlasLayout,
+        BlasPlan, BlasPtOperandAlloc, Left, Right, blas_matmul_key_uses, blas_matmul_output_layout, blas_matmul_pt_left_key_uses,
+        blas_matmul_pt_left_output_layout, blas_matmul_pt_right_key_uses, blas_matmul_pt_right_output_layout, blas_sum_key_uses,
+        blas_sum_output_layout, blas_transpose_key_uses, blas_transpose_output_layout,
         grid::{join_blocks, split_into_blocks},
     },
 };

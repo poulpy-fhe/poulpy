@@ -37,17 +37,20 @@ use super::repack::{
     GRID, grid_model, grid_to_vector_cases, line_values, matrix_times, placed, repack_fits, vector_to_grid_cases,
 };
 use crate::{
-    api::{BlasEncodingOps, BlasMatInterOps, BlasMatIntraOps, BlasMatMulOps, BlasMatVecOps},
+    api::{
+        BlasEncodingOps, BlasMatInterOps, BlasMatIntraOps, BlasMatMulLeftOperandPreparedFactory, BlasMatMulOps,
+        BlasMatMulRightOperandPreparedFactory, BlasMatVecOps,
+    },
     layouts::{
-        BlasCiphertext, BlasCiphertextOwned, BlasContextInfos, BlasGridInfos, BlasGridMut, BlasLayout, BlasMatVecOperandLayout,
-        BlasModuleAlloc, BlasPlan, BlasVectorInfos, BlasVectorShape, Left, Right, blas_grid_to_vector_output_layout,
-        blas_matmul_left_operand_layout, blas_matmul_left_term_layout, blas_matmul_output_layout,
-        blas_matmul_prepared_output_layout, blas_matmul_pt_left_output_layout, blas_matmul_pt_right_output_layout,
-        blas_matmul_right_operand_layout, blas_matmul_right_term_layout, blas_matvec_diagonal_output_layout,
-        blas_matvec_pt_output_layout, blas_rotate_cols_output_layout, blas_rotate_output_layout, blas_rotate_rows_output_layout,
-        blas_sum_cols_output_layout, blas_sum_output_layout, blas_sum_rows_output_layout, blas_transpose_output_layout,
-        blas_vector_to_grid_output_layout, diagonal_ciphertext::AppendAxis, matvec_pt_galois_elements, replicated,
-        sum_galois_elements,
+        BlasCiphertext, BlasCiphertextAlloc, BlasCiphertextOwned, BlasContextInfos, BlasDiagonalCiphertextAlloc, BlasGridInfos,
+        BlasGridMut, BlasLayout, BlasMatVecOperandLayout, BlasPlan, BlasVectorInfos, BlasVectorShape, Left, Right,
+        blas_grid_to_vector_output_layout, blas_matmul_left_operand_layout, blas_matmul_left_term_layout,
+        blas_matmul_output_layout, blas_matmul_prepared_output_layout, blas_matmul_pt_left_output_layout,
+        blas_matmul_pt_right_output_layout, blas_matmul_right_operand_layout, blas_matmul_right_term_layout,
+        blas_matvec_diagonal_output_layout, blas_matvec_pt_output_layout, blas_rotate_cols_output_layout,
+        blas_rotate_output_layout, blas_rotate_rows_output_layout, blas_sum_cols_output_layout, blas_sum_output_layout,
+        blas_sum_rows_output_layout, blas_transpose_output_layout, blas_vector_to_grid_output_layout,
+        diagonal_ciphertext::AppendAxis, matvec_pt_galois_elements, replicated, sum_galois_elements,
     },
     oep::BlasImpl,
 };
@@ -169,10 +172,10 @@ pub fn test_blas_result_meta<BE, F, E>(
         .max(module.blas_sum_cols_tmp_bytes(&full_column, &full_column, &ctx, &atk))
         .max(module.blas_sum_tmp_bytes(&full_row, &full_row, &atk))
         .max(module.blas_rotate_tmp_bytes(&full_row, &full_row, &atk))
-        .max(module.blas_matmul_prepare_left_tmp_bytes(&full_row, &ctx, &atk, Reuse))
-        .max(module.blas_matmul_prepare_right_tmp_bytes(&full_column, &ctx, &atk, Reuse))
-        .max(module.blas_matmul_prepare_left_tmp_bytes(&full_row, &ctx, &atk, OneShot))
-        .max(module.blas_matmul_prepare_right_tmp_bytes(&full_column, &ctx, &atk, OneShot))
+        .max(module.blas_matmul_left_operand_prepare_tmp_bytes(&full_row, &ctx, &atk, Reuse))
+        .max(module.blas_matmul_right_operand_prepare_tmp_bytes(&full_column, &ctx, &atk, Reuse))
+        .max(module.blas_matmul_left_operand_prepare_tmp_bytes(&full_row, &ctx, &atk, OneShot))
+        .max(module.blas_matmul_right_operand_prepare_tmp_bytes(&full_column, &ctx, &atk, OneShot))
         .max(module.blas_matmul_pt_right_tmp_bytes(&full_row, &full_row, &pt, &ctx, &atk))
         .max(module.blas_matmul_pt_left_tmp_bytes(&full_row, &pt_left, &full_column, &ctx, &atk));
     let mut op_scratch = poisoned_scratch::<BE>(bytes);
@@ -843,8 +846,8 @@ pub fn test_blas_batch_record<BE, F, E>(
 
         let prepare = |hint| {
             let bytes = module
-                .blas_matmul_prepare_left_tmp_bytes(ct_a, &ctx, &atk_layout, hint)
-                .max(module.blas_matmul_prepare_right_tmp_bytes(ct_b, &ctx, &atk_layout, hint));
+                .blas_matmul_left_operand_prepare_tmp_bytes(ct_a, &ctx, &atk_layout, hint)
+                .max(module.blas_matmul_right_operand_prepare_tmp_bytes(ct_b, &ctx, &atk_layout, hint));
             let mut prepare_scratch = poisoned_scratch::<BE>(bytes);
             let left = matmul_left_operand(module, ct_a, &ctx, &keys, hint, &mut prepare_scratch.borrow()).unwrap();
             let right = matmul_right_operand(module, ct_b, &ctx, &keys, hint, &mut prepare_scratch.borrow()).unwrap();

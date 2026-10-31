@@ -95,7 +95,7 @@ impl<D: Data, BE: Backend> MapDiagonal for PreparedDiagonal<D, BE> {
 ///
 /// # Panics
 ///
-/// As [`crate::layouts::BlasModuleAlloc::blas_pt_operand_alloc`], for a layout that does not fit.
+/// As [`crate::layouts::BlasPtOperandAlloc::blas_pt_operand_alloc`], for a layout that does not fit.
 pub(crate) fn operand_shapes<S: BlasPtSide>(
     infos: &impl BlasPtOperandInfos<Side = S>,
 ) -> OperandMaps<LinearTransformation<DiagonalShape>> {
@@ -108,8 +108,8 @@ pub(crate) fn operand_shapes<S: BlasPtSide>(
 ///
 /// # Panics
 ///
-/// Under those paths, as [`crate::layouts::BlasModuleAlloc::blas_context_alloc`] for a layout that does not fit, and on
-/// the `left` for a context whose plan selects neither, which holds no column halves of psi^k.
+/// Under those paths, as [`crate::layouts::BlasContextAlloc::blas_context_alloc`] for a layout that does not fit, and
+/// on the `left` for a context whose plan selects neither, which holds no column halves of psi^k.
 fn with_mask_shapes<R>(
     plan: BlasPlan,
     ctx: &impl BlasContextInfos,
@@ -599,7 +599,7 @@ fn pt_block<P: LtDiagonalMeta, S: BlasPtSide>(
 ///
 /// # Panics
 ///
-/// On a layout of `b` no operand is allocated at, as [`crate::layouts::BlasModuleAlloc::blas_pt_operand_alloc`], a
+/// On a layout of `b` no operand is allocated at, as [`crate::layouts::BlasPtOperandAlloc::blas_pt_operand_alloc`], a
 /// count that does not divide its matrix slots included, and under `JklsStored` and `JklsGalois` on a `ctx` layout no
 /// context is allocated at or at another block dimension than the operand's ("a context at another block dimension than
 /// the operand's"), which [`validate_blas_matmul_pt_right`](crate::layouts::validate_blas_matmul_pt_right) rejects.
@@ -655,14 +655,15 @@ pub fn blas_matmul_key_uses<BE: Backend>(
     BlasKeyUses::collect(module, Some(matmul_tensor(a, b, &maps).0), |f| matmul_uses(a, b, &maps, f))
 }
 
-/// The keys [`crate::api::BlasMatMulOps::blas_matmul_prepare_left`] looks up for `a` under `ctx`, under either hint.
-/// See [`BlasKeyUses`]. `ctx` is a context or its layout: the query reads the shape of its maps.
+/// The keys [`crate::api::BlasMatMulLeftOperandPreparedFactory::blas_matmul_left_operand_prepare`] looks up for `a`
+/// under `ctx`, under either hint. See [`BlasKeyUses`]. `ctx` is a context or its layout: the query reads the shape of
+/// its maps.
 ///
 /// # Panics
 ///
 /// As [`blas_transpose_output_layout`], for
-/// [`validate_blas_matmul_prepare_left`](crate::layouts::validate_blas_matmul_prepare_left).
-pub fn blas_matmul_prepare_left_key_uses<BE: Backend>(
+/// [`validate_blas_matmul_left_operand_prepare`](crate::layouts::validate_blas_matmul_left_operand_prepare).
+pub fn blas_matmul_left_operand_prepare_key_uses<BE: Backend>(
     module: &Module<BE>,
     a: &impl BlasGridInfos,
     ctx: &impl BlasContextInfos,
@@ -671,13 +672,14 @@ pub fn blas_matmul_prepare_left_key_uses<BE: Backend>(
     BlasKeyUses::collect(module, None, |f| left_uses(a, &maps, f))
 }
 
-/// [`blas_matmul_prepare_left_key_uses`] for [`crate::api::BlasMatMulOps::blas_matmul_prepare_right`].
+/// [`blas_matmul_left_operand_prepare_key_uses`] for
+/// [`crate::api::BlasMatMulRightOperandPreparedFactory::blas_matmul_right_operand_prepare`].
 ///
 /// # Panics
 ///
 /// As [`blas_transpose_output_layout`], for
-/// [`validate_blas_matmul_prepare_right`](crate::layouts::validate_blas_matmul_prepare_right).
-pub fn blas_matmul_prepare_right_key_uses<BE: Backend>(
+/// [`validate_blas_matmul_right_operand_prepare`](crate::layouts::validate_blas_matmul_right_operand_prepare).
+pub fn blas_matmul_right_operand_prepare_key_uses<BE: Backend>(
     module: &Module<BE>,
     b: &impl BlasGridInfos,
     ctx: &impl BlasContextInfos,
@@ -755,7 +757,7 @@ pub fn blas_matmul_pt_left_key_uses<BE: Backend>(
 /// # Panics
 ///
 /// On a layout of `w` no operand is allocated at, as
-/// [`crate::layouts::BlasModuleAlloc::blas_matvec_operand_alloc`].
+/// [`crate::layouts::BlasMatVecOperandAlloc::blas_matvec_operand_alloc`].
 pub fn blas_matvec_pt_output_layout(
     res: &impl BlasVectorInfos,
     w: &impl BlasMatVecOperandInfos,

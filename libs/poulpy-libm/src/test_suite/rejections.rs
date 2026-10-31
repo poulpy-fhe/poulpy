@@ -184,35 +184,37 @@ where
             });
         }};
     }
-    rejects_in_place!("ckks_goldschmidt_division iters", "iters must be > 0", full, |c, s| module
-        .ckks_goldschmidt_division(c, 0, tsk, s));
+    rejects_in_place!("ckks_goldschmidt_division_assign iters", "iters must be > 0", full, |c, s| {
+        module.ckks_goldschmidt_division_assign(c, 0, tsk, s)
+    });
     rejects_in_place!(
-        "ckks_goldschmidt_division budget",
-        "ckks_goldschmidt_division: log_budget",
+        "ckks_goldschmidt_division_assign budget",
+        "ckks_goldschmidt_division_assign: log_budget",
         low,
-        |c, s| module.ckks_goldschmidt_division(c, 2, tsk, s)
+        |c, s| module.ckks_goldschmidt_division_assign(c, 2, tsk, s)
     );
-    rejects_in_place!("ckks_rsqrt r", "ckks_rsqrt: r must be > 0", full, |c, s| module
-        .ckks_rsqrt(c, &full, 0, tsk, s));
-    rejects_in_place!("ckks_rsqrt budget", "ckks_rsqrt: log_budget", low, |c, s| module
-        .ckks_rsqrt(c, &full, 2, tsk, s));
+    rejects_in_place!("ckks_rsqrt_assign r", "ckks_rsqrt_assign: r must be > 0", full, |c, s| module
+        .ckks_rsqrt_assign(c, &full, 0, tsk, s));
+    rejects_in_place!("ckks_rsqrt_assign budget", "ckks_rsqrt_assign: log_budget", low, |c, s| {
+        module.ckks_rsqrt_assign(c, &full, 2, tsk, s)
+    });
     rejects_in_place!(
-        "ckks_inverse_negative_domain budget",
-        "ckks_inverse_negative_domain: log_budget",
+        "ckks_inverse_negative_domain_assign budget",
+        "ckks_inverse_negative_domain_assign: log_budget",
         low,
-        |c, s| { module.ckks_inverse_negative_domain(c, 2, tsk, s) }
+        |c, s| { module.ckks_inverse_negative_domain_assign(c, 2, tsk, s) }
     );
     rejects_in_place!(
-        "ckks_inverse_full_domain iters",
-        "ckks_inverse_full_domain: iters must be > 0",
+        "ckks_inverse_full_domain_assign iters",
+        "ckks_inverse_full_domain_assign: iters must be > 0",
         full,
-        |c, s| { module.ckks_inverse_full_domain(c, 0, comp, tsk, conj, s) }
+        |c, s| { module.ckks_inverse_full_domain_assign(c, 0, comp, tsk, conj, s) }
     );
     rejects_in_place!(
-        "ckks_inverse_full_domain budget",
-        "ckks_inverse_full_domain: log_budget",
+        "ckks_inverse_full_domain_assign budget",
+        "ckks_inverse_full_domain_assign: log_budget",
         low,
-        |c, s| { module.ckks_inverse_full_domain(c, 2, comp, tsk, conj, s) }
+        |c, s| { module.ckks_inverse_full_domain_assign(c, 2, comp, tsk, conj, s) }
     );
 
     let mut pair = (fresh_res(), low.clone());

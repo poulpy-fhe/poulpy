@@ -41,7 +41,7 @@ use crate::{
 /// The hook runs on the inputs of an operation its validator accepted ([`crate::layouts::validate_blas_transpose`],
 /// [`crate::layouts::validate_blas_rotate_rows`], [`crate::layouts::validate_blas_rotate_cols`],
 /// [`crate::layouts::validate_blas_sum_rows`], [`crate::layouts::validate_blas_sum_cols`],
-/// [`crate::layouts::validate_blas_matmul_prepare_left`], [`crate::layouts::validate_blas_matmul_prepare_right`],
+/// [`crate::layouts::validate_blas_matmul_left_operand_prepare`], [`crate::layouts::validate_blas_matmul_right_operand_prepare`],
 /// [`crate::layouts::validate_blas_matmul_prepared`], [`crate::layouts::validate_blas_matmul`],
 /// [`crate::layouts::validate_blas_matmul_pt_right`], [`crate::layouts::validate_blas_matmul_pt_left`]): it checks
 /// nothing but its scratch, and returns poulpy-ckks's budget errors before any write. It runs source after source on

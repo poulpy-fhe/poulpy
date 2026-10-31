@@ -18,8 +18,8 @@ use poulpy_hal::{
 use super::{LtEval, baby_caches, lt_tmp_bytes, shared_giants};
 use crate::{
     layouts::{
-        BlasContextPrepared, BlasGrid, BlasGridInfos, BlasGridMut, BlasMatMulOperand, BlasMatMulOperandInfos,
-        BlasMatMulOperandLayout, BlasPlan, BlasPtAlgorithm, BlasPtOperandInfos, BlasPtOperandPrepared, Left,
+        BlasContextPrepared, BlasGrid, BlasGridInfos, BlasGridMut, BlasMatMulOperandInfos, BlasMatMulOperandLayout,
+        BlasMatMulOperandPrepared, BlasPlan, BlasPtAlgorithm, BlasPtOperandInfos, BlasPtOperandPrepared, Left,
         ciphertext::layout_of,
         encoding::mapped_block,
         grid_batch,
@@ -32,8 +32,8 @@ use crate::{
         validate::{
             KeyLayouts, assert_scratch, context_masks, ensure_rotation, ensure_tensor_key, left_takes_replicated,
             prepared_tensor, prepared_uses, pt_left_uses, pt_right_uses, term_uses, validate_blas_matmul,
-            validate_blas_matmul_prepare_left, validate_blas_matmul_prepare_right, validate_blas_matmul_prepared,
-            validate_blas_matmul_pt_left, validate_blas_matmul_pt_right,
+            validate_blas_matmul_left_operand_prepare, validate_blas_matmul_prepared, validate_blas_matmul_pt_left,
+            validate_blas_matmul_pt_right, validate_blas_matmul_right_operand_prepare,
         },
     },
     oep::{BlasJklsImpl, BlasMatIntraImpl},
@@ -51,25 +51,26 @@ fn ensure_term_keys<'c, BE: Backend + 'c>(
     term_uses(a, first, shift, &mut |u| ensure_rotation(op, module, keys, u))
 }
 
-/// Reference compositions of [`crate::api::BlasMatMulOps`]. Each operation runs its validator, the matching
-/// `validate_*` of [`crate::layouts`], before any write, so its errors leave `res`, its batch record and the operands
-/// untouched, then asserts its scratch and returns poulpy-ckks's budget errors before any write to `res`; on `Ok`, a
-/// product stamps `res` with the batch the validator returns, and a preparation records its source's batch on its
-/// operand. A hot preparation copies its input; a cold one makes its terms through the map hook of [`BlasMatIntraImpl`],
-/// block row after block row, each converted once by poulpy-ckks's preparations. The prepared product, and
-/// `blas_matmul` on the borrowed grids, make a hot side's terms the same way under their context, a block row of `a` or
-/// a block column of `b` at a time, holding, of two hot sides, the smaller one's terms and streaming the other's, and
-/// read the terms one output block at a time through the JKLS kernel of [`BlasJklsImpl`]. The products by public
-/// matrices evaluate one poulpy-ckks summed linear transformation per output block, under JKLS of the results of the
-/// operand's first map, made through the map hook a block row (column) of `a` at a time; under `JklsStored` and
-/// `JklsGalois`, one poulpy-ckks summed product by prepared plaintexts per output block, of terms made as a hot side's.
-/// They run block after block on one scratch, and the first error stops them.
+/// Reference compositions of [`crate::api::BlasMatMulOps`] and of the preparations of
+/// [`crate::api::BlasMatMulLeftOperandPreparedFactory`] and [`crate::api::BlasMatMulRightOperandPreparedFactory`]. Each
+/// operation runs its validator, the matching `validate_*` of [`crate::layouts`], before any write, so its errors leave
+/// `res`, its batch record and the operands untouched, then asserts its scratch and returns poulpy-ckks's budget errors
+/// before any write to `res`; on `Ok`, a product stamps `res` with the batch the validator returns, and a preparation
+/// records its source's batch on its operand. A hot preparation copies its input; a cold one makes its terms through
+/// the map hook of [`BlasMatIntraImpl`], block row after block row, each converted once by poulpy-ckks's preparations.
+/// The prepared product, and `blas_matmul` on the borrowed grids, make a hot side's terms the same way under their
+/// context, a block row of `a` or a block column of `b` at a time, holding, of two hot sides, the smaller one's terms
+/// and streaming the other's, and read the terms one output block at a time through the JKLS kernel of
+/// [`BlasJklsImpl`]. The products by public matrices evaluate one poulpy-ckks summed linear transformation per output
+/// block, under JKLS of the results of the operand's first map, made through the map hook a block row (column) of `a`
+/// at a time; under `JklsStored` and `JklsGalois`, one poulpy-ckks summed product by prepared plaintexts per output
+/// block, of terms made as a hot side's. They run block after block on one scratch, and the first error stops them.
 pub trait BlasMatMulReference<BE: Backend> {
     /// Under `OneShot`, the copy of a block of `a` into a block of its layout. Under `Reuse`, the largest of the map
     /// hook's queries through sigma, from a block row of `a` into blocks of its layout at the width sigma leaves, and
     /// through every shift, from those into blocks of the terms' layout, of the copy of one into a block of the terms'
     /// layout, and of the conversion of a term.
-    fn blas_matmul_prepare_left_tmp_bytes_reference<A, K>(
+    fn blas_matmul_left_operand_prepare_tmp_bytes_reference<A, K>(
         &self,
         a: &A,
         ctx: &BlasContextPrepared<BE>,
@@ -93,9 +94,9 @@ pub trait BlasMatMulReference<BE: Backend> {
     /// [`blas_matmul_left_term_layout`](crate::layouts::blas_matmul_left_term_layout) gives. `res` then reports the
     /// infos [`blas_matmul_left_operand_layout`](crate::layouts::blas_matmul_left_operand_layout) gives for `a` under
     /// its hint and `a`'s batch, [`grid_batch`].
-    fn blas_matmul_prepare_left_reference<A, K>(
+    fn blas_matmul_left_operand_prepare_reference<A, K>(
         &self,
-        res: &mut BlasMatMulOperand<BE, CKKSLeftOperandPrepared<BE>>,
+        res: &mut BlasMatMulOperandPrepared<BE, CKKSLeftOperandPrepared<BE>>,
         a: &A,
         ctx: &BlasContextPrepared<BE>,
         keys: &K,
@@ -107,9 +108,9 @@ pub trait BlasMatMulReference<BE: Backend> {
         A: BlasGrid<BE>,
         K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
 
-    /// As [`Self::blas_matmul_prepare_left_tmp_bytes_reference`], with the right maps
+    /// As [`Self::blas_matmul_left_operand_prepare_tmp_bytes_reference`], with the right maps
     /// [`blas_matmul_right_term_layout`](crate::layouts::blas_matmul_right_term_layout) reads.
-    fn blas_matmul_prepare_right_tmp_bytes_reference<B, K>(
+    fn blas_matmul_right_operand_prepare_tmp_bytes_reference<B, K>(
         &self,
         b: &B,
         ctx: &BlasContextPrepared<BE>,
@@ -122,12 +123,12 @@ pub trait BlasMatMulReference<BE: Backend> {
         B: BlasGridInfos,
         K: GGLWEInfos;
 
-    /// As [`Self::blas_matmul_prepare_left_reference`], with the right maps
+    /// As [`Self::blas_matmul_left_operand_prepare_reference`], with the right maps
     /// [`blas_matmul_right_term_layout`](crate::layouts::blas_matmul_right_term_layout) reads, converted by
     /// `ckks_right_operand_prepare`. For a replicated `b`, whose shifts spend no scale, the copy keeps `S`'s width.
-    fn blas_matmul_prepare_right_reference<B, K>(
+    fn blas_matmul_right_operand_prepare_reference<B, K>(
         &self,
-        res: &mut BlasMatMulOperand<BE, CKKSRightOperandPrepared<BE>>,
+        res: &mut BlasMatMulOperandPrepared<BE, CKKSRightOperandPrepared<BE>>,
         b: &B,
         ctx: &BlasContextPrepared<BE>,
         keys: &K,
@@ -185,8 +186,8 @@ pub trait BlasMatMulReference<BE: Backend> {
     fn blas_matmul_prepared_reference<R, T, K>(
         &self,
         res: &mut R,
-        a: &BlasMatMulOperand<BE, CKKSLeftOperandPrepared<BE>>,
-        b: &BlasMatMulOperand<BE, CKKSRightOperandPrepared<BE>>,
+        a: &BlasMatMulOperandPrepared<BE, CKKSLeftOperandPrepared<BE>>,
+        b: &BlasMatMulOperandPrepared<BE, CKKSRightOperandPrepared<BE>>,
         ctx: &BlasContextPrepared<BE>,
         tsk: &T,
         keys: &K,
@@ -366,7 +367,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE>
 where
     Module<BE>: CKKSRightOperandPreparedFactory<BE> + CKKSLeftOperandPreparedFactory<BE>,
 {
-    fn blas_matmul_prepare_left_tmp_bytes_reference<A, K>(
+    fn blas_matmul_left_operand_prepare_tmp_bytes_reference<A, K>(
         &self,
         a: &A,
         ctx: &BlasContextPrepared<BE>,
@@ -382,9 +383,9 @@ where
         prepare_tmp_bytes(self, a, ctx.sigma(), |k| ctx.rotate_cols(k), keys, hint)
     }
 
-    fn blas_matmul_prepare_left_reference<A, K>(
+    fn blas_matmul_left_operand_prepare_reference<A, K>(
         &self,
-        res: &mut BlasMatMulOperand<BE, CKKSLeftOperandPrepared<BE>>,
+        res: &mut BlasMatMulOperandPrepared<BE, CKKSLeftOperandPrepared<BE>>,
         a: &A,
         ctx: &BlasContextPrepared<BE>,
         keys: &K,
@@ -396,7 +397,7 @@ where
         A: BlasGrid<BE>,
         K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync,
     {
-        validate_blas_matmul_prepare_left(self, &*res, a, ctx, keys)?;
+        validate_blas_matmul_left_operand_prepare(self, &*res, a, ctx, keys)?;
         let convert = |res: &mut CKKSLeftOperandPrepared<BE>, term: &CKKSCiphertextOwned<BE>, s: &mut ScratchArena<'_, BE>| {
             self.ckks_left_operand_prepare(res, term, s)
         };
@@ -404,7 +405,7 @@ where
         let layout = left_operand_layout(a, &ctx.maps, res.hint());
         prepare(
             self,
-            "blas_matmul_prepare_left",
+            "blas_matmul_left_operand_prepare",
             res,
             layout,
             a,
@@ -416,7 +417,7 @@ where
         )
     }
 
-    fn blas_matmul_prepare_right_tmp_bytes_reference<B, K>(
+    fn blas_matmul_right_operand_prepare_tmp_bytes_reference<B, K>(
         &self,
         b: &B,
         ctx: &BlasContextPrepared<BE>,
@@ -433,9 +434,9 @@ where
         prepare_tmp_bytes(self, b, first, shift, keys, hint)
     }
 
-    fn blas_matmul_prepare_right_reference<B, K>(
+    fn blas_matmul_right_operand_prepare_reference<B, K>(
         &self,
-        res: &mut BlasMatMulOperand<BE, CKKSRightOperandPrepared<BE>>,
+        res: &mut BlasMatMulOperandPrepared<BE, CKKSRightOperandPrepared<BE>>,
         b: &B,
         ctx: &BlasContextPrepared<BE>,
         keys: &K,
@@ -447,7 +448,7 @@ where
         B: BlasGrid<BE>,
         K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync,
     {
-        validate_blas_matmul_prepare_right(self, &*res, b, ctx, keys)?;
+        validate_blas_matmul_right_operand_prepare(self, &*res, b, ctx, keys)?;
         let convert = |res: &mut CKKSRightOperandPrepared<BE>, term: &CKKSCiphertextOwned<BE>, s: &mut ScratchArena<'_, BE>| {
             self.ckks_right_operand_prepare(res, term, s)
         };
@@ -455,7 +456,7 @@ where
         let layout = right_operand_layout(b, &ctx.maps, res.hint());
         prepare(
             self,
-            "blas_matmul_prepare_right",
+            "blas_matmul_right_operand_prepare",
             res,
             layout,
             b,
@@ -491,8 +492,8 @@ where
     fn blas_matmul_prepared_reference<R, T, K>(
         &self,
         res: &mut R,
-        a: &BlasMatMulOperand<BE, CKKSLeftOperandPrepared<BE>>,
-        b: &BlasMatMulOperand<BE, CKKSRightOperandPrepared<BE>>,
+        a: &BlasMatMulOperandPrepared<BE, CKKSLeftOperandPrepared<BE>>,
+        b: &BlasMatMulOperandPrepared<BE, CKKSRightOperandPrepared<BE>>,
         ctx: &BlasContextPrepared<BE>,
         tsk: &T,
         keys: &K,
@@ -549,8 +550,8 @@ where
             left_operand_layout(a, &ctx.maps, hot),
             right_operand_layout(b, &ctx.maps, hot),
         );
-        self.blas_matmul_prepare_left_tmp_bytes_reference(a, ctx, keys, hot)
-            .max(self.blas_matmul_prepare_right_tmp_bytes_reference(b, ctx, keys, hot))
+        self.blas_matmul_left_operand_prepare_tmp_bytes_reference(a, ctx, keys, hot)
+            .max(self.blas_matmul_right_operand_prepare_tmp_bytes_reference(b, ctx, keys, hot))
             .max(self.blas_matmul_prepared_tmp_bytes_reference(res, &left, &right, ctx, tsk, keys))
     }
 
@@ -772,7 +773,7 @@ where
     }
 }
 
-impl<BE: Backend, P> BlasMatMulOperand<BE, P> {
+impl<BE: Backend, P> BlasMatMulOperandPrepared<BE, P> {
     /// The side the operand is in a product: its source blocks when hot, its terms when cold.
     fn side(&self) -> Side<'_, CKKSCiphertextOwned<BE>, P> {
         match self.layout.hint {
@@ -1076,7 +1077,7 @@ where
 fn prepare<'c, BE, A, K, P>(
     module: &Module<BE>,
     op: &'static str,
-    res: &mut BlasMatMulOperand<BE, P>,
+    res: &mut BlasMatMulOperandPrepared<BE, P>,
     layout: BlasMatMulOperandLayout,
     a: &A,
     first: &LinearTransformationPrepared<BE>,

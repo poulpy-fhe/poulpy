@@ -2,31 +2,30 @@
 
 use poulpy_ckks::{
     CKKSLayout,
-    api::{CKKSLeftOperandPreparedFactory, CKKSRightOperandPreparedFactory, LinearTransformation, LtDiagonalMeta},
+    api::{LinearTransformation, LtDiagonalMeta},
     layouts::{CKKSCiphertextOwned, CKKSLeftOperandPrepared, CKKSRightOperandPrepared},
 };
 use poulpy_core::layouts::GLWELayout;
-use poulpy_hal::layouts::{Backend, Module, PrepareHint};
+use poulpy_hal::layouts::{Backend, PrepareHint};
 
 use super::{
-    BlasBytesOf, BlasContextInfos, BlasGridInfos, BlasLayout, BlasMatMulOperandInfos, BlasMatMulOperandLayout, BlasModuleAlloc,
+    BlasCiphertextAlloc, BlasCiphertextBytesOf, BlasContextInfos, BlasGridInfos, BlasLayout, BlasMatMulOperandInfos,
+    BlasMatMulOperandLayout,
     ciphertext::replicated_at,
     context::{ContextMaps, context_shapes},
     encoding::mapped_block,
 };
 
 /// The left operand of [`blas_matmul_prepared`](crate::api::BlasMatMulOps::blas_matmul_prepared), hot or cold, which
-/// [`BlasMatMulOperandPreparedFactory::blas_matmul_left_alloc_from_infos`] allocates and
-/// [`blas_matmul_prepare_left`](crate::api::BlasMatMulOps::blas_matmul_prepare_left) fills.
-pub type BlasMatMulLeft<BE> = BlasMatMulOperand<BE, CKKSLeftOperandPrepared<BE>>;
+/// [`BlasMatMulLeftOperandPreparedFactory`](crate::api::BlasMatMulLeftOperandPreparedFactory) allocates and fills.
+pub type BlasMatMulLeftOperandPrepared<BE> = BlasMatMulOperandPrepared<BE, CKKSLeftOperandPrepared<BE>>;
 
 /// The right operand of [`blas_matmul_prepared`](crate::api::BlasMatMulOps::blas_matmul_prepared), hot or cold, which
-/// [`BlasMatMulOperandPreparedFactory::blas_matmul_right_alloc_from_infos`] allocates and
-/// [`blas_matmul_prepare_right`](crate::api::BlasMatMulOps::blas_matmul_prepare_right) fills.
-pub type BlasMatMulRight<BE> = BlasMatMulOperand<BE, CKKSRightOperandPrepared<BE>>;
+/// [`BlasMatMulRightOperandPreparedFactory`](crate::api::BlasMatMulRightOperandPreparedFactory) allocates and fills.
+pub type BlasMatMulRightOperandPrepared<BE> = BlasMatMulOperandPrepared<BE, CKKSRightOperandPrepared<BE>>;
 
-/// A prepared operand of a product, of terms `P`: [`CKKSLeftOperandPrepared`] on the left, [`BlasMatMulLeft`], and
-/// [`CKKSRightOperandPrepared`] on the right, [`BlasMatMulRight`], so that swapping the operands of a product does not
+/// A prepared operand of a product, of terms `P`: [`CKKSLeftOperandPrepared`] on the left, [`BlasMatMulLeftOperandPrepared`], and
+/// [`CKKSRightOperandPrepared`] on the right, [`BlasMatMulRightOperandPrepared`], so that swapping the operands of a product does not
 /// compile. Its storage is `BE`'s, poulpy-ckks ciphertexts and prepared terms. An allocation from
 /// [`BlasMatMulOperandInfos`] makes all its storage, after their hint, and a preparation fills it:
 /// - hot, `OneShot`, prepared for one product: a block of the source's layout per block of its source, row-major, into
@@ -43,14 +42,14 @@ pub type BlasMatMulRight<BE> = BlasMatMulOperand<BE, CKKSRightOperandPrepared<BE
 /// and its source's batch. The preparation's validator checks that the source's infos have the operand's shape. An
 /// implementation of the preparations and of the prepared product reads and fills the storage through [`Self::blocks`]
 /// and [`Self::terms`], and records a preparation with [`Self::set_prepared`].
-pub struct BlasMatMulOperand<BE: Backend, P> {
+pub struct BlasMatMulOperandPrepared<BE: Backend, P> {
     pub(crate) blocks: Vec<CKKSCiphertextOwned<BE>>,
     pub(crate) terms: Vec<P>,
     pub(crate) layout: BlasMatMulOperandLayout,
     pub(crate) mat_slots: usize,
 }
 
-impl<BE: Backend, P> BlasMatMulOperand<BE, P> {
+impl<BE: Backend, P> BlasMatMulOperandPrepared<BE, P> {
     /// A hot operand's blocks, row-major; empty when cold.
     pub fn blocks(&self) -> &[CKKSCiphertextOwned<BE>] {
         &self.blocks
@@ -88,9 +87,9 @@ impl<BE: Backend, P> BlasMatMulOperand<BE, P> {
 }
 
 /// The operand's infos and the count of what it holds; its digits may live on a device.
-impl<BE: Backend, P> std::fmt::Debug for BlasMatMulOperand<BE, P> {
+impl<BE: Backend, P> std::fmt::Debug for BlasMatMulOperandPrepared<BE, P> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("BlasMatMulOperand")
+        f.debug_struct("BlasMatMulOperandPrepared")
             .field("layout", &self.layout)
             .field("mat_slots", &self.mat_slots)
             .field("held", &(self.blocks.len() + self.terms.len()))
@@ -98,7 +97,7 @@ impl<BE: Backend, P> std::fmt::Debug for BlasMatMulOperand<BE, P> {
     }
 }
 
-impl<BE: Backend, P> BlasGridInfos for BlasMatMulOperand<BE, P> {
+impl<BE: Backend, P> BlasGridInfos for BlasMatMulOperandPrepared<BE, P> {
     fn log_d(&self) -> usize {
         self.layout.grid.log_d
     }
@@ -120,7 +119,7 @@ impl<BE: Backend, P> BlasGridInfos for BlasMatMulOperand<BE, P> {
     }
 }
 
-impl<BE: Backend, P> BlasMatMulOperandInfos for BlasMatMulOperand<BE, P> {
+impl<BE: Backend, P> BlasMatMulOperandInfos for BlasMatMulOperandPrepared<BE, P> {
     fn hint(&self) -> PrepareHint {
         self.layout.hint
     }
@@ -130,64 +129,13 @@ impl<BE: Backend, P> BlasMatMulOperandInfos for BlasMatMulOperand<BE, P> {
     }
 }
 
-/// Allocation and sizing of the prepared operands of a product.
-pub trait BlasMatMulOperandPreparedFactory<BE: Backend>:
-    BlasModuleAlloc<BE> + BlasBytesOf<BE> + CKKSLeftOperandPreparedFactory<BE> + CKKSRightOperandPreparedFactory<BE>
-{
-    /// Bytes a left operand of `infos` holds, as [`Self::blas_matmul_left_alloc_from_infos`] allocates it.
-    fn blas_matmul_left_bytes_of_from_infos<A: BlasMatMulOperandInfos>(&self, infos: &A) -> usize {
-        operand_bytes(self, infos, |term| {
-            self.ckks_left_operand_prepared_bytes_of_from_infos(term, PrepareHint::Reuse)
-        })
-    }
-
-    /// A left operand of `infos`, holding all its storage, which
-    /// [`blas_matmul_prepare_left`](crate::api::BlasMatMulOps::blas_matmul_prepare_left) fills: the infos
-    /// [`blas_matmul_left_operand_layout`] gives for a grid, a context and a hint. Until then it reports `infos` and the
-    /// batch `0`, which the prepared product rejects.
-    ///
-    /// # Panics
-    ///
-    /// May panic on infos of no block, or whose bytes overflow `usize`.
-    fn blas_matmul_left_alloc_from_infos<A: BlasMatMulOperandInfos>(&self, infos: &A) -> BlasMatMulLeft<BE> {
-        alloc_operand(self, infos, |term| {
-            self.ckks_left_operand_prepared_alloc_from_infos(term, PrepareHint::Reuse)
-        })
-    }
-
-    /// As [`Self::blas_matmul_left_bytes_of_from_infos`], for a right operand.
-    fn blas_matmul_right_bytes_of_from_infos<A: BlasMatMulOperandInfos>(&self, infos: &A) -> usize {
-        operand_bytes(self, infos, |term| {
-            self.ckks_right_operand_prepared_bytes_of_from_infos(term, PrepareHint::Reuse)
-        })
-    }
-
-    /// As [`Self::blas_matmul_left_alloc_from_infos`], a right operand, which
-    /// [`blas_matmul_prepare_right`](crate::api::BlasMatMulOps::blas_matmul_prepare_right) fills from the infos
-    /// [`blas_matmul_right_operand_layout`] gives.
-    ///
-    /// # Panics
-    ///
-    /// As [`Self::blas_matmul_left_alloc_from_infos`].
-    fn blas_matmul_right_alloc_from_infos<A: BlasMatMulOperandInfos>(&self, infos: &A) -> BlasMatMulRight<BE> {
-        alloc_operand(self, infos, |term| {
-            self.ckks_right_operand_prepared_alloc_from_infos(term, PrepareHint::Reuse)
-        })
-    }
-}
-
-impl<BE: Backend> BlasMatMulOperandPreparedFactory<BE> for Module<BE> where
-    Module<BE>: CKKSLeftOperandPreparedFactory<BE> + CKKSRightOperandPreparedFactory<BE>
-{
-}
-
 /// An operand of `infos` holding all its storage, the batch `0`: hot, a grid of the source's block layout; cold, `d`
 /// terms of `term` per source block.
-fn alloc_operand<BE: Backend, P>(
-    module: &impl BlasModuleAlloc<BE>,
+pub(crate) fn alloc_prepared<BE: Backend, P>(
+    module: &impl BlasCiphertextAlloc<BE>,
     infos: &impl BlasMatMulOperandInfos,
     term: impl Fn(&CKKSLayout) -> P,
-) -> BlasMatMulOperand<BE, P> {
+) -> BlasMatMulOperandPrepared<BE, P> {
     let layout = BlasMatMulOperandLayout {
         grid: infos.blas_layout(),
         source: infos.source_block_layout(),
@@ -203,7 +151,7 @@ fn alloc_operand<BE: Backend, P>(
             (Vec::new(), (0..count).map(|_| term(&layout.grid.block)).collect())
         }
     };
-    BlasMatMulOperand {
+    BlasMatMulOperandPrepared {
         blocks,
         terms,
         layout,
@@ -211,9 +159,9 @@ fn alloc_operand<BE: Backend, P>(
     }
 }
 
-/// The bytes [`alloc_operand`] allocates for `infos`, `term` bytes per term.
-fn operand_bytes<BE: Backend>(
-    module: &impl BlasBytesOf<BE>,
+/// The bytes [`alloc_prepared`] allocates for `infos`, `term` bytes per term.
+pub(crate) fn prepared_bytes_of<BE: Backend>(
+    module: &impl BlasCiphertextBytesOf<BE>,
     infos: &impl BlasMatMulOperandInfos,
     term: impl Fn(&CKKSLayout) -> usize,
 ) -> usize {
@@ -383,7 +331,7 @@ mod tests {
     use std::panic::{AssertUnwindSafe, catch_unwind};
 
     use poulpy_ckks::layouts::CKKSCiphertextAlloc;
-    use poulpy_hal::layouts::HostBytesBackend;
+    use poulpy_hal::layouts::{HostBytesBackend, Module};
 
     use super::*;
     use crate::layouts::ciphertext::layout_of;
@@ -397,7 +345,7 @@ mod tests {
             source: block,
             hint: PrepareHint::Reuse,
         };
-        let mut operand = BlasMatMulOperand::<HostBytesBackend, ()> {
+        let mut operand = BlasMatMulOperandPrepared::<HostBytesBackend, ()> {
             blocks: Vec::new(),
             terms: Vec::new(),
             layout,

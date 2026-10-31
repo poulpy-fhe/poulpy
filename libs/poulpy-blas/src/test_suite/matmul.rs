@@ -50,11 +50,14 @@ use super::helpers::{
     rotation_keys, to_f, want_operand_infos,
 };
 use crate::{
-    api::{BlasEncodingOps, BlasMatIntraOps, BlasMatMulOps},
+    api::{
+        BlasEncodingOps, BlasMatIntraOps, BlasMatMulLeftOperandPreparedFactory, BlasMatMulOps,
+        BlasMatMulRightOperandPreparedFactory,
+    },
     layouts::{
         BlasCiphertext, BlasCiphertextOwned, BlasContextInfos, BlasContextPrepared, BlasGridInfos, BlasKeyUses, BlasLayout,
-        BlasMatMulLeft, BlasMatMulOperand, BlasMatMulOperandLayout, BlasMatMulOperandPreparedFactory, BlasMatMulRight,
-        BlasModuleAlloc, BlasPlan, BlasPtAlgorithm, BlasPtOperandInfos, BlasPtOperandPrepared, Left, Right,
+        BlasMatMulLeftOperandPrepared, BlasMatMulOperandLayout, BlasMatMulOperandPrepared, BlasMatMulRightOperandPrepared,
+        BlasPlan, BlasPtAlgorithm, BlasPtOperandAlloc, BlasPtOperandInfos, BlasPtOperandPrepared, Left, Right,
         blas_matmul_left_operand_layout, blas_matmul_pt_left_key_uses, blas_matmul_pt_left_output_layout,
         blas_matmul_pt_right_key_uses, blas_matmul_pt_right_output_layout, blas_matmul_right_operand_layout,
         ciphertext::layout_of, planning::pt_label, replicated, validate::MASKLESS, validate_blas_matmul_prepared,
@@ -159,29 +162,30 @@ pub fn test_blas_matmul<BE, F, E>(
         .collect();
     // Each preparation and product on exactly the scratch its query reports.
     let prepare_left = |x: &BlasCiphertextOwned<BE>, ctx: &BlasContextPrepared<BE>, hint| {
-        let bytes = module.blas_matmul_prepare_left_tmp_bytes(x, ctx, &atk_layout, hint);
+        let bytes = module.blas_matmul_left_operand_prepare_tmp_bytes(x, ctx, &atk_layout, hint);
         matmul_left_operand(module, x, ctx, &keys, hint, &mut poisoned_scratch::<BE>(bytes).borrow()).unwrap()
     };
     let prepare_right = |y: &BlasCiphertextOwned<BE>, ctx: &BlasContextPrepared<BE>, hint| {
-        let bytes = module.blas_matmul_prepare_right_tmp_bytes(y, ctx, &atk_layout, hint);
+        let bytes = module.blas_matmul_right_operand_prepare_tmp_bytes(y, ctx, &atk_layout, hint);
         matmul_right_operand(module, y, ctx, &keys, hint, &mut poisoned_scratch::<BE>(bytes).borrow()).unwrap()
     };
-    let product = |left: &BlasMatMulLeft<BE>, right: &BlasMatMulRight<BE>, ctx: &BlasContextPrepared<BE>| {
-        let mut res = alloc_grid(&params, module, log_d, m, n, params.k);
-        let bytes = module.blas_matmul_prepared_tmp_bytes(&res, left, right, ctx, &tsk_layout, &atk_layout);
-        module
-            .blas_matmul_prepared(
-                &mut res,
-                left,
-                right,
-                ctx,
-                &keys,
-                &keys,
-                &mut poisoned_scratch::<BE>(bytes).borrow(),
-            )
-            .unwrap();
-        res
-    };
+    let product =
+        |left: &BlasMatMulLeftOperandPrepared<BE>, right: &BlasMatMulRightOperandPrepared<BE>, ctx: &BlasContextPrepared<BE>| {
+            let mut res = alloc_grid(&params, module, log_d, m, n, params.k);
+            let bytes = module.blas_matmul_prepared_tmp_bytes(&res, left, right, ctx, &tsk_layout, &atk_layout);
+            module
+                .blas_matmul_prepared(
+                    &mut res,
+                    left,
+                    right,
+                    ctx,
+                    &keys,
+                    &keys,
+                    &mut poisoned_scratch::<BE>(bytes).borrow(),
+                )
+                .unwrap();
+            res
+        };
     // Hot operands of every factor, prepared once under the context at the factors' scale: the product evaluates their
     // terms under its own, so they serve the products under every context. Those of `A` and `B` come from copies,
     // dropped or overwritten once prepared, which the operands, owning their storage, do not see.
@@ -2121,9 +2125,9 @@ pub fn test_blas_matmul_guards<BE, F, E>(
         for hint in HINTS {
             let label = &format!("{label} {hint:?}");
             let left = matmul_left_operand(module, &bad, &ctx, &keys, hint, &mut op_scratch.borrow());
-            assert_rejected(label, "blas_matmul_prepare_left", InvalidOperand, left);
+            assert_rejected(label, "blas_matmul_left_operand_prepare", InvalidOperand, left);
             let right = matmul_right_operand(module, &bad, &ctx, &keys, hint, &mut op_scratch.borrow());
-            assert_rejected(label, "blas_matmul_prepare_right", InvalidOperand, right);
+            assert_rejected(label, "blas_matmul_right_operand_prepare", InvalidOperand, right);
         }
     }
     for (label, bad) in rejected_grids(module, &ct) {
@@ -2197,9 +2201,9 @@ pub fn test_blas_matmul_guards<BE, F, E>(
         for hint in HINTS {
             let label = &format!("{label} {hint:?}");
             let left = matmul_left_operand(module, &sparse_row, &ctx, &keys, hint, &mut op_scratch.borrow());
-            assert_rejected(label, "blas_matmul_prepare_left", InvalidOperand, left);
+            assert_rejected(label, "blas_matmul_left_operand_prepare", InvalidOperand, left);
             let right = matmul_right_operand(module, &sparse_column, &ctx, &keys, hint, &mut op_scratch.borrow());
-            assert_rejected(label, "blas_matmul_prepare_right", InvalidOperand, right);
+            assert_rejected(label, "blas_matmul_right_operand_prepare", InvalidOperand, right);
         }
     }
 
@@ -2213,9 +2217,9 @@ pub fn test_blas_matmul_guards<BE, F, E>(
         for hint in HINTS {
             let label = &format!("{label} {hint:?}");
             let left = matmul_left_operand(module, &ct, ctx, &keys, hint, &mut op_scratch.borrow());
-            assert_rejected(label, "blas_matmul_prepare_left", InvalidOperand, left);
+            assert_rejected(label, "blas_matmul_left_operand_prepare", InvalidOperand, left);
             let right = matmul_right_operand(module, &column, ctx, &keys, hint, &mut op_scratch.borrow());
-            assert_rejected(label, "blas_matmul_prepare_right", InvalidOperand, right);
+            assert_rejected(label, "blas_matmul_right_operand_prepare", InvalidOperand, right);
         }
         for (hl, hr) in MIXES {
             let (l, r) = (&left[side(hl)], &right[side(hr)]);
@@ -2246,17 +2250,17 @@ pub fn test_blas_matmul_guards<BE, F, E>(
     for hint in HINTS {
         let label = &format!("radix {hint:?}");
         let left_radix = matmul_left_operand(module, &radix(1, 2), &ctx, &keys, hint, &mut op_scratch.borrow());
-        assert_rejected(label, "blas_matmul_prepare_left", InvalidOperand, left_radix);
+        assert_rejected(label, "blas_matmul_left_operand_prepare", InvalidOperand, left_radix);
         let right_radix = matmul_right_operand(module, &radix(2, 1), &ctx, &keys, hint, &mut op_scratch.borrow());
-        assert_rejected(label, "blas_matmul_prepare_right", InvalidOperand, right_radix);
+        assert_rejected(label, "blas_matmul_right_operand_prepare", InvalidOperand, right_radix);
         // A grid of another degree, radix or rank, alone: no `res` to compare it with, so the rank is compared with the
         // keys'.
         for (label, bad) in foreign_layouts(module, &ct) {
             let label = &format!("{label} {hint:?}");
             let left = matmul_left_operand(module, &bad, &ctx, &keys, hint, &mut op_scratch.borrow());
-            assert_rejected(label, "blas_matmul_prepare_left", InvalidOperand, left);
+            assert_rejected(label, "blas_matmul_left_operand_prepare", InvalidOperand, left);
             let right = matmul_right_operand(module, &bad, &ctx, &keys, hint, &mut op_scratch.borrow());
-            assert_rejected(label, "blas_matmul_prepare_right", InvalidOperand, right);
+            assert_rejected(label, "blas_matmul_right_operand_prepare", InvalidOperand, right);
         }
     }
 
@@ -2507,13 +2511,13 @@ pub fn test_blas_matmul_guards<BE, F, E>(
         });
     }
     for hint in HINTS {
-        let op = &format!("blas_matmul_prepare_left {hint:?}");
-        let bytes = module.blas_matmul_prepare_left_tmp_bytes(&ct, &ctx, &atk_layout, hint);
+        let op = &format!("blas_matmul_left_operand_prepare {hint:?}");
+        let bytes = module.blas_matmul_left_operand_prepare_tmp_bytes(&ct, &ctx, &atk_layout, hint);
         with_scratch::<BE, _>(bytes, |s| matmul_left_operand(module, &ct, &ctx, &keys, hint, s))
             .unwrap_or_else(|e| panic!("{op}: {e}"));
         assert_short_scratch_panics::<BE, _>(op, bytes, |s| matmul_left_operand(module, &ct, &ctx, &keys, hint, s));
-        let op = &format!("blas_matmul_prepare_right {hint:?}");
-        let bytes = module.blas_matmul_prepare_right_tmp_bytes(&column, &ctx, &atk_layout, hint);
+        let op = &format!("blas_matmul_right_operand_prepare {hint:?}");
+        let bytes = module.blas_matmul_right_operand_prepare_tmp_bytes(&column, &ctx, &atk_layout, hint);
         with_scratch::<BE, _>(bytes, |s| matmul_right_operand(module, &column, &ctx, &keys, hint, s))
             .unwrap_or_else(|e| panic!("{op}: {e}"));
         assert_short_scratch_panics::<BE, _>(op, bytes, |s| matmul_right_operand(module, &column, &ctx, &keys, hint, s));
@@ -2538,9 +2542,9 @@ pub fn test_blas_matmul_guards<BE, F, E>(
     for hint in HINTS {
         let label = &format!("no rotation keys {hint:?}");
         let left = matmul_left_operand(module, &ct, &ctx, &no_atks, hint, &mut op_scratch.borrow());
-        assert_rejected(label, "blas_matmul_prepare_left", MissingKey, left);
+        assert_rejected(label, "blas_matmul_left_operand_prepare", MissingKey, left);
         let right = matmul_right_operand(module, &column, &ctx, &no_atks, hint, &mut op_scratch.borrow());
-        assert_rejected(label, "blas_matmul_prepare_right", MissingKey, right);
+        assert_rejected(label, "blas_matmul_right_operand_prepare", MissingKey, right);
         matmul_left_operand(module, &ct, &ctx, &no_tsk, hint, &mut op_scratch.borrow()).unwrap();
         matmul_right_operand(module, &column, &ctx, &no_tsk, hint, &mut op_scratch.borrow()).unwrap();
     }
@@ -2647,8 +2651,8 @@ where
     check("matmul", &res, &a.matmul(&b), &mut scratch.borrow());
 
     let bytes = module
-        .blas_matmul_prepare_left_tmp_bytes(&ct_a, &ctx, &atk_layout, Reuse)
-        .max(module.blas_matmul_prepare_right_tmp_bytes(&ct_b, &ctx, &atk_layout, Reuse));
+        .blas_matmul_left_operand_prepare_tmp_bytes(&ct_a, &ctx, &atk_layout, Reuse)
+        .max(module.blas_matmul_right_operand_prepare_tmp_bytes(&ct_b, &ctx, &atk_layout, Reuse));
     let mut prepare_scratch = poisoned_scratch::<BE>(bytes);
     let left = matmul_left_operand(module, &ct_a, &ctx, &keys, Reuse, &mut prepare_scratch.borrow()).unwrap();
     let right = matmul_right_operand(module, &ct_b, &ctx, &keys, Reuse, &mut prepare_scratch.borrow()).unwrap();
@@ -2807,21 +2811,21 @@ pub fn test_blas_matmul_operands<BE, F, E>(
             blas_matmul_left_operand_layout(&first, &ctx, hint),
             blas_matmul_right_operand_layout(&first, &ctx, hint),
         );
-        let fresh_left = module.blas_matmul_left_alloc_from_infos(&left);
+        let fresh_left = module.blas_matmul_left_operand_prepared_alloc_from_infos(&left);
         assert_eq!(
             operand_infos(&fresh_left),
             (left.grid, Some(0), hint, left.source),
             "left {hint:?}"
         );
-        let fresh_right = module.blas_matmul_right_alloc_from_infos(&right);
+        let fresh_right = module.blas_matmul_right_operand_prepared_alloc_from_infos(&right);
         assert_eq!(
             operand_infos(&fresh_right),
             (right.grid, Some(0), hint, right.source),
             "right {hint:?}"
         );
         let (left_bytes, right_bytes) = (
-            module.blas_matmul_prepare_left_tmp_bytes(&first, &ctx, &atk, hint),
-            module.blas_matmul_prepare_right_tmp_bytes(&first, &ctx, &atk, hint),
+            module.blas_matmul_left_operand_prepare_tmp_bytes(&first, &ctx, &atk, hint),
+            module.blas_matmul_right_operand_prepare_tmp_bytes(&first, &ctx, &atk, hint),
         );
         let mut op_scratch = poisoned_scratch::<BE>(left_bytes.max(right_bytes));
         let mut prepared_left = matmul_left_operand(module, &first, &ctx, &keys, hint, &mut op_scratch.borrow()).unwrap();
@@ -2842,12 +2846,12 @@ pub fn test_blas_matmul_operands<BE, F, E>(
 
         let mut other = left;
         other.grid.rows += 1;
-        let mut wrong = module.blas_matmul_left_alloc_from_infos(&other);
+        let mut wrong = module.blas_matmul_left_operand_prepared_alloc_from_infos(&other);
         assert_rejected(
             &format!("left {hint:?}"),
-            "blas_matmul_prepare_left",
+            "blas_matmul_left_operand_prepare",
             InvalidOperand,
-            module.blas_matmul_prepare_left(&mut wrong, &first, &ctx, &keys, &mut op_scratch.borrow()),
+            module.blas_matmul_left_operand_prepare(&mut wrong, &first, &ctx, &keys, &mut op_scratch.borrow()),
         );
         assert_eq!(
             operand_infos(&wrong),
@@ -2857,32 +2861,32 @@ pub fn test_blas_matmul_operands<BE, F, E>(
         let infos = operand_infos(&prepared_left);
         assert_rejected(
             &format!("narrow left {hint:?}"),
-            "blas_matmul_prepare_left",
+            "blas_matmul_left_operand_prepare",
             InvalidOperand,
-            module.blas_matmul_prepare_left(&mut prepared_left, &narrow, &ctx, &keys, &mut op_scratch.borrow()),
+            module.blas_matmul_left_operand_prepare(&mut prepared_left, &narrow, &ctx, &keys, &mut op_scratch.borrow()),
         );
         assert_eq!(operand_infos(&prepared_left), infos, "narrow left {hint:?}");
         let infos = operand_infos(&prepared_right);
         assert_rejected(
             &format!("narrow right {hint:?}"),
-            "blas_matmul_prepare_right",
+            "blas_matmul_right_operand_prepare",
             InvalidOperand,
-            module.blas_matmul_prepare_right(&mut prepared_right, &narrow, &ctx, &keys, &mut op_scratch.borrow()),
+            module.blas_matmul_right_operand_prepare(&mut prepared_right, &narrow, &ctx, &keys, &mut op_scratch.borrow()),
         );
         assert_eq!(operand_infos(&prepared_right), infos, "narrow right {hint:?}");
 
-        let mut left_rejected = vec![("narrow", &narrow, InvalidOperand, "blas_matmul_prepare_left")];
+        let mut left_rejected = vec![("narrow", &narrow, InvalidOperand, "blas_matmul_left_operand_prepare")];
         if hint == Reuse {
             left_rejected.push(("budget", &short, Budget, "ckks_linear_transformation_eval_into"));
         }
         check_operand_refill(
             &format!("left {hint:?}"),
-            || module.blas_matmul_left_alloc_from_infos(&left),
-            module.blas_matmul_left_bytes_of_from_infos(&left),
+            || module.blas_matmul_left_operand_prepared_alloc_from_infos(&left),
+            module.blas_matmul_left_operand_prepared_bytes_of_from_infos(&left),
             CKKSLeftOperandPrepared::cnv,
             |op, a| {
                 let s = &mut poisoned_scratch::<BE>(left_bytes);
-                module.blas_matmul_prepare_left_reference(op, a, &ctx, &keys, &mut s.borrow())
+                module.blas_matmul_left_operand_prepare_reference(op, a, &ctx, &keys, &mut s.borrow())
             },
             |a| blas_matmul_left_operand_layout(a, &ctx, hint),
             [&first, &second],
@@ -2890,16 +2894,16 @@ pub fn test_blas_matmul_operands<BE, F, E>(
         );
         check_operand_refill(
             &format!("right {hint:?}"),
-            || module.blas_matmul_right_alloc_from_infos(&right),
-            module.blas_matmul_right_bytes_of_from_infos(&right),
+            || module.blas_matmul_right_operand_prepared_alloc_from_infos(&right),
+            module.blas_matmul_right_operand_prepared_bytes_of_from_infos(&right),
             CKKSRightOperandPrepared::cnv,
             |op, b| {
                 let s = &mut poisoned_scratch::<BE>(right_bytes);
-                module.blas_matmul_prepare_right_reference(op, b, &ctx, &keys, &mut s.borrow())
+                module.blas_matmul_right_operand_prepare_reference(op, b, &ctx, &keys, &mut s.borrow())
             },
             |b| blas_matmul_right_operand_layout(b, &ctx, hint),
             [&first, &second],
-            &[("narrow", &narrow, InvalidOperand, "blas_matmul_prepare_right")],
+            &[("narrow", &narrow, InvalidOperand, "blas_matmul_right_operand_prepare")],
         );
     }
 }
@@ -2913,10 +2917,10 @@ type Refused<'a, BE> = (&'a str, &'a BlasCiphertextOwned<BE>, Rejection, &'a str
 /// states and leaves the operand as it was.
 fn check_operand_refill<BE, P, V>(
     label: &str,
-    alloc: impl Fn() -> BlasMatMulOperand<BE, P>,
+    alloc: impl Fn() -> BlasMatMulOperandPrepared<BE, P>,
     bytes_of: usize,
     cnv: fn(&P) -> &V,
-    prepare: impl Fn(&mut BlasMatMulOperand<BE, P>, &BlasCiphertextOwned<BE>) -> CKKSResult<()>,
+    prepare: impl Fn(&mut BlasMatMulOperandPrepared<BE, P>, &BlasCiphertextOwned<BE>) -> CKKSResult<()>,
     infos: impl Fn(&BlasCiphertextOwned<BE>) -> BlasMatMulOperandLayout,
     [first, second]: [&BlasCiphertextOwned<BE>; 2],
     rejected: &[Refused<'_, BE>],
@@ -2924,7 +2928,7 @@ fn check_operand_refill<BE, P, V>(
     BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     V: DataView<D = AlignedBuf>,
 {
-    let state = |op: &BlasMatMulOperand<BE, P>| {
+    let state = |op: &BlasMatMulOperandPrepared<BE, P>| {
         let bytes: Vec<Vec<u8>> = operand_buffers(op, cnv).iter().map(|b| b.to_vec()).collect();
         let blocks: Vec<Snapshot> = op.blocks.iter().map(snapshot::<BE, _>).collect();
         (bytes, blocks, operand_infos(op))
@@ -2965,7 +2969,7 @@ fn check_operand_refill<BE, P, V>(
 }
 
 /// The bytes of every buffer `op` holds, in order: its blocks' when hot, `cnv` of each term when cold.
-fn operand_buffers<'a, BE, P, V>(op: &'a BlasMatMulOperand<BE, P>, cnv: impl Fn(&'a P) -> &'a V) -> Vec<&'a [u8]>
+fn operand_buffers<'a, BE, P, V>(op: &'a BlasMatMulOperandPrepared<BE, P>, cnv: impl Fn(&'a P) -> &'a V) -> Vec<&'a [u8]>
 where
     BE: Backend<OwnedBuf = AlignedBuf>,
     V: DataView<D = AlignedBuf> + 'a,

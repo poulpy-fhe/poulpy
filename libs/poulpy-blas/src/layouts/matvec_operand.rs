@@ -13,7 +13,10 @@ use poulpy_core::{
         optimal_bsgs_giant_step,
     },
 };
-use poulpy_hal::{api::CnvPVecAlloc, layouts::Backend};
+use poulpy_hal::{
+    api::CnvPVecAlloc,
+    layouts::{Backend, Module},
+};
 
 use super::{
     BlasVectorShape,
@@ -78,7 +81,7 @@ impl BlasMatVecOperandLayout {
     ///
     /// # Panics
     ///
-    /// As [`super::BlasModuleAlloc::blas_matvec_operand_alloc`], for a layout that does not fit.
+    /// As [`BlasMatVecOperandAlloc::blas_matvec_operand_alloc`], for a layout that does not fit.
     pub fn with_optimal_bsgs(self) -> Self {
         let giant_step = optimal_bsgs_giant_step(map_indexes(&self), self.slots);
         self.with_strategy(LinearTransformationStrategy::Bsgs { giant_step })
@@ -363,7 +366,7 @@ pub(crate) fn output_label(infos: &impl BlasMatVecOperandInfos) -> usize {
 ///
 /// # Panics
 ///
-/// As [`super::BlasModuleAlloc::blas_matvec_operand_alloc`], for a layout that does not fit.
+/// As [`BlasMatVecOperandAlloc::blas_matvec_operand_alloc`], for a layout that does not fit.
 pub fn matvec_pt_galois_elements(cyclotomic_order: i64, infos: &impl BlasMatVecOperandInfos) -> Vec<i64> {
     let layout = infos.blas_matvec_operand_layout();
     if ring_slots(cyclotomic_order) != Some(layout.slots) {
@@ -372,8 +375,58 @@ pub fn matvec_pt_galois_elements(cyclotomic_order: i64, infos: &impl BlasMatVecO
     map_layout(&layout).lt().galois_elements(cyclotomic_order)
 }
 
-/// [`super::BlasModuleAlloc::blas_matvec_operand_alloc_from_infos`].
-pub(crate) fn alloc<BE, M>(module: &M, layout: &BlasMatVecOperandLayout) -> BlasMatVecOperand<BE>
+/// Allocation of public operands of products of a vector by a matrix.
+pub trait BlasMatVecOperandAlloc<BE: Backend>: CKKSLinearTransformationAlloc<BE> + GetDegree + Sized {
+    /// A public operand of products of a vector by a matrix from vectors of shape `input` repeating every
+    /// `input_period` slots into vectors of shape `output` repeating every `output_period` slots, on this module's
+    /// slots and the `Direct` schedule, every diagonal zero, which
+    /// [`BlasEncodingOps::blas_matvec_operand_encode`](crate::api::BlasEncodingOps::blas_matvec_operand_encode) fills.
+    /// Another schedule is a [`BlasMatVecOperandLayout`] built with
+    /// [`with_strategy`](BlasMatVecOperandLayout::with_strategy) or
+    /// [`with_optimal_bsgs`](BlasMatVecOperandLayout::with_optimal_bsgs), allocated by
+    /// [`Self::blas_matvec_operand_alloc_from_infos`].
+    ///
+    /// # Panics
+    ///
+    /// Panics unless each shape holds an entry, an entry per ciphertext and a positive stride, and its entries fit its
+    /// period, which divides the slots, if the operand has more blocks than a `usize` counts, if `coeffs_meta.k` is
+    /// `0`, if `base2k` is outside `1..=63`, or, from infos, for a schedule other than `Direct` and `Bsgs` of a
+    /// positive giant step.
+    fn blas_matvec_operand_alloc(
+        &self,
+        input: BlasVectorShape,
+        input_period: usize,
+        output: BlasVectorShape,
+        output_period: usize,
+        base2k: Base2K,
+        coeffs_meta: CoeffsMeta,
+    ) -> BlasMatVecOperand<BE> {
+        let layout = BlasMatVecOperandLayout::new(
+            self.ckks_max_slots(),
+            input,
+            input_period,
+            output,
+            output_period,
+            base2k,
+            coeffs_meta,
+        );
+        self.blas_matvec_operand_alloc_from_infos(&layout)
+    }
+
+    /// A public operand of products of a vector by a matrix of `infos`, which must be of this module's slots.
+    ///
+    /// # Panics
+    ///
+    /// As [`Self::blas_matvec_operand_alloc`], and if the slots of `infos` are not the module's.
+    fn blas_matvec_operand_alloc_from_infos<A: BlasMatVecOperandInfos>(&self, infos: &A) -> BlasMatVecOperand<BE> {
+        alloc(self, &infos.blas_matvec_operand_layout())
+    }
+}
+
+impl<BE: Backend> BlasMatVecOperandAlloc<BE> for Module<BE> where Module<BE>: CKKSLinearTransformationAlloc<BE> {}
+
+/// [`BlasMatVecOperandAlloc::blas_matvec_operand_alloc_from_infos`].
+fn alloc<BE, M>(module: &M, layout: &BlasMatVecOperandLayout) -> BlasMatVecOperand<BE>
 where
     BE: Backend,
     M: CKKSLinearTransformationAlloc<BE> + GetDegree,
