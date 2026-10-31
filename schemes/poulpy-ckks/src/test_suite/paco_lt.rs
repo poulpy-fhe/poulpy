@@ -39,7 +39,7 @@ use crate::{
     layouts::PaCoPlan,
     layouts::paco::factors::{mul_vec_tiled, paco_c2s_factors, paco_stc_factors},
     layouts::{
-        CKKSEncodingBuffer, CKKSModuleAlloc, ScratchArenaTakeCKKS, copy_encoding_buffer_into_reim_host,
+        CKKSEncodingBuffer, CKKSPlaintextAlloc, ScratchArenaTakeCKKSEncodingBuffer, copy_encoding_buffer_into_reim_host,
         copy_host_into_encoding_buffer,
     },
     test_suite::reference_encoder::ReferenceEncoder,
@@ -131,7 +131,7 @@ where
                     log_sparsity: 0,
                 },
             };
-            crate::encoding::ckks_encode_linear_transformation_from_diagonals(
+            crate::encoding::ckks_linear_transformation_encode_from_diagonals(
                 &module,
                 Base2K(params.base2k as u32),
                 factor_layout,
@@ -171,7 +171,7 @@ where
     for lt in &lts {
         let bytes = pt_self_into_tmp_bytes(&module, true, &ct, &lt.index(), &params.atk_layout());
         with_scratch::<BE, _>(bytes, |s| {
-            module.ckks_eval_linear_transformation_self_assign(&mut ct, lt, &atks, s)
+            module.ckks_linear_transformation_eval_self_assign(&mut ct, lt, &atks, s)
         })
         .unwrap();
     }
@@ -191,7 +191,7 @@ where
     let want_re: Vec<F> = w.iter().map(|x| x.re).collect();
     let want_im: Vec<F> = w.iter().map(|x| x.im).collect();
 
-    let mut pt_want = module.ckks_pt_vec_alloc(module.ckks_max_slots(), ct.base2k(), ct.k());
+    let mut pt_want = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), ct.base2k(), ct.k());
     pt_want.set_meta(GLWEPlaintextMeta {
         scale: Scale::Log(ct.log_delta()),
         slots: SlotsKind::Complex,
@@ -332,7 +332,7 @@ where
                 scratch.scope(|arena| {
                     let (mut values, _) = arena.take_ckks_encoding_buffer_scratch::<F>(coeffs.len());
                     copy_host_into_encoding_buffer::<BE, F, _>(&mut values, coeffs)?;
-                    module.ckks_coeffs_to_slots_assign(&mut values)?;
+                    module.ckks_encoding_buffer_coeffs_to_slots_assign(&mut values)?;
                     copy_encoding_buffer_into_reim_host::<BE, F, _>(&values, re, im)
                 })
             },

@@ -158,7 +158,7 @@ pub trait BlasMatMulOps<BE: Backend> {
     /// hint, or for a grid of `a`'s shape (dimensions, degree, radix, width and rank), whatever its metadata, from `a`
     /// under that hint, with no allocation of its storage: hot, a relabel of `a`, through no map, key or transform; cold,
     /// every term the product multiplies, sigma of every block of `a` and its shifts under `ctx`, each converted once by
-    /// poulpy-ckks's `ckks_prepare_left_into`.
+    /// poulpy-ckks's `ckks_left_operand_prepare`.
     ///
     /// When `ctx` is the product's, the products give the same bits under either hint, which selects where the work
     /// happens and the memory held: for `a` of `m x K` blocks, a hot operand holds `m K` blocks of `a`'s layout, a cold
@@ -230,7 +230,7 @@ pub trait BlasMatMulOps<BE: Backend> {
     /// Fills `res`, a right operand allocated from the infos
     /// [`blas_matmul_right_operand_layout`](crate::layouts::blas_matmul_right_operand_layout) gives for `b`, `ctx` and a
     /// hint, from `b` under that hint, as [`Self::blas_matmul_prepare_left`]: hot, a relabel of `b`; cold, tau of every
-    /// block and its shifts, each converted once by poulpy-ckks's `ckks_prepare_right_into`. On a replicated `b` the maps
+    /// block and its shifts, each converted once by poulpy-ckks's `ckks_right_operand_prepare`. On a replicated `b` the maps
     /// are [`BlasContextPrepared::tau_rep`] and [`BlasContextPrepared::rotate_rows_rep`], whose psi^k spend no scale.
     ///
     /// # Metadata
@@ -376,7 +376,7 @@ pub trait BlasMatMulOps<BE: Backend> {
     ///
     /// Under `JklsStored` and `JklsGalois`, JKLS's masks go on the ciphertext: every block of `a` goes through
     /// `b.first()`, sigma, then through `ctx`'s phi^k, `1 <= k < d`, a block row at a time, the row's `K d` terms prepared
-    /// once and shared by its blocks, and block `(i, j)` of `res` is poulpy-ckks's `ckks_dot_product_prepared_pt` of those
+    /// once and shared by its blocks, and block `(i, j)` of `res` is poulpy-ckks's `ckks_dot_product_prepared_pt_vec` of those
     /// terms by `b`'s prepared plaintexts: `psi^k(tau(B_lj))` stored under `JklsStored`, `tau(B_lj)` read through the
     /// Galois element of the rotation by `k d` under `JklsGalois`. It spends three scales, `2 p_B + p`, for `p` the
     /// context's scale. It adds the `K d` products in the transform domain, and each mask adds one diagonal per giant
@@ -401,9 +401,9 @@ pub trait BlasMatMulOps<BE: Backend> {
     ///
     /// # Metadata
     ///
-    /// Block `(i, j)` of `res` is poulpy-ckks's `ckks_eval_linear_transformation_sum_into` of the `K` terms `(a_il, b_lj)`,
+    /// Block `(i, j)` of `res` is poulpy-ckks's `ckks_linear_transformation_eval_sum_into` of the `K` terms `(a_il, b_lj)`,
     /// or under `Jkls` `(s_il, b_lj)` for `s_il` the block `a_il` through `b.first()`, or under `JklsStored` and
-    /// `JklsGalois` poulpy-ckks's `ckks_dot_product_prepared_pt` of the row's `K d` masked terms by `b`'s plaintexts,
+    /// `JklsGalois` poulpy-ckks's `ckks_dot_product_prepared_pt_vec` of the row's `K d` masked terms by `b`'s plaintexts,
     /// labelled, as by poulpy-ckks's plaintext product, with the smaller of `a`'s label and the largest label the
     /// `b.count()` distinct matrices allow, for `S` the slots of a block:
     ///
@@ -482,7 +482,7 @@ pub trait BlasMatMulOps<BE: Backend> {
     /// Under `JklsStored` and `JklsGalois`, every block of `a` goes through `b.first()`, tau, then through `ctx`'s column
     /// halves of psi^k, `rows_left(k)` and `rows_right(k)`, a block column at a time, the column's `K (2d - 1)` terms
     /// prepared once and shared by its blocks, and block `(i, j)` of `res` is poulpy-ckks's
-    /// `ckks_dot_product_prepared_pt` of those terms by `b`'s prepared plaintexts `Rot_j(sigma(B_il))`, stored or read
+    /// `ckks_dot_product_prepared_pt_vec` of those terms by `b`'s prepared plaintexts `Rot_j(sigma(B_il))`, stored or read
     /// through Galois elements. `ctx` must hold those masks: its plan selects one of these paths.
     ///
     /// Under `Diagonal` and `Jkls`, each block of `res` is one linear transformation over its `K = a.rows()` terms,

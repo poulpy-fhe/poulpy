@@ -340,26 +340,29 @@ impl<F: CKKSScalar, D: HostDataMut + HostDataRef, R: Ring> CKKSPlaintextVecHostC
 mod tests {
     use super::*;
     use crate::CKKSModuleInfos;
-    use crate::layouts::CKKSModuleAlloc;
+    use crate::layouts::CKKSPlaintextAlloc;
     use crate::{Scale, SlotsKind};
     use poulpy_hal::layouts::{Backend, HostBytesBackend, Module};
 
     #[test]
-    fn pt_vec_alloc_takes_twice_the_slots() {
+    fn plaintext_alloc_from_slots_takes_twice_the_slots() {
         let module = Module::<HostBytesBackend>::new(64);
         let (base2k, k) = (Base2K(12), TorusPrecision(24));
-        assert_eq!(module.ckks_pt_vec_alloc(8, base2k, k).n().as_usize(), 16);
+        assert_eq!(module.ckks_plaintext_alloc_from_slots(8, base2k, k).n().as_usize(), 16);
         assert_eq!(
-            module.ckks_pt_vec_alloc(module.ckks_max_slots(), base2k, k).n().as_usize(),
+            module
+                .ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), base2k, k)
+                .n()
+                .as_usize(),
             64
         );
     }
 
     #[test]
-    #[should_panic(expected = "ckks_pt_vec_alloc: the slot count needs a degree below the backend's minimum")]
-    fn pt_vec_alloc_rejects_a_degree_below_the_floor() {
+    #[should_panic(expected = "ckks_plaintext_alloc_from_slots: the slot count needs a degree below the backend's minimum")]
+    fn plaintext_alloc_from_slots_rejects_a_degree_below_the_floor() {
         let module = Module::<HostBytesBackend>::new(64);
-        module.ckks_pt_vec_alloc(<HostBytesBackend as Backend>::MIN_DEGREE / 4, Base2K(12), TorusPrecision(24));
+        module.ckks_plaintext_alloc_from_slots(<HostBytesBackend as Backend>::MIN_DEGREE / 4, Base2K(12), TorusPrecision(24));
     }
 
     #[test]
@@ -372,7 +375,7 @@ mod tests {
         };
         let base2k: Base2K = 52usize.into();
 
-        let mut pt = module.ckks_pt_coeffs_alloc(3, base2k, (12usize + 40).into());
+        let mut pt = module.ckks_plaintext_alloc(3usize.into(), base2k, (12usize + 40).into());
         pt.set_meta(prec);
 
         assert_eq!(pt.n().as_usize(), 3);

@@ -1,4 +1,7 @@
-use poulpy_ckks::{CKKSResult, api::CKKSEncodingScalar, layouts::CKKSModuleAlloc};
+use poulpy_ckks::{
+    CKKSResult,
+    api::{CKKSEncodingScalar, CKKSModuleInfos, CKKSRightOperandPreparedFactory},
+};
 use poulpy_core::layouts::{DiagonalArithmetic, GetDegree};
 use poulpy_hal::{
     api::{CnvPVecAlloc, CnvPVecBytesOf},
@@ -129,14 +132,17 @@ pub trait BlasEncodingOps<BE: Backend, F: CKKSEncodingScalar + DiagonalArithmeti
 
 /// Allocation, sizing and preparation of prepared public operands. The allocation is direct on the module; the
 /// preparation and its query dispatch through [`BlasEncodingImpl`](crate::oep::BlasEncodingImpl).
-pub trait BlasPtOperandPreparedFactory<BE: Backend>: CKKSModuleAlloc<BE> + GetDegree + Sized {
+pub trait BlasPtOperandPreparedFactory<BE: Backend>: CKKSModuleInfos + GetDegree + Sized {
     /// A prepared operand of `infos`, which must be of this module's slots. Under `JklsStored` and `JklsGalois` it holds
     /// the first map and, per term, a right operand of poulpy-ckks's products at the layout of the term's plaintext.
     ///
     /// # Panics
     ///
     /// As [`BlasModuleAlloc::blas_pt_operand_alloc_from_infos`](crate::layouts::BlasModuleAlloc::blas_pt_operand_alloc_from_infos).
-    fn blas_pt_operand_prepared_alloc_from_infos<A: BlasPtOperandInfos>(&self, infos: &A) -> BlasPtOperandPrepared<BE, A::Side> {
+    fn blas_pt_operand_prepared_alloc_from_infos<A: BlasPtOperandInfos>(&self, infos: &A) -> BlasPtOperandPrepared<BE, A::Side>
+    where
+        Self: CKKSRightOperandPreparedFactory<BE>,
+    {
         pt_operand::alloc_prepared(self, &infos.blas_pt_operand_layout())
     }
 
@@ -148,7 +154,7 @@ pub trait BlasPtOperandPreparedFactory<BE: Backend>: CKKSModuleAlloc<BE> + GetDe
     fn blas_pt_operand_prepare_tmp_bytes<A: BlasPtOperandInfos>(&self, infos: &A) -> usize;
 
     /// Prepares every map of `other` into `res`, in place, and under `JklsStored` and `JklsGalois` the one plaintext of
-    /// each term's map by `ckks_prepare_right_into`: preparing again after a new encoding refills `res` with no
+    /// each term's map by `ckks_right_operand_prepare`: preparing again after a new encoding refills `res` with no
     /// allocation.
     ///
     /// # Panics
@@ -167,7 +173,7 @@ pub trait BlasPtOperandPreparedFactory<BE: Backend>: CKKSModuleAlloc<BE> + GetDe
 /// Allocation, sizing and preparation of prepared public operands of products of a vector by a matrix. The allocation
 /// is direct on the module; the preparation and its query dispatch through
 /// [`BlasEncodingImpl`](crate::oep::BlasEncodingImpl).
-pub trait BlasMatVecOperandPreparedFactory<BE: Backend>: CKKSModuleAlloc<BE> + CnvPVecAlloc<BE> + GetDegree + Sized {
+pub trait BlasMatVecOperandPreparedFactory<BE: Backend>: CnvPVecAlloc<BE> + CKKSModuleInfos + GetDegree + Sized {
     /// A prepared operand of `infos`, which must be of this module's slots.
     ///
     /// # Panics
@@ -206,7 +212,7 @@ pub trait BlasMatVecOperandPreparedFactory<BE: Backend>: CKKSModuleAlloc<BE> + C
 /// Allocation, sizing and preparation of prepared diagonal ciphertexts. The allocation and its size are direct on the
 /// module; the preparation and its query dispatch through [`BlasEncodingImpl`](crate::oep::BlasEncodingImpl).
 pub trait BlasDiagonalCiphertextPreparedFactory<BE: Backend>:
-    CKKSModuleAlloc<BE> + CnvPVecAlloc<BE> + CnvPVecBytesOf + GetDegree + Sized
+    CnvPVecAlloc<BE> + CnvPVecBytesOf + CKKSModuleInfos + GetDegree + Sized
 {
     /// A prepared diagonal ciphertext of `infos`, every diagonal zero, carrying the layout's metadata.
     ///
@@ -249,7 +255,7 @@ pub trait BlasDiagonalCiphertextPreparedFactory<BE: Backend>:
 
 /// Allocation, sizing and preparation of prepared contexts. The allocation is direct on the module; the preparation and
 /// its query dispatch through [`BlasEncodingImpl`](crate::oep::BlasEncodingImpl).
-pub trait BlasContextPreparedFactory<BE: Backend>: CKKSModuleAlloc<BE> + GetDegree + Sized {
+pub trait BlasContextPreparedFactory<BE: Backend>: CnvPVecAlloc<BE> + CKKSModuleInfos + GetDegree + Sized {
     /// A prepared context of `infos`, which must be of this module's ring.
     ///
     /// # Panics

@@ -9,11 +9,12 @@ use criterion::{Bencher, measurement::Measurement};
 use poulpy_ckks::{
     GLWEPlaintextMeta, SetCKKSInfos,
     api::{
-        CKKSAddOps, CKKSConjugateOps, CKKSDotProductOps, CKKSEncodingOps, CKKSLinearTransformationOps, CKKSMulOps, CKKSNegOps,
-        CKKSPow2Ops, CKKSRotateOps, CKKSSubOps, LinearTransformationBabySteps, LinearTransformationLayout,
-        LinearTransformationPrepared, LinearTransformationStrategy,
+        CKKSAddOps, CKKSConjugateOps, CKKSDotProductOps, CKKSEncodingOps, CKKSLeftOperandPreparedFactory,
+        CKKSLinearTransformationOps, CKKSMulOps, CKKSNegOps, CKKSPow2Ops, CKKSRightOperandPreparedFactory, CKKSRotateOps,
+        CKKSSubOps, LinearTransformationBabySteps, LinearTransformationLayout, LinearTransformationPrepared,
+        LinearTransformationStrategy,
     },
-    layouts::{CKKSCiphertextOwned, CKKSEncodingBuffer, CKKSModuleAlloc},
+    layouts::{CKKSCiphertextAlloc, CKKSCiphertextOwned, CKKSEncodingBuffer, CKKSPlaintextAlloc},
 };
 use poulpy_core::{
     GLWEFill, GLWENormalize,
@@ -209,7 +210,8 @@ where
     ct_a.set_meta_checked(meta).unwrap();
     ct_dst.set_meta_checked(meta).unwrap();
 
-    let mut pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), Base2K(cp.base2k as u32), TorusPrecision(cp.k as u32));
+    let mut pt =
+        module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), Base2K(cp.base2k as u32), TorusPrecision(cp.k as u32));
     pt.set_meta(meta);
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_add_pt_vec_tmp_bytes(ct_layout.size()));
@@ -239,7 +241,7 @@ pub fn runner_ckks_add_pt_const_into<BE: Backend<ZnxWord = i64>, M: Measurement>
     ct_a.set_meta_checked(meta).unwrap();
     ct_dst.set_meta_checked(meta).unwrap();
 
-    let mut cst = module.ckks_pt_coeffs_alloc(2, Base2K(cp.base2k as u32), TorusPrecision(cp.k as u32));
+    let mut cst = module.ckks_plaintext_alloc(2usize.into(), Base2K(cp.base2k as u32), TorusPrecision(cp.k as u32));
     cst.set_meta(meta);
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_add_pt_const_tmp_bytes(ct_layout.size()));
@@ -294,7 +296,8 @@ where
     ct_a.set_meta_checked(meta).unwrap();
     ct_dst.set_meta_checked(meta).unwrap();
 
-    let mut pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), Base2K(cp.base2k as u32), TorusPrecision(cp.k as u32));
+    let mut pt =
+        module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), Base2K(cp.base2k as u32), TorusPrecision(cp.k as u32));
     pt.set_meta(meta);
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_sub_pt_vec_tmp_bytes(ct_layout.size()));
@@ -324,7 +327,7 @@ pub fn runner_ckks_sub_pt_const_into<BE: Backend<ZnxWord = i64>, M: Measurement>
     ct_a.set_meta_checked(meta).unwrap();
     ct_dst.set_meta_checked(meta).unwrap();
 
-    let mut cst = module.ckks_pt_coeffs_alloc(2, Base2K(cp.base2k as u32), TorusPrecision(cp.k as u32));
+    let mut cst = module.ckks_plaintext_alloc(2usize.into(), Base2K(cp.base2k as u32), TorusPrecision(cp.k as u32));
     cst.set_meta(meta);
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_sub_pt_const_tmp_bytes(ct_layout.size()));
@@ -453,7 +456,8 @@ where
     ct_a.set_meta_checked(meta).unwrap();
     ct_dst.set_meta_checked(meta).unwrap();
 
-    let mut pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), Base2K(cp.base2k as u32), TorusPrecision(cp.k as u32));
+    let mut pt =
+        module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), Base2K(cp.base2k as u32), TorusPrecision(cp.k as u32));
     pt.set_meta(meta);
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_mul_pt_vec_tmp_bytes(&ct_dst, &ct_a, &pt));
@@ -483,7 +487,8 @@ pub fn runner_ckks_mul_pt_const_into<BE: Backend<ZnxWord = i64>, M: Measurement>
     ct_a.set_meta_checked(meta).unwrap();
     ct_dst.set_meta_checked(meta).unwrap();
 
-    let mut const_full = module.ckks_pt_vec_alloc(module.ckks_max_slots(), Base2K(cp.base2k as u32), TorusPrecision(cp.k as u32));
+    let mut const_full =
+        module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), Base2K(cp.base2k as u32), TorusPrecision(cp.k as u32));
     const_full.set_meta(meta);
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_mul_pt_const_tmp_bytes(&ct_dst, &ct_a, &const_full));
@@ -501,7 +506,7 @@ fn ckks_encoding_values(len: usize) -> Vec<f64> {
     (0..len).map(|i| (i as f64 + 1.0) / len as f64).collect()
 }
 
-pub fn runner_ckks_encode_slots_assign_into<BE: Backend<ZnxWord = i64>, M: Measurement>(
+pub fn runner_ckks_encode_slots_into<BE: Backend<ZnxWord = i64>, M: Measurement>(
     bencher: &mut Bencher<'_, M>,
     cp: &CkksBenchParams,
 ) where
@@ -509,14 +514,14 @@ pub fn runner_ckks_encode_slots_assign_into<BE: Backend<ZnxWord = i64>, M: Measu
 {
     let module = Module::<BE>::new(cp.n as u64);
 
-    let mut pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), cp.base2k.into(), cp.k.into());
+    let mut pt = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), cp.base2k.into(), cp.k.into());
     pt.set_meta(ckks_ct_meta(cp));
 
     let values = ckks_encoding_values(cp.n);
     let mut slots = CKKSEncodingBuffer::<BE::OwnedBuf, f64>::from_host::<BE>(&values);
 
     bencher.iter(|| {
-        module.ckks_encode_slots_assign_into(&mut pt, &mut slots).unwrap();
+        module.ckks_encode_slots_into(&mut pt, &mut slots).unwrap();
         module.synchronize();
         black_box(());
     });
@@ -530,12 +535,12 @@ pub fn runner_ckks_decode_slots_into<BE: Backend<ZnxWord = i64>, M: Measurement>
 {
     let module = Module::<BE>::new(cp.n as u64);
 
-    let mut pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), cp.base2k.into(), 127usize.into()); // TODO: should this be a benchmark parameter?
+    let mut pt = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), cp.base2k.into(), 127usize.into()); // TODO: should this be a benchmark parameter?
     pt.set_meta(ckks_ct_meta(cp));
 
     let values = ckks_encoding_values(cp.n);
     let mut seed = CKKSEncodingBuffer::<BE::OwnedBuf, f64>::from_host::<BE>(&values);
-    module.ckks_encode_slots_assign_into(&mut pt, &mut seed).unwrap();
+    module.ckks_encode_slots_into(&mut pt, &mut seed).unwrap();
 
     let mut slots = CKKSEncodingBuffer::<BE::OwnedBuf, f64>::from_host::<BE>(&values);
 
@@ -554,7 +559,7 @@ pub fn runner_ckks_encode_coeffs_into<BE: Backend<ZnxWord = i64>, M: Measurement
 {
     let module = Module::<BE>::new(cp.n as u64);
 
-    let mut pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), cp.base2k.into(), 127usize.into()); // TODO: should this be a benchmark parameter?
+    let mut pt = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), cp.base2k.into(), 127usize.into()); // TODO: should this be a benchmark parameter?
     pt.set_meta(ckks_ct_meta(cp));
 
     let values = ckks_encoding_values(cp.n);
@@ -575,7 +580,7 @@ pub fn runner_ckks_decode_coeffs_into<BE: Backend<ZnxWord = i64>, M: Measurement
 {
     let module = Module::<BE>::new(cp.n as u64);
 
-    let mut pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), cp.base2k.into(), 127usize.into()); // TODO: should this be a benchmark parameter?
+    let mut pt = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), cp.base2k.into(), 127usize.into()); // TODO: should this be a benchmark parameter?
     pt.set_meta(ckks_ct_meta(cp));
 
     let values = ckks_encoding_values(cp.n);
@@ -679,9 +684,9 @@ where
     (src, lt, plan, atks, tsk_prepared)
 }
 
-/// `ckks_eval_linear_transformation_into` of `CT_LT_DIAGONALS` resident encrypted diagonals on an encrypted vector,
+/// `ckks_linear_transformation_eval_into` of `CT_LT_DIAGONALS` resident encrypted diagonals on an encrypted vector,
 /// its baby rotations prepared.
-pub fn runner_ckks_eval_linear_transformation_into_ct<BE: Backend<ZnxWord = i64>, M: Measurement>(
+pub fn runner_ckks_linear_transformation_eval_into_ct<BE: Backend<ZnxWord = i64>, M: Measurement>(
     bencher: &mut Bencher<'_, M>,
     cp: &CkksBenchParams,
 ) where
@@ -707,34 +712,36 @@ pub fn runner_ckks_eval_linear_transformation_into_ct<BE: Backend<ZnxWord = i64>
     let mut dst = module.ckks_ciphertext_alloc_from_glwe_infos(&ckks_layout(cp));
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
-            .ckks_prepare_linear_transformation_rhs_tmp_bytes(first)
-            .max(module.ckks_prepare_linear_transformation_baby_steps_tmp_bytes(&src, &plan, &atk_layout(cp)))
-            .max(module.ckks_eval_linear_transformation_tmp_bytes(&src, first, &plan, &tsk, &atk_layout(cp))),
+            .ckks_linear_transformation_rhs_prepare_tmp_bytes(first)
+            .max(module.ckks_linear_transformation_baby_steps_prepare_tmp_bytes(&src, &plan, &atk_layout(cp)))
+            .max(module.ckks_linear_transformation_eval_tmp_bytes(&src, first, &plan, &tsk, &atk_layout(cp))),
     );
     module
-        .ckks_prepare_linear_transformation_rhs(&mut prepared, &lt, &mut scratch.borrow())
+        .ckks_linear_transformation_rhs_prepare(&mut prepared, &lt, &mut scratch.borrow())
         .unwrap();
     module
-        .ckks_prepare_linear_transformation_baby_steps(&mut babies, &src, &atks, &mut scratch.borrow())
+        .ckks_linear_transformation_baby_steps_prepare(&mut babies, &src, &atks, &mut scratch.borrow())
         .unwrap();
     bencher.iter(|| {
         module
-            .ckks_eval_linear_transformation_into(&mut dst, &src, &babies, &prepared, &keys, &mut scratch.borrow())
+            .ckks_linear_transformation_eval_into(&mut dst, &src, &babies, &prepared, &keys, &mut scratch.borrow())
             .unwrap();
         module.synchronize();
         black_box(());
     });
 }
 
-/// The product of [`runner_ckks_eval_linear_transformation_into_ct`] composed from the same prepared rotations and
+/// The product of [`runner_ckks_linear_transformation_eval_into_ct`] composed from the same prepared rotations and
 /// diagonals: one `ckks_dot_product_prepared` per giant step, rotated and added, then normalized.
-pub fn runner_ckks_eval_linear_transformation_into_ct_composed<BE: Backend<ZnxWord = i64>, M: Measurement>(
+pub fn runner_ckks_linear_transformation_eval_into_ct_composed<BE: Backend<ZnxWord = i64>, M: Measurement>(
     bencher: &mut Bencher<'_, M>,
     cp: &CkksBenchParams,
 ) where
     Module<BE>: ModuleNew<BE>
         + ModuleSynchronize<BE>
         + CKKSMulOps<BE>
+        + CKKSLeftOperandPreparedFactory<BE>
+        + CKKSRightOperandPreparedFactory<BE>
         + CKKSDotProductOps<BE>
         + CKKSRotateOps<BE>
         + CKKSAddOps<BE>
@@ -753,7 +760,8 @@ pub fn runner_ckks_eval_linear_transformation_into_ct_composed<BE: Backend<ZnxWo
     let mut dst = module.ckks_ciphertext_alloc_from_glwe_infos(&ct_layout);
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
-            .ckks_prepare_tmp_bytes(&src)
+            .ckks_left_operand_prepare_tmp_bytes(&src)
+            .max(module.ckks_right_operand_prepare_tmp_bytes(&src))
             .max(module.ckks_rotate_tmp_bytes(&src, &atk_layout(cp)))
             .max(module.ckks_dot_product_ct_tmp_bytes(CT_LT_GIANT_STEP, &src, &src, &src, &tsk))
             .max(module.ckks_add_tmp_bytes(ct_layout.size()))
@@ -763,14 +771,16 @@ pub fn runner_ckks_eval_linear_transformation_into_ct_composed<BE: Backend<ZnxWo
         .baby_steps
         .iter()
         .map(|&baby| {
-            let mut left = module.ckks_prepared_left_alloc_from_infos(&src, PrepareHint::Reuse);
+            let mut left = module.ckks_left_operand_prepared_alloc_from_infos(&src, PrepareHint::Reuse);
             if baby != 0 {
                 module
                     .ckks_rotate_into(baby, &mut rotated, &src, &atks, &mut scratch.borrow())
                     .unwrap();
             }
             let ct = if baby == 0 { &src } else { &rotated };
-            module.ckks_prepare_left_into(&mut left, ct, &mut scratch.borrow()).unwrap();
+            module
+                .ckks_left_operand_prepare(&mut left, ct, &mut scratch.borrow())
+                .unwrap();
             (baby, left)
         })
         .collect();
@@ -781,9 +791,9 @@ pub fn runner_ckks_eval_linear_transformation_into_ct_composed<BE: Backend<ZnxWo
             gs.diagonals
                 .iter()
                 .map(|d| {
-                    let mut right = module.ckks_prepared_right_alloc_from_infos(&d.plaintext, PrepareHint::Reuse);
+                    let mut right = module.ckks_right_operand_prepared_alloc_from_infos(&d.plaintext, PrepareHint::Reuse);
                     module
-                        .ckks_prepare_right_into(&mut right, &d.plaintext, &mut scratch.borrow())
+                        .ckks_right_operand_prepare(&mut right, &d.plaintext, &mut scratch.borrow())
                         .unwrap();
                     right
                 })

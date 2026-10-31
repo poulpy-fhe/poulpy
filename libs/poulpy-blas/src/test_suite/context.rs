@@ -5,10 +5,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use poulpy_ckks::{
     CKKSInfos, CKKSModuleInfos, CoeffsMeta, GLWEPlaintextInfos, Scale, SetCKKSInfos, SetGLWEPlaintextInfos, SlotsKind,
     api::{
-        CKKSEncodingOps, CKKSLinearTransformationOps, CKKSMulOps, LinearTransformation, LinearTransformationPrepared,
-        PreparedDiagonal,
+        CKKSEncodingOps, CKKSLinearTransformationOps, CKKSMulOps, CKKSRightOperandPreparedFactory, LinearTransformation,
+        LinearTransformationPrepared, PreparedDiagonal,
     },
-    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned},
+    layouts::{CKKSCiphertextOwned, CKKSPlaintextOwned},
     test_suite::{
         CKKSTestParams,
         helpers::{TestContextBackend, TestContextModule, TestScalar},
@@ -644,8 +644,11 @@ fn check_refill<U, P>(
 fn refill_operand<BE, F, S>(module: &Module<BE>, plan: BlasPlan, base2k: Base2K, meta: CoeffsMeta)
 where
     BE: TestContextBackend + BlasEncodingImpl,
-    Module<BE>:
-        CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F> + BlasEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CKKSMulOps<BE>,
+    Module<BE>: CKKSRightOperandPreparedFactory<BE>
+        + CKKSEncodingOps<BE, F>
+        + BlasEncodingOps<BE, F>
+        + CKKSLinearTransformationOps<BE>
+        + CKKSMulOps<BE>,
     F: TestScalar + DiagonalArithmetic,
     S: BlasPtSide,
 {
@@ -749,7 +752,7 @@ pub fn test_blas_refill<BE, F, E>(
 fn refill_matvec<BE, F>(module: &Module<BE>, layout: &BlasMatVecOperandLayout)
 where
     BE: TestContextBackend + BlasEncodingImpl,
-    Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F> + BlasEncodingOps<BE, F> + CKKSLinearTransformationOps<BE>,
+    Module<BE>: CKKSEncodingOps<BE, F> + BlasEncodingOps<BE, F> + CKKSLinearTransformationOps<BE>,
     F: TestScalar + DiagonalArithmetic,
 {
     let first: fn(usize, usize) -> f64 = |r, c| ((r * 3 + c) % 5) as f64 - 2.0;

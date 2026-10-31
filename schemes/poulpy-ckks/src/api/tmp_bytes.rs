@@ -22,7 +22,7 @@ use poulpy_hal::{
 /// Pass layouts covering the widest live ciphertext and plaintext operands in
 /// the intended pipeline. These are shared bounds for polynomial evaluation.
 /// DFT preparation and evaluation require their selected matrix-specific queries,
-/// [`crate::api::CKKSDFTOps::ckks_prepare_dft_matrix_tmp_bytes`] and
+/// [`crate::api::CKKSDFTMatrixPreparedFactory::ckks_dft_matrix_prepare_tmp_bytes`] and
 /// [`crate::api::CKKSDFTOps::ckks_dft_tmp_bytes`], including format wrappers.
 /// EvalMod has its own selected query because its working precision depends on the compiled plan.
 pub trait CKKSAllOpsTmpBytes<BE: Backend> {

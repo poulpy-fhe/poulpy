@@ -32,8 +32,10 @@ use poulpy_hal::{
 use crate::SlotsKind;
 use crate::{
     CKKSCompositionError, CKKSInfos, GLWEPlaintextMeta,
-    api::{CKKSLinearTransformationOps, CKKSPaCoOps, PaCoScalar},
-    layouts::{CKKSModuleAlloc, PaCoContext, PaCoDFTPlan, PaCoKeySet, PaCoKeysPrepared, PaCoPlan, PaCoSecretSpec, PaCoWorker},
+    api::{CKKSLinearTransformationOps, CKKSPaCoOps, CKKSPaCoScalar},
+    layouts::{
+        CKKSCiphertextAlloc, PaCoContext, PaCoDFTPlan, PaCoKeySet, PaCoKeysPrepared, PaCoPlan, PaCoSecretSpec, PaCoWorker,
+    },
     test_suite::reference_encoder::ReferenceEncoder,
     test_suite::{
         CKKSTestParams,
@@ -131,7 +133,7 @@ pub fn test_paco_parallel_bootstrap<BE, F, E>(
         + CnvPVecAlloc<BE>
         + GLWERotate<BE>
         + Sync,
-    F: TestScalar + PaCoScalar,
+    F: TestScalar + CKKSPaCoScalar,
     E: ReimNew<F> + Sync,
 {
     let log_delta = params.prec().log_delta();
@@ -447,7 +449,7 @@ pub fn test_paco_encapsulated_bootstrap<BE, F, E>(
         + CnvPVecAlloc<BE>
         + GLWERotate<BE>
         + Sync,
-    F: TestScalar + PaCoScalar,
+    F: TestScalar + CKKSPaCoScalar,
     E: ReimNew<F> + Sync,
 {
     use crate::test_suite::helpers::gen_sk_with_raw;
@@ -635,7 +637,7 @@ pub fn test_paco_bootstrap_into_rejects_narrow_encapsulation_key<BE, F, E>(
         + CnvPVecAlloc<BE>
         + GLWERotate<BE>
         + Sync,
-    F: TestScalar + PaCoScalar,
+    F: TestScalar + CKKSPaCoScalar,
     E: ReimNew<F> + Sync,
 {
     use crate::test_suite::helpers::gen_sk_with_raw;

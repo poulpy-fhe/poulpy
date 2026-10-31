@@ -18,7 +18,7 @@ use poulpy_ckks::{
         CKKSAddOps, CKKSAllOpsTmpBytes, CKKSConjugateOps, CKKSCopyOps, CKKSMulOps, CKKSNegOps, CKKSPolynomialEvaluationOps,
         CKKSPow2Ops, CKKSSubOps,
     },
-    layouts::ScratchArenaTakeCKKS,
+    layouts::ScratchArenaTakeCKKSCiphertext,
 };
 
 use crate::{

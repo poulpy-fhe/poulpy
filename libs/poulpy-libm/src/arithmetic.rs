@@ -10,7 +10,7 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 use poulpy_ckks::{
     CKKSCtBounds, SetCKKSInfos,
     api::{CKKSCopyOps, CKKSMulAddOps, CKKSPow2Ops},
-    layouts::ScratchArenaTakeCKKS,
+    layouts::ScratchArenaTakeCKKSCiphertext,
 };
 
 /// Homomorphic arithmetic matching simple `libm` operations.

@@ -19,7 +19,7 @@ use crate::layouts::CKKSPlaintextOwned;
 use crate::{
     CKKSInfos, CKKSLayout, SetCKKSInfos,
     api::CKKSAffineOps,
-    layouts::{CKKSModuleAlloc, CKKSPlaintextVecHostCodec},
+    layouts::{CKKSPlaintextAlloc, CKKSPlaintextVecHostCodec},
 };
 use poulpy_core::layouts::LWEInfos;
 
@@ -42,7 +42,7 @@ fn encode_affine_const<F: TestScalar>(
     scale: F,
     prec: CKKSLayout,
 ) -> CKKSPlaintextOwned<HostBytesBackend> {
-    let mut pt = host_module.ckks_pt_coeffs_alloc(2, base2k, prec.k());
+    let mut pt = host_module.ckks_plaintext_alloc(2usize.into(), base2k, prec.k());
     pt.set_meta(prec.meta());
     pt.encode_host_floats(&[offset, scale]).unwrap();
     pt

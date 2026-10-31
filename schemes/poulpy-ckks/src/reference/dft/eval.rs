@@ -23,8 +23,12 @@
 use crate::{CKKSResult as Result, ckks_ensure};
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
-    GLWEDiagonalProd, GLWELinearTransformationBabyStepsBytesOf, ScratchArenaTakeGLWELinearTransformationBabySteps,
-    layouts::{Base2K, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LinearTransformation},
+    GLWEBytesOf, GLWEDiagonalProd, GLWELinearTransformationBabyStepsBytesOf, GLWELinearTransformationOps,
+    ScratchArenaTakeGLWELinearTransformationBabySteps,
+    layouts::{
+        Base2K, GGLWEInfos, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey,
+        LWEInfos, LinearTransformation,
+    },
 };
 use poulpy_hal::{
     api::CnvPVecAlloc,
@@ -33,11 +37,14 @@ use poulpy_hal::{
 
 use crate::{
     CKKSCompositionError, CKKSCtBounds, SetCKKSInfos,
-    api::{CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, CKKSLinearTransformationOps, LtDiagonalMeta},
+    api::{
+        CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, CKKSImagOps,
+        CKKSLinearTransformationOps, CKKSRotateOps, CKKSSubOps, LtDiagonalMeta,
+    },
     layouts::{
-        CKKSModuleAlloc, CKKSPlaintextOwned, ComplexDiagonals, DFTMatrix, DFTMatrixFactors, DFTMatrixPrepared, DFTPlan,
-        DftDirection, DftFormat, DftScalar,
-        dft_matrices::gen_dft_matrices,
+        CKKSPlaintextOwned, ComplexDiagonals, DFTMatrix, DFTMatrixFactors, DFTMatrixPrepared, DFTPlan, DftDirection, DftFormat,
+        DftScalar,
+        dft_matrices::ckks_dft_matrices_gen,
         validation::{ensure_prepared_transformation_layout, ensure_uniform_diagonals},
     },
     oep::CKKSEncodingImpl,
@@ -69,13 +76,13 @@ fn checked_dft_log_slots(literal: &DFTPlan, log_n: usize) -> Result<usize> {
 fn dft_plan_diagonals<F: DftScalar>(literal: &DFTPlan, log_n: usize) -> Result<(DFTPlan, Vec<ComplexDiagonals<F>>)> {
     checked_dft_log_slots(literal, log_n)?;
     let plan = literal.resolved_at(log_n);
-    let factors = gen_dft_matrices::<F>(&plan, log_n);
+    let factors = ckks_dft_matrices_gen::<F>(&plan, log_n);
     Ok((plan, factors))
 }
 
 /// Encodes each factor's generated diagonals into an (unprepared) CKKS linear
 /// transformation (the plaintext factors of an unprepared [`DFTMatrix`]);
-/// [`ckks_prepare_dft_matrix`] later prepares each factor into a `CnvPVec` of the
+/// [`ckks_dft_matrix_prepare_reference`] later prepares each factor into a `CnvPVec` of the
 /// resident [`DFTMatrixPrepared`].
 #[allow(clippy::too_many_arguments)]
 fn dft_factor_lts<BE, F>(
@@ -86,7 +93,7 @@ fn dft_factor_lts<BE, F>(
 ) -> Result<(DFTPlan, Vec<DftFactorLt<BE>>)>
 where
     BE: Backend + CKKSEncodingImpl<F>,
-    Module<BE>: CnvPVecAlloc<BE> + CKKSLinearTransformationOps<BE> + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
+    Module<BE>: CnvPVecAlloc<BE> + CKKSLinearTransformationOps<BE> + CKKSEncodingOps<BE, F>,
     F: DftScalar + CKKSEncodingScalar,
 {
     let (plan, factors_cd) = dft_plan_diagonals::<F>(literal, module.log_n())?;
@@ -98,7 +105,7 @@ where
         .zip(&plan.schedule.steps)
         .map(|(cd, step)| {
             let strategy = plan.factor_strategy(step.giant_step);
-            crate::encoding::ckks_encode_linear_transformation_from_diagonals::<BE, F>(
+            crate::encoding::ckks_linear_transformation_encode_from_diagonals::<BE, F>(
                 module,
                 base2k,
                 plan.coeffs_meta,
@@ -122,9 +129,9 @@ where
 /// and `res` takes `dft`'s resolved plan. A `res` of another factor count, factor
 /// schedule or diagonal degree, radix or width, or a factor whose diagonals do not
 /// share one scale, width and slot kind, is `InvalidOperand`, and an arena below
-/// [`ckks_prepare_dft_matrix_tmp_bytes`] is `CKKSError::Internal`, both before any write.
-/// Build the input via [`ckks_new_dft_matrix`].
-pub fn ckks_prepare_dft_matrix<Dir, Fmt, BE, P>(
+/// [`ckks_dft_matrix_prepare_tmp_bytes_reference`] is `CKKSError::Internal`, both before any write.
+/// Build the input via [`ckks_dft_matrix_new_reference`].
+pub fn ckks_dft_matrix_prepare_reference<Dir, Fmt, BE, P>(
     module: &Module<BE>,
     res: &mut DFTMatrixPrepared<BE, Dir, Fmt>,
     dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
@@ -135,7 +142,7 @@ where
     Module<BE>: CKKSLinearTransformationOps<BE>,
     P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + GLWEDiagonalProd<BE>,
 {
-    const OP: &str = "ckks_prepare_dft_matrix";
+    const OP: &str = "ckks_dft_matrix_prepare";
     if res.factor_operands().len() != dft.factor_operands().len() {
         return Err(CKKSCompositionError::InvalidOperand {
             op: OP,
@@ -148,11 +155,11 @@ where
         ensure_uniform_diagonals(OP, lt, |pt| (pt.log_delta(), pt.encoded_k().as_usize(), pt.slots()))?;
     }
     ckks_ensure!(
-        scratch.available() >= ckks_prepare_dft_matrix_tmp_bytes(module, dft),
+        scratch.available() >= ckks_dft_matrix_prepare_tmp_bytes_reference(module, dft),
         "{OP}: scratch below its query"
     );
     for (prepared, lt) in res.inner.factors.iter_mut().zip(dft.factor_operands()) {
-        module.ckks_prepare_linear_transformation_rhs(prepared, lt, scratch)?;
+        module.ckks_linear_transformation_rhs_prepare(prepared, lt, scratch)?;
     }
     res.inner.plan = dft.plan().clone();
     Ok(())
@@ -166,7 +173,7 @@ where
 /// are ignored, like `factor_log_delta`). Each factor matrix is encoded into a
 /// CKKS linear transformation whose diagonals are kept as plaintexts (the default
 /// [`DFTMatrix`]); evaluating it materializes each diagonal on the fly per factor.
-/// Prepare it into the resident form with [`ckks_prepare_dft_matrix`].
+/// Prepare it into the resident form with [`ckks_dft_matrix_prepare_reference`].
 ///
 /// Returns an error when the plan is invalid, a generated diagonal cannot be
 /// encoded at the requested metadata, or `Fmt = Repack` is requested with
@@ -175,7 +182,7 @@ where
 /// latter is the single runtime format resolution; every downstream eval is
 /// type-checked.
 #[allow(clippy::too_many_arguments)]
-pub fn ckks_new_dft_matrix<Dir, Fmt, BE, F>(
+pub fn ckks_dft_matrix_new_reference<Dir, Fmt, BE, F>(
     module: &Module<BE>,
     base2k: Base2K,
     literal: &DFTPlan,
@@ -185,7 +192,7 @@ where
     Dir: DftDirection,
     Fmt: DftFormat,
     BE: Backend + CKKSEncodingImpl<F>,
-    Module<BE>: CnvPVecAlloc<BE> + CKKSLinearTransformationOps<BE> + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
+    Module<BE>: CnvPVecAlloc<BE> + CKKSLinearTransformationOps<BE> + CKKSEncodingOps<BE, F>,
     F: DftScalar + CKKSEncodingScalar,
 {
     // The markers are the source of truth for direction and requested format.
@@ -200,7 +207,7 @@ where
     // unrepresentable for these parameters.
     if plan.format != Fmt::FORMAT {
         return Err(CKKSCompositionError::DftMatrixMismatch {
-            op: "ckks_new_dft_matrix",
+            op: "ckks_dft_matrix_new",
             expected: "sparse Repack (RepackImagAsReal)",
             got: "dense parameters — build with the `Split` format instead".to_string(),
         }
@@ -210,13 +217,14 @@ where
     Ok(DFTMatrix::from_factors(DFTMatrixFactors::new(plan, lts)))
 }
 
-/// Scratch bytes of [`ckks_new_dft_matrix`] for `literal`: the factors are encoded one after the other on the same
-/// scratch, so the largest slot encoding of one factor's diagonals, at that factor's period.
+/// Scratch bytes of [`ckks_dft_matrix_new_reference`] for `literal`: the factors are encoded one after the other on the
+/// same scratch, so the largest slot encoding of one factor's diagonals, at that factor's period.
 ///
 /// # Errors
 ///
-/// The plan-versus-ring error of [`ckks_new_dft_matrix`] for a plan with more slots than the ring supports.
-pub fn ckks_new_dft_matrix_tmp_bytes<Dir, Fmt, BE, F>(module: &Module<BE>, literal: &DFTPlan) -> Result<usize>
+/// The plan-versus-ring error of [`ckks_dft_matrix_new_reference`] for a plan with more slots than the ring
+/// supports.
+pub fn ckks_dft_matrix_new_tmp_bytes_reference<Dir, Fmt, BE, F>(module: &Module<BE>, literal: &DFTPlan) -> Result<usize>
 where
     Dir: DftDirection,
     Fmt: DftFormat,
@@ -230,7 +238,7 @@ where
     let (_, factors) = dft_plan_diagonals::<F>(&literal, module.log_n())?;
     Ok(factors
         .iter()
-        .map(|factor| crate::encoding::ckks_encode_linear_transformation_tmp_bytes::<BE, _, F>(module, factor.period()))
+        .map(|factor| crate::encoding::ckks_linear_transformation_encode_tmp_bytes::<BE, _, F>(module, factor.period()))
         .max()
         .unwrap_or(0))
 }
@@ -261,7 +269,7 @@ impl<BE: Backend, Dir, Fmt: DftFormat, P> DFTMatrix<BE, Dir, Fmt, LinearTransfor
 /// Chains one linear transformation per factor — generic over the diagonal
 /// representation `P` (resident `PreparedDiagonal` or streamed plaintext),
 /// dispatched by the single unified
-/// [`ckks_eval_linear_transformation_assign`](CKKSLinearTransformationOps::ckks_eval_linear_transformation_assign)
+/// [`ckks_linear_transformation_eval_assign`](CKKSLinearTransformationOps::ckks_linear_transformation_eval_assign)
 /// — preparing the baby rotations of the running ciphertext each time. No
 /// explicit rescale is needed (the plaintext-multiply realigns to the input
 /// `log_delta`, see the module docs). The input `ct.log_budget()` must be at
@@ -274,7 +282,7 @@ impl<BE: Backend, Dir, Fmt: DftFormat, P> DFTMatrix<BE, Dir, Fmt, LinearTransfor
 /// factor's baby-step keyswitches, which scale with the operand limb count) is
 /// smaller than its storage. After every factor `ct` is therefore compacted in
 /// place.
-pub fn ckks_dft_evaluate_assign<BE, Dir, Fmt, P, Dst, H>(
+pub fn ckks_dft_matrix_eval_assign_reference<BE, Dir, Fmt, P, Dst, H>(
     module: &Module<BE>,
     ct: &mut Dst,
     dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
@@ -318,38 +326,38 @@ where
     let plan = factor.index();
     ckks_ensure!(
         scratch.available() >= module.glwe_linear_transformation_baby_steps_bytes_of(&plan, &*running),
-        "ckks_dft_evaluate_assign: scratch below its baby-step cache"
+        "ckks_dft_matrix_eval_assign: scratch below its baby-step cache"
     );
     let (mut babies, mut scratch) = scratch
         .borrow()
         .take_glwe_linear_transformation_baby_steps_scratch(module, &plan, &*running);
-    module.ckks_prepare_linear_transformation_baby_steps(&mut babies, running, keys, &mut scratch)?;
-    module.ckks_eval_linear_transformation_assign(running, &babies, factor, keys, &mut scratch)?;
+    module.ckks_linear_transformation_baby_steps_prepare(&mut babies, running, keys, &mut scratch)?;
+    module.ckks_linear_transformation_eval_assign(running, &babies, factor, keys, &mut scratch)?;
     Ok(())
 }
 
 /// Workspace for preparing the largest factor through the selected Core operation.
-pub fn ckks_prepare_dft_matrix_tmp_bytes<BE, Dir, Fmt, P>(
+pub fn ckks_dft_matrix_prepare_tmp_bytes_reference<BE, Dir, Fmt, P>(
     module: &Module<BE>,
     dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
 ) -> usize
 where
     BE: Backend,
-    P: poulpy_core::layouts::GLWEInfos,
+    P: GLWEInfos,
     Module<BE>: CKKSLinearTransformationOps<BE>,
 {
     dft.factor_operands()
         .iter()
         .flat_map(|factor| &factor.giant_steps)
         .flat_map(|giant| &giant.diagonals)
-        .map(|diagonal| module.ckks_prepare_linear_transformation_rhs_tmp_bytes(&diagonal.plaintext))
+        .map(|diagonal| module.ckks_linear_transformation_rhs_prepare_tmp_bytes(&diagonal.plaintext))
         .max()
         .unwrap_or(0)
 }
 
 /// Workspace for the reference DFT chain and all format compositions.
 /// Covers both the prepared and the streamed evaluation of every factor.
-pub fn ckks_dft_tmp_bytes<BE, Dir, Fmt, P, Dst, Src, K>(
+pub fn ckks_dft_tmp_bytes_reference<BE, Dir, Fmt, P, Dst, Src, K>(
     module: &Module<BE>,
     dst: &Dst,
     src: &Src,
@@ -358,25 +366,20 @@ pub fn ckks_dft_tmp_bytes<BE, Dir, Fmt, P, Dst, Src, K>(
 ) -> usize
 where
     BE: Backend,
-    P: poulpy_core::layouts::GLWEInfos,
+    P: GLWEInfos,
     Dst: CKKSCtBounds,
     Src: CKKSCtBounds,
-    K: poulpy_core::layouts::GGLWEInfos,
-    Module<BE>: poulpy_core::GLWELinearTransformationOps<BE>
-        + poulpy_core::GLWEBytesOf<BE>
+    K: GGLWEInfos,
+    Module<BE>: GLWELinearTransformationOps<BE>
+        + GLWEBytesOf<BE>
         + GLWELinearTransformationBabyStepsBytesOf<BE>
-        + crate::api::CKKSCopyOps<BE>
-        + crate::api::CKKSConjugateOps<BE>
-        + crate::api::CKKSRotateOps<BE>
-        + crate::api::CKKSAddOps<BE>
-        + crate::api::CKKSSubOps<BE>
-        + crate::api::CKKSImagOps<BE>,
+        + CKKSCopyOps<BE>
+        + CKKSConjugateOps<BE>
+        + CKKSRotateOps<BE>
+        + CKKSAddOps<BE>
+        + CKKSSubOps<BE>
+        + CKKSImagOps<BE>,
 {
-    use crate::api::{CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSImagOps, CKKSRotateOps, CKKSSubOps};
-    use poulpy_core::{
-        GLWEBytesOf, GLWELinearTransformationBabyStepsBytesOf, GLWELinearTransformationOps,
-        layouts::{GLWELayout, LWEInfos},
-    };
     let envelope = |ct: &dyn CKKSCtBounds| crate::CKKSLayout {
         glwe_layout: GLWELayout {
             n: ct.n(),
@@ -431,6 +434,178 @@ where
         }
     }
     bytes
+}
+
+/// Reference bodies of the required [`CKKSDFTImpl`](crate::oep::CKKSDFTImpl) methods, which
+/// [`impl_ckks_dft_reference_full!`](crate::impl_ckks_dft_reference_full) forwards to.
+pub trait CKKSDFTReference<BE: Backend> {
+    fn ckks_dft_matrix_prepare_tmp_bytes_reference<Dir, Fmt, P>(
+        &self,
+        dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
+    ) -> usize
+    where
+        P: GLWEInfos,
+        Module<BE>: CKKSLinearTransformationOps<BE>;
+
+    fn ckks_dft_tmp_bytes_reference<Dir, Fmt, P, Dst, Src, K>(
+        &self,
+        dst: &Dst,
+        src: &Src,
+        dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
+        key: &K,
+    ) -> usize
+    where
+        P: GLWEInfos,
+        Dst: CKKSCtBounds,
+        Src: CKKSCtBounds,
+        K: GGLWEInfos,
+        Module<BE>: GLWELinearTransformationOps<BE>
+            + GLWEBytesOf<BE>
+            + GLWELinearTransformationBabyStepsBytesOf<BE>
+            + CKKSCopyOps<BE>
+            + CKKSConjugateOps<BE>
+            + CKKSRotateOps<BE>
+            + CKKSAddOps<BE>
+            + CKKSSubOps<BE>
+            + CKKSImagOps<BE>;
+
+    fn ckks_dft_matrix_prepare_reference<Dir, Fmt, P>(
+        &self,
+        res: &mut DFTMatrixPrepared<BE, Dir, Fmt>,
+        dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Module<BE>: CKKSLinearTransformationOps<BE>,
+        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + GLWEDiagonalProd<BE>;
+
+    fn ckks_dft_matrix_eval_assign_reference<Dir, Fmt, P, Dst, H>(
+        &self,
+        ct: &mut Dst,
+        dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
+        keys: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
+        Module<BE>: CKKSLinearTransformationOps<BE>,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
+}
+
+impl<BE: Backend> CKKSDFTReference<BE> for Module<BE> {
+    fn ckks_dft_matrix_prepare_tmp_bytes_reference<Dir, Fmt, P>(
+        &self,
+        dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
+    ) -> usize
+    where
+        P: GLWEInfos,
+        Module<BE>: CKKSLinearTransformationOps<BE>,
+    {
+        ckks_dft_matrix_prepare_tmp_bytes_reference(self, dft)
+    }
+
+    fn ckks_dft_tmp_bytes_reference<Dir, Fmt, P, Dst, Src, K>(
+        &self,
+        dst: &Dst,
+        src: &Src,
+        dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
+        key: &K,
+    ) -> usize
+    where
+        P: GLWEInfos,
+        Dst: CKKSCtBounds,
+        Src: CKKSCtBounds,
+        K: GGLWEInfos,
+        Module<BE>: GLWELinearTransformationOps<BE>
+            + GLWEBytesOf<BE>
+            + GLWELinearTransformationBabyStepsBytesOf<BE>
+            + CKKSCopyOps<BE>
+            + CKKSConjugateOps<BE>
+            + CKKSRotateOps<BE>
+            + CKKSAddOps<BE>
+            + CKKSSubOps<BE>
+            + CKKSImagOps<BE>,
+    {
+        ckks_dft_tmp_bytes_reference(self, dst, src, dft, key)
+    }
+
+    fn ckks_dft_matrix_prepare_reference<Dir, Fmt, P>(
+        &self,
+        res: &mut DFTMatrixPrepared<BE, Dir, Fmt>,
+        dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Module<BE>: CKKSLinearTransformationOps<BE>,
+        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + GLWEDiagonalProd<BE>,
+    {
+        ckks_dft_matrix_prepare_reference(self, res, dft, scratch)
+    }
+
+    fn ckks_dft_matrix_eval_assign_reference<Dir, Fmt, P, Dst, H>(
+        &self,
+        ct: &mut Dst,
+        dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
+        keys: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
+        Module<BE>: CKKSLinearTransformationOps<BE>,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
+    {
+        ckks_dft_matrix_eval_assign_reference(self, ct, dft, keys, scratch)
+    }
+}
+
+/// Reference bodies of the required [`CKKSDFTMatrixImpl<F>`](crate::oep::CKKSDFTMatrixImpl) methods, which
+/// [`impl_ckks_dft_matrix_reference_full!`](crate::impl_ckks_dft_matrix_reference_full) forwards to.
+pub trait CKKSDFTMatrixReference<BE: Backend, F: DftScalar + CKKSEncodingScalar> {
+    fn ckks_dft_matrix_new_tmp_bytes_reference<Dir, Fmt>(&self, literal: &DFTPlan) -> Result<usize>
+    where
+        Dir: DftDirection,
+        Fmt: DftFormat,
+        Module<BE>: CKKSEncodingHostOps<BE, F>;
+
+    fn ckks_dft_matrix_new_reference<Dir, Fmt>(
+        &self,
+        base2k: Base2K,
+        literal: &DFTPlan,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<DFTMatrix<BE, Dir, Fmt>>
+    where
+        Dir: DftDirection,
+        Fmt: DftFormat,
+        BE: CKKSEncodingImpl<F>,
+        Module<BE>: CnvPVecAlloc<BE> + CKKSLinearTransformationOps<BE> + CKKSEncodingOps<BE, F>;
+}
+
+impl<BE: Backend, F: DftScalar + CKKSEncodingScalar> CKKSDFTMatrixReference<BE, F> for Module<BE> {
+    fn ckks_dft_matrix_new_tmp_bytes_reference<Dir, Fmt>(&self, literal: &DFTPlan) -> Result<usize>
+    where
+        Dir: DftDirection,
+        Fmt: DftFormat,
+        Module<BE>: CKKSEncodingHostOps<BE, F>,
+    {
+        ckks_dft_matrix_new_tmp_bytes_reference::<Dir, Fmt, BE, F>(self, literal)
+    }
+
+    fn ckks_dft_matrix_new_reference<Dir, Fmt>(
+        &self,
+        base2k: Base2K,
+        literal: &DFTPlan,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<DFTMatrix<BE, Dir, Fmt>>
+    where
+        Dir: DftDirection,
+        Fmt: DftFormat,
+        BE: CKKSEncodingImpl<F>,
+        Module<BE>: CnvPVecAlloc<BE> + CKKSLinearTransformationOps<BE> + CKKSEncodingOps<BE, F>,
+    {
+        ckks_dft_matrix_new_reference::<Dir, Fmt, BE, F>(self, base2k, literal, scratch)
+    }
 }
 
 #[cfg(test)]

@@ -38,9 +38,12 @@ pub mod ship;
 pub mod sub;
 
 pub use add::CKKSAddReference;
-pub use dft::gen_dft_matrices;
+pub use bootstrapping::{CKKSBootstrappingCIReference, CKKSEncapsulatedModUpReference};
+pub use dft::{CKKSDFTMatrixReference, CKKSDFTReference, ckks_dft_matrices_gen};
 pub use dot_product::CKKSDotProductReference;
+pub use encoding::CKKSEncodingReference;
 pub use eval_mod::CKKSEvalModReference;
+pub use first_factor::CKKSModUpFirstFactorReference;
 pub use linear_transformation::CKKSLinearTransformationReference;
 pub use plaintext::CKKSPlaintextVecReference;
 pub use polynomial_evaluation::CKKSPolynomialEvaluationReference;

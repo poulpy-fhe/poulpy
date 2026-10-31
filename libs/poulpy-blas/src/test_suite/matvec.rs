@@ -3,8 +3,8 @@
 use poulpy_ckks::{
     CKKSInfos, CKKSLayout, CKKSModuleInfos, CKKSResult, CoeffsMeta, GLWEPlaintextInfos, GLWEPlaintextMeta, Scale, SetCKKSInfos,
     SetGLWEPlaintextInfos, SlotsKind,
-    api::{CKKSEncodingOps, CKKSLinearTransformationOps, CKKSMulOps, LinearTransformationLayout},
-    layouts::{CKKSModuleAlloc, CKKSPreparedRight},
+    api::{CKKSEncodingOps, CKKSLinearTransformationOps, CKKSRightOperandPreparedFactory, LinearTransformationLayout},
+    layouts::CKKSRightOperandPrepared,
     test_suite::{
         CKKSTestParams,
         helpers::{
@@ -130,10 +130,7 @@ pub fn alloc_vector<BE: Backend>(
     module: &Module<BE>,
     shape: BlasVectorShape,
     k: usize,
-) -> BlasVectorOwned<BE>
-where
-    Module<BE>: CKKSModuleAlloc<BE>,
-{
+) -> BlasVectorOwned<BE> {
     let ct = CKKSLayout {
         glwe_layout: GLWELayout {
             k: k.into(),
@@ -204,7 +201,7 @@ pub fn matvec_operands<BE, F>(
 ) -> (BlasMatVecOperand<BE>, BlasMatVecOperandPrepared<BE>)
 where
     BE: Backend + BlasEncodingImpl,
-    Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F> + BlasEncodingOps<BE, F> + CnvPVecAlloc<BE>,
+    Module<BE>: CKKSEncodingOps<BE, F> + BlasEncodingOps<BE, F> + CnvPVecAlloc<BE>,
     F: DiagonalArithmetic + TestScalar,
 {
     matvec_operands_of::<BE, F>(module, layout, matvec_entry)
@@ -218,7 +215,7 @@ pub(crate) fn matvec_operands_of<BE, F>(
 ) -> (BlasMatVecOperand<BE>, BlasMatVecOperandPrepared<BE>)
 where
     BE: Backend + BlasEncodingImpl,
-    Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F> + BlasEncodingOps<BE, F> + CnvPVecAlloc<BE>,
+    Module<BE>: CKKSEncodingOps<BE, F> + BlasEncodingOps<BE, F> + CnvPVecAlloc<BE>,
     F: DiagonalArithmetic + TestScalar,
 {
     let mut streamed = module.blas_matvec_operand_alloc_from_infos(layout);
@@ -679,7 +676,7 @@ where
     );
     assert_vector_guard::<BE>(
         "an input budget below the operand's scale",
-        "ckks_eval_linear_transformation_sum_into",
+        "ckks_linear_transformation_eval_sum_into",
         Budget,
         &mut res,
         |res| with_scratch::<BE, _>(bytes, |s| module.blas_matvec_pt(res, &w, &low, &keys, s)),
@@ -733,7 +730,7 @@ pub(crate) fn append<BE, V, K>(
     m: &mut BlasDiagonalCiphertext<BE>,
     at: i64,
     v: &V,
-    mask: &CKKSPreparedRight<BE>,
+    mask: &CKKSRightOperandPrepared<BE>,
     keys: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> CKKSResult<()>
@@ -943,8 +940,8 @@ where
             &to_f::<F>(&re),
             &to_f::<F>(&vec![0.0; slots]),
         );
-        let prepared = with_scratch::<BE, _>(module.ckks_prepare_tmp_bytes(&pt), |s| {
-            module.ckks_prepare_right(&pt, hint, s)
+        let prepared = with_scratch::<BE, _>(module.ckks_right_operand_prepare_tmp_bytes(&pt), |s| {
+            module.ckks_right_operand_prepare_alloc(&pt, hint, s)
         })
         .unwrap();
         (re, prepared)
@@ -1250,14 +1247,14 @@ pub fn test_blas_matvec_diagonal_guards<BE, F, E>(
             &to_f::<F>(&re),
             &to_f::<F>(&vec![0.0; slots]),
         );
-        with_scratch::<BE, _>(module.ckks_prepare_tmp_bytes(&pt), |s| {
-            module.ckks_prepare_right(&pt, PrepareHint::Reuse, s)
+        with_scratch::<BE, _>(module.ckks_right_operand_prepare_tmp_bytes(&pt), |s| {
+            module.ckks_right_operand_prepare_alloc(&pt, PrepareHint::Reuse, s)
         })
         .unwrap()
     };
     let mask = mask_at(params.base2k);
-    let ct_mask = with_scratch::<BE, _>(module.ckks_prepare_tmp_bytes(&a.cts()[0]), |s| {
-        module.ckks_prepare_right(&a.cts()[0], PrepareHint::Reuse, s)
+    let ct_mask = with_scratch::<BE, _>(module.ckks_right_operand_prepare_tmp_bytes(&a.cts()[0]), |s| {
+        module.ckks_right_operand_prepare_alloc(&a.cts()[0], PrepareHint::Reuse, s)
     })
     .unwrap();
     // Zero operands of another radix, then of another rank, than `params`'.
@@ -1333,7 +1330,7 @@ pub fn test_blas_matvec_diagonal_guards<BE, F, E>(
     let empty_bytes = module.blas_matvec_diagonal_tmp_bytes(&empty_res, &m, &a, &params.tsk_layout(), &params.atk_layout());
     assert_vector_guard::<BE>(
         "a res of no width",
-        "ckks_eval_linear_transformation_into",
+        "ckks_linear_transformation_eval_into",
         Budget,
         &mut empty_res,
         |res| with_scratch::<BE, _>(empty_bytes, |s| module.blas_matvec_diagonal(res, &m, &a, &keys, s)),
@@ -1356,7 +1353,7 @@ pub fn test_blas_matvec_diagonal_guards<BE, F, E>(
         module.blas_matvec_diagonal_tmp_bytes(&empty_res, &prepared, &a, &params.tsk_layout(), &params.atk_layout());
     assert_vector_guard::<BE>(
         "resident, a res of no width",
-        "ckks_eval_linear_transformation_into",
+        "ckks_linear_transformation_eval_into",
         Budget,
         &mut empty_res,
         |res| with_scratch::<BE, _>(empty_bytes, |s| module.blas_matvec_diagonal(res, &prepared, &a, &keys, s)),
@@ -1407,7 +1404,7 @@ pub fn test_blas_matvec_diagonal_guards<BE, F, E>(
                      raised: &str,
                      layout: &BlasDiagonalCiphertextLayout,
                      v: &BlasVectorOwned<BE>,
-                     mask: &CKKSPreparedRight<BE>,
+                     mask: &CKKSRightOperandPrepared<BE>,
                      keys: &TestKeys<BE>| {
             let mut m = module.blas_diagonal_ciphertext_alloc_from_infos(layout);
             let before = diagonal_ciphertext_snapshot::<BE>(&m);
@@ -1492,7 +1489,7 @@ pub fn test_blas_matvec_diagonal_guards<BE, F, E>(
         check(
             "a vector off the diagonals' frame",
             InvalidOperand,
-            "ckks_dot_product_prepared_pt_add",
+            "ckks_dot_product_prepared_pt_vec_add",
             &layout,
             &narrower,
             &mask,

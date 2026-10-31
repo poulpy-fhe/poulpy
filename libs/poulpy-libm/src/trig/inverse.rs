@@ -19,7 +19,7 @@ use poulpy_ckks::{
         CKKSAddOps, CKKSAllOpsTmpBytes, CKKSConjugateOps, CKKSCopyOps, CKKSMulOps, CKKSNegOps, CKKSPolynomialEvaluationOps,
         CKKSPow2Ops,
     },
-    layouts::{CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar, ScratchArenaTakeCKKS},
+    layouts::{CKKSPlaintext, CKKSPlaintextAlloc, CKKSPlaintextVecHostCodec, CKKSScalar, ScratchArenaTakeCKKSCiphertext},
     polynomial::SplitStrategy,
 };
 
@@ -248,7 +248,7 @@ where
             "atan2: normalized sign gap exceeds input_bound"
         );
         let normalizer = F::from_f64(2.0f64.powi(-(normalization_steps as i32))).unwrap();
-        let mut constants = module.ckks_pt_coeffs_alloc(2, base2k, coeff_meta.k());
+        let mut constants = module.ckks_plaintext_alloc(2usize.into(), base2k, coeff_meta.k());
         constants.set_meta(coeff_meta.meta());
         constants
             .encode_host_floats(&[F::PI() / (F::one() + F::one()), normalizer])
@@ -460,7 +460,7 @@ where
                 .max(self.ckks_goldschmidt_division_tmp_bytes(x, tsk))
                 .max(self.ckks_mul_tmp_bytes(x, x, x, tsk))
                 .max(self.ckks_mul_tmp_bytes(x, y, x, tsk))
-                .max(self.ckks_approximation_tmp_bytes(x, x, &plan.atan.approximation, tsk))
+                .max(self.ckks_polynomial_approximation_eval_tmp_bytes(x, x, &plan.atan.approximation, tsk))
                 .max(self.ckks_add_tmp_bytes(x.size()))
                 .max(self.ckks_add_tmp_bytes(res.size()))
     }
@@ -519,7 +519,7 @@ where
             self.ckks_goldschmidt_division(&mut ratio, plan.reciprocal_iters, tsk, &mut scratch_local)?;
             self.ckks_mul_assign(&mut ratio, &sign_x, tsk, &mut scratch_local)?;
             self.ckks_mul_assign(&mut ratio, &correction, tsk, &mut scratch_local)?;
-            self.ckks_eval_approximation(&mut angle, &ratio, &plan.atan.approximation, tsk, &mut scratch_local)?;
+            self.ckks_polynomial_approximation_eval(&mut angle, &ratio, &plan.atan.approximation, tsk, &mut scratch_local)?;
 
             // pi/2 * sign(y) * (1 - sign(x)).
             self.ckks_mul_into(&mut correction, &sign_y, &sign_x, tsk, &mut scratch_local)?;

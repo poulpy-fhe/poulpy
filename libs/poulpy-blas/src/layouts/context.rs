@@ -7,12 +7,15 @@ use num_traits::One;
 use poulpy_ckks::{
     CoeffsMeta, GLWEPlaintextMeta, Scale,
     api::{CKKSModuleInfos, LinearTransformation, LinearTransformationPrepared, optimal_bsgs_giant_step},
-    layouts::{CKKSModuleAlloc, CKKSPlaintextOwned},
+    layouts::{CKKSLinearTransformationAlloc, CKKSPlaintextOwned},
 };
 use poulpy_core::layouts::{
     Base2K, Degree, DiagonalArithmetic, Diagonals, GetDegree, LinearTransformationLayout, LinearTransformationStrategy,
 };
-use poulpy_hal::layouts::{Backend, galois_elements_from_rotations};
+use poulpy_hal::{
+    api::CnvPVecAlloc,
+    layouts::{Backend, galois_elements_from_rotations},
+};
 
 use super::{
     BlasGridInfos,
@@ -733,7 +736,7 @@ pub(crate) fn module_layout(
 pub(crate) fn alloc<BE, M>(module: &M, layout: &BlasContextLayout) -> BlasContext<BE>
 where
     BE: Backend,
-    M: CKKSModuleAlloc<BE> + GetDegree,
+    M: CKKSLinearTransformationAlloc<BE> + GetDegree,
 {
     assert_fits_module(module, layout);
     let maps = ContextMaps::build(layout.plan, layout.slots, |id| {
@@ -746,7 +749,7 @@ where
 pub(crate) fn alloc_prepared<BE, M>(module: &M, layout: &BlasContextLayout) -> BlasContextPrepared<BE>
 where
     BE: Backend,
-    M: CKKSModuleAlloc<BE> + GetDegree,
+    M: CnvPVecAlloc<BE> + CKKSModuleInfos + GetDegree,
 {
     assert_fits_module(module, layout);
     let maps = ContextMaps::build(layout.plan, layout.slots, |id| {

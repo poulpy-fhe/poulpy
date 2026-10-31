@@ -37,9 +37,9 @@ use poulpy_hal::{
 
 use crate::{
     CKKSInfos, GLWEPlaintextMeta, Scale,
-    api::{CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncryptOps, ShipScalar},
+    api::{CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncryptOps, CKKSShipScalar},
     encoding::ship::masks::ship_mask_slot_vectors,
-    layouts::{CKKSCiphertext, CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned},
+    layouts::{CKKSCiphertext, CKKSCiphertextAlloc, CKKSCiphertextOwned, CKKSPlaintextAlloc, CKKSPlaintextOwned},
 };
 
 use super::{plan::ShipPlan, secret::ShipSecretSpec};
@@ -464,13 +464,14 @@ impl<D: Data> ShipKeySet<D, i64> {
     where
         BE: HostStaged + Backend<OwnedBuf = D, Ring = Standard>,
         D: HostDataRef + HostDataMut,
-        F: ShipScalar,
+        F: CKKSShipScalar,
         Module<BE>: GLWESwitchingKeyEncryptSk<BE>
             + GLWEAutomorphismKeyEncryptSk<BE>
             + GLWETensorKeyEncryptSk<BE>
             + GLWESecretPreparedFactory<BE>
             + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
-            + CKKSModuleAlloc<BE>
+            + CKKSCiphertextAlloc<BE>
+            + CKKSPlaintextAlloc<BE>
             + CKKSEncryptOps<BE>
             + CKKSEncodingOps<BE, F>
             + GaloisElement,
@@ -522,9 +523,9 @@ impl<D: Data> ShipKeySet<D, i64> {
                         .into_iter()
                         .map(|re| {
                             let im = vec![F::zero(); m];
-                            let mut pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), base2k, kk.into());
+                            let mut pt = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), base2k, kk.into());
                             pt.set_meta_checked(mask_meta)?;
-                            module.ckks_encode_reim_into(&mut pt, &re, &im, scratch)?;
+                            module.ckks_encode_slots_host_into(&mut pt, &re, &im, scratch)?;
                             let mut ct = module.ckks_ciphertext_alloc(base2k, kk.into());
                             module.ckks_encrypt_sk(&mut ct, &pt, &sk_dense_prepared, source_xe, source_xa, scratch)?;
                             Ok(ct)

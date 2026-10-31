@@ -1,5 +1,5 @@
 use poulpy_ckks::CKKSResult as Result;
-use poulpy_ckks::layouts::CKKSPreparedRight;
+use poulpy_ckks::layouts::CKKSRightOperandPrepared;
 use poulpy_core::layouts::{GGLWEInfos, GLWEInfos, GetAutomorphismKey, GetTensorKey};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
@@ -132,7 +132,7 @@ impl<BE: Backend + BlasMatVecImpl> BlasMatVecOps<BE> for Module<BE> {
         m: &mut BlasDiagonalCiphertext<BE>,
         row: i64,
         v: &V,
-        mask: &CKKSPreparedRight<BE>,
+        mask: &CKKSRightOperandPrepared<BE>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -158,7 +158,7 @@ impl<BE: Backend + BlasMatVecImpl> BlasMatVecOps<BE> for Module<BE> {
         m: &mut BlasDiagonalCiphertext<BE>,
         col: i64,
         v: &V,
-        mask: &CKKSPreparedRight<BE>,
+        mask: &CKKSRightOperandPrepared<BE>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>

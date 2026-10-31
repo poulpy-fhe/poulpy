@@ -255,9 +255,9 @@ fn main() -> Result<()> {
             let blocks = split_into_blocks(rows, cols, LOG_D, SLOTS, BATCH, entry)
                 .iter()
                 .map(|re| {
-                    let mut pt = module.ckks_pt_vec_alloc(SLOTS, CT.base2k(), CT.k());
+                    let mut pt = module.ckks_plaintext_alloc_from_slots(SLOTS, CT.base2k(), CT.k());
                     pt.set_meta(CT.meta);
-                    module.ckks_encode_reim_into(&mut pt, re, &zeros, &mut scratch.borrow())?;
+                    module.ckks_encode_slots_host_into(&mut pt, re, &zeros, &mut scratch.borrow())?;
                     let mut ct = module.ckks_ciphertext_alloc_from_infos(&CT);
                     module.ckks_encrypt_sk(&mut ct, &pt, &sk, &mut source_xe, &mut source_xa, &mut scratch.borrow())?;
                     Ok(ct)
@@ -332,7 +332,7 @@ fn main() -> Result<()> {
             let mut pt = module.ckks_plaintext_alloc_from_infos(block);
             module.ckks_decrypt(&mut pt, block, &sk, &mut scratch.borrow())?;
             let (mut re, mut im) = (vec![0.0f64; SLOTS], vec![0.0f64; SLOTS]);
-            module.ckks_decode_reim_into(&pt, &mut re, &mut im, &mut scratch.borrow())?;
+            module.ckks_decode_slots_host_into(&pt, &mut re, &mut im, &mut scratch.borrow())?;
             Ok(re)
         })
         .collect::<Result<Vec<_>>>()?;

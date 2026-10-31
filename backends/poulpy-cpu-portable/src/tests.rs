@@ -1751,7 +1751,7 @@ mod bin_fhe_overrides;
 mod ckks_noncanonical_compact_dst {
     use crate::FFT64Portable;
     use poulpy_ckks::api::{CKKSAddOps, CKKSCopyOps, CKKSImagOps, CKKSNegOps, CKKSPow2Ops, CKKSSubOps};
-    use poulpy_ckks::layouts::{CKKSCiphertextOwned, CKKSModuleAlloc};
+    use poulpy_ckks::layouts::{CKKSCiphertextAlloc, CKKSCiphertextOwned};
     use poulpy_ckks::{GLWEPlaintextMeta, Scale, SetCKKSInfos};
     use poulpy_core::layouts::{GLWELayout, GLWEToBackendMut};
     use poulpy_core::{GLWECopy, GLWENormalize};

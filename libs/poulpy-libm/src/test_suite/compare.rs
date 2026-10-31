@@ -12,7 +12,7 @@ use poulpy_hal::{
 
 use poulpy_ckks::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
-    layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec},
+    layouts::{CKKSCiphertext, CKKSCiphertextAlloc, CKKSPlaintext, CKKSPlaintextAlloc, CKKSPlaintextVecHostCodec},
     test_suite::{
         CKKSTestParams,
         helpers::{
@@ -73,7 +73,7 @@ where
     let want_min_const: Vec<F> = a.iter().copied().map(min_const).collect();
     let want_clamp: Vec<F> = a.iter().copied().map(|v| min_const(max_const(v))).collect();
 
-    let mut host_bounds = host_module.ckks_pt_coeffs_alloc(2, base.base2k.into(), coeff_meta.k());
+    let mut host_bounds = host_module.ckks_plaintext_alloc(2usize.into(), base.base2k.into(), coeff_meta.k());
     host_bounds.set_meta(coeff_meta.meta());
     host_bounds.encode_host_floats(&[lo, hi]).unwrap();
     let bounds = upload_pt(module, &host_bounds);

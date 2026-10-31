@@ -18,7 +18,7 @@ use poulpy_ckks::{
     CKKSLayout,
     api::{Basis, Parity},
     layouts::{CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar},
-    polynomial::{BSGSPolynomial, EncodeBSGS, Polynomial, SplitStrategy},
+    polynomial::{BSGSPolynomial, CKKSPolynomialEncode, Polynomial, SplitStrategy},
 };
 
 use poulpy_ckks::approximation::{RemezOptions, sign_composite_coeffs};

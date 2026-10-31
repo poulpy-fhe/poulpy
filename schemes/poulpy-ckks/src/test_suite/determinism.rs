@@ -30,12 +30,12 @@ use crate::{
     api::{CKKSEncodingHostOps, CKKSEncodingOps},
     approximation::{Parity, RemezOptions, minimax, sign_composite_coeffs},
     layouts::{
-        CKKSEncodingBuffer, CKKSModuleAlloc, CKKSPlaintextOwned, DFTOutputFormat, DFTPlan, DFTType,
-        eval_mod::{EvalModPlan, EvalModPoly, EvalModType, compile_eval_mod},
+        CKKSEncodingBuffer, CKKSPlaintextAlloc, CKKSPlaintextOwned, DFTOutputFormat, DFTPlan, DFTType,
+        eval_mod::{EvalModPlan, EvalModPoly, EvalModType, ckks_eval_mod_compile},
         slot_coeff_count,
     },
     polynomial::SplitStrategy,
-    reference::gen_dft_matrices,
+    reference::ckks_dft_matrices_gen,
     test_suite::{helpers::TestScalar, parity::helpers::with_scratch},
 };
 
@@ -144,7 +144,7 @@ pub fn encoding_fixtures<BE, F>(module: &Module<BE>)
 where
     BE: Backend<ZnxWord = i64>,
     F: TestScalar,
-    Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
+    Module<BE>: CKKSPlaintextAlloc<BE> + CKKSEncodingOps<BE, F>,
 {
     let ring = if BE::Ring::CYCLOTOMIC_ORDER_FACTOR == Standard::CYCLOTOMIC_ORDER_FACTOR {
         "standard"
@@ -164,28 +164,31 @@ where
         let coeffs = slot_coeff_count(module, 2 * slots);
 
         let mut values = CKKSEncodingBuffer::<BE::OwnedBuf, F>::from_host::<BE>(&[re.as_slice(), im.as_slice()].concat());
-        module.ckks_slots_to_coeffs_assign(&mut values).unwrap();
+        module.ckks_encoding_buffer_slots_to_coeffs_assign(&mut values).unwrap();
         check_scalars(&format!("{key}-coeffs"), &values.to_host::<BE>()[..coeffs]);
-        module.ckks_coeffs_to_slots_assign(&mut values).unwrap();
+        module.ckks_encoding_buffer_coeffs_to_slots_assign(&mut values).unwrap();
         check_scalars(&format!("{key}-slots"), &values.to_host::<BE>());
 
         if coeffs < BE::MIN_DEGREE {
             continue;
         }
         for log_delta in [20, 40, 100] {
-            let mut pt = module.ckks_pt_vec_alloc(slots, Base2K(19), TorusPrecision(log_delta as u32 + 20));
+            let mut pt = module.ckks_plaintext_alloc_from_slots(slots, Base2K(19), TorusPrecision(log_delta as u32 + 20));
             pt.set_meta(GLWEPlaintextMeta {
                 scale: Scale::Log(log_delta),
                 slots: SlotsKind::Complex,
                 log_sparsity: 0,
             });
-            let reim_bytes = module.ckks_reim_tmp_bytes(slots);
-            with_scratch::<BE, _>(reim_bytes, |s| module.ckks_encode_reim_into(&mut pt, &re, &im, s)).unwrap();
+            let reim_bytes = module.ckks_encoding_host_tmp_bytes(slots);
+            with_scratch::<BE, _>(reim_bytes, |s| module.ckks_encode_slots_host_into(&mut pt, &re, &im, s)).unwrap();
             check_plaintext::<BE>(&format!("{key}-delta{log_delta}-plaintext"), &pt);
 
             let mut got_re = vec![F::zero(); slots];
             let mut got_im = vec![F::zero(); slots];
-            with_scratch::<BE, _>(reim_bytes, |s| module.ckks_decode_reim_into(&pt, &mut got_re, &mut got_im, s)).unwrap();
+            with_scratch::<BE, _>(reim_bytes, |s| {
+                module.ckks_decode_slots_host_into(&pt, &mut got_re, &mut got_im, s)
+            })
+            .unwrap();
             check_scalars(&format!("{key}-delta{log_delta}-decoded"), &[got_re, got_im].concat());
 
             let mut coefficients = vec![F::zero(); coeffs];
@@ -202,7 +205,7 @@ pub fn setup_fixtures<BE, F>(module: &Module<BE>)
 where
     BE: Backend<ZnxWord = i64>,
     F: TestScalar,
-    Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
+    Module<BE>: CKKSEncodingOps<BE, F>,
 {
     let bits = precision::<F>();
 
@@ -235,7 +238,7 @@ where
         .with_scaling(0.37)
         .unwrap();
         let mut scalars = Vec::new();
-        for factor in gen_dft_matrices::<F>(&plan, 7) {
+        for factor in ckks_dft_matrices_gen::<F>(&plan, 7) {
             for index in factor.indexes() {
                 for part in [&factor.re, &factor.im] {
                     if let Some(values) = part.get(index) {
@@ -259,7 +262,7 @@ where
     .unwrap();
     check_scalars(&format!("setup-f{bits}-minimax"), &fit.poly.coeffs);
 
-    let compile_bytes = module.ckks_reim_tmp_bytes(module.ckks_max_slots());
+    let compile_bytes = module.ckks_encoding_host_tmp_bytes(module.ckks_max_slots());
     for kind in [
         EvalModType::SinCheby,
         EvalModType::CosCheby,
@@ -279,7 +282,8 @@ where
             coeffs_meta: CoeffsMeta::from_delta_budget(100, 10),
             f_mod_log_delta: 110,
         };
-        let compiled = with_scratch::<BE, _>(compile_bytes, |s| compile_eval_mod::<BE, F>(Base2K(20), plan, module, s)).unwrap();
+        let compiled =
+            with_scratch::<BE, _>(compile_bytes, |s| ckks_eval_mod_compile::<BE, F>(Base2K(20), plan, module, s)).unwrap();
         let scalars = match &compiled.f_mod_poly {
             EvalModPoly::Real(p) => p.coeffs.clone(),
             EvalModPoly::Complex(p) => p.re.iter().chain(&p.im).copied().collect(),
@@ -305,7 +309,7 @@ pub fn test_encoding_determinism<BE, F>()
 where
     BE: Backend<ZnxWord = i64, Ring = Standard>,
     F: TestScalar,
-    Module<BE>: ModuleNew<BE> + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
+    Module<BE>: ModuleNew<BE> + CKKSEncodingOps<BE, F>,
 {
     let module = Module::<BE>::new(4096);
     encoding_fixtures::<BE, F>(&module);

@@ -12,10 +12,13 @@ use super::{
 };
 use crate::{
     CKKSCtBounds, CKKSInfos, CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, SlotsKind,
-    api::{CKKSAllOpsTmpBytes, CKKSDFTMatrixOps, CKKSDFTOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar},
+    api::{
+        CKKSAllOpsTmpBytes, CKKSDFTMatrixOps, CKKSDFTMatrixPreparedFactory, CKKSDFTOps, CKKSEncodingHostOps, CKKSEncodingOps,
+        CKKSEncodingScalar,
+    },
     layouts::{
         BootstrappingContextPrepared, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys, BootstrappingPipeline,
-        BootstrappingPlan, BootstrappingTechniques, CKKSModuleAlloc, CKKSPlaintextOwned, DFTOutputFormat, DFTPlan, DFTType,
+        BootstrappingPlan, BootstrappingTechniques, CKKSPlaintextOwned, DFTOutputFormat, DFTPlan, DFTType,
         EncapsulationKeysLayout, EncodedLut, EvalModPlan, EvalModType, EvalRoundPlus, SparseSecretEncapsulation,
     },
     oep::{CKKSBootstrappingImpl, CKKSEncapsulatedModUpImpl},
@@ -394,11 +397,11 @@ fn run_bootstrap<BE, F>(params: CKKSTestParams, module: &Module<BE>) -> Vec<Outc
 where
     BE: Backend<ZnxWord = i64> + CKKSBootstrappingImpl + HostStaged,
     F: CKKSEncodingScalar,
-    Module<BE>: CKKSDFTOps<BE>
+    Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + CKKSDFTOps<BE>
         + CKKSDFTMatrixOps<BE, F>
         + CKKSEncodingOps<BE, F>
         + CKKSEncodingHostOps<BE, F>
-        + CKKSModuleAlloc<BE>
         + CKKSAllOpsTmpBytes<BE>
         + GLWEAutomorphismKeyPreparedFactory<BE>
         + GLWETensorKeyPreparedFactory<BE>
@@ -459,9 +462,13 @@ where
             .into_keys();
         let layout = keys_layout(elements, &atk, &d2s, &s2d, encapsulate);
         let pt = ct_layout(n, b, 16 + 2 * b, 16, SlotsKind::Complex);
-        let compile = module
-            .ckks_all_ops_with_atk_tmp_bytes(&out_layout, &pt, &atk, &atk)
-            .max(<Module<BE> as CKKSEncodingHostOps<BE, F>>::ckks_reim_tmp_bytes(module, n / 2));
+        let compile =
+            module
+                .ckks_all_ops_with_atk_tmp_bytes(&out_layout, &pt, &atk, &atk)
+                .max(<Module<BE> as CKKSEncodingHostOps<BE, F>>::ckks_encoding_host_tmp_bytes(
+                    module,
+                    n / 2,
+                ));
         // Staged compilation: preparation runs with exactly its advertised scratch.
         let unprepared = with_scratch::<BE, _>(compile, |scratch| {
             BootstrappingContextPrepared::<BE, F>::compile_unprepared(module, b.into(), &plan, scratch)
@@ -518,22 +525,22 @@ where
     BR: Backend<ZnxWord = i64> + CKKSBootstrappingImpl + HostStaged,
     BT: Backend<ZnxWord = i64> + CKKSBootstrappingImpl + HostStaged,
     F: CKKSEncodingScalar,
-    Module<BR>: CKKSDFTOps<BR>
+    Module<BR>: CKKSDFTMatrixPreparedFactory<BR>
+        + CKKSDFTOps<BR>
         + CKKSDFTMatrixOps<BR, F>
         + CKKSEncodingOps<BR, F>
         + CKKSEncodingHostOps<BR, F>
-        + CKKSModuleAlloc<BR>
         + CKKSAllOpsTmpBytes<BR>
         + GLWEAutomorphismKeyPreparedFactory<BR>
         + GLWETensorKeyPreparedFactory<BR>
         + GGLWEPreparedFactory<BR>
         + GLWEFill<BR>
         + CyclotomicOrder,
-    Module<BT>: CKKSDFTOps<BT>
+    Module<BT>: CKKSDFTMatrixPreparedFactory<BT>
+        + CKKSDFTOps<BT>
         + CKKSDFTMatrixOps<BT, F>
         + CKKSEncodingOps<BT, F>
         + CKKSEncodingHostOps<BT, F>
-        + CKKSModuleAlloc<BT>
         + CKKSAllOpsTmpBytes<BT>
         + GLWEAutomorphismKeyPreparedFactory<BT>
         + GLWETensorKeyPreparedFactory<BT>

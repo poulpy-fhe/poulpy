@@ -11,9 +11,9 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
     api::{BSGSPolynomialInfos, CKKSCopyOps, CKKSMulOps, CKKSPow2Ops, CKKSSubOps, PolynomialInputTransform},
-    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, ScratchArenaTakeCKKS},
+    layouts::{CKKSCiphertextAlloc, CKKSCiphertextOwned, ScratchArenaTakeCKKSCiphertext},
     polynomial::ComplexBSGSPolynomial,
-    power_basis::{PowerBasis, PowerBasisGen},
+    power_basis::{CKKSPowerBasisGen, PowerBasis},
 };
 
 /// Scratch upper bound for [`GLWEBSGSOps::eval_baby_linear_combination`]: the constant combination
@@ -36,7 +36,7 @@ pub(crate) fn polynomial_input<BE, S, H>(
 ) -> Result<CKKSCiphertextOwned<BE>>
 where
     BE: Backend,
-    Module<BE>: CKKSCopyOps<BE> + CKKSMulOps<BE> + CKKSPow2Ops<BE> + CKKSSubOps<BE> + CKKSModuleAlloc<BE>,
+    Module<BE>: CKKSCopyOps<BE> + CKKSMulOps<BE> + CKKSPow2Ops<BE> + CKKSSubOps<BE> + CKKSCiphertextAlloc<BE>,
     S: GLWEToBackendRef<BE> + CKKSCtBounds,
     H: GetTensorKey<BE>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
@@ -87,7 +87,6 @@ where
         + CKKSMulOps<BE>
         + CKKSPow2Ops<BE>
         + CKKSSubOps<BE>
-        + CKKSModuleAlloc<BE>
         + GLWENormalize<BE>,
     R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     S: GLWEToBackendRef<BE> + CKKSCtBounds,
@@ -125,7 +124,6 @@ where
         + CKKSMulOps<BE>
         + CKKSPow2Ops<BE>
         + CKKSSubOps<BE>
-        + CKKSModuleAlloc<BE>
         + GLWENormalize<BE>,
     R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     S: GLWEToBackendRef<BE> + CKKSCtBounds,

@@ -246,6 +246,6 @@ The three packed operations rotate by `1, 2, 4, ...` slots.
 
 `minimax`, `minimax_with`, `degree_for_precision`, and `precision_at_depth` build host polynomials.
 `PolynomialApproximation::from_polynomial` prepares a Poulpy BSGS polynomial and its interval map.
-`ckks_eval_approximation` evaluates that plan with cost `plan.consumed_bits(D)` and depth `plan.depth()`.
+`ckks_polynomial_approximation_eval` evaluates that plan with cost `plan.consumed_bits(D)` and depth `plan.depth()`.
 
 See the generated Rust documentation for complete generic bounds and argument types.

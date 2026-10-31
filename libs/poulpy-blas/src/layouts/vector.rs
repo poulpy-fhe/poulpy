@@ -5,7 +5,7 @@ use anyhow::{Result, ensure};
 use byteorder::{LittleEndian, WriteBytesExt};
 use poulpy_ckks::{
     CKKSCtBounds, CKKSLayout, GLWEPlaintextInfos, SetCKKSInfos,
-    layouts::{CKKSCiphertext, CKKSModuleAlloc},
+    layouts::{CKKSCiphertext, CKKSCiphertextAlloc},
 };
 use poulpy_core::layouts::{GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos};
 use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, Ring, WriterTo, ZnxWord};
@@ -314,7 +314,7 @@ where
 pub(crate) fn alloc<BE, M>(module: &M, ct: &CKKSLayout, shape: BlasVectorShape) -> BlasVectorOwned<BE>
 where
     BE: Backend,
-    M: CKKSModuleAlloc<BE>,
+    M: CKKSCiphertextAlloc<BE>,
 {
     let count = shape.count();
     assert!(count > 0, "a vector has at least one entry and one entry per ciphertext");

@@ -1,6 +1,6 @@
 use crate::FFT64Portable;
 use poulpy_ckks::CKKSModuleInfos;
-use poulpy_ckks::api::{CKKSDFTMatrixOps, CKKSDFTOps, CKKSLinearTransformationOps};
+use poulpy_ckks::api::{CKKSDFTMatrixOps, CKKSDFTMatrixPreparedFactory, CKKSDFTOps, CKKSLinearTransformationOps};
 use poulpy_ckks::layouts::{DFTMatrix, DFTOutputFormat, DFTPlan, Decode, Encode, Repack, Standard};
 use poulpy_ckks::test_suite::{
     helpers::{assert_ckks_error, assert_ckks_internal},
@@ -18,9 +18,9 @@ fn plan(kind: poulpy_ckks::layouts::DFTType, format: DFTOutputFormat) -> DFTPlan
 fn new_matrix(module: &Module<FFT64Portable>, plan: &DFTPlan) -> DFTMatrix<FFT64Portable, Encode, Standard> {
     type Ops = Module<FFT64Portable>;
     let bytes =
-        <Ops as CKKSDFTMatrixOps<FFT64Portable, f64>>::ckks_new_dft_matrix_tmp_bytes::<Encode, Standard>(module, plan).unwrap();
+        <Ops as CKKSDFTMatrixOps<FFT64Portable, f64>>::ckks_dft_matrix_new_tmp_bytes::<Encode, Standard>(module, plan).unwrap();
     with_scratch::<FFT64Portable, _>(bytes, |s| {
-        <Ops as CKKSDFTMatrixOps<FFT64Portable, f64>>::ckks_new_dft_matrix::<Encode, Standard>(module, 16usize.into(), plan, s)
+        <Ops as CKKSDFTMatrixOps<FFT64Portable, f64>>::ckks_dft_matrix_new::<Encode, Standard>(module, 16usize.into(), plan, s)
     })
     .unwrap()
 }
@@ -36,8 +36,8 @@ fn prepared_factors(
         .map(|factor| {
             let first = factor.first_diagonal_plaintext().unwrap();
             let mut prepared = LinearTransformationPrepared::alloc_prepared_from_index(module, &factor.index(), first);
-            with_scratch::<FFT64Portable, _>(module.ckks_prepare_linear_transformation_rhs_tmp_bytes(first), |s| {
-                module.ckks_prepare_linear_transformation_rhs(&mut prepared, factor, s)
+            with_scratch::<FFT64Portable, _>(module.ckks_linear_transformation_rhs_prepare_tmp_bytes(first), |s| {
+                module.ckks_linear_transformation_rhs_prepare(&mut prepared, factor, s)
             })
             .unwrap();
             prepared
@@ -53,8 +53,8 @@ fn downstream_dft_preparation_preserves_plan_and_factors() {
     let custom = matrix
         .try_with_factor_operands(&module, prepared_factors(&module, &matrix))
         .unwrap();
-    let reference = with_scratch::<FFT64Portable, _>(module.ckks_prepare_dft_matrix_tmp_bytes(&matrix), |s| {
-        module.ckks_prepare_dft_matrix_alloc(&matrix, s)
+    let reference = with_scratch::<FFT64Portable, _>(module.ckks_dft_matrix_prepare_tmp_bytes(&matrix), |s| {
+        module.ckks_dft_matrix_prepare_alloc(&matrix, s)
     })
     .unwrap();
     assert_eq!(custom.plan().schedule(), reference.plan().schedule());
@@ -165,14 +165,14 @@ fn checked_dft_construction_rejects_invalid_markers_and_layouts() {
 
 #[test]
 fn checked_dft_construction_rejects_repeated_and_inconsistent_diagonals() {
-    use poulpy_ckks::layouts::{CKKSModuleAlloc, DFTType};
+    use poulpy_ckks::layouts::{CKKSPlaintextAlloc, DFTType};
     use poulpy_core::layouts::{LinearTransformation, LinearTransformationDiagonal, LinearTransformationGiantStep};
     let module = Module::<FFT64Portable>::new(64);
     let meta = CoeffsMeta::from_delta_budget(12, 2);
     let dft_plan = || DFTPlan::new(DFTType::Encode, vec![(1, 1)], DFTOutputFormat::Standard, meta).unwrap();
     // A diagonal of the plan's precision, stored across `storage_k` bits.
     let diagonal = |baby: i64, storage_k: usize, real: bool| {
-        let mut pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), 16usize.into(), storage_k.into());
+        let mut pt = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), 16usize.into(), storage_k.into());
         pt.set_meta(meta.meta);
         poulpy_core::layouts::SetK::set_k(&mut pt, meta.k);
         if real {
@@ -321,7 +321,7 @@ fn checked_dft_construction_preserves_exact_encoded_width() {
 use super::OverrideBackend;
 use super::carry::assert_query_takes_extra;
 use poulpy_ckks::api::LtDiagonalMeta;
-use poulpy_ckks::layouts::{CKKSModuleAlloc, DFTMatrixPrepared};
+use poulpy_ckks::layouts::{CKKSCiphertextAlloc, CKKSPlaintextAlloc, DFTMatrixPrepared};
 use poulpy_ckks::{CKKSCtBounds, CKKSResult as Result, SetCKKSInfos};
 use poulpy_core::GLWEDiagonalProd;
 use poulpy_core::layouts::{
@@ -341,14 +341,14 @@ thread_local! {
     static DFT_CALLS: Cell<usize> = const { Cell::new(0) };
 }
 unsafe impl poulpy_ckks::oep::CKKSDFTImpl for OverrideBackend {
-    fn ckks_prepare_dft_matrix_tmp_bytes<Dir, Fmt, P>(
+    fn ckks_dft_matrix_prepare_tmp_bytes<Dir, Fmt, P>(
         module: &Module<Self>,
         dft: &DFTMatrix<Self, Dir, Fmt, LinearTransformation<P>>,
     ) -> usize
     where
         P: poulpy_core::layouts::GLWEInfos,
     {
-        DFT_PREPARE_EXTRA.get() + poulpy_ckks::reference::dft::ckks_prepare_dft_matrix_tmp_bytes(module, dft)
+        DFT_PREPARE_EXTRA.get() + poulpy_ckks::reference::dft::ckks_dft_matrix_prepare_tmp_bytes_reference(module, dft)
     }
 
     fn ckks_dft_tmp_bytes<Dir, Fmt, P, Dst, Src, K>(
@@ -367,10 +367,10 @@ unsafe impl poulpy_ckks::oep::CKKSDFTImpl for OverrideBackend {
         DFT_QUERIES.set(DFT_QUERIES.get() + 1);
         DFT_QUERY_LAYOUTS
             .with_borrow_mut(|layouts| layouts.push((dft.plan().kind(), dst.max_k().as_usize(), src.max_k().as_usize())));
-        poulpy_ckks::reference::dft::ckks_dft_tmp_bytes(module, dst, src, dft, key) + DFT_EXTRA.get()
+        poulpy_ckks::reference::dft::ckks_dft_tmp_bytes_reference(module, dst, src, dft, key) + DFT_EXTRA.get()
     }
 
-    fn ckks_prepare_dft_matrix<Dir, Fmt, P>(
+    fn ckks_dft_matrix_prepare<Dir, Fmt, P>(
         module: &Module<Self>,
         res: &mut DFTMatrixPrepared<Self, Dir, Fmt>,
         dft: &DFTMatrix<Self, Dir, Fmt, LinearTransformation<P>>,
@@ -380,11 +380,11 @@ unsafe impl poulpy_ckks::oep::CKKSDFTImpl for OverrideBackend {
         P: GLWEToBackendRef<Self> + IntPolyInfos + CKKSCtBounds + GLWEDiagonalProd<Self>,
     {
         super::carry::with_marked_bytes(DFT_PREPARE_EXTRA.get(), scratch, |rest| {
-            poulpy_ckks::reference::dft::ckks_prepare_dft_matrix(module, res, dft, rest)
+            poulpy_ckks::reference::dft::ckks_dft_matrix_prepare_reference(module, res, dft, rest)
         })
     }
 
-    fn ckks_dft_evaluate_assign<Dir, Fmt, P, Dst, H>(
+    fn ckks_dft_matrix_eval_assign<Dir, Fmt, P, Dst, H>(
         module: &Module<Self>,
         ct: &mut Dst,
         dft: &DFTMatrix<Self, Dir, Fmt, LinearTransformation<P>>,
@@ -429,7 +429,7 @@ fn dft_format_wrapper_reenters_selected_evaluation() {
     use poulpy_core::layouts::{LinearTransformationDiagonal, LinearTransformationGiantStep};
     let module = Module::<OverrideBackend>::new(64);
     let meta = CoeffsMeta::from_delta_budget(12, 2);
-    let mut pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), 16usize.into(), meta.k);
+    let mut pt = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), 16usize.into(), meta.k);
     pt.set_meta(meta.meta);
     let matrix = DFTMatrix::<OverrideBackend, Decode, Repack, _>::try_from_factor_operands(
         &module,
@@ -463,7 +463,7 @@ fn dft_format_wrapper_reenters_selected_evaluation() {
     let bytes = module.ckks_dft_tmp_bytes(&dst, &src, &matrix, &key);
     assert_eq!(
         bytes,
-        poulpy_ckks::reference::dft::ckks_dft_tmp_bytes(&module, &dst, &src, &matrix, &key) + DFT_EXTRA_DEFAULT
+        poulpy_ckks::reference::dft::ckks_dft_tmp_bytes_reference(&module, &dst, &src, &matrix, &key) + DFT_EXTRA_DEFAULT
     );
     DFT_CALLS.set(0);
     let error = with_scratch::<OverrideBackend, _>(bytes, |s| {
@@ -484,20 +484,20 @@ poulpy_ckks::impl_ckks_bootstrapping_reference_full!(OverrideBackend);
 unsafe impl<F: poulpy_ckks::api::CKKSEncodingScalar + poulpy_ckks::layouts::DftScalar> poulpy_ckks::oep::CKKSDFTMatrixImpl<F>
     for OverrideBackend
 {
-    fn ckks_new_dft_matrix_tmp_bytes<Dir: poulpy_ckks::layouts::DftDirection, Fmt: poulpy_ckks::layouts::DftFormat>(
+    fn ckks_dft_matrix_new_tmp_bytes<Dir: poulpy_ckks::layouts::DftDirection, Fmt: poulpy_ckks::layouts::DftFormat>(
         module: &Module<Self>,
         plan: &DFTPlan,
     ) -> Result<usize> {
-        poulpy_ckks::reference::dft::ckks_new_dft_matrix_tmp_bytes::<Dir, Fmt, Self, F>(module, plan)
+        poulpy_ckks::reference::dft::ckks_dft_matrix_new_tmp_bytes_reference::<Dir, Fmt, Self, F>(module, plan)
     }
 
-    fn ckks_new_dft_matrix<Dir: poulpy_ckks::layouts::DftDirection, Fmt: poulpy_ckks::layouts::DftFormat>(
+    fn ckks_dft_matrix_new<Dir: poulpy_ckks::layouts::DftDirection, Fmt: poulpy_ckks::layouts::DftFormat>(
         module: &Module<Self>,
         base2k: poulpy_core::layouts::Base2K,
         plan: &DFTPlan,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<DFTMatrix<Self, Dir, Fmt>> {
-        poulpy_ckks::reference::dft::ckks_new_dft_matrix::<Dir, Fmt, Self, F>(module, base2k, plan, scratch)
+        poulpy_ckks::reference::dft::ckks_dft_matrix_new_reference::<Dir, Fmt, Self, F>(module, base2k, plan, scratch)
     }
 }
 
@@ -602,7 +602,7 @@ fn dft_scratch_covers_factor_copy_with_working_buffer() {
     use poulpy_core::layouts::{LinearTransformationDiagonal, LinearTransformationGiantStep};
     let module = Module::<OverrideBackend>::new(64);
     let meta = CoeffsMeta::from_delta_budget(12, 2);
-    let mut pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), 16usize.into(), meta.k);
+    let mut pt = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), 16usize.into(), meta.k);
     pt.set_meta(meta.meta);
     let matrix = DFTMatrix::<OverrideBackend, Encode, Standard, _>::try_from_factor_operands(
         &module,
@@ -633,9 +633,9 @@ fn dft_scratch_covers_factor_copy_with_working_buffer() {
         dnum: 4usize.into(),
         k_digit: 16usize.into(),
     };
-    let bytes = poulpy_ckks::reference::dft::ckks_dft_tmp_bytes(&module, &ct, &ct, &matrix, &key);
+    let bytes = poulpy_ckks::reference::dft::ckks_dft_tmp_bytes_reference(&module, &ct, &ct, &matrix, &key);
     with_scratch::<OverrideBackend, _>(bytes, |s| {
-        poulpy_ckks::reference::dft::ckks_dft_evaluate_assign(&module, &mut ct, &matrix, &NoAutomorphismKey, s)
+        poulpy_ckks::reference::dft::ckks_dft_matrix_eval_assign_reference(&module, &mut ct, &matrix, &NoAutomorphismKey, s)
     })
     .unwrap();
     assert_eq!(ct.log_budget(), 20);
@@ -647,10 +647,10 @@ fn dft_preparation_uses_selected_scratch() {
     let plan = plan(poulpy_ckks::layouts::DFTType::Encode, DFTOutputFormat::Standard);
     type Ops = Module<OverrideBackend>;
     let matrix = with_scratch::<OverrideBackend, _>(
-        <Ops as CKKSDFTMatrixOps<OverrideBackend, f64>>::ckks_new_dft_matrix_tmp_bytes::<Encode, Standard>(&module, &plan)
+        <Ops as CKKSDFTMatrixOps<OverrideBackend, f64>>::ckks_dft_matrix_new_tmp_bytes::<Encode, Standard>(&module, &plan)
             .unwrap(),
         |s| {
-            <Ops as CKKSDFTMatrixOps<OverrideBackend, f64>>::ckks_new_dft_matrix::<Encode, Standard>(
+            <Ops as CKKSDFTMatrixOps<OverrideBackend, f64>>::ckks_dft_matrix_new::<Encode, Standard>(
                 &module,
                 16usize.into(),
                 &plan,
@@ -659,12 +659,12 @@ fn dft_preparation_uses_selected_scratch() {
         },
     )
     .unwrap();
-    let bytes = module.ckks_prepare_dft_matrix_tmp_bytes(&matrix);
+    let bytes = module.ckks_dft_matrix_prepare_tmp_bytes(&matrix);
     assert_eq!(
         bytes,
-        DFT_PREPARE_DEFAULT + poulpy_ckks::reference::dft::ckks_prepare_dft_matrix_tmp_bytes(&module, &matrix)
+        DFT_PREPARE_DEFAULT + poulpy_ckks::reference::dft::ckks_dft_matrix_prepare_tmp_bytes_reference(&module, &matrix)
     );
-    let prepared = with_scratch::<OverrideBackend, _>(bytes, |s| module.ckks_prepare_dft_matrix_alloc(&matrix, s)).unwrap();
+    let prepared = with_scratch::<OverrideBackend, _>(bytes, |s| module.ckks_dft_matrix_prepare_alloc(&matrix, s)).unwrap();
     for (factor, prepared) in matrix.factor_operands().iter().zip(prepared.factor_operands()) {
         assert_eq!(factor.index(), prepared.index());
     }

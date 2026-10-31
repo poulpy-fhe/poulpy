@@ -40,7 +40,7 @@ pub unsafe trait BlasMatIntraImpl: Backend {
     /// The map hook. Reproduces
     /// [`blas_map_blocks_reference`](crate::reference::BlasMatIntraReference::blas_map_blocks_reference) bit for bit,
     /// digits and CKKS metadata, within [`Self::blas_map_blocks_tmp_bytes`]: block `t * lts.len() + m` of `dst`
-    /// receives `lts[m]` evaluated from `src[t]` by poulpy-ckks's `ckks_eval_linear_transformation_into`, then the
+    /// receives `lts[m]` evaluated from `src[t]` by poulpy-ckks's `ckks_linear_transformation_eval_into`, then the
     /// label (`log_sparsity`) of `src[t]`, in any order. It looks up the keys of a map at the widths that evaluation
     /// does: the baby steps at the width of `src`, the giant steps at `src`'s width less the map's scale (`0` for
     /// [`BlasContextPrepared::rotate_rows_rep`]), capped at `dst`'s. Within that scratch it returns `Ok`, or poulpy-ckks's

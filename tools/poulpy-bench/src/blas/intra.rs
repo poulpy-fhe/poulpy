@@ -19,6 +19,7 @@ use super::matmul::{
     BlasBenchModule, BlasClientModule, BlasEvalModule, BlasPoint, Client, a_entry, atk_layout, b_entry, check, log_budget, verify,
 };
 use crate::{blas::params::BlasBenchParams, timed};
+use poulpy_ckks::api::CKKSRightOperandPreparedFactory;
 
 /// The point of `blas_sum_rows` (`rows`) or `blas_sum_cols` of `matrices` matrices, `bp.batch_on` distinct ones or one
 /// encrypted from a plaintext of `d^2` slots, which proves it and sums its rows without the projection. Their entries
@@ -27,7 +28,7 @@ pub fn point_blas_reduction<BE, BC>(bp: &BlasBenchParams, op: &'static str, rows
 where
     BE: Backend + HostStaged + 'static + BlasMatIntraImpl,
     BC: Backend<Ring = BE::Ring> + HostStaged + 'static,
-    Module<BE>: BlasEvalModule<BE>,
+    Module<BE>: CKKSRightOperandPreparedFactory<BE> + BlasEvalModule<BE>,
     Module<BC>: BlasClientModule<BC>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     ScratchOwned<BC>: ScratchOwnedAlloc<BC> + ScratchOwnedBorrow<BC>,

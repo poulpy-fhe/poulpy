@@ -59,14 +59,14 @@ where
     let query = |ct: &CKKSLayout| {
         let diagonal = ckks_plaintext_diagonal_layout(ct);
         match eval {
-            LtEval::Single => module.ckks_eval_linear_transformation_tmp_bytes(ct, &diagonal, &plan, key, key),
-            LtEval::Sum => module.ckks_eval_linear_transformation_sum_tmp_bytes(ct, &diagonal, &plan, key, key),
-            LtEval::StreamedSum => module.ckks_eval_linear_transformation_sum_streamed_tmp_bytes(ct, &diagonal, &plan, key, key),
+            LtEval::Single => module.ckks_linear_transformation_eval_tmp_bytes(ct, &diagonal, &plan, key, key),
+            LtEval::Sum => module.ckks_linear_transformation_eval_sum_tmp_bytes(ct, &diagonal, &plan, key, key),
+            LtEval::StreamedSum => module.ckks_linear_transformation_eval_sum_streamed_tmp_bytes(ct, &diagonal, &plan, key, key),
         }
     };
     let res_bytes = if live { query(&layout_of(res)) } else { 0 };
     module
-        .ckks_prepare_linear_transformation_baby_steps_tmp_bytes(a, &plan, key)
+        .ckks_linear_transformation_baby_steps_prepare_tmp_bytes(a, &plan, key)
         .max(query(&layout_of(a)).max(res_bytes))
 }
 
@@ -116,7 +116,7 @@ where
     let (mut srcs, mut lts) = (Vec::with_capacity(inner), Vec::with_capacity(inner));
     for (g, blocks) in groups.into_iter().enumerate() {
         for (l, cache) in caches.iter_mut().enumerate() {
-            module.ckks_prepare_linear_transformation_baby_steps(cache, source(g, l), keys, scratch)?;
+            module.ckks_linear_transformation_baby_steps_prepare(cache, source(g, l), keys, scratch)?;
         }
         let babies: Vec<_> = caches.iter().collect();
         srcs.clear();
@@ -124,7 +124,7 @@ where
         for (o, dst) in blocks.into_iter().enumerate() {
             lts.clear();
             lts.extend((0..inner).map(|l| map(g, o, l)));
-            module.ckks_eval_linear_transformation_sum_into(&mut *dst, &srcs, &babies, &lts, keys, scratch)?;
+            module.ckks_linear_transformation_eval_sum_into(&mut *dst, &srcs, &babies, &lts, keys, scratch)?;
             dst.set_log_sparsity(label);
         }
     }

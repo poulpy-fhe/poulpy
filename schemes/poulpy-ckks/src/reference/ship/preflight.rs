@@ -14,7 +14,7 @@ use super::bootstrap::{ship_bottom_layout, validate_runtime};
 use crate::SlotsKind;
 use crate::{
     CKKSCtBounds,
-    api::{CKKSAddOps, CKKSConjugateOps, CKKSImagOps, CKKSMulOps, CKKSSubOps, ShipScalar},
+    api::{CKKSAddOps, CKKSConjugateOps, CKKSImagOps, CKKSMulOps, CKKSShipScalar, CKKSSubOps},
     layouts::{CKKSCiphertextOwned, ShipKeysPrepared},
     oep::CKKSEncodingImpl,
 };
@@ -32,7 +32,7 @@ pub(super) fn ckks_ship_bootstrap_tmp_bytes<BE, F, Src>(
 ) -> Result<usize>
 where
     BE: super::ShipBackend + CKKSEncodingImpl<F>,
-    F: ShipScalar,
+    F: CKKSShipScalar,
     Src: CKKSCtBounds,
 {
     let params = keys.parameters();

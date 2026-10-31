@@ -1,7 +1,7 @@
 use poulpy_ckks::{
     CKKSCtBounds, CKKSLayout, CKKSModuleInfos, CKKSResult as Result, SetCKKSInfos,
-    api::{CKKSDotProductOps, CKKSLinearTransformationOps, CKKSMulOps, CKKSRotateOps},
-    layouts::{CKKSModuleAlloc, CKKSPreparedRight, ScratchArenaTakeCKKS},
+    api::{CKKSDotProductOps, CKKSLeftOperandPreparedFactory, CKKSLinearTransformationOps, CKKSMulOps, CKKSRotateOps},
+    layouts::{CKKSRightOperandPrepared, ScratchArenaTakeCKKSCiphertext},
 };
 use poulpy_core::{
     GLWEBytesOf, GLWELinearTransformationBabyStepsBytesOf, ScratchArenaTakeGLWELinearTransformationBabySteps,
@@ -129,7 +129,7 @@ pub trait BlasMatVecReference<BE: Backend> {
         K: GGLWEInfos;
 
     /// One baby-step cache of `a`, prepared as `m`'s schedule reaches its rotations, then poulpy-ckks's
-    /// `ckks_eval_linear_transformation_into` of `m`'s ciphertext diagonals into `res`, resident or prepared at each use,
+    /// `ckks_linear_transformation_eval_into` of `m`'s ciphertext diagonals into `res`, resident or prepared at each use,
     /// each giant step's products relinearized once with `tsk`.
     fn blas_matvec_diagonal_reference<R, M, A, K>(
         &self,
@@ -159,13 +159,13 @@ pub trait BlasMatVecReference<BE: Backend> {
     /// Appends row `row` of `m`, `mask` marking the slots it covers: for each baby step `b` the diagonals read, in
     /// ascending order, `rot(v, b)` prepared as a left operand, then every entry `(b, g)` receives `mask` read through the
     /// Galois element of `-(row + g)` times `rot(v, b)`, in storage order, by poulpy-ckks's
-    /// `ckks_dot_product_prepared_pt_add`.
+    /// `ckks_dot_product_prepared_pt_vec_add`.
     fn blas_append_row_diagonal_reference<V, K>(
         &self,
         m: &mut BlasDiagonalCiphertext<BE>,
         row: i64,
         v: &V,
-        mask: &CKKSPreparedRight<BE>,
+        mask: &CKKSRightOperandPrepared<BE>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -174,7 +174,6 @@ pub trait BlasMatVecReference<BE: Backend> {
             + CKKSRotateOps<BE>
             + CKKSMulOps<BE>
             + CKKSDotProductOps<BE>
-            + CKKSModuleAlloc<BE>
             + GLWEBytesOf<BE>
             + Sized,
         V: BlasVectorRef<BE>,
@@ -197,7 +196,7 @@ pub trait BlasMatVecReference<BE: Backend> {
         m: &mut BlasDiagonalCiphertext<BE>,
         col: i64,
         v: &V,
-        mask: &CKKSPreparedRight<BE>,
+        mask: &CKKSRightOperandPrepared<BE>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -206,14 +205,16 @@ pub trait BlasMatVecReference<BE: Backend> {
             + CKKSRotateOps<BE>
             + CKKSMulOps<BE>
             + CKKSDotProductOps<BE>
-            + CKKSModuleAlloc<BE>
             + GLWEBytesOf<BE>
             + Sized,
         V: BlasVectorRef<BE>,
         K: GetAutomorphismKey<BE> + Sync;
 }
 
-impl<BE: Backend> BlasMatVecReference<BE> for Module<BE> {
+impl<BE: Backend> BlasMatVecReference<BE> for Module<BE>
+where
+    Module<BE>: CKKSLeftOperandPreparedFactory<BE>,
+{
     fn blas_matvec_pt_tmp_bytes_reference<R, W, A, K>(&self, res: &R, w: &W, a: &A, keys: &K) -> usize
     where
         Self: CKKSLinearTransformationOps<BE>,
@@ -410,8 +411,8 @@ impl<BE: Backend> BlasMatVecReference<BE> for Module<BE> {
             scratch
                 .borrow()
                 .take_glwe_linear_transformation_baby_steps_scratch(self, &m.map().index(), src);
-        self.ckks_prepare_linear_transformation_baby_steps(&mut babies, src, keys, &mut scratch.borrow())?;
-        self.ckks_eval_linear_transformation_into(&mut res.cts_mut()[0], src, &babies, m.map(), keys, &mut scratch)
+        self.ckks_linear_transformation_baby_steps_prepare(&mut babies, src, keys, &mut scratch.borrow())?;
+        self.ckks_linear_transformation_eval_into(&mut res.cts_mut()[0], src, &babies, m.map(), keys, &mut scratch)
     }
 
     fn blas_append_row_diagonal_tmp_bytes_reference<M, V, P, K>(&self, m: &M, v: &V, mask: &P, keys: &K) -> usize
@@ -430,7 +431,7 @@ impl<BE: Backend> BlasMatVecReference<BE> for Module<BE> {
         m: &mut BlasDiagonalCiphertext<BE>,
         row: i64,
         v: &V,
-        mask: &CKKSPreparedRight<BE>,
+        mask: &CKKSRightOperandPrepared<BE>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -439,7 +440,6 @@ impl<BE: Backend> BlasMatVecReference<BE> for Module<BE> {
             + CKKSRotateOps<BE>
             + CKKSMulOps<BE>
             + CKKSDotProductOps<BE>
-            + CKKSModuleAlloc<BE>
             + GLWEBytesOf<BE>
             + Sized,
         V: BlasVectorRef<BE>,
@@ -465,7 +465,7 @@ impl<BE: Backend> BlasMatVecReference<BE> for Module<BE> {
         m: &mut BlasDiagonalCiphertext<BE>,
         col: i64,
         v: &V,
-        mask: &CKKSPreparedRight<BE>,
+        mask: &CKKSRightOperandPrepared<BE>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -474,7 +474,6 @@ impl<BE: Backend> BlasMatVecReference<BE> for Module<BE> {
             + CKKSRotateOps<BE>
             + CKKSMulOps<BE>
             + CKKSDotProductOps<BE>
-            + CKKSModuleAlloc<BE>
             + GLWEBytesOf<BE>
             + Sized,
         V: BlasVectorRef<BE>,
@@ -503,15 +502,15 @@ where
     let (plan, keys) = (layout.lt.index(), keys.unwrap_or(tsk));
     let eval = |ct| {
         if streamed {
-            module.ckks_eval_linear_transformation_streamed_tmp_bytes(ct, &layout.ct, &plan, tsk, keys)
+            module.ckks_linear_transformation_eval_streamed_tmp_bytes(ct, &layout.ct, &plan, tsk, keys)
         } else {
-            module.ckks_eval_linear_transformation_tmp_bytes(ct, &layout.ct, &plan, tsk, keys)
+            module.ckks_linear_transformation_eval_tmp_bytes(ct, &layout.ct, &plan, tsk, keys)
         }
     };
     // The baby-step cache of `a` beside the preparation and either evaluation.
     module.glwe_linear_transformation_baby_steps_bytes_of(&plan, &a)
         + module
-            .ckks_prepare_linear_transformation_baby_steps_tmp_bytes(&a, &plan, keys)
+            .ckks_linear_transformation_baby_steps_prepare_tmp_bytes(&a, &plan, keys)
             .max(eval(&a))
             .max(eval(&res))
 }
@@ -526,7 +525,12 @@ fn append_query<BE: Backend>(
     keys: &impl GGLWEInfos,
 ) -> usize
 where
-    Module<BE>: CKKSLinearTransformationOps<BE> + CKKSRotateOps<BE> + CKKSMulOps<BE> + CKKSDotProductOps<BE> + GLWEBytesOf<BE>,
+    Module<BE>: CKKSLinearTransformationOps<BE>
+        + CKKSRotateOps<BE>
+        + CKKSMulOps<BE>
+        + CKKSLeftOperandPreparedFactory<BE>
+        + CKKSDotProductOps<BE>
+        + GLWEBytesOf<BE>,
 {
     let shape = diagonal_ciphertext::shape(&m.blas_diagonal_ciphertext_layout());
     let keys = rotates(module, |f| append_uses(axis, &shape, v, f)).then(|| keys.gglwe_layout());
@@ -544,16 +548,21 @@ fn append_tmp_bytes<BE: Backend>(
     keys: Option<&GGLWELayout>,
 ) -> usize
 where
-    Module<BE>: CKKSLinearTransformationOps<BE> + CKKSRotateOps<BE> + CKKSMulOps<BE> + CKKSDotProductOps<BE> + GLWEBytesOf<BE>,
+    Module<BE>: CKKSLinearTransformationOps<BE>
+        + CKKSRotateOps<BE>
+        + CKKSMulOps<BE>
+        + CKKSLeftOperandPreparedFactory<BE>
+        + CKKSDotProductOps<BE>
+        + GLWEBytesOf<BE>,
 {
     let (diagonal, v) = (m.blas_diagonal_ciphertext_layout().ct, v.ct_layout());
-    let left = module.ckks_prepare_tmp_bytes(&v);
+    let left = module.ckks_left_operand_prepare_tmp_bytes(&v);
     let rotated = keys.map_or(0, |keys| {
         BE::scratch_aligned(module.glwe_bytes_of_from_infos(&v)) + module.ckks_rotate_tmp_bytes(&v, keys).max(left)
     });
     rotated
         .max(left)
-        .max(module.ckks_dot_product_prepared_pt_add_tmp_bytes(&diagonal, &v, mask))
+        .max(module.ckks_dot_product_prepared_pt_vec_add_tmp_bytes(&diagonal, &v, mask))
 }
 
 /// The body of the row (`axis` [`AppendAxis::Row`]) and column appends at `at`, after their validators: one prepared
@@ -566,7 +575,7 @@ fn append<BE, V, K>(
     m: &mut BlasDiagonalCiphertext<BE>,
     at: i64,
     v: &V,
-    mask: &CKKSPreparedRight<BE>,
+    mask: &CKKSRightOperandPrepared<BE>,
     keys: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
@@ -575,8 +584,8 @@ where
     Module<BE>: CKKSLinearTransformationOps<BE>
         + CKKSRotateOps<BE>
         + CKKSMulOps<BE>
+        + CKKSLeftOperandPreparedFactory<BE>
         + CKKSDotProductOps<BE>
-        + CKKSModuleAlloc<BE>
         + GLWEBytesOf<BE>,
     V: BlasVectorRef<BE>,
     K: GetAutomorphismKey<BE> + Sync,
@@ -588,14 +597,14 @@ where
     assert_scratch(op, bytes, scratch);
     let (src, layout, slots) = (&v.cts()[0], v.ct_layout(), module.ckks_max_slots() as i64);
     let at = at.rem_euclid(slots);
-    let mut left = module.ckks_prepared_left_alloc_from_infos(&layout, PrepareHint::Reuse);
+    let mut left = module.ckks_left_operand_prepared_alloc_from_infos(&layout, PrepareHint::Reuse);
     for r in append_rotations(axis, &m.diagonals) {
         if r.rem_euclid(slots) == 0 {
-            module.ckks_prepare_left_into(&mut left, src, scratch)?;
+            module.ckks_left_operand_prepare(&mut left, src, scratch)?;
         } else {
             let (mut rotated, mut s) = scratch.borrow().take_ckks_ciphertext_like_scratch(&layout);
             module.ckks_rotate_into(r, &mut rotated, src, keys, &mut s)?;
-            module.ckks_prepare_left_into(&mut left, &rotated, &mut s)?;
+            module.ckks_left_operand_prepare(&mut left, &rotated, &mut s)?;
         }
         for gs in &mut m.diagonals.giant_steps {
             let giant = gs.rot;
@@ -606,7 +615,7 @@ where
                     _ => continue,
                 };
                 let galois = module.ckks_galois_element(shift.rem_euclid(slots));
-                module.ckks_dot_product_prepared_pt_add(&mut d.plaintext, &[&left], &[mask], &[galois], scratch)?;
+                module.ckks_dot_product_prepared_pt_vec_add(&mut d.plaintext, &[&left], &[mask], &[galois], scratch)?;
             }
         }
     }

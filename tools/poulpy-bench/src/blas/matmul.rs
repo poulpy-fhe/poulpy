@@ -32,9 +32,9 @@ use poulpy_ckks::{
     CKKSInfos, CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotsKind,
     api::{
         CKKSAllOpsTmpBytes, CKKSDecryptOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncryptOps, CKKSLinearTransformationOps,
-        CKKSModuleInfos, CKKSMulOps,
+        CKKSModuleInfos, CKKSMulOps, CKKSRightOperandPreparedFactory,
     },
-    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc},
+    layouts::{CKKSCiphertextAlloc, CKKSCiphertextOwned, CKKSPlaintextAlloc},
     test_suite::helpers::TestContextSharedModule,
 };
 use poulpy_core::{
@@ -258,7 +258,6 @@ pub(super) fn check<BE: Backend>(
 pub trait BlasEvalModule<BE: Backend>:
     ModuleNew<BE>
     + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
-    + CKKSModuleAlloc<BE>
     + CKKSModuleInfos
     + CyclotomicOrder
     + GLWEAutomorphismKeyPreparedFactory<BE>
@@ -279,7 +278,6 @@ pub trait BlasEvalModule<BE: Backend>:
 impl<BE: Backend, M> BlasEvalModule<BE> for M where
     M: ModuleNew<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
-        + CKKSModuleAlloc<BE>
         + CKKSModuleInfos
         + CyclotomicOrder
         + GLWEAutomorphismKeyPreparedFactory<BE>
@@ -325,7 +323,7 @@ impl<BE, BC> Client<BE, BC>
 where
     BE: Backend + HostStaged + 'static,
     BC: Backend<Ring = BE::Ring> + HostStaged + 'static,
-    Module<BE>: BlasEvalModule<BE>,
+    Module<BE>: CKKSRightOperandPreparedFactory<BE> + BlasEvalModule<BE>,
     Module<BC>: BlasClientModule<BC>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     ScratchOwned<BC>: ScratchOwnedAlloc<BC> + ScratchOwnedBorrow<BC>,
@@ -341,7 +339,7 @@ where
         client.glwe_secret_prepare(&mut sk, &sk_raw);
         let bytes = client
             .ckks_all_ops_with_atk_tmp_bytes(&layout, &layout, &tsk_layout(bp), &atk_layout(bp))
-            .max(<Module<BC> as CKKSEncodingHostOps<BC, f64>>::ckks_reim_tmp_bytes(
+            .max(<Module<BC> as CKKSEncodingHostOps<BC, f64>>::ckks_encoding_host_tmp_bytes(
                 &client,
                 bp.slots_on::<BE::Ring>(),
             ));
@@ -459,16 +457,16 @@ where
     ) -> BlasCiphertextOwned<BE> {
         let slots = matrices << (2 * bp.log_d);
         let held = slots.max(self.module.ckks_slots_of_degree(BE::MIN_DEGREE));
-        let mut pt = self
-            .client
-            .ckks_pt_vec_alloc(held, base2k(bp), TorusPrecision((bp.log_delta + HEADROOM) as u32));
+        let mut pt =
+            self.client
+                .ckks_plaintext_alloc_from_slots(held, base2k(bp), TorusPrecision((bp.log_delta + HEADROOM) as u32));
         pt.set_meta(block_layout::<BE::Ring>(bp).meta);
         let im = vec![0.0; held];
         let blocks = split_into_blocks(rows, cols, bp.log_d, slots, matrices, entry)
             .into_iter()
             .map(|values| {
                 self.client
-                    .ckks_encode_reim_into(&mut pt, &values.repeat(held / slots), &im, &mut self.arena.borrow())
+                    .ckks_encode_slots_host_into(&mut pt, &values.repeat(held / slots), &im, &mut self.arena.borrow())
                     .unwrap();
                 let mut ct = self.client.ckks_ciphertext_alloc(base2k(bp), TorusPrecision(bp.k as u32));
                 self.client
@@ -493,12 +491,12 @@ where
     /// and moved to the evaluated module.
     pub(super) fn encrypt_slots(&mut self, bp: &BlasBenchParams, re: &[f64]) -> CKKSCiphertextOwned<BE> {
         let slots = bp.slots_on::<BE::Ring>();
-        let mut pt = self
-            .client
-            .ckks_pt_vec_alloc(slots, base2k(bp), TorusPrecision((bp.log_delta + HEADROOM) as u32));
+        let mut pt =
+            self.client
+                .ckks_plaintext_alloc_from_slots(slots, base2k(bp), TorusPrecision((bp.log_delta + HEADROOM) as u32));
         pt.set_meta(block_layout::<BE::Ring>(bp).meta);
         self.client
-            .ckks_encode_reim_into(&mut pt, re, &vec![0.0; slots], &mut self.arena.borrow())
+            .ckks_encode_slots_host_into(&mut pt, re, &vec![0.0; slots], &mut self.arena.borrow())
             .unwrap();
         let mut ct = self.client.ckks_ciphertext_alloc(base2k(bp), TorusPrecision(bp.k as u32));
         self.client
@@ -519,9 +517,9 @@ where
         (**moved).transfer_into(&mut *ct);
         ct.set_meta(moved.meta());
         let log_delta = ct.log_delta();
-        let mut pt = self
-            .client
-            .ckks_pt_vec_alloc(slots, base2k(bp), TorusPrecision((log_delta + DECODE_HEADROOM) as u32));
+        let mut pt =
+            self.client
+                .ckks_plaintext_alloc_from_slots(slots, base2k(bp), TorusPrecision((log_delta + DECODE_HEADROOM) as u32));
         pt.set_meta(GLWEPlaintextMeta {
             scale: Scale::Log(log_delta),
             slots: slots_kind::<BE::Ring>(),
@@ -532,7 +530,7 @@ where
             .unwrap();
         let (mut re, mut im) = (vec![0.0; slots], vec![0.0; slots]);
         self.client
-            .ckks_decode_reim_into(&pt, &mut re, &mut im, &mut self.arena.borrow())
+            .ckks_decode_slots_host_into(&pt, &mut re, &mut im, &mut self.arena.borrow())
             .unwrap();
         (re, im)
     }
@@ -562,7 +560,7 @@ pub fn point_blas_transpose<BE, BC>(bp: &BlasBenchParams) -> BlasPoint
 where
     BE: Backend + HostStaged + 'static + BlasMatIntraImpl,
     BC: Backend<Ring = BE::Ring> + HostStaged + 'static,
-    Module<BE>: BlasEvalModule<BE>,
+    Module<BE>: CKKSRightOperandPreparedFactory<BE> + BlasEvalModule<BE>,
     Module<BC>: BlasClientModule<BC>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     ScratchOwned<BC>: ScratchOwnedAlloc<BC> + ScratchOwnedBorrow<BC>,

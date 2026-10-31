@@ -18,11 +18,11 @@ use poulpy_hal::{
 
 use crate::{
     CKKSCompositionError, CKKSInfos, SetCKKSInfos, SlotsKind,
-    api::{CKKSCopyOps, CKKSEncodingOps, CKKSShipOps, ShipScalar},
+    api::{CKKSCopyOps, CKKSEncodingOps, CKKSShipOps, CKKSShipScalar},
     encoding::ship::masks::{ship_pre_rotated_masks, ship_pre_rotated_masks_omega2},
     layouts::CKKSPlaintextVecHostCodec,
     layouts::{
-        CKKSCiphertextOwned, CKKSModuleAlloc, ShipKeySet, ShipKeysLayout, ShipPlan, ShipSecretSpec,
+        CKKSCiphertextOwned, CKKSPlaintextAlloc, ShipKeySet, ShipKeysLayout, ShipPlan, ShipSecretSpec,
         ship::keyset::{HMuxRotKeyPrepared, hmux_rot_key_encrypt_sk},
     },
     oep::{CKKSEncodingImpl, CKKSShipCoeffEncodingImpl, CKKSShipImpl},
@@ -468,7 +468,7 @@ fn ship_bootstrap_case<BE, F, E>(
         + CnvOps<BE>
         + CnvPVecAlloc<BE>
         + CnvPVecBytesOf,
-    F: TestScalar + ShipScalar,
+    F: TestScalar + CKKSShipScalar,
     E: ReimNew<F>,
 {
     let n = params.n;
@@ -532,7 +532,7 @@ fn ship_bootstrap_case<BE, F, E>(
         })
         .collect();
     let bottom_prec = ckks_spec(n, base2k, base2k, 0);
-    let mut host_pt = host_module.ckks_pt_vec_alloc(host_module.ckks_max_slots(), base2k.into(), bottom_prec.k());
+    let mut host_pt = host_module.ckks_plaintext_alloc_from_slots(host_module.ckks_max_slots(), base2k.into(), bottom_prec.k());
     host_pt.set_meta(bottom_prec.meta());
     host_pt.encode_host_floats(&coeffs).unwrap();
     let mut coeffs_quant = vec![F::zero(); n];
@@ -612,7 +612,7 @@ where
         + CnvOps<BE>
         + CnvPVecAlloc<BE>
         + CnvPVecBytesOf,
-    F: TestScalar + ShipScalar,
+    F: TestScalar + CKKSShipScalar,
     E: ReimNew<F>,
 {
     ship_bootstrap_case::<BE, F, E>(params, module, host_module, false);
@@ -630,7 +630,7 @@ where
         + CnvOps<BE>
         + CnvPVecAlloc<BE>
         + CnvPVecBytesOf,
-    F: TestScalar + ShipScalar,
+    F: TestScalar + CKKSShipScalar,
     E: ReimNew<F>,
 {
     ship_bootstrap_case::<BE, F, E>(params, module, host_module, true);
@@ -651,7 +651,7 @@ pub fn test_ship_bootstrap_into_rejects_output_radix<BE, F, E>(
         + CnvOps<BE>
         + CnvPVecAlloc<BE>
         + CnvPVecBytesOf,
-    F: TestScalar + ShipScalar,
+    F: TestScalar + CKKSShipScalar,
     E: ReimNew<F>,
 {
     use super::parity::{helpers::fixture_ciphertext, layout};

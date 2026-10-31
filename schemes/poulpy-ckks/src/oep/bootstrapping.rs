@@ -146,8 +146,9 @@ pub unsafe trait CKKSBootstrappingCIImpl: Backend<Ring = Standard> {
         C1: CKKSCtBounds,
         C2: CKKSCtBounds;
 
-    /// Reproduces [`ckks_bootstrap_ci_reference`](crate::reference::bootstrapping::ckks_bootstrap_ci_reference) bit for
-    /// bit: values, metadata, canonical flag, refusals and their order; free in kernels. It runs within what
+    /// Reproduces
+    /// [`ckks_bootstrap_ci_reference`](crate::reference::bootstrapping::CKKSBootstrappingCIReference::ckks_bootstrap_ci_reference)
+    /// bit for bit: values, metadata, canonical flag, refusals and their order; free in kernels. It runs within what
     /// [`Self::ckks_bootstrap_ci_tmp_bytes`] reports for each arena.
     #[expect(
         clippy::too_many_arguments,
@@ -196,9 +197,9 @@ pub unsafe trait CKKSModUpFirstFactorImpl: Backend<Ring = Standard> {
         K: GGLWEInfos;
 
     /// Reproduces
-    /// [`ckks_mod_up_first_factor_reference`](crate::reference::first_factor::ckks_mod_up_first_factor_reference) bit
-    /// for bit, within [`Self::ckks_mod_up_first_factor_tmp_bytes`]; free in kernels and scratch use. It honors the key
-    /// layouts of the reference composition.
+    /// [`ckks_mod_up_first_factor_reference`](crate::reference::first_factor::CKKSModUpFirstFactorReference::ckks_mod_up_first_factor_reference)
+    /// bit for bit, within [`Self::ckks_mod_up_first_factor_tmp_bytes`]; free in kernels and scratch use. It honors the
+    /// key layouts of the reference composition.
     fn ckks_mod_up_first_factor<Dst, Src, K>(
         module: &Module<Self>,
         dst: &mut Dst,
@@ -241,8 +242,8 @@ pub unsafe trait CKKSEncapsulatedModUpImpl: Backend<Ring = Standard> {
         S2D: GGLWEInfos;
 
     /// Reproduces
-    /// [`ckks_encapsulated_mod_up_reference`](crate::reference::bootstrapping::ckks_encapsulated_mod_up_reference) bit
-    /// for bit, within [`Self::ckks_encapsulated_mod_up_tmp_bytes`]; free in kernels and scratch use. `scale_up` is
+    /// [`ckks_encapsulated_mod_up_reference`](crate::reference::bootstrapping::CKKSEncapsulatedModUpReference::ckks_encapsulated_mod_up_reference)
+    /// bit for bit, within [`Self::ckks_encapsulated_mod_up_tmp_bytes`]; free in kernels and scratch use. `scale_up` is
     /// applied to the raised ciphertext between ModUp and the sparse-to-dense switch, so the message is already at its
     /// final scale when that key-switch's noise is added. It honors the key layouts of the reference composition.
     fn ckks_encapsulated_mod_up<Dst, Src>(
@@ -407,7 +408,7 @@ macro_rules! impl_ckks_bootstrapping_ci_reference_full {
                 C1: $crate::CKKSCtBounds,
                 C2: $crate::CKKSCtBounds,
             {
-                $crate::reference::bootstrapping::ckks_bootstrap_ci_tmp_bytes_reference::<$be, $ci, C1, C2, F>(
+                $crate::reference::bootstrapping::CKKSBootstrappingCIReference::ckks_bootstrap_ci_tmp_bytes_reference(
                     module,
                     ci,
                     ct_out,
@@ -432,7 +433,7 @@ macro_rules! impl_ckks_bootstrapping_ci_reference_full {
                 Src: ::poulpy_core::layouts::GLWEToBackendRef<$be> + $crate::CKKSCtBounds,
                 K: $crate::layouts::BootstrappingCIKeys<$be, $ci>,
             {
-                $crate::reference::bootstrapping::ckks_bootstrap_ci_reference::<$be, $ci, Dst, Src, F, K>(
+                $crate::reference::bootstrapping::CKKSBootstrappingCIReference::ckks_bootstrap_ci_reference(
                     module, ci, dst, src, ctx, keys, scratch, scratch_ci,
                 )
             }
@@ -458,7 +459,7 @@ macro_rules! impl_ckks_encapsulated_mod_up_reference_full {
                 D2S: ::poulpy_core::layouts::GGLWEInfos,
                 S2D: ::poulpy_core::layouts::GGLWEInfos,
             {
-                $crate::reference::bootstrapping::ckks_encapsulated_mod_up_tmp_bytes_reference(
+                $crate::reference::bootstrapping::CKKSEncapsulatedModUpReference::ckks_encapsulated_mod_up_tmp_bytes_reference(
                     module,
                     dst_infos,
                     src_infos,
@@ -486,7 +487,7 @@ macro_rules! impl_ckks_encapsulated_mod_up_reference_full {
                     + $crate::CKKSCtBounds
                     + $crate::SetCKKSInfos,
             {
-                $crate::reference::bootstrapping::ckks_encapsulated_mod_up_reference(
+                $crate::reference::bootstrapping::CKKSEncapsulatedModUpReference::ckks_encapsulated_mod_up_reference(
                     module,
                     dst,
                     src,
@@ -519,7 +520,7 @@ macro_rules! impl_ckks_mod_up_first_factor_reference_full {
                 D2S: ::poulpy_core::layouts::GGLWEInfos,
                 K: ::poulpy_core::layouts::GGLWEInfos,
             {
-                $crate::reference::first_factor::ckks_mod_up_first_factor_tmp_bytes_reference(
+                $crate::reference::first_factor::CKKSModUpFirstFactorReference::ckks_mod_up_first_factor_tmp_bytes_reference(
                     module, dst_infos, src_infos, factor, d2s_infos, key_infos,
                 )
             }
@@ -544,7 +545,7 @@ macro_rules! impl_ckks_mod_up_first_factor_reference_full {
                     + $crate::SetCKKSInfos,
                 K: $crate::layouts::BootstrappingLinearKeys<$be>,
             {
-                $crate::reference::first_factor::ckks_mod_up_first_factor_reference(
+                $crate::reference::first_factor::CKKSModUpFirstFactorReference::ckks_mod_up_first_factor_reference(
                     module, dst, src, scale_up, factor, keys, scratch,
                 )
             }

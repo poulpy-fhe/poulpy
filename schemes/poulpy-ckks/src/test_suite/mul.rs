@@ -50,8 +50,8 @@
 //! | [`test_mul_pt_vec_assign`] | - |
 use crate::{
     CKKSCompositionError, CKKSInfos,
-    api::{CKKSDotProductOps, CKKSMulOps},
-    layouts::CKKSModuleAlloc,
+    api::{CKKSDotProductOps, CKKSLeftOperandPreparedFactory, CKKSMulOps, CKKSRightOperandPreparedFactory},
+    layouts::CKKSCiphertextAlloc,
 };
 use poulpy_core::layouts::{GLWEToBackendMut, LWEInfos};
 
@@ -125,8 +125,8 @@ where
     let metadata = ct1.noise();
     assert!(metadata.is_some());
     assert_eq!(ct_res.noise(), None);
-    let prepared = with_scratch::<BE, _>(module.ckks_prepare_tmp_bytes(&ct2), |s| {
-        module.ckks_prepare_right(&ct2, PrepareHint::OneShot, s)
+    let prepared = with_scratch::<BE, _>(module.ckks_right_operand_prepare_tmp_bytes(&ct2), |s| {
+        module.ckks_right_operand_prepare_alloc(&ct2, PrepareHint::OneShot, s)
     })
     .unwrap();
     let mut prepared_result = ct1.clone();
@@ -140,8 +140,8 @@ where
 
     let mut unknown = ct2.clone();
     GLWEToBackendMut::<BE>::set_noise(&mut unknown, None);
-    let prepared = with_scratch::<BE, _>(module.ckks_prepare_tmp_bytes(&unknown), |s| {
-        module.ckks_prepare_right(&unknown, PrepareHint::Reuse, s)
+    let prepared = with_scratch::<BE, _>(module.ckks_right_operand_prepare_tmp_bytes(&unknown), |s| {
+        module.ckks_right_operand_prepare_alloc(&unknown, PrepareHint::Reuse, s)
     })
     .unwrap();
     let mut prepared_result = ct1.clone();
@@ -409,8 +409,8 @@ pub fn test_mul_ct_larger_budget_smaller_scale<BE, F, E>(
         })
         .unwrap();
 
-        let prepared = with_scratch::<BE, _>(module.ckks_prepare_tmp_bytes(b), |s| {
-            module.ckks_prepare_right(b, PrepareHint::OneShot, s)
+        let prepared = with_scratch::<BE, _>(module.ckks_right_operand_prepare_tmp_bytes(b), |s| {
+            module.ckks_right_operand_prepare_alloc(b, PrepareHint::OneShot, s)
         })
         .unwrap();
         let mut prepared_result = a.clone();
@@ -1503,8 +1503,8 @@ pub fn test_mul_prepared_assign_rejects_layout_mismatch<BE, F, E>(
     let mismatched_base2k = params.base2k / 2;
     let mut other = module.ckks_ciphertext_alloc(mismatched_base2k.into(), params.k.into());
     other.set_meta(params.prec().meta);
-    let prepared = with_scratch::<BE, _>(module.ckks_prepare_tmp_bytes(&other), |s| {
-        module.ckks_prepare_right(&other, PrepareHint::Reuse, s)
+    let prepared = with_scratch::<BE, _>(module.ckks_right_operand_prepare_tmp_bytes(&other), |s| {
+        module.ckks_right_operand_prepare_alloc(&other, PrepareHint::Reuse, s)
     })
     .unwrap();
     let before = snapshot::<BE, _>(&dst);
@@ -1572,26 +1572,26 @@ where
     for hint in [PrepareHint::OneShot, PrepareHint::Reuse] {
         check_prepare_into(
             &format!("left {hint:?}"),
-            "ckks_prepare_left_into",
-            module.ckks_prepared_left_bytes_of_from_infos(&ct, hint),
-            || module.ckks_prepared_left_alloc_from_infos(&ct, hint),
+            "ckks_left_operand_prepare",
+            module.ckks_left_operand_prepared_bytes_of_from_infos(&ct, hint),
+            || module.ckks_left_operand_prepared_alloc_from_infos(&ct, hint),
             |p| p.prep.data(),
             |p| p.prep.data_mut(),
-            |a| module.ckks_prepare_tmp_bytes(a),
-            |a, s| module.ckks_prepare_left(a, hint, s),
-            |p, a, s| module.ckks_prepare_left_into(p, a, s),
+            |a| module.ckks_left_operand_prepare_tmp_bytes(a),
+            |a, s| module.ckks_left_operand_prepare_alloc(a, hint, s),
+            |p, a, s| module.ckks_left_operand_prepare(p, a, s),
             (&ct, &other),
         );
         check_prepare_into(
             &format!("right {hint:?}"),
-            "ckks_prepare_right_into",
-            module.ckks_prepared_right_bytes_of_from_infos(&ct, hint),
-            || module.ckks_prepared_right_alloc_from_infos(&ct, hint),
+            "ckks_right_operand_prepare",
+            module.ckks_right_operand_prepared_bytes_of_from_infos(&ct, hint),
+            || module.ckks_right_operand_prepared_alloc_from_infos(&ct, hint),
             |p| p.prep.data(),
             |p| p.prep.data_mut(),
-            |a| module.ckks_prepare_tmp_bytes(a),
-            |a, s| module.ckks_prepare_right(a, hint, s),
-            |p, a, s| module.ckks_prepare_right_into(p, a, s),
+            |a| module.ckks_right_operand_prepare_tmp_bytes(a),
+            |a, s| module.ckks_right_operand_prepare_alloc(a, hint, s),
+            |p, a, s| module.ckks_right_operand_prepare(p, a, s),
             (&ct, &other),
         );
     }

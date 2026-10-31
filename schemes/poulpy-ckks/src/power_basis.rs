@@ -11,24 +11,24 @@ use crate::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
     api::{CKKSMulOps, CKKSPow2Ops, CKKSSubOps},
     checked_mul_ct_log_budget,
-    layouts::{CKKSCiphertext, CKKSModuleAlloc, ScratchArenaTakeCKKS},
+    layouts::{CKKSCiphertext, CKKSCiphertextAlloc, ScratchArenaTakeCKKSCiphertext},
 };
 
 pub use crate::api::{Basis, Parity};
 pub use poulpy_core::layouts::{PowerBasis, PowerBasisHelper};
 
 /// CKKS computation of the power basis entries used by BSGS evaluation.
-pub trait PowerBasisInsert<D: Data, W: ZnxWord, R: Ring> {
+pub trait CKKSPowerBasisInsert<D: Data, W: ZnxWord, R: Ring> {
     /// Inserts a caller-provided pre-computed ciphertext power.
     fn insert(&mut self, n: usize, value: CKKSCiphertext<D, W, R>) -> Result<()>;
 }
 
 /// CKKS computation of the power basis entries used by BSGS evaluation.
-pub trait PowerBasisGen<BE: Backend> {
+pub trait CKKSPowerBasisGen<BE: Backend> {
     /// Recursively computes and stores X^`n` (monomial basis).
     fn gen_power<H>(&mut self, n: usize, module: &Module<BE>, tsk: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Module<BE>: CKKSMulOps<BE> + CKKSModuleAlloc<BE>,
+        Module<BE>: CKKSMulOps<BE> + CKKSCiphertextAlloc<BE>,
         CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetTensorKey<BE>;
 
@@ -41,7 +41,7 @@ pub trait PowerBasisGen<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Module<BE>: CKKSPow2Ops<BE> + CKKSMulOps<BE> + CKKSSubOps<BE> + CKKSModuleAlloc<BE> + GLWENormalize<BE>,
+        Module<BE>: CKKSPow2Ops<BE> + CKKSMulOps<BE> + CKKSSubOps<BE> + CKKSCiphertextAlloc<BE> + GLWENormalize<BE>,
         CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetTensorKey<BE>;
 
@@ -57,12 +57,12 @@ pub trait PowerBasisGen<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Module<BE>: CKKSPow2Ops<BE> + CKKSMulOps<BE> + CKKSSubOps<BE> + CKKSModuleAlloc<BE> + GLWENormalize<BE>,
+        Module<BE>: CKKSPow2Ops<BE> + CKKSMulOps<BE> + CKKSSubOps<BE> + GLWENormalize<BE>,
         CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetTensorKey<BE>;
 }
 
-impl<D: Data, W: ZnxWord, R: Ring> PowerBasisInsert<D, W, R> for PowerBasis<CKKSCiphertext<D, W, R>> {
+impl<D: Data, W: ZnxWord, R: Ring> CKKSPowerBasisInsert<D, W, R> for PowerBasis<CKKSCiphertext<D, W, R>> {
     fn insert(&mut self, n: usize, value: CKKSCiphertext<D, W, R>) -> Result<()> {
         ensure!(
             n >= 2,
@@ -100,10 +100,10 @@ impl<D: Data, W: ZnxWord, R: Ring> PowerBasisInsert<D, W, R> for PowerBasis<CKKS
     }
 }
 
-impl<BE: Backend> PowerBasisGen<BE> for PowerBasis<CKKSCiphertextOwned<BE>> {
+impl<BE: Backend> CKKSPowerBasisGen<BE> for PowerBasis<CKKSCiphertextOwned<BE>> {
     fn gen_power<H>(&mut self, n: usize, module: &Module<BE>, tsk: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Module<BE>: CKKSMulOps<BE> + CKKSModuleAlloc<BE>,
+        Module<BE>: CKKSMulOps<BE> + CKKSCiphertextAlloc<BE>,
         CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetTensorKey<BE>,
     {
@@ -137,7 +137,7 @@ impl<BE: Backend> PowerBasisGen<BE> for PowerBasis<CKKSCiphertextOwned<BE>> {
 
     fn gen_power_chebyshev<H>(&mut self, n: usize, module: &Module<BE>, tsk: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Module<BE>: CKKSPow2Ops<BE> + CKKSMulOps<BE> + CKKSSubOps<BE> + CKKSModuleAlloc<BE> + GLWENormalize<BE>,
+        Module<BE>: CKKSPow2Ops<BE> + CKKSMulOps<BE> + CKKSSubOps<BE> + CKKSCiphertextAlloc<BE> + GLWENormalize<BE>,
         CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetTensorKey<BE>,
     {
@@ -207,7 +207,7 @@ impl<BE: Backend> PowerBasisGen<BE> for PowerBasis<CKKSCiphertextOwned<BE>> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Module<BE>: CKKSPow2Ops<BE> + CKKSMulOps<BE> + CKKSSubOps<BE> + CKKSModuleAlloc<BE> + GLWENormalize<BE>,
+        Module<BE>: CKKSPow2Ops<BE> + CKKSMulOps<BE> + CKKSSubOps<BE> + GLWENormalize<BE>,
         CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetTensorKey<BE>,
     {

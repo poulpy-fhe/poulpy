@@ -10,7 +10,7 @@ use crate::{
     api::{CKKSAddOps, CKKSMulOps, CKKSSubOps},
     ckks_ensure, ckks_mul_pt_const_checks, ckks_mul_pt_vec_checks, ensure_plaintext_const_operand, ensure_plaintext_vec_operand,
     get_mul_ct_params,
-    layouts::{CKKSCiphertextViewMut, ScratchArenaTakeCKKS},
+    layouts::{CKKSCiphertextViewMut, ScratchArenaTakeCKKSCiphertext},
     oep::{CKKSAffineImpl, CKKSMulAddImpl, CKKSMulSubImpl},
     reference::mul::tensor_key_at,
 };

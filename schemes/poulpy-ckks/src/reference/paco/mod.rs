@@ -15,7 +15,7 @@ use poulpy_hal::{
 
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
-    api::PaCoScalar,
+    api::CKKSPaCoScalar,
     layouts::{CKKSCiphertextOwned, PaCoContext, PaCoKeys, PaCoWorker},
     oep::{
         CKKSAddImpl, CKKSConjugateImpl, CKKSCopyImpl, CKKSEncodingImpl, CKKSLinearTransformationImpl, CKKSMulImpl,
@@ -84,7 +84,7 @@ pub trait CKKSPaCoReference<BE: Backend>: Borrow<Module<BE>> {
             + CKKSLinearTransformationImpl
             + GLWERotateImpl
             + GLWEKeyswitchImpl,
-        F: PaCoScalar,
+        F: CKKSPaCoScalar,
         K: PaCoKeys<BE>,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
@@ -113,7 +113,7 @@ pub trait CKKSPaCoReference<BE: Backend>: Borrow<Module<BE>> {
             + CKKSLinearTransformationImpl
             + GLWERotateImpl
             + GLWEKeyswitchImpl,
-        F: PaCoScalar,
+        F: CKKSPaCoScalar,
         K: PaCoKeys<BE>,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
@@ -126,7 +126,7 @@ pub trait CKKSPaCoReference<BE: Backend>: Borrow<Module<BE>> {
     /// the recombined sparsity recorded last. A branch is the selected `ckks_paco_coeff_encodings` of the input, the
     /// blind rotation (`ckks_mul_pt_vec_into` of the first bootstrapping ciphertext, `ckks_mul_pt_vec_into` and
     /// `ckks_add_assign` of the other three), the selected `ckks_slot_trace_assign`, each CoeffsToSlots factor by
-    /// `ckks_eval_linear_transformation_self_assign`, the psi tail (conjugation and two transforms added, or
+    /// `ckks_linear_transformation_eval_self_assign`, the psi tail (conjugation and two transforms added, or
     /// conjugate-rotate added and masked with `ckks_mul_pt_vec_assign`), the selected `ckks_slot_product_assign`, the
     /// imaginary-part extraction (`ckks_conjugate_into`, `ckks_sub_assign`), each SlotsToCoeffs factor, the scale
     /// relabel, and `ckks_copy` into the destination. A shifted branch runs on a `ckks_copy` of the input rotated by
@@ -151,7 +151,7 @@ pub trait CKKSPaCoReference<BE: Backend>: Borrow<Module<BE>> {
             + CKKSLinearTransformationImpl
             + GLWERotateImpl
             + GLWEKeyswitchImpl,
-        F: PaCoScalar,
+        F: CKKSPaCoScalar,
         K: PaCoKeys<BE>,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
@@ -182,7 +182,7 @@ pub trait CKKSPaCoReference<BE: Backend>: Borrow<Module<BE>> {
             + CKKSLinearTransformationImpl
             + GLWERotateImpl
             + GLWEKeyswitchImpl,
-        F: PaCoScalar,
+        F: CKKSPaCoScalar,
         K: PaCoKeys<BE>,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
@@ -220,7 +220,7 @@ pub trait CKKSPaCoReference<BE: Backend>: Borrow<Module<BE>> {
             + CKKSLinearTransformationImpl
             + GLWERotateImpl
             + GLWEKeyswitchImpl,
-        F: PaCoScalar,
+        F: CKKSPaCoScalar,
         K: PaCoKeys<BE> + Sync,
         ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds + Sync,
@@ -257,7 +257,7 @@ pub trait CKKSPaCoReference<BE: Backend>: Borrow<Module<BE>> {
             + CKKSLinearTransformationImpl
             + GLWERotateImpl
             + GLWEKeyswitchImpl,
-        F: PaCoScalar,
+        F: CKKSPaCoScalar,
         K: PaCoKeys<BE> + Sync,
         ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,

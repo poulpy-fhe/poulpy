@@ -53,17 +53,17 @@ fn prefix<'a, BE: Backend + 'a, F>(
     ))
 }
 
-pub(crate) fn ckks_encode_slots_assign_into_derived<BE, F, P, C>(module: &Module<BE>, pt: &mut P, slots: &mut C) -> Result<()>
+pub(crate) fn ckks_encode_slots_into_derived<BE, F, P, C>(module: &Module<BE>, pt: &mut P, slots: &mut C) -> Result<()>
 where
     BE: CKKSEncodingImpl<F>,
     F: CKKSEncodingScalar,
     P: CKKSPlaintextToBackendMut<BE> + IntPolyInfos + SetCKKSInfos,
     C: CKKSEncodingBufferToBackendMut<BE, F>,
 {
-    validate_transform("ckks_encode_slots_assign_into", 2 * module.ckks_max_slots(), slots.len())?;
+    validate_transform("ckks_encode_slots_into", 2 * module.ckks_max_slots(), slots.len())?;
     let count = slot_coeff_count(module, slots.len());
-    validate_coefficients("ckks_encode_slots_assign_into", module.max_n(), pt, count)?;
-    BE::ckks_slots_to_coeffs_assign(module, slots)?;
+    validate_coefficients("ckks_encode_slots_into", module.max_n(), pt, count)?;
+    BE::ckks_encoding_buffer_slots_to_coeffs_assign(module, slots)?;
     BE::ckks_encode_coeffs_into(module, pt, &prefix(&mut slots.to_backend_mut(), count))
 }
 
@@ -78,7 +78,7 @@ where
     let count = slot_coeff_count(module, slots.len());
     validate_coefficients("ckks_decode_slots_into", module.max_n(), pt, count)?;
     BE::ckks_decode_coeffs_into(module, pt, &mut prefix(&mut slots.to_backend_mut(), count))?;
-    BE::ckks_coeffs_to_slots_assign(module, slots)
+    BE::ckks_encoding_buffer_coeffs_to_slots_assign(module, slots)
 }
 
 pub(crate) fn ckks_encode_coeffs_into_derived<BE, F, P, C>(module: &Module<BE>, pt: &mut P, coeffs: &C) -> Result<()>
@@ -103,30 +103,38 @@ where
     BE::ckks_dequantize_coeffs_into(module, pt, &mut coeffs.to_backend_mut())
 }
 
-pub(crate) fn ckks_slots_to_coeffs_assign_derived<BE, F, C>(module: &Module<BE>, values: &mut C) -> Result<()>
+pub(crate) fn ckks_encoding_buffer_slots_to_coeffs_assign_derived<BE, F, C>(module: &Module<BE>, values: &mut C) -> Result<()>
 where
     BE: CKKSEncodingImpl<F>,
     F: CKKSEncodingScalar,
     C: CKKSEncodingBufferToBackendMut<BE, F>,
 {
-    validate_transform("ckks_slots_to_coeffs_assign", 2 * module.ckks_max_slots(), values.len())?;
+    validate_transform(
+        "ckks_encoding_buffer_slots_to_coeffs_assign",
+        2 * module.ckks_max_slots(),
+        values.len(),
+    )?;
     let mut values = values.to_backend_mut();
     BE::ckks_encoding_plan_cache(module).with_or_create::<CKKSEncodingPlanKey<F>, _, _>(
         || BE::ckks_encoding_plans_create(module).map_err(::anyhow::Error::from),
-        |plans| BE::ckks_slots_to_coeffs_assign_with_plan(module, plans, &mut values),
+        |plans| BE::ckks_encoding_buffer_slots_to_coeffs_assign_with_plan(module, plans, &mut values),
     )?
 }
 
-pub(crate) fn ckks_coeffs_to_slots_assign_derived<BE, F, C>(module: &Module<BE>, values: &mut C) -> Result<()>
+pub(crate) fn ckks_encoding_buffer_coeffs_to_slots_assign_derived<BE, F, C>(module: &Module<BE>, values: &mut C) -> Result<()>
 where
     BE: CKKSEncodingImpl<F>,
     F: CKKSEncodingScalar,
     C: CKKSEncodingBufferToBackendMut<BE, F>,
 {
-    validate_transform("ckks_coeffs_to_slots_assign", 2 * module.ckks_max_slots(), values.len())?;
+    validate_transform(
+        "ckks_encoding_buffer_coeffs_to_slots_assign",
+        2 * module.ckks_max_slots(),
+        values.len(),
+    )?;
     let mut values = values.to_backend_mut();
     BE::ckks_encoding_plan_cache(module).with_or_create::<CKKSEncodingPlanKey<F>, _, _>(
         || BE::ckks_encoding_plans_create(module).map_err(::anyhow::Error::from),
-        |plans| BE::ckks_coeffs_to_slots_assign_with_plan(module, plans, &mut values),
+        |plans| BE::ckks_encoding_buffer_coeffs_to_slots_assign_with_plan(module, plans, &mut values),
     )?
 }

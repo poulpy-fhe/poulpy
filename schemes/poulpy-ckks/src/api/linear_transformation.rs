@@ -15,7 +15,7 @@
 //! [`PreparedDiagonal`] (resident, fastest for repeated use) or an unprepared diagonal (streamed, lower peak memory),
 //! a [`CKKSPlaintext`](crate::layouts::CKKSPlaintext) or a [`CKKSCiphertext`](crate::layouts::CKKSCiphertext) of the
 //! source's rank. All go through the same
-//! [`CKKSLinearTransformationOps::ckks_eval_linear_transformation_into`]: the `P = PreparedDiagonal` case is the
+//! [`CKKSLinearTransformationOps::ckks_linear_transformation_eval_into`]: the `P = PreparedDiagonal` case is the
 //! resident path, an unprepared `P` the streamed path, which prepares each diagonal in the call. The rank of the
 //! diagonals picks the product: plaintext diagonals are multiplied as plaintexts, ciphertext diagonals tensored and
 //! relinearized. There is no separate "prepared" vs "unprepared" method; you pick the path by which `P` you pass.
@@ -25,12 +25,12 @@
 //! ```ignore
 //! // setup, once per transform / per input shape
 //! let mut prepared = LinearTransformation::alloc_prepared(module, &layout, lt.first_diagonal_plaintext().unwrap());
-//! module.ckks_prepare_linear_transformation_rhs(&mut prepared, &lt, &mut scratch)?;
+//! module.ckks_linear_transformation_rhs_prepare(&mut prepared, &lt, &mut scratch)?;
 //! let mut babies = LinearTransformationBabySteps::alloc(module, prepared.baby_steps(), &ct);
 //!
 //! // per evaluation
-//! module.ckks_prepare_linear_transformation_baby_steps(&mut babies, &ct, &atks, &mut scratch)?;
-//! module.ckks_eval_linear_transformation_into(&mut dst, &ct, &babies, &prepared, &atks, &mut scratch)?;
+//! module.ckks_linear_transformation_baby_steps_prepare(&mut babies, &ct, &atks, &mut scratch)?;
+//! module.ckks_linear_transformation_eval_into(&mut dst, &ct, &babies, &prepared, &atks, &mut scratch)?;
 //! ```
 
 use crate::CKKSResult as Result;
@@ -84,7 +84,7 @@ pub trait LtDiagonalMeta {
     }
 }
 
-/// Torus width of the result of [`CKKSLinearTransformationOps::ckks_eval_linear_transformation_into`] evaluating `lt`
+/// Torus width of the result of [`CKKSLinearTransformationOps::ckks_linear_transformation_eval_into`] evaluating `lt`
 /// of plaintext diagonals from a ciphertext of width `src_k` into one of width `dst_k`, when it evaluates: the
 /// diagonals' scale comes off the source, capped at the destination. Baby-step keys are looked up at `src_k`, giant-step
 /// keys at this width. Diagonals of the source's rank need the source's scale too:
@@ -151,9 +151,9 @@ pub fn ckks_linear_transformation_output_layout<P: LtDiagonalMeta>(
 ///    [`LinearTransformation::alloc_prepared`] for the right side,
 ///    [`LinearTransformationBabySteps::alloc`] for the left side.
 /// 2. **Populate** them whenever the underlying data changes:
-///    [`Self::ckks_prepare_linear_transformation_rhs`] /
-///    [`Self::ckks_prepare_linear_transformation_baby_steps`].
-/// 3. **Evaluate** with [`Self::ckks_eval_linear_transformation_into`] (or the
+///    [`Self::ckks_linear_transformation_rhs_prepare`] /
+///    [`Self::ckks_linear_transformation_baby_steps_prepare`].
+/// 3. **Evaluate** with [`Self::ckks_linear_transformation_eval_into`] (or the
 ///    `_assign` / `_self_` variants), generic over the diagonal representation.
 ///
 /// The `_self_` variants allocate and prepare the baby cache internally for code
@@ -161,15 +161,15 @@ pub fn ckks_linear_transformation_output_layout<P: LtDiagonalMeta>(
 pub trait CKKSLinearTransformationOps<BE: Backend> {
     // ----- tmp_bytes -----
 
-    /// Scratch bytes required by [`Self::ckks_prepare_linear_transformation_rhs`].
-    fn ckks_prepare_linear_transformation_rhs_tmp_bytes<P>(&self, pt_infos: &P) -> usize
+    /// Scratch bytes required by [`Self::ckks_linear_transformation_rhs_prepare`].
+    fn ckks_linear_transformation_rhs_prepare_tmp_bytes<P>(&self, pt_infos: &P) -> usize
     where
         P: GLWEInfos;
 
-    /// Scratch bytes required by [`Self::ckks_prepare_linear_transformation_baby_steps`] for a
+    /// Scratch bytes required by [`Self::ckks_linear_transformation_baby_steps_prepare`] for a
     /// cache of the baby steps of `plan` (see
     /// [`GLWELinearTransformationOps::glwe_linear_transformation_baby_steps_prepare_tmp_bytes`](poulpy_core::GLWELinearTransformationOps::glwe_linear_transformation_baby_steps_prepare_tmp_bytes)).
-    fn ckks_prepare_linear_transformation_baby_steps_tmp_bytes<C, K>(
+    fn ckks_linear_transformation_baby_steps_prepare_tmp_bytes<C, K>(
         &self,
         ct: &C,
         plan: &LinearTransformationPlan,
@@ -184,7 +184,7 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     /// ciphertexts by its rank ([`ckks_plaintext_diagonal_layout`] for plaintexts), with the tensor key `tsk` for
     /// ciphertexts (see
     /// [`GLWELinearTransformationOps::glwe_linear_transformation_eval_tmp_bytes`](poulpy_core::GLWELinearTransformationOps::glwe_linear_transformation_eval_tmp_bytes)).
-    fn ckks_eval_linear_transformation_tmp_bytes<C, D, K, T>(
+    fn ckks_linear_transformation_eval_tmp_bytes<C, D, K, T>(
         &self,
         ct: &C,
         diagonal: &D,
@@ -200,8 +200,8 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
 
     /// Scratch bytes required to evaluate with a **streamed** RHS (an unprepared diagonal `P`): the streamed inner
     /// product additionally holds one resident `CnvPVecR` diagonal slot, so this is larger than the resident budget.
-    /// `diagonal`, `plan` and `tsk` as in [`Self::ckks_eval_linear_transformation_tmp_bytes`].
-    fn ckks_eval_linear_transformation_streamed_tmp_bytes<C, D, K, T>(
+    /// `diagonal`, `plan` and `tsk` as in [`Self::ckks_linear_transformation_eval_tmp_bytes`].
+    fn ckks_linear_transformation_eval_streamed_tmp_bytes<C, D, K, T>(
         &self,
         ct: &C,
         diagonal: &D,
@@ -215,14 +215,14 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
         K: GGLWEInfos,
         T: GGLWEInfos;
 
-    /// Scratch bytes required by [`Self::ckks_eval_linear_transformation_self_into`] and
-    /// [`Self::ckks_eval_linear_transformation_self_assign`] on a source of the layout `ct`, for a transform of the
+    /// Scratch bytes required by [`Self::ckks_linear_transformation_eval_self_into`] and
+    /// [`Self::ckks_linear_transformation_eval_self_assign`] on a source of the layout `ct`, for a transform of the
     /// schedule `plan` (its [`index`](LinearTransformation::index)) with diagonals of the layout `diagonal`, streamed
     /// when `streamed`, else resident, `diagonal`, `tsk` and `key` as in
-    /// [`Self::ckks_eval_linear_transformation_tmp_bytes`]: a working copy of `ct` and the baby-step cache beside the
+    /// [`Self::ckks_linear_transformation_eval_tmp_bytes`]: a working copy of `ct` and the baby-step cache beside the
     /// larger of the baby-step and evaluation queries.
     #[allow(clippy::too_many_arguments)]
-    fn ckks_eval_linear_transformation_self_into_tmp_bytes<C, D, K, T>(
+    fn ckks_linear_transformation_eval_self_tmp_bytes<C, D, K, T>(
         &self,
         streamed: bool,
         ct: &C,
@@ -237,9 +237,9 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
         K: GGLWEInfos,
         T: GGLWEInfos;
 
-    /// Scratch bytes required by [`Self::ckks_eval_linear_transformation_sum_into`] over resident transforms, `plan`
+    /// Scratch bytes required by [`Self::ckks_linear_transformation_eval_sum_into`] over resident transforms, `plan`
     /// the schedule of the first term.
-    fn ckks_eval_linear_transformation_sum_tmp_bytes<C, D, K, T>(
+    fn ckks_linear_transformation_eval_sum_tmp_bytes<C, D, K, T>(
         &self,
         ct: &C,
         diagonal: &D,
@@ -253,11 +253,11 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
         K: GGLWEInfos,
         T: GGLWEInfos;
 
-    /// Scratch bytes required by [`Self::ckks_eval_linear_transformation_sum_into`] over streamed transforms, plaintext
+    /// Scratch bytes required by [`Self::ckks_linear_transformation_eval_sum_into`] over streamed transforms, plaintext
     /// diagonals: the resident sum's with the streamed diagonal slot of
-    /// [`Self::ckks_eval_linear_transformation_streamed_tmp_bytes`], whose arguments it takes. `plan` the schedule of
+    /// [`Self::ckks_linear_transformation_eval_streamed_tmp_bytes`], whose arguments it takes. `plan` the schedule of
     /// the first term.
-    fn ckks_eval_linear_transformation_sum_streamed_tmp_bytes<C, D, K, T>(
+    fn ckks_linear_transformation_eval_sum_streamed_tmp_bytes<C, D, K, T>(
         &self,
         ct: &C,
         diagonal: &D,
@@ -289,7 +289,7 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     /// `InvalidOperand`, before any write to `prepared`, when `prepared` was allocated for another schedule or
     /// diagonal degree, radix, rank or width than `lt`'s, or when the diagonals of `lt` do not share one scale, width
     /// and slot kind.
-    fn ckks_prepare_linear_transformation_rhs<P>(
+    fn ckks_linear_transformation_rhs_prepare<P>(
         &self,
         prepared: &mut LinearTransformationPrepared<BE>,
         lt: &LinearTransformation<P>,
@@ -304,7 +304,7 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     /// [`LinearTransformationBabySteps::alloc`], or carved by poulpy-core's
     /// `ScratchArenaTakeGLWELinearTransformationBabySteps::take_glwe_linear_transformation_baby_steps_scratch`, for the
     /// rotations the caller wants populated. Performs zero `CnvPVecL` allocations.
-    fn ckks_prepare_linear_transformation_baby_steps<Src, H, L: BabyStepOperand<BE>>(
+    fn ckks_linear_transformation_baby_steps_prepare<Src, H, L: BabyStepOperand<BE>>(
         &self,
         babies: &mut LinearTransformationBabySteps<BE, L>,
         src: &Src,
@@ -329,7 +329,7 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     /// of `lt`. `babies` must cover at least `lt`'s baby rotations; supersets are
     /// allowed (e.g. when sharing a cache across several transforms).
     ///
-    /// Diagonals of the rank of `src`, ciphertexts prepared by [`Self::ckks_prepare_linear_transformation_rhs`] or
+    /// Diagonals of the rank of `src`, ciphertexts prepared by [`Self::ckks_linear_transformation_rhs_prepare`] or
     /// streamed, are multiplied as ciphertexts: each giant step's products are summed and relinearized once, as by
     /// [`CKKSDotProductOps::ckks_dot_product_prepared`](crate::api::CKKSDotProductOps::ckks_dot_product_prepared), with
     /// the tensor key of `keys` at the larger of the widths of `src` and of the diagonals.
@@ -348,7 +348,7 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     ///   at `dst`'s width;
     /// - `MissingAutomorphismKey` for a non-zero giant rotation of `lt` with no key at the output width;
     /// - `CKKSError::Internal` when `lt` has no diagonals or `babies` lacks one of `lt`'s baby rotations.
-    fn ckks_eval_linear_transformation_into<Dst, Src, P, H, L: BabyStepOperand<BE>>(
+    fn ckks_linear_transformation_eval_into<Dst, Src, P, H, L: BabyStepOperand<BE>>(
         &self,
         dst: &mut Dst,
         src: &Src,
@@ -364,8 +364,8 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
 
     /// In-place `dst = M · dst` with a caller-supplied baby cache (see
-    /// [`Self::ckks_eval_linear_transformation_into`]).
-    fn ckks_eval_linear_transformation_assign<Dst, P, H, L: BabyStepOperand<BE>>(
+    /// [`Self::ckks_linear_transformation_eval_into`]).
+    fn ckks_linear_transformation_eval_assign<Dst, P, H, L: BabyStepOperand<BE>>(
         &self,
         dst: &mut Dst,
         babies: &LinearTransformationBabySteps<BE, L>,
@@ -380,7 +380,7 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
 
     /// Computes `dst = Σ_t M_t · src_t` over resident transforms that share one
     /// giant schedule, at the giant key switches of one transform. Term `t` is
-    /// `(srcs[t], babies[t], lts[t])`, as for [`Self::ckks_eval_linear_transformation_into`];
+    /// `(srcs[t], babies[t], lts[t])`, as for [`Self::ckks_linear_transformation_eval_into`];
     /// one term is that method, bit for bit. The terms are added in slice order;
     /// see [`GLWELinearTransformationOps::glwe_linear_transformation_eval_sum_into`](poulpy_core::GLWELinearTransformationOps::glwe_linear_transformation_eval_sum_into)
     /// for why the order matters and how to pick `base2k`.
@@ -391,8 +391,8 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     /// length or are empty, or if a term does not share the first one's giant
     /// schedule, diagonal layout, width, scale and slot kind, source layout and
     /// scale, or baby-cache layout and width. Also returns an error before writing `dst`
-    /// if a term fails the checks of [`Self::ckks_eval_linear_transformation_into`].
-    fn ckks_eval_linear_transformation_sum_into<Dst, Src, P, H, L: BabyStepOperand<BE>>(
+    /// if a term fails the checks of [`Self::ckks_linear_transformation_eval_into`].
+    fn ckks_linear_transformation_eval_sum_into<Dst, Src, P, H, L: BabyStepOperand<BE>>(
         &self,
         dst: &mut Dst,
         srcs: &[&Src],
@@ -410,9 +410,9 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     // ----- eval (baby cache carved from scratch) -----
 
     /// Computes `dst = M · src`, preparing a baby cache it carves from
-    /// `scratch`, within [`Self::ckks_eval_linear_transformation_self_into_tmp_bytes`].
+    /// `scratch`, within [`Self::ckks_linear_transformation_eval_self_tmp_bytes`].
     ///
-    /// Convenience over [`Self::ckks_eval_linear_transformation_into`] for one-off
+    /// Convenience over [`Self::ckks_linear_transformation_eval_into`] for one-off
     /// evaluations; for repeated evaluation that shares a baby cache, use that
     /// method. An unprepared `lt` takes the streamed path; a prepared `lt` the
     /// resident path.
@@ -420,9 +420,9 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     /// # Errors
     ///
     /// [`CKKSError::Internal`](crate::CKKSError::Internal) for an arena below the baby-step cache, before any
-    /// write, then the errors of [`Self::ckks_prepare_linear_transformation_baby_steps`] and
-    /// [`Self::ckks_eval_linear_transformation_into`], which they return as they do.
-    fn ckks_eval_linear_transformation_self_into<Dst, Src, P, H>(
+    /// write, then the errors of [`Self::ckks_linear_transformation_baby_steps_prepare`] and
+    /// [`Self::ckks_linear_transformation_eval_into`], which they return as they do.
+    fn ckks_linear_transformation_eval_self_into<Dst, Src, P, H>(
         &self,
         dst: &mut Dst,
         src: &Src,
@@ -437,14 +437,14 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
 
     /// In-place `dst = M · dst`, carving the baby cache from `scratch` (see
-    /// [`Self::ckks_eval_linear_transformation_self_into`]), within
-    /// [`Self::ckks_eval_linear_transformation_self_into_tmp_bytes`] at `dst`.
+    /// [`Self::ckks_linear_transformation_eval_self_into`]), within
+    /// [`Self::ckks_linear_transformation_eval_self_tmp_bytes`] at `dst`.
     ///
     /// # Errors
     ///
     /// [`CKKSError::Internal`](crate::CKKSError::Internal) for an arena below its working copy, before any write,
-    /// then the errors of [`Self::ckks_eval_linear_transformation_self_into`] into that copy, `dst` unchanged.
-    fn ckks_eval_linear_transformation_self_assign<Dst, P, H>(
+    /// then the errors of [`Self::ckks_linear_transformation_eval_self_into`] into that copy, `dst` unchanged.
+    fn ckks_linear_transformation_eval_self_assign<Dst, P, H>(
         &self,
         dst: &mut Dst,
         lt: &LinearTransformation<P>,

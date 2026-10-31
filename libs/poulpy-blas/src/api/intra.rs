@@ -10,7 +10,7 @@ use crate::layouts::{BlasContextPrepared, BlasGrid, BlasGridInfos, BlasGridMut};
 /// In the `# Metadata` sections, `x.k` is the width of the blocks of `x`, for `res` the width they have before the
 /// call, `p` is the scale of the maps of `ctx`, that of the `coeffs_meta` it was encoded at, and `a`'s batch is its
 /// record, or the batch its blocks' label proves when it has none ([`grid_batch`](crate::layouts::grid_batch)). A map
-/// of `ctx` is evaluated by poulpy-ckks's `ckks_eval_linear_transformation_into`, then labelled as its source; its
+/// of `ctx` is evaluated by poulpy-ckks's `ckks_linear_transformation_eval_into`, then labelled as its source; its
 /// slots are `Real`. A copy is poulpy-ckks's `ckks_copy`: it keeps the canonical flag of `a` when `res.k >= a.k` and
 /// `res` has room for every limb of a non-canonical `a`, and otherwise normalizes, which sets it.
 pub trait BlasMatIntraOps<BE: Backend> {

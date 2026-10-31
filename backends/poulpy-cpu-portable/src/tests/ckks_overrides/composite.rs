@@ -11,7 +11,7 @@ use poulpy_ckks::{
         CKKSAddManyOps, CKKSAddOps, CKKSAffineOps, CKKSAllOpsTmpBytes, CKKSApproximationOps, CKKSCopyOps, CKKSMulAddOps,
         CKKSMulOps, CKKSMulSubOps, CKKSSubOps,
     },
-    layouts::{CKKSModuleAlloc, CKKSPlaintextOwned, PolynomialApproximation},
+    layouts::{CKKSPlaintextAlloc, CKKSPlaintextOwned, PolynomialApproximation},
     polynomial::BSGSPolynomial,
     test_suite::{
         CKKSTestParams,
@@ -154,7 +154,7 @@ fn add_many_enters_the_selected_additions() {
 fn run_pt_form<BE, Q, O>(module: &Module<BE>, query: Q, op: O) -> Snapshot
 where
     BE: Backend<ZnxWord = i64>,
-    Module<BE>: GLWEFill<BE> + CKKSModuleAlloc<BE>,
+    Module<BE>: GLWEFill<BE>,
     Q: FnOnce(
         &poulpy_ckks::layouts::CKKSCiphertextOwned<BE>,
         &poulpy_ckks::layouts::CKKSCiphertextOwned<BE>,
@@ -455,12 +455,12 @@ fn affine_forms_enter_the_selected_plaintext_additions() {
 /// digits from fixed seeds.
 fn approximation<BE: Backend<ZnxWord = i64>>(module: &Module<BE>) -> PolynomialApproximation<CKKSPlaintextOwned<BE>>
 where
-    Module<BE>: CKKSModuleAlloc<BE> + GLWEFill<BE>,
+    Module<BE>: CKKSPlaintextAlloc<BE> + GLWEFill<BE>,
 {
     use poulpy_ckks::polynomial::{Basis, Polynomial, SplitStrategy};
     let seed = Cell::new(50u8);
     let coeffs = |count: usize| -> anyhow::Result<CKKSPlaintextOwned<BE>> {
-        let mut pt = module.ckks_pt_coeffs_alloc(count, 16usize.into(), 32usize.into());
+        let mut pt = module.ckks_plaintext_alloc(count.into(), 16usize.into(), 32usize.into());
         pt.set_meta(GLWEPlaintextMeta {
             scale: Scale::Log(8),
             ..Default::default()
@@ -494,9 +494,9 @@ fn approximations_enter_the_selected_map_and_polynomial_evaluation() {
         let approx = approximation(r);
         let src = fixture_ciphertext(r, &approximation_input(), 41);
         let mut res = fixture_ciphertext(r, &approximation_input(), 31);
-        let bytes = r.ckks_approximation_tmp_bytes(&res, &src, &approx, &tsk);
+        let bytes = r.ckks_polynomial_approximation_eval_tmp_bytes(&res, &src, &approx, &tsk);
         with_scratch::<FFT64Portable, _>(bytes, |s| {
-            r.ckks_eval_approximation(&mut res, &src, &approx, &super::NoTensorKey, s)
+            r.ckks_polynomial_approximation_eval(&mut res, &src, &approx, &super::NoTensorKey, s)
         })
         .unwrap();
         snapshot::<FFT64Portable, _>(&res)
@@ -510,7 +510,7 @@ fn approximations_enter_the_selected_map_and_polynomial_evaluation() {
     let eval = module_test
         .ckks_all_ops_tmp_bytes(&res, coeffs, &tsk)
         .max(module_test.ckks_all_ops_tmp_bytes(&src, coeffs, &tsk));
-    let bytes = module_test.ckks_approximation_tmp_bytes(&res, &src, &approx, &tsk);
+    let bytes = module_test.ckks_polynomial_approximation_eval_tmp_bytes(&res, &src, &approx, &tsk);
     assert_eq!(
         bytes,
         OverrideBackend::scratch_aligned(module_test.glwe_bytes_of_from_infos(&src))
@@ -519,7 +519,7 @@ fn approximations_enter_the_selected_map_and_polynomial_evaluation() {
     super::REAL_CALLS.set(0);
     let calls = count(&ADD_CONST_CALLS, || {
         with_scratch::<OverrideBackend, _>(bytes, |s| {
-            module_test.ckks_eval_approximation(&mut res, &src, &approx, &super::NoTensorKey, s)
+            module_test.ckks_polynomial_approximation_eval(&mut res, &src, &approx, &super::NoTensorKey, s)
         })
         .unwrap();
     });
@@ -533,13 +533,13 @@ fn approximations_enter_the_selected_map_and_polynomial_evaluation() {
     super::REAL_CALLS.set(0);
     let calls = count(&ADD_CONST_CALLS, || {
         let err = with_scratch::<OverrideBackend, _>(bytes, |s| {
-            module_test.ckks_eval_approximation(&mut res, &short, &approx, &super::NoTensorKey, s)
+            module_test.ckks_polynomial_approximation_eval(&mut res, &short, &approx, &super::NoTensorKey, s)
         })
         .unwrap_err();
         assert_eq!(
             err.composition(),
             Some(&CKKSCompositionError::InsufficientHomomorphicCapacity {
-                op: "ckks_eval_approximation",
+                op: "ckks_polynomial_approximation_eval",
                 available_log_budget: 4,
                 required_bits: approx.consumed_bits(16),
             })

@@ -22,7 +22,7 @@ use poulpy_hal::{
 
 use crate::{
     CKKSCtBounds,
-    api::ShipScalar,
+    api::CKKSShipScalar,
     layouts::{CKKSCiphertextOwned, CKKSPlaintextOwned, HMuxRotKeyPrepared, ShipKeysPrepared, ShipPlan},
     oep::{
         CKKSAddImpl, CKKSConjugateImpl, CKKSEncodingImpl, CKKSImagImpl, CKKSMulImpl, CKKSShipCoeffEncodingImpl, CKKSShipImpl,
@@ -117,7 +117,7 @@ pub trait CKKSShipReference<BE: Backend>: Borrow<Module<BE>> + Sized {
             + GLWEKeyswitchImpl
             + GLWEZeroImpl
             + HalVecZnxDftImpl,
-        F: ShipScalar,
+        F: CKKSShipScalar,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
         preflight::ckks_ship_bootstrap_tmp_bytes::<BE, F, Src>(self.borrow(), output, input, keys)
@@ -151,7 +151,7 @@ pub trait CKKSShipReference<BE: Backend>: Borrow<Module<BE>> + Sized {
             + GLWEKeyswitchImpl
             + GLWEZeroImpl
             + HalVecZnxDftImpl,
-        F: ShipScalar,
+        F: CKKSShipScalar,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
         bootstrap::ckks_ship_bootstrap_into::<BE, F, Src>(self.borrow(), output, input, keys, scratch)
@@ -182,7 +182,7 @@ pub trait CKKSShipReference<BE: Backend>: Borrow<Module<BE>> + Sized {
             + GLWEKeyswitchImpl
             + GLWEZeroImpl
             + HalVecZnxDftImpl,
-        F: ShipScalar,
+        F: CKKSShipScalar,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
         bootstrap::ckks_ship_bootstrap_complex_into::<BE, F, Src>(self.borrow(), output, input, keys, scratch)

@@ -9,7 +9,7 @@ use crate::{
     CKKSCtBounds, CKKSInfos, CKKSResult as Result, SetCKKSInfos,
     api::{CKKSAddOps, CKKSMulOps},
     ckks_ensure_operand,
-    layouts::{CKKSCiphertext, CKKSCiphertextViewMut, ScratchArenaTakeCKKS},
+    layouts::{CKKSCiphertext, CKKSCiphertextViewMut, ScratchArenaTakeCKKSCiphertext},
     oep::CKKSDotProductImpl,
 };
 

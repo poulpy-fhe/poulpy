@@ -10,7 +10,7 @@ use poulpy_hal::{
 
 use poulpy_ckks::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
-    layouts::{CKKSCiphertext, CKKSModuleAlloc},
+    layouts::{CKKSCiphertext, CKKSCiphertextAlloc},
     test_suite::{
         CKKSTestParams,
         helpers::{

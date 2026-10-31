@@ -1,9 +1,10 @@
 use poulpy_ckks::{
     CKKSCtBounds, CKKSLayout, CKKSResult as Result, SetCKKSInfos,
     api::{
-        CKKSCopyOps, CKKSDotProductOps, CKKSLinearTransformationOps, CKKSModuleInfos, CKKSMulOps, LinearTransformationPrepared,
+        CKKSCopyOps, CKKSDotProductOps, CKKSLeftOperandPreparedFactory, CKKSLinearTransformationOps, CKKSModuleInfos, CKKSMulOps,
+        CKKSRightOperandPreparedFactory, LinearTransformationPrepared,
     },
-    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPreparedLeft, CKKSPreparedRight},
+    layouts::{CKKSCiphertextAlloc, CKKSCiphertextOwned, CKKSLeftOperandPrepared, CKKSRightOperandPrepared},
 };
 use poulpy_core::{
     GLWEMulPreparedPlainSum,
@@ -87,14 +88,14 @@ pub trait BlasMatMulReference<BE: Backend> {
     /// evaluates `S = sigma(a_il)` for every block of the row into a heap block of `a`'s layout at the width sigma
     /// leaves; one hook call evaluates `phi^k(S)` for every `S` and every `k` in `1..d` into heap blocks of the terms'
     /// layout, one baby-step cache per `S`; then `ckks_copy` narrows each `S` into a block of the terms' layout, its
-    /// term `0`, exactly: it charges the shift to the budget. Each term is converted once by `ckks_prepare_left_into`
+    /// term `0`, exactly: it charges the shift to the budget. Each term is converted once by `ckks_left_operand_prepare`
     /// into its place in `res`, and has the layout
     /// [`blas_matmul_left_term_layout`](crate::layouts::blas_matmul_left_term_layout) gives. `res` then reports the
     /// infos [`blas_matmul_left_operand_layout`](crate::layouts::blas_matmul_left_operand_layout) gives for `a` under
     /// its hint and `a`'s batch, [`grid_batch`].
     fn blas_matmul_prepare_left_reference<A, K>(
         &self,
-        res: &mut BlasMatMulOperand<BE, CKKSPreparedLeft<BE>>,
+        res: &mut BlasMatMulOperand<BE, CKKSLeftOperandPrepared<BE>>,
         a: &A,
         ctx: &BlasContextPrepared<BE>,
         keys: &K,
@@ -102,7 +103,7 @@ pub trait BlasMatMulReference<BE: Backend> {
     ) -> Result<()>
     where
         BE: BlasMatIntraImpl,
-        Self: CKKSMulOps<BE> + CKKSCopyOps<BE>,
+        Self: CKKSMulOps<BE> + CKKSLeftOperandPreparedFactory<BE> + CKKSCopyOps<BE>,
         A: BlasGrid<BE>,
         K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
 
@@ -123,10 +124,10 @@ pub trait BlasMatMulReference<BE: Backend> {
 
     /// As [`Self::blas_matmul_prepare_left_reference`], with the right maps
     /// [`blas_matmul_right_term_layout`](crate::layouts::blas_matmul_right_term_layout) reads, converted by
-    /// `ckks_prepare_right_into`. For a replicated `b`, whose shifts spend no scale, the copy keeps `S`'s width.
+    /// `ckks_right_operand_prepare`. For a replicated `b`, whose shifts spend no scale, the copy keeps `S`'s width.
     fn blas_matmul_prepare_right_reference<B, K>(
         &self,
-        res: &mut BlasMatMulOperand<BE, CKKSPreparedRight<BE>>,
+        res: &mut BlasMatMulOperand<BE, CKKSRightOperandPrepared<BE>>,
         b: &B,
         ctx: &BlasContextPrepared<BE>,
         keys: &K,
@@ -134,7 +135,7 @@ pub trait BlasMatMulReference<BE: Backend> {
     ) -> Result<()>
     where
         BE: BlasMatIntraImpl,
-        Self: CKKSMulOps<BE> + CKKSCopyOps<BE>,
+        Self: CKKSMulOps<BE> + CKKSRightOperandPreparedFactory<BE> + CKKSCopyOps<BE>,
         B: BlasGrid<BE>,
         K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
 
@@ -184,8 +185,8 @@ pub trait BlasMatMulReference<BE: Backend> {
     fn blas_matmul_prepared_reference<R, T, K>(
         &self,
         res: &mut R,
-        a: &BlasMatMulOperand<BE, CKKSPreparedLeft<BE>>,
-        b: &BlasMatMulOperand<BE, CKKSPreparedRight<BE>>,
+        a: &BlasMatMulOperand<BE, CKKSLeftOperandPrepared<BE>>,
+        b: &BlasMatMulOperand<BE, CKKSRightOperandPrepared<BE>>,
         ctx: &BlasContextPrepared<BE>,
         tsk: &T,
         keys: &K,
@@ -246,7 +247,7 @@ pub trait BlasMatMulReference<BE: Backend> {
     /// a block row of `a` into such blocks. Under `JklsStored` and `JklsGalois`, in place of the baby steps and the
     /// summed linear transformation, the map hook's query of `ctx`'s masks, phi^k, from those blocks into blocks of the
     /// terms' layout, the copy of one into a block of the terms' layout, the conversion of a term, and poulpy-ckks's
-    /// `ckks_dot_product_prepared_pt` query of a block of `res` by terms of that layout and `b`'s plaintexts. `ctx` is
+    /// `ckks_dot_product_prepared_pt_vec` query of a block of `res` by terms of that layout and `b`'s plaintexts. `ctx` is
     /// read only then.
     fn blas_matmul_pt_right_tmp_bytes_reference<R, A, K>(
         &self,
@@ -361,7 +362,10 @@ pub trait BlasMatMulReference<BE: Backend> {
         K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
 }
 
-impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
+impl<BE: Backend> BlasMatMulReference<BE> for Module<BE>
+where
+    Module<BE>: CKKSRightOperandPreparedFactory<BE> + CKKSLeftOperandPreparedFactory<BE>,
+{
     fn blas_matmul_prepare_left_tmp_bytes_reference<A, K>(
         &self,
         a: &A,
@@ -380,7 +384,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
 
     fn blas_matmul_prepare_left_reference<A, K>(
         &self,
-        res: &mut BlasMatMulOperand<BE, CKKSPreparedLeft<BE>>,
+        res: &mut BlasMatMulOperand<BE, CKKSLeftOperandPrepared<BE>>,
         a: &A,
         ctx: &BlasContextPrepared<BE>,
         keys: &K,
@@ -388,13 +392,13 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
     ) -> Result<()>
     where
         BE: BlasMatIntraImpl,
-        Self: CKKSMulOps<BE> + CKKSCopyOps<BE>,
+        Self: CKKSMulOps<BE> + CKKSLeftOperandPreparedFactory<BE> + CKKSCopyOps<BE>,
         A: BlasGrid<BE>,
         K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync,
     {
         validate_blas_matmul_prepare_left(self, &*res, a, ctx, keys)?;
-        let convert = |res: &mut CKKSPreparedLeft<BE>, term: &CKKSCiphertextOwned<BE>, s: &mut ScratchArena<'_, BE>| {
-            self.ckks_prepare_left_into(res, term, s)
+        let convert = |res: &mut CKKSLeftOperandPrepared<BE>, term: &CKKSCiphertextOwned<BE>, s: &mut ScratchArena<'_, BE>| {
+            self.ckks_left_operand_prepare(res, term, s)
         };
         let (first, shift) = (ctx.sigma(), |k| ctx.rotate_cols(k));
         let layout = left_operand_layout(a, &ctx.maps, res.hint());
@@ -431,7 +435,7 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
 
     fn blas_matmul_prepare_right_reference<B, K>(
         &self,
-        res: &mut BlasMatMulOperand<BE, CKKSPreparedRight<BE>>,
+        res: &mut BlasMatMulOperand<BE, CKKSRightOperandPrepared<BE>>,
         b: &B,
         ctx: &BlasContextPrepared<BE>,
         keys: &K,
@@ -439,13 +443,13 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
     ) -> Result<()>
     where
         BE: BlasMatIntraImpl,
-        Self: CKKSMulOps<BE> + CKKSCopyOps<BE>,
+        Self: CKKSMulOps<BE> + CKKSRightOperandPreparedFactory<BE> + CKKSCopyOps<BE>,
         B: BlasGrid<BE>,
         K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync,
     {
         validate_blas_matmul_prepare_right(self, &*res, b, ctx, keys)?;
-        let convert = |res: &mut CKKSPreparedRight<BE>, term: &CKKSCiphertextOwned<BE>, s: &mut ScratchArena<'_, BE>| {
-            self.ckks_prepare_right_into(res, term, s)
+        let convert = |res: &mut CKKSRightOperandPrepared<BE>, term: &CKKSCiphertextOwned<BE>, s: &mut ScratchArena<'_, BE>| {
+            self.ckks_right_operand_prepare(res, term, s)
         };
         let (first, shift) = right_maps(&ctx.maps, replicated::<BE::Ring>(b));
         let layout = right_operand_layout(b, &ctx.maps, res.hint());
@@ -487,8 +491,8 @@ impl<BE: Backend> BlasMatMulReference<BE> for Module<BE> {
     fn blas_matmul_prepared_reference<R, T, K>(
         &self,
         res: &mut R,
-        a: &BlasMatMulOperand<BE, CKKSPreparedLeft<BE>>,
-        b: &BlasMatMulOperand<BE, CKKSPreparedRight<BE>>,
+        a: &BlasMatMulOperand<BE, CKKSLeftOperandPrepared<BE>>,
+        b: &BlasMatMulOperand<BE, CKKSRightOperandPrepared<BE>>,
         ctx: &BlasContextPrepared<BE>,
         tsk: &T,
         keys: &K,
@@ -801,7 +805,7 @@ fn product_scratch<BE, T, K>(
 ) -> usize
 where
     BE: BlasJklsImpl + BlasMatIntraImpl,
-    Module<BE>: CKKSMulOps<BE> + CKKSCopyOps<BE>,
+    Module<BE>: CKKSRightOperandPreparedFactory<BE> + CKKSLeftOperandPreparedFactory<BE> + CKKSMulOps<BE> + CKKSCopyOps<BE>,
     T: GetTensorKey<BE>,
     K: GetAutomorphismKey<BE>,
 {
@@ -824,8 +828,8 @@ where
 fn product<BE, R, SA, SB, T, K>(
     module: &Module<BE>,
     res: &mut R,
-    a: Side<'_, SA, CKKSPreparedLeft<BE>>,
-    b: Side<'_, SB, CKKSPreparedRight<BE>>,
+    a: Side<'_, SA, CKKSLeftOperandPrepared<BE>>,
+    b: Side<'_, SB, CKKSRightOperandPrepared<BE>>,
     inner: usize,
     log_d: usize,
     ctx: &BlasContextPrepared<BE>,
@@ -836,7 +840,7 @@ fn product<BE, R, SA, SB, T, K>(
 ) -> Result<()>
 where
     BE: BlasJklsImpl + BlasMatIntraImpl,
-    Module<BE>: CKKSMulOps<BE> + CKKSCopyOps<BE>,
+    Module<BE>: CKKSMulOps<BE> + CKKSLeftOperandPreparedFactory<BE> + CKKSRightOperandPreparedFactory<BE> + CKKSCopyOps<BE>,
     R: BlasGridMut<BE>,
     SA: GLWEToBackendRef<BE> + CKKSCtBounds + Sync,
     SB: GLWEToBackendRef<BE> + CKKSCtBounds + Sync,
@@ -857,18 +861,23 @@ where
     // The terms of block row `i` of a hot `a`, and of block column `j` of a hot `b`, `l`-major.
     let a_row = |blocks: &[SA], i: usize, scratch: &mut ScratchArena<'_, BE>| {
         let sources: Vec<_> = blocks[i * inner..(i + 1) * inner].iter().collect();
-        let convert = |term: &CKKSCiphertextOwned<BE>, s: &mut ScratchArena<'_, BE>| module.ckks_prepare_left(term, hot, s);
+        let convert =
+            |term: &CKKSCiphertextOwned<BE>, s: &mut ScratchArena<'_, BE>| module.ckks_left_operand_prepare_alloc(term, hot, s);
         new_unit_terms(module, &sources, ctx.sigma(), &a_shifts, keys, convert, scratch)
     };
     let b_col = |blocks: &[SB], j: usize, scratch: &mut ScratchArena<'_, BE>| {
         let sources: Vec<_> = (0..inner).map(|l| &blocks[l * n + j]).collect();
-        let convert = |term: &CKKSCiphertextOwned<BE>, s: &mut ScratchArena<'_, BE>| module.ckks_prepare_right(term, hot, s);
+        let convert =
+            |term: &CKKSCiphertextOwned<BE>, s: &mut ScratchArena<'_, BE>| module.ckks_right_operand_prepare_alloc(term, hot, s);
         new_unit_terms(module, &sources, b_first, &b_shifts, keys, convert, scratch)
     };
-    let mut jkls =
-        |i: usize, j: usize, lhs: &[&CKKSPreparedLeft<BE>], rhs: &[&CKKSPreparedRight<BE>], s: &mut ScratchArena<'_, BE>| {
-            BE::blas_jkls_block(module, &mut res.blocks_mut()[i * n + j], lhs, rhs, tsk, s)
-        };
+    let mut jkls = |i: usize,
+                    j: usize,
+                    lhs: &[&CKKSLeftOperandPrepared<BE>],
+                    rhs: &[&CKKSRightOperandPrepared<BE>],
+                    s: &mut ScratchArena<'_, BE>| {
+        BE::blas_jkls_block(module, &mut res.blocks_mut()[i * n + j], lhs, rhs, tsk, s)
+    };
     match (a, b) {
         (Side::Cold(at), Side::Cold(bt)) => {
             for i in 0..m {
@@ -980,7 +989,7 @@ fn hot_tmp_bytes<BE>(
 ) -> usize
 where
     BE: BlasMatIntraImpl,
-    Module<BE>: CKKSMulOps<BE> + CKKSCopyOps<BE>,
+    Module<BE>: CKKSRightOperandPreparedFactory<BE> + CKKSLeftOperandPreparedFactory<BE> + CKKSMulOps<BE> + CKKSCopyOps<BE>,
 {
     let left = match a.hint() {
         PrepareHint::OneShot => {
@@ -1021,7 +1030,7 @@ fn prepare_tmp_bytes<'c, BE, K>(
 ) -> usize
 where
     BE: BlasMatIntraImpl + 'c,
-    Module<BE>: CKKSMulOps<BE> + CKKSCopyOps<BE>,
+    Module<BE>: CKKSRightOperandPreparedFactory<BE> + CKKSLeftOperandPreparedFactory<BE> + CKKSMulOps<BE> + CKKSCopyOps<BE>,
     K: GGLWEInfos,
 {
     match hint {
@@ -1047,7 +1056,7 @@ fn unit_tmp_bytes<BE, K>(
 ) -> usize
 where
     BE: BlasMatIntraImpl,
-    Module<BE>: CKKSMulOps<BE> + CKKSCopyOps<BE>,
+    Module<BE>: CKKSMulOps<BE> + CKKSLeftOperandPreparedFactory<BE> + CKKSRightOperandPreparedFactory<BE> + CKKSCopyOps<BE>,
     K: GGLWEInfos,
 {
     let block = a.block_layout();
@@ -1056,7 +1065,8 @@ where
     BE::blas_map_blocks_tmp_bytes(module, sources, &s, &block, &[first], keys)
         .max(BE::blas_map_blocks_tmp_bytes(module, sources, &term, &s, shifts, keys))
         .max(module.ckks_copy_tmp_bytes(&term, &s))
-        .max(module.ckks_prepare_tmp_bytes(&term))
+        .max(module.ckks_left_operand_prepare_tmp_bytes(&term))
+        .max(module.ckks_right_operand_prepare_tmp_bytes(&term))
 }
 
 /// Fills `res` from `a` under its hint: hot, `ckks_copy` of every block of `a` into `res`'s; cold, the terms of every
@@ -1077,7 +1087,7 @@ fn prepare<'c, BE, A, K, P>(
 ) -> Result<()>
 where
     BE: BlasMatIntraImpl + 'c,
-    Module<BE>: CKKSMulOps<BE> + CKKSCopyOps<BE>,
+    Module<BE>: CKKSRightOperandPreparedFactory<BE> + CKKSLeftOperandPreparedFactory<BE> + CKKSMulOps<BE> + CKKSCopyOps<BE>,
     A: BlasGrid<BE>,
     K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync,
 {
@@ -1190,7 +1200,7 @@ fn pt_tmp_bytes<BE: BlasMatIntraImpl + BlasJklsImpl>(
     res: &impl BlasGridInfos,
     a: &impl BlasGridInfos,
     first: Option<&LinearTransformationPrepared<BE>>,
-    masked: Option<(&[&LinearTransformationPrepared<BE>], &CKKSPreparedRight<BE>)>,
+    masked: Option<(&[&LinearTransformationPrepared<BE>], &CKKSRightOperandPrepared<BE>)>,
     sources: usize,
     outputs: usize,
     keys: &impl GGLWEInfos,
@@ -1227,7 +1237,7 @@ fn masked_units<'s, 'p, BE, D, S, K>(
     inner: usize,
     first: &LinearTransformationPrepared<BE>,
     masks: &[&LinearTransformationPrepared<BE>],
-    plaintexts: impl Fn(usize, usize) -> &'p [CKKSPreparedRight<BE>],
+    plaintexts: impl Fn(usize, usize) -> &'p [CKKSRightOperandPrepared<BE>],
     galois: &[i64],
     label: usize,
     keys: &K,

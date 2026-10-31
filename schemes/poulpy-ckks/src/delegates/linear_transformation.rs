@@ -15,14 +15,14 @@ use crate::{
 };
 
 impl<BE: Backend + CKKSLinearTransformationImpl> CKKSLinearTransformationOps<BE> for Module<BE> {
-    fn ckks_prepare_linear_transformation_rhs_tmp_bytes<P>(&self, pt_infos: &P) -> usize
+    fn ckks_linear_transformation_rhs_prepare_tmp_bytes<P>(&self, pt_infos: &P) -> usize
     where
         P: GLWEInfos,
     {
-        BE::ckks_prepare_linear_transformation_rhs_tmp_bytes(self, pt_infos)
+        BE::ckks_linear_transformation_rhs_prepare_tmp_bytes(self, pt_infos)
     }
 
-    fn ckks_prepare_linear_transformation_baby_steps_tmp_bytes<C, K>(
+    fn ckks_linear_transformation_baby_steps_prepare_tmp_bytes<C, K>(
         &self,
         ct: &C,
         plan: &LinearTransformationPlan,
@@ -32,27 +32,10 @@ impl<BE: Backend + CKKSLinearTransformationImpl> CKKSLinearTransformationOps<BE>
         C: CKKSCtBounds,
         K: GGLWEInfos,
     {
-        BE::ckks_prepare_linear_transformation_baby_steps_tmp_bytes(self, ct, plan, key)
+        BE::ckks_linear_transformation_baby_steps_prepare_tmp_bytes(self, ct, plan, key)
     }
 
-    fn ckks_eval_linear_transformation_tmp_bytes<C, D, K, T>(
-        &self,
-        ct: &C,
-        diagonal: &D,
-        plan: &LinearTransformationPlan,
-        tsk: &T,
-        key: &K,
-    ) -> usize
-    where
-        C: CKKSCtBounds,
-        D: GLWEInfos,
-        K: GGLWEInfos,
-        T: GGLWEInfos,
-    {
-        BE::ckks_eval_linear_transformation_tmp_bytes(self, ct, diagonal, plan, tsk, key)
-    }
-
-    fn ckks_eval_linear_transformation_streamed_tmp_bytes<C, D, K, T>(
+    fn ckks_linear_transformation_eval_tmp_bytes<C, D, K, T>(
         &self,
         ct: &C,
         diagonal: &D,
@@ -66,10 +49,27 @@ impl<BE: Backend + CKKSLinearTransformationImpl> CKKSLinearTransformationOps<BE>
         K: GGLWEInfos,
         T: GGLWEInfos,
     {
-        BE::ckks_eval_linear_transformation_streamed_tmp_bytes(self, ct, diagonal, plan, tsk, key)
+        BE::ckks_linear_transformation_eval_tmp_bytes(self, ct, diagonal, plan, tsk, key)
     }
 
-    fn ckks_eval_linear_transformation_self_into_tmp_bytes<C, D, K, T>(
+    fn ckks_linear_transformation_eval_streamed_tmp_bytes<C, D, K, T>(
+        &self,
+        ct: &C,
+        diagonal: &D,
+        plan: &LinearTransformationPlan,
+        tsk: &T,
+        key: &K,
+    ) -> usize
+    where
+        C: CKKSCtBounds,
+        D: GLWEInfos,
+        K: GGLWEInfos,
+        T: GGLWEInfos,
+    {
+        BE::ckks_linear_transformation_eval_streamed_tmp_bytes(self, ct, diagonal, plan, tsk, key)
+    }
+
+    fn ckks_linear_transformation_eval_self_tmp_bytes<C, D, K, T>(
         &self,
         streamed: bool,
         ct: &C,
@@ -84,10 +84,10 @@ impl<BE: Backend + CKKSLinearTransformationImpl> CKKSLinearTransformationOps<BE>
         K: GGLWEInfos,
         T: GGLWEInfos,
     {
-        BE::ckks_eval_linear_transformation_self_into_tmp_bytes(self, streamed, ct, diagonal, plan, tsk, key)
+        BE::ckks_linear_transformation_eval_self_tmp_bytes(self, streamed, ct, diagonal, plan, tsk, key)
     }
 
-    fn ckks_eval_linear_transformation_sum_streamed_tmp_bytes<C, D, K, T>(
+    fn ckks_linear_transformation_eval_sum_streamed_tmp_bytes<C, D, K, T>(
         &self,
         ct: &C,
         diagonal: &D,
@@ -101,10 +101,10 @@ impl<BE: Backend + CKKSLinearTransformationImpl> CKKSLinearTransformationOps<BE>
         K: GGLWEInfos,
         T: GGLWEInfos,
     {
-        BE::ckks_eval_linear_transformation_sum_streamed_tmp_bytes(self, ct, diagonal, plan, tsk, key)
+        BE::ckks_linear_transformation_eval_sum_streamed_tmp_bytes(self, ct, diagonal, plan, tsk, key)
     }
 
-    fn ckks_eval_linear_transformation_sum_tmp_bytes<C, D, K, T>(
+    fn ckks_linear_transformation_eval_sum_tmp_bytes<C, D, K, T>(
         &self,
         ct: &C,
         diagonal: &D,
@@ -118,10 +118,10 @@ impl<BE: Backend + CKKSLinearTransformationImpl> CKKSLinearTransformationOps<BE>
         K: GGLWEInfos,
         T: GGLWEInfos,
     {
-        BE::ckks_eval_linear_transformation_sum_tmp_bytes(self, ct, diagonal, plan, tsk, key)
+        BE::ckks_linear_transformation_eval_sum_tmp_bytes(self, ct, diagonal, plan, tsk, key)
     }
 
-    fn ckks_prepare_linear_transformation_rhs<P>(
+    fn ckks_linear_transformation_rhs_prepare<P>(
         &self,
         prepared: &mut LinearTransformationPrepared<BE>,
         lt: &LinearTransformation<P>,
@@ -130,10 +130,10 @@ impl<BE: Backend + CKKSLinearTransformationImpl> CKKSLinearTransformationOps<BE>
     where
         P: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        BE::ckks_prepare_linear_transformation_rhs(self, prepared, lt, scratch)
+        BE::ckks_linear_transformation_rhs_prepare(self, prepared, lt, scratch)
     }
 
-    fn ckks_prepare_linear_transformation_baby_steps<Src, H, L: BabyStepOperand<BE>>(
+    fn ckks_linear_transformation_baby_steps_prepare<Src, H, L: BabyStepOperand<BE>>(
         &self,
         babies: &mut LinearTransformationBabySteps<BE, L>,
         src: &Src,
@@ -144,10 +144,10 @@ impl<BE: Backend + CKKSLinearTransformationImpl> CKKSLinearTransformationOps<BE>
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetAutomorphismKey<BE>,
     {
-        BE::ckks_prepare_linear_transformation_baby_steps(self, babies, src, keys, scratch)
+        BE::ckks_linear_transformation_baby_steps_prepare(self, babies, src, keys, scratch)
     }
 
-    fn ckks_eval_linear_transformation_into<Dst, Src, P, H, L: BabyStepOperand<BE>>(
+    fn ckks_linear_transformation_eval_into<Dst, Src, P, H, L: BabyStepOperand<BE>>(
         &self,
         dst: &mut Dst,
         src: &Src,
@@ -162,10 +162,10 @@ impl<BE: Backend + CKKSLinearTransformationImpl> CKKSLinearTransformationOps<BE>
         P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
     {
-        BE::ckks_eval_linear_transformation_into(self, dst, src, babies, lt, keys, scratch)
+        BE::ckks_linear_transformation_eval_into(self, dst, src, babies, lt, keys, scratch)
     }
 
-    fn ckks_eval_linear_transformation_assign<Dst, P, H, L: BabyStepOperand<BE>>(
+    fn ckks_linear_transformation_eval_assign<Dst, P, H, L: BabyStepOperand<BE>>(
         &self,
         dst: &mut Dst,
         babies: &LinearTransformationBabySteps<BE, L>,
@@ -178,10 +178,10 @@ impl<BE: Backend + CKKSLinearTransformationImpl> CKKSLinearTransformationOps<BE>
         P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
     {
-        BE::ckks_eval_linear_transformation_assign(self, dst, babies, lt, keys, scratch)
+        BE::ckks_linear_transformation_eval_assign(self, dst, babies, lt, keys, scratch)
     }
 
-    fn ckks_eval_linear_transformation_sum_into<Dst, Src, P, H, L: BabyStepOperand<BE>>(
+    fn ckks_linear_transformation_eval_sum_into<Dst, Src, P, H, L: BabyStepOperand<BE>>(
         &self,
         dst: &mut Dst,
         srcs: &[&Src],
@@ -196,10 +196,10 @@ impl<BE: Backend + CKKSLinearTransformationImpl> CKKSLinearTransformationOps<BE>
         P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
     {
-        BE::ckks_eval_linear_transformation_sum_into(self, dst, srcs, babies, lts, keys, scratch)
+        BE::ckks_linear_transformation_eval_sum_into(self, dst, srcs, babies, lts, keys, scratch)
     }
 
-    fn ckks_eval_linear_transformation_self_into<Dst, Src, P, H>(
+    fn ckks_linear_transformation_eval_self_into<Dst, Src, P, H>(
         &self,
         dst: &mut Dst,
         src: &Src,
@@ -213,10 +213,10 @@ impl<BE: Backend + CKKSLinearTransformationImpl> CKKSLinearTransformationOps<BE>
         P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
     {
-        BE::ckks_eval_linear_transformation_self_into(self, dst, src, lt, keys, scratch)
+        BE::ckks_linear_transformation_eval_self_into(self, dst, src, lt, keys, scratch)
     }
 
-    fn ckks_eval_linear_transformation_self_assign<Dst, P, H>(
+    fn ckks_linear_transformation_eval_self_assign<Dst, P, H>(
         &self,
         dst: &mut Dst,
         lt: &LinearTransformation<P>,
@@ -228,6 +228,6 @@ impl<BE: Backend + CKKSLinearTransformationImpl> CKKSLinearTransformationOps<BE>
         P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
     {
-        BE::ckks_eval_linear_transformation_self_assign(self, dst, lt, keys, scratch)
+        BE::ckks_linear_transformation_eval_self_assign(self, dst, lt, keys, scratch)
     }
 }

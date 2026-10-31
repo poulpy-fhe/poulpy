@@ -7,7 +7,7 @@
 
 use poulpy_ckks::{
     GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotsKind,
-    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc},
+    layouts::{CKKSCiphertextAlloc, CKKSCiphertextOwned},
     test_suite::helpers::{TestContextSharedModule, upload_pt},
 };
 use poulpy_core::{

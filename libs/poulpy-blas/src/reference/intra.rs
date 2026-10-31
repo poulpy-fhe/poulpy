@@ -4,7 +4,7 @@ use poulpy_ckks::{
         CKKSAddManyOps, CKKSAddOps, CKKSCopyOps, CKKSInnerSumOps, CKKSLinearTransformationOps, CKKSModuleInfos, CKKSRotateOps,
         LinearTransformationBabySteps, LinearTransformationPrepared,
     },
-    layouts::{CKKSModuleAlloc, ScratchArenaTakeCKKS},
+    layouts::{CKKSCiphertextAlloc, ScratchArenaTakeCKKSCiphertext},
 };
 use poulpy_core::{
     GLWEBytesOf, GLWENormalize,
@@ -67,7 +67,7 @@ pub trait BlasMatIntraReference<BE: Backend> {
     }
 
     /// `dst[t * lts.len() + m] = lts[m](src[t])`, stamped with the label of `src[t]`. Per source, one baby-step cache
-    /// covers the baby steps of every map, then each map is evaluated from it with `ckks_eval_linear_transformation_into`.
+    /// covers the baby steps of every map, then each map is evaluated from it with `ckks_linear_transformation_eval_into`.
     ///
     /// # Panics
     ///
@@ -105,9 +105,9 @@ pub trait BlasMatIntraReference<BE: Backend> {
         let rotations: Vec<i64> = lts.iter().flat_map(|lt| lt.baby_steps().iter().copied()).collect();
         let mut babies = LinearTransformationBabySteps::alloc(self, &rotations, first);
         for (&src, dst) in src.iter().zip(dst.chunks_mut(lts.len())) {
-            self.ckks_prepare_linear_transformation_baby_steps(&mut babies, src, keys, scratch)?;
+            self.ckks_linear_transformation_baby_steps_prepare(&mut babies, src, keys, scratch)?;
             for (dst, lt) in dst.iter_mut().zip(lts) {
-                self.ckks_eval_linear_transformation_into(dst, src, &babies, lt, keys, scratch)?;
+                self.ckks_linear_transformation_eval_into(dst, src, &babies, lt, keys, scratch)?;
                 dst.set_log_sparsity(src.log_sparsity());
             }
         }

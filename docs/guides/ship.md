@@ -25,7 +25,7 @@ All outputs are caller-allocated:
 The only SHIP-specific backend hook is the coefficient encoding: the input-dependent conversion of the bottom ciphertext's public residues into `pt0` and the rotated `pi` plaintexts.
 A backend opts in by implementing `poulpy_ckks::oep::CKKSShipCoeffEncodingImpl`.
 The canonical embedding is exported as
-`poulpy_ckks::reference::encoding::ship_coeff_encodings_host` (also available
+`poulpy_ckks::reference::encoding::ckks_ship_coeff_encodings_host` (also available
 through `poulpy_ckks::encoding`). Its host-access requirements belong to this
 explicit host reference; the resident OEP takes backend-readable ciphertexts
 and has no host-storage bound. Slot permutation and quantization are also

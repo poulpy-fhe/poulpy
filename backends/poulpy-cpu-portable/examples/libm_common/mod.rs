@@ -7,7 +7,7 @@ use anyhow::Result;
 use poulpy_ckks::{
     CKKSLayout, GLWEPlaintextMeta, Scale, SetCKKSInfos,
     api::CKKSAllOpsTmpBytes,
-    layouts::{CKKSCiphertext, CKKSModuleAlloc},
+    layouts::{CKKSCiphertext, CKKSCiphertextAlloc},
     test_suite::{
         CKKSTestParams,
         helpers::{

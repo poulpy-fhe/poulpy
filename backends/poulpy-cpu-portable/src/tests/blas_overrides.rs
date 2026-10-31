@@ -19,7 +19,7 @@ use poulpy_blas::{
 use poulpy_ckks::{
     CKKSCtBounds, CKKSResult, SetCKKSInfos,
     api::LinearTransformationPrepared,
-    layouts::{CKKSPreparedLeft, CKKSPreparedRight},
+    layouts::{CKKSLeftOperandPrepared, CKKSRightOperandPrepared},
     test_suite::{
         BASE19_PARAMS_F64, CKKSTestParams,
         helpers::{alloc_scratch, gen_sk_with_raw, gen_tsk},
@@ -232,8 +232,8 @@ unsafe impl BlasJklsImpl for OverrideBackend {
     fn blas_jkls_block<R, T>(
         module: &Module<Self>,
         res: &mut R,
-        lhs: &[&CKKSPreparedLeft<Self>],
-        rhs: &[&CKKSPreparedRight<Self>],
+        lhs: &[&CKKSLeftOperandPrepared<Self>],
+        rhs: &[&CKKSRightOperandPrepared<Self>],
         tsk: &T,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> CKKSResult<()>
@@ -252,7 +252,7 @@ unsafe impl BlasJklsImpl for OverrideBackend {
         src: &S,
         first: &LinearTransformationPrepared<Self>,
         masks: &[&LinearTransformationPrepared<Self>],
-        plaintext: &CKKSPreparedRight<Self>,
+        plaintext: &CKKSRightOperandPrepared<Self>,
         keys: &K,
     ) -> usize
     where
@@ -269,7 +269,7 @@ unsafe impl BlasJklsImpl for OverrideBackend {
         sources: &[&S],
         first: &LinearTransformationPrepared<Self>,
         masks: &[&LinearTransformationPrepared<Self>],
-        plaintexts: &[&[CKKSPreparedRight<Self>]],
+        plaintexts: &[&[CKKSRightOperandPrepared<Self>]],
         galois: &[i64],
         keys: &K,
         scratch: &mut ScratchArena<'_, Self>,

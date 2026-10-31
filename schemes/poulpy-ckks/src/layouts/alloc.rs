@@ -1,37 +1,21 @@
 use poulpy_core::layouts::{
-    Base2K, Degree, GLWEAlloc, GLWEInfos, GLWEPlaintextAlloc, GLWEPlaintextLayout, GetDegree, LWEInfos, LinearTransformation,
-    LinearTransformationDiagonal, LinearTransformationGiantStep, LinearTransformationLayout, LinearTransformationPrepared,
-    ModuleCoreAlloc, Rank, TorusPrecision,
+    Base2K, Degree, GLWEAlloc, GLWEInfos, GLWEPlaintextAlloc, GLWEPlaintextLayout, GetDegree, LinearTransformation,
+    LinearTransformationDiagonal, LinearTransformationGiantStep, LinearTransformationLayout, ModuleCoreAlloc, Rank,
+    TorusPrecision,
 };
-use poulpy_hal::{
-    api::{CnvPVecAlloc, CnvPVecBytesOf},
-    layouts::{Backend, Module, PrepareHint},
-};
+use poulpy_hal::layouts::{Backend, Module};
 
 use crate::{CKKSInfos, GLWEPlaintextMeta, SetCKKSInfos, api::CKKSModuleInfos};
 
-use super::{
-    CKKSCiphertext, CKKSCiphertextOwned, CKKSPlaintext, CKKSPlaintextOwned, CKKSPreparedLeft, CKKSPreparedRight, DFTMatrix,
-    DFTMatrixFactors, DFTMatrixPrepared,
-};
+use super::{CKKSCiphertext, CKKSCiphertextOwned, CKKSPlaintext, CKKSPlaintextOwned};
 
-/// CKKS container allocation on a backend module.
+/// Allocates [`CKKSCiphertext`]s on a [`Module`].
 ///
-/// Every method is default-bodied over the [`ModuleCoreAlloc`], [`CnvPVecAlloc`] and [`CnvPVecBytesOf`] supertraits, so
-/// the blanket impl for `Module<BE>` is empty: the whole constructor matrix is
-/// two primitive shapes (ciphertext with explicit rank, plaintext with explicit
-/// degree) plus thin conveniences over them, and the prepared operands and DFT matrices with their byte counts.
-pub trait CKKSModuleAlloc<BE: Backend>:
-    ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
-    + GLWEAlloc
-    + GLWEPlaintextAlloc
-    + CnvPVecAlloc<BE>
-    + CnvPVecBytesOf
-    + CKKSModuleInfos
-{
+/// Every method is default-bodied over [`GLWEAlloc`]: a ciphertext with explicit rank plus thin conveniences over it.
+pub trait CKKSCiphertextAlloc<BE: Backend>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord> + GLWEAlloc {
     /// Allocates a ciphertext with `infos`' layout **and** its CKKS metadata
     /// (`log_delta`, `log_sparsity`), mirroring
-    /// [`Self::ckks_plaintext_alloc_from_infos`]. Use
+    /// [`CKKSPlaintextAlloc::ckks_plaintext_alloc_from_infos`]. Use
     /// [`Self::ckks_ciphertext_alloc_from_glwe_infos`] when only a GLWE layout
     /// is available (fresh default metadata).
     fn ckks_ciphertext_alloc_from_infos<A>(&self, infos: &A) -> CKKSCiphertextOwned<BE>
@@ -59,7 +43,20 @@ pub trait CKKSModuleAlloc<BE: Backend>:
     fn ckks_ciphertext_alloc(&self, base2k: Base2K, k: TorusPrecision) -> CKKSCiphertextOwned<BE> {
         self.ckks_ciphertext_alloc_with_rank(base2k, k, Rank(1))
     }
+}
 
+impl<BE: Backend> CKKSCiphertextAlloc<BE> for Module<BE> where
+    Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+{
+}
+
+/// Allocates [`CKKSPlaintext`]s on a [`Module`].
+///
+/// Every method is default-bodied over [`GLWEPlaintextAlloc`]: a plaintext with explicit degree plus thin
+/// conveniences over it.
+pub trait CKKSPlaintextAlloc<BE: Backend>:
+    ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord> + GLWEPlaintextAlloc + CKKSModuleInfos
+{
     fn ckks_plaintext_alloc_from_infos<A>(&self, infos: &A) -> CKKSPlaintextOwned<BE>
     where
         A: CKKSInfos,
@@ -70,7 +67,7 @@ pub trait CKKSModuleAlloc<BE: Backend>:
     }
 
     /// Allocates a default-meta plaintext sized to `k` over `base2k`. The semantic
-    /// [`GLWEPlaintextMeta`] is not needed to size the buffer — set it afterwards with
+    /// [`GLWEPlaintextMeta`] is not needed to size the buffer: set it afterwards with
     /// [`SetCKKSInfos::set_meta`] (the `_from_infos` variants do this for you).
     fn ckks_plaintext_alloc(&self, n: Degree, base2k: Base2K, k: TorusPrecision) -> CKKSPlaintextOwned<BE> {
         // `k` is the effective torus width (`log_delta + log_budget`); the buffer
@@ -83,33 +80,36 @@ pub trait CKKSModuleAlloc<BE: Backend>:
         )
     }
 
-    /// Coefficient-count convenience over [`Self::ckks_plaintext_alloc`].
-    fn ckks_pt_coeffs_alloc(&self, coeff_count: usize, base2k: Base2K, k: TorusPrecision) -> CKKSPlaintextOwned<BE> {
-        self.ckks_plaintext_alloc(coeff_count.into(), base2k, k)
-    }
-
     /// A plaintext of `slots` slots, at the degree that holds them: `2 * slots` on the standard ring, `slots` on the
     /// invariant ring; [`CKKSModuleInfos::ckks_max_slots`] gives one at the ring degree.
     ///
     /// Panics when `slots` is not a power of two, exceeds `ckks_max_slots`, or needs a degree below the backend's
     /// minimum.
-    fn ckks_pt_vec_alloc(&self, slots: usize, base2k: Base2K, k: TorusPrecision) -> CKKSPlaintextOwned<BE>
+    fn ckks_plaintext_alloc_from_slots(&self, slots: usize, base2k: Base2K, k: TorusPrecision) -> CKKSPlaintextOwned<BE>
     where
         Self: GetDegree,
     {
         let max_slots = self.ckks_max_slots();
         assert!(
             slots.is_power_of_two() && slots <= max_slots,
-            "ckks_pt_vec_alloc: the slot count must be a power of two up to the module's slots"
+            "ckks_plaintext_alloc_from_slots: the slot count must be a power of two up to the module's slots"
         );
         let n = slots * (self.ring_degree().as_usize() / max_slots);
         assert!(
             n >= BE::MIN_DEGREE,
-            "ckks_pt_vec_alloc: the slot count needs a degree below the backend's minimum"
+            "ckks_plaintext_alloc_from_slots: the slot count needs a degree below the backend's minimum"
         );
         self.ckks_plaintext_alloc(n.into(), base2k, k)
     }
+}
 
+impl<BE: Backend> CKKSPlaintextAlloc<BE> for Module<BE> where
+    Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+{
+}
+
+/// Allocates plaintext-diagonal [`LinearTransformation`]s on a [`Module`].
+pub trait CKKSLinearTransformationAlloc<BE: Backend>: CKKSPlaintextAlloc<BE> {
     /// A transform of `layout`'s schedule, a zero plaintext of `infos` at every diagonal; `infos`' degree must be the
     /// encoder's, that of a plaintext of the diagonals' period in slots. It is the schedule
     /// [`ComplexDiagonals::build_transform`](crate::layouts::ComplexDiagonals::build_transform) produces for that
@@ -143,109 +143,9 @@ pub trait CKKSModuleAlloc<BE: Backend>:
             rotations: plan.rotations,
         }
     }
-
-    /// Bytes of a left operand [`Self::ckks_prepared_left_alloc_from_infos`] allocates for `infos` under `hint`.
-    fn ckks_prepared_left_bytes_of_from_infos<A>(&self, infos: &A, hint: PrepareHint) -> usize
-    where
-        A: GLWEInfos,
-    {
-        self.cnv_pvec_left_bytes_of(infos.n().as_usize(), infos.rank().as_usize() + 1, infos.size(), hint)
-    }
-
-    /// Bytes of a right operand [`Self::ckks_prepared_right_alloc_from_infos`] allocates for `infos` under `hint`.
-    fn ckks_prepared_right_bytes_of_from_infos<A>(&self, infos: &A, hint: PrepareHint) -> usize
-    where
-        A: GLWEInfos,
-    {
-        self.cnv_pvec_right_bytes_of(infos.n().as_usize(), infos.rank().as_usize() + 1, infos.size(), hint)
-    }
-
-    /// A left operand for a ciphertext of `infos`, on its `ceil(k / base2k)` limbs and `rank + 1` columns, in the
-    /// representation `hint` selects, as [`CKKSMulOps::ckks_prepare_right`](crate::api::CKKSMulOps::ckks_prepare_right)
-    /// describes it, which [`CKKSMulOps::ckks_prepare_left_into`](crate::api::CKKSMulOps::ckks_prepare_left_into) fills.
-    /// Its contents are unspecified until then, and its infos report `infos` and no metadata.
-    fn ckks_prepared_left_alloc_from_infos<A>(&self, infos: &A, hint: PrepareHint) -> CKKSPreparedLeft<BE>
-    where
-        A: GLWEInfos,
-    {
-        let size = infos.size();
-        CKKSPreparedLeft {
-            prep: self.cnv_pvec_left_alloc(infos.n().as_usize(), infos.rank().as_usize() + 1, size, hint),
-            size,
-            layout: infos.glwe_layout(),
-            meta: None,
-        }
-    }
-
-    /// As [`Self::ckks_prepared_left_alloc_from_infos`], a right operand, which
-    /// [`CKKSMulOps::ckks_prepare_right_into`](crate::api::CKKSMulOps::ckks_prepare_right_into) fills.
-    fn ckks_prepared_right_alloc_from_infos<A>(&self, infos: &A, hint: PrepareHint) -> CKKSPreparedRight<BE>
-    where
-        A: GLWEInfos,
-    {
-        let size = infos.size();
-        CKKSPreparedRight {
-            prep: self.cnv_pvec_right_alloc(infos.n().as_usize(), infos.rank().as_usize() + 1, size, hint),
-            size,
-            layout: infos.glwe_layout(),
-            meta: None,
-        }
-    }
-
-    /// Bytes of the prepared matrix [`Self::ckks_dft_matrix_prepared_alloc_from_infos`] allocates for `dft`.
-    ///
-    /// # Panics
-    ///
-    /// As [`Self::ckks_dft_matrix_prepared_alloc_from_infos`], and when the byte count overflows `usize`.
-    fn ckks_dft_matrix_prepared_bytes_of_from_infos<Dir, Fmt, P>(
-        &self,
-        dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
-    ) -> usize
-    where
-        P: LWEInfos,
-    {
-        dft.factor_operands().iter().fold(0usize, |bytes, factor| {
-            let first = factor
-                .first_diagonal_plaintext()
-                .expect("ckks_dft_matrix_prepared_bytes_of_from_infos: every factor has a diagonal");
-            let diagonals: usize = factor.index().index.iter().map(Vec::len).sum();
-            diagonals
-                .checked_mul(self.cnv_pvec_right_bytes_of(first.n().as_usize(), 1, first.size(), PrepareHint::Reuse))
-                .and_then(|factor_bytes| bytes.checked_add(factor_bytes))
-                .expect("ckks_dft_matrix_prepared_bytes_of_from_infos: the byte count overflows usize")
-        })
-    }
-
-    /// A prepared matrix of `dft`'s plan and factor schedules, each diagonal at the degree, radix and width of the
-    /// factor's first diagonal, which [`CKKSDFTOps::ckks_prepare_dft_matrix`](crate::api::CKKSDFTOps::ckks_prepare_dft_matrix)
-    /// fills. Its diagonals are unspecified until then.
-    ///
-    /// # Panics
-    ///
-    /// When a factor of `dft` has no diagonal.
-    fn ckks_dft_matrix_prepared_alloc_from_infos<Dir, Fmt, P>(
-        &self,
-        dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
-    ) -> DFTMatrixPrepared<BE, Dir, Fmt>
-    where
-        Self: Sized,
-        P: GLWEInfos,
-    {
-        let factors = dft
-            .factor_operands()
-            .iter()
-            .map(|factor| {
-                let first = factor
-                    .first_diagonal_plaintext()
-                    .expect("ckks_dft_matrix_prepared_alloc_from_infos: every factor has a diagonal");
-                LinearTransformationPrepared::<BE>::alloc_prepared_from_index(self, &factor.index(), first)
-            })
-            .collect();
-        DFTMatrix::from_factors(DFTMatrixFactors::new(dft.plan().clone(), factors))
-    }
 }
 
-impl<BE: Backend> CKKSModuleAlloc<BE> for Module<BE> where
+impl<BE: Backend> CKKSLinearTransformationAlloc<BE> for Module<BE> where
     Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
 {
 }
@@ -277,7 +177,9 @@ mod tests {
             slots: cd.slots(),
             strategy,
         };
-        let n = module.ckks_pt_vec_alloc(cd.period(), Base2K(12), TorusPrecision(24)).n();
+        let n = module
+            .ckks_plaintext_alloc_from_slots(cd.period(), Base2K(12), TorusPrecision(24))
+            .n();
         let infos = CKKSLayout {
             glwe_layout: GLWELayout {
                 n,

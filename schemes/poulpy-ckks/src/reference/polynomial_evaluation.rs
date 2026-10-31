@@ -14,9 +14,9 @@ use crate::{
     SetCKKSInfos,
     api::{
         BSGSPolynomialInfos, BabyStep as BabyStepInfos, Basis, CKKSAddOps, CKKSCopyOps, CKKSImagOps, CKKSMulAddOps, CKKSMulOps,
-        PowerBasisHelper,
+        CKKSRightOperandPreparedFactory, PowerBasisHelper,
     },
-    layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPreparedRight},
+    layouts::{CKKSCiphertext, CKKSCiphertextAlloc, CKKSRightOperandPrepared},
     polynomial::ComplexBSGSPolynomial,
 };
 
@@ -56,13 +56,18 @@ struct CKKSBSGSOps;
 impl<BE: Backend, V, P, A, R> GLWEBSGSOps<BE, V, P, A, R> for CKKSBSGSOps
 where
     BE: GLWEMulConstImpl,
-    Module<BE>: CKKSAddOps<BE> + CKKSMulOps<BE> + CKKSMulAddOps<BE> + CKKSCopyOps<BE> + GLWEZero<BE>,
+    Module<BE>: CKKSAddOps<BE>
+        + CKKSMulOps<BE>
+        + CKKSRightOperandPreparedFactory<BE>
+        + CKKSMulAddOps<BE>
+        + CKKSCopyOps<BE>
+        + GLWEZero<BE>,
     V: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     A: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
     R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
 {
-    type Prepared = CKKSPreparedRight<BE>;
+    type Prepared = CKKSRightOperandPrepared<BE>;
 
     fn init_accumulator(
         &self,
@@ -219,7 +224,7 @@ where
     fn prepare_right(&self, module: &Module<BE>, a: &A, scratch: &mut ScratchArena<'_, BE>) -> anyhow::Result<Self::Prepared> {
         // `X^{gsp}` multiplies every pair of its giant-step level.
         module
-            .ckks_prepare_right(a, PrepareHint::Reuse, scratch)
+            .ckks_right_operand_prepare_alloc(a, PrepareHint::Reuse, scratch)
             .map_err(::anyhow::Error::from)
     }
 
@@ -262,8 +267,9 @@ pub trait CKKSPolynomialEvaluationReference<BE: Backend> {
         Self: GLWEZero<BE>
             + CKKSAddOps<BE>
             + CKKSMulOps<BE>
+            + CKKSRightOperandPreparedFactory<BE>
             + CKKSMulAddOps<BE>
-            + CKKSModuleAlloc<BE>
+            + CKKSCiphertextAlloc<BE>
             + CKKSCopyOps<BE>
             + CnvOps<BE>
             + VecZnxBigNormalize<BE>
@@ -290,8 +296,9 @@ pub trait CKKSPolynomialEvaluationReference<BE: Backend> {
             + CKKSAddOps<BE>
             + CKKSImagOps<BE>
             + CKKSMulOps<BE>
+            + CKKSRightOperandPreparedFactory<BE>
             + CKKSMulAddOps<BE>
-            + CKKSModuleAlloc<BE>
+            + CKKSCiphertextAlloc<BE>
             + CKKSCopyOps<BE>
             + CnvOps<BE>
             + VecZnxBigNormalize<BE>
@@ -323,8 +330,9 @@ where
             + GLWEPolynomialEvaluation<BE>
             + CKKSAddOps<BE>
             + CKKSMulOps<BE>
+            + CKKSRightOperandPreparedFactory<BE>
             + CKKSMulAddOps<BE>
-            + CKKSModuleAlloc<BE>
+            + CKKSCiphertextAlloc<BE>
             + CKKSCopyOps<BE>
             + CnvOps<BE>
             + VecZnxBigNormalize<BE>
@@ -398,8 +406,9 @@ where
             + CKKSAddOps<BE>
             + CKKSImagOps<BE>
             + CKKSMulOps<BE>
+            + CKKSRightOperandPreparedFactory<BE>
             + CKKSMulAddOps<BE>
-            + CKKSModuleAlloc<BE>
+            + CKKSCiphertextAlloc<BE>
             + CKKSCopyOps<BE>
             + CnvOps<BE>
             + VecZnxBigNormalize<BE>

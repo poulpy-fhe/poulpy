@@ -31,16 +31,16 @@ mod sealed {
 /// must represent every residue exactly: operations reject radixes reaching
 /// [`MANTISSA_BITS`](Self::MANTISSA_BITS). Sealed to `f64` and the crate's
 /// binary128 [`Quad`](crate::Quad), whose precision contracts are known here.
-pub trait ShipScalar: sealed::Sealed + CKKSEncodingScalar {
+pub trait CKKSShipScalar: sealed::Sealed + CKKSEncodingScalar {
     /// Number of significant binary digits in the scalar representation.
     const MANTISSA_BITS: u32;
 }
 
-impl ShipScalar for f64 {
+impl CKKSShipScalar for f64 {
     const MANTISSA_BITS: u32 = f64::MANTISSA_DIGITS;
 }
 
-impl ShipScalar for crate::Quad {
+impl CKKSShipScalar for crate::Quad {
     const MANTISSA_BITS: u32 = 113;
 }
 
@@ -51,7 +51,7 @@ impl ShipScalar for crate::Quad {
 /// secret; it is switched to the sparse secret internally through the key
 /// bundle's encapsulation key. The output is a slots-domain ciphertext at the
 /// plan's raised precision under the dense secret.
-pub trait CKKSShipOps<BE: Backend, F: ShipScalar> {
+pub trait CKKSShipOps<BE: Backend, F: CKKSShipScalar> {
     /// Scratch bytes required by [`Self::ckks_ship_bootstrap_into`] and
     /// [`Self::ckks_ship_bootstrap_complex_into`]. The ciphertext and key
     /// layouts are validated while computing the bound.
@@ -87,7 +87,7 @@ pub trait CKKSShipOps<BE: Backend, F: ShipScalar> {
     ///
     /// An untyped error, before anything is built, when the module or `ciphertext` is not of the plan's degree,
     /// `ciphertext` is not of rank 1 or not one limb of `base2k`, or `base2k` is outside `1..63` or reaches
-    /// [`ShipScalar::MANTISSA_BITS`]; then an untyped error for a phase the scalar cannot represent.
+    /// [`CKKSShipScalar::MANTISSA_BITS`]; then an untyped error for a phase the scalar cannot represent.
     fn ckks_ship_coeff_encodings<Src>(
         &self,
         base2k: Base2K,

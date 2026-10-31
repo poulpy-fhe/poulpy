@@ -842,21 +842,21 @@ pub fn test_blas_intra_guards<BE, F, E>(
     );
     assert_guard::<BE, _>(
         "budget",
-        "ckks_eval_linear_transformation_into",
+        "ckks_linear_transformation_eval_into",
         Budget,
         &mut narrow_res_t,
         |res| module.blas_transpose(res, &ct, &ctx, &keys, &mut op_scratch.borrow()),
     );
     assert_guard::<BE, _>(
         "budget",
-        "ckks_eval_linear_transformation_into",
+        "ckks_linear_transformation_eval_into",
         Budget,
         &mut narrow_res,
         |res| module.blas_rotate_rows(1, res, &ct, &ctx, &keys, &mut op_scratch.borrow()),
     );
     assert_guard::<BE, _>(
         "budget",
-        "ckks_eval_linear_transformation_into",
+        "ckks_linear_transformation_eval_into",
         Budget,
         &mut narrow_res,
         |res| module.blas_rotate_cols(1, res, &ct, &ctx, &keys, &mut op_scratch.borrow()),
@@ -865,14 +865,14 @@ pub fn test_blas_intra_guards<BE, F, E>(
     let sum_rows_op = if replicated::<Standard>(&ct) {
         "ckks_inner_sum"
     } else {
-        "ckks_eval_linear_transformation_into"
+        "ckks_linear_transformation_eval_into"
     };
     assert_guard::<BE, _>("budget", sum_rows_op, Budget, &mut narrow_res, |res| {
         module.blas_sum_rows(res, &ct, &ctx, &keys, &mut op_scratch.borrow())
     });
     assert_guard::<BE, _>(
         "budget",
-        "ckks_eval_linear_transformation_into",
+        "ckks_linear_transformation_eval_into",
         Budget,
         &mut narrow_res,
         |res| module.blas_sum_cols(res, &ct, &ctx, &keys, &mut op_scratch.borrow()),

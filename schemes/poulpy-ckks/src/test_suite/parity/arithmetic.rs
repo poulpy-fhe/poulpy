@@ -311,12 +311,12 @@ where
             let before_b = snapshot::<BE, _>(&rhs);
             let key_infos = key_layout(params.n, b, 4 * b + 5, dsize, rank * (rank + 1) / 2, rank);
             let key = prepared_tensor_key(module, &key_infos, 53);
-            let left = with_scratch::<BE, _>(BE::ckks_prepare_tmp_bytes(module, &a), |scratch| {
-                BE::ckks_prepare_left(module, &a, PrepareHint::Reuse, scratch)
+            let left = with_scratch::<BE, _>(BE::ckks_left_operand_prepare_tmp_bytes(module, &a), |scratch| {
+                BE::ckks_left_operand_prepare_alloc(module, &a, PrepareHint::Reuse, scratch)
             })
             .unwrap();
-            let right = with_scratch::<BE, _>(BE::ckks_prepare_tmp_bytes(module, &rhs), |scratch| {
-                BE::ckks_prepare_right(module, &rhs, PrepareHint::OneShot, scratch)
+            let right = with_scratch::<BE, _>(BE::ckks_right_operand_prepare_tmp_bytes(module, &rhs), |scratch| {
+                BE::ckks_right_operand_prepare_alloc(module, &rhs, PrepareHint::OneShot, scratch)
             })
             .unwrap();
             for width in [2 * b + 3, 5 * b + 1] {
@@ -354,8 +354,8 @@ where
             })
             .unwrap();
             let ordinary = snapshot::<BE, _>(&assigned);
-            let prepared = with_scratch::<BE, _>(BE::ckks_prepare_tmp_bytes(module, &rhs), |scratch| {
-                BE::ckks_prepare_right(module, &rhs, PrepareHint::OneShot, scratch)
+            let prepared = with_scratch::<BE, _>(BE::ckks_right_operand_prepare_tmp_bytes(module, &rhs), |scratch| {
+                BE::ckks_right_operand_prepare_alloc(module, &rhs, PrepareHint::OneShot, scratch)
             })
             .unwrap();
             let mut assigned = fixture_operand(module, &la, 51, lazy);
@@ -408,25 +408,31 @@ where
                 }
                 // The DFT forms of the summed product by prepared plaintexts, one term then one added, finished, are
                 // the summed product of both terms.
-                let right_pt = with_scratch::<BE, _>(BE::ckks_prepare_tmp_bytes(module, &pt), |scratch| {
-                    BE::ckks_prepare_right(module, &pt, PrepareHint::OneShot, scratch)
+                let right_pt = with_scratch::<BE, _>(BE::ckks_right_operand_prepare_tmp_bytes(module, &pt), |scratch| {
+                    BE::ckks_right_operand_prepare_alloc(module, &pt, PrepareHint::OneShot, scratch)
                 })
                 .unwrap();
                 let galois = [1, module.ckks_galois_element(1)];
                 let mut want = fixture_ciphertext(module, &lr, 99);
                 with_scratch::<BE, _>(
-                    module.ckks_dot_product_prepared_pt_tmp_bytes(&want, &left, &right_pt),
+                    module.ckks_dot_product_prepared_pt_vec_tmp_bytes(&want, &left, &right_pt),
                     |scratch| {
-                        module.ckks_dot_product_prepared_pt(&mut want, &[&left, &left], &[&right_pt, &right_pt], &galois, scratch)
+                        module.ckks_dot_product_prepared_pt_vec(
+                            &mut want,
+                            &[&left, &left],
+                            &[&right_pt, &right_pt],
+                            &galois,
+                            scratch,
+                        )
                     },
                 )
                 .unwrap();
                 let mut have = fixture_ciphertext(module, &lr, 99);
                 let mut acc = module.vec_znx_dft_alloc(params.n, rank + 1, left.size() + right_pt.size());
                 with_scratch::<BE, _>(
-                    module.ckks_dot_product_prepared_pt_dft_tmp_bytes(&have, &left, &right_pt),
+                    module.ckks_dot_product_prepared_pt_vec_dft_tmp_bytes(&have, &left, &right_pt),
                     |scratch| {
-                        module.ckks_dot_product_prepared_pt_dft(
+                        module.ckks_dot_product_prepared_pt_vec_dft(
                             &mut acc.to_backend_mut(),
                             &have,
                             &[&left],
@@ -438,9 +444,9 @@ where
                 )
                 .unwrap();
                 with_scratch::<BE, _>(
-                    module.ckks_dot_product_prepared_pt_dft_add_tmp_bytes(&have, &left, &right_pt),
+                    module.ckks_dot_product_prepared_pt_vec_dft_add_tmp_bytes(&have, &left, &right_pt),
                     |scratch| {
-                        module.ckks_dot_product_prepared_pt_dft_add(
+                        module.ckks_dot_product_prepared_pt_vec_dft_add(
                             &mut acc.to_backend_mut(),
                             &have,
                             &[&left],
@@ -452,9 +458,9 @@ where
                 )
                 .unwrap();
                 with_scratch::<BE, _>(
-                    module.ckks_dot_product_prepared_pt_from_dft_tmp_bytes(&have, &left, &right_pt),
+                    module.ckks_dot_product_prepared_pt_vec_from_dft_tmp_bytes(&have, &left, &right_pt),
                     |scratch| {
-                        module.ckks_dot_product_prepared_pt_from_dft(
+                        module.ckks_dot_product_prepared_pt_vec_from_dft(
                             &mut have,
                             &mut acc.to_backend_mut(),
                             &left,
@@ -470,36 +476,48 @@ where
                     want,
                     "DFT forms of the prepared dot product by plaintexts"
                 );
-                results.push(("dot_product_prepared_pt", want));
+                results.push(("dot_product_prepared_pt_vec", want));
                 // The summed product added into a ciphertext at its frame, `lazy` or not, by these plaintexts and by
                 // plaintexts narrower than a limb, whose product's offset falls below one.
                 let mut ln = lp;
                 ln.glwe_layout.k = (b - 1).into();
                 ln.meta.scale = Scale::Log(b - 3);
                 let narrow = fixture_plaintext(module, &ln, 55);
-                let narrow = with_scratch::<BE, _>(BE::ckks_prepare_tmp_bytes(module, &narrow), |scratch| {
-                    BE::ckks_prepare_right(module, &narrow, PrepareHint::OneShot, scratch)
+                let narrow = with_scratch::<BE, _>(BE::ckks_right_operand_prepare_tmp_bytes(module, &narrow), |scratch| {
+                    BE::ckks_right_operand_prepare_alloc(module, &narrow, PrepareHint::OneShot, scratch)
                 })
                 .unwrap();
                 for (seed, right) in [(97, &right_pt), (96, &narrow)] {
                     let mut frame = fixture_ciphertext(module, &lr, 99);
                     with_scratch::<BE, _>(
-                        module.ckks_dot_product_prepared_pt_tmp_bytes(&frame, &left, right),
+                        module.ckks_dot_product_prepared_pt_vec_tmp_bytes(&frame, &left, right),
                         |scratch| {
-                            module.ckks_dot_product_prepared_pt(&mut frame, &[&left, &left], &[right, right], &galois, scratch)
+                            module.ckks_dot_product_prepared_pt_vec(
+                                &mut frame,
+                                &[&left, &left],
+                                &[right, right],
+                                &galois,
+                                scratch,
+                            )
                         },
                     )
                     .unwrap();
                     let mut sum = fixture_operand(module, &lr, seed, lazy);
                     sum.set_meta(frame.meta());
                     with_scratch::<BE, _>(
-                        module.ckks_dot_product_prepared_pt_add_tmp_bytes(&sum, &left, right),
+                        module.ckks_dot_product_prepared_pt_vec_add_tmp_bytes(&sum, &left, right),
                         |scratch| {
-                            module.ckks_dot_product_prepared_pt_add(&mut sum, &[&left, &left], &[right, right], &galois, scratch)
+                            module.ckks_dot_product_prepared_pt_vec_add(
+                                &mut sum,
+                                &[&left, &left],
+                                &[right, right],
+                                &galois,
+                                scratch,
+                            )
                         },
                     )
                     .unwrap();
-                    results.push(("dot_product_prepared_pt_add", snapshot::<BE, _>(&sum)));
+                    results.push(("dot_product_prepared_pt_vec_add", snapshot::<BE, _>(&sum)));
                 }
                 assert_eq!(before_pt, snapshot::<BE, _>(&pt));
             }
@@ -565,8 +583,8 @@ where
         for lazy in [false, true] {
             let a = fixture_operand(module, &infos, 81, lazy);
             let before = snapshot::<BE, _>(&a);
-            let prepared = with_scratch::<BE, _>(BE::ckks_prepare_tmp_bytes(module, &a), |scratch| {
-                BE::ckks_prepare_right(module, &a, PrepareHint::Reuse, scratch)
+            let prepared = with_scratch::<BE, _>(BE::ckks_right_operand_prepare_tmp_bytes(module, &a), |scratch| {
+                BE::ckks_right_operand_prepare_alloc(module, &a, PrepareHint::Reuse, scratch)
             })
             .unwrap();
             let mul_bytes = BE::ckks_mul_tmp_bytes(module, &a, &a, &a, &key);

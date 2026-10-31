@@ -21,7 +21,7 @@
 ///
 /// All type and trait names in the expansion resolve at the call site: the
 /// invoking module must import the shared bounds (`GLWECopy`, `GLWEShift`, `GLWENormalize`,
-/// `VecZnx{Lsh,Rsh}TmpBytes`, `CKKSPlaintextVecReference`, `CKKSModuleAlloc`, the
+/// `VecZnx{Lsh,Rsh}TmpBytes`, `CKKSPlaintextVecReference`, the
 /// info traits) alongside its verb-specific ones.
 macro_rules! ckks_carry_verb_reference {
     (

@@ -11,12 +11,12 @@ use crate::{
         CKKSPolynomialEvaluationOps,
     },
     layouts::{
-        CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned,
-        eval_mod::{EvalModPlan, EvalModType, compile_eval_mod},
+        CKKSCiphertextOwned, CKKSPlaintextAlloc, CKKSPlaintextOwned,
+        eval_mod::{EvalModPlan, EvalModType, ckks_eval_mod_compile},
     },
     oep::{CKKSEncodingImpl, CKKSImpl, CKKSPolynomialEvaluationImpl},
-    polynomial::{Basis, ComplexBSGSPolynomial, EncodeBSGS, Parity, Polynomial, SplitStrategy},
-    power_basis::{PowerBasis, PowerBasisGen},
+    polynomial::{Basis, CKKSPolynomialEncode, ComplexBSGSPolynomial, Parity, Polynomial, SplitStrategy},
+    power_basis::{CKKSPowerBasisGen, PowerBasis},
     test_suite::CKKSTestParams,
 };
 use poulpy_core::{
@@ -310,9 +310,11 @@ where
                 coeffs_meta: coeff_meta,
                 f_mod_log_delta: 10,
             };
-            let encoding = <Module<BE> as CKKSEncodingHostOps<BE, F>>::ckks_reim_tmp_bytes(module, module.n() / 2);
-            let compiled =
-                with_scratch::<BE, _>(encoding, |scratch| compile_eval_mod::<BE, F>(b.into(), plan, module, scratch)).unwrap();
+            let encoding = <Module<BE> as CKKSEncodingHostOps<BE, F>>::ckks_encoding_host_tmp_bytes(module, module.n() / 2);
+            let compiled = with_scratch::<BE, _>(encoding, |scratch| {
+                ckks_eval_mod_compile::<BE, F>(b.into(), plan, module, scratch)
+            })
+            .unwrap();
             let input = fixture_ciphertext(module, &layout, 149);
             let before = snapshot::<BE, _>(&input);
             let mut out = fixture_ciphertext(module, &layout, 151);

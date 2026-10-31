@@ -29,7 +29,7 @@ use crate::{
     api::CKKSConjugateOps,
     encoding::paco::cpx::Cpx,
     layouts::slots::fold_rotations,
-    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc},
+    layouts::{CKKSCiphertextAlloc, CKKSCiphertextOwned, CKKSPlaintextAlloc},
     oep::CKKSPaCoImpl,
     test_suite::reference_encoder::ReferenceEncoder,
     test_suite::{
@@ -121,7 +121,7 @@ pub(crate) fn assert_slots<BE, F, E>(
     // Expected plaintext, encoded host-side at the same layout.
     let want_re: Vec<F> = want.iter().map(|x| F::from_f64(x.re).unwrap()).collect();
     let want_im: Vec<F> = want.iter().map(|x| F::from_f64(x.im).unwrap()).collect();
-    let mut want_pt = host_module.ckks_pt_vec_alloc(host_module.ckks_max_slots(), base2k, ct.k());
+    let mut want_pt = host_module.ckks_plaintext_alloc_from_slots(host_module.ckks_max_slots(), base2k, ct.k());
     want_pt.set_meta(GLWEPlaintextMeta {
         scale: Scale::Log(log_delta),
         slots: SlotsKind::Complex,

@@ -37,7 +37,7 @@ use crate::{
         CKKSCopyOps, CKKSLinearTransformationOps, LinearTransformation, LinearTransformationBabySteps,
         LinearTransformationPrepared,
     },
-    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, ComplexDiagonals},
+    layouts::{CKKSCiphertextAlloc, CKKSCiphertextOwned, CKKSPlaintextOwned, ComplexDiagonals},
     test_suite::reference_encoder::ReferenceEncoder,
     test_suite::{
         CKKSTestParams,
@@ -94,7 +94,7 @@ where
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F>,
     F: TestScalar,
 {
-    crate::encoding::ckks_encode_linear_transformation_from_diagonals(
+    crate::encoding::ckks_linear_transformation_encode_from_diagonals(
         module,
         params.base2k.into(),
         params.prec().into(),
@@ -119,8 +119,8 @@ where
 {
     let first = lt.first_diagonal_plaintext().expect("linear transformation has no diagonals");
     let mut prepared = LinearTransformationPrepared::<BE>::alloc_prepared_from_index(module, &lt.index(), first);
-    with_scratch::<BE, _>(module.ckks_prepare_linear_transformation_rhs_tmp_bytes(first), |s| {
-        module.ckks_prepare_linear_transformation_rhs(&mut prepared, lt, s)
+    with_scratch::<BE, _>(module.ckks_linear_transformation_rhs_prepare_tmp_bytes(first), |s| {
+        module.ckks_linear_transformation_rhs_prepare(&mut prepared, lt, s)
     })
     .unwrap();
     prepared
@@ -189,7 +189,7 @@ where
     let prepared_left = prepare_lt(module, &lt_left);
     let mut ct_left = alloc_ct(&params, module, params.k);
     with_scratch::<BE, _>(self_into_bytes(&lt_left.index(), false), |s| {
-        module.ckks_eval_linear_transformation_self_into(&mut ct_left, &ct, &prepared_left, &atks, s)
+        module.ckks_linear_transformation_eval_self_into(&mut ct_left, &ct, &prepared_left, &atks, s)
     })
     .unwrap();
     let (want_left_re, want_left_im) = b.evaluate((a_re.as_slice(), a_im.as_slice()), strategy);
@@ -209,7 +209,7 @@ where
     // same reference — same unified evaluator, different `P`.
     let mut ct_left_streamed = alloc_ct(&params, module, params.k);
     with_scratch::<BE, _>(self_into_bytes(&lt_left.index(), true), |s| {
-        module.ckks_eval_linear_transformation_self_into(&mut ct_left_streamed, &ct, &lt_left, &atks, s)
+        module.ckks_linear_transformation_eval_self_into(&mut ct_left_streamed, &ct, &lt_left, &atks, s)
     })
     .unwrap();
     assert_decrypt_precision(
@@ -228,7 +228,7 @@ where
     let prepared_right = prepare_lt(module, &lt_right);
     let mut ct_right = alloc_ct(&params, module, params.k);
     with_scratch::<BE, _>(self_into_bytes(&lt_right.index(), false), |s| {
-        module.ckks_eval_linear_transformation_self_into(&mut ct_right, &ct, &prepared_right, &atks, s)
+        module.ckks_linear_transformation_eval_self_into(&mut ct_right, &ct, &prepared_right, &atks, s)
     })
     .unwrap();
     let mut b_t = b.clone();
@@ -312,14 +312,14 @@ pub fn test_linear_transformation_sum<BE, F, E>(
         .map(|ct| {
             let mut babies = LinearTransformationBabySteps::alloc(module, prepared[0].baby_steps(), ct);
             with_scratch::<BE, _>(
-                module.ckks_prepare_linear_transformation_baby_steps_tmp_bytes(ct, &prepared[0].index(), &params.atk_layout()),
-                |s| module.ckks_prepare_linear_transformation_baby_steps(&mut babies, ct, &keys, s),
+                module.ckks_linear_transformation_baby_steps_prepare_tmp_bytes(ct, &prepared[0].index(), &params.atk_layout()),
+                |s| module.ckks_linear_transformation_baby_steps_prepare(&mut babies, ct, &keys, s),
             )
             .unwrap();
             babies
         })
         .collect();
-    let sum_bytes = module.ckks_eval_linear_transformation_sum_tmp_bytes(
+    let sum_bytes = module.ckks_linear_transformation_eval_sum_tmp_bytes(
         &cts[0],
         &crate::api::ckks_plaintext_diagonal_layout(&cts[0]),
         &prepared[0].index(),
@@ -331,13 +331,13 @@ pub fn test_linear_transformation_sum<BE, F, E>(
     let mut single = alloc_ct(&params, module, params.k);
     with_scratch::<BE, _>(
         pt_eval_tmp_bytes(module, &cts[0], &prepared[0].index(), &params.atk_layout()),
-        |s| module.ckks_eval_linear_transformation_into(&mut single, &cts[0], &babies[0], &prepared[0], &keys, s),
+        |s| module.ckks_linear_transformation_eval_into(&mut single, &cts[0], &babies[0], &prepared[0], &keys, s),
     )
     .unwrap();
     let single = snapshot::<BE, _>(&single);
     let mut one = alloc_ct(&params, module, params.k);
     with_scratch::<BE, _>(sum_bytes, |scratch| {
-        module.ckks_eval_linear_transformation_sum_into(&mut one, &[&cts[0]], &[&babies[0]], &[&prepared[0]], &keys, scratch)
+        module.ckks_linear_transformation_eval_sum_into(&mut one, &[&cts[0]], &[&babies[0]], &[&prepared[0]], &keys, scratch)
     })
     .unwrap();
     assert_eq!(snapshot::<BE, _>(&one), single, "a one-term sum is not the single transform");
@@ -349,7 +349,7 @@ pub fn test_linear_transformation_sum<BE, F, E>(
     let term_lts: Vec<_> = terms.iter().map(|&(_, l)| &prepared[l]).collect();
     let mut sum = alloc_ct(&params, module, params.k);
     with_scratch::<BE, _>(sum_bytes, |scratch| {
-        module.ckks_eval_linear_transformation_sum_into(&mut sum, &term_srcs, &term_babies, &term_lts, &keys, scratch)
+        module.ckks_linear_transformation_eval_sum_into(&mut sum, &term_srcs, &term_babies, &term_lts, &keys, scratch)
     })
     .unwrap();
     let have = snapshot::<BE, _>(&sum);
@@ -379,7 +379,7 @@ pub fn test_linear_transformation_sum<BE, F, E>(
     let streamed_lts: Vec<_> = terms.iter().map(|&(_, l)| &lts[l]).collect();
     let mut streamed = alloc_ct(&params, module, params.k);
     with_scratch::<BE, _>(
-        module.ckks_eval_linear_transformation_sum_streamed_tmp_bytes(
+        module.ckks_linear_transformation_eval_sum_streamed_tmp_bytes(
             &cts[0],
             &crate::api::ckks_plaintext_diagonal_layout(&cts[0]),
             &prepared[0].index(),
@@ -387,7 +387,7 @@ pub fn test_linear_transformation_sum<BE, F, E>(
             &params.atk_layout(),
         ),
         |scratch| {
-            module.ckks_eval_linear_transformation_sum_into(
+            module.ckks_linear_transformation_eval_sum_into(
                 &mut streamed,
                 &term_srcs,
                 &term_babies,
@@ -437,10 +437,10 @@ pub fn test_linear_transformation_sum<BE, F, E>(
                       reason: &str| {
         let before = snapshot::<BE, _>(&sum);
         let err = with_scratch::<BE, _>(0, |scratch| {
-            module.ckks_eval_linear_transformation_sum_into(&mut sum, srcs, cache, lts, &keys, scratch)
+            module.ckks_linear_transformation_eval_sum_into(&mut sum, srcs, cache, lts, &keys, scratch)
         })
         .unwrap_err();
-        assert_invalid_operand(reason, &err, "ckks_eval_linear_transformation_sum_into", reason);
+        assert_invalid_operand(reason, &err, "ckks_linear_transformation_eval_sum_into", reason);
         assert_eq!(snapshot::<BE, _>(&sum), before, "a rejected sum wrote dst ({reason})");
     };
     let two = [&cts[0], &cts[1]];
@@ -526,10 +526,10 @@ pub fn test_linear_transformation_sum<BE, F, E>(
     ] {
         let before = snapshot::<BE, _>(&dst);
         let err = with_scratch::<BE, _>(0, |s| {
-            module.ckks_eval_linear_transformation_into(&mut dst, &cts[1], cache, lt, &keys, s)
+            module.ckks_linear_transformation_eval_into(&mut dst, &cts[1], cache, lt, &keys, s)
         })
         .unwrap_err();
-        assert_invalid_operand(label, &err, "ckks_eval_linear_transformation_into", reason);
+        assert_invalid_operand(label, &err, "ckks_linear_transformation_eval_into", reason);
         assert_eq!(snapshot::<BE, _>(&dst), before, "{label}: a refused transform wrote dst");
     }
 }
@@ -547,12 +547,12 @@ fn assert_prepare_refused<BE, P>(
     Module<BE>: CKKSLinearTransformationOps<BE>,
     P: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
-    let err = with_scratch::<BE, _>(0, |scratch| module.ckks_prepare_linear_transformation_rhs(res, lt, scratch)).unwrap_err();
+    let err = with_scratch::<BE, _>(0, |scratch| module.ckks_linear_transformation_rhs_prepare(res, lt, scratch)).unwrap_err();
     assert!(
         matches!(
             err.composition(),
             Some(CKKSCompositionError::InvalidOperand {
-                op: "ckks_prepare_linear_transformation_rhs",
+                op: "ckks_linear_transformation_rhs_prepare",
                 ..
             })
         ),
@@ -597,7 +597,7 @@ where
 
 /// A transform whose diagonals do not share one scale or slot kind is refused by its preparation as `InvalidOperand`,
 /// before any write and any scratch, with the destination unchanged.
-pub fn test_prepare_linear_transformation_rhs_rejects_mixed_diagonals<BE, F, E>(
+pub fn test_linear_transformation_rhs_prepare_rejects_mixed_diagonals<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
     _host_module: &Module<HostBytesBackend>,
@@ -645,7 +645,7 @@ pub fn test_prepare_linear_transformation_rhs_rejects_mixed_diagonals<BE, F, E>(
 
 /// An arena one byte below the preparation's query is refused as `CKKSError::Internal` before any write, the
 /// destination, prepared from other values, unchanged.
-pub fn test_prepare_linear_transformation_rhs_rejects_short_scratch<BE, F, E>(
+pub fn test_linear_transformation_rhs_prepare_rejects_short_scratch<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
     _host_module: &Module<HostBytesBackend>,
@@ -672,23 +672,23 @@ pub fn test_prepare_linear_transformation_rhs_rejects_short_scratch<BE, F, E>(
     let (lt, other) = (encode(0), encode(1));
     let want = prepare_lt(module, &other);
     let mut res = prepare_lt(module, &other);
-    let bytes = module.ckks_prepare_linear_transformation_rhs_tmp_bytes(lt.first_diagonal_plaintext().unwrap());
+    let bytes = module.ckks_linear_transformation_rhs_prepare_tmp_bytes(lt.first_diagonal_plaintext().unwrap());
     if bytes == 0 {
-        eprintln!("test_prepare_linear_transformation_rhs_rejects_short_scratch: the preparation takes no scratch here");
+        eprintln!("test_linear_transformation_rhs_prepare_rejects_short_scratch: the preparation takes no scratch here");
         return;
     }
-    let err = with_scratch::<BE, _>(bytes - 1, |s| module.ckks_prepare_linear_transformation_rhs(&mut res, &lt, s)).unwrap_err();
+    let err = with_scratch::<BE, _>(bytes - 1, |s| module.ckks_linear_transformation_rhs_prepare(&mut res, &lt, s)).unwrap_err();
     assert_ckks_internal(
         "one byte short",
         &err,
-        "ckks_prepare_linear_transformation_rhs: scratch below its query",
+        "ckks_linear_transformation_rhs_prepare: scratch below its query",
     );
     assert_prepared_unchanged(&res, &want, "one byte short");
 }
 
 /// A destination allocated for another schedule or diagonal layout is refused by the preparation as `InvalidOperand`,
 /// before any write and any scratch, with the destination unchanged.
-pub fn test_prepare_linear_transformation_rhs_rejects_foreign_layout<BE, F, E>(
+pub fn test_linear_transformation_rhs_prepare_rejects_foreign_layout<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
     _host_module: &Module<HostBytesBackend>,
@@ -716,7 +716,7 @@ pub fn test_prepare_linear_transformation_rhs_rejects_foreign_layout<BE, F, E>(
     let other = complex_diagonals::<F>(&indices, m, 1);
     let other_schedule = encode_lt(module, &params, &other, 4, false, &mut scratch.borrow());
     assert_prepare_refused(module, &mut res, &want, &other_schedule, "schedule");
-    let other_radix = crate::encoding::ckks_encode_linear_transformation_from_diagonals(
+    let other_radix = crate::encoding::ckks_linear_transformation_encode_from_diagonals(
         module,
         (params.base2k - 1).into(),
         params.prec().into(),
@@ -731,7 +731,7 @@ pub fn test_prepare_linear_transformation_rhs_rejects_foreign_layout<BE, F, E>(
 
 /// A prepared pair sharing one schedule and diagonal layout is refused by the preparation as `InvalidOperand` before
 /// any write and any scratch when it holds no diagonal, or when its baby steps do not start with the identity rotation.
-pub fn test_prepare_linear_transformation_rhs_rejects_malformed_schedule<BE, F, E>(
+pub fn test_linear_transformation_rhs_prepare_rejects_malformed_schedule<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
     _host_module: &Module<HostBytesBackend>,
@@ -742,12 +742,12 @@ pub fn test_prepare_linear_transformation_rhs_rejects_malformed_schedule<BE, F, 
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     F: TestScalar,
 {
-    const OP: &str = "ckks_prepare_linear_transformation_rhs";
+    const OP: &str = "ckks_linear_transformation_rhs_prepare";
     let refused = |res: &mut LinearTransformationPrepared<BE>,
                    want: &LinearTransformationPrepared<BE>,
                    lt: &LinearTransformation<CKKSPlaintextOwned<BE>>,
                    reason: &str| {
-        let err = with_scratch::<BE, _>(0, |s| module.ckks_prepare_linear_transformation_rhs(res, lt, s)).unwrap_err();
+        let err = with_scratch::<BE, _>(0, |s| module.ckks_linear_transformation_rhs_prepare(res, lt, s)).unwrap_err();
         assert_ckks_error(
             reason,
             &err,
@@ -800,7 +800,7 @@ pub fn test_prepare_linear_transformation_rhs_rejects_malformed_schedule<BE, F, 
 /// `0xA5`-poisoned refill gives them again without reallocating. A right side of another schedule or radix is refused
 /// with `InvalidOperand`, and a left side missing a key with `MissingAutomorphismKey`, on an empty arena, bytes and
 /// infos unchanged.
-pub fn test_prepare_linear_transformation_rhs_lifecycle<BE, F, E>(
+pub fn test_linear_transformation_rhs_prepare_lifecycle<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
@@ -832,7 +832,7 @@ pub fn test_prepare_linear_transformation_rhs_lifecycle<BE, F, E>(
         &mut scratch.borrow(),
     );
     let first = lt.first_diagonal_plaintext().unwrap();
-    let rhs_bytes = module.ckks_prepare_linear_transformation_rhs_tmp_bytes(first);
+    let rhs_bytes = module.ckks_linear_transformation_rhs_prepare_tmp_bytes(first);
 
     let buffers = |p: &LinearTransformationPrepared<BE>| -> Vec<Vec<u8>> {
         p.giant_steps
@@ -867,7 +867,7 @@ pub fn test_prepare_linear_transformation_rhs_lifecycle<BE, F, E>(
         "right side: bytes_of"
     );
     for lt in [&other, &lt] {
-        with_scratch::<BE, _>(rhs_bytes, |s| module.ckks_prepare_linear_transformation_rhs(&mut res, lt, s)).unwrap();
+        with_scratch::<BE, _>(rhs_bytes, |s| module.ckks_linear_transformation_rhs_prepare(&mut res, lt, s)).unwrap();
     }
     assert!(
         buffers(&res) == buffers(&fresh),
@@ -878,7 +878,7 @@ pub fn test_prepare_linear_transformation_rhs_lifecycle<BE, F, E>(
     for diagonal in res.giant_steps.iter_mut().flat_map(|gs| &mut gs.diagonals) {
         diagonal.plaintext.cnv_mut().data_mut().as_mut().fill(0xA5);
     }
-    with_scratch::<BE, _>(rhs_bytes, |s| module.ckks_prepare_linear_transformation_rhs(&mut res, &lt, s)).unwrap();
+    with_scratch::<BE, _>(rhs_bytes, |s| module.ckks_linear_transformation_rhs_prepare(&mut res, &lt, s)).unwrap();
     assert_eq!(addresses(&res), before, "right side: the refill reallocated");
     assert!(
         buffers(&res) == buffers(&fresh),
@@ -893,7 +893,7 @@ pub fn test_prepare_linear_transformation_rhs_lifecycle<BE, F, E>(
         false,
         &mut scratch.borrow(),
     );
-    let other_radix = crate::encoding::ckks_encode_linear_transformation_from_diagonals(
+    let other_radix = crate::encoding::ckks_linear_transformation_encode_from_diagonals(
         module,
         (params.base2k - 1).into(),
         params.prec().into(),
@@ -910,12 +910,12 @@ pub fn test_prepare_linear_transformation_rhs_lifecycle<BE, F, E>(
         ),
         (&other_radix, "a diagonal's layout differs from the prepared transformation's"),
     ] {
-        let err = with_scratch::<BE, _>(0, |s| module.ckks_prepare_linear_transformation_rhs(&mut res, foreign, s)).unwrap_err();
+        let err = with_scratch::<BE, _>(0, |s| module.ckks_linear_transformation_rhs_prepare(&mut res, foreign, s)).unwrap_err();
         assert_ckks_error(
             reason,
             &err,
             CKKSCompositionError::InvalidOperand {
-                op: "ckks_prepare_linear_transformation_rhs",
+                op: "ckks_linear_transformation_rhs_prepare",
                 reason: reason.into(),
             },
         );
@@ -962,7 +962,7 @@ pub fn test_prepare_linear_transformation_rhs_lifecycle<BE, F, E>(
         &im2,
         &mut scratch.borrow(),
     );
-    let baby_bytes = module.ckks_prepare_linear_transformation_baby_steps_tmp_bytes(&ct, &lt.index(), &params.atk_layout());
+    let baby_bytes = module.ckks_linear_transformation_baby_steps_prepare_tmp_bytes(&ct, &lt.index(), &params.atk_layout());
     let baby_buffers = |b: &LinearTransformationBabySteps<BE>| -> Vec<Vec<u8>> {
         b.baby_steps().map(|rot| b.baby_step(rot).data().to_vec()).collect()
     };
@@ -971,7 +971,7 @@ pub fn test_prepare_linear_transformation_rhs_lifecycle<BE, F, E>(
     };
     let mut fresh = LinearTransformationBabySteps::alloc_for(module, &lt, &ct);
     with_scratch::<BE, _>(baby_bytes, |s| {
-        module.ckks_prepare_linear_transformation_baby_steps(&mut fresh, &ct, &keys, s)
+        module.ckks_linear_transformation_baby_steps_prepare(&mut fresh, &ct, &keys, s)
     })
     .unwrap();
     let mut babies = LinearTransformationBabySteps::alloc_for(module, &lt, &ct);
@@ -982,7 +982,7 @@ pub fn test_prepare_linear_transformation_rhs_lifecycle<BE, F, E>(
     );
     for src in [&ct_other, &ct] {
         with_scratch::<BE, _>(baby_bytes, |s| {
-            module.ckks_prepare_linear_transformation_baby_steps(&mut babies, src, &keys, s)
+            module.ckks_linear_transformation_baby_steps_prepare(&mut babies, src, &keys, s)
         })
         .unwrap();
     }
@@ -995,7 +995,7 @@ pub fn test_prepare_linear_transformation_rhs_lifecycle<BE, F, E>(
         operand.data_mut().as_mut().fill(0xA5);
     }
     with_scratch::<BE, _>(baby_bytes, |s| {
-        module.ckks_prepare_linear_transformation_baby_steps(&mut babies, &ct, &keys, s)
+        module.ckks_linear_transformation_baby_steps_prepare(&mut babies, &ct, &keys, s)
     })
     .unwrap();
     assert_eq!(baby_addresses(&babies), before, "left side: the refill reallocated");
@@ -1005,14 +1005,14 @@ pub fn test_prepare_linear_transformation_rhs_lifecycle<BE, F, E>(
     );
     let no_keys: HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>> = HashMap::new();
     let err = with_scratch::<BE, _>(0, |s| {
-        module.ckks_prepare_linear_transformation_baby_steps(&mut babies, &ct_other, &no_keys, s)
+        module.ckks_linear_transformation_baby_steps_prepare(&mut babies, &ct_other, &no_keys, s)
     })
     .unwrap_err();
     assert!(
         matches!(
             err.composition(),
             Some(CKKSCompositionError::MissingAutomorphismKey {
-                op: "ckks_prepare_linear_transformation_baby_steps",
+                op: "ckks_linear_transformation_baby_steps_prepare",
                 ..
             })
         ),
@@ -1115,7 +1115,7 @@ pub fn test_linear_transformation_pins_operation_precisions<BE, F, E>(
     let mut res = alloc_ct(&params, module, params.k - params.base2k);
     with_scratch::<BE, _>(
         pt_self_into_tmp_bytes(module, false, &ct, &lt.index(), &key_params.atk_layout()),
-        |s| module.ckks_eval_linear_transformation_self_into(&mut res, &ct, &prepared, &keys, s),
+        |s| module.ckks_linear_transformation_eval_self_into(&mut res, &ct, &prepared, &keys, s),
     )
     .unwrap();
     let dst_k = res.k();
@@ -1229,7 +1229,7 @@ pub fn test_linear_transformation_mixed_key_layouts<BE, F, E>(
         &coarse_infos,
     ));
     with_scratch::<BE, _>(eval_bytes, |s| {
-        module.ckks_eval_linear_transformation_self_into(&mut res, &ct, &prepared, &keys, s)
+        module.ckks_linear_transformation_eval_self_into(&mut res, &ct, &prepared, &keys, s)
     })
     .unwrap();
 }
@@ -1348,8 +1348,8 @@ where
 {
     let mut babies = LinearTransformationBabySteps::alloc_for(module, lt, src);
     with_scratch::<BE, _>(
-        module.ckks_prepare_linear_transformation_baby_steps_tmp_bytes(src, &lt.index(), &params.atk_layout()),
-        |s| module.ckks_prepare_linear_transformation_baby_steps(&mut babies, src, keys, s),
+        module.ckks_linear_transformation_baby_steps_prepare_tmp_bytes(src, &lt.index(), &params.atk_layout()),
+        |s| module.ckks_linear_transformation_baby_steps_prepare(&mut babies, src, keys, s),
     )
     .unwrap();
     babies
@@ -1371,7 +1371,7 @@ pub fn test_linear_transformation_ct<BE, F, E>(
     F: TestScalar,
     E: ReimNew<F>,
 {
-    const OP: &str = "ckks_eval_linear_transformation_into";
+    const OP: &str = "ckks_linear_transformation_eval_into";
     let m = params.n / 2;
     let (a_re, a_im) = test_vector_1::<F>(m);
     let secret = Secret::<BE, E>::new::<F>(&params, module, host_module);
@@ -1416,11 +1416,11 @@ pub fn test_linear_transformation_ct<BE, F, E>(
         let babies = prepare_babies(module, &params, &prepared, &src, &atks);
         let first = lt.first_diagonal_plaintext().unwrap();
         let plan = lt.index();
-        let bytes = module.ckks_eval_linear_transformation_tmp_bytes(&src, first, &plan, &tsk_layout, &params.atk_layout());
+        let bytes = module.ckks_linear_transformation_eval_tmp_bytes(&src, first, &plan, &tsk_layout, &params.atk_layout());
 
         let mut dst = alloc_ct(&params, module, src_k);
         with_scratch::<BE, _>(bytes, |s| {
-            module.ckks_eval_linear_transformation_into(&mut dst, &src, &babies, &prepared, &keys, s)
+            module.ckks_linear_transformation_eval_into(&mut dst, &src, &babies, &prepared, &keys, s)
         })
         .unwrap();
         let want = b.evaluate((a_re.as_slice(), a_im.as_slice()), strategy);
@@ -1429,29 +1429,23 @@ pub fn test_linear_transformation_ct<BE, F, E>(
 
         let mut assigned = src.clone();
         with_scratch::<BE, _>(bytes, |s| {
-            module.ckks_eval_linear_transformation_assign(&mut assigned, &babies, &prepared, &keys, s)
+            module.ckks_linear_transformation_eval_assign(&mut assigned, &babies, &prepared, &keys, s)
         })
         .unwrap();
         // One byte short of its baby-step cache, `self_into` refuses at entry.
-        let self_into_bytes = module.ckks_eval_linear_transformation_self_into_tmp_bytes(
-            false,
-            &src,
-            first,
-            &plan,
-            &tsk_layout,
-            &params.atk_layout(),
-        );
+        let self_into_bytes =
+            module.ckks_linear_transformation_eval_self_tmp_bytes(false, &src, first, &plan, &tsk_layout, &params.atk_layout());
         let cache_bytes = module.glwe_linear_transformation_baby_steps_bytes_of(&plan, &src);
         let mut self_into = alloc_ct(&params, module, src_k);
         let before = snapshot::<BE, _>(&self_into);
         let err = with_scratch::<BE, _>(cache_bytes - 1, |s| {
-            module.ckks_eval_linear_transformation_self_into(&mut self_into, &src, &prepared, &keys, s)
+            module.ckks_linear_transformation_eval_self_into(&mut self_into, &src, &prepared, &keys, s)
         })
         .unwrap_err();
         assert_ckks_internal(
             &label,
             &err,
-            "ckks_eval_linear_transformation_self_into: scratch below its baby-step cache",
+            "ckks_linear_transformation_eval_self_into: scratch below its baby-step cache",
         );
         assert_eq!(
             snapshot::<BE, _>(&self_into),
@@ -1459,19 +1453,19 @@ pub fn test_linear_transformation_ct<BE, F, E>(
             "{label}: a refused self_into wrote dst"
         );
         with_scratch::<BE, _>(self_into_bytes, |s| {
-            module.ckks_eval_linear_transformation_self_into(&mut self_into, &src, &prepared, &keys, s)
+            module.ckks_linear_transformation_eval_self_into(&mut self_into, &src, &prepared, &keys, s)
         })
         .unwrap();
         let mut self_assigned = src.clone();
         with_scratch::<BE, _>(self_into_bytes, |s| {
-            module.ckks_eval_linear_transformation_self_assign(&mut self_assigned, &prepared, &keys, s)
+            module.ckks_linear_transformation_eval_self_assign(&mut self_assigned, &prepared, &keys, s)
         })
         .unwrap();
         // The unprepared diagonals, prepared in the call.
         let mut streamed = alloc_ct(&params, module, src_k);
         with_scratch::<BE, _>(
-            module.ckks_eval_linear_transformation_streamed_tmp_bytes(&src, first, &plan, &tsk_layout, &params.atk_layout()),
-            |s| module.ckks_eval_linear_transformation_into(&mut streamed, &src, &babies, &lt, &keys, s),
+            module.ckks_linear_transformation_eval_streamed_tmp_bytes(&src, first, &plan, &tsk_layout, &params.atk_layout()),
+            |s| module.ckks_linear_transformation_eval_into(&mut streamed, &src, &babies, &lt, &keys, s),
         )
         .unwrap();
         // Diagonals allocated wider than their width, as a copy into a larger ciphertext leaves them, read as theirs.
@@ -1504,13 +1498,13 @@ pub fn test_linear_transformation_ct<BE, F, E>(
         let wide_prepared = prepare_lt(module, &wide_lt);
         let mut wide_resident = alloc_ct(&params, module, src_k);
         with_scratch::<BE, _>(bytes, |s| {
-            module.ckks_eval_linear_transformation_into(&mut wide_resident, &src, &babies, &wide_prepared, &keys, s)
+            module.ckks_linear_transformation_eval_into(&mut wide_resident, &src, &babies, &wide_prepared, &keys, s)
         })
         .unwrap();
         let mut wide_streamed = alloc_ct(&params, module, src_k);
         with_scratch::<BE, _>(
-            module.ckks_eval_linear_transformation_streamed_tmp_bytes(&src, first, &plan, &tsk_layout, &params.atk_layout()),
-            |s| module.ckks_eval_linear_transformation_into(&mut wide_streamed, &src, &babies, &wide_lt, &keys, s),
+            module.ckks_linear_transformation_eval_streamed_tmp_bytes(&src, first, &plan, &tsk_layout, &params.atk_layout()),
+            |s| module.ckks_linear_transformation_eval_into(&mut wide_streamed, &src, &babies, &wide_lt, &keys, s),
         )
         .unwrap();
         for (form, out) in [
@@ -1531,7 +1525,7 @@ pub fn test_linear_transformation_ct<BE, F, E>(
                 tensor: &at_k,
             };
             let err = with_scratch::<BE, _>(0, |s| {
-                module.ckks_eval_linear_transformation_into(&mut dst, &src, &babies, &prepared, &keys, s)
+                module.ckks_linear_transformation_eval_into(&mut dst, &src, &babies, &prepared, &keys, s)
             })
             .unwrap_err();
             assert!(
@@ -1605,17 +1599,17 @@ pub fn test_linear_transformation_sum_ct<BE, F, E>(
 
     let mut single = alloc_ct(&params, module, params.k);
     with_scratch::<BE, _>(
-        module.ckks_eval_linear_transformation_tmp_bytes(
+        module.ckks_linear_transformation_eval_tmp_bytes(
             &srcs[0],
             diagonals[0],
             &plan,
             &params.tsk_layout(),
             &params.atk_layout(),
         ),
-        |s| module.ckks_eval_linear_transformation_into(&mut single, &srcs[0], &babies[0], &prepared[0], &keys, s),
+        |s| module.ckks_linear_transformation_eval_into(&mut single, &srcs[0], &babies[0], &prepared[0], &keys, s),
     )
     .unwrap();
-    let sum_bytes = module.ckks_eval_linear_transformation_sum_tmp_bytes(
+    let sum_bytes = module.ckks_linear_transformation_eval_sum_tmp_bytes(
         &srcs[0],
         diagonals[0],
         &plan,
@@ -1624,7 +1618,7 @@ pub fn test_linear_transformation_sum_ct<BE, F, E>(
     );
     let mut one = alloc_ct(&params, module, params.k);
     with_scratch::<BE, _>(sum_bytes, |s| {
-        module.ckks_eval_linear_transformation_sum_into(&mut one, &[&srcs[0]], &[&babies[0]], &[&prepared[0]], &keys, s)
+        module.ckks_linear_transformation_eval_sum_into(&mut one, &[&srcs[0]], &[&babies[0]], &[&prepared[0]], &keys, s)
     })
     .unwrap();
     assert_eq!(
@@ -1635,7 +1629,7 @@ pub fn test_linear_transformation_sum_ct<BE, F, E>(
 
     let mut sum = alloc_ct(&params, module, params.k);
     with_scratch::<BE, _>(sum_bytes, |s| {
-        module.ckks_eval_linear_transformation_sum_into(
+        module.ckks_linear_transformation_eval_sum_into(
             &mut sum,
             &[&srcs[0], &srcs[1]],
             &[&babies[0], &babies[1]],
@@ -1676,7 +1670,7 @@ pub fn test_linear_transformation_ct_rejects_foreign_layouts<BE, F, E>(
     Module<BE>: TestContextModule<BE> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     F: TestScalar,
 {
-    const OP: &str = "ckks_eval_linear_transformation_into";
+    const OP: &str = "ckks_linear_transformation_eval_into";
     let p = &params;
     let lt = complex_diagonals::<F>(&[0, 1, 2, 3, 4, 5], p.n / 2, 0)
         .build_transform(LinearTransformationStrategy::Bsgs { giant_step: 2 }, |_, _| {
@@ -1691,7 +1685,7 @@ pub fn test_linear_transformation_ct_rejects_foreign_layouts<BE, F, E>(
     let refused = |dst: &mut CKKSCiphertextOwned<BE>, babies: &_, lt: &LinearTransformationPrepared<BE>| {
         let before = snapshot::<BE, _>(&*dst);
         let err = with_scratch::<BE, _>(0, |s| {
-            module.ckks_eval_linear_transformation_into(dst, &src, babies, lt, &no_keys, s)
+            module.ckks_linear_transformation_eval_into(dst, &src, babies, lt, &no_keys, s)
         })
         .unwrap_err();
         assert_eq!(snapshot::<BE, _>(&*dst), before, "a refused transform wrote dst: {err}");

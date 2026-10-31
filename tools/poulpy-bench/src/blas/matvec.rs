@@ -14,8 +14,11 @@ use poulpy_blas::{
 };
 use poulpy_ckks::{
     CoeffsMeta, SetCKKSInfos,
-    api::{CKKSEncodingHostOps, CKKSMulOps, LinearTransformationLayout, LinearTransformationStrategy, optimal_bsgs_giant_step},
-    layouts::{CKKSModuleAlloc, CKKSPreparedRight},
+    api::{
+        CKKSEncodingHostOps, CKKSRightOperandPreparedFactory, LinearTransformationLayout, LinearTransformationStrategy,
+        optimal_bsgs_giant_step,
+    },
+    layouts::{CKKSPlaintextAlloc, CKKSRightOperandPrepared},
 };
 use poulpy_core::{
     Result as CoreResult,
@@ -194,7 +197,7 @@ fn diagonal_ciphertext_layout(bp: &BlasBenchParams) -> BlasDiagonalCiphertextLay
 }
 
 /// The prepared mask of slot 0, at scale `p`.
-fn slot_mask<BE>(client: &Client<BE, BE>, bp: &BlasBenchParams) -> CKKSPreparedRight<BE>
+fn slot_mask<BE>(client: &Client<BE, BE>, bp: &BlasBenchParams) -> CKKSRightOperandPrepared<BE>
 where
     BE: Backend<Ring = Standard> + HostStaged + 'static,
     Module<BE>: BlasBenchModule<BE>,
@@ -202,19 +205,19 @@ where
 {
     let module = &client.module;
     let meta = CoeffsMeta::from_delta_budget(bp.p, HEADROOM);
-    let mut pt = module.ckks_pt_vec_alloc(bp.slots(), base2k(bp), meta.k);
+    let mut pt = module.ckks_plaintext_alloc_from_slots(bp.slots(), base2k(bp), meta.k);
     SetCKKSInfos::set_meta(&mut pt, meta.meta);
     let mut re = vec![0.0; bp.slots()];
     re[0] = 1.0;
     let mut arena = ScratchOwned::<BE>::alloc(
-        <Module<BE> as CKKSEncodingHostOps<BE, f64>>::ckks_reim_tmp_bytes(module, bp.slots())
-            .max(module.ckks_prepare_tmp_bytes(&pt)),
+        <Module<BE> as CKKSEncodingHostOps<BE, f64>>::ckks_encoding_host_tmp_bytes(module, bp.slots())
+            .max(module.ckks_right_operand_prepare_tmp_bytes(&pt)),
     );
     module
-        .ckks_encode_reim_into(&mut pt, &re, &vec![0.0; bp.slots()], &mut arena.borrow())
+        .ckks_encode_slots_host_into(&mut pt, &re, &vec![0.0; bp.slots()], &mut arena.borrow())
         .unwrap();
     module
-        .ckks_prepare_right(&pt, PrepareHint::Reuse, &mut arena.borrow())
+        .ckks_right_operand_prepare_alloc(&pt, PrepareHint::Reuse, &mut arena.borrow())
         .unwrap()
 }
 

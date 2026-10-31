@@ -35,11 +35,11 @@ use poulpy_hal::layouts::{Backend, ConjugateInvariant, Module, ScratchArena};
 
 use crate::{
     CKKSCtBounds, CKKSInfos, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotsKind,
-    api::{CKKSDFTMatrixOps, CKKSDFTOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar},
+    api::{CKKSDFTMatrixOps, CKKSDFTMatrixPreparedFactory, CKKSDFTOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar},
     layouts::{
-        CKKSModuleAlloc, ComplexDiagonals, DFTMatrix, DFTMatrixPrepared, DFTPlan, DFTType, Decode, DftScalar, Encode, EncodedLut,
-        EvalMod, EvalModPlan, Split,
-        eval_mod::{EvalModType, compile_eval_mod},
+        CKKSPlaintextAlloc, ComplexDiagonals, DFTMatrix, DFTMatrixPrepared, DFTPlan, DFTType, Decode, DftScalar, Encode,
+        EncodedLut, EvalMod, EvalModPlan, Split,
+        eval_mod::{EvalModType, ckks_eval_mod_compile},
     },
 };
 
@@ -911,17 +911,17 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
     /// budget among the matrices.
     pub fn prepare_tmp_bytes(&self, module: &Module<BE>) -> usize
     where
-        Module<BE>: CKKSDFTOps<BE>,
+        Module<BE>: CKKSDFTOps<BE> + CKKSDFTMatrixPreparedFactory<BE>,
         CKKSPlaintextOwned<BE>: LWEInfos,
     {
         let mut bytes = module
-            .ckks_prepare_dft_matrix_tmp_bytes(&self.coeffs_to_slots)
-            .max(module.ckks_prepare_dft_matrix_tmp_bytes(&self.slots_to_coeffs));
+            .ckks_dft_matrix_prepare_tmp_bytes(&self.coeffs_to_slots)
+            .max(module.ckks_dft_matrix_prepare_tmp_bytes(&self.slots_to_coeffs));
         if let Some(bypass) = &self.coeffs_to_slots_bypass {
-            bytes = bytes.max(module.ckks_prepare_dft_matrix_tmp_bytes(bypass));
+            bytes = bytes.max(module.ckks_dft_matrix_prepare_tmp_bytes(bypass));
         }
         if let Some(CIPre::Folded(folded)) = self.eval_mod_ci.as_ref().map(|ci| &ci.pre) {
-            bytes = bytes.max(module.ckks_prepare_dft_matrix_tmp_bytes(folded));
+            bytes = bytes.max(module.ckks_dft_matrix_prepare_tmp_bytes(folded));
         }
         bytes
     }
@@ -931,10 +931,10 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
     ///
     /// # Errors
     ///
-    /// As [`CKKSDFTOps::ckks_prepare_dft_matrix`].
+    /// As [`CKKSDFTMatrixPreparedFactory::ckks_dft_matrix_prepare`].
     pub fn prepare(self, module: &Module<BE>, scratch: &mut ScratchArena<'_, BE>) -> Result<BootstrappingContextPrepared<BE, F>>
     where
-        Module<BE>: CKKSDFTOps<BE>,
+        Module<BE>: CKKSDFTOps<BE> + CKKSDFTMatrixPreparedFactory<BE>,
         CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + GLWEDiagonalProd<BE>,
     {
         let Self {
@@ -954,14 +954,14 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
         } = self;
         let coeffs_to_slots = {
             let unprepared = coeffs_to_slots;
-            module.ckks_prepare_dft_matrix_alloc(&unprepared, scratch)?
+            module.ckks_dft_matrix_prepare_alloc(&unprepared, scratch)?
         };
         let slots_to_coeffs = {
             let unprepared = slots_to_coeffs;
-            module.ckks_prepare_dft_matrix_alloc(&unprepared, scratch)?
+            module.ckks_dft_matrix_prepare_alloc(&unprepared, scratch)?
         };
         let coeffs_to_slots_bypass = coeffs_to_slots_bypass
-            .map(|unprepared| module.ckks_prepare_dft_matrix_alloc(&unprepared, scratch))
+            .map(|unprepared| module.ckks_dft_matrix_prepare_alloc(&unprepared, scratch))
             .transpose()?;
         let eval_mod_ci = match eval_mod_ci {
             Some(ci) => Some(EvalModCIPrepared {
@@ -970,7 +970,7 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
                     CIPre::Product(pre) => CIPrePrepared(CIPreForm::Product(pre)),
                     CIPre::Folded(folded) => {
                         let [even, odd]: [_; 2] = module
-                            .ckks_prepare_dft_matrix_alloc(&folded, scratch)?
+                            .ckks_dft_matrix_prepare_alloc(&folded, scratch)?
                             .inner
                             .factors
                             .try_into()
@@ -1022,7 +1022,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<Self>
     where
-        Module<BE>: CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F> + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
+        Module<BE>: CKKSDFTMatrixPreparedFactory<BE> + CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F> + CKKSEncodingOps<BE, F>,
         CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + GLWEDiagonalProd<BE>,
     {
         Self::compile_unprepared(module, base2k, plan, scratch)?.prepare(module, scratch)
@@ -1048,8 +1048,8 @@ where
     where
         BCI: Backend<Ring = ConjugateInvariant, OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
         F: DftScalar,
-        Module<BE>: CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F> + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
-        Module<BCI>: CKKSModuleAlloc<BCI> + CKKSEncodingOps<BCI, F>,
+        Module<BE>: CKKSDFTMatrixPreparedFactory<BE> + CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F> + CKKSEncodingOps<BE, F>,
+        Module<BCI>: CKKSEncodingOps<BCI, F>,
         CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + GLWEDiagonalProd<BE>,
     {
         Self::compile_ci_unprepared(module, ci, base2k, plan, scratch, scratch_ci)?.prepare(module, scratch)
@@ -1076,9 +1076,10 @@ where
         let n = ci.n();
         let plan = plan.with_dft_formats_resolved_at(ci.log_n());
         Ok((
-            Self::compile_unprepared_tmp_bytes(module, &plan)?
-                .max(<Module<BE> as CKKSEncodingHostOps<BE, F>>::ckks_reim_tmp_bytes(module, n)),
-            <Module<BCI> as CKKSEncodingHostOps<BCI, F>>::ckks_reim_tmp_bytes(ci, n / 2),
+            Self::compile_unprepared_tmp_bytes(module, &plan)?.max(
+                <Module<BE> as CKKSEncodingHostOps<BE, F>>::ckks_encoding_host_tmp_bytes(module, n),
+            ),
+            <Module<BCI> as CKKSEncodingHostOps<BCI, F>>::ckks_encoding_host_tmp_bytes(ci, n / 2),
         ))
     }
 
@@ -1094,8 +1095,8 @@ where
     ) -> Result<BootstrappingContext<BE, F>>
     where
         BCI: Backend<Ring = ConjugateInvariant, OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
-        Module<BE>: CKKSDFTMatrixOps<BE, F> + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
-        Module<BCI>: CKKSModuleAlloc<BCI> + CKKSEncodingOps<BCI, F>,
+        Module<BE>: CKKSDFTMatrixOps<BE, F> + CKKSPlaintextAlloc<BE> + CKKSEncodingOps<BE, F>,
+        Module<BCI>: CKKSPlaintextAlloc<BCI> + CKKSEncodingOps<BCI, F>,
     {
         let EvalModRing::ConjugateInvariant { pre, post } = plan.eval_mod_ring else {
             anyhow::bail!("compile_ci takes a plan with EvalMod on the conjugate-invariant ring");
@@ -1117,13 +1118,13 @@ where
             im[half..].fill(F::from_f64(modulus * second).unwrap());
             // Values of modulus one take two bits above the scale, of modulus two three.
             let headroom = 2 + usize::from(modulus > 1.0);
-            let mut pt = module.ckks_pt_vec_alloc(2 * half, base2k, (log_delta + headroom).into());
+            let mut pt = module.ckks_plaintext_alloc_from_slots(2 * half, base2k, (log_delta + headroom).into());
             pt.set_meta(GLWEPlaintextMeta {
                 scale: Scale::Log(log_delta),
                 slots: SlotsKind::Complex,
                 log_sparsity: 0,
             });
-            module.ckks_encode_reim_into(&mut pt, &re, &im, scratch).map(|_| pt)
+            module.ckks_encode_slots_host_into(&mut pt, &re, &im, scratch).map(|_| pt)
         };
         // `v`, a product since the plan refuses to fold it, also carries the factor 2
         // of the conjugate pair, which the even coefficients of degree `2N` keep once
@@ -1166,7 +1167,7 @@ where
             }
         };
         context.eval_mod_ci = Some(EvalModCI {
-            eval_mod: compile_eval_mod(base2k, plan.eval_mod, ci, scratch_ci)?,
+            eval_mod: ckks_eval_mod_compile(base2k, plan.eval_mod, ci, scratch_ci)?,
             pre,
             post,
         });
@@ -1174,24 +1175,24 @@ where
     }
 
     /// Scratch of [`Self::compile_unprepared`] for `plan`: the DFT matrices and EvalMod are built one after the other on
-    /// the same scratch, so the largest of their queries, [`CKKSDFTMatrixOps::ckks_new_dft_matrix_tmp_bytes`] of each
+    /// the same scratch, so the largest of their queries, [`CKKSDFTMatrixOps::ckks_dft_matrix_new_tmp_bytes`] of each
     /// matrix and the slot encoding EvalMod stages its coefficients through.
     ///
     /// # Errors
     ///
-    /// The plan-versus-ring error of [`CKKSDFTMatrixOps::ckks_new_dft_matrix`].
+    /// The plan-versus-ring error of [`CKKSDFTMatrixOps::ckks_dft_matrix_new`].
     pub fn compile_unprepared_tmp_bytes(module: &Module<BE>, plan: &BootstrappingPlan) -> Result<usize>
     where
         Module<BE>: CKKSDFTMatrixOps<BE, F> + CKKSEncodingOps<BE, F>,
     {
         let mut bytes = module
-            .ckks_new_dft_matrix_tmp_bytes::<Encode, Split>(&plan.coeffs_to_slots)?
-            .max(module.ckks_new_dft_matrix_tmp_bytes::<Decode, Split>(&plan.slots_to_coeffs)?);
+            .ckks_dft_matrix_new_tmp_bytes::<Encode, Split>(&plan.coeffs_to_slots)?
+            .max(module.ckks_dft_matrix_new_tmp_bytes::<Decode, Split>(&plan.slots_to_coeffs)?);
         if let Some(bypass) = plan.coeffs_to_slots_bypass() {
-            bytes = bytes.max(module.ckks_new_dft_matrix_tmp_bytes::<Encode, Split>(bypass)?);
+            bytes = bytes.max(module.ckks_dft_matrix_new_tmp_bytes::<Encode, Split>(bypass)?);
         }
         if plan.eval_mod_ring == EvalModRing::Standard {
-            bytes = bytes.max(<Module<BE> as CKKSEncodingHostOps<BE, F>>::ckks_reim_tmp_bytes(
+            bytes = bytes.max(<Module<BE> as CKKSEncodingHostOps<BE, F>>::ckks_encoding_host_tmp_bytes(
                 module,
                 module.n() / 2,
             ));
@@ -1208,23 +1209,23 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<BootstrappingContext<BE, F>>
     where
-        Module<BE>: CKKSDFTMatrixOps<BE, F> + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
+        Module<BE>: CKKSDFTMatrixOps<BE, F> + CKKSEncodingOps<BE, F>,
     {
-        let mut coeffs_to_slots = module.ckks_new_dft_matrix::<Encode, Split>(base2k, &plan.coeffs_to_slots, scratch)?;
+        let mut coeffs_to_slots = module.ckks_dft_matrix_new::<Encode, Split>(base2k, &plan.coeffs_to_slots, scratch)?;
         // A first factor left to the modulus raise is evaluated from its plaintexts,
         // not by the matrix.
         let coeffs_to_slots_first_factor = plan
             .coeffs_to_slots
             .first_factor_on_raise()
             .then(|| coeffs_to_slots.inner.factors.remove(0));
-        let slots_to_coeffs = module.ckks_new_dft_matrix::<Decode, Split>(base2k, &plan.slots_to_coeffs, scratch)?;
+        let slots_to_coeffs = module.ckks_dft_matrix_new::<Decode, Split>(base2k, &plan.slots_to_coeffs, scratch)?;
         // EvalMod on the conjugate-invariant ring is encoded by `compile_ci`, on its module.
         let eval_mod = match plan.eval_mod_ring {
-            EvalModRing::Standard => Some(compile_eval_mod::<BE, F>(base2k, plan.eval_mod, module, scratch)?),
+            EvalModRing::Standard => Some(ckks_eval_mod_compile::<BE, F>(base2k, plan.eval_mod, module, scratch)?),
             EvalModRing::ConjugateInvariant { .. } => None,
         };
         let coeffs_to_slots_bypass = match plan.coeffs_to_slots_bypass() {
-            Some(bypass) => Some(module.ckks_new_dft_matrix::<Encode, Split>(base2k, bypass, scratch)?),
+            Some(bypass) => Some(module.ckks_dft_matrix_new::<Encode, Split>(base2k, bypass, scratch)?),
             None => None,
         };
 

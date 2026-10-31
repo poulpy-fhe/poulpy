@@ -29,7 +29,7 @@ use crate::{
     api::{CKKSAddOps, CKKSConjugateOps, CKKSImagOps, CKKSSubOps},
     invalid_operand,
     layouts::{
-        CKKSCiphertextOwned, CKKSFoldKeysLayout, CKKSModuleAlloc, CKKSRingCiphertext,
+        CKKSCiphertextAlloc, CKKSCiphertextOwned, CKKSFoldKeysLayout, CKKSRingCiphertext,
         validation::{validate_gadget_backend_view, validate_storage_capacity},
     },
     reference::ring_map::{ckks_ci_embed_keyless, ckks_ci_trace_keyless},
@@ -90,7 +90,7 @@ where
         + CKKSSubOps<BE>
         + CKKSImagOps<BE>
         + CKKSConjugateOps<BE>
-        + CKKSModuleAlloc<BE>,
+        + CKKSCiphertextAlloc<BE>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
     fn units(ins: &[CKKSCiphertextOwned<BE>]) -> Vec<Unit> {
@@ -178,7 +178,7 @@ where
         + GLWENormalize<BE>
         + GLWECIEmbed<BE>
         + GLWECITrace<BE>
-        + CKKSModuleAlloc<BE>,
+        + CKKSCiphertextAlloc<BE>,
     GLWE<BE::OwnedBuf, BE::ZnxWord>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
@@ -369,7 +369,7 @@ where
         + GLWEKeyswitch<BE>
         + CKKSAddOps<BE>
         + CKKSImagOps<BE>
-        + CKKSModuleAlloc<BE>,
+        + CKKSCiphertextAlloc<BE>,
     GLWE<BE::OwnedBuf, BE::ZnxWord>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
@@ -629,7 +629,7 @@ where
         + GLWEShift<BE>
         + GLWENormalize<BE>
         + GLWEAutomorphism<BE>
-        + CKKSModuleAlloc<BE>,
+        + CKKSCiphertextAlloc<BE>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
     let n = part.n().as_usize();

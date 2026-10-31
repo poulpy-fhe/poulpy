@@ -35,7 +35,7 @@
 //!
 //! [`EvalModPlan`] is the user-facing recipe; [`EvalMod`]
 //! is its compiled, plaintext-encoded form built by
-//! [`compile_eval_mod`]. Polynomial coefficients are generated as scalar
+//! [`ckks_eval_mod_compile`]. Polynomial coefficients are generated as scalar
 //! slices, then encoded directly by the destination module into its own
 //! plaintext storage. The result is evaluated through the
 //! [`CKKSEvalModOps`](crate::api::CKKSEvalModOps) trait (see
@@ -53,7 +53,7 @@ use crate::{
     polynomial::{BSGSPolynomial, ComplexBSGSPolynomial, ComplexPolynomial, Polynomial, SplitStrategy},
 };
 
-use super::{CKKSModuleAlloc, CKKSPlaintextOwned, CKKSScalar};
+use super::{CKKSPlaintextAlloc, CKKSPlaintextOwned, CKKSScalar};
 
 // Fallible scalar conversions: building the host-side polynomials goes through
 // the generic float `F`, and a conversion that is not exactly representable in
@@ -133,7 +133,7 @@ pub enum EvalModType {
 }
 
 /// User-facing recipe for an `x mod 1` evaluation. Compiled into the encoded
-/// [`EvalMod`] by [`compile_eval_mod`].
+/// [`EvalMod`] by [`ckks_eval_mod_compile`].
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct EvalModPlan {
     /// Which periodic-function approximation and output form to use.
@@ -248,7 +248,7 @@ impl EvalModPlan {
     }
 
     pub(crate) fn validate(&self) -> Result<()> {
-        self.coeffs_meta.ensure_width("compile_eval_mod")?;
+        self.coeffs_meta.ensure_width("ckks_eval_mod_compile")?;
         ensure!(self.f_mod_degree > 0, "f_mod_degree must be > 0");
         ensure!(self.f_mod_interval > 0, "f_mod_interval must be > 0");
         ensure!(self.log_msg_ratio < 64, "log_msg_ratio must be < 64");
@@ -297,7 +297,7 @@ impl EvalModPlan {
         let input_log_delta = self.f_mod_log_delta;
         // `bsgs_consumed_bits`'s depth model is parity-independent (the parameter
         // is documentation-only), so no per-family parity is threaded here; the
-        // compiled polynomials carry their real parity (`compile_eval_mod` pins
+        // compiled polynomials carry their real parity (`ckks_eval_mod_compile` pins
         // Full for the phase-shifted Sin/CosCheby, CosHK keeps auto-detection).
         let (degree, fold) = self.encoded_base_degree();
         let base = usize::from(fold) * input_log_delta
@@ -324,7 +324,7 @@ impl EvalModPlan {
             EvalModType::CosHK | EvalModType::CosHKEven => {
                 // Clear preconditions instead of a usize underflow inside the
                 // Han–Ki degree table / a shift overflow on the message ratio;
-                // `compile_eval_mod` enforces the same bounds with typed errors.
+                // `ckks_eval_mod_compile` enforces the same bounds with typed errors.
                 assert!(self.f_mod_interval > 0, "EvalModPlan: f_mod_interval must be > 0");
                 assert!(self.log_msg_ratio < 64, "EvalModPlan: log_msg_ratio must be < 64");
                 let dev = (1u64 << self.log_msg_ratio) as f64;
@@ -412,7 +412,7 @@ impl EvalModPlan {
 
 /// BSGS-encoded base polynomial driving the homomorphic evaluation. Its
 /// coefficients are stored as the plaintexts `P` (host-side after
-/// [`compile_eval_mod`].
+/// [`ckks_eval_mod_compile`].
 pub enum EvalModBsgs<P> {
     /// Real-valued `f` (e.g. the `sin`/`cos` families).
     Real(BSGSPolynomial<P>),
@@ -436,7 +436,7 @@ pub enum EvalModPoly<F> {
 ///
 /// `F` is the host floating-point scalar the polynomials were built in; `P` is
 /// the plaintext storage type — a host [`CKKSPlaintext`](crate::layouts::CKKSPlaintext) right after
-/// [`compile_eval_mod`]. Evaluate it with
+/// [`ckks_eval_mod_compile`]. Evaluate it with
 /// [`CKKSEvalModOps::ckks_eval_mod`](crate::api::CKKSEvalModOps::ckks_eval_mod).
 pub struct EvalMod<F, P> {
     /// Copy of [`EvalModPlan`].
@@ -474,12 +474,12 @@ fn encode_bsgs_folded_backend<BE, F>(
 ) -> Result<BSGSPolynomial<CKKSPlaintextOwned<BE>>>
 where
     BE: Backend,
-    Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
+    Module<BE>: CKKSPlaintextAlloc<BE> + CKKSEncodingOps<BE, F>,
     F: CKKSEncodingScalar,
 {
     let mut step_idx = 0usize;
     polynomial.decompose_bsgs_folded_with(strategy, |baby_coeffs| {
-        let mut pt = module.ckks_pt_coeffs_alloc(baby_coeffs.len(), base2k, coeff_meta.k);
+        let mut pt = module.ckks_plaintext_alloc(baby_coeffs.len().into(), base2k, coeff_meta.k);
         pt.set_meta_checked(coeff_meta.meta)?;
         module
             .ckks_encode_coeffs_host_into(&mut pt, baby_coeffs, scratch)
@@ -499,12 +499,12 @@ fn encode_bsgs_backend<BE, F>(
 ) -> Result<BSGSPolynomial<CKKSPlaintextOwned<BE>>>
 where
     BE: Backend,
-    Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
+    Module<BE>: CKKSPlaintextAlloc<BE> + CKKSEncodingOps<BE, F>,
     F: CKKSEncodingScalar,
 {
     let mut step_idx = 0usize;
     polynomial.decompose_bsgs_with(strategy, |baby_coeffs| {
-        let mut pt = module.ckks_pt_coeffs_alloc(baby_coeffs.len(), base2k, coeff_meta.k);
+        let mut pt = module.ckks_plaintext_alloc(baby_coeffs.len().into(), base2k, coeff_meta.k);
         pt.set_meta_checked(coeff_meta.meta)?;
         module
             .ckks_encode_coeffs_host_into(&mut pt, baby_coeffs, scratch)
@@ -524,7 +524,7 @@ fn encode_complex_bsgs_backend<BE, F>(
 ) -> Result<ComplexBSGSPolynomial<CKKSPlaintextOwned<BE>>>
 where
     BE: Backend,
-    Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
+    Module<BE>: CKKSEncodingOps<BE, F>,
     F: CKKSEncodingScalar,
 {
     let (re, im) = polynomial.split_with_shared_parity();
@@ -545,7 +545,7 @@ where
 /// Returns an error if the plan is inconsistent, a generated coefficient is
 /// not representable, or `scratch` is too small for the largest coefficient
 /// block.
-pub fn compile_eval_mod<BE, F>(
+pub fn ckks_eval_mod_compile<BE, F>(
     base2k: Base2K,
     lit: EvalModPlan,
     module: &Module<BE>,
@@ -553,7 +553,7 @@ pub fn compile_eval_mod<BE, F>(
 ) -> Result<EvalMod<F, CKKSPlaintextOwned<BE>>>
 where
     BE: Backend,
-    Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
+    Module<BE>: CKKSPlaintextAlloc<BE> + CKKSEncodingOps<BE, F>,
     F: CKKSEncodingScalar,
 {
     lit.validate()?;
@@ -671,7 +671,7 @@ where
     };
     let f_mod_input_offset = match lit.input_offset::<F>() {
         Some(offset) => {
-            let mut pt = module.ckks_pt_coeffs_alloc(1, base2k, coeff_meta.k);
+            let mut pt = module.ckks_plaintext_alloc(1usize.into(), base2k, coeff_meta.k);
             pt.set_meta_checked(coeff_meta.meta)?;
             module
                 .ckks_encode_coeffs_host_into(&mut pt, &[offset], scratch)
@@ -692,7 +692,7 @@ where
         let vals: Vec<F> = (0..f_mod_log_interval_reduction)
             .map(|i| s.ckks_powi(1i32 << (i + 1)))
             .collect();
-        let mut pt = module.ckks_pt_coeffs_alloc(f_mod_log_interval_reduction, base2k, coeff_meta.k);
+        let mut pt = module.ckks_plaintext_alloc(f_mod_log_interval_reduction.into(), base2k, coeff_meta.k);
         pt.set_meta_checked(coeff_meta.meta)?;
         module
             .ckks_encode_coeffs_host_into(&mut pt, &vals, scratch)
@@ -713,7 +713,7 @@ where
     })
 }
 
-/// [`EvalModType::ExpCmplx`] specialization of [`compile_eval_mod`]: interpolates
+/// [`EvalModType::ExpCmplx`] specialization of [`ckks_eval_mod_compile`]: interpolates
 /// the real and imaginary parts of `s·exp(2πi·x)` on the reduced range as a
 /// single [`ComplexPolynomial`] and BSGS-encodes it. The `r` range-extension
 /// steps are plain complex squarings (`exp 2θ = (exp θ)²`), so no offset or
@@ -726,7 +726,7 @@ fn compile_eval_mod_exp<BE, F>(
 ) -> Result<EvalMod<F, CKKSPlaintextOwned<BE>>>
 where
     BE: Backend,
-    Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
+    Module<BE>: CKKSEncodingOps<BE, F>,
     F: CKKSEncodingScalar,
 {
     let coeff_meta = lit.coeffs_meta;
@@ -816,7 +816,7 @@ impl<F, P> EvalMod<F, P> {
     /// Maps every encoded plaintext field from storage `P` to storage `Q`,
     /// leaving the scalar polynomial descriptions untouched.
     ///
-    /// Normal setup should use [`compile_eval_mod`], which already encodes on
+    /// Normal setup should use [`ckks_eval_mod_compile`], which already encodes on
     /// the destination backend. This utility remains useful for explicit
     /// storage conversions and serialization adapters.
     pub fn map_plaintexts<Q>(self, mut f: impl FnMut(&P) -> Q) -> EvalMod<F, Q> {

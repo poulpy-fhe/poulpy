@@ -12,7 +12,7 @@
 use crate::CKKSResult as Result;
 use crate::SlotsKind;
 use crate::layouts::CKKSPlaintextOwned;
-use crate::{GLWEPlaintextMeta, Scale, SetCKKSInfos, ckks_log_delta, layouts::CKKSModuleAlloc};
+use crate::{GLWEPlaintextMeta, Scale, SetCKKSInfos, ckks_log_delta, layouts::CKKSPlaintextAlloc};
 use poulpy_core::layouts::Base2K;
 use poulpy_hal::{
     AlignedBuf, alloc_aligned,
@@ -25,10 +25,10 @@ use poulpy_hal::{
 /// Each call allocates and uploads a degree-1, single-limb monomial. The
 /// unit-operation scratch query covers the arithmetic workspace. A backend
 /// that keeps the constant builds it here, once per module and radix.
-pub fn ckks_one_pt<BE, M>(module: &M, base2k: Base2K) -> Result<CKKSPlaintextOwned<BE>>
+pub fn ckks_plaintext_one<BE, M>(module: &M, base2k: Base2K) -> Result<CKKSPlaintextOwned<BE>>
 where
     BE: Backend,
-    M: CKKSModuleAlloc<BE> + ?Sized,
+    M: CKKSPlaintextAlloc<BE> + ?Sized,
 {
     let meta = GLWEPlaintextMeta {
         scale: Scale::Log(1),
@@ -56,7 +56,7 @@ where
         &[1i64 << ckks_log_delta(&meta)],
     );
 
-    let mut pt = module.ckks_pt_coeffs_alloc(1, base2k, k_total.into());
+    let mut pt = module.ckks_plaintext_alloc(1usize.into(), base2k, k_total.into());
     pt.set_meta(meta);
     pt.copy_from_host_bytes::<BE>(limbs.data().as_slice());
     Ok(pt)

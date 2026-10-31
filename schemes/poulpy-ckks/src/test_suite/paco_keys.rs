@@ -229,7 +229,7 @@ where
     let lts: Vec<_> = factors
         .iter()
         .map(|cd| {
-            crate::encoding::ckks_encode_linear_transformation_from_diagonals(
+            crate::encoding::ckks_linear_transformation_encode_from_diagonals(
                 &module,
                 Base2K(params.base2k as u32),
                 crate::CoeffsMeta {
@@ -284,7 +284,7 @@ where
     for lt in &lts {
         let bytes = pt_self_into_tmp_bytes(&module, true, &acc, &lt.index(), &params.atk_layout());
         with_scratch::<BE, _>(bytes, |s| {
-            module.ckks_eval_linear_transformation_self_assign(&mut acc, lt, &atks, s)
+            module.ckks_linear_transformation_eval_self_assign(&mut acc, lt, &atks, s)
         })
         .unwrap();
     }

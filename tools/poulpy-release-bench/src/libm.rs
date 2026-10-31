@@ -15,7 +15,7 @@ use anyhow::{Result, bail};
 use poulpy_ckks::{
     CKKSInfos, CKKSLayout, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotsKind,
     api::{CKKSAllOpsTmpBytes, CKKSCopyOps, CKKSDecryptOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncryptOps},
-    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc},
+    layouts::{CKKSCiphertextAlloc, CKKSCiphertextOwned, CKKSPlaintextAlloc},
     polynomial::SplitStrategy,
     test_suite::helpers::{TestContextBackend, TestContextSharedModule, upload_pt},
 };
@@ -92,7 +92,8 @@ pub trait LibmModule<BE: Backend>:
     ModuleNew<BE>
     + ModuleSynchronize<BE>
     + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
-    + CKKSModuleAlloc<BE>
+    + CKKSCiphertextAlloc<BE>
+    + CKKSPlaintextAlloc<BE>
     + GLWETensorKeyPreparedFactory<BE>
     + GLWEAutomorphismKeyPreparedFactory<BE>
     + CKKSCopyOps<BE>
@@ -108,7 +109,8 @@ impl<BE: Backend, M> LibmModule<BE> for M where
     M: ModuleNew<BE>
         + ModuleSynchronize<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
-        + CKKSModuleAlloc<BE>
+        + CKKSCiphertextAlloc<BE>
+        + CKKSPlaintextAlloc<BE>
         + GLWETensorKeyPreparedFactory<BE>
         + GLWEAutomorphismKeyPreparedFactory<BE>
         + CKKSCopyOps<BE>
@@ -284,7 +286,7 @@ where
         let (tsk, atk) = (tsk_layout(k), atk_layout(k));
         let bytes = client
             .ckks_all_ops_with_atk_tmp_bytes(&layout, &layout, &tsk, &atk)
-            .max(<Module<BC> as CKKSEncodingHostOps<BC, f64>>::ckks_reim_tmp_bytes(
+            .max(<Module<BC> as CKKSEncodingHostOps<BC, f64>>::ckks_encoding_host_tmp_bytes(
                 &client,
                 slots(),
             ))
@@ -350,10 +352,10 @@ where
     fn encrypt(&mut self, values: &[f64]) -> CKKSCiphertextOwned<BE> {
         let mut pt = self
             .client
-            .ckks_pt_vec_alloc(slots(), base2k(), TorusPrecision((LOG_DELTA + HEADROOM) as u32));
+            .ckks_plaintext_alloc_from_slots(slots(), base2k(), TorusPrecision((LOG_DELTA + HEADROOM) as u32));
         pt.set_meta(layout(self.k).meta);
         self.client
-            .ckks_encode_reim_into(&mut pt, values, &vec![0.0; slots()], &mut self.arena.borrow())
+            .ckks_encode_slots_host_into(&mut pt, values, &vec![0.0; slots()], &mut self.arena.borrow())
             .unwrap();
         let mut ct = self.client.ckks_ciphertext_alloc(base2k(), TorusPrecision(self.k as u32));
         self.client
@@ -382,7 +384,7 @@ where
         let log_delta = moved.log_delta();
         let mut pt = self
             .client
-            .ckks_pt_vec_alloc(slots(), base2k(), TorusPrecision((log_delta + DECODE_HEADROOM) as u32));
+            .ckks_plaintext_alloc_from_slots(slots(), base2k(), TorusPrecision((log_delta + DECODE_HEADROOM) as u32));
         pt.set_meta(GLWEPlaintextMeta {
             scale: Scale::Log(log_delta),
             slots: SlotsKind::Complex,
@@ -393,7 +395,7 @@ where
             .unwrap();
         let (mut re, mut im) = (vec![0.0; slots()], vec![0.0; slots()]);
         self.client
-            .ckks_decode_reim_into(&pt, &mut re, &mut im, &mut self.arena.borrow())
+            .ckks_decode_slots_host_into(&pt, &mut re, &mut im, &mut self.arena.borrow())
             .unwrap();
         re
     }
@@ -438,7 +440,7 @@ where
     let module = &client.module;
     let mut scratch = ScratchOwned::<BE>::alloc(
         module
-            .ckks_approximation_tmp_bytes(&y, &ct_x, &approximation, &tsk_infos)
+            .ckks_polynomial_approximation_eval_tmp_bytes(&y, &ct_x, &approximation, &tsk_infos)
             .max(module.ckks_rsqrt_tmp_bytes(&y, &ct_half, &tsk_infos)),
     );
     // Each call widens the destination back, a change of label, so that every call runs as the first, checked one.
@@ -446,7 +448,7 @@ where
     let op = move |module: &Module<BE>, y: &mut CKKSCiphertextOwned<BE>, scratch: &mut ScratchOwned<BE>| {
         y.set_k(k);
         module
-            .ckks_eval_approximation(y, &ct_x, &approximation, &tsk, &mut scratch.borrow())
+            .ckks_polynomial_approximation_eval(y, &ct_x, &approximation, &tsk, &mut scratch.borrow())
             .unwrap();
         module.ckks_rsqrt(y, &ct_half, steps, &tsk, &mut scratch.borrow()).unwrap();
         module.synchronize();
@@ -465,7 +467,7 @@ where
         output_log_budget,
         rotation_keys: 0,
         details: json!({
-            "function": "ckks_eval_approximation + ckks_rsqrt",
+            "function": "ckks_polynomial_approximation_eval + ckks_rsqrt",
             "domain": [min, 1.0],
             "target_bits": TARGET_BITS,
             "planned_consumed_bits": consumed,

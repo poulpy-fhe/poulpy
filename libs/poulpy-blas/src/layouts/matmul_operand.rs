@@ -2,8 +2,8 @@
 
 use poulpy_ckks::{
     CKKSLayout,
-    api::{CKKSMulOps, LinearTransformation, LtDiagonalMeta},
-    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPreparedLeft, CKKSPreparedRight},
+    api::{CKKSLeftOperandPreparedFactory, CKKSRightOperandPreparedFactory, LinearTransformation, LtDiagonalMeta},
+    layouts::{CKKSCiphertextOwned, CKKSLeftOperandPrepared, CKKSRightOperandPrepared},
 };
 use poulpy_core::layouts::GLWELayout;
 use poulpy_hal::layouts::{Backend, Module, PrepareHint};
@@ -18,15 +18,15 @@ use super::{
 /// The left operand of [`blas_matmul_prepared`](crate::api::BlasMatMulOps::blas_matmul_prepared), hot or cold, which
 /// [`BlasMatMulOperandPreparedFactory::blas_matmul_left_alloc_from_infos`] allocates and
 /// [`blas_matmul_prepare_left`](crate::api::BlasMatMulOps::blas_matmul_prepare_left) fills.
-pub type BlasMatMulLeft<BE> = BlasMatMulOperand<BE, CKKSPreparedLeft<BE>>;
+pub type BlasMatMulLeft<BE> = BlasMatMulOperand<BE, CKKSLeftOperandPrepared<BE>>;
 
 /// The right operand of [`blas_matmul_prepared`](crate::api::BlasMatMulOps::blas_matmul_prepared), hot or cold, which
 /// [`BlasMatMulOperandPreparedFactory::blas_matmul_right_alloc_from_infos`] allocates and
 /// [`blas_matmul_prepare_right`](crate::api::BlasMatMulOps::blas_matmul_prepare_right) fills.
-pub type BlasMatMulRight<BE> = BlasMatMulOperand<BE, CKKSPreparedRight<BE>>;
+pub type BlasMatMulRight<BE> = BlasMatMulOperand<BE, CKKSRightOperandPrepared<BE>>;
 
-/// A prepared operand of a product, of terms `P`: [`CKKSPreparedLeft`] on the left, [`BlasMatMulLeft`], and
-/// [`CKKSPreparedRight`] on the right, [`BlasMatMulRight`], so that swapping the operands of a product does not
+/// A prepared operand of a product, of terms `P`: [`CKKSLeftOperandPrepared`] on the left, [`BlasMatMulLeft`], and
+/// [`CKKSRightOperandPrepared`] on the right, [`BlasMatMulRight`], so that swapping the operands of a product does not
 /// compile. Its storage is `BE`'s, poulpy-ckks ciphertexts and prepared terms. An allocation from
 /// [`BlasMatMulOperandInfos`] makes all its storage, after their hint, and a preparation fills it:
 /// - hot, `OneShot`, prepared for one product: a block of the source's layout per block of its source, row-major, into
@@ -131,11 +131,13 @@ impl<BE: Backend, P> BlasMatMulOperandInfos for BlasMatMulOperand<BE, P> {
 }
 
 /// Allocation and sizing of the prepared operands of a product.
-pub trait BlasMatMulOperandPreparedFactory<BE: Backend>: BlasModuleAlloc<BE> + BlasBytesOf<BE> + CKKSMulOps<BE> {
+pub trait BlasMatMulOperandPreparedFactory<BE: Backend>:
+    BlasModuleAlloc<BE> + BlasBytesOf<BE> + CKKSLeftOperandPreparedFactory<BE> + CKKSRightOperandPreparedFactory<BE>
+{
     /// Bytes a left operand of `infos` holds, as [`Self::blas_matmul_left_alloc_from_infos`] allocates it.
     fn blas_matmul_left_bytes_of_from_infos<A: BlasMatMulOperandInfos>(&self, infos: &A) -> usize {
         operand_bytes(self, infos, |term| {
-            self.ckks_prepared_left_bytes_of_from_infos(term, PrepareHint::Reuse)
+            self.ckks_left_operand_prepared_bytes_of_from_infos(term, PrepareHint::Reuse)
         })
     }
 
@@ -149,14 +151,14 @@ pub trait BlasMatMulOperandPreparedFactory<BE: Backend>: BlasModuleAlloc<BE> + B
     /// May panic on infos of no block, or whose bytes overflow `usize`.
     fn blas_matmul_left_alloc_from_infos<A: BlasMatMulOperandInfos>(&self, infos: &A) -> BlasMatMulLeft<BE> {
         alloc_operand(self, infos, |term| {
-            self.ckks_prepared_left_alloc_from_infos(term, PrepareHint::Reuse)
+            self.ckks_left_operand_prepared_alloc_from_infos(term, PrepareHint::Reuse)
         })
     }
 
     /// As [`Self::blas_matmul_left_bytes_of_from_infos`], for a right operand.
     fn blas_matmul_right_bytes_of_from_infos<A: BlasMatMulOperandInfos>(&self, infos: &A) -> usize {
         operand_bytes(self, infos, |term| {
-            self.ckks_prepared_right_bytes_of_from_infos(term, PrepareHint::Reuse)
+            self.ckks_right_operand_prepared_bytes_of_from_infos(term, PrepareHint::Reuse)
         })
     }
 
@@ -169,12 +171,15 @@ pub trait BlasMatMulOperandPreparedFactory<BE: Backend>: BlasModuleAlloc<BE> + B
     /// As [`Self::blas_matmul_left_alloc_from_infos`].
     fn blas_matmul_right_alloc_from_infos<A: BlasMatMulOperandInfos>(&self, infos: &A) -> BlasMatMulRight<BE> {
         alloc_operand(self, infos, |term| {
-            self.ckks_prepared_right_alloc_from_infos(term, PrepareHint::Reuse)
+            self.ckks_right_operand_prepared_alloc_from_infos(term, PrepareHint::Reuse)
         })
     }
 }
 
-impl<BE: Backend> BlasMatMulOperandPreparedFactory<BE> for Module<BE> where Module<BE>: CKKSModuleAlloc<BE> + CKKSMulOps<BE> {}
+impl<BE: Backend> BlasMatMulOperandPreparedFactory<BE> for Module<BE> where
+    Module<BE>: CKKSLeftOperandPreparedFactory<BE> + CKKSRightOperandPreparedFactory<BE>
+{
+}
 
 /// An operand of `infos` holding all its storage, the batch `0`: hot, a grid of the source's block layout; cold, `d`
 /// terms of `term` per source block.
@@ -377,7 +382,7 @@ pub(crate) fn product_terms(x: &impl BlasMatMulOperandInfos, hot: impl FnOnce() 
 mod tests {
     use std::panic::{AssertUnwindSafe, catch_unwind};
 
-    use poulpy_ckks::layouts::CKKSModuleAlloc;
+    use poulpy_ckks::layouts::CKKSCiphertextAlloc;
     use poulpy_hal::layouts::HostBytesBackend;
 
     use super::*;

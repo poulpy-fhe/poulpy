@@ -17,7 +17,7 @@ use poulpy_hal::{
 use crate::{
     CKKSCompositionError, CKKSInfos, CKKSLayout, GLWEPlaintextMeta, SetCKKSInfos, SlotsKind,
     api::{CKKSFoldLayoutOps, CKKSFoldOps},
-    layouts::{CKKSCiphertextOwned, CKKSFoldKeysLayout, CKKSModuleAlloc, CKKSPlaintextVecHostCodec, RingSwitchKeys},
+    layouts::{CKKSCiphertextAlloc, CKKSCiphertextOwned, CKKSFoldKeysLayout, CKKSPlaintextVecHostCodec, RingSwitchKeys},
     test_suite::{
         CKKSTestParams,
         helpers::{

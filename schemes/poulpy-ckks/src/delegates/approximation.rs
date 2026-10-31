@@ -13,7 +13,7 @@ impl<BE: Backend + CKKSApproximationImpl> CKKSApproximationOps<BE> for Module<BE
 where
     Module<BE>: CKKSAllOpsTmpBytes<BE>,
 {
-    fn ckks_approximation_tmp_bytes<R, I, T, P>(
+    fn ckks_polynomial_approximation_eval_tmp_bytes<R, I, T, P>(
         &self,
         res: &R,
         input: &I,
@@ -26,10 +26,10 @@ where
         T: GGLWEInfos,
         P: CKKSInfos + LWEInfos,
     {
-        BE::ckks_approximation_tmp_bytes(self, res, input, approximation, tsk)
+        BE::ckks_polynomial_approximation_eval_tmp_bytes(self, res, input, approximation, tsk)
     }
 
-    fn ckks_eval_approximation<R, I, P, H>(
+    fn ckks_polynomial_approximation_eval<R, I, P, H>(
         &self,
         res: &mut R,
         input: &I,
@@ -43,6 +43,6 @@ where
         P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta + IntPolyInfos,
         H: GetTensorKey<BE>,
     {
-        BE::ckks_eval_approximation(self, res, input, approximation, tsk, scratch)
+        BE::ckks_polynomial_approximation_eval(self, res, input, approximation, tsk, scratch)
     }
 }

@@ -15,10 +15,10 @@ use crate::{
     api::{BSGSPolynomialInfos, CKKSComplexPolynomialEvaluationOps, CKKSMulOps, CKKSPolynomialEvaluationOps},
     layouts::{CKKSCiphertextOwned, CKKSPlaintextOwned, CKKSPlaintextVecHostCodec},
     polynomial::{
-        BSGSPolynomial, Basis, ComplexBSGSPolynomial, ComplexPolynomial, EncodeBSGS, Parity, Polynomial,
+        BSGSPolynomial, Basis, CKKSPolynomialEncode, ComplexBSGSPolynomial, ComplexPolynomial, Parity, Polynomial,
         PolynomialInputTransform, SplitStrategy,
     },
-    power_basis::{PowerBasis, PowerBasisGen, PowerBasisInsert},
+    power_basis::{CKKSPowerBasisGen, CKKSPowerBasisInsert, PowerBasis},
     test_suite::CKKSTestParams,
     test_suite::reference_encoder::ReferenceEncoder,
 };
@@ -31,7 +31,7 @@ use super::helpers::{
 use super::parity::helpers::{snapshot, with_scratch};
 use crate::SlotsKind;
 use crate::api::CKKSAllOpsTmpBytes;
-use crate::layouts::CKKSModuleAlloc;
+use crate::layouts::CKKSCiphertextAlloc;
 
 /// The documented query of polynomial evaluation and of the power basis it builds: the shared all-operations bound.
 fn poly_scratch_bytes<BE>(params: &CKKSTestParams, module: &Module<BE>) -> usize
@@ -2002,9 +2002,9 @@ pub fn test_eval_poly_consumed_bits_sweep<BE, F, E>(
     }
 }
 
-/// An input whose budget cannot pay the approximation is `InsufficientHomomorphicCapacity` of `ckks_eval_approximation`
+/// An input whose budget cannot pay the approximation is `InsufficientHomomorphicCapacity` of `ckks_polynomial_approximation_eval`
 /// before any write, on an empty arena and on the query.
-pub fn test_eval_approximation_rejects_insufficient_capacity<BE, F, E>(
+pub fn test_polynomial_approximation_eval_rejects_insufficient_capacity<BE, F, E>(
     params: crate::test_suite::CKKSTestParams,
     module: &poulpy_hal::layouts::Module<BE>,
     host_module: &poulpy_hal::layouts::Module<poulpy_hal::layouts::HostBytesBackend>,
@@ -2024,12 +2024,12 @@ pub fn test_eval_approximation_rejects_insufficient_capacity<BE, F, E>(
     use crate::{
         CKKSCompositionError, CKKSInfos, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotsKind,
         api::CKKSApproximationOps,
-        layouts::{CKKSModuleAlloc, CKKSPlaintextOwned, PolynomialApproximation},
+        layouts::{CKKSPlaintextAlloc, CKKSPlaintextOwned, PolynomialApproximation},
         polynomial::{BSGSPolynomial, Basis, Polynomial, SplitStrategy},
     };
     let b = params.base2k;
     let coeffs = |count: usize| -> anyhow::Result<CKKSPlaintextOwned<BE>> {
-        let mut pt = module.ckks_pt_coeffs_alloc(count, b.into(), (2 * b).into());
+        let mut pt = module.ckks_plaintext_alloc(count.into(), b.into(), (2 * b).into());
         pt.set_meta(GLWEPlaintextMeta {
             scale: Scale::Log(b / 2),
             ..Default::default()
@@ -2058,18 +2058,18 @@ pub fn test_eval_approximation_rejects_insufficient_capacity<BE, F, E>(
     );
     for bytes in [
         0,
-        module.ckks_approximation_tmp_bytes(&res, &input, &approximation, &params.tsk_layout()),
+        module.ckks_polynomial_approximation_eval_tmp_bytes(&res, &input, &approximation, &params.tsk_layout()),
     ] {
         let before = snapshot::<BE, _>(&res);
         let err = with_scratch::<BE, _>(bytes, |s| {
-            module.ckks_eval_approximation(&mut res, &input, &approximation, &tsk, s)
+            module.ckks_polynomial_approximation_eval(&mut res, &input, &approximation, &tsk, s)
         })
         .unwrap_err();
         assert_ckks_error(
-            "eval_approximation: input without budget",
+            "polynomial_approximation_eval: input without budget",
             &err,
             CKKSCompositionError::InsufficientHomomorphicCapacity {
-                op: "ckks_eval_approximation",
+                op: "ckks_polynomial_approximation_eval",
                 available_log_budget: 0,
                 required_bits: required,
             },

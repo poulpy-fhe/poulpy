@@ -11,7 +11,9 @@ use crate::{
     layouts::PolynomialApproximation,
     oep::{
         CKKSAddImpl, CKKSAffineImpl, CKKSCopyImpl, CKKSPolynomialEvaluationImpl, CKKSPow2Impl,
-        derived::approximation::{ckks_approximation_tmp_bytes_derived, ckks_eval_approximation_derived},
+        derived::approximation::{
+            ckks_polynomial_approximation_eval_derived, ckks_polynomial_approximation_eval_tmp_bytes_derived,
+        },
     },
 };
 
@@ -29,12 +31,12 @@ use crate::{
 pub unsafe trait CKKSApproximationImpl:
     Backend + CKKSAddImpl + CKKSAffineImpl + CKKSCopyImpl + CKKSPow2Impl + CKKSPolynomialEvaluationImpl
 {
-    /// Default body: `ckks_approximation_tmp_bytes_derived`, the larger of the selected `ckks_all_ops_tmp_bytes` at
+    /// Default body: `ckks_polynomial_approximation_eval_tmp_bytes_derived`, the larger of the selected `ckks_all_ops_tmp_bytes` at
     /// `res` and at `input`, both against the first baby-step coefficient layout and `tsk`. An approximation with an
     /// affine map adds the aligned bytes of an `input`-shaped temporary and, unless it has a power-of-two scale, folds in the
     /// larger of that bound and the selected `ckks_affine_pt_const_tmp_bytes`. Scratch bound of
-    /// [`Self::ckks_eval_approximation`]; may report less than the reference, never less than the body takes.
-    fn ckks_approximation_tmp_bytes<R, I, T, P>(
+    /// [`Self::ckks_polynomial_approximation_eval`]; may report less than the reference, never less than the body takes.
+    fn ckks_polynomial_approximation_eval_tmp_bytes<R, I, T, P>(
         module: &Module<Self>,
         res: &R,
         input: &I,
@@ -48,10 +50,10 @@ pub unsafe trait CKKSApproximationImpl:
         T: GGLWEInfos,
         P: CKKSInfos + LWEInfos,
     {
-        ckks_approximation_tmp_bytes_derived(module, res, input, approximation, tsk)
+        ckks_polynomial_approximation_eval_tmp_bytes_derived(module, res, input, approximation, tsk)
     }
 
-    /// Default body: `ckks_eval_approximation_derived`. A `log_budget` below the bits the approximation consumes at the
+    /// Default body: `ckks_polynomial_approximation_eval_derived`. A `log_budget` below the bits the approximation consumes at the
     /// input's `log_delta` is `InsufficientHomomorphicCapacity`, then, with an affine map, an arena below the
     /// temporary plus its map step's selected queries a refusal. An approximation with an affine map first fills an
     /// `input`-shaped scratch
@@ -59,7 +61,7 @@ pub unsafe trait CKKSApproximationImpl:
     /// kind joined with real) then `ckks_div_pow2_assign`, either then `ckks_add_pt_const_assign` of the affine
     /// constant at coefficient 0; without a power-of-two scale `ckks_affine_pt_const_into` with offset 0 and scale 1.
     /// Then `ckks_eval_poly_real_const_coeffs` of the temporary, or of `input` itself when there is no map.
-    fn ckks_eval_approximation<R, I, P, H>(
+    fn ckks_polynomial_approximation_eval<R, I, P, H>(
         module: &Module<Self>,
         res: &mut R,
         input: &I,
@@ -73,7 +75,7 @@ pub unsafe trait CKKSApproximationImpl:
         P: GLWEToBackendRef<Self> + CKKSCtBounds + BSGSMeta + IntPolyInfos,
         H: GetTensorKey<Self>,
     {
-        ckks_eval_approximation_derived(module, res, input, approximation, tsk, scratch)
+        ckks_polynomial_approximation_eval_derived(module, res, input, approximation, tsk, scratch)
     }
 }
 

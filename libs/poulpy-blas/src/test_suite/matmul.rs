@@ -11,7 +11,7 @@ use poulpy_ckks::{
         CKKSCopyOps, CKKSEncodingOps, CKKSLinearTransformationOps, CKKSRotateOps, LinearTransformationBabySteps,
         LinearTransformationPrepared,
     },
-    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPreparedLeft, CKKSPreparedRight},
+    layouts::{CKKSCiphertextAlloc, CKKSCiphertextOwned, CKKSLeftOperandPrepared, CKKSRightOperandPrepared},
     test_suite::{
         CKKSTestParams,
         helpers::{
@@ -424,14 +424,14 @@ where
             .map(|(&src, lt)| {
                 let mut cache = LinearTransformationBabySteps::alloc(module, lt.baby_steps(), src);
                 module
-                    .ckks_prepare_linear_transformation_baby_steps(&mut cache, src, keys, scratch)
+                    .ckks_linear_transformation_baby_steps_prepare(&mut cache, src, keys, scratch)
                     .unwrap();
                 cache
             })
             .collect();
         let babies: Vec<_> = caches.iter().collect();
         module
-            .ckks_eval_linear_transformation_sum_into(dst, &srcs, &babies, &lts, keys, scratch)
+            .ckks_linear_transformation_eval_sum_into(dst, &srcs, &babies, &lts, keys, scratch)
             .unwrap();
         dst.set_log_sparsity(label);
     }
@@ -451,7 +451,7 @@ fn staged<BE, S>(
 ) -> BlasCiphertextOwned<BE>
 where
     BE: TestContextBackend,
-    Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE> + CKKSModuleAlloc<BE>,
+    Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
 {
     let Some(first) = b.first() else {
         return a.clone();
@@ -462,10 +462,10 @@ where
         // An owned cache, which the setup arena need not hold beside the evaluation.
         let mut cache = LinearTransformationBabySteps::alloc_for(module, first, src);
         module
-            .ckks_prepare_linear_transformation_baby_steps(&mut cache, src, keys, scratch)
+            .ckks_linear_transformation_baby_steps_prepare(&mut cache, src, keys, scratch)
             .unwrap();
         module
-            .ckks_eval_linear_transformation_into(dst, src, &cache, first, keys, scratch)
+            .ckks_linear_transformation_eval_into(dst, src, &cache, first, keys, scratch)
             .unwrap();
         dst.set_log_sparsity(src.log_sparsity());
     }
@@ -667,7 +667,6 @@ pub fn test_blas_matmul_pt_right<BE, F, E>(
 fn res_below_scale<BE>(params: &CKKSTestParams, module: &Module<BE>, log_d: usize, log_delta: usize) -> BlasCiphertextOwned<BE>
 where
     BE: TestContextBackend<Ring = Standard>,
-    Module<BE>: CKKSModuleAlloc<BE>,
 {
     let res = alloc_grid(params, module, log_d, 1, 1, log_delta - 1);
     if (params.n / 2) >> (2 * log_d) < 2 {
@@ -857,7 +856,7 @@ pub fn test_blas_matmul_pt_right_guards<BE, F, E>(
     let mut narrow_res = res_below_scale(&params, module, log_d, ct.block_layout().log_delta());
     assert_guard::<BE, _>(
         "budget",
-        "ckks_eval_linear_transformation_sum_into",
+        "ckks_linear_transformation_eval_sum_into",
         Budget,
         &mut narrow_res,
         |res| module.blas_matmul_pt_right(res, &ct, &b, &ctx, &keys, &mut op_scratch.borrow()),
@@ -893,9 +892,9 @@ pub fn test_blas_matmul_pt_right_guards<BE, F, E>(
         assert_guard::<BE, _>(
             label,
             if label == "jkls second map" {
-                "ckks_eval_linear_transformation_sum_into"
+                "ckks_linear_transformation_eval_sum_into"
             } else {
-                "ckks_eval_linear_transformation_into"
+                "ckks_linear_transformation_eval_into"
             },
             Budget,
             &mut res,
@@ -1534,7 +1533,7 @@ pub fn test_blas_matmul_pt_left_guards<BE, F, E>(
     let mut narrow_res = res_below_scale(&params, module, log_d, ct.block_layout().log_delta());
     assert_guard::<BE, _>(
         "budget",
-        "ckks_eval_linear_transformation_sum_into",
+        "ckks_linear_transformation_eval_sum_into",
         Budget,
         &mut narrow_res,
         |res| module.blas_matmul_pt_left(res, &b, &ct, &ctx, &keys, &mut op_scratch.borrow()),
@@ -1570,9 +1569,9 @@ pub fn test_blas_matmul_pt_left_guards<BE, F, E>(
         assert_guard::<BE, _>(
             label,
             if label == "jkls second map" {
-                "ckks_eval_linear_transformation_sum_into"
+                "ckks_linear_transformation_eval_sum_into"
             } else {
-                "ckks_eval_linear_transformation_into"
+                "ckks_linear_transformation_eval_into"
             },
             Budget,
             &mut res,
@@ -2398,12 +2397,12 @@ pub fn test_blas_matmul_guards<BE, F, E>(
     }
     let inputs = [&short, &short_right].map(grid_snapshot::<BE, _>);
     let left_short = matmul_left_operand(module, &short, &ctx, &keys, Reuse, &mut op_scratch.borrow());
-    assert_rejected("budget", "ckks_eval_linear_transformation_into", Budget, left_short);
+    assert_rejected("budget", "ckks_linear_transformation_eval_into", Budget, left_short);
     let right_short = matmul_right_operand(module, &short_right, &ctx, &keys, Reuse, &mut op_scratch.borrow());
-    assert_rejected("budget", "ckks_eval_linear_transformation_into", Budget, right_short);
+    assert_rejected("budget", "ckks_linear_transformation_eval_into", Budget, right_short);
     assert_guard::<BE, _>(
         "budget factor",
-        "ckks_eval_linear_transformation_into",
+        "ckks_linear_transformation_eval_into",
         Budget,
         &mut res,
         |res| module.blas_matmul(res, &short, &column, &ctx, &keys, &keys, &mut op_scratch.borrow()),
@@ -2411,7 +2410,7 @@ pub fn test_blas_matmul_guards<BE, F, E>(
     let hot_short = matmul_left_operand(module, &short, &ctx, &keys, OneShot, &mut op_scratch.borrow()).unwrap();
     assert_guard::<BE, _>(
         "budget hot left",
-        "ckks_eval_linear_transformation_into",
+        "ckks_linear_transformation_eval_into",
         Budget,
         &mut res,
         |res| module.blas_matmul_prepared(res, &hot_short, cold_right, &ctx, &keys, &keys, &mut op_scratch.borrow()),
@@ -2420,7 +2419,7 @@ pub fn test_blas_matmul_guards<BE, F, E>(
     let hot_short = matmul_right_operand(module, &short_right, &ctx, &keys, OneShot, &mut op_scratch.borrow()).unwrap();
     assert_guard::<BE, _>(
         "budget hot right",
-        "ckks_eval_linear_transformation_into",
+        "ckks_linear_transformation_eval_into",
         Budget,
         &mut alloc(2, 2),
         |res| {
@@ -2467,7 +2466,7 @@ pub fn test_blas_matmul_guards<BE, F, E>(
         let mut both = None;
         assert_guard::<BE, _>(
             &format!("budget {label}"),
-            "ckks_eval_linear_transformation_into",
+            "ckks_linear_transformation_eval_into",
             Budget,
             &mut res,
             |res| {
@@ -2729,7 +2728,7 @@ pub fn test_blas_replicated_shifts<BE, F, E>(
     for k in 1..d {
         let mut via_map = alloc_grid(&params, module, log_d, 1, 1, params.k);
         module
-            .ckks_eval_linear_transformation_self_into(
+            .ckks_linear_transformation_eval_self_into(
                 via_map.block_mut(0, 0),
                 ct.block(0, 0),
                 ctx.rotate_rows_rep(k),
@@ -2874,13 +2873,13 @@ pub fn test_blas_matmul_operands<BE, F, E>(
 
         let mut left_rejected = vec![("narrow", &narrow, InvalidOperand, "blas_matmul_prepare_left")];
         if hint == Reuse {
-            left_rejected.push(("budget", &short, Budget, "ckks_eval_linear_transformation_into"));
+            left_rejected.push(("budget", &short, Budget, "ckks_linear_transformation_eval_into"));
         }
         check_operand_refill(
             &format!("left {hint:?}"),
             || module.blas_matmul_left_alloc_from_infos(&left),
             module.blas_matmul_left_bytes_of_from_infos(&left),
-            CKKSPreparedLeft::cnv,
+            CKKSLeftOperandPrepared::cnv,
             |op, a| {
                 let s = &mut poisoned_scratch::<BE>(left_bytes);
                 module.blas_matmul_prepare_left_reference(op, a, &ctx, &keys, &mut s.borrow())
@@ -2893,7 +2892,7 @@ pub fn test_blas_matmul_operands<BE, F, E>(
             &format!("right {hint:?}"),
             || module.blas_matmul_right_alloc_from_infos(&right),
             module.blas_matmul_right_bytes_of_from_infos(&right),
-            CKKSPreparedRight::cnv,
+            CKKSRightOperandPrepared::cnv,
             |op, b| {
                 let s = &mut poisoned_scratch::<BE>(right_bytes);
                 module.blas_matmul_prepare_right_reference(op, b, &ctx, &keys, &mut s.borrow())
@@ -3067,7 +3066,7 @@ fn flag_clear<BE>(
 ) -> BlasCiphertextOwned<BE>
 where
     BE: TestContextBackend,
-    Module<BE>: CKKSModuleAlloc<BE> + CKKSCopyOps<BE>,
+    Module<BE>: CKKSCiphertextAlloc<BE> + CKKSCopyOps<BE>,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
     let blocks = grid

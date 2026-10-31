@@ -6,8 +6,8 @@ use super::{
 use crate::Scale;
 use crate::{
     CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, SlotsKind,
-    api::{CKKSDFTMatrixOps, CKKSDFTOps, CKKSEncodingHostOps, CKKSEncodingScalar},
-    layouts::{CKKSModuleAlloc, DFTOutputFormat, DFTPlan, DFTType, Decode, Encode, Repack, Split, Standard},
+    api::{CKKSDFTMatrixOps, CKKSDFTMatrixPreparedFactory, CKKSDFTOps, CKKSEncodingHostOps, CKKSEncodingScalar},
+    layouts::{DFTOutputFormat, DFTPlan, DFTType, Decode, Encode, Repack, Split, Standard},
     oep::{CKKSDFTImpl, CKKSDFTMatrixImpl, CKKSEncodingImpl},
     test_suite::CKKSTestParams,
 };
@@ -61,7 +61,7 @@ where
                 log_sparsity: log_max_slots - log_slots,
             },
         };
-        let encoding = <Module<BE> as CKKSEncodingHostOps<BE, F>>::ckks_reim_tmp_bytes(module, module.n() / 2);
+        let encoding = <Module<BE> as CKKSEncodingHostOps<BE, F>>::ckks_encoding_host_tmp_bytes(module, module.n() / 2);
         macro_rules! prepare {
             ($dir:ty, $fmt:ty, $kind:expr, $format:expr) => {{
                 let plan = DFTPlan::new(
@@ -72,7 +72,7 @@ where
                 )
                 .unwrap();
                 let dft = with_scratch::<BE, _>(encoding, |scratch| {
-                    <Module<BE> as CKKSDFTMatrixOps<BE, F>>::ckks_new_dft_matrix::<$dir, $fmt>(module, b.into(), &plan, scratch)
+                    <Module<BE> as CKKSDFTMatrixOps<BE, F>>::ckks_dft_matrix_new::<$dir, $fmt>(module, b.into(), &plan, scratch)
                 })
                 .unwrap();
                 // Quantized diagonals are public logical operands; prepared
@@ -96,19 +96,19 @@ where
                     );
                 }
                 let mut prepared = module.ckks_dft_matrix_prepared_alloc_from_infos(&dft);
-                with_scratch::<BE, _>(module.ckks_prepare_dft_matrix_tmp_bytes(&dft), |scratch| {
-                    module.ckks_prepare_dft_matrix(&mut prepared, &dft, scratch)
+                with_scratch::<BE, _>(module.ckks_dft_matrix_prepare_tmp_bytes(&dft), |scratch| {
+                    module.ckks_dft_matrix_prepare(&mut prepared, &dft, scratch)
                 })
                 .unwrap();
                 let mut raw = fixture_ciphertext(module, &layout, 61);
                 with_scratch::<BE, _>(module.ckks_dft_tmp_bytes(&layout, &layout, &dft, &key), |scratch| {
-                    module.ckks_dft_evaluate_assign(&mut raw, &dft, &keys, scratch)
+                    module.ckks_dft_matrix_eval_assign(&mut raw, &dft, &keys, scratch)
                 })
                 .unwrap();
                 let mut resident = fixture_ciphertext(module, &layout, 61);
                 with_scratch::<BE, _>(
                     module.ckks_dft_tmp_bytes(&layout, &layout, &prepared, &key),
-                    |scratch| module.ckks_dft_evaluate_assign(&mut resident, &prepared, &keys, scratch),
+                    |scratch| module.ckks_dft_matrix_eval_assign(&mut resident, &prepared, &keys, scratch),
                 )
                 .unwrap();
                 assert_eq!(
@@ -138,8 +138,8 @@ where
                 results.push(snapshot::<BE, _>(&out));
             }};
         }
-        standard!(Encode, DFTType::Encode, ckks_coeffs_to_slots);
-        standard!(Decode, DFTType::Decode, ckks_slots_to_coeffs);
+        standard!(Encode, DFTType::Encode, ckks_coeffs_to_slots_assign);
+        standard!(Decode, DFTType::Decode, ckks_slots_to_coeffs_assign);
         {
             let (dft, prepared, keys) = prepare!(Encode, Split, DFTType::Encode, DFTOutputFormat::SplitRealAndImag);
             let src = fixture_ciphertext(module, &layout, 71);
@@ -249,7 +249,7 @@ where
             .unwrap();
             assert!(
                 with_scratch::<BE, _>(encoding, |scratch| {
-                    <Module<BE> as CKKSDFTMatrixOps<BE, F>>::ckks_new_dft_matrix::<Encode, Repack>(
+                    <Module<BE> as CKKSDFTMatrixOps<BE, F>>::ckks_dft_matrix_new::<Encode, Repack>(
                         module,
                         b.into(),
                         &invalid,

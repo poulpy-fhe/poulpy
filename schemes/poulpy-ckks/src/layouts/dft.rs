@@ -835,19 +835,19 @@ impl DftFormat for Repack {
 /// `DFTMatrix<BE, Encode, Repack, R>` — so a direction/format mismatch is a
 /// **compile error** rather than a runtime check. The single runtime resolution
 /// (the dense-`RepackImagAsReal`≡`Split` rule, which depends on `log_slots` vs
-/// `log_n`) happens once, when [`ckks_new_dft_matrix`] establishes the markers
+/// `log_n`) happens once, when [`ckks_dft_matrix_new`] establishes the markers
 /// (it errors if `Repack` is requested for dense parameters).
 ///
 /// `R` selects how each factor's RHS is stored, trading memory for compute: the
 /// default keeps unprepared plaintext diagonals ([`LinearTransformation`]) and
 /// materializes them per factor at eval time (minimal resident memory); the
 /// prepared alias [`DFTMatrixPrepared`] keeps the convolution-domain diagonals
-/// resident. Build via [`ckks_new_dft_matrix`], then optionally prepare into a
-/// [`DFTMatrixPrepared`] with [`ckks_prepare_dft_matrix`]. The required Galois keys are reported by
+/// resident. Build via [`ckks_dft_matrix_new`], then optionally prepare into a
+/// [`DFTMatrixPrepared`] with [`ckks_dft_matrix_prepare`]. The required Galois keys are reported by
 /// `galois_elements`.
 ///
-/// [`ckks_new_dft_matrix`]: crate::reference::dft::ckks_new_dft_matrix
-/// [`ckks_prepare_dft_matrix`]: crate::api::CKKSDFTOps::ckks_prepare_dft_matrix
+/// [`ckks_dft_matrix_new`]: crate::reference::dft::ckks_dft_matrix_new_reference
+/// [`ckks_dft_matrix_prepare`]: crate::api::CKKSDFTMatrixPreparedFactory::ckks_dft_matrix_prepare
 /// [`ckks_coeffs_to_slots_repack`]: crate::api::CKKSDFTOps::ckks_coeffs_to_slots_repack
 pub struct DFTMatrix<BE: Backend, Dir, Fmt, R = LinearTransformation<CKKSPlaintextOwned<BE>>> {
     pub(crate) inner: DFTMatrixFactors<BE, R>,
@@ -858,15 +858,15 @@ pub struct DFTMatrix<BE: Backend, Dir, Fmt, R = LinearTransformation<CKKSPlainte
 /// convolution domain ([`LinearTransformationPrepared`]) rather than materialized
 /// per factor, trading resident memory for faster repeated evaluation. Preserves
 /// the `Dir`/`Fmt` type-state of the matrix it was prepared from. Allocated by
-/// [`CKKSModuleAlloc::ckks_dft_matrix_prepared_alloc_from_infos`](crate::layouts::CKKSModuleAlloc::ckks_dft_matrix_prepared_alloc_from_infos)
+/// [`CKKSDFTMatrixPreparedFactory::ckks_dft_matrix_prepared_alloc_from_infos`](crate::api::CKKSDFTMatrixPreparedFactory::ckks_dft_matrix_prepared_alloc_from_infos)
 /// and filled from a [`DFTMatrix`] by
-/// [`CKKSDFTOps::ckks_prepare_dft_matrix`](crate::api::CKKSDFTOps::ckks_prepare_dft_matrix).
+/// [`CKKSDFTMatrixPreparedFactory::ckks_dft_matrix_prepare`](crate::api::CKKSDFTMatrixPreparedFactory::ckks_dft_matrix_prepare).
 pub type DFTMatrixPrepared<BE, Dir, Fmt> = DFTMatrix<BE, Dir, Fmt, LinearTransformationPrepared<BE>>;
 
 impl<BE: Backend, Dir, Fmt, R> DFTMatrix<BE, Dir, Fmt, R> {
     /// Wraps factor operands into the typed matrix. Internal: the caller asserts
     /// the `Dir`/`Fmt` markers describe the resolved plan (see
-    /// `ckks_new_dft_matrix`, which validates this at construction).
+    /// `ckks_dft_matrix_new`, which validates this at construction).
     pub(crate) fn from_factors(inner: DFTMatrixFactors<BE, R>) -> Self {
         Self {
             inner,
@@ -1052,10 +1052,10 @@ pub(crate) fn ckks_scaled_last_factors<BE, F>(
 ) -> crate::CKKSResult<DFTMatrix<BE, crate::layouts::Encode, crate::layouts::Split>>
 where
     BE: Backend,
-    Module<BE>: crate::layouts::CKKSModuleAlloc<BE> + crate::api::CKKSEncodingOps<BE, F>,
+    Module<BE>: crate::api::CKKSEncodingOps<BE, F>,
     F: crate::layouts::DftScalar + crate::api::CKKSEncodingScalar,
 {
-    let last = crate::layouts::dft_matrices::gen_dft_matrices::<F>(plan, log_n)
+    let last = crate::layouts::dft_matrices::ckks_dft_matrices_gen::<F>(plan, log_n)
         .pop()
         .expect("a DFT plan has at least one factor");
     let strategy = plan.factor_strategy(
@@ -1068,7 +1068,7 @@ where
     let factors = scales
         .iter()
         .map(|scale| {
-            crate::encoding::ckks_encode_linear_transformation_from_diagonals::<BE, F>(
+            crate::encoding::ckks_linear_transformation_encode_from_diagonals::<BE, F>(
                 module,
                 base2k,
                 plan.coeffs_meta,
@@ -1112,7 +1112,9 @@ mod tests {
                 .with_power_of_two_keys(power_of_two_keys)
                 .resolved_at(log_n);
             assert!(plan.factor_slots(log_n) < half, "a sparse plan");
-            let last = crate::reference::dft::gen_dft_matrices::<f64>(&plan, log_n).pop().unwrap();
+            let last = crate::reference::dft::ckks_dft_matrices_gen::<f64>(&plan, log_n)
+                .pop()
+                .unwrap();
             let mut scale = crate::layouts::ComplexDiagonals::new(
                 poulpy_core::layouts::Diagonals::new(half),
                 poulpy_core::layouts::Diagonals::new(half),
