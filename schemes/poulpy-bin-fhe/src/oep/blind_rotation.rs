@@ -52,8 +52,8 @@ pub unsafe trait BlindRotationExecuteImpl<BRA: BlindRotationAlgo>: Backend<Ring 
 macro_rules! impl_blind_rotation_execute_reference_full {
     ($backend:ty) => {
         const _: () = {
-            use poulpy_core::layouts::{GLWEInfos, GLWEToBackendMut, LWEInfos, LWEToBackendRef};
-            use poulpy_hal::layouts::{Module, ScratchArena};
+            use ::poulpy_core::layouts::{GLWEInfos, GLWEToBackendMut, LWEInfos, LWEToBackendRef};
+            use ::poulpy_hal::layouts::{Module, ScratchArena};
             use $crate::blind_rotation::{BlindRotationKeyInfos, BlindRotationKeyPrepared, CGGI, LookupTable};
 
             unsafe impl $crate::oep::BlindRotationExecuteImpl<$crate::blind_rotation::CGGI> for $backend {
@@ -131,11 +131,11 @@ pub unsafe trait BlindRotationKeyEncryptSkImpl<BRA: BlindRotationAlgo>: Backend 
 macro_rules! impl_blind_rotation_key_encrypt_sk_reference_full {
     ($backend:ty) => {
         const _: () = {
-            use poulpy_core::{
+            use ::poulpy_core::{
                 GetDistribution,
                 layouts::{GGSWInfos, GLWEInfos, GLWESecretPreparedToBackendRef, LWEInfos, LWESecretToBackendRef},
             };
-            use poulpy_hal::{
+            use ::poulpy_hal::{
                 layouts::{Module, ScratchArena},
                 source::Source,
             };
@@ -205,11 +205,11 @@ pub unsafe trait BlindRotationKeyCompressedEncryptSkImpl<BRA: BlindRotationAlgo>
 macro_rules! impl_blind_rotation_key_compressed_encrypt_sk_reference_full {
     ($backend:ty) => {
         const _: () = {
-            use poulpy_core::{
+            use ::poulpy_core::{
                 GetDistribution,
                 layouts::{GGSWInfos, GLWEInfos, GLWESecretPreparedToBackendRef, LWEInfos, LWESecretToBackendRef},
             };
-            use poulpy_hal::{
+            use ::poulpy_hal::{
                 layouts::{Module, ScratchArena},
                 source::Source,
             };
@@ -273,7 +273,7 @@ pub unsafe trait BlindRotationKeyPreparedFactoryImpl<BRA: BlindRotationAlgo>: Ba
 macro_rules! impl_blind_rotation_key_prepared_factory_reference_full {
     ($backend:ty) => {
         const _: () = {
-            use poulpy_hal::layouts::{Module, ScratchArena};
+            use ::poulpy_hal::layouts::{Module, ScratchArena};
             use $crate::blind_rotation::{BlindRotationKey, BlindRotationKeyInfos, BlindRotationKeyPrepared, CGGI};
 
             unsafe impl $crate::oep::BlindRotationKeyPreparedFactoryImpl<$crate::blind_rotation::CGGI> for $backend {
@@ -340,8 +340,8 @@ pub unsafe trait BlindRotationKeyDecompressImpl<BRA: BlindRotationAlgo>: Backend
 macro_rules! impl_blind_rotation_mod_switch_reference_full {
     ($backend:ty) => {
         unsafe impl $crate::oep::BlindRotationModSwitchImpl for $backend {
-            fn blind_rotation_mod_switch<L: poulpy_core::layouts::LWEToBackendRef<Self> + poulpy_core::layouts::LWEInfos>(
-                module: &poulpy_hal::layouts::Module<Self>,
+            fn blind_rotation_mod_switch<L: ::poulpy_core::layouts::LWEToBackendRef<Self> + ::poulpy_core::layouts::LWEInfos>(
+                module: &::poulpy_hal::layouts::Module<Self>,
                 modulus: usize,
                 direction: $crate::blind_rotation::LookUpTableRotationDirection,
                 res: &mut [i64],
@@ -360,20 +360,20 @@ macro_rules! impl_blind_rotation_key_decompress_reference_full {
     ($backend:ty) => {
         unsafe impl $crate::oep::BlindRotationKeyDecompressImpl<$crate::blind_rotation::CGGI> for $backend {
             fn blind_rotation_key_decompress_tmp_bytes<A: $crate::blind_rotation::BlindRotationKeyInfos>(
-                module: &poulpy_hal::layouts::Module<Self>,
+                module: &::poulpy_hal::layouts::Module<Self>,
                 infos: &A,
             ) -> usize {
                 <::poulpy_hal::layouts::Module<$backend> as $crate::reference::blind_rotation::BlindRotationKeyDecompressReference<$crate::blind_rotation::CGGI, $backend>>::blind_rotation_key_decompress_tmp_bytes_reference(module, infos)
             }
             fn blind_rotation_key_decompress(
-                module: &poulpy_hal::layouts::Module<Self>,
+                module: &::poulpy_hal::layouts::Module<Self>,
                 res: &mut $crate::blind_rotation::BlindRotationKey<Self::OwnedBuf, $crate::blind_rotation::CGGI, Self::ZnxWord>,
                 src: &$crate::blind_rotation::BlindRotationKeyCompressed<
                     Self::OwnedBuf,
                     $crate::blind_rotation::CGGI,
                     Self::ZnxWord,
                 >,
-                scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) {
                 <::poulpy_hal::layouts::Module<$backend> as $crate::reference::blind_rotation::BlindRotationKeyDecompressReference<$crate::blind_rotation::CGGI, $backend>>::blind_rotation_key_decompress_reference(module, res, src, scratch)
             }

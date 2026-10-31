@@ -23,7 +23,7 @@ macro_rules! bin_fhe_backend_test_suite {
     ) => {
         mod $modname {
             mod blind_rotation {
-                use poulpy_hal::{api::ModuleNew, layouts::Module};
+                use ::poulpy_hal::{api::ModuleNew, layouts::Module};
 
                 use $crate::{
                     blind_rotation::CGGI,
@@ -82,7 +82,7 @@ macro_rules! bin_fhe_backend_test_suite {
             }
 
             mod circuit_bootstrapping {
-                use poulpy_hal::{api::ModuleNew, layouts::Module};
+                use ::poulpy_hal::{api::ModuleNew, layouts::Module};
 
                 use $crate::{
                     blind_rotation::CGGI,
@@ -112,7 +112,7 @@ macro_rules! bin_fhe_backend_test_suite {
             }
 
             mod bdd_arithmetic {
-                use std::sync::LazyLock;
+                use ::std::sync::LazyLock;
 
                 use $crate::{blind_rotation::CGGI, test_suite::bdd_arithmetic as test_suite};
 
@@ -285,7 +285,7 @@ macro_rules! bin_fhe_backend_test_suite {
 macro_rules! bin_fhe_parity_test_suite {
     (mod $modname:ident, backend_ref = $backend_ref:ty, backend_test = $backend_test:ty $(,)?) => {
         mod $modname {
-            use poulpy_hal::layouts::Module;
+            use ::poulpy_hal::layouts::Module;
             use $crate::test_suite::parity;
             #[test]
             fn lifecycle() {
@@ -358,7 +358,7 @@ macro_rules! bin_fhe_parity_test_suite {
 macro_rules! bin_fhe_reference_test_suite {
     (mod $modname:ident, backend = $backend:ty $(,)?) => {
         mod $modname {
-            use poulpy_hal::layouts::Module;
+            use ::poulpy_hal::layouts::Module;
             #[test]
             fn blind_rotation_key_lifecycle() {
                 $crate::test_suite::parity::blind_rotation::test_blind_rotation_key_lifecycle(&Module::<$backend>::new(64));

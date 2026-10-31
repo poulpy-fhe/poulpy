@@ -22,7 +22,7 @@ macro_rules! impl_lookup_table_factory_reference_full {
     ($backend:ty) => {
         unsafe impl $crate::oep::LookupTableFactoryImpl for $backend {
             fn lookup_table_set(
-                module: &poulpy_hal::layouts::Module<Self>,
+                module: &::poulpy_hal::layouts::Module<Self>,
                 k: usize,
                 res: &mut $crate::blind_rotation::LookupTable<Self::OwnedBuf, Self::ZnxWord>,
                 f: &[i64],
@@ -33,7 +33,7 @@ macro_rules! impl_lookup_table_factory_reference_full {
             }
 
             fn lookup_table_rotate_assign(
-                module: &poulpy_hal::layouts::Module<Self>,
+                module: &::poulpy_hal::layouts::Module<Self>,
                 k: i64,
                 res: &mut $crate::blind_rotation::LookupTable<Self::OwnedBuf, Self::ZnxWord>,
             ) {

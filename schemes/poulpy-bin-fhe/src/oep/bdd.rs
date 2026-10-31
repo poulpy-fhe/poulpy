@@ -31,13 +31,13 @@ pub use bdd_key_prepared_factory::*;
 macro_rules! impl_bdd_circuit_execute_reference_full {
     ($be:ty) => {
         const _: () = {
-            use poulpy_core::{
+            use ::poulpy_core::{
                 layouts::{prepared::*, *},
                 *,
             };
-            use poulpy_hal::{api::*, layouts::*, source::Source};
+            use ::poulpy_hal::{api::*, layouts::*, source::Source};
             #[allow(unused_imports)]
-            use std::{collections::HashMap, marker::PhantomData};
+            use ::std::{collections::HashMap, marker::PhantomData};
             use $crate::{
                 bdd_arithmetic::*,
                 blind_rotation::{BlindRotationAlgo, BlindRotationKeyInfos},
@@ -86,13 +86,13 @@ macro_rules! impl_bdd_circuit_execute_reference_full {
 macro_rules! impl_glwe_cswap_reference_full {
     ($be:ty) => {
         const _: () = {
-            use poulpy_core::{
+            use ::poulpy_core::{
                 layouts::{prepared::*, *},
                 *,
             };
-            use poulpy_hal::{api::*, layouts::*, source::Source};
+            use ::poulpy_hal::{api::*, layouts::*, source::Source};
             #[allow(unused_imports)]
-            use std::{collections::HashMap, marker::PhantomData};
+            use ::std::{collections::HashMap, marker::PhantomData};
             use $crate::{
                 bdd_arithmetic::*,
                 blind_rotation::{BlindRotationAlgo, BlindRotationKeyInfos},
@@ -141,13 +141,13 @@ macro_rules! impl_glwe_cswap_reference_full {
 macro_rules! impl_glwe_cmux_reference_full {
     ($be:ty) => {
         const _: () = {
-            use poulpy_core::{
+            use ::poulpy_core::{
                 layouts::{prepared::*, *},
                 *,
             };
-            use poulpy_hal::{api::*, layouts::*, source::Source};
+            use ::poulpy_hal::{api::*, layouts::*, source::Source};
             #[allow(unused_imports)]
-            use std::{collections::HashMap, marker::PhantomData};
+            use ::std::{collections::HashMap, marker::PhantomData};
             use $crate::{
                 bdd_arithmetic::*,
                 blind_rotation::{BlindRotationAlgo, BlindRotationKeyInfos},
@@ -219,13 +219,13 @@ macro_rules! impl_glwe_cmux_reference_full {
 macro_rules! impl_ggsw_blind_rotation_reference_full {
     ($be:ty) => {
         const _: () = {
-            use poulpy_core::{
+            use ::poulpy_core::{
                 layouts::{prepared::*, *},
                 *,
             };
-            use poulpy_hal::{api::*, layouts::*, source::Source};
+            use ::poulpy_hal::{api::*, layouts::*, source::Source};
             #[allow(unused_imports)]
-            use std::{collections::HashMap, marker::PhantomData};
+            use ::std::{collections::HashMap, marker::PhantomData};
             use $crate::{
                 bdd_arithmetic::*,
                 blind_rotation::{BlindRotationAlgo, BlindRotationKeyInfos},
@@ -281,13 +281,13 @@ macro_rules! impl_ggsw_blind_rotation_reference_full {
 macro_rules! impl_glwe_blind_rotation_reference_full {
     ($be:ty) => {
         const _: () = {
-            use poulpy_core::{
+            use ::poulpy_core::{
                 layouts::{prepared::*, *},
                 *,
             };
-            use poulpy_hal::{api::*, layouts::*, source::Source};
+            use ::poulpy_hal::{api::*, layouts::*, source::Source};
             #[allow(unused_imports)]
-            use std::{collections::HashMap, marker::PhantomData};
+            use ::std::{collections::HashMap, marker::PhantomData};
             use $crate::{
                 bdd_arithmetic::*,
                 blind_rotation::{BlindRotationAlgo, BlindRotationKeyInfos},
@@ -355,13 +355,13 @@ macro_rules! impl_glwe_blind_rotation_reference_full {
 macro_rules! impl_glwe_blind_selection_reference_full {
     ($be:ty) => {
         const _: () = {
-            use poulpy_core::{
+            use ::poulpy_core::{
                 layouts::{prepared::*, *},
                 *,
             };
-            use poulpy_hal::{api::*, layouts::*, source::Source};
+            use ::poulpy_hal::{api::*, layouts::*, source::Source};
             #[allow(unused_imports)]
-            use std::{collections::HashMap, marker::PhantomData};
+            use ::std::{collections::HashMap, marker::PhantomData};
             use $crate::{
                 bdd_arithmetic::*,
                 blind_rotation::{BlindRotationAlgo, BlindRotationKeyInfos},
@@ -423,13 +423,13 @@ macro_rules! impl_glwe_blind_retrieval_derived_full {
 macro_rules! impl_bdd_circuit_execute_1w_to_1w_reference_full {
     ($be:ty) => {
         const _: () = {
-            use poulpy_core::{
+            use ::poulpy_core::{
                 layouts::{prepared::*, *},
                 *,
             };
-            use poulpy_hal::{api::*, layouts::*, source::Source};
+            use ::poulpy_hal::{api::*, layouts::*, source::Source};
             #[allow(unused_imports)]
-            use std::{collections::HashMap, marker::PhantomData};
+            use ::std::{collections::HashMap, marker::PhantomData};
             use $crate::{
                 bdd_arithmetic::*,
                 blind_rotation::{BlindRotationAlgo, BlindRotationKeyInfos},
@@ -484,13 +484,13 @@ macro_rules! impl_bdd_circuit_execute_1w_to_1w_reference_full {
 macro_rules! impl_bdd_circuit_execute_2w_to_1w_reference_full {
     ($be:ty) => {
         const _: () = {
-            use poulpy_core::{
+            use ::poulpy_core::{
                 layouts::{prepared::*, *},
                 *,
             };
-            use poulpy_hal::{api::*, layouts::*, source::Source};
+            use ::poulpy_hal::{api::*, layouts::*, source::Source};
             #[allow(unused_imports)]
-            use std::{collections::HashMap, marker::PhantomData};
+            use ::std::{collections::HashMap, marker::PhantomData};
             use $crate::{
                 bdd_arithmetic::*,
                 blind_rotation::{BlindRotationAlgo, BlindRotationKeyInfos},
@@ -547,13 +547,13 @@ macro_rules! impl_bdd_circuit_execute_2w_to_1w_reference_full {
 macro_rules! impl_fhe_uint_prepared_encrypt_sk_reference_full {
     ($be:ty) => {
         const _: () = {
-            use poulpy_core::{
+            use ::poulpy_core::{
                 layouts::{prepared::*, *},
                 *,
             };
-            use poulpy_hal::{api::*, layouts::*, source::Source};
+            use ::poulpy_hal::{api::*, layouts::*, source::Source};
             #[allow(unused_imports)]
-            use std::{collections::HashMap, marker::PhantomData};
+            use ::std::{collections::HashMap, marker::PhantomData};
             use $crate::{
                 bdd_arithmetic::*,
                 blind_rotation::{BlindRotationAlgo, BlindRotationKeyInfos},
@@ -589,13 +589,13 @@ macro_rules! impl_fhe_uint_prepared_encrypt_sk_reference_full {
 macro_rules! impl_fhe_uint_prepare_reference_full {
     ($be:ty, $algo:ty) => {
         const _: () = {
-            use poulpy_core::{
+            use ::poulpy_core::{
                 layouts::{prepared::*, *},
                 *,
             };
-            use poulpy_hal::{api::*, layouts::*, source::Source};
+            use ::poulpy_hal::{api::*, layouts::*, source::Source};
             #[allow(unused_imports)]
-            use std::{collections::HashMap, marker::PhantomData};
+            use ::std::{collections::HashMap, marker::PhantomData};
             use $crate::{
                 bdd_arithmetic::*,
                 blind_rotation::{BlindRotationAlgo, BlindRotationKeyInfos},
@@ -652,13 +652,13 @@ macro_rules! impl_fhe_uint_prepare_reference_full {
 macro_rules! impl_bdd_key_encrypt_sk_reference_full {
     ($be:ty, $algo:ty) => {
         const _: () = {
-            use poulpy_core::{
+            use ::poulpy_core::{
                 layouts::{prepared::*, *},
                 *,
             };
-            use poulpy_hal::{api::*, layouts::*, source::Source};
+            use ::poulpy_hal::{api::*, layouts::*, source::Source};
             #[allow(unused_imports)]
-            use std::{collections::HashMap, marker::PhantomData};
+            use ::std::{collections::HashMap, marker::PhantomData};
             use $crate::{
                 bdd_arithmetic::*,
                 blind_rotation::{BlindRotationAlgo, BlindRotationKeyInfos},
@@ -699,13 +699,13 @@ macro_rules! impl_bdd_key_encrypt_sk_reference_full {
 macro_rules! impl_bdd_key_prepared_factory_reference_full {
     ($be:ty, $algo:ty) => {
         const _: () = {
-            use poulpy_core::{
+            use ::poulpy_core::{
                 layouts::{prepared::*, *},
                 *,
             };
-            use poulpy_hal::{api::*, layouts::*, source::Source};
+            use ::poulpy_hal::{api::*, layouts::*, source::Source};
             #[allow(unused_imports)]
-            use std::{collections::HashMap, marker::PhantomData};
+            use ::std::{collections::HashMap, marker::PhantomData};
             use $crate::{
                 bdd_arithmetic::*,
                 blind_rotation::{BlindRotationAlgo, BlindRotationKeyInfos},
