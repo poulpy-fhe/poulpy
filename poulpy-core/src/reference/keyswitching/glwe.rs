@@ -20,8 +20,8 @@ use crate::{
         precision_limbs,
     },
     layouts::{
-        Base2K, Dnum, GGLWEInfos, GGLWEPreparedBackendRef, GLWEInfos, GLWEToBackendRef, LWEInfos, TorusPrecision,
-        assert_key_covers, assert_no_row_offset, digits_aligned, gadget_product_limbs,
+        GGLWEInfos, GGLWEPreparedBackendRef, GLWEInfos, GLWEToBackendRef, LWEInfos, TorusPrecision, assert_key_covers,
+        assert_no_row_offset, gadget_product_limbs,
     },
     oep::{GGLWEProductDigitsStridedImpl, gglwe_product_digit_output_size},
 };
@@ -1022,24 +1022,6 @@ pub fn glwe_keyswitch_assign_reference<BE, M, R>(
             i,
             &mut scratch.borrow(),
         );
-    }
-}
-
-/// Leading limbs of the gadget operand that are known to be zero for an input
-/// of magnitude below `2^-(zero_bits + 1)`, so a product may skip them.
-///
-/// Whole-limb digits read the canonical input limbs, the top
-/// `zero_bits / base2k` of which are zero. Other widths read the digits the
-/// input decomposes into. The gadget rounding can carry one unit into the
-/// digit that ends at bit `zero_bits`, so only the top digits ending at least
-/// one bit above it are zero, `(zero_bits - 1) / k_digit` of them, each
-/// spanning `ceil(k_digit / base2k)` limbs.
-pub fn gadget_known_zero_prefix(base2k: Base2K, k_digit: TorusPrecision, dnum: Dnum, zero_bits: usize) -> usize {
-    if digits_aligned(base2k, k_digit) {
-        zero_bits / base2k.as_usize()
-    } else {
-        let digits: usize = (zero_bits.saturating_sub(1) / k_digit.as_usize()).min(dnum.as_usize());
-        digits * k_digit.as_usize().div_ceil(base2k.as_usize())
     }
 }
 

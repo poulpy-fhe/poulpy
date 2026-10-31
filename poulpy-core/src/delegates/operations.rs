@@ -786,8 +786,8 @@ impl_operations_delegate!(
 impl_operations_delegate!(
     GLWEPack<BE>,
     GLWEPackImpl,
-    fn glwe_pack_galois_elements(&self) -> Vec<i64> {
-        BE::glwe_pack_galois_elements(self)
+    fn glwe_pack_galois_elements(&self, n: Degree) -> Vec<i64> {
+        BE::glwe_pack_galois_elements(self, n)
     },
     fn glwe_pack_tmp_bytes<R, A, K>(&self, res: &R, a: &A, key: &K) -> usize
     where

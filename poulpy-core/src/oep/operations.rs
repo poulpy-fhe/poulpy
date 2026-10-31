@@ -653,7 +653,7 @@ pub unsafe trait GLWETensoringImpl: Backend {
     );
 
     /// [`Self::glwe_mul_columns`] of a square, on the two forms [`Self::glwe_square_operand_prepare`]
-    /// prepared from one operand. The default is [`Self::glwe_mul_columns`].
+    /// prepared from one operand. Default body: `glwe_square_columns_derived`, [`Self::glwe_mul_columns`].
     /// Overrides must reproduce it bit for bit within the scratch of [`Self::glwe_mul_columns`].
     fn glwe_square_columns(
         module: &Module<Self>,
@@ -664,7 +664,15 @@ pub unsafe trait GLWETensoringImpl: Backend {
         right: &CnvPVecRBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        Self::glwe_mul_columns(module, cnv_offset_hi, diag, cross, left, right, scratch)
+        crate::oep::derived::operations::glwe_square_columns_derived::<Self>(
+            module,
+            cnv_offset_hi,
+            diag,
+            cross,
+            left,
+            right,
+            scratch,
+        )
     }
 }
 
@@ -990,7 +998,7 @@ pub unsafe trait GLWETraceImpl: crate::oep::AutomorphismImpl + GLWEShiftImpl + G
     /// Default body: `glwe_trace_galois_elements_derived`, the Galois elements of the visited levels of a degree-`n`
     /// operand, in visiting order.
     fn glwe_trace_galois_elements(module: &Module<Self>, n: Degree, levels: Range<usize>, reverse: bool) -> Vec<i64> {
-        crate::oep::derived::structure::glwe_trace_galois_elements_derived::<Self, _>(module, n, levels, reverse)
+        crate::oep::derived::operations::glwe_trace_galois_elements_derived::<Self, _>(module, n, levels, reverse)
     }
 
     /// Default body: `glwe_trace_tmp_bytes_derived`, a temporary at the key's radix plus the larger of the copies
@@ -1002,7 +1010,7 @@ pub unsafe trait GLWETraceImpl: crate::oep::AutomorphismImpl + GLWEShiftImpl + G
         A: GLWEInfos,
         K: GGLWEInfos,
     {
-        crate::oep::derived::structure::glwe_trace_tmp_bytes_derived::<Self, _, _, _, _>(module, res_infos, a_infos, key_infos)
+        crate::oep::derived::operations::glwe_trace_tmp_bytes_derived::<Self, _, _, _, _>(module, res_infos, a_infos, key_infos)
     }
 
     /// Default body: `glwe_trace_assign_tmp_bytes_derived`, the larger of
@@ -1015,7 +1023,7 @@ pub unsafe trait GLWETraceImpl: crate::oep::AutomorphismImpl + GLWEShiftImpl + G
         A: GLWEInfos,
         K: GGLWEInfos,
     {
-        crate::oep::derived::structure::glwe_trace_assign_tmp_bytes_derived::<Self, _, _, _>(module, a_infos, key_infos)
+        crate::oep::derived::operations::glwe_trace_assign_tmp_bytes_derived::<Self, _, _, _>(module, a_infos, key_infos)
     }
 
     /// Default body: `glwe_trace_derived`, [`GLWECopyImpl::glwe_copy`](crate::oep::GLWECopyImpl::glwe_copy) of `a`
@@ -1041,7 +1049,7 @@ pub unsafe trait GLWETraceImpl: crate::oep::AutomorphismImpl + GLWEShiftImpl + G
         A: GLWEToBackendRef<Self> + GLWEInfos,
         H: GetAutomorphismKey<Self>,
     {
-        crate::oep::derived::structure::glwe_trace_derived::<Self, _, _, _, _>(
+        crate::oep::derived::operations::glwe_trace_derived::<Self, _, _, _, _>(
             module, res, levels, reverse, normalize, a, keys, scratch,
         )
     }
@@ -1066,7 +1074,7 @@ pub unsafe trait GLWETraceImpl: crate::oep::AutomorphismImpl + GLWEShiftImpl + G
         R: GLWEToBackendMut<Self> + GLWEInfos,
         H: GetAutomorphismKey<Self>,
     {
-        crate::oep::derived::structure::glwe_trace_assign_derived::<Self, _, _, _>(
+        crate::oep::derived::operations::glwe_trace_assign_derived::<Self, _, _, _>(
             module, res, levels, reverse, normalize, keys, scratch,
         )
     }
@@ -1083,9 +1091,9 @@ pub unsafe trait GLWEPackImpl:
 {
     /// Default body: `glwe_pack_galois_elements_derived`,
     /// [`GLWETraceImpl::glwe_trace_galois_elements`](crate::oep::GLWETraceImpl::glwe_trace_galois_elements) over
-    /// every level.
-    fn glwe_pack_galois_elements(module: &Module<Self>) -> Vec<i64> {
-        crate::oep::derived::structure::glwe_pack_galois_elements_derived::<Self, _>(module)
+    /// every level of degree `n`.
+    fn glwe_pack_galois_elements(module: &Module<Self>, n: Degree) -> Vec<i64> {
+        crate::oep::derived::operations::glwe_pack_galois_elements_derived::<Self, _>(module, n)
     }
 
     /// Default body: `glwe_pack_tmp_bytes_derived`, an input-sized temporary plus the larger of
@@ -1101,7 +1109,7 @@ pub unsafe trait GLWEPackImpl:
         A: GLWEInfos,
         K: GGLWEInfos,
     {
-        crate::oep::derived::structure::glwe_pack_tmp_bytes_derived::<Self, _, _, _, _>(module, res, a, key)
+        crate::oep::derived::operations::glwe_pack_tmp_bytes_derived::<Self, _, _, _, _>(module, res, a, key)
     }
 
     /// Default body: `glwe_pack_derived`, a binary merge tree whose steps use
@@ -1131,7 +1139,7 @@ pub unsafe trait GLWEPackImpl:
         A: GLWEToBackendMut<Self> + GLWEInfos,
         H: GetAutomorphismKey<Self>,
     {
-        crate::oep::derived::structure::glwe_pack_derived::<Self, _, _, _, _>(module, res, a, log_gap_out, keys, scratch)
+        crate::oep::derived::operations::glwe_pack_derived::<Self, _, _, _, _>(module, res, a, log_gap_out, keys, scratch)
     }
 }
 

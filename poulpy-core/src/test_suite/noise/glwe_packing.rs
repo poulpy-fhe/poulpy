@@ -91,7 +91,7 @@ pub fn test_glwe_packing<BE: crate::test_suite::noise::TestBackend + crate::oep:
 
     pt.encode_vec_i64(&data, pt_k.into());
 
-    let gal_els: Vec<i64> = module.glwe_pack_galois_elements();
+    let gal_els: Vec<i64> = module.glwe_pack_galois_elements(glwe_out_infos.n);
 
     let mut auto_keys: HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>> = HashMap::new();
     let mut tmp: GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_automorphism_key_alloc_from_infos(&key_infos);
