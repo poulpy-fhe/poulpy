@@ -20,9 +20,9 @@ use poulpy_blas::{
         BlasMatVecOperandPreparedFactory, BlasPtOperandPreparedFactory,
     },
     layouts::{
-        BlasCiphertext, BlasCiphertextOwned, BlasContextPrepared, BlasGridInfos, BlasModuleAlloc, BlasPlan, BlasPtAlgorithm,
-        BlasPtOperandPrepared, BlasPtSide, Left, Right, blas_matmul_max_base2k, blas_matmul_pt_left_max_base2k,
-        blas_matmul_pt_right_max_base2k,
+        BlasCiphertext, BlasCiphertextAlloc, BlasCiphertextOwned, BlasContextAlloc, BlasContextPrepared, BlasGridInfos, BlasPlan,
+        BlasPtAlgorithm, BlasPtOperandAlloc, BlasPtOperandPrepared, BlasPtSide, Left, Right, blas_matmul_max_base2k,
+        blas_matmul_pt_left_max_base2k, blas_matmul_pt_right_max_base2k,
         grid::{join_blocks, split_into_blocks},
         replicated,
     },

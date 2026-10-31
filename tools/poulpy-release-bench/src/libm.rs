@@ -205,7 +205,7 @@ fn spread(a: f64, b: f64) -> Vec<f64> {
 
 /// The seed of `1/sqrt(x)` on `[min, 1]` and the Newton steps that take it to [`TARGET_BITS`] of absolute error: the
 /// pair of least depth, a step costing two levels, and of least degree among those. It takes at least one step, so that
-/// the case measures `ckks_rsqrt` rather than a polynomial alone.
+/// the case measures `ckks_rsqrt_assign` rather than a polynomial alone.
 ///
 /// On the domain `1/sqrt(x)` lies in `[1, 1/sqrt(min)]`, so a seed of absolute error `e` has a relative error of at most
 /// `e`, a step maps a relative error `e` to at most `1.5 e^2 + 0.5 e^3`, and the result needs a relative error of
@@ -441,7 +441,7 @@ where
     let mut scratch = ScratchOwned::<BE>::alloc(
         module
             .ckks_polynomial_approximation_eval_tmp_bytes(&y, &ct_x, &approximation, &tsk_infos)
-            .max(module.ckks_rsqrt_tmp_bytes(&y, &ct_half, &tsk_infos)),
+            .max(module.ckks_rsqrt_assign_tmp_bytes(&y, &ct_half, &tsk_infos)),
     );
     // Each call widens the destination back, a change of label, so that every call runs as the first, checked one.
     let k = TorusPrecision(client.k as u32);
@@ -450,7 +450,7 @@ where
         module
             .ckks_polynomial_approximation_eval(y, &ct_x, &approximation, &tsk, &mut scratch.borrow())
             .unwrap();
-        module.ckks_rsqrt(y, &ct_half, steps, &tsk, &mut scratch.borrow()).unwrap();
+        module.ckks_rsqrt_assign(y, &ct_half, steps, &tsk, &mut scratch.borrow()).unwrap();
         module.synchronize();
     };
     op(&client.module, &mut y, &mut scratch);
@@ -467,7 +467,7 @@ where
         output_log_budget,
         rotation_keys: 0,
         details: json!({
-            "function": "ckks_polynomial_approximation_eval + ckks_rsqrt",
+            "function": "ckks_polynomial_approximation_eval + ckks_rsqrt_assign",
             "domain": [min, 1.0],
             "target_bits": TARGET_BITS,
             "planned_consumed_bits": consumed,
@@ -569,7 +569,7 @@ where
     let mut scratch = ScratchOwned::<BE>::alloc(
         module
             .ckks_copy_tmp_bytes(&res, &ct_x)
-            .max(module.ckks_goldschmidt_division_tmp_bytes(&res, &tsk_layout(client.k))),
+            .max(module.ckks_goldschmidt_division_assign_tmp_bytes(&res, &tsk_layout(client.k))),
     );
     // The inversion runs in place and narrows its operand, so each call widens it back, a change of label, and starts
     // from a copy of the input, which the timed region includes.
@@ -578,7 +578,7 @@ where
         res.set_k(k);
         module.ckks_copy(res, &ct_x, &mut scratch.borrow()).unwrap();
         module
-            .ckks_inverse_positive_domain(res, iters, &tsk, &mut scratch.borrow())
+            .ckks_inverse_positive_domain_assign(res, iters, &tsk, &mut scratch.borrow())
             .unwrap();
         module.synchronize();
     };
@@ -596,7 +596,7 @@ where
         output_log_budget,
         rotation_keys: 0,
         details: json!({
-            "function": "ckks_copy + ckks_inverse_positive_domain",
+            "function": "ckks_copy + ckks_inverse_positive_domain_assign",
             "domain": [min, 1.0],
             "target_bits": TARGET_BITS,
             "planned_consumed_bits": consumed,

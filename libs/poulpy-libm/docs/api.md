@@ -123,7 +123,7 @@ Negative integer exponents use a reciprocal explicitly; `ckks_powi` accepts only
 
 `ckks_sqrt` uses `x` as the initial inverse-square-root estimate.
 `in_half` must encode `x / 2` at the same scale and at least the same budget.
-Self-seeding converges only for `x ∈ (0, ∛3) ≈ (0, 1.442)`; larger inputs make the Newton iterate diverge, so condition them toward `1` first (public power-of-two scaling or normalization) or drive `ckks_rsqrt` directly with a hand-picked seed.
+Self-seeding converges only for `x ∈ (0, ∛3) ≈ (0, 1.442)`; larger inputs make the Newton iterate diverge, so condition them toward `1` first (public power-of-two scaling or normalization) or drive `ckks_rsqrt_assign` directly with a hand-picked seed.
 There is no runtime guard on this bound.
 
 ## Trigonometric
@@ -200,16 +200,16 @@ These operations have no direct `libm` equivalent but complete the public functi
 
 | Operation | Domain | Modulus | Depth |
 |---|---|---:|---:|
-| `ckks_goldschmidt_division` | `0 < x < 2` | `(r + 1)D` | `r + 1` |
-| `ckks_inverse_positive_domain` | Alias of Goldschmidt | `(r + 1)D` | `r + 1` |
-| `ckks_inverse_negative_domain` | `-2 < x < 0` | `(r + 1)D` | `r + 1` |
-| `ckks_inverse_full_domain` | `[-1, -tau] ∪ [tau, 1]` | `S(D) + (r + 3)D` | `s + r + 3` |
-| `ckks_rsqrt` | Positive and conditioned near `1` | `2rD` | `2r` |
+| `ckks_goldschmidt_division_assign` | `0 < x < 2` | `(r + 1)D` | `r + 1` |
+| `ckks_inverse_positive_domain_assign` | Alias of Goldschmidt | `(r + 1)D` | `r + 1` |
+| `ckks_inverse_negative_domain_assign` | `-2 < x < 0` | `(r + 1)D` | `r + 1` |
+| `ckks_inverse_full_domain_assign` | `[-1, -tau] ∪ [tau, 1]` | `S(D) + (r + 3)D` | `s + r + 3` |
+| `ckks_rsqrt_assign` | Positive and conditioned near `1` | `2rD` | `2r` |
 | `ckks_div(a, b)` | `0 < b < 2` | `(r + 2)D` | `r + 2` |
 | `ckks_interval_normalization` | Prepared `[-max, max]` | `2nD` | `2n` |
 
 Here `r` is the fixed iteration count, `tau` is the sign-composite gap, and `n` is `IntervalNorm::n`.
-`ckks_rsqrt` refines the estimate held in `y`; it converges to `1/sqrt(x)` only when the seed satisfies the Newton basin `0 < x·y² < 3`, and there is no runtime guard.
+`ckks_rsqrt_assign` refines the estimate held in `y`; it converges to `1/sqrt(x)` only when the seed satisfies the Newton basin `0 < x·y² < 3`, and there is no runtime guard.
 Interval normalization writes both the compressed value and its per-slot factor; it is not applied implicitly.
 
 ### Predicates and selection

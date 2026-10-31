@@ -457,7 +457,7 @@ where
                 .max(self.ckks_copy_tmp_bytes(x, x))
                 .max(self.ckks_copy_tmp_bytes(x, y))
                 .max(self.ckks_mul_pt_const_tmp_bytes(x, x, &plan.constants))
-                .max(self.ckks_goldschmidt_division_tmp_bytes(x, tsk))
+                .max(self.ckks_goldschmidt_division_assign_tmp_bytes(x, tsk))
                 .max(self.ckks_mul_tmp_bytes(x, x, x, tsk))
                 .max(self.ckks_mul_tmp_bytes(x, y, x, tsk))
                 .max(self.ckks_polynomial_approximation_eval_tmp_bytes(x, x, &plan.atan.approximation, tsk))
@@ -516,7 +516,7 @@ where
                 &mut scratch_local,
             )?;
             self.ckks_mul_assign(&mut ratio, &sign_x, tsk, &mut scratch_local)?;
-            self.ckks_goldschmidt_division(&mut ratio, plan.reciprocal_iters, tsk, &mut scratch_local)?;
+            self.ckks_goldschmidt_division_assign(&mut ratio, plan.reciprocal_iters, tsk, &mut scratch_local)?;
             self.ckks_mul_assign(&mut ratio, &sign_x, tsk, &mut scratch_local)?;
             self.ckks_mul_assign(&mut ratio, &correction, tsk, &mut scratch_local)?;
             self.ckks_polynomial_approximation_eval(&mut angle, &ratio, &plan.atan.approximation, tsk, &mut scratch_local)?;

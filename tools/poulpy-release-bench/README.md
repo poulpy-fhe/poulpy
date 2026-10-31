@@ -39,13 +39,13 @@ At `2^40` the noise caps the results near 21 bits relative to the largest output
 
 | Case | Function | Domain | Target |
 |---|---|---|---|
-| `rsqrt_r16` | `ckks_rsqrt` | [1/16, 1] | 20 bits |
-| `rsqrt_r256` | `ckks_rsqrt` | [1/256, 1] | 20 bits |
+| `rsqrt_r16` | `ckks_rsqrt_assign` | [1/16, 1] | 20 bits |
+| `rsqrt_r256` | `ckks_rsqrt_assign` | [1/256, 1] | 20 bits |
 | `softmax_b20` | `ckks_softmax` | [-1, 1] | 20 bits |
-| `inv_r256` | `ckks_inverse_positive_domain` | [1/256, 1] | 20 bits |
+| `inv_r256` | `ckks_inverse_positive_domain_assign` | [1/256, 1] | 20 bits |
 
 Targets are absolute-error bits, as libm's options count them.
-`ckks_rsqrt` only refines an estimate, so the rsqrt cases evaluate a minimax seed of `1/sqrt(x)` first, then Newton steps: the seed and step count of least depth that reach the target, both in the record.
+`ckks_rsqrt_assign` only refines an estimate, so the rsqrt_assign cases evaluate a minimax seed of `1/sqrt(x)` first, then Newton steps: the seed and step count of least depth that reach the target, both in the record.
 The inverse runs in place, so its timed call starts with a copy of the input.
 The ciphertext is as wide as the function consumes plus `2 log_delta` of headroom and two limbs of guard, rounded up to a limb.
 Keys use digits of 4 limbs, which keeps a softmax point, with its tensor key and 15 rotation keys, under 6 GB.

@@ -35,13 +35,16 @@ use super::{
     },
 };
 use crate::{
-    api::{BlasEncodingOps, BlasMatInterOps, BlasMatIntraOps, BlasMatMulOps, BlasMatVecOps},
+    api::{
+        BlasEncodingOps, BlasMatInterOps, BlasMatIntraOps, BlasMatMulLeftOperandPreparedFactory, BlasMatMulOps,
+        BlasMatMulRightOperandPreparedFactory, BlasMatVecOps,
+    },
     layouts::{
-        BlasCiphertext, BlasCiphertextOwned, BlasContextInfos, BlasGridInfos, BlasGridLine, BlasLayout, BlasMatVecOperandLayout,
-        BlasModuleAlloc, BlasPlan, BlasPtAlgorithm, BlasPtOperandPrepared, BlasVector, BlasVectorInfos, BlasVectorLayout,
-        BlasVectorOwned, BlasVectorShape, Left, Right, blas_grid_to_vector_output_layout, blas_matvec_diagonal_output_layout,
-        blas_matvec_pt_output_layout, blas_vector_to_grid_output_layout, ciphertext::layout_of, diagonal_ciphertext::AppendAxis,
-        matvec_pt_galois_elements, replicated, sum_galois_elements,
+        BlasCiphertext, BlasCiphertextOwned, BlasContextInfos, BlasDiagonalCiphertextAlloc, BlasGridInfos, BlasGridLine,
+        BlasLayout, BlasMatVecOperandLayout, BlasPlan, BlasPtAlgorithm, BlasPtOperandPrepared, BlasVector, BlasVectorInfos,
+        BlasVectorLayout, BlasVectorOwned, BlasVectorShape, Left, Right, blas_grid_to_vector_output_layout,
+        blas_matvec_diagonal_output_layout, blas_matvec_pt_output_layout, blas_vector_to_grid_output_layout,
+        ciphertext::layout_of, diagonal_ciphertext::AppendAxis, matvec_pt_galois_elements, replicated, sum_galois_elements,
     },
     oep::BlasImpl,
 };
@@ -208,9 +211,10 @@ pub fn test_blas_conjugate_invariant<BE>(
 
     // Both operands under either hint, hot first, then the prepared product of every mix.
     let lefts = HINTS.map(|hint| {
-        let left = with_scratch::<BE, _>(module.blas_matmul_prepare_left_tmp_bytes(&ct_a, &ctx, &atk, hint), |s| {
-            matmul_left_operand(module, &ct_a, &ctx, &keys, hint, s)
-        })
+        let left = with_scratch::<BE, _>(
+            module.blas_matmul_left_operand_prepare_tmp_bytes(&ct_a, &ctx, &atk, hint),
+            |s| matmul_left_operand(module, &ct_a, &ctx, &keys, hint, s),
+        )
         .unwrap();
         assert_eq!(left.block_layout().slots(), SlotsKind::Real, "prepare_left {hint:?}: slots");
         left
@@ -224,9 +228,10 @@ pub fn test_blas_conjugate_invariant<BE>(
     let side = |hint| usize::from(hint == PrepareHint::Reuse);
     for (name, ct_y, y) in [("", &ct_b, &b), (" of one matrix", &ct_one, &spread_one)] {
         let rights = HINTS.map(|hint| {
-            let right = with_scratch::<BE, _>(module.blas_matmul_prepare_right_tmp_bytes(ct_y, &ctx, &atk, hint), |s| {
-                matmul_right_operand(module, ct_y, &ctx, &keys, hint, s)
-            })
+            let right = with_scratch::<BE, _>(
+                module.blas_matmul_right_operand_prepare_tmp_bytes(ct_y, &ctx, &atk, hint),
+                |s| matmul_right_operand(module, ct_y, &ctx, &keys, hint, s),
+            )
             .unwrap();
             assert_eq!(
                 right.block_layout().slots(),

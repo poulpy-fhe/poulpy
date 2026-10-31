@@ -36,12 +36,15 @@ use poulpy_hal::{
 };
 
 use crate::{
-    api::{BlasContextPreparedFactory, BlasEncodingOps, BlasMatMulOps, BlasPtOperandPreparedFactory},
+    api::{
+        BlasContextPreparedFactory, BlasEncodingOps, BlasMatMulLeftOperandPreparedFactory, BlasMatMulRightOperandPreparedFactory,
+        BlasPtOperandPreparedFactory,
+    },
     layouts::{
-        BlasCiphertext, BlasCiphertextOwned, BlasContextInfos, BlasContextPrepared, BlasGrid, BlasGridInfos, BlasGridMut,
-        BlasLayout, BlasMatMulLeft, BlasMatMulOperandInfos, BlasMatMulOperandPreparedFactory, BlasMatMulRight, BlasModuleAlloc,
-        BlasPlan, BlasPtAlgorithm, BlasPtOperandPrepared, BlasPtSide, blas_matmul_left_operand_layout,
-        blas_matmul_right_operand_layout, ciphertext::layout_of, grid::split_into_blocks,
+        BlasCiphertext, BlasCiphertextAlloc, BlasCiphertextOwned, BlasContextAlloc, BlasContextInfos, BlasContextPrepared,
+        BlasGrid, BlasGridInfos, BlasGridMut, BlasLayout, BlasMatMulLeftOperandPrepared, BlasMatMulOperandInfos,
+        BlasMatMulRightOperandPrepared, BlasPlan, BlasPtAlgorithm, BlasPtOperandAlloc, BlasPtOperandPrepared, BlasPtSide,
+        blas_matmul_left_operand_layout, blas_matmul_right_operand_layout, ciphertext::layout_of, grid::split_into_blocks,
     },
     oep::{BlasEncodingImpl, BlasMatMulImpl},
 };
@@ -49,8 +52,8 @@ use crate::{
 /// Both preparation hints: hot, `OneShot`, then cold, `Reuse`.
 pub const HINTS: [PrepareHint; 2] = [PrepareHint::OneShot, PrepareHint::Reuse];
 
-/// [`BlasMatMulOps::blas_matmul_prepare_left`] of `a` under `hint`, into an operand allocated from the infos
-/// [`blas_matmul_left_operand_layout`] gives.
+/// [`BlasMatMulLeftOperandPreparedFactory::blas_matmul_left_operand_prepare`] of `a` under `hint`, into an operand
+/// allocated from the infos [`blas_matmul_left_operand_layout`] gives.
 pub fn matmul_left_operand<BE: BlasMatMulImpl>(
     module: &Module<BE>,
     a: &impl BlasGrid<BE>,
@@ -58,14 +61,14 @@ pub fn matmul_left_operand<BE: BlasMatMulImpl>(
     keys: &(impl GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync),
     hint: PrepareHint,
     scratch: &mut ScratchArena<'_, BE>,
-) -> CKKSResult<BlasMatMulLeft<BE>> {
-    let mut res = module.blas_matmul_left_alloc_from_infos(&blas_matmul_left_operand_layout(a, ctx, hint));
-    module.blas_matmul_prepare_left(&mut res, a, ctx, keys, scratch)?;
+) -> CKKSResult<BlasMatMulLeftOperandPrepared<BE>> {
+    let mut res = module.blas_matmul_left_operand_prepared_alloc_from_infos(&blas_matmul_left_operand_layout(a, ctx, hint));
+    module.blas_matmul_left_operand_prepare(&mut res, a, ctx, keys, scratch)?;
     Ok(res)
 }
 
-/// [`BlasMatMulOps::blas_matmul_prepare_right`] of `b` under `hint`, into an operand allocated from the infos
-/// [`blas_matmul_right_operand_layout`] gives.
+/// [`BlasMatMulRightOperandPreparedFactory::blas_matmul_right_operand_prepare`] of `b` under `hint`, into an operand
+/// allocated from the infos [`blas_matmul_right_operand_layout`] gives.
 pub fn matmul_right_operand<BE: BlasMatMulImpl>(
     module: &Module<BE>,
     b: &impl BlasGrid<BE>,
@@ -73,9 +76,9 @@ pub fn matmul_right_operand<BE: BlasMatMulImpl>(
     keys: &(impl GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync),
     hint: PrepareHint,
     scratch: &mut ScratchArena<'_, BE>,
-) -> CKKSResult<BlasMatMulRight<BE>> {
-    let mut res = module.blas_matmul_right_alloc_from_infos(&blas_matmul_right_operand_layout(b, ctx, hint));
-    module.blas_matmul_prepare_right(&mut res, b, ctx, keys, scratch)?;
+) -> CKKSResult<BlasMatMulRightOperandPrepared<BE>> {
+    let mut res = module.blas_matmul_right_operand_prepared_alloc_from_infos(&blas_matmul_right_operand_layout(b, ctx, hint));
+    module.blas_matmul_right_operand_prepare(&mut res, b, ctx, keys, scratch)?;
     Ok(res)
 }
 

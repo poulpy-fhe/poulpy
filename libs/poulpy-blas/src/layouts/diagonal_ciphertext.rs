@@ -20,7 +20,7 @@ use std::collections::BTreeSet;
 use super::encoding::{DiagonalShape, ring_slots, skeleton};
 use poulpy_hal::{
     api::{CnvPVecAlloc, CnvPVecBytesOf},
-    layouts::Backend,
+    layouts::{Backend, Module},
 };
 
 /// A diagonal ciphertext's diagonals and their schedule: diagonal `t` of the `S x S` matrix over the `S` slots, `D_t[i] =
@@ -254,8 +254,38 @@ fn append_galois_elements(cyclotomic_order: i64, infos: &impl BlasDiagonalCipher
     galois_elements_from_rotations(rotations, cyclotomic_order)
 }
 
-/// [`super::BlasModuleAlloc::blas_diagonal_ciphertext_alloc_from_infos`]: zero diagonals of the layout's metadata.
-pub(crate) fn alloc<BE, M>(module: &M, layout: &BlasDiagonalCiphertextLayout) -> BlasDiagonalCiphertext<BE>
+/// Allocation of diagonal ciphertexts.
+pub trait BlasDiagonalCiphertextAlloc<BE: Backend>: CKKSCiphertextAlloc<BE> + CKKSModuleInfos + GetDegree + Sized {
+    /// A diagonal ciphertext of `infos`, every diagonal zero: a matrix `blas_append_row_diagonal` and
+    /// `blas_append_col_diagonal` fill.
+    ///
+    /// # Panics
+    ///
+    /// Panics unless the slots of `infos` are the module's, it holds at least one diagonal, each below the slots, and
+    /// its diagonals are ciphertexts of the module's degree at a radix in `1..=62`.
+    fn blas_diagonal_ciphertext_alloc_from_infos<A: BlasDiagonalCiphertextInfos>(&self, infos: &A) -> BlasDiagonalCiphertext<BE> {
+        alloc(self, &infos.blas_diagonal_ciphertext_layout())
+    }
+}
+
+impl<BE: Backend> BlasDiagonalCiphertextAlloc<BE> for Module<BE> where Module<BE>: CKKSCiphertextAlloc<BE> {}
+
+/// Byte sizes of diagonal ciphertexts, routed through the backend.
+pub trait BlasDiagonalCiphertextBytesOf<BE: Backend>: GLWEBytesOf<BE> + Sized {
+    /// Bytes of [`BlasDiagonalCiphertextAlloc::blas_diagonal_ciphertext_alloc_from_infos`] of `infos`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the bytes overflow `usize`.
+    fn blas_diagonal_ciphertext_bytes_of_from_infos<A: BlasDiagonalCiphertextInfos>(&self, infos: &A) -> usize {
+        bytes_of(self, &infos.blas_diagonal_ciphertext_layout())
+    }
+}
+
+impl<BE: Backend> BlasDiagonalCiphertextBytesOf<BE> for Module<BE> {}
+
+/// [`BlasDiagonalCiphertextAlloc::blas_diagonal_ciphertext_alloc_from_infos`]: zero diagonals of the layout's metadata.
+fn alloc<BE, M>(module: &M, layout: &BlasDiagonalCiphertextLayout) -> BlasDiagonalCiphertext<BE>
 where
     BE: Backend,
     M: CKKSCiphertextAlloc<BE> + CKKSModuleInfos + GetDegree,
@@ -308,9 +338,9 @@ fn count(layout: &BlasDiagonalCiphertextLayout) -> usize {
     layout.lt.index().index.iter().map(Vec::len).sum()
 }
 
-/// [`super::BlasBytesOf::blas_diagonal_ciphertext_bytes_of_from_infos`]: one ciphertext of the diagonals' layout per
-/// diagonal.
-pub(crate) fn bytes_of<BE: Backend>(module: &impl GLWEBytesOf<BE>, layout: &BlasDiagonalCiphertextLayout) -> usize {
+/// [`BlasDiagonalCiphertextBytesOf::blas_diagonal_ciphertext_bytes_of_from_infos`]: one ciphertext of the diagonals'
+/// layout per diagonal.
+fn bytes_of<BE: Backend>(module: &impl GLWEBytesOf<BE>, layout: &BlasDiagonalCiphertextLayout) -> usize {
     count(layout)
         .checked_mul(module.glwe_bytes_of_from_infos(&layout.ct))
         .expect("the diagonal ciphertext's bytes overflow usize")
@@ -333,7 +363,7 @@ mod tests {
         api::{LinearTransformationStrategy, ckks_linear_transformation_output_layout},
         layouts::CKKSCiphertextAlloc,
     };
-    use poulpy_hal::layouts::{CyclotomicOrder, HostBytesBackend, Module};
+    use poulpy_hal::layouts::{CyclotomicOrder, HostBytesBackend};
 
     use super::*;
     use crate::layouts::{

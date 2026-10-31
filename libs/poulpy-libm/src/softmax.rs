@@ -224,7 +224,7 @@ pub trait CKKSSoftmaxOps<BE: Backend> {
     ///
     /// An error for a sparse input or an input whose slot count is not the plan's, and the errors of
     /// [`CKKSExpOps::ckks_exp`], [`CKKSReductionOps::ckks_sum_slots`],
-    /// [`CKKSInverseOps::ckks_goldschmidt_division`], the products and the final `ckks_copy`. The stages run in scratch,
+    /// [`CKKSInverseOps::ckks_goldschmidt_division_assign`], the products and the final `ckks_copy`. The stages run in scratch,
     /// so `res` is untouched on `Err`.
     fn ckks_softmax<R, I, P, H, A>(
         &self,
@@ -271,7 +271,7 @@ where
             + self
                 .ckks_sum_slots_tmp_bytes(input, input, rotation_key)
                 .max(self.ckks_mul_pt_const_tmp_bytes(input, input, &plan.constants))
-                .max(self.ckks_goldschmidt_division_tmp_bytes(input, tsk))
+                .max(self.ckks_goldschmidt_division_assign_tmp_bytes(input, tsk))
                 .max(self.ckks_mul_tmp_bytes(input, input, input, tsk));
         ct + shifted.max(normalize).max(self.ckks_copy_tmp_bytes(res, input))
     }
@@ -310,7 +310,7 @@ where
                 let (mut denominator, mut stage) = stage.take_ckks_ciphertext_like_scratch(&numerator);
                 self.ckks_sum_slots(&mut denominator, &numerator, rotation_keys, &mut stage)?;
                 self.ckks_mul_pt_const_assign(&mut denominator, &plan.constants, 1, &mut stage)?;
-                self.ckks_goldschmidt_division(&mut denominator, plan.reciprocal_iters, tsk, &mut stage)?;
+                self.ckks_goldschmidt_division_assign(&mut denominator, plan.reciprocal_iters, tsk, &mut stage)?;
                 self.ckks_mul_assign(&mut numerator, &denominator, tsk, &mut stage)?;
                 self.ckks_mul_pt_const_assign(&mut numerator, &plan.constants, 1, &mut stage)?;
                 anyhow::Ok(())

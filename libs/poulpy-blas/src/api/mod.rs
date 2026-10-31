@@ -12,5 +12,5 @@ pub use encoding::{
 };
 pub use inter::BlasMatInterOps;
 pub use intra::BlasMatIntraOps;
-pub use matmul::BlasMatMulOps;
+pub use matmul::{BlasMatMulLeftOperandPreparedFactory, BlasMatMulOps, BlasMatMulRightOperandPreparedFactory};
 pub use matvec::BlasMatVecOps;

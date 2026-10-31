@@ -72,7 +72,7 @@ pub trait BlasEncodingOps<BE: Backend, F: CKKSEncodingScalar + DiagonalArithmeti
     ///
     /// # Panics
     ///
-    /// As [`BlasModuleAlloc::blas_matvec_operand_alloc`](crate::layouts::BlasModuleAlloc::blas_matvec_operand_alloc).
+    /// As [`BlasMatVecOperandAlloc::blas_matvec_operand_alloc`](crate::layouts::BlasMatVecOperandAlloc::blas_matvec_operand_alloc).
     fn blas_matvec_operand_encode_tmp_bytes<A: BlasMatVecOperandInfos>(&self, infos: &A) -> usize;
 
     /// Encodes into `res` the public matrix of entries `entry(row, col)`, `row < output.len`, `col < input.len`, at the
@@ -138,7 +138,7 @@ pub trait BlasPtOperandPreparedFactory<BE: Backend>: CKKSModuleInfos + GetDegree
     ///
     /// # Panics
     ///
-    /// As [`BlasModuleAlloc::blas_pt_operand_alloc_from_infos`](crate::layouts::BlasModuleAlloc::blas_pt_operand_alloc_from_infos).
+    /// As [`BlasPtOperandAlloc::blas_pt_operand_alloc_from_infos`](crate::layouts::BlasPtOperandAlloc::blas_pt_operand_alloc_from_infos).
     fn blas_pt_operand_prepared_alloc_from_infos<A: BlasPtOperandInfos>(&self, infos: &A) -> BlasPtOperandPrepared<BE, A::Side>
     where
         Self: CKKSRightOperandPreparedFactory<BE>,
@@ -178,7 +178,7 @@ pub trait BlasMatVecOperandPreparedFactory<BE: Backend>: CnvPVecAlloc<BE> + CKKS
     ///
     /// # Panics
     ///
-    /// As [`BlasModuleAlloc::blas_matvec_operand_alloc_from_infos`](crate::layouts::BlasModuleAlloc::blas_matvec_operand_alloc_from_infos).
+    /// As [`BlasMatVecOperandAlloc::blas_matvec_operand_alloc_from_infos`](crate::layouts::BlasMatVecOperandAlloc::blas_matvec_operand_alloc_from_infos).
     fn blas_matvec_operand_prepared_alloc_from_infos<A: BlasMatVecOperandInfos>(
         &self,
         infos: &A,
@@ -218,7 +218,7 @@ pub trait BlasDiagonalCiphertextPreparedFactory<BE: Backend>:
     ///
     /// # Panics
     ///
-    /// As [`BlasModuleAlloc::blas_diagonal_ciphertext_alloc_from_infos`](crate::layouts::BlasModuleAlloc::blas_diagonal_ciphertext_alloc_from_infos).
+    /// As [`BlasDiagonalCiphertextAlloc::blas_diagonal_ciphertext_alloc_from_infos`](crate::layouts::BlasDiagonalCiphertextAlloc::blas_diagonal_ciphertext_alloc_from_infos).
     fn blas_diagonal_ciphertext_prepared_alloc_from_infos<A: BlasDiagonalCiphertextInfos>(
         &self,
         infos: &A,
@@ -260,7 +260,7 @@ pub trait BlasContextPreparedFactory<BE: Backend>: CnvPVecAlloc<BE> + CKKSModule
     ///
     /// # Panics
     ///
-    /// As [`BlasModuleAlloc::blas_context_alloc_from_infos`](crate::layouts::BlasModuleAlloc::blas_context_alloc_from_infos).
+    /// As [`BlasContextAlloc::blas_context_alloc_from_infos`](crate::layouts::BlasContextAlloc::blas_context_alloc_from_infos).
     fn blas_context_prepared_alloc_from_infos<A: BlasContextInfos>(&self, infos: &A) -> BlasContextPrepared<BE> {
         context::alloc_prepared(self, &infos.blas_context_layout())
     }

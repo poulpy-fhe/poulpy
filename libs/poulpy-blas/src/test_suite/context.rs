@@ -38,10 +38,11 @@ use crate::{
         BlasPtOperandPreparedFactory,
     },
     layouts::{
-        BlasBytesOf, BlasContext, BlasContextInfos, BlasContextLayout, BlasContextPrepared, BlasDiagonalCiphertext,
-        BlasDiagonalCiphertextPrepared, BlasMatVecOperand, BlasMatVecOperandLayout, BlasMatVecOperandPrepared, BlasModuleAlloc,
-        BlasPlan, BlasPtAlgorithm, BlasPtOperand, BlasPtOperandInfos, BlasPtOperandLayout, BlasPtOperandPrepared, BlasPtSide,
-        Left, Right, matvec_pt_galois_elements,
+        BlasContext, BlasContextAlloc, BlasContextInfos, BlasContextLayout, BlasContextPrepared, BlasDiagonalCiphertext,
+        BlasDiagonalCiphertextAlloc, BlasDiagonalCiphertextBytesOf, BlasDiagonalCiphertextPrepared, BlasMatVecOperand,
+        BlasMatVecOperandAlloc, BlasMatVecOperandLayout, BlasMatVecOperandPrepared, BlasPlan, BlasPtAlgorithm, BlasPtOperand,
+        BlasPtOperandAlloc, BlasPtOperandInfos, BlasPtOperandLayout, BlasPtOperandPrepared, BlasPtSide, Left, Right,
+        matvec_pt_galois_elements,
     },
     oep::BlasEncodingImpl,
 };
@@ -792,7 +793,7 @@ fn ciphertext<BE: Backend<OwnedBuf = AlignedBuf>>(ct: &CKKSCiphertextOwned<BE>) 
 fn refill_diagonal_ciphertext<BE>(params: &CKKSTestParams, module: &Module<BE>)
 where
     BE: TestContextBackend + BlasEncodingImpl,
-    Module<BE>: BlasDiagonalCiphertextPreparedFactory<BE> + BlasBytesOf<BE> + CKKSLinearTransformationOps<BE>,
+    Module<BE>: BlasDiagonalCiphertextPreparedFactory<BE> + BlasDiagonalCiphertextBytesOf<BE> + CKKSLinearTransformationOps<BE>,
 {
     let layout = diagonal_ciphertext_layout(params, module.ckks_max_slots(), params.k - params.prec().log_delta());
     let alloc = || {

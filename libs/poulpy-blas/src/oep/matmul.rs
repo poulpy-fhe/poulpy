@@ -3,12 +3,14 @@ use poulpy_core::layouts::{GGLWEInfos, GetAutomorphismKey, GetTensorKey};
 use poulpy_hal::layouts::{Backend, Module, PrepareHint, ScratchArena};
 
 use crate::layouts::{
-    BlasContextPrepared, BlasGrid, BlasGridInfos, BlasGridMut, BlasMatMulLeft, BlasMatMulOperandInfos, BlasMatMulRight,
-    BlasPtOperandPrepared, Left,
+    BlasContextPrepared, BlasGrid, BlasGridInfos, BlasGridMut, BlasMatMulLeftOperandPrepared, BlasMatMulOperandInfos,
+    BlasMatMulRightOperandPrepared, BlasPtOperandPrepared, Left,
 };
 
-/// Extension point of [`crate::api::BlasMatMulOps`]: the product, the preparations, the prepared product and the products
-/// by public matrices, on the right and on the left, all required.
+/// Extension point of [`crate::api::BlasMatMulOps`] and of the preparations of
+/// [`crate::api::BlasMatMulLeftOperandPreparedFactory`] and [`crate::api::BlasMatMulRightOperandPreparedFactory`]: the
+/// product, the preparations, the prepared product and the products by public matrices, on the right and on the left,
+/// all required.
 ///
 /// # Safety
 /// Every required method reproduces its `_reference` counterpart in
@@ -24,9 +26,9 @@ use crate::layouts::{
 ///
 /// The memory, layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait BlasMatMulImpl: Backend + CKKSMulImpl {
-    /// Scratch bound of [`Self::blas_matmul_prepare_left`] under the hint `hint`; may report less than the reference,
+    /// Scratch bound of [`Self::blas_matmul_left_operand_prepare`] under the hint `hint`; may report less than the reference,
     /// never less than the body takes.
-    fn blas_matmul_prepare_left_tmp_bytes<A, K>(
+    fn blas_matmul_left_operand_prepare_tmp_bytes<A, K>(
         module: &Module<Self>,
         a: &A,
         ctx: &BlasContextPrepared<Self>,
@@ -38,14 +40,15 @@ pub unsafe trait BlasMatMulImpl: Backend + CKKSMulImpl {
         K: GGLWEInfos;
 
     /// Reproduces
-    /// [`blas_matmul_prepare_left_reference`](crate::reference::BlasMatMulReference::blas_matmul_prepare_left_reference)
-    /// bit for bit, within [`Self::blas_matmul_prepare_left_tmp_bytes`]; validator:
-    /// [`crate::layouts::validate_blas_matmul_prepare_left`]. Fills `res`, allocated from the infos its validator
+    /// [`blas_matmul_left_operand_prepare_reference`](crate::reference::BlasMatMulReference::blas_matmul_left_operand_prepare_reference)
+    /// bit for bit, within [`Self::blas_matmul_left_operand_prepare_tmp_bytes`]; validator:
+    /// [`crate::layouts::validate_blas_matmul_left_operand_prepare`]. Fills `res`, allocated from the infos its validator
     /// checks, from `a` under `res`'s hint.
     ///
-    /// **Prepared operands.** A backend does not choose their type: [`BlasMatMulLeft`] and [`BlasMatMulRight`] are
-    /// [`BlasMatMulOperand`](crate::layouts::BlasMatMulOperand)s of the backend's poulpy-ckks ciphertexts and prepared
-    /// terms, which [`BlasMatMulOperandPreparedFactory`](crate::layouts::BlasMatMulOperandPreparedFactory) allocates. A
+    /// **Prepared operands.** A backend does not choose their type: [`BlasMatMulLeftOperandPrepared`] and [`BlasMatMulRightOperandPrepared`] are
+    /// [`BlasMatMulOperandPrepared`](crate::layouts::BlasMatMulOperandPrepared)s of the backend's poulpy-ckks ciphertexts and prepared
+    /// terms, which [`BlasMatMulLeftOperandPreparedFactory`](crate::api::BlasMatMulLeftOperandPreparedFactory) and
+    /// [`BlasMatMulRightOperandPreparedFactory`](crate::api::BlasMatMulRightOperandPreparedFactory) allocate. A
     /// preparation fills one through its `blocks_mut` or `terms_mut`, with no allocation of its storage, from a source
     /// whose infos have its shape (the validator checks the hint, the dimensions and the GLWE layouts, not the
     /// metadata), under its hint, and returns poulpy-ckks's budget error before any write to it, which a cold
@@ -66,9 +69,9 @@ pub unsafe trait BlasMatMulImpl: Backend + CKKSMulImpl {
     ///   budget returns `Ok`.
     ///
     /// **Free:** as [`Self::blas_matmul`].
-    fn blas_matmul_prepare_left<A, K>(
+    fn blas_matmul_left_operand_prepare<A, K>(
         module: &Module<Self>,
-        res: &mut BlasMatMulLeft<Self>,
+        res: &mut BlasMatMulLeftOperandPrepared<Self>,
         a: &A,
         ctx: &BlasContextPrepared<Self>,
         keys: &K,
@@ -78,9 +81,9 @@ pub unsafe trait BlasMatMulImpl: Backend + CKKSMulImpl {
         A: BlasGrid<Self>,
         K: GetAutomorphismKey<Self> + GetTensorKey<Self> + Sync;
 
-    /// Scratch bound of [`Self::blas_matmul_prepare_right`] under the hint `hint`; may report less than the reference,
+    /// Scratch bound of [`Self::blas_matmul_right_operand_prepare`] under the hint `hint`; may report less than the reference,
     /// never less than the body takes.
-    fn blas_matmul_prepare_right_tmp_bytes<B, K>(
+    fn blas_matmul_right_operand_prepare_tmp_bytes<B, K>(
         module: &Module<Self>,
         b: &B,
         ctx: &BlasContextPrepared<Self>,
@@ -92,10 +95,10 @@ pub unsafe trait BlasMatMulImpl: Backend + CKKSMulImpl {
         K: GGLWEInfos;
 
     /// Reproduces
-    /// [`blas_matmul_prepare_right_reference`](crate::reference::BlasMatMulReference::blas_matmul_prepare_right_reference)
-    /// bit for bit, within [`Self::blas_matmul_prepare_right_tmp_bytes`]; validator:
-    /// [`crate::layouts::validate_blas_matmul_prepare_right`]. Fills `res`, allocated from the infos its validator
-    /// checks, from `b` under `res`'s hint, as [`Self::blas_matmul_prepare_left`] fills a left operand (see its
+    /// [`blas_matmul_right_operand_prepare_reference`](crate::reference::BlasMatMulReference::blas_matmul_right_operand_prepare_reference)
+    /// bit for bit, within [`Self::blas_matmul_right_operand_prepare_tmp_bytes`]; validator:
+    /// [`crate::layouts::validate_blas_matmul_right_operand_prepare`]. Fills `res`, allocated from the infos its validator
+    /// checks, from `b` under `res`'s hint, as [`Self::blas_matmul_left_operand_prepare`] fills a left operand (see its
     /// **Prepared operands**), recording the infos
     /// [`blas_matmul_right_operand_layout`](crate::layouts::blas_matmul_right_operand_layout) gives.
     ///
@@ -109,9 +112,9 @@ pub unsafe trait BlasMatMulImpl: Backend + CKKSMulImpl {
     ///   budget returns `Ok`.
     ///
     /// **Free:** as [`Self::blas_matmul`].
-    fn blas_matmul_prepare_right<B, K>(
+    fn blas_matmul_right_operand_prepare<B, K>(
         module: &Module<Self>,
-        res: &mut BlasMatMulRight<Self>,
+        res: &mut BlasMatMulRightOperandPrepared<Self>,
         b: &B,
         ctx: &BlasContextPrepared<Self>,
         keys: &K,
@@ -144,7 +147,7 @@ pub unsafe trait BlasMatMulImpl: Backend + CKKSMulImpl {
     /// Reproduces
     /// [`blas_matmul_prepared_reference`](crate::reference::BlasMatMulReference::blas_matmul_prepared_reference) bit
     /// for bit, within [`Self::blas_matmul_prepared_tmp_bytes`]; validator:
-    /// [`crate::layouts::validate_blas_matmul_prepared`]. The operands are those [`Self::blas_matmul_prepare_left`]
+    /// [`crate::layouts::validate_blas_matmul_prepared`]. The operands are those [`Self::blas_matmul_left_operand_prepare`]
     /// describes (**Prepared operands**). The `_prepared` validator and the batch the prepared product records read
     /// nothing else than what a preparation records. The terms of a cold operand are those of the preparation's `ctx`;
     /// those of a hot operand are those of the `ctx` of the product it enters, whatever the context it was prepared
@@ -177,8 +180,8 @@ pub unsafe trait BlasMatMulImpl: Backend + CKKSMulImpl {
     fn blas_matmul_prepared<R, T, K>(
         module: &Module<Self>,
         res: &mut R,
-        a: &BlasMatMulLeft<Self>,
-        b: &BlasMatMulRight<Self>,
+        a: &BlasMatMulLeftOperandPrepared<Self>,
+        b: &BlasMatMulRightOperandPrepared<Self>,
         ctx: &BlasContextPrepared<Self>,
         tsk: &T,
         keys: &K,
@@ -367,7 +370,7 @@ pub unsafe trait BlasMatMulImpl: Backend + CKKSMulImpl {
 macro_rules! impl_blas_mat_mul_reference_full {
     ($be:ty) => {
         unsafe impl $crate::oep::BlasMatMulImpl for $be {
-            fn blas_matmul_prepare_left_tmp_bytes<A, K>(
+            fn blas_matmul_left_operand_prepare_tmp_bytes<A, K>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 a: &A,
                 ctx: &$crate::layouts::BlasContextPrepared<Self>,
@@ -378,12 +381,14 @@ macro_rules! impl_blas_mat_mul_reference_full {
                 A: $crate::layouts::BlasGridInfos,
                 K: ::poulpy_core::layouts::GGLWEInfos,
             {
-                $crate::reference::BlasMatMulReference::blas_matmul_prepare_left_tmp_bytes_reference(module, a, ctx, keys, hint)
+                $crate::reference::BlasMatMulReference::blas_matmul_left_operand_prepare_tmp_bytes_reference(
+                    module, a, ctx, keys, hint,
+                )
             }
 
-            fn blas_matmul_prepare_left<A, K>(
+            fn blas_matmul_left_operand_prepare<A, K>(
                 module: &::poulpy_hal::layouts::Module<Self>,
-                res: &mut $crate::layouts::BlasMatMulLeft<Self>,
+                res: &mut $crate::layouts::BlasMatMulLeftOperandPrepared<Self>,
                 a: &A,
                 ctx: &$crate::layouts::BlasContextPrepared<Self>,
                 keys: &K,
@@ -393,10 +398,12 @@ macro_rules! impl_blas_mat_mul_reference_full {
                 A: $crate::layouts::BlasGrid<Self>,
                 K: ::poulpy_core::layouts::GetAutomorphismKey<Self> + ::poulpy_core::layouts::GetTensorKey<Self> + Sync,
             {
-                $crate::reference::BlasMatMulReference::blas_matmul_prepare_left_reference(module, res, a, ctx, keys, scratch)
+                $crate::reference::BlasMatMulReference::blas_matmul_left_operand_prepare_reference(
+                    module, res, a, ctx, keys, scratch,
+                )
             }
 
-            fn blas_matmul_prepare_right_tmp_bytes<B, K>(
+            fn blas_matmul_right_operand_prepare_tmp_bytes<B, K>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 b: &B,
                 ctx: &$crate::layouts::BlasContextPrepared<Self>,
@@ -407,12 +414,14 @@ macro_rules! impl_blas_mat_mul_reference_full {
                 B: $crate::layouts::BlasGridInfos,
                 K: ::poulpy_core::layouts::GGLWEInfos,
             {
-                $crate::reference::BlasMatMulReference::blas_matmul_prepare_right_tmp_bytes_reference(module, b, ctx, keys, hint)
+                $crate::reference::BlasMatMulReference::blas_matmul_right_operand_prepare_tmp_bytes_reference(
+                    module, b, ctx, keys, hint,
+                )
             }
 
-            fn blas_matmul_prepare_right<B, K>(
+            fn blas_matmul_right_operand_prepare<B, K>(
                 module: &::poulpy_hal::layouts::Module<Self>,
-                res: &mut $crate::layouts::BlasMatMulRight<Self>,
+                res: &mut $crate::layouts::BlasMatMulRightOperandPrepared<Self>,
                 b: &B,
                 ctx: &$crate::layouts::BlasContextPrepared<Self>,
                 keys: &K,
@@ -422,7 +431,9 @@ macro_rules! impl_blas_mat_mul_reference_full {
                 B: $crate::layouts::BlasGrid<Self>,
                 K: ::poulpy_core::layouts::GetAutomorphismKey<Self> + ::poulpy_core::layouts::GetTensorKey<Self> + Sync,
             {
-                $crate::reference::BlasMatMulReference::blas_matmul_prepare_right_reference(module, res, b, ctx, keys, scratch)
+                $crate::reference::BlasMatMulReference::blas_matmul_right_operand_prepare_reference(
+                    module, res, b, ctx, keys, scratch,
+                )
             }
 
             fn blas_matmul_prepared_tmp_bytes<R, A, B, T, K>(
@@ -449,8 +460,8 @@ macro_rules! impl_blas_mat_mul_reference_full {
             fn blas_matmul_prepared<R, T, K>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 res: &mut R,
-                a: &$crate::layouts::BlasMatMulLeft<Self>,
-                b: &$crate::layouts::BlasMatMulRight<Self>,
+                a: &$crate::layouts::BlasMatMulLeftOperandPrepared<Self>,
+                b: &$crate::layouts::BlasMatMulRightOperandPrepared<Self>,
                 ctx: &$crate::layouts::BlasContextPrepared<Self>,
                 tsk: &T,
                 keys: &K,

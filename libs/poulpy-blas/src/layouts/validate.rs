@@ -875,8 +875,8 @@ fn ensure_masks<BE: Backend>(
 }
 
 /// Checks a [`blas_matmul`](crate::api::BlasMatMulOps::blas_matmul) call, and returns the batch `res` records, the
-/// larger of `a`'s and `b`'s: `a` and `b` as their preparations check them ([`validate_blas_matmul_prepare_left`],
-/// [`validate_blas_matmul_prepare_right`]), `res` against them as [`validate_blas_matmul_prepared`] checks it against
+/// larger of `a`'s and `b`'s: `a` and `b` as their preparations check them ([`validate_blas_matmul_left_operand_prepare`],
+/// [`validate_blas_matmul_right_operand_prepare`]), `res` against them as [`validate_blas_matmul_prepared`] checks it against
 /// their operands, and `tsk` at the wider of their term widths
 /// ([`blas_matmul_left_term_layout`](crate::layouts::blas_matmul_left_term_layout),
 /// [`blas_matmul_right_term_layout`](crate::layouts::blas_matmul_right_term_layout)), of their rank.
@@ -904,47 +904,49 @@ pub fn validate_blas_matmul<BE: Backend>(
     Ok(grid_batch::<BE::Ring>(a).max(grid_batch::<BE::Ring>(b)))
 }
 
-/// Checks a [`blas_matmul_prepare_left`](crate::api::BlasMatMulOps::blas_matmul_prepare_left) call: `a` is a grid at
-/// the context's `log_d` whose blocks tile its shape and share one layout whose label allows its batch record, of the
-/// module's degree, `ctx` was encoded on a module of `module`'s slot count at `a`'s radix, `res` has the shape of the
-/// infos [`blas_matmul_left_operand_layout`](crate::layouts::blas_matmul_left_operand_layout) gives for `a`, `ctx` and
-/// `res`'s hint (the hint, the dimensions, and the degree, radix, width and rank of the source's and the reported
-/// blocks, whatever their metadata), and `keys` holds every key of sigma from `a`'s width and of each phi^k from sigma's
-/// result into the terms' width, at the width it is looked up at, of `a`'s rank.
+/// Checks a
+/// [`blas_matmul_left_operand_prepare`](crate::api::BlasMatMulLeftOperandPreparedFactory::blas_matmul_left_operand_prepare)
+/// call: `a` is a grid at the context's `log_d` whose blocks tile its shape and share one layout whose label allows its
+/// batch record, of the module's degree, `ctx` was encoded on a module of `module`'s slot count at `a`'s radix, `res`
+/// has the shape of the infos [`blas_matmul_left_operand_layout`](crate::layouts::blas_matmul_left_operand_layout)
+/// gives for `a`, `ctx` and `res`'s hint (the hint, the dimensions, and the degree, radix, width and rank of the
+/// source's and the reported blocks, whatever their metadata), and `keys` holds every key of sigma from `a`'s width and
+/// of each phi^k from sigma's result into the terms' width, at the width it is looked up at, of `a`'s rank.
 ///
 /// # Errors
 ///
 /// `InvalidOperand` for a grid, layout or context it rejects or for `res` of another shape, then, key by key,
 /// `MissingAutomorphismKey`, or `InvalidOperand` for a key of another rank.
-pub fn validate_blas_matmul_prepare_left<BE: Backend>(
+pub fn validate_blas_matmul_left_operand_prepare<BE: Backend>(
     module: &Module<BE>,
     res: &impl BlasMatMulOperandInfos,
     a: &impl BlasGrid<BE>,
     ctx: &BlasContextPrepared<BE>,
     keys: &impl GetAutomorphismKey<BE>,
 ) -> Result<()> {
-    let op = "blas_matmul_prepare_left";
+    let op = "blas_matmul_left_operand_prepare";
     ensure_factor(op, module, a, ctx)?;
     ensure_allocated(op, res, left_operand_layout(a, &ctx.maps, res.hint()))?;
     left_uses(a, &ctx.maps, &mut |u| ensure_rotation(op, module, keys, u))
 }
 
-/// [`validate_blas_matmul_prepare_left`] for
-/// [`blas_matmul_prepare_right`](crate::api::BlasMatMulOps::blas_matmul_prepare_right), with tau and psi^k, or for a
-/// replicated `b` [`BlasContextPrepared::tau_rep`] and [`BlasContextPrepared::rotate_rows_rep`], and the infos
+/// [`validate_blas_matmul_left_operand_prepare`] for
+/// [`blas_matmul_right_operand_prepare`](crate::api::BlasMatMulRightOperandPreparedFactory::blas_matmul_right_operand_prepare),
+/// with tau and psi^k, or for a replicated `b` [`BlasContextPrepared::tau_rep`] and
+/// [`BlasContextPrepared::rotate_rows_rep`], and the infos
 /// [`blas_matmul_right_operand_layout`](crate::layouts::blas_matmul_right_operand_layout) gives.
 ///
 /// # Errors
 ///
-/// As [`validate_blas_matmul_prepare_left`].
-pub fn validate_blas_matmul_prepare_right<BE: Backend>(
+/// As [`validate_blas_matmul_left_operand_prepare`].
+pub fn validate_blas_matmul_right_operand_prepare<BE: Backend>(
     module: &Module<BE>,
     res: &impl BlasMatMulOperandInfos,
     b: &impl BlasGrid<BE>,
     ctx: &BlasContextPrepared<BE>,
     keys: &impl GetAutomorphismKey<BE>,
 ) -> Result<()> {
-    let op = "blas_matmul_prepare_right";
+    let op = "blas_matmul_right_operand_prepare";
     ensure_factor(op, module, b, ctx)?;
     ensure_allocated(op, res, right_operand_layout(b, &ctx.maps, res.hint()))?;
     right_uses(b, &ctx.maps, &mut |u| ensure_rotation(op, module, keys, u))
@@ -1635,7 +1637,7 @@ mod tests {
     use poulpy_hal::layouts::HostBytesBackend;
 
     use super::*;
-    use crate::layouts::{BlasLayout, BlasModuleAlloc};
+    use crate::layouts::{BlasCiphertextAlloc, BlasLayout};
 
     #[test]
     fn maps_reject_blocks_of_another_ring_radix_or_a_narrower_width() {

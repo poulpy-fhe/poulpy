@@ -15,7 +15,7 @@ sums on row 0 (column 0) and broadcasts them back, one scale. On a replicated gr
 a rotation by a multiple of `d` wraps inside a block, so the rows sum with no projection and no scale, and a grid one
 block high shifts its rows by rotations, also at no scale.
 Inter operations move whole matrices across the batch: `blas_rotate`, `blas_sum`. Products multiply every matrix of the
-batch: `blas_matmul` (JKLS, ciphertext x ciphertext), `blas_matmul_prepare_left`, `blas_matmul_prepare_right` and
+batch: `blas_matmul` (JKLS, ciphertext x ciphertext), `blas_matmul_left_operand_prepare`, `blas_matmul_right_operand_prepare` and
 `blas_matmul_prepared` (the same product from prepared operands, bit for bit under the same context), `blas_matmul_pt_right`
 (ciphertext x public matrices, shared or one per matrix slot) and `blas_matmul_pt_left` (public matrices x ciphertext).
 A public operand is encoded from a plan whose `BlasPtAlgorithm` picks the diagonal products (one map per block, one
@@ -84,7 +84,7 @@ caller-chosen precision, into a `BlasContextPrepared`, and public matrices into 
 and `Sync` key stores: rotation keys through poulpy-core's `GetAutomorphismKey` (`keys`), the tensor key through
 `GetTensorKey` (`tsk`). The preparations take only `keys`, and `blas_matmul` and `blas_matmul_prepared` both: the latter
 looks up the rotation keys of a hot operand's terms, and of two cold operands the tensor key alone. Every operation
-takes any grid implementing `BlasGrid` (`BlasGridMut` for the result). A prepared operand, a `BlasMatMulOperand`, holds
+takes any grid implementing `BlasGrid` (`BlasGridMut` for the result). A prepared operand, a `BlasMatMulOperandPrepared`, holds
 poulpy-ckks ciphertexts or prepared terms in the backend's storage, and reports its hint and its input's dimensions,
 batch and layout (`BlasMatMulOperandInfos`). Slot-wise additions, products and rescaling are poulpy-ckks operations
 applied to each block.
@@ -127,13 +127,18 @@ form, the backend's representation, which operations read.
 | `BlasPtOperand<BE, S>` | `BlasPtOperandPrepared<BE, S>` | `BlasPtOperandLayout<S>`, `BlasPtOperandInfos` |
 | `BlasMatVecOperand<BE>` | `BlasMatVecOperandPrepared<BE>` | `BlasMatVecOperandLayout`, `BlasMatVecOperandInfos` |
 | `BlasContext<BE>` | `BlasContextPrepared<BE>` | `BlasContextLayout`, `BlasContextInfos` |
-| none | `BlasMatMulLeft<BE>`, `BlasMatMulRight<BE>` | `BlasMatMulOperandLayout`, `BlasMatMulOperandInfos` |
+| none | `BlasMatMulLeftOperandPrepared<BE>`, `BlasMatMulRightOperandPrepared<BE>` | `BlasMatMulOperandLayout`, `BlasMatMulOperandInfos` |
 
-Each is allocated on a module from its layout (`BlasModuleAlloc`, and the factories `BlasPtOperandPreparedFactory`,
-`BlasMatVecOperandPreparedFactory` and `BlasContextPreparedFactory` of `poulpy_blas::api`), sized by the matching `bytes_of` (`BlasBytesOf` and the factories),
-and filled in place: encoded into (`BlasEncodingOps`, at poulpy-ckks's encoding scalar `F`, a trait parameter), then
-prepared into. A public operand takes its matrices at encoding, and its side is its type parameter `S`, `Right` or
-`Left`. Encoding and preparing again into the same allocations refills them, with no reallocation of their storage:
+Each is allocated on a module from its layout, by its own trait: `BlasCiphertextAlloc`, `BlasVectorAlloc`,
+`BlasDiagonalCiphertextAlloc`, `BlasPtOperandAlloc`, `BlasMatVecOperandAlloc` and `BlasContextAlloc` of
+`poulpy_blas::layouts`, and for a prepared form the factories `BlasDiagonalCiphertextPreparedFactory`,
+`BlasPtOperandPreparedFactory`, `BlasMatVecOperandPreparedFactory`, `BlasContextPreparedFactory`,
+`BlasMatMulLeftOperandPreparedFactory` and `BlasMatMulRightOperandPreparedFactory` of `poulpy_blas::api`. It is sized by
+the matching `bytes_of` (`BlasCiphertextBytesOf`, `BlasVectorBytesOf`, `BlasDiagonalCiphertextBytesOf` and the
+factories), and filled in place: encoded into (`BlasEncodingOps`, at poulpy-ckks's encoding scalar `F`, a trait
+parameter), then prepared into. A public operand takes its matrices at encoding, and its side is its type parameter `S`,
+`Right` or `Left`. Encoding and preparing again into the same allocations refills them, with no reallocation of their
+storage:
 
 ```rust,ignore
 let mut ctx = module.blas_context_alloc(plan, base2k, coeffs_meta);
@@ -151,9 +156,10 @@ An allocation panics on a layout whose blocks do not fit the module's slots, who
 divide the matrix slots, whose maps have no torus width, or whose `base2k` is outside `1..=63`.
 
 A prepared operand of a product is allocated from the infos `blas_matmul_left_operand_layout`
-(`blas_matmul_right_operand_layout`) gives for a grid, a context and a hint, by `blas_matmul_left_alloc_from_infos`
-(`blas_matmul_right_alloc_from_infos`), sized by `blas_matmul_left_bytes_of_from_infos` (`_right_`), and filled by
-`blas_matmul_prepare_left` (`_right`), under that hint.
+(`blas_matmul_right_operand_layout`) gives for a grid, a context and a hint, by `BlasMatMulLeftOperandPreparedFactory`
+(`BlasMatMulRightOperandPreparedFactory`): allocated by `blas_matmul_left_operand_prepared_alloc_from_infos` (`_right_`),
+sized by `blas_matmul_left_operand_prepared_bytes_of_from_infos` (`_right_`), and filled by
+`blas_matmul_left_operand_prepare` (`_right_`), under that hint.
 
 `BlasCiphertext` implements `WriterTo` and `ReaderFrom`, little-endian, with no magic or version bytes: a header of its
 dimensions and its blocks' `n`, `base2k`, `k` and rank, then its blocks, row-major, each at its `ceil(k / base2k)` live
@@ -175,7 +181,7 @@ hand, forwarding the methods it keeps to `reference`. `poulpy-cpu-oracle` and th
 the macros expand to `::poulpy_hal`, `::poulpy_core` and `::poulpy_ckks`. Like the reference, an implementation runs its
 operation's validator, the public `layouts::validate_*`, before any write and stamps the batch record of `res` after
 `Ok`: the API dispatches without a check. A backend does not choose the type of the prepared operands,
-`BlasMatMulOperand`: it supplies their storage through its `Backend`, as poulpy-hal's prepared layouts do, and holds its
+`BlasMatMulOperandPrepared`: it supplies their storage through its `Backend`, as poulpy-hal's prepared layouts do, and holds its
 terms in its own representation through its poulpy-ckks preparations.
 
 ```sh

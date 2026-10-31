@@ -59,16 +59,18 @@ use super::repack::{
 };
 use crate::{
     api::{
-        BlasDiagonalCiphertextPreparedFactory, BlasEncodingOps, BlasMatInterOps, BlasMatIntraOps, BlasMatMulOps, BlasMatVecOps,
+        BlasDiagonalCiphertextPreparedFactory, BlasEncodingOps, BlasMatInterOps, BlasMatIntraOps,
+        BlasMatMulLeftOperandPreparedFactory, BlasMatMulOps, BlasMatMulRightOperandPreparedFactory, BlasMatVecOps,
         BlasPtOperandPreparedFactory,
     },
     layouts::{
-        BlasCiphertext, BlasCiphertextOwned, BlasContextInfos, BlasDiagonalCiphertext, BlasGridInfos, BlasGridMut, BlasKeyUses,
-        BlasMatMulLeft, BlasMatMulRight, BlasMatVecOperandLayout, BlasModuleAlloc, BlasPlan, BlasPtAlgorithm, BlasPtOperandInfos,
-        BlasPtSide, BlasVectorInfos, BlasVectorOwned, BlasVectorShape, Left, Right, blas_append_col_diagonal_key_uses,
-        blas_append_row_diagonal_key_uses, blas_grid_to_vector_key_uses, blas_grid_to_vector_output_layout, blas_matmul_key_uses,
-        blas_matmul_prepare_left_key_uses, blas_matmul_prepare_right_key_uses, blas_matmul_prepared_key_uses,
-        blas_matmul_pt_left_key_uses, blas_matmul_pt_right_key_uses, blas_matvec_diagonal_key_uses,
+        BlasCiphertext, BlasCiphertextOwned, BlasContextInfos, BlasDiagonalCiphertext, BlasDiagonalCiphertextAlloc,
+        BlasGridInfos, BlasGridMut, BlasKeyUses, BlasMatMulLeftOperandPrepared, BlasMatMulRightOperandPrepared,
+        BlasMatVecOperandLayout, BlasPlan, BlasPtAlgorithm, BlasPtOperandAlloc, BlasPtOperandInfos, BlasPtSide, BlasVectorInfos,
+        BlasVectorOwned, BlasVectorShape, Left, Right, blas_append_col_diagonal_key_uses, blas_append_row_diagonal_key_uses,
+        blas_grid_to_vector_key_uses, blas_grid_to_vector_output_layout, blas_matmul_key_uses,
+        blas_matmul_left_operand_prepare_key_uses, blas_matmul_prepared_key_uses, blas_matmul_pt_left_key_uses,
+        blas_matmul_pt_right_key_uses, blas_matmul_right_operand_prepare_key_uses, blas_matvec_diagonal_key_uses,
         blas_matvec_diagonal_output_layout, blas_matvec_pt_key_uses, blas_matvec_pt_output_layout, blas_rotate_cols_key_uses,
         blas_rotate_key_uses, blas_rotate_rows_key_uses, blas_sum_cols_key_uses, blas_sum_key_uses, blas_sum_rows_key_uses,
         blas_transpose_key_uses, blas_vector_to_grid_key_uses, blas_vector_to_grid_output_layout,
@@ -547,7 +549,7 @@ pub fn test_blas_key_widths<BE, F, E>(
         // The widths of the terms, read off real results: sigma (tau) evaluated into a block of its input's width,
         // then phi^1 (psi^1) of that into a block of its width, which gives the width of every term.
         let term_widths = |src: &BlasCiphertextOwned<BE>, first, shift| {
-            let bytes = module.blas_matmul_prepare_left_tmp_bytes(src, &ctx, &atk_layout, Reuse);
+            let bytes = module.blas_matmul_left_operand_prepare_tmp_bytes(src, &ctx, &atk_layout, Reuse);
             let mut s = alloc(1, 1, width(src));
             module
                 .ckks_linear_transformation_eval_self_into(
@@ -610,15 +612,15 @@ pub fn test_blas_key_widths<BE, F, E>(
         // Each preparation, under either hint, under the restricted rotation keys alone, its product with the other
         // operand cold under the full store: a missing key stops the preparation before `res` changes, whatever the
         // hint, and the operand's every term reaches `res`.
-        let prepared_bytes = |left: &BlasMatMulLeft<BE>, right: &BlasMatMulRight<BE>| {
+        let prepared_bytes = |left: &BlasMatMulLeftOperandPrepared<BE>, right: &BlasMatMulRightOperandPrepared<BE>| {
             module.blas_matmul_prepared_tmp_bytes(&alloc(1, 1, a_k), left, right, &ctx, &tsk_layout, &atk_layout)
         };
         let prepare_left = |hint, keys: &StrictKeys<'_, BE>| {
-            let bytes = module.blas_matmul_prepare_left_tmp_bytes(a, &ctx, &atk_layout, hint);
+            let bytes = module.blas_matmul_left_operand_prepare_tmp_bytes(a, &ctx, &atk_layout, hint);
             matmul_left_operand(module, a, &ctx, keys, hint, &mut own(bytes).borrow())
         };
         let prepare_right = |hint, keys: &StrictKeys<'_, BE>| {
-            let bytes = module.blas_matmul_prepare_right_tmp_bytes(b, &ctx, &atk_layout, hint);
+            let bytes = module.blas_matmul_right_operand_prepare_tmp_bytes(b, &ctx, &atk_layout, hint);
             matmul_right_operand(module, b, &ctx, keys, hint, &mut own(bytes).borrow())
         };
         let all = keys.at_widths(left_uses.iter().chain(&right_uses).copied(), products);
@@ -630,9 +632,9 @@ pub fn test_blas_key_widths<BE, F, E>(
         for hint in HINTS {
             assert_key_widths(
                 &format!("prepare_left {hint:?} {factors}"),
-                "blas_matmul_prepare_left",
+                "blas_matmul_left_operand_prepare",
                 &keys,
-                blas_matmul_prepare_left_key_uses(module, a, &ctx),
+                blas_matmul_left_operand_prepare_key_uses(module, a, &ctx),
                 left_uses.iter().copied(),
                 [],
                 &full,
@@ -645,9 +647,9 @@ pub fn test_blas_key_widths<BE, F, E>(
             );
             assert_key_widths(
                 &format!("prepare_right {hint:?} {factors}"),
-                "blas_matmul_prepare_right",
+                "blas_matmul_right_operand_prepare",
                 &keys,
-                blas_matmul_prepare_right_key_uses(module, b, &ctx),
+                blas_matmul_right_operand_prepare_key_uses(module, b, &ctx),
                 right_uses.iter().copied(),
                 [],
                 &full,

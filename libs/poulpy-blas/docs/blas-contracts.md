@@ -1,9 +1,10 @@
 # Implementing BLAS operations
 
 Public matrix calls follow the [layering contract](../../../docs/guides/layering-contract.md): `Module<BE>` implements
-`BlasMatInterOps`, `BlasMatIntraOps`, `BlasMatMulOps` and `BlasMatVecOps`, and `BlasEncodingOps`,
-`BlasPtOperandPreparedFactory`, `BlasMatVecOperandPreparedFactory` and `BlasContextPreparedFactory`, for every
-backend that implements the matching `*Impl` trait, and each OEP method of an
+`BlasMatInterOps`, `BlasMatIntraOps`, `BlasMatMulOps`, `BlasMatMulLeftOperandPreparedFactory`,
+`BlasMatMulRightOperandPreparedFactory` and `BlasMatVecOps`, and `BlasEncodingOps`,
+`BlasPtOperandPreparedFactory`, `BlasMatVecOperandPreparedFactory`, `BlasDiagonalCiphertextPreparedFactory` and
+`BlasContextPreparedFactory`, for every backend that implements the matching `*Impl` trait, and each OEP method of an
 operation runs its validator first. The BLAS
 crate imports no backend crate: each backend crate wires its own types.
 
@@ -21,7 +22,7 @@ changes bits.
 |---|---|---|
 | `BlasMatInterImpl` | `blas_rotate`, `blas_sum` | |
 | `BlasMatIntraImpl` | the map hook `blas_map_blocks`, `blas_rotate_rows`, `blas_rotate_cols`, `blas_sum_rows`, `blas_sum_cols` | `blas_transpose`, over the hook |
-| `BlasMatMulImpl` | `blas_matmul`, `blas_matmul_prepare_left`, `blas_matmul_prepare_right`, `blas_matmul_prepared`, `blas_matmul_pt_right`, `blas_matmul_pt_left` | |
+| `BlasMatMulImpl` | `blas_matmul`, `blas_matmul_left_operand_prepare`, `blas_matmul_right_operand_prepare`, `blas_matmul_prepared`, `blas_matmul_pt_right`, `blas_matmul_pt_left` | |
 | `BlasMatVecImpl` | `blas_matvec_pt`, `blas_grid_to_vector`, `blas_vector_to_grid`, `blas_matvec_diagonal`, `blas_append_row_diagonal`, `blas_append_col_diagonal` | |
 | `BlasJklsImpl` | the JKLS kernel `blas_jkls_block`, one output block of the prepared product, and the masked-unit hook `blas_jkls_pt_unit`, one unit of a product by public matrices under `JklsStored` and `JklsGalois` | |
 | `BlasEncodingImpl` | `blas_pt_operand_encode`, `blas_matvec_operand_encode`, `blas_context_encode`, `blas_pt_operand_prepare`, `blas_matvec_operand_prepare`, `blas_diagonal_ciphertext_prepare`, `blas_context_prepare` | |
@@ -42,13 +43,13 @@ reaches every operation built on it. The provided body is crate-private,
 `blas_transpose_derived` with its query `blas_transpose_tmp_bytes_derived`, in
 the family's file under `oep::derived`.
 
-The prepared operands of the products, `BlasMatMulLeft<BE>` and
-`BlasMatMulRight<BE>`, are `poulpy_blas::layouts::BlasMatMulOperand`s of the
+The prepared operands of the products, `BlasMatMulLeftOperandPrepared<BE>` and
+`BlasMatMulRightOperandPrepared<BE>`, are `poulpy_blas::layouts::BlasMatMulOperandPrepared`s of the
 backend's poulpy-ckks storage, a type the backend does not choose.
-`BlasMatMulOperandPreparedFactory` allocates them; an implementation of the
-preparations and of the prepared product reads and fills their storage through
-`blocks`, `terms` and their `_mut` forms, and records a preparation with
-`set_prepared`.
+`BlasMatMulLeftOperandPreparedFactory` and `BlasMatMulRightOperandPreparedFactory`
+allocate them; an implementation of the preparations and of the prepared product
+reads and fills their storage through `blocks`, `terms` and their `_mut` forms,
+and records a preparation with `set_prepared`.
 
 ## Reference implementations
 
@@ -133,7 +134,7 @@ and hooks state what an implementation must reproduce. Three replacements cover 
   the batch as the reference does, and forwards the others to
   `BlasMatMulReference`, `blas_matmul` to `blas_matmul_reference` as the macro
   does. Preparations and a prepared product read and fill the operands through
-  `BlasMatMulOperand::{blocks, terms}`, their `_mut` forms and `set_prepared`.
+  `BlasMatMulOperandPrepared::{blocks, terms}`, their `_mut` forms and `set_prepared`.
 
 A backend may also override a shift, for example to chunk its heap grid, in a
 hand-written `BlasMatIntraImpl`; it then reproduces the circuit the reference
@@ -193,7 +194,7 @@ public operand's scale `p_B`:
 | `blas_transpose` | `transpose_galois_elements(order)` | baby steps at `a.k`, giant steps at `min(res.k, a.k - p)` |
 | `blas_rotate_rows`, `blas_rotate_cols` by `k` | `rotate_rows_galois_elements(order, k)`, `rotate_cols_galois_elements(order, k)` | as the transpose; none for a shift by a multiple of `d`, a copy; a row shift of a replicated grid one block high, a rotation by `k d`, at `min(res.k, a.k)` |
 | `blas_sum_rows`, `blas_sum_cols` | `sum_rows_galois_elements(order)`, `sum_cols_galois_elements(order)` | the tree's rotations at `a.k`, the broadcast's at `min(res.k, a.k - p)`; along the rows of a replicated grid, the tree's at `min(res.k, a.k)` and no broadcast |
-| `blas_matmul_prepare_left`, `blas_matmul_prepare_right`, `blas_matmul`, and `blas_matmul_prepared` of a hot operand | `matmul_galois_elements(order)` | sigma's (tau's) baby steps at `a.k` and giant steps at `a.k - p`; the shifts' giant steps at `a.k - 2p`, those of a replicated right factor `b` at `b.k - p` |
+| `blas_matmul_left_operand_prepare`, `blas_matmul_right_operand_prepare`, `blas_matmul`, and `blas_matmul_prepared` of a hot operand | `matmul_galois_elements(order)` | sigma's (tau's) baby steps at `a.k` and giant steps at `a.k - p`; the shifts' giant steps at `a.k - 2p`, those of a replicated right factor `b` at `b.k - p` |
 | `blas_matvec_pt` | `matvec_pt_galois_elements(order, w)` of the operand's layout | every map's baby steps at `a.k`, giant steps at `min(res.k, a.k - p_W)` |
 | `blas_grid_to_vector`, `blas_vector_to_grid` | `matvec_pt_galois_elements(order, w)` of the operand's layout | as `blas_matvec_pt`, the grid's blocks giving `a.k` (`res.k` when they are `res`) |
 | `blas_matvec_diagonal` | `matvec_diagonal_galois_elements(order, m)` of the matrix's layout, and the tensor key | the keys of its schedule, per rotation or by powers of two: baby steps at `a.k`, giant steps at the result's width (the ct x ct rule); the tensor key at `max(a.k, m.k)` |
@@ -251,7 +252,7 @@ a store holding its operation's set alone suffices.
 
 Each operation has a query in `poulpy_blas::layouts` that lists the keys it
 looks up: `blas_matmul_key_uses`,
-`blas_matmul_prepare_left_key_uses`, `blas_matmul_prepare_right_key_uses`,
+`blas_matmul_left_operand_prepare_key_uses`, `blas_matmul_right_operand_prepare_key_uses`,
 `blas_matmul_prepared_key_uses`, `blas_matmul_pt_right_key_uses`,
 `blas_matmul_pt_left_key_uses`, `blas_matvec_pt_key_uses`, `blas_grid_to_vector_key_uses`,
 `blas_vector_to_grid_key_uses`, `blas_matvec_diagonal_key_uses`, `blas_append_row_diagonal_key_uses`,

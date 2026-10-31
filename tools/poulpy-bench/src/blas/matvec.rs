@@ -5,10 +5,10 @@ use criterion::{Bencher, measurement::Measurement};
 use poulpy_blas::{
     api::{BlasDiagonalCiphertextPreparedFactory, BlasEncodingOps, BlasMatVecOperandPreparedFactory, BlasMatVecOps},
     layouts::{
-        BlasDiagonalCiphertext, BlasDiagonalCiphertextLayout, BlasGridLine, BlasMatVecMaps, BlasMatVecOperandLayout,
-        BlasModuleAlloc, BlasVector, BlasVectorLayout, BlasVectorShape, append_row_diagonal_galois_elements,
-        blas_grid_to_vector_max_base2k, blas_matvec_diagonal_max_base2k, blas_matvec_pt_max_base2k,
-        matvec_diagonal_galois_elements, matvec_pt_galois_elements,
+        BlasDiagonalCiphertext, BlasDiagonalCiphertextAlloc, BlasDiagonalCiphertextLayout, BlasGridLine, BlasMatVecMaps,
+        BlasMatVecOperandAlloc, BlasMatVecOperandLayout, BlasVector, BlasVectorAlloc, BlasVectorLayout, BlasVectorShape,
+        append_row_diagonal_galois_elements, blas_grid_to_vector_max_base2k, blas_matvec_diagonal_max_base2k,
+        blas_matvec_pt_max_base2k, matvec_diagonal_galois_elements, matvec_pt_galois_elements,
     },
     oep::BlasMatVecImpl,
 };

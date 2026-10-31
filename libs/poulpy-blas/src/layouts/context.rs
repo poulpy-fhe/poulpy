@@ -14,7 +14,7 @@ use poulpy_core::layouts::{
 };
 use poulpy_hal::{
     api::CnvPVecAlloc,
-    layouts::{Backend, galois_elements_from_rotations},
+    layouts::{Backend, Module, galois_elements_from_rotations},
 };
 
 use super::{
@@ -170,7 +170,7 @@ impl BlasPlan {
         galois_elements_from_rotations([r.rem_euclid(mat_slots) << (2 * self.log_d)], cyclotomic_order)
     }
 
-    /// Galois elements `blas_matmul`, `blas_matmul_prepare_left` and `blas_matmul_prepare_right` look up, and
+    /// Galois elements `blas_matmul`, `blas_matmul_left_operand_prepare` and `blas_matmul_right_operand_prepare` look up, and
     /// `blas_matmul_prepared` for a hot operand, whose terms it evaluates; of two cold operands it looks up none.
     pub fn matmul_galois_elements(&self, cyclotomic_order: i64) -> Vec<i64> {
         self.elements(cyclotomic_order, |slots| self.matmul_maps(slots))
@@ -732,8 +732,33 @@ pub(crate) fn module_layout(
     }
 }
 
-/// [`super::BlasModuleAlloc::blas_context_alloc_from_infos`].
-pub(crate) fn alloc<BE, M>(module: &M, layout: &BlasContextLayout) -> BlasContext<BE>
+/// Allocation of contexts.
+pub trait BlasContextAlloc<BE: Backend>: CKKSLinearTransformationAlloc<BE> + GetDegree + Sized {
+    /// A context of `plan` on this module's ring, every diagonal zero, which
+    /// [`BlasEncodingOps::blas_context_encode`](crate::api::BlasEncodingOps::blas_context_encode) fills.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the blocks of `plan` are smaller than `2 x 2` or do not fit the module's slots, if `coeffs_meta.k` is
+    /// `0` or if `base2k` is outside `1..=63`.
+    fn blas_context_alloc(&self, plan: BlasPlan, base2k: Base2K, coeffs_meta: CoeffsMeta) -> BlasContext<BE> {
+        self.blas_context_alloc_from_infos(&module_layout(self, plan, base2k, coeffs_meta))
+    }
+
+    /// A context of `infos`, which must be of this module's ring.
+    ///
+    /// # Panics
+    ///
+    /// As [`Self::blas_context_alloc`], and if the degree or the slots of `infos` are not the module's.
+    fn blas_context_alloc_from_infos<A: BlasContextInfos>(&self, infos: &A) -> BlasContext<BE> {
+        alloc(self, &infos.blas_context_layout())
+    }
+}
+
+impl<BE: Backend> BlasContextAlloc<BE> for Module<BE> where Module<BE>: CKKSLinearTransformationAlloc<BE> {}
+
+/// [`BlasContextAlloc::blas_context_alloc_from_infos`].
+fn alloc<BE, M>(module: &M, layout: &BlasContextLayout) -> BlasContext<BE>
 where
     BE: Backend,
     M: CKKSLinearTransformationAlloc<BE> + GetDegree,
@@ -814,9 +839,9 @@ mod tests {
     use std::panic::{AssertUnwindSafe, catch_unwind};
 
     use super::*;
-    use crate::layouts::{BlasLayout, BlasModuleAlloc, replicated};
+    use crate::layouts::{BlasCiphertextAlloc, BlasLayout, replicated};
     use poulpy_ckks::{CKKSInfos, SetGLWEPlaintextInfos};
-    use poulpy_hal::layouts::{CyclotomicOrder, HostBytesBackend, Module, Standard};
+    use poulpy_hal::layouts::{CyclotomicOrder, HostBytesBackend, Standard};
 
     #[test]
     fn contexts_allocate_every_map_of_their_layout() {

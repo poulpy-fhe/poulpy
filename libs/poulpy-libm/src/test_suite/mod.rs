@@ -81,17 +81,17 @@ macro_rules! libm_backend_test_suite {
                 $crate::test_suite::approximation::test_precision_tuning_log_n12::<$backend, $scalar, $encoder>($params);
             }
             run_test!(
-                goldschmidt_division,
-                $crate::test_suite::inverse::test_goldschmidt_division
+                goldschmidt_division_assign,
+                $crate::test_suite::inverse::test_goldschmidt_division_assign
             );
-            run_test!(rsqrt, $crate::test_suite::inverse::test_rsqrt);
+            run_test!(rsqrt_assign, $crate::test_suite::inverse::test_rsqrt_assign);
             run_test!(
-                inverse_negative_domain,
-                $crate::test_suite::inverse::test_inverse_negative_domain
+                inverse_negative_domain_assign,
+                $crate::test_suite::inverse::test_inverse_negative_domain_assign
             );
             run_test!(
-                inverse_full_domain,
-                $crate::test_suite::inverse::test_inverse_full_domain
+                inverse_full_domain_assign,
+                $crate::test_suite::inverse::test_inverse_full_domain_assign
             );
             run_test!(
                 interval_normalization,
