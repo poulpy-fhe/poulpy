@@ -50,7 +50,7 @@ pub trait CKKSArithmeticOps<BE: Backend> {
         C: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetTensorKey<BE>;
 
-    /// Scratch bytes for [`Self::ckks_scalbn`] and [`Self::ckks_ldexp`].
+    /// Scratch bytes for [`Self::ckks_scalbn`].
     fn ckks_scalbn_tmp_bytes<R>(&self, res: &R) -> usize
     where
         R: CKKSCtBounds;
@@ -68,6 +68,11 @@ pub trait CKKSArithmeticOps<BE: Backend> {
     where
         R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         I: GLWEToBackendRef<BE> + CKKSCtBounds;
+
+    /// Scratch bytes for [`Self::ckks_ldexp`].
+    fn ckks_ldexp_tmp_bytes<R>(&self, res: &R) -> usize
+    where
+        R: CKKSCtBounds;
 
     /// Alias of [`Self::ckks_scalbn`].
     fn ckks_ldexp<R, I>(&self, exponent: i32, res: &mut R, input: &I, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
@@ -133,6 +138,13 @@ where
             self.ckks_div_pow2_into(bits, res, input, scratch)?;
         }
         Ok(())
+    }
+
+    fn ckks_ldexp_tmp_bytes<R>(&self, res: &R) -> usize
+    where
+        R: CKKSCtBounds,
+    {
+        self.ckks_scalbn_tmp_bytes(res)
     }
 
     fn ckks_ldexp<R, I>(&self, exponent: i32, res: &mut R, input: &I, scratch: &mut ScratchArena<'_, BE>) -> Result<()>

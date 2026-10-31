@@ -112,18 +112,14 @@ where
 
     let mut sizing = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
     sizing.set_meta(params.prec().meta);
-    let size = module.ckks_fmax_slots_tmp_bytes(
-        &sizing,
-        &sizing,
-        &params.tsk_layout(),
-        &params.atk_layout(),
-        &params.atk_layout(),
-        &coeff_meta,
-    );
+    let (tsk_layout, atk_layout) = (params.tsk_layout(), params.atk_layout());
+    let size = module
+        .ckks_fmax_slots_tmp_bytes(&sizing, &sizing, &coeff_meta, &tsk_layout, &atk_layout)
+        .max(module.ckks_fmin_slots_tmp_bytes(&sizing, &sizing, &coeff_meta, &tsk_layout, &atk_layout));
     let mut scratch = ScratchOwned::<BE>::alloc(size);
     let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
-    let conj_key = gen_atk(&params, module, -1, &sk_raw, &mut scratch.borrow());
-    let rotation_keys = rotation_keys(&params, module, &sk_raw, &mut scratch);
+    let mut keys = rotation_keys(&params, module, &sk_raw, &mut scratch);
+    keys.insert(-1, gen_atk(&params, module, -1, &sk_raw, &mut scratch.borrow()));
     let input = ckks_encrypt_with_prec(
         &params,
         module,
@@ -143,25 +139,9 @@ where
     ] {
         let mut res = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
         if max {
-            module.ckks_fmax_slots(
-                &mut res,
-                &input,
-                &composite,
-                &tsk,
-                &rotation_keys,
-                &conj_key,
-                &mut scratch.borrow(),
-            )
+            module.ckks_fmax_slots(&mut res, &input, &composite, &tsk, &keys, &mut scratch.borrow())
         } else {
-            module.ckks_fmin_slots(
-                &mut res,
-                &input,
-                &composite,
-                &tsk,
-                &rotation_keys,
-                &conj_key,
-                &mut scratch.borrow(),
-            )
+            module.ckks_fmin_slots(&mut res, &input, &composite, &tsk, &keys, &mut scratch.borrow())
         }
         .unwrap_or_else(|e| panic!("ckks_{label}: {e}"));
         assert_eq!(res.log_delta(), log_delta, "{label}: log_delta");

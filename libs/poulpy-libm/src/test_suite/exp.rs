@@ -80,7 +80,7 @@ where
     sizing.set_meta(params.prec().meta);
     let size = plans
         .iter()
-        .map(|(_, _, plan)| module.ckks_exp_tmp_bytes(&sizing, &sizing, &params.tsk_layout(), plan))
+        .map(|(_, _, plan)| module.ckks_exp_tmp_bytes(&sizing, &sizing, plan, &params.tsk_layout()))
         .max()
         .unwrap();
     let mut scratch = ScratchOwned::<BE>::alloc(size);
@@ -155,7 +155,7 @@ where
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut sizing = module.ckks_ciphertext_alloc(params.base2k.into(), k_in.into());
     sizing.set_meta(params.prec().meta);
-    let size = module.ckks_exp_tmp_bytes(&sizing, &sizing, &params.tsk_layout(), &plan);
+    let size = module.ckks_exp_tmp_bytes(&sizing, &sizing, &plan, &params.tsk_layout());
     let mut scratch = ScratchOwned::<BE>::alloc(size);
     let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
 
@@ -228,8 +228,8 @@ where
     let mut sizing = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
     sizing.set_meta(params.prec().meta);
     let size = module
-        .ckks_exp2_tmp_bytes(&sizing, &sizing, &params.tsk_layout(), &exp2)
-        .max(module.ckks_expm1_tmp_bytes(&sizing, &sizing, &params.tsk_layout(), &expm1));
+        .ckks_exp2_tmp_bytes(&sizing, &sizing, &exp2, &params.tsk_layout())
+        .max(module.ckks_expm1_tmp_bytes(&sizing, &sizing, &expm1, &params.tsk_layout()));
     let mut scratch = ScratchOwned::<BE>::alloc(size);
     let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
     let input = ckks_encrypt_with_prec(
@@ -303,7 +303,7 @@ where
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0xa6u8; 32]);
     let mut sizing = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
     sizing.set_meta(params.prec().meta);
-    let size = module.ckks_exp10_tmp_bytes(&sizing, &sizing, &params.tsk_layout(), &plan);
+    let size = module.ckks_exp10_tmp_bytes(&sizing, &sizing, &plan, &params.tsk_layout());
     let mut scratch = ScratchOwned::<BE>::alloc(size);
     let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
     let input = ckks_encrypt_with_prec(

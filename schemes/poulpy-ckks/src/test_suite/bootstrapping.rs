@@ -666,8 +666,8 @@ where
     //    message ratio: `I(X)·q` becomes the integer part, the message the
     //    residue `Δ·c/q`.
     let mut ct = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
-    // `ckks_bootstrap_tmp_bytes` is the query of the raise step.
-    with_scratch::<BE, _>(boot_tmp, |s| {
+    let mod_up_tmp = module.ckks_bootstrap_mod_up_tmp_bytes(&ct, &ct0, &ctx, &keys_layout);
+    with_scratch::<BE, _>(mod_up_tmp, |s| {
         module.ckks_bootstrap_mod_up(&mut ct, &ct0, plan.eval_mod(), &bsk, s)
     })
     .unwrap();
@@ -950,8 +950,8 @@ where
     // 1) The whole raise step: lift, (encapsulate) denseToSparse / ModUp /
     //    sparseToDense, relabel by the message ratio.
     let mut ct = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
-    // `ckks_bootstrap_tmp_bytes` is the query of the raise step.
-    with_scratch::<BE, _>(boot_tmp, |s| {
+    let mod_up_tmp = module.ckks_bootstrap_mod_up_tmp_bytes(&ct, &ct0, &ctx, &keys_layout);
+    with_scratch::<BE, _>(mod_up_tmp, |s| {
         module.ckks_bootstrap_mod_up(&mut ct, &ct0, plan.eval_mod(), &bsk, s)
     })
     .unwrap();

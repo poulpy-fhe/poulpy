@@ -21,4 +21,4 @@ pub use select::{
     degree_for_precision_with, error_bits, precision_at_depth, precision_at_depth_multi_interval,
     precision_at_depth_multi_interval_with, precision_at_depth_with,
 };
-pub use sign::{sign_composite_coeffs, sign_composite_coeffs_with_margin};
+pub use sign::{sign_composite_coeffs, sign_composite_coeffs_with};

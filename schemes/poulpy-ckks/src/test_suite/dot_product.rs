@@ -940,8 +940,8 @@ where
 /// were prepared from, bit for bit, metadata, noise tag and canonical flag included, for one pair and for 16 fresh
 /// pairs, under every pair of hints: the one-pass sum on rank 1, the two-pass circuit on rank 2. Each preparation runs on the exact
 /// poisoned budget of its `ckks_<side>_operand_prepare_tmp_bytes`, and each prepared operand reports its source's layout, metadata and
-/// noise estimate, `None` from a source without metadata, so `ckks_dot_product_ct_tmp_bytes` of the prepared operands
-/// is that of the ciphertexts, on whose exact poisoned budget both products run. Wrong lengths, operands of another
+/// noise estimate, `None` from a source without metadata, so `ckks_dot_product_prepared_tmp_bytes` of the prepared operands
+/// is `ckks_dot_product_ct_tmp_bytes` of the ciphertexts, on whose exact poisoned budget both products run. Wrong lengths, operands of another
 /// degree, radix or rank, mixed layouts, radix 63, a missing tensor key and inputs without the budget are rejected, in
 /// that order, with `dst` untouched.
 pub fn test_dot_product_prepared<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
@@ -1015,7 +1015,7 @@ where
             let rhs: Vec<&_> = right[hb][..n].iter().collect();
             let mut have = alloc_ct(p, module, p.k);
             assert_eq!(
-                module.ckks_dot_product_ct_tmp_bytes(n, &have, lhs[0], rhs[0], tsk),
+                module.ckks_dot_product_prepared_tmp_bytes(n, &have, lhs[0], rhs[0], tsk),
                 bytes,
                 "{label}: scratch query"
             );

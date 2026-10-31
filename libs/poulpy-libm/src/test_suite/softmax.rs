@@ -70,7 +70,7 @@ where
 
     let mut sizing = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
     sizing.set_meta(params.prec().meta);
-    let size = module.ckks_softmax_tmp_bytes(&sizing, &sizing, &params.tsk_layout(), &params.atk_layout(), &plan);
+    let size = module.ckks_softmax_tmp_bytes(&sizing, &sizing, &plan, &params.tsk_layout(), &params.atk_layout());
     let mut scratch = ScratchOwned::<BE>::alloc(size);
     let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
     let rotation_keys = rotation_keys(&params, module, &sk_raw, &mut scratch);

@@ -217,13 +217,13 @@ pub trait CKKSPowOps<BE: Backend> {
         H: GetTensorKey<BE>;
 
     /// Scratch bytes for [`Self::ckks_pow`].
-    fn ckks_pow_tmp_bytes<R, B, E, T, P>(&self, res: &R, base: &B, exponent: &E, tsk: &T, plan: &PowPlan<P>) -> usize
+    fn ckks_pow_tmp_bytes<R, B, E, P, T>(&self, res: &R, base: &B, exponent: &E, plan: &PowPlan<P>, tsk: &T) -> usize
     where
         R: CKKSCtBounds,
         B: CKKSCtBounds,
         E: CKKSCtBounds,
-        T: GGLWEInfos,
-        P: CKKSInfos + LWEInfos;
+        P: CKKSInfos + LWEInfos,
+        T: GGLWEInfos;
 
     /// Evaluates `base^exponent = exp(exponent * log(base))`. `base` must lie in the plan's positive domain and the
     /// product in the domain of its `exp` stage.
@@ -313,20 +313,20 @@ where
         })
     }
 
-    fn ckks_pow_tmp_bytes<R, B, E, T, P>(&self, res: &R, base: &B, exponent: &E, tsk: &T, plan: &PowPlan<P>) -> usize
+    fn ckks_pow_tmp_bytes<R, B, E, P, T>(&self, res: &R, base: &B, exponent: &E, plan: &PowPlan<P>, tsk: &T) -> usize
     where
         R: CKKSCtBounds,
         B: CKKSCtBounds,
         E: CKKSCtBounds,
-        T: GGLWEInfos,
         P: CKKSInfos + LWEInfos,
+        T: GGLWEInfos,
     {
         // The logarithm and the product have the layout of `base`.
         let ct = BE::scratch_aligned(self.glwe_bytes_of_from_infos(base));
-        ct + self.ckks_log_tmp_bytes(base, base, tsk, &plan.log).max(
+        ct + self.ckks_log_tmp_bytes(base, base, &plan.log, tsk).max(
             ct + self
                 .ckks_mul_tmp_bytes(base, base, exponent, tsk)
-                .max(self.ckks_exp_tmp_bytes(res, base, tsk, &plan.exp)),
+                .max(self.ckks_exp_tmp_bytes(res, base, &plan.exp, tsk)),
         )
     }
 

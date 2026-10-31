@@ -1449,7 +1449,7 @@ where
     for atk in &keys_layout.rotation_key_layouts() {
         let s2c_mod_up = module
             .ckks_dft_tmp_bytes(&in_layout, &in_layout, ctx.slots_to_coeffs(), atk)
-            .max(module.ckks_mul_pow2_tmp_bytes(in_layout.size()))
+            .max(module.ckks_double_tmp_bytes(in_layout.size()))
             .max(raise);
         let c2s = module.ckks_dft_tmp_bytes(&boot_layout, &boot_layout, ctx.coeffs_to_slots(), atk);
         bytes = bytes.max(in_ct_bytes + s2c_mod_up).max(c2s);

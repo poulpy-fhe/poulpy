@@ -274,7 +274,7 @@ where
         + module
             .ckks_mul_tmp_bytes(ct, ct, ct, tsk)
             .max(module.ckks_square_tmp_bytes(ct, ct, tsk))
-            .max(module.ckks_mul_pow2_tmp_bytes(ct.max_size()))
+            .max(module.ckks_double_tmp_bytes(ct.max_size()))
             .max(module.ckks_sub_one_tmp_bytes(ct.max_size()))
             .max(module.ckks_sub_tmp_bytes(ct.max_size()))
             .max(module.glwe_normalize_tmp_bytes())

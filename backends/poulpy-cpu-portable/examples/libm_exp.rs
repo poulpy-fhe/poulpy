@@ -39,7 +39,7 @@ fn run() -> Result<()> {
     // The setup helper also creates the multiplication key and allocates the temporary memory reported by the operation.
     let plan = host_plan.map_plaintexts(|pt| upload_pt(&setup.module, pt));
     let mut context = setup.prepare(consumed, |module, sizing, params| {
-        module.ckks_exp_tmp_bytes(sizing, sizing, &params.tsk_layout(), &plan)
+        module.ckks_exp_tmp_bytes(sizing, sizing, &plan, &params.tsk_layout())
     });
 
     // 3. Pack many values into one ciphertext and encrypt them together.

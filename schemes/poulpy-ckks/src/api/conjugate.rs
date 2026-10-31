@@ -32,6 +32,8 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 /// For `_assign` variants `offset = 0` and CKKS layout and scale metadata is unchanged.
 /// Component noise metadata is cleared.
 pub trait CKKSConjugateOps<BE: Backend> {
+    /// Scratch bytes for [`Self::ckks_conjugate_into`], [`Self::ckks_conjugate_assign`] and
+    /// [`Self::ckks_conjugate_rotate_into`].
     fn ckks_conjugate_tmp_bytes<C, K>(&self, ct_infos: &C, key_infos: &K) -> usize
     where
         C: CKKSCtBounds,
@@ -68,7 +70,8 @@ pub trait CKKSConjugateOps<BE: Backend> {
     /// Computes `dst = conj(rot_k(src))`: conjugation composed with a rotation
     /// of `k` slots, as one key switch under the Galois element
     /// `-galois_element(k)`. PaCo's psi tail is the caller; `k = 0` is plain
-    /// conjugation, spelled [`Self::ckks_conjugate_into`].
+    /// conjugation, spelled [`Self::ckks_conjugate_into`]. Size scratch with
+    /// [`Self::ckks_conjugate_tmp_bytes`].
     ///
     /// # Errors
     ///

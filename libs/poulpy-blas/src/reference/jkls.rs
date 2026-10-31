@@ -25,8 +25,7 @@ use crate::{
 /// [`crate::oep::BlasMatMulImpl`] call once per block of `res`. It runs on inputs the prepared product's validator,
 /// [`crate::layouts::validate_blas_matmul_prepared`], accepted, and checks nothing but its scratch.
 pub trait BlasJklsReference<BE: Backend> {
-    /// poulpy-ckks's `ckks_dot_product_ct` query for `terms` pairs, which covers `ckks_dot_product_prepared` on pairs
-    /// prepared from terms of these layouts.
+    /// poulpy-ckks's `ckks_dot_product_prepared` query for `terms` pairs prepared from terms of these layouts.
     fn blas_jkls_block_tmp_bytes_reference<R, L, Rh, T>(&self, terms: usize, res: &R, lhs: &L, rhs: &Rh, tsk: &T) -> usize
     where
         Self: CKKSDotProductOps<BE>,
@@ -35,7 +34,7 @@ pub trait BlasJklsReference<BE: Backend> {
         Rh: CKKSCtBounds,
         T: GGLWEInfos,
     {
-        self.ckks_dot_product_ct_tmp_bytes(terms, res, lhs, rhs, tsk)
+        self.ckks_dot_product_prepared_tmp_bytes(terms, res, lhs, rhs, tsk)
     }
 
     /// The JKLS kernel: `res = sum_t lhs[t] rhs[t]` by poulpy-ckks's `ckks_dot_product_prepared`, which is
