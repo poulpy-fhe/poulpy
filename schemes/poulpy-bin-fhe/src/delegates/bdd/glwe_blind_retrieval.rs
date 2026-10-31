@@ -14,7 +14,7 @@ where
         BE::glwe_blind_retrieval_tmp_bytes::<R, K>(self, res_infos, k_infos)
     }
     #[allow(clippy::too_many_arguments)]
-    fn glwe_blind_retrieval_statefull<R, K>(
+    fn glwe_blind_retrieval_stateful_assign<R, K>(
         &self,
         bit_rsh: usize,
         bit_mask: usize,
@@ -25,10 +25,10 @@ where
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
         K: GetGGSWBit<BE>,
     {
-        BE::glwe_blind_retrieval_statefull::<R, K>(self, bit_rsh, bit_mask, res, bits, scratch)
+        BE::glwe_blind_retrieval_stateful_assign::<R, K>(self, bit_rsh, bit_mask, res, bits, scratch)
     }
     #[allow(clippy::too_many_arguments)]
-    fn glwe_blind_retrieval_statefull_rev<R, K>(
+    fn glwe_blind_retrieval_stateful_rev_assign<R, K>(
         &self,
         bit_rsh: usize,
         bit_mask: usize,
@@ -39,6 +39,6 @@ where
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
         K: GetGGSWBit<BE>,
     {
-        BE::glwe_blind_retrieval_statefull_rev::<R, K>(self, bit_rsh, bit_mask, res, bits, scratch)
+        BE::glwe_blind_retrieval_stateful_rev_assign::<R, K>(self, bit_rsh, bit_mask, res, bits, scratch)
     }
 }

@@ -367,7 +367,7 @@ pub trait FheUintPrepareDebug<
 {
     /// Populates `res` by bootstrapping each bit of `bits` through `key`'s
     /// circuit-bootstrapping pipeline, storing the output GGSW in standard form.
-    fn fhe_uint_debug_prepare(
+    fn fhe_uint_prepare_debug(
         &self,
         res: &mut FheUintPreparedDebug<BE::OwnedBuf, T, BE::ZnxWord>,
         bits: &FheUint<BE::OwnedBuf, T, BE::ZnxWord>,

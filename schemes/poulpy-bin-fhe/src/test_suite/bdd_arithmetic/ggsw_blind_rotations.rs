@@ -23,7 +23,7 @@ use crate::{
 };
 use poulpy_core::test_suite::with_scratch;
 
-pub fn test_scalar_to_ggsw_blind_rotation<BRA, BE>(test_context: &TestContext<BRA, BE>)
+pub fn test_ggsw_blind_rotation_from_scalar<BRA, BE>(test_context: &TestContext<BRA, BE>)
 where
     BRA: BlindRotationAlgo,
     Module<BE>: crate::api::FheUintPreparedEncryptSk<u32, BE>
@@ -118,14 +118,14 @@ where
             // How many bits to take
             let bit_size: usize = (32 - bit_start).min(digit);
 
-            let rotation_bytes = module.scalar_to_ggsw_blind_rotation_tmp_bytes(&ggsw_res_infos, &ggsw_k_infos);
+            let rotation_bytes = module.ggsw_blind_rotation_from_scalar_tmp_bytes(&ggsw_res_infos, &ggsw_k_infos);
             let before = snapshot_ggsw::<BE, _>(&res);
-            assert_short_scratch_panics::<BE, _>(rotation_bytes, "scalar_to_ggsw_blind_rotation: insufficient scratch", |s| {
-                module.scalar_to_ggsw_blind_rotation(false, bit_start, bit_size, bit_step, &mut res, &scalar, &k_enc_prep, s)
+            assert_short_scratch_panics::<BE, _>(rotation_bytes, "ggsw_blind_rotation_from_scalar: insufficient scratch", |s| {
+                module.ggsw_blind_rotation_from_scalar(false, bit_start, bit_size, bit_step, &mut res, &scalar, &k_enc_prep, s)
             });
             assert_eq!(before, snapshot_ggsw::<BE, _>(&res));
             with_scratch::<BE, _>(rotation_bytes, |s| {
-                module.scalar_to_ggsw_blind_rotation(false, bit_start, bit_size, bit_step, &mut res, &scalar, &k_enc_prep, s)
+                module.ggsw_blind_rotation_from_scalar(false, bit_start, bit_size, bit_step, &mut res, &scalar, &k_enc_prep, s)
             });
 
             let rot: i64 = (((k >> bit_start) & mask) << bit_step) as i64;

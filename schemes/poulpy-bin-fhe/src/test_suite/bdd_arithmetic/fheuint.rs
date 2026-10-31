@@ -22,7 +22,9 @@ use rand::Rng;
 use crate::test_suite::bdd_arithmetic::{TEST_GGSW_INFOS, TEST_GLWE_INFOS, TestContext};
 use crate::test_suite::parity::{assert_panics_with, assert_short_scratch_panics, snapshot_glwe};
 use crate::{
-    bdd_arithmetic::{BDDKeyPrepared, Cmux, FheUint, FheUintPrepared, FheUintPreparedEncryptSk, FheUintPreparedFactory, ToBits},
+    bdd_arithmetic::{
+        BDDKeyPrepared, FheUint, FheUintPrepared, FheUintPreparedEncryptSk, FheUintPreparedFactory, GLWECmux, ToBits,
+    },
     blind_rotation::{BlindRotationAlgo, BlindRotationKeyInfos},
 };
 
@@ -368,7 +370,7 @@ pub fn test_fhe_uint_from_fhe_uint_prepared<
 ) where
     Module<BE>: GLWEEncryptSk<BE>
         + GLWEDecrypt<BE>
-        + Cmux<BE>
+        + GLWECmux<BE>
         + GLWEPack<BE>
         + GLWECopy<BE>
         + FheUintPreparedEncryptSk<u32, BE>

@@ -53,3 +53,48 @@ pub fn fhe_uint_prepared_encrypt_sk_reference<T: UnsignedInteger + ToBits, BE: B
 
     scratch.wipe(fhe_uint_prepared_encrypt_sk_tmp_bytes_reference(module, &*res));
 }
+
+/// Reference bodies of the [`FheUintPreparedEncryptSkImpl`](crate::oep::FheUintPreparedEncryptSkImpl) methods, which
+/// [`impl_fhe_uint_prepared_encrypt_sk_reference_full!`](crate::impl_fhe_uint_prepared_encrypt_sk_reference_full)
+/// forwards to.
+pub trait FheUintPreparedEncryptSkReference<T: UnsignedInteger + ToBits, BE: Backend> {
+    fn fhe_uint_prepared_encrypt_sk_tmp_bytes_reference<A: GGSWInfos>(&self, infos: &A) -> usize;
+
+    fn fhe_uint_prepared_encrypt_sk_reference<S>(
+        &self,
+        res: &mut FheUintPrepared<BE::OwnedBuf, T, BE>,
+        value: T,
+        sk: &S,
+        source_xe: &mut Source,
+        source_xa: &mut Source,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos;
+}
+
+impl<T: UnsignedInteger + ToBits, BE: Backend<ZnxWord = i64>> FheUintPreparedEncryptSkReference<T, BE> for Module<BE>
+where
+    Module<BE>: ModuleN
+        + GGSWEncryptSk<BE>
+        + GGSWPreparedFactory<BE>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+        + GGSWAlloc,
+{
+    fn fhe_uint_prepared_encrypt_sk_tmp_bytes_reference<A: GGSWInfos>(&self, infos: &A) -> usize {
+        fhe_uint_prepared_encrypt_sk_tmp_bytes_reference(self, infos)
+    }
+
+    fn fhe_uint_prepared_encrypt_sk_reference<S>(
+        &self,
+        res: &mut FheUintPrepared<BE::OwnedBuf, T, BE>,
+        value: T,
+        sk: &S,
+        source_xe: &mut Source,
+        source_xa: &mut Source,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
+    {
+        fhe_uint_prepared_encrypt_sk_reference(self, res, value, sk, source_xe, source_xa, scratch)
+    }
+}

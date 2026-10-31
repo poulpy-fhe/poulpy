@@ -25,33 +25,9 @@ use poulpy_hal::{
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait CircuitBootstrappingExecuteImpl<BRA: BlindRotationAlgo>: Backend<ZnxWord = i64, Ring = Standard> {
-    /// Default body: `circuit_bootstrapping_execute_tmp_bytes_derived`, the selected
+    /// Default body: `circuit_bootstrapping_execute_to_constant_tmp_bytes_derived`, the selected
     /// [`Self::circuit_bootstrapping_execute_prepared_tmp_bytes`] at a plan layout over `res_infos` with no `log_domain`
     /// or gaps, which bounds every domain at that output layout.
-    ///
-    /// Scratch bound of [`Self::circuit_bootstrapping_execute_to_constant`] at every `log_domain`; may report less than
-    /// the reference, never less than the body takes.
-    fn circuit_bootstrapping_execute_tmp_bytes<R, A>(
-        module: &Module<Self>,
-        block_size: usize,
-        extension_factor: usize,
-        res_infos: &R,
-        cbt_infos: &A,
-    ) -> usize
-    where
-        R: GGSWInfos,
-        A: CircuitBootstrappingKeyInfos,
-    {
-        crate::oep::derived::circuit_bootstrapping::circuit_bootstrapping_execute_tmp_bytes_derived(
-            module,
-            block_size,
-            extension_factor,
-            res_infos,
-            cbt_infos,
-        )
-    }
-    /// Default body: `circuit_bootstrapping_execute_to_constant_tmp_bytes_derived`, the selected
-    /// [`Self::circuit_bootstrapping_execute_tmp_bytes`].
     ///
     /// Scratch bound of [`Self::circuit_bootstrapping_execute_to_constant`]; may report less than the reference, never
     /// less than the body takes.
@@ -238,7 +214,7 @@ pub unsafe trait CircuitBootstrappingKeyEncryptSkImpl<BRA: BlindRotationAlgo>: B
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait CircuitBootstrappingKeyPreparedImpl<BRA: BlindRotationAlgo>: Backend {
+pub unsafe trait CircuitBootstrappingKeyPreparedFactoryImpl<BRA: BlindRotationAlgo>: Backend {
     /// Scratch bound of [`Self::circuit_bootstrapping_key_prepare`]; may report less than the reference, never less than
     /// the body takes.
     fn circuit_bootstrapping_key_prepare_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
@@ -266,7 +242,7 @@ macro_rules! impl_circuit_bootstrapping_execute_reference_full {
                 res_infos: &R,
                 key: &$crate::circuit_bootstrapping::CircuitBootstrappingKeyPrepared<Self::OwnedBuf, $algo, Self>,
             ) -> $crate::circuit_bootstrapping::CircuitBootstrappingPlan<Self::OwnedBuf> {
-                $crate::reference::circuit_bootstrapping::circuit_bootstrapping_prepare_to_constant_reference::<R, _, $algo, Self>(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::circuit_bootstrapping::CircuitBootstrappingExecuteReference<$algo, $be>>::circuit_bootstrapping_prepare_to_constant_reference(
                     module,
                     log_domain,
                     extension_factor,
@@ -282,7 +258,7 @@ macro_rules! impl_circuit_bootstrapping_execute_reference_full {
                 res_infos: &R,
                 key: &$crate::circuit_bootstrapping::CircuitBootstrappingKeyPrepared<Self::OwnedBuf, $algo, Self>,
             ) -> $crate::circuit_bootstrapping::CircuitBootstrappingPlan<Self::OwnedBuf> {
-                $crate::reference::circuit_bootstrapping::circuit_bootstrapping_prepare_to_exponent_reference::<R, _, $algo, Self>(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::circuit_bootstrapping::CircuitBootstrappingExecuteReference<$algo, $be>>::circuit_bootstrapping_prepare_to_exponent_reference(
                     module,
                     log_gap_out,
                     log_domain,
@@ -296,7 +272,7 @@ macro_rules! impl_circuit_bootstrapping_execute_reference_full {
                 plan: &$crate::circuit_bootstrapping::CircuitBootstrappingPlanLayout,
                 key: &A,
             ) -> usize {
-                $crate::reference::circuit_bootstrapping::circuit_bootstrapping_execute_prepared_tmp_bytes_reference::<_, _, $algo, Self>(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::circuit_bootstrapping::CircuitBootstrappingExecuteReference<$algo, $be>>::circuit_bootstrapping_execute_prepared_tmp_bytes_reference(
                     module, plan, key,
                 )
             }
@@ -314,7 +290,7 @@ macro_rules! impl_circuit_bootstrapping_execute_reference_full {
                     + ::poulpy_core::layouts::GGSWInfos,
                 L: ::poulpy_core::layouts::LWEToBackendRef<Self> + ::poulpy_core::layouts::LWEInfos,
             {
-                $crate::reference::circuit_bootstrapping::circuit_bootstrapping_execute_prepared_reference::<R, L, _, $algo, Self>(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::circuit_bootstrapping::CircuitBootstrappingExecuteReference<$algo, $be>>::circuit_bootstrapping_execute_prepared_reference(
                     module, res, lwe, plan, key, scratch,
                 )
             }
@@ -330,7 +306,7 @@ macro_rules! impl_circuit_bootstrapping_key_encrypt_sk_reference_full {
             where
                 A: $crate::circuit_bootstrapping::CircuitBootstrappingKeyInfos,
             {
-                $crate::reference::circuit_bootstrapping::circuit_bootstrapping_key_encrypt_sk_tmp_bytes_reference::<A, _, $algo, Self>(module, infos)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::circuit_bootstrapping::CircuitBootstrappingKeyEncryptSkReference<$algo, $be>>::circuit_bootstrapping_key_encrypt_sk_tmp_bytes_reference(module, infos)
             }
             fn circuit_bootstrapping_key_encrypt_sk<S0, S1>(
                 module: &::poulpy_hal::layouts::Module<Self>,
@@ -348,23 +324,23 @@ macro_rules! impl_circuit_bootstrapping_key_encrypt_sk_reference_full {
                     + ::poulpy_core::layouts::GLWEInfos
                     + ::poulpy_core::GetDistribution,
             {
-                $crate::reference::circuit_bootstrapping::circuit_bootstrapping_key_encrypt_sk_reference::<S0, S1, _, $algo, Self>(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::circuit_bootstrapping::CircuitBootstrappingKeyEncryptSkReference<$algo, $be>>::circuit_bootstrapping_key_encrypt_sk_reference(
                     module, res, sk_lwe, sk_glwe, source_xe, source_xa, scratch,
                 )
             }
         }
     };
 }
-/// Selects the reference implementation of `CircuitBootstrappingKeyPreparedImpl<$algo>` for `$be`.
+/// Selects the reference implementation of `CircuitBootstrappingKeyPreparedFactoryImpl<$algo>` for `$be`.
 #[macro_export]
-macro_rules! impl_circuit_bootstrapping_key_prepared_reference_full {
+macro_rules! impl_circuit_bootstrapping_key_prepared_factory_reference_full {
     ($be:ty, $algo:ty) => {
-        unsafe impl $crate::oep::CircuitBootstrappingKeyPreparedImpl<$algo> for $be {
+        unsafe impl $crate::oep::CircuitBootstrappingKeyPreparedFactoryImpl<$algo> for $be {
             fn circuit_bootstrapping_key_prepare_tmp_bytes<A>(module: &::poulpy_hal::layouts::Module<Self>, infos: &A) -> usize
             where
                 A: $crate::circuit_bootstrapping::CircuitBootstrappingKeyInfos,
             {
-                $crate::reference::circuit_bootstrapping::circuit_bootstrapping_key_prepare_tmp_bytes_reference::<A, _, $algo, Self>(module, infos)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::circuit_bootstrapping::CircuitBootstrappingKeyPreparedFactoryReference<$algo, $be>>::circuit_bootstrapping_key_prepare_tmp_bytes_reference(module, infos)
             }
             fn circuit_bootstrapping_key_prepare(
                 module: &::poulpy_hal::layouts::Module<Self>,
@@ -372,7 +348,7 @@ macro_rules! impl_circuit_bootstrapping_key_prepared_reference_full {
                 other: &$crate::circuit_bootstrapping::CircuitBootstrappingKey<Self::OwnedBuf, $algo, Self::ZnxWord>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) {
-                $crate::reference::circuit_bootstrapping::circuit_bootstrapping_key_prepare_reference::<_, $algo, Self>(module, res, other, scratch)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::circuit_bootstrapping::CircuitBootstrappingKeyPreparedFactoryReference<$algo, $be>>::circuit_bootstrapping_key_prepare_reference(module, res, other, scratch)
             }
         }
     };
@@ -383,6 +359,6 @@ macro_rules! impl_circuit_bootstrapping_reference_full {
     ($be:ty, $algo:ty) => {
         $crate::impl_circuit_bootstrapping_execute_reference_full!($be, $algo);
         $crate::impl_circuit_bootstrapping_key_encrypt_sk_reference_full!($be, $algo);
-        $crate::impl_circuit_bootstrapping_key_prepared_reference_full!($be, $algo);
+        $crate::impl_circuit_bootstrapping_key_prepared_factory_reference_full!($be, $algo);
     };
 }

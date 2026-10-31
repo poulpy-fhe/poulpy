@@ -2,8 +2,8 @@ use crate::bdd_arithmetic::*;
 use poulpy_core::{layouts::*, *};
 use poulpy_hal::{api::*, layouts::*};
 #[allow(clippy::too_many_arguments)]
-/// Independently callable canonical implementation of [`Cswap::cswap_tmp_bytes`].
-pub fn cswap_tmp_bytes_reference<BE: Backend<ZnxWord = i64>, R, A, S>(
+/// Independently callable canonical implementation of [`GLWECswap::glwe_cswap_assign_tmp_bytes`].
+pub fn glwe_cswap_assign_tmp_bytes_reference<BE: Backend<ZnxWord = i64>, R, A, S>(
     module: &Module<BE>,
     res_a_infos: &R,
     res_b_infos: &A,
@@ -76,8 +76,8 @@ where
             .max(module.glwe_copy_tmp_bytes(res_b_infos, res_b_infos))
 }
 #[allow(clippy::too_many_arguments)]
-/// Independently callable canonical implementation of [`Cswap::cswap`].
-pub fn cswap_reference<BE, A, B>(
+/// Independently callable canonical implementation of [`GLWECswap::glwe_cswap_assign`].
+pub fn glwe_cswap_assign_reference<BE, A, B>(
     module: &Module<BE>,
     res_a: &mut A,
     res_b: &mut B,
@@ -117,8 +117,8 @@ pub fn cswap_reference<BE, A, B>(
 
     let scratch = scratch.borrow();
     assert!(
-        scratch.available() >= cswap_tmp_bytes_reference(module, res_a, res_b, s),
-        "cswap: insufficient scratch"
+        scratch.available() >= glwe_cswap_assign_tmp_bytes_reference(module, res_a, res_b, s),
+        "glwe_cswap_assign: insufficient scratch"
     );
 
     let res_base2k: usize = res_a.base2k().as_usize();
@@ -298,5 +298,71 @@ pub fn cswap_reference<BE, A, B>(
                 &mut scratch_norm.borrow(),
             );
         }
+    }
+}
+
+/// Reference bodies of the [`GLWECswapImpl`](crate::oep::GLWECswapImpl) methods, which
+/// [`impl_glwe_cswap_reference_full!`](crate::impl_glwe_cswap_reference_full) forwards to.
+pub trait GLWECswapReference<BE: Backend> {
+    fn glwe_cswap_assign_tmp_bytes_reference<R, A, S>(&self, res_a_infos: &R, res_b_infos: &A, s_infos: &S) -> usize
+    where
+        R: GLWEInfos,
+        A: GLWEInfos,
+        S: GGSWInfos;
+
+    fn glwe_cswap_assign_reference<A, B>(
+        &self,
+        res_a: &mut A,
+        res_b: &mut B,
+        s: &GGSWPreparedBackendRef<'_, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        A: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
+        B: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos;
+}
+
+impl<BE: Backend<ZnxWord = i64>> GLWECswapReference<BE> for Module<BE>
+where
+    Module<BE>: GLWEBytesOf<BE>
+        + ModuleN
+        + GLWEExternalProductDft<BE>
+        + GLWESub<BE>
+        + GLWECopy<BE>
+        + GLWENormalize<BE>
+        + VecZnxBigAddSmall<BE>
+        + VecZnxBigBytesOf
+        + VecZnxBigNormalize<BE>
+        + VecZnxBigNormalizeTmpBytes
+        + VecZnxBigSubSmallA<BE>
+        + VecZnxDftAddAssign<BE>
+        + VecZnxDftApply<BE>
+        + VecZnxDftBytesOf
+        + VecZnxDftZero<BE>
+        + VecZnxIdftApply<BE>
+        + VecZnxIdftApplyTmpBytes
+        + VecZnxNormalizeTmpBytes
+        + VmpApplyDftToDft<BE>
+        + VmpApplyDftToDftTmpBytes,
+{
+    fn glwe_cswap_assign_tmp_bytes_reference<R, A, S>(&self, res_a_infos: &R, res_b_infos: &A, s_infos: &S) -> usize
+    where
+        R: GLWEInfos,
+        A: GLWEInfos,
+        S: GGSWInfos,
+    {
+        glwe_cswap_assign_tmp_bytes_reference(self, res_a_infos, res_b_infos, s_infos)
+    }
+
+    fn glwe_cswap_assign_reference<A, B>(
+        &self,
+        res_a: &mut A,
+        res_b: &mut B,
+        s: &GGSWPreparedBackendRef<'_, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        A: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
+        B: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
+    {
+        glwe_cswap_assign_reference(self, res_a, res_b, s, scratch)
     }
 }

@@ -15,7 +15,7 @@ use poulpy_hal::layouts::{Backend, Ring, ScratchArena, Standard};
 ///
 /// Allocation and sizing are direct on the module; the preparation and its
 /// query dispatch through
-/// [`CircuitBootstrappingKeyPreparedImpl`](crate::oep::CircuitBootstrappingKeyPreparedImpl).
+/// [`CircuitBootstrappingKeyPreparedFactoryImpl`](crate::oep::CircuitBootstrappingKeyPreparedFactoryImpl).
 pub trait CircuitBootstrappingKeyPreparedFactory<BRA: BlindRotationAlgo, BE: Backend>: Sized {
     /// Allocates a zero-filled prepared key bundle of `infos`: the prepared
     /// blind-rotation key, the prepared tensor-switching key and one prepared

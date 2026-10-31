@@ -258,9 +258,8 @@ where
                 assert_eq!(want, snapshot_ggsw::<BT, _>(&actual));
                 for legacy in [false, true] {
                     let bytes = match gap {
-                        None if legacy => {
-                            module_test.circuit_bootstrapping_execute_tmp_bytes(block_size, extension, &output, &key_test)
-                        }
+                        None if legacy => module_test
+                            .circuit_bootstrapping_execute_to_constant_tmp_bytes(block_size, extension, &output, &key_test),
                         None => module_test
                             .circuit_bootstrapping_execute_to_constant_tmp_bytes(block_size, extension, &output, &key_test),
                         Some(gap) => module_test.circuit_bootstrapping_execute_to_exponent_tmp_bytes(

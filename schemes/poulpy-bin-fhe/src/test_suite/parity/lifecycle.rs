@@ -2,9 +2,9 @@
 use super::{ParityBackend, assert_panics_with, fixture_glwe, gglwe_prepared_bytes, snapshot_glwe};
 use crate::{
     api::{
-        BDDKeyEncryptSk, BDDKeyPreparedFactory, BlindRotationKeyEncryptSk, BlindRotationKeyPreparedFactory,
-        CircuitBootstrappingKeyEncryptSk, CircuitBootstrappingKeyPreparedFactory, ExecuteBDDCircuit1WTo1W,
-        ExecuteBDDCircuit2WTo1W, FheUintPrepare, FheUintPreparedEncryptSk,
+        BDDCircuitExecute1WTo1W, BDDCircuitExecute2WTo1W, BDDKeyEncryptSk, BDDKeyPreparedFactory, BlindRotationKeyEncryptSk,
+        BlindRotationKeyPreparedFactory, CircuitBootstrappingKeyEncryptSk, CircuitBootstrappingKeyPreparedFactory,
+        FheUintPrepare, FheUintPreparedEncryptSk,
     },
     bdd_arithmetic::{
         BDDKey, BDDKeyInfos, BDDKeyLayout, BDDKeyPrepared, FheUint, FheUintPrepared, FheUintPreparedFactory, GetBitCircuitInfo,
@@ -12,6 +12,10 @@ use crate::{
     },
     blind_rotation::{BlindRotationKeyLayout, CGGI},
     circuit_bootstrapping::CircuitBootstrappingKeyLayout,
+    reference::{
+        bdd::{BDDKeyEncryptSkReference, FheUintPreparedEncryptSkReference},
+        circuit_bootstrapping::CircuitBootstrappingKeyEncryptSkReference,
+    },
 };
 use poulpy_core::test_suite::with_scratch;
 use poulpy_core::{
@@ -214,8 +218,8 @@ where
         + GLWEExternalProduct<BR>
         + GLWESecretSampling<BR>
         + LWESecretSampling<BR>
-        + ExecuteBDDCircuit1WTo1W<BR>
-        + ExecuteBDDCircuit2WTo1W<BR>,
+        + BDDCircuitExecute1WTo1W<BR>
+        + BDDCircuitExecute2WTo1W<BR>,
     Module<BT>: BDDKeyPreparedFactory<CGGI, BT>
         + CircuitBootstrappingKeyPreparedFactory<CGGI, BT>
         + BlindRotationKeyPreparedFactory<CGGI, BT>
@@ -226,8 +230,8 @@ where
         + FheUintPrepare<CGGI, BT>
         + GGSWPreparedFactory<BT>
         + GLWEExternalProduct<BT>
-        + ExecuteBDDCircuit1WTo1W<BT>
-        + ExecuteBDDCircuit2WTo1W<BT>,
+        + BDDCircuitExecute1WTo1W<BT>
+        + BDDCircuitExecute2WTo1W<BT>,
 {
     assert_eq!(module_ref.n(), module_test.n());
     for bridge in [false, true] {
@@ -288,8 +292,8 @@ where
         };
         let mut input_test = FheUint::<_, u8, i64>::alloc_from_infos(module_test, &bits_layout);
         input_ref.transfer_into(&mut input_test);
-        let mut res_ref = module_ref.alloc_fhe_uint_prepared_from_infos(&output);
-        let mut res_test = module_test.alloc_fhe_uint_prepared_from_infos(&output);
+        let mut res_ref = module_ref.fhe_uint_prepared_alloc_from_infos(&output);
+        let mut res_test = module_test.fhe_uint_prepared_alloc_from_infos(&output);
         let br_bytes = module_ref.fhe_uint_prepare_tmp_bytes(3, 1, &output, &bits_layout, &layout);
         let bt_bytes = module_test.fhe_uint_prepare_tmp_bytes(3, 1, &output, &bits_layout, &layout);
         with_scratch::<BR, _>(br_bytes, |s| {
@@ -324,8 +328,8 @@ where
                 assert_eq!(expected, observe(module_test, &res_test));
             }
         }
-        let mut right_ref = module_ref.alloc_fhe_uint_prepared_from_infos(&output);
-        let mut right_test = module_test.alloc_fhe_uint_prepared_from_infos(&output);
+        let mut right_ref = module_ref.fhe_uint_prepared_alloc_from_infos(&output);
+        let mut right_test = module_test.fhe_uint_prepared_alloc_from_infos(&output);
         with_scratch::<BR, _>(br_bytes, |s| {
             module_ref.fhe_uint_prepare_custom(&mut right_ref, &input_ref, 0, 0, &key_ref, s)
         });
@@ -337,33 +341,33 @@ where
             let mut expected = FheUint::<_, u8, i64>::alloc_from_infos(module_ref, &bits_layout);
             let mut actual = FheUint::<_, u8, i64>::alloc_from_infos(module_test, &bits_layout);
             let rb = if two_words {
-                module_ref.execute_bdd_circuit_2w_to_1w_tmp_bytes::<_, u8, _, _, _>(&bits_layout, &output, &circuit, &key_ref)
+                module_ref.bdd_circuit_execute_2w_to_1w_tmp_bytes::<_, u8, _, _, _>(&bits_layout, &output, &circuit, &key_ref)
             } else {
-                module_ref.execute_bdd_circuit_1w_to_1w_tmp_bytes::<_, u8, _, _, _>(&bits_layout, &output, &circuit, &key_ref)
+                module_ref.bdd_circuit_execute_1w_to_1w_tmp_bytes::<_, u8, _, _, _>(&bits_layout, &output, &circuit, &key_ref)
             };
             let tb = if two_words {
-                module_test.execute_bdd_circuit_2w_to_1w_tmp_bytes::<_, u8, _, _, _>(&bits_layout, &output, &circuit, &key_test)
+                module_test.bdd_circuit_execute_2w_to_1w_tmp_bytes::<_, u8, _, _, _>(&bits_layout, &output, &circuit, &key_test)
             } else {
-                module_test.execute_bdd_circuit_1w_to_1w_tmp_bytes::<_, u8, _, _, _>(&bits_layout, &output, &circuit, &key_test)
+                module_test.bdd_circuit_execute_1w_to_1w_tmp_bytes::<_, u8, _, _, _>(&bits_layout, &output, &circuit, &key_test)
             };
             with_scratch::<BR, _>(rb, |s| {
                 if two_words {
-                    module_ref.execute_bdd_circuit_2w_to_1w(&mut expected, &res_ref, &right_ref, &circuit, &key_ref, s)
+                    module_ref.bdd_circuit_execute_2w_to_1w(&mut expected, &res_ref, &right_ref, &circuit, &key_ref, s)
                 } else {
-                    module_ref.execute_bdd_circuit_1w_to_1w(&mut expected, &res_ref, &circuit, &key_ref, s)
+                    module_ref.bdd_circuit_execute_1w_to_1w(&mut expected, &res_ref, &circuit, &key_ref, s)
                 }
             });
             with_scratch::<BT, _>(tb, |s| {
                 if two_words {
-                    module_test.execute_bdd_circuit_2w_to_1w(&mut actual, &res_test, &right_test, &circuit, &key_test, s)
+                    module_test.bdd_circuit_execute_2w_to_1w(&mut actual, &res_test, &right_test, &circuit, &key_test, s)
                 } else {
-                    module_test.execute_bdd_circuit_1w_to_1w(&mut actual, &res_test, &circuit, &key_test, s)
+                    module_test.bdd_circuit_execute_1w_to_1w(&mut actual, &res_test, &circuit, &key_test, s)
                 }
             });
             assert_eq!(snapshot_glwe::<BR, _>(&expected), snapshot_glwe::<BT, _>(&actual));
             for threads in [1usize, 2, 4] {
                 let bytes = if two_words {
-                    module_test.execute_bdd_circuit_2w_to_1w_multi_thread_tmp_bytes::<_, u8, _, _, _>(
+                    module_test.bdd_circuit_execute_2w_to_1w_multi_thread_tmp_bytes::<_, u8, _, _, _>(
                         threads,
                         &bits_layout,
                         &output,
@@ -371,7 +375,7 @@ where
                         &key_test,
                     )
                 } else {
-                    module_test.execute_bdd_circuit_1w_to_1w_multi_thread_tmp_bytes::<_, u8, _, _, _>(
+                    module_test.bdd_circuit_execute_1w_to_1w_multi_thread_tmp_bytes::<_, u8, _, _, _>(
                         threads,
                         &bits_layout,
                         &output,
@@ -381,7 +385,7 @@ where
                 };
                 with_scratch::<BT, _>(bytes, |s| {
                     if two_words {
-                        module_test.execute_bdd_circuit_2w_to_1w_multi_thread(
+                        module_test.bdd_circuit_execute_2w_to_1w_multi_thread(
                             threads,
                             &mut actual,
                             &res_test,
@@ -391,7 +395,7 @@ where
                             s,
                         )
                     } else {
-                        module_test.execute_bdd_circuit_1w_to_1w_multi_thread(
+                        module_test.bdd_circuit_execute_1w_to_1w_multi_thread(
                             threads,
                             &mut actual,
                             &res_test,
@@ -437,13 +441,12 @@ where
         let mut expected = BDDKey::alloc_from_infos(module, &layout);
         let mut actual = BDDKey::alloc_from_infos(module, &layout);
         let circuit_bytes =
-            crate::reference::circuit_bootstrapping::circuit_bootstrapping_key_encrypt_sk_tmp_bytes_reference::<_, _, CGGI, BE>(
+            CircuitBootstrappingKeyEncryptSkReference::<CGGI, BE>::circuit_bootstrapping_key_encrypt_sk_tmp_bytes_reference(
                 module,
                 &layout.cbt_layout,
             );
         poulpy_core::test_suite::assert_wipes_scratch::<BE>(circuit_bytes, |scratch| {
-            crate::reference::circuit_bootstrapping::circuit_bootstrapping_key_encrypt_sk_reference::<_, _, _, CGGI, BE>(
-                module,
+            module.circuit_bootstrapping_key_encrypt_sk_reference(
                 &mut expected.cbt,
                 &sk_lwe,
                 &sk,
@@ -469,10 +472,9 @@ where
             raw_key_bytes(module, &expected, &layout) == raw_key_bytes(module, &actual, &layout),
             "key encryption parity mismatch"
         );
-        let reference_bytes = crate::reference::bdd::bdd_key_encrypt_sk_tmp_bytes_reference::<CGGI, BE, _>(module, &layout);
+        let reference_bytes = BDDKeyEncryptSkReference::<CGGI, BE>::bdd_key_encrypt_sk_tmp_bytes_reference(module, &layout);
         poulpy_core::test_suite::assert_wipes_scratch::<BE>(reference_bytes, |s| {
-            crate::reference::bdd::bdd_key_encrypt_sk_reference::<CGGI, BE, _, _>(
-                module,
+            module.bdd_key_encrypt_sk_reference(
                 &mut expected,
                 &sk_lwe,
                 &sk,
@@ -507,12 +509,12 @@ where
         };
 
         for value in [0u8, 0xA5, u8::MAX] {
-            let mut expected = module.alloc_fhe_uint_prepared_from_infos(&output);
-            let mut actual = module.alloc_fhe_uint_prepared_from_infos(&output);
-            let bytes = crate::reference::bdd::fhe_uint_prepared_encrypt_sk_tmp_bytes_reference::<BE, _>(module, &output);
+            let mut expected = module.fhe_uint_prepared_alloc_from_infos(&output);
+            let mut actual = module.fhe_uint_prepared_alloc_from_infos(&output);
+            let bytes =
+                FheUintPreparedEncryptSkReference::<u8, BE>::fhe_uint_prepared_encrypt_sk_tmp_bytes_reference(module, &output);
             poulpy_core::test_suite::assert_wipes_scratch::<BE>(bytes, |s| {
-                crate::reference::bdd::fhe_uint_prepared_encrypt_sk_reference::<u8, BE, _>(
-                    module,
+                module.fhe_uint_prepared_encrypt_sk_reference(
                     &mut expected,
                     value,
                     &sk_prepared,

@@ -40,3 +40,39 @@ pub fn bdd_key_prepare_reference<BRA: BlindRotationAlgo, BE: Backend<ZnxWord = i
 
     module.glwe_to_lwe_key_prepare(&mut res.ks_lwe, &other.ks_lwe, scratch);
 }
+
+/// Reference bodies of the [`BDDKeyPreparedFactoryImpl`](crate::oep::BDDKeyPreparedFactoryImpl) methods, which
+/// [`impl_bdd_key_prepared_factory_reference_full!`](crate::impl_bdd_key_prepared_factory_reference_full) forwards to.
+pub trait BDDKeyPreparedFactoryReference<BRA: BlindRotationAlgo, BE: Backend> {
+    fn bdd_key_prepare_tmp_bytes_reference<A>(&self, infos: &A) -> usize
+    where
+        A: BDDKeyInfos;
+
+    fn bdd_key_prepare_reference(
+        &self,
+        res: &mut BDDKeyPrepared<BE::OwnedBuf, BRA, BE>,
+        other: &BDDKey<BE::OwnedBuf, BRA, BE::ZnxWord>,
+        scratch: &mut ScratchArena<'_, BE>,
+    );
+}
+
+impl<BRA: BlindRotationAlgo, BE: Backend<ZnxWord = i64>> BDDKeyPreparedFactoryReference<BRA, BE> for Module<BE>
+where
+    Module<BE>: CircuitBootstrappingKeyPreparedFactory<BRA, BE> + GLWEToLWEKeyPreparedFactory<BE>,
+{
+    fn bdd_key_prepare_tmp_bytes_reference<A>(&self, infos: &A) -> usize
+    where
+        A: BDDKeyInfos,
+    {
+        bdd_key_prepare_tmp_bytes_reference::<BRA, BE, A>(self, infos)
+    }
+
+    fn bdd_key_prepare_reference(
+        &self,
+        res: &mut BDDKeyPrepared<BE::OwnedBuf, BRA, BE>,
+        other: &BDDKey<BE::OwnedBuf, BRA, BE::ZnxWord>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) {
+        bdd_key_prepare_reference(self, res, other, scratch)
+    }
+}

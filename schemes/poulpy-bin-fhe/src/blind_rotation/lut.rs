@@ -210,7 +210,7 @@ impl<D: Data, W: ZnxWord> LookupTable<D, W> {
     where
         M: LookupTableFactory<D, W>,
     {
-        module.lookup_table_rotate(k, self);
+        module.lookup_table_rotate_assign(k, self);
     }
 }
 

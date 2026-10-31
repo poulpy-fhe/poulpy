@@ -288,10 +288,9 @@ where
         let mut expected = BlindRotationKey::<BE::OwnedBuf, CGGI, i64>::alloc(module, &layout);
         let mut actual = BlindRotationKey::<BE::OwnedBuf, CGGI, i64>::alloc(module, &layout);
         poulpy_core::test_suite::assert_wipes_scratch::<BE>(
-            blind_rotation_key_encrypt_sk_tmp_bytes_reference(module, &layout),
+            BlindRotationKeyEncryptSkReference::<CGGI, BE>::blind_rotation_key_encrypt_sk_tmp_bytes_reference(module, &layout),
             |s| {
-                blind_rotation_key_encrypt_sk_reference(
-                    module,
+                module.blind_rotation_key_encrypt_sk_reference(
                     &mut expected,
                     &lwe_secret,
                     &secret_prepared,
@@ -330,10 +329,11 @@ where
             layout.n_lwe.as_usize() * ggsw_bytes
         );
         poulpy_core::test_suite::assert_wipes_scratch::<BE>(
-            blind_rotation_key_compressed_encrypt_sk_tmp_bytes_reference(module, &layout),
+            BlindRotationKeyCompressedEncryptSkReference::<CGGI, BE>::blind_rotation_key_compressed_encrypt_sk_tmp_bytes_reference(
+                module, &layout,
+            ),
             |s| {
-                blind_rotation_key_compressed_encrypt_sk_reference(
-                    module,
+                module.blind_rotation_key_compressed_encrypt_sk_reference(
                     &mut compressed_expected,
                     &lwe_secret,
                     &secret_prepared,
@@ -356,9 +356,10 @@ where
         assert_eq!(compressed_actual.dist, compressed_expected.dist);
         // Decompression checks every body limb and recreated mask rather than
         // requiring the prepared representation to be shared across backends.
-        with_scratch::<BE, _>(blind_rotation_key_decompress_tmp_bytes_reference(module, &layout), |s| {
-            blind_rotation_key_decompress_reference(module, &mut expected, &compressed_expected, s)
-        });
+        with_scratch::<BE, _>(
+            BlindRotationKeyDecompressReference::<CGGI, BE>::blind_rotation_key_decompress_tmp_bytes_reference(module, &layout),
+            |s| module.blind_rotation_key_decompress_reference(&mut expected, &compressed_expected, s),
+        );
         with_scratch::<BE, _>(module.blind_rotation_key_decompress_tmp_bytes(&layout), |s| {
             module.blind_rotation_key_decompress(&mut actual, &compressed_actual, s)
         });

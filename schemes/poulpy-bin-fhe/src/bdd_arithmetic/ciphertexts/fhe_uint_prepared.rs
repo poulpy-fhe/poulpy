@@ -19,7 +19,7 @@ use poulpy_hal::layouts::{Backend, Data, HostBackend, HostDataRef, Module};
 use poulpy_hal::{layouts::ScratchArena, source::Source};
 
 use crate::bdd_arithmetic::{BDDKey, BDDKeyHelper, BDDKeyInfos, BDDKeyPrepared, BDDKeyPreparedFactory, BitSize, FheUint, ToBits};
-use crate::bdd_arithmetic::{Cmux, FromBits, UnsignedInteger};
+use crate::bdd_arithmetic::{FromBits, GLWECmux, UnsignedInteger};
 use crate::blind_rotation::BlindRotationAlgo;
 use poulpy_core::GLWEBytesOf;
 
@@ -42,7 +42,7 @@ use poulpy_core::GLWEBytesOf;
 /// 1. Allocate with [`FheUintPrepared::alloc`] or [`FheUintPrepared::alloc_from_infos`].
 /// 2. Populate from plaintext with [`FheUintPrepared::encrypt_sk`], or derive
 ///    from a packed [`FheUint`] with [`FheUintPrepared::prepare`].
-/// 3. Use as input to BDD circuit evaluation (`ExecuteBDDCircuit`).
+/// 3. Use as input to BDD circuit evaluation (`BDDCircuitExecute`).
 ///
 /// ## Thread Safety
 ///
@@ -58,7 +58,7 @@ impl<T: UnsignedInteger, BE: Backend> FheUintPreparedFactory<T, BE> for Module<B
 /// Read-only access to individual DFT-domain GGSW bit-ciphertexts.
 ///
 /// Implemented by [`FheUintPrepared`] and by the internal `FheUintHelper`
-/// used during two-word BDD evaluation.  Required by `ExecuteBDDCircuit`
+/// used during two-word BDD evaluation.  Required by `BDDCircuitExecute`
 /// and `GLWEBlindRotation`.
 pub trait GetGGSWBit<BE: Backend>: Sync {
     /// Returns a shared reference view of the GGSW ciphertext for bit `bit`.
@@ -131,7 +131,7 @@ pub trait FheUintPreparedFactory<T: UnsignedInteger, BE: Backend>
 where
     Self: Sized + GGSWPreparedFactory<BE>,
 {
-    fn alloc_fhe_uint_prepared(
+    fn fhe_uint_prepared_alloc(
         &self,
         base2k: Base2K,
         dnum: Dnum,
@@ -147,11 +147,11 @@ where
         }
     }
 
-    fn alloc_fhe_uint_prepared_from_infos<A>(&self, infos: &A) -> FheUintPrepared<BE::OwnedBuf, T, BE>
+    fn fhe_uint_prepared_alloc_from_infos<A>(&self, infos: &A) -> FheUintPrepared<BE::OwnedBuf, T, BE>
     where
         A: GGSWInfos,
     {
-        self.alloc_fhe_uint_prepared(infos.base2k(), infos.dnum(), infos.k_digit(), infos.k_aux(), infos.rank())
+        self.fhe_uint_prepared_alloc(infos.base2k(), infos.dnum(), infos.k_digit(), infos.k_aux(), infos.rank())
     }
 }
 
@@ -161,14 +161,14 @@ impl<T: UnsignedInteger, BE: Backend> FheUintPrepared<BE::OwnedBuf, T, BE> {
         A: GGSWInfos,
         M: FheUintPreparedFactory<T, BE>,
     {
-        module.alloc_fhe_uint_prepared_from_infos(infos)
+        module.fhe_uint_prepared_alloc_from_infos(infos)
     }
 
     pub fn alloc<M>(module: &M, base2k: Base2K, dnum: Dnum, k_digit: TorusPrecision, k_aux: TorusPrecision, rank: Rank) -> Self
     where
         M: FheUintPreparedFactory<T, BE>,
     {
-        module.alloc_fhe_uint_prepared(base2k, dnum, k_digit, k_aux, rank)
+        module.fhe_uint_prepared_alloc(base2k, dnum, k_digit, k_aux, rank)
     }
 }
 
@@ -202,7 +202,7 @@ where
             + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
             + ModuleLogN
             + GLWEDecrypt<BE>
-            + Cmux<BE>
+            + GLWECmux<BE>
             + GLWEPack<BE>
             + GLWECopy<BE>
             + GLWEBytesOf<BE>,

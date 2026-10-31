@@ -23,7 +23,7 @@ use poulpy_core::{
 };
 
 use crate::api::BlindRotationModSwitch;
-use crate::blind_rotation::{BlindRotationKeyInfos, BlindRotationKeyPrepared, CGGI, LookupTable};
+use crate::blind_rotation::{BlindRotationAlgo, BlindRotationKeyInfos, BlindRotationKeyPrepared, CGGI, LookupTable};
 use poulpy_core::GLWEBytesOf;
 use poulpy_core::layouts::prepared::GGSWPreparedToBackendRef;
 
@@ -677,4 +677,90 @@ fn execute_standard<R, L, M, BE: Backend<ZnxWord = i64>>(
         module.glwe_normalize_assign(&mut out_tmp, &mut scratch_1.borrow());
     }
     module.glwe_copy(res, &out_tmp, &mut scratch_1);
+}
+
+/// Reference bodies of the [`BlindRotationExecuteImpl`](crate::oep::BlindRotationExecuteImpl) methods for [`CGGI`],
+/// which [`impl_blind_rotation_execute_reference_full!`](crate::impl_blind_rotation_execute_reference_full) forwards to.
+pub trait BlindRotationExecuteReference<BRA: BlindRotationAlgo, BE: Backend> {
+    fn blind_rotation_execute_tmp_bytes_reference<G, B>(
+        &self,
+        block_size: usize,
+        extension_factor: usize,
+        glwe_infos: &G,
+        brk_infos: &B,
+    ) -> usize
+    where
+        G: GLWEInfos,
+        B: BlindRotationKeyInfos;
+
+    fn blind_rotation_execute_reference<R, L>(
+        &self,
+        res: &mut R,
+        lwe: &L,
+        lut: &LookupTable<BE::OwnedBuf, BE::ZnxWord>,
+        brk: &BlindRotationKeyPrepared<BE::OwnedBuf, BRA, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        L: LWEToBackendRef<BE> + LWEInfos;
+}
+
+impl<BE> BlindRotationExecuteReference<CGGI, BE> for Module<BE>
+where
+    BE: Backend<ZnxWord = i64> + HalVecZnxImpl,
+    Module<BE>: BlindRotationModSwitch<BE>
+        + VecZnxDftBytesOf
+        + VecZnxBigBytesOf
+        + VmpApplyDftToDftTmpBytes
+        + VecZnxBigNormalizeTmpBytes
+        + VecZnxIdftApplyTmpBytes
+        + GLWEExternalProduct<BE>
+        + ModuleN
+        + VecZnxRotate<BE>
+        + VecZnxDftApply<BE>
+        + VecZnxDftZero<BE>
+        + VmpApplyDftToDft<BE>
+        + SvpApplyDftToDft<BE>
+        + VecZnxDftAddAssign<BE>
+        + VecZnxDftSubAssign<BE>
+        + VecZnxDftSubNegateAssign<BE>
+        + VecZnxIdftApply<BE>
+        + VecZnxBigAddSmallAssign<BE>
+        + VecZnxBigNormalize<BE>
+        + GLWEMulXpMinusOne<BE>
+        + GLWEAdd<BE>
+        + GLWECopy<BE>
+        + GLWEZero<BE>
+        + GLWENormalize<BE>
+        + VecZnxCopy<BE>
+        + VecZnxZero<BE>
+        + Sync,
+{
+    fn blind_rotation_execute_tmp_bytes_reference<G, B>(
+        &self,
+        block_size: usize,
+        extension_factor: usize,
+        glwe_infos: &G,
+        brk_infos: &B,
+    ) -> usize
+    where
+        G: GLWEInfos,
+        B: BlindRotationKeyInfos,
+    {
+        blind_rotation_execute_tmp_bytes_reference(self, block_size, extension_factor, glwe_infos, brk_infos)
+    }
+
+    fn blind_rotation_execute_reference<R, L>(
+        &self,
+        res: &mut R,
+        lwe: &L,
+        lut: &LookupTable<BE::OwnedBuf, BE::ZnxWord>,
+        brk: &BlindRotationKeyPrepared<BE::OwnedBuf, CGGI, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        L: LWEToBackendRef<BE> + LWEInfos,
+    {
+        blind_rotation_execute_reference(self, res, lwe, lut, brk, scratch)
+    }
 }

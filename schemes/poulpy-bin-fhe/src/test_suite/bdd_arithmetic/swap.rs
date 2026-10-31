@@ -18,7 +18,7 @@ use crate::test_suite::bdd_arithmetic::decrypt_checked;
 use crate::test_suite::bdd_arithmetic::{TEST_GGSW_INFOS, TEST_GLWE_INFOS, TestContext};
 use crate::test_suite::parity::{assert_short_scratch_panics, snapshot_glwe};
 use crate::{
-    bdd_arithmetic::{Cmux, Cswap, FheUint, FheUintPrepared, GLWEBlindRetrieval, GLWEBlindRetriever},
+    bdd_arithmetic::{FheUint, FheUintPrepared, GLWEBlindRetrieval, GLWEBlindRetriever, GLWECmux, GLWECswap},
     blind_rotation::BlindRotationAlgo,
 };
 use poulpy_core::layouts::prepared::GGSWPreparedToBackendRef;
@@ -50,13 +50,13 @@ where
     )
 }
 
-pub fn test_cmux_direct<BRA, BE>(test_context: &TestContext<BRA, BE>)
+pub fn test_glwe_cmux_direct<BRA, BE>(test_context: &TestContext<BRA, BE>)
 where
     BRA: BlindRotationAlgo,
     Module<BE>: crate::api::FheUintPreparedEncryptSk<u32, BE>
         + GLWEEncryptSk<BE>
         + GLWEDecrypt<BE>
-        + Cmux<BE>
+        + GLWECmux<BE>
         + GGSWEncryptSk<BE>
         + GGSWPreparedFactory<BE>,
     BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64> + HostBackend,
@@ -96,14 +96,14 @@ where
         module.ggsw_prepare(&mut s_prepared, &s, &mut scratch.borrow());
 
         let mut ct_res = module.glwe_alloc_from_infos(&glwe_infos);
-        let cmux_bytes = module.cmux_tmp_bytes(&ct_res, &ct_t, &s_prepared.to_backend_ref());
+        let cmux_bytes = module.glwe_cmux_tmp_bytes(&ct_res, &ct_t, &s_prepared.to_backend_ref());
         let before = snapshot_glwe::<BE, _>(&ct_res);
-        assert_short_scratch_panics::<BE, _>(cmux_bytes, "cmux: insufficient scratch", |s| {
-            module.cmux(&mut ct_res, &ct_t, &ct_f, &s_prepared.to_backend_ref(), s)
+        assert_short_scratch_panics::<BE, _>(cmux_bytes, "glwe_cmux: insufficient scratch", |s| {
+            module.glwe_cmux(&mut ct_res, &ct_t, &ct_f, &s_prepared.to_backend_ref(), s)
         });
         assert_eq!(before, snapshot_glwe::<BE, _>(&ct_res));
         with_scratch::<BE, _>(cmux_bytes, |s| {
-            module.cmux(&mut ct_res, &ct_t, &ct_f, &s_prepared.to_backend_ref(), s)
+            module.glwe_cmux(&mut ct_res, &ct_t, &ct_f, &s_prepared.to_backend_ref(), s)
         });
 
         let mut pt_have: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
@@ -114,13 +114,13 @@ where
     }
 }
 
-pub fn test_cswap_direct<BRA, BE>(test_context: &TestContext<BRA, BE>)
+pub fn test_glwe_cswap_assign_direct<BRA, BE>(test_context: &TestContext<BRA, BE>)
 where
     BRA: BlindRotationAlgo,
     Module<BE>: crate::api::FheUintPreparedEncryptSk<u32, BE>
         + GLWEEncryptSk<BE>
         + GLWEDecrypt<BE>
-        + Cswap<BE>
+        + GLWECswap<BE>
         + GGSWEncryptSk<BE>
         + GGSWPreparedFactory<BE>,
     BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64> + HostBackend,
@@ -159,14 +159,14 @@ where
         module.ggsw_encrypt_sk(&mut s, &pt_sel, sk, &mut source_xe, &mut source_xa, &mut scratch.borrow());
         module.ggsw_prepare(&mut s_prepared, &s, &mut scratch.borrow());
 
-        let cswap_bytes = module.cswap_tmp_bytes(&ct_a, &ct_b, &s_prepared.to_backend_ref());
+        let cswap_bytes = module.glwe_cswap_assign_tmp_bytes(&ct_a, &ct_b, &s_prepared.to_backend_ref());
         let before = (snapshot_glwe::<BE, _>(&ct_a), snapshot_glwe::<BE, _>(&ct_b));
-        assert_short_scratch_panics::<BE, _>(cswap_bytes, "cswap: insufficient scratch", |s| {
-            module.cswap(&mut ct_a, &mut ct_b, &s_prepared.to_backend_ref(), s)
+        assert_short_scratch_panics::<BE, _>(cswap_bytes, "glwe_cswap_assign: insufficient scratch", |s| {
+            module.glwe_cswap_assign(&mut ct_a, &mut ct_b, &s_prepared.to_backend_ref(), s)
         });
         assert_eq!(before, (snapshot_glwe::<BE, _>(&ct_a), snapshot_glwe::<BE, _>(&ct_b)));
         with_scratch::<BE, _>(cswap_bytes, |s| {
-            module.cswap(&mut ct_a, &mut ct_b, &s_prepared.to_backend_ref(), s)
+            module.glwe_cswap_assign(&mut ct_a, &mut ct_b, &s_prepared.to_backend_ref(), s)
         });
 
         let mut pt_a_have: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
@@ -186,7 +186,7 @@ where
     Module<BE>: crate::api::FheUintPreparedEncryptSk<u32, BE>
         + GLWEEncryptSk<BE>
         + GLWEDecrypt<BE>
-        + Cswap<BE>
+        + GLWECswap<BE>
         + GGSWEncryptSk<BE>
         + GGSWPreparedFactory<BE>,
     BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64> + HostBackend,
@@ -224,9 +224,9 @@ where
         module.ggsw_encrypt_sk(&mut s, &pt, sk, &mut source_xe, &mut source_xa, &mut scratch.borrow());
         module.ggsw_prepare(&mut s_prepared, &s, &mut scratch.borrow());
 
-        let cswap_bytes = module.cswap_tmp_bytes(&a_enc, &b_enc, &s_prepared.to_backend_ref());
+        let cswap_bytes = module.glwe_cswap_assign_tmp_bytes(&a_enc, &b_enc, &s_prepared.to_backend_ref());
         with_scratch::<BE, _>(cswap_bytes, |s| {
-            module.cswap(&mut a_enc, &mut b_enc, &s_prepared.to_backend_ref(), s)
+            module.glwe_cswap_assign(&mut a_enc, &mut b_enc, &s_prepared.to_backend_ref(), s)
         });
 
         let (a_want, b_want) = if bit == 0 { (a, b) } else { (b, a) };
@@ -236,7 +236,7 @@ where
     }
 }
 
-pub fn test_glwe_blind_retrieval_statefull<BRA, BE>(test_context: &TestContext<BRA, BE>)
+pub fn test_glwe_blind_retrieval_stateful_assign<BRA, BE>(test_context: &TestContext<BRA, BE>)
 where
     BRA: BlindRotationAlgo,
     Module<BE>: crate::api::FheUintPreparedEncryptSk<u32, BE>
@@ -244,7 +244,7 @@ where
         + GLWEDecrypt<BE>
         + poulpy_core::GLWEZero<BE>
         + GLWEBlindRetrieval<BE>
-        + Cmux<BE>
+        + GLWECmux<BE>
         + poulpy_core::GLWECopy<BE>
         + GGSWEncryptSk<BE>
         + GGSWPreparedFactory<BE>,
@@ -279,13 +279,13 @@ where
 
         let retrieval_bytes = module.glwe_blind_retrieval_tmp_bytes(&glwe_infos, &ggsw_infos);
         with_scratch::<BE, _>(retrieval_bytes, |s| {
-            module.glwe_blind_retrieval_statefull(0, 5, &mut data_enc, &idx_enc, s)
+            module.glwe_blind_retrieval_stateful_assign(0, 5, &mut data_enc, &idx_enc, s)
         });
 
         assert_eq!(data[idx as usize], decrypt_checked(module, &data_enc[0], sk));
 
         with_scratch::<BE, _>(retrieval_bytes, |s| {
-            module.glwe_blind_retrieval_statefull_rev(0, 5, &mut data_enc, &idx_enc, s)
+            module.glwe_blind_retrieval_stateful_rev_assign(0, 5, &mut data_enc, &idx_enc, s)
         });
 
         for i in 0..data.len() {
@@ -302,7 +302,7 @@ where
         + GLWEDecrypt<BE>
         + poulpy_core::GLWEZero<BE>
         + GLWEBlindRetrieval<BE>
-        + Cmux<BE>
+        + GLWECmux<BE>
         + poulpy_core::GLWECopy<BE>
         + GGSWEncryptSk<BE>
         + GGSWPreparedFactory<BE>,

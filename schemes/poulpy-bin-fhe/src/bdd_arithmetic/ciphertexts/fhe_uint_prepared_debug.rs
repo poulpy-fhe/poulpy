@@ -148,7 +148,7 @@ where
     BE::OwnedBuf: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
-    fn fhe_uint_debug_prepare(
+    fn fhe_uint_prepare_debug(
         &self,
         res: &mut FheUintPreparedDebug<BE::OwnedBuf, T, BE::ZnxWord>,
         bits: &FheUint<BE::OwnedBuf, T, BE::ZnxWord>,
@@ -187,6 +187,6 @@ impl<T: UnsignedInteger> FheUintPreparedDebug<AlignedBuf, T, i64> {
         BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64> + HostBackend,
         M: FheUintPrepareDebug<BRA, T, BE>,
     {
-        module.fhe_uint_debug_prepare(self, other, key, scratch);
+        module.fhe_uint_prepare_debug(self, other, key, scratch);
     }
 }

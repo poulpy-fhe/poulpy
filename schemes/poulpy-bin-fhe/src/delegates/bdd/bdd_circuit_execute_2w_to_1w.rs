@@ -1,16 +1,12 @@
 use crate::bdd_arithmetic::*;
 use poulpy_core::layouts::*;
 use poulpy_hal::layouts::*;
-/// Backend-level executor for two-input BDD circuits (`Z × Z → Z`).
-///
-/// Evaluates a BDD circuit that reads two encrypted integers and produces
-/// one encrypted integer.  The two input [`FheUintPrepared`] values are
-/// concatenated into a virtual bit-array, with `a` occupying bits
-/// `[0, T::BITS)` and `b` occupying `[T::BITS, 2*T::BITS)`.  After BDD
-/// evaluation the output bits are repacked into a single [`FheUint`].
-pub trait ExecuteBDDCircuit2WTo1W<BE: Backend> {
+impl<BE: Backend> BDDCircuitExecute2WTo1W<BE> for Module<BE>
+where
+    BE: crate::oep::BDDCircuitExecute2WTo1WImpl,
+{
     #[allow(clippy::too_many_arguments)]
-    fn execute_bdd_circuit_2w_to_1w<C, H, T>(
+    fn bdd_circuit_execute_2w_to_1w<C, H, T>(
         &self,
         out: &mut FheUint<BE::OwnedBuf, T, BE::ZnxWord>,
         a: &FheUintPrepared<BE::OwnedBuf, T, BE>,
@@ -22,21 +18,23 @@ pub trait ExecuteBDDCircuit2WTo1W<BE: Backend> {
         T: UnsignedInteger,
         C: GetBitCircuitInfo,
         H: GetAutomorphismKey<BE>,
-        BE: Backend<ZnxWord = i64>;
+        BE: Backend<ZnxWord = i64>,
+    {
+        BE::bdd_circuit_execute_2w_to_1w::<C, H, T>(self, out, a, b, circuit, key, scratch)
+    }
     #[allow(clippy::too_many_arguments)]
-    /// Minimum scratch size in bytes for [`execute_bdd_circuit_2w_to_1w`][Self::execute_bdd_circuit_2w_to_1w]
-    /// (one BDD worker).
-    fn execute_bdd_circuit_2w_to_1w_tmp_bytes<C, T, R, G, H>(&self, res_infos: &R, ggsw_infos: &G, circuit: &C, key: &H) -> usize
+    fn bdd_circuit_execute_2w_to_1w_tmp_bytes<C, T, R, G, H>(&self, res_infos: &R, ggsw_infos: &G, circuit: &C, key: &H) -> usize
     where
         C: GetBitCircuitInfo,
         T: UnsignedInteger,
         R: GLWEInfos,
         G: GGSWInfos,
-        H: GetAutomorphismKey<BE>;
+        H: GetAutomorphismKey<BE>,
+    {
+        BE::bdd_circuit_execute_2w_to_1w_tmp_bytes::<C, T, R, G, H>(self, res_infos, ggsw_infos, circuit, key)
+    }
     #[allow(clippy::too_many_arguments)]
-    /// Minimum scratch size in bytes for [`execute_bdd_circuit_2w_to_1w_multi_thread`][Self::execute_bdd_circuit_2w_to_1w_multi_thread].
-    /// Operations Z x Z -> Z
-    fn execute_bdd_circuit_2w_to_1w_multi_thread_tmp_bytes<C, T, R, G, H>(
+    fn bdd_circuit_execute_2w_to_1w_multi_thread_tmp_bytes<C, T, R, G, H>(
         &self,
         threads: usize,
         res_infos: &R,
@@ -49,9 +47,14 @@ pub trait ExecuteBDDCircuit2WTo1W<BE: Backend> {
         T: UnsignedInteger,
         R: GLWEInfos,
         G: GGSWInfos,
-        H: GetAutomorphismKey<BE>;
+        H: GetAutomorphismKey<BE>,
+    {
+        BE::bdd_circuit_execute_2w_to_1w_multi_thread_tmp_bytes::<C, T, R, G, H>(
+            self, threads, res_infos, ggsw_infos, circuit, key,
+        )
+    }
     #[allow(clippy::too_many_arguments)]
-    fn execute_bdd_circuit_2w_to_1w_multi_thread<C, H, T>(
+    fn bdd_circuit_execute_2w_to_1w_multi_thread<C, H, T>(
         &self,
         threads: usize,
         out: &mut FheUint<BE::OwnedBuf, T, BE::ZnxWord>,
@@ -64,5 +67,8 @@ pub trait ExecuteBDDCircuit2WTo1W<BE: Backend> {
         T: UnsignedInteger,
         C: GetBitCircuitInfo,
         H: GetAutomorphismKey<BE>,
-        BE: Backend<ZnxWord = i64>;
+        BE: Backend<ZnxWord = i64>,
+    {
+        BE::bdd_circuit_execute_2w_to_1w_multi_thread::<C, H, T>(self, threads, out, a, b, circuit, key, scratch)
+    }
 }

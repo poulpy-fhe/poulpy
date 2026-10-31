@@ -2,8 +2,8 @@ use crate::bdd_arithmetic::*;
 use poulpy_core::{layouts::*, *};
 use poulpy_hal::{api::*, layouts::*};
 #[allow(clippy::too_many_arguments)]
-/// Independently callable canonical implementation of [`ExecuteBDDCircuit::execute_bdd_circuit_tmp_bytes`].
-pub fn execute_bdd_circuit_tmp_bytes_reference<BE: Backend<ZnxWord = i64>, R, G>(
+/// Independently callable canonical implementation of [`BDDCircuitExecute::bdd_circuit_execute_tmp_bytes`].
+pub fn bdd_circuit_execute_tmp_bytes_reference<BE: Backend<ZnxWord = i64>, R, G>(
     module: &Module<BE>,
     state_size: usize,
     res_infos: &R,
@@ -13,7 +13,7 @@ where
     R: GLWEInfos,
     G: GGSWInfos,
     Module<BE>: GLWEBytesOf<BE>
-        + Cmux<BE>
+        + GLWECmux<BE>
         + GLWECopy<BE>
         + GLWEZero<BE>
         + VecZnxAddScalarAssign<BE>
@@ -23,13 +23,13 @@ where
     poulpy_hal::execution::worker_scratch_bytes::<BE>(
         2 * state_size * BE::scratch_aligned(module.glwe_bytes_of_from_infos(res_infos))
             + module
-                .cmux_tmp_bytes(res_infos, res_infos, ggsw_infos)
+                .glwe_cmux_tmp_bytes(res_infos, res_infos, ggsw_infos)
                 .max(module.glwe_copy_tmp_bytes(res_infos, res_infos)),
     )
 }
 #[allow(clippy::too_many_arguments)]
-/// Independently callable canonical implementation of [`ExecuteBDDCircuit::execute_bdd_circuit_multi_thread`].
-pub fn execute_bdd_circuit_multi_thread_reference<BE: Backend<ZnxWord = i64>, C, G, O>(
+/// Independently callable canonical implementation of [`BDDCircuitExecute::bdd_circuit_execute_multi_thread`].
+pub fn bdd_circuit_execute_multi_thread_reference<BE: Backend<ZnxWord = i64>, C, G, O>(
     module: &Module<BE>,
     threads: usize,
     out: &mut [O],
@@ -41,7 +41,7 @@ pub fn execute_bdd_circuit_multi_thread_reference<BE: Backend<ZnxWord = i64>, C,
     C: GetBitCircuitInfo,
     O: GLWEToBackendMut<BE> + GLWEInfos + Send,
     Module<BE>: GLWEBytesOf<BE>
-        + Cmux<BE>
+        + GLWECmux<BE>
         + GLWECopy<BE>
         + GLWEZero<BE>
         + VecZnxAddScalarAssign<BE>
@@ -52,11 +52,11 @@ pub fn execute_bdd_circuit_multi_thread_reference<BE: Backend<ZnxWord = i64>, C,
     assert!(out.len() >= circuit.output_size());
     let output_size = circuit.output_size();
     let scratch_thread_size = (output_size > 0)
-        .then(|| execute_bdd_circuit_tmp_bytes_reference(module, circuit.max_state_size(), &out[0], inputs.get_bit(0)));
+        .then(|| bdd_circuit_execute_tmp_bytes_reference(module, circuit.max_state_size(), &out[0], inputs.get_bit(0)));
     if let Some(scratch_thread_size) = scratch_thread_size {
         assert!(
             scratch.available() >= bdd_parallel_tmp_bytes::<BE>(threads, output_size, scratch_thread_size),
-            "execute_bdd_circuit: insufficient scratch"
+            "bdd_circuit_execute: insufficient scratch"
         );
     }
     for out_i in out.iter_mut().skip(output_size) {
@@ -128,7 +128,7 @@ fn eval_level<M, G, R, BE>(
     one: &M::Prepared,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    M: Cmux<BE> + GLWECopy<BE> + GLWEZero<BE> + BddTrivialOne<BE>,
+    M: GLWECmux<BE> + GLWECopy<BE> + GLWEZero<BE> + BddTrivialOne<BE>,
     BE: Backend<ZnxWord = i64>,
     G: GetGGSWBit<BE> + BitSize,
     R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -148,7 +148,7 @@ fn eval_level<M, G, R, BE>(
         for (j, node) in nodes_lvl.iter().enumerate() {
             match node {
                 Node::Cmux(in_idx, hi_idx, lo_idx) => {
-                    module.cmux(
+                    module.glwe_cmux(
                         &mut next_level[j],
                         &prev_level[*hi_idx],
                         &prev_level[*lo_idx],
@@ -156,7 +156,7 @@ fn eval_level<M, G, R, BE>(
                         &mut scratch_1.borrow(),
                     );
                 }
-                Node::Copy => module.glwe_copy(&mut next_level[j], &prev_level[j], &mut scratch_1.borrow()), /* Update BDD circuits to order Cmux -> Copy -> None so that mem swap can be used */
+                Node::Copy => module.glwe_copy(&mut next_level[j], &prev_level[j], &mut scratch_1.borrow()), /* Update BDD circuits to order GLWECmux -> Copy -> None so that mem swap can be used */
                 Node::None => {}
             }
         }
@@ -168,7 +168,7 @@ fn eval_level<M, G, R, BE>(
     // [CMUX, NONE, NONE, ..., NONE]
     match &last[0] {
         Node::Cmux(in_idx, hi_idx, lo_idx) => {
-            module.cmux(
+            module.glwe_cmux(
                 res,
                 &prev_level[*hi_idx],
                 &prev_level[*lo_idx],
@@ -207,5 +207,60 @@ where
     let mut res = res.to_backend_mut();
     for limb in 0..limbs {
         module.vec_znx_add_scalar_assign(res.data_mut(), 0, limb, &scalar, 0);
+    }
+}
+
+/// Reference bodies of the required [`BDDCircuitExecuteImpl`](crate::oep::BDDCircuitExecuteImpl) methods, which
+/// [`impl_bdd_circuit_execute_reference_full!`](crate::impl_bdd_circuit_execute_reference_full) forwards to.
+pub trait BDDCircuitExecuteReference<BE: Backend> {
+    fn bdd_circuit_execute_tmp_bytes_reference<R, G>(&self, state_size: usize, res_infos: &R, ggsw_infos: &G) -> usize
+    where
+        R: GLWEInfos,
+        G: GGSWInfos;
+
+    fn bdd_circuit_execute_multi_thread_reference<C, G, O>(
+        &self,
+        threads: usize,
+        out: &mut [O],
+        inputs: &G,
+        circuit: &C,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        G: GetGGSWBit<BE> + BitSize,
+        C: GetBitCircuitInfo,
+        O: GLWEToBackendMut<BE> + GLWEInfos + Send;
+}
+
+impl<BE: Backend<ZnxWord = i64>> BDDCircuitExecuteReference<BE> for Module<BE>
+where
+    Module<BE>: GLWEBytesOf<BE>
+        + GLWECmux<BE>
+        + GLWECopy<BE>
+        + GLWEZero<BE>
+        + VecZnxAddScalarAssign<BE>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+        + Sync,
+{
+    fn bdd_circuit_execute_tmp_bytes_reference<R, G>(&self, state_size: usize, res_infos: &R, ggsw_infos: &G) -> usize
+    where
+        R: GLWEInfos,
+        G: GGSWInfos,
+    {
+        bdd_circuit_execute_tmp_bytes_reference(self, state_size, res_infos, ggsw_infos)
+    }
+
+    fn bdd_circuit_execute_multi_thread_reference<C, G, O>(
+        &self,
+        threads: usize,
+        out: &mut [O],
+        inputs: &G,
+        circuit: &C,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        G: GetGGSWBit<BE> + BitSize,
+        C: GetBitCircuitInfo,
+        O: GLWEToBackendMut<BE> + GLWEInfos + Send,
+    {
+        bdd_circuit_execute_multi_thread_reference(self, threads, out, inputs, circuit, scratch)
     }
 }

@@ -14,7 +14,7 @@ where
     R: GLWEInfos,
     A: GLWEInfos,
     K: GGSWInfos,
-    Module<BE>: GLWECopy<BE> + Cmux<BE> + GLWEZero<BE>,
+    Module<BE>: GLWECopy<BE> + GLWECmux<BE> + GLWEZero<BE>,
 {
     // Scratch holds a compact zero branch; the caller's output may have a
     // larger allocation. Preserve the actual capacities of the map entries.
@@ -39,12 +39,12 @@ where
         // A missing low branch writes into zero, then back into the high
         // branch. Any surviving map entry can be copied into the final output.
         work = work
-            .max(module.cmux_tmp_bytes(&zero, dst, k_infos))
-            .max(module.cmux_tmp_bytes(dst, &zero, k_infos))
+            .max(module.glwe_cmux_tmp_bytes(&zero, dst, k_infos))
+            .max(module.glwe_cmux_tmp_bytes(dst, &zero, k_infos))
             .max(module.glwe_copy_tmp_bytes(dst, &zero))
             .max(module.glwe_copy_tmp_bytes(res_infos, dst));
         for src in &inputs {
-            work = work.max(module.cmux_tmp_bytes(dst, src, k_infos));
+            work = work.max(module.glwe_cmux_tmp_bytes(dst, src, k_infos));
         }
     }
     // Deduplicating before the ordered pair scan keeps uniform maps linear.
@@ -66,7 +66,7 @@ pub fn glwe_blind_selection_reference<T: UnsignedInteger, BE: Backend<ZnxWord = 
     R: GLWEToBackendMut<BE> + GLWEInfos,
     A: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
     K: GetGGSWBit<BE>,
-    Module<BE>: GLWECopy<BE> + Cmux<BE> + GLWEZero<BE>,
+    Module<BE>: GLWECopy<BE> + GLWECmux<BE> + GLWEZero<BE>,
 {
     assert!(bit_rsh + bit_mask <= T::BITS as usize);
     let inputs: Vec<&&mut A> = a.values().collect();
@@ -89,19 +89,19 @@ pub fn glwe_blind_selection_reference<T: UnsignedInteger, BE: Backend<ZnxWord = 
 
             match (lo, hi) {
                 (Some(lo), Some(hi)) => {
-                    module.cmux_assign(lo, hi, &bit.to_backend_ref(), &mut scratch.borrow());
+                    module.glwe_cmux_assign(lo, hi, &bit.to_backend_ref(), &mut scratch.borrow());
                     a.insert(j, lo);
                 }
 
                 (Some(lo), None) => {
                     module.glwe_zero(&mut zero);
-                    module.cmux_assign(lo, &zero, &bit.to_backend_ref(), &mut scratch.borrow());
+                    module.glwe_cmux_assign(lo, &zero, &bit.to_backend_ref(), &mut scratch.borrow());
                     a.insert(j, lo);
                 }
 
                 (None, Some(hi)) => {
                     module.glwe_zero(&mut zero);
-                    module.cmux_assign(&mut zero, hi, &bit.to_backend_ref(), &mut scratch.borrow());
+                    module.glwe_cmux_assign(&mut zero, hi, &bit.to_backend_ref(), &mut scratch.borrow());
                     module.glwe_copy(hi, &zero, &mut scratch);
                     a.insert(j, hi);
                 }
@@ -123,4 +123,57 @@ pub fn glwe_blind_selection_reference<T: UnsignedInteger, BE: Backend<ZnxWord = 
     }
 
     res.set_noise(None);
+}
+
+/// Reference bodies of the [`GLWEBlindSelectionImpl`](crate::oep::GLWEBlindSelectionImpl) methods, which
+/// [`impl_glwe_blind_selection_reference_full!`](crate::impl_glwe_blind_selection_reference_full) forwards to.
+pub trait GLWEBlindSelectionReference<T: UnsignedInteger, BE: Backend> {
+    fn glwe_blind_selection_tmp_bytes_reference<R, A, K>(&self, res_infos: &R, input_infos: &[A], k_infos: &K) -> usize
+    where
+        R: GLWEInfos,
+        A: GLWEInfos,
+        K: GGSWInfos;
+
+    fn glwe_blind_selection_reference<R, A, K>(
+        &self,
+        bit_rsh: usize,
+        bit_mask: usize,
+        res: &mut R,
+        a: HashMap<usize, &mut A>,
+        fhe_uint: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
+        K: GetGGSWBit<BE>;
+}
+
+impl<T: UnsignedInteger, BE: Backend<ZnxWord = i64>> GLWEBlindSelectionReference<T, BE> for Module<BE>
+where
+    Module<BE>: GLWECopy<BE> + GLWECmux<BE> + GLWEZero<BE>,
+{
+    fn glwe_blind_selection_tmp_bytes_reference<R, A, K>(&self, res_infos: &R, input_infos: &[A], k_infos: &K) -> usize
+    where
+        R: GLWEInfos,
+        A: GLWEInfos,
+        K: GGSWInfos,
+    {
+        glwe_blind_selection_tmp_bytes_reference::<T, BE, R, A, K>(self, res_infos, input_infos, k_infos)
+    }
+
+    fn glwe_blind_selection_reference<R, A, K>(
+        &self,
+        bit_rsh: usize,
+        bit_mask: usize,
+        res: &mut R,
+        a: HashMap<usize, &mut A>,
+        fhe_uint: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
+        K: GetGGSWBit<BE>,
+    {
+        glwe_blind_selection_reference::<T, BE, R, A, K>(self, bit_rsh, bit_mask, res, a, fhe_uint, scratch)
+    }
 }
