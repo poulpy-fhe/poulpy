@@ -39,7 +39,7 @@ where
     // Each right slot is taken at its plaintext's degree, at most the module's.
     let preps = 4 * plan.theta() * module.cnv_pvec_right_bytes_of(module.n(), 1, b_size, PrepareHint::Reuse);
     let work = module
-        .cnv_prepare_right_tmp_bytes(b_size, b_size)
+        .cnv_pvec_right_prepare_tmp_bytes(b_size, b_size)
         .max(module.cnv_apply_dft_sum_tmp_bytes(0, res_dft_size, a_size, b_size))
         .max(
             module.vec_znx_big_bytes_of(module.n(), 2, res_dft_size)
@@ -108,7 +108,8 @@ where
             "{OP}: inconsistent operand sizes"
         );
         let (mut b_prep, next) = rest.take_cnv_pvec_right_scratch(pi.n().as_usize(), 1, b_size, PrepareHint::Reuse);
-        rest = next.apply_mut(|s| module.cnv_prepare_right(&mut b_prep, GLWEToBackendRef::<BE>::to_backend_ref(pi).data(), s));
+        rest =
+            next.apply_mut(|s| module.cnv_pvec_right_prepare(&mut b_prep, GLWEToBackendRef::<BE>::to_backend_ref(pi).data(), s));
         preps.push(b_prep);
     }
 

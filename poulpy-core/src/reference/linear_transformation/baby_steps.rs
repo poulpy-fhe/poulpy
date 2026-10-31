@@ -133,7 +133,7 @@ where
     let a_size = a_infos.size();
     let key_size = gglwe_product_output_size::<BE, _, _, _>(a_infos, a_infos, key_infos);
     let baby = module.glwe_bytes_of_from_infos(a_infos);
-    let prepare = module.cnv_prepare_left_tmp_bytes(a_infos.size(), a_infos.size());
+    let prepare = module.cnv_pvec_left_prepare_tmp_bytes(a_infos.size(), a_infos.size());
 
     let (base2k, k_digit, dnum) = (key_infos.base2k(), key_infos.k_digit(), key_infos.dnum());
     let operand_size = gglwe_gadget_input_size(base2k, k_digit, dnum, a_infos.k(), a_size);
@@ -368,7 +368,7 @@ pub(super) fn glwe_linear_transformation_baby_steps_prepare<BE, A, H, L>(
                 .max()
                 .unwrap_or(0);
             let task_bytes = worker_scratch_bytes::<BE>(
-                module.glwe_bytes_of_from_infos(a) + rotation_bytes.max(module.cnv_prepare_left_tmp_bytes(a_size, a_size)),
+                module.glwe_bytes_of_from_infos(a) + rotation_bytes.max(module.cnv_pvec_left_prepare_tmp_bytes(a_size, a_size)),
             );
             let (worker_scratch, _) = loop_scratch.borrow().split(workers, task_bytes);
             for_each_with_scratch::<BE::TaskExecutor, BE, _, _>(&mut tasks, 0, worker_scratch, &|_, task, task_scratch| {
@@ -376,7 +376,7 @@ pub(super) fn glwe_linear_transformation_baby_steps_prepare<BE, A, H, L>(
                 assert_eq!(prepared.cols(), cols, "prepared baby cache has wrong column count");
                 assert_eq!(prepared.size(), a_size, "prepared baby cache has wrong size");
                 if *rot == 0 {
-                    module.cnv_prepare_left(&mut prepared.to_backend_mut(), &a_ref.data, task_scratch);
+                    module.cnv_pvec_left_prepare(&mut prepared.to_backend_mut(), &a_ref.data, task_scratch);
                 } else {
                     let key = key_refs[*index].as_ref().unwrap();
                     let (mut baby, mut baby_scratch) = task_scratch.borrow().take_glwe_scratch(&a_ref);
@@ -391,7 +391,7 @@ pub(super) fn glwe_linear_transformation_baby_steps_prepare<BE, A, H, L>(
                         &mut baby_scratch.borrow(),
                     );
                     let baby_ref = baby.to_backend_ref();
-                    module.cnv_prepare_left(&mut prepared.to_backend_mut(), &baby_ref.data, &mut baby_scratch.borrow());
+                    module.cnv_pvec_left_prepare(&mut prepared.to_backend_mut(), &baby_ref.data, &mut baby_scratch.borrow());
                 }
             });
         }
@@ -400,13 +400,13 @@ pub(super) fn glwe_linear_transformation_baby_steps_prepare<BE, A, H, L>(
             assert_eq!(prepared.cols(), cols, "prepared baby cache has wrong column count");
             assert_eq!(prepared.size(), a_size, "prepared baby cache has wrong size");
             if rot == 0 {
-                module.cnv_prepare_left(&mut prepared.to_backend_mut(), &a_ref.data, scratch);
+                module.cnv_pvec_left_prepare(&mut prepared.to_backend_mut(), &a_ref.data, scratch);
             } else {
                 let (mut baby, mut baby_scratch) = scratch.borrow().take_glwe_scratch(a);
                 let key = key.as_ref().unwrap();
                 module.glwe_automorphism(&mut baby, a, key, &mut baby_scratch.borrow());
                 let baby_ref = baby.to_backend_ref();
-                module.cnv_prepare_left(&mut prepared.to_backend_mut(), &baby_ref.data, &mut baby_scratch.borrow());
+                module.cnv_pvec_left_prepare(&mut prepared.to_backend_mut(), &baby_ref.data, &mut baby_scratch.borrow());
             }
         }
     }
@@ -488,7 +488,7 @@ fn glwe_prepare_baby_steps_doubling<'h, BE, H, L>(
     let (mut rotated, work) = scratch.borrow().take_glwe_slice_scratch(rotations.len(), a);
     let (operands, work) = work.take_vec_znx_dft_slice_scratch(n, widest, cols - 1, operand_max);
     let (products, work) = work.take_vec_znx_dft_slice_scratch(n, widest, cols, key_max);
-    let (normalized, mut work) = work.take_vec_znx_slice_scratch(widest, n, cols, a_size);
+    let (normalized, mut work) = work.take_vec_znx_slice_scratch(n, widest, cols, a_size);
     let mut operands: Vec<VecZnxDftBackendMut<'_, BE>> = operands.into_iter().map(|v| v.into_inner()).collect();
     let mut products: Vec<VecZnxDftBackendMut<'_, BE>> = products.into_iter().map(|v| v.into_inner()).collect();
     let mut normalized: Vec<poulpy_hal::layouts::VecZnxBackendMut<'_, BE>> =
@@ -666,7 +666,7 @@ fn glwe_prepare_baby_steps_doubling<'h, BE, H, L>(
         })
         .collect();
     let mut tasks: Vec<_> = cache.values.values_mut().zip(&sources).collect();
-    let task_bytes = worker_scratch_bytes::<BE>(module.cnv_prepare_left_tmp_bytes(a_size, a_size));
+    let task_bytes = worker_scratch_bytes::<BE>(module.cnv_pvec_left_prepare_tmp_bytes(a_size, a_size));
     let workers = worker_count::<BE::TaskExecutor>(BABY_ROTATION_WORKERS, tasks.len())
         .min(work.available() / task_bytes.max(1))
         .max(1);
@@ -674,7 +674,7 @@ fn glwe_prepare_baby_steps_doubling<'h, BE, H, L>(
     for_each_with_scratch::<BE::TaskExecutor, BE, _, _>(&mut tasks, 0, worker_scratch, &|_, (prepared, source), task_scratch| {
         assert_eq!(prepared.cols(), cols, "prepared baby cache has wrong column count");
         assert_eq!(prepared.size(), a_size, "prepared baby cache has wrong size");
-        module.cnv_prepare_left(&mut prepared.to_backend_mut(), &source.data, task_scratch);
+        module.cnv_pvec_left_prepare(&mut prepared.to_backend_mut(), &source.data, task_scratch);
     });
 }
 

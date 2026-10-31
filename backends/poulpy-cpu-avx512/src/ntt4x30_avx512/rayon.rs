@@ -33,7 +33,7 @@ mod drivers {
 
     use super::{NTT4x30Avx512, convolution, vec_znx_dft};
 
-    pub(super) use super::convolution::cnv_prepare_tmp_bytes;
+    pub(super) use super::convolution::cnv_pvec_prepare_tmp_bytes;
     pub(super) use super::vec_znx_dft::{
         vec_znx_dft_add, vec_znx_dft_add_assign, vec_znx_dft_automorphism_add, vec_znx_dft_copy, vec_znx_dft_sub,
         vec_znx_dft_sub_assign, vec_znx_dft_sub_negate_assign,
@@ -93,7 +93,7 @@ mod drivers {
         vec_znx_dft::idft_compact_limb(module, n, slot, tmp)
     }
 
-    pub(super) fn cnv_prepare_left<R: Ring, BE: PackedWord, E: TaskExecutor>(
+    pub(super) fn cnv_pvec_left_prepare<R: Ring, BE: PackedWord, E: TaskExecutor>(
         base: &Module<NTT4x30Avx512<R>>,
         module: &Module<BE>,
         res: &mut CnvPVecLBackendMut<'_, BE>,
@@ -104,12 +104,12 @@ mod drivers {
         for<'a> BE::BufRef<'a>: HostDataRef,
         for<'a> BE::BufMut<'a>: HostDataMut,
     {
-        convolution::cnv_prepare_left::<BE, E>(module, res, a, tmp, |n, dst, src| {
+        convolution::cnv_pvec_left_prepare::<BE, E>(module, res, a, tmp, |n, dst, src| {
             vec_znx_dft::dft_limb_wide(base, n, dst, src)
         })
     }
 
-    pub(super) fn cnv_prepare_right<R: Ring, BE: PackedWord, E: TaskExecutor>(
+    pub(super) fn cnv_pvec_right_prepare<R: Ring, BE: PackedWord, E: TaskExecutor>(
         base: &Module<NTT4x30Avx512<R>>,
         module: &Module<BE>,
         res: &mut CnvPVecRBackendMut<'_, BE>,
@@ -120,12 +120,12 @@ mod drivers {
         for<'a> BE::BufRef<'a>: HostDataRef,
         for<'a> BE::BufMut<'a>: HostDataMut,
     {
-        convolution::cnv_prepare_right::<BE, E>(module, res, a, tmp, |n, dst, src| {
+        convolution::cnv_pvec_right_prepare::<BE, E>(module, res, a, tmp, |n, dst, src| {
             vec_znx_dft::dft_limb_wide(base, n, dst, src)
         })
     }
 
-    pub(super) fn cnv_prepare_self<R: Ring, BE: PackedWord, E: TaskExecutor>(
+    pub(super) fn cnv_pvec_self_prepare<R: Ring, BE: PackedWord, E: TaskExecutor>(
         base: &Module<NTT4x30Avx512<R>>,
         module: &Module<BE>,
         left: &mut CnvPVecLBackendMut<'_, BE>,
@@ -137,7 +137,7 @@ mod drivers {
         for<'a> BE::BufRef<'a>: HostDataRef,
         for<'a> BE::BufMut<'a>: HostDataMut,
     {
-        convolution::cnv_prepare_self::<BE, E>(module, left, right, a, tmp, |n, dst, src| {
+        convolution::cnv_pvec_self_prepare::<BE, E>(module, left, right, a, tmp, |n, dst, src| {
             vec_znx_dft::dft_limb_wide(base, n, dst, src)
         })
     }

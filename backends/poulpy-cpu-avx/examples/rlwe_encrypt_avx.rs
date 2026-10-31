@@ -25,7 +25,7 @@ use poulpy_cpu_portable::FFT64Portable as BackendImpl;
 
 use poulpy_hal::{
     api::{
-        ScratchOwnedAlloc, ScratchOwnedBorrow, SvpApplyDftToDftAssign, SvpPPolAlloc, SvpPrepare, VecZnxBigAddSmallAssign,
+        ScratchOwnedAlloc, ScratchOwnedBorrow, SvpApplyDftToDftAssign, SvpPPolAlloc, SvpPPolPrepare, VecZnxBigAddSmallAssign,
         VecZnxBigAlloc, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxBigSubSmallNegateAssign, VecZnxDftAlloc,
         VecZnxDftApply, VecZnxFillUniformSource, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxNormalizeAssign,
     },
@@ -65,7 +65,7 @@ fn main() {
     let mut s_dft = module.svp_ppol_alloc(module.n(), s.cols(), PrepareHint::Reuse);
 
     // s_dft <- DFT(s)
-    module.svp_prepare(
+    module.svp_ppol_prepare(
         &mut s_dft.to_backend_mut(),
         0,
         &<ScalarZnx<AlignedBuf, i64> as ScalarZnxToBackendRef<BackendImpl>>::to_backend_ref(&s),

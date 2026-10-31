@@ -325,8 +325,8 @@ where
         let lvl_0: usize = self.cnv_pvec_left_bytes_of(n, cols, a_size, PrepareHint::OneShot)
             + self.cnv_pvec_right_bytes_of(n, 1, b_size, PrepareHint::OneShot);
         let lvl_1: usize = self
-            .cnv_prepare_left_tmp_bytes(a_size, a_size)
-            .max(self.cnv_prepare_right_tmp_bytes(b_size, b_size));
+            .cnv_pvec_left_prepare_tmp_bytes(a_size, a_size)
+            .max(self.cnv_pvec_right_prepare_tmp_bytes(b_size, b_size));
 
         let res_dft_size = a_size + b_size;
         let lvl_2_cnv_apply: usize = self.cnv_apply_dft_tmp_bytes(0, res_dft_size, a_size, b_size);
@@ -384,8 +384,8 @@ where
 
         let b_backend = b.to_backend_ref();
 
-        scratch = scratch.apply_mut(|scratch| self.cnv_prepare_left(&mut a_prep, &a.data, scratch));
-        scratch = scratch.apply_mut(|scratch| self.cnv_prepare_right(&mut b_prep, &b_backend.data, scratch));
+        scratch = scratch.apply_mut(|scratch| self.cnv_pvec_left_prepare(&mut a_prep, &a.data, scratch));
+        scratch = scratch.apply_mut(|scratch| self.cnv_pvec_right_prepare(&mut b_prep, &b_backend.data, scratch));
 
         let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, ab_base2k);
 
@@ -463,9 +463,9 @@ where
 
         scratch = scratch.apply_mut(|scratch| {
             let res_backend = res.to_backend_ref();
-            self.cnv_prepare_left(&mut res_prep, &res_backend.data, scratch)
+            self.cnv_pvec_left_prepare(&mut res_prep, &res_backend.data, scratch)
         });
-        scratch = scratch.apply_mut(|scratch| self.cnv_prepare_right(&mut a_prep, &a_backend.data, scratch));
+        scratch = scratch.apply_mut(|scratch| self.cnv_pvec_right_prepare(&mut a_prep, &a_backend.data, scratch));
 
         let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, ab_base2k);
 
@@ -728,7 +728,7 @@ pub trait GLWETensoringReference<BE: Backend> {
     );
 
     /// Reference of [`GLWETensoringImpl::glwe_square_operand_prepare`]: both forms of the operand of a
-    /// one-pass square, with `cnv_prepare_self`.
+    /// one-pass square, with `cnv_pvec_self_prepare`.
     fn glwe_square_operand_prepare_reference(
         &self,
         left: &mut poulpy_hal::layouts::CnvPVecLBackendMut<'_, BE>,
@@ -916,7 +916,7 @@ where
 
         let lvl_0: usize = self.cnv_pvec_left_bytes_of(n, cols, a_size, PrepareHint::Reuse)
             + self.cnv_pvec_right_bytes_of(n, cols, a_size, PrepareHint::Reuse);
-        let lvl_1: usize = self.cnv_prepare_self_tmp_bytes(a_size, a_size);
+        let lvl_1: usize = self.cnv_pvec_self_prepare_tmp_bytes(a_size, a_size);
         let diag_dft_size =
             normalize_input_limb_bound_worst_case(2 * a_size, res_size, res.base2k().as_usize(), a.base2k().as_usize());
         let lvl_2_apply: usize = self.cnv_apply_dft_tmp_bytes(cnv_offset, diag_dft_size, a_size, a_size);
@@ -963,8 +963,8 @@ where
         let lvl_0: usize = self.cnv_pvec_left_bytes_of(n, cols, a_size, PrepareHint::Reuse)
             + self.cnv_pvec_right_bytes_of(n, cols, b_size, PrepareHint::Reuse);
         let lvl_1: usize = self
-            .cnv_prepare_left_tmp_bytes(a_size, a_size)
-            .max(self.cnv_prepare_right_tmp_bytes(b_size, b_size));
+            .cnv_pvec_left_prepare_tmp_bytes(a_size, a_size)
+            .max(self.cnv_pvec_right_prepare_tmp_bytes(b_size, b_size));
         let lvl_2: usize = glwe_tensor_apply_loop_tmp_bytes(self, res, a_size, b_size, ab_base2k.as_usize());
 
         BE::scratch_aligned(self.glwe_bytes_of_from_infos(a))
@@ -1187,7 +1187,7 @@ where
         let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(res.n().as_usize(), cols, a_size, PrepareHint::Reuse);
 
         let mut prep_scratch = scratch.borrow();
-        self.cnv_prepare_self(&mut a_prep, &mut b_prep, &a.data, &mut prep_scratch);
+        self.cnv_pvec_self_prepare(&mut a_prep, &mut b_prep, &a.data, &mut prep_scratch);
 
         let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, a_base2k);
 
@@ -1286,8 +1286,8 @@ where
         let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(res.n().as_usize(), cols, b_size, PrepareHint::Reuse);
 
         let mut prep_scratch = scratch.borrow();
-        self.cnv_prepare_left(&mut a_prep, &a.data, &mut prep_scratch);
-        self.cnv_prepare_right(&mut b_prep, &b.data, &mut prep_scratch);
+        self.cnv_pvec_left_prepare(&mut a_prep, &a.data, &mut prep_scratch);
+        self.cnv_pvec_right_prepare(&mut b_prep, &b.data, &mut prep_scratch);
 
         glwe_tensor_apply_loop(
             self,
@@ -1515,7 +1515,7 @@ where
         a: &VecZnxBackendRef<'_, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) {
-        self.cnv_prepare_self(left, right, a, scratch)
+        self.cnv_pvec_self_prepare(left, right, a, scratch)
     }
 
     fn glwe_mul_relinearize_sum_tmp_bytes_reference<R, B>(
@@ -1940,9 +1940,9 @@ where
     // Either operand may need a normalized copy while it is prepared.
     let prepare = 2 * BE::scratch_aligned(module.glwe_bytes_of_from_infos(&tensor_infos))
         + module
-            .cnv_prepare_self_tmp_bytes(max_size, max_size)
-            .max(module.cnv_prepare_left_tmp_bytes(max_size, max_size))
-            .max(module.cnv_prepare_right_tmp_bytes(max_size, max_size))
+            .cnv_pvec_self_prepare_tmp_bytes(max_size, max_size)
+            .max(module.cnv_pvec_left_prepare_tmp_bytes(max_size, max_size))
+            .max(module.cnv_pvec_right_prepare_tmp_bytes(max_size, max_size))
             .max(module.glwe_normalize_tmp_bytes());
     let columns = module.vec_znx_dft_bytes_of(n, 2, dft_size) + module.vec_znx_dft_bytes_of(n, 1, dft_size);
     let convolve = module
@@ -2217,11 +2217,11 @@ fn glwe_mul_relinearize_one_pass<BE, R, A, B, AP, BP, H>(
                     BE::glwe_square_operand_prepare(module, &mut a_prep, &mut b_prep, &left.data, &mut prep_scratch.borrow())
                 }
                 MulRight::Operand(b) => {
-                    module.cnv_prepare_left(&mut a_prep, &left.data, &mut prep_scratch.borrow());
+                    module.cnv_pvec_left_prepare(&mut a_prep, &left.data, &mut prep_scratch.borrow());
                     let b = canonical!(*b, right_tmp, prep_scratch);
-                    module.cnv_prepare_right(&mut b_prep, &b.data, &mut prep_scratch.borrow());
+                    module.cnv_pvec_right_prepare(&mut b_prep, &b.data, &mut prep_scratch.borrow());
                 }
-                MulRight::Prepared { .. } => module.cnv_prepare_left(&mut a_prep, &left.data, &mut prep_scratch.borrow()),
+                MulRight::Prepared { .. } => module.cnv_pvec_left_prepare(&mut a_prep, &left.data, &mut prep_scratch.borrow()),
             }
         }};
     }
@@ -2294,9 +2294,9 @@ fn glwe_mul_relinearize_one_pass<BE, R, A, B, AP, BP, H>(
                     let (mut left_tmp, prep_scratch) = scratch.borrow().take_glwe_scratch(&left_infos);
                     let (mut right_tmp, mut prep_scratch) = prep_scratch.take_glwe_scratch(&right_infos);
                     let a = canonical!(*a, left_tmp, prep_scratch);
-                    module.cnv_prepare_left(&mut a_prep, &a.data, &mut prep_scratch.borrow());
+                    module.cnv_pvec_left_prepare(&mut a_prep, &a.data, &mut prep_scratch.borrow());
                     let b = canonical!(*b, right_tmp, prep_scratch);
-                    module.cnv_prepare_right(&mut b_prep, &b.data, &mut prep_scratch.borrow());
+                    module.cnv_pvec_right_prepare(&mut b_prep, &b.data, &mut prep_scratch.borrow());
                 }
                 add_columns!(&a_prep.to_backend_ref(), &b_prep.to_backend_ref());
             }
@@ -2853,7 +2853,7 @@ where
     let cnv_offset = a_size.min(b_size);
 
     let lvl_0: usize = module.cnv_pvec_left_bytes_of(module.n(), cols, a_size, PrepareHint::Reuse);
-    let lvl_1: usize = module.cnv_prepare_left_tmp_bytes(a_size, a_size);
+    let lvl_1: usize = module.cnv_pvec_left_prepare_tmp_bytes(a_size, a_size);
     let diag_dft_size = normalize_input_limb_bound_worst_case(a_size + b_size, res_size, res.base2k().as_usize(), ab_base2k);
     let lvl_2_apply: usize = module.cnv_apply_dft_tmp_bytes(cnv_offset, diag_dft_size, a_size, b_size);
     let pairwise_dft_size = normalize_input_limb_bound_worst_case(a_size + b_size, res_size, res.base2k().as_usize(), ab_base2k);
@@ -2918,7 +2918,7 @@ pub fn glwe_tensor_apply_prepared_right_reference<BE, M, R, A, BP>(
     let a_k = a.k().as_usize();
     let a_size: usize = a_k.div_ceil(ab_base2k);
     // Relaxed input: `a` may carry more limbs than `a_k` requires; the prepared left
-    // operand is sized to the effective limb count and `cnv_prepare_left` clamps to it, reading
+    // operand is sized to the effective limb count and `cnv_pvec_left_prepare` clamps to it, reading
     // only the top (most-significant) effective limbs.
     assert!(a_size <= a.size(), "a_k limbs ({a_size}) > a.size() ({})", a.size());
 
@@ -2943,7 +2943,7 @@ pub fn glwe_tensor_apply_prepared_right_reference<BE, M, R, A, BP>(
     let (mut a_prep, mut scratch) = scratch.take_cnv_pvec_left_scratch(res.n().as_usize(), cols, a_size, PrepareHint::Reuse);
 
     let mut prep_scratch = scratch.borrow();
-    module.cnv_prepare_left(&mut a_prep, &a.data, &mut prep_scratch);
+    module.cnv_pvec_left_prepare(&mut a_prep, &a.data, &mut prep_scratch);
 
     glwe_tensor_apply_loop(
         module,
@@ -2965,7 +2965,7 @@ where
     M: CnvOps<BE> + GLWENormalize<BE> + GLWEBytesOf<BE>,
     B: GLWEInfos,
 {
-    glwe_prepare_tmp_bytes(module, b, module.cnv_prepare_right_tmp_bytes(b_prep_size, b.size()))
+    glwe_prepare_tmp_bytes(module, b, module.cnv_pvec_right_prepare_tmp_bytes(b_prep_size, b.size()))
 }
 
 /// Prepares GLWE `b` into the caller-owned scratch `CnvPVecR` `b_prep`.
@@ -2991,7 +2991,7 @@ pub fn glwe_right_operand_prepare<BE, M, B, BP>(
 {
     let mut b_prep = b_prep.to_backend_mut();
     glwe_prepare_canonical(module, b_prep.size(), b, b_k, scratch, |b, scratch| {
-        module.cnv_prepare_right(&mut b_prep, b, scratch)
+        module.cnv_pvec_right_prepare(&mut b_prep, b, scratch)
     });
 }
 
@@ -3002,7 +3002,7 @@ where
     M: CnvOps<BE> + GLWENormalize<BE> + GLWEBytesOf<BE>,
     A: GLWEInfos,
 {
-    glwe_prepare_tmp_bytes(module, a, module.cnv_prepare_left_tmp_bytes(a_prep_size, a.size()))
+    glwe_prepare_tmp_bytes(module, a, module.cnv_pvec_left_prepare_tmp_bytes(a_prep_size, a.size()))
 }
 
 /// Prepares GLWE `a` into the caller-owned `CnvPVecL` `a_prep`: the left operand of the prepared products, as
@@ -3017,7 +3017,7 @@ where
 {
     let mut a_prep = a_prep.to_backend_mut();
     glwe_prepare_canonical(module, a_prep.size(), a, a_k, scratch, |a, scratch| {
-        module.cnv_prepare_left(&mut a_prep, a, scratch)
+        module.cnv_pvec_left_prepare(&mut a_prep, a, scratch)
     });
 }
 

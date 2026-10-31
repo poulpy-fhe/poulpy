@@ -316,19 +316,6 @@ pub unsafe trait HalVecZnxImpl: Backend {
         scratch: &mut ScratchArena<'_, Self>,
     );
 
-    /// `res[res_col] = a[a_col](X^k)`. Default body: `scalar_znx_automorphism_derived`,
-    /// a `vec_znx_automorphism` on `res` and `a` read as one-limb `VecZnx`. Takes no scratch.
-    fn scalar_znx_automorphism(
-        module: &Module<Self>,
-        k: i64,
-        res: &mut ScalarZnxBackendMut<'_, Self>,
-        res_col: usize,
-        a: &ScalarZnxBackendRef<'_, Self>,
-        a_col: usize,
-    ) {
-        crate::oep::scalar_znx_automorphism_derived::<Self>(module, k, res, res_col, a, a_col)
-    }
-
     fn vec_znx_switch_ring(
         module: &Module<Self>,
         res: &mut VecZnxBackendMut<'_, Self>,
@@ -345,13 +332,15 @@ pub unsafe trait HalVecZnxImpl: Backend {
         a_col: usize,
     );
 
-    fn vec_znx_fill_uniform(
+    /// Fills `res[res_col]` from a stream seeded by one `source.new_seed()`, so every backend advances the caller's
+    /// source alike.
+    fn vec_znx_fill_uniform_source(
         module: &Module<Self>,
         base2k: usize,
         k: usize,
         res: &mut VecZnxBackendMut<'_, Self>,
         res_col: usize,
-        seed: [u8; 32],
+        source: &mut Source,
     );
 
     /// Every column of `res` filled in increasing order, each with the next
@@ -361,6 +350,40 @@ pub unsafe trait HalVecZnxImpl: Backend {
         R: VecZnxToBackendMut<Self>,
     {
         crate::oep::vec_znx_fill_uniform_source_all_derived::<Self, R>(module, base2k, k, res, source)
+    }
+}
+
+/// Coefficient-domain `ScalarZnx` extension point.
+///
+/// # Safety
+/// Same contract as [`HalVecZnxImpl`].
+pub unsafe trait HalScalarZnxImpl: HalVecZnxImpl {
+    /// `res[res_col] = a[a_col](X^k)`. Default body: `scalar_znx_automorphism_derived`,
+    /// a `vec_znx_automorphism` on `res` and `a` read as one-limb `VecZnx`. Takes no scratch.
+    fn scalar_znx_automorphism(
+        module: &Module<Self>,
+        k: i64,
+        res: &mut ScalarZnxBackendMut<'_, Self>,
+        res_col: usize,
+        a: &ScalarZnxBackendRef<'_, Self>,
+        a_col: usize,
+    ) {
+        crate::oep::scalar_znx_automorphism_derived::<Self>(module, k, res, res_col, a, a_col)
+    }
+
+    /// `res[res_col]` = the conjugate-invariant `a[a_col]` embedded in the standard ring of twice its degree.
+    /// Default body: `scalar_znx_ci_embed_derived`, a `vec_znx_ci_embed` on `res` and `a` read as one-limb
+    /// `VecZnx`. Takes no scratch.
+    fn scalar_znx_ci_embed(
+        module: &Module<Self>,
+        res: &mut ScalarZnxBackendMut<'_, Self>,
+        res_col: usize,
+        a: &ScalarZnxBackendRef<'_, Self>,
+        a_col: usize,
+    ) where
+        Self: HalVecZnxCIImpl,
+    {
+        crate::oep::scalar_znx_ci_embed_derived::<Self>(module, res, res_col, a, a_col)
     }
 }
 
@@ -505,19 +528,6 @@ pub unsafe trait HalVecZnxCIImpl: HalVecZnxImpl + Backend<Ring = Standard> {
         a: &VecZnxBackendRef<'_, Self>,
         a_col: usize,
     );
-
-    /// `res[res_col]` = the conjugate-invariant `a[a_col]` embedded in the standard ring of twice its degree.
-    /// Default body: `scalar_znx_ci_embed_derived`, a `vec_znx_ci_embed` on `res` and `a` read as one-limb
-    /// `VecZnx`. Takes no scratch.
-    fn scalar_znx_ci_embed(
-        module: &Module<Self>,
-        res: &mut ScalarZnxBackendMut<'_, Self>,
-        res_col: usize,
-        a: &ScalarZnxBackendRef<'_, Self>,
-        a_col: usize,
-    ) {
-        crate::oep::scalar_znx_ci_embed_derived::<Self>(module, res, res_col, a, a_col)
-    }
 }
 
 /// Big-coefficient `VecZnxBig` extension point.
@@ -905,7 +915,7 @@ pub unsafe trait HalVecZnxDftImpl: Backend + HalVecZnxBigImpl {
 /// Implementations must uphold the backend safety contract for prepared
 /// polynomial layouts and arithmetic correctness.
 pub unsafe trait HalSvpImpl: Backend + HalVecZnxDftImpl {
-    fn svp_prepare(
+    fn svp_ppol_prepare(
         module: &Module<Self>,
         res: &mut crate::layouts::SvpPPolBackendMut<'_, Self>,
         res_col: usize,
@@ -975,9 +985,9 @@ pub unsafe trait HalSvpImpl: Backend + HalVecZnxDftImpl {
 /// Implementations must uphold the backend safety contract for prepared matrix
 /// layouts, scratch usage, and arithmetic correctness.
 pub unsafe trait HalVmpImpl: Backend + HalVecZnxDftImpl {
-    fn vmp_prepare_tmp_bytes(module: &Module<Self>, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> usize;
+    fn vmp_pmat_prepare_tmp_bytes(module: &Module<Self>, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> usize;
 
-    fn vmp_prepare(
+    fn vmp_pmat_prepare(
         module: &Module<Self>,
         res: &mut crate::layouts::VmpPMatBackendMut<'_, Self>,
         a: &crate::layouts::MatZnxBackendRef<'_, Self>,
@@ -1086,18 +1096,18 @@ pub unsafe trait HalVmpImpl: Backend + HalVecZnxDftImpl {
 /// Implementations must uphold the backend safety contract for prepared matrix
 /// layouts, scratch usage, and arithmetic correctness.
 pub unsafe trait HalCnvImpl: Backend + HalVecZnxDftImpl + HalVecZnxBigImpl {
-    fn cnv_prepare_left_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize) -> usize;
+    fn cnv_pvec_left_prepare_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize) -> usize;
 
-    fn cnv_prepare_left(
+    fn cnv_pvec_left_prepare(
         module: &Module<Self>,
         res: &mut crate::layouts::CnvPVecLBackendMut<'_, Self>,
         a: &crate::layouts::VecZnxBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     );
 
-    fn cnv_prepare_right_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize) -> usize;
+    fn cnv_pvec_right_prepare_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize) -> usize;
 
-    fn cnv_prepare_right(
+    fn cnv_pvec_right_prepare(
         module: &Module<Self>,
         res: &mut crate::layouts::CnvPVecRBackendMut<'_, Self>,
         a: &crate::layouts::VecZnxBackendRef<'_, Self>,
@@ -1266,23 +1276,23 @@ pub unsafe trait HalCnvImpl: Backend + HalVecZnxDftImpl + HalVecZnxBigImpl {
         crate::oep::cnv_pairwise_apply_dft_derived::<Self>(module, cnv_offset, res, res_col, a, b, i, j, scratch)
     }
 
-    /// Returns scratch bytes required for [`Self::cnv_prepare_self`]. Default
-    /// body: `cnv_prepare_self_tmp_bytes_derived`, the larger of the two
+    /// Returns scratch bytes required for [`Self::cnv_pvec_self_prepare`]. Default
+    /// body: `cnv_pvec_self_prepare_tmp_bytes_derived`, the larger of the two
     /// prepares.
-    fn cnv_prepare_self_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize) -> usize {
-        crate::oep::cnv_prepare_self_tmp_bytes_derived::<Self>(module, res_size, a_size)
+    fn cnv_pvec_self_prepare_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize) -> usize {
+        crate::oep::cnv_pvec_self_prepare_tmp_bytes_derived::<Self>(module, res_size, a_size)
     }
 
     /// Prepares `a` as both a left and a right convolution factor. Default body:
-    /// `cnv_prepare_self_derived`, one [`Self::cnv_prepare_left`] then one
-    /// [`Self::cnv_prepare_right`].
-    fn cnv_prepare_self(
+    /// `cnv_pvec_self_prepare_derived`, one [`Self::cnv_pvec_left_prepare`] then one
+    /// [`Self::cnv_pvec_right_prepare`].
+    fn cnv_pvec_self_prepare(
         module: &Module<Self>,
         left: &mut crate::layouts::CnvPVecLBackendMut<'_, Self>,
         right: &mut crate::layouts::CnvPVecRBackendMut<'_, Self>,
         a: &crate::layouts::VecZnxBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        crate::oep::cnv_prepare_self_derived::<Self>(module, left, right, a, scratch)
+        crate::oep::cnv_pvec_self_prepare_derived::<Self>(module, left, right, a, scratch)
     }
 }

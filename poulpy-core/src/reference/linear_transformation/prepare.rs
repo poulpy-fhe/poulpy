@@ -108,7 +108,7 @@ where
     if pt_infos.rank().as_usize() > 0 {
         return crate::glwe_right_operand_prepare_tmp_bytes(module, pt_infos.size(), pt_infos);
     }
-    module.cnv_prepare_right_tmp_bytes(pt_infos.size(), pt_infos.size())
+    module.cnv_pvec_right_prepare_tmp_bytes(pt_infos.size(), pt_infos.size())
 }
 
 /// Reference impl: encodes every diagonal of `lt` into the matching
@@ -215,7 +215,7 @@ pub fn glwe_linear_transformation_rhs_prepare_reference<BE, M, P>(
                 continue;
             }
             let plaintext_backend = plaintext.to_backend_ref();
-            module.cnv_prepare_right(
+            module.cnv_pvec_right_prepare(
                 &mut prepared_slot.plaintext.cnv_mut().to_backend_mut(),
                 &plaintext_backend.data,
                 scratch,

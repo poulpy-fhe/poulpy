@@ -28,9 +28,9 @@ use crate::layouts::VmpPMatToBackendMut;
 use crate::test_suite::{PoisonedArena, poisoned_arena};
 use crate::{
     api::{
-        SvpPPolAlloc, SvpPrepare, VecZnxBigAlloc, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAlloc, VecZnxDftApply,
-        VecZnxFillUniformSource, VecZnxFillUniformSourceAll, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VmpPMatAlloc, VmpPrepare,
-        VmpPrepareTmpBytes,
+        SvpPPolAlloc, SvpPPolPrepare, VecZnxBigAlloc, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAlloc,
+        VecZnxDftApply, VecZnxFillUniformSource, VecZnxFillUniformSourceAll, VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
+        VmpPMatAlloc, VmpPMatPrepare, VmpPMatPrepareTmpBytes,
     },
     layouts::{
         Backend, DataView, MatZnx, MatZnxAtBackendMut, MatZnxToBackendRef, Module, PrepareHint, ScalarZnxAsVecZnxBackendMut,
@@ -65,14 +65,14 @@ where
     }
 }
 
-/// Same input, `svp_prepare` on each backend: the resulting `SvpPPol` buffers
+/// Same input, `svp_ppol_prepare` on each backend: the resulting `SvpPPol` buffers
 /// must be byte-identical. Exact-arithmetic (NTT/CRT) words only.
-pub fn test_word_compat_svp_prepare_bytes<BA, BB>(params: &TestParams, module_a: &Module<BA>, module_b: &Module<BB>)
+pub fn test_word_compat_svp_ppol_prepare_bytes<BA, BB>(params: &TestParams, module_a: &Module<BA>, module_b: &Module<BB>)
 where
     BA: crate::test_suite::TestBackend + SvpPPolLayoutCompatible<BB>,
     BB: crate::test_suite::TestBackend,
-    Module<BA>: SvpPPolAlloc<BA> + SvpPrepare<BA>,
-    Module<BB>: SvpPPolAlloc<BB> + SvpPrepare<BB>,
+    Module<BA>: SvpPPolAlloc<BA> + SvpPPolPrepare<BA>,
+    Module<BB>: SvpPPolAlloc<BB> + SvpPPolPrepare<BB>,
 {
     let base2k = params.base2k;
     assert_eq!(module_a.n(), module_b.n());
@@ -95,8 +95,8 @@ where
     let mut svp_a: SvpPPolOwned<BA> = module_a.svp_ppol_alloc(params.n, cols, PrepareHint::Reuse);
     let mut svp_b: SvpPPolOwned<BB> = module_b.svp_ppol_alloc(params.n, cols, PrepareHint::Reuse);
     for j in 0..cols {
-        module_a.svp_prepare(&mut svp_a.to_backend_mut(), j, &scalar_znx_backend_ref::<BA>(&scalar_a), j);
-        module_b.svp_prepare(&mut svp_b.to_backend_mut(), j, &scalar_znx_backend_ref::<BB>(&scalar_b), j);
+        module_a.svp_ppol_prepare(&mut svp_a.to_backend_mut(), j, &scalar_znx_backend_ref::<BA>(&scalar_a), j);
+        module_b.svp_ppol_prepare(&mut svp_b.to_backend_mut(), j, &scalar_znx_backend_ref::<BB>(&scalar_b), j);
     }
     assert!(
         BA::to_host_bytes(&svp_a.data) == BB::to_host_bytes(&svp_b.data),
@@ -104,7 +104,7 @@ where
     );
 }
 
-/// Same input, `vmp_prepare` on each backend: the resulting `VmpPMat` buffers
+/// Same input, `vmp_pmat_prepare` on each backend: the resulting `VmpPMat` buffers
 /// must be byte-identical. Exact-arithmetic (NTT/CRT) words only.
 ///
 /// A backend pair that packs `VmpPMat` differently must not declare
@@ -113,20 +113,20 @@ where
 /// block-interleaved layout on the other: their divergence under a shared
 /// DFT word is now prevented by construction, the backends being distinct
 /// container types with no `VmpPMat` marker.
-pub fn test_word_compat_vmp_prepare_bytes<BA, BB>(params: &TestParams, module_a: &Module<BA>, module_b: &Module<BB>)
+pub fn test_word_compat_vmp_pmat_prepare_bytes<BA, BB>(params: &TestParams, module_a: &Module<BA>, module_b: &Module<BB>)
 where
     BA: crate::test_suite::TestBackend + VmpPMatLayoutCompatible<BB>,
     BB: crate::test_suite::TestBackend,
-    Module<BA>: VmpPMatAlloc<BA> + VmpPrepare<BA> + VmpPrepareTmpBytes,
-    Module<BB>: VmpPMatAlloc<BB> + VmpPrepare<BB> + VmpPrepareTmpBytes,
+    Module<BA>: VmpPMatAlloc<BA> + VmpPMatPrepare<BA> + VmpPMatPrepareTmpBytes,
+    Module<BB>: VmpPMatAlloc<BB> + VmpPMatPrepare<BB> + VmpPMatPrepareTmpBytes,
 {
     let base2k = params.base2k;
     assert_eq!(module_a.n(), module_b.n());
     let (rows, cols_in, cols_out, size) = (2, 2, 2, 3);
     let mut source = Source::new([0u8; 32]);
 
-    let mut scratch_a: PoisonedArena<BA> = poisoned_arena(module_a.vmp_prepare_tmp_bytes(rows, cols_in, cols_out, size));
-    let mut scratch_b: PoisonedArena<BB> = poisoned_arena(module_b.vmp_prepare_tmp_bytes(rows, cols_in, cols_out, size));
+    let mut scratch_a: PoisonedArena<BA> = poisoned_arena(module_a.vmp_pmat_prepare_tmp_bytes(rows, cols_in, cols_out, size));
+    let mut scratch_b: PoisonedArena<BB> = poisoned_arena(module_b.vmp_pmat_prepare_tmp_bytes(rows, cols_in, cols_out, size));
 
     let mut mat_a = module_a.mat_znx_alloc(params.n, rows, cols_in, cols_out, size);
     for row in 0..rows {
@@ -147,12 +147,12 @@ where
 
     let mut pmat_a: VmpPMatOwned<BA> = module_a.vmp_pmat_alloc(params.n, rows, cols_in, cols_out, size, PrepareHint::Reuse);
     let mut pmat_b: VmpPMatOwned<BB> = module_b.vmp_pmat_alloc(params.n, rows, cols_in, cols_out, size, PrepareHint::Reuse);
-    module_a.vmp_prepare(
+    module_a.vmp_pmat_prepare(
         &mut pmat_a.to_backend_mut(),
         &<MatZnx<BA::OwnedBuf, BA::ZnxWord> as MatZnxToBackendRef<BA>>::to_backend_ref(&mat_a),
         &mut scratch_a.arena(),
     );
-    module_b.vmp_prepare(
+    module_b.vmp_pmat_prepare(
         &mut pmat_b.to_backend_mut(),
         &<MatZnx<BB::OwnedBuf, BB::ZnxWord> as MatZnxToBackendRef<BB>>::to_backend_ref(&mat_b),
         &mut scratch_b.arena(),

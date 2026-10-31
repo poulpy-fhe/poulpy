@@ -24,7 +24,7 @@ and so the layout/schedule math stays free of any backend.
 | File | Role | Spec § |
 |---|---|---|
 | [`linear_transformation.rs`](../../poulpy-core/src/reference/linear_transformation.rs) | Module root: re-exports the data types and the `*_reference` functions a backend forwards to. | §11 |
-| [`prepare.rs`](../../poulpy-core/src/reference/linear_transformation/prepare.rs) | **Setup, RHS:** encode-then-`cnv_prepare_right` the matrix diagonals into `CnvPVecR`. | §5 |
+| [`prepare.rs`](../../poulpy-core/src/reference/linear_transformation/prepare.rs) | **Setup, RHS:** encode-then-`cnv_pvec_right_prepare` the matrix diagonals into `CnvPVecR`. | §5 |
 | [`baby_steps.rs`](../../poulpy-core/src/reference/linear_transformation/baby_steps.rs) | **Setup, LHS / Phase A:** hoisted baby rotations `rot(v,k)`, prepared as `CnvPVecL`. | §6.2 |
 | [`inner_product.rs`](../../poulpy-core/src/reference/linear_transformation/inner_product.rs) | **Phase B, PROD:** per-giant DFT-domain inner sum `Σ_k ũ_{j,k} ⊙ rot(v,k)`. | §6.3 |
 | [`lazy.rs`](../../poulpy-core/src/reference/linear_transformation/lazy.rs) | **Phase B, ROT + Phase C:** lazy DFT giant rotation, DFT accumulate helpers, final normalize. | §6.3–§6.4 |
@@ -99,7 +99,7 @@ and a plaintext-shape proxy (one `CnvPVecR(1, pt_size)` per real diagonal), reco
 diagonals' `pt_base2k` / `pt_k` so the evaluator never needs the raw transform again.
 
 `glwe_linear_transformation_rhs_prepare_reference` then fills each pre-allocated slot with
-`cnv_prepare_right(plaintext)`. Zero allocations happen here; it only populates. The
+`cnv_pvec_right_prepare(plaintext)`. Zero allocations happen here; it only populates. The
 diagonals are expected pre-encoded (and pre-rotated `ũ_{j,k} = rot(u_{n1·j+k}, −n1·j)`) by
 the CKKS layer — the core engine is scheme-agnostic.
 
@@ -166,7 +166,7 @@ sum in DFT with a single IDFT deferred to later is **saving #5 (lazy normalize i
 PROD)**.
 
 The streamed sibling `glwe_accumulate_unprepared_baby_steps_dft` is identical except it
-`cnv_prepare_right`s each diagonal on the fly into one reused scratch `CnvPVecR` — see §6.
+`cnv_pvec_right_prepare`s each diagonal on the fly into one reused scratch `CnvPVecR` — see §6.
 
 ### 4.3 ROT — the lazy giant rotation ([`lazy.rs`](../../poulpy-core/src/reference/linear_transformation/lazy.rs))
 
@@ -230,7 +230,7 @@ These `*_reference` free functions are what a backend forwards to from its
 plain) and take the `max`. The eval budget covers the hoisted `a_dft`, the DFT PROD buffer
 + DFT temp, the DFT giant accumulator, the rotation scratch, the final BIG accumulator, and
 the per-op VMP/IDFT/normalize/convolution `*_tmp_bytes`. The streamed variant adds one
-resident `CnvPVecR` slot and a `cnv_prepare_right` scratch on top, and the sum one PROD bucket.
+resident `CnvPVecR` slot and a `cnv_pvec_right_prepare` scratch on top, and the sum one PROD bucket.
 
 ---
 

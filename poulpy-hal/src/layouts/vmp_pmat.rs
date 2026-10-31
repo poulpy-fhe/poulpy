@@ -64,7 +64,7 @@ impl VmpPMatShape {
 ///
 /// Used as the right operand in
 /// [`VmpApplyDftToDft`](crate::api::VmpApplyDftToDft). Create via
-/// [`VmpPrepare`](crate::api::VmpPrepare) from a coefficient-domain
+/// [`VmpPMatPrepare`](crate::api::VmpPMatPrepare) from a coefficient-domain
 /// [`MatZnx`](crate::layouts::MatZnx).
 ///
 /// Note that a backend may pack this matrix more compactly than

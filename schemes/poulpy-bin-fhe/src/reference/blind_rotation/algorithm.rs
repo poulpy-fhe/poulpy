@@ -249,7 +249,7 @@ fn execute_block_binary_extended<R, L, M, BE: Backend<ZnxWord = i64>>(
     let cols: usize = (res.rank() + 1).into();
 
     let scratch = scratch.borrow();
-    let (mut acc, scratch_1) = scratch.take_vec_znx_slice_scratch(extension_factor, n_glwe, cols, res.size());
+    let (mut acc, scratch_1) = scratch.take_vec_znx_slice_scratch(n_glwe, extension_factor, cols, res.size());
     let (mut acc_dft, scratch_2) = scratch_1.take_vec_znx_dft_slice_scratch(module.n(), extension_factor, cols, dnum);
     let (mut vmp_res, scratch_3) = scratch_2.take_vec_znx_dft_slice_scratch(module.n(), extension_factor, cols, brk.size());
     let (mut acc_add_dft, scratch_4) = scratch_3.take_vec_znx_dft_slice_scratch(module.n(), extension_factor, cols, brk.size());

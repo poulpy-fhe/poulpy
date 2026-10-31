@@ -1440,12 +1440,12 @@ unsafe fn zero_limb_packed(dst: *mut u64, size: usize, limb_row: usize, n_groups
     }
 }
 
-/// Scratch bytes required by [`cnv_prepare_left`]: one three-prime NTT limb.
-pub(crate) fn cnv_prepare_left_tmp_bytes(n: usize) -> usize {
+/// Scratch bytes required by [`cnv_pvec_left_prepare`]: one three-prime NTT limb.
+pub(crate) fn cnv_pvec_left_prepare_tmp_bytes(n: usize) -> usize {
     3 * n * size_of::<u64>()
 }
 
-pub(crate) fn cnv_prepare_left<R: Ring, E: TaskExecutor>(
+pub(crate) fn cnv_pvec_left_prepare<R: Ring, E: TaskExecutor>(
     module: &Module<NTT3x42Ifma<R>>,
     res: &mut CnvPVecLBackendMut<'_, NTT3x42Ifma<R>>,
     a: &VecZnxBackendRef<'_, NTT3x42Ifma<R>>,
@@ -1454,7 +1454,7 @@ pub(crate) fn cnv_prepare_left<R: Ring, E: TaskExecutor>(
     NTT3x42Ifma<R>:
         Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>> + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>,
 {
-    poulpy_hal::layouts::assert_dense(a, "cnv_prepare_left");
+    poulpy_hal::layouts::assert_dense(a, "cnv_pvec_left_prepare");
     let n = res.n();
     check_degree::<NTT3x42Ifma<R>>(module.n(), n);
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
@@ -1513,12 +1513,12 @@ pub(crate) fn cnv_prepare_left<R: Ring, E: TaskExecutor>(
     }
 }
 
-/// Scratch bytes required by [`cnv_prepare_right`]: one three-prime NTT limb.
-pub(crate) fn cnv_prepare_right_tmp_bytes(n: usize) -> usize {
+/// Scratch bytes required by [`cnv_pvec_right_prepare`]: one three-prime NTT limb.
+pub(crate) fn cnv_pvec_right_prepare_tmp_bytes(n: usize) -> usize {
     3 * n * size_of::<u64>()
 }
 
-pub(crate) fn cnv_prepare_right<R: Ring, E: TaskExecutor>(
+pub(crate) fn cnv_pvec_right_prepare<R: Ring, E: TaskExecutor>(
     module: &Module<NTT3x42Ifma<R>>,
     res: &mut CnvPVecRBackendMut<'_, NTT3x42Ifma<R>>,
     a: &VecZnxBackendRef<'_, NTT3x42Ifma<R>>,
@@ -1527,7 +1527,7 @@ pub(crate) fn cnv_prepare_right<R: Ring, E: TaskExecutor>(
     NTT3x42Ifma<R>:
         Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>> + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>,
 {
-    poulpy_hal::layouts::assert_dense(a, "cnv_prepare_right");
+    poulpy_hal::layouts::assert_dense(a, "cnv_pvec_right_prepare");
     let n = res.n();
     check_degree::<NTT3x42Ifma<R>>(module.n(), n);
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
@@ -1583,12 +1583,12 @@ pub(crate) fn cnv_prepare_right<R: Ring, E: TaskExecutor>(
     }
 }
 
-/// Scratch bytes required by [`cnv_prepare_self`]: one three-prime NTT limb.
-pub(crate) fn cnv_prepare_self_tmp_bytes(n: usize) -> usize {
+/// Scratch bytes required by [`cnv_pvec_self_prepare`]: one three-prime NTT limb.
+pub(crate) fn cnv_pvec_self_prepare_tmp_bytes(n: usize) -> usize {
     3 * n * size_of::<u64>()
 }
 
-pub(crate) fn cnv_prepare_self<R: Ring, E: TaskExecutor>(
+pub(crate) fn cnv_pvec_self_prepare<R: Ring, E: TaskExecutor>(
     module: &Module<NTT3x42Ifma<R>>,
     left: &mut CnvPVecLBackendMut<'_, NTT3x42Ifma<R>>,
     right: &mut CnvPVecRBackendMut<'_, NTT3x42Ifma<R>>,
@@ -1598,11 +1598,11 @@ pub(crate) fn cnv_prepare_self<R: Ring, E: TaskExecutor>(
     NTT3x42Ifma<R>:
         Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>> + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>,
 {
-    poulpy_hal::layouts::assert_dense(a, "cnv_prepare_self");
+    poulpy_hal::layouts::assert_dense(a, "cnv_pvec_self_prepare");
     let n = left.n();
     check_degree::<NTT3x42Ifma<R>>(module.n(), n);
-    assert_eq!(a.n(), n, "cnv_prepare_self: a.n():{} != left.n():{n}", a.n());
-    assert_eq!(right.n(), n, "cnv_prepare_self: right.n():{} != left.n():{n}", right.n());
+    assert_eq!(a.n(), n, "cnv_pvec_self_prepare: a.n():{} != left.n():{n}", a.n());
+    assert_eq!(right.n(), n, "cnv_pvec_self_prepare: right.n():{} != left.n():{n}", right.n());
     let table = handle(module).table_ntt_for(n);
     let cols = left.cols();
     assert_eq!(a.cols(), cols, "a.cols():{} != left.cols():{cols}", a.cols());

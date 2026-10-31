@@ -454,8 +454,8 @@ where
     let prepared = module.cnv_pvec_left_bytes_of(n, 2, a_size, PrepareHint::Reuse)
         + module.cnv_pvec_right_bytes_of(n, 2, b_size, PrepareHint::Reuse);
     let prepare = module
-        .cnv_prepare_left_tmp_bytes(a_size, a_size)
-        .max(module.cnv_prepare_right_tmp_bytes(b_size, b_size));
+        .cnv_pvec_left_prepare_tmp_bytes(a_size, a_size)
+        .max(module.cnv_pvec_right_prepare_tmp_bytes(b_size, b_size));
     BE::scratch_aligned(module.glwe_bytes_of_from_infos(a))
         + BE::scratch_aligned(module.glwe_bytes_of_from_infos(b))
         + (prepared + prepare.max(rank_one_tensor_prepared_tmp_bytes(module, res, a_size, b_size, base2k)))
@@ -510,7 +510,7 @@ where
     let dft_size = (2 * a_size).min((res.size() * res.base2k().as_usize() + base2k - 1).div_ceil(base2k));
     let prepared = module.cnv_pvec_left_bytes_of(n, 2, a_size, PrepareHint::Reuse)
         + module.cnv_pvec_right_bytes_of(n, 2, a_size, PrepareHint::Reuse);
-    let prepare = module.cnv_prepare_self_tmp_bytes(a_size, a_size);
+    let prepare = module.cnv_pvec_self_prepare_tmp_bytes(a_size, a_size);
     BE::scratch_aligned(module.glwe_bytes_of_from_infos(a))
         + (prepared + prepare.max(rank_one_tensor_work_bytes(module, n, res.size(), dft_size, a_size, a_size)))
             .max(module.glwe_normalize_tmp_bytes())
@@ -685,8 +685,8 @@ fn rank_one_tensor_apply<BE, R, A, B>(
     let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(n, 2, b_size, PrepareHint::Reuse);
     {
         let mut prep_scratch = scratch.borrow();
-        module.cnv_prepare_left(&mut a_prep, a.data(), &mut prep_scratch);
-        module.cnv_prepare_right(&mut b_prep, b.data(), &mut prep_scratch);
+        module.cnv_pvec_left_prepare(&mut a_prep, a.data(), &mut prep_scratch);
+        module.cnv_pvec_right_prepare(&mut b_prep, b.data(), &mut prep_scratch);
     }
     rank_one_tensor_finish(
         module,
@@ -785,7 +785,7 @@ fn rank_one_tensor_square<BE, R, A>(
     let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(n, 2, a_size, PrepareHint::Reuse);
     {
         let mut prep_scratch = scratch.borrow();
-        module.cnv_prepare_self(&mut a_prep, &mut b_prep, a.data(), &mut prep_scratch);
+        module.cnv_pvec_self_prepare(&mut a_prep, &mut b_prep, a.data(), &mut prep_scratch);
     }
     rank_one_tensor_finish(
         module,
@@ -1587,7 +1587,7 @@ fn ifma_prepared_tensor<R, A, BP>(
     };
     res.set_canonical(true);
     let (mut left, mut work) = work.take_cnv_pvec_left_scratch(n, 2, a_size, PrepareHint::Reuse);
-    module.cnv_prepare_left(&mut left, a.data(), &mut work);
+    module.cnv_pvec_left_prepare(&mut left, a.data(), &mut work);
     let (high, low) = cnv_offset_to_limb_offset(offset, base);
     let size = normalize_input_limb_bound_with_offset(a_size + b_size - high, res.size(), result_base, base, low);
     let (mut dft, mut work) = work.take_vec_znx_dft_scratch(n, 1, size);
@@ -1779,7 +1779,7 @@ mod prepared_tensor_tests {
             let mut right = module.cnv_pvec_right_alloc(n, rank + 1, b_size, PrepareHint::Reuse);
             let prep_bytes = module.glwe_bytes_of_from_infos(&b)
                 + module
-                    .cnv_prepare_right_tmp_bytes(b_size, b_size)
+                    .cnv_pvec_right_prepare_tmp_bytes(b_size, b_size)
                     .max(module.glwe_normalize_tmp_bytes());
             let mut prep_scratch = ScratchOwned::<BE>::alloc(prep_bytes);
             glwe_right_operand_prepare(&module, &mut right, &b, b.k().as_usize(), &mut prep_scratch.borrow());

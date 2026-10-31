@@ -109,7 +109,7 @@ use $crate::__private::poulpy_cpu_portable::{
                 Reim4BlkMatVec, Reim4Convolution, reim4_gather_block_portable, reim4_gather_block_sum_portable,
                 reim4_real_gather_block_portable, reim4_real_gather_block_sum_portable,
             },
-            vmp::{vmp_prepare_portable as fft64_vmp_prepare, vmp_prepare_tmp_bytes_portable as fft64_vmp_prepare_tmp_bytes},
+            vmp::{vmp_pmat_prepare_portable as fft64_vmp_pmat_prepare, vmp_pmat_prepare_tmp_bytes_portable as fft64_vmp_pmat_prepare_tmp_bytes},
         },
         znx::{
             ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxCopy, ZnxMulAddPowerOfTwo, ZnxMulPowerOfTwo, ZnxMulPowerOfTwoAssign,
@@ -645,6 +645,7 @@ impl BigWordHadamardProduct for $rayon {
     }
 }
 
+unsafe impl $crate::__private::poulpy_hal::oep::HalScalarZnxImpl for $rayon {}
 unsafe impl $crate::__private::poulpy_hal::oep::HalMatZnxImpl for $rayon {}
 
 unsafe impl HalVecZnxImpl for $rayon {
@@ -698,12 +699,12 @@ unsafe impl HalModuleImpl for $rayon {
     poulpy_cpu_portable::hal_impl_module!(FFT64ModuleDefault);
 }
 unsafe impl HalVmpImpl for $rayon {
-    fn vmp_prepare_tmp_bytes(module: &Module<Self>, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> usize {
+    fn vmp_pmat_prepare_tmp_bytes(module: &Module<Self>, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> usize {
         <$rayon as $crate::__private::poulpy_hal::execution::ScratchWorkers>::PREPARE
-            * <Self as FFT64VmpDefault>::vmp_prepare_tmp_bytes_default(module, rows, cols_in, cols_out, size)
+            * <Self as FFT64VmpDefault>::vmp_pmat_prepare_tmp_bytes_default(module, rows, cols_in, cols_out, size)
     }
 
-    fn vmp_prepare(
+    fn vmp_pmat_prepare(
         module: &Module<Self>,
         res: &mut VmpPMatBackendMut<'_, Self>,
         a: &MatZnxBackendRef<'_, Self>,
@@ -711,8 +712,8 @@ unsafe impl HalVmpImpl for $rayon {
     ) {
         let n = res.n();
         $crate::__private::poulpy_hal::layouts::check_degree::<Self>(module.n(), n);
-        assert_eq!(a.n(), n, "vmp_prepare: a.n():{} != res.n():{n}", a.n());
-        let per_worker = fft64_vmp_prepare_tmp_bytes(n);
+        assert_eq!(a.n(), n, "vmp_pmat_prepare: a.n():{} != res.n():{n}", a.n());
+        let per_worker = fft64_vmp_pmat_prepare_tmp_bytes(n);
         let rows = a.cols_in() * a.rows();
         let workers = $crate::workers_within(
             rows.min(<$rayon as $crate::__private::poulpy_hal::execution::ScratchWorkers>::PREPARE),
@@ -720,7 +721,7 @@ unsafe impl HalVmpImpl for $rayon {
             scratch.available(),
         );
         let (tmp, _) = $crate::take_scratch::<Self, f64>(scratch.borrow(), workers * per_worker / core::mem::size_of::<f64>());
-        fft64_vmp_prepare::<Self>(module.get_fft_plan(n), res, a, tmp);
+        fft64_vmp_pmat_prepare::<Self>(module.get_fft_plan(n), res, a, tmp);
     }
 
     fn vmp_apply_dft_to_dft_tmp_bytes(

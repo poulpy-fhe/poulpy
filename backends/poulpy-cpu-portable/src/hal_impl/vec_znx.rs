@@ -170,15 +170,15 @@ macro_rules! hal_impl_vec_znx_without_normalize_or_decompose {
             <Self as HalVecZnxDefault>::vec_znx_copy_default(module, res, res_col, a, a_col)
         }
 
-        fn vec_znx_fill_uniform(
+        fn vec_znx_fill_uniform_source(
             module: &Module<Self>,
             base2k: usize,
             k: usize,
             res: &mut VecZnxBackendMut<'_, Self>,
             res_col: usize,
-            seed: [u8; 32],
+            source: &mut $crate::source::Source,
         ) {
-            <Self as HalVecZnxDefault>::vec_znx_fill_uniform_default(module, base2k, k, res, res_col, seed)
+            <Self as HalVecZnxDefault>::vec_znx_fill_uniform_source_default(module, base2k, k, res, res_col, source)
         }
     };
 }

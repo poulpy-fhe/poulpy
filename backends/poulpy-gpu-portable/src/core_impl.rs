@@ -1175,7 +1175,7 @@ macro_rules! impl_tensoring {
                 a: &::poulpy_hal::layouts::VecZnxBackendRef<'_, $be>,
                 _scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) {
-                crate::hal_impl::cnv_prepare_self_left(module, left, right, a);
+                crate::hal_impl::cnv_pvec_self_prepare_left(module, left, right, a);
             }
 
             fn glwe_square_columns(

@@ -40,27 +40,27 @@ impl<BE: Backend> CnvPVecBytesOf for Module<BE> {
 
 impl_cnv_delegate!(
     CnvOps<BE>,
-    fn cnv_prepare_left_tmp_bytes(&self, res_size: usize, a_size: usize) -> usize {
-        BE::cnv_prepare_left_tmp_bytes(self, res_size, a_size)
+    fn cnv_pvec_left_prepare_tmp_bytes(&self, res_size: usize, a_size: usize) -> usize {
+        BE::cnv_pvec_left_prepare_tmp_bytes(self, res_size, a_size)
     },
-    fn cnv_prepare_left(
+    fn cnv_pvec_left_prepare(
         &self,
         res: &mut CnvPVecLBackendMut<'_, BE>,
         a: &VecZnxBackendRef<'_, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) {
-        BE::cnv_prepare_left(self, res, a, scratch);
+        BE::cnv_pvec_left_prepare(self, res, a, scratch);
     },
-    fn cnv_prepare_right_tmp_bytes(&self, res_size: usize, a_size: usize) -> usize {
-        BE::cnv_prepare_right_tmp_bytes(self, res_size, a_size)
+    fn cnv_pvec_right_prepare_tmp_bytes(&self, res_size: usize, a_size: usize) -> usize {
+        BE::cnv_pvec_right_prepare_tmp_bytes(self, res_size, a_size)
     },
-    fn cnv_prepare_right(
+    fn cnv_pvec_right_prepare(
         &self,
         res: &mut CnvPVecRBackendMut<'_, BE>,
         a: &VecZnxBackendRef<'_, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) {
-        BE::cnv_prepare_right(self, res, a, scratch);
+        BE::cnv_pvec_right_prepare(self, res, a, scratch);
     },
     fn cnv_apply_dft_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize {
         BE::cnv_apply_dft_tmp_bytes(self, cnv_offset, res_size, a_size, b_size)
@@ -159,16 +159,16 @@ impl_cnv_delegate!(
     ) {
         BE::cnv_pairwise_apply_dft(self, cnv_offset, res, res_col, a, b, i, j, scratch)
     },
-    fn cnv_prepare_self_tmp_bytes(&self, res_size: usize, a_size: usize) -> usize {
-        BE::cnv_prepare_self_tmp_bytes(self, res_size, a_size)
+    fn cnv_pvec_self_prepare_tmp_bytes(&self, res_size: usize, a_size: usize) -> usize {
+        BE::cnv_pvec_self_prepare_tmp_bytes(self, res_size, a_size)
     },
-    fn cnv_prepare_self(
+    fn cnv_pvec_self_prepare(
         &self,
         left: &mut CnvPVecLBackendMut<'_, BE>,
         right: &mut CnvPVecRBackendMut<'_, BE>,
         a: &VecZnxBackendRef<'_, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) {
-        BE::cnv_prepare_self(self, left, right, a, scratch)
+        BE::cnv_pvec_self_prepare(self, left, right, a, scratch)
     }
 );

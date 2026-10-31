@@ -5,7 +5,7 @@
 //!
 //! 1. **Prepare** — encode a `MatZnx` (i64 coefficients) into the
 //!    [`VmpPMat`](poulpy_hal::layouts::VmpPMat) prepared format (q120c, NTT domain) via
-//!    [`ntt4x30_vmp_prepare_portable`].
+//!    [`ntt4x30_vmp_pmat_prepare_portable`].
 //! 2. **Apply** — multiply a [`VecZnxDft`](poulpy_hal::layouts::VecZnxDft) (q120b) by a prepared
 //!    [`VmpPMat`](poulpy_hal::layouts::VmpPMat) (q120c) to obtain a new [`VecZnxDft`](poulpy_hal::layouts::VecZnxDft) (q120b) via
 //!    [`ntt4x30_vmp_apply_dft_to_dft_portable`].
@@ -47,10 +47,10 @@ use crate::kernels::vmp_select::{assert_extractable_portable, vmp_extract_select
 // Prepare
 // ──────────────────────────────────────────────────────────────────────────────
 
-/// Scratch space (in bytes) required by [`ntt4x30_vmp_prepare_portable`].
+/// Scratch space (in bytes) required by [`ntt4x30_vmp_pmat_prepare_portable`].
 ///
 /// Returns `4 * n * 8` bytes (one q120b NTT buffer of `4*n` u64).
-pub fn ntt4x30_vmp_prepare_tmp_bytes_portable(n: usize) -> usize {
+pub fn ntt4x30_vmp_pmat_prepare_tmp_bytes_portable(n: usize) -> usize {
     4 * n * size_of::<u64>()
 }
 
@@ -62,8 +62,8 @@ pub fn ntt4x30_vmp_prepare_tmp_bytes_portable(n: usize) -> usize {
 /// 3. Convert q120b → q120c ([`NttCFromB`]).
 /// 4. Store in `res` in the block-interleaved layout (see module doc).
 ///
-/// `tmp` must hold at least `ntt4x30_vmp_prepare_tmp_bytes(n) / size_of::<u64>()` elements.
-pub fn ntt4x30_vmp_prepare_portable<BE>(
+/// `tmp` must hold at least `ntt4x30_vmp_pmat_prepare_tmp_bytes(n) / size_of::<u64>()` elements.
+pub fn ntt4x30_vmp_pmat_prepare_portable<BE>(
     module: &Module<BE>,
     res: &mut VmpPMatBackendMut<'_, BE>,
     a: &MatZnxBackendRef<'_, BE>,
@@ -85,7 +85,7 @@ pub fn ntt4x30_vmp_prepare_portable<BE>(
     assert_eq!(res.rows(), a.rows());
     assert_eq!(res.cols_out(), a.cols_out());
     assert_eq!(res.size(), a.size());
-    assert!(std::mem::size_of_val(tmp) >= ntt4x30_vmp_prepare_tmp_bytes_portable(n));
+    assert!(std::mem::size_of_val(tmp) >= ntt4x30_vmp_pmat_prepare_tmp_bytes_portable(n));
 
     let nrows: usize = a.cols_in() * a.rows();
     let ncols: usize = a.cols_out() * a.size();

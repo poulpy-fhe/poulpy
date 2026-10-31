@@ -194,7 +194,7 @@ where
 /// Ring operations require `n == n_full == N` and must reject a coefficient
 /// window rather than silently compute in `Z[X]/(X^n+1)` for the window's
 /// `n`. Cases: `vec_znx_rotate`, `vec_znx_automorphism`,
-/// `vec_znx_dft_apply` and `cnv_prepare_left` panic on a windowed input, while
+/// `vec_znx_dft_apply` and `cnv_pvec_left_prepare` panic on a windowed input, while
 /// a coefficient-wise op (`vec_znx_add`) keeps accepting it.
 pub fn test_vec_znx_window_rejected_by_ring_ops<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
@@ -267,16 +267,19 @@ where
     );
 
     let mut prep = module.cnv_pvec_left_alloc(params.n, cols, size, PrepareHint::Reuse);
-    let mut scratch: PoisonedArena<BE> = poisoned_arena(module.cnv_prepare_left_tmp_bytes(size, size));
+    let mut scratch: PoisonedArena<BE> = poisoned_arena(module.cnv_pvec_left_prepare_tmp_bytes(size, size));
     let cnv_panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        module.cnv_prepare_left(
+        module.cnv_pvec_left_prepare(
             &mut prep.to_backend_mut(),
             &vec_znx_backend_ref::<BE>(&a_be).with_shape(shape),
             &mut scratch.arena(),
         );
     }))
     .is_err();
-    assert!(cnv_panicked, "cnv_prepare_left accepted a windowed view instead of panicking");
+    assert!(
+        cnv_panicked,
+        "cnv_pvec_left_prepare accepted a windowed view instead of panicking"
+    );
 
     let add_into_ok = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         module.vec_znx_add(

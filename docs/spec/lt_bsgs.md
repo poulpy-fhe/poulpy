@@ -111,8 +111,8 @@ Primitives (all already implemented in the HAL):
 | normalize | `vec_znx_big_normalize` | `BIG → SMALL` |
 | automorphism (small) | `vec_znx_automorphism` | permutation `X → X^p` on `SMALL` |
 | automorphism (big) | `vec_znx_big_automorphism_assign` | permutation on `BIG` (deferred-norm path) |
-| prepare diagonal | `cnv_prepare_right` | plaintext → `CnvPVecR`, at setup |
-| prepare rotation | `cnv_prepare_left` | `SMALL → CnvPVecL` |
+| prepare diagonal | `cnv_pvec_right_prepare` | plaintext → `CnvPVecR`, at setup |
+| prepare rotation | `cnv_pvec_left_prepare` | `SMALL → CnvPVecL` |
 | convolution | `cnv_apply_dft` | `CnvPVecL ⊗ CnvPVecR → DFT`; **overwrites** its target column |
 | DFT accumulate | `vec_znx_dft_add_assign` / `vec_znx_dft_zero` | accumulate convolution products |
 
@@ -140,7 +140,7 @@ Done once, at key/transform setup (not per evaluation):
    are the identity — **no keys needed**.
 2. **Prepared diagonals.** For every `(j, k)` with `n1·j + k ∈ I`: encode the
    pre-rotated diagonal `ũ_{j,k} = rot(u_{n1·j+k}, −n1·j)` as a plaintext polynomial and
-   prepare it with `cnv_prepare_right` into a `CnvPVecR`. Store indexed by `(j, k)`.
+   prepare it with `cnv_pvec_right_prepare` into a `CnvPVecR`. Store indexed by `(j, k)`.
    Zero diagonals are omitted (§8).
 
 The prepared linear transformation stores non-empty giant steps; each giant step
@@ -179,7 +179,7 @@ for k in 0 .. n1:
         rot_small = [ vec_znx_big_normalize(res_big[c]) for c in 0..=r ]   # SMALL
         rot_k = [ vec_znx_automorphism(g, rot_small[c]) for c in 0..=r ]   # permute slots
     # Prepare for the plaintext multiplications; reused across all giant steps.
-    L[k][c] = cnv_prepare_left(rot_k[c])  for c in 0..=r        # CnvPVecL
+    L[k][c] = cnv_pvec_left_prepare(rot_k[c])  for c in 0..=r        # CnvPVecL
 ```
 
 `a_dft` is the single hoisted object: the `n1 − 1` non-trivial baby rotations all reuse

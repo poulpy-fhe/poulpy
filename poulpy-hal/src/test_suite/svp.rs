@@ -11,7 +11,7 @@ use crate::layouts::VecZnxDftToBackendRef;
 use crate::test_suite::{PoisonedArena, poisoned_arena};
 use crate::{
     api::{
-        SvpApplyDft, SvpApplyDftTmpBytes, SvpApplyDftToDft, SvpApplyDftToDftAssign, SvpPPolAlloc, SvpPPolCopy, SvpPrepare,
+        SvpApplyDft, SvpApplyDftTmpBytes, SvpApplyDftToDft, SvpApplyDftToDftAssign, SvpPPolAlloc, SvpPPolCopy, SvpPPolPrepare,
         VecZnxBigAlloc, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAlloc, VecZnxDftApply, VecZnxFillUniformSource,
         VecZnxFillUniformSourceAll, VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
     },
@@ -27,7 +27,7 @@ pub fn test_svp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
-    Module<BR>: SvpPrepare<BR>
+    Module<BR>: SvpPPolPrepare<BR>
         + SvpApplyDft<BR>
         + SvpApplyDftTmpBytes
         + SvpPPolAlloc<BR>
@@ -37,7 +37,7 @@ pub fn test_svp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
         + VecZnxIdftApply<BR>
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalizeTmpBytes,
-    Module<BT>: SvpPrepare<BT>
+    Module<BT>: SvpPPolPrepare<BT>
         + SvpApplyDft<BT>
         + SvpApplyDftTmpBytes
         + SvpPPolAlloc<BT>
@@ -75,13 +75,13 @@ pub fn test_svp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
     let scalar_test_backend = upload_scalar_znx::<BT>(&scalar);
 
     for j in 0..cols {
-        module_ref.svp_prepare(
+        module_ref.svp_ppol_prepare(
             &mut svp_ref.to_backend_mut(),
             j,
             &scalar_znx_backend_ref::<BR>(&scalar_ref_backend),
             j,
         );
-        module_test.svp_prepare(
+        module_test.svp_ppol_prepare(
             &mut svp_test.to_backend_mut(),
             j,
             &scalar_znx_backend_ref::<BT>(&scalar_test_backend),
@@ -167,7 +167,7 @@ pub fn test_svp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
-    Module<BR>: SvpPrepare<BR>
+    Module<BR>: SvpPPolPrepare<BR>
         + SvpApplyDftToDft<BR>
         + SvpPPolAlloc<BR>
         + SvpPPolCopy<BR>
@@ -178,7 +178,7 @@ pub fn test_svp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
         + VecZnxIdftApply<BR>
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalizeTmpBytes,
-    Module<BT>: SvpPrepare<BT>
+    Module<BT>: SvpPPolPrepare<BT>
         + SvpApplyDftToDft<BT>
         + SvpPPolAlloc<BT>
         + SvpPPolCopy<BT>
@@ -217,13 +217,13 @@ pub fn test_svp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
     let scalar_test_backend = upload_scalar_znx::<BT>(&scalar);
 
     for j in 0..cols {
-        module_ref.svp_prepare(
+        module_ref.svp_ppol_prepare(
             &mut svp_ref.to_backend_mut(),
             j,
             &scalar_znx_backend_ref::<BR>(&scalar_ref_backend),
             j,
         );
-        module_test.svp_prepare(
+        module_test.svp_ppol_prepare(
             &mut svp_test.to_backend_mut(),
             j,
             &scalar_znx_backend_ref::<BT>(&scalar_test_backend),
@@ -353,7 +353,7 @@ pub fn test_svp_apply_dft_to_dft_assign<BR: crate::test_suite::TestBackend, BT: 
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
-    Module<BR>: SvpPrepare<BR>
+    Module<BR>: SvpPPolPrepare<BR>
         + SvpApplyDftToDftAssign<BR>
         + SvpPPolAlloc<BR>
         + VecZnxDftAlloc<BR>
@@ -363,7 +363,7 @@ pub fn test_svp_apply_dft_to_dft_assign<BR: crate::test_suite::TestBackend, BT: 
         + VecZnxIdftApply<BR>
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalizeTmpBytes,
-    Module<BT>: SvpPrepare<BT>
+    Module<BT>: SvpPPolPrepare<BT>
         + SvpApplyDftToDftAssign<BT>
         + SvpPPolAlloc<BT>
         + VecZnxDftAlloc<BT>
@@ -401,13 +401,13 @@ pub fn test_svp_apply_dft_to_dft_assign<BR: crate::test_suite::TestBackend, BT: 
     let scalar_test_backend = upload_scalar_znx::<BT>(&scalar);
 
     for j in 0..cols {
-        module_ref.svp_prepare(
+        module_ref.svp_ppol_prepare(
             &mut svp_ref.to_backend_mut(),
             j,
             &scalar_znx_backend_ref::<BR>(&scalar_ref_backend),
             j,
         );
-        module_test.svp_prepare(
+        module_test.svp_ppol_prepare(
             &mut svp_test.to_backend_mut(),
             j,
             &scalar_znx_backend_ref::<BT>(&scalar_test_backend),

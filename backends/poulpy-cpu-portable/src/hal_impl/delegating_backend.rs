@@ -171,6 +171,7 @@ macro_rules! impl_fft64_delegating_backend {
             }
         }
 
+        unsafe impl poulpy_hal::oep::HalScalarZnxImpl for $be {}
         unsafe impl poulpy_hal::oep::HalMatZnxImpl for $be {}
 
         unsafe impl HalVecZnxImpl for $be {

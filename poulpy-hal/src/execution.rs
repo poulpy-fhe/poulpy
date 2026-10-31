@@ -81,7 +81,7 @@ pub fn worker_count<E: TaskExecutor>(requested: usize, tasks: usize) -> usize {
 ///
 /// The defaults are serial; a backend overrides the families it has measured.
 pub trait ScratchWorkers {
-    /// `cnv_prepare_left`, `cnv_prepare_right`, `cnv_prepare_self`.
+    /// `cnv_pvec_left_prepare`, `cnv_pvec_right_prepare`, `cnv_pvec_self_prepare`.
     const PREPARE: usize = 1;
     /// `cnv_apply_dft`, `cnv_pairwise_apply_dft`, `cnv_apply_dft_sum`.
     const APPLY: usize = 1;

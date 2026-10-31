@@ -189,7 +189,7 @@ where
             let (mut diag, scratch) = scratch.take_vec_znx_dft_scratch(n, cols, self.shape.dft_size);
             let (mut cross, mut scratch) = scratch.take_vec_znx_dft_scratch(n, cols * (cols - 1) / 2, self.shape.dft_size);
             // 3. Baby-step kernel, `GLWETensoringImpl::glwe_tensor_apply_prepared_sum_dft`. Reference, per pair:
-            //    `cnv_prepare_right` of a GLWE view, `cnv_apply_dft` (first pair) or `cnv_apply_dft_add` into `diag`,
+            //    `cnv_pvec_right_prepare` of a GLWE view, `cnv_apply_dft` (first pair) or `cnv_apply_dft_add` into `diag`,
             //    `cnv_pairwise_apply_dft` into `cross` (then `vec_znx_dft_add_assign` after the first pair); once:
             //    `vec_znx_dft_sub_assign` of `diag` from `cross`.
             BE::glwe_tensor_apply_prepared_sum_dft(

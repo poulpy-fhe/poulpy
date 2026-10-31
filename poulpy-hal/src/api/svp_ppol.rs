@@ -26,7 +26,7 @@ pub trait SvpPPolAlloc<B: Backend> {
 /// mutation   none
 /// domain     n: a power of two, MIN_DEGREE <= n <= the module's degree; cols >= 1
 /// ensures    returns the bytes required for a degree-n SvpPPol with cols columns and the requested hint
-/// test       test_word_compat_prepare_hint_sizes, test_word_compat_svp_prepare_bytes
+/// test       test_word_compat_prepare_hint_sizes, test_word_compat_svp_ppol_prepare_bytes
 /// ```
 pub trait SvpPPolBytesOf {
     /// Returns the bytes a degree-`n` [`SvpPPol`](crate::layouts::SvpPPol) with `cols` columns under `hint` occupies.
@@ -36,7 +36,7 @@ pub trait SvpPPolBytesOf {
 /// Preparation of a [`ScalarZnx`](crate::layouts::ScalarZnx) into an [`SvpPPol`](crate::layouts::SvpPPol).
 ///
 /// ```text
-/// op         svp_prepare(res, res_col, a, a_col)
+/// op         svp_ppol_prepare(res, res_col, a, a_col)
 /// class      basis
 /// mutation   out-of-place
 /// definition res[res_col] reads as the polynomial a[a_col]; other columns of res are unchanged
@@ -44,9 +44,9 @@ pub trait SvpPPolBytesOf {
 /// ensures    the selected scalar polynomial is prepared for multiplication
 /// test       test_svp_apply_dft_to_dft
 /// ```
-pub trait SvpPrepare<B: Backend> {
+pub trait SvpPPolPrepare<B: Backend> {
     /// Writes `a[a_col]` into `res[res_col]` in the prepared representation.
-    fn svp_prepare(&self, res: &mut SvpPPolBackendMut<'_, B>, res_col: usize, a: &ScalarZnxBackendRef<'_, B>, a_col: usize);
+    fn svp_ppol_prepare(&self, res: &mut SvpPPolBackendMut<'_, B>, res_col: usize, a: &ScalarZnxBackendRef<'_, B>, a_col: usize);
 }
 
 /// Copy of one prepared scalar polynomial column into another.

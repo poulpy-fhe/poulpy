@@ -51,7 +51,7 @@ unsafe fn mul_packed_limb_assign(n: usize, dst: &mut [u32], factor: &[u32]) {
     }
 }
 
-pub(crate) fn svp_prepare<R: Ring>(
+pub(crate) fn svp_ppol_prepare<R: Ring>(
     module: &Module<NTT4x30Avx512<R>>,
     res: &mut SvpPPolBackendMut<'_, NTT4x30Avx512<R>>,
     res_col: usize,
@@ -62,9 +62,9 @@ pub(crate) fn svp_prepare<R: Ring>(
 {
     let n = res.n();
     check_degree::<NTT4x30Avx512<R>>(module.n(), n);
-    assert!(a.n() == n, "svp_prepare: a.n() != res.n()");
+    assert!(a.n() == n, "svp_ppol_prepare: a.n() != res.n()");
     let data: &mut [u32] = cast_slice_mut(res.data_mut());
-    // The q120 form takes twice the destination limb, and `svp_prepare` has no scratch.
+    // The q120 form takes twice the destination limb, and `svp_ppol_prepare` has no scratch.
     poulpy_cpu_portable::kernels::with_thread_buffer(4 * n, |tmp| {
         NTT4x30Avx512::<R>::ntt_from_znx64(tmp, a.at(a_col, 0));
         NTT4x30Avx512::<R>::ntt_dft_execute(module.get_ntt_table_for(n), tmp);

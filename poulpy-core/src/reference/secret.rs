@@ -2,7 +2,7 @@
 
 use poulpy_hal::{
     api::{
-        ScalarZnxAutomorphism, ScratchArenaTakeVecZnxBig, ScratchArenaTakeVecZnxDft, SvpApplyDftToDft, SvpPrepare,
+        ScalarZnxAutomorphism, ScratchArenaTakeVecZnxBig, ScratchArenaTakeVecZnxDft, SvpApplyDftToDft, SvpPPolPrepare,
         VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftApply, VecZnxDftBytesOf,
         VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
     },
@@ -69,7 +69,7 @@ where
     Module<BE>: GLWESecretPreparedFactory<BE>
         + ScalarZnxAutomorphism<BE>
         + SvpApplyDftToDft<BE>
-        + SvpPrepare<BE>
+        + SvpPPolPrepare<BE>
         + VecZnxBigBytesOf
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes
@@ -92,7 +92,7 @@ where
                 "glwe_secret_prepare: prepared secret rank differs from the source secret rank"
             );
             for i in 0..res.rank().into() {
-                self.svp_prepare(&mut res.data, i, &other.data, i);
+                self.svp_ppol_prepare(&mut res.data, i, &other.data, i);
             }
         }
 
@@ -117,7 +117,7 @@ where
                 "glwe_secret_tensor_prepare: prepared tensor column count differs from the source tensor"
             );
             for i in 0..cols {
-                self.svp_prepare(&mut res.data, i, &other.data, i);
+                self.svp_ppol_prepare(&mut res.data, i, &other.data, i);
             }
         }
 
@@ -168,7 +168,7 @@ where
             {
                 let mut a_prepared_data = a_prepared.data.reborrow_backend_mut();
                 for i in 0..rank {
-                    self.svp_prepare(&mut a_prepared_data, i, a.data(), i);
+                    self.svp_ppol_prepare(&mut a_prepared_data, i, a.data(), i);
                 }
             }
             a_prepared.dist = *a.dist();

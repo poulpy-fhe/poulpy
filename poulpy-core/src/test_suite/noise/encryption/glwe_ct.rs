@@ -1,7 +1,7 @@
 use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     api::{
-        ScalarZnxAlloc, ScratchOwnedAlloc, ScratchOwnedBorrow, SvpApplyDftToDft, SvpPPolAlloc, SvpPrepare,
+        ScalarZnxAlloc, ScratchOwnedAlloc, ScratchOwnedBorrow, SvpApplyDftToDft, SvpPPolAlloc, SvpPPolPrepare,
         VecZnxBigAddSmallAssign, VecZnxBigAlloc, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign,
         VecZnxDftAlloc, VecZnxDftBytesOf, VecZnxDftZero, VecZnxFillUniformSource, VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
         VmpApplyDftToDftTmpBytes,
@@ -794,7 +794,7 @@ where
         + ScalarZnxAlloc<BE>
         + ScalarZnxFillDistribution<BE>
         + SvpPPolAlloc<BE>
-        + SvpPrepare<BE>
+        + SvpPPolPrepare<BE>
         + SvpApplyDftToDft<BE>
         + VecZnxDftAlloc<BE>
         + VecZnxDftBytesOf
@@ -909,7 +909,7 @@ where
             let mut u_prepared = module.svp_ppol_alloc(n, rank, PrepareHint::Reuse);
             for l in 0..rank {
                 module.scalar_znx_fill_distribution(&mut scalar_znx_backend_mut::<BE>(&mut u), l, *pk.dist(), &mut source_xu);
-                module.svp_prepare(&mut u_prepared.to_backend_mut(), l, &scalar_znx_backend_ref::<BE>(&u), l);
+                module.svp_ppol_prepare(&mut u_prepared.to_backend_mut(), l, &scalar_znx_backend_ref::<BE>(&u), l);
             }
 
             // Independent scalar products consume only the leading key limbs,

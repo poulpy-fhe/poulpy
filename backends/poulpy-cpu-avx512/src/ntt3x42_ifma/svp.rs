@@ -47,7 +47,7 @@ unsafe fn mul_packed_limb(n: usize, dst: *mut u64, src: *const u64, prepared: &[
 }
 
 /// Encode a scalar polynomial into IFMA prepared format.
-pub(crate) fn svp_prepare<R: Ring>(
+pub(crate) fn svp_ppol_prepare<R: Ring>(
     module: &Module<NTT3x42Ifma<R>>,
     res: &mut SvpPPolBackendMut<'_, NTT3x42Ifma<R>>,
     res_col: usize,
@@ -59,7 +59,7 @@ pub(crate) fn svp_prepare<R: Ring>(
 {
     let n = res.n();
     check_degree::<NTT3x42Ifma<R>>(module.n(), n);
-    assert!(a.n() == n, "svp_prepare: a.n() != res.n()");
+    assert!(a.n() == n, "svp_ppol_prepare: a.n() != res.n()");
 
     let mut tmp = vec![0u64; 3 * n];
     NTT3x42Ifma::<R>::ntt3x42_ifma_from_znx64(&mut tmp, a.at(a_col, 0));

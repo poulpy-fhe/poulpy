@@ -5,7 +5,7 @@
 //!
 //! 1. **Prepare** — encode a `ScalarZnx` (i64 coefficients) into the
 //!    [`SvpPPol`](poulpy_hal::layouts::SvpPPol) prepared format (q120c, NTT domain) via
-//!    [`ntt4x30_svp_prepare_portable`].
+//!    [`ntt4x30_svp_ppol_prepare_portable`].
 //! 2. **Apply** — multiply a [`VecZnxDft`](poulpy_hal::layouts::VecZnxDft) (q120b) by a prepared
 //!    [`SvpPPol`](poulpy_hal::layouts::SvpPPol) (q120c) to obtain a new [`VecZnxDft`](poulpy_hal::layouts::VecZnxDft) (q120b) via
 //!    one of the `ntt4x30_svp_apply_dft_to_dft*` functions.
@@ -50,7 +50,7 @@ use crate::{
 /// `res` must be a [`SvpPPol`](poulpy_hal::layouts::SvpPPol) with `DftWord = Q120bScalar`.
 /// A temporary heap buffer of `4 * n` u64 values is allocated internally
 /// (this is a setup/key-preparation function, not a hot path).
-pub fn ntt4x30_svp_prepare_portable<'r, 'a, BE>(
+pub fn ntt4x30_svp_ppol_prepare_portable<'r, 'a, BE>(
     module: &Module<BE>,
     res: &mut SvpPPolBackendMut<'r, BE>,
     res_col: usize,
@@ -67,7 +67,7 @@ pub fn ntt4x30_svp_prepare_portable<'r, 'a, BE>(
 {
     let n = res.n();
     check_degree::<BE>(module.n(), n);
-    assert!(a.n() == n, "svp_prepare: a.n() != res.n()");
+    assert!(a.n() == n, "svp_ppol_prepare: a.n() != res.n()");
 
     // Temporary q120b working buffer (heap-allocated; prepare is not hot).
     let mut tmp = vec![0u64; 4 * n];

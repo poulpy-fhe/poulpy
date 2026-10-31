@@ -171,7 +171,7 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
     let product_size = ct_infos.size() + pt.size();
 
     let mut tmp_bytes = module.glwe_encrypt_sk_tmp_bytes(&ct_infos)
-        | module.cnv_prepare_right_tmp_bytes(pt.size(), pt.size())
+        | module.cnv_pvec_right_prepare_tmp_bytes(pt.size(), pt.size())
         | module.cnv_apply_dft_tmp_bytes(0, product_size, ct_infos.size(), pt.size())
         | module.vec_znx_big_normalize_tmp_bytes()
         | module.vec_znx_idft_apply_tmp_bytes();
@@ -339,7 +339,7 @@ fn assert_hoisted_babies_match<BE: crate::test_suite::noise::TestBackend, K: Get
 
     let mut right_prepared = module.cnv_pvec_right_alloc(module.n(), 1, pt.size(), PrepareHint::Reuse);
     let pt_ref = <GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> as GLWEToBackendRef<BE>>::to_backend_ref(pt);
-    module.cnv_prepare_right(&mut right_prepared.to_backend_mut(), &pt_ref.data, &mut scratch.borrow());
+    module.cnv_pvec_right_prepare(&mut right_prepared.to_backend_mut(), &pt_ref.data, &mut scratch.borrow());
 
     for &rot in baby_steps {
         let mut expected: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(ct);
@@ -355,7 +355,7 @@ fn assert_hoisted_babies_match<BE: crate::test_suite::noise::TestBackend, K: Get
 
         let mut expected_prepared = module.cnv_pvec_left_alloc(module.n(), rank + 1, expected.size(), PrepareHint::Reuse);
         let expected_ref = <GLWE<BE::OwnedBuf, BE::ZnxWord> as GLWEToBackendRef<BE>>::to_backend_ref(&expected);
-        module.cnv_prepare_left(
+        module.cnv_pvec_left_prepare(
             &mut expected_prepared.to_backend_mut(),
             &expected_ref.data,
             &mut scratch.borrow(),

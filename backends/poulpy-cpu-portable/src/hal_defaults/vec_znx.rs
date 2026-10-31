@@ -360,17 +360,17 @@ where
         vec_znx_copy_portable::<Self>(res, res_col, a, a_col);
     }
 
-    fn vec_znx_fill_uniform_default(
+    fn vec_znx_fill_uniform_source_default(
         _module: &Module<Self>,
         base2k: usize,
         k: usize,
         res: &mut VecZnxBackendMut<'_, Self>,
         res_col: usize,
-        seed: [u8; 32],
+        source: &mut Source,
     ) where
         for<'x> Self::BufMut<'x>: HostDataMut,
     {
-        let mut source = Source::new(seed);
+        let mut source = Source::new(source.new_seed());
         vec_znx_fill_uniform_portable::<Self>(base2k, k, res, res_col, &mut source);
     }
 }

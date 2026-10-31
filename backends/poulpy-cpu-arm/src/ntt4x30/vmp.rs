@@ -46,12 +46,12 @@ impl SendU32Ptr {
 /// Scratch space (in bytes) required by the VMP prepare kernel.
 ///
 /// Holds one packed limb.
-pub(crate) fn vmp_prepare_tmp_bytes_neon(n: usize) -> usize {
+pub(crate) fn vmp_pmat_prepare_tmp_bytes_neon(n: usize) -> usize {
     prepare_tmp_words(n) * size_of::<u64>()
 }
 
 /// VMP prepare into the block-major prepared layout.
-pub(crate) fn vmp_prepare_neon_pm<R: Ring>(
+pub(crate) fn vmp_pmat_prepare_neon_pm<R: Ring>(
     module: &Module<NTT4x30Neon<R>>,
     res: &mut VmpPMatBackendMut<'_, NTT4x30Neon<R>>,
     a: &MatZnxBackendRef<'_, NTT4x30Neon<R>>,
@@ -67,7 +67,7 @@ pub(crate) fn vmp_prepare_neon_pm<R: Ring>(
     assert_eq!(res.rows(), a.rows());
     assert_eq!(res.cols_out(), a.cols_out());
     assert_eq!(res.size(), a.size());
-    assert!(std::mem::size_of_val(tmp) >= vmp_prepare_tmp_bytes_neon(n));
+    assert!(std::mem::size_of_val(tmp) >= vmp_pmat_prepare_tmp_bytes_neon(n));
     assert!(n.is_multiple_of(4));
 
     let nrows = a.cols_in() * a.rows();

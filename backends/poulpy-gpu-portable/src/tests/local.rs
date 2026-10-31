@@ -7,8 +7,8 @@ use poulpy_hal::{
     api::{
         CnvOps, CnvPVecAlloc, ScratchOwnedAlloc, VecZnxBigAlloc, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
         VecZnxDftAddAssign, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftAutomorphismPlan, VecZnxDftCopy,
-        VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes, VmpPMatAlloc, VmpPrepare,
-        VmpPrepareTmpBytes,
+        VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes, VmpPMatAlloc, VmpPMatPrepare,
+        VmpPMatPrepareTmpBytes,
     },
     layouts::{
         Backend, DataView, MatZnx, Module, PrepareHint, Ring, ScratchOwned, VecZnx, VecZnxBigToBackendMut, VecZnxDftOwned,
@@ -74,7 +74,7 @@ fn digits_case<R: Ring>(
     extreme: bool,
 ) {
     let mut seed = 0x1234_5678_9abc_def0u64 ^ ((a_size * 131 + dsize * 17 + rows * 7 + res_size) as u64);
-    let mut scratch = ScratchOwned::<BE<R>>::alloc(module.vmp_prepare_tmp_bytes(rows, cols_in, cols_out, key_size).max(
+    let mut scratch = ScratchOwned::<BE<R>>::alloc(module.vmp_pmat_prepare_tmp_bytes(rows, cols_in, cols_out, key_size).max(
         module.gglwe_product_digits_strided_tmp_bytes_reference(
             res_size, cols_in, a_size, dsize, rows, cols_in, cols_out, key_size,
         ),
@@ -115,7 +115,7 @@ fn digits_case<R: Ring>(
         key_size,
     );
     let mut pmat = module.vmp_pmat_alloc(n, rows, cols_in, cols_out, key_size, PrepareHint::Reuse);
-    module.vmp_prepare(
+    module.vmp_pmat_prepare(
         &mut pmat.to_backend_mut(),
         &poulpy_hal::layouts::MatZnxToBackendRef::<BE<R>>::to_backend_ref(&matrix),
         &mut scratch.arena(),
@@ -282,7 +282,7 @@ fn product_with_fused_inverse_matches_product_then_inverse() {
                 key_size,
             );
             let mut pmat = module.vmp_pmat_alloc(n, rows, 1, 2, key_size, PrepareHint::Reuse);
-            module.vmp_prepare(
+            module.vmp_pmat_prepare(
                 &mut pmat.to_backend_mut(),
                 &poulpy_hal::layouts::MatZnxToBackendRef::<Gpu>::to_backend_ref(&matrix),
                 &mut scratch.arena(),
@@ -389,8 +389,8 @@ fn mul_columns_case<R: Ring>(
     let mut seed = 0x0fed_cba9_8765_4321u64 ^ ((a_size * 31 + b_size * 7 + diag_size * 3 + cross_size + offset) as u64);
     let mut scratch = ScratchOwned::<BE<R>>::alloc(
         [
-            module.cnv_prepare_left_tmp_bytes(a_size, a_size),
-            module.cnv_prepare_right_tmp_bytes(b_size, b_size),
+            module.cnv_pvec_left_prepare_tmp_bytes(a_size, a_size),
+            module.cnv_pvec_right_prepare_tmp_bytes(b_size, b_size),
             module.cnv_apply_dft_tmp_bytes(offset, diag_size, a_size, b_size),
             module.cnv_pairwise_apply_dft_tmp_bytes(offset, cross_size, a_size, b_size),
         ]
@@ -401,12 +401,12 @@ fn mul_columns_case<R: Ring>(
     let (a, b) = (vector::<R>(n, 2, a_size, &mut seed), vector::<R>(b_n, 2, b_size, &mut seed));
     let mut left = module.cnv_pvec_left_alloc(n, 2, a_size, PrepareHint::Reuse);
     let mut right = module.cnv_pvec_right_alloc(b_n, 2, b_size, PrepareHint::Reuse);
-    module.cnv_prepare_left(
+    module.cnv_pvec_left_prepare(
         &mut poulpy_hal::layouts::CnvPVecLToBackendMut::to_backend_mut(&mut left),
         &vec_znx_backend_ref::<BE<R>>(&a),
         &mut scratch.arena(),
     );
-    module.cnv_prepare_right(
+    module.cnv_pvec_right_prepare(
         &mut poulpy_hal::layouts::CnvPVecRToBackendMut::to_backend_mut(&mut right),
         &vec_znx_backend_ref::<BE<R>>(&b),
         &mut scratch.arena(),
@@ -448,7 +448,7 @@ fn mul_columns_case<R: Ring>(
     // The square of `a`: the reference on both prepared forms of `a`, the
     // fused columns from the left form alone.
     let mut right = module.cnv_pvec_right_alloc(n, 2, a_size, PrepareHint::Reuse);
-    module.cnv_prepare_right(
+    module.cnv_pvec_right_prepare(
         &mut poulpy_hal::layouts::CnvPVecRToBackendMut::to_backend_mut(&mut right),
         &vec_znx_backend_ref::<BE<R>>(&a),
         &mut scratch.arena(),
@@ -520,10 +520,10 @@ fn glwe_mul_columns_rejects_a_right_operand_below_the_minimum_degree() {
     let mut seed = 0x0dd0_0dd0_0dd0_0dd0u64;
     let a = vector::<poulpy_hal::layouts::Standard>(n, 2, size, &mut seed);
     let mut left = module.cnv_pvec_left_alloc(n, 2, size, PrepareHint::Reuse);
-    module.cnv_prepare_left(
+    module.cnv_pvec_left_prepare(
         &mut poulpy_hal::layouts::CnvPVecLToBackendMut::to_backend_mut(&mut left),
         &vec_znx_backend_ref::<Gpu>(&a),
-        &mut ScratchOwned::<Gpu>::alloc(module.cnv_prepare_left_tmp_bytes(size, size)).arena(),
+        &mut ScratchOwned::<Gpu>::alloc(module.cnv_pvec_left_prepare_tmp_bytes(size, size)).arena(),
     );
     let narrow: poulpy_hal::layouts::CnvPVecROwned<Gpu> =
         poulpy_hal::layouts::CnvPVecR::alloc(Gpu::MIN_DEGREE / 2, 2, size, PrepareHint::Reuse);
@@ -655,8 +655,8 @@ fn one_limb_sum_case<R: Ring>(module: &Module<BE<R>>, n: usize, b_n: usize, galo
     let mut seed = 0x5eed_0f0e_e11bu64 ^ ((b_n * 31 + galois.len()) as u64);
     let mut scratch = ScratchOwned::<BE<R>>::alloc(
         [
-            module.cnv_prepare_left_tmp_bytes(a_size, a_size),
-            module.cnv_prepare_right_tmp_bytes(1, 1),
+            module.cnv_pvec_left_prepare_tmp_bytes(a_size, a_size),
+            module.cnv_pvec_right_prepare_tmp_bytes(1, 1),
             module.cnv_apply_dft_tmp_bytes(offset, res_size, a_size, 1),
             module.cnv_apply_dft_add_tmp_bytes(offset, res_size, a_size, 1),
             module.cnv_apply_dft_sum_tmp_bytes(offset, res_size, a_size, 1),
@@ -671,12 +671,12 @@ fn one_limb_sum_case<R: Ring>(module: &Module<BE<R>>, n: usize, b_n: usize, galo
             let (a, b) = (vector::<R>(n, 1, a_size, &mut seed), vector::<R>(b_n, 1, 1, &mut seed));
             let mut left = module.cnv_pvec_left_alloc(n, 1, a_size, PrepareHint::Reuse);
             let mut right = module.cnv_pvec_right_alloc(b_n, 1, 1, PrepareHint::Reuse);
-            module.cnv_prepare_left(
+            module.cnv_pvec_left_prepare(
                 &mut poulpy_hal::layouts::CnvPVecLToBackendMut::to_backend_mut(&mut left),
                 &vec_znx_backend_ref::<BE<R>>(&a),
                 &mut scratch.arena(),
             );
-            module.cnv_prepare_right(
+            module.cnv_pvec_right_prepare(
                 &mut poulpy_hal::layouts::CnvPVecRToBackendMut::to_backend_mut(&mut right),
                 &vec_znx_backend_ref::<BE<R>>(&b),
                 &mut scratch.arena(),
@@ -843,10 +843,10 @@ macro_rules! bootstrap_shapes {
                 key_size,
             );
             let mut pmat = module.vmp_pmat_alloc(n, rows, 1, 2, key_size, PrepareHint::Reuse);
-            module.vmp_prepare(
+            module.vmp_pmat_prepare(
                 &mut pmat.to_backend_mut(),
                 &poulpy_hal::layouts::MatZnxToBackendRef::<B>::to_backend_ref(&matrix),
-                &mut arena(module.vmp_prepare_tmp_bytes(rows, 1, 2, key_size)).arena(),
+                &mut arena(module.vmp_pmat_prepare_tmp_bytes(rows, 1, 2, key_size)).arena(),
             );
             for a_size in a_sizes {
                 let a = upload(n, 1, a_size, &mut seed);
@@ -885,15 +885,15 @@ macro_rules! bootstrap_shapes {
                 let (left_source, right_source) = (upload(n, 2, size, &mut seed), upload(n / ratio, 1, 1, &mut seed));
                 let mut left = module.cnv_pvec_left_alloc(n, 2, size, PrepareHint::Reuse);
                 let mut right = module.cnv_pvec_right_alloc(n / ratio, 1, 1, PrepareHint::Reuse);
-                module.cnv_prepare_left(
+                module.cnv_pvec_left_prepare(
                     &mut poulpy_hal::layouts::CnvPVecLToBackendMut::to_backend_mut(&mut left),
                     &vec_znx_backend_ref::<B>(&left_source),
-                    &mut arena(module.cnv_prepare_left_tmp_bytes(size, size)).arena(),
+                    &mut arena(module.cnv_pvec_left_prepare_tmp_bytes(size, size)).arena(),
                 );
-                module.cnv_prepare_right(
+                module.cnv_pvec_right_prepare(
                     &mut poulpy_hal::layouts::CnvPVecRToBackendMut::to_backend_mut(&mut right),
                     &vec_znx_backend_ref::<B>(&right_source),
-                    &mut arena(module.cnv_prepare_right_tmp_bytes(1, 1)).arena(),
+                    &mut arena(module.cnv_pvec_right_prepare_tmp_bytes(1, 1)).arena(),
                 );
                 lefts.push(left);
                 rights.push(right);
@@ -933,15 +933,15 @@ macro_rules! bootstrap_shapes {
             let (left_source, right_source) = (upload(n, 2, a_size, &mut seed), upload(n, 2, b_size, &mut seed));
             let mut left = module.cnv_pvec_left_alloc(n, 2, a_size, PrepareHint::Reuse);
             let mut right = module.cnv_pvec_right_alloc(n, 2, b_size, PrepareHint::Reuse);
-            module.cnv_prepare_left(
+            module.cnv_pvec_left_prepare(
                 &mut poulpy_hal::layouts::CnvPVecLToBackendMut::to_backend_mut(&mut left),
                 &vec_znx_backend_ref::<B>(&left_source),
-                &mut arena(module.cnv_prepare_left_tmp_bytes(a_size, a_size)).arena(),
+                &mut arena(module.cnv_pvec_left_prepare_tmp_bytes(a_size, a_size)).arena(),
             );
-            module.cnv_prepare_right(
+            module.cnv_pvec_right_prepare(
                 &mut poulpy_hal::layouts::CnvPVecRToBackendMut::to_backend_mut(&mut right),
                 &vec_znx_backend_ref::<B>(&right_source),
-                &mut arena(module.cnv_prepare_right_tmp_bytes(b_size, b_size)).arena(),
+                &mut arena(module.cnv_pvec_right_prepare_tmp_bytes(b_size, b_size)).arena(),
             );
             let (left, right) = (
                 poulpy_hal::layouts::CnvPVecLToBackendRef::to_backend_ref(&left),
@@ -1425,15 +1425,15 @@ fn convolution_capacity_step_keeps_the_product() {
         );
         let mut left = module.cnv_pvec_left_alloc(n, 1, a_size, PrepareHint::Reuse);
         let mut right = module.cnv_pvec_right_alloc(n, 1, b_size, PrepareHint::Reuse);
-        module.cnv_prepare_left(
+        module.cnv_pvec_left_prepare(
             &mut poulpy_hal::layouts::CnvPVecLToBackendMut::to_backend_mut(&mut left),
             &vec_znx_backend_ref::<Gpu>(&a),
-            &mut ScratchOwned::<Gpu>::alloc(module.cnv_prepare_left_tmp_bytes(a_size, a_size)).arena(),
+            &mut ScratchOwned::<Gpu>::alloc(module.cnv_pvec_left_prepare_tmp_bytes(a_size, a_size)).arena(),
         );
-        module.cnv_prepare_right(
+        module.cnv_pvec_right_prepare(
             &mut poulpy_hal::layouts::CnvPVecRToBackendMut::to_backend_mut(&mut right),
             &vec_znx_backend_ref::<Gpu>(&b),
-            &mut ScratchOwned::<Gpu>::alloc(module.cnv_prepare_right_tmp_bytes(b_size, b_size)).arena(),
+            &mut ScratchOwned::<Gpu>::alloc(module.cnv_pvec_right_prepare_tmp_bytes(b_size, b_size)).arena(),
         );
         let mut res = transformed(&module, n, 1, res_size, &mut seed);
         module.cnv_apply_dft(
@@ -1482,7 +1482,7 @@ fn fresh_buffers_are_zero_and_prepare_overwrites_them() {
         let mut settled = module.cnv_pvec_left_alloc(N, 2, 5, PrepareHint::Reuse);
         assert!(settled.data().to_host().iter().all(|&byte| byte == 0));
         for prepared in [&mut fresh, &mut settled] {
-            module.cnv_prepare_left(
+            module.cnv_pvec_left_prepare(
                 &mut poulpy_hal::layouts::CnvPVecLToBackendMut::to_backend_mut(prepared),
                 &vec_znx_backend_ref::<Gpu>(&a),
                 &mut scratch.arena(),
@@ -1504,13 +1504,13 @@ fn refused_prepare_keeps_the_zero_fill() {
     let mut res = module.cnv_pvec_left_alloc(N, 2, 5, PrepareHint::Reuse);
     let a = module.vec_znx_alloc(N / 2, 2, 5);
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        module.cnv_prepare_left(
+        module.cnv_pvec_left_prepare(
             &mut poulpy_hal::layouts::CnvPVecLToBackendMut::to_backend_mut(&mut res),
             &vec_znx_backend_ref::<Gpu>(&a),
             &mut scratch.arena(),
         );
     }))
-    .expect_err("cnv_prepare_left accepted a source of another degree");
+    .expect_err("cnv_pvec_left_prepare accepted a source of another degree");
     assert!(res.data().owes_fill(), "a refused preparation dropped the zero fill");
     assert!(res.data().to_host().iter().all(|&byte| byte == 0));
 }
@@ -1626,7 +1626,7 @@ fn many_source_products_match_one_launch_each_at_full_degree() {
     );
     let mut pmat = module.vmp_pmat_alloc(n, rows, 1, 2, key_size, PrepareHint::Reuse);
     let mut scratch = ScratchOwned::<Gpu>::alloc(1 << 24);
-    module.vmp_prepare(
+    module.vmp_pmat_prepare(
         &mut pmat.to_backend_mut(),
         &poulpy_hal::layouts::MatZnxToBackendRef::<Gpu>::to_backend_ref(&matrix),
         &mut scratch.arena(),
