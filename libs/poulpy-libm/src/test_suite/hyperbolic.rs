@@ -65,9 +65,9 @@ where
     let mut sizing = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
     sizing.set_meta(params.prec().meta);
     let size = module
-        .ckks_sinh_tmp_bytes(&sizing, &sizing, &params.tsk_layout(), &sinh)
-        .max(module.ckks_cosh_tmp_bytes(&sizing, &sizing, &params.tsk_layout(), &cosh))
-        .max(module.ckks_tanh_tmp_bytes(&sizing, &sizing, &params.tsk_layout(), &tanh));
+        .ckks_sinh_tmp_bytes(&sizing, &sizing, &sinh, &params.tsk_layout())
+        .max(module.ckks_cosh_tmp_bytes(&sizing, &sizing, &cosh, &params.tsk_layout()))
+        .max(module.ckks_tanh_tmp_bytes(&sizing, &sizing, &tanh, &params.tsk_layout()));
     let mut scratch = ScratchOwned::<BE>::alloc(size);
     let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
 
@@ -188,9 +188,9 @@ where
     let mut sizing = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
     sizing.set_meta(params.prec().meta);
     let size = module
-        .ckks_asinh_tmp_bytes(&sizing, &sizing, &params.tsk_layout(), &asinh)
-        .max(module.ckks_acosh_tmp_bytes(&sizing, &sizing, &params.tsk_layout(), &acosh))
-        .max(module.ckks_atanh_tmp_bytes(&sizing, &sizing, &params.tsk_layout(), &atanh));
+        .ckks_asinh_tmp_bytes(&sizing, &sizing, &asinh, &params.tsk_layout())
+        .max(module.ckks_acosh_tmp_bytes(&sizing, &sizing, &acosh, &params.tsk_layout()))
+        .max(module.ckks_atanh_tmp_bytes(&sizing, &sizing, &atanh, &params.tsk_layout()));
     let mut scratch = ScratchOwned::<BE>::alloc(size);
     let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
     let mut source = Source::new([0xd4u8; 32]);

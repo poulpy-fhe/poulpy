@@ -506,6 +506,7 @@ where
             assert!(result.is_ok(), "{pipeline:?}: {result:?}");
             results.push((result.map_err(|e| e.to_string()), vec![snapshot::<BE, _>(&raised)]));
             let mut raised = fixture_ciphertext(module, &out_layout, 103);
+            let bytes = BE::ckks_bootstrap_mod_up_tmp_bytes(module, &out_layout, &in_layout, &ctx, &layout);
             let result = with_scratch::<BE, _>(bytes, |scratch| {
                 BE::ckks_bootstrap_mod_up(module, &mut raised, &ct_in, plan.eval_mod(), &keys, scratch)
             });

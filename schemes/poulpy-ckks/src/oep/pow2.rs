@@ -12,8 +12,8 @@ use crate::{CKKSCtBounds, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos};
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait CKKSPow2Impl: Backend {
-    /// Scratch bound of [`Self::ckks_mul_pow2_into`], [`Self::ckks_mul_pow2_assign`] and [`Self::ckks_double_into`];
-    /// may report less than the reference, never less than the body takes.
+    /// Scratch bound of [`Self::ckks_mul_pow2_into`] and [`Self::ckks_mul_pow2_assign`]; may report less than the
+    /// reference, never less than the body takes.
     fn ckks_mul_pow2_tmp_bytes(module: &Module<Self>, res_size: usize) -> usize;
 
     /// Reproduces
@@ -42,8 +42,14 @@ pub unsafe trait CKKSPow2Impl: Backend {
     where
         Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos;
 
+    /// Default body: `ckks_double_tmp_bytes_derived`, [`Self::ckks_mul_pow2_tmp_bytes`]. Scratch bound of
+    /// [`Self::ckks_double_into`]; may report less than the reference, never less than the body takes.
+    fn ckks_double_tmp_bytes(module: &Module<Self>, res_size: usize) -> usize {
+        super::derived::pow2::ckks_double_tmp_bytes_derived(module, res_size)
+    }
+
     /// Reproduces [`ckks_double_into_reference`](crate::reference::pow2::CKKSPow2Reference::ckks_double_into_reference)
-    /// bit for bit, within [`Self::ckks_mul_pow2_tmp_bytes`]; free in kernels and scratch use.
+    /// bit for bit, within [`Self::ckks_double_tmp_bytes`]; free in kernels and scratch use.
     fn ckks_double_into<Dst, Src>(
         module: &Module<Self>,
         dst: &mut Dst,

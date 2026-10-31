@@ -73,7 +73,7 @@ where
                     let dst = layout(params, rank, width, b - 1, 0, SlotsKind::Complex);
                     let mut doubled = fixture_ciphertext(module, &dst, 31);
                     let mut shifted = fixture_ciphertext(module, &dst, 31);
-                    let bytes = BE::ckks_mul_pow2_tmp_bytes(module, doubled.max_size());
+                    let bytes = BE::ckks_double_tmp_bytes(module, doubled.max_size());
                     with_scratch::<BE, _>(bytes, |scratch| BE::ckks_double_into(module, &mut doubled, &a, scratch)).unwrap();
                     let raw = snapshot::<BE, _>(&doubled);
                     assert_eq!(raw.canonical, !lazy, "double_into k={width}");
@@ -138,7 +138,7 @@ where
                         results.push(("ckks_copy", snapshot::<BE, _>(&out)));
                     }
                     run!(ckks_neg_into, ckks_neg_tmp_bytes, out_layout, [&a]);
-                    run!(ckks_double_into, ckks_mul_pow2_tmp_bytes, out_layout, [&a]);
+                    run!(ckks_double_into, ckks_double_tmp_bytes, out_layout, [&a]);
                     let mut neg = fixture_ciphertext(module, &la, 31);
                     BE::ckks_neg_assign(module, &mut neg).unwrap();
                     results.push(("neg_assign", snapshot::<BE, _>(&neg)));
@@ -338,6 +338,7 @@ where
                     })
                     .unwrap();
                     let mut have = fixture_ciphertext(module, &lr, 99);
+                    let bytes = module.ckks_dot_product_prepared_tmp_bytes(pairs, &have, &left, &right, &key);
                     with_scratch::<BE, _>(bytes, |scratch| {
                         module.ckks_dot_product_prepared(&mut have, &vec![&left; pairs], &vec![&right; pairs], &key, scratch)
                     })

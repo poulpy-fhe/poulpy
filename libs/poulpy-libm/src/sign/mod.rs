@@ -28,12 +28,12 @@ pub use predicate::CKKSPredicateOps;
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn ckks_sign_into<BE, R, I, F, P, H, K>(
     module: &Module<BE>,
+    step: bool,
     res: &mut R,
     input: &I,
     composite: &SignComposite<F, P>,
     tsk: &H,
-    conj_key: &K,
-    step: bool,
+    keys: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
@@ -66,7 +66,7 @@ where
         // keeping `log_delta` constant.
         for poly in &composite.polys_bsgs {
             module.ckks_eval_poly_real_const_coeffs(&mut nxt, &cur, poly, tsk, &mut scratch_local)?;
-            module.ckks_conjugate_into(&mut conj, &nxt, conj_key, &mut scratch_local)?;
+            module.ckks_conjugate_into(&mut conj, &nxt, keys, &mut scratch_local)?;
             module.ckks_add_assign(&mut nxt, &conj, &mut scratch_local)?;
             std::mem::swap(&mut cur, &mut nxt);
         }
@@ -83,43 +83,43 @@ where
 }
 
 /// Query of [`ckks_sign_into`]: three temporaries with the layout of `input`.
-pub(crate) fn ckks_sign_tmp_bytes<BE, R, I, T, A, P>(
+pub(crate) fn ckks_sign_tmp_bytes<BE, R, I, P, T, A>(
     module: &Module<BE>,
     res: &R,
     input: &I,
-    tsk: &T,
-    conj_key: &A,
     coeff_prec: &P,
+    tsk: &T,
+    keys: &A,
 ) -> usize
 where
     BE: Backend,
     Module<BE>: CKKSAllOpsTmpBytes<BE> + CKKSCopyOps<BE> + GLWEBytesOf<BE>,
     R: CKKSCtBounds,
     I: CKKSCtBounds,
+    P: CKKSInfos + LWEInfos,
     T: GGLWEInfos,
     A: GGLWEInfos,
-    P: CKKSInfos + LWEInfos,
 {
     3 * BE::scratch_aligned(module.glwe_bytes_of_from_infos(input))
         + module
-            .ckks_all_ops_with_atk_tmp_bytes(input, coeff_prec, tsk, conj_key)
+            .ckks_all_ops_with_atk_tmp_bytes(input, coeff_prec, tsk, keys)
             .max(module.ckks_copy_tmp_bytes(res, input))
 }
 
 /// Homomorphic `sign` and `step`.
 pub trait CKKSSignOps<BE: Backend> {
     /// Scratch bytes for [`Self::ckks_sign`] and [`Self::ckks_step`].
-    fn ckks_sign_tmp_bytes<R, I, T, A, P>(&self, res: &R, input: &I, tsk: &T, conj_key: &A, coeff_prec: &P) -> usize
+    fn ckks_sign_tmp_bytes<R, I, P, T, A>(&self, res: &R, input: &I, coeff_prec: &P, tsk: &T, keys: &A) -> usize
     where
         R: CKKSCtBounds,
         I: CKKSCtBounds,
+        P: CKKSInfos + LWEInfos,
         T: GGLWEInfos,
-        A: GGLWEInfos,
-        P: CKKSInfos + LWEInfos;
+        A: GGLWEInfos;
 
     /// Evaluates `sign(input)` on `[-1, 1]` outside the composite gap.
     ///
-    /// `conj_key` answers the conjugation, Galois element `-1`.
+    /// `keys` answers the conjugation, Galois element `-1`.
     ///
     /// # Metadata
     ///
@@ -136,7 +136,7 @@ pub trait CKKSSignOps<BE: Backend> {
         input: &I,
         composite: &SignComposite<F, P>,
         tsk: &H,
-        conj_key: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -161,7 +161,7 @@ pub trait CKKSSignOps<BE: Backend> {
         input: &I,
         composite: &SignComposite<F, P>,
         tsk: &H,
-        conj_key: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -182,15 +182,15 @@ where
         + CKKSAllOpsTmpBytes<BE>
         + GLWEBytesOf<BE>,
 {
-    fn ckks_sign_tmp_bytes<R, I, T, A, P>(&self, res: &R, input: &I, tsk: &T, conj_key: &A, coeff_prec: &P) -> usize
+    fn ckks_sign_tmp_bytes<R, I, P, T, A>(&self, res: &R, input: &I, coeff_prec: &P, tsk: &T, keys: &A) -> usize
     where
         R: CKKSCtBounds,
         I: CKKSCtBounds,
+        P: CKKSInfos + LWEInfos,
         T: GGLWEInfos,
         A: GGLWEInfos,
-        P: CKKSInfos + LWEInfos,
     {
-        ckks_sign_tmp_bytes(self, res, input, tsk, conj_key, coeff_prec)
+        ckks_sign_tmp_bytes(self, res, input, coeff_prec, tsk, keys)
     }
 
     fn ckks_sign<R, I, F, P, H, K>(
@@ -199,7 +199,7 @@ where
         input: &I,
         composite: &SignComposite<F, P>,
         tsk: &H,
-        conj_key: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -209,7 +209,7 @@ where
         H: GetTensorKey<BE>,
         K: GetAutomorphismKey<BE>,
     {
-        ckks_sign_into(self, res, input, composite, tsk, conj_key, false, scratch)
+        ckks_sign_into(self, false, res, input, composite, tsk, keys, scratch)
     }
 
     fn ckks_step<R, I, F, P, H, K>(
@@ -218,7 +218,7 @@ where
         input: &I,
         composite: &SignComposite<F, P>,
         tsk: &H,
-        conj_key: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -228,6 +228,6 @@ where
         H: GetTensorKey<BE>,
         K: GetAutomorphismKey<BE>,
     {
-        ckks_sign_into(self, res, input, composite, tsk, conj_key, true, scratch)
+        ckks_sign_into(self, true, res, input, composite, tsk, keys, scratch)
     }
 }

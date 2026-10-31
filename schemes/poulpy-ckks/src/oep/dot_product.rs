@@ -6,8 +6,8 @@ use crate::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
     layouts::{CKKSCiphertext, CKKSLeftOperandPrepared, CKKSRightOperandPrepared},
     oep::derived::dot_product::{
-        ckks_dot_product_pt_const_derived, ckks_dot_product_pt_const_tmp_bytes_derived, ckks_dot_product_pt_vec_derived,
-        ckks_dot_product_pt_vec_tmp_bytes_derived,
+        ckks_dot_product_prepared_tmp_bytes_derived, ckks_dot_product_pt_const_derived,
+        ckks_dot_product_pt_const_tmp_bytes_derived, ckks_dot_product_pt_vec_derived, ckks_dot_product_pt_vec_tmp_bytes_derived,
     },
 };
 
@@ -18,10 +18,9 @@ use crate::{
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait CKKSDotProductImpl: Backend + super::CKKSMulImpl + super::CKKSAddImpl {
-    /// Scratch bound of [`Self::ckks_dot_product_ct`] and [`Self::ckks_dot_product_prepared`]; may report less than the
-    /// reference, never less than the body takes. It covers `n` input pairs, `a` and `b` describing the widest pair
-    /// (the internal products are carved at `max(a.k, b.k)`), and prepared operands are passed as such, their infos
-    /// reporting the ciphertexts they were prepared from.
+    /// Scratch bound of [`Self::ckks_dot_product_ct`]; may report less than the reference, never less than the body
+    /// takes. It covers `n` input pairs, `a` and `b` describing the widest pair (the internal products are carved at
+    /// `max(a.k, b.k)`).
     fn ckks_dot_product_ct_tmp_bytes<R: CKKSCtBounds, A: CKKSCtBounds, B: CKKSCtBounds, T: GGLWEInfos>(
         module: &Module<Self>,
         n: usize,
@@ -74,9 +73,24 @@ pub unsafe trait CKKSDotProductImpl: Backend + super::CKKSMulImpl + super::CKKSA
         B: GLWEToBackendRef<Self> + CKKSCtBounds,
         H: GetTensorKey<Self>;
 
+    /// Default body: `ckks_dot_product_prepared_tmp_bytes_derived`, [`Self::ckks_dot_product_ct_tmp_bytes`]. Scratch
+    /// bound of [`Self::ckks_dot_product_prepared`] over `n` pairs, `a` and `b` describing the widest pair, prepared
+    /// operands passed as such, their infos reporting the ciphertexts they were prepared from; may report less than the
+    /// reference, never less than the body takes.
+    fn ckks_dot_product_prepared_tmp_bytes<R: CKKSCtBounds, A: CKKSCtBounds, B: CKKSCtBounds, T: GGLWEInfos>(
+        module: &Module<Self>,
+        n: usize,
+        res: &R,
+        a: &A,
+        b: &B,
+        tsk: &T,
+    ) -> usize {
+        ckks_dot_product_prepared_tmp_bytes_derived(module, n, res, a, b, tsk)
+    }
+
     /// Reproduces
     /// [`ckks_dot_product_prepared_reference`](crate::reference::CKKSDotProductReference::ckks_dot_product_prepared_reference)
-    /// bit for bit, within [`Self::ckks_dot_product_ct_tmp_bytes`]; free in kernels and scratch use.
+    /// bit for bit, within [`Self::ckks_dot_product_prepared_tmp_bytes`]; free in kernels and scratch use.
     fn ckks_dot_product_prepared<Dst, H>(
         module: &Module<Self>,
         dst: &mut Dst,

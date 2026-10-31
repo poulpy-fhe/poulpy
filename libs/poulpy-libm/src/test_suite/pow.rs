@@ -132,7 +132,7 @@ where
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0xc4u8; 32]);
     let mut sizing = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
     sizing.set_meta(params.prec().meta);
-    let size = module.ckks_pow_tmp_bytes(&sizing, &sizing, &sizing, &params.tsk_layout(), &plan);
+    let size = module.ckks_pow_tmp_bytes(&sizing, &sizing, &sizing, &plan, &params.tsk_layout());
     let mut scratch = ScratchOwned::<BE>::alloc(size);
     let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
     let base_ct = ckks_encrypt_with_prec(

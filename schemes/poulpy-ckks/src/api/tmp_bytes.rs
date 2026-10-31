@@ -108,6 +108,7 @@ where
             .max(self.ckks_sub_pt_const_tmp_bytes(ct_infos.max_size()))
             .max(self.ckks_neg_tmp_bytes(ct_infos.max_size()))
             .max(self.ckks_mul_pow2_tmp_bytes(ct_infos.max_size()))
+            .max(self.ckks_double_tmp_bytes(ct_infos.max_size()))
             .max(self.ckks_div_pow2_tmp_bytes(ct_infos.max_size()))
             .max(self.ckks_mul_tmp_bytes(ct_infos, ct_infos, ct_infos, tsk_infos))
             .max(self.ckks_mul_add_ct_tmp_bytes(ct_infos, ct_infos, ct_infos, tsk_infos))

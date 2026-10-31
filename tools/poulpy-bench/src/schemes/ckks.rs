@@ -763,7 +763,7 @@ pub fn runner_ckks_linear_transformation_eval_into_ct_composed<BE: Backend<ZnxWo
             .ckks_left_operand_prepare_tmp_bytes(&src)
             .max(module.ckks_right_operand_prepare_tmp_bytes(&src))
             .max(module.ckks_rotate_tmp_bytes(&src, &atk_layout(cp)))
-            .max(module.ckks_dot_product_ct_tmp_bytes(CT_LT_GIANT_STEP, &src, &src, &src, &tsk))
+            .max(module.ckks_dot_product_prepared_tmp_bytes(CT_LT_GIANT_STEP, &src, &src, &src, &tsk))
             .max(module.ckks_add_tmp_bytes(ct_layout.size()))
             .max(module.glwe_normalize_tmp_bytes()),
     );

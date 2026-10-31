@@ -30,7 +30,7 @@ pub trait CKKSReductionOps<BE: Backend> {
         C: CKKSCtBounds;
 
     /// Scratch bytes for [`Self::ckks_sum_slots`].
-    fn ckks_sum_slots_tmp_bytes<R, I, A>(&self, res: &R, input: &I, rotation_key: &A) -> usize
+    fn ckks_sum_slots_tmp_bytes<R, I, A>(&self, res: &R, input: &I, keys: &A) -> usize
     where
         R: CKKSCtBounds,
         I: CKKSCtBounds,
@@ -46,39 +46,24 @@ pub trait CKKSReductionOps<BE: Backend> {
     ///
     /// An error for a sparse input, and the errors of the rotations (a missing key included), the sums and the final
     /// `ckks_copy`. The fold runs in scratch, so `res` is untouched on `Err`.
-    fn ckks_sum_slots<R, I, H>(
-        &self,
-        res: &mut R,
-        input: &I,
-        rotation_keys: &H,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
+    fn ckks_sum_slots<R, I, H>(&self, res: &mut R, input: &I, keys: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         I: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetAutomorphismKey<BE>;
 
-    /// Scratch bytes for [`Self::ckks_fmax_slots`] and [`Self::ckks_fmin_slots`].
-    fn ckks_fmax_slots_tmp_bytes<R, I, T, A, K, P>(
-        &self,
-        res: &R,
-        input: &I,
-        tsk: &T,
-        rotation_key: &A,
-        conj_key: &K,
-        coeff_prec: &P,
-    ) -> usize
+    /// Scratch bytes for [`Self::ckks_fmax_slots`].
+    fn ckks_fmax_slots_tmp_bytes<R, I, P, T, K>(&self, res: &R, input: &I, coeff_prec: &P, tsk: &T, keys: &K) -> usize
     where
         R: CKKSCtBounds,
         I: CKKSCtBounds,
+        P: CKKSInfos + LWEInfos,
         T: GGLWEInfos,
-        A: GGLWEInfos,
-        K: GGLWEInfos,
-        P: CKKSInfos + LWEInfos;
+        K: GGLWEInfos;
 
     /// Reduces `fmax` over all dense slots and broadcasts the result.
     ///
-    /// `conj_key` answers the conjugation, Galois element `-1`, of the comparisons.
+    /// `keys` answers the rotations and the conjugation, Galois element `-1`, of the comparisons.
     ///
     /// # Metadata
     ///
@@ -89,15 +74,13 @@ pub trait CKKSReductionOps<BE: Backend> {
     /// An error for a sparse input, and the errors of the rotations, of
     /// [`CKKSComparisonOps::ckks_fmax`] and of the final `ckks_copy`. The fold runs in scratch, so `res` is untouched on
     /// `Err`.
-    #[allow(clippy::too_many_arguments)]
-    fn ckks_fmax_slots<R, I, F, P, H, A, K>(
+    fn ckks_fmax_slots<R, I, F, P, H, K>(
         &self,
         res: &mut R,
         input: &I,
         composite: &SignComposite<F, P>,
         tsk: &H,
-        rotation_keys: &A,
-        conj_key: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -105,8 +88,16 @@ pub trait CKKSReductionOps<BE: Backend> {
         I: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
         H: GetTensorKey<BE>,
-        A: GetAutomorphismKey<BE>,
         K: GetAutomorphismKey<BE>;
+
+    /// Scratch bytes for [`Self::ckks_fmin_slots`].
+    fn ckks_fmin_slots_tmp_bytes<R, I, P, T, K>(&self, res: &R, input: &I, coeff_prec: &P, tsk: &T, keys: &K) -> usize
+    where
+        R: CKKSCtBounds,
+        I: CKKSCtBounds,
+        P: CKKSInfos + LWEInfos,
+        T: GGLWEInfos,
+        K: GGLWEInfos;
 
     /// Reduces `fmin` over all dense slots and broadcasts the result.
     ///
@@ -117,15 +108,13 @@ pub trait CKKSReductionOps<BE: Backend> {
     /// # Errors
     ///
     /// As [`Self::ckks_fmax_slots`], with [`CKKSComparisonOps::ckks_fmin`]. `res` is untouched on `Err`.
-    #[allow(clippy::too_many_arguments)]
-    fn ckks_fmin_slots<R, I, F, P, H, A, K>(
+    fn ckks_fmin_slots<R, I, F, P, H, K>(
         &self,
         res: &mut R,
         input: &I,
         composite: &SignComposite<F, P>,
         tsk: &H,
-        rotation_keys: &A,
-        conj_key: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -133,7 +122,6 @@ pub trait CKKSReductionOps<BE: Backend> {
         I: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
         H: GetTensorKey<BE>,
-        A: GetAutomorphismKey<BE>,
         K: GetAutomorphismKey<BE>;
 }
 
@@ -150,7 +138,7 @@ where
             .collect()
     }
 
-    fn ckks_sum_slots_tmp_bytes<R, I, A>(&self, res: &R, input: &I, rotation_key: &A) -> usize
+    fn ckks_sum_slots_tmp_bytes<R, I, A>(&self, res: &R, input: &I, keys: &A) -> usize
     where
         R: CKKSCtBounds,
         I: CKKSCtBounds,
@@ -160,12 +148,12 @@ where
         2 * BE::scratch_aligned(self.glwe_bytes_of_from_infos(input))
             + self
                 .ckks_copy_tmp_bytes(input, input)
-                .max(self.ckks_rotate_tmp_bytes(input, rotation_key))
+                .max(self.ckks_rotate_tmp_bytes(input, keys))
                 .max(self.ckks_add_tmp_bytes(input.size()))
                 .max(self.ckks_copy_tmp_bytes(res, input))
     }
 
-    fn ckks_sum_slots<R, I, H>(&self, res: &mut R, input: &I, rotation_keys: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_sum_slots<R, I, H>(&self, res: &mut R, input: &I, keys: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         I: GLWEToBackendRef<BE> + CKKSCtBounds,
@@ -177,7 +165,7 @@ where
             let (mut rotated, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(input);
             self.ckks_copy(&mut acc, input, &mut scratch_local)?;
             for shift in slot_shifts(self, input) {
-                self.ckks_rotate_into(shift, &mut rotated, &acc, rotation_keys, &mut scratch_local)?;
+                self.ckks_rotate_into(shift, &mut rotated, &acc, keys, &mut scratch_local)?;
                 self.ckks_add_assign(&mut acc, &rotated, &mut scratch_local)?;
             }
             self.ckks_copy(res, &acc, &mut scratch_local)?;
@@ -185,40 +173,24 @@ where
         })
     }
 
-    fn ckks_fmax_slots_tmp_bytes<R, I, T, A, K, P>(
-        &self,
-        res: &R,
-        input: &I,
-        tsk: &T,
-        rotation_key: &A,
-        conj_key: &K,
-        coeff_prec: &P,
-    ) -> usize
+    fn ckks_fmax_slots_tmp_bytes<R, I, P, T, K>(&self, res: &R, input: &I, coeff_prec: &P, tsk: &T, keys: &K) -> usize
     where
         R: CKKSCtBounds,
         I: CKKSCtBounds,
-        T: GGLWEInfos,
-        A: GGLWEInfos,
-        K: GGLWEInfos,
         P: CKKSInfos + LWEInfos,
+        T: GGLWEInfos,
+        K: GGLWEInfos,
     {
-        // The accumulator, the rotation and the comparison, each with the layout of `input`.
-        3 * BE::scratch_aligned(self.glwe_bytes_of_from_infos(input))
-            + self
-                .ckks_copy_tmp_bytes(input, input)
-                .max(self.ckks_rotate_tmp_bytes(input, rotation_key))
-                .max(self.ckks_comparison_tmp_bytes(input, input, input, tsk, conj_key, coeff_prec))
-                .max(self.ckks_copy_tmp_bytes(res, input))
+        extrema_slots_tmp_bytes(self, res, input, coeff_prec, tsk, keys)
     }
 
-    fn ckks_fmax_slots<R, I, F, P, H, A, K>(
+    fn ckks_fmax_slots<R, I, F, P, H, K>(
         &self,
         res: &mut R,
         input: &I,
         composite: &SignComposite<F, P>,
         tsk: &H,
-        rotation_keys: &A,
-        conj_key: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -226,20 +198,29 @@ where
         I: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
         H: GetTensorKey<BE>,
-        A: GetAutomorphismKey<BE>,
         K: GetAutomorphismKey<BE>,
     {
-        extrema_slots(self, res, input, composite, tsk, rotation_keys, conj_key, true, scratch)
+        extrema_slots(self, true, res, input, composite, tsk, keys, scratch)
     }
 
-    fn ckks_fmin_slots<R, I, F, P, H, A, K>(
+    fn ckks_fmin_slots_tmp_bytes<R, I, P, T, K>(&self, res: &R, input: &I, coeff_prec: &P, tsk: &T, keys: &K) -> usize
+    where
+        R: CKKSCtBounds,
+        I: CKKSCtBounds,
+        P: CKKSInfos + LWEInfos,
+        T: GGLWEInfos,
+        K: GGLWEInfos,
+    {
+        extrema_slots_tmp_bytes(self, res, input, coeff_prec, tsk, keys)
+    }
+
+    fn ckks_fmin_slots<R, I, F, P, H, K>(
         &self,
         res: &mut R,
         input: &I,
         composite: &SignComposite<F, P>,
         tsk: &H,
-        rotation_keys: &A,
-        conj_key: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -247,10 +228,9 @@ where
         I: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
         H: GetTensorKey<BE>,
-        A: GetAutomorphismKey<BE>,
         K: GetAutomorphismKey<BE>,
     {
-        extrema_slots(self, res, input, composite, tsk, rotation_keys, conj_key, false, scratch)
+        extrema_slots(self, false, res, input, composite, tsk, keys, scratch)
     }
 }
 
@@ -265,16 +245,34 @@ fn slot_shifts<BE: Backend>(module: &Module<BE>, input: &impl CKKSCtBounds) -> i
     (0..log_slots).map(|i| 1i64 << i)
 }
 
+/// Query of [`extrema_slots`]: the accumulator, the rotation and the comparison, each with the layout of `input`.
+fn extrema_slots_tmp_bytes<BE, R, I, P, T, K>(module: &Module<BE>, res: &R, input: &I, coeff_prec: &P, tsk: &T, keys: &K) -> usize
+where
+    BE: Backend,
+    Module<BE>: CKKSComparisonOps<BE> + CKKSCopyOps<BE> + CKKSRotateOps<BE> + GLWEBytesOf<BE>,
+    R: CKKSCtBounds,
+    I: CKKSCtBounds,
+    P: CKKSInfos + LWEInfos,
+    T: GGLWEInfos,
+    K: GGLWEInfos,
+{
+    3 * BE::scratch_aligned(module.glwe_bytes_of_from_infos(input))
+        + module
+            .ckks_copy_tmp_bytes(input, input)
+            .max(module.ckks_rotate_tmp_bytes(input, keys))
+            .max(module.ckks_comparison_tmp_bytes(input, input, input, coeff_prec, tsk, keys))
+            .max(module.ckks_copy_tmp_bytes(res, input))
+}
+
 #[allow(clippy::too_many_arguments)]
-fn extrema_slots<BE, R, I, F, P, H, A, K>(
+fn extrema_slots<BE, R, I, F, P, H, K>(
     module: &Module<BE>,
+    max: bool,
     res: &mut R,
     input: &I,
     composite: &SignComposite<F, P>,
     tsk: &H,
-    rotation_keys: &A,
-    conj_key: &K,
-    max: bool,
+    keys: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
@@ -284,7 +282,6 @@ where
     I: GLWEToBackendRef<BE> + CKKSCtBounds,
     P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
     H: GetTensorKey<BE>,
-    A: GetAutomorphismKey<BE>,
     K: GetAutomorphismKey<BE>,
 {
     ensure_dense(if max { "ckks_fmax_slots" } else { "ckks_fmin_slots" }, input)?;
@@ -294,11 +291,11 @@ where
         let (mut next, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(input);
         module.ckks_copy(&mut acc, input, &mut scratch_local)?;
         for shift in slot_shifts(module, input) {
-            module.ckks_rotate_into(shift, &mut rotated, &acc, rotation_keys, &mut scratch_local)?;
+            module.ckks_rotate_into(shift, &mut rotated, &acc, keys, &mut scratch_local)?;
             if max {
-                module.ckks_fmax(&mut next, &acc, &rotated, composite, tsk, conj_key, &mut scratch_local)?;
+                module.ckks_fmax(&mut next, &acc, &rotated, composite, tsk, keys, &mut scratch_local)?;
             } else {
-                module.ckks_fmin(&mut next, &acc, &rotated, composite, tsk, conj_key, &mut scratch_local)?;
+                module.ckks_fmin(&mut next, &acc, &rotated, composite, tsk, keys, &mut scratch_local)?;
             }
             module.ckks_copy(&mut acc, &next, &mut scratch_local)?;
         }

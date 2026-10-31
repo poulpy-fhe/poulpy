@@ -32,6 +32,10 @@ impl<BE: Backend + CKKSPow2Impl> CKKSPow2Ops<BE> for Module<BE> {
         BE::ckks_mul_pow2_assign(self, bits, dst, scratch)
     }
 
+    fn ckks_double_tmp_bytes(&self, res_size: usize) -> usize {
+        BE::ckks_double_tmp_bytes(self, res_size)
+    }
+
     fn ckks_double_into<Dst, Src>(&self, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
