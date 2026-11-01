@@ -315,16 +315,20 @@ For example, a CKKS application can depend on:
 
 ```toml
 [dependencies]
+poulpy-hal = "0.10.0"
+poulpy-core = "0.10.0"
 poulpy-ckks = "0.10.0"
-poulpy-cpu-portable = "0.10.0"
+poulpy-cpu-portable = { version = "0.10.0", features = ["enable-ckks"] }
 ```
 
 For binary FHE:
 
 ```toml
 [dependencies]
+poulpy-hal = "0.10.0"
+poulpy-core = "0.10.0"
 poulpy-bin-fhe = "0.10.0"
-poulpy-cpu-portable = "0.10.0"
+poulpy-cpu-portable = { version = "0.10.0", features = ["enable-bin-fhe"] }
 ```
 
 ## Documentation
@@ -419,6 +423,6 @@ Please use the following BibTeX entry for citing Poulpy:
         author = {Jean-Philippe Bossuat and Jules Dumezy and Rasoul Akhavan Mahdavi and Janmajaya Mall and Cedoor and Luis Ruiz-Lopez and Christian Mouchet},
         affiliation = {Jean-Philippe Bossuat: Ideal Rings Lab and PhantomZone; Jules Dumezy: CEA-List, Universit{\'e} Paris-Saclay; Rasoul Akhavan Mahdavi: University of Waterloo; Janmajaya Mall: PhantomZone; Cedoor: Independent contributor; Luis Ruiz-Lopez: University of Waterloo; Christian Mouchet: Independent contributor},
         howpublished = {Online: \url{https://github.com/poulpy-fhe/poulpy}},
-        month = November,
+        month = nov,
         year = 2026,
     }
